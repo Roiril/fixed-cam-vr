@@ -73,6 +73,11 @@ Thumbs.db
 # Env / secrets
 .env
 .env.local
+/[Aa]ssets/[Ss]treamingAssets/secrets.json
+/[Aa]ssets/[Ss]treamingAssets/secrets.*.json
 
 # Claude Code local overrides
 .claude/settings.local.json
+
+# MCP per-project placeholder（実体は ~/.claude.json で管理されるため不要）
+/.mcp.json

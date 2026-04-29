@@ -8,6 +8,14 @@ type: project
 
 採用：**Meta XR All-in-One SDK**（メイン）+ **XR Interaction Toolkit**（補助）+ **OpenXR Plugin**（基盤）
 
+## 導入状況（2026-04-29 時点）
+
+| SDK | バージョン | 状態 |
+|---|---|---|
+| Meta XR All-in-One SDK | `201.0.0` | ✅ 導入済み（`Packages/manifest.json`） |
+| XR Interaction Toolkit | — | ❌ 未導入（コントローラ入力 / UI レイキャストが必要になったら追加） |
+| OpenXR Plugin | — | ❌ 未導入（Editor の Game ビューで OVR カメラ出力が出ない原因の可能性。実機検証では問題なし） |
+
 ## 役割分担
 
 | SDK | 用途 |

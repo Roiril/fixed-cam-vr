@@ -1,0 +1,65 @@
+# Unity 推奨 .gitattributes
+# - LF 統一でクロスプラットフォームの改行差を抑える
+# - YAML シリアライズされる Unity アセットは unityyamlmerge を指定（git config で別途設定）
+# - 主要バイナリは binary として誤判定を防ぐ
+
+* text=auto eol=lf
+
+# C# / Shader / 設定
+*.cs        text eol=lf diff=csharp
+*.shader    text eol=lf
+*.cginc     text eol=lf
+*.hlsl      text eol=lf
+*.compute   text eol=lf
+*.json      text eol=lf
+*.xml       text eol=lf
+*.asmdef    text eol=lf
+*.asmref    text eol=lf
+*.uxml      text eol=lf
+*.uss       text eol=lf
+
+# Unity YAML
+*.meta              merge=unityyamlmerge eol=lf
+*.unity             merge=unityyamlmerge eol=lf
+*.prefab            merge=unityyamlmerge eol=lf
+*.asset             merge=unityyamlmerge eol=lf
+*.mat               merge=unityyamlmerge eol=lf
+*.physicMaterial    merge=unityyamlmerge eol=lf
+*.physicsMaterial2D merge=unityyamlmerge eol=lf
+*.controller        merge=unityyamlmerge eol=lf
+*.anim              merge=unityyamlmerge eol=lf
+*.overrideController merge=unityyamlmerge eol=lf
+*.preset            merge=unityyamlmerge eol=lf
+*.lighting          merge=unityyamlmerge eol=lf
+*.shadergraph       merge=unityyamlmerge eol=lf
+*.shadersubgraph    merge=unityyamlmerge eol=lf
+*.terrainlayer      merge=unityyamlmerge eol=lf
+*.signal            merge=unityyamlmerge eol=lf
+*.spriteatlas       merge=unityyamlmerge eol=lf
+
+# 画像・音声・モデル・フォント
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.psd   binary
+*.tga   binary
+*.tif   binary
+*.exr   binary
+*.hdr   binary
+*.fbx   binary
+*.obj   binary
+*.blend binary
+*.glb   binary
+*.gltf  binary
+*.wav   binary
+*.mp3   binary
+*.ogg   binary
+*.aif   binary
+*.ttf   binary
+*.otf   binary
+*.dll   binary
+*.so    binary
+*.dylib binary
+*.bundle binary
+*.unitypackage binary
