@@ -10,20 +10,20 @@ Unity MCP (MCP for Unity) との接続が不安定な時に走らせる診断コ
 ## 0. 前提
 
 - MCP for Unity の Unity 側ブリッジは Editor 起動中のみリッスンする（既定 TCP `127.0.0.1:6400`）
-- Claude Code 側のサーバ登録は `~/.claude.json` （ユーザ全体）か プロジェクト `.mcp.json` のいずれか
-- 本セッションに deferred tool として `mcp__unityMCP__*` か `mcp__UnityMCP__*` が出てくれば「ロード成功」
+- Claude Code 側のサーバ登録は **ユーザースコープ**（`~/.claude.json` の トップレベル `mcpServers`）に置くのが安定
+  - プロジェクトスコープ（`projects."<path>".mcpServers`）はパスキー揺れで不可視化することがあるため避ける
+- 本セッションに deferred tool として `mcp__UnityMCP__*` が出てくれば「ロード成功」（小文字 `unityMCP` は古い名前なので新規登録時は使わない）
+- 詳細な落とし穴は [`.claude/memory/mcp_unity_setup.md`](../memory/mcp_unity_setup.md) 参照
 
 ---
 
 ## 1. ロード状態の判定（最優先）
 
-ToolSearch で以下の 2 系統を順に問い合わせ、ヒットした側を「採用ネームスペース」として記録する。
+ToolSearch で `select:mcp__UnityMCP__read_console,mcp__UnityMCP__manage_editor` を問い合わせ、ヒットすればロード成功。
+ヒットしなかった場合は **未ロード**（`/unity-status` は失敗するため呼ばない）。
+ヒット時は `manage_editor action=get_state` と `mcpforunity://instances` を読み、接続健全性を確認する（実質 `/unity-status` と同等）。
 
-- `select:mcp__unityMCP__read_console,mcp__unityMCP__manage_editor`
-- `select:mcp__UnityMCP__read_console,mcp__UnityMCP__manage_editor`
-
-両方ヒットしなかった場合は **未ロード**。`/unity-status` は失敗するため呼ばない。
-ヒットした場合は採用ネームスペースで `manage_editor action=get_state` と `mcpforunity://instances` を読み、接続健全性を確認する（実質 `/unity-status` と同等）。
+旧名 `mcp__unityMCP__*`（小文字 u）が出てくる古い登録に当たった場合は、ユーザに削除と再登録を提案する（命名統一のため）。
 
 ---
 
@@ -37,7 +37,7 @@ cat .mcp.json 2>/dev/null
 ```
 
 判定：
-- `claude mcp list` に `unityMCP` も `UnityMCP` も無い → **登録欠落**
+- `claude mcp list` に `UnityMCP` 系が無い → **登録欠落**（プロジェクトスコープに埋もれている可能性も含む — `~/.claude.json` の `projects.*.mcpServers` を python で grep して確認）
 - 登録あるが `connected` でない → **接続失敗**
 - 登録あり `connected` だがツール未ロード → **セッションキャッシュ不整合**（要再起動）
 
@@ -87,15 +87,21 @@ Editor 内で `Window → MCP for Unity → Status` を開いて bridge を Star
 これにより `~/.claude.json` に `UnityMCP`（大文字 U）が `uvx --offline --from mcpforunityserver==<ver> mcp-for-unity` の形で登録される。
 このプロジェクトの権限 allow リストは `mcp__UnityMCP__*`（大文字 U）に揃っているので、命名を一致させる。
 
-**フォールバック**（Unity の Auto Setup が使えない時）:
+**フォールバック**（手動登録）:
 
 ```bash
-claude mcp add UnityMCP -s user -- uvx --offline --from "mcpforunityserver" mcp-for-unity
+claude mcp add UnityMCP -s user -- "C:\Users\kouga\.local\bin\uvx.exe" --offline --from "mcpforunityserver==9.6.8" mcp-for-unity
 ```
 
-`--offline` の前提として、Unity Editor 側の MCP for Unity が一度でも `Auto Setup` を走らせて、`mcpforunityserver` を `uv tool install` してあること。していなければ Unity Editor で先に Auto Setup を実行。
+- `-s user` でユーザースコープ（cwd 表記揺れに左右されない）
+- バージョン `9.6.8` は `~/.local/bin/uvx.exe` に install 済みのものに合わせる（Unity の Auto Setup が事前に `uv tool install mcpforunityserver` 済み前提）
+- `--offline` で git fetch を回避（オンライン取得は本環境で失敗実績あり）
+- 命名は **大文字 `UnityMCP`**（権限 allow リストと揃える）
 
-git+uvx 経由 (`git+https://github.com/CoplayDev/unity-mcp.git#subdirectory=...`) は本環境では fetch に失敗するため避ける。
+**避けるべき形式**:
+- ❌ `claude mcp add ... -- uvx --from "git+https://github.com/CoplayDev/unity-mcp.git#subdirectory=..."` — git fetch 失敗
+- ❌ `claude mcp add-json` で `"type":"stdio"` を含む JSON — `Invalid input` で弾かれる
+- ❌ プロジェクトスコープ (`-s project` / `-s local`) — cwd キー揺れで `claude mcp list` から消える
 
 ---
 
