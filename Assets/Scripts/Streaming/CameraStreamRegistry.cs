@@ -64,13 +64,20 @@ namespace FixedCamVr.Streaming
         public void SetActive(int index)
         {
             if (_streams.Length == 0) return;
-            int clamped = ((index % _streams.Length) + _streams.Length) % _streams.Length;
-            if (clamped == _activeIndex) return;
-            _activeIndex = clamped;
+            int wrapped = WrapIndex(index, _streams.Length);
+            if (wrapped == _activeIndex) return;
+            _activeIndex = wrapped;
             ActiveChanged?.Invoke(_activeIndex);
         }
 
         public void Next() => SetActive(_activeIndex + 1);
         public void Prev() => SetActive(_activeIndex - 1);
+
+        /// <summary>負値を含めた wrap-around。count==0 では 0 を返す。</summary>
+        public static int WrapIndex(int index, int count)
+        {
+            if (count <= 0) return 0;
+            return ((index % count) + count) % count;
+        }
     }
 }
