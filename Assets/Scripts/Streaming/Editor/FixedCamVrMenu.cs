@@ -1,0 +1,97 @@
+#nullable enable
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
+using FixedCamVr.Streaming;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEditor.TestTools.TestRunner.Api;
+using UnityEngine;
+
+namespace FixedCamVr.Streaming.EditorTools
+{
+    /// <summary>
+    /// Tools > FixedCamVr メニュー。シーン切替・テスト実行・DroidCam 接続確認の導線を集約。
+    /// </summary>
+    public static class FixedCamVrMenu
+    {
+        private const string Root = "Tools/FixedCamVr/";
+
+        [MenuItem(Root + "Open Main Scene %#m")] // Ctrl+Shift+M
+        public static void OpenMain() => OpenScene("Assets/Scenes/Main.unity");
+
+        [MenuItem(Root + "Open Debug Scene %#d")] // Ctrl+Shift+D
+        public static void OpenDebug() => OpenScene("Assets/Scenes/Debug.unity");
+
+        [MenuItem(Root + "Run Streaming Tests")]
+        public static void RunStreamingTests()
+        {
+            var api = ScriptableObject.CreateInstance<TestRunnerApi>();
+            api.Execute(new ExecutionSettings(new Filter
+            {
+                testMode = TestMode.EditMode,
+                assemblyNames = new[] { "FixedCamVr.Streaming.Tests" }
+            }));
+            Debug.Log("[FixedCamVr] EditMode tests launched. See Test Runner window for results.");
+        }
+
+        [MenuItem(Root + "Ping DroidCams")]
+        public static async void PingDroidCams()
+        {
+            var sources = AssetDatabase.FindAssets("t:CameraSource")
+                .Select(g => AssetDatabase.LoadAssetAtPath<CameraSource>(AssetDatabase.GUIDToAssetPath(g)))
+                .Where(s => s != null)
+                .ToArray();
+
+            if (sources.Length == 0)
+            {
+                Debug.LogWarning("[FixedCamVr] No CameraSource assets found.");
+                return;
+            }
+
+            using var http = new HttpClient { Timeout = System.TimeSpan.FromSeconds(2) };
+            foreach (var src in sources)
+            {
+                var url = src.BuildUrl();
+                try
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Head, url);
+                    var resp = await http.SendAsync(req);
+                    Debug.Log($"[FixedCamVr] ✅ {src.DisplayName} {url} → HTTP {(int)resp.StatusCode}");
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[FixedCamVr] ❌ {src.DisplayName} {url} → {ex.Message}");
+                }
+            }
+        }
+
+        [MenuItem(Root + "Reveal Camera Sources Folder")]
+        public static void RevealCamerasFolder()
+        {
+            var obj = AssetDatabase.LoadAssetAtPath<Object>("Assets/Settings/Cameras");
+            if (obj != null)
+            {
+                EditorUtility.FocusProjectWindow();
+                Selection.activeObject = obj;
+                EditorGUIUtility.PingObject(obj);
+            }
+        }
+
+        [MenuItem(Root + "Open Test Runner")]
+        public static void OpenTestRunner() => EditorApplication.ExecuteMenuItem("Window/General/Test Runner");
+
+        private static void OpenScene(string path)
+        {
+            if (!System.IO.File.Exists(path))
+            {
+                Debug.LogError($"[FixedCamVr] scene not found: {path}");
+                return;
+            }
+            if (EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+            {
+                EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+            }
+        }
+    }
+}
