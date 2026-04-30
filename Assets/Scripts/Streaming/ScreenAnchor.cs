@@ -12,7 +12,7 @@ namespace FixedCamVr.Streaming
     {
         [SerializeField] private Transform? head;
         [SerializeField] private float distance = 1.5f;
-        [SerializeField] private bool locked = true;
+        [SerializeField] private bool locked = false;
         [SerializeField] private KeyCode toggleKey = KeyCode.Space;
 
         public bool Locked

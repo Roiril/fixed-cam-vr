@@ -1,7 +1,9 @@
 {
     "name": "FixedCamVr.Streaming",
     "rootNamespace": "FixedCamVr.Streaming",
-    "references": [],
+    "references": [
+        "Unity.TextMeshPro"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
