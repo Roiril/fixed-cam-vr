@@ -85,6 +85,49 @@ namespace FixedCamVr.Streaming.EditorTools
 
         private const string LayoutPath = "Assets/Editor/Layouts/FixedCamVr.wlt";
 
+        [MenuItem(Root + "Layout/Setup Recommended Workspace")]
+        public static void SetupRecommendedWorkspace()
+        {
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
+            // 1. Main シーンをロード
+            if (System.IO.File.Exists("Assets/Scenes/Main.unity"))
+            {
+                EditorSceneManager.OpenScene("Assets/Scenes/Main.unity", OpenSceneMode.Single);
+            }
+
+            // 2. 開発で常用するウィンドウを開く
+            EditorApplication.ExecuteMenuItem("Window/General/Hierarchy");
+            EditorApplication.ExecuteMenuItem("Window/General/Inspector");
+            EditorApplication.ExecuteMenuItem("Window/General/Project");
+            EditorApplication.ExecuteMenuItem("Window/General/Console");
+            EditorApplication.ExecuteMenuItem("Window/General/Scene");
+            EditorApplication.ExecuteMenuItem("Window/General/Game");
+            EditorApplication.ExecuteMenuItem("Window/General/Test Runner");
+
+            // 3. [Streaming] を選択（Inspector に Registry の live state が出る位置）
+            var streaming = GameObject.Find("[Streaming]");
+            if (streaming != null) Selection.activeGameObject = streaming;
+
+            // 4. Scene View を Screen にフレーム
+            var screen = GameObject.Find("Screen");
+            if (screen != null && SceneView.lastActiveSceneView != null)
+            {
+                SceneView.lastActiveSceneView.Frame(new Bounds(screen.transform.position, Vector3.one * 3f), instant: true);
+            }
+
+            Debug.Log(
+                "[FixedCamVr] 推奨ワークスペースを準備しました。\n" +
+                "次の手順（一度だけ手動でドラッグ）:\n" +
+                "  ・Hierarchy を左カラムに / Project をその下に\n" +
+                "  ・Scene と Game を中央上タブに\n" +
+                "  ・Console を中央下に\n" +
+                "  ・Inspector を右カラムに / Test Runner をその下 or タブで\n" +
+                "完了したら Tools > FixedCamVr > Layout > Save Current Layout でコミット可能な .wlt として保存される。\n" +
+                "次回以降は Tools > FixedCamVr > Layout > Apply FixedCamVr Layout 一発で復元。"
+            );
+        }
+
         [MenuItem(Root + "Layout/Apply FixedCamVr Layout")]
         public static void ApplyLayout()
         {
