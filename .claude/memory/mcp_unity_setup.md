@@ -26,6 +26,13 @@ type: feedback
 - Unity Editor の Auto Setup は **プロジェクトスコープ** (`~/.claude.json` の `projects."<path>".mcpServers`) に書き込むことがある
 - キーは `C:/Users/kouga/Projects/Unity/fixed-cam-vr`（フォワードスラッシュ）。Claude Code が認識する cwd 表記とマッチしないと **`claude mcp list` から消える**
 - **対処**: ユーザースコープ (`-s user`) で登録すれば cwd 形式に依存しない
+- ⚠️ **再発注意**: ユーザースコープに移しても、Unity Editor の MCP for Unity ウィンドウから `Configure Claude Code` 等を再実行すると **プロジェクトスコープ側に書き戻されて再び不可視化** する。2026-04-30 セッションで 1 度遭遇後、同日中に再発した実績あり。Unity 側で再 Configure する場合は、その後に下記の修復ワンライナーを実行する：
+  ```bash
+  # ユーザースコープに UnityMCP を設置（既にあれば失敗するが無害）
+  claude mcp add UnityMCP -s user "C:\Users\kouga\.local\bin\uvx.exe" -- --offline --from "mcpforunityserver==9.6.8" mcp-for-unity
+  # プロジェクトスコープの重複を削除
+  python -c "import json; p=r'C:\Users\kouga\.claude.json'; d=json.load(open(p,encoding='utf-8')); k='C:/Users/kouga/Projects/Unity/fixed-cam-vr'; (d['projects'][k]['mcpServers'].pop('UnityMCP', None)); json.dump(d, open(p,'w',encoding='utf-8'), indent=2)"
+  ```
 
 ### 罠 2: `claude mcp add` の git+uvx 形式は動かない
 - ❌ `claude mcp add unityMCP -s user -- uvx --from "git+https://github.com/CoplayDev/unity-mcp.git#subdirectory=UnityMcpBridge/UnityMcpServer" unity-mcp-server`
