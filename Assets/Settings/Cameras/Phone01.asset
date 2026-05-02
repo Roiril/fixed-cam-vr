@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Phone01
   m_EditorClassIdentifier: 
   displayName: Phone 01
-  host: 192.168.1.10
+  host: 192.168.10.129
   port: 4747
   path: /mjpegfeed?640x480
   width: 640

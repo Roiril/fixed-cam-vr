@@ -19,7 +19,21 @@
       "Bash(python -c ' *)",
       "mcp__UnityMCP__manage_scriptable_object",
       "mcp__UnityMCP__run_tests",
-      "mcp__UnityMCP__get_test_job"
+      "mcp__UnityMCP__get_test_job",
+      "Bash(lftp --version)",
+      "Bash(choco --version)",
+      "Bash(scoop --version)",
+      "Bash(winget --version)",
+      "Bash(wget --version)",
+      "Bash(curl --version)",
+      "Bash(python -c \"import ftplib; print\\('ftplib OK'\\)\")",
+      "Bash(tasklist)",
+      "Bash(python -u scripts/survey.py)",
+      "Bash(tee survey_result.txt)",
+      "Bash(python -u -c ' *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\kouga\\Projects\\Web\\kougaku-lab"
     ]
   }
 }
