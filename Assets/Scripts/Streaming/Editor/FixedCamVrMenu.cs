@@ -81,6 +81,57 @@ namespace FixedCamVr.Streaming.EditorTools
         [MenuItem(Root + "Open Test Runner")]
         public static void OpenTestRunner() => EditorApplication.ExecuteMenuItem("Window/General/Test Runner");
 
+        // ---- Editor Layout ----
+
+        private const string LayoutPath = "Assets/Editor/Layouts/FixedCamVr.wlt";
+
+        [MenuItem(Root + "Layout/Apply FixedCamVr Layout")]
+        public static void ApplyLayout()
+        {
+            if (!System.IO.File.Exists(LayoutPath))
+            {
+                Debug.LogWarning($"[FixedCamVr] レイアウト未保存。先に Tools > FixedCamVr > Layout > Save Current Layout を実行してください。期待パス: {LayoutPath}");
+                return;
+            }
+            EditorUtility.LoadWindowLayout(System.IO.Path.GetFullPath(LayoutPath));
+        }
+
+        [MenuItem(Root + "Layout/Save Current Layout")]
+        public static void SaveLayout()
+        {
+            var dir = System.IO.Path.GetDirectoryName(LayoutPath);
+            if (!string.IsNullOrEmpty(dir) && !System.IO.Directory.Exists(dir))
+            {
+                System.IO.Directory.CreateDirectory(dir);
+            }
+
+            // SaveWindowLayout は internal なので reflection で呼ぶ（API 安定）
+            var saveFn = typeof(EditorUtility).GetMethod(
+                "SaveWindowLayout",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public,
+                null, new[] { typeof(string) }, null);
+
+            if (saveFn == null)
+            {
+                // フォールバック: WindowLayout クラス
+                var wlType = typeof(EditorWindow).Assembly.GetType("UnityEditor.WindowLayout");
+                saveFn = wlType?.GetMethod(
+                    "SaveWindowLayout",
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public,
+                    null, new[] { typeof(string) }, null);
+            }
+
+            if (saveFn == null)
+            {
+                Debug.LogError("[FixedCamVr] SaveWindowLayout が見つかりません。`Window > Layouts > Save Layout...` から手動で Assets/Editor/Layouts/FixedCamVr.wlt として保存してください。");
+                return;
+            }
+
+            saveFn.Invoke(null, new object[] { System.IO.Path.GetFullPath(LayoutPath) });
+            AssetDatabase.Refresh();
+            Debug.Log($"[FixedCamVr] レイアウトを保存しました: {LayoutPath}（コミットすれば全員に共有可）");
+        }
+
         private static void OpenScene(string path)
         {
             if (!System.IO.File.Exists(path))
