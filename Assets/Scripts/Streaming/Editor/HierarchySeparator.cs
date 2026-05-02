@@ -15,9 +15,9 @@ namespace FixedCamVr.Streaming.EditorTools
         private static readonly Regex Pattern = new(@"^=+\s*(.+?)\s*=+$", RegexOptions.Compiled);
 
         // VS Code 系ダーク UI と相性のいい控えめなアクセント色。
-        private static readonly Color XrColor    = new(0.30f, 0.46f, 0.65f, 1f);
-        private static readonly Color StageColor = new(0.32f, 0.56f, 0.40f, 1f);
-        private static readonly Color LogicColor = new(0.74f, 0.49f, 0.27f, 1f);
+        private static readonly Color RigColor   = new(0.30f, 0.46f, 0.65f, 1f);  // 青 (Camera Rig)
+        private static readonly Color StageColor = new(0.32f, 0.56f, 0.40f, 1f);  // 緑 (Light/Screen)
+        private static readonly Color LogicColor = new(0.74f, 0.49f, 0.27f, 1f);  // 橙 (Streaming/Controllers)
         private static readonly Color DefaultColor = new(0.35f, 0.35f, 0.35f, 1f);
 
         static HierarchySeparator()
@@ -36,7 +36,8 @@ namespace FixedCamVr.Streaming.EditorTools
             string label = match.Groups[1].Value.ToUpperInvariant();
             var color = label switch
             {
-                "XR"     => XrColor,
+                "RIG"    => RigColor,
+                "XR"     => RigColor,   // 互換: 旧命名
                 "STAGE"  => StageColor,
                 "LOGIC"  => LogicColor,
                 _ => DefaultColor,
