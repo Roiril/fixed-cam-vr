@@ -1,0 +1,66 @@
+# Unity EditMode Test Runner
+#
+# このワークフローは GameCI の unity-test-runner を使い、
+# Assets/Tests/ 配下の EditMode テストを CI 上で実行する。
+#
+# 必要シークレット（Settings > Secrets and variables > Actions に登録）:
+#   - UNITY_LICENSE   : Unity の Personal/Pro ライセンス XML（.ulf の中身全文）
+#   - UNITY_EMAIL     : Unity アカウントのメールアドレス
+#   - UNITY_PASSWORD  : Unity アカウントのパスワード
+#
+# UNITY_LICENSE 取得手順（Personal license の場合）:
+#   1. ローカルで GameCI の unity-request-activation-file アクションを実行し
+#      Unity_v2022.x.alf を生成
+#   2. https://license.unity3d.com/manual に .alf をアップロードして .ulf を取得
+#   3. .ulf の中身を UNITY_LICENSE シークレットに貼り付け
+#   詳細: https://game.ci/docs/github/activation
+#
+# シークレット未設定の環境（fork など）ではジョブをスキップする。
+
+name: Unity Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  editmode-tests:
+    name: EditMode Tests (Unity 2022.3.62f2)
+    runs-on: ubuntu-latest
+    if: ${{ secrets.UNITY_LICENSE != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Cache Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-
+
+      - name: Run EditMode tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: 2022.3.62f2
+          testMode: editmode
+          artifactsPath: artifacts
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: EditMode Test Results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editmode-test-results
+          path: artifacts
