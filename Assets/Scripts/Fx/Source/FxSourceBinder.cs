@@ -15,8 +15,11 @@ namespace FixedCamVr.Fx.Source
     {
         public enum Mode { ExplicitTexture, RendererMainTexture }
 
+        [Tooltip("ExplicitTexture: 明示的な Texture を使う / RendererMainTexture: 既存 Renderer の sharedMaterial.mainTexture を読む")]
         [SerializeField] private Mode mode = Mode.ExplicitTexture;
+        [Tooltip("Mode=ExplicitTexture 時に使う Texture (RenderTexture / Texture2D いずれも可)")]
         [SerializeField] private Texture? explicitTexture;
+        [Tooltip("Mode=RendererMainTexture 時に参照する Renderer (sharedMaterial.mainTexture を読み取り)")]
         [SerializeField] private Renderer? sourceRenderer;
 
         public Texture? Current
