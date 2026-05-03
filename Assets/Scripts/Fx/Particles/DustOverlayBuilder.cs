@@ -14,10 +14,17 @@ namespace FixedCamVr.Fx.Particles
     [DisallowMultipleComponent]
     public sealed class DustOverlayBuilder : MonoBehaviour
     {
+        [Tooltip("単位時間あたりのパーティクル発生数 (個/秒)")]
         [SerializeField] private float emitRate = 60f;
+        [Tooltip("各パーティクルの生存時間 (秒)")]
         [SerializeField] private float lifetime = 4f;
+        [Tooltip("各パーティクルの初期サイズ (ワールド単位)")]
         [SerializeField] private float startSize = 0.04f;
+        [Tooltip("パーティクルの色味と最大不透明度")]
         [SerializeField] private Color tint = new Color(0.9f, 0.85f, 0.7f, 0.25f);
+
+        // ApplyConfig 内で生成したマテリアルの参照を保持し、OnDestroy で確実に破棄する。
+        private Material? _generatedMat;
 
         private void Reset()
         {
@@ -28,6 +35,16 @@ namespace FixedCamVr.Fx.Particles
         private void OnEnable()
         {
             ApplyConfig();
+        }
+
+        private void OnDestroy()
+        {
+            if (_generatedMat != null)
+            {
+                if (Application.isPlaying) Destroy(_generatedMat);
+                else DestroyImmediate(_generatedMat);
+                _generatedMat = null;
+            }
         }
 
         private void ApplyConfig()
@@ -69,10 +86,27 @@ namespace FixedCamVr.Fx.Particles
             if (renderer != null)
             {
                 renderer.renderMode = ParticleSystemRenderMode.Billboard;
-                renderer.material = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"))
+
+                // 既に生成済みマテリアルがある場合は使い回す。
+                // 以前は OnEnable のたびに new Material を作って前回分が GC 管理から外れていた。
+                if (_generatedMat == null)
                 {
-                    name = "FxDustParticleMat",
-                };
+                    var sh = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+                    if (sh == null)
+                    {
+                        Debug.LogWarning("[DustOverlayBuilder] URP Particles/Unlit shader not found. " +
+                            "URP がプロジェクトに導入されているか確認してください。");
+                    }
+                    else
+                    {
+                        _generatedMat = new Material(sh)
+                        {
+                            name = "FxDustParticleMat",
+                            hideFlags = HideFlags.DontSave,
+                        };
+                    }
+                }
+                if (_generatedMat != null) renderer.sharedMaterial = _generatedMat;
             }
         }
     }
