@@ -1,0 +1,67 @@
+// Sobel エッジ検出 + Reinhard トーンマップを 1 ディスパッチで行う Compute Shader。
+// 入力テクスチャを 8x8 スレッドグループで処理。
+
+#pragma kernel SobelEdge
+#pragma kernel SobelEdgeOverlay
+#pragma kernel ReinhardTonemap
+
+Texture2D<float4> _Source;
+RWTexture2D<float4> _Result;
+SamplerState sampler_LinearClamp_Source;
+
+uint2 _Size;
+float _EdgeIntensity;
+float _Exposure;
+
+float Luma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
+
+float4 SampleClamp(int2 p)
+{
+    p = clamp(p, int2(0, 0), int2(_Size) - 1);
+    return _Source.Load(int3(p, 0));
+}
+
+float ComputeSobel(uint2 id)
+{
+    float tl = Luma(SampleClamp(int2(id) + int2(-1, -1)).rgb);
+    float t  = Luma(SampleClamp(int2(id) + int2( 0, -1)).rgb);
+    float tr = Luma(SampleClamp(int2(id) + int2( 1, -1)).rgb);
+    float l  = Luma(SampleClamp(int2(id) + int2(-1,  0)).rgb);
+    float r  = Luma(SampleClamp(int2(id) + int2( 1,  0)).rgb);
+    float bl = Luma(SampleClamp(int2(id) + int2(-1,  1)).rgb);
+    float b  = Luma(SampleClamp(int2(id) + int2( 0,  1)).rgb);
+    float br = Luma(SampleClamp(int2(id) + int2( 1,  1)).rgb);
+
+    float gx = -tl - 2.0 * l - bl + tr + 2.0 * r + br;
+    float gy = -tl - 2.0 * t - tr + bl + 2.0 * b + br;
+    return saturate(sqrt(gx * gx + gy * gy) * _EdgeIntensity);
+}
+
+[numthreads(8, 8, 1)]
+void SobelEdge(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _Size.x || id.y >= _Size.y) return;
+    float e = ComputeSobel(id.xy);
+    _Result[id.xy] = float4(e, e, e, 1);
+}
+
+[numthreads(8, 8, 1)]
+void SobelEdgeOverlay(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _Size.x || id.y >= _Size.y) return;
+    float4 src = SampleClamp(int2(id.xy));
+    float e = ComputeSobel(id.xy);
+    // バイオハザード固定カメラの「輪郭強調」表現: 暗部の輪郭を赤味付きで強調
+    float3 edgeTint = float3(0.9, 0.15, 0.15) * e;
+    float3 outRgb = src.rgb * (1.0 - 0.4 * e) + edgeTint;
+    _Result[id.xy] = float4(outRgb, 1);
+}
+
+[numthreads(8, 8, 1)]
+void ReinhardTonemap(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _Size.x || id.y >= _Size.y) return;
+    float3 c = SampleClamp(int2(id.xy)).rgb * _Exposure;
+    c = c / (1.0 + c);
+    _Result[id.xy] = float4(c, 1);
+}
