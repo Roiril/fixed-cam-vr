@@ -1,0 +1,16 @@
+{
+    "name": "FixedCamVr.Tracking",
+    "rootNamespace": "FixedCamVr.Tracking",
+    "references": [
+        "FixedCamVr.Streaming"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
