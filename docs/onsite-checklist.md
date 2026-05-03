@@ -40,19 +40,26 @@
 
 ## 3. 起動後 60 秒チェック（HMD を被って）
 
-> 現状ランタイム HUD（オーバーレイ表示）は未実装。
-> 接続状態 / アクティブカメラ番号 / フレームレートは Editor 接続で確認する：
-> - **Game ビュー**: 右上の Stats でフレームレート / DrawCalls
-> - **Hierarchy → `[Streaming]` 選択 → Inspector の Runtime State 行**: ● Connected / ○ Disconnected
-> - **OVR Metrics Tool**（Quest 内）: GPU/CPU レベル・実フレームレート
+`RuntimeDebugHud`（[`Assets/Scripts/Diagnostics/RuntimeDebugHud.cs`](../Assets/Scripts/Diagnostics/RuntimeDebugHud.cs)）が World Space Canvas で HMD 前方に常時表示される。
+左コントローラ **Y ボタン**でトグル（OvrControllerBridge 経由）。Editor では `H` キーでもトグル可。
 
-最低限の主観チェック:
+HUD の各行を順に確認：
+
+- [ ] **FPS 行**: 72fps 以上（90 出てれば理想）
+- [ ] **CONN 行**: `●` で接続済み、カメラ番号と名前（例: `1/3 Phone01@192.168.1.10`）が表示
+- [ ] **ZONE 行**: 立っているゾーン名が出ている
+- [ ] **HMD 行**: 頭の動きで座標 (X Y Z) が変わる
+- [ ] **FX 行**: 各エフェクト（CRT / Dust / Sobel）の状態が表示
+
+主観チェックも併用:
 
 - [ ] スクリーン Quad に映像が出ている（黒くない / 色が落ちていない）
 - [ ] 頭を左右に振って、Quad がワールド固定（または head-lock）に追従する
 - [ ] 30 秒程度立ったまま見て、明らかなフリーズ・カクつき・大きな黒挿入が無い
 
-> HUD が必要なら別タスクで `RuntimeDebugHud`（仮）を起こす。本日は Editor + OVR Metrics Tool で代替。
+補助計測:
+- **OVR Metrics Tool**（Quest 内）: GPU/CPU レベル・実フレームレート
+- **Hierarchy → `[Streaming]` 選択 → Inspector の Runtime State 行**: Editor 検証時の補助
 
 ---
 

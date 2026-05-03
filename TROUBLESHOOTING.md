@@ -192,7 +192,7 @@ PlayerZone 設定:
 
 URP RendererFeature の配線:
 
-1. `Assets/Settings/UniversalRenderPipelineRendererData.asset` を Inspector で開く
+1. `Assets/Settings/URP-Balanced-Renderer.asset`（または現在使用中の `URP-*-Renderer.asset`）を Inspector で開く
 2. Renderer Features に `FullScreenPassRendererFeature` が登録されているか
 3. Material が `Assets/Art/Materials/Fx/FxCrtMaterial.mat` を指しているか
 4. Camera の Renderer Index が一致しているか
