@@ -45,8 +45,11 @@ namespace FixedCamVr.Fx.Editor
             mat.SetFloat("_VignetteIntensity", 0.6f);
 
             AssetDatabase.CreateAsset(mat, MatPath);
-            AssetDatabase.SaveAssets();
+            AssetDatabase.SaveAssetIfDirty(mat);
+            AssetDatabase.Refresh();
+            EditorUtility.FocusProjectWindow();
             Selection.activeObject = mat;
+            EditorGUIUtility.PingObject(mat);
 
             Debug.Log(
                 "[FxRendererSetup] Created FxCrtMaterial.\n" +
