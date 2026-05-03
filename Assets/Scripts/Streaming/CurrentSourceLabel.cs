@@ -21,6 +21,12 @@ namespace FixedCamVr.Streaming
         private float _showUntil;
         private string _lastText = "";
 
+        // GC アロケ削減用: 文字列補間は state が変化したときのみ実行する。
+        private bool _lastConnected;
+        private int _lastIndex = -1;
+        private int _lastCount = -1;
+        private string? _lastDisplayName;
+
         private void Awake()
         {
             _label = GetComponent<TMP_Text>();
@@ -49,12 +55,27 @@ namespace FixedCamVr.Streaming
             var stream = registry.GetActive();
             if (stream == null) return;
 
-            string indicator = stream.IsConnected ? "●" : "○";
-            string text = $"{indicator} [{registry.ActiveIndex + 1}/{registry.Count}] {stream.DisplayName}";
-            if (text != _lastText)
+            // 毎フレ string 構築を避けるため、state が変化したときだけ補間する。
+            bool connected = stream.IsConnected;
+            int index = registry.ActiveIndex;
+            int count = registry.Count;
+            string displayName = stream.DisplayName;
+            if (connected != _lastConnected
+                || index != _lastIndex
+                || count != _lastCount
+                || !ReferenceEquals(displayName, _lastDisplayName))
             {
-                _label.text = text;
-                _lastText = text;
+                string indicator = connected ? "●" : "○";
+                string text = $"{indicator} [{index + 1}/{count}] {displayName}";
+                if (text != _lastText)
+                {
+                    _label.text = text;
+                    _lastText = text;
+                }
+                _lastConnected = connected;
+                _lastIndex = index;
+                _lastCount = count;
+                _lastDisplayName = displayName;
             }
 
             float alpha;

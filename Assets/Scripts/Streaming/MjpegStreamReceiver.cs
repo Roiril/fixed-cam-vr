@@ -25,8 +25,12 @@ namespace FixedCamVr.Streaming
         private int _pendingLength;
         private readonly object _lock = new();
 
-        public bool IsConnected { get; private set; }
-        public string? LastError { get; private set; }
+        // ワーカスレッド書き込み / メインスレッド読み出しのため volatile / lock で同期する。
+        private volatile bool _isConnected;
+        private volatile string? _lastError;
+
+        public bool IsConnected => _isConnected;
+        public string? LastError => _lastError;
 
         public MjpegStreamReceiver(string url, TimeSpan? connectTimeout = null)
         {
@@ -81,8 +85,8 @@ namespace FixedCamVr.Streaming
                 }
                 catch (Exception ex)
                 {
-                    LastError = ex.Message;
-                    IsConnected = false;
+                    _lastError = ex.Message;
+                    _isConnected = false;
                     Debug.LogWarning($"[MJPEG] disconnected: {ex.Message}. retry in {backoffSec}s");
                     try { await Task.Delay(TimeSpan.FromSeconds(backoffSec), ct); }
                     catch (OperationCanceledException) { return; }
@@ -107,7 +111,7 @@ namespace FixedCamVr.Streaming
                 throw new InvalidOperationException($"boundary not found in Content-Type: {contentType}");
             }
 
-            IsConnected = true;
+            _isConnected = true;
             using var stream = await resp.Content.ReadAsStreamAsync();
             await ParseMultipartAsync(stream, boundary, ct);
         }
@@ -200,9 +204,25 @@ namespace FixedCamVr.Streaming
 
         public void Dispose()
         {
-            try { _cts.Cancel(); } catch { }
-            try { _http?.Dispose(); } catch { }
-            _cts.Dispose();
+            // 1. キャンセルを通知
+            try { _cts.Cancel(); }
+            catch (Exception ex) { Debug.LogWarning($"[MJPEG] cts cancel failed: {ex.Message}"); }
+
+            // 2. ワーカが _http を触り終えるのを短時間だけ待つ（無限待ちは Editor を固める）
+            if (_loop != null)
+            {
+                try { _loop.Wait(TimeSpan.FromMilliseconds(500)); }
+                catch (AggregateException) { /* タスク内例外は LastError に既に出ている */ }
+                catch (Exception ex) { Debug.LogWarning($"[MJPEG] loop join failed: {ex.Message}"); }
+            }
+
+            // 3. HttpClient と CTS を破棄
+            try { _http?.Dispose(); }
+            catch (Exception ex) { Debug.LogWarning($"[MJPEG] http dispose failed: {ex.Message}"); }
+            _http = null;
+
+            try { _cts.Dispose(); }
+            catch (Exception ex) { Debug.LogWarning($"[MJPEG] cts dispose failed: {ex.Message}"); }
         }
     }
 }

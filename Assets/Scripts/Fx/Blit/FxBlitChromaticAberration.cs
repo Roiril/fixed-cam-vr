@@ -14,32 +14,47 @@ namespace FixedCamVr.Fx.Blit
     [DisallowMultipleComponent]
     public sealed class FxBlitChromaticAberration : MonoBehaviour
     {
+        [Tooltip("色収差を計算する HLSL シェーダ (FxChromaticAberration.shader)")]
         [SerializeField] private Shader? blitShader;
+        [Tooltip("色収差を掛ける入力 Texture を提供するブリッジ")]
         [SerializeField] private FxSourceBinder? binder;
+        [Tooltip("加工後 RT を mainTexture として渡す描画先 Renderer")]
         [SerializeField] private Renderer? targetRenderer;
+        [Tooltip("色収差の最大ずらし量 (UV 単位)")]
         [Range(0, 0.05f)] [SerializeField] private float strength = 0.012f;
+        [Tooltip("中心からの距離に対するずらし強度の指数。値が大きいほど周辺だけ強く出る")]
         [Range(0, 4f)] [SerializeField] private float falloff = 1.5f;
 
         private Material? _mat;
         private RenderTexture? _rt;
         private Texture? _lastSource;
+        // targetRenderer.material は呼ぶたびに sharedMaterial の複製を返す。
+        // 1 度だけインスタンス化して使い回し、OnDisable で Destroy する。
+        private Material? _targetMatInstance;
 
         private static readonly int IdStrength = Shader.PropertyToID("_Strength");
         private static readonly int IdFalloff = Shader.PropertyToID("_Falloff");
 
         private void OnEnable()
         {
-            if (blitShader != null)
+            if (blitShader == null)
             {
-                _mat = new Material(blitShader) { hideFlags = HideFlags.HideAndDontSave };
+                Debug.LogWarning($"[{nameof(FxBlitChromaticAberration)}] blitShader 未割り当て。Update は no-op になります。", this);
+                return;
             }
+            _mat = new Material(blitShader) { hideFlags = HideFlags.HideAndDontSave };
         }
 
         private void OnDisable()
         {
             if (_mat != null) { Destroy(_mat); _mat = null; }
             ReleaseRT();
-            if (targetRenderer != null) targetRenderer.material.mainTexture = null;
+            if (_targetMatInstance != null)
+            {
+                _targetMatInstance.mainTexture = null;
+                Destroy(_targetMatInstance);
+                _targetMatInstance = null;
+            }
         }
 
         private void Update()
@@ -57,7 +72,10 @@ namespace FixedCamVr.Fx.Blit
 
             if (!ReferenceEquals(_rt, _lastSource))
             {
-                targetRenderer.material.mainTexture = _rt;
+                // targetRenderer.material は呼び出し時に複製インスタンスを生成するため
+                // 初回のみ取得して保持。以降は同じインスタンスへ書き込む。
+                if (_targetMatInstance == null) _targetMatInstance = targetRenderer.material;
+                _targetMatInstance.mainTexture = _rt;
                 _lastSource = _rt;
             }
         }

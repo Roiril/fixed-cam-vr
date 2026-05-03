@@ -17,13 +17,13 @@ namespace FixedCamVr.Streaming.EditorTools
     {
         private const string Root = "Tools/FixedCamVr/";
 
-        [MenuItem(Root + "Open Main Scene %#m")] // Ctrl+Shift+M
+        [MenuItem(Root + "Open Main Scene %#m", priority = 0)] // Ctrl+Shift+M
         public static void OpenMain() => OpenScene("Assets/Scenes/Main.unity");
 
-        [MenuItem(Root + "Open Debug Scene %#d")] // Ctrl+Shift+D
+        [MenuItem(Root + "Open Debug Scene %#d", priority = 1)] // Ctrl+Shift+D
         public static void OpenDebug() => OpenScene("Assets/Scenes/Debug.unity");
 
-        [MenuItem(Root + "Run Streaming Tests")]
+        [MenuItem(Root + "Run Streaming Tests", priority = 20)]
         public static void RunStreamingTests()
         {
             var api = ScriptableObject.CreateInstance<TestRunnerApi>();
@@ -35,9 +35,18 @@ namespace FixedCamVr.Streaming.EditorTools
             Debug.Log("[FixedCamVr] EditMode tests launched. See Test Runner window for results.");
         }
 
-        [MenuItem(Root + "Ping DroidCams")]
+        private static bool _pingInFlight;
+
+        [MenuItem(Root + "Ping DroidCams", priority = 30)]
         public static async void PingDroidCams()
         {
+            // 連打防止（async void なので前回完了前に再入する可能性がある）
+            if (_pingInFlight)
+            {
+                Debug.Log("[FixedCamVr] Ping DroidCams は実行中です。");
+                return;
+            }
+
             var sources = AssetDatabase.FindAssets("t:CameraSource")
                 .Select(g => AssetDatabase.LoadAssetAtPath<CameraSource>(AssetDatabase.GUIDToAssetPath(g)))
                 .Where(s => s != null)
@@ -49,24 +58,36 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
 
-            using var http = new HttpClient { Timeout = System.TimeSpan.FromSeconds(2) };
-            foreach (var src in sources)
+            _pingInFlight = true;
+            try
             {
-                var url = src.BuildUrl();
-                try
+                using var http = new HttpClient { Timeout = System.TimeSpan.FromSeconds(2) };
+                foreach (var src in sources)
                 {
-                    using var req = new HttpRequestMessage(HttpMethod.Head, url);
-                    var resp = await http.SendAsync(req);
-                    Debug.Log($"[FixedCamVr] ✅ {src.DisplayName} {url} → HTTP {(int)resp.StatusCode}");
+                    if (src == null) continue;
+                    var url = src.BuildUrl();
+                    try
+                    {
+                        // MJPEG エンドポイント (DroidCam / IP Webcam) は HEAD に応えないことが多いので
+                        // GET + ResponseHeadersRead でヘッダだけ取得して即破棄する。
+                        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                        using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                        var ct = resp.Content.Headers.ContentType?.MediaType ?? "(no content-type)";
+                        Debug.Log($"[FixedCamVr] OK {src.DisplayName} {url} -> HTTP {(int)resp.StatusCode} ({ct})");
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.LogWarning($"[FixedCamVr] NG {src.DisplayName} {url} -> {ex.Message}");
+                    }
                 }
-                catch (System.Exception ex)
-                {
-                    Debug.LogWarning($"[FixedCamVr] ❌ {src.DisplayName} {url} → {ex.Message}");
-                }
+            }
+            finally
+            {
+                _pingInFlight = false;
             }
         }
 
-        [MenuItem(Root + "Reveal Camera Sources Folder")]
+        [MenuItem(Root + "Reveal Camera Sources Folder", priority = 31)]
         public static void RevealCamerasFolder()
         {
             var obj = AssetDatabase.LoadAssetAtPath<Object>("Assets/Settings/Cameras");
@@ -78,14 +99,14 @@ namespace FixedCamVr.Streaming.EditorTools
             }
         }
 
-        [MenuItem(Root + "Open Test Runner")]
+        [MenuItem(Root + "Open Test Runner", priority = 21)]
         public static void OpenTestRunner() => EditorApplication.ExecuteMenuItem("Window/General/Test Runner");
 
         // ---- Editor Layout ----
 
         private const string LayoutPath = "Assets/Editor/Layouts/FixedCamVr.wlt";
 
-        [MenuItem(Root + "Layout/Setup Recommended Workspace")]
+        [MenuItem(Root + "Layout/Setup Recommended Workspace", priority = 100)]
         public static void SetupRecommendedWorkspace()
         {
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
@@ -128,7 +149,7 @@ namespace FixedCamVr.Streaming.EditorTools
             );
         }
 
-        [MenuItem(Root + "Layout/Apply FixedCamVr Layout")]
+        [MenuItem(Root + "Layout/Apply FixedCamVr Layout", priority = 101)]
         public static void ApplyLayout()
         {
             if (!System.IO.File.Exists(LayoutPath))
@@ -139,7 +160,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorUtility.LoadWindowLayout(System.IO.Path.GetFullPath(LayoutPath));
         }
 
-        [MenuItem(Root + "Layout/Save Current Layout")]
+        [MenuItem(Root + "Layout/Save Current Layout", priority = 102)]
         public static void SaveLayout()
         {
             var dir = System.IO.Path.GetDirectoryName(LayoutPath);

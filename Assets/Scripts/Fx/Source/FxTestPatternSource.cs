@@ -13,9 +13,13 @@ namespace FixedCamVr.Fx.Source
     [DisallowMultipleComponent]
     public sealed class FxTestPatternSource : MonoBehaviour
     {
+        [Tooltip("生成 RenderTexture の幅 (px)")]
         [SerializeField] private int width = 1280;
+        [Tooltip("生成 RenderTexture の高さ (px)")]
         [SerializeField] private int height = 720;
+        [Tooltip("テストパターンを描画するシェーダ (FxTestPattern.shader)")]
         [SerializeField] private Shader? patternShader;
+        [Tooltip("生成 RT を ExplicitTexture として流し込む先のブリッジ")]
         [SerializeField] private FxSourceBinder? binderToFeed;
 
         private RenderTexture? _rt;

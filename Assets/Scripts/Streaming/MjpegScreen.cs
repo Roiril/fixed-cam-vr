@@ -56,6 +56,17 @@ namespace FixedCamVr.Streaming
             _receiver = null;
         }
 
+        private void OnDestroy()
+        {
+            // 単一モードで自前確保した Texture2D を解放（registry モードでは _tex は null）。
+            if (_tex != null)
+            {
+                if (Application.isPlaying) Destroy(_tex);
+                else DestroyImmediate(_tex);
+                _tex = null;
+            }
+        }
+
         private void Update()
         {
             if (UseRegistry)

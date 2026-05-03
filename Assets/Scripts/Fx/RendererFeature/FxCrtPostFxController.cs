@@ -13,10 +13,15 @@ namespace FixedCamVr.Fx.RendererFeature
     /// </summary>
     public sealed class FxCrtPostFxController : MonoBehaviour
     {
+        [Tooltip("FullScreenPassRendererFeature が参照する CRT 用 Material (FxCrtMaterial)")]
         [SerializeField] private Material? targetMaterial;
+        [Tooltip("スキャンライン暗化の強度 (0=無効, 1=黒帯)")]
         [Range(0, 1)] [SerializeField] private float scanlineIntensity = 0.25f;
+        [Tooltip("画面 Y 方向のスキャンライン本数")]
         [Range(60, 800)] [SerializeField] private float scanlineCount = 240f;
+        [Tooltip("フィルムグレインの振幅")]
         [Range(0, 0.4f)] [SerializeField] private float grainIntensity = 0.08f;
+        [Tooltip("ビネット (周辺減光) の強度")]
         [Range(0, 1)] [SerializeField] private float vignetteIntensity = 0.6f;
 
         private static readonly int IdScanInt = Shader.PropertyToID("_ScanlineIntensity");
