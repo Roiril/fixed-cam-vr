@@ -130,3 +130,84 @@ fixed-cam-vr で詰まりがちな箇所と対処方法。
 4. メニューが出ない場合
    - `Assets/Scripts/Fx/Editor/FxSandboxBuilder.cs` がコンパイル通っているか `read_console` で確認
    - asmdef が Editor 限定になっているか（`FixedCamVr.Fx.Editor.asmdef`）
+
+---
+
+## 明日の現場で詰まった時（Quest 3 実機セッション）
+
+実機デモ当日に発生しがちな症状を、症状 → 疑う層 → 即試すこと の順で並べる。詳細は [docs/onsite-checklist.md](docs/onsite-checklist.md) と相互参照。
+
+### Q. 起動後 HUD が出ない
+
+**原因候補**:
+
+- APK ビルド失敗 → `adb logcat -s Unity` で起動時例外
+- RuntimeDebugHud の参照漏れ（Inspector で receiver/registry/tracker/hmd が null）
+- HUD Canvas が頭に追従していない（OVRCameraRig の CenterEye 配下に置く）
+
+**確認手順**:
+
+1. `adb devices` で Quest が見えるか
+2. APK 再ビルド（File > Build And Run）
+3. Editor の Main シーンで HUD が出るか先に確認
+
+### Q. HUD は出るが CONN が `○`（未接続）
+
+接続レイヤーの問題。順に確認:
+
+1. PC で `ping <スマホIP>` 通るか
+2. Quest からも繋がるか（PC と Quest が同一 LAN / SSID か）
+3. ルータの 5GHz 帯と 2.4GHz 帯で別 SSID なら統一
+4. スマホの DroidCam / IP Webcam アプリが起動しているか（バックグラウンド落ちしてないか）
+5. `Assets/Settings/Cameras/Phone01.asset` の host/port が実 IP と一致
+
+### Q. CONN は `●` だが映像が出ない
+
+描画レイヤーの問題:
+
+- Quad の Material が **URP/Unlit** になっているか
+- Quad の表裏が逆（HMD から見て裏面）→ rotation Y を 180 度
+- URP の Color Space が Linear
+- スマホ側解像度が異常（4K など）→ `Assets/Settings/Cameras/Phone01.asset` の path で `?640x480` を指定
+
+### Q. FPS が 60 以下
+
+パフォーマンス問題:
+
+1. Phase 3 FX を全 OFF にして再測（`docs/onsite-checklist.md` の Phase 別確認順を参照）
+2. RuntimeDebugHud の updateInterval を 0.5 秒以上に
+3. OVR Metrics Tool（adb で Quest にインストール）で GPU/CPU 個別計測
+4. `docs/performance.md` の手順に沿ってボトルネック特定
+
+### Q. ゾーン切替が暴れる / 反応しない
+
+PlayerZone 設定:
+
+- `halfExtents` が現場の体験空間サイズと合っているか（Inspector で Gizmo 表示）
+- `centerOffset` の Y を HMD 高さ（≈1.6m）込みで考えているか
+- `[Tracker]` の `zones` 配列に `[Zones]` の子全部が刺さっているか
+- hysteresisShrink を一時的に 0 にして「単純に判定が外れてる」のか「ヒステリシスで動かない」のか切り分け
+
+### Q. FX が出ない
+
+URP RendererFeature の配線:
+
+1. `Assets/Settings/URP-Balanced-Renderer.asset`（または現在使用中の `URP-*-Renderer.asset`）を Inspector で開く
+2. Renderer Features に `FullScreenPassRendererFeature` が登録されているか
+3. Material が `Assets/Art/Materials/Fx/FxCrtMaterial.mat` を指しているか
+4. Camera の Renderer Index が一致しているか
+5. Editor の FxSandbox で動くなら Renderer 構成の差分を疑う
+
+### 切り分けフロー早見表
+
+```
+症状 → 疑う層 → 即試すこと
+HUD 出ない         → ビルド層       → adb logcat で起動例外確認
+CONN ○             → ネットワーク層 → ping → ルータ → 配信アプリ
+映像出ない         → 描画層         → Material URP/Unlit / Quad 向き
+FPS 低             → CPU/GPU 層     → FX OFF / Profiler / OVR Metrics
+ゾーン誤判定       → Tracking 層    → halfExtents / Y オフセット
+FX 出ない          → URP 層         → RendererData の Features 確認
+```
+
+詳細フローは [docs/onsite-checklist.md](docs/onsite-checklist.md) を参照。

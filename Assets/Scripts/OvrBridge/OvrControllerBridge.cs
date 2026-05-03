@@ -18,6 +18,14 @@ namespace FixedCamVr.OvrBridge
         [SerializeField] private OVRInput.Button nextButton = OVRInput.Button.One;        // A (右)
         [SerializeField] private OVRInput.Button prevButton = OVRInput.Button.Two;        // B (右)
         [SerializeField] private OVRInput.Button anchorToggleButton = OVRInput.Button.Three; // X (左)
+        [SerializeField] private OVRInput.Button hudToggleButton = OVRInput.Button.Four;     // Y (左)
+
+        [Header("HUD")]
+        [Tooltip("RuntimeDebugHud をアサイン。Y ボタン押下時に SetVisible(bool) を SendMessage で呼ぶ。" +
+                 " Diagnostics 名前空間に直接依存しないため MonoBehaviour で受ける。")]
+        [SerializeField] private MonoBehaviour? hud = null;
+
+        private bool _hudVisible = true;
 
         private void Update()
         {
@@ -29,6 +37,13 @@ namespace FixedCamVr.OvrBridge
             if (screenAnchor != null)
             {
                 if (OVRInput.GetDown(anchorToggleButton)) screenAnchor.Toggle();
+            }
+            // 左コントローラ Y ボタンで HUD 表示トグル（要実機確認）
+            if (OVRInput.GetDown(hudToggleButton))
+            {
+                _hudVisible = !_hudVisible;
+                if (hud != null)
+                    hud.SendMessage("SetVisible", _hudVisible, SendMessageOptions.DontRequireReceiver);
             }
         }
     }
