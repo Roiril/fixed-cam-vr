@@ -20,6 +20,9 @@ namespace FixedCamVr.Streaming.EditorTools
         private static readonly Color LogicColor = new(0.74f, 0.49f, 0.27f, 1f);  // 橙 (Streaming/Controllers)
         private static readonly Color DefaultColor = new(0.35f, 0.35f, 0.35f, 1f);
 
+        // GUIStyle は OnGUI 毎フレーム呼ばれるためキャッシュする（Hierarchy が大きい時の GC を抑制）
+        private static GUIStyle? _labelStyle;
+
         static HierarchySeparator()
         {
             EditorApplication.hierarchyWindowItemOnGUI -= OnGUI;
@@ -30,6 +33,8 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             var go = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
             if (go == null) return;
+            // 名前が空の GameObject や明らかに短いものは Regex を回す前に弾く
+            if (string.IsNullOrEmpty(go.name) || go.name.Length < 3) return;
             var match = Pattern.Match(go.name);
             if (!match.Success) return;
 
@@ -47,13 +52,17 @@ namespace FixedCamVr.Streaming.EditorTools
             var bar = new Rect(rect.x - 28, rect.y, rect.width + 32, rect.height);
             EditorGUI.DrawRect(bar, color);
 
-            var style = new GUIStyle(EditorStyles.boldLabel)
+            // EditorStyles は最初の OnGUI 以降でしか触れないので遅延初期化
+            if (_labelStyle == null)
             {
-                normal = { textColor = Color.white },
-                alignment = TextAnchor.MiddleLeft,
-                fontStyle = FontStyle.Bold,
-            };
-            EditorGUI.LabelField(rect, label, style);
+                _labelStyle = new GUIStyle(EditorStyles.boldLabel)
+                {
+                    normal = { textColor = Color.white },
+                    alignment = TextAnchor.MiddleLeft,
+                    fontStyle = FontStyle.Bold,
+                };
+            }
+            EditorGUI.LabelField(rect, label, _labelStyle);
         }
     }
 }
