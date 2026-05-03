@@ -59,6 +59,8 @@ namespace FixedCamVr.Streaming.EditorTools
             Repaint();
 
             var sw = Stopwatch.StartNew();
+            string nextStatus;
+            MessageType nextType;
             try
             {
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
@@ -67,20 +69,22 @@ namespace FixedCamVr.Streaming.EditorTools
                 int code = (int)resp.StatusCode;
                 bool ok = resp.IsSuccessStatusCode;
                 var ct = resp.Content.Headers.ContentType?.MediaType ?? "(no content-type)";
-                _status = $"{(ok ? "✅" : "⚠️")} HTTP {code}  ({sw.ElapsedMilliseconds}ms)\nContent-Type: {ct}";
-                _statusType = ok ? MessageType.Info : MessageType.Warning;
+                nextStatus = $"{(ok ? "✅" : "⚠️")} HTTP {code}  ({sw.ElapsedMilliseconds}ms)\nContent-Type: {ct}";
+                nextType = ok ? MessageType.Info : MessageType.Warning;
             }
             catch (System.Exception ex)
             {
                 sw.Stop();
-                _status = $"❌ {ex.Message}";
-                _statusType = MessageType.Error;
+                nextStatus = $"❌ {ex.Message}";
+                nextType = MessageType.Error;
             }
-            finally
-            {
-                _testing = false;
-                Repaint();
-            }
+
+            // 非同期完了時に Editor / target が既に破棄されている可能性に備える（Unity の偽 null チェック）。
+            if (this == null) return;
+            _status = nextStatus;
+            _statusType = nextType;
+            _testing = false;
+            Repaint();
         }
     }
 }
