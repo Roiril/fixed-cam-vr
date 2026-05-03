@@ -21,7 +21,10 @@ namespace FixedCamVr.Streaming.EditorTools
         public static void OpenMain() => OpenScene("Assets/Scenes/Main.unity");
 
         [MenuItem(Root + "Open Debug Scene %#d", priority = 1)] // Ctrl+Shift+D
-        public static void OpenDebug() => OpenScene("Assets/Scenes/Debug.unity");
+        public static void OpenDebug() => OpenScene("Assets/Scenes/Debug/FlatStreaming.unity");
+
+        [MenuItem(Root + "Open PlayerZone Sandbox", priority = 2)]
+        public static void OpenPlayerZoneSandbox() => OpenScene("Assets/Scenes/Sandbox/PlayerZone.unity");
 
         [MenuItem(Root + "Run Streaming Tests", priority = 20)]
         public static void RunStreamingTests()
