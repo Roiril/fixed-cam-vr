@@ -31,10 +31,21 @@
    - Inspector の **Test Connection** ボタンで疎通確認できる
 4. [ ] **Tools > FixedCamVr > Ping DroidCams** で全 `CameraSource` 一括到達確認
 5. [ ] Build Settings が `Assets/Scenes/Main.unity` のみ enabled であることを確認
-6. [ ] Player Settings 確認（[TROUBLESHOOTING.md Q.ビルド入らない](../TROUBLESHOOTING.md) も参照）
+6. [ ] **Main.unity を開いて Tools > FixedCamVr > Setup Main Demo Scene を実行**
+   - Phase 2.7 用の `[Zones]` (Center / Right / Left) と `[Tracker]` を自動配置
+   - HMD 内 HUD (`DebugHud` Canvas + `RuntimeDebugHud`) を CenterEyeAnchor 配下に配置
+   - `OvrControllerBridge.hud` への参照も自動で結線
+   - 再実行可能（既存配置は削除して再生成）
+7. [ ] **URP RendererFeature を手動配線**（Phase 3 FX を実機で出すために必須）
+   - `Assets/Settings/URP-Balanced-Renderer.asset` を Inspector で開く
+   - **Add Renderer Feature → Full Screen Pass Renderer Feature** を追加
+   - Pass Material = `Assets/Art/Materials/Fx/FxCrtMaterial.mat` (無ければ **FixedCamVr > Fx > Create CRT Material** で生成)
+   - Inject Point = `After Rendering Post Processing`
+   - Bind to Color Texture = ON
+8. [ ] Player Settings 確認（[TROUBLESHOOTING.md Q.ビルド入らない](../TROUBLESHOOTING.md) も参照）
    - Scripting Backend: IL2CPP / Target Architectures: ARM64 のみ / Min API Level: 29+
-7. [ ] Quest 3 を USB-C 接続 → `adb devices` で `device` 表示を確認
-8. [ ] **File > Build Settings > Build And Run**
+9. [ ] Quest 3 を USB-C 接続 → `adb devices` で `device` 表示を確認
+10. [ ] **File > Build Settings > Build And Run**
 
 ---
 
