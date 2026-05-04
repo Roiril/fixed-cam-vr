@@ -187,6 +187,8 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(meta.widthPx);
                 _sb.Append("x");
                 _sb.Append(meta.heightPx);
+                _sb.Append(" PORT=");
+                _sb.Append(meta.isPortrait ? "1" : "0");
             }
 
             // ZONE

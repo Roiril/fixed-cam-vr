@@ -135,7 +135,8 @@ namespace FixedCamVr.Diagnostics
             var h = active.Health;
             if (h != null)
             {
-                sb.Append("  📱");
+                // 絵文字 (📱 U+1F4F1) は LiberationSans SDF に無く tofu 化するので ASCII にする。
+                sb.Append("  PHN ");
                 AppendFloat1(sb, h.fps);
                 sb.Append("fps");
                 // Unity 受信側の実 fps（カクつきの切り分け用）。
