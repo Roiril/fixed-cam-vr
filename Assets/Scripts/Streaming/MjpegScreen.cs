@@ -147,7 +147,7 @@ namespace FixedCamVr.Streaming
             }
             t.localRotation = _baseLocalRotation * Quaternion.Euler(0f, 0f, -rot);
 
-            // 2) アスペクトの決定。
+            // 2) アスペクトの決定 (= テクスチャ自体の見た目の W/H 比、回転前)。
             //    square フレーム時は autoAspectFromIsPortrait で 9:16 / 16:9 を切替。
             //    非 square なら meta.EffectiveAspect() を使う。
             float aspect;
@@ -172,9 +172,22 @@ namespace FixedCamVr.Streaming
                 aspect = meta.EffectiveAspect();
             }
 
+            // 3) サイズ計算。
+            //    - 長辺を _baseLocalScale.y に固定 → 縦/横でスクリーンの「サイズ感」が統一される
+            //    - rot が 90 / 270 のとき localScale が World 軸と swap するので、W/H を入れ替えて整合
+            //    （これをやらないと縦持ちなのに World 上で横長になる現象が出る）
             if (aspect > 0f && _baseLocalScale.y > 0f)
             {
-                t.localScale = new Vector3(_baseLocalScale.y * aspect, _baseLocalScale.y, _baseLocalScale.z);
+                float baseSize = _baseLocalScale.y;
+                float localW, localH;
+                if (aspect >= 1f) { localW = baseSize; localH = baseSize / aspect; }
+                else              { localH = baseSize; localW = baseSize * aspect; }
+
+                int rotMod = ((rot % 360) + 360) % 360;
+                bool swapped = (rotMod == 90 || rotMod == 270);
+                if (swapped) { (localW, localH) = (localH, localW); }
+
+                t.localScale = new Vector3(localW, localH, _baseLocalScale.z);
             }
         }
 
