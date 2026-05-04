@@ -63,7 +63,9 @@ namespace FixedCamVr.Diagnostics
             _fpsAccum += Time.unscaledDeltaTime;
             _fpsFrames++;
 
-            // /health を低頻度でリフレッシュ（fire-and-forget）。失敗は無視（DroidCam 等互換）。
+            // /health と /info を低頻度でリフレッシュ（fire-and-forget）。
+            // /info はスマホの向き変更を Unity 側で追従するため必須（一度きりだとローテに追従しない）。
+            // 失敗は無視（DroidCam 等互換、フェイルオープン）。
             if (healthRefreshInterval > 0f && registry != null)
             {
                 _healthAccum += Time.unscaledDeltaTime;
@@ -71,7 +73,11 @@ namespace FixedCamVr.Diagnostics
                 {
                     _healthAccum = 0f;
                     var active = registry.GetActive();
-                    if (active != null) _ = active.RefreshHealthAsync();
+                    if (active != null)
+                    {
+                        _ = active.RefreshHealthAsync();
+                        _ = active.RefreshMetadataAsync();
+                    }
                 }
             }
 
@@ -145,7 +151,12 @@ namespace FixedCamVr.Diagnostics
             {
                 sb.Append("  📱");
                 AppendFloat1(sb, h.fps);
-                sb.Append("fps  up ");
+                sb.Append("fps");
+                // Unity 受信側の実 fps（カクつきの切り分け用）。
+                sb.Append(" → ");
+                AppendFloat1(sb, active.ReceivedFps);
+                sb.Append("rx");
+                sb.Append("  up ");
                 AppendUptime(sb, h.uptimeMs);
             }
         }

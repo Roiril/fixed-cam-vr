@@ -165,15 +165,28 @@ namespace FixedCamVr.Diagnostics
                 }
             }
 
-            // 配信側 fps / uptime（あれば）
+            // 配信側 fps / uptime / Unity 受信 fps（あれば）
             var health = activeForHealth?.Health;
             if (health != null)
             {
                 _sb.Append(" PHONE_FPS=");
                 _sb.Append(health.fps.ToString("F1"));
+                _sb.Append(" RECV_FPS=");
+                _sb.Append(activeForHealth!.ReceivedFps.ToString("F1"));
                 _sb.Append(" UP=");
                 _sb.Append((health.uptimeMs / 1000L).ToString());
                 _sb.Append("s");
+            }
+            // Metadata（向き）が取れていれば付ける（向き変更検知用）
+            var meta = activeForHealth?.Metadata;
+            if (meta != null)
+            {
+                _sb.Append(" ROT=");
+                _sb.Append(meta.rotationDeg);
+                _sb.Append(" ");
+                _sb.Append(meta.widthPx);
+                _sb.Append("x");
+                _sb.Append(meta.heightPx);
             }
 
             // ZONE
