@@ -168,7 +168,20 @@ HMD を被る
 
 ---
 
-## 6. 不具合発生時の記録テンプレ
+## 6. シュビーが Console から状態を読む（HudLogDumper）
+
+HMD 装着者しか見えない HUD の値を、PC 側 Console / MCP からも読めるよう
+`HudLogDumper`（[`Assets/Scripts/Diagnostics/HudLogDumper.cs`](../Assets/Scripts/Diagnostics/HudLogDumper.cs)）が DebugHud Canvas に自動アタッチされる。
+
+- 出力タイミング: **状態変化（CONN / CAM index / ZONE label）時に 1 行 + 30 秒に 1 回定期 ping**
+- フォーマット例: `[HudDump #12 t=45.6 why=zone] FPS=72.3 CONN=1 CAM=2/3 Phone02 ZONE=Right@0 HMD=+2.31,+1.62,+0.04`
+- シュビーが取る方法: MCP `read_console filter_text="HudDump" count=100` で時系列が抽出可能
+
+ログが流れて埋もれない設計なので、ユーザーは特に意識しなくてよい。
+
+---
+
+## 7. 不具合発生時の記録テンプレ
 
 その場で潰せない不具合は次セッションに引き継ぐため、以下を記録：
 

@@ -211,3 +211,59 @@ FX 出ない          → URP 層         → RendererData の Features 確認
 ```
 
 詳細フローは [docs/onsite-checklist.md](docs/onsite-checklist.md) を参照。
+
+---
+
+## 実機検証で得た知見（2026-05-04 セッション、シュビー向け）
+
+### Quest Link で Editor Play 時の制約
+
+| 項目 | 仕様 / 観測 | 対処 |
+|---|---|---|
+| 表示周波数 | **72Hz 固定**（Quest 3 でも Link 接続時は 72 までしか出ない） | 90/120Hz 検証は実機 APK で |
+| 実 FPS | Editor Play は実機より重く **5〜10fps** 程度に落ちることがある | 主要な性能評価は APK ビルドで |
+| `Local Dimming feature is not supported` 警告 | Link 接続時の仕様 | 無視 |
+| `InputFocusLost` ログ | PC 側で別ウィンドウにフォーカスが移ると出る | Game ビュークリックで回復 |
+
+### 必要パッケージ
+
+- `com.unity.xr.oculus`（Oculus XR Plugin）が **Standalone (Windows) 用に必須**。Quest Link 経由で Editor Play する場合これがないと HMD に映像が出ない
+- インストール後、**XR Plug-in Management の Windows / Mac / Linux タブで Oculus にチェック**
+
+### Project Setup Tool の残り項目
+
+- **OVROverlayCanvas Recommended** は Apply ボタンが効かない（PlayerSettings ではなくシーン内 Canvas への手動 AddComponent が必要）。実機で HUD テキストがぼやけたら個別対応
+- **Data Use Checkup / Application ID** は Platform SDK（Achievements / IAP 等）使うときだけ。**Mark as Fixed** で消して OK
+
+### 体験中の挙動と原因
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| **HUD FPS が 7 fps 程度** | Editor Play の重さ + メインスレッド JPEG decode | 配信解像度を `?640x480` に固定 / 実機 APK で再測 |
+| **配信スマホ電源 OFF→ON で映像が白いまま** | スマホ DHCP リース失効で **IP が変わる** → 古い URL に無限 backoff | `Tools > FixedCamVr > Diagnostics > Ping DroidCams` で IP 変動確認 → CameraSource.host 書き直し → Play 再起動 / 根治はルータで MAC 固定 IP |
+| **Quest Boundary で数歩で画面消失** | ガーディアン未設定 or 範囲外 | Quest 設定 > 物理的空間 で Roomscale 拡張、または開発者モードで Boundary 無効 |
+| **PingDroidCams が 1 回目失敗 / 2 回目成功** | 初回 ARP 解決 / TCP セッション確立に時間 | 既に対策済み（5s timeout + 1 回リトライ実装、`FixedCamVrMenu.cs`） |
+
+### `[HudDump]` ログ
+
+実機 / Editor Play どちらでも HUD 値を Console に時系列出力する `HudLogDumper` が `Assets/Scripts/Diagnostics/HudLogDumper.cs` にある。
+
+- 状態変化（CONN / CAM index / ZONE label）時に 1 行 + 30 秒に 1 回定期 ping
+- フォーマット: `[HudDump #N t=XX.X why=...] FPS=X.X CONN=0|1 CAM=N/N <name> ZONE=<label>@<pri> HMD=X.XX,Y.YY,Z.ZZ`
+- MCP 経由抽出: `read_console filter_text="HudDump" count=100`
+- 自動配置: `Tools > FixedCamVr > Setup > Setup Main Demo Scene` で DebugHud Canvas に Component 追加される
+
+### 動作確認できたこと（5/4 セッション）
+
+- ✓ Quest Link 経由で OVRCameraRig の HMD トラッキング
+- ✓ MJPEG 受信・スクリーン Quad 描画
+- ✓ コントローラ A/B/X/Y（カメラ切替・head-lock 切替・HUD トグル）
+- ✓ HUD 各行の値表示
+- ✓ `Tools > FixedCamVr > Setup > Setup Main Demo Scene` メニューでのワンクリック配置
+
+### まだ試せていない / 残課題
+
+- 実機 APK ビルドでの 90Hz 維持確認
+- Phase 3（CRT / Dust）の URP RendererFeature 本配線後の見え方
+- ゾーン自動切替（CenterEye の絶対位置と Zone AABB の整合）
+- 体験空間の物理レイアウト調整（halfExtents の現場サイズ調整）
