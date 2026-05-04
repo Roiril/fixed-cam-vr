@@ -25,6 +25,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string ZonesName = "[Zones]";
         private const string TrackerName = "[Tracker]";
         private const string DebugHudName = "DebugHud";
+        private const string StartupFaderName = "StartupFader";
 
         [MenuItem("Tools/FixedCamVr/Setup/Setup Main Demo Scene", priority = 50)]
         public static void Setup()
@@ -52,6 +53,7 @@ namespace FixedCamVr.Streaming.EditorTools
             DeleteIfExists($"{LogicGroupName}/{ZonesName}");
             DeleteIfExists($"{LogicGroupName}/{TrackerName}");
             DeleteIfExists($"{CenterEyePath}/{DebugHudName}");
+            DeleteIfExists($"{CenterEyePath}/{StartupFaderName}");
 
             var logic = GameObject.Find(LogicGroupName);
             if (logic == null)
@@ -88,13 +90,20 @@ namespace FixedCamVr.Streaming.EditorTools
             }
 
             // 1. [Zones] と 3 ゾーン
+            // ゾーン形状: 5/4 実機計測（プレイレンジ x≈±1.3m）から逆算した値。
+            // - 各ゾーン halfExtents.x = 0.5m / 中心は ±0.9m → 隣接ゾーン同士が 0.1m オーバーラップ
+            // - 重なった所は配列順で先勝ち（Center が先頭なので中央寄りでは Center に張り付く = デッドゾーン消滅）
+            // - z は ±1.2m のまま（前後方向のゾーン分割は今は不要）
             var zonesGo = new GameObject(ZonesName);
             zonesGo.transform.SetParent(logic.transform, worldPositionStays: false);
             var zoneA = CreateZone(zonesGo, "Zone_A_Center", new Vector3(0, 1, 0),
+                halfExtents: new Vector3(0.5f, 2f, 1.2f),
                 cameraIndex: 0, label: "Center", color: new Color(0f, 1f, 0.5f, 0.25f));
-            var zoneB = CreateZone(zonesGo, "Zone_B_Right", new Vector3(2.5f, 1, 0),
+            var zoneB = CreateZone(zonesGo, "Zone_B_Right", new Vector3(0.9f, 1, 0),
+                halfExtents: new Vector3(0.5f, 2f, 1.2f),
                 cameraIndex: 1, label: "Right", color: new Color(1f, 0.4f, 0.4f, 0.25f));
-            var zoneC = CreateZone(zonesGo, "Zone_C_Left", new Vector3(-2.5f, 1, 0),
+            var zoneC = CreateZone(zonesGo, "Zone_C_Left", new Vector3(-0.9f, 1, 0),
+                halfExtents: new Vector3(0.5f, 2f, 1.2f),
                 cameraIndex: 0, label: "Left", color: new Color(0.4f, 0.6f, 1f, 0.25f));
 
             // 2. [Tracker]
@@ -111,10 +120,13 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetBool(trackerSo, "logChanges", true);
             trackerSo.ApplyModifiedPropertiesWithoutUndo();
 
-            // 3. DebugHud
+            // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
+            CreateStartupFader(centerEye.transform, registry);
+
+            // 4. DebugHud
             var hud = CreateDebugHud(centerEye.transform, registry, tracker, centerEye.transform);
 
-            // 4. OvrControllerBridge.hud に HUD 連携
+            // 5. OvrControllerBridge.hud に HUD 連携
             if (ovrBridge != null && hud != null)
             {
                 var bridgeSo = new SerializedObject(ovrBridge);
@@ -122,12 +134,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
-            // 5. シーン保存
+            // 6. シーン保存
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=3 / Tracker / DebugHud / OvrBridge.hud 連携。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=3 / Tracker / StartupFader / DebugHud / OvrBridge.hud 連携。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
@@ -144,7 +156,7 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         private static PlayerZone CreateZone(GameObject parent, string name, Vector3 position,
-            int cameraIndex, string label, Color color)
+            Vector3 halfExtents, int cameraIndex, string label, Color color)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent.transform, worldPositionStays: false);
@@ -152,7 +164,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
             var zone = go.AddComponent<PlayerZone>();
             var so = new SerializedObject(zone);
-            TrySetVector3(so, "halfExtents", new Vector3(1.2f, 2f, 1.2f));
+            TrySetVector3(so, "halfExtents", halfExtents);
             TrySetVector3(so, "centerOffset", Vector3.zero);
             TrySetInt(so, "cameraIndex", cameraIndex);
             TrySetInt(so, "priority", 0);
@@ -160,6 +172,28 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetColor(so, "gizmoColor", color);
             so.ApplyModifiedPropertiesWithoutUndo();
             return zone;
+        }
+
+        private static void CreateStartupFader(Transform parent, CameraStreamRegistry registry)
+        {
+            // CenterEyeAnchor 直下に名前付き空オブジェクトを置き、StartupFader が Awake で
+            // 子に Canvas を生やす。再実行時は DeleteIfExists で消されるので冪等。
+            var go = new GameObject(StartupFaderName);
+            go.transform.SetParent(parent, worldPositionStays: false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+
+            var fader = go.AddComponent<StartupFader>();
+            var so = new SerializedObject(fader);
+            TrySetObjectRef(so, "registry", registry);
+            TrySetFloat(so, "distance", 0.3f);
+            TrySetVector2(so, "worldSize", new Vector2(2f, 2f));
+            TrySetFloat(so, "minHoldSec", 0.5f);
+            TrySetFloat(so, "maxWaitSec", 4f);
+            TrySetFloat(so, "fadeDuration", 0.5f);
+            TrySetColor(so, "fadeColor", Color.black);
+            TrySetInt(so, "sortingOrder", 10000);
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static RuntimeDebugHud? CreateDebugHud(Transform parent, CameraStreamRegistry registry,
@@ -219,6 +253,32 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(dumperSo, "hmd", hmd);
             dumperSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // HmdTrajectoryRecorder: HMD 位置 / 各ゾーン含有判定を CSV で persistentDataPath に書き出す。
+            // 実機 Quest で歩いた後 adb pull で取り出し、ゾーン配置の妥当性をシュビーが解析する用途。
+            // tracker.zones を直接参照できないので、Tracker と同じ並びを SerializedObject 経由で複製する。
+            var rec = canvasGo.AddComponent<HmdTrajectoryRecorder>();
+            var recSo = new SerializedObject(rec);
+            TrySetObjectRef(recSo, "hmd", hmd);
+            TrySetObjectRef(recSo, "tracker", tracker);
+            TrySetObjectRef(recSo, "registry", registry);
+            var trackerZonesProp = new SerializedObject(tracker).FindProperty("zones");
+            if (trackerZonesProp != null && trackerZonesProp.isArray)
+            {
+                var zonesProp = recSo.FindProperty("zones");
+                if (zonesProp != null && zonesProp.isArray)
+                {
+                    zonesProp.arraySize = trackerZonesProp.arraySize;
+                    for (int i = 0; i < trackerZonesProp.arraySize; i++)
+                    {
+                        zonesProp.GetArrayElementAtIndex(i).objectReferenceValue =
+                            trackerZonesProp.GetArrayElementAtIndex(i).objectReferenceValue;
+                    }
+                }
+            }
+            TrySetFloat(recSo, "sampleInterval", 1.0f);
+            TrySetFloat(recSo, "hysteresisShrink", 0.15f);
+            recSo.ApplyModifiedPropertiesWithoutUndo();
+
             return hud;
         }
 
@@ -270,6 +330,12 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             var p = so.FindProperty(propName);
             if (p != null) p.stringValue = value;
+        }
+
+        private static void TrySetVector2(SerializedObject so, string propName, Vector2 value)
+        {
+            var p = so.FindProperty(propName);
+            if (p != null) p.vector2Value = value;
         }
 
         private static void TrySetVector3(SerializedObject so, string propName, Vector3 value)

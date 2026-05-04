@@ -35,6 +35,14 @@ MCP for Unity が落ちている時、`.unity` ファイルを直接編集して
 
 **How to apply**: MCP 復旧待ちで詰まったらこの手順で進める。ただし PrefabInstance を弄ると壊れるので Prefab には適用しない。
 
+## 未初期化 Texture2D が Quest GPU で白ノイズになる
+
+`new Texture2D(w, h, fmt, false)` は **ピクセル内容未定義**。PC エディタでは黒に見えがちでも、Quest 3（Mali）で大画面に貼るとフレームごとに違う未定義メモリが出て **白チカチカ** する。
+
+**Why**: 2026-05-04 セッションで MJPEG 未接続中の `CameraStream._texture` がチカチカし、ユーザーから「目に悪い」と指摘された。
+
+**How to apply**: 動的にテクスチャを生成して画面に貼る系は、コンストラクタ直後に `SetPixels(black) + Apply()` で **必ず初期化**する。LoadImage でサイズが変わる用途でも、初回 LoadImage が走るまでの一瞬を埋めるために必要。`MjpegStreamReceiver` のような「接続が遅延する受信器」と組み合わさると顕著に出る。
+
 ## DroidCam の単一クライアント制約
 
 DroidCam は同時に 1 クライアントしか配信を受け付けない。ブラウザで `/video` を見ながら Unity で受信しようとすると "他のクライアントに接続されています" になる。
