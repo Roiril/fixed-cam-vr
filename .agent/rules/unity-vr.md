@@ -97,6 +97,25 @@ Left:   (-0.9, 1, 0)  hx=(0.5, 2, 1.2)   x ∈ [-1.4, -0.4]
 ### 前後 (z) 方向の演出を入れる時
 現在 z は全ゾーン共通 [-1.2, +1.2]。**前後で挙動を変えたいなら別軸のロジックを足す**（zone は左右専用にしておく）。`PlayerStateBus` のような中央集約は Phase 4（CG 合成）着手時に検討、それまでは Tracker と並列に小さな BehaviourScript で済ませる。
 
+## 起動時の視界保護（StartupFader）
+
+VR では **Play 開始から最初の安定フレームまで** の間、以下が同時に起こり「不安定な絵」が露出する：
+- Quest システムの砂時計表示（OS レイヤ）
+- OVRCameraRig がヘッドポーズを取得するまで数フレーム
+- MJPEG ストリームの接続待ち（数百 ms 〜 数秒）
+- URP の RT 確保 / ポストプロセス初期化の最初のフレーム
+
+これを直接ユーザーに見せると **目に悪い + 体験の質を下げる**。原則：
+
+- CenterEyeAnchor 配下に **head-locked な黒 Canvas** を Awake 時に生成し、最初から視界を覆う
+- 解除条件は `(min_hold) AND (any_stream_connected OR max_wait_timeout)` の AND/OR
+  - `min_hold`（既定 0.5s）: 早すぎる解除での pop-in 防止
+  - `max_wait_timeout`（既定 4s）: スマホがスリープ等で永遠に繋がらない時のハードガード
+- フェードアウトは 0.5s 程度の線形 alpha 1→0
+- 完了したら GameObject ごと破棄（Update を残さない）
+
+実装は [`StartupFader`](../Assets/Scripts/Diagnostics/StartupFader.cs)。`MainDemoSceneSetup` で自動配置される。
+
 ## Editor 拡張メニュー設計
 
 カスタムメニューは **`Tools/FixedCamVr/`** 配下のみ（トップレベル `FixedCamVr/` を切らない）。サブメニューは 4 階層に固定：

@@ -269,6 +269,7 @@ FX 出ない          → URP 層         → RendererData の Features 確認
 | **Quest Boundary で数歩で画面消失** | ガーディアン未設定 or 範囲外 | Quest 設定 > 物理的空間 で Roomscale 拡張、または開発者モードで Boundary 無効 |
 | **PingDroidCams が 1 回目失敗 / 2 回目成功** | 初回 ARP 解決 / TCP セッション確立に時間 | 既に対策済み（5s timeout + 1 回リトライ実装、`FixedCamVrMenu.cs`） |
 | **配信未接続時にスクリーンが白くチカチカする** | `CameraStream` が `Texture2D(2,2)` を未初期化のまま `material.mainTexture` に貼っており、Quest GPU 上で未定義メモリが毎フレ違う色で見えていた | `CameraStream` コンストラクタで `SetPixels` + `Apply` で黒に初期化済み（[`CameraStream.cs:34`](Assets/Scripts/Streaming/CameraStream.cs:34)）。未接続中は黒画面で固定される |
+| **Play 直後に砂時計 + 不安定なスクリーンが見える** | OVR 初期化 / 最初のヘッドポーズ取得 / MJPEG 接続待ちの間、未確定の絵が表示されてしまう | `StartupFader` で 0.5s 〜 4s（最長）視界を黒で覆い、ストリーム接続後に 0.5s でフェードアウト。[`StartupFader.cs`](Assets/Scripts/Diagnostics/StartupFader.cs)。Setup Main Demo Scene で CenterEyeAnchor 配下に自動配置 |
 | **歩いても PlayerZone が切り替わらない** | ゾーンが現場サイズに対し離れすぎ / `cameraIndex` が重複 / デッドゾーン（`hysteresisShrink` で縮めた A の外側 ↔ B の内側に届かない狭間） | 後述の `[HmdTrace]` ログで実機の `pos` と `*_in/inShrunk` を 1 Hz 採取してゾーン形状を逆算する |
 
 ### `[HudDump]` ログ

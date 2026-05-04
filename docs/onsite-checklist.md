@@ -34,6 +34,7 @@
 6. [ ] **Main.unity を開いて Tools > FixedCamVr > Setup > Setup Main Demo Scene を実行**
    - Phase 2.7 用の `[Zones]` (Center / Right / Left) と `[Tracker]` を自動配置
    - HMD 内 HUD (`DebugHud` Canvas + `RuntimeDebugHud`) を CenterEyeAnchor 配下に配置
+   - **`StartupFader`** を CenterEyeAnchor 配下に配置（Play 直後の砂時計 / 接続待ちを黒で隠してフェードイン）
    - `OvrControllerBridge.hud` への参照も自動で結線
    - 再実行可能（既存配置は削除して再生成）
 7. [ ] **URP RendererFeature を手動配線**（Phase 3 FX を実機で出すために必須）
