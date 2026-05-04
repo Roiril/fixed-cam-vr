@@ -10,16 +10,11 @@ description: シュビーの Git 作業フロー規約。worktree 並列・cherr
 ## ブランチ戦略
 
 - 主軸は **`master` 1 本**。長期ブランチは持たない。
-- 中規模以上の機能変更は **`feature/<slug>`** を切って PR → merge。
-- 軽微な追従コミット（typo / メタ追補 / 小さなフォローアップ）は **master 直 push 可**。
-
-### 直 push 許容条件（すべて満たす）
-
-1. 1〜数行の追補で、レビュー価値が低い
-2. 他のブランチ作業と衝突しない
-3. CI を壊さない確信がある（コンパイル確認済み等）
-
-迷ったら PR 経由にする。
+- ユーザー（シュビーのオーナー）はシュビーを信用しているため、**シュビーが完成したと判断したら自律的に master へマージ + origin へ push してよい**（PR を介す必要なし）。実機検証はユーザー側で別途行う前提。
+- ブランチ運用：
+  - 並列作業（Agent worktree）や、領域が完全独立で衝突しない作業は **claude/<slug> や agent worktree** を使い、完了時に `git merge --no-ff` で master へ取り込む
+  - 一連の変更を 1 セッションで完結させる場合は **master 直コミット可**
+- 注意：実機検証は後日になるため、push 後に問題が見つかったら `git revert` で戻す（force push で history を書き換えない）。
 
 ## 並列タスクと worktree
 
@@ -84,26 +79,27 @@ git stash pop
 - `Packages/packages-lock.json`（manage_packages で追加した時）
 - `ProjectSettings/EditorBuildSettings.asset`（Build Settings 整理時、変更内容を明示的に説明）
 
-## PR / merge
+## merge / push
 
-`gh pr create --base master --head <branch>` で作成。本文テンプレ：
+PR は **基本作らない**（ユーザー信用に基づく直マージ運用）。手順：
 
-```markdown
-## Summary
-- 箇条書き 3-5 行
+1. ブランチ / worktree で作業 → コミット
+2. コンパイル確認（`refresh_unity` + `read_console types=["error"]`）
+3. master へ `git merge --no-ff <branch>`（squash / rebase 禁止、履歴を保つ）
+4. `git push origin master`
+5. 完了をユーザーに報告（実機検証は別途依頼）
 
-## ユーザー判断要事項（あれば）
-- 変更したかったが規約上触らなかった項目
+merge commit message は `<type>：<日本語要約>` 形式（type=`chore` 推奨）。本文に取り込んだ変更を箇条書きする。
 
-## Test plan
-- [ ] コンパイル確認
-- [ ] 関連テスト
-- [ ] 実機検証は手動依頼
-```
+PR を **例外的に**作るケース：
+- 大きな構造変更で、ユーザーがレビューしたいと明言した時
+- CI を回したい時（GitHub Actions が PR トリガで動く構成の場合）
+- 共同作業者と非同期にレビューする時
 
-merge は `gh pr merge <N> --merge`（squash / rebase は使わない、履歴を保つ）。
-
-merge 後は **ローカル master を `git pull --ff-only` で同期** してから次の作業へ。
+問題が見つかったら：
+- 直近 1 コミット → `git revert HEAD` で打ち消しコミットを作って push
+- 複数コミットを跨ぐ → 該当範囲を個別 revert
+- **`git push --force` / `git reset --hard` でリモート履歴を書き換えない**
 
 ## ハンドオフ
 
