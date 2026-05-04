@@ -56,6 +56,12 @@ namespace FixedCamVr.Streaming
         /// <summary>Unity 受信側の実 fps（直近 1 秒の Texture2D.LoadImage 回数）。</summary>
         public float ReceivedFps => _recvFps;
 
+        /// <summary>
+        /// 外部から強制的に MJPEG 接続を張り直す。デバッグ用ホットキーや lag 手動発火に使う。
+        /// （内蔵 lag 検知は CameraStream.Tick から自動で呼ばれる）
+        /// </summary>
+        public void ForceReconnect() => _receiver.RequestReconnect();
+
         /// <summary>Metadata が更新された時に呼ばれる。MjpegScreen 等が orientation を反映するためのフック。</summary>
         public event Action<StreamMetadata>? MetadataUpdated;
 
