@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Threading;
@@ -20,9 +21,12 @@ namespace FixedCamVr.Streaming
         private HttpClient? _http;
         private Task? _loop;
 
-        // フレームバッファ（ダブルバッファ）。書き込み側はワーカ、読み出しはメインスレッド。
-        private byte[]? _pending;
-        private int _pendingLength;
+        // フレームキュー（最大 3 スロット）。Wi-Fi のバースト到着で単一スロットだと
+        // フレームが上書きで失われる問題（実測 RECV_FPS=22 vs PHONE_FPS=30）への対処。
+        // 満杯時は最古を捨てて最新を保持（low-latency 優先）。+100ms 程度のレイテンシと引き換えに
+        // 取りこぼしを大幅に削減。
+        private const int QueueCapacity = 3;
+        private readonly Queue<(byte[] data, int length)> _pendingQueue = new(QueueCapacity);
         private readonly object _lock = new();
 
         // ワーカスレッド書き込み / メインスレッド読み出しのため volatile / lock で同期する。
@@ -53,18 +57,18 @@ namespace FixedCamVr.Streaming
         {
             lock (_lock)
             {
-                if (_pending == null)
+                if (_pendingQueue.Count == 0)
                 {
                     lengthOut = 0;
                     return false;
                 }
-                if (bufferOut == null || bufferOut.Length < _pendingLength)
+                var (data, len) = _pendingQueue.Dequeue();
+                if (bufferOut == null || bufferOut.Length < len)
                 {
-                    bufferOut = new byte[Mathf.NextPowerOfTwo(_pendingLength)];
+                    bufferOut = new byte[Mathf.NextPowerOfTwo(len)];
                 }
-                Buffer.BlockCopy(_pending, 0, bufferOut, 0, _pendingLength);
-                lengthOut = _pendingLength;
-                _pending = null;
+                Buffer.BlockCopy(data, 0, bufferOut, 0, len);
+                lengthOut = len;
                 return true;
             }
         }
@@ -177,12 +181,17 @@ namespace FixedCamVr.Streaming
             int payloadLen = payloadEnd - payloadStart;
             if (payloadLen > 0)
             {
+                // フレーム毎にコピーを作って enqueue。3 個を超えたら最古を捨てる。
+                // バックグラウンドスレッドで毎フレーム allocation だが 30fps × ~25KB なので GC は問題なし。
+                var copy = new byte[payloadLen];
+                Buffer.BlockCopy(acc, payloadStart, copy, 0, payloadLen);
                 lock (_lock)
                 {
-                    if (_pending == null || _pending.Length < payloadLen)
-                        _pending = new byte[Mathf.NextPowerOfTwo(payloadLen)];
-                    Buffer.BlockCopy(acc, payloadStart, _pending, 0, payloadLen);
-                    _pendingLength = payloadLen;
+                    _pendingQueue.Enqueue((copy, payloadLen));
+                    while (_pendingQueue.Count > QueueCapacity)
+                    {
+                        _pendingQueue.Dequeue();
+                    }
                 }
             }
             return b2;
