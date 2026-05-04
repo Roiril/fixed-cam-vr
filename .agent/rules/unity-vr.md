@@ -63,3 +63,16 @@ Assets/
 - ターゲット: Android / IL2CPP / ARM64 単独
 - `Development Build` 有効でデプロイし、初期は `adb logcat` でログ確認
 - リリースビルドは `Development Build` を外す
+
+## Editor 拡張メニュー設計
+
+カスタムメニューは **`Tools/FixedCamVr/`** 配下のみ（トップレベル `FixedCamVr/` を切らない）。サブメニューは 4 階層に固定：
+
+| サブメニュー | priority 範囲 | 用途 |
+|---|---|---|
+| 直下（ショートカット可） | 0〜49 | ユーザー常用（Open Main Scene 等） |
+| `Setup/` | 50〜99 | シーン構築・アセット生成（Setup Main Demo Scene 等） |
+| `Layout/` | 100〜199 | Editor レイアウト管理（ユーザー初期設定） |
+| `Diagnostics/` | 200〜299 | シュビーが叩く検証ツール（Ping / Run Tests 等） |
+
+新規メニュー追加時は **どの階層に置くべきか判断**してから書く。階層基準が曖昧なら直下に置かない（ゴチャゴチャ化を防ぐ）。MenuItem パスを README / TROUBLESHOOTING / docs/ で参照している箇所も同時更新する。

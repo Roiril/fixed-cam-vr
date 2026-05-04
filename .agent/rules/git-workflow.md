@@ -55,7 +55,7 @@ git cherry-pick <SHA1> <SHA2> <SHA3> ...
 
 ## WIP / stash 運用
 
-ユーザーの作業中変更（`.claude/settings.json`, `ProjectSettings/*`, `docs/ivrc-*` 等）が残っている時に別ブランチで作業する場合：
+ユーザーの作業中変更が残っている時に別ブランチで作業する場合：
 
 ```bash
 git stash push -m "WIP: <理由>" -- <対象ファイル>
@@ -65,7 +65,24 @@ git checkout master
 git stash pop
 ```
 
-CLAUDE.md「禁止事項」に該当するファイル（`ProjectSettings/`, `Packages/manifest.json`）の編集は、必要なら **ユーザーに事前報告**してから add する。
+### ユーザー所有ファイル（`git add` で巻き込み禁止）
+
+シュビーがコミットに含めてはいけないファイル。`git status` で見えても `git add .` / `git add -A` は使わず、対象ファイルを **個別指定**して避ける。
+
+| ファイル | 理由 |
+|---|---|
+| `.claude/settings.json` | ユーザーのローカル権限・MCP 設定 |
+| `ProjectSettings/*` | Unity Project Setup Tool / Quality 設定の調整 中（CLAUDE.md 禁止事項） |
+| `Packages/manifest.json` | 依存追加削除はユーザー事前報告 |
+| `Assets/Settings/Cameras/Phone*.asset` の `host` 変更 | 現場で書き換えるローカル値、コミットすると次回ビルドで他の現場が壊れる |
+| `docs/ivrc-*.md` | ユーザー作のドキュメント |
+| `Assets/Editor/Layouts/FixedCamVr.wlt` | ユーザーが触っている可能性、変更検知時はユーザーに確認 |
+| `.claude/worktrees/` | エージェント worktree の一時ディレクトリ |
+
+ただし以下は例外的にシュビーがコミットして良い：
+- 自動生成 `.meta` ファイル（Unity が必須とする）
+- `Packages/packages-lock.json`（manage_packages で追加した時）
+- `ProjectSettings/EditorBuildSettings.asset`（Build Settings 整理時、変更内容を明示的に説明）
 
 ## PR / merge
 
