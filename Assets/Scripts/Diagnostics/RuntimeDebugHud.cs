@@ -28,6 +28,9 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("HUD 更新間隔 (秒)。Update 毎フレーム文字列構築を避けて 90Hz を維持するためのスロットリング。")]
         [SerializeField] private float updateInterval = 0.25f;
 
+        [Tooltip("配信側 /health の取得間隔 (秒)。0 なら取得しない。fixed-cam-streamer の uptime / FPS を表示。")]
+        [SerializeField] private float healthRefreshInterval = 5f;
+
         [Tooltip("起動時に HUD を表示するか。")]
         [SerializeField] private bool startVisible = true;
 
@@ -36,6 +39,7 @@ namespace FixedCamVr.Diagnostics
         private float _fpsAccum;
         private int _fpsFrames;
         private float _fps;
+        private float _healthAccum;
         private bool _visible;
 
         /// <summary>HUD の表示・非表示を外部から切り替える。</summary>
@@ -58,6 +62,18 @@ namespace FixedCamVr.Diagnostics
             // FPS は毎フレーム積算（更新間隔単位で平均化）。
             _fpsAccum += Time.unscaledDeltaTime;
             _fpsFrames++;
+
+            // /health を低頻度でリフレッシュ（fire-and-forget）。失敗は無視（DroidCam 等互換）。
+            if (healthRefreshInterval > 0f && registry != null)
+            {
+                _healthAccum += Time.unscaledDeltaTime;
+                if (_healthAccum >= healthRefreshInterval)
+                {
+                    _healthAccum = 0f;
+                    var active = registry.GetActive();
+                    if (active != null) _ = active.RefreshHealthAsync();
+                }
+            }
 
             _accum += Time.unscaledDeltaTime;
             if (_accum < updateInterval) return;
@@ -122,6 +138,43 @@ namespace FixedCamVr.Diagnostics
             sb.Append(count);
             sb.Append(' ');
             sb.Append(active.DisplayName);
+
+            // 配信側 /health（fps + uptime）が取れていれば付ける。
+            var h = active.Health;
+            if (h != null)
+            {
+                sb.Append("  📱");
+                AppendFloat1(sb, h.fps);
+                sb.Append("fps  up ");
+                AppendUptime(sb, h.uptimeMs);
+            }
+        }
+
+        /// <summary>uptime ms を mm:ss / h:mm:ss 形式で append。</summary>
+        private static void AppendUptime(StringBuilder sb, long ms)
+        {
+            long sec = ms / 1000;
+            long h = sec / 3600;
+            long m = (sec % 3600) / 60;
+            long s = sec % 60;
+            if (h > 0)
+            {
+                sb.Append(h);
+                sb.Append(':');
+                if (m < 10) sb.Append('0');
+                sb.Append(m);
+                sb.Append(':');
+                if (s < 10) sb.Append('0');
+                sb.Append(s);
+            }
+            else
+            {
+                if (m < 10) sb.Append('0');
+                sb.Append(m);
+                sb.Append(':');
+                if (s < 10) sb.Append('0');
+                sb.Append(s);
+            }
         }
 
         private void BuildZoneLine(StringBuilder sb)
