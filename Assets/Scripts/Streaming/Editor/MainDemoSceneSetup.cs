@@ -88,13 +88,20 @@ namespace FixedCamVr.Streaming.EditorTools
             }
 
             // 1. [Zones] と 3 ゾーン
+            // ゾーン形状: 5/4 実機計測（プレイレンジ x≈±1.3m）から逆算した値。
+            // - 各ゾーン halfExtents.x = 0.5m / 中心は ±0.9m → 隣接ゾーン同士が 0.1m オーバーラップ
+            // - 重なった所は配列順で先勝ち（Center が先頭なので中央寄りでは Center に張り付く = デッドゾーン消滅）
+            // - z は ±1.2m のまま（前後方向のゾーン分割は今は不要）
             var zonesGo = new GameObject(ZonesName);
             zonesGo.transform.SetParent(logic.transform, worldPositionStays: false);
             var zoneA = CreateZone(zonesGo, "Zone_A_Center", new Vector3(0, 1, 0),
+                halfExtents: new Vector3(0.5f, 2f, 1.2f),
                 cameraIndex: 0, label: "Center", color: new Color(0f, 1f, 0.5f, 0.25f));
-            var zoneB = CreateZone(zonesGo, "Zone_B_Right", new Vector3(2.5f, 1, 0),
+            var zoneB = CreateZone(zonesGo, "Zone_B_Right", new Vector3(0.9f, 1, 0),
+                halfExtents: new Vector3(0.5f, 2f, 1.2f),
                 cameraIndex: 1, label: "Right", color: new Color(1f, 0.4f, 0.4f, 0.25f));
-            var zoneC = CreateZone(zonesGo, "Zone_C_Left", new Vector3(-2.5f, 1, 0),
+            var zoneC = CreateZone(zonesGo, "Zone_C_Left", new Vector3(-0.9f, 1, 0),
+                halfExtents: new Vector3(0.5f, 2f, 1.2f),
                 cameraIndex: 0, label: "Left", color: new Color(0.4f, 0.6f, 1f, 0.25f));
 
             // 2. [Tracker]
@@ -144,7 +151,7 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         private static PlayerZone CreateZone(GameObject parent, string name, Vector3 position,
-            int cameraIndex, string label, Color color)
+            Vector3 halfExtents, int cameraIndex, string label, Color color)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent.transform, worldPositionStays: false);
@@ -152,7 +159,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
             var zone = go.AddComponent<PlayerZone>();
             var so = new SerializedObject(zone);
-            TrySetVector3(so, "halfExtents", new Vector3(1.2f, 2f, 1.2f));
+            TrySetVector3(so, "halfExtents", halfExtents);
             TrySetVector3(so, "centerOffset", Vector3.zero);
             TrySetInt(so, "cameraIndex", cameraIndex);
             TrySetInt(so, "priority", 0);

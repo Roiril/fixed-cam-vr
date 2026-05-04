@@ -103,6 +103,14 @@ HUD の各行を順に確認：
 - [ ] ゾーン境界を細かく出入り → 切替が暴れない（shrink 0.15m のヒステリシス）
 - [ ] 全ゾーン外に出る → 直前のカメラが維持される（`keepLastWhenOutside` 既定 ON）
 
+> ゾーン形状（5/4 実機計測から逆算した既定値、`MainDemoSceneSetup` で自動配置）:
+> - Center: pos=(0,1,0) / halfExtents=(0.5, 2, 1.2) → x ∈ [-0.5, +0.5]
+> - Right:  pos=(+0.9,1,0) / halfExtents=(0.5, 2, 1.2) → x ∈ [+0.4, +1.4]
+> - Left:   pos=(-0.9,1,0) / halfExtents=(0.5, 2, 1.2) → x ∈ [-1.4, -0.4]
+>
+> 隣接ゾーン同士が **0.1m オーバーラップ**しており、配列順（Center/Right/Left）で先勝ち = 中央寄りでは Center に張り付く設計。実プレイレンジ x≈±1.3m で Right/Left に深く入れる。
+> 部屋が極端に狭い／広い場合は `MainDemoSceneSetup.cs` で値を再調整。
+
 ### Phase 3（映像加工）
 
 - [ ] Editor で **Tools > FixedCamVr > Setup > Setup FxSandbox Scene** で生成済みである事を確認（実機では FxSandbox は build に入っていない点注意）
