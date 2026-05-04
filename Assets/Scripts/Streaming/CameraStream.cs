@@ -30,6 +30,10 @@ namespace FixedCamVr.Streaming
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear,
             };
+            // 未接続中に未初期化メモリが Quest GPU 上で白ノイズ化しチカチカする問題を回避するため、
+            // 初回 LoadImage が走る前に黒で埋めておく（4 px 分のみ; LoadImage で正しいサイズへ再確保される）。
+            _texture.SetPixels(new[] { Color.black, Color.black, Color.black, Color.black });
+            _texture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
             _receiver = new MjpegStreamReceiver(source.BuildUrl());
         }
 

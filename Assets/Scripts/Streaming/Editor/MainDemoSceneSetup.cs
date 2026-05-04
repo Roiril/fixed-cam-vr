@@ -219,6 +219,32 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(dumperSo, "hmd", hmd);
             dumperSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // HmdTrajectoryRecorder: HMD 位置 / 各ゾーン含有判定を CSV で persistentDataPath に書き出す。
+            // 実機 Quest で歩いた後 adb pull で取り出し、ゾーン配置の妥当性をシュビーが解析する用途。
+            // tracker.zones を直接参照できないので、Tracker と同じ並びを SerializedObject 経由で複製する。
+            var rec = canvasGo.AddComponent<HmdTrajectoryRecorder>();
+            var recSo = new SerializedObject(rec);
+            TrySetObjectRef(recSo, "hmd", hmd);
+            TrySetObjectRef(recSo, "tracker", tracker);
+            TrySetObjectRef(recSo, "registry", registry);
+            var trackerZonesProp = new SerializedObject(tracker).FindProperty("zones");
+            if (trackerZonesProp != null && trackerZonesProp.isArray)
+            {
+                var zonesProp = recSo.FindProperty("zones");
+                if (zonesProp != null && zonesProp.isArray)
+                {
+                    zonesProp.arraySize = trackerZonesProp.arraySize;
+                    for (int i = 0; i < trackerZonesProp.arraySize; i++)
+                    {
+                        zonesProp.GetArrayElementAtIndex(i).objectReferenceValue =
+                            trackerZonesProp.GetArrayElementAtIndex(i).objectReferenceValue;
+                    }
+                }
+            }
+            TrySetFloat(recSo, "sampleInterval", 1.0f);
+            TrySetFloat(recSo, "hysteresisShrink", 0.15f);
+            recSo.ApplyModifiedPropertiesWithoutUndo();
+
             return hud;
         }
 
