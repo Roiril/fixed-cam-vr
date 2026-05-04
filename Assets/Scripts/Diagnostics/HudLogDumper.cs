@@ -140,6 +140,7 @@ namespace FixedCamVr.Diagnostics
 
             // CONN / CAM
             _sb.Append(" CONN=");
+            CameraStream? activeForHealth = null;
             if (registry == null)
             {
                 _sb.Append("noreg");
@@ -147,6 +148,7 @@ namespace FixedCamVr.Diagnostics
             else
             {
                 var active = registry.GetActive();
+                activeForHealth = active;
                 _sb.Append(active != null && active.IsConnected ? "1" : "0");
                 _sb.Append(" CAM=");
                 if (active == null)
@@ -161,6 +163,17 @@ namespace FixedCamVr.Diagnostics
                     _sb.Append(' ');
                     _sb.Append(active.DisplayName);
                 }
+            }
+
+            // 配信側 fps / uptime（あれば）
+            var health = activeForHealth?.Health;
+            if (health != null)
+            {
+                _sb.Append(" PHONE_FPS=");
+                _sb.Append(health.fps.ToString("F1"));
+                _sb.Append(" UP=");
+                _sb.Append((health.uptimeMs / 1000L).ToString());
+                _sb.Append("s");
             }
 
             // ZONE
