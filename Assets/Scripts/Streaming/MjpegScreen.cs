@@ -32,8 +32,14 @@ namespace FixedCamVr.Streaming
         [Tooltip("isPortrait が false (横持ち) のときに rotationDeg に加える補正角度。Inspector で 0 / 90 / -90 / 180 を試して合うものを選ぶ。")]
         [SerializeField] private int landscapeRotationOffsetDeg = 90;
 
-        [Tooltip("正方形フレーム時に縦長 (9:16) / 横長 (16:9) でアスペクトを切り替える。isPortrait に応じて自動。")]
+        [Tooltip("正方形フレーム時に縦長 / 横長 でアスペクトを切り替える。isPortrait に応じて自動。")]
         [SerializeField] private bool autoAspectFromIsPortrait = true;
+
+        [Tooltip("portrait (縦持ち) 時の表示アスペクト (W/H)。Pixel 7 Pro なら 9/19.5 ≒ 0.4615。")]
+        [SerializeField] private float portraitAspectWPerH = 9f / 19.5f;
+
+        [Tooltip("landscape (横持ち) 時の表示アスペクト (W/H)。Pixel 7 Pro なら 19.5/9 ≒ 2.1667。")]
+        [SerializeField] private float landscapeAspectWPerH = 19.5f / 9f;
 
         [Tooltip("autoAspectFromIsPortrait が無効な square 時の aspect 強制値。0 以下なら 1:1。")]
         [SerializeField] private float fallbackSquareAspect = 0f;
@@ -156,7 +162,7 @@ namespace FixedCamVr.Streaming
             {
                 if (autoAspectFromIsPortrait)
                 {
-                    aspect = meta.isPortrait ? (9f / 16f) : (16f / 9f);
+                    aspect = meta.isPortrait ? portraitAspectWPerH : landscapeAspectWPerH;
                 }
                 else if (fallbackSquareAspect > 0f)
                 {

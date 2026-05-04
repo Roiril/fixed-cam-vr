@@ -21,6 +21,11 @@ namespace FixedCamVr.Streaming
         private HttpClient? _http;
         private Task? _loop;
 
+        // 現在の HTTP 接続を中断するための内側 CTS。RequestReconnect で発火。
+        // 外側 _cts は dispose 用、内側 _connectionCts は接続毎に張り替え。
+        private CancellationTokenSource? _connectionCts;
+        private readonly object _connectionCtsLock = new();
+
         // フレームキュー（最大 3 スロット）。Wi-Fi のバースト到着で単一スロットだと
         // フレームが上書きで失われる問題（実測 RECV_FPS=22 vs PHONE_FPS=30）への対処。
         // 満杯時は最古を捨てて最新を保持（low-latency 優先）。+100ms 程度のレイテンシと引き換えに
@@ -35,6 +40,18 @@ namespace FixedCamVr.Streaming
 
         public bool IsConnected => _isConnected;
         public string? LastError => _lastError;
+
+        /// <summary>
+        /// 現在の接続を破棄して再接続させる。Wi-Fi 輻輳 / TCP バッファ滞留で
+        /// 受信が遅延しているときの強制リセット用。
+        /// </summary>
+        public void RequestReconnect()
+        {
+            CancellationTokenSource? toCancel;
+            lock (_connectionCtsLock) { toCancel = _connectionCts; }
+            try { toCancel?.Cancel(); }
+            catch (Exception ex) { Debug.LogWarning($"[MJPEG] reconnect cancel failed: {ex.Message}"); }
+        }
 
         public MjpegStreamReceiver(string url, TimeSpan? connectTimeout = null)
         {
@@ -78,14 +95,23 @@ namespace FixedCamVr.Streaming
             int backoffSec = 1;
             while (!ct.IsCancellationRequested)
             {
+                // 接続毎に独立の CTS を張る。RequestReconnect はこの内側 CTS を Cancel して
+                // 外側ループは生き残ったまま再接続する。
+                using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                lock (_connectionCtsLock) { _connectionCts = connectionCts; }
+                bool wasReconnectRequest = false;
                 try
                 {
-                    await ReceiveOnceAsync(ct);
+                    await ReceiveOnceAsync(connectionCts.Token);
                     backoffSec = 1;
                 }
                 catch (OperationCanceledException)
                 {
-                    return;
+                    if (ct.IsCancellationRequested) return;
+                    // 外側 ct は生きている → RequestReconnect による中断
+                    wasReconnectRequest = true;
+                    _isConnected = false;
+                    backoffSec = 1;
                 }
                 catch (Exception ex)
                 {
@@ -95,6 +121,15 @@ namespace FixedCamVr.Streaming
                     try { await Task.Delay(TimeSpan.FromSeconds(backoffSec), ct); }
                     catch (OperationCanceledException) { return; }
                     backoffSec = Math.Min(backoffSec * 2, 30);
+                }
+                finally
+                {
+                    lock (_connectionCtsLock) { _connectionCts = null; }
+                }
+                if (wasReconnectRequest)
+                {
+                    // 即時に張り直し（バックオフ無し）
+                    Debug.Log("[MJPEG] reconnect requested, reopening connection");
                 }
             }
         }
