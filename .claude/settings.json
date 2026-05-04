@@ -30,9 +30,7 @@
       "Bash(tasklist)",
       "Bash(python -u scripts/survey.py)",
       "Bash(tee survey_result.txt)",
-      "Bash(python -u -c ' *)",
-      "Bash(gh api *)",
-      "Bash(gh search *)"
+      "Bash(python -u -c ' *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kouga\\Projects\\Web\\kougaku-lab"
