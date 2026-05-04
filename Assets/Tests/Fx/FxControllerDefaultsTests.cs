@@ -40,7 +40,7 @@ namespace FixedCamVr.Fx.Tests
             var f = instance.GetType().GetField(fieldName, BFI);
             Assert.That(f, Is.Not.Null, $"field '{fieldName}' not found");
             var value = (float)f!.GetValue(instance)!;
-            var range = f.GetCustomAttribute<RangeAttribute>();
+            var range = f.GetCustomAttribute<UnityEngine.RangeAttribute>();
             Assert.That(range, Is.Not.Null, $"field '{fieldName}' has no [Range]");
             Assert.That(value, Is.GreaterThanOrEqualTo(range!.min).And.LessThanOrEqualTo(range.max),
                 $"default of '{fieldName}' ({value}) is outside [{range.min}, {range.max}]");
