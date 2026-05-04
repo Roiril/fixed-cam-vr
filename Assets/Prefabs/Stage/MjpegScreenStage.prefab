@@ -107,6 +107,8 @@ MonoBehaviour:
   useIsPortraitForRotation: 1
   landscapeRotationOffsetDeg: 90
   autoAspectFromIsPortrait: 1
+  portraitAspectWPerH: 0.4615385
+  landscapeAspectWPerH: 2.1666667
   fallbackSquareAspect: 0
 --- !u!114 &917727975689658914
 MonoBehaviour:

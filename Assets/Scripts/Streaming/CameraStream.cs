@@ -32,6 +32,16 @@ namespace FixedCamVr.Streaming
         private bool _metaInflight;
         private bool _healthInflight;
 
+        // Lag 検出 → 強制再接続。
+        // PHONE_FPS に対して RECV_FPS が一定割合を下回る状態が連続したとき、
+        // TCP 輻輳ウィンドウや kernel バッファ滞留が原因と推定して接続を張り直す。
+        // Wi-Fi の断続的なパケロスで TCP cwnd が縮みっぱなしになるケースで効果が大きい。
+        private const float LagDetectWindowSec = 3.0f;     // 評価ウィンドウ
+        private const float LagThresholdRatio  = 0.6f;     // RECV / PHONE 比率がこれ未満なら lag
+        private const float LagReconnectCooldownSec = 8.0f;// 連続再接続のクールダウン
+        private float _lagWindowAccum;
+        private float _lastReconnectTime;
+
         public string DisplayName => _source.DisplayName;
         public Texture2D Texture => _texture;
         public bool IsConnected => _receiver.IsConnected;
@@ -172,6 +182,29 @@ namespace FixedCamVr.Streaming
             {
                 _healthRefreshAccum = 0f;
                 _ = RefreshHealthAsync();
+            }
+
+            // Lag 検出。PHONE_FPS と RECV_FPS が両方読めるときのみ評価。
+            float phoneFps = _health?.fps ?? 0f;
+            if (phoneFps > 1f && _recvFps > 0f)
+            {
+                float ratio = _recvFps / phoneFps;
+                if (ratio < LagThresholdRatio)
+                {
+                    _lagWindowAccum += dt;
+                    if (_lagWindowAccum >= LagDetectWindowSec
+                        && now - _lastReconnectTime >= LagReconnectCooldownSec)
+                    {
+                        Debug.Log($"[CameraStream] lag detected (recv={_recvFps:F1}/phone={phoneFps:F1} ratio={ratio:F2}). reconnecting.");
+                        _receiver.RequestReconnect();
+                        _lastReconnectTime = now;
+                        _lagWindowAccum = 0f;
+                    }
+                }
+                else
+                {
+                    _lagWindowAccum = 0f;
+                }
             }
         }
 
