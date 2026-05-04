@@ -44,6 +44,9 @@ namespace FixedCamVr.Streaming
         [Tooltip("autoAspectFromIsPortrait が無効な square 時の aspect 強制値。0 以下なら 1:1。")]
         [SerializeField] private float fallbackSquareAspect = 0f;
 
+        [Tooltip("有効なら Texture2D の実寸 (width/height) をそのまま aspect として採用する。/info 経由の値より優先（streamer 側 /info が square 固定でも、JPEG 自体が 19.5:9 等で来る場合に正しく追従するため）。Texture が未デコード時のみ /info ベースにフォールバック。")]
+        [SerializeField] private bool useTextureAspect = true;
+
         private MjpegStreamReceiver? _receiver;
         private Texture2D? _tex;
         private byte[]? _scratch;
@@ -52,6 +55,8 @@ namespace FixedCamVr.Streaming
         private CameraStream? _lastSubscribed;
         private Quaternion _baseLocalRotation;
         private Vector3 _baseLocalScale;
+        private int _lastTexW;
+        private int _lastTexH;
 
         private bool UseRegistry => registry != null;
 
@@ -125,6 +130,38 @@ namespace FixedCamVr.Streaming
         private void OnMetadataUpdated(StreamMetadata meta) => ApplyOrient(meta);
 
         /// <summary>
+        /// 現在割り当てられている Texture から W/H 比を返す。useTextureAspect が無効、
+        /// または Texture 未割当 / 未デコード (2x2 等の placeholder) なら 0 を返してフォールバック。
+        /// </summary>
+        private float TryGetTextureAspect()
+        {
+            if (!useTextureAspect) return 0f;
+            var tex = _lastAssigned ?? _tex;
+            if (tex == null) return 0f;
+            int w = tex.width, h = tex.height;
+            if (w <= 4 || h <= 4) return 0f;
+            return (float)w / h;
+        }
+
+        /// <summary>
+        /// Texture の実寸が前回適用時から変化していたら ApplyOrient を再実行する。
+        /// 初回 LoadImage（2x2 → 実寸）や streamer 側で解像度が変わったときに自動追従する。
+        /// </summary>
+        private void ReapplyOrientIfTextureSizeChanged(CameraStream active)
+        {
+            if (!useTextureAspect) return;
+            var tex = _lastAssigned ?? _tex;
+            if (tex == null) return;
+            int w = tex.width, h = tex.height;
+            if (w <= 4 || h <= 4) return;
+            if (w == _lastTexW && h == _lastTexH) return;
+            _lastTexW = w;
+            _lastTexH = h;
+            var meta = active.Metadata ?? new StreamMetadata { widthPx = w, heightPx = h };
+            ApplyOrient(meta);
+        }
+
+        /// <summary>
         /// rotationDeg と effective aspect を Transform に適用する。
         /// - rotation: 初期回転に Z 軸 -rotationDeg を掛ける（反時計回り = 画像を正立させる）
         /// - scale:    初期 scale から effective aspect (W/H) に合わせて X/Y を調整。Y を保ち X = Y * aspect。
@@ -154,28 +191,32 @@ namespace FixedCamVr.Streaming
             t.localRotation = _baseLocalRotation * Quaternion.Euler(0f, 0f, -rot);
 
             // 2) アスペクトの決定 (= テクスチャ自体の見た目の W/H 比、回転前)。
-            //    square フレーム時は autoAspectFromIsPortrait で 9:16 / 16:9 を切替。
-            //    非 square なら meta.EffectiveAspect() を使う。
-            float aspect;
-            bool isSquare = meta.widthPx == meta.heightPx && meta.widthPx > 0;
-            if (isSquare)
+            //    最優先: Texture2D の実寸（streamer 側 /info が square 固定でも、JPEG 寸法が
+            //    実態を正しく表しているケースに追従できる）。
+            //    fallback: /info の widthPx/heightPx + isPortrait 切替。
+            float aspect = TryGetTextureAspect();
+            if (aspect <= 0f)
             {
-                if (autoAspectFromIsPortrait)
+                bool isSquare = meta.widthPx == meta.heightPx && meta.widthPx > 0;
+                if (isSquare)
                 {
-                    aspect = meta.isPortrait ? portraitAspectWPerH : landscapeAspectWPerH;
-                }
-                else if (fallbackSquareAspect > 0f)
-                {
-                    aspect = fallbackSquareAspect;
+                    if (autoAspectFromIsPortrait)
+                    {
+                        aspect = meta.isPortrait ? portraitAspectWPerH : landscapeAspectWPerH;
+                    }
+                    else if (fallbackSquareAspect > 0f)
+                    {
+                        aspect = fallbackSquareAspect;
+                    }
+                    else
+                    {
+                        aspect = 1f;
+                    }
                 }
                 else
                 {
-                    aspect = 1f;
+                    aspect = meta.EffectiveAspect();
                 }
-            }
-            else
-            {
-                aspect = meta.EffectiveAspect();
             }
 
             // 3) サイズ計算。
@@ -208,10 +249,14 @@ namespace FixedCamVr.Streaming
                 {
                     _renderer.material.mainTexture = tex;
                     _lastAssigned = tex;
+                    _lastTexW = 0; _lastTexH = 0;
                     SubscribeOrient(active);
                     // 既に Metadata 取得済みなら即適用（subscribe より前にイベントが発火していたケース）。
                     if (active.Metadata != null) ApplyOrient(active.Metadata);
                 }
+                // 初回 LoadImage で 2x2 placeholder → 実寸に切り替わるタイミング、
+                // および streamer 解像度変更時に自動でアスペクト再適用。
+                ReapplyOrientIfTextureSizeChanged(active);
                 return;
             }
 

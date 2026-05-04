@@ -110,6 +110,7 @@ MonoBehaviour:
   portraitAspectWPerH: 0.4615385
   landscapeAspectWPerH: 2.1666667
   fallbackSquareAspect: 0
+  useTextureAspect: 1
 --- !u!114 &917727975689658914
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -112,5 +112,9 @@ $RECYCLE.BIN/
 # Claude Code local overrides
 .claude/settings.local.json
 
+# Claude Code agent worktrees（ローカルでのみ存在する一時的な並列作業ツリー。
+# git worktree 配下なので素直に commit すると submodule 扱いされてしまう）
+.claude/worktrees/
+
 # MCP per-project placeholder（実体は ~/.claude.json で管理されるため不要）
 /.mcp.json
