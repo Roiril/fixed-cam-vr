@@ -29,9 +29,9 @@
 2. [ ] PC ブラウザで上記 URL を直接開いて映像が見える事を全台で確認
 3. [ ] Unity Editor で `Assets/Settings/Cameras/Phone01.asset` 〜 を開いて `host` を実 IP に書き換え
    - Inspector の **Test Connection** ボタンで疎通確認できる
-4. [ ] **Tools > FixedCamVr > Ping DroidCams** で全 `CameraSource` 一括到達確認
+4. [ ] **Tools > FixedCamVr > Diagnostics > Ping DroidCams** で全 `CameraSource` 一括到達確認
 5. [ ] Build Settings が `Assets/Scenes/Main.unity` のみ enabled であることを確認
-6. [ ] **Main.unity を開いて Tools > FixedCamVr > Setup Main Demo Scene を実行**
+6. [ ] **Main.unity を開いて Tools > FixedCamVr > Setup > Setup Main Demo Scene を実行**
    - Phase 2.7 用の `[Zones]` (Center / Right / Left) と `[Tracker]` を自動配置
    - HMD 内 HUD (`DebugHud` Canvas + `RuntimeDebugHud`) を CenterEyeAnchor 配下に配置
    - `OvrControllerBridge.hud` への参照も自動で結線
@@ -39,7 +39,7 @@
 7. [ ] **URP RendererFeature を手動配線**（Phase 3 FX を実機で出すために必須）
    - `Assets/Settings/URP-Balanced-Renderer.asset` を Inspector で開く
    - **Add Renderer Feature → Full Screen Pass Renderer Feature** を追加
-   - Pass Material = `Assets/Art/Materials/Fx/FxCrtMaterial.mat` (無ければ **FixedCamVr > Fx > Create CRT Material** で生成)
+   - Pass Material = `Assets/Art/Materials/Fx/FxCrtMaterial.mat` (無ければ **Tools > FixedCamVr > Setup > Create CRT Material** で生成)
    - Inject Point = `After Rendering Post Processing`
    - Bind to Color Texture = ON
 8. [ ] Player Settings 確認（[TROUBLESHOOTING.md Q.ビルド入らない](../TROUBLESHOOTING.md) も参照）
@@ -105,7 +105,7 @@ HUD の各行を順に確認：
 
 ### Phase 3（映像加工）
 
-- [ ] Editor で **FixedCamVr > Fx > Setup FxSandbox Scene** で生成済みである事を確認（実機では FxSandbox は build に入っていない点注意）
+- [ ] Editor で **Tools > FixedCamVr > Setup > Setup FxSandbox Scene** で生成済みである事を確認（実機では FxSandbox は build に入っていない点注意）
 - [ ] Main シーン側で FX を有効にしたビルドを使う場合、各ゾーンに対応した FX が ON になる（CRT / Dust / 全部入り 等）
 - [ ] OVR Metrics Tool で GPU < 11ms / 72fps 維持。落ちる場合は FX を 1 つずつ OFF にして原因特定
 
@@ -163,7 +163,7 @@ HMD を被る
         ・Settings/URP の UniversalRendererData に FullScreenPassRendererFeature が入ってるか
         ・FX 用 Material（FxCrtMaterial 等）がアサイン済みか
         ・カメラの Renderer Index と Renderer 設定が一致しているか
-        ・FixedCamVr > Fx > Create CRT Material を実行済みか
+        ・Tools > FixedCamVr > Setup > Create CRT Material を実行済みか
 ```
 
 ---

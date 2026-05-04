@@ -16,7 +16,7 @@
 ### Added
 - 映像加工 / CG 合成プロトタイプ 4 系統と比較レポート（CRT 風 / フィルム粒子 / 薄い埃 / Sobel エッジ）
 - `Assets/Art/Shaders/Fx/` 配下のシェーダ群と `FxSandbox.unity`
-- `FixedCamVr > Fx > Create CRT Material` などの Editor メニュー
+- `Tools > FixedCamVr > Setup > Create CRT Material` などの Editor メニュー
 - README に Phase 2.7 / Phase 3 の成果を反映
 
 ## [Phase 2.7] - 2026-05-03

@@ -24,7 +24,7 @@ fixed-cam-vr で詰まりがちな箇所と対処方法。
    - Windows Defender Firewall でポート 4747 / 8080 がブロックされていないか
    - スマホ側アプリが「ローカルネットワーク」へのアクセスを許可されているか
 5. **一括 ping**
-   - **Tools > FixedCamVr > Ping DroidCams** を実行 → Console に各 `CameraSource` の到達状況が出る
+   - **Tools > FixedCamVr > Diagnostics > Ping DroidCams** を実行 → Console に各 `CameraSource` の到達状況が出る
 6. **再接続挙動**
    - `MjpegStreamReceiver` は最大 30 秒の exponential backoff で再接続する。スマホ側を起動し直したあと最長 30 秒待つ
 
@@ -120,9 +120,9 @@ fixed-cam-vr で詰まりがちな箇所と対処方法。
 
 **手順**:
 
-1. Unity Editor 上部メニュー: **FixedCamVr > Fx > Setup FxSandbox Scene**
+1. Unity Editor 上部メニュー: **Tools > FixedCamVr > Setup > Setup FxSandbox Scene**
    - これで `FxSandbox.unity` が生成され、テストパターン入力 + 4 系統の GameObject (`[Fx]_BlitChromatic` / `[Fx]_DustParticles` / `[Fx]_SobelCompute` 等) が配置される
-2. **FixedCamVr > Fx > Create CRT Material**
+2. **Tools > FixedCamVr > Setup > Create CRT Material**
    - `Assets/Art/Materials/Fx/FxCrtMaterial.mat` を生成
    - Phase 3-1 (CRT) の手動セットアップ手順が Console に出るので従う
 3. 各 Phase の見比べ

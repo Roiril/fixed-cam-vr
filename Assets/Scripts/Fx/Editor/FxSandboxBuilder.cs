@@ -22,7 +22,7 @@ namespace FixedCamVr.Fx.Editor
         private const string ScenePath = "Assets/Scenes/FxSandbox.unity";
         private const string PatternShaderPath = "Assets/Art/Shaders/Fx/FxTestPattern.shader";
 
-        [MenuItem("FixedCamVr/Fx/Setup FxSandbox Scene", priority = 200)]
+        [MenuItem("Tools/FixedCamVr/Setup/Setup FxSandbox Scene", priority = 51)]
         public static void Setup()
         {
             // 未保存変更があるシーンを破棄する前にユーザーに確認させる

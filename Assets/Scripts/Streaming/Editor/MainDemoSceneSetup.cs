@@ -26,7 +26,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string TrackerName = "[Tracker]";
         private const string DebugHudName = "DebugHud";
 
-        [MenuItem("Tools/FixedCamVr/Setup Main Demo Scene", priority = 30)]
+        [MenuItem("Tools/FixedCamVr/Setup/Setup Main Demo Scene", priority = 50)]
         public static void Setup()
         {
             var scene = SceneManager.GetActiveScene();

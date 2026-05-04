@@ -18,7 +18,7 @@ namespace FixedCamVr.Fx.Editor
         private const string MatPath = "Assets/Art/Materials/Fx/FxCrtMaterial.mat";
         private const string ShaderPath = "Assets/Art/Shaders/Fx/FxCrtPostFx.shader";
 
-        [MenuItem("FixedCamVr/Fx/Create CRT Material", priority = 210)]
+        [MenuItem("Tools/FixedCamVr/Setup/Create CRT Material", priority = 52)]
         public static void CreateCrtMaterial()
         {
             var shader = AssetDatabase.LoadAssetAtPath<Shader>(ShaderPath);

@@ -123,8 +123,8 @@ MJPEG で取り込んだスマホ映像（既存 `MjpegScreen` の出力 Texture
 ### 動作確認手順（merge 後にユーザーが実行）
 
 1. Unity Editor で本ブランチを取り込み、`Assets/Scenes/FxSandbox.unity` を生成するために
-   メニュー **`FixedCamVr > Fx > Setup FxSandbox Scene`** を実行
-2. **`FixedCamVr > Fx > Create CRT Material`** を実行（FxCrtMaterial.mat 生成）
+   メニュー **`Tools > FixedCamVr > Setup > Setup FxSandbox Scene`** を実行
+2. **`Tools > FixedCamVr > Setup > Create CRT Material`** を実行（FxCrtMaterial.mat 生成）
 3. Phase 1 を有効化したい場合は、ログ指示に従い `Assets/Settings/Fx/FxRenderer.asset` を
    手動作成し、`FullScreenPassRendererFeature` に FxCrtMaterial を割り当て、
    Camera の Renderer 欄に当てる

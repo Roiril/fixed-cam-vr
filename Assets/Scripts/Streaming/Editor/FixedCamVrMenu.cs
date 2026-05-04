@@ -17,30 +17,39 @@ namespace FixedCamVr.Streaming.EditorTools
     {
         private const string Root = "Tools/FixedCamVr/";
 
+        // ---- ユーザー常用 ----
+
         [MenuItem(Root + "Open Main Scene %#m", priority = 0)] // Ctrl+Shift+M
         public static void OpenMain() => OpenScene("Assets/Scenes/Main.unity");
 
-        [MenuItem(Root + "Open Debug Scene %#d", priority = 1)] // Ctrl+Shift+D
+        // ---- Diagnostics（シュビー / 検証用） ----
+
+        [MenuItem(Root + "Diagnostics/Open Debug Scene %#d", priority = 200)] // Ctrl+Shift+D
         public static void OpenDebug() => OpenScene("Assets/Scenes/Debug/FlatStreaming.unity");
 
-        [MenuItem(Root + "Open PlayerZone Sandbox", priority = 2)]
+        [MenuItem(Root + "Diagnostics/Open PlayerZone Sandbox", priority = 201)]
         public static void OpenPlayerZoneSandbox() => OpenScene("Assets/Scenes/Sandbox/PlayerZone.unity");
 
-        [MenuItem(Root + "Run Streaming Tests", priority = 20)]
-        public static void RunStreamingTests()
+        [MenuItem(Root + "Diagnostics/Run All Tests", priority = 220)]
+        public static void RunAllTests()
         {
             var api = ScriptableObject.CreateInstance<TestRunnerApi>();
             api.Execute(new ExecutionSettings(new Filter
             {
                 testMode = TestMode.EditMode,
-                assemblyNames = new[] { "FixedCamVr.Streaming.Tests" }
+                assemblyNames = new[]
+                {
+                    "FixedCamVr.Streaming.Tests",
+                    "FixedCamVr.Tracking.Tests",
+                    "FixedCamVr.Fx.Tests"
+                }
             }));
-            Debug.Log("[FixedCamVr] EditMode tests launched. See Test Runner window for results.");
+            Debug.Log("[FixedCamVr] EditMode tests launched (Streaming / Tracking / Fx). See Test Runner window for results.");
         }
 
         private static bool _pingInFlight;
 
-        [MenuItem(Root + "Ping DroidCams", priority = 30)]
+        [MenuItem(Root + "Diagnostics/Ping DroidCams", priority = 230)]
         public static async void PingDroidCams()
         {
             // 連打防止（async void なので前回完了前に再入する可能性がある）
@@ -90,7 +99,7 @@ namespace FixedCamVr.Streaming.EditorTools
             }
         }
 
-        [MenuItem(Root + "Reveal Camera Sources Folder", priority = 31)]
+        [MenuItem(Root + "Diagnostics/Reveal Camera Sources Folder", priority = 240)]
         public static void RevealCamerasFolder()
         {
             var obj = AssetDatabase.LoadAssetAtPath<Object>("Assets/Settings/Cameras");
@@ -102,7 +111,7 @@ namespace FixedCamVr.Streaming.EditorTools
             }
         }
 
-        [MenuItem(Root + "Open Test Runner", priority = 21)]
+        [MenuItem(Root + "Diagnostics/Open Test Runner", priority = 221)]
         public static void OpenTestRunner() => EditorApplication.ExecuteMenuItem("Window/General/Test Runner");
 
         // ---- Editor Layout ----
