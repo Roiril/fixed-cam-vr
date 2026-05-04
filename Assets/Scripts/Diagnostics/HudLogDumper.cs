@@ -28,8 +28,8 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("FPS 計測ウィンドウ（秒）。HUD と同じ値を推奨。")]
         [SerializeField] private float fpsWindowSec = 1.0f;
 
-        [Tooltip("変化が無い時に最低 1 行は吐く間隔（秒）。長めに取って良い。")]
-        [SerializeField] private float periodicIntervalSec = 30f;
+        [Tooltip("変化が無い時に最低 1 行は吐く間隔（秒）。診断中は 1s、本番は 30s 推奨。")]
+        [SerializeField] private float periodicIntervalSec = 1f;
 
         [Tooltip("起動時のみ 1 行吐く initial dump を有効化。")]
         [SerializeField] private bool initialDump = true;

@@ -251,6 +251,8 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(dumperSo, "registry", registry);
             TrySetObjectRef(dumperSo, "tracker", tracker);
             TrySetObjectRef(dumperSo, "hmd", hmd);
+            // 診断中は 1s 周期で出す。本番は再 Setup 時に 30 等に戻すこと。
+            TrySetFloat(dumperSo, "periodicIntervalSec", 1f);
             dumperSo.ApplyModifiedPropertiesWithoutUndo();
 
             // HmdTrajectoryRecorder: HMD 位置 / 各ゾーン含有判定を CSV で persistentDataPath に書き出す。
