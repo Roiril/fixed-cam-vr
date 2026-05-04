@@ -14,7 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   displayName: Phone 02
   host: 192.168.10.142
-  port: 4747
-  path: /mjpegfeed?640x480
-  width: 640
-  height: 480
+  port: 8080
+  videoPath: /video
+  infoPath: /info
+  healthPath: /health
+  width: 1280
+  height: 720
