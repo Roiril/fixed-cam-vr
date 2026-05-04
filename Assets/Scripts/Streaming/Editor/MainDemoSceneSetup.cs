@@ -210,6 +210,15 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(toggleSo, "hud", hud);
             toggleSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // HudLogDumper: HUD と同じ値を [HudDump] プレフィックスで Console に吐く
+            // （MCP read_console で時系列取得するため）
+            var dumper = canvasGo.AddComponent<HudLogDumper>();
+            var dumperSo = new SerializedObject(dumper);
+            TrySetObjectRef(dumperSo, "registry", registry);
+            TrySetObjectRef(dumperSo, "tracker", tracker);
+            TrySetObjectRef(dumperSo, "hmd", hmd);
+            dumperSo.ApplyModifiedPropertiesWithoutUndo();
+
             return hud;
         }
 
