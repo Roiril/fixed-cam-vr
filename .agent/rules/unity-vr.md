@@ -64,6 +64,39 @@ Assets/
 - `Development Build` 有効でデプロイし、初期は `adb logcat` でログ確認
 - リリースビルドは `Development Build` を外す
 
+## 座標駆動の体験設計（PlayerZone / カメラ自動切替）
+
+体験設計で **HMD 座標は最重要の入力**。Quest 3 の標準ガーディアンを前提に以下を守る：
+
+### 前提
+- **実プレイレンジは ±1.3m 程度**（4 畳半 / 2.5–3m 四方の典型値）。これを超える前提でゾーンを置かない。
+- HMD 高さは ≈1.6m。`PlayerZone.centerOffset` を 0 のまま運用するなら、ゾーン Transform.y を 1.0–1.2m に置いて `halfExtents.y=2` で全身を含める。
+- **ゾーン形状は推測で決めず、実機で `[HudDump]` / `[HmdTrace]` を取って `pos` の min/max からプレイレンジを逆算してから決める**（[`HmdTrajectoryRecorder`](../Assets/Scripts/Diagnostics/HmdTrajectoryRecorder.cs) 参照）。
+
+### Pick() の挙動を踏まえた設計
+[`PlayerZoneTracker.Pick`](../Assets/Scripts/Tracking/PlayerZoneTracker.cs) は次の順で評価する：
+1. 直近ゾーンが `shrink` 後 AABB に含まれるなら維持（再評価スキップ）
+2. それ以外は全ゾーンで full AABB 判定 → `priority` 大が勝ち、同値なら **配列先頭が勝つ**
+
+これを踏まえると：
+
+- **隣接ゾーンを 0.05–0.10m オーバーラップさせる** — `keepLastWhenOutside` に頼って間を埋めるとデッドゾーンで前ゾーン張り付きが起き、ユーザーが「切り替わらない」と感じる
+- **Center を配列の先頭に置く** — オーバーラップ帯では Center が勝ち、中央寄りに自然に張り付く
+- **`hysteresisShrink` は halfExtents の 20–30% を目安**（hx=0.5m なら 0.10–0.15m）。これより小さいと境界 jitter、大きいと「shrink から出ても full では現ゾーンが勝つ」状態が続いて切替が鈍くなる
+- ヒステリシス幅 ≒ `hx_overlap` + `shrink` の効き方の組み合わせで決まる。**手で計算するか、Pick の事前条件をテストで固定する**（[`PlayerZoneSelectionTests`](../Assets/Tests/Tracking/PlayerZoneSelectionTests.cs) を増やす）
+
+### 既定ゾーン（5/4 実機計測ベース、`MainDemoSceneSetup` 自動配置）
+
+```
+Center: (0,    1, 0)  hx=(0.5, 2, 1.2)   x ∈ [-0.5, +0.5]
+Right:  (+0.9, 1, 0)  hx=(0.5, 2, 1.2)   x ∈ [+0.4, +1.4]
+Left:   (-0.9, 1, 0)  hx=(0.5, 2, 1.2)   x ∈ [-1.4, -0.4]
+```
+部屋が極端に違う場合は `MainDemoSceneSetup.cs` の値を上書きしてから `Setup Main Demo Scene` を再実行。
+
+### 前後 (z) 方向の演出を入れる時
+現在 z は全ゾーン共通 [-1.2, +1.2]。**前後で挙動を変えたいなら別軸のロジックを足す**（zone は左右専用にしておく）。`PlayerStateBus` のような中央集約は Phase 4（CG 合成）着手時に検討、それまでは Tracker と並列に小さな BehaviourScript で済ませる。
+
 ## Editor 拡張メニュー設計
 
 カスタムメニューは **`Tools/FixedCamVr/`** 配下のみ（トップレベル `FixedCamVr/` を切らない）。サブメニューは 4 階層に固定：
