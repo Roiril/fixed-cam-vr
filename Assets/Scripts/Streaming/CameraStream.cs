@@ -90,7 +90,9 @@ namespace FixedCamVr.Streaming
                 var meta = await StreamMetadataFetcher.FetchInfoAsync(url);
                 if (_disposed || meta == null) return;
 
-                // 比較: rotationDeg と widthPx/heightPx だけ気にする（向き反映に必要）
+                // 比較: 向き反映に効く 4 値のいずれか変化で発火。
+                // 特に isPortrait は fixed-cam-streamer 側で rotationDeg が固定でも
+                // 動的更新されるため、これが回ったら必ず ApplyOrient したい。
                 var prev = _metadata;
                 bool changed = prev == null
                     || prev.rotationDeg != meta.rotationDeg

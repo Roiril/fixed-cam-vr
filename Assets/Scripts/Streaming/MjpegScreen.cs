@@ -26,8 +26,17 @@ namespace FixedCamVr.Streaming
         [Tooltip("Z 軸回転を /info の代わりに固定値で適用する（負値 = 自動）。配信側が rotationDeg を更新しない / 画像が square で回転反映できない時用。")]
         [SerializeField] private int manualRotationDegOverride = -1;
 
-        [Tooltip("正方形フレーム時に縦長 (9:16) としてスケールを適用する。配信が square で実質縦動画なケース向け。")]
-        [SerializeField] private bool treatSquareAsPortrait = false;
+        [Tooltip("isPortrait で動的に Z 軸補正を入れる（fixed-cam-streamer は rotationDeg を更新しない代わりに isPortrait を更新するため）。横持ち時に +portraitToLandscapeOffsetDeg を加算。")]
+        [SerializeField] private bool useIsPortraitForRotation = true;
+
+        [Tooltip("isPortrait が false (横持ち) のときに rotationDeg に加える補正角度。Inspector で 0 / 90 / -90 / 180 を試して合うものを選ぶ。")]
+        [SerializeField] private int landscapeRotationOffsetDeg = 90;
+
+        [Tooltip("正方形フレーム時に縦長 (9:16) / 横長 (16:9) でアスペクトを切り替える。isPortrait に応じて自動。")]
+        [SerializeField] private bool autoAspectFromIsPortrait = true;
+
+        [Tooltip("autoAspectFromIsPortrait が無効な square 時の aspect 強制値。0 以下なら 1:1。")]
+        [SerializeField] private float fallbackSquareAspect = 0f;
 
         private MjpegStreamReceiver? _receiver;
         private Texture2D? _tex;
@@ -120,15 +129,43 @@ namespace FixedCamVr.Streaming
             if (!autoOrient) return;
             var t = orientTarget != null ? orientTarget : transform;
 
-            int rot = manualRotationDegOverride >= 0 ? manualRotationDegOverride : meta.rotationDeg;
+            // 1) 回転角の決定。
+            //    - manualRotationDegOverride (>=0) があれば最優先（デバッグ用）
+            //    - それ以外は meta.rotationDeg を基準にしつつ、isPortrait 動的更新を見て補正
+            int rot;
+            if (manualRotationDegOverride >= 0)
+            {
+                rot = manualRotationDegOverride;
+            }
+            else
+            {
+                rot = meta.rotationDeg;
+                if (useIsPortraitForRotation && !meta.isPortrait)
+                {
+                    rot += landscapeRotationOffsetDeg;
+                }
+            }
             t.localRotation = _baseLocalRotation * Quaternion.Euler(0f, 0f, -rot);
 
-            // square フレーム + treatSquareAsPortrait のとき、9:16 として scale を適用する暫定対応。
-            // 配信側 (fixed-cam-streamer) が現状 widthPx==heightPx で固定回転を返しているため。
+            // 2) アスペクトの決定。
+            //    square フレーム時は autoAspectFromIsPortrait で 9:16 / 16:9 を切替。
+            //    非 square なら meta.EffectiveAspect() を使う。
             float aspect;
-            if (treatSquareAsPortrait && meta.widthPx == meta.heightPx)
+            bool isSquare = meta.widthPx == meta.heightPx && meta.widthPx > 0;
+            if (isSquare)
             {
-                aspect = 9f / 16f;
+                if (autoAspectFromIsPortrait)
+                {
+                    aspect = meta.isPortrait ? (9f / 16f) : (16f / 9f);
+                }
+                else if (fallbackSquareAspect > 0f)
+                {
+                    aspect = fallbackSquareAspect;
+                }
+                else
+                {
+                    aspect = 1f;
+                }
             }
             else
             {
