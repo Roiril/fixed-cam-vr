@@ -23,6 +23,12 @@ namespace FixedCamVr.Streaming
         [Tooltip("回転 / スケールを反映する Transform。null なら自身の Transform を使う。子に Content を置きたい場合に使う。")]
         [SerializeField] private Transform? orientTarget;
 
+        [Tooltip("Z 軸回転を /info の代わりに固定値で適用する（負値 = 自動）。配信側が rotationDeg を更新しない / 画像が square で回転反映できない時用。")]
+        [SerializeField] private int manualRotationDegOverride = -1;
+
+        [Tooltip("正方形フレーム時に縦長 (9:16) としてスケールを適用する。配信が square で実質縦動画なケース向け。")]
+        [SerializeField] private bool treatSquareAsPortrait = false;
+
         private MjpegStreamReceiver? _receiver;
         private Texture2D? _tex;
         private byte[]? _scratch;
@@ -113,9 +119,22 @@ namespace FixedCamVr.Streaming
         {
             if (!autoOrient) return;
             var t = orientTarget != null ? orientTarget : transform;
-            t.localRotation = _baseLocalRotation * Quaternion.Euler(0f, 0f, -meta.rotationDeg);
 
-            float aspect = meta.EffectiveAspect();
+            int rot = manualRotationDegOverride >= 0 ? manualRotationDegOverride : meta.rotationDeg;
+            t.localRotation = _baseLocalRotation * Quaternion.Euler(0f, 0f, -rot);
+
+            // square フレーム + treatSquareAsPortrait のとき、9:16 として scale を適用する暫定対応。
+            // 配信側 (fixed-cam-streamer) が現状 widthPx==heightPx で固定回転を返しているため。
+            float aspect;
+            if (treatSquareAsPortrait && meta.widthPx == meta.heightPx)
+            {
+                aspect = 9f / 16f;
+            }
+            else
+            {
+                aspect = meta.EffectiveAspect();
+            }
+
             if (aspect > 0f && _baseLocalScale.y > 0f)
             {
                 t.localScale = new Vector3(_baseLocalScale.y * aspect, _baseLocalScale.y, _baseLocalScale.z);
@@ -141,9 +160,17 @@ namespace FixedCamVr.Streaming
             }
 
             if (_receiver == null || _tex == null) return;
-            if (_receiver.TryConsumeFrame(ref _scratch, out int len) && len > 0 && _scratch != null)
+            // while-drain: バーストで溜まったフレームは捨てて最新のみ表示（加速⇄スロー対策）。
+            byte[]? lastBuf = null;
+            int lastLen = 0;
+            while (_receiver.TryConsumeFrame(ref _scratch, out int len) && len > 0 && _scratch != null)
             {
-                _tex.LoadImage(_scratch, markNonReadable: false);
+                lastBuf = _scratch;
+                lastLen = len;
+            }
+            if (lastBuf != null && lastLen > 0)
+            {
+                _tex.LoadImage(lastBuf, markNonReadable: false);
             }
         }
     }

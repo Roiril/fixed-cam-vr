@@ -23,6 +23,15 @@ namespace FixedCamVr.Streaming
         private int _recvFramesInWindow;
         private float _recvFps;
 
+        // 内蔵 polling タイマー。HUD 等の外部呼び出しに依存せず、
+        // /info と /health を自動でリフレッシュする（スマホ向き / 統計値の追従用）。
+        private const float MetadataRefreshInterval = 1.5f;
+        private const float HealthRefreshInterval   = 2.0f;
+        private float _metaRefreshAccum;
+        private float _healthRefreshAccum;
+        private bool _metaInflight;
+        private bool _healthInflight;
+
         public string DisplayName => _source.DisplayName;
         public Texture2D Texture => _texture;
         public bool IsConnected => _receiver.IsConnected;
@@ -72,33 +81,45 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public async System.Threading.Tasks.Task RefreshMetadataAsync()
         {
-            string url = _source.BuildInfoUrl();
-            if (string.IsNullOrEmpty(url)) return;
-            var meta = await StreamMetadataFetcher.FetchInfoAsync(url);
-            if (_disposed || meta == null) return;
+            if (_metaInflight) return;
+            _metaInflight = true;
+            try
+            {
+                string url = _source.BuildInfoUrl();
+                if (string.IsNullOrEmpty(url)) return;
+                var meta = await StreamMetadataFetcher.FetchInfoAsync(url);
+                if (_disposed || meta == null) return;
 
-            // 比較: rotationDeg と widthPx/heightPx だけ気にする（向き反映に必要）
-            var prev = _metadata;
-            bool changed = prev == null
-                || prev.rotationDeg != meta.rotationDeg
-                || prev.widthPx != meta.widthPx
-                || prev.heightPx != meta.heightPx
-                || prev.isPortrait != meta.isPortrait;
-            _metadata = meta;
-            if (!changed) return;
+                // 比較: rotationDeg と widthPx/heightPx だけ気にする（向き反映に必要）
+                var prev = _metadata;
+                bool changed = prev == null
+                    || prev.rotationDeg != meta.rotationDeg
+                    || prev.widthPx != meta.widthPx
+                    || prev.heightPx != meta.heightPx
+                    || prev.isPortrait != meta.isPortrait;
+                _metadata = meta;
+                if (!changed) return;
 
-            try { MetadataUpdated?.Invoke(meta); }
-            catch (Exception ex) { Debug.LogWarning($"[CameraStream] MetadataUpdated handler threw: {ex.Message}"); }
+                try { MetadataUpdated?.Invoke(meta); }
+                catch (Exception ex) { Debug.LogWarning($"[CameraStream] MetadataUpdated handler threw: {ex.Message}"); }
+            }
+            finally { _metaInflight = false; }
         }
 
         /// <summary>HudDump 等から呼ばれる任意のリフレッシュ。/health は時間経過で値が変わるので明示更新。</summary>
         public async System.Threading.Tasks.Task RefreshHealthAsync()
         {
-            string url = _source.BuildHealthUrl();
-            if (string.IsNullOrEmpty(url)) return;
-            var h = await StreamMetadataFetcher.FetchHealthAsync(url);
-            if (_disposed || h == null) return;
-            _health = h;
+            if (_healthInflight) return;
+            _healthInflight = true;
+            try
+            {
+                string url = _source.BuildHealthUrl();
+                if (string.IsNullOrEmpty(url)) return;
+                var h = await StreamMetadataFetcher.FetchHealthAsync(url);
+                if (_disposed || h == null) return;
+                _health = h;
+            }
+            finally { _healthInflight = false; }
         }
 
         /// <summary>
@@ -107,11 +128,25 @@ namespace FixedCamVr.Streaming
         public void Tick()
         {
             if (_disposed) return;
-            if (_receiver.TryConsumeFrame(ref _scratch, out int len) && len > 0 && _scratch != null)
+
+            // フレームをドレインして「最新フレームだけ」表示。
+            // 単一 frame/Tick だと FIFO に溜まったバーストで「加速⇄スロー」が起きるため、
+            // 古いフレームは捨てて常に最新で更新する（固定カメラ用途は最新優先）。
+            byte[]? lastBuf = null;
+            int lastLen = 0;
+            int drained = 0;
+            while (_receiver.TryConsumeFrame(ref _scratch, out int len) && len > 0 && _scratch != null)
             {
-                _texture.LoadImage(_scratch, markNonReadable: false);
+                lastBuf = _scratch;
+                lastLen = len;
+                drained++;
+            }
+            if (lastBuf != null && lastLen > 0)
+            {
+                _texture.LoadImage(lastBuf, markNonReadable: false);
                 _recvFramesInWindow++;
             }
+
             // 受信 fps 計測（1 秒ウィンドウ）
             float now = Time.realtimeSinceStartup;
             if (_recvWindowStart == 0f) _recvWindowStart = now;
@@ -120,6 +155,21 @@ namespace FixedCamVr.Streaming
                 _recvFps = _recvFramesInWindow / (now - _recvWindowStart);
                 _recvWindowStart = now;
                 _recvFramesInWindow = 0;
+            }
+
+            // /info / /health を内蔵タイマーで定期 refresh（HUD 不在シーンでも動くように）。
+            float dt = Time.unscaledDeltaTime;
+            _metaRefreshAccum += dt;
+            if (_metaRefreshAccum >= MetadataRefreshInterval)
+            {
+                _metaRefreshAccum = 0f;
+                _ = RefreshMetadataAsync();
+            }
+            _healthRefreshAccum += dt;
+            if (_healthRefreshAccum >= HealthRefreshInterval)
+            {
+                _healthRefreshAccum = 0f;
+                _ = RefreshHealthAsync();
             }
         }
 
