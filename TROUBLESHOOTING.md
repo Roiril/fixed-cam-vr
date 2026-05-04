@@ -84,7 +84,7 @@ fixed-cam-vr で詰まりがちな箇所と対処方法。
    - フレーム内アロケが出ていれば `byte[]` プールの使い回しが効いていない
    - `Texture2D.LoadImage(bytes, markNonReadable: false)` を使い、Texture2D は再生成しない（既存をそのまま渡す）
 4. **OVR Metrics Tool**
-   - 詳細手順は [docs/performance.md](docs/performance.md) 参照
+   - 詳細手順は本ファイル下部「Q. FPS が 60 以下」の計測ツールセクションを参照
 5. **基準値**
    - 90fps / GPU < 11ms / CPU Main < 11ms
    - 超えるなら Phase 3 の Compute Shader / Blit / RendererFeature のいずれかが重い候補
@@ -172,12 +172,37 @@ fixed-cam-vr で詰まりがちな箇所と対処方法。
 
 ### Q. FPS が 60 以下
 
-パフォーマンス問題:
+#### 目標値
+- FPS **90** / GPU < **11.1ms** / CPU Main < **11.1ms** / GC Alloc 0 byte / 90fps を割ると ASW が 45fps + 補完にフォールバック
 
-1. Phase 3 FX を全 OFF にして再測（`docs/onsite-checklist.md` の Phase 別確認順を参照）
-2. RuntimeDebugHud の updateInterval を 0.5 秒以上に
-3. OVR Metrics Tool（adb で Quest にインストール）で GPU/CPU 個別計測
-4. `docs/performance.md` の手順に沿ってボトルネック特定
+#### 切り分け手順
+1. Phase 3 FX を全 OFF にして再測（FX が原因か即判定）
+2. **配信スマホ解像度を `?640x480` に固定**（メインスレッド JPEG decode のコスト削減）
+3. RuntimeDebugHud の updateInterval を 0.5 秒以上に
+4. **Editor Play は実機より遥かに重い**（Quest Link でも 5〜10fps に落ちることがある）→ 性能評価は APK ビルドで
+
+#### 計測ツール
+
+**OVR Metrics Tool**（実機オーバーレイ）:
+```bash
+adb install -r OVRMetricsTool.apk   # Meta 公式から入手
+```
+Quest 内 → ライブラリ → 提供元不明 → **OVR Metrics Tool** → **Persistent Overlay** ON で常時表示。CSV ログ出力可。
+
+**Unity Profiler**（USB / Wi-Fi）:
+- Build Settings で **Development Build** + **Autoconnect Profiler** にチェック
+- Window → Analysis → Profiler、上部ドロップダウンを **AndroidPlayer (Quest 3)** に
+- Wi-Fi 経由なら `adb tcpip 5555` → `adb connect <quest-ip>:5555`
+
+#### よくあるボトルネック
+
+| 場所 | 症状 | 対処 |
+|---|---|---|
+| `Texture2D.LoadImage` | CPU Main で 30〜100ms / frame | 配信解像度下げ・JPEG quality 下げ・将来 NativeArray + 別スレッド decode 検討 |
+| `MjpegStreamReceiver.RunLoop` | 別スレッド受信 → メインに lock 取得待ち | バッファサイズが小さい時に頻発、`acc` 初期サイズ拡大 |
+| GC Spike | Update / 描画パスで new / 文字列結合 | StringBuilder 化・ToString() 回避（HUD は対策済み）|
+| URP Renderer Feature 過剰 | GPU > 11ms | Phase 3 の RendererFeature 数を絞る |
+| Material 複製 | Renderer.material 呼び出しで都度コピー | OnEnable で 1 度だけ取得して保持（Fx は対策済み）|
 
 ### Q. ゾーン切替が暴れる / 反応しない
 

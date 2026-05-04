@@ -3,7 +3,7 @@
 2026-05-04 想定。Quest 3 実機で Phase 0〜3 を通しで動作確認するための現場手順書。
 事前準備から起動後の状態確認、Phase 別動作確認、切り分けフローまでを 1 枚にまとめる。
 
-> 関連: [README.md](../README.md) / [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) / [docs/performance.md](performance.md)
+> 関連: [README.md](../README.md) / [TROUBLESHOOTING.md](../TROUBLESHOOTING.md)
 
 ---
 

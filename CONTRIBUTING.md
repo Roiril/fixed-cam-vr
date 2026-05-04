@@ -107,5 +107,5 @@ refactor：Tracking 名前空間を Streaming から分離
 - [.agent/rules/meta-xr.md](.agent/rules/meta-xr.md) — Meta XR SDK
 - [.agent/rules/streaming.md](.agent/rules/streaming.md) — MJPEG / WebRTC
 - [.agent/rules/mcp-unity.md](.agent/rules/mcp-unity.md) — Unity MCP 経由の編集手順
-- [docs/architecture.md](docs/architecture.md) — モジュール依存関係
-- [docs/performance.md](docs/performance.md) — Quest 3 90Hz 維持の計測手順
+- [README.md](README.md) — モジュール構成・ディレクトリ・実装済みコード
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Quest 3 90Hz 維持の計測手順（OVR Metrics / Profiler）と現場対処
