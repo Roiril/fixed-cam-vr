@@ -18,6 +18,11 @@ namespace FixedCamVr.Streaming
         private StreamMetadata? _metadata;
         private StreamHealth? _health;
 
+        // 受信側 (Unity) の実 fps 計測。1 秒ウィンドウで texture 更新回数を数える。
+        private float _recvWindowStart;
+        private int _recvFramesInWindow;
+        private float _recvFps;
+
         public string DisplayName => _source.DisplayName;
         public Texture2D Texture => _texture;
         public bool IsConnected => _receiver.IsConnected;
@@ -28,6 +33,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>fixed-cam-streamer の /health から取得した最新の統計。未取得なら null。</summary>
         public StreamHealth? Health => _health;
+
+        /// <summary>Unity 受信側の実 fps（直近 1 秒の Texture2D.LoadImage 回数）。</summary>
+        public float ReceivedFps => _recvFps;
 
         /// <summary>Metadata が更新された時に呼ばれる。MjpegScreen 等が orientation を反映するためのフック。</summary>
         public event Action<StreamMetadata>? MetadataUpdated;
@@ -53,17 +61,32 @@ namespace FixedCamVr.Streaming
             if (_disposed) return;
             _receiver.Start();
 
-            // /info を一度だけバックグラウンドで取得。失敗しても配信本体は影響なし（DroidCam 等の互換）。
-            _ = FetchMetadataOnceAsync();
+            // /info を起動直後に 1 回。以降は RefreshMetadataAsync を HUD 等が定期的に呼ぶ
+            // （スマホの向き変更を Unity 側でも追従させるため）。失敗時はフェイルオープン。
+            _ = RefreshMetadataAsync();
         }
 
-        private async System.Threading.Tasks.Task FetchMetadataOnceAsync()
+        /// <summary>
+        /// /info を取得して Metadata を更新。値が変わった時のみ MetadataUpdated を発火し、
+        /// 重複イベント（毎回 Quad 再回転）を避ける。
+        /// </summary>
+        public async System.Threading.Tasks.Task RefreshMetadataAsync()
         {
             string url = _source.BuildInfoUrl();
             if (string.IsNullOrEmpty(url)) return;
             var meta = await StreamMetadataFetcher.FetchInfoAsync(url);
             if (_disposed || meta == null) return;
+
+            // 比較: rotationDeg と widthPx/heightPx だけ気にする（向き反映に必要）
+            var prev = _metadata;
+            bool changed = prev == null
+                || prev.rotationDeg != meta.rotationDeg
+                || prev.widthPx != meta.widthPx
+                || prev.heightPx != meta.heightPx
+                || prev.isPortrait != meta.isPortrait;
             _metadata = meta;
+            if (!changed) return;
+
             try { MetadataUpdated?.Invoke(meta); }
             catch (Exception ex) { Debug.LogWarning($"[CameraStream] MetadataUpdated handler threw: {ex.Message}"); }
         }
@@ -87,6 +110,16 @@ namespace FixedCamVr.Streaming
             if (_receiver.TryConsumeFrame(ref _scratch, out int len) && len > 0 && _scratch != null)
             {
                 _texture.LoadImage(_scratch, markNonReadable: false);
+                _recvFramesInWindow++;
+            }
+            // 受信 fps 計測（1 秒ウィンドウ）
+            float now = Time.realtimeSinceStartup;
+            if (_recvWindowStart == 0f) _recvWindowStart = now;
+            if (now - _recvWindowStart >= 1f)
+            {
+                _recvFps = _recvFramesInWindow / (now - _recvWindowStart);
+                _recvWindowStart = now;
+                _recvFramesInWindow = 0;
             }
         }
 
