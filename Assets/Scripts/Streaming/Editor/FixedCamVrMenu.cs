@@ -73,29 +73,56 @@ namespace FixedCamVr.Streaming.EditorTools
             _pingInFlight = true;
             try
             {
-                using var http = new HttpClient { Timeout = System.TimeSpan.FromSeconds(2) };
+                // タイムアウト 5 秒。DroidCam の起動直後 / ARP 解決初回 / Wi-Fi 不安定時は 2 秒では届かないことがあるため
+                using var http = new HttpClient { Timeout = System.TimeSpan.FromSeconds(5) };
                 foreach (var src in sources)
                 {
                     if (src == null) continue;
                     var url = src.BuildUrl();
-                    try
+                    var (ok, info) = await TryProbe(http, url);
+                    if (!ok)
                     {
-                        // MJPEG エンドポイント (DroidCam / IP Webcam) は HEAD に応えないことが多いので
-                        // GET + ResponseHeadersRead でヘッダだけ取得して即破棄する。
-                        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                        using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
-                        var ct = resp.Content.Headers.ContentType?.MediaType ?? "(no content-type)";
-                        Debug.Log($"[FixedCamVr] OK {src.DisplayName} {url} -> HTTP {(int)resp.StatusCode} ({ct})");
+                        // 1 度目失敗時は 500ms 待って 1 回だけリトライ。1 回目で TCP セッション / ARP がキャッシュされ
+                        // 2 回目で成功するパターン（DroidCam で観測された "1 回目失敗、2 回目成功" 現象）への対処。
+                        await System.Threading.Tasks.Task.Delay(500);
+                        var (ok2, info2) = await TryProbe(http, url);
+                        if (ok2)
+                        {
+                            Debug.Log($"[FixedCamVr] OK (retry) {src.DisplayName} {url} -> {info2}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[FixedCamVr] NG {src.DisplayName} {url} -> 1st: {info} / 2nd: {info2}");
+                        }
                     }
-                    catch (System.Exception ex)
+                    else
                     {
-                        Debug.LogWarning($"[FixedCamVr] NG {src.DisplayName} {url} -> {ex.Message}");
+                        Debug.Log($"[FixedCamVr] OK {src.DisplayName} {url} -> {info}");
                     }
                 }
             }
             finally
             {
                 _pingInFlight = false;
+            }
+        }
+
+        /// <summary>
+        /// 単発プローブ。MJPEG エンドポイント (DroidCam / IP Webcam) は HEAD に応えないことが多いので
+        /// GET + ResponseHeadersRead でヘッダだけ取得して即破棄する。
+        /// </summary>
+        private static async System.Threading.Tasks.Task<(bool ok, string info)> TryProbe(HttpClient http, string url)
+        {
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                var ct = resp.Content.Headers.ContentType?.MediaType ?? "(no content-type)";
+                return (true, $"HTTP {(int)resp.StatusCode} ({ct})");
+            }
+            catch (System.Exception ex)
+            {
+                return (false, ex.Message);
             }
         }
 
