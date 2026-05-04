@@ -63,23 +63,9 @@ namespace FixedCamVr.Diagnostics
             _fpsAccum += Time.unscaledDeltaTime;
             _fpsFrames++;
 
-            // /health と /info を低頻度でリフレッシュ（fire-and-forget）。
-            // /info はスマホの向き変更を Unity 側で追従するため必須（一度きりだとローテに追従しない）。
-            // 失敗は無視（DroidCam 等互換、フェイルオープン）。
-            if (healthRefreshInterval > 0f && registry != null)
-            {
-                _healthAccum += Time.unscaledDeltaTime;
-                if (_healthAccum >= healthRefreshInterval)
-                {
-                    _healthAccum = 0f;
-                    var active = registry.GetActive();
-                    if (active != null)
-                    {
-                        _ = active.RefreshHealthAsync();
-                        _ = active.RefreshMetadataAsync();
-                    }
-                }
-            }
+            // /health と /info の polling は CameraStream 側に内蔵されたため、
+            // ここでは行わない（HUD 不在シーンでも追従させるための責務分離）。
+            _ = healthRefreshInterval; _ = _healthAccum;
 
             _accum += Time.unscaledDeltaTime;
             if (_accum < updateInterval) return;
@@ -149,7 +135,8 @@ namespace FixedCamVr.Diagnostics
             var h = active.Health;
             if (h != null)
             {
-                sb.Append("  📱");
+                // 絵文字 (📱 U+1F4F1) は LiberationSans SDF に無く tofu 化するので ASCII にする。
+                sb.Append("  PHN ");
                 AppendFloat1(sb, h.fps);
                 sb.Append("fps");
                 // Unity 受信側の実 fps（カクつきの切り分け用）。

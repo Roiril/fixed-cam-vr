@@ -100,7 +100,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   registry: {fileID: 0}
   source: {fileID: 0}
-  overrideUrl: 
+  overrideUrl:
+  autoOrient: 1
+  orientTarget: {fileID: 0}
+  manualRotationDegOverride: -1
+  useIsPortraitForRotation: 1
+  landscapeRotationOffsetDeg: 90
+  autoAspectFromIsPortrait: 1
+  fallbackSquareAspect: 0
 --- !u!114 &917727975689658914
 MonoBehaviour:
   m_ObjectHideFlags: 0
