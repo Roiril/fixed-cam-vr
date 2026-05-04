@@ -32,7 +32,7 @@
 | 0 | プロジェクト初期化・Meta XR SDK 導入 | ✅ |
 | 1 | MJPEG 受信ロジック実装（[Assets/Scripts/Streaming/](Assets/Scripts/Streaming/)） | ✅ |
 | 2 | Main シーンに OVRCameraRig + Quad + MjpegScreen を配置し、Quest 3 で映像表示 | ✅ シーン配置完了・実機検証待ち |
-| 2.5 | 複数 DroidCam の切替表示（A/B ボタン or Tab/数字キー）+ 現在ソース TMP ラベル | ✅ シーン配置完了・実機検証待ち |
+| 2.5 | 複数配信ソース（fixed-cam-streamer / DroidCam）の切替表示（A/B ボタン or Tab/数字キー）+ 現在ソース TMP ラベル | ✅ シーン配置完了・実機検証待ち |
 | 2.7 | プレイヤー位置連動カメラ切替（[Assets/Scripts/Tracking/](Assets/Scripts/Tracking/)）+ ZoneSandbox 検証シーン | ✅ プロトタイプ完了・実機検証待ち |
 | 3 | パススルー暗転 + CCTV 風シェーダ + CG 合成手法の比較（[Assets/Scripts/Fx/](Assets/Scripts/Fx/)）| ✅ 4 系統プロトタイプ完了・本実装着手前 |
 | 4 | スクリーン外 3D 演出 / CG 合成 | 未着手 |
@@ -43,7 +43,7 @@
 - **XR**: Meta XR All-in-One SDK `201.0.0` + Oculus XR Plugin `4.5.4`（Standalone での Quest Link Editor Play 用）
 - **ターゲット**: Quest 3（Android / IL2CPP / ARM64）
 - **言語**: C#（`#nullable enable` / `async/await`）+ Shader Graph + Compute Shader
-- **入力**: MJPEG over Wi-Fi（DroidCam / IP Webcam）→ `MjpegStreamReceiver` でデコード
+- **入力**: MJPEG over Wi-Fi（**[fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) 標準**、DroidCam / IP Webcam はフォールバック）→ `MjpegStreamReceiver` でデコード + `/info` で自動回転 / アスペクト補正
 - **HUD**: TextMeshPro World Space Canvas + `RuntimeDebugHud`（Diagnostics）
 
 ## 実装済みコード
@@ -90,7 +90,7 @@
 
 - Unity **2022.3.62f2** LTS + Android Build Support
 - Quest 3（開発者モード有効、USB デバッグ許可）
-- 配信用スマホ（DroidCam または IP Webcam）×N、全デバイスが同一 LAN（5GHz Wi-Fi 推奨）
+- 配信用スマホ（**fixed-cam-streamer** 推奨、DroidCam / IP Webcam も可）×N、全デバイスが同一 LAN（5GHz Wi-Fi 推奨）
 
 ## 初回セットアップ
 
@@ -134,12 +134,29 @@ Phase 2.7 用 `[Zones]`（Center/Right/Left）+ `[Tracker]` + HUD（`DebugHud` C
 
 ## 配信側（スマホ）設定例
 
-| アプリ | URL 例 |
-|---|---|
-| IP Webcam (Android) | `http://<phone-ip>:8080/video` |
-| DroidCam | `http://<phone-ip>:4747/mjpegfeed?640x480` |
+**標準は [fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)**（自作 Android アプリ）。DroidCam / IP Webcam はフォールバック扱い。
 
-`CameraSource` に `host` / `port` / `path` を分割して入力。
+| アプリ | port | videoPath | infoPath | 備考 |
+|---|---|---|---|---|
+| **fixed-cam-streamer** (標準) | 8080 | `/video` | `/info` | レンズ切替・露出ロック・/health・auto-IDLE 対応 |
+| IP Webcam (Android) | 8080 | `/video` | （なし） | infoPath 空にすれば fallback |
+| DroidCam | 4747 | `/mjpegfeed?640x480` | （なし） | infoPath 空にすれば fallback |
+
+`CameraSource` に `host` / `port` / `videoPath` / `infoPath` / `healthPath` を分割入力。`Assets/Settings/Cameras/Phone01.asset` 等で `host` を実機 IP に書き換える運用。
+
+### fixed-cam-streamer のセットアップ概要
+
+詳細は [fixed-cam-streamer README](https://github.com/Roiril/fixed-cam-streamer) 参照。要点：
+
+1. `git clone` → `./gradlew.bat assembleDebug` → APK が `app/build/outputs/apk/debug/app-debug.apk` に出る
+2. `adb install -r <apk>` で各スマホへ。複数台は `adb -s <serial>` で個別指定
+3. 起動 → カメラ + 通知権限を許可 → ステータス上部に `http://<phone-ip>:8080/` が出る
+4. その IP を `Phone01.asset` / `Phone02.asset` の `host` に転記して Unity Play
+
+実機運用のコツ：
+- **設置前にレンズ選択・露出ロック**を済ませる（人が通った時に画が動かない）
+- **15 秒で auto-IDLE** に入る（プレビュー消えて画面減光、配信は継続）。タップで復帰
+- 画面ロックや別アプリへの切替で **配信が止まる可能性**あり（Foreground Service で耐えるが完全ではない）。デモ中はアプリ前面のままにしておく
 
 ## 推奨ワークスペースと作業フロー
 
@@ -175,7 +192,7 @@ Phase 2.7 用 `[Zones]`（Center/Right/Left）+ `[Tracker]` + HUD（`DebugHud` C
 | Main シーン開く | **Ctrl+Shift+M** |
 | Main の統合配置を再生成 | **Tools > FixedCamVr > Setup > Setup Main Demo Scene**（Zones / Tracker / DebugHud を一発配置） |
 | Debug シーン開く（HMD なし検証用） | **Ctrl+Shift+D** |
-| DroidCam が繋がるか即確認 | **Tools > FixedCamVr > Diagnostics > Ping DroidCams** → Console に結果 |
+| 配信スマホが繋がるか即確認 | **Tools > FixedCamVr > Diagnostics > Ping DroidCams** → Console に結果（メニュー名は旧称、fixed-cam-streamer も同じ仕組みで疎通確認される） |
 | Phone01/02 の URL/IP 編集 | Project で `Settings/Cameras/Phone01.asset` → Inspector の **Test Connection** ボタン |
 | EditMode テスト実行 | **Tools > FixedCamVr > Diagnostics > Run All Tests** → Test Runner に結果 |
 | Play 中にカメラ切替（HMD なし） | Hierarchy で `[Streaming]` 選択 → Inspector の **Activate / Prev / Next** ボタン |
@@ -221,7 +238,7 @@ Window → General → Test Runner → EditMode → Run All
 | 1 / 2 | 直接指定 |
 | Space | スクリーンの head-lock 切替（Camera 固定なので見た目は変化しない） |
 
-スマホ側 DroidCam が動いている前提。`Assets/Settings/Cameras/Phone01.asset` の host を実 IP に書き換えてから Play。
+スマホ側で fixed-cam-streamer（または DroidCam）が動いている前提。`Assets/Settings/Cameras/Phone01.asset` の host を実 IP に書き換えてから Play。
 
 ### 3. Main シーン + OVR Headset Emulator（VR 視点シミュ）
 
@@ -237,7 +254,7 @@ Window → General → Test Runner → EditMode → Run All
 Phase 進捗テーブルで「実機検証待ち」になっている項目の確認手順。Quest 3 を被って 1 回通せば全部潰せる。
 
 ### Phase 2（MJPEG 受信 + Quad 描画）
-- [ ] スマホで DroidCam / IP Webcam 起動 → URL を `Assets/Settings/Cameras/Phone01.asset` の `host`/`port` に反映
+- [ ] スマホで fixed-cam-streamer 起動（または DroidCam / IP Webcam）→ URL を `Assets/Settings/Cameras/Phone01.asset` の `host`/`port` に反映
 - [ ] Main シーンで Play → Quad に映像が表示される
 - [ ] Quest 3 にビルド & デプロイ → HMD 内 Quad に映像（暗転していない / 色が落ちていない）
 - [ ] スマホ電源 OFF → 30 秒以内に reconnect ログ → 復旧
@@ -281,7 +298,8 @@ Quest 3 を USB-C 接続。adb 経由のワイヤレスデプロイも可。
 | ファイル | 内容 |
 |---|---|
 | [CONTRIBUTING.md](CONTRIBUTING.md) | コミット規約・ブランチ運用・コードスタイル |
-| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | DroidCam 不通 / HMD 真っ黒 / FPS 低下（OVR Metrics / Profiler 含む）/ 実機検証で得た知見 |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | fixed-cam-streamer / DroidCam 不通 / HMD 真っ黒 / FPS 低下（OVR Metrics / Profiler 含む）/ 実機検証で得た知見 |
+| [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) (別リポジトリ) | 配信側 Android アプリの実装・ビルド手順・運用ノート |
 | [docs/onsite-checklist.md](docs/onsite-checklist.md) | 現場（実機 Quest 3）での 60 秒チェック → Phase 別動作確認 → 切り分けフロー |
 | [.agent/plans/](.agent/plans/) | 直近・次フェーズの実装計画書（完了済みは git log で参照） |
 | [.github/workflows/README.md](.github/workflows/README.md) | GitHub Actions（Unity Test Runner）の設定手順 |
