@@ -43,6 +43,27 @@ MCP for Unity が落ちている時、`.unity` ファイルを直接編集して
 
 **How to apply**: 動的にテクスチャを生成して画面に貼る系は、コンストラクタ直後に `SetPixels(black) + Apply()` で **必ず初期化**する。LoadImage でサイズが変わる用途でも、初回 LoadImage が走るまでの一瞬を埋めるために必要。`MjpegStreamReceiver` のような「接続が遅延する受信器」と組み合わさると顕著に出る。
 
+## UnityMCP `execute_code` は Windows でコード長すぎ NG
+
+`mcp__UnityMCP__execute_code` は内部で Mono を CLI 起動するため、**Windows のコマンドライン長制限 (~8192 chars) に当たる**と「ファイル名または拡張子が長すぎます」で即死。一見短いコード（500 文字程度）でも落ちることがある。
+
+**How to apply**: 1〜2 行の極小スニペットしか通らないと割り切る。複数のコンポーネント状態を確認したい時は、`mcpforunity://scene/gameobject/{id}/components` リソースを `ReadMcpResourceTool` 経由で読む方が確実（serialized field の値が JSON で返る）。runtime のプロパティ（`IsConnected` 等）はリソース経由では取れないため、その用途は **HUD / Diagnostics オーバーレイ系の MonoBehaviour で吐く方針**にする。
+
+## UnityMCP `manage_components set_property` の Object 参照は Component instance ID
+
+`registry: CameraStreamRegistry` のような **Component 参照** フィールドに値をセットする時、`value` には GameObject の instance ID ではなく **Component の instance ID** を渡す必要がある。GameObject ID を渡すと "Failed to convert value for serialized field 'X' to type 'Y'" で失敗する。
+
+**How to apply**:
+1. まず `mcpforunity://scene/gameobject/{go-id}/components` を `ReadMcpResourceTool` で読む
+2. 返却 JSON の中で対象 Component の `instanceID` を取得
+3. その値を `set_property value=<componentInstanceID>` に渡す
+
+## Texture2D.width/height が aspect の真値
+
+MJPEG 経由の映像でアスペクト比を決める時、配信側の `/info` (widthPx/heightPx) より **`Texture2D.width/height`（LoadImage 後の実寸）の方が信頼できる**。`/info` は streamer 側で固定値を返すケースがあるが、JPEG ヘッダ (SOF) は嘘を付けない。
+
+**How to apply**: `MjpegScreen.useTextureAspect = true`（デフォルト）で Texture から aspect を採用。Texture が未デコード（2x2 placeholder）の間だけ /info にフォールバックする。streamer が square (1080×1080) を返す現状でも、将来 19.5:9 を返すようになれば自動追従。詳細は [streaming-offline-test skill](../skills/streaming-offline-test/SKILL.md) 参照。
+
 ## DroidCam の単一クライアント制約
 
 DroidCam は同時に 1 クライアントしか配信を受け付けない。ブラウザで `/video` を見ながら Unity で受信しようとすると "他のクライアントに接続されています" になる。
