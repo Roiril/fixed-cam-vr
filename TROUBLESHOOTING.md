@@ -4,7 +4,7 @@ fixed-cam-vr で詰まりがちな箇所と対処方法。
 
 ---
 
-## Q. DroidCam / IP Webcam が繋がらない
+## Q. fixed-cam-streamer / DroidCam が繋がらない
 
 **症状**: `MjpegScreen` が黒いまま、Console に `WebException` / `connection refused` / `timeout`。
 
@@ -14,19 +14,23 @@ fixed-cam-vr で詰まりがちな箇所と対処方法。
    - PC（Unity）/ Quest 3 / 配信スマホがすべて同じ Wi-Fi（推奨 5GHz）に接続されているか
    - スマホがモバイル回線にフォールバックしていないか
 2. **ポートと URL**
-   - DroidCam: `http://<phone-ip>:4747/mjpegfeed?640x480`
+   - **fixed-cam-streamer (標準)**: `http://<phone-ip>:8080/video` / `http://<phone-ip>:8080/info` / `http://<phone-ip>:8080/health`
+   - DroidCam (フォールバック): `http://<phone-ip>:4747/mjpegfeed?640x480`
    - IP Webcam (Android): `http://<phone-ip>:8080/video`
    - PC ブラウザで上記 URL を直接開いて映像が見えるか確認
 3. **`CameraSource` の設定**
-   - `Assets/Settings/Cameras/Phone01.asset` 等の `host` / `port` / `path` が分割入力されているか
+   - `Assets/Settings/Cameras/Phone01.asset` 等の `host` / `port` / `videoPath` / `infoPath` が分割入力されているか
+   - 既定は fixed-cam-streamer 互換（port=8080, videoPath=/video, infoPath=/info）
    - Inspector の **Test Connection** ボタンで Console に成否が出る
 4. **PC / スマホ側ファイアウォール**
-   - Windows Defender Firewall でポート 4747 / 8080 がブロックされていないか
+   - Windows Defender Firewall でポート 8080 / 4747 がブロックされていないか
    - スマホ側アプリが「ローカルネットワーク」へのアクセスを許可されているか
 5. **一括 ping**
-   - **Tools > FixedCamVr > Diagnostics > Ping DroidCams** を実行 → Console に各 `CameraSource` の到達状況が出る
+   - **Tools > FixedCamVr > Diagnostics > Ping DroidCams** を実行 → Console に各 `CameraSource` の到達状況が出る（命名は旧 DroidCam 時代だが fixed-cam-streamer も同じ仕組みでチェックされる）
 6. **再接続挙動**
    - `MjpegStreamReceiver` は最大 30 秒の exponential backoff で再接続する。スマホ側を起動し直したあと最長 30 秒待つ
+7. **fixed-cam-streamer が背景に落ちている**
+   - Foreground Service が起動していれば落ちないが、初回起動時に通知権限を拒否すると Service が見えづらくなる。アプリを最前面に戻して通知が出ているか確認
 
 ---
 
@@ -158,7 +162,7 @@ fixed-cam-vr で詰まりがちな箇所と対処方法。
 1. PC で `ping <スマホIP>` 通るか
 2. Quest からも繋がるか（PC と Quest が同一 LAN / SSID か）
 3. ルータの 5GHz 帯と 2.4GHz 帯で別 SSID なら統一
-4. スマホの DroidCam / IP Webcam アプリが起動しているか（バックグラウンド落ちしてないか）
+4. スマホの fixed-cam-streamer (or DroidCam / IP Webcam) アプリが起動しているか（fixed-cam-streamer は Foreground Service で落ちにくいが、初回権限拒否時はバックグラウンド落ちあり）
 5. `Assets/Settings/Cameras/Phone01.asset` の host/port が実 IP と一致
 
 ### Q. CONN は `●` だが映像が出ない

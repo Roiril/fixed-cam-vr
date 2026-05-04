@@ -7,7 +7,7 @@ namespace FixedCamVr.Streaming.Tests
 {
     public sealed class CameraSourceTests
     {
-        private static CameraSource MakeSource(string host, int port, string path)
+        private static CameraSource MakeSource(string host, int port, string videoPath)
         {
             var so = ScriptableObject.CreateInstance<CameraSource>();
             // private SerializeField を SerializedObject なしで触るため reflection
@@ -15,8 +15,8 @@ namespace FixedCamVr.Streaming.Tests
                 .SetValue(so, host);
             typeof(CameraSource).GetField("port", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
                 .SetValue(so, port);
-            typeof(CameraSource).GetField("path", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-                .SetValue(so, path);
+            typeof(CameraSource).GetField("videoPath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .SetValue(so, videoPath);
             return so;
         }
 

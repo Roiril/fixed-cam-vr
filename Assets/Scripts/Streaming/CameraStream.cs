@@ -15,11 +15,22 @@ namespace FixedCamVr.Streaming
         private readonly Texture2D _texture;
         private byte[]? _scratch;
         private bool _disposed;
+        private StreamMetadata? _metadata;
+        private StreamHealth? _health;
 
         public string DisplayName => _source.DisplayName;
         public Texture2D Texture => _texture;
         public bool IsConnected => _receiver.IsConnected;
         public string? LastError => _receiver.LastError;
+
+        /// <summary>fixed-cam-streamer の /info から取得したメタ情報。未取得 / 非対応サーバなら null。</summary>
+        public StreamMetadata? Metadata => _metadata;
+
+        /// <summary>fixed-cam-streamer の /health から取得した最新の統計。未取得なら null。</summary>
+        public StreamHealth? Health => _health;
+
+        /// <summary>Metadata が更新された時に呼ばれる。MjpegScreen 等が orientation を反映するためのフック。</summary>
+        public event Action<StreamMetadata>? MetadataUpdated;
 
         public CameraStream(CameraSource source)
         {
@@ -41,6 +52,30 @@ namespace FixedCamVr.Streaming
         {
             if (_disposed) return;
             _receiver.Start();
+
+            // /info を一度だけバックグラウンドで取得。失敗しても配信本体は影響なし（DroidCam 等の互換）。
+            _ = FetchMetadataOnceAsync();
+        }
+
+        private async System.Threading.Tasks.Task FetchMetadataOnceAsync()
+        {
+            string url = _source.BuildInfoUrl();
+            if (string.IsNullOrEmpty(url)) return;
+            var meta = await StreamMetadataFetcher.FetchInfoAsync(url);
+            if (_disposed || meta == null) return;
+            _metadata = meta;
+            try { MetadataUpdated?.Invoke(meta); }
+            catch (Exception ex) { Debug.LogWarning($"[CameraStream] MetadataUpdated handler threw: {ex.Message}"); }
+        }
+
+        /// <summary>HudDump 等から呼ばれる任意のリフレッシュ。/health は時間経過で値が変わるので明示更新。</summary>
+        public async System.Threading.Tasks.Task RefreshHealthAsync()
+        {
+            string url = _source.BuildHealthUrl();
+            if (string.IsNullOrEmpty(url)) return;
+            var h = await StreamMetadataFetcher.FetchHealthAsync(url);
+            if (_disposed || h == null) return;
+            _health = h;
         }
 
         /// <summary>
