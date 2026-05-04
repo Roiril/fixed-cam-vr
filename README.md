@@ -14,6 +14,7 @@
 - [初回セットアップ](#初回セットアップ)
 - [配信側（スマホ）設定例](#配信側スマホ設定例)
 - [推奨ワークスペースと作業フロー](#推奨ワークスペースと作業フロー)
+  - [入力早見表（HMD 装着者向け）](#入力早見表hmd-装着者向け)
 - [HMD なしの検証フロー](#hmd-なしの検証フロー)
 - [実機検証チェックリスト](#実機検証チェックリスト)
 - [ビルド & デプロイ](#ビルド--デプロイ)
@@ -39,10 +40,11 @@
 ## スタック
 
 - **Unity**: 2022.3.62f2 LTS（URP）
-- **XR**: Meta XR All-in-One SDK `201.0.0`（`Packages/manifest.json` 経由で導入済み）
+- **XR**: Meta XR All-in-One SDK `201.0.0` + Oculus XR Plugin `4.5.4`（Standalone での Quest Link Editor Play 用）
 - **ターゲット**: Quest 3（Android / IL2CPP / ARM64）
-- **言語**: C#（`#nullable enable` / `async/await`）+ Shader Graph
+- **言語**: C#（`#nullable enable` / `async/await`）+ Shader Graph + Compute Shader
 - **入力**: MJPEG over Wi-Fi（DroidCam / IP Webcam）→ `MjpegStreamReceiver` でデコード
+- **HUD**: TextMeshPro World Space Canvas + `RuntimeDebugHud`（Diagnostics）
 
 ## 実装済みコード
 
@@ -108,14 +110,27 @@
 
 エディタ右下に表示される **Project Setup Tool** で **Fix All / Apply All** を実行。
 
-### 3. Main シーン配置（Phase 2）
+### 3. Main シーン配置（Phase 2 / 2.5 / 2.7）
 
-1. `Assets/Scenes/Main.unity` を開く（現状は空）
-2. `OVRCameraRig` プレハブを配置
-3. Quad を配置（推奨：head から 2m 前方 / scale 1.6 × 0.9）
-4. Quad に `MjpegScreen` をアタッチ
-5. `Assets/Settings/` 配下に `CameraSource` ScriptableObject を作成（**Create → FixedCamVr → Camera Source**）し、配信スマホの host/port を設定して `MjpegScreen.source` に割り当て
-6. URP の Unlit Material を Quad に設定（HMD 内で映像が暗くならないように）
+`Assets/Scenes/Main.unity` を開いて **Tools > FixedCamVr > Setup > Setup Main Demo Scene** を実行。
+Phase 2.7 用 `[Zones]`（Center/Right/Left）+ `[Tracker]` + HUD（`DebugHud` Canvas + `RuntimeDebugHud` + `HudToggleInput` + `HudLogDumper`）+ OvrControllerBridge.hud 結線を一発で配置する（再実行可能）。
+
+メニューが効かない場合は手動で：OVRCameraRig プレハブ配置 → Quad に MjpegScreen アタッチ → CameraSource SO（**Create > FixedCamVr > Camera Source**）を割当。
+
+### 4. Phase 3（FX）— URP RendererFeature 手動配線
+
+`Assets/Settings/URP-Balanced-Renderer.asset` を Inspector で開き **Add Renderer Feature > Full Screen Pass Renderer Feature** を追加。Pass Material に `Assets/Art/Materials/Fx/FxCrtMaterial.mat`（無ければ **Tools > FixedCamVr > Setup > Create CRT Material**）。Inject Point = `After Rendering Post Processing`。
+
+### 5. Quest Link で Editor Play する場合（反復開発用）
+
+実機ビルドせず PC の Editor から Quest に流す経路。詳細手順は [TROUBLESHOOTING.md「Quest Link で Editor Play 時の制約」](TROUBLESHOOTING.md) 参照。要点：
+
+1. **Build Target は Standalone (Windows) のまま**（Android にスイッチしない）
+2. **Edit > Project Settings > XR Plug-in Management > Windows / Mac / Linux タブ** で **Oculus** にチェック（`com.unity.xr.oculus` 4.5.4 が必須）
+3. PC で Meta Quest Link app 起動 → Quest 側で Quest Link ON
+4. Unity Editor で **Ctrl+Shift+M** で Main を開いて Play
+
+実機性能評価（90Hz 維持）は Quest Link でなく実機 APK ビルドで実施。Quest Link 接続時は **72Hz が上限** + Editor Play の重さで実 FPS が落ちる。
 
 ## 配信側（スマホ）設定例
 
@@ -158,6 +173,7 @@
 | 目的 | 操作 |
 |---|---|
 | Main シーン開く | **Ctrl+Shift+M** |
+| Main の統合配置を再生成 | **Tools > FixedCamVr > Setup > Setup Main Demo Scene**（Zones / Tracker / DebugHud を一発配置） |
 | Debug シーン開く（HMD なし検証用） | **Ctrl+Shift+D** |
 | DroidCam が繋がるか即確認 | **Tools > FixedCamVr > Diagnostics > Ping DroidCams** → Console に結果 |
 | Phone01/02 の URL/IP 編集 | Project で `Settings/Cameras/Phone01.asset` → Inspector の **Test Connection** ボタン |
@@ -166,6 +182,21 @@
 | 受信状態の確認 | Inspector の Runtime State 行（● Connected / ○ Disconnected） |
 
 Hierarchy のグループ見出し `=== XR ===` `=== Stage ===` `=== Logic ===` は色分けバーで強調表示される（[HierarchySeparator.cs](Assets/Scripts/Streaming/Editor/HierarchySeparator.cs)）。
+
+### 入力早見表（HMD 装着者向け）
+
+| 入力 | 機能 | 実装 |
+|---|---|---|
+| 右コントローラ **A** | 次のカメラに切替 | `OvrControllerBridge.nextButton`（`OVRInput.Button.One`）|
+| 右コントローラ **B** | 前のカメラに切替 | `OvrControllerBridge.prevButton`（`OVRInput.Button.Two`）|
+| 左コントローラ **X** | スクリーン head-lock 切替 | `OvrControllerBridge.anchorToggleButton`（`OVRInput.Button.Three`）|
+| 左コントローラ **Y** | HUD 表示トグル | `OvrControllerBridge.hudToggleButton`（`OVRInput.Button.Four`）|
+| キーボード **Tab** / **Shift+Tab** | カメラ切替（Editor / HMD なし検証） | `CameraSwitchInput` |
+| キーボード **1〜9** | カメラ直接指定 | `CameraSwitchInput` |
+| キーボード **Space** | スクリーン head-lock 切替 | `ScreenAnchor.Toggle` |
+| キーボード **H** | HUD 表示トグル | `HudToggleInput.keyboardToggleKey` |
+
+ゾーンに入ると自動でカメラ切替される（`PlayerZoneTracker`、Phase 2.7）。手動切替は自動切替を上書きする。
 
 ## HMD なしの検証フロー
 
