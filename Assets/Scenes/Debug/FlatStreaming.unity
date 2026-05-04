@@ -518,6 +518,7 @@ GameObject:
   - component: {fileID: 2060769075}
   - component: {fileID: 2060769074}
   - component: {fileID: 2060769073}
+  - component: {fileID: 2060769076}
   m_Layer: 0
   m_Name: '[Streaming]'
   m_TagString: Untagged
@@ -570,6 +571,22 @@ Transform:
   m_Children: []
   m_Father: {fileID: 199907309}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2060769076
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2060769072}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9e4cf49de59e6c3469fb116b242320e0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  registry: {fileID: 2060769074}
+  startVisible: 1
+  anchor: {x: 12, y: 12}
+  width: 360
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
