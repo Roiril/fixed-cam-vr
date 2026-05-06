@@ -195,8 +195,13 @@ namespace FixedCamVr.Streaming
 
             using var stream = new NetworkStream(socket, ownsSocket: false);
 
-            // レスポンスヘッダを CRLF CRLF まで読み、Content-Type の boundary を抜く。
-            string contentType = await ReadResponseHeadersAsync(stream, ct);
+            // レスポンスヘッダを CRLF CRLF まで読み、Content-Type の boundary と
+            // Transfer-Encoding を抜く。NanoHTTPD の newChunkedResponse は
+            // Transfer-Encoding: chunked で返してくるため、生 Socket では明示的に
+            // デチャンクが必要（HttpClient なら自動）。デチャンクを忘れると hex の
+            // チャンク長プレフィックスが multipart 中に混入して JPEG を破壊する
+            // → スクリーン映像が R/G/B/黒 にちらつく症状になる。
+            var (contentType, transferEncoding) = await ReadResponseHeadersAsync(stream, ct);
             string boundary = ParseBoundary(contentType);
             if (string.IsNullOrEmpty(boundary))
             {
@@ -204,19 +209,21 @@ namespace FixedCamVr.Streaming
             }
 
             _isConnected = true;
-            await ParseMultipartAsync(stream, boundary, ct);
+            Stream readStream = stream;
+            if (string.Equals(transferEncoding.Trim(), "chunked", StringComparison.OrdinalIgnoreCase))
+            {
+                readStream = new ChunkedReadStream(stream);
+            }
+            await ParseMultipartAsync(readStream, boundary, ct);
         }
 
-        // ステータス行 + ヘッダを CRLFCRLF まで読み、Content-Type を返す。
-        // 余分に読んだ最初のフレーム断片はパーサに渡す必要があるが、boundary パース直後は
-        // 通常 1〜2KB 程度しか先読みされないため、シンプルに「ヘッダ末尾までで stream を返す」設計。
-        // → 実装簡素化のため、CRLFCRLF が見つかるまで 1 バイトずつ読む（<1KB なので問題なし）。
-        private static async Task<string> ReadResponseHeadersAsync(NetworkStream stream, CancellationToken ct)
+        // ステータス行 + ヘッダを CRLFCRLF まで読み、Content-Type と Transfer-Encoding を返す。
+        // CRLFCRLF が見つかるまで 1 バイトずつ読む（ヘッダ全体は通常 <1KB なので問題なし）。
+        private static async Task<(string contentType, string transferEncoding)> ReadResponseHeadersAsync(NetworkStream stream, CancellationToken ct)
         {
             var sb = new StringBuilder(512);
             byte[] one = new byte[1];
             int matched = 0;
-            // CRLFCRLF パターン
             byte[] pat = { 0x0D, 0x0A, 0x0D, 0x0A };
             while (matched < pat.Length)
             {
@@ -231,18 +238,17 @@ namespace FixedCamVr.Streaming
             }
 
             string raw = sb.ToString();
-            // 1 行目のステータス行
             int firstLineEnd = raw.IndexOf("\r\n", StringComparison.Ordinal);
             if (firstLineEnd < 0) throw new InvalidOperationException("malformed response");
             string statusLine = raw.Substring(0, firstLineEnd);
-            // "HTTP/1.1 200 OK"
             string[] parts = statusLine.Split(' ');
             if (parts.Length < 2 || !int.TryParse(parts[1], out int statusCode) || statusCode < 200 || statusCode >= 300)
             {
                 throw new InvalidOperationException($"http error: {statusLine}");
             }
-            // Content-Type を探す
-            string ct1 = "";
+
+            string contentType = "";
+            string transferEncoding = "";
             int p = firstLineEnd + 2;
             while (p < raw.Length)
             {
@@ -255,14 +261,102 @@ namespace FixedCamVr.Streaming
                     string key = line.Substring(0, colon).Trim();
                     string val = line.Substring(colon + 1).Trim();
                     if (string.Equals(key, "Content-Type", StringComparison.OrdinalIgnoreCase))
-                    {
-                        ct1 = val;
-                        break;
-                    }
+                        contentType = val;
+                    else if (string.Equals(key, "Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
+                        transferEncoding = val;
                 }
                 p = e + 2;
             }
-            return ct1;
+            return (contentType, transferEncoding);
+        }
+
+        /// <summary>
+        /// HTTP/1.1 chunked transfer encoding を透過的にデコードする読み取り Stream。
+        /// 形式: <c>[hex size]\r\n[size bytes of data]\r\n... 0\r\n\r\n</c>。
+        /// HttpClient を捨てて生 Socket にした際、これを忘れると hex prefix が
+        /// 配信ペイロードに混入して JPEG が破損する（色のチカチカ症状）。
+        /// </summary>
+        private sealed class ChunkedReadStream : Stream
+        {
+            private readonly Stream _inner;
+            private int _bytesLeftInChunk;
+            private bool _eof;
+
+            public ChunkedReadStream(Stream inner) { _inner = inner; }
+
+            public override bool CanRead => true;
+            public override bool CanWrite => false;
+            public override bool CanSeek => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+            public override void Flush() { }
+            public override int Read(byte[] buffer, int offset, int count)
+                => ReadAsync(buffer, offset, count, CancellationToken.None).GetAwaiter().GetResult();
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+            public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+            {
+                if (_eof || count <= 0) return 0;
+                if (_bytesLeftInChunk == 0)
+                {
+                    int size = await ReadChunkSizeAsync(ct);
+                    if (size == 0)
+                    {
+                        // 0\r\n の後の最終 CRLF（trailers 無しの簡易対応）
+                        await ReadCrlfAsync(ct);
+                        _eof = true;
+                        return 0;
+                    }
+                    _bytesLeftInChunk = size;
+                }
+                int toRead = Math.Min(count, _bytesLeftInChunk);
+                int n = await _inner.ReadAsync(buffer, offset, toRead, ct);
+                if (n <= 0) { _eof = true; return 0; }
+                _bytesLeftInChunk -= n;
+                if (_bytesLeftInChunk == 0)
+                {
+                    // chunk data 直後の CRLF
+                    await ReadCrlfAsync(ct);
+                }
+                return n;
+            }
+
+            private async Task<int> ReadChunkSizeAsync(CancellationToken ct)
+            {
+                var sb = new StringBuilder(8);
+                byte[] one = new byte[1];
+                bool sawCR = false;
+                while (true)
+                {
+                    int n = await _inner.ReadAsync(one, 0, 1, ct);
+                    if (n <= 0) throw new IOException("EOF in chunk size");
+                    byte b = one[0];
+                    if (sawCR && b == 0x0A) break;
+                    sawCR = false;
+                    if (b == 0x0D) { sawCR = true; continue; }
+                    sb.Append((char)b);
+                    if (sb.Length > 32) throw new InvalidOperationException("chunk size too long");
+                }
+                string s = sb.ToString();
+                int semi = s.IndexOf(';');
+                if (semi >= 0) s = s.Substring(0, semi);
+                return int.Parse(s.Trim(), System.Globalization.NumberStyles.HexNumber);
+            }
+
+            private async Task ReadCrlfAsync(CancellationToken ct)
+            {
+                byte[] buf = new byte[2];
+                int got = 0;
+                while (got < 2)
+                {
+                    int n = await _inner.ReadAsync(buf, got, 2 - got, ct);
+                    if (n <= 0) throw new IOException("EOF on chunk CRLF");
+                    got += n;
+                }
+                if (buf[0] != 0x0D || buf[1] != 0x0A) throw new IOException("expected CRLF after chunk");
+            }
         }
 
         private static string ParseBoundary(string contentType)
