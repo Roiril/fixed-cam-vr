@@ -3,8 +3,8 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Net.Http;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -17,10 +17,10 @@ namespace FixedCamVr.Streaming
     /// メインスレッドの Update() から TryConsumeFrame でテクスチャ更新する想定。
     ///
     /// 低遅延設計:
+    /// - 生 Socket で HTTP GET を直接送り、NoDelay / SO_RCVBUF を完全制御（Unity Mono BCL に
+    ///   SocketsHttpHandler が無いため HttpClient ベースは使わない）
     /// - キュー深度 = 1（最新のみ）。受信側でも古フレームは即破棄して滞留させない
-    /// - SocketsHttpHandler.ConnectCallback で TCP_NODELAY を立て Nagle 抑止
-    /// - SO_RCVBUF を 64KB に縮小し kernel バッファ滞留を抑制
-    /// - パート毎に X-Capture-Ns / X-Frame-Seq を抜き出して、消費側で「now-capture > 100ms なら捨てる」判定可能
+    /// - パート毎に X-Capture-Ns / X-Frame-Seq を抜き出して、消費側で歯抜け / 古フレ判定可能
     /// - フレームバッファはダブルバッファリング（受信側 / 消費側で所有権 swap、コピー無し）
     /// </summary>
     public sealed class MjpegStreamReceiver : IDisposable
@@ -42,8 +42,8 @@ namespace FixedCamVr.Streaming
         private readonly string _url;
         private readonly TimeSpan _connectTimeout;
         private readonly CancellationTokenSource _cts = new();
-        private HttpClient? _http;
         private Task? _loop;
+        private readonly Uri _uri;
 
         private CancellationTokenSource? _connectionCts;
         private readonly object _connectionCtsLock = new();
@@ -79,41 +79,13 @@ namespace FixedCamVr.Streaming
         public MjpegStreamReceiver(string url, TimeSpan? connectTimeout = null)
         {
             _url = url;
+            _uri = new Uri(url);
             _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(3);
         }
 
         public void Start()
         {
             if (_loop != null) return;
-
-            // SocketsHttpHandler.ConnectCallback で生 Socket に低遅延オプションを立てる。
-            // - NoDelay: Nagle 無効化（送信側 ACK 待ちを排除）
-            // - ReceiveBufferSize=64KB: kernel 受信バッファを抑え、滞留フレームを溜め込まない
-            //   （既定 256KB-1MB 前後だと数フレーム蓄積される）
-            var handler = new SocketsHttpHandler
-            {
-                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                ConnectCallback = async (ctx, ct) =>
-                {
-                    var s = new Socket(SocketType.Stream, ProtocolType.Tcp)
-                    {
-                        NoDelay = true,
-                        ReceiveBufferSize = 64 * 1024,
-                        SendBufferSize = 16 * 1024,
-                    };
-                    try
-                    {
-                        await s.ConnectAsync(ctx.DnsEndPoint, ct);
-                        return new NetworkStream(s, ownsSocket: true);
-                    }
-                    catch
-                    {
-                        s.Dispose();
-                        throw;
-                    }
-                },
-            };
-            _http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
             _loop = Task.Run(() => RunLoopAsync(_cts.Token));
         }
 
@@ -188,14 +160,43 @@ namespace FixedCamVr.Streaming
 
         private async Task ReceiveOnceAsync(CancellationToken ct)
         {
+            // 生 Socket で接続して NoDelay / SO_RCVBUF を立てる。
+            // Unity Mono BCL は SocketsHttpHandler を持たないため HttpClient 経由は不可。
+            using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp)
+            {
+                NoDelay = true,                  // Nagle 抑止
+                ReceiveBufferSize = 64 * 1024,   // kernel 受信バッファ縮小（滞留フレーム抑制）
+                SendBufferSize = 16 * 1024,
+            };
+
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             connectCts.CancelAfter(_connectTimeout);
 
-            using var req = new HttpRequestMessage(HttpMethod.Get, _url);
-            using var resp = await _http!.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, connectCts.Token);
-            resp.EnsureSuccessStatusCode();
+            // ホスト名解決 + 接続。OperationCanceledException はそのまま伝播させる。
+            string host = _uri.Host;
+            int port = _uri.Port > 0 ? _uri.Port : 80;
+            using (connectCts.Token.Register(() => { try { socket.Close(); } catch { } }))
+            {
+                await socket.ConnectAsync(host, port);
+            }
+            connectCts.Token.ThrowIfCancellationRequested();
 
-            var contentType = resp.Content.Headers.ContentType?.ToString() ?? "";
+            // HTTP/1.1 GET を手書きで送る（最小ヘッダ）
+            string path = string.IsNullOrEmpty(_uri.PathAndQuery) ? "/" : _uri.PathAndQuery;
+            string reqLine =
+                $"GET {path} HTTP/1.1\r\n" +
+                $"Host: {host}:{port}\r\n" +
+                "User-Agent: fixed-cam-vr/1.0\r\n" +
+                "Accept: multipart/x-mixed-replace, image/jpeg, */*\r\n" +
+                "Connection: close\r\n" +
+                "\r\n";
+            byte[] reqBytes = Encoding.ASCII.GetBytes(reqLine);
+            await socket.SendAsync(new ArraySegment<byte>(reqBytes), SocketFlags.None);
+
+            using var stream = new NetworkStream(socket, ownsSocket: false);
+
+            // レスポンスヘッダを CRLF CRLF まで読み、Content-Type の boundary を抜く。
+            string contentType = await ReadResponseHeadersAsync(stream, ct);
             string boundary = ParseBoundary(contentType);
             if (string.IsNullOrEmpty(boundary))
             {
@@ -203,8 +204,65 @@ namespace FixedCamVr.Streaming
             }
 
             _isConnected = true;
-            using var stream = await resp.Content.ReadAsStreamAsync();
             await ParseMultipartAsync(stream, boundary, ct);
+        }
+
+        // ステータス行 + ヘッダを CRLFCRLF まで読み、Content-Type を返す。
+        // 余分に読んだ最初のフレーム断片はパーサに渡す必要があるが、boundary パース直後は
+        // 通常 1〜2KB 程度しか先読みされないため、シンプルに「ヘッダ末尾までで stream を返す」設計。
+        // → 実装簡素化のため、CRLFCRLF が見つかるまで 1 バイトずつ読む（<1KB なので問題なし）。
+        private static async Task<string> ReadResponseHeadersAsync(NetworkStream stream, CancellationToken ct)
+        {
+            var sb = new StringBuilder(512);
+            byte[] one = new byte[1];
+            int matched = 0;
+            // CRLFCRLF パターン
+            byte[] pat = { 0x0D, 0x0A, 0x0D, 0x0A };
+            while (matched < pat.Length)
+            {
+                int n = await stream.ReadAsync(one, 0, 1, ct);
+                if (n <= 0) throw new IOException("unexpected EOF in response headers");
+                byte b = one[0];
+                sb.Append((char)b);
+                if (b == pat[matched]) matched++;
+                else if (b == pat[0]) matched = 1;
+                else matched = 0;
+                if (sb.Length > 16 * 1024) throw new InvalidOperationException("response headers too large");
+            }
+
+            string raw = sb.ToString();
+            // 1 行目のステータス行
+            int firstLineEnd = raw.IndexOf("\r\n", StringComparison.Ordinal);
+            if (firstLineEnd < 0) throw new InvalidOperationException("malformed response");
+            string statusLine = raw.Substring(0, firstLineEnd);
+            // "HTTP/1.1 200 OK"
+            string[] parts = statusLine.Split(' ');
+            if (parts.Length < 2 || !int.TryParse(parts[1], out int statusCode) || statusCode < 200 || statusCode >= 300)
+            {
+                throw new InvalidOperationException($"http error: {statusLine}");
+            }
+            // Content-Type を探す
+            string ct1 = "";
+            int p = firstLineEnd + 2;
+            while (p < raw.Length)
+            {
+                int e = raw.IndexOf("\r\n", p, StringComparison.Ordinal);
+                if (e < 0 || e == p) break;
+                string line = raw.Substring(p, e - p);
+                int colon = line.IndexOf(':');
+                if (colon > 0)
+                {
+                    string key = line.Substring(0, colon).Trim();
+                    string val = line.Substring(colon + 1).Trim();
+                    if (string.Equals(key, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ct1 = val;
+                        break;
+                    }
+                }
+                p = e + 2;
+            }
+            return ct1;
         }
 
         private static string ParseBoundary(string contentType)
@@ -384,10 +442,6 @@ namespace FixedCamVr.Streaming
                 catch (AggregateException) { }
                 catch (Exception ex) { Debug.LogWarning($"[MJPEG] loop join failed: {ex.Message}"); }
             }
-
-            try { _http?.Dispose(); }
-            catch (Exception ex) { Debug.LogWarning($"[MJPEG] http dispose failed: {ex.Message}"); }
-            _http = null;
 
             try { _cts.Dispose(); }
             catch (Exception ex) { Debug.LogWarning($"[MJPEG] cts dispose failed: {ex.Message}"); }
