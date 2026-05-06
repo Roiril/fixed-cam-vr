@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -7,6 +8,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace FixedCamVr.Streaming
 {
@@ -298,7 +300,11 @@ namespace FixedCamVr.Streaming
             return b2;
         }
 
-        private static long NowMs() => (long)(Time.realtimeSinceStartupAsDouble * 1000.0);
+        // 受信スレッドから呼ばれるため Unity API を避け、プロセス起動からの monotonic ms を使う。
+        // （Time.realtimeSinceStartup* は main thread 前提でバージョンによっては警告が出る）
+        // 同じ時間基準を CameraStream も利用するため public 公開。
+        private static readonly Stopwatch _sw = Stopwatch.StartNew();
+        public static long NowMs() => _sw.ElapsedMilliseconds;
 
         // ヘッダ領域 (headerStart..headerEnd) から X-Capture-Ns / X-Frame-Seq を読む。
         // 単純な ASCII スキャン（依存ゼロ・GC 圧無し）。見つからなければ 0。

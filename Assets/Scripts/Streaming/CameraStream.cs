@@ -172,8 +172,7 @@ namespace FixedCamVr.Streaming
                 // E2E 遅延推定: /health の clockSkew 補正は無いので、ここでは「Unity 受信からテクスチャ反映」までを表示
                 if (meta.captureNs != 0)
                 {
-                    long nowMs = (long)(Time.realtimeSinceStartupAsDouble * 1000.0);
-                    EstimatedLatencyMs = nowMs - meta.receivedTickMs;
+                    EstimatedLatencyMs = MjpegStreamReceiver.NowMs() - meta.receivedTickMs;
                 }
             }
 
