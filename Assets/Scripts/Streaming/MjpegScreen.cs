@@ -261,17 +261,12 @@ namespace FixedCamVr.Streaming
             }
 
             if (_receiver == null || _tex == null) return;
-            // while-drain: バーストで溜まったフレームは捨てて最新のみ表示（加速⇄スロー対策）。
-            byte[]? lastBuf = null;
-            int lastLen = 0;
-            while (_receiver.TryConsumeFrame(ref _scratch, out int len) && len > 0 && _scratch != null)
+            // 単一スロット最新フレームを直接消費（受信側で既に「最新のみ」保持される設計）。
+            if (_receiver.TryConsumeFrame(ref _scratch, out int len, out _) && len > 0 && _scratch != null)
             {
-                lastBuf = _scratch;
-                lastLen = len;
-            }
-            if (lastBuf != null && lastLen > 0)
-            {
-                _tex.LoadImage(lastBuf, markNonReadable: false);
+                // markNonReadable=false 維持: 連続 LoadImage で texture を再上書きするため、
+                // CPU 側 readable を残しておく必要がある。
+                _tex.LoadImage(_scratch, markNonReadable: false);
             }
         }
     }
