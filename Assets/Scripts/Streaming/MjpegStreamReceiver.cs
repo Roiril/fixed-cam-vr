@@ -210,10 +210,10 @@ namespace FixedCamVr.Streaming
 
             _isConnected = true;
             Stream readStream = stream;
-            if (string.Equals(transferEncoding.Trim(), "chunked", StringComparison.OrdinalIgnoreCase))
-            {
-                readStream = new ChunkedReadStream(stream);
-            }
+            bool useChunked = string.Equals(transferEncoding.Trim(), "chunked", StringComparison.OrdinalIgnoreCase);
+            if (useChunked) readStream = new ChunkedReadStream(stream);
+            // 接続毎に 1 行だけ。診断用: chunked / boundary が想定通りか目視確認するため。
+            Debug.Log($"[MJPEG] connected to {_url} ContentType=\"{contentType}\" TransferEncoding=\"{transferEncoding}\" useChunked={useChunked}");
             await ParseMultipartAsync(readStream, boundary, ct);
         }
 
