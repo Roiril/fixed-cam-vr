@@ -58,6 +58,17 @@ namespace FixedCamVr.Streaming
         private int _lastTexW;
         private int _lastTexH;
 
+        // MjpegScreen が「この localRotation であってほしい」と最後に決めた値。
+        // ScreenAnchor 等が world rotation を上書きする際、これを掛け合わせて補正を保つ。
+        private Quaternion _desiredLocalRotation = Quaternion.identity;
+
+        /// <summary>
+        /// 配信メタに基づいて MjpegScreen が orientTarget に適用したい localRotation。
+        /// ScreenAnchor (head-lock) のような外部回転源が、本補正を保ったまま world 回転を
+        /// 上書きする時に <c>head.rotation * DesiredLocalRotation</c> として使う。
+        /// </summary>
+        public Quaternion DesiredLocalRotation => _desiredLocalRotation;
+
         private bool UseRegistry => registry != null;
 
         private void Awake()
@@ -73,6 +84,7 @@ namespace FixedCamVr.Streaming
             var t = orientTarget != null ? orientTarget : transform;
             _baseLocalRotation = t.localRotation;
             _baseLocalScale = t.localScale;
+            _desiredLocalRotation = _baseLocalRotation;
         }
 
         private void OnEnable()
@@ -188,7 +200,8 @@ namespace FixedCamVr.Streaming
                     rot += landscapeRotationOffsetDeg;
                 }
             }
-            t.localRotation = _baseLocalRotation * Quaternion.Euler(0f, 0f, -rot);
+            _desiredLocalRotation = _baseLocalRotation * Quaternion.Euler(0f, 0f, -rot);
+            t.localRotation = _desiredLocalRotation;
 
             // 2) アスペクトの決定 (= テクスチャ自体の見た目の W/H 比、回転前)。
             //    最優先: Texture2D の実寸（streamer 側 /info が square 固定でも、JPEG 寸法が
