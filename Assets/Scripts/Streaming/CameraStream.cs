@@ -36,11 +36,21 @@ namespace FixedCamVr.Streaming
         // PHONE_FPS に対して RECV_FPS が一定割合を下回る状態が連続したとき、
         // TCP 輻輳ウィンドウや kernel バッファ滞留が原因と推定して接続を張り直す。
         // Wi-Fi の断続的なパケロスで TCP cwnd が縮みっぱなしになるケースで効果が大きい。
-        private const float LagDetectWindowSec = 3.0f;     // 評価ウィンドウ
-        private const float LagThresholdRatio  = 0.6f;     // RECV / PHONE 比率がこれ未満なら lag
-        private const float LagReconnectCooldownSec = 8.0f;// 連続再接続のクールダウン
+        // 低遅延優先のため反応速度を上げる: 窓 1.5s / 閾値 0.7 / cooldown 5s。
+        private const float LagDetectWindowSec = 1.5f;
+        private const float LagThresholdRatio  = 0.7f;
+        private const float LagReconnectCooldownSec = 5.0f;
         private float _lagWindowAccum;
         private float _lastReconnectTime;
+
+        // /health の latestFrameAgeMs と receivedTickMs から推定する E2E 遅延（ms）。
+        // 「frame が capture されてから Unity がテクスチャに上げるまで」の参考値。
+        public float EstimatedLatencyMs { get; private set; }
+
+        // 直近フレームの seq。歯抜け検出用。
+        private long _lastSeq;
+        public long LastFrameSeq => _lastSeq;
+        public long DroppedFrames { get; private set; }
 
         public string DisplayName => _source.DisplayName;
         public Texture2D Texture => _texture;
@@ -147,22 +157,23 @@ namespace FixedCamVr.Streaming
         {
             if (_disposed) return;
 
-            // フレームをドレインして「最新フレームだけ」表示。
-            // 単一 frame/Tick だと FIFO に溜まったバーストで「加速⇄スロー」が起きるため、
-            // 古いフレームは捨てて常に最新で更新する（固定カメラ用途は最新優先）。
-            byte[]? lastBuf = null;
-            int lastLen = 0;
-            int drained = 0;
-            while (_receiver.TryConsumeFrame(ref _scratch, out int len) && len > 0 && _scratch != null)
+            // 単一スロット最新フレームを取り出す（既に MjpegStreamReceiver 側で「最新だけ」保持）。
+            // バッファは swap で受け渡され、毎フレーム new は発生しない。
+            if (_receiver.TryConsumeFrame(ref _scratch, out int len, out var meta) && len > 0 && _scratch != null)
             {
-                lastBuf = _scratch;
-                lastLen = len;
-                drained++;
-            }
-            if (lastBuf != null && lastLen > 0)
-            {
-                _texture.LoadImage(lastBuf, markNonReadable: false);
+                // markNonReadable=false: 連続 LoadImage 上書きで texture 再利用するため CPU 側を残す
+                _texture.LoadImage(_scratch, markNonReadable: false);
                 _recvFramesInWindow++;
+
+                if (_lastSeq != 0 && meta.seq > _lastSeq + 1)
+                    DroppedFrames += (meta.seq - _lastSeq - 1);
+                _lastSeq = meta.seq;
+
+                // E2E 遅延推定: /health の clockSkew 補正は無いので、ここでは「Unity 受信からテクスチャ反映」までを表示
+                if (meta.captureNs != 0)
+                {
+                    EstimatedLatencyMs = MjpegStreamReceiver.NowMs() - meta.receivedTickMs;
+                }
             }
 
             // 受信 fps 計測（1 秒ウィンドウ）

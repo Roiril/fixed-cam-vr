@@ -1,50 +1,73 @@
 #nullable enable
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// multipart/x-mixed-replace MJPEG ストリームを受信し、最新フレームを byte[] で保持する。
+    /// multipart/x-mixed-replace MJPEG ストリームを受信し、最新フレームを 1 スロットで保持する。
     /// メインスレッドの Update() から TryConsumeFrame でテクスチャ更新する想定。
+    ///
+    /// 低遅延設計:
+    /// - キュー深度 = 1（最新のみ）。受信側でも古フレームは即破棄して滞留させない
+    /// - SocketsHttpHandler.ConnectCallback で TCP_NODELAY を立て Nagle 抑止
+    /// - SO_RCVBUF を 64KB に縮小し kernel バッファ滞留を抑制
+    /// - パート毎に X-Capture-Ns / X-Frame-Seq を抜き出して、消費側で「now-capture > 100ms なら捨てる」判定可能
+    /// - フレームバッファはダブルバッファリング（受信側 / 消費側で所有権 swap、コピー無し）
     /// </summary>
     public sealed class MjpegStreamReceiver : IDisposable
     {
+        public readonly struct FrameMeta
+        {
+            public readonly long captureNs;   // streamer 側 monotonic ns
+            public readonly long seq;          // 連番
+            public readonly long receivedTickMs; // 受信側 wall-clock ms（古フレ判定用）
+
+            public FrameMeta(long captureNs, long seq, long receivedTickMs)
+            {
+                this.captureNs = captureNs;
+                this.seq = seq;
+                this.receivedTickMs = receivedTickMs;
+            }
+        }
+
         private readonly string _url;
         private readonly TimeSpan _connectTimeout;
         private readonly CancellationTokenSource _cts = new();
         private HttpClient? _http;
         private Task? _loop;
 
-        // 現在の HTTP 接続を中断するための内側 CTS。RequestReconnect で発火。
-        // 外側 _cts は dispose 用、内側 _connectionCts は接続毎に張り替え。
         private CancellationTokenSource? _connectionCts;
         private readonly object _connectionCtsLock = new();
 
-        // フレームキュー（最大 3 スロット）。Wi-Fi のバースト到着で単一スロットだと
-        // フレームが上書きで失われる問題（実測 RECV_FPS=22 vs PHONE_FPS=30）への対処。
-        // 満杯時は最古を捨てて最新を保持（low-latency 優先）。+100ms 程度のレイテンシと引き換えに
-        // 取りこぼしを大幅に削減。
-        private const int QueueCapacity = 3;
-        private readonly Queue<(byte[] data, int length)> _pendingQueue = new(QueueCapacity);
-        private readonly object _lock = new();
+        // 単一スロット最新フレーム。受信スレッドが新フレを書き、Tick が読む。
+        // 所有権 swap: TryConsumeFrame は _latestBuf を取り出し、引数で受け取った
+        // バッファを「次の受信で使う空きバッファ」として返却する → 受信側はそれを再利用し
+        // 一切 new せずに済む。
+        private byte[]? _latestBuf;
+        private int _latestLen;
+        private FrameMeta _latestMeta;
+        private bool _hasLatest;
 
-        // ワーカスレッド書き込み / メインスレッド読み出しのため volatile / lock で同期する。
+        // 受信側で再利用する空きバッファ（消費側から返却されたもの）
+        private byte[]? _spareBuf;
+
+        private readonly object _slotLock = new();
+
         private volatile bool _isConnected;
         private volatile string? _lastError;
 
         public bool IsConnected => _isConnected;
         public string? LastError => _lastError;
 
-        /// <summary>
-        /// 現在の接続を破棄して再接続させる。Wi-Fi 輻輳 / TCP バッファ滞留で
-        /// 受信が遅延しているときの強制リセット用。
-        /// </summary>
         public void RequestReconnect()
         {
             CancellationTokenSource? toCancel;
@@ -62,30 +85,63 @@ namespace FixedCamVr.Streaming
         public void Start()
         {
             if (_loop != null) return;
-            _http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+
+            // SocketsHttpHandler.ConnectCallback で生 Socket に低遅延オプションを立てる。
+            // - NoDelay: Nagle 無効化（送信側 ACK 待ちを排除）
+            // - ReceiveBufferSize=64KB: kernel 受信バッファを抑え、滞留フレームを溜め込まない
+            //   （既定 256KB-1MB 前後だと数フレーム蓄積される）
+            var handler = new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+                ConnectCallback = async (ctx, ct) =>
+                {
+                    var s = new Socket(SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true,
+                        ReceiveBufferSize = 64 * 1024,
+                        SendBufferSize = 16 * 1024,
+                    };
+                    try
+                    {
+                        await s.ConnectAsync(ctx.DnsEndPoint, ct);
+                        return new NetworkStream(s, ownsSocket: true);
+                    }
+                    catch
+                    {
+                        s.Dispose();
+                        throw;
+                    }
+                },
+            };
+            _http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
             _loop = Task.Run(() => RunLoopAsync(_cts.Token));
         }
 
         /// <summary>
-        /// 最新フレームの JPEG バイト列を取り出す（呼び出し側が消費）。
-        /// 戻り値は false なら新フレーム無し。bufferOut に書き出された有効長は lengthOut。
+        /// 最新フレームを受け取る。consumer は再利用可能な空きバッファを recycleBuf として渡し、
+        /// 戻り値で渡された frameBuf を使い終わったら次回呼び出し時に渡し直す（再利用）。
+        /// 新フレーム無しなら false。
         /// </summary>
-        public bool TryConsumeFrame(ref byte[]? bufferOut, out int lengthOut)
+        public bool TryConsumeFrame(ref byte[]? frameBuf, out int length, out FrameMeta meta)
         {
-            lock (_lock)
+            lock (_slotLock)
             {
-                if (_pendingQueue.Count == 0)
+                if (!_hasLatest || _latestBuf == null)
                 {
-                    lengthOut = 0;
+                    length = 0;
+                    meta = default;
                     return false;
                 }
-                var (data, len) = _pendingQueue.Dequeue();
-                if (bufferOut == null || bufferOut.Length < len)
-                {
-                    bufferOut = new byte[Mathf.NextPowerOfTwo(len)];
-                }
-                Buffer.BlockCopy(data, 0, bufferOut, 0, len);
-                lengthOut = len;
+                // swap: 呼び出し側から渡された buf を spare として保持し、最新フレーム buf を渡す
+                var prev = frameBuf;
+                frameBuf = _latestBuf;
+                length = _latestLen;
+                meta = _latestMeta;
+
+                // spare に置く（受信側が次フレームでそのまま使える）
+                _spareBuf = prev;
+                _latestBuf = null;
+                _hasLatest = false;
                 return true;
             }
         }
@@ -95,8 +151,6 @@ namespace FixedCamVr.Streaming
             int backoffSec = 1;
             while (!ct.IsCancellationRequested)
             {
-                // 接続毎に独立の CTS を張る。RequestReconnect はこの内側 CTS を Cancel して
-                // 外側ループは生き残ったまま再接続する。
                 using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 lock (_connectionCtsLock) { _connectionCts = connectionCts; }
                 bool wasReconnectRequest = false;
@@ -108,7 +162,6 @@ namespace FixedCamVr.Streaming
                 catch (OperationCanceledException)
                 {
                     if (ct.IsCancellationRequested) return;
-                    // 外側 ct は生きている → RequestReconnect による中断
                     wasReconnectRequest = true;
                     _isConnected = false;
                     backoffSec = 1;
@@ -128,7 +181,6 @@ namespace FixedCamVr.Streaming
                 }
                 if (wasReconnectRequest)
                 {
-                    // 即時に張り直し（バックオフ無し）
                     Debug.Log("[MJPEG] reconnect requested, reopening connection");
                 }
             }
@@ -205,34 +257,109 @@ namespace FixedCamVr.Streaming
             int b2 = IndexOf(acc, searchFrom, len, boundary);
             if (b2 < 0) return 0;
 
-            // ヘッダ終端（\r\n\r\n）を boundary 間で探す
             int headerEnd = IndexOf(acc, searchFrom, b2, CrlfCrlf);
-            if (headerEnd < 0) return b2; // ヘッダが取れない → このパートは飛ばす
+            if (headerEnd < 0) return b2;
+            int headerStart = searchFrom;
             int payloadStart = headerEnd + CrlfCrlf.Length;
             int payloadEnd = b2;
-            // boundary 直前の \r\n を除外
             if (payloadEnd - 2 > payloadStart && acc[payloadEnd - 2] == 0x0D && acc[payloadEnd - 1] == 0x0A)
                 payloadEnd -= 2;
             int payloadLen = payloadEnd - payloadStart;
-            if (payloadLen > 0)
+            if (payloadLen <= 0) return b2;
+
+            // パートヘッダから X-Capture-Ns / X-Frame-Seq を抜く
+            long captureNs = 0L, seq = 0L;
+            ParsePartHeaders(acc, headerStart, headerEnd, out captureNs, out seq);
+
+            // 受信側でも「最新だけ」保持する。
+            // 古い未消費フレームがある場合はそのまま捨てる（ここでバッファ swap してアロケーション最小化）。
+            lock (_slotLock)
             {
-                // フレーム毎にコピーを作って enqueue。3 個を超えたら最古を捨てる。
-                // バックグラウンドスレッドで毎フレーム allocation だが 30fps × ~25KB なので GC は問題なし。
-                var copy = new byte[payloadLen];
-                Buffer.BlockCopy(acc, payloadStart, copy, 0, payloadLen);
-                lock (_lock)
+                byte[] target;
+                if (_latestBuf != null && _latestBuf.Length >= payloadLen)
                 {
-                    _pendingQueue.Enqueue((copy, payloadLen));
-                    while (_pendingQueue.Count > QueueCapacity)
-                    {
-                        _pendingQueue.Dequeue();
-                    }
+                    // 既存最新がまだ消費されていないが、新しい方を優先 → 既存 buf を再利用
+                    target = _latestBuf;
                 }
+                else if (_spareBuf != null && _spareBuf.Length >= payloadLen)
+                {
+                    target = _spareBuf;
+                    _spareBuf = null;
+                }
+                else
+                {
+                    // 必要サイズに合わせて確保（power-of-two で次回以降の伸長を抑制）
+                    target = new byte[Mathf.NextPowerOfTwo(payloadLen)];
+                }
+                Buffer.BlockCopy(acc, payloadStart, target, 0, payloadLen);
+                _latestBuf = target;
+                _latestLen = payloadLen;
+                _latestMeta = new FrameMeta(captureNs, seq, NowMs());
+                _hasLatest = true;
             }
             return b2;
         }
 
+        // 受信スレッドから呼ばれるため Unity API を避け、プロセス起動からの monotonic ms を使う。
+        // （Time.realtimeSinceStartup* は main thread 前提でバージョンによっては警告が出る）
+        // 同じ時間基準を CameraStream も利用するため public 公開。
+        private static readonly Stopwatch _sw = Stopwatch.StartNew();
+        public static long NowMs() => _sw.ElapsedMilliseconds;
+
+        // ヘッダ領域 (headerStart..headerEnd) から X-Capture-Ns / X-Frame-Seq を読む。
+        // 単純な ASCII スキャン（依存ゼロ・GC 圧無し）。見つからなければ 0。
+        private static void ParsePartHeaders(byte[] acc, int headerStart, int headerEnd, out long captureNs, out long seq)
+        {
+            captureNs = 0;
+            seq = 0;
+            int i = headerStart;
+            while (i < headerEnd)
+            {
+                int lineEnd = IndexOf(acc, i, headerEnd, Crlf);
+                if (lineEnd < 0) lineEnd = headerEnd;
+
+                if (StartsWithIgnoreCase(acc, i, lineEnd, XCaptureNsKey))
+                    captureNs = ParseLongAfterColon(acc, i + XCaptureNsKey.Length, lineEnd);
+                else if (StartsWithIgnoreCase(acc, i, lineEnd, XFrameSeqKey))
+                    seq = ParseLongAfterColon(acc, i + XFrameSeqKey.Length, lineEnd);
+
+                i = lineEnd + Crlf.Length;
+            }
+        }
+
+        private static long ParseLongAfterColon(byte[] acc, int from, int end)
+        {
+            int p = from;
+            while (p < end && (acc[p] == (byte)':' || acc[p] == (byte)' ' || acc[p] == (byte)'\t')) p++;
+            long v = 0;
+            while (p < end)
+            {
+                byte c = acc[p];
+                if (c < (byte)'0' || c > (byte)'9') break;
+                v = v * 10 + (c - (byte)'0');
+                p++;
+            }
+            return v;
+        }
+
+        private static bool StartsWithIgnoreCase(byte[] acc, int start, int end, byte[] needle)
+        {
+            if (end - start < needle.Length) return false;
+            for (int j = 0; j < needle.Length; j++)
+            {
+                byte a = acc[start + j];
+                byte b = needle[j];
+                if (a >= (byte)'A' && a <= (byte)'Z') a = (byte)(a + 32);
+                if (b >= (byte)'A' && b <= (byte)'Z') b = (byte)(b + 32);
+                if (a != b) return false;
+            }
+            return true;
+        }
+
         private static readonly byte[] CrlfCrlf = { 0x0D, 0x0A, 0x0D, 0x0A };
+        private static readonly byte[] Crlf = { 0x0D, 0x0A };
+        private static readonly byte[] XCaptureNsKey = System.Text.Encoding.ASCII.GetBytes("x-capture-ns");
+        private static readonly byte[] XFrameSeqKey  = System.Text.Encoding.ASCII.GetBytes("x-frame-seq");
 
         private static int IndexOf(byte[] hay, int start, int end, byte[] needle)
         {
@@ -248,19 +375,16 @@ namespace FixedCamVr.Streaming
 
         public void Dispose()
         {
-            // 1. キャンセルを通知
             try { _cts.Cancel(); }
             catch (Exception ex) { Debug.LogWarning($"[MJPEG] cts cancel failed: {ex.Message}"); }
 
-            // 2. ワーカが _http を触り終えるのを短時間だけ待つ（無限待ちは Editor を固める）
             if (_loop != null)
             {
                 try { _loop.Wait(TimeSpan.FromMilliseconds(500)); }
-                catch (AggregateException) { /* タスク内例外は LastError に既に出ている */ }
+                catch (AggregateException) { }
                 catch (Exception ex) { Debug.LogWarning($"[MJPEG] loop join failed: {ex.Message}"); }
             }
 
-            // 3. HttpClient と CTS を破棄
             try { _http?.Dispose(); }
             catch (Exception ex) { Debug.LogWarning($"[MJPEG] http dispose failed: {ex.Message}"); }
             _http = null;
