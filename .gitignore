@@ -116,5 +116,11 @@ $RECYCLE.BIN/
 # git worktree 配下なので素直に commit すると submodule 扱いされてしまう）
 .claude/worktrees/
 
+# Claude Code runtime lock / state ファイル（ScheduleWakeup / 各種スケジューラが
+# 動作中に作る一時ファイル。チームで共有する意味は無いので gitignore する）
+.claude/*.lock
+.claude/state/
+.claude/cache/
+
 # MCP per-project placeholder（実体は ~/.claude.json で管理されるため不要）
 /.mcp.json
