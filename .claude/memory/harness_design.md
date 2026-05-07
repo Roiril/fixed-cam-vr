@@ -14,7 +14,7 @@ type: project
 | `<project>/CLAUDE.md` | プロジェクト規約（スタック・コーディング規約・自動テスト方針・Unity 編集の標準フロー） |
 | `<project>/.claude/memory/` | 自動メモリ（`MEMORY.md` がインデックス） |
 | `<project>/.claude/settings.json` | プロジェクト固有 hook / 権限（Unity MCP ツール allowlist） |
-| `<project>/.claude/commands/` | プロジェクト固有スラッシュコマンド |
+| `<project>/.claude/skills/<name>/SKILL.md` | シュビーが自律的に呼ぶスキル（プロジェクト固有スラッシュコマンドは廃止、すべてスキル化） |
 | `<project>/.claude/rules/*.md` | 領域別ルール（YAML frontmatter の `globs:` で path-scope） |
 | `<project>/.claude/plans/` | 実装計画 (`YYYY-MM-DD_<slug>.md`) |
 
