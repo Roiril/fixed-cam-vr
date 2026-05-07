@@ -60,11 +60,11 @@ git cherry-pick <SHA1> <SHA2> <SHA3> ...
 
 ## ハンドオフ
 
-長時間セッションの終わり / 大きな機能完了時 / 翌日に持ち越す時は **次セッション貼り付け用プロンプト** を出力する。`/handoff` skill 推奨。最低限含める：
+長時間セッションの終わり / 大きな機能完了時 / 翌日に持ち越す時は **次セッション貼り付け用プロンプト** を出力する。`handoff` スキル推奨。最低限含める：
 
 - master HEAD SHA
 - 動作確認済み / 残課題
 - 直近で追加した機能の使い方
 - 必読ドキュメント（README / TROUBLESHOOTING / 直近の plan）
 
-加えて、再発しうる罠は **TROUBLESHOOTING.md** か **`.agent/rules/`** か **`.claude/memory/`** に追記して恒久化する（CLAUDE.md「自己改善ループ」原則）。
+加えて、再発しうる罠は **TROUBLESHOOTING.md** か **`.claude/rules/`** か **`.claude/memory/`** に追記して恒久化する（CLAUDE.md「自己改善ループ」原則）。

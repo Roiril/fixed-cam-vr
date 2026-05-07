@@ -16,7 +16,7 @@ type: feedback
    バージョン番号 `9.6.8` は Unity Editor が `~/.local/bin/uvx.exe` 経由でインストール済みのものに合わせる
 3. `claude mcp list` で `UnityMCP: ✓ Connected` を確認
 4. **Claude Code を `/exit` → 再起動**（deferred tools はセッション起動時にロードされる）
-5. 再起動後の新セッションで `/unity-status` を打って動作確認
+5. 再起動後の新セッションで `unity-status` スキルで動作確認
 
 ## Why（実際に踏んだ罠）
 
@@ -73,7 +73,7 @@ type: feedback
 
 「Unity MCP が反応しない」と感じた瞬間：
 
-1. まず **`/unity-mcp` スラッシュコマンド** を打つ（`.claude/commands/unity-mcp.md` で診断パス自動化済み）
+1. まず **`unity-mcp` スキル**を呼ぶ（`.claude/skills/unity-mcp/SKILL.md` で診断パス自動化済み）
 2. 自動診断で対応表のどの行に当てはまるか即特定
 3. 副作用ある操作（remove / add / 再起動）はユーザに合意を得てから実行
 

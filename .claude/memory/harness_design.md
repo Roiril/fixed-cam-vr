@@ -1,6 +1,6 @@
 ---
 name: harness_design
-description: CLAUDE.md / .claude/ / .agent/ の役割分担と動作モードの根拠（fixed-cam-vr 現状版）
+description: CLAUDE.md / .claude/ の役割分担と動作モードの根拠（fixed-cam-vr 現状版）
 type: project
 ---
 
@@ -14,23 +14,9 @@ type: project
 | `<project>/CLAUDE.md` | プロジェクト規約（スタック・コーディング規約・自動テスト方針・Unity 編集の標準フロー） |
 | `<project>/.claude/memory/` | 自動メモリ（`MEMORY.md` がインデックス） |
 | `<project>/.claude/settings.json` | プロジェクト固有 hook / 権限（Unity MCP ツール allowlist） |
-| `<project>/.claude/commands/` | プロジェクト固有スラッシュコマンド |
-| `<project>/.agent/rules/*.md` | 領域別ルール（YAML frontmatter の `globs:` で path-scope） |
-| `<project>/.agent/plans/` | 実装計画 (`YYYY-MM-DD_<slug>.md`) |
-
-## 現在のルール構成
-
-`.agent/rules/`:
-- `unity-vr.md` — Unity / VR 共通（`Assets/**`, `ProjectSettings/**` で発火）
-- `meta-xr.md` — Meta XR SDK / OVR* 利用規約（`Assets/**/Passthrough/**` 等）
-- `streaming.md` — MJPEG / WebRTC 取り込み（`Assets/**/Streaming/**`, `*Mjpeg*.cs`）
-- `mcp-unity.md` — Unity MCP for Unity 経由の編集規約（`Assets/**`, `Packages/**` 等）
-
-## 現在のスラッシュコマンド
-
-`.claude/commands/`:
-- `/unity-status` — Unity MCP 接続状況・エディタ状態・直近エラーをまとめ表示
-- `/handoff` — 次セッション向けの引き継ぎプロンプトを生成
+| `<project>/.claude/skills/<name>/SKILL.md` | シュビーが自律的に呼ぶスキル（プロジェクト固有スラッシュコマンドは廃止、すべてスキル化） |
+| `<project>/.claude/rules/*.md` | 領域別ルール（YAML frontmatter の `globs:` で path-scope） |
+| `<project>/.claude/plans/` | 実装計画 (`YYYY-MM-DD_<slug>.md`) |
 
 ## 動作モード
 
@@ -48,4 +34,4 @@ type: project
 | 編集ツール | Read/Edit/Grep | 同上 + `mcp__unityMCP__manage_*`（`manage_scene` / `manage_components` / `manage_asset` 等） |
 | 制約 | DOM/CSS をホットリロード可 | C# 変更 → ドメインリロード待ち。`refresh_unity wait_for_ready=true` 必須 |
 
-**How to apply**: 新しい領域別ルールやコマンドを足すときは本ファイルの「現在のルール構成」「現在のスラッシュコマンド」テーブルも同時更新。差分が増えてきたら別ファイルに分離する。
+**How to apply**: 設計の根拠（なぜこういう構成なのか）が変わった時にだけ更新。現在のルール / コマンド一覧は **CLAUDE.md が単一情報源**（このファイルと二重メンテしない）。

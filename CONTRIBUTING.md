@@ -1,6 +1,6 @@
 # コントリビューションガイド
 
-fixed-cam-vr への貢献ルール。詳細な動作規約は [CLAUDE.md](CLAUDE.md) と [.agent/rules/](.agent/rules/) を参照。
+fixed-cam-vr への貢献ルール。詳細な動作規約は [CLAUDE.md](CLAUDE.md) と [.claude/rules/](.claude/rules/) を参照。
 
 ## 言語
 
@@ -103,9 +103,9 @@ refactor：Tracking 名前空間を Streaming から分離
 ## 参考
 
 - [CLAUDE.md](CLAUDE.md) — プロジェクト全体規約
-- [.agent/rules/unity-vr.md](.agent/rules/unity-vr.md) — Unity / VR 共通
-- [.agent/rules/meta-xr.md](.agent/rules/meta-xr.md) — Meta XR SDK
-- [.agent/rules/streaming.md](.agent/rules/streaming.md) — MJPEG / WebRTC
-- [.agent/rules/mcp-unity.md](.agent/rules/mcp-unity.md) — Unity MCP 経由の編集手順
+- [.claude/rules/unity-vr.md](.claude/rules/unity-vr.md) — Unity / VR 共通
+- [.claude/rules/meta-xr.md](.claude/rules/meta-xr.md) — Meta XR SDK
+- [.claude/rules/streaming.md](.claude/rules/streaming.md) — MJPEG / WebRTC
+- [.claude/rules/mcp-unity.md](.claude/rules/mcp-unity.md) — Unity MCP 経由の編集手順
 - [README.md](README.md) — モジュール構成・ディレクトリ・実装済みコード
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Quest 3 90Hz 維持の計測手順（OVR Metrics / Profiler）と現場対処

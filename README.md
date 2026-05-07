@@ -78,7 +78,7 @@
 | 3-3 | `ParticleSystem` ベース埃オーバーレイ | `Assets/Scripts/Fx/Particles/DustOverlayBuilder.cs` |
 | 3-4 | Compute Shader 畳み込み（Sobel / SobelOverlay / Reinhard Tonemap 3 kernel） | `Assets/Art/Shaders/Fx/FxSobel.compute` + `Assets/Scripts/Fx/Compute/SobelEdgeRunner.cs` |
 
-**推奨方針（[計画レポート](.agent/plans/2026-05-03_video-fx-research.md) より）**: Phase 3-1 (CRT) + 3-3 (薄い埃) の組合せが本命。Phase 3-4 (Sobel) は全画面ではなく選択的マスクで使うのが筋。
+**推奨方針（[計画レポート](.claude/plans/2026-05-03_video-fx-research.md) より）**: Phase 3-1 (CRT) + 3-3 (薄い埃) の組合せが本命。Phase 3-4 (Sobel) は全画面ではなく選択的マスクで使うのが筋。
 
 #### 利用フロー（Editor）
 
@@ -288,9 +288,9 @@ Quest 3 を USB-C 接続。adb 経由のワイヤレスデプロイも可。
 
 ## 開発フロー
 
-- 実装計画は `.agent/plans/YYYY-MM-DD_<slug>.md` に置く
+- 実装計画は `.claude/plans/YYYY-MM-DD_<slug>.md` に置く
 - シュビー（Claude Code）と共同開発。動作モード等は [CLAUDE.md](CLAUDE.md) 参照
-- 領域別ルール: [.agent/rules/unity-vr.md](.agent/rules/unity-vr.md), [meta-xr.md](.agent/rules/meta-xr.md), [streaming.md](.agent/rules/streaming.md)
+- 領域別ルール: [.claude/rules/unity-vr.md](.claude/rules/unity-vr.md), [meta-xr.md](.claude/rules/meta-xr.md), [streaming.md](.claude/rules/streaming.md)
 - コミット規約：日本語 `<type>：<要約>` 形式（グローバル `~/.claude/CLAUDE.md` 参照）
 
 ## ドキュメント一覧
@@ -301,7 +301,7 @@ Quest 3 を USB-C 接続。adb 経由のワイヤレスデプロイも可。
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | fixed-cam-streamer / DroidCam 不通 / HMD 真っ黒 / FPS 低下（OVR Metrics / Profiler 含む）/ 実機検証で得た知見 |
 | [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) (別リポジトリ) | 配信側 Android アプリの実装・ビルド手順・運用ノート |
 | [docs/onsite-checklist.md](docs/onsite-checklist.md) | 現場（実機 Quest 3）での 60 秒チェック → Phase 別動作確認 → 切り分けフロー |
-| [.agent/plans/](.agent/plans/) | 直近・次フェーズの実装計画書（完了済みは git log で参照） |
+| [.claude/plans/](.claude/plans/) | 直近・次フェーズの実装計画書（完了済みは git log で参照） |
 | [.github/workflows/README.md](.github/workflows/README.md) | GitHub Actions（Unity Test Runner）の設定手順 |
 
 ## ディレクトリ
@@ -333,8 +333,7 @@ fixed-cam-vr/
 │   └── Settings/             # URP / Quality / CameraSource SO
 ├── Packages/manifest.json    # Meta XR SDK 等の依存
 ├── ProjectSettings/          # エディタ設定
-├── .agent/                   # 共有ハーネス（rules / plans）
-├── .claude/                  # Claude Code ハーネス（settings / memory）
+├── .claude/                  # Claude Code ハーネス（rules / plans / commands / memory / skills / settings）
 ├── CLAUDE.md
 └── README.md
 ```
