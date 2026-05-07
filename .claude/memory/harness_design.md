@@ -1,6 +1,6 @@
 ---
 name: harness_design
-description: CLAUDE.md / .claude/ / .agent/ の役割分担と動作モードの根拠（fixed-cam-vr 現状版）
+description: CLAUDE.md / .claude/ の役割分担と動作モードの根拠（fixed-cam-vr 現状版）
 type: project
 ---
 
@@ -15,16 +15,18 @@ type: project
 | `<project>/.claude/memory/` | 自動メモリ（`MEMORY.md` がインデックス） |
 | `<project>/.claude/settings.json` | プロジェクト固有 hook / 権限（Unity MCP ツール allowlist） |
 | `<project>/.claude/commands/` | プロジェクト固有スラッシュコマンド |
-| `<project>/.agent/rules/*.md` | 領域別ルール（YAML frontmatter の `globs:` で path-scope） |
-| `<project>/.agent/plans/` | 実装計画 (`YYYY-MM-DD_<slug>.md`) |
+| `<project>/.claude/rules/*.md` | 領域別ルール（YAML frontmatter の `globs:` で path-scope） |
+| `<project>/.claude/plans/` | 実装計画 (`YYYY-MM-DD_<slug>.md`) |
 
 ## 現在のルール構成
 
-`.agent/rules/`:
+`.claude/rules/`:
 - `unity-vr.md` — Unity / VR 共通（`Assets/**`, `ProjectSettings/**` で発火）
 - `meta-xr.md` — Meta XR SDK / OVR* 利用規約（`Assets/**/Passthrough/**` 等）
 - `streaming.md` — MJPEG / WebRTC 取り込み（`Assets/**/Streaming/**`, `*Mjpeg*.cs`）
 - `mcp-unity.md` — Unity MCP for Unity 経由の編集規約（`Assets/**`, `Packages/**` 等）
+- `git-workflow.md` — Git ブランチ・worktree・PR 運用
+- `troubleshooting.md` — 層別トラブルシュート（配信/ネット/Unity/MCP/Meta XR/ビルド）
 
 ## 現在のスラッシュコマンド
 

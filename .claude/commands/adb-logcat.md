@@ -48,4 +48,4 @@ logcat の生出力をそのまま貼らず、以下に整形して返す：
 ## 関連
 
 - `.claude/skills/streamer-android-build/SKILL.md` — installDebug が落ちる時の adb 復旧手順
-- `.agent/rules/troubleshooting.md` — どの層を疑うかの判定フロー
+- `.claude/rules/troubleshooting.md` — どの層を疑うかの判定フロー

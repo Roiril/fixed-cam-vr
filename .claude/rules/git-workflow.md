@@ -67,4 +67,4 @@ git cherry-pick <SHA1> <SHA2> <SHA3> ...
 - 直近で追加した機能の使い方
 - 必読ドキュメント（README / TROUBLESHOOTING / 直近の plan）
 
-加えて、再発しうる罠は **TROUBLESHOOTING.md** か **`.agent/rules/`** か **`.claude/memory/`** に追記して恒久化する（CLAUDE.md「自己改善ループ」原則）。
+加えて、再発しうる罠は **TROUBLESHOOTING.md** か **`.claude/rules/`** か **`.claude/memory/`** に追記して恒久化する（CLAUDE.md「自己改善ループ」原則）。

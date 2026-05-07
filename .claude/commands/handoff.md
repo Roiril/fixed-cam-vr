@@ -37,7 +37,7 @@ C:\Users\kouga\Projects\Unity\fixed-cam-vr で作業継続。Unity 2022.3.62f2 /
 ## 必読
 - CLAUDE.md
 - .claude/memory/MEMORY.md（特に <該当ファイル>）
-- 領域に応じた .agent/rules/
+- 領域に応じた .claude/rules/
 
 ## 次にやること
 1. ...
