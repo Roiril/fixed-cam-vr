@@ -138,6 +138,18 @@ namespace FixedCamVr.Streaming
                     _isConnected = false;
                     backoffSec = 1;
                 }
+                catch (ObjectDisposedException)
+                {
+                    // RequestReconnect() が connectionCts を cancel → socket.Close() した時、
+                    // 進行中の ReadAsync は OperationCanceledException ではなく
+                    // ObjectDisposedException を投げることがある。意図した再接続なので
+                    // 警告ログ + backoff 倍化はせず、クリーンな再接続として扱う
+                    // （連発時に "Cannot access a disposed object" でログが埋まるのを防ぐ）。
+                    if (ct.IsCancellationRequested) return;
+                    wasReconnectRequest = true;
+                    _isConnected = false;
+                    backoffSec = 1;
+                }
                 catch (Exception ex)
                 {
                     _lastError = ex.Message;
