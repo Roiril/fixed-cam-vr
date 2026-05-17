@@ -47,6 +47,32 @@ namespace FixedCamVr.Streaming
             foreach (var s in _streams) s?.Tick();
         }
 
+        // HMD を外す / システムメニューで Quest ランタイムが描画ループ(=この Update)を凍結する。
+        // Meta は pause を発火するが OVRManager.HMDUnmounted は SDK v77/OpenXR で発火しない既知不具合が
+        // あるため、Meta XR 依存を増やさず Unity 標準の pause/focus で扱う。
+        // 凍結中は各 stream を suspend し、復帰時に計測ウィンドウをリセット
+        // （凍結ぶんの実時間ギャップで lag-detect が誤発火 → 不要な強制再接続が走るのを防ぐ）。
+        private bool _paused;
+        private bool _unfocused;
+
+        private void OnApplicationPause(bool pause)
+        {
+            _paused = pause;
+            ApplySuspendState();
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            _unfocused = !hasFocus;
+            ApplySuspendState();
+        }
+
+        private void ApplySuspendState()
+        {
+            bool suspend = _paused || _unfocused;
+            foreach (var s in _streams) s?.SetSuspended(suspend);
+        }
+
         private void OnDestroy()
         {
             foreach (var s in _streams) s?.Dispose();
