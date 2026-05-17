@@ -43,6 +43,9 @@ namespace FixedCamVr.Streaming
         private const float LagDetectWindowSec = 1.5f;
         private const float LagThresholdRatio  = 0.7f;
         private const float LagReconnectCooldownSec = 5.0f;
+        // この秒数を超える unscaledDeltaTime は「フリーズ明け（HMD 着脱 / OS pause）」とみなす。
+        // 通常フレームは ~0.01s、ヒッチでも <0.2s。0.5s なら誤検知なく pause だけ拾える。
+        private const float ResumeGapSec = 0.5f;
         private float _lagWindowAccum;
         private float _lastReconnectTime;
 
@@ -89,6 +92,7 @@ namespace FixedCamVr.Streaming
         {
             if (_disposed || _suspended == suspended) return;
             _suspended = suspended;
+            Debug.Log($"[HmdLife] {_source.DisplayName} SetSuspended({suspended})");
             if (suspended) return;
 
             _recvWindowStart = 0f;
@@ -183,7 +187,28 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Tick()
         {
-            if (_disposed || _suspended) return;
+            if (_disposed) return;
+
+            // フリーズ明け自己回復（コールバック非依存）:
+            // HMD 着脱や OS pause で Update が数秒凍結すると復帰初回フレームの
+            // unscaledDeltaTime が巨大になる。Quest/Link は resume コールバック
+            // (OnApplicationPause(false)/Focus(true)) を確実には配送しないため
+            // （実機ログで実証済み）、ここで巨大 dt を「フリーズ明け」と判定し
+            // 計測ウィンドウを全リセットしてこの 1 フレームをスキップする。
+            // → lag-detect 誤発火を防ぎつつ次フレームから正常復帰。
+            //   suspend で Tick を凍結する旧方式（resume 来ず永久凍結=画面が戻らない）を置換。
+            if (Time.unscaledDeltaTime > ResumeGapSec)
+            {
+                _recvWindowStart = 0f;
+                _recvFramesInWindow = 0;
+                _recvFps = 0f;
+                _lagWindowAccum = 0f;
+                _metaRefreshAccum = 0f;
+                _healthRefreshAccum = 0f;
+                _lastReconnectTime = Time.realtimeSinceStartup;
+                Debug.Log($"[HmdLife] {_source.DisplayName} resume-gap (dt={Time.unscaledDeltaTime:F2}s) -> reset");
+                return;
+            }
 
             // 単一スロット最新フレームを取り出す（既に MjpegStreamReceiver 側で「最新だけ」保持）。
             // バッファは swap で受け渡され、毎フレーム new は発生しない。

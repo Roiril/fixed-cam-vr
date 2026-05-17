@@ -48,29 +48,41 @@ namespace FixedCamVr.Streaming
         }
 
         // HMD を外す / システムメニューで Quest ランタイムが描画ループ(=この Update)を凍結する。
-        // Meta は pause を発火するが OVRManager.HMDUnmounted は SDK v77/OpenXR で発火しない既知不具合が
-        // あるため、Meta XR 依存を増やさず Unity 標準の pause/focus で扱う。
-        // 凍結中は各 stream を suspend し、復帰時に計測ウィンドウをリセット
-        // （凍結ぶんの実時間ギャップで lag-detect が誤発火 → 不要な強制再接続が走るのを防ぐ）。
-        private bool _paused;
-        private bool _unfocused;
+        // 凍結中は各 stream を suspend し、復帰時に計測ウィンドウをリセットする
+        // （凍結ぶんの実時間ギャップで lag-detect が誤発火 → 不要な強制再接続を防ぐ）。
+        //
+        // 設計上の注意（重要）: pause と focus のコールバックは Quest / Link で
+        // 非対称に発火しうる（外す時 pause(true)+focus(false)、戻す時 focus(true) のみ等）。
+        // _paused || _unfocused の OR ラッチだと片方が立ちっぱなしで永久 suspend → 復帰不能に
+        // なる。そのため「どの resume 信号でも確実に解除」する非ラッチ方式にする。
+        private bool _suspended;
 
         private void OnApplicationPause(bool pause)
         {
-            _paused = pause;
-            ApplySuspendState();
+            Debug.Log($"[HmdLife] OnApplicationPause({pause})");
+            if (pause) Suspend("pause"); else Resume("unpause");
         }
 
         private void OnApplicationFocus(bool hasFocus)
         {
-            _unfocused = !hasFocus;
-            ApplySuspendState();
+            Debug.Log($"[HmdLife] OnApplicationFocus({hasFocus})");
+            if (hasFocus) Resume("focusGained"); else Suspend("focusLost");
         }
 
-        private void ApplySuspendState()
+        private void Suspend(string why)
         {
-            bool suspend = _paused || _unfocused;
-            foreach (var s in _streams) s?.SetSuspended(suspend);
+            if (_suspended) return;
+            _suspended = true;
+            Debug.Log($"[HmdLife] -> SUSPEND ({why}) streams={_streams.Length}");
+            foreach (var s in _streams) s?.SetSuspended(true);
+        }
+
+        private void Resume(string why)
+        {
+            if (!_suspended) return;
+            _suspended = false;
+            Debug.Log($"[HmdLife] -> RESUME ({why}) streams={_streams.Length}");
+            foreach (var s in _streams) s?.SetSuspended(false);
         }
 
         private void OnDestroy()
