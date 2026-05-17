@@ -15,6 +15,9 @@ namespace FixedCamVr.Streaming
         private readonly Texture2D _texture;
         private byte[]? _scratch;
         private bool _disposed;
+        // HMD を外す / システムメニュー等で app が pause された間は true。
+        // この間メインスレッドの Tick は凍結されるため、計測を止めて復帰時にリセットする。
+        private bool _suspended;
         private StreamMetadata? _metadata;
         private StreamHealth? _health;
 
@@ -71,6 +74,31 @@ namespace FixedCamVr.Streaming
         /// （内蔵 lag 検知は CameraStream.Tick から自動で呼ばれる）
         /// </summary>
         public void ForceReconnect() => _receiver.RequestReconnect();
+
+        /// <summary>
+        /// app の pause / 入力フォーカス喪失（HMD を外す・システムメニュー）に応じて受信ユニットを
+        /// 一時停止/再開する。CameraStreamRegistry の OnApplicationPause/Focus から呼ばれる。
+        ///
+        /// 停止中: Tick を no-op にし、フレーム消費・fps 計測・lag 検出を全て止める。
+        /// 復帰時: 凍結中に Time.realtimeSinceStartup / unscaledDeltaTime が実時間ぶん進み、
+        ///   復帰初回フレームで「recv_fps が激減した」と誤検知 → 不要な強制再接続が走るのを防ぐため、
+        ///   計測ウィンドウの基準を全てリセットしてから再開する。受信スレッド自体は止めない
+        ///   （ソケットを温存し、被り直し時に即復帰させるため）。
+        /// </summary>
+        public void SetSuspended(bool suspended)
+        {
+            if (_disposed || _suspended == suspended) return;
+            _suspended = suspended;
+            if (suspended) return;
+
+            _recvWindowStart = 0f;
+            _recvFramesInWindow = 0;
+            _recvFps = 0f;
+            _lagWindowAccum = 0f;
+            _metaRefreshAccum = 0f;
+            _healthRefreshAccum = 0f;
+            _lastReconnectTime = Time.realtimeSinceStartup;
+        }
 
         /// <summary>Metadata が更新された時に呼ばれる。MjpegScreen 等が orientation を反映するためのフック。</summary>
         public event Action<StreamMetadata>? MetadataUpdated;
@@ -155,7 +183,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Tick()
         {
-            if (_disposed) return;
+            if (_disposed || _suspended) return;
 
             // 単一スロット最新フレームを取り出す（既に MjpegStreamReceiver 側で「最新だけ」保持）。
             // バッファは swap で受け渡され、毎フレーム new は発生しない。
