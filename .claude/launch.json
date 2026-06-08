@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-compositor",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["tools/web-compositor/capture-server.py", "8099"],
+      "port": 8099
+    }
+  ]
+}

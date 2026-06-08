@@ -183,3 +183,7 @@ $RECYCLE.BIN/
 
 # MCP per-project placeholder（実体は ~/.claude.json で管理されるため不要）
 /.mcp.json
+
+# web compositor のキャプチャ/録画（PC ローカル成果物・コミットしない）
+tools/web-compositor/captures/
+tools/web-compositor/prompts.json

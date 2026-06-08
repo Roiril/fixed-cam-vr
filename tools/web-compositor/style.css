@@ -1,0 +1,124 @@
+:root {
+  --bg: #14171c;
+  --panel: #1c2128;
+  --panel2: #232a33;
+  --line: #2e3742;
+  --fg: #d7dde4;
+  --muted: #8a96a3;
+  --accent: #c0455a;
+  --green: #7fffb0;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+.app { display: flex; flex-direction: column; height: 100vh; }
+header {
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .02em; }
+.status { color: var(--green); font-size: 12px; }
+.fps { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.main { display: flex; flex: 1; min-height: 0; }
+.stage {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  background: #0c0e11; padding: 12px; min-width: 0;
+}
+#gl {
+  max-width: 100%; max-height: 100%;
+  background: #000; border: 1px solid var(--line);
+  image-rendering: auto;
+}
+
+.panel {
+  width: 320px; flex-shrink: 0; overflow-y: auto;
+  background: var(--panel); border-left: 1px solid var(--line);
+  padding: 4px 12px 24px;
+}
+.panel section { border-bottom: 1px solid var(--line); padding: 12px 0; }
+.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
+.row label { display: block; font-size: 11px; color: var(--muted); margin: 6px 0 4px; }
+
+.btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+button, .btns a {
+  background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 5px 8px; font-size: 12px; cursor: pointer;
+  text-decoration: none;
+}
+button:hover { background: #2c343d; border-color: #3a4654; }
+button.accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.accent:hover { filter: brightness(1.12); }
+
+/* 各スロットに現在割り当たっているソースボタン */
+button.active {
+  background: #213029; border-color: var(--green); color: var(--green);
+  box-shadow: inset 0 0 0 1px var(--green);
+}
+button.active:hover { background: #294035; }
+
+.gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.gal-item {
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 4px;
+  padding: 4px; display: flex; flex-direction: column; gap: 4px;
+}
+.gal-item img, .gal-item video {
+  width: 100%; aspect-ratio: 16/9; object-fit: cover;
+  background: #000; border-radius: 3px; display: block;
+}
+.gal-media { cursor: pointer; }
+.gal-media:hover { outline: 1px solid var(--green); outline-offset: -1px; }
+.gal-item .gal-open { flex: 0 0 auto; }
+.gal-name {
+  font-size: 10px; color: var(--muted); font-family: monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gal-item .btns { gap: 4px; }
+.gal-item .btns button { flex: 1; padding: 3px 4px; font-size: 11px; }
+
+input[type=text] {
+  flex: 1; width: 100%; background: var(--panel2); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px;
+  font-size: 12px; font-family: monospace;
+}
+textarea {
+  width: 100%; background: var(--panel2); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px;
+  font-size: 12px; font-family: monospace; resize: vertical; margin: 6px 0;
+}
+
+.prompt-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.prompt-group-head {
+  font-size: 11px; color: var(--green); font-weight: 600;
+  margin: 6px 0 2px; padding-bottom: 2px; border-bottom: 1px solid var(--line);
+}
+.prompt-item {
+  background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 4px; padding: 6px 8px;
+}
+.prompt-head { font-size: 12px; color: var(--fg); font-weight: 600; margin-bottom: 2px; }
+.prompt-body {
+  font-size: 11px; color: var(--muted); font-family: monospace;
+  white-space: pre-wrap; max-height: 64px; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+  margin-bottom: 6px;
+}
+.prompt-item .btns button { flex: 1; padding: 3px 4px; font-size: 11px; }
+.mask-view {
+  width: 100%; aspect-ratio: 16/9; background: #000;
+  border: 1px solid var(--line); border-radius: 4px;
+  cursor: crosshair; display: block; touch-action: none;
+}
+.hint { font-size: 11px; color: var(--muted); margin: 4px 0 8px; }
+
+.slider, .check {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; margin: 6px 0; color: var(--fg);
+}
+.slider input[type=range] { flex: 1; accent-color: var(--accent); }
+.slider span { width: 38px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.slider select { flex: 1; background: var(--panel2); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px; }
+.check input { accent-color: var(--accent); }
