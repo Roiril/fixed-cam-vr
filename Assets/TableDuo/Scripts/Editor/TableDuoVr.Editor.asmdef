@@ -1,0 +1,22 @@
+{
+    "name": "TableDuoVr.Editor",
+    "rootNamespace": "TableDuoVr.EditorTools",
+    "references": [
+        "TableDuoVr.Hands",
+        "TableDuoVr.Net",
+        "Oculus.VR",
+        "Unity.Netcode.Runtime",
+        "Unity.Netcode.Transports.UTP"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

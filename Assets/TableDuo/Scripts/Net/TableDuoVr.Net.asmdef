@@ -1,0 +1,20 @@
+{
+    "name": "TableDuoVr.Net",
+    "rootNamespace": "TableDuoVr.Net",
+    "references": [
+        "TableDuoVr.Hands",
+        "Unity.Netcode.Runtime",
+        "Unity.Netcode.Transports.UTP",
+        "Unity.Networking.Transport",
+        "Unity.Collections"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

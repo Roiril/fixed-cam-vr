@@ -1,0 +1,16 @@
+{
+    "name": "TableDuoVr.Hands",
+    "rootNamespace": "TableDuoVr.Hands",
+    "references": [
+        "Oculus.VR"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
