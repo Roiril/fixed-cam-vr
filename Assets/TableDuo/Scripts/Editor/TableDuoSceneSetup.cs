@@ -79,12 +79,28 @@ namespace TableDuoVr.EditorTools
             floor.transform.SetParent(root.transform, false);
             floor.GetComponent<Renderer>().sharedMaterial = floorMat;
 
-            var table = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            table.name = "Table";
-            table.transform.SetParent(root.transform, false);
-            table.transform.localPosition = new Vector3(0f, 0.35f, 0f);
-            table.transform.localScale = new Vector3(1.2f, 0.7f, 0.8f); // 天板高 0.7m
-            table.GetComponent<Renderer>().sharedMaterial = tableMat;
+            // テーブル: Kenney Furniture Kit（CC0）。バウンディングから天板高 0.7m に正規化。
+            // FBX が無い環境では従来のキューブにフォールバック
+            var table = InstantiateModelFitHeight(
+                "Assets/ThirdParty/Kenney/Furniture/table.fbx", root.transform,
+                "Table", Vector3.zero, 0f, targetHeight: 0.7f, maxWidth: 1.3f);
+            if (table == null)
+            {
+                table = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                table.name = "Table";
+                table.transform.SetParent(root.transform, false);
+                table.transform.localPosition = new Vector3(0f, 0.35f, 0f);
+                table.transform.localScale = new Vector3(1.2f, 0.7f, 0.8f);
+                table.GetComponent<Renderer>().sharedMaterial = tableMat;
+            }
+
+            // 椅子（見た目のみ・席アンカーとは独立）と卓上ランプ
+            InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
+                root.transform, "Chair0", new Vector3(0f, 0f, -0.78f), 0f, targetHeight: 0.85f, maxWidth: 0.55f);
+            InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
+                root.transform, "Chair1", new Vector3(0f, 0f, 0.78f), 180f, targetHeight: 0.85f, maxWidth: 0.55f);
+            InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/lampRoundTable.fbx",
+                root.transform, "TableLamp", new Vector3(-0.5f, 0.7f, -0.22f), 0f, targetHeight: 0.25f, maxWidth: 0.18f);
 
             var seats = new GameObject("Seats");
             seats.transform.SetParent(root.transform, false);
@@ -92,11 +108,28 @@ namespace TableDuoVr.EditorTools
             CreateSeat(seats.transform, 1, new Vector3(0f, 0f, 0.85f), 180f);   // 手だけアバター席
 
             // 掴める小物（scene-placed NetworkObject。サーバ駆動追従 + NetworkTransform 同期）
+            // Kenney Food Kit（CC0）。FBX 不在時はオレンジキューブにフォールバック
             var props = new GameObject("Props");
             props.transform.SetParent(root.transform, false);
-            CreateProp(props.transform, "Prop_Cube0", new Vector3(-0.3f, 0.74f, 0f), propMat);
-            CreateProp(props.transform, "Prop_Cube1", new Vector3(0f, 0.74f, 0f), propMat);
-            CreateProp(props.transform, "Prop_Cube2", new Vector3(0.3f, 0.74f, 0f), propMat);
+            string[] foods = { "apple", "banana", "burger", "carrot", "cake" };
+            float[] xs = { -0.4f, -0.2f, 0f, 0.2f, 0.4f };
+            for (int i = 0; i < foods.Length; i++)
+            {
+                var pos = new Vector3(xs[i], 0.71f, 0f);
+                var model = InstantiateModelFitHeight(
+                    $"Assets/ThirdParty/Kenney/Food/{foods[i]}.fbx", props.transform,
+                    $"Prop_{foods[i]}", pos, 0f, targetHeight: 0.09f);
+                if (model == null)
+                {
+                    CreateProp(props.transform, $"Prop_{foods[i]}", pos, propMat);
+                    continue;
+                }
+                model.AddComponent<NetworkObject>();
+                var nt = model.AddComponent<Unity.Netcode.Components.NetworkTransform>();
+                nt.Interpolate = true;
+                nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
+                model.AddComponent<Grabbable>();
+            }
 
             // --- OVRCameraRig + ハンドトラッキング ---
             var rig = InstantiateRig();
@@ -172,6 +205,61 @@ namespace TableDuoVr.EditorTools
                       "- 実機: OVRProjectConfig の Hand Tracking Support を Controllers And Hands 以上にすること\n" +
                       "- ビルド対象にする時は Build Settings へ本シーンを手動追加（Main.unity と排他運用）\n" +
                       "- L0 検証: OVRCameraRig を無効化 / DebugCamera と FakeHandDriver を有効化");
+        }
+
+        /// <summary>
+        /// FBX をインスタンス化し、Renderer バウンディングの高さが targetHeight になるよう
+        /// 一様スケール + 足元 (bounds.min.y) を pos.y に揃える。FBX が無ければ null。
+        /// </summary>
+        private static GameObject? InstantiateModelFitHeight(string assetPath, Transform parent,
+            string name, Vector3 pos, float yaw, float targetHeight, float maxWidth = 0f)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[TableDuoSceneSetup] モデルが見つかりません: {assetPath}");
+                return null;
+            }
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+
+            // Kenney FBX はピボットが中心に無いものがあるため、
+            // バウンディングで「高さ正規化 + 水平センタリング + 足元接地」を行う
+            var renderers = go.GetComponentsInChildren<Renderer>();
+            if (renderers.Length > 0)
+            {
+                var b = CalcBounds(renderers);
+                if (b.size.y > 0.0001f)
+                {
+                    float k = targetHeight / b.size.y;
+                    float horizontal = Mathf.Max(b.size.x, b.size.z);
+                    if (maxWidth > 0f && horizontal * k > maxWidth)
+                    {
+                        k = maxWidth / horizontal;
+                    }
+                    go.transform.localScale = go.transform.localScale * k;
+                }
+                b = CalcBounds(renderers);
+                var pivotToBounds = b.center - go.transform.position;
+                go.transform.localPosition = new Vector3(
+                    pos.x - pivotToBounds.x,
+                    pos.y - (b.min.y - go.transform.position.y),
+                    pos.z - pivotToBounds.z);
+            }
+            else
+            {
+                go.transform.localPosition = pos;
+            }
+            return go;
+        }
+
+        private static Bounds CalcBounds(Renderer[] renderers)
+        {
+            var b = renderers[0].bounds;
+            foreach (var r in renderers) b.Encapsulate(r.bounds);
+            return b;
         }
 
         private static Material EnsureMaterial(string path, string shaderName, Color color)
