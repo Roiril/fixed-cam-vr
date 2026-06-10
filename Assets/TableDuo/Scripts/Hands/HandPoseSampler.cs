@@ -41,6 +41,11 @@ namespace TableDuoVr.Hands
             _pose.TrackedR = SampleHand(trackingSpace, rightHand, rightSkeleton,
                 ref _pose.WristPosR, ref _pose.WristRotR, _pose.BonesR);
 
+            _pose.PinchL = _pose.TrackedL && leftHand != null &&
+                leftHand.GetFingerIsPinching(OVRHand.HandFinger.Index);
+            _pose.PinchR = _pose.TrackedR && rightHand != null &&
+                rightHand.GetFingerIsPinching(OVRHand.HandFinger.Index);
+
             CaptureLayoutIfReady(leftSkeleton, ref HandSkeletonLayout.CapturedL);
             CaptureLayoutIfReady(rightSkeleton, ref HandSkeletonLayout.CapturedR);
         }

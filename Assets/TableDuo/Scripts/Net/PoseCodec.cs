@@ -22,7 +22,8 @@ namespace TableDuoVr.Net
             WriteQf(ref w, p.WristRotL);
             WriteV3(ref w, p.WristPosR);
             WriteQf(ref w, p.WristRotR);
-            byte flags = (byte)((p.TrackedL ? 1 : 0) | (p.TrackedR ? 2 : 0));
+            byte flags = (byte)((p.TrackedL ? 1 : 0) | (p.TrackedR ? 2 : 0)
+                | (p.PinchL ? 4 : 0) | (p.PinchR ? 8 : 0));
             w.WriteValueSafe(flags);
             WriteBones(ref w, p.BonesL);
             WriteBones(ref w, p.BonesR);
@@ -39,6 +40,8 @@ namespace TableDuoVr.Net
             r.ReadValueSafe(out byte flags);
             p.TrackedL = (flags & 1) != 0;
             p.TrackedR = (flags & 2) != 0;
+            p.PinchL = (flags & 4) != 0;
+            p.PinchR = (flags & 8) != 0;
             ReadBones(ref r, p.BonesL);
             ReadBones(ref r, p.BonesR);
         }

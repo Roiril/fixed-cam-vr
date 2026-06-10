@@ -63,6 +63,13 @@ namespace TableDuoVr.EditorTools
             CreateSeat(seats.transform, 0, new Vector3(0f, 0f, -0.85f), 0f);    // フルアバター席
             CreateSeat(seats.transform, 1, new Vector3(0f, 0f, 0.85f), 180f);   // 手だけアバター席
 
+            // 掴める小物（scene-placed NetworkObject。サーバ駆動追従 + NetworkTransform 同期）
+            var props = new GameObject("Props");
+            props.transform.SetParent(root.transform, false);
+            CreateProp(props.transform, "Prop_Cube0", new Vector3(-0.3f, 0.74f, 0f));
+            CreateProp(props.transform, "Prop_Cube1", new Vector3(0f, 0.74f, 0f));
+            CreateProp(props.transform, "Prop_Cube2", new Vector3(0.3f, 0.74f, 0f));
+
             // --- OVRCameraRig + ハンドトラッキング ---
             var rig = InstantiateRig();
             Transform? trackingSpace = null, centerEye = null;
@@ -126,6 +133,20 @@ namespace TableDuoVr.EditorTools
                       "- 実機: OVRProjectConfig の Hand Tracking Support を Controllers And Hands 以上にすること\n" +
                       "- ビルド対象にする時は Build Settings へ本シーンを手動追加（Main.unity と排他運用）\n" +
                       "- L0 検証: OVRCameraRig を無効化 / DebugCamera と FakeHandDriver を有効化");
+        }
+
+        private static void CreateProp(Transform parent, string name, Vector3 pos)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = pos;
+            go.transform.localScale = Vector3.one * 0.08f;
+            go.AddComponent<NetworkObject>();
+            var nt = go.AddComponent<Unity.Netcode.Components.NetworkTransform>();
+            nt.Interpolate = true;
+            nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
+            go.AddComponent<Grabbable>();
         }
 
         private static void CreateSeat(Transform parent, int index, Vector3 pos, float yaw)

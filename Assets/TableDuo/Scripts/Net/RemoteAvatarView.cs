@@ -13,10 +13,16 @@ namespace TableDuoVr.Net
     /// </summary>
     public sealed class RemoteAvatarView : MonoBehaviour
     {
+        /// <summary>受信レート(30Hz)→描画レート(72-90Hz)の指数平滑係数。大きいほど追従が速い。</summary>
+        private const float SmoothK = 20f;
+
         private Transform? _head;
         private HandView? _left;
         private HandView? _right;
         private bool _handsOnly;
+
+        private readonly AvatarPose _target = new();
+        private bool _hasTarget;
 
         public static RemoteAvatarView Create(Transform seatAnchor, bool handsOnly)
         {
@@ -43,15 +49,28 @@ namespace TableDuoVr.Net
             _right = new HandView(transform, "HandR");
         }
 
+        /// <summary>受信 pose をターゲットに記録。実際の追従は Update で平滑化して行う。</summary>
         public void Apply(AvatarPose pose)
         {
+            _target.CopyFrom(pose);
+            _hasTarget = true;
+        }
+
+        private void Update()
+        {
+            if (!_hasTarget) return;
+            // 30Hz 受信を描画フレームへ指数平滑（フレームレート非依存）
+            float a = 1f - Mathf.Exp(-SmoothK * Time.deltaTime);
+
             if (_head != null)
             {
-                _head.localPosition = pose.HeadPos;
-                _head.localRotation = pose.HeadRot;
+                _head.localPosition = Vector3.Lerp(_head.localPosition, _target.HeadPos, a);
+                _head.localRotation = Quaternion.Slerp(_head.localRotation, _target.HeadRot, a);
             }
-            _left?.Apply(pose.WristPosL, pose.WristRotL, pose.BonesL, pose.TrackedL, HandSkeletonLayout.CapturedL);
-            _right?.Apply(pose.WristPosR, pose.WristRotR, pose.BonesR, pose.TrackedR, HandSkeletonLayout.CapturedR);
+            _left?.Tick(a, _target.WristPosL, _target.WristRotL, _target.BonesL,
+                _target.TrackedL, HandSkeletonLayout.CapturedL);
+            _right?.Tick(a, _target.WristPosR, _target.WristRotR, _target.BonesR,
+                _target.TrackedR, HandSkeletonLayout.CapturedR);
         }
 
         private static Transform CreatePrimitive(Transform parent, PrimitiveType type, float scale, string name)
@@ -68,9 +87,13 @@ namespace TableDuoVr.Net
         /// <summary>片手の描画。bone 階層は layout が手に入った時点で遅延構築。</summary>
         private sealed class HandView
         {
+            /// <summary>トラッキングロスト時のフェード速度（スケール 1→0 が ~0.3s）。</summary>
+            private const float FadePerSec = 3.5f;
+
             private readonly Transform _root;
             private readonly Transform _wristProxy;
             private Transform[]? _bones;
+            private float _visibility = 1f;
 
             public HandView(Transform parent, string name)
             {
@@ -79,18 +102,25 @@ namespace TableDuoVr.Net
                 _wristProxy = CreatePrimitive(_root, PrimitiveType.Cube, 0.05f, "WristProxy");
             }
 
-            public void Apply(Vector3 wristPos, Quaternion wristRot, Quaternion[] boneRots,
+            public void Tick(float smooth, Vector3 wristPos, Quaternion wristRot, Quaternion[] boneRots,
                 bool tracked, HandSkeletonLayout? layout)
             {
-                // v1 はフェード無しの即時表示切替（点滅はしない: tracked は受信側で安定している前提）
-                if (_root.gameObject.activeSelf != tracked)
+                // ロスト中はスケールフェードで消す（点滅させない — 要件 §4）
+                _visibility = Mathf.MoveTowards(_visibility, tracked ? 1f : 0f,
+                    FadePerSec * Time.deltaTime);
+                bool visible = _visibility > 0.001f;
+                if (_root.gameObject.activeSelf != visible)
                 {
-                    _root.gameObject.SetActive(tracked);
+                    _root.gameObject.SetActive(visible);
                 }
-                if (!tracked) return;
+                if (!visible) return;
+                _root.localScale = Vector3.one * _visibility;
 
-                _root.localPosition = wristPos;
-                _root.localRotation = wristRot;
+                if (tracked)
+                {
+                    _root.localPosition = Vector3.Lerp(_root.localPosition, wristPos, smooth);
+                    _root.localRotation = Quaternion.Slerp(_root.localRotation, wristRot, smooth);
+                }
 
                 if (_bones == null && layout != null)
                 {
@@ -102,7 +132,7 @@ namespace TableDuoVr.Net
                 int n = layout.BoneCount;
                 for (int i = 0; i < n; i++)
                 {
-                    _bones[i].localRotation = boneRots[i];
+                    _bones[i].localRotation = Quaternion.Slerp(_bones[i].localRotation, boneRots[i], smooth);
                 }
             }
 

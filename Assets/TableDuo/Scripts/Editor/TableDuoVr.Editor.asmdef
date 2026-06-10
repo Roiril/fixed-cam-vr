@@ -6,6 +6,7 @@
         "TableDuoVr.Net",
         "Oculus.VR",
         "Unity.Netcode.Runtime",
+        "Unity.Netcode.Components",
         "Unity.Netcode.Transports.UTP"
     ],
     "includePlatforms": [

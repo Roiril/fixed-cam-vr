@@ -160,3 +160,12 @@ adb shell am start -n <pkg>/com.unity3d.player.UnityPlayerActivity -e tdv_mode c
 ```
 
 PC ビルド / Editor: `-tdvMode host|client -tdvIp <ip>`
+
+### 2026-06-10 追記: Phase 3 実装 + L0 検証完了
+
+- ピンチを AvatarPose/codec/録画(TDV2)に追加。Fake は右手 4 秒周期ピンチ + テーブルへ届く軌道
+- 掴みは **ownership 移譲ではなくサーバ駆動追従**に変更（NGO 1.x コアの NetworkTransform はサーバ権威のため。サーバは全 pose を保持済みで部品が減る）。Grabbable=先着裁定 / PinchGrabInteractor=要求送信
+- RemoteAvatarView に指数平滑（k=20）+ ロスト時スケールフェード追加
+- L0 実績: Host 単体で Grab/Release ループ確認（`Grab Prop_Cube2 ← client0 hand1`）。EditMode テスト 2/2 PASS
+- 既知の環境制約: この PC の execute_code は常に失敗（mono コマンドライン長）→ autoMode フィールド + manage_components で代替
+- 残: 2プロセス同期の絵としての確認（L1/L2、Quest 接続時）・recenter・Phase 5

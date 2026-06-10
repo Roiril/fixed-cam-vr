@@ -75,11 +75,17 @@ namespace TableDuoVr.Hands.Playback
 
             _pose.TrackedL = true;
             _pose.TrackedR = true;
-            _pose.WristPosL = new Vector3(-0.18f + Mathf.Sin(t * 1.7f) * 0.06f, 0.85f + Mathf.Sin(t * 2.1f) * 0.08f, 0.25f);
+            // 席はテーブル中心から 0.85m 後ろ。テーブル上の小物（local z≈0.85 相当）まで
+            // 届くように手を前方へ伸ばす（人間の腕より長いが L0 検証用なので可）
+            _pose.WristPosL = new Vector3(-0.28f + Mathf.Sin(t * 1.7f) * 0.06f, 0.80f + Mathf.Sin(t * 2.1f) * 0.05f, 0.6f + Mathf.Sin(t * 0.9f) * 0.15f);
             _pose.WristRotL = Quaternion.Euler(Mathf.Sin(t * 2f) * 30f, 0f, 90f);
-            _pose.WristPosR = new Vector3(0.18f + Mathf.Sin(t * 1.4f + 1f) * 0.06f, 0.85f + Mathf.Cos(t * 1.9f) * 0.08f, 0.25f);
+            _pose.WristPosR = new Vector3(0.28f + Mathf.Sin(t * 1.4f + 1f) * 0.04f, 0.80f + Mathf.Cos(t * 1.9f) * 0.05f, 0.85f + Mathf.Sin(t * 0.8f) * 0.12f);
             _pose.WristRotR = Quaternion.Euler(Mathf.Sin(t * 2.2f + 0.5f) * 30f, 0f, -90f);
             // bone は identity のまま（synthetic では指は固定。指の検証は File モードで）
+
+            // 掴み検証用: 右手が 4 秒周期で 1.5 秒ピンチする
+            _pose.PinchR = Mathf.Repeat(t, 4f) < 1.5f;
+            _pose.PinchL = false;
         }
     }
 }

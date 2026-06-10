@@ -23,6 +23,8 @@ namespace TableDuoVr.Tests
                 WristRotR = Quaternion.Euler(5f, -90f, -15f),
                 TrackedL = true,
                 TrackedR = false,
+                PinchL = false,
+                PinchR = true,
             };
             for (int i = 0; i < AvatarPose.BonesPerHand; i++)
             {
@@ -62,6 +64,8 @@ namespace TableDuoVr.Tests
             AssertQuat(src.WristRotR, dst.WristRotR, 1e-5f, "WristRotR");
             Assert.AreEqual(src.TrackedL, dst.TrackedL);
             Assert.AreEqual(src.TrackedR, dst.TrackedR);
+            Assert.AreEqual(src.PinchL, dst.PinchL);
+            Assert.AreEqual(src.PinchR, dst.PinchR);
 
             // bone は half 精度。角度誤差 1° 未満を要求
             for (int i = 0; i < AvatarPose.BonesPerHand; i++)

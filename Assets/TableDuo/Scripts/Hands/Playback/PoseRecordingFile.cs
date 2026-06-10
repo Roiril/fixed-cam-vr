@@ -11,7 +11,7 @@ namespace TableDuoVr.Hands.Playback
     /// </summary>
     public static class PoseRecordingFile
     {
-        private const int Magic = 0x54445631; // "TDV1"
+        private const int Magic = 0x54445632; // "TDV2"（pinch フラグ追加で format 改訂）
 
         public sealed class Data
         {
@@ -97,6 +97,8 @@ namespace TableDuoVr.Hands.Playback
             WriteQ(w, p.WristRotR);
             w.Write(p.TrackedL);
             w.Write(p.TrackedR);
+            w.Write(p.PinchL);
+            w.Write(p.PinchR);
             for (int i = 0; i < AvatarPose.BonesPerHand; i++) WriteQ(w, p.BonesL[i]);
             for (int i = 0; i < AvatarPose.BonesPerHand; i++) WriteQ(w, p.BonesR[i]);
         }
@@ -111,6 +113,8 @@ namespace TableDuoVr.Hands.Playback
             p.WristRotR = ReadQ(r);
             p.TrackedL = r.ReadBoolean();
             p.TrackedR = r.ReadBoolean();
+            p.PinchL = r.ReadBoolean();
+            p.PinchR = r.ReadBoolean();
             for (int i = 0; i < AvatarPose.BonesPerHand; i++) p.BonesL[i] = ReadQ(r);
             for (int i = 0; i < AvatarPose.BonesPerHand; i++) p.BonesR[i] = ReadQ(r);
         }

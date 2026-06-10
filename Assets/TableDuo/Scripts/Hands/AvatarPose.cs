@@ -23,6 +23,10 @@ namespace TableDuoVr.Hands
         public bool TrackedL;
         public bool TrackedR;
 
+        /// <summary>人差し指ピンチ（掴み入力）。</summary>
+        public bool PinchL;
+        public bool PinchR;
+
         public readonly Quaternion[] BonesL = NewIdentityArray();
         public readonly Quaternion[] BonesR = NewIdentityArray();
 
@@ -36,6 +40,8 @@ namespace TableDuoVr.Hands
             WristRotR = src.WristRotR;
             TrackedL = src.TrackedL;
             TrackedR = src.TrackedR;
+            PinchL = src.PinchL;
+            PinchR = src.PinchR;
             System.Array.Copy(src.BonesL, BonesL, BonesPerHand);
             System.Array.Copy(src.BonesR, BonesR, BonesPerHand);
         }

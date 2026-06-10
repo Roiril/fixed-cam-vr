@@ -17,6 +17,7 @@ namespace TableDuoVr.Net
         [SerializeField] private float sendRate = 30f;
 
         private RemoteAvatarView? _view;
+        private PinchGrabInteractor? _interactor;
         private IHandPoseSource? _source;
         private float _nextSend;
         private float _lastPoseAt = -1f;
@@ -25,8 +26,8 @@ namespace TableDuoVr.Net
 
         public override void OnNetworkSpawn()
         {
-            SeatIndex = OwnerClientId == NetworkManager.ServerClientId ? 0 : 1;
-            var seat = FindSeat(SeatIndex);
+            SeatIndex = SeatLocator.SeatIndexOf(OwnerClientId);
+            var seat = SeatLocator.Find(SeatIndex);
             if (seat == null)
             {
                 Debug.LogError($"[TableDuo] 席が見つかりません: Seat{SeatIndex}（Setup TableDuo Scene 未実行？）");
@@ -37,6 +38,11 @@ namespace TableDuoVr.Net
             {
                 AlignLocalRig(seat);
                 _nextSend = Time.time;
+
+                var interactorGo = new GameObject("PinchGrabInteractor");
+                interactorGo.transform.SetParent(transform, false);
+                _interactor = interactorGo.AddComponent<PinchGrabInteractor>();
+                _interactor.Initialize(seat, OwnerClientId);
             }
             else
             {
@@ -98,10 +104,5 @@ namespace TableDuoVr.Net
             Debug.Log($"[TableDuo] リグを {seat.name} へアライン");
         }
 
-        private static Transform? FindSeat(int index)
-        {
-            var go = GameObject.Find($"[TableDuo]/Seats/Seat{index}");
-            return go != null ? go.transform : null;
-        }
     }
 }

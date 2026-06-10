@@ -33,6 +33,8 @@ namespace TableDuoVr.Net
 
         private const string PoseMsg = "tdv_pose";
         private readonly Dictionary<ulong, AvatarPose> _remotePoses = new();
+        private readonly AvatarPose _localPose = new();
+        private bool _hasLocalPose;
         private string _ipInput = "";
         private string _status = "idle";
 
@@ -104,6 +106,9 @@ namespace TableDuoVr.Net
             var nm = NetworkManager.Singleton;
             if (nm == null || !nm.IsListening || nm.CustomMessagingManager == null) return;
 
+            _localPose.CopyFrom(pose);
+            _hasLocalPose = true;
+
             var writer = new FastBufferWriter(PoseCodec.MaxBytes, Allocator.Temp);
             try
             {
@@ -163,6 +168,21 @@ namespace TableDuoVr.Net
                 nm.CustomMessagingManager.SendNamedMessage(
                     PoseMsg, clientId, writer, NetworkDelivery.Unreliable);
             }
+        }
+
+        /// <summary>
+        /// clientId の最新 pose を返す（自分=送信キャッシュ / 他人=受信バッファ）。
+        /// サーバ側の掴み追従（Grabbable）が使う。
+        /// </summary>
+        public bool TryGetPose(ulong clientId, out AvatarPose pose)
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null && clientId == nm.LocalClientId)
+            {
+                pose = _localPose;
+                return _hasLocalPose;
+            }
+            return _remotePoses.TryGetValue(clientId, out pose!);
         }
 
         private AvatarPose GetPoseBuffer(ulong clientId)
