@@ -301,6 +301,7 @@ Quest 3 を USB-C 接続。adb 経由のワイヤレスデプロイも可。
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | fixed-cam-streamer / DroidCam 不通 / HMD 真っ黒 / FPS 低下（OVR Metrics / Profiler 含む）/ 実機検証で得た知見 |
 | [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) (別リポジトリ) | 配信側 Android アプリの実装・ビルド手順・運用ノート |
 | [docs/onsite-checklist.md](docs/onsite-checklist.md) | 現場（実機 Quest 3）での 60 秒チェック → Phase 別動作確認 → 切り分けフロー |
+| [docs/table-duo/requirements.md](docs/table-duo/requirements.md) | 同居サブプロジェクト TableDuo（2人非対称VR）の要件 |
 | [.claude/plans/](.claude/plans/) | 直近・次フェーズの実装計画書（完了済みは git log で参照） |
 | [.github/workflows/README.md](.github/workflows/README.md) | GitHub Actions（Unity Test Runner）の設定手順 |
 
@@ -319,7 +320,7 @@ fixed-cam-vr/
 │   │   ├── Logic/            # StreamingLogic（CameraStreamRegistry + 入力ブリッジ）
 │   │   └── XR/               # 自前 XR Prefab 用（OVRCameraRig は Meta XR 標準を直接利用）
 │   ├── Scenes/
-│   │   ├── Main.unity                  # 唯一の Build Settings 登録シーン（Phase 2 / 2.5）
+│   │   ├── Main.unity                  # 本体の Build Settings 登録シーン（TableDuoMain と排他運用）
 │   │   ├── Debug/
 │   │   │   └── FlatStreaming.unity     # HMD なし検証（Editor 専用）
 │   │   └── Sandbox/
@@ -330,6 +331,7 @@ fixed-cam-vr/
 │   │   ├── OvrBridge/        # OVRInput ↔ asmdef 境界ブリッジ
 │   │   ├── Tracking/         # プレイヤー位置連動カメラ切替（Phase 2.7）
 │   │   └── Fx/               # 映像加工 / CG 合成プロトタイプ（Phase 3）
+│   ├── TableDuo/             # 同居サブプロジェクト：テーブル2人非対称VR（CLAUDE.md 参照）
 │   └── Settings/             # URP / Quality / CameraSource SO
 ├── Packages/manifest.json    # Meta XR SDK 等の依存
 ├── ProjectSettings/          # エディタ設定

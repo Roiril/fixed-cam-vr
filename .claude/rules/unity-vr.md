@@ -17,18 +17,19 @@ globs:
 Assets/
 ├── Scenes/                  # *.unity（命名: PascalCase）
 ├── Scripts/
-│   ├── Streaming/           # MJPEG / WebRTC 取り込み
-│   ├── Passthrough/         # パススルー制御
-│   ├── UI/                  # ワールドスペース UI
-│   └── Common/              # 共有ユーティリティ
+│   ├── Streaming/           # MJPEG 取り込み（asmdef: FixedCamVr.Streaming）
+│   ├── Diagnostics/         # HUD / ログ / StartupFader
+│   ├── Tracking/            # PlayerZone（HMD 座標駆動）
+│   ├── Fx/                  # ポスト FX（Blit/Compute/Particles/Source）
+│   ├── OvrBridge/           # OVRInput 接点（asmdef なし = Assembly-CSharp。意図的）
+│   └── <Feature>/Editor/    # 各機能の Editor 拡張（別 asmdef）
 ├── Prefabs/<Feature>/
-├── Art/
-│   ├── Materials/
-│   ├── Shaders/             # ShaderGraph (.shadergraph) / HLSL (.shader)
-│   └── Textures/
-├── Settings/                # ScriptableObject 設定
+├── Settings/                # ScriptableObject 設定（Cameras/ 等）
+├── TableDuo/                # 同居サブプロジェクト（CLAUDE.md 参照、相互参照禁止）
 └── ThirdParty/              # 外部アセット（Meta XR SDK は除く）
 ```
+
+Passthrough/・UI/・Common/・Art/ は後続フェーズで必要になったら切る（先回りで作らない）。
 
 ## C# 規約
 
@@ -55,8 +56,8 @@ Assets/
 
 ## 入力
 
-- コントローラ: XR Interaction Toolkit の `XRController` + `InputActionReference`
-- Action 定義は `Assets/Settings/InputActions.inputactions` 単一ファイルに集約
+- 現状は `OvrBridge/OvrControllerBridge.cs` で OVRInput を直接参照（マッピングは Inspector で変更可）
+- XRI の `InputActionReference` + `Assets/Settings/InputActions.inputactions` への集約は、入力が増えた段階で導入（現状ファイル未作成）
 
 ## ビルド
 

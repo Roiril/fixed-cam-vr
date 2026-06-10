@@ -58,6 +58,16 @@ git cherry-pick <SHA1> <SHA2> <SHA3> ...
 - `Packages/packages-lock.json`（manage_packages で追加した時）
 - `ProjectSettings/EditorBuildSettings.asset`（Build Settings 整理時、変更内容を明示的に説明）
 
+## ドキュメント同期チェック（コミット前）
+
+構造を変えるコミット（ディレクトリ新設 / 標準ツール移行 / サブプロジェクト追加 / メニュー追加 / シーン構成変更）では、**同じコミットで参照ドキュメントもスイープする**：
+
+- `unity-vr.md` のディレクトリ構成図 / `README.md` のディレクトリ・ドキュメント一覧
+- 旧標準に言及する memory（例: DroidCam 標準時代の記述）→ 非推奨マーク or 更新
+- 逆方向も同じ：rules/memory に新しい罠・規約を書いた時は、既存コードを grep してスイープする（2026-06-10 の MjpegScreen Texture2D 未初期化の教訓 — [fixed_cam_review_backlog.md](../memory/fixed_cam_review_backlog.md)）
+
+「コードだけ直してドキュメントが古いまま」を 2 回検出済み（2026-06-10 レビューで一括是正）。3 回目を出さない。
+
 ## ハンドオフ
 
 長時間セッションの終わり / 大きな機能完了時 / 翌日に持ち越す時は **次セッション貼り付け用プロンプト** を出力する。`handoff` スキル推奨。最低限含める：
