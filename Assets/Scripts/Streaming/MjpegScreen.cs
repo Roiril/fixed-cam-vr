@@ -77,6 +77,9 @@ namespace FixedCamVr.Streaming
             if (!UseRegistry)
             {
                 _tex = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                // 未初期化 Texture2D は Quest GPU で白ノイズ化する（unity_pitfalls.md）
+                _tex.SetPixels(new[] { Color.black, Color.black, Color.black, Color.black });
+                _tex.Apply(updateMipmaps: false, makeNoLongerReadable: false);
                 _renderer.material.mainTexture = _tex;
             }
 
