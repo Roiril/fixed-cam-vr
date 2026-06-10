@@ -95,10 +95,11 @@ namespace TableDuoVr.EditorTools
             }
 
             // 椅子（見た目のみ・席アンカーとは独立）と卓上ランプ
+            // Kenney chair.fbx は -z が正面（180° が「テーブルへ向く」）
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
-                root.transform, "Chair0", new Vector3(0f, 0f, -0.78f), 0f, targetHeight: 0.85f, maxWidth: 0.55f);
+                root.transform, "Chair0", new Vector3(0f, 0f, -0.78f), 180f, targetHeight: 0.85f, maxWidth: 0.55f);
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
-                root.transform, "Chair1", new Vector3(0f, 0f, 0.78f), 180f, targetHeight: 0.85f, maxWidth: 0.55f);
+                root.transform, "Chair1", new Vector3(0f, 0f, 0.78f), 0f, targetHeight: 0.85f, maxWidth: 0.55f);
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/lampRoundTable.fbx",
                 root.transform, "TableLamp", new Vector3(-0.5f, 0.7f, -0.22f), 0f, targetHeight: 0.25f, maxWidth: 0.18f);
 
