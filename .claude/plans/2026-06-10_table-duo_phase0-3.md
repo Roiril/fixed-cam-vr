@@ -169,3 +169,12 @@ PC ビルド / Editor: `-tdvMode host|client -tdvIp <ip>`
 - L0 実績: Host 単体で Grab/Release ループ確認（`Grab Prop_Cube2 ← client0 hand1`）。EditMode テスト 2/2 PASS
 - 既知の環境制約: この PC の execute_code は常に失敗（mono コマンドライン長）→ autoMode フィールド + manage_components で代替
 - 残: 2プロセス同期の絵としての確認（L1/L2、Quest 接続時）・recenter・Phase 5
+
+### 2026-06-10 追記2: 実機 L1 検証（人間装着）+ Phase 4 完了
+
+- **L1 完了**: ユーザー装着で実手ピンチ掴み（3キューブ Grab/Release 多数、client1）が成立
+- 装着で発覚し修正: ①Standard マテリアルの URP マゼンタ化 → Setup が URP マテリアル生成・割当（リモート用は Resources）②ローカル手の描画欠落 → OVRHandPrefab ③Setup の保存確認ダイアログが Editor をブロック → 無確認保存
+- Phase 4 完了: 胴体（頭緩追従）/ RecenterWatcher（席再アライン）/ 自動録画は実機のみ
+- **TestData/tdv_handrec_real_20260610.bin** = 実手録画（ピンチ込み120s）。Editor の FakeHandDriver File モードが既定でロードし、L0 で実手データの掴み再現を確認済み
+- 既知の残課題: 録画に skeleton layout が入らない（layout=False、PC 再生で指の絵が出ない）→ 次回実機録画で OVRHandPrefab 構成での capture を確認
+- 残: L2（実機2台）/ UDP discovery / ゲームルール（未定）
