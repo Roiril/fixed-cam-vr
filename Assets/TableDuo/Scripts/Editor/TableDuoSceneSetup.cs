@@ -7,6 +7,7 @@ using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using UnityEngine.SceneManagement;
 using UnityEngine;
 
 namespace TableDuoVr.EditorTools
@@ -224,8 +225,13 @@ namespace TableDuoVr.EditorTools
 
         private static void DeleteRoot(string name)
         {
-            var go = GameObject.Find(name);
-            if (go != null) Object.DestroyImmediate(go);
+            // GameObject.Find は inactive を見つけられず重複が生まれる（L0 トグルでリグを
+            // 無効化したまま再 Setup した事故が実績あり）。ルートを直接走査する。
+            var scene = SceneManager.GetActiveScene();
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                if (root.name == name) Object.DestroyImmediate(root);
+            }
         }
 
         private static void SetRef(SerializedObject so, string prop, Object? value)
