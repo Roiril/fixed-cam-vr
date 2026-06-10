@@ -23,11 +23,20 @@ namespace TableDuoVr.EditorTools
         private const string ScenePath = "Assets/TableDuo/Scenes/TableDuoMain.unity";
         private const string PlayerPrefabPath = "Assets/TableDuo/Prefabs/TableDuoPlayer.prefab";
         private const string RigPrefabPath = "Packages/com.meta.xr.sdk.core/Prefabs/OVRCameraRig.prefab";
+        private const string HandPrefabPath = "Packages/com.meta.xr.sdk.core/Prefabs/OVRHandPrefab.prefab";
+        private const string MaterialDir = "Assets/TableDuo/Materials";
+        private const string ResourcesDir = "Assets/TableDuo/Resources";
 
         [MenuItem("Tools/FixedCamVr/Setup/Setup TableDuo Scene", priority = 60)]
         public static void Setup()
         {
-            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            // 確認ダイアログを出さない（MCP/batchmode から呼ぶとモーダルで Editor ごと
+            // ブロックする実害 2 回）。dirty なら黙って保存してから進む
+            var current = SceneManager.GetActiveScene();
+            if (current.isDirty)
+            {
+                EditorSceneManager.SaveScene(current);
+            }
 
             var scene = File.Exists(ScenePath)
                 ? EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single)
@@ -49,15 +58,33 @@ namespace TableDuoVr.EditorTools
 
             var root = new GameObject("[TableDuo]");
 
+            // URP マテリアル（ランタイム生成プリミティブが内蔵 Standard を引いて
+            // 実機でマゼンタ化した実害があるため、全プリミティブに明示割当する）
+            var floorMat = EnsureMaterial($"{MaterialDir}/TableDuoFloor.mat",
+                "Universal Render Pipeline/Lit", new Color(0.25f, 0.27f, 0.30f));
+            var tableMat = EnsureMaterial($"{MaterialDir}/TableDuoTable.mat",
+                "Universal Render Pipeline/Lit", new Color(0.45f, 0.32f, 0.22f));
+            var propMat = EnsureMaterial($"{MaterialDir}/TableDuoProp.mat",
+                "Universal Render Pipeline/Lit", new Color(0.95f, 0.55f, 0.15f));
+            var handMat = EnsureMaterial($"{MaterialDir}/TableDuoLocalHand.mat",
+                "Universal Render Pipeline/Lit", new Color(0.85f, 0.75f, 0.65f));
+            // リモートアバター用はランタイム生成側が Resources.Load で引く
+            EnsureMaterial($"{ResourcesDir}/TableDuoAvatar.mat",
+                "Universal Render Pipeline/Lit", new Color(0.55f, 0.75f, 0.95f));
+            EnsureMaterial($"{ResourcesDir}/TableDuoHeadMarker.mat",
+                "Universal Render Pipeline/Unlit", new Color(1f, 0.9f, 0.3f));
+
             var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
             floor.name = "Floor";
             floor.transform.SetParent(root.transform, false);
+            floor.GetComponent<Renderer>().sharedMaterial = floorMat;
 
             var table = GameObject.CreatePrimitive(PrimitiveType.Cube);
             table.name = "Table";
             table.transform.SetParent(root.transform, false);
             table.transform.localPosition = new Vector3(0f, 0.35f, 0f);
             table.transform.localScale = new Vector3(1.2f, 0.7f, 0.8f); // 天板高 0.7m
+            table.GetComponent<Renderer>().sharedMaterial = tableMat;
 
             var seats = new GameObject("Seats");
             seats.transform.SetParent(root.transform, false);
@@ -67,9 +94,9 @@ namespace TableDuoVr.EditorTools
             // 掴める小物（scene-placed NetworkObject。サーバ駆動追従 + NetworkTransform 同期）
             var props = new GameObject("Props");
             props.transform.SetParent(root.transform, false);
-            CreateProp(props.transform, "Prop_Cube0", new Vector3(-0.3f, 0.74f, 0f));
-            CreateProp(props.transform, "Prop_Cube1", new Vector3(0f, 0.74f, 0f));
-            CreateProp(props.transform, "Prop_Cube2", new Vector3(0.3f, 0.74f, 0f));
+            CreateProp(props.transform, "Prop_Cube0", new Vector3(-0.3f, 0.74f, 0f), propMat);
+            CreateProp(props.transform, "Prop_Cube1", new Vector3(0f, 0.74f, 0f), propMat);
+            CreateProp(props.transform, "Prop_Cube2", new Vector3(0.3f, 0.74f, 0f), propMat);
 
             // --- OVRCameraRig + ハンドトラッキング ---
             var rig = InstantiateRig();
@@ -89,7 +116,8 @@ namespace TableDuoVr.EditorTools
             var debugCamGo = new GameObject("DebugCamera");
             var debugCam = debugCamGo.AddComponent<Camera>();
             debugCam.nearClipPlane = 0.05f;
-            debugCamGo.transform.SetPositionAndRotation(new Vector3(0f, 1.4f, -1.6f), Quaternion.Euler(20f, 0f, 0f));
+            // 向かいの席の頭（y≈1.6m）まで画角に入る高さ・引き
+            debugCamGo.transform.SetPositionAndRotation(new Vector3(0f, 1.7f, -2.1f), Quaternion.Euler(14f, 0f, 0f));
             debugCamGo.SetActive(false);
 
             // --- Systems ---
@@ -136,13 +164,34 @@ namespace TableDuoVr.EditorTools
                       "- L0 検証: OVRCameraRig を無効化 / DebugCamera と FakeHandDriver を有効化");
         }
 
-        private static void CreateProp(Transform parent, string name, Vector3 pos)
+        private static Material EnsureMaterial(string path, string shaderName, Color color)
+        {
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                var shader = Shader.Find(shaderName);
+                if (shader == null)
+                {
+                    Debug.LogError($"[TableDuoSceneSetup] シェーダが見つかりません: {shaderName}");
+                    shader = Shader.Find("Universal Render Pipeline/Lit");
+                }
+                mat = new Material(shader!);
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            mat.color = color;
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        private static void CreateProp(Transform parent, string name, Vector3 pos, Material mat)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = name;
             go.transform.SetParent(parent, false);
             go.transform.localPosition = pos;
             go.transform.localScale = Vector3.one * 0.08f;
+            go.GetComponent<Renderer>().sharedMaterial = mat;
             go.AddComponent<NetworkObject>();
             var nt = go.AddComponent<Unity.Netcode.Components.NetworkTransform>();
             nt.Interpolate = true;
@@ -195,18 +244,50 @@ namespace TableDuoVr.EditorTools
                 Debug.LogError($"[TableDuoSceneSetup] アンカーが見つかりません: {anchorPath}");
                 return;
             }
-            var go = new GameObject(isLeft ? "OVRHandLeft" : "OVRHandRight");
-            go.transform.SetParent(anchor, false);
+            // OVRHandPrefab = OVRHand + OVRSkeleton + OVRMesh + OVRMeshRenderer + SkinnedMeshRenderer。
+            // ローカル手の見た目（自分の手）をネット往復なしで描画するために必須
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(HandPrefabPath);
+            GameObject go;
+            if (prefab != null)
+            {
+                go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                go.transform.SetParent(anchor, false);
+            }
+            else
+            {
+                Debug.LogWarning("[TableDuoSceneSetup] OVRHandPrefab が見つからず素の OVRHand で代替（手の見た目なし）");
+                go = new GameObject();
+                go.transform.SetParent(anchor, false);
+                go.AddComponent<OVRHand>();
+                go.AddComponent<OVRSkeleton>();
+            }
+            go.name = isLeft ? "OVRHandLeft" : "OVRHandRight";
 
-            hand = go.AddComponent<OVRHand>();
+            hand = go.GetComponent<OVRHand>();
             var handSo = new SerializedObject(hand);
             SetEnum(handSo, "HandType", isLeft ? 0 : 1); // OVRPlugin.Hand: HandLeft=0, HandRight=1
             handSo.ApplyModifiedPropertiesWithoutUndo();
 
-            skeleton = go.AddComponent<OVRSkeleton>();
+            skeleton = go.GetComponent<OVRSkeleton>();
             var skelSo = new SerializedObject(skeleton);
             SetEnum(skelSo, "_skeletonType", isLeft ? 0 : 1); // SkeletonType: HandLeft=0, HandRight=1
             skelSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var mesh = go.GetComponent<OVRMesh>();
+            if (mesh != null)
+            {
+                var meshSo = new SerializedObject(mesh);
+                SetEnum(meshSo, "_meshType", isLeft ? 0 : 1); // MeshType: HandLeft=0, HandRight=1
+                meshSo.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            // 手マテリアルも URP に差し替え（プレハブ既定がビルドでマゼンタ化する保険）
+            var smr = go.GetComponentInChildren<SkinnedMeshRenderer>();
+            var urpHandMat = AssetDatabase.LoadAssetAtPath<Material>($"{MaterialDir}/TableDuoLocalHand.mat");
+            if (smr != null && urpHandMat != null)
+            {
+                smr.sharedMaterial = urpHandMat;
+            }
         }
 
         private static GameObject CreatePlayerPrefab()

@@ -34,16 +34,33 @@ namespace TableDuoVr.Net
             return view;
         }
 
+        private static Material? _avatarMat;
+        private static Material? _markerMat;
+        private static bool _matsLoaded;
+
         private void Build()
         {
+            if (!_matsLoaded)
+            {
+                // Setup メニューが Assets/TableDuo/Resources/ に生成する URP マテリアル。
+                // ランタイム生成プリミティブの内蔵 Standard は URP 実機ビルドでマゼンタ化するため必須
+                _avatarMat = Resources.Load<Material>("TableDuoAvatar");
+                _markerMat = Resources.Load<Material>("TableDuoHeadMarker");
+                _matsLoaded = true;
+                if (_avatarMat == null)
+                {
+                    Debug.LogWarning("[TableDuo] TableDuoAvatar.mat が Resources に無い（Setup 未実行？）— 既定マテリアルで続行");
+                }
+            }
+
             if (_handsOnly)
             {
                 // 頭マーカー: 小さな球。視線・頷きの社会的キューだけ残す
-                _head = CreatePrimitive(transform, PrimitiveType.Sphere, 0.06f, "HeadMarker");
+                _head = CreatePrimitive(transform, PrimitiveType.Sphere, 0.06f, "HeadMarker", _markerMat);
             }
             else
             {
-                _head = CreatePrimitive(transform, PrimitiveType.Cube, 0.18f, "Head");
+                _head = CreatePrimitive(transform, PrimitiveType.Cube, 0.18f, "Head", _avatarMat);
             }
             _left = new HandView(transform, "HandL");
             _right = new HandView(transform, "HandR");
@@ -73,12 +90,15 @@ namespace TableDuoVr.Net
                 _target.TrackedR, HandSkeletonLayout.CapturedR);
         }
 
-        private static Transform CreatePrimitive(Transform parent, PrimitiveType type, float scale, string name)
+        private static Transform CreatePrimitive(Transform parent, PrimitiveType type, float scale,
+            string name, Material? mat = null)
         {
             var go = GameObject.CreatePrimitive(type);
             go.name = name;
             var col = go.GetComponent<Collider>();
             if (col != null) Destroy(col);
+            if (mat == null) mat = _avatarMat; // 既定はアバター色
+            if (mat != null) go.GetComponent<Renderer>().sharedMaterial = mat;
             go.transform.SetParent(parent, worldPositionStays: false);
             go.transform.localScale = Vector3.one * scale;
             return go.transform;

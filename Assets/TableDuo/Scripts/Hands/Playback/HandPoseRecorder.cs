@@ -62,6 +62,10 @@ namespace TableDuoVr.Hands.Playback
             var src = HandPoseSourceRegistry.Best;
             if (src == null) return;
 
+            // どちらかの手がトラッキングされるまで録画を始めない
+            // （実機で被るまでの装着前デッドタイムをバッファに入れない）
+            if (_count == 0 && !src.Current.TrackedL && !src.Current.TrackedR) return;
+
             if (_count >= _buffer.Count)
             {
                 StopAndSave();
@@ -74,6 +78,13 @@ namespace TableDuoVr.Hands.Playback
         private void OnDestroy()
         {
             if (_recording) StopAndSave();
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            // Quest はホームに戻る/HMD を外すと pause が来る。force-stop では
+            // OnDestroy が呼ばれないため、ここでも保存しておく
+            if (paused && _recording) StopAndSave();
         }
     }
 }
