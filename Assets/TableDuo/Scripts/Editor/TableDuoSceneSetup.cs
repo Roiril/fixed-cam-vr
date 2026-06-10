@@ -135,7 +135,17 @@ namespace TableDuoVr.EditorTools
             SetRef(so, "rightSkeleton", rightSkel);
             so.ApplyModifiedPropertiesWithoutUndo();
 
-            systems.AddComponent<HandPoseRecorder>();
+            // 実機セッションは常に自動録画（装着が検知されてから 120s、pause で保存）。
+            // 実手データが L0 再生資産になるため既定 ON
+            var recorder = systems.AddComponent<HandPoseRecorder>();
+            var recSo = new SerializedObject(recorder);
+            var p = recSo.FindProperty("autoStartOnPlay");
+            if (p != null) p.boolValue = true;
+            var pm = recSo.FindProperty("maxSeconds");
+            if (pm != null) pm.floatValue = 120f;
+            recSo.ApplyModifiedPropertiesWithoutUndo();
+
+            systems.AddComponent<RecenterWatcher>();
 
             var fake = systems.AddComponent<FakeHandDriver>();
             fake.enabled = false; // L0 検証時に手動で ON

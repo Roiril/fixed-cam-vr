@@ -18,6 +18,8 @@ namespace TableDuoVr.Net
 
         private RemoteAvatarView? _view;
         private PinchGrabInteractor? _interactor;
+        private RecenterWatcher? _recenterWatcher;
+        private System.Action? _onRecentered;
         private IHandPoseSource? _source;
         private float _nextSend;
         private float _lastPoseAt = -1f;
@@ -43,6 +45,15 @@ namespace TableDuoVr.Net
                 interactorGo.transform.SetParent(transform, false);
                 _interactor = interactorGo.AddComponent<PinchGrabInteractor>();
                 _interactor.Initialize(seat, OwnerClientId);
+
+                // OS recenter で席がズレたら即再アライン（要件 §6）
+                _recenterWatcher = FindObjectOfType<RecenterWatcher>();
+                if (_recenterWatcher != null)
+                {
+                    var seatRef = seat;
+                    _onRecentered = () => AlignLocalRig(seatRef);
+                    _recenterWatcher.Recentered += _onRecentered;
+                }
             }
             else
             {
@@ -57,6 +68,10 @@ namespace TableDuoVr.Net
 
         public override void OnNetworkDespawn()
         {
+            if (_recenterWatcher != null && _onRecentered != null)
+            {
+                _recenterWatcher.Recentered -= _onRecentered;
+            }
             if (ConnectionManager.Instance != null)
             {
                 ConnectionManager.Instance.RemotePoseReceived -= OnRemotePose;

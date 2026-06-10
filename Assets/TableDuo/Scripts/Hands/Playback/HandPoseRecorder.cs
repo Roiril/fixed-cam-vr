@@ -27,7 +27,9 @@ namespace TableDuoVr.Hands.Playback
 
         private void Start()
         {
-            if (autoStartOnPlay) StartRecording();
+            // 自動録画は実機のみ。Editor は Fake 再生を re-record してしまい、
+            // その産物が persistentDataPath に残って TestData より優先される事故になる
+            if (autoStartOnPlay && !Application.isEditor) StartRecording();
         }
 
         [ContextMenu("Start Recording")]

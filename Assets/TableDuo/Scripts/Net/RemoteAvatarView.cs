@@ -17,6 +17,7 @@ namespace TableDuoVr.Net
         private const float SmoothK = 20f;
 
         private Transform? _head;
+        private Transform? _chest;
         private HandView? _left;
         private HandView? _right;
         private bool _handsOnly;
@@ -61,6 +62,10 @@ namespace TableDuoVr.Net
             else
             {
                 _head = CreatePrimitive(transform, PrimitiveType.Cube, 0.18f, "Head", _avatarMat);
+                // 胴体（フルアバターのみ）。席に座る上半身として頭の下へ。
+                // 腕 IK は意図的に無し（肘推定の破綻リスク — 要件 §5）
+                _chest = CreatePrimitive(transform, PrimitiveType.Cube, 1f, "Chest", _avatarMat);
+                _chest.localScale = new Vector3(0.34f, 0.42f, 0.16f);
             }
             _left = new HandView(transform, "HandL");
             _right = new HandView(transform, "HandR");
@@ -83,6 +88,17 @@ namespace TableDuoVr.Net
             {
                 _head.localPosition = Vector3.Lerp(_head.localPosition, _target.HeadPos, a);
                 _head.localRotation = Quaternion.Slerp(_head.localRotation, _target.HeadRot, a);
+            }
+            if (_chest != null && _head != null)
+            {
+                // 胴体は頭へ緩く追従（x/z は 6 割だけ・首 0.30m 下・yaw のみゆっくり）
+                float chestA = 1f - Mathf.Exp(-6f * Time.deltaTime);
+                var headP = _head.localPosition;
+                var chestTarget = new Vector3(headP.x * 0.6f, headP.y - 0.30f - 0.21f, headP.z * 0.6f);
+                _chest.localPosition = Vector3.Lerp(_chest.localPosition, chestTarget, chestA);
+                float headYaw = _head.localEulerAngles.y;
+                _chest.localRotation = Quaternion.Slerp(
+                    _chest.localRotation, Quaternion.Euler(0f, headYaw, 0f), chestA);
             }
             _left?.Tick(a, _target.WristPosL, _target.WristRotL, _target.BonesL,
                 _target.TrackedL, HandSkeletonLayout.CapturedL);

@@ -34,9 +34,7 @@ namespace TableDuoVr.Hands.Playback
         {
             if (mode == Mode.File && _data == null)
             {
-                string path = string.IsNullOrEmpty(filePath)
-                    ? Path.Combine(Application.persistentDataPath, "tdv_handrec.bin")
-                    : filePath;
+                string path = ResolveFilePath();
                 _data = PoseRecordingFile.Load(path);
                 if (_data == null)
                 {
@@ -54,6 +52,27 @@ namespace TableDuoVr.Hands.Playback
         }
 
         private void OnDisable() => HandPoseSourceRegistry.Unregister(this);
+
+        private string ResolveFilePath()
+        {
+            if (!string.IsNullOrEmpty(filePath)) return filePath;
+            string persistent = Path.Combine(Application.persistentDataPath, "tdv_handrec.bin");
+            if (File.Exists(persistent)) return persistent;
+#if UNITY_EDITOR
+            // Editor L0 では実機から回収した録画（TestData/）を既定で使う
+            var dir = Path.GetFullPath(Path.Combine(Application.dataPath, "../TestData"));
+            if (Directory.Exists(dir))
+            {
+                var files = Directory.GetFiles(dir, "tdv_handrec*.bin");
+                if (files.Length > 0)
+                {
+                    System.Array.Sort(files);
+                    return files[^1]; // 最新（名前順末尾）
+                }
+            }
+#endif
+            return persistent;
+        }
 
         private void Update()
         {
