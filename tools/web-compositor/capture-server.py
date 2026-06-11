@@ -1,23 +1,78 @@
 #!/usr/bin/env python3
-# web compositor 用ローカルサーバ。
+# web compositor / オペレータ卓 用ローカルサーバ。
 # - 静的配信（アプリ本体）
 # - POST /save?type=image|video  : body のバイナリを captures/ に保存（= この PC 内）
 # - GET  /captures/list          : 保存済み一覧（JSON、新しい順）
 # - GET  /captures/<name>        : 保存物の配信（静的）
+# - ショー制御（Unity 遠隔操作、.claude/plans/2026-06-11_web-operator-console.md）:
+#   GET  /state?rev=N            : show.json（rev > N まで最大 25s ブロックする long-poll）
+#   POST /state                  : show.json の部分更新（cameras/cues/post/control）
+#   POST /command                : {type: playCue|stopCue|setCameraOverride|setPost}
+#   POST /masks?name=            : マスク PNG 保存 → /masks/<name>.png で配信
+#   POST /unity/heartbeat        : Unity が現状報告（アクティブカメラ等）
+#   GET  /unity/status           : 直近 heartbeat + 経過秒（UI 表示用）
 # キャプチャ/録画は全てブラウザ側で行い、ここはその受け皿。スマホ側には何も書かない。
 
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CAPTURES = os.path.join(ROOT, 'captures')
+MASKS = os.path.join(ROOT, 'masks')
 os.makedirs(CAPTURES, exist_ok=True)
+os.makedirs(MASKS, exist_ok=True)
+
+# ---- ショー状態（show.json = 状態の正）----------------------------------
+SHOW_FILE = os.path.join(ROOT, 'show.json')
+LONGPOLL_MAX_SEC = 25.0
+_show_cond = threading.Condition()
+
+
+def _default_show():
+    return {
+        'rev': 0,
+        'cameras': [
+            {'id': 'A', 'sourceId': 'Phone01'},
+            {'id': 'B', 'sourceId': 'Phone02'},
+            {'id': 'C', 'sourceId': 'Phone03'},
+        ],
+        'cues': [],
+        'post': {'exposure': 0.0, 'contrast': 1.0, 'saturation': 1.0, 'temperature': 0.0,
+                 'vignette': 0.25, 'grain': 0.06, 'scanline': 0.0},
+        'control': {'activeCue': None, 'cameraOverride': None},
+    }
+
+
+def _load_show():
+    try:
+        with open(SHOW_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return _default_show()
+
+
+_show = _load_show()
+# Unity の直近 heartbeat（メモリのみ。再起動で消えてよい）
+_unity_status = {'at': 0.0}
+
+
+def _mutate_show(fn):
+    """_show を fn で変更し rev++ → long-poll を起こして永続化。"""
+    with _show_cond:
+        fn(_show)
+        _show['rev'] = int(_show.get('rev', 0)) + 1
+        with open(SHOW_FILE, 'w', encoding='utf-8') as f:
+            json.dump(_show, f, ensure_ascii=False, indent=2)
+        _show_cond.notify_all()
+        return _show['rev']
 
 # 動画生成プロンプトのストア（PC 内 prompts.json）。LAN のどの端末からも共有。
 PROMPTS_FILE = os.path.join(ROOT, 'prompts.json')
@@ -69,7 +124,41 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/reveal':
             q = parse_qs(urlparse(self.path).query)
             return self._reveal(q.get('name', [''])[0])
+        if path == '/state':
+            return self._get_state()
+        if path == '/unity/status':
+            age = (time.time() - _unity_status['at']) if _unity_status['at'] else None
+            return self._json({'status': _unity_status, 'ageSec': age,
+                               'alive': age is not None and age < 6.0})
+        if path == '/masks/list':
+            return self._json(self._list_masks())
         return super().do_GET()
+
+    # ---- show 状態（long-poll）----
+    def _get_state(self):
+        q = parse_qs(urlparse(self.path).query)
+        try:
+            known_rev = int(q.get('rev', ['-1'])[0])
+        except ValueError:
+            known_rev = -1
+        deadline = time.monotonic() + LONGPOLL_MAX_SEC
+        with _show_cond:
+            # rev が進むまでブロック（known_rev 省略/-1 なら即返す）
+            while known_rev >= 0 and int(_show.get('rev', 0)) <= known_rev:
+                remain = deadline - time.monotonic()
+                if remain <= 0:
+                    break
+                _show_cond.wait(remain)
+            return self._json(_show)
+
+    def _list_masks(self):
+        items = []
+        for n in os.listdir(MASKS):
+            fp = os.path.join(MASKS, n)
+            if os.path.isfile(fp):
+                items.append({'name': n, 'url': '/masks/' + n, 'mtime': os.stat(fp).st_mtime})
+        items.sort(key=lambda x: x['mtime'], reverse=True)
+        return items
 
     # captures/<name> をファイルマネージャで開く（選択状態）。サーバは PC 上で動くので可能。
     def _reveal(self, name):
@@ -92,6 +181,18 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == '/state':
+            return self._post_state()
+        if parsed.path == '/command':
+            return self._post_command()
+        if parsed.path == '/masks':
+            return self._post_mask(parse_qs(parsed.query))
+        if parsed.path == '/unity/heartbeat':
+            body = self._read_json_body()
+            body['at'] = time.time()
+            _unity_status.clear()
+            _unity_status.update(body)
+            return self._json({'ok': True})
         if parsed.path == '/save':
             q = parse_qs(parsed.query)
             typ = q.get('type', ['image'])[0]
@@ -142,6 +243,57 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({'ok': True, 'items': items})
 
         return self._json({'ok': False, 'error': 'unknown endpoint'}, 404)
+
+    # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
+    _STATE_KEYS = ('cameras', 'cues', 'post', 'control')
+
+    def _post_state(self):
+        body = self._read_json_body()
+        patch = {k: body[k] for k in self._STATE_KEYS if k in body}
+        if not patch:
+            return self._json({'ok': False, 'error': 'no valid keys'}, 400)
+
+        def apply(show):
+            show.update(patch)
+        rev = _mutate_show(apply)
+        return self._json({'ok': True, 'rev': rev})
+
+    def _post_command(self):
+        body = self._read_json_body()
+        typ = body.get('type')
+
+        def apply(show):
+            ctrl = show.setdefault('control', {})
+            if typ == 'playCue':
+                ctrl['activeCue'] = body.get('id')
+            elif typ == 'stopCue':
+                ctrl['activeCue'] = None
+            elif typ == 'setCameraOverride':
+                ctrl['cameraOverride'] = body.get('camera')  # None = ゾーン自律へ戻す
+            elif typ == 'setPost':
+                show.setdefault('post', {}).update(body.get('post') or {})
+            else:
+                raise ValueError(f'unknown command type: {typ}')
+        try:
+            rev = _mutate_show(apply)
+        except ValueError as e:
+            return self._json({'ok': False, 'error': str(e)}, 400)
+        return self._json({'ok': True, 'rev': rev})
+
+    def _post_mask(self, q):
+        name = (q.get('name', [''])[0]).strip()
+        # パストラバーサル拒否 + 拡張子は固定で .png
+        if not re.fullmatch(r'[A-Za-z0-9_\-]{1,64}', name):
+            return self._json({'ok': False, 'error': 'bad name (A-Za-z0-9_- only)'}, 400)
+        length = int(self.headers.get('Content-Length', 0))
+        data = self.rfile.read(length) if length else b''
+        if not data.startswith(b'\x89PNG'):
+            return self._json({'ok': False, 'error': 'not a png'}, 400)
+        fname = name + '.png'
+        with open(os.path.join(MASKS, fname), 'wb') as f:
+            f.write(data)
+        return self._json({'ok': True, 'name': fname, 'url': '/masks/' + fname,
+                           'size': len(data)})
 
     def _list_captures(self):
         items = []
