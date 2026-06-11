@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>📡 マルチカメラビュー — fixed-cam-vr</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #111; color: #ddd; font-family: "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: #1a1a1a; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .hint { color: #888; font-size: 12px; }
+  #grid { display: grid; gap: 8px; padding: 8px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+  .cam { background: #000; border: 1px solid #2a2a2a; border-radius: 6px; overflow: hidden; }
+  .cam .bar { display: flex; align-items: center; gap: 8px; padding: 5px 9px; background: #1d1d1d; font-size: 12px; }
+  .cam .bar .name { font-weight: 600; }
+  .cam .bar .status { margin-left: auto; color: #888; }
+  .cam .bar .status.ok { color: #5c5; }
+  .cam .bar .status.ng { color: #e66; }
+  .cam img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; }
+  .cam input { width: 110px; background: #111; color: #ccc; border: 1px solid #333; border-radius: 3px;
+               padding: 2px 5px; font-size: 11px; }
+  .cam input.auth { width: 90px; }
+  .cam input.port { width: 44px; }
+  button { background: #2a2a2a; color: #ccc; border: 1px solid #3a3a3a; border-radius: 4px;
+           padding: 3px 10px; font-size: 12px; cursor: pointer; }
+  button:hover { background: #353535; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📡 マルチカメラビュー</h1>
+  <span class="hint">/cam プロキシ経由（Basic 認証はサーバが肩代わり）。IP は編集して 🔄 で再接続、localStorage に保存される。</span>
+  <button id="reloadAll" style="margin-left:auto">🔄 全再接続</button>
+</header>
+<div id="grid"></div>
+<script>
+const DEFAULTS = [
+  { name: 'Phone01 / iPhone 13 Pro', host: '192.168.11.22', port: 8081, auth: 'admin:admin' },
+  { name: 'Phone02 / Pixel 7a',      host: '192.168.11.9',  port: 8080, auth: '' },
+  { name: 'Phone03 / Pixel 7 Pro',   host: '192.168.11.27', port: 8080, auth: '' },
+];
+const LS_KEY = 'multicam.cams.v1';
+let cams;
+try { cams = JSON.parse(localStorage.getItem(LS_KEY)) || DEFAULTS; } catch { cams = DEFAULTS; }
+if (!Array.isArray(cams) || cams.length !== DEFAULTS.length) cams = DEFAULTS;
+
+const grid = document.getElementById('grid');
+const panels = cams.map((cam, i) => {
+  const div = document.createElement('div');
+  div.className = 'cam';
+  div.innerHTML = `
+    <div class="bar">
+      <span class="name">${cam.name}</span>
+      <input class="host" value="${cam.host}" title="IP">
+      <input class="port" value="${cam.port}" title="port">
+      <input class="auth" value="${cam.auth}" placeholder="user:pass" title="Basic 認証（空=なし）">
+      <button class="re">🔄</button>
+      <span class="status">接続中…</span>
+    </div>
+    <img alt="${cam.name}">`;
+  grid.appendChild(div);
+
+  const img = div.querySelector('img');
+  const status = div.querySelector('.status');
+  let retryTimer = null;
+
+  function connect() {
+    clearTimeout(retryTimer);
+    cam.host = div.querySelector('.host').value.trim();
+    cam.port = parseInt(div.querySelector('.port').value, 10) || 8080;
+    cam.auth = div.querySelector('.auth').value.trim();
+    localStorage.setItem(LS_KEY, JSON.stringify(cams));
+    status.textContent = '接続中…'; status.className = 'status';
+    // 再接続でキャッシュされた壊れストリームを掴まないよう nonce を付ける
+    img.src = `/cam?host=${encodeURIComponent(cam.host)}&port=${cam.port}&path=/video` +
+              (cam.auth ? `&auth=${encodeURIComponent(cam.auth)}` : '') + `&t=${Date.now()}`;
+  }
+  img.addEventListener('load', () => { status.textContent = '● LIVE'; status.className = 'status ok'; });
+  img.addEventListener('error', () => {
+    status.textContent = '✕ 切断 — 5s 後に再試行'; status.className = 'status ng';
+    retryTimer = setTimeout(connect, 5000);
+  });
+  div.querySelector('.re').addEventListener('click', connect);
+  connect();
+  return { connect };
+});
+document.getElementById('reloadAll').addEventListener('click', () => panels.forEach(p => p.connect()));
+</script>
+</body>
+</html>

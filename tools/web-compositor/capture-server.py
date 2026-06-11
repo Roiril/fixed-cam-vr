@@ -11,8 +11,11 @@
 #   POST /masks?name=            : マスク PNG 保存 → /masks/<name>.png で配信
 #   POST /unity/heartbeat        : Unity が現状報告（アクティブカメラ等）
 #   GET  /unity/status           : 直近 heartbeat + 経過秒（UI 表示用）
+# - GET /cam?host=&port=&path=&auth=user:pass : MJPEG プロキシ（Basic 認証肩代わり。
+#   ブラウザは <img> の URL 埋め込み認証をブロックするため iPhone/IP Camera Lite はここを経由する）
 # キャプチャ/録画は全てブラウザ側で行い、ここはその受け皿。スマホ側には何も書かない。
 
+import base64
 import datetime
 import json
 import os
@@ -21,6 +24,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -132,7 +136,50 @@ class Handler(SimpleHTTPRequestHandler):
                                'alive': age is not None and age < 6.0})
         if path == '/masks/list':
             return self._json(self._list_masks())
+        if path == '/cam':
+            return self._proxy_cam(parse_qs(urlparse(self.path).query))
         return super().do_GET()
+
+    # MJPEG プロキシ。Basic 認証をサーバ側で肩代わりして同一オリジンで返す。
+    # <img src="/cam?host=...&port=8081&auth=admin:admin"> で使う。
+    def _proxy_cam(self, q):
+        host = (q.get('host', [''])[0]).strip()
+        if not re.fullmatch(r'[A-Za-z0-9.\-]{1,253}', host):
+            return self._json({'ok': False, 'error': 'bad host'}, 400)
+        try:
+            port = int(q.get('port', ['8080'])[0])
+        except ValueError:
+            return self._json({'ok': False, 'error': 'bad port'}, 400)
+        path = q.get('path', ['/video'])[0]
+        if not path.startswith('/'):
+            path = '/' + path
+        auth = q.get('auth', [''])[0]
+
+        req = urllib.request.Request(f'http://{host}:{port}{path}')
+        if auth:
+            token = base64.b64encode(auth.encode('utf-8')).decode('ascii')
+            req.add_header('Authorization', f'Basic {token}')
+        try:
+            upstream = urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            return self._json({'ok': False, 'error': f'upstream: {e}'}, 502)
+        try:
+            self.send_response(200)
+            ctype = upstream.headers.get('Content-Type', 'multipart/x-mixed-replace')
+            self.send_header('Content-Type', ctype)
+            self.end_headers()
+            while True:
+                chunk = upstream.read(16 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            pass  # クライアント側がタブを閉じた等。正常系
+        finally:
+            try:
+                upstream.close()
+            except Exception:
+                pass
 
     # ---- show 状態（long-poll）----
     def _get_state(self):
