@@ -192,12 +192,19 @@ namespace TableDuoVr.EditorTools
 
             systems.AddComponent<ConnectionManager>();
 
-            // 調査ロガー（ホストのみ稼働）+ フェーズマーク受付
+            // 調査ロガー（ホストのみ稼働）+ フェーズマーク受付 + リプレイ全記録
             var sessionLogger = systems.AddComponent<SessionLogger>();
             var markServer = systems.AddComponent<FacilitatorMarkServer>();
             var markSo = new SerializedObject(markServer);
             SetRef(markSo, "logger", sessionLogger);
             markSo.ApplyModifiedPropertiesWithoutUndo();
+            systems.AddComponent<SessionReplayRecorder>();
+
+            // リプレイビューア（stimulated recall 用・既定無効。有効化して Play で再生）
+            var replayGo = new GameObject("ReplayViewer");
+            replayGo.transform.SetParent(root.transform, false);
+            replayGo.AddComponent<ReplayViewer>();
+            replayGo.SetActive(false);
 
             // --- NetworkManager + プレイヤープレハブ ---
             var playerPrefab = CreatePlayerPrefab();

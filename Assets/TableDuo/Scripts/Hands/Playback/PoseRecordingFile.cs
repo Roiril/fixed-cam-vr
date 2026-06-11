@@ -64,7 +64,7 @@ namespace TableDuoVr.Hands.Playback
             return data;
         }
 
-        private static void WriteLayout(BinaryWriter w, HandSkeletonLayout l)
+        public static void WriteLayout(BinaryWriter w, HandSkeletonLayout l)
         {
             w.Write(l.BoneCount);
             for (int i = 0; i < AvatarPose.BonesPerHand; i++)
@@ -75,7 +75,7 @@ namespace TableDuoVr.Hands.Playback
             }
         }
 
-        private static HandSkeletonLayout ReadLayout(BinaryReader r)
+        public static HandSkeletonLayout ReadLayout(BinaryReader r)
         {
             var l = new HandSkeletonLayout { BoneCount = r.ReadInt32() };
             for (int i = 0; i < AvatarPose.BonesPerHand; i++)
@@ -87,7 +87,7 @@ namespace TableDuoVr.Hands.Playback
             return l;
         }
 
-        private static void WritePose(BinaryWriter w, AvatarPose p)
+        public static void WritePose(BinaryWriter w, AvatarPose p)
         {
             WriteV3(w, p.HeadPos);
             WriteQ(w, p.HeadRot);
@@ -103,7 +103,7 @@ namespace TableDuoVr.Hands.Playback
             for (int i = 0; i < AvatarPose.BonesPerHand; i++) WriteQ(w, p.BonesR[i]);
         }
 
-        private static void ReadPose(BinaryReader r, AvatarPose p)
+        public static void ReadPose(BinaryReader r, AvatarPose p)
         {
             p.HeadPos = ReadV3(r);
             p.HeadRot = ReadQ(r);

@@ -35,6 +35,9 @@ namespace TableDuoVr.Net
 
         public string? FilePath { get; private set; }
 
+        /// <summary>イベントの横流し（SessionReplayRecorder が購読してリプレイにも刻む）。</summary>
+        public static event Action<string, string>? EventLogged;
+
         /// <summary>イベント行を書く（MarkServer / Grabbable から）。</summary>
         public void LogEvent(string label, string detail = "")
         {
@@ -42,6 +45,7 @@ namespace TableDuoVr.Net
             _writer.WriteLine($"event,{EpochMs()},{Escape(label)},{Escape(detail)}");
             _writer.Flush();
             Debug.Log($"[TableDuo] mark: {label} {detail}");
+            EventLogged?.Invoke(label, detail);
         }
 
         private void OnEnable() => Grabbable.GrabLogged += OnGrabLogged;
