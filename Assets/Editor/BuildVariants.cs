@@ -21,13 +21,23 @@ namespace FixedCamVr.EditorTools
 
         [MenuItem("Tools/FixedCamVr/Build FixedCam APK（廻リ視）", priority = 20)]
         public static void BuildFixedCam() =>
-            BuildVariant("廻リ視", "com.roiril.mawarimi", FixedCamScene, "mawarimi");
+            BuildVariant("廻リ視", "com.roiril.mawarimi", FixedCamScene, "mawarimi", development: true);
 
         [MenuItem("Tools/FixedCamVr/Build TableDuo APK", priority = 21)]
         public static void BuildTableDuo() =>
-            BuildVariant("TableDuo", "com.roiril.tableduo", TableDuoScene, "tableduo");
+            BuildVariant("TableDuo", "com.roiril.tableduo", TableDuoScene, "tableduo", development: true);
 
-        private static void BuildVariant(string productName, string packageId, string scenePath, string outName)
+        // リリース（提出・配布用）: Development Build なし。出力名に -release を付けて区別。
+        [MenuItem("Tools/FixedCamVr/Build FixedCam APK（廻リ視・Release）", priority = 22)]
+        public static void BuildFixedCamRelease() =>
+            BuildVariant("廻リ視", "com.roiril.mawarimi", FixedCamScene, "mawarimi-release", development: false);
+
+        [MenuItem("Tools/FixedCamVr/Build TableDuo APK（Release）", priority = 23)]
+        public static void BuildTableDuoRelease() =>
+            BuildVariant("TableDuo", "com.roiril.tableduo", TableDuoScene, "tableduo-release", development: false);
+
+        private static void BuildVariant(string productName, string packageId, string scenePath, string outName,
+            bool development)
         {
             string prevProduct = PlayerSettings.productName;
             string prevId = PlayerSettings.GetApplicationIdentifier(BuildTargetGroup.Android);
@@ -41,8 +51,8 @@ namespace FixedCamVr.EditorTools
                     scenes = new[] { scenePath },
                     target = BuildTarget.Android,
                     locationPathName = $"Builds/{outName}.apk",
-                    // 初期デプロイは Development Build（unity-vr.md）。リリース時はここを外す。
-                    options = BuildOptions.Development,
+                    // 普段は Development Build（logcat 確認用、unity-vr.md）。Release メニューは外す。
+                    options = development ? BuildOptions.Development : BuildOptions.None,
                 };
                 BuildReport report = BuildPipeline.BuildPlayer(opts);
                 var summary = report.summary;
