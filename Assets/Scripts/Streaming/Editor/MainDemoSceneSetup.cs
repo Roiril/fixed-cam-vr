@@ -89,22 +89,28 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
 
-            // 1. [Zones] と 3 ゾーン
-            // ゾーン形状: 5/4 実機計測（プレイレンジ x≈±1.3m）から逆算した値。
-            // - 各ゾーン halfExtents.x = 0.5m / 中心は ±0.9m → 隣接ゾーン同士が 0.1m オーバーラップ
-            // - 重なった所は配列順で先勝ち（Center が先頭なので中央寄りでは Center に張り付く = デッドゾーン消滅）
-            // - z は ±1.2m のまま（前後方向のゾーン分割は今は不要）
+            // 1. [Zones] — 廻リ視の周回経路（企画書 図4）を ±1.3m プレイレンジに当てはめた推測配置。
+            // ★パーテーションで L 字壁を組んだら [HmdTrace] 実測で必ず校正すること（unity-vr.md 原則）。
+            //
+            // 想定: L 字壁が中央（西の腕 + 北の腕）、体験者は時計回りに 南→東→北→西→南 と周回。
+            //   区間1=南辺(カメラA) / 区間2=東辺(カメラB) / 区間3=北辺+西辺(カメラC、AABB は矩形のみ
+            //   なので 2 ゾーンに分割して同じ cameraIndex=2 を割る)。
+            // 隣接ゾーンは角で 0.1m 以上オーバーラップ。重なりは配列順で先勝ち
+            // （周回順 A→B→C で並べ、戻り側の角は A が勝つ = 周回の終わりで自然に A に戻る）。
             var zonesGo = new GameObject(ZonesName);
             zonesGo.transform.SetParent(logic.transform, worldPositionStays: false);
-            var zoneA = CreateZone(zonesGo, "Zone_A_Center", new Vector3(0, 1, 0),
-                halfExtents: new Vector3(0.5f, 2f, 1.2f),
-                cameraIndex: 0, label: "Center", color: new Color(0f, 1f, 0.5f, 0.25f));
-            var zoneB = CreateZone(zonesGo, "Zone_B_Right", new Vector3(0.9f, 1, 0),
-                halfExtents: new Vector3(0.5f, 2f, 1.2f),
-                cameraIndex: 1, label: "Right", color: new Color(1f, 0.4f, 0.4f, 0.25f));
-            var zoneC = CreateZone(zonesGo, "Zone_C_Left", new Vector3(-0.9f, 1, 0),
-                halfExtents: new Vector3(0.5f, 2f, 1.2f),
-                cameraIndex: 0, label: "Left", color: new Color(0.4f, 0.6f, 1f, 0.25f));
+            var zoneA = CreateZone(zonesGo, "Zone_A_South", new Vector3(0f, 1f, -0.8f),
+                halfExtents: new Vector3(1.4f, 2f, 0.55f),    // x∈[-1.4,1.4] z∈[-1.35,-0.25]
+                cameraIndex: 0, label: "A:South", color: new Color(0f, 1f, 0.5f, 0.25f));
+            var zoneB = CreateZone(zonesGo, "Zone_B_East", new Vector3(0.8f, 1f, 0.2f),
+                halfExtents: new Vector3(0.55f, 2f, 1.2f),    // x∈[0.25,1.35] z∈[-1.0,1.4]
+                cameraIndex: 1, label: "B:East", color: new Color(1f, 0.4f, 0.4f, 0.25f));
+            var zoneC = CreateZone(zonesGo, "Zone_C_North", new Vector3(-0.2f, 1f, 0.8f),
+                halfExtents: new Vector3(1.2f, 2f, 0.55f),    // x∈[-1.4,1.0] z∈[0.25,1.35]
+                cameraIndex: 2, label: "C:North", color: new Color(0.4f, 0.6f, 1f, 0.25f));
+            var zoneC2 = CreateZone(zonesGo, "Zone_C_West", new Vector3(-0.8f, 1f, 0f),
+                halfExtents: new Vector3(0.55f, 2f, 1.0f),    // x∈[-1.35,-0.25] z∈[-1.0,1.0]
+                cameraIndex: 2, label: "C:West", color: new Color(0.6f, 0.4f, 1f, 0.25f));
 
             // 2. [Tracker]
             var trackerGo = new GameObject(TrackerName);
@@ -113,7 +119,7 @@ namespace FixedCamVr.Streaming.EditorTools
             var trackerSo = new SerializedObject(tracker);
             TrySetObjectRef(trackerSo, "registry", registry);
             TrySetObjectRef(trackerSo, "headTransform", centerEye.transform);
-            SetPlayerZoneArray(trackerSo, "zones", new[] { zoneA, zoneB, zoneC });
+            SetPlayerZoneArray(trackerSo, "zones", new[] { zoneA, zoneB, zoneC, zoneC2 });
             TrySetFloat(trackerSo, "hysteresisShrink", 0.15f);
             TrySetFloat(trackerSo, "updateInterval", 0.05f);
             TrySetBool(trackerSo, "keepLastWhenOutside", true);
@@ -139,7 +145,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=3 / Tracker / StartupFader / DebugHud / OvrBridge.hud 連携。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（周回 A南/B東/C北/C西・推測配置、実測校正待ち） / Tracker / StartupFader / DebugHud / OvrBridge.hud 連携。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
