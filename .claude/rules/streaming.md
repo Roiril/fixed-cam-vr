@@ -58,15 +58,23 @@ globs:
 | Lag detect | `recv_fps / phone_fps < 0.7` が 1.5s 続いたら強制再接続 | TCP cwnd 縮みっぱなし状態を自動復旧 |
 | Monitor | `/health` の `latestFrameAgeMs` / `sentFrames` で原因切り分け | 配信側 stall vs ネットワーク詰まりを判別 |
 
-## 自動回転 / アスペクト補正
+## スクリーン表示モデル（固定枠 + シェーダ letterbox）
 
-`/info` の `rotationDeg` / `widthPx` / `heightPx` を [`MjpegScreen.autoOrient`](../Assets/Scripts/Streaming/MjpegScreen.cs) が読み取り、Screen Quad の `localRotation.z` と `localScale` を自動補正する。
+**web-compositor と同じモデル**（2026-06-11 移行）。Screen Quad の Transform は authored のまま**不変**で、フィット・回転・合成・ポスト FX は全部 [`ScreenComposite.shader`](../Assets/Art/Shaders/Streaming/ScreenComposite.shader) の UV 空間で完結する。
 
-- 縦持ちスマホ (`rotationDeg=90, isPortrait=true`) → スクリーンが縦向きに自動切替
-- 横持ちスマホ (`rotationDeg=0, isPortrait=false`) → 既定の横向き
-- 補正対象: `MjpegScreen.orientTarget` で別 Transform を指定可能。null なら自分自身
+- [`MjpegScreen`](../Assets/Scripts/Streaming/MjpegScreen.cs) はテクスチャ供給 + contain-fit スケール（`_LiveScale`）計算のみ。Texture2D 実寸からアスペクトを毎フレーム追従（`/info` は使わない — JPEG 実寸が真実）
+- ソースは contain-fit、はみ出しは黒 letterbox。**枠サイズはカメラ切替・縦横切替でも不動**
+- streamer は常に正立フレームを送る（`rotationDeg=0`）ので回転補正は不要。緊急時は `MjpegScreen.uvRotSteps`（90 度単位の UV 回転）で手動補正
+- 旧 `ApplyOrient`（/info メタで Transform を回転・変形）は**廃止**。`autoOrient` / `orientTarget` / `useIsPortraitForRotation` 等のフィールドはもう存在しない
 
-`/info` 取得失敗時（DroidCam 等）は補正なし、Quad の初期 transform のまま。
+### 映像差し替え（オーバーレイ合成）
+
+[`ScreenOverlayController`](../Assets/Scripts/Streaming/ScreenOverlayController.cs) + [`OverlayCue`](../Assets/Scripts/Streaming/OverlayCue.cs)（ScriptableObject、`Create > FixedCamVr > Overlay Cue`）:
+
+- cue = 事前撮影 VideoClip（or 静止画）+ マスク Texture（R チャンネル、スクリーン枠空間、白=差し替え）+ フェード時間
+- 固定視点なのでマスクは事前撮影フレームから作ればそのまま位置が合う（web-compositor で検証済みの理屈）
+- 発火: キーボード（CueBinding.key、Editor+Link オペレータ用）or `PlayCue()` / `StopOverlay()`（ゾーントリガ等から）
+- ポスト FX（vignette/grain/scanline 等）はシェーダ内 = スクリーン内容にだけかかる。視界全体への FullScreenPass とは独立
 
 ## カメラ管理
 

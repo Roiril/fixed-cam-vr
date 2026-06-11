@@ -50,10 +50,10 @@ mcp__UnityMCP__manage_editor action=play
 mcp__UnityMCP__manage_camera action=screenshot include_image=true max_resolution=1024 super_size=2 screenshot_file_name=flatstreaming-fake-test.png
 ```
 
-期待結果（useTextureAspect が効いていれば）：
-- 黒背景に **square な Quad**（1080×1080 → 1:1）
-- 中央に黄丸 + 青枠 + 赤×線（fake コンテンツ）
-- "FAKE STREAMER #N" が縦書き表示（rotationDeg=90 適用）
+期待結果（ScreenComposite 固定枠モデル、2026-06-11 移行後）：
+- **Quad の枠は 16:9 のまま不変**。square ソース (1080×1080) は高さ基準で contain-fit され、左右は黒 pillarbox（背景と同色なので見た目は「中央に正方形」）
+- 中央に黄丸 + 青枠 + 赤×線（fake コンテンツ）が**正方形のまま**表示（歪んでいたら _LiveScale 計算のバグ）
+- Transform 回転はもう適用されない（回転は uvRotSteps による UV 回転のみ）
 
 `mcp__UnityMCP__read_console types=["error","warning"]` で `[MjpegScreen] No registry...` 等が無いか確認。
 
