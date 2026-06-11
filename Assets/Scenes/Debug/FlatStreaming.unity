@@ -203,7 +203,12 @@ PrefabInstance:
     - target: {fileID: 3925281961422704451, guid: d4658efafa96a35409e8c486faf98a36,
         type: 3}
       propertyPath: registry
-      value: 
+      value:
+      objectReference: {fileID: 2060769074}
+    - target: {fileID: 5123456789012345678, guid: d4658efafa96a35409e8c486faf98a36,
+        type: 3}
+      propertyPath: registry
+      value:
       objectReference: {fileID: 2060769074}
     - target: {fileID: 5354141347488557634, guid: d4658efafa96a35409e8c486faf98a36,
         type: 3}

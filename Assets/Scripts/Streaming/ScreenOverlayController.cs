@@ -1,6 +1,10 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.Video;
 
 namespace FixedCamVr.Streaming
@@ -9,10 +13,11 @@ namespace FixedCamVr.Streaming
     /// ScreenComposite シェーダのオーバーレイ側（事前撮影クリップ × マスク）を駆動する。
     /// MjpegScreen と同じ Renderer のマテリアルインスタンスへプロパティを書き込む。
     ///
-    /// 発火方法:
+    /// 発火方法（すべて PlayCue(OverlayCueData) に集約、最後の命令が勝つ）:
     ///   - キーボード（Editor + Link 運用でのオペレータ操作）: bindings の key
-    ///   - コード: PlayCue(int) / PlayCue(OverlayCue) / StopOverlay()
-    ///     PlayerZoneTracker のゾーン遷移等から呼べるよう public にしてある。
+    ///   - Web オペレータ卓: ShowControlClient → PlayCue(OverlayCueData)
+    ///   - コード（ゾーントリガ等）: PlayCue / StopOverlay
+    /// ソースは ローカル（VideoClip / Texture2D）と URL（mp4 直再生 / png ダウンロード）の両対応。
     /// </summary>
     [RequireComponent(typeof(Renderer))]
     public sealed class ScreenOverlayController : MonoBehaviour
@@ -42,16 +47,21 @@ namespace FixedCamVr.Streaming
         private MjpegScreen? _screen;
         private VideoPlayer? _player;
         private RenderTexture? _videoRt;
-        private OverlayCue? _current;
+        private OverlayCueData? _current;
+
+        // URL ロード物のキャッシュ（マスク / 静止画）。現場で同じ cue を繰り返し叩く前提。
+        private readonly Dictionary<string, Texture2D> _urlTextureCache = new();
+        // PlayCue が非同期ロードを挟む間に次の PlayCue が来たら古い方を破棄するための世代カウンタ。
+        private int _playGeneration;
+
+        /// <summary>現在のオーバーレイ（フェードアウト中も含む）。null なら停止。</summary>
+        public OverlayCueData? Current => _current;
 
         // フェード状態。target に向かって _strength を進める。
         private float _strength;
         private float _target;
         private float _fadeSpeed = 4f;
         private bool _stopWhenFadedOut;
-
-        /// <summary>現在再生中の cue（フェードアウト中も含む）。null なら停止。</summary>
-        public OverlayCue? Current => _current;
 
         private void Awake()
         {
@@ -78,6 +88,15 @@ namespace FixedCamVr.Streaming
                 else DestroyImmediate(_videoRt);
                 _videoRt = null;
             }
+            foreach (var tex in _urlTextureCache.Values)
+            {
+                if (tex != null)
+                {
+                    if (Application.isPlaying) Destroy(tex);
+                    else DestroyImmediate(tex);
+                }
+            }
+            _urlTextureCache.Clear();
         }
 
         private void Update()
@@ -110,36 +129,71 @@ namespace FixedCamVr.Streaming
         {
             if (index < 0 || index >= bindings.Length) return;
             var cue = bindings[index].cue;
-            if (cue != null) PlayCue(cue);
+            if (cue != null) PlayCue(OverlayCueData.From(cue));
         }
 
-        /// <summary>cue を発火。再生中の cue があれば即座に置き換える。</summary>
-        public void PlayCue(OverlayCue cue)
+        /// <summary>ScriptableObject 版 cue を発火（互換 API）。</summary>
+        public void PlayCue(OverlayCue cue) => PlayCue(OverlayCueData.From(cue));
+
+        /// <summary>cue を発火。再生中の cue があれば置き換える（最後の命令が勝つ）。</summary>
+        public void PlayCue(OverlayCueData data)
         {
             if (_material == null || _player == null) return;
-            _current = cue;
-            _stopWhenFadedOut = false;
+            int gen = ++_playGeneration;
+            _ = PlayCueAsync(data, gen, destroyCancellationToken);
+        }
 
-            // マスク。null は全面差し替え（白）
-            _material.SetTexture(MaskTexId, cue.mask != null ? cue.mask : Texture2D.whiteTexture);
-
-            if (cue.clip != null)
+        private async Task PlayCueAsync(OverlayCueData data, int gen, CancellationToken ct)
+        {
+            // 1) マスク（URL ならロード、ローカルならそのまま、無指定なら全面白）
+            Texture? mask = data.maskTexture;
+            if (mask == null && !string.IsNullOrEmpty(data.maskUrl))
             {
-                _player.Stop();
-                _player.clip = cue.clip;
-                _player.isLooping = cue.loop;
-                _player.Prepare(); // 完了後 OnPrepared で RT 接続 + 再生 + フェードイン
+                mask = await LoadTextureAsync(data.maskUrl, ct);
+                if (gen != _playGeneration || ct.IsCancellationRequested) return; // 古い発火は破棄
+                if (mask == null)
+                {
+                    Debug.LogWarning($"[ScreenOverlay] mask load failed: {data.maskUrl} (全面差し替えで続行)");
+                }
             }
-            else if (cue.stillImage != null)
+
+            // 2) ソース
+            if (data.SourceIsVideo)
             {
-                if (_player.isPlaying) _player.Stop();
-                SetOverlayTexture(cue.stillImage, (float)cue.stillImage.width / cue.stillImage.height);
-                BeginFadeIn(cue);
+                _current = data;
+                _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
+                _player!.Stop();
+                if (data.clip != null)
+                {
+                    _player.source = VideoSource.VideoClip;
+                    _player.clip = data.clip;
+                }
+                else
+                {
+                    _player.source = VideoSource.Url;
+                    _player.url = data.sourceUrl;
+                }
+                _player.isLooping = data.loop;
+                _player.Prepare(); // 完了後 OnPrepared で RT 接続 + 再生 + フェードイン
             }
             else
             {
-                Debug.LogWarning($"[ScreenOverlay] cue '{cue.name}' has no clip / stillImage.");
-                _current = null;
+                Texture? still = data.stillImage;
+                if (still == null && !string.IsNullOrEmpty(data.sourceUrl))
+                {
+                    still = await LoadTextureAsync(data.sourceUrl, ct);
+                    if (gen != _playGeneration || ct.IsCancellationRequested) return;
+                }
+                if (still == null)
+                {
+                    Debug.LogWarning($"[ScreenOverlay] cue '{data.displayName}' has no source.");
+                    return;
+                }
+                _current = data;
+                _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
+                if (_player!.isPlaying) _player.Stop();
+                SetOverlayTexture(still, (float)still.width / still.height);
+                BeginFadeIn(data);
             }
         }
 
@@ -147,10 +201,37 @@ namespace FixedCamVr.Streaming
         public void StopOverlay()
         {
             if (_current == null) return;
+            _playGeneration++; // ロード途中の発火も破棄
             float fade = Mathf.Max(_current.fadeOutSeconds, 1e-3f);
             _target = 0f;
-            _fadeSpeed = _strength / fade;
+            _fadeSpeed = Mathf.Max(_strength, 0.01f) / fade;
             _stopWhenFadedOut = true;
+        }
+
+        private async Task<Texture2D?> LoadTextureAsync(string url, CancellationToken ct)
+        {
+            if (_urlTextureCache.TryGetValue(url, out var cached) && cached != null) return cached;
+            try
+            {
+                using var req = UnityWebRequestTexture.GetTexture(url, nonReadable: true);
+                req.timeout = 5;
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await Task.Yield();
+                }
+                if (req.result != UnityWebRequest.Result.Success) return null;
+                var tex = DownloadHandlerTexture.GetContent(req);
+                _urlTextureCache[url] = tex;
+                return tex;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ScreenOverlay] texture load error: {url} ({e.Message})");
+                return null;
+            }
         }
 
         private void OnPrepared(VideoPlayer vp)
@@ -185,7 +266,7 @@ namespace FixedCamVr.Streaming
             BeginFadeIn(cue);
         }
 
-        private void BeginFadeIn(OverlayCue cue)
+        private void BeginFadeIn(OverlayCueData cue)
         {
             float fade = Mathf.Max(cue.fadeInSeconds, 1e-3f);
             _target = cue.strength;

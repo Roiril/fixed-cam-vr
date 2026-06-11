@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 3925281961422704451}
   - component: {fileID: 917727975689658914}
   - component: {fileID: 4781234567890123456}
+  - component: {fileID: 5123456789012345678}
   m_Layer: 0
   m_Name: MjpegScreenStage
   m_TagString: Untagged
@@ -136,6 +137,22 @@ MonoBehaviour:
   bindings: []
   stopKey: 48
   videoHeightPx: 720
+--- !u!114 &5123456789012345678
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2060759931292713981}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: febb813f46a04c058b1203934f1d375c, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  server: {fileID: 11400000, guid: 7d9a85b600534120968d3730e12c6b87, type: 2}
+  registry: {fileID: 0}
+  zoneTrackerToDisable: {fileID: 0}
+  heartbeatInterval: 2
 --- !u!1 &4239758231215687403
 GameObject:
   m_ObjectHideFlags: 0

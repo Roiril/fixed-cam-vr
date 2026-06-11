@@ -1529,8 +1529,18 @@ PrefabInstance:
     - target: {fileID: 7177049842531526914, guid: d4658efafa96a35409e8c486faf98a36,
         type: 3}
       propertyPath: registry
-      value: 
+      value:
       objectReference: {fileID: 2113788419}
+    - target: {fileID: 5123456789012345678, guid: d4658efafa96a35409e8c486faf98a36,
+        type: 3}
+      propertyPath: registry
+      value:
+      objectReference: {fileID: 2113788419}
+    - target: {fileID: 5123456789012345678, guid: d4658efafa96a35409e8c486faf98a36,
+        type: 3}
+      propertyPath: zoneTrackerToDisable
+      value:
+      objectReference: {fileID: 1788998931}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
