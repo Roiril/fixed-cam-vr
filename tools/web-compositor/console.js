@@ -142,7 +142,10 @@ function renderCameras() {
     const img = document.createElement('img');
     img.alt = '(プレビュー OFF)';
     if (previewOn[cam.id] && cam.host) {
-      img.src = `http://${cam.host}:8080/video`;
+      // /cam プロキシ経由（multicam.html と同じ）。Basic 認証肩代わり + 同一オリジン化。
+      // iPhone (IP Camera Lite :8081, admin:admin) も Pixel (streamer :8080) もこれ一本で映る。
+      img.src = `/cam?host=${encodeURIComponent(cam.host)}&port=${cam.port || 8080}&path=/video`
+        + (cam.auth ? `&auth=${encodeURIComponent(cam.auth)}` : '') + `&t=${Date.now()}`;
     }
     thumb.appendChild(img);
     card.appendChild(thumb);
@@ -158,6 +161,30 @@ function renderCameras() {
       postState({ cameras: state.cameras });
     };
     hostRow.appendChild(hostInput);
+    const portInput = document.createElement('input');
+    portInput.type = 'text';
+    portInput.placeholder = 'port';
+    portInput.title = 'ポート（streamer=8080 / IP Camera Lite=8081）';
+    portInput.style.width = '52px';
+    portInput.style.flex = 'none';
+    portInput.value = cam.port || 8080;
+    portInput.onchange = () => {
+      cam.port = parseInt(portInput.value, 10) || 8080;
+      postState({ cameras: state.cameras });
+    };
+    hostRow.appendChild(portInput);
+    const authInput = document.createElement('input');
+    authInput.type = 'text';
+    authInput.placeholder = 'user:pass';
+    authInput.title = 'Basic 認証（IP Camera Lite は admin:admin。空=認証なし）';
+    authInput.style.width = '86px';
+    authInput.style.flex = 'none';
+    authInput.value = cam.auth || '';
+    authInput.onchange = () => {
+      cam.auth = authInput.value.trim();
+      postState({ cameras: state.cameras });
+    };
+    hostRow.appendChild(authInput);
     card.appendChild(hostRow);
 
     const btns = document.createElement('div');
