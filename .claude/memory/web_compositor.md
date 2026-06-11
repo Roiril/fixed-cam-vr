@@ -1,6 +1,11 @@
 # web compositor（tools/web-compositor/）
 
-固定視点ホラーの**映像合成を Unity 抜きでブラウザ検証する自作ツール**。「事前撮影映像 × リアルタイム配信」をマスクで切り貼り→合成跡を消す画像処理→フィルタ、までを WebGL2 で実装。AI 動画生成（貞子系）の素材づくり・プロンプト管理もここに集約。
+**オペレータ卓（Unity 遠隔制御）+ 合成のブラウザ検証**の 2 タブ構成（2026-06-11 T4 で再編）。
+
+- **🎛 コンソール**（console.js）: show.json を正として Unity を遠隔制御。cue 発火/停止・カメラ手動固定・ポスト FX ライブ調整・Unity heartbeat 表示。Unity 側対向は `ShowControlClient`（long-poll）。API: `/state`(long-poll) `/command` `/masks` `/unity/*`。計画: `.claude/plans/2026-06-11_web-operator-console.md`
+- **✂ コンポジット検証**（main.js、従来機能）: 「事前撮影映像 × リアルタイム配信」をマスクで切り貼り→合成跡を消す画像処理→フィルタ、までを WebGL2 で実装。AI 動画生成（貞子系）の素材づくり・プロンプト管理もここに集約。
+
+show.json / masks/ は gitignore（ローカル運用状態、prompts.json と同様）。
 
 ## 場所と起動
 

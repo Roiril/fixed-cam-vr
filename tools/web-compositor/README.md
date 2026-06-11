@@ -1,8 +1,23 @@
-# web compositor — 固定視点合成の Web 検証ツール
+# web compositor — オペレータ卓 + 固定視点合成の Web 検証ツール
 
-Unity を開かずに、ブラウザだけで **固定視点ホラーの映像合成**（[企画書](../../docs/) の「視界の一部を事前映像へ差し替え」）を試すためのプロトタイピング環境。WebGL2 でリアルタイム（30–60fps）に動く。配信フレームのキャプチャ/録画と AI 動画生成プロンプトの管理も兼ねる。
+2 つの顔を持つ：
 
-## できること
+- **🎛 コンソール（オペレータ卓）** — 体験中の **Unity（Quest）を遠隔制御**する本番運用 UI。カメラ状態の監視・手動固定、演出 cue の発火/停止、ポスト FX のライブ調整。状態の正は `show.json`（このサーバ）で、Unity は long-poll（`GET /state?rev=`）で追従する。実装計画: [.claude/plans/2026-06-11_web-operator-console.md](../../.claude/plans/2026-06-11_web-operator-console.md)
+- **✂ コンポジット検証** — Unity を開かずにブラウザだけで **固定視点ホラーの映像合成**（視界の一部を事前映像へ差し替え）を試すプロトタイピング環境。WebGL2 でリアルタイム（30–60fps）。配信フレームのキャプチャ/録画と AI 動画生成プロンプトの管理も兼ねる。
+
+## ショー制御 API（コンソールが使う / Unity が読む）
+
+| メソッド | パス | 用途 |
+|---|---|---|
+| GET | `/state?rev=N` | show.json（rev > N まで最大 25s ブロックの long-poll） |
+| POST | `/state` | cameras / cues / post / control の部分更新 |
+| POST | `/command` | `playCue` / `stopCue` / `setCameraOverride` / `setPost` |
+| POST | `/masks?name=` | マスク PNG 保存 → `/masks/<name>.png` 配信 |
+| POST/GET | `/unity/heartbeat` / `/unity/status` | Unity の生存・アクティブカメラ報告 |
+
+Unity 側の対向: `ShowControlClient`（long-poll 適用）+ `ScreenOverlayController`（URL ソースの cue 再生）。`Assets/Settings/ShowServer.asset` の host をこの PC に向ける（Editor+Link なら 127.0.0.1 のまま）。
+
+## できること（コンポジット検証タブ）
 
 1. **領域合成** — ⬜白スロット / ⬛黒スロットに映像を割り当て、マスクで「半分こっち/半分あっち」に切り貼り。マスク白→白スロット、黒→黒スロットが出る。運用イメージは **黒=AI生成動画 / 白=リアルタイム配信**。
 2. **合成跡を消す処理**

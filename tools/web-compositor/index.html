@@ -10,11 +10,54 @@
   <div class="app">
     <header>
       <h1>廻リ視 web compositor</h1>
+      <nav class="tabs">
+        <button id="tabBtnConsole" class="tab-btn active">🎛 コンソール</button>
+        <button id="tabBtnComp" class="tab-btn">✂ コンポジット検証</button>
+      </nav>
       <span id="status" class="status">init…</span>
       <span id="fps" class="fps">– fps</span>
     </header>
 
-    <div class="main">
+    <div id="tabConsole" class="console">
+      <div class="unity-bar">
+        <span id="unityAlive" class="unity-dot off"></span>
+        <span id="unityInfo">Unity: 未接続</span>
+        <span class="spacer"></span>
+        <button id="consoleRefresh">↻ 状態再取得</button>
+      </div>
+
+      <div class="console-grid">
+        <section class="con-cameras">
+          <h2>カメラ</h2>
+          <div id="cameraCards" class="camera-cards"></div>
+          <div class="btns">
+            <button id="ovrAuto" class="accent">🚶 ゾーン自律に戻す</button>
+          </div>
+        </section>
+
+        <section class="con-cues">
+          <h2>演出 cue</h2>
+          <div id="cueList" class="cue-list"></div>
+          <div class="btns">
+            <button id="cueStopAll">⏹ 全停止</button>
+          </div>
+          <p class="hint">cue の作成・マスク編集は「コンポジット検証」タブ（T5 で統合予定）。</p>
+        </section>
+
+        <section class="con-post">
+          <h2>ポスト FX（Unity 即反映）</h2>
+          <label class="slider">露出 <input id="conExposure" type="range" min="-2" max="2" step="0.01" value="0"><span></span></label>
+          <label class="slider">コントラスト <input id="conContrast" type="range" min="0.5" max="2" step="0.01" value="1"><span></span></label>
+          <label class="slider">彩度 <input id="conSaturation" type="range" min="0" max="2" step="0.01" value="1"><span></span></label>
+          <label class="slider">色温度 <input id="conTemperature" type="range" min="-1" max="1" step="0.01" value="0"><span></span></label>
+          <label class="slider">ヴィネット <input id="conVignette" type="range" min="0" max="1" step="0.01" value="0.25"><span></span></label>
+          <label class="slider">グレイン <input id="conGrain" type="range" min="0" max="0.3" step="0.005" value="0.06"><span></span></label>
+          <label class="slider">走査線 <input id="conScanline" type="range" min="0" max="1" step="0.01" value="0"><span></span></label>
+        </section>
+      </div>
+    </div>
+
+    <div class="main" id="tabComp" style="display:none">
       <div class="stage">
         <canvas id="gl"></canvas>
       </div>
@@ -140,5 +183,6 @@
     </div>
   </div>
   <script type="module" src="main.js"></script>
+  <script type="module" src="console.js"></script>
 </body>
 </html>
