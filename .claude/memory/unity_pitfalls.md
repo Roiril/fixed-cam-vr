@@ -69,3 +69,18 @@ MJPEG 経由の映像でアスペクト比を決める時、配信側の `/info`
 DroidCam は同時に 1 クライアントしか配信を受け付けない。ブラウザで `/video` を見ながら Unity で受信しようとすると "他のクライアントに接続されています" になる。
 
 **How to apply**: Unity Play 前にブラウザタブ・PC 版 DroidCam を閉じる。CI 等で複数同時受信が必要なら IP Webcam に切り替える（こちらは複数 OK）。
+
+## シーン .unity をディスク直編集したら「再ロード」必須（2026-06-11）
+
+Editor で開いているシーンの .unity ファイルを外部編集（Edit ツール等）した場合、
+`refresh_unity` では**メモリ上のシーンは更新されない**。そのまま Play すると編集前の
+シーンで走る（prefab override の追加が効かない等、静かに古い挙動になる）。
+
+→ 対策: 外部編集後は `manage_scene action=load path=...` で**明示的に再ロード**してから Play。
+
+## execute_code が「ファイル名または拡張子が長すぎます」で全滅する状態（2026-06-11）
+
+mono.exe 起動時の引数長の環境問題で、コード長に関係なく（1 行でも）失敗する。
+既知の「コード長制限」とは別物。Editor 再起動で直る可能性が高い。
+代替: `mcpforunity://scene/gameobject/{id}/component/{name}` リソース読み +
+manage_* ツールで大半は代替できる（このセッションで実証）。
