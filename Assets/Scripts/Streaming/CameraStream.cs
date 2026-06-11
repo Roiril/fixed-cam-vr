@@ -120,7 +120,7 @@ namespace FixedCamVr.Streaming
             // 初回 LoadImage が走る前に黒で埋めておく（4 px 分のみ; LoadImage で正しいサイズへ再確保される）。
             _texture.SetPixels(new[] { Color.black, Color.black, Color.black, Color.black });
             _texture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
-            _receiver = new MjpegStreamReceiver(source.BuildUrl());
+            _receiver = new MjpegStreamReceiver(source.BuildUrl(), basicAuthToken: source.BasicAuthToken);
         }
 
         public void Start()
@@ -145,7 +145,7 @@ namespace FixedCamVr.Streaming
             {
                 string url = _source.BuildInfoUrl();
                 if (string.IsNullOrEmpty(url)) return;
-                var meta = await StreamMetadataFetcher.FetchInfoAsync(url);
+                var meta = await StreamMetadataFetcher.FetchInfoAsync(url, basicAuthToken: _source.BasicAuthToken);
                 if (_disposed || meta == null) return;
 
                 // 比較: 向き反映に効く 4 値のいずれか変化で発火。
@@ -175,7 +175,7 @@ namespace FixedCamVr.Streaming
             {
                 string url = _source.BuildHealthUrl();
                 if (string.IsNullOrEmpty(url)) return;
-                var h = await StreamMetadataFetcher.FetchHealthAsync(url);
+                var h = await StreamMetadataFetcher.FetchHealthAsync(url, basicAuthToken: _source.BasicAuthToken);
                 if (_disposed || h == null) return;
                 _health = h;
             }

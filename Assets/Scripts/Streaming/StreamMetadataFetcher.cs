@@ -26,28 +26,31 @@ namespace FixedCamVr.Streaming
             Timeout = TimeSpan.FromSeconds(5)
         };
 
-        public static async Task<StreamMetadata?> FetchInfoAsync(string url, int timeoutSec = 3)
+        public static async Task<StreamMetadata?> FetchInfoAsync(string url, int timeoutSec = 3, string? basicAuthToken = null)
         {
-            string? json = await GetTextAsync(url, timeoutSec);
+            string? json = await GetTextAsync(url, timeoutSec, basicAuthToken);
             if (string.IsNullOrEmpty(json)) return null;
             try { return JsonUtility.FromJson<StreamMetadata>(json); }
             catch (Exception ex) { Debug.LogWarning($"[StreamMetadataFetcher] /info parse failed: {ex.Message}"); return null; }
         }
 
-        public static async Task<StreamHealth?> FetchHealthAsync(string url, int timeoutSec = 2)
+        public static async Task<StreamHealth?> FetchHealthAsync(string url, int timeoutSec = 2, string? basicAuthToken = null)
         {
-            string? json = await GetTextAsync(url, timeoutSec);
+            string? json = await GetTextAsync(url, timeoutSec, basicAuthToken);
             if (string.IsNullOrEmpty(json)) return null;
             try { return JsonUtility.FromJson<StreamHealth>(json); }
             catch (Exception ex) { Debug.LogWarning($"[StreamMetadataFetcher] /health parse failed: {ex.Message}"); return null; }
         }
 
-        private static async Task<string?> GetTextAsync(string url, int timeoutSec)
+        private static async Task<string?> GetTextAsync(string url, int timeoutSec, string? basicAuthToken = null)
         {
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
-                using var resp = await _http.GetAsync(url, HttpCompletionOption.ResponseContentRead, cts.Token);
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                if (basicAuthToken != null)
+                    req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", basicAuthToken);
+                using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token);
                 if (!resp.IsSuccessStatusCode) return null;
                 return await resp.Content.ReadAsStringAsync();
             }

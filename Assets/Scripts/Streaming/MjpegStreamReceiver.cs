@@ -40,6 +40,7 @@ namespace FixedCamVr.Streaming
         }
 
         private readonly string _url;
+        private readonly string? _basicAuthToken;
         private readonly TimeSpan _connectTimeout;
         private readonly CancellationTokenSource _cts = new();
         private Task? _loop;
@@ -76,11 +77,12 @@ namespace FixedCamVr.Streaming
             catch (Exception ex) { Debug.LogWarning($"[MJPEG] reconnect cancel failed: {ex.Message}"); }
         }
 
-        public MjpegStreamReceiver(string url, TimeSpan? connectTimeout = null)
+        public MjpegStreamReceiver(string url, TimeSpan? connectTimeout = null, string? basicAuthToken = null)
         {
             _url = url;
             _uri = new Uri(url);
             _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(3);
+            _basicAuthToken = basicAuthToken;
         }
 
         public void Start()
@@ -195,11 +197,13 @@ namespace FixedCamVr.Streaming
 
             // HTTP/1.1 GET を手書きで送る（最小ヘッダ）
             string path = string.IsNullOrEmpty(_uri.PathAndQuery) ? "/" : _uri.PathAndQuery;
+            string authLine = _basicAuthToken == null ? "" : $"Authorization: Basic {_basicAuthToken}\r\n";
             string reqLine =
                 $"GET {path} HTTP/1.1\r\n" +
                 $"Host: {host}:{port}\r\n" +
                 "User-Agent: fixed-cam-vr/1.0\r\n" +
                 "Accept: multipart/x-mixed-replace, image/jpeg, */*\r\n" +
+                authLine +
                 "Connection: close\r\n" +
                 "\r\n";
             byte[] reqBytes = Encoding.ASCII.GetBytes(reqLine);
@@ -254,8 +258,11 @@ namespace FixedCamVr.Streaming
             if (firstLineEnd < 0) throw new InvalidOperationException("malformed response");
             string statusLine = raw.Substring(0, firstLineEnd);
             string[] parts = statusLine.Split(' ');
-            if (parts.Length < 2 || !int.TryParse(parts[1], out int statusCode) || statusCode < 200 || statusCode >= 300)
+            int statusCode = 0;
+            if (parts.Length < 2 || !int.TryParse(parts[1], out statusCode) || statusCode < 200 || statusCode >= 300)
             {
+                if (statusCode == 401)
+                    throw new InvalidOperationException($"http error: {statusLine} (Basic 認証が必要。CameraSource の username/password を設定する)");
                 throw new InvalidOperationException($"http error: {statusLine}");
             }
 
