@@ -96,6 +96,13 @@
    - プレビュー: 既存 WebGL パイプラインの **simple 合成 + post**（= ScreenComposite と同 ALU）で Unity の見た目を再現。ラプラシアン/色マッチは「プレビューのみ（Unity 未実装）」とバッジ表示
 3. **📁 素材 / プロンプト**（既存ギャラリー + プロンプト管理を統合）
 
+## 進捗（2026-06-11）
+
+- ✅ T1–T5 実装・検証済み（コミット f725ad5 / 80dfdfe / c9f8190 / 8853f3a / 以降）
+- ✅ 追加: 仮想 Unity（sim.html、Quest の代役）と heartbeat appliedRev による反映確認
+- ✅ Phone03.asset + StreamingLogic prefab sources 3 台化
+- ⏳ 残: ゾーンの周回経路再配置（L字パーテーションの実測後に着手 — 推測で置かない、unity-vr.md 原則）/ T6（ゾーン自動発火・色マッチ移植・録画リプレイ）
+
 ## フェーズ分割（各フェーズで動くものを締める）
 
 | | 内容 | 検証 |

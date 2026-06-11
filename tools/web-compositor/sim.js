@@ -34,11 +34,26 @@ function setLiveHost(host) {
   }
 }
 
+// マスクを「輝度→アルファ」に変換して返す。
+// Unity の ScreenComposite は R チャンネル（白=差し替え）を読むが、canvas の
+// destination-in はアルファを見るため、不透明の白黒 PNG をそのまま使うと全面差し替えになる。
 function loadMask(url) {
   return new Promise((res) => {
     if (!url) return res(null);
     const img = new Image();
-    img.onload = () => res(img);
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, c.width, c.height);
+        const p = d.data;
+        for (let i = 0; i < p.length; i += 4) p[i + 3] = p[i]; // a = r
+        g.putImageData(d, 0, 0);
+        res(c);
+      } catch (e) { res(img); /* 変換不可（cross-origin 等）は素のまま */ }
+    };
     img.onerror = () => res(null);
     img.src = url;
   });

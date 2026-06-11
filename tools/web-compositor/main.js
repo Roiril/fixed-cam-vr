@@ -562,6 +562,7 @@ function init() {
   rebuildPipeline();
   setupMaskCanvas();
   bindUI();
+  window.compositorMask = mask;   // cue-editor.js がマスクを書き出すための導線
   refreshSourceButtons();   // 起動時の既定割当（白=テスト / 黒=グラデ）を可視化
   refreshGallery();         // PC 内 captures/ の一覧を読み込む
   loadPrompts();            // PC 内 prompts.json を読み込む

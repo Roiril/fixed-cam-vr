@@ -78,7 +78,7 @@ globs:
 
 ## カメラ管理
 
-- 各カメラは `ScriptableObject` で URL・解像度・名前を定義（`Assets/Settings/Cameras/`）
+- 各カメラは `ScriptableObject` で URL・解像度・名前を定義（`Assets/Settings/Cameras/` — Phone01/02/03 の 3 台。StreamingLogic prefab の sources に登録済み）
 - 既定値: port=8080, videoPath=/video, infoPath=/info, healthPath=/health（fixed-cam-streamer 互換）
 - DroidCam 互換時は port=4747, videoPath=/mjpegfeed?WxH, infoPath="" にする
 - 切替時は **常時受信を維持**（再接続コスト回避）し、表示先 Quad の `enabled` または RenderTexture 切替で対応

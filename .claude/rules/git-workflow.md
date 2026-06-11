@@ -49,6 +49,7 @@ git cherry-pick <SHA1> <SHA2> <SHA3> ...
 | `ProjectSettings/*` | Unity Project Setup Tool / Quality 設定の調整中（CLAUDE.md 禁止事項） |
 | `Packages/manifest.json` | 依存追加削除はユーザー事前報告 |
 | `Assets/Settings/Cameras/Phone*.asset` の `host` 変更 | 現場で書き換えるローカル値、コミットすると次回ビルドで他の現場が壊れる |
+| `Assets/Settings/ShowServer.asset` の `host` 変更 | 同上（オペレータ卓サーバの接続先。Editor+Link は 127.0.0.1、Quest 単体は PC の LAN IP） |
 | `docs/ivrc-*.md` | ユーザー作のドキュメント |
 | `Assets/Editor/Layouts/FixedCamVr.wlt` | ユーザーが触っている可能性、変更検知時はユーザーに確認 |
 | `.claude/worktrees/` | エージェント worktree の一時ディレクトリ |
