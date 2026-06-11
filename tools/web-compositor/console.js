@@ -8,7 +8,9 @@ const $ = (id) => document.getElementById(id);
 
 let state = null;          // 最新の show.json
 let unityAlive = false;
+let lastUnity = {};        // 直近の /unity/status の status（appliedRev / playingCue / activeIndex）
 let previewOn = {};        // camId -> bool（MJPEG サムネは明示 ON。スマホ負荷への配慮）
+let pendingCameraRender = false; // 入力フォーカス中に来た再描画を遅延させる
 
 // ---- タブ切替 -------------------------------------------------------------
 function setupTabs() {
@@ -69,15 +71,24 @@ async function pollUnityLoop() {
       const s = await r.json();
       unityAlive = !!s.alive;
       const st = s.status || {};
+      lastUnity = st;
+      // 反映同期表示: Unity が報告した appliedRev と show.json の rev を突き合わせる
+      let sync = '';
+      if (unityAlive && state && typeof st.appliedRev === 'number') {
+        sync = st.appliedRev >= state.rev ? ' / ✓ 反映済み' : ` / ⏳ 同期中 (${st.appliedRev}/${state.rev})`;
+      }
       $('unityAlive').className = 'unity-dot ' + (unityAlive ? 'on' : 'off');
       $('unityInfo').textContent = unityAlive
         ? `Unity: ${st.activeCamera || '?'} / ${(st.recvFps || 0).toFixed(1)}fps`
           + (st.playingCue ? ` / 🎬 ${st.playingCue}` : '')
           + (st.cameraOverride ? ` / 🔒 override=${st.cameraOverride}` : '')
+          + (st.simulator ? '（仮想）' : '') + sync
         : 'Unity: 未接続';
       renderActiveBadges(st);
+      renderCues(); // ✓ / ⚠ 表示は Unity 状態に依存するため毎回更新（入力欄が無いので安全）
     } catch (e) {
       unityAlive = false;
+      lastUnity = {};
       $('unityAlive').className = 'unity-dot off';
       $('unityInfo').textContent = 'サーバ未接続';
     }
@@ -85,9 +96,35 @@ async function pollUnityLoop() {
   }
 }
 
+// heartbeat の activeIndex（優先）/ activeCamera 名（フォールバック）から
+// アクティブなカメラの id（A/B/C）を引く。
+function activeCameraId() {
+  const cams = state?.cameras || [];
+  if (typeof lastUnity.activeIndex === 'number' && lastUnity.activeIndex >= 0
+      && lastUnity.activeIndex < cams.length) {
+    return cams[lastUnity.activeIndex].id;
+  }
+  const norm = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
+  const active = norm(lastUnity.activeCamera);
+  return cams.find((c) => norm(c.sourceId) === active)?.id || null;
+}
+
 // ---- カメラカード ----------------------------------------------------------
 function renderCameras() {
   const wrap = $('cameraCards');
+  // 操作者がカード内の入力欄（スマホ IP 等）を編集中なら再描画を遅延する。
+  // innerHTML 全再構築で入力中の値が吹っ飛ぶのを防ぐ（blur 時に再描画）。
+  const focused = document.activeElement;
+  if (focused && wrap.contains(focused) && focused.tagName === 'INPUT') {
+    if (!pendingCameraRender) {
+      pendingCameraRender = true;
+      focused.addEventListener('blur', () => {
+        pendingCameraRender = false;
+        renderCameras();
+      }, { once: true });
+    }
+    return;
+  }
   wrap.innerHTML = '';
   for (const cam of state?.cameras || []) {
     const card = document.createElement('div');
@@ -144,16 +181,11 @@ function renderCameras() {
   }
 }
 
-// heartbeat の activeCamera（DisplayName）と cameras[].sourceId を緩く突き合わせてバッジ表示。
-// "Phone 01" vs "Phone01" の空白差を吸収する。
 function renderActiveBadges(st) {
-  const norm = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
-  const active = norm(st.activeCamera);
+  const activeId = activeCameraId();
   document.querySelectorAll('.camera-card').forEach((card) => {
-    const cam = (state?.cameras || []).find((c) => c.id === card.dataset.cam);
     const badge = card.querySelector('.cam-active-badge');
-    if (!cam || !badge) return;
-    badge.style.display = active && norm(cam.sourceId) === active ? '' : 'none';
+    if (badge) badge.style.display = unityAlive && card.dataset.cam === activeId ? '' : 'none';
   });
 }
 
@@ -166,6 +198,7 @@ function renderCues() {
     wrap.innerHTML = '<p class="hint">cue がまだ無い。コンポジット検証タブで素材とマスクを作って登録する（T5）。</p>';
     return;
   }
+  const activeId = activeCameraId();
   for (const cue of cues) {
     const row = document.createElement('div');
     row.className = 'cue-row';
@@ -177,9 +210,27 @@ function renderCues() {
     label.textContent = `${cue.name || cue.id}${cue.camera ? `（カメラ ${cue.camera}）` : ''}`;
     row.appendChild(label);
 
+    // Unity 反映確認: heartbeat の playingCue がこの cue になっていれば ✓
+    if (playing && unityAlive) {
+      const mark = document.createElement('span');
+      const applied = lastUnity.playingCue === cue.id;
+      mark.className = 'cue-mark ' + (applied ? 'ok' : 'wait');
+      mark.textContent = applied ? '✓ Unity 反映' : '⏳ 送信済み…';
+      row.appendChild(mark);
+    }
+
+    // カメラ不一致警告: cue が想定するカメラと現在のアクティブが違う
+    if (cue.camera && unityAlive && activeId && cue.camera !== activeId) {
+      const warn = document.createElement('span');
+      warn.className = 'cue-warn';
+      warn.textContent = `⚠ 現在 ${activeId} 表示中`;
+      warn.title = `この cue はカメラ ${cue.camera} 用。今発火すると位置のズレた絵が出る。`;
+      row.appendChild(warn);
+    }
+
     const btn = document.createElement('button');
     btn.textContent = playing ? '⏹ 停止' : '▶ 発火';
-    btn.className = playing ? '' : 'accent';
+    btn.className = 'cue-fire ' + (playing ? '' : 'accent');
     btn.onclick = () => postCommand(playing ? { type: 'stopCue' } : { type: 'playCue', id: cue.id });
     row.appendChild(btn);
 
@@ -230,6 +281,10 @@ setupTabs();
 setupPostSliders();
 $('ovrAuto').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
 $('cueStopAll').onclick = () => postCommand({ type: 'stopCue' });
+$('postReset').onclick = () => postCommand({
+  type: 'setPost',
+  post: { exposure: 0, contrast: 1, saturation: 1, temperature: 0, vignette: 0.25, grain: 0.06, scanline: 0 },
+});
 $('consoleRefresh').onclick = async () => {
   try {
     state = await (await fetch('/state')).json();

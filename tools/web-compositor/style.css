@@ -178,3 +178,14 @@ textarea {
 @media (max-width: 1100px) {
   .console-grid { grid-template-columns: 1fr; }
 }
+
+/* レビュー反映: 本番操作向けの大型ボタン・固定全停止・反映/警告表示 */
+.cue-row button.cue-fire { padding: 12px 20px; font-size: 14px; min-width: 96px; }
+.cue-mark { font-size: 11px; white-space: nowrap; }
+.cue-mark.ok { color: var(--green); }
+.cue-mark.wait { color: #e8c46a; }
+.cue-warn { font-size: 11px; color: #ffae5e; white-space: nowrap; }
+.con-cues .btns { position: sticky; bottom: 0; background: var(--panel); padding: 6px 0; }
+#cueStopAll { width: 100%; padding: 12px; font-size: 14px; }
+.sim-link { color: var(--muted); font-size: 12px; text-decoration: none; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+.sim-link:hover { color: var(--fg); background: var(--panel2); }

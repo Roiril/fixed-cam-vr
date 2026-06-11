@@ -204,9 +204,12 @@ namespace FixedCamVr.Streaming
         [Serializable] private class Heartbeat
         {
             public string activeCamera = "";
+            public int activeIndex = -1;
             public float recvFps;
             public string playingCue = "";
             public string cameraOverride = "";
+            // ここまで適用した show.json の rev。UI / 自動検証が「Unity 反映済み」を機械判定する。
+            public int appliedRev = -1;
         }
 
         private async Task HeartbeatLoopAsync(CancellationToken ct)
@@ -218,9 +221,11 @@ namespace FixedCamVr.Streaming
                 {
                     var active = registry != null ? registry.GetActive() : null;
                     hb.activeCamera = active?.DisplayName ?? "";
+                    hb.activeIndex = registry != null ? registry.ActiveIndex : -1;
                     hb.recvFps = active?.ReceivedFps ?? 0f;
                     hb.playingCue = _overlay?.Current?.id ?? "";
                     hb.cameraOverride = _appliedOverride;
+                    hb.appliedRev = _rev;
 
                     string json = JsonUtility.ToJson(hb);
                     using var req = UnityWebRequest.Post(

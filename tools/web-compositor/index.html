@@ -23,6 +23,7 @@
         <span id="unityAlive" class="unity-dot off"></span>
         <span id="unityInfo">Unity: 未接続</span>
         <span class="spacer"></span>
+        <a href="sim.html" target="_blank" class="sim-link" title="Unity なしで動作確認する仮想クライアント（Quest の代役）">🖥 仮想 Unity を開く</a>
         <button id="consoleRefresh">↻ 状態再取得</button>
       </div>
 
@@ -53,6 +54,9 @@
           <label class="slider">ヴィネット <input id="conVignette" type="range" min="0" max="1" step="0.01" value="0.25"><span></span></label>
           <label class="slider">グレイン <input id="conGrain" type="range" min="0" max="0.3" step="0.005" value="0.06"><span></span></label>
           <label class="slider">走査線 <input id="conScanline" type="range" min="0" max="1" step="0.01" value="0"><span></span></label>
+          <div class="btns">
+            <button id="postReset">↺ 既定値に戻す</button>
+          </div>
         </section>
       </div>
     </div>
