@@ -49,6 +49,12 @@
 
 ## 4. 計測・記録
 
+### セッション全記録（SessionReplayRecorder・ホスト側）
+
+両者の全 bone 30Hz + 小物 + イベントを 1 ファイル（TDVR1）に記録し、**ReplayViewer（Editor）で自由視点再生**。
+体験直後に両操作者と見返して意図↔解釈を突き合わせる **stimulated recall**（protocol Phase 8）の基盤。
+視点プリセット「手の視点」は RQ3 のプローブを兼ねる。実装計画 → `.claude/plans/2026-06-11_table-duo_replay.md`
+
 ### 自動ログ（SessionLogger・ホスト側）
 
 ホストは全員の pose を受信済みなのでホスト1箇所で記録する。**起動ごとにタイムスタンプ付きファイル名**（役割交代の再起動で上書きしない）。
