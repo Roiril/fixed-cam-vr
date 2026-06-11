@@ -26,10 +26,22 @@ namespace TableDuoVr.Net
             Client,
         }
 
+        public enum RoleOverride
+        {
+            None,
+            Full,
+            Hand,
+        }
+
         [SerializeField] private string defaultAddress = "192.168.1.10";
         [SerializeField] private ushort port = 7777;
         [SerializeField] private AutoMode autoMode = AutoMode.None;
         [SerializeField] private bool showGui = true;
+
+        [Header("Study（Editor 検証用。実機は tdv_* extras が優先）")]
+        [SerializeField] private RoleOverride studyRole = RoleOverride.None;
+        [SerializeField] private bool showHeadMarker;
+        [SerializeField] private bool oneHandMode = true;
 
         private const string PoseMsg = "tdv_pose";
         private readonly Dictionary<ulong, AvatarPose> _remotePoses = new();
@@ -45,6 +57,67 @@ namespace TableDuoVr.Net
         {
             Instance = this;
             _ipInput = defaultAddress;
+
+            // Inspector 既定 → 起動フラグの順で StudyConfig を確定（フラグ優先）
+            StudyConfig.ForcedRole = studyRole switch
+            {
+                RoleOverride.Full => StudyConfig.Role.Full,
+                RoleOverride.Hand => StudyConfig.Role.Hand,
+                _ => null,
+            };
+            StudyConfig.ShowHeadMarker = showHeadMarker;
+            StudyConfig.OneHandMode = oneHandMode;
+            ApplyStudyFlags();
+            if (StudyConfig.LaunchedWithStudyFlags)
+            {
+                showGui = false; // 調査セッションではデバッグ GUI を見せない
+            }
+        }
+
+        /// <summary>tdv_role / tdv_marker / tdv_hands を intent extras（実機）/ コマンドライン（PC）から読む。</summary>
+        private void ApplyStudyFlags()
+        {
+            string? role = GetLaunchValue("tdv_role", "-tdvRole");
+            if (role == "full") StudyConfig.ForcedRole = StudyConfig.Role.Full;
+            else if (role == "hand") StudyConfig.ForcedRole = StudyConfig.Role.Hand;
+            if (role != null) StudyConfig.LaunchedWithStudyFlags = true;
+
+            string? marker = GetLaunchValue("tdv_marker", "-tdvMarker");
+            if (marker == "on") StudyConfig.ShowHeadMarker = true;
+            else if (marker == "off") StudyConfig.ShowHeadMarker = false;
+
+            string? hands = GetLaunchValue("tdv_hands", "-tdvHands");
+            if (hands == "one") StudyConfig.OneHandMode = true;
+            else if (hands == "two") StudyConfig.OneHandMode = false;
+
+            if (StudyConfig.LaunchedWithStudyFlags)
+            {
+                Debug.Log($"[TableDuo] StudyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode}");
+            }
+        }
+
+        private static string? GetLaunchValue(string extraKey, string cmdKey)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+                using var activity = player.GetStatic<AndroidJavaObject>("currentActivity");
+                using var intent = activity.Call<AndroidJavaObject>("getIntent");
+                return intent.Call<string>("getStringExtra", extraKey);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+#else
+            var args = Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == cmdKey) return args[i + 1];
+            }
+            return null;
+#endif
         }
 
         private void Start()

@@ -27,6 +27,19 @@ namespace TableDuoVr.Hands
         /// <summary>席アライン対象のリグルート。L0（リグ無し）では null。</summary>
         public Transform? RigRoot => rigRoot;
 
+        /// <summary>片手モード: 左手を抑制（pose 非送信 + ローカル描画も隠す＝身体感の一貫性）。</summary>
+        public bool SuppressLeftHand
+        {
+            get => _suppressLeft;
+            set
+            {
+                _suppressLeft = value;
+                if (leftHand != null) leftHand.gameObject.SetActive(!value);
+            }
+        }
+
+        private bool _suppressLeft;
+
         private void OnEnable() => HandPoseSourceRegistry.Register(this);
         private void OnDisable() => HandPoseSourceRegistry.Unregister(this);
 
@@ -45,6 +58,12 @@ namespace TableDuoVr.Hands
                 leftHand.GetFingerIsPinching(OVRHand.HandFinger.Index);
             _pose.PinchR = _pose.TrackedR && rightHand != null &&
                 rightHand.GetFingerIsPinching(OVRHand.HandFinger.Index);
+
+            if (_suppressLeft)
+            {
+                _pose.TrackedL = false;
+                _pose.PinchL = false;
+            }
 
             CaptureLayoutIfReady(leftSkeleton, ref HandSkeletonLayout.CapturedL);
             CaptureLayoutIfReady(rightSkeleton, ref HandSkeletonLayout.CapturedR);

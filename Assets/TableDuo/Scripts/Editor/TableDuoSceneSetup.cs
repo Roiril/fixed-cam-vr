@@ -132,6 +132,12 @@ namespace TableDuoVr.EditorTools
                 model.AddComponent<Grabbable>();
             }
 
+            // 絵カードデッキ（RQ2: カード照準分析用。片面絵柄 + 共通裏面）
+            CreateCardDeck(root.transform);
+
+            // 協調配置課題の目標パネル（手役ローカルのみ表示）
+            CreatePatternPanel(root.transform);
+
             // --- OVRCameraRig + ハンドトラッキング ---
             var rig = InstantiateRig();
             Transform? trackingSpace = null, centerEye = null;
@@ -185,6 +191,13 @@ namespace TableDuoVr.EditorTools
             fake.enabled = false; // L0 検証時に手動で ON
 
             systems.AddComponent<ConnectionManager>();
+
+            // 調査ロガー（ホストのみ稼働）+ フェーズマーク受付
+            var sessionLogger = systems.AddComponent<SessionLogger>();
+            var markServer = systems.AddComponent<FacilitatorMarkServer>();
+            var markSo = new SerializedObject(markServer);
+            SetRef(markSo, "logger", sessionLogger);
+            markSo.ApplyModifiedPropertiesWithoutUndo();
 
             // --- NetworkManager + プレイヤープレハブ ---
             var playerPrefab = CreatePlayerPrefab();
@@ -261,6 +274,104 @@ namespace TableDuoVr.EditorTools
             var b = renderers[0].bounds;
             foreach (var r in renderers) b.Encapsulate(r.bounds);
             return b;
+        }
+
+        private static readonly string[] CardIcons =
+        {
+            "home", "phone", "gamepad", "video", "star", "trophy",
+            "wrench", "gear", "shoppingCart", "mouse", "target", "trashcan",
+        };
+
+        /// <summary>絵カード 12 枚を人役（席0）寄りのテーブル端に 2 列で並べる。</summary>
+        private static void CreateCardDeck(Transform root)
+        {
+            var deck = new GameObject("Cards");
+            deck.transform.SetParent(root, false);
+            var backMat = TableDuoStudyAssets.EnsureCardBackMaterial();
+            var bodyMat = AssetDatabase.LoadAssetAtPath<Material>($"{MaterialDir}/TableDuoFloor.mat");
+
+            for (int i = 0; i < CardIcons.Length; i++)
+            {
+                string id = CardIcons[i];
+                var faceMat = TableDuoStudyAssets.EnsureCardFaceMaterial(
+                    $"Assets/ThirdParty/Kenney/Icons/{id}.png", id);
+
+                int row = i / 6;
+                int col = i % 6;
+                var pos = new Vector3(-0.45f + col * 0.18f, 0.706f, -0.16f - row * 0.16f);
+
+                var card = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                card.name = $"Card_{id}";
+                card.transform.SetParent(deck.transform, false);
+                card.transform.localPosition = pos;
+                card.transform.localScale = new Vector3(0.10f, 0.004f, 0.14f);
+                if (bodyMat != null) card.GetComponent<Renderer>().sharedMaterial = bodyMat;
+
+                CreateCardFace(card.transform, "Face", faceMat, up: true);
+                CreateCardFace(card.transform, "Back", backMat, up: false);
+
+                card.AddComponent<NetworkObject>();
+                var nt = card.AddComponent<Unity.Netcode.Components.NetworkTransform>();
+                nt.Interpolate = true;
+                nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
+                card.AddComponent<Grabbable>();
+                var prop = card.AddComponent<CardProp>();
+                var propSo = new SerializedObject(prop);
+                var idProp = propSo.FindProperty("cardId");
+                if (idProp != null) idProp.stringValue = id;
+                var normalProp = propSo.FindProperty("faceNormalLocal");
+                if (normalProp != null) normalProp.vector3Value = Vector3.up;
+                propSo.ApplyModifiedPropertiesWithoutUndo();
+            }
+        }
+
+        private static void CreateCardFace(Transform card, string name, Material mat, bool up)
+        {
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = name;
+            var col = quad.GetComponent<Collider>();
+            if (col != null) Object.DestroyImmediate(col);
+            quad.transform.SetParent(card, false);
+            // 親 cube が (0.10, 0.004, 0.14) スケールなのでローカルは正規化座標
+            quad.transform.localPosition = new Vector3(0f, up ? 0.51f : -0.51f, 0f);
+            quad.transform.localRotation = Quaternion.Euler(up ? 90f : -90f, 0f, 0f);
+            quad.transform.localScale = new Vector3(0.95f, 0.95f, 1f);
+            quad.GetComponent<Renderer>().sharedMaterial = mat;
+        }
+
+        /// <summary>手役席（席1）の斜め上方・作業空間の外に目標配置パネルを置く。</summary>
+        private static void CreatePatternPanel(Transform root)
+        {
+            var holder = new GameObject("PatternPanel");
+            holder.transform.SetParent(root, false);
+
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = "PanelQuad";
+            var col = quad.GetComponent<Collider>();
+            if (col != null) Object.DestroyImmediate(col);
+            quad.transform.SetParent(holder.transform, false);
+            // 席1 (0,0,0.85) の斜め上・横。テーブル上の作業視線と分離した位置
+            var panelPos = new Vector3(0.8f, 1.6f, 1.4f);
+            quad.transform.position = panelPos;
+            var lookFrom = new Vector3(0f, 1.5f, 0.85f); // 席1 の頭の想定位置
+            quad.transform.rotation = Quaternion.LookRotation(panelPos - lookFrom);
+            quad.transform.localScale = new Vector3(0.35f, 0.35f, 1f);
+            quad.SetActive(false); // PatternPanel が手役ローカルでのみ有効化する
+
+            var panel = holder.AddComponent<PatternPanel>();
+            var so = new SerializedObject(panel);
+            SetRef(so, "panelRenderer", quad.GetComponent<Renderer>());
+            var mats = TableDuoStudyAssets.EnsurePatternMaterials(4);
+            var matsProp = so.FindProperty("patterns");
+            if (matsProp != null && matsProp.isArray)
+            {
+                matsProp.arraySize = mats.Length;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    matsProp.GetArrayElementAtIndex(i).objectReferenceValue = mats[i];
+                }
+            }
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static Material EnsureMaterial(string path, string shaderName, Color color)

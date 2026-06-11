@@ -17,6 +17,9 @@ namespace TableDuoVr.Net
     {
         private const ulong NoHolder = ulong.MaxValue;
 
+        /// <summary>サーバ側 grab/release 通知（objectName, clientId, isGrab）。SessionLogger 用。</summary>
+        public static event System.Action<string, ulong, bool>? GrabLogged;
+
         private readonly NetworkVariable<ulong> _holder = new(
             NoHolder, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         private readonly NetworkVariable<byte> _holderHand = new(
@@ -46,14 +49,17 @@ namespace TableDuoVr.Net
             _grabOffsetPos = inv * (transform.position - handPos);
             _grabOffsetRot = inv * transform.rotation;
             Debug.Log($"[TableDuo] Grab {name} ← client{sender} hand{hand}");
+            GrabLogged?.Invoke(name, sender, true);
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void RequestReleaseServerRpc(ServerRpcParams rpcParams = default)
         {
             if (_holder.Value != rpcParams.Receive.SenderClientId) return;
+            ulong holder = _holder.Value;
             _holder.Value = NoHolder;
             Debug.Log($"[TableDuo] Release {name}");
+            GrabLogged?.Invoke(name, holder, false);
         }
 
         private void Update()

@@ -56,8 +56,12 @@ namespace TableDuoVr.Net
 
             if (_handsOnly)
             {
-                // 頭マーカー: 小さな球。視線・頷きの社会的キューだけ残す
-                _head = CreatePrimitive(transform, PrimitiveType.Sphere, 0.06f, "HeadMarker", _markerMat);
+                // 頭マーカーは調査条件（StudyConfig）。既定 OFF —
+                // 「どこに話しかけるか」の曖昧さ自体が RQ2/RQ3 の観察対象（study-design.md §2）
+                if (StudyConfig.ShowHeadMarker)
+                {
+                    _head = CreatePrimitive(transform, PrimitiveType.Sphere, 0.06f, "HeadMarker", _markerMat);
+                }
             }
             else
             {
@@ -123,40 +127,36 @@ namespace TableDuoVr.Net
         /// <summary>片手の描画。bone 階層は layout が手に入った時点で遅延構築。</summary>
         private sealed class HandView
         {
-            /// <summary>トラッキングロスト時のフェード速度（スケール 1→0 が ~0.3s）。</summary>
-            private const float FadePerSec = 3.5f;
-
             private readonly Transform _root;
             private readonly Transform _wristProxy;
             private Transform[]? _bones;
-            private float _visibility = 1f;
+            private bool _everTracked;
 
             public HandView(Transform parent, string name)
             {
                 _root = new GameObject(name).transform;
                 _root.SetParent(parent, worldPositionStays: false);
+                _root.gameObject.SetActive(false); // 一度トラッキングされるまで非表示（片手モードの左手対策）
                 _wristProxy = CreatePrimitive(_root, PrimitiveType.Cube, 0.05f, "WristProxy");
             }
 
             public void Tick(float smooth, Vector3 wristPos, Quaternion wristRot, Quaternion[] boneRots,
                 bool tracked, HandSkeletonLayout? layout)
             {
-                // ロスト中はスケールフェードで消す（点滅させない — 要件 §4）
-                _visibility = Mathf.MoveTowards(_visibility, tracked ? 1f : 0f,
-                    FadePerSec * Time.deltaTime);
-                bool visible = _visibility > 0.001f;
-                if (_root.gameObject.activeSelf != visible)
+                // ロスト時は「最終姿勢でフリーズ」（調査仕様 — 消すと相手が
+                // 無に向かって話す時間が混入し RQ2/RQ3 を汚染する。ロスト区間は SessionLogger が記録）
+                if (!tracked)
                 {
-                    _root.gameObject.SetActive(visible);
+                    return; // 表示状態・姿勢を保持したまま何もしない
                 }
-                if (!visible) return;
-                _root.localScale = Vector3.one * _visibility;
+                if (!_everTracked)
+                {
+                    _everTracked = true;
+                    _root.gameObject.SetActive(true);
+                }
 
-                if (tracked)
-                {
-                    _root.localPosition = Vector3.Lerp(_root.localPosition, wristPos, smooth);
-                    _root.localRotation = Quaternion.Slerp(_root.localRotation, wristRot, smooth);
-                }
+                _root.localPosition = Vector3.Lerp(_root.localPosition, wristPos, smooth);
+                _root.localRotation = Quaternion.Slerp(_root.localRotation, wristRot, smooth);
 
                 if (_bones == null && layout != null)
                 {
