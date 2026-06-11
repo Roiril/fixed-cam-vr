@@ -34,7 +34,7 @@ function $(id) { return document.getElementById(id); }
 
 function setStatus(msg, isErr = false) {
   els.status.textContent = msg;
-  els.status.style.color = isErr ? '#ff8080' : '#7fffb0';
+  els.status.style.color = isErr ? 'var(--danger-color)' : 'var(--accent-color)';
 }
 
 function currentRes() { return RES[params.res]; }

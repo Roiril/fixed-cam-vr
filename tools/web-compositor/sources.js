@@ -30,7 +30,7 @@ export class TestPattern {
     c.beginPath(); c.arc(cx - 8, cy - 6, 4, 0, Math.PI * 2); c.fill();
     c.beginPath(); c.arc(cx + 8, cy - 6, 4, 0, Math.PI * 2); c.fill();
     // タイムスタンプ
-    c.fillStyle = '#7fffb0'; c.font = '20px monospace';
+    c.fillStyle = '#ffdead'; c.font = '20px monospace';
     c.fillText('LIVE ' + this.t.toFixed(1) + 's', 12, h - 16);
   }
   get element() { return this.canvas; }

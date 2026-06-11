@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 const status = (msg, err = false) => {
   const el = $('cueStatus');
   el.textContent = msg;
-  el.style.color = err ? '#ff8080' : '#7fffb0';
+  el.style.color = err ? 'var(--danger-color)' : 'var(--accent-color)';
 };
 
 async function fetchState() {
