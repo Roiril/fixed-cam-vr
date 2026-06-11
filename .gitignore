@@ -189,3 +189,6 @@ tools/web-compositor/captures/
 tools/web-compositor/prompts.json
 tools/web-compositor/show.json
 tools/web-compositor/masks/
+
+# ビルド成果物（BuildVariants が出力）
+Builds/
