@@ -2,6 +2,8 @@
 
 **オペレータ卓（Unity 遠隔制御）+ 合成のブラウザ検証**の 2 タブ構成（2026-06-11 T4 で再編）。
 
+**デザイン言語（2026-06-11 ユーザー指定・cogni-storage 準拠）**: 純黒 `#000` + radial-gradient / 文字 `#fffaf0` / アクセント `#ffdead` / **角丸ゼロ** / 透明カード + 1px 罫線（`--line-soft`）/ UPPERCASE マイクロラベル / 下線型インプット。トークンは style.css の `:root` に集約、multicam.html も同トークン。新 UI 追加時はこれに従う（JS でのインライン色指定は `var(--accent-color)` 等を使う）。
+
 - **🎛 コンソール**（console.js）: show.json を正として Unity を遠隔制御。cue 発火/停止・カメラ手動固定・ポスト FX ライブ調整・Unity heartbeat 表示。Unity 側対向は `ShowControlClient`（long-poll）。API: `/state`(long-poll) `/command` `/masks` `/unity/*`。計画: `.claude/plans/2026-06-11_web-operator-console.md`
 - **✂ コンポジット検証**（main.js、従来機能）: 「事前撮影映像 × リアルタイム配信」をマスクで切り貼り→合成跡を消す画像処理→フィルタ、までを WebGL2 で実装。AI 動画生成（貞子系）の素材づくり・プロンプト管理もここに集約。
 
