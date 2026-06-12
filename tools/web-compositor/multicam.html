@@ -25,25 +25,32 @@
   }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   header {
-    display: flex; align-items: center; gap: 16px;
+    display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap;
     padding: 14px 20px 12px; border-bottom: 1px solid var(--line-soft);
   }
   header h1 {
     font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .12em;
-    border-bottom: 2px solid var(--accent-color); padding-bottom: 2px;
+    border-bottom: 2px solid var(--accent-color); padding-bottom: 2px; white-space: nowrap;
   }
   header .hint { opacity: var(--opacity-mute); font-size: 11px; }
   #grid { display: grid; gap: 12px; padding: 12px; grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); }
   .cam { background: transparent; border: 1px solid var(--line-soft); overflow: hidden; }
-  .cam.big { grid-column: 1 / -1; }
+  .cam.big, .cam.editing { grid-column: 1 / -1; }
   .cam .bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-size: 12px;
-              border-bottom: 1px solid var(--line-soft); }
+              border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
   .cam .bar .name { font-weight: 600; letter-spacing: .06em; }
   .cam .bar .status { margin-left: auto; opacity: var(--opacity-mute); font-size: 11px; letter-spacing: .08em; }
   .cam .bar .status.ok { color: var(--accent-color); opacity: 1; }
   .cam .bar .status.ng { color: var(--danger-color); opacity: 1; }
+  .video-wrap { position: relative; }
   .cam img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; cursor: zoom-in; }
   .cam.big img { cursor: zoom-out; }
+  .cam.editing img { cursor: default; }
+  .mask-overlay {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    display: none; cursor: crosshair; touch-action: none;
+  }
+  .cam.editing .mask-overlay { display: block; }
   .cam input {
     width: 110px; background: transparent; color: var(--text-color);
     border: none; border-bottom: 1px solid var(--line-input); border-radius: 0;
@@ -58,15 +65,43 @@
     border: 1px solid var(--line-soft); border-radius: 0;
     padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
     opacity: var(--opacity-sub); transition: color .15s ease, border-color .15s ease;
+    white-space: nowrap;
   }
   button:hover { color: var(--accent-color); border-color: var(--accent-color); opacity: 1; }
+  button.on { color: var(--accent-color); border-color: var(--accent-color); opacity: 1;
+              box-shadow: inset 0 0 0 1px var(--accent-color); }
+  button.accent { background: var(--accent-color); border-color: var(--accent-color); color: #000; font-weight: 600; opacity: 1; }
   :focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+
+  /* ---- ✂ 合成エディタ ---- */
+  .editor { display: none; border-top: 1px solid var(--line-soft); padding: 10px 12px 12px; }
+  .cam.editing .editor { display: flex; flex-direction: column; gap: 8px; }
+  .editor .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .12em;
+    opacity: var(--opacity-mute);
+  }
+  .editor .rowflex { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .editor select {
+    flex: 1; min-width: 160px; background: transparent; color: var(--text-color);
+    border: none; border-bottom: 1px solid var(--line-input); padding: 4px 2px;
+    font-size: 12px; font-family: inherit; outline: none;
+  }
+  .editor select option { background: #111; color: var(--text-color); }
+  .editor input[type=text] { flex: 1; min-width: 140px; width: auto; }
+  .editor input.cue-name { width: 180px; flex: none; }
+  .editor .ed-status { font-size: 11px; opacity: var(--opacity-sub); min-height: 1.2em; }
+  .editor .ed-status.err { color: var(--danger-color); opacity: 1; }
+  .editor .ed-status.ok { color: var(--accent-color); opacity: 1; }
+  .editor .slider { display: flex; align-items: center; gap: 6px; font-size: 11px; opacity: var(--opacity-sub); }
+  .editor .slider input[type=range] { width: 90px; accent-color: var(--accent-color); }
+  .editor .check { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+  .editor .check input { accent-color: var(--accent-color); }
 </style>
 </head>
 <body>
 <header>
   <h1>📡 マルチカメラビュー</h1>
-  <span class="hint">/cam プロキシ経由（Basic 認証はサーバが肩代わり）。IP は編集して 🔄 で再接続、localStorage に保存。映像クリックで拡大。</span>
+  <span class="hint">映像クリックで拡大。✂ 合成 で差し替え素材とマスク範囲（塗った所=差し替え）を指定して cue 保存 → コンソール/Unity で発火。</span>
   <button id="reloadAll" style="margin-left:auto">🔄 全再接続</button>
 </header>
 <div id="grid"></div>
@@ -83,6 +118,37 @@ let cams;
 try { cams = JSON.parse(localStorage.getItem(LS_KEY)) || DEFAULTS; } catch { cams = DEFAULTS; }
 if (!Array.isArray(cams) || cams.length !== DEFAULTS.length) cams = DEFAULTS;
 
+// show.json のカメラ id（A/B/C）。パネル index で対応付ける（コンソールと同じ並び前提）
+let stateCamIds = ['A', 'B', 'C'];
+fetch('/state').then(r => r.json()).then(s => {
+  if (Array.isArray(s.cameras) && s.cameras.length) stateCamIds = s.cameras.map(c => c.id);
+}).catch(() => {});
+
+// captures/ の素材一覧（全パネル共有）
+let captureItems = [];
+async function refreshCaptures() {
+  try { captureItems = await (await fetch('/captures/list')).json(); } catch { captureItems = []; }
+  document.querySelectorAll('select.src-select').forEach(populateSourceSelect);
+}
+function populateSourceSelect(sel) {
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">（captures/ から素材を選ぶ）</option>';
+  for (const it of captureItems) {
+    const o = document.createElement('option');
+    o.value = it.url;
+    o.textContent = `${it.type === 'video' ? '🎞' : '🖼'} ${it.name}`;
+    sel.appendChild(o);
+  }
+  sel.value = cur;
+}
+
+// マスク slug（/masks は A-Za-z0-9_- のみ）
+function maskSlug(camId) {
+  const t = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `cue_${camId}_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}`;
+}
+
 const grid = document.getElementById('grid');
 const panels = cams.map((cam, i) => {
   const div = document.createElement('div');
@@ -94,9 +160,46 @@ const panels = cams.map((cam, i) => {
       <input class="port" value="${cam.port}" title="port">
       <input class="auth" value="${cam.auth}" placeholder="user:pass" title="Basic 認証（空=なし）">
       <button class="re">🔄</button>
+      <button class="edit-toggle">✂ 合成</button>
       <span class="status">接続中…</span>
     </div>
-    <img alt="${cam.name}">`;
+    <div class="video-wrap">
+      <img alt="${cam.name}">
+      <canvas class="mask-overlay"></canvas>
+    </div>
+    <div class="editor">
+      <span class="label">差し替え素材（合成する映像/画像）</span>
+      <div class="rowflex">
+        <select class="src-select"></select>
+        <button class="src-refresh" title="captures/ を再読込">↻</button>
+      </div>
+      <div class="rowflex">
+        <input type="text" class="src-url" placeholder="または素材 URL 直書き（/captures/xxx.webm 等）" spellcheck="false">
+      </div>
+      <span class="label">マスク範囲 — 塗った所（橙）に素材が出る。残りはライブ映像のまま</span>
+      <div class="rowflex tools">
+        <button data-tool="rect" class="on">▭ 矩形</button>
+        <button data-tool="brush">🖌 ブラシ</button>
+        <button data-tool="erase">⌫ 消し</button>
+        <span class="slider">サイズ <input type="range" class="brush-size" min="8" max="120" value="40"></span>
+      </div>
+      <div class="rowflex">
+        <button data-fill="left">◧ 左半分</button>
+        <button data-fill="right">◨ 右半分</button>
+        <button data-fill="top">⬒ 上半分</button>
+        <button data-fill="bottom">⬓ 下半分</button>
+        <button data-fill="all">■ 全面</button>
+        <button class="mask-invert">⇄ 反転</button>
+        <button class="mask-clear">✕ クリア</button>
+      </div>
+      <div class="rowflex">
+        <input type="text" class="cue-name" placeholder="cue 名（例: 貞子_左窓）" spellcheck="false">
+        <label class="check"><input type="checkbox" class="cue-loop" checked> ループ</label>
+        <span class="slider">フェード <input type="range" class="cue-fade" min="0" max="3" step="0.1" value="0.5"><span class="fade-val">0.5s</span></span>
+        <button class="cue-save accent">💾 cue 保存</button>
+      </div>
+      <span class="ed-status"></span>
+    </div>`;
   grid.appendChild(div);
 
   const img = div.querySelector('img');
@@ -120,11 +223,180 @@ const panels = cams.map((cam, i) => {
     retryTimer = setTimeout(connect, 5000);
   });
   div.querySelector('.re').addEventListener('click', connect);
-  img.addEventListener('click', () => div.classList.toggle('big')); // クリックで拡大/縮小
+  img.addEventListener('click', () => { if (!div.classList.contains('editing')) div.classList.toggle('big'); });
   connect();
+
+  // ---- ✂ 合成エディタ -------------------------------------------------------
+  // マスク実体: 640x360 オフスクリーン。黒=ライブ維持 / 白=差し替え（Unity _MaskTex と同じ向き）
+  const MW = 640, MH = 360;
+  const mask = document.createElement('canvas');
+  mask.width = MW; mask.height = MH;
+  const mctx = mask.getContext('2d', { willReadFrequently: true });
+  mctx.fillStyle = '#000'; mctx.fillRect(0, 0, MW, MH);
+
+  const overlay = div.querySelector('.mask-overlay');
+  const octx = overlay.getContext('2d');
+  let tool = 'rect';
+  let dragging = false, dragStart = null, dragCur = null;
+
+  function syncOverlaySize() {
+    const r = overlay.getBoundingClientRect();
+    if (r.width && (overlay.width !== Math.round(r.width) || overlay.height !== Math.round(r.height))) {
+      overlay.width = Math.round(r.width); overlay.height = Math.round(r.height);
+    }
+  }
+  const tint = document.createElement('canvas');
+  tint.width = MW; tint.height = MH;
+  const tctx = tint.getContext('2d');
+  function drawOverlay() {
+    syncOverlaySize();
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    // マスク白領域だけをアクセント色 45% で可視化（輝度 → alpha 変換。
+    // destination-in 方式は「不透明な黒」も残してしまい全面が黒被りするので不可）
+    const md = mctx.getImageData(0, 0, MW, MH);
+    const td = tctx.createImageData(MW, MH);
+    for (let k = 0; k < md.data.length; k += 4) {
+      td.data[k] = 255; td.data[k + 1] = 222; td.data[k + 2] = 173; // #ffdead
+      td.data[k + 3] = md.data[k]; // 白=不透明 / 黒=透明
+    }
+    tctx.putImageData(td, 0, 0);
+    octx.globalAlpha = 0.45;
+    octx.drawImage(tint, 0, 0, overlay.width, overlay.height);
+    octx.globalAlpha = 1;
+    // 矩形ドラッグ中のラバーバンド
+    if (dragging && tool === 'rect' && dragStart && dragCur) {
+      octx.strokeStyle = '#ffdead'; octx.lineWidth = 1.5;
+      octx.strokeRect(Math.min(dragStart.x, dragCur.x), Math.min(dragStart.y, dragCur.y),
+                      Math.abs(dragCur.x - dragStart.x), Math.abs(dragCur.y - dragStart.y));
+    }
+  }
+  function toMask(p) { return { x: p.x / overlay.width * MW, y: p.y / overlay.height * MH }; }
+  function localPos(ev) {
+    const r = overlay.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+  function paintBrush(p, erase) {
+    const m = toMask(p);
+    const size = parseInt(div.querySelector('.brush-size').value, 10);
+    mctx.fillStyle = erase ? '#000' : '#fff';
+    mctx.beginPath();
+    mctx.arc(m.x, m.y, size / 2 / overlay.width * MW, 0, Math.PI * 2);
+    mctx.fill();
+  }
+  overlay.addEventListener('pointerdown', (ev) => {
+    try { overlay.setPointerCapture(ev.pointerId); } catch { /* 合成イベント等 */ }
+    dragging = true; dragStart = dragCur = localPos(ev);
+    if (tool !== 'rect') paintBrush(dragCur, tool === 'erase');
+    drawOverlay();
+  });
+  overlay.addEventListener('pointermove', (ev) => {
+    if (!dragging) return;
+    dragCur = localPos(ev);
+    if (tool !== 'rect') paintBrush(dragCur, tool === 'erase');
+    drawOverlay();
+  });
+  overlay.addEventListener('pointerup', () => {
+    if (dragging && tool === 'rect' && dragStart && dragCur) {
+      const a = toMask(dragStart), b = toMask(dragCur);
+      mctx.fillStyle = '#fff';
+      mctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    }
+    dragging = false; dragStart = dragCur = null;
+    drawOverlay();
+  });
+
+  div.querySelectorAll('[data-tool]').forEach((b) => {
+    b.addEventListener('click', () => {
+      tool = b.dataset.tool;
+      div.querySelectorAll('[data-tool]').forEach((x) => x.classList.toggle('on', x === b));
+    });
+  });
+  div.querySelectorAll('[data-fill]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const f = b.dataset.fill;
+      mctx.fillStyle = '#fff';
+      if (f === 'all') mctx.fillRect(0, 0, MW, MH);
+      if (f === 'left') mctx.fillRect(0, 0, MW / 2, MH);
+      if (f === 'right') mctx.fillRect(MW / 2, 0, MW / 2, MH);
+      if (f === 'top') mctx.fillRect(0, 0, MW, MH / 2);
+      if (f === 'bottom') mctx.fillRect(0, MH / 2, MW, MH / 2);
+      drawOverlay();
+    });
+  });
+  div.querySelector('.mask-invert').addEventListener('click', () => {
+    const d = mctx.getImageData(0, 0, MW, MH);
+    for (let k = 0; k < d.data.length; k += 4) {
+      d.data[k] = 255 - d.data[k]; d.data[k + 1] = 255 - d.data[k + 1]; d.data[k + 2] = 255 - d.data[k + 2];
+    }
+    mctx.putImageData(d, 0, 0);
+    drawOverlay();
+  });
+  div.querySelector('.mask-clear').addEventListener('click', () => {
+    mctx.fillStyle = '#000'; mctx.fillRect(0, 0, MW, MH);
+    drawOverlay();
+  });
+  div.querySelector('.brush-size').addEventListener('input', () => {});
+  const fadeRange = div.querySelector('.cue-fade');
+  fadeRange.addEventListener('input', () => {
+    div.querySelector('.fade-val').textContent = parseFloat(fadeRange.value).toFixed(1) + 's';
+  });
+
+  div.querySelector('.edit-toggle').addEventListener('click', () => {
+    const on = div.classList.toggle('editing');
+    div.querySelector('.edit-toggle').classList.toggle('on', on);
+    if (on) { div.classList.add('big'); requestAnimationFrame(drawOverlay); }
+  });
+  div.querySelector('.src-refresh').addEventListener('click', refreshCaptures);
+
+  // ---- cue 保存 ---------------------------------------------------------------
+  const edStatus = (msg, cls = '') => {
+    const el = div.querySelector('.ed-status');
+    el.textContent = msg; el.className = 'ed-status ' + cls;
+  };
+  function maskIsEmpty() {
+    const d = mctx.getImageData(0, 0, MW, MH).data;
+    for (let k = 0; k < d.length; k += 4) if (d[k] > 8) return false;
+    return true;
+  }
+  div.querySelector('.cue-save').addEventListener('click', async () => {
+    const camId = stateCamIds[i] || ['A', 'B', 'C'][i];
+    const sourceUrl = (div.querySelector('.src-url').value.trim() || div.querySelector('.src-select').value || '').trim();
+    if (!sourceUrl) return edStatus('差し替え素材を選んで（or URL 直書き）', 'err');
+    const name = div.querySelector('.cue-name').value.trim() || `cue ${camId} ${new Date().toLocaleTimeString()}`;
+    const id = maskSlug(camId);
+    try {
+      let maskUrl = '';
+      if (!maskIsEmpty()) {
+        edStatus('マスク書き出し中…');
+        // マスクは白=差し替えでそのまま Unity _MaskTex 形式（反転不要）
+        const blob = await new Promise((r) => mask.toBlob(r, 'image/png'));
+        const res = await (await fetch(`/masks?name=${encodeURIComponent(id)}`, { method: 'POST', body: blob })).json();
+        if (!res.ok) throw new Error(res.error || 'マスク保存失敗');
+        maskUrl = res.url;
+      }
+      const fade = parseFloat(fadeRange.value) || 0.5;
+      const cue = {
+        id, name, camera: camId, maskUrl, sourceUrl,
+        strength: 1, loop: div.querySelector('.cue-loop').checked,
+        fadeIn: fade, fadeOut: fade,
+      };
+      const s = await (await fetch('/state')).json();
+      const cues = s.cues || [];
+      const k = cues.findIndex((c) => c.id === id);
+      if (k >= 0) cues[k] = cue; else cues.push(cue);
+      const res2 = await (await fetch('/state', { method: 'POST', body: JSON.stringify({ cues }) })).json();
+      if (!res2.ok) throw new Error(res2.error || 'state 保存失敗');
+      edStatus(`✓ cue「${name}」保存（カメラ ${camId}${maskUrl ? ' / マスク付き' : ' / 全面差し替え'}）。コンソールから発火できる`, 'ok');
+    } catch (e) {
+      edStatus('保存失敗: ' + e.message, 'err');
+    }
+  });
+
+  window.addEventListener('resize', () => { if (div.classList.contains('editing')) drawOverlay(); });
   return { connect };
 });
 document.getElementById('reloadAll').addEventListener('click', () => panels.forEach(p => p.connect()));
+refreshCaptures();
 </script>
 </body>
 </html>
