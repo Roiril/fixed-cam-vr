@@ -33,33 +33,6 @@
     border-bottom: 2px solid var(--accent-color); padding-bottom: 2px; white-space: nowrap;
   }
   header .hint { opacity: var(--opacity-mute); font-size: 11px; }
-  #grid { display: grid; gap: 12px; padding: 12px; grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); }
-  .cam { background: transparent; border: 1px solid var(--line-soft); overflow: hidden; }
-  .cam.big, .cam.editing { grid-column: 1 / -1; }
-  .cam .bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-size: 12px;
-              border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
-  .cam .bar .name { font-weight: 600; letter-spacing: .06em; }
-  .cam .bar .status { margin-left: auto; opacity: var(--opacity-mute); font-size: 11px; letter-spacing: .08em; }
-  .cam .bar .status.ok { color: var(--accent-color); opacity: 1; }
-  .cam .bar .status.ng { color: var(--danger-color); opacity: 1; }
-  .video-wrap { position: relative; }
-  .cam img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; cursor: zoom-in; }
-  .cam.big img { cursor: zoom-out; }
-  .cam.editing img { cursor: default; }
-  .mask-overlay {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    display: none; cursor: crosshair; touch-action: none;
-  }
-  .cam.editing .mask-overlay { display: block; }
-  .cam input {
-    width: 110px; background: transparent; color: var(--text-color);
-    border: none; border-bottom: 1px solid var(--line-input); border-radius: 0;
-    padding: 2px 2px; font-size: 11px; font-family: monospace; outline: none;
-  }
-  .cam input:focus { border-bottom-color: var(--accent-color); }
-  .cam input::placeholder { color: var(--text-color); opacity: var(--opacity-mute); }
-  .cam input.auth { width: 90px; }
-  .cam input.port { width: 44px; }
   button {
     background: transparent; color: var(--text-color);
     border: 1px solid var(--line-soft); border-radius: 0;
@@ -73,35 +46,80 @@
   button.accent { background: var(--accent-color); border-color: var(--accent-color); color: #000; font-weight: 600; opacity: 1; }
   :focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
 
-  /* ---- ✂ 合成エディタ ---- */
-  .editor { display: none; border-top: 1px solid var(--line-soft); padding: 10px 12px 12px; }
-  .cam.editing .editor { display: flex; flex-direction: column; gap: 8px; }
-  .editor .label {
-    font-size: 10px; text-transform: uppercase; letter-spacing: .12em;
+  /* ---- カメラ列 ×（ライブ / マスク / 合成）マトリクス ---- */
+  #grid {
+    display: grid; gap: 12px; padding: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+    align-items: start;
+  }
+  .cam { background: transparent; border: 1px solid var(--line-soft); display: flex; flex-direction: column; }
+  .cam .bar {
+    display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-size: 12px;
+    border-bottom: 1px solid var(--line-soft); flex-wrap: wrap;
+  }
+  .cam .bar .name { font-weight: 600; letter-spacing: .06em; white-space: nowrap; }
+  .cam .bar .status { margin-left: auto; opacity: var(--opacity-mute); font-size: 11px; letter-spacing: .08em; }
+  .cam .bar .status.ok { color: var(--accent-color); opacity: 1; }
+  .cam .bar .status.ng { color: var(--danger-color); opacity: 1; }
+  .cam input {
+    background: transparent; color: var(--text-color);
+    border: none; border-bottom: 1px solid var(--line-input); border-radius: 0;
+    padding: 2px 2px; font-size: 11px; font-family: monospace; outline: none;
+  }
+  .cam input:focus { border-bottom-color: var(--accent-color); }
+  .cam input::placeholder { color: var(--text-color); opacity: var(--opacity-mute); }
+  .cam input.host { width: 104px; }
+  .cam input.auth { width: 80px; }
+  .cam input.port { width: 42px; }
+
+  .tile { position: relative; border-bottom: 1px solid var(--line-soft); }
+  .tile .tag {
+    position: absolute; top: 6px; left: 8px; z-index: 2;
+    font-size: 9px; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--text-color); opacity: var(--opacity-sub);
+    background: rgba(0, 0, 0, 0.55); padding: 2px 6px; pointer-events: none;
+  }
+  .tile img, .tile canvas {
+    display: block; width: 100%; aspect-ratio: 16 / 9; background: #000;
+  }
+  .tile canvas.mask-canvas { cursor: crosshair; touch-action: none; }
+
+  /* ツール行（マスク段の直下） */
+  .tools {
+    display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    padding: 6px 8px; border-bottom: 1px solid var(--line-soft);
+  }
+  .tools button { padding: 3px 7px; font-size: 11px; }
+  .tools .slider { display: flex; align-items: center; gap: 4px; font-size: 10px; opacity: var(--opacity-sub); }
+  .tools .slider input[type=range] { width: 64px; accent-color: var(--accent-color); }
+
+  /* cue 設定（列の最下段） */
+  .cue-box { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; }
+  .cue-box .label {
+    font-size: 9px; text-transform: uppercase; letter-spacing: .15em;
     opacity: var(--opacity-mute);
   }
-  .editor .rowflex { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .editor select {
-    flex: 1; min-width: 160px; background: transparent; color: var(--text-color);
-    border: none; border-bottom: 1px solid var(--line-input); padding: 4px 2px;
-    font-size: 12px; font-family: inherit; outline: none;
+  .cue-box .rowflex { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .cue-box select {
+    flex: 1; min-width: 120px; background: transparent; color: var(--text-color);
+    border: none; border-bottom: 1px solid var(--line-input); padding: 3px 2px;
+    font-size: 11px; font-family: inherit; outline: none;
   }
-  .editor select option { background: #111; color: var(--text-color); }
-  .editor input[type=text] { flex: 1; min-width: 140px; width: auto; }
-  .editor input.cue-name { width: 180px; flex: none; }
-  .editor .ed-status { font-size: 11px; opacity: var(--opacity-sub); min-height: 1.2em; }
-  .editor .ed-status.err { color: var(--danger-color); opacity: 1; }
-  .editor .ed-status.ok { color: var(--accent-color); opacity: 1; }
-  .editor .slider { display: flex; align-items: center; gap: 6px; font-size: 11px; opacity: var(--opacity-sub); }
-  .editor .slider input[type=range] { width: 90px; accent-color: var(--accent-color); }
-  .editor .check { display: flex; align-items: center; gap: 4px; font-size: 11px; }
-  .editor .check input { accent-color: var(--accent-color); }
+  .cue-box select option { background: #111; color: var(--text-color); }
+  .cue-box input[type=text] { flex: 1; min-width: 110px; width: auto; }
+  .cue-box .check { display: flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap; }
+  .cue-box .check input { accent-color: var(--accent-color); }
+  .cue-box .slider { display: flex; align-items: center; gap: 4px; font-size: 10px; opacity: var(--opacity-sub); white-space: nowrap; }
+  .cue-box .slider input[type=range] { width: 70px; accent-color: var(--accent-color); }
+  .cue-box .ed-status { font-size: 11px; opacity: var(--opacity-sub); min-height: 1.2em; }
+  .cue-box .ed-status.err { color: var(--danger-color); opacity: 1; }
+  .cue-box .ed-status.ok { color: var(--accent-color); opacity: 1; }
 </style>
 </head>
 <body>
 <header>
   <h1>📡 マルチカメラビュー</h1>
-  <span class="hint">映像クリックで拡大。✂ 合成 で差し替え素材とマスク範囲（塗った所=差し替え）を指定して cue 保存 → コンソール/Unity で発火。</span>
+  <span class="hint">列=カメラ。上から ライブ / 白黒マスク（描いて指定: 白=差し替え） / 合成プレビュー。素材を選んで cue 保存 → コンソール/Unity で発火。</span>
   <button id="reloadAll" style="margin-left:auto">🔄 全再接続</button>
 </header>
 <div id="grid"></div>
@@ -124,7 +142,7 @@ fetch('/state').then(r => r.json()).then(s => {
   if (Array.isArray(s.cameras) && s.cameras.length) stateCamIds = s.cameras.map(c => c.id);
 }).catch(() => {});
 
-// captures/ の素材一覧（全パネル共有）
+// captures/ の素材一覧（全列共有）
 let captureItems = [];
 async function refreshCaptures() {
   try { captureItems = await (await fetch('/captures/list')).json(); } catch { captureItems = []; }
@@ -142,12 +160,12 @@ function populateSourceSelect(sel) {
   sel.value = cur;
 }
 
-// マスク slug（/masks は A-Za-z0-9_- のみ）
 function maskSlug(camId) {
   const t = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   return `cue_${camId}_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}`;
 }
+const isVideoUrl = (u) => /\.(webm|mp4|mov|m4v)(\?|$)/i.test(u);
 
 const grid = document.getElementById('grid');
 const panels = cams.map((cam, i) => {
@@ -159,16 +177,27 @@ const panels = cams.map((cam, i) => {
       <input class="host" value="${cam.host}" title="IP">
       <input class="port" value="${cam.port}" title="port">
       <input class="auth" value="${cam.auth}" placeholder="user:pass" title="Basic 認証（空=なし）">
-      <button class="re">🔄</button>
-      <button class="edit-toggle">✂ 合成</button>
+      <button class="re" title="再接続">🔄</button>
       <span class="status">接続中…</span>
     </div>
-    <div class="video-wrap">
-      <img alt="${cam.name}">
-      <canvas class="mask-overlay"></canvas>
+    <div class="tile"><span class="tag">Live</span><img alt="${cam.name}"></div>
+    <div class="tile"><span class="tag">Mask — 白=差し替え</span><canvas class="mask-canvas"></canvas></div>
+    <div class="tools">
+      <button data-tool="rect" class="on">▭</button>
+      <button data-tool="brush">🖌</button>
+      <button data-tool="erase">⌫</button>
+      <span class="slider"><input type="range" class="brush-size" min="8" max="120" value="40" title="ブラシサイズ"></span>
+      <button data-fill="left">◧</button>
+      <button data-fill="right">◨</button>
+      <button data-fill="top">⬒</button>
+      <button data-fill="bottom">⬓</button>
+      <button data-fill="all">■</button>
+      <button class="mask-invert" title="反転">⇄</button>
+      <button class="mask-clear" title="クリア">✕</button>
     </div>
-    <div class="editor">
-      <span class="label">差し替え素材（合成する映像/画像）</span>
+    <div class="tile"><span class="tag">Composite — 合成プレビュー</span><canvas class="comp-canvas" width="640" height="360"></canvas></div>
+    <div class="cue-box">
+      <span class="label">差し替え素材</span>
       <div class="rowflex">
         <select class="src-select"></select>
         <button class="src-refresh" title="captures/ を再読込">↻</button>
@@ -176,33 +205,21 @@ const panels = cams.map((cam, i) => {
       <div class="rowflex">
         <input type="text" class="src-url" placeholder="または素材 URL 直書き（/captures/xxx.webm 等）" spellcheck="false">
       </div>
-      <span class="label">マスク範囲 — 塗った所（橙）に素材が出る。残りはライブ映像のまま</span>
-      <div class="rowflex tools">
-        <button data-tool="rect" class="on">▭ 矩形</button>
-        <button data-tool="brush">🖌 ブラシ</button>
-        <button data-tool="erase">⌫ 消し</button>
-        <span class="slider">サイズ <input type="range" class="brush-size" min="8" max="120" value="40"></span>
-      </div>
       <div class="rowflex">
-        <button data-fill="left">◧ 左半分</button>
-        <button data-fill="right">◨ 右半分</button>
-        <button data-fill="top">⬒ 上半分</button>
-        <button data-fill="bottom">⬓ 下半分</button>
-        <button data-fill="all">■ 全面</button>
-        <button class="mask-invert">⇄ 反転</button>
-        <button class="mask-clear">✕ クリア</button>
-      </div>
-      <div class="rowflex">
-        <input type="text" class="cue-name" placeholder="cue 名（例: 貞子_左窓）" spellcheck="false">
+        <input type="text" class="cue-name" placeholder="cue 名" spellcheck="false">
         <label class="check"><input type="checkbox" class="cue-loop" checked> ループ</label>
-        <span class="slider">フェード <input type="range" class="cue-fade" min="0" max="3" step="0.1" value="0.5"><span class="fade-val">0.5s</span></span>
+        <span class="slider">fade <input type="range" class="cue-fade" min="0" max="3" step="0.1" value="0.5"><span class="fade-val">0.5s</span></span>
         <button class="cue-save accent">💾 cue 保存</button>
       </div>
       <span class="ed-status"></span>
     </div>`;
   grid.appendChild(div);
 
+  // ---- ライブ接続 -------------------------------------------------------------
   const img = div.querySelector('img');
+  // /cam プロキシは ACAO:* を返すので CORS 画像として読み込む
+  // （無印だと別ポート由来で合成 canvas が taint され getImageData 系が全滅する）
+  img.crossOrigin = 'anonymous';
   const status = div.querySelector('.status');
   let retryTimer = null;
 
@@ -223,86 +240,62 @@ const panels = cams.map((cam, i) => {
     retryTimer = setTimeout(connect, 5000);
   });
   div.querySelector('.re').addEventListener('click', connect);
-  img.addEventListener('click', () => { if (!div.classList.contains('editing')) div.classList.toggle('big'); });
   connect();
 
-  // ---- ✂ 合成エディタ -------------------------------------------------------
-  // マスク実体: 640x360 オフスクリーン。黒=ライブ維持 / 白=差し替え（Unity _MaskTex と同じ向き）
+  // ---- 白黒マスク段（直接描画。白=差し替え = Unity _MaskTex と同じ向き）---------
   const MW = 640, MH = 360;
-  const mask = document.createElement('canvas');
-  mask.width = MW; mask.height = MH;
-  const mctx = mask.getContext('2d', { willReadFrequently: true });
+  const maskCanvas = div.querySelector('.mask-canvas');
+  maskCanvas.width = MW; maskCanvas.height = MH;
+  const mctx = maskCanvas.getContext('2d', { willReadFrequently: true });
   mctx.fillStyle = '#000'; mctx.fillRect(0, 0, MW, MH);
+  let maskDirty = true; // 合成段の alpha マスク再生成フラグ
 
-  const overlay = div.querySelector('.mask-overlay');
-  const octx = overlay.getContext('2d');
   let tool = 'rect';
   let dragging = false, dragStart = null, dragCur = null;
 
-  function syncOverlaySize() {
-    const r = overlay.getBoundingClientRect();
-    if (r.width && (overlay.width !== Math.round(r.width) || overlay.height !== Math.round(r.height))) {
-      overlay.width = Math.round(r.width); overlay.height = Math.round(r.height);
-    }
-  }
-  const tint = document.createElement('canvas');
-  tint.width = MW; tint.height = MH;
-  const tctx = tint.getContext('2d');
-  function drawOverlay() {
-    syncOverlaySize();
-    octx.clearRect(0, 0, overlay.width, overlay.height);
-    // マスク白領域だけをアクセント色 45% で可視化（輝度 → alpha 変換。
-    // destination-in 方式は「不透明な黒」も残してしまい全面が黒被りするので不可）
-    const md = mctx.getImageData(0, 0, MW, MH);
-    const td = tctx.createImageData(MW, MH);
-    for (let k = 0; k < md.data.length; k += 4) {
-      td.data[k] = 255; td.data[k + 1] = 222; td.data[k + 2] = 173; // #ffdead
-      td.data[k + 3] = md.data[k]; // 白=不透明 / 黒=透明
-    }
-    tctx.putImageData(td, 0, 0);
-    octx.globalAlpha = 0.45;
-    octx.drawImage(tint, 0, 0, overlay.width, overlay.height);
-    octx.globalAlpha = 1;
-    // 矩形ドラッグ中のラバーバンド
-    if (dragging && tool === 'rect' && dragStart && dragCur) {
-      octx.strokeStyle = '#ffdead'; octx.lineWidth = 1.5;
-      octx.strokeRect(Math.min(dragStart.x, dragCur.x), Math.min(dragStart.y, dragCur.y),
-                      Math.abs(dragCur.x - dragStart.x), Math.abs(dragCur.y - dragStart.y));
-    }
-  }
-  function toMask(p) { return { x: p.x / overlay.width * MW, y: p.y / overlay.height * MH }; }
   function localPos(ev) {
-    const r = overlay.getBoundingClientRect();
-    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    const r = maskCanvas.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) / r.width * MW, y: (ev.clientY - r.top) / r.height * MH };
   }
   function paintBrush(p, erase) {
-    const m = toMask(p);
-    const size = parseInt(div.querySelector('.brush-size').value, 10);
+    const r = maskCanvas.getBoundingClientRect();
+    const size = parseInt(div.querySelector('.brush-size').value, 10) / r.width * MW;
     mctx.fillStyle = erase ? '#000' : '#fff';
     mctx.beginPath();
-    mctx.arc(m.x, m.y, size / 2 / overlay.width * MW, 0, Math.PI * 2);
+    mctx.arc(p.x, p.y, size / 2, 0, Math.PI * 2);
     mctx.fill();
+    maskDirty = true;
   }
-  overlay.addEventListener('pointerdown', (ev) => {
-    try { overlay.setPointerCapture(ev.pointerId); } catch { /* 合成イベント等 */ }
+  // 矩形ドラッグ中のラバーバンドは putImageData で元に戻してから描く
+  let rectSnapshot = null;
+  maskCanvas.addEventListener('pointerdown', (ev) => {
+    try { maskCanvas.setPointerCapture(ev.pointerId); } catch { /* 合成イベント等 */ }
     dragging = true; dragStart = dragCur = localPos(ev);
-    if (tool !== 'rect') paintBrush(dragCur, tool === 'erase');
-    drawOverlay();
+    if (tool === 'rect') rectSnapshot = mctx.getImageData(0, 0, MW, MH);
+    else paintBrush(dragCur, tool === 'erase');
   });
-  overlay.addEventListener('pointermove', (ev) => {
+  maskCanvas.addEventListener('pointermove', (ev) => {
     if (!dragging) return;
     dragCur = localPos(ev);
-    if (tool !== 'rect') paintBrush(dragCur, tool === 'erase');
-    drawOverlay();
-  });
-  overlay.addEventListener('pointerup', () => {
-    if (dragging && tool === 'rect' && dragStart && dragCur) {
-      const a = toMask(dragStart), b = toMask(dragCur);
-      mctx.fillStyle = '#fff';
-      mctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    if (tool === 'rect') {
+      mctx.putImageData(rectSnapshot, 0, 0);
+      mctx.strokeStyle = '#fff'; mctx.lineWidth = 2; mctx.setLineDash([6, 4]);
+      mctx.strokeRect(Math.min(dragStart.x, dragCur.x), Math.min(dragStart.y, dragCur.y),
+                      Math.abs(dragCur.x - dragStart.x), Math.abs(dragCur.y - dragStart.y));
+      mctx.setLineDash([]);
+    } else {
+      paintBrush(dragCur, tool === 'erase');
     }
-    dragging = false; dragStart = dragCur = null;
-    drawOverlay();
+  });
+  maskCanvas.addEventListener('pointerup', () => {
+    if (dragging && tool === 'rect' && dragStart && dragCur && rectSnapshot) {
+      mctx.putImageData(rectSnapshot, 0, 0);
+      mctx.fillStyle = '#fff';
+      mctx.fillRect(Math.min(dragStart.x, dragCur.x), Math.min(dragStart.y, dragCur.y),
+                    Math.abs(dragCur.x - dragStart.x), Math.abs(dragCur.y - dragStart.y));
+      maskDirty = true;
+    }
+    dragging = false; dragStart = dragCur = null; rectSnapshot = null;
   });
 
   div.querySelectorAll('[data-tool]').forEach((b) => {
@@ -320,7 +313,7 @@ const panels = cams.map((cam, i) => {
       if (f === 'right') mctx.fillRect(MW / 2, 0, MW / 2, MH);
       if (f === 'top') mctx.fillRect(0, 0, MW, MH / 2);
       if (f === 'bottom') mctx.fillRect(0, MH / 2, MW, MH / 2);
-      drawOverlay();
+      maskDirty = true;
     });
   });
   div.querySelector('.mask-invert').addEventListener('click', () => {
@@ -329,26 +322,92 @@ const panels = cams.map((cam, i) => {
       d.data[k] = 255 - d.data[k]; d.data[k + 1] = 255 - d.data[k + 1]; d.data[k + 2] = 255 - d.data[k + 2];
     }
     mctx.putImageData(d, 0, 0);
-    drawOverlay();
+    maskDirty = true;
   });
   div.querySelector('.mask-clear').addEventListener('click', () => {
     mctx.fillStyle = '#000'; mctx.fillRect(0, 0, MW, MH);
-    drawOverlay();
+    maskDirty = true;
   });
-  div.querySelector('.brush-size').addEventListener('input', () => {});
+
+  // ---- 差し替え素材のロード -----------------------------------------------------
+  let srcMedia = null;   // HTMLVideoElement | HTMLImageElement | null
+  let srcReady = false;
+  function loadSource(url) {
+    if (srcMedia && srcMedia.tagName === 'VIDEO') { srcMedia.pause(); srcMedia.src = ''; }
+    srcMedia = null; srcReady = false;
+    if (!url) return;
+    if (isVideoUrl(url)) {
+      const v = document.createElement('video');
+      v.muted = true; v.loop = true; v.playsInline = true; v.crossOrigin = 'anonymous';
+      v.src = url;
+      v.addEventListener('canplay', () => { srcReady = true; v.play().catch(() => {}); });
+      srcMedia = v;
+    } else {
+      const im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = () => { srcReady = true; };
+      im.src = url;
+      srcMedia = im;
+    }
+  }
+  const srcSelect = div.querySelector('.src-select');
+  const srcUrl = div.querySelector('.src-url');
+  srcSelect.addEventListener('change', () => { srcUrl.value = ''; loadSource(srcSelect.value); });
+  srcUrl.addEventListener('change', () => { loadSource(srcUrl.value.trim()); });
+  div.querySelector('.src-refresh').addEventListener('click', refreshCaptures);
+
+  // ---- 合成プレビュー段（ライブ + マスク切り抜き素材、RAF 合成）-----------------
+  const comp = div.querySelector('.comp-canvas');
+  const cctx = comp.getContext('2d');
+  // 素材をマスクで切り抜くための作業バッファ
+  const cut = document.createElement('canvas');
+  cut.width = MW; cut.height = MH;
+  const cutCtx = cut.getContext('2d');
+  // マスク（白=不透明）の alpha 版。maskDirty の時だけ作り直す
+  const alphaMask = document.createElement('canvas');
+  alphaMask.width = MW; alphaMask.height = MH;
+  const amCtx = alphaMask.getContext('2d');
+  function rebuildAlphaMask() {
+    const md = mctx.getImageData(0, 0, MW, MH);
+    const ad = amCtx.createImageData(MW, MH);
+    for (let k = 0; k < md.data.length; k += 4) {
+      ad.data[k] = 255; ad.data[k + 1] = 255; ad.data[k + 2] = 255;
+      ad.data[k + 3] = md.data[k]; // 白=不透明 / 黒=透明
+    }
+    amCtx.putImageData(ad, 0, 0);
+    maskDirty = false;
+  }
+  function drawContain(ctx, media, w, h) {
+    const mw = media.videoWidth || media.naturalWidth || w;
+    const mh = media.videoHeight || media.naturalHeight || h;
+    const s = Math.min(w / mw, h / mh);
+    const dw = mw * s, dh = mh * s;
+    ctx.drawImage(media, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  }
+  function renderComposite() {
+    cctx.fillStyle = '#000'; cctx.fillRect(0, 0, MW, MH);
+    // ライブ（contain。Unity 側の letterbox と同じ見え方）
+    if (img.naturalWidth) drawContain(cctx, img, MW, MH);
+    // 素材をスクリーン枠全面に引き伸ばし、マスク白領域だけ残して重ねる（Unity ScreenComposite と同じモデル）
+    if (srcMedia && srcReady) {
+      if (maskDirty) rebuildAlphaMask();
+      cutCtx.clearRect(0, 0, MW, MH);
+      cutCtx.drawImage(srcMedia, 0, 0, MW, MH);
+      cutCtx.globalCompositeOperation = 'destination-in';
+      cutCtx.drawImage(alphaMask, 0, 0);
+      cutCtx.globalCompositeOperation = 'source-over';
+      cctx.drawImage(cut, 0, 0);
+    }
+  }
+  // RAF ではなく setInterval（非表示タブで RAF は完全停止するが、interval は
+  // 1Hz に間引かれつつ動き続ける）。3 列 × 640x360 の 2D 合成なら 30fps で余裕
+  setInterval(renderComposite, 33);
+
+  // ---- cue 保存 -----------------------------------------------------------------
   const fadeRange = div.querySelector('.cue-fade');
   fadeRange.addEventListener('input', () => {
     div.querySelector('.fade-val').textContent = parseFloat(fadeRange.value).toFixed(1) + 's';
   });
-
-  div.querySelector('.edit-toggle').addEventListener('click', () => {
-    const on = div.classList.toggle('editing');
-    div.querySelector('.edit-toggle').classList.toggle('on', on);
-    if (on) { div.classList.add('big'); requestAnimationFrame(drawOverlay); }
-  });
-  div.querySelector('.src-refresh').addEventListener('click', refreshCaptures);
-
-  // ---- cue 保存 ---------------------------------------------------------------
   const edStatus = (msg, cls = '') => {
     const el = div.querySelector('.ed-status');
     el.textContent = msg; el.className = 'ed-status ' + cls;
@@ -360,7 +419,7 @@ const panels = cams.map((cam, i) => {
   }
   div.querySelector('.cue-save').addEventListener('click', async () => {
     const camId = stateCamIds[i] || ['A', 'B', 'C'][i];
-    const sourceUrl = (div.querySelector('.src-url').value.trim() || div.querySelector('.src-select').value || '').trim();
+    const sourceUrl = (srcUrl.value.trim() || srcSelect.value || '').trim();
     if (!sourceUrl) return edStatus('差し替え素材を選んで（or URL 直書き）', 'err');
     const name = div.querySelector('.cue-name').value.trim() || `cue ${camId} ${new Date().toLocaleTimeString()}`;
     const id = maskSlug(camId);
@@ -369,7 +428,7 @@ const panels = cams.map((cam, i) => {
       if (!maskIsEmpty()) {
         edStatus('マスク書き出し中…');
         // マスクは白=差し替えでそのまま Unity _MaskTex 形式（反転不要）
-        const blob = await new Promise((r) => mask.toBlob(r, 'image/png'));
+        const blob = await new Promise((r) => maskCanvas.toBlob(r, 'image/png'));
         const res = await (await fetch(`/masks?name=${encodeURIComponent(id)}`, { method: 'POST', body: blob })).json();
         if (!res.ok) throw new Error(res.error || 'マスク保存失敗');
         maskUrl = res.url;
@@ -392,7 +451,6 @@ const panels = cams.map((cam, i) => {
     }
   });
 
-  window.addEventListener('resize', () => { if (div.classList.contains('editing')) drawOverlay(); });
   return { connect };
 });
 document.getElementById('reloadAll').addEventListener('click', () => panels.forEach(p => p.connect()));
