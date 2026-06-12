@@ -10,7 +10,14 @@ let state = null;          // 最新の show.json
 let unityAlive = false;
 let lastUnity = {};        // 直近の /unity/status の status（appliedRev / playingCue / activeIndex）
 let previewOn = {};        // camId -> bool（MJPEG サムネは明示 ON。スマホ負荷への配慮）
-let pendingCameraRender = false; // 入力フォーカス中に来た再描画を遅延させる
+
+// MJPEG ストリームはメインポート+1 から取る（capture-server.py が両方 listen）。
+// 同一ポートだとブラウザの同時接続上限（6/origin）を張りっぱなしストリームが食い潰し、
+// /state long-poll や他カメラの接続が詰まる＝「接続が不安定」の正体。
+function streamBase() {
+  const p = (parseInt(location.port, 10) || 80) + 1;
+  return `${location.protocol}//${location.hostname}:${p}`;
+}
 
 // ---- タブ切替 -------------------------------------------------------------
 function setupTabs() {
@@ -110,101 +117,143 @@ function activeCameraId() {
 }
 
 // ---- カメラカード ----------------------------------------------------------
+// 差分更新方式。innerHTML 全再構築だと state 更新のたびに <img> が作り直され、
+// 全カメラの MJPEG が同時再接続（=全サムネが一斉に暗転）するため、
+// カードは 1 度だけ生成し、以後は値とストリーム URL の変化分のみ反映する。
+const camCards = new Map(); // camId -> { card, img, refs..., streamKey, retryTimer }
+
+function camStreamKey(cam) {
+  return previewOn[cam.id] && cam.host
+    ? `${cam.host}|${cam.port || 8080}|${cam.auth || ''}` : '';
+}
+
+function buildCameraCard(cam) {
+  const card = document.createElement('div');
+  card.className = 'camera-card';
+  card.dataset.cam = cam.id;
+
+  const head = document.createElement('div');
+  head.className = 'cam-head';
+  head.innerHTML = `<b>カメラ ${cam.id}</b> <span class="cam-src"></span>`
+    + `<span class="cam-active-badge" style="display:none">● ACTIVE</span>`;
+  card.appendChild(head);
+
+  const thumb = document.createElement('div');
+  thumb.className = 'cam-thumb';
+  const img = document.createElement('img');
+  img.alt = '';
+  thumb.appendChild(img);
+  card.appendChild(thumb);
+
+  const refs = {
+    card, img, cam,
+    srcSpan: head.querySelector('.cam-src'),
+    streamKey: '', retryTimer: null,
+  };
+
+  // ストリーム切断時は 5s 後に自動リトライ（プレビュー ON のままなら）
+  img.addEventListener('error', () => {
+    if (!refs.streamKey) return;
+    clearTimeout(refs.retryTimer);
+    refs.retryTimer = setTimeout(() => {
+      if (refs.streamKey) connectThumb(refs);
+    }, 5000);
+  });
+
+  const hostRow = document.createElement('div');
+  hostRow.className = 'btns';
+  const mkInput = (props, onchange) => {
+    const el = document.createElement('input');
+    el.type = 'text';
+    Object.assign(el, props);
+    if (props.width) { el.style.width = props.width; el.style.flex = 'none'; }
+    el.onchange = onchange;
+    hostRow.appendChild(el);
+    return el;
+  };
+  refs.hostInput = mkInput({ placeholder: 'スマホ IP（サムネ用）' }, () => {
+    refs.cam.host = refs.hostInput.value.trim();
+    postState({ cameras: state.cameras });
+  });
+  refs.portInput = mkInput(
+    { placeholder: 'port', title: 'ポート（streamer=8080 / IP Camera Lite=8081）', width: '52px' },
+    () => {
+      refs.cam.port = parseInt(refs.portInput.value, 10) || 8080;
+      postState({ cameras: state.cameras });
+    });
+  refs.authInput = mkInput(
+    { placeholder: 'user:pass', title: 'Basic 認証（IP Camera Lite は admin:admin。空=認証なし）', width: '86px' },
+    () => {
+      refs.cam.auth = refs.authInput.value.trim();
+      postState({ cameras: state.cameras });
+    });
+  card.appendChild(hostRow);
+
+  const btns = document.createElement('div');
+  btns.className = 'btns';
+  refs.prevBtn = document.createElement('button');
+  refs.prevBtn.onclick = () => {
+    previewOn[cam.id] = !previewOn[cam.id];
+    renderCameras();
+  };
+  btns.appendChild(refs.prevBtn);
+
+  refs.ovrBtn = document.createElement('button');
+  refs.ovrBtn.textContent = '🔒 このカメラに固定';
+  refs.ovrBtn.onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
+  btns.appendChild(refs.ovrBtn);
+  card.appendChild(btns);
+
+  return refs;
+}
+
+function connectThumb(refs) {
+  const cam = refs.cam;
+  refs.img.src = `${streamBase()}/cam?host=${encodeURIComponent(cam.host)}`
+    + `&port=${cam.port || 8080}&path=/video`
+    + (cam.auth ? `&auth=${encodeURIComponent(cam.auth)}` : '') + `&t=${Date.now()}`;
+}
+
 function renderCameras() {
   const wrap = $('cameraCards');
-  // 操作者がカード内の入力欄（スマホ IP 等）を編集中なら再描画を遅延する。
-  // innerHTML 全再構築で入力中の値が吹っ飛ぶのを防ぐ（blur 時に再描画）。
-  const focused = document.activeElement;
-  if (focused && wrap.contains(focused) && focused.tagName === 'INPUT') {
-    if (!pendingCameraRender) {
-      pendingCameraRender = true;
-      focused.addEventListener('blur', () => {
-        pendingCameraRender = false;
-        renderCameras();
-      }, { once: true });
+  const cams = state?.cameras || [];
+  const ids = new Set(cams.map((c) => c.id));
+
+  for (const [id, refs] of camCards) {
+    if (!ids.has(id)) {
+      clearTimeout(refs.retryTimer);
+      refs.card.remove();
+      camCards.delete(id);
     }
-    return;
   }
-  wrap.innerHTML = '';
-  for (const cam of state?.cameras || []) {
-    const card = document.createElement('div');
-    card.className = 'camera-card';
-    card.dataset.cam = cam.id;
 
-    const head = document.createElement('div');
-    head.className = 'cam-head';
-    head.innerHTML = `<b>カメラ ${cam.id}</b> <span class="cam-src">${cam.sourceId || ''}</span>`
-      + `<span class="cam-active-badge" style="display:none">● ACTIVE</span>`;
-    card.appendChild(head);
-
-    const thumb = document.createElement('div');
-    thumb.className = 'cam-thumb';
-    const img = document.createElement('img');
-    img.alt = '(プレビュー OFF)';
-    if (previewOn[cam.id] && cam.host) {
-      // /cam プロキシ経由（multicam.html と同じ）。Basic 認証肩代わり + 同一オリジン化。
-      // iPhone (IP Camera Lite :8081, admin:admin) も Pixel (streamer :8080) もこれ一本で映る。
-      img.src = `/cam?host=${encodeURIComponent(cam.host)}&port=${cam.port || 8080}&path=/video`
-        + (cam.auth ? `&auth=${encodeURIComponent(cam.auth)}` : '') + `&t=${Date.now()}`;
+  for (const cam of cams) {
+    let refs = camCards.get(cam.id);
+    if (!refs) {
+      refs = buildCameraCard(cam);
+      camCards.set(cam.id, refs);
+      wrap.appendChild(refs.card);
     }
-    thumb.appendChild(img);
-    card.appendChild(thumb);
+    refs.cam = cam; // state 再取得でオブジェクトが差し替わるため毎回更新
 
-    const hostRow = document.createElement('div');
-    hostRow.className = 'btns';
-    const hostInput = document.createElement('input');
-    hostInput.type = 'text';
-    hostInput.placeholder = 'スマホ IP（サムネ用）';
-    hostInput.value = cam.host || '';
-    hostInput.onchange = () => {
-      cam.host = hostInput.value.trim();
-      postState({ cameras: state.cameras });
-    };
-    hostRow.appendChild(hostInput);
-    const portInput = document.createElement('input');
-    portInput.type = 'text';
-    portInput.placeholder = 'port';
-    portInput.title = 'ポート（streamer=8080 / IP Camera Lite=8081）';
-    portInput.style.width = '52px';
-    portInput.style.flex = 'none';
-    portInput.value = cam.port || 8080;
-    portInput.onchange = () => {
-      cam.port = parseInt(portInput.value, 10) || 8080;
-      postState({ cameras: state.cameras });
-    };
-    hostRow.appendChild(portInput);
-    const authInput = document.createElement('input');
-    authInput.type = 'text';
-    authInput.placeholder = 'user:pass';
-    authInput.title = 'Basic 認証（IP Camera Lite は admin:admin。空=認証なし）';
-    authInput.style.width = '86px';
-    authInput.style.flex = 'none';
-    authInput.value = cam.auth || '';
-    authInput.onchange = () => {
-      cam.auth = authInput.value.trim();
-      postState({ cameras: state.cameras });
-    };
-    hostRow.appendChild(authInput);
-    card.appendChild(hostRow);
+    refs.srcSpan.textContent = cam.sourceId || '';
+    // 編集中の入力欄は上書きしない（入力中の値が吹っ飛ぶのを防ぐ）
+    const setVal = (el, v) => { if (document.activeElement !== el) el.value = v; };
+    setVal(refs.hostInput, cam.host || '');
+    setVal(refs.portInput, cam.port || 8080);
+    setVal(refs.authInput, cam.auth || '');
 
-    const btns = document.createElement('div');
-    btns.className = 'btns';
-    const prevBtn = document.createElement('button');
-    prevBtn.textContent = previewOn[cam.id] ? '⏸ プレビュー停止' : '▶ プレビュー';
-    prevBtn.onclick = () => {
-      previewOn[cam.id] = !previewOn[cam.id];
-      renderCameras();
-    };
-    btns.appendChild(prevBtn);
+    refs.prevBtn.textContent = previewOn[cam.id] ? '⏸ プレビュー停止' : '▶ プレビュー';
+    refs.ovrBtn.classList.toggle('active', state?.control?.cameraOverride === cam.id);
 
-    const ovrBtn = document.createElement('button');
-    ovrBtn.textContent = '🔒 このカメラに固定';
-    ovrBtn.onclick = () => postCommand({ type: 'setCameraOverride', camera: cam.id });
-    if (state?.control?.cameraOverride === cam.id) ovrBtn.classList.add('active');
-    btns.appendChild(ovrBtn);
-    card.appendChild(btns);
-
-    wrap.appendChild(card);
+    // ストリームは接続パラメータが変わった時だけ張り替える
+    const key = camStreamKey(cam);
+    if (key !== refs.streamKey) {
+      refs.streamKey = key;
+      clearTimeout(refs.retryTimer);
+      if (key) connectThumb(refs);
+      else refs.img.removeAttribute('src');
+    }
   }
 }
 

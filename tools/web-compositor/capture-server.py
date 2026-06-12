@@ -13,6 +13,10 @@
 #   GET  /unity/status           : 直近 heartbeat + 経過秒（UI 表示用）
 # - GET /cam?host=&port=&path=&auth=user:pass : MJPEG プロキシ（Basic 認証肩代わり。
 #   ブラウザは <img> の URL 埋め込み認証をブロックするため iPhone/IP Camera Lite はここを経由する）
+#   /cam は <メインポート+1>（既定 8100）でも同時に listen する。MJPEG は接続を張りっぱなしに
+#   するため、メインポートと同居させるとブラウザの同一オリジン同時接続上限（6 本）を
+#   食い潰して /state long-poll 等が詰まる → ストリームは別ポートに隔離するのが正
+#   （JS 側は location.port+1 を自動算出。LAN 内利用なので追加ポート開放のみ注意）
 # キャプチャ/録画は全てブラウザ側で行い、ここはその受け皿。スマホ側には何も書かない。
 
 import base64
@@ -169,7 +173,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header('Content-Type', ctype)
             self.end_headers()
             while True:
-                chunk = upstream.read(16 * 1024)
+                chunk = upstream.read(64 * 1024)
                 if not chunk:
                     break
                 self.wfile.write(chunk)
@@ -362,5 +366,10 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8099
+    cam_port = port + 1
+    # MJPEG ストリーム専用の追加 listener（接続上限隔離。ハンドラは同一でよい）
+    cam_srv = ThreadingHTTPServer(('0.0.0.0', cam_port), Handler)
+    threading.Thread(target=cam_srv.serve_forever, daemon=True).start()
     print(f'web compositor capture-server : http://0.0.0.0:{port}/  (captures -> {CAPTURES})')
+    print(f'  MJPEG stream proxy (/cam)    : http://0.0.0.0:{cam_port}/cam')
     ThreadingHTTPServer(('0.0.0.0', port), Handler).serve_forever()

@@ -32,7 +32,7 @@ body {
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 header {
-  display: flex; align-items: center; gap: 20px;
+  display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap;
   padding: 14px 20px 12px;
   border-bottom: 1px solid var(--line-soft);
   background: transparent;
@@ -40,6 +40,7 @@ header {
 header h1 {
   font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .12em;
   border-bottom: 2px solid var(--accent-color); padding-bottom: 2px;
+  white-space: nowrap;
 }
 .status { color: var(--accent-color); font-size: 11px; letter-spacing: .06em; }
 .fps {
@@ -180,7 +181,7 @@ select option { background: #111; color: var(--text-color); }
 .tab-btn {
   border: none; border-bottom: 2px solid transparent; padding: 6px 4px;
   text-transform: uppercase; letter-spacing: .1em; font-size: 12px;
-  opacity: var(--opacity-mute);
+  opacity: var(--opacity-mute); white-space: nowrap;
 }
 .tab-btn:hover { border-color: transparent; }
 .tab-btn.active {
@@ -212,9 +213,10 @@ select option { background: #111; color: var(--text-color); }
 }
 
 /* ---- カメラカード ---- */
-.camera-cards { display: flex; flex-wrap: wrap; gap: 12px; }
+/* 可変グリッド: 横幅に応じて 1 カード 280px〜 で伸縮（サムネ視認性優先） */
+.camera-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); }
 .camera-card {
-  width: 208px; background: transparent;
+  background: transparent;
   border: 1px solid var(--line-soft); border-radius: 0; padding: 10px;
 }
 .cam-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
@@ -226,11 +228,17 @@ select option { background: #111; color: var(--text-color); }
 }
 @keyframes blink { 0% { opacity: .25; } 50% { opacity: 1; } 100% { opacity: .25; } }
 .cam-thumb {
-  height: 108px; background: #000; border: 1px solid var(--line-soft);
+  aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--line-soft);
   display: flex; align-items: center; justify-content: center; overflow: hidden;
   opacity: var(--opacity-full); font-size: 11px;
 }
-.cam-thumb img { max-width: 100%; max-height: 100%; }
+.cam-thumb img { width: 100%; height: 100%; object-fit: contain; }
+/* src 未設定（プレビュー OFF）の間は壊れ画像アイコンを出さずラベル表示 */
+.cam-thumb img:not([src]) { display: none; }
+.cam-thumb:has(img:not([src]))::after {
+  content: 'プレビュー OFF'; opacity: var(--opacity-mute);
+  letter-spacing: .12em; font-size: 10px; text-transform: uppercase;
+}
 .camera-card input[type="text"] { width: 100%; }
 
 /* ---- cue 一覧 ---- */
