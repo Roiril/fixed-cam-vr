@@ -48,6 +48,15 @@ namespace FixedCamVr.Tracking
         [Tooltip("halfExtents の下限 (m)。これ未満には縮められない。")]
         [SerializeField, Min(0.01f)] private float minHalfExtent = 0.15f;
 
+        [Header("Recenter（起動時の立ち位置基準化）")]
+        [Tooltip("起動時の HMD 位置（XZ）をレイアウト原点としてゾーン全体を平行移動する。" +
+                 "authored 配置は『プレイヤーがコース中心 (0,0) に立つ』前提なので、" +
+                 "これを ON にすると起動した場所がコース中心になる。向き（回転）は合わせない（AABB のため）。")]
+        [SerializeField] private bool recenterOnStart = true;
+
+        [Tooltip("トラッキング安定待ち。HMD 位置が有効になってからこの秒数後に基準化する。")]
+        [SerializeField, Min(0f)] private float recenterDelaySec = 1.0f;
+
         /// <summary>Bridge から毎フレーム渡される校正入力。</summary>
         public struct CalibInput
         {
@@ -71,6 +80,14 @@ namespace FixedCamVr.Tracking
 
         private (Vector3 center, Vector3 half)[] _authored = Array.Empty<(Vector3, Vector3)>();
         private int _selected;
+
+        // 起動時基準化のオフセット（XZ）。ゾーンの「真の座標」は origin 相対で扱い、
+        // 表示・判定用のワールド座標 = origin 相対 + _recenterOffset。
+        // 保存時は引き、ロード時は足すことで、JSON は常に origin 相対で持つ
+        // （セッション毎に立ち位置が変わっても保存済みレイアウトの形が崩れない）。
+        private Vector3 _recenterOffset = Vector3.zero;
+        private bool _recenterDone;
+        private float _recenterTimer;
         private GameObject? _vizRoot;
         private Transform[] _vizQuads = Array.Empty<Transform>();
         private Material[] _vizMats = Array.Empty<Material>();
@@ -152,7 +169,37 @@ namespace FixedCamVr.Tracking
 
         private void Update()
         {
+            if (recenterOnStart && !_recenterDone) TryRecenter();
             if (IsActive) UpdateViz();
+        }
+
+        // 起動時の立ち位置基準化。HMD のトラッキングが有効になる（位置が原点から動く）のを
+        // 待ってから recenterDelaySec 経過後に 1 回だけ実行する。
+        private void TryRecenter()
+        {
+            Transform? head = headTransform;
+            if (head == null && Camera.main != null) head = Camera.main.transform;
+            if (head == null) return;
+
+            // 起動直後はポーズ未確定で (0,0,0) 付近に座っていることがある。
+            // 高さ（y）が現実的な値になったらトラッキング確立とみなす。
+            if (head.position.y < 0.3f) { _recenterTimer = 0f; return; }
+
+            _recenterTimer += Time.deltaTime;
+            if (_recenterTimer < recenterDelaySec) return;
+
+            _recenterDone = true;
+            var delta = new Vector3(head.position.x, 0f, head.position.z) - _recenterOffset;
+            ShiftAllZones(delta);
+            _recenterOffset += delta;
+            Debug.Log($"[ZoneCalib] 起動位置基準化: レイアウト原点を ({_recenterOffset.x:F2}, {_recenterOffset.z:F2}) へ平行移動");
+        }
+
+        private void ShiftAllZones(Vector3 delta)
+        {
+            if (delta.sqrMagnitude < 1e-8f) return;
+            foreach (var z in zones)
+                z.SetRuntimeBounds(z.Center + delta, z.HalfExtents);
         }
 
         // ---- 永続化 -------------------------------------------------------------
@@ -160,8 +207,10 @@ namespace FixedCamVr.Tracking
         private void Save()
         {
             var data = new SaveData();
+            // JSON は常にレイアウト原点相対で保存（起動位置基準化のオフセットを除去）。
+            // セッション毎に立ち位置が変わっても保存済みレイアウトの形・相対配置が保たれる。
             foreach (var z in zones)
-                data.entries.Add(new Entry { name = z.name, center = z.Center, halfExtents = z.HalfExtents });
+                data.entries.Add(new Entry { name = z.name, center = z.Center - _recenterOffset, halfExtents = z.HalfExtents });
             try
             {
                 File.WriteAllText(SavePath, JsonUtility.ToJson(data, prettyPrint: true));
@@ -186,7 +235,7 @@ namespace FixedCamVr.Tracking
                     foreach (var z in zones)
                     {
                         if (z.name != e.name) continue;
-                        z.SetRuntimeBounds(e.center, e.halfExtents);
+                        z.SetRuntimeBounds(e.center + _recenterOffset, e.halfExtents);
                         applied++;
                         break;
                     }
@@ -202,7 +251,7 @@ namespace FixedCamVr.Tracking
         private void ResetToAuthored()
         {
             for (int i = 0; i < zones.Length && i < _authored.Length; i++)
-                zones[i].SetRuntimeBounds(_authored[i].center, _authored[i].half);
+                zones[i].SetRuntimeBounds(_authored[i].center + _recenterOffset, _authored[i].half);
             try { if (File.Exists(SavePath)) File.Delete(SavePath); }
             catch (Exception ex) { Debug.LogWarning($"[ZoneCalib] 保存ファイル削除失敗: {ex.Message}"); }
             Debug.Log("[ZoneCalib] authored 値へリセット（保存ファイルも削除）");

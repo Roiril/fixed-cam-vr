@@ -120,6 +120,7 @@ HMD 内でコントローラだけでゾーンを実地調整できる（[`ZoneC
 | X（左） | **保存** → `persistentDataPath/zone_calibration.json`（以後の起動で自動適用） |
 | Y（左） | authored 値へリセット + 保存ファイル削除 |
 
+- **起動位置基準化（recenterOnStart、既定 ON）**: トラッキング確立の 1 秒後、起動時の HMD 位置（XZ）がレイアウト原点（=コース中心）になるようゾーン全体を平行移動する。**回転は合わせない**（AABB のため。コースの向きはガーディアン空間基準のまま）。保存 JSON は原点相対で持つので、セッション毎に立ち位置が変わっても保存レイアウトの形は崩れない
 - 校正中は床にゾーンのフットプリントをカメラ別色で表示（緑=cam0 / 青=cam1 / 橙=cam2、白菱形=HMD 位置）。通常のボタン操作（カメラ切替・HUD）は抑止される
 - 保存先は**端末ローカル**（Quest なら `/sdcard/Android/data/com.roiril.mawarimi/files/`）。シーンの authored 値は変わらないので、恒久化したい値が決まったら `MainDemoSceneSetup.cs` に反映する
 - 入力は OvrBridge → `ZoneCalibrator.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）
