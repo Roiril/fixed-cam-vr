@@ -44,6 +44,22 @@ namespace FixedCamVr.Tracking
         /// <summary>ワールド座標での AABB 中心 (Transform.position + centerOffset)。</summary>
         public Vector3 Center => transform.position + centerOffset;
 
+        /// <summary>Transform.position からの中心オフセット (m)。</summary>
+        public Vector3 CenterOffset => centerOffset;
+
+        /// <summary>
+        /// ランタイム校正（ZoneCalibrator）用。ワールド中心と半長を直接設定する。
+        /// centerOffset は維持し、transform.position 側を動かす。
+        /// </summary>
+        public void SetRuntimeBounds(Vector3 worldCenter, Vector3 newHalfExtents)
+        {
+            transform.position = worldCenter - centerOffset;
+            halfExtents = new Vector3(
+                Mathf.Max(0f, newHalfExtents.x),
+                Mathf.Max(0f, newHalfExtents.y),
+                Mathf.Max(0f, newHalfExtents.z));
+        }
+
         /// <summary>
         /// world 座標 worldPos がこのゾーンに含まれるかを判定する。
         /// shrink を渡すと各軸を内側に縮めて判定（ヒステリシス用）。

@@ -126,17 +126,25 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetBool(trackerSo, "logChanges", true);
             trackerSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // 2.5. ZoneCalibrator（Quest コントローラでゾーンを実地調整。両グリップ長押しで起動）
+            var calibrator = trackerGo.AddComponent<ZoneCalibrator>();
+            var calibSo = new SerializedObject(calibrator);
+            SetPlayerZoneArray(calibSo, "zones", new[] { zoneA, zoneB, zoneC, zoneC2 });
+            TrySetObjectRef(calibSo, "headTransform", centerEye.transform);
+            calibSo.ApplyModifiedPropertiesWithoutUndo();
+
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
             CreateStartupFader(centerEye.transform, registry);
 
             // 4. DebugHud
             var hud = CreateDebugHud(centerEye.transform, registry, tracker, centerEye.transform);
 
-            // 5. OvrControllerBridge.hud に HUD 連携
-            if (ovrBridge != null && hud != null)
+            // 5. OvrControllerBridge.hud に HUD 連携 + ZoneCalibrator 接続
+            if (ovrBridge != null)
             {
                 var bridgeSo = new SerializedObject(ovrBridge);
-                TrySetObjectRef(bridgeSo, "hud", hud);
+                if (hud != null) TrySetObjectRef(bridgeSo, "hud", hud);
+                TrySetObjectRef(bridgeSo, "zoneCalibrator", calibrator);
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -145,7 +153,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（周回 A南/B東/C北/C西・推測配置、実測校正待ち） / Tracker / StartupFader / DebugHud / OvrBridge.hud 連携。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（周回 A南/B東/C北/C西・推測配置、実測校正待ち） / Tracker / ZoneCalibrator（両グリップ長押しで校正） / StartupFader / DebugHud / OvrBridge 連携。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }

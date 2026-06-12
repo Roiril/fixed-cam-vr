@@ -1,5 +1,6 @@
 #nullable enable
 using FixedCamVr.Streaming;
+using FixedCamVr.Tracking;
 using UnityEngine;
 
 namespace FixedCamVr.OvrBridge
@@ -25,10 +26,58 @@ namespace FixedCamVr.OvrBridge
                  " Diagnostics 名前空間に直接依存しないため MonoBehaviour で受ける。")]
         [SerializeField] private MonoBehaviour? hud = null;
 
+        [Header("Zone calibration")]
+        [Tooltip("ZoneCalibrator（[Tracker] 上）。両グリップ長押しで校正モード切替、" +
+                 "校正中は通常のボタン操作を抑止して入力を転送する。")]
+        [SerializeField] private ZoneCalibrator? zoneCalibrator;
+
+        [Tooltip("校正モード切替に必要な両グリップの長押し秒数。")]
+        [SerializeField, Min(0.2f)] private float calibToggleHoldSec = 1.0f;
+
         private bool _hudVisible = true;
+        private float _gripHold;
+        private bool _calibToggleFired;
 
         private void Update()
         {
+            // 両グリップ長押しで校正モード切替（押しっぱなしで連続トグルしない）
+            if (zoneCalibrator != null)
+            {
+                bool bothGrips =
+                    OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.LTouch) &&
+                    OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
+                if (bothGrips)
+                {
+                    _gripHold += Time.deltaTime;
+                    if (!_calibToggleFired && _gripHold >= calibToggleHoldSec)
+                    {
+                        _calibToggleFired = true;
+                        zoneCalibrator.Toggle();
+                    }
+                }
+                else
+                {
+                    _gripHold = 0f;
+                    _calibToggleFired = false;
+                }
+
+                // 校正モード中は通常マッピング（カメラ切替/HUD 等）を抑止して入力を転送
+                if (zoneCalibrator.IsActive)
+                {
+                    zoneCalibrator.Feed(new ZoneCalibrator.CalibInput
+                    {
+                        move = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch),
+                        size = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch),
+                        nextZone = OVRInput.GetDown(OVRInput.Button.One),   // A (右)
+                        prevZone = OVRInput.GetDown(OVRInput.Button.Two),   // B (右)
+                        save = OVRInput.GetDown(OVRInput.Button.Three),     // X (左)
+                        reset = OVRInput.GetDown(OVRInput.Button.Four),     // Y (左)
+                        fine = OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger, OVRInput.Controller.RTouch) > 0.5f,
+                    });
+                    return;
+                }
+            }
+
             if (registry != null && registry.Count > 0)
             {
                 if (OVRInput.GetDown(nextButton)) registry.Next();

@@ -106,6 +106,24 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 `MainDemoSceneSetup.cs` の値を上書きして `Setup Main Demo Scene` を再実行（冪等）。
 再実行は [Tracker] を作り直すため、**Screen の ShowControlClient.zoneTrackerToDisable を再アサイン**すること。
 
+### 実機でのゾーン校正（ZoneCalibrator、2026-06-12 追加）
+
+HMD 内でコントローラだけでゾーンを実地調整できる（[`ZoneCalibrator`](../Assets/Scripts/Tracking/ZoneCalibrator.cs)、[Tracker] 上、`Setup Main Demo Scene` が自動配線）：
+
+| 操作 | 機能 |
+|---|---|
+| **両グリップ 1 秒長押し** | 校正モード ON/OFF（OvrControllerBridge が検知） |
+| A / B（右） | 対象ゾーン選択（選択中はブリンク） |
+| 左スティック | ゾーン中心を XZ 移動 |
+| 右スティック | halfExtents を XZ 伸縮（下限 0.15m） |
+| 右トリガ押下中 | 微調整（速度 1/5） |
+| X（左） | **保存** → `persistentDataPath/zone_calibration.json`（以後の起動で自動適用） |
+| Y（左） | authored 値へリセット + 保存ファイル削除 |
+
+- 校正中は床にゾーンのフットプリントをカメラ別色で表示（緑=cam0 / 青=cam1 / 橙=cam2、白菱形=HMD 位置）。通常のボタン操作（カメラ切替・HUD）は抑止される
+- 保存先は**端末ローカル**（Quest なら `/sdcard/Android/data/com.roiril.mawarimi/files/`）。シーンの authored 値は変わらないので、恒久化したい値が決まったら `MainDemoSceneSetup.cs` に反映する
+- 入力は OvrBridge → `ZoneCalibrator.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）
+
 ### 前後 (z) 方向の演出を入れる時
 現在 z は全ゾーン共通 [-1.2, +1.2]。**前後で挙動を変えたいなら別軸のロジックを足す**（zone は左右専用にしておく）。`PlayerStateBus` のような中央集約は Phase 4（CG 合成）着手時に検討、それまでは Tracker と並列に小さな BehaviourScript で済ませる。
 
