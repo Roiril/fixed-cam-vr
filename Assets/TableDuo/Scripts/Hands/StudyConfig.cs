@@ -26,5 +26,16 @@ namespace TableDuoVr.Hands
 
         /// <summary>tdv_* 起動フラグ経由で起動された＝調査セッション（デバッグ GUI を隠す等）。</summary>
         public static bool LaunchedWithStudyFlags;
+
+        // domain-reload を切った Play では static が前回 Play の条件を引き継ぐ。Editor で役割/条件を
+        // 変えて再生したのに古い値で走る事故を防ぐため毎 Play 既定へ戻す（ConnectionManager.Awake が再設定）。
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics()
+        {
+            ForcedRole = null;
+            ShowHeadMarker = false;
+            OneHandMode = true;
+            LaunchedWithStudyFlags = false;
+        }
     }
 }

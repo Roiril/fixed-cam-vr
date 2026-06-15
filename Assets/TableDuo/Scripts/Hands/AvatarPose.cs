@@ -27,6 +27,14 @@ namespace TableDuoVr.Hands
         public bool PinchL;
         public bool PinchR;
 
+        /// <summary>送信側で単調増加する連番。受信側は歯抜けで「凍結 vs パケット欠落」を判別できる
+        /// （study-validity: 欠落 frame は意図的静止ではない）。送信ソースごとに採番。</summary>
+        public uint Seq;
+
+        /// <summary>送信ソース端末の壁時計 ms（DateTimeOffset.UtcNow）。host 受信時刻との差で
+        /// ネット遅延・client 内タイミングを復元する。端末間クロック差はあるので絶対整列は host epoch を使う。</summary>
+        public long CaptureMs;
+
         public readonly Quaternion[] BonesL = NewIdentityArray();
         public readonly Quaternion[] BonesR = NewIdentityArray();
 
@@ -42,6 +50,8 @@ namespace TableDuoVr.Hands
             TrackedR = src.TrackedR;
             PinchL = src.PinchL;
             PinchR = src.PinchR;
+            Seq = src.Seq;
+            CaptureMs = src.CaptureMs;
             System.Array.Copy(src.BonesL, BonesL, BonesPerHand);
             System.Array.Copy(src.BonesR, BonesR, BonesPerHand);
         }
@@ -64,6 +74,15 @@ namespace TableDuoVr.Hands
     {
         public static HandSkeletonLayout? CapturedL;
         public static HandSkeletonLayout? CapturedR;
+
+        // domain-reload を切った Play では static が前回 Play のレイアウトを引き継ぐ。
+        // Editor で役割/手を変えて再生すると古い指レイアウトが混入するので毎 Play クリアする。
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics()
+        {
+            CapturedL = null;
+            CapturedR = null;
+        }
 
         public int BoneCount;
         public readonly short[] ParentIndex = new short[AvatarPose.BonesPerHand];

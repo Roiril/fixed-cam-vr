@@ -24,18 +24,36 @@ namespace TableDuoVr.Net
         private readonly NetworkVariable<byte> _role = new(
             RoleUnset, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
+        // 調査条件を全員へ共有（bit0=頭マーカー / bit1=片手モード）。owner が起動フラグから書く。
+        // SessionLogger が clientId 別に記録するため（条件は端末ごとの起動フラグ＝host ローカル値では不正確）。
+        private readonly NetworkVariable<byte> _studyFlags = new(
+            0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+
+        /// <summary>owner の OS recenter をサーバへ報告した（study-validity: 座標系不連続のマーク用）。</summary>
+        public static event System.Action<ulong>? RecenterReported;
+
         private RemoteAvatarView? _view;
         private PinchGrabInteractor? _interactor;
         private RecenterWatcher? _recenterWatcher;
         private System.Action? _onRecentered;
         private IHandPoseSource? _source;
+        private HandPoseSampler? _sampler;
+        private Transform? _seat;
+        private uint _seq;
         private float _nextSend;
 
         public int SeatIndex { get; private set; } = -1;
 
+        /// <summary>確定済みの席アンカー（host 側で SessionLogger が参照。毎フレーム GameObject.Find を避ける）。</summary>
+        public Transform? Seat => _seat;
+
         /// <summary>同期済みの役割。未確定なら null（SessionLogger が参照）。</summary>
         public StudyConfig.Role? Role =>
             _role.Value == RoleUnset ? null : (StudyConfig.Role)_role.Value;
+
+        /// <summary>同期済みの調査条件（host の SessionLogger が clientId 別に記録）。</summary>
+        public bool ShowHeadMarker => (_studyFlags.Value & 1) != 0;
+        public bool OneHandMode => (_studyFlags.Value & 2) != 0;
 
         public override void OnNetworkSpawn()
         {
@@ -46,6 +64,8 @@ namespace TableDuoVr.Net
                         ? StudyConfig.Role.Full
                         : StudyConfig.Role.Hand);
                 _role.Value = (byte)role;
+                _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
+                    | (StudyConfig.OneHandMode ? 2 : 0));
                 SetupOwner(role);
             }
             else if (_role.Value != RoleUnset)
@@ -91,19 +111,17 @@ namespace TableDuoVr.Net
                 Debug.LogError($"[TableDuo] 席が見つかりません: Seat{SeatIndex}（Setup TableDuo Scene 未実行？）");
                 return;
             }
+            _seat = seat;
+            _sampler = FindObjectOfType<HandPoseSampler>(); // 1 回だけ取得（recenter/片手で再 Find しない）
             Debug.Log($"[TableDuo] 自分の役割={role} 席={SeatIndex}");
 
             AlignLocalRig(seat);
             _nextSend = Time.time;
 
-            if (role == StudyConfig.Role.Hand && StudyConfig.OneHandMode)
+            if (role == StudyConfig.Role.Hand && StudyConfig.OneHandMode && _sampler != null)
             {
-                var sampler = FindObjectOfType<HandPoseSampler>();
-                if (sampler != null)
-                {
-                    sampler.SuppressLeftHand = true;
-                    Debug.Log("[TableDuo] 片手モード: 左手を抑制");
-                }
+                _sampler.SuppressLeftHand = true;
+                Debug.Log("[TableDuo] 片手モード: 左手を抑制");
             }
 
             var interactorGo = new GameObject("PinchGrabInteractor");
@@ -111,12 +129,16 @@ namespace TableDuoVr.Net
             _interactor = interactorGo.AddComponent<PinchGrabInteractor>();
             _interactor.Initialize(seat, OwnerClientId);
 
-            // OS recenter で席がズレたら即再アライン（要件 §6）
+            // OS recenter で席がズレたら即再アライン（要件 §6）+ サーバへ報告（座標系不連続のログ）
             _recenterWatcher = FindObjectOfType<RecenterWatcher>();
             if (_recenterWatcher != null)
             {
                 var seatRef = seat;
-                _onRecentered = () => AlignLocalRig(seatRef);
+                _onRecentered = () =>
+                {
+                    AlignLocalRig(seatRef);
+                    if (IsSpawned) ReportRecenterServerRpc();
+                };
                 _recenterWatcher.Recentered += _onRecentered;
             }
         }
@@ -130,6 +152,7 @@ namespace TableDuoVr.Net
                 Debug.LogError($"[TableDuo] 席が見つかりません: Seat{SeatIndex}");
                 return;
             }
+            _seat = seat;
             Debug.Log($"[TableDuo] リモート(client{OwnerClientId}) 役割={role} 席={SeatIndex}");
             WarnIfSeatCollision();
 
@@ -155,7 +178,10 @@ namespace TableDuoVr.Net
         {
             if (!IsSpawned || !IsOwner) return;
             if (Time.time < _nextSend) return;
+            // hitch（GC/ドメインリロード）後に Time.time が大きく進むと、毎フレーム +1/rate では
+            // 追いつくまで毎フレ送信のバーストになる。次の境界へクランプして 30Hz を保つ
             _nextSend += 1f / sendRate;
+            if (_nextSend < Time.time) _nextSend = Time.time + 1f / sendRate;
 
             _source ??= HandPoseSourceRegistry.Best;
             if (_source == null || !_source.IsValid)
@@ -163,8 +189,14 @@ namespace TableDuoVr.Net
                 _source = HandPoseSourceRegistry.Best; // Fake の有効化など差し替えに追従
                 if (_source == null) return;
             }
-            ConnectionManager.Instance?.SubmitLocalPose(_source.Current);
+            var pose = _source.Current;
+            pose.Seq = unchecked(++_seq);
+            pose.CaptureMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            ConnectionManager.Instance?.SubmitLocalPose(pose);
         }
+
+        [ServerRpc]
+        private void ReportRecenterServerRpc() => RecenterReported?.Invoke(OwnerClientId);
 
         private void OnRemotePose(ulong originClientId, AvatarPose pose)
         {
@@ -176,10 +208,9 @@ namespace TableDuoVr.Net
             role == StudyConfig.Role.Full ? 0 : 1;
 
         /// <summary>OVRCameraRig（あれば）を席へアライン。L0（リグ無し）は何もしない。</summary>
-        private static void AlignLocalRig(Transform seat)
+        private void AlignLocalRig(Transform seat)
         {
-            var sampler = FindObjectOfType<HandPoseSampler>();
-            var rig = sampler != null ? sampler.RigRoot : null;
+            var rig = _sampler != null ? _sampler.RigRoot : null;
             if (rig == null)
             {
                 Debug.Log("[TableDuo] リグ無し（L0 モード想定）— 席アラインをスキップ");

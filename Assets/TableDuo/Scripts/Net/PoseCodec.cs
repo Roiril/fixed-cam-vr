@@ -7,7 +7,7 @@ namespace TableDuoVr.Net
 {
     /// <summary>
     /// AvatarPose ⇔ FastBuffer の序列化。頭・手首は float32、指 bone は half（FloatToHalf）。
-    /// 1 pose ≈ 460B。per-bone NetworkTransform は使わない（規約）。
+    /// 1 pose ≈ 489B（seq 4B + captureMs 8B 込み）。per-bone NetworkTransform は使わない（規約）。
     /// </summary>
     public static class PoseCodec
     {
@@ -25,6 +25,8 @@ namespace TableDuoVr.Net
             byte flags = (byte)((p.TrackedL ? 1 : 0) | (p.TrackedR ? 2 : 0)
                 | (p.PinchL ? 4 : 0) | (p.PinchR ? 8 : 0));
             w.WriteValueSafe(flags);
+            w.WriteValueSafe(p.Seq);        // 欠落検出用の連番（4B）
+            w.WriteValueSafe(p.CaptureMs);  // 送信端末の壁時計 ms（8B）
             WriteBones(ref w, p.BonesL);
             WriteBones(ref w, p.BonesR);
         }
@@ -42,6 +44,8 @@ namespace TableDuoVr.Net
             p.TrackedR = (flags & 2) != 0;
             p.PinchL = (flags & 4) != 0;
             p.PinchR = (flags & 8) != 0;
+            r.ReadValueSafe(out p.Seq);
+            r.ReadValueSafe(out p.CaptureMs);
             ReadBones(ref r, p.BonesL);
             ReadBones(ref r, p.BonesR);
         }

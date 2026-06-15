@@ -18,13 +18,7 @@ namespace TableDuoVr.Hands
             "wrist", "palm", "thumbTip", "indexTip", "middleTip", "ringTip", "pinkyTip",
         };
 
-        // OVRSkeleton Hand bone index（24 bone スケルトン）
-        private const int Middle1 = 9;   // 掌中心の代理: 中指基節の根本
-        private const int ThumbTip = 19;
-        private const int IndexTip = 20;
-        private const int MiddleTip = 21;
-        private const int RingTip = 22;
-        private const int PinkyTip = 23;
+        // bone index は HandBoneTable に集約（メッシュ駆動・送信側と同じ BoneId 順を共有）
 
         // FK 作業バッファ（再利用・アロケーションゼロ）
         private static readonly Vector3[] Pos = new Vector3[AvatarPose.BonesPerHand];
@@ -64,12 +58,12 @@ namespace TableDuoVr.Hands
                 Rot[i] = parentRot * boneRots[i];
             }
 
-            results[1] = SafeBone(n, Middle1, wristPos);
-            results[2] = SafeBone(n, ThumbTip, wristPos);
-            results[3] = SafeBone(n, IndexTip, wristPos);
-            results[4] = SafeBone(n, MiddleTip, wristPos);
-            results[5] = SafeBone(n, RingTip, wristPos);
-            results[6] = SafeBone(n, PinkyTip, wristPos);
+            results[1] = SafeBone(n, HandBoneTable.Palm, wristPos);
+            results[2] = SafeBone(n, HandBoneTable.ThumbTip, wristPos);
+            results[3] = SafeBone(n, HandBoneTable.IndexTip, wristPos);
+            results[4] = SafeBone(n, HandBoneTable.MiddleTip, wristPos);
+            results[5] = SafeBone(n, HandBoneTable.RingTip, wristPos);
+            results[6] = SafeBone(n, HandBoneTable.PinkyTip, wristPos);
             return true;
         }
 

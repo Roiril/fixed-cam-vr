@@ -135,6 +135,7 @@ namespace TableDuoVr.Net
             private readonly bool _isRight;
             private bool _everTracked;
             private bool _built;
+            private bool _meshTried; // メッシュ構築を一度試したか（失敗しても毎フレ再 Instantiate しないラッチ）
 
             // メッシュ手: bone Transform を BoneId 順（名前マッピング）に並べ、同期 bone で回す。
             // 要素は見つからなかった bone が null になりうる（適用時に null チェック）
@@ -171,12 +172,17 @@ namespace TableDuoVr.Net
 
                 if (!_built)
                 {
-                    if (TryBuildMeshHand())
+                    // メッシュ構築は一度だけ試す（例外や失敗で毎フレ Instantiate を繰り返さないようラッチ）
+                    if (!_meshTried)
                     {
-                        _built = true;
-                        _wristProxy.gameObject.SetActive(false);
+                        _meshTried = true;
+                        if (TryBuildMeshHandSafe())
+                        {
+                            _built = true;
+                            _wristProxy.gameObject.SetActive(false);
+                        }
                     }
-                    else if (layout != null) // メッシュ供給が無い → カプセル（layout 待ち）
+                    if (!_built && layout != null) // メッシュ供給が無い/失敗 → カプセル（layout 待ち）
                     {
                         BuildBones(layout);
                         _built = true;
@@ -212,6 +218,21 @@ namespace TableDuoVr.Net
             /// （OVRCustomSkeleton.CustomBones は package 同梱状態で未マッピング＝全 null のため使えない。
             /// これに頼ると指ボーンが一切回らず bind ポーズ＝開いた手で固定される）。供給が無ければ false。
             /// </summary>
+            /// <summary>例外で Tick ループ全体を殺さない/中途半端な inst を残さないラッパ。</summary>
+            private bool TryBuildMeshHandSafe()
+            {
+                try
+                {
+                    return TryBuildMeshHand();
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[TableDuo] メッシュ手の構築に失敗 → カプセルにフォールバック: {e.Message}");
+                    _meshBones = null;
+                    return false;
+                }
+            }
+
             private bool TryBuildMeshHand()
             {
                 var provider = RemoteHandMeshProvider.Instance;

@@ -79,6 +79,11 @@ namespace TableDuoVr.Net
                 Debug.LogWarning($"[TableDuo] Replay {_status}");
                 return;
             }
+            // 同一 Play 内で別ファイルを読む時、前ファイルの static レイアウトを継承しないようクリア
+            // （指レイアウトはこのファイルの RecLayouts で上書きされるべき）
+            HandSkeletonLayout.CapturedL = null;
+            HandSkeletonLayout.CapturedR = null;
+
             using var r = new BinaryReader(File.OpenRead(path));
             if (r.ReadInt32() != ReplayFormat.Magic)
             {

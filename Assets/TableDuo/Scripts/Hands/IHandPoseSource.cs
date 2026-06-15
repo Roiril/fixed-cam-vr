@@ -25,6 +25,10 @@ namespace TableDuoVr.Hands
     {
         private static readonly List<IHandPoseSource> Sources = new();
 
+        // domain-reload 無効 Play で前回 Play の破棄済みソースが残ると Best が無効参照を返すためクリア。
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics() => Sources.Clear();
+
         public static void Register(IHandPoseSource s)
         {
             if (!Sources.Contains(s)) Sources.Add(s);

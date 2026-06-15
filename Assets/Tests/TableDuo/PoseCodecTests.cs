@@ -25,6 +25,8 @@ namespace TableDuoVr.Tests
                 TrackedR = false,
                 PinchL = false,
                 PinchR = true,
+                Seq = 123456u,
+                CaptureMs = 1_700_000_000_123L,
             };
             for (int i = 0; i < AvatarPose.BonesPerHand; i++)
             {
@@ -66,6 +68,8 @@ namespace TableDuoVr.Tests
             Assert.AreEqual(src.TrackedR, dst.TrackedR);
             Assert.AreEqual(src.PinchL, dst.PinchL);
             Assert.AreEqual(src.PinchR, dst.PinchR);
+            Assert.AreEqual(src.Seq, dst.Seq);
+            Assert.AreEqual(src.CaptureMs, dst.CaptureMs);
 
             // bone は half 精度。角度誤差 1° 未満を要求
             for (int i = 0; i < AvatarPose.BonesPerHand; i++)

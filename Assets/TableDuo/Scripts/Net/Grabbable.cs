@@ -25,9 +25,10 @@ namespace TableDuoVr.Net
         private readonly NetworkVariable<byte> _holderHand = new(
             0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-        // サーバ側のみ: 掴んだ瞬間の手→オブジェクト相対姿勢
+        // サーバ側のみ: 掴んだ瞬間の手→オブジェクト相対姿勢 + 保持者の席（毎フレ GameObject.Find を避け、掴み時に1回解決）
         private Vector3 _grabOffsetPos;
         private Quaternion _grabOffsetRot = Quaternion.identity;
+        private Transform? _grabSeat;
 
         public bool IsHeld => _holder.Value != NoHolder;
         public ulong HolderClientId => _holder.Value;
@@ -41,10 +42,12 @@ namespace TableDuoVr.Net
             ulong sender = rpcParams.Receive.SenderClientId;
             if (IsHeld) return; // 先着勝ち。敗者は無反応（すり抜け）
 
-            if (!TryGetHandWorldPose(sender, hand, out var handPos, out var handRot)) return;
+            var seat = SeatLocator.FindByClient(sender); // 掴み時に1回だけ席を解決（以後 Update で使い回す）
+            if (seat == null || !TryGetHandWorldPose(sender, hand, seat, out var handPos, out var handRot)) return;
 
             _holder.Value = sender;
             _holderHand.Value = hand;
+            _grabSeat = seat;
             var inv = Quaternion.Inverse(handRot);
             _grabOffsetPos = inv * (transform.position - handPos);
             _grabOffsetRot = inv * transform.rotation;
@@ -58,6 +61,8 @@ namespace TableDuoVr.Net
             if (_holder.Value != rpcParams.Receive.SenderClientId) return;
             ulong holder = _holder.Value;
             _holder.Value = NoHolder;
+            _holderHand.Value = 0;
+            _grabSeat = null;
             Debug.Log($"[TableDuo] Release {name}");
             GrabLogged?.Invoke(name, holder, false);
         }
@@ -68,13 +73,15 @@ namespace TableDuoVr.Net
 
             // 保持者の切断で宙に浮くのを防ぐ
             var nm = NetworkManager.Singleton;
-            if (nm == null || (!nm.ConnectedClients.ContainsKey(_holder.Value)))
+            if (nm == null || _grabSeat == null || (!nm.ConnectedClients.ContainsKey(_holder.Value)))
             {
                 _holder.Value = NoHolder;
+                _holderHand.Value = 0;
+                _grabSeat = null;
                 return;
             }
 
-            if (TryGetHandWorldPose(_holder.Value, _holderHand.Value, out var handPos, out var handRot))
+            if (TryGetHandWorldPose(_holder.Value, _holderHand.Value, _grabSeat, out var handPos, out var handRot))
             {
                 transform.SetPositionAndRotation(
                     handPos + handRot * _grabOffsetPos,
@@ -83,14 +90,13 @@ namespace TableDuoVr.Net
         }
 
         /// <summary>clientId の手のワールド姿勢（席アンカー × トラッキングスペース pose）。hand: 0=L, 1=R。</summary>
-        private static bool TryGetHandWorldPose(ulong clientId, byte hand,
+        private static bool TryGetHandWorldPose(ulong clientId, byte hand, Transform seat,
             out Vector3 pos, out Quaternion rot)
         {
             pos = default;
             rot = Quaternion.identity;
             var cm = ConnectionManager.Instance;
-            var seat = SeatLocator.FindByClient(clientId);
-            if (cm == null || seat == null || !cm.TryGetPose(clientId, out AvatarPose pose)) return false;
+            if (cm == null || !cm.TryGetPose(clientId, out AvatarPose pose)) return false;
 
             bool tracked = hand == 0 ? pose.TrackedL : pose.TrackedR;
             if (!tracked) return false;

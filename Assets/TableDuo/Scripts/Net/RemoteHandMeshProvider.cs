@@ -28,22 +28,8 @@ namespace TableDuoVr.Net
         // --- 手メッシュの bone マッピング（BoneId 順）---
         // OVRCustomHandPrefab は OVRCustomSkeleton.CustomBones が package 同梱状態では未マッピング
         // （全 null）。本来は Editor の "Auto Map Bones" が埋めるが空のまま出荷されている。
-        // そのため CustomBones に頼らず、Meta の FBX 命名規則で bone Transform を実体検索する。
-        // 命名規則は OVRCustomSkeletonEditor.FbxBoneNameFromBoneId（legacy Hand）と一致させること。
-
-        /// <summary>BoneId 0..18（skinnable）の FBX 名（"b_<side>" を前置）。送信側 OVRSkeleton.Bones の並びと一致。</summary>
-        private static readonly string[] SkinnableBoneNames =
-        {
-            "wrist", "forearm_stub",
-            "thumb0", "thumb1", "thumb2", "thumb3",
-            "index1", "index2", "index3",
-            "middle1", "middle2", "middle3",
-            "ring1", "ring2", "ring3",
-            "pinky0", "pinky1", "pinky2", "pinky3",
-        };
-
-        /// <summary>BoneId 19..23（指先マーカー）の名前要素（"<side>" 前置 + "_finger_tip_marker"）。</summary>
-        private static readonly string[] FingerTipNames = { "thumb", "index", "middle", "ring", "pinky" };
+        // そのため CustomBones に頼らず、Meta の FBX 命名規則（<see cref="HandBoneTable"/>）で
+        // bone Transform を実体検索する。命名/順序は HandBoneTable に集約（drift 防止）。
 
         /// <summary>
         /// 手メッシュ階層から BoneId 順（<see cref="AvatarPose.BonesPerHand"/> 個）の Transform 配列を作る。
@@ -52,16 +38,10 @@ namespace TableDuoVr.Net
         public static Transform?[] MapHandBonesByName(Transform root, bool isRight)
         {
             var map = new Transform?[AvatarPose.BonesPerHand];
-            string side = isRight ? "r_" : "l_";
-            for (int i = 0; i < SkinnableBoneNames.Length; i++)
+            for (int i = 0; i < map.Length; i++)
             {
-                map[i] = FindChildRecursive(root, "b_" + side + SkinnableBoneNames[i]);
-            }
-            for (int i = 0; i < FingerTipNames.Length; i++)
-            {
-                int boneId = SkinnableBoneNames.Length + i; // 19..23
-                if (boneId >= map.Length) break;
-                map[boneId] = FindChildRecursive(root, side + FingerTipNames[i] + "_finger_tip_marker");
+                var name = HandBoneTable.FbxBoneName(i, isRight);
+                if (name != null) map[i] = FindChildRecursive(root, name);
             }
             return map;
         }

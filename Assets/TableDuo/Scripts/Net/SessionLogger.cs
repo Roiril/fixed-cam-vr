@@ -29,9 +29,12 @@ namespace TableDuoVr.Net
         private TableDuoPlayer[] _players = Array.Empty<TableDuoPlayer>();
         private CardProp[] _cards = Array.Empty<CardProp>();
         private float _nextRefresh;
+        private float _nextCardSnapshot;
         private readonly Vector3[] _landmarks = new Vector3[HandLandmarks.Count];
         // clientId ごとの直近 tracked 状態（ロスト遷移イベント用）。2人なので小さな配列で十分
         private readonly System.Collections.Generic.Dictionary<ulong, bool> _lastTracked = new();
+        // 条件（role/marker/oneHand）を記録済みの clientId。条件は端末ごとの起動フラグなので clientId 別に1回記録
+        private readonly System.Collections.Generic.HashSet<ulong> _conditionLogged = new();
 
         public string? FilePath { get; private set; }
 
@@ -48,16 +51,24 @@ namespace TableDuoVr.Net
             EventLogged?.Invoke(label, detail);
         }
 
-        private void OnEnable() => Grabbable.GrabLogged += OnGrabLogged;
+        private void OnEnable()
+        {
+            Grabbable.GrabLogged += OnGrabLogged;
+            TableDuoPlayer.RecenterReported += OnRecenterReported;
+        }
 
         private void OnDisable()
         {
             Grabbable.GrabLogged -= OnGrabLogged;
+            TableDuoPlayer.RecenterReported -= OnRecenterReported;
             CloseFile();
         }
 
         private void OnGrabLogged(string objectName, ulong clientId, bool isGrab) =>
             LogEvent(isGrab ? "grab" : "release", $"{objectName}:client{clientId}");
+
+        // OS recenter は座標系を不連続化する。post-hoc 空間解析が境界を分割できるよう刻む（study-validity）
+        private void OnRecenterReported(ulong clientId) => LogEvent("recenter", $"client{clientId}");
 
         private void Update()
         {
@@ -87,25 +98,41 @@ namespace TableDuoVr.Net
                 if (player == null || player.SeatIndex < 0) continue;
                 ulong clientId = player.OwnerClientId;
                 if (!cm.TryGetPose(clientId, out AvatarPose pose)) continue;
-                var seat = SeatLocator.Find(player.SeatIndex);
+                var seat = player.Seat; // 確定済み席アンカー（毎サンプル GameObject.Find しない）
                 if (seat == null) continue;
 
+                LogConditionOnce(player);
                 WritePoseRow(epoch, clientId, player.Role, pose, seat);
                 LogTrackingTransition(clientId, pose.TrackedR);
             }
 
+            // カードは掴み中＝毎サンプル（操作の軌跡）+ 全カードを 2Hz スナップショット
+            // （RQ「どのカードを指すか」は掴まず指す場合も解析対象 → 静止カードの位置も必要）
+            bool snapshotAll = Time.time >= _nextCardSnapshot;
+            if (snapshotAll) _nextCardSnapshot = Time.time + 0.5f;
             foreach (var card in _cards)
             {
-                if (card == null || card.Grabbable == null || !card.Grabbable.IsHeld) continue;
-                var p = card.transform.position;
-                var n = card.FaceNormalWorld;
+                if (card == null || card.Grabbable == null) continue;
+                bool held = card.Grabbable.IsHeld;
+                if (!held && !snapshotAll) continue;
                 _sb.Clear();
                 _sb.Append("card,").Append(epoch).Append(',').Append(card.CardId).Append(',')
-                   .Append(card.Grabbable.HolderClientId);
-                AppendV3(p);
-                AppendV3(n);
+                   .Append(held ? card.Grabbable.HolderClientId.ToString() : "-1");
+                AppendV3(card.transform.position);
+                AppendV3(card.FaceNormalWorld);
                 _writer!.WriteLine(_sb.ToString());
             }
+        }
+
+        // 条件（role/marker/oneHand）を clientId 別に1回記録。役割が同期確定してから（Role!=null）。
+        // host ローカルの StudyConfig では相手デバイスの条件を取り違えるため、同期値を使う（study-validity）
+        private void LogConditionOnce(TableDuoPlayer player)
+        {
+            if (player.Role is not { } role) return;
+            ulong clientId = player.OwnerClientId;
+            if (!_conditionLogged.Add(clientId)) return;
+            LogEvent("condition",
+                $"client{clientId}:role={role}:marker={(player.ShowHeadMarker ? 1 : 0)}:oneHand={(player.OneHandMode ? 1 : 0)}");
         }
 
         private void WritePoseRow(long epoch, ulong clientId, StudyConfig.Role? role,
@@ -120,6 +147,8 @@ namespace TableDuoVr.Net
             AppendV3(seat.TransformPoint(pose.WristPosR));
             AppendQ(seat.rotation * pose.WristRotR);
             _sb.Append(',').Append(pose.TrackedR ? 1 : 0).Append(',').Append(pose.PinchR ? 1 : 0);
+            // seq=送信連番（歯抜けで「凍結 vs パケット欠落」を判別）, captureMs=送信端末の壁時計
+            _sb.Append(',').Append(pose.Seq).Append(',').Append(pose.CaptureMs);
 
             // 手役の右手 7 ランドマーク（FK・トラッキングスペース→ワールド）
             HandLandmarks.Compute(HandSkeletonLayout.CapturedR,
@@ -147,7 +176,7 @@ namespace TableDuoVr.Net
             // FileShare.Read: 記録中もファシリテータが tail / コピーできるようにする
             var stream = new FileStream(FilePath, FileMode.Create, FileAccess.Write, FileShare.Read);
             _writer = new StreamWriter(stream);
-            _writer.WriteLine("# type,epochMs,... study-design.md §4 / pose: clientId,role,headP3,headQ4,wristRP3,wristRQ4,trackedR,pinchR,7landmarks(wrist,palm,thumb,index,middle,ring,pinky)x3");
+            _writer.WriteLine("# type,epochMs,... study-design.md §4 / pose: clientId,role,headP3,headQ4,wristRP3,wristRQ4,trackedR,pinchR,seq,captureMs,7landmarks(wrist,palm,thumb,index,middle,ring,pinky)x3 / card: cardId,holder(-1=未保持),pos3,normal3 / event: condition,recenter,grab,release,trackingLost/Regained,<mark>");
             _writer.WriteLine($"# studyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode}");
             _writer.Flush();
             Debug.Log($"[TableDuo] SessionLogger 開始 → {FilePath}");
@@ -184,6 +213,7 @@ namespace TableDuoVr.Net
 
         private static long EpochMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        private static string Escape(string s) => s.Replace(',', ';');
+        // カンマは列区切り、改行は行区切りを壊すので無害化（外部 label に curl ?label= 等で混入しうる）
+        private static string Escape(string s) => s.Replace(',', ';').Replace('\n', ' ').Replace('\r', ' ');
     }
 }

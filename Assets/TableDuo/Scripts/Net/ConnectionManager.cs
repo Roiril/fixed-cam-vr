@@ -55,6 +55,12 @@ namespace TableDuoVr.Net
 
         private void Awake()
         {
+            // additive ロード / シーン再ロードの重複で pose ルーティングが誤インスタンスを指すのを防ぐ
+            if (Instance != null && Instance != this)
+            {
+                Destroy(this);
+                return;
+            }
             Instance = this;
             _ipInput = defaultAddress;
 
@@ -205,6 +211,10 @@ namespace TableDuoVr.Net
 
         private void RegisterHandler(NetworkManager nm)
         {
+            // 再接続で前セッションの clientId 別 pose バッファが残ると stale 姿勢が混入するためクリア。
+            // named message handler は session 終了で NGO 側が破棄するので毎 start 登録でよい
+            _remotePoses.Clear();
+            _hasLocalPose = false;
             nm.CustomMessagingManager.RegisterNamedMessageHandler(PoseMsg, OnPoseMessage);
         }
 
