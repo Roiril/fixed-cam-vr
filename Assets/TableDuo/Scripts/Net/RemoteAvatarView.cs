@@ -136,8 +136,9 @@ namespace TableDuoVr.Net
             private bool _everTracked;
             private bool _built;
 
-            // メッシュ手: OVRCustomSkeleton の CustomBones（BoneId 順）を同期 bone で回す
-            private Transform[]? _meshBones;
+            // メッシュ手: bone Transform を BoneId 順（名前マッピング）に並べ、同期 bone で回す。
+            // 要素は見つからなかった bone が null になりうる（適用時に null チェック）
+            private Transform?[]? _meshBones;
             // カプセル手（フォールバック）
             private Transform[]? _bones;
 
@@ -207,7 +208,9 @@ namespace TableDuoVr.Net
             /// <summary>
             /// Meta の白い手メッシュ（OVRCustomHandPrefab）をインスタンス化し、駆動系（OVRHand/OVRCustomSkeleton/
             /// Animator）を剥がして SkinnedMeshRenderer + bone Transform だけ残す。bone は同期データで回す。
-            /// OVRCustomSkeleton.CustomBones の index = BoneId 順 = 同期 boneRots の index。供給が無ければ false。
+            /// bone は <see cref="RemoteHandMeshProvider.MapHandBonesByName"/> で BoneId 順に名前検索する
+            /// （OVRCustomSkeleton.CustomBones は package 同梱状態で未マッピング＝全 null のため使えない。
+            /// これに頼ると指ボーンが一切回らず bind ポーズ＝開いた手で固定される）。供給が無ければ false。
             /// </summary>
             private bool TryBuildMeshHand()
             {
@@ -220,11 +223,12 @@ namespace TableDuoVr.Net
                 inst.transform.localRotation = Quaternion.identity;
                 inst.SetActive(true);
 
-                var skel = inst.GetComponent<OVRCustomSkeleton>();
-                if (skel == null) { Object.Destroy(inst); return false; }
-                var custom = skel.CustomBones;
-                _meshBones = new Transform[custom.Count];
-                for (int i = 0; i < custom.Count; i++) _meshBones[i] = custom[i];
+                // CustomBones に頼らず Meta の FBX 命名規則で bone Transform を実体検索（index = BoneId = 同期 boneRots）
+                var mapped = RemoteHandMeshProvider.MapHandBonesByName(inst.transform, _isRight);
+                bool anyMapped = false;
+                foreach (var b in mapped) { if (b != null) { anyMapped = true; break; } }
+                if (!anyMapped) { Object.Destroy(inst); return false; } // 名前不一致（SDK 改名等）→ カプセルへ
+                _meshBones = mapped;
 
                 // live トラッキング駆動を剥がす（このリモート手を相手のローカル手で上書きさせない）
                 foreach (var s in inst.GetComponents<OVRSkeleton>()) Object.Destroy(s); // OVRCustomSkeleton 含む

@@ -1,7 +1,10 @@
 ---
 name: unity_pitfalls
 description: 本プロジェクトで踏んだ Unity / Meta XR の地雷集（再発防止用）
-type: project
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 8a78d033-0888-47ba-9493-e8e5d446b971
 ---
 
 # Unity / Meta XR 地雷集
@@ -77,6 +80,23 @@ Editor で開いているシーンの .unity ファイルを外部編集（Edit 
 シーンで走る（prefab override の追加が効かない等、静かに古い挙動になる）。
 
 → 対策: 外部編集後は `manage_scene action=load path=...` で**明示的に再ロード**してから Play。
+
+## OVRCustomHandPrefab の CustomBones が package 同梱状態で全 null（2026-06-15）
+
+Meta XR SDK v201 同梱の `OVRCustomHandPrefab_L/R`（`Packages/com.meta.xr.sdk.core/Prefabs/`）は、
+`OVRCustomSkeleton._customBones_V2`（= `CustomBones`）が**全エントリ `{fileID: 0}`（null）**で出荷されている。
+本来は Editor の `OVRCustomSkeletonEditor.AutoMapBones`（Inspector の "Auto Map Bones"）が埋めるが、
+プレハブには反映されていない。
+
+**踏んだ症状**: TableDuo でリモートの白い手メッシュを `CustomBones[i]` で駆動 → 全 null なので
+指ボーンが一切回らず、bind ポーズ（=開いたパー）で固定。手首位置だけ別経路で追従するので
+「位置は合うが指ポーズが死ぬ」状態になる。
+
+**How to apply**: OVRCustomSkeleton 系プレハブを**ランタイムで bone 駆動するなら CustomBones を信用しない**。
+Meta の FBX 命名規則で bone Transform を実体検索する（legacy Hand: `"b_" + ("r_"/"l_") + {wrist,forearm_stub,
+thumb0..3,index1..3,middle1..3,ring1..3,pinky0..3}`、指先は `"<side><finger>_finger_tip_marker"`、index=BoneId 順）。
+命名表は `OVRCustomSkeletonEditor.FBXHandBoneNames` / `FBXHandSidePrefix` に一致させること。
+TableDuo の実装は [`RemoteHandMeshProvider.MapHandBonesByName`](../../Assets/TableDuo/Scripts/Net/RemoteHandMeshProvider.cs)。
 
 ## execute_code が「ファイル名または拡張子が長すぎます」で全滅する状態（2026-06-11）
 
