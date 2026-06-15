@@ -11,10 +11,12 @@ description: 1 Unity プロジェクトに同居する 廻リ視(FixedCam) と T
 
 この Unity プロジェクトには **2 つの独立アプリが 1 つの Unity プロジェクトとして同居**している：
 
-| アプリ | 名前空間 / asmdef | シーン | パッケージ ID | コード |
-|---|---|---|---|---|
-| **廻リ視（FixedCam・本体）** | `FixedCamVr.*` | `Assets/Scenes/Main.unity` | `com.roiril.mawarimi` | `Assets/Scripts/` |
-| **TableDuo（手アバター調査）** | `TableDuoVr.*` | `Assets/TableDuo/Scenes/TableDuoMain.unity` | `com.roiril.tableduo` | `Assets/TableDuo/` |
+| アプリ | ユーザー呼称 | 名前空間 / asmdef | シーン | パッケージ ID | コード |
+|---|---|---|---|---|---|
+| **廻リ視（FixedCam・本体）** | **fixedcam** / 本体 / カメラ | `FixedCamVr.*` | `Assets/Scenes/Main.unity` | `com.roiril.mawarimi` | `Assets/Scripts/` |
+| **TableDuo（手アバター調査）** | **ハンド** / 手 / テーブル | `TableDuoVr.*` | `Assets/TableDuo/Scenes/TableDuoMain.unity` | `com.roiril.tableduo` | `Assets/TableDuo/` |
+
+**⚠ 呼称で取り違えない**: ユーザーは「fixedcam」「ハンド」で呼ぶ。正式名（廻リ視 / TableDuo）からは導けない（特に「ハンド」⇄ TableDuo は名前に hand が出ない）。**作業前にこの表で対象アプリを確定**してから着手する。
 
 別シュビー（並列エージェント / worktree / 別セッション）と本シュビーが**別々のアプリを同時に進めることがある**。下記は壊さないための絶対規約。
 
@@ -68,9 +70,20 @@ worktree の罠（base が古い等）は [git-workflow.md](git-workflow.md) も
 - 2 アプリはパッケージ ID が違うので 1 台の Quest に**並存できる**（上書きし合わない）
 - 「最新が入ってるか」はパッケージ ID 別に `dumpsys package <id>` の `lastUpdateTime` で確認
 
+## 6. 単一アプリ対象の作業（レビュー / 監査 / リファクタ / サブエージェント）
+
+「fixedcam をレビューして」「ハンドのコードを直して」のように**片方のアプリだけ**を対象にする指示では、相手アプリを **視界（スコープ・プロンプト・読み込み）から完全に外す**。「壊さない」だけでなく「**持ち込まない**」。
+
+- **対象 root を 1 つに固定する**: fixedcam = `Assets/Scripts/`（+ `FixedCamVr.*`）／ ハンド = `Assets/TableDuo/`。glob・ファイル列挙・grep は**この root 配下のみ**にする。相手 root を混ぜない
+- **サブエージェントのプロンプトに相手アプリを書かない**: 文脈・アンチスコープ・「相互参照ゼロを確認」等の名目でも相手アプリ名/パスを織り込まない。混ぜると「scope が曖昧」に見え、相手アプリの所見が混入するリスクが出る（2026-06-16 実害: fixedcam レビューでアーキ観点プロンプトに TableDuo を多数織り込み、ユーザーから「スコープを理解できていない」と指摘）
+- **相互参照チェックが要るなら一方向で**: 「対象アプリが相手を参照していないか」は対象アプリ側の asmdef / using を見れば足りる。相手アプリのファイルを開く必要はない
+- **成果物（レビュー結果・差分）に相手アプリが出てきたら捨てる**: triage で相手アプリ由来の所見は対象外として除外し、その旨を明記する
+
 ## チェックリスト（並列で着手する前に）
 
-1. 自分が触るのはどっちのアプリ？ → 相手のコード領域・シーン・prefab に手を出さない
-2. 共有資源（ProjectSettings / URP / OVR / XR / manifest）を触る？ → 触るなら逐次 + 影響説明
-3. Unity Editor を使う作業？ → 並列にしない（本シュビーが逐次）
-4. ビルドする？ → 他のビルドが走っていないこと、PlayerSettings が復元済みであることを確認
+1. **どっちのアプリ？** → 呼称マッピング表（冒頭）で確定。「fixedcam／ハンド」を正式名・コード root に変換してから着手
+2. 自分が触るのはどっちのアプリ？ → 相手のコード領域・シーン・prefab に手を出さない
+3. 単一アプリ対象の作業（レビュー/監査等）？ → §6。相手アプリをスコープ・プロンプトに持ち込まない
+4. 共有資源（ProjectSettings / URP / OVR / XR / manifest）を触る？ → 触るなら逐次 + 影響説明
+5. Unity Editor を使う作業？ → 並列にしない（本シュビーが逐次）
+6. ビルドする？ → 他のビルドが走っていないこと、PlayerSettings が復元済みであることを確認
