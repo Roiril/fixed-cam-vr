@@ -16,11 +16,13 @@ namespace FixedCamVr.Tracking.Tests
 
         private readonly System.Collections.Generic.List<GameObject> _spawned = new();
 
-        private PlayerZone MakeZone(string name, Vector3 worldCenter, Vector3 halfExtents, int cameraIndex, int priority)
+        private PlayerZone MakeZone(string name, Vector3 worldCenter, Vector3 halfExtents, int cameraIndex, int priority,
+            Quaternion? rotation = null)
         {
             var go = new GameObject(name);
             _spawned.Add(go);
             go.transform.position = worldCenter;
+            go.transform.rotation = rotation ?? Quaternion.identity;
             var z = go.AddComponent<PlayerZone>();
             typeof(PlayerZone).GetField("halfExtents", BFI)!.SetValue(z, halfExtents);
             typeof(PlayerZone).GetField("centerOffset", BFI)!.SetValue(z, Vector3.zero);
@@ -118,6 +120,26 @@ namespace FixedCamVr.Tracking.Tests
 
             var picked = InvokePick(t, new Vector3(100, 0, 0));
             Assert.That(picked, Is.Null);
+        }
+
+        [Test]
+        public void Pick_RotatedZone_UsesOrientedBounds()
+        {
+            // 長辺 x=1.0 / 短辺 z=0.5 のゾーン。点 (0,0,0.9) は無回転だと z=0.9 > 0.5 で外。
+            // 90° yaw 回転すると長辺が world Z へ向くので、同じ点が OBB 内に入る。
+            var rotated = MakeZone("Rot", Vector3.zero, new Vector3(1f, 2f, 0.5f),
+                cameraIndex: 0, priority: 0, rotation: Quaternion.Euler(0f, 90f, 0f));
+            var t = MakeTracker(new[] { rotated }, current: null);
+
+            var picked = InvokePick(t, new Vector3(0f, 0f, 0.9f));
+            Assert.That(picked, Is.SameAs(rotated), "90° 回転で長辺が world Z を向き、点が OBB 内に入るはず");
+
+            // 同じ点を無回転ゾーンで判定すると外（OBB が AABB と同一に退化）
+            var axisAligned = MakeZone("Aabb", Vector3.zero, new Vector3(1f, 2f, 0.5f),
+                cameraIndex: 1, priority: 0);
+            var t2 = MakeTracker(new[] { axisAligned }, keepLastWhenOutside: false, current: null);
+            var picked2 = InvokePick(t2, new Vector3(0f, 0f, 0.9f));
+            Assert.That(picked2, Is.Null, "無回転なら z=0.9 は短辺 0.5 の外");
         }
 
         [Test]

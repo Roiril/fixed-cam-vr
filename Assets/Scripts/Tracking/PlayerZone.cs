@@ -5,7 +5,8 @@ namespace FixedCamVr.Tracking
 {
     /// <summary>
     /// プレイヤーが入った時に切り替えるカメラを定義する空間ゾーン。
-    /// AABB（軸並行ボックス）で表現し、Transform に追従する（rotation は無視）。
+    /// OBB（向き付きボックス）で表現し、Transform の位置・回転に追従する。
+    /// rotation が identity のときは従来の AABB と完全に一致する。
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]
@@ -47,6 +48,9 @@ namespace FixedCamVr.Tracking
         /// <summary>Transform.position からの中心オフセット (m)。</summary>
         public Vector3 CenterOffset => centerOffset;
 
+        /// <summary>ボックスの向き（= transform.rotation）。AABB 互換時は identity。</summary>
+        public Quaternion Rotation => transform.rotation;
+
         /// <summary>
         /// ランタイム校正（ZoneCalibrator）用。ワールド中心と半長を直接設定する。
         /// centerOffset は維持し、transform.position 側を動かす。
@@ -60,17 +64,25 @@ namespace FixedCamVr.Tracking
                 Mathf.Max(0f, newHalfExtents.z));
         }
 
+        /// <summary>ランタイム校正用。ボックスの向き（yaw 等）を直接設定する。</summary>
+        public void SetRuntimeRotation(Quaternion worldRotation) => transform.rotation = worldRotation;
+
         /// <summary>
-        /// world 座標 worldPos がこのゾーンに含まれるかを判定する。
+        /// world 座標 worldPos がこのゾーンに含まれるかを判定する（OBB）。
+        /// ワールド差分をゾーンローカル軸へ射影してから半長と比較する。
         /// shrink を渡すと各軸を内側に縮めて判定（ヒステリシス用）。
         /// </summary>
         public bool Contains(Vector3 worldPos, float shrink = 0f)
         {
             Vector3 d = worldPos - Center;
+            Quaternion rot = transform.rotation;
+            float dx = Vector3.Dot(d, rot * Vector3.right);
+            float dy = Vector3.Dot(d, rot * Vector3.up);
+            float dz = Vector3.Dot(d, rot * Vector3.forward);
             float hx = Mathf.Max(0f, halfExtents.x - shrink);
             float hy = Mathf.Max(0f, halfExtents.y - shrink);
             float hz = Mathf.Max(0f, halfExtents.z - shrink);
-            return Mathf.Abs(d.x) <= hx && Mathf.Abs(d.y) <= hy && Mathf.Abs(d.z) <= hz;
+            return Mathf.Abs(dx) <= hx && Mathf.Abs(dy) <= hy && Mathf.Abs(dz) <= hz;
         }
 
         private void OnValidate()
@@ -87,10 +99,14 @@ namespace FixedCamVr.Tracking
             Color wireColor = new(gizmoColor.r, gizmoColor.g, gizmoColor.b, 1f);
             Vector3 size = halfExtents * 2f;
 
+            // OBB を描くため Gizmos.matrix を Center + 向きで設定し、ローカル原点に箱を描く。
+            Matrix4x4 prev = Gizmos.matrix;
+            Gizmos.matrix = Matrix4x4.TRS(Center, transform.rotation, Vector3.one);
             Gizmos.color = faceColor;
-            Gizmos.DrawCube(Center, size);
+            Gizmos.DrawCube(Vector3.zero, size);
             Gizmos.color = wireColor;
-            Gizmos.DrawWireCube(Center, size);
+            Gizmos.DrawWireCube(Vector3.zero, size);
+            Gizmos.matrix = prev;
         }
     }
 }

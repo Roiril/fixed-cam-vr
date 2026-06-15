@@ -68,7 +68,7 @@
 
 - `PlayerZone` — MonoBehaviour。AABB（中心 + halfExtents）+ 優先度 + `cameraIndex` + ラベルを持つ
 - `PlayerZoneTracker` — OVRCameraRig の HMD 位置をサンプリングし、ヒステリシス（縮小 AABB の内外で切替判定 / shrink 0.15m）+ 優先度比較で `CameraStreamRegistry` のアクティブを切替（評価間隔 0.05s、全ゾーン外時は `keepLastWhenOutside` で直近維持が既定）
-- `ZoneCalibrator` — HMD 内で Quest コントローラだけでゾーン（中心・サイズ）を実地調整。**右コントローラから床へレイを飛ばし**、両グリップ 3 秒長押しで校正モード ON/OFF、A=レイ先のゾーン選択、右トリガ握り=床に沿ってドラッグ移動、右スティック=サイズ伸縮（横倒し=横幅 / 縦倒し=奥行き）、X=保存（`persistentDataPath/zone_calibration.json`）/ Y=リセット。レイ表示は校正モード限定。起動位置をコース中心に合わせる recenter 付き
+- `ZoneCalibrator` — HMD 内で Quest コントローラだけでゾーン（中心・サイズ・向き）を実地調整。**右コントローラから床へレイを飛ばし**、両グリップ 3 秒長押しで校正モード ON/OFF、A=レイ先のゾーン選択、右トリガ握り=床に沿ってドラッグ移動、右スティック=サイズ伸縮（横倒し=横幅 / 縦倒し=奥行き）、左スティック横=レイアウト全体を回転、X=保存（`persistentDataPath/zone_calibration.json`）/ Y=リセット。レイ表示は校正モード限定。ゾーンは OBB（向き付き）で回転が当たり判定に効く。起動位置をコース中心に合わせる recenter 付き
 - 検証シーン: [Assets/Scenes/Sandbox/PlayerZone.unity](Assets/Scenes/Sandbox/PlayerZone.unity)（A_Center / B_Right / C_Left の 3 ゾーン構成）
 - 計画: 完了済み（git log の `feat：プレイヤー位置連動カメラ切替（PlayerZone / PlayerZoneTracker）`・`feat：ZoneCalibrator` を参照）
 
@@ -229,7 +229,7 @@ Hierarchy のグループ見出し `=== XR ===` `=== Stage ===` `=== Logic ===` 
 | 右コントローラ **B** | 前のカメラに切替 | `OvrControllerBridge.prevButton`（`OVRInput.Button.Two`）|
 | 左コントローラ **X** | スクリーン head-lock 切替 | `OvrControllerBridge.anchorToggleButton`（`OVRInput.Button.Three`）|
 | 左コントローラ **Y** | HUD 表示トグル | `OvrControllerBridge.hudToggleButton`（`OVRInput.Button.Four`）|
-| **両グリップ** 3 秒長押し | ゾーン校正モード ON/OFF（[ZoneCalibrator](Assets/Scripts/Tracking/ZoneCalibrator.cs)・校正中は右コントローラのレイで A=選択 / 右トリガ=床ドラッグ / 右スティック=サイズ・X 保存 / Y リセット） | `OvrControllerBridge` → `ZoneCalibrator.Feed()` |
+| **両グリップ** 3 秒長押し | ゾーン校正モード ON/OFF（[ZoneCalibrator](Assets/Scripts/Tracking/ZoneCalibrator.cs)・校正中は右コントローラのレイで A=選択 / 右トリガ=床ドラッグ / 右スティック=サイズ / 左スティック横=レイアウト回転・X 保存 / Y リセット） | `OvrControllerBridge` → `ZoneCalibrator.Feed()` |
 | キーボード **Tab** / **Shift+Tab** | カメラ切替（Editor / HMD なし検証） | `CameraSwitchInput` |
 | キーボード **1〜9** | カメラ直接指定 | `CameraSwitchInput` |
 | キーボード **Space** | スクリーン head-lock 切替 | `ScreenAnchor.Toggle` |

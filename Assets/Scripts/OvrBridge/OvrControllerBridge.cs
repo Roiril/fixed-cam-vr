@@ -67,6 +67,7 @@ namespace FixedCamVr.OvrBridge
                     zoneCalibrator.Feed(new ZoneCalibrator.CalibInput
                     {
                         size = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch),
+                        rotate = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch).x, // 左スティック横: レイアウト回転
                         pick = OVRInput.GetDown(OVRInput.Button.One),       // A (右): レイ先を選択
                         grab = OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger, OVRInput.Controller.RTouch) > 0.5f, // 右トリガ: ドラッグ
                         save = OVRInput.GetDown(OVRInput.Button.Three),     // X (左)

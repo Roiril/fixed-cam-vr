@@ -17,8 +17,11 @@ namespace FixedCamVr.Tracking
     ///   A … レイ先（床ヒット点）にあるゾーンを選択
     ///   右トリガ握り中 … 選択ゾーンをレイ先へドラッグ（床に沿って平行移動）
     ///   右スティック … 横倒し=halfExtents.x（横）/ 縦倒し=halfExtents.z（縦）を伸縮
+    ///   左スティック横 … レイアウト全体をコース中心（起動位置）まわりに yaw 回転
     ///   X … 保存（persistentDataPath/zone_calibration.json、以後の起動で自動適用）
     ///   Y … authored 値へリセット + 保存ファイル削除
+    ///
+    /// ゾーンは OBB（向き付きボックス、<see cref="PlayerZone"/>）なので回転が実際に当たり判定へ効く。
     ///
     /// 校正モード中のみ、コントローラ先端から床へのレイと、ゾーンの床フットプリント
     /// （カメラ index 別の色・選択中はブリンク・レイで指している間はハイライト）を表示する。
@@ -48,6 +51,9 @@ namespace FixedCamVr.Tracking
         [Tooltip("右スティックでのサイズ伸縮速度 (m/s)。")]
         [SerializeField, Min(0.01f)] private float resizeSpeed = 0.6f;
 
+        [Tooltip("左スティック横でのレイアウト回転速度 (度/s)。")]
+        [SerializeField, Min(1f)] private float rotateSpeedDeg = 60f;
+
         [Tooltip("halfExtents の下限 (m)。これ未満には縮められない。")]
         [SerializeField, Min(0.01f)] private float minHalfExtent = 0.15f;
 
@@ -64,6 +70,7 @@ namespace FixedCamVr.Tracking
         public struct CalibInput
         {
             public Vector2 size;     // 右スティック（halfExtents XZ）
+            public float rotate;     // 左スティック横（レイアウト全体の yaw）
             public bool pick;        // A: レイ先のゾーンを選択
             public bool grab;        // 右トリガ握り中: レイ先へドラッグ
             public bool save;        // X
@@ -71,7 +78,7 @@ namespace FixedCamVr.Tracking
         }
 
         [Serializable]
-        private class Entry { public string name = ""; public Vector3 center; public Vector3 halfExtents; }
+        private class Entry { public string name = ""; public Vector3 center; public Vector3 halfExtents; public Vector3 euler; }
 
         [Serializable]
         private class SaveData { public List<Entry> entries = new(); }
@@ -79,7 +86,7 @@ namespace FixedCamVr.Tracking
         /// <summary>校正モード中か。Bridge はこれを見て通常入力を抑止する。</summary>
         public bool IsActive { get; private set; }
 
-        private (Vector3 center, Vector3 half)[] _authored = Array.Empty<(Vector3, Vector3)>();
+        private (Vector3 center, Vector3 half, Quaternion rot)[] _authored = Array.Empty<(Vector3, Vector3, Quaternion)>();
         private int _selected;
         private int _hovered = -1;       // レイ先にあるゾーン（ハイライト用）
         private bool _hasHit;            // 今フレーム床ヒットがあるか
@@ -117,9 +124,9 @@ namespace FixedCamVr.Tracking
             if (zones.Length == 0) zones = FindObjectsOfType<PlayerZone>();
 
             // authored 値（シーンに保存されている配置）を控えてから、保存済み校正を適用
-            _authored = new (Vector3, Vector3)[zones.Length];
+            _authored = new (Vector3, Vector3, Quaternion)[zones.Length];
             for (int i = 0; i < zones.Length; i++)
-                _authored[i] = (zones[i].Center, zones[i].HalfExtents);
+                _authored[i] = (zones[i].Center, zones[i].HalfExtents, zones[i].Rotation);
 
             LoadAndApply();
         }
@@ -140,7 +147,7 @@ namespace FixedCamVr.Tracking
                 _grabbing = false;
                 BuildViz();
                 Debug.Log("[ZoneCalib] 校正モード ON — レイ先 A=ゾーン選択, 右トリガ握り=床ドラッグ移動, " +
-                          "右スティック=サイズ(横/縦), X=保存, Y=リセット, 両グリップ長押し=終了");
+                          "右スティック=サイズ(横/縦), 左スティック横=レイアウト回転, X=保存, Y=リセット, 両グリップ長押し=終了");
             }
             else
             {
@@ -199,6 +206,25 @@ namespace FixedCamVr.Tracking
             }
 
             z.SetRuntimeBounds(center, half);
+
+            // 左スティック横: レイアウト全体をコース中心（起動位置）まわりに回転
+            RotateLayout(input.rotate);
+        }
+
+        // 全ゾーンを recenter 原点（コース中心）まわりに yaw 回転する。
+        // 各ゾーンの中心位置を回し、ゾーン自身の向き（OBB）も同じだけ回す。
+        private void RotateLayout(float rate)
+        {
+            if (Mathf.Abs(rate) < 0.1f) return; // スティックのデッドゾーン
+            float deg = rate * rotateSpeedDeg * Time.deltaTime;
+            Vector3 pivot = new(_recenterOffset.x, 0f, _recenterOffset.z);
+            Quaternion yaw = Quaternion.Euler(0f, deg, 0f);
+            foreach (var z in zones)
+            {
+                Vector3 newC = pivot + yaw * (z.Center - pivot);
+                z.SetRuntimeBounds(newC, z.HalfExtents);
+                z.SetRuntimeRotation(yaw * z.Rotation);
+            }
         }
 
         private Transform? RayOrigin()
@@ -225,7 +251,7 @@ namespace FixedCamVr.Tracking
             return true;
         }
 
-        // 床ヒット点の XZ を含むゾーン。重なりは Priority 大が勝ち、同値なら配列先頭。
+        // 床ヒット点を含むゾーン（OBB のローカル XZ で判定）。重なりは Priority 大が勝ち、同値なら配列先頭。
         private int PickZoneAt(Vector3 worldHit)
         {
             int best = -1;
@@ -233,9 +259,11 @@ namespace FixedCamVr.Tracking
             for (int i = 0; i < zones.Length; i++)
             {
                 var z = zones[i];
-                Vector3 c = z.Center;
-                if (Mathf.Abs(worldHit.x - c.x) <= z.HalfExtents.x &&
-                    Mathf.Abs(worldHit.z - c.z) <= z.HalfExtents.z)
+                Vector3 d = worldHit - z.Center;
+                Quaternion rot = z.Rotation;
+                float dx = Vector3.Dot(d, rot * Vector3.right);
+                float dz = Vector3.Dot(d, rot * Vector3.forward);
+                if (Mathf.Abs(dx) <= z.HalfExtents.x && Mathf.Abs(dz) <= z.HalfExtents.z)
                 {
                     if (z.Priority > bestPriority) { bestPriority = z.Priority; best = i; }
                 }
@@ -286,7 +314,13 @@ namespace FixedCamVr.Tracking
             // JSON は常にレイアウト原点相対で保存（起動位置基準化のオフセットを除去）。
             // セッション毎に立ち位置が変わっても保存済みレイアウトの形・相対配置が保たれる。
             foreach (var z in zones)
-                data.entries.Add(new Entry { name = z.name, center = z.Center - _recenterOffset, halfExtents = z.HalfExtents });
+                data.entries.Add(new Entry
+                {
+                    name = z.name,
+                    center = z.Center - _recenterOffset,
+                    halfExtents = z.HalfExtents,
+                    euler = z.Rotation.eulerAngles,
+                });
             try
             {
                 File.WriteAllText(SavePath, JsonUtility.ToJson(data, prettyPrint: true));
@@ -312,6 +346,7 @@ namespace FixedCamVr.Tracking
                     {
                         if (z.name != e.name) continue;
                         z.SetRuntimeBounds(e.center + _recenterOffset, e.halfExtents);
+                        z.SetRuntimeRotation(Quaternion.Euler(e.euler));
                         applied++;
                         break;
                     }
@@ -327,7 +362,10 @@ namespace FixedCamVr.Tracking
         private void ResetToAuthored()
         {
             for (int i = 0; i < zones.Length && i < _authored.Length; i++)
+            {
                 zones[i].SetRuntimeBounds(_authored[i].center + _recenterOffset, _authored[i].half);
+                zones[i].SetRuntimeRotation(_authored[i].rot);
+            }
             try { if (File.Exists(SavePath)) File.Delete(SavePath); }
             catch (Exception ex) { Debug.LogWarning($"[ZoneCalib] 保存ファイル削除失敗: {ex.Message}"); }
             Debug.Log("[ZoneCalib] authored 値へリセット（保存ファイルも削除）");
@@ -407,6 +445,8 @@ namespace FixedCamVr.Tracking
                 Vector3 c = z.Center;
                 // ゾーン毎に高さを 1mm ずらして Z-fight 回避
                 q.position = new Vector3(c.x, 0.02f + i * 0.002f, c.z);
+                // 床に寝かせた Quad をゾーンの yaw だけ回す（OBB フットプリント）
+                q.rotation = Quaternion.Euler(0f, z.Rotation.eulerAngles.y, 0f) * Quaternion.Euler(90f, 0f, 0f);
                 q.localScale = new Vector3(z.HalfExtents.x * 2f, z.HalfExtents.z * 2f, 1f);
 
                 Color baseColor = Palette[z.CameraIndex % Palette.Length];

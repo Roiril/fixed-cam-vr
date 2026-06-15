@@ -117,13 +117,15 @@ HMD 内でコントローラだけでゾーンを実地調整できる（[`ZoneC
 | 右トリガ握り中 | 選択ゾーンをレイ先へ**床ドラッグ**（掴んだ瞬間の相対位置を維持して追従） |
 | 右スティック 横倒し | halfExtents.x（横幅）を伸縮（下限 0.15m） |
 | 右スティック 縦倒し | halfExtents.z（奥行き）を伸縮（下限 0.15m） |
+| 左スティック 横倒し | **レイアウト全体**をコース中心（起動位置）まわりに yaw 回転 |
 | X（左） | **保存** → `persistentDataPath/zone_calibration.json`（以後の起動で自動適用） |
 | Y（左） | authored 値へリセット + 保存ファイル削除 |
 
 - レイ起点は `OVRCameraRig/TrackingSpace/RightHandAnchor`（SerializeField `rightHandTransform`、null なら headTransform にフォールバック）。床平面 y=0 との交点をヒット点とする（上向き／水平はヒットなし＝赤レイ表示）
 - **レイ表示は校正モード限定**（viz は SetActive で生成・破棄）。水色＝床ヒットあり、橙＝床に当たっていない、ドット緑＝ドラッグ中
 
-- **起動位置基準化（recenterOnStart、既定 ON）**: トラッキング確立の 1 秒後、起動時の HMD 位置（XZ）がレイアウト原点（=コース中心）になるようゾーン全体を平行移動する。**回転は合わせない**（AABB のため。コースの向きはガーディアン空間基準のまま）。保存 JSON は原点相対で持つので、セッション毎に立ち位置が変わっても保存レイアウトの形は崩れない
+- **PlayerZone は OBB（向き付きボックス）**: `Contains` はワールド差分をゾーンローカル軸（`transform.rotation`）へ射影して判定する。rotation が identity のときは従来 AABB と完全一致（既存テストもそのまま pass）。左スティック回転で各ゾーンの位置と向きが回り、当たり判定にも効く
+- **起動位置基準化（recenterOnStart、既定 ON）**: トラッキング確立の 1 秒後、起動時の HMD 位置（XZ）がレイアウト原点（=コース中心）になるようゾーン全体を平行移動する。**自動では回転を合わせない**（コースの向きはガーディアン空間基準のまま）。向き合わせは校正モードで**左スティック横**を倒して手動回転 → X 保存（回転も JSON に euler で永続化）。保存 JSON は原点相対で持つので、セッション毎に立ち位置が変わっても保存レイアウトの形は崩れない
 - 校正中は床にゾーンのフットプリントをカメラ別色で表示（緑=cam0 / 青=cam1 / 橙=cam2、白菱形=HMD 位置、水色レイ＋ドット=コントローラの指し先）。通常のボタン操作（カメラ切替・HUD）は抑止される
 - 保存先は**端末ローカル**（Quest なら `/sdcard/Android/data/com.roiril.mawarimi/files/`）。シーンの authored 値は変わらないので、恒久化したい値が決まったら `MainDemoSceneSetup.cs` に反映する
 - 入力は OvrBridge → `ZoneCalibrator.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）
