@@ -22,6 +22,7 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - 起動は adb intent: `-e tdv_mode host|client -e tdv_role full|hand [-e tdv_ip <hostIP>]`。役割で席・アバター種別・片手モードが決まる（host/client と role は独立）
 - 目線: **EyeLevel + 席=目線アンカー（[TableDuo]/Seats/Seat0,1, y=1.15）**。FloorLevel にすると身長で目線高が変わるので不可。`Preview Eye - Seat0/1` メニュー＋SeatEyeGizmo で調整
 - リモートの手＝**Meta の白い手メッシュ**（OVRCustomHandPrefab を同期 bone で駆動。ローカル手と同じ見た目）。供給は `RemoteHandMeshProvider`（Systems・Setup が L/R プレハブ＋白マテリアルを配線）、プレハブ不在時はカプセル手にフォールバック
+- **人側フルアバターの見た目＝簡易人型**（2026-06-16）。頭（マネキン頭＋目2＝視線キュー）/首/肩/テーパー胴 + **肩→手首を直結した cosmetic な袖（肘 IK なし＝破綻しない・手の位置を体に反映）** + 既存の動く白手。全部 [RemoteAvatarView](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs) のプリミティブ procedural（外部アセット/依存なし）。配色は研究中立な無個性トーン（肌=TableDuoSkin / 袖&胴=TableDuoShirt / 目=TableDuoEye、Resources 優先・無ければランタイム URP/Lit 生成で Setup 未実行でも肌色で出る）。追跡が頭＋手首＋指のみなので realタイプ（Ready Player Me+IK）はアンカニー&肘破綻リスクで不採用、procedural を選択。**実機で見た目・腕の自然さ要確認**
 - **指ポーズが動かない（ずっとパー）バグ → 2026-06-15 修正済み**。原因: `OVRCustomHandPrefab_L/R` の `OVRCustomSkeleton._customBones_V2` が SDK 同梱状態で**全 null（未マッピング）**。`CustomBones` を読んで bone を回す実装だと全 null で指が一切動かず bind＝開いた手で固定（手首位置だけ別経路で追従）。修正＝`RemoteHandMeshProvider.MapHandBonesByName` で Meta の FBX 命名（`b_r_thumb0` 等、BoneId 順）を実体検索して回す（[[unity_pitfalls]] 参照）。**実機で指の曲げ同期は要再確認**（手首向きの二重適用が無いかも併せて見る）
 - テーブル上の小物・カードは **Setup が天板の実バウンディング（高さ・XZ 範囲）を測って接地配置**（maxWidth で天板が 0.7→0.5 に縮むので固定 Y だと浮く。固定値ハードコード禁止）
 

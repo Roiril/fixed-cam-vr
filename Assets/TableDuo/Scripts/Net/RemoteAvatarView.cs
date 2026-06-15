@@ -6,18 +6,26 @@ namespace TableDuoVr.Net
 {
     /// <summary>
     /// リモートプレイヤーの v1 アバター描画。席アンカー基準でプリミティブを駆動する。
-    /// - フル（席0）: 頭ボックス + 両手
+    /// - フル（席0）: 簡易人型上半身（頭＝顔＋目 / 首 / 肩 / テーパー胴）+ 肩→手首の簡易腕（袖）+ 両手
     /// - 手だけ（席1）: 両手 + 最小の頭マーカー（社会的キュー用）
     /// 手は HandSkeletonLayout があれば 24 bone の関節球、無ければ手首キューブ。
     /// レイアウトは遅延構築（リモート接続時点で未キャプチャでも後から生える）。
+    /// 追跡は頭＋手首＋指のみ（肩・肘・胴は無追跡）。腕は肘 IK を使わず肩→手首を直結した
+    /// cosmetic な袖（破綻しない・手の位置を体の輪郭に反映）— 要件 §5 の「肘推定を持たない」を踏襲。
     /// </summary>
     public sealed class RemoteAvatarView : MonoBehaviour
     {
         /// <summary>受信レート(30Hz)→描画レート(72-90Hz)の指数平滑係数。大きいほど追従が速い。</summary>
         private const float SmoothK = 20f;
 
+        // 肩の付け根（胴ローカル）。腕（袖）はここから手首へ伸びる。+X=アバターの右手側
+        private static readonly Vector3 ShoulderOffsetR = new(0.16f, 0.20f, 0f);
+        private static readonly Vector3 ShoulderOffsetL = new(-0.16f, 0.20f, 0f);
+
         private Transform? _head;
         private Transform? _chest;
+        private Transform? _armL;
+        private Transform? _armR;
         private HandView? _left;
         private HandView? _right;
         private bool _handsOnly;
@@ -37,16 +45,31 @@ namespace TableDuoVr.Net
 
         private static Material? _avatarMat;
         private static Material? _markerMat;
+        private static Material? _skinMat;
+        private static Material? _shirtMat;
+        private static Material? _eyeMat;
         private static bool _matsLoaded;
+
+        // domain-reload 無効 Play で前回 Play の破棄済み Material 参照を引き継がないようリセット
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetMatCache()
+        {
+            _avatarMat = _markerMat = _skinMat = _shirtMat = _eyeMat = null;
+            _matsLoaded = false;
+        }
 
         private void Build()
         {
             if (!_matsLoaded)
             {
-                // Setup メニューが Assets/TableDuo/Resources/ に生成する URP マテリアル。
-                // ランタイム生成プリミティブの内蔵 Standard は URP 実機ビルドでマゼンタ化するため必須
+                // Setup メニューが Assets/TableDuo/Resources/ に生成する URP マテリアル（あれば優先＝アーティスト調整可）。
+                // 無ければランタイムで URP/Lit を生成（Setup 未実行でも人型が肌色で出る・実機でもマゼンタ化しない）
                 _avatarMat = Resources.Load<Material>("TableDuoAvatar");
                 _markerMat = Resources.Load<Material>("TableDuoHeadMarker");
+                // 研究中立な無個性配色（髪なしマネキン頭 + 無地の袖）。肌は単一の中間トーン
+                _skinMat = GetOrCreateMat("TableDuoSkin", new Color(0.86f, 0.69f, 0.56f));
+                _shirtMat = GetOrCreateMat("TableDuoShirt", new Color(0.32f, 0.40f, 0.52f));
+                _eyeMat = GetOrCreateMat("TableDuoEye", new Color(0.12f, 0.12f, 0.14f));
                 _matsLoaded = true;
                 if (_avatarMat == null)
                 {
@@ -65,14 +88,45 @@ namespace TableDuoVr.Net
             }
             else
             {
-                _head = CreatePrimitive(transform, PrimitiveType.Cube, 0.18f, "Head", _avatarMat);
-                // 胴体（フルアバターのみ）。席に座る上半身として頭の下へ。
-                // 腕 IK は意図的に無し（肘推定の破綻リスク — 要件 §5）
-                _chest = CreatePrimitive(transform, PrimitiveType.Cube, 1f, "Chest", _avatarMat);
-                _chest.localScale = new Vector3(0.34f, 0.42f, 0.16f);
+                BuildHumanUpperBody();
             }
             _left = new HandView(transform, "HandL", isRight: false);
             _right = new HandView(transform, "HandR", isRight: true);
+        }
+
+        /// <summary>簡易人型の上半身（頭＝顔＋目 / 首 / 肩 / テーパー胴 / 肩→手首の袖）。フルアバター用。</summary>
+        private void BuildHumanUpperBody()
+        {
+            // 頭グループ（位置・向きは Update で頭 pose 追従）。子に頭蓋・目を持たせ、向きが視線キューになる
+            _head = new GameObject("Head").transform;
+            _head.SetParent(transform, worldPositionStays: false);
+            CreateShape(_head, PrimitiveType.Sphere, new Vector3(0.19f, 0.21f, 0.19f), Vector3.zero, _skinMat, "Skull");
+            CreateShape(_head, PrimitiveType.Sphere, new Vector3(0.035f, 0.035f, 0.035f), new Vector3(0.045f, 0.02f, 0.092f), _eyeMat, "EyeR");
+            CreateShape(_head, PrimitiveType.Sphere, new Vector3(0.035f, 0.035f, 0.035f), new Vector3(-0.045f, 0.02f, 0.092f), _eyeMat, "EyeL");
+
+            // 胴グループ（頭へ緩く追従）。子に首・テーパー胴・肩
+            _chest = new GameObject("Torso").transform;
+            _chest.SetParent(transform, worldPositionStays: false);
+            CreateShape(_chest, PrimitiveType.Capsule, new Vector3(0.05f, 0.06f, 0.05f), new Vector3(0f, 0.31f, 0f), _skinMat, "Neck");
+            CreateShape(_chest, PrimitiveType.Capsule, new Vector3(0.30f, 0.26f, 0.19f), new Vector3(0f, 0.05f, 0f), _shirtMat, "Trunk");
+            CreateShape(_chest, PrimitiveType.Sphere, new Vector3(0.13f, 0.13f, 0.13f), ShoulderOffsetR, _shirtMat, "ShoulderR");
+            CreateShape(_chest, PrimitiveType.Sphere, new Vector3(0.13f, 0.13f, 0.13f), ShoulderOffsetL, _shirtMat, "ShoulderL");
+
+            // 腕（袖）= 肩→手首を直結する cosmetic capsule。長さ・向きは Update で毎フレ更新。肘なし＝破綻しない
+            _armR = CreateShape(transform, PrimitiveType.Capsule, Vector3.one * 0.05f, Vector3.zero, _shirtMat, "ArmR");
+            _armL = CreateShape(transform, PrimitiveType.Capsule, Vector3.one * 0.05f, Vector3.zero, _shirtMat, "ArmL");
+            _armR.gameObject.SetActive(false);
+            _armL.gameObject.SetActive(false);
+        }
+
+        /// <summary>Resources に無ければ URP/Lit でランタイム生成する色マテリアル（共有・1回だけ）。</summary>
+        private static Material? GetOrCreateMat(string resourceName, Color color)
+        {
+            var mat = Resources.Load<Material>(resourceName);
+            if (mat != null) return mat;
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) return _avatarMat; // URP 不在の保険（通常起きない）
+            return new Material(shader) { color = color };
         }
 
         /// <summary>受信 pose をターゲットに記録。実際の追従は Update で平滑化して行う。</summary>
@@ -108,6 +162,29 @@ namespace TableDuoVr.Net
                 _target.TrackedL, HandSkeletonLayout.CapturedL);
             _right?.Tick(a, _target.WristPosR, _target.WristRotR, _target.BonesR,
                 _target.TrackedR, HandSkeletonLayout.CapturedR);
+
+            // 腕（袖）を肩→手首に張り直す。手が一度も出ていない間は隠す（片手モードの左手も自動で隠れる）
+            UpdateArm(_armR, ShoulderOffsetR, _right);
+            UpdateArm(_armL, ShoulderOffsetL, _left);
+        }
+
+        /// <summary>肩（胴ローカル offset）から手首（手 root のローカル位置）へ伸びる cosmetic な腕を更新。</summary>
+        private void UpdateArm(Transform? arm, Vector3 shoulderOffset, HandView? hand)
+        {
+            if (arm == null || _chest == null || hand == null) return;
+            bool show = hand.IsVisible;
+            if (arm.gameObject.activeSelf != show) arm.gameObject.SetActive(show);
+            if (!show) return;
+
+            // すべて avatar-root ローカル空間で計算（肩は胴 transform で回り、手首は手 root のローカル位置）
+            Vector3 shoulder = _chest.localPosition + _chest.localRotation * shoulderOffset;
+            Vector3 wrist = hand.RootLocalPos;
+            Vector3 dir = wrist - shoulder;
+            float len = dir.magnitude;
+            if (len < 1e-3f) return;
+            arm.localPosition = (shoulder + wrist) * 0.5f;
+            arm.localRotation = Quaternion.FromToRotation(Vector3.up, dir / len);
+            arm.localScale = new Vector3(0.05f, len * 0.5f, 0.05f); // capsule 既定高 2 → 全長 = len
         }
 
         private static Transform CreatePrimitive(Transform parent, PrimitiveType type, float scale,
@@ -122,6 +199,16 @@ namespace TableDuoVr.Net
             go.transform.SetParent(parent, worldPositionStays: false);
             go.transform.localScale = Vector3.one * scale;
             return go.transform;
+        }
+
+        /// <summary>非一様スケール + ローカル位置指定のプリミティブ（人型パーツ用）。</summary>
+        private static Transform CreateShape(Transform parent, PrimitiveType type, Vector3 scale,
+            Vector3 localPos, Material? mat, string name)
+        {
+            var t = CreatePrimitive(parent, type, 1f, name, mat);
+            t.localScale = scale;
+            t.localPosition = localPos;
+            return t;
         }
 
         /// <summary>
@@ -142,6 +229,12 @@ namespace TableDuoVr.Net
             private Transform?[]? _meshBones;
             // カプセル手（フォールバック）
             private Transform[]? _bones;
+
+            /// <summary>手 root のローカル位置（avatar-root 空間。腕の手首端に使う）。</summary>
+            public Vector3 RootLocalPos => _root.localPosition;
+
+            /// <summary>一度でもトラッキングされ表示中か（腕の表示ゲートに使う）。</summary>
+            public bool IsVisible => _root.gameObject.activeSelf;
 
             public HandView(Transform parent, string name, bool isRight)
             {

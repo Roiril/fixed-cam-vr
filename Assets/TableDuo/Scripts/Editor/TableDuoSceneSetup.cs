@@ -73,6 +73,14 @@ namespace TableDuoVr.EditorTools
                 "Universal Render Pipeline/Lit", new Color(0.55f, 0.75f, 0.95f));
             EnsureMaterial($"{ResourcesDir}/TableDuoHeadMarker.mat",
                 "Universal Render Pipeline/Unlit", new Color(1f, 0.9f, 0.3f));
+            // 簡易人型（人側フルアバター）の配色。研究中立な無個性トーン。
+            // 無ければ RemoteAvatarView がランタイムで同色を生成するので Setup 未実行でも出る
+            EnsureMaterial($"{ResourcesDir}/TableDuoSkin.mat",
+                "Universal Render Pipeline/Lit", new Color(0.86f, 0.69f, 0.56f));
+            EnsureMaterial($"{ResourcesDir}/TableDuoShirt.mat",
+                "Universal Render Pipeline/Lit", new Color(0.32f, 0.40f, 0.52f));
+            EnsureMaterial($"{ResourcesDir}/TableDuoEye.mat",
+                "Universal Render Pipeline/Lit", new Color(0.12f, 0.12f, 0.14f));
 
             var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
             floor.name = "Floor";
