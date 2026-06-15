@@ -27,12 +27,12 @@ namespace FixedCamVr.OvrBridge
         [SerializeField] private MonoBehaviour? hud = null;
 
         [Header("Zone calibration")]
-        [Tooltip("ZoneCalibrator（[Tracker] 上）。両グリップ長押しで校正モード切替、" +
-                 "校正中は通常のボタン操作を抑止して入力を転送する。")]
+        [Tooltip("ZoneCalibrator（[Tracker] 上）。両グリップ 3 秒長押しで校正モード切替、" +
+                 "校正中は通常のボタン操作を抑止して入力（レイ選択・ドラッグ・サイズ）を転送する。")]
         [SerializeField] private ZoneCalibrator? zoneCalibrator;
 
         [Tooltip("校正モード切替に必要な両グリップの長押し秒数。")]
-        [SerializeField, Min(0.2f)] private float calibToggleHoldSec = 1.0f;
+        [SerializeField, Min(0.2f)] private float calibToggleHoldSec = 3.0f;
 
         private bool _hudVisible = true;
         private float _gripHold;
@@ -66,13 +66,11 @@ namespace FixedCamVr.OvrBridge
                 {
                     zoneCalibrator.Feed(new ZoneCalibrator.CalibInput
                     {
-                        move = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch),
                         size = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch),
-                        nextZone = OVRInput.GetDown(OVRInput.Button.One),   // A (右)
-                        prevZone = OVRInput.GetDown(OVRInput.Button.Two),   // B (右)
+                        pick = OVRInput.GetDown(OVRInput.Button.One),       // A (右): レイ先を選択
+                        grab = OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger, OVRInput.Controller.RTouch) > 0.5f, // 右トリガ: ドラッグ
                         save = OVRInput.GetDown(OVRInput.Button.Three),     // X (左)
                         reset = OVRInput.GetDown(OVRInput.Button.Four),     // Y (左)
-                        fine = OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger, OVRInput.Controller.RTouch) > 0.5f,
                     });
                     return;
                 }

@@ -20,6 +20,7 @@ namespace FixedCamVr.Streaming.EditorTools
     {
         private const string MainScenePath = "Assets/Scenes/Main.unity";
         private const string CenterEyePath = "OVRCameraRig/TrackingSpace/CenterEyeAnchor";
+        private const string RightHandPath = "OVRCameraRig/TrackingSpace/RightHandAnchor";
         private const string LogicGroupName = "=== Logic ===";
         private const string StreamingName = "[Streaming]";
         private const string ZonesName = "[Zones]";
@@ -126,11 +127,16 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetBool(trackerSo, "logChanges", true);
             trackerSo.ApplyModifiedPropertiesWithoutUndo();
 
-            // 2.5. ZoneCalibrator（Quest コントローラでゾーンを実地調整。両グリップ長押しで起動）
+            // 2.5. ZoneCalibrator（Quest コントローラでゾーンを実地調整。両グリップ 3 秒長押しで起動、
+            //       右コントローラから床へレイ → A=選択 / 右トリガ握り=床ドラッグ / 右スティック=サイズ）
+            var rightHand = GameObject.Find(RightHandPath);
+            if (rightHand == null)
+                Debug.LogWarning($"[MainDemoSceneSetup] '{RightHandPath}' が見つかりません。レイ起点が headTransform にフォールバックします。");
             var calibrator = trackerGo.AddComponent<ZoneCalibrator>();
             var calibSo = new SerializedObject(calibrator);
             SetPlayerZoneArray(calibSo, "zones", new[] { zoneA, zoneB, zoneC, zoneC2 });
             TrySetObjectRef(calibSo, "headTransform", centerEye.transform);
+            if (rightHand != null) TrySetObjectRef(calibSo, "rightHandTransform", rightHand.transform);
             calibSo.ApplyModifiedPropertiesWithoutUndo();
 
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
@@ -145,6 +151,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 var bridgeSo = new SerializedObject(ovrBridge);
                 if (hud != null) TrySetObjectRef(bridgeSo, "hud", hud);
                 TrySetObjectRef(bridgeSo, "zoneCalibrator", calibrator);
+                TrySetFloat(bridgeSo, "calibToggleHoldSec", 3.0f); // 両グリップ 3 秒長押しで校正トグル
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -153,7 +160,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（周回 A南/B東/C北/C西・推測配置、実測校正待ち） / Tracker / ZoneCalibrator（両グリップ長押しで校正） / StartupFader / DebugHud / OvrBridge 連携。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（周回 A南/B東/C北/C西・推測配置、実測校正待ち） / Tracker / ZoneCalibrator（両グリップ 3 秒長押しで校正、右レイ A=選択/トリガ=ドラッグ/右スティック=サイズ） / StartupFader / DebugHud / OvrBridge 連携。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }

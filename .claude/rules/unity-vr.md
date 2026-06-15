@@ -106,22 +106,25 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 `MainDemoSceneSetup.cs` の値を上書きして `Setup Main Demo Scene` を再実行（冪等）。
 再実行は [Tracker] を作り直すため、**Screen の ShowControlClient.zoneTrackerToDisable を再アサイン**すること。
 
-### 実機でのゾーン校正（ZoneCalibrator、2026-06-12 追加）
+### 実機でのゾーン校正（ZoneCalibrator、2026-06-12 追加 / 2026-06-16 レイ操作化）
 
-HMD 内でコントローラだけでゾーンを実地調整できる（[`ZoneCalibrator`](../Assets/Scripts/Tracking/ZoneCalibrator.cs)、[Tracker] 上、`Setup Main Demo Scene` が自動配線）：
+HMD 内でコントローラだけでゾーンを実地調整できる（[`ZoneCalibrator`](../Assets/Scripts/Tracking/ZoneCalibrator.cs)、[Tracker] 上、`Setup Main Demo Scene` が自動配線）。**右コントローラから床へレイを飛ばし、レイ先（床ヒット点）を基準に操作する**：
 
 | 操作 | 機能 |
 |---|---|
-| **両グリップ 1 秒長押し** | 校正モード ON/OFF（OvrControllerBridge が検知） |
-| A / B（右） | 対象ゾーン選択（選択中はブリンク） |
-| 左スティック | ゾーン中心を XZ 移動 |
-| 右スティック | halfExtents を XZ 伸縮（下限 0.15m） |
-| 右トリガ押下中 | 微調整（速度 1/5） |
+| **両グリップ 3 秒長押し** | 校正モード ON/OFF（OvrControllerBridge が検知） |
+| A（右） | レイ先（床ヒット点）にあるゾーンを選択（選択中はブリンク／指している間はハイライト） |
+| 右トリガ握り中 | 選択ゾーンをレイ先へ**床ドラッグ**（掴んだ瞬間の相対位置を維持して追従） |
+| 右スティック 横倒し | halfExtents.x（横幅）を伸縮（下限 0.15m） |
+| 右スティック 縦倒し | halfExtents.z（奥行き）を伸縮（下限 0.15m） |
 | X（左） | **保存** → `persistentDataPath/zone_calibration.json`（以後の起動で自動適用） |
 | Y（左） | authored 値へリセット + 保存ファイル削除 |
 
+- レイ起点は `OVRCameraRig/TrackingSpace/RightHandAnchor`（SerializeField `rightHandTransform`、null なら headTransform にフォールバック）。床平面 y=0 との交点をヒット点とする（上向き／水平はヒットなし＝赤レイ表示）
+- **レイ表示は校正モード限定**（viz は SetActive で生成・破棄）。水色＝床ヒットあり、橙＝床に当たっていない、ドット緑＝ドラッグ中
+
 - **起動位置基準化（recenterOnStart、既定 ON）**: トラッキング確立の 1 秒後、起動時の HMD 位置（XZ）がレイアウト原点（=コース中心）になるようゾーン全体を平行移動する。**回転は合わせない**（AABB のため。コースの向きはガーディアン空間基準のまま）。保存 JSON は原点相対で持つので、セッション毎に立ち位置が変わっても保存レイアウトの形は崩れない
-- 校正中は床にゾーンのフットプリントをカメラ別色で表示（緑=cam0 / 青=cam1 / 橙=cam2、白菱形=HMD 位置）。通常のボタン操作（カメラ切替・HUD）は抑止される
+- 校正中は床にゾーンのフットプリントをカメラ別色で表示（緑=cam0 / 青=cam1 / 橙=cam2、白菱形=HMD 位置、水色レイ＋ドット=コントローラの指し先）。通常のボタン操作（カメラ切替・HUD）は抑止される
 - 保存先は**端末ローカル**（Quest なら `/sdcard/Android/data/com.roiril.mawarimi/files/`）。シーンの authored 値は変わらないので、恒久化したい値が決まったら `MainDemoSceneSetup.cs` に反映する
 - 入力は OvrBridge → `ZoneCalibrator.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）
 
