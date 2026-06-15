@@ -59,6 +59,26 @@ git cherry-pick <SHA1> <SHA2> <SHA3> ...
 - `Packages/packages-lock.json`（manage_packages で追加した時）
 - `ProjectSettings/EditorBuildSettings.asset`（Build Settings 整理時、変更内容を明示的に説明）
 
+## 並列作業時は pathspec コミット必須（index 共有事故の防止）
+
+**同一 working copy で並列エージェントが同時に git を触ると index（ステージング領域）は 1 つで共有される。**
+`git add <自分のファイル>` で個別指定しても、相手のエージェントが同時に `git add` を走らせると、
+**相手のステージ済みファイルが自分の `git commit` に混入する**（2026-06-15 実害：TableDuo の commit が
+廻リ視側の未コミット作業 `ZoneCalibrator.cs` 等を巻き込んだ）。
+
+→ **対策：コミットは必ず明示 pathspec で行う。**
+
+```bash
+git commit -F <msgfile> -- <自分のファイルを列挙>
+```
+
+`git commit -- <paths>` は index の状態に依存せず**列挙したパスだけ**を確定するので、相手の `add` が
+混ざらない（並列前提のこのプロジェクトでは index 状態を信用しない）。`git add` + 無指定 `git commit` は
+単独作業時のみ。やり直しが要る時は `git reset --soft HEAD~1` → pathspec で再コミット（履歴未 push なら安全）。
+
+コミットメッセージに全角コロンや改行を含むので、`-m` の直書きより **メッセージファイル + `-F`** が安全
+（Bash で `@'...'@` は here-string にならず `@` が混入する。PowerShell の here-string と混同しない）。
+
 ## ドキュメント同期チェック（コミット前）
 
 構造を変えるコミット（ディレクトリ新設 / 標準ツール移行 / サブプロジェクト追加 / メニュー追加 / シーン構成変更）では、**同じコミットで参照ドキュメントもスイープする**：
