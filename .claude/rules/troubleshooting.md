@@ -71,5 +71,6 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 | `adb-logcat` | 実機 Quest / Pixel のログ取得（`unity` / `xr` / `streamer` / `crash` フィルタ） |
 | `unity-mcp` | MCP 接続診断と再接続 |
 | `streaming-offline-test` | スマホ無しで Unity の MJPEG パイプライン検証 |
+| `quest-build` | 廻リ視 / TableDuo の APK を Quest にビルド & インストール |
 | `streamer-android-build` | 姉妹リポ APK ビルド & 実機インストール |
 | `unity-prefab-fields` | prefab YAML / SerializeField 不整合の修正 |
