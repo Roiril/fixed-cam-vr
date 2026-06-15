@@ -45,5 +45,11 @@ namespace FixedCamVr.Streaming
         public long totalFrames;
         public long totalBytes;
         public float fps;
+
+        /// <summary>配信済みフレーム数。<see cref="totalFrames"/> との差が広がる時は HTTP ワーカ詰まり。</summary>
+        public long sentFrames;
+
+        /// <summary>最新フレームの経過時間 (ms)。大きい時はカメラ stall（配信側で映像が更新されていない）。</summary>
+        public long latestFrameAgeMs;
     }
 }
