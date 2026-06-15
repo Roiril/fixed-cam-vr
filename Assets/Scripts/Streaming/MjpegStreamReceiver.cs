@@ -39,6 +39,11 @@ namespace FixedCamVr.Streaming
             }
         }
 
+        // フレームバッファ／chunk サイズの上限。境界が二度と来ない・巨大 chunk を吐く
+        // 不正ストリームで acc が無制限に伸びて OOM/クラッシュするのを防ぐ。
+        // 超過したら例外 → backoff 再接続で復旧する（実フレームは ~100KB なので 16MB は十分余裕）。
+        private const int MaxFrameBytes = 16 * 1024 * 1024;
+
         private readonly string _url;
         private readonly string? _basicAuthToken;
         private readonly TimeSpan _connectTimeout;
@@ -361,7 +366,13 @@ namespace FixedCamVr.Streaming
                 string s = sb.ToString();
                 int semi = s.IndexOf(';');
                 if (semi >= 0) s = s.Substring(0, semi);
-                return int.Parse(s.Trim(), System.Globalization.NumberStyles.HexNumber);
+                // long で受けてから範囲検証する。int.Parse(HexNumber) は "80000000" を
+                // 負値に丸めてしまい、負の _bytesLeftInChunk → Math.Min が負 → ReadAsync 例外になる。
+                if (!long.TryParse(s.Trim(), System.Globalization.NumberStyles.HexNumber,
+                        System.Globalization.CultureInfo.InvariantCulture, out long size)
+                    || size < 0 || size > MaxFrameBytes)
+                    throw new IOException($"invalid chunk size: '{s.Trim()}'");
+                return (int)size;
             }
 
             private async Task ReadCrlfAsync(CancellationToken ct)
@@ -404,6 +415,9 @@ namespace FixedCamVr.Streaming
                 if (accLen + read > acc.Length)
                 {
                     int newSize = Math.Max(acc.Length * 2, accLen + read);
+                    if (newSize > MaxFrameBytes)
+                        throw new IOException(
+                            $"MJPEG accumulator exceeded {MaxFrameBytes} bytes (boundary not found / corrupt stream) — forcing reconnect");
                     Array.Resize(ref acc, newSize);
                 }
                 Buffer.BlockCopy(buf, 0, acc, accLen, read);

@@ -30,13 +30,25 @@ namespace FixedCamVr.Fx.RendererFeature
         private static readonly int IdVignette = Shader.PropertyToID("_VignetteIntensity");
         private static readonly int IdTime = Shader.PropertyToID("_Time01");
 
-        private void Update()
+        private void OnEnable() => PushStaticParams();
+
+        // インスペクタ変更時に即反映（Editor のみ）。
+        private void OnValidate() => PushStaticParams();
+
+        // スキャンライン強度等は静的。毎フレーム書くとマテリアルを無駄に dirty 化するので、
+        // 変化時（OnEnable / OnValidate）だけ push し、Update では時間項だけ更新する。
+        private void PushStaticParams()
         {
             if (targetMaterial == null) return;
             targetMaterial.SetFloat(IdScanInt, scanlineIntensity);
             targetMaterial.SetFloat(IdScanCount, scanlineCount);
             targetMaterial.SetFloat(IdGrain, grainIntensity);
             targetMaterial.SetFloat(IdVignette, vignetteIntensity);
+        }
+
+        private void Update()
+        {
+            if (targetMaterial == null) return;
             targetMaterial.SetFloat(IdTime, Time.time);
         }
     }

@@ -26,6 +26,10 @@ namespace FixedCamVr.Streaming
             Timeout = TimeSpan.FromSeconds(5)
         };
 
+        // 401 はフェイルオープン（null 返し）だが、原因が分からず黙って /info /health が
+        // 効かない状態になりやすい。最初の 1 回だけ認証ヒント付きで警告する。
+        private static bool _logged401;
+
         public static async Task<StreamMetadata?> FetchInfoAsync(string url, int timeoutSec = 3, string? basicAuthToken = null)
         {
             string? json = await GetTextAsync(url, timeoutSec, basicAuthToken);
@@ -51,7 +55,16 @@ namespace FixedCamVr.Streaming
                 if (basicAuthToken != null)
                     req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", basicAuthToken);
                 using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token);
-                if (!resp.IsSuccessStatusCode) return null;
+                if (!resp.IsSuccessStatusCode)
+                {
+                    if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized && !_logged401)
+                    {
+                        _logged401 = true;
+                        Debug.LogWarning($"[StreamMetadataFetcher] GET {url} -> 401 Unauthorized。" +
+                                         "CameraSource の username/password を確認（IP Camera Lite 既定 admin/admin）。/info /health は無効化して続行。");
+                    }
+                    return null;
+                }
                 return await resp.Content.ReadAsStringAsync();
             }
             catch (TaskCanceledException) { return null; }

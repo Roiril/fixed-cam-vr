@@ -99,7 +99,31 @@ namespace FixedCamVr.Streaming
 
         public CameraStream? GetActive() => Get(_activeIndex);
 
+        /// <summary>
+        /// 絶対指定でアクティブカメラを切り替える（ゾーン連動・オペレータ卓など）。
+        /// 範囲外はラップせず clamp + 警告する。ラップは「カメラ番号や cameraIndex の
+        /// ズレで無言で別カメラに切り替わる」事故（実害）を招くため、絶対指定では禁じる。
+        /// 巡回切替（コントローラの Next/Prev）が欲しい場合は <see cref="Next"/>/<see cref="Prev"/> を使う。
+        /// </summary>
         public void SetActive(int index)
+        {
+            if (_streams.Length == 0) return;
+            if (index < 0 || index >= _streams.Length)
+            {
+                Debug.LogWarning($"[CameraStreamRegistry] SetActive({index}) は範囲 [0,{_streams.Length}) 外。" +
+                                 "clamp します（cameraIndex / show.json のカメラ並びと sources の不一致を疑え）。");
+                index = Mathf.Clamp(index, 0, _streams.Length - 1);
+            }
+            if (index == _activeIndex) return;
+            _activeIndex = index;
+            ActiveChanged?.Invoke(_activeIndex);
+        }
+
+        public void Next() => SetActiveWrapped(_activeIndex + 1);
+        public void Prev() => SetActiveWrapped(_activeIndex - 1);
+
+        // 巡回切替用。Next/Prev は端で反対側へラップするのが期待挙動。
+        private void SetActiveWrapped(int index)
         {
             if (_streams.Length == 0) return;
             int wrapped = WrapIndex(index, _streams.Length);
@@ -107,9 +131,6 @@ namespace FixedCamVr.Streaming
             _activeIndex = wrapped;
             ActiveChanged?.Invoke(_activeIndex);
         }
-
-        public void Next() => SetActive(_activeIndex + 1);
-        public void Prev() => SetActive(_activeIndex - 1);
 
         /// <summary>負値を含めた wrap-around。count==0 では 0 を返す。</summary>
         public static int WrapIndex(int index, int count)
