@@ -101,3 +101,8 @@ T1 → T4 → T2 → T3 → T5 → T6 → T7（L0 で T1/T4 を検証 → L1 で
 - 人側の自分の胴体（一人称）表示
 - リプレイの音声同期実運用（クラップ mark で校正）
 - パイロット本番（所有者が手役を一度経験 → プロトコル凍結）
+
+### 2026-06-15 追記2: 見た目修正（テーブル配置・白い手メッシュ・診断ログ）
+- **テーブル配置**: Setup が `WorldBounds(table)` で天板の実高(topY)・XZ 範囲を測り、小物/カード/ランプをその上に接地・範囲内へ。maxWidth で天板が縮む（0.7→約0.5m）ため固定 Y のハードコードは禁止。数値検証済み（apple/card 底面=天板）
+- **リモートの手をメッシュ化**: `RemoteHandMeshProvider`（Systems）が Meta の `OVRCustomHandPrefab_L/R` とローカル手と同じ白マテリアルを供給。`RemoteAvatarView.HandView.TryBuildMeshHand()` が OVRHand/OVRCustomSkeleton/Animator を剥がし SkinnedMeshRenderer + CustomBones だけ残して同期 bone(localRotation, BoneId 順)で駆動。供給不在時はカプセル手にフォールバック。Net asmdef に Oculus.VR 参照追加。**実機装着での見た目は未検証**（bone 向き/手首オフセットの補正が要る可能性）
+- **診断ログ**: `HandPoseSampler.logDiagnostics`（既定 false）で `[TDV-DIAG]`（OVRHand tracked/valid/conf 等）1Hz 出力。手トラッキング不調の切り分け用

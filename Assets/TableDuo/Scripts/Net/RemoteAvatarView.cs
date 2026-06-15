@@ -71,8 +71,8 @@ namespace TableDuoVr.Net
                 _chest = CreatePrimitive(transform, PrimitiveType.Cube, 1f, "Chest", _avatarMat);
                 _chest.localScale = new Vector3(0.34f, 0.42f, 0.16f);
             }
-            _left = new HandView(transform, "HandL");
-            _right = new HandView(transform, "HandR");
+            _left = new HandView(transform, "HandL", isRight: false);
+            _right = new HandView(transform, "HandR", isRight: true);
         }
 
         /// <summary>受信 pose をターゲットに記録。実際の追従は Update で平滑化して行う。</summary>
@@ -124,16 +124,26 @@ namespace TableDuoVr.Net
             return go.transform;
         }
 
-        /// <summary>片手の描画。bone 階層は layout が手に入った時点で遅延構築。</summary>
+        /// <summary>
+        /// 片手の描画。Meta の白い手メッシュ（OVRCustomHandPrefab）を同期 bone で駆動するのを第一選択、
+        /// 供給が無ければ関節を骨で繋ぐカプセル手にフォールバック。どちらも layout/プレハブが揃った時点で遅延構築。
+        /// </summary>
         private sealed class HandView
         {
             private readonly Transform _root;
             private readonly Transform _wristProxy;
-            private Transform[]? _bones;
+            private readonly bool _isRight;
             private bool _everTracked;
+            private bool _built;
 
-            public HandView(Transform parent, string name)
+            // メッシュ手: OVRCustomSkeleton の CustomBones（BoneId 順）を同期 bone で回す
+            private Transform[]? _meshBones;
+            // カプセル手（フォールバック）
+            private Transform[]? _bones;
+
+            public HandView(Transform parent, string name, bool isRight)
             {
+                _isRight = isRight;
                 _root = new GameObject(name).transform;
                 _root.SetParent(parent, worldPositionStays: false);
                 _root.gameObject.SetActive(false); // 一度トラッキングされるまで非表示（片手モードの左手対策）
@@ -158,18 +168,78 @@ namespace TableDuoVr.Net
                 _root.localPosition = Vector3.Lerp(_root.localPosition, wristPos, smooth);
                 _root.localRotation = Quaternion.Slerp(_root.localRotation, wristRot, smooth);
 
-                if (_bones == null && layout != null)
+                if (!_built)
                 {
-                    BuildBones(layout);
-                    _wristProxy.gameObject.SetActive(false);
+                    if (TryBuildMeshHand())
+                    {
+                        _built = true;
+                        _wristProxy.gameObject.SetActive(false);
+                    }
+                    else if (layout != null) // メッシュ供給が無い → カプセル（layout 待ち）
+                    {
+                        BuildBones(layout);
+                        _built = true;
+                        _wristProxy.gameObject.SetActive(false);
+                    }
                 }
-                if (_bones == null || layout == null) return;
 
-                int n = layout.BoneCount;
-                for (int i = 0; i < n; i++)
+                if (_meshBones != null)
+                {
+                    int n = Mathf.Min(boneRots.Length, _meshBones.Length);
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (_meshBones[i] != null)
+                        {
+                            _meshBones[i].localRotation = Quaternion.Slerp(_meshBones[i].localRotation, boneRots[i], smooth);
+                        }
+                    }
+                    return;
+                }
+
+                if (_bones == null || layout == null) return;
+                int m = layout.BoneCount;
+                for (int i = 0; i < m; i++)
                 {
                     _bones[i].localRotation = Quaternion.Slerp(_bones[i].localRotation, boneRots[i], smooth);
                 }
+            }
+
+            /// <summary>
+            /// Meta の白い手メッシュ（OVRCustomHandPrefab）をインスタンス化し、駆動系（OVRHand/OVRCustomSkeleton/
+            /// Animator）を剥がして SkinnedMeshRenderer + bone Transform だけ残す。bone は同期データで回す。
+            /// OVRCustomSkeleton.CustomBones の index = BoneId 順 = 同期 boneRots の index。供給が無ければ false。
+            /// </summary>
+            private bool TryBuildMeshHand()
+            {
+                var provider = RemoteHandMeshProvider.Instance;
+                var prefab = provider != null ? provider.GetPrefab(_isRight) : null;
+                if (provider == null || prefab == null) return false;
+
+                var inst = Object.Instantiate(prefab, _root, worldPositionStays: false);
+                inst.transform.localPosition = Vector3.zero;
+                inst.transform.localRotation = Quaternion.identity;
+                inst.SetActive(true);
+
+                var skel = inst.GetComponent<OVRCustomSkeleton>();
+                if (skel == null) { Object.Destroy(inst); return false; }
+                var custom = skel.CustomBones;
+                _meshBones = new Transform[custom.Count];
+                for (int i = 0; i < custom.Count; i++) _meshBones[i] = custom[i];
+
+                // live トラッキング駆動を剥がす（このリモート手を相手のローカル手で上書きさせない）
+                foreach (var s in inst.GetComponents<OVRSkeleton>()) Object.Destroy(s); // OVRCustomSkeleton 含む
+                foreach (var h in inst.GetComponents<OVRHand>()) Object.Destroy(h);
+                var anim = inst.GetComponent<Animator>();
+                if (anim != null) Object.Destroy(anim);
+
+                var smr = inst.GetComponentInChildren<SkinnedMeshRenderer>(true);
+                if (smr != null)
+                {
+                    smr.enabled = true;
+                    smr.updateWhenOffscreen = true;
+                    if (provider.HandMaterial != null) smr.sharedMaterial = provider.HandMaterial;
+                }
+                return true;
             }
 
             private void BuildBones(HandSkeletonLayout layout)

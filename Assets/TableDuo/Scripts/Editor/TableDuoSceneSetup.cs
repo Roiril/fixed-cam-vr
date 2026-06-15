@@ -94,14 +94,25 @@ namespace TableDuoVr.EditorTools
                 table.GetComponent<Renderer>().sharedMaterial = tableMat;
             }
 
-            // 椅子（見た目のみ・席アンカーとは独立）と卓上ランプ
+            // テーブル天板の実測（maxWidth で縮むと天板高が 0.7 未満になるので実バウンディングを使う）。
+            // 小物・カードはこの天板の上 (y=topY) かつ天板の XZ 範囲内に収める。
+            Bounds tb = WorldBounds(table);
+            float topY = tb.max.y;
+            float cx = tb.center.x, cz = tb.center.z;
+            float hx = tb.extents.x, hz = tb.extents.z;
+            const float edge = 0.07f; // 縁マージン（はみ出し防止）
+
+            // 椅子（見た目のみ・席アンカーとは独立・床に置く）
             // Kenney chair.fbx は -z が正面（180° が「テーブルへ向く」）
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
                 root.transform, "Chair0", new Vector3(0f, 0f, -0.78f), 180f, targetHeight: 0.85f, maxWidth: 0.55f);
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
                 root.transform, "Chair1", new Vector3(0f, 0f, 0.78f), 0f, targetHeight: 0.85f, maxWidth: 0.55f);
+            // 卓上ランプ：天板の奥の角に乗せる
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/lampRoundTable.fbx",
-                root.transform, "TableLamp", new Vector3(-0.5f, 0.7f, -0.22f), 0f, targetHeight: 0.25f, maxWidth: 0.18f);
+                root.transform, "TableLamp",
+                new Vector3(cx - (hx - 0.14f), topY, cz - (hz - 0.14f)), 0f,
+                targetHeight: 0.25f, maxWidth: 0.18f);
 
             // 席 = 初期目線アンカー。**ローカル原点が目の位置**（EyeLevel なので頭が席に乗る）、
             // forward(+Z) が視線方向。Y を座位の目の高さに置く。Scene ビューで席を動かして調整可能
@@ -117,10 +128,12 @@ namespace TableDuoVr.EditorTools
             var props = new GameObject("Props");
             props.transform.SetParent(root.transform, false);
             string[] foods = { "apple", "banana", "burger", "carrot", "cake" };
-            float[] xs = { -0.4f, -0.2f, 0f, 0.2f, 0.4f };
+            // 天板の手前寄りに横一列。天板の実 X 範囲に均等配置（はみ出し防止）
+            float foodSpan = Mathf.Max(0f, hx - edge - 0.06f);
             for (int i = 0; i < foods.Length; i++)
             {
-                var pos = new Vector3(xs[i], 0.71f, 0f);
+                float fx = foods.Length > 1 ? Mathf.Lerp(-foodSpan, foodSpan, i / (float)(foods.Length - 1)) : 0f;
+                var pos = new Vector3(cx + fx, topY, cz + 0.12f); // y=天板（接地）/ 奥寄り
                 var model = InstantiateModelFitHeight(
                     $"Assets/ThirdParty/Kenney/Food/{foods[i]}.fbx", props.transform,
                     $"Prop_{foods[i]}", pos, 0f, targetHeight: 0.09f);
@@ -136,8 +149,8 @@ namespace TableDuoVr.EditorTools
                 model.AddComponent<Grabbable>();
             }
 
-            // 絵カードデッキ（RQ2: カード照準分析用。片面絵柄 + 共通裏面）
-            CreateCardDeck(root.transform);
+            // 絵カードデッキ（RQ2: カード照準分析用。片面絵柄 + 共通裏面）。天板の手前側に乗せる
+            CreateCardDeck(root.transform, topY, tb);
 
             // 協調配置課題の目標パネル（手役ローカルのみ表示）
             CreatePatternPanel(root.transform);
@@ -207,6 +220,17 @@ namespace TableDuoVr.EditorTools
             fake.enabled = false; // L0 検証時に手動で ON
 
             systems.AddComponent<ConnectionManager>();
+
+            // リモートの手を Meta の白い手メッシュで描くための供給（ローカル手と同じ見た目）。
+            // OVRCustomHandPrefab（静的メッシュ + CustomBones）を同期 bone で駆動する（RemoteAvatarView）
+            var meshProvider = systems.AddComponent<RemoteHandMeshProvider>();
+            var mpSo = new SerializedObject(meshProvider);
+            SetRef(mpSo, "leftHandPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Packages/com.meta.xr.sdk.core/Prefabs/OVRCustomHandPrefab_L.prefab"));
+            SetRef(mpSo, "rightHandPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Packages/com.meta.xr.sdk.core/Prefabs/OVRCustomHandPrefab_R.prefab"));
+            SetRef(mpSo, "handMaterial", handMat); // ローカル手と同じ URP 白マテリアル
+            mpSo.ApplyModifiedPropertiesWithoutUndo();
 
             // 調査ロガー（ホストのみ稼働）+ フェーズマーク受付 + リプレイ全記録
             var sessionLogger = systems.AddComponent<SessionLogger>();
@@ -299,19 +323,32 @@ namespace TableDuoVr.EditorTools
             return b;
         }
 
+        /// <summary>GameObject 配下の全 Renderer のワールドバウンディング。Renderer 無しは中心ゼロ。</summary>
+        private static Bounds WorldBounds(GameObject? go)
+        {
+            if (go == null) return new Bounds(Vector3.zero, Vector3.zero);
+            var rs = go.GetComponentsInChildren<Renderer>();
+            return rs.Length > 0 ? CalcBounds(rs) : new Bounds(go.transform.position, Vector3.zero);
+        }
+
         private static readonly string[] CardIcons =
         {
             "home", "phone", "gamepad", "video", "star", "trophy",
             "wrench", "gear", "shoppingCart", "mouse", "target", "trashcan",
         };
 
-        /// <summary>絵カード 12 枚を人役（席0）寄りのテーブル端に 2 列で並べる。</summary>
-        private static void CreateCardDeck(Transform root)
+        /// <summary>絵カード 12 枚をテーブル天板の手前側に 2 列で乗せる（天板高 topY・範囲 tb 内）。</summary>
+        private static void CreateCardDeck(Transform root, float topY, Bounds tb)
         {
             var deck = new GameObject("Cards");
             deck.transform.SetParent(root, false);
             var backMat = TableDuoStudyAssets.EnsureCardBackMaterial();
             var bodyMat = AssetDatabase.LoadAssetAtPath<Material>($"{MaterialDir}/TableDuoFloor.mat");
+
+            const int cols = 6;
+            float colSpan = Mathf.Min(0.45f, tb.extents.x - 0.07f - 0.06f); // 天板 X 内・カード幅考慮
+            float frontLimit = tb.center.z - (tb.extents.z - 0.07f - 0.08f); // 手前縁の内側
+            const float cardHalfThick = 0.002f;
 
             for (int i = 0; i < CardIcons.Length; i++)
             {
@@ -319,9 +356,11 @@ namespace TableDuoVr.EditorTools
                 var faceMat = TableDuoStudyAssets.EnsureCardFaceMaterial(
                     $"Assets/ThirdParty/Kenney/Icons/{id}.png", id);
 
-                int row = i / 6;
-                int col = i % 6;
-                var pos = new Vector3(-0.45f + col * 0.18f, 0.706f, -0.16f - row * 0.16f);
+                int row = i / cols;
+                int col = i % cols;
+                float fx = cols > 1 ? Mathf.Lerp(-colSpan, colSpan, col / (float)(cols - 1)) : 0f;
+                float fz = Mathf.Max(tb.center.z - 0.04f - row * 0.16f, frontLimit);
+                var pos = new Vector3(tb.center.x + fx, topY + cardHalfThick, fz);
 
                 var card = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 card.name = $"Card_{id}";

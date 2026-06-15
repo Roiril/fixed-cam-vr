@@ -3,6 +3,7 @@
     "rootNamespace": "TableDuoVr.Net",
     "references": [
         "TableDuoVr.Hands",
+        "Oculus.VR",
         "Unity.Netcode.Runtime",
         "Unity.Netcode.Transports.UTP",
         "Unity.Networking.Transport",

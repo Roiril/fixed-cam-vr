@@ -15,7 +15,8 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **パッケージ `com.roiril.tableduo`**。ビルドは Unity メニュー `Tools/FixedCamVr/Build TableDuo APK`→`Builds/tableduo.apk`（[[mcp_unity_setup]] / quest-build スキル）。旧 `manage_build` 版（`com.UnityTechnologies...urpblank`）は使わない
 - 起動は adb intent: `-e tdv_mode host|client -e tdv_role full|hand [-e tdv_ip <hostIP>]`。役割で席・アバター種別・片手モードが決まる（host/client と role は独立）
 - 目線: **EyeLevel + 席=目線アンカー（[TableDuo]/Seats/Seat0,1, y=1.15）**。FloorLevel にすると身長で目線高が変わるので不可。`Preview Eye - Seat0/1` メニュー＋SeatEyeGizmo で調整
-- リモートの手＝関節を骨（カプセル）で繋いだ手の形（旧バラバラの点を 2026-06-15 修正）
+- リモートの手＝**Meta の白い手メッシュ**（OVRCustomHandPrefab を同期 bone で駆動。ローカル手と同じ見た目）。供給は `RemoteHandMeshProvider`（Systems・Setup が L/R プレハブ＋白マテリアルを配線）、プレハブ不在時はカプセル手にフォールバック。**実機での見た目は要装着検証**（bone 向き補正が要るかも）
+- テーブル上の小物・カードは **Setup が天板の実バウンディング（高さ・XZ 範囲）を測って接地配置**（maxWidth で天板が 0.7→0.5 に縮むので固定 Y だと浮く。固定値ハードコード禁止）
 
 ## 既知の罠
 - **ビルド直前に `Setup TableDuo Scene` を再実行**してクリーン状態にする。L0/リプレイ検証で OVRCameraRig 無効・DebugCamera/ReplayViewer 有効・FakeHandDriver 有効のまま保存→ビルドすると実機で VR にならず平面表示（2 回踏んだ → [[unity_pitfalls]] 同種）
