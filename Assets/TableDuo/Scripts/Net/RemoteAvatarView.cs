@@ -19,8 +19,8 @@ namespace TableDuoVr.Net
         private const float SmoothK = 20f;
 
         // 肩の付け根（胴ローカル）。腕（袖）はここから手首へ伸びる。+X=アバターの右手側
-        private static readonly Vector3 ShoulderOffsetR = new(0.16f, 0.20f, 0f);
-        private static readonly Vector3 ShoulderOffsetL = new(-0.16f, 0.20f, 0f);
+        private static readonly Vector3 ShoulderOffsetR = new(0.17f, 0.24f, 0f);
+        private static readonly Vector3 ShoulderOffsetL = new(-0.17f, 0.24f, 0f);
 
         private Transform? _head;
         private Transform? _chest;
@@ -100,17 +100,17 @@ namespace TableDuoVr.Net
             // 頭グループ（位置・向きは Update で頭 pose 追従）。子に頭蓋・目を持たせ、向きが視線キューになる
             _head = new GameObject("Head").transform;
             _head.SetParent(transform, worldPositionStays: false);
-            CreateShape(_head, PrimitiveType.Sphere, new Vector3(0.19f, 0.21f, 0.19f), Vector3.zero, _skinMat, "Skull");
-            CreateShape(_head, PrimitiveType.Sphere, new Vector3(0.035f, 0.035f, 0.035f), new Vector3(0.045f, 0.02f, 0.092f), _eyeMat, "EyeR");
-            CreateShape(_head, PrimitiveType.Sphere, new Vector3(0.035f, 0.035f, 0.035f), new Vector3(-0.045f, 0.02f, 0.092f), _eyeMat, "EyeL");
+            CreateShape(_head, PrimitiveType.Sphere, new Vector3(0.17f, 0.20f, 0.17f), Vector3.zero, _skinMat, "Skull");
+            CreateShape(_head, PrimitiveType.Sphere, new Vector3(0.032f, 0.032f, 0.032f), new Vector3(0.040f, 0.015f, 0.082f), _eyeMat, "EyeR");
+            CreateShape(_head, PrimitiveType.Sphere, new Vector3(0.032f, 0.032f, 0.032f), new Vector3(-0.040f, 0.015f, 0.082f), _eyeMat, "EyeL");
 
-            // 胴グループ（頭へ緩く追従）。子に首・テーパー胴・肩
+            // 胴グループ（頭へ緩く追従）。子に首・箱型の胴・丸めた肩（シンプル人間体型）
             _chest = new GameObject("Torso").transform;
             _chest.SetParent(transform, worldPositionStays: false);
-            CreateShape(_chest, PrimitiveType.Capsule, new Vector3(0.05f, 0.06f, 0.05f), new Vector3(0f, 0.31f, 0f), _skinMat, "Neck");
-            CreateShape(_chest, PrimitiveType.Capsule, new Vector3(0.30f, 0.26f, 0.19f), new Vector3(0f, 0.05f, 0f), _shirtMat, "Trunk");
-            CreateShape(_chest, PrimitiveType.Sphere, new Vector3(0.13f, 0.13f, 0.13f), ShoulderOffsetR, _shirtMat, "ShoulderR");
-            CreateShape(_chest, PrimitiveType.Sphere, new Vector3(0.13f, 0.13f, 0.13f), ShoulderOffsetL, _shirtMat, "ShoulderL");
+            CreateShape(_chest, PrimitiveType.Cylinder, new Vector3(0.075f, 0.05f, 0.075f), new Vector3(0f, 0.27f, 0f), _skinMat, "Neck");
+            CreateShape(_chest, PrimitiveType.Cube, new Vector3(0.34f, 0.46f, 0.20f), new Vector3(0f, 0.02f, 0f), _shirtMat, "Trunk");
+            CreateShape(_chest, PrimitiveType.Sphere, new Vector3(0.17f, 0.16f, 0.18f), ShoulderOffsetR, _shirtMat, "ShoulderR");
+            CreateShape(_chest, PrimitiveType.Sphere, new Vector3(0.17f, 0.16f, 0.18f), ShoulderOffsetL, _shirtMat, "ShoulderL");
 
             // 腕（袖）= 肩→手首を直結する cosmetic capsule。長さ・向きは Update で毎フレ更新。肘なし＝破綻しない
             _armR = CreateShape(transform, PrimitiveType.Capsule, Vector3.one * 0.05f, Vector3.zero, _shirtMat, "ArmR");
@@ -136,12 +136,25 @@ namespace TableDuoVr.Net
             _hasTarget = true;
         }
 
+        /// <summary>pose を即時反映（平滑なしスナップ）。リプレイ seek・Editor プレビュー・スクショ用。</summary>
+        public void PoseImmediate(AvatarPose pose)
+        {
+            _target.CopyFrom(pose);
+            _hasTarget = true;
+            ApplyToTransforms(1f, 1f);
+        }
+
         private void Update()
         {
             if (!_hasTarget) return;
             // 30Hz 受信を描画フレームへ指数平滑（フレームレート非依存）
-            float a = 1f - Mathf.Exp(-SmoothK * Time.deltaTime);
+            float dt = Time.deltaTime;
+            ApplyToTransforms(1f - Mathf.Exp(-SmoothK * dt), 1f - Mathf.Exp(-6f * dt));
+        }
 
+        /// <summary>ターゲット pose をパーツへ反映。a=頭/手の平滑係数、chestA=胴の平滑係数（1=即時）。</summary>
+        private void ApplyToTransforms(float a, float chestA)
+        {
             if (_head != null)
             {
                 _head.localPosition = Vector3.Lerp(_head.localPosition, _target.HeadPos, a);
@@ -149,10 +162,9 @@ namespace TableDuoVr.Net
             }
             if (_chest != null && _head != null)
             {
-                // 胴体は頭へ緩く追従（x/z は 6 割だけ・首 0.30m 下・yaw のみゆっくり）
-                float chestA = 1f - Mathf.Exp(-6f * Time.deltaTime);
+                // 胴体は頭へ緩く追従（x/z は 6 割だけ・首ぶん下・yaw のみゆっくり）
                 var headP = _head.localPosition;
-                var chestTarget = new Vector3(headP.x * 0.6f, headP.y - 0.30f - 0.21f, headP.z * 0.6f);
+                var chestTarget = new Vector3(headP.x * 0.6f, headP.y - 0.40f, headP.z * 0.6f);
                 _chest.localPosition = Vector3.Lerp(_chest.localPosition, chestTarget, chestA);
                 float headYaw = _head.localEulerAngles.y;
                 _chest.localRotation = Quaternion.Slerp(
