@@ -150,6 +150,17 @@ namespace TableDuoVr.EditorTools
                 AddHand(rig, "TrackingSpace/LeftHandAnchor", isLeft: true, out leftHand, out leftSkel);
                 AddHand(rig, "TrackingSpace/RightHandAnchor", isLeft: false, out rightHand, out rightSkel);
                 rig.transform.SetPositionAndRotation(new Vector3(0f, 0f, -0.85f), Quaternion.identity);
+
+                // トラッキング原点を FloorLevel に（OVRCameraRig プレハブ既定は EyeLevel=0）。
+                // 席が床(y=0)なので EyeLevel だと頭が床に来る。FloorLevel なら実身長ぶん
+                // 持ち上がり、座位の正しい目線になる（リモートアバターの頭高も自動で正しくなる）
+                var ovrManager = rig.GetComponent("OVRManager") as MonoBehaviour;
+                if (ovrManager != null)
+                {
+                    var mgrSo = new SerializedObject(ovrManager);
+                    SetEnum(mgrSo, "_trackingOriginType", 1); // OVRManager.TrackingOrigin.FloorLevel
+                    mgrSo.ApplyModifiedPropertiesWithoutUndo();
+                }
             }
 
             // --- L0 用デバッグカメラ（リグを無効化して使う。既定 OFF）---
