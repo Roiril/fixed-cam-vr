@@ -103,10 +103,14 @@ namespace TableDuoVr.EditorTools
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/lampRoundTable.fbx",
                 root.transform, "TableLamp", new Vector3(-0.5f, 0.7f, -0.22f), 0f, targetHeight: 0.25f, maxWidth: 0.18f);
 
+            // 席 = 初期目線アンカー。**ローカル原点が目の位置**（EyeLevel なので頭が席に乗る）、
+            // forward(+Z) が視線方向。Y を座位の目の高さに置く。Scene ビューで席を動かして調整可能
+            // （ギズモ表示 + Tools/FixedCamVr/Diagnostics/Preview Eye）。
+            const float eyeHeight = 1.15f;
             var seats = new GameObject("Seats");
             seats.transform.SetParent(root.transform, false);
-            CreateSeat(seats.transform, 0, new Vector3(0f, 0f, -0.85f), 0f);    // フルアバター席
-            CreateSeat(seats.transform, 1, new Vector3(0f, 0f, 0.85f), 180f);   // 手だけアバター席
+            CreateSeat(seats.transform, 0, new Vector3(0f, eyeHeight, -0.85f), 0f);    // フルアバター席
+            CreateSeat(seats.transform, 1, new Vector3(0f, eyeHeight, 0.85f), 180f);   // 手だけアバター席
 
             // 掴める小物（scene-placed NetworkObject。サーバ駆動追従 + NetworkTransform 同期）
             // Kenney Food Kit（CC0）。FBX 不在時はオレンジキューブにフォールバック
@@ -151,14 +155,15 @@ namespace TableDuoVr.EditorTools
                 AddHand(rig, "TrackingSpace/RightHandAnchor", isLeft: false, out rightHand, out rightSkel);
                 rig.transform.SetPositionAndRotation(new Vector3(0f, 0f, -0.85f), Quaternion.identity);
 
-                // トラッキング原点を FloorLevel に（OVRCameraRig プレハブ既定は EyeLevel=0）。
-                // 席が床(y=0)なので EyeLevel だと頭が床に来る。FloorLevel なら実身長ぶん
-                // 持ち上がり、座位の正しい目線になる（リモートアバターの頭高も自動で正しくなる）
+                // トラッキング原点は EyeLevel（=0）。FloorLevel だと実身長で目線高が変わり
+                // 参加者間で体験差が出る。EyeLevel + 席を目の高さに置くことで、全員が
+                // 席（=目線アンカー）の高さ・向きで揃う。リグを席にアライン → trackingSpace が
+                // 席フレームと一致するので、リモートアバターの頭高も席基準で自動的に正しくなる
                 var ovrManager = rig.GetComponent("OVRManager") as MonoBehaviour;
                 if (ovrManager != null)
                 {
                     var mgrSo = new SerializedObject(ovrManager);
-                    SetEnum(mgrSo, "_trackingOriginType", 1); // OVRManager.TrackingOrigin.FloorLevel
+                    SetEnum(mgrSo, "_trackingOriginType", 0); // OVRManager.TrackingOrigin.EyeLevel
                     mgrSo.ApplyModifiedPropertiesWithoutUndo();
                 }
             }
@@ -433,6 +438,7 @@ namespace TableDuoVr.EditorTools
             seat.transform.SetParent(parent, false);
             seat.transform.localPosition = pos;
             seat.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            seat.AddComponent<SeatEyeGizmo>(); // Scene ビューで目線位置・向きを可視化
         }
 
         private static GameObject? InstantiateRig()
