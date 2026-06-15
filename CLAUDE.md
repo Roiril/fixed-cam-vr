@@ -2,6 +2,18 @@
 
 Meta Quest 3 上で、固定視点カメラ（バイオハザード風）の無線映像を VR 内スクリーンに表示するアプリ。後々、映像加工 / CG 合成 / スクリーン外演出を追加していく。
 
+## ⚠ 同居 2 アプリ — 並列作業の干渉防止（全シュビー必読）
+
+この Unity プロジェクトには **2 つの独立アプリが 1 プロジェクトに同居**している：**廻リ視（FixedCam・本体 / `FixedCamVr.*` / `Assets/Scripts/` / `Main.unity`）** と **TableDuo（手アバター調査 / `TableDuoVr.*` / `Assets/TableDuo/` / `TableDuoMain.unity`）**。
+
+別シュビー（並列エージェント / worktree / 別セッション）と本シュビーが**別々のアプリを同時に進めることがある**。根底原則：
+
+1. **コードは完全分離** — `FixedCamVr.*` ↔ `TableDuoVr.*` の asmdef 相互参照禁止。相手のコード領域・シーン・prefab に手を出さない
+2. **共有資源は両方に効く** — Unity Editor（1 インスタンス）/ `ProjectSettings/` / 共有 `.asset`（URP・OVR・XR）/ `manifest.json` は 2 アプリ共有。片アプリ専用の都合で弄らない
+3. **Unity Editor とビルドは奪い合わない** — MCP 編集・Play・Build は単一 Editor を共有。**並列化せず逐次**。ビルドは productName/ID を一時 swap するので **2 ビルド同時起動厳禁**（片方が他方の ID で焼ける）
+
+詳細・並列化可否表・チェックリスト → **[.claude/rules/parallel-projects.md](.claude/rules/parallel-projects.md)（Unity / 両アプリのコードを触る前に必読）**
+
 ## スタック
 
 - **エンジン**: Unity 2022.3.62f2 LTS
@@ -89,7 +101,7 @@ fixed-cam-vr 本体とは別に、**テーブルを囲む2人マルチプレイ 
 - 要件: [docs/table-duo/requirements.md](docs/table-duo/requirements.md) / 実行計画: [.claude/plans/2026-06-10_table-duo_phase0-3.md](.claude/plans/2026-06-10_table-duo_phase0-3.md)
 - **体験の目的＝調査**: 手だけアバターとの対人インタラクション観察（手は無言・ジェスチャーのみ）。設計 [docs/table-duo/study-design.md](docs/table-duo/study-design.md) / 実施手順 [docs/table-duo/study-protocol.md](docs/table-duo/study-protocol.md) / 計画 [.claude/plans/2026-06-11_table-duo_study.md](.claude/plans/2026-06-11_table-duo_study.md)
 - コード: `Assets/TableDuo/`（自己完結）。namespace `TableDuoVr.<Feature>`、asmdef `TableDuoVr.*`
-- **干渉防止**: TableDuoVr.\* と FixedCamVr.\* の asmdef 相互参照禁止。`Main.unity` と `TableDuoMain.unity` は Build Settings 排他運用
+- **干渉防止**: 並列作業の絶対規約は [.claude/rules/parallel-projects.md](.claude/rules/parallel-projects.md) に集約（asmdef 相互参照禁止・共有資源・ビルド逐次・並列化可否）。冒頭「⚠ 同居 2 アプリ」も参照
 - シーン生成: `Tools/FixedCamVr/Setup/Setup TableDuo Scene`（冪等再実行可）
 - 検証 3 層: L0=FakeHandDriver（HMD 0台）/ L1=Editor+Link↔実機1台 / L2=実機2台（フェーズ締めのみ）
 - 依存追加: `com.unity.netcode.gameobjects` 1.12.0（このサブプロジェクト用）
@@ -107,6 +119,7 @@ fixed-cam-vr 本体とは別に、**テーブルを囲む2人マルチプレイ 
 - [streaming.md](.claude/rules/streaming.md) — MJPEG 取り込み + fixed-cam-streamer エンドポイント仕様
 - [mcp-unity.md](.claude/rules/mcp-unity.md) — Unity MCP 経由でシーン/コンポーネント/アセットを編集する手順と落とし穴
 - [git-workflow.md](.claude/rules/git-workflow.md) — Git 作業フロー（worktree 並列・cherry-pick・PR vs 直 push 判断）
+- [parallel-projects.md](.claude/rules/parallel-projects.md) — **同居 2 アプリ（廻リ視 / TableDuo）の干渉防止**（共有資源・ビルド逐次・並列化可否・コード分離）
 - [troubleshooting.md](.claude/rules/troubleshooting.md) — 「動かない」時に層を切り分ける診断フロー（配信/ネット/Unity/Meta XR/ビルド の責任マップ）
 
 ### その他
