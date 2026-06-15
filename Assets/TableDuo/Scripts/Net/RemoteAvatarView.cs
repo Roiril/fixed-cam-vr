@@ -179,13 +179,38 @@ namespace TableDuoVr.Net
                 {
                     var bone = new GameObject($"Bone{i}").transform;
                     int parent = layout.ParentIndex[i];
-                    bone.SetParent(parent >= 0 && parent < i ? _bones[parent] : _root,
-                        worldPositionStays: false);
+                    bool hasParentBone = parent >= 0 && parent < i;
+                    bone.SetParent(hasParentBone ? _bones[parent] : _root, worldPositionStays: false);
                     bone.localPosition = layout.BindLocalPos[i];
                     bone.localRotation = layout.BindLocalRot[i];
-                    CreatePrimitive(bone, PrimitiveType.Sphere, 0.014f, "Joint");
+                    CreatePrimitive(bone, PrimitiveType.Sphere, 0.017f, "Joint", _avatarMat);
                     _bones[i] = bone;
+
+                    // 親関節→この関節を結ぶ骨（指の節・手のひら）。バインドオフセットは固定なので
+                    // 親ボーン下に一度置けば、親の回転に追従して手の形を保つ（毎フレーム更新不要）
+                    if (hasParentBone)
+                    {
+                        CreateBoneLink(_bones[parent], layout.BindLocalPos[i]);
+                    }
                 }
+            }
+
+            /// <summary>parentBone の原点から childLocalPos まで伸びる細い円柱（骨）を 1 個生成。</summary>
+            private static void CreateBoneLink(Transform parentBone, Vector3 childLocalPos)
+            {
+                float len = childLocalPos.magnitude;
+                if (len < 1e-4f) return;
+                var cyl = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                cyl.name = "BoneLink";
+                var col = cyl.GetComponent<Collider>();
+                if (col != null) Destroy(col);
+                if (_avatarMat != null) cyl.GetComponent<Renderer>().sharedMaterial = _avatarMat;
+                var t = cyl.transform;
+                t.SetParent(parentBone, worldPositionStays: false);
+                t.localPosition = childLocalPos * 0.5f;
+                t.localRotation = Quaternion.FromToRotation(Vector3.up, childLocalPos.normalized);
+                // 既定シリンダーは高さ 2・半径 0.5 → 高さ=len, 半径≈0.006
+                t.localScale = new Vector3(0.012f, len * 0.5f, 0.012f);
             }
         }
     }

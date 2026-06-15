@@ -18,7 +18,13 @@ namespace TableDuoVr.Hands
         [SerializeField] private OVRSkeleton? leftSkeleton;
         [SerializeField] private OVRSkeleton? rightSkeleton;
 
+        // 手トラッキングの診断ログ（1Hz, [TDV-DIAG]）。トラッキング不調の切り分け用。
+        // 既定オフ。必要時に Inspector か manage_components set_property で true にして実機ログを見る
+        [Header("診断")]
+        [SerializeField] private bool logDiagnostics;
+
         private readonly AvatarPose _pose = new();
+        private float _nextDiagLog;
 
         public AvatarPose Current => _pose;
         public bool IsValid => trackingSpace != null && centerEye != null;
@@ -67,6 +73,23 @@ namespace TableDuoVr.Hands
 
             CaptureLayoutIfReady(leftSkeleton, ref HandSkeletonLayout.CapturedL);
             CaptureLayoutIfReady(rightSkeleton, ref HandSkeletonLayout.CapturedR);
+
+            if (logDiagnostics && Time.time >= _nextDiagLog)
+            {
+                _nextDiagLog = Time.time + 1f;
+                Debug.Log("[TDV-DIAG] " + Describe("L", leftHand, leftSkeleton, _suppressLeft) +
+                          " || " + Describe("R", rightHand, rightSkeleton, suppressed: false) +
+                          $" || poseTrackedR={_pose.TrackedR} wristR={_pose.WristPosR:F2} headLocal={_pose.HeadPos:F2}");
+            }
+        }
+
+        private static string Describe(string tag, OVRHand? hand, OVRSkeleton? skel, bool suppressed)
+        {
+            string h = hand == null ? "null"
+                : $"act={hand.gameObject.activeInHierarchy} tracked={hand.IsTracked} valid={hand.IsDataValid} hi={hand.IsDataHighConfidence} conf={hand.HandConfidence}";
+            string s = skel == null ? "skelNull"
+                : $"skelInit={skel.IsInitialized} bones={skel.Bones.Count}";
+            return $"{tag}[supp={suppressed} {h} {s}]";
         }
 
         private static bool SampleHand(Transform space, OVRHand? hand, OVRSkeleton? skeleton,

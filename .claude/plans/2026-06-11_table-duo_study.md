@@ -63,3 +63,41 @@ T1 → T4 → T2 → T3 → T5 → T6 → T7（L0 で T1/T4 を検証 → L1 で
 ## 未決（ユーザー）
 
 公表予定（倫理手続き）/ 参加者の知己関係 / 部屋レイアウト — design §8 参照
+
+---
+
+## 実装＆実機検証状況（2026-06-15 シュビー記録）
+
+**L2（実機2台）で接続〜役割〜目線〜手メッシュまで動作確認済み。** 調査機能 T1–T6・リプレイ T8–T10 実装済み。
+
+### 動いていること（実機2台で確認）
+- 単体 Quest ×2 を LAN 直結（host/client）。`tdv_role full|hand` で役割割当 → 席/アバター種別/片手モードが正しく適用
+- VR 描画・目線高（EyeLevel + 席=目線アンカー y=1.15）・相手アバター表示
+- 絵カード/食べ物小物の配置、手役のみの目標配置パネル、SessionLogger/ReplayRecorder/MarkServer（host）
+- リモートの手は**関節を骨（カプセル）で繋いだ手の形**で描画（旧: バラバラの点）
+
+### 実機運用 runbook（このビルド＝BuildVariants 標準）
+- パッケージ: **`com.roiril.tableduo`**（旧 manage_build 版の `com.UnityTechnologies...urpblank` ではない）
+- ビルド: Unity メニュー `Tools/FixedCamVr/Build TableDuo APK` → `Builds/tableduo.apk`（quest-build スキル参照）
+- インストール: `adb -s <serial> install -r --no-streaming Builds\tableduo.apk`
+- 起動（host=full / client=hand）:
+  ```
+  adb -s <hostSerial>   shell am start -n com.roiril.tableduo/com.unity3d.player.UnityPlayerActivity -e tdv_mode host   -e tdv_role full
+  adb -s <clientSerial> shell am start -n com.roiril.tableduo/com.unity3d.player.UnityPlayerActivity -e tdv_mode client -e tdv_ip <hostIP> -e tdv_role hand
+  ```
+- 実機 IP: `adb -s <serial> shell ip route | grep wlan0`。検証時の例 host=192.168.11.10 / client=192.168.11.11
+- スクショ: `adb -s <serial> shell screencap -p /sdcard/x.png && adb pull ...`（PowerShell の `>` はバイナリ破損するので device 保存→pull）
+
+### ⚠ 罠（再発防止・他シュビー向け）
+1. **ビルド前にシーンをクリーン状態にすること**（2 回踏んだ）。L0/リプレイ検証で OVRCameraRig 無効・DebugCamera 有効・ReplayViewer 有効・FakeHandDriver 有効にしたまま保存→ビルドすると、実機で VR にならず平面表示になる。**ビルド直前に `Setup TableDuo Scene` を再実行**すれば確実にクリーン（OVRCameraRig 有効 / DebugCamera・ReplayViewer 無効 / FakeHandDriver 無効）
+2. **目線高は EyeLevel + 席 y=1.15**。FloorLevel だと実身長で目線が変わり個人差が出る。席（[TableDuo]/Seats/Seat0,1）が目線アンカー＝位置が目の位置・forward が視線。`Tools/FixedCamVr/Diagnostics/Preview Eye - Seat0/1` で確認、ギズモ（SeatEyeGizmo）で調整
+3. **ハンドトラッキングは「自分の手を見てる」時だけ高精度**。手をカメラ視界（FOV）に入れないと conf=Low/tracked=False。`HandPoseSampler.logDiagnostics=true` で `[TDV-DIAG]`（OVRHand の tracked/valid/conf, skeleton init/bones, 計算後 trackedR）を 1Hz 出力 → 切り分け。既定オフ
+4. **片手モードは右手を残す**（左を抑制）。左手しか動かさないと相手に映らない。左右選択/両手は未実装（要望次第）
+5. **人（フル）側は自分の体を一人称描画してない**（自分の手のみ）。自分の胴体表示は未実装（要望次第）
+6. APK サイズが 62MB→88MB に増えたのは再 Setput でのアセット再生成由来とみられる。動作影響なし
+
+### 未対応（要望待ち）
+- 片手モードの左右選択 / 両手対応
+- 人側の自分の胴体（一人称）表示
+- リプレイの音声同期実運用（クラップ mark で校正）
+- パイロット本番（所有者が手役を一度経験 → プロトコル凍結）

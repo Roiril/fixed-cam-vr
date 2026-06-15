@@ -5757,6 +5757,7 @@ MonoBehaviour:
   rightHand: {fileID: 1575462059}
   leftSkeleton: {fileID: 765325405}
   rightSkeleton: {fileID: 1575462058}
+  logDiagnostics: 0
 --- !u!1 &1811884252
 GameObject:
   m_ObjectHideFlags: 0
