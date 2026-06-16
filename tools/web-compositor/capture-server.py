@@ -47,10 +47,12 @@ _show_cond = threading.Condition()
 def _default_show():
     return {
         'rev': 0,
+        # host/port/auth は Unity 実機が参照する接続先（空 host は焼き込み .asset へフォールバック）。
+        # post（カメラ別画像加工）は任意キー。未設定なら Unity は global post に従う。
         'cameras': [
-            {'id': 'A', 'sourceId': 'Phone01'},
-            {'id': 'B', 'sourceId': 'Phone02'},
-            {'id': 'C', 'sourceId': 'Phone03'},
+            {'id': 'A', 'sourceId': 'Phone01', 'host': '', 'port': 8080, 'auth': ''},
+            {'id': 'B', 'sourceId': 'Phone02', 'host': '', 'port': 8080, 'auth': ''},
+            {'id': 'C', 'sourceId': 'Phone03', 'host': '', 'port': 8080, 'auth': ''},
         ],
         'cues': [],
         'post': {'exposure': 0.0, 'contrast': 1.0, 'saturation': 1.0, 'temperature': 0.0,

@@ -11,8 +11,9 @@ namespace FixedCamVr.Streaming
     public sealed class CameraStream : IDisposable
     {
         private readonly CameraSource _source;
-        private readonly MjpegStreamReceiver _receiver;
+        private MjpegStreamReceiver _receiver;
         private readonly Texture2D _texture;
+        private bool _started;
         private byte[]? _scratch;
         private bool _disposed;
         // HMD を外す / システムメニュー等で app が pause された間は true。
@@ -126,11 +127,41 @@ namespace FixedCamVr.Streaming
         public void Start()
         {
             if (_disposed) return;
+            _started = true;
             _receiver.Start();
 
             // /info を起動直後に 1 回。以降は RefreshMetadataAsync を HUD 等が定期的に呼ぶ
             // （スマホの向き変更を Unity 側でも追従させるため）。失敗時はフェイルオープン。
             _ = RefreshMetadataAsync();
+        }
+
+        /// <summary>CameraSource の接続パラメータ（host|port|user）の変化検知キー。</summary>
+        public string ConnectionKey => _source.ConnectionKey;
+
+        /// <summary>
+        /// show.json / 端末キャッシュで host・port・認証が差し替わった時に MJPEG 接続を張り直す。
+        /// 現場で配信スマホの DHCP IP がズレたケースを、ビルドし直さず Web から復旧できるようにする。
+        /// 旧 receiver を破棄して新 URL で作り直す（URL は CameraSource.BuildUrl 経由なので
+        /// ApplyRuntimeEndpoint 後に呼ぶこと）。
+        /// </summary>
+        public void ReapplyConnection()
+        {
+            if (_disposed) return;
+            try { _receiver.Dispose(); } catch { }
+            _receiver = new MjpegStreamReceiver(_source.BuildUrl(), basicAuthToken: _source.BasicAuthToken);
+            // メタ/統計と計測ウィンドウは接続先が変わったらリセット
+            _metadata = null;
+            _health = null;
+            _recvWindowStart = 0f;
+            _recvFramesInWindow = 0;
+            _recvFps = 0f;
+            _lagWindowAccum = 0f;
+            if (_started && !_suspended)
+            {
+                _receiver.Start();
+                _ = RefreshMetadataAsync();
+            }
+            Debug.Log($"[CameraStream] {_source.DisplayName} reconnect -> {_source.BuildUrl()}");
         }
 
         /// <summary>

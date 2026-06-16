@@ -229,6 +229,7 @@ const panels = cams.map((cam, i) => {
     cam.port = parseInt(div.querySelector('.port').value, 10) || 8080;
     cam.auth = div.querySelector('.auth').value.trim();
     localStorage.setItem(LS_KEY, JSON.stringify(cams));
+    pushCameras(); // IP の正は show.json（Quest 実機が参照する）。localStorage は初期表示用フォールバック
     status.textContent = '接続中…'; status.className = 'status';
     // 再接続でキャッシュされた壊れストリームを掴まないよう nonce を付ける
     img.src = `${streamBase()}/cam?host=${encodeURIComponent(cam.host)}&port=${cam.port}&path=/video` +
@@ -455,6 +456,40 @@ const panels = cams.map((cam, i) => {
 });
 document.getElementById('reloadAll').addEventListener('click', () => panels.forEach(p => p.connect()));
 refreshCaptures();
+
+// IP の正は show.json（console タブ・Quest 実機と共有）。起動時に show.json の host/port/auth を
+// 入力欄へ反映してから接続し、以後の編集は show.json へ書き戻す（localStorage は初期フォールバック）。
+async function syncFromState() {
+  try {
+    const s = await (await fetch('/state')).json();
+    if (!Array.isArray(s.cameras) || !s.cameras.length) return;
+    stateCamIds = s.cameras.map((c) => c.id);
+    s.cameras.forEach((c, i) => {
+      const panel = grid.children[i];
+      if (!panel) return;
+      if (c.host) panel.querySelector('.host').value = c.host;
+      if (c.port) panel.querySelector('.port').value = c.port;
+      panel.querySelector('.auth').value = c.auth || '';
+    });
+    panels.forEach((p) => p.connect());
+  } catch { /* サーバ未接続なら localStorage 値のまま */ }
+}
+let pushTimer = 0;
+function pushCameras() {
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async () => {
+    try {
+      const s = await (await fetch('/state')).json();
+      const arr = Array.isArray(s.cameras) ? s.cameras : [];
+      cams.forEach((cam, i) => {
+        if (!arr[i]) arr[i] = { id: stateCamIds[i] || ['A', 'B', 'C'][i] };
+        arr[i].host = cam.host; arr[i].port = cam.port; arr[i].auth = cam.auth;
+      });
+      await fetch('/state', { method: 'POST', body: JSON.stringify({ cameras: arr }) });
+    } catch { /* オフラインなら show.json へは書けない（次回 connect で再試行）*/ }
+  }, 200);
+}
+syncFromState();
 </script>
 </body>
 </html>

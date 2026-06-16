@@ -241,6 +241,13 @@ select option { background: #111; color: var(--text-color); }
 }
 .camera-card input[type="text"] { width: 100%; }
 
+/* カメラ別 画像加工（折りたたみ）。global グレーディングと区別するため左罫線で囲う */
+.cam-fx {
+  margin-top: 8px; padding: 8px 8px 6px; display: flex; flex-direction: column; gap: 4px;
+  border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color);
+}
+.cam-fx .slider { font-size: 11px; }
+
 /* ---- cue 一覧 ---- */
 .cue-list { display: flex; flex-direction: column; gap: 8px; }
 .cue-row {

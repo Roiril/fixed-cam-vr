@@ -99,6 +99,25 @@ namespace FixedCamVr.Streaming
 
         public CameraStream? GetActive() => Get(_activeIndex);
 
+        /// <summary>登録 CameraSource の数（show.json cameras[] との対応付けに使う）。</summary>
+        public int SourceCount => sources.Length;
+
+        /// <summary>
+        /// index 番カメラの接続先（host/port/Basic 認証）を show.json / 端末キャッシュ値で実行時上書きする。
+        /// 接続パラメータが実際に変わった時だけ MJPEG を張り直す（無変化なら no-op で再接続コストを払わない）。
+        /// host 空文字は「Web 未設定」とみなし焼き込み .asset 値へ戻す。
+        /// </summary>
+        public void ApplyEndpoint(int index, string host, int port, string user, string pass)
+        {
+            if (index < 0 || index >= sources.Length) return;
+            var src = sources[index];
+            if (src == null) return;
+            string before = src.ConnectionKey;
+            src.ApplyRuntimeEndpoint(host, port, user, pass);
+            if (src.ConnectionKey != before)
+                Get(index)?.ReapplyConnection();
+        }
+
         /// <summary>
         /// 絶対指定でアクティブカメラを切り替える（ゾーン連動・オペレータ卓など）。
         /// 範囲外はラップせず clamp + 警告する。ラップは「カメラ番号や cameraIndex の

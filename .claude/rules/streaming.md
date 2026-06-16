@@ -108,6 +108,28 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 - 切替時は **常時受信を維持**（再接続コスト回避）し、表示先 Quad の `enabled` または RenderTexture 切替で対応
 - 同時 3 台までは Quest 3 で実用域、それ以上は要計測
 
+## show.json = 設定契約（IP / カメラ別画像加工を実機へ流す）— 2026-06-16
+
+Web オペレータ卓（`tools/web-compositor/`）の `show.json` が **Web と Quest 実機の共有設定**。
+カメラの接続先（host/port/auth）と画像加工（post）をここで決め、実機が参照する。計画
+[.claude/plans/2026-06-16_web-config-to-quest.md](../plans/2026-06-16_web-config-to-quest.md)。
+
+- **`cameras[i].host/port/auth`**: 従来 Web プレビュー専用だったが、**Unity 実機も読む**ようになった。
+  [`ShowControlClient.ApplyCameraEndpoints`](../Assets/Scripts/Streaming/ShowControlClient.cs) →
+  [`CameraStreamRegistry.ApplyEndpoint`](../Assets/Scripts/Streaming/CameraStreamRegistry.cs) →
+  [`CameraSource.ApplyRuntimeEndpoint`](../Assets/Scripts/Streaming/CameraSource.cs)（`[NonSerialized]` 実行時上書き、
+  **焼き込み .asset を汚さない**＝git 巻き込み防止）→ 変化時のみ [`CameraStream.ReapplyConnection`](../Assets/Scripts/Streaming/CameraStream.cs) で MJPEG 張り直し。
+  **空 host は override 解除＝焼き込み値へフォールバック**（Web 未設定カメラの保護）
+- **`cameras[i].post`**（任意）: カメラ別の明るさ・色補正。アクティブカメラ切替時に
+  [`ShowControlClient.ApplyPostForActive`](../Assets/Scripts/Streaming/ShowControlClient.cs) が適用。
+  未設定カメラはトップレベル `post`（global＝全体グレーディング）にフォールバック。
+  JsonUtility が null 入れ子を既定値で書く罠を避けるため「個別 post を持つか」は明示 `hasPost` bool を正にする
+- **永続化（PC 不在でも参照）**: 受信 show.json を `persistentDataPath/show_config.json` にキャッシュし、
+  起動時に再適用。**優先順位は 焼き込み .asset < 端末キャッシュ < ライブ long-poll（後勝ち）**。
+  キャッシュは「一度ライブ受信した後」生成されるので、完全新規インストール＋PC 不在の初回は焼き込み値で起動
+- **server 不在でも ShowControlClient は動く**（旧コードは `enabled=false` で自滅していた）。
+  long-poll / heartbeat だけスキップし、キャッシュ適用とカメラ別 post のゾーン切替連動は成立する
+
 ## エラーハンドリング
 
 - 接続失敗時は **指数バックオフ**で再接続（1s → 2s → 4s、上限 30s）

@@ -11,6 +11,20 @@ let unityAlive = false;
 let lastUnity = {};        // 直近の /unity/status の status（appliedRev / playingCue / activeIndex）
 let previewOn = {};        // camId -> bool（MJPEG サムネは明示 ON。スマホ負荷への配慮）
 
+// カメラ別画像加工（cameras[i].post）。未設定カメラは show.json の global post にフォールバック。
+// Unity 側はアクティブカメラ切替時にこの post を適用する（ShowControlClient.ApplyPostForActive）。
+const CAM_FX = [
+  ['exposure', '露出', -2, 2, 0.01, 0],
+  ['contrast', 'コントラスト', 0.5, 2, 0.01, 1],
+  ['saturation', '彩度', 0, 2, 0.01, 1],
+  ['temperature', '色温度', -1, 1, 0.01, 0],
+  ['vignette', 'ヴィネット', 0, 1, 0.01, 0],
+  ['grain', 'グレイン', 0, 0.3, 0.005, 0],
+  ['scanline', '走査線', 0, 1, 0.01, 0],
+];
+const FX_DEFAULT = Object.fromEntries(CAM_FX.map(([k, , , , , d]) => [k, d]));
+let camFxDebounce = 0;
+
 // MJPEG ストリームはメインポート+1 から取る（capture-server.py が両方 listen）。
 // 同一ポートだとブラウザの同時接続上限（6/origin）を張りっぱなしストリームが食い潰し、
 // /state long-poll や他カメラの接続が詰まる＝「接続が不安定」の正体。
@@ -202,9 +216,57 @@ function buildCameraCard(cam) {
   refs.ovrBtn.textContent = '🔒 このカメラに固定';
   refs.ovrBtn.onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
   btns.appendChild(refs.ovrBtn);
+
+  // 🎨 カメラ別 画像加工（折りたたみ）
+  refs.fxBtn = document.createElement('button');
+  refs.fxBtn.textContent = '🎨 画像加工';
+  refs.fxBtn.title = 'このカメラだけの明るさ・色補正（cameras[].post）。未設定なら全体グレーディングに従う。';
+  btns.appendChild(refs.fxBtn);
   card.appendChild(btns);
 
+  const fx = document.createElement('div');
+  fx.className = 'cam-fx';
+  fx.style.display = 'none';
+  refs.fxInputs = {};
+  refs.fxVals = {};
+  for (const [key, label, min, max, step] of CAM_FX) {
+    const row = document.createElement('label');
+    row.className = 'slider';
+    row.append(label + ' ');
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step;
+    inp.oninput = () => onCamFx(refs, key, parseFloat(inp.value));
+    const val = document.createElement('span');
+    row.append(inp, val);
+    fx.appendChild(row);
+    refs.fxInputs[key] = inp;
+    refs.fxVals[key] = val;
+  }
+  const fxBtns = document.createElement('div');
+  fxBtns.className = 'btns';
+  refs.fxResetBtn = document.createElement('button');
+  refs.fxResetBtn.textContent = '↺ 全体グレーディングに戻す';
+  refs.fxResetBtn.title = 'このカメラの個別加工を消し、全体グレーディング（global post）に従わせる。';
+  refs.fxResetBtn.onclick = () => {
+    delete refs.cam.post;
+    postState({ cameras: state.cameras });
+  };
+  fxBtns.appendChild(refs.fxResetBtn);
+  fx.appendChild(fxBtns);
+  card.appendChild(fx);
+  refs.fxBtn.onclick = () => { fx.style.display = fx.style.display === 'none' ? '' : 'none'; };
+
   return refs;
+}
+
+// カメラ別 FX スライダー変更 → cameras[i].post を更新して show.json へ（ドラッグ連打は debounce）。
+function onCamFx(refs, key, v) {
+  if (!refs.cam.post) refs.cam.post = { ...FX_DEFAULT };
+  refs.cam.post[key] = v;
+  refs.fxVals[key].textContent = String(v);
+  refs.fxBtn.classList.add('active');
+  clearTimeout(camFxDebounce);
+  camFxDebounce = setTimeout(() => postState({ cameras: state.cameras }), 120);
 }
 
 function connectThumb(refs) {
@@ -245,6 +307,19 @@ function renderCameras() {
 
     refs.prevBtn.textContent = previewOn[cam.id] ? '⏸ プレビュー停止' : '▶ プレビュー';
     refs.ovrBtn.classList.toggle('active', state?.control?.cameraOverride === cam.id);
+
+    // カメラ別 FX の同期（個別 post が無ければ global 値を映す。active 表示で個別有無を示す）
+    const hasPost = !!cam.post;
+    refs.fxBtn.classList.toggle('active', hasPost);
+    refs.fxBtn.textContent = hasPost ? '🎨 画像加工 ●' : '🎨 画像加工';
+    for (const [key, , , , , d] of CAM_FX) {
+      const inp = refs.fxInputs[key];
+      if (document.activeElement === inp) continue;
+      const v = hasPost && (key in cam.post) ? cam.post[key]
+        : (state?.post?.[key] ?? d);
+      inp.value = v;
+      refs.fxVals[key].textContent = String(v);
+    }
 
     // ストリームは接続パラメータが変わった時だけ張り替える
     const key = camStreamKey(cam);

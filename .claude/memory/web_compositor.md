@@ -9,6 +9,13 @@
 
 show.json / masks/ は gitignore（ローカル運用状態、prompts.json と同様）。
 
+**show.json は Web ↔ Quest 実機の共有設定契約（2026-06-16 拡張）**: `cameras[i]` の `host/port/auth` を
+Unity 実機が読む（接続先を Web から差し替え・DHCP ズレ復旧）。`cameras[i].post`（任意）= カメラ別画像加工で、
+未設定なら global `post` にフォールバック。受信内容は実機が `persistentDataPath/show_config.json` にキャッシュし
+**PC 不在でも前回設定で起動**（焼き込み .asset < 端末キャッシュ < ライブ long-poll の後勝ち）。console タブの
+カメラカードに「🎨 画像加工」、multicam.html の IP も localStorage → show.json に一本化。詳細は
+rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to-quest.md。
+
 ## 場所と起動
 
 - パス: `tools/web-compositor/`（Unity の Assets 外。Unity は読み込まない）
