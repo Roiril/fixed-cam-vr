@@ -1,13 +1,18 @@
 # web compositor（tools/web-compositor/）
 
-**オペレータ卓（Unity 遠隔制御）+ 合成のブラウザ検証**の 2 タブ構成（2026-06-11 T4 で再編）。
+**1 ページ統合 UI（縦割り = カメラ列）**（2026-06-16 にユーザー要望で再編）。旧 3 画面（コンソール / コンポジット検証 / 合成エディタ multicam.html）を 1 ページへ統合し、人間が触らない検証機能（色統計マッチング・ラプラシアン・プロンプト管理・ギャラリー・Webcam/テスト source）は撤去した。
 
-**デザイン言語（2026-06-11 ユーザー指定・cogni-storage 準拠）**: 純黒 `#000` + radial-gradient / 文字 `#fffaf0` / アクセント `#ffdead` / **角丸ゼロ** / 透明カード + 1px 罫線（`--line-soft`）/ UPPERCASE マイクロラベル / 下線型インプット。トークンは style.css の `:root` に集約、multicam.html も同トークン。新 UI 追加時はこれに従う（JS でのインライン色指定は `var(--accent-color)` 等を使う）。
+構成: **ステータス**（Unity 生存/アクティブカメラ/fps/反映rev）＋ **マルチカメラ**（列＝カメラ A/B/C、各列を上から **ビュー / 設定 / マスク / 合成素材** と縦割り）。
+- **ビュー**: 画質を当てた最終見た目。Unity `ScreenComposite.shader` を WebGL `FS_VIEW` で移植＝**Quest と同じ絵**。スライダを動かすとその場で反映（「画質をいじった結果が見えない」を解消）。+ ▶発火/⏹停止/🔒固定/📷保存
+- **設定**: IP/port/auth ＋ カメラ別画質（7 スライダ → `cameras[i].post`）
+- **マスク**: 白黒で差し替え領域（白=差し替え）。矩形/ブラシ/消し/半分/反転/クリア
+- **合成素材**: captures/ から画像/動画 select（or URL）→ 💾 cue 保存（1 カメラ 1 cue: id=`cue_<camId>`）
 
-- **🎛 コンソール**（console.js）: show.json を正として Unity を遠隔制御。cue 発火/停止・カメラ手動固定・ポスト FX ライブ調整・Unity heartbeat 表示。Unity 側対向は `ShowControlClient`（long-poll）。API: `/state`(long-poll) `/command` `/masks` `/unity/*`。計画: `.claude/plans/2026-06-11_web-operator-console.md`
-- **✂ コンポジット検証**（main.js、従来機能）: 「事前撮影映像 × リアルタイム配信」をマスクで切り貼り→合成跡を消す画像処理→フィルタ、までを WebGL2 で実装。AI 動画生成（貞子系）の素材づくり・プロンプト管理もここに集約。
+実装: `index.html` ＋ `app.js`（全配線、ESM、show.json を正に I/O）＋ `gl.js`/`shaders.js`（FS_VIEW）。Unity 側対向は `ShowControlClient`（long-poll + 端末キャッシュ）。
 
-show.json / masks/ は gitignore（ローカル運用状態、prompts.json と同様）。
+**デザイン言語（cogni-storage 準拠）**: 純黒 `#000` + radial-gradient / 文字 `#fffaf0` / アクセント `#ffdead` / **角丸ゼロ** / 透明カード + 1px 罫線（`--line-soft`）/ UPPERCASE マイクロラベル / 下線型インプット。トークンは style.css の `:root` に集約。
+
+show.json / masks/ / captures/ は gitignore（ローカル運用状態）。
 
 **show.json は Web ↔ Quest 実機の共有設定契約（2026-06-16 拡張）**: `cameras[i]` の `host/port/auth` を
 Unity 実機が読む（接続先を Web から差し替え・DHCP ズレ復旧）。`cameras[i].post`（任意）= カメラ別画像加工で、
@@ -25,17 +30,18 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
   - getUserMedia(Webcam) は localhost か https のみ
 - バックグラウンドの `python capture-server.py` はセッション跨ぎで落ちやすい → ユーザに `serve.ps1` 常駐を勧める
 
-## 構成ファイル
+## 構成ファイル（2026-06-16 統合後）
 
 | ファイル | 役割 |
 |---|---|
-| `index.html` / `style.css` | UI |
-| `main.js` | ソース/マスク/UI 配線 + メインループ + キャプチャ/録画/プロンプト |
-| `sources.js` | 内蔵パターン / Webcam / 動画 / MJPEG / マスク canvas |
-| `pipeline.js` | 合成パイプライン（取り込み→色統計→ラプラシアン→ポスト） |
-| `gl.js` / `shaders.js` | WebGL2 ヘルパー / GLSL 全シェーダ |
-| `capture-server.py` | ローカルサーバ（静的配信 + 保存/一覧/reveal/プロンプト API） |
+| `index.html` / `style.css` | 1 ページ統合 UI（縦割りマトリクス） |
+| `app.js` | 全配線（status / カメラ列 / IP・画質 / マスク / 合成素材 / cue / 📷）。show.json を正に I/O |
+| `gl.js` / `shaders.js` | WebGL2 ヘルパー / GLSL（ビューは `FS_VIEW` = ScreenComposite 移植） |
+| `capture-server.py` | ローカルサーバ（静的配信 + show 制御 + /cam プロキシ + 保存 API） |
 | `serve.ps1` | 起動スクリプト |
+| `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json long-poll） |
+
+**撤去済み（2026-06-16）**: `main.js` / `pipeline.js` / `sources.js` / `cue-editor.js` / `console.js` / `multicam.html`（色統計・ラプラシアン・プロンプト・ギャラリー・2 タブ・別ページ合成エディタ）。以降の「合成パイプライン」節（色統計→ラプラシアン）は廃止機能の記録。AI 動画生成の知見は末尾に残す。
 
 ## 合成パイプライン（pipeline.js）
 

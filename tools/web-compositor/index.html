@@ -3,220 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>fixed-cam-vr / web compositor</title>
+  <title>廻リ視 web compositor</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="app">
     <header>
       <h1>廻リ視 web compositor</h1>
-      <nav class="tabs">
-        <button id="tabBtnConsole" class="tab-btn active">🎛 コンソール</button>
-        <button id="tabBtnComp" class="tab-btn">✂ コンポジット検証</button>
-      </nav>
-      <span id="status" class="status">init…</span>
-      <span id="fps" class="fps">– fps</span>
+      <div class="status-bar">
+        <span id="stDot" class="st-dot off"></span>
+        <span id="stInfo">Unity: 未接続</span>
+        <span id="stSync" class="st-sync"></span>
+        <span class="spacer"></span>
+        <button id="autoZone" title="カメラ手動固定を解除しゾーン自律へ戻す">🚶 ゾーン自律</button>
+        <a href="sim.html" target="_blank" class="link" title="Unity なしで動作確認する仮想クライアント">🖥 仮想Quest</a>
+      </div>
     </header>
 
-    <div id="tabConsole" class="console">
-      <div class="unity-bar">
-        <span id="unityAlive" class="unity-dot off"></span>
-        <span id="unityInfo">Unity: 未接続</span>
-        <span class="spacer"></span>
-        <a href="sim.html" target="_blank" class="sim-link" title="Unity なしで動作確認する仮想クライアント（Quest の代役）">🖥 仮想 Unity を開く</a>
-        <button id="consoleRefresh">↻ 状態再取得</button>
+    <section class="multicam">
+      <div class="mc-title">
+        マルチカメラ
+        <span class="hint">列＝カメラ。設定・マスク・合成素材はすべて show.json に保存され、Quest 実機が起動時キャッシュ＋ライブで参照する。ビューは画質を当てた最終見た目（Quest と同じ絵）。</span>
       </div>
-
-      <div class="console-grid">
-        <section class="con-cameras">
-          <h2>マルチカメラ（IP・画像加工）</h2>
-          <p class="hint">各カメラの IP / 認証と <b>カメラ別の明るさ・色補正</b>（🎨 画像加工）を設定。
-            ここで決めた値は show.json に保存され、Quest 実機が起動時キャッシュ＋ライブ long-poll で参照する。</p>
-          <div id="cameraCards" class="camera-cards"></div>
-          <div class="btns">
-            <button id="ovrAuto" class="accent">🚶 ゾーン自律に戻す</button>
-            <a href="multicam.html" target="_blank" class="sim-link" title="3 台の MJPEG を全画面で同時表示 + マスク/cue 合成（/cam プロキシ経由）">📡 合成エディタ（3 台同時）</a>
-          </div>
-        </section>
-
-        <section class="con-cues">
-          <h2>演出 cue</h2>
-          <div id="cueList" class="cue-list"></div>
-          <div class="btns">
-            <button id="cueStopAll">⏹ 全停止</button>
-          </div>
-          <p class="hint">cue の作成・マスク編集は「コンポジット検証」タブ（T5 で統合予定）。</p>
-        </section>
-
-        <section class="con-post">
-          <h2>全体グレーディング（global）</h2>
-          <p class="hint">ショー全体にかかる post FX。<b>カメラ別 🎨 画像加工が未設定のカメラ</b>はこの値に従う。
-            カメラ個別に明るさを変えたい時は各カメラの「🎨 画像加工」を使う。</p>
-          <label class="slider">露出 <input id="conExposure" type="range" min="-2" max="2" step="0.01" value="0"><span></span></label>
-          <label class="slider">コントラスト <input id="conContrast" type="range" min="0.5" max="2" step="0.01" value="1"><span></span></label>
-          <label class="slider">彩度 <input id="conSaturation" type="range" min="0" max="2" step="0.01" value="1"><span></span></label>
-          <label class="slider">色温度 <input id="conTemperature" type="range" min="-1" max="1" step="0.01" value="0"><span></span></label>
-          <label class="slider">ヴィネット <input id="conVignette" type="range" min="0" max="1" step="0.01" value="0.25"><span></span></label>
-          <label class="slider">グレイン <input id="conGrain" type="range" min="0" max="0.3" step="0.005" value="0.06"><span></span></label>
-          <label class="slider">走査線 <input id="conScanline" type="range" min="0" max="1" step="0.01" value="0"><span></span></label>
-          <div class="btns">
-            <button id="postReset">↺ 既定値に戻す</button>
-          </div>
-        </section>
-      </div>
-    </div>
-
-    <div class="main" id="tabComp" style="display:none">
-      <div class="stage">
-        <canvas id="gl"></canvas>
-      </div>
-
-      <aside class="panel">
-        <section>
-          <h2>ソース割り当て</h2>
-          <p class="hint">各ソースを「白に接続」か「黒に接続」で割り当て。マスクの白い所に「白」、黒い所に「黒」が出る。</p>
-
-          <div class="row"><label>⬜ 白スロット</label></div>
-          <div class="btns">
-            <button data-which="white" data-src="test">テスト</button>
-            <button data-which="white" data-src="gradient">グラデ</button>
-            <button data-which="white" data-src="webcam">Webcam</button>
-            <button data-which="white" data-src="file">動画</button>
-          </div>
-          <div class="row"><label>⬛ 黒スロット</label></div>
-          <div class="btns">
-            <button data-which="black" data-src="test">テスト</button>
-            <button data-which="black" data-src="gradient">グラデ</button>
-            <button data-which="black" data-src="webcam">Webcam</button>
-            <button data-which="black" data-src="file">動画</button>
-          </div>
-
-          <div class="row"><label>📡 リアルタイム映像（配信スマホ MJPEG）</label></div>
-          <div class="btns">
-            <input id="streamUrl" type="text" value="http://192.168.11.10:8080/video" spellcheck="false">
-          </div>
-          <div class="btns">
-            <button data-which="white" data-src="stream">白に接続</button>
-            <button data-which="black" data-src="stream">黒に接続</button>
-          </div>
-          <div class="btns">
-            <button id="captureBtn">📷 配信をキャプチャ</button>
-            <button id="captureTimerBtn">⏱ 3秒後にキャプチャ</button>
-            <button id="captureRecBtn">⏺ 配信を録画</button>
-          </div>
-          <p class="hint">キャプチャ／録画は PC 内 <code>captures/</code> に保存される（スマホには書かない）。</p>
-
-          <div class="row"><label>その他</label></div>
-          <div class="btns">
-            <button id="swap">⇄ 白黒入替</button>
-          </div>
-        </section>
-
-        <section>
-          <h2>💾 保存済み（PC内）</h2>
-          <div class="btns">
-            <button id="galleryRefresh">↻ 一覧更新</button>
-          </div>
-          <div id="gallery" class="gallery"></div>
-        </section>
-
-        <section>
-          <h2>🎬 生成プロンプト（PC内に保存）</h2>
-          <div class="btns">
-            <label class="check"><input type="radio" name="promptKind" value="image" checked> 🖼️ 画像生成</label>
-            <label class="check"><input type="radio" name="promptKind" value="video"> 🎬 動画生成</label>
-          </div>
-          <input id="promptTitle" type="text" placeholder="タイトル（任意）" spellcheck="false">
-          <textarea id="promptText" rows="5" placeholder="プロンプト本文を貼り付け / 入力…"></textarea>
-          <div class="btns">
-            <button id="promptSave" class="accent">＋ 保存</button>
-            <button id="promptNew">クリア</button>
-            <button id="promptTemplate">雛形を挿入</button>
-          </div>
-          <div id="promptList" class="prompt-list"></div>
-        </section>
-
-        <section>
-          <h2>マスク（白 / 黒 の切り分け）</h2>
-          <canvas id="maskView" class="mask-view"></canvas>
-          <p class="hint">分割: ドラッグで境界移動 / 矩形・円・全: 左ドラッグ=白・右(Shift)=黒</p>
-          <div class="btns">
-            <button data-mask="split-lr">左右</button>
-            <button data-mask="split-rl">右左</button>
-            <button data-mask="split-tb">上下</button>
-            <button data-mask="split-bt">下上</button>
-            <button data-mask="rect">矩形</button>
-            <button data-mask="circle">円</button>
-            <button data-mask="full-live">全白</button>
-            <button data-mask="full-pre">全黒</button>
-            <button id="maskInvert">反転</button>
-          </div>
-          <label class="slider">ブラシ <input id="brush" type="range" min="8" max="200" value="64"></label>
-          <label class="slider">フェザー <input id="feather" type="range" min="0" max="1" step="0.01" value="0.3"><span id="featherVal"></span></label>
-        </section>
-
-        <section>
-          <h2>🎬 cue として登録（オペレータ卓へ）</h2>
-          <p class="hint">今のマスクの<b>黒スロット領域＝差し替え領域</b>として書き出し、選んだ素材と組で show.json に保存する。発火はコンソールタブから。</p>
-          <input id="cueName" type="text" placeholder="cue 名（例: 血の手形）" spellcheck="false">
-          <div class="btns">
-            <label>カメラ <select id="cueCamera"></select></label>
-            <label>強度 <input id="cueStrength" type="number" min="0" max="1" step="0.05" value="1" style="width:60px"></label>
-            <label class="check"><input id="cueLoop" type="checkbox" checked> ループ</label>
-          </div>
-          <div class="btns">
-            <label>フェードIN <input id="cueFadeIn" type="number" min="0" step="0.1" value="0.5" style="width:56px">s</label>
-            <label>OUT <input id="cueFadeOut" type="number" min="0" step="0.1" value="0.5" style="width:56px">s</label>
-          </div>
-          <div class="row"><label>差し替え素材（captures/ から選ぶ or URL 直書き）</label></div>
-          <select id="cueSource"></select>
-          <input id="cueSourceUrl" type="text" placeholder="または素材 URL（/captures/xxx.mp4 等）" spellcheck="false">
-          <div class="btns">
-            <button id="cueSave" class="accent">💾 マスク付きで保存</button>
-            <button id="cueSaveFull">全面差し替えで保存</button>
-            <button id="cueSourceRefresh">↻ 素材一覧</button>
-          </div>
-          <span id="cueStatus" class="hint"></span>
-        </section>
-
-        <section>
-          <h2>合成跡を消す処理</h2>
-          <label class="check"><input id="colorMatch" type="checkbox" checked> ① 色統計マッチング</label>
-          <label class="slider">強度 <input id="colorStrength" type="range" min="0" max="1" step="0.01" value="1"><span id="colorStrengthVal"></span></label>
-          <label class="check"><input id="laplacian" type="checkbox" checked> ② ラプラシアンピラミッド合成</label>
-          <label class="slider">レベル <input id="levels" type="range" min="2" max="9" step="1" value="7"><span id="levelsVal">7</span></label>
-        </section>
-
-        <section>
-          <h2>後段フィルタ</h2>
-          <label class="slider">露出 <input id="exposure" type="range" min="-2" max="2" step="0.01" value="0"><span id="exposureVal"></span></label>
-          <label class="slider">コントラスト <input id="contrast" type="range" min="0.5" max="2" step="0.01" value="1"><span id="contrastVal"></span></label>
-          <label class="slider">彩度 <input id="saturation" type="range" min="0" max="2" step="0.01" value="1"><span id="saturationVal"></span></label>
-          <label class="slider">色温度 <input id="temperature" type="range" min="-1" max="1" step="0.01" value="0"><span id="temperatureVal"></span></label>
-          <label class="slider">ヴィネット <input id="vignette" type="range" min="0" max="1" step="0.01" value="0.25"><span id="vignetteVal"></span></label>
-          <label class="slider">グレイン <input id="grain" type="range" min="0" max="0.4" step="0.005" value="0.06"><span id="grainVal"></span></label>
-          <label class="slider">色収差 <input id="aberration" type="range" min="0" max="20" step="0.1" value="0"><span id="aberrationVal"></span></label>
-          <label class="slider">走査線 <input id="scanline" type="range" min="0" max="1" step="0.01" value="0"><span id="scanlineVal"></span></label>
-        </section>
-
-        <section>
-          <h2>表示</h2>
-          <label class="check"><input id="showMask" type="checkbox"> マスク境界をオーバーレイ</label>
-          <label class="check"><input id="fit" type="checkbox" checked> アスペクト維持（縦持ち配信を歪ませない）</label>
-          <label class="slider">解像度
-            <select id="res">
-              <option value="320x180">320x180</option>
-              <option value="640x360" selected>640x360</option>
-              <option value="960x540">960x540</option>
-              <option value="1280x720">1280x720</option>
-            </select>
-          </label>
-        </section>
-      </aside>
-    </div>
+      <div id="cams" class="cams"></div>
+    </section>
   </div>
-  <script type="module" src="main.js"></script>
-  <script type="module" src="console.js"></script>
-  <script type="module" src="cue-editor.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
