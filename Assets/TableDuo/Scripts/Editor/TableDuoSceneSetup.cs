@@ -223,6 +223,8 @@ namespace TableDuoVr.EditorTools
             recSo.ApplyModifiedPropertiesWithoutUndo();
 
             systems.AddComponent<RecenterWatcher>();
+            // 手動リセット: コントローラ両手グリップ長押しで頭を席へ戻す（人側/手側両方・ジェスチャー不可）
+            systems.AddComponent<ControllerRecenterWatcher>();
 
             var fake = systems.AddComponent<FakeHandDriver>();
             fake.enabled = false; // L0 検証時に手動で ON

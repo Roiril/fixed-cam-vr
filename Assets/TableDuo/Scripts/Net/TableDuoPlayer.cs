@@ -36,6 +36,8 @@ namespace TableDuoVr.Net
         private PinchGrabInteractor? _interactor;
         private RecenterWatcher? _recenterWatcher;
         private System.Action? _onRecentered;
+        private ControllerRecenterWatcher? _controllerRecenter;
+        private System.Action? _onControllerRecenter;
         private IHandPoseSource? _source;
         private HandPoseSampler? _sampler;
         private Transform? _seat;
@@ -84,6 +86,10 @@ namespace TableDuoVr.Net
             if (_recenterWatcher != null && _onRecentered != null)
             {
                 _recenterWatcher.Recentered -= _onRecentered;
+            }
+            if (_controllerRecenter != null && _onControllerRecenter != null)
+            {
+                _controllerRecenter.Recentered -= _onControllerRecenter;
             }
             if (ConnectionManager.Instance != null)
             {
@@ -140,6 +146,19 @@ namespace TableDuoVr.Net
                     if (IsSpawned) ReportRecenterServerRpc();
                 };
                 _recenterWatcher.Recentered += _onRecentered;
+            }
+
+            // 手動リセット: コントローラ両手グリップ長押し（人側/手側 両方・ジェスチャー不可）→ 頭を席へ戻す
+            _controllerRecenter = FindObjectOfType<ControllerRecenterWatcher>();
+            if (_controllerRecenter != null)
+            {
+                var seatRef = seat;
+                _onControllerRecenter = () =>
+                {
+                    RecenterToSeat(seatRef);
+                    if (IsSpawned) ReportRecenterServerRpc();
+                };
+                _controllerRecenter.Recentered += _onControllerRecenter;
             }
         }
 
@@ -206,6 +225,24 @@ namespace TableDuoVr.Net
 
         private static int SeatIndexOf(StudyConfig.Role role) =>
             role == StudyConfig.Role.Full ? 0 : 1;
+
+        /// <summary>
+        /// 手動リセット: 現在の頭の姿勢を席（初期目線アンカー）へ合わせる（yaw＋位置）。
+        /// OS recenter と違い頭オフセットが残らないよう <see cref="RigRecenter.HeadToSeat"/> を使う。
+        /// 頭が取れない L0 ではリグを席へ素直にアライン。
+        /// </summary>
+        private void RecenterToSeat(Transform seat)
+        {
+            var rig = _sampler != null ? _sampler.RigRoot : null;
+            var head = _sampler != null ? _sampler.CenterEye : null;
+            if (rig == null || head == null)
+            {
+                AlignLocalRig(seat);
+                return;
+            }
+            RigRecenter.HeadToSeat(rig, head, seat);
+            Debug.Log("[TableDuo] 手動リセット: 頭を席へ再センタ");
+        }
 
         /// <summary>OVRCameraRig（あれば）を席へアライン。L0（リグ無し）は何もしない。</summary>
         private void AlignLocalRig(Transform seat)

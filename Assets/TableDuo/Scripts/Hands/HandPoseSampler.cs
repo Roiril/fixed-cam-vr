@@ -33,6 +33,9 @@ namespace TableDuoVr.Hands
         /// <summary>席アライン対象のリグルート。L0（リグ無し）では null。</summary>
         public Transform? RigRoot => rigRoot;
 
+        /// <summary>頭（CenterEyeAnchor）。手動リセットで「頭→席」を合わせるのに使う。L0 では null。</summary>
+        public Transform? CenterEye => centerEye;
+
         /// <summary>片手モード: 左手を抑制（pose 非送信 + ローカル描画も隠す＝身体感の一貫性）。</summary>
         public bool SuppressLeftHand
         {

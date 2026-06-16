@@ -27,6 +27,12 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **指ポーズが動かない（ずっとパー）バグ → 2026-06-15 修正済み**。原因: `OVRCustomHandPrefab_L/R` の `OVRCustomSkeleton._customBones_V2` が SDK 同梱状態で**全 null（未マッピング）**。`CustomBones` を読んで bone を回す実装だと全 null で指が一切動かず bind＝開いた手で固定（手首位置だけ別経路で追従）。修正＝`RemoteHandMeshProvider.MapHandBonesByName` で Meta の FBX 命名（`b_r_thumb0` 等、BoneId 順）を実体検索して回す（[[unity_pitfalls]] 参照）。**実機で指の曲げ同期は要再確認**（手首向きの二重適用が無いかも併せて見る）
 - テーブル上の小物・カードは **Setup が天板の実バウンディング（高さ・XZ 範囲）を測って接地配置**（maxWidth で天板が 0.7→0.5 に縮むので固定 Y だと浮く。固定値ハードコード禁止）
 
+## 手動視点リセット（2026-06-16）
+- **人側/手側 両方**: コントローラ**両手グリップ同時 3 秒長押し**で頭を席（初期目線アンカー）へ戻す。
+- **コントローラ限定**: 入力は OVRInput の grip 軸（LTouch/RTouch）だけ。ハンドトラッキング/ピンチは一切見ないのでジェスチャーでは発火しない。両手必須で片手偶発も防止（誤検知防止の明示要件）。閾値/秒数は `ControllerRecenterWatcher` の SerializeField
+- 実装: [ControllerRecenterWatcher](../../Assets/TableDuo/Scripts/Hands/ControllerRecenterWatcher.cs)(OVR依存・Hands, event 発火) → [TableDuoPlayer](../../Assets/TableDuo/Scripts/Net/TableDuoPlayer.cs) が購読 → [RigRecenter.HeadToSeat](../../Assets/TableDuo/Scripts/Net/RigRecenter.cs)（純関数・yaw＋位置を頭→席へ、pitch/roll は保持＝水平維持。EditMode テスト済み）+ recenter ログ送信。OS recenter（[[ ]] RecenterWatcher）は従来通り AlignLocalRig
+- **Setup 再実行が必要**: `ControllerRecenterWatcher` は `Setup TableDuo Scene` が Systems に追加する。既存シーンに無ければ再実行
+
 ## 既知の罠
 - **ビルド直前に `Setup TableDuo Scene` を再実行**してクリーン状態にする。L0/リプレイ検証で OVRCameraRig 無効・DebugCamera/ReplayViewer 有効・FakeHandDriver 有効のまま保存→ビルドすると実機で VR にならず平面表示（2 回踏んだ → [[unity_pitfalls]] 同種）
 - ハンドトラッキングは「自分の手を見てる（カメラ FOV 内）」時だけ高精度。不調切り分けは `HandPoseSampler.logDiagnostics=true`→`[TDV-DIAG]` ログ（既定オフ）
