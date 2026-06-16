@@ -37,6 +37,13 @@ namespace TableDuoVr.EditorTools
                 seat.transform.position = Vector3.zero;
                 var view = RemoteAvatarView.Create(seat.transform, handsOnly: false);
 
+                // エディタ同期実行中はフレーム更新が無く SMR が初回姿勢でスキンを焼いたままになる。
+                // レンダー毎に行列再計算を強制し、ポーズ切替が各ショットに反映されるようにする
+                foreach (var smr in seat.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    smr.forceMatrixRecalculationPerRender = true;
+                }
+
                 // 専用ライト（シーンのライト状態に依存しないよう自前で1灯）
                 lightGo = new GameObject("PreviewLight");
                 var light = lightGo.AddComponent<Light>();
@@ -53,17 +60,17 @@ namespace TableDuoVr.EditorTools
                 cam.backgroundColor = new Color(0.60f, 0.62f, 0.65f);
                 cam.cullingMask = 1 << Layer; // アバターだけを描画（テーブル等を除外）
 
-                var aim = new Vector3(0f, -0.28f, 0.05f);
+                var aim = new Vector3(0f, -0.38f, 0.05f); // 座位フルボディの重心寄り
 
                 view.PoseImmediate(NeutralPose());
                 SetLayerRecursive(seat, Layer);
-                Shot(cam, dir, "01_front_neutral.png", new Vector3(0f, -0.20f, 2.30f), aim);
-                Shot(cam, dir, "02_threequarter.png", new Vector3(1.55f, -0.05f, 1.75f), aim);
-                Shot(cam, dir, "04_side.png", new Vector3(2.30f, -0.28f, 0.05f), aim);
+                Shot(cam, dir, "01_front_neutral.png", new Vector3(0f, -0.30f, 3.0f), aim);
+                Shot(cam, dir, "02_threequarter.png", new Vector3(2.1f, -0.15f, 2.2f), aim);
+                Shot(cam, dir, "04_side.png", new Vector3(3.0f, -0.38f, 0.05f), aim);
 
                 view.PoseImmediate(GesturePose());
                 SetLayerRecursive(seat, Layer);
-                Shot(cam, dir, "03_front_gesture.png", new Vector3(0f, -0.20f, 2.30f), aim);
+                Shot(cam, dir, "03_front_gesture.png", new Vector3(0f, -0.30f, 3.0f), aim);
 
                 Debug.Log($"[TableDuo] アバタープレビュー保存 → {dir}\n" +
                           "01_front_neutral.png / 02_threequarter.png / 03_front_gesture.png / 04_side.png");

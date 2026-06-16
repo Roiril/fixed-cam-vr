@@ -28,6 +28,7 @@ namespace TableDuoVr.Net
         private Transform? _armR;
         private HandView? _left;
         private HandView? _right;
+        private RemyAvatarRig? _remy; // フル（人側）= Mixamo Remy 駆動。無ければ procedural 人型へフォールバック
         private bool _handsOnly;
 
         private readonly AvatarPose _target = new();
@@ -85,13 +86,24 @@ namespace TableDuoVr.Net
                 {
                     _head = CreatePrimitive(transform, PrimitiveType.Sphere, 0.06f, "HeadMarker", _markerMat);
                 }
+                _left = new HandView(transform, "HandL", isRight: false);
+                _right = new HandView(transform, "HandR", isRight: true);
             }
             else
             {
-                BuildHumanUpperBody();
+                // 人側フル: Remy（Mixamo）があれば IK 駆動、無ければ procedural 人型＋手メッシュへフォールバック
+                var remyPrefab = Resources.Load<GameObject>("RemyFullAvatar");
+                if (remyPrefab != null)
+                {
+                    _remy = new RemyAvatarRig(transform, remyPrefab);
+                }
+                else
+                {
+                    BuildHumanUpperBody();
+                    _left = new HandView(transform, "HandL", isRight: false);
+                    _right = new HandView(transform, "HandR", isRight: true);
+                }
             }
-            _left = new HandView(transform, "HandL", isRight: false);
-            _right = new HandView(transform, "HandR", isRight: true);
         }
 
         /// <summary>簡易人型の上半身（頭＝顔＋目 / 首 / 肩 / テーパー胴 / 肩→手首の袖）。フルアバター用。</summary>
@@ -155,6 +167,11 @@ namespace TableDuoVr.Net
         /// <summary>ターゲット pose をパーツへ反映。a=頭/手の平滑係数、chestA=胴の平滑係数（1=即時）。</summary>
         private void ApplyToTransforms(float a, float chestA)
         {
+            if (_remy != null)
+            {
+                _remy.Drive(_target); // Remy は IK で即解（平滑は IK 入力＝受信 pose 側に委ねる）
+                return;
+            }
             if (_head != null)
             {
                 _head.localPosition = Vector3.Lerp(_head.localPosition, _target.HeadPos, a);
