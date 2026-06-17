@@ -186,6 +186,7 @@ $RECYCLE.BIN/
 
 # web compositor のキャプチャ/録画（PC ローカル成果物・コミットしない）
 tools/web-compositor/captures/
+tools/web-compositor/recordings/
 tools/web-compositor/prompts.json
 tools/web-compositor/show.json
 tools/web-compositor/masks/

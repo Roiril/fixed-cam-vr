@@ -3,7 +3,7 @@
 **1 ページ統合 UI（縦割り = カメラ列）**（2026-06-16 にユーザー要望で再編）。旧 3 画面（コンソール / コンポジット検証 / 合成エディタ multicam.html）を 1 ページへ統合し、人間が触らない検証機能（色統計マッチング・ラプラシアン・プロンプト管理・ギャラリー・Webcam/テスト source）は撤去した。
 
 構成: **ステータス**（Unity 生存/アクティブカメラ/fps/反映rev）＋ **マルチカメラ**（列＝カメラ A/B/C、各列を上から **ビュー / 設定 / マスク / 合成素材** と縦割り）。
-- **ビュー**: 画質を当てた最終見た目。Unity `ScreenComposite.shader` を WebGL `FS_VIEW` で移植＝**Quest と同じ絵**。スライダを動かすとその場で反映（「画質をいじった結果が見えない」を解消）。+ ▶発火/⏹停止/🔒固定/📷保存
+- **ビュー**: 画質を当てた最終見た目。Unity `ScreenComposite.shader` を WebGL `FS_VIEW` で移植＝**Quest と同じ絵**。スライダを動かすとその場で反映（「画質をいじった結果が見えない」を解消）。+ ▶発火/⏹停止/🔒固定/**📷 1枚キャプチャ/⏺ 録画**（webgl `captureStream`+MediaRecorder→`recordings/`、`/save?to=recordings&cam=`）。📂 撮影フォルダ ボタン=`/open-dir`。デモ用に 1 画面密度レイアウト（canvas 高は vh 上限・FX 2 列・短画面 media query）
 - **設定**: IP/port/auth ＋ カメラ別画質（7 スライダ → `cameras[i].post`）
 - **マスク**: 白黒で差し替え領域（白=差し替え）。矩形/ブラシ/消し/半分/反転/クリア
 - **合成素材**: captures/ から画像/動画 select（or URL）→ 💾 cue 保存（1 カメラ 1 cue: id=`cue_<camId>`）

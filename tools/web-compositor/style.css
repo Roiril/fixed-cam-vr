@@ -361,3 +361,60 @@ select option { background: #111; color: var(--text-color); }
 .ed-status { display: block; margin-top: 6px; font-size: 11px; min-height: 1.2em; opacity: var(--opacity-sub); }
 .ed-status.ok { color: var(--accent-color); opacity: 1; }
 .ed-status.err { color: var(--danger-color); opacity: 1; }
+
+/* ===================================================================== */
+/* ③ デモ用: 1 画面に全コンテンツを収める高密度レイアウト（縦割り維持）   */
+/*   後勝ちで上の統合スタイルを締める。要素を詰め、2 canvas を vh で上限。  */
+/* ===================================================================== */
+header { padding: 7px 16px 6px; gap: 8px 16px; }
+header h1 { font-size: 14px; }
+.multicam { padding: 8px 14px 12px; }
+.mc-title { margin-bottom: 6px; font-size: 10px; }
+.mc-title .hint { flex-basis: 100%; opacity: var(--opacity-mute); }
+
+/* 3 カメラを等幅 3 列固定（縦割り）。中央寄せで横に広がりすぎないよう上限。 */
+.cams { gap: 10px; max-width: 1180px; margin: 0 auto; grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1040px) { .cams { grid-template-columns: 1fr 1fr; max-width: none; } }
+@media (max-width: 680px)  { .cams { grid-template-columns: 1fr; } }
+
+.col-head { padding: 5px 8px; }
+.col-sec { padding: 5px 8px; }
+.sec-label { margin-bottom: 3px; font-size: 8px; }
+
+/* ビュー/マスクは縦を vh で上限化（歪ませず中央寄せ・レターボックスは枠の黒で吸収）。 */
+.view-wrap { display: flex; justify-content: center; }
+.view-canvas, .mask-canvas {
+  display: block; margin: 0 auto; width: auto; height: auto;
+  max-width: 100%; aspect-ratio: 16 / 9;
+}
+.view-canvas { max-height: 24vh; }
+.mask-canvas { max-height: 14vh; }
+
+/* 低い画面（ノート PC 等）ではさらに詰めて 1 画面に収める */
+@media (max-height: 860px) {
+  .view-canvas { max-height: 19vh; }
+  .mask-canvas { max-height: 12vh; }
+  .col-sec { padding: 4px 8px; }
+  .sec-label { margin-bottom: 2px; }
+  .row-btns { margin-top: 3px; }
+  .fx-rows { margin-top: 3px; }
+  .mc-title { margin-bottom: 4px; }
+  header { padding: 5px 16px 5px; }
+}
+
+.row-btns { margin-top: 4px; gap: 4px; }
+.row-btns button { padding: 3px 7px; font-size: 11px; }
+.rec-btn.on { color: var(--danger-color); border-color: var(--danger-color);
+  box-shadow: inset 0 0 0 1px var(--danger-color); opacity: 1; }
+
+.ip-row { gap: 5px; }
+/* 画質 7 スライダは 2 列グリッドで縦を半減 */
+.fx-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 10px; margin-top: 5px; padding-left: 5px; }
+.sld { margin: 1px 0; gap: 5px; font-size: 10px; }
+.sld input[type=range] { min-width: 40px; }
+.sld span { min-width: 28px; }
+.fx-row { overflow: hidden; }
+.fx-reset { font-size: 10px; padding: 2px 7px; margin-top: 3px; }
+
+.col-sec .src-url { margin-top: 3px; }
+.ed-status { margin-top: 3px; min-height: 1em; }

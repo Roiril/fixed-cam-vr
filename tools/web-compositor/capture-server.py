@@ -35,8 +35,14 @@ from urllib.parse import urlparse, parse_qs
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CAPTURES = os.path.join(ROOT, 'captures')
 MASKS = os.path.join(ROOT, 'masks')
+# デモ撮影専用フォルダ（静止画 📷 / 録画 ⏺ の保存先。captures とは分ける）
+RECORDINGS = os.path.join(ROOT, 'recordings')
 os.makedirs(CAPTURES, exist_ok=True)
 os.makedirs(MASKS, exist_ok=True)
+os.makedirs(RECORDINGS, exist_ok=True)
+
+# /save?to= と /open-dir?dir= の保存先ホワイトリスト（パストラバーサル防止）
+SAVE_DIRS = {'captures': CAPTURES, 'recordings': RECORDINGS}
 
 # ---- ショー状態（show.json = 状態の正）----------------------------------
 SHOW_FILE = os.path.join(ROOT, 'show.json')
@@ -134,6 +140,9 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/reveal':
             q = parse_qs(urlparse(self.path).query)
             return self._reveal(q.get('name', [''])[0])
+        if path == '/open-dir':
+            q = parse_qs(urlparse(self.path).query)
+            return self._open_dir(q.get('dir', ['recordings'])[0])
         if path == '/state':
             return self._get_state()
         if path == '/unity/status':
@@ -232,6 +241,23 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             return self._json({'ok': False, 'error': str(e)}, 500)
 
+    # 撮影フォルダ（recordings/ 等）をファイルマネージャで開く。
+    def _open_dir(self, key):
+        target = SAVE_DIRS.get(key)
+        if not target:
+            return self._json({'ok': False, 'error': 'bad dir'}, 400)
+        os.makedirs(target, exist_ok=True)
+        try:
+            if sys.platform.startswith('win'):
+                subprocess.Popen(['explorer', target])
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', target])
+            else:
+                subprocess.Popen(['xdg-open', target])
+            return self._json({'ok': True, 'path': target})
+        except Exception as e:
+            return self._json({'ok': False, 'error': str(e)}, 500)
+
     def do_POST(self):
         parsed = urlparse(self.path)
         if parsed.path == '/state':
@@ -249,16 +275,22 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == '/save':
             q = parse_qs(parsed.query)
             typ = q.get('type', ['image'])[0]
+            to = q.get('to', ['captures'])[0]
+            dest = SAVE_DIRS.get(to, CAPTURES)
+            cam = (q.get('cam', [''])[0]) or ''
+            cam = cam if re.fullmatch(r'[A-Za-z0-9_\-]{1,16}', cam) else ''
             ext = 'webm' if typ == 'video' else 'jpg'
             length = int(self.headers.get('Content-Length', 0))
             data = self.rfile.read(length) if length else b''
             if not data:
                 return self._json({'ok': False, 'error': 'empty body'}, 400)
             stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
-            name = f'cap_{stamp}.{ext}'
-            with open(os.path.join(CAPTURES, name), 'wb') as f:
+            prefix = f'cam{cam}_' if cam else 'cap_'
+            name = f'{prefix}{stamp}.{ext}'
+            with open(os.path.join(dest, name), 'wb') as f:
                 f.write(data)
-            return self._json({'ok': True, 'name': name, 'url': '/captures/' + name,
+            url = ('/recordings/' if dest is RECORDINGS else '/captures/') + name
+            return self._json({'ok': True, 'name': name, 'url': url, 'dir': to,
                                'type': typ, 'size': len(data)})
 
         if parsed.path == '/prompts':

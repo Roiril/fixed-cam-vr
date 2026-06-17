@@ -96,7 +96,8 @@ function buildColumn(cam, index) {
         <button class="cue-fire accent">▶ 発火</button>
         <button class="cue-stop">⏹ 停止</button>
         <span class="spacer"></span>
-        <button class="cap-btn" title="今のフレームを captures/ に保存">📷 保存</button>
+        <button class="cap-btn" title="この見た目を1枚 recordings/ に保存">📷</button>
+        <button class="rec-btn" title="動画 録画 開始 / 停止（recordings/ へ）">⏺ 録画</button>
       </div>
     </div>
 
@@ -336,17 +337,39 @@ function buildColumn(cam, index) {
   q('.cue-stop').onclick = () => postCommand({ type: 'stopCue' });
   q('.col-lock').onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
 
-  // ===== 📷 キャプチャ（今の live フレーム）=====
-  q('.cap-btn').onclick = async () => {
-    if (!refs.liveImg.naturalWidth) return ed('ライブ映像が無い', 'err');
-    const cv = document.createElement('canvas');
-    cv.width = refs.liveImg.naturalWidth; cv.height = refs.liveImg.naturalHeight;
-    cv.getContext('2d').drawImage(refs.liveImg, 0, 0);
-    cv.toBlob(async (blob) => {
-      const r = await (await fetch('/save?type=image', { method: 'POST', body: blob })).json();
-      if (r.ok) { ed(`📷 保存: ${r.name}`, 'ok'); refreshCaptures(); }
-      else ed('保存失敗', 'err');
+  // ===== 📷 キャプチャ / ⏺ 録画（ビューの見た目＝Quest と同じ絵を recordings/ へ）=====
+  const viewCanvas = q('.view-canvas');
+  q('.cap-btn').onclick = () => {
+    viewCanvas.toBlob(async (blob) => {
+      if (!blob) return ed('キャプチャ不可', 'err');
+      const r = await (await fetch(`/save?type=image&to=recordings&cam=${refs.cam.id}`,
+        { method: 'POST', body: blob })).json();
+      ed(r.ok ? `📷 保存: ${r.name}` : '保存失敗', r.ok ? 'ok' : 'err');
     }, 'image/jpeg', 0.92);
+  };
+
+  let mediaRec = null, recChunks = [];
+  q('.rec-btn').onclick = () => {
+    const btn = q('.rec-btn');
+    if (mediaRec && mediaRec.state === 'recording') { mediaRec.stop(); return; }
+    let stream;
+    try { stream = viewCanvas.captureStream(30); }
+    catch (e) { return ed('録画不可: ' + e.message, 'err'); }
+    recChunks = [];
+    const mime = (window.MediaRecorder && MediaRecorder.isTypeSupported('video/webm;codecs=vp9'))
+      ? 'video/webm;codecs=vp9' : 'video/webm';
+    mediaRec = new MediaRecorder(stream, { mimeType: mime });
+    mediaRec.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+    mediaRec.onstop = async () => {
+      btn.textContent = '⏺ 録画'; btn.classList.remove('on');
+      const blob = new Blob(recChunks, { type: 'video/webm' });
+      const r = await (await fetch(`/save?type=video&to=recordings&cam=${refs.cam.id}`,
+        { method: 'POST', body: blob })).json();
+      ed(r.ok ? `⏹ 録画保存: ${r.name}（${Math.round(r.size / 1024)}KB）` : '録画保存失敗', r.ok ? 'ok' : 'err');
+    };
+    mediaRec.start();
+    btn.textContent = '⏹ 停止'; btn.classList.add('on');
+    ed('● 録画中…', 'ok');
   };
 
   // ===== WebGL ビュー（ScreenComposite 再現）=====
@@ -363,7 +386,8 @@ function buildColumn(cam, index) {
 
 // ---- 列ごとの WebGL ビュー --------------------------------------------------
 function setupView(refs, canvas, mctx, maskCanvas) {
-  const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, alpha: false });
+  // preserveDrawingBuffer: true — 📷 toBlob / ⏺ captureStream で view を取り込めるようにする
+  const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, alpha: false, preserveDrawingBuffer: true });
   if (!gl) { canvas.replaceWith(Object.assign(document.createElement('div'),
     { className: 'view-fallback', textContent: 'WebGL2 非対応' })); return; }
   const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
@@ -474,6 +498,7 @@ async function pollUnity() {
 
 // ---- 起動 -------------------------------------------------------------------
 $('#autoZone').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
+$('#openRecordings').onclick = () => fetch('/open-dir?dir=recordings').catch(() => {});
 refreshCaptures();
 pollState();
 pollUnity();
