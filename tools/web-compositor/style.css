@@ -376,6 +376,19 @@ select option { background: #111; color: var(--text-color); }
   color: var(--accent-color); opacity: .8; margin-top: 4px; }
 .prompt-item .row-btns button { flex: 1; padding: 4px 6px; font-size: 11px; }
 
+/* マスク白黒境界（スライダ）/ 区間・フェード数値入力 */
+.mask-tools .seg-label { font-size: 10px; opacity: .55; letter-spacing: .04em; }
+.mask-tools [data-edge] { padding: 3px 8px; font-size: 11px; }
+.mask-tools .mask-pos { width: 76px; }
+.mask-pos-v { font-size: 10px; opacity: .6; min-width: 30px; font-variant-numeric: tabular-nums; }
+.cue-fade-sec, .trim-start, .trim-end {
+  flex: none; width: 46px; text-align: right; font-family: monospace; font-size: 11px;
+  border: none; border-bottom: 1px solid var(--line-input); background: transparent;
+  color: var(--text-color); padding: 2px 1px;
+}
+.cue-fade-sec:focus, .trim-start:focus, .trim-end:focus { border-bottom-color: var(--accent-color); outline: none; }
+.trim-row .sld { font-size: 10px; opacity: .85; }
+
 /* ===================================================================== */
 /* ① マスク/ビュー: カメラ実寸比（JS が aspect-ratio をインライン設定）。     */
 /*    黒レターボックスの「背景」を出さず、要素境界は 1px 罫線で示す。         */

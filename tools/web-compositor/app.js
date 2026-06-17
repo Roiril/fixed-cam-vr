@@ -94,6 +94,7 @@ function buildColumn(cam, index) {
       <div class="view-wrap"><canvas class="view-canvas" width="${MW}" height="${MH}"></canvas></div>
       <div class="row-btns">
         <button class="cue-toggle" title="演出（合成映像）の ON / OFF">演出 ON</button>
+        <span class="sld">fade <input class="cue-fade-sec" type="number" min="0" max="5" step="0.1" value="0.5" title="フェード秒（ON で出る / OFF・再生終了で戻る）">s</span>
         <span class="spacer"></span>
         <button class="cap-btn" title="この見た目を1枚 recordings/ に保存">📷</button>
         <button class="rec-btn" title="動画 録画 開始 / 停止（recordings/ へ）">⏺ 録画</button>
@@ -115,15 +116,13 @@ function buildColumn(cam, index) {
       <div class="sec-label">マスク（白 = 差し替え）</div>
       <div class="view-wrap"><canvas class="mask-canvas" width="${MW}" height="${MH}"></canvas></div>
       <div class="row-btns mask-tools">
-        <button data-tool="rect" class="on">▭</button>
-        <button data-tool="brush">🖌</button>
-        <button data-tool="erase">⌫</button>
-        <input type="range" class="brush-size" min="8" max="120" value="40" title="ブラシ">
-        <button data-fill="left">◧</button><button data-fill="right">◨</button>
-        <button data-fill="top">⬒</button><button data-fill="bottom">⬓</button>
-        <button data-fill="all">■</button>
-        <button class="mask-invert" title="反転">⇄</button>
-        <button class="mask-clear" title="クリア">✕</button>
+        <span class="seg-label">白の向き</span>
+        <button data-edge="left">左</button>
+        <button data-edge="right" class="on">右</button>
+        <button data-edge="top">上</button>
+        <button data-edge="bottom">下</button>
+        <span class="sld"><input type="range" class="mask-pos" min="0" max="100" value="50" title="白黒境界の位置"><span class="mask-pos-v">50%</span></span>
+        <button class="mask-clear" title="全黒に戻す">取り消し</button>
       </div>
     </div>
 
@@ -131,14 +130,13 @@ function buildColumn(cam, index) {
       <div class="sec-label">合成素材（画像 / 動画）</div>
       <div class="row-btns">
         <select class="src-select"></select>
-        <button class="src-refresh" title="captures/ を再読込">↻</button>
+        <button class="src-refresh" title="一覧を更新">↻</button>
+        <button class="src-folder" title="素材フォルダ（captures/）を開く">📂</button>
       </div>
-      <input type="text" class="src-url" placeholder="または素材 URL（/captures/xxx.webm 等）" spellcheck="false">
-      <div class="row-btns">
-        <label class="chk"><input type="checkbox" class="cue-loop" checked> ループ</label>
-        <span class="sld">fade <input type="range" class="cue-fade" min="0" max="3" step="0.1" value="0.5"><span class="fade-v">0.5s</span></span>
-        <button class="cue-save accent">💾 cue 保存</button>
+      <div class="row-btns trim-row" style="display:none">
+        <span class="sld">再生区間 <input class="trim-start" type="number" min="0" step="0.1" value="0" title="開始秒">–<input class="trim-end" type="number" min="0" step="0.1" value="0" title="終了秒（0=最後まで）">s</span>
       </div>
+      <div class="row-btns"><button class="cue-save accent">💾 cue 保存</button></div>
       <span class="ed-status"></span>
     </div>`;
 
@@ -202,73 +200,36 @@ function buildColumn(cam, index) {
   });
   refs.connectLive = connectLive;
 
-  // ===== マスク段 =====
+  // ===== マスク段（白黒境界をスライダで調整。白=差し替え）=====
   const maskCanvas = q('.mask-canvas');
   const mctx = maskCanvas.getContext('2d', { willReadFrequently: true });
-  mctx.fillStyle = '#000'; mctx.fillRect(0, 0, MW, MH);
-  let tool = 'rect', dragging = false, dStart = null, dCur = null, snap = null;
-  const lp = (ev) => {
-    const r = maskCanvas.getBoundingClientRect();
-    return { x: (ev.clientX - r.left) / r.width * MW, y: (ev.clientY - r.top) / r.height * MH };
-  };
-  const brush = (p, erase) => {
-    const r = maskCanvas.getBoundingClientRect();
-    const sz = parseInt(q('.brush-size').value, 10) / r.width * MW;
-    mctx.fillStyle = erase ? '#000' : '#fff';
-    mctx.beginPath(); mctx.arc(p.x, p.y, sz / 2, 0, Math.PI * 2); mctx.fill();
-  };
-  maskCanvas.addEventListener('pointerdown', (ev) => {
-    try { maskCanvas.setPointerCapture(ev.pointerId); } catch { /* noop */ }
-    dragging = true; dStart = dCur = lp(ev);
-    if (tool === 'rect') snap = mctx.getImageData(0, 0, MW, MH);
-    else brush(dCur, tool === 'erase');
-  });
-  maskCanvas.addEventListener('pointermove', (ev) => {
-    if (!dragging) return; dCur = lp(ev);
-    if (tool === 'rect') {
-      mctx.putImageData(snap, 0, 0);
-      mctx.strokeStyle = '#fff'; mctx.lineWidth = 2; mctx.setLineDash([6, 4]);
-      mctx.strokeRect(Math.min(dStart.x, dCur.x), Math.min(dStart.y, dCur.y),
-        Math.abs(dCur.x - dStart.x), Math.abs(dCur.y - dStart.y));
-      mctx.setLineDash([]);
-    } else brush(dCur, tool === 'erase');
-  });
-  maskCanvas.addEventListener('pointerup', () => {
-    if (dragging && tool === 'rect' && dStart && dCur && snap) {
-      mctx.putImageData(snap, 0, 0); mctx.fillStyle = '#fff';
-      mctx.fillRect(Math.min(dStart.x, dCur.x), Math.min(dStart.y, dCur.y),
-        Math.abs(dCur.x - dStart.x), Math.abs(dCur.y - dStart.y));
-    }
-    dragging = false; dStart = dCur = snap = null;
-  });
-  col.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => {
-    tool = b.dataset.tool;
-    col.querySelectorAll('[data-tool]').forEach((x) => x.classList.toggle('on', x === b));
+  refs.maskEdge = 'right'; refs.maskCoverage = 50;
+  function drawMask() {
+    const W = maskCanvas.width, H = maskCanvas.height;
+    mctx.fillStyle = '#000'; mctx.fillRect(0, 0, W, H);
+    const c = Math.max(0, Math.min(100, refs.maskCoverage)) / 100;
+    if (c <= 0) return;
+    mctx.fillStyle = '#fff';
+    if (refs.maskEdge === 'left') mctx.fillRect(0, 0, W * c, H);
+    else if (refs.maskEdge === 'right') mctx.fillRect(W * (1 - c), 0, W * c, H);
+    else if (refs.maskEdge === 'top') mctx.fillRect(0, 0, W, H * c);
+    else mctx.fillRect(0, H * (1 - c), W, H * c);
+  }
+  drawMask();
+  col.querySelectorAll('[data-edge]').forEach((b) => b.addEventListener('click', () => {
+    refs.maskEdge = b.dataset.edge;
+    col.querySelectorAll('[data-edge]').forEach((x) => x.classList.toggle('on', x === b));
+    drawMask();
   }));
-  col.querySelectorAll('[data-fill]').forEach((b) => b.addEventListener('click', () => {
-    const f = b.dataset.fill; mctx.fillStyle = '#fff';
-    if (f === 'all') mctx.fillRect(0, 0, MW, MH);
-    if (f === 'left') mctx.fillRect(0, 0, MW / 2, MH);
-    if (f === 'right') mctx.fillRect(MW / 2, 0, MW / 2, MH);
-    if (f === 'top') mctx.fillRect(0, 0, MW, MH / 2);
-    if (f === 'bottom') mctx.fillRect(0, MH / 2, MW, MH / 2);
-  }));
-  q('.mask-invert').onclick = () => {
-    const d = mctx.getImageData(0, 0, MW, MH);
-    for (let k = 0; k < d.data.length; k += 4) {
-      d.data[k] = 255 - d.data[k]; d.data[k + 1] = 255 - d.data[k + 1]; d.data[k + 2] = 255 - d.data[k + 2];
-    }
-    mctx.putImageData(d, 0, 0);
-  };
-  q('.mask-clear').onclick = () => { mctx.fillStyle = '#000'; mctx.fillRect(0, 0, MW, MH); };
-  const maskIsEmpty = () => {
-    const d = mctx.getImageData(0, 0, MW, MH).data;
-    for (let k = 0; k < d.length; k += 4) if (d[k] > 8) return false;
-    return true;
-  };
+  const maskPos = q('.mask-pos'), maskPosV = q('.mask-pos-v');
+  maskPos.oninput = () => { refs.maskCoverage = parseInt(maskPos.value, 10); maskPosV.textContent = maskPos.value + '%'; drawMask(); };
+  q('.mask-clear').onclick = () => { refs.maskCoverage = 0; maskPos.value = 0; maskPosV.textContent = '0%'; drawMask(); };
+  const maskIsEmpty = () => refs.maskCoverage <= 0;
 
   // ===== 合成素材 =====
-  const srcSelect = q('.src-select'), srcUrl = q('.src-url');
+  const srcSelect = q('.src-select');
+  const trimRow = q('.trim-row'), trimStartI = q('.trim-start'), trimEndI = q('.trim-end');
+  refs.trimStart = 0; refs.trimEnd = 0; refs.sourceUrl = '';
   refs.populateSources = () => {
     const cur = srcSelect.value;
     srcSelect.innerHTML = '<option value="">（captures/ から選ぶ）</option>';
@@ -281,12 +242,17 @@ function buildColumn(cam, index) {
   };
   function loadSource(url) {
     if (refs.srcMedia && refs.srcMedia.tagName === 'VIDEO') { refs.srcMedia.pause(); refs.srcMedia.src = ''; }
-    refs.srcMedia = null; refs.srcReady = false;
+    refs.srcMedia = null; refs.srcReady = false; refs.sourceUrl = url || '';
+    trimRow.style.display = 'none';
     if (!url) return;
     if (isVideoUrl(url)) {
       const v = document.createElement('video');
-      v.muted = true; v.loop = true; v.playsInline = true; v.crossOrigin = 'anonymous'; v.src = url;
-      v.addEventListener('canplay', () => { refs.srcReady = true; v.play().catch(() => {}); });
+      v.muted = true; v.loop = false; v.playsInline = true; v.crossOrigin = 'anonymous'; v.src = url;
+      v.addEventListener('loadedmetadata', () => {
+        trimRow.style.display = '';
+        if (!(refs.trimEnd > 0)) { refs.trimEnd = +(v.duration || 0).toFixed(1); trimEndI.value = refs.trimEnd; }
+      });
+      v.addEventListener('canplay', () => { refs.srcReady = true; });
       refs.srcMedia = v;
     } else {
       const im = new Image(); im.crossOrigin = 'anonymous';
@@ -294,19 +260,36 @@ function buildColumn(cam, index) {
       refs.srcMedia = im;
     }
   }
-  srcSelect.onchange = () => { srcUrl.value = ''; loadSource(srcSelect.value); };
-  srcUrl.onchange = () => loadSource(srcUrl.value.trim());
+  srcSelect.onchange = () => { refs.trimStart = 0; refs.trimEnd = 0; trimStartI.value = 0; trimEndI.value = 0; loadSource(srcSelect.value); };
   q('.src-refresh').onclick = refreshCaptures;
-  const fade = q('.cue-fade');
-  fade.oninput = () => { q('.fade-v').textContent = parseFloat(fade.value).toFixed(1) + 's'; };
+  q('.src-folder').onclick = () => fetch('/open-dir?dir=captures').catch(() => {});
+  trimStartI.onchange = () => { refs.trimStart = Math.max(0, parseFloat(trimStartI.value) || 0); };
+  trimEndI.onchange = () => { refs.trimEnd = Math.max(0, parseFloat(trimEndI.value) || 0); };
+
+  // 演出フェード秒（ON で出る / OFF・再生終了で戻る）。cue.fadeIn/Out にも反映。
+  const fadeSecI = q('.cue-fade-sec');
+  refs.fadeSec = parseFloat(fadeSecI.value) || 0.5;
+  function patchCueFade() {
+    const cues = state?.cues; if (!cues) return;
+    const cue = cues.find((c) => c.id === `cue_${refs.cam.id}`);
+    if (cue) { cue.fadeIn = refs.fadeSec; cue.fadeOut = refs.fadeSec; postState({ cues }); }
+  }
+  fadeSecI.onchange = () => { refs.fadeSec = Math.max(0, parseFloat(fadeSecI.value) || 0); patchCueFade(); };
+
+  // 動画が再生区間の終端に達したら演出 OFF（フェードで戻る）。ループしない。
+  refs.onOverlayEnd = () => {
+    if (refs.overlayEnded) return;
+    refs.overlayEnded = true;
+    postCommand({ type: 'stopCue' });
+  };
 
   const ed = (m, cls = '') => { const e = q('.ed-status'); e.textContent = m; e.className = 'ed-status ' + cls; };
 
   // ===== cue 保存（1 カメラ 1 cue: id = cue_<camId>）=====
   q('.cue-save').onclick = async () => {
     const camId = refs.cam.id;
-    const sourceUrl = (srcUrl.value.trim() || srcSelect.value || '').trim();
-    if (!sourceUrl) return ed('合成素材を選んで（or URL 直書き）', 'err');
+    const sourceUrl = refs.sourceUrl || srcSelect.value || '';
+    if (!sourceUrl) return ed('合成素材を選んで', 'err');
     const id = `cue_${camId}`;
     try {
       let maskUrl = '';
@@ -317,10 +300,10 @@ function buildColumn(cam, index) {
         if (!res.ok) throw new Error(res.error || 'マスク保存失敗');
         maskUrl = res.url;
       }
-      const f = parseFloat(fade.value) || 0.5;
       const cue = {
         id, name: `カメラ ${camId}`, camera: camId, maskUrl, sourceUrl,
-        strength: 1, loop: q('.cue-loop').checked, fadeIn: f, fadeOut: f,
+        strength: 1, loop: false, fadeIn: refs.fadeSec, fadeOut: refs.fadeSec,
+        trimStart: refs.trimStart || 0, trimEnd: refs.trimEnd || 0,
       };
       const s = await getState();
       const cues = s.cues || [];
@@ -408,9 +391,14 @@ function buildColumn(cam, index) {
   // ===== WebGL ビュー（ScreenComposite 再現）=====
   setupView(refs, q('.view-canvas'), mctx, maskCanvas);
 
-  // 既存 cue があれば素材 URL を復元（見た目を現状に合わせる）
+  // 既存 cue があれば素材・区間・フェードを復元（見た目を現状に合わせる）
   const existing = (state?.cues || []).find((c) => c.id === `cue_${cam.id}`);
-  if (existing?.sourceUrl) { srcUrl.value = existing.sourceUrl; loadSource(existing.sourceUrl); }
+  if (existing) {
+    if (existing.fadeIn != null) { refs.fadeSec = existing.fadeIn; fadeSecI.value = existing.fadeIn; }
+    if (existing.trimStart != null) { refs.trimStart = existing.trimStart; trimStartI.value = existing.trimStart; }
+    if (existing.trimEnd != null) { refs.trimEnd = existing.trimEnd; trimEndI.value = existing.trimEnd; }
+    if (existing.sourceUrl) { srcSelect.value = existing.sourceUrl; loadSource(existing.sourceUrl); }
+  }
 
   connectLive();
   refs.populateSources();
@@ -442,15 +430,26 @@ function setupView(refs, canvas, mctx, maskCanvas) {
     const img = refs.liveImg;
     if (img.naturalWidth) texLive.upload(img);
     texMask.upload(maskCanvas);
-    // 演出 ON（このカメラの cue が発火中）のときだけオーバーレイを出す。
-    // → 演出 OFF（停止）で合成映像が消える。Quest の挙動と一致。
-    let ovScale = [1, 1], ovStrength = 0;
-    if (refs.cueActive && refs.srcMedia && refs.srcReady) {
+    // 演出オーバーレイ: cueActive を target にして強度をフェード（ON=fade-in / OFF・再生終了=fade-out）。
+    const hasSrc = refs.srcMedia && refs.srcReady;
+    // 動画の再生区間終端 → 自動終了（ループしない）
+    if (refs.cueActive && !refs.overlayEnded && hasSrc && refs.srcMedia.tagName === 'VIDEO') {
+      const v = refs.srcMedia;
+      const tEnd = (refs.trimEnd > 0) ? refs.trimEnd : (v.duration || 0);
+      if (tEnd && v.currentTime >= tEnd - 0.03) refs.onOverlayEnd && refs.onOverlayEnd();
+    }
+    const target = (refs.cueActive && hasSrc && !refs.overlayEnded) ? 1 : 0;
+    const fadeSec = Math.max(0.05, refs.fadeSec ?? 0.5);
+    const stepMax = 0.04 / fadeSec;
+    const cur = refs._ov ?? 0;
+    refs._ov = cur + Math.max(-stepMax, Math.min(stepMax, target - cur));
+    let ovScale = [1, 1];
+    if (hasSrc && refs._ov > 0.002) {
       texOv.upload(refs.srcMedia);
       ovScale = containScale(refs.srcMedia.videoWidth || refs.srcMedia.naturalWidth,
         refs.srcMedia.videoHeight || refs.srcMedia.naturalHeight, frameAspect);
-      ovStrength = 1;
     }
+    const ovStrength = hasSrc ? refs._ov : 0;
     const p = refs.cam.post || state?.post || FX_DEFAULT;
     prog.draw(screen, {
       uLive: texLive, uOverlay: texOv, uMask: texMask,
@@ -485,6 +484,14 @@ function syncColumn(refs, cam) {
   if (key !== refs.streamKey) { refs.streamKey = key; refs.connectLive(); }
   // 演出 ON/OFF トグル（このカメラの cue が発火中か）
   const cueActive = state?.control?.activeCue === `cue_${cam.id}`;
+  if (cueActive && !refs.cueActive) {
+    // 演出 ON になった瞬間: 動画を再生区間の頭から再生、終了フラグをリセット
+    refs.overlayEnded = false;
+    const v = refs.srcMedia;
+    if (v && v.tagName === 'VIDEO') { try { v.currentTime = refs.trimStart || 0; v.play().catch(() => {}); } catch {} }
+  } else if (!cueActive && refs.cueActive) {
+    refs.overlayEnded = false; // OFF で次回に備える
+  }
   refs.cueActive = cueActive;
   const tg = refs.el.querySelector('.cue-toggle');
   tg.textContent = cueActive ? '演出 OFF' : '演出 ON';
