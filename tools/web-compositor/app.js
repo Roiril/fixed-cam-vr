@@ -544,5 +544,59 @@ async function pollUnity() {
 $('#autoZone').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
 $('#openRecordings').onclick = () => fetch('/open-dir?dir=recordings').catch(() => {});
 refreshCaptures();
+
+// ---- 生成プロンプト（下部・コピー用）。バックエンドは既存 /prompts（prompts.json）----
+async function loadPrompts() {
+  let items = [];
+  try { items = await (await fetch('/prompts')).json(); } catch { /* offline */ }
+  const wrap = $('#promptList'); wrap.innerHTML = '';
+  for (const [kind, label] of [['image', '🖼 画像生成'], ['video', '🎬 動画生成']]) {
+    const list = items.filter((p) => (p.kind || 'video') === kind);
+    if (!list.length) continue;
+    const h = document.createElement('div'); h.className = 'prompt-group'; h.textContent = label;
+    wrap.appendChild(h);
+    for (const it of list) wrap.appendChild(promptCard(it));
+  }
+}
+function copyText(text, btn) {
+  const flash = () => { btn.textContent = '✓ コピー'; setTimeout(() => (btn.textContent = '📋 コピー'), 1200); };
+  const fallback = () => {
+    const ta = document.createElement('textarea'); ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); flash(); } catch { /* noop */ } ta.remove();
+  };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(flash).catch(fallback);
+  else fallback();
+}
+function promptCard(it) {
+  const card = document.createElement('div'); card.className = 'prompt-item';
+  const head = document.createElement('div'); head.className = 'prompt-head'; head.textContent = it.title || '(無題)';
+  const body = document.createElement('div'); body.className = 'prompt-body'; body.textContent = it.text;
+  const btns = document.createElement('div'); btns.className = 'row-btns';
+  const copy = document.createElement('button'); copy.className = 'accent'; copy.textContent = '📋 コピー';
+  copy.onclick = () => copyText(it.text, copy);
+  const edit = document.createElement('button'); edit.textContent = '✎'; edit.title = '編集に読み込む';
+  edit.onclick = () => {
+    const r = document.querySelector(`input[name=pkind][value="${it.kind || 'video'}"]`); if (r) r.checked = true;
+    $('#pTitle').value = it.title || ''; $('#pText').value = it.text; $('#pText').dataset.id = it.id || '';
+    $('#pText').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  const del = document.createElement('button'); del.textContent = '🗑'; del.title = '削除';
+  del.onclick = async () => { try { await fetch('/prompts/delete', { method: 'POST', body: JSON.stringify({ id: it.id }) }); } catch {} loadPrompts(); };
+  btns.append(copy, edit, del);
+  card.append(head, body, btns);
+  return card;
+}
+$('#pSave').onclick = async () => {
+  const kind = (document.querySelector('input[name=pkind]:checked') || {}).value || 'image';
+  const title = $('#pTitle').value.trim(), text = $('#pText').value.trim();
+  if (!text) return;
+  const id = $('#pText').dataset.id || undefined;
+  try { await fetch('/prompts', { method: 'POST', body: JSON.stringify({ id, kind, title, text }) }); } catch {}
+  $('#pTitle').value = ''; $('#pText').value = ''; delete $('#pText').dataset.id;
+  loadPrompts();
+};
+loadPrompts();
+
 pollState();
 pollUnity();

@@ -28,6 +28,22 @@
       </div>
       <div id="cams" class="cams"></div>
     </section>
+
+    <section class="prompts">
+      <div class="mc-title">生成プロンプト
+        <span class="hint">画像/動画 AI 生成用。📋 でコピーして各ツールへ。PC（show.json と同じ）に保存。</span>
+      </div>
+      <div class="prompt-add">
+        <div class="row-btns">
+          <label class="chk"><input type="radio" name="pkind" value="image" checked> 🖼 画像</label>
+          <label class="chk"><input type="radio" name="pkind" value="video"> 🎬 動画</label>
+          <input id="pTitle" type="text" placeholder="タイトル（任意）">
+        </div>
+        <textarea id="pText" rows="3" placeholder="プロンプト本文を貼り付け / 入力…"></textarea>
+        <div class="row-btns"><button id="pSave" class="accent">＋ 保存 / 更新</button></div>
+      </div>
+      <div id="promptList" class="prompt-list"></div>
+    </section>
   </div>
   <script type="module" src="app.js"></script>
 </body>
