@@ -236,7 +236,7 @@ MonoBehaviour:
   hmd: {fileID: 612330381}
   updateInterval: 0.25
   healthRefreshInterval: 5
-  startVisible: 1
+  startVisible: 0
 --- !u!114 &5863496
 MonoBehaviour:
   m_ObjectHideFlags: 0

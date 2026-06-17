@@ -77,17 +77,20 @@ namespace FixedCamVr.OvrBridge
                 }
             }
 
+            // カメラ切替は右コントローラ限定で読む。Button.One/Two はコントローラ未指定だと
+            // A(右)|X(左) / B(右)|Y(左) を両手から拾うため、左の X/Y までカメラ切替に化けていた。
+            // RTouch を明示して A=Next / B=Prev に限定 → 左の X/Y は本来の anchor/HUD だけになる。
             if (registry != null && registry.Count > 0)
             {
-                if (OVRInput.GetDown(nextButton)) registry.Next();
-                if (OVRInput.GetDown(prevButton)) registry.Prev();
+                if (OVRInput.GetDown(nextButton, OVRInput.Controller.RTouch)) registry.Next();
+                if (OVRInput.GetDown(prevButton, OVRInput.Controller.RTouch)) registry.Prev();
             }
             if (screenAnchor != null)
             {
-                if (OVRInput.GetDown(anchorToggleButton)) screenAnchor.Toggle();
+                if (OVRInput.GetDown(anchorToggleButton, OVRInput.Controller.LTouch)) screenAnchor.Toggle();
             }
-            // 左コントローラ Y ボタンで HUD 表示トグル（要実機確認）
-            if (OVRInput.GetDown(hudToggleButton))
+            // 左コントローラ Y ボタンで HUD 表示トグル
+            if (OVRInput.GetDown(hudToggleButton, OVRInput.Controller.LTouch))
             {
                 _hudVisible = !_hudVisible;
                 if (hud != null)
