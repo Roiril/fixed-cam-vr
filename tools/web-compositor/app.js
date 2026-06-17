@@ -356,38 +356,53 @@ function buildColumn(cam, index) {
     viewCanvas.height = 360;
   };
 
-  // ===== 📷 キャプチャ / ⏺ 録画（ビューの見た目＝Quest と同じ絵を recordings/ へ）=====
+  // ===== 📷 キャプチャ / ⏺ 録画（★生フレーム = 画質加工も合成も無しの素の配信映像を recordings/ へ）=====
   q('.cap-btn').onclick = () => {
-    viewCanvas.toBlob(async (blob) => {
+    const img = refs.liveImg;
+    if (!img.naturalWidth) return ed('ライブ映像が無い', 'err');
+    const cv = document.createElement('canvas');
+    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+    cv.getContext('2d').drawImage(img, 0, 0);
+    cv.toBlob(async (blob) => {
       if (!blob) return ed('キャプチャ不可', 'err');
       const r = await (await fetch(`/save?type=image&to=recordings&cam=${refs.cam.id}`,
         { method: 'POST', body: blob })).json();
-      ed(r.ok ? `📷 保存: ${r.name}` : '保存失敗', r.ok ? 'ok' : 'err');
-    }, 'image/jpeg', 0.92);
+      ed(r.ok ? `📷 保存(生): ${r.name}` : '保存失敗', r.ok ? 'ok' : 'err');
+    }, 'image/jpeg', 0.95);
   };
 
-  let mediaRec = null, recChunks = [];
+  let mediaRec = null, recChunks = [], rawDrawTimer = 0;
   q('.rec-btn').onclick = () => {
     const btn = q('.rec-btn');
     if (mediaRec && mediaRec.state === 'recording') { mediaRec.stop(); return; }
+    const img = refs.liveImg;
+    if (!img.naturalWidth) return ed('ライブ映像が無い', 'err');
+    // 生フレーム用 2D canvas（加工・合成なし）。live をそのまま描いて captureStream する。
+    const raw = document.createElement('canvas');
+    raw.width = img.naturalWidth; raw.height = img.naturalHeight;
+    const rctx = raw.getContext('2d');
+    rctx.drawImage(img, 0, 0);
+    clearInterval(rawDrawTimer);
+    rawDrawTimer = setInterval(() => { if (img.naturalWidth) rctx.drawImage(img, 0, 0, raw.width, raw.height); }, 33);
     let stream;
-    try { stream = viewCanvas.captureStream(30); }
-    catch (e) { return ed('録画不可: ' + e.message, 'err'); }
+    try { stream = raw.captureStream(30); }
+    catch (e) { clearInterval(rawDrawTimer); return ed('録画不可: ' + e.message, 'err'); }
     recChunks = [];
     const mime = (window.MediaRecorder && MediaRecorder.isTypeSupported('video/webm;codecs=vp9'))
       ? 'video/webm;codecs=vp9' : 'video/webm';
     mediaRec = new MediaRecorder(stream, { mimeType: mime });
     mediaRec.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
     mediaRec.onstop = async () => {
+      clearInterval(rawDrawTimer);
       btn.textContent = '⏺ 録画'; btn.classList.remove('on');
       const blob = new Blob(recChunks, { type: 'video/webm' });
       const r = await (await fetch(`/save?type=video&to=recordings&cam=${refs.cam.id}`,
         { method: 'POST', body: blob })).json();
-      ed(r.ok ? `⏹ 録画保存: ${r.name}（${Math.round(r.size / 1024)}KB）` : '録画保存失敗', r.ok ? 'ok' : 'err');
+      ed(r.ok ? `⏹ 録画保存(生): ${r.name}（${Math.round(r.size / 1024)}KB）` : '録画保存失敗', r.ok ? 'ok' : 'err');
     };
     mediaRec.start();
     btn.textContent = '⏹ 停止'; btn.classList.add('on');
-    ed('● 録画中…', 'ok');
+    ed('● 録画中（生）…', 'ok');
   };
 
   // ===== WebGL ビュー（ScreenComposite 再現）=====
