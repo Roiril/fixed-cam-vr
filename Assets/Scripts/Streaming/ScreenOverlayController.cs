@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -51,6 +52,8 @@ namespace FixedCamVr.Streaming
 
         // URL ロード物のキャッシュ（マスク / 静止画）。現場で同じ cue を繰り返し叩く前提。
         private readonly Dictionary<string, Texture2D> _urlTextureCache = new();
+        // 動画 URL → DL 済みローカル mp4 パスのキャッシュ。
+        private readonly Dictionary<string, string> _videoFileCache = new();
         // PlayCue が非同期ロードを挟む間に次の PlayCue が来たら古い方を破棄するための世代カウンタ。
         private int _playGeneration;
 
@@ -76,6 +79,7 @@ namespace FixedCamVr.Streaming
             _player.skipOnDrop = true;
             _player.prepareCompleted += OnPrepared;
             _player.loopPointReached += OnVideoEnd; // 自然終端 → 自動フェードアウト（ループしない cue のみ）
+            _player.errorReceived += (vp, msg) => Debug.LogWarning($"[ScreenOverlay] VideoPlayer error: {msg}");
 
             ApplyStrength(0f);
         }
@@ -178,8 +182,13 @@ namespace FixedCamVr.Streaming
                 }
                 else
                 {
+                    // Android ネイティブ VideoPlayer は Python http.server(HTTP/1.0) からの
+                    // HTTP ストリーミングを扱えず NuCachedSource2 error -1 で落ちる。
+                    // UnityWebRequest（=画像で実証済みのスタック）でローカルに DL してから再生する。
+                    string localUrl = await GetLocalVideoUrlAsync(data.sourceUrl, ct);
+                    if (gen != _playGeneration || ct.IsCancellationRequested) return;
                     _player.source = VideoSource.Url;
-                    _player.url = data.sourceUrl;
+                    _player.url = localUrl;
                 }
                 _player.isLooping = data.loop;
                 _player.Prepare(); // 完了後 OnPrepared で RT 接続 + 再生 + フェードイン
@@ -214,6 +223,42 @@ namespace FixedCamVr.Streaming
             _target = 0f;
             _fadeSpeed = Mathf.Max(_strength, 0.01f) / fade;
             _stopWhenFadedOut = true;
+        }
+
+        // 動画 URL をローカルへ DL して file:// パスを返す（Android ネイティブ HTTP ストリーミング回避）。
+        // 同一 URL はキャッシュして再 DL しない。失敗時は元 URL を返してストリーミングへ fallback。
+        private async Task<string> GetLocalVideoUrlAsync(string url, CancellationToken ct)
+        {
+            if (_videoFileCache.TryGetValue(url, out var cached) && File.Exists(cached))
+                return "file://" + cached;
+            try
+            {
+                string fn = "ovr_" + ((uint)url.GetHashCode()).ToString() + ".mp4";
+                string path = Path.Combine(Application.temporaryCachePath, fn);
+                using var req = UnityWebRequest.Get(url);
+                req.downloadHandler = new DownloadHandlerFile(path);
+                req.timeout = 20;
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await Task.Yield();
+                }
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning($"[ScreenOverlay] video download failed: {url} ({req.error}) → ストリーミングへ fallback");
+                    return url;
+                }
+                _videoFileCache[url] = path;
+                Debug.Log($"[ScreenOverlay] video cached: {url} -> {path}");
+                return "file://" + path;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ScreenOverlay] video download error: {e.Message} → ストリーミングへ fallback");
+                return url;
+            }
         }
 
         private async Task<Texture2D?> LoadTextureAsync(string url, CancellationToken ct)

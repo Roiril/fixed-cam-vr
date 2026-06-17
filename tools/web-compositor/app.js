@@ -27,6 +27,14 @@ const streamBase = () =>
   `${location.protocol}//${location.hostname}:${(parseInt(location.port, 10) || 80) + 1}`;
 const isVideoUrl = (u) => /\.(webm|mp4|mov|m4v)(\?|$)/i.test(u);
 
+// パス各セグメントを percent-encode（スペースや括弧入りのファイル名で Unity VideoPlayer が
+// ロード失敗するのを防ぐ）。既にエンコード済みでも二重化しないよう decode してから encode。
+function encPath(u) {
+  if (!u) return u;
+  const encSeg = (s) => { if (!s) return s; try { return encodeURIComponent(decodeURIComponent(s)); } catch { return encodeURIComponent(s); } };
+  return u.split('/').map(encSeg).join('/');
+}
+
 // ---- サーバ I/O -------------------------------------------------------------
 async function getState() { return (await fetch('/state')).json(); }
 async function postState(patch) {
@@ -314,7 +322,8 @@ function buildColumn(cam, index) {
         maskUrl = res.url;
       }
       const cue = {
-        id, name: `カメラ ${camId}`, camera: camId, maskUrl, sourceUrl,
+        id, name: `カメラ ${camId}`, camera: camId,
+        maskUrl: encPath(maskUrl), sourceUrl: encPath(sourceUrl),
         strength: 1, loop: false, fadeIn: refs.fadeSec, fadeOut: refs.fadeSec,
         trimStart: refs.trimStart || 0, trimEnd: refs.trimEnd || 0,
       };
