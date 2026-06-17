@@ -56,6 +56,17 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 
 → [unity-prefab-fields SKILL](../../.claude/skills/unity-prefab-fields/SKILL.md) を読む。SerializeField 追加直後の prefab YAML 未反映パターン。
 
+### 「Web で演出 ON にしても Quest にオーバーレイが出ない」（2026-06-17 実害）
+
+1. **cue 未保存が最多**: 演出 ON は `cue_<camId>` を発火するだけ。合成素材+マスクを選び 💾 cue 保存していないと show.json に cue が無く、Quest は「unknown cue id」で何も出せない（Web 側は未保存なら警告を出すようにした）
+2. **動画だけ出ない（画像は出る）**: ログに `E/NuCachedSource2: source returned error -1`。Android ネイティブ VideoPlayer が Python http.server(HTTP/1.0) からの HTTP ストリーミングを扱えない。→ Quest は UnityWebRequest でローカル DL してから `file://` 再生する（[`ScreenOverlayController.GetLocalVideoUrlAsync`](../Assets/Scripts/Streaming/ScreenOverlayController.cs)）。`[ScreenOverlay] video cached` ログが出れば DL 成功。画像/マスクは UnityWebRequest なので直 URL で出る（=切り分けに使える）
+3. ファイル名のスペース/括弧は URL を percent-encode（Web の cue 保存で対応済み）
+
+### 「コントローラのボタンが意図と違う / 左右どちらも同じ操作になる」（2026-06-17 実害）
+
+- **`OVRInput.GetDown(Button.One/Two)` はコントローラ未指定だと両手から拾う**。`Button.One`=A(右)**または**X(左)、`Button.Two`=B(右)**または**Y(左)。なので左の X/Y までカメラ Next/Prev に化けていた
+- → 用途ごとに `OVRInput.Controller.RTouch` / `LTouch` を明示する（[`OvrControllerBridge`](../Assets/Scripts/OvrBridge/OvrControllerBridge.cs)：カメラ切替=右手、anchor/HUD トグル=左手）
+
 ## 鉄則
 
 - **Unity の中で全部見ようとしない** — 配信側は配信側のツール（ブラウザ / curl）で先に潰す

@@ -1,14 +1,15 @@
 # web compositor（tools/web-compositor/）
 
-**1 ページ統合 UI（縦割り = カメラ列）**（2026-06-16 にユーザー要望で再編）。旧 3 画面（コンソール / コンポジット検証 / 合成エディタ multicam.html）を 1 ページへ統合し、人間が触らない検証機能（色統計マッチング・ラプラシアン・プロンプト管理・ギャラリー・Webcam/テスト source）は撤去した。
+**1 ページ統合 UI（縦割り = カメラ列）**（2026-06-16 にユーザー要望で再編、〜06-17 で機能追加多数）。旧 3 画面（コンソール / コンポジット検証 / 合成エディタ multicam.html）を 1 ページへ統合。Webcam/テスト source・ギャラリーは撤去したが、**境界ブレンド（色統計/ラプラシアン/フェザー）と生成プロンプト管理はユーザー要望で復活**。
 
-構成: **ステータス**（Unity 生存/アクティブカメラ/fps/反映rev）＋ **マルチカメラ**（列＝カメラ A/B/C、各列を上から **ビュー / 設定 / マスク / 合成素材** と縦割り）。
-- **ビュー**: 画質を当てた最終見た目。Unity `ScreenComposite.shader` を WebGL `FS_VIEW` で移植＝**Quest と同じ絵**。スライダを動かすとその場で反映（「画質をいじった結果が見えない」を解消）。+ ▶発火/⏹停止/🔒固定/**📷 1枚キャプチャ/⏺ 録画**（webgl `captureStream`+MediaRecorder→`recordings/`、`/save?to=recordings&cam=`）。📂 撮影フォルダ ボタン=`/open-dir`。デモ用に 1 画面密度レイアウト（canvas 高は vh 上限・FX 2 列・短画面 media query）
+構成: **ステータス**（Unity生存/アクティブカメラ/fps/反映rev、🚶ゾーン自律・📂撮影フォルダ）＋ **境界ブレンドバー**（フェザー/色統計+強度/ラプラシアン+レベル、全カメラ共通）＋ **マルチカメラ**（列＝カメラ A/B/C、各列上から **ビュー / 設定 / マスク / 合成素材**）＋ 下部 **生成プロンプト**。
+- **ビュー**: 画質+合成を当てた最終見た目。**マルチパス合成 `pipeline.js`**（取り込み→色統計マッチング→ラプラシアン→post）。カメラ実寸比に追従（黒帯ゼロ）。+ **📺切替**（Quest 表示切替=setCameraOverride、● 表示中表示）/ **演出 ON/OFF トグル**+fade秒（cue.fadeIn/Out へ）/ **📷 生1枚・⏺ 生録画**（=加工合成なしの生フレーム→`recordings/`、`/save?to=recordings&cam=`）。デモ用 1 画面密度レイアウト
 - **設定**: IP/port/auth ＋ カメラ別画質（7 スライダ → `cameras[i].post`）
-- **マスク**: 白黒で差し替え領域（白=差し替え）。矩形/ブラシ/消し/半分/反転/クリア
-- **合成素材**: captures/ から画像/動画 select（or URL）→ 💾 cue 保存（1 カメラ 1 cue: id=`cue_<camId>`）
+- **マスク**: 白黒境界を**スライダ調整**（白の向き 左/右/上/下 ＋ 位置スライダ ＋ 取り消し）。フリーハンド系は撤去
+- **合成素材**: captures/ から select / ↻更新 / 📂フォルダ / **動画は再生区間(trim)入力** → 💾 cue 保存（1 カメラ 1 cue: id=`cue_<camId>`、loop なし・再生終了で自動復帰、URL は percent-encode）。**未保存のまま演出 ON は警告**
+- **生成プロンプト**: 画像/動画 AI プロンプトを 📋コピー/編集/削除（既存 `/prompts`=prompts.json）
 
-実装: `index.html` ＋ `app.js`（全配線、ESM、show.json を正に I/O）＋ `gl.js`/`shaders.js`（FS_VIEW）。Unity 側対向は `ShowControlClient`（long-poll + 端末キャッシュ）。
+実装: `index.html` ＋ `app.js`（全配線、ESM）＋ `pipeline.js`（合成）＋ `gl.js`/`shaders.js`。Unity 側対向は `ShowControlClient`（long-poll + 端末キャッシュ）/ `ScreenOverlayController`（cue 再生・動画はローカル DL）。**境界ブレンドの色統計/ラプラシアンは Web プレビュー専用**（Quest はハード合成、フェザーのみ PNG 焼き込みで効く）。
 
 **デザイン言語（cogni-storage 準拠）**: 純黒 `#000` + radial-gradient / 文字 `#fffaf0` / アクセント `#ffdead` / **角丸ゼロ** / 透明カード + 1px 罫線（`--line-soft`）/ UPPERCASE マイクロラベル / 下線型インプット。トークンは style.css の `:root` に集約。
 
