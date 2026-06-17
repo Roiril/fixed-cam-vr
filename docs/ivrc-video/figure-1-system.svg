@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" font-family="'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="8" refY="6" orient="auto">
+      <path d="M0,0 L10,6 L0,12 Z" fill="#ffdead"/>
+    </marker>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+
+  <!-- micro label -->
+  <text x="120" y="120" fill="#7a7468" font-size="26" letter-spacing="8">PRINCIPLE / SYSTEM</text>
+  <text x="120" y="190" fill="#fffaf0" font-size="58" letter-spacing="2">スマホ固定カメラ → 位置でカメラ自動選択</text>
+  <line x1="120" y1="230" x2="1800" y2="230" stroke="#2a2820" stroke-width="1"/>
+
+  <!-- Stage 1: phones -->
+  <g>
+    <rect x="150" y="380" width="360" height="320" fill="none" stroke="#3a3830" stroke-width="1.5"/>
+    <text x="180" y="350" fill="#9aE89a" font-size="28" letter-spacing="4">① 固定カメラ</text>
+    <!-- three phones -->
+    <g stroke="#fffaf0" stroke-width="2" fill="none">
+      <rect x="200" y="430" width="70" height="130" rx="6"/>
+      <rect x="300" y="430" width="70" height="130" rx="6"/>
+      <rect x="400" y="430" width="70" height="130" rx="6"/>
+    </g>
+    <g fill="#ffdead">
+      <circle cx="235" cy="455" r="6"/><circle cx="335" cy="455" r="6"/><circle cx="435" cy="455" r="6"/>
+    </g>
+    <text x="330" y="640" fill="#cfc9bb" font-size="26" text-anchor="middle">スマートフォン ×3（三脚固定）</text>
+    <text x="330" y="678" fill="#7a7468" font-size="22" text-anchor="middle">fixed-cam-streamer</text>
+  </g>
+
+  <!-- arrow 1 -->
+  <line x1="540" y1="540" x2="700" y2="540" stroke="#ffdead" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="620" y="510" fill="#fffaf0" font-size="26" text-anchor="middle">Wi-Fi</text>
+  <text x="620" y="580" fill="#7a7468" font-size="22" text-anchor="middle">MJPEG</text>
+
+  <!-- Stage 2: transmit -->
+  <g>
+    <rect x="730" y="380" width="360" height="320" fill="none" stroke="#3a3830" stroke-width="1.5"/>
+    <text x="760" y="350" fill="#9ac3e8" font-size="28" letter-spacing="4">② 映像伝送</text>
+    <g stroke="#fffaf0" stroke-width="2" fill="none">
+      <path d="M820 560 q90 -120 180 0" />
+      <path d="M850 560 q60 -80 120 0" />
+      <path d="M880 560 q30 -40 60 0" />
+    </g>
+    <circle cx="910" cy="560" r="6" fill="#ffdead"/>
+    <text x="910" y="640" fill="#cfc9bb" font-size="26" text-anchor="middle">ローカル Wi-Fi（持込AP）</text>
+    <text x="910" y="678" fill="#7a7468" font-size="22" text-anchor="middle">非同期デコード・GCゼロ</text>
+  </g>
+
+  <!-- arrow 2 -->
+  <line x1="1120" y1="540" x2="1280" y2="540" stroke="#ffdead" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 3: Quest -->
+  <g>
+    <rect x="1310" y="380" width="440" height="320" fill="none" stroke="#3a3830" stroke-width="1.5"/>
+    <text x="1340" y="350" fill="#e8b89a" font-size="28" letter-spacing="4">③ Quest 3 が位置で選択</text>
+    <!-- hmd glyph -->
+    <rect x="1380" y="470" width="200" height="90" rx="45" fill="none" stroke="#fffaf0" stroke-width="2.5"/>
+    <rect x="1410" y="495" width="60" height="40" fill="#111" stroke="#ffdead" stroke-width="1.5"/>
+    <rect x="1490" y="495" width="60" height="40" fill="#111" stroke="#ffdead" stroke-width="1.5"/>
+    <!-- selection ticks -->
+    <g fill="#9aE89a"><rect x="1620" y="475" width="14" height="14"/></g>
+    <g fill="#3a3830"><rect x="1620" y="510" width="14" height="14"/><rect x="1620" y="545" width="14" height="14"/></g>
+    <text x="1530" y="640" fill="#cfc9bb" font-size="26" text-anchor="middle">頭部位置 → 今いる場所のカメラ</text>
+    <text x="1530" y="678" fill="#7a7468" font-size="22" text-anchor="middle">PlayerZone 自動切替</text>
+  </g>
+
+  <!-- novelty callout: body-driven, zero controller -->
+  <rect x="430" y="780" width="1060" height="80" fill="none" stroke="#ffdead" stroke-width="1.5"/>
+  <text x="960" y="833" fill="#ffdead" font-size="40" text-anchor="middle" letter-spacing="2">操作ボタンなし — 切替トリガは「身体の移動」だけ</text>
+
+  <!-- honest perf line (no over-claim) -->
+  <text x="960" y="905" fill="#7a7468" font-size="24" text-anchor="middle">歩行に映像がほぼ遅れず追従／フレーム内アロケーション排除でなめらかに表示</text>
+
+  <text x="120" y="1010" fill="#5a564c" font-size="22" letter-spacing="3">廻リ視 / Fixed-Camera Horror in Real Space</text>
+</svg>

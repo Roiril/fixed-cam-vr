@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" font-family="'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif">
+  <defs>
+    <radialGradient id="bg2" cx="50%" cy="45%" r="80%">
+      <stop offset="0%" stop-color="#0b0b0b"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg2)"/>
+
+  <!-- faint scanlines -->
+  <g stroke="#ffffff" stroke-width="1" opacity="0.025">
+    <line x1="0" y1="200" x2="1920" y2="200"/><line x1="0" y1="240" x2="1920" y2="240"/>
+    <line x1="0" y1="280" x2="1920" y2="280"/><line x1="0" y1="320" x2="1920" y2="320"/>
+    <line x1="0" y1="760" x2="1920" y2="760"/><line x1="0" y1="800" x2="1920" y2="800"/>
+    <line x1="0" y1="840" x2="1920" y2="840"/><line x1="0" y1="880" x2="1920" y2="880"/>
+  </g>
+
+  <!-- CCTV corner marks -->
+  <g stroke="#ffdead" stroke-width="2" opacity="0.5" fill="none">
+    <path d="M120 120 h60 M120 120 v60"/>
+    <path d="M1800 120 h-60 M1800 120 v60"/>
+    <path d="M120 960 h60 M120 960 v-60"/>
+    <path d="M1800 960 h-60 M1800 960 v-60"/>
+  </g>
+  <circle cx="170" cy="170" r="9" fill="#c0392b"/>
+  <text x="200" y="178" fill="#fffaf0" font-size="26" letter-spacing="3">REC</text>
+  <text x="1560" y="178" fill="#7a7468" font-size="26" letter-spacing="2">CAM 01  --:--:--</text>
+
+  <!-- title -->
+  <text x="960" y="470" fill="#fffaf0" font-size="160" text-anchor="middle" letter-spacing="20">廻 リ 視</text>
+  <text x="960" y="560" fill="#ffdead" font-size="46" text-anchor="middle" letter-spacing="6">Fixed-Camera Horror in Real Space</text>
+
+  <line x1="660" y1="620" x2="1260" y2="620" stroke="#2a2820" stroke-width="1"/>
+
+  <!-- keywords -->
+  <text x="960" y="690" fill="#cfc9bb" font-size="36" text-anchor="middle" letter-spacing="4">固定カメラの視点で、現実世界を歩く VR ホラー</text>
+
+  <!-- exhibition line -->
+  <text x="960" y="800" fill="#fffaf0" font-size="40" text-anchor="middle" letter-spacing="3">VR 学会での展示へ</text>
+
+  <text x="960" y="900" fill="#5a564c" font-size="22" text-anchor="middle" letter-spacing="2">Music: ____（DOVA-SYNDROME） / Voice: VOICEVOX:____ / SE: 効果音ラボ</text>
+</svg>
