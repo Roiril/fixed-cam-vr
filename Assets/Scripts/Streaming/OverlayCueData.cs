@@ -29,6 +29,10 @@ namespace FixedCamVr.Streaming
         public float fadeInSeconds = 0.5f;
         public float fadeOutSeconds = 0.5f;
 
+        // 動画の再生区間（秒）。trimEnd<=0 は「最後まで」。区間終端 or 自然終端で自動フェードアウトする。
+        public float trimStart = 0f;
+        public float trimEnd = 0f;
+
         public bool SourceIsVideo
         {
             get

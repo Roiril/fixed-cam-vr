@@ -101,6 +101,8 @@ namespace FixedCamVr.Streaming
             public bool loop = true;
             public float fadeIn = 0.5f;
             public float fadeOut = 0.5f;
+            public float trimStart = 0f;
+            public float trimEnd = 0f;   // <=0 = 最後まで
         }
         [Serializable] private class PostParams
         {
@@ -256,6 +258,8 @@ namespace FixedCamVr.Streaming
                         loop = def.loop,
                         fadeInSeconds = def.fadeIn,
                         fadeOutSeconds = def.fadeOut,
+                        trimStart = def.trimStart,
+                        trimEnd = def.trimEnd,
                     });
                 }
             }

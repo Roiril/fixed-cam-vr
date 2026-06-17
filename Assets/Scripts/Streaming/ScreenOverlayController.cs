@@ -75,6 +75,7 @@ namespace FixedCamVr.Streaming
             _player.audioOutputMode = VideoAudioOutputMode.None;
             _player.skipOnDrop = true;
             _player.prepareCompleted += OnPrepared;
+            _player.loopPointReached += OnVideoEnd; // 自然終端 → 自動フェードアウト（ループしない cue のみ）
 
             ApplyStrength(0f);
         }
@@ -109,6 +110,13 @@ namespace FixedCamVr.Streaming
                 }
             }
             if (Input.GetKeyDown(stopKey)) StopOverlay();
+
+            // 動画の再生区間終端で自動停止（ループしない cue・trimEnd>0 のとき）
+            if (_current != null && !_current.loop && _current.trimEnd > 0f && !_stopWhenFadedOut
+                && _player != null && _player.isPlaying && _player.time >= _current.trimEnd)
+            {
+                StopOverlay();
+            }
 
             // フェード進行
             if (!Mathf.Approximately(_strength, _target))
@@ -262,8 +270,15 @@ namespace FixedCamVr.Streaming
 
             vp.targetTexture = _videoRt;
             SetOverlayTexture(_videoRt, aspect);
+            if (cue.trimStart > 0f) vp.time = cue.trimStart; // 再生区間の頭へシーク
             vp.Play();
             BeginFadeIn(cue);
+        }
+
+        // 動画が自然終端（trimEnd 未指定で最後まで再生）に達した時。ループしない cue を自動で戻す。
+        private void OnVideoEnd(VideoPlayer vp)
+        {
+            if (_current != null && !_current.loop && !_stopWhenFadedOut) StopOverlay();
         }
 
         private void BeginFadeIn(OverlayCueData cue)

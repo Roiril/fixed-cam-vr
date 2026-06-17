@@ -298,7 +298,17 @@ function buildColumn(cam, index) {
       let maskUrl = '';
       if (!maskIsEmpty()) {
         ed('マスク書き出し中…');
-        const blob = await new Promise((r) => maskCanvas.toBlob(r, 'image/png'));
+        // フェザーを PNG に焼き込む（Quest はマスクをそのままサンプルするので境界をここでぼかす）
+        let blob;
+        if (blendCfg.feather > 0.001) {
+          const tmp = document.createElement('canvas'); tmp.width = maskCanvas.width; tmp.height = maskCanvas.height;
+          const tc = tmp.getContext('2d');
+          tc.filter = `blur(${Math.max(1, Math.round(blendCfg.feather * 12))}px)`;
+          tc.drawImage(maskCanvas, 0, 0);
+          blob = await new Promise((r) => tmp.toBlob(r, 'image/png'));
+        } else {
+          blob = await new Promise((r) => maskCanvas.toBlob(r, 'image/png'));
+        }
         const res = await (await fetch(`/masks?name=${encodeURIComponent(id)}`, { method: 'POST', body: blob })).json();
         if (!res.ok) throw new Error(res.error || 'マスク保存失敗');
         maskUrl = res.url;

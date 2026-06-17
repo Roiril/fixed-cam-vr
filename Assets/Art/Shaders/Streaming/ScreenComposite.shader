@@ -122,22 +122,27 @@ Shader "FixedCamVr/ScreenComposite"
                 half mask = SAMPLE_TEXTURE2D(_MaskTex, sampler_MaskTex, screenUv).r;
                 half3 col = lerp(live, overlay, saturate(mask * _OverlayStrength));
 
-                // 3) ポスト FX（スクリーン内容のみ。web-compositor FS_POST 相当の簡易版）
+                // 3) ポスト FX（web-compositor の FS_POST と数式・順序を一致させる）
                 col *= exp2(_Exposure);
+                col.r *= 1.0 + 0.25 * _Temperature;
+                col.b *= 1.0 - 0.25 * _Temperature;
                 col = (col - 0.5) * _Contrast + 0.5;
                 half luma = dot(col, half3(0.299, 0.587, 0.114));
                 col = lerp(luma.xxx, col, _Saturation);
-                col.r += _Temperature * 0.08;
-                col.b -= _Temperature * 0.08;
 
-                float d = distance(screenUv, float2(0.5, 0.5));
-                col *= 1.0 - _Vignette * smoothstep(0.35, 0.75, d);
+                float2 dir = screenUv - 0.5;
+                col *= saturate(1.0 - _Vignette * dot(dir, dir) * 2.2);
 
-                float n = Hash21(screenUv * 731.7 + frac(_Time.y) * 113.1);
-                col += (n - 0.5) * _Grain;
-
-                float sl = 0.5 + 0.5 * sin(screenUv.y * _ScanlineCount * 6.2831853);
-                col *= 1.0 - _Scanline * 0.35 * sl;
+                if (_Scanline > 0.001)
+                {
+                    float s = 0.5 + 0.5 * sin(screenUv.y * _ScanlineCount * 3.14159265);
+                    col *= 1.0 - _Scanline * (1.0 - s) * 0.6;
+                }
+                if (_Grain > 0.001)
+                {
+                    float n = Hash21(screenUv * 480.0 + frac(_Time.y));
+                    col += (n - 0.5) * _Grain;
+                }
 
                 return half4(saturate(col), 1);
             }
