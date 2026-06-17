@@ -330,8 +330,13 @@ function buildColumn(cam, index) {
 
   // ===== 操作系（演出 ON/OFF・固定）=====
   q('.cue-toggle').onclick = () => {
-    const active = state?.control?.activeCue === `cue_${refs.cam.id}`;
-    postCommand(active ? { type: 'stopCue' } : { type: 'playCue', id: `cue_${refs.cam.id}` });
+    const id = `cue_${refs.cam.id}`;
+    const active = state?.control?.activeCue === id;
+    if (active) { postCommand({ type: 'stopCue' }); return; }
+    // 演出 ON は「保存済み cue を発火」するだけ。未保存なら Quest 側で出ないので警告。
+    const exists = (state?.cues || []).some((c) => c.id === id);
+    if (!exists) { ed('このカメラの cue が未保存。合成素材を選び 💾 cue 保存してから演出 ON', 'err'); return; }
+    postCommand({ type: 'playCue', id });
   };
   q('.col-switch').onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
 
