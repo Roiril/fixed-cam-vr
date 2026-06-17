@@ -344,11 +344,16 @@ function buildColumn(cam, index) {
   refs.applyAspect = () => {
     const w = refs.liveImg.naturalWidth, h = refs.liveImg.naturalHeight;
     if (!w || !h) return;
-    const a = (w / h).toFixed(4);
-    if (refs._aspect === a) return;
-    refs._aspect = a;
-    viewCanvas.style.aspectRatio = a;
-    maskCanvas.style.aspectRatio = a;
+    const a = w / h;
+    const aStr = a.toFixed(4);
+    if (refs._aspect === aStr) return;
+    refs._aspect = aStr;
+    viewCanvas.style.aspectRatio = aStr;
+    maskCanvas.style.aspectRatio = aStr;
+    // ★ビューの内部レンダー解像度もカメラ比にする → FS_VIEW が letterbox せず full-fill。
+    //   表示(CSS)だけでなくピクセル自体が黒帯ゼロ → 📷/⏺ のキャプチャにも黒帯が入らない。
+    viewCanvas.width = Math.max(2, Math.round(360 * a));
+    viewCanvas.height = 360;
   };
 
   // ===== 📷 キャプチャ / ⏺ 録画（ビューの見た目＝Quest と同じ絵を recordings/ へ）=====
@@ -407,16 +412,18 @@ function setupView(refs, canvas, mctx, maskCanvas) {
   gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
   const prog = new Program(gl, FS_VIEW);
   const texLive = new SourceTexture(gl), texMask = new SourceTexture(gl), texOv = new SourceTexture(gl);
-  const screen = { fbo: null, w: canvas.width, h: canvas.height };
-  const frameAspect = MW / MH;
-  // contain-fit scale（ScreenComposite._LiveScale と同義: scale<1 を letterbox）
-  const containScale = (w, h) => {
+  // contain-fit scale（ScreenComposite._LiveScale と同義: scale<1 を letterbox）。
+  // frameAspect はキャンバス内部比（applyAspect がカメラ比へリサイズする）を毎フレーム参照。
+  const containScale = (w, h, frameAspect) => {
     if (!w || !h) return [1, 1];
     const a = w / h;
     return a > frameAspect ? [1, frameAspect / a] : [a / frameAspect, 1];
   };
   let t0 = performance.now();
   const render = () => {
+    // applyAspect で canvas.width/height がカメラ比に変わるので毎回再計算（黒帯を出さない肝）
+    const screen = { fbo: null, w: canvas.width, h: canvas.height };
+    const frameAspect = canvas.width / canvas.height;
     const img = refs.liveImg;
     if (img.naturalWidth) texLive.upload(img);
     texMask.upload(maskCanvas);
@@ -426,13 +433,13 @@ function setupView(refs, canvas, mctx, maskCanvas) {
     if (refs.cueActive && refs.srcMedia && refs.srcReady) {
       texOv.upload(refs.srcMedia);
       ovScale = containScale(refs.srcMedia.videoWidth || refs.srcMedia.naturalWidth,
-        refs.srcMedia.videoHeight || refs.srcMedia.naturalHeight);
+        refs.srcMedia.videoHeight || refs.srcMedia.naturalHeight, frameAspect);
       ovStrength = 1;
     }
     const p = refs.cam.post || state?.post || FX_DEFAULT;
     prog.draw(screen, {
       uLive: texLive, uOverlay: texOv, uMask: texMask,
-      uLiveScale: containScale(img.naturalWidth, img.naturalHeight),
+      uLiveScale: containScale(img.naturalWidth, img.naturalHeight, frameAspect),
       uOverlayScale: ovScale, uOverlayStrength: ovStrength,
       uExposure: p.exposure ?? 0, uContrast: p.contrast ?? 1, uSaturation: p.saturation ?? 1,
       uTemperature: p.temperature ?? 0, uVignette: p.vignette ?? 0, uGrain: p.grain ?? 0,
