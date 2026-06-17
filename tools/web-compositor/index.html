@@ -24,7 +24,15 @@
     <section class="multicam">
       <div class="mc-title">
         マルチカメラ
-        <span class="hint">列＝カメラ。設定・マスク・合成素材はすべて show.json に保存され、Quest 実機が起動時キャッシュ＋ライブで参照する。ビューは画質を当てた最終見た目（Quest と同じ絵）。</span>
+        <span class="hint">列＝カメラ。設定・マスク・合成素材は show.json に保存。ビューは画質+合成の最終見た目。</span>
+      </div>
+      <div class="blend-bar">
+        <span class="seg-label">境界ブレンド（合成跡を消す）</span>
+        <label class="sld">フェザー <input id="bFeather" type="range" min="0" max="1" step="0.01" value="0.3"></label>
+        <label class="chk"><input id="bColor" type="checkbox" checked> 色統計</label>
+        <label class="sld">強度 <input id="bColorStr" type="range" min="0" max="1" step="0.01" value="1"></label>
+        <label class="chk"><input id="bLap" type="checkbox" checked> ラプラシアン</label>
+        <label class="sld">レベル <input id="bLevels" type="range" min="2" max="9" step="1" value="7"><span id="bLevelsV">7</span></label>
       </div>
       <div id="cams" class="cams"></div>
     </section>

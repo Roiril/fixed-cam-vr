@@ -389,6 +389,15 @@ select option { background: #111; color: var(--text-color); }
 .cue-fade-sec:focus, .trim-start:focus, .trim-end:focus { border-bottom-color: var(--accent-color); outline: none; }
 .trim-row .sld { font-size: 10px; opacity: .85; }
 
+/* 境界ブレンド（合成跡を消す）共通バー */
+.blend-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px;
+  max-width: 1180px; margin: 0 auto 10px; padding: 7px 12px;
+  border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); }
+.blend-bar .seg-label { font-size: 10px; opacity: .55; letter-spacing: .1em; text-transform: uppercase; }
+.blend-bar .sld { font-size: 11px; gap: 6px; margin: 0; }
+.blend-bar .sld input[type=range] { width: 92px; }
+.blend-bar .chk { font-size: 11px; }
+
 /* ===================================================================== */
 /* ① マスク/ビュー: カメラ実寸比（JS が aspect-ratio をインライン設定）。     */
 /*    黒レターボックスの「背景」を出さず、要素境界は 1px 罫線で示す。         */

@@ -1,8 +1,11 @@
 // 廻リ視 web compositor — 1 ページ統合（縦割り = カメラ列）。
 //   ステータス / マルチカメラ（ビュー・設定・マスク・合成素材）だけ。show.json が唯一の正。
 //   ビューは Unity ScreenComposite を WebGL で完全再現（画質を当てた最終見た目＝Quest と同じ絵）。
-import { Program, SourceTexture } from './gl.js';
-import { FS_VIEW } from './shaders.js';
+import { createContext, SourceTexture } from './gl.js';
+import { Pipeline } from './pipeline.js';
+
+// 境界ブレンド（合成跡を消す）設定。全カメラ共通。各カメラの Pipeline がこれを参照。
+const blendCfg = { feather: 0.3, colorMatch: true, colorStrength: 1, laplacian: true, levels: 7 };
 
 const $ = (s) => document.querySelector(s);
 
@@ -405,32 +408,31 @@ function buildColumn(cam, index) {
   return refs;
 }
 
-// ---- 列ごとの WebGL ビュー --------------------------------------------------
+// ---- 列ごとの WebGL ビュー（マルチパス: 色統計マッチング→ラプラシアン合成→ポスト FX）----
 function setupView(refs, canvas, mctx, maskCanvas) {
-  // preserveDrawingBuffer: true — 📷 toBlob / ⏺ captureStream で view を取り込めるようにする
-  const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, alpha: false, preserveDrawingBuffer: true });
-  if (!gl) { canvas.replaceWith(Object.assign(document.createElement('div'),
-    { className: 'view-fallback', textContent: 'WebGL2 非対応' })); return; }
-  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
-  const prog = new Program(gl, FS_VIEW);
+  let ctx;
+  try { ctx = createContext(canvas); } // half-float RT が要るため EXT_color_buffer_float 必須
+  catch (e) {
+    canvas.replaceWith(Object.assign(document.createElement('div'),
+      { className: 'view-fallback', textContent: 'WebGL2/float RT 非対応: ' + e.message }));
+    return;
+  }
+  const gl = ctx.gl;
+  const pipe = new Pipeline(gl);
   const texLive = new SourceTexture(gl), texMask = new SourceTexture(gl), texOv = new SourceTexture(gl);
-  // contain-fit scale（ScreenComposite._LiveScale と同義: scale<1 を letterbox）。
-  // frameAspect はキャンバス内部比（applyAspect がカメラ比へリサイズする）を毎フレーム参照。
-  const containScale = (w, h, frameAspect) => {
+  const containScale = (w, h, fa) => {
     if (!w || !h) return [1, 1];
     const a = w / h;
-    return a > frameAspect ? [1, frameAspect / a] : [a / frameAspect, 1];
+    return a > fa ? [1, fa / a] : [a / fa, 1];
   };
-  let t0 = performance.now();
+  const t0 = performance.now();
   const render = () => {
-    // applyAspect で canvas.width/height がカメラ比に変わるので毎回再計算（黒帯を出さない肝）
-    const screen = { fbo: null, w: canvas.width, h: canvas.height };
-    const frameAspect = canvas.width / canvas.height;
+    const W = canvas.width, H = canvas.height;
+    pipe.allocate(W, H, Math.max(2, Math.min(9, blendCfg.levels))); // 同一サイズなら no-op
+    const frameAspect = W / H;
     const img = refs.liveImg;
     if (img.naturalWidth) texLive.upload(img);
     texMask.upload(maskCanvas);
-    // 演出オーバーレイ: cueActive を target にして強度をフェード（ON=fade-in / OFF・再生終了=fade-out）。
     const hasSrc = refs.srcMedia && refs.srcReady;
     // 動画の再生区間終端 → 自動終了（ループしない）
     if (refs.cueActive && !refs.overlayEnded && hasSrc && refs.srcMedia.tagName === 'VIDEO') {
@@ -438,27 +440,33 @@ function setupView(refs, canvas, mctx, maskCanvas) {
       const tEnd = (refs.trimEnd > 0) ? refs.trimEnd : (v.duration || 0);
       if (tEnd && v.currentTime >= tEnd - 0.03) refs.onOverlayEnd && refs.onOverlayEnd();
     }
+    // 演出フェード（cueActive=target、強度をイージング。マスクに掛けて overlay を出し入れ）
     const target = (refs.cueActive && hasSrc && !refs.overlayEnded) ? 1 : 0;
     const fadeSec = Math.max(0.05, refs.fadeSec ?? 0.5);
     const stepMax = 0.04 / fadeSec;
     const cur = refs._ov ?? 0;
     refs._ov = cur + Math.max(-stepMax, Math.min(stepMax, target - cur));
-    let ovScale = [1, 1];
-    if (hasSrc && refs._ov > 0.002) {
-      texOv.upload(refs.srcMedia);
-      ovScale = containScale(refs.srcMedia.videoWidth || refs.srcMedia.naturalWidth,
-        refs.srcMedia.videoHeight || refs.srcMedia.naturalHeight, frameAspect);
-    }
-    const ovStrength = hasSrc ? refs._ov : 0;
+    const ov = hasSrc ? refs._ov : 0;
+    if (ov > 0.002 && hasSrc) texOv.upload(refs.srcMedia);
     const p = refs.cam.post || state?.post || FX_DEFAULT;
-    prog.draw(screen, {
-      uLive: texLive, uOverlay: texOv, uMask: texMask,
-      uLiveScale: containScale(img.naturalWidth, img.naturalHeight, frameAspect),
-      uOverlayScale: ovScale, uOverlayStrength: ovStrength,
-      uExposure: p.exposure ?? 0, uContrast: p.contrast ?? 1, uSaturation: p.saturation ?? 1,
-      uTemperature: p.temperature ?? 0, uVignette: p.vignette ?? 0, uGrain: p.grain ?? 0,
-      uScanline: p.scanline ?? 0, uScanlineCount: 240, uTime: (performance.now() - t0) / 1000,
-    });
+    // overlay が出ている時だけ色統計/ラプラシアンを走らせる（live-only 時の無駄/誤補正を回避）
+    const active = ov > 0.01;
+    // Pipeline は mix(uB, uA, mask)=白→uA/黒→uB。白=差し替え=overlay なので
+    //   uA(liveSrc 引数)=overlay、uB(preSrc 引数)=live を渡す。
+    //   色統計は uA(overlay) を uB(live) の色味へ寄せる＝AI素材が背景に馴染む。
+    pipe.render(texOv, texLive, texMask, {
+      liveScale: hasSrc ? containScale(refs.srcMedia.videoWidth || refs.srcMedia.naturalWidth,
+        refs.srcMedia.videoHeight || refs.srcMedia.naturalHeight, frameAspect) : [1, 1],
+      preScale: containScale(img.naturalWidth, img.naturalHeight, frameAspect),
+      feather: blendCfg.feather,
+      colorMatch: blendCfg.colorMatch && active, colorStrength: blendCfg.colorStrength,
+      laplacian: blendCfg.laplacian && active,
+      maskStrength: ov,
+      exposure: p.exposure ?? 0, contrast: p.contrast ?? 1, saturation: p.saturation ?? 1,
+      temperature: p.temperature ?? 0, vignette: p.vignette ?? 0, grain: p.grain ?? 0,
+      aberration: 0, scanline: p.scanline ?? 0, showMask: 0,
+      time: (performance.now() - t0) / 1000,
+    }, { fbo: null, w: W, h: H });
   };
   // RAF は非表示タブで停止するので setInterval（multicam の教訓）
   setInterval(render, 40);
@@ -550,6 +558,14 @@ async function pollUnity() {
 // ---- 起動 -------------------------------------------------------------------
 $('#autoZone').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
 $('#openRecordings').onclick = () => fetch('/open-dir?dir=recordings').catch(() => {});
+
+// 境界ブレンド設定（全カメラ共通）の配線
+const bindBlend = (id, fn) => { const el = $('#' + id); if (el) el.oninput = () => fn(el); };
+bindBlend('bFeather', (el) => { blendCfg.feather = parseFloat(el.value); });
+bindBlend('bColor', (el) => { blendCfg.colorMatch = el.checked; });
+bindBlend('bColorStr', (el) => { blendCfg.colorStrength = parseFloat(el.value); });
+bindBlend('bLap', (el) => { blendCfg.laplacian = el.checked; });
+bindBlend('bLevels', (el) => { blendCfg.levels = parseInt(el.value, 10); $('#bLevelsV').textContent = el.value; });
 refreshCaptures();
 
 // ---- 生成プロンプト（下部・コピー用）。バックエンドは既存 /prompts（prompts.json）----

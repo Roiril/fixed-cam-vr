@@ -36,17 +36,18 @@ in vec2 vUv; out vec4 o;
 uniform sampler2D uTex;
 uniform vec2 uTexel;
 uniform float uRadius; // texel 単位のぼかし半径
+uniform float uStrength; // 演出フェード（0=オーバーレイ無し / 1=フル）。未指定時は 1。
 void main(){
   float sum = 0.0; float wsum = 0.0;
-  for(int j=-1;j<=1;j++){
-    for(int i=-1;i<=1;i++){
+  // 5x5 で広めにサンプルしてフェザー（境界ぼかし）を効かせる
+  for(int j=-2;j<=2;j++){
+    for(int i=-2;i<=2;i++){
       vec2 off = vec2(float(i), float(j)) * uTexel * uRadius;
-      float w = 1.0;
-      sum += texture(uTex, vUv + off).r * w;
-      wsum += w;
+      sum += texture(uTex, vUv + off).r;
+      wsum += 1.0;
     }
   }
-  float m = sum / wsum;
+  float m = (sum / wsum) * uStrength;
   o = vec4(m, m, m, 1.0);
 }`;
 
