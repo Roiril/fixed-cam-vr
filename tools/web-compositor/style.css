@@ -363,6 +363,64 @@ select option { background: #111; color: var(--text-color); }
 .ed-status.err { color: var(--danger-color); opacity: 1; }
 
 /* ===================================================================== */
+/* ① マスク/ビュー: カメラ実寸比（JS が aspect-ratio をインライン設定）。     */
+/*    黒レターボックスの「背景」を出さず、要素境界は 1px 罫線で示す。         */
+/* ===================================================================== */
+.view-wrap { background: transparent; border: none; }
+.view-canvas, .mask-canvas { border: 1px solid var(--line-soft); background: #000; }
+.mask-canvas { border-color: var(--line-input); }   /* マスクは少し強い罫線で領域を明示 */
+
+/* ===================================================================== */
+/* ② 入力・スライダー・字面の統一（cogni-storage 準拠でスタイリッシュに）   */
+/* ===================================================================== */
+/* レンジスライダー: 細いトラック + アクセントの丸ツマミ（OS 既定の野暮さを消す） */
+input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  height: 14px; background: transparent; cursor: pointer; outline: none;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  height: 2px; background: var(--line-input); border-radius: 2px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; margin-top: -4.5px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--accent-color); border: none; cursor: pointer;
+  transition: transform .1s ease;
+}
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.18); }
+input[type=range]::-moz-range-track { height: 2px; background: var(--line-input); border-radius: 2px; }
+input[type=range]::-moz-range-thumb {
+  width: 11px; height: 11px; border-radius: 50%; background: var(--accent-color); border: none; cursor: pointer;
+}
+
+/* IP / port / auth 入力: 等幅 + 控えめ下線、ラベルと馴染ませる */
+.ip-row input {
+  font-family: "SFMono-Regular", "Roboto Mono", ui-monospace, monospace;
+  font-size: 11px; letter-spacing: .02em; color: var(--text-color);
+  border: none; border-bottom: 1px solid var(--line-input); padding: 3px 1px;
+}
+.ip-row input:focus { border-bottom-color: var(--accent-color); }
+.ip-row input::placeholder { font-family: inherit; opacity: .4; letter-spacing: .04em; }
+
+.col-sec .src-select, .col-sec .src-url { font-size: 11px; letter-spacing: .01em; }
+
+/* スライダー値・ラベルの字面を統一（数字は tabular で踊らせない） */
+.sld { letter-spacing: .02em; }
+.sld span { font-variant-numeric: tabular-nums; opacity: .6; }
+.fx-row { color: var(--text-color); opacity: .9; }
+
+/* セクション/カメラ名ラベルを上品に */
+.sec-label { letter-spacing: .18em; opacity: .5; }
+.col-name { letter-spacing: .1em; }
+
+/* 演出トグル: ON で塗り、OFF で枠線 */
+.cue-toggle { letter-spacing: .08em; min-width: 76px; }
+.cue-toggle.on {
+  background: var(--accent-color); border-color: var(--accent-color);
+  color: #000; font-weight: 600; opacity: 1;
+}
+
+/* ===================================================================== */
 /* ③ デモ用: 1 画面に全コンテンツを収める高密度レイアウト（縦割り維持）   */
 /*   後勝ちで上の統合スタイルを締める。要素を詰め、2 canvas を vh で上限。  */
 /* ===================================================================== */

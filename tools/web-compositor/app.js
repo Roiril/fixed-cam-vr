@@ -93,8 +93,7 @@ function buildColumn(cam, index) {
       <div class="sec-label">ビュー（最終見た目 = Quest と同じ）</div>
       <div class="view-wrap"><canvas class="view-canvas" width="${MW}" height="${MH}"></canvas></div>
       <div class="row-btns">
-        <button class="cue-fire accent">▶ 発火</button>
-        <button class="cue-stop">⏹ 停止</button>
+        <button class="cue-toggle" title="演出（合成映像）の ON / OFF">演出 ON</button>
         <span class="spacer"></span>
         <button class="cap-btn" title="この見た目を1枚 recordings/ に保存">📷</button>
         <button class="rec-btn" title="動画 録画 開始 / 停止（recordings/ へ）">⏺ 録画</button>
@@ -195,6 +194,7 @@ function buildColumn(cam, index) {
   }
   refs.liveImg.addEventListener('load', () => {
     refs.statusEl.textContent = '● LIVE'; refs.statusEl.className = 'col-status ok';
+    refs.applyAspect && refs.applyAspect(); // ビュー/マスクの縦横比をカメラ実寸に合わせる
   });
   refs.liveImg.addEventListener('error', () => {
     refs.statusEl.textContent = '✕ 切断 — 再試行'; refs.statusEl.className = 'col-status ng';
@@ -328,17 +328,30 @@ function buildColumn(cam, index) {
       if (k >= 0) cues[k] = cue; else cues.push(cue);
       const r2 = await postState({ cues });
       if (!r2.ok) throw new Error('state 保存失敗');
-      ed(`✓ 保存（${maskUrl ? 'マスク付き' : '全面差し替え'}）。▶ 発火 で出る`, 'ok');
+      ed(`✓ 保存（${maskUrl ? 'マスク付き' : '全面差し替え'}）。演出 ON で出る`, 'ok');
     } catch (e) { ed('保存失敗: ' + e.message, 'err'); }
   };
 
-  // ===== 操作系（発火・停止・固定）=====
-  q('.cue-fire').onclick = () => postCommand({ type: 'playCue', id: `cue_${refs.cam.id}` });
-  q('.cue-stop').onclick = () => postCommand({ type: 'stopCue' });
+  // ===== 操作系（演出 ON/OFF・固定）=====
+  q('.cue-toggle').onclick = () => {
+    const active = state?.control?.activeCue === `cue_${refs.cam.id}`;
+    postCommand(active ? { type: 'stopCue' } : { type: 'playCue', id: `cue_${refs.cam.id}` });
+  };
   q('.col-lock').onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
 
-  // ===== 📷 キャプチャ / ⏺ 録画（ビューの見た目＝Quest と同じ絵を recordings/ へ）=====
+  // ===== ① ビュー/マスクの縦横比をカメラ実寸に合わせる（黒レターボックス背景を出さない）=====
   const viewCanvas = q('.view-canvas');
+  refs.applyAspect = () => {
+    const w = refs.liveImg.naturalWidth, h = refs.liveImg.naturalHeight;
+    if (!w || !h) return;
+    const a = (w / h).toFixed(4);
+    if (refs._aspect === a) return;
+    refs._aspect = a;
+    viewCanvas.style.aspectRatio = a;
+    maskCanvas.style.aspectRatio = a;
+  };
+
+  // ===== 📷 キャプチャ / ⏺ 録画（ビューの見た目＝Quest と同じ絵を recordings/ へ）=====
   q('.cap-btn').onclick = () => {
     viewCanvas.toBlob(async (blob) => {
       if (!blob) return ed('キャプチャ不可', 'err');
@@ -407,8 +420,10 @@ function setupView(refs, canvas, mctx, maskCanvas) {
     const img = refs.liveImg;
     if (img.naturalWidth) texLive.upload(img);
     texMask.upload(maskCanvas);
+    // 演出 ON（このカメラの cue が発火中）のときだけオーバーレイを出す。
+    // → 演出 OFF（停止）で合成映像が消える。Quest の挙動と一致。
     let ovScale = [1, 1], ovStrength = 0;
-    if (refs.srcMedia && refs.srcReady) {
+    if (refs.cueActive && refs.srcMedia && refs.srcReady) {
       texOv.upload(refs.srcMedia);
       ovScale = containScale(refs.srcMedia.videoWidth || refs.srcMedia.naturalWidth,
         refs.srcMedia.videoHeight || refs.srcMedia.naturalHeight);
@@ -446,6 +461,13 @@ function syncColumn(refs, cam) {
   // ストリーム再接続は接続パラメータ変化時のみ
   const key = `${cam.host || ''}|${cam.port || 8080}|${cam.auth || ''}`;
   if (key !== refs.streamKey) { refs.streamKey = key; refs.connectLive(); }
+  // 演出 ON/OFF トグル（このカメラの cue が発火中か）
+  const cueActive = state?.control?.activeCue === `cue_${cam.id}`;
+  refs.cueActive = cueActive;
+  const tg = refs.el.querySelector('.cue-toggle');
+  tg.textContent = cueActive ? '演出 OFF' : '演出 ON';
+  tg.classList.toggle('on', cueActive);
+
   // active / lock 表示
   const activeId = activeCamId();
   refs.el.classList.toggle('active', unityAlive && activeId === cam.id);
