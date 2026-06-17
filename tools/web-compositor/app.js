@@ -89,7 +89,7 @@ function buildColumn(cam, index) {
       <b class="col-name">カメラ ${cam.id}</b>
       <span class="col-src"></span>
       <span class="col-status">接続中…</span>
-      <button class="col-lock" title="このカメラに手動固定">🔒</button>
+      <button class="col-switch" title="Quest の表示をこのカメラに切り替える（ゾーン自律は一時オフ。戻すのは上部の 🚶）">📺 切替</button>
     </div>
 
     <div class="col-sec">
@@ -333,7 +333,7 @@ function buildColumn(cam, index) {
     const active = state?.control?.activeCue === `cue_${refs.cam.id}`;
     postCommand(active ? { type: 'stopCue' } : { type: 'playCue', id: `cue_${refs.cam.id}` });
   };
-  q('.col-lock').onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
+  q('.col-switch').onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
 
   // ===== ① ビュー/マスクの縦横比をカメラ実寸に合わせる（黒レターボックス背景を出さない）=====
   const viewCanvas = q('.view-canvas');
@@ -518,7 +518,11 @@ function syncColumn(refs, cam) {
   // active / lock 表示
   const activeId = activeCamId();
   refs.el.classList.toggle('active', unityAlive && activeId === cam.id);
-  refs.el.querySelector('.col-lock').classList.toggle('on', state?.control?.cameraOverride === cam.id);
+  // 📺 切替: 実際に表示中（heartbeat の activeIndex）なら「● 表示中」、それ以外は「📺 切替」
+  const sw = refs.el.querySelector('.col-switch');
+  const isShown = unityAlive && activeId === cam.id;
+  sw.textContent = isShown ? '● 表示中' : '📺 切替';
+  sw.classList.toggle('on', isShown);
 }
 
 // ---- カメラ列の再構築（カメラ集合が変わった時のみ）--------------------------

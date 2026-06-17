@@ -313,8 +313,8 @@ select option { background: #111; color: var(--text-color); }
 .col-status { margin-left: auto; font-size: 11px; letter-spacing: .08em; opacity: var(--opacity-mute); }
 .col-status.ok { color: var(--accent-color); opacity: 1; }
 .col-status.ng { color: var(--danger-color); opacity: 1; }
-.col-lock { padding: 3px 8px; flex: none; }
-.col-lock.on { color: var(--accent-color); border-color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-color); opacity: 1; }
+.col-switch { padding: 3px 9px; flex: none; font-size: 11px; letter-spacing: .04em; }
+.col-switch.on { background: var(--accent-color); border-color: var(--accent-color); color: #000; font-weight: 600; opacity: 1; }
 
 .col-sec { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); }
 .col-sec:last-child { border-bottom: none; }
