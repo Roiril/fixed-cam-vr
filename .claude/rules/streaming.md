@@ -35,6 +35,8 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
   - 実パスワードを設定した .asset はコミットしない（既定 admin/admin はコミット可）
 - **超広角対応**: アプリ内カメラ選択で「Back Ultra Wide Camera」を選べる（13 Pro 実機確認済み）。広角配置にも iPhone を使える
 - **配信プロファイル実測**（13 Pro 既定設定）: HTTP/1.0・非 chunked・`boundary=--BoundaryString`・パート毎 `Content-Length` 付き。1 フレーム ≈93KB、帯域 ≈30Mbps と **fixed-cam-streamer（quality 40 / 720x405）の数倍重い** → 3 台運用ではアプリ側で解像度/品質を下げること
+- **解像度・アスペクト（2026-06-17 調査）**: 既定は **640×480（4:3）固定**。黒帯は無く素の 4:3（iPhone センサーのフル 4:3）。Unity スクリーン（16:9）や streamer（16:9）と揃えたいなら **アプリ Settings → Video Resolution で 1280×720（16:9）に変更**する（4:3→16:9 は上下画角が犠牲・帯域増 → 品質スライダで調整）。web-compositor のビューは live 実寸からアスペクトを自動追従するので、解像度を変えればコード変更なしで 16:9 化する
+- **遠隔制御・メタ endpoint は無し**: `/video?resolution=` 等の URL パラメータは効かない。`/settings` `/status` `/info` `/config` `/jpeg` `/photo.jpg` は全て 404。解像度・品質・カメラ選択は**アプリ UI でしか変えられない**。`/` も `/video` と同じ MJPEG を返す（`Server: IP Camera for iOS`）
 - **Lite（無料）版は全フレームにウォーターマークが入る**。演出上問題なら有料版で除去
 - `/info` 無し → 自動回転メタは来ない。**端末を横持ち固定**で運用するか、`MjpegScreen.uvRotSteps` で手動補正
 - `/health` 無し → lag 検出・E2E 遅延推定は自動無効。カクつき調査はアプリ側 UI とルータで切り分け
