@@ -406,16 +406,31 @@ function buildColumn(cam, index) {
     }, 'image/jpeg', 0.95);
   }
 
-  // 列に 1 個のレコーダ（生 / 最終を同時録画はしない。録画中に他方を押すと現行を停止）。
+  // 列に 1 個のレコーダ（生 / 最終の同時録画はしない）。kind = 'raw' | 'view'。
+  //   refs.startRecord / stopRecord / isRecording を公開し、個別ボタンからも
+  //   「全カメラ同時録画」（ヘッダ）からも同じ経路で叩く。
   let mediaRec = null, recChunks = [], rawTimer = 0;
-  function startRecord(btn, streamCanvas, tickFn, tag, label) {
-    if (mediaRec && mediaRec.state === 'recording') { mediaRec.stop(); return; }
-    if (!streamCanvas) return ed('映像が無い', 'err');
+  const recRawBtn = q('.rec-raw'), recViewBtn = q('.rec-view');
+  refs.recording = null; // 'raw' | 'view' | null
+  function updateColRecUI() {
+    recRawBtn.textContent = refs.recording === 'raw' ? '⏹ 停止' : '⏺ 録画';
+    recRawBtn.classList.toggle('on', refs.recording === 'raw');
+    recViewBtn.textContent = refs.recording === 'view' ? '⏹ 停止' : '⏺ 録画';
+    recViewBtn.classList.toggle('on', refs.recording === 'view');
+  }
+  function colStartRecord(kind) {
+    if (refs.recording) return false; // 既に録画中（1 列 1 レコーダ）
+    const isView = kind === 'view';
+    const streamCanvas = isView ? viewCanvas : rawCanvas;
+    if (isView) { if (!streamCanvas) { ed('映像が無い', 'err'); return false; } }
+    else if (!rawDraw()) { ed('生映像が無い', 'err'); return false; } // 初回フレームを描く
+    const tag = isView ? viewTag() : rawTag();
+    const label = isView ? 'Quest最終' : '生';
     clearInterval(rawTimer);
-    if (tickFn) rawTimer = setInterval(tickFn, 33);
+    if (!isView) rawTimer = setInterval(rawDraw, 33); // 生は img→canvas を回し続ける
     let stream;
     try { stream = streamCanvas.captureStream(30); }
-    catch (e) { clearInterval(rawTimer); return ed('録画不可: ' + e.message, 'err'); }
+    catch (e) { clearInterval(rawTimer); ed('録画不可: ' + e.message, 'err'); return false; }
     recChunks = [];
     const mime = (window.MediaRecorder && MediaRecorder.isTypeSupported('video/webm;codecs=vp9'))
       ? 'video/webm;codecs=vp9' : 'video/webm';
@@ -423,23 +438,39 @@ function buildColumn(cam, index) {
     mediaRec.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
     mediaRec.onstop = async () => {
       clearInterval(rawTimer);
-      btn.textContent = '⏺ 録画'; btn.classList.remove('on');
+      refs.recording = null; updateColRecUI(); renderGlobalRecState();
       const blob = new Blob(recChunks, { type: 'video/webm' });
       const r = await (await fetch(`/save?type=video&to=recordings&cam=${tag}`,
         { method: 'POST', body: blob })).json();
       ed(r.ok ? `⏹ 録画保存(${label}): ${r.name}（${Math.round(r.size / 1024)}KB）` : '録画保存失敗', r.ok ? 'ok' : 'err');
     };
     mediaRec.start();
-    btn.textContent = '⏹ 停止'; btn.classList.add('on');
+    refs.recording = kind; updateColRecUI();
     ed(`● 録画中（${label}）…`, 'ok');
+    return true;
   }
+  function colStopRecord() {
+    if (mediaRec && mediaRec.state === 'recording') { mediaRec.stop(); return true; }
+    return false;
+  }
+  refs.startRecord = colStartRecord;
+  refs.stopRecord = colStopRecord;
+  refs.isRecording = () => !!refs.recording;
 
   // ① 生映像のキャプチャ
   q('.cap-raw').onclick = () => saveStill(rawDraw() ? rawCanvas : null, rawTag(), '生');
-  q('.rec-raw').onclick = (e) => { rawDraw(); startRecord(e.currentTarget, rawCanvas, rawDraw, rawTag(), '生'); };
+  recRawBtn.onclick = () => {
+    if (refs.recording === 'raw') colStopRecord();
+    else if (!refs.recording) colStartRecord('raw');
+    renderGlobalRecState();
+  };
   // ④ 最終映像（合成済み = Quest 実映像）のキャプチャ。view-canvas は自走描画なので tick 不要。
   q('.cap-view').onclick = () => saveStill(viewCanvas, viewTag(), 'Quest最終');
-  q('.rec-view').onclick = (e) => startRecord(e.currentTarget, viewCanvas, null, viewTag(), 'Quest最終');
+  recViewBtn.onclick = () => {
+    if (refs.recording === 'view') colStopRecord();
+    else if (!refs.recording) colStartRecord('view');
+    renderGlobalRecState();
+  };
 
   // ===== WebGL ビュー（ScreenComposite 再現）=====
   setupView(refs, q('.view-canvas'), mctx, maskCanvas);
@@ -609,9 +640,42 @@ async function pollUnity() {
   }
 }
 
+// ---- 全カメラ同時録画（ヘッダ）---------------------------------------------
+//   生 / Quest最終 の 2 系統。押すと全列で一斉に開始、もう一度押すと全停止。
+//   ファイルは各列のタグ（A / A_quest）+ ほぼ同一タイムスタンプで recordings/ へ。
+let globalRecKind = null; // 'raw' | 'view' | null（全録画を発火した系統）
+function renderGlobalRecState() {
+  const anyRec = [...columns.values()].some((c) => c.isRecording && c.isRecording());
+  if (!anyRec) globalRecKind = null;
+  const rawBtn = $('#recAllRaw'), viewBtn = $('#recAllView');
+  if (rawBtn) {
+    rawBtn.textContent = globalRecKind === 'raw' ? '⏹ 全停止' : '⏺ 全カメラ録画(生)';
+    rawBtn.classList.toggle('on', globalRecKind === 'raw');
+  }
+  if (viewBtn) {
+    viewBtn.textContent = globalRecKind === 'view' ? '⏹ 全停止' : '⏺ 全カメラ録画(Quest)';
+    viewBtn.classList.toggle('on', globalRecKind === 'view');
+  }
+}
+function recordAll(kind) {
+  const anyRec = [...columns.values()].some((c) => c.isRecording && c.isRecording());
+  if (anyRec) {
+    // 何か録画中なら全停止（個別録画も含めてまとめて止める）
+    for (const c of columns.values()) c.stopRecord && c.stopRecord();
+    globalRecKind = null;
+  } else {
+    let started = 0;
+    for (const c of columns.values()) { if (c.startRecord && c.startRecord(kind)) started++; }
+    globalRecKind = started ? kind : null;
+  }
+  renderGlobalRecState();
+}
+
 // ---- 起動 -------------------------------------------------------------------
 $('#autoZone').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
 $('#openRecordings').onclick = () => fetch('/open-dir?dir=recordings').catch(() => {});
+if ($('#recAllRaw')) $('#recAllRaw').onclick = () => recordAll('raw');
+if ($('#recAllView')) $('#recAllView').onclick = () => recordAll('view');
 
 // 境界ブレンド設定（全カメラ共通）の配線
 const bindBlend = (id, fn) => { const el = $('#' + id); if (el) el.oninput = () => fn(el); };

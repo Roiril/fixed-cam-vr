@@ -8,6 +8,7 @@
 - **② マスク**: 白黒境界を**スライダ調整**（白の向き 左/右/上/下 ＋ 位置スライダ ＋ 取り消し）。フリーハンド系は撤去
 - **① 生リアルタイム映像（最下段）**: 生 MJPEG を `<img.raw-live>` で直接表示（加工前。この img を GL テクスチャ源にも兼用＝MJPEG 接続は 1 本のまま）。上に **📷1枚・⏺録画（=生フレーム→`recordings/`、cam=`A`）** + 配信元 IP/port/auth
 - **キャプチャ 2 系統**: ① 生映像の上＝生フレーム / ④ 実映像の上＝合成済み（ビデオデモ用に「実際に Quest で見える絵」を録れる）。合成済み静止画のため `gl.js` は `preserveDrawingBuffer: true`（false だと toBlob が空になる）
+- **全カメラ同時録画（2026-06-18）**: ヘッダに `⏺全カメラ録画(生)` / `(Quest)`。押すと全列で一斉録画開始、もう一度で全停止。各列の録画は `refs.startRecord(kind)/stopRecord()/isRecording()` を公開し個別ボタンとヘッダの一括が同じ経路を叩く（`recordAll`/`renderGlobalRecState` が全列集約）。1 列 1 レコーダ。ライブ未到達の列は生録画を graceful スキップ。ファイルは各列タグ + ほぼ同一タイムスタンプで `recordings/`
 - **生成プロンプト**: 画像/動画 AI プロンプトを 📋コピー/編集/削除（既存 `/prompts`=prompts.json）
 
 実装: `index.html` ＋ `app.js`（全配線、ESM）＋ `pipeline.js`（合成）＋ `gl.js`/`shaders.js`。Unity 側対向は `ShowControlClient`（long-poll + 端末キャッシュ）/ `ScreenOverlayController`（cue 再生・動画はローカル DL）。**境界ブレンドの色統計/ラプラシアンは Web プレビュー専用**（Quest はハード合成、フェザーのみ PNG 焼き込みで効く）。
