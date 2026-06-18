@@ -265,6 +265,53 @@ namespace FixedCamVr.Streaming
             }
         }
 
+        // ---- コントローラ等からのローカル発火（演出トグル）----
+
+        [Serializable] private class CommandMsg { public string type = ""; public string id = ""; }
+
+        /// <summary>
+        /// 今アクティブなカメラの cue（id = cue_&lt;camId&gt;）を ON/OFF する。コントローラのグリップ単押し等から呼ぶ。
+        /// show.json を唯一の正に保つため、ローカルで直接 PlayCue せず /command（playCue/stopCue）をサーバへ送る
+        /// → 自分の long-poll が即座に戻り Apply が実再生/停止する（web UI 表示・heartbeat とも整合）。
+        /// サーバ未接続時は cue 定義自体が無いので発火不可（その旨をログ）。
+        /// </summary>
+        public void ToggleActiveCameraCue()
+        {
+            if (registry == null) return;
+            int idx = registry.ActiveIndex;
+            if (idx < 0) return;
+            string camId = (idx < _cameras.Length && _cameras[idx] != null && !string.IsNullOrEmpty(_cameras[idx]!.id))
+                ? _cameras[idx]!.id
+                : ((char)('A' + idx)).ToString(); // long-poll 前のフォールバック（show.json は A/B/C 順）
+            string cueId = $"cue_{camId}";
+            bool playingThis = _overlay != null && _overlay.Current != null && _overlay.Current.id == cueId;
+            if (playingThis) SendCommand("stopCue", "");
+            else SendCommand("playCue", cueId);
+            Debug.Log($"[ShowControl] grip cue toggle: cam={camId} -> {(playingThis ? "stop" : cueId)}");
+        }
+
+        private void SendCommand(string type, string id)
+        {
+            if (server == null) { Debug.LogWarning("[ShowControl] server 未設定: 演出はオペレータ卓接続時のみ発火可"); return; }
+            _ = SendCommandAsync(type, id, destroyCancellationToken);
+        }
+
+        private async Task SendCommandAsync(string type, string id, CancellationToken ct)
+        {
+            try
+            {
+                string json = JsonUtility.ToJson(new CommandMsg { type = type, id = id });
+                using var req = UnityWebRequest.Post(server!.BuildUrl("/command"), json, "application/json");
+                req.timeout = 3;
+                var op = req.SendWebRequest();
+                while (!op.isDone) { ct.ThrowIfCancellationRequested(); await Task.Yield(); }
+                if (req.result != UnityWebRequest.Result.Success)
+                    Debug.LogWarning($"[ShowControl] command '{type}' failed: {req.error}");
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception e) { Debug.LogWarning($"[ShowControl] command '{type}' error: {e.Message}"); }
+        }
+
         // ---- カメラ設定 / 画像加工 の適用 ----
 
         /// <summary>cameras[i].host/port/auth を registry の各 stream へ実行時上書きする（変化時のみ再接続）。</summary>

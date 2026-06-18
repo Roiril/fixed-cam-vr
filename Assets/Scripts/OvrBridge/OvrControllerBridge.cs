@@ -15,6 +15,9 @@ namespace FixedCamVr.OvrBridge
         [SerializeField] private CameraStreamRegistry? registry;
         [SerializeField] private ScreenAnchor? screenAnchor;
 
+        [Tooltip("演出 cue を発火する ShowControlClient（Screen 上）。未割当なら Start で自動取得。")]
+        [SerializeField] private ShowControlClient? showControl;
+
         [Header("Mappings")]
         [SerializeField] private OVRInput.Button nextButton = OVRInput.Button.One;        // A (右)
         [SerializeField] private OVRInput.Button prevButton = OVRInput.Button.Two;        // B (右)
@@ -34,9 +37,19 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("校正モード切替に必要な両グリップの長押し秒数。")]
         [SerializeField, Min(0.2f)] private float calibToggleHoldSec = 3.0f;
 
+        // 片手グリップの『単押し』と判定する最大長さ(秒)。これ以下の片手タップで今見ているカメラの
+        // 演出をトグル（両手押し / 長押しは校正側なので cue は発火しない）。
+        // ※ SerializeField にすると既存シーンの YAML に未記載で 0 と読まれ判定が壊れる
+        //   （unity-prefab-fields の罠）。調整不要なので const 固定。
+        private const float GripTapMaxSec = 0.4f;
+
         private bool _hudVisible = true;
         private float _gripHold;
         private bool _calibToggleFired;
+        // グリップ単押し検出（release ベース。両手 or 長押しは校正なので除外）。
+        private bool _gripPressActive;
+        private float _gripPressStart;
+        private bool _gripPressBoth;
 
         private void Start()
         {
@@ -45,6 +58,7 @@ namespace FixedCamVr.OvrBridge
             // HUD を隠す」空振りになり、表示するのに 2 回押す羽目になる（最近の「ボタンが意図と
             // 違う」系の罠と同質）。型は MonoBehaviour で緩く受けたまま安全にキャストして読む。
             if (hud is FixedCamVr.Diagnostics.RuntimeDebugHud rdh) _hudVisible = rdh.IsVisible;
+            if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
         }
 
         private void Update()
@@ -104,6 +118,31 @@ namespace FixedCamVr.OvrBridge
                 _hudVisible = !_hudVisible;
                 if (hud != null)
                     hud.SendMessage("SetVisible", _hudVisible, SendMessageOptions.DontRequireReceiver);
+            }
+
+            // 片手グリップの「単押し」で、今見ているカメラの演出を ON/OFF（トグル）。
+            // 両手グリップ長押し（校正）と衝突しないよう release ベースで判定する：
+            // 押下中に両手になった or 規定時間を超えた押下は cue を発火しない。
+            bool lGrip = OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.LTouch);
+            bool rGrip = OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
+            if (lGrip || rGrip)
+            {
+                if (!_gripPressActive)
+                {
+                    _gripPressActive = true;
+                    _gripPressStart = Time.unscaledTime;
+                    _gripPressBoth = lGrip && rGrip;
+                }
+                else if (lGrip && rGrip)
+                {
+                    _gripPressBoth = true; // 途中で両手になったら校正ジェスチャ扱い
+                }
+            }
+            else if (_gripPressActive)
+            {
+                _gripPressActive = false;
+                if (!_gripPressBoth && (Time.unscaledTime - _gripPressStart) < GripTapMaxSec)
+                    showControl?.ToggleActiveCameraCue();
             }
         }
     }
