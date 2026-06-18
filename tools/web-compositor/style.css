@@ -532,3 +532,31 @@ header h1 { font-size: 14px; }
 }
 .raw-live:not([src]) { min-height: 60px; }   /* 接続前も枠を確保 */
 @media (max-height: 860px) { .raw-live { max-height: 18vh; } }
+
+/* ===================================================================== */
+/* ⑤ IP / port / 認証 入力の視認性修正（2026-06-18）                       */
+/*    ブラウザの autofill が背景を白系に上書きし、クリーム文字が白地に     */
+/*    乗って見えなくなる。黒背景 + 外枠 + アクセント色(黄系 #ffdead)文字に。 */
+/* ===================================================================== */
+.ip-row input {
+  background: #000;
+  color: var(--accent-color);
+  border: 1px solid var(--line-input);   /* 下線だけ → 外枠ありに */
+  border-radius: 0;
+  padding: 4px 6px;
+}
+.ip-row input::placeholder { color: var(--accent-color); opacity: .45; }
+.ip-row input:focus { border-color: var(--accent-color); outline: none; }
+
+/* autofill は通常の background 指定では潰せない（Chrome が専用レイヤで上書き）。
+   inset box-shadow で黒く塗り、-webkit-text-fill-color でアクセント色を維持する。 */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--accent-color);
+  -webkit-box-shadow: 0 0 0 1000px #000 inset;
+  box-shadow: 0 0 0 1000px #000 inset;
+  caret-color: var(--accent-color);
+  border: 1px solid var(--line-input);
+}

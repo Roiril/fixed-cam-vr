@@ -13,7 +13,7 @@
 
 実装: `index.html` ＋ `app.js`（全配線、ESM）＋ `pipeline.js`（合成）＋ `gl.js`/`shaders.js`。Unity 側対向は `ShowControlClient`（long-poll + 端末キャッシュ）/ `ScreenOverlayController`（cue 再生・動画はローカル DL）。**境界ブレンドの色統計/ラプラシアンは Web プレビュー専用**（Quest はハード合成、フェザーのみ PNG 焼き込みで効く）。
 
-**デザイン言語（cogni-storage 準拠）**: 純黒 `#000` + radial-gradient / 文字 `#fffaf0` / アクセント `#ffdead` / **角丸ゼロ** / 透明カード + 1px 罫線（`--line-soft`）/ UPPERCASE マイクロラベル / 下線型インプット。トークンは style.css の `:root` に集約。
+**デザイン言語（cogni-storage 準拠）**: 純黒 `#000` + radial-gradient / 文字 `#fffaf0` / アクセント `#ffdead` / **角丸ゼロ** / 透明カード + 1px 罫線（`--line-soft`）/ UPPERCASE マイクロラベル / 下線型インプット。トークンは style.css の `:root` に集約。**例外: IP/port/認証 入力だけは下線型でなく「黒地 + 外枠 + アクセント文字」**（2026-06-18）— ブラウザ autofill が背景を白系に上書きしクリーム文字が消える対策。`input:-webkit-autofill` を inset box-shadow で黒塗りにしてある。下線型に戻さないこと。
 
 show.json / masks/ / captures/ は gitignore（ローカル運用状態）。
 
