@@ -563,15 +563,26 @@ namespace FixedCamVr.Streaming
             try { _cts.Cancel(); }
             catch (Exception ex) { Debug.LogWarning($"[MJPEG] cts cancel failed: {ex.Message}"); }
 
-            if (_loop != null)
+            // ★ main スレッドをブロックしない。受信ループは ct を見て自走終了する。
+            //   ここで _loop.Wait(500ms) すると、ReapplyConnection（show.json の IP 差し替え）が
+            //   stall 中のカメラに対して呼ばれた時に最大 500ms のフレームヒッチになる
+            //   ── IP 差し替えはまさにカメラが固まった現場で使うので、最も踏みやすい場面で固まる。
+            //   ループが掴む socket は using なのでタスク巻き取り時に閉じる。_cts はリンク CTS が
+            //   残っている間に dispose すると ObjectDisposedException になるため、ループ完了後
+            //   （背景スレッド）に dispose する。
+            var loop = _loop;
+            if (loop != null)
             {
-                try { _loop.Wait(TimeSpan.FromMilliseconds(500)); }
-                catch (AggregateException) { }
-                catch (Exception ex) { Debug.LogWarning($"[MJPEG] loop join failed: {ex.Message}"); }
+                loop.ContinueWith(t =>
+                {
+                    _ = t.Exception; // UnobservedTaskException 抑止のため観測する
+                    try { _cts.Dispose(); } catch { }
+                }, TaskScheduler.Default);
             }
-
-            try { _cts.Dispose(); }
-            catch (Exception ex) { Debug.LogWarning($"[MJPEG] cts dispose failed: {ex.Message}"); }
+            else
+            {
+                try { _cts.Dispose(); } catch { }
+            }
         }
     }
 }

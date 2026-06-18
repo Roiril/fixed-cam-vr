@@ -123,50 +123,11 @@ void main(){
   o = mix(texture(uB, vUv), texture(uA, vUv), m);
 }`;
 
-// 統合ビュー用: Unity ScreenComposite.shader の完全移植（Quest と同じ見た目を再現）。
-//   live(contain) × overlay(contain, mask 越し) を合成 → ポスト FX。
-//   Assets/Art/Shaders/Streaming/ScreenComposite.shader と数式・順序を一致させること。
-export const FS_VIEW = `#version 300 es
-precision highp float;
-in vec2 vUv; out vec4 o;
-uniform sampler2D uLive, uOverlay, uMask;
-uniform vec2 uLiveScale, uOverlayScale;
-uniform float uOverlayStrength;
-uniform float uExposure, uContrast, uSaturation, uTemperature;
-uniform float uVignette, uGrain, uScanline, uScanlineCount, uTime;
-float hash21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-vec2 containUv(vec2 uv, vec2 scale, out float inside){
-  vec2 s = max(scale, vec2(1e-4));
-  vec2 p = (uv - 0.5) / s + 0.5;
-  vec2 ok = step(vec2(0.0), p) * step(p, vec2(1.0));
-  inside = ok.x * ok.y;
-  return clamp(p, 0.0, 1.0);
-}
-void main(){
-  vec2 uv = vUv;
-  float liveIn; vec2 uvL = containUv(uv, uLiveScale, liveIn);
-  vec3 live = texture(uLive, uvL).rgb * liveIn;
-  float ovIn; vec2 uvO = containUv(uv, uOverlayScale, ovIn);
-  vec3 overlay = texture(uOverlay, uvO).rgb * ovIn;
-  float mask = texture(uMask, uv).r;
-  vec3 col = mix(live, overlay, clamp(mask * uOverlayStrength, 0.0, 1.0));
-  // ポスト FX（ScreenComposite と一致）
-  col *= pow(2.0, uExposure);
-  col = (col - 0.5) * uContrast + 0.5;
-  float luma = dot(col, vec3(0.299, 0.587, 0.114));
-  col = mix(vec3(luma), col, uSaturation);
-  col.r += uTemperature * 0.08;
-  col.b -= uTemperature * 0.08;
-  float d = distance(uv, vec2(0.5));
-  col *= 1.0 - uVignette * smoothstep(0.35, 0.75, d);
-  float n = hash21(uv * 731.7 + fract(uTime) * 113.1);
-  col += (n - 0.5) * uGrain;
-  float sl = 0.5 + 0.5 * sin(uv.y * uScanlineCount * 6.2831853);
-  col *= 1.0 - uScanline * 0.35 * sl;
-  o = vec4(clamp(col, 0.0, 1.0), 1.0);
-}`;
-
 // 後段ポストFX + 画面出力
+//   ★ ビューの最終見た目（= Quest と同じ絵）はこの FS_POST。Unity
+//      Assets/Art/Shaders/Streaming/ScreenComposite.shader と数式・順序を一致させてある
+//      （露出→色温度[乗算]→コントラスト→彩度→ヴィネット[dot*2.2]→走査線→グレイン）。
+//      合成（contain-fit / マスク / 色統計 / ラプラシアン）は pipeline.js の多パスで行う。
 export const FS_POST = `#version 300 es
 precision highp float;
 in vec2 vUv; out vec4 o;

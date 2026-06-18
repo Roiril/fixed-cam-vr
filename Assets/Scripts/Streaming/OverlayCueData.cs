@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using UnityEngine;
 using UnityEngine.Video;
 
@@ -39,8 +40,11 @@ namespace FixedCamVr.Streaming
             {
                 if (clip != null) return true;
                 if (stillImage != null) return false;
-                string u = sourceUrl.ToLowerInvariant();
-                return u.EndsWith(".mp4") || u.EndsWith(".webm") || u.EndsWith(".mov");
+                // ToLowerInvariant() は毎回 string を確保するので、StringComparison 付き EndsWith で
+                // ノーアロケート判定する（拡張子の大小無視はこれで足りる）。
+                return sourceUrl.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+                    || sourceUrl.EndsWith(".webm", StringComparison.OrdinalIgnoreCase)
+                    || sourceUrl.EndsWith(".mov", StringComparison.OrdinalIgnoreCase);
             }
         }
 

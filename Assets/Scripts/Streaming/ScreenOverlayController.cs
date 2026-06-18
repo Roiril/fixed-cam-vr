@@ -102,6 +102,15 @@ namespace FixedCamVr.Streaming
                 }
             }
             _urlTextureCache.Clear();
+
+            // DL 済み動画キャッシュ（temporaryCachePath の mp4）を掃除する。放置すると
+            // 新しい AI 動画 cue を叩くたびに端末ストレージへ mp4 が無限に積もる。
+            foreach (var path in _videoFileCache.Values)
+            {
+                try { if (File.Exists(path)) File.Delete(path); }
+                catch (Exception e) { Debug.LogWarning($"[ScreenOverlay] video cache delete failed: {e.Message}"); }
+            }
+            _videoFileCache.Clear();
         }
 
         private void Update()

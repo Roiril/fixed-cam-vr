@@ -38,6 +38,15 @@ namespace FixedCamVr.OvrBridge
         private float _gripHold;
         private bool _calibToggleFired;
 
+        private void Start()
+        {
+            // HUD の初期表示状態に _hudVisible を合わせる。RuntimeDebugHud が既定 OFF
+            // （startVisible=false）のとき true 固定のままだと、初回 Y 押下が「既に隠れている
+            // HUD を隠す」空振りになり、表示するのに 2 回押す羽目になる（最近の「ボタンが意図と
+            // 違う」系の罠と同質）。型は MonoBehaviour で緩く受けたまま安全にキャストして読む。
+            if (hud is FixedCamVr.Diagnostics.RuntimeDebugHud rdh) _hudVisible = rdh.IsVisible;
+        }
+
         private void Update()
         {
             // 両グリップ長押しで校正モード切替（押しっぱなしで連続トグルしない）
