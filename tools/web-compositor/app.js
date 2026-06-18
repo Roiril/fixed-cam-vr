@@ -92,6 +92,8 @@ function activeCamId() {
 function buildColumn(cam, index) {
   const col = document.createElement('div');
   col.className = 'cam-col';
+  // 縦フロー（下→上）: ① 生リアルタイム映像 → ② マスク → ③ 画像加工 → ④ Quest 実映像。
+  //   キャプチャ UI は「① 生映像の上」（=生フレーム保存）と「④ 実映像の上」（=合成済み保存）の 2 か所。
   col.innerHTML = `
     <div class="col-head">
       <b class="col-name">カメラ ${cam.id}</b>
@@ -101,30 +103,35 @@ function buildColumn(cam, index) {
     </div>
 
     <div class="col-sec">
-      <div class="sec-label">ビュー（最終見た目 = Quest と同じ）</div>
-      <div class="view-wrap"><canvas class="view-canvas" width="${MW}" height="${MH}"></canvas></div>
-      <div class="row-btns">
+      <div class="sec-label">④ メタクエストで見えている映像（最終 = 加工 + 合成）</div>
+      <div class="cap-bar">
+        <button class="cap-btn cap-view" title="この最終映像を 1 枚 recordings/ に保存">📷 1枚</button>
+        <button class="rec-btn rec-view" title="最終映像を録画（recordings/ へ）">⏺ 録画</button>
+        <span class="spacer"></span>
         <button class="cue-toggle" title="演出（合成映像）の ON / OFF">演出 ON</button>
         <span class="sld">fade <input class="cue-fade-sec" type="number" min="0" max="5" step="0.1" value="0.5" title="フェード秒（ON で出る / OFF・再生終了で戻る）">s</span>
-        <span class="spacer"></span>
-        <button class="cap-btn" title="この見た目を1枚 recordings/ に保存">📷</button>
-        <button class="rec-btn" title="動画 録画 開始 / 停止（recordings/ へ）">⏺ 録画</button>
       </div>
+      <div class="view-wrap"><canvas class="view-canvas" width="${MW}" height="${MH}"></canvas></div>
     </div>
 
     <div class="col-sec">
-      <div class="sec-label">設定（IP・画質）</div>
-      <div class="ip-row">
-        <input class="ip-host" placeholder="スマホ IP" title="配信スマホの IP">
-        <input class="ip-port" placeholder="port" title="streamer=8080 / IP Camera Lite=8081">
-        <input class="ip-auth" placeholder="user:pass" title="Basic 認証（空=なし）">
-      </div>
+      <div class="sec-label">③ 画像加工（画質 + 合成素材）</div>
       <div class="fx-rows"></div>
       <div class="row-btns"><button class="fx-reset">↺ 画質を初期化</button></div>
+      <div class="row-btns">
+        <select class="src-select"></select>
+        <button class="src-refresh" title="一覧を更新">↻</button>
+        <button class="src-folder" title="素材フォルダ（captures/）を開く">📂</button>
+      </div>
+      <div class="row-btns trim-row" style="display:none">
+        <span class="sld">再生区間 <input class="trim-start" type="number" min="0" step="0.1" value="0" title="開始秒">–<input class="trim-end" type="number" min="0" step="0.1" value="0" title="終了秒（0=最後まで）">s</span>
+      </div>
+      <div class="row-btns"><button class="cue-save accent">💾 cue 保存</button></div>
+      <span class="ed-status"></span>
     </div>
 
     <div class="col-sec">
-      <div class="sec-label">マスク（白 = 差し替え）</div>
+      <div class="sec-label">② マスク領域調整（白 = 差し替え）</div>
       <div class="view-wrap"><canvas class="mask-canvas" width="${MW}" height="${MH}"></canvas></div>
       <div class="row-btns mask-tools">
         <span class="seg-label">白の向き</span>
@@ -138,17 +145,19 @@ function buildColumn(cam, index) {
     </div>
 
     <div class="col-sec">
-      <div class="sec-label">合成素材（画像 / 動画）</div>
-      <div class="row-btns">
-        <select class="src-select"></select>
-        <button class="src-refresh" title="一覧を更新">↻</button>
-        <button class="src-folder" title="素材フォルダ（captures/）を開く">📂</button>
+      <div class="sec-label">① 生リアルタイム映像（加工前）</div>
+      <div class="cap-bar">
+        <button class="cap-btn cap-raw" title="生フレームを 1 枚 recordings/ に保存">📷 1枚</button>
+        <button class="rec-btn rec-raw" title="生フレームを録画（recordings/ へ）">⏺ 録画</button>
+        <span class="spacer"></span>
+        <span class="ip-mini-label">配信元</span>
       </div>
-      <div class="row-btns trim-row" style="display:none">
-        <span class="sld">再生区間 <input class="trim-start" type="number" min="0" step="0.1" value="0" title="開始秒">–<input class="trim-end" type="number" min="0" step="0.1" value="0" title="終了秒（0=最後まで）">s</span>
+      <div class="ip-row">
+        <input class="ip-host" placeholder="スマホ IP" title="配信スマホの IP">
+        <input class="ip-port" placeholder="port" title="streamer=8080 / IP Camera Lite=8081">
+        <input class="ip-auth" placeholder="user:pass" title="Basic 認証（空=なし）">
       </div>
-      <div class="row-btns"><button class="cue-save accent">💾 cue 保存</button></div>
-      <span class="ed-status"></span>
+      <div class="view-wrap"><img class="raw-live" alt="生リアルタイム映像"></div>
     </div>`;
 
   const q = (s) => col.querySelector(s);
@@ -157,7 +166,9 @@ function buildColumn(cam, index) {
     statusEl: q('.col-status'), srcSpan: q('.col-src'),
     hostI: q('.ip-host'), portI: q('.ip-port'), authI: q('.ip-auth'),
     fxInputs: {}, fxVals: {},
-    liveImg: new Image(), srcMedia: null, srcReady: false,
+    // 生ライブは DOM の <img>（最下段に直接表示）。GL テクスチャ源としても同じ要素を使い回す
+    //   → MJPEG 接続は 1 本のまま（同一オリジン 6 接続制限を食わない）。
+    liveImg: q('.raw-live'), srcMedia: null, srcReady: false,
     retry: 0, streamKey: '',
   };
 
@@ -360,60 +371,75 @@ function buildColumn(cam, index) {
     refs._aspect = aStr;
     viewCanvas.style.aspectRatio = aStr;
     maskCanvas.style.aspectRatio = aStr;
-    // ★ビューの内部レンダー解像度もカメラ比にする → FS_VIEW が letterbox せず full-fill。
-    //   表示(CSS)だけでなくピクセル自体が黒帯ゼロ → 📷/⏺ のキャプチャにも黒帯が入らない。
+    refs.liveImg.style.aspectRatio = aStr; // 生ライブ表示もカメラ実寸比に追従（黒帯ゼロ）
+    // ★ビューの内部レンダー解像度もカメラ比にする → 取り込み(FS_INGEST の contain-fit)が
+    //   letterbox せず full-fill。表示(CSS)だけでなくピクセル自体が黒帯ゼロ
+    //   → 📷/⏺ のキャプチャにも黒帯が入らない。
     viewCanvas.width = Math.max(2, Math.round(360 * a));
     viewCanvas.height = 360;
   };
 
-  // ===== 📷 キャプチャ / ⏺ 録画（★生フレーム = 画質加工も合成も無しの素の配信映像を recordings/ へ）=====
-  q('.cap-btn').onclick = () => {
+  // ===== 📷 キャプチャ / ⏺ 録画（2 系統）=====
+  //   ① cap-raw / rec-raw … 生フレーム（画質加工も合成も無しの素の配信映像）
+  //   ④ cap-view / rec-view … 合成済みビュー（= Quest で実際に見えている最終映像）
+  //   保存先はどちらも recordings/。cam タグで区別（生 = "A" / 最終 = "A_quest"）。
+  const rawTag = () => refs.cam.id;            // 生フレーム
+  const viewTag = () => `${refs.cam.id}_quest`; // 合成済み（Quest 実映像）
+
+  // 生フレームを 1 枚の 2D canvas へ描く（img は toBlob 不可なので canvas 化）。
+  const rawCanvas = document.createElement('canvas');
+  const rawDraw = () => {
     const img = refs.liveImg;
-    if (!img.naturalWidth) return ed('ライブ映像が無い', 'err');
-    const cv = document.createElement('canvas');
-    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
-    cv.getContext('2d').drawImage(img, 0, 0);
-    cv.toBlob(async (blob) => {
-      if (!blob) return ed('キャプチャ不可', 'err');
-      const r = await (await fetch(`/save?type=image&to=recordings&cam=${refs.cam.id}`,
-        { method: 'POST', body: blob })).json();
-      ed(r.ok ? `📷 保存(生): ${r.name}` : '保存失敗', r.ok ? 'ok' : 'err');
-    }, 'image/jpeg', 0.95);
+    if (!img.naturalWidth) return false;
+    if (rawCanvas.width !== img.naturalWidth) { rawCanvas.width = img.naturalWidth; rawCanvas.height = img.naturalHeight; }
+    rawCanvas.getContext('2d').drawImage(img, 0, 0, rawCanvas.width, rawCanvas.height);
+    return true;
   };
 
-  let mediaRec = null, recChunks = [], rawDrawTimer = 0;
-  q('.rec-btn').onclick = () => {
-    const btn = q('.rec-btn');
+  async function saveStill(canvas, tag, label) {
+    if (!canvas) return ed('映像が無い', 'err');
+    canvas.toBlob(async (blob) => {
+      if (!blob) return ed('キャプチャ不可', 'err');
+      const r = await (await fetch(`/save?type=image&to=recordings&cam=${tag}`,
+        { method: 'POST', body: blob })).json();
+      ed(r.ok ? `📷 保存(${label}): ${r.name}` : '保存失敗', r.ok ? 'ok' : 'err');
+    }, 'image/jpeg', 0.95);
+  }
+
+  // 列に 1 個のレコーダ（生 / 最終を同時録画はしない。録画中に他方を押すと現行を停止）。
+  let mediaRec = null, recChunks = [], rawTimer = 0;
+  function startRecord(btn, streamCanvas, tickFn, tag, label) {
     if (mediaRec && mediaRec.state === 'recording') { mediaRec.stop(); return; }
-    const img = refs.liveImg;
-    if (!img.naturalWidth) return ed('ライブ映像が無い', 'err');
-    // 生フレーム用 2D canvas（加工・合成なし）。live をそのまま描いて captureStream する。
-    const raw = document.createElement('canvas');
-    raw.width = img.naturalWidth; raw.height = img.naturalHeight;
-    const rctx = raw.getContext('2d');
-    rctx.drawImage(img, 0, 0);
-    clearInterval(rawDrawTimer);
-    rawDrawTimer = setInterval(() => { if (img.naturalWidth) rctx.drawImage(img, 0, 0, raw.width, raw.height); }, 33);
+    if (!streamCanvas) return ed('映像が無い', 'err');
+    clearInterval(rawTimer);
+    if (tickFn) rawTimer = setInterval(tickFn, 33);
     let stream;
-    try { stream = raw.captureStream(30); }
-    catch (e) { clearInterval(rawDrawTimer); return ed('録画不可: ' + e.message, 'err'); }
+    try { stream = streamCanvas.captureStream(30); }
+    catch (e) { clearInterval(rawTimer); return ed('録画不可: ' + e.message, 'err'); }
     recChunks = [];
     const mime = (window.MediaRecorder && MediaRecorder.isTypeSupported('video/webm;codecs=vp9'))
       ? 'video/webm;codecs=vp9' : 'video/webm';
     mediaRec = new MediaRecorder(stream, { mimeType: mime });
     mediaRec.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
     mediaRec.onstop = async () => {
-      clearInterval(rawDrawTimer);
+      clearInterval(rawTimer);
       btn.textContent = '⏺ 録画'; btn.classList.remove('on');
       const blob = new Blob(recChunks, { type: 'video/webm' });
-      const r = await (await fetch(`/save?type=video&to=recordings&cam=${refs.cam.id}`,
+      const r = await (await fetch(`/save?type=video&to=recordings&cam=${tag}`,
         { method: 'POST', body: blob })).json();
-      ed(r.ok ? `⏹ 録画保存(生): ${r.name}（${Math.round(r.size / 1024)}KB）` : '録画保存失敗', r.ok ? 'ok' : 'err');
+      ed(r.ok ? `⏹ 録画保存(${label}): ${r.name}（${Math.round(r.size / 1024)}KB）` : '録画保存失敗', r.ok ? 'ok' : 'err');
     };
     mediaRec.start();
     btn.textContent = '⏹ 停止'; btn.classList.add('on');
-    ed('● 録画中（生）…', 'ok');
-  };
+    ed(`● 録画中（${label}）…`, 'ok');
+  }
+
+  // ① 生映像のキャプチャ
+  q('.cap-raw').onclick = () => saveStill(rawDraw() ? rawCanvas : null, rawTag(), '生');
+  q('.rec-raw').onclick = (e) => { rawDraw(); startRecord(e.currentTarget, rawCanvas, rawDraw, rawTag(), '生'); };
+  // ④ 最終映像（合成済み = Quest 実映像）のキャプチャ。view-canvas は自走描画なので tick 不要。
+  q('.cap-view').onclick = () => saveStill(viewCanvas, viewTag(), 'Quest最終');
+  q('.rec-view').onclick = (e) => startRecord(e.currentTarget, viewCanvas, null, viewTag(), 'Quest最終');
 
   // ===== WebGL ビュー（ScreenComposite 再現）=====
   setupView(refs, q('.view-canvas'), mctx, maskCanvas);

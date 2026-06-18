@@ -5,7 +5,9 @@ export function createContext(canvas) {
   const gl = canvas.getContext('webgl2', {
     antialias: false,
     premultipliedAlpha: false,
-    preserveDrawingBuffer: false,
+    // 合成ビュー（= Quest 実映像）を 📷 で 1 枚 toBlob する時、描画バッファが
+    // composite 後にクリアされていると空画像になる。保持して読み出せるようにする。
+    preserveDrawingBuffer: true,
   });
   if (!gl) throw new Error('WebGL2 が使えません。Chrome/Edge/Firefox の新しめのバージョンで開いてください。');
   // half-float RT（ラプラシアンは負値を持つので必須）

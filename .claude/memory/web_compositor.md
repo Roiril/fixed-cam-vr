@@ -2,11 +2,12 @@
 
 **1 ページ統合 UI（縦割り = カメラ列）**（2026-06-16 にユーザー要望で再編、〜06-17 で機能追加多数）。旧 3 画面（コンソール / コンポジット検証 / 合成エディタ multicam.html）を 1 ページへ統合。Webcam/テスト source・ギャラリーは撤去したが、**境界ブレンド（色統計/ラプラシアン/フェザー）と生成プロンプト管理はユーザー要望で復活**。
 
-構成: **ステータス**（Unity生存/アクティブカメラ/fps/反映rev、🚶ゾーン自律・📂撮影フォルダ）＋ **境界ブレンドバー**（フェザー/色統計+強度/ラプラシアン+レベル、全カメラ共通）＋ **マルチカメラ**（列＝カメラ A/B/C、各列上から **ビュー / 設定 / マスク / 合成素材**）＋ 下部 **生成プロンプト**。
-- **ビュー**: 画質+合成を当てた最終見た目。**マルチパス合成 `pipeline.js`**（取り込み→色統計マッチング→ラプラシアン→post）。カメラ実寸比に追従（黒帯ゼロ）。+ **📺切替**（Quest 表示切替=setCameraOverride、● 表示中表示）/ **演出 ON/OFF トグル**+fade秒（cue.fadeIn/Out へ）/ **📷 生1枚・⏺ 生録画**（=加工合成なしの生フレーム→`recordings/`、`/save?to=recordings&cam=`）。デモ用 1 画面密度レイアウト
-- **設定**: IP/port/auth ＋ カメラ別画質（7 スライダ → `cameras[i].post`）
-- **マスク**: 白黒境界を**スライダ調整**（白の向き 左/右/上/下 ＋ 位置スライダ ＋ 取り消し）。フリーハンド系は撤去
-- **合成素材**: captures/ から select / ↻更新 / 📂フォルダ / **動画は再生区間(trim)入力** → 💾 cue 保存（1 カメラ 1 cue: id=`cue_<camId>`、loop なし・再生終了で自動復帰、URL は percent-encode）。**未保存のまま演出 ON は警告**
+構成: **ステータス**（Unity生存/アクティブカメラ/fps/反映rev、🚶ゾーン自律・📂撮影フォルダ）＋ **境界ブレンドバー**（フェザー/色統計+強度/ラプラシアン+レベル、全カメラ共通）＋ **マルチカメラ**（列＝カメラ A/B/C、各列は**下→上の加工フロー**＝ **① 生映像 → ② マスク → ③ 画像加工 → ④ Quest 実映像**、2026-06-18 にユーザー要望で縦フロー化）＋ 下部 **生成プロンプト**。
+- **④ Quest 実映像（最上段）**: 画質+合成を当てた最終見た目。**マルチパス合成 `pipeline.js`**（取り込み→色統計マッチング→ラプラシアン→post）。カメラ実寸比に追従（黒帯ゼロ）。ヘッダに **📺切替**（=setCameraOverride、● 表示中）/ 上に **📷1枚・⏺録画（=合成済み = Quest と同じ絵→`recordings/`、cam=`A_quest`）** + **演出 ON/OFF**+fade秒（cue.fadeIn/Out へ）。デモ用 1 画面密度レイアウト
+- **③ 画像加工**: カメラ別画質（7 スライダ → `cameras[i].post`）＋ **合成素材**（captures/ から select / ↻ / 📂 / 動画は再生区間 trim）→ 💾 cue 保存（1 カメラ 1 cue: id=`cue_<camId>`、loop なし・再生終了で自動復帰、URL は percent-encode）。**未保存のまま演出 ON は警告**
+- **② マスク**: 白黒境界を**スライダ調整**（白の向き 左/右/上/下 ＋ 位置スライダ ＋ 取り消し）。フリーハンド系は撤去
+- **① 生リアルタイム映像（最下段）**: 生 MJPEG を `<img.raw-live>` で直接表示（加工前。この img を GL テクスチャ源にも兼用＝MJPEG 接続は 1 本のまま）。上に **📷1枚・⏺録画（=生フレーム→`recordings/`、cam=`A`）** + 配信元 IP/port/auth
+- **キャプチャ 2 系統**: ① 生映像の上＝生フレーム / ④ 実映像の上＝合成済み（ビデオデモ用に「実際に Quest で見える絵」を録れる）。合成済み静止画のため `gl.js` は `preserveDrawingBuffer: true`（false だと toBlob が空になる）
 - **生成プロンプト**: 画像/動画 AI プロンプトを 📋コピー/編集/削除（既存 `/prompts`=prompts.json）
 
 実装: `index.html` ＋ `app.js`（全配線、ESM）＋ `pipeline.js`（合成）＋ `gl.js`/`shaders.js`。Unity 側対向は `ShowControlClient`（long-poll + 端末キャッシュ）/ `ScreenOverlayController`（cue 再生・動画はローカル DL）。**境界ブレンドの色統計/ラプラシアンは Web プレビュー専用**（Quest はハード合成、フェザーのみ PNG 焼き込みで効く）。
@@ -37,12 +38,12 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 |---|---|
 | `index.html` / `style.css` | 1 ページ統合 UI（縦割りマトリクス） |
 | `app.js` | 全配線（status / カメラ列 / IP・画質 / マスク / 合成素材 / cue / 📷）。show.json を正に I/O |
-| `gl.js` / `shaders.js` | WebGL2 ヘルパー / GLSL（ビューは `FS_VIEW` = ScreenComposite 移植） |
+| `gl.js` / `shaders.js` | WebGL2 ヘルパー / GLSL（**ビューの最終 post は `FS_POST`** = Unity ScreenComposite と数式・順序一致。合成は pipeline.js。旧 `FS_VIEW` は未使用かつ式が古かったので 2026-06-18 削除） |
 | `capture-server.py` | ローカルサーバ（静的配信 + show 制御 + /cam プロキシ + 保存 API） |
 | `serve.ps1` | 起動スクリプト |
 | `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json long-poll） |
 
-**撤去済み（2026-06-16）**: `main.js` / `pipeline.js` / `sources.js` / `cue-editor.js` / `console.js` / `multicam.html`（色統計・ラプラシアン・プロンプト・ギャラリー・2 タブ・別ページ合成エディタ）。以降の「合成パイプライン」節（色統計→ラプラシアン）は廃止機能の記録。AI 動画生成の知見は末尾に残す。
+**撤去済み（2026-06-16）**: `main.js` / `sources.js` / `cue-editor.js` / `console.js` / `multicam.html`（プロンプト・ギャラリー・2 タブ・別ページ合成エディタ）。**⚠ `pipeline.js`（色統計マッチング→ラプラシアン）はユーザー要望で復活し現役**（app.js が import、境界ブレンドバーが駆動）。以降の「合成パイプライン」節は現役の説明として読む。AI 動画生成の知見は末尾に残す。
 
 ## 合成パイプライン（pipeline.js）
 
