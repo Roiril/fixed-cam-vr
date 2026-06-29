@@ -36,6 +36,54 @@ namespace FixedCamVr.EditorTools
         public static void BuildTableDuoRelease() =>
             BuildVariant("TableDuo", "com.roiril.tableduo", TableDuoScene, "tableduo-release", development: false);
 
+        // 実機ゼロ・MCP ゼロの検証用デスクトップビルド（Standalone Windows64）。
+        // tdv_l0=on で起動すると HMD/XR 無しのフラット描画 + 合成 pose（FakeHandDriver）で動くので、
+        // host/client/spectator を 127.0.0.1 で CLI 起動してマルチプレイ＋観戦を実機なしで検証できる。
+        // batchmode から: Unity.exe -batchmode -quit -projectPath <proj> -executeMethod FixedCamVr.EditorTools.BuildVariants.BuildTableDuoDesktop
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Build TableDuo Desktop (L0 test)", priority = 240)]
+        public static void BuildTableDuoDesktop()
+        {
+            string prevProduct = PlayerSettings.productName;
+            var prevGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
+            var prevTarget = EditorUserBuildSettings.activeBuildTarget;
+            try
+            {
+                if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.StandaloneWindows64)
+                {
+                    EditorUserBuildSettings.SwitchActiveBuildTarget(
+                        BuildTargetGroup.Standalone, BuildTarget.StandaloneWindows64);
+                }
+                PlayerSettings.productName = "TableDuo";
+
+                var opts = new BuildPlayerOptions
+                {
+                    scenes = new[] { TableDuoScene },
+                    target = BuildTarget.StandaloneWindows64,
+                    locationPathName = "Builds/tableduo-desktop/TableDuo.exe",
+                    options = BuildOptions.Development,
+                };
+                BuildReport report = BuildPipeline.BuildPlayer(opts);
+                var s = report.summary;
+                if (s.result == BuildResult.Succeeded)
+                {
+                    Debug.Log($"[BuildVariants] DESKTOP OK -> {s.outputPath} " +
+                              $"({s.totalSize / (1024 * 1024)}MB, {s.totalTime.TotalSeconds:F0}s)");
+                }
+                else
+                {
+                    Debug.LogError($"[BuildVariants] DESKTOP 失敗: result={s.result} errors={s.totalErrors}");
+                }
+            }
+            finally
+            {
+                PlayerSettings.productName = prevProduct;
+                if (EditorUserBuildSettings.activeBuildTarget != prevTarget)
+                {
+                    EditorUserBuildSettings.SwitchActiveBuildTarget(prevGroup, prevTarget);
+                }
+            }
+        }
+
         private static void BuildVariant(string productName, string packageId, string scenePath, string outName,
             bool development)
         {

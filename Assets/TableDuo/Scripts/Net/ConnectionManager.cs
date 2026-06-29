@@ -49,6 +49,9 @@ namespace TableDuoVr.Net
         [Tooltip("診断: 各席に静的アバターを先置き（描画/疎通/トラッキングの段階切り分け用）。接続で静的→ライブに差替。" +
                  "研究本番は OFF（相手不在時にアバターが居ると体験が変わる）。実機は tdv_preplace=on で有効化")]
         [SerializeField] private bool preplaceAvatars;
+        [Tooltip("L0（HMD/XR 無しのデスクトップ検証）: OVRCameraRig を切り DebugCamera+FakeHandDriver を有効化。" +
+                 "Standalone Windows ビルドを CLI で host/client/spectator 起動して実機ゼロ検証する用。tdv_l0=on で有効化")]
+        [SerializeField] private bool enableL0InEditor;
 
         private const string PoseMsg = "tdv_pose";
         private const string LayoutMsg = "tdv_layout";
@@ -86,10 +89,29 @@ namespace TableDuoVr.Net
             StudyConfig.OneHandMode = oneHandMode;
             StudyConfig.PreplaceAvatars = preplaceAvatars;
             ApplyStudyFlags();
+            ConfigureL0IfRequested();
             if (StudyConfig.LaunchedWithStudyFlags)
             {
                 showGui = false; // 調査セッションではデバッグ GUI を見せない
             }
+        }
+
+        // L0（HMD/XR 無しのデスクトップ検証）: OVRCameraRig を切り、DebugCamera + FakeHandDriver を有効化。
+        // Standalone Windows ビルドを CLI で host/client/spectator 起動して実機ゼロ・MCP ゼロで検証するための土台。
+        private void ConfigureL0IfRequested()
+        {
+            string? l0 = GetLaunchValue("tdv_l0", "-tdvL0");
+            bool enable = l0 == "on" || (l0 == null && enableL0InEditor);
+            if (l0 == "off") enable = false;
+            if (!enable) return;
+
+            var rig = GameObject.Find("OVRCameraRig");
+            if (rig != null) rig.SetActive(false);
+            var dbg = GameObject.Find("DebugCamera");
+            if (dbg != null) dbg.SetActive(true);
+            var fake = FindObjectOfType<TableDuoVr.Hands.Playback.FakeHandDriver>(includeInactive: true);
+            if (fake != null) fake.enabled = true; // OnEnable で HandPoseSourceRegistry に登録（合成 pose 供給）
+            Debug.Log("[TableDuo] L0 モード: OVRCameraRig OFF / DebugCamera ON / FakeHandDriver ON（HMD/XR 不要）");
         }
 
         /// <summary>tdv_role / tdv_marker / tdv_hands を intent extras（実機）/ コマンドライン（PC）から読む。</summary>

@@ -32,6 +32,9 @@ namespace TableDuoVr.Net
             // 型依存を避けるため名前で探して GameObject ごと無効化（AudioListener も止まる）。
             var rig = GameObject.Find("OVRCameraRig");
             if (rig != null) rig.SetActive(false);
+            // L0 でフラット描画用の DebugCamera が出ていれば切る（観戦は俯瞰カメラ1本にする）
+            var dbg = GameObject.Find("DebugCamera");
+            if (dbg != null) dbg.SetActive(false);
 
             // 2席の中点を等距離から見るよう動的算出（hardcode のコーナー固定だと片方の席に寄って
             // もう片方＝特に手役が小さく見えにくかった。レイアウト非依存で両者を均等に framing）
@@ -48,6 +51,21 @@ namespace TableDuoVr.Net
             go.AddComponent<AudioListener>(); // 無効化した OVRCameraRig の AudioListener を補う
 
             Debug.Log($"[TableDuo] 観戦カメラ起動 pos={camPos:F2} look={look:F2}");
+
+            // 診断モード（先置き）時は数秒後に観戦ビューを1枚 PNG 保存。
+            // ヘッドレス/実機ゼロ（standalone CLI）でも framing を Read で確認できるようにする。
+            if (TableDuoVr.Hands.StudyConfig.PreplaceAvatars)
+            {
+                StartCoroutine(CaptureAfter(6f));
+            }
+        }
+
+        private System.Collections.IEnumerator CaptureAfter(float seconds)
+        {
+            yield return new WaitForSeconds(seconds);
+            string path = System.IO.Path.Combine(Application.persistentDataPath, "spectator_shot.png");
+            ScreenCapture.CaptureScreenshot(path);
+            Debug.Log($"[TableDuo] 観戦スクショ保存 → {path}");
         }
 
         /// <summary>2 席アンカーから「両者を等距離・横やや上から見る」位置と注視点を算出。席不在ならフォールバック。</summary>
