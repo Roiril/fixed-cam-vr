@@ -361,9 +361,15 @@ namespace TableDuoVr.Net
                 writer.WriteValueSafe(nm.LocalClientId);
                 PoseCodec.WriteLayout(ref writer, left);
                 PoseCodec.WriteLayout(ref writer, right);
+                // 両手 layout は ~1.4KB で単一パケット上限(1264B)を超える → 断片化配送が必須
+                // （Reliable だと OverflowException。実機で判明 2026-06-29）
                 nm.CustomMessagingManager.SendNamedMessage(
-                    LayoutMsg, NetworkManager.ServerClientId, writer, NetworkDelivery.Reliable);
+                    LayoutMsg, NetworkManager.ServerClientId, writer, NetworkDelivery.ReliableFragmentedSequenced);
                 Debug.Log("[TableDuo] 自分の手 layout を host へ送信");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[TableDuo] 手 layout 送信に失敗（FK はホスト layout フォールバック）: {e.Message}");
             }
             finally
             {

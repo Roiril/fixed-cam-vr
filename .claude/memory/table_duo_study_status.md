@@ -83,7 +83,9 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **#8 メッシュ手の手首**: `_root`=wristRot ＋ wrist bone localRotation は OVRSkeleton の元構成（anchor×wrist.local）と一致＝二重でない（[RemoteAvatarView](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs) にコメント注記）。実機で最終確認余地は残す
 - **解析ノートを [study-design.md](../../docs/table-duo/study-design.md) §4 に追記**: layout 同期 / 手役の遅延・seq/captureMs 整列 / half 量子化 / lossless 録画未配線 / pid・pair フラグ
 
-⚠ いずれも実機2台での動作・遅延体感は未検証（コンパイル＋EditMode テストのみ）。
+**2 Quest 実機で検証済み（2026-06-29・adb intent host/client 起動 + logcat）**: 接続・役割確定（Full/Hand）・席アライン・片手モード・参加者/ペアID（CSV ファイル名 `_pairXX_pidYY`）・**手 layout 同期の往復成立**（client「layout を host へ送信」→ host「client1 から受信 L=True R=True」）・クラッシュ/例外ゼロ。
+- ⚠ **実機で発覚し修正したバグ**: 手 layout(~1450B) は `NetworkDelivery.Reliable`(単一パケット上限 1264B)で `OverflowException` → **`ReliableFragmentedSequenced`** に修正（[ConnectionManager.SubmitLocalLayout](../../Assets/TableDuo/Scripts/Net/ConnectionManager.cs)）。Editor では出ず実機 logcat で判明
+- **残る人手確認**（HMD 装着が要る）: 遅延の体感 / SmoothK 上げ由来の jitter / 掴み・指の見た目 / Remy の被験者目線での自然さ
 
 ## 未対応（要望待ち）
 片手モードの左右選択/両手 / 人側の自分の胴体表示 / リプレイ音声同期実運用 / パイロット本番（所有者が手役を一度経験→プロトコル凍結） / 手アバターの client ローカル lossless 記録（上記データ整合性の完全版）
