@@ -63,11 +63,28 @@ namespace TableDuoVr.Net
                 _root.localPosition -= headLocal;
             }
 
-            // bind 補正を確定（配置後の各 bone のワールド向きを席空間へ）
+            // bind 補正を確定（配置後の各 bone のワールド向きを席空間へ）。手はまだ bind 向き（外向き）なのでここで確定
             Quaternion seatInv = Quaternion.Inverse(seat.rotation);
             _headB = _head != null ? seatInv * _head.rotation : Quaternion.identity;
             _lHandB = _lHand != null ? seatInv * _lHand.rotation : Quaternion.identity;
             _rHandB = _rHand != null ? seatInv * _rHand.rotation : Quaternion.identity;
+
+            // 初期＝休めポーズを適用。トラッキング前/ロスト中の腕が T 字（真横・手が外向き）で固まるのを防ぐ。
+            // 受信 pose が来れば Drive が上書きする。bind 補正確定後に呼ぶこと（handB が bind 基準）
+            ApplyRestPose();
+        }
+
+        /// <summary>卓上に手を置く自然な座位の休めポーズ（前方やや下・指=前/手のひら=下）。未トラッキング初期姿勢。</summary>
+        private static readonly Vector3 RestWristL = new(-0.20f, -0.44f, 0.30f);
+        private static readonly Vector3 RestWristR = new(0.20f, -0.44f, 0.30f);
+        private static readonly Quaternion RestWristRotL = Quaternion.Euler(12f, 90f, 0f);
+        private static readonly Quaternion RestWristRotR = Quaternion.Euler(12f, -90f, 0f);
+
+        /// <summary>両腕を休めポーズへ（IK で手首を卓上へ・手首向きを前方へ）。構築時の初期姿勢に使う。</summary>
+        public void ApplyRestPose()
+        {
+            SolveArm(true, RestWristL, RestWristRotL, true, _lArm, _lFore, _lHand, _lHandB, _lArmBase, _lForeBase);
+            SolveArm(false, RestWristR, RestWristRotR, true, _rArm, _rFore, _rHand, _rHandB, _rArmBase, _rForeBase);
         }
 
         /// <summary>受信 pose を反映（頭・腕 IK・手首向き）。ロスト手は最後の姿勢で凍結。</summary>
@@ -86,7 +103,7 @@ namespace TableDuoVr.Net
             Quaternion armBase, Quaternion foreBase)
         {
             if (!tracked || arm == null || fore == null || hand == null) return; // ロスト=凍結
-            // 累積を避けるため毎回ベース姿勢から解く（解析 IK は後乗算）
+            // 累積を避けるため毎回ベース姿勢から解き直す（IK は現姿勢からの相対解）
             arm.localRotation = armBase;
             fore.localRotation = foreBase;
             Vector3 goal = _seat.TransformPoint(wristLocal);

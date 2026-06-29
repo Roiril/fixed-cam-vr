@@ -62,6 +62,12 @@ namespace TableDuoVr.EditorTools
 
                 var aim = new Vector3(0f, -0.38f, 0.05f); // 座位フルボディの重心寄り
 
+                // 初期（未トラッキング）状態＝構築直後の休めポーズ。pose を当てずに描画して
+                // 「接続直後に腕が T 字・手が外向き」で固まっていないことを確認する
+                SetLayerRecursive(seat, Layer);
+                Shot(cam, dir, "00_initial_rest.png", new Vector3(0f, -0.30f, 3.0f), aim);
+                Shot(cam, dir, "00b_initial_threequarter.png", new Vector3(2.1f, -0.15f, 2.2f), aim);
+
                 view.PoseImmediate(NeutralPose());
                 SetLayerRecursive(seat, Layer);
                 Shot(cam, dir, "01_front_neutral.png", new Vector3(0f, -0.30f, 3.0f), aim);
