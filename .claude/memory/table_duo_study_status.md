@@ -61,5 +61,14 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 
 **defer（理由付き・要望時に着手）**: ConnectionManager god-object 全面分割 / `TryGetPose` 参照返し API / RemoteAvatarView の描画⇔調査方針分離 / AvatarPose 三役解体 / アセットパス定数集約 / テスト用 seam interface 化 — いずれも稼働中コードへの大規模リファクタで回帰リスク>価値。
 
+## 2026-06-29 遅延対策（手アバター同期の体感レイテンシ削減）
+送信→描画の遅延を ≈130–170ms → ≈60–80ms 目標に圧縮。全て TableDuo 単独・調査データ非影響（SessionLogger は受信生 pose を記録、平滑は描画のみ）。
+- **送信 30→60Hz**: [TableDuoPlayer](../../Assets/TableDuo/Scripts/Net/TableDuoPlayer.cs) `sendRate=60`（prefab YAML も 60）。Quest ハンドトラッキング ~60Hz に整合。帯域 ≈29KB/s/プレイヤーで LAN 無視可
+- **NGO TickRate 30→60**: named message(pose) の flush 間隔を 33→16ms に。[TableDuoSceneSetup](../../Assets/TableDuo/Scripts/Editor/TableDuoSceneSetup.cs) `TickRate=60` + シーンの NetworkConfig.TickRate=60。**送信レートと必ず揃える**（速く送っても tick で律速されるため）
+- **送信を Update→LateUpdate**: `[DefaultExecutionOrder(100)]` で HandPoseSampler/FakeHandDriver（順0）採取の後に送る → 1フレ古い pose を送る問題を解消
+- **受信平滑を 60Hz 向けに再調整**: [RemoteAvatarView](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs) `SmoothK 20→32`（τ 50→31ms）/ 胴 `ChestSmoothK=9`。収束遅れを削減
+- **dead-reckoning（外挿）は意図的に不採用**: 手の overshoot が調査刺激を歪めるため。ロスト時は従来通り「最終姿勢でフリーズ」
+- ⚠ **未検証**: 編集時 Unity が非フォーカスで MCP コンパイルが走らず、ドメイン再コンパイル＋実機の体感は未確認。次の Editor フォーカス／ビルドで自動コンパイルされる。**実機で遅延体感・jitter（K上げの副作用）を要確認**
+
 ## 未対応（要望待ち）
 片手モードの左右選択/両手 / 人側の自分の胴体表示 / リプレイ音声同期実運用 / パイロット本番（所有者が手役を一度経験→プロトコル凍結） / 手アバターの client ローカル lossless 記録（上記データ整合性の完全版）

@@ -265,7 +265,9 @@ namespace TableDuoVr.EditorTools
             {
                 NetworkTransport = utp,
                 PlayerPrefab = playerPrefab,
-                TickRate = 30,
+                // 60Hz tick: named message（pose）の flush 間隔を半減（33→16ms）。
+                // TableDuoPlayer.sendRate=60 と必ず揃える（送信が速くても tick で律速されるため）。
+                TickRate = 60,
             };
 
             EditorSceneManager.MarkSceneDirty(scene);

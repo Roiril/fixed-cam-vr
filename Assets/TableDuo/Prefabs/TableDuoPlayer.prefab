@@ -66,4 +66,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 94ffd2e6ac78b304b848dc4e42252879, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  sendRate: 30
+  sendRate: 60

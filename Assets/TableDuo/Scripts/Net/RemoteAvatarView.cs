@@ -15,8 +15,14 @@ namespace TableDuoVr.Net
     /// </summary>
     public sealed class RemoteAvatarView : MonoBehaviour
     {
-        /// <summary>受信レート(30Hz)→描画レート(72-90Hz)の指数平滑係数。大きいほど追従が速い。</summary>
-        private const float SmoothK = 20f;
+        /// <summary>受信レート(60Hz)→描画レート(72-90Hz)の指数平滑係数（時定数 τ=1/K 秒）。大きいほど追従が速い＝遅延が小さい。
+        /// 送信を 60Hz に上げた（TableDuoPlayer.sendRate / NetworkConfig.TickRate）ぶんパケット間隔が 16.6ms に詰まったので、
+        /// τ を 50ms(K=20)→約31ms(K=32) に短縮して収束遅れを削る。60Hz 入力なら段差が小さく K を上げても jitter は出にくい。
+        /// 平滑は描画のみに作用し、SessionLogger は受信生 pose を記録するので調査データには影響しない。</summary>
+        private const float SmoothK = 32f;
+
+        /// <summary>胴（頭への緩い追従）の平滑係数。胴は無追跡の cosmetic なので頭より遅い τ で揺れを抑える。</summary>
+        private const float ChestSmoothK = 9f;
 
         // 肩の付け根（胴ローカル）。腕（袖）はここから手首へ伸びる。+X=アバターの右手側
         private static readonly Vector3 ShoulderOffsetR = new(0.17f, 0.24f, 0f);
@@ -159,9 +165,9 @@ namespace TableDuoVr.Net
         private void Update()
         {
             if (!_hasTarget) return;
-            // 30Hz 受信を描画フレームへ指数平滑（フレームレート非依存）
+            // 60Hz 受信を描画フレームへ指数平滑（フレームレート非依存）
             float dt = Time.deltaTime;
-            ApplyToTransforms(1f - Mathf.Exp(-SmoothK * dt), 1f - Mathf.Exp(-6f * dt));
+            ApplyToTransforms(1f - Mathf.Exp(-SmoothK * dt), 1f - Mathf.Exp(-ChestSmoothK * dt));
         }
 
         /// <summary>ターゲット pose をパーツへ反映。a=頭/手の平滑係数、chestA=胴の平滑係数（1=即時）。</summary>

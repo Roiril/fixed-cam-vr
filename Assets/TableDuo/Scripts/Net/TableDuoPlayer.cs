@@ -15,11 +15,18 @@ namespace TableDuoVr.Net
     /// - リモート: 役割が判明した時点で席アンカー下に RemoteAvatarView を生成
     /// 自分の手はローカルトラッキング描画のまま（ネット往復させない — 要件 §4）。
     /// </summary>
+    // HandPoseSampler（実行順 0）が LateUpdate で pose を採取した「後」に送信したい。
+    // これで送る pose は今フレームの最新になる（Update 送信だと 1 フレ古い pose を送ってしまう）。
+    [DefaultExecutionOrder(100)]
     public sealed class TableDuoPlayer : NetworkBehaviour
     {
         private const byte RoleUnset = 255;
 
-        [SerializeField] private float sendRate = 30f;
+        // 60Hz 送信。Quest のハンドトラッキングは ~60Hz なのでこれが採取レートに整合する。
+        // 1 pose ≈489B × 60 ≈ 29KB/s/手 で LAN 上は無視できる帯域。NGO TickRate も 60 に揃える
+        // （TableDuoSceneSetup / シーンの NetworkConfig.TickRate）こと — 送信が速くても tick で flush
+        // 律速されると離散化遅延が残るため。
+        [SerializeField] private float sendRate = 60f;
 
         private readonly NetworkVariable<byte> _role = new(
             RoleUnset, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
@@ -193,7 +200,9 @@ namespace TableDuoVr.Net
             }
         }
 
-        private void Update()
+        // 送信は LateUpdate（HandPoseSampler.LateUpdate の後＝今フレームの最新 pose を送る）。
+        // DefaultExecutionOrder(100) で sampler（順 0）より後に回ることを保証している。
+        private void LateUpdate()
         {
             if (!IsSpawned || !IsOwner) return;
             if (Time.time < _nextSend) return;
