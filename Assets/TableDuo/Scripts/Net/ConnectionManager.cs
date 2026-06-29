@@ -174,6 +174,14 @@ namespace TableDuoVr.Net
 
         private void Start()
         {
+            // キービジュアル撮影モード: ネットワーク/preplace せず、authored ポーズ＋シネマカメラで1枚撮る
+            if (GetLaunchValue("tdv_keyvisual", "-tdvKeyVisual") == "on")
+            {
+                showGui = false; // 接続 GUI を映り込ませない
+                new GameObject("KeyVisualDirector").AddComponent<KeyVisualDirector>().Run();
+                return;
+            }
+
             // 診断: 各席に静的アバターを先置き（疎通前から描画を確認できる・接続で差し替わる）
             if (StudyConfig.PreplaceAvatars && SeatAvatarPreview.Instance == null)
             {
