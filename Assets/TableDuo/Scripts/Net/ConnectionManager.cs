@@ -31,14 +31,16 @@ namespace TableDuoVr.Net
             None,
             Full,
             Hand,
+            Spectator,
         }
 
         [SerializeField] private string defaultAddress = "192.168.1.10";
         [SerializeField] private ushort port = 7777;
         [SerializeField] private AutoMode autoMode = AutoMode.None;
         [SerializeField] private bool showGui = true;
-        [Tooltip("接続上限（host 含む）。2人非対称調査なので既定 2。超過する接続は server が拒否する")]
-        [SerializeField] private int maxClients = 2;
+        [Tooltip("接続上限（host 含む）。2人プレイヤー + 観戦者1 を許すため既定 3。超過する接続は server が拒否する。" +
+                 "観戦者は席を持たない Spectator ロールで参加する（席衝突は WarnIfSeatCollision が検知）")]
+        [SerializeField] private int maxClients = 3;
 
         [Header("Study（Editor 検証用。実機は tdv_* extras が優先）")]
         [SerializeField] private RoleOverride studyRole = RoleOverride.None;
@@ -74,6 +76,7 @@ namespace TableDuoVr.Net
             {
                 RoleOverride.Full => StudyConfig.Role.Full,
                 RoleOverride.Hand => StudyConfig.Role.Hand,
+                RoleOverride.Spectator => StudyConfig.Role.Spectator,
                 _ => null,
             };
             StudyConfig.ShowHeadMarker = showHeadMarker;
@@ -91,6 +94,7 @@ namespace TableDuoVr.Net
             string? role = GetLaunchValue("tdv_role", "-tdvRole");
             if (role == "full") StudyConfig.ForcedRole = StudyConfig.Role.Full;
             else if (role == "hand") StudyConfig.ForcedRole = StudyConfig.Role.Hand;
+            else if (role == "spectator") StudyConfig.ForcedRole = StudyConfig.Role.Spectator;
             if (role != null) StudyConfig.LaunchedWithStudyFlags = true;
 
             string? marker = GetLaunchValue("tdv_marker", "-tdvMarker");

@@ -118,6 +118,18 @@ namespace TableDuoVr.Net
 
         private void SetupOwner(StudyConfig.Role role)
         {
+            // 観戦者: 席なし・pose 非送信・掴み無し。両プレイヤーを俯瞰する固定カメラを起動するだけ。
+            if (role == StudyConfig.Role.Spectator)
+            {
+                SeatIndex = -1;
+                Debug.Log("[TableDuo] 観戦者として参加（席なし・pose 非送信・俯瞰カメラ）");
+                // scene 配置に依存せず on-demand 生成（Setup/scene を変えずに済む）
+                var spectator = FindObjectOfType<SpectatorController>(includeInactive: true)
+                    ?? new GameObject("SpectatorController").AddComponent<SpectatorController>();
+                spectator.Activate();
+                return;
+            }
+
             SeatIndex = SeatIndexOf(role);
             var seat = SeatLocator.Find(SeatIndex);
             if (seat == null)
@@ -172,6 +184,13 @@ namespace TableDuoVr.Net
 
         private void SetupRemote(StudyConfig.Role role)
         {
+            // 観戦者はアバターを持たない（誰も観戦者を描画しない・席も取らない）
+            if (role == StudyConfig.Role.Spectator)
+            {
+                SeatIndex = -1;
+                return;
+            }
+
             SeatIndex = SeatIndexOf(role);
             var seat = SeatLocator.Find(SeatIndex);
             if (seat == null)
@@ -206,6 +225,7 @@ namespace TableDuoVr.Net
         private void LateUpdate()
         {
             if (!IsSpawned || !IsOwner) return;
+            if (SeatIndex < 0) return; // 観戦者（席なし）は pose も layout も送らない
             if (Time.time < _nextSend) return;
             // hitch（GC/ドメインリロード）後に Time.time が大きく進むと、毎フレーム +1/rate では
             // 追いつくまで毎フレ送信のバーストになる。次の境界へクランプして 30Hz を保つ
@@ -243,8 +263,12 @@ namespace TableDuoVr.Net
             _view.Apply(pose);
         }
 
-        private static int SeatIndexOf(StudyConfig.Role role) =>
-            role == StudyConfig.Role.Full ? 0 : 1;
+        private static int SeatIndexOf(StudyConfig.Role role) => role switch
+        {
+            StudyConfig.Role.Full => 0,
+            StudyConfig.Role.Hand => 1,
+            _ => -1, // Spectator など席を持たないロール
+        };
 
         /// <summary>
         /// 手動リセット: 現在の頭の姿勢を席（初期目線アンカー）へ合わせる（yaw＋位置）。

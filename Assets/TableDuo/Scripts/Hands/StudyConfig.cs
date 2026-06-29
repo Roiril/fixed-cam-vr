@@ -13,6 +13,9 @@ namespace TableDuoVr.Hands
         {
             Full = 0,
             Hand = 1,
+            // 観戦者（第三者視点）。席を持たず・アバター無し・pose 非送信。PC（Editor Play）で
+            // 両プレイヤーを俯瞰観察するためのロール。tdv_role=spectator で起動。
+            Spectator = 2,
         }
 
         /// <summary>起動フラグで指定された自分の役割。null なら従来規則（host=Full / client=Hand）。</summary>
