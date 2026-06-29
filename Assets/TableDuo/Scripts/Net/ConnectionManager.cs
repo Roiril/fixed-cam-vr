@@ -46,6 +46,9 @@ namespace TableDuoVr.Net
         [SerializeField] private RoleOverride studyRole = RoleOverride.None;
         [SerializeField] private bool showHeadMarker;
         [SerializeField] private bool oneHandMode = true;
+        [Tooltip("診断: 各席に静的アバターを先置き（描画/疎通/トラッキングの段階切り分け用）。接続で静的→ライブに差替。" +
+                 "研究本番は OFF（相手不在時にアバターが居ると体験が変わる）。実機は tdv_preplace=on で有効化")]
+        [SerializeField] private bool preplaceAvatars;
 
         private const string PoseMsg = "tdv_pose";
         private const string LayoutMsg = "tdv_layout";
@@ -81,6 +84,7 @@ namespace TableDuoVr.Net
             };
             StudyConfig.ShowHeadMarker = showHeadMarker;
             StudyConfig.OneHandMode = oneHandMode;
+            StudyConfig.PreplaceAvatars = preplaceAvatars;
             ApplyStudyFlags();
             if (StudyConfig.LaunchedWithStudyFlags)
             {
@@ -110,6 +114,11 @@ namespace TableDuoVr.Net
             if (!string.IsNullOrEmpty(pid)) { StudyConfig.ParticipantId = pid!; StudyConfig.LaunchedWithStudyFlags = true; }
             string? pair = GetLaunchValue("tdv_pair", "-tdvPair");
             if (!string.IsNullOrEmpty(pair)) { StudyConfig.PairId = pair!; StudyConfig.LaunchedWithStudyFlags = true; }
+
+            // 診断: 各席に静的アバターを先置き（描画/疎通/トラッキングの段階切り分け）
+            string? preplace = GetLaunchValue("tdv_preplace", "-tdvPreplace");
+            if (preplace == "on") StudyConfig.PreplaceAvatars = true;
+            else if (preplace == "off") StudyConfig.PreplaceAvatars = false;
 
             if (StudyConfig.LaunchedWithStudyFlags)
             {
@@ -143,6 +152,12 @@ namespace TableDuoVr.Net
 
         private void Start()
         {
+            // 診断: 各席に静的アバターを先置き（疎通前から描画を確認できる・接続で差し替わる）
+            if (StudyConfig.PreplaceAvatars && SeatAvatarPreview.Instance == null)
+            {
+                new GameObject("SeatAvatarPreview").AddComponent<SeatAvatarPreview>();
+            }
+
             ResolveAutoMode(out var mode, out string? ip);
             switch (mode)
             {

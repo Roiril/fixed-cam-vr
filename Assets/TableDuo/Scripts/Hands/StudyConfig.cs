@@ -36,6 +36,10 @@ namespace TableDuoVr.Hands
         /// <summary>ペアID（tdv_pair）。2台の記録を機械的に紐づける。空=未指定。</summary>
         public static string PairId = "";
 
+        /// <summary>診断: 各席に静的アバターを先置きする（tdv_preplace=on）。描画/疎通/トラッキングの段階切り分け用。
+        /// 接続したら静的→ライブに差し替わる。研究本番は false（相手不在時にアバターが居ると体験が変わるため）。</summary>
+        public static bool PreplaceAvatars;
+
         // domain-reload を切った Play では static が前回 Play の条件を引き継ぐ。Editor で役割/条件を
         // 変えて再生したのに古い値で走る事故を防ぐため毎 Play 既定へ戻す（ConnectionManager.Awake が再設定）。
         [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -47,6 +51,7 @@ namespace TableDuoVr.Hands
             LaunchedWithStudyFlags = false;
             ParticipantId = "";
             PairId = "";
+            PreplaceAvatars = false;
         }
     }
 }

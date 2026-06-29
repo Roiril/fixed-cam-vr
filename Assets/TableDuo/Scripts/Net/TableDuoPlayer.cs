@@ -202,6 +202,9 @@ namespace TableDuoVr.Net
             Debug.Log($"[TableDuo] リモート(client{OwnerClientId}) 役割={role} 席={SeatIndex}");
             WarnIfSeatCollision();
 
+            // 診断の静的アバターが先置きされていれば撤去（ライブ追従アバターに差し替え）
+            SeatAvatarPreview.Instance?.HideSeat(SeatIndex);
+
             _view = RemoteAvatarView.Create(seat, handsOnly: role == StudyConfig.Role.Hand);
             if (ConnectionManager.Instance != null)
             {
