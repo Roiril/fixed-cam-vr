@@ -259,15 +259,26 @@ namespace TableDuoVr.Net
             }
         }
 
-        // 切断時: その client の stale バッファを掃除し、状態表示を更新（再接続の導線を確保）
+        // 切断時: その client の stale バッファを掃除し、状態表示を更新（再接続の導線を確保）。
+        // クライアント側は NGO の DisconnectReason をログして原因究明を容易にする
+        // （観戦者が接続後に落ちる等の切り分け用。理由が空なら transport/timeout）。
         private void OnClientDisconnected(ulong clientId)
         {
             _remotePoses.Remove(clientId);
             _remoteLayouts.Remove(clientId);
             var nm = NetworkManager.Singleton;
-            if (nm != null && nm.IsListening)
+            if (nm == null) return;
+            if (!nm.IsServer)
             {
-                _status = nm.IsServer ? $"host :{port} (client{clientId} 切断)" : "切断されました";
+                string reason = string.IsNullOrEmpty(nm.DisconnectReason)
+                    ? "(理由なし＝transport/timeout か config 不一致)" : nm.DisconnectReason;
+                Debug.LogWarning($"[TableDuo] サーバから切断された: {reason}");
+                _status = $"切断: {reason}";
+            }
+            else
+            {
+                Debug.Log($"[TableDuo] client{clientId} が切断");
+                if (nm.IsListening) _status = $"host :{port} (client{clientId} 切断)";
             }
         }
 
