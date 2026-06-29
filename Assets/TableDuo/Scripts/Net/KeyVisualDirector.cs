@@ -55,29 +55,32 @@ namespace TableDuoVr.Net
             Application.Quit();                        // 撮影専用なのでプロセスを残さない
         }
 
-        // 人役: テーブルへ少し前傾、右手を卓中央へ伸ばして「これ」と指す（カードゲームで盛り上がる感じ）。
-        // 角度規約は TableDuoAvatarPreview の Neutral/Gesture に合わせる（小 Euler・z ひねり無し）。
-        // 人役: 両手を体の近く低く置く（IK の伸び＝腕上がりを最小化）＋頭を相手（手役）へ向けて見つめる。
-        // 「人が、差し出された宙の手を見つめる」非対称が映える。腕を遠くへ伸ばす動作は IK が暴れるので避ける。
+        // 人役: テーブルに両手を置き、頭を相手（手役）へ向けて見つめる。「人が、差し出された宙の手を見つめる」
+        // 非対称が映える。手首向きは bind（外向き）を前へ向ける yaw（右 -90/左 +90）＝卓に手を置く自然な向き。
+        // IK 修正済みなので卓上の wrist target に確実に届く（肘も自然に曲がる）。
         private static AvatarPose RemyPose() => new()
         {
-            HeadPos = new Vector3(0f, -0.03f, 0.05f),
-            HeadRot = Quaternion.Euler(12f, 0f, 0f),       // 卓越しに相手（手）の方を見る・やや伏し目
-            WristPosR = new Vector3(0.17f, -0.46f, 0.18f), // 体に近く低い＝肘が自然に曲がり腕が上がらない
-            WristRotR = Quaternion.Euler(20f, 0f, 0f),
-            WristPosL = new Vector3(-0.17f, -0.46f, 0.18f),
-            WristRotL = Quaternion.Euler(20f, 0f, 0f),
+            HeadPos = new Vector3(0f, -0.02f, 0.04f),
+            HeadRot = Quaternion.Euler(16f, 0f, 0f),        // 卓越しに相手（手）の方を見る・やや伏し目
+            WristPosR = new Vector3(0.20f, -0.43f, 0.32f),  // 卓上・体の前。指=前/手のひら=やや下
+            WristRotR = Quaternion.Euler(14f, -90f, 0f),
+            WristPosL = new Vector3(-0.20f, -0.43f, 0.32f),
+            WristRotL = Quaternion.Euler(14f, 90f, 0f),
             TrackedR = true,
             TrackedL = true,
         };
 
-        // 手役: 卓中央のカードへ手を低く差し出して指す（人と同じ場所へ「応える」）。片手のみ＝象徴的。
+        // 手役: 片手を卓上へ低く差し出し、指を前（人の方＝卓中央のカード）へ向けて palm-down で置く（人へ「応える」）。
+        // 手だけアバターは bind を直接 wrist 回転として使う（補正なし）。bind は指=下向きなので
+        // X を -85° 回して指=前・手のひら=下にする（卓に手を伏せて置く向き）。片手のみ＝象徴的。
         private static AvatarPose HandPose() => new()
         {
             HeadPos = Vector3.zero,
             HeadRot = Quaternion.identity,
-            WristPosR = new Vector3(0.04f, -0.42f, 0.40f),
-            WristRotR = Quaternion.Euler(24f, 0f, 0f),
+            WristPosR = new Vector3(0.0f, -0.42f, 0.56f),   // 卓上・中央のカードへ伸ばす（共有 = 一緒に遊んでいる感）
+            // bind は手のひら上・指=-X。軸(1,0,1)まわり180°で 指=人/中央へ前向き・手のひら=下 にする
+            WristRotR = Quaternion.AngleAxis(180f, new Vector3(1f, 0f, 1f).normalized),
+
             TrackedR = true,
             TrackedL = false,
         };
@@ -92,12 +95,12 @@ namespace TableDuoVr.Net
                 return;
             }
             Vector3 mid = (s0.position + s1.position) * 0.5f;
-            look = new Vector3(mid.x, 0.86f, mid.z); // 卓・カードの高さに寄せる
+            look = new Vector3(mid.x, 0.84f, mid.z); // 人役の顔〜卓・両手が収まる高さ
             Vector3 axis = s1.position - s0.position; axis.y = 0f;
             Vector3 side = Vector3.Cross(axis.normalized, Vector3.up).normalized;
             float gap = axis.magnitude;
-            // 横やや前・低めの 3/4 を少しタイトに
-            camPos = mid + side * (gap * 0.3f + 0.98f) + axis.normalized * (gap * 0.12f) + Vector3.up * 0.72f;
+            // 横やや前・低めの 3/4。人役の顔と両者の手元が両方入る引き
+            camPos = mid + side * (gap * 0.28f + 0.92f) + axis.normalized * (gap * 0.12f) + Vector3.up * 0.74f;
         }
     }
 }
