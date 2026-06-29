@@ -113,17 +113,18 @@ namespace TableDuoVr.EditorTools
             foreach (Transform c in go.transform) SetLayerRecursive(c.gameObject, layer);
         }
 
-        // 頭は原点（席ローカル）、両手首は前方やや下＝テーブル上の自然な構え
+        // 頭は原点（席ローカル）、両手首は前方やや下＝テーブル上の自然な構え。
+        // 手首回転は bind（横向き）を前方へ向ける yaw（右 -90/左 +90）＋軽い伏せで「机に手を置く」向きに。
         private static AvatarPose NeutralPose()
         {
             return new AvatarPose
             {
                 HeadPos = Vector3.zero,
                 HeadRot = Quaternion.identity,
-                WristPosR = new Vector3(0.24f, -0.40f, 0.34f),
-                WristRotR = Quaternion.Euler(10f, 0f, 0f),
-                WristPosL = new Vector3(-0.24f, -0.40f, 0.34f),
-                WristRotL = Quaternion.Euler(10f, 0f, 0f),
+                WristPosR = new Vector3(0.22f, -0.42f, 0.36f),
+                WristRotR = Quaternion.Euler(20f, -90f, 0f),
+                WristPosL = new Vector3(-0.22f, -0.42f, 0.36f),
+                WristRotL = Quaternion.Euler(20f, 90f, 0f),
                 TrackedR = true,
                 TrackedL = true,
             };

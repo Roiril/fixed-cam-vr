@@ -41,5 +41,5 @@ TableDuo（[[table_duo_study_status]]）を **Quest も Unity Editor も MCP も
 `TableDuo.exe -tdvKeyVisual on` で [KeyVisualDirector](../../Assets/TableDuo/Scripts/Net/KeyVisualDirector.cs) が発動：ネットワーク/preplace せず、人役(Remy)＋手役を authored ポーズで置き、暖色キーライト＋シネマ 3/4 カメラで `persistentDataPath/keyvisual.png`（superSize 2）を保存して `Application.Quit`。接続 GUI は出さない（ConnectionManager の keyvisual 分岐で `showGui=false`）。成果物 docs/table-duo/keyvisual_tableduo.png。ポーズ/カメラ/ライトは KeyVisualDirector.cs で調整→1コマンド再撮影。
 
 ## ポーズの罠（キービジュアル/アバター撮影）
-- **RemyAvatarRig の腕 IK は未校正で、遠い/低い wrist target に届かず腕が上がる**（卓上を指させようとすると腕が肩〜胸の高さで横に伸びる）。→ **wrist target は体に近く低く**置いて IK の伸びを最小化する（`(±0.17,-0.46,0.18)` 程度で自然に肘が曲がり腕が下りる）。「卓中央を指す」等の遠い reach は避け、engagement は**頭の向き**（相手＝手役の方を見る）で表現する方が綺麗。手役（hand-only）も WristPos.y を卓の高さ(≈-0.42)まで下げないと宙に浮く
+- **【2026-06-30 解消】RemyAvatarRig の腕 IK は堅牢化済み**（旧: 未校正で遠い/低い wrist target に届かず腕が上がっていた）。TwoBoneIK が `FromToRotation` で照準を強制するので**任意の wrist target に必ず届く**（座位ポーズも AimBone 化）。卓上を指す遠い reach も OK。検証は `Tools/FixedCamVr/Diagnostics/Preview Full Avatar (screenshot)` → `Temp/AvatarPreview/*.png`。詳細は [[table_duo_study_status]] の「IK しっかり化」。**手役（hand-only）は別系統**で、WristPos.y を卓の高さ(≈-0.42)まで下げないと宙に浮くのは従来どおり
 - 画像を見ながらのイテレーションは「ポーズ.cs 編集→batchmode 2回ビルド→`TableDuo.exe -tdvKeyVisual on`→PNG を Read」。**起動 exe を Editor の `Unity.exe` と取り違えない**（standalone は `Builds/tableduo-desktop/TableDuo.exe`）

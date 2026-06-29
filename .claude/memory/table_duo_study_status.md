@@ -25,6 +25,7 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **人側フルアバター＝Mixamo Remy（実人間・IK 駆動）に置換中**（2026-06-16, P0–P2 完了）。設計 [.claude/plans/2026-06-16_table-duo_remy-fullbody-avatar.md](../plans/2026-06-16_table-duo_remy-fullbody-avatar.md)。
   - 取り込み: `Assets/ThirdParty/Mixamo/Remy.fbx`（Generic・**×0.48 スケール**で標準身長。元は2倍）。マテリアルは暫定で `Resources/RemyBody.mat`（URP/Lit グレー単色＝**テクスチャ未対応は P4 仕上げ**）。プレハブ `Resources/RemyFullAvatar.prefab`（7メッシュ＋mixamorig 骨）
   - 駆動: [RemyAvatarRig](../../Assets/TableDuo/Scripts/Net/RemyAvatarRig.cs)（[RemoteAvatarView](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs) の Full 経路が Resources から引いて使用・無ければ procedural 人型へフォールバック）。**頭=受信回転（bind 補正）/ 腕=肩固定の解析2ボーン IK（[TwoBoneIK](../../Assets/TableDuo/Scripts/Net/TwoBoneIK.cs)・肘 pole で下外後ろ）/ 手首向き=受信回転 / 体幹・脚=固定の座位ポーズ**。SMR は updateWhenOffscreen=true
+  - **2026-06-30 IK しっかり化（重要・旧「未校正で届かない」を解消）**: ① 座位ポーズを Mixamo ローカル Euler 当て推量 → **ワールド方向で各ボーンを向ける `AimBone` 方式**に書き換え（太もも水平前方・すね真下・足を床へ。一発で自然な座位に）。② TwoBoneIK を**ワールド前乗算の堅牢版**に置換＝「内角を余弦定理で曲げ → `FromToRotation(a→c, a→target)` で end を target 直線へ強制 → a→target 軸でひねって肘を pole 側へ」。**FromToRotation で照準を強制するので遠い/低い/高い wrist target にも必ず届く**（旧版は局所軸・後乗算＋別 twist が噛み合わず腕が上がっていた）。preview 4 ビュー（neutral/3-4/side/gesture）で到達・肘曲げ・座位を確認済み
   - **未: 指リターゲット（P3）** — 今は手が開いたまま（bind）。**テクスチャ（P4）**。実機検証
   - スクショ検証: `Tools/FixedCamVr/Diagnostics/Preview Full Avatar` が Remy を実 URP で隔離描画（エディタ同期実行では SMR が再スキンしないので `forceMatrixRecalculationPerRender=true` を付与）。`RemyAvatarRig`/`TwoBoneIK` は EditMode テスト済み（IK 到達/伸び切り）
   - ⚠ 取り込み作業で `TableDuoMain.unity` に紛れ Camera が入りうる（要 `git checkout` で破棄）。Remy はシーン配置不要・ランタイム生成
@@ -79,7 +80,7 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **CSV 破損耐性**: `SessionLogger.Escape` が `"`/タブも無害化。`FacilitatorMarkServer` の label を 200 字 clamp
 - **掴み対象の取得を都度化**: [PinchGrabInteractor](../../Assets/TableDuo/Scripts/Net/PinchGrabInteractor.cs) がピンチ時に `FindObjectsOfType<Grabbable>` 再取得（旧: 生成時1回固定で動的/遅延 spawn が掴めなかった）
 - **`CreatePlayerPrefab` を冪等化**: 既存 prefab に必須コンポーネントが欠ければ非破壊で補完（旧: あれば即 return で構成変更が Setup 再実行で反映されなかった）
-- **#7 Remy 校正は preview で検証 → 現状正常**（`Preview Full Avatar (screenshot)` で neutral/gesture/side/3-4 確認。座位ポーズ自然・脚貫通/肘逆折れ無し・テクスチャ済み）。RemyAvatarRig の値は変更不要だった（監査はコードコメント由来の警戒で、実物は調整済み）
+- **#7 Remy IK は 2026-06-30 に「しっかり化」して解消**（旧記述「変更不要だった」は誤り＝実際はベースラインで腕が T 字のまま wrist target に届いていなかった）。座位ポーズ AimBone 化＋TwoBoneIK 堅牢版で到達保証。`Preview Full Avatar (screenshot)` の neutral/gesture/side/3-4 で到達・肘曲げ・座位を確認（上の P0–P2 ブロック内「IK しっかり化」参照）
 - **#8 メッシュ手の手首**: `_root`=wristRot ＋ wrist bone localRotation は OVRSkeleton の元構成（anchor×wrist.local）と一致＝二重でない（[RemoteAvatarView](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs) にコメント注記）。実機で最終確認余地は残す
 - **解析ノートを [study-design.md](../../docs/table-duo/study-design.md) §4 に追記**: layout 同期 / 手役の遅延・seq/captureMs 整列 / half 量子化 / lossless 録画未配線 / pid・pair フラグ
 

@@ -98,28 +98,43 @@ namespace TableDuoVr.Net
         }
 
         /// <summary>
-        /// 座位の固定ポーズ。Mixamo bind は T ポーズ。脚を曲げて着座させ、腕は IK の縮退回避に軽く曲げておく。
-        /// ※ Mixamo の bone ローカル軸は直感的でないため、値は preview スクショで詰める前提の初期値。
+        /// 座位の固定ポーズ。bind は T ポーズ（直立）。下半身を「各ボーンを目標ワールド方向へ向ける」
+        /// 方式で着座させる（Mixamo のローカル軸に依存しない＝当て推量を排除）。
+        /// 太もも≒水平前方・すね≒真下・足≒床に水平。親→子の順に向けるので子の更新位置で解ける。
         /// </summary>
         private void ApplySeatedPose()
         {
-            // 脚（股 ~90° 前・膝 ~90° 曲げ・足を水平に）。軸/符号は要 preview 調整
-            SetLocalEuler("mixamorig:LeftUpLeg", new Vector3(90f, 0f, 0f));
-            SetLocalEuler("mixamorig:RightUpLeg", new Vector3(90f, 0f, 0f));
-            SetLocalEuler("mixamorig:LeftLeg", new Vector3(-95f, 0f, 0f));
-            SetLocalEuler("mixamorig:RightLeg", new Vector3(-95f, 0f, 0f));
-            SetLocalEuler("mixamorig:LeftFoot", new Vector3(20f, 0f, 0f));
-            SetLocalEuler("mixamorig:RightFoot", new Vector3(20f, 0f, 0f));
+            SeatLeg("mixamorig:LeftUpLeg", "mixamorig:LeftLeg", "mixamorig:LeftFoot", "mixamorig:LeftToeBase", -1f);
+            SeatLeg("mixamorig:RightUpLeg", "mixamorig:RightLeg", "mixamorig:RightFoot", "mixamorig:RightToeBase", +1f);
 
-            // 前腕を軽く曲げて IK の axis0 縮退を防ぐ（IK が毎フレ上書きするので向きは何でもよい）
+            // 前腕を軽く曲げて IK 初期姿勢の縮退（肩-手首が一直線）を防ぐ。IK が毎フレ base から解き直すので向きは大まかでよい
             RotateLocal(_lFore, Quaternion.Euler(0f, 25f, 0f));
             RotateLocal(_rFore, Quaternion.Euler(0f, -25f, 0f));
         }
 
-        private void SetLocalEuler(string boneName, Vector3 deltaEuler)
+        /// <summary>片脚を座位へ。side: アバター左=-1 / 右=+1（太ももを左右へ少し開く）。</summary>
+        private void SeatLeg(string upLegN, string legN, string footN, string toeN, float side)
         {
-            var t = Find(boneName);
-            if (t != null) t.localRotation = t.localRotation * Quaternion.Euler(deltaEuler);
+            var upLeg = Find(upLegN);
+            var leg = Find(legN);
+            var foot = Find(footN);
+            var toe = Find(toeN);
+            Vector3 fwd = _root.forward, up = _root.up, right = _root.right;
+            // 太もも: ほぼ水平前方（わずかに下げ・外へ開く）
+            AimBone(upLeg, leg, fwd - up * 0.15f + right * (side * 0.12f));
+            // すね: 真下（わずかに前）
+            AimBone(leg, foot, -up + fwd * 0.05f);
+            // 足: 前方・床に水平
+            AimBone(foot, toe, fwd - up * 0.05f);
+        }
+
+        /// <summary>bone→child のワールド方向が worldDir に向くよう bone をワールド回転する（ローカル軸に非依存）。</summary>
+        private static void AimBone(Transform? bone, Transform? child, Vector3 worldDir)
+        {
+            if (bone == null || child == null) return;
+            Vector3 cur = child.position - bone.position;
+            if (cur.sqrMagnitude < 1e-8f || worldDir.sqrMagnitude < 1e-8f) return;
+            bone.rotation = Quaternion.FromToRotation(cur.normalized, worldDir.normalized) * bone.rotation;
         }
 
         private static void RotateLocal(Transform? t, Quaternion delta)
