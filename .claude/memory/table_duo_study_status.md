@@ -87,5 +87,11 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - ⚠ **実機で発覚し修正したバグ**: 手 layout(~1450B) は `NetworkDelivery.Reliable`(単一パケット上限 1264B)で `OverflowException` → **`ReliableFragmentedSequenced`** に修正（[ConnectionManager.SubmitLocalLayout](../../Assets/TableDuo/Scripts/Net/ConnectionManager.cs)）。Editor では出ず実機 logcat で判明
 - **残る人手確認**（HMD 装着が要る）: 遅延の体感 / SmoothK 上げ由来の jitter / 掴み・指の見た目 / Remy の被験者目線での自然さ
 
+## 2026-06-30 ライブ観戦（第三者視点）完成 + 段階診断
+- **観戦ロール完成・end-to-end 実機検証**: host(Quest) + 観戦(PC=Editor Play) で、観戦が両プレイヤーを俯瞰で見られる。詳細・真因・運用注意 → [.claude/plans/2026-06-29_table-duo_spectator.md](../plans/2026-06-29_table-duo_spectator.md)
+- **despawn の真因**: 観戦者(3人目)が接続直後に落ちていたのは host ビルドの `maxClients` が古い 2 で焼かれ kick していたため。clean シーン再ビルド（C# 既定 3）で解消
+- **段階診断 [SeatAvatarPreview](../../Assets/TableDuo/Scripts/Net/SeatAvatarPreview.cs)**: `tdv_preplace=on` で各席に静的アバター先置き→接続でライブ差替。「静的出ない=描画/カメラ / 接続で消えライブ出る=疎通 / 出て固まる=トラッキング」と切り分く。研究本番は OFF
+- ⚠ **Editor 観戦運用**: Play 突入中は MCP を叩かない（デッドロック実害）/ Play・ビルドで TableDuoMain に stray camera が serialize されたら `git checkout --` で破棄
+
 ## 未対応（要望待ち）
 片手モードの左右選択/両手 / 人側の自分の胴体表示 / リプレイ音声同期実運用 / パイロット本番（所有者が手役を一度経験→プロトコル凍結） / 手アバターの client ローカル lossless 記録（上記データ整合性の完全版）
