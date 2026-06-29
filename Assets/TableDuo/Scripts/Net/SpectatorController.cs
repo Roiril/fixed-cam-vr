@@ -11,10 +11,13 @@ namespace TableDuoVr.Net
     /// </summary>
     public sealed class SpectatorController : MonoBehaviour
     {
-        [Tooltip("俯瞰カメラのワールド位置（テーブル中心を斜め上から見下ろす既定）")]
-        [SerializeField] private Vector3 cameraPosition = new(2.4f, 2.4f, -2.4f);
-        [Tooltip("カメラの注視ワールド点（テーブル中心・着座目線あたり）")]
-        [SerializeField] private Vector3 lookAt = new(0f, 0.9f, 0f);
+        [Tooltip("2席の中点から見たときの横オフセット倍率（席間距離×これ + 余白）。両者を等距離で profile 気味に収める")]
+        [SerializeField] private float sideMargin = 1.9f;
+        [Tooltip("注視点（席中点）からのカメラ高さ")]
+        [SerializeField] private float cameraHeight = 1.7f;
+        [Tooltip("席が見つからない時のフォールバック位置/注視")]
+        [SerializeField] private Vector3 fallbackPosition = new(2.4f, 2.4f, -2.4f);
+        [SerializeField] private Vector3 fallbackLookAt = new(0f, 0.9f, 0f);
         [SerializeField] private float fieldOfView = 50f;
 
         private Camera? _cam;
@@ -30,17 +33,44 @@ namespace TableDuoVr.Net
             var rig = GameObject.Find("OVRCameraRig");
             if (rig != null) rig.SetActive(false);
 
+            // 2席の中点を等距離から見るよう動的算出（hardcode のコーナー固定だと片方の席に寄って
+            // もう片方＝特に手役が小さく見えにくかった。レイアウト非依存で両者を均等に framing）
+            ComputeFraming(out Vector3 camPos, out Vector3 look);
+
             var go = new GameObject("SpectatorCamera");
             go.transform.SetParent(transform, worldPositionStays: false);
-            go.transform.position = cameraPosition;
-            go.transform.rotation = Quaternion.LookRotation(lookAt - cameraPosition, Vector3.up);
+            go.transform.position = camPos;
+            go.transform.rotation = Quaternion.LookRotation(look - camPos, Vector3.up);
             _cam = go.AddComponent<Camera>();
             _cam.fieldOfView = fieldOfView;
             _cam.nearClipPlane = 0.05f;
             _cam.farClipPlane = 100f;
             go.AddComponent<AudioListener>(); // 無効化した OVRCameraRig の AudioListener を補う
 
-            Debug.Log($"[TableDuo] 観戦カメラ起動 pos={cameraPosition} look={lookAt}");
+            Debug.Log($"[TableDuo] 観戦カメラ起動 pos={camPos:F2} look={look:F2}");
+        }
+
+        /// <summary>2 席アンカーから「両者を等距離・横やや上から見る」位置と注視点を算出。席不在ならフォールバック。</summary>
+        private void ComputeFraming(out Vector3 camPos, out Vector3 look)
+        {
+            var s0 = SeatLocator.Find(0);
+            var s1 = SeatLocator.Find(1);
+            if (s0 == null || s1 == null)
+            {
+                camPos = fallbackPosition;
+                look = fallbackLookAt;
+                return;
+            }
+            Vector3 p0 = s0.position, p1 = s1.position;
+            Vector3 mid = (p0 + p1) * 0.5f;
+            look = new Vector3(mid.x, 0.7f, mid.z); // テーブル＋着座者の下半身も入る高さ
+
+            Vector3 axis = p1 - p0; axis.y = 0f; // 2席を結ぶ水平線
+            if (axis.sqrMagnitude < 1e-4f) { camPos = fallbackPosition; return; }
+            float gap = axis.magnitude;
+            // 2席線に直交する水平方向＝両者を profile 気味に等距離で収められる側
+            Vector3 side = Vector3.Cross(axis.normalized, Vector3.up).normalized;
+            camPos = mid + side * (gap * 0.5f + sideMargin) + Vector3.up * cameraHeight;
         }
     }
 }
