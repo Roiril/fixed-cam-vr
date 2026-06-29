@@ -36,3 +36,10 @@ TableDuo（[[table_duo_study_status]]）を **Quest も Unity Editor も MCP も
 
 ## 確認できること
 先置き（描画）→ 接続で静的→ライブ差替（疎通）→ 合成 pose 追従（トラッキング）／ maxClients=3 で host+hand+観戦の3接続共存（kick 無し）／ 手 layout 同期／ 観戦カメラの2席中点 framing。全部 Quest・Editor・MCP 無しで。
+
+## キービジュアル撮影モード（同じ基盤で）
+`TableDuo.exe -tdvKeyVisual on` で [KeyVisualDirector](../../Assets/TableDuo/Scripts/Net/KeyVisualDirector.cs) が発動：ネットワーク/preplace せず、人役(Remy)＋手役を authored ポーズで置き、暖色キーライト＋シネマ 3/4 カメラで `persistentDataPath/keyvisual.png`（superSize 2）を保存して `Application.Quit`。接続 GUI は出さない（ConnectionManager の keyvisual 分岐で `showGui=false`）。成果物 docs/table-duo/keyvisual_tableduo.png。ポーズ/カメラ/ライトは KeyVisualDirector.cs で調整→1コマンド再撮影。
+
+## ポーズの罠（キービジュアル/アバター撮影）
+- **RemyAvatarRig の腕 IK は未校正で、遠い/低い wrist target に届かず腕が上がる**（卓上を指させようとすると腕が肩〜胸の高さで横に伸びる）。→ **wrist target は体に近く低く**置いて IK の伸びを最小化する（`(±0.17,-0.46,0.18)` 程度で自然に肘が曲がり腕が下りる）。「卓中央を指す」等の遠い reach は避け、engagement は**頭の向き**（相手＝手役の方を見る）で表現する方が綺麗。手役（hand-only）も WristPos.y を卓の高さ(≈-0.42)まで下げないと宙に浮く
+- 画像を見ながらのイテレーションは「ポーズ.cs 編集→batchmode 2回ビルド→`TableDuo.exe -tdvKeyVisual on`→PNG を Read」。**起動 exe を Editor の `Unity.exe` と取り違えない**（standalone は `Builds/tableduo-desktop/TableDuo.exe`）
