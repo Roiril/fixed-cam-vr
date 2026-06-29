@@ -37,6 +37,8 @@ namespace TableDuoVr.Net
         [SerializeField] private ushort port = 7777;
         [SerializeField] private AutoMode autoMode = AutoMode.None;
         [SerializeField] private bool showGui = true;
+        [Tooltip("接続上限（host 含む）。2人非対称調査なので既定 2。超過する接続は server が拒否する")]
+        [SerializeField] private int maxClients = 2;
 
         [Header("Study（Editor 検証用。実機は tdv_* extras が優先）")]
         [SerializeField] private RoleOverride studyRole = RoleOverride.None;
@@ -44,7 +46,10 @@ namespace TableDuoVr.Net
         [SerializeField] private bool oneHandMode = true;
 
         private const string PoseMsg = "tdv_pose";
+        private const string LayoutMsg = "tdv_layout";
         private readonly Dictionary<ulong, AvatarPose> _remotePoses = new();
+        // clientId→その端末の手 bind 構造（指先 FK を本人の手寸法で計算するため）。host は自分のは静的 Captured を使う
+        private readonly Dictionary<ulong, (HandSkeletonLayout? L, HandSkeletonLayout? R)> _remoteLayouts = new();
         private readonly AvatarPose _localPose = new();
         private bool _hasLocalPose;
         private string _ipInput = "";
@@ -96,9 +101,15 @@ namespace TableDuoVr.Net
             if (hands == "one") StudyConfig.OneHandMode = true;
             else if (hands == "two") StudyConfig.OneHandMode = false;
 
+            // 参加者ID / ペアID（紙記録と機械的に突合・取り違え防止）。指定があれば調査セッション扱い。
+            string? pid = GetLaunchValue("tdv_pid", "-tdvPid");
+            if (!string.IsNullOrEmpty(pid)) { StudyConfig.ParticipantId = pid!; StudyConfig.LaunchedWithStudyFlags = true; }
+            string? pair = GetLaunchValue("tdv_pair", "-tdvPair");
+            if (!string.IsNullOrEmpty(pair)) { StudyConfig.PairId = pair!; StudyConfig.LaunchedWithStudyFlags = true; }
+
             if (StudyConfig.LaunchedWithStudyFlags)
             {
-                Debug.Log($"[TableDuo] StudyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode}");
+                Debug.Log($"[TableDuo] StudyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode} pid={StudyConfig.ParticipantId} pair={StudyConfig.PairId}");
             }
         }
 
@@ -142,6 +153,12 @@ namespace TableDuoVr.Net
 
         private void OnDestroy()
         {
+            var nm = NetworkManager.Singleton;
+            if (nm != null)
+            {
+                nm.OnClientConnectedCallback -= OnClientConnected;
+                nm.OnClientDisconnectCallback -= OnClientDisconnected;
+            }
             if (Instance == this) Instance = null;
         }
 
@@ -211,35 +228,92 @@ namespace TableDuoVr.Net
 
         private void RegisterHandler(NetworkManager nm)
         {
-            // 再接続で前セッションの clientId 別 pose バッファが残ると stale 姿勢が混入するためクリア。
+            // 再接続で前セッションの clientId 別 pose / layout バッファが残ると stale が混入するためクリア。
             // named message handler は session 終了で NGO 側が破棄するので毎 start 登録でよい
             _remotePoses.Clear();
+            _remoteLayouts.Clear();
             _hasLocalPose = false;
             nm.CustomMessagingManager.RegisterNamedMessageHandler(PoseMsg, OnPoseMessage);
+            nm.CustomMessagingManager.RegisterNamedMessageHandler(LayoutMsg, OnLayoutMessage);
+
+            // 接続上限の enforcement と切断時のクリーンアップ（重複購読を避けて付け直す）
+            nm.OnClientConnectedCallback -= OnClientConnected;
+            nm.OnClientConnectedCallback += OnClientConnected;
+            nm.OnClientDisconnectCallback -= OnClientDisconnected;
+            nm.OnClientDisconnectCallback += OnClientDisconnected;
+        }
+
+        // server: 接続上限を超えたクライアントを拒否（席は2つ固定なので3人目で席衝突・アバター重なりを防ぐ）
+        private void OnClientConnected(ulong clientId)
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsServer) return;
+            if (nm.ConnectedClientsIds.Count > maxClients && clientId != nm.LocalClientId)
+            {
+                Debug.LogWarning($"[TableDuo] 接続上限({maxClients})超過のため client{clientId} を切断");
+                nm.DisconnectClient(clientId);
+            }
+        }
+
+        // 切断時: その client の stale バッファを掃除し、状態表示を更新（再接続の導線を確保）
+        private void OnClientDisconnected(ulong clientId)
+        {
+            _remotePoses.Remove(clientId);
+            _remoteLayouts.Remove(clientId);
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsListening)
+            {
+                _status = nm.IsServer ? $"host :{port} (client{clientId} 切断)" : "切断されました";
+            }
         }
 
         private void OnPoseMessage(ulong senderClientId, FastBufferReader reader)
         {
-            reader.ReadValueSafe(out ulong originId);
-            var pose = GetPoseBuffer(originId);
-            PoseCodec.Read(ref reader, pose);
-            RemotePoseReceived?.Invoke(originId, pose);
-
-            // server はオリジン以外のクライアントへリレー（3人目の観戦者などにも将来対応）
-            var nm = NetworkManager.Singleton;
-            if (nm != null && nm.IsServer)
+            // 壊れた／切り詰められた Unreliable パケット 1 発で named-message dispatch が
+            // 例外で死に、以後の pose 受信・リレーが止まるのを防ぐ（受信ループの堅牢性）。
+            try
             {
-                var writer = new FastBufferWriter(PoseCodec.MaxBytes, Allocator.Temp);
-                try
+                reader.ReadValueSafe(out ulong originId);
+                var pose = GetPoseBuffer(originId);
+                PoseCodec.Read(ref reader, pose);
+                RemotePoseReceived?.Invoke(originId, pose);
+
+                // server はオリジン以外のクライアントへリレー（3人目の観戦者などにも将来対応）
+                var nm = NetworkManager.Singleton;
+                if (nm != null && nm.IsServer)
                 {
-                    writer.WriteValueSafe(originId);
-                    PoseCodec.Write(ref writer, pose);
-                    SendToAllClientsExcept(nm, ref writer, originId);
+                    var writer = new FastBufferWriter(PoseCodec.MaxBytes, Allocator.Temp);
+                    try
+                    {
+                        writer.WriteValueSafe(originId);
+                        PoseCodec.Write(ref writer, pose);
+                        SendToAllClientsExcept(nm, ref writer, originId);
+                    }
+                    finally
+                    {
+                        writer.Dispose();
+                    }
                 }
-                finally
-                {
-                    writer.Dispose();
-                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[TableDuo] pose メッセージの処理に失敗（破棄して継続）: {e.Message}");
+            }
+        }
+
+        private void OnLayoutMessage(ulong senderClientId, FastBufferReader reader)
+        {
+            try
+            {
+                reader.ReadValueSafe(out ulong originId);
+                var l = PoseCodec.ReadLayout(ref reader);
+                var r = PoseCodec.ReadLayout(ref reader);
+                _remoteLayouts[originId] = (l, r);
+                Debug.Log($"[TableDuo] 手 layout を client{originId} から受信（L={l != null} R={r != null}）");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[TableDuo] layout メッセージの処理に失敗: {e.Message}");
             }
         }
 
@@ -266,6 +340,54 @@ namespace TableDuoVr.Net
                 return _hasLocalPose;
             }
             return _remotePoses.TryGetValue(clientId, out pose!);
+        }
+
+        /// <summary>
+        /// 自分の手 bind 構造を host へ1回送る（owner が layout キャプチャ後に呼ぶ）。
+        /// host 自身は静的 Captured を使うので送信不要（ローカル格納のみ）。
+        /// </summary>
+        public void SubmitLocalLayout(HandSkeletonLayout? left, HandSkeletonLayout? right)
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsListening || nm.CustomMessagingManager == null) return;
+            if (nm.IsServer)
+            {
+                _remoteLayouts[nm.LocalClientId] = (left, right);
+                return;
+            }
+            var writer = new FastBufferWriter(PoseCodec.MaxLayoutBytes, Allocator.Temp);
+            try
+            {
+                writer.WriteValueSafe(nm.LocalClientId);
+                PoseCodec.WriteLayout(ref writer, left);
+                PoseCodec.WriteLayout(ref writer, right);
+                nm.CustomMessagingManager.SendNamedMessage(
+                    LayoutMsg, NetworkManager.ServerClientId, writer, NetworkDelivery.Reliable);
+                Debug.Log("[TableDuo] 自分の手 layout を host へ送信");
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// clientId の手 bind 構造（指先 FK 用）。自分=静的 Captured / 他人=受信済み layout。
+        /// 未受信なら host 自身の layout へフォールバック（最悪でも従来挙動＝現状維持）。
+        /// </summary>
+        public HandSkeletonLayout? GetHandLayout(ulong clientId, bool right)
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null && clientId == nm.LocalClientId)
+            {
+                return right ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL;
+            }
+            if (_remoteLayouts.TryGetValue(clientId, out var pair))
+            {
+                var layout = right ? pair.R : pair.L;
+                if (layout != null) return layout;
+            }
+            return right ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL;
         }
 
         private AvatarPose GetPoseBuffer(ulong clientId)

@@ -50,6 +50,7 @@ namespace TableDuoVr.Net
         private Transform? _seat;
         private uint _seq;
         private float _nextSend;
+        private bool _layoutSent; // 手 bind 構造を host へ送ったか（FK を本人の手寸法で行うため・1回限り）
 
         public int SeatIndex { get; private set; } = -1;
 
@@ -221,6 +222,16 @@ namespace TableDuoVr.Net
             pose.Seq = unchecked(++_seq);
             pose.CaptureMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             ConnectionManager.Instance?.SubmitLocalPose(pose);
+
+            // 手 bind 構造を host へ1回送る（host が指先7ランドマークを本人の手寸法で FK するため。
+            // 送らないと host 自身の手骨格で全員分 FK され RQ2/RQ3 の主計測に系統誤差）。
+            // SessionLogger は右手の landmark のみ算出するので CapturedR を準備完了トリガにする。
+            if (!_layoutSent && HandSkeletonLayout.CapturedR != null)
+            {
+                _layoutSent = true;
+                ConnectionManager.Instance?.SubmitLocalLayout(
+                    HandSkeletonLayout.CapturedL, HandSkeletonLayout.CapturedR);
+            }
         }
 
         [ServerRpc]

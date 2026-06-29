@@ -70,5 +70,20 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **dead-reckoning（外挿）は意図的に不採用**: 手の overshoot が調査刺激を歪めるため。ロスト時は従来通り「最終姿勢でフリーズ」
 - ⚠ **未検証**: 編集時 Unity が非フォーカスで MCP コンパイルが走らず、ドメイン再コンパイル＋実機の体感は未確認。次の Editor フォーカス／ビルドで自動コンパイルされる。**実機で遅延体感・jitter（K上げの副作用）を要確認**
 
+## 2026-06-29 自律監査＋全面改善（netcode / 調査妥当性 / アバター品質）
+3観点サブエージェント監査 → 全件改善（コンパイル確認: TableDuoVr.Tests 6/6 / 全 TableDuo asmdef ビルド green）。
+- **手 layout 同期（最重要・研究妥当性）**: 各 client が起動時に手 bind 構造をホストへ1回送信（`tdv_layout` reliable named msg / [PoseCodec.WriteLayout/ReadLayout](../../Assets/TableDuo/Scripts/Net/PoseCodec.cs)）。[ConnectionManager.GetHandLayout](../../Assets/TableDuo/Scripts/Net/ConnectionManager.cs) を [SessionLogger](../../Assets/TableDuo/Scripts/Net/SessionLogger.cs) が使い、**指先7ランドマークFKを本人の手寸法で計算**（旧: ホスト自身の手骨格で全員分FK＝系統誤差）。未受信はホスト layout フォールバック＝最悪でも現状維持
+- **接続上限 enforcement**: `ConnectionManager.maxClients=2`。3人目を server が `DisconnectClient`（席は2択固定なので席衝突・アバター重なり防止）
+- **pose 受信の堅牢化**: `OnPoseMessage` を try/catch（壊れた Unreliable パケット1発で配送・リレーが死ぬのを防ぐ）。切断時 `OnClientDisconnectCallback` で stale バッファ掃除＋状態表示更新
+- **参加者ID/ペアID**: 起動フラグ `tdv_pid` / `tdv_pair` → CSV ヘッダ＋ファイル名（紙記録突合・取り違え防止）。[StudyConfig](../../Assets/TableDuo/Scripts/Hands/StudyConfig.cs)
+- **CSV 破損耐性**: `SessionLogger.Escape` が `"`/タブも無害化。`FacilitatorMarkServer` の label を 200 字 clamp
+- **掴み対象の取得を都度化**: [PinchGrabInteractor](../../Assets/TableDuo/Scripts/Net/PinchGrabInteractor.cs) がピンチ時に `FindObjectsOfType<Grabbable>` 再取得（旧: 生成時1回固定で動的/遅延 spawn が掴めなかった）
+- **`CreatePlayerPrefab` を冪等化**: 既存 prefab に必須コンポーネントが欠ければ非破壊で補完（旧: あれば即 return で構成変更が Setup 再実行で反映されなかった）
+- **#7 Remy 校正は preview で検証 → 現状正常**（`Preview Full Avatar (screenshot)` で neutral/gesture/side/3-4 確認。座位ポーズ自然・脚貫通/肘逆折れ無し・テクスチャ済み）。RemyAvatarRig の値は変更不要だった（監査はコードコメント由来の警戒で、実物は調整済み）
+- **#8 メッシュ手の手首**: `_root`=wristRot ＋ wrist bone localRotation は OVRSkeleton の元構成（anchor×wrist.local）と一致＝二重でない（[RemoteAvatarView](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs) にコメント注記）。実機で最終確認余地は残す
+- **解析ノートを [study-design.md](../../docs/table-duo/study-design.md) §4 に追記**: layout 同期 / 手役の遅延・seq/captureMs 整列 / half 量子化 / lossless 録画未配線 / pid・pair フラグ
+
+⚠ いずれも実機2台での動作・遅延体感は未検証（コンパイル＋EditMode テストのみ）。
+
 ## 未対応（要望待ち）
 片手モードの左右選択/両手 / 人側の自分の胴体表示 / リプレイ音声同期実運用 / パイロット本番（所有者が手役を一度経験→プロトコル凍結） / 手アバターの client ローカル lossless 記録（上記データ整合性の完全版）

@@ -579,7 +579,23 @@ namespace TableDuoVr.EditorTools
         {
             Directory.CreateDirectory("Assets/TableDuo/Prefabs");
             var existing = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
-            if (existing != null) return existing;
+            if (existing != null)
+            {
+                // 冪等: 既存 prefab に必須コンポーネントが揃っていればそのまま使う。欠けていれば
+                // 非破壊で補う（以前は「あれば即 return」で、必須構成が増えても Setup 再実行で反映されなかった）。
+                // 構成済みなら何もしないので sendRate 等の serialized 値は保持される。
+                bool hasNetworkObject = existing.GetComponent<NetworkObject>() != null;
+                bool hasPlayer = existing.GetComponent<TableDuoPlayer>() != null;
+                if (hasNetworkObject && hasPlayer) return existing;
+
+                var contents = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
+                if (contents.GetComponent<NetworkObject>() == null) contents.AddComponent<NetworkObject>();
+                if (contents.GetComponent<TableDuoPlayer>() == null) contents.AddComponent<TableDuoPlayer>();
+                PrefabUtility.SaveAsPrefabAsset(contents, PlayerPrefabPath);
+                PrefabUtility.UnloadPrefabContents(contents);
+                Debug.Log("[TableDuoSceneSetup] 既存 TableDuoPlayer.prefab に欠けていた必須コンポーネントを補完");
+                return AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            }
 
             var go = new GameObject("TableDuoPlayer");
             go.AddComponent<NetworkObject>();

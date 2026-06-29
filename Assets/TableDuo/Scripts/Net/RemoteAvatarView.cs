@@ -320,6 +320,9 @@ namespace TableDuoVr.Net
 
                 if (_meshBones != null)
                 {
+                    // bone[0]=wrist の localRotation は「手アンカー(_root=wristRot)からの相対」で、
+                    // 送信元 OVRSkeleton の Bones[0].localRotation と同じ合成（anchor × wrist.local）になる
+                    // ＝二重回転ではない（設計上一致）。※実機で手首の捻れが無いか最終確認すること。
                     int n = Mathf.Min(boneRots.Length, _meshBones.Length);
                     for (int i = 0; i < n; i++)
                     {

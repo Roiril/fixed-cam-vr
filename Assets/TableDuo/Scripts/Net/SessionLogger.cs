@@ -150,8 +150,12 @@ namespace TableDuoVr.Net
             // seq=送信連番（歯抜けで「凍結 vs パケット欠落」を判別）, captureMs=送信端末の壁時計
             _sb.Append(',').Append(pose.Seq).Append(',').Append(pose.CaptureMs);
 
-            // 手役の右手 7 ランドマーク（FK・トラッキングスペース→ワールド）
-            HandLandmarks.Compute(HandSkeletonLayout.CapturedR,
+            // 手役の右手 7 ランドマーク（FK・トラッキングスペース→ワールド）。
+            // ★その client の実際の手 bind 構造で FK する（host 自身の手骨格だと別端末の手寸法を
+            //   取り違えて RQ2/RQ3 の主計測に系統誤差。未受信なら host layout へフォールバック）
+            var layoutR = ConnectionManager.Instance?.GetHandLayout(clientId, right: true)
+                          ?? HandSkeletonLayout.CapturedR;
+            HandLandmarks.Compute(layoutR,
                 pose.WristPosR, pose.WristRotR, pose.BonesR, _landmarks);
             for (int i = 0; i < HandLandmarks.Count; i++)
             {
@@ -171,13 +175,17 @@ namespace TableDuoVr.Net
 
         private void OpenFile()
         {
-            string name = $"tdv_session_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            // 参加者/ペアID があればファイル名に含め、紙記録との突合・取り違え防止に使う
+            string tag = "";
+            if (!string.IsNullOrEmpty(StudyConfig.PairId)) tag += $"_pair{SafeTag(StudyConfig.PairId)}";
+            if (!string.IsNullOrEmpty(StudyConfig.ParticipantId)) tag += $"_pid{SafeTag(StudyConfig.ParticipantId)}";
+            string name = $"tdv_session_{DateTime.Now:yyyyMMdd_HHmmss}{tag}.csv";
             FilePath = Path.Combine(Application.persistentDataPath, name);
             // FileShare.Read: 記録中もファシリテータが tail / コピーできるようにする
             var stream = new FileStream(FilePath, FileMode.Create, FileAccess.Write, FileShare.Read);
             _writer = new StreamWriter(stream);
             _writer.WriteLine("# type,epochMs,... study-design.md §4 / pose: clientId,role,headP3,headQ4,wristRP3,wristRQ4,trackedR,pinchR,seq,captureMs,7landmarks(wrist,palm,thumb,index,middle,ring,pinky)x3 / card: cardId,holder(-1=未保持),pos3,normal3 / event: condition,recenter,grab,release,trackingLost/Regained,<mark>");
-            _writer.WriteLine($"# studyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode}");
+            _writer.WriteLine($"# studyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode} participantId={StudyConfig.ParticipantId} pairId={StudyConfig.PairId}");
             _writer.Flush();
             Debug.Log($"[TableDuo] SessionLogger 開始 → {FilePath}");
         }
@@ -213,7 +221,21 @@ namespace TableDuoVr.Net
 
         private static long EpochMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        // カンマは列区切り、改行は行区切りを壊すので無害化（外部 label に curl ?label= 等で混入しうる）
-        private static string Escape(string s) => s.Replace(',', ';').Replace('\n', ' ').Replace('\r', ' ');
+        // カンマは列区切り、改行は行区切りを壊すので無害化（外部 label に curl ?label= 等で混入しうる）。
+        // 二重引用符・タブも RFC4180 パーサで列崩れを起こすので無害化する。
+        private static string Escape(string s) =>
+            s.Replace(',', ';').Replace('"', '\'').Replace('\t', ' ').Replace('\n', ' ').Replace('\r', ' ');
+
+        // ファイル名に使える文字だけに落とす（英数 . _ - 以外は _）。pid/pair の取り違え防止用。
+        private static string SafeTag(string s)
+        {
+            var chars = s.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                char c = chars[i];
+                if (!(char.IsLetterOrDigit(c) || c == '.' || c == '_' || c == '-')) chars[i] = '_';
+            }
+            return new string(chars);
+        }
     }
 }

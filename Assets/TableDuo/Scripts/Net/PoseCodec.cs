@@ -14,6 +14,9 @@ namespace TableDuoVr.Net
         /// <summary>sender id (8B) + pose 本体 + 余裕。Unreliable MTU(~1400B) 内に収まること。</summary>
         public const int MaxBytes = 600;
 
+        /// <summary>sender id (8B) + 両手 layout（各 ≤ 1+24*(2+12+16)=721B）+ 余裕。Reliable で送る。</summary>
+        public const int MaxLayoutBytes = 2048;
+
         public static void Write(ref FastBufferWriter w, AvatarPose p)
         {
             WriteV3(ref w, p.HeadPos);
@@ -48,6 +51,45 @@ namespace TableDuoVr.Net
             r.ReadValueSafe(out p.CaptureMs);
             ReadBones(ref r, p.BonesL);
             ReadBones(ref r, p.BonesR);
+        }
+
+        /// <summary>
+        /// 手スケルトンの bind 構造（親index + bind ローカル姿勢）を序列化する。
+        /// 手役の指先 7 ランドマーク FK を「その端末の実際の手寸法」で計算するため、
+        /// client→host へ1回だけ送る（送らないと host 自身の手骨格で全員分 FK され系統誤差になる）。
+        /// </summary>
+        public static void WriteLayout(ref FastBufferWriter w, HandSkeletonLayout? layout)
+        {
+            byte count = (byte)(layout == null ? 0 : Mathf.Min(layout.BoneCount, AvatarPose.BonesPerHand));
+            w.WriteValueSafe(count);
+            for (int i = 0; i < count; i++)
+            {
+                w.WriteValueSafe(layout!.ParentIndex[i]);
+                WriteV3(ref w, layout.BindLocalPos[i]);
+                WriteQf(ref w, layout.BindLocalRot[i]);
+            }
+        }
+
+        /// <summary>受信した手 layout を復元（空＝null）。</summary>
+        public static HandSkeletonLayout? ReadLayout(ref FastBufferReader r)
+        {
+            r.ReadValueSafe(out byte count);
+            if (count == 0) return null;
+            int n = Mathf.Min(count, (byte)AvatarPose.BonesPerHand);
+            var layout = new HandSkeletonLayout { BoneCount = n };
+            for (int i = 0; i < count; i++)
+            {
+                r.ReadValueSafe(out short parent);
+                ReadV3(ref r, out Vector3 pos);
+                ReadQf(ref r, out Quaternion rot);
+                if (i < n)
+                {
+                    layout.ParentIndex[i] = parent;
+                    layout.BindLocalPos[i] = pos;
+                    layout.BindLocalRot[i] = rot;
+                }
+            }
+            return layout;
         }
 
         private static void WriteBones(ref FastBufferWriter w, Quaternion[] bones)

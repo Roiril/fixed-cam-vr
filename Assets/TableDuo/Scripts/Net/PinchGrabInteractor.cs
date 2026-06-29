@@ -15,7 +15,6 @@ namespace TableDuoVr.Net
 
         private Transform? _seat;
         private ulong _localClientId;
-        private Grabbable[] _grabbables = System.Array.Empty<Grabbable>();
         private readonly bool[] _wasPinching = new bool[2];
         private readonly Grabbable?[] _heldCandidate = new Grabbable?[2];
 
@@ -23,7 +22,6 @@ namespace TableDuoVr.Net
         {
             _seat = seat;
             _localClientId = localClientId;
-            _grabbables = FindObjectsOfType<Grabbable>();
         }
 
         private void Update()
@@ -64,7 +62,9 @@ namespace TableDuoVr.Net
         {
             Grabbable? best = null;
             float bestSqr = GrabRadius * GrabRadius;
-            foreach (var g in _grabbables)
+            // ピンチ立ち上がり時のみ（稀）に都度取得 → 動的/遅延 spawn の Grabbable も対象に入る
+            // （生成時1回固定だと後から spawn したオブジェクトを永久に掴めない）
+            foreach (var g in FindObjectsOfType<Grabbable>())
             {
                 if (g == null || g.IsHeld) continue;
                 float sqr = (g.transform.position - worldPos).sqrMagnitude;

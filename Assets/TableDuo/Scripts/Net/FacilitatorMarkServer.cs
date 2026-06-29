@@ -80,6 +80,8 @@ namespace TableDuoVr.Net
                 {
                     var ctx = listener.GetContext();
                     string label = ctx.Request.QueryString["label"] ?? "unlabeled";
+                    // 巨大 label による1行肥大化・破損を防ぐ（カンマ/引用符/改行の無害化は SessionLogger.Escape 側）
+                    if (label.Length > 200) label = label.Substring(0, 200);
                     _marks.Enqueue(label);
                     var buf = System.Text.Encoding.UTF8.GetBytes($"marked: {label}\n");
                     ctx.Response.ContentLength64 = buf.Length;

@@ -27,6 +27,12 @@ namespace TableDuoVr.Hands
         /// <summary>tdv_* 起動フラグ経由で起動された＝調査セッション（デバッグ GUI を隠す等）。</summary>
         public static bool LaunchedWithStudyFlags;
 
+        /// <summary>参加者ID（tdv_pid）。CSV/リプレイのヘッダに刻み、紙記録との突合・取り違え防止に使う。空=未指定。</summary>
+        public static string ParticipantId = "";
+
+        /// <summary>ペアID（tdv_pair）。2台の記録を機械的に紐づける。空=未指定。</summary>
+        public static string PairId = "";
+
         // domain-reload を切った Play では static が前回 Play の条件を引き継ぐ。Editor で役割/条件を
         // 変えて再生したのに古い値で走る事故を防ぐため毎 Play 既定へ戻す（ConnectionManager.Awake が再設定）。
         [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -36,6 +42,8 @@ namespace TableDuoVr.Hands
             ShowHeadMarker = false;
             OneHandMode = true;
             LaunchedWithStudyFlags = false;
+            ParticipantId = "";
+            PairId = "";
         }
     }
 }
