@@ -131,34 +131,12 @@ namespace TableDuoVr.EditorTools
             CreateSeat(seats.transform, 0, new Vector3(0f, eyeHeight, -0.85f), 0f);    // フルアバター席
             CreateSeat(seats.transform, 1, new Vector3(0f, eyeHeight, 0.85f), 180f);   // 手だけアバター席
 
-            // 掴める小物（scene-placed NetworkObject。サーバ駆動追従 + NetworkTransform 同期）
-            // Kenney Food Kit（CC0）。FBX 不在時はオレンジキューブにフォールバック
+            // 卓上 = ボードゲーム「海底探検（Deep Sea Adventure）」一式（旧: Kenney 食べ物プロップ＋絵カードを置換）。
+            // 潜水艦ボードを中央奥に静置、宝物チップ/裏トークン/空気マーカーを手前にグリッド配置、駒2+サイコロは掴める。
+            // GLB は glTFast 取込（Assets/TableDuo/ThirdParty/DeepSeaAdventure/glb、テクスチャ埋込・実スケール=メートル）。
             var props = new GameObject("Props");
             props.transform.SetParent(root.transform, false);
-            string[] foods = { "apple", "banana", "burger", "carrot", "cake" };
-            // 天板の手前寄りに横一列。天板の実 X 範囲に均等配置（はみ出し防止）
-            float foodSpan = Mathf.Max(0f, hx - edge - 0.06f);
-            for (int i = 0; i < foods.Length; i++)
-            {
-                float fx = foods.Length > 1 ? Mathf.Lerp(-foodSpan, foodSpan, i / (float)(foods.Length - 1)) : 0f;
-                var pos = new Vector3(cx + fx, topY, cz + 0.12f); // y=天板（接地）/ 奥寄り
-                var model = InstantiateModelFitHeight(
-                    $"Assets/ThirdParty/Kenney/Food/{foods[i]}.fbx", props.transform,
-                    $"Prop_{foods[i]}", pos, 0f, targetHeight: 0.09f);
-                if (model == null)
-                {
-                    CreateProp(props.transform, $"Prop_{foods[i]}", pos, propMat);
-                    continue;
-                }
-                model.AddComponent<NetworkObject>();
-                var nt = model.AddComponent<Unity.Netcode.Components.NetworkTransform>();
-                nt.Interpolate = true;
-                nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
-                model.AddComponent<Grabbable>();
-            }
-
-            // 絵カードデッキ（RQ2: カード照準分析用。片面絵柄 + 共通裏面）。天板の手前側に乗せる
-            CreateCardDeck(root.transform, topY, tb);
+            PlaceDeepSeaAdventure(props.transform, topY, cx, cz, hx, hz, edge);
 
             // 協調配置課題の目標パネル（手役ローカルのみ表示）
             CreatePatternPanel(root.transform);
@@ -341,6 +319,93 @@ namespace TableDuoVr.EditorTools
             if (go == null) return new Bounds(Vector3.zero, Vector3.zero);
             var rs = go.GetComponentsInChildren<Renderer>();
             return rs.Length > 0 ? CalcBounds(rs) : new Bounds(go.transform.position, Vector3.zero);
+        }
+
+        private const string DsaGlbDir = "Assets/TableDuo/ThirdParty/DeepSeaAdventure/glb";
+
+        /// <summary>
+        /// 卓上にボードゲーム「海底探検」一式を配置。潜水艦ボードを中央奥に静置し、宝物チップ16/裏トークン5/
+        /// 空気マーカーを手前にグリッド静置、駒2+サイコロを掴めるトークンとして置く。GLB は実スケール（メートル）。
+        /// </summary>
+        private static void PlaceDeepSeaAdventure(Transform parent, float topY, float cx, float cz,
+            float hx, float hz, float edge)
+        {
+            // 潜水艦ボード（静置・中央やや奥）
+            PlaceModelRealScale($"{DsaGlbDir}/submarine_board.glb", parent, "DSA_Board",
+                new Vector3(cx, topY, cz + 0.12f), 0f, grabbable: false);
+
+            // 盤面ピース（静置）: 宝物チップ16 + 裏トークン5 + 空気マーカー。手前側にグリッド
+            string[] tiles =
+            {
+                "tri_0", "tri_1", "tri_2", "tri_3",
+                "sq_4", "sq_5", "sq_6", "sq_7",
+                "pen_8", "pen_9", "pen_10", "pen_11",
+                "hex_12", "hex_13", "hex_14", "hex_15",
+                "back_circle", "back_tri", "back_square", "back_pentagon", "back_hexagon",
+                "air_marker",
+            };
+            const int cols = 6;
+            const float step = 0.072f;
+            float gx0 = cx - (cols - 1) * step * 0.5f;
+            float gz0 = cz - Mathf.Max(0.04f, hz - edge - 0.07f); // 手前縁の内側から奥へ
+            for (int i = 0; i < tiles.Length; i++)
+            {
+                int row = i / cols, col = i % cols;
+                var pos = new Vector3(gx0 + col * step, topY, gz0 + row * step);
+                PlaceModelRealScale($"{DsaGlbDir}/{tiles[i]}.glb", parent, $"DSA_{tiles[i]}", pos, 0f, grabbable: false);
+            }
+
+            // 駒2 + サイコロ（掴める相互作用トークン）。ボードとチップ群の間に置く
+            PlaceModelRealScale($"{DsaGlbDir}/meeple_purple.glb", parent, "DSA_MeeplePurple",
+                new Vector3(cx - 0.10f, topY, cz + 0.02f), 0f, grabbable: true);
+            PlaceModelRealScale($"{DsaGlbDir}/meeple_red.glb", parent, "DSA_MeepleRed",
+                new Vector3(cx, topY, cz + 0.02f), 0f, grabbable: true);
+            PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die",
+                new Vector3(cx + 0.10f, topY, cz + 0.02f), 0f, grabbable: true);
+        }
+
+        /// <summary>
+        /// GLB プレハブ（glTFast 取込）を実スケールのまま卓上に接地配置（足元 = topY, 水平センタリング）。
+        /// grabbable=true なら旧プロップ同様 NetworkObject + NetworkTransform + Grabbable を付ける。
+        /// </summary>
+        private static GameObject? PlaceModelRealScale(string glbPath, Transform parent, string name,
+            Vector3 pos, float yaw, bool grabbable)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(glbPath);
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[TableDuoSceneSetup] GLB が見つかりません: {glbPath}（glTFast 取込未完？）");
+                return null;
+            }
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+
+            var renderers = go.GetComponentsInChildren<Renderer>();
+            if (renderers.Length > 0)
+            {
+                var b = CalcBounds(renderers);
+                var pivotToBounds = b.center - go.transform.position;
+                go.transform.localPosition = new Vector3(
+                    pos.x - pivotToBounds.x,
+                    pos.y - (b.min.y - go.transform.position.y),
+                    pos.z - pivotToBounds.z);
+            }
+            else
+            {
+                go.transform.localPosition = pos;
+            }
+
+            if (grabbable)
+            {
+                go.AddComponent<NetworkObject>();
+                var nt = go.AddComponent<Unity.Netcode.Components.NetworkTransform>();
+                nt.Interpolate = true;
+                nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
+                go.AddComponent<Grabbable>();
+            }
+            return go;
         }
 
         private static readonly string[] CardIcons =
