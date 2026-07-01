@@ -24,6 +24,8 @@
 
 **適用範囲**: 自分の手（[`LocalVariantHand`](../../Assets/TableDuo/Scripts/Net/LocalVariantHand.cs)）＋相手の手（[`RemoteAvatarView`](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs)）の両方。
 
+**接続時の出現（2026-07-01）**: 手役アバターは**接続した時点で右手を卓上の休めポーズで出現**し、トラッキングが来たら実手位置へスナップして追従する（[`RemoteAvatarView.HandView.ShowAtRest`](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs)）。従来は「一度トラッキングされるまで非表示」で、手が視界外だと手役が丸ごと消えて見えた。左手は従来どおり「使われるまで非表示」（片手モードで左手が出ない）。出現時の手モデルは選択中の変種。
+
 **駆動方式（別リグ命名への対応）**: パックの手は Meta の `b_*` とは別命名・別バインドなので、同期される
 OVR 24bone をそのまま当てると指が壊れる。対策 2 つ:
 1. **BoneId→bone 名対応表**（[`HandVariantTable`](../../Assets/TableDuo/Scripts/Hands/HandVariantTable.cs)、実リグを Unity で実測して作成）。
