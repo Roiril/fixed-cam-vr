@@ -45,10 +45,17 @@ OVR 24bone をそのまま当てると指が壊れる。対策 2 つ:
   （リターゲット式 A=`live·inv(ovrBind)·varBind` / B=`varBind·inv(ovrBind)·live` 両方で再現 → 単純な式変更では直らない）。
   bind 診断（`... Rest` メニュー）で「元ポーズは正常・動かすと崩れる」を確認済み＝**retarget の軸不一致**。
 
-**Robot を直すには（未対応・要判断）**:
-- 本命 = **軸非依存のワールド空間 FK リターゲット**（各 bone の world 姿勢を OVR→variant へ移す）に作り替え。全変種の堅牢化にもなるが実装コスト中。
-- 代替 = Robot だけ指の駆動を簡略化（関節ごとに「子方向まわりの 1DOF 屈曲」で駆動）／Robot リグを Blender で OVR 軸へ調整。
-- 現状の `HandRetarget.Solve` は式 A（Male/Default で検証済み）。Robot のみ別処理にするか全体を FK 化するかは未決。
+**Robot を直すには（未対応）**:
+- **試したが撤去: 軸非依存のワールド空間 FK リターゲット**（各 bone の手首相対 world 姿勢を OVR→variant へ移す実装）。
+  Robot の「爆発的な散らばり」は収まったが **(a) working だった Realistic を爪状に退行させ**、**(b) Robot の手首 bone が
+  約 90° 別向きに焼かれている**問題が残った。手首整列（ovrBind[0] 基準）を足すと Realistic をさらに壊した。
+  → **式 A（`HandRetarget.Solve`）に戻して確定**（Realistic/Default は式 A が最良）。世界 FK は naive には再挑戦しないこと。
+- **Robot の根因 = 機械リグ**: 各指が独立した剛体セグメントの連なりで、各 bone のローカル軸がバラバラ＋手首 bone が
+  別向き。ハンドトラッキングのクォータニオン delta 転写と本質的に相性が悪い。
+- **残された現実的な道**: ① **Blender で Robot リグを再調整**（指 bone 軸と手首を OVR/Male 規則へ）→ 式 A に乗る。
+  ② Robot だけ「関節ごとに子方向まわりの 1DOF 屈曲」で駆動（軸非依存だが実手と完全一致しない）。
+  ③ Robot は静止指＋手首追従のみで妥協（ジェスチャーは死ぬ）。
+- 現状 Robot は selectable だが指がスクランブルする（既知の未完）。
 
 **実機（Quest）でさらに確認する点**: ローカル手の手首の向き（親追従のバインド軸ずれ）・手の大きさ（`RefHandLenMeters`）。
 
