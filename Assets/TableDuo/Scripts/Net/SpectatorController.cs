@@ -12,13 +12,13 @@ namespace TableDuoVr.Net
     public sealed class SpectatorController : MonoBehaviour
     {
         [Tooltip("2席の中点から見たときの横オフセット倍率（席間距離×これ + 余白）。両者を等距離で profile 気味に収める")]
-        [SerializeField] private float sideMargin = 1.9f;
+        [SerializeField] private float sideMargin = 1.1f;   // やや寄せ（旧 1.9）
         [Tooltip("注視点（席中点）からのカメラ高さ")]
-        [SerializeField] private float cameraHeight = 1.7f;
+        [SerializeField] private float cameraHeight = 1.35f; // やや寄せ（旧 1.7）
         [Tooltip("席が見つからない時のフォールバック位置/注視")]
         [SerializeField] private Vector3 fallbackPosition = new(2.4f, 2.4f, -2.4f);
         [SerializeField] private Vector3 fallbackLookAt = new(0f, 0.9f, 0f);
-        [SerializeField] private float fieldOfView = 50f;
+        [SerializeField] private float fieldOfView = 43f;   // やや寄せ（旧 50）
 
         private Camera? _cam;
         private bool _active;
@@ -56,7 +56,7 @@ namespace TableDuoVr.Net
             // ヘッドレス/実機ゼロ（standalone CLI）でも framing を Read で確認できるようにする。
             if (TableDuoVr.Hands.StudyConfig.PreplaceAvatars)
             {
-                StartCoroutine(CaptureAfter(6f));
+                StartCoroutine(CaptureAfter(12f)); // 両プレイヤー接続＋手の出現を待ってから撮る
             }
         }
 
