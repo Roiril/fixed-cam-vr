@@ -28,6 +28,11 @@ namespace TableDuoVr.Net
         private static readonly Vector3 ShoulderOffsetR = new(0.17f, 0.24f, 0f);
         private static readonly Vector3 ShoulderOffsetL = new(-0.17f, 0.24f, 0f);
 
+        // 接続直後（未トラッキング）に右手を置く休めポーズ（avatar-root=席ローカル。卓上に手を置いた自然な構え）。
+        // トラッキングが来たら実手へスナップして追従する。片手モードの左手は従来どおり「使われるまで非表示」。
+        private static readonly Vector3 HandRestLocalPosR = new(0.20f, -0.42f, 0.32f);
+        private static readonly Quaternion HandRestLocalRotR = Quaternion.Euler(15f, -90f, 0f);
+
         private Transform? _head;
         private Transform? _chest;
         private Transform? _armL;
@@ -94,6 +99,9 @@ namespace TableDuoVr.Net
                 }
                 _left = new HandView(transform, "HandL", isRight: false);
                 _right = new HandView(transform, "HandR", isRight: true);
+                // 接続＝アバター出現。右手（片手モードの主役）を休めポーズで即表示し、
+                // トラッキングが来たら追従する（手が視界外でも「居る」ことが伝わる）。
+                _right.ShowAtRest(HandRestLocalPosR, HandRestLocalRotR);
             }
             else
             {
@@ -294,15 +302,49 @@ namespace TableDuoVr.Net
                 _isRight = isRight;
                 _root = new GameObject(name).transform;
                 _root.SetParent(parent, worldPositionStays: false);
-                _root.gameObject.SetActive(false); // 一度トラッキングされるまで非表示（片手モードの左手対策）
+                _root.gameObject.SetActive(false); // 既定は非表示（片手モードの左手対策）。右手は ShowAtRest で接続時に出す
                 _wristProxy = CreatePrimitive(_root, PrimitiveType.Cube, 0.05f, "WristProxy");
+            }
+
+            /// <summary>接続直後に休めポーズで手を出現させる（未トラッキングでも「居る」ことを示す）。
+            /// トラッキングが来たら <see cref="Tick"/> が実手へスナップして追従する。</summary>
+            public void ShowAtRest(Vector3 restLocalPos, Quaternion restLocalRot)
+            {
+                _root.localPosition = restLocalPos;
+                _root.localRotation = restLocalRot;
+                _root.gameObject.SetActive(true);
+                // 受信側の手 bind（layout）でメッシュ/カプセルを先に組む（bind=開いた手の休めポーズで見える）
+                TryBuild(_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL);
+            }
+
+            /// <summary>メッシュ手→（失敗時）カプセル手を一度だけ構築する。成功でラッチ。</summary>
+            private void TryBuild(HandSkeletonLayout? layout)
+            {
+                if (_built) return;
+                if (!_meshTried)
+                {
+                    _meshTried = true;
+                    if (TryBuildMeshHandSafe())
+                    {
+                        _built = true;
+                        _wristProxy.gameObject.SetActive(false);
+                        return;
+                    }
+                }
+                if (!_built && layout != null) // メッシュ供給が無い/失敗 → カプセル（layout 待ち）
+                {
+                    BuildBones(layout);
+                    _built = true;
+                    _wristProxy.gameObject.SetActive(false);
+                }
             }
 
             public void Tick(float smooth, Vector3 wristPos, Quaternion wristRot, Quaternion[] boneRots,
                 bool tracked, HandSkeletonLayout? layout)
             {
                 // ロスト時は「最終姿勢でフリーズ」（調査仕様 — 消すと相手が
-                // 無に向かって話す時間が混入し RQ2/RQ3 を汚染する。ロスト区間は SessionLogger が記録）
+                // 無に向かって話す時間が混入し RQ2/RQ3 を汚染する。ロスト区間は SessionLogger が記録）。
+                // ただし接続時に ShowAtRest で出した休めポーズはそのまま保持（消さない）。
                 if (!tracked)
                 {
                     return; // 表示状態・姿勢を保持したまま何もしない
@@ -311,30 +353,15 @@ namespace TableDuoVr.Net
                 {
                     _everTracked = true;
                     _root.gameObject.SetActive(true);
+                    // 休めポーズ（卓上）→ 実手位置へは glide させずスナップ（離れた場所からスーッと寄るのを防ぐ）
+                    _root.localPosition = wristPos;
+                    _root.localRotation = wristRot;
                 }
 
                 _root.localPosition = Vector3.Lerp(_root.localPosition, wristPos, smooth);
                 _root.localRotation = Quaternion.Slerp(_root.localRotation, wristRot, smooth);
 
-                if (!_built)
-                {
-                    // メッシュ構築は一度だけ試す（例外や失敗で毎フレ Instantiate を繰り返さないようラッチ）
-                    if (!_meshTried)
-                    {
-                        _meshTried = true;
-                        if (TryBuildMeshHandSafe())
-                        {
-                            _built = true;
-                            _wristProxy.gameObject.SetActive(false);
-                        }
-                    }
-                    if (!_built && layout != null) // メッシュ供給が無い/失敗 → カプセル（layout 待ち）
-                    {
-                        BuildBones(layout);
-                        _built = true;
-                        _wristProxy.gameObject.SetActive(false);
-                    }
-                }
+                TryBuild(layout);
 
                 if (_meshBones != null)
                 {
