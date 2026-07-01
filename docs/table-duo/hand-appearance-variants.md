@@ -38,11 +38,19 @@ OVR 24bone をそのまま当てると指が壊れる。対策 2 つ:
 **URP/Lit の肌/金属材質を生成して全 Renderer を上書き**（材質変換不要）。Setup が
 `TableDuoRealisticHand.mat` / `TableDuoRobotHand.mat` を生成し provider に配線する。
 
-**⚠ 実機で要確認（コンパイルOK／実機未検証）**:
-- 指の**曲がり軸**が正しいか（両リグの bone 親相対軸がほぼ揃う前提のリターゲット。ずれると横に曲がる）。
-- 手首の**向き**（ローカル手は親追従なのでバインド軸ずれで定数傾きの可能性）。
-- 手の**大きさ**（`RefHandLenMeters` で調整）。
-- ずれる場合の調整先: `RefHandLenMeters`（スケール）/ `HandVariantTable` の対応（指の対応ズレ）/ 必要なら変種別の軸補正クォータニオンを追加。
+**PC 検証結果（2026-07-01・`Tools/FixedCamVr/Diagnostics/Preview Hand Variants` で実録画データを 3 種に適用しスクショ）**:
+- **Default（Meta 白手）: 正常**。指の曲がり・スケール・配置 OK。
+- **Realistic（Male Hand）: 正常**。実データの指ポーズを自然に再現、肌 URP 材質でマゼンタ無し、スケール適正。
+- **Robot: 静止(bind)は正常だが指を動かすとセグメントが散る**。機械リグの指ボーン軸が OVR と食い違うのが原因
+  （リターゲット式 A=`live·inv(ovrBind)·varBind` / B=`varBind·inv(ovrBind)·live` 両方で再現 → 単純な式変更では直らない）。
+  bind 診断（`... Rest` メニュー）で「元ポーズは正常・動かすと崩れる」を確認済み＝**retarget の軸不一致**。
+
+**Robot を直すには（未対応・要判断）**:
+- 本命 = **軸非依存のワールド空間 FK リターゲット**（各 bone の world 姿勢を OVR→variant へ移す）に作り替え。全変種の堅牢化にもなるが実装コスト中。
+- 代替 = Robot だけ指の駆動を簡略化（関節ごとに「子方向まわりの 1DOF 屈曲」で駆動）／Robot リグを Blender で OVR 軸へ調整。
+- 現状の `HandRetarget.Solve` は式 A（Male/Default で検証済み）。Robot のみ別処理にするか全体を FK 化するかは未決。
+
+**実機（Quest）でさらに確認する点**: ローカル手の手首の向き（親追従のバインド軸ずれ）・手の大きさ（`RefHandLenMeters`）。
 
 **設定変更時**: `TableDuoSceneSetup` を編集したら `Tools/FixedCamVr/Setup/Setup TableDuo Scene` を再実行して
 シーンに焼き直す（provider の変種参照・`LocalVariantHand`・`HandVariantWatcher` を再配線）。
