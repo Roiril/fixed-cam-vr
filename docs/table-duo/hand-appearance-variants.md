@@ -38,24 +38,20 @@ OVR 24bone をそのまま当てると指が壊れる。対策 2 つ:
 **URP/Lit の肌/金属材質を生成して全 Renderer を上書き**（材質変換不要）。Setup が
 `TableDuoRealisticHand.mat` / `TableDuoRobotHand.mat` を生成し provider に配線する。
 
-**PC 検証結果（2026-07-01・`Tools/FixedCamVr/Diagnostics/Preview Hand Variants` で実録画データを 3 種に適用しスクショ）**:
+**PC 検証結果（2026-07-01・`Tools/FixedCamVr/Diagnostics/Preview Hand Variants` で実録画データを 3 種に適用しスクショ）— 3 種とも実用的に動作**:
 - **Default（Meta 白手）: 正常**。指の曲がり・スケール・配置 OK。
 - **Realistic（Male Hand）: 正常**。実データの指ポーズを自然に再現、肌 URP 材質でマゼンタ無し、スケール適正。
-- **Robot: 静止(bind)は正常だが指を動かすとセグメントが散る**。機械リグの指ボーン軸が OVR と食い違うのが原因
-  （リターゲット式 A=`live·inv(ovrBind)·varBind` / B=`varBind·inv(ovrBind)·live` 両方で再現 → 単純な式変更では直らない）。
-  bind 診断（`... Rest` メニュー）で「元ポーズは正常・動かすと崩れる」を確認済み＝**retarget の軸不一致**。
+- **Robot: 正常（式 A で動く）**。**⚠ 初見で「崩れてる」と誤判定したが、実際は視点の問題だった**
+  — Robot は多数の機械リンク（アクチュエータ様の平板）を持つ嵩張るモデルで、斜め/正面からはパーツが重なって
+  散らばって見える。**上面（`robot_top` / `03_top`）から見ると掌プレート＋4 指＋親指がポーズどおり並ぶ普通のロボットハンド**。
+  指は実ポーズに追従し、Default の指配置とも整合する。多角度・Robot 単体の寄り確認は
+  `Preview Robot Only` メニュー（背景の手を排して周回撮影）。
 
-**Robot を直すには（未対応）**:
-- **試したが撤去: 軸非依存のワールド空間 FK リターゲット**（各 bone の手首相対 world 姿勢を OVR→variant へ移す実装）。
-  Robot の「爆発的な散らばり」は収まったが **(a) working だった Realistic を爪状に退行させ**、**(b) Robot の手首 bone が
-  約 90° 別向きに焼かれている**問題が残った。手首整列（ovrBind[0] 基準）を足すと Realistic をさらに壊した。
-  → **式 A（`HandRetarget.Solve`）に戻して確定**（Realistic/Default は式 A が最良）。世界 FK は naive には再挑戦しないこと。
-- **Robot の根因 = 機械リグ**: 各指が独立した剛体セグメントの連なりで、各 bone のローカル軸がバラバラ＋手首 bone が
-  別向き。ハンドトラッキングのクォータニオン delta 転写と本質的に相性が悪い。
-- **残された現実的な道**: ① **Blender で Robot リグを再調整**（指 bone 軸と手首を OVR/Male 規則へ）→ 式 A に乗る。
-  ② Robot だけ「関節ごとに子方向まわりの 1DOF 屈曲」で駆動（軸非依存だが実手と完全一致しない）。
-  ③ Robot は静止指＋手首追従のみで妥協（ジェスチャーは死ぬ）。
-- 現状 Robot は selectable だが指がスクランブルする（既知の未完）。
+**リターゲットの結論**: `HandRetarget.Solve`（式 A = `live·inv(ovrBind)·varBind`）で 3 種とも成立。
+- **世界空間 FK リターゲットは試したが撤去**（Robot の見え方改善を狙ったが working だった Realistic を退行させた。
+  そもそも Robot は式 A で問題なかったので不要だった）。naive な世界 FK は再挑戦しない。
+- Robot の指トラッキング精度はフレーム毎に厳密検証はしていない（機械モデルで判別しづらい）。気になれば
+  握り拳など明確なジェスチャーのフレームで `Preview Robot Only` を撮って確認する。実機での最終確認は別途。
 
 **実機（Quest）でさらに確認する点**: ローカル手の手首の向き（親追従のバインド軸ずれ）・手の大きさ（`RefHandLenMeters`）。
 

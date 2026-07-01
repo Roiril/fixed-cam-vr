@@ -25,9 +25,14 @@ namespace TableDuoVr.EditorTools
         private static readonly HandVariant[] Variants = { HandVariant.Default, HandVariant.Realistic, HandVariant.Robot };
 
         private static bool _applyMotion = true;
+        private static bool _robotOnly = false;
 
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Hand Variants (screenshot)", priority = 211)]
-        public static void CapturePosed() { _applyMotion = true; Capture(); }
+        public static void CapturePosed() { _applyMotion = true; _robotOnly = false; Capture(); }
+
+        // Robot だけを原点に置き、背景の手を排して寄りで周回撮影（見え方の切り分け用）
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Robot Only (screenshot)", priority = 213)]
+        public static void CaptureRobotOnly() { _applyMotion = true; _robotOnly = true; Capture(); }
 
         // 指を動かさず各モデルの authored rest（バインド）だけを見る診断。崩れが retarget 由来かモデル由来か切り分ける。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Hand Variants Rest (screenshot)", priority = 212)]
@@ -59,14 +64,15 @@ namespace TableDuoVr.EditorTools
             try
             {
                 root = new GameObject("HandVariantPreview");
-                float[] xs = { -0.30f, 0f, 0.30f };
-                for (int v = 0; v < Variants.Length; v++)
+                var vlist = _robotOnly ? new[] { HandVariant.Robot } : Variants;
+                float[] xs = _robotOnly ? new[] { 0f } : new[] { -0.30f, 0f, 0.30f };
+                for (int v = 0; v < vlist.Length; v++)
                 {
-                    var anchor = new GameObject($"{Variants[v]}").transform;
+                    var anchor = new GameObject($"{vlist[v]}").transform;
                     anchor.SetParent(root.transform, false);
                     anchor.localPosition = new Vector3(xs[v], 0f, 0f);
                     anchor.localRotation = frame.WristRotR; // 実機と同じ: 手首の向きを anchor に、bone は相対
-                    BuildHand(provider, anchor, Variants[v], frame, ovrBind);
+                    BuildHand(provider, anchor, vlist[v], frame, ovrBind);
                 }
 
                 foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -93,6 +99,16 @@ namespace TableDuoVr.EditorTools
                 Shot(cam, dir, "01_front.png", new Vector3(0.06f, 0.0f, -1.75f), aim);
                 Shot(cam, dir, "02_threequarter.png", new Vector3(-0.85f, 0.45f, -1.35f), aim);
                 Shot(cam, dir, "03_top.png", new Vector3(0.06f, 1.5f, -0.4f), aim);
+
+                // Robot を寄りで周回撮影（角度による見え方の誤解を排除・実際に崩れているか判定）
+                var rc = new Vector3(_robotOnly ? 0.06f : 0.36f, 0f, 0f); // Robot 手首＋前方の指の概略中心
+                const float r = 0.34f;
+                Shot(cam, dir, "robot_front.png", rc + new Vector3(0f, 0.02f, -r), rc);
+                Shot(cam, dir, "robot_back.png", rc + new Vector3(0f, 0.02f, r), rc);
+                Shot(cam, dir, "robot_left.png", rc + new Vector3(-r, 0.02f, 0f), rc);
+                Shot(cam, dir, "robot_right.png", rc + new Vector3(r, 0.02f, 0f), rc);
+                Shot(cam, dir, "robot_top.png", rc + new Vector3(0f, r, -0.04f), rc);
+                Shot(cam, dir, "robot_iso.png", rc + new Vector3(-0.24f, 0.24f, -0.24f), rc);
 
                 Debug.Log($"[TableDuo] 手バリアントプレビュー保存 → {dir}\n" +
                           "左=Default(白手) / 中=Realistic(人間) / 右=Robot。3種が同じ握り形なら指リターゲットOK。");
