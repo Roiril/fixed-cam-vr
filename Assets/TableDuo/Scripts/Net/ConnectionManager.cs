@@ -49,6 +49,9 @@ namespace TableDuoVr.Net
         [Tooltip("診断: 各席に静的アバターを先置き（描画/疎通/トラッキングの段階切り分け用）。接続で静的→ライブに差替。" +
                  "研究本番は OFF（相手不在時にアバターが居ると体験が変わる）。実機は tdv_preplace=on で有効化")]
         [SerializeField] private bool preplaceAvatars;
+        [Tooltip("手役の手メッシュの見た目（Editor 検証既定。実機は tdv_hand extras が優先）。" +
+                 "Default=Meta白手 / Realistic=人間の手 / Robot=機械の手。実機は左コントローラ Y でも巡回切替できる")]
+        [SerializeField] private HandVariant studyHandVariant = HandVariant.Default;
         [Tooltip("L0（HMD/XR 無しのデスクトップ検証）: OVRCameraRig を切り DebugCamera+FakeHandDriver を有効化。" +
                  "Standalone Windows ビルドを CLI で host/client/spectator 起動して実機ゼロ検証する用。tdv_l0=on で有効化")]
         [SerializeField] private bool enableL0InEditor;
@@ -88,6 +91,7 @@ namespace TableDuoVr.Net
             StudyConfig.ShowHeadMarker = showHeadMarker;
             StudyConfig.OneHandMode = oneHandMode;
             StudyConfig.PreplaceAvatars = preplaceAvatars;
+            StudyConfig.SelectedHandVariant = studyHandVariant;
             ApplyStudyFlags();
             ConfigureL0IfRequested();
             if (StudyConfig.LaunchedWithStudyFlags)
@@ -142,9 +146,23 @@ namespace TableDuoVr.Net
             if (preplace == "on") StudyConfig.PreplaceAvatars = true;
             else if (preplace == "off") StudyConfig.PreplaceAvatars = false;
 
+            // 手メッシュの見た目（default=Meta白手 / realistic=人間の手 / robot=機械の手）。
+            // 別名も受ける（male/human/skin→realistic、meta/simple→default）。指定で調査セッション扱い。
+            string? hand = GetLaunchValue("tdv_hand", "-tdvHand");
+            if (hand != null)
+            {
+                StudyConfig.SelectedHandVariant = hand switch
+                {
+                    "realistic" or "male" or "human" or "skin" => HandVariant.Realistic,
+                    "robot" => HandVariant.Robot,
+                    _ => HandVariant.Default,
+                };
+                StudyConfig.LaunchedWithStudyFlags = true;
+            }
+
             if (StudyConfig.LaunchedWithStudyFlags)
             {
-                Debug.Log($"[TableDuo] StudyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode} pid={StudyConfig.ParticipantId} pair={StudyConfig.PairId}");
+                Debug.Log($"[TableDuo] StudyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode} hand={StudyConfig.SelectedHandVariant} pid={StudyConfig.ParticipantId} pair={StudyConfig.PairId}");
             }
         }
 

@@ -40,6 +40,34 @@ namespace TableDuoVr.Hands
         /// 接続したら静的→ライブに差し替わる。研究本番は false（相手不在時にアバターが居ると体験が変わるため）。</summary>
         public static bool PreplaceAvatars;
 
+        /// <summary>手役アバターの手メッシュの見た目（Default=Meta白手 / Realistic=人間の手 / Robot=機械の手）。
+        /// ネット非同期＝ローカル表示選択。tdv_hand 起動フラグ / 左コントローラ実機トグルで切替。
+        /// 変更は <see cref="SetHandVariant"/> 経由にすること（描画側が <see cref="HandVariantChanged"/> で再構築する）。</summary>
+        public static HandVariant SelectedHandVariant;
+
+        /// <summary>手バリアントが切り替わった。ローカル手 / リモート手の描画側がメッシュを作り直すために購読する。</summary>
+        public static event System.Action? HandVariantChanged;
+
+        /// <summary>手バリアントを設定し、変わった時だけ購読者へ通知する（同値なら再構築しない）。</summary>
+        public static void SetHandVariant(HandVariant v)
+        {
+            if (v == SelectedHandVariant) return;
+            SelectedHandVariant = v;
+            HandVariantChanged?.Invoke();
+        }
+
+        /// <summary>Default→Realistic→Robot→Default と巡回（実機トグル用）。</summary>
+        public static void CycleHandVariant()
+        {
+            var next = SelectedHandVariant switch
+            {
+                HandVariant.Default => HandVariant.Realistic,
+                HandVariant.Realistic => HandVariant.Robot,
+                _ => HandVariant.Default,
+            };
+            SetHandVariant(next);
+        }
+
         // domain-reload を切った Play では static が前回 Play の条件を引き継ぐ。Editor で役割/条件を
         // 変えて再生したのに古い値で走る事故を防ぐため毎 Play 既定へ戻す（ConnectionManager.Awake が再設定）。
         [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -52,6 +80,8 @@ namespace TableDuoVr.Hands
             ParticipantId = "";
             PairId = "";
             PreplaceAvatars = false;
+            SelectedHandVariant = HandVariant.Default;
+            HandVariantChanged = null;
         }
     }
 }

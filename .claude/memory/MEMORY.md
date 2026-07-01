@@ -19,3 +19,4 @@
 - [parallel_projects_isolation.md](parallel_projects_isolation.md) - 廻リ視/TableDuo 同居の干渉防止（共有資源・ビルド逐次・コード分離・並列化可否）→ rules/parallel-projects.md
 - [quest_build_and_camera_ip.md](quest_build_and_camera_ip.md) - 実機体験2大ハマり：ビルドメニュー「即success=未実行/Timeout=実行中」＋ Phone*.asset host の DHCP ズレ(errno113=Web見えるがQuest黒)
 - [table_duo_l0_desktop_test.md](table_duo_l0_desktop_test.md) - TableDuo を実機ゼロ・MCP ゼロで検証（L0 Standalone build を CLI で host/client/観戦 3 プロセス起動・観戦 PNG 自動保存・batchmode の罠）
+- [table_duo_hand_variants.md](table_duo_hand_variants.md) - 手の見た目3バリアント（Default/Realistic=Male/Robot）切替：tdv_hand フラグ+左Yトグル、別リグへのバインド差分リターゲット、実機で指の曲がり軸/向き/大きさ要確認

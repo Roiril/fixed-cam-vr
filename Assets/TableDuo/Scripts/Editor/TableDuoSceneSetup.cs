@@ -27,6 +27,19 @@ namespace TableDuoVr.EditorTools
         private const string MaterialDir = "Assets/TableDuo/Materials";
         private const string ResourcesDir = "Assets/TableDuo/Resources";
 
+        // 手の見た目バリアント（VR Hands Starter Pack）。プレハブ = 別リグ命名の skinned 手（HandVariantTable 参照）。
+        private const string PackDir = "Assets/TableDuo/ThirdParty/VRHandsStarterPack";
+        private const string RealisticLeftPrefab = PackDir + "/Male Hand/Prefab/Low Left Male Hand.prefab";
+        private const string RealisticRightPrefab = PackDir + "/Male Hand/Prefab/Low Right Male Hand.prefab";
+        private const string RobotLeftPrefab = PackDir + "/Robot Hand/Prefabs/Black Left Robot Hand.prefab";
+        private const string RobotRightPrefab = PackDir + "/Robot Hand/Prefabs/Black Right Robot Hand.prefab";
+        private const string MaleAlbedo = PackDir + "/Male Hand/Texture/MaleHand_Albedo.png";
+        private const string MaleNormal = PackDir + "/Male Hand/Texture/MaleHand_Normal.png";
+        private const string MaleAo = PackDir + "/Male Hand/Texture/MaleHand_AO.png";
+        private const string RobotAlbedo = PackDir + "/Robot Hand/Textures/Black/RobotHand_Black001_Albedo.png";
+        private const string RobotNormal = PackDir + "/Robot Hand/Textures/Black/RobotHand_Black001_Normal.png";
+        private const string RobotMetallic = PackDir + "/Robot Hand/Textures/Black/RobotHand_Black001_Metallic.png";
+
         [MenuItem("Tools/FixedCamVr/Setup/Setup TableDuo Scene", priority = 60)]
         public static void Setup()
         {
@@ -208,9 +221,12 @@ namespace TableDuoVr.EditorTools
             fake.enabled = false; // L0 検証時に手動で ON
 
             systems.AddComponent<ConnectionManager>();
+            // 左コントローラ Y で手の見た目を巡回切替（お試し用。調査本番は tdv_hand フラグで固定）
+            systems.AddComponent<HandVariantWatcher>();
 
-            // リモートの手を Meta の白い手メッシュで描くための供給（ローカル手と同じ見た目）。
-            // OVRCustomHandPrefab（静的メッシュ + CustomBones）を同期 bone で駆動する（RemoteAvatarView）
+            // リモートの手を描くプレハブ/材質の供給（3 バリアント）。
+            // Default = Meta 白手（OVRCustomHandPrefab、同期 bone を直接駆動）。
+            // Realistic/Robot = 購入パックの別リグ手（バインド差分リターゲット、RemoteAvatarView/LocalVariantHand）。
             var meshProvider = systems.AddComponent<RemoteHandMeshProvider>();
             var mpSo = new SerializedObject(meshProvider);
             SetRef(mpSo, "leftHandPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(
@@ -218,6 +234,16 @@ namespace TableDuoVr.EditorTools
             SetRef(mpSo, "rightHandPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(
                 "Packages/com.meta.xr.sdk.core/Prefabs/OVRCustomHandPrefab_R.prefab"));
             SetRef(mpSo, "handMaterial", handMat); // ローカル手と同じ URP 白マテリアル
+            // Realistic（Male Hand・肌 URP/Lit）
+            SetRef(mpSo, "realisticLeftPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(RealisticLeftPrefab));
+            SetRef(mpSo, "realisticRightPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(RealisticRightPrefab));
+            SetRef(mpSo, "realisticMaterial", EnsureHandVariantMaterial(
+                $"{MaterialDir}/TableDuoRealisticHand.mat", MaleAlbedo, MaleNormal, MaleAo, metal: false));
+            // Robot（Robot Hand・金属 URP/Lit）
+            SetRef(mpSo, "robotLeftPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(RobotLeftPrefab));
+            SetRef(mpSo, "robotRightPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(RobotRightPrefab));
+            SetRef(mpSo, "robotMaterial", EnsureHandVariantMaterial(
+                $"{MaterialDir}/TableDuoRobotHand.mat", RobotAlbedo, RobotNormal, RobotMetallic, metal: true));
             mpSo.ApplyModifiedPropertiesWithoutUndo();
 
             // 調査ロガー（ホストのみ稼働）+ フェーズマーク受付 + リプレイ全記録
@@ -533,6 +559,59 @@ namespace TableDuoVr.EditorTools
             return mat;
         }
 
+        /// <summary>
+        /// パック手用の URP/Lit マテリアルを生成（無ければ）してテクスチャを割り当てる。パック同梱の
+        /// Standard マテリアルは URP でマゼンタ化するため、これで全 Renderer を上書きする（BuildExternalHand）。
+        /// metal=true は金属（metallic map + metallic=1）、false は肌（AO map + 非金属）。
+        /// normal テクスチャは NormalMap タイプに強制インポートしてから割り当てる。
+        /// </summary>
+        private static Material EnsureHandVariantMaterial(string path, string albedoPath, string normalPath,
+            string extraPath, bool metal)
+        {
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                var shader = Shader.Find("Universal Render Pipeline/Lit");
+                mat = new Material(shader!);
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            mat.color = Color.white;
+            mat.SetColor("_BaseColor", Color.white);
+
+            var albedo = AssetDatabase.LoadAssetAtPath<Texture>(albedoPath);
+            if (albedo != null) mat.SetTexture("_BaseMap", albedo);
+
+            EnsureNormalMapImport(normalPath);
+            var normal = AssetDatabase.LoadAssetAtPath<Texture>(normalPath);
+            if (normal != null) { mat.SetTexture("_BumpMap", normal); mat.EnableKeyword("_NORMALMAP"); }
+
+            var extra = AssetDatabase.LoadAssetAtPath<Texture>(extraPath);
+            if (metal)
+            {
+                if (extra != null) { mat.SetTexture("_MetallicGlossMap", extra); mat.EnableKeyword("_METALLICSPECGLOSSMAP"); }
+                mat.SetFloat("_Metallic", 1f);
+                mat.SetFloat("_Smoothness", 0.5f);
+            }
+            else
+            {
+                if (extra != null) { mat.SetTexture("_OcclusionMap", extra); mat.EnableKeyword("_OCCLUSIONMAP"); }
+                mat.SetFloat("_Metallic", 0f);
+                mat.SetFloat("_Smoothness", 0.3f);
+            }
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        /// <summary>normal テクスチャの ImporterType が NormalMap でなければ設定して再インポートする。</summary>
+        private static void EnsureNormalMapImport(string texturePath)
+        {
+            var importer = AssetImporter.GetAtPath(texturePath) as TextureImporter;
+            if (importer == null || importer.textureType == TextureImporterType.NormalMap) return;
+            importer.textureType = TextureImporterType.NormalMap;
+            importer.SaveAndReimport();
+        }
+
         private static void CreateProp(Transform parent, string name, Vector3 pos, Material mat)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -638,6 +717,14 @@ namespace TableDuoVr.EditorTools
             {
                 smr.sharedMaterial = urpHandMat;
             }
+
+            // 自分のローカル手をバリアント（Realistic/Robot）で表示する駆動。Default 時は白手のまま。
+            var localVariant = go.AddComponent<LocalVariantHand>();
+            var lvSo = new SerializedObject(localVariant);
+            SetRef(lvSo, "skeleton", skeleton);
+            lvSo.FindProperty("isRight").boolValue = !isLeft;
+            SetRef(lvSo, "metaMesh", smr);
+            lvSo.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static GameObject CreatePlayerPrefab()

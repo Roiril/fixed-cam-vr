@@ -110,6 +110,20 @@ namespace TableDuoVr.Net
                     _right = new HandView(transform, "HandR", isRight: true);
                 }
             }
+
+            // 手の見た目切替（実機トグル/フラグ）で手メッシュを作り直す。Remy（IK フル手）は対象外。
+            StudyConfig.HandVariantChanged += OnHandVariantChanged;
+        }
+
+        private void OnHandVariantChanged()
+        {
+            _left?.MarkVariantDirty();
+            _right?.MarkVariantDirty();
+        }
+
+        private void OnDestroy()
+        {
+            StudyConfig.HandVariantChanged -= OnHandVariantChanged;
         }
 
         /// <summary>簡易人型の上半身（頭＝顔＋目 / 首 / 肩 / テーパー胴 / 肩→手首の袖）。フルアバター用。</summary>
@@ -262,6 +276,10 @@ namespace TableDuoVr.Net
             // メッシュ手: bone Transform を BoneId 順（名前マッピング）に並べ、同期 bone で回す。
             // 要素は見つからなかった bone が null になりうる（適用時に null チェック）
             private Transform?[]? _meshBones;
+            private GameObject? _meshInstance;
+            // 外部リグ（Realistic/Robot）のメッシュ側バインドローカル回転（BoneId 順）。
+            // non-null ならバインド差分リターゲットで駆動、null なら Meta 直接代入。
+            private Quaternion[]? _varBind;
             // カプセル手（フォールバック）
             private Transform[]? _bones;
 
@@ -320,15 +338,32 @@ namespace TableDuoVr.Net
 
                 if (_meshBones != null)
                 {
-                    // bone[0]=wrist の localRotation は「手アンカー(_root=wristRot)からの相対」で、
-                    // 送信元 OVRSkeleton の Bones[0].localRotation と同じ合成（anchor × wrist.local）になる
-                    // ＝二重回転ではない（設計上一致）。※実機で手首の捻れが無いか最終確認すること。
                     int n = Mathf.Min(boneRots.Length, _meshBones.Length);
-                    for (int i = 0; i < n; i++)
+                    if (_varBind == null)
                     {
-                        if (_meshBones[i] != null)
+                        // Meta 白手: bind が OVR と同一なので同期 bone を直接代入。
+                        // bone[0]=wrist の localRotation は「手アンカー(_root=wristRot)からの相対」で、
+                        // 送信元 OVRSkeleton の Bones[0].localRotation と同じ合成（anchor × wrist.local）になる＝二重回転ではない。
+                        for (int i = 0; i < n; i++)
                         {
-                            _meshBones[i].localRotation = Quaternion.Slerp(_meshBones[i].localRotation, boneRots[i], smooth);
+                            if (_meshBones[i] != null)
+                            {
+                                _meshBones[i]!.localRotation = Quaternion.Slerp(_meshBones[i]!.localRotation, boneRots[i], smooth);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 外部リグ（Realistic/Robot）: バインドが違うのでバインド差分リターゲット。
+                        // ovrBind は受信側の手 bind（layout）。OVR 手の bind ローカル回転は正規化された正準値なので、
+                        // 送信元と受信側で一致する（Meta 直接代入経路が成立しているのと同じ前提）。
+                        for (int i = 0; i < n; i++)
+                        {
+                            if (_meshBones[i] == null) continue;
+                            var ovrBind = (layout != null && i < layout.BoneCount)
+                                ? layout.BindLocalRot[i] : Quaternion.identity;
+                            var target = HandRetarget.Solve(boneRots[i], ovrBind, _varBind[i]);
+                            _meshBones[i]!.localRotation = Quaternion.Slerp(_meshBones[i]!.localRotation, target, smooth);
                         }
                     }
                     return;
@@ -367,8 +402,23 @@ namespace TableDuoVr.Net
             private bool TryBuildMeshHand()
             {
                 var provider = RemoteHandMeshProvider.Instance;
-                var prefab = provider != null ? provider.GetPrefab(_isRight) : null;
-                if (provider == null || prefab == null) return false;
+                if (provider == null) return false;
+                var variant = StudyConfig.SelectedHandVariant;
+
+                if (HandVariantTable.IsExternalRig(variant))
+                {
+                    // Realistic/Robot: パック手を生成（配置・スケール・材質は provider が処理）→ リターゲット駆動
+                    var built = provider.BuildExternalHand(_root, _isRight, variant);
+                    if (built == null) return false;
+                    _meshInstance = built.Instance;
+                    _meshBones = built.Bones;
+                    _varBind = built.VarBind;
+                    return true;
+                }
+
+                // Default: Meta 白手（OVRCustomHandPrefab）を同期 bone で直接駆動
+                var prefab = provider.GetPrefab(_isRight, HandVariant.Default);
+                if (prefab == null) return false;
 
                 var inst = Object.Instantiate(prefab, _root, worldPositionStays: false);
                 inst.transform.localPosition = Vector3.zero;
@@ -376,11 +426,13 @@ namespace TableDuoVr.Net
                 inst.SetActive(true);
 
                 // CustomBones に頼らず Meta の FBX 命名規則で bone Transform を実体検索（index = BoneId = 同期 boneRots）
-                var mapped = RemoteHandMeshProvider.MapHandBonesByName(inst.transform, _isRight);
+                var mapped = RemoteHandMeshProvider.MapHandBonesByName(inst.transform, _isRight, HandVariant.Default);
                 bool anyMapped = false;
                 foreach (var b in mapped) { if (b != null) { anyMapped = true; break; } }
                 if (!anyMapped) { Object.Destroy(inst); return false; } // 名前不一致（SDK 改名等）→ カプセルへ
+                _meshInstance = inst;
                 _meshBones = mapped;
+                _varBind = null; // Meta は bind 一致 → 直接代入
 
                 // live トラッキング駆動を剥がす（このリモート手を相手のローカル手で上書きさせない）
                 foreach (var s in inst.GetComponents<OVRSkeleton>()) Object.Destroy(s); // OVRCustomSkeleton 含む
@@ -396,6 +448,22 @@ namespace TableDuoVr.Net
                     if (provider.HandMaterial != null) smr.sharedMaterial = provider.HandMaterial;
                 }
                 return true;
+            }
+
+            /// <summary>手バリアント切替時に呼ぶ。現在の手メッシュ/カプセルを破棄し、次の Tick で作り直す。</summary>
+            public void MarkVariantDirty()
+            {
+                if (_meshInstance != null) { Object.Destroy(_meshInstance); _meshInstance = null; }
+                if (_bones != null)
+                {
+                    foreach (var b in _bones) { if (b != null) Object.Destroy(b.gameObject); }
+                    _bones = null;
+                }
+                _meshBones = null;
+                _varBind = null;
+                _built = false;
+                _meshTried = false;
+                if (_wristProxy != null) _wristProxy.gameObject.SetActive(true);
             }
 
             private void BuildBones(HandSkeletonLayout layout)
