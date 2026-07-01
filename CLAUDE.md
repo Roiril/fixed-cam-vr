@@ -139,6 +139,7 @@ fixed-cam-vr 本体とは別に、**テーブルを囲む2人マルチプレイ 
 - [doc-sync.md](.claude/rules/doc-sync.md) — **機能変更時にドキュメントも同時更新する癖**（更新先対応表・発動条件）
 - [parallel-projects.md](.claude/rules/parallel-projects.md) — **同居 2 アプリ（廻リ視 / TableDuo）の干渉防止**（共有資源・ビルド逐次・並列化可否・コード分離）
 - [troubleshooting.md](.claude/rules/troubleshooting.md) — 「動かない」時に層を切り分ける診断フロー（配信/ネット/Unity/Meta XR/ビルド の責任マップ）
+- [visual-verification.md](.claude/rules/visual-verification.md) — **3D/レンダリング結果を「壊れてる」と判断する前・特に大改修の前に多角度/単体隔離で確認**（誤判定で working を退行させない・2026-07-01 実害の恒久化）
 
 ### その他
 
