@@ -77,6 +77,21 @@ namespace TableDuoVr.Net
         /// （破棄フレームが記録に残らず「凍結 vs 欠落」を判別できなくなるのを防ぐ）。</summary>
         public int DroppedPoseMessages { get; private set; }
 
+        /// <summary>Seq 逆行（Unreliable の後着）で棄却した pose の累計。SessionLogger が刻む。</summary>
+        public int RejectedStalePoses { get; private set; }
+
+        // 受信 pose を一旦ここへデコードし、Seq が単調増加のときだけ本バッファへ反映する
+        // （後着の古いパケットで pose が 1 フレーム巻き戻り、CSV/リプレイ/Grabbable を汚すのを防ぐ）
+        private readonly AvatarPose _rxScratch = new();
+        private readonly Dictionary<ulong, uint> _lastAcceptedSeq = new();
+
+        // client 切断時の自動再接続（Wi-Fi 瞬断で HMD 内から復帰不能になるのを防ぐ。
+        // 調査モードは GUI 非表示なので、これが無いと復帰手段が adb 再起動しかない）
+        private string? _lastClientAddress;
+        private bool _wasClient;
+        private float _reconnectAt = -1f;
+        private float _reconnectDelay = 2f;
+
         private void Awake()
         {
             // additive ロード / シーン再ロードの重複で pose ルーティングが誤インスタンスを指すのを防ぐ
@@ -165,10 +180,38 @@ namespace TableDuoVr.Net
             if (Instance == this) Instance = null;
         }
 
+        // 自動再接続の駆動（client 切断後のみ稼働。接続確立 or host 化で自動停止）
+        private void Update()
+        {
+            if (_reconnectAt < 0f || _lastClientAddress == null) return;
+            var nm = NetworkManager.Singleton;
+            if (nm == null) return;
+            if (nm.IsConnectedClient || nm.IsServer)
+            {
+                _reconnectAt = -1f; // 復帰完了
+                return;
+            }
+            if (Time.time < _reconnectAt) return;
+
+            if (nm.IsListening)
+            {
+                // 前回試行が pending のまま（connect timeout 待ち）→ 一度掃除してから再試行
+                nm.Shutdown();
+                _reconnectAt = Time.time + 0.5f;
+                return;
+            }
+            Debug.Log($"[TableDuo] 自動再接続 → {_lastClientAddress}:{port}");
+            StartClient(_lastClientAddress);
+            _reconnectDelay = Mathf.Min(_reconnectDelay * 2f, 10f);
+            _reconnectAt = Time.time + _reconnectDelay;
+        }
+
         public void StartHost()
         {
             var nm = NetworkManager.Singleton;
             if (nm == null || nm.IsListening) return;
+            _wasClient = false;
+            _reconnectAt = -1f;
             GetTransport(nm).SetConnectionData("0.0.0.0", port, "0.0.0.0");
             if (nm.StartHost())
             {
@@ -186,6 +229,8 @@ namespace TableDuoVr.Net
         {
             var nm = NetworkManager.Singleton;
             if (nm == null || nm.IsListening) return;
+            _wasClient = true;
+            _lastClientAddress = address;
             GetTransport(nm).SetConnectionData(address, port);
             if (nm.StartClient())
             {
@@ -235,6 +280,7 @@ namespace TableDuoVr.Net
             // named message handler は session 終了で NGO 側が破棄するので毎 start 登録でよい
             _remotePoses.Clear();
             _remoteLayouts.Clear();
+            _lastAcceptedSeq.Clear();
             _hasLocalPose = false;
             nm.CustomMessagingManager.RegisterNamedMessageHandler(PoseMsg, OnPoseMessage);
             nm.CustomMessagingManager.RegisterNamedMessageHandler(LayoutMsg, OnLayoutMessage);
@@ -265,6 +311,7 @@ namespace TableDuoVr.Net
         {
             _remotePoses.Remove(clientId);
             _remoteLayouts.Remove(clientId);
+            _lastAcceptedSeq.Remove(clientId);
             var nm = NetworkManager.Singleton;
             if (nm == null) return;
             if (!nm.IsServer)
@@ -273,6 +320,14 @@ namespace TableDuoVr.Net
                     ? "(理由なし＝transport/timeout か config 不一致)" : nm.DisconnectReason;
                 Debug.LogWarning($"[TableDuo] サーバから切断された: {reason}");
                 _status = $"切断: {reason}";
+                // Wi-Fi 瞬断・host 一時フリーズからの自動復帰（指数バックオフで再接続。
+                // host が listen し続けていれば player 再スポーン + layout 再送で状態は復元される）
+                if (_wasClient && _lastClientAddress != null && _reconnectAt < 0f)
+                {
+                    _reconnectDelay = 2f;
+                    _reconnectAt = Time.time + _reconnectDelay;
+                    Debug.Log($"[TableDuo] {_reconnectDelay:F0}s 後に自動再接続を試行");
+                }
             }
             else
             {
@@ -288,8 +343,18 @@ namespace TableDuoVr.Net
             try
             {
                 reader.ReadValueSafe(out ulong originId);
+                PoseCodec.Read(ref reader, _rxScratch);
+                // Unreliable は順序保証なし。Seq 非増加（後着・重複）は棄却する。
+                // wraparound は符号付き差分で判定（uint 一周しても正しく比較できる）
+                if (_lastAcceptedSeq.TryGetValue(originId, out uint last)
+                    && (int)(_rxScratch.Seq - last) <= 0)
+                {
+                    RejectedStalePoses++;
+                    return;
+                }
+                _lastAcceptedSeq[originId] = _rxScratch.Seq;
                 var pose = GetPoseBuffer(originId);
-                PoseCodec.Read(ref reader, pose);
+                pose.CopyFrom(_rxScratch);
                 RemotePoseReceived?.Invoke(originId, pose);
 
                 // server はオリジン以外のクライアントへリレー（3人目の観戦者などにも将来対応）

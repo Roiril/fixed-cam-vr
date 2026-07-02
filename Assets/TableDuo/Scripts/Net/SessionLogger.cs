@@ -38,6 +38,8 @@ namespace TableDuoVr.Net
         // ConnectionManager はシーンロード順で Instance 確定が遅れうるため、Update で遅延購読する
         private ConnectionManager? _subscribedCm;
         private int _lastDroppedPoses;
+        private int _lastStalePoses;
+        private float _nextFlush;
 
         public string? FilePath { get; private set; }
 
@@ -58,12 +60,26 @@ namespace TableDuoVr.Net
         {
             Grabbable.GrabLogged += OnGrabLogged;
             TableDuoPlayer.RecenterReported += OnRecenterReported;
+            TableDuoPlayer.ClockOffsetReported += OnClockOffsetReported;
+            StudyConfig.HandVariantChanged += OnHandVariantChanged;
         }
+
+        // client 壁時計のオフセット（serverUtc - clientUtc、RTT/2 補正済み）。
+        // 解析時は pose 行の captureMs にこの値を足すと host 時計に整列する
+        private void OnClockOffsetReported(ulong clientId, long offsetMs) =>
+            LogEvent("clockOffset", $"client{clientId}:offsetMs={offsetMs}");
+
+        // 手バリアントは調査条件（tdv_hand 固定・セッション中トグル禁止）。万一切り替わったら
+        // 条件汚染として解析で除外できるよう必ず刻む（この端末=host 表示の見た目）
+        private void OnHandVariantChanged() =>
+            LogEvent("handVariantChanged", $"host:{StudyConfig.SelectedHandVariant}");
 
         private void OnDisable()
         {
             Grabbable.GrabLogged -= OnGrabLogged;
             TableDuoPlayer.RecenterReported -= OnRecenterReported;
+            TableDuoPlayer.ClockOffsetReported -= OnClockOffsetReported;
+            StudyConfig.HandVariantChanged -= OnHandVariantChanged;
             if (_subscribedCm != null)
             {
                 _subscribedCm.HandLayoutReceived -= OnHandLayoutReceived;
@@ -114,6 +130,19 @@ namespace TableDuoVr.Net
             {
                 LogEvent("posesDropped", $"total={cm.DroppedPoseMessages}");
                 _lastDroppedPoses = cm.DroppedPoseMessages;
+            }
+            // Seq 逆行（後着 Unreliable）の棄却累計も刻む
+            if (cm.RejectedStalePoses != _lastStalePoses)
+            {
+                LogEvent("posesStale", $"total={cm.RejectedStalePoses}");
+                _lastStalePoses = cm.RejectedStalePoses;
+            }
+            // 定期 flush: クラッシュ・電池切れ・ANR kill で StreamWriter バッファ分
+            //（数 KB＝直近数秒〜数十秒）を失わないようにする（欠測はセッション末尾に集中しがち）
+            if (Time.time >= _nextFlush)
+            {
+                _nextFlush = Time.time + 2f;
+                _writer?.Flush();
             }
 
             foreach (var player in _players)
@@ -208,7 +237,8 @@ namespace TableDuoVr.Net
             var stream = new FileStream(FilePath, FileMode.Create, FileAccess.Write, FileShare.Read);
             _writer = new StreamWriter(stream);
             _writer.WriteLine("# type,epochMs,... study-design.md §4 / pose: clientId,role,headP3,headQ4,wristRP3,wristRQ4,trackedR,pinchR,seq,captureMs,7landmarks(wrist,palm,thumb,index,middle,ring,pinky)x3 / card: cardId,holder(-1=未保持),pos3,normal3 / event: condition,recenter,grab,release,trackingLost/Regained,<mark>");
-            _writer.WriteLine($"# studyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode} participantId={StudyConfig.ParticipantId} pairId={StudyConfig.PairId}");
+            // hand=手バリアント条件（この host 端末の表示。フル役=host 前提で「人役が見る手の見た目」＝操作因子）
+            _writer.WriteLine($"# studyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode} hand={StudyConfig.SelectedHandVariant} participantId={StudyConfig.ParticipantId} pairId={StudyConfig.PairId}");
             _writer.Flush();
             Debug.Log($"[TableDuo] SessionLogger 開始 → {FilePath}");
         }

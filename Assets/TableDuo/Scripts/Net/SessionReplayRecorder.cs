@@ -26,6 +26,7 @@ namespace TableDuoVr.Net
         private float _nextPose;
         private float _nextProp;
         private float _nextRefresh;
+        private float _nextFlush;
         private bool _layoutsWritten;
 
         private TableDuoPlayer[] _players = Array.Empty<TableDuoPlayer>();
@@ -80,6 +81,12 @@ namespace TableDuoVr.Net
             {
                 _nextProp = Time.time + 1f / propRate;
                 WriteChangedProps(epoch);
+            }
+            // 定期 flush: プロセス kill で直近バッファ分のリプレイを失わない（SessionLogger と同方針）
+            if (Time.time >= _nextFlush)
+            {
+                _nextFlush = Time.time + 2f;
+                _writer.Flush();
             }
         }
 

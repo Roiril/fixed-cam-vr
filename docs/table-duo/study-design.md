@@ -50,6 +50,22 @@
 | 配置課題に「向き」追加 | 協調課題の難化（位置のみ→位置+向き） |
 | 両手モード | 帯域比較（後日。基本セッションでは使わない） |
 
+### 手の見た目バリアント（操作因子・**決定 2026-07-02**）
+
+手役アバターの見た目 3 水準を**正式な調査条件（操作因子）**とする（実装 → [hand-appearance-variants.md](hand-appearance-variants.md)）：
+
+| 水準 | 見た目 | 起動フラグ |
+|---|---|---|
+| Default | Meta 白手 | `-e tdv_hand default` |
+| Realistic | 人間の手（Male Hand） | `-e tdv_hand realistic` |
+| Robot | 機械の手 | `-e tdv_hand robot` |
+
+- **within-pair 因子**: 同じペアが 3 ブロック（各ブロック = 1 バリアント固定）を体験する。ブロック間で `tdv_hand` 起動フラグを変えて再起動（役割交代と同じ運用。`tools/tableduo-role-swap.ps1` の起動に `-e tdv_hand <variant>` を足す）
+- **順序はペア間でカウンターバランス**: 3 条件 = 6 順列。ペア数が 6 の倍数でなければラテン方格 3 順序で回す
+- **セッション中の切替は禁止**: 左 Y トグルは調査フラグ起動時に無効化済み（HandVariantWatcher）。万一切り替わったら CSV の `handVariantChanged` イベントで検出し、当該ブロックを除外する（除外基準）
+- **記録**: CSV ヘッダ `# studyConfig: ... hand=<variant>` に条件が刻まれる（host=フル役端末の表示＝人役が見る手の見た目が操作対象）
+- **RQ への接続**: 手の見た目（人間らしさ/機械らしさ）が、話しかけ方・指差し理解・社会的距離にどう影響するか — 既存 RQ1–RQ4 に「条件比較」の軸を足す
+
 ### 役割と起動
 
 - 役割は host/client と独立に `tdv_role full|hand` で起動時指定（adb extras）
@@ -59,6 +75,7 @@
 ## 3. セッション構成（概要・詳細は protocol）
 
 40分/ペア目安。順序: 自由対面 → 物見せ課題 → 質問ゲーム → 協調配置 → **役割交代** → 短縮再実施 → 事後インタビュー。
+これを **手バリアント 3 ブロック**（各ブロック = 1 バリアント固定、§2 参照）で回す。ブロック間は `tdv_hand` を変えて両機再起動＋休憩。ブロック順序はペア間でカウンターバランス。
 卓上タスクは **Deep Sea Adventure（海底探検）ボードゲーム一式**（GLB モデル・静置ボード/チップ＋掴める駒 ×2・サイコロ）。旧仕様の絵カード＋食べ物プロップは廃止（2026-06-30）— RQ2 の「カード」照準は掴んだ駒等の pose 記録で代替する。
 開始時に**同期クラップ**（音+映像+モーションスパイク）で全記録ストリームの時刻を揃える。
 
@@ -81,7 +98,7 @@
 
 ### 既存の録画（併用）
 
-- ホスト集約のリプレイ録画（バイナリ・全 bone・`SessionReplayRecorder`）が回る。ただし **bone 回転は half(float16) 量子化**かつ**ホストが受信した手役 pose**（＝ネット遅延ぶん遅れ・受信側 lossy）。「各端末ローカルの lossless 全 bone 録画＝完全忠実度バックアップ」は **未配線**（将来課題）。現状の忠実度はこのホスト集約録画が上限。
+- ホスト集約のリプレイ録画（バイナリ・全 bone・`SessionReplayRecorder`）が回る。ただし **bone 回転は half(float16) 量子化**かつ**ホストが受信した手役 pose**（＝ネット遅延ぶん遅れ・受信側 lossy）。「各端末ローカルの lossless 全 bone 録画＝完全忠実度バックアップ」は **`StreamingPoseRecorder` で配線済み**（2026-07-02。実装ノート参照）— 忠実度が要る解析はローカル記録（`tdv_local_*.bin`）を正とする。
 
 ### 実装ノート（2026-06-29 監査反映・データ解析者向け）
 
@@ -89,7 +106,9 @@
 - **手役の pose 記録はネット遅延ぶん遅れる**: ホストは受信バッファの最新値を 30Hz サンプルする。各行に `seq`（送信連番）と `captureMs`（送信端末壁時計）が付くので、**重複 seq＝パケット欠落中の重複サンプル**として除外し、人=声/手=ジェスチャーの同時性（RQ4）は `captureMs` 基準で後処理整列すること（端末間クロック差は clap mark で補正）。
 - **参加者ID / ペアID をログに刻める**: 起動フラグ `tdv_pid` / `tdv_pair` を渡すと CSV ヘッダとファイル名（`tdv_session_..._pairXX_pidYY.csv`）に入り、紙記録との機械的突合・取り違え防止になる。
 - **client ローカル lossless 手 pose ログは実装済み**（`StreamingPoseRecorder`・TDV 録画形式・persistentDataPath に `tdv_local_*.bin`）: 「lossless 全 bone 録画未配線」の解消。tdv_* フラグ起動時のみ自動稼働し、half 量子化・ネット遅延のない 60Hz ローカル記録を各端末に残す（pause ごとに確定保存・adb pull で回収・FakeHandDriver で再生可）。
-- **SessionLogger CSV に `layoutReceived` イベント行を実装済み**: 解析時に「最初の layout 受信以降を使う」判断を CSV 単体で機械的にできる。壊れた pose パケットの破棄は `posesDropped` イベント行（累計）で刻まれる。
+- **SessionLogger CSV に `layoutReceived` イベント行を実装済み**: 解析時に「最初の layout 受信以降を使う」判断を CSV 単体で機械的にできる。壊れた pose パケットの破棄は `posesDropped`、Seq 逆行（後着 Unreliable）の棄却は `posesStale` イベント行（いずれも累計）で刻まれる。受信段で Seq 非単調は棄却済みなので **CSV の pose 行に巻き戻りは混入しない**。
+- **CSV の pose 行は受信（60Hz）の約 1/2 サンプル**（SessionLogger は 30Hz ポーリング）: seq が 2 飛びでも即「欠落」ではない。全量が要る解析は各端末の lossless ローカル記録（`tdv_local_*.bin`・60Hz）を使うこと。
+- **`clockOffset` イベント行（2026-07-02 追加）**: client 接続時に ping-pong 1 往復で壁時計オフセット（serverUtc − clientUtc、RTT/2 補正済み・LAN 誤差 <10ms）を推定し CSV に刻む。**pose 行の `captureMs` にこの offset を足すと host 時計に整列**する。E2E 遅延を報告値にする場合は必ずこれで補正する（NTP ズレは ±数十〜数百 ms あり得る）。clap mark は引き続き音声・映像との整列に使う。
 
 ### 手動・外部記録
 

@@ -10,7 +10,7 @@ namespace TableDuoVr.Net
     /// - 役割（Full=フルアバター / Hand=手だけ）は StudyConfig.ForcedRole（tdv_role 起動フラグ）優先、
     ///   未指定なら従来規則（ホスト=Full / クライアント=Hand）。役割は NetworkVariable で全員に共有
     /// - 席は役割で決まる（Full=席0 / Hand=席1）
-    /// - owner: ローカルリグを席にアラインし、IHandPoseSource の pose を 30Hz 送信。
+    /// - owner: ローカルリグを席にアラインし、IHandPoseSource の pose を 60Hz 送信（sendRate）。
     ///   Hand 役 + 片手モードなら左手を抑制（送信もローカル描画も）
     /// - リモート: 役割が判明した時点で席アンカー下に RemoteAvatarView を生成
     /// 自分の手はローカルトラッキング描画のまま（ネット往復させない — 要件 §4）。
@@ -38,6 +38,11 @@ namespace TableDuoVr.Net
 
         /// <summary>owner の OS recenter をサーバへ報告した（study-validity: 座標系不連続のマーク用）。</summary>
         public static event System.Action<ulong>? RecenterReported;
+
+        /// <summary>client の壁時計オフセット推定を受信した（clientId, offsetMs）。SessionLogger が刻む。
+        /// offsetMs = serverUtc - clientUtc（RTT/2 補正済み）。CSV の captureMs を host 時計へ整列する材料
+        /// — NTP ズレ（±数十〜数百 ms）をそのまま E2E 遅延と誤読しないため（study-validity）。</summary>
+        public static event System.Action<ulong, long>? ClockOffsetReported;
 
         private RemoteAvatarView? _view;
         private PinchGrabInteractor? _interactor;
@@ -77,6 +82,11 @@ namespace TableDuoVr.Net
                 _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
                     | (StudyConfig.OneHandMode ? 2 : 0));
                 SetupOwner(role);
+                // client の壁時計オフセットを host CSV に刻む（captureMs 整列用）。host 自身は offset=0 で不要
+                if (!IsServer)
+                {
+                    PingClockServerRpc(System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                }
             }
             else if (_role.Value != RoleUnset)
             {
@@ -266,6 +276,32 @@ namespace TableDuoVr.Net
 
         [ServerRpc]
         private void ReportRecenterServerRpc() => RecenterReported?.Invoke(OwnerClientId);
+
+        // --- 壁時計オフセット推定（ping-pong 1 往復・スポーン時に 1 回）---
+        // client: t0 送信 → server: (t0, serverT1) を返す → client: offset = serverT1 - (t0+t3)/2 を報告。
+        // LAN の RTT/2（<10ms）が誤差上限で、NTP 依存（±数十〜数百 ms）より1桁以上良い。
+
+        [ServerRpc]
+        private void PingClockServerRpc(long clientT0)
+        {
+            PongClockClientRpc(clientT0, System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        }
+
+        [ClientRpc]
+        private void PongClockClientRpc(long clientT0, long serverT1)
+        {
+            if (!IsOwner) return; // 自分の ping への応答だけ処理
+            long t3 = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            long offset = serverT1 - (clientT0 + t3) / 2;
+            ReportClockOffsetServerRpc(offset);
+        }
+
+        [ServerRpc]
+        private void ReportClockOffsetServerRpc(long offsetMs)
+        {
+            Debug.Log($"[TableDuo] clockOffset client{OwnerClientId} = {offsetMs}ms（serverUtc - clientUtc）");
+            ClockOffsetReported?.Invoke(OwnerClientId, offsetMs);
+        }
 
         private void OnRemotePose(ulong originClientId, AvatarPose pose)
         {

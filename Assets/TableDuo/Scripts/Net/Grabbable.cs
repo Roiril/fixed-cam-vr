@@ -30,6 +30,11 @@ namespace TableDuoVr.Net
         private Quaternion _grabOffsetRot = Quaternion.identity;
         private Transform? _grabSeat;
 
+        // 保持者の手がトラッキングロストのまま放置されると解放されず空中静止する。
+        // この秒数連続で pose が取れなければサーバが自動解放する
+        private const float UntrackedReleaseSeconds = 3f;
+        private float _untrackedSince = -1f;
+
         public bool IsHeld => _holder.Value != NoHolder;
         public ulong HolderClientId => _holder.Value;
 
@@ -48,6 +53,7 @@ namespace TableDuoVr.Net
             _holder.Value = sender;
             _holderHand.Value = hand;
             _grabSeat = seat;
+            _untrackedSince = -1f;
             var inv = Quaternion.Inverse(handRot);
             _grabOffsetPos = inv * (transform.position - handPos);
             _grabOffsetRot = inv * transform.rotation;
@@ -83,9 +89,26 @@ namespace TableDuoVr.Net
 
             if (TryGetHandWorldPose(_holder.Value, _holderHand.Value, _grabSeat, out var handPos, out var handRot))
             {
+                _untrackedSince = -1f;
                 transform.SetPositionAndRotation(
                     handPos + handRot * _grabOffsetPos,
                     handRot * _grabOffsetRot);
+            }
+            else
+            {
+                // トラッキングロスト継続で自動解放（保持者は掴んだつもりでも手が消えている状態。
+                // 短時間の瞬断では解放しない — その間オブジェクトは最終位置で静止）
+                if (_untrackedSince < 0f) _untrackedSince = Time.time;
+                else if (Time.time - _untrackedSince >= UntrackedReleaseSeconds)
+                {
+                    ulong holder = _holder.Value;
+                    _holder.Value = NoHolder;
+                    _holderHand.Value = 0;
+                    _grabSeat = null;
+                    _untrackedSince = -1f;
+                    Debug.Log($"[TableDuo] Release {name}（トラッキングロスト {UntrackedReleaseSeconds:F0}s 継続で自動解放）");
+                    GrabLogged?.Invoke(name, holder, false);
+                }
             }
         }
 
