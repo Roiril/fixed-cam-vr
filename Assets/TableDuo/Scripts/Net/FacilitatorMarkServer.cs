@@ -33,6 +33,11 @@ namespace TableDuoVr.Net
             {
                 if (logger == null) logger = FindObjectOfType<SessionLogger>();
                 logger?.LogEvent("mark", label);
+                // 特別ラベル: 盤面リセット（ラウンド/ブロック跨ぎで卓上を初期配置へ）。mark 行も残る
+                if (label == "reset_board")
+                {
+                    FindObjectOfType<BoardReset>()?.ResetBoard();
+                }
             }
         }
 

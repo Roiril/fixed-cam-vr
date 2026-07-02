@@ -62,7 +62,12 @@ namespace TableDuoVr.Net
             TableDuoPlayer.RecenterReported += OnRecenterReported;
             TableDuoPlayer.ClockOffsetReported += OnClockOffsetReported;
             StudyConfig.HandVariantChanged += OnHandVariantChanged;
+            DiceRoller.DiceRolled += OnDiceRolled;
         }
+
+        // サイコロの出目（確定表示方式）。ゲーム進行＝ラウンド構造の事後復元に使う
+        private void OnDiceRolled(string dieName, ulong clientId, int value) =>
+            LogEvent("dice", $"{dieName}:client{clientId}:value={value}");
 
         // client 壁時計のオフセット（serverUtc - clientUtc、RTT/2 補正済み）。
         // 解析時は pose 行の captureMs にこの値を足すと host 時計に整列する
@@ -80,6 +85,7 @@ namespace TableDuoVr.Net
             TableDuoPlayer.RecenterReported -= OnRecenterReported;
             TableDuoPlayer.ClockOffsetReported -= OnClockOffsetReported;
             StudyConfig.HandVariantChanged -= OnHandVariantChanged;
+            DiceRoller.DiceRolled -= OnDiceRolled;
             if (_subscribedCm != null)
             {
                 _subscribedCm.HandLayoutReceived -= OnHandLayoutReceived;

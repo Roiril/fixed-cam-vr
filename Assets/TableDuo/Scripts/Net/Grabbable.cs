@@ -61,6 +61,20 @@ namespace TableDuoVr.Net
             GrabLogged?.Invoke(name, sender, true);
         }
 
+        /// <summary>サーバ側からの強制解放（BoardReset・運用リカバリ用）。保持中でなければ何もしない。</summary>
+        public void ServerForceRelease(string reason)
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsServer || !IsHeld) return;
+            ulong holder = _holder.Value;
+            _holder.Value = NoHolder;
+            _holderHand.Value = 0;
+            _grabSeat = null;
+            _untrackedSince = -1f;
+            Debug.Log($"[TableDuo] Release {name}（強制解放: {reason}）");
+            GrabLogged?.Invoke(name, holder, false);
+        }
+
         [ServerRpc(RequireOwnership = false)]
         public void RequestReleaseServerRpc(ServerRpcParams rpcParams = default)
         {

@@ -252,6 +252,8 @@ namespace TableDuoVr.EditorTools
 
             // 調査ロガー（ホストのみ稼働）+ フェーズマーク受付 + リプレイ全記録
             var sessionLogger = systems.AddComponent<SessionLogger>();
+            // 盤面リセット（curl mark?label=reset_board で卓上プロップを初期配置へ）
+            systems.AddComponent<BoardReset>();
             var markServer = systems.AddComponent<FacilitatorMarkServer>();
             var markSo = new SerializedObject(markServer);
             SetRef(markSo, "logger", sessionLogger);
@@ -354,17 +356,23 @@ namespace TableDuoVr.EditorTools
         private const string DsaGlbDir = "Assets/TableDuo/ThirdParty/DeepSeaAdventure/glb";
 
         /// <summary>
-        /// 卓上にボードゲーム「海底探検」一式を配置。潜水艦ボードを中央奥に静置し、宝物チップ16/裏トークン5/
-        /// 空気マーカーを手前にグリッド静置、駒2+サイコロを掴めるトークンとして置く。GLB は実スケール（メートル）。
+        /// 卓上にボードゲーム「海底探検」一式を**プレイ可能な形**で配置（G1・2026-07-02）。
+        /// 潜水艦ボードは静置、宝物チップ16/裏トークン5/空気マーカー/駒2/サイコロ2 は全部掴める。
+        /// ルール裁定はコード化しない（人間が運用 = 無言交渉そのものが研究データ）。
+        /// チップ類はピンチで拾いやすいよう実物の 1.6 倍。サイコロは確定表示方式（DiceRoller）。
+        /// GLB は実スケール（メートル）。盤面リセットは BoardReset（mark?label=reset_board）。
         /// </summary>
         private static void PlaceDeepSeaAdventure(Transform parent, float topY, float cx, float cz,
             float hx, float hz, float edge)
         {
+            // 掴めるチップ類の拡大率（ハンドトラッキングのピンチ精度対策）
+            const float chipScale = 1.6f;
+
             // 潜水艦ボード（静置・中央やや奥）
             PlaceModelRealScale($"{DsaGlbDir}/submarine_board.glb", parent, "DSA_Board",
                 new Vector3(cx, topY, cz + 0.12f), 0f, grabbable: false);
 
-            // 盤面ピース（静置）: 宝物チップ16 + 裏トークン5 + 空気マーカー。手前側にグリッド
+            // 盤面ピース（掴める）: 宝物チップ16 + 裏トークン5 + 空気マーカー。手前側にグリッド
             string[] tiles =
             {
                 "tri_0", "tri_1", "tri_2", "tri_3",
@@ -375,23 +383,29 @@ namespace TableDuoVr.EditorTools
                 "air_marker",
             };
             const int cols = 6;
-            const float step = 0.072f;
+            const float step = 0.085f; // 1.6 倍チップが重ならない間隔
             float gx0 = cx - (cols - 1) * step * 0.5f;
             float gz0 = cz - Mathf.Max(0.04f, hz - edge - 0.07f); // 手前縁の内側から奥へ
             for (int i = 0; i < tiles.Length; i++)
             {
                 int row = i / cols, col = i % cols;
                 var pos = new Vector3(gx0 + col * step, topY, gz0 + row * step);
-                PlaceModelRealScale($"{DsaGlbDir}/{tiles[i]}.glb", parent, $"DSA_{tiles[i]}", pos, 0f, grabbable: false);
+                PlaceModelRealScale($"{DsaGlbDir}/{tiles[i]}.glb", parent, $"DSA_{tiles[i]}", pos, 0f,
+                    grabbable: true, scale: chipScale);
             }
 
-            // 駒2 + サイコロ（掴める相互作用トークン）。ボードとチップ群の間に置く
+            // 駒2 + サイコロ2（掴める）。ボードとチップ群の間に置く。海底探検はダイス 2 個
+            //（各 1–3）を振って合計移動。出目はサイコロを離した瞬間にサーバが確定して数字表示（DiceRoller）
             PlaceModelRealScale($"{DsaGlbDir}/meeple_purple.glb", parent, "DSA_MeeplePurple",
-                new Vector3(cx - 0.10f, topY, cz + 0.02f), 0f, grabbable: true);
+                new Vector3(cx - 0.14f, topY, cz + 0.02f), 0f, grabbable: true);
             PlaceModelRealScale($"{DsaGlbDir}/meeple_red.glb", parent, "DSA_MeepleRed",
-                new Vector3(cx, topY, cz + 0.02f), 0f, grabbable: true);
-            PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die",
-                new Vector3(cx + 0.10f, topY, cz + 0.02f), 0f, grabbable: true);
+                new Vector3(cx - 0.05f, topY, cz + 0.02f), 0f, grabbable: true);
+            var die1 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die1",
+                new Vector3(cx + 0.07f, topY, cz + 0.02f), 0f, grabbable: true, scale: 1.3f);
+            var die2 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die2",
+                new Vector3(cx + 0.14f, topY, cz + 0.02f), 0f, grabbable: true, scale: 1.3f);
+            if (die1 != null) die1.AddComponent<DiceRoller>();
+            if (die2 != null) die2.AddComponent<DiceRoller>();
         }
 
         /// <summary>
@@ -399,7 +413,7 @@ namespace TableDuoVr.EditorTools
         /// grabbable=true なら旧プロップ同様 NetworkObject + NetworkTransform + Grabbable を付ける。
         /// </summary>
         private static GameObject? PlaceModelRealScale(string glbPath, Transform parent, string name,
-            Vector3 pos, float yaw, bool grabbable)
+            Vector3 pos, float yaw, bool grabbable, float scale = 1f)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(glbPath);
             if (prefab == null)
@@ -411,6 +425,7 @@ namespace TableDuoVr.EditorTools
             go.name = name;
             go.transform.SetParent(parent, false);
             go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            if (!Mathf.Approximately(scale, 1f)) go.transform.localScale *= scale;
 
             var renderers = go.GetComponentsInChildren<Renderer>();
             if (renderers.Length > 0)
