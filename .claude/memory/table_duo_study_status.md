@@ -52,7 +52,7 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 4視点（netcode/設計/性能/調査妥当性）で自己レビュー → 致命/高/中/安価な低を修正済み（大規模リファクタは defer）。
 
 **データ整合性（研究計測器として重要）**:
-- pose ワイヤに **`Seq`（連番）+ `CaptureMs`（送信端末壁時計）** 追加（[PoseCodec](../../Assets/TableDuo/Scripts/Net/PoseCodec.cs)）。CSV pose 行に列追加 → **歯抜け＝パケット欠落を「凍結」と区別でき**、client 内タイミングも復元可。手アバターは受信側 lossy 記録のままなので、厳密には各 client のローカル lossless 記録併用が理想（未実装・将来）
+- pose ワイヤに **`Seq`（連番）+ `CaptureMs`（送信端末壁時計）** 追加（[PoseCodec](../../Assets/TableDuo/Scripts/Net/PoseCodec.cs)）。CSV pose 行に列追加 → **歯抜け＝パケット欠落を「凍結」と区別でき**、client 内タイミングも復元可。手アバターは受信側 lossy 記録のままなので、厳密には各 client のローカル lossless 記録併用が理想 → **2026-07-02 StreamingPoseRecorder で実装済み**（下記）
 - **条件を clientId 別に記録**（CSV `condition` イベント, role/marker/oneHand）。host ローカル StudyConfig だと役割入替時に相手条件を取り違えるため、`TableDuoPlayer._studyFlags`（NetworkVariable）で同期
 - **OS recenter を記録**（`TableDuoPlayer.ReportRecenterServerRpc`→ CSV `recenter`）。座標系不連続を解析で分割可能に
 - カードは掴み中=毎サンプル + **全カード 2Hz スナップショット**（holder=-1）。掴まず「指す」RQ 用に静止カード位置も残す
@@ -98,4 +98,22 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - ⚠ **Editor 観戦運用**: Play 突入中は MCP を叩かない（デッドロック実害）/ Play・ビルドで TableDuoMain に stray camera が serialize されたら `git checkout --` で破棄
 
 ## 未対応（要望待ち）
-片手モードの左右選択/両手 / 人側の自分の胴体表示 / リプレイ音声同期実運用 / パイロット本番（所有者が手役を一度経験→プロトコル凍結） / 手アバターの client ローカル lossless 記録（上記データ整合性の完全版）
+片手モードの左右選択/両手 / 人側の自分の胴体表示 / リプレイ音声同期実運用 / パイロット本番（所有者が手役を一度経験→プロトコル凍結）
+
+## 2026-07-02 構造改善スイープ（レビュー指摘の一括改善・EditMode 37/37・実機未検証）
+
+**Phase1 運用**: study docs を実装状態へ同期（package ID 修正 / Deep Sea Adventure / Setup 再実行・TDV-DIAG・recenter・tdv_preplace・ffmpeg・倫理審査・観戦を protocol に反映）。役割交代は `tools/tableduo-role-swap.ps1`（2台の tdv_role 反転再起動・DryRun 可）。
+
+**Phase2 計測**:
+- **[StreamingPoseRecorder](../../Assets/TableDuo/Scripts/Hands/Playback/StreamingPoseRecorder.cs)**: tdv_* フラグ起動時に各端末が自分の生 pose を 60Hz・float 精度で `persistentDataPath/tdv_local_*.bin`（TDV2 形式）へ逐次記録。pause ごとに frameCount 確定 → force-stop でも直前 pause まで有効。FakeHandDriver で再生可。SceneSetup が Systems へ配線
+- SessionLogger CSV に **`layoutReceived`**（本人手寸法 FK の境界）と **`posesDropped`**（破棄パケット累計）イベント行
+- TableDuoPlayer の layout 送信 silent fail 解消（Instance 未確定なら次サンプル再試行）
+
+**Phase3 構造**（挙動不変リファクタ）:
+- RigRecenter を Net→Hands へ移動（recenter 系は Hands 集約、TableDuoPlayer は購読のみ）
+- **[StudyLaunchFlags](../../Assets/TableDuo/Scripts/Hands/StudyLaunchFlags.cs)**（Hands）に tdv_* パースと優先順（Inspector 既定 < 起動フラグ）を一元化。ConnectionManager から重複パース撤去
+- RemoteAvatarView の nested HandView（~300行）を **[RemoteHandView](../../Assets/TableDuo/Scripts/Net/RemoteHandView.cs)** へ分離。Preview Hand Variants 多角度スクショで 3 バリアント退行なし確認済み
+- mesh 実体先行破棄時の破棄済み bone 代入ガード（Tick で作り直しへ戻す）
+
+**残る構造負債（study 完了後に検討・今回見送り）**: Net asmdef の 3 層分割（Core/Hands/Net+Presentation）、TableDuoSceneSetup の prefab 化、ConnectionManager の接続管理/GUI 分離。パイロット前の大改修は visual-verification ルールに従い回避。
+
