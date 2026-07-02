@@ -368,11 +368,7 @@ namespace TableDuoVr.EditorTools
             // 掴めるチップ類の拡大率（ハンドトラッキングのピンチ精度対策）
             const float chipScale = 1.6f;
 
-            // 潜水艦ボード（静置・中央やや奥）
-            PlaceModelRealScale($"{DsaGlbDir}/submarine_board.glb", parent, "DSA_Board",
-                new Vector3(cx, topY, cz + 0.12f), 0f, grabbable: false);
-
-            // 盤面ピース（掴める）: 宝物チップ16 + 裏トークン5 + 空気マーカー。手前側にグリッド
+            // 宝物チップ16 + 裏トークン5 を手前（人役側）にグリッド。空気マーカーはボード脇へ分離
             string[] tiles =
             {
                 "tri_0", "tri_1", "tri_2", "tri_3",
@@ -380,32 +376,64 @@ namespace TableDuoVr.EditorTools
                 "pen_8", "pen_9", "pen_10", "pen_11",
                 "hex_12", "hex_13", "hex_14", "hex_15",
                 "back_circle", "back_tri", "back_square", "back_pentagon", "back_hexagon",
-                "air_marker",
             };
             const int cols = 6;
             const float step = 0.085f; // 1.6 倍チップが重ならない間隔
+            int rows = Mathf.CeilToInt(tiles.Length / (float)cols);
             float gx0 = cx - (cols - 1) * step * 0.5f;
             float gz0 = cz - Mathf.Max(0.04f, hz - edge - 0.07f); // 手前縁の内側から奥へ
             for (int i = 0; i < tiles.Length; i++)
             {
                 int row = i / cols, col = i % cols;
                 var pos = new Vector3(gx0 + col * step, topY, gz0 + row * step);
-                PlaceModelRealScale($"{DsaGlbDir}/{tiles[i]}.glb", parent, $"DSA_{tiles[i]}", pos, 0f,
+                // yaw=180: 数字面を人役（席0 = -Z 側）向きに（俯瞰スクショ検証で逆さまだったのを補正）
+                var chip = PlaceModelRealScale($"{DsaGlbDir}/{tiles[i]}.glb", parent, $"DSA_{tiles[i]}", pos, 180f,
                     grabbable: true, scale: chipScale);
+                SetSurfaceClamp(chip, topY, cx, cz, hx, hz);
             }
 
-            // 駒2 + サイコロ2（掴める）。ボードとチップ群の間に置く。海底探検はダイス 2 個
-            //（各 1–3）を振って合計移動。出目はサイコロを離した瞬間にサーバが確定して数字表示（DiceRoller）
-            PlaceModelRealScale($"{DsaGlbDir}/meeple_purple.glb", parent, "DSA_MeeplePurple",
-                new Vector3(cx - 0.14f, topY, cz + 0.02f), 0f, grabbable: true);
-            PlaceModelRealScale($"{DsaGlbDir}/meeple_red.glb", parent, "DSA_MeepleRed",
-                new Vector3(cx - 0.05f, topY, cz + 0.02f), 0f, grabbable: true);
+            // 駒2 + サイコロ2 の行はチップグリッドの 1 行分奥（座標をグリッドから導出し重なりを防ぐ。
+            // 2026-07-02 俯瞰スクショ検証: 固定座標 cz+0.02 だと最終行のチップに駒が乗っていた）
+            float pieceZ = gz0 + rows * step + 0.02f;
+            var mp = PlaceModelRealScale($"{DsaGlbDir}/meeple_purple.glb", parent, "DSA_MeeplePurple",
+                new Vector3(cx - 0.14f, topY, pieceZ), 0f, grabbable: true, scale: 1.6f);
+            var mr = PlaceModelRealScale($"{DsaGlbDir}/meeple_red.glb", parent, "DSA_MeepleRed",
+                new Vector3(cx - 0.05f, topY, pieceZ), 0f, grabbable: true, scale: 1.6f);
             var die1 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die1",
-                new Vector3(cx + 0.07f, topY, cz + 0.02f), 0f, grabbable: true, scale: 1.3f);
+                new Vector3(cx + 0.07f, topY, pieceZ), 0f, grabbable: true, scale: 1.5f);
             var die2 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die2",
-                new Vector3(cx + 0.14f, topY, cz + 0.02f), 0f, grabbable: true, scale: 1.3f);
+                new Vector3(cx + 0.15f, topY, pieceZ), 0f, grabbable: true, scale: 1.5f);
+
+            // 潜水艦ボード（静置）はさらに奥・空気マーカー（掴める）はボード脇＝空気トラック管理用
+            PlaceModelRealScale($"{DsaGlbDir}/submarine_board.glb", parent, "DSA_Board",
+                new Vector3(cx, topY, pieceZ + 0.14f), 0f, grabbable: false);
+            var air = PlaceModelRealScale($"{DsaGlbDir}/air_marker.glb", parent, "DSA_air_marker",
+                new Vector3(cx + 0.17f, topY, pieceZ + 0.14f), 0f, grabbable: true, scale: chipScale);
+            SetSurfaceClamp(air, topY, cx, cz, hx, hz);
+
             if (die1 != null) die1.AddComponent<DiceRoller>();
             if (die2 != null) die2.AddComponent<DiceRoller>();
+            foreach (var piece in new[] { mp, mr, die1, die2 })
+            {
+                SetSurfaceClamp(piece, topY, cx, cz, hx, hz);
+            }
+        }
+
+        /// <summary>掴めるピースに卓上拘束を焼き込む（テーブル貫通・卓外落下の防止。Grabbable が clamp）。</summary>
+        private static void SetSurfaceClamp(GameObject? go, float topY, float cx, float cz, float hx, float hz)
+        {
+            if (go == null) return;
+            var grab = go.GetComponent<Grabbable>();
+            if (grab == null) return;
+            var so = new SerializedObject(grab);
+            var pY = so.FindProperty("surfaceY");
+            var pC = so.FindProperty("surfaceCenter");
+            var pH = so.FindProperty("surfaceHalf");
+            if (pY != null) pY.floatValue = topY;
+            if (pC != null) pC.vector2Value = new Vector2(cx, cz);
+            // 卓縁より少し内側まで許す（縁ギリギリで浮くのを防ぎつつ卓外へは出さない）
+            if (pH != null) pH.vector2Value = new Vector2(hx - 0.02f, hz - 0.02f);
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         /// <summary>

@@ -35,6 +35,42 @@ namespace TableDuoVr.Net
         private const float UntrackedReleaseSeconds = 3f;
         private float _untrackedSince = -1f;
 
+        [Header("卓上拘束（TableDuoSceneSetup が設定。未設定=拘束なし）")]
+        [Tooltip("天板の上面 Y。掴み追従・解放時にピースの最下点がこれを下回らないようクランプする（テーブル貫通防止）")]
+        [SerializeField] private float surfaceY = float.NegativeInfinity;
+        [Tooltip("天板の XZ 中心。surfaceHalf と併せてピースが卓外へ消えないようクランプする")]
+        [SerializeField] private Vector2 surfaceCenter;
+        [Tooltip("天板の XZ 半径。(0,0)=XZ クランプなし")]
+        [SerializeField] private Vector2 surfaceHalf;
+
+        // ピースの pivot→最下点オフセット（クランプは「最下点が天板以上」で判定）
+        private float _bottomOffset;
+
+        private void Awake()
+        {
+            var rs = GetComponentsInChildren<Renderer>();
+            if (rs.Length > 0)
+            {
+                float minY = float.PositiveInfinity;
+                foreach (var r in rs) minY = Mathf.Min(minY, r.bounds.min.y);
+                _bottomOffset = minY - transform.position.y;
+            }
+        }
+
+        /// <summary>掴み中の手が天板の下へ潜っても、ピースは天板上・卓の範囲内に留める。</summary>
+        private Vector3 ClampToSurface(Vector3 p)
+        {
+            if (float.IsNegativeInfinity(surfaceY)) return p;
+            float minY = surfaceY - _bottomOffset;
+            if (p.y < minY) p.y = minY;
+            if (surfaceHalf.x > 0f)
+            {
+                p.x = Mathf.Clamp(p.x, surfaceCenter.x - surfaceHalf.x, surfaceCenter.x + surfaceHalf.x);
+                p.z = Mathf.Clamp(p.z, surfaceCenter.y - surfaceHalf.y, surfaceCenter.y + surfaceHalf.y);
+            }
+            return p;
+        }
+
         public bool IsHeld => _holder.Value != NoHolder;
         public ulong HolderClientId => _holder.Value;
 
@@ -105,7 +141,7 @@ namespace TableDuoVr.Net
             {
                 _untrackedSince = -1f;
                 transform.SetPositionAndRotation(
-                    handPos + handRot * _grabOffsetPos,
+                    ClampToSurface(handPos + handRot * _grabOffsetPos),
                     handRot * _grabOffsetRot);
             }
             else
