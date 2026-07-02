@@ -117,3 +117,12 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 
 **残る構造負債（study 完了後に検討・今回見送り）**: Net asmdef の 3 層分割（Core/Hands/Net+Presentation）、TableDuoSceneSetup の prefab 化、ConnectionManager の接続管理/GUI 分離。パイロット前の大改修は visual-verification ルールに従い回避。
 
+## 2026-07-02 (2) 手バリアント＝正式調査条件＋通信堅牢化（EditMode 37/37・実機未検証）
+
+**手バリアント条件化（ユーザー決定）**: 3 水準（Default/Realistic/Robot）を within-pair 因子・3 ブロック（各ブロック tdv_hand 固定・再起動で切替・順序カウンターバランス）。調査フラグ起動中は左 Y トグル無効（HandVariantWatcher）。CSV ヘッダ `hand=`＋切替検出 `handVariantChanged`（除外基準）。`tools/tableduo-role-swap.ps1 -HandVariant <v> [-KeepRoles]` でブロック切替。設計 → study-design §2 / 運用 → protocol §4。
+
+**通信堅牢化（理想比較レビュー実装済み）**:
+- Seq 後着棄却（Unreliable 逆転を受信段で棄却・CSV `posesStale`）／client 自動再接続（瞬断→指数バックオフ 2s→10s）／SessionLogger+ReplayRecorder 定期 flush 2s／Grabbable ロスト 3s 自動解放／`clockOffset` CSV 行（ping-pong RTT/2 補正・captureMs 整列用）
+- **見送り（理由付き）**: 補間バッファ（LAN では遅延増のみ）・smallest-three 圧縮（帯域余裕）・layout の観戦者リレー（主計測は無事・見た目のみ）・ConnectionApproval（4台目は運用上ない）
+- レビューで「現状で十分」確認済み: half 量子化（頭/手首は float32・指のみ half でサブ mm）／観戦 pose リレー／Grabbable 先着裁定
+
