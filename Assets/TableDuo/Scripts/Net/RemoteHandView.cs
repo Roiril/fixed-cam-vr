@@ -20,6 +20,7 @@ namespace TableDuoVr.Net
         private bool _everTracked;
         private bool _built;
         private bool _meshTried; // メッシュ構築を一度試したか（失敗しても毎フレ再 Instantiate しないラッチ）
+        private bool _externalDowngraded; // 外部リグ希望だが layout 未取得で Default に降格中（layout が来たら昇格再構築）
 
         // メッシュ手: bone Transform を BoneId 順（名前マッピング）に並べ、同期 bone で回す。
         // 要素は見つからなかった bone が null になりうる（適用時に null チェック）
@@ -117,6 +118,12 @@ namespace TableDuoVr.Net
         public void Tick(float smooth, Vector3 wristPos, Quaternion wristRot, Quaternion[] boneRots,
             bool tracked, HandSkeletonLayout? layout)
         {
+            // Default へ暫定降格中（接続が受信側の手キャプチャより先行した場合）に layout が揃ったら
+            // 本来の外部リグへ昇格再構築する。ロスト凍結中は姿勢を変えないため rest/追跡中のみ
+            if (_externalDowngraded && layout != null && (tracked || !_everTracked))
+            {
+                MarkVariantDirty();
+            }
             // ロスト時は「最終姿勢でフリーズ」（調査仕様 — 消すと相手が
             // 無に向かって話す時間が混入し RQ2/RQ3 を汚染する。ロスト区間は SessionLogger が記録）。
             // ただし接続時に ShowAtRest で出した休めポーズはそのまま保持（消さない）。
@@ -223,8 +230,9 @@ namespace TableDuoVr.Net
             if (HandVariantTable.IsExternalRig(variant)
                 && (_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL) == null)
             {
-                Debug.LogWarning($"[TableDuo] 受信側の手 layout が無い（観戦 PC 等）→ {variant} はリターゲット不能。Default 白手で表示（観戦記録の手見た目は条件と異なる点に注意）");
+                Debug.LogWarning($"[TableDuo] 受信側の手 layout が無い（キャプチャ前/観戦 PC 等）→ {variant} はリターゲット不能。Default 白手で暫定表示（layout が来たら本来のバリアントへ再構築）");
                 variant = HandVariant.Default;
+                _externalDowngraded = true; // 接続が手キャプチャより先行しただけの場合、後で昇格させる
             }
 
             if (HandVariantTable.IsExternalRig(variant))
@@ -285,14 +293,16 @@ namespace TableDuoVr.Net
             _varBind = null;
             _built = false;
             _meshTried = false;
+            _externalDowngraded = false;
             if (_wristProxy != null) _wristProxy.gameObject.SetActive(true);
 
-            // 休めポーズ表示中（未トラッキング）は Tick が早期 return するため、ここで作り直さないと
-            // トラッキング開始まで白キューブのままになる（デモ時のトグル用。調査中はトグル封印済み）
-            if (!_everTracked && _root.gameObject.activeSelf)
+            // Tick はロスト中に早期 return するため、表示中ならここで即作り直す（rest 中の切替、
+            // ロスト凍結中の切替とも、白キューブのままトラッキング再開を待つ状態を作らない）
+            if (_root.gameObject.activeSelf)
             {
                 TryBuild(_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL);
-                if (_varBind != null && _meshBones != null) AlignRestForward();
+                // rest 限定の向き合わせ。追跡済み（凍結中含む）の手首向きは変えない
+                if (!_everTracked && _varBind != null && _meshBones != null) AlignRestForward();
             }
         }
 

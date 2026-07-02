@@ -46,6 +46,11 @@ namespace TableDuoVr.Net
         private readonly AvatarPose _target = new();
         private bool _hasTarget;
 
+        // Remy 用の表示 pose（受信 pose を指数平滑したもの）。Remy は IK 即解のため、生受信値を
+        // 直に食わせると 60Hz 受信の段差＋ネットジッタがそのまま出る（手だけアバターは平滑済みで
+        // 全身側だけガタつく非対称になる）。ここで頭/手首/指を平滑してから Drive する
+        private AvatarPose? _remyDisplay;
+
         /// <param name="showHeadMarker">頭マーカー条件。null なら見る側のローカル StudyConfig（プレビュー/リプレイ用）。
         /// ライブ接続では TableDuoPlayer が「手役端末の申告した同期値」を渡す＝全視点で提示条件が一致する。</param>
         public static RemoteAvatarView Create(Transform seatAnchor, bool handsOnly, bool? showHeadMarker = null)
@@ -153,6 +158,9 @@ namespace TableDuoVr.Net
             // 胴グループ（頭へ緩く追従）。子に首・箱型の胴・丸めた肩（シンプル人間体型）
             _chest = new GameObject("Torso").transform;
             _chest.SetParent(transform, worldPositionStays: false);
+            // 初期位置＝中立の胴目標（頭が席原点のときの -0.40）。原点(目線高)のままだと最初の pose が
+            // 来るまで胴が頭に食い込んで見え、来た後もゆっくり滑り降りる
+            _chest.localPosition = new Vector3(0f, -0.40f, 0f);
             CreateShape(_chest, PrimitiveType.Cylinder, new Vector3(0.075f, 0.05f, 0.075f), new Vector3(0f, 0.27f, 0f), _skinMat, "Neck");
             CreateShape(_chest, PrimitiveType.Cube, new Vector3(0.34f, 0.46f, 0.20f), new Vector3(0f, 0.02f, 0f), _shirtMat, "Trunk");
             CreateShape(_chest, PrimitiveType.Sphere, new Vector3(0.17f, 0.16f, 0.18f), ShoulderOffsetR, _shirtMat, "ShoulderR");
@@ -203,7 +211,17 @@ namespace TableDuoVr.Net
         {
             if (_remy != null)
             {
-                _remy.Drive(_target); // Remy は IK で即解（平滑は IK 入力＝受信 pose 側に委ねる）
+                // IK 入力（頭・手首・指）を平滑してから Drive（a=1 は PoseImmediate＝スナップ）
+                if (_remyDisplay == null || a >= 1f)
+                {
+                    _remyDisplay ??= new AvatarPose();
+                    _remyDisplay.CopyFrom(_target);
+                }
+                else
+                {
+                    BlendPose(_remyDisplay, _target, a);
+                }
+                _remy.Drive(_remyDisplay);
                 return;
             }
             if (_head != null)
@@ -217,9 +235,15 @@ namespace TableDuoVr.Net
                 var headP = _head.localPosition;
                 var chestTarget = new Vector3(headP.x * 0.6f, headP.y - 0.40f, headP.z * 0.6f);
                 _chest.localPosition = Vector3.Lerp(_chest.localPosition, chestTarget, chestA);
-                float headYaw = _head.localEulerAngles.y;
-                _chest.localRotation = Quaternion.Slerp(
-                    _chest.localRotation, Quaternion.Euler(0f, headYaw, 0f), chestA);
+                // yaw は前方ベクトルの水平射影から取る。localEulerAngles.y はピッチが ±90° を跨ぐと
+                // 表現が反転して 180° 跳ぶ（下を覗き込むと胴がゆっくり半回転する）
+                Vector3 fwd = _head.localRotation * Vector3.forward;
+                fwd.y = 0f;
+                if (fwd.sqrMagnitude > 1e-4f)
+                {
+                    _chest.localRotation = Quaternion.Slerp(
+                        _chest.localRotation, Quaternion.LookRotation(fwd.normalized, Vector3.up), chestA);
+                }
             }
             _left?.Tick(a, _target.WristPosL, _target.WristRotL, _target.BonesL,
                 _target.TrackedL, HandSkeletonLayout.CapturedL);
@@ -229,6 +253,26 @@ namespace TableDuoVr.Net
             // 腕（袖）を肩→手首に張り直す。手が一度も出ていない間は隠す（片手モードの左手も自動で隠れる）
             UpdateArm(_armR, ShoulderOffsetR, _right);
             UpdateArm(_armL, ShoulderOffsetL, _left);
+        }
+
+        /// <summary>dst を src へ係数 a で指数平滑（頭/手首/指）。bool 系はそのままコピー。</summary>
+        private static void BlendPose(AvatarPose dst, AvatarPose src, float a)
+        {
+            dst.HeadPos = Vector3.Lerp(dst.HeadPos, src.HeadPos, a);
+            dst.HeadRot = Quaternion.Slerp(dst.HeadRot, src.HeadRot, a);
+            dst.WristPosL = Vector3.Lerp(dst.WristPosL, src.WristPosL, a);
+            dst.WristRotL = Quaternion.Slerp(dst.WristRotL, src.WristRotL, a);
+            dst.WristPosR = Vector3.Lerp(dst.WristPosR, src.WristPosR, a);
+            dst.WristRotR = Quaternion.Slerp(dst.WristRotR, src.WristRotR, a);
+            for (int i = 0; i < AvatarPose.BonesPerHand; i++)
+            {
+                dst.BonesL[i] = Quaternion.Slerp(dst.BonesL[i], src.BonesL[i], a);
+                dst.BonesR[i] = Quaternion.Slerp(dst.BonesR[i], src.BonesR[i], a);
+            }
+            dst.TrackedL = src.TrackedL;
+            dst.TrackedR = src.TrackedR;
+            dst.PinchL = src.PinchL;
+            dst.PinchR = src.PinchR;
         }
 
         /// <summary>肩（胴ローカル offset）から手首（手 root のローカル位置）へ伸びる cosmetic な腕を更新。</summary>

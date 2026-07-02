@@ -152,3 +152,19 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **[TableDuoTablePreview](../../Assets/TableDuo/Scripts/Editor/TableDuoTablePreview.cs)**（`Diagnostics/Preview Table (screenshot)`）: 卓上を 4 角度（斜め上×2/低め/真上）で Play 不要撮影 → `Temp/TablePreview/`。**盤面配置を変えたら必ずこれで見る**
 - スクショで見つけて直した配置バグ: 駒/サイコロの固定座標 cz+0.02 がチップ最終行に乗る（→グリッド由来 pieceZ に）/ チップ数字が人役側から逆さま（→yaw180）/ 空気マーカーがチップ列混在（→ボード脇）/ 駒が小さすぎ（→1.6 倍、サイコロ 1.5 倍）
 
+## 2026-07-02 (6) アバター挙動レビュー（接続時＋運動時・2 視点並列監査→9 件修正・EditMode 37/37・実機未検証）
+
+**修正済み**:
+- **layout の bind を BindPoses から採取**（HandPoseSampler）: 旧実装は live bone（初回トラッキング時の実手ポーズ）を bind と偽っており、半握りで起動すると Realistic/Robot の指がセッション中ずっとオフセットする（LocalVariantHand は元から BindPoses 使用＝ローカルとリモートで同バリアントの見た目が違う真因候補）
+- **低 confidence を「ロスト」扱い**（HandPoseSampler.SampleHand が IsDataHighConfidence 必須に）: 遮蔽・両手交差で IsTracked=true のままノイズ関節が流れ、リモート指の暴れ・掴んだ駒の振り回しになるのを既存フリーズ経路へ
+- **_role/_studyFlags の同 tick レース**（TableDuoPlayer.OnRoleSynced→1フレーム遅延 SetupRemote）: NGO は変数を宣言順適用しつつ即 callback するため、旧実装は頭マーカー無し構築・バリアント申告誤読が恒久化し得た
+- **外部リグの Default 恒久降格を解除**（RemoteHandView `_externalDowngraded`）: 接続が手キャプチャより先行すると Robot/Realistic 条件でも白手のままセッション固定だった → layout が揃い次第昇格再構築
+- **ロスト凍結中のバリアント切替で白キューブ固定**（MarkVariantDirty が表示中なら常に再構築。rest 限定だった向き合わせは維持）
+- **Remy に受信平滑を追加**（RemoteAvatarView `_remyDisplay`+BlendPose）: 旧実装は IK に生受信値を直結し、手だけアバター（平滑済み）と全身側だけガタつく非対称
+- **胴 yaw の euler 180° フリップ**（procedural fallback）: localEulerAngles.y → 前方ベクトル水平射影の LookRotation に。下を覗き込むと胴が半回転する現象を解消。胴の初期位置も -0.40 に（頭に食い込んで滑り降りる見た目を解消）
+- **RecenterWatcher の購読取りこぼし**: OVRManager.display が null の OnEnable で恒久無効化 → Update でリトライ購読
+- **Grabbable**: サーバ追従を指数平滑（K=32・60Hz 段差スナップ解消）＋卓上クランプの最下点オフセットを保持中は都度計算（細長い駒を回すと貫通/浮きになるのを解消）／LocalVariantHand の構築失敗を毎フレ Instantiate+Destroy する 90Hz チャーンをラッチで停止
+
+**未対応（レビューで検出・報告のみ）**: client 瞬断再接続時に旧接続タイムアウトまで同席二重アバター（server 側 stale kick 未実装・数秒で自然解消）/ Remy の頭位置無視（前傾が伝わらない）と指リターゲット（P3 予定）/ IK 到達距離クランプ（腕長以上は届かない・仕様）
+**実機確認事項**: bind 修正後の Realistic/Robot 指の曲がり / 低 confidence ゲートでフリーズが増えすぎないか / Remy 平滑の遅延体感
+

@@ -25,6 +25,7 @@ namespace TableDuoVr.Net
 
         private RemoteHandMeshProvider.BuiltHand? _built;
         private HandVariant _builtVariant = HandVariant.Default;
+        private bool _buildFailed; // 構築失敗ラッチ（毎フレ Instantiate+Destroy の 90Hz チャーン防止。バリアント切替でクリア）
         private bool _subscribed;
 
         private void OnEnable()
@@ -44,6 +45,7 @@ namespace TableDuoVr.Net
         private void OnVariantChanged()
         {
             Teardown();
+            _buildFailed = false;
             ApplyVariantVisibility();
         }
 
@@ -77,12 +79,13 @@ namespace TableDuoVr.Net
 
             if (_built == null || _builtVariant != variant)
             {
+                if (_buildFailed && _builtVariant == variant) return; // 失敗ラッチ（切替まで再試行しない）
                 Teardown();
                 _builtVariant = variant;
                 var wristBone = skeleton.Bones[0].Transform; // ライブ手首 bone。ここに吊るせば追従は自動
                 _built = provider.BuildExternalHand(wristBone, isRight, variant);
                 if (metaMesh != null) metaMesh.enabled = false;
-                if (_built == null) return;
+                if (_built == null) { _buildFailed = true; return; }
             }
 
             // 指（BoneId>=2）をリターゲット。手首(0)/前腕(1)は親の手首 bone 追従に任せる（二重回転回避）。

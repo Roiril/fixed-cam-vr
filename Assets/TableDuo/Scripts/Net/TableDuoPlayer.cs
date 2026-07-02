@@ -128,7 +128,17 @@ namespace TableDuoVr.Net
         private void OnRoleSynced(byte _, byte current)
         {
             if (current == RoleUnset || IsOwner || _view != null) return;
-            SetupRemote((StudyConfig.Role)current);
+            // _role と _studyFlags は owner が同フレームに書き同 tick で届くが、NGO は変数を宣言順に
+            // 適用しつつ都度 OnValueChanged を撃つ → この時点では _studyFlags がまだ旧値（0）のことがある。
+            // 直で SetupRemote すると頭マーカー無し構築・バリアント申告の誤読が恒久化するため 1 フレーム遅延
+            //（同 tick の残り変数はこのフレーム内に適用済みになる）
+            StartCoroutine(SetupRemoteDeferred((StudyConfig.Role)current));
+        }
+
+        private System.Collections.IEnumerator SetupRemoteDeferred(StudyConfig.Role role)
+        {
+            yield return null;
+            if (IsSpawned && !IsOwner && _view == null) SetupRemote(role);
         }
 
         private void SetupOwner(StudyConfig.Role role)

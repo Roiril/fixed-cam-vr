@@ -43,24 +43,34 @@ namespace TableDuoVr.Net
         [Tooltip("天板の XZ 半径。(0,0)=XZ クランプなし")]
         [SerializeField] private Vector2 surfaceHalf;
 
-        // ピースの pivot→最下点オフセット（クランプは「最下点が天板以上」で判定）
+        // ピースの pivot→最下点オフセット（クランプは「最下点が天板以上」で判定）。
+        // 掴み中に回転すると変わるため、保持中は現在の bounds から都度計算する（spawn 時値は初期値のみ）
         private float _bottomOffset;
+        private Renderer[] _renderers = System.Array.Empty<Renderer>();
 
         private void Awake()
         {
-            var rs = GetComponentsInChildren<Renderer>();
-            if (rs.Length > 0)
+            _renderers = GetComponentsInChildren<Renderer>();
+            _bottomOffset = CurrentBottomOffset();
+        }
+
+        /// <summary>現在の姿勢での pivot→最下点オフセット（回転で変わる）。Renderer 無しは 0。</summary>
+        private float CurrentBottomOffset()
+        {
+            if (_renderers.Length == 0) return 0f;
+            float minY = float.PositiveInfinity;
+            foreach (var r in _renderers)
             {
-                float minY = float.PositiveInfinity;
-                foreach (var r in rs) minY = Mathf.Min(minY, r.bounds.min.y);
-                _bottomOffset = minY - transform.position.y;
+                if (r != null) minY = Mathf.Min(minY, r.bounds.min.y);
             }
+            return float.IsPositiveInfinity(minY) ? 0f : minY - transform.position.y;
         }
 
         /// <summary>掴み中の手が天板の下へ潜っても、ピースは天板上・卓の範囲内に留める。</summary>
         private Vector3 ClampToSurface(Vector3 p)
         {
             if (float.IsNegativeInfinity(surfaceY)) return p;
+            if (IsHeld) _bottomOffset = CurrentBottomOffset(); // 細長い駒を回して持つと最下点が変わる
             float minY = surfaceY - _bottomOffset;
             if (p.y < minY) p.y = minY;
             if (surfaceHalf.x > 0f)
@@ -140,9 +150,14 @@ namespace TableDuoVr.Net
             if (TryGetHandWorldPose(_holder.Value, _holderHand.Value, _grabSeat, out var handPos, out var handRot))
             {
                 _untrackedSince = -1f;
+                // 60Hz 受信 pose を描画フレームへ指数平滑（RemoteAvatarView.SmoothK と同じ τ）。
+                // 生スナップだと host 画面で駒だけ段差ステップし、平滑済みのリモート手と噛み合わない
+                float k = 1f - Mathf.Exp(-32f * Time.deltaTime);
+                var targetPos = ClampToSurface(handPos + handRot * _grabOffsetPos);
+                var targetRot = handRot * _grabOffsetRot;
                 transform.SetPositionAndRotation(
-                    ClampToSurface(handPos + handRot * _grabOffsetPos),
-                    handRot * _grabOffsetRot);
+                    Vector3.Lerp(transform.position, targetPos, k),
+                    Quaternion.Slerp(transform.rotation, targetRot, k));
             }
             else
             {

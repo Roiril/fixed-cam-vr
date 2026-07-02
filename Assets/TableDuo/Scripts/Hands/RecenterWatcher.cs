@@ -14,20 +14,31 @@ namespace TableDuoVr.Hands
     {
         public event Action? Recentered;
 
-        private void OnEnable()
+        private bool _subscribed;
+
+        private void OnEnable() => TrySubscribe();
+
+        // OVRManager.display は OVRManager 側の初期化で生えるため、OnEnable の実行順によっては
+        // まだ null（→黙って恒久無効＝OS recenter で席がズレたまま・ログにも残らない）。生えるまでリトライ
+        private void Update()
         {
-            if (OVRManager.display != null)
-            {
-                OVRManager.display.RecenteredPose += OnRecentered;
-            }
+            if (!_subscribed) TrySubscribe();
+        }
+
+        private void TrySubscribe()
+        {
+            if (_subscribed || OVRManager.display == null) return;
+            OVRManager.display.RecenteredPose += OnRecentered;
+            _subscribed = true;
         }
 
         private void OnDisable()
         {
-            if (OVRManager.display != null)
+            if (_subscribed && OVRManager.display != null)
             {
                 OVRManager.display.RecenteredPose -= OnRecentered;
             }
+            _subscribed = false;
         }
 
         private void OnRecentered()

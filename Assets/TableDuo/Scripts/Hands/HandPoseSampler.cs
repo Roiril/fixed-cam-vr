@@ -98,7 +98,10 @@ namespace TableDuoVr.Hands
         private static bool SampleHand(Transform space, OVRHand? hand, OVRSkeleton? skeleton,
             ref Vector3 wristPos, ref Quaternion wristRot, Quaternion[] bones)
         {
-            if (hand == null || !hand.IsTracked) return false;
+            // 低 confidence（遮蔽・両手交差時など）は IsTracked=true のままノイズ関節を出すため
+            // 「ロスト」として扱う → 既存のフリーズ描画 / Grabbable の未追跡ホールドに乗せる
+            //（生値を通すとリモート手の指が暴れ、掴んだ駒が手首ノイズで振り回される）
+            if (hand == null || !hand.IsTracked || !hand.IsDataHighConfidence) return false;
 
             ToLocal(space, hand.transform, out wristPos, out wristRot);
 
@@ -120,6 +123,11 @@ namespace TableDuoVr.Hands
             var list = skeleton.Bones;
             if (list.Count == 0) return;
 
+            // 回転は BindPoses（正準バインド）から取る。live Bones はキャプチャ時点の実手ポーズ
+            // （半握り等）で既に回っており、それを bind と偽るとリターゲットが全セッション分ズレる
+            var bind = skeleton.BindPoses;
+            bool hasBind = bind != null && bind.Count >= list.Count;
+
             var layout = new HandSkeletonLayout
             {
                 BoneCount = Mathf.Min(list.Count, AvatarPose.BonesPerHand)
@@ -127,8 +135,8 @@ namespace TableDuoVr.Hands
             for (int i = 0; i < layout.BoneCount; i++)
             {
                 layout.ParentIndex[i] = list[i].ParentBoneIndex;
-                layout.BindLocalPos[i] = list[i].Transform.localPosition;
-                layout.BindLocalRot[i] = list[i].Transform.localRotation;
+                layout.BindLocalPos[i] = hasBind ? bind![i].Transform.localPosition : list[i].Transform.localPosition;
+                layout.BindLocalRot[i] = hasBind ? bind![i].Transform.localRotation : list[i].Transform.localRotation;
             }
             slot = layout;
         }
