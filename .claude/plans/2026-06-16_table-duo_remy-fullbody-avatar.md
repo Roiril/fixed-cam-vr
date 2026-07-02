@@ -1,6 +1,6 @@
 # TableDuo 人側アバターを Remy（Mixamo フルボディ）に置換 — 設計
 
-状態: **設計のみ（未実装）**。実装は本書を承認後に着手。
+状態: **実装済み（P0–P4 完了・2026-06-30 IK 改修済み・実機最終確認待ち）**。詳細は `.claude/memory/table_duo_study_status.md`。
 対象: TableDuo の **人側（Full / Seat0）アバター** だけ。手側（Hand）・廻リ視には触れない。
 
 ## 0. ゴールと制約
