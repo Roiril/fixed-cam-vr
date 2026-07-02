@@ -126,3 +126,13 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **見送り（理由付き）**: 補間バッファ（LAN では遅延増のみ）・smallest-three 圧縮（帯域余裕）・layout の観戦者リレー（主計測は無事・見た目のみ）・ConnectionApproval（4台目は運用上ない）
 - レビューで「現状で十分」確認済み: half 量子化（頭/手首は float32・指のみ half でサブ mm）／観戦 pose リレー／Grabbable 先着裁定
 
+## 2026-07-02 (3) 三視点整合性レビュー＋改善（人役/手役/PC観戦・EditMode 37/37・実機未検証）
+
+**直した不整合**:
+- 手バリアント: 端末間検証ゼロ→ `_studyFlags` bit2-3 で申告値同期・CSV `condition` 行に `hand=`・不一致は `conditionMismatch`＋エラーログ（描画はローカルのまま検証で守る）
+- 頭マーカー: 見る側ローカルフラグ依存→「手役端末の申告同期値」で描画（`RemoteAvatarView.Create(showHeadMarker:)`）
+- layout: host 止まり→server リレー＋途中参加者へ再送。観戦 PC（Captured=null）の Realistic/Robot は Default へ自動フォールバック＋警告（観戦記録の手見た目は条件と異なり得る→**条件の映像記録は scrcpy が正**）
+- preplace 自席重なり / trackingOriginType!=EyeLevel 警告 / 休め中バリアント切替の白キューブ固定 も修正
+
+**整合確認済み（触っていない）**: 片手モード（送信側抑制で全視点一致）/ 休めポーズの3視点出現 / 席・座標系・recenter 契約 / 診断表示の本番非混入 / Spectator の非干渉。**LocalVariantHand vs RemoteHandView の駆動経路差（平滑・bone0 リターゲット）は既知・working 判定のため未変更**（実機比較スクショで確認する事項）。
+
