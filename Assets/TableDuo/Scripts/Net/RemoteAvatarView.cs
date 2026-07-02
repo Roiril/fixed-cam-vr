@@ -315,6 +315,41 @@ namespace TableDuoVr.Net
                 _root.gameObject.SetActive(true);
                 // 受信側の手 bind（layout）でメッシュ/カプセルを先に組む（bind=開いた手の休めポーズで見える）
                 TryBuild(_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL);
+                // 外部リグ（Realistic/Robot）は bind の手首向きが Meta と違い、休めで指が上を向く。
+                // メッシュの指方向を測って「指=前やや下・手のひら下」に揃える（rest 限定。tracking では _root=wristRot で上書き）。
+                if (_varBind != null && _meshBones != null) AlignRestForward();
+            }
+
+            /// <summary>休めポーズで外部リグ手の指が前（人役方向）やや下・手のひら下を向くよう _root を回す（rest 限定）。</summary>
+            private void AlignRestForward()
+            {
+                var bones = _meshBones!;
+                Transform? wrist = bones.Length > 0 ? bones[0] : null;
+                Transform? tip = null;
+                foreach (int i in new[] { 11, 10, 8, 9, 7 }) { if (i < bones.Length && bones[i] != null) { tip = bones[i]; break; } }
+                if (wrist == null || tip == null) return;
+
+                // メッシュ固有の「指方向」と「手の甲方向」を _root ローカルで測る（_root.localRotation に依存しない固定量）
+                Vector3 fwd = _root.InverseTransformDirection(tip.position - wrist.position);
+                if (fwd.sqrMagnitude < 1e-8f) return;
+                fwd.Normalize();
+
+                Transform? idx = bones.Length > 6 ? bones[6] : null;
+                Transform? pnk = null;
+                foreach (int i in new[] { 15, 16 }) { if (i < bones.Length && bones[i] != null) { pnk = bones[i]; break; } }
+                Vector3 up = Vector3.up;
+                if (idx != null && pnk != null)
+                {
+                    Vector3 lateral = _root.InverseTransformDirection(pnk.position - idx.position);
+                    Vector3 n = Vector3.Cross(lateral, fwd); // 右手: 手の甲側の法線
+                    if (n.sqrMagnitude > 1e-8f) up = n.normalized;
+                }
+
+                // 望ましい向き（avatar 空間）: 指=前(人役,+Z)やや下, 手の甲=上（手のひら下）
+                var desiredFwd = new Vector3(0f, -0.35f, 1f).normalized;
+                // メッシュ local (fwd,up) → 望ましい (desiredFwd, up) へ写す回転を _root.localRotation に据える
+                _root.localRotation = Quaternion.LookRotation(desiredFwd, Vector3.up)
+                    * Quaternion.Inverse(Quaternion.LookRotation(fwd, up));
             }
 
             /// <summary>メッシュ手→（失敗時）カプセル手を一度だけ構築する。成功でラッチ。</summary>
@@ -362,6 +397,16 @@ namespace TableDuoVr.Net
                 _root.localRotation = Quaternion.Slerp(_root.localRotation, wristRot, smooth);
 
                 TryBuild(layout);
+
+                // バリアント切替や teardown 順序で mesh 実体だけ先に破棄された場合、
+                // 破棄済み bone へ代入して NRE/MissingReference にならないよう作り直しへ戻す
+                if (_meshBones != null && _meshInstance == null)
+                {
+                    _meshBones = null;
+                    _varBind = null;
+                    _built = false;
+                    _meshTried = false;
+                }
 
                 if (_meshBones != null)
                 {

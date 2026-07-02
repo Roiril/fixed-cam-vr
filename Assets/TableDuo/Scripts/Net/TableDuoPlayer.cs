@@ -251,9 +251,16 @@ namespace TableDuoVr.Net
             // SessionLogger は右手の landmark のみ算出するので CapturedR を準備完了トリガにする。
             if (!_layoutSent && HandSkeletonLayout.CapturedR != null)
             {
+                var cm = ConnectionManager.Instance;
+                if (cm == null)
+                {
+                    // Instance 未確定のまま黙って送信済み扱いにすると FK がホスト layout 固定になる
+                    // （silent fail）。次サンプルで再試行する
+                    Debug.LogWarning("[TableDuo] 手 layout 送信を保留（ConnectionManager 未確定・次サンプルで再試行）");
+                    return;
+                }
                 _layoutSent = true;
-                ConnectionManager.Instance?.SubmitLocalLayout(
-                    HandSkeletonLayout.CapturedL, HandSkeletonLayout.CapturedR);
+                cm.SubmitLocalLayout(HandSkeletonLayout.CapturedL, HandSkeletonLayout.CapturedR);
             }
         }
 

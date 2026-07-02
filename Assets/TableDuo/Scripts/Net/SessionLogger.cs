@@ -35,6 +35,9 @@ namespace TableDuoVr.Net
         private readonly System.Collections.Generic.Dictionary<ulong, bool> _lastTracked = new();
         // 条件（role/marker/oneHand）を記録済みの clientId。条件は端末ごとの起動フラグなので clientId 別に1回記録
         private readonly System.Collections.Generic.HashSet<ulong> _conditionLogged = new();
+        // ConnectionManager はシーンロード順で Instance 確定が遅れうるため、Update で遅延購読する
+        private ConnectionManager? _subscribedCm;
+        private int _lastDroppedPoses;
 
         public string? FilePath { get; private set; }
 
@@ -61,8 +64,16 @@ namespace TableDuoVr.Net
         {
             Grabbable.GrabLogged -= OnGrabLogged;
             TableDuoPlayer.RecenterReported -= OnRecenterReported;
+            if (_subscribedCm != null)
+            {
+                _subscribedCm.HandLayoutReceived -= OnHandLayoutReceived;
+                _subscribedCm = null;
+            }
             CloseFile();
         }
+
+        // layout 受信 = ここから先の pose 行が「本人の手寸法」で FK される境界（study-design §4 解析ノート）
+        private void OnHandLayoutReceived(ulong clientId) => LogEvent("layoutReceived", $"client{clientId}");
 
         private void OnGrabLogged(string objectName, ulong clientId, bool isGrab) =>
             LogEvent(isGrab ? "grab" : "release", $"{objectName}:client{clientId}");
@@ -92,6 +103,18 @@ namespace TableDuoVr.Net
             long epoch = EpochMs();
             var cm = ConnectionManager.Instance;
             if (cm == null) return;
+            if (_subscribedCm != cm)
+            {
+                if (_subscribedCm != null) _subscribedCm.HandLayoutReceived -= OnHandLayoutReceived;
+                cm.HandLayoutReceived += OnHandLayoutReceived;
+                _subscribedCm = cm;
+            }
+            // 破棄 pose メッセージの累計変化を刻む（「凍結 vs パケット欠落」の解析材料）
+            if (cm.DroppedPoseMessages != _lastDroppedPoses)
+            {
+                LogEvent("posesDropped", $"total={cm.DroppedPoseMessages}");
+                _lastDroppedPoses = cm.DroppedPoseMessages;
+            }
 
             foreach (var player in _players)
             {

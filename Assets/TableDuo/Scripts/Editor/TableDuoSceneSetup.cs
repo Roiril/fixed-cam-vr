@@ -213,6 +213,10 @@ namespace TableDuoVr.EditorTools
             if (pm != null) pm.floatValue = 120f;
             recSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // 調査セッションのローカル lossless 手 pose 録画（study-design §4 の完全忠実度バックアップ。
+            // tdv_* フラグ起動時のみ自動稼働・逐次書き込みで長時間可・pause ごとに確定保存）
+            systems.AddComponent<StreamingPoseRecorder>();
+
             systems.AddComponent<RecenterWatcher>();
             // 手動リセット: コントローラ両手グリップ長押しで頭を席へ戻す（人側/手側両方・ジェスチャー不可）
             systems.AddComponent<ControllerRecenterWatcher>();

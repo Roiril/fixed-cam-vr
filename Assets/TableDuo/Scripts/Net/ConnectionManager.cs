@@ -69,6 +69,14 @@ namespace TableDuoVr.Net
         /// <summary>リモートプレイヤーの pose を受信した（originClientId, pose）。pose は使い回しバッファ。</summary>
         public event Action<ulong, AvatarPose>? RemotePoseReceived;
 
+        /// <summary>手 layout を受信/格納した（originClientId）。SessionLogger が CSV に刻み、
+        /// 解析側が「どこから本人の手寸法で FK されるか」の境界を判別できるようにする（study-validity）。</summary>
+        public event Action<ulong>? HandLayoutReceived;
+
+        /// <summary>壊れた pose メッセージを破棄した累計。SessionLogger が変化を event 行に刻む
+        /// （破棄フレームが記録に残らず「凍結 vs 欠落」を判別できなくなるのを防ぐ）。</summary>
+        public int DroppedPoseMessages { get; private set; }
+
         private void Awake()
         {
             // additive ロード / シーン再ロードの重複で pose ルーティングが誤インスタンスを指すのを防ぐ
@@ -375,7 +383,8 @@ namespace TableDuoVr.Net
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[TableDuo] pose メッセージの処理に失敗（破棄して継続）: {e.Message}");
+                DroppedPoseMessages++;
+                Debug.LogWarning($"[TableDuo] pose メッセージの処理に失敗（破棄して継続・累計{DroppedPoseMessages}）: {e.Message}");
             }
         }
 
@@ -388,6 +397,7 @@ namespace TableDuoVr.Net
                 var r = PoseCodec.ReadLayout(ref reader);
                 _remoteLayouts[originId] = (l, r);
                 Debug.Log($"[TableDuo] 手 layout を client{originId} から受信（L={l != null} R={r != null}）");
+                HandLayoutReceived?.Invoke(originId);
             }
             catch (Exception e)
             {
@@ -431,6 +441,7 @@ namespace TableDuoVr.Net
             if (nm.IsServer)
             {
                 _remoteLayouts[nm.LocalClientId] = (left, right);
+                HandLayoutReceived?.Invoke(nm.LocalClientId);
                 return;
             }
             var writer = new FastBufferWriter(PoseCodec.MaxLayoutBytes, Allocator.Temp);
