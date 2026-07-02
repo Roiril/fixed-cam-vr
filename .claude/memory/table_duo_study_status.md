@@ -146,3 +146,9 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **G2 候補（パイロットで操作が辛ければ）**: チップの列スロットスナップ / 手元トレイ（持ちチップ枚数の可視化） / 空気トラック目盛りスナップ
 - 実機確認事項: サイコロ数字の見やすさ（サイズ0.02×64）/ 1.6倍チップのピンチ掴み心地 / reset_board の復元
 
+## 2026-07-02 (5) 卓上拘束＋盤面レイアウト修正（俯瞰スクショ検証・EditMode 37/37・実機未検証）
+
+- **Grabbable 卓上拘束**: 掴み追従を「最下点≥天板 Y・XZ=卓内」にクランプ（テーブル貫通・卓外落下防止）。Setup が surfaceY/center/half を全ピースへ焼き込み。pivot→最下点は renderer bounds から Awake で自動算出
+- **[TableDuoTablePreview](../../Assets/TableDuo/Scripts/Editor/TableDuoTablePreview.cs)**（`Diagnostics/Preview Table (screenshot)`）: 卓上を 4 角度（斜め上×2/低め/真上）で Play 不要撮影 → `Temp/TablePreview/`。**盤面配置を変えたら必ずこれで見る**
+- スクショで見つけて直した配置バグ: 駒/サイコロの固定座標 cz+0.02 がチップ最終行に乗る（→グリッド由来 pieceZ に）/ チップ数字が人役側から逆さま（→yaw180）/ 空気マーカーがチップ列混在（→ボード脇）/ 駒が小さすぎ（→1.6 倍、サイコロ 1.5 倍）
+
