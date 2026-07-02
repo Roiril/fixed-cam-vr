@@ -41,8 +41,10 @@ namespace TableDuoVr.Hands
         public static bool PreplaceAvatars;
 
         /// <summary>手役アバターの手メッシュの見た目（Default=Meta白手 / Realistic=人間の手 / Robot=機械の手）。
-        /// ネット非同期＝ローカル表示選択。tdv_hand 起動フラグ / 左コントローラ実機トグルで切替。
-        /// 変更は <see cref="SetHandVariant"/> 経由にすること（描画側が <see cref="HandVariantChanged"/> で再構築する）。</summary>
+        /// **正式な調査条件（within-pair 因子・2026-07-02 決定）**: ブロックごとに tdv_hand 起動フラグで固定し、
+        /// セッション中の切替は禁止（HandVariantWatcher が調査フラグ起動時にトグルを無効化。切替は CSV に刻まれる）。
+        /// ネット非同期＝ローカル表示選択。変更は <see cref="SetHandVariant"/> 経由にすること
+        /// （描画側が <see cref="HandVariantChanged"/> で再構築する）。</summary>
         public static HandVariant SelectedHandVariant;
 
         /// <summary>手バリアントが切り替わった。ローカル手 / リモート手の描画側がメッシュを作り直すために購読する。</summary>

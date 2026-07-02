@@ -8,7 +8,12 @@ param(
     [string]$FullSerial,   # 現在 full（=host）役の Quest serial
     [string]$HandSerial,   # 現在 hand（=client）役の Quest serial
     [string]$HostIp,       # host Quest の LAN IP（client の tdv_ip に入れる）。省略時は入力を求める
+    # 手バリアント条件（調査ブロックごとに固定。省略時は付けない=端末既定）。default / realistic / robot
+    [ValidateSet("", "default", "realistic", "robot")]
+    [string]$HandVariant = "",
     [string]$Package = "com.roiril.tableduo",
+    # 役割を入れ替えずに再起動（調査ブロック切替: バリアントだけ変えたい時）
+    [switch]$KeepRoles,
     [switch]$DryRun
 )
 
@@ -45,10 +50,21 @@ if (-not $HostIp) {
 
 # --- 交代プラン: full⇄hand を反転 ---
 # 旧 full($FullSerial) → 新 hand/client、旧 hand($HandSerial) → 新 full/host
-$plan = @(
-    @{ Serial = $HandSerial; Desc = "新 host/full"; Args = "-e tdv_mode host -e tdv_role full" },
-    @{ Serial = $FullSerial; Desc = "新 client/hand"; Args = "-e tdv_mode client -e tdv_ip $HostIp -e tdv_role hand" }
-)
+$variantArg = ""
+if ($HandVariant) { $variantArg = " -e tdv_hand $HandVariant" }
+if ($KeepRoles) {
+    # ブロック切替: 役割は維持し、tdv_hand（等）だけ変えて再起動
+    $plan = @(
+        @{ Serial = $FullSerial; Desc = "host/full（維持）"; Args = "-e tdv_mode host -e tdv_role full$variantArg" },
+        @{ Serial = $HandSerial; Desc = "client/hand（維持）"; Args = "-e tdv_mode client -e tdv_ip $HostIp -e tdv_role hand$variantArg" }
+    )
+} else {
+    # 役割交代: 旧 full($FullSerial) → 新 hand/client、旧 hand($HandSerial) → 新 full/host
+    $plan = @(
+        @{ Serial = $HandSerial; Desc = "新 host/full"; Args = "-e tdv_mode host -e tdv_role full$variantArg" },
+        @{ Serial = $FullSerial; Desc = "新 client/hand"; Args = "-e tdv_mode client -e tdv_ip $HostIp -e tdv_role hand$variantArg" }
+    )
+}
 
 Write-Host ""
 Write-Host "=== 役割交代プラン ==="
