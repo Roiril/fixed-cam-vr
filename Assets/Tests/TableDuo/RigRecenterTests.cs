@@ -1,6 +1,6 @@
 #nullable enable
 using NUnit.Framework;
-using TableDuoVr.Net;
+using TableDuoVr.Hands;
 using UnityEngine;
 
 namespace TableDuoVr.Tests

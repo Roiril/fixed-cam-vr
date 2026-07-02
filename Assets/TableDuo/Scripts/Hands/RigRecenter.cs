@@ -1,11 +1,13 @@
 #nullable enable
 using UnityEngine;
 
-namespace TableDuoVr.Net
+namespace TableDuoVr.Hands
 {
     /// <summary>
     /// 「現在の頭の姿勢を席（初期目線アンカー）に合わせる」リグ再センタリングの純計算。
     /// OVR 非依存（Transform 操作のみ）なので EditMode テスト可能。
+    /// recenter 系（RecenterWatcher / ControllerRecenterWatcher / 本クラス）は Hands に集約し、
+    /// Net 側（TableDuoPlayer）は購読と席解決だけを担う。
     /// </summary>
     public static class RigRecenter
     {

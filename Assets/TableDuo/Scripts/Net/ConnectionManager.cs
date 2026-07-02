@@ -100,7 +100,7 @@ namespace TableDuoVr.Net
             StudyConfig.OneHandMode = oneHandMode;
             StudyConfig.PreplaceAvatars = preplaceAvatars;
             StudyConfig.SelectedHandVariant = studyHandVariant;
-            ApplyStudyFlags();
+            StudyLaunchFlags.Apply(); // tdv_* パースと優先順の定義は StudyLaunchFlags（Hands）に一元化
             ConfigureL0IfRequested();
             if (StudyConfig.LaunchedWithStudyFlags)
             {
@@ -112,7 +112,7 @@ namespace TableDuoVr.Net
         // Standalone Windows ビルドを CLI で host/client/spectator 起動して実機ゼロ・MCP ゼロで検証するための土台。
         private void ConfigureL0IfRequested()
         {
-            string? l0 = GetLaunchValue("tdv_l0", "-tdvL0");
+            string? l0 = StudyLaunchFlags.Get("tdv_l0", "-tdvL0");
             bool enable = l0 == "on" || (l0 == null && enableL0InEditor);
             if (l0 == "off") enable = false;
             if (!enable) return;
@@ -126,82 +126,10 @@ namespace TableDuoVr.Net
             Debug.Log("[TableDuo] L0 モード: OVRCameraRig OFF / DebugCamera ON / FakeHandDriver ON（HMD/XR 不要）");
         }
 
-        /// <summary>tdv_role / tdv_marker / tdv_hands を intent extras（実機）/ コマンドライン（PC）から読む。</summary>
-        private void ApplyStudyFlags()
-        {
-            string? role = GetLaunchValue("tdv_role", "-tdvRole");
-            if (role == "full") StudyConfig.ForcedRole = StudyConfig.Role.Full;
-            else if (role == "hand") StudyConfig.ForcedRole = StudyConfig.Role.Hand;
-            else if (role == "spectator") StudyConfig.ForcedRole = StudyConfig.Role.Spectator;
-            if (role != null) StudyConfig.LaunchedWithStudyFlags = true;
-
-            string? marker = GetLaunchValue("tdv_marker", "-tdvMarker");
-            if (marker == "on") StudyConfig.ShowHeadMarker = true;
-            else if (marker == "off") StudyConfig.ShowHeadMarker = false;
-
-            string? hands = GetLaunchValue("tdv_hands", "-tdvHands");
-            if (hands == "one") StudyConfig.OneHandMode = true;
-            else if (hands == "two") StudyConfig.OneHandMode = false;
-
-            // 参加者ID / ペアID（紙記録と機械的に突合・取り違え防止）。指定があれば調査セッション扱い。
-            string? pid = GetLaunchValue("tdv_pid", "-tdvPid");
-            if (!string.IsNullOrEmpty(pid)) { StudyConfig.ParticipantId = pid!; StudyConfig.LaunchedWithStudyFlags = true; }
-            string? pair = GetLaunchValue("tdv_pair", "-tdvPair");
-            if (!string.IsNullOrEmpty(pair)) { StudyConfig.PairId = pair!; StudyConfig.LaunchedWithStudyFlags = true; }
-
-            // 診断: 各席に静的アバターを先置き（描画/疎通/トラッキングの段階切り分け）
-            string? preplace = GetLaunchValue("tdv_preplace", "-tdvPreplace");
-            if (preplace == "on") StudyConfig.PreplaceAvatars = true;
-            else if (preplace == "off") StudyConfig.PreplaceAvatars = false;
-
-            // 手メッシュの見た目（default=Meta白手 / realistic=人間の手 / robot=機械の手）。
-            // 別名も受ける（male/human/skin→realistic、meta/simple→default）。指定で調査セッション扱い。
-            string? hand = GetLaunchValue("tdv_hand", "-tdvHand");
-            if (hand != null)
-            {
-                StudyConfig.SelectedHandVariant = hand switch
-                {
-                    "realistic" or "male" or "human" or "skin" => HandVariant.Realistic,
-                    "robot" => HandVariant.Robot,
-                    _ => HandVariant.Default,
-                };
-                StudyConfig.LaunchedWithStudyFlags = true;
-            }
-
-            if (StudyConfig.LaunchedWithStudyFlags)
-            {
-                Debug.Log($"[TableDuo] StudyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode} hand={StudyConfig.SelectedHandVariant} pid={StudyConfig.ParticipantId} pair={StudyConfig.PairId}");
-            }
-        }
-
-        private static string? GetLaunchValue(string extraKey, string cmdKey)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            try
-            {
-                using var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
-                using var activity = player.GetStatic<AndroidJavaObject>("currentActivity");
-                using var intent = activity.Call<AndroidJavaObject>("getIntent");
-                return intent.Call<string>("getStringExtra", extraKey);
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-#else
-            var args = Environment.GetCommandLineArgs();
-            for (int i = 0; i < args.Length - 1; i++)
-            {
-                if (args[i] == cmdKey) return args[i + 1];
-            }
-            return null;
-#endif
-        }
-
         private void Start()
         {
             // キービジュアル撮影モード: ネットワーク/preplace せず、authored ポーズ＋シネマカメラで1枚撮る
-            if (GetLaunchValue("tdv_keyvisual", "-tdvKeyVisual") == "on")
+            if (StudyLaunchFlags.Get("tdv_keyvisual", "-tdvKeyVisual") == "on")
             {
                 showGui = false; // 接続 GUI を映り込ませない
                 new GameObject("KeyVisualDirector").AddComponent<KeyVisualDirector>().Run();
@@ -501,38 +429,11 @@ namespace TableDuoVr.Net
         private void ResolveAutoMode(out AutoMode mode, out string? ip)
         {
             mode = autoMode;
-            ip = null;
-#if UNITY_ANDROID && !UNITY_EDITOR
-            try
-            {
-                using var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
-                using var activity = player.GetStatic<AndroidJavaObject>("currentActivity");
-                using var intent = activity.Call<AndroidJavaObject>("getIntent");
-                string m = intent.Call<string>("getStringExtra", "tdv_mode");
-                string i = intent.Call<string>("getStringExtra", "tdv_ip");
-                if (m == "host") mode = AutoMode.Host;
-                else if (m == "client") mode = AutoMode.Client;
-                if (!string.IsNullOrEmpty(i)) ip = i;
-            }
-            catch (Exception)
-            {
-                // intent 無し起動は通常フロー
-            }
-#else
-            var args = Environment.GetCommandLineArgs();
-            for (int i = 0; i < args.Length - 1; i++)
-            {
-                if (args[i] == "-tdvMode")
-                {
-                    if (args[i + 1] == "host") mode = AutoMode.Host;
-                    else if (args[i + 1] == "client") mode = AutoMode.Client;
-                }
-                else if (args[i] == "-tdvIp")
-                {
-                    ip = args[i + 1];
-                }
-            }
-#endif
+            string? m = StudyLaunchFlags.Get("tdv_mode", "-tdvMode");
+            if (m == "host") mode = AutoMode.Host;
+            else if (m == "client") mode = AutoMode.Client;
+            ip = StudyLaunchFlags.Get("tdv_ip", "-tdvIp");
+            if (string.IsNullOrEmpty(ip)) ip = null;
         }
 
         private void OnGUI()
