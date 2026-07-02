@@ -217,6 +217,16 @@ namespace TableDuoVr.Net
             if (provider == null) return false;
             var variant = StudyConfig.SelectedHandVariant;
 
+            // 外部リグ（Realistic/Robot）は受信側の手 layout（Captured）を ovrBind に使う。
+            // 手キャプチャの無い環境（観戦 PC の Editor Play 等）では layout=null → ovrBind=identity で
+            // 指の曲がりが別物になるため、Default 白手（bind 一致・直接代入）へフォールバックする
+            if (HandVariantTable.IsExternalRig(variant)
+                && (_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL) == null)
+            {
+                Debug.LogWarning($"[TableDuo] 受信側の手 layout が無い（観戦 PC 等）→ {variant} はリターゲット不能。Default 白手で表示（観戦記録の手見た目は条件と異なる点に注意）");
+                variant = HandVariant.Default;
+            }
+
             if (HandVariantTable.IsExternalRig(variant))
             {
                 // Realistic/Robot: パック手を生成（配置・スケール・材質は provider が処理）→ リターゲット駆動
@@ -276,6 +286,14 @@ namespace TableDuoVr.Net
             _built = false;
             _meshTried = false;
             if (_wristProxy != null) _wristProxy.gameObject.SetActive(true);
+
+            // 休めポーズ表示中（未トラッキング）は Tick が早期 return するため、ここで作り直さないと
+            // トラッキング開始まで白キューブのままになる（デモ時のトグル用。調査中はトグル封印済み）
+            if (!_everTracked && _root.gameObject.activeSelf)
+            {
+                TryBuild(_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL);
+                if (_varBind != null && _meshBones != null) AlignRestForward();
+            }
         }
 
         private void BuildBones(HandSkeletonLayout layout)

@@ -184,7 +184,14 @@ namespace TableDuoVr.Net
             ulong clientId = player.OwnerClientId;
             if (!_conditionLogged.Add(clientId)) return;
             LogEvent("condition",
-                $"client{clientId}:role={role}:marker={(player.ShowHeadMarker ? 1 : 0)}:oneHand={(player.OneHandMode ? 1 : 0)}");
+                $"client{clientId}:role={role}:marker={(player.ShowHeadMarker ? 1 : 0)}:oneHand={(player.OneHandMode ? 1 : 0)}:hand={player.DeclaredHandVariant}");
+            // 手バリアントは within-pair 条件＝全端末一致が前提。申告値が host と食い違えば
+            // 条件汚染として当該ブロックを解析除外できるよう必ず刻む（TableDuoPlayer 側もエラーログを出す）
+            if (player.DeclaredHandVariant != StudyConfig.SelectedHandVariant)
+            {
+                LogEvent("conditionMismatch",
+                    $"client{clientId}:hand={player.DeclaredHandVariant}:host={StudyConfig.SelectedHandVariant}");
+            }
         }
 
         private void WritePoseRow(long epoch, ulong clientId, StudyConfig.Role? role,

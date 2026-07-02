@@ -301,6 +301,37 @@ namespace TableDuoVr.Net
             {
                 Debug.LogWarning($"[TableDuo] 接続上限({maxClients})超過のため client{clientId} を切断");
                 nm.DisconnectClient(clientId);
+                return;
+            }
+            // 途中参加（後から入る観戦者・再接続 client）へ既受信の layout を再送
+            //（layout は各 client が接続直後に 1 回しか送らないため、リレーだけだと後着者に届かない）
+            foreach (var kv in _remoteLayouts)
+            {
+                if (kv.Key == clientId) continue;
+                SendLayoutTo(nm, clientId, kv.Key, kv.Value.L, kv.Value.R);
+            }
+        }
+
+        /// <summary>origin の手 layout を target クライアントへ送る（server 用）。</summary>
+        private static void SendLayoutTo(NetworkManager nm, ulong targetClientId, ulong originId,
+            HandSkeletonLayout? l, HandSkeletonLayout? r)
+        {
+            var writer = new FastBufferWriter(PoseCodec.MaxLayoutBytes, Allocator.Temp);
+            try
+            {
+                writer.WriteValueSafe(originId);
+                PoseCodec.WriteLayout(ref writer, l);
+                PoseCodec.WriteLayout(ref writer, r);
+                nm.CustomMessagingManager.SendNamedMessage(
+                    LayoutMsg, targetClientId, writer, NetworkDelivery.ReliableFragmentedSequenced);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[TableDuo] layout リレー失敗 client{originId}→client{targetClientId}: {e.Message}");
+            }
+            finally
+            {
+                writer.Dispose();
             }
         }
 
@@ -391,6 +422,18 @@ namespace TableDuoVr.Net
                 _remoteLayouts[originId] = (l, r);
                 Debug.Log($"[TableDuo] 手 layout を client{originId} から受信（L={l != null} R={r != null}）");
                 HandLayoutReceived?.Invoke(originId);
+
+                // server は他クライアント（観戦者・対面プレイヤー）へもリレーする
+                // （pose はリレー済みなのに layout だけ host 止まりだと、観戦 PC が手寸法を持てない）
+                var nm = NetworkManager.Singleton;
+                if (nm != null && nm.IsServer)
+                {
+                    foreach (var clientId in nm.ConnectedClientsIds)
+                    {
+                        if (clientId == originId || clientId == nm.LocalClientId) continue;
+                        SendLayoutTo(nm, clientId, originId, l, r);
+                    }
+                }
             }
             catch (Exception e)
             {

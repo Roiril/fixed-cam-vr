@@ -41,16 +41,20 @@ namespace TableDuoVr.Net
         private RemoteHandView? _right;
         private RemyAvatarRig? _remy; // フル（人側）= Mixamo Remy 駆動。無ければ procedural 人型へフォールバック
         private bool _handsOnly;
+        private bool _showHeadMarker;
 
         private readonly AvatarPose _target = new();
         private bool _hasTarget;
 
-        public static RemoteAvatarView Create(Transform seatAnchor, bool handsOnly)
+        /// <param name="showHeadMarker">頭マーカー条件。null なら見る側のローカル StudyConfig（プレビュー/リプレイ用）。
+        /// ライブ接続では TableDuoPlayer が「手役端末の申告した同期値」を渡す＝全視点で提示条件が一致する。</param>
+        public static RemoteAvatarView Create(Transform seatAnchor, bool handsOnly, bool? showHeadMarker = null)
         {
             var go = new GameObject(handsOnly ? "RemoteAvatar(HandsOnly)" : "RemoteAvatar(Full)");
             go.transform.SetParent(seatAnchor, worldPositionStays: false);
             var view = go.AddComponent<RemoteAvatarView>();
             view._handsOnly = handsOnly;
+            view._showHeadMarker = showHeadMarker ?? StudyConfig.ShowHeadMarker;
             view.Build();
             return view;
         }
@@ -95,7 +99,7 @@ namespace TableDuoVr.Net
             {
                 // 頭マーカーは調査条件（StudyConfig）。既定 OFF —
                 // 「どこに話しかけるか」の曖昧さ自体が RQ2/RQ3 の観察対象（study-design.md §2）
-                if (StudyConfig.ShowHeadMarker)
+                if (_showHeadMarker)
                 {
                     _head = CreatePrimitive(transform, PrimitiveType.Sphere, 0.06f, "HeadMarker", _markerMat);
                 }

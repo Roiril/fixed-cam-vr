@@ -63,6 +63,7 @@
 - **within-pair 因子**: 同じペアが 3 ブロック（各ブロック = 1 バリアント固定）を体験する。ブロック間で `tdv_hand` 起動フラグを変えて再起動（役割交代と同じ運用。`tools/tableduo-role-swap.ps1` の起動に `-e tdv_hand <variant>` を足す）
 - **順序はペア間でカウンターバランス**: 3 条件 = 6 順列。ペア数が 6 の倍数でなければラテン方格 3 順序で回す
 - **セッション中の切替は禁止**: 左 Y トグルは調査フラグ起動時に無効化済み（HandVariantWatcher）。万一切り替わったら CSV の `handVariantChanged` イベントで検出し、当該ブロックを除外する（除外基準）
+- **端末間の一致検証（2026-07-02 追加）**: 各端末は自分の `tdv_hand` 申告値を同期し（`TableDuoPlayer._studyFlags`）、CSV の `condition` 行に clientId 別 `hand=` として記録。ホストと食い違えば `conditionMismatch` イベント＋各端末にエラーログ。**condition 行の hand が全端末一致していることをブロック冒頭に確認**し、`conditionMismatch` があるブロックは除外する（描画自体は各端末ローカルのため、検証で守る設計）
 - **記録**: CSV ヘッダ `# studyConfig: ... hand=<variant>` に条件が刻まれる（host=フル役端末の表示＝人役が見る手の見た目が操作対象）
 - **RQ への接続**: 手の見た目（人間らしさ/機械らしさ）が、話しかけ方・指差し理解・社会的距離にどう影響するか — 既存 RQ1–RQ4 に「条件比較」の軸を足す
 

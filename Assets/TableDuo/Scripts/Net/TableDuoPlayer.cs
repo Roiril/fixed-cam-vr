@@ -31,8 +31,10 @@ namespace TableDuoVr.Net
         private readonly NetworkVariable<byte> _role = new(
             RoleUnset, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
-        // 調査条件を全員へ共有（bit0=頭マーカー / bit1=片手モード）。owner が起動フラグから書く。
+        // 調査条件を全員へ共有（bit0=頭マーカー / bit1=片手モード / bit2-3=手バリアント）。owner が起動フラグから書く。
         // SessionLogger が clientId 別に記録するため（条件は端末ごとの起動フラグ＝host ローカル値では不正確）。
+        // 手バリアントの描画自体はローカル選択のままだが、申告値を同期して端末間フラグ不一致を検出する
+        //（within-pair 条件の根幹 — 不一致が無警告で成立すると条件ラベルが信用できなくなる）。
         private readonly NetworkVariable<byte> _studyFlags = new(
             0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
@@ -69,6 +71,8 @@ namespace TableDuoVr.Net
         /// <summary>同期済みの調査条件（host の SessionLogger が clientId 別に記録）。</summary>
         public bool ShowHeadMarker => (_studyFlags.Value & 1) != 0;
         public bool OneHandMode => (_studyFlags.Value & 2) != 0;
+        /// <summary>この端末が申告した手バリアント（同期値。描画はローカル選択のまま — 不一致検出・記録用）。</summary>
+        public HandVariant DeclaredHandVariant => (HandVariant)((_studyFlags.Value >> 2) & 0x3);
 
         public override void OnNetworkSpawn()
         {
@@ -80,7 +84,8 @@ namespace TableDuoVr.Net
                         : StudyConfig.Role.Hand);
                 _role.Value = (byte)role;
                 _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
-                    | (StudyConfig.OneHandMode ? 2 : 0));
+                    | (StudyConfig.OneHandMode ? 2 : 0)
+                    | ((byte)StudyConfig.SelectedHandVariant << 2));
                 SetupOwner(role);
                 // client の壁時計オフセットを host CSV に刻む（captureMs 整列用）。host 自身は offset=0 で不要
                 if (!IsServer)
@@ -151,6 +156,17 @@ namespace TableDuoVr.Net
             _sampler = FindObjectOfType<HandPoseSampler>(); // 1 回だけ取得（recenter/片手で再 Find しない）
             Debug.Log($"[TableDuo] 自分の役割={role} 席={SeatIndex}");
 
+            // 診断の静的アバターが「自分の席」に先置きされていれば撤去（ForcedRole 未指定の
+            // 既定規則起動だと SeatAvatarPreview は自席を判定できず、自分と重なって立つ）
+            SeatAvatarPreview.Instance?.HideSeat(SeatIndex);
+
+            // 席=目線の契約（席アンカーは EyeLevel 原点前提。FloorLevel だと頭が席+1.6m に浮く）
+            var ovr = OVRManager.instance;
+            if (ovr != null && ovr.trackingOriginType != OVRManager.TrackingOrigin.EyeLevel)
+            {
+                Debug.LogWarning($"[TableDuo] ⚠ trackingOriginType={ovr.trackingOriginType}（EyeLevel 前提）。アバターの高さがズレる場合はここを疑う");
+            }
+
             AlignLocalRig(seat);
             _nextSend = Time.time;
 
@@ -211,14 +227,29 @@ namespace TableDuoVr.Net
             _seat = seat;
             Debug.Log($"[TableDuo] リモート(client{OwnerClientId}) 役割={role} 席={SeatIndex}");
             WarnIfSeatCollision();
+            WarnIfHandVariantMismatch();
 
             // 診断の静的アバターが先置きされていれば撤去（ライブ追従アバターに差し替え）
             SeatAvatarPreview.Instance?.HideSeat(SeatIndex);
 
-            _view = RemoteAvatarView.Create(seat, handsOnly: role == StudyConfig.Role.Hand);
+            // 頭マーカーは「手役端末が申告した同期値」で描く（見る側のローカルフラグではなく。
+            // 端末ごとに tdv_marker が食い違っても、提示される条件＝手役の申告値で全視点一致させる）
+            _view = RemoteAvatarView.Create(seat, handsOnly: role == StudyConfig.Role.Hand,
+                showHeadMarker: ShowHeadMarker);
             if (ConnectionManager.Instance != null)
             {
                 ConnectionManager.Instance.RemotePoseReceived += OnRemotePose;
+            }
+        }
+
+        // 手バリアント＝within-pair 調査条件。全端末が同じ tdv_hand で起動している前提を検証する
+        //（描画は各端末ローカル選択のため、フラグ不一致は無警告だと「人役 Robot / 手役自認 Realistic /
+        //  観戦 Default」が成立してしまう）。不一致はエラーログ＋host なら CSV にも刻まれる（condition 行）
+        private void WarnIfHandVariantMismatch()
+        {
+            if (DeclaredHandVariant != StudyConfig.SelectedHandVariant)
+            {
+                Debug.LogError($"[TableDuo] ⚠ 手バリアント条件が端末間で不一致: client{OwnerClientId} 申告={DeclaredHandVariant} / この端末={StudyConfig.SelectedHandVariant}。tdv_hand を全端末で揃えて再起動すること（条件汚染）");
             }
         }
 
