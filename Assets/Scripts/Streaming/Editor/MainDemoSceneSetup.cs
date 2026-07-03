@@ -27,6 +27,9 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string TrackerName = "[Tracker]";
         private const string DebugHudName = "DebugHud";
         private const string StartupFaderName = "StartupFader";
+        // Tracker と HmdTrajectoryRecorder で同値を使う（片方だけ変えると
+        // 解析 CSV と実挙動の判定がズレるため 1 本化）。
+        private const float HysteresisShrink = 0.15f;
 
         [MenuItem("Tools/FixedCamVr/Setup/Setup Main Demo Scene", priority = 50)]
         public static void Setup()
@@ -121,7 +124,7 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(trackerSo, "registry", registry);
             TrySetObjectRef(trackerSo, "headTransform", centerEye.transform);
             SetPlayerZoneArray(trackerSo, "zones", new[] { zoneA, zoneB, zoneC, zoneC2 });
-            TrySetFloat(trackerSo, "hysteresisShrink", 0.15f);
+            TrySetFloat(trackerSo, "hysteresisShrink", HysteresisShrink);
             TrySetFloat(trackerSo, "updateInterval", 0.05f);
             TrySetBool(trackerSo, "keepLastWhenOutside", true);
             TrySetBool(trackerSo, "logChanges", true);
@@ -138,6 +141,22 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(calibSo, "headTransform", centerEye.transform);
             if (rightHand != null) TrySetObjectRef(calibSo, "rightHandTransform", rightHand.transform);
             calibSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // 2.7. ShowControlClient.zoneTrackerToDisable を新 Tracker へ再配線。
+            //      旧 Tracker は DeleteIfExists で消えるため、放置すると参照が missing になり
+            //      Web オペレータ卓のカメラ override 時のゾーン無効化連動が黙って死ぬ
+            //      （従来は手動再アサイン運用だった — unity-vr.md の注意書きを自動化）。
+            var showControl = Object.FindObjectOfType<ShowControlClient>(includeInactive: true);
+            if (showControl != null)
+            {
+                var scSo = new SerializedObject(showControl);
+                TrySetObjectRef(scSo, "zoneTrackerToDisable", tracker);
+                scSo.ApplyModifiedPropertiesWithoutUndo();
+            }
+            else
+            {
+                Debug.LogWarning("[MainDemoSceneSetup] ShowControlClient が見つかりません。zoneTrackerToDisable の再配線はスキップ。");
+            }
 
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
             CreateStartupFader(centerEye.transform, registry);
@@ -169,11 +188,31 @@ namespace FixedCamVr.Streaming.EditorTools
 
         private static void DeleteIfExists(string path)
         {
-            var go = GameObject.Find(path);
+            // GameObject.Find は非アクティブを返さないため、ユーザーが Hierarchy で
+            // 無効化した既存配置を拾えず重複生成される（冪等性の破れ）。
+            // シーンルートから transform.Find（非アクティブも辿れる）で解決する。
+            var go = FindByPath(path);
             if (go != null)
             {
                 Object.DestroyImmediate(go);
             }
+        }
+
+        // 非アクティブを含むパス解決（"A/B/C" 形式、アクティブシーンのルートから）。
+        private static GameObject? FindByPath(string path)
+        {
+            var segs = path.Split('/');
+            foreach (var root in SceneManager.GetActiveScene().GetRootGameObjects())
+            {
+                if (root.name != segs[0]) continue;
+                Transform? t = root.transform;
+                for (int i = 1; i < segs.Length && t != null; i++)
+                {
+                    t = t.Find(segs[i]);
+                }
+                if (t != null) return t.gameObject;
+            }
+            return null;
         }
 
         private static PlayerZone CreateZone(GameObject parent, string name, Vector3 position,
@@ -299,7 +338,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
             }
             TrySetFloat(recSo, "sampleInterval", 1.0f);
-            TrySetFloat(recSo, "hysteresisShrink", 0.15f);
+            TrySetFloat(recSo, "hysteresisShrink", HysteresisShrink);
             recSo.ApplyModifiedPropertiesWithoutUndo();
 
             return hud;

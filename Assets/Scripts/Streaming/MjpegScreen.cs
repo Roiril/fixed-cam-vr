@@ -43,6 +43,7 @@ namespace FixedCamVr.Streaming
         private int _lastTexW;
         private int _lastTexH;
         private float _lastScreenAspect;
+        private int _lastUvRotSteps = int.MinValue; // 実行中の手動補正（uvRotSteps 変更）も反映するため dirty 判定に含める
 
         private bool UseRegistry => registry != null;
 
@@ -131,10 +132,12 @@ namespace FixedCamVr.Streaming
 
             int w = tex.width, h = tex.height;
             float screenAspect = ScreenAspect;
-            if (w == _lastTexW && h == _lastTexH && Mathf.Approximately(screenAspect, _lastScreenAspect)) return;
+            if (w == _lastTexW && h == _lastTexH && uvRotSteps == _lastUvRotSteps
+                && Mathf.Approximately(screenAspect, _lastScreenAspect)) return;
             _lastTexW = w;
             _lastTexH = h;
             _lastScreenAspect = screenAspect;
+            _lastUvRotSteps = uvRotSteps;
 
             // 2x2 placeholder（未デコード）は黒のまま全面に出しても見た目は変わらないので 1:1 扱い
             float srcAspect = (w > 4 && h > 4) ? (float)w / h : 1f;

@@ -48,7 +48,9 @@ namespace FixedCamVr.Diagnostics
         private bool _hasPrev;
         private bool _prevConnected;
         private int _prevCamIndex = -1;
-        private string _prevZone = "";
+        // ゾーン変化は参照比較で検知する。Label（→ GameObject.name）はアクセス毎に
+        // マネージ文字列を確保するため、90Hz の Update で毎フレーム読むと GC 圧になる。
+        private FixedCamVr.Tracking.PlayerZone? _prevZoneRef;
 
         private void OnEnable()
         {
@@ -74,7 +76,7 @@ namespace FixedCamVr.Diagnostics
             }
 
             // 変化検知
-            string reason = DetectChange();
+            string? reason = DetectChange();
             if (reason != null)
             {
                 Dump(reason);
@@ -97,7 +99,7 @@ namespace FixedCamVr.Diagnostics
         {
             bool conn = false;
             int camIdx = -1;
-            string zone = "";
+            FixedCamVr.Tracking.PlayerZone? zone = null;
 
             if (registry != null)
             {
@@ -105,15 +107,12 @@ namespace FixedCamVr.Diagnostics
                 conn = active != null && active.IsConnected;
                 camIdx = registry.ActiveIndex;
             }
-            if (tracker != null && tracker.CurrentZone != null)
-            {
-                zone = tracker.CurrentZone.Label ?? "";
-            }
+            if (tracker != null) zone = tracker.CurrentZone;
 
             if (!_hasPrev) return null;
             if (conn != _prevConnected) return "conn";
             if (camIdx != _prevCamIndex) return "cam";
-            if (zone != _prevZone) return "zone";
+            if (!ReferenceEquals(zone, _prevZoneRef)) return "zone";
             return null;
         }
 
@@ -122,7 +121,7 @@ namespace FixedCamVr.Diagnostics
             _hasPrev = true;
             _prevConnected = registry?.GetActive()?.IsConnected ?? false;
             _prevCamIndex = registry?.ActiveIndex ?? -1;
-            _prevZone = tracker?.CurrentZone?.Label ?? "";
+            _prevZoneRef = tracker != null ? tracker.CurrentZone : null;
         }
 
         private void Dump(string reason)

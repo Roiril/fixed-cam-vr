@@ -71,6 +71,10 @@ namespace FixedCamVr.Streaming
         private volatile bool _isConnected;
         private volatile string? _lastError;
 
+        // RequestReconnect 起因の cancel と、connect timeout 等の異常系 cancel を区別する。
+        // これが立っていない OCE/ODE は「意図しない切断」なので backoff を適用する。
+        private volatile bool _reconnectRequested;
+
         public bool IsConnected => _isConnected;
         public string? LastError => _lastError;
 
@@ -78,6 +82,7 @@ namespace FixedCamVr.Streaming
         {
             CancellationTokenSource? toCancel;
             lock (_connectionCtsLock) { toCancel = _connectionCts; }
+            _reconnectRequested = true;
             try { toCancel?.Cancel(); }
             catch (Exception ex) { Debug.LogWarning($"[MJPEG] reconnect cancel failed: {ex.Message}"); }
         }
@@ -138,24 +143,32 @@ namespace FixedCamVr.Streaming
                     await ReceiveOnceAsync(connectionCts.Token);
                     backoffSec = 1;
                 }
-                catch (OperationCanceledException)
-                {
-                    if (ct.IsCancellationRequested) return;
-                    wasReconnectRequest = true;
-                    _isConnected = false;
-                    backoffSec = 1;
-                }
-                catch (ObjectDisposedException)
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
                 {
                     // RequestReconnect() が connectionCts を cancel → socket.Close() した時、
-                    // 進行中の ReadAsync は OperationCanceledException ではなく
-                    // ObjectDisposedException を投げることがある。意図した再接続なので
-                    // 警告ログ + backoff 倍化はせず、クリーンな再接続として扱う
-                    // （連発時に "Cannot access a disposed object" でログが埋まるのを防ぐ）。
+                    // 進行中の ReadAsync は OperationCanceledException または
+                    // ObjectDisposedException を投げる。_reconnectRequested が立っている時だけ
+                    // 「意図した再接続」としてクリーン扱い（backoff リセット・即時リトライ）。
+                    // 立っていない OCE/ODE は connect timeout 等の異常系なので、
+                    // 通常エラーと同じく _lastError + 指数バックオフを適用する
+                    // （旧実装は全 OCE/ODE を再接続要求扱いにしており、サーバ不在時に
+                    //   バックオフ無しの永久リトライ + 誤 INFO ログになっていた）。
                     if (ct.IsCancellationRequested) return;
-                    wasReconnectRequest = true;
                     _isConnected = false;
-                    backoffSec = 1;
+                    if (_reconnectRequested)
+                    {
+                        _reconnectRequested = false;
+                        wasReconnectRequest = true;
+                        backoffSec = 1;
+                    }
+                    else
+                    {
+                        _lastError = "connect timeout / connection aborted";
+                        Debug.LogWarning($"[MJPEG] disconnected (timeout/abort). retry in {backoffSec}s");
+                        try { await Task.Delay(TimeSpan.FromSeconds(backoffSec), ct); }
+                        catch (OperationCanceledException) { return; }
+                        backoffSec = Math.Min(backoffSec * 2, 30);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -188,6 +201,14 @@ namespace FixedCamVr.Streaming
                 SendBufferSize = 16 * 1024,
             };
 
+            // ★ socket.Close は「接続確立後も」ct（RequestReconnect / Dispose）に反応させる。
+            //   Unity Mono の NetworkStream.ReadAsync は進行中の read を token では中断しないため、
+            //   完全 stall（Wi-Fi 切断・スマホスリープで RST が来ない）時に Close だけが
+            //   ReadAsync を破れる唯一の手段。register を connect フェーズ限定にすると
+            //   lag 検出の RequestReconnect も ReapplyConnection の Dispose も stall を破れない。
+            using var closeOnCancel = ct.Register(() => { try { socket.Close(); } catch { } });
+
+            // connect timeout は別 CTS で socket.Close を重ねる（timeout でも Close で中断）。
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             connectCts.CancelAfter(_connectTimeout);
 
@@ -305,6 +326,10 @@ namespace FixedCamVr.Streaming
             private readonly Stream _inner;
             private int _bytesLeftInChunk;
             private bool _eof;
+            // チャンク境界パース用の再利用バッファ。チャンク毎の new をゼロにする
+            // （30fps × 数チャンク/フレームで毎秒百個規模の小アロケーションになるため）。
+            private readonly byte[] _one = new byte[1];
+            private readonly byte[] _crlf = new byte[2];
 
             public ChunkedReadStream(Stream inner) { _inner = inner; }
 
@@ -349,43 +374,46 @@ namespace FixedCamVr.Streaming
 
             private async Task<int> ReadChunkSizeAsync(CancellationToken ct)
             {
-                var sb = new StringBuilder(8);
-                byte[] one = new byte[1];
+                // hex を int に直接累算し、StringBuilder / string を確保しない。
+                // long で受けてから範囲検証する（"80000000" が負値に丸まるのを防ぐ）。
+                long size = 0;
+                int digits = 0;
                 bool sawCR = false;
+                bool inExtension = false; // ';' 以降の chunk extension は読み飛ばす
                 while (true)
                 {
-                    int n = await _inner.ReadAsync(one, 0, 1, ct);
+                    int n = await _inner.ReadAsync(_one, 0, 1, ct);
                     if (n <= 0) throw new IOException("EOF in chunk size");
-                    byte b = one[0];
+                    byte b = _one[0];
                     if (sawCR && b == 0x0A) break;
                     sawCR = false;
                     if (b == 0x0D) { sawCR = true; continue; }
-                    sb.Append((char)b);
-                    if (sb.Length > 32) throw new InvalidOperationException("chunk size too long");
+                    if (inExtension) continue;
+                    if (b == (byte)';') { inExtension = true; continue; }
+                    int d;
+                    if (b >= (byte)'0' && b <= (byte)'9') d = b - (byte)'0';
+                    else if (b >= (byte)'a' && b <= (byte)'f') d = b - (byte)'a' + 10;
+                    else if (b >= (byte)'A' && b <= (byte)'F') d = b - (byte)'A' + 10;
+                    else if (b == (byte)' ' || b == (byte)'\t') continue; // 前後空白は無視
+                    else throw new IOException($"invalid chunk size char: 0x{b:X2}");
+                    size = size * 16 + d;
+                    if (++digits > 8 || size > MaxFrameBytes)
+                        throw new IOException($"invalid chunk size: too large ({size})");
                 }
-                string s = sb.ToString();
-                int semi = s.IndexOf(';');
-                if (semi >= 0) s = s.Substring(0, semi);
-                // long で受けてから範囲検証する。int.Parse(HexNumber) は "80000000" を
-                // 負値に丸めてしまい、負の _bytesLeftInChunk → Math.Min が負 → ReadAsync 例外になる。
-                if (!long.TryParse(s.Trim(), System.Globalization.NumberStyles.HexNumber,
-                        System.Globalization.CultureInfo.InvariantCulture, out long size)
-                    || size < 0 || size > MaxFrameBytes)
-                    throw new IOException($"invalid chunk size: '{s.Trim()}'");
+                if (digits == 0) throw new IOException("empty chunk size");
                 return (int)size;
             }
 
             private async Task ReadCrlfAsync(CancellationToken ct)
             {
-                byte[] buf = new byte[2];
                 int got = 0;
                 while (got < 2)
                 {
-                    int n = await _inner.ReadAsync(buf, got, 2 - got, ct);
+                    int n = await _inner.ReadAsync(_crlf, got, 2 - got, ct);
                     if (n <= 0) throw new IOException("EOF on chunk CRLF");
                     got += n;
                 }
-                if (buf[0] != 0x0D || buf[1] != 0x0A) throw new IOException("expected CRLF after chunk");
+                if (_crlf[0] != 0x0D || _crlf[1] != 0x0A) throw new IOException("expected CRLF after chunk");
             }
         }
 
@@ -560,6 +588,8 @@ namespace FixedCamVr.Streaming
 
         public void Dispose()
         {
+            // HUD 等に「切断済みなのに Connected」が残らないよう即時反映する。
+            _isConnected = false;
             try { _cts.Cancel(); }
             catch (Exception ex) { Debug.LogWarning($"[MJPEG] cts cancel failed: {ex.Message}"); }
 
@@ -567,7 +597,8 @@ namespace FixedCamVr.Streaming
             //   ここで _loop.Wait(500ms) すると、ReapplyConnection（show.json の IP 差し替え）が
             //   stall 中のカメラに対して呼ばれた時に最大 500ms のフレームヒッチになる
             //   ── IP 差し替えはまさにカメラが固まった現場で使うので、最も踏みやすい場面で固まる。
-            //   ループが掴む socket は using なのでタスク巻き取り時に閉じる。_cts はリンク CTS が
+            //   _cts.Cancel() は ct.Register 経由で socket.Close を即発火するため、
+            //   完全 stall 中の ReadAsync も即座に破れる。_cts はリンク CTS が
             //   残っている間に dispose すると ObjectDisposedException になるため、ループ完了後
             //   （背景スレッド）に dispose する。
             var loop = _loop;

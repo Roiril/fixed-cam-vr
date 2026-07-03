@@ -1,11 +1,7 @@
 {
     "name": "FixedCamVr.Fx",
     "rootNamespace": "FixedCamVr.Fx",
-    "references": [
-        "FixedCamVr.Streaming",
-        "Unity.RenderPipelines.Universal.Runtime",
-        "Unity.RenderPipelines.Core.Runtime"
-    ],
+    "references": [],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

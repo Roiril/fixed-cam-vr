@@ -16,20 +16,15 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("Editor 用フォールバック。実機 Quest 3 では OvrControllerBridge から RuntimeDebugHud.SetVisible(...) を呼ぶ想定。")]
         [SerializeField] private KeyCode keyboardToggleKey = KeyCode.H;
 
-        private bool _visible = true;
-
-        private void Start()
-        {
-            if (hud != null) _visible = hud.IsVisible;
-        }
-
         private void Update()
         {
             if (hud == null) return;
             if (Input.GetKeyDown(keyboardToggleKey))
             {
-                _visible = !_visible;
-                hud.SetVisible(_visible);
+                // ローカルにコピーを持たず真実源（hud.IsVisible）を反転する。
+                // シャドウコピーは OvrControllerBridge 側のトグルと併用した時に desync して
+                // 「初回押下が空振り」になる（2026-06-18 の既知バグ類型）。
+                hud.SetVisible(!hud.IsVisible);
             }
         }
     }

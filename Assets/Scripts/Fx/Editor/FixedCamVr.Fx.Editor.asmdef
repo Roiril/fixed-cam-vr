@@ -2,9 +2,7 @@
     "name": "FixedCamVr.Fx.Editor",
     "rootNamespace": "FixedCamVr.Fx.Editor",
     "references": [
-        "FixedCamVr.Fx",
-        "Unity.RenderPipelines.Universal.Runtime",
-        "Unity.RenderPipelines.Core.Runtime"
+        "FixedCamVr.Fx"
     ],
     "includePlatforms": ["Editor"],
     "excludePlatforms": [],

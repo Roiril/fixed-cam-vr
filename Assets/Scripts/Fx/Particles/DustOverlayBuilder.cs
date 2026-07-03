@@ -23,6 +23,11 @@ namespace FixedCamVr.Fx.Particles
         [Tooltip("パーティクルの色味と最大不透明度")]
         [SerializeField] private Color tint = new Color(0.9f, 0.85f, 0.7f, 0.25f);
 
+        [Tooltip("パーティクル用シェーダ（URP Particles/Unlit）。シリアライズ参照で焼き込む。" +
+                 "未割当だと Shader.Find フォールバックになるが、実機ビルドではどのアセットからも" +
+                 "参照されないシェーダはストリップされて null になる（Editor でしか映らない）。")]
+        [SerializeField] private Shader? particleShader;
+
         // ApplyConfig 内で生成したマテリアルの参照を保持し、OnDestroy で確実に破棄する。
         private Material? _generatedMat;
 
@@ -91,11 +96,12 @@ namespace FixedCamVr.Fx.Particles
                 // 以前は OnEnable のたびに new Material を作って前回分が GC 管理から外れていた。
                 if (_generatedMat == null)
                 {
-                    var sh = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+                    var sh = particleShader != null ? particleShader : Shader.Find("Universal Render Pipeline/Particles/Unlit");
                     if (sh == null)
                     {
                         Debug.LogWarning("[DustOverlayBuilder] URP Particles/Unlit shader not found. " +
-                            "URP がプロジェクトに導入されているか確認してください。");
+                            "particleShader を Inspector で割り当てるか、URP 導入を確認してください" +
+                            "（実機ビルドでは Shader.Find はストリップされ null になる）。");
                     }
                     else
                     {

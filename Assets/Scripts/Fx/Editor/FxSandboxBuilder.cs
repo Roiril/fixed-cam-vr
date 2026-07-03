@@ -187,7 +187,20 @@ namespace FixedCamVr.Fx.Editor
             var go = new GameObject("[Fx]_DustParticles (disabled)");
             go.transform.SetParent(screen.transform, worldPositionStays: false);
             go.transform.localPosition = new Vector3(0, 0, -0.05f);
-            go.AddComponent<DustOverlayBuilder>();
+            var dust = go.AddComponent<DustOverlayBuilder>();
+            // シェーダをシリアライズ参照で焼き込む。実行時 Shader.Find だけだと
+            // 実機ビルドでシェーダがストリップされて埃 FX が Editor 専用になる。
+            var particleShader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            if (particleShader != null)
+            {
+                var dso = new SerializedObject(dust);
+                TrySetObjectRef(dso, "particleShader", particleShader, "DustOverlayBuilder");
+                dso.ApplyModifiedPropertiesWithoutUndo();
+            }
+            else
+            {
+                Debug.LogWarning("[FxSandboxBuilder] URP Particles/Unlit shader が見つかりません（DustOverlayBuilder は Editor 専用のまま）");
+            }
             go.SetActive(false);
         }
     }

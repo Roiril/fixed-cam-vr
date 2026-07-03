@@ -43,7 +43,8 @@ namespace FixedCamVr.OvrBridge
         //   （unity-prefab-fields の罠）。調整不要なので const 固定。
         private const float GripTapMaxSec = 0.4f;
 
-        private bool _hudVisible = true;
+        // HUD の型付き参照（Start で hud からキャスト）。トグルは真実源 IsVisible を反転する。
+        private FixedCamVr.Diagnostics.RuntimeDebugHud? _hudTyped;
         private float _gripHold;
         private bool _calibToggleFired;
         // グリップ単押し検出（release ベース。両手 or 長押しは校正なので除外）。
@@ -53,11 +54,10 @@ namespace FixedCamVr.OvrBridge
 
         private void Start()
         {
-            // HUD の初期表示状態に _hudVisible を合わせる。RuntimeDebugHud が既定 OFF
-            // （startVisible=false）のとき true 固定のままだと、初回 Y 押下が「既に隠れている
-            // HUD を隠す」空振りになり、表示するのに 2 回押す羽目になる（最近の「ボタンが意図と
-            // 違う」系の罠と同質）。型は MonoBehaviour で緩く受けたまま安全にキャストして読む。
-            if (hud is FixedCamVr.Diagnostics.RuntimeDebugHud rdh) _hudVisible = rdh.IsVisible;
+            // 型付きで保持し、トグル時に真実源（IsVisible）を毎回読む。ローカル bool の
+            // シャドウコピーは HudToggleInput（H キー）併用時に desync して「初回押下が空振り」
+            // になる（2026-06-18 の既知バグ類型）。
+            _hudTyped = hud as FixedCamVr.Diagnostics.RuntimeDebugHud;
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
         }
 
@@ -91,10 +91,12 @@ namespace FixedCamVr.OvrBridge
                     {
                         size = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch),
                         rotate = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch).x, // 左スティック横: レイアウト回転
-                        pick = OVRInput.GetDown(OVRInput.Button.One),       // A (右): レイ先を選択
+                        // Button.One/Three/Four はコントローラ未指定だと両手から拾う
+                        //（One=A|X 等）ため、必ず RTouch/LTouch を明示する（通常マッピングと同じ規約）。
+                        pick = OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.RTouch),   // A (右): レイ先を選択
                         grab = OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger, OVRInput.Controller.RTouch) > 0.5f, // 右トリガ: ドラッグ
-                        save = OVRInput.GetDown(OVRInput.Button.Three),     // X (左)
-                        reset = OVRInput.GetDown(OVRInput.Button.Four),     // Y (左)
+                        save = OVRInput.GetDown(OVRInput.Button.Three, OVRInput.Controller.LTouch), // X (左)
+                        reset = OVRInput.GetDown(OVRInput.Button.Four, OVRInput.Controller.LTouch), // Y (左)
                     });
                     return;
                 }
@@ -112,12 +114,13 @@ namespace FixedCamVr.OvrBridge
             {
                 if (OVRInput.GetDown(anchorToggleButton, OVRInput.Controller.LTouch)) screenAnchor.Toggle();
             }
-            // 左コントローラ Y ボタンで HUD 表示トグル
+            // 左コントローラ Y ボタンで HUD 表示トグル（真実源 IsVisible の反転）
             if (OVRInput.GetDown(hudToggleButton, OVRInput.Controller.LTouch))
             {
-                _hudVisible = !_hudVisible;
-                if (hud != null)
-                    hud.SendMessage("SetVisible", _hudVisible, SendMessageOptions.DontRequireReceiver);
+                if (_hudTyped != null)
+                    _hudTyped.SetVisible(!_hudTyped.IsVisible);
+                else if (hud != null) // RuntimeDebugHud 以外は状態が読めないので非表示のみ
+                    hud.SendMessage("SetVisible", false, SendMessageOptions.DontRequireReceiver);
             }
 
             // 片手グリップの「単押し」で、今見ているカメラの演出を ON/OFF（トグル）。

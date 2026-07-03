@@ -56,6 +56,9 @@ namespace FixedCamVr.Streaming
         private readonly Dictionary<string, string> _videoFileCache = new();
         // PlayCue が非同期ロードを挟む間に次の PlayCue が来たら古い方を破棄するための世代カウンタ。
         private int _playGeneration;
+        // Prepare() を発行した時点の世代。OnPrepared で照合し、stale な Prepare 完了
+        //（動画 cue A の準備中に cue B へ切り替えた後で A の prepareCompleted が届く）を破棄する。
+        private int _prepareGeneration = -1;
 
         /// <summary>現在のオーバーレイ（フェードアウト中も含む）。null なら停止。</summary>
         public OverlayCueData? Current => _current;
@@ -161,7 +164,16 @@ namespace FixedCamVr.Streaming
         {
             if (_material == null || _player == null) return;
             int gen = ++_playGeneration;
-            _ = PlayCueAsync(data, gen, destroyCancellationToken);
+            _ = RunPlayCueAsync(data, gen, destroyCancellationToken);
+        }
+
+        // fire-and-forget の例外を無音で失わないための wrapper。
+        // ここで catch しないと unobserved task exception になり「演出が出ないのにログも無い」になる。
+        private async Task RunPlayCueAsync(OverlayCueData data, int gen, CancellationToken ct)
+        {
+            try { await PlayCueAsync(data, gen, ct); }
+            catch (OperationCanceledException) { }
+            catch (Exception e) { Debug.LogError($"[ScreenOverlay] PlayCue '{data.displayName}' failed: {e}"); }
         }
 
         private async Task PlayCueAsync(OverlayCueData data, int gen, CancellationToken ct)
@@ -182,6 +194,10 @@ namespace FixedCamVr.Streaming
             if (data.SourceIsVideo)
             {
                 _current = data;
+                // StopOverlay のフェードアウト進行中に新 cue が来たケース:
+                // クリアしないと Update のフェード完了分岐が preparing 中の player を Stop し
+                // _current を null にして、新 cue が無言で殺される。
+                _stopWhenFadedOut = false;
                 _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
                 _player!.Stop();
                 if (data.clip != null)
@@ -200,6 +216,7 @@ namespace FixedCamVr.Streaming
                     _player.url = localUrl;
                 }
                 _player.isLooping = data.loop;
+                _prepareGeneration = gen;
                 _player.Prepare(); // 完了後 OnPrepared で RT 接続 + 再生 + フェードイン
             }
             else
@@ -216,8 +233,11 @@ namespace FixedCamVr.Streaming
                     return;
                 }
                 _current = data;
+                _stopWhenFadedOut = false; // 動画パスと同じくフェードアウト完了分岐から守る
                 _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
-                if (_player!.isPlaying) _player.Stop();
+                // 無条件 Stop: preparing 中（isPlaying=false）の動画 cue も中断しないと、
+                // 後から prepareCompleted が届いてこの静止画を動画 RT で上書きする。
+                _player!.Stop();
                 SetOverlayTexture(still, (float)still.width / still.height);
                 BeginFadeIn(data);
             }
@@ -298,6 +318,8 @@ namespace FixedCamVr.Streaming
 
         private void OnPrepared(VideoPlayer vp)
         {
+            // stale な Prepare 完了（準備中に別 cue へ切り替え済み）は現行 cue を乗っ取らない。
+            if (_prepareGeneration != _playGeneration) return;
             var cue = _current;
             if (cue == null || _material == null) return;
 

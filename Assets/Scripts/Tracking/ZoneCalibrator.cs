@@ -109,6 +109,7 @@ namespace FixedCamVr.Tracking
         private Transform? _rayDot;
         private Material? _rayMat;
         private Material? _rayDotMat;
+        private Material? _headMarkerMat;
 
         // カメラ index 別の色（A=緑 / B=青 / C=橙…）。index がパレットを超えたら循環。
         private static readonly Color[] Palette =
@@ -342,6 +343,14 @@ namespace FixedCamVr.Tracking
                 int applied = 0;
                 foreach (var e in data.entries)
                 {
+                    // 旧フォーマット / 壊れたエントリのガード:
+                    // JsonUtility は欠損フィールドを default で埋めるため、halfExtents 欠損の
+                    // エントリを適用するとゾーンが点（0,0,0）に潰れる。スキップして守る。
+                    if (e.halfExtents == Vector3.zero)
+                    {
+                        Debug.LogWarning($"[ZoneCalib] 不正エントリをスキップ（halfExtents=0）: {e.name}");
+                        continue;
+                    }
                     foreach (var z in zones)
                     {
                         if (z.name != e.name) continue;
@@ -405,8 +414,9 @@ namespace FixedCamVr.Tracking
             marker.transform.localScale = new Vector3(0.15f, 0.15f, 1f);
             var mcol = marker.GetComponent<Collider>();
             if (mcol != null) Destroy(mcol);
-            var mmat = new Material(shader) { color = new Color(1f, 1f, 1f, 0.9f) };
-            marker.GetComponent<Renderer>().sharedMaterial = mmat;
+            // フィールドに保持して TearDownViz で破棄する（保持しないと ON/OFF の度にリーク）
+            _headMarkerMat = new Material(shader) { color = new Color(1f, 1f, 1f, 0.9f) };
+            marker.GetComponent<Renderer>().sharedMaterial = _headMarkerMat;
             _headMarker = marker.transform;
 
             // コントローラ → 床のレイ（校正モード限定で表示）
@@ -503,10 +513,12 @@ namespace FixedCamVr.Tracking
             foreach (var m in _vizMats) if (m != null) Destroy(m);
             if (_rayMat != null) Destroy(_rayMat);
             if (_rayDotMat != null) Destroy(_rayDotMat);
+            if (_headMarkerMat != null) Destroy(_headMarkerMat);
             _vizRoot = null;
             _vizQuads = Array.Empty<Transform>();
             _vizMats = Array.Empty<Material>();
             _headMarker = null;
+            _headMarkerMat = null;
             _rayLine = null;
             _rayDot = null;
             _rayMat = null;

@@ -148,6 +148,10 @@ namespace FixedCamVr.Streaming
             }
         }
 
+        // enable 期間だけ生きる CTS。destroy token と束ねて disable / destroy 両方で止める。
+        // これが無いと disable→enable のたびに long-poll / heartbeat が多重起動する。
+        private CancellationTokenSource? _loopCts;
+
         private void OnEnable()
         {
             // server 未設定でも component は生かす（端末キャッシュ適用・カメラ別 post の
@@ -157,8 +161,16 @@ namespace FixedCamVr.Streaming
                 Debug.Log("[ShowControl] server 未設定。オペレータ卓なしで続行（キャッシュ設定のみ適用）。");
                 return;
             }
-            _ = PollLoopAsync(destroyCancellationToken);
-            _ = HeartbeatLoopAsync(destroyCancellationToken);
+            _loopCts = CancellationTokenSource.CreateLinkedTokenSource(destroyCancellationToken);
+            _ = PollLoopAsync(_loopCts.Token);
+            _ = HeartbeatLoopAsync(_loopCts.Token);
+        }
+
+        private void OnDisable()
+        {
+            _loopCts?.Cancel();
+            _loopCts?.Dispose();
+            _loopCts = null;
         }
 
         private void OnActiveCameraChanged(int _) => ApplyPostForActive();
@@ -186,7 +198,12 @@ namespace FixedCamVr.Streaming
                         continue;
                     }
                     var state = JsonUtility.FromJson<ShowState>(req.downloadHandler.text);
-                    if (state == null) continue;
+                    if (state == null)
+                    {
+                        // 200 で空/壊れ JSON を返し続ける異常系でホットループにしない
+                        await Task.Delay(1000, ct);
+                        continue;
+                    }
                     if (state.rev != _rev)
                     {
                         _rev = state.rev;
@@ -234,10 +251,10 @@ namespace FixedCamVr.Streaming
             string cueId = state.control?.activeCue ?? "";
             if (cueId != _appliedCue)
             {
-                _appliedCue = cueId;
                 if (_overlay == null) return;
                 if (string.IsNullOrEmpty(cueId))
                 {
+                    _appliedCue = cueId;
                     _overlay.StopOverlay();
                 }
                 else
@@ -245,9 +262,12 @@ namespace FixedCamVr.Streaming
                     var def = Array.Find(state.cues, c => c.id == cueId);
                     if (def == null)
                     {
+                        // _appliedCue は確定しない: Web 側で cue を保存し直した後の再 poll で
+                        // 同じ activeCue 文字列でも再解決できるようにする。
                         Debug.LogWarning($"[ShowControl] unknown cue id: {cueId}");
                         return;
                     }
+                    _appliedCue = cueId;
                     _overlay.PlayCue(new OverlayCueData
                     {
                         id = def.id,
