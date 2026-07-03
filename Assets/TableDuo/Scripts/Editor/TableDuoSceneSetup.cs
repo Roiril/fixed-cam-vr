@@ -60,6 +60,7 @@ namespace TableDuoVr.EditorTools
             DeleteRoot("OVRCameraRig");
             DeleteRoot("NetworkManager");
             DeleteRoot("Directional Light");
+            DeleteRoot("Ceiling Fill Light");
             DeleteRoot("DebugCamera");
 
             // --- 環境 ---
@@ -67,7 +68,28 @@ namespace TableDuoVr.EditorTools
             var light = lightGo.AddComponent<Light>();
             light.type = LightType.Directional;
             light.intensity = 1.0f;
+            // 室内ボックス（天井あり）なので影を落とすと部屋全体が天井の影に沈む。
+            // 調査用の均一な明るさを優先して影は切る（flat ambient と合わせて陰影は最小限）。
+            light.shadows = LightShadows.None;
             lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+
+            // 背景 = 室内。既定の Procedural Skybox（青空）は屋内タスクとして不自然なため外し、
+            // フラット環境光に置き換える（研究アプリなので無個性・非誘目のニュートラルトーン）。
+            RenderSettings.skybox = null;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            // 直接光が当たらない面（光源と逆向きの壁・天井の裏面）はこの ambient のみで
+            // 照らされる。低いと部屋が陰気になるので室内照明相当まで持ち上げる
+            RenderSettings.ambientLight = new Color(0.62f, 0.62f, 0.64f);
+            RenderSettings.fog = false;
+
+            // 天井の裏面は下向き directional では一切照らされないため、弱い上向き補助光で
+            // 「照明の照り返し」を再現する（影なし・強度控えめで陰影は潰さない）
+            var fillGo = new GameObject("Ceiling Fill Light");
+            var fill = fillGo.AddComponent<Light>();
+            fill.type = LightType.Directional;
+            fill.intensity = 0.35f;
+            fill.shadows = LightShadows.None;
+            fillGo.transform.rotation = Quaternion.Euler(-140f, 20f, 0f); // 下から上へ
 
             var root = new GameObject("[TableDuo]");
 
@@ -98,7 +120,13 @@ namespace TableDuoVr.EditorTools
             var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
             floor.name = "Floor";
             floor.transform.SetParent(root.transform, false);
+            // 部屋サイズ（6m 四方）に合わせる。Plane 素体は 10m なので 0.6 倍
+            floor.transform.localScale = new Vector3(RoomSize / 10f, 1f, RoomSize / 10f);
             floor.GetComponent<Renderer>().sharedMaterial = floorMat;
+
+            // 室内ボックス（壁 4 面 + 天井）。青空 skybox の代わりに視界を室内で閉じる。
+            // 調査で視線・注意を引かないよう装飾なしの無地（study-design の中立トーン方針）
+            CreateRoomShell(root.transform);
 
             // テーブル: Kenney Furniture Kit（CC0）。バウンディングから天板高 0.7m に正規化。
             // FBX が無い環境では従来のキューブにフォールバック
@@ -178,12 +206,22 @@ namespace TableDuoVr.EditorTools
                     SetEnum(mgrSo, "_trackingOriginType", 0); // OVRManager.TrackingOrigin.EyeLevel
                     mgrSo.ApplyModifiedPropertiesWithoutUndo();
                 }
+
+                // 背景保険: skybox は外してあるが、clear flags が Skybox のままだと
+                // 環境によって既定空が出る。室内トーンの単色 clear に固定する
+                if (centerEye != null && centerEye.TryGetComponent<Camera>(out var eyeCam))
+                {
+                    eyeCam.clearFlags = CameraClearFlags.SolidColor;
+                    eyeCam.backgroundColor = new Color(0.30f, 0.30f, 0.32f);
+                }
             }
 
             // --- L0 用デバッグカメラ（リグを無効化して使う。既定 OFF）---
             var debugCamGo = new GameObject("DebugCamera");
             var debugCam = debugCamGo.AddComponent<Camera>();
             debugCam.nearClipPlane = 0.05f;
+            debugCam.clearFlags = CameraClearFlags.SolidColor;
+            debugCam.backgroundColor = new Color(0.30f, 0.30f, 0.32f);
             // 向かいの席の頭（y≈1.6m）まで画角に入る高さ・引き
             debugCamGo.transform.SetPositionAndRotation(new Vector3(0f, 1.7f, -2.1f), Quaternion.Euler(14f, 0f, 0f));
             debugCamGo.SetActive(false);
@@ -288,6 +326,73 @@ namespace TableDuoVr.EditorTools
                       "- 実機: OVRProjectConfig の Hand Tracking Support を Controllers And Hands 以上にすること\n" +
                       "- ビルド対象にする時は Build Settings へ本シーンを手動追加（Main.unity と排他運用）\n" +
                       "- L0 検証: OVRCameraRig を無効化 / DebugCamera と FakeHandDriver を有効化");
+        }
+
+        // 部屋の内寸（正方形の一辺）と天井高。プレイ空間（テーブル±1m 程度）を
+        // 圧迫せず、かつ「屋外に見えない」最小限の箱
+        private const float RoomSize = 6f;
+        private const float RoomHeight = 2.6f;
+
+        /// <summary>
+        /// 壁 4 面 + 天井の無地室内ボックスを生成する。青空 skybox を隠して屋内タスクの
+        /// 文脈に合わせるのが目的で、装飾は置かない（調査の注意誘引を避ける）。
+        /// Collider は不要（プレイヤーは物理移動しない）ので外す。
+        /// </summary>
+        private static void CreateRoomShell(Transform root)
+        {
+            var wallMat = EnsureMaterial($"{MaterialDir}/TableDuoWall.mat",
+                "Universal Render Pipeline/Lit", new Color(0.63f, 0.61f, 0.58f)); // 暖色寄りグレー（漆喰調）
+            var ceilMat = EnsureMaterial($"{MaterialDir}/TableDuoCeiling.mat",
+                "Universal Render Pipeline/Lit", new Color(0.72f, 0.72f, 0.73f)); // 天井は少し明るく
+
+            var shell = new GameObject("RoomShell");
+            shell.transform.SetParent(root, false);
+
+            float half = RoomSize * 0.5f;
+            const float t = 0.1f; // 壁厚
+            // (name, position, scale)
+            (string name, Vector3 pos, Vector3 scale)[] parts =
+            {
+                ("Wall_N", new Vector3(0f, RoomHeight * 0.5f, half + t * 0.5f), new Vector3(RoomSize + t * 2f, RoomHeight, t)),
+                ("Wall_S", new Vector3(0f, RoomHeight * 0.5f, -half - t * 0.5f), new Vector3(RoomSize + t * 2f, RoomHeight, t)),
+                ("Wall_E", new Vector3(half + t * 0.5f, RoomHeight * 0.5f, 0f), new Vector3(t, RoomHeight, RoomSize)),
+                ("Wall_W", new Vector3(-half - t * 0.5f, RoomHeight * 0.5f, 0f), new Vector3(t, RoomHeight, RoomSize)),
+                ("Ceiling", new Vector3(0f, RoomHeight + t * 0.5f, 0f), new Vector3(RoomSize + t * 2f, t, RoomSize + t * 2f)),
+            };
+            foreach (var (name, pos, scale) in parts)
+            {
+                var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                go.name = name;
+                go.transform.SetParent(shell.transform, false);
+                go.transform.localPosition = pos;
+                go.transform.localScale = scale;
+                go.GetComponent<Renderer>().sharedMaterial = name == "Ceiling" ? ceilMat : wallMat;
+                var col = go.GetComponent<Collider>();
+                if (col != null) Object.DestroyImmediate(col);
+            }
+
+            // 幅木（壁と床の境界を締める細いライン）。無地の箱が「テクスチャ抜け」に
+            // 見えないよう、最低限のスケール手がかりだけ足す
+            var trimMat = EnsureMaterial($"{MaterialDir}/TableDuoTrim.mat",
+                "Universal Render Pipeline/Lit", new Color(0.38f, 0.36f, 0.34f));
+            (Vector3 pos, Vector3 scale)[] trims =
+            {
+                (new Vector3(0f, 0.05f, half - 0.02f), new Vector3(RoomSize, 0.1f, 0.04f)),
+                (new Vector3(0f, 0.05f, -half + 0.02f), new Vector3(RoomSize, 0.1f, 0.04f)),
+                (new Vector3(half - 0.02f, 0.05f, 0f), new Vector3(0.04f, 0.1f, RoomSize)),
+                (new Vector3(-half + 0.02f, 0.05f, 0f), new Vector3(0.04f, 0.1f, RoomSize)),
+            };
+            for (int i = 0; i < trims.Length; i++)
+            {
+                var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                go.name = $"Baseboard_{i}";
+                go.transform.SetParent(shell.transform, false);
+                go.transform.localPosition = trims[i].pos;
+                go.transform.localScale = trims[i].scale;
+                go.GetComponent<Renderer>().sharedMaterial = trimMat;
+                var col = go.GetComponent<Collider>();
+                if (col != null) Object.DestroyImmediate(col);
+            }
         }
 
         /// <summary>

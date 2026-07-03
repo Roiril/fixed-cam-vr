@@ -11,6 +11,11 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 
 詳細は CLAUDE.md「同居サブプロジェクト: TableDuo」/ docs/table-duo/（study-design・study-protocol・consent-template）/ .claude/plans/2026-06-11_table-duo_study.md（実装状況・runbook・罠）。
 
+## シーン環境（2026-07-03 室内化）
+- 背景は**無地の室内ボックス**（壁4+天井+幅木、6m四方×高2.6m、`RoomShell`）。既定の青空 skybox は**調査シーンとして不自然なため廃止**（skybox=null / flat ambient 0.62 / fog off / CenterEye・DebugCamera とも SolidColor clear）
+- 照明: 主 directional（影なし・天井に沈むため）+ 上向き `Ceiling Fill Light` 0.35（天井裏面の照り返し役）。**部屋が暗い時は ambient か fill を触る**（壁材 TableDuoWall/Ceiling/Trim.mat）
+- すべて `Setup TableDuo Scene` が冪等生成（[TableDuoSceneSetup](../../Assets/TableDuo/Scripts/Editor/TableDuoSceneSetup.cs) `CreateRoomShell`）。手でシーンに足さない
+
 ## 用語: 「人側」と「手側」（全部同じものの別名）
 - **人側＝人役＝フルアバター＝`Role.Full`＝Seat0＝`tdv_role full`**: 発話可。相手には頭+胴体+両手で見える
 - **手側＝手役＝手だけ＝`Role.Hand`＝Seat1＝`tdv_role hand`**: 発話不可（ジェスチャーのみ）。相手には手だけ（既定 右手・頭マーカー無し）
