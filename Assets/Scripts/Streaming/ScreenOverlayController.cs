@@ -260,10 +260,9 @@ namespace FixedCamVr.Streaming
         {
             if (_videoFileCache.TryGetValue(url, out var cached) && File.Exists(cached))
                 return "file://" + cached;
+            string path = Path.Combine(Application.temporaryCachePath, "ovr_" + StableFileKey(url) + ".mp4");
             try
             {
-                string fn = "ovr_" + ((uint)url.GetHashCode()).ToString() + ".mp4";
-                string path = Path.Combine(Application.temporaryCachePath, fn);
                 using var req = UnityWebRequest.Get(url);
                 req.downloadHandler = new DownloadHandlerFile(path);
                 req.timeout = 20;
@@ -276,18 +275,37 @@ namespace FixedCamVr.Streaming
                 if (req.result != UnityWebRequest.Result.Success)
                 {
                     Debug.LogWarning($"[ScreenOverlay] video download failed: {url} ({req.error}) → ストリーミングへ fallback");
+                    TryDeleteFile(path); // DownloadHandlerFile が書きかけた部分ファイルを残さない
                     return url;
                 }
                 _videoFileCache[url] = path;
                 Debug.Log($"[ScreenOverlay] video cached: {url} -> {path}");
                 return "file://" + path;
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) { TryDeleteFile(path); throw; }
             catch (Exception e)
             {
                 Debug.LogWarning($"[ScreenOverlay] video download error: {e.Message} → ストリーミングへ fallback");
+                TryDeleteFile(path);
                 return url;
             }
+        }
+
+        // URL → 衝突しない安定ファイル名キー。GetHashCode は 32bit で衝突可能・
+        // Unity バージョン間の安定保証もないため SHA1 の hex を使う。
+        private static string StableFileKey(string url)
+        {
+            using var sha = System.Security.Cryptography.SHA1.Create();
+            var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(url));
+            var sb = new System.Text.StringBuilder(bytes.Length * 2);
+            foreach (var b in bytes) sb.Append(b.ToString("x2"));
+            return sb.ToString();
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            try { if (File.Exists(path)) File.Delete(path); }
+            catch (Exception e) { Debug.LogWarning($"[ScreenOverlay] partial file delete failed: {e.Message}"); }
         }
 
         private async Task<Texture2D?> LoadTextureAsync(string url, CancellationToken ct)

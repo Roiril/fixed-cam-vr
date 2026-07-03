@@ -108,7 +108,9 @@ namespace FixedCamVr.Fx.Particles
                         _generatedMat = new Material(sh)
                         {
                             name = "FxDustParticleMat",
-                            hideFlags = HideFlags.DontSave,
+                            // HideAndDontSave: ドメインリロードで参照が切れてもリークカウントに紛れず、
+                            // Hierarchy にも出さない（DontSave のみだと Editor のリーク検出に載る）。
+                            hideFlags = HideFlags.HideAndDontSave,
                         };
                     }
                 }

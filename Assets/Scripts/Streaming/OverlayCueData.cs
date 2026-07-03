@@ -40,12 +40,33 @@ namespace FixedCamVr.Streaming
             {
                 if (clip != null) return true;
                 if (stillImage != null) return false;
-                // ToLowerInvariant() は毎回 string を確保するので、StringComparison 付き EndsWith で
-                // ノーアロケート判定する（拡張子の大小無視はこれで足りる）。
-                return sourceUrl.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
-                    || sourceUrl.EndsWith(".webm", StringComparison.OrdinalIgnoreCase)
-                    || sourceUrl.EndsWith(".mov", StringComparison.OrdinalIgnoreCase);
+                // クエリ/フラグメント（?v=2 等のキャッシュバスター）を除いた末尾で判定する。
+                // これを剥がさないと "clip.mp4?v=2" が拡張子不一致で静止画に誤判定される。
+                int end = sourceUrl.Length;
+                int q = sourceUrl.IndexOf('?');
+                if (q >= 0) end = q;
+                int hash = sourceUrl.IndexOf('#');
+                if (hash >= 0 && hash < end) end = hash;
+                // ToLowerInvariant() は毎回 string を確保するので、範囲付き比較でノーアロケート判定する。
+                return EndsWithExt(sourceUrl, end, ".mp4")
+                    || EndsWithExt(sourceUrl, end, ".webm")
+                    || EndsWithExt(sourceUrl, end, ".mov");
             }
+        }
+
+        // s の [0, end) 範囲が ext（小文字前提の拡張子）で終わるか。大小無視・ノーアロケート。
+        private static bool EndsWithExt(string s, int end, string ext)
+        {
+            int n = ext.Length;
+            if (end < n) return false;
+            int off = end - n;
+            for (int i = 0; i < n; i++)
+            {
+                char c = s[off + i];
+                if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+                if (c != ext[i]) return false;
+            }
+            return true;
         }
 
         public static OverlayCueData From(OverlayCue so) => new()

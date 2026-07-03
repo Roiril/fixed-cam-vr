@@ -28,9 +28,6 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("HUD 更新間隔 (秒)。Update 毎フレーム文字列構築を避けて 90Hz を維持するためのスロットリング。")]
         [SerializeField] private float updateInterval = 0.25f;
 
-        [Tooltip("配信側 /health の取得間隔 (秒)。0 なら取得しない。fixed-cam-streamer の uptime / FPS を表示。")]
-        [SerializeField] private float healthRefreshInterval = 5f;
-
         [Tooltip("起動時に HUD を表示するか。")]
         [SerializeField] private bool startVisible = true;
 
@@ -39,7 +36,6 @@ namespace FixedCamVr.Diagnostics
         private float _fpsAccum;
         private int _fpsFrames;
         private float _fps;
-        private float _healthAccum;
         private bool _visible;
 
         /// <summary>HUD の表示・非表示を外部から切り替える。</summary>
@@ -63,10 +59,8 @@ namespace FixedCamVr.Diagnostics
             _fpsAccum += Time.unscaledDeltaTime;
             _fpsFrames++;
 
-            // /health と /info の polling は CameraStream 側に内蔵されたため、
-            // ここでは行わない（HUD 不在シーンでも追従させるための責務分離）。
-            _ = healthRefreshInterval; _ = _healthAccum;
-
+            // /health と /info の polling は CameraStream 側に内蔵されたため HUD では行わない
+            //（HUD 不在シーンでも追従させるための責務分離。関連フィールドは削除済み）。
             _accum += Time.unscaledDeltaTime;
             if (_accum < updateInterval) return;
 

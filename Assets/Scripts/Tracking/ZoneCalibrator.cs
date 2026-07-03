@@ -124,6 +124,13 @@ namespace FixedCamVr.Tracking
         {
             if (zones.Length == 0) zones = FindObjectsOfType<PlayerZone>();
 
+            // 保存 JSON は name をキーにゾーンへ照合する。同名ゾーンが 2 個あると
+            // 両方が同一エントリを受け、ロード結果が並び依存で不定になる → 警告する。
+            for (int i = 0; i < zones.Length; i++)
+                for (int j = i + 1; j < zones.Length; j++)
+                    if (zones[i].name == zones[j].name)
+                        Debug.LogWarning($"[ZoneCalib] ゾーン名が重複: '{zones[i].name}'。校正の保存/ロードが並び依存で不定になります（名前を一意にしてください）。");
+
             // authored 値（シーンに保存されている配置）を控えてから、保存済み校正を適用
             _authored = new (Vector3, Vector3, Quaternion)[zones.Length];
             for (int i = 0; i < zones.Length; i++)
