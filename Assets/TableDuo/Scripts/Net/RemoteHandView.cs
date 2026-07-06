@@ -26,6 +26,7 @@ namespace TableDuoVr.Net
         // 要素は見つからなかった bone が null になりうる（適用時に null チェック）
         private Transform?[]? _meshBones;
         private GameObject? _meshInstance;
+        private float _nextDiagLog; // [TDV-DRAW] 診断ログの throttle
         // 外部リグ（Realistic/Robot）のメッシュ側バインドローカル回転（BoneId 順）。
         // non-null ならバインド差分リターゲットで駆動、null なら Meta 直接代入。
         private Quaternion[]? _varBind;
@@ -145,6 +146,25 @@ namespace TableDuoVr.Net
 
             TryBuild(layout);
 
+            // 描画適用側の診断（WireTap 記録中のみ）。受信ワイヤ側 [TDV-WIRE] と対で読む。
+            // target=受信 wristRot / applied=平滑後に実際に手 root へ据えた向き / driveN=回した bone 数 /
+            // varBind=外部リグのバインド差分リターゲット中か / mode=mesh/capsule。
+            // 「wire は素直なのに applied が変・mode/varBind が想定外」なら描画/リターゲット側の問題と分かる。
+            if (WireTapRecorder.DiagnosticsEnabled && _isRight && Time.unscaledTime >= _nextDiagLog)
+            {
+                _nextDiagLog = Time.unscaledTime + 1f;
+                var tgt = wristRot.eulerAngles;
+                var app = _root.localRotation.eulerAngles;
+                string mode = _meshBones != null ? (_varBind != null ? "mesh/retarget" : "mesh/direct")
+                    : (_bones != null ? "capsule" : "none");
+                int driveN = _meshBones != null ? CountNonNull(_meshBones) : (_bones?.Length ?? 0);
+                Debug.Log($"[TDV-DRAW] R variant={StudyConfig.SelectedHandVariant} mode={mode} " +
+                          $"driveN={driveN} boneRotN={boneRots.Length} tracked={tracked} " +
+                          $"targetEuler=({tgt.x:F0},{tgt.y:F0},{tgt.z:F0}) " +
+                          $"appliedEuler=({app.x:F0},{app.y:F0},{app.z:F0}) " +
+                          $"downgraded={_externalDowngraded} layout={(layout != null ? layout.BoneCount : 0)}");
+            }
+
             // バリアント切替や teardown 順序で mesh 実体だけ先に破棄された場合、
             // 破棄済み bone へ代入して NRE/MissingReference にならないよう作り直しへ戻す
             if (_meshBones != null && _meshInstance == null)
@@ -194,6 +214,13 @@ namespace TableDuoVr.Net
             {
                 _bones[i].localRotation = Quaternion.Slerp(_bones[i].localRotation, boneRots[i], smooth);
             }
+        }
+
+        private static int CountNonNull(Transform?[] arr)
+        {
+            int n = 0;
+            foreach (var t in arr) if (t != null) n++;
+            return n;
         }
 
         /// <summary>例外で Tick ループ全体を殺さない/中途半端な inst を残さないラッパ。</summary>

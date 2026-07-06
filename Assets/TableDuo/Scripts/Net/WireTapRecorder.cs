@@ -10,25 +10,38 @@ using UnityEngine;
 namespace TableDuoVr.Net
 {
     /// <summary>
-    /// 通信ワイヤタップ記録（ソロ実機検証用）。右コントローラ B ボタンで開始/停止をトグルし、
-    /// その間に「通信上で見えるアバターの動き」を CSV に記録する:
+    /// 通信ワイヤタップ記録（ソロ／PC ホスト実機検証用）。開始/停止を
+    ///   - 右コントローラ B ボタン（Quest）
+    ///   - キーボード F9（PC ホスト＝コントローラ無し）
+    ///   - 画面の GUI ボタン（PC ホスト。マウスで押せる）
+    /// のいずれかでトグルし、その間「通信上で見えるアバターの動き」を CSV に記録する:
     ///   - dir=sent: この端末が相手へ実際に送出した pose（<see cref="ConnectionManager.LocalPoseSent"/>
     ///     ＝ワイヤ送出点のタップ。ローカル描画用の手は経由しない — 手側検証の主対象）
     ///   - dir=recv: ネットワーク経由で受信・デコード・Seq フィルタ通過後の相手 pose
     ///     （<see cref="ConnectionManager.RemotePoseReceived"/>）
-    /// どちらも「通信経路を通ったデータそのもの」であり、ローカルのトラッキング値を横取りしない。
-    /// 出力: persistentDataPath/tdv_wiretap_yyyyMMdd_HHmmss.csv（adb pull で回収して解析）。
+    /// どちらも「通信経路を通ったデータそのもの」で、ローカルのトラッキング値を横取りしない。
+    /// 出力: persistentDataPath/tdv_wiretap_yyyyMMdd_HHmmss.csv（adb pull / PC の LocalLow で回収）。
+    ///
+    /// 記録中は <see cref="DiagnosticsEnabled"/> を立て、受信手 pose の要約（[TDV-WIRE]）と
+    /// 描画適用側の要約（[TDV-DRAW]、<see cref="RemoteHandView"/>）を throttle ログする。
+    /// 両者を突き合わせると「データが崩れている（wire 側で既に変）」のか
+    /// 「描画/リターゲットが崩している（wire は素直だが draw で変）」のかを切り分けられる。
     /// </summary>
     public sealed class WireTapRecorder : MonoBehaviour
     {
-        private const float FlushIntervalSec = 2f; // 電源断・force-stop でも直近まで残す
+        private const float FlushIntervalSec = 2f;   // 電源断・force-stop でも直近まで残す
+        private const float DiagIntervalSec = 1f;    // 診断ログの throttle（受信手 pose の要約）
+
+        /// <summary>記録中フラグ。RemoteHandView が描画適用の診断ログを出すかの判定に使う（同 asmdef 参照）。</summary>
+        public static bool DiagnosticsEnabled { get; private set; }
 
         private StreamWriter? _writer;
         private string _path = "";
         private int _sentRows;
         private int _recvRows;
         private float _nextFlush;
-        private readonly StringBuilder _sb = new(512);
+        private float _nextDiag;
+        private readonly StringBuilder _sb = new(640);
 
         private ConnectionManager? _cm;
         private Action<AvatarPose>? _onSent;
@@ -38,21 +51,43 @@ namespace TableDuoVr.Net
 
         private void Update()
         {
-            // トグル入力: 右コントローラ B（Quest）/ キーボード F9（PC ホスト＝コントローラ無し）。
-            // 左 Y（バリアント切替）とは別ボタン。PC 観戦ホストでは B は来ないので F9 が主。
             bool toggle = OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.RTouch)
                           || Input.GetKeyDown(KeyCode.F9);
-            if (toggle)
-            {
-                if (IsRecording) StopRecording();
-                else StartRecording();
-            }
+            if (toggle) Toggle();
 
             if (IsRecording && Time.unscaledTime >= _nextFlush)
             {
                 _nextFlush = Time.unscaledTime + FlushIntervalSec;
                 try { _writer!.Flush(); } catch { /* flush 失敗は次周期で再試行 */ }
             }
+        }
+
+        // PC ホスト（コントローラ無し）用の GUI ボタン。マウスで記録開始/停止できる。
+        // Quest（Android）では OnGUI ボタンにカーソルが無く押しにくいので出さない（B/F9 を使う）。
+        private void OnGUI()
+        {
+            if (Application.platform == RuntimePlatform.Android) return;
+
+            const float w = 240f, h = 64f;
+            var area = new Rect(Screen.width - w - 12f, 12f, w, h);
+            GUILayout.BeginArea(area, GUI.skin.box);
+            if (IsRecording)
+            {
+                GUILayout.Label($"● 記録中  sent={_sentRows} recv={_recvRows}");
+                if (GUILayout.Button("■ 記録停止 (F9)")) Toggle();
+            }
+            else
+            {
+                GUILayout.Label("WireTap 記録: 停止中");
+                if (GUILayout.Button("● 記録開始 (F9)")) Toggle();
+            }
+            GUILayout.EndArea();
+        }
+
+        private void Toggle()
+        {
+            if (IsRecording) StopRecording();
+            else StartRecording();
         }
 
         private void StartRecording()
@@ -70,7 +105,9 @@ namespace TableDuoVr.Net
                 _writer = new StreamWriter(_path, false, new UTF8Encoding(false)) { NewLine = "\n" };
                 _writer.WriteLine("tMs,dir,origin,seq,captureMs,trackedL,trackedR,pinchL,pinchR," +
                     "headX,headY,headZ,headEX,headEY,headEZ," +
-                    "wristLX,wristLY,wristLZ,wristRX,wristRY,wristRZ,indexBendL,indexBendR");
+                    "wristLX,wristLY,wristLZ,wristLEX,wristLEY,wristLEZ," +
+                    "wristRX,wristRY,wristRZ,wristREX,wristREY,wristREZ," +
+                    "bendIdxL,bendIdxR,boneMaxL,boneMaxR");
             }
             catch (Exception e)
             {
@@ -82,16 +119,19 @@ namespace TableDuoVr.Net
             _sentRows = 0;
             _recvRows = 0;
             _nextFlush = Time.unscaledTime + FlushIntervalSec;
+            _nextDiag = 0f;
             _onSent = pose => WriteRow("sent", LocalClientId(), pose);
-            _onRecv = (origin, pose) => WriteRow("recv", origin, pose);
+            _onRecv = (origin, pose) => { WriteRow("recv", origin, pose); DiagRecv(origin, pose); };
             _cm.LocalPoseSent += _onSent;
             _cm.RemotePoseReceived += _onRecv;
-            Debug.Log($"[TableDuo][WireTap] ● 記録開始 → {_path}（B で停止）");
+            DiagnosticsEnabled = true; // 描画適用側（RemoteHandView）の診断ログも有効化
+            Debug.Log($"[TableDuo][WireTap] ● 記録開始 → {_path}（B / F9 / GUI で停止）。診断ログ [TDV-WIRE]/[TDV-DRAW] を有効化");
         }
 
         private void StopRecording()
         {
             Unsubscribe();
+            DiagnosticsEnabled = false;
             try
             {
                 _writer?.Flush();
@@ -127,6 +167,21 @@ namespace TableDuoVr.Net
             return nm != null ? nm.LocalClientId : ulong.MaxValue;
         }
 
+        // 受信手 pose の要約を throttle ログ（データ側）。描画側の [TDV-DRAW] と突き合わせて切り分ける。
+        // wristEuler=手首の向き / boneMax=指骨の最大回転角（0 ≒ 全 identity＝指が動いていない/凍結）
+        private void DiagRecv(ulong origin, AvatarPose pose)
+        {
+            if (Time.unscaledTime < _nextDiag) return;
+            _nextDiag = Time.unscaledTime + DiagIntervalSec;
+
+            var er = pose.WristRotR.eulerAngles;
+            long ageMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - pose.CaptureMs;
+            Debug.Log($"[TDV-WIRE] recv client{origin} R tracked={(pose.TrackedR ? 1 : 0)} " +
+                      $"wristEuler=({er.x:F0},{er.y:F0},{er.z:F0}) boneMaxR={MaxBoneAngle(pose.BonesR):F0} " +
+                      $"bendIdxR={BoneAngle(pose.BonesR, 7):F0} pinchR={(pose.PinchR ? 1 : 0)} " +
+                      $"seq={pose.Seq} age={ageMs}ms wristPosR={pose.WristPosR:F2}");
+        }
+
         private void WriteRow(string dir, ulong origin, AvatarPose pose)
         {
             if (_writer == null) return;
@@ -134,9 +189,8 @@ namespace TableDuoVr.Net
             {
                 var inv = CultureInfo.InvariantCulture;
                 var he = pose.HeadRot.eulerAngles;
-                // 人差し指 Index2（OVR BoneId=7）の bind からの回転角 = 指の曲げ量プロキシ
-                float bendL = Quaternion.Angle(Quaternion.identity, pose.BonesL[7]);
-                float bendR = Quaternion.Angle(Quaternion.identity, pose.BonesR[7]);
+                var wl = pose.WristRotL.eulerAngles;
+                var wr = pose.WristRotR.eulerAngles;
 
                 _sb.Clear();
                 _sb.Append(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).Append(',');
@@ -151,9 +205,13 @@ namespace TableDuoVr.Net
                 AppendV3(pose.HeadPos, inv);
                 AppendV3(he, inv);
                 AppendV3(pose.WristPosL, inv);
+                AppendV3(wl, inv);
                 AppendV3(pose.WristPosR, inv);
-                _sb.Append(bendL.ToString("F1", inv)).Append(',');
-                _sb.Append(bendR.ToString("F1", inv));
+                AppendV3(wr, inv);
+                _sb.Append(BoneAngle(pose.BonesL, 7).ToString("F1", inv)).Append(',');
+                _sb.Append(BoneAngle(pose.BonesR, 7).ToString("F1", inv)).Append(',');
+                _sb.Append(MaxBoneAngle(pose.BonesL).ToString("F1", inv)).Append(',');
+                _sb.Append(MaxBoneAngle(pose.BonesR).ToString("F1", inv));
                 _writer.WriteLine(_sb.ToString());
 
                 if (dir == "sent") _sentRows++;
@@ -163,6 +221,21 @@ namespace TableDuoVr.Net
             {
                 Debug.LogWarning($"[TableDuo][WireTap] 行書き込み失敗（記録継続）: {e.Message}");
             }
+        }
+
+        private static float BoneAngle(Quaternion[] bones, int i)
+            => (bones != null && i < bones.Length) ? Quaternion.Angle(Quaternion.identity, bones[i]) : 0f;
+
+        private static float MaxBoneAngle(Quaternion[] bones)
+        {
+            if (bones == null) return 0f;
+            float max = 0f;
+            for (int i = 0; i < bones.Length; i++)
+            {
+                float a = Quaternion.Angle(Quaternion.identity, bones[i]);
+                if (a > max) max = a;
+            }
+            return max;
         }
 
         private void AppendV3(Vector3 v, CultureInfo inv)
