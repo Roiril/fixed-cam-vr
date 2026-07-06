@@ -18,6 +18,10 @@ namespace TableDuoVr.Hands
         [Tooltip("grip 軸（0..1）をこの値以上で『握っている』とみなす")]
         [SerializeField, Range(0.1f, 1f)] private float gripThreshold = 0.6f;
 
+        // 即リセットは右コントローラ A ボタン（Button.One）単押し固定。
+        // SerializeField にすると既存シーン YAML 未反映時に enum が None(0) 等の型 default で
+        // 読まれて発火しなくなる（unity-prefab-fields の罠）ため、ここは定数で持つ。
+
         /// <summary>両手グリップ長押しが成立した（手動リセット要求）。</summary>
         public event Action? Recentered;
 
@@ -26,6 +30,13 @@ namespace TableDuoVr.Hands
 
         private void Update()
         {
+            // A ボタン単押しで即リセット（両手グリップ長押しより手軽）
+            if (OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.RTouch))
+            {
+                Debug.Log("[TableDuo] A ボタン → 視点リセット");
+                Recentered?.Invoke();
+            }
+
             // コントローラ専用: ハンドトラッキング時は両軸とも 0 を返すため発火しない
             float l = OVRInput.Get(OVRInput.Axis1D.PrimaryHandTrigger, OVRInput.Controller.LTouch);
             float r = OVRInput.Get(OVRInput.Axis1D.PrimaryHandTrigger, OVRInput.Controller.RTouch);

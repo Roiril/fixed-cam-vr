@@ -69,6 +69,10 @@ namespace TableDuoVr.Net
         /// <summary>リモートプレイヤーの pose を受信した（originClientId, pose）。pose は使い回しバッファ。</summary>
         public event Action<ulong, AvatarPose>? RemotePoseReceived;
 
+        /// <summary>自分の pose をネットワークへ送出した（ワイヤ送出点）。WireTapRecorder が
+        /// 「実際に相手へ送ったデータ」を記録するためのタップ。ローカル描画用の手とは別経路。</summary>
+        public event Action<AvatarPose>? LocalPoseSent;
+
         /// <summary>手 layout を受信/格納した（originClientId）。SessionLogger が CSV に刻み、
         /// 解析側が「どこから本人の手寸法で FK されるか」の境界を判別できるようにする（study-validity）。</summary>
         public event Action<ulong>? HandLayoutReceived;
@@ -117,6 +121,7 @@ namespace TableDuoVr.Net
             StudyConfig.SelectedHandVariant = studyHandVariant;
             StudyLaunchFlags.Apply(); // tdv_* パースと優先順の定義は StudyLaunchFlags（Hands）に一元化
             ConfigureL0IfRequested();
+            ConfigureFakeSenderIfRequested();
             if (StudyConfig.LaunchedWithStudyFlags)
             {
                 showGui = false; // 調査セッションではデバッグ GUI を見せない
@@ -139,6 +144,23 @@ namespace TableDuoVr.Net
             var fake = FindObjectOfType<TableDuoVr.Hands.Playback.FakeHandDriver>(includeInactive: true);
             if (fake != null) fake.enabled = true; // OnEnable で HandPoseSourceRegistry に登録（合成 pose 供給）
             Debug.Log("[TableDuo] L0 モード: OVRCameraRig OFF / DebugCamera ON / FakeHandDriver ON（HMD/XR 不要）");
+        }
+
+        // ソロ実機検証（tdv_fake=on）: マネキン側 HMD を「固定動作の送信機」にする。
+        // FakeHandDriver（合成モーション・Priority=10）が実トラッキングより優先されて送信ソースになり、
+        // pose は通常どおり SubmitLocalPose → NGO named message で相手へ届く（受信側は無改変＝
+        // ネットワーク経路の実測になる。L0 と違い OVRCameraRig は生かしたままなので HMD 描画も通常）。
+        private void ConfigureFakeSenderIfRequested()
+        {
+            if (StudyLaunchFlags.Get("tdv_fake", "-tdvFake") != "on") return;
+            var fake = FindObjectOfType<TableDuoVr.Hands.Playback.FakeHandDriver>(includeInactive: true);
+            if (fake == null)
+            {
+                Debug.LogError("[TableDuo] tdv_fake=on だが FakeHandDriver がシーンに無い（Setup TableDuo Scene 未実行？）");
+                return;
+            }
+            fake.enabled = true;
+            Debug.Log("[TableDuo] ソロ検証モード: FakeHandDriver ON — 固定動作をネットワーク送信します（tdv_fake=on）");
         }
 
         private void Start()
@@ -267,6 +289,7 @@ namespace TableDuoVr.Net
                     nm.CustomMessagingManager.SendNamedMessage(
                         PoseMsg, NetworkManager.ServerClientId, writer, NetworkDelivery.Unreliable);
                 }
+                LocalPoseSent?.Invoke(pose); // 送出成功後にタップ（未接続 early-return は発火しない）
             }
             finally
             {

@@ -204,6 +204,13 @@ namespace TableDuoVr.EditorTools
                 {
                     var mgrSo = new SerializedObject(ovrManager);
                     SetEnum(mgrSo, "_trackingOriginType", 0); // OVRManager.TrackingOrigin.EyeLevel
+                    // コントローラを握ってもハンドトラッキングが切れて手が消えないようにする（Quest 3 マルチモーダル）。
+                    // - launchSimultaneousHandsControllersOnStartup: 手とコントローラを同時トラッキング（起動時に有効化）
+                    // - controllerDrivenHandPosesType=Natural(2): 握った手の骨格をコントローラ入力から自然な手形で駆動
+                    //   → OVRHand.IsTracked が保たれ、握っていても手メッシュ（＝送信 pose）が出続ける。
+                    // 素手（コントローラ非把持）のときは通常のハンドトラッキングがそのまま働く。
+                    SetBool(mgrSo, "launchSimultaneousHandsControllersOnStartup", true);
+                    SetEnum(mgrSo, "controllerDrivenHandPosesType", 2); // Natural
                     mgrSo.ApplyModifiedPropertiesWithoutUndo();
                 }
 
@@ -265,6 +272,8 @@ namespace TableDuoVr.EditorTools
             systems.AddComponent<ConnectionManager>();
             // 左コントローラ Y で手の見た目を巡回切替（お試し用。調査本番は tdv_hand フラグで固定）
             systems.AddComponent<HandVariantWatcher>();
+            // 右コントローラ B でワイヤタップ記録トグル（ソロ実機検証: 送出 pose + 受信 pose を CSV 化）
+            systems.AddComponent<WireTapRecorder>();
 
             // リモートの手を描くプレハブ/材質の供給（3 バリアント）。
             // Default = Meta 白手（OVRCustomHandPrefab、同期 bone を直接駆動）。
@@ -940,6 +949,17 @@ namespace TableDuoVr.EditorTools
                 return;
             }
             p.intValue = intValue;
+        }
+
+        private static void SetBool(SerializedObject so, string prop, bool value)
+        {
+            var p = so.FindProperty(prop);
+            if (p == null)
+            {
+                Debug.LogWarning($"[TableDuoSceneSetup] FindProperty 失敗: {so.targetObject.GetType().Name}.{prop}");
+                return;
+            }
+            p.boolValue = value;
         }
     }
 }
