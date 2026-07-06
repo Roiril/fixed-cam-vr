@@ -42,6 +42,17 @@ OVRManager を [TableDuoSceneSetup](../../Assets/TableDuo/Scripts/Editor/TableDu
 - `controllerDrivenHandPosesType=Natural(2)`（握った手の骨格をコントローラ入力から自然な手形で駆動）
 → 素手ならハンドトラッキング、握れば手メッシュが出続ける（OVRHand.IsTracked 保持）。OVRProjectConfig.handTrackingSupport=1(ControllersAndHands) 前提（設定済み）。**実機で握り時の手の見た目・送信 pose を要確認**。
 
+## ⚠ 手崩れ・指非同期の根治（2026-07-06・b51a747）
+リモート手が崩れ指が動かない真因＝ `Assets/Resources/OculusRuntimeSettings.asset` の
+**`handSkeletonVersion: 1`(OpenXR 26 bone)**。SDK 201 導入時から入っており、OVRHand は
+この**グローバル設定だけ**でスケルトン種別を決める（シーンの `_skeletonType` serialize 値は無関係）。
+コード側は全経路 legacy 24 bone 前提（HandBoneTable / PoseCodec 24 枠 / OVRCustomHandPrefab）なので全ズレ。
+**対処＝ 0 (legacy OVR) に戻す**。切り分けは HandPoseSampler の `[TDV-SKEL]` ダンプ
+（`type=HandLeft count=24` なら正常 / `XRHandLeft count=26` なら再発）。
+**再発経路: Meta Project Setup Tool の「Apply All」がこの値を OpenXR へ倒しがち**。手が崩れたらまずここを疑う。
+WireTap の切り分け実績: ワイヤ側 [TDV-WIRE] は滑らか＝データ正常、[TDV-DRAW] target≒applied＝描画忠実、
+なのに見た目が崩れる → スケルトン体系の不一致、という診断手順が有効だった。
+
 ## 実機起動 早見表
 | 役 | intent（PC host 構成） |
 |---|---|
