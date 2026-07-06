@@ -117,11 +117,32 @@ namespace TableDuoVr.Hands
             return true;
         }
 
+        // スケルトン構造を1回だけダンプ（手崩れ切り分け用）。送信 index 順・BoneId・名前・可動性を
+        // logcat で確認し、HandBoneTable（legacy 24-bone 前提）の並びと実ランタイム（SDK 201 で
+        // OpenXR hand に変わっていないか）が一致するかを判定する。左右それぞれ初回のみ。
+        private static bool _dumpedL, _dumpedR;
+        private static void DumpSkeletonOnce(OVRSkeleton skeleton, bool isRight)
+        {
+            if (isRight ? _dumpedR : _dumpedL) return;
+            if (isRight) _dumpedR = true; else _dumpedL = true;
+            var list = skeleton.Bones;
+            var sb = new System.Text.StringBuilder(512);
+            sb.Append($"[TDV-SKEL] {(isRight ? "R" : "L")} type={skeleton.GetSkeletonType()} count={list.Count}\n");
+            for (int i = 0; i < list.Count; i++)
+            {
+                var lr = list[i].Transform.localRotation.eulerAngles;
+                sb.Append($"  i={i} id={list[i].Id} parent={list[i].ParentBoneIndex} localEuler=({lr.x:F0},{lr.y:F0},{lr.z:F0})\n");
+            }
+            Debug.Log(sb.ToString());
+        }
+
         private static void CaptureLayoutIfReady(OVRSkeleton? skeleton, ref HandSkeletonLayout? slot)
         {
-            if (slot != null || skeleton == null || !skeleton.IsInitialized) return;
+            if (skeleton == null || !skeleton.IsInitialized) return;
             var list = skeleton.Bones;
             if (list.Count == 0) return;
+            DumpSkeletonOnce(skeleton, skeleton.GetSkeletonType() == OVRSkeleton.SkeletonType.HandRight);
+            if (slot != null) return;
 
             // 回転は BindPoses（正準バインド）から取る。live Bones はキャプチャ時点の実手ポーズ
             // （半握り等）で既に回っており、それを bind と偽るとリターゲットが全セッション分ズレる
