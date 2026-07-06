@@ -26,6 +26,16 @@ namespace TableDuoVr.Hands
         private readonly AvatarPose _pose = new();
         private float _nextDiagLog;
 
+        /// <summary>
+        /// pose を表現する基準フレーム（未設定なら trackingSpace）。TableDuoPlayer が席アンカーを設定する。
+        /// 受信側（RemoteAvatarView / Grabbable / Remy）は pose を「席ローカル」として解釈するため、
+        /// ここを席に固定しないと契約が崩れる: 手動リセット（A ボタン=RigRecenter.HeadToSeat）は
+        /// 頭を席に合わせるためにリグごと平行移動する＝以後 trackingSpace 原点 ≠ 席。
+        /// trackingSpace 基準のまま送ると、リセット時の頭ドリフト分だけリモート手・頭が系統的にズレる
+        /// （2026-07-06 実害: HMD 内の自分の手と、ホストから見たリモート手の位置が根本ズレ）。
+        /// </summary>
+        public Transform? ReferenceFrame { get; set; }
+
         public AvatarPose Current => _pose;
         public bool IsValid => trackingSpace != null && centerEye != null;
         public int Priority => 0;
@@ -56,11 +66,14 @@ namespace TableDuoVr.Hands
         {
             if (trackingSpace == null || centerEye == null) return;
 
-            ToLocal(trackingSpace, centerEye, out _pose.HeadPos, out _pose.HeadRot);
+            // 基準フレーム: 席（設定済みなら）。リグ再センタと独立に「席から見た pose」を送る
+            Transform frame = ReferenceFrame != null ? ReferenceFrame : trackingSpace;
 
-            _pose.TrackedL = SampleHand(trackingSpace, leftHand, leftSkeleton,
+            ToLocal(frame, centerEye, out _pose.HeadPos, out _pose.HeadRot);
+
+            _pose.TrackedL = SampleHand(frame, leftHand, leftSkeleton,
                 ref _pose.WristPosL, ref _pose.WristRotL, _pose.BonesL);
-            _pose.TrackedR = SampleHand(trackingSpace, rightHand, rightSkeleton,
+            _pose.TrackedR = SampleHand(frame, rightHand, rightSkeleton,
                 ref _pose.WristPosR, ref _pose.WristRotR, _pose.BonesR);
 
             _pose.PinchL = _pose.TrackedL && leftHand != null &&
@@ -113,9 +126,27 @@ namespace TableDuoVr.Hands
                 {
                     bones[i] = list[i].Transform.localRotation;
                 }
+
+                // 位置ズレ切り分け: 送信で使う hand.transform（アンカー）と実追跡手首 Bones[0] の
+                // space ローカル差を 1Hz でログ。delta が大きければ「アンカー採取」が①の位置ズレ原因。
+                if (list.Count > 0)
+                {
+                    bool right = skeleton.GetSkeletonType() == OVRSkeleton.SkeletonType.HandRight;
+                    if ((right ? _nextWristLogR : _nextWristLogL) <= Time.time)
+                    {
+                        if (right) _nextWristLogR = Time.time + 1f; else _nextWristLogL = Time.time + 1f;
+                        var b0 = list[0].Transform;
+                        Vector3 anchorLocal = wristPos;
+                        Vector3 bone0Local = space.InverseTransformPoint(b0.position);
+                        Vector3 d = bone0Local - anchorLocal;
+                        Debug.Log($"[TDV-WRIST] {(right ? "R" : "L")} anchorLocal={anchorLocal:F3} bone0Local={bone0Local:F3} delta={d:F3} |delta|={d.magnitude:F3} bone0.localPos={b0.localPosition:F3}");
+                    }
+                }
             }
             return true;
         }
+
+        private static float _nextWristLogL, _nextWristLogR;
 
         // スケルトン構造を1回だけダンプ（手崩れ切り分け用）。送信 index 順・BoneId・名前・可動性を
         // logcat で確認し、HandBoneTable（legacy 24-bone 前提）の並びと実ランタイム（SDK 201 で

@@ -65,6 +65,10 @@ if (-not $NoHost) {
     if (-not (Test-Path $exeFull)) {
         Write-Error "デスクトップビルドが見つかりません: $exeFull`n先に Unity メニュー『Tools/FixedCamVr/Diagnostics/Build TableDuo Desktop (L0 test)』でビルドしてください。"
     }
+    # 旧ホストの残骸掃除: プロセスが残っていると MarkServer(7780) が bind できず reset_board が死ぬ。
+    # kill 後もゴースト socket が 7780 を掴み続けることがある（その場合は接続/記録に無影響・PC 再起動で解消）
+    Get-Process TableDuo -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
     $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
     $logDir = Join-Path $repo "Builds/tableduo-desktop/logs"
     New-Item -ItemType Directory -Force $logDir | Out-Null
@@ -94,20 +98,27 @@ foreach ($p in $plan) { Write-Host "  $($p.Serial) → $($p.Desc)" }
 
 foreach ($p in $plan) {
     $stop  = "adb -s $($p.Serial) shell am force-stop $Package"
+    # スリープ中（HMD が顔/マネキンから外れて近接センサー OFF）だと am start が黙って失敗する → 先に WAKEUP
+    $wake  = "adb -s $($p.Serial) shell input keyevent KEYCODE_WAKEUP"
     # USB 接続中に出る Quest Link ダイアログがアプリ起動をブロックするので先に潰す
     $killDlg = "adb -s $($p.Serial) shell am force-stop com.oculus.systemux"
     $start = "adb -s $($p.Serial) shell am start -n $Activity $($p.Args)"
     if ($DryRun) {
         Write-Host "[DryRun] $stop"
+        Write-Host "[DryRun] $wake"
         Write-Host "[DryRun] $killDlg"
         Write-Host "[DryRun] $start"
         continue
     }
     Invoke-Expression $stop | Out-Null
+    Invoke-Expression $wake | Out-Null
     Invoke-Expression $killDlg | Out-Null
     Start-Sleep -Milliseconds 800
     Invoke-Expression $start | Out-Null
-    Write-Host "  起動: $($p.Serial) → $($p.Desc)" -ForegroundColor Green
+    Start-Sleep -Seconds 6
+    $procId = adb -s $($p.Serial) shell pidof $Package
+    if ($procId) { Write-Host "  起動 OK: $($p.Serial) → $($p.Desc) (pid $procId)" -ForegroundColor Green }
+    else { Write-Warning "  起動確認できず: $($p.Serial)（スリープ/Link ダイアログ/未インストールを確認。HMD を被るか近接センサーを指で塞ぐと wake する）" }
 }
 
 Write-Host ""

@@ -164,6 +164,12 @@ namespace TableDuoVr.Net
             }
             _seat = seat;
             _sampler = FindObjectOfType<HandPoseSampler>(); // 1 回だけ取得（recenter/片手で再 Find しない）
+            if (_sampler != null)
+            {
+                // pose の基準フレームを席に固定（受信側は席ローカル解釈）。trackingSpace 基準のままだと
+                // 手動リセット（A/両手グリップ）でリグが席からズレた分、リモート描画が系統ズレする
+                _sampler.ReferenceFrame = seat;
+            }
             Debug.Log($"[TableDuo] 自分の役割={role} 席={SeatIndex}");
 
             // 診断の静的アバターが「自分の席」に先置きされていれば撤去（ForcedRole 未指定の

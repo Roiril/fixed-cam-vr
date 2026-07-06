@@ -25,6 +25,14 @@ namespace TableDuoVr.Net
         // 腕の座位ベース localRotation。解析 IK は後乗算で累積するため、毎フレ解く前にここへ戻す
         private readonly Quaternion _lArmBase, _lForeBase, _rArmBase, _rForeBase;
 
+        // 指リターゲット（P3）: OVR legacy BoneId → Mixamo 指ボーン。
+        // 対応が無い OVR bone（thumb0=大菱形骨, pinky0=中手骨, forearm_stub 等）は null で無視。
+        // mixBind は構築時（bind ポーズ）の localRotation。HandRetarget.Solve でバインド差分リターゲット
+        private readonly Transform?[] _lFingers = new Transform?[AvatarPose.BonesPerHand];
+        private readonly Transform?[] _rFingers = new Transform?[AvatarPose.BonesPerHand];
+        private readonly Quaternion[] _lFingerBind = new Quaternion[AvatarPose.BonesPerHand];
+        private readonly Quaternion[] _rFingerBind = new Quaternion[AvatarPose.BonesPerHand];
+
         public RemyAvatarRig(Transform seat, GameObject prefab)
         {
             _seat = seat;
@@ -47,6 +55,11 @@ namespace TableDuoVr.Net
             _rArm = Find("mixamorig:RightArm");
             _rFore = Find("mixamorig:RightForeArm");
             _rHand = Find("mixamorig:RightHand");
+
+            // 指ボーンのマップと bind localRotation を確保（bind ポーズのうちに取ること —
+            // ApplySeatedPose/RestPose は腕までしか触らないが、順序依存を作らないようここで確定）
+            MapFingers(isLeft: true, _lFingers, _lFingerBind);
+            MapFingers(isLeft: false, _rFingers, _rFingerBind);
 
             ApplySeatedPose();
 
@@ -87,7 +100,7 @@ namespace TableDuoVr.Net
             SolveArm(false, RestWristR, RestWristRotR, true, _rArm, _rFore, _rHand, _rHandB, _rArmBase, _rForeBase);
         }
 
-        /// <summary>受信 pose を反映（頭・腕 IK・手首向き）。ロスト手は最後の姿勢で凍結。</summary>
+        /// <summary>受信 pose を反映（頭・腕 IK・手首向き・指リターゲット）。ロスト手は最後の姿勢で凍結。</summary>
         public void Drive(AvatarPose t)
         {
             if (_head != null)
@@ -96,6 +109,57 @@ namespace TableDuoVr.Net
             }
             SolveArm(true, t.WristPosL, t.WristRotL, t.TrackedL, _lArm, _lFore, _lHand, _lHandB, _lArmBase, _lForeBase);
             SolveArm(false, t.WristPosR, t.WristRotR, t.TrackedR, _rArm, _rFore, _rHand, _rHandB, _rArmBase, _rForeBase);
+            if (t.TrackedL) DriveFingers(t.BonesL, _lFingers, _lFingerBind, HandSkeletonLayout.CapturedL);
+            if (t.TrackedR) DriveFingers(t.BonesR, _rFingers, _rFingerBind, HandSkeletonLayout.CapturedR);
+        }
+
+        /// <summary>
+        /// 同期 bone（OVR legacy ローカル回転）を Mixamo 指ボーンへバインド差分リターゲット。
+        /// ovrBind は受信側デバイスの手 layout（正準バインド）。無い環境（PC 観戦等）は identity で
+        /// 近似（曲がりの絶対量に若干のオフセットが乗るが動きは伝わる）。
+        /// </summary>
+        private void DriveFingers(Quaternion[] boneRots, Transform?[] fingers, Quaternion[] mixBind,
+            HandSkeletonLayout? layout)
+        {
+            for (int i = 0; i < fingers.Length; i++)
+            {
+                var f = fingers[i];
+                if (f == null) continue;
+                var ovrBind = (layout != null && i < layout.BoneCount)
+                    ? layout.BindLocalRot[i] : Quaternion.identity;
+                f.localRotation = HandRetarget.Solve(boneRots[i], ovrBind, mixBind[i]);
+            }
+        }
+
+        /// <summary>
+        /// OVR legacy BoneId（HandBoneTable 順）→ Mixamo 指ボーン Transform の対応を確保する。
+        /// legacy 24: wrist=0, forearm=1, thumb0..3=2..5, index1..3=6..8, middle1..3=9..11,
+        /// ring1..3=12..14, pinky0..3=15..18, tips=19..23。Mixamo は各指 1..3 節のみ
+        /// （thumb0/pinky0=中手骨と指先マーカーは対応なし → null で無視）。
+        /// </summary>
+        private void MapFingers(bool isLeft, Transform?[] fingers, Quaternion[] bind)
+        {
+            string side = isLeft ? "Left" : "Right";
+            (int ovrIdx, string mixName)[] map =
+            {
+                (3, "HandThumb1"), (4, "HandThumb2"), (5, "HandThumb3"),
+                (6, "HandIndex1"), (7, "HandIndex2"), (8, "HandIndex3"),
+                (9, "HandMiddle1"), (10, "HandMiddle2"), (11, "HandMiddle3"),
+                (12, "HandRing1"), (13, "HandRing2"), (14, "HandRing3"),
+                (16, "HandPinky1"), (17, "HandPinky2"), (18, "HandPinky3"),
+            };
+            int found = 0;
+            foreach (var (ovrIdx, mixName) in map)
+            {
+                var t = Find($"mixamorig:{side}{mixName}");
+                fingers[ovrIdx] = t;
+                bind[ovrIdx] = t != null ? t.localRotation : Quaternion.identity;
+                if (t != null) found++;
+            }
+            if (found == 0)
+            {
+                Debug.LogWarning($"[TableDuo] Remy {side} 指ボーンが見つからない（mixamorig:{side}HandThumb1 等）— 指は bind 固定のまま");
+            }
         }
 
         private void SolveArm(bool left, Vector3 wristLocal, Quaternion wristRotLocal, bool tracked,
