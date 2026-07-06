@@ -51,17 +51,37 @@ namespace TableDuoVr.Net
         // 全身側だけガタつく非対称になる）。ここで頭/手首/指を平滑してから Drive する
         private AvatarPose? _remyDisplay;
 
+        /// <summary>この view が描くリモートプレイヤーの clientId（手 layout の解決に使う）。
+        /// 未設定（プレビュー/リプレイ）は MaxValue → GetHandLayout が受信側 Captured へフォールバック。</summary>
+        private ulong _originClientId = ulong.MaxValue;
+
         /// <param name="showHeadMarker">頭マーカー条件。null なら見る側のローカル StudyConfig（プレビュー/リプレイ用）。
         /// ライブ接続では TableDuoPlayer が「手役端末の申告した同期値」を渡す＝全視点で提示条件が一致する。</param>
-        public static RemoteAvatarView Create(Transform seatAnchor, bool handsOnly, bool? showHeadMarker = null)
+        /// <param name="originClientId">描画対象プレイヤーの clientId。指定すると手 layout を
+        /// 「送信元本人の layout（server リレー済み）」で解決する — 受信側に手キャプチャが無い
+        /// PC 観戦ホストでもカプセル/リターゲット/Remy 指の ovrBind が成立する。</param>
+        public static RemoteAvatarView Create(Transform seatAnchor, bool handsOnly, bool? showHeadMarker = null,
+            ulong originClientId = ulong.MaxValue)
         {
             var go = new GameObject(handsOnly ? "RemoteAvatar(HandsOnly)" : "RemoteAvatar(Full)");
             go.transform.SetParent(seatAnchor, worldPositionStays: false);
             var view = go.AddComponent<RemoteAvatarView>();
             view._handsOnly = handsOnly;
             view._showHeadMarker = showHeadMarker ?? StudyConfig.ShowHeadMarker;
+            view._originClientId = originClientId;
             view.Build();
             return view;
+        }
+
+        /// <summary>手 layout の解決: 送信元本人の layout（リレー済み）→ 無ければ受信側 Captured。</summary>
+        private HandSkeletonLayout? ResolveLayout(bool right)
+        {
+            var cm = ConnectionManager.Instance;
+            if (cm != null && _originClientId != ulong.MaxValue)
+            {
+                return cm.GetHandLayout(_originClientId, right); // 内部で Captured フォールバック
+            }
+            return right ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL;
         }
 
         private static Material? _avatarMat;
@@ -221,7 +241,7 @@ namespace TableDuoVr.Net
                 {
                     BlendPose(_remyDisplay, _target, a);
                 }
-                _remy.Drive(_remyDisplay);
+                _remy.Drive(_remyDisplay, ResolveLayout(right: false), ResolveLayout(right: true));
                 return;
             }
             if (_head != null)
@@ -246,9 +266,9 @@ namespace TableDuoVr.Net
                 }
             }
             _left?.Tick(a, _target.WristPosL, _target.WristRotL, _target.BonesL,
-                _target.TrackedL, HandSkeletonLayout.CapturedL);
+                _target.TrackedL, ResolveLayout(right: false));
             _right?.Tick(a, _target.WristPosR, _target.WristRotR, _target.BonesR,
-                _target.TrackedR, HandSkeletonLayout.CapturedR);
+                _target.TrackedR, ResolveLayout(right: true));
 
             // 腕（袖）を肩→手首に張り直す。手が一度も出ていない間は隠す（片手モードの左手も自動で隠れる）
             UpdateArm(_armR, ShoulderOffsetR, _right);

@@ -251,7 +251,7 @@ namespace TableDuoVr.Net
             // 頭マーカーは「手役端末が申告した同期値」で描く（見る側のローカルフラグではなく。
             // 端末ごとに tdv_marker が食い違っても、提示される条件＝手役の申告値で全視点一致させる）
             _view = RemoteAvatarView.Create(seat, handsOnly: role == StudyConfig.Role.Hand,
-                showHeadMarker: ShowHeadMarker);
+                showHeadMarker: ShowHeadMarker, originClientId: OwnerClientId);
             if (ConnectionManager.Instance != null)
             {
                 ConnectionManager.Instance.RemotePoseReceived += OnRemotePose;

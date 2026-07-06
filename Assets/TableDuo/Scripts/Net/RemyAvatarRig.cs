@@ -100,8 +100,9 @@ namespace TableDuoVr.Net
             SolveArm(false, RestWristR, RestWristRotR, true, _rArm, _rFore, _rHand, _rHandB, _rArmBase, _rForeBase);
         }
 
-        /// <summary>受信 pose を反映（頭・腕 IK・手首向き・指リターゲット）。ロスト手は最後の姿勢で凍結。</summary>
-        public void Drive(AvatarPose t)
+        /// <summary>受信 pose を反映（頭・腕 IK・手首向き・指リターゲット）。ロスト手は最後の姿勢で凍結。
+        /// layoutL/R は送信元本人の手 bind（RemoteAvatarView.ResolveLayout）。null なら identity 近似。</summary>
+        public void Drive(AvatarPose t, HandSkeletonLayout? layoutL = null, HandSkeletonLayout? layoutR = null)
         {
             if (_head != null)
             {
@@ -109,8 +110,8 @@ namespace TableDuoVr.Net
             }
             SolveArm(true, t.WristPosL, t.WristRotL, t.TrackedL, _lArm, _lFore, _lHand, _lHandB, _lArmBase, _lForeBase);
             SolveArm(false, t.WristPosR, t.WristRotR, t.TrackedR, _rArm, _rFore, _rHand, _rHandB, _rArmBase, _rForeBase);
-            if (t.TrackedL) DriveFingers(t.BonesL, _lFingers, _lFingerBind, HandSkeletonLayout.CapturedL);
-            if (t.TrackedR) DriveFingers(t.BonesR, _rFingers, _rFingerBind, HandSkeletonLayout.CapturedR);
+            if (t.TrackedL) DriveFingers(t.BonesL, _lFingers, _lFingerBind, layoutL ?? HandSkeletonLayout.CapturedL);
+            if (t.TrackedR) DriveFingers(t.BonesR, _rFingers, _rFingerBind, layoutR ?? HandSkeletonLayout.CapturedR);
         }
 
         /// <summary>

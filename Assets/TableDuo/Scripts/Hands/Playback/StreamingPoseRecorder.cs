@@ -36,6 +36,9 @@ namespace TableDuoVr.Hands.Playback
         private void Update()
         {
             if (onlyDuringStudy && !StudyConfig.LaunchedWithStudyFlags) return;
+            // 観戦者は手を持たない（L0 の FakeHandDriver が tracked=true を返すため、
+            // ゲートしないと合成 pose を「ローカル生データ」として録画してしまう）
+            if (StudyConfig.ForcedRole == StudyConfig.Role.Spectator) return;
             var src = HandPoseSourceRegistry.Best;
             if (src == null) return;
             if (Time.time < _next) return;
@@ -74,9 +77,15 @@ namespace TableDuoVr.Hands.Playback
                 // Finalize 時にシークして実数を書き戻す
                 _writer.Write(0x54445632); // "TDV2"
                 _writer.Write(AvatarPose.BonesPerHand);
-                _writer.Write(true);
-                PoseRecordingFile.WriteLayout(_writer, HandSkeletonLayout.CapturedL);
-                PoseRecordingFile.WriteLayout(_writer, HandSkeletonLayout.CapturedR);
+                // layout 未キャプチャ（トラッキング前に片手だけ来た等）でも NRE で死なず
+                // hasLayout=false の有効ファイルを書く（PoseRecordingFile.Save/Load と同形式）
+                bool hasLayout = HandSkeletonLayout.CapturedL != null && HandSkeletonLayout.CapturedR != null;
+                _writer.Write(hasLayout);
+                if (hasLayout)
+                {
+                    PoseRecordingFile.WriteLayout(_writer, HandSkeletonLayout.CapturedL!);
+                    PoseRecordingFile.WriteLayout(_writer, HandSkeletonLayout.CapturedR!);
+                }
                 _frameCountPos = _stream.Position;
                 _writer.Write(0);
                 _writer.Write(1f / sampleRate);

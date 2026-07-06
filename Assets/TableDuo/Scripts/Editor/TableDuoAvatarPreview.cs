@@ -78,14 +78,67 @@ namespace TableDuoVr.EditorTools
                 SetLayerRecursive(seat, Layer);
                 Shot(cam, dir, "03_front_gesture.png", new Vector3(0f, -0.30f, 3.0f), aim);
 
+                // 実録画の指ポーズで Remy 指リターゲット（P3）を検証（05/06）。
+                // ovrBind に録画同梱の実 layout を使い、実機と同じ入力系列で軸ズレ/巻き込みを見る
+                CaptureRealFingerShots(view, seat, cam, dir);
+
                 Debug.Log($"[TableDuo] アバタープレビュー保存 → {dir}\n" +
-                          "01_front_neutral.png / 02_threequarter.png / 03_front_gesture.png / 04_side.png");
+                          "01_front_neutral.png / 02_threequarter.png / 03_front_gesture.png / 04_side.png / " +
+                          "05_fingers_front.png / 06_fingers_close.png（実録画指ポーズ）");
             }
             finally
             {
                 if (seat != null) Object.DestroyImmediate(seat);
                 if (camGo != null) Object.DestroyImmediate(camGo);
                 if (lightGo != null) Object.DestroyImmediate(lightGo);
+            }
+        }
+
+        /// <summary>
+        /// 実トラッキング録画（TestData/tdv_handrec_real_*.bin）の表情豊かなフレームで Remy の
+        /// 指リターゲットを撮る。Captured layout を録画同梱の実 layout に差し替え（ovrBind）、
+        /// 撮影後に必ず復元する（static 汚染防止）。録画が無ければスキップ。
+        /// </summary>
+        private static void CaptureRealFingerShots(RemoteAvatarView view, GameObject seat, Camera cam, string dir)
+        {
+            string proj = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            var rec = Playback.LoadRecordingForPreview(proj);
+            if (rec == null || rec.Frames.Count == 0)
+            {
+                Debug.LogWarning("[TableDuo] 実録画（TestData/tdv_handrec_real_*.bin）が無いため指ショットをスキップ");
+                return;
+            }
+
+            var prevL = HandSkeletonLayout.CapturedL;
+            var prevR = HandSkeletonLayout.CapturedR;
+            try
+            {
+                HandSkeletonLayout.CapturedL = rec.LayoutL;
+                HandSkeletonLayout.CapturedR = rec.LayoutR;
+
+                var frame = rec.Frames[Playback.PickExpressiveFrame(rec)];
+                var p = new AvatarPose();
+                p.CopyFrom(frame);
+                // 手首はフレーミング固定（卓上の見やすい位置）に差し替え、指 bone は実録画のまま
+                p.WristPosR = new Vector3(0.24f, -0.30f, 0.36f);
+                p.WristRotR = Quaternion.Euler(-30f, -90f, 0f); // 甲をカメラへ（指の曲がりが見える向き）
+                p.WristPosL = new Vector3(-0.24f, -0.42f, 0.36f);
+                p.WristRotL = Quaternion.Euler(20f, 90f, 0f);
+                p.TrackedL = true;
+                p.TrackedR = true;
+
+                view.PoseImmediate(p);
+                SetLayerRecursive(seat, Layer);
+                var aim = new Vector3(0f, -0.30f, 0.2f);
+                Shot(cam, dir, "05_fingers_front.png", new Vector3(0f, -0.15f, 2.4f), aim);
+                // 右手クローズアップ（指の節ごとの曲がり・巻き込み/反りの検証用）
+                var handAim = new Vector3(0.24f, -0.30f, 0.36f);
+                Shot(cam, dir, "06_fingers_close.png", handAim + new Vector3(0.05f, 0.25f, 0.75f), handAim);
+            }
+            finally
+            {
+                HandSkeletonLayout.CapturedL = prevL;
+                HandSkeletonLayout.CapturedR = prevR;
             }
         }
 
