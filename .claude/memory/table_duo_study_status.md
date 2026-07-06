@@ -105,6 +105,11 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 ## 未対応（要望待ち）
 片手モードの左右選択/両手 / 人側の自分の胴体表示 / リプレイ音声同期実運用 / パイロット本番（所有者が手役を一度経験→プロトコル凍結）
 
+## 2026-07-06〜07 手アバター3大バグ根治 + PC ホスト運用へ移行
+手崩れ/指非同期（handSkeletonVersion=OpenXR 混入）・位置系統ズレ（席フレーム契約崩れ）・Remy 指未駆動（P3）を根治。
+運用は **PC=NGO host（観戦）+ Quest2台=client** に移行（ログが PC に落ちる・役割交代が楽）。
+フロー・起動の罠・診断タグ・実機確認チェックリスト → **[[table_duo_pc_host_and_wiretap]]**（Remy 指リターゲット実装済み＝上記 P3 記述は解消）。
+
 ## 2026-07-02 構造改善スイープ（レビュー指摘の一括改善・EditMode 37/37・実機未検証）
 
 **Phase1 運用**: study docs を実装状態へ同期（package ID 修正 / Deep Sea Adventure / Setup 再実行・TDV-DIAG・recenter・tdv_preplace・ffmpeg・倫理審査・観戦を protocol に反映）。役割交代は `tools/tableduo-role-swap.ps1`（2台の tdv_role 反転再起動・DryRun 可）。

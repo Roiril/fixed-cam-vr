@@ -42,7 +42,43 @@ OVRManager を [TableDuoSceneSetup](../../Assets/TableDuo/Scripts/Editor/TableDu
 - `controllerDrivenHandPosesType=Natural(2)`（握った手の骨格をコントローラ入力から自然な手形で駆動）
 → 素手ならハンドトラッキング、握れば手メッシュが出続ける（OVRHand.IsTracked 保持）。OVRProjectConfig.handTrackingSupport=1(ControllersAndHands) 前提（設定済み）。**実機で握り時の手の見た目・送信 pose を要確認**。
 
-## ⚠ 手崩れ・指非同期の根治（2026-07-06・b51a747）
+## 運用フロー（PC ホスト + 2 Quest・確立版）
+1. `tools/tableduo-pc-host.ps1` 一発（wake→Link ダイアログ潰し→起動→pid 確認まで内包）。手動なら:
+   - PC: 旧 `TableDuo.exe` を全 kill → `TableDuo.exe -tdvMode host -tdvRole spectator -tdvL0 on -screen-fullscreen 0 -logFile <logs/host_*.log>` → ログに `Host 開始 port=7777` で listen 確認
+   - Quest×2: `am force-stop` → **`input keyevent KEYCODE_WAKEUP`** → `am force-stop com.oculus.systemux` → `am start ... -e tdv_mode client -e tdv_role full|hand -e tdv_ip <PCのIP>` → `pidof` で起動確認 → ホストログ `リモート(clientN) 役割=...` で接続確認
+2. 記録: PC 画面右上 GUI ボタン / F9（Quest は右 B）。CSV は PC の `%USERPROFILE%\AppData\LocalLow\DefaultCompany\TableDuo\tdv_wiretap_*.csv`
+
+### 起動の罠（2026-07-06 実害・全部踏んだ）
+- **Quest がスリープ（近接センサー OFF＝顔/マネキンから外れた）だと `am start` が黙って失敗**（エラーなし・pid 立たず・`dumpsys power | grep mWakefulness` が Asleep）→ `KEYCODE_WAKEUP` か HMD を被る/センサーを指で塞ぐ
+- **USB 接続中の「Quest Link を開始しますか？」OS ダイアログがアプリ起動をブロック**（`Launch is blocked because: a Reprojected OS dialog is currently showing`）→ `am force-stop com.oculus.systemux`
+- **PC ホストの旧プロセス残骸が MarkServer(7780) を掴む** → `MarkServer 起動失敗` は reset_board の curl だけ死ぬ（接続/記録/診断は無影響）。kill してもゴースト socket が残ることがあり、その時は PC 再起動まで放置で可
+- adb install が「0 files pushed」で無言失敗することがある → もう一度 install（2回目で通る）
+
+## 診断タグ一覧（手アバター不具合の切り分け）
+| タグ | 出所 | 見るもの |
+|---|---|---|
+| `[TDV-SKEL]` | 送信側・スケルトン初期化時1回 | `type=HandLeft count=24` が正（`XRHandLeft count=26` なら handSkeletonVersion 再発） |
+| `[TDV-WRIST]` | 送信側・1Hz | 手首アンカー vs 実 bone0 の差（delta=0 が正） |
+| `[TDV-WIRE]` | 受信側・記録中1Hz | ワイヤ上の pose（wristEuler/boneMax/seq/age）＝データ側の健全性 |
+| `[TDV-DRAW]` | 受信側・記録中1Hz | 描画適用（target vs applied/mode/varBind）＝描画側の健全性 |
+切り分け手順: WIRE が荒れてる→送信/座標系、WIRE 正常で DRAW target≒applied なのに見た目が変→スケルトン体系/リターゲット、DRAW の applied が target とズレ→平滑/描画バグ。
+
+## ⚠ 手アバター3大バグの根治記録（2026-07-06〜07）
+
+### (2) 手/頭の系統的な位置ズレ（1bea205）
+受信側（RemoteAvatarView/Grabbable/Remy）は pose を**席ローカル**として解釈するが、送信は
+**trackingSpace ローカル**で採取していた。A ボタン（RigRecenter.HeadToSeat）は**リグごと平行移動**
+して頭を席に合わせるため、以後 trackingSpace 原点≠席になり、リセット時の頭ドリフト分だけ
+リモート手・頭が系統ズレ。→ **HandPoseSampler.ReferenceFrame に席を設定**（TableDuoPlayer.SetupOwner）
+し「席から見た pose」を送る。座標系契約は「pose は常に席ローカル」で統一。
+[TDV-WRIST] で delta=0 を確認済み＝アンカー採取説は棄却してこの結論に至った。
+
+### (3) 人役 Remy の指が動かない（1bea205・P3 消化）
+RemyAvatarRig は手首 IK のみで指を未駆動だった。OVR legacy BoneId（各指 1-3 節・15 ボーン）→
+`mixamorig:<Side>Hand<Finger><1-3>` へ HandRetarget.Solve（バインド差分）で駆動。
+ovrBind=受信側 Captured layout（観戦 PC 等 layout 無しは identity 近似＝多少オフセットするが動きは伝わる）。
+
+### (1) 手崩れ・指非同期の根治（2026-07-06・b51a747）
 リモート手が崩れ指が動かない真因＝ `Assets/Resources/OculusRuntimeSettings.asset` の
 **`handSkeletonVersion: 1`(OpenXR 26 bone)**。SDK 201 導入時から入っており、OVRHand は
 この**グローバル設定だけ**でスケルトン種別を決める（シーンの `_skeletonType` serialize 値は無関係）。
@@ -61,3 +97,11 @@ WireTap の切り分け実績: ワイヤ側 [TDV-WIRE] は滑らか＝データ�
 | PC | `TableDuo.exe -tdvMode host -tdvRole spectator -tdvL0 on -logFile <path>` |
 
 Quest 同士 host 構成（PC 不要の従来）は host を `-e tdv_mode host -e tdv_role full`、client の tdv_ip を host Quest の IP に。USB 接続中は host 側で Quest Link ダイアログが起動をブロックするので `adb -s <serial> shell am force-stop com.oculus.systemux` で潰してから起動（スクリプトは内包）。
+
+## 明日（2026-07-07 以降）の実機確認チェックリスト
+最新 APK（1bea205 ビルド）は両 Quest 導入済み・desktop も焼き直し済み。確認事項:
+1. **位置ズレ解消**: 自分の HMD で見る自分の手と、ホスト/相手から見たリモート手が同じ場所か。**A ボタンで視点リセットした後も**ズレないか（これが今回の修正の核心）
+2. **Remy（人役）の指**が動くか・曲がり方が不自然でないか（バインド差分リターゲットの軸ズレは実機でしか判定できない）
+3. **Remy の手首位置**が自然か（席フレーム修正の効果）
+4. 手役の指（前回 OK）が退行していないか
+5. コントローラ把持で手が消えないか（マルチモーダル・素手テストでは未検証のまま）
