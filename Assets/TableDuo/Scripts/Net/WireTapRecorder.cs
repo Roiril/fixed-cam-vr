@@ -38,8 +38,11 @@ namespace TableDuoVr.Net
 
         private void Update()
         {
-            // B ボタン（右手 Button.Two）単押しでトグル。左 Y（バリアント切替）とは別ボタン
-            if (OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.RTouch))
+            // トグル入力: 右コントローラ B（Quest）/ キーボード F9（PC ホスト＝コントローラ無し）。
+            // 左 Y（バリアント切替）とは別ボタン。PC 観戦ホストでは B は来ないので F9 が主。
+            bool toggle = OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.RTouch)
+                          || Input.GetKeyDown(KeyCode.F9);
+            if (toggle)
             {
                 if (IsRecording) StopRecording();
                 else StartRecording();
