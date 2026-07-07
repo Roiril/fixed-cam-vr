@@ -46,14 +46,27 @@ namespace TableDuoVr.Hands
         /// <summary>頭（CenterEyeAnchor）。手動リセットで「頭→席」を合わせるのに使う。L0 では null。</summary>
         public Transform? CenterEye => centerEye;
 
-        /// <summary>ローカル手（Meta 白手）のメッシュレンダラー。一人称自己アバター時に隠す用
-        /// （OVRHand/OVRSkeleton は生かしたままレンダラーだけ切る）。</summary>
-        public SkinnedMeshRenderer[] GetLocalHandRenderers()
+        /// <summary>
+        /// ローカル手（Meta 白手）のメッシュ表示を切り替える（一人称自己アバター時に隠す用）。
+        /// OVRHand/OVRSkeleton は生かしたまま（トラッキング・ピンチ・送信は無変化）。
+        /// ⚠ SkinnedMeshRenderer.enabled を切るだけでは足りない — OVRMeshRenderer が毎フレーム
+        /// confidence に応じて renderer.enabled を上書きするため、OVRMeshRenderer 自体も無効化する
+        /// （2026-07-07 実害: selfbody で白手を消したはずが表示され続けた）。
+        /// </summary>
+        public void SetLocalHandMeshVisible(bool visible)
         {
-            var list = new System.Collections.Generic.List<SkinnedMeshRenderer>();
-            if (leftHand != null) list.AddRange(leftHand.GetComponentsInChildren<SkinnedMeshRenderer>(true));
-            if (rightHand != null) list.AddRange(rightHand.GetComponentsInChildren<SkinnedMeshRenderer>(true));
-            return list.ToArray();
+            foreach (var hand in new[] { leftHand, rightHand })
+            {
+                if (hand == null) continue;
+                foreach (var omr in hand.GetComponentsInChildren<OVRMeshRenderer>(true))
+                {
+                    omr.enabled = visible;
+                }
+                foreach (var smr in hand.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    smr.enabled = visible;
+                }
+            }
         }
 
         /// <summary>片手モード: 左手を抑制（pose 非送信 + ローカル描画も隠す＝身体感の一貫性）。</summary>

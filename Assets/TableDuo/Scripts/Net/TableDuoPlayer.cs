@@ -205,7 +205,7 @@ namespace TableDuoVr.Net
                     var go = new GameObject("LocalSelfBody");
                     go.transform.SetParent(transform, false);
                     var self = go.AddComponent<LocalSelfBody>();
-                    self.Initialize(seat, remyPrefab, _sampler.GetLocalHandRenderers());
+                    self.Initialize(seat, remyPrefab, _sampler);
                 }
                 else
                 {

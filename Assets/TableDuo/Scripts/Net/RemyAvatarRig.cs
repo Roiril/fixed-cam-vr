@@ -22,6 +22,12 @@ namespace TableDuoVr.Net
         // bind 補正（席空間）: boneWorld = seat.rotation * receivedRot * B のとき received=I で bind に戻る
         private readonly Quaternion _headB, _lHandB, _rHandB;
 
+        // 手首写像 W: 受信 wristRot は「OVR 手アンカー」の向き（identity=掌上・指-X、白手 bind と同一）。
+        // Remy の手ボーン軸はこれと無関係なので、bind 時の実ジオメトリ（手首→中指方向・手の甲法線）から
+        // 「ボーンローカル → アンカーローカル」の回転 W を構築し hand.rotation = seat * wristRot * W とする。
+        // 定数の当て推量（Euler オフセット）はしない — 2026-07-07 に Z180 仮説が校正プレビューで棄却された。
+        private readonly Quaternion _lHandW, _rHandW;
+
         // 腕の座位ベース localRotation。解析 IK は後乗算で累積するため、毎フレ解く前にここへ戻す
         private readonly Quaternion _lArmBase, _lForeBase, _rArmBase, _rForeBase;
 
@@ -83,6 +89,9 @@ namespace TableDuoVr.Net
             _headB = _head != null ? seatInv * _head.rotation : Quaternion.identity;
             _lHandB = _lHand != null ? seatInv * _lHand.rotation : Quaternion.identity;
             _rHandB = _rHand != null ? seatInv * _rHand.rotation : Quaternion.identity;
+            // 手首写像 W（bind の実ジオメトリから構築。腕/指がまだ bind のこの時点で測る）
+            _lHandW = ComputeWristMap(_lHand, _lFingers, right: false, seat, _lHandB);
+            _rHandW = ComputeWristMap(_rHand, _rFingers, right: true, seat, _rHandB);
 
             // 初期＝休めポーズを適用。トラッキング前/ロスト中の腕が T 字（真横・手が外向き）で固まるのを防ぐ。
             // 受信 pose が来れば Drive が上書きする。bind 補正確定後に呼ぶこと（handB が bind 基準）
@@ -117,8 +126,8 @@ namespace TableDuoVr.Net
         /// <summary>両腕を休めポーズへ（IK で手首を卓上へ・手首向きを前方へ）。構築時の初期姿勢に使う。</summary>
         public void ApplyRestPose()
         {
-            SolveArm(true, RestWristL, RestWristRotL, true, _lArm, _lFore, _lHand, _lHandB, _lArmBase, _lForeBase);
-            SolveArm(false, RestWristR, RestWristRotR, true, _rArm, _rFore, _rHand, _rHandB, _rArmBase, _rForeBase);
+            SolveArm(true, RestWristL, RestWristRotL, true, _lArm, _lFore, _lHand, _lArmBase, _lForeBase);
+            SolveArm(false, RestWristR, RestWristRotR, true, _rArm, _rFore, _rHand, _rArmBase, _rForeBase);
         }
 
         /// <summary>受信 pose を反映（頭・腕 IK・手首向き・指リターゲット）。ロスト手は最後の姿勢で凍結。
@@ -129,8 +138,8 @@ namespace TableDuoVr.Net
             {
                 _head.rotation = _seat.rotation * t.HeadRot * _headB;
             }
-            SolveArm(true, t.WristPosL, t.WristRotL, t.TrackedL, _lArm, _lFore, _lHand, _lHandB, _lArmBase, _lForeBase);
-            SolveArm(false, t.WristPosR, t.WristRotR, t.TrackedR, _rArm, _rFore, _rHand, _rHandB, _rArmBase, _rForeBase);
+            SolveArm(true, t.WristPosL, t.WristRotL, t.TrackedL, _lArm, _lFore, _lHand, _lArmBase, _lForeBase);
+            SolveArm(false, t.WristPosR, t.WristRotR, t.TrackedR, _rArm, _rFore, _rHand, _rArmBase, _rForeBase);
             if (t.TrackedL) DriveFingers(t.BonesL, _lFingers, _lFingerBind, layoutL ?? HandSkeletonLayout.CapturedL);
             if (t.TrackedR) DriveFingers(t.BonesR, _rFingers, _rFingerBind, layoutR ?? HandSkeletonLayout.CapturedR);
         }
@@ -184,8 +193,47 @@ namespace TableDuoVr.Net
             }
         }
 
+        /// <summary>
+        /// bind 実ジオメトリから「Remy 手ボーンローカル → OVR アンカーローカル」の回転 W を構築する。
+        /// アンカー基準（白手 bind 実測・[[table_duo_l0_desktop_test]] のキービジュアル校正と同じ知見）:
+        ///   右手 identity = 指-X・掌上（手の甲=-Y）/ 左手 = 指+X・掌上（ミラー）。
+        /// Remy 側は「手首→中指付け根」を指方向、「(index1-pinky1)×指方向」を手の甲法線として測る
+        /// （bind=Tポーズで手の甲は上向き、で符号を確定）。指ボーンが見つからない場合は旧式
+        /// （seat 基準 bind 直乗せ）へフォールバック。
+        /// </summary>
+        private static Quaternion ComputeWristMap(Transform? hand, Transform?[] fingers, bool right,
+            Transform seat, Quaternion handBFallback)
+        {
+            if (hand == null) return handBFallback;
+            var mid = fingers[9];  // middle1
+            var idx = fingers[6];  // index1
+            var pnk = fingers[16]; // pinky1
+            if (mid == null) return handBFallback;
+
+            Vector3 fW = mid.position - hand.position; // 指方向（world）
+            if (fW.sqrMagnitude < 1e-8f) return handBFallback;
+            fW.Normalize();
+            Vector3 sW = (idx != null && pnk != null) ? (idx.position - pnk.position) : seat.forward;
+            Vector3 bW = Vector3.Cross(sW, fW); // 手の甲法線候補
+            if (bW.sqrMagnitude < 1e-8f) return handBFallback;
+            bW.Normalize();
+            if (Vector3.Dot(bW, seat.up) < 0f) bW = -bW; // bind（Tポーズ）では手の甲=上
+
+            // ボーンローカルへ
+            Quaternion boneInv = Quaternion.Inverse(hand.rotation);
+            Vector3 fL = boneInv * fW;
+            Vector3 bL = boneInv * bW;
+
+            // アンカー基準（白手 bind の**実測**・2026-07-07 [TDV-CALIB] でゴーストメッシュ実ボーンから確定）:
+            // 右手 identity = 指+X・手の甲+Y（掌下）。左は右のミラー＝指-X・甲+Y。
+            // （旧 memory の「指-X・掌上」は両軸とも実測と 180° 逆＝誤りだった）
+            Vector3 f0 = right ? Vector3.right : Vector3.left;
+            Vector3 b0 = Vector3.up;
+            return Quaternion.LookRotation(f0, b0) * Quaternion.Inverse(Quaternion.LookRotation(fL, bL));
+        }
+
         private void SolveArm(bool left, Vector3 wristLocal, Quaternion wristRotLocal, bool tracked,
-            Transform? arm, Transform? fore, Transform? hand, Quaternion handB,
+            Transform? arm, Transform? fore, Transform? hand,
             Quaternion armBase, Quaternion foreBase)
         {
             if (!tracked || arm == null || fore == null || hand == null) return; // ロスト=凍結
@@ -197,7 +245,7 @@ namespace TableDuoVr.Net
             Vector3 poleLocal = new Vector3(left ? -0.6f : 0.6f, -0.7f, -0.5f);
             Vector3 pole = arm.position + _seat.TransformDirection(poleLocal);
             TwoBoneIK.Solve(arm, fore, hand, goal, pole);
-            hand.rotation = _seat.rotation * wristRotLocal * handB;
+            hand.rotation = _seat.rotation * wristRotLocal * (left ? _lHandW : _rHandW);
         }
 
         /// <summary>

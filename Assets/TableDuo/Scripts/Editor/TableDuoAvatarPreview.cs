@@ -190,11 +190,67 @@ namespace TableDuoVr.EditorTools
                 cam.backgroundColor = new Color(0.30f, 0.30f, 0.32f);
                 cam.cullingMask = 1 << Layer;
 
+                // 手首向きの正解基準: 白手（OVRCustomHandPrefab_R）を同じ wristRot で Remy の右手の
+                // すぐ横に置く（メッシュ bind=アンカーなので localRotation=wristRot が常に正しい向き）。
+                // Remy 手と白手ゴーストの向きが一致していれば手首合成（OvrAnchorToRemyBind）が正しい
+                var ghostPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Packages/com.meta.xr.sdk.core/Prefabs/OVRCustomHandPrefab_R.prefab");
+                Transform? remyRHand = FindDeep(seat.transform, "mixamorig:RightHand");
+                if (ghostPrefab != null)
+                {
+                    var ghost = (GameObject)Object.Instantiate(ghostPrefab, seat.transform, false);
+                    foreach (var c in ghost.GetComponentsInChildren<MonoBehaviour>(true)) Object.DestroyImmediate(c);
+                    ghost.transform.localPosition = p.WristPosR + new Vector3(0.16f, 0f, 0f); // Remy 右手の横
+                    ghost.transform.localRotation = p.WristRotR;
+                    SetLayerRecursive(ghost, Layer);
+
+                    // 数値でも突き合わせ（スクショの画角に依存しない一次証拠）:
+                    // Remy 手の「指方向・手の甲方向」を席ローカルで測り、ゴースト（正解）と比較する
+                    if (remyRHand != null)
+                    {
+                        Transform? mid = FindDeep(remyRHand, "mixamorig:RightHandMiddle1");
+                        Vector3 handLocal = seat.transform.InverseTransformPoint(remyRHand.position);
+                        Vector3 fRemy = mid != null
+                            ? seat.transform.InverseTransformDirection((mid.position - remyRHand.position).normalized)
+                            : Vector3.zero;
+                        // ゴースト（白手）の指方向は**メッシュ実ボーン**から測る（式や仮定を使わない＝真の基準。
+                        // 自作の f0 仮定と比較すると循環になるため）
+                        Transform? gWrist = FindDeep(ghost.transform, "b_r_wrist");
+                        Transform? gMid = FindDeep(ghost.transform, "b_r_middle1");
+                        Vector3 fGhost = (gWrist != null && gMid != null)
+                            ? seat.transform.InverseTransformDirection((gMid.position - gWrist.position).normalized)
+                            : Vector3.zero;
+                        // 手の甲方向も実測（b0=down 仮定の検証）。remy 側も同様に測る
+                        Transform? gIdx = FindDeep(ghost.transform, "b_r_index1");
+                        Transform? gPnk = FindDeep(ghost.transform, "b_r_pinky1");
+                        Vector3 bGhost = Vector3.zero;
+                        if (gIdx != null && gPnk != null && fGhost != Vector3.zero)
+                        {
+                            var sG = seat.transform.InverseTransformDirection(gIdx.position - gPnk.position);
+                            bGhost = Vector3.Cross(sG, fGhost).normalized;
+                        }
+                        Transform? rIdx = FindDeep(remyRHand, "mixamorig:RightHandIndex1");
+                        Transform? rPnk = FindDeep(remyRHand, "mixamorig:RightHandPinky1");
+                        Vector3 bRemy = Vector3.zero;
+                        if (rIdx != null && rPnk != null && fRemy != Vector3.zero)
+                        {
+                            var sR = seat.transform.InverseTransformDirection(rIdx.position - rPnk.position);
+                            bRemy = Vector3.Cross(sR, fRemy).normalized;
+                        }
+                        Debug.Log($"[TDV-CALIB] R target={p.WristPosR:F3} remyHandLocal={handLocal:F3} " +
+                                  $"fingerDir remy={fRemy:F3} ghostMesh={fGhost:F3} angle={Vector3.Angle(fRemy, fGhost):F1}deg | " +
+                                  $"backDir remy={bRemy:F3} ghost={bGhost:F3} bAngle={Vector3.Angle(bRemy, bGhost):F1}deg");
+                    }
+                }
+
                 // 一人称カメラ＝目線アンカー（席原点）から少し下を向く。頭が潰れて視界を塞がないか＋
                 // 胴/腕/手が下方に見えるかを確認
                 Shot(cam, dir, "07_selfbody_lookdown.png", Vector3.zero, new Vector3(0f, -0.6f, 0.7f));
                 Shot(cam, dir, "08_selfbody_straight.png", Vector3.zero, new Vector3(0f, -0.15f, 1f));
-                Debug.Log($"[TableDuo] 一人称自己ボディ preview → {dir}\n07_selfbody_lookdown.png / 08_selfbody_straight.png");
+                // 右手クローズアップ（白手ゴーストとの向き比較）
+                var rh = p.WristPosR;
+                Shot(cam, dir, "09_selfbody_hand_calib.png", rh + new Vector3(0.08f, 0.35f, 0.55f), rh + new Vector3(0.08f, 0f, 0f));
+                Debug.Log($"[TableDuo] 一人称自己ボディ preview → {dir}\n07_selfbody_lookdown / 08_selfbody_straight / 09_selfbody_hand_calib（白手=正解基準と並置）");
             }
             finally
             {
@@ -239,6 +295,17 @@ namespace TableDuoVr.EditorTools
             Object.DestroyImmediate(tex);
             rt.Release();
             Object.DestroyImmediate(rt);
+        }
+
+        private static Transform? FindDeep(Transform root, string name)
+        {
+            if (root.name == name) return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                var f = FindDeep(root.GetChild(i), name);
+                if (f != null) return f;
+            }
+            return null;
         }
 
         private static void SetLayerRecursive(GameObject go, int layer)

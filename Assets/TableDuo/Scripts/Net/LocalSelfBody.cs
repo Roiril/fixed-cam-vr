@@ -27,13 +27,12 @@ namespace TableDuoVr.Net
         /// 席アンカー下に一人称 Remy を生成し、ローカル白手メッシュを隠す。
         /// prefab 不在（Remy 未取り込み）なら自己ボディ無し（従来通り＝手だけ見える）でフォールバック。
         /// </summary>
-        public void Initialize(Transform seat, GameObject remyPrefab, SkinnedMeshRenderer[] localHandRenderers)
+        public void Initialize(Transform seat, GameObject remyPrefab, HandPoseSampler sampler)
         {
             _rig = new RemyAvatarRig(seat, remyPrefab, firstPerson: true);
-            foreach (var smr in localHandRenderers)
-            {
-                if (smr != null) smr.enabled = false; // 白手はレンダラーのみ非表示（駆動系は生かす）
-            }
+            // 白手はメッシュのみ非表示（OVRMeshRenderer ごと止める — SMR だけ切っても毎フレ復活する）。
+            // OVRHand/OVRSkeleton は生かす＝トラッキング・ピンチ・送信は無変化
+            sampler.SetLocalHandMeshVisible(false);
             Debug.Log("[TableDuo] 一人称自己アバター ON（頭を潰した Remy をローカル pose で駆動 / 白手メッシュ非表示）");
         }
 
