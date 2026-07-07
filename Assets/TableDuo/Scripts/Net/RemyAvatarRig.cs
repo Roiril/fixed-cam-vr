@@ -142,7 +142,40 @@ namespace TableDuoVr.Net
             SolveArm(false, t.WristPosR, t.WristRotR, t.TrackedR, _rArm, _rFore, _rHand, _rArmBase, _rForeBase);
             if (t.TrackedL) DriveFingers(t.BonesL, _lFingers, _lFingerBind, layoutL ?? HandSkeletonLayout.CapturedL);
             if (t.TrackedR) DriveFingers(t.BonesR, _rFingers, _rFingerBind, layoutR ?? HandSkeletonLayout.CapturedR);
+
+            // 実行時診断（WireTap 記録中のみ・1Hz）: 手首写像 W が実機データでも成立しているかを
+            // 「wristRot から期待される指/甲方向」vs「実際にメッシュへ適用された方向」の角度差で刻む。
+            // fAngle/bAngle が小さければ手首向きの数式は正しく、残る違和感は位置・指・体格側と切り分けられる
+            if (WireTapRecorder.DiagnosticsEnabled && t.TrackedR && Time.unscaledTime >= _nextDiag)
+            {
+                _nextDiag = Time.unscaledTime + 1f;
+                var hand = _rHand;
+                var mid = _rFingers[9];
+                var idx = _rFingers[6];
+                var pnk = _rFingers[16];
+                if (hand != null && mid != null)
+                {
+                    Quaternion seatInv = Quaternion.Inverse(_seat.rotation);
+                    Vector3 fActual = seatInv * (mid.position - hand.position).normalized;
+                    Vector3 fExpect = t.WristRotR * Vector3.right; // アンカー実測: 右手 identity=指+X
+                    float fAngle = Vector3.Angle(fActual, fExpect);
+                    float bAngle = -1f;
+                    if (idx != null && pnk != null)
+                    {
+                        Vector3 sV = seatInv * (idx.position - pnk.position);
+                        Vector3 bActual = Vector3.Cross(sV, fActual).normalized;
+                        Vector3 bExpect = t.WristRotR * Vector3.up; // 甲+Y
+                        bAngle = Vector3.Angle(bActual, bExpect);
+                    }
+                    Vector3 handLocal = _seat.InverseTransformPoint(hand.position);
+                    Debug.Log($"[TDV-REMY] R fAngle={fAngle:F0} bAngle={bAngle:F0} " +
+                              $"handLocal={handLocal:F2} target={t.WristPosR:F2} " +
+                              $"reach={(handLocal - t.WristPosR).magnitude:F3}");
+                }
+            }
         }
+
+        private float _nextDiag;
 
         /// <summary>
         /// 同期 bone（OVR legacy ローカル回転）を Mixamo 指ボーンへバインド差分リターゲット。
