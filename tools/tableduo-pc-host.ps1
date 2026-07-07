@@ -20,6 +20,7 @@ param(
     [string]$Package = "com.roiril.tableduo",
     [string]$ExePath = "Builds/tableduo-desktop/TableDuo.exe",
     [switch]$NoHost,     # PC ホストを起動しない（既に立っている時）
+    [switch]$SelfBody,   # 人役に一人称自己アバターを出す（tdv_selfbody on）
     [switch]$DryRun
 )
 
@@ -87,8 +88,10 @@ if (-not $NoHost) {
 }
 
 # --- 2) Quest 2 台をクライアントで起動 ---
+$selfArg = ""
+if ($SelfBody) { $selfArg = " -e tdv_selfbody on" }  # 人役のみ（一人称自己アバター）
 $plan = @(
-    @{ Serial = $FullSerial; Desc = "client / full（人）"; Args = "-e tdv_mode client -e tdv_ip $HostIp -e tdv_role full$variantArg" },
+    @{ Serial = $FullSerial; Desc = "client / full（人）"; Args = "-e tdv_mode client -e tdv_ip $HostIp -e tdv_role full$variantArg$selfArg" },
     @{ Serial = $HandSerial; Desc = "client / hand（手）"; Args = "-e tdv_mode client -e tdv_ip $HostIp -e tdv_role hand$variantArg" }
 )
 

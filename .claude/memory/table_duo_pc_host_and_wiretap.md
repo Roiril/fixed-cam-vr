@@ -89,6 +89,21 @@ ovrBind=受信側 Captured layout（観戦 PC 等 layout 無しは identity 近�
 WireTap の切り分け実績: ワイヤ側 [TDV-WIRE] は滑らか＝データ正常、[TDV-DRAW] target≒applied＝描画忠実、
 なのに見た目が崩れる → スケルトン体系の不一致、という診断手順が有効だった。
 
+## 人役の一人称自己アバター（tdv_selfbody・2026-07-07・ca8422b）
+下を向くと自分の胴/腕/手が見える身体所有感。人役の起動に `-e tdv_selfbody on`（既定 off）。
+- 仕組み: [LocalSelfBody](../../Assets/TableDuo/Scripts/Net/LocalSelfBody.cs) が相手に見えるのと同じ Remy を
+  もう1体、**自分のローカル pose（HandPoseSourceRegistry.Best＝送信と同じ席フレーム値）**で駆動。
+  [RemyAvatarRig](../../Assets/TableDuo/Scripts/Net/RemyAvatarRig.cs) の firstPerson モードで**頭ボーンを
+  scale 0.01 で潰し**（視界を塞がない）body を席ローカル -Z へ 4cm（胸のニアクリップ貫通防止）。
+- 白手は**レンダラーだけ非表示**（OVRHand/Skeleton は生きる＝トラッキング/ピンチ/送信/掴み判定は無変化）。
+  手は Remy 手に一本化。掴み判定は描画非依存なので機能劣化なし（唯一の実機確認点＝Remy 手の IK 表示位置で
+  掴み狙いがズレないか）。
+- ローカル描画専用＝**相手に見える自分（ネット越し Remy）は不変**・ネット送信は無追加。
+- 条件記録: `_studyFlags` bit4 同期・CSV `condition` 行に `selfBody=0/1`。既定 off は交絡回避
+  （パイロットで on/off 比較して本番既定を決める）。
+- Editor 検証: `Diagnostics/Preview Self Body (first-person)` → `Temp/AvatarPreview/07_selfbody_lookdown.png`
+  ・`08_selfbody_straight.png`（頭が消えて体が下方に見えるのを確認済み）。
+
 ## 実機起動 早見表
 | 役 | intent（PC host 構成） |
 |---|---|

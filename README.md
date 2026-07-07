@@ -70,6 +70,7 @@
 - **標準トポロジ（2026-07-06〜）**: **PC が NGO host（観戦ロール兼任・L0 デスクトップビルド）+ Quest 2 台が client**。SessionLogger/WireTap が PC に直接落ち、両者の pose が必ずワイヤを通る（計測対称）。役割交代もセッション継続のまま Quest 再起動だけ
 - **卓上タスク**: Deep Sea Adventure（ボードゲーム）を **1 ラウンド実際に遊べる**。全ピース（チップ 21・駒 2・空気マーカー・サイコロ 2）が掴める（サーバ権威・ピンチグラブ）。サイコロは離すと出目 1–3 を確定表示＋CSV 記録。ルール裁定はコード化せず人間運用（無言交渉が研究データ）。盤面リセットは `mark?label=reset_board`
 - **手の見た目 3 バリアント = 調査条件**（within-pair・ブロック固定・`tdv_hand default|realistic|robot`。セッション中の切替は封印、端末間の不一致は検出して CSV に記録）
+- **人役の一人称自己アバター**（`tdv_selfbody on`・既定 off）: 下を向くと自分の胴/腕/手が見える（頭は潰して視界を塞がない・白手は隠し Remy 手に一本化）。ローカル描画専用＝相手に見える自分は不変。条件は CSV に記録（自己身体の有無は交絡なのでパイロットで既定を決める）
 - **シーン生成**: `Tools/FixedCamVr/Setup/Setup TableDuo Scene`（冪等。**ビルド直前に再実行してクリーン状態にする**）
 
 ## 調査の記録物（すべて自動）
@@ -87,6 +88,7 @@
 ```powershell
 .\tools\tableduo-pc-host.ps1              # PC host(観戦) 起動 → 2 台を full/hand で接続まで一発
 .\tools\tableduo-pc-host.ps1 -HandVariant robot   # 条件ブロック指定
+.\tools\tableduo-pc-host.ps1 -SelfBody    # 人役に一人称自己アバターを出す（tdv_selfbody on）
 .\tools\tableduo-pc-host.ps1 -NoHost      # ホスト起動済みで Quest だけ繋ぎ直し
 ```
 
