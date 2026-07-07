@@ -4,7 +4,11 @@ using UnityEngine;
 namespace TableDuoVr.Hands
 {
     /// <summary>
-    /// 1人分のアバター姿勢スナップショット。座標はすべてトラッキングスペース（席）基準のローカル。
+    /// 1人分のアバター姿勢スナップショット。**座標はすべて席アンカー基準のローカル**（送受信の契約）。
+    /// 送信側は HandPoseSampler.ReferenceFrame=席 で採取し、受信側（RemoteAvatarView/Grabbable/Remy）は
+    /// 席の TransformPoint で復元する。trackingSpace 基準と混同しないこと — リグ再センタ
+    /// （A ボタン等）で trackingSpace 原点は席からズレるため、trackingSpace 基準で送ると
+    /// リモート描画が系統的に平行移動する（2026-07-06 実害・根治済み）。
     /// 受信側で使い回すため class（参照共有でアロケーションゼロ運用）。
     /// </summary>
     public sealed class AvatarPose
