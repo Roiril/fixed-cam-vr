@@ -45,3 +45,6 @@ TableDuo（[[table_duo_study_status]]）を **Quest も Unity Editor も MCP も
 - 画像を見ながらのイテレーションは「ポーズ.cs 編集→batchmode 2回ビルド→`TableDuo.exe -tdvKeyVisual on`→PNG を Read」。**起動 exe を Editor の `Unity.exe` と取り違えない**（standalone は `Builds/tableduo-desktop/TableDuo.exe`）
 - **Editor を開いたまま MCP 経由でビルドできる**（2026-06-30）: `execute_menu_item("Tools/FixedCamVr/Diagnostics/Build TableDuo Desktop (L0 test)")`。コンパイルは先に `refresh_unity(compile=request)` で済ませる。MCP 応答は **build 同期実行で timeout するが build は進む**（`result=Unknown` ログや複数回実行が出ても**出力 DLL は正しく焼ける**）→ **`Builds/.../Managed/TableDuoVr.Net.dll` の mtime 更新＋安定で完了判定**して exe 実行。batchmode（Editor 閉じ・2回ビルド）より速い。ターゲットは BuildVariants の finally で Android に自動復元
 - **手役（hand-only）の手首向き校正（2026-06-30）**: 手だけアバターは `wristRot` を bind に直接かける（補正なし）。`OVRCustomHandPrefab_R` の bind は **手のひら上・指=ローカル -X**。キービジュアルで「指=人/卓中央へ前向き・手のひら=下」にするのは **`Quaternion.AngleAxis(180f, new Vector3(1,0,1).normalized)`**（[KeyVisualDirector.HandPose](../../Assets/TableDuo/Scripts/Net/KeyVisualDirector.cs)）。identity だと手が外/上を向いて不自然。校正は `KeyVisualDirector` に一時的にカメラを手へロックする block を足して bind 向きを実画像で読んで確定した（確定後 block は撤去）
+
+## 2026-07-06 追記: この基盤が実機運用の本番ホストに昇格
+L0 デスクトップビルド（spectator host）は検証専用ではなく、**実機セッションの標準トポロジ（PC=host + Quest2台=client）の本番ホスト**として使われるようになった。運用フロー・罠 → [[table_duo_pc_host_and_wiretap]]。デスクトップビルドの鮮度維持（Quest APK と同版）が実運用要件になった点に注意。

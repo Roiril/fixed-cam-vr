@@ -121,6 +121,7 @@ fixed-cam-vr 本体とは別に、**テーブルを囲む2人マルチプレイ 
 - **干渉防止**: 並列作業の絶対規約は [.claude/rules/parallel-projects.md](.claude/rules/parallel-projects.md) に集約（asmdef 相互参照禁止・共有資源・ビルド逐次・並列化可否）。冒頭「⚠ 同居 2 アプリ」も参照
 - シーン生成: `Tools/FixedCamVr/Setup/Setup TableDuo Scene`（冪等再実行可）
 - 検証 3 層: L0=FakeHandDriver（HMD 0台）/ L1=Editor+Link↔実機1台 / L2=実機2台（フェーズ締めのみ）
+- **実機運用の標準トポロジ（2026-07-06〜）**: PC=NGO host（観戦兼任・L0 デスクトップビルド）+ Quest 2台=client。起動は `tools/tableduo-pc-host.ps1` 一発。詳細・罠・診断タグ → [.claude/memory/table_duo_pc_host_and_wiretap.md](.claude/memory/table_duo_pc_host_and_wiretap.md)
 - 依存追加: `com.unity.netcode.gameobjects` 1.12.0（このサブプロジェクト用）
 
 ## 姉妹リポジトリ

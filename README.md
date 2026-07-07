@@ -66,7 +66,8 @@
 
 テーブルを挟んだ 2 人非対称マルチプレイ VR。片方は**フルアバター（発話可）**、片方は**手だけ（無言・ジェスチャーのみ）**。「手だけの存在と人はどうコミュニケーションするか」を半構造化観察する研究用アプリ（学会発表前提）。
 
-- **構成**: Meta XR ハンドトラッキング + Netcode for GameObjects（LAN 直結・pose 60Hz Unreliable + Seq 後着棄却・自動再接続）。役割（full/hand）と host/client は起動フラグで独立指定。PC からの**観戦ロール**（第三者視点・席なし）あり
+- **構成**: Meta XR ハンドトラッキング + Netcode for GameObjects（LAN 直結・pose 60Hz Unreliable + Seq 後着棄却・自動再接続）。役割（full/hand）と host/client は起動フラグで独立指定
+- **標準トポロジ（2026-07-06〜）**: **PC が NGO host（観戦ロール兼任・L0 デスクトップビルド）+ Quest 2 台が client**。SessionLogger/WireTap が PC に直接落ち、両者の pose が必ずワイヤを通る（計測対称）。役割交代もセッション継続のまま Quest 再起動だけ
 - **卓上タスク**: Deep Sea Adventure（ボードゲーム）を **1 ラウンド実際に遊べる**。全ピース（チップ 21・駒 2・空気マーカー・サイコロ 2）が掴める（サーバ権威・ピンチグラブ）。サイコロは離すと出目 1–3 を確定表示＋CSV 記録。ルール裁定はコード化せず人間運用（無言交渉が研究データ）。盤面リセットは `mark?label=reset_board`
 - **手の見た目 3 バリアント = 調査条件**（within-pair・ブロック固定・`tdv_hand default|realistic|robot`。セッション中の切替は封印、端末間の不一致は検出して CSV に記録）
 - **シーン生成**: `Tools/FixedCamVr/Setup/Setup TableDuo Scene`（冪等。**ビルド直前に再実行してクリーン状態にする**）
@@ -75,26 +76,37 @@
 
 | 記録 | 内容 | 場所 |
 |---|---|---|
-| SessionLogger CSV | 両者 pose 30Hz + 手役 7 ランドマーク + イベント（grab / recenter / 条件 / layout 受信 / clockOffset / 欠落系） | host の `persistentDataPath` |
+| SessionLogger CSV | 両者 pose 30Hz + 手役 7 ランドマーク + イベント（grab / recenter / 条件 / layout 受信 / clockOffset / 欠落系） | host（=PC）の `persistentDataPath` |
 | SessionReplayRecorder | 全 bone + 小物 + イベントの一括リプレイ（Editor の ReplayViewer で自由視点再生 = stimulated recall） | 同上 |
-| StreamingPoseRecorder | 各端末ローカルの **lossless 手 pose 60Hz**（ネット遅延・量子化なしの完全忠実度バックアップ） | 各端末の `persistentDataPath` |
-| FacilitatorMarkServer | `curl http://<host>:7780/mark?label=phase2` でフェーズマーク | CSV へ |
+| StreamingPoseRecorder | 各端末ローカルの **lossless 手 pose 60Hz**（ネット遅延・量子化なしの完全忠実度バックアップ） | 各 Quest の `persistentDataPath` |
+| WireTapRecorder | 通信ワイヤ上の pose を CSV 化（送出/受信・診断ログ [TDV-WIRE]/[TDV-DRAW] 連動）。**右 B（Quest）/ F9・GUI ボタン（PC）**でトグル | 押した端末の `persistentDataPath` |
+| FacilitatorMarkServer | `curl http://localhost:7780/mark?label=phase2` でフェーズマーク（PC ホスト時は localhost） | CSV へ |
 
-## 実機起動（2 台・同 LAN）
+## 実機起動（PC ホスト + Quest 2 台・同 LAN）
 
+```powershell
+.\tools\tableduo-pc-host.ps1              # PC host(観戦) 起動 → 2 台を full/hand で接続まで一発
+.\tools\tableduo-pc-host.ps1 -HandVariant robot   # 条件ブロック指定
+.\tools\tableduo-pc-host.ps1 -NoHost      # ホスト起動済みで Quest だけ繋ぎ直し
 ```
-adb -s <hostSerial>   shell am start -n com.roiril.tableduo/com.unity3d.player.UnityPlayerActivity -e tdv_mode host   -e tdv_role full -e tdv_hand default
-adb -s <clientSerial> shell am start -n com.roiril.tableduo/com.unity3d.player.UnityPlayerActivity -e tdv_mode client -e tdv_ip <hostIP> -e tdv_role hand -e tdv_hand default
-```
 
-役割交代・条件ブロック切替は [tools/tableduo-role-swap.ps1](tools/tableduo-role-swap.ps1)（`-HandVariant robot` / `-KeepRoles` / `-DryRun`）。
+前提: `Tools/FixedCamVr/Diagnostics/Build TableDuo Desktop (L0 test)` のデスクトップビルドが最新であること（PoseCodec を変えたら Quest APK と両方焼き直す）。Quest 同士 host 構成（PC 不要）も従来通り可: host を `-e tdv_mode host -e tdv_role full`、client の `-e tdv_ip` を host Quest の IP に。役割交代・条件ブロック切替は [tools/tableduo-role-swap.ps1](tools/tableduo-role-swap.ps1)（`-HandVariant robot` / `-KeepRoles` / `-DryRun`）。
 
-## 状態（2026-07-02）
+## HMD 内の操作（コントローラ）
 
-実機 2 台で接続〜手メッシュ描画〜掴みまで動作確認済み。手バリアント条件化・lossless 記録・通信堅牢化・三視点整合性改善まで実装済み（EditMode 37/37・直近改善分は実機最終確認待ち）。**パイロット 1 ペア実施 → プロトコル凍結**が次のマイルストーン。
+| 操作 | 機能 |
+|---|---|
+| **A（右手）単押し** / 両手グリップ 3 秒 | 視点リセット（頭を席へ再センタ） |
+| **B（右手）単押し** | WireTap 通信記録の開始/停止 |
+| **Y（左手）** | 手バリアント巡回（調査フラグ起動中は封印） |
+
+## 状態（2026-07-07）
+
+PC ホスト + Quest 2 台の運用へ移行し、手アバターの 3 大バグ（handSkeletonVersion=OpenXR 混入による手崩れ・席フレーム契約崩れによる位置ズレ・Remy 指未駆動）を根治（手役の指同期は実機確認済み、位置ズレ/Remy 指は Editor 検証済み・実機最終確認待ち）。**パイロット 1 ペア実施 → プロトコル凍結**が次のマイルストーン。
 
 - 設計 [docs/table-duo/study-design.md](docs/table-duo/study-design.md) / 実施手順 [docs/table-duo/study-protocol.md](docs/table-duo/study-protocol.md) / 同意書 [docs/table-duo/consent-template.md](docs/table-duo/consent-template.md)
 - 最新の実装状態・既知の罠 → [.claude/memory/table_duo_study_status.md](.claude/memory/table_duo_study_status.md)
+- **PC ホスト運用・WireTap・手アバター根治の詳細** → [.claude/memory/table_duo_pc_host_and_wiretap.md](.claude/memory/table_duo_pc_host_and_wiretap.md)
 - 実機ゼロ検証（L0: Standalone を CLI で host/client/観戦 3 プロセス起動） → [.claude/memory/table_duo_l0_desktop_test.md](.claude/memory/table_duo_l0_desktop_test.md)
 
 ---

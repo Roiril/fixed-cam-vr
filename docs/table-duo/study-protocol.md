@@ -23,40 +23,39 @@
 - ログ（動作データ）・映像・音声を記録すること、目的は後で説明すること（事後ブリーフィング）に同意を得る
 - 練習: 装着 → 手が見えること → ピンチで物が掴めることを各自 1 分
 
-### 起動 runbook（PC から）
+### 起動 runbook（標準: PC ホスト構成・2026-07-06〜）
+
+**PC が NGO host（観戦兼任・俯瞰画面）+ Quest 2 台が client**。ログ（SessionLogger CSV / リプレイ / WireTap）が PC に直接落ち、役割交代もセッション継続のまま Quest 再起動だけで済む。
 
 ```powershell
-# 1. ホスト役の Quest（シリアル A）— 例: 人役 (full)
-adb -s <serialA> shell am start -n com.roiril.tableduo/com.unity3d.player.UnityPlayerActivity -e tdv_mode host -e tdv_role full
+# 一発起動（PC host 起動 → 2 台を full/hand で接続。IP 自動解決・スリープ wake・Link ダイアログ潰し込み）
+.\tools\tableduo-pc-host.ps1
+.\tools\tableduo-pc-host.ps1 -HandVariant robot   # 条件ブロック指定（両 Quest に同フラグが付く）
+.\tools\tableduo-pc-host.ps1 -NoHost              # PC ホスト起動済みで Quest だけ繋ぎ直し
 
-# 2. クライアント役の Quest（シリアル B）— 手役 (hand)
-adb -s <serialB> shell am start -n com.roiril.tableduo/com.unity3d.player.UnityPlayerActivity -e tdv_mode client -e tdv_ip <hostQuestのIP> -e tdv_role hand
-
-# 役割交代（HMD はそのまま、role を入れ替えて再起動）
-adb -s <serialA> shell am force-stop com.roiril.tableduo && （上記を role を逆にして再実行）
-# → tools/tableduo-role-swap.ps1 で自動化（Phase 5 参照）
-
-# フェーズマーク（ホスト宛て）
-curl "http://<hostQuestのIP>:7780/mark?label=<任意ラベル>"
+# フェーズマーク（PC ホスト宛て = localhost）
+curl "http://localhost:7780/mark?label=<任意ラベル>"
 
 # セッション後のログ回収
-adb -s <serialA> pull /sdcard/Android/data/com.roiril.tableduo/files/ ./logs/<日付_ペアID>/
+#   PC 側（CSV / リプレイ / WireTap）: %USERPROFILE%\AppData\LocalLow\DefaultCompany\TableDuo\
+#   各 Quest（lossless ローカル録画）:
+adb -s <serial> pull /sdcard/Android/data/com.roiril.tableduo/files/ ./logs/<日付_ペアID>/
 ```
 
-- 参加者ID / ペアID を刻む場合は `-e tdv_pid <ID> -e tdv_pair <ID>` を追加（CSV ヘッダとファイル名に入る）
+- 前提: デスクトップビルド（`Tools/FixedCamVr/Diagnostics/Build TableDuo Desktop (L0 test)`）が Quest APK と同版であること
+- 参加者ID / ペアID を刻む場合は各 Quest の起動に `-e tdv_pid <ID> -e tdv_pair <ID>` を追加（CSV ヘッダとファイル名に入る）
 - **`tdv_preplace` はデバッグ用（各席に静的アバター先置き）。本番セッションでは付けない（OFF）**
+- 従来の Quest 同士 host 構成（PC 不要・フィールド運用等）も可: host Quest を `-e tdv_mode host -e tdv_role full`、client の `-e tdv_ip` を host Quest の IP に
 
 近接センサ無効化（装着外で動かす検証時のみ。実セッションでは不要）。
 
-### 観戦（Spectator・任意）
+### 観戦（PC ホストが兼任）
 
-ファシリテータは **PC の Unity Editor（Play）を 3人目の client（`tdv_role spectator`）として接続**し、両プレイヤーを固定俯瞰カメラでライブ観察できる（席を持たない seatless ロール・アバターは描画されない。実装 → `.claude/plans/2026-06-29_table-duo_spectator.md`）。
+PC ホストは席を持たない **Spectator ロール**で参加し、両プレイヤーを固定俯瞰カメラでライブ観察できる（実装 → `.claude/plans/2026-06-29_table-duo_spectator.md`）。各フェーズの 👁 観察はこの画面で行える（scrcpy ミラーと併用可）。
 
-- Editor 側: TableDuoMain を開き ConnectionManager を autoMode=Client / studyRole=Spectator / IP=host Quest にして Play
-- **⚠ 前提: Link/HMD 無しの Editor で OVR シーンを Play するとハングする**（既知）。観戦は L0 モード（`enableL0InEditor` or `tdv_l0=on`）か Standalone ビルドの CLI 起動で行う
-- **⚠ 観戦 PC の `tdv_hand`（studyHandVariant）も両 Quest と同じ値にする**: 手の見た目は端末ローカル描画のため、観戦だけ違う値だと観戦記録の見た目が条件と食い違う。なお観戦 PC は手キャプチャが無いため Realistic/Robot は自動で Default 白手にフォールバックする（警告ログが出る）— **見た目条件の映像記録は scrcpy（人役 HMD ミラー）を正とする**
-- 各フェーズの 👁 観察はこの観戦画面で行える（scrcpy ミラーと併用可）
+- **⚠ 観戦 PC の `tdv_hand`（-tdvHand）も両 Quest と同じ値にする**: 手の見た目は端末ローカル描画のため、観戦だけ違う値だと観戦記録の見た目が条件と食い違う。なお観戦 PC は手キャプチャが無いため Realistic/Robot は自動で Default 白手にフォールバックする（警告ログが出る）— **見た目条件の映像記録は scrcpy（人役 HMD ミラー）を正とする**
 - **⚠ 同意書に観戦・記録の説明が必要**: ファシリテータが観戦画面で観察し、スクリーンショット/リプレイを記録することを事前に開示・同意取得する（[consent-template.md](consent-template.md) に項目あり）。観戦の存在が行動を変えうる点は研究者判断で開示範囲を決める
+- 通信の生データ検証が要る時は WireTap（PC 画面の GUI ボタン / F9、Quest は右 B）→ `tdv_wiretap_*.csv` + 診断ログ [TDV-WIRE]/[TDV-DRAW]（詳細 → `.claude/memory/table_duo_pc_host_and_wiretap.md`）
 
 ## 1. セッション台本（40分目安）
 
@@ -111,7 +110,7 @@ adb -s <serialA> pull /sdcard/Android/data/com.roiril.tableduo/files/ ./logs/<�
 
 ### Phase 5: 役割交代 ⏱2分 📌 `swap`
 
-HMD はそのまま、adb で role を入れ替えて再起動。`tools/tableduo-role-swap.ps1` で自動化（両機 force-stop → role を逆にして再起動）。新しい手役に禁止事項カードを渡す。
+HMD はそのまま、adb で role を入れ替えて再起動。PC ホスト構成なら **PC はそのまま** `tools/tableduo-pc-host.ps1 -NoHost` を再実行して full/hand の割当を逆に答えるだけ（セッション・CSV は host 側で連続。Quest 同士 host 構成では `tools/tableduo-role-swap.ps1`）。新しい手役に禁止事項カードを渡す。
 
 ### Phase 6: 短縮再実施 ⏱10分 📌 `phase6-1` 等
 
@@ -198,16 +197,8 @@ PC モニタを3人で囲み、ReplayViewer で再生（手順は下記 runbook�
 
 手の見た目 3 水準（Default / Realistic / Robot）は **within-pair の操作因子**。同じペアが 3 ブロックを体験する（設計 → [study-design.md](study-design.md) §2）。
 
-- **各ブロックの起動**: 通常の起動 runbook に `-e tdv_hand <variant>` を追加（両機同じ値で起動）：
-
-```powershell
-# 例: Robot ブロック（人役 host / 手役 client とも同フラグ）
-adb -s <serialA> shell am start -n com.roiril.tableduo/com.unity3d.player.UnityPlayerActivity -e tdv_mode host -e tdv_role full -e tdv_hand robot
-adb -s <serialB> shell am start -n com.roiril.tableduo/com.unity3d.player.UnityPlayerActivity -e tdv_mode client -e tdv_ip <hostIP> -e tdv_role hand -e tdv_hand robot
-# variant は default | realistic | robot
-```
-
-- **ブロック間**: 両機 force-stop → 休憩（HMD を外して数分）→ 次バリアントのフラグで再起動（役割交代と同じ運用。`tools/tableduo-role-swap.ps1` の起動に `-e tdv_hand <variant>` を足す）
+- **各ブロックの起動**: PC ホスト構成なら `tools/tableduo-pc-host.ps1 -HandVariant <variant>`（PC ホストにも -tdvHand が付き、両 Quest にも同フラグで起動される）。Quest 同士 host 構成なら通常 runbook に `-e tdv_hand <variant>` を追加（両機同じ値・variant は default | realistic | robot）
+- **ブロック間**: 両 Quest force-stop → 休憩（HMD を外して数分）→ 次バリアントのフラグで再起動（PC ホストはそのままで可＝`-NoHost -HandVariant <variant>`。ただし PC 側の -tdvHand も変えたい場合はホストも再起動）
 - **順序割付**: ペア間でカウンターバランス（3 条件 = 6 順列。ペア数が 6 の倍数でなければラテン方格 3 順序）。**順序割付表は観察シートと同じ紙束に置き、ペアID とセットで管理**する
 - **セッション中の切替は禁止**: 左 Y トグルは調査フラグ起動時に無効化済み（HandVariantWatcher）。万一切り替わったら CSV `handVariantChanged` イベントで検出し当該ブロックを除外
 - **条件の記録**: CSV ヘッダ `# studyConfig: ... hand=<variant>` に自動で刻まれる（host=フル役端末の表示＝人役が見る手の見た目が操作対象）。観察シートにもブロック毎にバリアント名を記入

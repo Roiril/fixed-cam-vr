@@ -96,6 +96,13 @@ adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastU
 - `Builds/` は gitignore 対象
 - もう 1 台の Quest が `unauthorized` の時は、その HMD 内で「USB デバッグを許可」を承認するまで入らない
 
+## インストール後の起動の罠（TableDuo 実機運用で全部踏んだ・2026-07-06）
+
+- **スリープ中（近接センサー OFF）だと `am start` が黙って失敗**（エラーなし・pid 立たず）→ `adb shell input keyevent KEYCODE_WAKEUP` か HMD を被る
+- **USB 接続中の Quest Link ダイアログが起動をブロック** → `adb shell am force-stop com.oculus.systemux`
+- install が「0 files pushed」で無言失敗することがある → リトライで通る
+- TableDuo の起動フロー一式は `tools/tableduo-pc-host.ps1`（wake・ダイアログ潰し内包） / [.claude/memory/table_duo_pc_host_and_wiretap.md](../../memory/table_duo_pc_host_and_wiretap.md)
+
 ## 関連
 
 - [adb-logcat](../adb-logcat/SKILL.md) — インストール後の実機ログ確認
