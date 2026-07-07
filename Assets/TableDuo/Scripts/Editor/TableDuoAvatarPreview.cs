@@ -142,6 +142,81 @@ namespace TableDuoVr.EditorTools
             }
         }
 
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Self Body (first-person)", priority = 211)]
+        public static void CaptureSelfBody()
+        {
+            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "../Temp/AvatarPreview"));
+            Directory.CreateDirectory(dir);
+            var remyPrefab = Resources.Load<GameObject>("RemyFullAvatar");
+            if (remyPrefab == null) { Debug.LogError("[TableDuo] RemyFullAvatar prefab が無い"); return; }
+
+            GameObject? seat = null, camGo = null, lightGo = null;
+            try
+            {
+                seat = new GameObject("PreviewSeat");
+                seat.transform.position = Vector3.zero; // 席原点＝一人称カメラ（目線アンカー）
+                var rig = new RemyAvatarRig(seat.transform, remyPrefab, firstPerson: true);
+
+                // 卓上に手を置き、やや下を向いた自然な座位で駆動（実録画の指があれば使う）
+                var rec = Playback.LoadRecordingForPreview(Path.GetFullPath(Path.Combine(Application.dataPath, "..")));
+                var prevL = HandSkeletonLayout.CapturedL; var prevR = HandSkeletonLayout.CapturedR;
+                var p = SelfBodyPose();
+                HandSkeletonLayout? layL = null, layR = null;
+                if (rec != null && rec.Frames.Count > 0)
+                {
+                    HandSkeletonLayout.CapturedL = rec.LayoutL; HandSkeletonLayout.CapturedR = rec.LayoutR;
+                    layL = rec.LayoutL; layR = rec.LayoutR;
+                    var f = rec.Frames[Playback.PickExpressiveFrame(rec)];
+                    System.Array.Copy(f.BonesR, p.BonesR, AvatarPose.BonesPerHand);
+                    System.Array.Copy(f.BonesL, p.BonesL, AvatarPose.BonesPerHand);
+                }
+                try { rig.Drive(p, layL, layR); }
+                finally { HandSkeletonLayout.CapturedL = prevL; HandSkeletonLayout.CapturedR = prevR; }
+
+                foreach (var smr in seat.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.forceMatrixRecalculationPerRender = true;
+                SetLayerRecursive(seat, Layer);
+
+                lightGo = new GameObject("PreviewLight");
+                var light = lightGo.AddComponent<Light>();
+                light.type = LightType.Directional; light.intensity = 1.1f;
+                light.transform.rotation = Quaternion.Euler(50f, -20f, 0f);
+
+                camGo = new GameObject("PreviewCam");
+                var cam = camGo.AddComponent<Camera>();
+                cam.fieldOfView = 82f; // VR に近い広画角（一人称で体がどう見えるか）
+                cam.nearClipPlane = 0.03f; cam.farClipPlane = 50f;
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = new Color(0.30f, 0.30f, 0.32f);
+                cam.cullingMask = 1 << Layer;
+
+                // 一人称カメラ＝目線アンカー（席原点）から少し下を向く。頭が潰れて視界を塞がないか＋
+                // 胴/腕/手が下方に見えるかを確認
+                Shot(cam, dir, "07_selfbody_lookdown.png", Vector3.zero, new Vector3(0f, -0.6f, 0.7f));
+                Shot(cam, dir, "08_selfbody_straight.png", Vector3.zero, new Vector3(0f, -0.15f, 1f));
+                Debug.Log($"[TableDuo] 一人称自己ボディ preview → {dir}\n07_selfbody_lookdown.png / 08_selfbody_straight.png");
+            }
+            finally
+            {
+                if (seat != null) Object.DestroyImmediate(seat);
+                if (camGo != null) Object.DestroyImmediate(camGo);
+                if (lightGo != null) Object.DestroyImmediate(lightGo);
+            }
+        }
+
+        // 卓上に両手を置いた座位（頭は正面・自己ボディが下に見える構え）
+        private static AvatarPose SelfBodyPose() => new()
+        {
+            HeadPos = Vector3.zero,
+            HeadRot = Quaternion.identity,
+            WristPosR = new Vector3(0.22f, -0.42f, 0.36f),
+            WristRotR = Quaternion.Euler(20f, -90f, 0f),
+            WristPosL = new Vector3(-0.22f, -0.42f, 0.36f),
+            WristRotL = Quaternion.Euler(20f, 90f, 0f),
+            TrackedR = true,
+            TrackedL = true,
+        };
+
         private static void Shot(Camera cam, string dir, string file, Vector3 camPos, Vector3 aim)
         {
             cam.transform.position = camPos;

@@ -40,6 +40,12 @@ namespace TableDuoVr.Hands
         /// 接続したら静的→ライブに差し替わる。研究本番は false（相手不在時にアバターが居ると体験が変わるため）。</summary>
         public static bool PreplaceAvatars;
 
+        /// <summary>人役の一人称自己アバター表示（tdv_selfbody=on）。自分のローカル pose で駆動する Remy を
+        /// 席下にもう1体出し、頭ボーンを潰して視界を塞がず胴/腕/手だけ見せる（身体所有感）。
+        /// **既定 off**: 自己身体の有無は人役の振る舞いを変えうる交絡なので、パイロットで比較して本番既定を決める。
+        /// ローカル描画専用＝相手に見える自分（ネット越しの Remy）は不変。条件は _studyFlags bit4 で同期・CSV 記録。</summary>
+        public static bool ShowSelfBody;
+
         /// <summary>手役アバターの手メッシュの見た目（Default=Meta白手 / Realistic=人間の手 / Robot=機械の手）。
         /// **正式な調査条件（within-pair 因子・2026-07-02 決定）**: ブロックごとに tdv_hand 起動フラグで固定し、
         /// セッション中の切替は禁止（HandVariantWatcher が調査フラグ起動時にトグルを無効化。切替は CSV に刻まれる）。
@@ -82,6 +88,7 @@ namespace TableDuoVr.Hands
             ParticipantId = "";
             PairId = "";
             PreplaceAvatars = false;
+            ShowSelfBody = false;
             SelectedHandVariant = HandVariant.Default;
             HandVariantChanged = null;
         }

@@ -71,6 +71,11 @@ namespace TableDuoVr.Hands
             if (preplace == "on") StudyConfig.PreplaceAvatars = true;
             else if (preplace == "off") StudyConfig.PreplaceAvatars = false;
 
+            // 人役の一人称自己アバター（頭を潰した Remy をローカル pose で駆動）
+            string? selfBody = Get("tdv_selfbody", "-tdvSelfBody");
+            if (selfBody == "on") StudyConfig.ShowSelfBody = true;
+            else if (selfBody == "off") StudyConfig.ShowSelfBody = false;
+
             // 手メッシュの見た目（default=Meta白手 / realistic=人間の手 / robot=機械の手）。
             // 別名も受ける（male/human/skin→realistic、meta/simple→default）。指定で調査セッション扱い。
             string? hand = Get("tdv_hand", "-tdvHand");
@@ -87,7 +92,7 @@ namespace TableDuoVr.Hands
 
             if (StudyConfig.LaunchedWithStudyFlags)
             {
-                Debug.Log($"[TableDuo] StudyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode} hand={StudyConfig.SelectedHandVariant} pid={StudyConfig.ParticipantId} pair={StudyConfig.PairId}");
+                Debug.Log($"[TableDuo] StudyConfig: role={StudyConfig.ForcedRole} marker={StudyConfig.ShowHeadMarker} oneHand={StudyConfig.OneHandMode} hand={StudyConfig.SelectedHandVariant} selfBody={StudyConfig.ShowSelfBody} pid={StudyConfig.ParticipantId} pair={StudyConfig.PairId}");
             }
         }
     }

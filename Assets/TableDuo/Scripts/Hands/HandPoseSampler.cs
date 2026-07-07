@@ -46,6 +46,16 @@ namespace TableDuoVr.Hands
         /// <summary>頭（CenterEyeAnchor）。手動リセットで「頭→席」を合わせるのに使う。L0 では null。</summary>
         public Transform? CenterEye => centerEye;
 
+        /// <summary>ローカル手（Meta 白手）のメッシュレンダラー。一人称自己アバター時に隠す用
+        /// （OVRHand/OVRSkeleton は生かしたままレンダラーだけ切る）。</summary>
+        public SkinnedMeshRenderer[] GetLocalHandRenderers()
+        {
+            var list = new System.Collections.Generic.List<SkinnedMeshRenderer>();
+            if (leftHand != null) list.AddRange(leftHand.GetComponentsInChildren<SkinnedMeshRenderer>(true));
+            if (rightHand != null) list.AddRange(rightHand.GetComponentsInChildren<SkinnedMeshRenderer>(true));
+            return list.ToArray();
+        }
+
         /// <summary>片手モード: 左手を抑制（pose 非送信 + ローカル描画も隠す＝身体感の一貫性）。</summary>
         public bool SuppressLeftHand
         {

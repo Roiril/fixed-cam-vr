@@ -71,6 +71,8 @@ namespace TableDuoVr.Net
         /// <summary>同期済みの調査条件（host の SessionLogger が clientId 別に記録）。</summary>
         public bool ShowHeadMarker => (_studyFlags.Value & 1) != 0;
         public bool OneHandMode => (_studyFlags.Value & 2) != 0;
+        /// <summary>この端末が一人称自己アバターを表示していたか（人役ローカル・研究記録用）。</summary>
+        public bool ShowSelfBody => (_studyFlags.Value & 16) != 0;
         /// <summary>この端末が申告した手バリアント（同期値。描画はローカル選択のまま — 不一致検出・記録用）。</summary>
         public HandVariant DeclaredHandVariant => (HandVariant)((_studyFlags.Value >> 2) & 0x3);
 
@@ -85,7 +87,8 @@ namespace TableDuoVr.Net
                 _role.Value = (byte)role;
                 _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
                     | (StudyConfig.OneHandMode ? 2 : 0)
-                    | ((byte)StudyConfig.SelectedHandVariant << 2));
+                    | ((byte)StudyConfig.SelectedHandVariant << 2)
+                    | (StudyConfig.ShowSelfBody ? 16 : 0)); // bit4=自己ボディ（人役のローカル表示・研究記録用）
                 SetupOwner(role);
                 // client の壁時計オフセットを host CSV に刻む（captureMs 整列用）。host 自身は offset=0 で不要
                 if (!IsServer)
@@ -190,6 +193,24 @@ namespace TableDuoVr.Net
             {
                 _sampler.SuppressLeftHand = true;
                 Debug.Log("[TableDuo] 片手モード: 左手を抑制");
+            }
+
+            // 人役の一人称自己アバター（tdv_selfbody=on）。頭を潰した Remy をローカル pose で駆動し、
+            // 白手メッシュは隠す。ローカル描画専用＝相手に見える自分（ネット越し Remy）は不変
+            if (role == StudyConfig.Role.Full && StudyConfig.ShowSelfBody && _sampler != null)
+            {
+                var remyPrefab = Resources.Load<GameObject>("RemyFullAvatar");
+                if (remyPrefab != null)
+                {
+                    var go = new GameObject("LocalSelfBody");
+                    go.transform.SetParent(transform, false);
+                    var self = go.AddComponent<LocalSelfBody>();
+                    self.Initialize(seat, remyPrefab, _sampler.GetLocalHandRenderers());
+                }
+                else
+                {
+                    Debug.LogWarning("[TableDuo] tdv_selfbody=on だが RemyFullAvatar prefab が無い → 自己ボディ無しで続行");
+                }
             }
 
             var interactorGo = new GameObject("PinchGrabInteractor");

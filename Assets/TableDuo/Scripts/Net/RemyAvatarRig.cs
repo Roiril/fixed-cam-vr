@@ -33,7 +33,9 @@ namespace TableDuoVr.Net
         private readonly Quaternion[] _lFingerBind = new Quaternion[AvatarPose.BonesPerHand];
         private readonly Quaternion[] _rFingerBind = new Quaternion[AvatarPose.BonesPerHand];
 
-        public RemyAvatarRig(Transform seat, GameObject prefab)
+        /// <param name="firstPerson">一人称自己アバター用。頭ボーンを潰して視界を塞がず、
+        /// 胴が前傾でカメラに食い込まないよう root を後方へずらす。駆動（Drive）はローカル pose で呼ぶ。</param>
+        public RemyAvatarRig(Transform seat, GameObject prefab, bool firstPerson = false)
         {
             _seat = seat;
             var go = Object.Instantiate(prefab, seat, worldPositionStays: false);
@@ -85,6 +87,25 @@ namespace TableDuoVr.Net
             // 初期＝休めポーズを適用。トラッキング前/ロスト中の腕が T 字（真横・手が外向き）で固まるのを防ぐ。
             // 受信 pose が来れば Drive が上書きする。bind 補正確定後に呼ぶこと（handB が bind 基準）
             ApplyRestPose();
+
+            if (firstPerson) ApplyFirstPersonView(seat);
+        }
+
+        /// <summary>
+        /// 一人称自己アバター化: 頭ボーンを潰して顔/髪/頭蓋が一人称カメラ（頭位置）を塞がないようにし、
+        /// 前傾時に胸がニアクリップを貫かないよう body を数 cm 後方へずらす。頭は Drive で回り続けるが不可視。
+        /// </summary>
+        private void ApplyFirstPersonView(Transform seat)
+        {
+            if (_head != null)
+            {
+                // 頭に skin された頂点を頭ボーン原点へ収縮させる（VR 自己アバターの定番）。
+                // 完全 0 は行列縮退で警告が出る環境があるため極小値
+                _head.localScale = Vector3.one * 0.01f;
+            }
+            // body を席ローカル -Z（後方）へ 4cm ずらす（前傾時に胸がニアクリップを貫くのを防ぐ）。
+            // _root は seat の子なので localPosition は席ローカル。潰した頭は視界に影響しない
+            _root.localPosition += new Vector3(0f, 0f, -0.04f);
         }
 
         /// <summary>卓上に手を置く自然な座位の休めポーズ（前方やや下・指=前/手のひら=下）。未トラッキング初期姿勢。</summary>
