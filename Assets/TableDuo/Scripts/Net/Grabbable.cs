@@ -129,6 +129,18 @@ namespace TableDuoVr.Net
         public bool IsHeldBy(ulong clientId, byte hand) =>
             _holder.Value == clientId && _holderHand.Value == hand;
 
+        /// <summary>
+        /// 保持者本人のクライアントが毎フレーム呼ぶ 0 レイテンシ表示（楽観的ローカルアタッチ）。
+        /// サーバ往復＋NetworkTransform 補間バッファを待つと「掴めるまで遅い・追従がゆっくり」になる
+        /// （2026-07-08 UX 指摘）ため、本人の画面ではローカル手 pose に直結して見た目だけ上書きする。
+        /// 状態（holder）はサーバ権威のまま。サーバ上では Update の権威追従が走るので何もしない。
+        /// </summary>
+        public void ApplyLocalHoldPose(Vector3 rawPos, Quaternion rawRot)
+        {
+            if (IsServer) return; // 二重駆動防止（host 上のローカルプレイヤーはサーバ追従が正）
+            transform.SetPositionAndRotation(ClampToSurface(rawPos), rawRot);
+        }
+
         [ServerRpc(RequireOwnership = false)]
         public void RequestGrabServerRpc(byte hand, ServerRpcParams rpcParams = default)
         {
