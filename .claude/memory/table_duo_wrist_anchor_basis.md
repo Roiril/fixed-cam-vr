@@ -1,10 +1,29 @@
 ---
 name: table_duo_wrist_anchor_basis
-description: OVR 手アンカーの実ランタイム基準（指≠±X・グリップ様に傾いた軸）— Remy 手首ズレの真因と、prefab authored ポーズを校正基準にしてはいけない理由
+description: Remy 駆動の全解（手首W=live FK・指=FK位置Aim・骨盤ヒンジ・鎖骨アシスト・手首ツイスト分散）と、その真因調査で確定した OVR 手アンカーの実基準
 metadata: 
   node_type: memory
   type: project
   originSessionId: 1da31df7-e8bb-4c10-a796-241b736694dd
+---
+
+# Remy（人役フルアバター）駆動の完成形（2026-07-08）
+
+[RemyAvatarRig](../../Assets/TableDuo/Scripts/Net/RemyAvatarRig.cs) は手首・指・リーチ・座位リーンを次の実データ駆動で解く。
+いずれも「定数ハードコード / prefab authored 姿勢 / スクショ目視」を基準にせず、**実録画・layout の FK か Mixamo 実アニメ解析**を一次証拠にしたのが要点。
+
+| 課題 | 解 | 一次証拠 |
+|---|---|---|
+| 手首の向き | `hand.rotation = seat*wristRot*W`。W は **layout骨長×live bone回転の FK** でアンカー基底を毎フレ実測して導出（bind FK 不可＝live bone0 に Y180 定回転あり） | 実録画 FK |
+| 手首の候補生成 | 校正定数 ±X/+Y は誤り。既定値は実録画実測（右手 指≈(-0.27,-0.57,0.78)） | 同上 |
+| 指の曲がり | **FK 位置ベース Aim**（各 Mixamo 指を FK した OVR 子関節方向へ AimBone）。回転移植（HandRetarget）は**曲げ軸が素手=local X・コントローラ駆動=local Z で 90°違い**破綻する。FK 位置は物理的で規約非依存 | 素手録画 vs 当日replay の曲げ軸比較（X vs Z）を Python 検算 |
+| リーチ不足 | 鎖骨アシスト（腕長 95% 超で肩を目標へ最大25°差し出す）＋ 骨盤ヒンジで肩ごと前進 | — |
+| 座位リーン | **骨盤ヒンジ**（Hips 70%前傾＋UpLeg 逆回転で足接地維持＋Spine 25%/胸椎 5%）。背骨曲げ方式は猫背に見えた | Mixamo `Sitting Laughing.fbx` バイナリ解析（Hips 44°+前後17.6cm・UpLeg 43°で相殺・胸椎ほぼ0°） |
+| 手首ねじれ細り | swing-twist 分解でツイスト 50% を前腕へ分散（手のワールド向きは不変） | — |
+
+計画: [.claude/plans/2026-07-08_remy-hip-hinge-lean.md](../plans/2026-07-08_remy-hip-hinge-lean.md)。
+汎用手法（実アセットを Python 直パースで一次証拠化・リターゲットは位置ベース）はグローバル [[reverse-engineer-binary-assets]] / [[avatar-retarget-position-based]] へ昇格。
+
 ---
 
 # OVR 手アンカー基準の実測（2026-07-07・実機録画から確定）

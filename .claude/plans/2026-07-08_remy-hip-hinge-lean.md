@@ -1,6 +1,6 @@
 # Remy 上体リーンを「骨盤ヒンジ方式」へ作り直す計画
 
-**status: planned**（実装未着手・ユーザー指示待ち）
+**status: done**（2026-07-08 実装・実機確認済み。手首/指/リーチ/リーン一式と同コミット）
 関連: [table_duo_wrist_anchor_basis](../memory/table_duo_wrist_anchor_basis.md) / RemyAvatarRig.cs（未コミットの現行実装）
 
 ## 背景 / 現状
