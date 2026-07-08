@@ -59,6 +59,15 @@ namespace TableDuoVr.Net
                 var grab = t.GetComponent<Grabbable>();
                 if (grab != null && grab.IsHeld) grab.ServerForceRelease("boardReset");
                 t.SetPositionAndRotation(pos, rot);
+                // 物理ピースは運動も止めて初期姿勢で静置する（velocity が残ると即滑り出す）
+                var rb = t.GetComponent<Rigidbody>();
+                if (rb != null && !rb.isKinematic)
+                {
+                    rb.velocity = Vector3.zero;
+                    rb.angularVelocity = Vector3.zero;
+                    rb.position = pos;
+                    rb.rotation = rot;
+                }
                 restored++;
             }
             Debug.Log($"[TableDuo] BoardReset: {restored} 個を初期配置へ復元");

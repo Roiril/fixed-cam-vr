@@ -79,18 +79,24 @@ DiceRoller = リリース時に乱数確定表示）。ここに Rigidbody 物�
 
 ## フェーズ
 
-### Phase 1: 物理基盤（ダイス・トークン）
+### Phase 1: 物理基盤（ダイス・トークン）— ✅ 2026-07-08 実装済み
 
-- [ ] TableDuoSceneSetup: 天板 static BoxCollider・キルゾーン・`TableProps` レイヤー・衝突マトリクス設定
-- [ ] ピース prefab/生成に Rigidbody + Collider + NetworkRigidbody + PhysicMaterial（ダイスは CCD）
-- [ ] Grabbable: Held⇄Free の kinematic 切替（Grab/Release/ForceRelease、保持者切断・トラッキングロスト解放も含む）
-- [ ] ReleaseVelocityEstimator（サーバ側リングバッファ + 速度クランプ）
-- [ ] キルゾーン → 初期位置リスポーン（velocity ゼロ化込み）。BoardReset にも velocity リセット追加
+- [x] TableDuoSceneSetup: 天板 BoxCollider（TableTopCollider）・`TableProps` レイヤー（TagManager slot 8）・
+      衝突マトリクスは PiecePhysicsConfig（Systems 常駐）がランタイム設定（DynamicsManager は触らない）
+- [x] ピース生成（PlaceModelRealScale physics:true）に Rigidbody + BoxCollider + NetworkRigidbody +
+      PhysicMaterial（ダイスは CCD）。対象 = 海底探検ピースのみ（カードは非物理のまま = ユーザー指示）
+- [x] Grabbable: Held⇄Free の kinematic 切替（全解放経路を ServerRelease に集約）
+- [x] リリース速度推定（Grabbable 内リングバッファ 0.12s 窓 + 3.5m/s / 12rad/s クランプ、
+      maxAngularVelocity=20 へ引き上げ）
+- [x] 卓外落下 → spawn 位置リスポーン（キルゾーン trigger でなく y < surfaceY-0.8 判定に簡素化）。
+      BoardReset に velocity リセット追加
 
-### Phase 2: サイコロ出目の物理化
+### Phase 2: サイコロ出目の物理化 — ✅ 2026-07-08 実装済み
 
-- [ ] DiceRoller: 静止検知 + 上面読み取り（面→値マッピング）+ タイムアウトフォールバック
-- [ ] 出目確定タイミング変更に伴う SessionLogger / CSV の整合確認
+- [x] DiceRoller: 乱数確定を廃止（ユーザー指示）。静止検知（IsSleeping or 低速 0.4s 継続）+
+      上面読み取り（faceValues[+X,-X,+Y,-Y,+Z,-Z]）+ 6s タイムアウト強制確定
+- [x] DiceRolled イベント・ラベル表示・CSV 連携は現行インタフェースのまま維持
+- [ ] ⚠ faceValues 既定 {1,2,3,1,2,3} は die.glb の実テクスチャ面と**未照合**。L0/実機で校正する
 
 ### Phase 3: 検証
 

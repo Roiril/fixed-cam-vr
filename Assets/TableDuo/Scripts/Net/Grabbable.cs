@@ -12,6 +12,14 @@ namespace TableDuoVr.Net
     /// - クライアントへは同居必須の NetworkTransform（サーバ権威・補間）で降りる
     /// ownership 移譲はしない（NGO 1.x コアに ClientNetworkTransform が無く、
     /// サーバは全員の pose を ConnectionManager 経由で常に持っているため、この方が部品が少ない）。
+    ///
+    /// 物理統合（2026-07-08）: Rigidbody を持つピースは 2 状態モデルで動く。
+    /// - Held: isKinematic=true でサーバが手 pose 追従（surfaceY クランプは保持中のみ）
+    /// - Free: リリース時に dynamic へ戻し、保持中の pose 履歴から推定した速度を与える
+    ///   （投げる・ひっくり返す・転がすが物理で成立）。以後の接地はテーブルの Collider 任せ。
+    ///   卓外へ落ちたら spawn 位置へ自動リスポーン。
+    /// Rigidbody 無しのピース（カード等）は従来どおり kinematic 追従のみ。
+    /// 物理はサーバのみ（クライアント側は NetworkRigidbody が非権威を kinematic 化する）。
     /// </summary>
     public sealed class Grabbable : NetworkBehaviour
     {
@@ -36,7 +44,7 @@ namespace TableDuoVr.Net
         private float _untrackedSince = -1f;
 
         [Header("卓上拘束（TableDuoSceneSetup が設定。未設定=拘束なし）")]
-        [Tooltip("天板の上面 Y。掴み追従・解放時にピースの最下点がこれを下回らないようクランプする（テーブル貫通防止）")]
+        [Tooltip("天板の上面 Y。掴み追従時にピースの最下点がこれを下回らないようクランプする（テーブル貫通防止）")]
         [SerializeField] private float surfaceY = float.NegativeInfinity;
         [Tooltip("天板の XZ 中心。surfaceHalf と併せてピースが卓外へ消えないようクランプする")]
         [SerializeField] private Vector2 surfaceCenter;
@@ -48,10 +56,44 @@ namespace TableDuoVr.Net
         private float _bottomOffset;
         private Renderer[] _renderers = System.Array.Empty<Renderer>();
 
+        // --- 物理（Rigidbody があるピースのみ有効。サーバ専用） ---
+        private Rigidbody? _rb;
+        private Vector3 _spawnPos;
+        private Quaternion _spawnRot = Quaternion.identity;
+        // 卓面よりこれだけ下に落ちたら卓外落下と見なして spawn 位置へ戻す
+        private const float FallRespawnDepth = 0.8f;
+
+        // リリース速度推定: 保持中の追従ターゲット（クランプ・平滑前の生 pose）をリングバッファに記録し、
+        // 離した瞬間に直近 VelocityWindow 秒の差分から線速度・角速度を推定する。
+        // 60Hz 受信 pose 由来でノイジーなので上限クランプ必須（無いとダイスが部屋の外へ飛ぶ）。
+        private const float VelocityWindow = 0.12f;
+        private const float MaxLinearSpeed = 3.5f;   // m/s
+        private const float MaxAngularSpeed = 12f;   // rad/s
+        private const int PoseHistoryCapacity = 16;
+        private readonly (float t, Vector3 p, Quaternion r)[] _poseHistory =
+            new (float, Vector3, Quaternion)[PoseHistoryCapacity];
+        private int _poseCount;
+        private int _poseHead; // 次に書く位置
+
         private void Awake()
         {
             _renderers = GetComponentsInChildren<Renderer>();
             _bottomOffset = CurrentBottomOffset();
+            _rb = GetComponent<Rigidbody>();
+            if (_rb != null)
+            {
+                // PhysX 既定の maxAngularVelocity=7rad/s では投げ回転が頭打ちになる
+                _rb.maxAngularVelocity = 20f;
+            }
+        }
+
+        public override void OnNetworkSpawn()
+        {
+            if (IsServer)
+            {
+                _spawnPos = transform.position;
+                _spawnRot = transform.rotation;
+            }
         }
 
         /// <summary>現在の姿勢での pivot→最下点オフセット（回転で変わる）。Renderer 無しは 0。</summary>
@@ -103,6 +145,12 @@ namespace TableDuoVr.Net
             var inv = Quaternion.Inverse(handRot);
             _grabOffsetPos = inv * (transform.position - handPos);
             _grabOffsetRot = inv * transform.rotation;
+            if (_rb != null)
+            {
+                _rb.isKinematic = true; // Held = kinematic 追従（Free ピースは押し退けられる）
+            }
+            _poseCount = 0;
+            _poseHead = 0;
             Debug.Log($"[TableDuo] Grab {name} ← client{sender} hand{hand}");
             GrabLogged?.Invoke(name, sender, true);
         }
@@ -112,52 +160,132 @@ namespace TableDuoVr.Net
         {
             var nm = NetworkManager.Singleton;
             if (nm == null || !nm.IsServer || !IsHeld) return;
-            ulong holder = _holder.Value;
-            _holder.Value = NoHolder;
-            _holderHand.Value = 0;
-            _grabSeat = null;
-            _untrackedSince = -1f;
-            Debug.Log($"[TableDuo] Release {name}（強制解放: {reason}）");
-            GrabLogged?.Invoke(name, holder, false);
+            ServerRelease(applyThrow: false, $"（強制解放: {reason}）");
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void RequestReleaseServerRpc(ServerRpcParams rpcParams = default)
         {
             if (_holder.Value != rpcParams.Receive.SenderClientId) return;
+            ServerRelease(applyThrow: true, "");
+        }
+
+        /// <summary>サーバ側の解放共通処理。applyThrow=true なら pose 履歴から投擲速度を引き継ぐ。</summary>
+        private void ServerRelease(bool applyThrow, string logSuffix)
+        {
             ulong holder = _holder.Value;
             _holder.Value = NoHolder;
             _holderHand.Value = 0;
             _grabSeat = null;
-            Debug.Log($"[TableDuo] Release {name}");
+            _untrackedSince = -1f;
+            ReleaseToPhysics(applyThrow);
+            Debug.Log($"[TableDuo] Release {name}{logSuffix}");
             GrabLogged?.Invoke(name, holder, false);
+        }
+
+        /// <summary>Held → Free 遷移。Rigidbody を dynamic に戻し、必要なら推定速度を与える。</summary>
+        private void ReleaseToPhysics(bool applyThrow)
+        {
+            if (_rb == null) return;
+            _rb.isKinematic = false;
+            _rb.WakeUp();
+            if (applyThrow && TryEstimateReleaseVelocity(out var linear, out var angular))
+            {
+                _rb.velocity = linear;
+                _rb.angularVelocity = angular;
+            }
+            else
+            {
+                _rb.velocity = Vector3.zero;
+                _rb.angularVelocity = Vector3.zero;
+            }
+        }
+
+        private void RecordPose(Vector3 pos, Quaternion rot)
+        {
+            _poseHistory[_poseHead] = (Time.time, pos, rot);
+            _poseHead = (_poseHead + 1) % PoseHistoryCapacity;
+            if (_poseCount < PoseHistoryCapacity) _poseCount++;
+        }
+
+        /// <summary>直近 VelocityWindow 秒の pose 履歴から線速度・角速度を推定（上限クランプ付き）。</summary>
+        private bool TryEstimateReleaseVelocity(out Vector3 linear, out Vector3 angular)
+        {
+            linear = Vector3.zero;
+            angular = Vector3.zero;
+            if (_poseCount < 2) return false;
+
+            var newest = _poseHistory[(_poseHead - 1 + PoseHistoryCapacity) % PoseHistoryCapacity];
+            // 窓内で最も古いサンプルを探す（新しい方から遡る）
+            var oldest = newest;
+            for (int i = 2; i <= _poseCount; i++)
+            {
+                var e = _poseHistory[(_poseHead - i + PoseHistoryCapacity) % PoseHistoryCapacity];
+                if (newest.t - e.t > VelocityWindow) break;
+                oldest = e;
+            }
+            float dt = newest.t - oldest.t;
+            if (dt < 0.02f) return false; // 1 サンプル相当以下では推定しない
+
+            linear = (newest.p - oldest.p) / dt;
+            if (linear.magnitude > MaxLinearSpeed) linear = linear.normalized * MaxLinearSpeed;
+
+            var delta = newest.r * Quaternion.Inverse(oldest.r);
+            delta.ToAngleAxis(out float angleDeg, out Vector3 axis);
+            if (angleDeg > 180f) angleDeg -= 360f; // 最短弧
+            if (!float.IsNaN(axis.x) && axis.sqrMagnitude > 0.5f)
+            {
+                angular = axis.normalized * (angleDeg * Mathf.Deg2Rad / dt);
+                if (angular.magnitude > MaxAngularSpeed) angular = angular.normalized * MaxAngularSpeed;
+            }
+            return true;
+        }
+
+        /// <summary>卓外落下ピースを spawn 位置へ戻す（Free 状態のサーバのみ）。</summary>
+        private void RespawnIfFallen()
+        {
+            if (_rb == null || float.IsNegativeInfinity(surfaceY)) return;
+            if (transform.position.y >= surfaceY - FallRespawnDepth) return;
+            _rb.velocity = Vector3.zero;
+            _rb.angularVelocity = Vector3.zero;
+            _rb.position = _spawnPos;
+            _rb.rotation = _spawnRot;
+            transform.SetPositionAndRotation(_spawnPos, _spawnRot);
+            Debug.Log($"[TableDuo] {name} 卓外落下 → spawn 位置へリスポーン");
         }
 
         private void Update()
         {
-            if (!IsSpawned || !IsServer || !IsHeld) return;
+            if (!IsSpawned || !IsServer) return;
+            if (!IsHeld)
+            {
+                RespawnIfFallen();
+                return;
+            }
 
             // 保持者の切断で宙に浮くのを防ぐ
             var nm = NetworkManager.Singleton;
             if (nm == null || _grabSeat == null || (!nm.ConnectedClients.ContainsKey(_holder.Value)))
             {
-                _holder.Value = NoHolder;
-                _holderHand.Value = 0;
-                _grabSeat = null;
+                ServerRelease(applyThrow: false, "（保持者切断）");
                 return;
             }
 
             if (TryGetHandWorldPose(_holder.Value, _holderHand.Value, _grabSeat, out var handPos, out var handRot))
             {
                 _untrackedSince = -1f;
+                var rawPos = handPos + handRot * _grabOffsetPos;
+                var rawRot = handRot * _grabOffsetRot;
+                // 投擲速度はクランプ・平滑前の生ターゲットから推定する
+                //（平滑 Lerp 後だと速度が減衰して「投げても落ちるだけ」になる）
+                RecordPose(rawPos, rawRot);
                 // 60Hz 受信 pose を描画フレームへ指数平滑（RemoteAvatarView.SmoothK と同じ τ）。
                 // 生スナップだと host 画面で駒だけ段差ステップし、平滑済みのリモート手と噛み合わない
                 float k = 1f - Mathf.Exp(-32f * Time.deltaTime);
-                var targetPos = ClampToSurface(handPos + handRot * _grabOffsetPos);
-                var targetRot = handRot * _grabOffsetRot;
+                var targetPos = ClampToSurface(rawPos);
                 transform.SetPositionAndRotation(
                     Vector3.Lerp(transform.position, targetPos, k),
-                    Quaternion.Slerp(transform.rotation, targetRot, k));
+                    Quaternion.Slerp(transform.rotation, rawRot, k));
             }
             else
             {
@@ -166,13 +294,9 @@ namespace TableDuoVr.Net
                 if (_untrackedSince < 0f) _untrackedSince = Time.time;
                 else if (Time.time - _untrackedSince >= UntrackedReleaseSeconds)
                 {
-                    ulong holder = _holder.Value;
-                    _holder.Value = NoHolder;
-                    _holderHand.Value = 0;
-                    _grabSeat = null;
-                    _untrackedSince = -1f;
-                    Debug.Log($"[TableDuo] Release {name}（トラッキングロスト {UntrackedReleaseSeconds:F0}s 継続で自動解放）");
-                    GrabLogged?.Invoke(name, holder, false);
+                    // 手が消えた状態からの解放なので投擲速度は与えない（履歴は古い）
+                    ServerRelease(applyThrow: false,
+                        $"（トラッキングロスト {UntrackedReleaseSeconds:F0}s 継続で自動解放）");
                 }
             }
         }

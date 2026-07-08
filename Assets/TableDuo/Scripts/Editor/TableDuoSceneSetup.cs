@@ -151,6 +151,19 @@ namespace TableDuoVr.EditorTools
             float hx = tb.extents.x, hz = tb.extents.z;
             const float edge = 0.07f; // 縁マージン（はみ出し防止）
 
+            // 卓上ピース物理: TableProps レイヤー確保 + 天板の物理コライダー（不可視・静的）。
+            // ピースはこのレイヤー同士のみ衝突（PiecePhysicsConfig がランタイムで設定）。
+            // 卓外へ落ちたピースは床と衝突せず落下 → Grabbable が spawn 位置へリスポーンする
+            int propsLayer = EnsureTablePropsLayer();
+            var tableTop = new GameObject("TableTopCollider");
+            tableTop.transform.SetParent(root.transform, false);
+            tableTop.transform.position = new Vector3(cx, topY - 0.025f, cz);
+            var topBox = tableTop.AddComponent<BoxCollider>();
+            topBox.size = new Vector3(tb.size.x, 0.05f, tb.size.z);
+            topBox.sharedMaterial = EnsurePhysicMaterial(
+                $"{MaterialDir}/TableDuoTableTop.physicMaterial", friction: 0.6f, bounciness: 0.1f);
+            if (propsLayer >= 0) tableTop.layer = propsLayer;
+
             // 椅子（見た目のみ・席アンカーとは独立・床に置く）
             // Kenney chair.fbx は -z が正面（180° が「テーブルへ向く」）
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
@@ -270,6 +283,8 @@ namespace TableDuoVr.EditorTools
             fake.enabled = false; // L0 検証時に手動で ON
 
             systems.AddComponent<ConnectionManager>();
+            // 卓上ピース物理の衝突マトリクス（TableProps 同士のみ衝突。起動時 1 回設定）
+            systems.AddComponent<PiecePhysicsConfig>();
             // 左コントローラ Y で手の見た目を巡回切替（お試し用。調査本番は tdv_hand フラグで固定）
             systems.AddComponent<HandVariantWatcher>();
             // 右コントローラ B でワイヤタップ記録トグル（ソロ実機検証: 送出 pose + 受信 pose を CSV 化）
@@ -473,7 +488,8 @@ namespace TableDuoVr.EditorTools
         /// 卓上にボードゲーム「海底探検」一式を**プレイ可能な形**で配置（G1・2026-07-02）。
         /// 潜水艦ボードは静置、宝物チップ16/裏トークン5/空気マーカー/駒2/サイコロ2 は全部掴める。
         /// ルール裁定はコード化しない（人間が運用 = 無言交渉そのものが研究データ）。
-        /// チップ類はピンチで拾いやすいよう実物の 1.6 倍。サイコロは確定表示方式（DiceRoller）。
+        /// チップ類はピンチで拾いやすいよう実物の 1.6 倍。ピースは物理（Rigidbody + TableProps レイヤー）、
+        /// サイコロは物理転がし + 静止面読み取り（DiceRoller）。
         /// GLB は実スケール（メートル）。盤面リセットは BoardReset（mark?label=reset_board）。
         /// </summary>
         private static void PlaceDeepSeaAdventure(Transform parent, float topY, float cx, float cz,
@@ -502,7 +518,7 @@ namespace TableDuoVr.EditorTools
                 var pos = new Vector3(gx0 + col * step, topY, gz0 + row * step);
                 // yaw=180: 数字面を人役（席0 = -Z 側）向きに（俯瞰スクショ検証で逆さまだったのを補正）
                 var chip = PlaceModelRealScale($"{DsaGlbDir}/{tiles[i]}.glb", parent, $"DSA_{tiles[i]}", pos, 180f,
-                    grabbable: true, scale: chipScale);
+                    grabbable: true, scale: chipScale, physics: true);
                 SetSurfaceClamp(chip, topY, cx, cz, hx, hz);
             }
 
@@ -510,19 +526,19 @@ namespace TableDuoVr.EditorTools
             // 2026-07-02 俯瞰スクショ検証: 固定座標 cz+0.02 だと最終行のチップに駒が乗っていた）
             float pieceZ = gz0 + rows * step + 0.02f;
             var mp = PlaceModelRealScale($"{DsaGlbDir}/meeple_purple.glb", parent, "DSA_MeeplePurple",
-                new Vector3(cx - 0.14f, topY, pieceZ), 0f, grabbable: true, scale: 1.6f);
+                new Vector3(cx - 0.14f, topY, pieceZ), 0f, grabbable: true, scale: 1.6f, physics: true);
             var mr = PlaceModelRealScale($"{DsaGlbDir}/meeple_red.glb", parent, "DSA_MeepleRed",
-                new Vector3(cx - 0.05f, topY, pieceZ), 0f, grabbable: true, scale: 1.6f);
+                new Vector3(cx - 0.05f, topY, pieceZ), 0f, grabbable: true, scale: 1.6f, physics: true);
             var die1 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die1",
-                new Vector3(cx + 0.07f, topY, pieceZ), 0f, grabbable: true, scale: 1.5f);
+                new Vector3(cx + 0.07f, topY, pieceZ), 0f, grabbable: true, scale: 1.5f, physics: true, ccd: true);
             var die2 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die2",
-                new Vector3(cx + 0.15f, topY, pieceZ), 0f, grabbable: true, scale: 1.5f);
+                new Vector3(cx + 0.15f, topY, pieceZ), 0f, grabbable: true, scale: 1.5f, physics: true, ccd: true);
 
             // 潜水艦ボード（静置）はさらに奥・空気マーカー（掴める）はボード脇＝空気トラック管理用
             PlaceModelRealScale($"{DsaGlbDir}/submarine_board.glb", parent, "DSA_Board",
                 new Vector3(cx, topY, pieceZ + 0.14f), 0f, grabbable: false);
             var air = PlaceModelRealScale($"{DsaGlbDir}/air_marker.glb", parent, "DSA_air_marker",
-                new Vector3(cx + 0.17f, topY, pieceZ + 0.14f), 0f, grabbable: true, scale: chipScale);
+                new Vector3(cx + 0.17f, topY, pieceZ + 0.14f), 0f, grabbable: true, scale: chipScale, physics: true);
             SetSurfaceClamp(air, topY, cx, cz, hx, hz);
 
             if (die1 != null) die1.AddComponent<DiceRoller>();
@@ -550,12 +566,93 @@ namespace TableDuoVr.EditorTools
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
+        /// <summary>TableProps レイヤーを TagManager に確保する（無ければ 8 以降の空きスロットへ追記）。</summary>
+        private static int EnsureTablePropsLayer()
+        {
+            var assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset");
+            if (assets.Length == 0)
+            {
+                Debug.LogWarning("[TableDuoSceneSetup] TagManager.asset を開けずレイヤー確保をスキップ");
+                return -1;
+            }
+            var tagManager = new SerializedObject(assets[0]);
+            var layers = tagManager.FindProperty("layers");
+            if (layers == null) return -1;
+            int firstEmpty = -1;
+            for (int i = 8; i < layers.arraySize; i++)
+            {
+                string v = layers.GetArrayElementAtIndex(i).stringValue;
+                if (v == PiecePhysicsConfig.LayerName) return i;
+                if (firstEmpty < 0 && string.IsNullOrEmpty(v)) firstEmpty = i;
+            }
+            if (firstEmpty < 0)
+            {
+                Debug.LogWarning("[TableDuoSceneSetup] レイヤー空きスロットなし。TableProps を確保できない");
+                return -1;
+            }
+            layers.GetArrayElementAtIndex(firstEmpty).stringValue = PiecePhysicsConfig.LayerName;
+            tagManager.ApplyModifiedPropertiesWithoutUndo();
+            Debug.Log($"[TableDuoSceneSetup] レイヤー {PiecePhysicsConfig.LayerName} を slot {firstEmpty} に追加");
+            return firstEmpty;
+        }
+
+        /// <summary>PhysicMaterial アセットを生成（無ければ）して係数を焼き込む。</summary>
+        private static PhysicMaterial EnsurePhysicMaterial(string path, float friction, float bounciness)
+        {
+            var mat = AssetDatabase.LoadAssetAtPath<PhysicMaterial>(path);
+            if (mat == null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                mat = new PhysicMaterial();
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            mat.dynamicFriction = friction;
+            mat.staticFriction = friction;
+            mat.bounciness = bounciness;
+            mat.frictionCombine = PhysicMaterialCombine.Average;
+            mat.bounceCombine = PhysicMaterialCombine.Maximum;
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        /// <summary>
+        /// 掴めるピースに物理一式を付ける: バウンディング適合 BoxCollider + Rigidbody +
+        /// NetworkRigidbody（非権威側を自動 kinematic 化）+ TableProps レイヤー。
+        /// ccd=true は高速投擲でのトンネリング防止（サイコロ用）。
+        /// </summary>
+        private static void AttachPiecePhysics(GameObject go, bool ccd)
+        {
+            var renderers = go.GetComponentsInChildren<Renderer>();
+            var b = renderers.Length > 0 ? CalcBounds(renderers)
+                : new Bounds(go.transform.position, Vector3.one * 0.03f);
+            var box = go.AddComponent<BoxCollider>();
+            // yaw 0/180 配置前提でワールド AABB を局所サイズへ流用（軸の大きさは一致する）
+            box.center = go.transform.InverseTransformPoint(b.center);
+            var ls = go.transform.lossyScale;
+            box.size = new Vector3(
+                Mathf.Abs(b.size.x / ls.x), Mathf.Abs(b.size.y / ls.y), Mathf.Abs(b.size.z / ls.z));
+            box.sharedMaterial = EnsurePhysicMaterial(
+                $"{MaterialDir}/TableDuoPiece.physicMaterial", friction: 0.5f, bounciness: 0.3f);
+
+            var rb = go.AddComponent<Rigidbody>();
+            rb.mass = 0.1f;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+            rb.collisionDetectionMode = ccd
+                ? CollisionDetectionMode.ContinuousDynamic : CollisionDetectionMode.Discrete;
+
+            go.AddComponent<Unity.Netcode.Components.NetworkRigidbody>();
+
+            int layer = LayerMask.NameToLayer(PiecePhysicsConfig.LayerName);
+            if (layer >= 0) go.layer = layer;
+        }
+
         /// <summary>
         /// GLB プレハブ（glTFast 取込）を実スケールのまま卓上に接地配置（足元 = topY, 水平センタリング）。
         /// grabbable=true なら旧プロップ同様 NetworkObject + NetworkTransform + Grabbable を付ける。
+        /// physics=true はさらに Rigidbody + Collider + NetworkRigidbody（卓上ボードゲームのピース用）。
         /// </summary>
         private static GameObject? PlaceModelRealScale(string glbPath, Transform parent, string name,
-            Vector3 pos, float yaw, bool grabbable, float scale = 1f)
+            Vector3 pos, float yaw, bool grabbable, float scale = 1f, bool physics = false, bool ccd = false)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(glbPath);
             if (prefab == null)
@@ -591,6 +688,7 @@ namespace TableDuoVr.EditorTools
                 nt.Interpolate = true;
                 nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
                 go.AddComponent<Grabbable>();
+                if (physics) AttachPiecePhysics(go, ccd);
             }
             return go;
         }
