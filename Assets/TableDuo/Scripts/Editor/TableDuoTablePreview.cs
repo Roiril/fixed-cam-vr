@@ -1,5 +1,7 @@
 #nullable enable
+using System.Collections.Generic;
 using System.IO;
+using TableDuoVr.Net;
 using UnityEditor;
 using UnityEngine;
 
@@ -10,13 +12,21 @@ namespace TableDuoVr.EditorTools
     /// Play 不要・現シーンをそのまま撮る。配置・スケール調整の視覚検証用
     /// （visual-verification ルール: 判断は 1 角度でしない → 斜め/両席/真上を一括出力）。
     /// 出力: Temp/TablePreview/*.png
+    ///
+    /// Remy 着座つき（2026-07-08）: 両席へ座位 Remy を一時生成して寸法感（体 vs 机の高さ・
+    /// リーチ）を確認できる。ランタイム生成物ではなくプレビュー内だけ（撮影後に破棄）。
     /// </summary>
     public static class TableDuoTablePreview
     {
         private const int Size = 1100;
 
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Table (screenshot)", priority = 214)]
-        public static void Capture()
+        public static void Capture() => CaptureInternal(withRemy: false);
+
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Table + Remy seated", priority = 215)]
+        public static void CaptureWithRemy() => CaptureInternal(withRemy: true);
+
+        private static void CaptureInternal(bool withRemy)
         {
             var table = GameObject.Find("[TableDuo]/Table") ?? GameObject.Find("Table");
             Vector3 center;
@@ -39,8 +49,11 @@ namespace TableDuoVr.EditorTools
 
             var camGo = new GameObject("TablePreviewCam");
             var lightGo = new GameObject("TablePreviewLight");
+            var remyInstances = new List<GameObject>();
             try
             {
+                if (withRemy) SeatRemy(remyInstances);
+
                 var cam = camGo.AddComponent<Camera>();
                 cam.clearFlags = CameraClearFlags.SolidColor;
                 cam.backgroundColor = new Color(0.16f, 0.17f, 0.20f);
@@ -56,12 +69,45 @@ namespace TableDuoVr.EditorTools
                 Shot(cam, dir, "low_fullside.png", center + new Vector3(0.0f, 0.35f, -0.75f), center + new Vector3(0f, 0.02f, 0f));
                 Shot(cam, dir, "top.png", center + new Vector3(0f, 1.1f, 0.001f), center);
 
-                Debug.Log($"[TablePreview] 4 枚保存 → {dir}（天板 y={topY:F3}）");
+                if (withRemy)
+                {
+                    // 寸法感用: 座位 Remy 全身と机を一緒に真横〜斜めから（体高 vs 天板高・肘/手の届き）
+                    var bodyAim = new Vector3(center.x, topY + 0.15f, center.z);
+                    Shot(cam, dir, "remy_side.png", bodyAim + new Vector3(2.4f, 0.15f, 0f), bodyAim);
+                    Shot(cam, dir, "remy_front_full.png", bodyAim + new Vector3(0f, 0.10f, -2.6f), bodyAim);
+                    Shot(cam, dir, "remy_diag.png", bodyAim + new Vector3(1.8f, 0.55f, -1.8f), bodyAim);
+                }
+
+                Debug.Log($"[TablePreview] {(withRemy ? "Remy 着座つき 7" : "4")} 枚保存 → {dir}（天板 y={topY:F3}）");
             }
             finally
             {
+                foreach (var go in remyInstances) if (go != null) Object.DestroyImmediate(go);
                 Object.DestroyImmediate(camGo);
                 Object.DestroyImmediate(lightGo);
+            }
+        }
+
+        /// <summary>両席に座位 Remy を一時生成する（撮影後に呼び出し側が破棄）。</summary>
+        private static void SeatRemy(List<GameObject> outInstances)
+        {
+            var prefab = Resources.Load<GameObject>("RemyFullAvatar");
+            if (prefab == null)
+            {
+                Debug.LogWarning("[TablePreview] RemyFullAvatar prefab が無いため Remy 着座をスキップ");
+                return;
+            }
+            foreach (var name in new[] { "[TableDuo]/Seats/Seat0", "[TableDuo]/Seats/Seat1" })
+            {
+                var seat = GameObject.Find(name);
+                if (seat == null) continue;
+                int before = seat.transform.childCount;
+                // コンストラクタが座位ポーズ + 休めポーズまで組む。firstPerson:false で頭も残す（全身確認）
+                _ = new RemyAvatarRig(seat.transform, prefab, firstPerson: false);
+                for (int i = before; i < seat.transform.childCount; i++)
+                {
+                    outInstances.Add(seat.transform.GetChild(i).gameObject);
+                }
             }
         }
 
