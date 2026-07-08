@@ -22,7 +22,8 @@ metadata:
 | 手首ねじれ細り | swing-twist 分解でツイスト 50% を前腕へ分散（手のワールド向きは不変） | — |
 
 計画: [.claude/plans/2026-07-08_remy-hip-hinge-lean.md](../plans/2026-07-08_remy-hip-hinge-lean.md)。
-汎用手法（実アセットを Python 直パースで一次証拠化・リターゲットは位置ベース）はグローバル [[reverse-engineer-binary-assets]] / [[avatar-retarget-position-based]] へ昇格。
+汎用手法「バイナリ資産を自前パースして一次証拠にする」はグローバル `~/.claude/rules/work-style.md` #2 へ昇格済み
+（リターゲット位置ベース化はドメイン特化のため本 memory に留置）。
 
 ---
 
