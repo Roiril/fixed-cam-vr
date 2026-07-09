@@ -190,8 +190,8 @@ namespace TableDuoVr.Net
         }
 
         /// <summary>卓上に手を置く自然な座位の休めポーズ（前方やや下・指=前/手のひら=下）。未トラッキング初期姿勢。</summary>
-        private static readonly Vector3 RestWristL = new(-0.20f, -0.44f, 0.30f);
-        private static readonly Vector3 RestWristR = new(0.20f, -0.44f, 0.30f);
+        private static readonly Vector3 RestWristL = new(-0.20f, -0.25f, 0.30f);
+        private static readonly Vector3 RestWristR = new(0.20f, -0.25f, 0.30f);
 
         /// <summary>両腕を休めポーズへ（IK で手首を卓上へ・手首向きを前方へ）。構築時の初期姿勢に使う。
         /// wristRot はアンカー基準に依存するため定数ではなく「指=前やや下・甲=上」から逆算する。</summary>

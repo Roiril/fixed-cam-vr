@@ -30,7 +30,7 @@ namespace TableDuoVr.Net
 
         // 接続直後（未トラッキング）に右手を置く休めポーズ（avatar-root=席ローカル。卓上に手を置いた自然な構え）。
         // トラッキングが来たら実手へスナップして追従する。片手モードの左手は従来どおり「使われるまで非表示」。
-        private static readonly Vector3 HandRestLocalPosR = new(0.20f, -0.42f, 0.32f);
+        private static readonly Vector3 HandRestLocalPosR = new(0.20f, -0.27f, 0.32f);
         private static readonly Quaternion HandRestLocalRotR = Quaternion.Euler(15f, -90f, 0f);
 
         private Transform? _head;
