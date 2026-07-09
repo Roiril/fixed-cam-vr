@@ -31,5 +31,13 @@ Robot/Male のみ `Assets/TableDuo/ThirdParty/VRHandsStarterPack/` に GUID 保�
 Robotの指トラッキング精度はフレーム毎の厳密検証は未（機械モデルで判別しづらい）。実機で最終確認。詳細
 [docs/table-duo/hand-appearance-variants.md](../../docs/table-duo/hand-appearance-variants.md)「実装済みサマリ」。
 
+**rest（接続直後 ShowAtRest）の向きバグ修正（2026-07-09）**: 外部リグ（Realistic/Robot）の右手が
+**手のひら上向き**で出ていた。真因は `RemoteHandView.AlignRestForward` の甲法線 `cross(lateral, fwd)`
+（lateral=pinky−index）が**左手でのみ甲側**になる符号だったこと（右手は index が pinky の左＝lateral≈+X で
+手のひら側を向く）。`_isRight ? cross(fwd,lateral) : cross(lateral,fwd)` に修正。Default 白手はこの経路を
+通らない（固定 euler）ので無症状だった＝「白手は正常・Robot だけ変」に見えるが実は Realistic も同罪、が切り分けの罠。
+プレビューでのバリアント確認は `StudyConfig.SelectedHandVariant` を execute_code で一時変更 →
+`Preview Hand Role Initial` / `Preview Table + Remy seated` → Default へ復元、で撮れる。
+
 関連: [[table_duo_study_status]] / [[parallel_projects_isolation]]（本作業は TableDuo 単独・fixedcam 非干渉）。
 Setup 編集後は `Tools/FixedCamVr/Setup/Setup TableDuo Scene` 再実行で再配線。

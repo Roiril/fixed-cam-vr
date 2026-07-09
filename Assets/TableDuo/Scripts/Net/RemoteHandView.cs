@@ -83,7 +83,10 @@ namespace TableDuoVr.Net
             if (idx != null && pnk != null)
             {
                 Vector3 lateral = _root.InverseTransformDirection(pnk.position - idx.position);
-                Vector3 n = Vector3.Cross(lateral, fwd); // 右手: 手の甲側の法線
+                // 甲側の法線。右手は index が pinky の左（lateral≈+X・指+Z）なので cross(lateral,fwd) は
+                // 手のひら側を向く → 反転が要る。左手は cross(lateral,fwd) がそのまま甲側
+                // （従来 cross(lateral,fwd) 固定で右手の rest が手のひら上向きになっていた 2026-07-09 修正）。
+                Vector3 n = _isRight ? Vector3.Cross(fwd, lateral) : Vector3.Cross(lateral, fwd);
                 if (n.sqrMagnitude > 1e-8f) up = n.normalized;
             }
 
