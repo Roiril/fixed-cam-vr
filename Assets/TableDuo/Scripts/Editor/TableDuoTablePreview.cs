@@ -1,6 +1,7 @@
 #nullable enable
 using System.Collections.Generic;
 using System.IO;
+using TableDuoVr.Hands;
 using TableDuoVr.Net;
 using UnityEditor;
 using UnityEngine;
@@ -13,8 +14,10 @@ namespace TableDuoVr.EditorTools
     /// （visual-verification ルール: 判断は 1 角度でしない → 斜め/両席/真上を一括出力）。
     /// 出力: Temp/TablePreview/*.png
     ///
-    /// Remy 着座つき（2026-07-08）: 両席へ座位 Remy を一時生成して寸法感（体 vs 机の高さ・
-    /// リーチ）を確認できる。ランタイム生成物ではなくプレビュー内だけ（撮影後に破棄）。
+    /// 着座つき（2026-07-08 / 2026-07-09 役割別化）: 実運用の接続直後配置に合わせ、
+    /// 人役席（Full=Seat0）へ座位 Remy、手役席（Hand=Seat1）へ白手 rest ポーズ（ShowAtRest）を
+    /// 一時生成して寸法感（体 vs 机の高さ・リーチ・手の届き）を確認できる。
+    /// ランタイム生成物ではなくプレビュー内だけ（撮影後に破棄）。
     /// </summary>
     public static class TableDuoTablePreview
     {
@@ -50,9 +53,10 @@ namespace TableDuoVr.EditorTools
             var camGo = new GameObject("TablePreviewCam");
             var lightGo = new GameObject("TablePreviewLight");
             var remyInstances = new List<GameObject>();
+            System.Action? restoreHandEnv = null;
             try
             {
-                if (withRemy) SeatRemy(remyInstances);
+                if (withRemy) restoreHandEnv = SeatRoles(remyInstances);
 
                 var cam = camGo.AddComponent<Camera>();
                 cam.clearFlags = CameraClearFlags.SolidColor;
@@ -78,37 +82,98 @@ namespace TableDuoVr.EditorTools
                     Shot(cam, dir, "remy_diag.png", bodyAim + new Vector3(1.8f, 0.55f, -1.8f), bodyAim);
                 }
 
-                Debug.Log($"[TablePreview] {(withRemy ? "Remy 着座つき 7" : "4")} 枚保存 → {dir}（天板 y={topY:F3}）");
+                Debug.Log($"[TablePreview] {(withRemy ? "着座つき（人役 Remy / 手役 白手）7" : "4")} 枚保存 → {dir}（天板 y={topY:F3}）");
             }
             finally
             {
                 foreach (var go in remyInstances) if (go != null) Object.DestroyImmediate(go);
+                restoreHandEnv?.Invoke();
                 Object.DestroyImmediate(camGo);
                 Object.DestroyImmediate(lightGo);
             }
         }
 
-        /// <summary>両席に座位 Remy を一時生成する（撮影後に呼び出し側が破棄）。</summary>
-        private static void SeatRemy(List<GameObject> outInstances)
+        /// <summary>
+        /// 実運用の接続直後配置に合わせ、人役席（Full=Seat0）へ座位 Remy、
+        /// 手役席（Hand=Seat1）へ白手 rest ポーズを一時生成する（撮影後に呼び出し側が破棄）。
+        /// 戻り値は手役の白手描画に必要な static 環境（Provider/layout）を元に戻す復元 Action。
+        /// </summary>
+        private static System.Action SeatRoles(List<GameObject> outInstances)
         {
-            var prefab = Resources.Load<GameObject>("RemyFullAvatar");
-            if (prefab == null)
+            // 手役の白手を実 Meta メッシュで描くための static 環境を先に整える（＝Preview Hand Role Initial と同じ）。
+            var restoreHandEnv = PrepareHandEnv();
+            // Seat0 = Full（人役）→ 座位 Remy 全身、Seat1 = Hand（手役）→ 白手 rest。SeatAvatarPreview.SeatIndexOf と対応
+            SeatOne("[TableDuo]/Seats/Seat0", outInstances, handRole: false);
+            SeatOne("[TableDuo]/Seats/Seat1", outInstances, handRole: true);
+            return restoreHandEnv;
+        }
+
+        /// <summary>1 席へ役割別アバターを生成し、生成物を outInstances に追加する。</summary>
+        private static void SeatOne(string seatPath, List<GameObject> outInstances, bool handRole)
+        {
+            var seat = GameObject.Find(seatPath);
+            if (seat == null) return;
+            int before = seat.transform.childCount;
+            if (handRole)
             {
-                Debug.LogWarning("[TablePreview] RemyFullAvatar prefab が無いため Remy 着座をスキップ");
-                return;
+                // 手役＝相手から見た手だけアバター。Create が右手を休めポーズで即表示（ShowAtRest）＝接続直後の実配置
+                var view = RemoteAvatarView.Create(seat.transform, handsOnly: true);
+                foreach (var smr in view.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.forceMatrixRecalculationPerRender = true;
             }
-            foreach (var name in new[] { "[TableDuo]/Seats/Seat0", "[TableDuo]/Seats/Seat1" })
+            else
             {
-                var seat = GameObject.Find(name);
-                if (seat == null) continue;
-                int before = seat.transform.childCount;
+                var prefab = Resources.Load<GameObject>("RemyFullAvatar");
+                if (prefab == null)
+                {
+                    Debug.LogWarning("[TablePreview] RemyFullAvatar prefab が無いため 人役 Remy 着座をスキップ");
+                    return;
+                }
                 // コンストラクタが座位ポーズ + 休めポーズまで組む。firstPerson:false で頭も残す（全身確認）
                 _ = new RemyAvatarRig(seat.transform, prefab, firstPerson: false);
-                for (int i = before; i < seat.transform.childCount; i++)
-                {
-                    outInstances.Add(seat.transform.GetChild(i).gameObject);
-                }
             }
+            for (int i = before; i < seat.transform.childCount; i++)
+            {
+                outInstances.Add(seat.transform.GetChild(i).gameObject);
+            }
+        }
+
+        /// <summary>
+        /// Edit モードで手だけアバターを実 Meta 白メッシュ + 実 layout で描くための static 環境を注入する。
+        /// Awake 未実行で RemoteHandMeshProvider.Instance=null / Captured layout 未設定のため手動で立て、
+        /// 戻り値の Action で元値へ復元する（Preview Hand Role Initial と同一手順）。
+        /// </summary>
+        private static System.Action PrepareHandEnv()
+        {
+            var provider = Object.FindObjectOfType<RemoteHandMeshProvider>();
+            var instProp = typeof(RemoteHandMeshProvider).GetProperty("Instance",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            var prevInstance = instProp?.GetValue(null);
+            var prevL = HandSkeletonLayout.CapturedL;
+            var prevR = HandSkeletonLayout.CapturedR;
+
+            if (provider != null)
+            {
+                instProp?.SetValue(null, provider);
+            }
+            else
+            {
+                Debug.LogWarning("[TablePreview] RemoteHandMeshProvider がシーンに無い — 手役は手首 proxy 立方体で表示（Setup 済みか確認）");
+            }
+            // 手 layout（bind）＝録画同梱の実 layout。無いと bone マッピングが立たず proxy に落ちる
+            var rec = Playback.LoadRecordingForPreview(Path.GetFullPath(Path.Combine(Application.dataPath, "..")));
+            if (rec != null && rec.Frames.Count > 0)
+            {
+                HandSkeletonLayout.CapturedL = rec.LayoutL;
+                HandSkeletonLayout.CapturedR = rec.LayoutR;
+            }
+
+            return () =>
+            {
+                instProp?.SetValue(null, prevInstance);
+                HandSkeletonLayout.CapturedL = prevL;
+                HandSkeletonLayout.CapturedR = prevR;
+            };
         }
 
         private static Bounds CalcBounds(GameObject go)
