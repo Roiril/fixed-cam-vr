@@ -174,19 +174,19 @@ namespace TableDuoVr.EditorTools
             // 椅子（見た目のみ・席アンカーとは独立・床に置く）
             // Kenney chair.fbx は -z が正面（180° が「テーブルへ向く」）
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
-                root.transform, "Chair0", new Vector3(0f, 0f, -0.78f), 180f, targetHeight: 0.85f, maxWidth: 0.55f);
+                root.transform, "Chair0", new Vector3(0f, 0f, -0.61f), 180f, targetHeight: 0.85f, maxWidth: 0.55f);
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
-                root.transform, "Chair1", new Vector3(0f, 0f, 0.78f), 0f, targetHeight: 0.85f, maxWidth: 0.55f);
+                root.transform, "Chair1", new Vector3(0f, 0f, 0.61f), 0f, targetHeight: 0.85f, maxWidth: 0.55f);
             // 卓上ランプは廃止（2026-07-09 ユーザー指示: 盤面の邪魔）
 
             // 席 = 初期目線アンカー。**ローカル原点が目の位置**（EyeLevel なので頭が席に乗る）、
             // forward(+Z) が視線方向。Y を座位の目の高さに置く。Scene ビューで席を動かして調整可能
             // （ギズモ表示 + Tools/FixedCamVr/Diagnostics/Preview Eye）。
-            const float eyeHeight = 1.15f;
+            const float eyeHeight = 1.20f;
             var seats = new GameObject("Seats");
             seats.transform.SetParent(root.transform, false);
-            CreateSeat(seats.transform, 0, new Vector3(0f, eyeHeight, -0.85f), 0f);    // フルアバター席
-            CreateSeat(seats.transform, 1, new Vector3(0f, eyeHeight, 0.85f), 180f);   // 手だけアバター席
+            CreateSeat(seats.transform, 0, new Vector3(0f, eyeHeight, -0.56f), 0f);    // フルアバター席
+            CreateSeat(seats.transform, 1, new Vector3(0f, eyeHeight, 0.56f), 180f);   // 手だけアバター席
 
             // 卓上 = ボードゲーム「海底探検（Deep Sea Adventure）」一式（旧: Kenney 食べ物プロップ＋絵カードを置換）。
             // 潜水艦ボードを中央奥に静置、宝物チップ/裏トークン/空気マーカーを手前にグリッド配置、駒2+サイコロは掴める。
@@ -209,7 +209,7 @@ namespace TableDuoVr.EditorTools
                 centerEye = rig.transform.Find("TrackingSpace/CenterEyeAnchor");
                 AddHand(rig, "TrackingSpace/LeftHandAnchor", isLeft: true, out leftHand, out leftSkel);
                 AddHand(rig, "TrackingSpace/RightHandAnchor", isLeft: false, out rightHand, out rightSkel);
-                rig.transform.SetPositionAndRotation(new Vector3(0f, 0f, -0.85f), Quaternion.identity);
+                rig.transform.SetPositionAndRotation(new Vector3(0f, 0f, -0.56f), Quaternion.identity);
 
                 // トラッキング原点は EyeLevel（=0）。FloorLevel だと実身長で目線高が変わり
                 // 参加者間で体験差が出る。EyeLevel + 席を目の高さに置くことで、全員が
