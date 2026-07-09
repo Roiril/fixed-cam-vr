@@ -1,4 +1,5 @@
 #nullable enable
+using System.Collections.Generic;
 using System.IO;
 using TableDuoVr.Hands;
 using TableDuoVr.Hands.Playback;
@@ -128,19 +129,25 @@ namespace TableDuoVr.EditorTools
             // 調査で視線・注意を引かないよう装飾なしの無地（study-design の中立トーン方針）
             CreateRoomShell(root.transform);
 
-            // テーブル: Kenney Furniture Kit（CC0）。バウンディングから天板高 0.7m に正規化。
-            // FBX が無い環境では従来のキューブにフォールバック
+            // テーブル: Kenney Furniture Kit（CC0）。天板高はここ 1 定数で決める（派生値は topY から自動追従）。
+            // FitHeight は幅（maxWidth）で拡大が頭打ちになり targetHeight が効かないため、幅フィット後に
+            // Y スケールだけ伸ばして目標天板高へ合わせる（＝横幅そのまま脚だけ伸びる）。
+            const float TableTopHeight = 0.75f; // 天板高（座位の目線 1.15m に対しての机の高さ）
             var table = InstantiateModelFitHeight(
                 "Assets/ThirdParty/Kenney/Furniture/table.fbx", root.transform,
-                "Table", Vector3.zero, 0f, targetHeight: 0.7f, maxWidth: 1.3f);
+                "Table", Vector3.zero, 0f, targetHeight: TableTopHeight, maxWidth: 1.3f);
             if (table == null)
             {
                 table = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 table.name = "Table";
                 table.transform.SetParent(root.transform, false);
-                table.transform.localPosition = new Vector3(0f, 0.35f, 0f);
-                table.transform.localScale = new Vector3(1.2f, 0.7f, 0.8f);
+                table.transform.localPosition = new Vector3(0f, TableTopHeight * 0.5f, 0f);
+                table.transform.localScale = new Vector3(1.2f, TableTopHeight, 0.8f);
                 table.GetComponent<Renderer>().sharedMaterial = tableMat;
+            }
+            else
+            {
+                StretchToTopHeight(table, TableTopHeight); // 横幅を保ち縦だけ伸ばして天板高を合わせる
             }
 
             // テーブル天板の実測（maxWidth で縮むと天板高が 0.7 未満になるので実バウンディングを使う）。
@@ -170,11 +177,7 @@ namespace TableDuoVr.EditorTools
                 root.transform, "Chair0", new Vector3(0f, 0f, -0.78f), 180f, targetHeight: 0.85f, maxWidth: 0.55f);
             InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/chair.fbx",
                 root.transform, "Chair1", new Vector3(0f, 0f, 0.78f), 0f, targetHeight: 0.85f, maxWidth: 0.55f);
-            // 卓上ランプ：天板の奥の角に乗せる
-            InstantiateModelFitHeight("Assets/ThirdParty/Kenney/Furniture/lampRoundTable.fbx",
-                root.transform, "TableLamp",
-                new Vector3(cx - (hx - 0.14f), topY, cz - (hz - 0.14f)), 0f,
-                targetHeight: 0.25f, maxWidth: 0.18f);
+            // 卓上ランプは廃止（2026-07-09 ユーザー指示: 盤面の邪魔）
 
             // 席 = 初期目線アンカー。**ローカル原点が目の位置**（EyeLevel なので頭が席に乗る）、
             // forward(+Z) が視線方向。Y を座位の目の高さに置く。Scene ビューで席を動かして調整可能
@@ -423,6 +426,23 @@ namespace TableDuoVr.EditorTools
         /// FBX をインスタンス化し、Renderer バウンディングの高さが targetHeight になるよう
         /// 一様スケール + 足元 (bounds.min.y) を pos.y に揃える。FBX が無ければ null。
         /// </summary>
+        /// <summary>横幅（X/Z スケール）を保ったまま Y スケールだけ伸縮して天板を targetTopY へ合わせ、
+        /// 足元を床（y=0）へ再接地する。幅フィットで頭打ちになった机を「脚だけ高く」するのに使う。</summary>
+        private static void StretchToTopHeight(GameObject go, float targetTopY)
+        {
+            var b = WorldBounds(go);
+            float cur = b.max.y; // 接地済みなので現在の天板高 ≒ max.y
+            if (cur < 0.0001f) return;
+            var s = go.transform.localScale;
+            s.y *= targetTopY / cur;
+            go.transform.localScale = s;
+            // 再接地（足元を y=0 へ）
+            var b2 = WorldBounds(go);
+            var lp = go.transform.localPosition;
+            lp.y -= b2.min.y;
+            go.transform.localPosition = lp;
+        }
+
         private static GameObject? InstantiateModelFitHeight(string assetPath, Transform parent,
             string name, Vector3 pos, float yaw, float targetHeight, float maxWidth = 0f)
         {
@@ -498,47 +518,71 @@ namespace TableDuoVr.EditorTools
             // 掴めるチップ類の拡大率（ハンドトラッキングのピンチ精度対策）
             const float chipScale = 1.6f;
 
-            // 宝物チップ16 + 裏トークン5 を手前（人役側）にグリッド。空気マーカーはボード脇へ分離
-            string[] tiles =
+            // 宝物チップ = レベル順（浅→深）の 1 本の鎖。本家 海底探検に合わせ各値 2 枚ずつ = 32 枚。
+            // 三角(lv1,値0-3)→四角(lv2,4-7)→五角(lv3,8-11)→六角(lv4,12-15)。同じ glb をもう 1 枚ずつ複製。
+            var chain = new List<string>();
+            foreach (var lvl in new[]
+                     {
+                         new[] { "tri_0", "tri_1", "tri_2", "tri_3" },
+                         new[] { "sq_4", "sq_5", "sq_6", "sq_7" },
+                         new[] { "pen_8", "pen_9", "pen_10", "pen_11" },
+                         new[] { "hex_12", "hex_13", "hex_14", "hex_15" },
+                     })
             {
-                "tri_0", "tri_1", "tri_2", "tri_3",
-                "sq_4", "sq_5", "sq_6", "sq_7",
-                "pen_8", "pen_9", "pen_10", "pen_11",
-                "hex_12", "hex_13", "hex_14", "hex_15",
-                "back_circle", "back_tri", "back_square", "back_pentagon", "back_hexagon",
-            };
-            const int cols = 6;
-            const float step = 0.085f; // 1.6 倍チップが重ならない間隔
-            int rows = Mathf.CeilToInt(tiles.Length / (float)cols);
-            float gx0 = cx - (cols - 1) * step * 0.5f;
-            float gz0 = cz - Mathf.Max(0.04f, hz - edge - 0.07f); // 手前縁の内側から奥へ
-            for (int i = 0; i < tiles.Length; i++)
+                chain.AddRange(lvl);
+                chain.AddRange(lvl); // 各値 2 枚
+            }
+
+            // 本家の初期配置と同じ「1 本の連続した数珠つなぎの S カーブ」（kaitei-seiretu.jpg 準拠。
+            // グリッド蛇行ではなくチップ同士がほぼ接して曲線を描く）。行 + ヘアピンで繋いだポリラインを
+            // ユークリッド間隔でサンプリングし、チップ向きも経路接線に沿わせる。
+            // 数珠の間隔: 実測の最大チップ=五角 0.067m（1.6x）に対し +3mm ＝「くっつくかどうかギリギリ」。
+            // 物理があるので実接触（<0.068）にはしない（ロード時に押し合って弾ける）
+            const float step = 0.070f;
+            float zStart = cz + (hz - edge) - 0.18f; // 鎖の最奥行（潜水艦の下）
+            float zEnd = cz - (hz - edge) + 0.05f;   // 手前縁の内側まで
+
+            var pts = SampleSerpentine(cx, zStart, zEnd, hx - edge - 0.05f, chain.Count, step);
+            for (int i = 0; i < chain.Count; i++)
             {
-                int row = i / cols, col = i % cols;
-                var pos = new Vector3(gx0 + col * step, topY, gz0 + row * step);
-                // yaw=180: 数字面を人役（席0 = -Z 側）向きに（俯瞰スクショ検証で逆さまだったのを補正）
-                var chip = PlaceModelRealScale($"{DsaGlbDir}/{tiles[i]}.glb", parent, $"DSA_{tiles[i]}", pos, 180f,
+                // 接線向き（次点との差分）。数字面の基準 yaw=180 に接線回りを加える
+                Vector3 dir = (i < pts.Count - 1 ? pts[i + 1] - pts[i] : pts[i] - pts[i - 1]);
+                float yaw = 180f + Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+                // 先頭チップ（潜水艦のもぐり口に繋がる）は先端を潜水艦（+Z）へ向ける
+                if (i == 0) yaw = 0f;
+                var pos = new Vector3(pts[i].x, topY, pts[i].z);
+                var chip = PlaceModelRealScale($"{DsaGlbDir}/{chain[i]}.glb", parent, $"DSA_{chain[i]}_{i}", pos, yaw,
                     grabbable: true, scale: chipScale, physics: true);
                 SetSurfaceClamp(chip, topY, cx, cz, hx, hz);
             }
 
-            // 駒2 + サイコロ2 の行はチップグリッドの 1 行分奥（座標をグリッドから導出し重なりを防ぐ。
-            // 2026-07-02 俯瞰スクショ検証: 固定座標 cz+0.02 だと最終行のチップに駒が乗っていた）
-            float pieceZ = gz0 + rows * step + 0.02f;
-            var mp = PlaceModelRealScale($"{DsaGlbDir}/meeple_purple.glb", parent, "DSA_MeeplePurple",
-                new Vector3(cx - 0.14f, topY, pieceZ), 0f, grabbable: true, scale: 1.6f, physics: true);
-            var mr = PlaceModelRealScale($"{DsaGlbDir}/meeple_red.glb", parent, "DSA_MeepleRed",
-                new Vector3(cx - 0.05f, topY, pieceZ), 0f, grabbable: true, scale: 1.6f, physics: true);
-            var die1 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die1",
-                new Vector3(cx + 0.07f, topY, pieceZ), 0f, grabbable: true, scale: 1.5f, physics: true, ccd: true);
-            var die2 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die2",
-                new Vector3(cx + 0.15f, topY, pieceZ), 0f, grabbable: true, scale: 1.5f, physics: true, ccd: true);
-
-            // 潜水艦ボード（静置）はさらに奥・空気マーカー（掴める）はボード脇＝空気トラック管理用
+            // 潜水艦ボードを 180° 回転（もぐり口 ⊗ を手前＝チェーン側へ）し、その中央下（⊗）が
+            // 先頭チップの先端に来るよう、先頭チップの真上・すぐ奥へ置く（船の中央 = チップ 1 の上）。
+            // 先頭チップは先端(+Z)が最も奥へ張り出す（実測でチップ中心から +0.022m）。船の前縁が
+            // その先端の 8mm 奥に来るよう置く＝被らず「船の下端からチップが続く」隙間になる
+            const float boardHalfDepth = 0.043f; // 実測 size.z 0.086 の半分
+            const float chip0TipReach = 0.022f;  // 先頭三角の中心→先端(+Z)
+            const float boardChipGap = 0.008f;    // 船下端とチップ先端の隙間
+            float board0X = pts[0].x;
+            float boardZ = pts[0].z + chip0TipReach + boardChipGap + boardHalfDepth;
             PlaceModelRealScale($"{DsaGlbDir}/submarine_board.glb", parent, "DSA_Board",
-                new Vector3(cx, topY, pieceZ + 0.14f), 0f, grabbable: false);
+                new Vector3(board0X, topY, boardZ), 180f, grabbable: false);
+
+            // 裏トークン（丸 X）20 枚を人役側の左（-X）に 2 山で積む。掴めない静置マーカー。
+            PlaceBlankStacks(parent, topY, cx - (hx - edge - 0.05f), cz - (hz - edge - 0.06f), chipScale);
+
+            // 駒2 + サイコロ2 + 空気マーカーは潜水艦の脇（右, +X 側）に一列。掴める＋物理。
+            float sideX = cx + (hx - edge - 0.06f);
+            var mp = PlaceModelRealScale($"{DsaGlbDir}/meeple_purple.glb", parent, "DSA_MeeplePurple",
+                new Vector3(sideX - 0.09f, topY, boardZ), 0f, grabbable: true, scale: 1.6f, physics: true);
+            var mr = PlaceModelRealScale($"{DsaGlbDir}/meeple_red.glb", parent, "DSA_MeepleRed",
+                new Vector3(sideX - 0.02f, topY, boardZ), 0f, grabbable: true, scale: 1.6f, physics: true);
+            var die1 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die1",
+                new Vector3(sideX - 0.09f, topY, boardZ - 0.09f), 0f, grabbable: true, scale: 1.5f, physics: true, ccd: true);
+            var die2 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die2",
+                new Vector3(sideX - 0.02f, topY, boardZ - 0.09f), 0f, grabbable: true, scale: 1.5f, physics: true, ccd: true);
             var air = PlaceModelRealScale($"{DsaGlbDir}/air_marker.glb", parent, "DSA_air_marker",
-                new Vector3(cx + 0.17f, topY, pieceZ + 0.14f), 0f, grabbable: true, scale: chipScale, physics: true);
+                new Vector3(sideX + 0.02f, topY, boardZ), 0f, grabbable: true, scale: chipScale, physics: true);
             SetSurfaceClamp(air, topY, cx, cz, hx, hz);
 
             if (die1 != null) die1.AddComponent<DiceRoller>();
@@ -546,6 +590,109 @@ namespace TableDuoVr.EditorTools
             foreach (var piece in new[] { mp, mr, die1, die2 })
             {
                 SetSurfaceClamp(piece, topY, cx, cz, hx, hz);
+            }
+        }
+
+        /// <summary>
+        /// 写真（kaitei-seiretu.jpg）の構造 = 「直線の行 ＋ 半円ターンで繋がる 1 本のサーペンタイン」。
+        /// 行（X 方向の直線）を交互方向に走らせ、行端を半円弧（半径 = 行間/2）で連結した密なポリラインを作り、
+        /// その上を「直前チップからのユークリッド距離 ≥ step」で count 点サンプリングする
+        /// （弧長等間隔だとターンで直線距離が縮み、物理チップが重なって弾け飛ぶ）。
+        /// </summary>
+        private static List<Vector3> SampleSerpentine(float cx, float zStart, float zEnd, float usableHalfX,
+            int count, float step)
+        {
+            // 行数・行長を決める: 8 枚/行 を基本に、ターン半径ぶん（rowPitch/2）を左右に確保して収める
+            int perRow = 8;
+            int rows = Mathf.CeilToInt(count / (float)perRow);
+            float rowPitch = rows > 1 ? Mathf.Min(0.10f, (zStart - zEnd) / (rows - 1)) : 0.10f;
+            float turnR = rowPitch * 0.5f;
+            float rowHalf = (perRow - 1) * step * 0.5f;
+            // 行 + ターンが卓幅を超えるなら行あたり枚数を減らして作り直す
+            while (rowHalf + turnR > usableHalfX && perRow > 4)
+            {
+                perRow--;
+                rows = Mathf.CeilToInt(count / (float)perRow);
+                rowPitch = rows > 1 ? Mathf.Min(0.10f, (zStart - zEnd) / (rows - 1)) : 0.10f;
+                turnR = rowPitch * 0.5f;
+                rowHalf = (perRow - 1) * step * 0.5f;
+            }
+
+            // 密なポリライン（行 → 半円 → 行 → …）。行 0 は左→右、以後交互
+            var poly = new List<Vector2>(rows * 64);
+            for (int r = 0; r < rows; r++)
+            {
+                float z = zStart - r * rowPitch;
+                bool ltr = (r % 2 == 0);
+                float xa = ltr ? -rowHalf : rowHalf;
+                float xb = -xa;
+                const int SegN = 32;
+                for (int i = 0; i <= SegN; i++)
+                {
+                    poly.Add(new Vector2(Mathf.Lerp(xa, xb, i / (float)SegN), z));
+                }
+                if (r == rows - 1) break;
+                // 行端の半円ターン（外側へ膨らみつつ次の行へ）。中心 = (xb, z - turnR)
+                const int ArcN = 24;
+                float dirSign = ltr ? 1f : -1f; // 右端ターンは +X 側へ膨らむ
+                for (int i = 1; i < ArcN; i++)
+                {
+                    float a = Mathf.PI * 0.5f - Mathf.PI * (i / (float)ArcN); // +90°→-90°
+                    poly.Add(new Vector2(xb + dirSign * turnR * Mathf.Cos(a), z - turnR + turnR * Mathf.Sin(a)));
+                }
+            }
+
+            // ユークリッド間隔サンプリング
+            var pts = new List<Vector3>(count);
+            Vector2 lastPlaced = poly[0];
+            pts.Add(new Vector3(cx + poly[0].x, 0f, poly[0].y));
+            for (int i = 1; i < poly.Count && pts.Count < count; i++)
+            {
+                // ポリラインの粗さで step を飛び越さないよう線分内も補間しながら進む
+                Vector2 a = poly[i - 1], b = poly[i];
+                float seg = Vector2.Distance(a, b);
+                const float ds = 0.004f;
+                int sub = Mathf.Max(1, Mathf.CeilToInt(seg / ds));
+                for (int s = 1; s <= sub && pts.Count < count; s++)
+                {
+                    Vector2 p = Vector2.Lerp(a, b, s / (float)sub);
+                    if (Vector2.Distance(lastPlaced, p) >= step)
+                    {
+                        pts.Add(new Vector3(cx + p.x, 0f, p.y));
+                        lastPlaced = p;
+                    }
+                }
+            }
+            while (pts.Count < count) // 保険（通常発生しない）
+            {
+                Vector3 last = pts[pts.Count - 1];
+                Vector3 dir = pts.Count >= 2 ? (last - pts[pts.Count - 2]).normalized : Vector3.back;
+                pts.Add(last + dir * step);
+            }
+            return pts;
+        }
+
+        /// <summary>裏トークン（back_circle・丸 X）20 枚を 2 山（各 10 枚）で積む。掴めない静置マーカー。</summary>
+        private static void PlaceBlankStacks(Transform parent, float topY, float baseX, float baseZ, float scale)
+        {
+            const int perStack = 10;
+            const float stackGap = 0.075f; // 2 山の間隔
+            for (int s = 0; s < 2; s++)
+            {
+                float x = baseX + s * stackGap;
+                float y = topY;
+                float thickness = 0f;
+                for (int k = 0; k < perStack; k++)
+                {
+                    var tok = PlaceModelRealScale($"{DsaGlbDir}/back_circle.glb", parent,
+                        $"DSA_blank_{s}_{k}", new Vector3(x, y, baseZ), 0f, grabbable: false, scale: scale);
+                    if (tok != null && thickness <= 0f)
+                    {
+                        var b = WorldBounds(tok);
+                        thickness = Mathf.Max(0.004f, b.size.y); // 実測厚み（次段の積み上げ量）
+                    }
+                    y += thickness > 0f ? thickness : 0.006f;
+                }
             }
         }
 
