@@ -142,6 +142,80 @@ namespace TableDuoVr.EditorTools
             }
         }
 
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Hand Role Initial (screenshot)", priority = 214)]
+        public static void CaptureHandRoleInitial()
+        {
+            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "../Temp/AvatarPreview"));
+            Directory.CreateDirectory(dir);
+
+            // 白手メッシュ供給元。Edit モードは Awake 未実行で Instance=null のため手動注入する。
+            var provider = Object.FindObjectOfType<RemoteHandMeshProvider>();
+            if (provider == null)
+            {
+                Debug.LogError("[TableDuo] RemoteHandMeshProvider がシーンに無い。TableDuoMain を開いて Setup 済みか確認。");
+                return;
+            }
+            var instProp = typeof(RemoteHandMeshProvider).GetProperty("Instance",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            var prevInstance = instProp?.GetValue(null);
+            // 手 layout（bind）＝録画同梱の実 layout。無いと bone マッピングが立たず proxy 立方体に落ちる
+            var rec = Playback.LoadRecordingForPreview(Path.GetFullPath(Path.Combine(Application.dataPath, "..")));
+            var prevL = HandSkeletonLayout.CapturedL;
+            var prevR = HandSkeletonLayout.CapturedR;
+
+            GameObject? seat = null, camGo = null, lightGo = null;
+            try
+            {
+                instProp?.SetValue(null, provider);
+                if (rec != null && rec.Frames.Count > 0)
+                {
+                    HandSkeletonLayout.CapturedL = rec.LayoutL;
+                    HandSkeletonLayout.CapturedR = rec.LayoutR;
+                }
+
+                seat = new GameObject("PreviewSeat");
+                seat.transform.position = Vector3.zero;
+                // 手役＝相手から見た手だけアバター。構築時に右手を休めポーズで即表示（ShowAtRest）
+                var view = RemoteAvatarView.Create(seat.transform, handsOnly: true);
+
+                foreach (var smr in seat.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.forceMatrixRecalculationPerRender = true;
+                SetLayerRecursive(seat, Layer);
+
+                lightGo = new GameObject("PreviewLight");
+                var light = lightGo.AddComponent<Light>();
+                light.type = LightType.Directional;
+                light.intensity = 1.1f;
+                light.transform.rotation = Quaternion.Euler(40f, -25f, 0f);
+
+                camGo = new GameObject("PreviewCam");
+                var cam = camGo.AddComponent<Camera>();
+                cam.fieldOfView = 40f;
+                cam.nearClipPlane = 0.03f;
+                cam.farClipPlane = 50f;
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = new Color(0.60f, 0.62f, 0.65f);
+                cam.cullingMask = 1 << Layer;
+
+                // 休め右手は席ローカル (0.20,-0.42,0.32) 付近＝卓上前方。手（約15cm）に寄る
+                var aim = new Vector3(0.28f, -0.40f, 0.36f);
+                Shot(cam, dir, "10_handrole_initial_front.png", aim + new Vector3(0f, 0.06f, -0.55f), aim);
+                Shot(cam, dir, "11_handrole_initial_threequarter.png", aim + new Vector3(-0.4f, 0.28f, -0.4f), aim);
+                Shot(cam, dir, "12_handrole_initial_top.png", aim + new Vector3(0f, 0.6f, -0.12f), aim);
+                Debug.Log($"[TableDuo] 手役 初期ポーズ preview → {dir}\n" +
+                          "10_handrole_initial_front / 11_..threequarter / 12_..top（接続直後 ShowAtRest）");
+            }
+            finally
+            {
+                if (seat != null) Object.DestroyImmediate(seat);
+                if (camGo != null) Object.DestroyImmediate(camGo);
+                if (lightGo != null) Object.DestroyImmediate(lightGo);
+                instProp?.SetValue(null, prevInstance);
+                HandSkeletonLayout.CapturedL = prevL;
+                HandSkeletonLayout.CapturedR = prevR;
+            }
+        }
+
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Self Body (first-person)", priority = 211)]
         public static void CaptureSelfBody()
         {
