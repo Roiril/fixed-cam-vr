@@ -66,6 +66,20 @@ if (-not $NoHost) {
     if (-not (Test-Path $exeFull)) {
         Write-Error "デスクトップビルドが見つかりません: $exeFull`n先に Unity メニュー『Tools/FixedCamVr/Diagnostics/Build TableDuo Desktop (L0 test)』でビルドしてください。"
     }
+    # host/client のビルド鮮度チェック: desktop が APK より古いとシーン/NetworkObject 構成が食い違い、
+    # クライアントの RPC（掴み等）が host 側で「Deferred messages ... OnSpawn」で黙って捨てられる
+    # （2026-07-10 実害: 駒が掴めない）。両方同時に焼き直すのが正。
+    # ⚠ exe の mtime は当てにならない（Unity のインクリメンタルビルドはランチャー stub を書き換えない）。
+    # ビルド内容の実体 = TableDuo_Data/level0（シーンデータ）の mtime で比較する
+    $apkFull = Join-Path $repo "Builds/tableduo.apk"
+    $dataSentinel = Join-Path $repo "Builds/tableduo-desktop/TableDuo_Data/level0"
+    if ((Test-Path $apkFull) -and (Test-Path $dataSentinel)) {
+        $exeTime = (Get-Item $dataSentinel).LastWriteTime
+        $apkTime = (Get-Item $apkFull).LastWriteTime
+        if ($exeTime -lt $apkTime.AddMinutes(-30)) {
+            Write-Warning "desktop ビルド($exeTime) が APK($apkTime) より大幅に古い。シーン/NetworkObject 構成が食い違うと掴み等の RPC が host で捨てられます。『Build TableDuo Desktop (L0 test)』で焼き直し推奨。"
+        }
+    }
     # 旧ホストの残骸掃除: プロセスが残っていると MarkServer(7780) が bind できず reset_board が死ぬ。
     # kill 後もゴースト socket が 7780 を掴み続けることがある（その場合は接続/記録に無影響・PC 再起動で解消）
     Get-Process TableDuo -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

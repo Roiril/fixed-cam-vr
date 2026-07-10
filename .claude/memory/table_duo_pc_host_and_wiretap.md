@@ -17,7 +17,7 @@ PC (NGO host・spectator・L0 desktop build)  ← Quest A: client/full(人)  ←
 - **唯一のデメリット**: 手→PC→人 の 2 ホップで named-message tick flush の +平均8ms/最悪16ms（TickRate=60）。まず WireTap+clockOffset で実測してから TickRate 上げを判断。
 - **成立にコード変更ほぼ不要**: 既存の spectator ロール（[SpectatorController](../../Assets/TableDuo/Scripts/Net/SpectatorController.cs)）+ L0 デスクトップビルド（[[table_duo_l0_desktop_test]]）+ pose/layout リレー + 自動再接続がそのまま効く。maxClients=3 で host+2 がちょうど。
 - **起動**: `tools/tableduo-pc-host.ps1`（PC の LAN IP 自動解決 → PC host を `-tdvMode host -tdvRole spectator -tdvL0 on -logFile` で起動 → Quest 2 台を client/full・client/hand で adb 起動。Link ダイアログ潰しも内包。`-NoHost` で Quest だけ繋ぎ直し、`-HandVariant`/`-DryRun` 可）。
-- **前提**: PC は `Builds/tableduo-desktop/TableDuo.exe`（`Build TableDuo Desktop (L0 test)`）が最新であること。PoseCodec を変えたら desktop/Quest 両方焼き直す。PC の UDP 7777 受信を firewall 許可（初回）。
+- **前提**: PC は `Builds/tableduo-desktop/TableDuo.exe`（`Build TableDuo Desktop (L0 test)`）が最新であること。**PoseCodec だけでなくシーン/NetworkObject 構成（駒の追加・prefab 変更）でも desktop/Quest 両方焼き直す**。片方だけ更新すると NetworkObjectId が食い違い、RPC が `[Netcode] Deferred messages ... OnSpawn ... not received within 10 second(s)` で黙って捨てられる（2026-07-10 実害: 駒が掴めない＝クライアントの Grab RPC を古い host が解決できず破棄。クライアント側はピンチ検出も RPC 送信も正常に見えるので host ログの Deferred 警告が唯一の手がかり）。`tableduo-pc-host.ps1` が exe と apk の mtime を比較して古ければ警告する。PC の UDP 7777 受信を firewall 許可（初回）。
 
 ## ソロ実機検証（Quest 1 台被り + マネキン 1 台）: tdv_fake=on
 片方の Quest をアプリ起動状態でマネキン頭に被せ host に、もう片方を自分が被って検証する用。

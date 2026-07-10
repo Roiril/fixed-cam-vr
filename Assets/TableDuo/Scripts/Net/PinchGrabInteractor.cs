@@ -69,7 +69,11 @@ namespace TableDuoVr.Net
             if (pinching && !_wasPinching[hand])
             {
                 Vector3 pinchLocal = PinchPointLocal(hand == 1, pose);
-                var target = FindNearestFree(_seat!.TransformPoint(pinchLocal));
+                Vector3 pinchWorld = _seat!.TransformPoint(pinchLocal);
+                var target = FindNearestFree(pinchWorld);
+                // 診断（[TDV-GRAB]）: ピンチ立ち上がりごとに最寄り駒の距離と半径内外を出す。
+                // 「掴めない」の切り分け用（ピンチ未検出ならこのログ自体が出ない）
+                LogNearestDiag(hand, pinchWorld, target);
                 if (target != null)
                 {
                     target.RequestGrabServerRpc((byte)hand);
@@ -137,6 +141,27 @@ namespace TableDuoVr.Net
                 return (_landmarks[2] + _landmarks[3]) * 0.5f; // thumbTip + indexTip
             }
             return wrist;
+        }
+
+        /// <summary>診断: ピンチ点から最寄り Grabbable までの距離（半径無関係）と半径内外をログ。</summary>
+        private void LogNearestDiag(int hand, Vector3 pinchWorld, Grabbable? picked)
+        {
+            Grabbable? nearest = null;
+            float bestSqr = float.PositiveInfinity;
+            int total = 0, free = 0;
+            foreach (var g in FindObjectsOfType<Grabbable>())
+            {
+                if (g == null) continue;
+                total++;
+                if (g.IsHeld) continue;
+                free++;
+                float sqr = (g.transform.position - pinchWorld).sqrMagnitude;
+                if (sqr < bestSqr) { bestSqr = sqr; nearest = g; }
+            }
+            float dist = nearest != null ? Mathf.Sqrt(bestSqr) : -1f;
+            Debug.Log($"[TDV-GRAB] hand{hand} pinch! pinchWorld={pinchWorld} grabbables total={total} free={free} " +
+                      $"nearest={(nearest != null ? nearest.name : "none")} dist={dist:F3}m radius={GrabRadius:F3}m " +
+                      $"→ {(picked != null ? "掴む" : "半径外/対象なし")}");
         }
 
         private Grabbable? FindNearestFree(Vector3 worldPos)
