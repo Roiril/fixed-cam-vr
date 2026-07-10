@@ -9,6 +9,7 @@
 - [mcp_unity_setup.md](mcp_unity_setup.md) - Unity MCP 接続手順（user-scope登録 / `claude mcp add UnityMCP --offline --from mcpforunityserver` / 命名は大文字 UnityMCP / 再起動必須）
 - [unity_pitfalls.md](unity_pitfalls.md) - Quad向き / OVRCameraRig Gameビュー / Scene YAML直編集 / Texture初期化 / UnityMCP execute_codeのWindows長さ制限 / manage_componentsのComponentID要件 / Texture2D.width=aspect真値 / DroidCam単一クライアント / OVRCustomHandPrefabのCustomBones全null（手ポーズ駆動は名前マッピング）
 - [camera_fleet.md](camera_fleet.md) - 配信スマホ実機 3 台構成（iPhone 13 Pro=IP Camera Lite + Pixel 7a/7 Pro=streamer、スロット割当・超広角可・IPは揮発）
+- [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) - 配信元をスマホ→Tapo C120(RTSP)化する案：go2rtc中継ならUnity改修ゼロ・遅延だけが唯一のリスク（要1台実測）
 - [iphone_camera_streamer_plan.md](iphone_camera_streamer_plan.md) - iPhone配信カメラ方針：デモはIP Cam Lite継続（ウォーターマーク許容）、自作するならPWA+WSリレー設計（Quest無改造）。Unity iOSはMac必須で却下
 - [droidcam_endpoint.md](droidcam_endpoint.md) - 【フォールバック専用】DroidCam IP/ポート（標準は fixed-cam-streamer）
 - [verification_workflow.md](verification_workflow.md) - 検証は build/install せず Link+Play+MCP read_console（ユーザー確定方針）。build ループの罠と例外ケース
