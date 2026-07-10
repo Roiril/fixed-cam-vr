@@ -189,7 +189,7 @@ namespace TableDuoVr.EditorTools
             CreateSeat(seats.transform, 1, new Vector3(0f, eyeHeight, 0.56f), 180f);   // 手だけアバター席
 
             // 卓上 = ボードゲーム「海底探検（Deep Sea Adventure）」一式（旧: Kenney 食べ物プロップ＋絵カードを置換）。
-            // 潜水艦ボードを中央奥に静置、宝物チップ/裏トークン/空気マーカーを手前にグリッド配置、駒2+サイコロは掴める。
+            // 潜水艦ボードを中央奥に配置、宝物チップ/裏トークン/空気マーカーを手前にグリッド配置。卓上プロップは全部掴める。
             // GLB は glTFast 取込（Assets/TableDuo/ThirdParty/DeepSeaAdventure/glb、テクスチャ埋込・実スケール=メートル）。
             var props = new GameObject("Props");
             props.transform.SetParent(root.transform, false);
@@ -506,7 +506,8 @@ namespace TableDuoVr.EditorTools
 
         /// <summary>
         /// 卓上にボードゲーム「海底探検」一式を**プレイ可能な形**で配置（G1・2026-07-02）。
-        /// 潜水艦ボードは静置、宝物チップ16/裏トークン5/空気マーカー/駒2/サイコロ2 は全部掴める。
+        /// 卓上プロップ（潜水艦ボード/宝物チップ/裏トークン/空気マーカー/駒2/サイコロ2）は全部掴める
+        /// （ボード・裏トークンは物理なし kinematic 追従、2026-07-10 ユーザー要望で掴めるよう変更）。
         /// ルール裁定はコード化しない（人間が運用 = 無言交渉そのものが研究データ）。
         /// チップ類はピンチで拾いやすいよう実物の 1.6 倍。ピースは物理（Rigidbody + TableProps レイヤー）、
         /// サイコロは物理転がし + 静止面読み取り（DiceRoller）。
@@ -565,11 +566,14 @@ namespace TableDuoVr.EditorTools
             const float boardChipGap = 0.008f;    // 船下端とチップ先端の隙間
             float board0X = pts[0].x;
             float boardZ = pts[0].z + chip0TipReach + boardChipGap + boardHalfDepth;
-            PlaceModelRealScale($"{DsaGlbDir}/submarine_board.glb", parent, "DSA_Board",
-                new Vector3(board0X, topY, boardZ), 180f, grabbable: false);
+            // 潜水艦ボードも掴める（2026-07-10 ユーザー要望）。薄板なので物理は付けない（kinematic 追従のみ）
+            var board = PlaceModelRealScale($"{DsaGlbDir}/submarine_board.glb", parent, "DSA_Board",
+                new Vector3(board0X, topY, boardZ), 180f, grabbable: true);
+            SetSurfaceClamp(board, topY, cx, cz, hx, hz);
 
-            // 裏トークン（丸 X）20 枚を人役側の左（-X）に 2 山で積む。掴めない静置マーカー。
-            PlaceBlankStacks(parent, topY, cx - (hx - edge - 0.05f), cz - (hz - edge - 0.06f), chipScale);
+            // 裏トークン（丸 X）20 枚を人役側の左（-X）に 2 山で積む。掴める（2026-07-10 ユーザー要望）。
+            PlaceBlankStacks(parent, topY, cx - (hx - edge - 0.05f), cz - (hz - edge - 0.06f), chipScale,
+                cx, cz, hx, hz);
 
             // 駒2 + サイコロ2 + 空気マーカーは潜水艦の脇（右, +X 側）に一列。掴める＋物理。
             float sideX = cx + (hx - edge - 0.06f);
@@ -672,8 +676,10 @@ namespace TableDuoVr.EditorTools
             return pts;
         }
 
-        /// <summary>裏トークン（back_circle・丸 X）20 枚を 2 山（各 10 枚）で積む。掴めない静置マーカー。</summary>
-        private static void PlaceBlankStacks(Transform parent, float topY, float baseX, float baseZ, float scale)
+        /// <summary>裏トークン（back_circle・丸 X）20 枚を 2 山（各 10 枚）で積む。掴める＋物理
+        /// （離すと卓面へ落ちる。2026-07-10 ユーザー要望「落としても机まで落ちるように」）。</summary>
+        private static void PlaceBlankStacks(Transform parent, float topY, float baseX, float baseZ, float scale,
+            float cx, float cz, float hx, float hz)
         {
             const int perStack = 10;
             const float stackGap = 0.075f; // 2 山の間隔
@@ -685,7 +691,9 @@ namespace TableDuoVr.EditorTools
                 for (int k = 0; k < perStack; k++)
                 {
                     var tok = PlaceModelRealScale($"{DsaGlbDir}/back_circle.glb", parent,
-                        $"DSA_blank_{s}_{k}", new Vector3(x, y, baseZ), 0f, grabbable: false, scale: scale);
+                        $"DSA_blank_{s}_{k}", new Vector3(x, y, baseZ), 0f, grabbable: true, scale: scale,
+                        physics: true);
+                    SetSurfaceClamp(tok, topY, cx, cz, hx, hz);
                     if (tok != null && thickness <= 0f)
                     {
                         var b = WorldBounds(tok);

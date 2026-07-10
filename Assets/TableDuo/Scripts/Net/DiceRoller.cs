@@ -7,7 +7,8 @@ namespace TableDuoVr.Net
     /// <summary>
     /// 海底探検のサイコロ（物理転がし方式・2026-07-08 に乱数確定方式から置換）。
     /// 離すと Grabbable が投擲速度を与えて物理で転がり、**静止したらサーバが上面を読んで出目を確定**する。
-    /// 確定した出目はダイス上方に表示（読み取り齟齬防止）し、CSV にも残る（DiceRolled → SessionLogger）。
+    /// 出目は CSV に残る（DiceRolled → SessionLogger）。VR 内の数字表示は出さない
+    /// （2026-07-10 ユーザー決定: 「同じサイコロを見る」体験だけでよい — 読み取りも対面の共同行為）。
     /// 縁立ち等で静止しない場合はタイムアウトで強制スリープ → その時点の上面で確定。
     /// Grabbable + Rigidbody と同じ GameObject に付ける（TableDuoSceneSetup が配線）。
     /// </summary>
@@ -40,8 +41,6 @@ namespace TableDuoVr.Net
         private bool _rolling;
         private float _rollStart;
         private float _restSince = -1f;
-        private TextMesh? _label;
-        private Transform? _labelRoot;
 
         private void Awake()
         {
@@ -51,64 +50,49 @@ namespace TableDuoVr.Net
             {
                 Debug.LogError($"[TableDuo] DiceRoller {name}: Rigidbody がありません（物理転がし前提。Setup TableDuo Scene を再実行）");
             }
-            BuildLabel();
-        }
-
-        // 出目表示: ダイス上方に浮かぶ数字（全クライアントローカル生成・値だけ同期）
-        private void BuildLabel()
-        {
-            _labelRoot = new GameObject("DiceValue").transform;
-            _labelRoot.SetParent(transform, false);
-            _labelRoot.localPosition = new Vector3(0f, 0.09f, 0f);
-            var go = new GameObject("Text");
-            go.transform.SetParent(_labelRoot, false);
-            _label = go.AddComponent<TextMesh>();
-            _label.anchor = TextAnchor.MiddleCenter;
-            _label.alignment = TextAlignment.Center;
-            _label.fontSize = 64;
-            _label.characterSize = 0.02f; // fontSize64 × 0.02 ≈ 高さ 4cm 弱の数字
-            _label.color = new Color(0.95f, 0.9f, 0.3f);
-            _labelRoot.gameObject.SetActive(false);
         }
 
         private void Update()
         {
-            if (IsSpawned && IsServer && _grab != null)
+            if (!IsSpawned || !IsServer || _grab == null) return;
+
+            bool held = _grab.IsHeld;
+            if (held)
             {
-                bool held = _grab.IsHeld;
-                if (held)
+                _lastHolder = _grab.HolderClientId;
+                if (!_wasHeld)
                 {
-                    _lastHolder = _grab.HolderClientId;
-                    if (!_wasHeld)
-                    {
-                        // 掴み直したら前回の出目・進行中のロールを破棄
-                        _rolling = false;
-                        _value.Value = 0;
-                    }
-                }
-                else if (_wasHeld)
-                {
-                    // リリース = ロール開始（投擲速度は Grabbable が与えている）
-                    _rolling = true;
-                    _rollStart = Time.time;
-                    _restSince = -1f;
+                    // 掴み直したら前回の出目・進行中のロールを破棄
+                    _rolling = false;
                     _value.Value = 0;
                 }
-                if (_rolling && !held) TickRoll();
-                _wasHeld = held;
             }
-
-            // 全員: 転がり中・保持中は隠し、確定後は表示 + カメラへビルボード
-            if (_label == null || _labelRoot == null) return;
-            bool show = _value.Value > 0 && (_grab == null || !_grab.IsHeld);
-            if (_labelRoot.gameObject.activeSelf != show) _labelRoot.gameObject.SetActive(show);
-            if (!show) return;
-            _label.text = _value.Value.ToString();
-            var cam = Camera.main;
-            if (cam != null)
+            else if (_wasHeld)
             {
-                _labelRoot.rotation = Quaternion.LookRotation(_labelRoot.position - cam.transform.position);
+                // リリース = ロール開始（投擲速度は Grabbable が与えている）
+                _rolling = true;
+                _rollStart = Time.time;
+                _restSince = -1f;
+                _value.Value = 0;
+                AddTumble();
             }
+            if (_rolling && !held) TickRoll();
+            _wasHeld = held;
+        }
+
+        /// <summary>
+        /// リリース直後にランダムなタンブル回転を与える。ピンチ投げは手首回転がほぼ乗らず、
+        /// Grabbable の角速度推定が ~0 のまま飛んで出目が保存される（＝ランダム感が無い）ため、
+        /// 投げの強さ（線速度）に応じた回転をサーバが必ず追加する。そっと置いた時（低速）は乱さない。
+        /// </summary>
+        private void AddTumble()
+        {
+            if (_rb == null || _rb.isKinematic) return;
+            float speed = _rb.velocity.magnitude;
+            if (speed < 0.3f) return; // 置いただけ（投げていない）は回さない
+            // 0.3m/s→約7rad/s、1.5m/s 以上→上限18rad/s（maxAngularVelocity=20 の内側）
+            float tumble = Mathf.Clamp(4f + speed * 9f, 7f, 18f);
+            _rb.angularVelocity = Random.onUnitSphere * tumble;
         }
 
         /// <summary>サーバ: 転がり中の静止監視。静止確定 or タイムアウトで出目を読む。</summary>
