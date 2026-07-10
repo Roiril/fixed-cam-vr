@@ -55,6 +55,8 @@ namespace TableDuoVr.Net
         private IHandPoseSource? _source;
         private HandPoseSampler? _sampler;
         private Transform? _seat;
+        private System.Action? _onOwnerVariantChanged;
+        private NetworkVariable<byte>.OnValueChangedDelegate? _onRemoteFlagsChanged;
         private uint _seq;
         private float _nextSend;
         private bool _layoutSent; // 手 bind 構造を host へ送ったか（FK を本人の手寸法で行うため・1回限り）
@@ -112,18 +114,28 @@ namespace TableDuoVr.Net
         private void ApplyOwnerRole(StudyConfig.Role role)
         {
             _role.Value = (byte)role;
-            _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
-                | (StudyConfig.OneHandMode ? 2 : 0)
-                | ((byte)StudyConfig.SelectedHandVariant << 2)
-                // bit4=自己ボディ。人役ローカル描画専用の条件なので人役のみ立てる
-                // （手役は描画されない＝ StudyConfig.ShowSelfBody 既定 on でも手役 CSV に selfBody=1 を刻まない）
-                | ((role == StudyConfig.Role.Full && StudyConfig.ShowSelfBody) ? 16 : 0));
+            WriteStudyFlags(role);
+            // Y トグル等でバリアントが変わったら申告値を書き直す（リモート側の描画が追従する）。
+            // 調査フラグ起動時は HandVariantWatcher がトグル自体を無効化するので、これが動くのは気軽な設営時のみ
+            _onOwnerVariantChanged = () => { if (IsSpawned && IsOwner) WriteStudyFlags(role); };
+            StudyConfig.HandVariantChanged += _onOwnerVariantChanged;
             SetupOwner(role);
             // client の壁時計オフセットを host CSV に刻む（captureMs 整列用）。host 自身は offset=0 で不要
             if (!IsServer)
             {
                 PingClockServerRpc(System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             }
+        }
+
+        /// <summary>調査条件フラグを NetworkVariable へ書く（スポーン時 + バリアント切替時）。</summary>
+        private void WriteStudyFlags(StudyConfig.Role role)
+        {
+            _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
+                | (StudyConfig.OneHandMode ? 2 : 0)
+                | ((byte)StudyConfig.SelectedHandVariant << 2)
+                // bit4=自己ボディ。人役ローカル描画専用の条件なので人役のみ立てる
+                // （手役は描画されない＝ StudyConfig.ShowSelfBody 既定 on でも手役 CSV に selfBody=1 を刻まない）
+                | ((role == StudyConfig.Role.Full && StudyConfig.ShowSelfBody) ? 16 : 0));
         }
 
         // --- 役割の自動割当（サーバ裁定・接続順。tdv_role 明示が無い client 用） ---
@@ -176,6 +188,16 @@ namespace TableDuoVr.Net
         public override void OnNetworkDespawn()
         {
             _role.OnValueChanged -= OnRoleSynced;
+            if (_onOwnerVariantChanged != null)
+            {
+                StudyConfig.HandVariantChanged -= _onOwnerVariantChanged;
+                _onOwnerVariantChanged = null;
+            }
+            if (_onRemoteFlagsChanged != null)
+            {
+                _studyFlags.OnValueChanged -= _onRemoteFlagsChanged;
+                _onRemoteFlagsChanged = null;
+            }
             if (_recenterWatcher != null && _onRecentered != null)
             {
                 _recenterWatcher.Recentered -= _onRecentered;
@@ -340,6 +362,14 @@ namespace TableDuoVr.Net
             // 端末ごとに tdv_marker が食い違っても、提示される条件＝手役の申告値で全視点一致させる）
             _view = RemoteAvatarView.Create(seat, handsOnly: role == StudyConfig.Role.Hand,
                 showHeadMarker: ShowHeadMarker, originClientId: OwnerClientId);
+            // 手バリアントは「相手端末の申告値」で描く（見る側のローカル選択ではなく）。
+            // Y トグルで owner が _studyFlags を書き直すと OnValueChanged で追従再構築される
+            _view.SetHandVariant(DeclaredHandVariant);
+            _onRemoteFlagsChanged = (_, _) =>
+            {
+                if (_view != null) _view.SetHandVariant(DeclaredHandVariant);
+            };
+            _studyFlags.OnValueChanged += _onRemoteFlagsChanged;
             if (ConnectionManager.Instance != null)
             {
                 ConnectionManager.Instance.RemotePoseReceived += OnRemotePose;

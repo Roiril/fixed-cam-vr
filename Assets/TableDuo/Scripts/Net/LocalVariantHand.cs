@@ -8,13 +8,15 @@ namespace TableDuoVr.Net
     /// 自分のローカル手（OVRHandPrefab）をバリアント（Realistic/Robot）メッシュで表示する。
     /// Default 時は何もせず Meta 白手をそのまま見せる。
     ///
-    /// 駆動方針: バリアントメッシュを **ライブ skeleton の手首 bone の子**に吊るす。手首の位置・向きは
-    /// 親（手首 bone）の追従で自動的に付き、指だけを毎フレーム skeleton のローカル回転からバインド差分
-    /// リターゲット（<see cref="HandRetarget"/>）で曲げる。リモート手（<see cref="RemoteAvatarView"/>）と
-    /// 同じ材質・スケール・配置ロジック（<see cref="RemoteHandMeshProvider.BuildExternalHand"/>）を共有する。
+    /// 駆動方針: バリアントメッシュを **手アンカー（skeleton.transform ＝ OVRHand と同じ GameObject）**の子に
+    /// 吊るし、手首 bone (i=0) 含む全 bone を毎フレーム skeleton のローカル回転からバインド差分リターゲット
+    /// （<see cref="HandRetarget"/>）で駆動する。検証済みのリモート/プレビュー経路
+    /// （RemoteHandView / TableDuoHandVariantPreview: anchor=wristRot ＋ i=0 から全 retarget）と 1:1 の構造。
+    /// リモート手と同じ材質・スケール・配置ロジック（<see cref="RemoteHandMeshProvider.BuildExternalHand"/>）を共有する。
     ///
-    /// ⚠ 手首の向きは親追従なので、バリアントリグのバインド軸が OVR とずれると定数分だけ傾く可能性がある
-    /// （指の曲がり軸同様、実機で最終確認）。
+    /// ⚠ ライブ手首 *bone*（Bones[0].Transform）に identity で吊るしてはいけない — アンカー回転 ×
+    /// Bones[0].localRotation が階層で既に乗るため、パックリグの手首 bind 差が未補正のまま出て
+    /// 手首が約90°ズレ・指の曲げ軸も観察上崩れる（2026-07-10 実機で実害）。
     /// </summary>
     public sealed class LocalVariantHand : MonoBehaviour
     {
@@ -27,6 +29,7 @@ namespace TableDuoVr.Net
         private HandVariant _builtVariant = HandVariant.Default;
         private bool _buildFailed; // 構築失敗ラッチ（毎フレ Instantiate+Destroy の 90Hz チャーン防止。バリアント切替でクリア）
         private bool _subscribed;
+        private OVRMeshRenderer? _metaMeshRenderer; // 白手の可視制御主体（metaMesh と同 GameObject・遅延解決）
 
         private void OnEnable()
         {
@@ -39,7 +42,7 @@ namespace TableDuoVr.Net
         {
             if (_subscribed) { StudyConfig.HandVariantChanged -= OnVariantChanged; _subscribed = false; }
             Teardown();
-            if (metaMesh != null) metaMesh.enabled = true; // 隠したまま無効化されないよう戻す
+            SetMetaHandVisible(true); // 隠したまま無効化されないよう戻す
         }
 
         private void OnVariantChanged()
@@ -52,7 +55,18 @@ namespace TableDuoVr.Net
         private void ApplyVariantVisibility()
         {
             bool external = HandVariantTable.IsExternalRig(StudyConfig.SelectedHandVariant);
-            if (metaMesh != null) metaMesh.enabled = !external; // 外部リグ時は白手を隠す（構築は LateUpdate）
+            SetMetaHandVisible(!external); // 外部リグ時は白手を隠す（構築は LateUpdate）
+        }
+
+        /// <summary>Meta 白手の表示/非表示。SMR だけ切っても OVRMeshRenderer.Update の
+        /// ConfidenceBehavior.ToggleRenderer が毎フレーム enabled を復活させるため、
+        /// 上流の OVRMeshRenderer ごと止める（LocalSelfBody→HandPoseSampler と同じ手法）。</summary>
+        private void SetMetaHandVisible(bool visible)
+        {
+            if (metaMesh == null) return;
+            if (_metaMeshRenderer == null) _metaMeshRenderer = metaMesh.GetComponent<OVRMeshRenderer>();
+            if (_metaMeshRenderer != null) _metaMeshRenderer.enabled = visible;
+            metaMesh.enabled = visible;
         }
 
         private void Teardown()
@@ -82,19 +96,21 @@ namespace TableDuoVr.Net
                 if (_buildFailed && _builtVariant == variant) return; // 失敗ラッチ（切替まで再試行しない）
                 Teardown();
                 _builtVariant = variant;
-                var wristBone = skeleton.Bones[0].Transform; // ライブ手首 bone。ここに吊るせば追従は自動
-                _built = provider.BuildExternalHand(wristBone, isRight, variant);
-                if (metaMesh != null) metaMesh.enabled = false;
+                // 手アンカー（回転=送信 wristRot と同じフレーム）に吊るす。[TDV-WRIST] 実測で
+                // アンカーと実手首 bone の位置差は delta=0 のため位置整列もこれで足りる
+                _built = provider.BuildExternalHand(skeleton.transform, isRight, variant);
+                SetMetaHandVisible(false);
                 if (_built == null) { _buildFailed = true; return; }
             }
 
-            // 指（BoneId>=2）をリターゲット。手首(0)/前腕(1)は親の手首 bone 追従に任せる（二重回転回避）。
+            // 全 bone をリターゲット（bone[0]=手首 も Solve でフレーム補正を載せる。
+            // bone[1]=前腕は HandVariantTable 未マップ → bones[1]=null で自動 skip）。
             var bones = _built.Bones;
             var varBind = _built.VarBind;
             var live = skeleton.Bones;
             var bind = skeleton.BindPoses;
             int n = Mathf.Min(bones.Length, live.Count);
-            for (int i = 2; i < n; i++)
+            for (int i = 0; i < n; i++)
             {
                 if (bones[i] == null) continue;
                 Quaternion ovrBind = (bind != null && i < bind.Count)

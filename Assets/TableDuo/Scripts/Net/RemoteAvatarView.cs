@@ -130,6 +130,9 @@ namespace TableDuoVr.Net
                 }
                 _left = new RemoteHandView(transform, "HandL", isRight: false);
                 _right = new RemoteHandView(transform, "HandR", isRight: true);
+                // layout 解決（送信元本人優先）を Tick 外の構築（ShowAtRest / バリアント切替）にも効かせる
+                _left.LayoutResolver = () => ResolveLayout(right: false);
+                _right.LayoutResolver = () => ResolveLayout(right: true);
                 // 接続＝アバター出現。右手（片手モードの主役）を休めポーズで即表示し、
                 // トラッキングが来たら追従する（手が視界外でも「居る」ことが伝わる）。
                 _right.ShowAtRest(HandRestLocalPosR, HandRestLocalRotR);
@@ -147,6 +150,8 @@ namespace TableDuoVr.Net
                     BuildHumanUpperBody();
                     _left = new RemoteHandView(transform, "HandL", isRight: false);
                     _right = new RemoteHandView(transform, "HandR", isRight: true);
+                    _left.LayoutResolver = () => ResolveLayout(right: false);
+                    _right.LayoutResolver = () => ResolveLayout(right: true);
                 }
             }
 
@@ -158,6 +163,21 @@ namespace TableDuoVr.Net
         {
             _left?.MarkVariantDirty();
             _right?.MarkVariantDirty();
+        }
+
+        /// <summary>相手端末が申告した手バリアントで描く（ローカル選択より優先）。
+        /// TableDuoPlayer が _studyFlags 同期値から設定・更新する。プレビュー/リプレイ
+        /// （origin 無し）は呼ばれず、従来どおりローカル StudyConfig で描く。</summary>
+        public void SetHandVariant(HandVariant variant)
+        {
+            bool changed = false;
+            if (_left != null && _left.VariantOverride != variant) { _left.VariantOverride = variant; changed = true; }
+            if (_right != null && _right.VariantOverride != variant) { _right.VariantOverride = variant; changed = true; }
+            if (changed)
+            {
+                _left?.MarkVariantDirty();
+                _right?.MarkVariantDirty();
+            }
         }
 
         private void OnDestroy()

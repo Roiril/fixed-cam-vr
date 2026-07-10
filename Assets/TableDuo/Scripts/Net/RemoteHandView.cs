@@ -14,6 +14,21 @@ namespace TableDuoVr.Net
         /// <summary>関節球・骨・wrist proxy の共有マテリアル（RemoteAvatarView.Build が設定）。</summary>
         internal static Material? AvatarMat;
 
+        /// <summary>相手端末が申告した手バリアント（_studyFlags 同期値）。null ならローカル StudyConfig で描く
+        /// （プレビュー/リプレイ用フォールバック）。RemoteAvatarView.SetHandVariant が設定する。</summary>
+        internal HandVariant? VariantOverride;
+
+        /// <summary>手 layout の解決（送信元本人の layout 優先。RemoteAvatarView.Build が設定）。
+        /// null なら受信側 Captured へフォールバック（プレビュー/リプレイ用）。Tick 外（ShowAtRest /
+        /// MarkVariantDirty / 外部リグ降格判定）でも送信元 layout を参照できるようにする —
+        /// 受信側 Captured だけ見ると、手キャプチャの無い PC 観戦ホストで永遠に Default 降格
+        /// ＋ Tick の昇格再構築が毎フレーム空回りする。</summary>
+        internal System.Func<HandSkeletonLayout?>? LayoutResolver;
+
+        private HandSkeletonLayout? ResolveLayoutOrCaptured()
+            => LayoutResolver?.Invoke()
+               ?? (_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL);
+
         private readonly Transform _root;
         private readonly Transform _wristProxy;
         private readonly bool _isRight;
@@ -55,8 +70,8 @@ namespace TableDuoVr.Net
             _root.localPosition = restLocalPos;
             _root.localRotation = restLocalRot;
             _root.gameObject.SetActive(true);
-            // 受信側の手 bind（layout）でメッシュ/カプセルを先に組む（bind=開いた手の休めポーズで見える）
-            TryBuild(_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL);
+            // 手 bind（送信元 layout 優先）でメッシュ/カプセルを先に組む（bind=開いた手の休めポーズで見える）
+            TryBuild(ResolveLayoutOrCaptured());
             // 外部リグ（Realistic/Robot）は bind の手首向きが Meta と違い、休めで指が上を向く。
             // メッシュの指方向を測って「指=前やや下・手のひら下」に揃える（rest 限定。tracking では _root=wristRot で上書き）。
             if (_varBind != null && _meshBones != null) AlignRestForward();
@@ -104,7 +119,7 @@ namespace TableDuoVr.Net
             if (!_meshTried)
             {
                 _meshTried = true;
-                if (TryBuildMeshHandSafe())
+                if (TryBuildMeshHandSafe(layout))
                 {
                     _built = true;
                     _wristProxy.gameObject.SetActive(false);
@@ -161,7 +176,7 @@ namespace TableDuoVr.Net
                 string mode = _meshBones != null ? (_varBind != null ? "mesh/retarget" : "mesh/direct")
                     : (_bones != null ? "capsule" : "none");
                 int driveN = _meshBones != null ? CountNonNull(_meshBones) : (_bones?.Length ?? 0);
-                Debug.Log($"[TDV-DRAW] R variant={StudyConfig.SelectedHandVariant} mode={mode} " +
+                Debug.Log($"[TDV-DRAW] R variant={VariantOverride ?? StudyConfig.SelectedHandVariant} mode={mode} " +
                           $"driveN={driveN} boneRotN={boneRots.Length} tracked={tracked} " +
                           $"targetEuler=({tgt.x:F0},{tgt.y:F0},{tgt.z:F0}) " +
                           $"appliedEuler=({app.x:F0},{app.y:F0},{app.z:F0}) " +
@@ -227,11 +242,11 @@ namespace TableDuoVr.Net
         }
 
         /// <summary>例外で Tick ループ全体を殺さない/中途半端な inst を残さないラッパ。</summary>
-        private bool TryBuildMeshHandSafe()
+        private bool TryBuildMeshHandSafe(HandSkeletonLayout? layout)
         {
             try
             {
-                return TryBuildMeshHand();
+                return TryBuildMeshHand(layout);
             }
             catch (System.Exception e)
             {
@@ -248,17 +263,16 @@ namespace TableDuoVr.Net
         /// （OVRCustomSkeleton.CustomBones は package 同梱状態で未マッピング＝全 null のため使えない。
         /// これに頼ると指ボーンが一切回らず bind ポーズ＝開いた手で固定される）。供給が無ければ false。
         /// </summary>
-        private bool TryBuildMeshHand()
+        private bool TryBuildMeshHand(HandSkeletonLayout? layout)
         {
             var provider = RemoteHandMeshProvider.Instance;
             if (provider == null) return false;
-            var variant = StudyConfig.SelectedHandVariant;
+            var variant = VariantOverride ?? StudyConfig.SelectedHandVariant;
 
-            // 外部リグ（Realistic/Robot）は受信側の手 layout（Captured）を ovrBind に使う。
-            // 手キャプチャの無い環境（観戦 PC の Editor Play 等）では layout=null → ovrBind=identity で
-            // 指の曲がりが別物になるため、Default 白手（bind 一致・直接代入）へフォールバックする
-            if (HandVariantTable.IsExternalRig(variant)
-                && (_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL) == null)
+            // 外部リグ（Realistic/Robot）は手 layout（送信元リレー優先）を ovrBind に使う。
+            // layout=null → ovrBind=identity で指の曲がりが別物になるため、
+            // Default 白手（bind 一致・直接代入）へフォールバックする
+            if (HandVariantTable.IsExternalRig(variant) && layout == null)
             {
                 Debug.LogWarning($"[TableDuo] 受信側の手 layout が無い（キャプチャ前/観戦 PC 等）→ {variant} はリターゲット不能。Default 白手で暫定表示（layout が来たら本来のバリアントへ再構築）");
                 variant = HandVariant.Default;
@@ -330,7 +344,7 @@ namespace TableDuoVr.Net
             // ロスト凍結中の切替とも、白キューブのままトラッキング再開を待つ状態を作らない）
             if (_root.gameObject.activeSelf)
             {
-                TryBuild(_isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL);
+                TryBuild(ResolveLayoutOrCaptured());
                 // rest 限定の向き合わせ。追跡済み（凍結中含む）の手首向きは変えない
                 if (!_everTracked && _varBind != null && _meshBones != null) AlignRestForward();
             }

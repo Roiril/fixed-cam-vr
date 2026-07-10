@@ -20,7 +20,10 @@
 - 起動フラグ `tdv_hand`（intent extras / コマンドライン）: `default` / `realistic`（=male/human/skin）/ `robot`。調査は 1 セッション 1 種固定に使う。
 - 実機トグル: **左コントローラ Y（Button.Two / LTouch）**で Default→Realistic→Robot 巡回（[`HandVariantWatcher`](../../Assets/TableDuo/Scripts/Net/HandVariantWatcher.cs)）。ハンドトラッキング中は発火しない（設営・お試し用）。
 - Editor 既定は `ConnectionManager.studyHandVariant`（フラグがあればフラグ優先）。
-- ネット非同期＝各クライアントのローカル表示選択。2 台調査では両端末を同じフラグで起動する。
+- **リモート描画は申告値で同期（2026-07-10 変更）**: 自分の手＝ローカル選択のまま。相手の手は
+  「相手端末が `_studyFlags`（bit2-3）で申告したバリアント」で描く（`TableDuoPlayer` が Y 切替時に
+  申告値を書き直し → 受信側 `RemoteAvatarView.SetHandVariant` が再構築）。ホスト/観戦 PC からも
+  切替が見える。調査では従来どおり両端末を同じ tdv_hand で起動（不一致はエラーログ＋CSV に残る）。
 
 **適用範囲**: 自分の手（[`LocalVariantHand`](../../Assets/TableDuo/Scripts/Net/LocalVariantHand.cs)）＋相手の手（[`RemoteAvatarView`](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs)）の両方。
 
@@ -55,7 +58,20 @@ OVR 24bone をそのまま当てると指が壊れる。対策 2 つ:
 - Robot の指トラッキング精度はフレーム毎に厳密検証はしていない（機械モデルで判別しづらい）。気になれば
   握り拳など明確なジェスチャーのフレームで `Preview Robot Only` を撮って確認する。実機での最終確認は別途。
 
-**実機（Quest）でさらに確認する点**: ローカル手の手首の向き（親追従のバインド軸ずれ）・手の大きさ（`RefHandLenMeters`）。
+**実機バグ4件の根治（2026-07-10）**: Quest 実機で Y 切替時に ①指の曲げ軸異常（Realistic 反り/Robot 横曲がり）
+②白手が二重表示 ③手首で白手と直交（指先が甲方向）④ホストに切替が映らない、が発覚。原因と修正:
+- **①③＝同一原因**: `LocalVariantHand` がメッシュを**ライブ手首 bone に identity で吊るし**、手首 bone(i=0) を
+  リターゲットしていなかった（アンカー回転×bone0.localRotation が階層で二重に乗り、パックリグの手首 bind 差が
+  未補正）。→ 検証済み経路（RemoteHandView / Preview）と同じ「**手アンカー（skeleton.transform）に吊るし
+  i=0 から全 bone を Solve**」に修正。
+- **②**: Meta SDK の `OVRMeshRenderer.Update()`（ConfidenceBehavior.ToggleRenderer）が毎フレーム白手 SMR の
+  enabled を復活させる。SMR だけ切っても無効。→ 上流の **OVRMeshRenderer ごと enabled=false**（LocalSelfBody と同手法）。
+- **④**: バリアントが「ローカル表示選択」設計で申告値（_studyFlags bit2-3）はスポーン時 1 回書き・不一致警告
+  専用だった。→ 切替時に申告値を書き直し、受信側は申告値で描画（上記「リモート描画は申告値で同期」）。
+  あわせて外部リグの Default 降格判定を「受信側 Captured」→「送信元リレー layout」に統一
+  （手キャプチャの無い PC 観戦ホストで恒久降格＋毎フレーム再構築空回りしていた）。
+
+**実機（Quest）でさらに確認する点**: 修正 4 件の実機再確認・手の大きさ（`RefHandLenMeters`）。
 
 **設定変更時**: `TableDuoSceneSetup` を編集したら `Tools/FixedCamVr/Setup/Setup TableDuo Scene` を再実行して
 シーンに焼き直す（provider の変種参照・`LocalVariantHand`・`HandVariantWatcher` を再配線）。
