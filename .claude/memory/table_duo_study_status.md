@@ -103,7 +103,9 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - ⚠ **Editor 観戦運用**: Play 突入中は MCP を叩かない（デッドロック実害）/ Play・ビルドで TableDuoMain に stray camera が serialize されたら `git checkout --` で破棄
 
 ## 未対応（要望待ち）
-片手モードの左右選択/両手 / リプレイ音声同期実運用 / パイロット本番（所有者が手役を一度経験→プロトコル凍結）
+**残タスクの単一入口 → [docs/table-duo/remaining-tasks.md](../../docs/table-duo/remaining-tasks.md)**（実装残・実機確認待ち・パラダイム決定待ち・研究実施前提を集約）。
+**⚠ 研究計画とのフォーク → [docs/table-duo/research-plan-alignment.md](../../docs/table-duo/research-plan-alignment.md)**（cogni-storage 研究計画 v3.1/v2.1 と別設計。着手前に D1 操作者モデルの決定を取る）。
+主な要望待ち: 片手モードの左右選択/両手 / リプレイ音声同期実運用 / パイロット本番（所有者が手役を一度経験→プロトコル凍結）。
 （人側の自分の胴体表示は tdv_selfbody で実装済み＝この行から除去）
 
 ## 2026-07-06〜07 手アバター3大バグ根治 + PC ホスト運用へ移行

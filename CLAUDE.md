@@ -115,6 +115,8 @@ Unity プロジェクトは Web と違い `localhost` でブラウザ検証が�
 
 fixed-cam-vr 本体とは別に、**テーブルを囲む2人マルチプレイ VR**（フルアバター vs 手だけアバター、ハンドトラッキング、NGO LAN 直結）が同居している。
 
+- **残タスクの単一入口**: [docs/table-duo/remaining-tasks.md](docs/table-duo/remaining-tasks.md)（実装残・実機確認待ち・パラダイム決定待ちを集約。作業着手はここから）
+- **研究計画とのアライメント**: [docs/table-duo/research-plan-alignment.md](docs/table-duo/research-plan-alignment.md)（cogni-storage 側の研究計画 v3.1/実験計画 v2.1 と**別設計にフォーク中**。着手前に必読・D1 操作者モデルの決定がブロッカー）
 - 要件: [docs/table-duo/requirements.md](docs/table-duo/requirements.md) / 実行計画: [.claude/plans/2026-06-10_table-duo_phase0-3.md](.claude/plans/2026-06-10_table-duo_phase0-3.md)
 - **体験の目的＝調査**: 手だけアバターとの対人インタラクション観察（手は無言・ジェスチャーのみ）。設計 [docs/table-duo/study-design.md](docs/table-duo/study-design.md) / 実施手順 [docs/table-duo/study-protocol.md](docs/table-duo/study-protocol.md) / 計画 [.claude/plans/2026-06-11_table-duo_study.md](.claude/plans/2026-06-11_table-duo_study.md)
 - コード: `Assets/TableDuo/`（自己完結）。namespace `TableDuoVr.<Feature>`、asmdef `TableDuoVr.*`
