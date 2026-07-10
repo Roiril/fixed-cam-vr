@@ -88,7 +88,9 @@ namespace TableDuoVr.Net
                 _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
                     | (StudyConfig.OneHandMode ? 2 : 0)
                     | ((byte)StudyConfig.SelectedHandVariant << 2)
-                    | (StudyConfig.ShowSelfBody ? 16 : 0)); // bit4=自己ボディ（人役のローカル表示・研究記録用）
+                    // bit4=自己ボディ。人役ローカル描画専用の条件なので人役のみ立てる
+                    // （手役は描画されない＝ StudyConfig.ShowSelfBody 既定 on でも手役 CSV に selfBody=1 を刻まない）
+                    | ((role == StudyConfig.Role.Full && StudyConfig.ShowSelfBody) ? 16 : 0));
                 SetupOwner(role);
                 // client の壁時計オフセットを host CSV に刻む（captureMs 整列用）。host 自身は offset=0 で不要
                 if (!IsServer)

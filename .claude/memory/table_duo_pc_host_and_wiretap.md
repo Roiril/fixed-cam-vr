@@ -89,8 +89,8 @@ ovrBind=受信側 Captured layout（観戦 PC 等 layout 無しは identity 近�
 WireTap の切り分け実績: ワイヤ側 [TDV-WIRE] は滑らか＝データ正常、[TDV-DRAW] target≒applied＝描画忠実、
 なのに見た目が崩れる → スケルトン体系の不一致、という診断手順が有効だった。
 
-## 人役の一人称自己アバター（tdv_selfbody・2026-07-07・ca8422b）
-下を向くと自分の胴/腕/手が見える身体所有感。人役の起動に `-e tdv_selfbody on`（既定 off）。
+## 人役の一人称自己アバター（tdv_selfbody・2026-07-07・ca8422b／既定 on 化 2026-07-10）
+下を向くと自分の胴/腕/手が見える身体所有感。**既定 on**（2026-07-10 ユーザー採択・StudyConfig.ShowSelfBody=true）＝人役は自分の体が見えるのが標準。off にしたい時だけ `-e tdv_selfbody off`（旧: 既定 off で `on` 指定だった）。スクリプトの `-SelfBody` スイッチは既定 on 化で冗長（無害）。
 - 仕組み: [LocalSelfBody](../../Assets/TableDuo/Scripts/Net/LocalSelfBody.cs) が相手に見えるのと同じ Remy を
   もう1体、**自分のローカル pose（HandPoseSourceRegistry.Best＝送信と同じ席フレーム値）**で駆動。
   [RemyAvatarRig](../../Assets/TableDuo/Scripts/Net/RemyAvatarRig.cs) の firstPerson モードで**頭ボーンを
