@@ -75,6 +75,17 @@ echo "TIMEOUT"; exit 1
 
 代替: `read_console filter_text="[BuildVariants]"` に `OK:` ログが出れば成功（MCP が生きていれば）。
 
+**⚠ タイムアウト ≠ ビルド開始（2026-07-10 実害 ×2）**: `execute_menu_item` の timeout は
+「ビルドが走っている」と「コンパイル/ドメインリロード中で **menu が握り潰され何も始まっていない**」を
+区別できない。直前に .cs を編集した後は特に後者になりやすい。→ **menu 実行の直前に
+`refresh_unity(mode=if_dirty, wait_for_ready=true)` で idle を確認**し、それでもポーリングが
+TIMEOUT したら「ビルド失敗」ではなく「未開始」を疑って Editor.log / `Temp/` の更新を確認 →
+idle 確認後にもう一度 menu を撃つ（2回目で normally 通る）。
+また **desktop ビルド（Standalone）の完成判定は exe の mtime を見ない**こと —
+Unity のインクリメンタルビルドはランチャー stub（TableDuo.exe）を書き換えない。
+`Builds/tableduo-desktop/TableDuo_Data/level0` の mtime が正しいセンチネル。
+起動中の TableDuo.exe（PC ホスト）はビルド前に必ず kill（exe ロックで上書き失敗する）。
+
 ### 3. インストール（adb）
 
 ```

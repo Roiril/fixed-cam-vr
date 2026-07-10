@@ -48,6 +48,7 @@ namespace FixedCamVr.EditorTools
             var prevTarget = EditorUserBuildSettings.activeBuildTarget;
             try
             {
+                StampTableDuoBuildInfo();
                 if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.StandaloneWindows64)
                 {
                     EditorUserBuildSettings.SwitchActiveBuildTarget(
@@ -84,6 +85,23 @@ namespace FixedCamVr.EditorTools
             }
         }
 
+        /// <summary>
+        /// TableDuo のシーンハッシュを Resources へ焼き込む（ビルド前に呼ぶ）。
+        /// HostBeacon/HostDiscovery が host/client のシーン構成一致を照合するのに使う
+        /// （不一致だと NetworkObjectId がズレて RPC が黙って捨てられる — 2026-07-10 実害の恒久化）。
+        /// APK / desktop の両ビルドが同じシーンから出ていれば同じハッシュになる。
+        /// </summary>
+        private static void StampTableDuoBuildInfo()
+        {
+            const string outPath = "Assets/TableDuo/Resources/TableDuoBuildInfo.txt";
+            byte[] scene = System.IO.File.ReadAllBytes(TableDuoScene);
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            string hash = BitConverter.ToString(md5.ComputeHash(scene)).Replace("-", "").Substring(0, 16);
+            System.IO.File.WriteAllText(outPath, hash + "\n", new System.Text.UTF8Encoding(false));
+            AssetDatabase.ImportAsset(outPath);
+            Debug.Log($"[BuildVariants] TableDuoBuildInfo stamped: sceneHash={hash}");
+        }
+
         private static void BuildVariant(string productName, string packageId, string scenePath, string outName,
             bool development)
         {
@@ -91,6 +109,7 @@ namespace FixedCamVr.EditorTools
             string prevId = PlayerSettings.GetApplicationIdentifier(BuildTargetGroup.Android);
             try
             {
+                if (scenePath == TableDuoScene) StampTableDuoBuildInfo();
                 PlayerSettings.productName = productName;
                 PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, packageId);
 

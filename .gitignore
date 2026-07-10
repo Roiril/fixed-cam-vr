@@ -193,3 +193,7 @@ tools/web-compositor/masks/
 
 # ビルド成果物（BuildVariants が出力）
 Builds/
+
+# ビルド時スタンプ（BuildVariants.StampTableDuoBuildInfo が毎ビルド書き換える）
+Assets/TableDuo/Resources/TableDuoBuildInfo.txt
+Assets/TableDuo/Resources/TableDuoBuildInfo.txt.meta

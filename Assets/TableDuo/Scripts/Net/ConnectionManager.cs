@@ -10,10 +10,12 @@ using UnityEngine;
 namespace TableDuoVr.Net
 {
     /// <summary>
-    /// LAN 直結（手動 IP）のホスト/クライアント接続管理 + pose の named message 配送。
+    /// LAN 直結のホスト/クライアント接続管理 + pose の named message 配送。
     /// 配送経路: owner → (client なら server へ) → server が他クライアントへリレー。
     /// 起動引数 / Android intent extras（tdv_mode=host|client, tdv_ip=...）で UI 無し自動接続可:
     ///   adb shell am start -n <pkg>/com.unity3d.player.UnityPlayerActivity -e tdv_mode host
+    /// フラグ一切無し（Quest ランチャーから普通に開いた）場合は **LAN ホスト自動発見**で接続する
+    /// （HostBeacon / HostDiscovery・UDP :7778。役割もサーバが接続順に自動割当 — 先着=人役）。
     /// </summary>
     public sealed class ConnectionManager : MonoBehaviour
     {
@@ -24,6 +26,8 @@ namespace TableDuoVr.Net
             None,
             Host,
             Client,
+            /// <summary>LAN 上のホストを UDP ビーコンで自動発見して接続（フラグ無し起動の既定）。</summary>
+            Discover,
         }
 
         public enum RoleOverride
@@ -188,7 +192,77 @@ namespace TableDuoVr.Net
                 case AutoMode.Client:
                     StartClient(ip ?? defaultAddress);
                     break;
+                case AutoMode.Discover:
+                    StartDiscovery();
+                    break;
             }
+        }
+
+        // --- LAN ホスト自動発見（client 側） ---
+
+        private HostDiscovery? _discovery;
+        private bool _buildMismatchWarned;
+        private TextMesh? _searchHud;
+
+        // 探索中だけ HMD 視界に控えめな状態テキストを出す（接続確立で消える）。
+        // OnGUI は HMD 内に映らないため、head-locked の 3D テキストで出す
+        private void UpdateSearchHud(bool searching)
+        {
+            if (!searching)
+            {
+                if (_searchHud != null)
+                {
+                    Destroy(_searchHud.transform.gameObject);
+                    _searchHud = null;
+                }
+                return;
+            }
+            var cam = Camera.main;
+            if (cam == null) return;
+            if (_searchHud == null)
+            {
+                var go = new GameObject("SearchHud");
+                go.transform.SetParent(cam.transform, false);
+                go.transform.localPosition = new Vector3(0f, -0.12f, 0.8f); // 視線やや下 80cm
+                _searchHud = go.AddComponent<TextMesh>();
+                _searchHud.anchor = TextAnchor.MiddleCenter;
+                _searchHud.alignment = TextAlignment.Center;
+                _searchHud.fontSize = 48;
+                _searchHud.characterSize = 0.008f;
+                _searchHud.color = new Color(1f, 1f, 1f, 0.85f);
+            }
+            _searchHud.text = _buildMismatchWarned
+                ? "ホストを探しています…\n⚠ ビルド不一致を検出（両ビルドの焼き直し推奨）"
+                : "ホストを探しています…\n（PC でホストを起動してください）";
+        }
+
+        /// <summary>ホスト探索を開始。発見次第 StartClient。切断後もビーコンが来れば再接続の種になる
+        /// （listen は張りっぱなし・接続中の beacon は無視するだけなのでコスト無し）。</summary>
+        public void StartDiscovery()
+        {
+            if (_discovery == null)
+            {
+                _discovery = gameObject.AddComponent<HostDiscovery>();
+                _discovery.Found += OnHostFound;
+            }
+            _discovery.Begin();
+            _status = "ホスト探索中…";
+        }
+
+        private void OnHostFound(string ip, ushort ngoPort, bool sceneHashMatches)
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || nm.IsListening || nm.IsConnectedClient) return; // 接続中/試行中は無視
+            if (!sceneHashMatches && !_buildMismatchWarned)
+            {
+                _buildMismatchWarned = true;
+                // 接続は許す（開発中の細差では動くことも多い）が、silent failure にしない
+                Debug.LogWarning("[TableDuo] ⚠ ホストとシーン構成（ビルド）が一致しません。" +
+                                 "掴み等の RPC が失敗する可能性 — 両ビルドを焼き直してください");
+            }
+            Debug.Log($"[TableDuo] ホスト発見 → {ip}:{ngoPort}（自動接続）");
+            port = ngoPort;
+            StartClient(ip);
         }
 
         private void OnDestroy()
@@ -205,6 +279,13 @@ namespace TableDuoVr.Net
         // 自動再接続の駆動（client 切断後のみ稼働。接続確立 or host 化で自動停止）
         private void Update()
         {
+            // 自動発見モードの状態表示（未接続の間だけ「ホストを探しています…」）
+            if (_discovery != null)
+            {
+                var nmd = NetworkManager.Singleton;
+                UpdateSearchHud(nmd != null && !nmd.IsConnectedClient && !nmd.IsServer);
+            }
+
             if (_reconnectAt < 0f || _lastClientAddress == null) return;
             var nm = NetworkManager.Singleton;
             if (nm == null) return;
@@ -240,6 +321,10 @@ namespace TableDuoVr.Net
                 RegisterHandler(nm);
                 _status = $"host :{port}";
                 Debug.Log($"[TableDuo] Host 開始 port={port}");
+                // 自動接続まわり: 役割割当の記憶をクリアし、存在通知ビーコンを開始
+                TableDuoPlayer.ResetAutoRoleAssignments();
+                var beacon = GetComponent<HostBeacon>() ?? gameObject.AddComponent<HostBeacon>();
+                beacon.Begin(port);
             }
             else
             {
@@ -561,10 +646,15 @@ namespace TableDuoVr.Net
         {
             mode = autoMode;
             string? m = StudyLaunchFlags.Get("tdv_mode", "-tdvMode");
-            if (m == "host") mode = AutoMode.Host;
-            else if (m == "client") mode = AutoMode.Client;
             ip = StudyLaunchFlags.Get("tdv_ip", "-tdvIp");
             if (string.IsNullOrEmpty(ip)) ip = null;
+
+            if (m == "host") mode = AutoMode.Host;
+            // client 指定でも IP 無しなら自動発見（IP を調べて打つ必要をなくす）
+            else if (m == "client") mode = ip != null ? AutoMode.Client : AutoMode.Discover;
+            // フラグ一切無し（＝Quest ランチャーから普通に開いた）は自動発見が既定。
+            // Inspector で Host/Client を焼き込んだシーン（L0 検証等）は従来どおりそちらが勝つ
+            else if (m == null && mode == AutoMode.None) mode = AutoMode.Discover;
         }
 
         private void OnGUI()

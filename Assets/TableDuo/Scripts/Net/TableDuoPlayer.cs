@@ -80,22 +80,22 @@ namespace TableDuoVr.Net
         {
             if (IsOwner)
             {
-                var role = StudyConfig.ForcedRole
-                    ?? (OwnerClientId == NetworkManager.ServerClientId
-                        ? StudyConfig.Role.Full
-                        : StudyConfig.Role.Hand);
-                _role.Value = (byte)role;
-                _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
-                    | (StudyConfig.OneHandMode ? 2 : 0)
-                    | ((byte)StudyConfig.SelectedHandVariant << 2)
-                    // bit4=自己ボディ。人役ローカル描画専用の条件なので人役のみ立てる
-                    // （手役は描画されない＝ StudyConfig.ShowSelfBody 既定 on でも手役 CSV に selfBody=1 を刻まない）
-                    | ((role == StudyConfig.Role.Full && StudyConfig.ShowSelfBody) ? 16 : 0));
-                SetupOwner(role);
-                // client の壁時計オフセットを host CSV に刻む（captureMs 整列用）。host 自身は offset=0 で不要
-                if (!IsServer)
+                if (StudyConfig.ForcedRole == null && !IsServer)
                 {
-                    PingClockServerRpc(System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    // 役割フラグ無し（ランチャー起動＝自動接続経路）: サーバに割当を求める。
+                    // 接続順で 先着=Full（人役）/ 後着=Hand（手役）。deviceId でセッション中スティッキー
+                    //（被り直し・Wi-Fi 瞬断の再接続で役割が入れ替わる事故を防ぐ）。
+                    // 確定は AssignRoleClientRpc → ApplyOwnerRole。リモート側は _role 同期待ちの
+                    // 既存経路（OnRoleSynced）がそのまま遅延セットアップしてくれる
+                    RequestAutoRoleServerRpc(SystemInfo.deviceUniqueIdentifier);
+                }
+                else
+                {
+                    var role = StudyConfig.ForcedRole
+                        ?? (OwnerClientId == NetworkManager.ServerClientId
+                            ? StudyConfig.Role.Full
+                            : StudyConfig.Role.Hand);
+                    ApplyOwnerRole(role);
                 }
             }
             else if (_role.Value != RoleUnset)
@@ -106,6 +106,71 @@ namespace TableDuoVr.Net
             {
                 _role.OnValueChanged += OnRoleSynced;
             }
+        }
+
+        /// <summary>owner の役割確定処理（従来 OnNetworkSpawn 直書きだった部分。自動割当と共用）。</summary>
+        private void ApplyOwnerRole(StudyConfig.Role role)
+        {
+            _role.Value = (byte)role;
+            _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
+                | (StudyConfig.OneHandMode ? 2 : 0)
+                | ((byte)StudyConfig.SelectedHandVariant << 2)
+                // bit4=自己ボディ。人役ローカル描画専用の条件なので人役のみ立てる
+                // （手役は描画されない＝ StudyConfig.ShowSelfBody 既定 on でも手役 CSV に selfBody=1 を刻まない）
+                | ((role == StudyConfig.Role.Full && StudyConfig.ShowSelfBody) ? 16 : 0));
+            SetupOwner(role);
+            // client の壁時計オフセットを host CSV に刻む（captureMs 整列用）。host 自身は offset=0 で不要
+            if (!IsServer)
+            {
+                PingClockServerRpc(System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            }
+        }
+
+        // --- 役割の自動割当（サーバ裁定・接続順。tdv_role 明示が無い client 用） ---
+
+        // deviceId → 割当済み役割（セッション中スティッキー）。host 開始時に ConnectionManager がクリアする
+        private static readonly System.Collections.Generic.Dictionary<string, StudyConfig.Role> AutoRoles = new();
+
+        /// <summary>host 開始時に前セッションの割当記憶を消す（ConnectionManager.StartHost が呼ぶ）。</summary>
+        public static void ResetAutoRoleAssignments() => AutoRoles.Clear();
+
+        [ServerRpc(RequireOwnership = true)]
+        private void RequestAutoRoleServerRpc(string deviceId, ServerRpcParams rpcParams = default)
+        {
+            StudyConfig.Role role;
+            if (!string.IsNullOrEmpty(deviceId) && AutoRoles.TryGetValue(deviceId, out var remembered))
+            {
+                role = remembered; // 再接続は前回と同じ役割（席）に戻す
+            }
+            else
+            {
+                // 席0（Full=人役）が空いていれば Full、埋まっていれば Hand（先着=人役）
+                bool fullTaken = false;
+                var nm = NetworkManager.Singleton;
+                foreach (var kv in nm.ConnectedClients)
+                {
+                    var po = kv.Value.PlayerObject;
+                    if (po == null || po == NetworkObject) continue;
+                    var p = po.GetComponent<TableDuoPlayer>();
+                    if (p != null && p.Role == StudyConfig.Role.Full) { fullTaken = true; break; }
+                }
+                role = fullTaken ? StudyConfig.Role.Hand : StudyConfig.Role.Full;
+                if (!string.IsNullOrEmpty(deviceId)) AutoRoles[deviceId] = role;
+            }
+            Debug.Log($"[TableDuo] 役割自動割当: client{OwnerClientId} → {role}（device={deviceId?.Substring(0, System.Math.Min(8, deviceId.Length))}…）");
+            var target = new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
+            };
+            AssignRoleClientRpc((byte)role, target);
+        }
+
+        [ClientRpc]
+        private void AssignRoleClientRpc(byte role, ClientRpcParams rpcParams = default)
+        {
+            if (!IsOwner || _role.Value != RoleUnset) return;
+            Debug.Log($"[TableDuo] サーバから役割割当を受領: {(StudyConfig.Role)role}");
+            ApplyOwnerRole((StudyConfig.Role)role);
         }
 
         public override void OnNetworkDespawn()
