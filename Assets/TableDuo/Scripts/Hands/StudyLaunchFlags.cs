@@ -88,6 +88,7 @@ namespace TableDuoVr.Hands
                     _ => HandVariant.Default,
                 };
                 StudyConfig.LaunchedWithStudyFlags = true;
+                StudyConfig.HandVariantLockedByFlag = true; // 調査条件として固定 → Y トグル無効
             }
 
             if (StudyConfig.LaunchedWithStudyFlags)

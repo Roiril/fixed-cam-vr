@@ -42,7 +42,9 @@ OVRManager を [TableDuoSceneSetup](../../Assets/TableDuo/Scripts/Editor/TableDu
 - `launchSimultaneousHandsControllersOnStartup=true`（手とコントローラ同時トラッキング）
 - `controllerDrivenHandPosesType=Natural(2)`（握った手の骨格をコントローラ入力から自然な手形で駆動）
 → 素手ならハンドトラッキング、握れば手メッシュが出続ける（OVRHand.IsTracked 保持）。OVRProjectConfig.handTrackingSupport=1(ControllersAndHands) 前提（設定済み）。
-- **⚠ 2026-07-11 実害: 上記2フィールドだけでは実機で効かない**。OVRManager にはもう1つ **`SimultaneousHandsAndControllersEnabled`（ビルド時 capability 宣言）**があり、これが false のままだと OS が `TrackingFidelityService: checkMultimodalFeature: Attempt made to enable multimodal ... when not supported by app` で拒否 → 排他モードに落ち、コントローラを握ると手が消える。切り分けは logcat の `mMultimodalityEnabled?: false` と interaction profile が hand_interaction_ext ⇄ touch_controller_plus を「行き来」する（同時でなく択一）こと。→ TableDuoSceneSetup で 3 フィールドとも true/Natural に設定し、**APK に焼かれるので要リビルド**（シーン再生成だけでは実機に効かない）。SDK 公式サンプル SimultaneousHandsAndControllers.unity が両フラグ=1 の正解基準。
+- **⚠ 2026-07-11 実害①（真因は表示ゲート）: コントローラを握ると手が消える本当の原因は `OVRHand.m_showState` の既定値 `ControllerNotInHand`**。握ると OVRHand が IsDataValid=false を強制し OVRMeshRenderer が手メッシュを隠す（骨格データ自体は流れ続けており [TDV-WRIST] は握り中も出る＝データ正常・表示だけ死ぬ）。→ TableDuoSceneSetup の BuildHand で `m_showState=0(Always)` を焼き込み。multimodal 自体は動いていた（logcat で `detached_controller_meta` の interaction profile 遷移が出る・`checkMultimodalFeature` 拒否なし＝正常のサイン）。
+- 同日の調査メモ: `SimultaneousHandsAndControllersEnabled`（ビルド時 capability）も true にしたが、**SDK v201 ではこのフラグを消費する build/runtime 経路が存在しない**（Editor UI と Body/Face 排他チェックのみ・マニフェスト生成にも bootconfig にも出ない）。無害なので設定は残すが、これ単体では何も変わらない。`TrackingFidelityService: not supported by app` ログはアプリ終了時などに出る紛らわしい残骸で、拒否の確定証拠には使えない。切り分けの正は「握った瞬間の interaction profile 遷移（hand→touch_controller_plus + detached 連動）」をライブ logcat で見ること。
+- **⚠ 2026-07-11 実害②: Y ボタンの手バリアント切替がスクリプト起動で常時無効だった**。HandVariantWatcher が `LaunchedWithStudyFlags` で無効化していたが、このフラグは `tdv_role` 指定だけで立つ（＝tableduo-pc-host.ps1 経由は常に該当）。→ 新フラグ `StudyConfig.HandVariantLockedByFlag`（tdv_hand 指定時のみ true）で判定するよう変更。tdv_role 単独なら Y トグル有効。
 
 ## 運用フロー（PC ホスト + 2 Quest・確立版）
 1. `tools/tableduo-pc-host.ps1` 一発（wake→Link ダイアログ潰し→起動→pid 確認まで内包）。手動なら:

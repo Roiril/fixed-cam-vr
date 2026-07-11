@@ -19,10 +19,12 @@ namespace TableDuoVr.Net
             if (OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.LTouch))
             {
                 // 手バリアントは調査条件（tdv_hand でブロックごとに固定・study-design §2）。
-                // セッション中に切り替わると条件が壊れるため、調査フラグ起動時はトグルを無効化する
-                if (StudyConfig.LaunchedWithStudyFlags)
+                // セッション中に切り替わると条件が壊れるため、tdv_hand で固定された時だけトグルを無効化する。
+                // ⚠ LaunchedWithStudyFlags で判定しない（tdv_role だけでも立つため、スクリプト起動で
+                //   Y トグルが常時死ぬ・2026-07-11 実害）。
+                if (StudyConfig.HandVariantLockedByFlag)
                 {
-                    Debug.Log("[TableDuo] 調査セッション中は手バリアント切替を無効化（tdv_hand で固定）");
+                    Debug.Log("[TableDuo] 手バリアントは tdv_hand で固定中のため切替無効");
                     return;
                 }
                 StudyConfig.CycleHandVariant();

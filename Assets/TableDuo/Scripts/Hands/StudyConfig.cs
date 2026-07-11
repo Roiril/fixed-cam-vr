@@ -55,6 +55,12 @@ namespace TableDuoVr.Hands
         /// し、owner の TableDuoPlayer が申告値を書き直して相手端末の描画も追従する）。</summary>
         public static HandVariant SelectedHandVariant;
 
+        /// <summary>手バリアントが tdv_hand 起動フラグで固定された（＝調査条件として指定された）。
+        /// Y ボタン切替（HandVariantWatcher）はこの時だけ無効化する。tdv_role 等の運用フラグは
+        /// 手バリアントを固定しないので Y トグルは生かす（2026-07-11: 起動スクリプトが常に tdv_role を
+        /// 渡すため LaunchedWithStudyFlags 判定だと Y が常時死んでいた）。</summary>
+        public static bool HandVariantLockedByFlag;
+
         /// <summary>手バリアントが切り替わった。ローカル手 / リモート手の描画側がメッシュを作り直すために購読する。</summary>
         public static event System.Action? HandVariantChanged;
 
@@ -92,6 +98,7 @@ namespace TableDuoVr.Hands
             PreplaceAvatars = false;
             ShowSelfBody = true;
             SelectedHandVariant = HandVariant.Default;
+            HandVariantLockedByFlag = false;
             HandVariantChanged = null;
         }
     }

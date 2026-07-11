@@ -1114,6 +1114,10 @@ namespace TableDuoVr.EditorTools
             hand = go.GetComponent<OVRHand>();
             var handSo = new SerializedObject(hand);
             SetEnum(handSo, "HandType", isLeft ? 0 : 1); // OVRPlugin.Hand: HandLeft=0, HandRight=1
+            // ⚠ m_showState 既定は ControllerNotInHand＝コントローラを握ると IsDataValid=false に
+            //   強制されて手メッシュが消える（2026-07-11 実害・multimodal 自体は生きているのに
+            //   表示ゲートで消えていた）。Always にして握り中も手を出し続ける。
+            SetEnum(handSo, "m_showState", 0); // OVRInput.InputDeviceShowState.Always
             handSo.ApplyModifiedPropertiesWithoutUndo();
 
             skeleton = go.GetComponent<OVRSkeleton>();
