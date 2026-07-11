@@ -225,6 +225,11 @@ namespace TableDuoVr.EditorTools
                     // - controllerDrivenHandPosesType=Natural(2): 握った手の骨格をコントローラ入力から自然な手形で駆動
                     //   → OVRHand.IsTracked が保たれ、握っていても手メッシュ（＝送信 pose）が出続ける。
                     // 素手（コントローラ非把持）のときは通常のハンドトラッキングがそのまま働く。
+                    // ⚠ SimultaneousHandsAndControllersEnabled はビルド時 capability 宣言。
+                    //   これが無いと OS が「not supported by app」で multimodal を拒否し、
+                    //   排他モードに落ちてコントローラ把持で手が消える（2026-07-11 実害・
+                    //   TrackingFidelityService: checkMultimodalFeature ログで確定）。
+                    SetBool(mgrSo, "SimultaneousHandsAndControllersEnabled", true);
                     SetBool(mgrSo, "launchSimultaneousHandsControllersOnStartup", true);
                     SetEnum(mgrSo, "controllerDrivenHandPosesType", 2); // Natural
                     mgrSo.ApplyModifiedPropertiesWithoutUndo();

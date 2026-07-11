@@ -41,7 +41,8 @@ PC (NGO host・spectator・L0 desktop build)  ← Quest A: client/full(人)  ←
 OVRManager を [TableDuoSceneSetup](../../Assets/TableDuo/Scripts/Editor/TableDuoSceneSetup.cs) で設定（シーンに override 焼き込み）:
 - `launchSimultaneousHandsControllersOnStartup=true`（手とコントローラ同時トラッキング）
 - `controllerDrivenHandPosesType=Natural(2)`（握った手の骨格をコントローラ入力から自然な手形で駆動）
-→ 素手ならハンドトラッキング、握れば手メッシュが出続ける（OVRHand.IsTracked 保持）。OVRProjectConfig.handTrackingSupport=1(ControllersAndHands) 前提（設定済み）。**実機で握り時の手の見た目・送信 pose を要確認**。
+→ 素手ならハンドトラッキング、握れば手メッシュが出続ける（OVRHand.IsTracked 保持）。OVRProjectConfig.handTrackingSupport=1(ControllersAndHands) 前提（設定済み）。
+- **⚠ 2026-07-11 実害: 上記2フィールドだけでは実機で効かない**。OVRManager にはもう1つ **`SimultaneousHandsAndControllersEnabled`（ビルド時 capability 宣言）**があり、これが false のままだと OS が `TrackingFidelityService: checkMultimodalFeature: Attempt made to enable multimodal ... when not supported by app` で拒否 → 排他モードに落ち、コントローラを握ると手が消える。切り分けは logcat の `mMultimodalityEnabled?: false` と interaction profile が hand_interaction_ext ⇄ touch_controller_plus を「行き来」する（同時でなく択一）こと。→ TableDuoSceneSetup で 3 フィールドとも true/Natural に設定し、**APK に焼かれるので要リビルド**（シーン再生成だけでは実機に効かない）。SDK 公式サンプル SimultaneousHandsAndControllers.unity が両フラグ=1 の正解基準。
 
 ## 運用フロー（PC ホスト + 2 Quest・確立版）
 1. `tools/tableduo-pc-host.ps1` 一発（wake→Link ダイアログ潰し→起動→pid 確認まで内包）。手動なら:
