@@ -89,12 +89,58 @@ namespace TableDuoVr.Net
             return null;
         }
 
-        /// <summary>外部リグ手（Realistic/Robot）の構築結果。BoneId 順の bone とバインドローカル回転を持つ。</summary>
+        /// <summary>Meta 白手（authored bind ポーズのまま）を container 下に生成し、隠しリファレンスとして返す。
+        /// ⚠ layout の親子 FK や BindLocalRot から OVR 側基準を「計算」してはいけない —
+        ///   layout の bind は live ストリームの中立ではなく（pinky0 で ~173° 乖離）、メッシュ実階層には
+        ///   中間ノードもあり得る（FK 合成と実ワールド回転が ~100° 乖離、いずれも 2026-07-11 実測）。
+        ///   正解は「白手そのものを live で駆動し、その実ワールド回転を参照する」こと。
+        /// 駆動系（OVRSkeleton/OVRHand/Animator）を剥がし全 Renderer を無効化して返す。失敗時 null。</summary>
+        private GameObject? BuildMetaReference(Transform container, bool isRight,
+            out Transform?[] metaBones, out Quaternion wristFrame)
+        {
+            metaBones = System.Array.Empty<Transform?>();
+            wristFrame = Quaternion.identity;
+            var metaPrefab = GetPrefab(isRight, HandVariant.Default);
+            if (metaPrefab == null) return null;
+            var tmp = Object.Instantiate(metaPrefab, container, worldPositionStays: false);
+            tmp.name = "MetaRefHidden";
+            tmp.transform.localPosition = Vector3.zero;
+            tmp.transform.localRotation = Quaternion.identity;
+            var mb = MapHandBonesByName(tmp.transform, isRight, HandVariant.Default);
+            var w = mb[0]; var idx = mb[6]; var mid = mb[9];
+            var pnk = mb[16] != null ? mb[16] : mb[15];
+            if (w == null || idx == null || mid == null || pnk == null)
+            {
+                if (Application.isPlaying) Object.Destroy(tmp); else Object.DestroyImmediate(tmp);
+                return null;
+            }
+            Vector3 pW = container.InverseTransformPoint(w.position);
+            Vector3 pI = container.InverseTransformPoint(idx.position);
+            Vector3 pM = container.InverseTransformPoint(mid.position);
+            Vector3 pP = container.InverseTransformPoint(pnk.position);
+            wristFrame = HandRetarget.WristFrame(pW, pI, pM, pP, isRight);
+
+            // live トラッキング/アニメの自走を止め、描画も消す（bone Transform だけ使う）
+            foreach (var sk in tmp.GetComponents<OVRSkeleton>()) { if (Application.isPlaying) Object.Destroy(sk); else Object.DestroyImmediate(sk); }
+            foreach (var h in tmp.GetComponents<OVRHand>()) { if (Application.isPlaying) Object.Destroy(h); else Object.DestroyImmediate(h); }
+            var anim = tmp.GetComponent<Animator>();
+            if (anim != null) { if (Application.isPlaying) Object.Destroy(anim); else Object.DestroyImmediate(anim); }
+            foreach (var r in tmp.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
+
+            metaBones = mb;
+            return tmp;
+        }
+
+        /// <summary>外部リグ手（Realistic/Robot）の構築結果。
+        /// Instance はコンテナ（パック手 + 隠し Meta リファレンスを内包。破棄はこれ 1 個で済む）。
+        /// 駆動は「MetaBones に live ローカル回転を流し込み → 実ワールド回転 × BoneOffsets を Bones へコピー」
+        /// （<see cref="HandRetarget.ApplyFromReference"/>）。リグの軸規約・階層差の仮定が一切無い。</summary>
         public sealed class BuiltHand
         {
-            public GameObject Instance = null!;
-            public Transform?[] Bones = null!;   // BoneId 順（未マップは null）
-            public Quaternion[] VarBind = null!; // BoneId 順のメッシュ側バインドローカル回転（未マップは identity）
+            public GameObject Instance = null!;      // コンテナ（pack inst + MetaRefHidden）
+            public Transform?[] Bones = null!;       // パック側 bone（BoneId 順・未マップは null）
+            public Transform?[] MetaBones = null!;   // 隠し白手 bone（BoneId 順・正解系の参照）
+            public Quaternion[] BoneOffsets = null!; // C_i = inv(metaWorld_i) * packWorld_i（整列済み bind で捕捉・定数）
         }
 
         /// <summary>
@@ -102,7 +148,10 @@ namespace TableDuoVr.Net
         /// - bone を BoneId 順にマッピング（1 個も当たらなければ失敗 → null）
         /// - メッシュ側バインドローカル回転を控える（リターゲット基準）
         /// - 手首→中指遠位で実寸に自動スケール
+        /// - **手首幾何フレーム整列**: パックの authored 休めポーズ方向（指方向×甲法線）を
+        ///   Meta authored 白手の方向に回して合わせる（「手のひらの後ろ方向に生える」2026-07-11 実害の根治）
         /// - 手首 bone を parent 原点へ整列（パックのメッシュは原点からオフセットしているため）
+        /// - 整列後の **アンカー相対 bind 回転**（VarBindAnchorRel）を捕捉 → ワールドデルタ式リターゲットの基準
         /// - コライダー除去・全 Renderer を variant 材質で上書き（Standard 材質のマゼンタ化を回避）
         /// 失敗時は生成物を破棄して null。
         /// </summary>
@@ -111,7 +160,14 @@ namespace TableDuoVr.Net
             var prefab = GetPrefab(isRight, variant);
             if (prefab == null) return null;
 
-            var inst = Object.Instantiate(prefab, parent, worldPositionStays: false);
+            // コンテナ（pack inst と隠し白手リファレンスを同居させ、破棄を 1 個にまとめる）
+            var container = new GameObject("HandVariant_" + variant);
+            container.transform.SetParent(parent, worldPositionStays: false);
+            container.transform.localPosition = Vector3.zero;
+            container.transform.localRotation = Quaternion.identity;
+            container.transform.localScale = Vector3.one;
+
+            var inst = Object.Instantiate(prefab, container.transform, worldPositionStays: false);
             inst.transform.localPosition = Vector3.zero;
             inst.transform.localRotation = Quaternion.identity;
             inst.transform.localScale = Vector3.one;
@@ -120,12 +176,15 @@ namespace TableDuoVr.Net
             var bones = MapHandBonesByName(inst.transform, isRight, variant);
             bool anyMapped = false;
             foreach (var b in bones) { if (b != null) { anyMapped = true; break; } }
-            if (!anyMapped) { Object.Destroy(inst); return null; }
 
-            var bind = new Quaternion[bones.Length];
-            for (int i = 0; i < bones.Length; i++)
+            // 正解系リファレンス: 隠し Meta 白手（authored bind のまま・非表示）
+            Transform?[] metaBones = System.Array.Empty<Transform?>();
+            Quaternion fOvr = Quaternion.identity;
+            var metaRef = anyMapped ? BuildMetaReference(container.transform, isRight, out metaBones, out fOvr) : null;
+            if (!anyMapped || metaRef == null)
             {
-                bind[i] = bones[i] != null ? bones[i]!.localRotation : Quaternion.identity;
+                if (Application.isPlaying) Object.Destroy(container); else Object.DestroyImmediate(container);
+                return null;
             }
 
             // 自動スケール: 手首→中指遠位（無ければ人差し指）でパック手を実寸に合わせる
@@ -139,10 +198,36 @@ namespace TableDuoVr.Net
                     inst.transform.localScale = Vector3.one * (RefHandLenMeters / meshLen);
                 }
             }
-            // スケール後に手首 bone を parent 原点へ整列（parent=手首アンカー。以後 parent が動くと手も追従）
+            // 手首幾何フレーム整列: パック手の「指方向×甲法線」を白手（authored）のそれに回して合わせる。
+            // パックの authored 休めポーズは白手基準と向きが違う（Male/Robot で各々バラバラ）ため、
+            // これ無しでは静止時から手が明後日の方向に生える（2026-07-11 実害の根治）。
+            {
+                var idx1 = bones[6]; var mid1 = bones[9];
+                var pnk1 = bones[16] != null ? bones[16] : bones[15];
+                if (wrist != null && idx1 != null && mid1 != null && pnk1 != null)
+                {
+                    Vector3 pW = container.transform.InverseTransformPoint(wrist.position);
+                    Vector3 pI = container.transform.InverseTransformPoint(idx1.position);
+                    Vector3 pM = container.transform.InverseTransformPoint(mid1.position);
+                    Vector3 pP = container.transform.InverseTransformPoint(pnk1.position);
+                    var fVar = HandRetarget.WristFrame(pW, pI, pM, pP, isRight);
+                    inst.transform.localRotation = fOvr * Quaternion.Inverse(fVar) * inst.transform.localRotation;
+                }
+            }
+            // スケール・整列後に手首 bone を parent 原点へ整列（parent=手首アンカー。以後 parent が動くと手も追従）
             if (wrist != null)
             {
                 inst.transform.position += parent.position - wrist.position;
+            }
+
+            // 定数オフセット捕捉: C_i = inv(metaWorld_i) * packWorld_i（両者いま同義の bind ポーズ）。
+            // 以後の駆動は「metaBones を live で回す → metaWorld_i * C_i を pack へコピー」だけ。
+            var offsets = new Quaternion[bones.Length];
+            for (int i = 0; i < bones.Length; i++)
+            {
+                offsets[i] = (bones[i] != null && i < metaBones.Length && metaBones[i] != null)
+                    ? Quaternion.Inverse(metaBones[i]!.rotation) * bones[i]!.rotation
+                    : Quaternion.identity;
             }
 
             foreach (var col in inst.GetComponentsInChildren<Collider>(true)) Object.Destroy(col);
@@ -165,7 +250,7 @@ namespace TableDuoVr.Net
                 }
             }
 
-            return new BuiltHand { Instance = inst, Bones = bones, VarBind = bind };
+            return new BuiltHand { Instance = container, Bones = bones, MetaBones = metaBones, BoneOffsets = offsets };
         }
     }
 }

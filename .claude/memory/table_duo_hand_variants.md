@@ -18,16 +18,24 @@ Robot/Male のみ `Assets/TableDuo/ThirdParty/VRHandsStarterPack/` に GUID 保�
 ホスト/観戦 PC にも切替が映る。調査は従来どおり両端末を同フラグ起動（不一致はエラーログ）。
 適用は自分の手（`LocalVariantHand`）＋相手の手（`RemoteAvatarView`）両方。
 
-**駆動のキモ**: パック手は Meta の `b_*` と別命名・別バインドなので、同期 OVR 24bone を直当てすると指が壊れる。
+**駆動のキモ（2026-07-11 参照コピー式へ全面刷新）**: パック手は Meta の `b_*` と別命名・別バインド・**別ローカル軸規約**。
 - BoneId→bone名 対応表 = `HandVariantTable`（Unity で実リグ実測して作成。Male=`.R/.L`・Pre/Lower/Medium/Upward、
   Robot=`Bone_*` 側なし・Pre/Lower/Middle/Upper）。
-- バインド差分リターゲット = `HandRetarget.Solve(live, ovrBind, varBind)`。ovrBind は手 bind（layout/skeleton.BindPoses）、
-  varBind は生成時のメッシュ bind。Default は bind 一致なので従来通り直接代入（回帰なし）。
+- **参照コピー式リターゲット = `HandRetarget.ApplyFromReference`**: `BuildExternalHand` が**隠し Meta 白手**
+  （authored bind・Renderer 無効・駆動系除去）を同コンテナに生成し、毎フレーム live ローカル回転をそこへ
+  流し込み（＝Default 白手と同一の正解系）、実ワールド回転 × 定数オフセット `C_i=inv(metaWorld_i)*packWorld_i`
+  をパック bone にコピー。**リグの軸規約・階層構造・bind 規約の仮定ゼロ**。生える向きは幾何フレーム
+  （指方向×甲法線・`WristFrame`）で白手 authored に整列。BuiltHand.Instance は**コンテナ**（pack+MetaRefHidden・破棄1個）。
+- **⚠ 旧式A（`HandRetarget.Solve`）はパック手に使ってはいけない**（2026-07-11 実機実害: 手首から後ろ向きに
+  生える＋Robot 右曲がり/Realistic 逆曲がり）。数値実測の教訓: (a) layout.BindLocalRot は live の中立ではない
+  （pinky0 で ~173° 乖離）、(b) layout.ParentIndex の FK とメッシュ実ワールド回転は中間ノードで ~100° 乖離。
+  →「白手そのものを駆動して実測参照」が唯一堅牢。Solve は RemyAvatarRig の指（OVR→mixamo・実機検証済み）にだけ残存。
 - 配置/スケール/材質 = `RemoteHandMeshProvider.BuildExternalHand`（手首を親原点整列、手首→中指遠位を
   `RefHandLenMeters=0.15m` に自動スケール、URP/Lit 肌/金属材質で全 Renderer 上書き＝パック Standard 材質のマゼンタ回避）。
 
-**状態（2026-07-01 PC 検証済み・3種とも動作）**: `Tools/FixedCamVr/Diagnostics/Preview Hand Variants`（実録画 tdv_handrec_real を3種に当てスクショ・Play不要）で確認。
-**Default / Realistic / Robot すべて式A(`HandRetarget.Solve`)で実用動作**。
+**状態（2026-07-11 Editor 数値+目視検証済み・実機再確認待ち）**: `Preview Hand Variants (screenshot)` が
+`Temp/HandVariantPreview/directions.txt` に指方向/甲法線の Default との角度差を出す（一次証拠）。
+刷新後 Δfwd=0°・Δup≈10°・Δlat≈20°（式A 時代は 102°/74°）・多角度スクショで 3 種同ポーズ確認。
 **⚠ Robot を一度「崩れてる」と誤判定したが視点の錯覚だった** — 機械リンクが嵩張り斜め/正面では重なって散って見えるが、
 **上面(`robot_top`/`03_top`)では掌+4指+親指がポーズどおり並ぶ普通のロボットハンド**。多角度は `Preview Robot Only` メニュー（背景の手を排し周回）。
 **ワールド空間FKリターゲットは試したが撤去**（Robotの見え方改善を狙ったが working だった Realistic を退行させた。そもそもRobotは式Aで問題なく不要だった）。naive世界FK再挑戦しない。

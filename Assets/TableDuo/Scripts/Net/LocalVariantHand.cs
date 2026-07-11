@@ -30,6 +30,7 @@ namespace TableDuoVr.Net
         private bool _buildFailed; // 構築失敗ラッチ（毎フレ Instantiate+Destroy の 90Hz チャーン防止。バリアント切替でクリア）
         private bool _subscribed;
         private OVRMeshRenderer? _metaMeshRenderer; // 白手の可視制御主体（metaMesh と同 GameObject・遅延解決）
+        private readonly Quaternion[] _liveLocals = new Quaternion[TableDuoVr.Hands.AvatarPose.BonesPerHand]; // 毎フレの live ローカル回転（参照コピー式の入力）
 
         private void OnEnable()
         {
@@ -97,26 +98,23 @@ namespace TableDuoVr.Net
                 Teardown();
                 _builtVariant = variant;
                 // 手アンカー（回転=送信 wristRot と同じフレーム）に吊るす。[TDV-WRIST] 実測で
-                // アンカーと実手首 bone の位置差は delta=0 のため位置整列もこれで足りる
+                // アンカーと実手首 bone の位置差は delta=0 のため位置整列もこれで足りる。
+                // 手首幾何フレーム整列（生える向きの根治）と隠し白手リファレンスの構築は provider 内で行う
                 _built = provider.BuildExternalHand(skeleton.transform, isRight, variant);
                 SetMetaHandVisible(false);
                 if (_built == null) { _buildFailed = true; return; }
             }
 
-            // 全 bone をリターゲット（bone[0]=手首 も Solve でフレーム補正を載せる。
-            // bone[1]=前腕は HandVariantTable 未マップ → bones[1]=null で自動 skip）。
-            var bones = _built.Bones;
-            var varBind = _built.VarBind;
+            // 参照コピー式リターゲット（HandRetarget.ApplyFromReference）:
+            // 隠し白手に live ローカル回転を流し込み、その実ワールド回転×定数オフセットをパック bone へコピー。
+            // 式A（親相対バインド差分）はリグ間の軸規約差で曲げ軸が壊れた（2026-07-11 実機実害:
+            // Robot 右曲がり / Realistic 逆曲がり・手が後ろ向きに生える）ため全廃。
             var live = skeleton.Bones;
-            var bind = skeleton.BindPoses;
-            int n = Mathf.Min(bones.Length, live.Count);
-            for (int i = 0; i < n; i++)
-            {
-                if (bones[i] == null) continue;
-                Quaternion ovrBind = (bind != null && i < bind.Count)
-                    ? bind[i].Transform.localRotation : Quaternion.identity;
-                bones[i]!.localRotation = HandRetarget.Solve(live[i].Transform.localRotation, ovrBind, varBind[i]);
-            }
+            int n = Mathf.Min(_liveLocals.Length, live.Count);
+            for (int i = 0; i < n; i++) _liveLocals[i] = live[i].Transform.localRotation;
+            for (int i = n; i < _liveLocals.Length; i++) _liveLocals[i] = Quaternion.identity;
+            HandRetarget.ApplyFromReference(_liveLocals, _built.MetaBones, _built.Bones,
+                _built.BoneOffsets, smooth: 1f);
         }
     }
 }

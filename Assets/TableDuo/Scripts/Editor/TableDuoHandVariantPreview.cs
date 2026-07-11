@@ -75,6 +75,10 @@ namespace TableDuoVr.EditorTools
                     BuildHand(provider, anchor, vlist[v], frame, ovrBind);
                 }
 
+                // 数値診断: 各バリアントの指方向（wrist→middle1）と横方向（index1→pinky1）を
+                // anchor 空間で測り、Default との角度差を出す（誤差 <15° 目安で整合と判定できる一次証拠）
+                LogVariantDirections(root.transform, vlist, frame, ovrBind);
+
                 foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
                 SetLayerRecursive(root, Layer);
@@ -121,21 +125,61 @@ namespace TableDuoVr.EditorTools
             }
         }
 
+        /// <summary>各バリアント手の指方向/横方向を anchor 空間で測って Default との角度差を出す。
+        /// スクショの目視より確実な整合判定（曲げ軸ズレ・生える向きズレの検出）。</summary>
+        private static Vector3 _defUp = Vector3.up;
+        private static string _driveDiag = "";
+
+        private static void LogVariantDirections(Transform root, HandVariant[] vlist,
+            AvatarPose frame, HandSkeletonLayout? ovrBind)
+        {
+            Vector3? defFwd = null, defLat = null;
+            _defUp = Vector3.up;
+            var sb = new System.Text.StringBuilder("[TableDuo] バリアント方向診断（anchor 空間）:\n");
+            // リターゲット入力の健全性: layout の有無と wrist の live↔bind 回転差
+            if (ovrBind == null) sb.AppendLine("  ⚠ ovrBind(layout)=null → 外部リグはワールドデルタ未適用（bind のまま）");
+            else
+            {
+                sb.AppendLine($"  layout.BoneCount={ovrBind.BoneCount} " +
+                    $"Δwrist(live vs bind)={Quaternion.Angle(frame.BonesR[0], ovrBind.BindLocalRot[0]):F0}°");
+            }
+            foreach (var v in vlist)
+            {
+                var anchor = root.Find(v.ToString());
+                if (anchor == null) continue;
+                var bones = RemoteHandMeshProvider.MapHandBonesByName(anchor, isRight: true, v);
+                var wrist = bones[0]; var idx = bones[6]; var mid = bones[9];
+                var pnk = bones[16] != null ? bones[16] : bones[15];
+                if (wrist == null || idx == null || mid == null || pnk == null)
+                {
+                    sb.AppendLine($"  {v}: bone 不足（wrist={wrist != null} idx={idx != null} mid={mid != null} pnk={pnk != null}）");
+                    continue;
+                }
+                Vector3 fwd = anchor.InverseTransformDirection((mid.position - wrist.position).normalized);
+                Vector3 lat = anchor.InverseTransformDirection((pnk.position - idx.position).normalized);
+                Vector3 up = Vector3.Cross(fwd, lat).normalized; // 右手の甲法線（WristFrame と同規約）
+                if (defFwd == null) { defFwd = fwd; defLat = lat; _defUp = up; }
+                sb.AppendLine($"  {v}: fwd={fwd:F2} lat={lat:F2} up={up:F2} | Δfwd={Vector3.Angle(defFwd.Value, fwd):F0}° Δlat={Vector3.Angle(defLat!.Value, lat):F0}° Δup={Vector3.Angle(_defUp, up):F0}°");
+            }
+            if (_driveDiag.Length > 0) { sb.Append("  --- 駆動計器 ---\n").Append(_driveDiag); _driveDiag = ""; }
+            Debug.Log(sb.ToString());
+            // コンソール API は複数行を切るのでファイルにも残す
+            File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,
+                "../Temp/HandVariantPreview/directions.txt")), sb.ToString());
+        }
+
         private static void BuildHand(RemoteHandMeshProvider provider, Transform anchor, HandVariant variant,
             AvatarPose frame, HandSkeletonLayout? ovrBind)
         {
             if (HandVariantTable.IsExternalRig(variant))
             {
+                // 実機（LocalVariantHand / RemoteHandView）と同じワールドデルタ式で駆動（手首整列込み）
                 var built = provider.BuildExternalHand(anchor, isRight: true, variant);
                 if (built == null) { Debug.LogWarning($"[TableDuo] {variant} の構築に失敗"); return; }
-                if (!_applyMotion) return; // rest 診断: retarget せず authored bind のまま
-                int n = Mathf.Min(frame.BonesR.Length, built.Bones.Length);
-                for (int i = 0; i < n; i++)
-                {
-                    if (built.Bones[i] == null) continue;
-                    var bind = (ovrBind != null && i < ovrBind.BoneCount) ? ovrBind.BindLocalRot[i] : Quaternion.identity;
-                    built.Bones[i]!.localRotation = HandRetarget.Solve(frame.BonesR[i], bind, built.VarBind[i]);
-                }
+                if (!_applyMotion) return; // rest 診断: retarget せず整列済み bind のまま
+                // 実機（LocalVariantHand / RemoteHandView）と同じ参照コピー式で駆動
+                HandRetarget.ApplyFromReference(frame.BonesR, built.MetaBones, built.Bones,
+                    built.BoneOffsets, smooth: 1f);
                 return;
             }
 

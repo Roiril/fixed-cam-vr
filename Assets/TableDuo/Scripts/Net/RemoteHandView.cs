@@ -42,9 +42,10 @@ namespace TableDuoVr.Net
         private Transform?[]? _meshBones;
         private GameObject? _meshInstance;
         private float _nextDiagLog; // [TDV-DRAW] 診断ログの throttle
-        // 外部リグ（Realistic/Robot）のメッシュ側バインドローカル回転（BoneId 順）。
-        // non-null ならバインド差分リターゲットで駆動、null なら Meta 直接代入。
-        private Quaternion[]? _varBind;
+        // 外部リグ（Realistic/Robot）: 隠し白手リファレンス bone と定数オフセット（BuiltHand 由来）。
+        // _varBind が non-null なら参照コピー式リターゲットで駆動、null なら Meta 直接代入。
+        private Quaternion[]? _varBind;   // = BuiltHand.BoneOffsets
+        private Transform?[]? _metaBones; // = BuiltHand.MetaBones（隠し白手＝正解系）
         // カプセル手（フォールバック）
         private Transform[]? _bones;
 
@@ -189,6 +190,7 @@ namespace TableDuoVr.Net
             {
                 _meshBones = null;
                 _varBind = null;
+                _metaBones = null;
                 _built = false;
                 _meshTried = false;
             }
@@ -211,16 +213,12 @@ namespace TableDuoVr.Net
                 }
                 else
                 {
-                    // 外部リグ（Realistic/Robot）: バインドが違うのでバインド差分リターゲット。
-                    // ovrBind は受信側の手 bind（layout）。OVR 手の bind ローカル回転は正規化された正準値なので、
-                    // 送信元と受信側で一致する（Meta 直接代入経路が成立しているのと同じ前提）。
-                    for (int i = 0; i < n; i++)
+                    // 外部リグ（Realistic/Robot）: 参照コピー式リターゲット（HandRetarget.ApplyFromReference）。
+                    // 同期 boneRots を隠し白手（正解系）へそのまま流し込み、その実ワールド回転×定数オフセットを
+                    // パック bone へコピー。旧式A（親相対バインド差分）はリグ間の軸規約差で壊れた（2026-07-11 実害）。
+                    if (_metaBones != null)
                     {
-                        if (_meshBones[i] == null) continue;
-                        var ovrBind = (layout != null && i < layout.BoneCount)
-                            ? layout.BindLocalRot[i] : Quaternion.identity;
-                        var target = HandRetarget.Solve(boneRots[i], ovrBind, _varBind[i]);
-                        _meshBones[i]!.localRotation = Quaternion.Slerp(_meshBones[i]!.localRotation, target, smooth);
+                        HandRetarget.ApplyFromReference(boneRots, _metaBones, _meshBones, _varBind, smooth);
                     }
                 }
                 return;
@@ -281,12 +279,14 @@ namespace TableDuoVr.Net
 
             if (HandVariantTable.IsExternalRig(variant))
             {
-                // Realistic/Robot: パック手を生成（配置・スケール・材質は provider が処理）→ リターゲット駆動
+                // Realistic/Robot: パック手を生成（配置・スケール・材質・手首整列は provider が処理）
+                // → ワールドデルタ式リターゲット駆動（この分岐に来る時 layout は必ず non-null）
                 var built = provider.BuildExternalHand(_root, _isRight, variant);
                 if (built == null) return false;
                 _meshInstance = built.Instance;
                 _meshBones = built.Bones;
-                _varBind = built.VarBind;
+                _varBind = built.BoneOffsets;
+                _metaBones = built.MetaBones;
                 return true;
             }
 
@@ -335,6 +335,7 @@ namespace TableDuoVr.Net
             }
             _meshBones = null;
             _varBind = null;
+            _metaBones = null;
             _built = false;
             _meshTried = false;
             _externalDowngraded = false;
