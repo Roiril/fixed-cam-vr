@@ -26,7 +26,10 @@ namespace TableDuoVr.Net
             if (role == null) return;
             _applied = true;
 
-            bool isHand = role == StudyConfig.Role.Hand;
+            // 表示条件: 手役ローカル **かつ** 起動フラグ tdv_pattern=on（既定 OFF・2026-07-12 変更）。
+            // 協調配置課題（Phase 4）専用の刺激なので、通常の設営/体験では出さない
+            // （「カラフルなサイコロ状の板が空中に浮いてる」と誤認された実機指摘への対応）。
+            bool isHand = role == StudyConfig.Role.Hand && StudyConfig.ShowPatternPanel;
             if (panelRenderer != null)
             {
                 panelRenderer.gameObject.SetActive(isHand);

@@ -33,9 +33,13 @@ Robot/Male のみ `Assets/TableDuo/ThirdParty/VRHandsStarterPack/` に GUID 保�
 - 配置/スケール/材質 = `RemoteHandMeshProvider.BuildExternalHand`（手首を親原点整列、手首→中指遠位を
   `RefHandLenMeters=0.15m` に自動スケール、URP/Lit 肌/金属材質で全 Renderer 上書き＝パック Standard 材質のマゼンタ回避）。
 
-**状態（2026-07-11 Editor 数値+目視検証済み・実機再確認待ち）**: `Preview Hand Variants (screenshot)` が
-`Temp/HandVariantPreview/directions.txt` に指方向/甲法線の Default との角度差を出す（一次証拠）。
+**状態（2026-07-12 Editor 数値+目視検証済み・実機再確認待ち）**: `Preview Hand Variants (screenshot)` が
+`Temp/HandVariantPreview/directions.txt` に指方向/甲法線/親指方向/実測長の Default との差分を出す（一次証拠）。
 刷新後 Δfwd=0°・Δup≈10°・Δlat≈20°（式A 時代は 102°/74°）・多角度スクショで 3 種同ポーズ確認。
+**2026-07-12 実機指摘の追修正**: ①サイズ差 → スケール基準を固定 0.15m から**白手リファレンス実測長**へ（Δ0.0cm）。
+②親指の曲がり差 → Realistic（親指 3 節）の末節に当てる bone を thumb2 → **thumb3（先端）**に変更（HandVariantTable）。
+③空中の「カラフルなサイコロ状の板」＝ **PatternPanel**（Phase 4 協調配置課題の目標パターン・手役ローカル表示）だった
+→ 起動フラグ `tdv_pattern=on` の時だけ表示（既定 OFF・StudyConfig.ShowPatternPanel）。
 **⚠ Robot を一度「崩れてる」と誤判定したが視点の錯覚だった** — 機械リンクが嵩張り斜め/正面では重なって散って見えるが、
 **上面(`robot_top`/`03_top`)では掌+4指+親指がポーズどおり並ぶ普通のロボットハンド**。多角度は `Preview Robot Only` メニュー（背景の手を排し周回）。
 **ワールド空間FKリターゲットは試したが撤去**（Robotの見え方改善を狙ったが working だった Realistic を退行させた。そもそもRobotは式Aで問題なく不要だった）。naive世界FK再挑戦しない。

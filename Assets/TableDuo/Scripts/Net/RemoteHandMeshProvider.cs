@@ -187,15 +187,26 @@ namespace TableDuoVr.Net
                 return null;
             }
 
-            // 自動スケール: 手首→中指遠位（無ければ人差し指）でパック手を実寸に合わせる
+            // 自動スケール: 手首→中指遠位（無ければ人差し指）でパック手を**白手リファレンスの実測長**に合わせる。
+            // 固定値 RefHandLenMeters だと白手と微妙にサイズが違って見える（2026-07-12 実機指摘）。
+            // 同コンテナの白手から同じ 2 点間距離を測って合わせれば、切替時のサイズが白手と一致する。
             var wrist = bones[0];
-            var tip = bones[11] ?? bones[8] ?? bones[7];
+            int tipIdx = bones[11] != null ? 11 : (bones[8] != null ? 8 : 7);
+            var tip = bones[tipIdx];
             if (wrist != null && tip != null)
             {
                 float meshLen = Vector3.Distance(wrist.position, tip.position);
+                float targetLen = RefHandLenMeters; // 白手側で同 2 点が測れない時のフォールバック
+                var mW = metaBones[0];
+                var mTip = tipIdx < metaBones.Length ? metaBones[tipIdx] : null;
+                if (mW != null && mTip != null)
+                {
+                    float metaLen = Vector3.Distance(mW.position, mTip.position);
+                    if (metaLen > 1e-5f) targetLen = metaLen;
+                }
                 if (meshLen > 1e-5f)
                 {
-                    inst.transform.localScale = Vector3.one * (RefHandLenMeters / meshLen);
+                    inst.transform.localScale = Vector3.one * (targetLen / meshLen);
                 }
             }
             // 手首幾何フレーム整列: パック手の「指方向×甲法線」を白手（authored）のそれに回して合わせる。

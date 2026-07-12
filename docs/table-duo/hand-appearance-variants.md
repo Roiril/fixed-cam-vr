@@ -73,6 +73,17 @@ OVR 24bone をそのまま当てると指が壊れる。対策 2 つ:
 
 **実機（Quest）でさらに確認する点**: 修正 4 件の実機再確認・手の大きさ（`RefHandLenMeters`）。
 
+**参照コピー式への全面刷新（2026-07-11〜12・上記「式 A で成立」を更新）**: 実機で「手首から後ろ向きに生える＋
+Robot/Realistic で曲げ軸が逆」が発覚し、数値実測で式 A の前提崩壊を確定（layout の bind は live の中立でない:
+pinky0 で 173° 乖離／layout FK とメッシュ実階層が 100° 乖離）。→ **隠し Meta 白手を同コンテナに生成して live で
+駆動し、実ワールド回転 × 定数オフセット `C_i` をパック bone にコピーする参照コピー式**（`HandRetarget.ApplyFromReference`）
+へ変更。式 A（`Solve`）は RemyAvatarRig の指専用に残存。あわせて 2026-07-12 実機指摘 2 件:
+- **サイズ**: 固定 `RefHandLenMeters` → **白手リファレンスの実測長**（手首→中指遠位）に合わせる方式へ（Δ0.0cm）。
+- **Realistic の親指**: 3 節リグの末節に thumb2 を当てていたのを **thumb3（先端）** に変更（`HandVariantTable`）。
+  先端の曲げが白手/Robot と揃う。
+検証は `Preview Hand Variants (screenshot)` → `Temp/HandVariantPreview/directions.txt`（指方向/甲法線/親指方向/
+実測長の Default との差分）。
+
 **設定変更時**: `TableDuoSceneSetup` を編集したら `Tools/FixedCamVr/Setup/Setup TableDuo Scene` を再実行して
 シーンに焼き直す（provider の変種参照・`LocalVariantHand`・`HandVariantWatcher` を再配線）。
 

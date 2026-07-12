@@ -128,6 +128,8 @@ namespace TableDuoVr.EditorTools
         /// <summary>各バリアント手の指方向/横方向を anchor 空間で測って Default との角度差を出す。
         /// スクショの目視より確実な整合判定（曲げ軸ズレ・生える向きズレの検出）。</summary>
         private static Vector3 _defUp = Vector3.up;
+        private static Vector3 _defThumb = Vector3.zero;
+        private static float _defLen;
         private static string _driveDiag = "";
 
         private static void LogVariantDirections(Transform root, HandVariant[] vlist,
@@ -158,8 +160,16 @@ namespace TableDuoVr.EditorTools
                 Vector3 fwd = anchor.InverseTransformDirection((mid.position - wrist.position).normalized);
                 Vector3 lat = anchor.InverseTransformDirection((pnk.position - idx.position).normalized);
                 Vector3 up = Vector3.Cross(fwd, lat).normalized; // 右手の甲法線（WristFrame と同規約）
-                if (defFwd == null) { defFwd = fwd; defLat = lat; _defUp = up; }
-                sb.AppendLine($"  {v}: fwd={fwd:F2} lat={lat:F2} up={up:F2} | Δfwd={Vector3.Angle(defFwd.Value, fwd):F0}° Δlat={Vector3.Angle(defLat!.Value, lat):F0}° Δup={Vector3.Angle(_defUp, up):F0}°");
+                // 親指: 基節(3)→最遠マップ bone の方向（Realistic の thumb3 マッピング検証・2026-07-12）
+                var thBase = bones[3];
+                var thTip = bones[19] ?? bones[5] ?? bones[4];
+                Vector3 th = (thBase != null && thTip != null)
+                    ? anchor.InverseTransformDirection((thTip.position - thBase.position).normalized) : Vector3.zero;
+                // サイズ: 手首→中指遠位(11) の実測長（白手と一致するか・2026-07-12）
+                float len = (bones[11] != null && wrist != null) ? Vector3.Distance(wrist.position, bones[11]!.position) : 0f;
+                if (defFwd == null) { defFwd = fwd; defLat = lat; _defUp = up; _defThumb = th; _defLen = len; }
+                sb.AppendLine($"  {v}: fwd={fwd:F2} lat={lat:F2} up={up:F2} | Δfwd={Vector3.Angle(defFwd.Value, fwd):F0}° Δlat={Vector3.Angle(defLat!.Value, lat):F0}° Δup={Vector3.Angle(_defUp, up):F0}°" +
+                              $" | Δthumb={(th == Vector3.zero || _defThumb == Vector3.zero ? -1 : Vector3.Angle(_defThumb, th)):F0}° len={len * 100f:F1}cm(Δ{(len - _defLen) * 100f:+0.0;-0.0}cm)");
             }
             if (_driveDiag.Length > 0) { sb.Append("  --- 駆動計器 ---\n").Append(_driveDiag); _driveDiag = ""; }
             Debug.Log(sb.ToString());

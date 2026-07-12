@@ -41,7 +41,7 @@ namespace TableDuoVr.Hands
         }
 
         /// <summary>
-        /// tdv_role / tdv_marker / tdv_hands / tdv_pid / tdv_pair / tdv_preplace / tdv_hand を
+        /// tdv_role / tdv_marker / tdv_hands / tdv_pid / tdv_pair / tdv_pattern / tdv_preplace / tdv_hand を
         /// StudyConfig へ上書き適用する（無指定の項目は既存値＝Inspector 既定を保持）。
         /// </summary>
         public static void Apply()
@@ -65,6 +65,11 @@ namespace TableDuoVr.Hands
             if (!string.IsNullOrEmpty(pid)) { StudyConfig.ParticipantId = pid!; StudyConfig.LaunchedWithStudyFlags = true; }
             string? pair = Get("tdv_pair", "-tdvPair");
             if (!string.IsNullOrEmpty(pair)) { StudyConfig.PairId = pair!; StudyConfig.LaunchedWithStudyFlags = true; }
+
+            // 協調配置課題（Phase 4）の目標配置パネル表示（既定 OFF・課題実施時のみ on）
+            string? pattern = Get("tdv_pattern", "-tdvPattern");
+            if (pattern == "on") StudyConfig.ShowPatternPanel = true;
+            else if (pattern == "off") StudyConfig.ShowPatternPanel = false;
 
             // 診断: 各席に静的アバターを先置き（描画/疎通/トラッキングの段階切り分け）
             string? preplace = Get("tdv_preplace", "-tdvPreplace");

@@ -40,7 +40,11 @@ namespace TableDuoVr.Hands
                 0 => "Root",           // 手首（skinning root）
                 2 => "PreThumb",       // 親指 中手骨(CMC)
                 3 => "LowerThumb",     // 親指 基節(MCP)
-                4 => "UpwardThumb",    // 親指 末節(IP)  ※thumb3 は非対応（末端が無い）
+                // Male の親指は 3 節（Medium 無し）。末節 Upward には OVR **thumb3（先端）** を当てる。
+                // 旧: thumb2(=4) を当てていたが、先端の曲げ（thumb3）が捨てられ Robot（親指 4 節フル対応）と
+                // 曲がり方が食い違った（2026-07-12 実機指摘）。参照コピー式は白手 thumb3 の実ワールド回転を
+                // コピーするので、先端の向きが白手/Robot と一致する（中間節分の位置差は 3 節リグの構造上の限界）。
+                5 => "UpwardThumb",    // 親指 末節(IP) ← OVR thumb3
                 6 => "LowerIndex", 7 => "MediumIndex", 8 => "UpwardIndex",
                 9 => "LowerMiddle", 10 => "MediumMiddle", 11 => "UpwardMiddle",
                 12 => "LowerRing", 13 => "MediumRing", 14 => "UpwardRing",

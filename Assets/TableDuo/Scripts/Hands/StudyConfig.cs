@@ -55,6 +55,11 @@ namespace TableDuoVr.Hands
         /// し、owner の TableDuoPlayer が申告値を書き直して相手端末の描画も追従する）。</summary>
         public static HandVariant SelectedHandVariant;
 
+        /// <summary>協調配置課題（Phase 4）の目標配置パネルを手役に表示する（tdv_pattern=on、既定 OFF）。
+        /// 課題を使わない通常の設営/体験では「空中にカラフルな板が浮いてる」と誤認されるため既定で出さない
+        /// （2026-07-12 実機指摘）。</summary>
+        public static bool ShowPatternPanel;
+
         /// <summary>手バリアントが tdv_hand 起動フラグで固定された（＝調査条件として指定された）。
         /// Y ボタン切替（HandVariantWatcher）はこの時だけ無効化する。tdv_role 等の運用フラグは
         /// 手バリアントを固定しないので Y トグルは生かす（2026-07-11: 起動スクリプトが常に tdv_role を
@@ -99,6 +104,7 @@ namespace TableDuoVr.Hands
             ShowSelfBody = true;
             SelectedHandVariant = HandVariant.Default;
             HandVariantLockedByFlag = false;
+            ShowPatternPanel = false;
             HandVariantChanged = null;
         }
     }
