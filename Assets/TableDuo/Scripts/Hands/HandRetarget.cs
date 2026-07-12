@@ -40,14 +40,17 @@ namespace TableDuoVr.Hands
             return Quaternion.LookRotation(fwd, up.normalized);
         }
 
-        // 各指の BoneId チェーン（親→子）。aim 補正で「白手の同関節が指す方向」に pack を実際に向ける。
+        // 各指の BoneId チェーン（親→子）。aim 補正は **knuckle(MCP) 以降の節だけ**を白手方向へ向ける。
+        // ⚠ 中手骨（thumb0=2 / pinky0=15）は aim に含めない。含めると付け根そのものを白手方向へ回して
+        //   指の付け根位置が動き、小指が薬指側へ寄って重なる（2026-07-12 実測: ring-pnk 間隔が 2.5→1.3cm に潰れた）。
+        //   中手骨は参照コピー（白手ワールド回転の移植）に任せ、指の広がり（外転）はリグ本来の値を保つ。
         private static readonly int[][] FingerChains =
         {
-            new[] { 2, 3, 4, 5 },      // thumb
-            new[] { 6, 7, 8 },         // index
-            new[] { 9, 10, 11 },       // middle
-            new[] { 12, 13, 14 },      // ring
-            new[] { 15, 16, 17, 18 },  // pinky
+            new[] { 3, 4, 5 },     // thumb（thumb0=2 は含めない）
+            new[] { 6, 7, 8 },     // index
+            new[] { 9, 10, 11 },   // middle
+            new[] { 12, 13, 14 },  // ring
+            new[] { 16, 17, 18 },  // pinky（pinky0=15 は含めない）
         };
 
         /// <summary>参照コピー式 + aim 補正の適用（毎フレーム）。

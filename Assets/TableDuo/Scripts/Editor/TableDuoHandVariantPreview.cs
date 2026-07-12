@@ -146,6 +146,24 @@ namespace TableDuoVr.EditorTools
                 sb.Append($" {fname}={Vector3.Angle(pd, wd):F0}°");
             }
             sb.AppendLine();
+            // 指先の隣接間隔（wrist ローカル）。pack が白手より狭い＝指が寄って重なっている。
+            // ring-pinky が潰れるバグ（2026-07-12）の検出用。
+            int[] tips = { 8, 11, 14, 18 }; string[] tnm = { "idx", "mid", "ring", "pnk" };
+            var w0 = white[0]; var p0 = pack[0];
+            if (w0 != null && p0 != null)
+            {
+                sb.Append("    tipGap(pack/white cm):");
+                for (int t = 0; t < tips.Length - 1; t++)
+                {
+                    int a = tips[t], b = tips[t + 1];
+                    if (a >= pack.Length || b >= pack.Length || pack[a] == null || pack[b] == null ||
+                        white[a] == null || white[b] == null) { sb.Append($" {tnm[t]}-{tnm[t + 1]}=NA"); continue; }
+                    float pg = Vector3.Distance(pack[a]!.position, pack[b]!.position) * 100f;
+                    float wg = Vector3.Distance(white[a]!.position, white[b]!.position) * 100f;
+                    sb.Append($" {tnm[t]}-{tnm[t + 1]}={pg:F1}/{wg:F1}");
+                }
+                sb.AppendLine();
+            }
         }
 
         /// <summary>anchor 下に variant 手を建て、bonesR で駆動する。外部リグは BuiltHand を返す
