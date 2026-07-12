@@ -24,20 +24,9 @@ namespace TableDuoVr.EditorTools
         private const int Layer = 31;
         private static readonly HandVariant[] Variants = { HandVariant.Default, HandVariant.Realistic, HandVariant.Robot };
 
-        private static bool _applyMotion = true;
-        private static bool _robotOnly = false;
-
+        // rest（bind）と fist（最曲がり録画フレーム）の 2 ポーズを回し、各バリアントを白手リファレンスと
+        // 指ごとに数値比較 + スクショ（Temp/HandVariantPreview/rest・fist/）。実機と同一の参照コピー式経路。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Hand Variants (screenshot)", priority = 211)]
-        public static void CapturePosed() { _applyMotion = true; _robotOnly = false; Capture(); }
-
-        // Robot だけを原点に置き、背景の手を排して寄りで周回撮影（見え方の切り分け用）
-        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Robot Only (screenshot)", priority = 213)]
-        public static void CaptureRobotOnly() { _applyMotion = true; _robotOnly = true; Capture(); }
-
-        // 指を動かさず各モデルの authored rest（バインド）だけを見る診断。崩れが retarget 由来かモデル由来か切り分ける。
-        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Hand Variants Rest (screenshot)", priority = 212)]
-        public static void CaptureRest() { _applyMotion = false; Capture(); }
-
         public static void Capture()
         {
             var provider = Object.FindObjectOfType<RemoteHandMeshProvider>();
@@ -53,162 +42,141 @@ namespace TableDuoVr.EditorTools
                 Debug.LogError("[TableDuo] 手録画が読めない（TestData/tdv_handrec_real_*.bin）。");
                 return;
             }
-            var frame = data.Frames[PickExpressiveFrame(data)];
             var ovrBind = data.LayoutR; // 送信元の手 bind（= リターゲットの ovrBind）
+            if (ovrBind == null) { Debug.LogError("[TableDuo] 録画に手 layout（bind）が無い。"); return; }
+            var fistFrame = data.Frames[PickExpressiveFrame(data)];
 
-            string dir = Path.GetFullPath(Path.Combine(Application.dataPath,
-                _applyMotion ? "../Temp/HandVariantPreview" : "../Temp/HandVariantPreview/rest"));
-            Directory.CreateDirectory(dir);
-
-            GameObject? root = null, camGo = null, lightGo = null;
-            try
+            // rest = bind（静止・開き手）と fist（最も曲がった録画フレーム）の 2 ポーズを回す。
+            // 実機指摘（静止で指が曲がる／握りで指が交わる）は rest と fist を別々に見ないと切り分かない。
+            var poses = new (string name, Quaternion[] bonesR, Quaternion wristRot)[]
             {
-                root = new GameObject("HandVariantPreview");
-                var vlist = _robotOnly ? new[] { HandVariant.Robot } : Variants;
-                float[] xs = _robotOnly ? new[] { 0f } : new[] { -0.30f, 0f, 0.30f };
-                for (int v = 0; v < vlist.Length; v++)
+                ("rest", ovrBind.BindLocalRot, fistFrame.WristRotR),
+                ("fist", fistFrame.BonesR, fistFrame.WristRotR),
+            };
+
+            var sb = new System.Text.StringBuilder("[TableDuo] 手バリアント忠実度診断（pack vs 同コンテナ白手・指ごと世界方向差）:\n");
+            foreach (var (poseName, bonesR, wristRot) in poses)
+            {
+                string dir = Path.GetFullPath(Path.Combine(Application.dataPath, $"../Temp/HandVariantPreview/{poseName}"));
+                Directory.CreateDirectory(dir);
+                sb.AppendLine($"[{poseName}]");
+
+                GameObject? root = null, camGo = null, lightGo = null;
+                try
                 {
-                    var anchor = new GameObject($"{vlist[v]}").transform;
-                    anchor.SetParent(root.transform, false);
-                    anchor.localPosition = new Vector3(xs[v], 0f, 0f);
-                    anchor.localRotation = frame.WristRotR; // 実機と同じ: 手首の向きを anchor に、bone は相対
-                    BuildHand(provider, anchor, vlist[v], frame, ovrBind);
+                    root = new GameObject("HandVariantPreview");
+                    var vlist = Variants;
+                    float[] xs = { -0.30f, 0f, 0.30f };
+                    for (int v = 0; v < vlist.Length; v++)
+                    {
+                        var anchor = new GameObject($"{vlist[v]}").transform;
+                        anchor.SetParent(root.transform, false);
+                        anchor.localPosition = new Vector3(xs[v], 0f, 0f);
+                        anchor.localRotation = wristRot; // 実機と同じ: 手首の向きを anchor に、bone は相対
+                        var built = BuildHand(provider, anchor, vlist[v], bonesR, ovrBind);
+                        if (built != null) AppendFingerFidelity(sb, vlist[v], built);
+                    }
+
+                    foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                        smr.forceMatrixRecalculationPerRender = true;
+                    SetLayerRecursive(root, Layer);
+
+                    lightGo = new GameObject("PreviewLight");
+                    var light = lightGo.AddComponent<Light>();
+                    light.type = LightType.Directional;
+                    light.intensity = 1.15f;
+                    light.transform.rotation = Quaternion.Euler(35f, -20f, 0f);
+
+                    camGo = new GameObject("PreviewCam");
+                    var cam = camGo.AddComponent<Camera>();
+                    cam.fieldOfView = 30f;
+                    cam.nearClipPlane = 0.01f;
+                    cam.farClipPlane = 20f;
+                    cam.clearFlags = CameraClearFlags.SolidColor;
+                    cam.backgroundColor = new Color(0.45f, 0.47f, 0.50f);
+                    cam.cullingMask = 1 << Layer;
+
+                    var aim = new Vector3(0.06f, -0.02f, 0f);
+                    Shot(cam, dir, "01_front.png", new Vector3(0.06f, 0.0f, -1.75f), aim);
+                    Shot(cam, dir, "02_threequarter.png", new Vector3(-0.85f, 0.45f, -1.35f), aim);
+                    Shot(cam, dir, "03_top.png", new Vector3(0.06f, 1.5f, -0.4f), aim);
                 }
-
-                // 数値診断: 各バリアントの指方向（wrist→middle1）と横方向（index1→pinky1）を
-                // anchor 空間で測り、Default との角度差を出す（誤差 <15° 目安で整合と判定できる一次証拠）
-                LogVariantDirections(root.transform, vlist, frame, ovrBind);
-
-                foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-                    smr.forceMatrixRecalculationPerRender = true;
-                SetLayerRecursive(root, Layer);
-
-                lightGo = new GameObject("PreviewLight");
-                var light = lightGo.AddComponent<Light>();
-                light.type = LightType.Directional;
-                light.intensity = 1.15f;
-                light.transform.rotation = Quaternion.Euler(35f, -20f, 0f);
-
-                camGo = new GameObject("PreviewCam");
-                var cam = camGo.AddComponent<Camera>();
-                cam.fieldOfView = 30f;
-                cam.nearClipPlane = 0.01f;
-                cam.farClipPlane = 20f;
-                cam.clearFlags = CameraClearFlags.SolidColor;
-                cam.backgroundColor = new Color(0.45f, 0.47f, 0.50f); // 白手も黒ロボットも見えるミッドグレー
-                cam.cullingMask = 1 << Layer;
-
-                // 手は手首から +x 方向へ伸びるので aim を少し +x に寄せて 3 体を収める
-                var aim = new Vector3(0.06f, -0.02f, 0f);
-                Shot(cam, dir, "01_front.png", new Vector3(0.06f, 0.0f, -1.75f), aim);
-                Shot(cam, dir, "02_threequarter.png", new Vector3(-0.85f, 0.45f, -1.35f), aim);
-                Shot(cam, dir, "03_top.png", new Vector3(0.06f, 1.5f, -0.4f), aim);
-
-                // Robot を寄りで周回撮影（角度による見え方の誤解を排除・実際に崩れているか判定）
-                var rc = new Vector3(_robotOnly ? 0.06f : 0.36f, 0f, 0f); // Robot 手首＋前方の指の概略中心
-                const float r = 0.34f;
-                Shot(cam, dir, "robot_front.png", rc + new Vector3(0f, 0.02f, -r), rc);
-                Shot(cam, dir, "robot_back.png", rc + new Vector3(0f, 0.02f, r), rc);
-                Shot(cam, dir, "robot_left.png", rc + new Vector3(-r, 0.02f, 0f), rc);
-                Shot(cam, dir, "robot_right.png", rc + new Vector3(r, 0.02f, 0f), rc);
-                Shot(cam, dir, "robot_top.png", rc + new Vector3(0f, r, -0.04f), rc);
-                Shot(cam, dir, "robot_iso.png", rc + new Vector3(-0.24f, 0.24f, -0.24f), rc);
-
-                Debug.Log($"[TableDuo] 手バリアントプレビュー保存 → {dir}\n" +
-                          "左=Default(白手) / 中=Realistic(人間) / 右=Robot。3種が同じ握り形なら指リターゲットOK。");
-            }
-            finally
-            {
-                if (root != null) Object.DestroyImmediate(root);
-                if (camGo != null) Object.DestroyImmediate(camGo);
-                if (lightGo != null) Object.DestroyImmediate(lightGo);
-            }
-        }
-
-        /// <summary>各バリアント手の指方向/横方向を anchor 空間で測って Default との角度差を出す。
-        /// スクショの目視より確実な整合判定（曲げ軸ズレ・生える向きズレの検出）。</summary>
-        private static Vector3 _defUp = Vector3.up;
-        private static Vector3 _defThumb = Vector3.zero;
-        private static float _defLen;
-        private static string _driveDiag = "";
-
-        private static void LogVariantDirections(Transform root, HandVariant[] vlist,
-            AvatarPose frame, HandSkeletonLayout? ovrBind)
-        {
-            Vector3? defFwd = null, defLat = null;
-            _defUp = Vector3.up;
-            var sb = new System.Text.StringBuilder("[TableDuo] バリアント方向診断（anchor 空間）:\n");
-            // リターゲット入力の健全性: layout の有無と wrist の live↔bind 回転差
-            if (ovrBind == null) sb.AppendLine("  ⚠ ovrBind(layout)=null → 外部リグはワールドデルタ未適用（bind のまま）");
-            else
-            {
-                sb.AppendLine($"  layout.BoneCount={ovrBind.BoneCount} " +
-                    $"Δwrist(live vs bind)={Quaternion.Angle(frame.BonesR[0], ovrBind.BindLocalRot[0]):F0}°");
-            }
-            foreach (var v in vlist)
-            {
-                var anchor = root.Find(v.ToString());
-                if (anchor == null) continue;
-                var bones = RemoteHandMeshProvider.MapHandBonesByName(anchor, isRight: true, v);
-                var wrist = bones[0]; var idx = bones[6]; var mid = bones[9];
-                var pnk = bones[16] != null ? bones[16] : bones[15];
-                if (wrist == null || idx == null || mid == null || pnk == null)
+                finally
                 {
-                    sb.AppendLine($"  {v}: bone 不足（wrist={wrist != null} idx={idx != null} mid={mid != null} pnk={pnk != null}）");
-                    continue;
+                    if (root != null) Object.DestroyImmediate(root);
+                    if (camGo != null) Object.DestroyImmediate(camGo);
+                    if (lightGo != null) Object.DestroyImmediate(lightGo);
                 }
-                Vector3 fwd = anchor.InverseTransformDirection((mid.position - wrist.position).normalized);
-                Vector3 lat = anchor.InverseTransformDirection((pnk.position - idx.position).normalized);
-                Vector3 up = Vector3.Cross(fwd, lat).normalized; // 右手の甲法線（WristFrame と同規約）
-                // 親指: 基節(3)→最遠マップ bone の方向（Realistic の thumb3 マッピング検証・2026-07-12）
-                var thBase = bones[3];
-                var thTip = bones[19] ?? bones[5] ?? bones[4];
-                Vector3 th = (thBase != null && thTip != null)
-                    ? anchor.InverseTransformDirection((thTip.position - thBase.position).normalized) : Vector3.zero;
-                // サイズ: 手首→中指遠位(11) の実測長（白手と一致するか・2026-07-12）
-                float len = (bones[11] != null && wrist != null) ? Vector3.Distance(wrist.position, bones[11]!.position) : 0f;
-                if (defFwd == null) { defFwd = fwd; defLat = lat; _defUp = up; _defThumb = th; _defLen = len; }
-                sb.AppendLine($"  {v}: fwd={fwd:F2} lat={lat:F2} up={up:F2} | Δfwd={Vector3.Angle(defFwd.Value, fwd):F0}° Δlat={Vector3.Angle(defLat!.Value, lat):F0}° Δup={Vector3.Angle(_defUp, up):F0}°" +
-                              $" | Δthumb={(th == Vector3.zero || _defThumb == Vector3.zero ? -1 : Vector3.Angle(_defThumb, th)):F0}° len={len * 100f:F1}cm(Δ{(len - _defLen) * 100f:+0.0;-0.0}cm)");
             }
-            if (_driveDiag.Length > 0) { sb.Append("  --- 駆動計器 ---\n").Append(_driveDiag); _driveDiag = ""; }
+
             Debug.Log(sb.ToString());
-            // コンソール API は複数行を切るのでファイルにも残す
             File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,
                 "../Temp/HandVariantPreview/directions.txt")), sb.ToString());
+            Debug.Log("[TableDuo] 忠実度診断 → Temp/HandVariantPreview/directions.txt / rest・fist の各スクショ");
         }
 
-        private static void BuildHand(RemoteHandMeshProvider provider, Transform anchor, HandVariant variant,
-            AvatarPose frame, HandSkeletonLayout? ovrBind)
+        // 指ごとの (mcp→tip) BoneId。pack と白手リファレンスを同 BoneId で比較する。
+        private static readonly (string name, int mcp, int tip)[] Fingers =
+        {
+            ("thumb", 3, 5), ("index", 6, 8), ("middle", 9, 11), ("ring", 12, 14), ("pinky", 16, 18),
+        };
+
+        /// <summary>pack 各指の (mcp→tip) 世界方向を、同コンテナの白手リファレンス（正解）と比較して角度差を出す。
+        /// pack は白手を「なぞる」設計なので、全指 &lt;~15° なら忠実。大きい指＝その指のリターゲット/マッピング不良。
+        /// サイズも wrist→middle3 の長さ比で白手と比較（1.00 なら一致）。</summary>
+        private static void AppendFingerFidelity(System.Text.StringBuilder sb, HandVariant variant,
+            RemoteHandMeshProvider.BuiltHand built)
+        {
+            var pack = built.Bones; var white = built.MetaBones;
+            float sizeRatio = -1f;
+            if (pack[0] != null && pack[11] != null && white[0] != null && white[11] != null)
+            {
+                float wl = Vector3.Distance(white[0]!.position, white[11]!.position);
+                float pl = Vector3.Distance(pack[0]!.position, pack[11]!.position);
+                if (wl > 1e-5f) sizeRatio = pl / wl;
+            }
+            sb.Append($"  {variant}: sizeRatio={sizeRatio:F2}");
+            foreach (var (fname, mcp, tip) in Fingers)
+            {
+                if (mcp >= pack.Length || tip >= pack.Length ||
+                    pack[mcp] == null || pack[tip] == null || white[mcp] == null || white[tip] == null)
+                { sb.Append($" {fname}=NA"); continue; }
+                Vector3 pd = (pack[tip]!.position - pack[mcp]!.position).normalized;
+                Vector3 wd = (white[tip]!.position - white[mcp]!.position).normalized;
+                sb.Append($" {fname}={Vector3.Angle(pd, wd):F0}°");
+            }
+            sb.AppendLine();
+        }
+
+        /// <summary>anchor 下に variant 手を建て、bonesR で駆動する。外部リグは BuiltHand を返す
+        /// （忠実度診断が MetaBones/Bones を読む）。Default は白手直接駆動で null を返す。</summary>
+        private static RemoteHandMeshProvider.BuiltHand? BuildHand(RemoteHandMeshProvider provider,
+            Transform anchor, HandVariant variant, Quaternion[] bonesR, HandSkeletonLayout ovrBind)
         {
             if (HandVariantTable.IsExternalRig(variant))
             {
-                // 実機（LocalVariantHand / RemoteHandView）と同じワールドデルタ式で駆動（手首整列込み）
-                var built = provider.BuildExternalHand(anchor, isRight: true, variant);
-                if (built == null) { Debug.LogWarning($"[TableDuo] {variant} の構築に失敗"); return; }
-                if (!_applyMotion) return; // rest 診断: retarget せず整列済み bind のまま
-                // 実機（LocalVariantHand / RemoteHandView）と同じ参照コピー式で駆動
-                HandRetarget.ApplyFromReference(frame.BonesR, built.MetaBones, built.Bones,
-                    built.BoneOffsets, smooth: 1f);
-                return;
+                // 実機（LocalVariantHand / RemoteHandView）と同じ参照コピー式で駆動。restPose=bind で
+                // オフセット捕捉を rest 基準にする（実機と同一経路）
+                var built = provider.BuildExternalHand(anchor, isRight: true, variant, ovrBind);
+                if (built == null) { Debug.LogWarning($"[TableDuo] {variant} の構築に失敗"); return null; }
+                HandRetarget.ApplyFromReference(bonesR, built.MetaBones, built.Bones, built.BoneOffsets, smooth: 1f);
+                return built;
             }
 
             // Default: Meta 白手を同期 bone で直接駆動（正解基準）
             var prefab = provider.GetPrefab(isRight: true, HandVariant.Default);
-            if (prefab == null) { Debug.LogWarning("[TableDuo] Default プレハブ（OVRCustomHandPrefab_R）が無い"); return; }
+            if (prefab == null) { Debug.LogWarning("[TableDuo] Default プレハブ（OVRCustomHandPrefab_R）が無い"); return null; }
             var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab, anchor);
             inst.transform.localPosition = Vector3.zero;
             inst.transform.localRotation = Quaternion.identity;
             inst.SetActive(true);
-            if (_applyMotion)
-            {
-                var mapped = RemoteHandMeshProvider.MapHandBonesByName(inst.transform, isRight: true, HandVariant.Default);
-                int m = Mathf.Min(frame.BonesR.Length, mapped.Length);
-                for (int i = 0; i < m; i++)
-                    if (mapped[i] != null) mapped[i]!.localRotation = frame.BonesR[i];
-            }
+            var mapped = RemoteHandMeshProvider.MapHandBonesByName(inst.transform, isRight: true, HandVariant.Default);
+            int m = Mathf.Min(bonesR.Length, mapped.Length);
+            for (int i = 0; i < m; i++)
+                if (mapped[i] != null) mapped[i]!.localRotation = bonesR[i];
             var smr = inst.GetComponentInChildren<SkinnedMeshRenderer>(true);
             if (smr != null && provider.HandMaterial != null) smr.sharedMaterial = provider.HandMaterial;
+            return null;
         }
 
         /// <summary>指がよく曲がっている（bind から角度が大きい）フレームを選ぶ＝表情のある一枚。</summary>

@@ -36,10 +36,17 @@ Robot/Male のみ `Assets/TableDuo/ThirdParty/VRHandsStarterPack/` に GUID 保�
 **状態（2026-07-12 Editor 数値+目視検証済み・実機再確認待ち）**: `Preview Hand Variants (screenshot)` が
 `Temp/HandVariantPreview/directions.txt` に指方向/甲法線/親指方向/実測長の Default との差分を出す（一次証拠）。
 刷新後 Δfwd=0°・Δup≈10°・Δlat≈20°（式A 時代は 102°/74°）・多角度スクショで 3 種同ポーズ確認。
-**2026-07-12 実機指摘の追修正**: ①サイズ差 → スケール基準を固定 0.15m から**白手リファレンス実測長**へ（Δ0.0cm）。
-②親指の曲がり差 → Realistic（親指 3 節）の末節に当てる bone を thumb2 → **thumb3（先端）**に変更（HandVariantTable）。
-③空中の「カラフルなサイコロ状の板」＝ **PatternPanel**（Phase 4 協調配置課題の目標パターン・手役ローカル表示）だった
-→ 起動フラグ `tdv_pattern=on` の時だけ表示（既定 OFF・StudyConfig.ShowPatternPanel）。
+**2026-07-12 実機指摘の追修正（第1弾・不十分だった）**: ②親指を thumb2→thumb3 マップ変更、①サイズを白手
+リファレンス実測長へ、③PatternPanel を tdv_pattern gating。だが**実機で再指摘**（サイズまだズレ・rest で指曲がる・
+Robot 握りで指交差・親指の曲げ違う）→ プレビューが実機を再現できていなかった（下記が真因）。
+
+**2026-07-12 第2弾（根治・プレビュー忠実化とセット）**: 3 つの独立バグを数値実測で分離して根治。
+- **サイズ（実機のみ出る・プレビュー素通り）**: ライブ白手 OVRHandPrefab は `_updateRootScale=1` で **HandScale（ユーザー実手サイズ）に毎フレームスケール**されるが、リターゲット基準の OVRCustomHandPrefab は `_updateRootScale=0` の固定サイズ（別プレハブ・別メッシュ／サブエージェント確認）。固定基準に合わせると実手より小さい。→ **LocalVariantHand がライブ骨の中指チェーン実測長（剛体セグメント和・ポーズ不変）を測り、`BuildExternalHand(sizeRefWorldLen)` に渡して pack をそこへスケール**。リモートは HandScale 無しなので従来の白手基準でよい（sizeRef=0 でフォールバック）。
+- **rest で指が曲がる**: 定数オフセット C_i を**白手 prefab authored のまま捕捉**していた。runtime は白手を live で駆動するので authored と live-rest の差が residual に。→ `BuildMetaReference(restPose)` で**白手を OVR bind に駆動してから C を捕捉**。
+- **親指 100°ズレ・Robot 指交差（最重要）**: 参照コピー式は各ボーンの**ワールド回転**を白手に似せるだけで、**見える指方向はリグ固有ボーン軸で決まる**ため軸規約が違うほどズレる（中指=0°は手首整列基準だから／親指 Realistic=100°・Robot=52°）。→ `ApplyFromReference` に **aim 補正**を追加: 各指チェーンを親→子に辿り、pack bone の子方向を白手同関節の子方向へ `FromToRotation` で実際に向ける。**全指 rest/fist とも 100°→0-1°**（`Preview Hand Variants (screenshot)` の `directions.txt` で計測）。
+- **プレビュー忠実化**: 診断を「rest（bind）+ fist（最曲がり録画）の 2 ポーズ × 指ごとに pack vs 同コンテナ白手の世界方向差」に作り替え。旧診断は 1 フレーム・手首向きしか見ず rest 残差を検出できなかった。ただし **HandScale はプレビューに無い**ので sizeRatio は常に 1.00＝サイズは実機でしか検証不可。
+- ③空中の「カラフルなサイコロ状の板」＝ **PatternPanel**（Phase 4 協調配置課題の目標パターン・手役ローカル表示）
+  → 起動フラグ `tdv_pattern=on` の時だけ表示（既定 OFF・StudyConfig.ShowPatternPanel）。
 **⚠ Robot を一度「崩れてる」と誤判定したが視点の錯覚だった** — 機械リンクが嵩張り斜め/正面では重なって散って見えるが、
 **上面(`robot_top`/`03_top`)では掌+4指+親指がポーズどおり並ぶ普通のロボットハンド**。多角度は `Preview Robot Only` メニュー（背景の手を排し周回）。
 **ワールド空間FKリターゲットは試したが撤去**（Robotの見え方改善を狙ったが working だった Realistic を退行させた。そもそもRobotは式Aで問題なく不要だった）。naive世界FK再挑戦しない。

@@ -99,8 +99,14 @@ namespace TableDuoVr.Net
                 _builtVariant = variant;
                 // 手アンカー（回転=送信 wristRot と同じフレーム）に吊るす。[TDV-WRIST] 実測で
                 // アンカーと実手首 bone の位置差は delta=0 のため位置整列もこれで足りる。
-                // 手首幾何フレーム整列（生える向きの根治）と隠し白手リファレンスの構築は provider 内で行う
-                _built = provider.BuildExternalHand(skeleton.transform, isRight, variant);
+                // 手首幾何フレーム整列（生える向きの根治）と隠し白手リファレンスの構築は provider 内で行う。
+                // restPose（OVR bind）を渡してオフセット捕捉を rest 基準にする（静止時に指が曲がる残差の根治）
+                var restPose = isRight ? HandSkeletonLayout.CapturedR : HandSkeletonLayout.CapturedL;
+                // サイズ基準 = 表示中のライブ白手（OVRHandPrefab・HandScale で実手サイズに追従）の
+                // 中指チェーン実測長（world・剛体セグメント和でポーズ不変）。これに pack を合わせると
+                // 実手サイズと一致する（固定リファレンスに合わせると小さく見える 2026-07-12 実機指摘の根治）
+                float liveLen = MiddleChainWorldLen(skeleton.Bones);
+                _built = provider.BuildExternalHand(skeleton.transform, isRight, variant, restPose, liveLen);
                 SetMetaHandVisible(false);
                 if (_built == null) { _buildFailed = true; return; }
             }
@@ -115,6 +121,19 @@ namespace TableDuoVr.Net
             for (int i = n; i < _liveLocals.Length; i++) _liveLocals[i] = Quaternion.identity;
             HandRetarget.ApplyFromReference(_liveLocals, _built.MetaBones, _built.Bones,
                 _built.BoneOffsets, smooth: 1f);
+        }
+
+        /// <summary>中指チェーン（wrist0→middle1(9)→middle2(10)→middle3(11)）の world セグメント長の和。
+        /// 骨長は剛体でポーズに依らないので、指を曲げていても正しい「手の長さ」が測れる。
+        /// bone 不足時は 0（呼び出し側はフォールバックへ）。</summary>
+        private static float MiddleChainWorldLen(System.Collections.Generic.IList<OVRBone> bones)
+        {
+            if (bones == null || bones.Count <= 11) return 0f;
+            var p0 = bones[0].Transform.position;
+            var p9 = bones[9].Transform.position;
+            var p10 = bones[10].Transform.position;
+            var p11 = bones[11].Transform.position;
+            return Vector3.Distance(p0, p9) + Vector3.Distance(p9, p10) + Vector3.Distance(p10, p11);
         }
     }
 }

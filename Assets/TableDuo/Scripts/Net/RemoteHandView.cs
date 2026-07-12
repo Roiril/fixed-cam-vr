@@ -280,8 +280,9 @@ namespace TableDuoVr.Net
             if (HandVariantTable.IsExternalRig(variant))
             {
                 // Realistic/Robot: パック手を生成（配置・スケール・材質・手首整列は provider が処理）
-                // → ワールドデルタ式リターゲット駆動（この分岐に来る時 layout は必ず non-null）
-                var built = provider.BuildExternalHand(_root, _isRight, variant);
+                // → 参照コピー式リターゲット駆動（この分岐に来る時 layout は必ず non-null）。
+                // restPose=layout で C 捕捉を rest 基準にする（静止時に指が曲がる残差の根治）
+                var built = provider.BuildExternalHand(_root, _isRight, variant, layout);
                 if (built == null) return false;
                 _meshInstance = built.Instance;
                 _meshBones = built.Bones;

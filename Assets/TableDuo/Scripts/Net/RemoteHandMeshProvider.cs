@@ -96,7 +96,7 @@ namespace TableDuoVr.Net
         ///   正解は「白手そのものを live で駆動し、その実ワールド回転を参照する」こと。
         /// 駆動系（OVRSkeleton/OVRHand/Animator）を剥がし全 Renderer を無効化して返す。失敗時 null。</summary>
         private GameObject? BuildMetaReference(Transform container, bool isRight,
-            out Transform?[] metaBones, out Quaternion wristFrame)
+            HandSkeletonLayout? restPose, out Transform?[] metaBones, out Quaternion wristFrame)
         {
             metaBones = System.Array.Empty<Transform?>();
             wristFrame = Quaternion.identity;
@@ -107,6 +107,18 @@ namespace TableDuoVr.Net
             tmp.transform.localPosition = Vector3.zero;
             tmp.transform.localRotation = Quaternion.identity;
             var mb = MapHandBonesByName(tmp.transform, isRight, HandVariant.Default);
+            // ⚠ 定数オフセット C_i の捕捉は「白手を OVR bind（＝live の静止姿勢）へ駆動した状態」で行う。
+            //   prefab authored のまま捕捉すると、authored と live-rest の差が residual として残り、
+            //   実機で「静止しているのに指が曲がって見える」（2026-07-12 実機指摘）。bind に駆動すれば
+            //   runtime で live==bind（rest）のとき pack がちょうど自身の authored rest に収束する。
+            if (restPose != null)
+            {
+                int rn = Mathf.Min(restPose.BoneCount, mb.Length);
+                for (int i = 0; i < rn; i++)
+                {
+                    if (mb[i] != null) mb[i]!.localRotation = restPose.BindLocalRot[i];
+                }
+            }
             var w = mb[0]; var idx = mb[6]; var mid = mb[9];
             var pnk = mb[16] != null ? mb[16] : mb[15];
             if (w == null || idx == null || mid == null || pnk == null)
@@ -155,7 +167,8 @@ namespace TableDuoVr.Net
         /// - コライダー除去・全 Renderer を variant 材質で上書き（Standard 材質のマゼンタ化を回避）
         /// 失敗時は生成物を破棄して null。
         /// </summary>
-        public BuiltHand? BuildExternalHand(Transform parent, bool isRight, HandVariant variant)
+        public BuiltHand? BuildExternalHand(Transform parent, bool isRight, HandVariant variant,
+            HandSkeletonLayout? restPose = null, float sizeRefWorldLen = 0f)
         {
             var prefab = GetPrefab(isRight, variant);
             if (prefab == null) return null;
@@ -180,7 +193,7 @@ namespace TableDuoVr.Net
             // 正解系リファレンス: 隠し Meta 白手（authored bind のまま・非表示）
             Transform?[] metaBones = System.Array.Empty<Transform?>();
             Quaternion fOvr = Quaternion.identity;
-            var metaRef = anyMapped ? BuildMetaReference(container.transform, isRight, out metaBones, out fOvr) : null;
+            var metaRef = anyMapped ? BuildMetaReference(container.transform, isRight, restPose, out metaBones, out fOvr) : null;
             if (!anyMapped || metaRef == null)
             {
                 if (Application.isPlaying) Object.Destroy(container); else Object.DestroyImmediate(container);
@@ -196,13 +209,24 @@ namespace TableDuoVr.Net
             if (wrist != null && tip != null)
             {
                 float meshLen = Vector3.Distance(wrist.position, tip.position);
-                float targetLen = RefHandLenMeters; // 白手側で同 2 点が測れない時のフォールバック
-                var mW = metaBones[0];
-                var mTip = tipIdx < metaBones.Length ? metaBones[tipIdx] : null;
-                if (mW != null && mTip != null)
+                float targetLen = RefHandLenMeters; // 最終フォールバック
+                // 優先: 呼び出し側が渡す **表示中の手の実測長（world）**。ローカル手は OVRHandPrefab が
+                // HandScale でユーザーの実手サイズにスケールされるが、リファレンス OVRCustomHandPrefab は
+                // 固定サイズなので、リファレンスに合わせると実手より小さく見える（2026-07-12 実機指摘の真因・
+                // サブエージェント確認: _updateRootScale が両者で 1/0 と逆）。→ ライブ骨長に直接合わせる。
+                if (sizeRefWorldLen > 1e-5f)
                 {
-                    float metaLen = Vector3.Distance(mW.position, mTip.position);
-                    if (metaLen > 1e-5f) targetLen = metaLen;
+                    targetLen = sizeRefWorldLen;
+                }
+                else
+                {
+                    var mW = metaBones[0];
+                    var mTip = tipIdx < metaBones.Length ? metaBones[tipIdx] : null;
+                    if (mW != null && mTip != null)
+                    {
+                        float metaLen = Vector3.Distance(mW.position, mTip.position);
+                        if (metaLen > 1e-5f) targetLen = metaLen;
+                    }
                 }
                 if (meshLen > 1e-5f)
                 {
