@@ -557,8 +557,9 @@ namespace TableDuoVr.EditorTools
                 // 先頭チップ（潜水艦のもぐり口に繋がる）は先端を潜水艦（+Z）へ向ける
                 if (i == 0) yaw = 0f;
                 var pos = new Vector3(pts[i].x, topY, pts[i].z);
+                // 宝物チップは本家 海底探検の初期状態と同じく数字面を伏せて（裏返しで）並べる
                 var chip = PlaceModelRealScale($"{DsaGlbDir}/{chain[i]}.glb", parent, $"DSA_{chain[i]}_{i}", pos, yaw,
-                    grabbable: true, scale: chipScale, physics: true);
+                    grabbable: true, scale: chipScale, physics: true, faceDown: true);
                 SetSurfaceClamp(chip, topY, cx, cz, hx, hz);
             }
 
@@ -812,7 +813,8 @@ namespace TableDuoVr.EditorTools
         /// physics=true はさらに Rigidbody + Collider + NetworkRigidbody（卓上ボードゲームのピース用）。
         /// </summary>
         private static GameObject? PlaceModelRealScale(string glbPath, Transform parent, string name,
-            Vector3 pos, float yaw, bool grabbable, float scale = 1f, bool physics = false, bool ccd = false)
+            Vector3 pos, float yaw, bool grabbable, float scale = 1f, bool physics = false, bool ccd = false,
+            bool faceDown = false)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(glbPath);
             if (prefab == null)
@@ -823,7 +825,8 @@ namespace TableDuoVr.EditorTools
             var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
             go.name = name;
             go.transform.SetParent(parent, false);
-            go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            // faceDown=数字面を伏せる（水平軸まわり 180° 反転）。反転後も b.min.y を topY に載せるので卓上に正立
+            go.transform.localRotation = faceDown ? Quaternion.Euler(180f, yaw, 0f) : Quaternion.Euler(0f, yaw, 0f);
             if (!Mathf.Approximately(scale, 1f)) go.transform.localScale *= scale;
 
             var renderers = go.GetComponentsInChildren<Renderer>();
