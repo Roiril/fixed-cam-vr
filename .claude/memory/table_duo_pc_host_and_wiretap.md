@@ -32,6 +32,11 @@ PC (NGO host・spectator・L0 desktop build)  ← Quest A: client/full(人)  ←
 - PC host（spectator）は送出しないので recv のみ（両 client 分＝origin 列で判別）＝両者のワイヤ全体像
 - 出力 `persistentDataPath/tdv_wiretap_yyyyMMdd_HHmmss.csv`（列: tMs,dir,origin,seq,captureMs,tracked/pinch,head pos/euler,wrist L/R pos,indexBend L/R）。2s ごと flush。
 
+## 観戦カメラの視点切替（PC ホスト画面・2026-07-13）
+PC ホスト（spectator）画面**左上の GUI ボタン／数字キー 1-3** で観戦カメラを3モード切替（[SpectatorController](../../Assets/TableDuo/Scripts/Net/SpectatorController.cs)）:
+- **1=俯瞰**（既定・両者を等距離で俯瞰）/ **2=人役視点**（席0 の完全一人称）/ **3=手役視点**（席1 の完全一人称）
+- 一人称は対象プレイヤーの頭 world pose にカメラを毎フレ追従し、当人の頭だけ潰す（胴・腕・手は残る＝体を見下ろせる）。純ローカル＝ネット非関与・Quest client 無変更。未接続なら「（対象 未接続）」表示でカメラ据え置き。WireTap の GUI（右上）とは別領域
+
 ## 操作ボタン（2026-07-06 現在）
 - **A（右手）単押し**: 視点リセット（席へ再センタ）。両手グリップ3秒長押しも維持（[ControllerRecenterWatcher](../../Assets/TableDuo/Scripts/Hands/ControllerRecenterWatcher.cs)）
 - **B（右手）単押し**: WireTap 記録トグル

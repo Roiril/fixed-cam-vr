@@ -474,6 +474,19 @@ namespace TableDuoVr.Net
             _view.Apply(pose);
         }
 
+        /// <summary>観戦一人称視点用: このリモートプレイヤーの頭 world pose（描画側平滑済み）。
+        /// アバター未生成（owner 自身・観戦者・未接続・pose 未受信）なら false。SpectatorController が使う。</summary>
+        public bool TryGetRemoteHeadWorldPose(out Vector3 pos, out Quaternion rot)
+        {
+            if (_view != null) return _view.TryGetHeadWorldPose(out pos, out rot);
+            pos = default;
+            rot = Quaternion.identity;
+            return false;
+        }
+
+        /// <summary>観戦一人称視点で当人の頭ジオメトリを潰す/戻す（SpectatorController が視点対象に対して呼ぶ）。</summary>
+        public void SetRemoteHeadCollapsed(bool collapsed) => _view?.SetHeadCollapsed(collapsed);
+
         private static int SeatIndexOf(StudyConfig.Role role) => role switch
         {
             StudyConfig.Role.Full => 0,

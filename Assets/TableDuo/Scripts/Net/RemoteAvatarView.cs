@@ -46,6 +46,12 @@ namespace TableDuoVr.Net
         private readonly AvatarPose _target = new();
         private bool _hasTarget;
 
+        // 観戦一人称カメラの追従用に、描画パス（Remy/procedural）に依存せず席ローカルの頭 pose を平滑保持する。
+        // Remy 経路は _head を使わない・手役は頭マーカー既定 OFF で _head が無い、のどちらでも一様に頭 pose を出せる。
+        private Vector3 _camHeadPos;
+        private Quaternion _camHeadRot = Quaternion.identity;
+        private bool _camHeadInit;
+
         // Remy 用の表示 pose（受信 pose を指数平滑したもの）。Remy は IK 即解のため、生受信値を
         // 直に食わせると 60Hz 受信の段差＋ネットジッタがそのまま出る（手だけアバターは平滑済みで
         // 全身側だけガタつく非対称になる）。ここで頭/手首/指を平滑してから Drive する
@@ -236,6 +242,7 @@ namespace TableDuoVr.Net
             _target.CopyFrom(pose);
             _hasTarget = true;
             ApplyToTransforms(1f, 1f);
+            UpdateCamHead(1f);
         }
 
         private void Update()
@@ -243,7 +250,46 @@ namespace TableDuoVr.Net
             if (!_hasTarget) return;
             // 60Hz 受信を描画フレームへ指数平滑（フレームレート非依存）
             float dt = Time.deltaTime;
-            ApplyToTransforms(1f - Mathf.Exp(-SmoothK * dt), 1f - Mathf.Exp(-ChestSmoothK * dt));
+            float a = 1f - Mathf.Exp(-SmoothK * dt);
+            ApplyToTransforms(a, 1f - Mathf.Exp(-ChestSmoothK * dt));
+            UpdateCamHead(a);
+        }
+
+        /// <summary>観戦カメラ用の頭 pose を頭平滑と同じ係数で更新（初回はスナップ）。</summary>
+        private void UpdateCamHead(float a)
+        {
+            if (!_camHeadInit)
+            {
+                _camHeadPos = _target.HeadPos;
+                _camHeadRot = _target.HeadRot;
+                _camHeadInit = true;
+                return;
+            }
+            _camHeadPos = Vector3.Lerp(_camHeadPos, _target.HeadPos, a);
+            _camHeadRot = Quaternion.Slerp(_camHeadRot, _target.HeadRot, a);
+        }
+
+        /// <summary>観戦一人称視点用: このアバターの頭 world pose（描画側と同じ平滑済み）。
+        /// pose 未受信なら false。席アンカー（この transform）基準で world 変換する。</summary>
+        public bool TryGetHeadWorldPose(out Vector3 pos, out Quaternion rot)
+        {
+            if (!_camHeadInit)
+            {
+                pos = default;
+                rot = Quaternion.identity;
+                return false;
+            }
+            pos = transform.TransformPoint(_camHeadPos);
+            rot = transform.rotation * _camHeadRot;
+            return true;
+        }
+
+        /// <summary>観戦一人称視点で当人の頭ジオメトリを潰す/戻す（Remy=頭ボーン潰し / 簡易人型・手役マーカー=非表示）。
+        /// 胴・腕・手は残すので「自分の体を一人称で見下ろす」見え方になる。</summary>
+        public void SetHeadCollapsed(bool collapsed)
+        {
+            if (_remy != null) { _remy.SetHeadCollapsed(collapsed); return; }
+            if (_head != null) _head.gameObject.SetActive(!collapsed);
         }
 
         /// <summary>ターゲット pose をパーツへ反映。a=頭/手の平滑係数、chestA=胴の平滑係数（1=即時）。</summary>

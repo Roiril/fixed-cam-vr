@@ -189,6 +189,26 @@ namespace TableDuoVr.Net
             _leanTargetOffset = new Vector3(0f, 0f, -0.04f);
         }
 
+        // 観戦一人称視点で頭を潰した際の元スケール（戻す用）
+        private Vector3? _headScaleOrig;
+
+        /// <summary>観戦の一人称視点用: 頭ボーンを潰す/戻す（当人の目にカメラを置くと頭メッシュに埋まるため）。
+        /// firstPerson 構築時の頭潰しと同じ手法だが、実行時に外部（SpectatorController）から切替できる。
+        /// Drive は頭の rotation しか触らないので scale の潰しは持続する。</summary>
+        public void SetHeadCollapsed(bool collapsed)
+        {
+            if (_head == null) return;
+            if (collapsed)
+            {
+                _headScaleOrig ??= _head.localScale;
+                _head.localScale = Vector3.one * 0.01f;
+            }
+            else if (_headScaleOrig.HasValue)
+            {
+                _head.localScale = _headScaleOrig.Value;
+            }
+        }
+
         /// <summary>卓上に手を置く自然な座位の休めポーズ（前方やや下・指=前/手のひら=下）。未トラッキング初期姿勢。</summary>
         private static readonly Vector3 RestWristL = new(-0.20f, -0.25f, 0.30f);
         private static readonly Vector3 RestWristR = new(0.20f, -0.25f, 0.30f);

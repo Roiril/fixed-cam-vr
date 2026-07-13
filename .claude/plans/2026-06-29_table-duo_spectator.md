@@ -41,3 +41,11 @@
   - **Play 突入中は MCP を一切叩かない**（叩くとブリッジ競合で EnterPlayMode デッドロック→Unity 強制終了の実害。プレーン sleep で待ってから MCP）
   - Play/ビルドで **TableDuoMain.unity に stray camera（URP の UniversalAdditionalCameraData）が serialize される**ことがある→ビルド後 `git checkout --` で破棄（disk を clean に保つ。in-memory は保存しない）
 - **未検証**: 手役(client) を繋いだ時の席1 ライブ差替（今回 Quest 1台のみ接続で host だけ検証）。3台揃えば確認可。被験者装着時の見た目・遅延体感は人手
+
+## 2026-07-13 観戦カメラの視点切替を追加（俯瞰／人役一人称／手役一人称）
+defer 扱いだった「自由/多視点カメラ」の最小版。PC ホスト画面左上の GUI ボタン（＋数字キー 1/2/3）で 3 モード切替。純ローカル＝ネット非関与・Quest client 側は無変更。
+- **モード**: `SpectatorController.ViewMode` = Overhead（既定・従来の等距離俯瞰）/ FullFpv（人役=席0 の完全一人称）/ HandFpv（手役=席1 の完全一人称）
+- **一人称の頭 pose 追従**: `RemoteAvatarView.TryGetHeadWorldPose`（席アンカー基準・描画と同じ平滑済み、Remy/簡易人型/手役マーカー無しでも一様に取れる）を `SpectatorController.LateUpdate` が毎フレ読みカメラへ適用。FOV は fpvFieldOfView(=60)
+- **当人の頭を潰す**: `RemoteAvatarView.SetHeadCollapsed` → Remy は `RemyAvatarRig.SetHeadCollapsed`（頭ボーン scale 0.01・firstPerson と同手法）、簡易人型/手役マーカーは非表示。胴・腕・手は残す＝自分の体を一人称で見下ろせる。俯瞰へ戻すと復元
+- **対象取得**: `SpectatorController` が `FindObjectsOfType<TableDuoPlayer>()` を Role で引く（Full/Hand）。未接続なら GUI に「（対象 未接続）」表示しカメラ据え置き
+- **状態**: コンパイル OK（ドメインリロード確認・エラー0）。**ランタイム未検証**（host+2client のライブ session が要る）。検証は L0 desktop 3プロセス（[[table_duo_l0_desktop_test]]）か実機3台。触ったファイル: SpectatorController / RemoteAvatarView / RemyAvatarRig / TableDuoPlayer
