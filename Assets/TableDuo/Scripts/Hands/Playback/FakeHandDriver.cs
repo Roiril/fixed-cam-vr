@@ -32,6 +32,13 @@ namespace TableDuoVr.Hands.Playback
 
         private void OnEnable()
         {
+            // L0 で録画（layout 同梱）を再生させる opt-in（-tdvFakeFile on）。File モードにすると手 layout が
+            // HandSkeletonLayout.Captured に載り、観戦側が Realistic/Robot をリターゲット描画できる
+            //（Synthetic は layout 無し＝観戦側が Default 白手にフォールバックする）。既定は Synthetic のまま。
+            if (StudyLaunchFlags.Get("tdv_fakefile", "-tdvFakeFile") == "on")
+            {
+                mode = Mode.File;
+            }
             if (mode == Mode.File && _data == null)
             {
                 string path = ResolveFilePath();

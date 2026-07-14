@@ -32,7 +32,13 @@ TableDuo（[[table_duo_study_status]]）を **Quest も Unity Editor も MCP も
 - 手役: `-tdvMode client -tdvRole hand -tdvIp 127.0.0.1`
 - 観戦: `-tdvMode client -tdvRole spectator -tdvIp 127.0.0.1 -tdvPreplace on`
 
-観戦は preplace 時、起動6秒後に **`%LocalLow%/DefaultCompany/TableDuo/spectator_shot.png`** を自動保存（[SpectatorController.CaptureAfter](../../Assets/TableDuo/Scripts/Net/SpectatorController.cs)）→ `Read` で framing 確認。ログの `[TableDuo] 診断: 席N ライブ接続→静的撤去` / `観戦カメラ起動 pos=...` で段階確認。
+観戦は preplace 時、起動 **12 秒後**（`CaptureAfter(12f)`）に **`%LocalLow%/DefaultCompany/TableDuo/spectator_shot.png`** を自動保存（[SpectatorController.CaptureAfter](../../Assets/TableDuo/Scripts/Net/SpectatorController.cs)）→ `Read` で framing 確認。Activate は接続後なので launch から ~18s、capture は ~30s。**3 プロセスを kill する前に 40s は待つ**（早く kill すると spectator_shot が出ない）。ログの `[TableDuo] 診断: 席N ライブ接続→静的撤去` / `観戦カメラ起動 pos=...` / `観戦スクショ保存 →` で段階確認。
+
+## ⚠ 手バリアント（Realistic/Robot）を L0 で描くには `-tdvFakeFile on`（2026-07-14）
+既定の FakeHandDriver は **Synthetic モード**で手 layout（bind 構造）を送らない → 観戦側は Realistic/Robot を**リターゲット不能で Default 白手にフォールバック**する（`[TableDuo] 受信側の手 layout が無い…` が連発・両バリアントが同じ白手になり見分け不能）。
+- **対処**: 全プロセスに **`-tdvFakeFile on`** を付ける（[FakeHandDriver.OnEnable](../../Assets/TableDuo/Scripts/Hands/Playback/FakeHandDriver.cs) が File モードに切替）。File モードは録画（layout 同梱）を再生し `HandSkeletonLayout.Captured` を供給 → 観戦側が変異体を正しく描く（実指モーションも出る）。既定 Synthetic は不変（opt-in）。
+- **録画の置き場**: standalone は Editor と違い TestData/ を見ない。**`TestData/tdv_handrec_real_*.bin` を `%LocalLow%/DefaultCompany/TableDuo/tdv_handrec.bin` へコピー**しておく（FakeHandDriver.ResolveFilePath が persistentDataPath を探す）。ログ `[TableDuo] 録画ロード Nf layout=True` が出れば供給成功、`layout が無い` が 0 件なら描画 OK。
+- 実機（Quest）は実 OVRHand が layout を捕るので `-tdvFakeFile` 不要。この件は L0/Fake 限定。
 
 ## 確認できること
 先置き（描画）→ 接続で静的→ライブ差替（疎通）→ 合成 pose 追従（トラッキング）／ maxClients=3 で host+hand+観戦の3接続共存（kick 無し）／ 手 layout 同期／ 観戦カメラの2席中点 framing。全部 Quest・Editor・MCP 無しで。
