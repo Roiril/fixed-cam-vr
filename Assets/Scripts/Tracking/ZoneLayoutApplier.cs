@@ -89,23 +89,78 @@ namespace FixedCamVr.Tracking
         {
             if (courseFrame == null || tracker == null) return;
 
-            ZoneLayoutSolver.ZoneLayoutInput? maybe = ResolveInput();
-            if (maybe == null) return;
-            ZoneLayoutSolver.ZoneLayoutInput input = maybe.Value;
+            if (!TryResolveRects(out List<ZoneLayoutSolver.ZoneRect> rects, out float hyst, out string src))
+                return;
 
-            List<ZoneLayoutSolver.ZoneRect> rects = ZoneLayoutSolver.Solve(input);
             PlayerZone[] zones = BuildZones(rects);
             tracker.SetZonesRuntime(zones);
-            tracker.SetHysteresisShrink(input.hysteresisM);
-            Debug.Log($"[ZoneLayoutApplier] rebuilt zones={zones.Length} (cuts={input.cuts?.Length ?? 0}, overlap={input.overlapM:F3}, hyst={input.hysteresisM:F3})");
+            tracker.SetHysteresisShrink(hyst);
+            Debug.Log($"[ZoneLayoutApplier] rebuilt zones={zones.Length} (src={src}, hyst={hyst:F3})");
         }
 
-        private ZoneLayoutSolver.ZoneLayoutInput? ResolveInput()
+        // layout（grid 優先→cuts→内蔵既定）を矩形群 + hysteresis へ解決する。解決できなければ false。
+        private bool TryResolveRects(out List<ZoneLayoutSolver.ZoneRect> rects, out float hyst, out string src)
         {
+            rects = null!;
+            hyst = 0.12f;
+            src = "none";
+
             ShowLayoutDef? lay = showControl != null ? showControl.Layout : null;
-            if (lay != null && lay.cuts != null && lay.cuts.Length > 0) return FromShowLayout(lay);
-            if (rebuildFromDefaultOnStart) return BuildDefaultInput();
-            return null;
+            if (lay != null)
+            {
+                bool hasGrid = lay.grid != null && lay.grid.HasData();
+                bool hasCuts = lay.cuts != null && lay.cuts.Length > 0;
+                switch (ZoneLayoutSolver.ChooseSource(hasGrid, hasCuts))
+                {
+                    case ZoneLayoutSolver.LayoutSource.Grid:
+                        rects = SolveGridFrom(lay);
+                        hyst = lay.hysteresisM;
+                        src = $"grid {lay.grid!.cols}x{lay.grid.rows}";
+                        return true;
+                    case ZoneLayoutSolver.LayoutSource.Cuts:
+                        ZoneLayoutSolver.ZoneLayoutInput ci = FromShowLayout(lay);
+                        rects = ZoneLayoutSolver.Solve(ci);
+                        hyst = ci.hysteresisM;
+                        src = $"cuts={lay.cuts!.Length}";
+                        return true;
+                }
+            }
+
+            if (rebuildFromDefaultOnStart)
+            {
+                ZoneLayoutSolver.ZoneLayoutInput di = BuildDefaultInput();
+                rects = ZoneLayoutSolver.Solve(di);
+                hyst = di.hysteresisM;
+                src = "default-cuts";
+                return true;
+            }
+            return false;
+        }
+
+        private static List<ZoneLayoutSolver.ZoneRect> SolveGridFrom(ShowLayoutDef lay)
+        {
+            ShowGridDef gd = lay.grid!;
+            float w = lay.floor != null && lay.floor.w > 0f ? lay.floor.w : 1.8f;
+            float d = lay.floor != null && lay.floor.d > 0f ? lay.floor.d : 1.8f;
+
+            // 検証: cols·tileM が floor.w と大きくズレていれば警告（NW 角アンカーでそのまま展開する）。
+            if (Mathf.Abs(gd.cols * gd.tileM - w) > 0.01f || Mathf.Abs(gd.rows * gd.tileM - d) > 0.01f)
+                Debug.LogWarning($"[ZoneLayoutApplier] grid 寸法 {gd.cols}x{gd.rows}·{gd.tileM:F3}m " +
+                                 $"= {gd.cols * gd.tileM:F2}x{gd.rows * gd.tileM:F2}m が floor {w:F2}x{d:F2}m と不一致。NW 角アンカーで展開。");
+
+            int[] cells = ZoneLayoutSolver.ParseGridCells(gd.cells, gd.rows, gd.cols);
+            var g = new ZoneLayoutSolver.GridLayoutInput
+            {
+                floorW = w,
+                floorD = d,
+                overlapM = lay.overlapM,
+                hysteresisM = lay.hysteresisM,
+                tileM = gd.tileM,
+                cols = gd.cols,
+                rows = gd.rows,
+                cells = cells,
+            };
+            return ZoneLayoutSolver.SolveGrid(g);
         }
 
         private static ZoneLayoutSolver.ZoneLayoutInput FromShowLayout(ShowLayoutDef lay)

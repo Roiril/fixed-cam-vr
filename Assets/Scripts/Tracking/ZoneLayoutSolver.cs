@@ -1,6 +1,7 @@
 #nullable enable
 using System.Collections.Generic;
 using UnityEngine;
+using UDebug = UnityEngine.Debug;
 
 namespace FixedCamVr.Tracking
 {
@@ -69,6 +70,30 @@ namespace FixedCamVr.Tracking
             public int cameraIndex;
             public int priority;
             public string label;
+        }
+
+        // ---- v2: タイルペイント（grid）モデル ----
+
+        /// <summary>layout ソースの選択結果。grid があれば grid、無ければ cuts、どちらも無ければ None。</summary>
+        public enum LayoutSource { None, Cuts, Grid }
+
+        /// <summary>
+        /// grid（タイルペイント）モデルの Solve 入力。
+        /// cells は row-major（<c>cells[r*cols + c]</c>）で、値は カメラ index（0..8）または未割当を表す -1。
+        /// row 0 = 北端（z=+d/2 側）、col 0 = 西端（x=-w/2）。
+        /// </summary>
+        public struct GridLayoutInput
+        {
+            public float floorW;
+            public float floorD;
+            public float overlapM;
+            /// <summary>PlayerZoneTracker.hysteresisShrink へ流す値（Solve は使わず applier がそのまま適用）。</summary>
+            public float hysteresisM;
+            public float tileM;
+            public int cols;
+            public int rows;
+            /// <summary>長さ rows*cols、row-major。-1 = 未割当、0..8 = カメラ index。</summary>
+            public int[] cells;
         }
 
         private enum Edge { South = 0, East = 1, North = 2, West = 3 }
@@ -221,6 +246,146 @@ namespace FixedCamVr.Tracking
                     break;
             }
             result.Add(rect);
+        }
+
+        // ---- v2: grid の展開 ----
+
+        /// <summary>
+        /// 与えられた grid/cuts の有無から使用するレイアウトソースを決める。grid 優先（cuts は後方互換）。
+        /// Applier の選択ロジックを純関数に切り出したもの（単体テスト用）。
+        /// </summary>
+        public static LayoutSource ChooseSource(bool hasGrid, bool hasCuts)
+            => hasGrid ? LayoutSource.Grid : (hasCuts ? LayoutSource.Cuts : LayoutSource.None);
+
+        /// <summary>
+        /// show.json grid.cells（rows 本の文字列）を row-major の int 配列（-1=未割当 / 0..8=カメラ index）へ
+        /// **例外を投げずに**変換する。行数≠rows / 行長≠cols / 未知文字は警告ログを出しつつ未割当扱いにする。
+        /// </summary>
+        public static int[] ParseGridCells(string[]? cells, int rows, int cols)
+        {
+            int rN = Mathf.Max(0, rows);
+            int cN = Mathf.Max(0, cols);
+            var grid = new int[rN * cN];
+            for (int i = 0; i < grid.Length; i++) grid[i] = -1;
+            if (rN == 0 || cN == 0) return grid;
+
+            if (cells == null)
+            {
+                UDebug.LogWarning("[ZoneLayoutSolver] grid.cells が null。全タイル未割当として扱う。");
+                return grid;
+            }
+            if (cells.Length != rN)
+                UDebug.LogWarning($"[ZoneLayoutSolver] grid rows 不一致: cells={cells.Length} rows={rN}（過不足は未割当扱い）。");
+
+            int usableRows = Mathf.Min(rN, cells.Length);
+            for (int r = 0; r < usableRows; r++)
+            {
+                string row = cells[r] ?? "";
+                if (row.Length != cN)
+                    UDebug.LogWarning($"[ZoneLayoutSolver] grid 行 {r} の長さ {row.Length} != cols {cN}（過不足は未割当扱い）。");
+                int usableCols = Mathf.Min(cN, row.Length);
+                for (int c = 0; c < usableCols; c++)
+                {
+                    char ch = row[c];
+                    if (ch == '.') continue;
+                    if (ch >= '0' && ch <= '8') grid[r * cN + c] = ch - '0';
+                    else UDebug.LogWarning($"[ZoneLayoutSolver] grid 未知文字 '{ch}' at ({r},{c})。未割当扱い。");
+                }
+            }
+            return grid;
+        }
+
+        /// <summary>
+        /// grid（タイルペイント）を course space の矩形ゾーン群へ展開する。
+        ///
+        /// アルゴリズム（決定的・貪欲矩形分解）:
+        ///   1. 左上→右下の走査順で未消費かつ同一カメラのタイルを見つける。
+        ///   2. その行で右方向へ同一カメラが続く限り伸ばす（行方向マージ）。
+        ///   3. その列幅を保ったまま下方向へ、全列が同一カメラかつ未消費な行が続く限り伸ばす（行間マージ）。
+        ///   4. 覆ったタイルを消費済みにして 1 矩形を確定。走査を続ける。
+        /// 各矩形は course space 矩形へ変換し、全方向に overlapM/2 拡張する
+        /// （隣接カメラ境界で計 overlapM 重なり → 既存 Pick+shrink ヒステリシスが効く）。
+        ///
+        /// 走査順が決定的なので、同一入力→同一出力・同一順序。ラベルはカメラ別連番 "cam0#0" 等。
+        /// priority は全ゾーン 0（既存タイブレーク＝配列先頭が勝つ、を維持）。
+        /// </summary>
+        public static List<ZoneRect> SolveGrid(GridLayoutInput g)
+        {
+            var result = new List<ZoneRect>();
+            int rows = g.rows, cols = g.cols;
+            if (g.cells == null || rows <= 0 || cols <= 0 || g.tileM <= 0f) return result;
+            if (g.cells.Length < rows * cols)
+            {
+                UDebug.LogWarning($"[ZoneLayoutSolver] grid cells 長 {g.cells.Length} < rows*cols {rows * cols}。展開を中止。");
+                return result;
+            }
+
+            var consumed = new bool[rows * cols];
+            float halfW = g.floorW * 0.5f;
+            float halfD = g.floorD * 0.5f;
+            float overlapHalf = Mathf.Max(0f, g.overlapM) * 0.5f;
+            var camCount = new Dictionary<int, int>();
+
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < cols; c++)
+                {
+                    int idx = r * cols + c;
+                    if (consumed[idx]) continue;
+                    int cam = g.cells[idx];
+                    if (cam < 0) continue; // 未割当タイルはゾーンを作らない
+
+                    // 2) 行方向マージ: 右へ同一カメラ・未消費が続く限り。
+                    int c1 = c;
+                    while (c1 + 1 < cols)
+                    {
+                        int j = r * cols + (c1 + 1);
+                        if (consumed[j] || g.cells[j] != cam) break;
+                        c1++;
+                    }
+
+                    // 3) 行間マージ: 列 [c,c1] 全てが同一カメラ・未消費な行が続く限り下へ。
+                    int r1 = r;
+                    bool grow = true;
+                    while (grow && r1 + 1 < rows)
+                    {
+                        int rr = r1 + 1;
+                        for (int cc = c; cc <= c1; cc++)
+                        {
+                            int j = rr * cols + cc;
+                            if (consumed[j] || g.cells[j] != cam) { grow = false; break; }
+                        }
+                        if (grow) r1 = rr;
+                    }
+
+                    // 4) 消費済みにする。
+                    for (int rr = r; rr <= r1; rr++)
+                        for (int cc = c; cc <= c1; cc++)
+                            consumed[rr * cols + cc] = true;
+
+                    // course space へ（NW 角アンカー: col0=x=-halfW, row0=z=+halfD）。
+                    float xLo = -halfW + c * g.tileM;
+                    float xHi = -halfW + (c1 + 1) * g.tileM;
+                    float zHi = halfD - r * g.tileM;
+                    float zLo = halfD - (r1 + 1) * g.tileM;
+
+                    int n = camCount.TryGetValue(cam, out int v) ? v : 0;
+                    camCount[cam] = n + 1;
+
+                    result.Add(new ZoneRect
+                    {
+                        centerX = 0.5f * (xLo + xHi),
+                        centerZ = 0.5f * (zLo + zHi),
+                        halfX = 0.5f * (xHi - xLo) + overlapHalf,
+                        halfZ = 0.5f * (zHi - zLo) + overlapHalf,
+                        cameraIndex = cam,
+                        priority = 0,
+                        label = $"cam{cam}#{n}",
+                    });
+                }
+            }
+
+            return result;
         }
     }
 }

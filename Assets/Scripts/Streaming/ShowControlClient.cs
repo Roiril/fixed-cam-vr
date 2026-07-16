@@ -26,15 +26,41 @@ namespace FixedCamVr.Streaming
     /// <summary>ループ上の切れ目。s ∈ [0,1)、camAfter = このカット以降のカメラ index。</summary>
     [Serializable] public sealed class ShowCutDef { public float s; public int camAfter; }
 
-    /// <summary>show.json の layout セクション。cuts が空なら「layout 未設定」として扱う。</summary>
+    /// <summary>
+    /// v2: タイルペイント（grid）モデル。フロアを正方タイルに切り、cells の各文字でカメラを塗る。
+    /// cells は rows 本の文字列。row 0 = 北端（z=+d/2 側）、col 0 = 西端（x=-w/2）。
+    /// 文字 '0'..'8' = カメラ index、'.' = 未割当。JsonUtility は string[] をパースできる。
+    /// </summary>
+    [Serializable] public sealed class ShowGridDef
+    {
+        public float tileM = 0.15f;
+        public int cols;
+        public int rows;
+        public string[] cells = System.Array.Empty<string>();
+
+        /// <summary>塗られたタイルが 1 つでもあれば present（cells に非空文字列が 1 行でもあるか）。</summary>
+        public bool HasData()
+        {
+            if (cells == null || cols <= 0 || rows <= 0 || tileM <= 0f) return false;
+            foreach (var row in cells) if (!string.IsNullOrEmpty(row)) return true;
+            return false;
+        }
+    }
+
+    /// <summary>show.json の layout セクション。cuts / grid のどちらも無ければ「layout 未設定」として扱う。</summary>
     [Serializable] public sealed class ShowLayoutDef
     {
         public int rev;
         public ShowFloorDef? floor;
         public ShowWallDef? wall;
         public ShowCutDef[] cuts = System.Array.Empty<ShowCutDef>();
+        public ShowGridDef? grid;   // v2: grid があれば grid 優先（cuts は後方互換）
         public float overlapM = 0.08f;
         public float hysteresisM = 0.12f;
+
+        /// <summary>ゾーン生成に使える layout データ（grid か cuts）を持つか。grid 優先の判定は Applier 側。</summary>
+        public bool HasData()
+            => (grid != null && grid.HasData()) || (cuts != null && cuts.Length > 0);
     }
 
     /// <summary>
@@ -283,7 +309,7 @@ namespace FixedCamVr.Streaming
             // 1.5) ゾーン layout（cuts/floor/overlap）。JsonUtility は null 入れ子を既定値で書くため
             //      「cuts が空でない」を present 判定に使い、rev で変更検出する。
             bool layoutChanged = false;
-            if (state.layout != null && state.layout.cuts != null && state.layout.cuts.Length > 0
+            if (state.layout != null && state.layout.HasData()
                 && state.layout.rev != _appliedLayoutRev)
             {
                 _layout = state.layout;
@@ -460,8 +486,8 @@ namespace FixedCamVr.Streaming
                 if (cfg == null) return;
                 _cameras = cfg.cameras ?? Array.Empty<CameraDef>();
                 if (cfg.post != null) _globalPost = cfg.post;
-                // キャッシュ済み layout も復元（cuts が空でないもののみ）。event は Start() 末で発火する。
-                if (cfg.layout != null && cfg.layout.cuts != null && cfg.layout.cuts.Length > 0)
+                // キャッシュ済み layout も復元（grid か cuts があるもののみ）。event は Start() 末で発火する。
+                if (cfg.layout != null && cfg.layout.HasData())
                 {
                     _layout = cfg.layout;
                     _appliedLayoutRev = cfg.layout.rev;

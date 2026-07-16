@@ -65,12 +65,33 @@ def _default_show():
                  'vignette': 0.25, 'grain': 0.06, 'scanline': 0.0},
         'control': {'activeCue': None, 'cameraOverride': None},
         # ゾーン校正レイアウト（course space）。Web フロアマップが編集し Unity が展開する。
-        # cuts = 正準ループ（矩形 x=±0.7, z=±0.7、s=0 南辺中央・時計回り）上の切れ目。
-        # セグメント i = cuts[i].s〜cuts[i+1].s（wrap）が cuts[i].camAfter のカメラ。
+        # grid = タイルペイント（12×12・0.15m）。cells は rows 本の文字列、rows[0]=北端
+        # （z=+0.9）・col0=西端（x=-0.9）。文字 '0'..'8'=カメラ index、'.'=未割当。
+        # cell(r,c) 中心: x=-w/2+(c+0.5)·tileM, z=+d/2-(r+0.5)·tileM。
+        # cuts = 後方互換（正準ループ上の切れ目）。grid が正で、grid 無しの端末は cuts から展開する。
+        # 下記 grid の初期塗りは既定 cuts（s=0.125→cam1 / 0.375→cam2 / 0.875→cam0）を
+        # 各タイル中心へ射影して静的生成した結果（floormap.js の cellsFromCuts と一致）。
         'layout': {
             'rev': 1,
             'floor': {'w': 1.8, 'd': 1.8},
             'wall': {'corner': [-0.5, 0.5], 'endX': [0.5, 0.5], 'endZ': [-0.5, -0.5]},
+            'grid': {
+                'tileM': 0.15, 'cols': 12, 'rows': 12,
+                'cells': [
+                    '222222222221',
+                    '222222222221',
+                    '222222222111',
+                    '222......111',
+                    '222......111',
+                    '222......111',
+                    '222......111',
+                    '222......111',
+                    '222......111',
+                    '222000000011',
+                    '220000000001',
+                    '000000000001',
+                ],
+            },
             'cuts': [
                 {'s': 0.125, 'camAfter': 1},
                 {'s': 0.375, 'camAfter': 2},

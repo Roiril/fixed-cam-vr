@@ -1,7 +1,36 @@
 # ゾーン校正の再設計 — 「形状は PC、位置合わせは HMD 10 秒」
 
 status: phase 1-3 実装済み・実機未検証（phase 4 = OVRSpatialAnchor 永続化は後回し）
+　　　　→ **v2: PC 編集モデルを cuts（ループ切れ目）から「タイルペイント」へ変更**（2026-07-16 ユーザー指示、下記 v2 節）
 date: 2026-07-16
+
+## v2: タイルペイント・モデル（cuts を置換）
+
+ユーザー指示：「道（ループ）じゃなく領域で決めたい。小さいタイルを 3 色に塗りつぶして、色 = カメラ担当区間」。
+
+- フロアを正方タイル（既定 0.15m → 12×12）に分割し、各タイルへカメラ index を塗る。`'.'` = 未割当（壁・使わない領域）。
+- show.json `layout.grid`：
+  ```json
+  "grid": {
+    "tileM": 0.15, "cols": 12, "rows": 12,
+    "cells": ["............", "222222222211", ...]
+  }
+  ```
+  rows[0] = 北端（z=+0.9 側）、col 0 = 西端（x=-0.9）。cell(r,c) 中心 = `x = -w/2 + (c+0.5)·tileM`, `z = +d/2 - (r+0.5)·tileM`。文字 `'0'..'8'` = カメラ index。
+- Unity 側展開：カメラ毎のタイル集合 → 貪欲矩形分解（行マージ）→ 各矩形を `overlapM/2` ずつ全方向に拡張（隣接カメラ境界で計 `overlapM` の重なり → 既存 Pick + shrink ヒステリシスがそのまま効く）→ PlayerZone 生成。Tracker 無改修は維持。
+- `cuts` は後方互換で残す（grid があれば grid 優先。端末キャッシュに古い cuts だけが残っていても動く）。
+- Web 卓はドラッグペイント UI（色パレット = カメラ + 消しゴム）。grid 未定義の show.json は既存 cuts から初期塗りを生成。シミュレーション・ライブドットは grid 判定に切替。
+
+### v2 Unity 側実装状況（2026-07-16・実機/Editor 未検証・コンパイルはユーザー確認待ち）
+
+- [`ZoneLayoutSolver`](../../Assets/Scripts/Tracking/ZoneLayoutSolver.cs) に grid 展開を追加：
+  - `GridLayoutInput`（row-major int[] cells、-1=未割当 / 0..8=カメラ）+ `SolveGrid()` = **貪欲矩形分解**（左上→右下走査で未消費・同一カメラを右へ行方向マージ→列幅を保ち下へ行間マージ→消費、決定的）。各矩形を `overlapM/2` 全方向拡張。ラベルはカメラ別連番 `cam0#0`。priority 全 0（既存タイブレーク維持）。
+  - `ParseGridCells(string[], rows, cols)` = show.json cells の char→int 変換。行数≠rows / 行長≠cols / 未知文字は**警告ログ + 未割当扱い**で例外を投げない。
+  - `ChooseSource(hasGrid, hasCuts)` = grid 優先の選択ロジック（純関数・テスト用）。
+- [`ShowControlClient`](../../Assets/Scripts/Streaming/ShowControlClient.cs)：`ShowGridDef`（tileM/cols/rows/cells）を `ShowLayoutDef.grid` に追加。`ShowLayoutDef.HasData()` = grid か cuts のどちらかがあれば present。long-poll 適用・端末キャッシュ往復の present 判定を `HasData()` に統一（grid-only layout も認識・キャッシュ復元）。
+- [`ZoneLayoutApplier`](../../Assets/Scripts/Tracking/ZoneLayoutApplier.cs)：`TryResolveRects` で **grid 優先 → cuts → 内蔵既定** の順に解決。grid 寸法が floor と不一致なら警告して NW 角アンカーで展開。
+- テスト [`ZoneLayoutSolverTests`](../../Assets/Tests/Tracking/ZoneLayoutSolverTests.cs)：cuts テストは維持。grid テスト追加（全塗り 1 矩形 / L 字 2 矩形カバー / 隣接カメラ overlapM 重なり / '.' 中心が無ゾーン / 不正 cells 非例外 / ParseGridCells 耐性 / ChooseSource grid 優先 / ラベル決定性）。
+- **未着手（別作業）**：Web 卓のタイルペイント UI（Phase 2）。Unity 側は grid が来れば展開する状態。
 
 ## 背景 / 問題
 

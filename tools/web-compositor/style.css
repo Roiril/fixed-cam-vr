@@ -596,14 +596,18 @@ input:-webkit-autofill:active {
 .fm-live-out.on { color: var(--accent-color); opacity: 1; }
 .fm-sim-out b, .fm-live-out b { color: var(--accent-color); }
 
-.fm-cuts-title {
-  font-size: 9px; text-transform: uppercase; letter-spacing: .15em;
-  opacity: var(--opacity-mute); margin-top: 6px;
+.fm-hint2 { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
+
+/* パレット（カメラ色 + 消しゴム）。選択中は accent 枠 */
+.fm-palette { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.fm-swatch {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; font-size: 11px;
+  border: 1px solid var(--line-input); background: transparent; border-radius: 3px; cursor: pointer;
 }
-.fm-cuts { display: flex; flex-direction: column; gap: 5px; }
-.fm-cut-row { display: flex; align-items: center; gap: 8px; }
-.fm-cut-s { font-family: monospace; font-size: 11px; opacity: var(--opacity-sub); min-width: 64px; }
-.fm-cut-arrow { opacity: var(--opacity-mute); }
-.fm-cut-cam { flex: 1; min-width: 0; }
-.fm-cut-del { flex: 0 0 auto; padding: 2px 8px; font-size: 12px; }
-.fm-add { align-self: flex-start; padding: 4px 10px; font-size: 11px; }
+.fm-swatch i { width: 12px; height: 12px; display: inline-block; border-radius: 2px; }
+.fm-swatch.on { border-color: var(--accent-color); box-shadow: 0 0 0 1px var(--accent-color); }
+.fm-eraser-sw {
+  background: repeating-conic-gradient(rgba(255,250,240,0.25) 0% 25%, transparent 0% 50%) 0 / 6px 6px;
+  border: 1px solid var(--line-input);
+}
+.fm-regen, .fm-clear { padding: 4px 10px; font-size: 11px; }
