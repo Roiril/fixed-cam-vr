@@ -106,6 +106,25 @@ namespace TableDuoVr.Hands
                     Vector3 packDir = pc.position - pa.position;
                     Vector3 whiteDir = mc.position - ma.position;
                     if (packDir.sqrMagnitude < 1e-10f || whiteDir.sqrMagnitude < 1e-10f) continue;
+                    // 中間 bone 欠け（Male 親指の thumb2 等）を跨いだ弦 aim は、白手が中間関節で曲げる
+                    // 分を子関節 1 箇所に集中させる（rest で第一関節だけ 14° 折れて見える・2026-07-16 実測）。
+                    // → 弦方向と「子のさらに先の白手方向」の中間へ向け、折れ角を親側と半分ずつ分配する。
+                    if (cIdx != chain[k + 1])
+                    {
+                        for (int j = k + 1; j < chain.Length - 1; j++)
+                        {
+                            if (chain[j] != cIdx) continue;
+                            int nIdx = chain[j + 1];
+                            var mn = nIdx < n ? metaBones[nIdx] : null;
+                            if (mn != null)
+                            {
+                                Vector3 whiteNext = mn.position - mc.position;
+                                if (whiteNext.sqrMagnitude > 1e-10f)
+                                    whiteDir = Vector3.Slerp(whiteDir.normalized, whiteNext.normalized, 0.5f);
+                            }
+                            break;
+                        }
+                    }
                     var aim = Quaternion.FromToRotation(packDir, whiteDir);
                     pa.rotation = aim * pa.rotation; // bone a を回すと子 pc が whiteDir 側へ動く
                 }

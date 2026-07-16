@@ -62,7 +62,10 @@ HandVariantTable にマップ**（Male `Upward*.R_end`/`.L_end`・Robot `Bone_*U
 `*_finger_tip_marker`）し FingerChains を 1 節延長 → 末節も aim。tip 自体は駆動しない（`HandBoneTable.IsFingerTip`
 で参照コピー除外。回すと aim 参照が壊れる）。診断も強化: preview の `tipDir`（pack vs 白手 末節→tip 方向差）が
 旧診断の盲点（mcp→末節関節までしか測らず指先を見ていなかった）を塞ぐ。検証済み: EditMode 37/37・
-tipDir 全指 0°（rest/fist）・スクショ多角度で破綻なし。手のサイズ差（幅 0.81/厚み 0.46 はモデル固有の肉厚差・
+tipDir 全指 0°（rest/fist）・スクショ多角度で破綻なし。
+**同日追修正**: tip aim 導入で Male 親指だけ rest に IP 関節の 14° 折れが集中（白手は 2 関節に 13°+11° 分散・
+Male は thumb2 欠けの 3 節）→ 中間 bone 欠けを跨ぐ弦 aim は「弦と子の先の白手方向の Slerp 0.5」へ向けて
+折れを半分ずつ分配（HandRetarget）。tipDir 0° 維持・rest の折れ解消をプレビューで確認。手のサイズ差（幅 0.81/厚み 0.46 はモデル固有の肉厚差・
 スケール正規化は長さ 1 距離のみ）は別件で未対応。
 
 **rest（接続直後 ShowAtRest）の向きバグ修正（2026-07-09）**: 外部リグ（Realistic/Robot）の右手が

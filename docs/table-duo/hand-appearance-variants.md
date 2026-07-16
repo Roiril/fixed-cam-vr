@@ -99,6 +99,13 @@ pinky0 で 173° 乖離／layout FK とメッシュ実階層が 100° 乖離）�
     live の OVR 回転が 19–23 に来なくても tip は bind のまま追従＝ world 位置は正しい。
 - **診断強化**: `directions.txt` に **tipDir（pack vs white の末節→tip 方向角）** を rest/fist 両ポーズで追加
   （従来の mcp→末節 指標では末節 1 節の向きズレを拾えず本症状を見逃した穴を塞ぐ）。
+- **追修正（同日・Male 親指の第一関節折れの分配）**: tip aim 導入後、Realistic だけ rest で親指が
+  第一関節（IP）から折れて見えた。原因＝白手の rest 親指は計 19° のカーブを thumb2/thumb3 の 2 関節に
+  13°+11° と分散して曲げるが、**Male は 3 節（thumb2 欠け）なので弦 aim の帰結として弦 vs 末節方向の差
+  14° が唯一の IP 関節に集中**（しかも Male 末節はスパンの 43% と長く目立つ。白手 27%）。Robot は 4 節で
+  分散するため無症状。→ `HandRetarget` の aim で**中間 bone 欠けを跨いだ弦 aim のとき、弦方向と「子の先の
+  白手方向」の中間（Slerp 0.5）へ向けて折れ角を親側と半分ずつ分配**。tipDir は全指 0° 維持・Male 親指の
+  弦偏差 4°（意図した分配ぶん）・rest 上面で折れ解消を確認。
 
 **設定変更時**: `TableDuoSceneSetup` を編集したら `Tools/FixedCamVr/Setup/Setup TableDuo Scene` を再実行して
 シーンに焼き直す（provider の変種参照・`LocalVariantHand`・`HandVariantWatcher` を再配線）。
