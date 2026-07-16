@@ -94,9 +94,9 @@ namespace TableDuoVr.Hands
 
             ToLocal(frame, centerEye, out _pose.HeadPos, out _pose.HeadRot);
 
-            _pose.TrackedL = SampleHand(frame, leftHand, leftSkeleton,
+            _pose.TrackedL = SampleHand(frame, trackingSpace, isRight: false, leftHand, leftSkeleton,
                 ref _pose.WristPosL, ref _pose.WristRotL, _pose.BonesL);
-            _pose.TrackedR = SampleHand(frame, rightHand, rightSkeleton,
+            _pose.TrackedR = SampleHand(frame, trackingSpace, isRight: true, rightHand, rightSkeleton,
                 ref _pose.WristPosR, ref _pose.WristRotR, _pose.BonesR);
 
             _pose.PinchL = _pose.TrackedL && leftHand != null &&
@@ -128,10 +128,17 @@ namespace TableDuoVr.Hands
                 : $"act={hand.gameObject.activeInHierarchy} tracked={hand.IsTracked} valid={hand.IsDataValid} hi={hand.IsDataHighConfidence} conf={hand.HandConfidence}";
             string s = skel == null ? "skelNull"
                 : $"skelInit={skel.IsInitialized} bones={skel.Bones.Count}";
-            return $"{tag}[supp={suppressed} {h} {s}]";
+            // 手首基底の切替診断（2026-07-16）: inHand=ControllerInHand の間は hand node 採取に切り替わる。
+            // nodeValid が false だと HandAnchor（コントローラ基底）へフォールバック＝症状が再発する。
+            bool right = tag == "R";
+            var node = right ? OVRInput.Controller.RHand : OVRInput.Controller.LHand;
+            string c = $"inHand={OVRInput.GetControllerIsInHandState(right ? OVRInput.Hand.HandRight : OVRInput.Hand.HandLeft)}" +
+                       $" nodeValid={OVRInput.GetControllerPositionValid(node) && OVRInput.GetControllerOrientationValid(node)}";
+            return $"{tag}[supp={suppressed} {h} {s} {c}]";
         }
 
-        private static bool SampleHand(Transform space, OVRHand? hand, OVRSkeleton? skeleton,
+        private static bool SampleHand(Transform space, Transform trackingSpace, bool isRight,
+            OVRHand? hand, OVRSkeleton? skeleton,
             ref Vector3 wristPos, ref Quaternion wristRot, Quaternion[] bones)
         {
             // 低 confidence（遮蔽・両手交差時など）は IsTracked=true のままノイズ関節を出すため
@@ -139,7 +146,10 @@ namespace TableDuoVr.Hands
             //（生値を通すとリモート手の指が暴れ、掴んだ駒が手首ノイズで振り回される）
             if (hand == null || !hand.IsTracked || !hand.IsDataHighConfidence) return false;
 
-            ToLocal(space, hand.transform, out wristPos, out wristRot);
+            if (!TrySampleWristFromHandNode(space, trackingSpace, isRight, out wristPos, out wristRot))
+            {
+                ToLocal(space, hand.transform, out wristPos, out wristRot);
+            }
 
             if (skeleton != null && skeleton.IsInitialized)
             {
@@ -170,6 +180,41 @@ namespace TableDuoVr.Hands
         }
 
         private static float _nextWristLogL, _nextWristLogR;
+
+        /// <summary>
+        /// コントローラ保持中だけ、手首 pose を **hand node（Node.HandLeft/Right）から直接**採る。
+        /// 通常（手のみ）は false を返し、呼び出し側は従来どおり hand.transform を使う。
+        ///
+        /// なぜ必要か: OVRHandPrefab は `_updateRootPose=0` なので `hand.transform` は親 HandAnchor の
+        /// 姿勢そのもの。HandAnchor は OVRCameraRig が「その手の active controller」で駆動するため
+        /// （OVRCameraRig.cs:406-409 → OVRInput.GetActiveControllerForHand は Touch を優先）、
+        /// コントローラを握ると回転基底が手根（Node.Hand*）から**コントローラのグリップ（Node.Controller*）へ
+        /// 丸ごと切り替わる**。受信側は wristRot を手根基底として解釈し指骨をその上に乗せる契約なので、
+        /// 手全体がコントローラの向きへ剛体回転する（＝先端から垂直に生える。2026-07-16 実害）。
+        /// hand node は握り中も手トラッキング基底の実手 pose を返す（OVRInput.cs:1231-1241）。
+        ///
+        /// 非保持時に切り替えない理由: 非保持の HandAnchor はこの node 自体で駆動されており同値。
+        /// 動作実績のある経路をそのまま残して回帰リスクをゼロにする。
+        /// </summary>
+        private static bool TrySampleWristFromHandNode(Transform space, Transform trackingSpace, bool isRight,
+            out Vector3 wristPos, out Quaternion wristRot)
+        {
+            wristPos = default;
+            wristRot = default;
+            if (trackingSpace == null) return false;
+
+            var inHand = OVRInput.GetControllerIsInHandState(isRight ? OVRInput.Hand.HandRight : OVRInput.Hand.HandLeft);
+            if (inHand != OVRInput.ControllerInHandState.ControllerInHand) return false;
+
+            var node = isRight ? OVRInput.Controller.RHand : OVRInput.Controller.LHand;
+            if (!OVRInput.GetControllerPositionValid(node) || !OVRInput.GetControllerOrientationValid(node)) return false;
+
+            Vector3 world = trackingSpace.TransformPoint(OVRInput.GetLocalControllerPosition(node));
+            Quaternion worldRot = trackingSpace.rotation * OVRInput.GetLocalControllerRotation(node);
+            wristPos = space.InverseTransformPoint(world);
+            wristRot = Quaternion.Inverse(space.rotation) * worldRot;
+            return true;
+        }
 
         // スケルトン構造を1回だけダンプ（手崩れ切り分け用）。送信 index 順・BoneId・名前・可動性を
         // logcat で確認し、HandBoneTable（legacy 24-bone 前提）の並びと実ランタイム（SDK 201 で

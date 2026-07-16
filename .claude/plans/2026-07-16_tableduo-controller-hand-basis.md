@@ -1,7 +1,25 @@
 # TableDuo: コントローラ保持中の手アバター基底修正
 
-**状態**: 設計（実装前・ユーザーレビュー待ち）
+**状態**: 実装済み（2026-07-16・コンパイル OK / EditMode 37/37・**実機未検証**）
 **症状**: コントローラを握ると手アバターが実際の手の向きと無関係に「コントローラ先端から垂直方向」に生える。
+
+## 実装（Plan A の簡略版を採用）
+
+`HandPoseSampler.TrySampleWristFromHandNode` を追加し、`SampleHand` から呼ぶ。
+
+- **anchor Transform ではなく `OVRInput` から hand node を直接引く**方式に変更。
+  SDK の `HandOnControllerAnchor` は `GetLocalControllerPosition/Rotation(LHand/RHand)` を
+  格納しているだけ（OVRCameraRig.cs:425-431）なので、**同じ値を直接引けば anchor 配線が不要**
+  → SerializeField 追加ゼロ ＝ prefab YAML 反映・シーン再生成が不要（unity-prefab-fields の罠を回避）。
+  `updateHandAnchors` 設定にも依存しない。
+- **保持中のみ切替**（`GetControllerIsInHandState == ControllerInHand`）。非保持は従来の
+  `hand.transform` 経路のまま＝**動作実績のある主経路に回帰リスクゼロ**
+  （非保持時の HandAnchor は同じ hand node で駆動されるので値としても同値）。
+- `GetControllerPositionValid/OrientationValid` ガード付き。node が無効なら従来経路へフォールバック。
+- 診断: `[TDV-DIAG]` に `inHand=` / `nodeValid=` を追加（実機で切替成立を確認できる）。
+
+**遷移スムージングは入れていない**（受信側 `RemoteHandView` に既存の Slerp があり、
+まず素の挙動を実機で見てから判断する。pop が目立つなら追加）。
 
 ## 真因（2026-07-16 SDK ソース調査で確定）
 
