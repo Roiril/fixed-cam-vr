@@ -64,6 +64,21 @@ def _default_show():
         'post': {'exposure': 0.0, 'contrast': 1.0, 'saturation': 1.0, 'temperature': 0.0,
                  'vignette': 0.25, 'grain': 0.06, 'scanline': 0.0},
         'control': {'activeCue': None, 'cameraOverride': None},
+        # ゾーン校正レイアウト（course space）。Web フロアマップが編集し Unity が展開する。
+        # cuts = 正準ループ（矩形 x=±0.7, z=±0.7、s=0 南辺中央・時計回り）上の切れ目。
+        # セグメント i = cuts[i].s〜cuts[i+1].s（wrap）が cuts[i].camAfter のカメラ。
+        'layout': {
+            'rev': 1,
+            'floor': {'w': 1.8, 'd': 1.8},
+            'wall': {'corner': [-0.5, 0.5], 'endX': [0.5, 0.5], 'endZ': [-0.5, -0.5]},
+            'cuts': [
+                {'s': 0.125, 'camAfter': 1},
+                {'s': 0.375, 'camAfter': 2},
+                {'s': 0.875, 'camAfter': 0},
+            ],
+            'overlapM': 0.08,
+            'hysteresisM': 0.12,
+        },
     }
 
 
@@ -330,7 +345,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json({'ok': False, 'error': 'unknown endpoint'}, 404)
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
-    _STATE_KEYS = ('cameras', 'cues', 'post', 'control')
+    _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout')
 
     def _post_state(self):
         body = self._read_json_body()

@@ -8,6 +8,35 @@ using UnityEngine.Networking;
 
 namespace FixedCamVr.Streaming
 {
+    // ---- show.json layout（ゾーン形状・カメラ割当のデータ）----
+    // Tracking 側（ZoneLayoutApplier）が読むため public。Streaming → Tracking の参照は作らない
+    // （このデータは純データで Tracking の型を持ち込まない）。JsonUtility でパースする。
+
+    /// <summary>course space のフロア寸法 (m)。</summary>
+    [Serializable] public sealed class ShowFloorDef { public float w = 1.8f; public float d = 1.8f; }
+
+    /// <summary>L 字壁の記述（描画・登録基準点導出用。Solver は使わない）。</summary>
+    [Serializable] public sealed class ShowWallDef
+    {
+        public float[] corner = System.Array.Empty<float>();
+        public float[] endX = System.Array.Empty<float>();
+        public float[] endZ = System.Array.Empty<float>();
+    }
+
+    /// <summary>ループ上の切れ目。s ∈ [0,1)、camAfter = このカット以降のカメラ index。</summary>
+    [Serializable] public sealed class ShowCutDef { public float s; public int camAfter; }
+
+    /// <summary>show.json の layout セクション。cuts が空なら「layout 未設定」として扱う。</summary>
+    [Serializable] public sealed class ShowLayoutDef
+    {
+        public int rev;
+        public ShowFloorDef? floor;
+        public ShowWallDef? wall;
+        public ShowCutDef[] cuts = System.Array.Empty<ShowCutDef>();
+        public float overlapM = 0.08f;
+        public float hysteresisM = 0.12f;
+    }
+
     /// <summary>
     /// Web オペレータ卓（show.json）の状態を long-poll で受けて Unity 側へ適用するクライアント。
     /// Screen GameObject（MjpegScreen / ScreenOverlayController と同居）に付ける。
@@ -61,6 +90,23 @@ namespace FixedCamVr.Streaming
         private PostParams _globalPost = new PostParams();
         private bool _subscribed;
 
+        // ゾーン layout（ライブ or 端末キャッシュ由来）。Tracking 側（ZoneLayoutApplier）が読む。
+        private ShowLayoutDef? _layout;
+        private int _appliedLayoutRev = -1;
+
+        /// <summary>現在の layout（未設定なら null）。ZoneLayoutApplier が Rebuild で参照する。</summary>
+        public ShowLayoutDef? Layout => _layout;
+
+        /// <summary>layout（cuts/floor/overlap 等）が変わった時に発火する。</summary>
+        public event Action? LayoutChanged;
+
+        // heartbeat に載せる HMD の course space XZ・現在ゾーンラベルの供給元。
+        // Streaming → Tracking の参照を作らないため Func で注入する（ZoneLayoutApplier が設定）。
+        /// <summary>HMD 位置を course space XZ で返す供給元（null なら heartbeat に載せない）。</summary>
+        public Func<Vector2>? HeadCourseXZProvider;
+        /// <summary>現在ゾーンのラベルを返す供給元（null なら空文字）。</summary>
+        public Func<string>? CurrentZoneLabelProvider;
+
         private string ConfigCachePath => Path.Combine(Application.persistentDataPath, configCacheFileName);
 
         [Serializable] private class ShowState
@@ -70,6 +116,7 @@ namespace FixedCamVr.Streaming
             public CueDef[] cues = Array.Empty<CueDef>();
             public PostParams? post;
             public ControlState? control;
+            public ShowLayoutDef? layout;
         }
         [Serializable] private class CameraDef
         {
@@ -90,6 +137,7 @@ namespace FixedCamVr.Streaming
         {
             public CameraDef[] cameras = Array.Empty<CameraDef>();
             public PostParams? post;
+            public ShowLayoutDef? layout;
         }
         [Serializable] private class CueDef
         {
@@ -137,6 +185,9 @@ namespace FixedCamVr.Streaming
             // server が後で繋がればライブ値で上書きされる（後勝ち）。
             LoadAndApplyCache();
             ApplyPostForActive();
+            // キャッシュ復元で layout が入った場合、ここで一度通知する
+            // （ZoneLayoutApplier は Start でも直接 Layout を読むので二重適用にはならない）。
+            if (_layout != null) LayoutChanged?.Invoke();
         }
 
         private void OnDestroy()
@@ -229,8 +280,20 @@ namespace FixedCamVr.Streaming
             if (state.post != null) _globalPost = state.post;
             ApplyPostForActive(); // global + アクティブカメラの個別 post をマテリアルへ
 
+            // 1.5) ゾーン layout（cuts/floor/overlap）。JsonUtility は null 入れ子を既定値で書くため
+            //      「cuts が空でない」を present 判定に使い、rev で変更検出する。
+            bool layoutChanged = false;
+            if (state.layout != null && state.layout.cuts != null && state.layout.cuts.Length > 0
+                && state.layout.rev != _appliedLayoutRev)
+            {
+                _layout = state.layout;
+                _appliedLayoutRev = state.layout.rev;
+                layoutChanged = true;
+            }
+
             // 端末キャッシュへ保存（次回 PC 不在起動で参照）
             SaveCache();
+            if (layoutChanged) LayoutChanged?.Invoke();
 
             // 2) カメラ手動 override（show.cameras の並び = registry sources の並びが前提）
             string ovr = state.control?.cameraOverride ?? "";
@@ -382,7 +445,7 @@ namespace FixedCamVr.Streaming
         {
             try
             {
-                var cfg = new CachedConfig { cameras = _cameras, post = _globalPost };
+                var cfg = new CachedConfig { cameras = _cameras, post = _globalPost, layout = _layout };
                 File.WriteAllText(ConfigCachePath, JsonUtility.ToJson(cfg));
             }
             catch (Exception e) { Debug.LogWarning($"[ShowControl] 設定キャッシュ保存失敗: {e.Message}"); }
@@ -397,8 +460,14 @@ namespace FixedCamVr.Streaming
                 if (cfg == null) return;
                 _cameras = cfg.cameras ?? Array.Empty<CameraDef>();
                 if (cfg.post != null) _globalPost = cfg.post;
+                // キャッシュ済み layout も復元（cuts が空でないもののみ）。event は Start() 末で発火する。
+                if (cfg.layout != null && cfg.layout.cuts != null && cfg.layout.cuts.Length > 0)
+                {
+                    _layout = cfg.layout;
+                    _appliedLayoutRev = cfg.layout.rev;
+                }
                 ApplyCameraEndpoints(); // post はこの後 Start() の ApplyPostForActive() で当てる
-                Debug.Log($"[ShowControl] 端末キャッシュ設定を適用: {ConfigCachePath} (cameras={_cameras.Length})");
+                Debug.Log($"[ShowControl] 端末キャッシュ設定を適用: {ConfigCachePath} (cameras={_cameras.Length}, layout={( _layout != null ? "yes" : "no")})");
             }
             catch (Exception e) { Debug.LogWarning($"[ShowControl] 設定キャッシュ読込失敗: {e.Message}"); }
         }
@@ -414,6 +483,11 @@ namespace FixedCamVr.Streaming
             public string cameraOverride = "";
             // ここまで適用した show.json の rev。UI / 自動検証が「Unity 反映済み」を機械判定する。
             public int appliedRev = -1;
+            // ライブモニタ用（任意）: HMD の course space XZ と現在ゾーンラベル。
+            // 供給元（ZoneLayoutApplier）未注入なら 0 / 空文字。
+            public float headCourseX;
+            public float headCourseZ;
+            public string currentZone = "";
         }
 
         private async Task HeartbeatLoopAsync(CancellationToken ct)
@@ -430,6 +504,13 @@ namespace FixedCamVr.Streaming
                     hb.playingCue = _overlay?.Current?.id ?? "";
                     hb.cameraOverride = _appliedOverride;
                     hb.appliedRev = _rev;
+                    if (HeadCourseXZProvider != null)
+                    {
+                        Vector2 c = HeadCourseXZProvider();
+                        hb.headCourseX = c.x;
+                        hb.headCourseZ = c.y;
+                    }
+                    hb.currentZone = CurrentZoneLabelProvider != null ? CurrentZoneLabelProvider() : "";
 
                     string json = JsonUtility.ToJson(hb);
                     using var req = UnityWebRequest.Post(

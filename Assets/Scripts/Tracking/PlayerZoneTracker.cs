@@ -43,6 +43,19 @@ namespace FixedCamVr.Tracking
         /// <summary>直近に選択されたゾーン。未選択時は null。</summary>
         public PlayerZone? CurrentZone => _current;
 
+        /// <summary>
+        /// ランタイムでゾーン配列を差し替える（ZoneLayoutApplier が layout / frame 変更時に呼ぶ）。
+        /// 配列順は同優先度時のタイブレーク（先頭優先）に効く。_current はリセットして次 Update で再評価させる。
+        /// </summary>
+        public void SetZonesRuntime(PlayerZone[] newZones)
+        {
+            zones = newZones ?? Array.Empty<PlayerZone>();
+            _current = null;
+        }
+
+        /// <summary>ランタイムでヒステリシス幅を差し替える（layout.hysteresisM の反映用）。</summary>
+        public void SetHysteresisShrink(float value) => hysteresisShrink = Mathf.Max(0f, value);
+
         private void Reset()
         {
             registry = FindObjectOfType<CameraStreamRegistry>();

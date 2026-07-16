@@ -560,3 +560,50 @@ input:-webkit-autofill:active {
   caret-color: var(--accent-color);
   border: 1px solid var(--line-input);
 }
+
+/* ===================================================================== */
+/* ⑥ フロアマップ（ゾーン校正 Phase 2）— floormap.js                        */
+/* ===================================================================== */
+.floormap { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
+.fm-wrap { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.fm-canvas-col { flex: 0 0 auto; }
+.fm-canvas {
+  display: block; width: 460px; max-width: 100%; height: auto; aspect-ratio: 1 / 1;
+  background: #000; border: 1px solid var(--line-soft); touch-action: none; cursor: crosshair;
+}
+.fm-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; }
+.fm-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; opacity: var(--opacity-sub); }
+.fm-chip i { width: 12px; height: 12px; display: inline-block; }
+
+.fm-controls { flex: 1 1 260px; min-width: 240px; display: flex; flex-direction: column; gap: 8px; }
+.fm-controls .fm-row { display: flex; align-items: center; gap: 10px; }
+.fm-save { padding: 7px 16px; }
+.fm-dirty { font-size: 11px; opacity: var(--opacity-mute); letter-spacing: .04em; }
+.fm-dirty.on { color: var(--warn-color); opacity: 1; }
+
+.fm-num {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 11px; opacity: var(--opacity-sub); text-transform: uppercase; letter-spacing: .06em;
+}
+.fm-num input { flex: 0 0 72px; width: 72px; text-align: right; }
+.fm-chk { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.fm-chk input { accent-color: var(--accent-color); }
+
+.fm-sim-out, .fm-live-out {
+  font-size: 11px; font-family: monospace; min-height: 1.3em; opacity: var(--opacity-sub);
+  letter-spacing: .01em;
+}
+.fm-live-out.on { color: var(--accent-color); opacity: 1; }
+.fm-sim-out b, .fm-live-out b { color: var(--accent-color); }
+
+.fm-cuts-title {
+  font-size: 9px; text-transform: uppercase; letter-spacing: .15em;
+  opacity: var(--opacity-mute); margin-top: 6px;
+}
+.fm-cuts { display: flex; flex-direction: column; gap: 5px; }
+.fm-cut-row { display: flex; align-items: center; gap: 8px; }
+.fm-cut-s { font-family: monospace; font-size: 11px; opacity: var(--opacity-sub); min-width: 64px; }
+.fm-cut-arrow { opacity: var(--opacity-mute); }
+.fm-cut-cam { flex: 1; min-width: 0; }
+.fm-cut-del { flex: 0 0 auto; padding: 2px 8px; font-size: 12px; }
+.fm-add { align-self: flex-start; padding: 4px 10px; font-size: 11px; }

@@ -24,6 +24,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string LogicGroupName = "=== Logic ===";
         private const string StreamingName = "[Streaming]";
         private const string ZonesName = "[Zones]";
+        private const string GeneratedZonesName = "[GeneratedZones]";
         private const string TrackerName = "[Tracker]";
         private const string DebugHudName = "DebugHud";
         private const string StartupFaderName = "StartupFader";
@@ -55,6 +56,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
             // 既存配置を削除（再実行性のため）
             DeleteIfExists($"{LogicGroupName}/{ZonesName}");
+            DeleteIfExists($"{LogicGroupName}/{GeneratedZonesName}");
             DeleteIfExists($"{LogicGroupName}/{TrackerName}");
             DeleteIfExists($"{CenterEyePath}/{DebugHudName}");
             DeleteIfExists($"{CenterEyePath}/{StartupFaderName}");
@@ -157,6 +159,28 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 Debug.LogWarning("[MainDemoSceneSetup] ShowControlClient が見つかりません。zoneTrackerToDisable の再配線はスキップ。");
             }
+
+            // 2.8. ゾーン再設計 Phase 1: CourseFrame + ZoneLayoutApplier を配線。
+            //      show.json layout（cuts→OBB 展開）が届くと ZoneLayoutApplier が [GeneratedZones] 配下へ
+            //      ゾーンを生成し tracker.zones を差し替える（CourseFrame の登録変換を通して配置）。
+            //      rebuildFromDefaultOnStart=false のため、layout 不在時は上の静的ゾーン（ZoneCalibrator 用）を
+            //      触らず、既存挙動を維持する。CourseFrame は identity デフォルト（registration.json があれば適用）。
+            var courseFrame = trackerGo.AddComponent<CourseFrame>();
+
+            var generatedZones = new GameObject(GeneratedZonesName);
+            generatedZones.transform.SetParent(logic.transform, worldPositionStays: false);
+
+            var applier = trackerGo.AddComponent<ZoneLayoutApplier>();
+            var applierSo = new SerializedObject(applier);
+            if (showControl != null) TrySetObjectRef(applierSo, "showControl", showControl);
+            TrySetObjectRef(applierSo, "courseFrame", courseFrame);
+            TrySetObjectRef(applierSo, "tracker", tracker);
+            TrySetObjectRef(applierSo, "zonesContainer", generatedZones.transform);
+            TrySetObjectRef(applierSo, "headTransform", centerEye.transform);
+            TrySetFloat(applierSo, "zoneCenterY", 1f);
+            TrySetFloat(applierSo, "zoneHalfHeight", 2f);
+            TrySetBool(applierSo, "rebuildFromDefaultOnStart", false);
+            applierSo.ApplyModifiedPropertiesWithoutUndo();
 
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
             CreateStartupFader(centerEye.transform, registry);

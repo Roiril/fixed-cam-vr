@@ -3,6 +3,7 @@
 //   ビューは Unity ScreenComposite を WebGL で完全再現（画質を当てた最終見た目＝Quest と同じ絵）。
 import { createContext, SourceTexture } from './gl.js';
 import { Pipeline } from './pipeline.js';
+import { createFloorMap } from './floormap.js';
 
 // 境界ブレンド（合成跡を消す）設定。全カメラ共通。各カメラの Pipeline がこれを参照。
 const blendCfg = { feather: 0.3, colorMatch: true, colorStrength: 1, laplacian: true, levels: 7 };
@@ -57,6 +58,7 @@ let unityAlive = false;
 let lastUnity = {};
 let captureItems = [];
 const columns = new Map();   // camId -> column controller
+let floorMap = null;         // フロアマップ（ゾーン校正）コントローラ
 
 // ---- captures/ 素材一覧（全列共有） ----------------------------------------
 async function refreshCaptures() {
@@ -620,7 +622,7 @@ async function pollState() {
   for (;;) {
     try {
       const s = await (await fetch(`/state?rev=${rev}`)).json();
-      if (s.rev !== rev) { rev = s.rev; state = s; renderColumns(); renderStatus(); }
+      if (s.rev !== rev) { rev = s.rev; state = s; renderColumns(); renderStatus(); floorMap && floorMap.onState(s); }
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
   }
 }
@@ -631,6 +633,7 @@ async function pollUnity() {
       unityAlive = !!s.alive; lastUnity = s.status || {};
     } catch { unityAlive = false; lastUnity = {}; }
     renderStatus();
+    floorMap && floorMap.onUnity(unityAlive, lastUnity);
     // active バッジ更新（state 再描画は重いので列だけ）
     for (const r of columns.values()) {
       const aid = activeCamId();
@@ -738,6 +741,15 @@ $('#pSave').onclick = async () => {
   loadPrompts();
 };
 loadPrompts();
+
+// ---- フロアマップ（ゾーン校正）---------------------------------------------
+if ($('#floorMap')) {
+  floorMap = createFloorMap($('#floorMap'), {
+    getCameras: () => state?.cameras || [],
+    saveLayout: (layout) => postState({ layout }),
+  });
+  if (state) floorMap.onState(state);
+}
 
 pollState();
 pollUnity();

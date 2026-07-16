@@ -68,6 +68,18 @@ namespace FixedCamVr.Tracking
         public void SetRuntimeRotation(Quaternion worldRotation) => transform.rotation = worldRotation;
 
         /// <summary>
+        /// ランタイム生成（ZoneLayoutApplier）用。cameraIndex / priority / label を実行時に設定する。
+        /// layout の cuts はゾーン数が可変なので、生成ゾーンには SerializeField を編集時に焼けない。
+        /// 既存の SetRuntime* と同じ「実行時に境界系を上書きする」用途の追加 API。
+        /// </summary>
+        public void SetRuntimeConfig(int newCameraIndex, int newPriority, string newLabel)
+        {
+            cameraIndex = Mathf.Max(0, newCameraIndex);
+            priority = newPriority;
+            label = newLabel ?? "";
+        }
+
+        /// <summary>
         /// world 座標 worldPos がこのゾーンに含まれるかを判定する（OBB）。
         /// ワールド差分をゾーンローカル軸へ射影してから半長と比較する。
         /// shrink を渡すと各軸を内側に縮めて判定（ヒステリシス用）。
