@@ -67,6 +67,12 @@ tipDir 全指 0°（rest/fist）・スクショ多角度で破綻なし。
 Male は thumb2 欠けの 3 節）→ 中間 bone 欠けを跨ぐ弦 aim は「弦と子の先の白手方向の Slerp 0.5」へ向けて
 折れを半分ずつ分配（HandRetarget）。tipDir 0° 維持・rest の折れ解消をプレビューで確認。手のサイズ差（幅 0.81/厚み 0.46 はモデル固有の肉厚差・
 スケール正規化は長さ 1 距離のみ）は別件で未対応。
+**プレビュー改良（同日）**: pinch ポーズ追加（症状②の比較用）＋撮影向き正準化＋7 アングル化。
+2 つの罠を記録: (a) **録画 tdv_handrec_real_20260610.bin は tip bone(19-23) の ParentIndex が非解剖学的**
+（19→18, 20→19, 21→1…）で `HandLandmarks` の FK だと指先間距離が**全フレーム定数 2.44cm**→最接近選択が
+常に最初の開き手フレームを返す。→ pinch 選択は末節 bone(5/8) のローカル FK + tip bind オフセット延長で行う
+（実ピンチ frame 2135・指先間 1.98cm）。(b) **手のひら正面ビューは屈曲指が遠近短縮で開き手に見える**
+→ 曲げ比較は top / yaw±60 を見る。ビルド: 2026-07-16 に tableduo.apk を再ビルドし Quest 2 台へ配布。
 
 **rest（接続直後 ShowAtRest）の向きバグ修正（2026-07-09）**: 外部リグ（Realistic/Robot）の右手が
 **手のひら上向き**で出ていた。真因は `RemoteHandView.AlignRestForward` の甲法線 `cross(lateral, fwd)`
