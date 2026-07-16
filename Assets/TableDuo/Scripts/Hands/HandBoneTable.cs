@@ -33,6 +33,10 @@ namespace TableDuoVr.Hands
         public const int RingTip = 22;
         public const int PinkyTip = 23;
 
+        /// <summary>BoneId が指先マーカー（19..23）か。tip は各指チェーンの aim 方向参照点として
+        /// マップするが、それ自身は回転駆動しない（リターゲット時の除外判定に使う）。</summary>
+        public static bool IsFingerTip(int boneId) => boneId >= ThumbTip && boneId <= PinkyTip;
+
         /// <summary>BoneId i（0..23）の FBX ボーン名。範囲外は null。isRight で side prefix を切替。</summary>
         public static string? FbxBoneName(int boneId, bool isRight)
         {

@@ -53,6 +53,18 @@ Robot 握りで指交差・親指の曲げ違う）→ プレビューが実機�
 Robotの指トラッキング精度はフレーム毎の厳密検証は未（機械モデルで判別しづらい）。実機で最終確認。詳細
 [docs/table-duo/hand-appearance-variants.md](../../docs/table-duo/hand-appearance-variants.md)「実装済みサマリ」。
 
+**2026-07-16 末節 tip aim 追加（実機再指摘①Realistic指先カール ②Robot親指曲がり過ぎ の根治・実機確認待ち）**:
+両症状の根本は同一——`FingerChains` が {mcp,mid,distal} 止まりで**末節 bone が aim されず**、親 2 段の aim
+回転を無補正でドラッグ継承（Robot 親指は 4 節フルで 2 段、Male は 3 節で 1 段＝Robot だけ顕著に見えた理由）。
+FBX 直パース実測: Male authored rest は白手の約 2 倍のカール焼き込み（累積 23-27° vs 6-14°）、Robot 親指は
+白手比 64% と短い（thumb/middle 0.774 vs 1.213）＋rest 外転 ~16° 過大。修正＝**OVR tip bone（BoneId 19-23）を
+HandVariantTable にマップ**（Male `Upward*.R_end`/`.L_end`・Robot `Bone_*Upper_end`・白手は既存
+`*_finger_tip_marker`）し FingerChains を 1 節延長 → 末節も aim。tip 自体は駆動しない（`HandBoneTable.IsFingerTip`
+で参照コピー除外。回すと aim 参照が壊れる）。診断も強化: preview の `tipDir`（pack vs 白手 末節→tip 方向差）が
+旧診断の盲点（mcp→末節関節までしか測らず指先を見ていなかった）を塞ぐ。検証済み: EditMode 37/37・
+tipDir 全指 0°（rest/fist）・スクショ多角度で破綻なし。手のサイズ差（幅 0.81/厚み 0.46 はモデル固有の肉厚差・
+スケール正規化は長さ 1 距離のみ）は別件で未対応。
+
 **rest（接続直後 ShowAtRest）の向きバグ修正（2026-07-09）**: 外部リグ（Realistic/Robot）の右手が
 **手のひら上向き**で出ていた。真因は `RemoteHandView.AlignRestForward` の甲法線 `cross(lateral, fwd)`
 （lateral=pinky−index）が**左手でのみ甲側**になる符号だったこと（右手は index が pinky の左＝lateral≈+X で

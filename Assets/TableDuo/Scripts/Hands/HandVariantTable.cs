@@ -50,10 +50,14 @@ namespace TableDuoVr.Hands
                 12 => "LowerRing", 13 => "MediumRing", 14 => "UpwardRing",
                 15 => "PrePink",       // 小指 中手骨（OVR pinky0）
                 16 => "LowerPink", 17 => "MediumPink", 18 => "UpwardPink",
+                // 指先 tip（末節 Upward の Blender leaf "_end"）。末節 bone の aim 方向参照点のみ（回転駆動しない）。
+                19 => "UpwardThumb", 20 => "UpwardIndex", 21 => "UpwardMiddle",
+                22 => "UpwardRing", 23 => "UpwardPink",
                 _ => null,
             };
             if (stem == null) return null;
-            return stem + (isRight ? ".R" : ".L");
+            // _end leaf は側サフィックスの**後ろ**に付く（例 UpwardIndex.R_end）
+            return stem + (isRight ? ".R" : ".L") + (HandBoneTable.IsFingerTip(boneId) ? "_end" : "");
         }
 
         // --- Robot Hand。側サフィックス無し（両手プレハブとも同名） ---
@@ -65,6 +69,9 @@ namespace TableDuoVr.Hands
             9 => "Bone_MiddleLower", 10 => "Bone_MiddleMiddle", 11 => "Bone_MiddleUpper",
             12 => "Bone_RingLower", 13 => "Bone_RingMiddle", 14 => "Bone_RingUpper",
             15 => "Bone_PrePink", 16 => "Bone_PinkLower", 17 => "Bone_PinkMiddle", 18 => "Bone_PinkUpper",
+            // 指先 tip（末節 Upper の Blender leaf "_end"・左右同名）。aim 方向参照点のみ（回転駆動しない）。
+            19 => "Bone_ThumbUpper_end", 20 => "Bone_IndexUpper_end", 21 => "Bone_MiddleUpper_end",
+            22 => "Bone_RingUpper_end", 23 => "Bone_PinkUpper_end",
             _ => null,
         };
     }

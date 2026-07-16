@@ -84,6 +84,22 @@ pinky0 で 173° 乖離／layout FK とメッシュ実階層が 100° 乖離）�
 検証は `Preview Hand Variants (screenshot)` → `Temp/HandVariantPreview/directions.txt`（指方向/甲法線/親指方向/
 実測長の Default との差分）。
 
+**指先の曲がり残留の根治（2026-07-16・指先 tip bone を aim チェーンに追加）**: 実機で
+①Realistic（Male）＝指を伸ばしても指先が曲がって見える ②Robot＝つまみで親指が曲がりすぎる、が発覚。
+- **原因**: `HandRetarget.FingerChains` が各指 {mcp, mid, distal} で、aim ループが `k < Length-1` のため
+  **末節 bone（thumb=5/index=8/…）が aim されず**、親 2 段の aim 回転を無補正でドラッグ継承していた。
+  見た目の指先を決める tip（末節の子）が BoneId 0–18 のマップ外で、末節の向きを白手に合わせる手段が無かった。
+  加えて Male は authored rest に白手の約 2 倍の指カール（累積 23–27°）が焼き込まれており、末節無補正だと残る。
+- **修正**: OVR の指先マーカー **BoneId 19–23（ThumbTip..PinkyTip）をマッピングに追加**し、各指チェーンを
+  1 節延長（例 thumb `{3,4,5,19}`）。aim ループの最終段が末節 bone を白手の末節方向へ向ける。
+  **tip 自体は回転駆動しない**（aim の方向参照点のみ・`HandBoneTable.IsFingerTip` で参照コピー step から除外）。
+  - tip の bone 名: Default=`<side><finger>_finger_tip_marker`（既存 `HandBoneTable`）/
+    Male=`Upward<Finger>.R_end`・`.L_end` / Robot=`Bone_<Finger>Upper_end`（左右同名）。いずれも末節 bone の子 leaf。
+  - `AvatarPose.BonesPerHand=24` で bone 配列は元々 19–23 を収容済み（`RemoteHandMeshProvider` の配列拡張は不要）。
+    live の OVR 回転が 19–23 に来なくても tip は bind のまま追従＝ world 位置は正しい。
+- **診断強化**: `directions.txt` に **tipDir（pack vs white の末節→tip 方向角）** を rest/fist 両ポーズで追加
+  （従来の mcp→末節 指標では末節 1 節の向きズレを拾えず本症状を見逃した穴を塞ぐ）。
+
 **設定変更時**: `TableDuoSceneSetup` を編集したら `Tools/FixedCamVr/Setup/Setup TableDuo Scene` を再実行して
 シーンに焼き直す（provider の変種参照・`LocalVariantHand`・`HandVariantWatcher` を再配線）。
 

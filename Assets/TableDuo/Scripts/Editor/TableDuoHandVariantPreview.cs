@@ -115,10 +115,20 @@ namespace TableDuoVr.EditorTools
             Debug.Log("[TableDuo] 忠実度診断 → Temp/HandVariantPreview/directions.txt / rest・fist の各スクショ");
         }
 
-        // 指ごとの (mcp→tip) BoneId。pack と白手リファレンスを同 BoneId で比較する。
+        // 指ごとの (mcp→末節) BoneId。pack と白手リファレンスを同 BoneId で比較する。
         private static readonly (string name, int mcp, int tip)[] Fingers =
         {
             ("thumb", 3, 5), ("index", 6, 8), ("middle", 9, 11), ("ring", 12, 14), ("pinky", 16, 18),
+        };
+
+        // 指ごとの (末節→指先 tip) BoneId。末節セグメントそのものの向きを見る指標。
+        // Fingers（mcp→末節）は末節が正しく置かれても最後の 1 節の向きズレを拾えず、
+        // 「指先だけ曲がって見える」症状（Male のカール残留・Robot 親指の曲がり過ぎ）を検出できなかった穴を塞ぐ。
+        private static readonly (string name, int distal, int tip)[] Fingertips =
+        {
+            ("thumb", 5, HandBoneTable.ThumbTip), ("index", 8, HandBoneTable.IndexTip),
+            ("middle", 11, HandBoneTable.MiddleTip), ("ring", 14, HandBoneTable.RingTip),
+            ("pinky", 18, HandBoneTable.PinkyTip),
         };
 
         /// <summary>pack 各指の (mcp→tip) 世界方向を、同コンテナの白手リファレンス（正解）と比較して角度差を出す。
@@ -143,6 +153,19 @@ namespace TableDuoVr.EditorTools
                 { sb.Append($" {fname}=NA"); continue; }
                 Vector3 pd = (pack[tip]!.position - pack[mcp]!.position).normalized;
                 Vector3 wd = (white[tip]!.position - white[mcp]!.position).normalized;
+                sb.Append($" {fname}={Vector3.Angle(pd, wd):F0}°");
+            }
+            sb.AppendLine();
+            // 指先セグメント（末節→tip）方向差。末節 aim が効いていれば全指 <~15°。
+            // 大きい指＝その指の末節がまだ白手方向を向いていない（指先カール残留）。
+            sb.Append("    tipDir(pack vs white distal→tip):");
+            foreach (var (fname, distal, tip) in Fingertips)
+            {
+                if (distal >= pack.Length || tip >= pack.Length ||
+                    pack[distal] == null || pack[tip] == null || white[distal] == null || white[tip] == null)
+                { sb.Append($" {fname}=NA"); continue; }
+                Vector3 pd = (pack[tip]!.position - pack[distal]!.position).normalized;
+                Vector3 wd = (white[tip]!.position - white[distal]!.position).normalized;
                 sb.Append($" {fname}={Vector3.Angle(pd, wd):F0}°");
             }
             sb.AppendLine();

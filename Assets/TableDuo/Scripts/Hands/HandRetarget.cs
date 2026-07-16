@@ -40,17 +40,20 @@ namespace TableDuoVr.Hands
             return Quaternion.LookRotation(fwd, up.normalized);
         }
 
-        // 各指の BoneId チェーン（親→子）。aim 補正は **knuckle(MCP) 以降の節だけ**を白手方向へ向ける。
+        // 各指の BoneId チェーン（親→子・末尾は指先 tip 19..23）。aim 補正は **knuckle(MCP) 以降の節だけ**を白手方向へ向ける。
         // ⚠ 中手骨（thumb0=2 / pinky0=15）は aim に含めない。含めると付け根そのものを白手方向へ回して
         //   指の付け根位置が動き、小指が薬指側へ寄って重なる（2026-07-12 実測: ring-pnk 間隔が 2.5→1.3cm に潰れた）。
         //   中手骨は参照コピー（白手ワールド回転の移植）に任せ、指の広がり（外転）はリグ本来の値を保つ。
+        // 末尾に tip（19..23）を足すことで aim ループの最終段が **末節 bone**（5/8/11/14/18）を白手の
+        //   末節方向へ向ける（tip は方向参照点＝子として使うだけで、それ自身は駆動しない）。これが無いと
+        //   末節が親 2 段の aim を無補正でドラッグ継承し、Male の指先カール残留・Robot 親指の曲がり過ぎになる。
         private static readonly int[][] FingerChains =
         {
-            new[] { 3, 4, 5 },     // thumb（thumb0=2 は含めない）
-            new[] { 6, 7, 8 },     // index
-            new[] { 9, 10, 11 },   // middle
-            new[] { 12, 13, 14 },  // ring
-            new[] { 16, 17, 18 },  // pinky（pinky0=15 は含めない）
+            new[] { 3, 4, 5, 19 },      // thumb（thumb0=2 は含めない・末尾 19=ThumbTip）
+            new[] { 6, 7, 8, 20 },      // index（末尾 20=IndexTip）
+            new[] { 9, 10, 11, 21 },    // middle（末尾 21=MiddleTip）
+            new[] { 12, 13, 14, 22 },   // ring（末尾 22=RingTip）
+            new[] { 16, 17, 18, 23 },   // pinky（pinky0=15 は含めない・末尾 23=PinkyTip）
         };
 
         /// <summary>参照コピー式 + aim 補正の適用（毎フレーム）。
@@ -71,9 +74,11 @@ namespace TableDuoVr.Hands
                 var m = metaBones[i];
                 if (m != null) m.localRotation = liveLocals[i];
             }
-            // (2) 参照コピー（roll と大枠の姿勢）
+            // (2) 参照コピー（roll と大枠の姿勢）。tip（19..23）は駆動せず、末節に付いた bind のまま
+            //     追従させる（tip の world 位置＝末節の向きを表す aim 参照点。回すと参照が壊れる）。
             for (int i = 0; i < n; i++)
             {
+                if (HandBoneTable.IsFingerTip(i)) continue;
                 var m = metaBones[i];
                 var p = packBones[i];
                 if (m == null || p == null) continue;
