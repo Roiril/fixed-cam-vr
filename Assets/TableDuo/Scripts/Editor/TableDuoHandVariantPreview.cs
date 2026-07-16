@@ -45,13 +45,16 @@ namespace TableDuoVr.EditorTools
             var ovrBind = data.LayoutR; // 送信元の手 bind（= リターゲットの ovrBind）
             if (ovrBind == null) { Debug.LogError("[TableDuo] 録画に手 layout（bind）が無い。"); return; }
             var fistFrame = data.Frames[PickExpressiveFrame(data)];
+            var pinchFrame = data.Frames[PickPinchFrame(data)];
 
-            // rest = bind（静止・開き手）と fist（最も曲がった録画フレーム）の 2 ポーズを回す。
-            // 実機指摘（静止で指が曲がる／握りで指が交わる）は rest と fist を別々に見ないと切り分かない。
+            // rest = bind（静止・開き手）/ fist（最も曲がった録画フレーム）/ pinch（親指+人差し指だけ
+            // 曲がったフレーム）の 3 ポーズを回す。実機指摘（静止で指が曲がる／握りで指が交わる／
+            // つまみで親指が曲がり過ぎる）はポーズ別に見ないと切り分かない。
             var poses = new (string name, Quaternion[] bonesR, Quaternion wristRot)[]
             {
                 ("rest", ovrBind.BindLocalRot, fistFrame.WristRotR),
                 ("fist", fistFrame.BonesR, fistFrame.WristRotR),
+                ("pinch", pinchFrame.BonesR, pinchFrame.WristRotR),
             };
 
             var sb = new System.Text.StringBuilder("[TableDuo] 手バリアント忠実度診断（pack vs 同コンテナ白手・指ごと世界方向差）:\n");
@@ -234,6 +237,29 @@ namespace TableDuoVr.EditorTools
                 float s = 0f;
                 for (int i = 2; i <= 18 && i < bind.BoneCount; i++)
                     s += Quaternion.Angle(pose.BonesR[i], bind.BindLocalRot[i]);
+                if (s > bestScore) { bestScore = s; best = f; }
+            }
+            return best;
+        }
+
+        /// <summary>つまみ（pinch）らしいフレーム＝親指+人差し指の曲げが大きく、中指以降が伸びている
+        /// フレームを選ぶ。FK せずローカル回転の bind 差だけで採点する近似（PickExpressiveFrame と同流儀）。</summary>
+        private static int PickPinchFrame(PoseRecordingFile.Data data)
+        {
+            var bind = data.LayoutR;
+            int best = data.Frames.Count / 2;
+            if (bind == null) return best;
+            float bestScore = float.MinValue;
+            for (int f = 0; f < data.Frames.Count; f++)
+            {
+                var pose = data.Frames[f];
+                if (!pose.TrackedR) continue;
+                float pinch = 0f, others = 0f;
+                for (int i = 2; i <= 8 && i < bind.BoneCount; i++)   // thumb(2-5) + index(6-8)
+                    pinch += Quaternion.Angle(pose.BonesR[i], bind.BindLocalRot[i]);
+                for (int i = 9; i <= 18 && i < bind.BoneCount; i++)  // middle/ring/pinky
+                    others += Quaternion.Angle(pose.BonesR[i], bind.BindLocalRot[i]);
+                float s = pinch - others;
                 if (s > bestScore) { bestScore = s; best = f; }
             }
             return best;
