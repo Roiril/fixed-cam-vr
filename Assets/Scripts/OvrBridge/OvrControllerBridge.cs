@@ -29,12 +29,15 @@ namespace FixedCamVr.OvrBridge
                  " Diagnostics 名前空間に直接依存しないため MonoBehaviour で受ける。")]
         [SerializeField] private MonoBehaviour? hud = null;
 
-        [Header("Zone calibration")]
-        [Tooltip("ZoneCalibrator（[Tracker] 上）。両グリップ 3 秒長押しで校正モード切替、" +
-                 "校正中は通常のボタン操作を抑止して入力（レイ選択・ドラッグ・サイズ）を転送する。")]
-        [SerializeField] private ZoneCalibrator? zoneCalibrator;
+        [Header("Course registration")]
+        [Tooltip("CourseRegistrationController（[Tracker] 上）。両グリップ 3 秒長押しで登録モード切替、" +
+                 "登録中は通常のボタン操作を抑止して入力（A=マーク/やり直し, B=確定, スティック=微調整）を転送する。")]
+        [SerializeField] private CourseRegistrationController? courseRegistration;
 
-        [Tooltip("校正モード切替に必要な両グリップの長押し秒数。")]
+        [Tooltip("OS recenter（Oculus ボタン長押し）検知で『要再登録』を立てる CourseFrame（[Tracker] 上）。")]
+        [SerializeField] private CourseFrame? courseFrame;
+
+        [Tooltip("登録モード切替に必要な両グリップの長押し秒数。")]
         [SerializeField, Min(0.2f)] private float calibToggleHoldSec = 3.0f;
 
         // 片手グリップの『単押し』と判定する最大長さ(秒)。これ以下の片手タップで今見ているカメラの
@@ -51,6 +54,8 @@ namespace FixedCamVr.OvrBridge
         private bool _gripPressActive;
         private float _gripPressStart;
         private bool _gripPressBoth;
+        // OS recenter 購読済みフラグ（OVRManager.display は初期化順で null のことがあるためリトライする）。
+        private bool _recenterSubscribed;
 
         private void Start()
         {
@@ -59,12 +64,34 @@ namespace FixedCamVr.OvrBridge
             // になる（2026-06-18 の既知バグ類型）。
             _hudTyped = hud as FixedCamVr.Diagnostics.RuntimeDebugHud;
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            TrySubscribeRecenter();
         }
+
+        private void OnDestroy()
+        {
+            if (_recenterSubscribed && OVRManager.display != null)
+                OVRManager.display.RecenteredPose -= OnRecentered;
+            _recenterSubscribed = false;
+        }
+
+        // OVRManager.display は OVRManager の初期化で生えるため、Start 時点で null のことがある
+        // （→黙って恒久無効＝OS recenter で登録がズレたまま・ログにも残らない）。生えるまで Update で再試行。
+        private void TrySubscribeRecenter()
+        {
+            if (_recenterSubscribed || courseFrame == null || OVRManager.display == null) return;
+            OVRManager.display.RecenteredPose += OnRecentered;
+            _recenterSubscribed = true;
+        }
+
+        private void OnRecentered() => courseFrame?.MarkNeedsReRegistration();
 
         private void Update()
         {
-            // 両グリップ長押しで校正モード切替（押しっぱなしで連続トグルしない）
-            if (zoneCalibrator != null)
+            // OVRManager.display が後から生えるケースに備え、未購読なら毎フレーム再試行（生えたら 1 回で確定）。
+            if (!_recenterSubscribed) TrySubscribeRecenter();
+
+            // 両グリップ長押しで登録モード切替（押しっぱなしで連続トグルしない）
+            if (courseRegistration != null)
             {
                 bool bothGrips =
                     OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.LTouch) &&
@@ -75,7 +102,7 @@ namespace FixedCamVr.OvrBridge
                     if (!_calibToggleFired && _gripHold >= calibToggleHoldSec)
                     {
                         _calibToggleFired = true;
-                        zoneCalibrator.Toggle();
+                        courseRegistration.Toggle();
                     }
                 }
                 else
@@ -84,19 +111,17 @@ namespace FixedCamVr.OvrBridge
                     _calibToggleFired = false;
                 }
 
-                // 校正モード中は通常マッピング（カメラ切替/HUD 等）を抑止して入力を転送
-                if (zoneCalibrator.IsActive)
+                // 登録モード中は通常マッピング（カメラ切替/HUD 等）を抑止して入力を転送
+                if (courseRegistration.IsActive)
                 {
-                    zoneCalibrator.Feed(new ZoneCalibrator.CalibInput
+                    courseRegistration.Feed(new CourseRegistrationController.RegInput
                     {
-                        size = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch),
-                        rotate = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch).x, // 左スティック横: レイアウト回転
-                        // Button.One/Three/Four はコントローラ未指定だと両手から拾う
-                        //（One=A|X 等）ため、必ず RTouch/LTouch を明示する（通常マッピングと同じ規約）。
-                        pick = OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.RTouch),   // A (右): レイ先を選択
-                        grab = OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger, OVRInput.Controller.RTouch) > 0.5f, // 右トリガ: ドラッグ
-                        save = OVRInput.GetDown(OVRInput.Button.Three, OVRInput.Controller.LTouch), // X (左)
-                        reset = OVRInput.GetDown(OVRInput.Button.Four, OVRInput.Controller.LTouch), // Y (左)
+                        // Button.One/Two はコントローラ未指定だと両手から拾う（One=A|X 等）ため、
+                        // 必ず RTouch を明示する（通常マッピングと同じ規約）。
+                        mark = OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.RTouch),    // A (右): マーク / やり直し
+                        confirm = OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.RTouch), // B (右): 確定
+                        nudgeMove = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch), // 左スティック: 平行移動
+                        nudgeYaw = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch).x, // 右スティック横: yaw
                     });
                     return;
                 }

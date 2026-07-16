@@ -1,6 +1,6 @@
 # ゾーン校正の再設計 — 「形状は PC、位置合わせは HMD 10 秒」
 
-status: proposed（設計のみ・未実装）
+status: phase 1-3 実装済み・実機未検証（phase 4 = OVRSpatialAnchor 永続化は後回し）
 date: 2026-07-16
 
 ## 背景 / 問題

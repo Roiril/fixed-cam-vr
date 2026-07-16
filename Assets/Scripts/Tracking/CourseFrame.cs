@@ -9,11 +9,10 @@ namespace FixedCamVr.Tracking
     /// course space（フロア中心原点・+Z 北）→ トラッキング空間ワールドへの**剛体変換 3 DOF**
     /// （XZ 平行移動 + yaw）を保持するコンポーネント。ゾーン群はこの 1 変換を通して配置される。
     ///
-    /// このフェーズでは identity デフォルト + persistentDataPath/registration.json の永続化のみ。
-    /// HMD 2 点登録 UI は別フェーズが <see cref="SetRegistration"/> を叩いて実装する（API だけ用意）。
+    /// identity デフォルト + persistentDataPath/registration.json の永続化を持つ。
+    /// HMD 2 点登録は <see cref="CourseRegistrationController"/> が <see cref="SetRegistration"/> を叩く。
     ///
-    /// registration.json は ZoneCalibrator の zone_calibration.json とは別ファイルで**衝突しない**。
-    /// （形状は show.json layout 側、位置合わせだけをこの 1 変換で持つ設計。）
+    /// 形状は show.json layout 側（PC で編集）、位置合わせだけをこの 1 変換で持つ設計。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CourseFrame : MonoBehaviour
@@ -32,6 +31,16 @@ namespace FixedCamVr.Tracking
 
         /// <summary>変換（原点 or yaw）が変わった時に発火。ZoneLayoutApplier が購読して再配置する。</summary>
         public event Action? Changed;
+
+        private bool _needsReRegistration;
+
+        /// <summary>
+        /// OS recenter（Oculus ボタン長押し等）でトラッキング原点が変わり、登録が無効になった状態。
+        /// <see cref="MarkNeedsReRegistration"/> で立ち、<see cref="SetRegistration"/>/<see cref="ResetRegistration"/>
+        /// で降りる。CourseRegistrationController がこれを見て「要再登録」警告を視界に出す。
+        /// ゾーン動作自体は継続する（黙ってズレたまま動かない、が目的）。
+        /// </summary>
+        public bool NeedsReRegistration => _needsReRegistration;
 
         /// <summary>course 原点のワールド XZ。</summary>
         public Vector2 OriginXZ => originXZ;
@@ -80,8 +89,20 @@ namespace FixedCamVr.Tracking
         {
             originXZ = newOriginXZ;
             yawDeg = newYawDeg;
+            _needsReRegistration = false;
             if (save) SaveRegistration();
             Changed?.Invoke();
+        }
+
+        /// <summary>
+        /// トラッキング原点が変わって登録が無効になったことを記録する（OS recenter 検知時に呼ぶ）。
+        /// フラグを立てて警告ログを出すだけ。ゾーン再配置はしない（次の登録まで現状のまま動かす）。
+        /// </summary>
+        public void MarkNeedsReRegistration()
+        {
+            if (_needsReRegistration) return;
+            _needsReRegistration = true;
+            Debug.LogWarning("[CourseFrame] OS recenter 検知 — 登録が無効化されました。両グリップ 3 秒長押しで再登録してください。");
         }
 
         /// <summary>登録を identity へ戻し、保存ファイルを削除する。</summary>
@@ -89,6 +110,7 @@ namespace FixedCamVr.Tracking
         {
             originXZ = Vector2.zero;
             yawDeg = 0f;
+            _needsReRegistration = false;
             if (deleteFile)
             {
                 try { if (File.Exists(RegistrationPath)) File.Delete(RegistrationPath); }

@@ -13,9 +13,9 @@ namespace FixedCamVr.Tracking
     /// また heartbeat 用に「HMD の course space XZ」「現在ゾーンラベル」を Streaming 側へ Func 注入する
     /// （Streaming → Tracking の参照を作らないため依存方向を守る手段）。
     ///
-    /// ⚠ ZoneCalibrator（zone_calibration.json）と併存する場合、両者が PlayerZone の境界を書く。
-    ///    layout / frame 変更で本 applier がゾーンを作り直すと、ZoneCalibrator が動かしていた旧ゾーンは
-    ///    tracker 配列から外れる（別フェーズで ZoneCalibrator を登録モードへ置換予定）。
+    /// layout / frame 変更で本 applier が [GeneratedZones] 配下のゾーンを作り直し、tracker.zones を
+    /// 差し替える。位置合わせは <see cref="CourseFrame"/>（HMD 2 点登録）を通す。
+    /// layout 不在時は rebuildFromDefaultOnStart=false なら何もせず、シーンの静的ゾーンを維持する。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class ZoneLayoutApplier : MonoBehaviour

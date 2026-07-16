@@ -28,7 +28,7 @@
 | Phase | 内容 | 状態 |
 |---|---|---|
 | 1–2.5 | MJPEG 受信（[Streaming/](Assets/Scripts/Streaming/)）・スクリーン描画・複数カメラ切替 | ✅ 実機動作確認済み |
-| 2.7 | プレイヤー位置連動カメラ切替（[Tracking/](Assets/Scripts/Tracking/)）+ HMD 内ゾーン校正（ZoneCalibrator） | ✅ 実機でゾーン校正運用中 |
+| 2.7 | プレイヤー位置連動カメラ切替（[Tracking/](Assets/Scripts/Tracking/)）。形状は show.json layout（PC）+ 位置合わせは HMD 2 点登録（CourseRegistrationController） | 🚧 登録フロー実装済み・実機未検証 |
 | 3 | 映像加工 4 系統プロトタイプ（[Fx/](Assets/Scripts/Fx/)。本命 = CRT + 薄い埃） | ✅ Editor 検証済み・本実装前 |
 | 3.5 | 映像差し替え（OverlayCue）+ Web オペレータ卓遠隔制御（ShowControlClient / [tools/web-compositor/](tools/web-compositor/)） | ✅ 実装済み・運用検証中 |
 | 4 | スクリーン外 3D 演出 / CG 合成 | 未着手 |
@@ -56,7 +56,7 @@
 | 右 **A** / **B** | 次 / 前のカメラに切替（ゾーン自動切替を上書き） |
 | 左 **X** | スクリーン head-lock 切替 |
 | 左 **Y** | HUD 表示トグル |
-| **両グリップ 3 秒長押し** | ゾーン校正モード ON/OFF（右レイで A=選択・トリガ=床ドラッグ・スティック=サイズ、左スティック横=全体回転、X=保存 / Y=リセット） |
+| **両グリップ 3 秒長押し** | コース登録モード ON/OFF（HMD 2 点登録：A で壁の凸角→北腕東端をタッチ→ワイヤー確認→ B 確定 / A やり直し / スティック微調整。形状は show.json layout で PC 編集） |
 | キーボード **Tab / Shift+Tab / 1–9** | カメラ切替（Editor・HMD なし検証） |
 | キーボード **Space** / **H** | head-lock / HUD トグル |
 

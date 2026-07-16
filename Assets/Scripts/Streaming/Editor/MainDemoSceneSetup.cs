@@ -132,17 +132,9 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetBool(trackerSo, "logChanges", true);
             trackerSo.ApplyModifiedPropertiesWithoutUndo();
 
-            // 2.5. ZoneCalibrator（Quest コントローラでゾーンを実地調整。両グリップ 3 秒長押しで起動、
-            //       右コントローラから床へレイ → A=選択 / 右トリガ握り=床ドラッグ / 右スティック=サイズ）
             var rightHand = GameObject.Find(RightHandPath);
             if (rightHand == null)
-                Debug.LogWarning($"[MainDemoSceneSetup] '{RightHandPath}' が見つかりません。レイ起点が headTransform にフォールバックします。");
-            var calibrator = trackerGo.AddComponent<ZoneCalibrator>();
-            var calibSo = new SerializedObject(calibrator);
-            SetPlayerZoneArray(calibSo, "zones", new[] { zoneA, zoneB, zoneC, zoneC2 });
-            TrySetObjectRef(calibSo, "headTransform", centerEye.transform);
-            if (rightHand != null) TrySetObjectRef(calibSo, "rightHandTransform", rightHand.transform);
-            calibSo.ApplyModifiedPropertiesWithoutUndo();
+                Debug.LogWarning($"[MainDemoSceneSetup] '{RightHandPath}' が見つかりません。登録の先端位置が headTransform にフォールバックします。");
 
             // 2.7. ShowControlClient.zoneTrackerToDisable を新 Tracker へ再配線。
             //      旧 Tracker は DeleteIfExists で消えるため、放置すると参照が missing になり
@@ -163,7 +155,7 @@ namespace FixedCamVr.Streaming.EditorTools
             // 2.8. ゾーン再設計 Phase 1: CourseFrame + ZoneLayoutApplier を配線。
             //      show.json layout（cuts→OBB 展開）が届くと ZoneLayoutApplier が [GeneratedZones] 配下へ
             //      ゾーンを生成し tracker.zones を差し替える（CourseFrame の登録変換を通して配置）。
-            //      rebuildFromDefaultOnStart=false のため、layout 不在時は上の静的ゾーン（ZoneCalibrator 用）を
+            //      rebuildFromDefaultOnStart=false のため、layout 不在時は上の静的ゾーン（フォールバック）を
             //      触らず、既存挙動を維持する。CourseFrame は identity デフォルト（registration.json があれば適用）。
             var courseFrame = trackerGo.AddComponent<CourseFrame>();
 
@@ -182,19 +174,32 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetBool(applierSo, "rebuildFromDefaultOnStart", false);
             applierSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // 2.9. CourseRegistrationController（HMD 2 点登録。両グリップ 3 秒長押しで開始、
+            //      壁の凸角と北腕東端をコントローラ先端でタッチ → CourseFrame へ剛体変換を解いて渡す。
+            //      Verify でワイヤーフレーム表示 → B 確定 / A やり直し / スティック微調整。
+            //      OS recenter は OvrControllerBridge が検知して CourseFrame.MarkNeedsReRegistration を呼ぶ）。
+            var registration = trackerGo.AddComponent<CourseRegistrationController>();
+            var regSo = new SerializedObject(registration);
+            TrySetObjectRef(regSo, "courseFrame", courseFrame);
+            TrySetObjectRef(regSo, "headTransform", centerEye.transform);
+            if (rightHand != null) TrySetObjectRef(regSo, "rightHandTransform", rightHand.transform);
+            if (showControl != null) TrySetObjectRef(regSo, "showControl", showControl);
+            regSo.ApplyModifiedPropertiesWithoutUndo();
+
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
             CreateStartupFader(centerEye.transform, registry);
 
             // 4. DebugHud
             var hud = CreateDebugHud(centerEye.transform, registry, tracker, centerEye.transform);
 
-            // 5. OvrControllerBridge.hud に HUD 連携 + ZoneCalibrator 接続
+            // 5. OvrControllerBridge.hud に HUD 連携 + CourseRegistrationController / CourseFrame 接続
             if (ovrBridge != null)
             {
                 var bridgeSo = new SerializedObject(ovrBridge);
                 if (hud != null) TrySetObjectRef(bridgeSo, "hud", hud);
-                TrySetObjectRef(bridgeSo, "zoneCalibrator", calibrator);
-                TrySetFloat(bridgeSo, "calibToggleHoldSec", 3.0f); // 両グリップ 3 秒長押しで校正トグル
+                TrySetObjectRef(bridgeSo, "courseRegistration", registration);
+                TrySetObjectRef(bridgeSo, "courseFrame", courseFrame);
+                TrySetFloat(bridgeSo, "calibToggleHoldSec", 3.0f); // 両グリップ 3 秒長押しで登録トグル
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -203,7 +208,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（周回 A南/B東/C北/C西・推測配置、実測校正待ち） / Tracker / ZoneCalibrator（両グリップ 3 秒長押しで校正、右レイ A=選択/トリガ=ドラッグ/右スティック=サイズ） / StartupFader / DebugHud / OvrBridge 連携。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（両グリップ 3 秒長押しで 2 点登録、A=マーク/B=確定/スティック微調整） / StartupFader / DebugHud / OvrBridge 連携。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }

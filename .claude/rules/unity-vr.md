@@ -106,29 +106,35 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 `MainDemoSceneSetup.cs` の値を上書きして `Setup Main Demo Scene` を再実行（冪等）。
 再実行は [Tracker] を作り直すため、**Screen の ShowControlClient.zoneTrackerToDisable を再アサイン**すること。
 
-### 実機でのゾーン校正（ZoneCalibrator、2026-06-12 追加 / 2026-06-16 レイ操作化）
+### ゾーン校正の再設計（2026-07-16〜・形状は PC / 位置合わせは HMD 2 点登録）
 
-HMD 内でコントローラだけでゾーンを実地調整できる（[`ZoneCalibrator`](../Assets/Scripts/Tracking/ZoneCalibrator.cs)、[Tracker] 上、`Setup Main Demo Scene` が自動配線）。**右コントローラから床へレイを飛ばし、レイ先（床ヒット点）を基準に操作する**：
+**旧 ZoneCalibrator（ゾーンを HMD 内でドラッグ・リサイズ・回転）は廃止**。校正を 2 つに分解した（設計 [.claude/plans/2026-07-16_zone-authoring-redesign.md](../plans/2026-07-16_zone-authoring-redesign.md)）：
+
+1. **形状・カメラ割当 = 純データ**（物理レイアウトは固定）。PC の Web オペレータ卓が show.json `layout`（フロア寸法 + ループ上の切れ目 `cuts`）を配り、[`ZoneLayoutSolver`](../Assets/Scripts/Tracking/ZoneLayoutSolver.cs) が矩形 OBB へ決定的に展開 → [`ZoneLayoutApplier`](../Assets/Scripts/Tracking/ZoneLayoutApplier.cs) が [GeneratedZones] へ生成し tracker.zones を差し替える。**HMD では形状を一切いじらない**。
+2. **位置合わせ = 剛体 3 DOF**（XZ 平行移動 + yaw）だけを [`CourseFrame`](../Assets/Scripts/Tracking/CourseFrame.cs) が持ち、[`CourseRegistrationController`](../Assets/Scripts/Tracking/CourseRegistrationController.cs) の **HMD 2 点登録**で解く（[Tracker] 上、`Setup Main Demo Scene` が自動配線）。
+
+#### HMD 2 点登録リチュアル（約 10 秒）
 
 | 操作 | 機能 |
 |---|---|
-| **両グリップ 3 秒長押し** | 校正モード ON/OFF（OvrControllerBridge が検知） |
-| A（右） | レイ先（床ヒット点）にあるゾーンを選択（選択中はブリンク／指している間はハイライト） |
-| 右トリガ握り中 | 選択ゾーンをレイ先へ**床ドラッグ**（掴んだ瞬間の相対位置を維持して追従） |
-| 右スティック 横倒し | halfExtents.x（横幅）を伸縮（下限 0.15m） |
-| 右スティック 縦倒し | halfExtents.z（奥行き）を伸縮（下限 0.15m） |
-| 左スティック 横倒し | **レイアウト全体**をコース中心（起動位置）まわりに yaw 回転 |
-| X（左） | **保存** → `persistentDataPath/zone_calibration.json`（以後の起動で自動適用） |
-| Y（左） | authored 値へリセット + 保存ファイル削除 |
+| **両グリップ 3 秒長押し** | 登録モード ON/OFF（OvrControllerBridge が検知） |
+| A（右）ステップ1 | 壁の外角（L の凸角 = course (-0.5,+0.5)）に**コントローラ先端を当てて**マーク |
+| A（右）ステップ2 | 北腕の東端（course (+0.5,+0.5)）に当ててマーク → 平行移動 + yaw を解いて適用 |
+| （自動チェック） | 2 点間実測距離が既知距離（既定 1m）から **15% 以上ズレたらエラー表示してやり直し** |
+| Verify: B（右） | **確定**（`persistentDataPath/registration.json` へ保存 + モード終了） |
+| Verify: A（右） | 最初からやり直し（ステップ1へ戻る） |
+| Verify: 左スティック | 平行移動ナッジ（≈0.3 m/s） |
+| Verify: 右スティック横 | yaw ナッジ（≈10°/s） |
 
-- レイ起点は `OVRCameraRig/TrackingSpace/RightHandAnchor`（SerializeField `rightHandTransform`、null なら headTransform にフォールバック）。床平面 y=0 との交点をヒット点とする（上向き／水平はヒットなし＝赤レイ表示）
-- **レイ表示は校正モード限定**（viz は SetActive で生成・破棄）。水色＝床ヒットあり、橙＝床に当たっていない、ドット緑＝ドラッグ中
-
-- **PlayerZone は OBB（向き付きボックス）**: `Contains` はワールド差分をゾーンローカル軸（`transform.rotation`）へ射影して判定する。rotation が identity のときは従来 AABB と完全一致（既存テストもそのまま pass）。左スティック回転で各ゾーンの位置と向きが回り、当たり判定にも効く
-- **起動位置基準化（recenterOnStart、既定 ON）**: トラッキング確立の 1 秒後、起動時の HMD 位置（XZ）がレイアウト原点（=コース中心）になるようゾーン全体を平行移動する。**自動では回転を合わせない**（コースの向きはガーディアン空間基準のまま）。向き合わせは校正モードで**左スティック横**を倒して手動回転 → X 保存（回転も JSON に euler で永続化）。保存 JSON は原点相対で持つので、セッション毎に立ち位置が変わっても保存レイアウトの形は崩れない
-- 校正中は床にゾーンのフットプリントをカメラ別色で表示（緑=cam0 / 青=cam1 / 橙=cam2、白菱形=HMD 位置、水色レイ＋ドット=コントローラの指し先）。通常のボタン操作（カメラ切替・HUD）は抑止される
-- 保存先は**端末ローカル**（Quest なら `/sdcard/Android/data/com.roiril.mawarimi/files/`）。シーンの authored 値は変わらないので、恒久化したい値が決まったら `MainDemoSceneSetup.cs` に反映する
-- 入力は OvrBridge → `ZoneCalibrator.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）
+- **先端位置は RightHandAnchor の position をそのまま使う**（先端オフセット補正なし。誤差 2〜3cm は 1m ベースライン + 40cm 回廊 + 8cm オーバーラップに対して許容）。SerializeField `rightHandTransform`、null なら headTransform にフォールバック。
+- **登録直後にワイヤーフレーム検証表示**：壁ポリライン（L の 2 辺・高さ既定 1m）+ フロア外周を LineRenderer でゴースト表示。show.json layout に wall/floor があればそれを、無ければ内蔵既定（フロア 1.8×1.8・regPoint から導出）を描く。nudge は毎フレーム CourseFrame 変換に追従。
+- **視界内ガイダンス**：head-locked な TextMesh（[CourseRegGuidance]、常時 1 個）に各ステップの指示を表示。**save はディスク書き込みを避けるため nudge 中は false**、B 確定でのみ registration.json を書く。
+- **登録モード中はゾーン床フットプリント表示**（現存 PlayerZone をカメラ別色で床投影）。通常のボタン操作（カメラ切替・HUD）は抑止される。
+- **OS recenter 検知**（Oculus ボタン長押し等でトラッキング原点が変わる）：OvrControllerBridge が `OVRManager.display.RecenteredPose` を購読 → `CourseFrame.MarkNeedsReRegistration()` で「要再登録」フラグ + 警告ログ + 視界警告を出す。**ゾーン動作は継続**（黙ってズレたまま動かさない、が目的）。再登録すればフラグは降りる。
+- **PlayerZone は OBB（向き付きボックス）**: `Contains` はワールド差分をゾーンローカル軸（`transform.rotation`）へ射影して判定する。rotation が identity のときは従来 AABB と完全一致（既存テストもそのまま pass）。CourseFrame の yaw が各生成ゾーンの向きに乗る。
+- 保存先は**端末ローカル**（Quest なら `/sdcard/Android/data/com.roiril.mawarimi/files/registration.json`）。1 変換（originXZ + yawDeg）のみを持つ。旧 `zone_calibration.json`（ゾーン個別の形状保存）は**廃止**。
+- 入力は OvrBridge → `CourseRegistrationController.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）。
+- **⚠ Phase 3（HMD 登録）は実装済み・実機未検証**（2026-07-16）。現地 L 壁で 2 点タッチ → ワイヤー重なり → 確定の一連を実機確認すること。show.json layout エディタ（Web 卓・Phase 2）は別作業。
 
 ### 前後 (z) 方向の演出を入れる時
 現在 z は全ゾーン共通 [-1.2, +1.2]。**前後で挙動を変えたいなら別軸のロジックを足す**（zone は左右専用にしておく）。`PlayerStateBus` のような中央集約は Phase 4（CG 合成）着手時に検討、それまでは Tracker と並列に小さな BehaviourScript で済ませる。

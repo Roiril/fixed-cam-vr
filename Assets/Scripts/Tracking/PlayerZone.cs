@@ -52,7 +52,7 @@ namespace FixedCamVr.Tracking
         public Quaternion Rotation => transform.rotation;
 
         /// <summary>
-        /// ランタイム校正（ZoneCalibrator）用。ワールド中心と半長を直接設定する。
+        /// ランタイム生成（ZoneLayoutApplier）用。ワールド中心と半長を直接設定する。
         /// centerOffset は維持し、transform.position 側を動かす。
         /// </summary>
         public void SetRuntimeBounds(Vector3 worldCenter, Vector3 newHalfExtents)
