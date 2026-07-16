@@ -54,7 +54,8 @@ namespace TableDuoVr.EditorTools
             {
                 ("rest", ovrBind.BindLocalRot, fistFrame.WristRotR),
                 ("fist", fistFrame.BonesR, fistFrame.WristRotR),
-                ("pinch", pinchFrame.BonesR, pinchFrame.WristRotR),
+                // 手首回転は fist と揃える（pinch フレームの実手首向きはカメラに背を向けがちで比較に不向き）
+                ("pinch", pinchFrame.BonesR, fistFrame.WristRotR),
             };
 
             var sb = new System.Text.StringBuilder("[TableDuo] 手バリアント忠実度診断（pack vs 同コンテナ白手・指ごと世界方向差）:\n");
@@ -76,8 +77,11 @@ namespace TableDuoVr.EditorTools
                         anchor.SetParent(root.transform, false);
                         anchor.localPosition = new Vector3(xs[v], 0f, 0f);
                         anchor.localRotation = wristRot; // 実機と同じ: 手首の向きを anchor に、bone は相対
-                        var built = BuildHand(provider, anchor, vlist[v], bonesR, ovrBind);
+                        var built = BuildHand(provider, anchor, vlist[v], bonesR, ovrBind, out var driveBones);
                         if (built != null) AppendFingerFidelity(sb, vlist[v], built);
+                        // 撮影向きの正準化: 録画の手首向きはポーズ毎にバラバラで、pinch 等は接点が
+                        // カメラから隠れる。「指=上・手のひら=正面カメラ向き」へ回して比較可能にする
+                        CanonicalizeAnchor(anchor, driveBones);
                     }
 
                     foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -103,6 +107,17 @@ namespace TableDuoVr.EditorTools
                     Shot(cam, dir, "01_front.png", new Vector3(0.06f, 0.0f, -1.75f), aim);
                     Shot(cam, dir, "02_threequarter.png", new Vector3(-0.85f, 0.45f, -1.35f), aim);
                     Shot(cam, dir, "03_top.png", new Vector3(0.06f, 1.5f, -0.4f), aim);
+                    // 04/05: 反対面と下面。pinch の親指-人差し指の接点は 01-03（甲側）だと隠れる
+                    Shot(cam, dir, "04_back.png", new Vector3(0.06f, 0.0f, 1.75f), aim);
+                    Shot(cam, dir, "05_bottom.png", new Vector3(0.06f, -1.5f, -0.4f), aim);
+                    // 06/07: 手のひら正面向きだと屈曲指がカメラ方向へ倒れて遠近短縮で潰れる（pinch が
+                    // 開き手に見える）。各手をその場でヨー回転させ、親指-人差し指の接点を横から見せる
+                    foreach (var (yawName, yawDeg) in new[] { ("06_yawR.png", 60f), ("07_yawL.png", -120f) })
+                    {
+                        foreach (Transform anchor in root.transform)
+                            anchor.rotation = Quaternion.AngleAxis(yawDeg, Vector3.up) * anchor.rotation;
+                        Shot(cam, dir, yawName, new Vector3(0.06f, 0.0f, -1.75f), aim);
+                    }
                 }
                 finally
                 {
@@ -193,10 +208,13 @@ namespace TableDuoVr.EditorTools
         }
 
         /// <summary>anchor 下に variant 手を建て、bonesR で駆動する。外部リグは BuiltHand を返す
-        /// （忠実度診断が MetaBones/Bones を読む）。Default は白手直接駆動で null を返す。</summary>
+        /// （忠実度診断が MetaBones/Bones を読む）。Default は白手直接駆動で null を返す。
+        /// driveBones には撮影向き正準化用の駆動済み bone 配列（外部リグ=隠し白手 / Default=実 bone）を返す。</summary>
         private static RemoteHandMeshProvider.BuiltHand? BuildHand(RemoteHandMeshProvider provider,
-            Transform anchor, HandVariant variant, Quaternion[] bonesR, HandSkeletonLayout ovrBind)
+            Transform anchor, HandVariant variant, Quaternion[] bonesR, HandSkeletonLayout ovrBind,
+            out Transform?[]? driveBones)
         {
+            driveBones = null;
             if (HandVariantTable.IsExternalRig(variant))
             {
                 // 実機（LocalVariantHand / RemoteHandView）と同じ参照コピー式で駆動。restPose=bind で
@@ -204,6 +222,7 @@ namespace TableDuoVr.EditorTools
                 var built = provider.BuildExternalHand(anchor, isRight: true, variant, ovrBind);
                 if (built == null) { Debug.LogWarning($"[TableDuo] {variant} の構築に失敗"); return null; }
                 HandRetarget.ApplyFromReference(bonesR, built.MetaBones, built.Bones, built.BoneOffsets, smooth: 1f);
+                driveBones = built.MetaBones;
                 return built;
             }
 
@@ -220,7 +239,21 @@ namespace TableDuoVr.EditorTools
                 if (mapped[i] != null) mapped[i]!.localRotation = bonesR[i];
             var smr = inst.GetComponentInChildren<SkinnedMeshRenderer>(true);
             if (smr != null && provider.HandMaterial != null) smr.sharedMaterial = provider.HandMaterial;
+            driveBones = mapped;
             return null;
+        }
+
+        /// <summary>撮影向きの正準化: 手の幾何フレーム（指方向×甲法線）を「指=+Y（画面上）・
+        /// 甲法線=+Z（＝手のひらが正面カメラ -Z を向く）」へ回す。録画フレームの手首向きに依存せず、
+        /// どのポーズでも同じ向きで 3 バリアントを比較できる。</summary>
+        private static void CanonicalizeAnchor(Transform anchor, Transform?[]? bones)
+        {
+            if (bones == null || bones.Length < 17 ||
+                bones[0] == null || bones[6] == null || bones[9] == null || bones[16] == null) return;
+            var cur = HandRetarget.WristFrame(bones[0]!.position, bones[6]!.position,
+                bones[9]!.position, bones[16]!.position, isRight: true);
+            var desired = Quaternion.LookRotation(Vector3.up, Vector3.forward);
+            anchor.rotation = desired * Quaternion.Inverse(cur) * anchor.rotation;
         }
 
         /// <summary>指がよく曲がっている（bind から角度が大きい）フレームを選ぶ＝表情のある一枚。</summary>
@@ -242,25 +275,52 @@ namespace TableDuoVr.EditorTools
             return best;
         }
 
-        /// <summary>つまみ（pinch）らしいフレーム＝親指+人差し指の曲げが大きく、中指以降が伸びている
-        /// フレームを選ぶ。FK せずローカル回転の bind 差だけで採点する近似（PickExpressiveFrame と同流儀）。</summary>
+        /// <summary>つまみ（pinch）フレーム＝親指と人差し指の**指先**が最接近するフレームを選ぶ。
+        ///
+        /// 【真因（2026-07-16 録画直パース診断）】旧実装は HandLandmarks.Compute の FK で得た
+        /// thumbTip(BoneId 19)-indexTip(20) 距離を使っていたが、録画（tdv_handrec_real_20260610.bin）の
+        /// tip マーカー bone(19-23) は ParentIndex が非解剖学的な連鎖（19→18=pinky3, 20→19, 21→1…）で
+        /// 記録され、かつ tip マーカーの毎フレーム回転がほぼ identity。この結果 thumbTip-indexTip 距離が
+        /// **全フレーム定数（≒|BindLocalPos[20]|=2.44cm）**になり、`d &lt; bestDist`（狭義）が常に最初の
+        /// tracked フレーム（＝開き手）を選んでいた（スクショが開き手になる症状の正体）。
+        /// → tip マーカーに頼らず、正しく親子付けされた末節 bone（thumb3=5 / index3=8）をローカル FK し、
+        ///   その回転で tip bind オフセットぶん前方へ延ばした指先位置で最接近を測る。
+        ///   録画には thumb≈49°/index≈66° 屈曲・他指は緩い実ピンチ（指先間≈2.0cm・frame≈2135）が実在する。</summary>
         private static int PickPinchFrame(PoseRecordingFile.Data data)
         {
             var bind = data.LayoutR;
             int best = data.Frames.Count / 2;
             if (bind == null) return best;
-            float bestScore = float.MinValue;
+            // 末節 bone（thumb3=5 / index3=8）まで FK が届かない録画は諦める（中央フレームで代替）。
+            // tip bind オフセット（BindLocalPos[19]/[20]）は固定長配列で常に参照可能。tips 未収録の
+            // 録画では既定 0 になり指先延長ゼロ＝末節同士の近接判定へ自然に縮退する。
+            const int IndexDistal = 8; // index3
+            int n = Mathf.Min(bind.BoneCount, AvatarPose.BonesPerHand);
+            if (n <= IndexDistal) return best;
+            var pos = new Vector3[AvatarPose.BonesPerHand];
+            var rot = new Quaternion[AvatarPose.BonesPerHand];
+            float bestDist = float.MaxValue;
             for (int f = 0; f < data.Frames.Count; f++)
             {
                 var pose = data.Frames[f];
                 if (!pose.TrackedR) continue;
-                float pinch = 0f, others = 0f;
-                for (int i = 2; i <= 8 && i < bind.BoneCount; i++)   // thumb(2-5) + index(6-8)
-                    pinch += Quaternion.Angle(pose.BonesR[i], bind.BindLocalRot[i]);
-                for (int i = 9; i <= 18 && i < bind.BoneCount; i++)  // middle/ring/pinky
-                    others += Quaternion.Angle(pose.BonesR[i], bind.BindLocalRot[i]);
-                float s = pinch - others;
-                if (s > bestScore) { bestScore = s; best = f; }
+                // 手首 identity 基準の相対 FK（指先間の相対距離だけ見るので手首絶対姿勢は不要）
+                for (int i = 0; i < n; i++)
+                {
+                    int p = bind.ParentIndex[i];
+                    Vector3 parentPos; Quaternion parentRot;
+                    if (p >= 0 && p < i) { parentPos = pos[p]; parentRot = rot[p]; }
+                    else { parentPos = Vector3.zero; parentRot = Quaternion.identity; }
+                    pos[i] = parentPos + parentRot * bind.BindLocalPos[i];
+                    rot[i] = parentRot * pose.BonesR[i];
+                }
+                // 末節 bone(5/8) を tip bind オフセット（distal 回転で前方へ）ぶん延ばして指先を近似。
+                // BindLocalPos[19]/[20] は録画では bone forward ≒2.6cm/2.4cm（近似・末節向き基準）。
+                const int ThumbDistal = 5; // thumb3
+                Vector3 thumbTip = pos[ThumbDistal] + rot[ThumbDistal] * bind.BindLocalPos[HandBoneTable.ThumbTip];
+                Vector3 indexTip = pos[IndexDistal] + rot[IndexDistal] * bind.BindLocalPos[HandBoneTable.IndexTip];
+                float d = Vector3.Distance(thumbTip, indexTip);
+                if (d < bestDist) { bestDist = d; best = f; }
             }
             return best;
         }
