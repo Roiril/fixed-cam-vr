@@ -34,7 +34,7 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
   - **Basic 認証対応は CameraSource の username/password フィールド**（2026-06-11 追加）。空なら Authorization ヘッダ自体を送らない。認証なしアクセスは 401（必須）
   - 実パスワードを設定した .asset はコミットしない（既定 admin/admin はコミット可）
 - **超広角対応**: アプリ内カメラ選択で「Back Ultra Wide Camera」を選べる（13 Pro 実機確認済み）。広角配置にも iPhone を使える
-- **配信プロファイル実測**（13 Pro 既定設定）: HTTP/1.0・非 chunked・`boundary=--BoundaryString`・パート毎 `Content-Length` 付き。1 フレーム ≈93KB、帯域 ≈30Mbps と **fixed-cam-streamer（quality 40 / 720x405）の数倍重い** → 3 台運用ではアプリ側で解像度/品質を下げること
+- **配信プロファイル実測**（13 Pro 既定設定）: HTTP/1.0・非 chunked・`boundary=--BoundaryString`・パート毎 `Content-Length` 付き。1 フレーム ≈93KB、帯域 ≈30Mbps と **fixed-cam-streamer（quality 40 / 640x360）の数倍重い** → 3 台運用ではアプリ側で解像度/品質を下げること
 - **解像度・アスペクト（2026-06-17 調査）**: 既定は **640×480（4:3）固定**。黒帯は無く素の 4:3（iPhone センサーのフル 4:3）。Unity スクリーン（16:9）や streamer（16:9）と揃えたいなら **アプリ Settings → Video Resolution で 1280×720（16:9）に変更**する（4:3→16:9 は上下画角が犠牲・帯域増 → 品質スライダで調整）。web-compositor のビューは live 実寸からアスペクトを自動追従するので、解像度を変えればコード変更なしで 16:9 化する
 - **遠隔制御・メタ endpoint は無し**: `/video?resolution=` 等の URL パラメータは効かない。`/settings` `/status` `/info` `/config` `/jpeg` `/photo.jpg` は全て 404。解像度・品質・カメラ選択は**アプリ UI でしか変えられない**。`/` も `/video` と同じ MJPEG を返す（`Server: IP Camera for iOS`）
 - **Lite（無料）版は全フレームにウォーターマークが入る**。演出上問題なら有料版で除去
@@ -50,7 +50,7 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 |---|---|---|
 | `GET /video` | `multipart/x-mixed-replace; boundary=frame` の MJPEG。**各パートに `X-Width` / `X-Height` / `X-Rotation` / `X-Capture-Ns` / `X-Frame-Seq` ヘッダ付き** | [`MjpegStreamReceiver`](../Assets/Scripts/Streaming/MjpegStreamReceiver.cs) |
 | `GET /info` | `{deviceName, lensId, lensFovDeg, widthPx, heightPx, rotationDeg, isPortrait, deviceRotationDeg}` | [`StreamMetadataFetcher`](../Assets/Scripts/Streaming/StreamMetadataFetcher.cs)、[`CameraStream.Start()`](../Assets/Scripts/Streaming/CameraStream.cs) で 1 回取得。`deviceRotationDeg`=端末の物理的な上方向(0/90/180/270、OrientationEventListener 検知)。配信フレームは常に正立済み（`rotationDeg=0`、横持ち=640x360 / 縦持ち=360x640） |
-| `GET /health` | `{uptimeMs, totalFrames, totalBytes, fps, sentFrames, latestFrameAgeMs}` | 任意。`CameraStream.RefreshHealthAsync()` で都度取得（HudDump からのモニタ用）。`sentFrames` と `totalFrames` の差分が広がる時は HTTP ワーカ詰まり。`latestFrameAgeMs` が大きい時はカメラ stall |
+| `GET /health` | `{uptimeMs, totalFrames, totalBytes, fps, sentFrames, latestFrameAgeMs}` | 任意。`CameraStream.RefreshHealthAsync()` で都度取得（HudDump からのモニタ用）。`sentFrames` と `totalFrames` の差分が広がる時は HTTP ワーカ詰まり（**⚠ sentFrames はクライアント接続ごとに加算される** — Quest + web 卓 /cam プロキシ等の多クライアント時は sent ≈ 接続数×totalFrames が正常。単一クライアント前提でしか差分ヒューリスティックを使わない）。`latestFrameAgeMs` が大きい時はカメラ stall |
 | `GET /` | 簡易ステータス HTML | ブラウザ確認用 |
 
 リポジトリ: [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)（private）。APK ビルド・インストール手順はそちらの README 参照。
@@ -63,7 +63,7 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 
 ### 性能ガイドライン（低遅延優先）
 
-- **解像度**: 1080p は Quest 3 でも GC アロケーションが増える。fixed-cam-streamer 側は **既定 720x405**（`CameraController.streamWidth/Height` で変更可）。VR 内での視認性とレイテンシのバランスでこの値が現状最適
+- **解像度**: 1080p は Quest 3 でも GC アロケーションが増える。fixed-cam-streamer 側は **既定 640x360**（`CameraController.streamWidth/Height` で変更可。旧 720x405 から低遅延化のため縮小）。VR 内での視認性とレイテンシのバランスでこの値が現状最適
 - **FPS**: streamer 側で `CONTROL_AE_TARGET_FPS_RANGE=[30,60]` を強制し、暗所で 15fps へ落ちないよう固定。capture フレーム間隔そのものが遅延の下限になる
 - **JPEG quality**: 既定 40。視認性は維持しつつ Wi-Fi 帯域を半減 → kernel バッファ滞留減
 - **バッファ**: 受信側は単一スロット最新フレーム + バッファ swap で再利用、毎フレ `new byte[]` 発生ゼロ
@@ -75,7 +75,7 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 | レイヤ | 対策 | 効果 |
 |---|---|---|
 | Capture (streamer) | `AE_TARGET_FPS_RANGE=[30,60]` で fps 下限固定 | 暗所での 15fps 化を防止（フレーム間隔 = 遅延下限） |
-| Encode (streamer) | JPEG quality=40, 解像度 720x405 | エンコード時間 + 帯域を半減 |
+| Encode (streamer) | JPEG quality=40, 解像度 640x360 | エンコード時間 + 帯域を半減 |
 | Distribute (streamer) | `FrameDistributor` は単一最新フレームのみ保持 | 配信側の滞留ゼロ |
 | Network (streamer→VR) | `TCP_NODELAY=true`, `SO_SNDBUF=64KB`/`SO_RCVBUF=64KB` | Nagle 待機 + kernel バッファ滞留を排除 |
 | Multipart header | `X-Capture-Ns` / `X-Frame-Seq` 付与 | 受信側で歯抜け検出・古フレ判定が可能 |
