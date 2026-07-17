@@ -11,9 +11,11 @@ metadata:
 
 | スロット | 端末 | アプリ | IP（DHCP・揮発） | 検証 |
 |---|---|---|---|---|
-| Phone01 / cam A | iPhone 13 Pro | IP Camera Lite（:8081/video、Basic admin/admin） | 192.168.11.22（7/17 無応答・要手動起動） | Editor 受信・描画 OK |
+| Phone01 / cam A | Pixel 7a（3C251JEHN03582） | fixed-cam-streamer **v0.2.0**（:8080） | 192.168.11.26（7/17） | Web 卓 /cam 200 OK・29.7fps |
 | Phone02 / cam B | Pixel 7a（37081JEHN03028） | fixed-cam-streamer **v0.2.0**（:8080） | 192.168.11.12（7/17） | Web 卓 /cam 200 OK・29.7fps |
-| Phone03 / cam C | Pixel 7a（37201JEHN14152） | fixed-cam-streamer **v0.2.0**（:8080） | 192.168.11.27（7/17） | Web 卓 /cam 200 OK・29.7fps |
+| Phone03 / cam C | Pixel 7a（37201JEHN14152） | fixed-cam-streamer **v0.2.0**（:8080） | 192.168.11.27（7/17） | Web 卓 /cam 200 OK・30fps |
+
+**2026-07-17 から現行フリートは Pixel 7a ×3 に統一**（全台 streamer v0.2.0・認証なし・:8080）。iPhone 13 Pro + IP Camera Lite（:8081・Basic admin/admin）は予備構成へ降格 — 使う時は該当カメラの auth を戻す。
 
 **v0.2.0（2026-07-17）**: カメラエラー自動復旧 / WifiLock + WakeLock 定期更新 / 録画容量ガード / レンズ・ロック永続化 / `/info` appVersion・`/health` clientCount 追加。版確認は `curl http://<ip>:8080/info` の appVersion が最速。
 
