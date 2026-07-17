@@ -18,6 +18,7 @@ namespace FixedCamVr.EditorTools
     {
         private const string FixedCamScene = "Assets/Scenes/Main.unity";
         private const string TableDuoScene = "Assets/TableDuo/Scenes/TableDuoMain.unity";
+        private const string MyCobotHandScene = "Assets/MyCobotHand/Scenes/HandTeleop.unity";
 
         [MenuItem("Tools/FixedCamVr/Build FixedCam APK（廻リ視）", priority = 20)]
         public static void BuildFixedCam() =>
@@ -26,6 +27,17 @@ namespace FixedCamVr.EditorTools
         [MenuItem("Tools/FixedCamVr/Build TableDuo APK", priority = 21)]
         public static void BuildTableDuo() =>
             BuildVariant("TableDuo", "com.roiril.tableduo", TableDuoScene, "tableduo", development: true);
+
+        // ロボットハンド操作 VR（第3のアプリ = mycobot-lab ハンドのテレオペ）。
+        // 右手ハンドトラッキングの curl を PC のハンドサーバ（localhost:8001）へストリームする。
+        // package: com.mycobot.handteleop / productName: ロボットハンド操作VR
+        [MenuItem("Tools/FixedCamVr/Build MyCobotHand APK（ロボットハンド操作VR）", priority = 24)]
+        public static void BuildMyCobotHand() =>
+            BuildVariant("ロボットハンド操作VR", "com.mycobot.handteleop", MyCobotHandScene, "mycobothand", development: false);
+
+        [MenuItem("Tools/FixedCamVr/Build MyCobotHand APK（ロボットハンド操作VR・Dev）", priority = 25)]
+        public static void BuildMyCobotHandDev() =>
+            BuildVariant("ロボットハンド操作VR", "com.mycobot.handteleop", MyCobotHandScene, "mycobothand-dev", development: true);
 
         // リリース（提出・配布用）: Development Build なし。出力名に -release を付けて区別。
         [MenuItem("Tools/FixedCamVr/Build FixedCam APK（廻リ視・Release）", priority = 22)]
