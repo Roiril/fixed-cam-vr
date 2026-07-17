@@ -138,6 +138,21 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 - 入力は OvrBridge → `CourseRegistrationController.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）。
 - **⚠ Phase 3（HMD 登録）は実装済み・実機未検証**（2026-07-16）。現地 L 壁で 2 点タッチ → ワイヤー重なり → 確定の一連を実機確認すること。show.json layout エディタ（Web 卓・Phase 2）は別作業。
 
+### 周回カウントと cue 自動発火（2026-07-17〜）
+
+「何周目のどのゾーンで cue を出すか」の事前オーサリング（詳細は [streaming.md](streaming.md) の該当節と
+[.claude/plans/2026-07-17_pre-authored-cue-schedule.md](../plans/2026-07-17_pre-authored-cue-schedule.md)）:
+
+- [`LapCounter`](../../Assets/Scripts/Tracking/LapCounter.cs)（[Tracker] に `Setup Main Demo Scene` が自動配置）が
+  `CameraStreamRegistry.ActiveChanged` を購読し、show.json `layout.course.order` の**順方向一致でのみ**進行ポインタを進める。
+  `order[0]` 復帰で lap++（1 始まり）。逆走・行き来・スキップは前進しない
+- 純ロジック（`LapCounterLogic` / `CueScheduleLogic`）は MonoBehaviour から分離済みで EditMode テストがある
+  （`Assets/Tests/Tracking/LapCounterTests.cs` / `Assets/Tests/Streaming/CueSchedulerTests.cs`）。セマンティクスを変えるときはテストを先に直す
+- `PlayerZoneTracker` に `ZoneChanged` イベントを公開済み（旧: イベント無し）。ただし LapCounter の駆動は
+  camera index キー（= course.order / schedule.camera と同一キー空間）のため registry 経由
+- 起動時は既にスタート領域に居て ActiveChanged が出ないため、LapCounter が現在カメラを「進入」としてシードする
+  （`seedInitialZone`。lap1 スタート領域の cue を発火可能にするため）
+
 ### 前後 (z) 方向の演出を入れる時
 現在 z は全ゾーン共通 [-1.2, +1.2]。**前後で挙動を変えたいなら別軸のロジックを足す**（zone は左右専用にしておく）。`PlayerStateBus` のような中央集約は Phase 4（CG 合成）着手時に検討、それまでは Tracker と並列に小さな BehaviourScript で済ませる。
 

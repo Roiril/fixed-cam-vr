@@ -186,6 +186,37 @@ namespace FixedCamVr.Streaming.EditorTools
             if (showControl != null) TrySetObjectRef(regSo, "showControl", showControl);
             regSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // 2.95. 事前オーサリング済み cue スケジュール（周回×ゾーン発火）。
+            //       CueScheduler と LapCounter を [Tracker] に載せる（毎回作り直しなので冪等）。
+            //       LapCounter が ActiveChanged を周回へ写像し進入を CueScheduler へ橋渡し、
+            //       CueScheduler が (lap,camera,delay,once) 評価で ScreenOverlayController.PlayCue を直接呼ぶ。
+            //       schedule / cue 解決 / activeCue 抑止は ShowControlClient から供給される。
+            var overlay = Object.FindObjectOfType<ScreenOverlayController>(includeInactive: true);
+            if (overlay == null)
+                Debug.LogWarning("[MainDemoSceneSetup] ScreenOverlayController が見つかりません。CueScheduler の発火先未配線。");
+
+            var cueScheduler = trackerGo.AddComponent<CueScheduler>();
+            var schSo = new SerializedObject(cueScheduler);
+            if (overlay != null) TrySetObjectRef(schSo, "overlay", overlay);
+            schSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var lapCounter = trackerGo.AddComponent<LapCounter>();
+            var lapSo = new SerializedObject(lapCounter);
+            TrySetObjectRef(lapSo, "registry", registry);
+            if (showControl != null) TrySetObjectRef(lapSo, "showControl", showControl);
+            TrySetObjectRef(lapSo, "cueScheduler", cueScheduler);
+            TrySetBool(lapSo, "seedInitialZone", true);
+            TrySetBool(lapSo, "logChanges", true);
+            lapSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // ShowControlClient.cueScheduler を新 CueScheduler へ配線（毎回 Tracker を作り直すため必須）。
+            if (showControl != null)
+            {
+                var scSchedSo = new SerializedObject(showControl);
+                TrySetObjectRef(scSchedSo, "cueScheduler", cueScheduler);
+                scSchedSo.ApplyModifiedPropertiesWithoutUndo();
+            }
+
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
             CreateStartupFader(centerEye.transform, registry);
 
@@ -208,7 +239,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（両グリップ 3 秒長押しで 2 点登録、A=マーク/B=確定/スティック微調整） / StartupFader / DebugHud / OvrBridge 連携。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（両グリップ 3 秒長押しで 2 点登録、A=マーク/B=確定/スティック微調整） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先） / StartupFader / DebugHud / OvrBridge 連携。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }

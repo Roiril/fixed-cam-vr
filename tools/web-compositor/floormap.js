@@ -95,6 +95,7 @@ export const DEFAULT_LAYOUT = {
   rev: 1,
   floor: { w: 1.8, d: 1.8 },
   wall: { corner: [-0.5, 0.5], endX: [0.5, 0.5], endZ: [-0.5, -0.5] },
+  course: { order: [0, 1, 2] },
   cuts: [
     { s: 0.125, camAfter: 1 },
     { s: 0.375, camAfter: 2 },
@@ -133,6 +134,15 @@ export function createFloorMap(container, deps) {
           <button class="fm-regen" title="保持している cuts から回廊を自動で塗り直す">cuts から自動生成</button>
           <button class="fm-clear" title="全タイルを未割当にする">全消去</button>
         </div>
+        <div class="fm-course">
+          <div class="fm-course-label">周回コース（スケジュール発火の順序）</div>
+          <div class="fm-row">
+            <label class="fm-course-lbl">スタート <select class="fm-course-start"></select></label>
+            <button class="fm-course-dir" title="巡回の向きを反転"></button>
+          </div>
+          <div class="fm-course-order"></div>
+          <button class="fm-course-auto" title="タイルの塗りからカメラ重心の角度順で巡回順を再提案">角度順に再提案</button>
+        </div>
         <label class="fm-num">オーバーラップ (m)<input class="fm-overlap" type="number" min="0" max="0.5" step="0.01"></label>
         <label class="fm-num">ヒステリシス (m)<input class="fm-hyst" type="number" min="0" max="0.5" step="0.01"></label>
         <label class="fm-chk"><input class="fm-sim" type="checkbox"> シミュレーション（ドットをドラッグ）</label>
@@ -147,6 +157,7 @@ export function createFloorMap(container, deps) {
   const overlapI = q('.fm-overlap'), hystI = q('.fm-hyst');
   const simChk = q('.fm-sim'), simOut = q('.fm-sim-out'), liveOut = q('.fm-live-out');
   const dirtyEl = q('.fm-dirty'), paletteEl = q('.fm-palette');
+  const courseStartSel = q('.fm-course-start'), courseDirBtn = q('.fm-course-dir'), courseOrderEl = q('.fm-course-order');
 
   // 状態
   let layout = clone(DEFAULT_LAYOUT);
@@ -156,6 +167,8 @@ export function createFloorMap(container, deps) {
   let sim = null;            // { x, z } シミュレーション用ドット（course space）
   let paintChar = '0';       // 選択中のパレット（カメラ index の文字 or '.'）
   let drag = null;           // { mode:'paint'|'sim' }
+  let courseStart = 0;       // 周回スタートのカメラ index（order[0]）
+  let courseDir = 'ccw';     // 巡回の向き 'cw' | 'ccw'
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function markDirty() { dirty = true; renderDirty(); }
@@ -347,6 +360,69 @@ export function createFloorMap(container, deps) {
     markDirty(); render();
   };
 
+  // ---- 周回コース（course.order）------------------------------------------------
+  // grid の塗りからカメラ毎のタイル重心を出し、床中心からの角度順で巡回順を提案。
+  function camCentroids() {
+    const g = grid(), f = floorDims();
+    const acc = {}; // idx -> {x,z,n}
+    if (g) for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
+      const ch = cellAt(r, c);
+      if (!/[0-8]/.test(ch)) continue;
+      const i = +ch;
+      const [x, z] = tileCenter(r, c, f, g.tileM);
+      (acc[i] || (acc[i] = { x: 0, z: 0, n: 0 }));
+      acc[i].x += x; acc[i].z += z; acc[i].n++;
+    }
+    const out = {};
+    for (const k of Object.keys(acc)) out[k] = [acc[k].x / acc[k].n, acc[k].z / acc[k].n];
+    return out;
+  }
+  // grid に現れるカメラ index を床中心からの角度で昇順（CCW 基準）に並べる。
+  function angularCycle() {
+    const cen = camCentroids();
+    const idx = Object.keys(cen).map(Number);
+    idx.sort((a, b) => Math.atan2(cen[a][1], cen[a][0]) - Math.atan2(cen[b][1], cen[b][0]));
+    return idx;
+  }
+  // courseStart / courseDir から order（index 配列。order[0]=start）を算出。
+  function computeOrder() {
+    let cyc = angularCycle();
+    if (!cyc.length) return [];
+    if (courseDir === 'cw') cyc = cyc.slice().reverse();
+    let i = cyc.indexOf(courseStart);
+    if (i < 0) i = 0;
+    return cyc.slice(i).concat(cyc.slice(0, i));
+  }
+  function camLabelIdx(i) { return cameras[i] ? `カメラ ${cameras[i].id}` : `#${i}`; }
+  // layout.course.order を現在の start/dir から設定（markDirty はしない — 呼び元が制御）。
+  function setCourseOrder() {
+    layout.course = { order: computeOrder() };
+    renderCourse();
+  }
+  function renderCourse() {
+    const cyc = angularCycle();
+    // スタート候補（grid に現れるカメラのみ）
+    courseStartSel.innerHTML = '';
+    for (const i of cyc) {
+      const o = document.createElement('option');
+      o.value = String(i); o.textContent = camLabelIdx(i);
+      if (i === courseStart) o.selected = true;
+      courseStartSel.appendChild(o);
+    }
+    if (!cyc.includes(courseStart) && cyc.length) { courseStart = cyc[0]; courseStartSel.value = String(courseStart); }
+    courseDirBtn.textContent = courseDir === 'cw' ? '↻ 時計回り (CW)' : '↺ 反時計回り (CCW)';
+    const order = (layout.course && Array.isArray(layout.course.order)) ? layout.course.order : computeOrder();
+    courseOrderEl.textContent = order.length ? '順序: ' + order.map(camLabelIdx).join(' → ') + ' →（1周）' : '（タイルを塗るとカメラが現れます）';
+  }
+  courseStartSel.onchange = () => { courseStart = parseInt(courseStartSel.value, 10) || 0; setCourseOrder(); markDirty(); };
+  courseDirBtn.onclick = () => { courseDir = courseDir === 'cw' ? 'ccw' : 'cw'; setCourseOrder(); markDirty(); };
+  q('.fm-course-auto').onclick = () => {
+    const cyc = angularCycle();
+    courseDir = 'ccw';
+    courseStart = cyc.length ? cyc[0] : 0;
+    setCourseOrder(); markDirty();
+  };
+
   overlapI.onchange = () => { layout.overlapM = Math.max(0, parseFloat(overlapI.value) || 0); markDirty(); };
   hystI.onchange = () => { layout.hysteresisM = Math.max(0, parseFloat(hystI.value) || 0); markDirty(); };
   simChk.onchange = () => {
@@ -430,6 +506,18 @@ export function createFloorMap(container, deps) {
     if (document.activeElement !== hystI) hystI.value = layout.hysteresisM ?? 0.12;
     // paintChar が現在のパレット範囲外なら 0 に寄せる
     if (paintChar !== '.' && cameras.length && +paintChar >= Math.max(cameras.length, GRID_COLS)) paintChar = '0';
+    // 周回コース: order があれば start/dir を逆算、無ければ角度順から生成。
+    if (layout.course && Array.isArray(layout.course.order) && layout.course.order.length) {
+      const order = layout.course.order;
+      courseStart = order[0];
+      let ccw = angularCycle();
+      const i = ccw.indexOf(courseStart);
+      if (i > 0) ccw = ccw.slice(i).concat(ccw.slice(0, i));
+      courseDir = JSON.stringify(ccw) === JSON.stringify(order) ? 'ccw' : 'cw';
+    } else {
+      courseStart = 0; courseDir = 'ccw';
+      layout.course = { order: computeOrder() };
+    }
   }
 
   // show.json が更新されたら呼ぶ。ローカル未保存編集中（dirty）は上書きしない。
@@ -437,6 +525,7 @@ export function createFloorMap(container, deps) {
     cameras = (state && state.cameras) || [];
     if (!dirty) adoptLayout(state && state.layout);
     renderPalette();
+    renderCourse();
     updateSimOut(); render();
   }
 
@@ -452,6 +541,7 @@ export function createFloorMap(container, deps) {
 
   adoptLayout(DEFAULT_LAYOUT);
   renderPalette();
+  renderCourse();
   renderDirty();
   render();
   return { onState, onUnity };

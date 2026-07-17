@@ -611,3 +611,74 @@ input:-webkit-autofill:active {
   border: 1px solid var(--line-input);
 }
 .fm-regen, .fm-clear { padding: 4px 10px; font-size: 11px; }
+
+/* 周回コース（course.order）エディタ — フロアマップ内 */
+.fm-course {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color);
+}
+.fm-course-label { font-size: 9px; text-transform: uppercase; letter-spacing: .15em; opacity: .5; }
+.fm-course-lbl { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.fm-course-lbl select { flex: 0 0 auto; min-width: 96px; }
+.fm-course-dir { padding: 4px 10px; font-size: 11px; white-space: nowrap; }
+.fm-course-order { font-size: 11px; font-family: monospace; opacity: var(--opacity-sub); letter-spacing: .01em; }
+.fm-course-auto { align-self: flex-start; padding: 4px 10px; font-size: 11px; }
+
+/* ===================================================================== */
+/* ⑦ cue 管理（1 カメラ複数 cue）— app.js ③ 画像加工セクション内            */
+/* ===================================================================== */
+.cue-manage { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line-soft); }
+.cue-list { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.cue-chip {
+  padding: 3px 8px; font-size: 11px; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cue-chip.on { border-color: var(--accent-color); color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-color); opacity: 1; }
+.cue-chip.playing { border-color: var(--warn-color); color: var(--warn-color); opacity: 1; }
+.cue-empty { font-size: 10px; opacity: var(--opacity-mute); }
+.cue-ops button { padding: 3px 8px; font-size: 11px; }
+.cue-name { font-size: 11px; }
+
+/* ===================================================================== */
+/* ⑧ 周回スケジュール（マトリクス）— schedule.js                            */
+/* ===================================================================== */
+.schedule { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
+.sc-wrap { display: flex; flex-direction: column; gap: 8px; }
+.sc-row { display: flex; align-items: center; gap: 10px; }
+.sc-row .spacer { flex: 1; }
+.sc-save { padding: 7px 16px; }
+.sc-dirty { font-size: 11px; opacity: var(--opacity-mute); letter-spacing: .04em; }
+.sc-dirty.on { color: var(--warn-color); opacity: 1; }
+.sc-lap-add, .sc-lap-del { padding: 4px 10px; font-size: 11px; }
+.sc-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
+.sc-matrix-wrap { overflow-x: auto; }
+.sc-matrix { border-collapse: collapse; font-size: 11px; }
+.sc-matrix th, .sc-matrix td { border: 1px solid var(--line-soft); padding: 5px 8px; text-align: center; }
+.sc-matrix thead th { font-weight: 500; opacity: var(--opacity-sub); font-variant-numeric: tabular-nums; }
+.sc-corner { text-align: left !important; opacity: var(--opacity-mute); letter-spacing: .04em; white-space: nowrap; }
+.sc-camhead { text-align: left !important; white-space: nowrap; }
+.sc-camhead i { width: 10px; height: 10px; display: inline-block; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+.sc-cell { cursor: pointer; min-width: 72px; color: var(--text-color); opacity: var(--opacity-sub); }
+.sc-cell:hover { color: var(--accent-color); }
+.sc-cell.filled { color: var(--accent-color); opacity: 1; }
+.sc-cell.sel { box-shadow: inset 0 0 0 2px var(--accent-color); }
+.sc-editor { border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); padding: 10px; display: none; }
+.sc-editor:not(:empty) { display: block; }
+.sc-edit-head { font-size: 11px; letter-spacing: .06em; margin-bottom: 8px; opacity: var(--opacity-sub); }
+.sc-edit-grid { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; }
+.sc-edit-grid label { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.sc-edit-grid select { min-width: 140px; }
+.sc-edit-grid .sc-delay { width: 60px; }
+.sc-chk input { accent-color: var(--accent-color); }
+.sc-warn { margin-top: 8px; font-size: 11px; color: var(--warn-color); }
+
+/* ===================================================================== */
+/* ⑨ ビルド用エクスポート — app.js / index.html                             */
+/* ===================================================================== */
+.export-sec { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
+.export-files { margin-top: 10px; display: flex; flex-direction: column; gap: 2px;
+  font-family: monospace; font-size: 11px; opacity: var(--opacity-sub); }
+.export-file { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 仮想 Quest: schedule 表示 */
+.sim-sched { font-size: 11px; font-family: monospace; opacity: var(--opacity-sub); }

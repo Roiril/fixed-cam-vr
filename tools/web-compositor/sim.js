@@ -105,6 +105,21 @@ function applyState(s) {
     const cue = (s.cues || []).find((c) => c.id === cueId) || null;
     applyCue(cue);
   }
+  renderSchedule(s);
+}
+
+// 受信した schedule（周回発火表）と現在の activeCue を表示。発火シミュレーションはしない。
+function renderSchedule(s) {
+  const el = document.getElementById('simSchedule');
+  if (!el) return;
+  const entries = (s.schedule && Array.isArray(s.schedule.entries)) ? s.schedule.entries : [];
+  const order = s.layout?.course?.order;
+  const cams = s.cameras || [];
+  const camLabel = (i) => (cams[i] ? cams[i].id : `#${i}`);
+  const parts = entries.slice().sort((a, b) => (a.lap - b.lap) || (a.camera - b.camera))
+    .map((e) => `L${e.lap}/${camLabel(e.camera)}→${e.cueId}${e.delaySec ? `+${e.delaySec}s` : ''}`);
+  const orderTxt = Array.isArray(order) && order.length ? ` / コース ${order.map(camLabel).join('→')}` : '';
+  el.textContent = `schedule: ${entries.length} 件${orderTxt}` + (parts.length ? ` [${parts.join(', ')}]` : '');
 }
 
 async function pollLoop() {

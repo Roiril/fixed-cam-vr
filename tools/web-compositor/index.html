@@ -46,6 +46,24 @@
       <div id="floorMap"></div>
     </section>
 
+    <section class="schedule">
+      <div class="mc-title">周回スケジュール（事前オーサリング）
+        <span class="hint">行＝カメラ（フロアマップのコース順）、列＝周回（1 始まり）。セルをクリックして、そのゾーンで発火する cue を割り当てる。💾 保存で show.json schedule に入り、📦 エクスポートで APK に焼き込む。ライブ手動操作（演出 ON）が優先。</span>
+      </div>
+      <div id="schedule"></div>
+    </section>
+
+    <section class="export-sec">
+      <div class="mc-title">ビルド用エクスポート
+        <span class="hint">現在の show.json と cue が参照するアセット（マスク・動画・画像）を Assets/StreamingAssets/show/ にコピーし、URL を sa://assets/… へ書き換える。Quest 単体（現地 PC 不在）で発火させる APK に焼き込む素材。</span>
+      </div>
+      <div class="row-btns">
+        <button id="exportBuild" class="accent">📦 ビルド用エクスポート</button>
+        <span id="exportResult" class="ed-status"></span>
+      </div>
+      <div id="exportFiles" class="export-files"></div>
+    </section>
+
     <section class="prompts">
       <div class="mc-title">生成プロンプト
         <span class="hint">画像/動画 AI 生成用。📋 でコピーして各ツールへ。PC（show.json と同じ）に保存。</span>

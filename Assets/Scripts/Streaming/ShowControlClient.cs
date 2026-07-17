@@ -47,6 +47,19 @@ namespace FixedCamVr.Streaming
         }
     }
 
+    /// <summary>
+    /// 周回定義（フロアマップ UI で編集・layout と同じ保存単位）。
+    /// order = 順方向のカメラ巡回順（カメラ index）。order[0] = スタート領域のカメラ。
+    /// LapCounter がこの順で周回を数える（順方向一致でのみ前進）。
+    /// </summary>
+    [Serializable] public sealed class ShowCourseDef
+    {
+        public int[] order = System.Array.Empty<int>();
+
+        /// <summary>2 カメラ以上の巡回順があれば present。</summary>
+        public bool HasData() => order != null && order.Length > 0;
+    }
+
     /// <summary>show.json の layout セクション。cuts / grid のどちらも無ければ「layout 未設定」として扱う。</summary>
     [Serializable] public sealed class ShowLayoutDef
     {
@@ -55,12 +68,33 @@ namespace FixedCamVr.Streaming
         public ShowWallDef? wall;
         public ShowCutDef[] cuts = System.Array.Empty<ShowCutDef>();
         public ShowGridDef? grid;   // v2: grid があれば grid 優先（cuts は後方互換）
+        public ShowCourseDef? course;   // 周回定義（LapCounter が読む。ゾーン生成には使わない）
         public float overlapM = 0.08f;
         public float hysteresisM = 0.12f;
 
         /// <summary>ゾーン生成に使える layout データ（grid か cuts）を持つか。grid 優先の判定は Applier 側。</summary>
         public bool HasData()
             => (grid != null && grid.HasData()) || (cuts != null && cuts.Length > 0);
+    }
+
+    /// <summary>事前オーサリング済みスケジュール 1 行。camera はカメラ index。lap は 1 始まり。</summary>
+    [Serializable] public sealed class ShowScheduleEntryDef
+    {
+        public int lap;
+        public int camera;
+        public string cueId = "";
+        public float delaySec;      // ゾーン進入からの遅延
+        public bool once = true;    // true = そのランで 1 回だけ
+    }
+
+    /// <summary>show.json の schedule セクション。rev で変更検出する。</summary>
+    [Serializable] public sealed class ShowScheduleDef
+    {
+        public int rev;
+        public ShowScheduleEntryDef[] entries = System.Array.Empty<ShowScheduleEntryDef>();
+
+        /// <summary>1 行でもエントリがあれば present。</summary>
+        public bool HasData() => entries != null && entries.Length > 0;
     }
 
     /// <summary>
@@ -104,6 +138,10 @@ namespace FixedCamVr.Streaming
                  "Quest 単体ビルドで PC 不在時、前回 Web で設定した IP / 画像加工を起動時に再適用する。")]
         [SerializeField] private string configCacheFileName = "show_config.json";
 
+        [Tooltip("事前オーサリング済み cue スケジュールを駆動する CueScheduler。" +
+                 "schedule / cue 解決 / activeCue 抑止状態を供給する。null なら自動発火なし。")]
+        [SerializeField] private CueScheduler? cueScheduler;
+
         private ScreenOverlayController? _overlay;
         private Material? _material;
         private int _rev = -1;
@@ -120,11 +158,26 @@ namespace FixedCamVr.Streaming
         private ShowLayoutDef? _layout;
         private int _appliedLayoutRev = -1;
 
+        // cue 定義（scheduler の cue 解決 + 手動 activeCue 発火の両方が引く）。
+        private CueDef[] _cues = Array.Empty<CueDef>();
+        // 事前オーサリング済みスケジュール（ライブ or 端末キャッシュ由来）。CueScheduler へ供給。
+        private ShowScheduleDef? _schedule;
+        private int _appliedScheduleRev = -1;
+
         /// <summary>現在の layout（未設定なら null）。ZoneLayoutApplier が Rebuild で参照する。</summary>
         public ShowLayoutDef? Layout => _layout;
 
         /// <summary>layout（cuts/floor/overlap 等）が変わった時に発火する。</summary>
         public event Action? LayoutChanged;
+
+        /// <summary>周回巡回順（layout.course.order）。未設定なら空配列。LapCounter が読む。</summary>
+        public int[] CourseOrder
+            => _layout != null && _layout.course != null && _layout.course.order != null
+                ? _layout.course.order
+                : Array.Empty<int>();
+
+        /// <summary>course（周回巡回順）が変わった時に発火する。LapCounter が購読して order を再取得する。</summary>
+        public event Action? CourseChanged;
 
         // heartbeat に載せる HMD の course space XZ・現在ゾーンラベルの供給元。
         // Streaming → Tracking の参照を作らないため Func で注入する（ZoneLayoutApplier が設定）。
@@ -143,6 +196,7 @@ namespace FixedCamVr.Streaming
             public PostParams? post;
             public ControlState? control;
             public ShowLayoutDef? layout;
+            public ShowScheduleDef? schedule;
         }
         [Serializable] private class CameraDef
         {
@@ -159,11 +213,14 @@ namespace FixedCamVr.Streaming
         }
 
         // 端末ローカルへ保存する設定キャッシュ（show.json のうち実機が参照する部分のみ）。
+        // course は layout に内包されるため layout の保存で往復する。
         [Serializable] private class CachedConfig
         {
             public CameraDef[] cameras = Array.Empty<CameraDef>();
             public PostParams? post;
             public ShowLayoutDef? layout;
+            public CueDef[] cues = Array.Empty<CueDef>();
+            public ShowScheduleDef? schedule;
         }
         [Serializable] private class CueDef
         {
@@ -207,13 +264,36 @@ namespace FixedCamVr.Streaming
 
         private void Start()
         {
-            // registry の Awake（stream 生成）が済んだ後に、端末キャッシュの IP / 画像加工を適用する。
-            // server が後で繋がればライブ値で上書きされる（後勝ち）。
-            LoadAndApplyCache();
+            // 優先順位: 焼き込み StreamingAssets < 端末キャッシュ < ライブ long-poll（後勝ち）。
+            // 焼き込みの読込は UnityWebRequest（Android は jar: URL）なので非同期。
+            // registry の Awake（stream 生成）が済んだ後に、この初期化列を回す。
+            _ = RunInitAsync();
+        }
+
+        private async Task RunInitAsync()
+        {
+            try { await InitializeAsync(destroyCancellationToken); }
+            catch (OperationCanceledException) { }
+            catch (Exception e) { Debug.LogWarning($"[ShowControl] 初期化失敗: {e.Message}"); }
+        }
+
+        private async Task InitializeAsync(CancellationToken ct)
+        {
+            // 1) 焼き込み StreamingAssets/show/show.json（最下位）。無ければ何もしない。
+            await LoadBakedShowAsync(ct);
+            // 2) 端末キャッシュ（焼き込みを上書き）。ライブが既に適用済みなら両方スキップ（ライブ優先）。
+            if (_rev < 0) LoadAndApplyCache();
+            // 3) 統合後の接続先・post を一度反映（焼き込み/キャッシュのどちらが勝っても 1 回）。
+            ApplyCameraEndpoints();
             ApplyPostForActive();
-            // キャッシュ復元で layout が入った場合、ここで一度通知する
-            // （ZoneLayoutApplier は Start でも直接 Layout を読むので二重適用にはならない）。
-            if (_layout != null) LayoutChanged?.Invoke();
+            // 4) 周回順・スケジュールを LapCounter / CueScheduler へ供給。
+            PushCourseAndSchedule();
+            // 5) layout / course が入っていれば通知（ZoneLayoutApplier / LapCounter が再取得）。
+            if (_layout != null)
+            {
+                LayoutChanged?.Invoke();
+                CourseChanged?.Invoke();
+            }
         }
 
         private void OnDestroy()
@@ -306,8 +386,11 @@ namespace FixedCamVr.Streaming
             if (state.post != null) _globalPost = state.post;
             ApplyPostForActive(); // global + アクティブカメラの個別 post をマテリアルへ
 
-            // 1.5) ゾーン layout（cuts/floor/overlap）。JsonUtility は null 入れ子を既定値で書くため
-            //      「cuts が空でない」を present 判定に使い、rev で変更検出する。
+            // 1.3) cue 定義を保持（scheduler の cue 解決 + 手動 activeCue 発火が引く）。
+            _cues = state.cues ?? Array.Empty<CueDef>();
+
+            // 1.5) ゾーン layout（cuts/floor/overlap/course）。JsonUtility は null 入れ子を既定値で書くため
+            //      「cuts が空でない」を present 判定に使い、rev で変更検出する。course は layout に内包。
             bool layoutChanged = false;
             if (state.layout != null && state.layout.HasData()
                 && state.layout.rev != _appliedLayoutRev)
@@ -317,9 +400,26 @@ namespace FixedCamVr.Streaming
                 layoutChanged = true;
             }
 
+            // 1.6) スケジュール（rev で変更検出）→ CueScheduler へ供給。cue 解決関数は毎回張り直す
+            //      （_cues の参照が更新されるため）。rev>0 を present 判定に使い、JsonUtility が
+            //      schedule 欠落時に書く既定オブジェクト（rev=0）で焼き込み/キャッシュを潰さない。
+            //      rev>0 なら entries 空でも適用する（オペレータの「全消去」を通す）。
+            if (state.schedule != null && state.schedule.rev > 0
+                && state.schedule.rev != _appliedScheduleRev)
+            {
+                _schedule = state.schedule;
+                _appliedScheduleRev = state.schedule.rev;
+                cueScheduler?.SetScheduleFromDefs(_schedule.entries);
+            }
+            cueScheduler?.SetCueResolver(ResolveCue);
+
             // 端末キャッシュへ保存（次回 PC 不在起動で参照）
             SaveCache();
-            if (layoutChanged) LayoutChanged?.Invoke();
+            if (layoutChanged)
+            {
+                LayoutChanged?.Invoke();
+                CourseChanged?.Invoke(); // course は layout に内包 → 同時通知
+            }
 
             // 2) カメラ手動 override（show.cameras の並び = registry sources の並びが前提）
             string ovr = state.control?.cameraOverride ?? "";
@@ -336,8 +436,10 @@ namespace FixedCamVr.Streaming
                 }
             }
 
-            // 3) cue 発火 / 停止
+            // 3) cue 発火 / 停止（ライブ手動オーバーライド）。
+            //    activeCue 非空の間は CueScheduler を抑止する（ライブ優先）。毎回同期する。
             string cueId = state.control?.activeCue ?? "";
+            cueScheduler?.SetLiveCueActive(!string.IsNullOrEmpty(cueId));
             if (cueId != _appliedCue)
             {
                 if (_overlay == null) return;
@@ -348,8 +450,8 @@ namespace FixedCamVr.Streaming
                 }
                 else
                 {
-                    var def = Array.Find(state.cues, c => c.id == cueId);
-                    if (def == null)
+                    OverlayCueData? data = ResolveCue(cueId);
+                    if (data == null)
                     {
                         // _appliedCue は確定しない: Web 側で cue を保存し直した後の再 poll で
                         // 同じ activeCue 文字列でも再解決できるようにする。
@@ -357,21 +459,89 @@ namespace FixedCamVr.Streaming
                         return;
                     }
                     _appliedCue = cueId;
-                    _overlay.PlayCue(new OverlayCueData
-                    {
-                        id = def.id,
-                        displayName = string.IsNullOrEmpty(def.name) ? def.id : def.name,
-                        sourceUrl = server!.Absolute(def.sourceUrl),
-                        maskUrl = server.Absolute(def.maskUrl),
-                        strength = def.strength,
-                        loop = def.loop,
-                        fadeInSeconds = def.fadeIn,
-                        fadeOutSeconds = def.fadeOut,
-                        trimStart = def.trimStart,
-                        trimEnd = def.trimEnd,
-                    });
+                    _overlay.PlayCue(data);
                 }
             }
+        }
+
+        /// <summary>
+        /// cueId を _cues から OverlayCueData へ解決する（sa:// / server 相対 URL を実機で開ける URL へ）。
+        /// ライブ手動発火（Apply）と CueScheduler の自動発火の両方が使う。未定義なら null。
+        /// </summary>
+        private OverlayCueData? ResolveCue(string cueId)
+        {
+            if (string.IsNullOrEmpty(cueId)) return null;
+            var def = Array.Find(_cues, c => c != null && c.id == cueId);
+            if (def == null) return null;
+            return new OverlayCueData
+            {
+                id = def.id,
+                displayName = string.IsNullOrEmpty(def.name) ? def.id : def.name,
+                sourceUrl = ShowAssetResolver.Resolve(def.sourceUrl, server),
+                maskUrl = ShowAssetResolver.Resolve(def.maskUrl, server),
+                strength = def.strength,
+                loop = def.loop,
+                fadeInSeconds = def.fadeIn,
+                fadeOutSeconds = def.fadeOut,
+                trimStart = def.trimStart,
+                trimEnd = def.trimEnd,
+            };
+        }
+
+        // 焼き込み StreamingAssets / 端末キャッシュ由来の schedule / course を消費者へ供給する。
+        private void PushCourseAndSchedule()
+        {
+            if (cueScheduler != null)
+            {
+                cueScheduler.SetScheduleFromDefs(_schedule?.entries);
+                cueScheduler.SetCueResolver(ResolveCue);
+                cueScheduler.SetLiveCueActive(!string.IsNullOrEmpty(_appliedCue));
+            }
+        }
+
+        // ---- 焼き込み StreamingAssets/show/show.json の起動時ロード（最下位優先）----
+
+        private async Task LoadBakedShowAsync(CancellationToken ct)
+        {
+            string uri = ShowAssetResolver.StreamingAssetsUri("show/show.json");
+            try
+            {
+                using var req = UnityWebRequest.Get(uri);
+                req.timeout = 5;
+                var op = req.SendWebRequest();
+                while (!op.isDone) { ct.ThrowIfCancellationRequested(); await Task.Yield(); }
+                // 焼き込みが無い（新規ビルドで export していない）のは正常。静かに続行。
+                if (req.result != UnityWebRequest.Result.Success) return;
+                var state = JsonUtility.FromJson<ShowState>(req.downloadHandler.text);
+                if (state == null) return;
+                ApplyBaked(state);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception e) { Debug.LogWarning($"[ShowControl] 焼き込み show.json 読込失敗: {e.Message}"); }
+        }
+
+        // 焼き込み値をフィールドへ流し込む（最下位優先。接続反映・イベント発火は InitializeAsync が一括で行う）。
+        // ライブが既に適用済み（_rev>=0）なら焼き込みで上書きしない（ライブ優先）。
+        private void ApplyBaked(ShowState state)
+        {
+            if (_rev >= 0) return;
+            _cameras = state.cameras ?? Array.Empty<CameraDef>();
+            foreach (var c in _cameras) if (c != null) c.hasPost = c.post != null;
+            if (state.post != null) _globalPost = state.post;
+            if (state.layout != null && state.layout.HasData())
+            {
+                _layout = state.layout;
+                _appliedLayoutRev = state.layout.rev;
+            }
+            _cues = state.cues ?? Array.Empty<CueDef>();
+            if (state.schedule != null && state.schedule.HasData())
+            {
+                _schedule = state.schedule;
+                _appliedScheduleRev = state.schedule.rev;
+            }
+            Debug.Log($"[ShowControl] 焼き込み show.json を適用: cameras={_cameras.Length}, " +
+                      $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)}, " +
+                      $"course={( _layout?.course != null ? _layout.course.order.Length : 0)}");
         }
 
         // ---- コントローラ等からのローカル発火（演出トグル）----
@@ -471,12 +641,21 @@ namespace FixedCamVr.Streaming
         {
             try
             {
-                var cfg = new CachedConfig { cameras = _cameras, post = _globalPost, layout = _layout };
+                var cfg = new CachedConfig
+                {
+                    cameras = _cameras,
+                    post = _globalPost,
+                    layout = _layout,   // course を内包
+                    cues = _cues,
+                    schedule = _schedule,
+                };
                 File.WriteAllText(ConfigCachePath, JsonUtility.ToJson(cfg));
             }
             catch (Exception e) { Debug.LogWarning($"[ShowControl] 設定キャッシュ保存失敗: {e.Message}"); }
         }
 
+        // 端末キャッシュを読み、焼き込み値の上へ「データを持つ項目だけ」上書きする（空で潰さない）。
+        // 接続反映・イベント発火・post 適用は呼び出し側（InitializeAsync）が一括で行う。
         private void LoadAndApplyCache()
         {
             try
@@ -484,16 +663,23 @@ namespace FixedCamVr.Streaming
                 if (!File.Exists(ConfigCachePath)) return;
                 var cfg = JsonUtility.FromJson<CachedConfig>(File.ReadAllText(ConfigCachePath));
                 if (cfg == null) return;
-                _cameras = cfg.cameras ?? Array.Empty<CameraDef>();
+                if (cfg.cameras != null && cfg.cameras.Length > 0) _cameras = cfg.cameras;
                 if (cfg.post != null) _globalPost = cfg.post;
-                // キャッシュ済み layout も復元（grid か cuts があるもののみ）。event は Start() 末で発火する。
+                // キャッシュ済み layout も復元（grid か cuts があるもののみ / course も内包）。
                 if (cfg.layout != null && cfg.layout.HasData())
                 {
                     _layout = cfg.layout;
                     _appliedLayoutRev = cfg.layout.rev;
                 }
-                ApplyCameraEndpoints(); // post はこの後 Start() の ApplyPostForActive() で当てる
-                Debug.Log($"[ShowControl] 端末キャッシュ設定を適用: {ConfigCachePath} (cameras={_cameras.Length}, layout={( _layout != null ? "yes" : "no")})");
+                if (cfg.cues != null && cfg.cues.Length > 0) _cues = cfg.cues;
+                if (cfg.schedule != null && cfg.schedule.HasData())
+                {
+                    _schedule = cfg.schedule;
+                    _appliedScheduleRev = cfg.schedule.rev;
+                }
+                Debug.Log($"[ShowControl] 端末キャッシュ設定を適用: {ConfigCachePath} " +
+                          $"(cameras={_cameras.Length}, layout={( _layout != null ? "yes" : "no")}, " +
+                          $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)})");
             }
             catch (Exception e) { Debug.LogWarning($"[ShowControl] 設定キャッシュ読込失敗: {e.Message}"); }
         }

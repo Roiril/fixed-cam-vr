@@ -31,9 +31,18 @@
 | 2.7 | プレイヤー位置連動カメラ切替（[Tracking/](Assets/Scripts/Tracking/)）。形状は show.json layout（PC）+ 位置合わせは HMD 2 点登録（CourseRegistrationController） | 🚧 登録フロー実装済み・実機未検証 |
 | 3 | 映像加工 4 系統プロトタイプ（[Fx/](Assets/Scripts/Fx/)。本命 = CRT + 薄い埃） | ✅ Editor 検証済み・本実装前 |
 | 3.5 | 映像差し替え（OverlayCue）+ Web オペレータ卓遠隔制御（ShowControlClient / [tools/web-compositor/](tools/web-compositor/)） | ✅ 実装済み・運用検証中 |
+| 3.7 | **事前オーサリング済み cue スケジュール**（周回×ゾーンで自動発火 + APK 焼き込みで現地 PC 不要。LapCounter / CueScheduler） | 🚧 実装済み・実機未検証 |
 | 4 | スクリーン外 3D 演出 / CG 合成 | 未着手 |
 
 主要コンポーネントの仕様（エンドポイント・遅延対策・show.json 設定契約・スクリーン合成モデル）は [.claude/rules/streaming.md](.claude/rules/streaming.md) に集約。
+
+### 演出の事前オーサリング → ビルド焼き込み（Phase 3.7 の使い方）
+
+1. Web 卓（`tools/web-compositor/serve.ps1` → `http://localhost:8099/`）で各カメラの **CUE を作成**（複数可。素材 + マスク + フェード + 再生区間）
+2. **フロアマップ**で担当カメラを塗り、「周回コース」で**スタート領域と順方向（CW/CCW）**を決めて保存
+3. **周回スケジュール**（行=カメラ・列=周回）のセルに cue を割り当て（遅延秒・1 回のみ、も設定可）て保存
+4. **📦 ビルド用エクスポート** → show.json + 参照アセットが `Assets/StreamingAssets/show/` に焼き込まれる（コミット禁止・gitignore 済み）
+5. 通常どおり APK ビルド → **Quest 単体（PC 不在）で周回に応じて自動発火**。Web 卓のライブ操作（演出 ON/OFF）は常にスケジュールより優先
 
 ## 動かし方（最短）
 

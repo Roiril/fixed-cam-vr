@@ -42,7 +42,8 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 | `gl.js` / `shaders.js` | WebGL2 ヘルパー / GLSL（**ビューの最終 post は `FS_POST`** = Unity ScreenComposite と数式・順序一致。合成は pipeline.js。旧 `FS_VIEW` は未使用かつ式が古かったので 2026-06-18 削除） |
 | `capture-server.py` | ローカルサーバ（静的配信 + show 制御 + /cam プロキシ + 保存 API） |
 | `serve.ps1` | 起動スクリプト |
-| `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json long-poll） |
+| `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json long-poll。schedule / course.order も表示） |
+| `schedule.js` | **周回スケジュール UI**（2026-07-17〜）。行=カメラ（course.order 順）×列=周回のマトリクスで cue 割当（delaySec / once）→ `postState({schedule})`。floormap.js の deps 注入・dirty ガードパターン踏襲 |
 
 **撤去済み（2026-06-16）**: `main.js` / `sources.js` / `cue-editor.js` / `console.js` / `multicam.html`（プロンプト・ギャラリー・2 タブ・別ページ合成エディタ）。**⚠ `pipeline.js`（色統計マッチング→ラプラシアン）はユーザー要望で復活し現役**（app.js が import、境界ブレンドバーが駆動）。以降の「合成パイプライン」節は現役の説明として読む。AI 動画生成の知見は末尾に残す。
 
@@ -74,6 +75,9 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 | POST | `/save?type=image\|video` | body のバイナリを captures/ に保存 |
 | GET | `/reveal?name=<file>` | captures/ の当該ファイルをファイルマネージャで選択表示（Win=explorer /select、mac=open -R、Linux=xdg-open）。パストラバーサル拒否 |
 | GET | `/cam?host=&port=&path=&auth=user:pass` | **MJPEG プロキシ**。Basic 認証をサーバが肩代わり（ブラウザは `<img>` の URL 埋め込み認証をブロックするため iPhone/IP Camera Lite はこれ必須）。`multicam.html`（3 台同時ビュー、IP 編集可・localStorage 保存・自動再接続・クリック拡大）とコンソールのカメラカードが利用 |
+| POST | `/export-build` | **ビルド焼き込みエクスポート**（2026-07-17〜）。show.json + cue 参照アセットを `Assets/StreamingAssets/show/` へコピーし URL を `sa://assets/<file>` に書換（欠損参照はエラーにせず verbatim 残置・毎回 assets/ 掃除・同一ファイル dedupe）。**カメラ host も verbatim 焼き込み**なのでビルド直前に現場でエクスポートし直す。出力はコミット禁止（gitignore 済み） |
+
+**cue の複数化（2026-07-17〜）**: `cue_<camId>` 固定 1 個 → 1 カメラに複数 cue（`cue_<camId>_<n>`、新規/複製/削除/選択編集）。演出 ON は選択中 cue を発火。周回スケジュール（`schedule.entries[] = {lap, camera(index), cueId, delaySec, once}`）と `layout.course.order`（フロアマップの「周回コース」で編集、order[0]=スタート、CW/CCW トグル、grid 塗りから角度順提案）は Unity 側 LapCounter / CueScheduler が消費。詳細契約は rules/streaming.md。
 
 ### multicam.html の合成エディタ（2026-06-12、3 段マトリクス構成）
 

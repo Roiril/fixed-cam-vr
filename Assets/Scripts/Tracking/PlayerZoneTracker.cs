@@ -44,6 +44,13 @@ namespace FixedCamVr.Tracking
         public PlayerZone? CurrentZone => _current;
 
         /// <summary>
+        /// Pick 確定でゾーンが変わった時に発火する（旧ゾーン, 新ゾーン）。
+        /// 初回取得時は旧ゾーンが null。周回カウント（LapCounter）等の外部消費者向け。
+        /// 発火は registry.SetActive と同じ箇所（cameraIndex 未変化のゾーン間移動でも発火する点に注意）。
+        /// </summary>
+        public event Action<PlayerZone?, PlayerZone>? ZoneChanged;
+
+        /// <summary>
         /// ランタイムでゾーン配列を差し替える（ZoneLayoutApplier が layout / frame 変更時に呼ぶ）。
         /// 配列順は同優先度時のタイブレーク（先頭優先）に効く。_current はリセットして次 Update で再評価させる。
         /// </summary>
@@ -86,8 +93,10 @@ namespace FixedCamVr.Tracking
             if (picked == null) return;
             if (ReferenceEquals(picked, _current)) return;
 
+            PlayerZone? previous = _current;
             _current = picked;
             registry.SetActive(picked.CameraIndex);
+            ZoneChanged?.Invoke(previous, picked);
 
             if (logChanges)
             {

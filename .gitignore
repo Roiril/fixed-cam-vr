@@ -197,3 +197,7 @@ Builds/
 # ビルド時スタンプ（BuildVariants.StampTableDuoBuildInfo が毎ビルド書き換える）
 Assets/TableDuo/Resources/TableDuoBuildInfo.txt
 Assets/TableDuo/Resources/TableDuoBuildInfo.txt.meta
+
+# ビルド焼き込みエクスポート生成物（Web 卓の 📦 エクスポートが生成。show.json にカメラ host を含むためコミット禁止）
+Assets/StreamingAssets/show/
+Assets/StreamingAssets/show.meta

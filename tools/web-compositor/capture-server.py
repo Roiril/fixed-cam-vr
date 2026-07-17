@@ -11,6 +11,8 @@
 #   POST /masks?name=            : マスク PNG 保存 → /masks/<name>.png で配信
 #   POST /unity/heartbeat        : Unity が現状報告（アクティブカメラ等）
 #   GET  /unity/status           : 直近 heartbeat + 経過秒（UI 表示用）
+#   POST /export-build           : 現 show.json + 参照アセットを Assets/StreamingAssets/show/
+#                                  へ焼き込み（URL を sa://assets/<file> に書換）。結果を JSON で返す
 # - GET /cam?host=&port=&path=&auth=user:pass : MJPEG プロキシ（Basic 認証肩代わり。
 #   ブラウザは <img> の URL 埋め込み認証をブロックするため iPhone/IP Camera Lite はここを経由する）
 #   /cam は <メインポート+1>（既定 8100）でも同時に listen する。MJPEG は接続を張りっぱなしに
@@ -37,12 +39,23 @@ CAPTURES = os.path.join(ROOT, 'captures')
 MASKS = os.path.join(ROOT, 'masks')
 # デモ撮影専用フォルダ（静止画 📷 / 録画 ⏺ の保存先。captures とは分ける）
 RECORDINGS = os.path.join(ROOT, 'recordings')
+STATIC_INPUTS = os.path.join(ROOT, 'static-inputs')
 os.makedirs(CAPTURES, exist_ok=True)
 os.makedirs(MASKS, exist_ok=True)
 os.makedirs(RECORDINGS, exist_ok=True)
 
 # /save?to= と /open-dir?dir= の保存先ホワイトリスト（パストラバーサル防止）
 SAVE_DIRS = {'captures': CAPTURES, 'recordings': RECORDINGS}
+
+# エクスポート時に「ローカル URL → 実ファイル」を解決するディレクトリ対応表。
+LOCAL_URL_DIRS = {
+    '/masks/': MASKS,
+    '/captures/': CAPTURES,
+    '/recordings/': RECORDINGS,
+    '/static-inputs/': STATIC_INPUTS,
+}
+# リポジトリルート（tools/web-compositor から 2 つ上）。エクスポート先の解決に使う。
+REPO_ROOT = os.path.dirname(os.path.dirname(ROOT))
 
 # ---- ショー状態（show.json = 状態の正）----------------------------------
 SHOW_FILE = os.path.join(ROOT, 'show.json')
@@ -71,10 +84,14 @@ def _default_show():
         # cuts = 後方互換（正準ループ上の切れ目）。grid が正で、grid 無しの端末は cuts から展開する。
         # 下記 grid の初期塗りは既定 cuts（s=0.125→cam1 / 0.375→cam2 / 0.875→cam0）を
         # 各タイル中心へ射影して静的生成した結果（floormap.js の cellsFromCuts と一致）。
+        # course.order = 周回の巡回順（カメラ index の配列。order[0]=スタート領域）。
+        # フロアマップ UI が grid の塗りから角度順で提案し CW/CCW で反転できる。周回カウント
+        # （schedule 発火）はこの順に沿って進む。
         'layout': {
             'rev': 1,
             'floor': {'w': 1.8, 'd': 1.8},
             'wall': {'corner': [-0.5, 0.5], 'endX': [0.5, 0.5], 'endZ': [-0.5, -0.5]},
+            'course': {'order': [0, 1, 2]},
             'grid': {
                 'tileM': 0.15, 'cols': 12, 'rows': 12,
                 'cells': [
@@ -100,6 +117,10 @@ def _default_show():
             'overlapM': 0.08,
             'hysteresisM': 0.12,
         },
+        # schedule = 事前オーサリングの正体（何周目 lap のどのゾーン camera で cueId を発火するか）。
+        # lap は 1 始まり、camera はカメラ index（ゾーンは cameraIndex でキー）。Web 卓が編集し
+        # export-build で APK に焼き込む。ライブ control.activeCue が非空の間は Unity 側で抑止される。
+        'schedule': {'rev': 1, 'entries': []},
     }
 
 
@@ -308,6 +329,8 @@ class Handler(SimpleHTTPRequestHandler):
             _unity_status.clear()
             _unity_status.update(body)
             return self._json({'ok': True})
+        if parsed.path == '/export-build':
+            return self._export_build()
         if parsed.path == '/save':
             q = parse_qs(parsed.query)
             typ = q.get('type', ['image'])[0]
@@ -366,7 +389,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json({'ok': False, 'error': 'unknown endpoint'}, 404)
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
-    _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout')
+    _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule')
 
     def _post_state(self):
         body = self._read_json_body()
@@ -415,6 +438,77 @@ class Handler(SimpleHTTPRequestHandler):
             f.write(data)
         return self._json({'ok': True, 'name': fname, 'url': '/masks/' + fname,
                            'size': len(data)})
+
+    # ローカル URL（/masks/... /captures/... /static-inputs/... /recordings/...）を実ファイルへ解決。
+    # 外部 http URL・空・sa:// は None（＝焼き込み対象外）。パストラバーサルは拒否。
+    def _resolve_local_asset(self, url):
+        if not url or not url.startswith('/'):
+            return None
+        clean = url.split('?', 1)[0]
+        for prefix, base in LOCAL_URL_DIRS.items():
+            if clean.startswith(prefix):
+                from urllib.parse import unquote
+                name = unquote(clean[len(prefix):])
+                fp = os.path.abspath(os.path.join(base, name))
+                # base の外へ出る参照は拒否
+                if os.path.commonpath([fp, os.path.abspath(base)]) != os.path.abspath(base):
+                    return None
+                return fp if os.path.isfile(fp) else None
+        return None
+
+    # 現 show.json + 参照アセットを Assets/StreamingAssets/show/ へ焼き込む。
+    # cues の maskUrl/sourceUrl の実ファイルを assets/ へコピーし URL を sa://assets/<file> に書換。
+    def _export_build(self):
+        import shutil
+        show = json.loads(json.dumps(_show))  # deep copy（現物 _show は不変）
+        out_dir = os.path.join(REPO_ROOT, 'Assets', 'StreamingAssets', 'show')
+        assets_dir = os.path.join(out_dir, 'assets')
+        os.makedirs(assets_dir, exist_ok=True)
+        # 前回のエクスポート物を掃除（orphan 蓄積とファイル名衝突を防ぐ。show/assets 配下のみ）。
+        for n in os.listdir(assets_dir):
+            p = os.path.join(assets_dir, n)
+            if os.path.isfile(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
+        copied = []            # [{from, to, size}]
+        used_names = set()     # 本エクスポートで割当済みのファイル名
+        src_to_dest = {}       # 実ファイル abs → dest 名（同一ファイルは 1 回だけコピー）
+
+        def bake(url):
+            fp = self._resolve_local_asset(url)
+            if not fp:
+                return url  # 外部 URL / 空 / 解決不能はそのまま
+            if fp in src_to_dest:
+                return 'sa://assets/' + src_to_dest[fp]
+            base = os.path.basename(fp)
+            stem, ext = os.path.splitext(base)
+            name, i = base, 1
+            while name in used_names:  # 別ファイルの同名は連番回避
+                name = f'{stem}_{i}{ext}'
+                i += 1
+            used_names.add(name)
+            src_to_dest[fp] = name
+            dest = os.path.join(assets_dir, name)
+            shutil.copy2(fp, dest)
+            copied.append({'from': url, 'to': 'assets/' + name, 'size': os.path.getsize(dest)})
+            return 'sa://assets/' + name
+
+        for cue in show.get('cues', []):
+            if cue.get('maskUrl'):
+                cue['maskUrl'] = bake(cue['maskUrl'])
+            if cue.get('sourceUrl'):
+                cue['sourceUrl'] = bake(cue['sourceUrl'])
+
+        show_path = os.path.join(out_dir, 'show.json')
+        # UTF-8 / LF 固定（Unity JsonUtility が読む契約）。
+        with open(show_path, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump(show, f, ensure_ascii=False, indent=2)
+        total = sum(c['size'] for c in copied)
+        return self._json({'ok': True, 'outDir': out_dir, 'showJson': show_path,
+                           'copied': copied, 'count': len(copied), 'totalBytes': total})
 
     def _list_captures(self):
         items = []

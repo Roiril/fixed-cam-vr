@@ -97,38 +97,39 @@ slug: pre-authored-cue-schedule
 
 ### Phase 1: Unity ランタイム（`Assets/Scripts/` — opus 委譲）
 
-- [ ] `PlayerZoneTracker` に `event Action<PlayerZone, PlayerZone> ZoneChanged` を公開（Pick 確定時に発火）
-- [ ] `LapCounter`（`Assets/Scripts/Tracking/LapCounter.cs`、純ロジック分離でテスト可能に）— order/進行ポインタ/lap
-- [ ] show.json パーサ拡張（`ShowControlClient`: `schedule` / `layout.course`。JsonUtility）
-- [ ] `CueScheduler`（`Assets/Scripts/Streaming/CueScheduler.cs`）— (lap, camera, delaySec, once) 評価 → PlayCue。activeCue 非空で抑止
-- [ ] `CachedConfig` に cues / schedule / course を追加保存
-- [ ] `sa://` URL リゾルバ（OverlayCueData 解決経路 + StreamingAssets/show/show.json 起動時ロード、優先順位最下位）
-- [ ] EditMode テスト: LapCounter（順方向/逆走/行き来/スキップ/1 周完了）+ CueScheduler 評価ロジック
-- [ ] `MainDemoSceneSetup` への自動配線（Setup 再実行で冪等）
+- [x] `PlayerZoneTracker` に `event Action<PlayerZone, PlayerZone> ZoneChanged` を公開（Pick 確定時に発火）
+- [x] `LapCounter`（`Assets/Scripts/Tracking/LapCounter.cs`、純ロジック分離でテスト可能に）— order/進行ポインタ/lap
+- [x] show.json パーサ拡張（`ShowControlClient`: `schedule` / `layout.course`。JsonUtility）
+- [x] `CueScheduler`（`Assets/Scripts/Streaming/CueScheduler.cs`）— (lap, camera, delaySec, once) 評価 → PlayCue。activeCue 非空で抑止
+- [x] `CachedConfig` に cues / schedule / course を追加保存
+- [x] `sa://` URL リゾルバ（OverlayCueData 解決経路 + StreamingAssets/show/show.json 起動時ロード、優先順位最下位）
+- [x] EditMode テスト: LapCounter（順方向/逆走/行き来/スキップ/1 周完了）+ CueScheduler 評価ロジック
+- [x] `MainDemoSceneSetup` への自動配線（Setup 再実行で冪等）
 
 ### Phase 2: Web 卓 + サーバ（`tools/web-compositor/` — opus 委譲・Phase 1 と並列可）
 
-- [ ] `capture-server.py`: `_STATE_KEYS` + `_default_show()` に `schedule` 追加。layout.course も契約コメント更新
-- [ ] cue 複数化: `cue_<camId>` ハードコード撤廃、1 カメラに複数 cue（追加/複製/削除、id=`cue_<camId>_<n>`）
-- [ ] フロアマップにコース設定統合: スタート領域選択 + 順方向 CW/CCW トグル → `layout.course.order` 保存（grid 塗りから角度順提案）
-- [ ] スケジュール UI（`schedule.js` 新設、floormap パターン流用）: 行=カメラ/ゾーン・列=周回のマトリクス。セルクリックで cue 割当・delaySec・once 編集。周回数は可変（列追加）
-- [ ] エクスポート API `POST /export-build`: show.json の参照アセットを収集 → URL を `sa://` に書換 → `Assets/StreamingAssets/show/` へコピー。UI に「📦 ビルド用エクスポート」ボタン + 結果表示
-- [ ] sim.html（仮想 Quest）でスケジュール発火を模擬確認できる程度の表示（現在 lap 表示）
+- [x] `capture-server.py`: `_STATE_KEYS` + `_default_show()` に `schedule` 追加。layout.course も契約コメント更新
+- [x] cue 複数化: `cue_<camId>` ハードコード撤廃、1 カメラに複数 cue（追加/複製/削除、id=`cue_<camId>_<n>`）
+- [x] フロアマップにコース設定統合: スタート領域選択 + 順方向 CW/CCW トグル → `layout.course.order` 保存（grid 塗りから角度順提案）
+- [x] スケジュール UI（`schedule.js` 新設、floormap パターン流用）: 行=カメラ/ゾーン・列=周回のマトリクス。セルクリックで cue 割当・delaySec・once 編集。周回数は可変（列追加）
+- [x] エクスポート API `POST /export-build`: show.json の参照アセットを収集 → URL を `sa://` に書換 → `Assets/StreamingAssets/show/` へコピー。UI に「📦 ビルド用エクスポート」ボタン + 結果表示
+- [x] sim.html（仮想 Quest）でスケジュール発火を模擬確認できる程度の表示（現在 lap 表示）
 
 ### Phase 3: 統合検証（シュビー本体・逐次）
 
-- [ ] Unity コンパイル確認（refresh_unity → DLL mtime → read_console エラー 0）
-- [ ] EditMode テスト実行（run_tests）
-- [ ] Web 卓: serve.ps1 起動 → ブラウザでスケジュール UI 操作 → show.json 差分確認 → sim.html で long-poll 受信確認
-- [ ] エクスポート実行 → StreamingAssets/show/ 生成物確認 → （可能なら）Editor Play or L0 相当でオフライン発火経路確認
+- [x] Unity コンパイル確認（refresh_unity → DLL mtime → read_console エラー 0）
+- [x] EditMode テスト実行（run_tests）
+- [x] Web 卓: serve.ps1 起動 → ブラウザでスケジュール UI 操作 → show.json 差分確認 → sim.html で long-poll 受信確認
+- [x] エクスポート実行 → StreamingAssets/show/ 生成物確認（`sa://` 書換・アセット 7 点コピーを実確認）
+- [ ] オフライン発火のランタイム経路（StreamingAssets ロード → LapCounter → CueScheduler → PlayCue）の通し確認 — OVR シーンは Link 無し Play 不可のため実機 or Link 環境で。ロジック単体は EditMode テスト済み
 - [ ] 実機確認はユーザー依頼（コンパイル OK / 実機未検証を明示）
 
 ### Phase 4: ドキュメント同期（同一コミット）
 
-- [ ] `.claude/rules/streaming.md`（show.json 契約・スケジュール・焼き込み）
-- [ ] `.claude/rules/unity-vr.md`（周回カウントのセマンティクス）
-- [ ] `README.md`（オーサリング→エクスポート→ビルドのフロー）
-- [ ] memory `web_compositor.md`（スケジュール UI・エクスポート）
+- [x] `.claude/rules/streaming.md`（show.json 契約・スケジュール・焼き込み）
+- [x] `.claude/rules/unity-vr.md`（周回カウントのセマンティクス）
+- [x] `README.md`（オーサリング→エクスポート→ビルドのフロー）
+- [x] memory `web_compositor.md`（スケジュール UI・エクスポート）
 
 ## 境界・注意
 
@@ -140,4 +141,10 @@ slug: pre-authored-cue-schedule
 
 ## 自律改善ログ
 
-(作業中に気付いた改善点や学びをここに追記)
+- 2026-07-17 実装完了（opus 2 体並列 → 親が検証・統合）。コンパイル 0 エラー / EditMode 75/75 pass / Web UI・/export-build 実動確認済み。**実機（Quest 単体オフライン発火）のみ未検証**
+- 設計判断の記録:
+  - LapCounter は `registry.ActiveChanged`（camera index）駆動。ZoneChanged は公開したが周回には使わない（schedule.camera と同一キー空間のため）
+  - 起動時シード: 開始時に既にスタート領域に居るため、現在カメラを「進入」として scheduler へ渡す（`seedInitialZone`）。CourseChanged 再シードで起動ロード順の穴を塞ぐ
+  - ライブ schedule の present 判定は `rev>0`（JsonUtility の既定オブジェクトで焼き込み/キャッシュを潰さない）
+  - エクスポートはカメラ host を verbatim 焼き込み → `Assets/StreamingAssets/show/` をコミット禁止（gitignore 追加）で対処。ビルド直前に現場で再エクスポートが運用の正
+  - MainDemoSceneSetup が zoneTrackerToDisable 再配線を自動化（unity-vr.md の手動再アサイン注意書きを解消）

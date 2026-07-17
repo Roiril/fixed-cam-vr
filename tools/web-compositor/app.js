@@ -4,6 +4,7 @@
 import { createContext, SourceTexture } from './gl.js';
 import { Pipeline } from './pipeline.js';
 import { createFloorMap } from './floormap.js';
+import { createSchedule } from './schedule.js';
 
 // 境界ブレンド（合成跡を消す）設定。全カメラ共通。各カメラの Pipeline がこれを参照。
 const blendCfg = { feather: 0.3, colorMatch: true, colorStrength: 1, laplacian: true, levels: 7 };
@@ -59,6 +60,7 @@ let lastUnity = {};
 let captureItems = [];
 const columns = new Map();   // camId -> column controller
 let floorMap = null;         // フロアマップ（ゾーン校正）コントローラ
+let schedule = null;         // 周回スケジュール UI コントローラ
 
 // ---- captures/ 素材一覧（全列共有） ----------------------------------------
 async function refreshCaptures() {
@@ -120,16 +122,27 @@ function buildColumn(cam, index) {
       <div class="sec-label">③ 画像加工（画質 + 合成素材）</div>
       <div class="fx-rows"></div>
       <div class="row-btns"><button class="fx-reset">↺ 画質を初期化</button></div>
-      <div class="row-btns">
-        <select class="src-select"></select>
-        <button class="src-refresh" title="一覧を更新">↻</button>
-        <button class="src-folder" title="素材フォルダ（captures/）を開く">📂</button>
+
+      <div class="cue-manage">
+        <div class="sec-label">cue（このカメラの演出。複数可）</div>
+        <div class="cue-list"></div>
+        <div class="row-btns cue-ops">
+          <button class="cue-add" title="空の cue を新規作成">＋ 新規</button>
+          <button class="cue-dup" title="選択中の cue を複製">⧉ 複製</button>
+          <button class="cue-del" title="選択中の cue を削除">🗑 削除</button>
+        </div>
+        <div class="row-btns"><input class="cue-name" type="text" placeholder="cue 名（任意）"></div>
+        <div class="row-btns">
+          <select class="src-select"></select>
+          <button class="src-refresh" title="一覧を更新">↻</button>
+          <button class="src-folder" title="素材フォルダ（captures/）を開く">📂</button>
+        </div>
+        <div class="row-btns trim-row" style="display:none">
+          <span class="sld">再生区間 <input class="trim-start" type="number" min="0" step="0.1" value="0" title="開始秒">–<input class="trim-end" type="number" min="0" step="0.1" value="0" title="終了秒（0=最後まで）">s</span>
+        </div>
+        <div class="row-btns"><button class="cue-save accent">💾 選択中の cue を保存</button></div>
+        <span class="ed-status"></span>
       </div>
-      <div class="row-btns trim-row" style="display:none">
-        <span class="sld">再生区間 <input class="trim-start" type="number" min="0" step="0.1" value="0" title="開始秒">–<input class="trim-end" type="number" min="0" step="0.1" value="0" title="終了秒（0=最後まで）">s</span>
-      </div>
-      <div class="row-btns"><button class="cue-save accent">💾 cue 保存</button></div>
-      <span class="ed-status"></span>
     </div>
 
     <div class="col-sec">
@@ -243,11 +256,11 @@ function buildColumn(cam, index) {
   col.querySelectorAll('[data-edge]').forEach((b) => b.addEventListener('click', () => {
     refs.maskEdge = b.dataset.edge;
     col.querySelectorAll('[data-edge]').forEach((x) => x.classList.toggle('on', x === b));
-    drawMask();
+    refs.maskEdited = true; drawMask();
   }));
   const maskPos = q('.mask-pos'), maskPosV = q('.mask-pos-v');
-  maskPos.oninput = () => { refs.maskCoverage = parseInt(maskPos.value, 10); maskPosV.textContent = maskPos.value + '%'; drawMask(); };
-  q('.mask-clear').onclick = () => { refs.maskCoverage = 0; maskPos.value = 0; maskPosV.textContent = '0%'; drawMask(); };
+  maskPos.oninput = () => { refs.maskCoverage = parseInt(maskPos.value, 10); maskPosV.textContent = maskPos.value + '%'; refs.maskEdited = true; drawMask(); };
+  q('.mask-clear').onclick = () => { refs.maskCoverage = 0; maskPos.value = 0; maskPosV.textContent = '0%'; refs.maskEdited = true; drawMask(); };
   const maskIsEmpty = () => refs.maskCoverage <= 0;
 
   // ===== 合成素材 =====
@@ -294,8 +307,9 @@ function buildColumn(cam, index) {
   const fadeSecI = q('.cue-fade-sec');
   refs.fadeSec = parseFloat(fadeSecI.value) || 0.5;
   function patchCueFade() {
+    const id = refs.selectedCueId; if (!id) return;
     const cues = state?.cues; if (!cues) return;
-    const cue = cues.find((c) => c.id === `cue_${refs.cam.id}`);
+    const cue = cues.find((c) => c.id === id);
     if (cue) { cue.fadeIn = refs.fadeSec; cue.fadeOut = refs.fadeSec; postState({ cues }); }
   }
   fadeSecI.onchange = () => { refs.fadeSec = Math.max(0, parseFloat(fadeSecI.value) || 0); patchCueFade(); };
@@ -309,35 +323,101 @@ function buildColumn(cam, index) {
 
   const ed = (m, cls = '') => { const e = q('.ed-status'); e.textContent = m; e.className = 'ed-status ' + cls; };
 
-  // ===== cue 保存（1 カメラ 1 cue: id = cue_<camId>）=====
+  // ===== cue 管理（1 カメラ複数 cue: id = cue_<camId>_<n>）=====
+  //   既存の単数 cue（id=cue_<camId>、camera フィールドで所属を示す）もそのまま一覧に出す。
+  const cueListEl = q('.cue-list');
+  const cueNameI = q('.cue-name');
+  refs.selectedCueId = null;   // 編集/発火の対象
+  refs.maskEdited = false;      // 選択後にマスクを触ったか（false なら既存マスク保持）
+  refs.selCueMaskUrl = '';      // 選択中 cue の既存 maskUrl（未編集時の保持用）
+
+  // このカメラに所属する cue（camera フィールド一致）。
+  function camCues() { return (state?.cues || []).filter((c) => (c.camera || '') === refs.cam.id); }
+
+  // cue_<camId>_<n> の空き番号を返す。
+  function nextCueId() {
+    const base = `cue_${refs.cam.id}_`;
+    const used = new Set((state?.cues || []).map((c) => c.id));
+    let n = 1; while (used.has(base + n)) n++;
+    return base + n;
+  }
+
+  // cue を編集エリアへ読み込む（マスクエディタは初期化。既存マスクは selCueMaskUrl に退避）。
+  function loadCueIntoEditor(cue) {
+    if (cue && cue.sourceUrl) { srcSelect.value = cue.sourceUrl; loadSource(cue.sourceUrl); }
+    else { srcSelect.value = ''; loadSource(''); }
+    refs.trimStart = cue?.trimStart || 0; refs.trimEnd = cue?.trimEnd || 0;
+    trimStartI.value = refs.trimStart; trimEndI.value = refs.trimEnd;
+    refs.fadeSec = (cue && cue.fadeIn != null) ? cue.fadeIn : 0.5; fadeSecI.value = refs.fadeSec;
+    cueNameI.value = cue?.name || '';
+    refs.selCueMaskUrl = cue?.maskUrl || '';
+    refs.maskCoverage = 0; maskPos.value = 0; maskPosV.textContent = '0%'; refs.maskEdited = false; drawMask();
+  }
+
+  function selectCue(id) {
+    refs.selectedCueId = id;
+    loadCueIntoEditor(camCues().find((c) => c.id === id) || null);
+    renderCueList();
+  }
+
+  function renderCueList() {
+    const list = camCues();
+    cueListEl.innerHTML = '';
+    if (!list.length) {
+      const e = document.createElement('span');
+      e.className = 'cue-empty'; e.textContent = '（cue 未作成 — ＋新規 で追加）';
+      cueListEl.appendChild(e); return;
+    }
+    for (const c of list) {
+      const b = document.createElement('button');
+      b.className = 'cue-chip'
+        + (c.id === refs.selectedCueId ? ' on' : '')
+        + (state?.control?.activeCue === c.id ? ' playing' : '');
+      b.textContent = (state?.control?.activeCue === c.id ? '🎬 ' : '') + (c.name || c.id);
+      b.title = c.id;
+      b.onclick = () => selectCue(c.id);
+      cueListEl.appendChild(b);
+    }
+  }
+  refs.renderCueList = renderCueList;
+  refs.loadSelectedCue = () => loadCueIntoEditor(camCues().find((c) => c.id === refs.selectedCueId) || null);
+
+  // マスク PNG を書き出して url を返す（フェザー焼き込み）。空マスクなら '' を返す。
+  async function writeMaskFor(id) {
+    if (maskIsEmpty()) return '';
+    ed('マスク書き出し中…');
+    let blob;
+    if (blendCfg.feather > 0.001) {
+      const tmp = document.createElement('canvas'); tmp.width = maskCanvas.width; tmp.height = maskCanvas.height;
+      const tc = tmp.getContext('2d');
+      tc.filter = `blur(${Math.max(1, Math.round(blendCfg.feather * 12))}px)`;
+      tc.drawImage(maskCanvas, 0, 0);
+      blob = await new Promise((r) => tmp.toBlob(r, 'image/png'));
+    } else {
+      blob = await new Promise((r) => maskCanvas.toBlob(r, 'image/png'));
+    }
+    const res = await (await fetch(`/masks?name=${encodeURIComponent(id)}`, { method: 'POST', body: blob })).json();
+    if (!res.ok) throw new Error(res.error || 'マスク保存失敗');
+    return res.url;
+  }
+
   q('.cue-save').onclick = async () => {
     const camId = refs.cam.id;
     const sourceUrl = refs.sourceUrl || srcSelect.value || '';
     if (!sourceUrl) return ed('合成素材を選んで', 'err');
-    const id = `cue_${camId}`;
+    let id = refs.selectedCueId;
+    const existing = id ? camCues().find((c) => c.id === id) : null;
+    if (!id || !existing) id = nextCueId();  // 未選択 or 消えた → 新規
     try {
-      let maskUrl = '';
-      if (!maskIsEmpty()) {
-        ed('マスク書き出し中…');
-        // フェザーを PNG に焼き込む（Quest はマスクをそのままサンプルするので境界をここでぼかす）
-        let blob;
-        if (blendCfg.feather > 0.001) {
-          const tmp = document.createElement('canvas'); tmp.width = maskCanvas.width; tmp.height = maskCanvas.height;
-          const tc = tmp.getContext('2d');
-          tc.filter = `blur(${Math.max(1, Math.round(blendCfg.feather * 12))}px)`;
-          tc.drawImage(maskCanvas, 0, 0);
-          blob = await new Promise((r) => tmp.toBlob(r, 'image/png'));
-        } else {
-          blob = await new Promise((r) => maskCanvas.toBlob(r, 'image/png'));
-        }
-        const res = await (await fetch(`/masks?name=${encodeURIComponent(id)}`, { method: 'POST', body: blob })).json();
-        if (!res.ok) throw new Error(res.error || 'マスク保存失敗');
-        maskUrl = res.url;
-      }
+      // マスク: 触っていれば書き出し（空なら全面差し替え）。未編集なら既存 maskUrl を保持。
+      let maskUrl;
+      if (refs.maskEdited) maskUrl = await writeMaskFor(id);
+      else maskUrl = existing ? (existing.maskUrl || '') : '';
       const cue = {
-        id, name: `カメラ ${camId}`, camera: camId,
+        id, name: cueNameI.value.trim() || `カメラ ${camId} #${id.split('_').pop()}`, camera: camId,
         maskUrl: encPath(maskUrl), sourceUrl: encPath(sourceUrl),
-        strength: 1, loop: false, fadeIn: refs.fadeSec, fadeOut: refs.fadeSec,
+        strength: existing?.strength ?? 1, loop: existing?.loop ?? false,
+        fadeIn: refs.fadeSec, fadeOut: refs.fadeSec,
         trimStart: refs.trimStart || 0, trimEnd: refs.trimEnd || 0,
       };
       const s = await getState();
@@ -346,18 +426,62 @@ function buildColumn(cam, index) {
       if (k >= 0) cues[k] = cue; else cues.push(cue);
       const r2 = await postState({ cues });
       if (!r2.ok) throw new Error('state 保存失敗');
+      if (state) state.cues = cues;   // poll 到達前でも即座に一覧へ反映
+      refs.selectedCueId = id; refs.selCueMaskUrl = cue.maskUrl; refs.maskEdited = false;
+      renderCueList();
       ed(`✓ 保存（${maskUrl ? 'マスク付き' : '全面差し替え'}）。演出 ON で出る`, 'ok');
     } catch (e) { ed('保存失敗: ' + e.message, 'err'); }
   };
 
-  // ===== 操作系（演出 ON/OFF・固定）=====
+  q('.cue-add').onclick = () => {
+    refs.selectedCueId = null;
+    loadCueIntoEditor(null);
+    renderCueList();
+    ed('新規 cue: 素材を選び 💾 保存', '');
+  };
+  q('.cue-dup').onclick = async () => {
+    const cur = refs.selectedCueId ? camCues().find((c) => c.id === refs.selectedCueId) : null;
+    if (!cur) return ed('複製する cue を選んで', 'err');
+    const id = nextCueId();
+    const cue = { ...JSON.parse(JSON.stringify(cur)), id, name: (cur.name || cur.id) + ' 複製' };
+    const s = await getState();
+    const cues = s.cues || []; cues.push(cue);
+    const r2 = await postState({ cues });
+    if (!r2.ok) return ed('複製失敗', 'err');
+    if (state) state.cues = cues;
+    selectCue(id);
+    ed('✓ 複製', 'ok');
+  };
+  q('.cue-del').onclick = async () => {
+    const id = refs.selectedCueId;
+    if (!id || !camCues().some((c) => c.id === id)) return ed('削除する cue を選んで', 'err');
+    if (state?.control?.activeCue === id) await postCommand({ type: 'stopCue' });
+    const s = await getState();
+    const cues = (s.cues || []).filter((c) => c.id !== id);
+    const r2 = await postState({ cues });
+    if (!r2.ok) return ed('削除失敗', 'err');
+    if (state) state.cues = cues;
+    const rest = camCues();
+    refs.selectedCueId = rest[0]?.id || null;
+    loadCueIntoEditor(rest[0] || null);
+    renderCueList();
+    ed('✓ 削除', 'ok');
+  };
+  cueNameI.onchange = () => {
+    const id = refs.selectedCueId; if (!id) return;
+    const cues = state?.cues; if (!cues) return;
+    const cue = cues.find((c) => c.id === id);
+    if (cue) { cue.name = cueNameI.value.trim() || cue.name; postState({ cues }); renderCueList(); }
+  };
+
+  // ===== 操作系（演出 ON/OFF・固定）= 選択中の cue を発火 =====
   q('.cue-toggle').onclick = () => {
-    const id = `cue_${refs.cam.id}`;
+    const id = refs.selectedCueId;
+    if (!id) { ed('先に cue を選択 / 保存', 'err'); return; }
     const active = state?.control?.activeCue === id;
     if (active) { postCommand({ type: 'stopCue' }); return; }
-    // 演出 ON は「保存済み cue を発火」するだけ。未保存なら Quest 側で出ないので警告。
     const exists = (state?.cues || []).some((c) => c.id === id);
-    if (!exists) { ed('このカメラの cue が未保存。合成素材を選び 💾 cue 保存してから演出 ON', 'err'); return; }
+    if (!exists) { ed('この cue は未保存。💾 保存してから演出 ON', 'err'); return; }
     postCommand({ type: 'playCue', id });
   };
   q('.col-switch').onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
@@ -477,14 +601,10 @@ function buildColumn(cam, index) {
   // ===== WebGL ビュー（ScreenComposite 再現）=====
   setupView(refs, q('.view-canvas'), mctx, maskCanvas);
 
-  // 既存 cue があれば素材・区間・フェードを復元（見た目を現状に合わせる）
-  const existing = (state?.cues || []).find((c) => c.id === `cue_${cam.id}`);
-  if (existing) {
-    if (existing.fadeIn != null) { refs.fadeSec = existing.fadeIn; fadeSecI.value = existing.fadeIn; }
-    if (existing.trimStart != null) { refs.trimStart = existing.trimStart; trimStartI.value = existing.trimStart; }
-    if (existing.trimEnd != null) { refs.trimEnd = existing.trimEnd; trimEndI.value = existing.trimEnd; }
-    if (existing.sourceUrl) { srcSelect.value = existing.sourceUrl; loadSource(existing.sourceUrl); }
-  }
+  // 初期選択: このカメラの最初の cue を選ぶ（無ければ空の編集状態）。
+  const firstCue = camCues()[0];
+  if (firstCue) selectCue(firstCue.id);
+  else { renderCueList(); loadCueIntoEditor(null); }
 
   connectLive();
   refs.populateSources();
@@ -573,8 +693,17 @@ function syncColumn(refs, cam) {
   // ストリーム再接続は接続パラメータ変化時のみ
   const key = `${cam.host || ''}|${cam.port || 8080}|${cam.auth || ''}`;
   if (key !== refs.streamKey) { refs.streamKey = key; refs.connectLive(); }
-  // 演出 ON/OFF トグル（このカメラの cue が発火中か）
-  const cueActive = state?.control?.activeCue === `cue_${cam.id}`;
+  // cue 一覧を state に追従（選択が消えたら先頭へ寄せて編集エリアも更新）。
+  if (refs.renderCueList) {
+    const cc = (state?.cues || []).filter((c) => (c.camera || '') === cam.id);
+    if (refs.selectedCueId && !cc.some((c) => c.id === refs.selectedCueId)) {
+      refs.selectedCueId = cc[0] ? cc[0].id : null;
+      if (refs.loadSelectedCue) refs.loadSelectedCue();
+    }
+    refs.renderCueList();
+  }
+  // 演出 ON/OFF トグル（選択中の cue が発火中か）
+  const cueActive = state?.control?.activeCue === refs.selectedCueId;
   if (cueActive && !refs.cueActive) {
     // 演出 ON になった瞬間: 動画を再生区間の頭から再生、終了フラグをリセット
     refs.overlayEnded = false;
@@ -622,7 +751,7 @@ async function pollState() {
   for (;;) {
     try {
       const s = await (await fetch(`/state?rev=${rev}`)).json();
-      if (s.rev !== rev) { rev = s.rev; state = s; renderColumns(); renderStatus(); floorMap && floorMap.onState(s); }
+      if (s.rev !== rev) { rev = s.rev; state = s; renderColumns(); renderStatus(); floorMap && floorMap.onState(s); schedule && schedule.onState(s); }
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
   }
 }
@@ -749,6 +878,39 @@ if ($('#floorMap')) {
     saveLayout: (layout) => postState({ layout }),
   });
   if (state) floorMap.onState(state);
+}
+
+// ---- 周回スケジュール --------------------------------------------------------
+if ($('#schedule')) {
+  schedule = createSchedule($('#schedule'), {
+    getCameras: () => state?.cameras || [],
+    getCues: () => state?.cues || [],
+    getCourseOrder: () => state?.layout?.course?.order || null,
+    saveSchedule: (sc) => postState({ schedule: sc }),
+  });
+  if (state) schedule.onState(state);
+}
+
+// ---- ビルド用エクスポート ----------------------------------------------------
+if ($('#exportBuild')) {
+  $('#exportBuild').onclick = async () => {
+    const r = $('#exportResult');
+    r.textContent = 'エクスポート中…'; r.className = 'ed-status';
+    try {
+      const res = await (await fetch('/export-build', { method: 'POST' })).json();
+      if (!res.ok) throw new Error(res.error || 'エクスポート失敗');
+      const mb = (res.totalBytes / 1024 / 1024).toFixed(2);
+      r.textContent = `✓ ${res.count} ファイル / ${mb}MB → ${res.outDir}`;
+      r.className = 'ed-status ok';
+      const fl = $('#exportFiles'); fl.innerHTML = '';
+      for (const c of res.copied) {
+        const d = document.createElement('div'); d.className = 'export-file';
+        d.textContent = `${c.from} → ${c.to}（${Math.round(c.size / 1024)}KB）`;
+        fl.appendChild(d);
+      }
+      if (!res.copied.length) { const d = document.createElement('div'); d.className = 'export-file'; d.textContent = '（コピー対象アセットなし。show.json のみ出力）'; fl.appendChild(d); }
+    } catch (e) { r.textContent = '✕ ' + e.message; r.className = 'ed-status err'; }
+  };
 }
 
 pollState();
