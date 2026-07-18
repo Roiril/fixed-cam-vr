@@ -84,6 +84,23 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 | Lag detect | `recv_fps / phone_fps < 0.7` が 1.5s 続いたら強制再接続 | TCP cwnd 縮みっぱなし状態を自動復旧 |
 | Monitor | `/health` の `latestFrameAgeMs` / `sentFrames` で原因切り分け | 配信側 stall vs ネットワーク詰まりを判別 |
 
+## ビューア体験レイヤ（追従・切替・フェイルソフト）— 2026-07-19
+
+計画 [.claude/plans/2026-07-19_viewer-ux.md](../plans/2026-07-19_viewer-ux.md)（設計契約・初期パラメータ表はここが正）。
+
+- **追従の緩急**: [`ScreenAnchor`](../../Assets/Scripts/Streaming/ScreenAnchor.cs) は yaw 純スナップを廃止し
+  deadzone 10° + SmoothDamp 0.3s + 角速度上限 110°/s + 逆走ガード（`YawFollowLogic` 純ロジック・テストあり）。
+  提示 2.0m・中心 -8°・スクリーン 4/3 倍（角径維持）。再ロック/ロスト復帰はスナップ禁止・減衰合流
+- **切替は [`CameraSwitchDirector`](../../Assets/Scripts/Streaming/CameraSwitchDirector.cs) に一本化**:
+  クールダウン 2s・最小ショット長 2s（dwell）・**cue 再生中は自動切替凍結**・手動後 8s は自動抑止・
+  dip-to-black 70/100ms + `SwitchAudioCue`（音源は空スロット）。Web cameraOverride は従来どおり即時
+- **フェイルソフト**: [`SignalLostFx`](../../Assets/Scripts/Streaming/SignalLostFx.cs) — 配信断 600ms → 砂嵐へ 150ms、
+  トラッキングロスト/pause 明けは追従凍結 + 弱ノイズ → 減衰合流。体験者には「信号ロスト」に見える
+- **⚠ ScreenComposite の `_SwitchDim` / `_SignalLost` は post FX 数式（Web FS_POST 一致規約）の対象外**（別系統 uniform）
+- HUD は既定 OFF（左 Y で表示・STATE 行にスタッフ用の断/凍結/抑止状態）
+- **⚠ 実機試着未実施**（パラメータは全て SerializeField・現場調整前提）。ゾーン 2 秒未満で駆け抜けると
+  dwell により切替が発生しない点に注意（minDwellSec で調整）
+
 ## スクリーン表示モデル（固定枠 + シェーダ letterbox）
 
 **web-compositor と同じモデル**（2026-06-11 移行）。Screen Quad の Transform は authored のまま**不変**で、フィット・回転・合成・ポスト FX は全部 [`ScreenComposite.shader`](../Assets/Art/Shaders/Streaming/ScreenComposite.shader) の UV 空間で完結する。
