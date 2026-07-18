@@ -87,7 +87,8 @@ HUD の各行を順に確認：
 
 [`OvrControllerBridge.cs`](../Assets/Scripts/OvrBridge/OvrControllerBridge.cs) のマッピングに準拠：
 
-- [ ] 右コントローラ **A**（`Button.One`）→ 次のカメラに切替
+- [ ] **両グリップ 3 秒長押しで Staff モードに入る**（2026-07-19〜 Run モード中は全ボタン封印。チートシートが視界に出る）
+- [ ] 右コントローラ **A**（`Button.One`）→ 次のカメラに切替（Staff モード中のみ）
 - [ ] 右コントローラ **B**（`Button.Two`）→ 前のカメラに切替
 - [ ] 左コントローラ **X**（`Button.Three`）→ ScreenAnchor の head-lock ON/OFF（[`ScreenAnchor.Toggle`](../Assets/Scripts/Streaming/ScreenAnchor.cs)）
 - [ ] 切替時に黒フレーム / フリーズが無い

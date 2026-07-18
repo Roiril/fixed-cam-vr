@@ -11,9 +11,12 @@ namespace FixedCamVr.Tracking
     /// <see cref="CourseFrame"/> の剛体変換 3 DOF（XZ 平行移動 + yaw）だけ。旧 ZoneCalibrator の
     /// 「ゾーン選択・ドラッグ・リサイズ・全体回転」の操作系は全廃し、登録リチュアルに置換した。
     ///
-    /// フロー（両グリップ 3 秒長押しで開始 = <see cref="Toggle"/> を Bridge が呼ぶ）:
-    ///   1. CaptureP1 … 壁の外角（L の凸角 = course <see cref="regPoint1"/>）に先端を当てて A
-    ///   2. CaptureP2 … 北腕の東端（course <see cref="regPoint2"/>）に当てて A
+    /// フロー（Staff モードで右スティック押込により開始 = <see cref="Toggle"/> を Bridge が呼ぶ）:
+    ///   1. CaptureP1 … 壁の外角（L の凸角 = course <see cref="regPoint1"/>）に先端を当てて
+    ///      **A を押したまま 0.5 秒静止**（ホールド中の位置サンプル平均を採用 = 手先ジッタ低減。
+    ///      0.5 秒未満で離すとマーク不成立でやり直し）
+    ///   2. CaptureP2 … 北腕の東端（course <see cref="regPoint2"/>）に同じく当てて A ホールド 0.5 秒。
+    ///      待機中は 1 点目との実測距離 vs 既知ベースラインの誤差 % をガイダンスへライブ表示
     ///      → 2 点から平行移動 + yaw を解く（スケールは解かない＝剛体）。2 点間の実測距離が
     ///        既知距離から <see cref="distanceTolerance"/> 以上ズレたらエラー表示してやり直し。
     ///   3. Verify … 壁ポリライン + フロア外周をワイヤーフレームでゴースト表示。実物の壁に重なるか目視。
@@ -72,13 +75,14 @@ namespace FixedCamVr.Tracking
         [SerializeField, Min(0.1f)] private float wallHeight = 1.0f;
 
         [Header("Behavior")]
-        [Tooltip("起動と同時に登録モードへ入る（通常は両グリップ長押しで入る）。")]
+        [Tooltip("起動と同時に登録モードへ入る（通常は Staff モードで右スティック押込により入る）。")]
         [SerializeField] private bool startInRegistration = false;
 
         /// <summary>Bridge から毎フレーム渡される登録入力（モード中のみ）。</summary>
         public struct RegInput
         {
-            public bool mark;         // A（右）: 基準点をマーク / Verify 中はやり直し
+            public bool mark;         // A（右）の Down エッジ: マークサンプリング開始 / Verify 中はやり直し
+            public bool markHeld;     // A（右）の押しっぱなし状態: ホールド平均サンプリングの継続判定
             public bool confirm;      // B（右）: Verify で確定
             public Vector2 nudgeMove; // 左スティック: 平行移動（x=world X, y=world Z）
             public float nudgeYaw;    // 右スティック横: yaw 微調整
@@ -91,11 +95,28 @@ namespace FixedCamVr.Tracking
 
         private const float StickDeadzone = 0.15f;
 
+        // マーク確定に必要な A ホールド秒。ホールド中の位置サンプルを平均して手先ジッタを均す
+        //（押下瞬間の 1 サンプルは腕の振り・ボタン押し込みのブレをそのまま拾う）。
+        private const float MarkHoldSec = 0.5f;
+
+        // ステップ 2 のライブ誤差 % 表示の更新間隔 (秒)。毎フレームの文字列生成 GC を間引く。
+        private const float LiveErrorInterval = 0.15f;
+
         private Phase _phase = Phase.Idle;
-        private Vector3 _p1World;              // 1 点目のタッチ位置（ワールド）
+        private Vector3 _p1World;              // 1 点目のタッチ位置（ワールド・ホールド平均）
         private bool _hasP1;
         private string _transientMsg = "";     // エラー等の一時メッセージ
         private float _transientUntil;
+
+        // A ホールド平均サンプリング（CaptureP1/P2 共通）。Feed が毎フレーム加算する（アロケーションなし）。
+        private bool _sampling;
+        private Vector3 _sampleAccum;
+        private int _sampleCount;
+        private float _sampleTime;
+
+        // ステップ 2 のライブ誤差 % ガイダンス（間引き更新のキャッシュ）。
+        private string _liveGuidanceText = "";
+        private float _liveGuidanceNext;
 
         // ---- 可視化 ----
         private GameObject? _vizRoot;
@@ -149,7 +170,7 @@ namespace FixedCamVr.Tracking
             if (_guidance != null) Destroy(_guidance.gameObject);
         }
 
-        /// <summary>Bridge の両グリップ長押しから呼ばれる。登録モードの ON/OFF。</summary>
+        /// <summary>Bridge のモード遷移（Staff → Registration 入場 / 退場）から呼ばれる。登録モードの ON/OFF。</summary>
         public void Toggle() => SetActive(!IsActive);
 
         private void SetActive(bool on)
@@ -159,12 +180,14 @@ namespace FixedCamVr.Tracking
             {
                 _phase = Phase.CaptureP1;
                 _hasP1 = false;
+                _sampling = false;
                 BuildViz();
-                Debug.Log("[CourseReg] 登録モード ON — ステップ1: 壁の外角（L の凸角）に先端を当てて A");
+                Debug.Log("[CourseReg] 登録モード ON — ステップ1: 壁の外角（L の凸角）に先端を当てて A を 0.5 秒ホールド");
             }
             else
             {
                 _phase = Phase.Idle;
+                _sampling = false;
                 TearDownViz();
                 Debug.Log("[CourseReg] 登録モード OFF");
             }
@@ -176,10 +199,10 @@ namespace FixedCamVr.Tracking
             switch (_phase)
             {
                 case Phase.CaptureP1:
-                    if (input.mark) CaptureFirst();
+                    UpdateMarkSampling(input, isSecond: false);
                     break;
                 case Phase.CaptureP2:
-                    if (input.mark) CaptureSecondAndSolve();
+                    UpdateMarkSampling(input, isSecond: true);
                     break;
                 case Phase.Verify:
                     if (input.confirm) { ConfirmAndExit(); return; }
@@ -189,6 +212,40 @@ namespace FixedCamVr.Tracking
             }
         }
 
+        // A ホールド平均のサンプリング進行（CaptureP1/P2 共通）。
+        //   Down エッジで開始 → ホールド中は毎フレーム位置を加算 → MarkHoldSec 経過で平均を確定。
+        //   途中で離したら不成立（ガイダンスにやり直し表示。フェーズは変えないのでそのまま再トライ可）。
+        private void UpdateMarkSampling(in RegInput input, bool isSecond)
+        {
+            if (!_sampling)
+            {
+                if (!input.mark) return;
+                _sampling = true;
+                _sampleAccum = Pointer(); // 押下フレームも 1 サンプル目として使う
+                _sampleCount = 1;
+                _sampleTime = 0f;
+                return;
+            }
+
+            if (!input.markHeld)
+            {
+                // MarkHoldSec 未満で離した → マーク不成立（点は採らない）。
+                _sampling = false;
+                ShowTransient("マーク不成立\n先端を当てたまま A を 0.5 秒静止してください", 2.5f);
+                return;
+            }
+
+            _sampleAccum += Pointer();
+            _sampleCount++;
+            _sampleTime += Time.deltaTime;
+            if (_sampleTime < MarkHoldSec) return;
+
+            _sampling = false;
+            Vector3 avg = _sampleAccum / _sampleCount;
+            if (isSecond) CaptureSecondAndSolve(avg);
+            else CaptureFirst(avg);
+        }
+
         private Vector3 Pointer()
         {
             if (rightHandTransform != null) return rightHandTransform.position;
@@ -196,18 +253,18 @@ namespace FixedCamVr.Tracking
             return Camera.main != null ? Camera.main.transform.position : Vector3.zero;
         }
 
-        private void CaptureFirst()
+        private void CaptureFirst(Vector3 avgPos)
         {
-            _p1World = Pointer();
+            _p1World = avgPos;
             _hasP1 = true;
             _phase = Phase.CaptureP2;
-            Debug.Log($"[CourseReg] P1 記録: world=({_p1World.x:F3},{_p1World.z:F3}) — ステップ2: 北腕の東端に当てて A");
+            Debug.Log($"[CourseReg] P1 記録(0.5s 平均): world=({_p1World.x:F3},{_p1World.z:F3}) — ステップ2: 北腕の東端に当てて A ホールド");
         }
 
-        private void CaptureSecondAndSolve()
+        private void CaptureSecondAndSolve(Vector3 avgPos)
         {
             if (courseFrame == null || !_hasP1) return;
-            Vector3 p2World = Pointer();
+            Vector3 p2World = avgPos;
 
             // XZ 平面での 2 点。y は無視（床は Guardian 基準）。
             Vector2 w1 = new(_p1World.x, _p1World.z);
@@ -280,8 +337,9 @@ namespace FixedCamVr.Tracking
         {
             _phase = Phase.CaptureP1;
             _hasP1 = false;
+            _sampling = false;
             TearDownWireframe();
-            Debug.Log("[CourseReg] やり直し — ステップ1: 壁の外角に先端を当てて A");
+            Debug.Log("[CourseReg] やり直し — ステップ1: 壁の外角に先端を当てて A を 0.5 秒ホールド");
         }
 
         private void ConfirmAndExit()
@@ -363,17 +421,21 @@ namespace FixedCamVr.Tracking
                 switch (_phase)
                 {
                     case Phase.CaptureP1:
-                        text = "ステップ 1/2\n壁の外角（L の凸角）に\nコントローラ先端を当てて A";
+                        text = _sampling
+                            ? "計測中… 当てたまま静止（0.5 秒）"
+                            : "ステップ 1/2\n壁の外角（L の凸角）に先端を当てて\nA を押しながら 0.5 秒静止";
                         break;
                     case Phase.CaptureP2:
-                        text = "ステップ 2/2\n北腕の東端に\nコントローラ先端を当てて A";
+                        text = _sampling
+                            ? "計測中… 当てたまま静止（0.5 秒）"
+                            : LiveP2Guidance();
                         break;
                     case Phase.Verify:
                         text = "ワイヤーが実物の壁に重なるか確認\nB = 確定    A = やり直し\n左スティック = 移動   右スティック横 = 回転";
                         break;
                     default: // Idle
                         text = courseFrame != null && courseFrame.NeedsReRegistration
-                            ? "⚠ トラッキング原点が変わりました\n両グリップ 3 秒長押しで再登録してください"
+                            ? "⚠ トラッキング原点が変わりました\n両グリップ 3 秒 → 右スティック押込で再登録"
                             : "";
                         if (!string.IsNullOrEmpty(text)) color = new Color(1f, 0.7f, 0.3f, 1f);
                         break;
@@ -383,6 +445,34 @@ namespace FixedCamVr.Tracking
             _guidance.text = text;
             _guidance.color = color;
             if (_guidanceRenderer != null) _guidanceRenderer.enabled = !string.IsNullOrEmpty(text);
+        }
+
+        // ステップ 2 待機中のガイダンス。現在の先端位置と P1 の実測距離 vs 既知ベースラインの
+        // 誤差 % をライブ表示する（確定前に「いま何 % ズレているか」を見ながら当てられる）。
+        // 文字列生成は LiveErrorInterval 間隔に間引く（毎フレームの補間 GC を避ける）。
+        private string LiveP2Guidance()
+        {
+            if (Time.unscaledTime < _liveGuidanceNext && !string.IsNullOrEmpty(_liveGuidanceText))
+                return _liveGuidanceText;
+            _liveGuidanceNext = Time.unscaledTime + LiveErrorInterval;
+
+            float known = (regPoint2 - regPoint1).magnitude;
+            if (!_hasP1 || known < 1e-4f)
+            {
+                _liveGuidanceText = "ステップ 2/2\n北腕の東端に先端を当てて\nA を押しながら 0.5 秒静止";
+                return _liveGuidanceText;
+            }
+
+            Vector3 p = Pointer();
+            float dx = p.x - _p1World.x;
+            float dz = p.z - _p1World.z;
+            float measured = Mathf.Sqrt(dx * dx + dz * dz);
+            float errPct = (measured - known) / known * 100f;
+            int tolPct = Mathf.RoundToInt(distanceTolerance * 100f);
+            _liveGuidanceText =
+                "ステップ 2/2\n北腕の東端に先端を当てて\nA を押しながら 0.5 秒静止\n" +
+                $"誤差 {(errPct >= 0f ? "+" : "")}{errPct:F1}%（±{tolPct}% で確定可）";
+            return _liveGuidanceText;
         }
 
         // ---- ワイヤーフレーム + フットプリント -----------------------------------

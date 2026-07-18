@@ -5,6 +5,7 @@
         "FixedCamVr.Streaming",
         "FixedCamVr.Tracking",
         "FixedCamVr.Diagnostics",
+        "FixedCamVr.Input",
         "Unity.TextMeshPro",
         "UnityEditor.TestRunner"
     ],

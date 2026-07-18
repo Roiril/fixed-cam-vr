@@ -156,6 +156,20 @@ namespace FixedCamVr.Streaming
         /// <summary>最後に /state を成功受信した realtimeSinceStartup。未接続なら大きな負値。</summary>
         public float LastServerContactTime => _lastServerContactTime;
 
+        // コントローラ操作モード（RUN/STAFF/REG）。OvrControllerBridge が遷移時に push し、heartbeat に載せる。
+        private string _controllerMode = "RUN";
+
+        // server 未設定、または /state を ServerStaleSeconds 受信できていない = 不通と見なす。
+        // long-poll 上限(35s)より長くとり、健全な idle 接続を誤って不通判定しない。
+        private const float ServerStaleSeconds = 40f;
+
+        /// <summary>server が実効的に通じているか（cue 試射のローカルフォールバック分岐に使う）。</summary>
+        private bool ServerReachable
+            => server != null && (Time.realtimeSinceStartup - _lastServerContactTime) < ServerStaleSeconds;
+
+        /// <summary>コントローラ操作モードのラベル（RUN/STAFF/REG）を設定する。heartbeat で卓へ報告する。</summary>
+        public void SetControllerMode(string mode) => _controllerMode = string.IsNullOrEmpty(mode) ? "RUN" : mode;
+
         /// <summary>卓サーバの接続先設定（null なら卓連携なし）。DiscoveryClient が現エンドポイント比較に読む。</summary>
         public ShowServerSource? Server => server;
 
@@ -623,9 +637,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 今アクティブなカメラの cue（id = cue_&lt;camId&gt;）を ON/OFF する。コントローラのグリップ単押し等から呼ぶ。
-        /// show.json を唯一の正に保つため、ローカルで直接 PlayCue せず /command（playCue/stopCue）をサーバへ送る
-        /// → 自分の long-poll が即座に戻り Apply が実再生/停止する（web UI 表示・heartbeat とも整合）。
-        /// サーバ未接続時は cue 定義自体が無いので発火不可（その旨をログ）。
+        ///
+        /// - server 接続中: show.json を唯一の正に保つため、ローカルで直接 PlayCue せず /command（playCue/stopCue）を
+        ///   サーバへ送る → 自分の long-poll が即座に戻り Apply が実再生/停止する（web UI 表示・heartbeat とも整合）。
+        /// - server 未設定 / 不通: 焼き込み・端末キャッシュの cue 定義から <see cref="ResolveCue"/> して
+        ///   ScreenOverlayController を**ローカル直呼び**する（PC 不在では /command が届かず発火できない既知の穴を塞ぐ）。
+        ///   CueScheduler が引くのと同じ _cues プールなので焼き込み cue はそのまま鳴る。
         /// </summary>
         public void ToggleActiveCameraCue()
         {
@@ -637,9 +654,36 @@ namespace FixedCamVr.Streaming
                 : ((char)('A' + idx)).ToString(); // long-poll 前のフォールバック（show.json は A/B/C 順）
             string cueId = $"cue_{camId}";
             bool playingThis = _overlay != null && _overlay.Current != null && _overlay.Current.id == cueId;
-            if (playingThis) SendCommand("stopCue", "");
-            else SendCommand("playCue", cueId);
-            Debug.Log($"[ShowControl] grip cue toggle: cam={camId} -> {(playingThis ? "stop" : cueId)}");
+
+            if (ServerReachable)
+            {
+                if (playingThis) SendCommand("stopCue", "");
+                else SendCommand("playCue", cueId);
+                Debug.Log($"[ShowControl] grip cue toggle: cam={camId} -> {(playingThis ? "stop" : cueId)}");
+                return;
+            }
+
+            // ローカルフォールバック（server 未設定 / 不通）。
+            if (_overlay == null)
+            {
+                Debug.LogWarning("[ShowControl] grip cue toggle: ScreenOverlayController 不在のためローカル発火不可");
+                return;
+            }
+            if (playingThis)
+            {
+                _overlay.StopOverlay();
+                Debug.Log($"[ShowControl] grip cue toggle (local): cam={camId} -> stop");
+                return;
+            }
+            OverlayCueData? data = ResolveCue(cueId);
+            if (data == null)
+            {
+                Debug.LogWarning($"[ShowControl] grip cue toggle (local): cue 未定義 {cueId}" +
+                                 "（焼き込み/端末キャッシュに cues があるか確認）");
+                return;
+            }
+            _overlay.PlayCue(data);
+            Debug.Log($"[ShowControl] grip cue toggle (local): cam={camId} -> {cueId}");
         }
 
         private void SendCommand(string type, string id)
@@ -766,6 +810,9 @@ namespace FixedCamVr.Streaming
             public float recvFps;
             public string playingCue = "";
             public string cameraOverride = "";
+            // コントローラ操作モード（RUN/STAFF/REG）。スタッフが遠隔でモードを把握するため。
+            // サーバ側は未知フィールドを無視するので送るだけでよい。
+            public string mode = "RUN";
             // ここまで適用した show.json の rev。UI / 自動検証が「Unity 反映済み」を機械判定する。
             public int appliedRev = -1;
             // ライブモニタ用（任意）: HMD の course space XZ と現在ゾーンラベル。
@@ -788,6 +835,7 @@ namespace FixedCamVr.Streaming
                     hb.recvFps = active?.ReceivedFps ?? 0f;
                     hb.playingCue = _overlay?.Current?.id ?? "";
                     hb.cameraOverride = _appliedOverride;
+                    hb.mode = _controllerMode;
                     hb.appliedRev = _rev;
                     if (HeadCourseXZProvider != null)
                     {

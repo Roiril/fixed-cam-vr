@@ -47,6 +47,10 @@ namespace FixedCamVr.Diagnostics
         private float _fps;
         private bool _visible;
 
+        // コントローラの操作モード（RUN/STAFF/REG）。OvrControllerBridge が遷移時に push する
+        //（Diagnostics → OvrBridge/Input への asmdef 依存を作らないため文字列を受け取るだけ）。
+        private string _modeLabel = "";
+
         /// <summary>HUD の表示・非表示を外部から切り替える。</summary>
         public void SetVisible(bool v)
         {
@@ -56,6 +60,9 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>現在の表示状態。</summary>
         public bool IsVisible => _visible;
+
+        /// <summary>コントローラ操作モードのラベル（RUN/STAFF/REG）を STATE 行へ反映する。</summary>
+        public void SetModeLabel(string label) => _modeLabel = label ?? "";
 
         private void OnEnable()
         {
@@ -90,7 +97,7 @@ namespace FixedCamVr.Diagnostics
             BuildHmdLine(_sb);
             _sb.Append('\n');
             BuildFxLine(_sb);
-            if (signalFx != null || switchDirector != null)
+            if (signalFx != null || switchDirector != null || _modeLabel.Length > 0)
             {
                 _sb.Append('\n');
                 BuildStateLine(_sb);
@@ -234,6 +241,12 @@ namespace FixedCamVr.Diagnostics
         private void BuildStateLine(StringBuilder sb)
         {
             sb.Append("STATE ");
+            if (_modeLabel.Length > 0)
+            {
+                sb.Append("MODE ");
+                sb.Append(_modeLabel);
+                if (signalFx != null || switchDirector != null) sb.Append("  ");
+            }
             if (signalFx != null)
             {
                 sb.Append("SIG ");
