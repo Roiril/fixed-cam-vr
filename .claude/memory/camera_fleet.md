@@ -11,11 +11,15 @@ metadata:
 
 | スロット | 端末 | アプリ | IP（DHCP・揮発） | 検証 |
 |---|---|---|---|---|
-| Phone01 / cam A | Pixel 7a（3C251JEHN03582） | fixed-cam-streamer **v0.3.0**（:8080・cameraId 刻印済み） | 192.168.11.26（7/17） | Web 卓 /cam 200 OK・29.7fps |
-| Phone02 / cam B | Pixel 7a（37081JEHN03028） | fixed-cam-streamer **v0.3.0**（:8080・cameraId 刻印済み） | 192.168.11.12（7/17） | Web 卓 /cam 200 OK・29.7fps |
-| Phone03 / cam C | Pixel 7a（37201JEHN14152） | fixed-cam-streamer **v0.3.0**（:8080・cameraId 刻印済み） | 192.168.11.27（7/17） | Web 卓 /cam 200 OK・30fps |
+| Phone01 / cam A | Pixel 7a（3C251JEHN03582） | fixed-cam-streamer **v0.5.0**（:8080・cameraId 刻印済み） | 192.168.11.26（7/17） | Web 卓 /cam 200 OK・29.7fps |
+| Phone02 / cam B | Pixel 7a（37081JEHN03028） | fixed-cam-streamer **v0.5.0**（:8080・cameraId 刻印済み） | 192.168.11.12（7/17） | Web 卓 /cam 200 OK・29.7fps |
+| Phone03 / cam C | Pixel 7a（37201JEHN14152） | fixed-cam-streamer **v0.5.0**（:8080・cameraId 刻印済み） | 192.168.11.27（7/17） | Web 卓 /cam 200 OK・30fps |
 
 **2026-07-17 から現行フリートは Pixel 7a ×3 に統一**（全台 streamer v0.2.0・認証なし・:8080）。iPhone 13 Pro + IP Camera Lite（:8081・Basic admin/admin）は予備構成へ降格 — 使う時は該当カメラの auth を戻す。
+
+**v0.5.0（2026-07-18）**: 決定性キャプチャプロファイル — EIS/OIS/AF を明示 OFF（EIS は端末既定 ON で超広角を不可視クロップしていた・dumpsys 実測）、フリッカー 50Hz・露出補正 0 固定、AE/AWB は AUTO 維持（🔒は AE/AWB のみ）。実効値は `/health` の eisMode/cropRatio/iso 等で観測可。lensFovDeg は物理レンズ intrinsic 由来に是正（超広角 =104.3°、旧 129° は誤算出）。
+
+**v0.4.0（2026-07-18）**: 配信中核を Service へ移管。HOME/画面 OFF/別アプリでも 30fps 維持（旧: 2.5fps に激減）。
 
 **v0.3.0（2026-07-18）**: cameraId（A/B/C）を端末に刻印（画面巨大表示・再起動永続）+ fixedcam-discovery/1（UDP :8830、probe→unicast announce）。IP が変わっても Web 卓が自動追従・Quest が ID で自動張り替え。ID は .26=A / .12=B / .27=C（show.json と一致）。
 
