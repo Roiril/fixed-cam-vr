@@ -114,7 +114,9 @@ IP 変動・入れ替わりで「間違った映像が間違ったゾーンに�
 - [x] streamer ビルド → 3 台へインストール → PC から python で probe → 3 台の announce 応答を実測（ID 永続・即時反映も確認）
 - [x] Unity コンパイル（エラー 0）+ EditMode テスト 93/93 pass ／ [ ] Setup 再実行（Editor が TableDuoMain 使用中でブロック・後続）
 - [x] Web 卓：/discovery・/diag 実測、host 破壊→自動追従 1 秒復元を確認
-- [ ] 廻リ視 APK ビルド → Quest（2G0YC1ZF7S06BW）へインストール → adb logcat で「PC 不在でも ID 解決 → 接続」を確認
+- [x] 廻リ視 APK → Quest インストール → 実機検証（opus デバッグエージェント）:
+      **クリーン再起動 + 壊れ IP 起動 → 4.9s（設計値 5s）でフレーム断 → /info ID 照合 → 正 IP へ自動張替を確認**。
+      ライブ破壊テストも張替成功（100ms・断アキュムレータ飽和済みだったため）。churn/フラップ無し
 - [ ] ドキュメント同期（streaming.md 契約 / README / troubleshooting.md 逆引き / camera_fleet memory）+ pathspec コミット
 
 ## 境界・注意
@@ -130,4 +132,6 @@ IP 変動・入れ替わりで「間違った映像が間違ったゾーンに�
 - 実測: probe→3 台 unicast 応答 / ID 再起動永続 / PC 卓 /discovery・/diag / **host 破壊→自動追従 1 秒復元**
 - 設計転換の記録: Quest は broadcast を受信しない（probe 送信+unicast 受信のみ）→ MulticastLock・共有 manifest 改変を回避
 - 逸脱採用: /info 照合は UnityWebRequest でなく既存 StreamMetadataFetcher（HttpClient）経路（Allow HTTP 設定の罠を回避する実績経路）。サブネットスイープは未実装（フォールバック未着・必要になったら追加）
-- 残: Setup 再実行 + Quest 実機検証（Editor が TableDuoMain 使用中のため保留）、Phase 4 Service 化
+- 2026-07-18 Quest 実機検証完了（discovery 張替は設計どおり機能）。シーン配線コミット b79c4a9
+- **実機検証で発見した設計ギャップ**: 「正 IP なのに受信 0」（half-open/dead socket）は discovery（同一 IP を候補にしない）でも lag-detect（/health fps 必要）でも救えない → CameraStream に **stall watchdog**（無フレーム 10s + cooldown で同一エンドポイント強制再接続）を追加して閉じた
+- 残: HMD 装着時 suspend 挙動・二重 ID conflict・show-server 発見の実機確認（次回現場テストで）、Phase 4 Service 化

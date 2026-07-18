@@ -47,8 +47,13 @@ namespace FixedCamVr.Streaming
         // この秒数を超える unscaledDeltaTime は「フリーズ明け（HMD 着脱 / OS pause）」とみなす。
         // 通常フレームは ~0.01s、ヒッチでも <0.2s。0.5s なら誤検知なく pause だけ拾える。
         private const float ResumeGapSec = 0.5f;
+        // 「接続は張れている風なのに受信 0」(half-open socket 等) を強制再接続で自己修復する閾値。
+        // discovery は同一エンドポイントを候補にせず、lag-detect は /health fps が読めないと発火しない
+        // ため、この watchdog が無いと非アクティブカメラが dead socket のまま滞留する（2026-07-18 実機観測）。
+        private const float StallReconnectSec = 10f;
         private float _lagWindowAccum;
         private float _lastReconnectTime;
+        private float _lastFrameTime;
 
         // /health の latestFrameAgeMs と receivedTickMs から推定する E2E 遅延（ms）。
         // 「frame が capture されてから Unity がテクスチャに上げるまで」の参考値。
@@ -240,6 +245,7 @@ namespace FixedCamVr.Streaming
                 _metaRefreshAccum = 0f;
                 _healthRefreshAccum = 0f;
                 _lastReconnectTime = Time.realtimeSinceStartup;
+                _lastFrameTime = Time.realtimeSinceStartup;
                 Debug.Log($"[HmdLife] {_source.DisplayName} resume-gap (dt={Time.unscaledDeltaTime:F2}s) -> reset");
                 return;
             }
@@ -255,6 +261,7 @@ namespace FixedCamVr.Streaming
                 if (_lastSeq != 0 && meta.seq > _lastSeq + 1)
                     DroppedFrames += (meta.seq - _lastSeq - 1);
                 _lastSeq = meta.seq;
+                _lastFrameTime = Time.realtimeSinceStartup;
 
                 // E2E 遅延推定: /health の clockSkew 補正は無いので、ここでは「Unity 受信からテクスチャ反映」までを表示
                 if (meta.captureNs != 0)
@@ -309,6 +316,19 @@ namespace FixedCamVr.Streaming
                 {
                     _lagWindowAccum = 0f;
                 }
+            }
+
+            // Stall watchdog: 無フレームが StallReconnectSec 続いたら同一エンドポイントへ強制再接続。
+            // suspend 中は表示を止めているだけなので発火させない。初回はここで基準時刻をシード。
+            if (_lastFrameTime == 0f) _lastFrameTime = now;
+            if (!_suspended
+                && now - _lastFrameTime >= StallReconnectSec
+                && now - _lastReconnectTime >= LagReconnectCooldownSec)
+            {
+                Debug.Log($"[CameraStream] {_source.DisplayName} stall detected ({now - _lastFrameTime:F1}s 無フレーム). reconnecting.");
+                _receiver.RequestReconnect();
+                _lastReconnectTime = now;
+                _lastFrameTime = now;
             }
         }
 
