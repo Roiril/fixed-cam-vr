@@ -181,3 +181,8 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 **未対応（レビューで検出・報告のみ）**: client 瞬断再接続時に旧接続タイムアウトまで同席二重アバター（server 側 stale kick 未実装・数秒で自然解消）/ Remy の頭位置無視（前傾が伝わらない）と指リターゲット（P3 予定）/ IK 到達距離クランプ（腕長以上は届かない・仕様）
 **実機確認事項**: bind 修正後の Realistic/Robot 指の曲がり / 低 confidence ゲートでフリーズが増えすぎないか / Remy 平滑の遅延体感
 
+## 2026-07-18 海底探検の物理統一 + 赤マーカー縮小（ユーザー要望・EditMode 未再計測・実機未検証）
+- **潜水艦ボード（`DSA_Board`）を宝物チップと同じ物理に統一**: [TableDuoSceneSetup.PlaceDeepSeaAdventure](../../Assets/TableDuo/Scripts/Editor/TableDuoSceneSetup.cs) の `submarine_board.glb` 配置に `physics: true` を追加 → `AttachPiecePhysics`（Rigidbody mass0.1 + BoxCollider + NetworkRigidbody + TableProps レイヤー）が付く。当初「薄板なので物理なし＝kinematic 追従のみ」だったのを撤回。掴み/投げ/転がし/卓外リスポーンがチップと同挙動。scale は実寸のまま（1.6x にするとチェーン配置と噛み合わない）
+- **赤色マーカー＝空気マーカー（`DSA_air_marker`・README で「赤い丸チップ」）を 0.8 倍**: `scale: chipScale` → `chipScale*0.8`（1.6→**1.28**。上記 07-02 (4)/(5) の「空気マーカー 1.6倍」記述はこの版で上書き）。物理はそのまま維持
+- Setup 再生成でライブシーンに反映済み（DSA_Board に Rigidbody/BoxCollider、DSA_air_marker localScale=1.28 を MCP で確認）。**薄板ボードの dynamic はトンネリング懸念があるので実機で落下・投げ挙動を要確認**
+

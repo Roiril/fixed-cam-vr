@@ -572,9 +572,11 @@ namespace TableDuoVr.EditorTools
             const float boardChipGap = 0.008f;    // 船下端とチップ先端の隙間
             float board0X = pts[0].x;
             float boardZ = pts[0].z + chip0TipReach + boardChipGap + boardHalfDepth;
-            // 潜水艦ボードも掴める（2026-07-10 ユーザー要望）。薄板なので物理は付けない（kinematic 追従のみ）
+            // 潜水艦ボードも掴める（2026-07-10 ユーザー要望）。宝物チップと同じ物理（Rigidbody + BoxCollider
+            // + NetworkRigidbody + TableProps レイヤー）に統一（2026-07-18 ユーザー要望）。掴み/投げ/転がし/
+            // 卓外落下リスポーンがチップと同挙動になる。scale は実寸のまま（1.6x にするとチェーン配置と噛み合わない）
             var board = PlaceModelRealScale($"{DsaGlbDir}/submarine_board.glb", parent, "DSA_Board",
-                new Vector3(board0X, topY, boardZ), 180f, grabbable: true);
+                new Vector3(board0X, topY, boardZ), 180f, grabbable: true, physics: true);
             SetSurfaceClamp(board, topY, cx, cz, hx, hz);
 
             // 裏トークン（丸 X）20 枚を人役側の左（-X）に 2 山で積む。掴める（2026-07-10 ユーザー要望）。
@@ -591,8 +593,9 @@ namespace TableDuoVr.EditorTools
                 new Vector3(sideX - 0.09f, topY, boardZ - 0.09f), 0f, grabbable: true, scale: 1.5f, physics: true, ccd: true);
             var die2 = PlaceModelRealScale($"{DsaGlbDir}/die.glb", parent, "DSA_Die2",
                 new Vector3(sideX - 0.02f, topY, boardZ - 0.09f), 0f, grabbable: true, scale: 1.5f, physics: true, ccd: true);
+            // 赤色マーカー（＝空気マーカー・赤い丸チップ）はチップより一回り小さく 0.8x（2026-07-18 ユーザー要望）
             var air = PlaceModelRealScale($"{DsaGlbDir}/air_marker.glb", parent, "DSA_air_marker",
-                new Vector3(sideX + 0.02f, topY, boardZ), 0f, grabbable: true, scale: chipScale, physics: true);
+                new Vector3(sideX + 0.02f, topY, boardZ), 0f, grabbable: true, scale: chipScale * 0.8f, physics: true);
             SetSurfaceClamp(air, topY, cx, cz, hx, hz);
 
             if (die1 != null) die1.AddComponent<DiceRoller>();

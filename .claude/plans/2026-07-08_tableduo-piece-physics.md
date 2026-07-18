@@ -51,6 +51,9 @@ DiceRoller = リリース時に乱数確定表示）。ここに Rigidbody 物�
 | ダイス | BoxCollider + **CCD (Continuous Dynamic)** | 高速投擲でのトンネリング防止 |
 | トークン/駒 | Box or Capsule 1 個 | メッシュコライダー禁止（凸でも高コスト） |
 | カード | **物理対象外**（Phase 2 で別扱い） | 薄板 dynamic はトンネリング・スタック暴れの温床 |
+| 潜水艦ボード | **物理あり**（2026-07-18 統一。当初は kinematic 追従のみ＝薄板で除外していた） | ユーザー要望でチップと同じ AttachPiecePhysics に統一。掴み/投げ/転がし/卓外リスポーンが同挙動 |
+
+> **2026-07-18 追記（ユーザー要望）**: (1) 潜水艦ボード（`DSA_Board`）を宝物チップと同じ物理（`AttachPiecePhysics` = Rigidbody mass0.1 + BoxCollider + NetworkRigidbody + TableProps）に統一。当初コメントの「薄板なので物理は付けない（kinematic 追従のみ）」を撤回。scale は実寸のまま（1.6x にするとチェーン配置と噛み合わない）。(2) 空気マーカー＝赤色マーカー（`DSA_air_marker`）を `chipScale`(1.6) → `chipScale*0.8`(1.28) に縮小。いずれも [TableDuoSceneSetup.PlaceDeepSeaAdventure](../../Assets/TableDuo/Scripts/Editor/TableDuoSceneSetup.cs)。Setup 再生成で反映済み・**実機未検証**。
 
 - 専用レイヤー `TableProps`: Table と自分同士のみ衝突。手・アバター・自己身体とは**衝突させない**
   （トラッキングの手にコライダーを付けると jitter で駒が爆ぜる。掴みは現行ピンチ方式のまま）
