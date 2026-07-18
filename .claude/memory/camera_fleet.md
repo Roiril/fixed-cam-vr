@@ -11,11 +11,13 @@ metadata:
 
 | スロット | 端末 | アプリ | IP（DHCP・揮発） | 検証 |
 |---|---|---|---|---|
-| Phone01 / cam A | Pixel 7a（3C251JEHN03582） | fixed-cam-streamer **v0.2.0**（:8080） | 192.168.11.26（7/17） | Web 卓 /cam 200 OK・29.7fps |
-| Phone02 / cam B | Pixel 7a（37081JEHN03028） | fixed-cam-streamer **v0.2.0**（:8080） | 192.168.11.12（7/17） | Web 卓 /cam 200 OK・29.7fps |
-| Phone03 / cam C | Pixel 7a（37201JEHN14152） | fixed-cam-streamer **v0.2.0**（:8080） | 192.168.11.27（7/17） | Web 卓 /cam 200 OK・30fps |
+| Phone01 / cam A | Pixel 7a（3C251JEHN03582） | fixed-cam-streamer **v0.3.0**（:8080・cameraId 刻印済み） | 192.168.11.26（7/17） | Web 卓 /cam 200 OK・29.7fps |
+| Phone02 / cam B | Pixel 7a（37081JEHN03028） | fixed-cam-streamer **v0.3.0**（:8080・cameraId 刻印済み） | 192.168.11.12（7/17） | Web 卓 /cam 200 OK・29.7fps |
+| Phone03 / cam C | Pixel 7a（37201JEHN14152） | fixed-cam-streamer **v0.3.0**（:8080・cameraId 刻印済み） | 192.168.11.27（7/17） | Web 卓 /cam 200 OK・30fps |
 
 **2026-07-17 から現行フリートは Pixel 7a ×3 に統一**（全台 streamer v0.2.0・認証なし・:8080）。iPhone 13 Pro + IP Camera Lite（:8081・Basic admin/admin）は予備構成へ降格 — 使う時は該当カメラの auth を戻す。
+
+**v0.3.0（2026-07-18）**: cameraId（A/B/C）を端末に刻印（画面巨大表示・再起動永続）+ fixedcam-discovery/1（UDP :8830、probe→unicast announce）。IP が変わっても Web 卓が自動追従・Quest が ID で自動張り替え。ID は .26=A / .12=B / .27=C（show.json と一致）。
 
 **v0.2.0（2026-07-17）**: カメラエラー自動復旧 / WifiLock + WakeLock 定期更新 / 録画容量ガード / レンズ・ロック永続化 / `/info` appVersion・`/health` clientCount 追加。版確認は `curl http://<ip>:8080/info` の appVersion が最速。
 

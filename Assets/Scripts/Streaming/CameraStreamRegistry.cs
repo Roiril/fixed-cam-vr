@@ -102,6 +102,13 @@ namespace FixedCamVr.Streaming
         /// <summary>登録 CameraSource の数（show.json cameras[] との対応付けに使う）。</summary>
         public int SourceCount => sources.Length;
 
+        /// <summary>index 番の CameraSource（cameraId / 実効エンドポイント参照用）。範囲外は null。</summary>
+        public CameraSource? GetSource(int index)
+        {
+            if (index < 0 || index >= sources.Length) return null;
+            return sources[index];
+        }
+
         /// <summary>
         /// index 番カメラの接続先（host/port/Basic 認証）を show.json / 端末キャッシュ値で実行時上書きする。
         /// 接続パラメータが実際に変わった時だけ MJPEG を張り直す（無変化なら no-op で再接続コストを払わない）。
@@ -114,6 +121,33 @@ namespace FixedCamVr.Streaming
             if (src == null) return;
             string before = src.ConnectionKey;
             src.ApplyRuntimeEndpoint(host, port, user, pass);
+            if (src.ConnectionKey != before)
+                Get(index)?.ReapplyConnection();
+        }
+
+        /// <summary>
+        /// index 番カメラに発見層（cameraId で解決した現在 IP）を適用する。runtime/baked より優先。
+        /// 接続キーが実際に変わった時だけ MJPEG を張り直す（DiscoveryClient が /info 照合後に呼ぶ）。
+        /// </summary>
+        public void ApplyDiscoveryEndpoint(int index, string host, int port)
+        {
+            if (index < 0 || index >= sources.Length) return;
+            var src = sources[index];
+            if (src == null) return;
+            string before = src.ConnectionKey;
+            src.ApplyDiscoveryEndpoint(host, port);
+            if (src.ConnectionKey != before)
+                Get(index)?.ReapplyConnection();
+        }
+
+        /// <summary>index 番カメラの発見層を解除し、runtime/baked へフォールバックする（変化時のみ再接続）。</summary>
+        public void ClearDiscoveryEndpoint(int index)
+        {
+            if (index < 0 || index >= sources.Length) return;
+            var src = sources[index];
+            if (src == null) return;
+            string before = src.ConnectionKey;
+            src.ClearDiscoveryEndpoint();
             if (src.ConnectionKey != before)
                 Get(index)?.ReapplyConnection();
         }

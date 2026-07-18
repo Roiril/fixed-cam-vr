@@ -148,6 +148,24 @@ namespace FixedCamVr.Streaming
         private string _appliedCue = "";
         private string _appliedOverride = "";
 
+        // ---- 発見（discovery）連携用の公開状態 ----
+        // DiscoveryClient が「PC 卓が不通か」を判定するために最後に /state 応答を得た時刻を持つ。
+        // control.discoveryEnabled はキルスイッチ（false で probe/切替を全停止。省略時 true）。
+        private float _lastServerContactTime = -999f;
+
+        /// <summary>最後に /state を成功受信した realtimeSinceStartup。未接続なら大きな負値。</summary>
+        public float LastServerContactTime => _lastServerContactTime;
+
+        /// <summary>卓サーバの接続先設定（null なら卓連携なし）。DiscoveryClient が現エンドポイント比較に読む。</summary>
+        public ShowServerSource? Server => server;
+
+        /// <summary>show.json control.discoveryEnabled（省略時 true）。DiscoveryClient のキルスイッチ上書き。</summary>
+        public bool DiscoveryEnabled { get; private set; } = true;
+
+        /// <summary>index 番カメラが卓で手動固定（pinned）されているか。pinned には discovery を適用しない。</summary>
+        public bool IsCameraPinned(int index)
+            => index >= 0 && index < _cameras.Length && _cameras[index] != null && _cameras[index]!.pinned;
+
         // 直近に解決したカメラ別設定 / global post（ライブ or 端末キャッシュ由来）。
         // ゾーン自律切替（ActiveChanged）でカメラ別 post を再適用するため保持する。
         private CameraDef[] _cameras = Array.Empty<CameraDef>();
@@ -210,6 +228,9 @@ namespace FixedCamVr.Streaming
             // キャッシュ往復後に post の null 判定が壊れる。「個別 post を持つか」は明示 bool を正にする
             // （ライブ受信パース直後に post!=null から確定し、キャッシュにも保存して往復させる）。
             public bool hasPost;
+            // 卓で host を手入力すると自動で true。true のカメラには DiscoveryClient が
+            // 発見層を適用しない（手動固定を尊重）。キャッシュへも往復させる（CachedConfig.cameras 経由）。
+            public bool pinned;
         }
 
         // 端末ローカルへ保存する設定キャッシュ（show.json のうち実機が参照する部分のみ）。
@@ -245,7 +266,15 @@ namespace FixedCamVr.Streaming
             public float grain;
             public float scanline;
         }
-        [Serializable] private class ControlState { public string? activeCue; public string? cameraOverride; }
+        // discoveryEnabled は「省略時 true」を守るため C# 初期化子で true にする
+        // （JsonUtility.FromJson は既定コンストラクタで初期化子を走らせてから present なキーだけ上書きするため、
+        //  JSON にキーが無ければ true が残る。control ブロックごと無い場合も呼び出し側が true 扱いにする）。
+        [Serializable] private class ControlState
+        {
+            public string? activeCue;
+            public string? cameraOverride;
+            public bool discoveryEnabled = true;
+        }
 
         private void Awake()
         {
@@ -330,6 +359,44 @@ namespace FixedCamVr.Streaming
             _loopCts = null;
         }
 
+        /// <summary>
+        /// long-poll / heartbeat ループを掴み直す（server の接続先が発見で張り替わった時に呼ぶ）。
+        /// 進行中の long-poll（最大 35s ハング）を即座に切って新エンドポイントで再起動する
+        /// （URL 自体は BuildUrl が毎回 EffectiveHost を読むので次周回で反映されるが、
+        ///  ハング中の request を待たせないためループごと差し替える。OnEnable と同じ _loopCts 再生成方式）。
+        /// </summary>
+        public void RestartServerLoop()
+        {
+            if (server == null) return;
+            _loopCts?.Cancel();
+            _loopCts?.Dispose();
+            _loopCts = null;
+            if (!isActiveAndEnabled) return;
+            _loopCts = CancellationTokenSource.CreateLinkedTokenSource(destroyCancellationToken);
+            _ = PollLoopAsync(_loopCts.Token);
+            _ = HeartbeatLoopAsync(_loopCts.Token);
+        }
+
+        /// <summary>
+        /// 発見した PC 卓（role="show-server"）の現在 IP を server へ反映しループを掴み直す。
+        /// DiscoveryClient が「server 未通 N 秒」を確認した時のみ呼ぶ。接続先が実際に変わった時だけ再起動。
+        /// </summary>
+        public void ApplyDiscoveredServer(string host, int port)
+        {
+            if (server == null)
+            {
+                Debug.LogWarning("[ShowControl] server 未設定のため発見した show-server を適用できない（ShowServer.asset を割り当てよ）。");
+                return;
+            }
+            string before = server.Endpoint;
+            server.ApplyRuntimeEndpoint(host, port);
+            if (server.Endpoint != before)
+            {
+                Debug.Log($"[ShowControl] 発見した show-server を適用: {host}:{port}（loop 再起動）");
+                RestartServerLoop();
+            }
+        }
+
         private void OnActiveCameraChanged(int _) => ApplyPostForActive();
 
         // ---- state long-poll ----
@@ -354,6 +421,8 @@ namespace FixedCamVr.Streaming
                         await Task.Delay(2000, ct); // サーバ不在。静かにリトライ
                         continue;
                     }
+                    // /state を成功受信した = 卓が通じている。DiscoveryClient の「不通 N 秒」判定の基準。
+                    _lastServerContactTime = Time.realtimeSinceStartup;
                     var state = JsonUtility.FromJson<ShowState>(req.downloadHandler.text);
                     if (state == null)
                     {
@@ -420,6 +489,10 @@ namespace FixedCamVr.Streaming
                 LayoutChanged?.Invoke();
                 CourseChanged?.Invoke(); // course は layout に内包 → 同時通知
             }
+
+            // 1.7) discovery キルスイッチ（control.discoveryEnabled、省略時 true）。
+            //      DiscoveryClient がこれを AND して probe/切替を全停止できる（従来の静的 IP 運用へ縮退）。
+            DiscoveryEnabled = state.control?.discoveryEnabled ?? true;
 
             // 2) カメラ手動 override（show.cameras の並び = registry sources の並びが前提）
             string ovr = state.control?.cameraOverride ?? "";

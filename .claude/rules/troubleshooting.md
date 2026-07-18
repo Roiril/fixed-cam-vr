@@ -33,6 +33,13 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 4. **MCP / コンパイル** — `unity-status` スキル でエラー有無
 5. **Meta XR** — Editor で出るが Quest で出ない → ビルド層 (`adb-logcat` スキル (unity))
 
+### 「カメラの IP が変わった / スロットの対応が崩れた」（2026-07-18 から自動化）
+
+1. streamer v0.3.0+ は端末に cameraId（A/B/C・画面に巨大表示）を刻んであり、Web 卓が beacon で `cameras[].host` を自動追従、Quest もフレーム断時に ID で自動張り替えする。**基本は何もしなくて直る**
+2. 直らない時は Web 卓の「🩺 疎通診断」— PC→カメラ HTTP / beacon / Quest heartbeat の 3 経路が ✅/❌ で出る。**beacon ✅ なのに HTTP ❌ = AP のクライアントアイソレーション**（技術で救えない → 自前 AP へ）
+3. 手動で固定したい時はカメラの host を手入力（自動で 📌 pin され、以後の自動追従・discovery を抑止）
+4. 詳細契約は [streaming.md](streaming.md) の「接続の堅牢化」節
+
 ### 「映像はカクつく / 遅い」
 
 1. `curl /health` で配信側の `fps` / `latestFrameAgeMs` 確認 → 配信側 stall 判別

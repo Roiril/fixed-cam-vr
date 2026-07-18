@@ -172,6 +172,10 @@ function buildColumn(cam, index) {
         <input class="ip-port" placeholder="port" title="streamer=8080 / IP Camera Lite=8081">
         <input class="ip-auth" placeholder="user:pass" title="Basic 認証（空=なし）">
       </div>
+      <div class="pin-row">
+        <span class="pin-state"></span>
+        <button class="pin-clear" style="display:none" title="手動固定を解除して発見の自動追従に戻す">📌 固定を解除</button>
+      </div>
       <div class="view-wrap"><img class="raw-live" alt="生リアルタイム映像"></div>
     </div>`;
 
@@ -209,14 +213,30 @@ function buildColumn(cam, index) {
   q('.fx-reset').onclick = () => { delete refs.cam.post; postState({ cameras: state.cameras }); };
 
   // ===== IP 設定（show.json へ）=====
+  //   手動編集 → pinned=true（自動追従を止める）。解除は 📌 固定を解除ボタン。
+  const pinState = q('.pin-state'), pinClear = q('.pin-clear');
+  refs.syncPin = () => {
+    const pinned = !!refs.cam.pinned;
+    pinState.textContent = pinned ? '📌 手動固定（自動追従オフ）' : '📡 自動追従';
+    pinState.className = 'pin-state' + (pinned ? ' pinned' : '');
+    pinClear.style.display = pinned ? '' : 'none';
+  };
   const onIp = () => {
     refs.cam.host = refs.hostI.value.trim();
     refs.cam.port = parseInt(refs.portI.value, 10) || 8080;
     refs.cam.auth = refs.authI.value.trim();
+    refs.cam.pinned = true;   // 手動編集は固定扱い（発見の自動追従で上書きしない）
     postState({ cameras: state.cameras });
+    refs.syncPin();
     connectLive();
   };
   refs.hostI.onchange = refs.portI.onchange = refs.authI.onchange = onIp;
+  pinClear.onclick = () => {
+    refs.cam.pinned = false;
+    postState({ cameras: state.cameras });
+    refs.syncPin();
+  };
+  refs.syncPin();
 
   // ===== ライブ受信 =====
   refs.liveImg.crossOrigin = 'anonymous';
@@ -683,6 +703,7 @@ function syncColumn(refs, cam) {
   setV(refs.hostI, cam.host || '');
   setV(refs.portI, cam.port || 8080);
   setV(refs.authI, cam.auth || '');
+  refs.syncPin && refs.syncPin();
   const hasPost = !!cam.post;
   for (const [key, , , , , d] of FX) {
     const inp = refs.fxInputs[key];
@@ -913,5 +934,111 @@ if ($('#exportBuild')) {
   };
 }
 
+// ---- 📡 発見済み端末（fixedcam-discovery/1）--------------------------------
+//   /discovery を 3 秒毎ポーリング。camera / show-server を一覧、二重 ID は赤警告。
+//   自動追従トグルはサーバ状態（control.autoFollow）を正として反映する。
+const roleLabel = (r) => (r === 'show-server' ? '🖥 PC 卓' : '📷 カメラ');
+function fmtAge(sec) {
+  if (sec == null) return '—';
+  if (sec < 1) return 'now';
+  return sec < 60 ? `${Math.round(sec)}s前` : `${Math.round(sec / 60)}m前`;
+}
+function renderDiscovery(data) {
+  const list = $('#discList'); if (!list) return;
+  const conflicts = new Set(data.conflicts || []);
+  const devices = data.devices || [];
+  // 自動追従トグル（フォーカス中は上書きしない）
+  const af = $('#autoFollow');
+  if (af && document.activeElement !== af) af.checked = data.autoFollow !== false;
+  const info = $('#autoFollowInfo');
+  if (info) {
+    if (data.lastFollow && data.lastFollow.changes && data.lastFollow.changes.length) {
+      const ch = data.lastFollow.changes.map((c) => `${c.id}→${c.host}`).join(', ');
+      const ago = fmtAge((Date.now() / 1000) - data.lastFollow.at);
+      info.textContent = `直近の追従: ${ch}（${ago}）`;
+    } else info.textContent = '';
+  }
+  const meta = $('#discMeta');
+  if (meta) {
+    meta.textContent = data.enabled === false ? 'discovery 無効'
+      : `show="${data.showToken || ''}" / ${devices.length} 台`;
+    meta.className = 'disc-meta' + (data.enabled === false ? ' off' : '');
+  }
+  list.innerHTML = '';
+  if (!devices.length) {
+    const e = document.createElement('div');
+    e.className = 'disc-empty';
+    e.textContent = data.enabled === false ? '（discovery 無効）' : '（まだ発見なし — 配信アプリの起動と同一 LAN を確認）';
+    list.appendChild(e); return;
+  }
+  for (const d of devices) {
+    const isConf = d.role === 'camera' && conflicts.has(d.id);
+    const card = document.createElement('div');
+    card.className = 'disc-item' + (isConf ? ' conflict' : '') + (d.self ? ' self' : '');
+    const idTxt = d.id && d.id !== '?' ? d.id : '（ID 未設定）';
+    card.innerHTML = `
+      <div class="disc-id">${roleLabel(d.role)} <b>${idTxt}</b>${d.self ? ' <span class="disc-tag">自機</span>' : ''}${isConf ? ' <span class="disc-tag warn">⚠ 二重 ID</span>' : ''}</div>
+      <div class="disc-meta-row">
+        <span class="disc-ip">${d.ip}:${d.port}</span>
+        <span class="disc-ver">v${d.version || '?'}</span>
+        <span class="disc-age">${fmtAge(d.ageSec)}</span>
+      </div>
+      <div class="disc-name">${d.name || ''} <span class="disc-uuid">${(d.uuid || '').slice(0, 14)}</span></div>`;
+    list.appendChild(card);
+  }
+}
+async function pollDiscovery() {
+  for (;;) {
+    try {
+      const d = await (await fetch('/discovery')).json();
+      renderDiscovery(d);
+    } catch { /* offline */ }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+}
+if ($('#autoFollow')) {
+  $('#autoFollow').onchange = (e) => postCommand({ type: 'setAutoFollow', on: e.target.checked });
+}
+
+// ---- 🩺 疎通診断（PC→カメラ /info + ビーコン + Quest heartbeat）--------------
+const okMark = (v) => (v === true ? '✅' : v === false ? '❌' : '—');
+if ($('#runDiag')) {
+  $('#runDiag').onclick = async () => {
+    const st = $('#diagStatus'), out = $('#diagResult');
+    st.textContent = '診断中…（各カメラの /info へ接続）'; st.className = 'ed-status';
+    out.innerHTML = '';
+    let d;
+    try { d = await (await fetch('/diag')).json(); }
+    catch (e) { st.textContent = '✕ 診断失敗: ' + e.message; st.className = 'ed-status err'; return; }
+    // Quest 行
+    const q = d.quest || {};
+    const questRow = document.createElement('div');
+    questRow.className = 'diag-quest';
+    questRow.innerHTML = `<b>Quest heartbeat</b> ${okMark(q.alive)} ${q.alive ? `（${q.activeCamera || '?'} / ${fmtAge(q.ageSec)}）` : '（未受信）'}`;
+    out.appendChild(questRow);
+    // カメラ行
+    let apSuspect = false;
+    for (const c of (d.cameras || [])) {
+      const beaconOkHttpNg = c.beacon === true && c.http === false;
+      if (beaconOkHttpNg) apSuspect = true;
+      const row = document.createElement('div');
+      row.className = 'diag-row' + (beaconOkHttpNg ? ' ap-suspect' : '');
+      row.innerHTML = `
+        <span class="diag-cam"><b>${c.id}</b>${c.pinned ? ' 📌' : ''}</span>
+        <span class="diag-http">/info ${okMark(c.http)} <span class="diag-detail">${c.host ? `${c.host}:${c.port}` : ''} ${c.httpDetail || ''}</span></span>
+        <span class="diag-beacon">ビーコン ${okMark(c.beacon)} <span class="diag-detail">${c.beaconIp ? `${c.beaconIp} / ${fmtAge(c.beaconAgeSec)}` : '未受信'}</span></span>`;
+      out.appendChild(row);
+    }
+    if (apSuspect) {
+      const w = document.createElement('div');
+      w.className = 'diag-warn';
+      w.textContent = '⚠ ビーコンは届くのに /info に繋がらないカメラがある → AP のクライアント間通信遮断（アイソレーション）が濃厚。自前 AP の持ち込みを検討。';
+      out.appendChild(w);
+    }
+    st.textContent = '✓ 完了'; st.className = 'ed-status ok';
+  };
+}
+
 pollState();
 pollUnity();
+pollDiscovery();

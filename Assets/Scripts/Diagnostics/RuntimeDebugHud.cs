@@ -22,6 +22,9 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("現在ゾーン取得元。")]
         [SerializeField] private PlayerZoneTracker? tracker;
 
+        [Tooltip("発見（discovery）状態の取得元。null なら DISC 行を出さない。")]
+        [SerializeField] private DiscoveryClient? discovery;
+
         [Tooltip("HMD 位置取得用 Transform。OVRCameraRig の CenterEyeAnchor を割り当てる。")]
         [SerializeField] private Transform? hmd;
 
@@ -82,7 +85,14 @@ namespace FixedCamVr.Diagnostics
             _sb.Append('\n');
             BuildFxLine(_sb);
 
-            if (registry == null && tracker == null && hmd == null)
+            // 発見（discovery）: カメラ別の { id, 出所レイヤ, 実効エンドポイント, lastSeen, 警告 }。
+            if (discovery != null)
+            {
+                _sb.Append('\n');
+                BuildDiscLines(_sb);
+            }
+
+            if (registry == null && tracker == null && hmd == null && discovery == null)
             {
                 _sb.Clear();
                 _sb.Append("(no refs)");
@@ -207,6 +217,32 @@ namespace FixedCamVr.Diagnostics
             // Fx 系の有効状態は現状 FxSourceBinder からは公開 API として読めないので NA。
             // Fx 側に取得 API が追加され次第ここを実装する。
             sb.Append("FX   CRT NA   Dust NA   Sobel NA");
+        }
+
+        // カメラ別の発見状態を 1 行ずつ。文字列は既存参照の append のみで新規 GC を出さない。
+        // 出所レイヤ: B=baked / S=show.json / D=discovery / P=pinned。!DUP=二重 ID / !MISS=フレーム断。
+        private void BuildDiscLines(StringBuilder sb)
+        {
+            if (discovery == null) return;
+            int n = discovery.CameraCount;
+            for (int i = 0; i < n; i++)
+            {
+                if (!discovery.TryGetCameraStatus(i, out var s)) continue;
+                sb.Append("DISC ");
+                sb.Append(string.IsNullOrEmpty(s.cameraId) ? "-" : s.cameraId);
+                sb.Append(' ');
+                sb.Append(s.layer);
+                sb.Append(' ');
+                sb.Append(s.host);
+                sb.Append(':');
+                sb.Append(s.port);
+                sb.Append("  seen ");
+                if (s.lastSeenAge < 0f) sb.Append('-');
+                else { AppendFloat1(sb, s.lastSeenAge); sb.Append('s'); }
+                if (s.conflict) sb.Append("  !DUP");
+                if (s.missing) sb.Append("  !MISS");
+                if (i < n - 1) sb.Append('\n');
+            }
         }
 
         // 小数 1 桁を非アロケで append。負値は - を付与。

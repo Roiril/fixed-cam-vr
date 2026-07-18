@@ -19,6 +19,14 @@ namespace FixedCamVr.Streaming
         public int rotationDeg;
         public bool isPortrait;
 
+        // ---- 発見プロトコル用（streamer v0.3.0 で /info 末尾に追記。旧版は空/既定）----
+        /// <summary>端末内在カメラ ID（"A"/"B"/"C"）。discovery の切替前照合に使う。空 = 未設定。</summary>
+        public string cameraId = "";
+        /// <summary>install 毎 UUID。roam / conflict 判別用。</summary>
+        public string uuid = "";
+        /// <summary>show トークン（隣ブース混線対策）。切替前に自分の showToken と照合する。</summary>
+        public string show = "";
+
         /// <summary>
         /// rotationDeg を加味した「表示時の論理サイズ」を返す。
         /// 例: 1080x1920 / 90deg → (1920, 1080) になる（向きを正立させた後の見え方）。

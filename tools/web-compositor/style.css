@@ -682,3 +682,55 @@ input:-webkit-autofill:active {
 
 /* 仮想 Quest: schedule 表示 */
 .sim-sched { font-size: 11px; font-family: monospace; opacity: var(--opacity-sub); }
+
+/* ===================================================================== */
+/* ⑩ カメラ列: 手動固定（pinned）表示 — app.js                              */
+/* ===================================================================== */
+.pin-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+.pin-state { font-size: 10px; letter-spacing: .06em; opacity: var(--opacity-mute); }
+.pin-state.pinned { color: var(--accent-color); opacity: 1; }
+.pin-clear { padding: 2px 8px; font-size: 10px; }
+
+/* ===================================================================== */
+/* ⑪ 発見済み端末（📡 discovery）— app.js / index.html                      */
+/* ===================================================================== */
+.discovery { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
+.disc-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px;
+  max-width: 1180px; margin: 0 0 10px; padding: 7px 12px;
+  border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); }
+.disc-bar .chk { font-size: 12px; }
+.disc-follow { font-size: 11px; opacity: var(--opacity-sub); font-variant-numeric: tabular-nums; }
+.disc-meta { font-size: 11px; font-family: monospace; opacity: var(--opacity-mute); }
+.disc-meta.off { color: var(--warn-color); opacity: 1; }
+.disc-list { display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); align-items: start; }
+.disc-item { border: 1px solid var(--line-soft); padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; }
+.disc-item.self { border-left: 2px solid var(--accent-color); }
+.disc-item.conflict { border-color: var(--danger-color); box-shadow: inset 0 0 0 1px var(--danger-color); }
+.disc-id { font-size: 12px; letter-spacing: .04em; }
+.disc-id b { color: var(--accent-color); }
+.disc-tag { font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  border: 1px solid var(--line-input); padding: 1px 5px; opacity: var(--opacity-sub); }
+.disc-tag.warn { color: var(--danger-color); border-color: var(--danger-color); opacity: 1; }
+.disc-meta-row { display: flex; gap: 10px; font-size: 11px; font-family: monospace;
+  opacity: var(--opacity-sub); flex-wrap: wrap; }
+.disc-ip { color: var(--text-color); opacity: 1; }
+.disc-age { margin-left: auto; opacity: var(--opacity-mute); }
+.disc-name { font-size: 10px; opacity: var(--opacity-mute); display: flex; gap: 8px; flex-wrap: wrap; }
+.disc-uuid { font-family: monospace; opacity: .5; }
+.disc-empty { font-size: 11px; opacity: var(--opacity-mute); }
+
+/* ===================================================================== */
+/* ⑫ 疎通診断（🩺 diag）— app.js / index.html                              */
+/* ===================================================================== */
+.diag { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
+.diag-result { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; max-width: 1180px; }
+.diag-quest { font-size: 12px; padding: 6px 10px; border: 1px solid var(--line-soft); }
+.diag-row { display: flex; gap: 14px 20px; flex-wrap: wrap; align-items: baseline;
+  font-size: 12px; padding: 6px 10px; border: 1px solid var(--line-soft); }
+.diag-row.ap-suspect { border-color: var(--warn-color); box-shadow: inset 0 0 0 1px var(--warn-color); }
+.diag-cam { min-width: 32px; }
+.diag-cam b { color: var(--accent-color); }
+.diag-detail { font-size: 10px; font-family: monospace; opacity: var(--opacity-mute); }
+.diag-warn { margin-top: 4px; font-size: 11px; color: var(--warn-color); line-height: 1.5;
+  border: 1px solid var(--warn-color); padding: 8px 10px; }

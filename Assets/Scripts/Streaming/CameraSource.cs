@@ -20,6 +20,12 @@ namespace FixedCamVr.Streaming
     public sealed class CameraSource : ScriptableObject
     {
         [SerializeField] private string displayName = "Phone 01";
+
+        [Tooltip("端末内在カメラ ID（\"A\"/\"B\"/\"C\"）。ゾーン・post・cue の割当先スロットと同じキー。" +
+                 "発見プロトコルで「この ID の現在 IP」を解決するため、配信スマホ側で刻んだ cameraId と照合する。" +
+                 "host（DHCP で揺れる）と違い恒久設定なのでコミット可。空 = discovery 非対象（iPhone 等）。")]
+        [SerializeField] private string cameraId = "";
+
         [SerializeField] private string host = "192.168.1.10";
         [SerializeField] private int port = 8080;
 
@@ -54,12 +60,39 @@ namespace FixedCamVr.Streaming
         [NonSerialized] private string _ovrUser = "";
         [NonSerialized] private string _ovrPass = "";
 
-        private string EffectiveHost => _hasOverride ? _ovrHost : host;
-        private int EffectivePort => _hasOverride ? _ovrPort : port;
+        // ---- 発見（discovery）オーバーライド層 -------------------------------------------
+        // DiscoveryClient が「cameraId → 現在 IP」を実時間解決し、接続断時に張り替える最上位層。
+        // show.json（runtime）や焼き込み .asset より優先する（pin されたカメラには DiscoveryClient が
+        // そもそも適用しない）。host/port のみ差し替え、認証は runtime/baked を維持する
+        // （発見対象 = fixed-cam-streamer は認証なし。IP Camera Lite 等は cameraId 空で discovery 非対象）。
+        [NonSerialized] private bool _hasDiscovery;
+        [NonSerialized] private string _discHost = "";
+        [NonSerialized] private int _discPort;
+
+        // 優先順位: discovery > runtime(show.json) > baked(.asset)。認証層は discovery を通さない。
+        private string EffectiveHost => _hasDiscovery ? _discHost : (_hasOverride ? _ovrHost : host);
+        private int EffectivePort => _hasDiscovery ? _discPort : (_hasOverride ? _ovrPort : port);
         private string EffectiveUser => _hasOverride ? _ovrUser : username;
         private string EffectivePass => _hasOverride ? _ovrPass : password;
 
+        /// <summary>接続先を解決している層。HUD の出所表示（baked/show/disc）に使う。</summary>
+        public enum EndpointLayer { Baked, Runtime, Discovery }
+
+        /// <summary>いま EffectiveHost/Port を決めている層（pin は DiscoveryClient 側の状態なのでここには出ない）。</summary>
+        public EndpointLayer ActiveLayer =>
+            _hasDiscovery ? EndpointLayer.Discovery
+            : (_hasOverride ? EndpointLayer.Runtime : EndpointLayer.Baked);
+
         public string DisplayName => displayName;
+
+        /// <summary>端末内在カメラ ID（"A"/"B"/"C"）。空なら discovery 非対象。</summary>
+        public string CameraId => cameraId;
+
+        /// <summary>現在の実効ホスト（HUD 表示・discovery の現エンドポイント比較用）。</summary>
+        public string EffectiveHostPublic => EffectiveHost;
+        /// <summary>現在の実効ポート。</summary>
+        public int EffectivePortPublic => EffectivePort;
+
         public int Width => width;
         public int Height => height;
 
@@ -79,8 +112,33 @@ namespace FixedCamVr.Streaming
 
         public void ClearRuntimeEndpoint() => _hasOverride = false;
 
+        /// <summary>
+        /// 発見プロトコルで解決した現在 IP を最上位層として適用する（DiscoveryClient から /info 照合後にのみ呼ぶ）。
+        /// host が空 / port が不正なら discovery 層を解除する。認証・runtime・baked 層はそのまま。
+        /// </summary>
+        public void ApplyDiscoveryEndpoint(string host, int port)
+        {
+            if (string.IsNullOrEmpty(host) || port <= 0) { ClearDiscoveryEndpoint(); return; }
+            _hasDiscovery = true;
+            _discHost = host;
+            _discPort = port;
+        }
+
+        public void ClearDiscoveryEndpoint() => _hasDiscovery = false;
+
         /// <summary>接続パラメータの変化検知キー（host|port|user）。再接続要否の判定に使う。</summary>
         public string ConnectionKey => $"{EffectiveHost}|{EffectivePort}|{EffectiveUser}";
+
+        /// <summary>
+        /// 任意の host:port に対する /info URL を作る（discovery の切替前照合用）。
+        /// infoPath 未設定（IP Camera Lite 等）なら空 = 照合不能 → 発見対象外。
+        /// </summary>
+        public string BuildInfoUrlFor(string host, int port)
+        {
+            if (string.IsNullOrEmpty(infoPath)) return "";
+            var prefixed = infoPath.StartsWith("/") ? infoPath : "/" + infoPath;
+            return $"http://{host}:{port}{prefixed}";
+        }
 
         /// <summary>HTTP Basic 認証トークン（"user:pass" の Base64）。username 未設定なら null = 認証なし。</summary>
         public string? BasicAuthToken =>

@@ -64,6 +64,9 @@ namespace FixedCamVr.Streaming
         public bool IsConnected => _receiver.IsConnected;
         public string? LastError => _receiver.LastError;
 
+        /// <summary>HMD 着脱 / OS pause で凍結中か。DiscoveryClient は suspend 中を「フレーム断」に数えない。</summary>
+        public bool IsSuspended => _suspended;
+
         /// <summary>fixed-cam-streamer の /info から取得したメタ情報。未取得 / 非対応サーバなら null。</summary>
         public StreamMetadata? Metadata => _metadata;
 

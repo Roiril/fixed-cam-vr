@@ -152,6 +152,16 @@ namespace FixedCamVr.Streaming.EditorTools
                 Debug.LogWarning("[MainDemoSceneSetup] ShowControlClient が見つかりません。zoneTrackerToDisable の再配線はスキップ。");
             }
 
+            // 2.75. DiscoveryClient（cameraId → 現在 IP を実時間解決し、断が続いたカメラを /info 照合の上で自動張替）。
+            //       [Streaming] は prefab instance で削除再生成しないため、既存を再利用して冪等にする
+            //       （GetComponent 優先。無ければ AddComponent）。registry / showControl を配線。
+            var discovery = streaming.GetComponent<DiscoveryClient>();
+            if (discovery == null) discovery = streaming.AddComponent<DiscoveryClient>();
+            var discSo = new SerializedObject(discovery);
+            TrySetObjectRef(discSo, "registry", registry);
+            if (showControl != null) TrySetObjectRef(discSo, "showControl", showControl);
+            discSo.ApplyModifiedPropertiesWithoutUndo();
+
             // 2.8. ゾーン再設計 Phase 1: CourseFrame + ZoneLayoutApplier を配線。
             //      show.json layout（cuts→OBB 展開）が届くと ZoneLayoutApplier が [GeneratedZones] 配下へ
             //      ゾーンを生成し tracker.zones を差し替える（CourseFrame の登録変換を通して配置）。
@@ -221,7 +231,7 @@ namespace FixedCamVr.Streaming.EditorTools
             CreateStartupFader(centerEye.transform, registry);
 
             // 4. DebugHud
-            var hud = CreateDebugHud(centerEye.transform, registry, tracker, centerEye.transform);
+            var hud = CreateDebugHud(centerEye.transform, registry, tracker, centerEye.transform, discovery);
 
             // 5. OvrControllerBridge.hud に HUD 連携 + CourseRegistrationController / CourseFrame 接続
             if (ovrBridge != null)
@@ -317,7 +327,7 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         private static RuntimeDebugHud? CreateDebugHud(Transform parent, CameraStreamRegistry registry,
-            PlayerZoneTracker tracker, Transform hmd)
+            PlayerZoneTracker tracker, Transform hmd, DiscoveryClient? discovery)
         {
             var canvasGo = new GameObject(DebugHudName);
             canvasGo.transform.SetParent(parent, worldPositionStays: false);
@@ -355,6 +365,7 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(hudSo, "registry", registry);
             TrySetObjectRef(hudSo, "tracker", tracker);
             TrySetObjectRef(hudSo, "hmd", hmd);
+            if (discovery != null) TrySetObjectRef(hudSo, "discovery", discovery);
             TrySetFloat(hudSo, "updateInterval", 0.25f);
             TrySetBool(hudSo, "startVisible", true);
             hudSo.ApplyModifiedPropertiesWithoutUndo();

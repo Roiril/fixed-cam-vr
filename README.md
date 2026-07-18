@@ -32,6 +32,7 @@
 | 3 | 映像加工 4 系統プロトタイプ（[Fx/](Assets/Scripts/Fx/)。本命 = CRT + 薄い埃） | ✅ Editor 検証済み・本実装前 |
 | 3.5 | 映像差し替え（OverlayCue）+ Web オペレータ卓遠隔制御（ShowControlClient / [tools/web-compositor/](tools/web-compositor/)） | ✅ 実装済み・運用検証中 |
 | 3.7 | **事前オーサリング済み cue スケジュール**（周回×ゾーンで自動発火 + APK 焼き込みで現地 PC 不要。LapCounter / CueScheduler） | 🚧 実装済み・実機未検証 |
+| 3.8 | **接続の堅牢化**（端末に cameraId を刻印 + UDP 発見プロトコル + フレーム断時の ID 自動張り替え。DHCP 変動・入れ替わりに自動追従、Web 卓に発見/疎通診断パネル） | 🚧 streamer/PC 実測済み・Quest 実機未検証 |
 | 4 | スクリーン外 3D 演出 / CG 合成 | 未着手 |
 
 主要コンポーネントの仕様（エンドポイント・遅延対策・show.json 設定契約・スクリーン合成モデル）は [.claude/rules/streaming.md](.claude/rules/streaming.md) に集約。

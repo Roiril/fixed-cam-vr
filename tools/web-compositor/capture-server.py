@@ -26,11 +26,13 @@ import datetime
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
 import time
 import urllib.request
+import uuid as _uuidlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -68,15 +70,19 @@ def _default_show():
         'rev': 0,
         # host/port/auth は Unity 実機が参照する接続先（空 host は焼き込み .asset へフォールバック）。
         # post（カメラ別画像加工）は任意キー。未設定なら Unity は global post に従う。
+        # pinned=True は「卓で host を手入力した」印。自動追従（discovery）を抑止する。
+        # 既存 show.json に pinned が無くても「未固定＝追従対象」として扱う（後方互換）。
         'cameras': [
-            {'id': 'A', 'sourceId': 'Phone01', 'host': '', 'port': 8080, 'auth': ''},
-            {'id': 'B', 'sourceId': 'Phone02', 'host': '', 'port': 8080, 'auth': ''},
-            {'id': 'C', 'sourceId': 'Phone03', 'host': '', 'port': 8080, 'auth': ''},
+            {'id': 'A', 'sourceId': 'Phone01', 'host': '', 'port': 8080, 'auth': '', 'pinned': False},
+            {'id': 'B', 'sourceId': 'Phone02', 'host': '', 'port': 8080, 'auth': '', 'pinned': False},
+            {'id': 'C', 'sourceId': 'Phone03', 'host': '', 'port': 8080, 'auth': '', 'pinned': False},
         ],
         'cues': [],
         'post': {'exposure': 0.0, 'contrast': 1.0, 'saturation': 1.0, 'temperature': 0.0,
                  'vignette': 0.25, 'grain': 0.06, 'scanline': 0.0},
-        'control': {'activeCue': None, 'cameraOverride': None},
+        # autoFollow=True: discovery で発見したカメラ IP を cameras[i].host へ自動反映する
+        # （pinned カメラは除外）。UI トグルで切替。欠落は ON 扱い（後方互換）。
+        'control': {'activeCue': None, 'cameraOverride': None, 'autoFollow': True},
         # ゾーン校正レイアウト（course space）。Web フロアマップが編集し Unity が展開する。
         # grid = タイルペイント（12×12・0.15m）。cells は rows 本の文字列、rows[0]=北端
         # （z=+0.9）・col0=西端（x=-0.9）。文字 '0'..'8'=カメラ index、'.'=未割当。
@@ -165,6 +171,230 @@ def _save_prompts(items):
         json.dump(items, f, ensure_ascii=False, indent=2)
 
 
+# ---- UDP 発見プロトコル fixedcam-discovery/1 -----------------------------------
+# 卓 PC がスマホ配信カメラ / 他 PC 卓を LAN 上で発見し、cameras[i].host を自動追従する。
+# 設計は .claude/plans/2026-07-18_connection-robustness.md が正。
+#   - :8830 で announce を listen（proto + show トークン一致のみ採用）
+#   - 2 秒毎に probe をブロードキャスト（subnet-directed 優先 + 255.255.255.255）
+#     → スマホは unicast で announce 応答。probe への unicast 応答も同ソケットで受信
+#   - 自機も show-server として announce（5 秒毎ブロードキャスト + probe への unicast 応答）
+#   - GET /discovery で発見表を返す。二重 ID（同一 id・異 uuid）は conflict として報告
+# キルスイッチ: 環境変数 FIXEDCAM_DISCOVERY=0 で無効化（bind 失敗も本体機能は継続）。
+DISCOVERY_ENABLED = os.environ.get('FIXEDCAM_DISCOVERY', '1') != '0'
+DISCOVERY_PORT = 8830
+DISCOVERY_PROTO = 'fixedcam-discovery/1'
+# show トークン: 隣ブース混線対策。不一致パケットは無視。streamer/Unity 側の既定と揃える。
+SHOW_TOKEN = os.environ.get('FIXEDCAM_SHOW', 'mawarimi')
+SERVER_VERSION = '0.3.0'
+
+_server_uuid = 'srv-' + _uuidlib.uuid4().hex[:12]  # 自機 announce の install uuid（起動毎）
+_http_port = 8099                                   # __main__ で実ポートに更新
+_disc_lock = threading.Lock()
+_disc = {}                                          # uuid -> {role,id,ip,port,uuid,version,name,lastSeen}
+_last_follow = None                                 # 直近の自動追従イベント {at, changes:[{id,host,port}]}
+
+
+class _NoChange(Exception):
+    """自動追従で変更が無い時に _mutate_show を空振りさせる番兵。"""
+
+
+def _local_ip():
+    """外向き UDP ソケットで自機の LAN IP を推定（実際には送信しない）。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 80))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+def _disc_targets():
+    """probe/announce の送信先。subnet-directed（/24 前提）優先 + 全体ブロードキャスト。"""
+    outs = ['255.255.255.255']
+    ip = _local_ip()
+    if ip:
+        p = ip.split('.')
+        if len(p) == 4:
+            outs.insert(0, '.'.join(p[:3]) + '.255')
+    return outs
+
+
+def _server_announce():
+    return {'proto': DISCOVERY_PROTO, 'type': 'announce', 'show': SHOW_TOKEN,
+            'role': 'show-server', 'id': 'PC', 'uuid': _server_uuid,
+            'httpPort': _http_port, 'version': SERVER_VERSION, 'name': socket.gethostname()}
+
+
+def _disc_send(sock, obj, addr):
+    try:
+        sock.sendto(json.dumps(obj).encode('utf-8'), addr)
+    except OSError:
+        pass
+
+
+def _disc_broadcast(sock, obj):
+    data = json.dumps(obj).encode('utf-8')
+    for host in _disc_targets():
+        try:
+            sock.sendto(data, (host, DISCOVERY_PORT))
+        except OSError:
+            pass
+
+
+def _disc_note(pkt, addr):
+    role = pkt.get('role') or 'camera'
+    u = pkt.get('uuid') or f"{role}:{pkt.get('id')}:{addr[0]}"
+    with _disc_lock:
+        _disc[u] = {
+            'role': role,
+            'id': str(pkt.get('id') if pkt.get('id') is not None else '?'),
+            'ip': addr[0],
+            'port': int(pkt.get('httpPort') or 8080),
+            'uuid': pkt.get('uuid') or u,
+            'version': str(pkt.get('version') or ''),
+            'name': str(pkt.get('name') or ''),
+            'lastSeen': time.time(),
+        }
+
+
+def _disc_listen(sock):
+    while True:
+        try:
+            data, addr = sock.recvfrom(2048)
+        except OSError:
+            break
+        try:
+            pkt = json.loads(data.decode('utf-8'))
+        except Exception:
+            continue
+        if pkt.get('proto') != DISCOVERY_PROTO or pkt.get('show') != SHOW_TOKEN:
+            continue  # 別プロトコル / 別ショーのパケットは無視
+        typ = pkt.get('type')
+        if typ == 'announce':
+            if pkt.get('uuid') == _server_uuid:
+                continue  # 自機 announce の反射
+            _disc_note(pkt, addr)
+        elif typ == 'probe':
+            # probe を出した相手（Quest / 別 PC）へ自機 show-server を unicast 応答
+            _disc_send(sock, _server_announce(), addr)
+
+
+def _disc_sender(sock):
+    seq = 0
+    last_announce = 0.0
+    while True:
+        seq += 1
+        _disc_broadcast(sock, {'proto': DISCOVERY_PROTO, 'type': 'probe',
+                               'show': SHOW_TOKEN, 'seq': seq})
+        now = time.time()
+        if now - last_announce >= 5.0:
+            _disc_broadcast(sock, _server_announce())
+            last_announce = now
+        try:
+            _auto_follow()
+        except Exception:
+            pass  # 追従は保険。失敗しても discovery/本体は継続
+        time.sleep(2.0)
+
+
+def _disc_snapshot_cameras(ttl=12.0):
+    """発見表から camera を id 毎に集約。best={id->最新entry}, conflicts={二重ID}。"""
+    now = time.time()
+    by_id = {}
+    with _disc_lock:
+        for e in _disc.values():
+            if e['role'] != 'camera' or e['id'] == '?':
+                continue
+            if now - e['lastSeen'] > ttl:
+                continue
+            by_id.setdefault(e['id'], []).append(dict(e))
+    best, conflicts = {}, set()
+    for cid, lst in by_id.items():
+        if len({e['uuid'] for e in lst}) > 1:
+            conflicts.add(cid)  # 別機が同 ID → 曖昧なので追従しない
+            continue
+        best[cid] = max(lst, key=lambda e: e['lastSeen'])
+    return best, conflicts
+
+
+def _auto_follow():
+    """発見した camera IP を cameras[i].host へ反映（pinned 除外・変化時のみ rev++）。"""
+    if not DISCOVERY_ENABLED:
+        return
+    best, conflicts = _disc_snapshot_cameras()
+    if not best:
+        return
+
+    def apply(show):
+        ctrl = show.setdefault('control', {})
+        if not ctrl.get('autoFollow', True):
+            raise _NoChange()
+        changes = []
+        for cam in show.get('cameras', []):
+            if cam.get('pinned'):
+                continue
+            cid = cam.get('id')
+            if cid in conflicts:
+                continue
+            e = best.get(cid)
+            if not e:
+                continue
+            if cam.get('host') != e['ip'] or int(cam.get('port') or 0) != int(e['port']):
+                cam['host'] = e['ip']
+                cam['port'] = int(e['port'])
+                changes.append({'id': cid, 'host': e['ip'], 'port': int(e['port'])})
+        if not changes:
+            raise _NoChange()
+        apply.changes = changes
+
+    try:
+        _mutate_show(apply)
+    except _NoChange:
+        return
+    global _last_follow
+    _last_follow = {'at': time.time(), 'changes': apply.changes}
+
+
+def _probe_info(host, port, auth, timeout=3.0):
+    """PC → カメラ /info へ実 HTTP GET。(ok, detail) を返す（疎通診断用）。"""
+    req = urllib.request.Request(f'http://{host}:{port}/info')
+    if auth:
+        token = base64.b64encode(auth.encode('utf-8')).decode('ascii')
+        req.add_header('Authorization', f'Basic {token}')
+    try:
+        r = urllib.request.urlopen(req, timeout=timeout)
+        body = r.read(2048)
+        try:
+            j = json.loads(body.decode('utf-8'))
+            nm = j.get('deviceName') or j.get('cameraId') or j.get('name') or ''
+            return True, ('/info OK ' + str(nm)).strip()
+        except Exception:
+            return True, f'/info HTTP {getattr(r, "status", 200)}'
+    except Exception as e:
+        return False, str(e)[:100]
+
+
+def _start_discovery(http_port):
+    global _http_port
+    _http_port = http_port
+    if not DISCOVERY_ENABLED:
+        print('  discovery                   : 無効（FIXEDCAM_DISCOVERY=0）')
+        return
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.bind(('', DISCOVERY_PORT))
+    except OSError as e:
+        print(f'  discovery                   : bind 失敗（{e}）→ 無効化（本体機能は継続）')
+        return
+    threading.Thread(target=_disc_listen, args=(sock,), daemon=True).start()
+    threading.Thread(target=_disc_sender, args=(sock,), daemon=True).start()
+    print(f'  discovery (fixedcam/1)       : udp :{DISCOVERY_PORT}  show="{SHOW_TOKEN}"  uuid={_server_uuid}')
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
@@ -210,7 +440,83 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(self._list_masks())
         if path == '/cam':
             return self._proxy_cam(parse_qs(urlparse(self.path).query))
+        if path == '/discovery':
+            return self._get_discovery()
+        if path == '/diag':
+            return self._get_diag()
         return super().do_GET()
+
+    # 発見表（camera / show-server）+ 二重 ID 警告 + 自動追従状態を返す。
+    def _get_discovery(self):
+        now = time.time()
+        devices = []
+        with _disc_lock:
+            for u in list(_disc):  # 30s 以上音沙汰なしは掃除
+                if now - _disc[u]['lastSeen'] > 30.0:
+                    del _disc[u]
+            for e in _disc.values():
+                devices.append({
+                    'role': e['role'], 'id': e['id'], 'ip': e['ip'], 'port': e['port'],
+                    'uuid': e['uuid'], 'version': e['version'], 'name': e['name'],
+                    'ageSec': round(now - e['lastSeen'], 1),
+                })
+        # 自機（show-server）も一覧に出す（PC 卓が複数居る二重サーバの検知用）。
+        devices.append({'role': 'show-server', 'id': 'PC', 'ip': _local_ip() or '127.0.0.1',
+                        'port': _http_port, 'uuid': _server_uuid, 'version': SERVER_VERSION,
+                        'name': socket.gethostname(), 'ageSec': 0.0, 'self': True})
+        # 二重 ID: 直近（<12s）の camera で同 id に異なる uuid が複数。
+        by_id = {}
+        for d in devices:
+            if d['role'] != 'camera' or d['id'] == '?' or d['ageSec'] > 12.0:
+                continue
+            by_id.setdefault(d['id'], set()).add(d['uuid'])
+        conflicts = sorted(cid for cid, us in by_id.items() if len(us) > 1)
+        devices.sort(key=lambda d: (d['role'] != 'show-server', d['id'], d['ip']))
+        with _show_cond:
+            auto_follow = bool(_show.get('control', {}).get('autoFollow', True))
+        return self._json({'devices': devices, 'conflicts': conflicts,
+                           'autoFollow': auto_follow, 'lastFollow': _last_follow,
+                           'enabled': DISCOVERY_ENABLED, 'showToken': SHOW_TOKEN})
+
+    # 疎通診断: (a) PC→各カメラ /info 実接続 (b) ビーコン受信 (c) Quest heartbeat。
+    # ビーコンは来るのに /info が ✕ なら AP のクライアント間遮断が濃厚（現地即判定用）。
+    def _get_diag(self):
+        now = time.time()
+        with _show_cond:
+            cams = json.loads(json.dumps(_show.get('cameras', [])))
+        with _disc_lock:
+            disc_by_id = {}
+            for e in _disc.values():
+                if e['role'] != 'camera' or e['id'] == '?':
+                    continue
+                cur = disc_by_id.get(e['id'])
+                if not cur or e['lastSeen'] > cur['lastSeen']:
+                    disc_by_id[e['id']] = dict(e)
+        results = []
+        for cam in cams:
+            cid = cam.get('id')
+            host = (cam.get('host') or '').strip()
+            port = int(cam.get('port') or 8080)
+            auth = cam.get('auth') or ''
+            row = {'id': cid, 'host': host, 'port': port, 'pinned': bool(cam.get('pinned'))}
+            if host:
+                ok, detail = _probe_info(host, port, auth)
+                row['http'] = ok
+                row['httpDetail'] = detail
+            else:
+                row['http'] = None
+                row['httpDetail'] = 'host 未設定'
+            e = disc_by_id.get(cid)
+            row['beacon'] = bool(e) and (now - e['lastSeen'] < 12.0)
+            row['beaconAgeSec'] = round(now - e['lastSeen'], 1) if e else None
+            row['beaconIp'] = e['ip'] if e else None
+            results.append(row)
+        age = (now - _unity_status['at']) if _unity_status['at'] else None
+        quest = {'alive': age is not None and age < 6.0,
+                 'ageSec': round(age, 1) if age is not None else None,
+                 'activeCamera': _unity_status.get('activeCamera')}
+        return self._json({'cameras': results, 'quest': quest,
+                           'discoveryEnabled': DISCOVERY_ENABLED})
 
     # MJPEG プロキシ。Basic 認証をサーバ側で肩代わりして同一オリジンで返す。
     # <img src="/cam?host=...&port=8081&auth=admin:admin"> で使う。
@@ -416,6 +722,8 @@ class Handler(SimpleHTTPRequestHandler):
                 ctrl['cameraOverride'] = body.get('camera')  # None = ゾーン自律へ戻す
             elif typ == 'setPost':
                 show.setdefault('post', {}).update(body.get('post') or {})
+            elif typ == 'setAutoFollow':
+                ctrl['autoFollow'] = bool(body.get('on'))
             else:
                 raise ValueError(f'unknown command type: {typ}')
         try:
@@ -536,4 +844,5 @@ if __name__ == '__main__':
     threading.Thread(target=cam_srv.serve_forever, daemon=True).start()
     print(f'web compositor capture-server : http://0.0.0.0:{port}/  (captures -> {CAPTURES})')
     print(f'  MJPEG stream proxy (/cam)    : http://0.0.0.0:{cam_port}/cam')
+    _start_discovery(port)
     ThreadingHTTPServer(('0.0.0.0', port), Handler).serve_forever()

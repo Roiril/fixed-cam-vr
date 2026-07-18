@@ -130,8 +130,10 @@ async function pollLoop() {
       if (s.rev !== rev) {
         rev = s.rev;
         applyState(s);
+        const pinned = (s.cameras || []).filter((c) => c.pinned).map((c) => c.id);
         document.getElementById('simState').textContent =
-          `state: rev=${rev} / camera=${(s.cameras || [])[activeIndex]?.id || '?'}${cameraOverride ? ' (override)' : ''}`;
+          `state: rev=${rev} / camera=${(s.cameras || [])[activeIndex]?.id || '?'}${cameraOverride ? ' (override)' : ''}`
+          + (pinned.length ? ` / 📌 ${pinned.join(',')}` : '');
       }
     } catch (e) {
       await new Promise((res) => setTimeout(res, 2000));

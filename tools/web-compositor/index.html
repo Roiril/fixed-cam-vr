@@ -39,6 +39,30 @@
       <div id="cams" class="cams"></div>
     </section>
 
+    <section class="discovery">
+      <div class="mc-title">📡 発見済み端末
+        <span class="hint">LAN 上の配信カメラ / PC 卓を UDP ビーコン（fixedcam-discovery/1）で発見。ID が同じで uuid が違う端末は二重 ID ＝赤警告。自動追従 ON なら発見した IP をカメラ列へ反映する（📌 手動固定を除く）。</span>
+      </div>
+      <div class="disc-bar">
+        <label class="chk"><input id="autoFollow" type="checkbox"> 発見した IP を自動追従</label>
+        <span id="autoFollowInfo" class="disc-follow"></span>
+        <span class="spacer"></span>
+        <span id="discMeta" class="disc-meta"></span>
+      </div>
+      <div id="discList" class="disc-list"></div>
+    </section>
+
+    <section class="diag">
+      <div class="mc-title">🩺 疎通診断
+        <span class="hint">PC から各カメラの /info へ実 HTTP 接続 + ビーコン受信状況 + Quest heartbeat を 1 画面で確認。ビーコンは ✅ なのに /info が ❌ なら、AP がクライアント間通信を遮断している疑いが濃い（自前 AP 持ち込みを検討）。</span>
+      </div>
+      <div class="row-btns">
+        <button id="runDiag" class="accent">🩺 疎通診断を実行</button>
+        <span id="diagStatus" class="ed-status"></span>
+      </div>
+      <div id="diagResult" class="diag-result"></div>
+    </section>
+
     <section class="floormap">
       <div class="mc-title">フロアマップ（ゾーン校正）
         <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。パレットの色（＝担当カメラ）を選び、タイルをクリック / ドラッグで塗る → 💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。シミュレーションはドットをドラッグして切替を事前確認。</span>

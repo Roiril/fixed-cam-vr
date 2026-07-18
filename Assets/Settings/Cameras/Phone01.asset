@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: Phone01
   m_EditorClassIdentifier: 
   displayName: Phone 01
+  cameraId: A
   host: 192.168.11.34
   port: 8080
   videoPath: /video
