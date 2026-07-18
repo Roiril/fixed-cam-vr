@@ -78,8 +78,9 @@
 
 - **構成**: Meta XR ハンドトラッキング + Netcode for GameObjects（LAN 直結・pose 60Hz Unreliable + Seq 後着棄却・自動再接続）。役割（full/hand）と host/client は起動フラグで独立指定
 - **標準トポロジ（2026-07-06〜）**: **PC が NGO host（観戦ロール兼任・L0 デスクトップビルド）+ Quest 2 台が client**。SessionLogger/WireTap が PC に直接落ち、両者の pose が必ずワイヤを通る（計測対称）。役割交代もセッション継続のまま Quest 再起動だけ
-- **卓上タスク**: Deep Sea Adventure（ボードゲーム）を **1 ラウンド実際に遊べる**。全ピース（チップ 21・駒 2・空気マーカー・サイコロ 2）が掴める（サーバ権威・ピンチグラブ）。サイコロは離すと出目 1–3 を確定表示＋CSV 記録。ルール裁定はコード化せず人間運用（無言交渉が研究データ）。盤面リセットは `mark?label=reset_board`
-- **手の見た目 3 バリアント = 調査条件**（within-pair・ブロック固定・`tdv_hand default|realistic|robot`。セッション中の切替は封印、端末間の不一致は検出して CSV に記録）
+- **卓上タスク = ボードゲーム（複数・プレイ中切替可）**: 海底探検（Deep Sea Adventure）とアルゴを卓上へベイクし、**PC ホストの FacilitatorPanel（画面右 IMGUI）か `mark?label=game_<dsa|algo>` でランタイム切替**（GameSwitcher・サーバ権威・stow/show 方式＝非アクティブゲームは不可視/掴み不可、切替は両ゲームの盤面リセットを兼ねる）。全ピースが掴める（サーバ権威・ピンチグラブ）。サイコロは離すと出目 1–3 を確定表示＋CSV 記録。ルール裁定はコード化せず人間運用（無言交渉が研究データ）。盤面リセットは `mark?label=reset_board`
+- **手の見た目 3 バリアント = 調査条件**（within-pair・ブロック固定・`tdv_hand default|realistic|robot`。**セッション中の変更はホストの FacilitatorPanel からの強制のみ**＝参加者側トグルは撤去、端末間の不一致は検出して CSV に記録）
+- **操作系の設計思想（2026-07-18〜）**: **Quest 側=体験・PC ホスト側=運用**。Quest コントローラは視点リセット（右 A 単押し / 両グリップ 3 秒）だけ。ボドゲ切替・手バリアント・盤面リセット・マークはホストの FacilitatorPanel（F10 で表示トグル）に集約
 - **人役の一人称自己アバター**（`tdv_selfbody on`・既定 off）: 下を向くと自分の胴/腕/手が見える（頭は潰して視界を塞がない・白手は隠し Remy 手に一本化）。ローカル描画専用＝相手に見える自分は不変。条件は CSV に記録（自己身体の有無は交絡なのでパイロットで既定を決める）
 - **シーン生成**: `Tools/FixedCamVr/Setup/Setup TableDuo Scene`（冪等。**ビルド直前に再実行してクリーン状態にする**）
 
@@ -90,7 +91,7 @@
 | SessionLogger CSV | 両者 pose 30Hz + 手役 7 ランドマーク + イベント（grab / recenter / 条件 / layout 受信 / clockOffset / 欠落系） | host（=PC）の `persistentDataPath` |
 | SessionReplayRecorder | 全 bone + 小物 + イベントの一括リプレイ（Editor の ReplayViewer で自由視点再生 = stimulated recall） | 同上 |
 | StreamingPoseRecorder | 各端末ローカルの **lossless 手 pose 60Hz**（ネット遅延・量子化なしの完全忠実度バックアップ） | 各 Quest の `persistentDataPath` |
-| WireTapRecorder | 通信ワイヤ上の pose を CSV 化（送出/受信・診断ログ [TDV-WIRE]/[TDV-DRAW] 連動）。**右 B（Quest）/ F9・GUI ボタン（PC）**でトグル | 押した端末の `persistentDataPath` |
+| WireTapRecorder | 通信ワイヤ上の pose を CSV 化（送出/受信・診断ログ [TDV-WIRE]/[TDV-DRAW] 連動）。**F9・GUI ボタン（PC）**でトグル（右 B バインドは 2026-07-18 撤去 — コントローラは視点リセット専用） | 押した端末の `persistentDataPath` |
 | FacilitatorMarkServer | `curl http://localhost:7780/mark?label=phase2` でフェーズマーク（PC ホスト時は localhost） | CSV へ |
 
 ## 実機起動（PC ホスト + Quest 2 台・同 LAN）

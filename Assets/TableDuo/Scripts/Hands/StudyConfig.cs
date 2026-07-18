@@ -48,11 +48,11 @@ namespace TableDuoVr.Hands
         public static bool ShowSelfBody = true;
 
         /// <summary>手役アバターの手メッシュの見た目（Default=Meta白手 / Realistic=人間の手 / Robot=機械の手）。
-        /// **正式な調査条件（within-pair 因子・2026-07-02 決定）**: ブロックごとに tdv_hand 起動フラグで固定し、
-        /// セッション中の切替は禁止（HandVariantWatcher が調査フラグ起動時にトグルを無効化。切替は CSV に刻まれる）。
+        /// **正式な調査条件（within-pair 因子・2026-07-02 決定）**: ブロックごとに tdv_hand 起動フラグで固定する。
+        /// セッション中の変更はホスト（実験者卓）強制のみ（<see cref="ApplyForcedVariant"/>）。参加者トグルは撤去済み（2026-07-18）。
         /// 自分の手＝この値。リモート描画＝相手の申告値（_studyFlags 同期）が優先される。
-        /// 変更は <see cref="SetHandVariant"/> 経由にすること（描画側が <see cref="HandVariantChanged"/> で再構築
-        /// し、owner の TableDuoPlayer が申告値を書き直して相手端末の描画も追従する）。</summary>
+        /// 変更は <see cref="SetHandVariant"/> / <see cref="ApplyForcedVariant"/> 経由にすること（描画側が
+        /// <see cref="HandVariantChanged"/> で再構築し、owner の TableDuoPlayer が申告値を書き直して相手端末の描画も追従する）。</summary>
         public static HandVariant SelectedHandVariant;
 
         /// <summary>協調配置課題（Phase 4）の目標配置パネルを手役に表示する（tdv_pattern=on、既定 OFF）。
@@ -60,10 +60,10 @@ namespace TableDuoVr.Hands
         /// （2026-07-12 実機指摘）。</summary>
         public static bool ShowPatternPanel;
 
-        /// <summary>手バリアントが tdv_hand 起動フラグで固定された（＝調査条件として指定された）。
-        /// Y ボタン切替（HandVariantWatcher）はこの時だけ無効化する。tdv_role 等の運用フラグは
-        /// 手バリアントを固定しないので Y トグルは生かす（2026-07-11: 起動スクリプトが常に tdv_role を
-        /// 渡すため LaunchedWithStudyFlags 判定だと Y が常時死んでいた）。</summary>
+        /// <summary>手バリアントが tdv_hand 起動フラグで固定された（＝調査条件として指定された）ことを表す申告フラグ。
+        /// かつては参加者の Y トグル（HandVariantWatcher）をこの時だけ無効化していたが、
+        /// トグル自体を撤去したため現在は gating に使われない（ホスト強制のみ・2026-07-18）。
+        /// CSV/リプレイに「条件固定で起動したか」を残す記録目的で保持している。</summary>
         public static bool HandVariantLockedByFlag;
 
         /// <summary>手バリアントが切り替わった。ローカル手 / リモート手の描画側がメッシュを作り直すために購読する。</summary>
@@ -77,16 +77,15 @@ namespace TableDuoVr.Hands
             HandVariantChanged?.Invoke();
         }
 
-        /// <summary>Default→Realistic→Robot→Default と巡回（実機トグル用）。</summary>
-        public static void CycleHandVariant()
+        /// <summary>ホスト（実験者）強制で手バリアントを設定する。
+        /// <see cref="HandVariantLockedByFlag"/> に**関係なく**貫通して適用する
+        /// （ホスト強制は参加者ロックより優先。参加者トグルはロック中に無効化されるが、実験者卓の指示は通す）。
+        /// TableDuoPlayer の _forcedVariant（server→owner 指示チャネル）から呼ばれる。</summary>
+        public static void ApplyForcedVariant(HandVariant v)
         {
-            var next = SelectedHandVariant switch
-            {
-                HandVariant.Default => HandVariant.Realistic,
-                HandVariant.Realistic => HandVariant.Robot,
-                _ => HandVariant.Default,
-            };
-            SetHandVariant(next);
+            if (v == SelectedHandVariant) return;
+            SelectedHandVariant = v;
+            HandVariantChanged?.Invoke();
         }
 
         // domain-reload を切った Play では static が前回 Play の条件を引き継ぐ。Editor で役割/条件を

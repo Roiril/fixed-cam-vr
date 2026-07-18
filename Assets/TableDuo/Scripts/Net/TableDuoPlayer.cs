@@ -21,6 +21,7 @@ namespace TableDuoVr.Net
     public sealed class TableDuoPlayer : NetworkBehaviour
     {
         private const byte RoleUnset = 255;
+        private const byte VariantUnset = 255; // ホスト未強制
 
         // 60Hz 送信。Quest のハンドトラッキングは ~60Hz なのでこれが採取レートに整合する。
         // 1 pose ≈489B × 60 ≈ 29KB/s/手 で LAN 上は無視できる帯域。NGO TickRate も 60 に揃える
@@ -37,6 +38,12 @@ namespace TableDuoVr.Net
         //（within-pair 条件の根幹 — 不一致が無警告で成立すると条件ラベルが信用できなくなる）。
         private readonly NetworkVariable<byte> _studyFlags = new(
             0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+
+        // ホスト（実験者卓）強制の手バリアント。server write・既定 255=未強制。
+        // FacilitatorPanel が対象プレイヤーに設定 → owner が観測して StudyConfig.ApplyForcedVariant を呼び、
+        // 既存の切替チェーン（HandVariantChanged → WriteStudyFlags → _studyFlags → 全 peer 再構築）を再利用する。
+        private readonly NetworkVariable<byte> _forcedVariant = new(
+            VariantUnset, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         /// <summary>owner の OS recenter をサーバへ報告した（study-validity: 座標系不連続のマーク用）。</summary>
         public static event System.Action<ulong>? RecenterReported;
@@ -56,6 +63,7 @@ namespace TableDuoVr.Net
         private HandPoseSampler? _sampler;
         private Transform? _seat;
         private System.Action? _onOwnerVariantChanged;
+        private NetworkVariable<byte>.OnValueChangedDelegate? _onForcedVariantChanged;
         private NetworkVariable<byte>.OnValueChangedDelegate? _onRemoteFlagsChanged;
         private uint _seq;
         private float _nextSend;
@@ -115,10 +123,21 @@ namespace TableDuoVr.Net
         {
             _role.Value = (byte)role;
             WriteStudyFlags(role);
-            // Y トグル等でバリアントが変わったら申告値を書き直す（リモート側の描画が追従する）。
-            // 調査フラグ起動時は HandVariantWatcher がトグル自体を無効化するので、これが動くのは気軽な設営時のみ
+            // バリアントが変わったら申告値を書き直す（リモート側の描画が追従する）。
+            // 変更源はホスト強制（下の _forcedVariant → StudyConfig.ApplyForcedVariant）。旧 Y トグルは撤去済み（2026-07-18）
             _onOwnerVariantChanged = () => { if (IsSpawned && IsOwner) WriteStudyFlags(role); };
             StudyConfig.HandVariantChanged += _onOwnerVariantChanged;
+            // ホスト強制バリアント（server→owner 指示チャネル）を観測。値が入ったら上の切替チェーンへ流す。
+            // 遅接続で既に force 済みなら購読時に即適用する（サーバ側で先に設定されたケース）。
+            _onForcedVariantChanged = (_, cur) =>
+            {
+                if (cur != VariantUnset) StudyConfig.ApplyForcedVariant((HandVariant)cur);
+            };
+            _forcedVariant.OnValueChanged += _onForcedVariantChanged;
+            if (_forcedVariant.Value != VariantUnset)
+            {
+                StudyConfig.ApplyForcedVariant((HandVariant)_forcedVariant.Value);
+            }
             SetupOwner(role);
             // client の壁時計オフセットを host CSV に刻む（captureMs 整列用）。host 自身は offset=0 で不要
             if (!IsServer)
@@ -136,6 +155,19 @@ namespace TableDuoVr.Net
                 // bit4=自己ボディ。人役ローカル描画専用の条件なので人役のみ立てる
                 // （手役は描画されない＝ StudyConfig.ShowSelfBody 既定 on でも手役 CSV に selfBody=1 を刻まない）
                 | ((role == StudyConfig.Role.Full && StudyConfig.ShowSelfBody) ? 16 : 0));
+        }
+
+        /// <summary>ホスト（実験者卓）からこのプレイヤーの手バリアントを強制する（server 専用）。
+        /// owner が _forcedVariant.OnValueChanged で観測し、StudyConfig.ApplyForcedVariant → 既存チェーンで
+        /// 全 peer の描画へ波及する。</summary>
+        public void ServerForceHandVariant(HandVariant v)
+        {
+            if (!IsServer)
+            {
+                Debug.LogWarning("[TableDuo] ServerForceHandVariant は server 専用");
+                return;
+            }
+            _forcedVariant.Value = (byte)v;
         }
 
         // --- 役割の自動割当（サーバ裁定・接続順。tdv_role 明示が無い client 用） ---
@@ -192,6 +224,11 @@ namespace TableDuoVr.Net
             {
                 StudyConfig.HandVariantChanged -= _onOwnerVariantChanged;
                 _onOwnerVariantChanged = null;
+            }
+            if (_onForcedVariantChanged != null)
+            {
+                _forcedVariant.OnValueChanged -= _onForcedVariantChanged;
+                _onForcedVariantChanged = null;
             }
             if (_onRemoteFlagsChanged != null)
             {
@@ -383,7 +420,9 @@ namespace TableDuoVr.Net
         {
             if (DeclaredHandVariant != StudyConfig.SelectedHandVariant)
             {
-                Debug.LogError($"[TableDuo] ⚠ 手バリアント条件が端末間で不一致: client{OwnerClientId} 申告={DeclaredHandVariant} / この端末={StudyConfig.SelectedHandVariant}。tdv_hand を全端末で揃えて再起動すること（条件汚染）");
+                // ホスト強制でバリアントが端末間で意図的に異なり得るため情報ログに降格（2026-07-18）。
+                // tdv_hand 固定運用でのみ「条件汚染」の兆候として拾う。
+                Debug.Log($"[TableDuo] 手バリアント申告が端末間で不一致: client{OwnerClientId} 申告={DeclaredHandVariant} / この端末={StudyConfig.SelectedHandVariant}（ホスト強制なら正常。tdv_hand 固定運用なら条件汚染を疑う）");
             }
         }
 

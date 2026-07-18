@@ -188,12 +188,34 @@ namespace TableDuoVr.EditorTools
             CreateSeat(seats.transform, 0, new Vector3(0f, eyeHeight, -0.56f), 0f);    // フルアバター席
             CreateSeat(seats.transform, 1, new Vector3(0f, eyeHeight, 0.56f), 180f);   // 手だけアバター席
 
-            // 卓上 = ボードゲーム「海底探検（Deep Sea Adventure）」一式（旧: Kenney 食べ物プロップ＋絵カードを置換）。
-            // 潜水艦ボードを中央奥に配置、宝物チップ/裏トークン/空気マーカーを手前にグリッド配置。卓上プロップは全部掴める。
-            // GLB は glTFast 取込（Assets/TableDuo/ThirdParty/DeepSeaAdventure/glb、テクスチャ埋込・実スケール=メートル）。
+            // 卓上 = ボードゲーム。複数ゲームを Props/Game_<id> 別ルートへ全部ベイクし、ランタイムは
+            // GameSwitcher（NetworkVariable・サーバ権威）が 1 つだけ「実体化」する（stow/show 方式・2026-07-18）。
+            // 非アクティブゲームはベイク時点から stow 状態（Renderer/Collider off + kinematic）で保存し、
+            // Editor シーン/Preview の見た目とランタイム既定（ゲーム 0 のみ表示）を一致させる。
+            // GLB は glTFast 取込（Assets/TableDuo/ThirdParty/<Game>/glb、テクスチャ埋込・実スケール=メートル）。
             var props = new GameObject("Props");
             props.transform.SetParent(root.transform, false);
-            PlaceDeepSeaAdventure(props.transform, topY, cx, cz, hx, hz, edge);
+
+            // ゲーム 0: 海底探検（既定アクティブ）。潜水艦ボード中央奥 + チップ鎖 + 駒/サイコロ/空気マーカー
+            var gameDsa = new GameObject("Game_dsa");
+            gameDsa.transform.SetParent(props.transform, false);
+            PlaceDeepSeaAdventure(gameDsa.transform, topY, cx, cz, hx, hz, edge);
+
+            // ゲーム 1: アルゴ（数字カード 24 枚）。ベイク時 stow（GameSwitcher が実行時に出し分け）
+            var gameAlgo = new GameObject("Game_algo");
+            gameAlgo.transform.SetParent(props.transform, false);
+            PlaceAlgo(gameAlgo.transform, topY, cx, cz, hx, hz);
+            BakeStowedState(gameAlgo);
+
+            // ランタイム切替（in-scene NetworkObject）。ホスト UI（FacilitatorPanel）/ mark?label=game_<id> が叩く
+            var switcherGo = new GameObject("GameSwitcher");
+            switcherGo.transform.SetParent(root.transform, false);
+            switcherGo.AddComponent<NetworkObject>();
+            var gameSwitcher = switcherGo.AddComponent<GameSwitcher>();
+            WireGameSwitcher(gameSwitcher,
+                new[] { gameDsa, gameAlgo },
+                new[] { "dsa", "algo" },
+                new[] { "海底探検", "アルゴ" });
 
             // 協調配置課題の目標パネル（手役ローカルのみ表示）
             CreatePatternPanel(root.transform);
@@ -293,9 +315,9 @@ namespace TableDuoVr.EditorTools
             systems.AddComponent<ConnectionManager>();
             // 卓上ピース物理の衝突マトリクス（TableProps 同士のみ衝突。起動時 1 回設定）
             systems.AddComponent<PiecePhysicsConfig>();
-            // 左コントローラ Y で手の見た目を巡回切替（お試し用。調査本番は tdv_hand フラグで固定）
-            systems.AddComponent<HandVariantWatcher>();
-            // 右コントローラ B でワイヤタップ記録トグル（ソロ実機検証: 送出 pose + 受信 pose を CSV 化）
+            // ワイヤタップ記録トグル（F9 / PC GUI。コントローラ B バインドは 2026-07-18 の
+            // 「コントローラ=視点リセット専用」方針で廃止。手バリアント左 Y トグル
+            // （旧 HandVariantWatcher）も同方針で削除 → ホストの FacilitatorPanel から強制する）
             systems.AddComponent<WireTapRecorder>();
 
             // リモートの手を描くプレハブ/材質の供給（3 バリアント）。
@@ -329,6 +351,9 @@ namespace TableDuoVr.EditorTools
             SetRef(markSo, "logger", sessionLogger);
             markSo.ApplyModifiedPropertiesWithoutUndo();
             systems.AddComponent<SessionReplayRecorder>();
+            // PC ホストのファシリテータ卓（IMGUI・画面右）: ボドゲ切替 / 手バリアント強制 / 盤面リセット / マーク。
+            // 「Quest=体験・PC ホスト=運用」方針の運用側入口（2026-07-18）
+            systems.AddComponent<FacilitatorPanel>();
 
             // リプレイビューア（stimulated recall 用・既定無効。有効化して Play で再生）
             var replayGo = new GameObject("ReplayViewer");
@@ -357,7 +382,8 @@ namespace TableDuoVr.EditorTools
             Debug.Log("[TableDuoSceneSetup] 完了。テーブル/席2/OVRCameraRig(+Hands)/NetworkManager/Systems 配置済み。\n" +
                       "- 実機: OVRProjectConfig の Hand Tracking Support を Controllers And Hands 以上にすること\n" +
                       "- ビルド対象にする時は Build Settings へ本シーンを手動追加（Main.unity と排他運用）\n" +
-                      "- L0 検証: OVRCameraRig を無効化 / DebugCamera と FakeHandDriver を有効化");
+                      "- L0 検証: OVRCameraRig を無効化 / DebugCamera と FakeHandDriver を有効化\n" +
+                      "- ボドゲ切替: ホストの FacilitatorPanel（画面右）か curl mark?label=game_<dsa|algo>");
         }
 
         // 部屋の内寸（正方形の一辺）と天井高。プレイ空間（テーブル±1m 程度）を
@@ -508,6 +534,75 @@ namespace TableDuoVr.EditorTools
         }
 
         private const string DsaGlbDir = "Assets/TableDuo/ThirdParty/DeepSeaAdventure/glb";
+        private const string AlgoGlbDir = "Assets/TableDuo/ThirdParty/Algo/glb";
+
+        /// <summary>
+        /// 卓上にボードゲーム「アルゴ」の数字カード 24 枚を置く（2026-07-18）。
+        /// 白 0-11 / 黒 0-11 の 2 列・値順・数字面伏せ（GLB は表面のみテクスチャ＝裏は無地なので
+        /// face-down で値が隠れる）。シャッフルは人間運用（ルール裁定をコード化しない方針は海底探検と同じ）。
+        /// カード実寸 42(X)×66(Z)mm・厚 2mm（GLB 直パースで確認済み）→ 1.3 倍（ピンチ精度対策。
+        /// 54.6mm 幅 + 隙間 7.4mm × 12 枚 = 全幅 0.74m が天板に収まる上限感）。物理あり（チップ同類・CCD なし）。
+        /// </summary>
+        private static void PlaceAlgo(Transform parent, float topY, float cx, float cz,
+            float hx, float hz)
+        {
+            const float cardScale = 1.3f;
+            const float stepX = 0.062f; // カード幅 42mm*1.3=54.6mm + 隙間 7.4mm
+            const float rowZ = 0.06f;   // 列中心の cz からの前後オフセット（カード長 85.8mm → 列間の実隙間 34mm）
+            for (int v = 0; v <= 11; v++)
+            {
+                float x = cx + (v - 5.5f) * stepX;
+                var white = PlaceModelRealScale($"{AlgoGlbDir}/white_{v}.glb", parent, $"ALGO_white_{v}",
+                    new Vector3(x, topY, cz - rowZ), 180f, grabbable: true, scale: cardScale, physics: true,
+                    faceDown: true);
+                SetSurfaceClamp(white, topY, cx, cz, hx, hz);
+                var black = PlaceModelRealScale($"{AlgoGlbDir}/black_{v}.glb", parent, $"ALGO_black_{v}",
+                    new Vector3(x, topY, cz + rowZ), 180f, grabbable: true, scale: cardScale, physics: true,
+                    faceDown: true);
+                SetSurfaceClamp(black, topY, cx, cz, hx, hz);
+            }
+        }
+
+        /// <summary>
+        /// 非アクティブゲームのベイク時 stow（Renderer/Collider off + kinematic）。
+        /// ランタイムは GameSwitcher.ApplyLocal が同じ状態を再適用するので、Editor シーン・
+        /// TablePreview・起動直後の見た目がランタイム既定（ゲーム 0 のみ実体化）と一致する。
+        /// </summary>
+        private static void BakeStowedState(GameObject gameRoot)
+        {
+            foreach (var r in gameRoot.GetComponentsInChildren<Renderer>()) r.enabled = false;
+            foreach (var c in gameRoot.GetComponentsInChildren<Collider>()) c.enabled = false;
+            foreach (var rb in gameRoot.GetComponentsInChildren<Rigidbody>()) rb.isKinematic = true;
+        }
+
+        /// <summary>GameSwitcher の SerializeField（gameRoots/gameIds/displayNames）を配線する。</summary>
+        private static void WireGameSwitcher(GameSwitcher switcher, GameObject[] roots,
+            string[] ids, string[] names)
+        {
+            var so = new SerializedObject(switcher);
+            SetArrayRefs(so, "gameRoots", roots);
+            SetArrayStrings(so, "gameIds", ids);
+            SetArrayStrings(so, "displayNames", names);
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void SetArrayRefs(SerializedObject so, string prop, GameObject[] values)
+        {
+            var p = so.FindProperty(prop);
+            if (p == null) return;
+            p.arraySize = values.Length;
+            for (int i = 0; i < values.Length; i++)
+                p.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
+        }
+
+        private static void SetArrayStrings(SerializedObject so, string prop, string[] values)
+        {
+            var p = so.FindProperty(prop);
+            if (p == null) return;
+            p.arraySize = values.Length;
+            for (int i = 0; i < values.Length; i++)
+                p.GetArrayElementAtIndex(i).stringValue = values[i];
+        }
 
         /// <summary>
         /// 卓上にボードゲーム「海底探検」一式を**プレイ可能な形**で配置（G1・2026-07-02）。

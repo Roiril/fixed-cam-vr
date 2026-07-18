@@ -38,6 +38,14 @@ namespace TableDuoVr.Net
                 {
                     FindObjectOfType<BoardReset>()?.ResetBoard();
                 }
+                // 特別ラベル: ボドゲ切替（reset_board と同じ遠隔導線）。
+                //   curl "http://<hostIP>:7780/mark?label=game_algo"
+                else if (label.StartsWith("game_", StringComparison.Ordinal))
+                {
+                    string id = label.Substring(5);
+                    bool ok = FindObjectOfType<GameSwitcher>()?.ServerSetActiveGameById(id) ?? false;
+                    Debug.Log($"[TableDuo] MarkServer game 切替 '{id}' → {(ok ? "成功" : "失敗（id 不一致 / GameSwitcher 不在）")}");
+                }
             }
         }
 

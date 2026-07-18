@@ -186,3 +186,15 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 - **赤色マーカー＝空気マーカー（`DSA_air_marker`・README で「赤い丸チップ」）を 0.8 倍**: `scale: chipScale` → `chipScale*0.8`（1.6→**1.28**。上記 07-02 (4)/(5) の「空気マーカー 1.6倍」記述はこの版で上書き）。物理はそのまま維持
 - Setup 再生成でライブシーンに反映済み（DSA_Board に Rigidbody/BoxCollider、DSA_air_marker localScale=1.28 を MCP で確認）。**薄板ボードの dynamic はトンネリング懸念があるので実機で落下・投げ挙動を要確認**
 
+## 2026-07-18 (2) ボドゲ切替 + 操作系再設計「Quest=体験・PC ホスト=運用」（コンパイル/EditMode 93/93・実機未検証）
+
+計画 [.claude/plans/2026-07-18_tableduo-game-switcher-host-ui.md](../plans/2026-07-18_tableduo-game-switcher-host-ui.md)。
+
+- **ボドゲのランタイム切替**: [GameSwitcher](../../Assets/TableDuo/Scripts/Net/GameSwitcher.cs)（`[TableDuo]/GameSwitcher` in-scene NetworkObject・`NetworkVariable<byte>` server write）。**stow/show 方式** = 全ゲーム（`Props/Game_dsa` 海底探検 / `Props/Game_algo` アルゴ 24 枚）を常時 spawn したまま、非アクティブは Renderer/Collider off + `Grabbable.IsStowed` + kinematic。NGO 1.x の despawn/SetActive 地雷を回避。切替は両ゲームの盤面リセットを兼ねる（解放→初期姿勢復元→isKinematic）
+- **⚠ 掴み判定はコライダー非依存**（`PinchGrabInteractor.FindNearestFree` = FindObjectsOfType + 距離）→ stow は Collider off だけでは掴めてしまう。`IsStowed` で候補除外 + `RequestGrabServerRpc` でもガード（二重防御）。**ボドゲ/プロップを非表示にする実装は必ずこのフラグを通すこと**
+- **アルゴ**: `Assets/TableDuo/ThirdParty/Algo/glb/`（model-lab 産・白/黒 0-11 の 24 枚・42×66×2mm 実寸は GLB 直パース確認）。`PlaceAlgo` = 2 列・値順・face-down（表面のみテクスチャ＝裏無地で値が隠れる）・1.3 倍・物理あり。シャッフルは人間運用
+- **FacilitatorPanel**（PC ホスト専用 IMGUI・画面右・F10 トグル）: ボドゲ切替 / 接続クライアント別の手バリアント強制 / 盤面リセット / マーク送信。`mark?label=game_<id>` の curl 導線も追加（MarkServer）
+- **手バリアントのホスト強制**: TableDuoPlayer `_forcedVariant`（server write・255=未強制）→ owner が観測 → `StudyConfig.ApplyForcedVariant`（ロック貫通）→ 既存チェーン（HandVariantChanged→WriteStudyFlags→_studyFlags→全 peer 再構築）を再利用。`WarnIfHandVariantMismatch` は LogError→Log 降格（強制で意図的に不一致になり得るため）
+- **コントローラ簡素化**: 残るのは視点リセットのみ（右 A 単押し / 両グリップ 3s・従来どおり）。左 Y（HandVariantWatcher）**削除**・右 B（WireTap）**バインド撤去**（F9/GUI は維持）。`StudyConfig.HandVariantLockedByFlag` は gating に使われなくなり記録目的で残置
+- **実機確認事項**: 切替の全 peer 同期（特に遅参加）/ stow 中プロップが掴めない・見えない / 強制バリアントの反映と CSV / アルゴカード（2mm 薄板×1.3）の物理挙動
+

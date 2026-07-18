@@ -11,11 +11,14 @@ TableDuo（ハンド）で手役の手メッシュを **Default=Meta白手 / Rea
 3種に切り替える機能を実装（2026-07-01）。素材はユーザー購入の **VR Hands Starter Pack**。パックの
 Robot/Male のみ `Assets/TableDuo/ThirdParty/VRHandsStarterPack/` に GUID 保持で抽出（他7種は未インポート）。
 
-**切替**: 起動フラグ `tdv_hand=default|realistic|robot`（intent extras/CLI）＋ 実機は**左コントローラ Y** で巡回
-（`HandVariantWatcher`）。Editor 既定は `ConnectionManager.studyHandVariant`。
+**切替**: 起動フラグ `tdv_hand=default|realistic|robot`（intent extras/CLI）＋ **セッション中はホスト（PC）の
+FacilitatorPanel から強制**（`TableDuoPlayer.ServerForceHandVariant` → `_forcedVariant` server write → owner が
+`StudyConfig.ApplyForcedVariant`）。旧: 左コントローラ Y 巡回（`HandVariantWatcher`）は **2026-07-18 撤去**
+（コントローラ=視点リセット専用化）。Editor 既定は `ConnectionManager.studyHandVariant`。
 **リモート描画は申告値同期（2026-07-10〜）**: 自分の手＝ローカル選択、相手の手＝相手端末の申告値
-（`TableDuoPlayer._studyFlags` bit2-3。Y 切替で書き直し → `RemoteAvatarView.SetHandVariant` が再構築）＝
-ホスト/観戦 PC にも切替が映る。調査は従来どおり両端末を同フラグ起動（不一致はエラーログ）。
+（`TableDuoPlayer._studyFlags` bit2-3。変更で書き直し → `RemoteAvatarView.SetHandVariant` が再構築）＝
+ホスト/観戦 PC にも切替が映る。調査は従来どおり両端末を同フラグ起動（不一致は情報ログ — ホスト強制で
+意図的不一致があり得るため 2026-07-18 に LogError から降格）。
 適用は自分の手（`LocalVariantHand`）＋相手の手（`RemoteAvatarView`）両方。
 
 **駆動のキモ（2026-07-11 参照コピー式へ全面刷新）**: パック手は Meta の `b_*` と別命名・別バインド・**別ローカル軸規約**。

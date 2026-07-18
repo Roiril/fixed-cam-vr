@@ -172,7 +172,7 @@ namespace TableDuoVr.Net
             // （生成時1回固定だと後から spawn したオブジェクトを永久に掴めない）
             foreach (var g in FindObjectsOfType<Grabbable>())
             {
-                if (g == null || g.IsHeld) continue;
+                if (g == null || g.IsHeld || g.IsStowed) continue; // stow = 非アクティブゲームは掴めない
                 float sqr = (g.transform.position - worldPos).sqrMagnitude;
                 if (sqr < bestSqr)
                 {

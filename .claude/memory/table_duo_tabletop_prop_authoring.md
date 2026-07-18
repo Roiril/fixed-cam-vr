@@ -13,9 +13,18 @@ metadata:
 
 ## 0. どこに何を書くか（全体像）
 
-- **コード**: [TableDuoSceneSetup.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoSceneSetup.cs) の `PlaceDeepSeaAdventure` が手本。新ゲームは `PlaceXxx(Transform parent, float topY, float cx, float cz, float hx, float hz, float edge)` を作り `Setup()` 本体から呼ぶ（topY=天板上面 Y、cx/cz=天板中心 XZ、hx/hz=天板半径、edge=縁マージン）。
+- **コード**: [TableDuoSceneSetup.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoSceneSetup.cs) の `PlaceDeepSeaAdventure` / `PlaceAlgo` が手本。新ゲームは `PlaceXxx(Transform parent, float topY, float cx, float cz, float hx, float hz, ...)` を作り `Setup()` 本体から呼ぶ（topY=天板上面 Y、cx/cz=天板中心 XZ、hx/hz=天板半径、edge=縁マージン）。
 - **GLB 資産**: `Assets/TableDuo/ThirdParty/<Game>/glb/`。glTFast 取込（テクスチャ埋め込み・実寸メートル）。
 - **反映**: メニュー `Tools/FixedCamVr/Setup/Setup TableDuo Scene`（冪等）を再実行 → `TableDuoMain.unity` にベイクされる。**シーン差分は毎回巨大**（全ルート作り直しのため。正常）。
+
+### 複数ゲームとランタイム切替（2026-07-18〜・[GameSwitcher](../../Assets/TableDuo/Scripts/Net/GameSwitcher.cs)）
+
+卓上ゲームは `Props/Game_<id>` 別ルートに**全部ベイクし常時 spawn**、[GameSwitcher](../../Assets/TableDuo/Scripts/Net/GameSwitcher.cs)（server 権威 NetworkVariable）が 1 つだけ実体化する（stow/show。NGO 1.x の in-scene despawn/respawn・SetActive 地雷を回避）。**新ゲーム追加の手順**:
+
+1. `Setup()` 内で `Game_<id>` ルートを作り `PlaceXxx` で配置、**非デフォルトゲームは `BakeStowedState(root)`**（Renderer/Collider off + kinematic ベイク＝Editor/Preview/起動直後がランタイム既定と一致）
+2. `WireGameSwitcher(...)` の 3 配列（gameRoots / gameIds / displayNames）へ追加 — これだけで FacilitatorPanel のボタンと `mark?label=game_<id>` の curl 導線に自動で出る
+3. **stow の掴み排除は `Grabbable.IsStowed` が担う**（掴み判定 `PinchGrabInteractor` はコライダー非依存の距離検索なので Collider off だけでは掴めてしまう — 罠）。GameSwitcher.ApplyLocal が設定するので追加作業は不要だが、独自に隠すものを作る時はこのフラグを必ず通す
+4. 切替はサーバ側で両ゲームの盤面リセットを兼ねる（初期姿勢は GameSwitcher が BoardReset と同じ流儀でキャプチャ）。ゲーム別の追加リセット処理は不要
 
 ## 1. 最小レシピ（プロップ 1 個 = 2 行 + α）
 

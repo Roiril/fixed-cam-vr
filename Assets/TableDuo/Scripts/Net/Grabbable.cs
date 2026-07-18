@@ -126,6 +126,14 @@ namespace TableDuoVr.Net
         public bool IsHeld => _holder.Value != NoHolder;
         public ulong HolderClientId => _holder.Value;
 
+        /// <summary>stow（気配消し）状態。<see cref="GameSwitcher"/> が全 peer で設定する。
+        /// replicated var（activeGame）起点なので peer 間で一致する。stow 中は掴み対象から除外され、
+        /// サーバ側 grab RPC もはじく（コライダー非依存の距離検索を二重防御）。</summary>
+        public bool IsStowed { get; private set; }
+
+        /// <summary>stow 状態を設定する（GameSwitcher が ApplyLocal で全 peer に反映）。</summary>
+        public void SetStowed(bool stowed) => IsStowed = stowed;
+
         public bool IsHeldBy(ulong clientId, byte hand) =>
             _holder.Value == clientId && _holderHand.Value == hand;
 
@@ -146,6 +154,7 @@ namespace TableDuoVr.Net
         {
             ulong sender = rpcParams.Receive.SenderClientId;
             if (IsHeld) return; // 先着勝ち。敗者は無反応（すり抜け）
+            if (IsStowed) return; // 非アクティブゲームのプロップは掴めない（GameSwitcher が stow 中）
 
             var seat = SeatLocator.FindByClient(sender); // 掴み時に1回だけ席を解決（以後 Update で使い回す）
             if (seat == null || !TryGetHandWorldPose(sender, hand, seat, out var handPos, out var handRot)) return;

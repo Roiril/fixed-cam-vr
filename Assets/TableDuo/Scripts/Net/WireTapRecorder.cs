@@ -11,10 +11,10 @@ namespace TableDuoVr.Net
 {
     /// <summary>
     /// 通信ワイヤタップ記録（ソロ／PC ホスト実機検証用）。開始/停止を
-    ///   - 右コントローラ B ボタン（Quest）
     ///   - キーボード F9（PC ホスト＝コントローラ無し）
     ///   - 画面の GUI ボタン（PC ホスト。マウスで押せる）
     /// のいずれかでトグルし、その間「通信上で見えるアバターの動き」を CSV に記録する:
+    /// （コントローラ B バインドは撤去 — コントローラは視点リセット専用化。2026-07-18）
     ///   - dir=sent: この端末が相手へ実際に送出した pose（<see cref="ConnectionManager.LocalPoseSent"/>
     ///     ＝ワイヤ送出点のタップ。ローカル描画用の手は経由しない — 手側検証の主対象）
     ///   - dir=recv: ネットワーク経由で受信・デコード・Seq フィルタ通過後の相手 pose
@@ -51,8 +51,8 @@ namespace TableDuoVr.Net
 
         private void Update()
         {
-            bool toggle = OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.RTouch)
-                          || Input.GetKeyDown(KeyCode.F9);
+            // コントローラは視点リセット専用化（2026-07-18）。記録は F9 / PC GUI で
+            bool toggle = Input.GetKeyDown(KeyCode.F9);
             if (toggle) Toggle();
 
             if (IsRecording && Time.unscaledTime >= _nextFlush)
@@ -63,7 +63,7 @@ namespace TableDuoVr.Net
         }
 
         // PC ホスト（コントローラ無し）用の GUI ボタン。マウスで記録開始/停止できる。
-        // Quest（Android）では OnGUI ボタンにカーソルが無く押しにくいので出さない（B/F9 を使う）。
+        // Quest（Android）では OnGUI ボタンにカーソルが無く押しにくいので出さない（F9 を使う）。
         private void OnGUI()
         {
             if (Application.platform == RuntimePlatform.Android) return;
@@ -125,7 +125,7 @@ namespace TableDuoVr.Net
             _cm.LocalPoseSent += _onSent;
             _cm.RemotePoseReceived += _onRecv;
             DiagnosticsEnabled = true; // 描画適用側（RemoteHandView）の診断ログも有効化
-            Debug.Log($"[TableDuo][WireTap] ● 記録開始 → {_path}（B / F9 / GUI で停止）。診断ログ [TDV-WIRE]/[TDV-DRAW] を有効化");
+            Debug.Log($"[TableDuo][WireTap] ● 記録開始 → {_path}（F9 / GUI で停止）。診断ログ [TDV-WIRE]/[TDV-DRAW] を有効化");
         }
 
         private void StopRecording()
