@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-07-18
 updated: 2026-07-18
 slug: connection-robustness
@@ -105,9 +105,9 @@ IP 変動・入れ替わりで「間違った映像が間違ったゾーンに�
 
 ### Phase 4: streamer Service 化（独立コミット・Phase 1-3 検証後）
 
-- [ ] CameraX bind を LifecycleService（StreamingService 拡張）へ移管。Activity は preview 表示のみ
-- [ ] 画面 OFF・ホーム誤爆でも配信継続を実機確認。不安定ならこのコミットのみ revert
-- [ ] BOOT_COMPLETED 自動復帰は**入れない**（Android 14 はバックグラウンドからの camera FGS 起動を禁止。runbook 対応）
+- [x] CameraX bind を Service（自前 LifecycleRegistry で LifecycleOwner 化）へ移管。Activity は UI 専任・bindService
+- [x] 実機確認（Pixel 7a）: 前面29.9 / HOME background 29.6 / 別アプリ 29.6 / 画面OFF 29.9 fps（v0.3.0 は 2.5fps）。discovery/cameraId も維持。3 台 v0.4.0 統一（streamer 8369635）
+- [x] BOOT_COMPLETED 自動復帰は入れない（Android 14 の camera FGS 制約。方針どおり）。プロセス完全死からの自動再起動は非保証（runbook 対応）
 
 ### Phase 5: 統合検証（シュビー本体・逐次）
 
@@ -135,3 +135,5 @@ IP 変動・入れ替わりで「間違った映像が間違ったゾーンに�
 - 2026-07-18 Quest 実機検証完了（discovery 張替は設計どおり機能）。シーン配線コミット b79c4a9
 - **実機検証で発見した設計ギャップ**: 「正 IP なのに受信 0」（half-open/dead socket）は discovery（同一 IP を候補にしない）でも lag-detect（/health fps 必要）でも救えない → CameraStream に **stall watchdog**（無フレーム 10s + cooldown で同一エンドポイント強制再接続）を追加して閉じた
 - 残: HMD 装着時 suspend 挙動・二重 ID conflict・show-server 発見の実機確認（次回現場テストで）、Phase 4 Service 化
+- 2026-07-18 Phase 4 完了（streamer v0.4.0・独立コミット 8369635）。Service 化で background fps 激減を解消。3 台 v0.4.0 統一・Quest 全系疎通確認。**この計画の実装フェーズは完了**（残: HMD 装着 suspend・二重 ID conflict・show-server 発見の現場実機確認は次回テスト）
+- 逸脱→修正: opus の Service 化に Kotlin ネストブロックコメントの罠（`/**...*/` 内の `/record/*` の `/*` がネスト開始と誤解釈され Unclosed comment）。親が該当コメントを書き換えて解消
