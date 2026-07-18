@@ -15,6 +15,13 @@ namespace FixedCamVr.OvrBridge
         [SerializeField] private CameraStreamRegistry? registry;
         [SerializeField] private ScreenAnchor? screenAnchor;
 
+        [Tooltip("カメラ切替を一本化する CameraSwitchDirector（Screen 上）。割当時はここ経由" +
+                 "（時間ガード + dip 演出）。null なら registry を直接叩く（後方互換）。")]
+        [SerializeField] private CameraSwitchDirector? switchDirector;
+
+        [Tooltip("トラッキングロスト（HMD 非装着）を通知する SignalLostFx（Screen 上）。null なら通知しない。")]
+        [SerializeField] private SignalLostFx? signalFx;
+
         [Tooltip("演出 cue を発火する ShowControlClient（Screen 上）。未割当なら Start で自動取得。")]
         [SerializeField] private ShowControlClient? showControl;
 
@@ -90,6 +97,14 @@ namespace FixedCamVr.OvrBridge
             // OVRManager.display が後から生えるケースに備え、未購読なら毎フレーム再試行（生えたら 1 回で確定）。
             if (!_recenterSubscribed) TrySubscribeRecenter();
 
+            // トラッキングロスト（HMD 非装着 = プロキシ）を SignalLostFx へ通知。初期化前（instance==null）は
+            // present 扱いにして誤発火を避ける。位置トラッキングの一時ロストは resume-gap 側で拾う。
+            if (signalFx != null)
+            {
+                bool present = OVRManager.instance == null || OVRManager.isHmdPresent;
+                signalFx.ReportTrackingLost(!present);
+            }
+
             // 両グリップ長押しで登録モード切替（押しっぱなしで連続トグルしない）
             if (courseRegistration != null)
             {
@@ -132,8 +147,18 @@ namespace FixedCamVr.OvrBridge
             // RTouch を明示して A=Next / B=Prev に限定 → 左の X/Y は本来の anchor/HUD だけになる。
             if (registry != null && registry.Count > 0)
             {
-                if (OVRInput.GetDown(nextButton, OVRInput.Controller.RTouch)) registry.Next();
-                if (OVRInput.GetDown(prevButton, OVRInput.Controller.RTouch)) registry.Prev();
+                bool next = OVRInput.GetDown(nextButton, OVRInput.Controller.RTouch);
+                bool prev = OVRInput.GetDown(prevButton, OVRInput.Controller.RTouch);
+                if (switchDirector != null)
+                {
+                    if (next) switchDirector.Next();
+                    if (prev) switchDirector.Prev();
+                }
+                else
+                {
+                    if (next) registry.Next();
+                    if (prev) registry.Prev();
+                }
             }
             if (screenAnchor != null)
             {

@@ -22,6 +22,11 @@ Shader "FixedCamVr/ScreenComposite"
         _Grain("Grain", Range(0, 0.3)) = 0
         _Scanline("Scanline", Range(0, 1)) = 0
         _ScanlineCount("Scanline Count", Float) = 240
+        [Header(Switch and Signal FX (out of FS_POST parity))]
+        // ↓ これらは web-compositor の FS_POST 一致規約の対象外（別系統 uniform）。
+        //   dip-to-black（切替演出）と信号ロスト（配信断のフェイルソフト＝砂嵐）を post FX の後段にかける。
+        _SwitchDim("Switch Dip Dim", Range(0, 1)) = 0
+        _SignalLost("Signal Lost (static)", Range(0, 1)) = 0
     }
 
     SubShader
@@ -54,6 +59,9 @@ Shader "FixedCamVr/ScreenComposite"
                 float _Grain;
                 float _Scanline;
                 float _ScanlineCount;
+                // FS_POST 一致規約の対象外（別系統）。CameraSwitchDirector / SignalLostFx が駆動。
+                float _SwitchDim;
+                float _SignalLost;
             CBUFFER_END
 
             struct Attributes
@@ -143,6 +151,19 @@ Shader "FixedCamVr/ScreenComposite"
                     float n = Hash21(screenUv * 480.0 + frac(_Time.y));
                     col += (n - 0.5) * _Grain;
                 }
+
+                // --- 切替 dip-to-black + 信号ロスト砂嵐（FS_POST 一致規約の対象外・別系統）---
+                // 信号ロスト: 手続き砂嵐へクロスフェード + 減光。強=1.0（配信断）/ 弱（トラッキングロスト）は低い値。
+                if (_SignalLost > 0.001)
+                {
+                    float st = Hash21(screenUv * 320.0 + floor(_Time.y * 60.0)); // ~60Hz でざわつく砂嵐
+                    half3 stat = half3(st, st, st);
+                    float sl = saturate(_SignalLost);
+                    col = lerp(col, stat, sl);
+                    col *= 1.0 - 0.30 * sl; // 減光
+                }
+                // dip-to-black: 切替の一瞬だけ黒へ（CCTV の瞬断）。
+                col *= 1.0 - saturate(_SwitchDim);
 
                 return half4(saturate(col), 1);
             }

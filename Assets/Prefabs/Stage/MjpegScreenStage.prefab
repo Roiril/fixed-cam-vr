@@ -32,7 +32,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 1.5, z: 1.5}
-  m_LocalScale: {x: 1.7778, y: 1, z: 1}
+  m_LocalScale: {x: 2.3704, y: 1.3333, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 436909362593726098}
@@ -118,10 +118,17 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier:
   head: {fileID: 0}
-  distance: 1.5
+  distance: 2
   locked: 0
   toggleKey: 32
   yawOnly: 1
+  yawDeadzoneDeg: 10
+  smoothTime: 0.3
+  maxYawSpeedDegPerSec: 110
+  catchUpThresholdDeg: 45
+  catchUpBoost: 2
+  heightOffset: -0.28
+  resumeGapSec: 0.5
 --- !u!114 &4781234567890123456
 MonoBehaviour:
   m_ObjectHideFlags: 0

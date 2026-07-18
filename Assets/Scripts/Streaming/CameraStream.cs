@@ -72,6 +72,12 @@ namespace FixedCamVr.Streaming
         /// <summary>HMD 着脱 / OS pause で凍結中か。DiscoveryClient は suspend 中を「フレーム断」に数えない。</summary>
         public bool IsSuspended => _suspended;
 
+        /// <summary>
+        /// 最後にテクスチャへ反映したフレームの realtimeSinceStartup。未受信 / リセット直後は 0。
+        /// SignalLostFx が配信断（フレーム断 &gt; 閾値）を判定するために読む。
+        /// </summary>
+        public float LastFrameRealtime => _lastFrameTime;
+
         /// <summary>fixed-cam-streamer の /info から取得したメタ情報。未取得 / 非対応サーバなら null。</summary>
         public StreamMetadata? Metadata => _metadata;
 

@@ -25,14 +25,20 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("発見（discovery）状態の取得元。null なら DISC 行を出さない。")]
         [SerializeField] private DiscoveryClient? discovery;
 
+        [Tooltip("信号ロスト / 追従凍結の真実状態の取得元（スタッフ用）。null なら STATE 行の SIG を出さない。")]
+        [SerializeField] private SignalLostFx? signalFx;
+
+        [Tooltip("切替抑止 / dip 状態の取得元（スタッフ用）。null なら STATE 行の SW を出さない。")]
+        [SerializeField] private CameraSwitchDirector? switchDirector;
+
         [Tooltip("HMD 位置取得用 Transform。OVRCameraRig の CenterEyeAnchor を割り当てる。")]
         [SerializeField] private Transform? hmd;
 
         [Tooltip("HUD 更新間隔 (秒)。Update 毎フレーム文字列構築を避けて 90Hz を維持するためのスロットリング。")]
         [SerializeField] private float updateInterval = 0.25f;
 
-        [Tooltip("起動時に HUD を表示するか。")]
-        [SerializeField] private bool startVisible = true;
+        [Tooltip("起動時に HUD を表示するか。本番は false（視界保護）。左 Y でいつでも表示。")]
+        [SerializeField] private bool startVisible = false;
 
         private readonly StringBuilder _sb = new(256);
         private float _accum;
@@ -84,6 +90,11 @@ namespace FixedCamVr.Diagnostics
             BuildHmdLine(_sb);
             _sb.Append('\n');
             BuildFxLine(_sb);
+            if (signalFx != null || switchDirector != null)
+            {
+                _sb.Append('\n');
+                BuildStateLine(_sb);
+            }
 
             // 発見（discovery）: カメラ別の { id, 出所レイヤ, 実効エンドポイント, lastSeen, 警告 }。
             if (discovery != null)
@@ -217,6 +228,27 @@ namespace FixedCamVr.Diagnostics
             // Fx 系の有効状態は現状 FxSourceBinder からは公開 API として読めないので NA。
             // Fx 側に取得 API が追加され次第ここを実装する。
             sb.Append("FX   CRT NA   Dust NA   Sobel NA");
+        }
+
+        // スタッフ用の真実状態（配信断 / 追従凍結 / 切替抑止）。体験者には diegetic 演出でしか出ない。
+        private void BuildStateLine(StringBuilder sb)
+        {
+            sb.Append("STATE ");
+            if (signalFx != null)
+            {
+                sb.Append("SIG ");
+                if (signalFx.SignalLost) sb.Append("LOST");
+                else if (signalFx.TrackingFrozen) sb.Append("TRACK");
+                else sb.Append("ok");
+            }
+            if (switchDirector != null)
+            {
+                if (signalFx != null) sb.Append("  ");
+                sb.Append("SW ");
+                if (switchDirector.Dipping) sb.Append("dip");
+                else if (switchDirector.SwitchSuppressed) sb.Append("hold");
+                else sb.Append("rdy");
+            }
         }
 
         // カメラ別の発見状態を 1 行ずつ。文字列は既存参照の append のみで新規 GC を出さない。

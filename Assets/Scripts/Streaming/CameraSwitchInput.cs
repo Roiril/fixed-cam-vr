@@ -10,6 +10,11 @@ namespace FixedCamVr.Streaming
     public sealed class CameraSwitchInput : MonoBehaviour
     {
         [SerializeField] private CameraStreamRegistry? registry;
+
+        [Tooltip("切替を一本化する CameraSwitchDirector。割当時はここ経由（時間ガード + dip 演出）。" +
+                 "null なら従来どおり registry を直接叩く（後方互換）。")]
+        [SerializeField] private CameraSwitchDirector? director;
+
         [SerializeField] private bool enableKeyboard = true;
 
         public CameraStreamRegistry? Registry => registry;
@@ -17,6 +22,7 @@ namespace FixedCamVr.Streaming
         private void Reset()
         {
             registry = GetComponent<CameraStreamRegistry>();
+            director = GetComponent<CameraSwitchDirector>();
         }
 
         private void Update()
@@ -27,17 +33,17 @@ namespace FixedCamVr.Streaming
             {
                 if (Input.GetKeyDown(KeyCode.Tab))
                 {
-                    if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
-                        registry.Prev();
-                    else
-                        registry.Next();
+                    bool prev = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+                    if (director != null) { if (prev) director.Prev(); else director.Next(); }
+                    else if (prev) registry.Prev(); else registry.Next();
                 }
 
                 for (int i = 0; i < 9; i++)
                 {
                     if (Input.GetKeyDown(KeyCode.Alpha1 + i))
                     {
-                        registry.SetActive(i);
+                        if (director != null) director.RequestManual(i);
+                        else registry.SetActive(i);
                         break;
                     }
                 }

@@ -95,6 +95,58 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
 
+            // 0.5. Phase B/C: Screen 上に CameraSwitchDirector / SwitchAudioCue / SignalLostFx を冪等配置。
+            //      Screen（= ScreenOverlayController の GameObject）は MjpegScreen と material を共有するため、
+            //      dip-to-black（_SwitchDim）/ 砂嵐（_SignalLost）を同じマテリアルへ書ける。
+            //      Screen は prefab instance で削除再生成しないので GetComponent 優先（無ければ AddComponent）。
+            var overlay = Object.FindObjectOfType<ScreenOverlayController>(includeInactive: true);
+            if (overlay == null)
+                Debug.LogWarning("[MainDemoSceneSetup] ScreenOverlayController が見つかりません。Director/SignalLostFx/CueScheduler の配線をスキップ。");
+
+            CameraSwitchDirector? director = null;
+            SignalLostFx? signalFx = null;
+            var screenGo = overlay != null ? overlay.gameObject : null;
+            if (screenGo != null)
+            {
+                // 切替音マスク（AudioSource + 空クリップ）。
+                var audioSource = screenGo.GetComponent<AudioSource>();
+                if (audioSource == null) audioSource = screenGo.AddComponent<AudioSource>();
+                audioSource.playOnAwake = false;
+                audioSource.spatialBlend = 0f;
+                var audioCue = screenGo.GetComponent<SwitchAudioCue>();
+                if (audioCue == null) audioCue = screenGo.AddComponent<SwitchAudioCue>();
+                var audioSo = new SerializedObject(audioCue);
+                TrySetObjectRef(audioSo, "source", audioSource);
+                audioSo.ApplyModifiedPropertiesWithoutUndo();
+
+                // カメラ切替 Director（時間ガード + dip-to-black）。
+                director = screenGo.GetComponent<CameraSwitchDirector>();
+                if (director == null) director = screenGo.AddComponent<CameraSwitchDirector>();
+                var dirSo = new SerializedObject(director);
+                TrySetObjectRef(dirSo, "registry", registry);
+                TrySetObjectRef(dirSo, "overlay", overlay);
+                TrySetObjectRef(dirSo, "audioCue", audioCue);
+                dirSo.ApplyModifiedPropertiesWithoutUndo();
+
+                // フェイルソフト（信号断 → 砂嵐 / トラッキングロスト → 追従凍結 + 弱ノイズ）。
+                signalFx = screenGo.GetComponent<SignalLostFx>();
+                if (signalFx == null) signalFx = screenGo.AddComponent<SignalLostFx>();
+                var sigSo = new SerializedObject(signalFx);
+                TrySetObjectRef(sigSo, "registry", registry);
+                var screenAnchor = screenGo.GetComponent<ScreenAnchor>();
+                if (screenAnchor != null) TrySetObjectRef(sigSo, "screenAnchor", screenAnchor);
+                sigSo.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            // 0.6. CameraSwitchInput（[Streaming] 上・キーボード切替）を Director 経由へ配線。
+            var switchInput = streaming.GetComponent<CameraSwitchInput>();
+            if (switchInput != null && director != null)
+            {
+                var siSo = new SerializedObject(switchInput);
+                TrySetObjectRef(siSo, "director", director);
+                siSo.ApplyModifiedPropertiesWithoutUndo();
+            }
+
             // 1. [Zones] — 廻リ視の周回経路（企画書 図4）を ±1.3m プレイレンジに当てはめた推測配置。
             // ★パーテーションで L 字壁を組んだら [HmdTrace] 実測で必ず校正すること（unity-vr.md 原則）。
             //
@@ -124,6 +176,7 @@ namespace FixedCamVr.Streaming.EditorTools
             var tracker = trackerGo.AddComponent<PlayerZoneTracker>();
             var trackerSo = new SerializedObject(tracker);
             TrySetObjectRef(trackerSo, "registry", registry);
+            if (director != null) TrySetObjectRef(trackerSo, "director", director);
             TrySetObjectRef(trackerSo, "headTransform", centerEye.transform);
             SetPlayerZoneArray(trackerSo, "zones", new[] { zoneA, zoneB, zoneC, zoneC2 });
             TrySetFloat(trackerSo, "hysteresisShrink", HysteresisShrink);
@@ -201,10 +254,7 @@ namespace FixedCamVr.Streaming.EditorTools
             //       LapCounter が ActiveChanged を周回へ写像し進入を CueScheduler へ橋渡し、
             //       CueScheduler が (lap,camera,delay,once) 評価で ScreenOverlayController.PlayCue を直接呼ぶ。
             //       schedule / cue 解決 / activeCue 抑止は ShowControlClient から供給される。
-            var overlay = Object.FindObjectOfType<ScreenOverlayController>(includeInactive: true);
-            if (overlay == null)
-                Debug.LogWarning("[MainDemoSceneSetup] ScreenOverlayController が見つかりません。CueScheduler の発火先未配線。");
-
+            //       overlay は 0.5 で取得済み（Director/SignalLostFx と同じ Screen 上）。
             var cueScheduler = trackerGo.AddComponent<CueScheduler>();
             var schSo = new SerializedObject(cueScheduler);
             if (overlay != null) TrySetObjectRef(schSo, "overlay", overlay);
@@ -230,14 +280,17 @@ namespace FixedCamVr.Streaming.EditorTools
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
             CreateStartupFader(centerEye.transform, registry);
 
-            // 4. DebugHud
-            var hud = CreateDebugHud(centerEye.transform, registry, tracker, centerEye.transform, discovery);
+            // 4. DebugHud（本番は startVisible=false・視界保護。左 Y でトグル。STATE 行で信号/切替の真実状態）
+            var hud = CreateDebugHud(centerEye.transform, registry, tracker, centerEye.transform, discovery,
+                                     signalFx, director);
 
-            // 5. OvrControllerBridge.hud に HUD 連携 + CourseRegistrationController / CourseFrame 接続
+            // 5. OvrControllerBridge.hud に HUD 連携 + CourseRegistrationController / CourseFrame + Director / SignalFx 接続
             if (ovrBridge != null)
             {
                 var bridgeSo = new SerializedObject(ovrBridge);
                 if (hud != null) TrySetObjectRef(bridgeSo, "hud", hud);
+                if (director != null) TrySetObjectRef(bridgeSo, "switchDirector", director);
+                if (signalFx != null) TrySetObjectRef(bridgeSo, "signalFx", signalFx);
                 TrySetObjectRef(bridgeSo, "courseRegistration", registration);
                 TrySetObjectRef(bridgeSo, "courseFrame", courseFrame);
                 TrySetFloat(bridgeSo, "calibToggleHoldSec", 3.0f); // 両グリップ 3 秒長押しで登録トグル
@@ -249,7 +302,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（両グリップ 3 秒長押しで 2 点登録、A=マーク/B=確定/スティック微調整） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先） / StartupFader / DebugHud / OvrBridge 連携。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（両グリップ 3 秒長押しで 2 点登録、A=マーク/B=確定/スティック微調整） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / DebugHud（startVisible=false・STATE 行） / OvrBridge 連携。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
@@ -327,7 +380,8 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         private static RuntimeDebugHud? CreateDebugHud(Transform parent, CameraStreamRegistry registry,
-            PlayerZoneTracker tracker, Transform hmd, DiscoveryClient? discovery)
+            PlayerZoneTracker tracker, Transform hmd, DiscoveryClient? discovery,
+            SignalLostFx? signalFx, CameraSwitchDirector? director)
         {
             var canvasGo = new GameObject(DebugHudName);
             canvasGo.transform.SetParent(parent, worldPositionStays: false);
@@ -366,8 +420,10 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(hudSo, "tracker", tracker);
             TrySetObjectRef(hudSo, "hmd", hmd);
             if (discovery != null) TrySetObjectRef(hudSo, "discovery", discovery);
+            if (signalFx != null) TrySetObjectRef(hudSo, "signalFx", signalFx);
+            if (director != null) TrySetObjectRef(hudSo, "switchDirector", director);
             TrySetFloat(hudSo, "updateInterval", 0.25f);
-            TrySetBool(hudSo, "startVisible", true);
+            TrySetBool(hudSo, "startVisible", false); // 本番の視界保護（左 Y でトグル）
             hudSo.ApplyModifiedPropertiesWithoutUndo();
 
             var toggle = canvasGo.AddComponent<HudToggleInput>();

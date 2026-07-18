@@ -17,6 +17,10 @@ namespace FixedCamVr.Tracking
         [Tooltip("切替対象の CameraStreamRegistry。null の場合 Update は何もしない。")]
         [SerializeField] private CameraStreamRegistry? registry;
 
+        [Tooltip("切替を一本化する CameraSwitchDirector。割当時はゾーン切替をここ経由で要求する" +
+                 "（最小滞在・クールダウン・cue 凍結ガード）。null なら registry を直接叩く（後方互換）。")]
+        [SerializeField] private CameraSwitchDirector? director;
+
         [Tooltip("OVRCameraRig 配下の CenterEyeAnchor を割り当てる。null の場合は Camera.main.transform を使用。")]
         [SerializeField] private Transform? headTransform;
 
@@ -95,7 +99,9 @@ namespace FixedCamVr.Tracking
 
             PlayerZone? previous = _current;
             _current = picked;
-            registry.SetActive(picked.CameraIndex);
+            // Director があればゾーン切替として要求（滞在ガード後に適用）。無ければ従来どおり即時切替。
+            if (director != null) director.RequestZone(picked.CameraIndex);
+            else registry.SetActive(picked.CameraIndex);
             ZoneChanged?.Invoke(previous, picked);
 
             if (logChanges)
