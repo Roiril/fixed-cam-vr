@@ -131,9 +131,13 @@ async function pollLoop() {
         rev = s.rev;
         applyState(s);
         const pinned = (s.cameras || []).filter((c) => c.pinned).map((c) => c.id);
+        const rp = (s.layout && Array.isArray(s.layout.regPoints)) ? s.layout.regPoints : null;
+        const regTxt = (rp && rp.length)
+          ? ` / 📍 ${rp.length}点 ${rp.map((p) => `(${(+p.x).toFixed(2)},${(+p.z).toFixed(2)})`).join(' ')}`
+          : ' / 📍 既定2点';
         document.getElementById('simState').textContent =
           `state: rev=${rev} / camera=${(s.cameras || [])[activeIndex]?.id || '?'}${cameraOverride ? ' (override)' : ''}`
-          + (pinned.length ? ` / 📌 ${pinned.join(',')}` : '');
+          + (pinned.length ? ` / 📌 ${pinned.join(',')}` : '') + regTxt;
       }
     } catch (e) {
       await new Promise((res) => setTimeout(res, 2000));

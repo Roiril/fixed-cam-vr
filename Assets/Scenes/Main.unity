@@ -3367,6 +3367,7 @@ MonoBehaviour:
   regPoint1: {x: -0.5, y: 0.5}
   regPoint2: {x: 0.5, y: 0.5}
   distanceTolerance: 0.15
+  maxResidualM: 0.12
   nudgeMoveSpeed: 0.3
   nudgeYawSpeed: 10
   floorW: 1.8

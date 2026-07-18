@@ -93,6 +93,10 @@ def _default_show():
         # course.order = 周回の巡回順（カメラ index の配列。order[0]=スタート領域）。
         # フロアマップ UI が grid の塗りから角度順で提案し CW/CCW で反転できる。周回カウント
         # （schedule 発火）はこの順に沿って進む。
+        # regPoints = HMD 位置合わせのタッチ基準点（course space・順序=タッチ順・2〜5 点）。
+        # 各要素 {x, z, label?}。フロアマップ UI が編集。未設定（下記のように省略）なら Unity は
+        # 既定 2 点 (-0.5,0.5)/(0.5,0.5) へフォールバックする。フィールドを足さなくても layout は
+        # shallow 置換で丸ごと通るため、UI が保存すれば自動で乗る（focus: 後方互換維持）。
         'layout': {
             'rev': 1,
             'floor': {'w': 1.8, 'd': 1.8},

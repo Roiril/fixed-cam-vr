@@ -24,6 +24,14 @@ const GRID_TILE = 0.15, GRID_COLS = 12, GRID_ROWS = 12;
 // 歩行回廊とみなすタイル中心 → 正準ループまでの距離しきい値（m）。壁 0.5〜床端 0.9 の帯を拾う。
 const CORRIDOR_HALF = 0.20;
 
+// 位置合わせ点（HMD タッチ基準点）。course space・順序=タッチ順・最小 2・最大 5。
+const REG_MIN = 2, REG_MAX = 5, REG_HIT = 15; // REG_HIT = マーカー掴み判定半径(px)
+// regPoints 未設定 show.json の既定表示（L 字壁の外角側 2 点）。クリックで実データ化する。
+const DEFAULT_REG_POINTS = [
+  { x: -0.5, z: 0.5, label: '' },
+  { x: 0.5, z: 0.5, label: '' },
+];
+
 // ---- 正準ループ（course space の矩形 ±0.7）: cuts → grid 初期化にのみ使う -------
 const LOOP = [
   { a: [0.0, -0.7], b: [0.7, -0.7], d0: 0.0 },  // 南辺の東半分
@@ -143,6 +151,15 @@ export function createFloorMap(container, deps) {
           <div class="fm-course-order"></div>
           <button class="fm-course-auto" title="タイルの塗りからカメラ重心の角度順で巡回順を再提案">角度順に再提案</button>
         </div>
+        <div class="fm-reg">
+          <div class="fm-course-label">位置合わせ点（HMD タッチ順）</div>
+          <label class="fm-chk"><input class="fm-regmode" type="checkbox"> 📍 位置合わせ点を編集</label>
+          <div class="fm-reg-note"></div>
+          <div class="fm-reg-list"></div>
+          <button class="fm-reg-add"></button>
+          <div class="fm-reg-coords"></div>
+          <div class="fm-hint2">床の×印テープを置く位置に点を打つ。番号＝HMD でタッチする順。最小2・最大5点。編集 ON でキャンバスをクリック配置・ドラッグ移動・右クリック削除。未設定なら既定2点を使用。</div>
+        </div>
         <label class="fm-num">オーバーラップ (m)<input class="fm-overlap" type="number" min="0" max="0.5" step="0.01"></label>
         <label class="fm-num">ヒステリシス (m)<input class="fm-hyst" type="number" min="0" max="0.5" step="0.01"></label>
         <label class="fm-chk"><input class="fm-sim" type="checkbox"> シミュレーション（ドットをドラッグ）</label>
@@ -158,6 +175,8 @@ export function createFloorMap(container, deps) {
   const simChk = q('.fm-sim'), simOut = q('.fm-sim-out'), liveOut = q('.fm-live-out');
   const dirtyEl = q('.fm-dirty'), paletteEl = q('.fm-palette');
   const courseStartSel = q('.fm-course-start'), courseDirBtn = q('.fm-course-dir'), courseOrderEl = q('.fm-course-order');
+  const regModeChk = q('.fm-regmode'), regNoteEl = q('.fm-reg-note'), regListEl = q('.fm-reg-list');
+  const regAddBtn = q('.fm-reg-add'), regCoordsEl = q('.fm-reg-coords');
 
   // 状態
   let layout = clone(DEFAULT_LAYOUT);
@@ -169,6 +188,8 @@ export function createFloorMap(container, deps) {
   let drag = null;           // { mode:'paint'|'sim' }
   let courseStart = 0;       // 周回スタートのカメラ index（order[0]）
   let courseDir = 'ccw';     // 巡回の向き 'cw' | 'ccw'
+  let regMode = false;       // 位置合わせ点の編集モード（ON でキャンバス操作が点編集になる）
+  let regDragIndex = -1;     // ドラッグ中の regPoint index
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function markDirty() { dirty = true; renderDirty(); }
@@ -203,6 +224,29 @@ export function createFloorMap(container, deps) {
     const t = tileAt(x, z); if (!t) return null;
     const ch = cellAt(t.r, t.c);
     return /[0-8]/.test(ch) ? parseInt(ch, 10) : null;
+  }
+
+  // ---- 位置合わせ点アクセサ ----------------------------------------------------
+  // materialize 済みの regPoints 配列（無ければ null = 未設定＝既定フォールバック）。
+  function regArr() { return Array.isArray(layout.regPoints) ? layout.regPoints : null; }
+  function isRegUnset() { const a = regArr(); return !a || a.length === 0; }
+  // 描画・判定に使う点列（未設定なら既定 2 点のゴースト）。
+  function displayRegPts() { const a = regArr(); return (a && a.length) ? a : DEFAULT_REG_POINTS; }
+  // 未設定の既定ゴーストを実データへ昇格（クリック / ＋ボタンで発火）。
+  function materializeReg() {
+    if (isRegUnset()) { layout.regPoints = clone(DEFAULT_REG_POINTS); markDirty(); }
+  }
+  const regBadge = (i) => (i < 20 ? String.fromCodePoint(0x2460 + i) : String(i + 1)); // ①②…
+  // px 座標に最も近い表示点の index（REG_HIT 内、無ければ -1）。
+  function regHitIndex(px, py) {
+    const pts = displayRegPts();
+    let best = -1, bd = REG_HIT;
+    pts.forEach((p, i) => {
+      const [x, y] = courseToPx(p.x, p.z);
+      const d = Math.hypot(px - x, py - y);
+      if (d <= bd) { bd = d; best = i; }
+    });
+    return best;
   }
 
   // ---- 描画 -----------------------------------------------------------------
@@ -278,6 +322,9 @@ export function createFloorMap(container, deps) {
     p = courseToPx(w.endX[0], w.endX[1]); ctx.lineTo(p[0], p[1]);       // 北腕の先端
     ctx.stroke();
 
+    // 位置合わせ点（番号つきマーカー + タッチ順の破線）
+    drawRegPoints();
+
     // シミュレーションドット
     if (simChk.checked && sim) {
       const cam = camAt(sim.x, sim.z);
@@ -312,6 +359,47 @@ export function createFloorMap(container, deps) {
     ctx.fillStyle = color; ctx.fillRect(-6, -6, 12, 12);
     ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.strokeRect(-6, -6, 12, 12);
     ctx.restore();
+  }
+
+  // 位置合わせ点を番号つきで描く。未設定は薄色ゴースト。順序を破線で結ぶ。
+  function drawRegPoints() {
+    const pts = displayRegPts();
+    if (!pts.length) return;
+    const ghost = isRegUnset();
+    // タッチ順の破線
+    if (pts.length >= 2) {
+      ctx.save();
+      ctx.strokeStyle = ghost ? 'rgba(255,222,173,0.22)' : 'rgba(255,222,173,0.55)';
+      ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      pts.forEach((p, i) => { const [px, py] = courseToPx(p.x, p.z); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+      ctx.stroke();
+      ctx.restore();
+    }
+    pts.forEach((p, i) => {
+      const [px, py] = courseToPx(p.x, p.z);
+      ctx.save();
+      ctx.globalAlpha = ghost ? 0.4 : 1;
+      ctx.beginPath(); ctx.arc(px, py, 11, 0, Math.PI * 2);
+      ctx.fillStyle = '#141820'; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = '#ffdead'; ctx.stroke();
+      ctx.fillStyle = '#ffdead'; ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(i + 1), px, py + 0.5);
+      if (p.label) {
+        ctx.fillStyle = 'rgba(255,250,240,0.9)'; ctx.font = '10px system-ui, sans-serif';
+        ctx.textBaseline = 'top'; ctx.fillText(p.label, px, py + 13);
+      }
+      ctx.restore();
+    });
+  }
+
+  // 現在の regPoints 座標をサマリ 1 行で表示。
+  function updateRegCoords() {
+    const a = regArr();
+    regCoordsEl.textContent = (a && a.length)
+      ? a.map((p, i) => `${regBadge(i)}(${p.x.toFixed(2)}, ${p.z.toFixed(2)})`).join('  ')
+      : '';
   }
 
   // ---- パレット --------------------------------------------------------------
@@ -423,6 +511,63 @@ export function createFloorMap(container, deps) {
     setCourseOrder(); markDirty();
   };
 
+  // ---- 位置合わせ点エディタ ----------------------------------------------------
+  function swapReg(i, j) {
+    const a = regArr();
+    if (!a || j < 0 || j >= a.length) return;
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+    markDirty(); renderRegList(); render();
+  }
+  // 点の行 UI を作る（ラベル入力 / 順序入替 / 削除）。ラベル入力はリストを再構築しない
+  // （フォーカス保持のため markDirty のみ）。番号・座標は canvas とサマリ行で確認する。
+  function renderRegList() {
+    const a = regArr();
+    const unset = isRegUnset();
+    if (unset) {
+      regNoteEl.textContent = '未設定（既定 2 点を使用中）— キャンバスをクリック / 下のボタンで実データ化';
+      regNoteEl.className = 'fm-reg-note';
+    } else if (a.length < REG_MIN) {
+      regNoteEl.textContent = `⚠ ${a.length} 点（最小 ${REG_MIN}）— このまま保存すると既定にフォールバックします`;
+      regNoteEl.className = 'fm-reg-note warn';
+    } else {
+      regNoteEl.textContent = `${a.length} 点（HMD はこの番号順にタッチ）`;
+      regNoteEl.className = 'fm-reg-note';
+    }
+    regListEl.innerHTML = '';
+    if (!unset) {
+      a.forEach((p, i) => {
+        const row = document.createElement('div'); row.className = 'fm-reg-item';
+        const badge = document.createElement('span'); badge.className = 'fm-reg-badge'; badge.textContent = regBadge(i);
+        const lab = document.createElement('input');
+        lab.type = 'text'; lab.className = 'fm-reg-label'; lab.placeholder = 'ラベル（任意）'; lab.value = p.label || '';
+        lab.oninput = () => { p.label = lab.value; markDirty(); updateRegCoords(); };
+        const up = document.createElement('button'); up.className = 'fm-reg-btn'; up.textContent = '▲'; up.title = '前へ';
+        up.disabled = i === 0; up.onclick = () => swapReg(i, i - 1);
+        const dn = document.createElement('button'); dn.className = 'fm-reg-btn'; dn.textContent = '▼'; dn.title = '後へ';
+        dn.disabled = i === a.length - 1; dn.onclick = () => swapReg(i, i + 1);
+        const del = document.createElement('button'); del.className = 'fm-reg-btn fm-reg-del'; del.textContent = '🗑'; del.title = '削除';
+        del.onclick = () => { a.splice(i, 1); markDirty(); renderRegList(); render(); };
+        row.append(badge, lab, up, dn, del);
+        regListEl.appendChild(row);
+      });
+    }
+    regAddBtn.textContent = unset ? '✎ 既定を編集可能にする' : '＋ 点を追加';
+    regAddBtn.disabled = !unset && a.length >= REG_MAX;
+    updateRegCoords();
+  }
+  regModeChk.onchange = () => { regMode = regModeChk.checked; canvas.classList.toggle('fm-reg-edit', regMode); render(); };
+  regAddBtn.onclick = () => {
+    if (isRegUnset()) {
+      layout.regPoints = clone(DEFAULT_REG_POINTS);
+    } else {
+      const a = regArr();
+      if (a.length >= REG_MAX) return;
+      a.push({ x: +(-0.3 + 0.2 * (a.length % 3)).toFixed(3), z: 0, label: '' });
+    }
+    if (!regMode) { regMode = true; regModeChk.checked = true; canvas.classList.add('fm-reg-edit'); }
+    markDirty(); renderRegList(); render();
+  };
+
   overlapI.onchange = () => { layout.overlapM = Math.max(0, parseFloat(overlapI.value) || 0); markDirty(); };
   hystI.onchange = () => { layout.hysteresisM = Math.max(0, parseFloat(hystI.value) || 0); markDirty(); };
   simChk.onchange = () => {
@@ -448,10 +593,17 @@ export function createFloorMap(container, deps) {
 
   q('.fm-save').onclick = async () => {
     ensureGrid();
+    // regPoints: 2 点未満は書かない（Unity 既定 2 点へフォールバック）。5 点超は切り詰め。
+    let regFellBack = false;
+    const rp = regArr();
+    if (rp && rp.length < REG_MIN) { delete layout.regPoints; regFellBack = true; }
+    else if (rp && rp.length > REG_MAX) { layout.regPoints = rp.slice(0, REG_MAX); }
     layout.rev = (parseInt(layout.rev, 10) || 0) + 1;
     const res = await deps.saveLayout(clone(layout));
-    if (res && res.ok !== false) { dirty = false; renderDirty(); }
-    else { dirtyEl.textContent = '✕ 保存失敗'; }
+    if (res && res.ok !== false) {
+      dirty = false; renderDirty(); renderRegList();
+      if (regFellBack) regNoteEl.textContent = '⚠ 2 点未満のため regPoints を保存せず既定にフォールバックしました';
+    } else { dirtyEl.textContent = '✕ 保存失敗'; }
   };
 
   // ---- マウス操作（タイル塗り / シミュレーションドット）------------------------
@@ -467,6 +619,18 @@ export function createFloorMap(container, deps) {
   }
   canvas.addEventListener('mousedown', (e) => {
     const m = mouseCourse(e);
+    // 位置合わせ点編集モードが最優先（掴む / 追加）。
+    if (regMode) {
+      const hit = regHitIndex(m.px, m.py);
+      materializeReg();                 // 未設定ゴーストは実データへ昇格（index は既定と一致）
+      const a = regArr();
+      if (hit >= 0) { regDragIndex = hit; drag = { mode: 'reg' }; }
+      else if (a.length < REG_MAX) {
+        a.push({ x: +m.x.toFixed(3), z: +m.z.toFixed(3), label: '' });
+        regDragIndex = a.length - 1; drag = { mode: 'reg' }; markDirty(); renderRegList();
+      }
+      render(); e.preventDefault(); return;
+    }
     // シミュレーションドット優先（ドラッグで動かす）
     if (simChk.checked && sim) {
       const [sx, sy] = courseToPx(sim.x, sim.z);
@@ -477,13 +641,29 @@ export function createFloorMap(container, deps) {
     paintAt(m);
     e.preventDefault();
   });
+  // 右クリックで位置合わせ点を削除（編集モード時のみ）。
+  canvas.addEventListener('contextmenu', (e) => {
+    if (!regMode) return;
+    const m = mouseCourse(e);
+    const hit = regHitIndex(m.px, m.py);
+    const a = regArr();
+    if (hit >= 0 && a) { a.splice(hit, 1); markDirty(); renderRegList(); render(); }
+    e.preventDefault();
+  });
   window.addEventListener('mousemove', (e) => {
     if (!drag) return;
     const m = mouseCourse(e);
     if (drag.mode === 'paint') paintAt(m);
     else if (drag.mode === 'sim') { sim = { x: +m.x.toFixed(3), z: +m.z.toFixed(3) }; updateSimOut(); render(); }
+    else if (drag.mode === 'reg') {
+      const a = regArr();
+      if (a && regDragIndex >= 0 && regDragIndex < a.length) {
+        a[regDragIndex].x = +m.x.toFixed(3); a[regDragIndex].z = +m.z.toFixed(3);
+        markDirty(); updateRegCoords(); render();
+      }
+    }
   });
-  window.addEventListener('mouseup', () => { drag = null; });
+  window.addEventListener('mouseup', () => { drag = null; regDragIndex = -1; });
 
   // ---- 外部 API ---------------------------------------------------------------
   function adoptLayout(src) {
@@ -491,6 +671,16 @@ export function createFloorMap(container, deps) {
     if (!layout.floor) layout.floor = clone(DEFAULT_LAYOUT.floor);
     if (!layout.wall) layout.wall = clone(DEFAULT_LAYOUT.wall);
     if (!Array.isArray(layout.cuts)) layout.cuts = clone(DEFAULT_LAYOUT.cuts);
+    // regPoints: 不正要素を除去し最大 5 点へ。空/不在は未設定（既定フォールバック）に保つ。
+    if (Array.isArray(layout.regPoints)) {
+      layout.regPoints = layout.regPoints
+        .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.z))
+        .slice(0, REG_MAX)
+        .map((p) => ({ x: p.x, z: p.z, label: typeof p.label === 'string' ? p.label : '' }));
+      if (!layout.regPoints.length) delete layout.regPoints;
+    } else if (layout.regPoints !== undefined) {
+      delete layout.regPoints;
+    }
     // grid が無ければ cuts から初期塗りを生成。dims 不整合や cells 欠落も同様に正規化。
     const g = layout.grid;
     const okGrid = g && Number.isFinite(g.tileM) && Number.isInteger(g.cols) && Number.isInteger(g.rows)
@@ -526,6 +716,7 @@ export function createFloorMap(container, deps) {
     if (!dirty) adoptLayout(state && state.layout);
     renderPalette();
     renderCourse();
+    if (!dirty) renderRegList(); // 編集中はラベル入力のフォーカスを潰さないため再構築しない
     updateSimOut(); render();
   }
 
@@ -542,6 +733,7 @@ export function createFloorMap(container, deps) {
   adoptLayout(DEFAULT_LAYOUT);
   renderPalette();
   renderCourse();
+  renderRegList();
   renderDirty();
   render();
   return { onState, onUnity };

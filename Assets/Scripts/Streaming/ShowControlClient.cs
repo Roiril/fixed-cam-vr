@@ -27,6 +27,13 @@ namespace FixedCamVr.Streaming
     [Serializable] public sealed class ShowCutDef { public float s; public int camAfter; }
 
     /// <summary>
+    /// HMD 位置合わせのタッチ基準点（course space XZ、床マーカー運用）。順序 = タッチ順。
+    /// フロアマップ UI で 2〜5 点をオーサリングする。label は HMD ガイダンス表示用（空可）。
+    /// CourseRegistrationController が読む（Tracking → Streaming の既存参照方向を守る純データ）。
+    /// </summary>
+    [Serializable] public sealed class ShowRegPointDef { public float x; public float z; public string label = ""; }
+
+    /// <summary>
     /// v2: タイルペイント（grid）モデル。フロアを正方タイルに切り、cells の各文字でカメラを塗る。
     /// cells は rows 本の文字列。row 0 = 北端（z=+d/2 側）、col 0 = 西端（x=-w/2）。
     /// 文字 '0'..'8' = カメラ index、'.' = 未割当。JsonUtility は string[] をパースできる。
@@ -69,6 +76,9 @@ namespace FixedCamVr.Streaming
         public ShowCutDef[] cuts = System.Array.Empty<ShowCutDef>();
         public ShowGridDef? grid;   // v2: grid があれば grid 優先（cuts は後方互換）
         public ShowCourseDef? course;   // 周回定義（LapCounter が読む。ゾーン生成には使わない）
+        // HMD 位置合わせの N 点基準（順序つき・2〜5）。不在（空）なら CourseRegistrationController は
+        // 既定 2 点へフォールバックする。ゾーン生成・HasData() には関与しない（純粋に登録用データ）。
+        public ShowRegPointDef[] regPoints = System.Array.Empty<ShowRegPointDef>();
         public float overlapM = 0.08f;
         public float hysteresisM = 0.12f;
 
