@@ -46,6 +46,12 @@ namespace TableDuoVr.Net
                     bool ok = FindObjectOfType<GameSwitcher>()?.ServerSetActiveGameById(id) ?? false;
                     Debug.Log($"[TableDuo] MarkServer game 切替 '{id}' → {(ok ? "成功" : "失敗（id 不一致 / GameSwitcher 不在）")}");
                 }
+                // 特別ラベル: アルゴ完全ランダム配り直し（山札・手札を permute）。
+                //   curl "http://<hostIP>:7780/mark?label=algo_deal"
+                else if (label == "algo_deal")
+                {
+                    FindObjectOfType<AlgoDealer>()?.ServerShuffleDeal();
+                }
             }
         }
 

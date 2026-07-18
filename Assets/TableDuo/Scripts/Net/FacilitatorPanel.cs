@@ -18,6 +18,7 @@ namespace TableDuoVr.Net
         private bool _visible = true;
         private GameSwitcher? _gameSwitcher;
         private BoardReset? _boardReset;
+        private AlgoDealer? _algoDealer;
         private SessionLogger? _logger;
         private string _markText = "";
 
@@ -25,6 +26,7 @@ namespace TableDuoVr.Net
         {
             _gameSwitcher = FindObjectOfType<GameSwitcher>();
             _boardReset = FindObjectOfType<BoardReset>();
+            _algoDealer = FindObjectOfType<AlgoDealer>();
             _logger = FindObjectOfType<SessionLogger>();
         }
 
@@ -102,6 +104,11 @@ namespace TableDuoVr.Net
             {
                 if (_boardReset == null) _boardReset = FindObjectOfType<BoardReset>();
                 _boardReset?.ResetBoard();
+            }
+            if (GUILayout.Button("アルゴ配り直し"))
+            {
+                if (_algoDealer == null) _algoDealer = FindObjectOfType<AlgoDealer>();
+                _algoDealer?.ServerShuffleDeal();
             }
         }
 

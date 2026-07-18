@@ -44,8 +44,13 @@ NGO のアクティブ状態セマンティクスに一切触らない。BoardRe
 
 - 資産: `Assets/TableDuo/ThirdParty/Algo/glb/`（white_0..11 / black_0..11 の 24 枚。model-lab `models/algo` 産、
   42×66mm・厚 2mm・実寸・表面のみテクスチャ＝**裏は無地で face-down にすると値が隠れる**）
-- `PlaceAlgo`: 白 12 枚 / 黒 12 枚の 2 列・face-down・値順（シャッフルは人間운用 or 将来のホストボタン）。
-  scale 1.3（カード 55×86mm 相当・ピンチ可能домен）、physics:true（チップ同類・CCD 不要）、`SetSurfaceClamp` 必須
+- `PlaceAlgo`: **実プレイ開始形**（2026-07-18 ユーザー指定・参考画像準拠）= 中央やや -X に裏向き山札 16 枚
+  （積み上げ・yaw90）+ 人役/手役の手前に裏向き手札 4 枚ずつ。ベイクは固定シード（20260718）擬似シャッフル＝
+  冪等のまま見た目もランダム。scale 1.3、physics:true（CCD 不要）、`SetSurfaceClamp` 必須
+- **完全ランダム配り直し = `AlgoDealer`**（Systems・algoRoot 配線）: スロット（=ベイク姿勢 24 個）を
+  BoardReset 流儀で採取し、カード→スロットを Fisher-Yates で permute（白黒込み）。ホスト UI
+  「アルゴ配り直し」ボタン + `mark?label=algo_deal`。⚠ GameSwitcher 切替はベイク配置へ戻すため、
+  アルゴ開始時に配り直しを押す運用
 - ルール裁定はコード化しない方針を維持（従来どおり）
 
 ## 手バリアントのホスト制御

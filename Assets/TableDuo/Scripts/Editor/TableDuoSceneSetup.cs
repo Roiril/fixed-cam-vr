@@ -354,6 +354,12 @@ namespace TableDuoVr.EditorTools
             // PC ホストのファシリテータ卓（IMGUI・画面右）: ボドゲ切替 / 手バリアント強制 / 盤面リセット / マーク。
             // 「Quest=体験・PC ホスト=運用」方針の運用側入口（2026-07-18）
             systems.AddComponent<FacilitatorPanel>();
+            // アルゴの配り直し（ホスト UI / mark?label=algo_deal）: ベイク済みスロット（山札16+手札4×2）へ
+            // カードを白黒込み完全ランダムで再割当（AlgoDealer がベイク姿勢からスロット採取）
+            var algoDealer = systems.AddComponent<AlgoDealer>();
+            var adSo = new SerializedObject(algoDealer);
+            SetRef(adSo, "algoRoot", gameAlgo);
+            adSo.ApplyModifiedPropertiesWithoutUndo();
 
             // リプレイビューア（stimulated recall 用・既定無効。有効化して Play で再生）
             var replayGo = new GameObject("ReplayViewer");
@@ -537,29 +543,49 @@ namespace TableDuoVr.EditorTools
         private const string AlgoGlbDir = "Assets/TableDuo/ThirdParty/Algo/glb";
 
         /// <summary>
-        /// 卓上にボードゲーム「アルゴ」の数字カード 24 枚を置く（2026-07-18）。
-        /// 白 0-11 / 黒 0-11 の 2 列・値順・数字面伏せ（GLB は表面のみテクスチャ＝裏は無地なので
-        /// face-down で値が隠れる）。シャッフルは人間運用（ルール裁定をコード化しない方針は海底探検と同じ）。
-        /// カード実寸 42(X)×66(Z)mm・厚 2mm（GLB 直パースで確認済み）→ 1.3 倍（ピンチ精度対策。
-        /// 54.6mm 幅 + 隙間 7.4mm × 12 枚 = 全幅 0.74m が天板に収まる上限感）。物理あり（チップ同類・CCD なし）。
+        /// 卓上にボードゲーム「アルゴ」の数字カード 24 枚を、実プレイの開始形で置く（2026-07-18 ユーザー指定）:
+        /// 中央やや -X に**裏向きの山札 16 枚**（積み上げ）+ **人役/手役それぞれの手前に裏向き手札 4 枚**。
+        /// GLB は表面のみテクスチャ＝裏は無地なので face-down で値が隠れる。
+        /// ベイクのカード→スロット割当は決定的（白 0-7 が手札・残りが山札の仮アサイン）。
+        /// **実運用はホスト UI「アルゴ配り直し」（AlgoDealer）がランタイムに白黒込み完全ランダムで再割当**する
+        /// （スロット姿勢はこのベイクから AlgoDealer が採取。レイアウト知識をランタイムへ二重化しない）。
+        /// カード実寸 42(X)×66(Z)mm・厚 2mm（GLB 直パース確認）→ 1.3 倍（ピンチ精度対策）。物理あり（CCD なし）。
         /// </summary>
         private static void PlaceAlgo(Transform parent, float topY, float cx, float cz,
             float hx, float hz)
         {
             const float cardScale = 1.3f;
-            const float stepX = 0.062f; // カード幅 42mm*1.3=54.6mm + 隙間 7.4mm
-            const float rowZ = 0.06f;   // 列中心の cz からの前後オフセット（カード長 85.8mm → 列間の実隙間 34mm）
-            for (int v = 0; v <= 11; v++)
+
+            // 配りスロット 24 個: 手札 4×2 + 山札 16。順序は「人役手札 → 手役手札 → 山札（下から上）」
+            const float handStepX = 0.065f; // カード幅 54.6mm + 隙間 10.4mm
+            const float handZ = 0.24f;      // 各席の手前列（天板端 hz≈0.35 の内側、クランプ hz-0.02 内）
+            const float deckLift = 0.0030f; // カード厚 2.6mm + 0.4mm 空隙（初期めり込み回避）
+            var slots = new List<(Vector3 pos, float yaw)>();
+            for (int i = 0; i < 4; i++) // 人役（-Z 側）: 長辺を人役へ向ける
+                slots.Add((new Vector3(cx + (i - 1.5f) * handStepX, topY, cz - handZ), 0f));
+            for (int i = 0; i < 4; i++) // 手役（+Z 側）
+                slots.Add((new Vector3(cx + (i - 1.5f) * handStepX, topY, cz + handZ), 180f));
+            for (int i = 0; i < 16; i++) // 山札: 横向き（yaw90）で積む
+                slots.Add((new Vector3(cx - 0.12f, topY + i * deckLift, cz), 90f));
+
+            var names = new List<string>();
+            for (int v = 0; v <= 11; v++) names.Add($"white_{v}");
+            for (int v = 0; v <= 11; v++) names.Add($"black_{v}");
+            // ベイクも固定シードで擬似シャッフル（冪等 = Setup 再実行で同配置）。素のソート順だと
+            // 手札が白 8 枚に偏って見える。本番の完全ランダムはホスト UI「アルゴ配り直し」（AlgoDealer）
+            var rng = new System.Random(20260718);
+            for (int i = names.Count - 1; i > 0; i--)
             {
-                float x = cx + (v - 5.5f) * stepX;
-                var white = PlaceModelRealScale($"{AlgoGlbDir}/white_{v}.glb", parent, $"ALGO_white_{v}",
-                    new Vector3(x, topY, cz - rowZ), 180f, grabbable: true, scale: cardScale, physics: true,
+                int j = rng.Next(i + 1);
+                (names[i], names[j]) = (names[j], names[i]);
+            }
+
+            for (int i = 0; i < names.Count; i++)
+            {
+                var card = PlaceModelRealScale($"{AlgoGlbDir}/{names[i]}.glb", parent, $"ALGO_{names[i]}",
+                    slots[i].pos, slots[i].yaw, grabbable: true, scale: cardScale, physics: true,
                     faceDown: true);
-                SetSurfaceClamp(white, topY, cx, cz, hx, hz);
-                var black = PlaceModelRealScale($"{AlgoGlbDir}/black_{v}.glb", parent, $"ALGO_black_{v}",
-                    new Vector3(x, topY, cz + rowZ), 180f, grabbable: true, scale: cardScale, physics: true,
-                    faceDown: true);
-                SetSurfaceClamp(black, topY, cx, cz, hx, hz);
+                SetSurfaceClamp(card, topY, cx, cz, hx, hz);
             }
         }
 
