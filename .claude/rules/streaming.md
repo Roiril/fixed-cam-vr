@@ -151,7 +151,8 @@ Web オペレータ卓（`tools/web-compositor/`）の `show.json` が **Web と
 - **`cameras[i].post`**（任意）: カメラ別の明るさ・色補正。アクティブカメラ切替時に
   [`ShowControlClient.ApplyPostForActive`](../Assets/Scripts/Streaming/ShowControlClient.cs) が適用。
   未設定カメラはトップレベル `post`（global＝全体グレーディング）にフォールバック。
-  JsonUtility が null 入れ子を既定値で書く罠を避けるため「個別 post を持つか」は明示 `hasPost` bool を正にする
+  JsonUtility が null 入れ子を既定値で書く罠を避けるため「個別 post を持つか」は明示 `hasPost` bool を正にする。
+  **⚠ 粒度はカメラ単位のみ** — cue にも周（schedule）にも紐づかないため周ごとの画質変化はできない（下記「編集の粒度と自由度」参照）
 - **永続化（PC 不在でも参照）**: 受信 show.json を `persistentDataPath/show_config.json` にキャッシュし、
   起動時に再適用。**優先順位は 焼き込み .asset < 端末キャッシュ < ライブ long-poll（後勝ち）**。
   キャッシュは「一度ライブ受信した後」生成されるので、完全新規インストール＋PC 不在の初回は焼き込み値で起動
@@ -166,7 +167,7 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - **cues は複数化**: id は任意（Web 卓の規約は `cue_<camId>_<n>`）。1 カメラに複数 cue を持てる。旧単数 id（`cue_<camId>`）も後方互換で動く
 - **`layout.regPoints[]`**: 位置合わせのタッチ基準点 `{x, z, label}`（course 座標・順序=タッチ順・2〜5 点。Web 卓フロアマップの「📍 位置合わせ点」で配置。不在なら Unity は従来既定 2 点にフォールバック）— 2026-07-19
 - **`layout.course.order`**: 順方向のカメラ巡回順（`order[0]`=スタート領域）。Web 卓フロアマップの「周回コース」で編集（grid の塗りから角度順提案 + CW/CCW トグル）
-- **`schedule.entries[]`**: `{lap, camera, cueId, delaySec, once}`。lap は **1 始まり**、camera は**カメラ index**。Web 卓「周回スケジュール」マトリクス（行=カメラ・列=周回）で編集
+- **`schedule.entries[]`**: `{lap, camera, cueId, delaySec, once}`。lap は **1 始まり**、camera は**カメラ index**。Web 卓の**タイムライン UI**（2026-07-19〜 マトリクスから改装。「1周目: A\|B\|C → 2周目: …」を `course.order` 順に横連結・区間クリックで cueId / delaySec / once を編集）で編集
 - **周回検知** = [`LapCounter`](../../Assets/Scripts/Tracking/LapCounter.cs)（進行ポインタ方式）: アクティブカメラが `order[(i+1)%n]` に一致した時だけ前進、`order[0]` 復帰で lap++。**逆走・行き来・スキップ・境界 jitter はカウントしない**。さらに 2026-07-19 から **Director の Zone 由来切替のみ算入**（スタッフ手動 A/B・Web cameraOverride・外部切替では周回も cue 進入通知も動かない — `SwitchSource` タグ）
 - **ラン（体験者 1 人分）**: `control.runEpoch`（int・既定 0）の**変化**で LapCounter リセット（lap=1・再シード）+ CueScheduler の once 発火済みクリア。Web ライブ運用パネルの「▶ ラン開始」= runEpoch++。PC 不在時は **Staff モードで左スティック押し込み** = ローカルランリセット。heartbeat に `lap` / `cam` を追加（Web でラン状態が見える）
 - **発火** = [`CueScheduler`](../../Assets/Scripts/Streaming/CueScheduler.cs): (lap, camera) 一致 + delaySec 後に `ScreenOverlayController.PlayCue` を**ローカル直接**呼ぶ（サーバ不要）。**`control.activeCue` が非空の間は抑止**（ライブ手動操作が常に優先）。once=true はラン内 1 回
@@ -174,6 +175,19 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - **⚠ `Assets/StreamingAssets/show/` はコミット禁止**（gitignore 済み）。エクスポート時点のカメラ host（現場 DHCP IP）が verbatim に焼き込まれるため。ビルド直前に現場でエクスポートし直すのが正
 - `CachedConfig`（端末キャッシュ）に cues / schedule / course を保存するようになった（旧: cues 欠落でオフライン発火不可だった）
 - **⚠ 実機未検証**（2026-07-17 実装。コンパイル・EditMode テスト 75/75・Web UI・エクスポートは検証済み）
+
+### 編集の粒度と自由度（2026-07-19 調査で確定）
+
+タイムラインで「周×カメラ」ごとに何を独立に変えられるか。**cue の中身とタイムラインの割当は別レイヤ**なので注意:
+
+| 調整対象 | 周×カメラ粒度で変えられるか | どこで |
+|---|---|---|
+| どの cue を出すか / delaySec / once | ✅ **タイムライン区間で直接** | schedule.entries |
+| マスク領域・素材（動画/画像）・フェード秒・trim・strength | △ できるが 2 ステップ | cue 単位（カメラ列で cue を作成）→ タイムラインで周ごとに別 cue を割当。**タイムライン上で直接は編集不可** |
+| **画像加工（露出・コントラスト・彩度・色温度・ヴィネット・グレイン・走査線）** | ❌ **不可（カメラ単位固定）** | `cameras[i].post`（カメラ 1 個 = 1 セット）。cue にも schedule にも紐づかない |
+
+- **cue（`OverlayCueData`）は色補正 post を一切持たない**。差し込み素材の見た目は「素材そのもの + マスク合成」で決まり、画面全体のグレーディングは常にアクティブカメラの `cameras[i].post`（`ApplyPostForActive`）
+- したがって **「1 周目の B は普通・2 周目の B は赤く染める」のような "周ごとの画質変化" は現状できない**。実現するには `schedule.entries` か cue に post 上書きを持たせ、Unity 側適用を「アクティブカメラ post → スケジュール/cue post で上書き」に拡張する改修が要る（**未実装**）
 
 ## 接続の堅牢化 — 端末内在 ID + 発見プロトコル（fixedcam-discovery/1）— 2026-07-18
 
