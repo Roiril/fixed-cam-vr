@@ -271,6 +271,8 @@ namespace FixedCamVr.Streaming.EditorTools
             var lapCounter = trackerGo.AddComponent<LapCounter>();
             var lapSo = new SerializedObject(lapCounter);
             TrySetObjectRef(lapSo, "registry", registry);
+            // director 経由で「出どころ Zone」だけ周回に数える（手動 / Web 固定 / 外部は数えない）。
+            if (director != null) TrySetObjectRef(lapSo, "director", director);
             if (showControl != null) TrySetObjectRef(lapSo, "showControl", showControl);
             TrySetObjectRef(lapSo, "cueScheduler", cueScheduler);
             TrySetBool(lapSo, "seedInitialZone", true);
@@ -278,10 +280,12 @@ namespace FixedCamVr.Streaming.EditorTools
             lapSo.ApplyModifiedPropertiesWithoutUndo();
 
             // ShowControlClient.cueScheduler を新 CueScheduler へ配線（毎回 Tracker を作り直すため必須）。
+            // switchDirector も配線（cameraOverride を出どころ Override として通す）。
             if (showControl != null)
             {
                 var scSchedSo = new SerializedObject(showControl);
                 TrySetObjectRef(scSchedSo, "cueScheduler", cueScheduler);
+                if (director != null) TrySetObjectRef(scSchedSo, "switchDirector", director);
                 scSchedSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -303,6 +307,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 TrySetObjectRef(bridgeSo, "courseRegistration", registration);
                 TrySetObjectRef(bridgeSo, "courseFrame", courseFrame);
                 TrySetObjectRef(bridgeSo, "staffPanel", staffPanel);
+                // Staff 左スティック押込＝ランリセットの対象。
+                TrySetObjectRef(bridgeSo, "lapCounter", lapCounter);
+                TrySetObjectRef(bridgeSo, "cueScheduler", cueScheduler);
                 TrySetFloat(bridgeSo, "calibToggleHoldSec", 3.0f);   // 両グリップ 3 秒で Run⇄Staff / Registration キャンセル
                 TrySetFloat(bridgeSo, "staffIdleTimeoutSec", 120f);  // Staff 無操作 120 秒で Run へ復帰
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
@@ -313,7 +320,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（Staff で右スティック押込→2 点登録、A=マーク/B=確定/スティック微調整） / StaffPanel（Staff チートシート） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / DebugHud（startVisible=false・STATE 行に MODE） / OvrBridge（Run 封印・両グリップ 3 秒で Staff）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（Staff で右スティック押込→2 点登録、A=マーク/B=確定/スティック微調整） / StaffPanel（Staff チートシート） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部は不算入。runEpoch 変化 or Staff 左スティック押込でランリセット） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / DebugHud（startVisible=false・STATE 行に MODE） / OvrBridge（Run 封印・両グリップ 3 秒で Staff）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }

@@ -50,6 +50,13 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("Staff で無操作がこの秒数続いたら Run へ戻る（ゲスト安全へのフェイルセーフ）。")]
         [SerializeField, Min(1f)] private float staffIdleTimeoutSec = 120f;
 
+        [Tooltip("Staff で左スティック押し込み＝ランリセット（周回リセット + cue 発火済みクリア）の対象 LapCounter。" +
+                 "runEpoch とは独立の現地手段（PC 卓不在でも体験者交代でリセットできる）。null なら cueScheduler へフォールバック。")]
+        [SerializeField] private LapCounter? lapCounter;
+
+        [Tooltip("LapCounter 未配線時にランリセットを行う CueScheduler（発火済みフラグのみクリア）。")]
+        [SerializeField] private CueScheduler? cueScheduler;
+
         [Header("Course registration")]
         [Tooltip("CourseRegistrationController（[Tracker] 上）。Staff で右スティック押込により登録モードへ入り、" +
                  "登録中は入力（A=マーク/やり直し, B=確定, スティック=微調整）を転送する。")]
@@ -150,13 +157,14 @@ namespace FixedCamVr.OvrBridge
             bool anchorDown = OVRInput.GetDown(anchorToggleButton, OVRInput.Controller.LTouch); // X (左)
             bool hudDown = OVRInput.GetDown(hudToggleButton, OVRInput.Controller.LTouch);        // Y (左)
             bool stickPressDown = OVRInput.GetDown(OVRInput.Button.PrimaryThumbstick, OVRInput.Controller.RTouch);
+            bool leftStickPressDown = OVRInput.GetDown(OVRInput.Button.PrimaryThumbstick, OVRInput.Controller.LTouch);
             Vector2 lStick = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch);
             Vector2 rStick = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch);
             bool stickMoved = lStick.sqrMagnitude > StickActivitySqr || rStick.sqrMagnitude > StickActivitySqr;
 
             bool regActive = courseRegistration != null && courseRegistration.IsActive;
             bool staffActivity = nextDown || prevDown || anchorDown || hudDown
-                                 || stickPressDown || stickMoved || lGrip || rGrip;
+                                 || stickPressDown || leftStickPressDown || stickMoved || lGrip || rGrip;
 
             // ---- モード遷移（副作用は OnModeChanged が担う）----
             _modeLogic.Tick(new ControllerModeLogic.Frame
@@ -206,6 +214,8 @@ namespace FixedCamVr.OvrBridge
                     if (screenAnchor != null && anchorDown) screenAnchor.Toggle();
                     // 左 Y: HUD 表示トグル（真実源 IsVisible の反転）。
                     if (hudDown) ToggleHud();
+                    // 左スティック押し込み: ランリセット（周回リセット + cue 発火済みクリア。体験者交代の現地手段）。
+                    if (leftStickPressDown) ResetRun();
                     // 右グリップ単押し: cue 試射（UpdateGripTap の release で発火）。
                     break;
 
@@ -240,6 +250,15 @@ namespace FixedCamVr.OvrBridge
                 if (wasTap && mode == ControllerModeLogic.Mode.Staff)
                     showControl?.ToggleActiveCameraCue();
             }
+        }
+
+        // ランリセット（現地手段）。LapCounter.ResetRun が周回リセット + cue 発火済みクリア + 現在ゾーン再シードを行う。
+        // LapCounter 未配線なら CueScheduler 単独で発火済みだけクリアする（周回は動かないが安全側）。
+        private void ResetRun()
+        {
+            if (lapCounter != null) lapCounter.ResetRun();
+            else cueScheduler?.ResetRun();
+            Debug.Log("[OvrBridge] Staff: ランリセット（左スティック押込）");
         }
 
         private void ToggleHud()

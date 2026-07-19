@@ -664,37 +664,55 @@ input:-webkit-autofill:active {
 .cue-name { font-size: 11px; }
 
 /* ===================================================================== */
-/* ⑧ 周回スケジュール（マトリクス）— schedule.js                            */
+/* ⑧ 周回タイムライン（横長・動画編集風）— schedule.js                      */
 /* ===================================================================== */
 .schedule { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
-.sc-wrap { display: flex; flex-direction: column; gap: 8px; }
-.sc-row { display: flex; align-items: center; gap: 10px; }
-.sc-row .spacer { flex: 1; }
-.sc-save { padding: 7px 16px; }
-.sc-dirty { font-size: 11px; opacity: var(--opacity-mute); letter-spacing: .04em; }
-.sc-dirty.on { color: var(--warn-color); opacity: 1; }
-.sc-lap-add, .sc-lap-del { padding: 4px 10px; font-size: 11px; }
-.sc-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
-.sc-matrix-wrap { overflow-x: auto; }
-.sc-matrix { border-collapse: collapse; font-size: 11px; }
-.sc-matrix th, .sc-matrix td { border: 1px solid var(--line-soft); padding: 5px 8px; text-align: center; }
-.sc-matrix thead th { font-weight: 500; opacity: var(--opacity-sub); font-variant-numeric: tabular-nums; }
-.sc-corner { text-align: left !important; opacity: var(--opacity-mute); letter-spacing: .04em; white-space: nowrap; }
-.sc-camhead { text-align: left !important; white-space: nowrap; }
-.sc-camhead i { width: 10px; height: 10px; display: inline-block; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
-.sc-cell { cursor: pointer; min-width: 72px; color: var(--text-color); opacity: var(--opacity-sub); }
-.sc-cell:hover { color: var(--accent-color); }
-.sc-cell.filled { color: var(--accent-color); opacity: 1; }
-.sc-cell.sel { box-shadow: inset 0 0 0 2px var(--accent-color); }
-.sc-editor { border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); padding: 10px; display: none; }
-.sc-editor:not(:empty) { display: block; }
-.sc-edit-head { font-size: 11px; letter-spacing: .06em; margin-bottom: 8px; opacity: var(--opacity-sub); }
-.sc-edit-grid { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; }
-.sc-edit-grid label { display: flex; align-items: center; gap: 6px; font-size: 11px; }
-.sc-edit-grid select { min-width: 140px; }
-.sc-edit-grid .sc-delay { width: 60px; }
-.sc-chk input { accent-color: var(--accent-color); }
-.sc-warn { margin-top: 8px; font-size: 11px; color: var(--warn-color); }
+.tl-wrap { display: flex; flex-direction: column; gap: 8px; }
+.tl-row { display: flex; align-items: center; gap: 10px; }
+.tl-row .spacer { flex: 1; }
+.tl-save { padding: 7px 16px; }
+.tl-dirty { font-size: 11px; opacity: var(--opacity-mute); letter-spacing: .04em; }
+.tl-dirty.on { color: var(--warn-color); opacity: 1; }
+.tl-lap-add, .tl-lap-del { padding: 4px 10px; font-size: 11px; }
+.tl-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
+.tl-note { font-size: 11px; color: var(--warn-color); line-height: 1.4; }
+.tl-note:empty { display: none; }
+
+/* 横長トラック（周回を横に連結・横スクロール） */
+.tl-track-wrap { overflow-x: auto; padding-bottom: 6px; }
+.tl-track { display: flex; align-items: stretch; gap: 8px; min-width: min-content; }
+.tl-arrow { align-self: center; opacity: var(--opacity-mute); font-size: 15px; flex: none; }
+.tl-lap { display: flex; flex-direction: column; gap: 5px; flex: none;
+  border: 1px solid var(--line-soft); padding: 6px; }
+.tl-lap-head { font-size: 10px; text-transform: uppercase; letter-spacing: .12em;
+  opacity: var(--opacity-mute); text-align: center; font-variant-numeric: tabular-nums; }
+.tl-segs { display: flex; gap: 4px; }
+
+/* 区間ブロック（周×カメラ）。cue をクリップ風に表示 */
+.tl-seg { display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  width: 96px; min-height: 60px; padding: 6px; text-align: left;
+  border: 1px solid var(--line-soft); cursor: pointer; }
+.tl-seg-cam { display: flex; align-items: center; gap: 5px; font-size: 11px;
+  letter-spacing: .06em; opacity: var(--opacity-sub); }
+.tl-seg-cam i { width: 9px; height: 9px; display: inline-block; border-radius: 2px;
+  background: var(--cam, #888); flex: none; }
+.tl-seg-clip { font-size: 11px; line-height: 1.3; word-break: break-word; opacity: var(--opacity-mute); }
+.tl-seg.filled { border-color: var(--line-input); }
+.tl-seg.filled .tl-seg-clip { color: var(--accent-color); opacity: 1; }
+.tl-seg:hover { border-color: var(--accent-color); }
+.tl-seg.sel { box-shadow: inset 0 0 0 2px var(--accent-color); }
+
+/* 区間エディタ（小編集） */
+.tl-editor { border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); padding: 10px; display: none; }
+.tl-editor:not(:empty) { display: block; }
+.tl-edit-head { font-size: 11px; letter-spacing: .06em; margin-bottom: 8px; opacity: var(--opacity-sub); }
+.tl-edit-grid { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; }
+.tl-edit-grid label { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.tl-edit-grid select { min-width: 140px; }
+.tl-edit-grid .tl-delay { width: 60px; }
+.tl-chk input { accent-color: var(--accent-color); }
+.tl-edit-close { padding: 3px 10px; font-size: 11px; }
+.tl-warn { margin-top: 8px; font-size: 11px; color: var(--warn-color); }
 
 /* ===================================================================== */
 /* ⑨ ビルド用エクスポート — app.js / index.html                             */
@@ -708,12 +726,25 @@ input:-webkit-autofill:active {
 .sim-sched { font-size: 11px; font-family: monospace; opacity: var(--opacity-sub); }
 
 /* ===================================================================== */
-/* ⑩ カメラ列: 手動固定（pinned）表示 — app.js                              */
+/* ⑩ カメラ列: 接続表示（発見ベース）+ 緊急手動接続 — app.js                */
 /* ===================================================================== */
-.pin-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
-.pin-state { font-size: 10px; letter-spacing: .06em; opacity: var(--opacity-mute); }
-.pin-state.pinned { color: var(--accent-color); opacity: 1; }
+.conn-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; flex-wrap: wrap; }
+.conn-disc { font-size: 10px; letter-spacing: .02em;
+  font-family: "SFMono-Regular", "Roboto Mono", ui-monospace, monospace; opacity: var(--opacity-sub); }
+.conn-disc.ok { color: var(--text-color); opacity: 1; }
+.conn-disc.none { color: var(--warn-color); opacity: 1; }
+.conn-disc.conflict { color: var(--danger-color); opacity: 1; }
+.conn-pin { font-size: 10px; letter-spacing: .04em; opacity: var(--opacity-mute);
+  font-family: "SFMono-Regular", "Roboto Mono", ui-monospace, monospace; }
+.conn-pin.on { color: var(--accent-color); opacity: 1; }
 .pin-clear { padding: 2px 8px; font-size: 10px; }
+/* 緊急手動接続（折りたたみ・普段は畳んでおく） */
+.conn-manual { margin: 4px 0; }
+.conn-manual > summary { font-size: 10px; letter-spacing: .06em; cursor: pointer;
+  color: var(--warn-color); opacity: var(--opacity-sub); }
+.conn-manual > summary:hover { opacity: 1; }
+.conn-manual[open] > summary { opacity: 1; margin-bottom: 4px; }
+.conn-manual-hint { font-size: 10px; opacity: var(--opacity-mute); margin-top: 4px; line-height: 1.4; }
 
 /* ===================================================================== */
 /* ⑪ 発見済み端末（📡 discovery）— app.js / index.html                      */
@@ -758,3 +789,29 @@ input:-webkit-autofill:active {
 .diag-detail { font-size: 10px; font-family: monospace; opacity: var(--opacity-mute); }
 .diag-warn { margin-top: 4px; font-size: 11px; color: var(--warn-color); line-height: 1.5;
   border: 1px solid var(--warn-color); padding: 8px 10px; }
+
+/* ===================================================================== */
+/* ⑬ モードナビ（🎬 事前オーサリング / 🚨 ライブ運用）— index.html          */
+/*    セクションを data-group="author|live" でタグ付けし、無タグは常時表示。 */
+/* ===================================================================== */
+.mode-nav { display: flex; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line-soft); }
+.mode-btn { padding: 7px 16px; font-size: 12px; letter-spacing: .06em; }
+.mode-btn.active {
+  background: var(--accent-color); border-color: var(--accent-color);
+  color: #000; font-weight: 600; opacity: 1;
+}
+.app[data-mode="author"] [data-group="live"] { display: none; }
+.app[data-mode="live"] [data-group="author"] { display: none; }
+
+/* ===================================================================== */
+/* ⑭ ライブ運用: ラン状態 + ▶ ラン開始 — app.js / index.html                */
+/* ===================================================================== */
+.runpanel { padding: 10px 14px 20px; border-top: 1px solid var(--line-soft); }
+.run-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px;
+  max-width: 1180px; padding: 10px 14px;
+  border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); }
+.run-bar .spacer { flex: 1; }
+.run-state { font-size: 14px; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.run-state.off { opacity: var(--opacity-mute); }
+.run-state.on { color: var(--accent-color); }
+#runStart { padding: 10px 18px; font-size: 13px; }

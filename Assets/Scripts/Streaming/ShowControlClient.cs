@@ -152,6 +152,10 @@ namespace FixedCamVr.Streaming
                  "schedule / cue 解決 / activeCue 抑止状態を供給する。null なら自動発火なし。")]
         [SerializeField] private CueScheduler? cueScheduler;
 
+        [Tooltip("カメラ override を出どころ Override として通す CameraSwitchDirector。" +
+                 "null なら従来どおり registry.SetActive を直接叩く（後方互換・その場合 LapCounter 側は External 扱い）。")]
+        [SerializeField] private CameraSwitchDirector? switchDirector;
+
         private ScreenOverlayController? _overlay;
         private Material? _material;
         private int _rev = -1;
@@ -221,6 +225,18 @@ namespace FixedCamVr.Streaming
         /// <summary>course（周回巡回順）が変わった時に発火する。LapCounter が購読して order を再取得する。</summary>
         public event Action? CourseChanged;
 
+        // ---- ラン概念（runEpoch）----
+        // control.runEpoch が変わった＝新しい体験者のランが始まった。周回リセット + cue 発火済みフラグ全消去。
+        // 「既知値」を起動時にキャッシュ / 焼き込みから初期化し、以後の変化のみ発火する
+        // （起動のたびに誤リセットしない）。
+        private int _knownRunEpoch;
+
+        /// <summary>ラン開始（runEpoch 変化）で発火する。LapCounter が購読して周回・cue をリセットする。</summary>
+        public event Action? RunReset;
+
+        /// <summary>heartbeat に載せる現在周回数の供給元（LapCounter が注入。null なら -1）。</summary>
+        public Func<int>? CurrentLapProvider;
+
         // heartbeat に載せる HMD の course space XZ・現在ゾーンラベルの供給元。
         // Streaming → Tracking の参照を作らないため Func で注入する（ZoneLayoutApplier が設定）。
         /// <summary>HMD 位置を course space XZ で返す供給元（null なら heartbeat に載せない）。</summary>
@@ -266,6 +282,9 @@ namespace FixedCamVr.Streaming
             public ShowLayoutDef? layout;
             public CueDef[] cues = Array.Empty<CueDef>();
             public ShowScheduleDef? schedule;
+            // 直近に既知だった runEpoch。起動時にこれを「既知値」として復元し、
+            // PC 不在の再起動で同一 epoch を誤リセットしない。
+            public int runEpoch;
         }
         [Serializable] private class CueDef
         {
@@ -298,6 +317,8 @@ namespace FixedCamVr.Streaming
             public string? activeCue;
             public string? cameraOverride;
             public bool discoveryEnabled = true;
+            // 体験者 1 人分のラン識別子。Web の「ラン開始」で ++ される。変化＝周回 / cue のリセット。
+            public int runEpoch;
         }
 
         private void Awake()
@@ -423,6 +444,25 @@ namespace FixedCamVr.Streaming
 
         private void OnActiveCameraChanged(int _) => ApplyPostForActive();
 
+        // カメラ override を出どころ Override として適用する（LapCounter が周回に数えないため）。
+        // director があればそこを通し、無ければ従来どおり registry を直接叩く（後方互換）。
+        private void SetActiveOverride(int index)
+        {
+            if (switchDirector != null)
+                switchDirector.SetActiveExternal(index, CameraSwitchDirector.SwitchSource.Override);
+            else
+                registry?.SetActive(index);
+        }
+
+        // ラン開始（runEpoch 変化 / 現地手動）。cue 発火済みを消し、周回リセットを購読者（LapCounter）へ通知する。
+        // cueScheduler.ResetRun は LapCounter 未配線でもスケジューラ単独で成立させるための直接呼び（LapCounter.ResetRun でも呼ぶが冪等）。
+        private void TriggerRunReset()
+        {
+            Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue をリセット");
+            cueScheduler?.ResetRun();
+            RunReset?.Invoke();
+        }
+
         // ---- state long-poll ----
 
         private async Task PollLoopAsync(CancellationToken ct)
@@ -506,6 +546,15 @@ namespace FixedCamVr.Streaming
             }
             cueScheduler?.SetCueResolver(ResolveCue);
 
+            // 1.65) ラン識別子（control.runEpoch）。変化＝新しい体験者のラン → 周回 / cue をリセット。
+            //       SaveCache より前で更新し、次回起動へ「既知値」を持ち越す（同一 epoch の誤リセット防止）。
+            int epoch = state.control?.runEpoch ?? _knownRunEpoch;
+            if (epoch != _knownRunEpoch)
+            {
+                _knownRunEpoch = epoch;
+                TriggerRunReset();
+            }
+
             // 端末キャッシュへ保存（次回 PC 不在起動で参照）
             SaveCache();
             if (layoutChanged)
@@ -528,7 +577,7 @@ namespace FixedCamVr.Streaming
                 if (hasOverride && registry != null)
                 {
                     int idx = Array.FindIndex(state.cameras, c => c.id == ovr);
-                    if (idx >= 0) registry.SetActive(idx);
+                    if (idx >= 0) SetActiveOverride(idx);
                     else Debug.LogWarning($"[ShowControl] unknown camera id: {ovr}");
                 }
             }
@@ -636,6 +685,8 @@ namespace FixedCamVr.Streaming
                 _schedule = state.schedule;
                 _appliedScheduleRev = state.schedule.rev;
             }
+            // 焼き込み値の runEpoch を「既知値」として取り込む（端末キャッシュがあれば後で上書きされる）。
+            _knownRunEpoch = state.control?.runEpoch ?? _knownRunEpoch;
             Debug.Log($"[ShowControl] 焼き込み show.json を適用: cameras={_cameras.Length}, " +
                       $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)}, " +
                       $"course={( _layout?.course != null ? _layout.course.order.Length : 0)}");
@@ -775,6 +826,7 @@ namespace FixedCamVr.Streaming
                     layout = _layout,   // course を内包
                     cues = _cues,
                     schedule = _schedule,
+                    runEpoch = _knownRunEpoch,
                 };
                 File.WriteAllText(ConfigCachePath, JsonUtility.ToJson(cfg));
             }
@@ -804,6 +856,8 @@ namespace FixedCamVr.Streaming
                     _schedule = cfg.schedule;
                     _appliedScheduleRev = cfg.schedule.rev;
                 }
+                // 既知の runEpoch を復元（この起動では発火しない = 同一 epoch の誤リセット防止）。
+                _knownRunEpoch = cfg.runEpoch;
                 Debug.Log($"[ShowControl] 端末キャッシュ設定を適用: {ConfigCachePath} " +
                           $"(cameras={_cameras.Length}, layout={( _layout != null ? "yes" : "no")}, " +
                           $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)})");
@@ -823,6 +877,10 @@ namespace FixedCamVr.Streaming
             // コントローラ操作モード（RUN/STAFF/REG）。スタッフが遠隔でモードを把握するため。
             // サーバ側は未知フィールドを無視するので送るだけでよい。
             public string mode = "RUN";
+            // 現在の周回数（LapCounter 由来。未注入なら -1）とアクティブカメラ index。
+            // Web ライブ運用パネルの「Lap N / cam B」表示用。既存 activeIndex と重複するが契約名は cam。
+            public int lap = -1;
+            public int cam = -1;
             // ここまで適用した show.json の rev。UI / 自動検証が「Unity 反映済み」を機械判定する。
             public int appliedRev = -1;
             // ライブモニタ用（任意）: HMD の course space XZ と現在ゾーンラベル。
@@ -847,6 +905,8 @@ namespace FixedCamVr.Streaming
                     hb.cameraOverride = _appliedOverride;
                     hb.mode = _controllerMode;
                     hb.appliedRev = _rev;
+                    hb.lap = CurrentLapProvider != null ? CurrentLapProvider() : -1;
+                    hb.cam = registry != null ? registry.ActiveIndex : -1;
                     if (HeadCourseXZProvider != null)
                     {
                         Vector2 c = HeadCourseXZProvider();

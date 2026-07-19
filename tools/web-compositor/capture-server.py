@@ -82,7 +82,10 @@ def _default_show():
                  'vignette': 0.25, 'grain': 0.06, 'scanline': 0.0},
         # autoFollow=True: discovery で発見したカメラ IP を cameras[i].host へ自動反映する
         # （pinned カメラは除外）。UI トグルで切替。欠落は ON 扱い（後方互換）。
-        'control': {'activeCue': None, 'cameraOverride': None, 'autoFollow': True},
+        # runEpoch: 体験者 1 人分の「ラン」世代。Web の ▶ ラン開始が +1 して postState
+        # （control を shallow 置換で送り直す）。値が変わると Unity は周回カウントと
+        # once 発火済みフラグをリセット（既定 0・欠落は 0 扱い）。
+        'control': {'activeCue': None, 'cameraOverride': None, 'autoFollow': True, 'runEpoch': 0},
         # ゾーン校正レイアウト（course space）。Web フロアマップが編集し Unity が展開する。
         # grid = タイルペイント（12×12・0.15m）。cells は rows 本の文字列、rows[0]=北端
         # （z=+0.9）・col0=西端（x=-0.9）。文字 '0'..'8'=カメラ index、'.'=未割当。

@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app">
+  <div class="app" data-mode="author">
     <header>
       <h1>廻リ視 web compositor</h1>
       <div class="status-bar">
@@ -22,6 +22,11 @@
         <a href="sim.html" target="_blank" class="link" title="Unity なしで動作確認する仮想クライアント">🖥 仮想Quest</a>
       </div>
     </header>
+
+    <nav class="mode-nav" aria-label="運用モード切替">
+      <button class="mode-btn active" data-mode="author" title="cue 作成・フロアマップ・タイムライン・エクスポート">🎬 事前オーサリング</button>
+      <button class="mode-btn" data-mode="live" title="発見済み端末・疎通診断・ラン状態・演出手動操作">🚨 ライブ運用</button>
+    </nav>
 
     <section class="multicam">
       <div class="mc-title">
@@ -39,7 +44,18 @@
       <div id="cams" class="cams"></div>
     </section>
 
-    <section class="discovery">
+    <section class="runpanel" data-group="live">
+      <div class="mc-title">🚨 ライブ運用 — ラン状態
+        <span class="hint">体験者 1 人分の周回。▶ ラン開始で周回とワンショット演出（once）をリセット（runEpoch++）。ラン状態は Unity heartbeat 由来（lap / cam / mode）で、Unity 側の実装が届くまでは「—」表示。</span>
+      </div>
+      <div class="run-bar">
+        <span id="runState" class="run-state off">Unity 未接続</span>
+        <span class="spacer"></span>
+        <button id="runStart" class="accent">▶ ラン開始（周回リセット）</button>
+      </div>
+    </section>
+
+    <section class="discovery" data-group="live">
       <div class="mc-title">📡 発見済み端末
         <span class="hint">LAN 上の配信カメラ / PC 卓を UDP ビーコン（fixedcam-discovery/1）で発見。ID が同じで uuid が違う端末は二重 ID ＝赤警告。自動追従 ON なら発見した IP をカメラ列へ反映する（📌 手動固定を除く）。</span>
       </div>
@@ -52,7 +68,7 @@
       <div id="discList" class="disc-list"></div>
     </section>
 
-    <section class="diag">
+    <section class="diag" data-group="live">
       <div class="mc-title">🩺 疎通診断
         <span class="hint">PC から各カメラの /info へ実 HTTP 接続 + ビーコン受信状況 + Quest heartbeat を 1 画面で確認。ビーコンは ✅ なのに /info が ❌ なら、AP がクライアント間通信を遮断している疑いが濃い（自前 AP 持ち込みを検討）。</span>
       </div>
@@ -63,21 +79,21 @@
       <div id="diagResult" class="diag-result"></div>
     </section>
 
-    <section class="floormap">
+    <section class="floormap" data-group="author">
       <div class="mc-title">フロアマップ（ゾーン校正）
         <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。パレットの色（＝担当カメラ）を選び、タイルをクリック / ドラッグで塗る → 💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。シミュレーションはドットをドラッグして切替を事前確認。</span>
       </div>
       <div id="floorMap"></div>
     </section>
 
-    <section class="schedule">
-      <div class="mc-title">周回スケジュール（事前オーサリング）
-        <span class="hint">行＝カメラ（フロアマップのコース順）、列＝周回（1 始まり）。セルをクリックして、そのゾーンで発火する cue を割り当てる。💾 保存で show.json schedule に入り、📦 エクスポートで APK に焼き込む。ライブ手動操作（演出 ON）が優先。</span>
+    <section class="schedule" data-group="author">
+      <div class="mc-title">周回タイムライン（事前オーサリング）
+        <span class="hint">動画編集風の横長タイムライン。layout.course.order 順に「1周目: A|B|C → 2周目: …」を横に連結。区間をクリックして、その周・そのカメラで発火する cue を割り当てる。💾 保存で show.json schedule に入り、📦 エクスポートで APK に焼き込む。ライブ手動操作（演出 ON）が優先。</span>
       </div>
       <div id="schedule"></div>
     </section>
 
-    <section class="export-sec">
+    <section class="export-sec" data-group="author">
       <div class="mc-title">ビルド用エクスポート
         <span class="hint">現在の show.json と cue が参照するアセット（マスク・動画・画像）を Assets/StreamingAssets/show/ にコピーし、URL を sa://assets/… へ書き換える。Quest 単体（現地 PC 不在）で発火させる APK に焼き込む素材。</span>
       </div>
@@ -88,7 +104,7 @@
       <div id="exportFiles" class="export-files"></div>
     </section>
 
-    <section class="prompts">
+    <section class="prompts" data-group="author">
       <div class="mc-title">生成プロンプト
         <span class="hint">画像/動画 AI 生成用。📋 でコピーして各ツールへ。PC（show.json と同じ）に保存。</span>
       </div>

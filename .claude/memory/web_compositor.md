@@ -1,5 +1,7 @@
 # web compositor（tools/web-compositor/）
 
+**2026-07-19 再構成**: 上部ナビで「🎬 事前オーサリング」（cue 作成・フロアマップ・タイムライン・エクスポート）と「🚨 ライブ運用」（発見/診断・ラン状態・▶ ラン開始 = control.runEpoch++・演出手動・カメラ固定・緊急手動接続）の 2 モード。**カメラカードから IP 常設入力を追放**（発見ベース読み取り専用表示・手動入力は「🚨 緊急: 手動接続」折りたたみ＝pinned 化）。
+
 **1 ページ統合 UI（縦割り = カメラ列）**（2026-06-16 にユーザー要望で再編、〜06-17 で機能追加多数）。旧 3 画面（コンソール / コンポジット検証 / 合成エディタ multicam.html）を 1 ページへ統合。Webcam/テスト source・ギャラリーは撤去したが、**境界ブレンド（色統計/ラプラシアン/フェザー）と生成プロンプト管理はユーザー要望で復活**。
 
 構成: **ステータス**（Unity生存/アクティブカメラ/fps/反映rev、🚶ゾーン自律・📂撮影フォルダ）＋ **境界ブレンドバー**（フェザー/色統計+強度/ラプラシアン+レベル、全カメラ共通）＋ **マルチカメラ**（列＝カメラ A/B/C、各列は**下→上の加工フロー**＝ **① 生映像 → ② マスク → ③ 画像加工 → ④ Quest 実映像**、2026-06-18 にユーザー要望で縦フロー化）＋ 下部 **生成プロンプト**。
@@ -43,7 +45,7 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 | `capture-server.py` | ローカルサーバ（静的配信 + show 制御 + /cam プロキシ + 保存 API） |
 | `serve.ps1` | 起動スクリプト |
 | `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json long-poll。schedule / course.order も表示） |
-| `schedule.js` | **周回スケジュール UI**（2026-07-17〜）。行=カメラ（course.order 順）×列=周回のマトリクスで cue 割当（delaySec / once）→ `postState({schedule})`。floormap.js の deps 注入・dirty ガードパターン踏襲 |
+| `schedule.js` | **タイムライン UI**（2026-07-19 マトリクスから全面改装）。「1周目: A\|B\|C → 2周目: …」を course.order 順に横連結、区間クリックで cue 割当（delaySec / once）。データモデルは schedule.entries のまま |
 
 **撤去済み（2026-06-16）**: `main.js` / `sources.js` / `cue-editor.js` / `console.js` / `multicam.html`（プロンプト・ギャラリー・2 タブ・別ページ合成エディタ）。**⚠ `pipeline.js`（色統計マッチング→ラプラシアン）はユーザー要望で復活し現役**（app.js が import、境界ブレンドバーが駆動）。以降の「合成パイプライン」節は現役の説明として読む。AI 動画生成の知見は末尾に残す。
 

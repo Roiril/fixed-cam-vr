@@ -79,10 +79,15 @@ namespace FixedCamVr.Tracking
     public sealed class LapCounter : MonoBehaviour
     {
         [Header("References")]
-        [Tooltip("アクティブカメラ切替の供給元。null なら周回カウントは動かない。")]
+        [Tooltip("アクティブカメラ切替の供給元。director 未割当時のフォールバック購読に使う（後方互換）。")]
         [SerializeField] private CameraStreamRegistry? registry;
 
-        [Tooltip("巡回順（layout.course.order）と CourseChanged の供給元。")]
+        [Tooltip("切替の出どころ付き確定イベント（SwitchCommitted）の供給元。割当時はここを購読し、" +
+                 "source==Zone（体験者のゾーン進行）だけを周回へ数える。手動 / Web 固定 / 外部は数えない。" +
+                 "null なら registry.ActiveChanged を無差別購読（従来挙動）。")]
+        [SerializeField] private CameraSwitchDirector? director;
+
+        [Tooltip("巡回順（layout.course.order）と CourseChanged / RunReset の供給元。")]
         [SerializeField] private ShowControlClient? showControl;
 
         [Tooltip("進入イベントを橋渡しするスケジューラ。null なら周回カウントのみ行う。")]
@@ -97,24 +102,55 @@ namespace FixedCamVr.Tracking
 
         private readonly LapCounterLogic _logic = new();
         private bool _subscribed;
+        // heartbeat（Web ライブ表示）へ現在 lap を渡す供給元。再購読での再割当を避けキャッシュする。
+        private Func<int>? _lapProvider;
 
         /// <summary>現在の周回数（1 始まり）。</summary>
         public int CurrentLap => _logic.CurrentLap;
 
         private void OnEnable()
         {
-            if (registry != null) registry.ActiveChanged += OnActiveCameraChanged;
-            if (showControl != null) showControl.CourseChanged += OnCourseChanged;
+            // director があれば「出どころ付き」確定を購読し、source==Zone のみ周回へ数える。
+            // 無ければ従来どおり registry.ActiveChanged を無差別購読（後方互換）。
+            if (director != null) director.SwitchCommitted += OnSwitchCommitted;
+            else if (registry != null) registry.ActiveChanged += OnActiveCameraChanged;
+            if (showControl != null)
+            {
+                showControl.CourseChanged += OnCourseChanged;
+                showControl.RunReset += OnRunReset;
+                _lapProvider ??= () => _logic.CurrentLap;
+                showControl.CurrentLapProvider = _lapProvider;
+            }
             _subscribed = true;
         }
 
         private void OnDisable()
         {
             if (!_subscribed) return;
-            if (registry != null) registry.ActiveChanged -= OnActiveCameraChanged;
-            if (showControl != null) showControl.CourseChanged -= OnCourseChanged;
+            if (director != null) director.SwitchCommitted -= OnSwitchCommitted;
+            else if (registry != null) registry.ActiveChanged -= OnActiveCameraChanged;
+            if (showControl != null)
+            {
+                showControl.CourseChanged -= OnCourseChanged;
+                showControl.RunReset -= OnRunReset;
+                if (ReferenceEquals(showControl.CurrentLapProvider, _lapProvider))
+                    showControl.CurrentLapProvider = null;
+            }
             _subscribed = false;
         }
+
+        // 出どころ付き確定。体験者のゾーン進行（Zone）だけを周回・cue 進入へ写す。
+        // 手動 / Web 固定 / 外部（Manual/Override/External）は周回もカメラ進入通知も動かさない
+        // （＝表示カメラは変わっても進行ポインタは体験者のゾーン進行だけを追う。desync は
+        //   進行ポインタが順方向一致でしか進まない性質で吸収される — LapCounterTests 参照）。
+        private void OnSwitchCommitted(int camera, CameraSwitchDirector.SwitchSource source)
+        {
+            if (source != CameraSwitchDirector.SwitchSource.Zone) return;
+            OnActiveCameraChanged(camera);
+        }
+
+        // runEpoch 変化（Web の「ラン開始」）を ShowControlClient から受けて周回・cue をリセットする。
+        private void OnRunReset() => ResetRun();
 
         private void Start() => ApplyOrder();
 

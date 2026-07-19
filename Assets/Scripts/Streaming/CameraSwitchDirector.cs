@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using UnityEngine;
 
 namespace FixedCamVr.Streaming
@@ -141,6 +142,16 @@ namespace FixedCamVr.Streaming
     [DisallowMultipleComponent]
     public sealed class CameraSwitchDirector : MonoBehaviour
     {
+        /// <summary>
+        /// 確定切替の出どころ。<see cref="SwitchCommitted"/> に載せて周回カウント（LapCounter）が
+        /// 「体験者のゾーン進行（Zone）だけを数え、スタッフ手動 / Web 固定 / 外部同期は数えない」を実現する。
+        ///   - Zone: PlayerZoneTracker（体験者のゾーン移動）
+        ///   - Manual: コントローラ / キーボードのスタッフ手動切替（Next/Prev/絶対指定）
+        ///   - Override: Web オペレータ卓の cameraOverride（手動固定）
+        ///   - External: 上記いずれでもない registry への直接切替（後方互換の catch-all）
+        /// </summary>
+        public enum SwitchSource { Zone, Manual, Override, External }
+
         private static readonly int SwitchDimId = Shader.PropertyToID("_SwitchDim");
 
         [Header("References")]
@@ -178,6 +189,20 @@ namespace FixedCamVr.Streaming
         private DipState _dip = DipState.Idle;
         private float _dipTimer;
         private int _dipTarget;
+        private SwitchSource _dipSource = SwitchSource.External;
+
+        // registry.SetActive を発火する直前に「今から起こす切替の出どころ」を書き、
+        // 同期発火する ActiveChanged（→ OnRegistryActiveChanged）が読む。
+        // registry を経由するすべての切替を単一点（OnRegistryActiveChanged）で SwitchCommitted へ写すため。
+        // 既定は External（Director を経由しない直接切替の catch-all）。
+        private SwitchSource _commitSource = SwitchSource.External;
+
+        /// <summary>
+        /// アクティブカメラの確定切替が起きた時、(index, source) で発火する。
+        /// LapCounter が source==Zone のみを周回へ数える駆動点。
+        /// Director 自身の dip 確定・Web override・その他の registry 直接切替すべてがここを通る。
+        /// </summary>
+        public event Action<int, SwitchSource>? SwitchCommitted;
 
         /// <summary>保留中の自動切替があり抑止されているか（HUD 表示用）。</summary>
         public bool SwitchSuppressed => _logic.HasPendingZone;
@@ -214,7 +239,27 @@ namespace FixedCamVr.Streaming
         }
 
         // 自分の commit も含めここに来る（同値の再設定で idempotent）。Web override 等の直接切替も同期する。
-        private void OnRegistryActiveChanged(int index) => _logic.NotifyExternalSwitch(index, Time.time);
+        // registry を経由する全切替の単一観測点。ここで SwitchCommitted を _commitSource 付きで発火する
+        // （Director の dip 確定（AdvanceDip）と SetActiveExternal が SetActive の直前に source を設定済み、
+        //  それ以外の registry 直接切替は既定の External）。
+        private void OnRegistryActiveChanged(int index)
+        {
+            _logic.NotifyExternalSwitch(index, Time.time);
+            SwitchCommitted?.Invoke(index, _commitSource);
+        }
+
+        /// <summary>
+        /// Director の時間ガードを介さない外部起点の切替（Web cameraOverride 等）を、出どころを明示して行う。
+        /// registry.SetActive を source 付きで叩き、OnRegistryActiveChanged で SwitchCommitted へ写す。
+        /// dip 演出は掛けない（従来の override も即時切替だった）。
+        /// </summary>
+        public void SetActiveExternal(int index, SwitchSource source)
+        {
+            if (registry == null) return;
+            _commitSource = source;
+            registry.SetActive(index); // 同値なら no-op（ActiveChanged も出ない）
+            _commitSource = SwitchSource.External;
+        }
 
         /// <summary>巡回 Next（手動）。</summary>
         public void Next()
@@ -236,7 +281,7 @@ namespace FixedCamVr.Streaming
             if (registry == null) return;
             _logic.Configure(switchCooldownSec, minDwellSec, manualHoldSec);
             if (_dip != DipState.Idle) return; // dip 中は新規切替を始めない（cooldown でも弾かれる）
-            if (_logic.RequestManual(target, Time.time, out int commit)) StartDip(commit);
+            if (_logic.RequestManual(target, Time.time, out int commit)) StartDip(commit, SwitchSource.Manual);
         }
 
         /// <summary>ゾーン自動切替の要求（PlayerZoneTracker から）。dwell/cue/manualHold ガード後に適用。</summary>
@@ -252,12 +297,13 @@ namespace FixedCamVr.Streaming
 
             if (_dip != DipState.Idle) { AdvanceDip(); return; }
 
-            if (_logic.Tick(Time.time, out int commit)) StartDip(commit);
+            if (_logic.Tick(Time.time, out int commit)) StartDip(commit, SwitchSource.Zone);
         }
 
-        private void StartDip(int target)
+        private void StartDip(int target, SwitchSource source)
         {
             _dipTarget = target;
+            _dipSource = source;
             _dip = DipState.Down;
             _dipTimer = 0f;
             audioCue?.Play(); // dip の黒 70ms が視覚差替に先行 → J カット相当
@@ -272,7 +318,11 @@ namespace FixedCamVr.Streaming
                 SetDim(t);
                 if (t >= 1f)
                 {
-                    registry?.SetActive(_dipTarget); // 全黒でソース差替 → ActiveChanged → NotifyExternalSwitch
+                    // 全黒でソース差替 → ActiveChanged → OnRegistryActiveChanged で
+                    // NotifyExternalSwitch + SwitchCommitted(_dipSource) を発火。
+                    _commitSource = _dipSource;
+                    registry?.SetActive(_dipTarget);
+                    _commitSource = SwitchSource.External;
                     _dip = DipState.Up;
                     _dipTimer = 0f;
                 }

@@ -140,5 +140,60 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(l.Feed(0), Is.False);
             Assert.That(l.CurrentLap, Is.EqualTo(1));
         }
+
+        // ---- 切替の出どころ（source）ゲート ----
+        // LapCounter（MonoBehaviour）は director.SwitchCommitted の source==Zone だけを Feed する。
+        // 手動 / Web 固定 / 外部（Manual/Override/External）は Feed しない。その振る舞いを純ロジックで固定する
+        // （LapCounter.OnSwitchCommitted の 1 行ゲートをこのヘルパで模す）。
+
+        /// <summary>source==Zone のときだけ Feed する（LapCounter.OnSwitchCommitted のゲート模擬）。</summary>
+        private static bool FeedIfZone(LapCounterLogic l, int camera, bool isZone)
+            => isZone && l.Feed(camera);
+
+        [Test]
+        public void OnlyZoneSwitchesAdvance_ManualAndOverrideIgnored()
+        {
+            var l = Make(0, 1, 2);
+            FeedIfZone(l, 1, isZone: true);   // 体験者のゾーン進行 0→1
+            FeedIfZone(l, 0, isZone: false);  // スタッフ手動でカメラ 0 へ（無視）
+            FeedIfZone(l, 2, isZone: false);  // Web override でカメラ 2 へ（無視）
+            // 進行ポインタは Zone だけで進む（手動 / override では動かない）。
+            Assert.That(l.Position, Is.EqualTo(1));
+            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            FeedIfZone(l, 2, isZone: true);   // ゾーン進行 1→2
+            Assert.That(FeedIfZone(l, 0, isZone: true), Is.True); // 2→0 で 1 周完了
+            Assert.That(l.CurrentLap, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void ManualCycling_NeverAdvancesLap()
+        {
+            var l = Make(0, 1, 2);
+            // スタッフが手動でカメラを何度も巡回（source=Manual）→ 一切カウントしない。
+            for (int i = 0; i < 10; i++)
+            {
+                FeedIfZone(l, 1, isZone: false);
+                FeedIfZone(l, 2, isZone: false);
+                FeedIfZone(l, 0, isZone: false);
+            }
+            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.Position, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void ManualDetour_ThenZoneForward_CountsExactlyOneLap()
+        {
+            var l = Make(0, 1, 2);
+            FeedIfZone(l, 1, isZone: true);   // ゾーン進行 0→1
+            // スタッフが手動でカメラ 1→0→2→1 と往復（未 Feed）。進行ポインタは pos=1 に据え置き。
+            FeedIfZone(l, 0, isZone: false);
+            FeedIfZone(l, 2, isZone: false);
+            FeedIfZone(l, 1, isZone: false);
+            Assert.That(l.Position, Is.EqualTo(1));
+            // 体験者が続けてゾーン進行 2→0 → ちょうど 1 周ぶんだけ前進する（手動往復は透過）。
+            Assert.That(FeedIfZone(l, 2, isZone: true), Is.False); // pos 1→2
+            Assert.That(FeedIfZone(l, 0, isZone: true), Is.True);  // pos 2→0（lap 2）
+            Assert.That(l.CurrentLap, Is.EqualTo(2));
+        }
     }
 }

@@ -60,7 +60,8 @@ let lastUnity = {};
 let captureItems = [];
 const columns = new Map();   // camId -> column controller
 let floorMap = null;         // フロアマップ（ゾーン校正）コントローラ
-let schedule = null;         // 周回スケジュール UI コントローラ
+let schedule = null;         // 周回タイムライン UI コントローラ
+let lastDiscovery = { devices: [], conflicts: [] };  // 直近の /discovery（カメラ列の発見表示用）
 
 // ---- captures/ 素材一覧（全列共有） ----------------------------------------
 async function refreshCaptures() {
@@ -167,15 +168,20 @@ function buildColumn(cam, index) {
         <span class="spacer"></span>
         <span class="ip-mini-label">配信元</span>
       </div>
-      <div class="ip-row">
-        <input class="ip-host" placeholder="スマホ IP" title="配信スマホの IP">
-        <input class="ip-port" placeholder="port" title="streamer=8080 / IP Camera Lite=8081">
-        <input class="ip-auth" placeholder="user:pass" title="Basic 認証（空=なし）">
-      </div>
-      <div class="pin-row">
-        <span class="pin-state"></span>
+      <div class="conn-row">
+        <span class="conn-disc" title="LAN 上で発見されたこのカメラ ID の端末（読み取り専用・自動追従）">📡 …</span>
+        <span class="conn-pin"></span>
         <button class="pin-clear" style="display:none" title="手動固定を解除して発見の自動追従に戻す">📌 固定を解除</button>
       </div>
+      <details class="conn-manual">
+        <summary>🚨 緊急: 手動接続</summary>
+        <div class="ip-row">
+          <input class="ip-host" placeholder="スマホ IP" title="配信スマホの IP">
+          <input class="ip-port" placeholder="port" title="streamer=8080 / IP Camera Lite=8081">
+          <input class="ip-auth" placeholder="user:pass" title="Basic 認証（空=なし）">
+        </div>
+        <div class="conn-manual-hint">discovery 非対応端末（iPhone 等）や障害時の最終手段。保存すると 📌 手動固定になり自動追従を止めます。</div>
+      </details>
       <div class="view-wrap"><img class="raw-live" alt="生リアルタイム映像"></div>
     </div>`;
 
@@ -212,14 +218,36 @@ function buildColumn(cam, index) {
   }
   q('.fx-reset').onclick = () => { delete refs.cam.post; postState({ cameras: state.cameras }); };
 
-  // ===== IP 設定（show.json へ）=====
-  //   手動編集 → pinned=true（自動追従を止める）。解除は 📌 固定を解除ボタン。
-  const pinState = q('.pin-state'), pinClear = q('.pin-clear');
+  // ===== 接続表示（発見ベース）+ 緊急手動接続 =====
+  //   通常は discovery（/discovery）で発見したこの id の端末を読み取り専用表示。
+  //   host/port/auth の手動編集は「🚨 緊急: 手動接続」details 内のみ → pinned=true
+  //   （自動追従を止める）。解除は 📌 固定を解除ボタン。
+  const connDisc = q('.conn-disc'), connPin = q('.conn-pin'), pinClear = q('.pin-clear');
   refs.syncPin = () => {
     const pinned = !!refs.cam.pinned;
-    pinState.textContent = pinned ? '📌 手動固定（自動追従オフ）' : '📡 自動追従';
-    pinState.className = 'pin-state' + (pinned ? ' pinned' : '');
+    connPin.textContent = pinned ? `📌 手動固定 ${refs.cam.host || ''}:${refs.cam.port || 8080}` : '';
+    connPin.className = 'conn-pin' + (pinned ? ' on' : '');
     pinClear.style.display = pinned ? '' : 'none';
+  };
+  // /discovery の一致 id 端末を読み取り専用表示（conflict=赤 / 未発見=警告）。
+  refs.applyDiscovery = (disc) => {
+    if (!connDisc) return;
+    const devices = (disc && disc.devices) || [];
+    const conflicts = new Set((disc && disc.conflicts) || []);
+    const id = refs.cam.id;
+    if (conflicts.has(id)) {
+      connDisc.textContent = `⚠ 二重 ID（${id}）— 発見が曖昧なため自動追従停止`;
+      connDisc.className = 'conn-disc conflict';
+      return;
+    }
+    const dev = devices.find((d) => d.role === 'camera' && d.id === id);
+    if (dev) {
+      connDisc.textContent = `📡 ${dev.ip}:${dev.port}${dev.version ? ` (v${dev.version}` : ' ('}・${fmtAge(dev.ageSec)})`;
+      connDisc.className = 'conn-disc ok';
+    } else {
+      connDisc.textContent = '⚠ 未発見';
+      connDisc.className = 'conn-disc none';
+    }
   };
   const onIp = () => {
     refs.cam.host = refs.hostI.value.trim();
@@ -237,6 +265,7 @@ function buildColumn(cam, index) {
     refs.syncPin();
   };
   refs.syncPin();
+  refs.applyDiscovery(lastDiscovery);
 
   // ===== ライブ受信 =====
   refs.liveImg.crossOrigin = 'anonymous';
@@ -783,6 +812,7 @@ async function pollUnity() {
       unityAlive = !!s.alive; lastUnity = s.status || {};
     } catch { unityAlive = false; lastUnity = {}; }
     renderStatus();
+    renderRunPanel();
     floorMap && floorMap.onUnity(unityAlive, lastUnity);
     // active バッジ更新（state 再描画は重いので列だけ）
     for (const r of columns.values()) {
@@ -827,6 +857,43 @@ function recordAll(kind) {
 // ---- 起動 -------------------------------------------------------------------
 $('#autoZone').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
 $('#openRecordings').onclick = () => fetch('/open-dir?dir=recordings').catch(() => {});
+
+// ---- モードナビ（🎬 事前オーサリング / 🚨 ライブ運用）------------------------
+//   セクションは data-group="author|live" でタグ付け。無タグ（マルチカメラ等）は常時表示。
+//   .app[data-mode] を切り替え → CSS が非該当グループを display:none にする。
+const appEl = $('.app');
+document.querySelectorAll('.mode-btn').forEach((b) => {
+  b.onclick = () => {
+    if (appEl) appEl.dataset.mode = b.dataset.mode;
+    document.querySelectorAll('.mode-btn').forEach((x) => x.classList.toggle('active', x === b));
+  };
+});
+
+// ---- ラン状態表示（Lap / cam / mode）+ ▶ ラン開始 ---------------------------
+//   heartbeat（/unity/status）に lap / cam / mode が来たら表示。フィールド不在は「—」で互換。
+function renderRunPanel() {
+  const el = $('#runState'); if (!el) return;
+  if (!unityAlive) { el.textContent = 'Unity 未接続'; el.className = 'run-state off'; return; }
+  const u = lastUnity;
+  const lap = (typeof u.lap === 'number') ? `Lap ${u.lap}` : 'Lap —';
+  const cam = u.cam || activeCamId() || '—';
+  const mode = u.mode || '—';
+  el.textContent = `${lap} / cam ${cam} / ${mode}`;
+  el.className = 'run-state on';
+}
+// ▶ ラン開始（周回リセット）: control.runEpoch を +1 して postState（無ければ 0 起点）。
+//   postState は control を shallow 置換するので、既存フィールドごと送り直す（活性 cue 等を保つ）。
+if ($('#runStart')) {
+  $('#runStart').onclick = async () => {
+    if (!confirm('体験者交代時に押します。周回とワンショット演出がリセットされます。実行しますか？')) return;
+    const s = await getState();
+    const ctrl = { ...(s.control || {}) };
+    ctrl.runEpoch = (parseInt(ctrl.runEpoch, 10) || 0) + 1;
+    const r = await postState({ control: ctrl });
+    const el = $('#runState');
+    if (el && r && r.ok !== false) el.textContent = `▶ ラン開始（epoch ${ctrl.runEpoch}）`;
+  };
+}
 if ($('#recAllRaw')) $('#recAllRaw').onclick = () => recordAll('raw');
 if ($('#recAllView')) $('#recAllView').onclick = () => recordAll('view');
 
@@ -991,7 +1058,9 @@ async function pollDiscovery() {
   for (;;) {
     try {
       const d = await (await fetch('/discovery')).json();
+      lastDiscovery = d;
       renderDiscovery(d);
+      for (const r of columns.values()) r.applyDiscovery && r.applyDiscovery(d);
     } catch { /* offline */ }
     await new Promise((r) => setTimeout(r, 3000));
   }
