@@ -130,10 +130,15 @@ def _default_show():
             'overlapM': 0.08,
             'hysteresisM': 0.12,
         },
-        # schedule = 事前オーサリングの正体（何周目 lap のどのゾーン camera で cueId を発火するか）。
-        # lap は 1 始まり、camera はカメラ index（ゾーンは cameraIndex でキー）。Web 卓が編集し
-        # export-build で APK に焼き込む。ライブ control.activeCue が非空の間は Unity 側で抑止される。
+        # schedule = 旧・事前オーサリング（何周目 lap のどのゾーン camera で cueId を発火するか）。
+        # timeline（下記）が存在すれば supersede される（後方互換のため残す）。
         'schedule': {'rev': 1, 'entries': []},
+        # timeline = 事前オーサリングの正面（周回×ゾーン区間 = セグメント）。
+        # segments[i] = {lap, camera, cues:[{cueId,delaySec,once,override,hasOverride}],
+        #                post, hasPost, insert:{anchor,camera,delaySec,durationSec,cueId,once,post,hasPost}, hasInsert}。
+        # lap は 1 始まり、camera はカメラ index。cueId は cues[].id。Web 卓が編集し export-build で焼き込む。
+        # timeline.rev > 0 && segments 非空 で schedule.entries を Unity 側が無視する。
+        'timeline': {'rev': 1, 'segments': []},
     }
 
 
@@ -702,7 +707,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json({'ok': False, 'error': 'unknown endpoint'}, 404)
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
-    _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule')
+    _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule', 'timeline')
 
     def _post_state(self):
         body = self._read_json_body()
@@ -817,13 +822,41 @@ class Handler(SimpleHTTPRequestHandler):
             if cue.get('sourceUrl'):
                 cue['sourceUrl'] = bake(cue['sourceUrl'])
 
+        # cue 参照走査: timeline / schedule / ライブ control が指す cueId が cues[] に実在するか検証。
+        # 全 cue のアセットは上のループで焼き込み済み（timeline は cueId 参照のみで新規アセットを持たない）
+        # ため追加コピーは不要。ここでは dangling 参照を missingCues として返し UI で気づけるようにする。
+        cue_ids = {c.get('id') for c in show.get('cues', [])}
+        referenced = self._referenced_cue_ids(show)
+        missing = sorted(r for r in referenced if r and r not in cue_ids)
+
         show_path = os.path.join(out_dir, 'show.json')
         # UTF-8 / LF 固定（Unity JsonUtility が読む契約）。
         with open(show_path, 'w', encoding='utf-8', newline='\n') as f:
             json.dump(show, f, ensure_ascii=False, indent=2)
         total = sum(c['size'] for c in copied)
         return self._json({'ok': True, 'outDir': out_dir, 'showJson': show_path,
-                           'copied': copied, 'count': len(copied), 'totalBytes': total})
+                           'copied': copied, 'count': len(copied), 'totalBytes': total,
+                           'referencedCues': len(referenced), 'missingCues': missing})
+
+    # timeline（segments[].cues[].cueId + insert.cueId）/ schedule.entries / control.activeCue が
+    # 参照する cueId の集合。export-build の dangling 参照検出に使う。
+    @staticmethod
+    def _referenced_cue_ids(show):
+        ids = set()
+        for e in ((show.get('schedule') or {}).get('entries') or []):
+            if e.get('cueId'):
+                ids.add(e['cueId'])
+        for seg in ((show.get('timeline') or {}).get('segments') or []):
+            for a in (seg.get('cues') or []):
+                if a.get('cueId'):
+                    ids.add(a['cueId'])
+            ins = seg.get('insert') or {}
+            if seg.get('hasInsert') and ins.get('cueId'):
+                ids.add(ins['cueId'])
+        ac = (show.get('control') or {}).get('activeCue')
+        if ac:
+            ids.add(ac)
+        return ids
 
     def _list_captures(self):
         items = []

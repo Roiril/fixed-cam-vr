@@ -16,6 +16,21 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public sealed class CueScheduleLogic
     {
+        /// <summary>
+        /// cue の任意上書き（タイムライン区間 cue 用）。has=false なら resolver の解決値をそのまま使う。
+        /// has=true なら strength / fade / trim を丸ごと差し替える（部分パッチではなく全置換。
+        /// JsonUtility は個別フィールドの present を判別できないため、区間 cue の hasOverride を present-flag に使う）。
+        /// </summary>
+        public struct CueOverride
+        {
+            public bool has;
+            public float strength;
+            public float fadeIn;
+            public float fadeOut;
+            public float trimStart;
+            public float trimEnd;
+        }
+
         /// <summary>スケジュール 1 行分。camera はカメラ index（ゾーンは cameraIndex でキー）。</summary>
         public struct Entry
         {
@@ -24,6 +39,7 @@ namespace FixedCamVr.Streaming
             public string cueId;
             public float delaySec;
             public bool once;
+            public CueOverride ov;   // タイムライン由来の cue 上書き（legacy schedule は has=false）
         }
 
         /// <summary>enter 時点評価の結果。fire=false なら他フィールドは無効。</summary>
@@ -33,6 +49,7 @@ namespace FixedCamVr.Streaming
             public int entryIndex;
             public string cueId;
             public float delaySec;
+            public CueOverride ov;
         }
 
         private Entry[] _entries = Array.Empty<Entry>();
@@ -66,7 +83,7 @@ namespace FixedCamVr.Streaming
                 Entry e = _entries[i];
                 if (e.lap != lap || e.camera != camera) continue;
                 if (e.once && _fired[i]) continue;
-                return new Decision { fire = true, entryIndex = i, cueId = e.cueId, delaySec = e.delaySec };
+                return new Decision { fire = true, entryIndex = i, cueId = e.cueId, delaySec = e.delaySec, ov = e.ov };
             }
             return default;
         }
@@ -105,6 +122,15 @@ namespace FixedCamVr.Streaming
         private float _pendingRemaining;
         private string _pendingCueId = "";
         private int _pendingEntryIndex = -1;
+        private CueScheduleLogic.CueOverride _pendingOv;
+
+        /// <summary>
+        /// ゾーン進入（LapCounter 由来の (camera, lap)）を受けた直後に発火する。deterministic post-Feed lap。
+        /// TimelineDirector が購読して区間 post / インサートを分配する（Insert source の切替はここに来ないので
+        /// 周回・区間追跡は体験者のゾーン進行だけを見る）。cue 評価の後に発火するため、インサート cue が
+        /// 区間 cue より後に PlayCue され最後の命令が勝つ。
+        /// </summary>
+        public event Action<int, int>? CameraEntered;
 
         private void Awake()
         {
@@ -137,6 +163,16 @@ namespace FixedCamVr.Streaming
             _pending = false; // スケジュール変更で計時中の発火は無効化
         }
 
+        /// <summary>
+        /// 評価用エントリを直接差し替える（TimelineDirector が timeline 区間 cues[] を override 付きで flatten して供給）。
+        /// legacy schedule 経路（SetScheduleFromDefs）と排他で、ShowControlClient が timeline supersede を調停する。
+        /// </summary>
+        public void SetEntries(CueScheduleLogic.Entry[] entries)
+        {
+            _logic.SetEntries(entries ?? Array.Empty<CueScheduleLogic.Entry>());
+            _pending = false;
+        }
+
         /// <summary>cueId → OverlayCueData の解決関数を注入する（URL 解決を ShowControlClient に集約）。</summary>
         public void SetCueResolver(Func<string, OverlayCueData?> resolver) => _cueResolver = resolver;
 
@@ -162,12 +198,11 @@ namespace FixedCamVr.Streaming
             if (!d.fire)
             {
                 _pending = false;
-                return;
             }
-            if (d.delaySec <= 0f)
+            else if (d.delaySec <= 0f)
             {
                 _pending = false;
-                Fire(d.cueId, d.entryIndex);
+                Fire(d.cueId, d.entryIndex, d.ov);
             }
             else
             {
@@ -175,7 +210,12 @@ namespace FixedCamVr.Streaming
                 _pendingRemaining = d.delaySec;
                 _pendingCueId = d.cueId;
                 _pendingEntryIndex = d.entryIndex;
+                _pendingOv = d.ov;
             }
+            // cue 評価の後に TimelineDirector（区間 post / インサート）を駆動する。
+            // 進入は Insert source ではここへ来ない（LapCounter が Zone のみ Feed するため）ので、
+            // これが「体験者のゾーン進行」の単一かつ deterministic な信号になる。
+            CameraEntered?.Invoke(camera, lap);
         }
 
         private void Update()
@@ -186,10 +226,10 @@ namespace FixedCamVr.Streaming
             _pendingRemaining -= Time.deltaTime;
             if (_pendingRemaining > 0f) return;
             _pending = false;
-            Fire(_pendingCueId, _pendingEntryIndex);
+            Fire(_pendingCueId, _pendingEntryIndex, _pendingOv);
         }
 
-        private void Fire(string cueId, int entryIndex)
+        private void Fire(string cueId, int entryIndex, CueScheduleLogic.CueOverride ov)
         {
             OverlayCueData? data = _cueResolver?.Invoke(cueId);
             if (data == null)
@@ -197,9 +237,19 @@ namespace FixedCamVr.Streaming
                 Debug.LogWarning($"[CueScheduler] cue 未解決のため発火スキップ: id={cueId}（cues[] に定義があるか確認）");
                 return;
             }
+            // タイムライン区間の上書きを適用する。ResolveCue は毎回新規 OverlayCueData を返すので
+            // 直接パッチしてよい（共有インスタンスを汚さない）。
+            if (ov.has)
+            {
+                data.strength = ov.strength;
+                data.fadeInSeconds = ov.fadeIn;
+                data.fadeOutSeconds = ov.fadeOut;
+                data.trimStart = ov.trimStart;
+                data.trimEnd = ov.trimEnd;
+            }
             overlay?.PlayCue(data);
             _logic.MarkFired(entryIndex);
-            Debug.Log($"[CueScheduler] スケジュール発火 cue={cueId}");
+            Debug.Log($"[CueScheduler] スケジュール発火 cue={cueId}{(ov.has ? " (override)" : "")}");
         }
     }
 }

@@ -161,5 +161,44 @@ namespace FixedCamVr.Streaming.Tests
             l.NotifyExternalSwitch(2, 0.2f); // 外部が保留先へ切替 → 保留解消
             Assert.That(l.HasPendingZone, Is.False);
         }
+
+        // ---- インサート凍結（cue 凍結と同型・独立フラグ） ----
+
+        [Test]
+        public void Zone_InsertActive_FreezesUntilCleared_ThenAppliesLatest()
+        {
+            var l = Make();
+            l.RequestZone(1, 0f);
+            l.SetInsertActive(true);
+            Assert.That(l.Tick(5f, out _), Is.False);   // インサート中は凍結（保留は保つ）
+            Assert.That(l.HasPendingZone, Is.True);
+            l.SetInsertActive(false);
+            Assert.That(l.Tick(5f, out int commit), Is.True); // 解除後に最新を適用
+            Assert.That(commit, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Zone_InsertActive_FreezesEvenWithoutCue()
+        {
+            var l = Make();
+            l.SetCueActive(false);       // cue は無い
+            l.SetInsertActive(true);     // インサート単独で凍結する
+            l.RequestZone(1, 0f);
+            Assert.That(l.Tick(10f, out _), Is.False);
+        }
+
+        [Test]
+        public void Zone_InsertAndCue_BothClearedNeededToResume()
+        {
+            var l = Make();
+            l.RequestZone(1, 0f);
+            l.SetCueActive(true);
+            l.SetInsertActive(true);
+            l.SetCueActive(false);       // 片方だけ解除では凍結継続
+            Assert.That(l.Tick(5f, out _), Is.False);
+            l.SetInsertActive(false);    // 両方解除で再開
+            Assert.That(l.Tick(5f, out int commit), Is.True);
+            Assert.That(commit, Is.EqualTo(1));
+        }
     }
 }

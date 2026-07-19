@@ -24,14 +24,21 @@
     </header>
 
     <nav class="mode-nav" aria-label="運用モード切替">
-      <button class="mode-btn active" data-mode="author" title="cue 作成・フロアマップ・タイムライン・エクスポート">🎬 事前オーサリング</button>
-      <button class="mode-btn" data-mode="live" title="発見済み端末・疎通診断・ラン状態・演出手動操作">🚨 ライブ運用</button>
+      <button class="mode-btn active" data-mode="author" title="タイムライン・cue 作成・フロアマップ・エクスポート">🎬 事前オーサリング</button>
+      <button class="mode-btn" data-mode="live" title="発見済み端末・疎通診断・ラン状態・cue 手動発火">🚨 ライブ運用</button>
     </nav>
+
+    <section class="timeline-sec" data-group="author">
+      <div class="mc-title">周回タイムライン（事前オーサリングの主面）
+        <span class="hint">動画編集風の横長タイムライン。layout.course.order 順に「1周目: A|B|C → 2周目: …」を横に連結。区間をクリックして、その周・そのカメラの cue 割当・画像加工（post）上書き・インサートショットを編集する。💾 保存で show.json timeline に入り、📦 エクスポートで APK に焼き込む。▶ 検証で矢印キーによる周回シミュレーション。ライブ手動操作が優先。</span>
+      </div>
+      <div id="timeline"></div>
+    </section>
 
     <section class="multicam">
       <div class="mc-title">
-        マルチカメラ
-        <span class="hint">列＝カメラ。各列は下→上に ① 生映像 → ② マスク → ③ 画像加工 → ④ Quest 実映像 の流れ。📷/⏺ は ① 生映像の上＝生フレーム、④ 実映像の上＝合成済み（Quest と同じ絵）を recordings/ へ。</span>
+        マルチカメラ（監視）
+        <span class="hint">列＝カメラ（監視専用）。各列は下→上に ① 生映像 → ③ 画像加工（カメラ単位の画質）→ ④ Quest 実映像（合成後）。📷/⏺ は ① 生映像の上＝生フレーム、④ 実映像の上＝合成済み（Quest と同じ絵）を recordings/ へ。cue・マスクの作成はタイムラインのセグメントインスペクタで行う。</span>
       </div>
       <div class="blend-bar">
         <span class="seg-label">境界ブレンド（合成跡を消す）</span>
@@ -52,6 +59,19 @@
         <span id="runState" class="run-state off">Unity 未接続</span>
         <span class="spacer"></span>
         <button id="runStart" class="accent">▶ ラン開始（周回リセット）</button>
+      </div>
+    </section>
+
+    <section class="livecue" data-group="live">
+      <div class="mc-title">🎬 cue 手動発火
+        <span class="hint">保存済み cue を選んで Quest に即時オーバーレイ（control.activeCue）。タイムラインの自動発火より優先され、その間は自動発火が抑止される。動画は再生終了で自動的にライブへ復帰。cue の作成・編集は 🎬 事前オーサリングのタイムラインで行う。</span>
+      </div>
+      <div class="run-bar">
+        <label class="livecue-lbl">cue <select id="liveCueSelect"></select></label>
+        <button id="liveCueFire" class="accent">▶ 発火</button>
+        <button id="liveCueStop">■ 停止</button>
+        <span class="spacer"></span>
+        <span id="liveCueState" class="ed-status">停止中</span>
       </div>
     </section>
 
@@ -84,13 +104,6 @@
         <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。パレットの色（＝担当カメラ）を選び、タイルをクリック / ドラッグで塗る → 💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。シミュレーションはドットをドラッグして切替を事前確認。</span>
       </div>
       <div id="floorMap"></div>
-    </section>
-
-    <section class="schedule" data-group="author">
-      <div class="mc-title">周回タイムライン（事前オーサリング）
-        <span class="hint">動画編集風の横長タイムライン。layout.course.order 順に「1周目: A|B|C → 2周目: …」を横に連結。区間をクリックして、その周・そのカメラで発火する cue を割り当てる。💾 保存で show.json schedule に入り、📦 エクスポートで APK に焼き込む。ライブ手動操作（演出 ON）が優先。</span>
-      </div>
-      <div id="schedule"></div>
     </section>
 
     <section class="export-sec" data-group="author">

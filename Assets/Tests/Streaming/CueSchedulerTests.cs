@@ -131,5 +131,37 @@ namespace FixedCamVr.Streaming.Tests
             var l = new CueScheduleLogic();
             Assert.That(l.Evaluate(1, 0, false).fire, Is.False);
         }
+
+        // ---- タイムライン由来の cue 上書き（override 運搬） ----
+
+        [Test]
+        public void Evaluate_CarriesOverrideToDecision()
+        {
+            var e = Entry(2, 1, "cue_B_1");
+            e.ov = new CueScheduleLogic.CueOverride
+            {
+                has = true, strength = 0.5f, fadeIn = 1.2f, fadeOut = 0.8f, trimStart = 0.1f, trimEnd = 2f,
+            };
+            var l = new CueScheduleLogic();
+            l.SetEntries(new[] { e });
+            var d = l.Evaluate(2, 1, false);
+            Assert.That(d.fire, Is.True);
+            Assert.That(d.ov.has, Is.True);
+            Assert.That(d.ov.strength, Is.EqualTo(0.5f).Within(1e-4f));
+            Assert.That(d.ov.fadeIn, Is.EqualTo(1.2f).Within(1e-4f));
+            Assert.That(d.ov.fadeOut, Is.EqualTo(0.8f).Within(1e-4f));
+            Assert.That(d.ov.trimStart, Is.EqualTo(0.1f).Within(1e-4f));
+            Assert.That(d.ov.trimEnd, Is.EqualTo(2f).Within(1e-4f));
+        }
+
+        [Test]
+        public void Evaluate_NoOverride_HasIsFalse()
+        {
+            // legacy schedule 由来のエントリは override を持たない（has=false）。
+            var l = Make(Entry(2, 1, "cue_B_1"));
+            var d = l.Evaluate(2, 1, false);
+            Assert.That(d.fire, Is.True);
+            Assert.That(d.ov.has, Is.False);
+        }
     }
 }

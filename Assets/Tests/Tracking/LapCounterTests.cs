@@ -1,4 +1,5 @@
 #nullable enable
+using FixedCamVr.Streaming;
 using FixedCamVr.Tracking;
 using NUnit.Framework;
 
@@ -193,6 +194,31 @@ namespace FixedCamVr.Tracking.Tests
             // 体験者が続けてゾーン進行 2→0 → ちょうど 1 周ぶんだけ前進する（手動往復は透過）。
             Assert.That(FeedIfZone(l, 2, isZone: true), Is.False); // pos 1→2
             Assert.That(FeedIfZone(l, 0, isZone: true), Is.True);  // pos 2→0（lap 2）
+            Assert.That(l.CurrentLap, Is.EqualTo(2));
+        }
+
+        // ---- インサート source のゲート（LapCounter.OnSwitchCommitted の実 source 判定を固定） ----
+        // タイムラインのインサートショットは SwitchSource.Insert で切り替わるが、周回には数えない。
+        // FeedIfSource は LapCounter.OnSwitchCommitted の「source==Zone のみ Feed」を実 enum で模す。
+
+        /// <summary>source==Zone のときだけ Feed する（LapCounter.OnSwitchCommitted のゲート・実 enum 版）。</summary>
+        private static bool FeedIfSource(LapCounterLogic l, int camera, CameraSwitchDirector.SwitchSource source)
+            => source == CameraSwitchDirector.SwitchSource.Zone && l.Feed(camera);
+
+        [Test]
+        public void InsertSourceSwitches_NeverAdvanceLap()
+        {
+            var l = Make(0, 1, 2);
+            FeedIfSource(l, 1, CameraSwitchDirector.SwitchSource.Zone);   // 体験者ゾーン進行 0→1
+            // exit インサート差し込み（別カメラへ Insert source で切替）→ 数えない。
+            FeedIfSource(l, 2, CameraSwitchDirector.SwitchSource.Insert);
+            // インサート復帰（Insert source）→ 数えない。
+            FeedIfSource(l, 0, CameraSwitchDirector.SwitchSource.Insert);
+            Assert.That(l.Position, Is.EqualTo(1));
+            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            // 体験者ゾーン進行だけで 1 周完了する（インサートは透過）。
+            FeedIfSource(l, 2, CameraSwitchDirector.SwitchSource.Zone);   // 1→2
+            Assert.That(FeedIfSource(l, 0, CameraSwitchDirector.SwitchSource.Zone), Is.True); // 2→0 で lap 2
             Assert.That(l.CurrentLap, Is.EqualTo(2));
         }
     }

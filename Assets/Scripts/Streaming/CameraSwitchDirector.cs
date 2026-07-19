@@ -24,6 +24,7 @@ namespace FixedCamVr.Streaming
         private float _lastSwitchTime = float.NegativeInfinity;
         private float _lastManualTime = float.NegativeInfinity;
         private bool _cueActive;
+        private bool _insertActive;
 
         // ゾーン自動切替の単一保留（最新の目標だけを保持し、dwell/cue/manualHold の解除待ちで適用）。
         private bool _hasPendingZone;
@@ -42,6 +43,9 @@ namespace FixedCamVr.Streaming
         /// <summary>cue 再生中フラグ（自動切替を凍結する）。</summary>
         public bool CueActive => _cueActive;
 
+        /// <summary>インサート表示中フラグ（cue と独立に自動切替を凍結する）。</summary>
+        public bool InsertActive => _insertActive;
+
         public void Configure(float cooldownSec, float minDwellSec, float manualHoldSec)
         {
             _cooldownSec = Mathf.Max(0f, cooldownSec);
@@ -59,6 +63,12 @@ namespace FixedCamVr.Streaming
         }
 
         public void SetCueActive(bool active) => _cueActive = active;
+
+        /// <summary>
+        /// インサート表示中の凍結を設定する（cue 凍結と同型）。true の間ゾーン自動切替は commit しないが
+        /// 最新の保留ゾーンは保持し続ける（インサート復帰先の算出に使う）。
+        /// </summary>
+        public void SetInsertActive(bool active) => _insertActive = active;
 
         /// <summary>
         /// 本ロジックを介さない直接切替（Web cameraOverride 等）を同期する。現在カメラとクールダウンを
@@ -117,7 +127,7 @@ namespace FixedCamVr.Streaming
             commitTarget = _current;
             if (!_hasPendingZone) return false;
             if (_pendingZone == _current) { _hasPendingZone = false; return false; }
-            if (_cueActive) return false;                                   // cue 中は凍結（保留は保つ）
+            if (_cueActive || _insertActive) return false;                  // cue / インサート中は凍結（保留は保つ）
             if (now - _lastSwitchTime < _cooldownSec) return false;         // クールダウン
             if (now - _lastManualTime < _manualHoldSec) return false;       // 手動優先の抑止
             if (now - _pendingSince < _minDwellSec) return false;           // 最小滞在
@@ -148,9 +158,11 @@ namespace FixedCamVr.Streaming
         ///   - Zone: PlayerZoneTracker（体験者のゾーン移動）
         ///   - Manual: コントローラ / キーボードのスタッフ手動切替（Next/Prev/絶対指定）
         ///   - Override: Web オペレータ卓の cameraOverride（手動固定）
+        ///   - Insert: タイムラインのインサートショット（InsertController 経由の差し込み・復帰）
         ///   - External: 上記いずれでもない registry への直接切替（後方互換の catch-all）
+        /// LapCounter は Zone のみを周回へ数える（Manual/Override/Insert/External は数えない）。
         /// </summary>
-        public enum SwitchSource { Zone, Manual, Override, External }
+        public enum SwitchSource { Zone, Manual, Override, Insert, External }
 
         private static readonly int SwitchDimId = Shader.PropertyToID("_SwitchDim");
 
@@ -190,6 +202,11 @@ namespace FixedCamVr.Streaming
         private float _dipTimer;
         private int _dipTarget;
         private SwitchSource _dipSource = SwitchSource.External;
+
+        // exit インサートの黒転換中差し替え。Zone dip が全黒で commit した直後（同期連鎖内）に
+        // InsertExitRedirect が立てる。AdvanceDip がその commit 後に読み、Up へ上がる前に
+        // 黒のまま insert カメラへ差し替える（中間カメラのフラッシュを見せない）。-1 = 差し替えなし。
+        private int _blackRedirect = -1;
 
         // registry.SetActive を発火する直前に「今から起こす切替の出どころ」を書き、
         // 同期発火する ActiveChanged（→ OnRegistryActiveChanged）が読む。
@@ -291,6 +308,49 @@ namespace FixedCamVr.Streaming
             _logic.RequestZone(target, Time.time);
         }
 
+        // ---- インサートショット（InsertController 用）----
+
+        /// <summary>
+        /// exit インサート: Zone dip が全黒で commit した直後（同期連鎖内）に呼ばれ、Up で切替先を見せる代わりに
+        /// 黒のまま insert カメラへ差し替える予約を立てる。実際の registry 切替は AdvanceDip が commit 連鎖の
+        /// 復帰後に行う（この場での registry.SetActive 再入を避ける）。ゾーン自動切替を凍結する。
+        /// </summary>
+        public void InsertExitRedirect(int insertCamera)
+        {
+            _blackRedirect = insertCamera;
+            _logic.SetInsertActive(true);
+        }
+
+        /// <summary>
+        /// enter インサート: 現在の映像から insert カメラへ dip-to-black で切り替える（Insert source ＝周回に数えない）。
+        /// ゾーン自動切替を凍結する。表示中の映像から入るため通常の dip（Down→黒→切替→Up）を掛ける。
+        /// </summary>
+        public void InsertBegin(int insertCamera)
+        {
+            _logic.SetInsertActive(true);
+            StartDip(insertCamera, SwitchSource.Insert);
+        }
+
+        /// <summary>
+        /// インサート表示を終え、復帰カメラ（最新ゾーン）へ dip-to-black で戻す（Insert source）。
+        /// ゾーン凍結を解除する（dip 完了後にゾーン自動切替が再開する）。
+        /// </summary>
+        public void InsertReturn(int returnCamera)
+        {
+            _logic.SetInsertActive(false);
+            StartDip(returnCamera, SwitchSource.Insert);
+        }
+
+        /// <summary>
+        /// 現在保留中のゾーン（インサート中に体験者が移動した先）を返す。InsertController が復帰先の算出に使う。
+        /// 保留が無ければ false（呼び出し側は開始時のゾーンカメラへフォールバックする）。
+        /// </summary>
+        public bool TryGetPendingZone(out int camera)
+        {
+            camera = _logic.PendingZone;
+            return _logic.HasPendingZone;
+        }
+
         private void Update()
         {
             _logic.SetCueActive(overlay != null && overlay.Current != null);
@@ -320,9 +380,23 @@ namespace FixedCamVr.Streaming
                 {
                     // 全黒でソース差替 → ActiveChanged → OnRegistryActiveChanged で
                     // NotifyExternalSwitch + SwitchCommitted(_dipSource) を発火。
+                    // この同期連鎖内で exit インサートが InsertExitRedirect を呼び _blackRedirect を立てうる。
                     _commitSource = _dipSource;
                     registry?.SetActive(_dipTarget);
                     _commitSource = SwitchSource.External;
+
+                    // exit インサート: Zone 切替先を見せずに、黒のまま insert カメラへ再差し替えする
+                    // （dim は 1 のまま維持 → Up で insert カメラを見せる。中間カメラのフラッシュを出さない）。
+                    if (_blackRedirect >= 0)
+                    {
+                        int rc = _blackRedirect;
+                        _blackRedirect = -1;
+                        _commitSource = SwitchSource.Insert;   // 周回に数えない
+                        registry?.SetActive(rc);
+                        _commitSource = SwitchSource.External;
+                        _dipTarget = rc;
+                    }
+
                     _dip = DipState.Up;
                     _dipTimer = 0f;
                 }

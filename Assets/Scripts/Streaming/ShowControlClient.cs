@@ -107,6 +107,93 @@ namespace FixedCamVr.Streaming
         public bool HasData() => entries != null && entries.Length > 0;
     }
 
+    // ---- show.json 画像加工 / タイムライン（スキーマ v2）のパース構造体 ----
+
+    /// <summary>
+    /// 画像加工 7 項目（露出/コントラスト/彩度/色温度/ヴィネット/グレイン/走査線）。
+    /// global（トップレベル post）/ カメラ別（cameras[i].post）/ タイムライン区間 / インサートで共通に使う。
+    /// もとは ShowControlClient のネスト private だったが、TimelineDirector・タイムライン定義が共有するため
+    /// public トップレベルへ昇格（型の位置が変わるだけでフィールド名は不変 = JsonUtility 往復は無影響）。
+    /// </summary>
+    [Serializable] public sealed class PostParams
+    {
+        public float exposure;
+        public float contrast = 1f;
+        public float saturation = 1f;
+        public float temperature;
+        public float vignette;
+        public float grain;
+        public float scanline;
+    }
+
+    /// <summary>タイムライン区間 cue の任意上書き（強度・フェード・trim を丸ごと差し替える）。hasOverride が present-flag。</summary>
+    [Serializable] public sealed class ShowCueOverrideDef
+    {
+        public float strength = 1f;
+        public float fadeIn = 0.5f;
+        public float fadeOut = 0.5f;
+        public float trimStart;
+        public float trimEnd;
+    }
+
+    /// <summary>タイムライン区間で発火する cue 1 本（従来 schedule.entries 相当 + 任意 override）。</summary>
+    [Serializable] public sealed class ShowSegmentCueDef
+    {
+        public string cueId = "";
+        public float delaySec;      // 区間進入からの遅延
+        public bool once = true;    // true = そのランで 1 回だけ
+        // JSON キー "override" は C# 予約語のため @override で受ける（実行時フィールド名は "override"）。
+        public ShowCueOverrideDef? @override;
+        public bool hasOverride;    // present-flag（ライブパース直後に @override!=null から確定）
+    }
+
+    /// <summary>
+    /// 区間からの離脱（exit）/ 進入（enter）時に別カメラを差し込むインサートショット定義。
+    /// exit: この区間から Zone 切替で離脱する瞬間（dip 黒中）に camera へ差し替える。
+    /// enter: 区間進入 + delaySec 後に camera を durationSec 表示する。どちらも表示後は最新ゾーンへ復帰。
+    /// </summary>
+    [Serializable] public sealed class ShowInsertDef
+    {
+        public string anchor = "enter";   // "enter" | "exit"
+        public int camera;                // 差し込むカメラ index
+        public float delaySec;            // enter: 進入からの遅延（exit は 0 運用）
+        public float durationSec = 4f;    // 表示秒数
+        public string cueId = "";         // 任意。表示に合わせ PlayCue
+        public bool once = true;          // true = そのランで 1 回だけ
+        public PostParams? post;          // 任意。無ければインサート先カメラの post / global へフォールバック
+        public bool hasPost;              // present-flag
+
+        public bool IsExit => anchor == "exit";
+    }
+
+    /// <summary>
+    /// タイムライン区間 = 「周回 lap にゾーン（カメラ camera）へ滞在する区間」。キーは (lap, camera)。
+    /// 同一キーの区間は 1 個（Web が保証・Unity は先勝ち）。lap は 1 始まり、camera はカメラ index。
+    /// </summary>
+    [Serializable] public sealed class ShowTimelineSegmentDef
+    {
+        public int lap;
+        public int camera;
+        public ShowSegmentCueDef[] cues = System.Array.Empty<ShowSegmentCueDef>();
+        public PostParams? post;          // 区間滞在中の post 上書き（segment > camera > global）
+        public bool hasPost;              // present-flag
+        public ShowInsertDef? insert;
+        public bool hasInsert;            // present-flag
+    }
+
+    /// <summary>
+    /// show.json の timeline セクション（スキーマ v2）。rev で変更検出する。
+    /// rev>0 && segments 非空なら旧 schedule.entries を supersede する。
+    /// </summary>
+    [Serializable] public sealed class ShowTimelineDef
+    {
+        public int rev;
+        public ShowTimelineSegmentDef[] segments = System.Array.Empty<ShowTimelineSegmentDef>();
+
+        /// <summary>区間が 1 つでもあれば present。</summary>
+        public bool HasData() => segments != null && segments.Length > 0;
+    }
+
     /// <summary>
     /// Web オペレータ卓（show.json）の状態を long-poll で受けて Unity 側へ適用するクライアント。
     /// Screen GameObject（MjpegScreen / ScreenOverlayController と同居）に付ける。
@@ -156,6 +243,10 @@ namespace FixedCamVr.Streaming
                  "null なら従来どおり registry.SetActive を直接叩く（後方互換・その場合 LapCounter 側は External 扱い）。")]
         [SerializeField] private CameraSwitchDirector? switchDirector;
 
+        [Tooltip("タイムライン（show.json timeline スキーマ v2）を CueScheduler / InsertController / " +
+                 "post 上書きへ分配する TimelineDirector。null なら timeline は無視され従来 schedule で動く（後方互換）。")]
+        [SerializeField] private TimelineDirector? timelineDirector;
+
         private ScreenOverlayController? _overlay;
         private Material? _material;
         private int _rev = -1;
@@ -200,6 +291,14 @@ namespace FixedCamVr.Streaming
         private PostParams _globalPost = new PostParams();
         private bool _subscribed;
 
+        // ---- post 上書き層（タイムライン）----
+        // 区間 post は TimelineDirector が SetPostOverride で掛け外し（区間滞在中のみ）。
+        // インサート表示中は _insertPostActive の insert 層が segment 層より優先する
+        // （insert 中は insert.post ?? インサート先カメラ post ?? global。segment 層は素通ししない）。
+        private PostParams? _segmentPostOverride;
+        private bool _insertPostActive;
+        private PostParams? _insertPostOverride;
+
         // ゾーン layout（ライブ or 端末キャッシュ由来）。Tracking 側（ZoneLayoutApplier）が読む。
         private ShowLayoutDef? _layout;
         private int _appliedLayoutRev = -1;
@@ -209,6 +308,15 @@ namespace FixedCamVr.Streaming
         // 事前オーサリング済みスケジュール（ライブ or 端末キャッシュ由来）。CueScheduler へ供給。
         private ShowScheduleDef? _schedule;
         private int _appliedScheduleRev = -1;
+        // タイムライン（スキーマ v2・ライブ or 端末キャッシュ由来）。TimelineDirector へ供給。
+        private ShowTimelineDef? _timeline;
+        private int _appliedTimelineRev = -1;
+
+        // timeline が有効（rev>0 && segments 非空）で、かつ TimelineDirector が配線されているか。
+        // これが true の間だけ timeline が schedule.entries を supersede する。
+        private bool TimelineActive
+            => _timeline != null && _timeline.rev > 0
+               && _timeline.segments != null && _timeline.segments.Length > 0;
 
         /// <summary>現在の layout（未設定なら null）。ZoneLayoutApplier が Rebuild で参照する。</summary>
         public ShowLayoutDef? Layout => _layout;
@@ -255,6 +363,7 @@ namespace FixedCamVr.Streaming
             public ControlState? control;
             public ShowLayoutDef? layout;
             public ShowScheduleDef? schedule;
+            public ShowTimelineDef? timeline;   // スキーマ v2（present なら schedule を supersede）
         }
         [Serializable] private class CameraDef
         {
@@ -282,6 +391,7 @@ namespace FixedCamVr.Streaming
             public ShowLayoutDef? layout;
             public CueDef[] cues = Array.Empty<CueDef>();
             public ShowScheduleDef? schedule;
+            public ShowTimelineDef? timeline;   // スキーマ v2（オフライン supersede 用）
             // 直近に既知だった runEpoch。起動時にこれを「既知値」として復元し、
             // PC 不在の再起動で同一 epoch を誤リセットしない。
             public int runEpoch;
@@ -299,16 +409,8 @@ namespace FixedCamVr.Streaming
             public float trimStart = 0f;
             public float trimEnd = 0f;   // <=0 = 最後まで
         }
-        [Serializable] private class PostParams
-        {
-            public float exposure;
-            public float contrast = 1f;
-            public float saturation = 1f;
-            public float temperature;
-            public float vignette;
-            public float grain;
-            public float scanline;
-        }
+        // PostParams は public トップレベルへ昇格済み（ファイル冒頭）。CameraDef.post / _globalPost /
+        // タイムライン各定義 / SetPostOverride が共有する。
         // discoveryEnabled は「省略時 true」を守るため C# 初期化子で true にする
         // （JsonUtility.FromJson は既定コンストラクタで初期化子を走らせてから present なキーだけ上書きするため、
         //  JSON にキーが無ければ true が残る。control ブロックごと無い場合も呼び出し側が true 扱いにする）。
@@ -458,8 +560,9 @@ namespace FixedCamVr.Streaming
         // cueScheduler.ResetRun は LapCounter 未配線でもスケジューラ単独で成立させるための直接呼び（LapCounter.ResetRun でも呼ぶが冪等）。
         private void TriggerRunReset()
         {
-            Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue をリセット");
+            Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue / タイムラインをリセット");
             cueScheduler?.ResetRun();
+            timelineDirector?.ResetRun();
             RunReset?.Invoke();
         }
 
@@ -533,18 +636,35 @@ namespace FixedCamVr.Streaming
                 layoutChanged = true;
             }
 
-            // 1.6) スケジュール（rev で変更検出）→ CueScheduler へ供給。cue 解決関数は毎回張り直す
-            //      （_cues の参照が更新されるため）。rev>0 を present 判定に使い、JsonUtility が
+            // 1.6) スケジュール（rev で変更検出）。rev>0 を present 判定に使い、JsonUtility が
             //      schedule 欠落時に書く既定オブジェクト（rev=0）で焼き込み/キャッシュを潰さない。
-            //      rev>0 なら entries 空でも適用する（オペレータの「全消去」を通す）。
+            //      実際の CueScheduler への供給は timeline supersede を調停する PushCueSource で行う。
+            bool cueSourceChanged = false;
             if (state.schedule != null && state.schedule.rev > 0
                 && state.schedule.rev != _appliedScheduleRev)
             {
                 _schedule = state.schedule;
                 _appliedScheduleRev = state.schedule.rev;
-                cueScheduler?.SetScheduleFromDefs(_schedule.entries);
+                cueSourceChanged = true;
             }
+
+            // 1.62) タイムライン（スキーマ v2・rev で変更検出）。hasXxx present-flag はライブパース直後に確定
+            //       （キャッシュ往復後は null 判定が壊れるため。CameraDef.hasPost と同手法）。
+            //       rev>0 なら segments 空でも適用する（オペレータの「全消去」を通す）。
+            if (state.timeline != null && state.timeline.rev > 0
+                && state.timeline.rev != _appliedTimelineRev)
+            {
+                _timeline = state.timeline;
+                _appliedTimelineRev = state.timeline.rev;
+                NormalizeTimelinePresentFlags(_timeline);
+                cueSourceChanged = true;
+            }
+
+            // cue 解決関数は毎回張り直す（_cues の参照が更新されるため）。CueScheduler / InsertController 共通。
             cueScheduler?.SetCueResolver(ResolveCue);
+            timelineDirector?.SetCueResolver(ResolveCue);
+            // schedule / timeline のどちらかが変わったら供給元を再分配する（timeline 優先）。
+            if (cueSourceChanged) PushCueSource();
 
             // 1.65) ラン識別子（control.runEpoch）。変化＝新しい体験者のラン → 周回 / cue をリセット。
             //       SaveCache より前で更新し、次回起動へ「既知値」を持ち越す（同一 epoch の誤リセット防止）。
@@ -586,6 +706,9 @@ namespace FixedCamVr.Streaming
             //    activeCue 非空の間は CueScheduler を抑止する（ライブ優先）。毎回同期する。
             string cueId = state.control?.activeCue ?? "";
             cueScheduler?.SetLiveCueActive(!string.IsNullOrEmpty(cueId));
+            // インサートも同条件で抑止する（activeCue 非空 or cameraOverride 非空中は発火しない）。
+            timelineDirector?.SetSuppressed(
+                !string.IsNullOrEmpty(cueId) || !string.IsNullOrEmpty(_appliedOverride));
             if (cueId != _appliedCue)
             {
                 if (_overlay == null) return;
@@ -634,14 +757,48 @@ namespace FixedCamVr.Streaming
             };
         }
 
-        // 焼き込み StreamingAssets / 端末キャッシュ由来の schedule / course を消費者へ供給する。
+        // 焼き込み StreamingAssets / 端末キャッシュ由来の schedule / timeline / course を消費者へ供給する。
         private void PushCourseAndSchedule()
         {
-            if (cueScheduler != null)
+            cueScheduler?.SetCueResolver(ResolveCue);
+            timelineDirector?.SetCueResolver(ResolveCue);
+            PushCueSource();
+            cueScheduler?.SetLiveCueActive(!string.IsNullOrEmpty(_appliedCue));
+            timelineDirector?.SetSuppressed(!string.IsNullOrEmpty(_appliedCue) || !string.IsNullOrEmpty(_appliedOverride));
+        }
+
+        // cue の供給元を timeline / schedule のどちらかに一本化して分配する（timeline supersede）。
+        //   - timeline 有効 && TimelineDirector 配線あり → TimelineDirector が cues / insert / post を分配。
+        //   - それ以外 → 従来どおり schedule.entries を CueScheduler へ直接供給（timeline は無視）。
+        private void PushCueSource()
+        {
+            if (TimelineActive && timelineDirector != null)
             {
-                cueScheduler.SetScheduleFromDefs(_schedule?.entries);
-                cueScheduler.SetCueResolver(ResolveCue);
-                cueScheduler.SetLiveCueActive(!string.IsNullOrEmpty(_appliedCue));
+                timelineDirector.SetTimeline(_timeline!.segments);
+            }
+            else
+            {
+                timelineDirector?.Clear();
+                cueScheduler?.SetScheduleFromDefs(_schedule?.entries);
+            }
+        }
+
+        // timeline の hasXxx present-flag をライブ / 焼き込みパース直後に確定する（CameraDef.hasPost と同手法）。
+        // JsonUtility は null の入れ子クラスを ToJson で既定オブジェクトとして書くため、キャッシュ往復後は
+        // null 判定が信頼できない。パース直後（往復前）だけ null で present を判定し bool へ焼く。
+        // 端末キャッシュ読込時はこの再導出を呼ばず、保存済み bool を信頼する（LoadAndApplyCache）。
+        private static void NormalizeTimelinePresentFlags(ShowTimelineDef t)
+        {
+            if (t?.segments == null) return;
+            foreach (var seg in t.segments)
+            {
+                if (seg == null) continue;
+                seg.hasPost = seg.post != null;
+                seg.hasInsert = seg.insert != null;
+                if (seg.insert != null) seg.insert.hasPost = seg.insert.post != null;
+                if (seg.cues != null)
+                    foreach (var c in seg.cues)
+                        if (c != null) c.hasOverride = c.@override != null;
             }
         }
 
@@ -685,10 +842,18 @@ namespace FixedCamVr.Streaming
                 _schedule = state.schedule;
                 _appliedScheduleRev = state.schedule.rev;
             }
+            // 焼き込み timeline（present-flag はフレッシュパースなので再導出できる）。
+            if (state.timeline != null && state.timeline.HasData())
+            {
+                _timeline = state.timeline;
+                _appliedTimelineRev = state.timeline.rev;
+                NormalizeTimelinePresentFlags(_timeline);
+            }
             // 焼き込み値の runEpoch を「既知値」として取り込む（端末キャッシュがあれば後で上書きされる）。
             _knownRunEpoch = state.control?.runEpoch ?? _knownRunEpoch;
             Debug.Log($"[ShowControl] 焼き込み show.json を適用: cameras={_cameras.Length}, " +
                       $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)}, " +
+                      $"timeline={( _timeline != null ? _timeline.segments.Length : 0)}, " +
                       $"course={( _layout?.course != null ? _layout.course.order.Length : 0)}");
         }
 
@@ -785,15 +950,49 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        /// <summary>アクティブカメラの個別 post（無ければ global post）をマテリアルへ適用する。</summary>
+        /// <summary>
+        /// タイムライン区間の post 上書き層を設定する（TimelineDirector 用）。
+        /// null で解除するとアクティブカメラ post → global へフォールバックする。
+        /// </summary>
+        public void SetPostOverride(PostParams? p)
+        {
+            _segmentPostOverride = p;
+            ApplyPostForActive();
+        }
+
+        /// <summary>
+        /// インサート表示中の post 層を設定する（InsertController 用）。active 中は segment 層より優先する。
+        /// p が null なら「インサート先カメラの post / global」へフォールバックする（segment 層は素通ししない）。
+        /// </summary>
+        public void SetInsertPostOverride(bool active, PostParams? p)
+        {
+            _insertPostActive = active;
+            _insertPostOverride = p;
+            ApplyPostForActive();
+        }
+
+        /// <summary>
+        /// アクティブカメラの映像へ適用する post を解決してマテリアルへ書く。
+        /// 段階（上ほど優先）:
+        ///   1. インサート層（_insertPostActive 中）: insert.post ?? アクティブ(=insert)カメラ post ?? global
+        ///   2. 区間層（_segmentPostOverride）: 区間 post ?? アクティブカメラ post ?? global
+        ///   3. アクティブカメラ個別 post（cameras[i].post）
+        ///   4. global post
+        /// インサート層と区間層は排他（インサート中は区間層を素通りせず insert 側で解決する）。
+        /// </summary>
         private void ApplyPostForActive()
         {
             if (_material == null) return;
             int idx = registry != null ? registry.ActiveIndex : -1;
-            PostParams p = _globalPost;
+            // ベース = アクティブカメラ個別 post（あれば）→ 無ければ global。
+            PostParams basePost = _globalPost;
             if (idx >= 0 && idx < _cameras.Length && _cameras[idx] != null
                 && _cameras[idx]!.hasPost && _cameras[idx]!.post != null)
-                p = _cameras[idx]!.post!;
+                basePost = _cameras[idx]!.post!;
+            // 上書き層: インサート中は insert 層（未指定ならベース）、そうでなければ区間層（未指定ならベース）。
+            PostParams p = _insertPostActive
+                ? (_insertPostOverride ?? basePost)
+                : (_segmentPostOverride ?? basePost);
             _material.SetFloat(ExposureId, p.exposure);
             _material.SetFloat(ContrastId, p.contrast);
             _material.SetFloat(SaturationId, p.saturation);
@@ -826,6 +1025,7 @@ namespace FixedCamVr.Streaming
                     layout = _layout,   // course を内包
                     cues = _cues,
                     schedule = _schedule,
+                    timeline = _timeline,
                     runEpoch = _knownRunEpoch,
                 };
                 File.WriteAllText(ConfigCachePath, JsonUtility.ToJson(cfg));
@@ -856,11 +1056,19 @@ namespace FixedCamVr.Streaming
                     _schedule = cfg.schedule;
                     _appliedScheduleRev = cfg.schedule.rev;
                 }
+                // キャッシュ済み timeline も復元。往復後は null 判定が壊れているため present-flag は
+                // 再導出せず保存済み bool を信頼する（NormalizeTimelinePresentFlags は呼ばない）。
+                if (cfg.timeline != null && cfg.timeline.HasData())
+                {
+                    _timeline = cfg.timeline;
+                    _appliedTimelineRev = cfg.timeline.rev;
+                }
                 // 既知の runEpoch を復元（この起動では発火しない = 同一 epoch の誤リセット防止）。
                 _knownRunEpoch = cfg.runEpoch;
                 Debug.Log($"[ShowControl] 端末キャッシュ設定を適用: {ConfigCachePath} " +
                           $"(cameras={_cameras.Length}, layout={( _layout != null ? "yes" : "no")}, " +
-                          $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)})");
+                          $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)}, " +
+                          $"timeline={( _timeline != null ? _timeline.segments.Length : 0)})");
             }
             catch (Exception e) { Debug.LogWarning($"[ShowControl] 設定キャッシュ読込失敗: {e.Message}"); }
         }

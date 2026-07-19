@@ -271,7 +271,7 @@ namespace FixedCamVr.Streaming.EditorTools
             var lapCounter = trackerGo.AddComponent<LapCounter>();
             var lapSo = new SerializedObject(lapCounter);
             TrySetObjectRef(lapSo, "registry", registry);
-            // director 経由で「出どころ Zone」だけ周回に数える（手動 / Web 固定 / 外部は数えない）。
+            // director 経由で「出どころ Zone」だけ周回に数える（手動 / Web 固定 / 外部 / インサートは数えない）。
             if (director != null) TrySetObjectRef(lapSo, "director", director);
             if (showControl != null) TrySetObjectRef(lapSo, "showControl", showControl);
             TrySetObjectRef(lapSo, "cueScheduler", cueScheduler);
@@ -279,13 +279,33 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetBool(lapSo, "logChanges", true);
             lapSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // 2.97. タイムライン（show.json timeline スキーマ v2）: InsertController + TimelineDirector を
+            //       [Tracker] に載せる（毎回作り直しなので冪等）。TimelineDirector は CueScheduler.CameraEntered を
+            //       購読して区間 cues[] を CueScheduler へ・insert を InsertController へ・区間 post を
+            //       ShowControlClient.SetPostOverride へ分配する。InsertController は Screen の Director / overlay と
+            //       showControl を叩く（dip-to-black 差し替え・insert 中 post 層）。
+            var insertController = trackerGo.AddComponent<InsertController>();
+            var insSo = new SerializedObject(insertController);
+            if (director != null) TrySetObjectRef(insSo, "director", director);
+            if (overlay != null) TrySetObjectRef(insSo, "overlay", overlay);
+            if (showControl != null) TrySetObjectRef(insSo, "showControl", showControl);
+            insSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var timelineDirector = trackerGo.AddComponent<TimelineDirector>();
+            var tlSo = new SerializedObject(timelineDirector);
+            TrySetObjectRef(tlSo, "cueScheduler", cueScheduler);
+            TrySetObjectRef(tlSo, "insertController", insertController);
+            if (showControl != null) TrySetObjectRef(tlSo, "showControl", showControl);
+            tlSo.ApplyModifiedPropertiesWithoutUndo();
+
             // ShowControlClient.cueScheduler を新 CueScheduler へ配線（毎回 Tracker を作り直すため必須）。
-            // switchDirector も配線（cameraOverride を出どころ Override として通す）。
+            // switchDirector（cameraOverride を出どころ Override として通す）・timelineDirector も配線。
             if (showControl != null)
             {
                 var scSchedSo = new SerializedObject(showControl);
                 TrySetObjectRef(scSchedSo, "cueScheduler", cueScheduler);
                 if (director != null) TrySetObjectRef(scSchedSo, "switchDirector", director);
+                TrySetObjectRef(scSchedSo, "timelineDirector", timelineDirector);
                 scSchedSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -320,7 +340,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（Staff で右スティック押込→2 点登録、A=マーク/B=確定/スティック微調整） / StaffPanel（Staff チートシート） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部は不算入。runEpoch 変化 or Staff 左スティック押込でランリセット） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / DebugHud（startVisible=false・STATE 行に MODE） / OvrBridge（Run 封印・両グリップ 3 秒で Staff）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（Staff で右スティック押込→2 点登録、A=マーク/B=確定/スティック微調整） / StaffPanel（Staff チートシート） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or Staff 左スティック押込でランリセット） / TimelineDirector + InsertController（show.json timeline v2: 区間 cue override / インサートショット / 区間 post 上書き。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / DebugHud（startVisible=false・STATE 行に MODE） / OvrBridge（Run 封印・両グリップ 3 秒で Staff）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }

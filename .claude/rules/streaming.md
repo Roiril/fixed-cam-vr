@@ -176,18 +176,52 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - `CachedConfig`（端末キャッシュ）に cues / schedule / course を保存するようになった（旧: cues 欠落でオフライン発火不可だった）
 - **⚠ 実機未検証**（2026-07-17 実装。コンパイル・EditMode テスト 75/75・Web UI・エクスポートは検証済み）
 
-### 編集の粒度と自由度（2026-07-19 調査で確定）
+## タイムライン第一級オーサリング（show.json v2 `timeline`）— 2026-07-19
 
-タイムラインで「周×カメラ」ごとに何を独立に変えられるか。**cue の中身とタイムラインの割当は別レイヤ**なので注意:
+体験オーサリングの正面を**周回×ゾーン区間（セグメント）のタイムライン**へ再設計した。計画
+[.claude/plans/2026-07-19_webui-timeline-authoring.md](../plans/2026-07-19_webui-timeline-authoring.md)（スキーマ・セマンティクスの単一ソース）。
+旧「カメラ列の下に cue がぶら下がる」構造と `schedule.entries` の (lap×camera) グリッドを置き換え、
+区間 1 個から **cue 割当（複数・パラメータ上書き付き）・画像加工 post の上書き・インサートショット**を一括編集できる。
 
-| 調整対象 | 周×カメラ粒度で変えられるか | どこで |
+**セグメント = (lap, camera)**。show.json トップレベルに `timeline` を新設（後方互換：`timeline.rev>0 && segments 非空`
+の時だけ Unity が `schedule.entries` を無視して supersede。無ければ従来経路が生きる）。
+
+```jsonc
+"timeline": { "rev": 1, "segments": [
+  { "lap": 2, "camera": 0,                       // lap=1始まり / camera=index（course.order と同キー）
+    "cues": [ { "cueId": "cue_A_1", "delaySec": 0, "once": true,
+                "override": { "strength": 0.5, "fadeIn": 1.2, "fadeOut": 0.8,
+                              "trimStart": 0, "trimEnd": 0 }, "hasOverride": true } ],
+    "post": { /* PostParams 7項目 */ }, "hasPost": true,           // このゾーン滞在中の post 上書き
+    "insert": { "anchor": "exit", "camera": 2, "durationSec": 4,   // 別カメラを N 秒差し込む
+                "delaySec": 0, "cueId": "cue_C_scare", "once": true,
+                "post": { /* PostParams */ }, "hasPost": false }, "hasInsert": true } ] }
+```
+
+- **cue**: 区間進入（Zone commit）+ delaySec で発火。複数可。`override` は ResolveCue 結果（OverlayCueData 複製）への差分パッチ。`control.activeCue` 非空中は抑止（ライブ優先）
+- **post 上書き**: 解決は **segment > cameras[i].post > global** の 3 段（Unity `ApplyPostForActive` を拡張。insert 中はさらに insert post が最優先の 4 段）。区間離脱（次の Zone commit）で解除。**「1 周目の B は普通・2 周目の B は赤く」が可能になった**（旧: カメラ単位固定で不可）
+- **インサートショット** = [`InsertController`](../../Assets/Scripts/Streaming/InsertController.cs) + `InsertLogic`（純ロジック・テストあり）:
+  - `enter`: 進入 + delaySec 後、insert.camera を durationSec 秒表示 → 最新ゾーンカメラへ復帰
+  - `exit`: **このゾーンを Zone 切替で離れる瞬間**、dip の黒中に insert.camera へ差し替え durationSec 秒 → 最新ゾーンカメラへ復帰。体験者は A→黒→C(N秒)→黒→B と見え、中間カメラのフラッシュを見せない（ユーザー要求「A→B に切り替わる前に C に演出を N 秒」の実装形）
+  - 切替は dip-to-black 付き（`CameraSwitchDirector` の `SwitchSource.Insert`）。insert 表示中はゾーン自動切替を凍結（cue 凍結と同型）。**周回カウントは実ゾーン移動の commit 時に通常どおり 1 回**（Insert 切替は LapCounter が数えない）
+- **present-flag 必須**（JsonUtility 制約）: `hasPost` / `hasInsert` / `hasOverride` を必ず書く。null 入れ子は既定値で書かれるため、ライブ・焼き込みパース直後に `!=null` から確定する（`CameraDef.hasPost` と同じ手法）
+- **JSON キー `override`** は C# 予約語のため Unity 側は `@override` フィールドで受ける（実行時フィールド名は `"override"` で JsonUtility が正しく往復。実型で確認済み）
+- **CachedConfig に timeline を保存**（オフライン発火。旧「cues 欠落」事故の教訓を踏襲）
+- **Web 検証モード**（実機不要）: Web 卓「▶ 検証」で **矢印キー**（→ 次ゾーン / ← 1手戻る / R 先頭 / Esc 終了）。Unity セマンティクス（LapCounter 順方向進行・CueScheduler・insert・post 3 段）を JS ミラーで再現し、発火順と「体験者に見える画」を WebGL プレビューで確認。**ローカルのみで show.json / 実機は書かない**
+- **⚠ Quest 実機未検証**（2026-07-19 実装。Unity コンパイル・EditMode 126/126・Web 卓ロード + 検証エンジン + セグメントインスペクタはブラウザ検証済み。insert の dip 演出・post 切替の見た目は現場調整前提）
+
+### 編集の粒度と自由度（2026-07-19 timeline v2 で更新）
+
+| 調整対象 | 周×カメラ（セグメント）粒度で変えられるか | どこで |
 |---|---|---|
-| どの cue を出すか / delaySec / once | ✅ **タイムライン区間で直接** | schedule.entries |
-| マスク領域・素材（動画/画像）・フェード秒・trim・strength | △ できるが 2 ステップ | cue 単位（カメラ列で cue を作成）→ タイムラインで周ごとに別 cue を割当。**タイムライン上で直接は編集不可** |
-| **画像加工（露出・コントラスト・彩度・色温度・ヴィネット・グレイン・走査線）** | ❌ **不可（カメラ単位固定）** | `cameras[i].post`（カメラ 1 個 = 1 セット）。cue にも schedule にも紐づかない |
+| どの cue を出すか / delaySec / once / 複数 cue | ✅ **タイムライン区間で直接** | `timeline.segments[].cues[]` |
+| cue パラメータ上書き（strength・フェード・trim） | ✅ **区間ごとに直接**（同じ cue を周ごとに違う強度で使える） | `cues[].override`（hasOverride） |
+| マスク領域・素材（動画/画像） | ✅ 区間インスペクタで既存 cue 割当 or その場で新規 cue 作成 | cue 単位（`cues[]` ライブラリ）。マスクはカメラ構図に対して作るため camera 帰属は維持 |
+| **画像加工 post（露出・コントラスト・彩度・色温度・ヴィネット・グレイン・走査線）** | ✅ **区間ごとに上書き可**（旧: カメラ単位固定で不可だった） | `timeline.segments[].post`（hasPost）。未設定は camera→global にフォールバック |
+| **別カメラのインサートショット（N 秒差し込み）** | ✅ **区間ごとに enter/exit で** | `timeline.segments[].insert`（hasInsert） |
 
-- **cue（`OverlayCueData`）は色補正 post を一切持たない**。差し込み素材の見た目は「素材そのもの + マスク合成」で決まり、画面全体のグレーディングは常にアクティブカメラの `cameras[i].post`（`ApplyPostForActive`）
-- したがって **「1 周目の B は普通・2 周目の B は赤く染める」のような "周ごとの画質変化" は現状できない**。実現するには `schedule.entries` か cue に post 上書きを持たせ、Unity 側適用を「アクティブカメラ post → スケジュール/cue post で上書き」に拡張する改修が要る（**未実装**）
+- **cue（`OverlayCueData`）自体は色補正 post を持たない**（従来どおり）。画面全体のグレーディングは segment post > camera post > global の 3 段で解決される
+- キー空間は現状維持（`cues[].camera`=文字列 id / `timeline.segments[].camera`=int index。変換は Web の `cuesForCam` 流儀）。統一は Unity 共有契約の破壊を避けるため見送り
 
 ## 接続の堅牢化 — 端末内在 ID + 発見プロトコル（fixedcam-discovery/1）— 2026-07-18
 
