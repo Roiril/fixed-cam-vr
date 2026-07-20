@@ -16,14 +16,15 @@
 - **Realistic = Male Hand**（Low Poly 使用）／ **Robot = Robot Hand**（Black 使用）／ **Default = 従来の Meta 白手**。
 - §6.5 で本命候補にしていた Marcin 無料モデル / Handy Hands は**不採用**（購入品で確定）。
 
-**切り替え方法（両対応）**:
-- 起動フラグ `tdv_hand`（intent extras / コマンドライン）: `default` / `realistic`（=male/human/skin）/ `robot`。調査は 1 セッション 1 種固定に使う。
-- 実機トグル: **左コントローラ Y（Button.Two / LTouch）**で Default→Realistic→Robot 巡回（[`HandVariantWatcher`](../../Assets/TableDuo/Scripts/Net/HandVariantWatcher.cs)）。ハンドトラッキング中は発火しない（設営・お試し用）。
-- Editor 既定は `ConnectionManager.studyHandVariant`（フラグがあればフラグ優先）。
-- **リモート描画は申告値で同期（2026-07-10 変更）**: 自分の手＝ローカル選択のまま。相手の手は
-  「相手端末が `_studyFlags`（bit2-3）で申告したバリアント」で描く（`TableDuoPlayer` が Y 切替時に
-  申告値を書き直し → 受信側 `RemoteAvatarView.SetHandVariant` が再構築）。ホスト/観戦 PC からも
-  切替が見える。調査では従来どおり両端末を同じ tdv_hand で起動（不一致はエラーログ＋CSV に残る）。
+**切り替え方法**:
+- 起動フラグ `tdv_hand`（intent extras / コマンドライン）: `default` / `realistic`（=male/human/skin）/ `robot`。調査は 1 セッション 1 種の初期条件に使う。
+- **セッション中の切替 = ホスト卓 [`FacilitatorPanel`](../../Assets/TableDuo/Scripts/Net/FacilitatorPanel.cs) の巡回ボタン 1 個**（2026-07-21〜）。対象は **手役（Role=Hand）の手だけ**。押すと Default→リアル→ロボ→… を巡回し、`TableDuoPlayer.ServerForceHandVariant` → `_forcedVariant`（server write）→ 手役 owner が `StudyConfig.ApplyForcedVariant`。旧: 左コントローラ Y 巡回（`HandVariantWatcher`）・クライアント別の白手/リアル/ロボ列は**撤去**（コントローラ=視点リセット専用 / UI は手役 1 ボタンのみ）。
+- Editor 既定は `ConnectionManager.studyHandVariant`（フラグがあればフラグ優先。優先順位＝ホスト強制 > 起動フラグ）。
+- **リモート描画は申告値で同期（2026-07-10〜）**: 自分の手＝ローカル選択のまま。相手（手役）の手は
+  「手役端末が `_studyFlags`（bit2-3）で申告したバリアント」で描く（`TableDuoPlayer` が切替時に
+  申告値を書き直し → 受信側 `RemoteAvatarView.SetHandVariant` が再構築）。**ホスト卓で手役の手を変えると
+  手役本人・人役の視界・ホスト観戦の全端末が自動で同じ見た目になる**（late join も `_studyFlags` 初期同期で一致）。
+  人役自身の手は Remy IK 手でバリアント経路を通らず不変。
 
 **適用範囲**: 自分の手（[`LocalVariantHand`](../../Assets/TableDuo/Scripts/Net/LocalVariantHand.cs)）＋相手の手（[`RemoteAvatarView`](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs)）の両方。
 
@@ -176,11 +177,15 @@ pinky0 で 173° 乖離／layout FK とメッシュ実階層が 100° 乖離）�
 - リアル過ぎると谷＋調査交絡 → **stylized 寄りの肌**（軽い SSS、控えめなディテール）に留める。
 - 優先度最下位。Robot/Simple が固まってから着手。
 
-## 4. 切り替え UI / 起動フラグ案
+## 4. 切り替え UI / 起動フラグ案（当初案・実装で更新済み）
 
-- `StudyConfig` に `enum HandVariant { Simple, Robot, Human }` と `static HandVariant SelectedHandVariant` を追加。
-- 起動時指定: `tdv_role` と同じ adb extras 方式（例 `-e tdv_hand robot`）。1 セッション 1 種で固定＝調査運用に最適。
-- 実機での即時切り替えが欲しければ、後付けでオペレータ操作（左コントローラ等）から `SelectedHandVariant` を変える経路も足せる（同期不要なのでローカルで完結）。
+> ⚠ この節は 2026-06-29 の当初案。実装は上の「切り替え方法」が正。現行は enum `HandVariant { Default, Realistic, Robot }`、
+> セッション中切替はホスト卓 FacilitatorPanel の巡回ボタン（手役のみ）で **NGO 同期あり**（当初案の「ローカルで完結」は誤り。
+> 手役の見た目は人役・ホスト観戦の全端末へ申告値同期で反映される）。
+
+- `StudyConfig` に `static HandVariant SelectedHandVariant` を追加（当初案どおり実装）。
+- 起動時指定: `tdv_role` と同じ adb extras 方式（例 `-e tdv_hand robot`）。1 セッション 1 種で固定＝調査運用の初期条件。
+- 実機での即時切替はオペレータ（ホスト卓）操作へ集約（参加者コントローラからは切替不可＝視点リセット専用）。
 
 ## 5. 未解決の人間判断ポイント
 

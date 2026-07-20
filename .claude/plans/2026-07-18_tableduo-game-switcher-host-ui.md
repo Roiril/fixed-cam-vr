@@ -66,7 +66,7 @@ NGO のアクティブ状態セマンティクスに一切触らない。BoardRe
 IMGUI・ガード = `Application.platform != Android && NetworkManager.IsServer && IsListening`（調査本番の tdv フラグ起動でも表示 — 実験者用のため）。画面右側に配置（左上の Spectator/WireTap GUI と非干渉）。
 
 - **ボドゲ切替**: GameSwitcher の表示名ボタン列（アクティブ強調）
-- **手の見た目**: 接続クライアント別の行（clientId + 役割）× [白手][リアル][ロボ][解除] → `ServerForceHandVariant`
+- **手の見た目（2026-07-21 更新）**: ~~接続クライアント別の行 × [白手][リアル][ロボ]~~ → **手役（Role=Hand）だけを対象にした巡回ボタン 1 個**へ簡素化。押すと `DeclaredHandVariant`→`HandVariantCycle.Next`→`ServerForceHandVariant`（Default→リアル→ロボ→…）。手役の申告値同期で人役の視界・ホスト観戦の全端末に自動反映。人役自身の手など他の手は対象外。UI は手役ボタン 1 個のみ（他の手バリアント UI は削除）
 - **盤面リセット**: `BoardReset.ResetBoard()`
 - **マーク**: テキスト + 送信（`SessionLogger.LogEvent("mark", ...)`＝MarkServer と同じ）
 - `FacilitatorMarkServer` に `game_<id>` ラベル追加（`curl /mark?label=game_algo` で切替＝reset_board と同じ遠隔導線）

@@ -11,10 +11,19 @@ TableDuo（ハンド）で手役の手メッシュを **Default=Meta白手 / Rea
 3種に切り替える機能を実装（2026-07-01）。素材はユーザー購入の **VR Hands Starter Pack**。パックの
 Robot/Male のみ `Assets/TableDuo/ThirdParty/VRHandsStarterPack/` に GUID 保持で抽出（他7種は未インポート）。
 
-**切替**: 起動フラグ `tdv_hand=default|realistic|robot`（intent extras/CLI）＋ **セッション中はホスト（PC）の
+**切替**: 起動フラグ `tdv_hand=default|realistic|robot`（intent extras/CLI）＝初期条件 ＋ **セッション中はホスト（PC）の
 FacilitatorPanel から強制**（`TableDuoPlayer.ServerForceHandVariant` → `_forcedVariant` server write → owner が
 `StudyConfig.ApplyForcedVariant`）。旧: 左コントローラ Y 巡回（`HandVariantWatcher`）は **2026-07-18 撤去**
-（コントローラ=視点リセット専用化）。Editor 既定は `ConnectionManager.studyHandVariant`。
+（コントローラ=視点リセット専用化）。Editor 既定は `ConnectionManager.studyHandVariant`。優先順位＝ホスト強制 > 起動フラグ初期値。
+
+**UI は「手役の手」1 ボタンに一本化（2026-07-21）**: FacilitatorPanel の手セクションは **接続クライアント別
+（白手/リアル/ロボ × 各行）を廃止**し、**手役（Role=Hand）だけを対象にした巡回ボタン 1 個**へ。押すと
+`DeclaredHandVariant` を読んで `HandVariantCycle.Next`（Default→Realistic→Robot→…・`HandVariant.cs` の純ロジック・
+EditMode テスト `HandVariantCycleTests`）を `ServerForceHandVariant` で強制。ラベルに現バリアント名を表示（申告値同期の
+往復後に更新＝真値追従）。手役未接続時は「(手役 未接続)」。人役自身の手・その他の手には触らない（人役リモートは Remy IK 手
+＝バリアント経路を通らない。人役端末の `StudyConfig` は強制対象外なので Default 据え置き）。ホスト権威は既存の
+`_forcedVariant`(server-write) + `_studyFlags` bit2-3(owner-write) 同期のまま（late join でも一致）。
+死にコードだった `StudyConfig.SetHandVariant`（旧参加者トグル入口・呼び出しゼロ）は削除。`ApplyForcedVariant` が唯一の変更入口。
 **リモート描画は申告値同期（2026-07-10〜）**: 自分の手＝ローカル選択、相手の手＝相手端末の申告値
 （`TableDuoPlayer._studyFlags` bit2-3。変更で書き直し → `RemoteAvatarView.SetHandVariant` が再構築）＝
 ホスト/観戦 PC にも切替が映る。調査は従来どおり両端末を同フラグ起動（不一致は情報ログ — ホスト強制で

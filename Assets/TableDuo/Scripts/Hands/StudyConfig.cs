@@ -51,8 +51,9 @@ namespace TableDuoVr.Hands
         /// **正式な調査条件（within-pair 因子・2026-07-02 決定）**: ブロックごとに tdv_hand 起動フラグで固定する。
         /// セッション中の変更はホスト（実験者卓）強制のみ（<see cref="ApplyForcedVariant"/>）。参加者トグルは撤去済み（2026-07-18）。
         /// 自分の手＝この値。リモート描画＝相手の申告値（_studyFlags 同期）が優先される。
-        /// 変更は <see cref="SetHandVariant"/> / <see cref="ApplyForcedVariant"/> 経由にすること（描画側が
-        /// <see cref="HandVariantChanged"/> で再構築し、owner の TableDuoPlayer が申告値を書き直して相手端末の描画も追従する）。</summary>
+        /// 変更は <see cref="ApplyForcedVariant"/> 経由にすること（描画側が <see cref="HandVariantChanged"/> で
+        /// 再構築し、owner の TableDuoPlayer が申告値を書き直して相手端末の描画も追従する）。
+        /// 手役の手の見た目を変える唯一の導線はホスト卓 FacilitatorPanel の巡回ボタン（参加者トグルは撤去済み）。</summary>
         public static HandVariant SelectedHandVariant;
 
         /// <summary>協調配置課題（Phase 4）の目標配置パネルを手役に表示する（tdv_pattern=on、既定 OFF）。
@@ -68,14 +69,6 @@ namespace TableDuoVr.Hands
 
         /// <summary>手バリアントが切り替わった。ローカル手 / リモート手の描画側がメッシュを作り直すために購読する。</summary>
         public static event System.Action? HandVariantChanged;
-
-        /// <summary>手バリアントを設定し、変わった時だけ購読者へ通知する（同値なら再構築しない）。</summary>
-        public static void SetHandVariant(HandVariant v)
-        {
-            if (v == SelectedHandVariant) return;
-            SelectedHandVariant = v;
-            HandVariantChanged?.Invoke();
-        }
 
         /// <summary>ホスト（実験者）強制で手バリアントを設定する。
         /// <see cref="HandVariantLockedByFlag"/> に**関係なく**貫通して適用する
