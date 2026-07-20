@@ -36,6 +36,7 @@
    - HMD 内ステータス表示 (`StatusHud` Canvas・world-space 緩追従) と診断コンテナ (`Diagnostics`: HudLogDumper / HmdTrajectoryRecorder / HudToggleInput) を Logic 配下に配置
    - **`StartupFader`** を CenterEyeAnchor 配下に配置（Play 直後の砂時計 / 接続待ちを黒で隠してフェードイン）
    - `OvrControllerBridge.statusHud` への参照も自動で結線
+   - **`ControllerHaptics`**（右コントローラ振動）を `[Streaming]` に冪等 add し `OvrControllerBridge.haptics` に結線
    - 再実行可能（既存配置は削除して再生成。旧 `DebugHud` Canvas も掃除される）
 7. [ ] **URP RendererFeature を手動配線**（Phase 3 FX を実機で出すために必須）
    - `Assets/Settings/URP-Balanced-Renderer.asset` を Inspector で開く
@@ -60,7 +61,13 @@
 - [ ] **1 行目**: `[NORMAL] lap N | zone <名> (cam<番>)`
 - [ ] **2 行目**: `次: lap<L> cam<番> → <cueId>`（次に発火する予定の cue。無ければ非表示）
 - [ ] **3 行目**: `信号 ●●○`（各カメラ接続状態）+ ロスト/凍結/⚠要再登録 バッジ
+- [ ] **4 行目**: `Rコン●`（右コントローラ接続）/ `⚠Rコン未接続`（電池切れ・スリープ・ペアリング落ち）
 - [ ] 右 B で表示/非表示がトグルする（初回押下で確実に出る）
+
+> **触覚フィードバック**: 右コントローラの A/B/グリップ/トリガーを押すと**右コントローラが振動**する
+> （受理=弱く一瞬 / アクション実行=中 / 長押し進行=進捗に比例したランプ / 発火・確定=強い二連 / 失敗=三連）。
+> HMD を体験者が被っている間もスタッフは手元の振動で操作が届いたか分かる。
+> **押しても一切振動しない**時は StatusHud 4 行目の `⚠Rコン未接続` を疑う（配信・ネット層ではなくコントローラ側）。
 
 主観チェックも併用:
 
@@ -86,10 +93,12 @@
 
 [`OvrControllerBridge.cs`](../Assets/Scripts/OvrBridge/OvrControllerBridge.cs) のマッピングに準拠：
 
-- [ ] 右コントローラ **A**（`Button.One`）短押し → 次のカメラに切替（Normal モード）
-- [ ] 右コントローラ **B**（`Button.Two`）短押し → ステータス表示トグル
-- [ ] **右トリガー 2 秒長押し** → コース登録モードに入る（登録ガイダンスが視界に出る）
-- [ ] **右グリップ 2 秒長押し** → ランリセット（周回=1・ワンショット演出クリア）
+- [ ] 右コントローラ **A**（`Button.One`）短押し → 次のカメラに切替（Normal モード）+ 振動（受理→アクション）
+- [ ] 右コントローラ **B**（`Button.Two`）短押し → ステータス表示トグル + 振動
+- [ ] **右トリガー 2 秒長押し** → 進行ランプ振動 → コース登録モードに入る（発火の二連振動 + 登録ガイダンスが視界に出る）
+- [ ] **右グリップ 2 秒長押し** → 進行ランプ振動 → ランリセット（周回=1・ワンショット演出クリア）+ 発火の二連振動
+- [ ] 登録中: 点タッチ確定=中振動 / 残差 NG やり直し=三連振動 / B 確定保存=強い二連振動
+- [ ] 押しても**まったく振動しない** → StatusHud 4 行目で `⚠Rコン未接続` を確認（コントローラ電池・スリープ・ペアリング）
 - [ ] 切替時に黒フレーム / フリーズが無い
 
 > ScreenAnchor の head-lock トグルはコントローラ割当から外れた（Editor は Space キーで [`ScreenAnchor.Toggle`](../Assets/Scripts/Streaming/ScreenAnchor.cs) を叩ける）。
@@ -154,8 +163,14 @@ HMD を被る
   │     ・Color Space: Linear
   │     ・Auto Graphics API: OFF / Vulkan が最上位
   │
+  ├─ 押しても振動もしない・何も反応しない
+  │   → コントローラ未接続を最優先で疑う
+  │     ・StatusHud 4 行目が `⚠Rコン未接続`？ → コントローラ電池 / スリープ / ペアリング落ち
+  │     ・振動はするが機能しない → 入力は届いている（下の入力ブリッジ問題へ）
+  │
   ├─ 映像出る・手動切替が効かない
   │   → 入力ブリッジ問題
+  │     ・押下で振動する？ 振動する＝入力は届いている → registry / director 側を疑う
   │     ・OVRCameraRig 配下に OVRManager がいるか（OVRInput 初期化に必要）
   │     ・OvrControllerBridge の registry / screenAnchor 参照がアサインされているか
   │     ・asmdef を持たない場所（Assembly-CSharp）に OvrControllerBridge が居るか

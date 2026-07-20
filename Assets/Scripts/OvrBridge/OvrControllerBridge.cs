@@ -45,6 +45,11 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("単一サーフェス StatusHud（[StatusHud] 上）。B 押下でステータス表示をトグルする。")]
         [SerializeField] private StatusHud? statusHud;
 
+        [Header("Haptics")]
+        [Tooltip("右コントローラの触覚フィードバック（[Streaming] 上・ControllerHaptics）。null でも全機能は従来通り動く" +
+                 "（振動が鳴らないだけ）。押下の受理 / 長押し進行 / 発火 / 失敗を振動で伝える。")]
+        [SerializeField] private ControllerHaptics? haptics;
+
         [Header("Run reset")]
         [Tooltip("グリップ 2 秒長押し＝ランリセット（周回リセット + cue 発火済みクリア）の対象 LapCounter。" +
                  "runEpoch とは独立の現地手段（PC 卓不在でも体験者交代でリセットできる）。null なら cueScheduler へフォールバック。")]
@@ -81,6 +86,15 @@ namespace FixedCamVr.OvrBridge
             _modeLogic.RunResetRequested += ResetRun;
             PushModeLabel(_modeLogic.Current); // 初期状態 NORMAL を StatusHud / heartbeat へ
 
+            // 登録フローの節目を触覚へ（点サンプル確定=Action / 残差NG=Error / 確定保存=Fire）。
+            // 購読はこの Assembly-CSharp 側で行い、Tracking asmdef に OVRInput 依存を作らない。
+            if (courseRegistration != null)
+            {
+                courseRegistration.PointCaptured += OnRegPointCaptured;
+                courseRegistration.FitRejected += OnRegFitRejected;
+                courseRegistration.RegistrationConfirmed += OnRegConfirmed;
+            }
+
             TrySubscribeRecenter();
         }
 
@@ -88,6 +102,12 @@ namespace FixedCamVr.OvrBridge
         {
             _modeLogic.ModeChanged -= OnModeChanged;
             _modeLogic.RunResetRequested -= ResetRun;
+            if (courseRegistration != null)
+            {
+                courseRegistration.PointCaptured -= OnRegPointCaptured;
+                courseRegistration.FitRejected -= OnRegFitRejected;
+                courseRegistration.RegistrationConfirmed -= OnRegConfirmed;
+            }
             if (_recenterSubscribed && OVRManager.display != null)
                 OVRManager.display.RecenteredPose -= OnRecentered;
             _recenterSubscribed = false;
@@ -125,6 +145,15 @@ namespace FixedCamVr.OvrBridge
             bool bDown = OVRInput.GetDown(statusButton, OVRInput.Controller.RTouch); // B: ステータストグル / 確定
             bool rGrip = OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
             bool rTrigger = OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
+            bool gripDown = OVRInput.GetDown(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
+            bool triggerDown = OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
+
+            // 監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る＝「入力は届いている」）。
+            // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。
+            if (aDown || bDown || gripDown || triggerDown) haptics?.Ack();
+
+            // 右コントローラ接続状態を StatusHud へ push（Diagnostics は OVRInput 非依存のため直読み不可）。
+            statusHud?.SetControllerConnected(OVRInput.IsControllerConnected(OVRInput.Controller.RTouch));
 
             bool regActive = courseRegistration != null && courseRegistration.IsActive;
 
@@ -137,6 +166,9 @@ namespace FixedCamVr.OvrBridge
                 registrationActive = regActive,
             });
             ControllerModeLogic.Mode mode = _modeLogic.Current;
+
+            // 長押しカウント進行を HoldTick 振動へ（トリガー = 登録入場 / グリップ = ランリセットの大きい方）。
+            haptics?.SetHoldProgress(Mathf.Max(_modeLogic.TriggerHoldProgress01, _modeLogic.GripHoldProgress01));
 
             // ---- モード別の入力分配 ----
             switch (mode)
@@ -158,9 +190,10 @@ namespace FixedCamVr.OvrBridge
                     {
                         if (switchDirector != null) switchDirector.Next();
                         else registry.Next();
+                        haptics?.Action(); // アクション実行（Ack をピーク優先で昇格）
                     }
                     // B: ステータス表示トグル（真実源 IsVisible の反転）。
-                    if (bDown) ToggleStatus();
+                    if (bDown) { ToggleStatus(); haptics?.Action(); }
                     // グリップ長押し=ランリセット / トリガー長押し=Registration 入場は _modeLogic が担う。
                     break;
             }
@@ -172,8 +205,16 @@ namespace FixedCamVr.OvrBridge
         {
             if (lapCounter != null) lapCounter.ResetRun();
             else cueScheduler?.ResetRun();
+            haptics?.Fire(); // 長押し発火（ランリセット）
             Debug.Log("[OvrBridge] Normal: ランリセット（右グリップ 2 秒長押し）");
         }
+
+        // ---- 登録フローの触覚（購読は Assembly-CSharp 側・Tracking は OVRInput 非依存）----
+        private void OnRegPointCaptured() => haptics?.Action(); // 点サンプル確定
+        private void OnRegFitRejected() => haptics?.Error();    // 残差 NG・やり直し
+        // 確定保存 = Fire。この直後に IsActive=false → 次フレーム ModeChanged(Reg→Normal) でも Fire が来るが、
+        // HapticSequenceLogic のピア優先（同ピークは再生中なら無視）で 1 回に畳まれる。
+        private void OnRegConfirmed() => haptics?.Fire();
 
         private void ToggleStatus()
         {
@@ -195,6 +236,7 @@ namespace FixedCamVr.OvrBridge
                     if (courseRegistration != null && !courseRegistration.IsActive) courseRegistration.Toggle(); // 開始
                     break;
             }
+            haptics?.Fire(); // モード遷移（登録入場 / キャンセル・確定退場）
             PushModeLabel(to);
         }
 

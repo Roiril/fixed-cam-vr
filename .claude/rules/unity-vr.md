@@ -156,6 +156,33 @@ Normal / Registration）。左手・スティック・cue 試射・操作チー�
 - 入力は OvrBridge → `CourseRegistrationController.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）。
 - **⚠ Phase 3（HMD 登録）は実装済み・実機未検証**（2026-07-16）。現地 L 壁で 2 点タッチ → ワイヤー重なり → 確定の一連を実機確認すること。show.json layout エディタ（Web 卓・Phase 2）は別作業。
 
+### コントローラ触覚（振動）フィードバック（2026-07-21〜）
+
+HMD を体験者が被っている間はスタッフに視覚（StatusHud）が見えない。押下の受理・進行・発火・失敗を
+**右コントローラの振動**で伝える（純ロジック [`HapticSequenceLogic`](../../Assets/Scripts/Input/HapticSequenceLogic.cs)
+＝「経過時間→振幅」・EditMode テスト [`HapticSequenceLogicTests`](../../Assets/Tests/Input/HapticSequenceLogicTests.cs)、
+MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHaptics.cs) が毎フレーム
+`OVRInput.SetControllerVibration` を RTouch へ適用）。両アプリ共通仕様（TableDuo 側も同じボキャブラリ）:
+
+| パターン | 意味 | 波形（freq 0.5 固定） |
+|---|---|---|
+| Ack | 監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る） | 40ms・amp 0.25 |
+| Action | 短押しアクション実行（カメラ Next / ステータストグル / 点サンプル確定） | 80ms・amp 0.5 |
+| HoldTick | 長押しカウント進行 | 連続・amp 0.10→0.30 の progress 比例ランプ |
+| Fire | 長押し発火・モード遷移・確定保存 | 80ms×2（間 80ms）・amp 0.8 |
+| Error | 失敗・拒否（登録の残差 NG やり直し） | 50ms×3（間 60ms）・amp 0.6 |
+
+- **重畳優先度（固定仕様）**: 単発パターンは「ピーク振幅が厳密に大きい後着だけ差し替え、同ピーク・低ピークは再生中なら無視」
+  （Ack→Action は昇格 / Fire 中の Ack は無視 / 確定保存の二重 Fire = RegistrationConfirmed と ModeChanged が 1 回に畳まれる）。
+  HoldTick は連続の床として単発と **max** 合成。数値は SerializeField ではなく **const**（旧シーン YAML で 0 に読まれる罠回避）
+- 配線: [`OvrControllerBridge`](../../Assets/Scripts/OvrBridge/OvrControllerBridge.cs) が down エッジ→Ack /
+  Normal アクション→Action / 長押し進捗→SetHoldProgress / ModeChanged・RunReset→Fire。登録フローの節目は
+  `CourseRegistrationController` の `PointCaptured`/`FitRejected`/`RegistrationConfirmed` イベントを Bridge が購読
+  （Tracking asmdef は OVRInput 非依存を維持）。`haptics` 参照は null 許容（未配線でも全機能が従来通り動く）
+- **接続表示**: StatusHud 4 行目に `Rコン●`/`⚠Rコン未接続`（Bridge が `OVRInput.IsControllerConnected(RTouch)` を push）。
+  「押しても振動しない」時はまずこれで切り分ける
+- **⚠ 実機未検証**（2026-07-21）。振幅・波形の体感、Rコン未接続表示は現場調整前提
+
 ### 周回カウントと cue 自動発火（2026-07-17〜）
 
 「何周目のどのゾーンで cue を出すか」の事前オーサリング（詳細は [streaming.md](streaming.md) の該当節と

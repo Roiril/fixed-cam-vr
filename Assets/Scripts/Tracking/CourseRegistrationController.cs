@@ -103,6 +103,18 @@ namespace FixedCamVr.Tracking
         /// <summary>ガイダンス表示色（エラー時は橙・通常は緑）。StatusHud が反映する。</summary>
         public Color GuidanceColor => _guidanceColor;
 
+        /// <summary>
+        /// 点サンプルが 1 点確定した時に発火（0.5s ホールド平均が採れた瞬間）。触覚フィードバックの
+        /// Action 発火に使う（購読側 = Assembly-CSharp の OvrControllerBridge。このアセンブリは OVRInput 非依存）。
+        /// </summary>
+        public event Action? PointCaptured;
+
+        /// <summary>剛体フィットの残差過大 / 解不能でやり直しへ戻した時に発火（触覚 Error に使う）。</summary>
+        public event Action? FitRejected;
+
+        /// <summary>Verify で B 確定・保存して登録を終えた時に発火（触覚 Fire に使う）。</summary>
+        public event Action? RegistrationConfirmed;
+
         // マーク確定に必要な A ホールド秒。ホールド中の位置サンプルを平均して手先ジッタを均す
         //（押下瞬間の 1 サンプルは腕の振り・ボタン押し込みのブレをそのまま拾う）。
         private const float MarkHoldSec = 0.5f;
@@ -320,6 +332,7 @@ namespace FixedCamVr.Tracking
             _capturedWorld[_pointIndex] = avgPos;
             Debug.Log($"[CourseReg] 点 {_pointIndex + 1}/{_authoredPoints.Length} 記録(0.5s 平均): " +
                       $"world=({avgPos.x:F3},{avgPos.z:F3})");
+            PointCaptured?.Invoke(); // 触覚 Action（点サンプル確定）
 
             if (_pointIndex + 1 < _authoredPoints.Length)
             {
@@ -346,6 +359,7 @@ namespace FixedCamVr.Tracking
             {
                 Debug.LogWarning("[CourseReg] 剛体フィット不能（基準点が重なっています）— やり直します");
                 ShowTransient("基準点の設定が不正です（点が重なっています）", 4f);
+                FitRejected?.Invoke(); // 触覚 Error（拒否・やり直し）
                 RestartCapture();
                 return;
             }
@@ -356,6 +370,7 @@ namespace FixedCamVr.Tracking
                 Debug.LogWarning($"[CourseReg] フィット残差過大: 点 {w + 1} の残差 {fit.maxResidualM:F3}m " +
                                  $"> 許容 {maxResidualM:F3}m（RMS {fit.rmsResidualM:F3}m）— やり直します");
                 ShowTransient($"点 {w + 1} の残差 {fit.maxResidualM:F2}m — タッチをやり直してください", 4f);
+                FitRejected?.Invoke(); // 触覚 Error（残差過大・やり直し）
                 RestartCapture();
                 return;
             }
@@ -385,6 +400,7 @@ namespace FixedCamVr.Tracking
                 courseFrame.SaveRegistration();
                 Debug.Log($"[CourseReg] 確定・保存: origin=({courseFrame.OriginXZ.x:F3},{courseFrame.OriginXZ.y:F3}) yaw={courseFrame.YawDeg:F1}°");
             }
+            RegistrationConfirmed?.Invoke(); // 触覚 Fire（確定保存）
             SetActive(false);
         }
 

@@ -113,6 +113,10 @@ namespace FixedCamVr.Diagnostics
         // コントローラ操作モードのラベル（NORMAL/REG）。OvrControllerBridge が遷移時に push する。
         private string _modeLabel = "";
 
+        // 右コントローラ接続状態。OvrControllerBridge が毎フレーム push する（Diagnostics は OVRInput 非依存
+        // のため直読みできない）。既定 true（push 前に「未接続」を誤表示しない）。
+        private bool _controllerConnected = true;
+
         /// <summary>ステータスの表示・非表示を外部から切り替える（右 B / Editor H）。</summary>
         public void SetVisible(bool v)
         {
@@ -125,6 +129,9 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>コントローラ操作モードのラベル（NORMAL/REG）をステータス行へ反映する。</summary>
         public void SetModeLabel(string label) => _modeLabel = label ?? "";
+
+        /// <summary>右コントローラの接続状態をステータス行へ反映する（OvrControllerBridge が push）。</summary>
+        public void SetControllerConnected(bool connected) => _controllerConnected = connected;
 
         private void Awake()
         {
@@ -275,6 +282,11 @@ namespace FixedCamVr.Diagnostics
                 else if (switchDirector.SwitchSuppressed) sb.Append(" SW:hold");
             }
             if (courseFrame != null && courseFrame.NeedsReRegistration) sb.Append("  ⚠要再登録");
+
+            // 行4: Rコン接続 / 未接続（未接続は目立たせる。押しても振動しない時の切り分け＝streamer 層でなく
+            // コントローラ電池切れ / スリープ / ペアリング落ちを疑うための表示）。
+            sb.Append('\n');
+            sb.Append(_controllerConnected ? "Rコン●" : "⚠Rコン未接続");
         }
     }
 }

@@ -23,6 +23,34 @@
 - **仕様から変えた点**: StatusHud に `recenterAutoShowSec`（既定 5s）を追加（「発生時オートショウ」の秒数を SerializeField 化）。
   MainDemoSceneSetup は StatusHud を world-space（Logic 直下・head 非親）に置き、診断系を別 `Diagnostics` コンテナへ分離。
 
+## 追記: コントローラ触覚（振動）フィードバック（2026-07-21 実装・実機未検証）
+
+**動機**: 押下フィードバックが HMD 内の視覚（StatusHud）しかなく、体験者が HMD を被っている場面では
+スタッフに何も見えない。「うまく押せていないのか、コントローラ未接続か」を区別できない。→ 右コントローラの
+**振動**で操作の受理・進行・発火・失敗を伝え、StatusHud にコントローラ接続状態を表示する。
+
+- **純ロジック** [`HapticSequenceLogic`](../../Assets/Scripts/Input/HapticSequenceLogic.cs)（FixedCamVr.Input・
+  UnityEngine 非依存・「経過時間→振幅」）+ EditMode テスト [`HapticSequenceLogicTests`](../../Assets/Tests/Input/HapticSequenceLogicTests.cs)。
+  **MonoBehaviour** [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHaptics.cs)（Assembly-CSharp）が
+  毎フレーム `OVRInput.SetControllerVibration` を RTouch へ適用（非再生時も (0,0) を送って自動停止を保証）
+- **ボキャブラリ**（両アプリ共通・freq 0.5 固定）: Ack=40ms/0.25（受理）・Action=80ms/0.5（アクション実行）・
+  HoldTick=連続 0.10→0.30 ランプ（長押し進行）・Fire=80ms×2/0.8（発火・モード遷移・確定保存）・
+  Error=50ms×3/0.6（失敗）。数値は const（旧シーン YAML で 0 に読まれる罠回避）
+- **重畳優先度（固定仕様）**: 単発は「ピーク厳密大の後着だけ差し替え、同ピーク・低ピークは再生中なら無視」。
+  → Ack→Action 昇格 / Fire 中 Ack 無視 / **確定保存の二重 Fire（RegistrationConfirmed と ModeChanged）が 1 回に畳まれる**。
+  HoldTick は床として単発と max 合成
+- **配線**: `OvrControllerBridge` が down エッジ→Ack / Normal アクション実行→Action / 長押し進捗（trigger|grip の大）→
+  SetHoldProgress / ModeChanged・RunReset→Fire。登録の節目は `CourseRegistrationController` に新設した
+  `PointCaptured`（→Action）/ `FitRejected`（→Error）/ `RegistrationConfirmed`（→Fire）イベントを Bridge が購読
+  （Tracking asmdef は OVRInput 非依存を維持）。`haptics` は null 許容（未配線でも全機能が従来通り動く）
+- **接続表示**: `StatusHud.SetControllerConnected(bool)` を追加、4 行目に `Rコン●`/`⚠Rコン未接続`。
+  Bridge が `OVRInput.IsControllerConnected(RTouch)` を毎フレーム push（Diagnostics は OVRInput 非依存のため直読み不可）
+- **Setup**: `MainDemoSceneSetup` が `[Streaming]` に ControllerHaptics を冪等 get-or-add（Assembly-CSharp 型のため
+  reflection で解決）し `OvrControllerBridge.haptics` へ結線 → **Setup Main Demo Scene の再実行が必要**
+- **仕様判断**: 計画の「Registration の A=サンプル開始 → Action」は、0.5s ホールド平均が**失敗し得る**ため
+  「A 押下＝Ack（受理）／ 0.5s 静止で点確定＝Action（PointCaptured）」に解釈した（Ack/Action の定義に厳密に一致）
+- **⚠ 実機未検証**（振幅・波形の体感、Rコン未接続表示は現場調整前提）
+
 ## 背景（ユーザー要求 2026-07-20）
 
 - Quest コントローラのスタッフ操作がわかりづらい。**既存割当を全解除**し、**右コントローラの A / B / グリップ / トリガーの 4 入力だけ**で全操作を賄う

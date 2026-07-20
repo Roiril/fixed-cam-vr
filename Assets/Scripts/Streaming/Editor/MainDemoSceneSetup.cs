@@ -92,6 +92,20 @@ namespace FixedCamVr.Streaming.EditorTools
                 Debug.LogWarning($"[MainDemoSceneSetup] '{StreamingName}' に OvrControllerBridge がありません。HUD トグル連携はスキップ。");
             }
 
+            // ControllerHaptics（右コントローラ振動）を [Streaming] に冪等 get-or-add。Assembly-CSharp 型のため
+            // Editor asmdef から直接参照できず reflection で解決する（OvrControllerBridge を string 取得するのと同型）。
+            MonoBehaviour? haptics = null;
+            var hapticsType = System.Type.GetType("FixedCamVr.OvrBridge.ControllerHaptics, Assembly-CSharp");
+            if (hapticsType != null)
+            {
+                haptics = streaming.GetComponent(hapticsType) as MonoBehaviour
+                          ?? streaming.AddComponent(hapticsType) as MonoBehaviour;
+            }
+            else
+            {
+                Debug.LogWarning("[MainDemoSceneSetup] ControllerHaptics 型が解決できません（Assembly-CSharp 未コンパイル?）。触覚フィードバックの配線をスキップ。");
+            }
+
             var centerEye = GameObject.Find(CenterEyePath);
             if (centerEye == null)
             {
@@ -330,6 +344,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 右グリップ 2 秒長押し＝ランリセットの対象。
                 TrySetObjectRef(bridgeSo, "lapCounter", lapCounter);
                 TrySetObjectRef(bridgeSo, "cueScheduler", cueScheduler);
+                // 触覚フィードバック（押下受理 / 長押し進行 / 発火 / 失敗の振動）。
+                if (haptics != null) TrySetObjectRef(bridgeSo, "haptics", haptics);
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
