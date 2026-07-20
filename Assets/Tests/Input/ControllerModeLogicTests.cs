@@ -6,144 +6,94 @@ using NUnit.Framework;
 namespace FixedCamVr.Input.Tests
 {
     /// <summary>
-    /// ControllerModeLogic（Run / Staff / Registration の状態機械）の検証。
-    /// Run 封印・両グリップ 3 秒儀式・無操作タイムアウト・Registration 遷移（開始/確定/キャンセル）・
-    /// 再入場・ModeChanged イベントを固定する。
+    /// ControllerModeLogic（Normal / Registration の 2 状態機械）の検証。
+    /// トリガー長押しでの Registration 入場 / キャンセル（対称）・registrationActive 追従での確定・
+    /// グリップ長押しでのランリセット要求・長押しラッチ（1 ホールド 1 発火）・進捗・ModeChanged を固定する。
     /// </summary>
     public sealed class ControllerModeLogicTests
     {
-        private const float GripHold = 3f;
-        private const float IdleTimeout = 120f;
+        private const float Hold = 2f;
 
-        private static ControllerModeLogic Make(ControllerModeLogic.Mode start = ControllerModeLogic.Mode.Run)
+        private static ControllerModeLogic Make(ControllerModeLogic.Mode start = ControllerModeLogic.Mode.Normal)
         {
             var l = new ControllerModeLogic();
-            l.Configure(GripHold, IdleTimeout);
+            l.Configure(Hold);
             l.Reset(start);
             return l;
         }
 
         private static void Tick(ControllerModeLogic l, float dt = 0f,
-            bool bothGrips = false, bool registrationActive = false,
-            bool stickPressDown = false, bool staffActivity = false)
+            bool triggerHeld = false, bool gripHeld = false, bool registrationActive = false)
         {
             l.Tick(new ControllerModeLogic.Frame
             {
                 deltaTime = dt,
-                bothGrips = bothGrips,
+                triggerHeld = triggerHeld,
+                gripHeld = gripHeld,
                 registrationActive = registrationActive,
-                stickPressDown = stickPressDown,
-                staffActivity = staffActivity,
             });
         }
 
-        // 両グリップを hold 秒ぶん押し続けて 1 回離す（儀式 1 回分）。
-        private static void HoldBothGrips(ControllerModeLogic l, float seconds)
+        // ボタンを seconds 秒ぶん押し続けて 1 回離す（長押し 1 回分。0.5s 刻み）。
+        private static void HoldTrigger(ControllerModeLogic l, float seconds, bool registrationActive = false)
         {
-            // 0.5s 刻みで押し続ける。
             float t = 0f;
-            while (t < seconds)
-            {
-                Tick(l, dt: 0.5f, bothGrips: true);
-                t += 0.5f;
-            }
-            Tick(l, dt: 0.5f, bothGrips: false); // 離す（ラッチ解除）
+            while (t < seconds) { Tick(l, dt: 0.5f, triggerHeld: true, registrationActive: registrationActive); t += 0.5f; }
+            Tick(l, dt: 0.5f, triggerHeld: false, registrationActive: registrationActive);
         }
 
-        // ---- 既定・Run 封印 ----
+        private static void HoldGrip(ControllerModeLogic l, float seconds)
+        {
+            float t = 0f;
+            while (t < seconds) { Tick(l, dt: 0.5f, gripHeld: true); t += 0.5f; }
+            Tick(l, dt: 0.5f, gripHeld: false);
+        }
+
+        // ---- 既定 ----
 
         [Test]
-        public void Default_IsRun()
+        public void Default_IsNormal()
         {
             var l = Make();
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Run));
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
         }
 
+        // ---- トリガー長押しで Registration 入場 ----
+
         [Test]
-        public void Run_IgnoresAllButGripRitual()
+        public void Trigger_BelowThreshold_StaysNormal()
         {
             var l = Make();
-            // Run では stick 押込・活動・登録アクティブ（万一）でも何も起きない。
-            Tick(l, dt: 1f, stickPressDown: true, staffActivity: true, registrationActive: true);
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Run));
+            Tick(l, dt: 1.0f, triggerHeld: true);
+            Tick(l, dt: 0.9f, triggerHeld: true); // 計 1.9s < 2s
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
         }
 
-        // ---- 両グリップ 3 秒儀式 ----
-
         [Test]
-        public void Grip_BelowThreshold_StaysRun()
+        public void Trigger_ReachesThreshold_NormalToRegistration()
         {
             var l = Make();
-            Tick(l, dt: 1.0f, bothGrips: true);
-            Tick(l, dt: 1.0f, bothGrips: true); // 計 2.0s < 3s
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Run));
-        }
-
-        [Test]
-        public void Grip_ReachesThreshold_RunToStaff()
-        {
-            var l = Make();
-            Tick(l, dt: 1.5f, bothGrips: true);
-            Tick(l, dt: 1.5f, bothGrips: true); // 計 3.0s → Staff
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Staff));
-        }
-
-        [Test]
-        public void Grip_FiresOncePerHold_NoRetoggleWhileHeld()
-        {
-            var l = Make();
-            // 押しっぱなしで 6 秒。3 秒で 1 回 Staff になり、以降離すまで再発火しない。
-            for (int i = 0; i < 12; i++) Tick(l, dt: 0.5f, bothGrips: true);
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Staff));
-        }
-
-        [Test]
-        public void Grip_StaffToRun_AfterReleaseAndReHold()
-        {
-            var l = Make();
-            HoldBothGrips(l, 3f); // Run → Staff
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Staff));
-            HoldBothGrips(l, 3f); // Staff → Run
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Run));
-        }
-
-        // ---- Staff 無操作タイムアウト ----
-
-        [Test]
-        public void Staff_IdleTimeout_ReturnsToRun()
-        {
-            var l = Make(ControllerModeLogic.Mode.Staff);
-            Tick(l, dt: 119f); // 未達
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Staff));
-            Tick(l, dt: 2f); // 計 121s ≥ 120s
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Run));
-        }
-
-        [Test]
-        public void Staff_ActivityResetsIdle()
-        {
-            var l = Make(ControllerModeLogic.Mode.Staff);
-            Tick(l, dt: 119f);
-            Tick(l, dt: 1f, staffActivity: true); // 活動 → idle リセット
-            Tick(l, dt: 119f); // ここから 119s（まだ 120s 未満）
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Staff));
-        }
-
-        // ---- Registration 遷移 ----
-
-        [Test]
-        public void Staff_StickPress_EntersRegistration()
-        {
-            var l = Make(ControllerModeLogic.Mode.Staff);
-            Tick(l, dt: 0f, stickPressDown: true);
+            Tick(l, dt: 1.0f, triggerHeld: true);
+            Tick(l, dt: 1.0f, triggerHeld: true); // 計 2.0s → Registration
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
         }
 
         [Test]
-        public void Staff_ExternalRegistrationActive_EntersRegistration()
+        public void Trigger_FiresOncePerHold_NoRetoggleWhileHeld()
+        {
+            var l = Make();
+            // 押しっぱなしで 4 秒。2 秒で 1 回 Registration になり、離すまで再発火（＝キャンセル）しない。
+            for (int i = 0; i < 8; i++) Tick(l, dt: 0.5f, triggerHeld: true, registrationActive: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
+        }
+
+        // ---- registrationActive 追従 ----
+
+        [Test]
+        public void Normal_ExternalRegistrationActive_EntersRegistration()
         {
             // startInRegistration など外部起動でも追従する。
-            var l = Make(ControllerModeLogic.Mode.Staff);
+            var l = Make();
             Tick(l, dt: 0f, registrationActive: true);
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
         }
@@ -157,42 +107,72 @@ namespace FixedCamVr.Input.Tests
         }
 
         [Test]
-        public void Registration_Confirmed_ReturnsToStaff()
+        public void Registration_Confirmed_ReturnsToNormal()
         {
             var l = Make(ControllerModeLogic.Mode.Registration);
             Tick(l, dt: 0f, registrationActive: false); // 確定して IsActive=false
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Staff));
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
+        }
+
+        // ---- トリガー長押しキャンセル（入場と対称）----
+
+        [Test]
+        public void Registration_TriggerHold_CancelsToNormal_EvenWhenActive()
+        {
+            var l = Make(ControllerModeLogic.Mode.Registration);
+            // まだ登録アクティブでもトリガー 2 秒でキャンセルして Normal へ。
+            HoldTrigger(l, 2f, registrationActive: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
+        }
+
+        // ---- グリップ長押し = ランリセット（モードは変わらない）----
+
+        [Test]
+        public void Normal_GripHold_RequestsRunReset_WithoutModeChange()
+        {
+            var l = Make();
+            int resets = 0;
+            l.RunResetRequested += () => resets++;
+            HoldGrip(l, 2f);
+            Assert.That(resets, Is.EqualTo(1));
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
         }
 
         [Test]
-        public void Registration_GripRitual_CancelsToStaff_EvenWhenActive()
+        public void Normal_GripBelowThreshold_NoReset()
+        {
+            var l = Make();
+            int resets = 0;
+            l.RunResetRequested += () => resets++;
+            Tick(l, dt: 1.0f, gripHeld: true);
+            Tick(l, dt: 0.9f, gripHeld: true); // 1.9s < 2s
+            Tick(l, dt: 0.5f, gripHeld: false);
+            Assert.That(resets, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void Registration_GripHold_DoesNothing()
         {
             var l = Make(ControllerModeLogic.Mode.Registration);
-            // まだ登録アクティブでも両グリップ 3 秒でキャンセルして Staff へ。
+            int resets = 0;
+            l.RunResetRequested += () => resets++;
             float t = 0f;
-            while (t < 3f) { Tick(l, dt: 0.5f, bothGrips: true, registrationActive: true); t += 0.5f; }
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Staff));
-        }
-
-        [Test]
-        public void Registration_StickPress_DoesNotDoubleTransition()
-        {
-            var l = Make(ControllerModeLogic.Mode.Registration);
-            Tick(l, dt: 0f, registrationActive: true, stickPressDown: true);
+            while (t < 2f) { Tick(l, dt: 0.5f, gripHeld: true, registrationActive: true); t += 0.5f; }
+            Assert.That(resets, Is.EqualTo(0));
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
         }
 
         // ---- 再入場 ----
 
         [Test]
-        public void ReEntry_StaffRegistrationStaffRegistration()
+        public void ReEntry_NormalRegistrationNormalRegistration()
         {
-            var l = Make(ControllerModeLogic.Mode.Staff);
-            Tick(l, stickPressDown: true);
+            var l = Make();
+            HoldTrigger(l, 2f, registrationActive: true);      // トリガー長押し → Registration（活動追従）
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
-            Tick(l, registrationActive: false); // 確定 → Staff
-            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Staff));
-            Tick(l, stickPressDown: true); // 再入場
+            Tick(l, registrationActive: false);                 // 確定 → Normal
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
+            HoldTrigger(l, 2f, registrationActive: true);      // 再入場
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
         }
 
@@ -205,23 +185,31 @@ namespace FixedCamVr.Input.Tests
             var events = new List<(ControllerModeLogic.Mode from, ControllerModeLogic.Mode to)>();
             l.ModeChanged += (from, to) => events.Add((from, to));
 
-            HoldBothGrips(l, 3f); // Run → Staff
-            Tick(l, stickPressDown: true); // Staff → Registration
-            Tick(l, registrationActive: false); // Registration → Staff
+            HoldTrigger(l, 2f, registrationActive: true); // Normal → Registration
+            Tick(l, registrationActive: false);            // Registration → Normal
 
-            Assert.That(events.Count, Is.EqualTo(3));
-            Assert.That(events[0], Is.EqualTo((ControllerModeLogic.Mode.Run, ControllerModeLogic.Mode.Staff)));
-            Assert.That(events[1], Is.EqualTo((ControllerModeLogic.Mode.Staff, ControllerModeLogic.Mode.Registration)));
-            Assert.That(events[2], Is.EqualTo((ControllerModeLogic.Mode.Registration, ControllerModeLogic.Mode.Staff)));
+            Assert.That(events.Count, Is.EqualTo(2));
+            Assert.That(events[0], Is.EqualTo((ControllerModeLogic.Mode.Normal, ControllerModeLogic.Mode.Registration)));
+            Assert.That(events[1], Is.EqualTo((ControllerModeLogic.Mode.Registration, ControllerModeLogic.Mode.Normal)));
+        }
+
+        [Test]
+        public void TriggerHoldProgress_TracksHold()
+        {
+            var l = Make();
+            Tick(l, dt: 1.0f, triggerHeld: true); // 1.0 / 2.0 = 0.5
+            Assert.That(l.TriggerHoldProgress01, Is.EqualTo(0.5f).Within(1e-4f));
+            Tick(l, dt: 0f, triggerHeld: false); // 離すと 0
+            Assert.That(l.TriggerHoldProgress01, Is.EqualTo(0f).Within(1e-4f));
         }
 
         [Test]
         public void GripHoldProgress_TracksHold()
         {
             var l = Make();
-            Tick(l, dt: 1.5f, bothGrips: true); // 1.5 / 3.0 = 0.5
-            Assert.That(l.GripHoldProgress01, Is.EqualTo(0.5f).Within(1e-4f));
-            Tick(l, dt: 0f, bothGrips: false); // 離すと 0
+            Tick(l, dt: 0.5f, gripHeld: true); // 0.5 / 2.0 = 0.25
+            Assert.That(l.GripHoldProgress01, Is.EqualTo(0.25f).Within(1e-4f));
+            Tick(l, dt: 0f, gripHeld: false);
             Assert.That(l.GripHoldProgress01, Is.EqualTo(0f).Within(1e-4f));
         }
     }

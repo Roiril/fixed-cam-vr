@@ -163,5 +163,61 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(d.fire, Is.True);
             Assert.That(d.ov.has, Is.False);
         }
+
+        // ---- 次に発火する予定の照会（StatusHud 表示用） ----
+
+        private static readonly int[] Order3 = { 0, 1, 2 }; // A(0)→B(1)→C(2)
+
+        [Test]
+        public void TryGetNext_ReturnsNearestUpcomingEntry_ByStep()
+        {
+            // lap1 の B と lap2 の A。現在 lap1・pos0(A) からは lap1 の B が先。
+            var l = Make(Entry(2, 0, "cue_A_lap2"), Entry(1, 1, "cue_B_lap1"));
+            Assert.That(l.TryGetNext(currentLap: 1, currentPos: 0, order: Order3, out var next), Is.True);
+            Assert.That(next.cueId, Is.EqualTo("cue_B_lap1"));
+        }
+
+        [Test]
+        public void TryGetNext_IncludesEntryAtCurrentStep()
+        {
+            // 現在ステップ（lap1・pos1=B）に一致する未発火エントリは「次（＝今まさに）」として返る。
+            var l = Make(Entry(1, 1, "cue_B_now"));
+            Assert.That(l.TryGetNext(1, 1, Order3, out var next), Is.True);
+            Assert.That(next.cueId, Is.EqualTo("cue_B_now"));
+        }
+
+        [Test]
+        public void TryGetNext_SkipsFiredOnceEntries()
+        {
+            var l = Make(Entry(1, 1, "cue_B_once", once: true), Entry(2, 2, "cue_C_lap2"));
+            var d = l.Evaluate(1, 1, false);
+            l.MarkFired(d.entryIndex);
+            // 発火済み once はスキップし、次の予定（lap2 C）を返す。
+            Assert.That(l.TryGetNext(1, 1, Order3, out var next), Is.True);
+            Assert.That(next.cueId, Is.EqualTo("cue_C_lap2"));
+        }
+
+        [Test]
+        public void TryGetNext_SkipsPastEntries()
+        {
+            // lap1 の A（既に通過）は現在 lap2・pos0 より前 → 除外され、該当なしで false。
+            var l = Make(Entry(1, 0, "cue_A_lap1"));
+            Assert.That(l.TryGetNext(2, 0, Order3, out _), Is.False);
+        }
+
+        [Test]
+        public void TryGetNext_CameraNotInOrder_Excluded()
+        {
+            // order に居ないカメラ(9)は配置不能 → false。
+            var l = Make(Entry(3, 9, "cue_ghost"));
+            Assert.That(l.TryGetNext(1, 0, Order3, out _), Is.False);
+        }
+
+        [Test]
+        public void TryGetNext_EmptyOrder_False()
+        {
+            var l = Make(Entry(1, 0, "cue"));
+            Assert.That(l.TryGetNext(1, 0, System.Array.Empty<int>(), out _), Is.False);
+        }
     }
 }

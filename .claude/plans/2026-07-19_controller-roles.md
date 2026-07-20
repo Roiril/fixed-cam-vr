@@ -7,6 +7,11 @@ slug: controller-roles
 
 # コントローラ操作の根本設計（Run/Staff モード分離）
 
+> ⚠ **廃止（2026-07-20 supersede）**: Run/Staff/Registration の 3 モデルは
+> [2026-07-20_staff-input-hud-redesign.md](2026-07-20_staff-input-hud-redesign.md) の **右手 4 入力・2 状態
+> （Normal/Registration）モデル**に置き換えられた。両グリップ儀式・Staff 封印・左手/スティック・120s idle・
+> cue 試射・StaffPanel チートシートは全廃。以下は経緯として残す（現行仕様ではない）。
+
 ## 概要
 
 Web 卓 + 焼き込みスケジュール + ゾーン自動切替 + 自動追従スクリーンが揃った現在、

@@ -108,6 +108,12 @@ namespace FixedCamVr.Tracking
         /// <summary>現在の周回数（1 始まり）。</summary>
         public int CurrentLap => _logic.CurrentLap;
 
+        /// <summary>コース順（order）内の現在確定位置。StatusHud の「次の cue」照会に渡す。</summary>
+        public int Position => _logic.Position;
+
+        /// <summary>順方向のカメラ巡回順（layout.course.order 由来）。StatusHud の「次の cue」照会に渡す。</summary>
+        public int[] Order => _logic.Order;
+
         private void OnEnable()
         {
             // director があれば「出どころ付き」確定を購読し、source==Zone のみ周回へ数える。

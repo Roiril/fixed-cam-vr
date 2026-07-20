@@ -93,6 +93,49 @@ namespace FixedCamVr.Streaming
         {
             if (entryIndex >= 0 && entryIndex < _fired.Length) _fired[entryIndex] = true;
         }
+
+        /// <summary>
+        /// 現在の周回進行から「次に発火する予定のエントリ」を読み取り専用で返す（StatusHud の予定表示用）。
+        /// 状態は変えない。順序は周回×コース位置の直線化ステップで評価する:
+        ///   step = (lap-1)*n + positionOf(camera)。currentPos はスタートからの現在コース位置。
+        /// currentStep 以降で最小 step の未発火（once）エントリを返す。同一 step は配列先頭が勝つ
+        /// （<see cref="Evaluate"/> と同じタイブレーク）。order に無いカメラのエントリは配置できないので除外。
+        /// order 空 or 該当なしは false。
+        /// </summary>
+        public bool TryGetNext(int currentLap, int currentPos, int[] order, out Entry next)
+        {
+            next = default;
+            int n = order?.Length ?? 0;
+            if (n == 0) return false;
+
+            long currentStep = (long)(currentLap - 1) * n + currentPos;
+            bool found = false;
+            long bestStep = long.MaxValue;
+
+            for (int i = 0; i < _entries.Length; i++)
+            {
+                Entry e = _entries[i];
+                if (e.once && _fired[i]) continue;
+                int pos = IndexOf(order!, e.camera);
+                if (pos < 0) continue; // コース順に居ないカメラは配置不能
+                long step = (long)(e.lap - 1) * n + pos;
+                if (step < currentStep) continue;
+                // より早い step、または同 step で配列先頭側を優先（>= で先勝ちを保つ）。
+                if (step < bestStep)
+                {
+                    bestStep = step;
+                    next = e;
+                    found = true;
+                }
+            }
+            return found;
+        }
+
+        private static int IndexOf(int[] order, int value)
+        {
+            for (int i = 0; i < order.Length; i++) if (order[i] == value) return i;
+            return -1;
+        }
     }
 
     /// <summary>
@@ -175,6 +218,14 @@ namespace FixedCamVr.Streaming
 
         /// <summary>cueId → OverlayCueData の解決関数を注入する（URL 解決を ShowControlClient に集約）。</summary>
         public void SetCueResolver(Func<string, OverlayCueData?> resolver) => _cueResolver = resolver;
+
+        /// <summary>
+        /// 現在の周回進行から「次に発火する予定のエントリ」を照会する（StatusHud の予定表示用・読み取り専用）。
+        /// timeline / legacy schedule のどちらの経路でも有効エントリは <see cref="_logic"/> に集約されているため、
+        /// ここ 1 点で両方をカバーできる。currentPos / order は LapCounter の進行状態を渡す。
+        /// </summary>
+        public bool TryGetNextCue(int currentLap, int currentPos, int[] order, out CueScheduleLogic.Entry next)
+            => _logic.TryGetNext(currentLap, currentPos, order, out next);
 
         /// <summary>control.activeCue 非空（ライブ手動オーバーライド中）を通知する。</summary>
         public void SetLiveCueActive(bool active) => _liveCueActive = active;

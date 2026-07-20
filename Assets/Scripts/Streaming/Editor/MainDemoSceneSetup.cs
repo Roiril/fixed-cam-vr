@@ -1,6 +1,5 @@
 #nullable enable
 using FixedCamVr.Diagnostics;
-using FixedCamVr.Input;
 using FixedCamVr.Tracking;
 using TMPro;
 using UnityEditor;
@@ -27,7 +26,9 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string ZonesName = "[Zones]";
         private const string GeneratedZonesName = "[GeneratedZones]";
         private const string TrackerName = "[Tracker]";
-        private const string DebugHudName = "DebugHud";
+        private const string StatusHudName = "StatusHud";
+        private const string DiagnosticsName = "Diagnostics";
+        private const string DebugHudName = "DebugHud"; // 旧構成の掃除用（削除対象）
         private const string StartupFaderName = "StartupFader";
         // Tracker と HmdTrajectoryRecorder で同値を使う（片方だけ変えると
         // 解析 CSV と実挙動の判定がズレるため 1 本化）。
@@ -59,7 +60,9 @@ namespace FixedCamVr.Streaming.EditorTools
             DeleteIfExists($"{LogicGroupName}/{ZonesName}");
             DeleteIfExists($"{LogicGroupName}/{GeneratedZonesName}");
             DeleteIfExists($"{LogicGroupName}/{TrackerName}");
-            DeleteIfExists($"{CenterEyePath}/{DebugHudName}");
+            DeleteIfExists($"{LogicGroupName}/{StatusHudName}");
+            DeleteIfExists($"{LogicGroupName}/{DiagnosticsName}");
+            DeleteIfExists($"{CenterEyePath}/{DebugHudName}");   // 旧 HUD Canvas（統合前）
             DeleteIfExists($"{CenterEyePath}/{StartupFaderName}");
 
             var logic = GameObject.Find(LogicGroupName);
@@ -250,13 +253,6 @@ namespace FixedCamVr.Streaming.EditorTools
             if (showControl != null) TrySetObjectRef(regSo, "showControl", showControl);
             regSo.ApplyModifiedPropertiesWithoutUndo();
 
-            // 2.96. StaffPanel（Staff モード中のチートシート。head-locked TextMesh を Start で生成）。
-            //       OvrControllerBridge がモード遷移で SetVisible を叩く。headTransform は CenterEyeAnchor。
-            var staffPanel = trackerGo.AddComponent<StaffPanel>();
-            var staffSo = new SerializedObject(staffPanel);
-            TrySetObjectRef(staffSo, "headTransform", centerEye.transform);
-            staffSo.ApplyModifiedPropertiesWithoutUndo();
-
             // 2.95. 事前オーサリング済み cue スケジュール（周回×ゾーン発火）。
             //       CueScheduler と LapCounter を [Tracker] に載せる（毎回作り直しなので冪等）。
             //       LapCounter が ActiveChanged を周回へ写像し進入を CueScheduler へ橋渡し、
@@ -312,26 +308,28 @@ namespace FixedCamVr.Streaming.EditorTools
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
             CreateStartupFader(centerEye.transform, registry);
 
-            // 4. DebugHud（本番は startVisible=false・視界保護。左 Y でトグル。STATE 行で信号/切替の真実状態）
-            var hud = CreateDebugHud(centerEye.transform, registry, tracker, centerEye.transform, discovery,
-                                     signalFx, director);
+            // 4. StatusHud（単一サーフェス・緩追従・TMP）。本番は startVisible=false・視界保護。右 B でトグル。
+            //    lap / ゾーン / 次の cue / 信号 / 要再登録 を 1 枚に統合し、登録中は登録ガイダンスを強制表示。
+            //    world-space（Logic 直下・head 非親）で StatusHud が自前に緩追従する。
+            var statusHud = CreateStatusHud(logic.transform, centerEye.transform, registry, tracker,
+                                            director, signalFx, lapCounter, cueScheduler, courseFrame, registration);
 
-            // 5. OvrControllerBridge.hud に HUD 連携 + CourseRegistrationController / CourseFrame + Director / SignalFx 接続
+            // 4.5. Diagnostics（HUD には出さない診断: [HudDump] ログ + HMD 軌跡 CSV + Editor H トグル）
+            CreateDiagnostics(logic.transform, registry, tracker, centerEye.transform, statusHud);
+
+            // 5. OvrControllerBridge に StatusHud / CourseRegistration / CourseFrame / Director / SignalFx / ランリセット対象を接続
             if (ovrBridge != null)
             {
                 var bridgeSo = new SerializedObject(ovrBridge);
-                if (hud != null) TrySetObjectRef(bridgeSo, "hud", hud);
+                if (statusHud != null) TrySetObjectRef(bridgeSo, "statusHud", statusHud);
                 if (director != null) TrySetObjectRef(bridgeSo, "switchDirector", director);
                 if (signalFx != null) TrySetObjectRef(bridgeSo, "signalFx", signalFx);
                 if (showControl != null) TrySetObjectRef(bridgeSo, "showControl", showControl);
                 TrySetObjectRef(bridgeSo, "courseRegistration", registration);
                 TrySetObjectRef(bridgeSo, "courseFrame", courseFrame);
-                TrySetObjectRef(bridgeSo, "staffPanel", staffPanel);
-                // Staff 左スティック押込＝ランリセットの対象。
+                // 右グリップ 2 秒長押し＝ランリセットの対象。
                 TrySetObjectRef(bridgeSo, "lapCounter", lapCounter);
                 TrySetObjectRef(bridgeSo, "cueScheduler", cueScheduler);
-                TrySetFloat(bridgeSo, "calibToggleHoldSec", 3.0f);   // 両グリップ 3 秒で Run⇄Staff / Registration キャンセル
-                TrySetFloat(bridgeSo, "staffIdleTimeoutSec", 120f);  // Staff 無操作 120 秒で Run へ復帰
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -340,7 +338,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（Staff で右スティック押込→2 点登録、A=マーク/B=確定/スティック微調整） / StaffPanel（Staff チートシート） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or Staff 左スティック押込でランリセット） / TimelineDirector + InsertController（show.json timeline v2: 区間 cue override / インサートショット / 区間 post 上書き。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / DebugHud（startVisible=false・STATE 行に MODE） / OvrBridge（Run 封印・両グリップ 3 秒で Staff）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + InsertController（show.json timeline v2: 区間 cue override / インサートショット / 区間 post 上書き。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / OvrBridge（右手 4 入力: A=Next / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
@@ -351,27 +349,52 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             // GameObject.Find は非アクティブを返さないため、ユーザーが Hierarchy で
             // 無効化した既存配置を拾えず重複生成される（冪等性の破れ）。
-            // シーンルートから transform.Find（非アクティブも辿れる）で解決する。
-            var go = FindByPath(path);
-            if (go != null)
+            // さらに「最初の 1 個だけ削除」だと過去の Setup 実行で蓄積した同名重複
+            // （実害: CenterEyeAnchor 配下に DebugHud ×7 / StartupFader ×8 が残存）を
+            // 掃除しきれないため、親を解決して直下の同名の子を全削除する。
+            int cut = path.LastIndexOf('/');
+            if (cut < 0)
             {
-                Object.DestroyImmediate(go);
+                foreach (var root in SceneManager.GetActiveScene().GetRootGameObjects())
+                {
+                    if (root.name == path) Object.DestroyImmediate(root);
+                }
+                return;
+            }
+
+            var parent = FindByPath(path[..cut]);
+            if (parent == null) return;
+            string leaf = path[(cut + 1)..];
+            for (int i = parent.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = parent.transform.GetChild(i);
+                if (child.name == leaf) Object.DestroyImmediate(child.gameObject);
             }
         }
 
-        // 非アクティブを含むパス解決（"A/B/C" 形式、アクティブシーンのルートから）。
+        // 非アクティブを含むパス解決。2 形式に対応:
+        //   (a) ルート名から始まる絶対形式（"=== Logic ===/[Zones]"）
+        //   (b) ルート名を含まない相対形式（"OVRCameraRig/TrackingSpace/CenterEyeAnchor"。
+        //       GameObject.Find と同様に任意ルート配下を探す。CenterEyePath がこの形式で、
+        //       旧実装は (a) しか解決できず CenterEye 配下の掃除が常に no-op だった）
         private static GameObject? FindByPath(string path)
         {
             var segs = path.Split('/');
             foreach (var root in SceneManager.GetActiveScene().GetRootGameObjects())
             {
-                if (root.name != segs[0]) continue;
-                Transform? t = root.transform;
-                for (int i = 1; i < segs.Length && t != null; i++)
+                if (root.name == segs[0])
                 {
-                    t = t.Find(segs[i]);
+                    Transform? t = root.transform;
+                    for (int i = 1; i < segs.Length && t != null; i++)
+                    {
+                        t = t.Find(segs[i]);
+                    }
+                    if (t != null) return t.gameObject;
                 }
-                if (t != null) return t.gameObject;
+
+                // transform.Find は "A/B/C" の相対パスを非アクティブ込みで辿れる。
+                var rel = root.transform.Find(path);
+                if (rel != null) return rel.gameObject;
             }
             return null;
         }
@@ -417,23 +440,24 @@ namespace FixedCamVr.Streaming.EditorTools
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
-        private static RuntimeDebugHud? CreateDebugHud(Transform parent, CameraStreamRegistry registry,
-            PlayerZoneTracker tracker, Transform hmd, DiscoveryClient? discovery,
-            SignalLostFx? signalFx, CameraSwitchDirector? director)
+        // 単一サーフェス StatusHud を world-space（parent 直下・head 非親）に作る。StatusHud が自前で緩追従する。
+        private static StatusHud CreateStatusHud(Transform parent, Transform head, CameraStreamRegistry registry,
+            PlayerZoneTracker tracker, CameraSwitchDirector? director, SignalLostFx? signalFx,
+            LapCounter lapCounter, CueScheduler cueScheduler, CourseFrame courseFrame,
+            CourseRegistrationController registration)
         {
-            var canvasGo = new GameObject(DebugHudName);
+            var canvasGo = new GameObject(StatusHudName);
             canvasGo.transform.SetParent(parent, worldPositionStays: false);
-            canvasGo.transform.localPosition = new Vector3(0f, 0f, 0.7f);
 
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
             canvasGo.AddComponent<UnityEngine.UI.CanvasScaler>();
 
             var rt = (RectTransform)canvasGo.transform;
-            rt.sizeDelta = new Vector2(600f, 400f);
+            rt.sizeDelta = new Vector2(720f, 320f);
             rt.localScale = Vector3.one * 0.001f;
 
-            var textGo = new GameObject("HudText");
+            var textGo = new GameObject("StatusText");
             textGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
             var textRt = textGo.AddComponent<RectTransform>();
             textRt.anchorMin = Vector2.zero;
@@ -444,46 +468,67 @@ namespace FixedCamVr.Streaming.EditorTools
             textRt.localPosition = Vector3.zero;
 
             var tmp = textGo.AddComponent<TextMeshProUGUI>();
-            tmp.text = "(HUD initializing)";
-            tmp.fontSize = 28f;
-            tmp.color = new Color(0.9f, 1f, 0.9f, 1f);
-            tmp.alignment = TextAlignmentOptions.TopLeft;
+            tmp.text = "";
+            tmp.fontSize = 34f;
+            tmp.color = new Color(0.9f, 1f, 0.95f, 1f);
+            tmp.alignment = TextAlignmentOptions.Center;
             tmp.enableWordWrapping = false;
             tmp.richText = true;
 
-            var hud = canvasGo.AddComponent<RuntimeDebugHud>();
+            var hud = canvasGo.AddComponent<StatusHud>();
             var hudSo = new SerializedObject(hud);
             TrySetObjectRef(hudSo, "text", tmp);
             TrySetObjectRef(hudSo, "registry", registry);
             TrySetObjectRef(hudSo, "tracker", tracker);
-            TrySetObjectRef(hudSo, "hmd", hmd);
-            if (discovery != null) TrySetObjectRef(hudSo, "discovery", discovery);
+            TrySetObjectRef(hudSo, "lapCounter", lapCounter);
+            TrySetObjectRef(hudSo, "cueScheduler", cueScheduler);
             if (signalFx != null) TrySetObjectRef(hudSo, "signalFx", signalFx);
             if (director != null) TrySetObjectRef(hudSo, "switchDirector", director);
+            TrySetObjectRef(hudSo, "courseFrame", courseFrame);
+            TrySetObjectRef(hudSo, "registration", registration);
+            TrySetObjectRef(hudSo, "head", head);
+            // 緩追従・配置の既定（prefab-YAML 未反映罠を避けるため setup が明示的に書く）。
+            TrySetFloat(hudSo, "distance", 1.6f);
+            TrySetFloat(hudSo, "heightOffset", -0.43f);
+            TrySetFloat(hudSo, "pitchDeg", -15f);
+            TrySetFloat(hudSo, "yawDeadzoneDeg", 10f);
+            TrySetFloat(hudSo, "smoothTime", 0.30f);
             TrySetFloat(hudSo, "updateInterval", 0.25f);
-            TrySetBool(hudSo, "startVisible", false); // 本番の視界保護（左 Y でトグル）
+            TrySetBool(hudSo, "startVisible", false); // 本番の視界保護（右 B でトグル）
+            TrySetFloat(hudSo, "autoHideSec", 0f);    // 既定無効（現場で必要なら設定）
+            TrySetFloat(hudSo, "recenterAutoShowSec", 5f);
             hudSo.ApplyModifiedPropertiesWithoutUndo();
 
-            var toggle = canvasGo.AddComponent<HudToggleInput>();
-            var toggleSo = new SerializedObject(toggle);
-            TrySetObjectRef(toggleSo, "hud", hud);
-            toggleSo.ApplyModifiedPropertiesWithoutUndo();
+            return hud;
+        }
 
-            // HudLogDumper: HUD と同じ値を [HudDump] プレフィックスで Console に吐く
-            // （MCP read_console で時系列取得するため）
-            var dumper = canvasGo.AddComponent<HudLogDumper>();
+        // HUD に出さない診断（[HudDump] ログ + HMD 軌跡 CSV + Editor H トグル）を 1 個の GameObject に載せる。
+        private static void CreateDiagnostics(Transform parent, CameraStreamRegistry registry,
+            PlayerZoneTracker tracker, Transform hmd, StatusHud statusHud)
+        {
+            var go = new GameObject(DiagnosticsName);
+            go.transform.SetParent(parent, worldPositionStays: false);
+
+            // HudLogDumper: 接続 / カメラ / ゾーン / HMD を [HudDump] プレフィックスで Console に吐く
+            // （MCP read_console で時系列取得するため。診断中は 1s 周期・本番は 30 等へ）。
+            var dumper = go.AddComponent<HudLogDumper>();
             var dumperSo = new SerializedObject(dumper);
             TrySetObjectRef(dumperSo, "registry", registry);
             TrySetObjectRef(dumperSo, "tracker", tracker);
             TrySetObjectRef(dumperSo, "hmd", hmd);
-            // 診断中は 1s 周期で出す。本番は再 Setup 時に 30 等に戻すこと。
             TrySetFloat(dumperSo, "periodicIntervalSec", 1f);
             dumperSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // HudToggleInput: Editor（Flat シーン）用の H キーで StatusHud をトグル（実機は右 B）。
+            var toggle = go.AddComponent<HudToggleInput>();
+            var toggleSo = new SerializedObject(toggle);
+            TrySetObjectRef(toggleSo, "hud", statusHud);
+            toggleSo.ApplyModifiedPropertiesWithoutUndo();
 
             // HmdTrajectoryRecorder: HMD 位置 / 各ゾーン含有判定を CSV で persistentDataPath に書き出す。
             // 実機 Quest で歩いた後 adb pull で取り出し、ゾーン配置の妥当性をシュビーが解析する用途。
             // tracker.zones を直接参照できないので、Tracker と同じ並びを SerializedObject 経由で複製する。
-            var rec = canvasGo.AddComponent<HmdTrajectoryRecorder>();
+            var rec = go.AddComponent<HmdTrajectoryRecorder>();
             var recSo = new SerializedObject(rec);
             TrySetObjectRef(recSo, "hmd", hmd);
             TrySetObjectRef(recSo, "tracker", tracker);
@@ -505,8 +550,6 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetFloat(recSo, "sampleInterval", 1.0f);
             TrySetFloat(recSo, "hysteresisShrink", HysteresisShrink);
             recSo.ApplyModifiedPropertiesWithoutUndo();
-
-            return hud;
         }
 
         private static void TrySetObjectRef(SerializedObject so, string propName, Object? value)

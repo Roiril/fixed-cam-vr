@@ -102,7 +102,7 @@ namespace FixedCamVr.Tracking
         {
             if (_needsReRegistration) return;
             _needsReRegistration = true;
-            Debug.LogWarning("[CourseFrame] OS recenter 検知 — 登録が無効化されました。両グリップ 3 秒長押しで再登録してください。");
+            Debug.LogWarning("[CourseFrame] OS recenter 検知 — 登録が無効化されました。右トリガー 2 秒長押しで再登録してください。");
         }
 
         /// <summary>登録を identity へ戻し、保存ファイルを削除する。</summary>

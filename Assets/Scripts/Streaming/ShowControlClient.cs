@@ -261,8 +261,8 @@ namespace FixedCamVr.Streaming
         /// <summary>最後に /state を成功受信した realtimeSinceStartup。未接続なら大きな負値。</summary>
         public float LastServerContactTime => _lastServerContactTime;
 
-        // コントローラ操作モード（RUN/STAFF/REG）。OvrControllerBridge が遷移時に push し、heartbeat に載せる。
-        private string _controllerMode = "RUN";
+        // コントローラ操作モード（NORMAL/REG）。OvrControllerBridge が遷移時に push し、heartbeat に載せる。
+        private string _controllerMode = "NORMAL";
 
         // server 未設定、または /state を ServerStaleSeconds 受信できていない = 不通と見なす。
         // long-poll 上限(35s)より長くとり、健全な idle 接続を誤って不通判定しない。
@@ -272,8 +272,8 @@ namespace FixedCamVr.Streaming
         private bool ServerReachable
             => server != null && (Time.realtimeSinceStartup - _lastServerContactTime) < ServerStaleSeconds;
 
-        /// <summary>コントローラ操作モードのラベル（RUN/STAFF/REG）を設定する。heartbeat で卓へ報告する。</summary>
-        public void SetControllerMode(string mode) => _controllerMode = string.IsNullOrEmpty(mode) ? "RUN" : mode;
+        /// <summary>コントローラ操作モードのラベル（NORMAL/REG）を設定する。heartbeat で卓へ報告する。</summary>
+        public void SetControllerMode(string mode) => _controllerMode = string.IsNullOrEmpty(mode) ? "NORMAL" : mode;
 
         /// <summary>卓サーバの接続先設定（null なら卓連携なし）。DiscoveryClient が現エンドポイント比較に読む。</summary>
         public ShowServerSource? Server => server;
@@ -1082,9 +1082,9 @@ namespace FixedCamVr.Streaming
             public float recvFps;
             public string playingCue = "";
             public string cameraOverride = "";
-            // コントローラ操作モード（RUN/STAFF/REG）。スタッフが遠隔でモードを把握するため。
+            // コントローラ操作モード（NORMAL/REG）。スタッフが遠隔でモードを把握するため。
             // サーバ側は未知フィールドを無視するので送るだけでよい。
-            public string mode = "RUN";
+            public string mode = "NORMAL";
             // 現在の周回数（LapCounter 由来。未注入なら -1）とアクティブカメラ index。
             // Web ライブ運用パネルの「Lap N / cam B」表示用。既存 activeIndex と重複するが契約名は cam。
             public int lap = -1;

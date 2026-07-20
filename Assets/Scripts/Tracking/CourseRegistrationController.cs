@@ -16,23 +16,25 @@ namespace FixedCamVr.Tracking
     /// （後方互換・既存動作不変）。各点は床に貼った×印テープの真上へコントローラ先端をかざして取る
     /// （壁へのめり込み問題を消すため「当てる」→「かざす」へ変更）。
     ///
-    /// フロー（Staff モードで右スティック押込により開始 = <see cref="Toggle"/> を Bridge が呼ぶ）:
+    /// フロー（トリガー 2 秒長押しで開始 = <see cref="Toggle"/> を Bridge が呼ぶ）:
     ///   1. Capture … 点 k/N をガイダンス表示し、床の×印の真上へ先端をかざして
     ///      **A を押したまま 0.5 秒静止**（ホールド中の位置サンプル平均を採用 = 手先ジッタ低減。
     ///      0.5 秒未満で離すとマーク不成立でやり直し）。2 点目以降は直前点との実測距離 vs authored 距離の
     ///      誤差 % をライブ表示する。N 点そろったら <see cref="RigidFit2D"/> で剛体フィット（2D Procrustes）。
     ///      **点毎残差の最大が <see cref="maxResidualM"/> を超えたら**、どの点が悪いかを表示して全体やり直し。
     ///   2. Verify … 壁ポリライン + フロア外周 + 登録点×マーカーをワイヤーフレームでゴースト表示。
-    ///      実物の壁・床マーカーに重なるか目視。B=確定（保存 + 終了） / A=最初からやり直し /
-    ///      左スティック=平行移動 / 右スティック横=yaw 微調整。
+    ///      実物の壁・床マーカーに重なるか目視。B=確定（保存 + 終了） / A=最初からやり直し。
+    ///      （スティックナッジ微調整は廃止。N 点剛体フィット + 残差ガード + 約 10 秒のやり直しが精度を担保する。）
     ///
     /// 入力は OvrControllerBridge から <see cref="Feed"/> で転送される（このアセンブリは OVRInput 非依存）。
     /// コントローラ先端の位置は <see cref="rightHandTransform"/> の position をそのまま使う
     /// （先端オフセット補正はしない。誤差 2〜3cm はベースライン + 回廊 + オーバーラップに対して許容）。
     ///
-    /// 視界内ガイダンス（head-locked TextMesh）は常時 1 個生き、登録モード中は各ステップの指示、
-    /// 非モード中は <see cref="CourseFrame.NeedsReRegistration"/> の警告を出す。ワイヤーフレームと
-    /// ゾーン床フットプリントは登録モード中のみ生成・破棄する。
+    /// 視界内ガイダンスは自前 TextMesh を持たず、各ステップの指示を <see cref="GuidanceText"/> /
+    /// <see cref="GuidanceColor"/> として公開する（単一サーフェス StatusHud が登録中に読み取って表示する。
+    /// Tracking → Diagnostics の asmdef 依存を作らないためのプロバイダ方式）。要再登録警告は StatusHud が
+    /// <see cref="CourseFrame.NeedsReRegistration"/> を直接読む。ワイヤーフレームとゾーン床フットプリントは
+    /// 登録モード中のみ生成・破棄する。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CourseRegistrationController : MonoBehaviour
@@ -41,7 +43,7 @@ namespace FixedCamVr.Tracking
         [Tooltip("位置合わせ対象の CourseFrame。null なら Awake で同 GameObject から取得。")]
         [SerializeField] private CourseFrame? courseFrame;
 
-        [Tooltip("HMD（CenterEyeAnchor）。ガイダンス TextMesh の head-lock 用。null なら Camera.main。")]
+        [Tooltip("HMD（CenterEyeAnchor）。rightHandTransform 未割当時のタッチ位置フォールバックに使う。")]
         [SerializeField] private Transform? headTransform;
 
         [Tooltip("コントローラ先端（RightHandAnchor）。position を登録基準点のタッチ位置に使う。" +
@@ -65,13 +67,6 @@ namespace FixedCamVr.Tracking
         [Tooltip("剛体フィット後の点毎残差の最大がこの値 (m) 以下なら合格。超えたら該当点を表示してやり直し。")]
         [SerializeField, Min(0.01f)] private float maxResidualM = 0.12f;
 
-        [Header("Nudge（Verify 中の微調整）")]
-        [Tooltip("左スティックでの平行移動速度 (m/s)。")]
-        [SerializeField, Min(0f)] private float nudgeMoveSpeed = 0.3f;
-
-        [Tooltip("右スティック横での yaw 回転速度 (度/s)。")]
-        [SerializeField, Min(0f)] private float nudgeYawSpeed = 10f;
-
         [Header("Wireframe fallback（course space・layout 不在時）")]
         [Tooltip("フロア幅 (X, m)。")]
         [SerializeField, Min(0.1f)] private float floorW = 1.8f;
@@ -92,8 +87,6 @@ namespace FixedCamVr.Tracking
             public bool mark;         // A（右）の Down エッジ: マークサンプリング開始 / Verify 中はやり直し
             public bool markHeld;     // A（右）の押しっぱなし状態: ホールド平均サンプリングの継続判定
             public bool confirm;      // B（右）: Verify で確定
-            public Vector2 nudgeMove; // 左スティック: 平行移動（x=world X, y=world Z）
-            public float nudgeYaw;    // 右スティック横: yaw 微調整
         }
 
         private enum Phase { Idle, Capture, Verify }
@@ -101,7 +94,14 @@ namespace FixedCamVr.Tracking
         /// <summary>登録モード中か。Bridge はこれを見て通常入力を抑止する。</summary>
         public bool IsActive => _phase != Phase.Idle;
 
-        private const float StickDeadzone = 0.15f;
+        /// <summary>
+        /// 現在の登録ガイダンス文字列（登録モード中のみ非空）。StatusHud（単一サーフェス）が読み取って表示する。
+        /// Idle では空文字（要再登録警告は StatusHud が CourseFrame から直接読む）。
+        /// </summary>
+        public string GuidanceText => _guidanceText;
+
+        /// <summary>ガイダンス表示色（エラー時は橙・通常は緑）。StatusHud が反映する。</summary>
+        public Color GuidanceColor => _guidanceColor;
 
         // マーク確定に必要な A ホールド秒。ホールド中の位置サンプルを平均して手先ジッタを均す
         //（押下瞬間の 1 サンプルは腕の振り・ボタン押し込みのブレをそのまま拾う）。
@@ -137,10 +137,12 @@ namespace FixedCamVr.Tracking
         private float _liveGuidanceNext;
         private int _liveGuidanceForIndex = -1;
 
+        // ガイダンス（StatusHud へ供給する文字列。自前 TextMesh は持たない）。
+        private string _guidanceText = "";
+        private Color _guidanceColor = new(0.9f, 1f, 0.9f, 1f);
+
         // ---- 可視化 ----
         private GameObject? _vizRoot;
-        private TextMesh? _guidance;           // 常時 1 個（モード外の警告も担う）
-        private MeshRenderer? _guidanceRenderer;
 
         // ワイヤーフレーム（course space に持ち、毎フレーム CourseFrame で world 変換して追従）
         private Vector2[] _floorCourse = Array.Empty<Vector2>();
@@ -188,7 +190,6 @@ namespace FixedCamVr.Tracking
 
         private void Start()
         {
-            BuildGuidance();
             ResolvePoints(); // 既定 or layout の初期供給（次の登録開始に備える）
             if (startInRegistration) SetActive(true);
         }
@@ -196,7 +197,6 @@ namespace FixedCamVr.Tracking
         private void OnDestroy()
         {
             TearDownViz();
-            if (_guidance != null) Destroy(_guidance.gameObject);
         }
 
         /// <summary>Bridge のモード遷移（Staff → Registration 入場 / 退場）から呼ばれる。登録モードの ON/OFF。</summary>
@@ -270,7 +270,6 @@ namespace FixedCamVr.Tracking
                 case Phase.Verify:
                     if (input.confirm) { ConfirmAndExit(); return; }
                     if (input.mark) { RestartCapture(); return; }
-                    ApplyNudge(input.nudgeMove, input.nudgeYaw);
                     break;
             }
         }
@@ -369,27 +368,6 @@ namespace FixedCamVr.Tracking
                       $"(max残差 {fit.maxResidualM:F3}m / RMS {fit.rmsResidualM:F3}m) — 壁・×印に重なるか確認して B=確定 / A=やり直し");
         }
 
-        private void ApplyNudge(Vector2 move, float yawIn)
-        {
-            if (courseFrame == null) return;
-            Vector2 origin = courseFrame.OriginXZ;
-            float yaw = courseFrame.YawDeg;
-            bool changed = false;
-
-            if (move.sqrMagnitude > StickDeadzone * StickDeadzone)
-            {
-                origin += move * (nudgeMoveSpeed * Time.deltaTime);
-                changed = true;
-            }
-            if (Mathf.Abs(yawIn) > StickDeadzone)
-            {
-                yaw += yawIn * (nudgeYawSpeed * Time.deltaTime);
-                changed = true;
-            }
-            // 毎フレームのディスク書き込みを避けるため save=false。永続化は B 確定時のみ。
-            if (changed) courseFrame.SetRegistration(origin, yaw, save: false);
-        }
-
         private void RestartCapture()
         {
             _phase = Phase.Capture;
@@ -418,44 +396,7 @@ namespace FixedCamVr.Tracking
 
         private void OnFrameChanged() => _zonesDirty = true;
 
-        // ---- ガイダンス（常時 1 個・head-locked）--------------------------------
-
-        private void BuildGuidance()
-        {
-            var head = HeadTransform();
-            var go = new GameObject("[CourseRegGuidance]");
-            if (head != null) go.transform.SetParent(head, worldPositionStays: false);
-            go.transform.localPosition = new Vector3(0f, -0.12f, 1.2f);
-            go.transform.localRotation = Quaternion.identity;
-
-            _guidance = go.AddComponent<TextMesh>();
-            _guidance.anchor = TextAnchor.MiddleCenter;
-            _guidance.alignment = TextAlignment.Center;
-            _guidance.characterSize = 0.02f;
-            _guidance.fontSize = 90;
-            _guidance.color = new Color(0.9f, 1f, 0.9f, 1f);
-            var font = BuiltinFont();
-            if (font != null)
-            {
-                _guidance.font = font;
-                _guidanceRenderer = go.GetComponent<MeshRenderer>();
-                if (_guidanceRenderer != null) _guidanceRenderer.sharedMaterial = font.material;
-            }
-            else
-            {
-                _guidanceRenderer = go.GetComponent<MeshRenderer>();
-            }
-            _guidance.text = "";
-            if (_guidanceRenderer != null) _guidanceRenderer.enabled = false;
-        }
-
-        private static Font? BuiltinFont()
-        {
-            Font? f = null;
-            try { f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { /* older Unity */ }
-            if (f == null) { try { f = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* ignore */ } }
-            return f;
-        }
+        // ---- ガイダンス（StatusHud へ供給する文字列）----------------------------
 
         private void Update()
         {
@@ -463,9 +404,10 @@ namespace FixedCamVr.Tracking
             if (IsActive) UpdateViz();
         }
 
+        // 各ステップの指示を _guidanceText / _guidanceColor へ書く（StatusHud が登録中に読み取る）。
+        // Idle は空文字（要再登録警告は StatusHud が CourseFrame から直接読む）。
         private void UpdateGuidanceText()
         {
-            if (_guidance == null) return;
             string text;
             Color color = new(0.9f, 1f, 0.9f, 1f);
 
@@ -484,20 +426,16 @@ namespace FixedCamVr.Tracking
                             : CaptureGuidance();
                         break;
                     case Phase.Verify:
-                        text = "ワイヤーが実物の壁・床の×印に重なるか確認\nB = 確定    A = やり直し\n左スティック = 移動   右スティック横 = 回転";
+                        text = "ワイヤーが実物の壁・床の×印に重なるか確認\nB = 確定    A = やり直し";
                         break;
                     default: // Idle
-                        text = courseFrame != null && courseFrame.NeedsReRegistration
-                            ? "⚠ トラッキング原点が変わりました\n両グリップ 3 秒 → 右スティック押込で再登録"
-                            : "";
-                        if (!string.IsNullOrEmpty(text)) color = new Color(1f, 0.7f, 0.3f, 1f);
+                        text = "";
                         break;
                 }
             }
 
-            _guidance.text = text;
-            _guidance.color = color;
-            if (_guidanceRenderer != null) _guidanceRenderer.enabled = !string.IsNullOrEmpty(text);
+            _guidanceText = text;
+            _guidanceColor = color;
         }
 
         // Capture 中のガイダンス。点 k/N と label を示し、2 点目以降は直前点との実測距離 vs
@@ -704,7 +642,7 @@ namespace FixedCamVr.Tracking
                 _footMats[i].color = new Color(baseColor.r, baseColor.g, baseColor.b, 0.2f);
             }
 
-            // ワイヤーフレーム（course → world 変換で毎フレーム追従。nudge に即応）
+            // ワイヤーフレーム（course → world 変換で毎フレーム追従。登録変換の変化に即応）
             if (_floorLine != null)
                 for (int i = 0; i < _floorCourse.Length; i++)
                     _floorLine.SetPosition(i, courseFrame.CourseToWorld(_floorCourse[i], 0.03f));
@@ -736,12 +674,6 @@ namespace FixedCamVr.Tracking
                 _markLines[b].SetPosition(0, courseFrame.CourseToWorld(p + new Vector2(-MarkerHalfM, MarkerHalfM), 0.031f));
                 _markLines[b].SetPosition(1, courseFrame.CourseToWorld(p + new Vector2(MarkerHalfM, -MarkerHalfM), 0.031f));
             }
-        }
-
-        private Transform? HeadTransform()
-        {
-            if (headTransform != null) return headTransform;
-            return Camera.main != null ? Camera.main.transform : null;
         }
     }
 }

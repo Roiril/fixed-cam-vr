@@ -115,23 +115,41 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
    - **v1: cuts（ループ切れ目）モデル**は後方互換で残す（`grid` があれば grid 優先。端末キャッシュに古い cuts しか無くても動く）。選択は `ZoneLayoutSolver.ChooseSource(hasGrid, hasCuts)`（grid 優先）。show.json layout present 判定は `ShowLayoutDef.HasData()`（grid か cuts）。
 2. **位置合わせ = 剛体 3 DOF**（XZ 平行移動 + yaw）だけを [`CourseFrame`](../Assets/Scripts/Tracking/CourseFrame.cs) が持ち、[`CourseRegistrationController`](../Assets/Scripts/Tracking/CourseRegistrationController.cs) の **HMD 2 点登録**で解く（[Tracker] 上、`Setup Main Demo Scene` が自動配線）。
 
-#### HMD 2 点登録リチュアル（約 10 秒）
+#### 入力モデル（右コントローラ 4 入力のみ・2026-07-20〜）
+
+体験者はコントローラを持たないため封印モード（旧 Run/Staff）を廃止。右手の A / B / グリップ / トリガー
+だけで全操作を賄う（[`ControllerModeLogic`](../../Assets/Scripts/Input/ControllerModeLogic.cs) の 2 状態
+Normal / Registration）。左手・スティック・cue 試射・操作チートシート（旧 StaffPanel）は撤去。
+
+| 状態 | 入力 | 機能 |
+|---|---|---|
+| Normal | A（右）短押し | カメラ手動送り Next（設営・リハ確認用。誤爆しても Zone 自動が復帰） |
+| Normal | B（右）短押し | ステータス表示トグル（StatusHud） |
+| Normal | 右グリップ 2 秒長押し | ランリセット（周回リセット + cue 発火済みクリア・体験者交代） |
+| Normal | 右トリガー 2 秒長押し | 位置合わせ（Registration）入場 |
+| Registration | A（右） | 点サンプル（0.5s ホールド平均）/ Verify 中: やり直し |
+| Registration | B（右） | Verify で確定・保存・退場 |
+| Registration | 右トリガー 2 秒長押し | キャンセル退場（入場と対称） |
+
+長押し閾値は 2 秒固定（const `LongPressSec`。SerializeField にすると既存シーン YAML で 0 に読まれる罠を避ける）。
+
+#### HMD N 点登録リチュアル（約 10 秒）
 
 | 操作 | 機能 |
 |---|---|
-| **両グリップ 3 秒長押し → Staff モード → 右スティック押し込み** | 登録モード開始（2026-07-19〜 Run/Staff モデル。Run 中は全ボタン封印・[`ControllerModeLogic`](../../Assets/Scripts/Input/ControllerModeLogic.cs)） |
+| **右トリガー 2 秒長押し** | 登録モード開始（2026-07-20〜。Normal からの唯一の入場） |
 | A（右）で点 1..N | **show.json `layout.regPoints` の点（2〜5・順序つき・Web 卓フロアマップの「📍 位置合わせ点」で配置）を順にタッチ**。床の×印テープの真上に先端をかざして A を 0.5 秒ホールド（位置サンプル平均・壁に触る必要なし）。regPoints 不在の旧 show.json は従来既定 2 点 (-0.5,0.5)/(0.5,0.5) にフォールバック |
 | （ライブ表示） | 2 点目以降は「直前の点との実測距離 vs authored 距離の誤差 %」を表示しながら当てられる |
 | （自動チェック） | N 点の 2D 剛体フィット（`RigidFit2D`・2 点時は従来解と同一）後、**max 残差 > 0.12m（maxResidualM）なら「どの点のタッチが悪いか」を表示してやり直し** |
 | Verify: B（右） | **確定**（`persistentDataPath/registration.json` へ保存 + モード終了） |
 | Verify: A（右） | 最初からやり直し（ステップ1へ戻る） |
-| Verify: 左スティック | 平行移動ナッジ（≈0.3 m/s） |
-| Verify: 右スティック横 | yaw ナッジ（≈10°/s） |
+| Verify: 右トリガー 2 秒長押し | キャンセル退場 |
 
+- **スティックナッジ（平行移動・yaw 微調整）は廃止**（2026-07-20）。N 点剛体フィット + 残差ガード 0.12m が精度を担保し、やり直しが約 10 秒で安いため。
 - **先端位置は RightHandAnchor の position をそのまま使う**（先端オフセット補正なし。誤差 2〜3cm は 1m ベースライン + 40cm 回廊 + 8cm オーバーラップに対して許容）。SerializeField `rightHandTransform`、null なら headTransform にフォールバック。
-- **登録直後にワイヤーフレーム検証表示**：壁ポリライン（L の 2 辺・高さ既定 1m）+ フロア外周を LineRenderer でゴースト表示。show.json layout に wall/floor があればそれを、無ければ内蔵既定（フロア 1.8×1.8・regPoint から導出）を描く。nudge は毎フレーム CourseFrame 変換に追従。
-- **視界内ガイダンス**：head-locked な TextMesh（[CourseRegGuidance]、常時 1 個）に各ステップの指示を表示。**save はディスク書き込みを避けるため nudge 中は false**、B 確定でのみ registration.json を書く。
-- **登録モード中はゾーン床フットプリント表示**（現存 PlayerZone をカメラ別色で床投影）。通常のボタン操作（カメラ切替・HUD）は抑止される。
+- **登録直後にワイヤーフレーム検証表示**：壁ポリライン（L の 2 辺・高さ既定 1m）+ フロア外周を LineRenderer でゴースト表示。show.json layout に wall/floor があればそれを、無ければ内蔵既定（フロア 1.8×1.8・regPoint から導出）を描く。ワイヤーは毎フレーム CourseFrame 変換に追従。
+- **視界内ガイダンス**：自前 TextMesh は持たず、各ステップの指示を `GuidanceText` / `GuidanceColor` として公開し、単一サーフェス [`StatusHud`](../../Assets/Scripts/Diagnostics/StatusHud.cs) が登録中に読み取って強制表示する（旧 [CourseRegGuidance] TextMesh は廃止・Tracking→Diagnostics の asmdef 依存を作らないプロバイダ方式）。save は B 確定でのみ registration.json を書く。
+- **登録モード中はゾーン床フットプリント表示**（現存 PlayerZone をカメラ別色で床投影）。通常のボタン操作（カメラ切替・ステータス）は抑止される。
 - **OS recenter 検知**（Oculus ボタン長押し等でトラッキング原点が変わる）：OvrControllerBridge が `OVRManager.display.RecenteredPose` を購読 → `CourseFrame.MarkNeedsReRegistration()` で「要再登録」フラグ + 警告ログ + 視界警告を出す。**ゾーン動作は継続**（黙ってズレたまま動かさない、が目的）。再登録すればフラグは降りる。
 - **PlayerZone は OBB（向き付きボックス）**: `Contains` はワールド差分をゾーンローカル軸（`transform.rotation`）へ射影して判定する。rotation が identity のときは従来 AABB と完全一致（既存テストもそのまま pass）。CourseFrame の yaw が各生成ゾーンの向きに乗る。
 - 保存先は**端末ローカル**（Quest なら `/sdcard/Android/data/com.roiril.mawarimi/files/registration.json`）。1 変換（originXZ + yawDeg）のみを持つ。旧 `zone_calibration.json`（ゾーン個別の形状保存）は**廃止**。

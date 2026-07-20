@@ -33,10 +33,10 @@
 5. [ ] Build Settings が `Assets/Scenes/Main.unity` のみ enabled であることを確認
 6. [ ] **Main.unity を開いて Tools > FixedCamVr > Setup > Setup Main Demo Scene を実行**
    - Phase 2.7 用の `[Zones]` (Center / Right / Left) と `[Tracker]` を自動配置
-   - HMD 内 HUD (`DebugHud` Canvas + `RuntimeDebugHud`) を CenterEyeAnchor 配下に配置
+   - HMD 内ステータス表示 (`StatusHud` Canvas・world-space 緩追従) と診断コンテナ (`Diagnostics`: HudLogDumper / HmdTrajectoryRecorder / HudToggleInput) を Logic 配下に配置
    - **`StartupFader`** を CenterEyeAnchor 配下に配置（Play 直後の砂時計 / 接続待ちを黒で隠してフェードイン）
-   - `OvrControllerBridge.hud` への参照も自動で結線
-   - 再実行可能（既存配置は削除して再生成）
+   - `OvrControllerBridge.statusHud` への参照も自動で結線
+   - 再実行可能（既存配置は削除して再生成。旧 `DebugHud` Canvas も掃除される）
 7. [ ] **URP RendererFeature を手動配線**（Phase 3 FX を実機で出すために必須）
    - `Assets/Settings/URP-Balanced-Renderer.asset` を Inspector で開く
    - **Add Renderer Feature → Full Screen Pass Renderer Feature** を追加
@@ -52,16 +52,15 @@
 
 ## 3. 起動後 60 秒チェック（HMD を被って）
 
-`RuntimeDebugHud`（[`Assets/Scripts/Diagnostics/RuntimeDebugHud.cs`](../Assets/Scripts/Diagnostics/RuntimeDebugHud.cs)）が World Space Canvas で HMD 前方に常時表示される。
-左コントローラ **Y ボタン**でトグル（OvrControllerBridge 経由）。Editor では `H` キーでもトグル可。
+`StatusHud`（[`Assets/Scripts/Diagnostics/StatusHud.cs`](../Assets/Scripts/Diagnostics/StatusHud.cs)）が World Space Canvas で HMD 前方に緩追従表示される（既定 OFF）。
+右コントローラ **B ボタン**でトグル。Editor では `H` キーでもトグル可。診断詳細（FPS / HMD 座標 / DISC）は HMD からは退役し、`[HudDump]` ログ（Console / MCP）と Web 卓 heartbeat が担う。
 
-HUD の各行を順に確認：
+ステータスの各行を確認：
 
-- [ ] **FPS 行**: 72fps 以上（90 出てれば理想）
-- [ ] **CONN 行**: `●` で接続済み、カメラ番号と名前（例: `1/3 Phone01@192.168.1.10`）が表示
-- [ ] **ZONE 行**: 立っているゾーン名が出ている
-- [ ] **HMD 行**: 頭の動きで座標 (X Y Z) が変わる
-- [ ] **FX 行**: 各エフェクト（CRT / Dust / Sobel）の状態が表示
+- [ ] **1 行目**: `[NORMAL] lap N | zone <名> (cam<番>)`
+- [ ] **2 行目**: `次: lap<L> cam<番> → <cueId>`（次に発火する予定の cue。無ければ非表示）
+- [ ] **3 行目**: `信号 ●●○`（各カメラ接続状態）+ ロスト/凍結/⚠要再登録 バッジ
+- [ ] 右 B で表示/非表示がトグルする（初回押下で確実に出る）
 
 主観チェックも併用:
 
@@ -87,11 +86,13 @@ HUD の各行を順に確認：
 
 [`OvrControllerBridge.cs`](../Assets/Scripts/OvrBridge/OvrControllerBridge.cs) のマッピングに準拠：
 
-- [ ] **両グリップ 3 秒長押しで Staff モードに入る**（2026-07-19〜 Run モード中は全ボタン封印。チートシートが視界に出る）
-- [ ] 右コントローラ **A**（`Button.One`）→ 次のカメラに切替（Staff モード中のみ）
-- [ ] 右コントローラ **B**（`Button.Two`）→ 前のカメラに切替
-- [ ] 左コントローラ **X**（`Button.Three`）→ ScreenAnchor の head-lock ON/OFF（[`ScreenAnchor.Toggle`](../Assets/Scripts/Streaming/ScreenAnchor.cs)）
+- [ ] 右コントローラ **A**（`Button.One`）短押し → 次のカメラに切替（Normal モード）
+- [ ] 右コントローラ **B**（`Button.Two`）短押し → ステータス表示トグル
+- [ ] **右トリガー 2 秒長押し** → コース登録モードに入る（登録ガイダンスが視界に出る）
+- [ ] **右グリップ 2 秒長押し** → ランリセット（周回=1・ワンショット演出クリア）
 - [ ] 切替時に黒フレーム / フリーズが無い
+
+> ScreenAnchor の head-lock トグルはコントローラ割当から外れた（Editor は Space キーで [`ScreenAnchor.Toggle`](../Assets/Scripts/Streaming/ScreenAnchor.cs) を叩ける）。
 
 > キーボードからは Tab / Shift+Tab / 数字キー 1〜9 で切替可（[`CameraSwitchInput.cs`](../Assets/Scripts/Streaming/CameraSwitchInput.cs)）。HMD 検証中は使わないが、デバッグで PC を覗き込む時に便利。
 
@@ -180,8 +181,8 @@ HMD を被る
 
 ## 6. シュビーが Console から状態を読む（HudLogDumper / HmdTrajectoryRecorder）
 
-HMD 装着者しか見えない HUD の値を、PC 側 Console / MCP からも読めるよう
-`HudLogDumper`（[`Assets/Scripts/Diagnostics/HudLogDumper.cs`](../Assets/Scripts/Diagnostics/HudLogDumper.cs)）が DebugHud Canvas に自動アタッチされる。
+HMD 装着者しか見えない値を、PC 側 Console / MCP からも読めるよう
+`HudLogDumper`（[`Assets/Scripts/Diagnostics/HudLogDumper.cs`](../Assets/Scripts/Diagnostics/HudLogDumper.cs)）が `Diagnostics` コンテナに自動アタッチされる。
 
 - 出力タイミング: **状態変化（CONN / CAM index / ZONE label）時に 1 行 + 30 秒に 1 回定期 ping**
 - フォーマット例: `[HudDump #12 t=45.6 why=zone] FPS=72.3 CONN=1 CAM=2/3 Phone02 ZONE=Right@0 HMD=+2.31,+1.62,+0.04`
@@ -194,7 +195,7 @@ HMD 装着者しか見えない HUD の値を、PC 側 Console / MCP からも�
 「歩いてもカメラが切り替わらない」等、**ゾーン形状を実測ベースで詰めたい時のみ**有効化する一時計測コンポーネント。
 [`Assets/Scripts/Diagnostics/HmdTrajectoryRecorder.cs`](../Assets/Scripts/Diagnostics/HmdTrajectoryRecorder.cs)。
 
-- Setup Main Demo Scene を実行すると DebugHud Canvas に **自動でアタッチされる**（常時 ON 想定ではないので、調査が終わったら GameObject から Component を削除して良い）。
+- Setup Main Demo Scene を実行すると `Diagnostics` コンテナに **自動でアタッチされる**（常時 ON 想定ではないので、調査が終わったら GameObject から Component を削除して良い）。
 - 出力: 1 Hz で `[HmdTrace #N t=X.X] pos=(x,y,z) zone=Label cam=N conn=0|1 Center=in/inShrunk Right=in/inShrunk Left=in/inShrunk`
   - `in` = AABB に含まれるか（0/1）
   - `inShrunk` = `hysteresisShrink=0.15m` を効かせた縮小 AABB に含まれるか（0/1）

@@ -71,9 +71,9 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 
 ### 「コントローラのボタンが意図と違う / 左右どちらも同じ操作になる」（2026-06-17 実害）
 
-- **`OVRInput.GetDown(Button.One/Two)` はコントローラ未指定だと両手から拾う**。`Button.One`=A(右)**または**X(左)、`Button.Two`=B(右)**または**Y(左)。なので左の X/Y までカメラ Next/Prev に化けていた
-- → 用途ごとに `OVRInput.Controller.RTouch` / `LTouch` を明示する（[`OvrControllerBridge`](../Assets/Scripts/OvrBridge/OvrControllerBridge.cs)：カメラ切替=右手、anchor/HUD トグル=左手）
-- **トグル系ボタンの「初回押下が空振り」（2026-06-18 実害）**: ローカルに `bool _visible=true` 等で持つ状態が**対象側の初期状態とズレる**と、初回押下が「既にその状態」へのトグルになり何も起きない（HUD 既定 OFF なのに `_hudVisible=true` 固定 → 初回 Y で「隠れている HUD を隠す」空振り、表示に 2 回必要）。→ **`Start()` で対象から初期状態を読んで同期する**（`OvrControllerBridge.Start()` が `RuntimeDebugHud.IsVisible` から復元。`HudToggleInput` も同様）
+- **`OVRInput.GetDown(Button.One/Two)` はコントローラ未指定だと両手から拾う**。`Button.One`=A(右)**または**X(左)、`Button.Two`=B(右)**または**Y(左)。左手を明示しないと左の X/Y までカメラ操作に化ける
+- → 用途ごとに `OVRInput.Controller.RTouch` / `LTouch` を明示する。**2026-07-20〜 廻リ視は右手 4 入力のみ**（[`OvrControllerBridge`](../Assets/Scripts/OvrBridge/OvrControllerBridge.cs)：A=Next / B=ステータストグル / 右グリップ長押し=ランリセット / 右トリガー長押し=登録。左手・スティックは読まない）
+- **トグル系ボタンの「初回押下が空振り」（2026-06-18 実害）**: ローカルに `bool _visible=true` 等で持つ状態が**対象側の初期状態とズレる**と、初回押下が「既にその状態」へのトグルになり何も起きない。→ **トグルは真実源（対象の `IsVisible`）を毎回読んで反転する**（`OvrControllerBridge.ToggleStatus()` が `StatusHud.IsVisible` を反転。`HudToggleInput`（Editor H）も同様）
 
 ## 鉄則
 
