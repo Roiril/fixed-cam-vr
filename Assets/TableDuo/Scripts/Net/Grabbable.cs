@@ -108,6 +108,12 @@ namespace TableDuoVr.Net
         }
 
         /// <summary>
+        /// このピースが「静止中は kinematic で凍結」する設計か（山札等）。GameSwitcher が
+        /// アクティブ化時に dynamic へ戻すべきか判断するのに使う（restKinematic 物は凍結のまま維持）。
+        /// </summary>
+        public bool RestKinematic => restKinematic;
+
+        /// <summary>
         /// restKinematic ピースを静止状態（kinematic・凍結）へ戻す（サーバ専用・保持中は無視）。
         /// AlgoDealer の配り直し後に呼び、再配置した山札をクリーンな凍結スタックに戻す。
         /// </summary>

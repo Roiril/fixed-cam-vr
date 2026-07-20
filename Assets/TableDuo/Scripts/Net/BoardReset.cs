@@ -68,6 +68,9 @@ namespace TableDuoVr.Net
                     rb.position = pos;
                     rb.rotation = rot;
                 }
+                // restKinematic 物（山札等）は初期姿勢へ戻したうえで凍結し直す
+                // （一度離して dynamic 化したカードがリセット後も沈み込むのを防ぐ）
+                if (grab != null) grab.ServerSettleKinematic();
                 restored++;
             }
             Debug.Log($"[TableDuo] BoardReset: {restored} 個を初期配置へ復元");

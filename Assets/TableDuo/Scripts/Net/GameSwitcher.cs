@@ -98,11 +98,12 @@ namespace TableDuoVr.Net
             if (IsServer)
             {
                 // 物理整合のみ（ポーズ復元はしない — ベイク時の初期位置のままのはず）:
-                // 非アクティブゲームを kinematic 化し、アクティブを dynamic に戻す
+                // 非アクティブゲームを kinematic 化し、アクティブは dynamic に戻す。
+                // ただし restKinematic 物（山札等）はアクティブでも凍結のまま（下記 SetRootKinematic）
                 EnsureCaptured();
                 for (int i = 0; i < gameRoots.Length; i++)
                 {
-                    SetRootKinematic(i, kinematic: i != _active.Value);
+                    SetRootKinematic(i, stowed: i != _active.Value);
                 }
             }
         }
@@ -188,18 +189,21 @@ namespace TableDuoVr.Net
                     }
                 }
                 var rb = grab.GetComponent<Rigidbody>();
-                if (rb != null) rb.isKinematic = stow;
+                // stow 中は必ず凍結。アクティブ化時も restKinematic 物（山札等）は凍結のまま
+                // （dynamic に戻すと薄板 16 段が沈み込んで貫入する。掴めば Grabbable が個別に dynamic 化する）
+                if (rb != null) rb.isKinematic = stow || grab.RestKinematic;
             }
         }
 
-        /// <summary>サーバ: 指定ルート配下 Grabbable の Rigidbody を kinematic 切替（初期 apply の物理整合用）。</summary>
-        private void SetRootKinematic(int idx, bool kinematic)
+        /// <summary>サーバ: 指定ルート配下 Grabbable の Rigidbody を kinematic 切替（初期 apply の物理整合用）。
+        /// stowed=false（アクティブ）でも restKinematic 物は凍結のまま維持する。</summary>
+        private void SetRootKinematic(int idx, bool stowed)
         {
             if (idx < 0 || idx >= gameRoots.Length || gameRoots[idx] == null) return;
             foreach (var grab in gameRoots[idx].GetComponentsInChildren<Grabbable>(includeInactive: true))
             {
                 var rb = grab.GetComponent<Rigidbody>();
-                if (rb != null) rb.isKinematic = kinematic;
+                if (rb != null) rb.isKinematic = stowed || grab.RestKinematic;
             }
         }
     }
