@@ -25,14 +25,26 @@ namespace TableDuoVr.Hands
         /// <summary>両手グリップ長押しが成立した（手動リセット要求）。</summary>
         public event Action? Recentered;
 
+        // 触覚フィードバック（任意）。未配置でも従来動作（振動が出ないだけ）。
+        // A 単押し=Action（押した右手）、両手グリップは進入=Ack → HoldTick ランプ → 発火=Fire（両手）。
+        private TableDuoHaptics? _haptics;
+
         private float _held;
         private bool _firedThisHold; // 握りっぱなしで連続発火しないよう、離すまで1回だけ
+        private bool _wasBothHeld;   // 両手グリップの立ち上がり/立ち下がり検出用
+
+        private void Awake()
+        {
+            // シーン内の system singleton を取得（Setup TableDuo Scene が Systems 直下に配置）
+            _haptics = FindObjectOfType<TableDuoHaptics>();
+        }
 
         private void Update()
         {
             // A ボタン単押しで即リセット（両手グリップ長押しより手軽）
             if (OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.RTouch))
             {
+                _haptics?.Action(OVRInput.Controller.RTouch); // 短押しアクション実行
                 Debug.Log("[TableDuo] A ボタン → 視点リセット");
                 Recentered?.Invoke();
             }
@@ -44,19 +56,45 @@ namespace TableDuoVr.Hands
 
             if (!bothHeld)
             {
+                if (_wasBothHeld) ClearHoldHaptics(); // 途中で離した = ランプ停止（失敗ではないので Error は鳴らさない）
                 _held = 0f;
                 _firedThisHold = false;
+                _wasBothHeld = false;
                 return;
             }
+
+            if (!_wasBothHeld)
+            {
+                // 両手グリップの立ち上がり: 受理を Ack で通知（まだアクションではない）
+                _haptics?.Ack(OVRInput.Controller.LTouch);
+                _haptics?.Ack(OVRInput.Controller.RTouch);
+            }
+            _wasBothHeld = true;
+
             if (_firedThisHold) return;
 
             _held += Time.deltaTime;
+
+            // 長押しカウント進行中のランプ振動（両手）
+            float progress = holdSeconds > 0f ? _held / holdSeconds : 1f;
+            _haptics?.SetHoldProgress(OVRInput.Controller.LTouch, progress);
+            _haptics?.SetHoldProgress(OVRInput.Controller.RTouch, progress);
+
             if (_held >= holdSeconds)
             {
                 _firedThisHold = true;
+                ClearHoldHaptics();
+                _haptics?.Fire(OVRInput.Controller.LTouch); // 長押し発火（確定）
+                _haptics?.Fire(OVRInput.Controller.RTouch);
                 Debug.Log("[TableDuo] コントローラ両手グリップ長押し → 視点リセット");
                 Recentered?.Invoke();
             }
+        }
+
+        private void ClearHoldHaptics()
+        {
+            _haptics?.SetHoldProgress(OVRInput.Controller.LTouch, -1f);
+            _haptics?.SetHoldProgress(OVRInput.Controller.RTouch, -1f);
         }
     }
 }

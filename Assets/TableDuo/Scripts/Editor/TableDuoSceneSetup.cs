@@ -311,6 +311,10 @@ namespace TableDuoVr.EditorTools
             // tdv_* フラグ起動時のみ自動稼働・逐次書き込みで長時間可・pause ごとに確定保存）
             systems.AddComponent<StreamingPoseRecorder>();
 
+            // コントローラ操作の触覚（振動）フィードバック（受理/実行/発火/失敗）。
+            // ControllerRecenterWatcher が Awake で FindObjectOfType で拾うので先に配置しておく
+            systems.AddComponent<TableDuoHaptics>();
+
             systems.AddComponent<RecenterWatcher>();
             // 手動リセット: コントローラ両手グリップ長押しで頭を席へ戻す（人側/手側両方・ジェスチャー不可）
             systems.AddComponent<ControllerRecenterWatcher>();

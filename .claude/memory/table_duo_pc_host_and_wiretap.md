@@ -39,6 +39,7 @@ PC ホスト（spectator）画面**左上の GUI ボタン／数字キー 1-3** 
 
 ## 操作ボタン（2026-07-06 現在）
 - **A（右手）単押し**: 視点リセット（席へ再センタ）。両手グリップ3秒長押しも維持（[ControllerRecenterWatcher](../../Assets/TableDuo/Scripts/Hands/ControllerRecenterWatcher.cs)）
+  - **触覚フィードバック（2026-07-21）**: A 単押し=右手に Action 振動 / 両手グリップは進入=Ack →長押し中 HoldTick ランプ→3 秒で Fire（両手）。波形は両アプリ共通 [`HapticVocabulary`](../../Assets/TableDuo/Scripts/Hands/HapticPatterns.cs)、適用は [`TableDuoHaptics`](../../Assets/TableDuo/Scripts/Hands/TableDuoHaptics.cs)（Systems 直下・`Setup TableDuo Scene` が配置。watcher が Awake で FindObjectOfType）。ハンドトラッキング時・未接続時は無音（＝「押せてない/未接続」の切り分け）。実機未検証
 - **B（右手）単押し**: WireTap 記録トグル
 - **Y（左手）**: 手バリアント巡回（調査フラグ起動中は無効）
 
