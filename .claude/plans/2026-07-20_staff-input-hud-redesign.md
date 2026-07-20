@@ -51,6 +51,31 @@
   「A 押下＝Ack（受理）／ 0.5s 静止で点確定＝Action（PointCaptured）」に解釈した（Ack/Action の定義に厳密に一致）
 - **⚠ 実機未検証**（振幅・波形の体感、Rコン未接続表示は現場調整前提）
 
+## 追記: 位置合わせフィードバック改修（2026-07-21 実装・実機未検証）
+
+**動機**: 登録フローの手応え不足を埋める。①0.5 秒ホールドの進行が見えない・鳴らない、②中断/成功の触覚が非対称、
+③Verify の残差が Debug.Log だけで HMD に出ない、④確定後にズレを確認する道がなく「一度確定したら不安なまま」、
+⑤登録の有無・鮮度・品質がどこにも見えない。
+
+- **サンプルホールド進捗**: `CourseRegistrationController.SampleHoldProgress01`（非サンプル中 0）を公開。
+  `OvrControllerBridge` が mode 長押し進捗と **Max 合成**して `haptics.SetHoldProgress` へ（0.5 秒ホールド中も HoldTick ランプが鳴る）。
+  ガイダンス 1 行目を進捗バー付き `計測中 ▓▓▓░░ 0.3/0.5s` に（毎フレーム更新）。
+- **触覚の対称化**: 新イベント `SampleAborted`（0.5 秒未満リリース → Error）/ `FitAccepted`（N 点残差通過 → Fire。
+  `FitRejected`=Error と対称）を追加、Bridge が購読（Tracking asmdef は OVRInput 非依存を維持）。
+- **Verify 残差表示**: 1 行目に `最大残差 0.05m（合格 ≤0.12m）` を追加（`_verifyMaxResidualM` を SolveAndVerify で確定）。
+- **確認（Review）フェーズ新設**: `Phase.Review` を追加。登録開始時に `CourseFrame.HasRegistration` なら Capture でなく
+  Review に着地（既存登録のワイヤー + フットプリント + `登録済み…（保存/残差/点数）` ヘッダ・recenter 時は橙警告）。
+  A=点 1 から再登録 / B=保存せず終了（`RegistrationConfirmed` を発火しない）。**`ControllerModeLogic` は変更不要**
+  （Review も `IsActive` = `_phase != Idle` で真、入場/退場は既存のトリガー長押し・IsActive 追従でそのまま成立）。
+- **品質・鮮度の永続化**: `registration.json` に `maxResidualM` / `pointCount` / `savedAtIso` を追加（JsonUtility 欠損 default で
+  後方互換）。`CourseFrame` が `HasRegistration`/`MaxResidualM`/`PointCount`/`SavedAtIso` を公開。StatusHud のステータス行に
+  `⚠未登録` / `登録済(残差0.05m)` バッジ（`⚠要再登録` 優先）を追加。
+- **純関数 + テスト**: 文言フォーマットを `RegistrationGuidance`（UnityEngine 非依存・進捗バー/残差/Review ヘッダ）へ切り出し
+  `RegistrationGuidanceTests`（9 件）を追加。
+- **Setup 再実行は不要**: 新 SerializeField を足していない（品質は private state・StatusHud は既存 courseFrame 参照・
+  Bridge のイベント購読は Start のコード）。MainDemoSceneSetup 変更なし。
+- **⚠ Quest 実機未検証**（進捗バー/触覚の体感・Review 着地・残差表示は現場確認前提）。
+
 ## 背景（ユーザー要求 2026-07-20）
 
 - Quest コントローラのスタッフ操作がわかりづらい。**既存割当を全解除**し、**右コントローラの A / B / グリップ / トリガーの 4 入力だけ**で全操作を賄う

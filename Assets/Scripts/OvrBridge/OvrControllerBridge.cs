@@ -92,6 +92,8 @@ namespace FixedCamVr.OvrBridge
             {
                 courseRegistration.PointCaptured += OnRegPointCaptured;
                 courseRegistration.FitRejected += OnRegFitRejected;
+                courseRegistration.FitAccepted += OnRegFitAccepted;
+                courseRegistration.SampleAborted += OnRegSampleAborted;
                 courseRegistration.RegistrationConfirmed += OnRegConfirmed;
             }
 
@@ -106,6 +108,8 @@ namespace FixedCamVr.OvrBridge
             {
                 courseRegistration.PointCaptured -= OnRegPointCaptured;
                 courseRegistration.FitRejected -= OnRegFitRejected;
+                courseRegistration.FitAccepted -= OnRegFitAccepted;
+                courseRegistration.SampleAborted -= OnRegSampleAborted;
                 courseRegistration.RegistrationConfirmed -= OnRegConfirmed;
             }
             if (_recenterSubscribed && OVRManager.display != null)
@@ -167,8 +171,12 @@ namespace FixedCamVr.OvrBridge
             });
             ControllerModeLogic.Mode mode = _modeLogic.Current;
 
-            // 長押しカウント進行を HoldTick 振動へ（トリガー = 登録入場 / グリップ = ランリセットの大きい方）。
-            haptics?.SetHoldProgress(Mathf.Max(_modeLogic.TriggerHoldProgress01, _modeLogic.GripHoldProgress01));
+            // 長押しカウント進行を HoldTick 振動へ（トリガー入場 / グリップ ランリセット / 登録の 0.5s ホールド
+            // 平均サンプリングの最大を流す。登録中は SampleHoldProgress01 が 0.5 秒ホールドの進行ランプを鳴らす）。
+            float holdProgress = Mathf.Max(_modeLogic.TriggerHoldProgress01, _modeLogic.GripHoldProgress01);
+            if (courseRegistration != null)
+                holdProgress = Mathf.Max(holdProgress, courseRegistration.SampleHoldProgress01);
+            haptics?.SetHoldProgress(holdProgress);
 
             // ---- モード別の入力分配 ----
             switch (mode)
@@ -212,6 +220,8 @@ namespace FixedCamVr.OvrBridge
         // ---- 登録フローの触覚（購読は Assembly-CSharp 側・Tracking は OVRInput 非依存）----
         private void OnRegPointCaptured() => haptics?.Action(); // 点サンプル確定
         private void OnRegFitRejected() => haptics?.Error();    // 残差 NG・やり直し
+        private void OnRegFitAccepted() => haptics?.Fire();     // 残差ガード通過・Verify 遷移（FitRejected と対称）
+        private void OnRegSampleAborted() => haptics?.Error();  // 0.5s 未満で離してホールド中断
         // 確定保存 = Fire。この直後に IsActive=false → 次フレーム ModeChanged(Reg→Normal) でも Fire が来るが、
         // HapticSequenceLogic のピア優先（同ピークは再生中なら無視）で 1 回に畳まれる。
         private void OnRegConfirmed() => haptics?.Fire();

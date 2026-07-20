@@ -17,6 +17,9 @@ namespace FixedCamVr.Tracking
     /// （壁へのめり込み問題を消すため「当てる」→「かざす」へ変更）。
     ///
     /// フロー（トリガー 2 秒長押しで開始 = <see cref="Toggle"/> を Bridge が呼ぶ）:
+    ///   0. Review … 開始時に既に有効な登録があれば（今セッション確定済み or registration.json ロード済み）
+    ///      ここへ着地し、現在の登録をワイヤーフレームで表示する（保存日時 / 残差 / 点数付き）。
+    ///      A=点 1 から再登録（Capture へ） / B=保存せず終了。未登録なら Capture から始まる。
     ///   1. Capture … 点 k/N をガイダンス表示し、床の×印の真上へ先端をかざして
     ///      **A を押したまま 0.5 秒静止**（ホールド中の位置サンプル平均を採用 = 手先ジッタ低減。
     ///      0.5 秒未満で離すとマーク不成立でやり直し）。2 点目以降は直前点との実測距離 vs authored 距離の
@@ -89,10 +92,17 @@ namespace FixedCamVr.Tracking
             public bool confirm;      // B（右）: Verify で確定
         }
 
-        private enum Phase { Idle, Capture, Verify }
+        private enum Phase { Idle, Capture, Verify, Review }
 
         /// <summary>登録モード中か。Bridge はこれを見て通常入力を抑止する。</summary>
         public bool IsActive => _phase != Phase.Idle;
+
+        /// <summary>
+        /// ホールド平均サンプリングの進捗 [0,1]（非サンプル中は 0）。Bridge が長押し進捗と Max 合成して
+        /// 触覚 HoldTick へ流す（0.5 秒ホールド中も進行ランプが鳴る）。
+        /// </summary>
+        public float SampleHoldProgress01 =>
+            (_sampling && MarkHoldSec > 0f) ? Mathf.Clamp01(_sampleTime / MarkHoldSec) : 0f;
 
         /// <summary>
         /// 現在の登録ガイダンス文字列（登録モード中のみ非空）。StatusHud（単一サーフェス）が読み取って表示する。
@@ -112,6 +122,16 @@ namespace FixedCamVr.Tracking
         /// <summary>剛体フィットの残差過大 / 解不能でやり直しへ戻した時に発火（触覚 Error に使う）。</summary>
         public event Action? FitRejected;
 
+        /// <summary>
+        /// N 点そろい残差ガードを通過して Verify へ遷移した時に発火（触覚 Fire に使う。FitRejected と対称）。
+        /// </summary>
+        public event Action? FitAccepted;
+
+        /// <summary>
+        /// ホールドを 0.5 秒未満で離してマークが不成立になった時に発火（触覚 Error に使う）。
+        /// </summary>
+        public event Action? SampleAborted;
+
         /// <summary>Verify で B 確定・保存して登録を終えた時に発火（触覚 Fire に使う）。</summary>
         public event Action? RegistrationConfirmed;
 
@@ -126,6 +146,9 @@ namespace FixedCamVr.Tracking
         private const float MarkerHalfM = 0.05f;
 
         private Phase _phase = Phase.Idle;
+
+        // Verify ガイダンスへ出す、直近フィットの最大残差 (m)。SolveAndVerify で確定する。
+        private float _verifyMaxResidualM;
 
         // authored 基準点（course space XZ）とラベル。SetActive / LayoutChanged で resolve する。
         private Vector2[] _authoredPoints = Array.Empty<Vector2>();
@@ -231,10 +254,23 @@ namespace FixedCamVr.Tracking
                 _pointIndex = 0;
                 _sampling = false;
                 _liveGuidanceForIndex = -1;
-                _phase = Phase.Capture;
                 BuildViz();
-                Debug.Log($"[CourseReg] 登録モード ON — {_authoredPoints.Length} 点登録。" +
-                          "点 1: 床の×印の真上に先端をかざして A を 0.5 秒ホールド");
+
+                // 有効な登録が既にあれば Review 着地（現在の登録をワイヤーで見せ、ズレていれば A で再登録）。
+                // 未登録なら従来どおり点 1 の Capture へ。
+                if (courseFrame != null && courseFrame.HasRegistration)
+                {
+                    _phase = Phase.Review;
+                    BuildWireframe();
+                    Debug.Log($"[CourseReg] 登録モード ON（確認）— 登録済みの位置合わせを表示。" +
+                              "ワイヤーが実物に重ならなければ A で再登録 / B で終了");
+                }
+                else
+                {
+                    _phase = Phase.Capture;
+                    Debug.Log($"[CourseReg] 登録モード ON — {_authoredPoints.Length} 点登録。" +
+                              "点 1: 床の×印の真上に先端をかざして A を 0.5 秒ホールド");
+                }
             }
             else
             {
@@ -283,6 +319,11 @@ namespace FixedCamVr.Tracking
                     if (input.confirm) { ConfirmAndExit(); return; }
                     if (input.mark) { RestartCapture(); return; }
                     break;
+                case Phase.Review:
+                    // 確認フェーズ: A=点 1 から再登録 / B=保存せず終了（RegistrationConfirmed は発火しない）。
+                    if (input.mark) { RestartCapture(); return; }
+                    if (input.confirm) { ExitReview(); return; }
+                    break;
             }
         }
 
@@ -306,6 +347,7 @@ namespace FixedCamVr.Tracking
                 // MarkHoldSec 未満で離した → マーク不成立（点は採らない）。
                 _sampling = false;
                 ShowTransient("マーク不成立\n×印の真上にかざしたまま A を 0.5 秒静止してください", 2.5f);
+                SampleAborted?.Invoke(); // 触覚 Error（ホールド中断）
                 return;
             }
 
@@ -375,10 +417,13 @@ namespace FixedCamVr.Tracking
                 return;
             }
 
-            // 保存はまだしない（Verify で B 確定するまで registration.json は書かない）。
-            courseFrame.SetRegistration(fit.originXZ, fit.yawDeg, save: false);
+            // 保存はまだしない（Verify で B 確定するまで registration.json は書かない）。品質メタは stash され、
+            // 確定時に json へ焼き込まれる（Review / StatusHud 表示に使う）。
+            courseFrame.SetRegistration(fit.originXZ, fit.yawDeg, fit.maxResidualM, n, save: false);
+            _verifyMaxResidualM = fit.maxResidualM;
             _phase = Phase.Verify;
             BuildWireframe();
+            FitAccepted?.Invoke(); // 触覚 Fire（残差ガード通過・Verify 遷移。FitRejected と対称）
             Debug.Log($"[CourseReg] 登録解決: origin=({fit.originXZ.x:F3},{fit.originXZ.y:F3}) yaw={fit.yawDeg:F1}° " +
                       $"(max残差 {fit.maxResidualM:F3}m / RMS {fit.rmsResidualM:F3}m) — 壁・×印に重なるか確認して B=確定 / A=やり直し");
         }
@@ -401,6 +446,14 @@ namespace FixedCamVr.Tracking
                 Debug.Log($"[CourseReg] 確定・保存: origin=({courseFrame.OriginXZ.x:F3},{courseFrame.OriginXZ.y:F3}) yaw={courseFrame.YawDeg:F1}°");
             }
             RegistrationConfirmed?.Invoke(); // 触覚 Fire（確定保存）
+            SetActive(false);
+        }
+
+        // Review フェーズを保存せず終える（B）。既存登録は一切変えない。IsActive=false により
+        // ControllerModeLogic が Normal へ戻す（その ModeChanged の Fire だけが鳴る＝確定保存とは区別）。
+        private void ExitReview()
+        {
+            Debug.Log("[CourseReg] 確認フェーズ終了（保存なし）");
             SetActive(false);
         }
 
@@ -437,12 +490,17 @@ namespace FixedCamVr.Tracking
                 switch (_phase)
                 {
                     case Phase.Capture:
+                        // サンプリング中は進捗バー付きで毎フレーム更新（ガイダンスブランチは間引きなし）。
                         text = _sampling
-                            ? "計測中… かざしたまま静止（0.5 秒）"
+                            ? RegistrationGuidance.SamplingLine(_sampleTime, MarkHoldSec)
                             : CaptureGuidance();
                         break;
                     case Phase.Verify:
-                        text = "ワイヤーが実物の壁・床の×印に重なるか確認\nB = 確定    A = やり直し";
+                        text = RegistrationGuidance.ResidualLine(_verifyMaxResidualM, maxResidualM)
+                             + "\nワイヤーが実物の壁・床の×印に重なるか確認\nB = 確定    A = やり直し";
+                        break;
+                    case Phase.Review:
+                        text = ReviewGuidance();
                         break;
                     default: // Idle
                         text = "";
@@ -489,6 +547,22 @@ namespace FixedCamVr.Tracking
             }
 
             _liveGuidanceText = text;
+            return text;
+        }
+
+        // Review（確認）フェーズのガイダンス。既存登録の保存日時 / 残差 / 点数を出し、A=再登録 / B=終了を促す。
+        // recenter で原点が変わっていれば橙のリッチテキスト行で再登録を推奨する（全体色は緑のまま）。
+        private string ReviewGuidance()
+        {
+            string header = RegistrationGuidance.ReviewHeader(
+                courseFrame != null ? courseFrame.SavedAtIso : "",
+                courseFrame != null ? courseFrame.MaxResidualM : 0f,
+                courseFrame != null ? courseFrame.PointCount : 0);
+            string text = header
+                        + "\nワイヤーが実物に重ならなければ A で再登録"
+                        + "\nA = 点1から再登録    B = OK（終了）";
+            if (courseFrame != null && courseFrame.NeedsReRegistration)
+                text += "\n<color=#FF8C40>⚠トラッキング原点が変わっています — 再登録を推奨</color>";
             return text;
         }
 

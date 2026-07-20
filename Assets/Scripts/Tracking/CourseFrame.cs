@@ -34,6 +34,13 @@ namespace FixedCamVr.Tracking
 
         private bool _needsReRegistration;
 
+        // 登録の有無・品質・鮮度（Review フェーズ着地判定 + StatusHud 表示に使う）。
+        // registration.json ロード成功 or 確定保存で有効化する（Verify プレビュー中は立てない）。
+        private bool _hasRegistration;
+        private float _maxResidualM;
+        private int _pointCount;
+        private string _savedAtIso = "";
+
         /// <summary>
         /// OS recenter（Oculus ボタン長押し等）でトラッキング原点が変わり、登録が無効になった状態。
         /// <see cref="MarkNeedsReRegistration"/> で立ち、<see cref="SetRegistration"/>/<see cref="ResetRegistration"/>
@@ -41,6 +48,22 @@ namespace FixedCamVr.Tracking
         /// ゾーン動作自体は継続する（黙ってズレたまま動かない、が目的）。
         /// </summary>
         public bool NeedsReRegistration => _needsReRegistration;
+
+        /// <summary>
+        /// 有効な登録が存在するか（registration.json をロード済み or 今セッションで確定保存済み）。
+        /// CourseRegistrationController が登録開始時に「Review 着地か Capture 着地か」を分岐するのに使い、
+        /// StatusHud が「未登録 / 登録済」バッジを出すのに使う。identity 既定のままでは false。
+        /// </summary>
+        public bool HasRegistration => _hasRegistration;
+
+        /// <summary>直近登録の剛体フィット最大残差 (m)。未記録（旧ファイル or 未登録）は 0。</summary>
+        public float MaxResidualM => _maxResidualM;
+
+        /// <summary>直近登録に使った基準点数。未記録（旧ファイル or 未登録）は 0。</summary>
+        public int PointCount => _pointCount;
+
+        /// <summary>直近登録の保存日時（ローカル時刻 ISO 文字列）。未記録（旧ファイル or 未登録）は空。</summary>
+        public string SavedAtIso => _savedAtIso;
 
         /// <summary>course 原点のワールド XZ。</summary>
         public Vector2 OriginXZ => originXZ;
@@ -59,6 +82,10 @@ namespace FixedCamVr.Tracking
             public float originX;
             public float originZ;
             public float yawDeg;
+            // 品質・鮮度（v2）。旧ファイルには無く、JsonUtility が既定 0 / null で埋める（後方互換）。
+            public float maxResidualM;
+            public int pointCount;
+            public string savedAtIso;
         }
 
         private void Awake()
@@ -95,6 +122,19 @@ namespace FixedCamVr.Tracking
         }
 
         /// <summary>
+        /// 登録変換を品質メタ（剛体フィット最大残差・基準点数）付きで設定する。N 点登録の Verify プレビュー
+        /// （save=false）が呼び、確定は <see cref="SaveRegistration"/> が担う。品質メタは記録しておき、確定時に
+        /// json へ焼き込む（Review フェーズ / StatusHud での表示に使う）。<see cref="HasRegistration"/> は
+        /// プレビューでは立てず、確定保存 or ロードでのみ立てる。
+        /// </summary>
+        public void SetRegistration(Vector2 newOriginXZ, float newYawDeg, float maxResidualM, int pointCount, bool save = true)
+        {
+            _maxResidualM = maxResidualM;
+            _pointCount = pointCount;
+            SetRegistration(newOriginXZ, newYawDeg, save);
+        }
+
+        /// <summary>
         /// トラッキング原点が変わって登録が無効になったことを記録する（OS recenter 検知時に呼ぶ）。
         /// フラグを立てて警告ログを出すだけ。ゾーン再配置はしない（次の登録まで現状のまま動かす）。
         /// </summary>
@@ -111,6 +151,10 @@ namespace FixedCamVr.Tracking
             originXZ = Vector2.zero;
             yawDeg = 0f;
             _needsReRegistration = false;
+            _hasRegistration = false;
+            _maxResidualM = 0f;
+            _pointCount = 0;
+            _savedAtIso = "";
             if (deleteFile)
             {
                 try { if (File.Exists(RegistrationPath)) File.Delete(RegistrationPath); }
@@ -128,7 +172,12 @@ namespace FixedCamVr.Tracking
                 var data = JsonUtility.FromJson<RegistrationData>(File.ReadAllText(RegistrationPath));
                 originXZ = new Vector2(data.originX, data.originZ);
                 yawDeg = data.yawDeg;
-                Debug.Log($"[CourseFrame] registration 適用: origin=({originXZ.x:F3},{originXZ.y:F3}) yaw={yawDeg:F1}°");
+                _maxResidualM = data.maxResidualM;   // 旧ファイルは 0（JsonUtility 欠損 default）
+                _pointCount = data.pointCount;
+                _savedAtIso = data.savedAtIso ?? "";
+                _hasRegistration = true;
+                Debug.Log($"[CourseFrame] registration 適用: origin=({originXZ.x:F3},{originXZ.y:F3}) yaw={yawDeg:F1}°" +
+                          $" (残差 {_maxResidualM:F3}m / {_pointCount}点 / 保存 {(_savedAtIso.Length > 0 ? _savedAtIso : "記録なし")})");
                 Changed?.Invoke();
             }
             catch (Exception e)
@@ -140,9 +189,19 @@ namespace FixedCamVr.Tracking
         /// <summary>現在の登録を registration.json へ保存する。</summary>
         public void SaveRegistration()
         {
+            _savedAtIso = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+            _hasRegistration = true; // 確定＝有効な登録あり（disk 書込が失敗してもセッション内は有効）
             try
             {
-                var data = new RegistrationData { originX = originXZ.x, originZ = originXZ.y, yawDeg = yawDeg };
+                var data = new RegistrationData
+                {
+                    originX = originXZ.x,
+                    originZ = originXZ.y,
+                    yawDeg = yawDeg,
+                    maxResidualM = _maxResidualM,
+                    pointCount = _pointCount,
+                    savedAtIso = _savedAtIso,
+                };
                 File.WriteAllText(RegistrationPath, JsonUtility.ToJson(data));
             }
             catch (Exception e)

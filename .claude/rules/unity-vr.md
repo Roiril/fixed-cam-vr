@@ -137,24 +137,29 @@ Normal / Registration）。左手・スティック・cue 試射・操作チー�
 
 | 操作 | 機能 |
 |---|---|
-| **右トリガー 2 秒長押し** | 登録モード開始（2026-07-20〜。Normal からの唯一の入場） |
-| A（右）で点 1..N | **show.json `layout.regPoints` の点（2〜5・順序つき・Web 卓フロアマップの「📍 位置合わせ点」で配置）を順にタッチ**。床の×印テープの真上に先端をかざして A を 0.5 秒ホールド（位置サンプル平均・壁に触る必要なし）。regPoints 不在の旧 show.json は従来既定 2 点 (-0.5,0.5)/(0.5,0.5) にフォールバック |
+| **右トリガー 2 秒長押し** | 登録モード開始（2026-07-20〜。Normal からの唯一の入場）。**有効な登録が既にあれば Review（確認）フェーズに着地**、未登録なら点 1 の Capture から始まる（2026-07-21〜） |
+| Review: A（右） | 点 1 から再登録（Capture へ）。ワイヤーが実物に重ならない＝ズレている時に押す |
+| Review: B（右） | 保存せず終了（既存登録は不変。`RegistrationConfirmed` は発火しない） |
+| A（右）で点 1..N | **show.json `layout.regPoints` の点（2〜5・順序つき・Web 卓フロアマップの「📍 位置合わせ点」で配置）を順にタッチ**。床の×印テープの真上に先端をかざして A を 0.5 秒ホールド（位置サンプル平均・壁に触る必要なし）。**ホールド中は進捗バー `計測中 ▓▓▓░░ 0.3/0.5s` + 触覚 HoldTick ランプ**（2026-07-21〜）。0.5 秒未満で離すと不成立＝触覚 Error。regPoints 不在の旧 show.json は従来既定 2 点 (-0.5,0.5)/(0.5,0.5) にフォールバック |
 | （ライブ表示） | 2 点目以降は「直前の点との実測距離 vs authored 距離の誤差 %」を表示しながら当てられる |
-| （自動チェック） | N 点の 2D 剛体フィット（`RigidFit2D`・2 点時は従来解と同一）後、**max 残差 > 0.12m（maxResidualM）なら「どの点のタッチが悪いか」を表示してやり直し** |
-| Verify: B（右） | **確定**（`persistentDataPath/registration.json` へ保存 + モード終了） |
+| （自動チェック） | N 点の 2D 剛体フィット（`RigidFit2D`・2 点時は従来解と同一）後、**max 残差 > 0.12m（maxResidualM）なら「どの点のタッチが悪いか」を表示してやり直し**（触覚 Error）。通過したら Verify へ（触覚 Fire） |
+| Verify: （表示） | 1 行目に **`最大残差 0.05m（合格 ≤0.12m）`** を表示（2026-07-21〜） |
+| Verify: B（右） | **確定**（`persistentDataPath/registration.json` へ保存 + モード終了）。残差・点数・保存日時も焼き込む |
 | Verify: A（右） | 最初からやり直し（ステップ1へ戻る） |
 | Verify: 右トリガー 2 秒長押し | キャンセル退場 |
 
 - **スティックナッジ（平行移動・yaw 微調整）は廃止**（2026-07-20）。N 点剛体フィット + 残差ガード 0.12m が精度を担保し、やり直しが約 10 秒で安いため。
 - **先端位置は RightHandAnchor の position をそのまま使う**（先端オフセット補正なし。誤差 2〜3cm は 1m ベースライン + 40cm 回廊 + 8cm オーバーラップに対して許容）。SerializeField `rightHandTransform`、null なら headTransform にフォールバック。
 - **登録直後にワイヤーフレーム検証表示**：壁ポリライン（L の 2 辺・高さ既定 1m）+ フロア外周を LineRenderer でゴースト表示。show.json layout に wall/floor があればそれを、無ければ内蔵既定（フロア 1.8×1.8・regPoint から導出）を描く。ワイヤーは毎フレーム CourseFrame 変換に追従。
-- **視界内ガイダンス**：自前 TextMesh は持たず、各ステップの指示を `GuidanceText` / `GuidanceColor` として公開し、単一サーフェス [`StatusHud`](../../Assets/Scripts/Diagnostics/StatusHud.cs) が登録中に読み取って強制表示する（旧 [CourseRegGuidance] TextMesh は廃止・Tracking→Diagnostics の asmdef 依存を作らないプロバイダ方式）。save は B 確定でのみ registration.json を書く。
+- **視界内ガイダンス**：自前 TextMesh は持たず、各ステップの指示を `GuidanceText` / `GuidanceColor` として公開し、単一サーフェス [`StatusHud`](../../Assets/Scripts/Diagnostics/StatusHud.cs) が登録中に読み取って強制表示する（旧 [CourseRegGuidance] TextMesh は廃止・Tracking→Diagnostics の asmdef 依存を作らないプロバイダ方式）。save は B 確定でのみ registration.json を書く。文言のフォーマットは純関数 [`RegistrationGuidance`](../../Assets/Scripts/Tracking/RegistrationGuidance.cs)（進捗バー・残差行・Review ヘッダ）に切り出し EditMode テスト（`RegistrationGuidanceTests`）で固定。
+- **確認（Review）フェーズ**（2026-07-21〜）：確定後でも位置ズレを見直せる道。登録開始時に `CourseFrame.HasRegistration`（json ロード済み or 今セッション確定済み）なら Capture でなく Review に着地し、既存登録のワイヤーフレーム + ゾーン床フットプリント + ヘッダ `登録済みの位置合わせを表示中（保存: <日時> / 残差 <X.XXm> / <N>点）` を出す。A=点 1 から再登録 / B=保存せず終了。recenter フラグが立っていれば橙で「⚠トラッキング原点が変わっています — 再登録を推奨」を追加。
+- **登録品質・鮮度の永続化**（2026-07-21〜）：`registration.json` に `maxResidualM` / `pointCount` / `savedAtIso`（ローカル時刻 ISO）を追加（JsonUtility 欠損 default で後方互換・旧ファイルは「記録なし」表示）。`CourseFrame` が `HasRegistration` / `MaxResidualM` / `PointCount` / `SavedAtIso` を公開し、Review 表示と StatusHud のステータス行バッジ（`⚠未登録` / `登録済(残差0.05m)`・`⚠要再登録` 優先）に使う。
 - **登録モード中はゾーン床フットプリント表示**（現存 PlayerZone をカメラ別色で床投影）。通常のボタン操作（カメラ切替・ステータス）は抑止される。
 - **OS recenter 検知**（Oculus ボタン長押し等でトラッキング原点が変わる）：OvrControllerBridge が `OVRManager.display.RecenteredPose` を購読 → `CourseFrame.MarkNeedsReRegistration()` で「要再登録」フラグ + 警告ログ + 視界警告を出す。**ゾーン動作は継続**（黙ってズレたまま動かさない、が目的）。再登録すればフラグは降りる。
 - **PlayerZone は OBB（向き付きボックス）**: `Contains` はワールド差分をゾーンローカル軸（`transform.rotation`）へ射影して判定する。rotation が identity のときは従来 AABB と完全一致（既存テストもそのまま pass）。CourseFrame の yaw が各生成ゾーンの向きに乗る。
 - 保存先は**端末ローカル**（Quest なら `/sdcard/Android/data/com.roiril.mawarimi/files/registration.json`）。1 変換（originXZ + yawDeg）のみを持つ。旧 `zone_calibration.json`（ゾーン個別の形状保存）は**廃止**。
 - 入力は OvrBridge → `CourseRegistrationController.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）。
-- **⚠ Phase 3（HMD 登録）は実装済み・実機未検証**（2026-07-16）。現地 L 壁で 2 点タッチ → ワイヤー重なり → 確定の一連を実機確認すること。show.json layout エディタ（Web 卓・Phase 2）は別作業。
+- **⚠ Phase 3（HMD 登録）は実装済み・実機未検証**（2026-07-16、フィードバック改修 2026-07-21）。現地 L 壁で 2 点タッチ → ワイヤー重なり → 確定の一連、および再入場での Review 着地・サンプル進捗バー/触覚・残差表示を実機確認すること。show.json layout エディタ（Web 卓・Phase 2）は別作業。
 
 ### コントローラ触覚（振動）フィードバック（2026-07-21〜）
 

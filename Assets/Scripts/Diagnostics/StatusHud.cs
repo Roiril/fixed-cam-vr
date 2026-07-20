@@ -281,7 +281,22 @@ namespace FixedCamVr.Diagnostics
                 if (switchDirector.Dipping) sb.Append(" SW:dip");
                 else if (switchDirector.SwitchSuppressed) sb.Append(" SW:hold");
             }
-            if (courseFrame != null && courseFrame.NeedsReRegistration) sb.Append("  ⚠要再登録");
+            // 登録状態バッジ（要再登録 > 未登録 > 登録済(残差) の優先順位で 1 つだけ）。
+            if (courseFrame != null)
+            {
+                if (courseFrame.NeedsReRegistration) sb.Append("  ⚠要再登録");
+                else if (!courseFrame.HasRegistration) sb.Append("  ⚠未登録");
+                else
+                {
+                    sb.Append("  登録済");
+                    if (courseFrame.MaxResidualM > 0f)
+                    {
+                        sb.Append("(残差");
+                        sb.Append(courseFrame.MaxResidualM.ToString("0.00"));
+                        sb.Append("m)");
+                    }
+                }
+            }
 
             // 行4: Rコン接続 / 未接続（未接続は目立たせる。押しても振動しない時の切り分け＝streamer 層でなく
             // コントローラ電池切れ / スリープ / ペアリング落ちを疑うための表示）。
