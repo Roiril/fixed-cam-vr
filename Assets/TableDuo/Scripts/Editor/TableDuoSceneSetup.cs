@@ -207,7 +207,7 @@ namespace TableDuoVr.EditorTools
             PlaceAlgo(gameAlgo.transform, topY, cx, cz, hx, hz);
             BakeStowedState(gameAlgo);
 
-            // ゲーム 2: ガイスター（盤 + 駒 青4/赤4・リリース時セルスナップ）。ベイク時 stow
+            // ゲーム 2: ガイスター（盤 + 駒 各席 青4/赤4 計 16・リリース時セルスナップ）。ベイク時 stow
             var gameGeister = new GameObject("Game_geister");
             gameGeister.transform.SetParent(props.transform, false);
             PlaceGeister(gameGeister.transform, topY, cx, cz, hx, hz);
@@ -600,8 +600,9 @@ namespace TableDuoVr.EditorTools
         /// <summary>
         /// 卓上にボードゲーム「ガイスター」を配置（2026-07-20）。
         /// 盤（390mm 四方・6×6 マスはテクスチャ表現）は掴み・物理なしの静置。
-        /// 駒は青4+赤4（各席 2+2・model-lab ghost_blue/ghost_red.glb）を中央 4 列 × 自陣端の行へ
-        /// 初期配置（geister-set の 8+8 を 4+4 へ縮約。実プレイは各自が伏せて並べ替える前提のデモ初期形）。
+        /// 駒は各席 8 体（青4+赤4・model-lab ghost_blue/ghost_red.glb・計 16 体）を
+        /// geister-set と同じ中央 4 列 × 自陣 2 行へ初期配置
+        ///（色は市松の混成。実プレイは各自が伏せて並べ替える前提のデモ初期形）。
         /// 駒は物理なし（Rigidbody なし = kinematic 追従のみ）+ GeisterPieceSnap:
         /// 盤上リリースは最寄り空きセルへ吸着し正面を相手方向へ固定（裏の色マーカー秘匿）、
         /// 盤外リリースは直立化のみで yaw 自由（捕獲駒の裏面確認用）。
@@ -627,17 +628,20 @@ namespace TableDuoVr.EditorTools
             float[] cols = { -1.5f, -0.5f, 0.5f, 1.5f }; // 中央 4 列（両端の列は脱出コーナー分を空ける）
             for (int seat = 0; seat < 2; seat++)
             {
-                // 自陣端の行（seat0 = -Z 側）。相手方向 = 席 forward（seat0: +Z / seat1: -Z）
-                float rowZ = cz + (seat == 0 ? -2.5f : 2.5f) * cellPitch;
+                // 自陣 2 行（geister-set と同配置。seat0 = -Z 側）。相手方向 = 席 forward（seat0: +Z / seat1: -Z）
                 float opponentYaw = seat == 0 ? 0f : 180f;
-                for (int i = 0; i < 4; i++)
+                float yaw = Mathf.Repeat(opponentYaw - ghostFrontYaw, 360f);
+                for (int i = 0; i < 8; i++)
                 {
-                    bool blue = ((i + seat) % 2) == 0; // 交互配色（席ごと 2+2・計 青4+赤4）
-                    float yaw = Mathf.Repeat(opponentYaw - ghostFrontYaw, 360f);
+                    int col = i % 4;
+                    int row = i / 4; // 0=端の行（±2.5）/ 1=その内側（±1.5）
+                    float rowZ = cz + (seat == 0 ? -1f : 1f) * (2.5f - row) * cellPitch;
+                    // 市松の交互配色 = 各席 青4+赤4 の混成（実プレイは各自が伏せて並べ替える前提のデモ初期形）
+                    bool blue = ((col + row + seat) % 2) == 0;
                     var piece = PlaceModelRealScale(
                         $"{GeisterGlbDir}/{(blue ? "ghost_blue" : "ghost_red")}.glb", parent,
                         $"GEISTER_s{seat}_{(blue ? "blue" : "red")}_{i}",
-                        new Vector3(cx + cols[i] * cellPitch, boardTopY, rowZ), yaw,
+                        new Vector3(cx + cols[col] * cellPitch, boardTopY, rowZ), yaw,
                         grabbable: true, scale: ghostScale);
                     if (piece == null) continue;
                     SetSurfaceClamp(piece, topY, cx, cz, hx, hz);
