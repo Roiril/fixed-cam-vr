@@ -207,15 +207,21 @@ namespace TableDuoVr.EditorTools
             PlaceAlgo(gameAlgo.transform, topY, cx, cz, hx, hz);
             BakeStowedState(gameAlgo);
 
+            // ゲーム 2: ガイスター（盤 + 駒 青4/赤4・リリース時セルスナップ）。ベイク時 stow
+            var gameGeister = new GameObject("Game_geister");
+            gameGeister.transform.SetParent(props.transform, false);
+            PlaceGeister(gameGeister.transform, topY, cx, cz, hx, hz);
+            BakeStowedState(gameGeister);
+
             // ランタイム切替（in-scene NetworkObject）。ホスト UI（FacilitatorPanel）/ mark?label=game_<id> が叩く
             var switcherGo = new GameObject("GameSwitcher");
             switcherGo.transform.SetParent(root.transform, false);
             switcherGo.AddComponent<NetworkObject>();
             var gameSwitcher = switcherGo.AddComponent<GameSwitcher>();
             WireGameSwitcher(gameSwitcher,
-                new[] { gameDsa, gameAlgo },
-                new[] { "dsa", "algo" },
-                new[] { "海底探検", "アルゴ" });
+                new[] { gameDsa, gameAlgo, gameGeister },
+                new[] { "dsa", "algo", "geister" },
+                new[] { "海底探検", "アルゴ", "ガイスター" });
 
             // 協調配置課題の目標パネル（手役ローカルのみ表示）
             CreatePatternPanel(root.transform);
@@ -586,6 +592,66 @@ namespace TableDuoVr.EditorTools
                     slots[i].pos, slots[i].yaw, grabbable: true, scale: cardScale, physics: true,
                     faceDown: true);
                 SetSurfaceClamp(card, topY, cx, cz, hx, hz);
+            }
+        }
+
+        private const string GeisterGlbDir = "Assets/TableDuo/ThirdParty/Geister/glb";
+
+        /// <summary>
+        /// 卓上にボードゲーム「ガイスター」を配置（2026-07-20）。
+        /// 盤（390mm 四方・6×6 マスはテクスチャ表現）は掴み・物理なしの静置。
+        /// 駒は青4+赤4（各席 2+2・model-lab ghost_blue/ghost_red.glb）を中央 4 列 × 自陣端の行へ
+        /// 初期配置（geister-set の 8+8 を 4+4 へ縮約。実プレイは各自が伏せて並べ替える前提のデモ初期形）。
+        /// 駒は物理なし（Rigidbody なし = kinematic 追従のみ）+ GeisterPieceSnap:
+        /// 盤上リリースは最寄り空きセルへ吸着し正面を相手方向へ固定（裏の色マーカー秘匿）、
+        /// 盤外リリースは直立化のみで yaw 自由（捕獲駒の裏面確認用）。
+        /// ルール裁定はコード化しない（既存方針）。
+        /// </summary>
+        private static void PlaceGeister(Transform parent, float topY, float cx, float cz,
+            float hx, float hz)
+        {
+            const float ghostScale = 1.6f;       // ピンチ精度基準（チップ類と同率）
+            const int cells = 6;
+            const float lift = 0.0005f;          // 接地面との z-fighting 回避の微小浮かせ
+            // glTFast 取込後の正面補正: 取込直後は顔が transform -Z を向く（Blender +Y 正面 → glTF -Z。
+            // TablePreview 実測 2026-07-20）。blue/red 単体 GLB に焼き込み向き差は無い
+            //（180° 回転は model-lab geister-set の組立時のみ）
+            const float ghostFrontYaw = 180f;
+
+            var board = PlaceModelRealScale($"{GeisterGlbDir}/geister.glb", parent, "GEISTER_board",
+                new Vector3(cx, topY, cz), 0f, grabbable: false);
+            float boardTopY = (board != null ? WorldBounds(board).max.y : topY + 0.002f) + lift;
+            // セルピッチは盤の実測幅から導出（盤 GLB の差し替え・スケール変更に追従。公称 390mm ÷ 6 = 65mm）
+            float cellPitch = (board != null ? WorldBounds(board).size.x : 0.390f) / cells;
+
+            float[] cols = { -1.5f, -0.5f, 0.5f, 1.5f }; // 中央 4 列（両端の列は脱出コーナー分を空ける）
+            for (int seat = 0; seat < 2; seat++)
+            {
+                // 自陣端の行（seat0 = -Z 側）。相手方向 = 席 forward（seat0: +Z / seat1: -Z）
+                float rowZ = cz + (seat == 0 ? -2.5f : 2.5f) * cellPitch;
+                float opponentYaw = seat == 0 ? 0f : 180f;
+                for (int i = 0; i < 4; i++)
+                {
+                    bool blue = ((i + seat) % 2) == 0; // 交互配色（席ごと 2+2・計 青4+赤4）
+                    float yaw = Mathf.Repeat(opponentYaw - ghostFrontYaw, 360f);
+                    var piece = PlaceModelRealScale(
+                        $"{GeisterGlbDir}/{(blue ? "ghost_blue" : "ghost_red")}.glb", parent,
+                        $"GEISTER_s{seat}_{(blue ? "blue" : "red")}_{i}",
+                        new Vector3(cx + cols[i] * cellPitch, boardTopY, rowZ), yaw,
+                        grabbable: true, scale: ghostScale);
+                    if (piece == null) continue;
+                    SetSurfaceClamp(piece, topY, cx, cz, hx, hz);
+                    var snap = piece.AddComponent<GeisterPieceSnap>();
+                    var so = new SerializedObject(snap);
+                    var pv = so.FindProperty("boardCenterX"); if (pv != null) pv.floatValue = cx;
+                    pv = so.FindProperty("boardCenterZ"); if (pv != null) pv.floatValue = cz;
+                    pv = so.FindProperty("boardTopY"); if (pv != null) pv.floatValue = boardTopY;
+                    pv = so.FindProperty("tableTopY"); if (pv != null) pv.floatValue = topY + lift;
+                    pv = so.FindProperty("cellPitch"); if (pv != null) pv.floatValue = cellPitch;
+                    pv = so.FindProperty("onBoardYawDeg"); if (pv != null) pv.floatValue = yaw;
+                    var pi = so.FindProperty("cellsPerSide"); if (pi != null) pi.intValue = cells;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                }
             }
         }
 

@@ -29,6 +29,41 @@ namespace TableDuoVr.EditorTools
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Table + Remy seated", priority = 215)]
         public static void CaptureWithRemy() => CaptureInternal(withRemy: true);
 
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Table (Geister)", priority = 216)]
+        public static void CaptureGeister() => CaptureWithActiveGame("Game_geister");
+
+        /// <summary>
+        /// stow ベイクで不可視のゲームを撮影中だけ表示に入れ替えて撮る（他ゲームは非表示化）。
+        /// GameSwitcher のランタイム挙動には触れず Renderer.enabled のみ往復する。
+        /// </summary>
+        private static void CaptureWithActiveGame(string gameRootName)
+        {
+            var props = GameObject.Find("[TableDuo]/Props");
+            if (props == null)
+            {
+                Debug.LogWarning("[TablePreview] [TableDuo]/Props が見つからない（Setup 済みか確認）");
+                return;
+            }
+            var restore = new List<(Renderer r, bool enabled)>();
+            try
+            {
+                foreach (Transform game in props.transform)
+                {
+                    bool show = game.name == gameRootName;
+                    foreach (var r in game.GetComponentsInChildren<Renderer>(true))
+                    {
+                        restore.Add((r, r.enabled));
+                        r.enabled = show;
+                    }
+                }
+                CaptureInternal(withRemy: false);
+            }
+            finally
+            {
+                foreach (var (r, enabled) in restore) if (r != null) r.enabled = enabled;
+            }
+        }
+
         private static void CaptureInternal(bool withRemy)
         {
             var table = GameObject.Find("[TableDuo]/Table") ?? GameObject.Find("Table");

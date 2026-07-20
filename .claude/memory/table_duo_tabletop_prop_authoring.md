@@ -72,6 +72,7 @@ SetSurfaceClamp(piece, topY, cx, cz, hx, hz);   // ← 掴めるプロップは�
 
 判断:
 - 転がす/投げる/倒す＝**物理**（`physics:true`）。ただの位置マーカーで動かすだけ＝kinematic でも可（が、統一感のため基本は物理に寄せる）。
+- **グリッド盤ゲームの駒＝物理なし + スナップサイドカーが正解**（2026-07-20 ガイスターで確立）: `physics:false` はリリース後に物理が一切介入しない（`ReleaseToPhysics` が即 return）ので「離した姿勢がそのまま静止」＝転がり防止が構造的に保証され、リリース時に transform を確定するスナップと完全に相性が良い。実装形は [GeisterPieceSnap](../../Assets/TableDuo/Scripts/Net/GeisterPieceSnap.cs)（DiceRoller 同型の IsHeld 遷移ポーリング → 純ロジック [GeisterSnapLogic](../../Assets/TableDuo/Scripts/Net/GeisterSnapLogic.cs) で盤上=最寄り空きセル吸着+固定 yaw / 盤外=直立化のみ、占有セルは現姿勢から都度導出＝状態レス）。盤も掴み不要なら `grabbable:false` で素置きできる（BoardReset/GameSwitcher は Grabbable 走査なので勝手に対象外になる）。
 - **`TableProps` レイヤーで手・アバターと衝突させないのは必須**。トラッキングの手にコライダーが触れると jitter で駒が爆ぜる定番事故を防ぐため。掴みは物理接触ではなくピンチ方式（サーバ駆動）。レイヤー分離は `PiecePhysicsConfig`（Systems 常駐・起動時に自己衝突のみへ設定）が担保。
 - **⚠ 薄板の物理付与はトンネリング注意**。潜水艦ボード（3mm 薄板）を 2026-07-18 に物理統一したが、dynamic 薄板は落下・投擲で貫通し得る。薄板系を物理化したら実機で落下挙動を要確認（サイコロは CCD で対策済み、他の薄板は未対策）。
 
@@ -107,6 +108,8 @@ SetSurfaceClamp(piece, topY, cx, cz, hx, hz);   // ← 掴めるプロップは�
 
 - `Setup()` は `DeleteRoot("[TableDuo]")` 等で既知ルートを全削除 → 再構築（確認ダイアログ無し。MCP/batchmode でモーダルが Editor をブロックした実害あり）。派生値は根の定数（`TableTopHeight` 等）から自動導出。
 - 配置チューニングは **Setup 実行 → `Diagnostics/Preview Table + Remy seated`（Play 不要スクショ、[TableDuoTablePreview.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoTablePreview.cs)）→ PNG 確認** のループ。手順詳細は [[table_duo_layout_tuning]]。
+- **stow ベイクされた非デフォルトゲームは通常プレビューに写らない** → `Diagnostics/Preview Table (Geister)` の型（`CaptureWithActiveGame`＝撮影中だけ対象ゲームの Renderer を表示・他を非表示に入れ替え、finally で復元）を流用する。新ゲームを足したら同型のメニューを 1 行足すだけ。
+- **GLB モデルの正面向きはプレビュー実測で校正する**（2026-07-20 実害）: Blender +Y 正面のモデルは glTFast 取込後 **transform -Z 向き**になる（ガイスター駒で実測・yaw+180 補正で解決）。調査エージェントの変換規則推測や生成スクリプトのコメントを信じず、初回配置 → プレビュー → 目視で正面 yaw 定数を確定する。
 - **OVR シーンは Link/HMD 無しの Play がハングする**ので、Preview スクショが実質唯一の高速検証（[.claude/rules/mcp-unity.md](../rules/mcp-unity.md)）。
 - 編集 → 実行の前に `Library/ScriptAssemblies/TableDuoVr.Editor.dll` の mtime が編集後になっているか確認してから `execute_menu_item` する（非フォーカス Editor はコンパイルを遅延する。mcp-unity.md 参照）。
 
