@@ -32,6 +32,9 @@ namespace TableDuoVr.EditorTools
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Table (Geister)", priority = 216)]
         public static void CaptureGeister() => CaptureWithActiveGame("Game_geister");
 
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Table (Algo)", priority = 216)]
+        public static void CaptureAlgo() => CaptureWithActiveGame("Game_algo");
+
         /// <summary>
         /// stow ベイクで不可視のゲームを撮影中だけ表示に入れ替えて撮る（他ゲームは非表示化）。
         /// GameSwitcher のランタイム挙動には触れず Renderer.enabled のみ往復する。

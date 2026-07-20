@@ -592,6 +592,9 @@ namespace TableDuoVr.EditorTools
                     slots[i].pos, slots[i].yaw, grabbable: true, scale: cardScale, physics: true,
                     faceDown: true);
                 SetSurfaceClamp(card, topY, cx, cz, hx, hz);
+                // 静止中は kinematic で凍結（山札 16 段が dynamic のまま沈み込んで貫入するのを回避）。
+                // 掴み＝kinematic 追従・離す＝dynamic 落下は Grabbable が従来どおり切り替える
+                SetRestKinematic(card);
             }
         }
 
@@ -918,6 +921,18 @@ namespace TableDuoVr.EditorTools
             if (pC != null) pC.vector2Value = new Vector2(cx, cz);
             // 卓縁より少し内側まで許す（縁ギリギリで浮くのを防ぎつつ卓外へは出さない）
             if (pH != null) pH.vector2Value = new Vector2(hx - 0.02f, hz - 0.02f);
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>Grabbable の restKinematic を立てる（静止中は kinematic で凍結。山札の貫入回避）。</summary>
+        private static void SetRestKinematic(GameObject? go)
+        {
+            if (go == null) return;
+            var grab = go.GetComponent<Grabbable>();
+            if (grab == null) return;
+            var so = new SerializedObject(grab);
+            var p = so.FindProperty("restKinematic");
+            if (p != null) p.boolValue = true;
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 

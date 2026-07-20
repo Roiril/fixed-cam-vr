@@ -43,6 +43,13 @@ namespace TableDuoVr.Net
         private const float UntrackedReleaseSeconds = 3f;
         private float _untrackedSince = -1f;
 
+        [Header("静止時の物理モード")]
+        [Tooltip("true: 静止中は kinematic で凍結し、掴んで離した時だけ dynamic 化する。" +
+                 "山札のように薄い剛体を積む物は dynamic のままだと自重で沈み込んで貫入するため、" +
+                 "置かれている間は物理シミュレーションから外す（VR の積み重ねグラバブルの定石）。" +
+                 "掴み＝kinematic 追従・離す＝dynamic 落下は不変。TableDuoSceneSetup が山札/手札に設定")]
+        [SerializeField] private bool restKinematic;
+
         [Header("卓上拘束（TableDuoSceneSetup が設定。未設定=拘束なし）")]
         [Tooltip("天板の上面 Y。掴み追従時にピースの最下点がこれを下回らないようクランプする（テーブル貫通防止）")]
         [SerializeField] private float surfaceY = float.NegativeInfinity;
@@ -93,7 +100,24 @@ namespace TableDuoVr.Net
             {
                 _spawnPos = transform.position;
                 _spawnRot = transform.rotation;
+                // restKinematic ピースは静止状態で凍結して出す（山札の 16 段スタックが
+                // dynamic のまま自重で沈み込み・相互貫入するのを根本回避）。クライアントは
+                // NetworkRigidbody が非権威側を kinematic 化するのでサーバ側だけ設定すれば足りる
+                if (restKinematic && _rb != null) _rb.isKinematic = true;
             }
+        }
+
+        /// <summary>
+        /// restKinematic ピースを静止状態（kinematic・凍結）へ戻す（サーバ専用・保持中は無視）。
+        /// AlgoDealer の配り直し後に呼び、再配置した山札をクリーンな凍結スタックに戻す。
+        /// </summary>
+        public void ServerSettleKinematic()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsServer || _rb == null || IsHeld || !restKinematic) return;
+            _rb.velocity = Vector3.zero;
+            _rb.angularVelocity = Vector3.zero;
+            _rb.isKinematic = true;
         }
 
         /// <summary>現在の姿勢での pivot→最下点オフセット（回転で変わる）。Renderer 無しは 0。</summary>

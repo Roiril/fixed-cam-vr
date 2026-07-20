@@ -103,6 +103,9 @@ namespace TableDuoVr.Net
                     rb.position = pos;
                     rb.rotation = rot;
                 }
+                // 再配置した山札はクリーンな凍結スタックへ戻す（restKinematic ピースのみ効く）。
+                // これをしないと、一度離して dynamic 化したカードが配り直し後も沈み込む
+                card.ServerSettleKinematic();
             }
             Debug.Log($"[TableDuo] AlgoDealer: 配り直し（{n} 枚）");
         }
