@@ -7,12 +7,12 @@ namespace TableDuoVr.Tests
 {
     /// <summary>
     /// BandidoSnapLogic（バンディド札リリース時スナップの純計算）の EditMode テスト。
-    /// 格子ピッチ = カード短辺（1.2 倍後 ≈52.8mm）。GameObject 生成なしの純関数テストのみ。
+    /// 格子ピッチ = カード短辺（0.8 倍後 ≈35.2mm）。GameObject 生成なしの純関数テストのみ。
     /// 格子原点を非ゼロにして「原点前提」の隠れバグを検出できるようにする。
     /// </summary>
     public class BandidoSnapLogicTests
     {
-        private const float Pitch = 0.0528f;
+        private const float Pitch = 0.0352f;
 
         private static BandidoSnapLogic.Config DefaultConfig() => new BandidoSnapLogic.Config
         {
@@ -94,6 +94,21 @@ namespace TableDuoVr.Tests
             Assert.That(r.x, Is.EqualTo(c.gridOriginX).Within(1e-5f));
             Assert.That(r.z, Is.EqualTo(c.gridOriginZ).Within(1e-5f));
             Assert.That(r.yawDeg, Is.EqualTo(0f).Within(1e-4f));
+        }
+
+        [Test]
+        public void SnapRelease_HorizontalAtHalfCellOffset_IsBandyFixedPoint()
+        {
+            // bandy は原点シフト (cx-p/2, cz-p/2) により原点相対 (0.5p, 0.5p) に yaw90 で置かれる。
+            // この点は横置き規則 (k+0.5)p の不動点で、掴んで離しても動かないことの回帰。
+            var c = DefaultConfig();
+            var pos = new Vector3(c.gridOriginX + 0.5f * Pitch, 0.1f, c.gridOriginZ + 0.5f * Pitch);
+
+            var r = BandidoSnapLogic.SnapRelease(pos, Quaternion.Euler(0f, 90f, 0f), in c);
+
+            Assert.That(r.yawDeg, Is.EqualTo(90f).Within(1e-4f));
+            Assert.That(r.x, Is.EqualTo(pos.x).Within(1e-4f), "bandy 位置は横置き格子の不動点（動かない）");
+            Assert.That(r.z, Is.EqualTo(pos.z).Within(1e-4f));
         }
 
         [Test]

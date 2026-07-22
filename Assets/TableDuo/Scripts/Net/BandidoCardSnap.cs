@@ -21,12 +21,12 @@ namespace TableDuoVr.Net
         [Header("格子（TableDuoSceneSetup が設定。bandy 中心 = 格子原点）")]
         [SerializeField] private float gridOriginX;
         [SerializeField] private float gridOriginZ;
-        [Tooltip("格子ピッチ = カード短辺（スケール後）。長辺はその 2 倍")]
-        [SerializeField] private float cellPitch = 0.0528f;
+        [Tooltip("格子ピッチ = カード短辺（0.8 倍後 ≈35.2mm）。長辺はその 2 倍")]
+        [SerializeField] private float cellPitch = 0.0352f;
         [Tooltip("天板上面 Y（積み先が無いときの接地面）")]
         [SerializeField] private float tableTopY;
-        [Tooltip("スケール後のカード厚み（積み重ねの参考値・接地は実 bounds で行う）")]
-        [SerializeField] private float cardThickness = 0.0018f;
+        [Tooltip("スケール後のカード厚み（0.8 倍後 ≈1.2mm・積み重ねの参考値・接地は実 bounds で行う）")]
+        [SerializeField] private float cardThickness = 0.0012f;
 
         // 積み重ね判定用の全カードレジストリ（都度 FindObjectsOfType を避ける）
         private static readonly List<BandidoCardSnap> All = new();

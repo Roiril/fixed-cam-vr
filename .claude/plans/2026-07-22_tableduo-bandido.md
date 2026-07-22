@@ -23,13 +23,17 @@ model-lab のバンディド GLB（開始札 `bandy.glb` / トンネル札 `g1..
 - **全カード physics:false**（Rigidbody なし = kinematic 追従 + サイドカー）。ガイスターで確立した
   「グリッドゲーム駒 = 物理なし + スナップサイドカー」パターン。Rigidbody が無いので山札の沈み込み対策
   （restKinematic）も不要 = リリース後は物理が一切介入せず、スナップした姿勢がそのまま静止。
-- **スケール 1.2 倍**（ピンチ精度と卓面積の折衷。algo は 1.3）。スケール後 短辺 W≈52.8mm / 長辺 H≈105.6mm / 厚 1.8mm。
-  **格子ピッチ p = W**（1:2 なので長辺の 1/2）。
-- **格子スナップの数理**（[BandidoSnapLogic](../../Assets/TableDuo/Scripts/Net/BandidoSnapLogic.cs)・純ロジック・EditMode 6 本）:
-  bandy 中心 = 格子原点。u = pos - origin。
+- **スケール 0.8 倍（2/3 リスケール・卓上の収まり優先）**。スケール後 短辺 W≈35.2mm / 長辺 H≈70.4mm / 厚 1.2mm。
+  **格子ピッチ p = W**（1:2 なので長辺の 1/2）。deckLift 1.6mm / handStep 45mm も派生再計算。
+- **bandy は横向き（yaw90）+ 格子原点シフト**（修正②）: bandy を卓中央に横置きするため格子原点を **(cx-p/2, cz-p/2)** に
+  シフトし、bandy 中心 (cx,cz) を横置き規則 (k+0.5)p の**不動点**にする（原点=bandy 中心のままだと bandy が整数格子(0,0)に
+  乗り横置き規則と矛盾＝一度掴むと p/2 ずれる）。境界整合: 横置き bandy の X 境界=(k+0.5)p・Z 境界=kp、縦置きの X 境界=(k±0.5)p・
+  Z 境界=kp で同じ格子線を共有 → 縦横の辺が繋がる。BandidoSnapLogic 本体は無変更（原点は呼び出し側の焼き込み値）。
+- **格子スナップの数理**（[BandidoSnapLogic](../../Assets/TableDuo/Scripts/Net/BandidoSnapLogic.cs)・純ロジック・EditMode 8 本）:
+  格子原点はシフト値。u = pos - origin。
   - 縦置き（yaw 0/180・長辺 Z）: ux/uz → 最寄り k·p（整数格子）
   - 横置き（yaw 90/270・長辺 X）: ux/uz → 最寄り (k+0.5)·p（半セル格子）
-  - この規則で 1×2 カードは縦横どちらでもセル境界（縦置きカード右端 = origin+p/2 等）が一致し、道が繋がる。
+  - この規則で 1×2 カードは縦横どちらでもセル境界が一致し、道が繋がる。
   - yaw は水平 yaw を最寄り 90° へ丸め（`GeisterSnapLogic.ExtractYawDeg` 再利用）、[0,360) 正規化。
   - 表裏保持: `dot(rot*up, up)>=0` で表/裏を判定し、傾いたまま置かず平置き化（裏は長軸まわり 180° ロール）。
 - **Y = 積み上げ対応**（[BandidoCardSnap](../../Assets/TableDuo/Scripts/Net/BandidoCardSnap.cs)・GeisterPieceSnap 同型）:
@@ -39,12 +43,17 @@ model-lab のバンディド GLB（開始札 `bandy.glb` / トンネル札 `g1..
   `PinchGrabInteractor.FindNearestFree` を改修。半径内最寄り候補と XZ 15mm 以内の候補群のうち Y 最大へ差し替え。
   バンディド山札・アルゴ山札（真上積み）で「一番上を取る」が両方成立。**ガイスター駒 65mm / 海底探検チップ 33mm 間隔は
   15mm 許容外なので巻き込まれず挙動不変**（共通改修だが既存ゲームに副作用なし）。
-- **初期配置**: 中央に開始札 bandy（表向き・格子原点）/ 各席の手前（±0.24m）に手札 3 枚（表向き平置き・yaw seat 別）/
-  +X 端（cx+hx-0.07）に山札 25 枚（裏向き・deckLift 2.2mm 積み）。合計 1+6+25 = 32 枚。
-  カード→スロット割当は固定シード（20260722）Fisher-Yates（冪等ベイク・bandy は混ぜない）。
-- **配り直し**（[BandidoDealer](../../Assets/TableDuo/Scripts/Net/BandidoDealer.cs)・AlgoDealer 同型）:
-  開始札 `BANDIDO_bandy` をスロット捕捉から除外し、残り 31 枚を手札 6 + 山札 25 スロットへ完全ランダム permute。
-  ホスト UI「バンディド配り直し」/ `mark?label=bandido_deal`。physics:false なので velocity ゼロ化は防御的 no-op。
+- **初期配置**: 中央に開始札 bandy（横向き・表向き・格子不動点）/ 各席の手前（±0.24m）に手札 3 枚（表向き平置き・yaw seat 別）/
+  +X 端（cx+hx-0.07）に山札 25 枚（裏向き・deckLift 1.6mm 積み）。合計 1+6+25 = 32 枚。
+- **手札構成制約（修正③・bake と dealer の両方で保証）**: 各席の手札 3 枚は「l×1 + g×2」or「g×3」の 50/50。
+  - **bake**（PlaceBandido）: 固定シード（20260722）rng で各席の構成を選び、g/l プールから抽出して手札 6 スロットへ、
+    残り 25 を山札スロットへ（冪等）。
+  - **dealer**（BandidoDealer）: 同じ制約をランタイムにも。カード分類は名前 prefix（`BANDIDO_g*` / `BANDIDO_l*`）。
+    手札 vs 山札スロットの識別は**子順序に依存せず位置から**（同一 XZ を 1mm 以内で共有する 2 枚以上 = 山札スタック、
+    残り 6 個 = 手札。レイアウト変更に頑健）。各席の割当は手札 6 個を z でソートして前半/後半に分ける（cz 不要）。
+    構成選択は Unity Random で 50/50。手札スロットが 6 でない想定外時は制約なし permute へフォールバック（+警告）。
+- **配り直し導線**: ホスト UI「バンディド配り直し」/ `mark?label=bandido_deal`。開始札 `BANDIDO_bandy` は捕捉から除外。
+  physics:false なので velocity ゼロ化は防御的 no-op。
 
 ## 変更・新規ファイル
 
@@ -61,11 +70,12 @@ model-lab のバンディド GLB（開始札 `bandy.glb` / トンネル札 `g1..
 - `Assets/TableDuo/Scripts/Net/PinchGrabInteractor.cs`（FindNearestFree にスタック最上段優先）
 - `Assets/TableDuo/Scripts/Net/FacilitatorPanel.cs`（「バンディド配り直し」ボタン）
 - `Assets/TableDuo/Scripts/Net/FacilitatorMarkServer.cs`（`bandido_deal` ラベル）
-- `Assets/TableDuo/Scripts/Editor/TableDuoTablePreview.cs`（`Preview Table (Bandido)`）
+- `Assets/TableDuo/Scripts/Editor/TableDuoTablePreview.cs`（`Preview Table (Bandido)` + 天板全体を収める frame ズームアウト・全ゲーム共通）
 
 ## 検証状態
 
-- [ ] コンパイル・EditMode（新規 12 本）・Setup 再生成・TablePreview 多角度 — **親（シュビー本体）が実行**
+- [ ] コンパイル・EditMode（新規 13 本）・Setup 再生成・TablePreview 多角度 — **親（シュビー本体）が実行**
 - [ ] **Quest 実機未検証**（パラメータは全て SerializeField / 定数・現場調整前提）:
-  格子スナップの体感・カードスケール 1.2・山札位置（+X 端）・表裏保持の見え方・スタック最上段ピンチの掴み心地
+  格子スナップの体感・カードスケール 0.8・bandy 横向き・山札位置（+X 端）・表裏保持の見え方・スタック最上段ピンチの掴み心地・
+  手札構成制約（各席 l+2g or 3g）
   → [docs/table-duo/remaining-tasks.md](../../docs/table-duo/remaining-tasks.md) §C

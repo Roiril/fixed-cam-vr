@@ -75,11 +75,14 @@ namespace TableDuoVr.EditorTools
             var table = GameObject.Find("[TableDuo]/Table") ?? GameObject.Find("Table");
             Vector3 center;
             float topY;
+            float tableHx = 0.5f, tableHz = 0.4f; // 天板半径（既定・見つからない時）
             if (table != null)
             {
                 var b = CalcBounds(table);
                 center = new Vector3(b.center.x, b.max.y, b.center.z);
                 topY = b.max.y;
+                tableHx = b.extents.x;
+                tableHz = b.extents.z;
             }
             else
             {
@@ -87,6 +90,9 @@ namespace TableDuoVr.EditorTools
                 topY = 0.75f;
                 Debug.LogWarning("[TablePreview] Table が見つからないため既定位置で撮影");
             }
+            // 天板全体（+X 端の山札含む）が枠に収まるよう、天板半径に応じてカメラを引く。
+            // baseline 0.45m（旧席デザインの半径感）を 1 として拡縮。1 未満には縮めない
+            float frame = Mathf.Clamp(Mathf.Max(tableHx, tableHz) / 0.45f, 1f, 3f);
 
             string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "../Temp/TablePreview"));
             Directory.CreateDirectory(dir);
@@ -108,11 +114,11 @@ namespace TableDuoVr.EditorTools
                 light.intensity = 1.1f;
                 lightGo.transform.rotation = Quaternion.Euler(55f, -25f, 0f);
 
-                // 斜め上（人役側/手役側）・低め斜め・真上
-                Shot(cam, dir, "diag_fullside.png", center + new Vector3(0.55f, 0.75f, -0.85f), center);
-                Shot(cam, dir, "diag_handside.png", center + new Vector3(-0.55f, 0.75f, 0.85f), center);
-                Shot(cam, dir, "low_fullside.png", center + new Vector3(0.0f, 0.35f, -0.75f), center + new Vector3(0f, 0.02f, 0f));
-                Shot(cam, dir, "top.png", center + new Vector3(0f, 1.1f, 0.001f), center);
+                // 斜め上（人役側/手役側）・低め斜め・真上。オフセットを frame 倍して天板全体を収める
+                Shot(cam, dir, "diag_fullside.png", center + new Vector3(0.55f, 0.75f, -0.85f) * frame, center);
+                Shot(cam, dir, "diag_handside.png", center + new Vector3(-0.55f, 0.75f, 0.85f) * frame, center);
+                Shot(cam, dir, "low_fullside.png", center + new Vector3(0.0f, 0.35f, -0.75f) * frame, center + new Vector3(0f, 0.02f, 0f));
+                Shot(cam, dir, "top.png", center + new Vector3(0f, 1.1f * frame, 0.001f), center);
 
                 if (withRemy)
                 {
