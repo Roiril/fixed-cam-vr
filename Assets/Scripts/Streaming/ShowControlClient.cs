@@ -912,10 +912,16 @@ namespace FixedCamVr.Streaming
         [Serializable] private class CommandMsg { public string type = ""; public string id = ""; }
 
         /// <summary>
-        /// 今アクティブなカメラの cue（id = cue_&lt;camId&gt;）を ON/OFF する。コントローラのグリップ単押し等から呼ぶ。
+        /// グリップ単押しの緊急復帰トグル。**何か再生中なら無条件で停止**し、何も再生していない時だけ
+        /// 今アクティブなカメラの cue（id = cue_&lt;camId&gt;）を発火する。
+        ///
+        /// 停止を「cue_&lt;camId&gt; 一致」に依存させない理由: スケジューラ発火の別 id cue（cue_A_1 等）が
+        /// 表示中だと固定一致では stop 側に入らず、黒/演出を止められない穴があった。緊急復帰の役目を果たすため、
+        /// 再生中判定（<see cref="ScreenOverlayController.Current"/> が非 null）を最優先の無条件停止にする。
         ///
         /// - server 接続中: show.json を唯一の正に保つため、ローカルで直接 PlayCue せず /command（playCue/stopCue）を
         ///   サーバへ送る → 自分の long-poll が即座に戻り Apply が実再生/停止する（web UI 表示・heartbeat とも整合）。
+        ///   停止は id 不問の "stopCue"（空 id）。再生中かは _overlay.Current で観測する。
         /// - server 未設定 / 不通: 焼き込み・端末キャッシュの cue 定義から <see cref="ResolveCue"/> して
         ///   ScreenOverlayController を**ローカル直呼び**する（PC 不在では /command が届かず発火できない既知の穴を塞ぐ）。
         ///   CueScheduler が引くのと同じ _cues プールなので焼き込み cue はそのまま鳴る。
@@ -925,17 +931,34 @@ namespace FixedCamVr.Streaming
             if (registry == null) return;
             int idx = registry.ActiveIndex;
             if (idx < 0) return;
+
+            // 最優先: 何か再生中なら無条件停止（緊急復帰）。id 一致に依存しない。
+            bool anythingPlaying = _overlay != null && _overlay.Current != null;
+            if (anythingPlaying)
+            {
+                if (ServerReachable)
+                {
+                    SendCommand("stopCue", "");
+                    Debug.Log("[ShowControl] grip cue toggle: 再生中 -> stop（無条件）");
+                }
+                else
+                {
+                    _overlay!.StopOverlay();
+                    Debug.Log("[ShowControl] grip cue toggle (local): 再生中 -> stop（無条件）");
+                }
+                return;
+            }
+
+            // 何も再生していない → アクティブカメラの cue を発火。
             string camId = (idx < _cameras.Length && _cameras[idx] != null && !string.IsNullOrEmpty(_cameras[idx]!.id))
                 ? _cameras[idx]!.id
                 : ((char)('A' + idx)).ToString(); // long-poll 前のフォールバック（show.json は A/B/C 順）
             string cueId = $"cue_{camId}";
-            bool playingThis = _overlay != null && _overlay.Current != null && _overlay.Current.id == cueId;
 
             if (ServerReachable)
             {
-                if (playingThis) SendCommand("stopCue", "");
-                else SendCommand("playCue", cueId);
-                Debug.Log($"[ShowControl] grip cue toggle: cam={camId} -> {(playingThis ? "stop" : cueId)}");
+                SendCommand("playCue", cueId);
+                Debug.Log($"[ShowControl] grip cue toggle: cam={camId} -> {cueId}");
                 return;
             }
 
@@ -943,12 +966,6 @@ namespace FixedCamVr.Streaming
             if (_overlay == null)
             {
                 Debug.LogWarning("[ShowControl] grip cue toggle: ScreenOverlayController 不在のためローカル発火不可");
-                return;
-            }
-            if (playingThis)
-            {
-                _overlay.StopOverlay();
-                Debug.Log($"[ShowControl] grip cue toggle (local): cam={camId} -> stop");
                 return;
             }
             OverlayCueData? data = ResolveCue(cueId);

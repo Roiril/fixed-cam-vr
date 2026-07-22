@@ -186,7 +186,11 @@ namespace FixedCamVr.Streaming
                 if (gen != _playGeneration || ct.IsCancellationRequested) return; // 古い発火は破棄
                 if (mask == null)
                 {
-                    Debug.LogWarning($"[ScreenOverlay] mask load failed: {data.maskUrl} (全面差し替えで続行)");
+                    // maskUrl 指定ありでロード失敗 → 白フォールバックに落ちると全面差し替え（黒背景素材なら
+                    // live が全面黒）になる。cue を中止して live 映像を守る（動画/静止画パス両方をここで防ぐ）。
+                    // maskUrl 未指定（意図的な全面差し替え）はこの分岐に入らず従来どおり白フォールバック。
+                    Debug.LogError($"[ScreenOverlay] mask load failed: {data.maskUrl} — cue '{data.displayName}' を中止（live 維持）");
+                    return;
                 }
             }
 
@@ -246,8 +250,11 @@ namespace FixedCamVr.Streaming
         /// <summary>現在のオーバーレイをフェードアウトして停止。</summary>
         public void StopOverlay()
         {
-            if (_current == null) return;
+            // _current==null でも世代を進める。ロード await 中の cue（PlayCueAsync が _current 代入前）は
+            // _current が null のままなので、この return より前に世代を上げないと in-flight のロード完了が
+            // 生き残って stop 後に live を差し替える穴が残る。
             _playGeneration++; // ロード途中の発火も破棄
+            if (_current == null) return;
             float fade = Mathf.Max(_current.fadeOutSeconds, 1e-3f);
             _target = 0f;
             _fadeSpeed = Mathf.Max(_strength, 0.01f) / fade;

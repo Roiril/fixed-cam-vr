@@ -51,6 +51,11 @@ namespace FixedCamVr.Streaming
         private float _trackingHoldRemaining;
         private bool _trackingReported;
 
+        // 未受信カメラ（LastFrameRealtime==0・黒プレースホルダ表示中）の砂嵐カバー判定に使う。
+        // アクティブ stream の参照が変わった時刻を追跡し、そこから lostThresholdSec 超過で信号ロスト扱いにする。
+        private CameraStream? _lastActiveStream;
+        private float _activeSinceRealtime;
+
         /// <summary>強い信号ロスト（配信断・砂嵐）中か（HUD 表示用）。</summary>
         public bool SignalLost => _level > 0.5f;
 
@@ -72,14 +77,30 @@ namespace FixedCamVr.Streaming
             _material = r != null ? r.material : null;
         }
 
-        private void OnEnable() => SetLevel(0f);
+        private void OnEnable()
+        {
+            _level = 0f;
+            _lastActiveStream = null; // 次の Update でアクティブ参照を再シードさせる
+            SetLevel(0f);
+        }
+
+        private void OnDisable()
+        {
+            _level = 0f;
+            SetLevel(0f);
+        }
 
         private void Update()
         {
             float dt = Time.deltaTime;
 
             // resume-gap（pause / HMD 着脱明け）検知。既存 CameraStream.Tick と同じ閾値パターン。
-            if (Time.unscaledDeltaTime > resumeGapSec) _trackingHoldRemaining = trackingHoldSec;
+            if (Time.unscaledDeltaTime > resumeGapSec)
+            {
+                _trackingHoldRemaining = trackingHoldSec;
+                // 未受信カメラのタイマーも再シード（凍結中に進んだ実時間で即・強砂嵐化するのを防ぐ）。
+                _activeSinceRealtime = Time.realtimeSinceStartup;
+            }
             else if (_trackingHoldRemaining > 0f) _trackingHoldRemaining -= dt;
 
             bool trackingLost = _trackingReported || _trackingHoldRemaining > 0f;
@@ -87,13 +108,26 @@ namespace FixedCamVr.Streaming
             // 追従凍結（暴れ防止）。解除時 ScreenAnchor が現在ヨーから合流する。
             if (screenAnchor != null) screenAnchor.SetFollowFrozen(trackingLost);
 
+            // アクティブ stream の参照が変わったら「アクティブ化時刻」を再シードする（切替でタイマーリセット）。
+            var active = registry != null ? registry.GetActive() : null;
+            if (active != _lastActiveStream)
+            {
+                _lastActiveStream = active;
+                _activeSinceRealtime = Time.realtimeSinceStartup;
+            }
+
             // 配信断判定（suspend 中は表示を止めているだけなので数えない = トラッキング系で扱う）。
             bool signalStale = false;
-            var active = registry != null ? registry.GetActive() : null;
             if (active != null && !active.IsSuspended)
             {
                 float last = active.LastFrameRealtime;
-                if (last > 0f && Time.realtimeSinceStartup - last > lostThresholdSec) signalStale = true;
+                if (last > 0f)
+                {
+                    if (Time.realtimeSinceStartup - last > lostThresholdSec) signalStale = true;
+                }
+                // 一度もフレームを受信していないカメラ（黒プレースホルダ表示中）は last==0 で上の判定が
+                // 発火せず素の黒が露出する。アクティブ化から lostThresholdSec 超過で砂嵐に覆う。
+                else if (Time.realtimeSinceStartup - _activeSinceRealtime > lostThresholdSec) signalStale = true;
             }
 
             // 目標レベル: 配信断 = 強（1.0） / トラッキングロスト = 弱 / 通常 = 0。

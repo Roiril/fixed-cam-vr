@@ -270,6 +270,10 @@ namespace FixedCamVr.Streaming
         {
             if (registry != null && _subscribed) registry.ActiveChanged -= OnRegistryActiveChanged;
             _subscribed = false;
+            // dip 中に無効化されると _SwitchDim が黒のまま残る。解除して状態も畳んでおく。
+            SetDim(0f);
+            _dip = DipState.Idle;
+            _dipTimer = 0f;
         }
 
         // 自分の commit も含めここに来る（同値の再設定で idempotent）。Web override 等の直接切替も同期する。
@@ -403,7 +407,8 @@ namespace FixedCamVr.Streaming
 
         private void AdvanceDip()
         {
-            _dipTimer += Time.deltaTime;
+            // unscaledDeltaTime で進める（StartupFader と同流儀）。timeScale=0 で黒凍結するのを防ぐ。
+            _dipTimer += Time.unscaledDeltaTime;
             if (_dip == DipState.Down)
             {
                 float t = dipDownSec <= 0f ? 1f : Mathf.Clamp01(_dipTimer / dipDownSec);

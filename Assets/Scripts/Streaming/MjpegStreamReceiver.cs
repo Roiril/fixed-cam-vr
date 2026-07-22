@@ -75,6 +75,11 @@ namespace FixedCamVr.Streaming
         // これが立っていない OCE/ODE は「意図しない切断」なので backoff を適用する。
         private volatile bool _reconnectRequested;
 
+        // この接続試行で「接続確立（ヘッダのパース成功 = _isConnected 立ち上げ）」まで到達したか。
+        // 確立していた接続の切断は、次リトライを backoff リセット（1s）から始めるために使う。
+        // ループ毎に false へ戻す。
+        private volatile bool _connectionEstablished;
+
         public bool IsConnected => _isConnected;
         public string? LastError => _lastError;
 
@@ -135,6 +140,7 @@ namespace FixedCamVr.Streaming
             int backoffSec = 1;
             while (!ct.IsCancellationRequested)
             {
+                _connectionEstablished = false; // この試行の確立フラグをリセット
                 using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 lock (_connectionCtsLock) { _connectionCts = connectionCts; }
                 bool wasReconnectRequest = false;
@@ -163,21 +169,27 @@ namespace FixedCamVr.Streaming
                     }
                     else
                     {
+                        // 確立していた接続の切断なら backoff を 1s に戻してから倍化判定する。
+                        if (_connectionEstablished) backoffSec = 1;
                         _lastError = "connect timeout / connection aborted";
                         Debug.LogWarning($"[MJPEG] disconnected (timeout/abort). retry in {backoffSec}s");
-                        try { await Task.Delay(TimeSpan.FromSeconds(backoffSec), ct); }
+                        bool interrupted;
+                        try { interrupted = await DelayWithReconnect(backoffSec, ct); }
                         catch (OperationCanceledException) { return; }
-                        backoffSec = Math.Min(backoffSec * 2, 30);
+                        backoffSec = interrupted ? 1 : Math.Min(backoffSec * 2, 30);
                     }
                 }
                 catch (Exception ex)
                 {
+                    // 確立していた接続の切断なら backoff を 1s に戻してから倍化判定する。
+                    if (_connectionEstablished) backoffSec = 1;
                     _lastError = ex.Message;
                     _isConnected = false;
                     Debug.LogWarning($"[MJPEG] disconnected: {ex.Message}. retry in {backoffSec}s");
-                    try { await Task.Delay(TimeSpan.FromSeconds(backoffSec), ct); }
+                    bool interrupted;
+                    try { interrupted = await DelayWithReconnect(backoffSec, ct); }
                     catch (OperationCanceledException) { return; }
-                    backoffSec = Math.Min(backoffSec * 2, 30);
+                    backoffSec = interrupted ? 1 : Math.Min(backoffSec * 2, 30);
                 }
                 finally
                 {
@@ -187,6 +199,35 @@ namespace FixedCamVr.Streaming
                 {
                     Debug.Log("[MJPEG] reconnect requested, reopening connection");
                 }
+            }
+        }
+
+        /// <summary>
+        /// バックオフ待機。待機中も CTS を <see cref="_connectionCts"/> に公開し、RequestReconnect
+        /// （stall watchdog 等）が待機（最大 30s）を即座に中断できるようにする。中断されたら
+        /// _reconnectRequested を消費して true を返す（呼び出し側は backoffSec=1 で即リトライ）。
+        /// 外側 ct（Dispose）由来の cancel は OperationCanceledException として上へ伝播する。
+        /// </summary>
+        private async Task<bool> DelayWithReconnect(int backoffSec, CancellationToken ct)
+        {
+            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            lock (_connectionCtsLock) { _connectionCts = waitCts; }
+            try
+            {
+                // 公開直前に立った reconnect 要求を取りこぼさない（cancel が waitCts に届く前のレース対策）。
+                if (_reconnectRequested) { _reconnectRequested = false; return true; }
+                await Task.Delay(TimeSpan.FromSeconds(backoffSec), waitCts.Token);
+                return false;
+            }
+            catch (OperationCanceledException)
+            {
+                if (ct.IsCancellationRequested) throw; // 外側 cancel（Dispose）は上へ
+                _reconnectRequested = false;           // RequestReconnect 由来: 消費して即リトライ
+                return true;
+            }
+            finally
+            {
+                lock (_connectionCtsLock) { _connectionCts = null; }
             }
         }
 
@@ -251,6 +292,7 @@ namespace FixedCamVr.Streaming
             }
 
             _isConnected = true;
+            _connectionEstablished = true; // 以降の切断は backoff リセット（次リトライ 1s）対象
             Stream readStream = stream;
             bool useChunked = string.Equals(transferEncoding.Trim(), "chunked", StringComparison.OrdinalIgnoreCase);
             if (useChunked) readStream = new ChunkedReadStream(stream);

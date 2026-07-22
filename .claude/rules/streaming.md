@@ -109,6 +109,18 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
   （shrink が overlap 帯より広いと shrink AABB を出た地点で隣ゾーンの重なり帯も抜けていてデッドバンドが消える）。grid/cuts 両経路に効く。
 - **フェイルソフト**: [`SignalLostFx`](../../Assets/Scripts/Streaming/SignalLostFx.cs) — 配信断 600ms → 砂嵐へ 150ms、
   トラッキングロスト/pause 明けは追従凍結 + 弱ノイズ → 減衰合流。体験者には「信号ロスト」に見える
+  - **未受信カメラも砂嵐で覆う**（2026-07-22）: 一度もフレームを受信していないカメラ（`LastFrameRealtime==0`・黒プレースホルダ表示中）は
+    従来の「最終フレームから経過」判定が発火せず素の黒が露出した。アクティブ stream 参照の切替時刻を追跡し、アクティブ化から
+    lostThresholdSec 超過で砂嵐化する（切替・resume-gap でタイマー再シード）。OnDisable で `_SignalLost` を 0 へ戻す
+- **cue のマスク読込失敗時は cue を中止**（2026-07-22）: [`ScreenOverlayController`](../../Assets/Scripts/Streaming/ScreenOverlayController.cs) は
+  `maskUrl` 指定ありでロード失敗した場合、白フォールバック（全面差し替え＝黒背景素材なら live 全面黒）に落ちず cue 発火を中止して live を守る
+  （動画/静止画パス両方）。maskUrl 未指定の意図的な全面差し替えは従来どおり白フォールバック。StopOverlay は `_current==null` でも世代を進めて
+  in-flight のロード完了を無効化する（stop 後に cue が復活する穴を塞ぐ）
+- **グリップ cue トグルは無条件停止優先**（2026-07-22）: [`ShowControlClient.ToggleActiveCameraCue`](../../Assets/Scripts/Streaming/ShowControlClient.cs) は
+  何か再生中（`_overlay.Current != null`）なら id 一致に依存せず無条件で停止（server 中は `stopCue` 空 id / ローカルは `StopOverlay`）。
+  スケジューラ発火の別 id cue（cue_A_1 等）が表示中でも黒/演出を確実に止められる緊急復帰。何も再生していない時だけ `cue_<camId>` を発火
+- **切替 dip は unscaledDeltaTime で進行**（2026-07-22）: `CameraSwitchDirector.AdvanceDip` は timeScale=0 で黒凍結しないよう
+  unscaledDeltaTime で進める（StartupFader と同流儀）。OnDisable で dip を解除（`_SwitchDim` を 0・状態 Idle 化）
 - **⚠ ScreenComposite の `_SwitchDim` / `_SignalLost` は post FX 数式（Web FS_POST 一致規約）の対象外**（別系統 uniform）
 - ステータス表示（[`StatusHud`](../../Assets/Scripts/Diagnostics/StatusHud.cs)）は既定 OFF（右 B で表示トグル・lap/ゾーン/次の cue/信号 ●●○/要再登録 を単一サーフェスに緩追従表示。旧 RuntimeDebugHud の STATE 行相当を統合）
 - **⚠ 実機試着未実施**（追従・フェイルソフト系パラメータは SerializeField・現場調整前提）。dwell/クールダウンは
@@ -255,6 +267,9 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 ## エラーハンドリング
 
 - 接続失敗時は **指数バックオフ**で再接続（1s → 2s → 4s、上限 30s）
+- **バックオフは接続確立でリセット**（2026-07-22）: 一度ヘッダのパースまで到達した接続の切断は、次リトライを 1s から始める（`MjpegStreamReceiver._connectionEstablished` を確立時に立て、catch でバックオフを 1s に戻してから倍化）。長時間安定した後の単発切断が 30s 待ちにならない
+- **バックオフ待機は RequestReconnect で中断可能**（2026-07-22）: バックオフ Delay 中も CTS を `_connectionCts` に公開し、stall watchdog 等の `RequestReconnect` が待機（最大 30s）を即中断して即リトライ（`DelayWithReconnect`）
+- **LoadImage 失敗時の再接続**（2026-07-22）: 壊れ JPEG 連続で `Texture2D.LoadImage` が false（texture 未更新＝黒/フリーズ）のとき受信統計を進めず、連続 30 枚 or 2 秒相当を超えたら（cooldown 明けで）強制再接続（`CameraStream`）。成功時のみ `_lastFrameTime`/seq/E2E を更新するので lag 検出・stall watchdog・SignalLostFx が沈黙しない
 - タイムアウトは 3 秒
 - `/info` `/health` 取得失敗は無視（DroidCam フォールバック互換）
 - 画面には接続状態を表示（VR 内デバッグ UI）

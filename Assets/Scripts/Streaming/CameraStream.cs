@@ -55,6 +55,14 @@ namespace FixedCamVr.Streaming
         private float _lastReconnectTime;
         private float _lastFrameTime;
 
+        // 壊れ JPEG が連続すると Texture2D.LoadImage が false を返し texture 未更新（黒/フリーズ）になる。
+        // このとき受信統計を進めないと、lag 検出・stall watchdog・SignalLostFx が「フレーム断」を検知できず
+        // 沈黙する。連続失敗が枚数 or 時間の閾値を超えたら（cooldown 明けで）強制再接続で自己修復する。
+        private const int DecodeFailReconnectCount = 30;  // 連続 30 枚（~1s @30fps）
+        private const float DecodeFailReconnectSec = 2f;   // または 2 秒相当（低 fps 用）
+        private int _decodeFailStreak;
+        private float _decodeFailSince;
+
         // /health の latestFrameAgeMs と receivedTickMs から推定する E2E 遅延（ms）。
         // 「frame が capture されてから Unity がテクスチャに上げるまで」の参考値。
         public float EstimatedLatencyMs { get; private set; }
@@ -260,19 +268,43 @@ namespace FixedCamVr.Streaming
             // バッファは swap で受け渡され、毎フレーム new は発生しない。
             if (_receiver.TryConsumeFrame(ref _scratch, out int len, out var meta) && len > 0 && _scratch != null)
             {
-                // markNonReadable=false: 連続 LoadImage 上書きで texture 再利用するため CPU 側を残す
-                _texture.LoadImage(_scratch, markNonReadable: false);
-                _recvFramesInWindow++;
-
-                if (_lastSeq != 0 && meta.seq > _lastSeq + 1)
-                    DroppedFrames += (meta.seq - _lastSeq - 1);
-                _lastSeq = meta.seq;
-                _lastFrameTime = Time.realtimeSinceStartup;
-
-                // E2E 遅延推定: /health の clockSkew 補正は無いので、ここでは「Unity 受信からテクスチャ反映」までを表示
-                if (meta.captureNs != 0)
+                // markNonReadable=false: 連続 LoadImage 上書きで texture 再利用するため CPU 側を残す。
+                // 戻り値で decode 成否を見る。壊れ JPEG は false（texture は前フレームのまま）なので、
+                // 成功時のみ受信統計を進める（false を成功として数えると健全性検知が全て沈黙する）。
+                bool decoded = _texture.LoadImage(_scratch, markNonReadable: false);
+                if (decoded)
                 {
-                    EstimatedLatencyMs = MjpegStreamReceiver.NowMs() - meta.receivedTickMs;
+                    _decodeFailStreak = 0;
+                    _recvFramesInWindow++;
+
+                    if (_lastSeq != 0 && meta.seq > _lastSeq + 1)
+                        DroppedFrames += (meta.seq - _lastSeq - 1);
+                    _lastSeq = meta.seq;
+                    _lastFrameTime = Time.realtimeSinceStartup;
+
+                    // E2E 遅延推定: /health の clockSkew 補正は無いので、ここでは「Unity 受信からテクスチャ反映」までを表示
+                    if (meta.captureNs != 0)
+                    {
+                        EstimatedLatencyMs = MjpegStreamReceiver.NowMs() - meta.receivedTickMs;
+                    }
+                }
+                else
+                {
+                    // decode 失敗を数える。連続が枚数 or 時間の閾値を超えたら強制再接続（cooldown 尊重）。
+                    float nowRt = Time.realtimeSinceStartup;
+                    if (_decodeFailStreak == 0) _decodeFailSince = nowRt;
+                    _decodeFailStreak++;
+                    bool overThreshold = _decodeFailStreak >= DecodeFailReconnectCount
+                                         || nowRt - _decodeFailSince >= DecodeFailReconnectSec;
+                    if (overThreshold && nowRt - _lastReconnectTime >= LagReconnectCooldownSec)
+                    {
+                        // ログは reconnect 発火時のみ（cooldown で >=5s 間隔）＝毎フレームは出さずスロットル済み。
+                        Debug.LogWarning($"[CameraStream] {_source.DisplayName} decode 連続失敗 " +
+                                         $"({_decodeFailStreak}枚 / {nowRt - _decodeFailSince:F1}s 壊れ JPEG). reconnecting.");
+                        _receiver.RequestReconnect();
+                        _lastReconnectTime = nowRt;
+                        _decodeFailStreak = 0;
+                    }
                 }
             }
 
