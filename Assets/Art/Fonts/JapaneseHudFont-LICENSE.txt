@@ -1,0 +1,5 @@
+﻿Source Han Sans JP Normal (SourceHanSansJP-Normal.otf)
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
+Licensed under the SIL Open Font License, Version 1.1.
+Full license text: https://github.com/adobe-fonts/source-han-sans/blob/master/LICENSE.txt
+Source: Windows installed font, imported 2026-07-22 for StatusHud Japanese glyph support.

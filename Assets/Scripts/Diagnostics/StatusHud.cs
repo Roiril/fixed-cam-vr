@@ -136,6 +136,14 @@ namespace FixedCamVr.Diagnostics
         private void Awake()
         {
             if (head == null && Camera.main != null) head = Camera.main.transform;
+
+            // 既定 LiberationSans SDF は日本語グリフを持たない（ガイダンス・ステータス行が豆腐化する）。
+            // OS フォントから日本語対応の動的 TMP フォントを生成して差し替える（失敗時は既定のまま）。
+            if (text != null)
+            {
+                var jp = JapaneseHudFont.TryGet();
+                if (jp != null) text.font = jp;
+            }
         }
 
         private void OnEnable()

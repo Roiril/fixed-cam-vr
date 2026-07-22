@@ -1,7 +1,10 @@
 #nullable enable
 using System;
 using System.IO;
+using FixedCamVr.Diagnostics;
 using FixedCamVr.Streaming;
+using FixedCamVr.Streaming.EditorTools;
+using TMPro;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -157,6 +160,10 @@ namespace FixedCamVr.Tracking.EditorTools
                         savedPaths.Add(path);
                     }
                 }
+
+                // --- HUD 検証パス（登録ガイダンス StatusHud の位置・サイズ感）---
+                // 既存 6 枚（タイル / ワイヤー）は上のループで保存済み。ここは eye アングルのみ +2 枚を足す。
+                RenderHudPass(root, cam, rt, tex, outDir, frame, ctrl, savedPaths);
             }
             catch (Exception e)
             {
@@ -183,6 +190,126 @@ namespace FixedCamVr.Tracking.EditorTools
                 foreach (string p in savedPaths) sb.AppendLine("  " + p.Replace('\\', '/'));
                 Debug.Log(sb.ToString());
             }
+        }
+
+        // 登録ガイダンス HUD（StatusHud）の位置・サイズ感を eye アングルで検証する追加パス（+2 枚）。
+        // HUD の見た目は本番と同一シーム（<see cref="MainDemoSceneSetup.CreateStatusHudVisual"/>）で組む。
+        // head = eye カメラにして、eye アングルへ置いてから SendMessage で内容解決・配置を 1 回駆動する。
+        private static void RenderHudPass(GameObject root, Camera cam, RenderTexture rt, Texture2D tex,
+            string outDir, CourseFrame frame, CourseRegistrationController ctrl,
+            System.Collections.Generic.List<string> savedPaths)
+        {
+            // head = eye カメラ。CreateStatusHudVisual は本番 CreateStatusHud と同一の見た目を組む
+            // （パネル 720x320・スケール 0.001・fontSize 34・distance 1.6 等）。
+            StatusHud hud = MainDemoSceneSetup.CreateStatusHudVisual(root.transform, cam.transform, ctrl, frame);
+            TMP_Text? hudTmp = hud.GetComponentInChildren<TMP_Text>();
+
+            // 登録モード（Capture）へ入れてガイダンスを非空にする。save:false 経路のため HasRegistration=false
+            // → Capture 着地でガイダンス「点 1/N …」が出る。SetActive は [CourseRegViz] を組み直すが、
+            // 既存 6 枚は保存済みなので影響しない。
+            if (!ctrl.IsActive) ctrl.Toggle();
+
+            Angle eye = Angles[2]; // eye アングルのみ HUD を写す（top/oblique の従来検証は汚さない）
+
+            foreach ((string stateName, Vector2 origin, float yaw) in new[]
+                     {
+                         ("identity", Vector2.zero, 0f),
+                         ("registered", RegisteredOrigin, RegisteredYawDeg),
+                     })
+            {
+                frame.SetRegistration(origin, yaw, save: false);
+
+                // HUD は head（=カメラ）の位置・ヨーに追従するので、先に eye アングルへ置いてから駆動する。
+                cam.transform.position = eye.pos;
+                cam.transform.LookAt(eye.lookAt, Vector3.up);
+
+                // 組み直された [CourseRegViz] と HUD をプレビューレイヤーへ（cullingMask 隔離）。
+                SetLayerRecursive(root, PreviewLayer);
+                LayerAllCourseRegViz();
+
+                // Edit Mode では MonoBehaviour の Update/LateUpdate が自動では走らない。SendMessage は private
+                // マジックメソッド（StatusHud.Update / LateUpdate）にも届くので、内容解決（RenderContent）と
+                // 配置（ApplyPose）を 1 回だけ手動駆動する。head 設定後に駆動 → HUD が視界内の実位置に来る。
+                // 先に controller の Update も駆動（GuidanceText がフレームループで組まれる場合に備える）。
+                ctrl.gameObject.SendMessage("Update", SendMessageOptions.DontRequireReceiver);
+                hud.gameObject.SendMessage("Update", SendMessageOptions.DontRequireReceiver);
+                hud.gameObject.SendMessage("LateUpdate", SendMessageOptions.DontRequireReceiver);
+
+                // ⚠ UGUI Canvas（TextMeshProUGUI）は Edit Mode の手動 Camera.Render() に乗らない
+                //   （active/enabled/レイヤー/視界内すべて正でも 1 文字も描かれないことを実測確認）。
+                //   実 StatusHud（本番シーム）には姿勢決定と内容解決だけをさせ、レンダは同メトリクスの
+                //   TMP 3D（TextMeshPro・RectTransform 720x320 / scale 0.001 / fontSize 34 = UGUI と同一単位）
+                //   ミラーで行う。位置・サイズ感の検証対象は姿勢とメトリクスなので忠実性は保たれる。
+                UpdateHudMirror(root, hud, hudTmp, ctrl);
+
+                Debug.Log($"[RegVizPreview] hud diag: active={ctrl.IsActive} guidanceLen={ctrl.GuidanceText?.Length ?? 0} " +
+                          $"hudPos={hud.transform.position} camPos={cam.transform.position} " +
+                          $"font={(hudTmp != null && hudTmp.font != null ? hudTmp.font.name : "null")}");
+
+                RenderToTexture(cam, rt, tex);
+                string path = Path.Combine(outDir, $"regviz_{stateName}_eye_hud.png");
+                File.WriteAllBytes(path, tex.EncodeToPNG());
+                savedPaths.Add(path);
+            }
+
+            // パネルの見かけ角を数値ログ（体感サイズの一次証拠）。パネル寸法は Canvas RectTransform 実測、
+            // 1 行高は TMP fontSize × スケール、distance は SerializeField を読み戻して二重定義を避ける。
+            var hudRt = (RectTransform)hud.transform;
+            float dist = new SerializedObject(hud).FindProperty("distance").floatValue;
+            float panelW = hudRt.rect.width * hudRt.lossyScale.x;   // 720 * 0.001 = 0.72m
+            float panelH = hudRt.rect.height * hudRt.lossyScale.y;  // 320 * 0.001 = 0.32m
+            float lineH = (hudTmp != null ? hudTmp.fontSize : 34f) * hudRt.lossyScale.y; // 34 * 0.001 ≈ 0.034m
+            float panelWDeg = 2f * Mathf.Atan2(panelW * 0.5f, dist) * Mathf.Rad2Deg;
+            float panelHDeg = 2f * Mathf.Atan2(panelH * 0.5f, dist) * Mathf.Rad2Deg;
+            float lineDeg = 2f * Mathf.Atan2(lineH * 0.5f, dist) * Mathf.Rad2Deg;
+            Debug.Log($"[RegVizPreview] hud angular: panel={panelWDeg:F1}°x{panelHDeg:F1}° line={lineDeg:F1}° " +
+                      $"(distance={dist:F2}m panel={panelW:F2}x{panelH:F2}m)");
+        }
+
+        // 実 StatusHud（UGUI）の姿勢・内容・メトリクスを TMP 3D へ写して手動レンダに乗せる。
+        // TextMeshPro(3D) も RectTransform + fontSize の単位系は UGUI と同一なので見かけサイズは等価。
+        private static TextMeshPro? _hudMirror;
+
+        private static void UpdateHudMirror(GameObject root, StatusHud hud, TMP_Text? hudTmp,
+            CourseRegistrationController ctrl)
+        {
+            if (_hudMirror == null)
+            {
+                var go = new GameObject("HudMirror3D");
+                go.transform.SetParent(root.transform, false);
+                _hudMirror = go.AddComponent<TextMeshPro>();
+                _hudMirror.alignment = TextAlignmentOptions.Center;
+                _hudMirror.enableWordWrapping = false;
+                _hudMirror.richText = true;
+                // Edit Mode では StatusHud.Awake（日本語フォント差し替え）が走らないため、ミラー側で同じ
+                // ローダを通す（実機と同じ「日本語が読める」見た目を Editor でも検証するため）。
+                var jp = FixedCamVr.Diagnostics.JapaneseHudFont.TryGet();
+                if (jp != null) _hudMirror.font = jp;
+            }
+            // TMP は ExecuteAlways で OnEnable がフォント/マテリアルを再解決するため、作成時の 1 回でなく
+            // 毎回代入し直す（Edit Mode で CJK が notdef 豆腐に化ける対策）。
+            var jpFont = FixedCamVr.Diagnostics.JapaneseHudFont.TryGet();
+            if (jpFont != null && _hudMirror.font != jpFont) _hudMirror.font = jpFont;
+
+            var hudRt = (RectTransform)hud.transform;
+            var mirrorRt = (RectTransform)_hudMirror.transform;
+            mirrorRt.sizeDelta = hudRt.sizeDelta;          // 720x320
+            mirrorRt.localScale = hudRt.localScale;        // 0.001
+            _hudMirror.transform.SetPositionAndRotation(hud.transform.position, hud.transform.rotation);
+            _hudMirror.fontSize = hudTmp != null ? hudTmp.fontSize : 34f;
+            _hudMirror.color = hudTmp != null ? hudTmp.color : Color.white;
+            string content = hudTmp != null && !string.IsNullOrEmpty(hudTmp.text) ? hudTmp.text : ctrl.GuidanceText;
+            // 動的アトラスは「メッシュ構築時に無いグリフ」を豆腐で組んでしまうことがある（実測）。
+            // 表示文字列のグリフを先に焼いてからテキストを流し込む。
+            if (_hudMirror.font != null && !string.IsNullOrEmpty(content))
+            {
+                bool ok = _hudMirror.font.TryAddCharacters(content, out string missing);
+                Debug.Log($"[RegVizPreview] font diag: {_hudMirror.font.name} addOk={ok} " +
+                          $"missing='{missing}' has床={_hudMirror.font.HasCharacter('床')}");
+            }
+            _hudMirror.text = content;
+            _hudMirror.gameObject.layer = PreviewLayer;
+            _hudMirror.ForceMeshUpdate();
         }
 
         // <repo>/tools/web-compositor/show.json の layout を読む。無い / 壊れているなら合成 grid にフォールバック。

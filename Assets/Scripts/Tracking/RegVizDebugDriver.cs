@@ -32,6 +32,10 @@ namespace FixedCamVr.Tracking
         // シーン探索までの待ち（ShowControlClient の初期化列・registry stream 生成が済むのを待つ）。
         private const float StartupDelaySec = 5f;
 
+        // フェーズ 1（登録ガイダンス表示）→ フェーズ 2（登録退場 + ステータス表示）の間隔。
+        // 親が phase1（viz ready）で 1 枚、phase2 マーカーで 2 枚目の screencap を撮るための猶予。
+        private const float Phase2DelaySec = 12f;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
@@ -96,6 +100,33 @@ namespace FixedCamVr.Tracking
             string phase = !ctrl.IsActive ? "Idle" : (frame.HasRegistration ? "Review" : "Capture");
             Debug.Log($"[RegVizDriver] viz ready (phase={phase}, active={ctrl.IsActive}, " +
                       $"origin=({frame.OriginXZ.x:F2},{frame.OriginXZ.y:F2}), yaw={frame.YawDeg:F0})");
+
+            // --- フェーズ 2: 登録退場 → StatusHud のステータス表示 ON ---
+            // 親がこの間に phase1（登録ガイダンス）の screencap を撮り、下の phase2 マーカーで 2 枚目を撮る。
+            yield return new WaitForSeconds(Phase2DelaySec);
+            try
+            {
+                // Toggle は「active → Idle」で保存せず退場する（B 確定のみが保存 = ConfirmAndExit）。
+                // 専用 Cancel API は無く、これがキャンセル退場に相当する。
+                if (ctrl.IsActive) ctrl.Toggle();
+
+                // StatusHud は Diagnostics asmdef 側（Tracking → Diagnostics の asmdef 参照は禁止）。
+                // 境界を破らないよう、型参照せず GameObject 名引き + SendMessage でステータス表示を ON にする。
+                var hudGo = GameObject.Find("StatusHud");
+                if (hudGo != null)
+                {
+                    hudGo.SendMessage("SetVisible", true, SendMessageOptions.DontRequireReceiver);
+                    Debug.Log("[RegVizDriver] phase2 status hud shown (registration exited)");
+                }
+                else
+                {
+                    Debug.LogWarning("[RegVizDriver] phase2: StatusHud 不在 — ステータス表示スキップ（フェーズ 1 は成立）");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[RegVizDriver] phase2 失敗（フェーズ 1 は成立）: {e.Message}");
+            }
         }
     }
 

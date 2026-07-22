@@ -462,6 +462,33 @@ namespace FixedCamVr.Streaming.EditorTools
             LapCounter lapCounter, CueScheduler cueScheduler, CourseFrame courseFrame,
             CourseRegistrationController registration)
         {
+            // 見た目（Canvas / TMP / 配置 SerializeField / head・registration・courseFrame 参照）は
+            // Editor プレビュー（RegistrationVizPreview の HUD 検証）と共有するため CreateStatusHudVisual に集約。
+            // ここではステータス内容ソース（registry / tracker / lap / cue / signal / switch）だけ足す。
+            var hud = CreateStatusHudVisual(parent, head, registration, courseFrame);
+            var hudSo = new SerializedObject(hud);
+            TrySetObjectRef(hudSo, "registry", registry);
+            TrySetObjectRef(hudSo, "tracker", tracker);
+            TrySetObjectRef(hudSo, "lapCounter", lapCounter);
+            TrySetObjectRef(hudSo, "cueScheduler", cueScheduler);
+            if (signalFx != null) TrySetObjectRef(hudSo, "signalFx", signalFx);
+            if (director != null) TrySetObjectRef(hudSo, "switchDirector", director);
+            hudSo.ApplyModifiedPropertiesWithoutUndo();
+
+            return hud;
+        }
+
+        /// <summary>
+        /// StatusHud の**見た目部分**（WorldSpace Canvas + CanvasScaler + TextMeshProUGUI + StatusHud
+        /// コンポーネント + 配置系 SerializeField + head / registration / courseFrame 参照）を組んで返す。
+        /// 本番シーン生成（<see cref="CreateStatusHud"/>）と Editor プレビュー（登録ガイダンス HUD の
+        /// 位置・サイズ感の机上検証）で**同一の見た目を再現するための共有シーム**。ステータス内容ソース
+        /// （registry / tracker / lap / cue / signal / switch）は含めない — 呼び出し側が足す。
+        /// パネル寸法・fontSize・配置の数値定義はこの 1 箇所だけに置く（二重定義を作らない）。
+        /// </summary>
+        public static StatusHud CreateStatusHudVisual(Transform parent, Transform head,
+            CourseRegistrationController? registration, CourseFrame? courseFrame)
+        {
             var canvasGo = new GameObject(StatusHudName);
             canvasGo.transform.SetParent(parent, worldPositionStays: false);
 
@@ -494,14 +521,8 @@ namespace FixedCamVr.Streaming.EditorTools
             var hud = canvasGo.AddComponent<StatusHud>();
             var hudSo = new SerializedObject(hud);
             TrySetObjectRef(hudSo, "text", tmp);
-            TrySetObjectRef(hudSo, "registry", registry);
-            TrySetObjectRef(hudSo, "tracker", tracker);
-            TrySetObjectRef(hudSo, "lapCounter", lapCounter);
-            TrySetObjectRef(hudSo, "cueScheduler", cueScheduler);
-            if (signalFx != null) TrySetObjectRef(hudSo, "signalFx", signalFx);
-            if (director != null) TrySetObjectRef(hudSo, "switchDirector", director);
-            TrySetObjectRef(hudSo, "courseFrame", courseFrame);
-            TrySetObjectRef(hudSo, "registration", registration);
+            if (courseFrame != null) TrySetObjectRef(hudSo, "courseFrame", courseFrame);
+            if (registration != null) TrySetObjectRef(hudSo, "registration", registration);
             TrySetObjectRef(hudSo, "head", head);
             // 緩追従・配置の既定（prefab-YAML 未反映罠を避けるため setup が明示的に書く）。
             TrySetFloat(hudSo, "distance", 1.6f);

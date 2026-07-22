@@ -3,7 +3,10 @@
     "rootNamespace": "FixedCamVr.Tracking.EditorTools",
     "references": [
         "FixedCamVr.Tracking",
-        "FixedCamVr.Streaming"
+        "FixedCamVr.Streaming",
+        "FixedCamVr.Streaming.Editor",
+        "FixedCamVr.Diagnostics",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [
         "Editor"
