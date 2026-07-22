@@ -92,14 +92,27 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
   deadzone 10° + SmoothDamp 0.3s + 角速度上限 110°/s + 逆走ガード（`YawFollowLogic` 純ロジック・テストあり）。
   提示 2.0m・中心 -8°・スクリーン 4/3 倍（角径維持）。再ロック/ロスト復帰はスナップ禁止・減衰合流
 - **切替は [`CameraSwitchDirector`](../../Assets/Scripts/Streaming/CameraSwitchDirector.cs) に一本化**:
-  クールダウン 2s・最小ショット長 2s（dwell）・**cue 再生中は自動切替凍結**・手動後 8s は自動抑止・
+  クールダウン **0.5s**・最小滞在 **0.5s**（dwell）・**cue 再生中は自動切替凍結**・手動後 8s は自動抑止・
   dip-to-black 70/100ms + `SwitchAudioCue`（音源は空スロット）。Web cameraOverride は従来どおり即時
+  - **dwell / クールダウン既定 0.5s（2026-07-22 改修）**: 旧 2s は 1.8m 四方の部屋（帯幅 ~0.45m を歩行 0.6〜1.5s で通過）に
+    過大で「歩くと切替が起きず、止まった瞬間に遅れて dip 付きで切替」の不具合を出した。`minDwellSec` / `switchCooldownSec` は
+    **非シリアライズ private**（既定 0.5s。旧 2/2 が焼き付いたシーン YAML を無効化する LongPressSec と同手法）。
+  - **現場調整 = show.json control**: `control.minDwellSec` / `control.switchCooldownSec`（Web 卓「ライブ運用」パネルの数値 2 入力）。
+    present 判定は **>0 で上書き / 0・未指定はコード既定 0.5s**（`SwitchDirectorLogic.ResolveTiming`）。ShowControlClient が
+    ライブ / 端末キャッシュ / 焼き込みのいずれからでも `ApplyTimingOverride` で Director へ流す（`CachedConfig` へ往復＝PC 不在でも生きる）。
+    ShowControlClient→Director 参照は既存シーンで未配線でも `ResolveSwitchDirector`（GetComponent→FindObjectOfType）で遅延解決。
+  - **保留キャンセル**: 保留中の目標が現在表示カメラへ戻ったら pending をクリア（境界でうろついた後に古い切替が突然 commit されない）。
+    無効カメラ index（ゾーン外・target<0・registry 範囲外）の要求は無視（現カメラ継続）。
+- **デッドバンド自動クランプ**: [`ZoneLayoutApplier`](../../Assets/Scripts/Tracking/ZoneLayoutApplier.cs) は tracker へ渡す
+  hysteresisShrink を **`min(hysteresisM, overlapM/2)`**（`ZoneLayoutSolver.ClampHysteresis`）へクランプし、逆転時に 1 回警告。
+  現 show.json（overlapM=0.08 / hysteresisM=0.12）は編集なしで実効 **0.04** になり、`Pick` の shrink 保持デッドバンドが復活する
+  （shrink が overlap 帯より広いと shrink AABB を出た地点で隣ゾーンの重なり帯も抜けていてデッドバンドが消える）。grid/cuts 両経路に効く。
 - **フェイルソフト**: [`SignalLostFx`](../../Assets/Scripts/Streaming/SignalLostFx.cs) — 配信断 600ms → 砂嵐へ 150ms、
   トラッキングロスト/pause 明けは追従凍結 + 弱ノイズ → 減衰合流。体験者には「信号ロスト」に見える
 - **⚠ ScreenComposite の `_SwitchDim` / `_SignalLost` は post FX 数式（Web FS_POST 一致規約）の対象外**（別系統 uniform）
 - ステータス表示（[`StatusHud`](../../Assets/Scripts/Diagnostics/StatusHud.cs)）は既定 OFF（右 B で表示トグル・lap/ゾーン/次の cue/信号 ●●○/要再登録 を単一サーフェスに緩追従表示。旧 RuntimeDebugHud の STATE 行相当を統合）
-- **⚠ 実機試着未実施**（パラメータは全て SerializeField・現場調整前提）。ゾーン 2 秒未満で駆け抜けると
-  dwell により切替が発生しない点に注意（minDwellSec で調整）
+- **⚠ 実機試着未実施**（追従・フェイルソフト系パラメータは SerializeField・現場調整前提）。dwell/クールダウンは
+  非シリアライズ既定 0.5s + show.json control で調整（上記）。ゾーン滞在が dwell 未満で駆け抜けると切替が発生しない点は同じ（値で調整）
 
 ## スクリーン表示モデル（固定枠 + シェーダ letterbox）
 

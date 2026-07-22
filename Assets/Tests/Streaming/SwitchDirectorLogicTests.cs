@@ -200,5 +200,71 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.Tick(5f, out int commit), Is.True);
             Assert.That(commit, Is.EqualTo(1));
         }
+
+        // ---- 部屋スケール向けの短い既定（2026-07-22 改修） ----
+
+        [Test]
+        public void Zone_ShortDwell_CommitsWhenWalkedThroughInOneSecond()
+        {
+            // 既定 dwell 0.5s: 帯幅 ~0.45m を歩行 0.6〜1.5s で抜ける想定 → 1s 滞在で切替が成立する。
+            var l = Make(dwell: SwitchDirectorLogic.DefaultDwellSec, cooldown: 0f, manualHold: 0f);
+            l.RequestZone(1, 0f);
+            Assert.That(l.Tick(0.4f, out _), Is.False);           // dwell 未達
+            Assert.That(l.Tick(1.0f, out int commit), Is.True);   // 1s 滞在で commit
+            Assert.That(commit, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Zone_WanderBackToCurrent_ClearsPending_NoStaleCommit()
+        {
+            // 境界でうろついて現カメラへ戻ると、積んでいた古い切替は commit されない。
+            var l = Make(current: 0, dwell: 0.5f, cooldown: 0f, manualHold: 0f);
+            l.RequestZone(1, 0f);      // 隣ゾーンへ踏み込む
+            l.RequestZone(0, 0.2f);    // 現カメラへ戻る（うろつき）
+            Assert.That(l.HasPendingZone, Is.False);
+            Assert.That(l.Tick(5f, out _), Is.False);
+            Assert.That(l.Current, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void Zone_CooldownActive_DelaysCommit_AndCurrentUnchanged()
+        {
+            // クールダウン中は commit を遅延し、表示カメラ（Current）は変わらない。
+            var l = Make(dwell: 0f, manualHold: 0f); // cooldown=2 を単離
+            l.NotifyExternalSwitch(0, 1.0f);          // lastSwitch=1.0, current=0
+            l.RequestZone(1, 1.0f);
+            Assert.That(l.Tick(1.5f, out _), Is.False); // 0.5 < 2 cooldown
+            Assert.That(l.Current, Is.EqualTo(0));      // 表示カメラ不変
+            Assert.That(l.Tick(3.0f, out int commit), Is.True);
+            Assert.That(commit, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Zone_InvalidTarget_DoesNothing()
+        {
+            // 無効 index（ゾーン外相当）は保留に触れず無視する。
+            var l = Make(current: 0, dwell: 0f, cooldown: 0f, manualHold: 0f);
+            l.RequestZone(-1, 0f);
+            Assert.That(l.HasPendingZone, Is.False);
+            Assert.That(l.Tick(10f, out _), Is.False);
+            Assert.That(l.Current, Is.EqualTo(0));
+        }
+
+        // ---- show.json control の present 判定（Director の ApplyTimingOverride が使う純関数） ----
+
+        [Test]
+        public void ResolveTiming_PresentJudgement()
+        {
+            Assert.That(SwitchDirectorLogic.ResolveTiming(0f, 0.5f), Is.EqualTo(0.5f));   // 未指定 → 既定
+            Assert.That(SwitchDirectorLogic.ResolveTiming(-1f, 0.5f), Is.EqualTo(0.5f));  // 負値 → 既定
+            Assert.That(SwitchDirectorLogic.ResolveTiming(1.5f, 0.5f), Is.EqualTo(1.5f)); // >0 → 採用
+        }
+
+        [Test]
+        public void Defaults_AreHalfSecond()
+        {
+            Assert.That(SwitchDirectorLogic.DefaultDwellSec, Is.EqualTo(0.5f));
+            Assert.That(SwitchDirectorLogic.DefaultCooldownSec, Is.EqualTo(0.5f));
+        }
     }
 }

@@ -114,13 +114,13 @@ namespace FixedCamVr.Tracking
                 {
                     case ZoneLayoutSolver.LayoutSource.Grid:
                         rects = SolveGridFrom(lay);
-                        hyst = lay.hysteresisM;
+                        hyst = ClampHyst(lay.hysteresisM, lay.overlapM);
                         src = $"grid {lay.grid!.cols}x{lay.grid.rows}";
                         return true;
                     case ZoneLayoutSolver.LayoutSource.Cuts:
                         ZoneLayoutSolver.ZoneLayoutInput ci = FromShowLayout(lay);
                         rects = ZoneLayoutSolver.Solve(ci);
-                        hyst = ci.hysteresisM;
+                        hyst = ClampHyst(ci.hysteresisM, ci.overlapM);
                         src = $"cuts={lay.cuts!.Length}";
                         return true;
                 }
@@ -130,11 +130,26 @@ namespace FixedCamVr.Tracking
             {
                 ZoneLayoutSolver.ZoneLayoutInput di = BuildDefaultInput();
                 rects = ZoneLayoutSolver.Solve(di);
-                hyst = di.hysteresisM;
+                hyst = ClampHyst(di.hysteresisM, di.overlapM);
                 src = "default-cuts";
                 return true;
             }
             return false;
+        }
+
+        // ヒステリシスを overlapM/2 でクランプし、逆転（hyst > overlap/2）でデッドバンドが消える構成なら
+        // 1 度だけ警告する。純関数 ZoneLayoutSolver.ClampHysteresis を全経路（grid/cuts/default）で共有する。
+        private bool _hystClampWarned;
+        private float ClampHyst(float hysteresisM, float overlapM)
+        {
+            float clamped = ZoneLayoutSolver.ClampHysteresis(hysteresisM, overlapM);
+            if (clamped < hysteresisM - 1e-4f && !_hystClampWarned)
+            {
+                _hystClampWarned = true;
+                Debug.LogWarning($"[ZoneLayoutApplier] hysteresisM {hysteresisM:F3} > overlapM/2 {overlapM * 0.5f:F3} → " +
+                                 $"デッドバンド消失を防ぐため {clamped:F3} にクランプ（show.json の overlapM/hysteresisM 逆転を確認）。");
+            }
+            return clamped;
         }
 
         private static List<ZoneLayoutSolver.ZoneRect> SolveGridFrom(ShowLayoutDef lay)

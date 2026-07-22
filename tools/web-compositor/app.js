@@ -507,6 +507,27 @@ if ($('#runStart')) {
     if (el && r && r.ok !== false) el.textContent = `▶ ラン開始（epoch ${ctrl.runEpoch}）`;
   };
 }
+// ---- カメラ切替タイミング（control.minDwellSec / switchCooldownSec）------------
+// 空 / 0 = 未指定（Unity 側でコード既定 0.5s に戻る。present 判定は Unity の ResolveTiming が >0 で行う）。
+async function loadSwitchTiming() {
+  const dEl = $('#switchDwell'), cEl = $('#switchCooldown');
+  if (!dEl || !cEl) return;
+  let ctrl = {};
+  try { ctrl = (await getState())?.control || {}; } catch { /* offline */ }
+  dEl.value = (typeof ctrl.minDwellSec === 'number' && ctrl.minDwellSec > 0) ? ctrl.minDwellSec : '';
+  cEl.value = (typeof ctrl.switchCooldownSec === 'number' && ctrl.switchCooldownSec > 0) ? ctrl.switchCooldownSec : '';
+}
+if ($('#switchTimingApply')) {
+  $('#switchTimingApply').onclick = async () => {
+    const s = await getState();
+    const ctrl = { ...(s.control || {}) };
+    ctrl.minDwellSec = parseFloat($('#switchDwell').value) || 0;
+    ctrl.switchCooldownSec = parseFloat($('#switchCooldown').value) || 0;
+    await postState({ control: ctrl });
+  };
+}
+loadSwitchTiming();
+
 if ($('#recAllRaw')) $('#recAllRaw').onclick = () => recordAll('raw');
 if ($('#recAllView')) $('#recAllView').onclick = () => recordAll('view');
 

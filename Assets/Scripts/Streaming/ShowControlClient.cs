@@ -351,6 +351,11 @@ namespace FixedCamVr.Streaming
         // （起動のたびに誤リセットしない）。
         private int _knownRunEpoch;
 
+        // カメラ切替の現場調整（control 由来。0=未指定でコード既定）。ライブ / キャッシュ / 焼き込みで更新し
+        // ApplySwitchTiming で CameraSwitchDirector へ流す。キャッシュへ往復させ PC 不在起動でも値を保つ。
+        private float _switchDwellSec;
+        private float _switchCooldownSec;
+
         /// <summary>ラン開始（runEpoch 変化）で発火する。LapCounter が購読して周回・cue をリセットする。</summary>
         public event Action? RunReset;
 
@@ -407,6 +412,9 @@ namespace FixedCamVr.Streaming
             // 直近に既知だった runEpoch。起動時にこれを「既知値」として復元し、
             // PC 不在の再起動で同一 epoch を誤リセットしない。
             public int runEpoch;
+            // カメラ切替の現場調整（control 由来）。0=未指定でコード既定。PC 不在起動でも値が生きるよう往復させる。
+            public float switchDwellSec;
+            public float switchCooldownSec;
         }
         [Serializable] private class CueDef
         {
@@ -433,6 +441,9 @@ namespace FixedCamVr.Streaming
             public bool discoveryEnabled = true;
             // 体験者 1 人分のラン識別子。Web の「ラン開始」で ++ される。変化＝周回 / cue のリセット。
             public int runEpoch;
+            // カメラ切替の現場調整（CameraSwitchDirector へ流す）。present 判定は「>0 で適用 / 0=未指定でコード既定」。
+            public float minDwellSec;
+            public float switchCooldownSec;
         }
 
         private void Awake()
@@ -474,6 +485,8 @@ namespace FixedCamVr.Streaming
             // 3) 統合後の接続先・post を一度反映（焼き込み/キャッシュのどちらが勝っても 1 回）。
             ApplyCameraEndpoints();
             ApplyPostForActive();
+            // 3.5) カメラ切替タイミング（焼き込み / キャッシュ由来。未指定なら Director がコード既定へ戻す）。
+            ApplySwitchTiming();
             // 4) 周回順・スケジュールを LapCounter / CueScheduler へ供給。
             PushCourseAndSchedule();
             // 5) layout / course が入っていれば通知（ZoneLayoutApplier / LapCounter が再取得）。
@@ -562,11 +575,26 @@ namespace FixedCamVr.Streaming
         // director があればそこを通し、無ければ従来どおり registry を直接叩く（後方互換）。
         private void SetActiveOverride(int index)
         {
-            if (switchDirector != null)
-                switchDirector.SetActiveExternal(index, CameraSwitchDirector.SwitchSource.Override);
+            var dir = ResolveSwitchDirector();
+            if (dir != null)
+                dir.SetActiveExternal(index, CameraSwitchDirector.SwitchSource.Override);
             else
                 registry?.SetActive(index);
         }
+
+        // switchDirector 参照を遅延解決する。既存シーンの YAML に SerializeField 参照が焼かれていなくても
+        // （シーン再生成前のビルドで動く）タイミング現場調整・Override 経路を成立させるためのフォールバック。
+        // ShowControlClient は Screen GameObject（Director と同居）に付くため GetComponent が第一選択。
+        private CameraSwitchDirector? ResolveSwitchDirector()
+        {
+            if (switchDirector == null)
+                switchDirector = GetComponent<CameraSwitchDirector>() ?? FindObjectOfType<CameraSwitchDirector>();
+            return switchDirector;
+        }
+
+        // control 由来のカメラ切替タイミングを Director へ流す（present 判定は Director 側の ResolveTiming）。
+        private void ApplySwitchTiming()
+            => ResolveSwitchDirector()?.ApplyTimingOverride(_switchDwellSec, _switchCooldownSec);
 
         // ラン開始（runEpoch 変化 / 現地手動）。cue 発火済みを消し、周回リセットを購読者（LapCounter）へ通知する。
         // cueScheduler.ResetRun は LapCounter 未配線でもスケジューラ単独で成立させるための直接呼び（LapCounter.ResetRun でも呼ぶが冪等）。
@@ -686,6 +714,13 @@ namespace FixedCamVr.Streaming
                 _knownRunEpoch = epoch;
                 TriggerRunReset();
             }
+
+            // 1.66) カメラ切替の現場調整（control.minDwellSec / switchCooldownSec）。
+            //       control ブロック / キー欠落時は 0 → Director 側でコード既定へ戻る（present 判定 >0）。
+            //       SaveCache より前で更新し、次回 PC 不在起動へ持ち越す。
+            _switchDwellSec = state.control?.minDwellSec ?? 0f;
+            _switchCooldownSec = state.control?.switchCooldownSec ?? 0f;
+            ApplySwitchTiming();
 
             // 端末キャッシュへ保存（次回 PC 不在起動で参照）
             SaveCache();
@@ -863,6 +898,9 @@ namespace FixedCamVr.Streaming
             }
             // 焼き込み値の runEpoch を「既知値」として取り込む（端末キャッシュがあれば後で上書きされる）。
             _knownRunEpoch = state.control?.runEpoch ?? _knownRunEpoch;
+            // 焼き込みのカメラ切替タイミング（端末キャッシュ / ライブがあれば後で上書きされる）。
+            _switchDwellSec = state.control?.minDwellSec ?? _switchDwellSec;
+            _switchCooldownSec = state.control?.switchCooldownSec ?? _switchCooldownSec;
             Debug.Log($"[ShowControl] 焼き込み show.json を適用: cameras={_cameras.Length}, " +
                       $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)}, " +
                       $"timeline={( _timeline != null ? _timeline.segments.Length : 0)}, " +
@@ -1039,6 +1077,8 @@ namespace FixedCamVr.Streaming
                     schedule = _schedule,
                     timeline = _timeline,
                     runEpoch = _knownRunEpoch,
+                    switchDwellSec = _switchDwellSec,
+                    switchCooldownSec = _switchCooldownSec,
                 };
                 File.WriteAllText(ConfigCachePath, JsonUtility.ToJson(cfg));
             }
@@ -1077,6 +1117,9 @@ namespace FixedCamVr.Streaming
                 }
                 // 既知の runEpoch を復元（この起動では発火しない = 同一 epoch の誤リセット防止）。
                 _knownRunEpoch = cfg.runEpoch;
+                // カメラ切替タイミングを復元（0=未指定でコード既定。ApplySwitchTiming は InitializeAsync が呼ぶ）。
+                _switchDwellSec = cfg.switchDwellSec;
+                _switchCooldownSec = cfg.switchCooldownSec;
                 Debug.Log($"[ShowControl] 端末キャッシュ設定を適用: {ConfigCachePath} " +
                           $"(cameras={_cameras.Length}, layout={( _layout != null ? "yes" : "no")}, " +
                           $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)}, " +

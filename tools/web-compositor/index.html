@@ -60,6 +60,13 @@
         <span class="spacer"></span>
         <button id="runStart" class="accent">▶ ラン開始（周回リセット）</button>
       </div>
+      <div class="run-bar">
+        <label class="livecue-lbl">最小滞在 <input id="switchDwell" type="number" min="0" max="5" step="0.1" placeholder="0.5"> s</label>
+        <label class="livecue-lbl">クールダウン <input id="switchCooldown" type="number" min="0" max="5" step="0.1" placeholder="0.5"> s</label>
+        <button id="switchTimingApply">切替タイミングを適用</button>
+        <span class="spacer"></span>
+        <span class="hint">空 / 0 = 未指定（Unity 既定 0.5s）。歩くと切替が起きない時は下げ、切替が忙しい時は上げる（control.minDwellSec / switchCooldownSec）。</span>
+      </div>
     </section>
 
     <section class="livecue" data-group="live">

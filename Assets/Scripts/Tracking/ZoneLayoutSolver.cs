@@ -277,6 +277,16 @@ namespace FixedCamVr.Tracking
             => hasGrid ? LayoutSource.Grid : (hasCuts ? LayoutSource.Cuts : LayoutSource.None);
 
         /// <summary>
+        /// ヒステリシス（<see cref="PlayerZoneTracker.hysteresisShrink"/>）を overlapM/2 でクランプする純関数。
+        /// 隣接ゾーンは境界で計 overlapM だけ重なる。Pick の shrink 保持が効くには shrink ≤ overlap/2 が要る
+        /// （shrink が overlap 帯より広いと、現ゾーンの shrink AABB を出た地点で既に隣ゾーンの overlap 帯も抜けていて
+        ///  デッドバンドが消え、切替が「止まるまで起きない」挙動になる）。<c>min(hysteresisM, overlapM/2)</c> を返す。
+        /// 例: overlapM=0.08 / hysteresisM=0.12 → 0.04（クランプ発動）。overlapM=0.24 / 0.12 → 0.12（据え置き）。
+        /// </summary>
+        public static float ClampHysteresis(float hysteresisM, float overlapM)
+            => Mathf.Min(Mathf.Max(0f, hysteresisM), Mathf.Max(0f, overlapM) * 0.5f);
+
+        /// <summary>
         /// show.json grid.cells（rows 本の文字列）を row-major の int 配列（-1=未割当 / 0..8=カメラ index）へ
         /// **例外を投げずに**変換する。行数≠rows / 行長≠cols / 未知文字は警告ログを出しつつ未割当扱いにする。
         /// </summary>

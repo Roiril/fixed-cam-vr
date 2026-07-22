@@ -342,5 +342,28 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(cells[2], Is.EqualTo(-1), "欠損行 → 未割当");
             Assert.That(cells[3], Is.EqualTo(-1));
         }
+
+        // ---- デッドバンド自動クランプ（hysteresis ≤ overlap/2） ----
+
+        [Test]
+        public void ClampHysteresis_OverlapSmallerThanHyst_ClampsToHalfOverlap()
+        {
+            // 現 show.json（overlapM=0.08 / hysteresisM=0.12）の逆転 → 実効 0.04 でデッドバンド復活。
+            Assert.That(ZoneLayoutSolver.ClampHysteresis(0.12f, 0.08f), Is.EqualTo(0.04f).Within(1e-5f));
+        }
+
+        [Test]
+        public void ClampHysteresis_OverlapLargeEnough_KeepsHyst()
+        {
+            Assert.That(ZoneLayoutSolver.ClampHysteresis(0.12f, 0.24f), Is.EqualTo(0.12f).Within(1e-5f)); // 境界 = 据え置き
+            Assert.That(ZoneLayoutSolver.ClampHysteresis(0.03f, 0.08f), Is.EqualTo(0.03f).Within(1e-5f)); // hyst < overlap/2
+        }
+
+        [Test]
+        public void ClampHysteresis_NegativeInputs_FloorAtZero()
+        {
+            Assert.That(ZoneLayoutSolver.ClampHysteresis(-1f, 0.08f), Is.EqualTo(0f).Within(1e-5f));
+            Assert.That(ZoneLayoutSolver.ClampHysteresis(0.12f, -1f), Is.EqualTo(0f).Within(1e-5f));
+        }
     }
 }

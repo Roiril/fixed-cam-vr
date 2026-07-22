@@ -16,6 +16,20 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public sealed class SwitchDirectorLogic
     {
+        /// <summary>ゾーン最小滞在の既定 (秒)。1.8m 四方・帯幅 ~0.45m を歩行 0.6〜1.5s で抜ける想定に合わせた値
+        /// （旧 2.0s は部屋スケールに過大で「歩くと切替が起きない」不具合の原因だった）。</summary>
+        public const float DefaultDwellSec = 0.5f;
+
+        /// <summary>切替直後の再切替ロック（クールダウン）の既定 (秒)。同上の根拠で 2.0s から短縮。</summary>
+        public const float DefaultCooldownSec = 0.5f;
+
+        /// <summary>
+        /// show.json control の present 判定。<paramref name="overrideValue"/> が正なら現場調整値を採用し、
+        /// 0 / 未指定（JsonUtility 既定 0）ならコード既定 <paramref name="defaultValue"/> へ戻す。
+        /// </summary>
+        public static float ResolveTiming(float overrideValue, float defaultValue)
+            => overrideValue > 0f ? overrideValue : defaultValue;
+
         private float _cooldownSec;
         private float _minDwellSec;
         private float _manualHoldSec;
@@ -105,6 +119,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void RequestZone(int target, float now)
         {
+            if (target < 0) return; // 無効 index（ゾーン外等）は保留に触れず無視
             if (target == _current)
             {
                 _hasPendingZone = false;
@@ -176,12 +191,14 @@ namespace FixedCamVr.Streaming
         [Tooltip("切替開始と同時に鳴らす音マスク。null なら無音。")]
         [SerializeField] private SwitchAudioCue? audioCue;
 
-        [Header("Timing (現場調整可)")]
-        [Tooltip("切替直後の再切替ロック秒（最小ショット長）。")]
-        [SerializeField, Min(0f)] private float switchCooldownSec = 2f;
-
-        [Tooltip("ゾーン自動切替の最小滞在秒（一瞬の通過で切らない）。")]
-        [SerializeField, Min(0f)] private float minDwellSec = 2f;
+        [Header("Timing")]
+        // switchCooldownSec / minDwellSec は **非シリアライズ**（既定 0.5s）。旧 2/2 が 1.8m 四方の部屋スケールに
+        // 過大で「歩くとカメラ切替が起きず、止まった瞬間に遅れて切替わる」不具合の原因だった。SerializeField だと
+        // 既存シーン YAML に焼き付いた旧 2/2 がコード既定を上書きし続けるため、LongPressSec の const 化と同じ手法で
+        // 非シリアライズ化して YAML の authored 値を無効化する。現場調整は show.json control の
+        // minDwellSec / switchCooldownSec（>0 で上書き）→ ShowControlClient → ApplyTimingOverride 経由で行う。
+        private float switchCooldownSec = SwitchDirectorLogic.DefaultCooldownSec;
+        private float minDwellSec = SwitchDirectorLogic.DefaultDwellSec;
 
         [Tooltip("手動切替後この秒数は自動切替を抑止する（手動優先）。")]
         [SerializeField, Min(0f)] private float manualHoldSec = 8f;
@@ -304,8 +321,23 @@ namespace FixedCamVr.Streaming
         /// <summary>ゾーン自動切替の要求（PlayerZoneTracker から）。dwell/cue/manualHold ガード後に適用。</summary>
         public void RequestZone(int target)
         {
+            // ゾーン外 / 無効カメラ index は無視（現カメラ表示を継続し、保留も触らない）。
+            // tracker は keepLastWhenOutside=true で null を出さない構成だが、Director 単体でも安全側に倒す。
+            if (registry == null || target < 0 || target >= registry.Count) return;
             _logic.Configure(switchCooldownSec, minDwellSec, manualHoldSec);
             _logic.RequestZone(target, Time.time);
+        }
+
+        /// <summary>
+        /// show.json control（minDwellSec / switchCooldownSec）由来のタイミング現場調整を適用する。
+        /// present 判定は <see cref="SwitchDirectorLogic.ResolveTiming"/>（&gt;0 で上書き、0/未指定はコード既定へ戻す）。
+        /// ShowControlClient がライブ long-poll / 端末キャッシュ / 焼き込みのいずれからでも呼ぶ。
+        /// </summary>
+        public void ApplyTimingOverride(float dwellSec, float cooldownSec)
+        {
+            minDwellSec = SwitchDirectorLogic.ResolveTiming(dwellSec, SwitchDirectorLogic.DefaultDwellSec);
+            switchCooldownSec = SwitchDirectorLogic.ResolveTiming(cooldownSec, SwitchDirectorLogic.DefaultCooldownSec);
+            _logic.Configure(switchCooldownSec, minDwellSec, manualHoldSec);
         }
 
         // ---- インサートショット（InsertController 用）----
