@@ -37,7 +37,9 @@ namespace FixedCamVr.Tracking
     /// <see cref="GuidanceColor"/> として公開する（単一サーフェス StatusHud が登録中に読み取って表示する。
     /// Tracking → Diagnostics の asmdef 依存を作らないためのプロバイダ方式）。要再登録警告は StatusHud が
     /// <see cref="CourseFrame.NeedsReRegistration"/> を直接読む。ワイヤーフレームとゾーン床フットプリントは
-    /// 登録モード中のみ生成・破棄する。
+    /// 登録モード中のみ生成・破棄する。床フットプリントは show.json layout.grid があれば Web 卓で塗った
+    /// 生タイル（<see cref="ZoneGridFootprint"/> の単一メッシュ）を、無ければ現存 <see cref="PlayerZone"/> の
+    /// OBB を Quad で床投影する。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CourseRegistrationController : MonoBehaviour
@@ -191,17 +193,15 @@ namespace FixedCamVr.Tracking
         private Vector2[] _markCourse = Array.Empty<Vector2>();
         private LineRenderer[] _markLines = Array.Empty<LineRenderer>(); // 2 * N 本
 
-        // ゾーン床フットプリント（登録モード中の分かりやすさ用。現存 PlayerZone を色分け表示）
+        // ゾーン床フットプリント（登録モード中の分かりやすさ用）。
+        // grid（Web 卓で塗ったタイル）がある時は ZoneGridFootprint（生タイルの単一メッシュ）を使い、
+        // grid 不在（v1 cuts / 既定ゾーン）時は現存 PlayerZone の OBB を Quad で床投影する。
+        private ZoneGridFootprint? _gridFootprint;
+        private bool _useGridFootprint;
         private PlayerZone[] _footZones = Array.Empty<PlayerZone>();
         private Transform[] _footQuads = Array.Empty<Transform>();
         private Material[] _footMats = Array.Empty<Material>();
         private bool _zonesDirty;
-
-        private static readonly Color[] Palette =
-        {
-            new(0.3f, 1f, 0.5f), new(0.35f, 0.6f, 1f), new(1f, 0.7f, 0.3f),
-            new(1f, 0.4f, 0.6f), new(0.7f, 0.5f, 1f),
-        };
 
         private void Awake()
         {
@@ -572,8 +572,29 @@ namespace FixedCamVr.Tracking
         {
             TearDownViz();
             _vizRoot = new GameObject("[CourseRegViz]");
-            _zonesDirty = true;
-            RefreshFootprints();
+
+            // grid（Web 卓で塗った生タイル）があればそれを単一メッシュで表示（PlayerZone Quad は作らない）。
+            // 無ければ従来どおり現存 PlayerZone の OBB を Quad で床投影する。
+            _useGridFootprint = HasGridTiles();
+            if (_useGridFootprint)
+            {
+                var go = new GameObject("ZoneGridFootprint");
+                go.transform.SetParent(_vizRoot.transform, worldPositionStays: false);
+                _gridFootprint = go.AddComponent<ZoneGridFootprint>();
+                _gridFootprint.Initialize(showControl, courseFrame);
+            }
+            else
+            {
+                _zonesDirty = true;
+                RefreshFootprints();
+            }
+        }
+
+        // show.json layout.grid に塗りタイルがあるか。ある間は grid 生タイル表示を優先する。
+        private bool HasGridTiles()
+        {
+            ShowLayoutDef? lay = showControl != null ? showControl.Layout : null;
+            return lay != null && lay.grid != null && lay.grid.HasData();
         }
 
         private void TearDownViz()
@@ -583,6 +604,8 @@ namespace FixedCamVr.Tracking
             _footQuads = Array.Empty<Transform>();
             _footMats = Array.Empty<Material>();
             _footZones = Array.Empty<PlayerZone>();
+            _gridFootprint = null; // 子 GameObject は _vizRoot 破棄で消える（ZoneGridFootprint.OnDestroy が購読解除）
+            _useGridFootprint = false;
             if (_vizRoot != null) Destroy(_vizRoot);
             _vizRoot = null;
         }
@@ -716,20 +739,25 @@ namespace FixedCamVr.Tracking
         {
             if (_vizRoot == null || courseFrame == null) return;
 
-            if (_zonesDirty) RefreshFootprints();
-
-            // フットプリント（現存ゾーンの OBB を床に投影）
-            for (int i = 0; i < _footZones.Length; i++)
+            // grid 生タイル表示は ZoneGridFootprint が Changed / LayoutChanged 駆動で自己更新するので、
+            // ここでは PlayerZone フットプリント（grid 不在時のみ）だけ毎フレーム追従させる。
+            if (!_useGridFootprint)
             {
-                var z = _footZones[i];
-                var q = _footQuads[i];
-                if (z == null || q == null) continue;
-                Vector3 c = z.Center;
-                q.position = new Vector3(c.x, 0.02f + i * 0.002f, c.z);
-                q.rotation = Quaternion.Euler(0f, z.Rotation.eulerAngles.y, 0f) * Quaternion.Euler(90f, 0f, 0f);
-                q.localScale = new Vector3(z.HalfExtents.x * 2f, z.HalfExtents.z * 2f, 1f);
-                Color baseColor = Palette[z.CameraIndex % Palette.Length];
-                _footMats[i].color = new Color(baseColor.r, baseColor.g, baseColor.b, 0.2f);
+                if (_zonesDirty) RefreshFootprints();
+
+                // フットプリント（現存ゾーンの OBB を床に投影）
+                for (int i = 0; i < _footZones.Length; i++)
+                {
+                    var z = _footZones[i];
+                    var q = _footQuads[i];
+                    if (z == null || q == null) continue;
+                    Vector3 c = z.Center;
+                    q.position = new Vector3(c.x, 0.02f + i * 0.002f, c.z);
+                    q.rotation = Quaternion.Euler(0f, z.Rotation.eulerAngles.y, 0f) * Quaternion.Euler(90f, 0f, 0f);
+                    q.localScale = new Vector3(z.HalfExtents.x * 2f, z.HalfExtents.z * 2f, 1f);
+                    Color baseColor = ZonePalette.ForCamera(z.CameraIndex);
+                    _footMats[i].color = new Color(baseColor.r, baseColor.g, baseColor.b, 0.2f);
+                }
             }
 
             // ワイヤーフレーム（course → world 変換で毎フレーム追従。登録変換の変化に即応）

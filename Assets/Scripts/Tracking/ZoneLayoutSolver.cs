@@ -84,6 +84,9 @@ namespace FixedCamVr.Tracking
         /// </summary>
         public struct GridLayoutInput
         {
+            // NOTE: SolveGrid はセル→course 変換を <see cref="CellRect"/>（cols·rows·tileM から NW 角アンカーで
+            // 導出）に一本化したため floorW/floorD は読まなくなった。呼び出し側の寸法検証・後方互換のため残す
+            // （Web 卓は floor = cols·tileM で grid をオーサリングするので通常一致する）。
             public float floorW;
             public float floorD;
             public float overlapM;
@@ -251,6 +254,22 @@ namespace FixedCamVr.Tracking
         // ---- v2: grid の展開 ----
 
         /// <summary>
+        /// grid セル (r,c) の course space 矩形（NW 角アンカー: col0=x=-cols·tileM/2、row0=z=+rows·tileM/2）。
+        /// <see cref="SolveGrid"/> のセル→course 変換と <see cref="ZoneGridFootprintLogic"/> の生タイル描画が
+        /// 同一式を共有するための純関数。row 0=北端（z 大）、col 0=西端（x 小）。
+        /// </summary>
+        public static void CellRect(int r, int c, int rows, int cols, float tileM,
+            out float xLo, out float xHi, out float zLo, out float zHi)
+        {
+            float halfW = cols * tileM * 0.5f;
+            float halfD = rows * tileM * 0.5f;
+            xLo = -halfW + c * tileM;
+            xHi = -halfW + (c + 1) * tileM;
+            zHi = halfD - r * tileM;
+            zLo = halfD - (r + 1) * tileM;
+        }
+
+        /// <summary>
         /// 与えられた grid/cuts の有無から使用するレイアウトソースを決める。grid 優先（cuts は後方互換）。
         /// Applier の選択ロジックを純関数に切り出したもの（単体テスト用）。
         /// </summary>
@@ -321,8 +340,6 @@ namespace FixedCamVr.Tracking
             }
 
             var consumed = new bool[rows * cols];
-            float halfW = g.floorW * 0.5f;
-            float halfD = g.floorD * 0.5f;
             float overlapHalf = Mathf.Max(0f, g.overlapM) * 0.5f;
             var camCount = new Dictionary<int, int>();
 
@@ -363,11 +380,10 @@ namespace FixedCamVr.Tracking
                         for (int cc = c; cc <= c1; cc++)
                             consumed[rr * cols + cc] = true;
 
-                    // course space へ（NW 角アンカー: col0=x=-halfW, row0=z=+halfD）。
-                    float xLo = -halfW + c * g.tileM;
-                    float xHi = -halfW + (c1 + 1) * g.tileM;
-                    float zHi = halfD - r * g.tileM;
-                    float zLo = halfD - (r1 + 1) * g.tileM;
+                    // course space へ。マージ矩形の NW 角は cell(r,c)、SE 角は cell(r1,c1) から取る
+                    // （<see cref="CellRect"/> をフットプリント表示と共有 = grid 生タイルとゾーンが同一座標式）。
+                    CellRect(r, c, rows, cols, g.tileM, out float xLo, out _, out _, out float zHi);
+                    CellRect(r1, c1, rows, cols, g.tileM, out _, out float xHi, out float zLo, out _);
 
                     int n = camCount.TryGetValue(cam, out int v) ? v : 0;
                     camCount[cam] = n + 1;
