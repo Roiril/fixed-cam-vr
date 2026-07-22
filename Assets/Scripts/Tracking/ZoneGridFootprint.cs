@@ -53,11 +53,12 @@ namespace FixedCamVr.Tracking
 
         private void EnsureComponents()
         {
+            // GetComponent は Editor で欠落時に fake null（参照非 null）を返すため ?? は使えない。
             if (_filter == null)
-                _filter = GetComponent<MeshFilter>() ?? gameObject.AddComponent<MeshFilter>();
+                _filter = TryGetComponent(out MeshFilter mf) ? mf : gameObject.AddComponent<MeshFilter>();
             if (_renderer == null)
             {
-                _renderer = GetComponent<MeshRenderer>() ?? gameObject.AddComponent<MeshRenderer>();
+                _renderer = TryGetComponent(out MeshRenderer mr) ? mr : gameObject.AddComponent<MeshRenderer>();
                 _material = new Material(Shader.Find("Sprites/Default"));
                 _renderer.sharedMaterial = _material;
                 _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -132,8 +133,16 @@ namespace FixedCamVr.Tracking
         private void OnDestroy()
         {
             Unsubscribe();
-            if (_mesh != null) Destroy(_mesh);
-            if (_material != null) Destroy(_material);
+            // Edit Mode（Editor プレビューツール）から破棄される経路があるため分岐する
+            // （Play 中でない Destroy は Unity がエラーにする）。
+            if (_mesh != null) DestroyMeshOrMaterial(_mesh);
+            if (_material != null) DestroyMeshOrMaterial(_material);
+        }
+
+        private static void DestroyMeshOrMaterial(Object o)
+        {
+            if (Application.isPlaying) Destroy(o);
+            else DestroyImmediate(o);
         }
     }
 

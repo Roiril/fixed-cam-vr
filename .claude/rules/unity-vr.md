@@ -160,6 +160,7 @@ Normal / Registration）。左手・スティック・cue 試射・操作チー�
 - 保存先は**端末ローカル**（Quest なら `/sdcard/Android/data/com.roiril.mawarimi/files/registration.json`）。1 変換（originXZ + yawDeg）のみを持つ。旧 `zone_calibration.json`（ゾーン個別の形状保存）は**廃止**。
 - 入力は OvrBridge → `CourseRegistrationController.Feed()` 転送（Tracking asmdef は OVRInput 非依存のまま）。
 - **⚠ Phase 3（HMD 登録）は実装済み・実機未検証**（2026-07-16、フィードバック改修 2026-07-21）。現地 L 壁で 2 点タッチ → ワイヤー重なり → 確定の一連、および再入場での Review 着地・サンプル進捗バー/触覚・残差表示を実機確認すること。show.json layout エディタ（Web 卓・Phase 2）は別作業。
+- **登録ビュー（ZoneGridFootprint + ワイヤーフレーム）の検証ハーネス**（2026-07-22）: (1) `Tools/FixedCamVr/Diagnostics/Preview Registration Viz`（Editor 多角度 PNG・Play 不要。show.json layout を注入し identity/登録後 × 真上/斜め/目線 を `Assets/Screenshots/regviz/` へ焼く。南北反転・変換ズレを机上で確認）、(2) `RegVizDebugDriver`（Development ビルド起動フック。`adb shell am start -e regviz 1 -n com.roiril.mawarimi/com.unity3d.player.UnityPlayerActivity` で起動 5 秒後に登録モードへ自動入場 → `adb exec-out screencap` で見た目確認。`[RegVizDriver]` タグでログ）。どちらも registration.json / show.json を書かない（`SetRegistration(save:false)` + `SetLayoutForPreview` 注入）。
 
 ### コントローラ触覚（振動）フィードバック（2026-07-21〜）
 

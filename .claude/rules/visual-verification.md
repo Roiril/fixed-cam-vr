@@ -29,6 +29,7 @@ globs:
 
 ## 具体（このプロジェクト）
 
+- 位置合わせ検証ビュー（廻リ視）: `Tools/FixedCamVr/Diagnostics/Preview Registration Viz`（ZoneGridFootprint + 登録ワイヤーフレームを identity/登録後 × 真上/斜め/目線で PNG 化 → `Assets/Screenshots/regviz/`。Play 不要・南北反転/変換ズレの机上検証）。
 - Editor 単体の多角度スクショ: `Tools/FixedCamVr/Diagnostics/Preview Hand Variants`（3種並べ）/ `Preview Robot Only`（背景排して周回）
   ＝ [TableDuoHandVariantPreview.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoHandVariantPreview.cs)。実録画データを当てるので Play 不要。
 - 新規に視覚検証ツールを書くときも「周回 / 単体隔離 / 正解と並置」を最初から入れる。

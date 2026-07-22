@@ -324,6 +324,18 @@ namespace FixedCamVr.Streaming
         /// <summary>layout（cuts/floor/overlap 等）が変わった時に発火する。</summary>
         public event Action? LayoutChanged;
 
+        /// <summary>
+        /// レイアウトを直接差し替えて <see cref="LayoutChanged"/> を発火する **Editor プレビュー / デバッグ起動フック /
+        /// テスト専用**フック。show.json を読まずに任意の <see cref="ShowLayoutDef"/> を注入して
+        /// 登録ビュー（ZoneGridFootprint / ワイヤーフレーム）を組ませるためのもの。運用コード（long-poll・
+        /// キャッシュ・焼き込み経路）からは呼ばない。ネットワーク系の状態（rev / server / heartbeat）には触れない。
+        /// </summary>
+        public void SetLayoutForPreview(ShowLayoutDef? layout)
+        {
+            _layout = layout;
+            LayoutChanged?.Invoke();
+        }
+
         /// <summary>周回巡回順（layout.course.order）。未設定なら空配列。LapCounter が読む。</summary>
         public int[] CourseOrder
             => _layout != null && _layout.course != null && _layout.course.order != null

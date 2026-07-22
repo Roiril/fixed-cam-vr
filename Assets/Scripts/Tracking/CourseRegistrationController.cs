@@ -237,6 +237,21 @@ namespace FixedCamVr.Tracking
         /// <summary>Bridge のモード遷移（Staff → Registration 入場 / 退場）から呼ばれる。登録モードの ON/OFF。</summary>
         public void Toggle() => SetActive(!IsActive);
 
+        /// <summary>
+        /// **Editor プレビュー / デバッグ起動フック用**エントリ。SetActive の状態機械を通さずに
+        /// 可視化（ゾーン床フットプリント + ワイヤーフレーム + 登録点マーカー）を 1 回だけ静的に組み、
+        /// 現在の CourseFrame 変換で 1 回配置する。Edit Mode の静的レンダ（多角度スクショ）で
+        /// 「実運用と同一の viz コードパス」を Play なしに再現する用途。通常の登録フロー（Capture/Verify/Review）
+        /// には使わない。呼ぶ前に courseFrame / showControl が注入済みであること。
+        /// </summary>
+        public void PreviewBuildViz()
+        {
+            ResolvePoints();   // Edit Mode は Start() が走らないため authored 点をここで供給
+            BuildViz();        // フットプリント（grid 生タイル or PlayerZone OBB）
+            BuildWireframe();  // 壁・フロア外周・登録点マーカー（Idle でも組めるよう非 Phase 依存で呼ぶ）
+            UpdateViz();       // 現在の CourseFrame 変換で 1 回配置
+        }
+
         // layout 更新（ライブ / キャッシュ由来）で regPoints が差し替わったら再供給する。
         // キャプチャ進行中に点数が変わると破綻するので、モード外（Idle）でのみ取り込む。
         private void OnLayoutChanged()
@@ -600,14 +615,22 @@ namespace FixedCamVr.Tracking
         private void TearDownViz()
         {
             TearDownWireframe();
-            foreach (var m in _footMats) if (m != null) Destroy(m);
+            foreach (var m in _footMats) if (m != null) DestroySafe(m);
             _footQuads = Array.Empty<Transform>();
             _footMats = Array.Empty<Material>();
             _footZones = Array.Empty<PlayerZone>();
             _gridFootprint = null; // 子 GameObject は _vizRoot 破棄で消える（ZoneGridFootprint.OnDestroy が購読解除）
             _useGridFootprint = false;
-            if (_vizRoot != null) Destroy(_vizRoot);
+            if (_vizRoot != null) DestroySafe(_vizRoot);
             _vizRoot = null;
+        }
+
+        // 可視化オブジェクトの破棄。Edit Mode（Editor プレビューツール）から TearDown 経路が呼ばれるため
+        // Play 中は Destroy、非 Play は DestroyImmediate に分岐する（非 Play の Destroy は Unity がエラーにする）。
+        private static void DestroySafe(UnityEngine.Object o)
+        {
+            if (Application.isPlaying) Destroy(o);
+            else DestroyImmediate(o);
         }
 
         private void BuildWireframe()
@@ -638,11 +661,11 @@ namespace FixedCamVr.Tracking
 
         private void TearDownWireframe()
         {
-            if (_floorLine != null) Destroy(_floorLine.gameObject);
-            if (_wallBottom != null) Destroy(_wallBottom.gameObject);
-            if (_wallTop != null) Destroy(_wallTop.gameObject);
-            foreach (var p in _wallPosts) if (p != null) Destroy(p.gameObject);
-            foreach (var m in _markLines) if (m != null) Destroy(m.gameObject);
+            if (_floorLine != null) DestroySafe(_floorLine.gameObject);
+            if (_wallBottom != null) DestroySafe(_wallBottom.gameObject);
+            if (_wallTop != null) DestroySafe(_wallTop.gameObject);
+            foreach (var p in _wallPosts) if (p != null) DestroySafe(p.gameObject);
+            foreach (var m in _markLines) if (m != null) DestroySafe(m.gameObject);
             _floorLine = null;
             _wallBottom = null;
             _wallTop = null;
@@ -712,8 +735,8 @@ namespace FixedCamVr.Tracking
         private void RefreshFootprints()
         {
             // 既存プールを破棄
-            foreach (var m in _footMats) if (m != null) Destroy(m);
-            foreach (var q in _footQuads) if (q != null) Destroy(q.gameObject);
+            foreach (var m in _footMats) if (m != null) DestroySafe(m);
+            foreach (var q in _footQuads) if (q != null) DestroySafe(q.gameObject);
 
             _footZones = FindObjectsOfType<PlayerZone>();
             _footQuads = new Transform[_footZones.Length];
@@ -726,7 +749,7 @@ namespace FixedCamVr.Tracking
                 quad.transform.SetParent(_vizRoot!.transform, worldPositionStays: false);
                 quad.transform.rotation = Quaternion.Euler(90f, 0f, 0f); // 床に寝かせる
                 var col = quad.GetComponent<Collider>();
-                if (col != null) Destroy(col);
+                if (col != null) DestroySafe(col);
                 var mat = new Material(shader);
                 quad.GetComponent<Renderer>().sharedMaterial = mat;
                 _footQuads[i] = quad.transform;
