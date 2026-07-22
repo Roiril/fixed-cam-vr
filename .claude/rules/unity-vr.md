@@ -187,8 +187,12 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
   Normal アクション→Action / 長押し進捗→SetHoldProgress / ModeChanged・RunReset→Fire。登録フローの節目は
   `CourseRegistrationController` の `PointCaptured`/`FitRejected`/`RegistrationConfirmed` イベントを Bridge が購読
   （Tracking asmdef は OVRInput 非依存を維持）。`haptics` 参照は null 許容（未配線でも全機能が従来通り動く）
-- **接続表示**: StatusHud 4 行目に `Rコン●`/`⚠Rコン未接続`（Bridge が `OVRInput.IsControllerConnected(RTouch)` を push）。
-  「押しても振動しない」時はまずこれで切り分ける
+- **接続表示**: StatusHud 末行に `右コントローラ: 接続中`/`⚠右コントローラが見つかりません（電池・スリープを確認）`
+  （Bridge が `OVRInput.IsControllerConnected(RTouch)` を StatusHud と ControllerGuidePanel の両方へ push）。
+  「押しても振動しない」時はまずこれで切り分ける（未接続なら ControllerGuidePanel も自動で消える）。
+  StatusHud 本文は 2026-07-23 に全編日本語・平文化（`[NORMAL]` 行頭・`信号 ●●○` 等の記号表記を廃止）。
+  スタッフ向け操作早見表は右コントローラ追従の [`ControllerGuidePanel`](../../Assets/Scripts/Diagnostics/ControllerGuidePanel.cs)
+  が常時表示（Bridge が `PushModeLabel` で NORMAL/REG 本文を切替）
 - **⚠ 実機未検証**（2026-07-21）。振幅・波形の体感、Rコン未接続表示は現場調整前提
 
 ### 周回カウントと cue 自動発火（2026-07-17〜）

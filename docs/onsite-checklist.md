@@ -34,6 +34,7 @@
 6. [ ] **Main.unity を開いて Tools > FixedCamVr > Setup > Setup Main Demo Scene を実行**
    - Phase 2.7 用の `[Zones]` (Center / Right / Left) と `[Tracker]` を自動配置
    - HMD 内ステータス表示 (`StatusHud` Canvas・world-space 緩追従) と診断コンテナ (`Diagnostics`: HudLogDumper / HmdTrajectoryRecorder / HudToggleInput) を Logic 配下に配置
+   - **`ControllerGuidePanel`**（スタッフ専用の操作早見表・右コントローラ追従）を Logic 配下に配置し `OvrControllerBridge.guidePanel` へ結線（RightHandAnchor 不在時はスキップ）
    - **`StartupFader`** を CenterEyeAnchor 配下に配置（Play 直後の砂時計 / 接続待ちを黒で隠してフェードイン）
    - `OvrControllerBridge.statusHud` への参照も自動で結線
    - **`ControllerHaptics`**（右コントローラ振動）を `[Streaming]` に冪等 add し `OvrControllerBridge.haptics` に結線
@@ -56,13 +57,19 @@
 `StatusHud`（[`Assets/Scripts/Diagnostics/StatusHud.cs`](../Assets/Scripts/Diagnostics/StatusHud.cs)）が World Space Canvas で HMD 前方に緩追従表示される（既定 OFF）。
 右コントローラ **B ボタン**でトグル。Editor では `H` キーでもトグル可。診断詳細（FPS / HMD 座標 / DISC）は HMD からは退役し、`[HudDump]` ログ（Console / MCP）と Web 卓 heartbeat が担う。
 
-ステータスの各行を確認：
+ステータスの各行を確認（2026-07-23 に全編を日本語・平文表記へ改稿。記号 `[NORMAL]`/`信号 ●●○` は廃止）：
 
-- [ ] **1 行目**: `[NORMAL] lap N | zone <名> (cam<番>)`
-- [ ] **2 行目**: `次: lap<L> cam<番> → <cueId>`（次に発火する予定の cue。無ければ非表示）
-- [ ] **3 行目**: `信号 ●●○`（各カメラ接続状態）+ ロスト/凍結/⚠要再登録 バッジ
-- [ ] **4 行目**: `Rコン●`（右コントローラ接続）/ `⚠Rコン未接続`（電池切れ・スリープ・ペアリング落ち）
+- [ ] **1 行目**: `2周目 ・ いまの場所: <名> ・ 表示中: カメラ<番>`（lap 未取得なら「周回 -」）
+- [ ] **2 行目**: `次の演出: 3周目 カメラ<番> 「<cueId>」`（次に発火する予定の cue。無ければ非表示）
+- [ ] **3 行目**: `カメラ映像: ①● ②● ③○`（丸数字 + ●接続/○切断・21 台以降は `21:●`）
+- [ ] **4 行目**（該当時のみ 1 つ）: `⚠映像が届いていません（砂嵐表示中）` / `⚠ヘッドセットの位置を見失っています` / `カメラ切替中…` / `カメラ切替を一時停止中`
+- [ ] **5 行目**（該当時のみ）: `位置合わせ: 済み（ずれ 0.05m）` / `⚠位置合わせが未実施です` / `⚠位置合わせのやり直しが必要です`
+- [ ] **6 行目**: `右コントローラ: 接続中` / `⚠右コントローラが見つかりません（電池・スリープを確認）`
 - [ ] 右 B で表示/非表示がトグルする（初回押下で確実に出る）
+
+> **コントローラ操作ガイド**（スタッフ専用）: 右コントローラの少し上・少し奥に、現在モード（NORMAL/REG）の
+> 操作早見表（`A：カメラを次へ送る` 等）が**常時表示**される（`ControllerGuidePanel`）。手首を捻っても文字は
+> 頭に正対したまま。コントローラ未接続時は自動で消える。位置合わせ（REG）に入ると本文が登録操作の説明へ切り替わる。
 
 > **触覚フィードバック**: 右コントローラの A/B/グリップ/トリガーを押すと**右コントローラが振動**する
 > （受理=弱く一瞬 / アクション実行=中 / 長押し進行=進捗に比例したランプ / 発火・確定=強い二連 / 失敗=三連）。

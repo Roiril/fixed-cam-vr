@@ -51,6 +51,30 @@
   「A 押下＝Ack（受理）／ 0.5s 静止で点確定＝Action（PointCaptured）」に解釈した（Ack/Action の定義に厳密に一致）
 - **⚠ 実機未検証**（振幅・波形の体感、Rコン未接続表示は現場調整前提）
 
+## 追記: 操作ガイドパネル新設・StatusHud 日本語化（2026-07-23 実装・実機未検証）
+
+**動機**: ①コントローラはスタッフ専用だが、現在モードでどのボタンが何をするかが手元に出ておらず暗記頼み。
+②StatusHud の本文が記号混じり（`[NORMAL] lap 2 | zone B (cam2) / 信号 ●●○ ...`）で、現場スタッフに直感的でない。
+
+- **ControllerGuidePanel（新規・[`Assets/Scripts/Diagnostics/ControllerGuidePanel.cs`](../../Assets/Scripts/Diagnostics/ControllerGuidePanel.cs)）**:
+  右コントローラの「少し上・少し奥」に現在モード（NORMAL/REG）の操作早見表を**常時表示**する小パネル。
+  OVRInput 非依存（Diagnostics asmdef）。配置は LateUpdate で `コントローラ位置 + up*heightOffset(0.12) +
+  (頭→コントローラ水平単位)*awayOffset(0.06)` を smoothTime(0.15) SmoothDamp、回転は頭へ billboard（手首回転に非追従）。
+  API: `SetMode("NORMAL"/"REG")` で本文切替 / `SetControllerConnected(bool)` で未接続時に非表示。フォントは
+  `JapaneseHudFont.TryGet()`。本文は 4 行（NORMAL）/3 行（REG）の平文操作説明。
+- **OvrControllerBridge**: `guidePanel` SerializeField を追加。`PushModeLabel` でモードを push、Update で接続状態を
+  StatusHud と並べて push（`haptics` 同様 null 許容）。
+- **StatusHud.BuildStatus 全面日本語化**: `2周目 ・ いまの場所: B ・ 表示中: カメラ2` / `次の演出: 3周目 カメラ1 「cue_A_1」` /
+  `カメラ映像: ①● ②● ③○` / `⚠映像が届いていません（砂嵐表示中）`等 / `位置合わせ: 済み（ずれ 0.05m）` /
+  `右コントローラ: 接続中` の 6 行構成。丸数字は U+2460 起点（21 台以降は `N:` フォールバック）。`[NORMAL]` 行頭
+  プレフィックスは廃止（REG 中は登録ガイダンス強制表示で自明）。`SetModeLabel` API + 保持値（`ModeLabel` getter 追加）と
+  heartbeat 連携は維持。StringBuilder append 主体・GC ゼロ・updateInterval 間引きは不変。
+- **MainDemoSceneSetup**: `ControllerGuidePanel` を冪等生成（DeleteIfExists → CreateControllerGuidePanel →
+  RightHandAnchor/CenterEyeAnchor 配線 → OvrControllerBridge.guidePanel 結線）。見た目は CreateStatusHudVisual を踏襲した
+  world-space Canvas + TMP（sizeDelta 560×300 / scale 0.0005 = 0.28m 幅・fontSize 26・左寄せ）。**Setup Main Demo Scene の
+  再実行が必要**。RightHandAnchor 不在時は生成スキップ（追従先が無いと常時非表示のため）。
+- **⚠ Quest 実機未検証**（パネルの距離・大きさ・billboard の読みやすさ、StatusHud 新文言の可読性・行数は現場確認前提）。
+
 ## 追記: 位置合わせフィードバック改修（2026-07-21 実装・実機未検証）
 
 **動機**: 登録フローの手応え不足を埋める。①0.5 秒ホールドの進行が見えない・鳴らない、②中断/成功の触覚が非対称、

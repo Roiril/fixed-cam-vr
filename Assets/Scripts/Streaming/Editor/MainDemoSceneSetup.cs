@@ -27,6 +27,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string GeneratedZonesName = "[GeneratedZones]";
         private const string TrackerName = "[Tracker]";
         private const string StatusHudName = "StatusHud";
+        private const string ControllerGuideName = "ControllerGuide";
         private const string DiagnosticsName = "Diagnostics";
         private const string DebugHudName = "DebugHud"; // 旧構成の掃除用（削除対象）
         private const string StartupFaderName = "StartupFader";
@@ -61,6 +62,7 @@ namespace FixedCamVr.Streaming.EditorTools
             DeleteIfExists($"{LogicGroupName}/{GeneratedZonesName}");
             DeleteIfExists($"{LogicGroupName}/{TrackerName}");
             DeleteIfExists($"{LogicGroupName}/{StatusHudName}");
+            DeleteIfExists($"{LogicGroupName}/{ControllerGuideName}");
             DeleteIfExists($"{LogicGroupName}/{DiagnosticsName}");
             DeleteIfExists($"{CenterEyePath}/{DebugHudName}");   // 旧 HUD Canvas（統合前）
             DeleteIfExists($"{CenterEyePath}/{StartupFaderName}");
@@ -328,6 +330,15 @@ namespace FixedCamVr.Streaming.EditorTools
             var statusHud = CreateStatusHud(logic.transform, centerEye.transform, registry, tracker,
                                             director, signalFx, lapCounter, cueScheduler, courseFrame, registration);
 
+            // 4.2. ControllerGuidePanel（スタッフ専用・右コントローラに追従する操作早見表）。
+            //      右コントローラアンカー（RightHandAnchor）+ CenterEyeAnchor へ配線。rightHand が
+            //      無い（OVR リグ未配置等）なら生成をスキップ（追従先が無いと常時非表示になるため）。
+            ControllerGuidePanel? guidePanel = null;
+            if (rightHand != null)
+                guidePanel = CreateControllerGuidePanel(logic.transform, rightHand.transform, centerEye.transform);
+            else
+                Debug.LogWarning($"[MainDemoSceneSetup] '{RightHandPath}' が無いため ControllerGuidePanel の生成をスキップ。");
+
             // 4.5. Diagnostics（HUD には出さない診断: [HudDump] ログ + HMD 軌跡 CSV + Editor H トグル）
             CreateDiagnostics(logic.transform, registry, tracker, centerEye.transform, statusHud);
 
@@ -346,6 +357,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 TrySetObjectRef(bridgeSo, "cueScheduler", cueScheduler);
                 // 触覚フィードバック（押下受理 / 長押し進行 / 発火 / 失敗の振動）。
                 if (haptics != null) TrySetObjectRef(bridgeSo, "haptics", haptics);
+                // スタッフ用コントローラ操作ガイド（モード遷移で本文を切替・接続状態を push）。
+                if (guidePanel != null) TrySetObjectRef(bridgeSo, "guidePanel", guidePanel);
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -354,7 +367,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + InsertController（show.json timeline v2: 区間 cue override / インサートショット / 区間 post 上書き。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / OvrBridge（右手 4 入力: A=Next / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + InsertController（show.json timeline v2: 区間 cue override / インサートショット / 区間 post 上書き。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / OvrBridge（右手 4 入力: A=Next / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
@@ -537,6 +550,57 @@ namespace FixedCamVr.Streaming.EditorTools
             hudSo.ApplyModifiedPropertiesWithoutUndo();
 
             return hud;
+        }
+
+        // スタッフ用の操作ガイドパネル（右コントローラに追従する小さな早見表）を作る。
+        // 見た目は StatusHud（CreateStatusHudVisual）を踏襲するが、パネル幅はコントローラ幅の
+        // 2〜3 倍程度に収める規模感（小さめ・左寄せの操作リスト）。配置追従は ControllerGuidePanel が
+        // controller / head を見て自前で行う（world-space・parent 直下・controller 非親）。
+        private static ControllerGuidePanel CreateControllerGuidePanel(Transform parent,
+            Transform controller, Transform head)
+        {
+            var canvasGo = new GameObject(ControllerGuideName);
+            canvasGo.transform.SetParent(parent, worldPositionStays: false);
+
+            var canvas = canvasGo.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvasGo.AddComponent<UnityEngine.UI.CanvasScaler>();
+
+            var rt = (RectTransform)canvasGo.transform;
+            // sizeDelta 560 × 0.0005 = 0.28m 幅（コントローラ幅 ≈0.1m の 2〜3 倍）。
+            rt.sizeDelta = new Vector2(560f, 300f);
+            rt.localScale = Vector3.one * 0.0005f;
+
+            var textGo = new GameObject("GuideText");
+            textGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
+            var textRt = textGo.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.anchoredPosition = Vector2.zero;
+            textRt.sizeDelta = Vector2.zero;
+            textRt.localScale = Vector3.one;
+            textRt.localPosition = Vector3.zero;
+
+            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = "";
+            tmp.fontSize = 26f;                 // StatusHud(34) より小さめ
+            tmp.color = new Color(0.9f, 1f, 0.95f, 1f);
+            tmp.alignment = TextAlignmentOptions.Left;
+            tmp.enableWordWrapping = false;
+            tmp.richText = false;
+
+            var panel = canvasGo.AddComponent<ControllerGuidePanel>();
+            var so = new SerializedObject(panel);
+            TrySetObjectRef(so, "text", tmp);
+            TrySetObjectRef(so, "controller", controller);
+            TrySetObjectRef(so, "head", head);
+            // 配置の既定（prefab-YAML 未反映罠を避けるため setup が明示的に書く）。
+            TrySetFloat(so, "heightOffset", 0.12f);
+            TrySetFloat(so, "awayOffset", 0.06f);
+            TrySetFloat(so, "smoothTime", 0.15f);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            return panel;
         }
 
         // HUD に出さない診断（[HudDump] ログ + HMD 軌跡 CSV + Editor H トグル）を 1 個の GameObject に載せる。

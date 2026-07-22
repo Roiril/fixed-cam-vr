@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [controller_input_final.md](controller_input_final.md) - コントローラは右手4入力が最終形（機能追加禁止・2026-07-23 ユーザー宣言）。ToggleActiveCameraCue は未配線デッドコード
+
 - [ivrc_video_pages_naming.md](ivrc_video_pages_naming.md) - IVRC動画 pages/ の透過PNGはファイル名固定（編集ソフト参照中・リネーム禁止／追加は既存をずらさない名で）
 - [project_overview.md](project_overview.md) - スタック・構成・目的（fixed-cam-vr）
 - [harness_design.md](harness_design.md) - CLAUDE.md / .claude/ の役割分担

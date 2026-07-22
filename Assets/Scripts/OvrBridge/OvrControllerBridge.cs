@@ -45,6 +45,10 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("単一サーフェス StatusHud（[StatusHud] 上）。B 押下でステータス表示をトグルする。")]
         [SerializeField] private StatusHud? statusHud;
 
+        [Tooltip("スタッフ用コントローラ操作ガイドパネル（右コントローラに追従）。現在モードの操作説明を常時表示。" +
+                 "null でも全機能は従来通り動く（ガイドが出ないだけ）。")]
+        [SerializeField] private ControllerGuidePanel? guidePanel;
+
         [Header("Haptics")]
         [Tooltip("右コントローラの触覚フィードバック（[Streaming] 上・ControllerHaptics）。null でも全機能は従来通り動く" +
                  "（振動が鳴らないだけ）。押下の受理 / 長押し進行 / 発火 / 失敗を振動で伝える。")]
@@ -156,8 +160,10 @@ namespace FixedCamVr.OvrBridge
             // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。
             if (aDown || bDown || gripDown || triggerDown) haptics?.Ack();
 
-            // 右コントローラ接続状態を StatusHud へ push（Diagnostics は OVRInput 非依存のため直読み不可）。
-            statusHud?.SetControllerConnected(OVRInput.IsControllerConnected(OVRInput.Controller.RTouch));
+            // 右コントローラ接続状態を StatusHud / ガイドパネルへ push（Diagnostics は OVRInput 非依存のため直読み不可）。
+            bool rConnected = OVRInput.IsControllerConnected(OVRInput.Controller.RTouch);
+            statusHud?.SetControllerConnected(rConnected);
+            guidePanel?.SetControllerConnected(rConnected);
 
             bool regActive = courseRegistration != null && courseRegistration.IsActive;
 
@@ -254,6 +260,7 @@ namespace FixedCamVr.OvrBridge
         {
             string label = mode == ControllerModeLogic.Mode.Registration ? "REG" : "NORMAL";
             statusHud?.SetModeLabel(label);
+            guidePanel?.SetMode(label);
             showControl?.SetControllerMode(label);
         }
     }

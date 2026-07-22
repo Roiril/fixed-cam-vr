@@ -127,8 +127,12 @@ namespace FixedCamVr.Diagnostics
         /// <summary>現在ステータスを手動表示中か（トグルの真実源）。</summary>
         public bool IsVisible => _visible;
 
-        /// <summary>コントローラ操作モードのラベル（NORMAL/REG）をステータス行へ反映する。</summary>
+        /// <summary>コントローラ操作モードのラベル（NORMAL/REG）を保持する。ステータス行の行頭
+        /// プレフィックス表示は廃止したが（REG 中は登録ガイダンス強制表示で自明）、API と保持値は残す。</summary>
         public void SetModeLabel(string label) => _modeLabel = label ?? "";
+
+        /// <summary>直近に push されたモードラベル（NORMAL/REG）。</summary>
+        public string ModeLabel => _modeLabel;
 
         /// <summary>右コントローラの接続状態をステータス行へ反映する（OvrControllerBridge が push）。</summary>
         public void SetControllerConnected(bool connected) => _controllerConnected = connected;
@@ -235,81 +239,86 @@ namespace FixedCamVr.Diagnostics
             text.enabled = true;
         }
 
-        // lap / ゾーン / 次の cue / 信号・要再登録 の 3〜4 行。既存参照の append のみで新規 GC を出さない。
+        // 全編を日本語・直感表記へ（記号を廃し、意味を平文で）。既存参照の append のみで新規 GC を出さない。
+        // モードラベル（[NORMAL]/[REG]）は行頭に出さない（REG 中は登録ガイダンスが強制表示されるため不要。
+        // SetModeLabel API と heartbeat 連携は別途維持）。
         private void BuildStatus(StringBuilder sb)
         {
             sb.Clear();
 
-            // 行1: [MODE] lap N | zone <label> (cam<idx>)
-            if (_modeLabel.Length > 0) { sb.Append('['); sb.Append(_modeLabel); sb.Append("] "); }
-            sb.Append("lap ");
-            sb.Append(lapCounter != null ? lapCounter.CurrentLap : -1);
-            sb.Append(" | zone ");
+            // 行1: {lap}周目 ・ いまの場所: {zone} ・ 表示中: カメラ{active+1}
+            bool hasLap = lapCounter != null && lapCounter.CurrentLap >= 1;
+            if (hasLap) { sb.Append(lapCounter!.CurrentLap); sb.Append("周目"); }
+            else sb.Append("周回 -");
+            sb.Append(" ・ いまの場所: ");
             var zone = tracker != null ? tracker.CurrentZone : null;
             sb.Append(zone != null ? zone.Label : "-");
-            if (registry != null && registry.Count > 0)
-            {
-                sb.Append(" (cam");
-                sb.Append(registry.ActiveIndex + 1);
-                sb.Append(')');
-            }
+            sb.Append(" ・ 表示中: カメラ");
+            if (registry != null && registry.Count > 0) sb.Append(registry.ActiveIndex + 1);
+            else sb.Append('-');
 
-            // 行2: 次: lap<L> cam<c> → <cueId>
+            // 行2（次の cue がある時のみ）: 次の演出: {lap}周目 カメラ{c+1} 「{cueId}」
             if (cueScheduler != null && lapCounter != null && lapCounter.Order.Length > 0
                 && cueScheduler.TryGetNextCue(lapCounter.CurrentLap, lapCounter.Position, lapCounter.Order, out var next))
             {
-                sb.Append("\n次: lap");
+                sb.Append("\n次の演出: ");
                 sb.Append(next.lap);
-                sb.Append(" cam");
+                sb.Append("周目 カメラ");
                 sb.Append(next.camera + 1);
-                sb.Append(" → ");
-                sb.Append(string.IsNullOrEmpty(next.cueId) ? "-" : next.cueId);
+                sb.Append(" 「");
+                sb.Append(string.IsNullOrEmpty(next.cueId) ? "（cue 未指定）" : next.cueId);
+                sb.Append('」');
             }
 
-            // 行3: 信号 ●●○ [ロスト/凍結] [SW ...] [⚠要再登録]
-            sb.Append("\n信号 ");
+            // 行3: カメラ映像: ①● ②● ③○（丸数字 + ●接続/○切断）。
+            sb.Append("\nカメラ映像: ");
             if (registry != null && registry.Count > 0)
             {
                 int n = registry.Count;
                 for (int i = 0; i < n; i++)
                 {
+                    if (i > 0) sb.Append(' ');
+                    if (i < 20) sb.Append((char)('①' + i)); // ①..⑳
+                    else { sb.Append(i + 1); sb.Append(':'); }   // 21 台以降は数字+:
                     var s = registry.Get(i);
                     sb.Append(s != null && s.IsConnected ? '●' : '○');
                 }
             }
             else sb.Append('-');
 
-            if (signalFx != null)
-            {
-                if (signalFx.SignalLost) sb.Append(" ロスト");
-                else if (signalFx.TrackingFrozen) sb.Append(" 凍結");
-            }
-            if (switchDirector != null)
-            {
-                if (switchDirector.Dipping) sb.Append(" SW:dip");
-                else if (switchDirector.SwitchSuppressed) sb.Append(" SW:hold");
-            }
-            // 登録状態バッジ（要再登録 > 未登録 > 登録済(残差) の優先順位で 1 つだけ）。
+            // 行4（該当時のみ・複数該当なら優先度順に 1 つだけ）: 信号断 / 追従凍結 / 切替中 / 切替抑止。
+            if (signalFx != null && signalFx.SignalLost)
+                sb.Append("\n⚠映像が届いていません（砂嵐表示中）");
+            else if (signalFx != null && signalFx.TrackingFrozen)
+                sb.Append("\n⚠ヘッドセットの位置を見失っています");
+            else if (switchDirector != null && switchDirector.Dipping)
+                sb.Append("\nカメラ切替中…");
+            else if (switchDirector != null && switchDirector.SwitchSuppressed)
+                sb.Append("\nカメラ切替を一時停止中");
+
+            // 行5（該当時のみ）: 位置合わせの状態（要再登録 > 未登録 > 済み の優先順位）。
             if (courseFrame != null)
             {
-                if (courseFrame.NeedsReRegistration) sb.Append("  ⚠要再登録");
-                else if (!courseFrame.HasRegistration) sb.Append("  ⚠未登録");
+                if (courseFrame.NeedsReRegistration) sb.Append("\n⚠位置合わせのやり直しが必要です");
+                else if (!courseFrame.HasRegistration) sb.Append("\n⚠位置合わせが未実施です");
                 else
                 {
-                    sb.Append("  登録済");
+                    sb.Append("\n位置合わせ: 済み");
                     if (courseFrame.MaxResidualM > 0f)
                     {
-                        sb.Append("(残差");
+                        sb.Append("（ずれ ");
                         sb.Append(courseFrame.MaxResidualM.ToString("0.00"));
-                        sb.Append("m)");
+                        sb.Append("m）");
                     }
                 }
             }
 
-            // 行4: Rコン接続 / 未接続（未接続は目立たせる。押しても振動しない時の切り分け＝streamer 層でなく
-            // コントローラ電池切れ / スリープ / ペアリング落ちを疑うための表示）。
+            // 行6: 右コントローラ接続 / 未接続（未接続は目立たせる。押しても振動しない時の切り分け＝
+            // streamer 層でなくコントローラ電池切れ / スリープ / ペアリング落ちを疑うための表示）。
             sb.Append('\n');
-            sb.Append(_controllerConnected ? "Rコン●" : "⚠Rコン未接続");
+            sb.Append(_controllerConnected
+                ? "右コントローラ: 接続中"
+                : "⚠右コントローラが見つかりません（電池・スリープを確認）");
         }
     }
 }
