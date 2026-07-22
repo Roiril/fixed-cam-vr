@@ -213,15 +213,21 @@ namespace TableDuoVr.EditorTools
             PlaceGeister(gameGeister.transform, topY, cx, cz, hx, hz);
             BakeStowedState(gameGeister);
 
+            // ゲーム 3: バンディド（トンネル札 32 枚・協力パズル）。ベイク時 stow
+            var gameBandido = new GameObject("Game_bandido");
+            gameBandido.transform.SetParent(props.transform, false);
+            PlaceBandido(gameBandido.transform, topY, cx, cz, hx, hz);
+            BakeStowedState(gameBandido);
+
             // ランタイム切替（in-scene NetworkObject）。ホスト UI（FacilitatorPanel）/ mark?label=game_<id> が叩く
             var switcherGo = new GameObject("GameSwitcher");
             switcherGo.transform.SetParent(root.transform, false);
             switcherGo.AddComponent<NetworkObject>();
             var gameSwitcher = switcherGo.AddComponent<GameSwitcher>();
             WireGameSwitcher(gameSwitcher,
-                new[] { gameDsa, gameAlgo, gameGeister },
-                new[] { "dsa", "algo", "geister" },
-                new[] { "海底探検", "アルゴ", "ガイスター" });
+                new[] { gameDsa, gameAlgo, gameGeister, gameBandido },
+                new[] { "dsa", "algo", "geister", "bandido" },
+                new[] { "海底探検", "アルゴ", "ガイスター", "バンディド" });
 
             // 協調配置課題の目標パネル（手役ローカルのみ表示）
             CreatePatternPanel(root.transform);
@@ -370,6 +376,12 @@ namespace TableDuoVr.EditorTools
             var adSo = new SerializedObject(algoDealer);
             SetRef(adSo, "algoRoot", gameAlgo);
             adSo.ApplyModifiedPropertiesWithoutUndo();
+            // バンディドの配り直し（ホスト UI / mark?label=bandido_deal）: 手札 3×2 + 山札 25 のスロットへ
+            // 開始札 BANDIDO_bandy を除く 31 枚を完全ランダムに再割当（BandidoDealer がベイク姿勢からスロット採取）
+            var bandidoDealer = systems.AddComponent<BandidoDealer>();
+            var bdSo = new SerializedObject(bandidoDealer);
+            SetRef(bdSo, "bandidoRoot", gameBandido);
+            bdSo.ApplyModifiedPropertiesWithoutUndo();
 
             // リプレイビューア（stimulated recall 用・既定無効。有効化して Play で再生）
             var replayGo = new GameObject("ReplayViewer");
@@ -664,6 +676,82 @@ namespace TableDuoVr.EditorTools
                     so.ApplyModifiedPropertiesWithoutUndo();
                 }
             }
+        }
+
+        private const string BandidoGlbDir = "Assets/TableDuo/ThirdParty/Bandido/glb";
+
+        /// <summary>
+        /// 卓上にボードゲーム「バンディド」（協力トンネルパズル・全 32 枚カード）を開始形で置く（2026-07-22）。
+        /// 中央に**表向きの開始札 bandy**（格子原点）、各席の手前に**表向き手札 3 枚**、+X 端に**裏向き山札 25 枚**。
+        /// カードは 1:2 縦長（短辺 44mm/長辺 88mm/厚 1.5mm・GLB 直パース確認、短辺=X・長辺=Z）→ 1.2 倍
+        /// （ピンチ精度と卓面積の折衷）。バンディドは全カード physics:false（グリッドゲーム駒 = 物理なし +
+        /// BandidoCardSnap サイドカーの確立パターン。Rigidbody 無しなので山札の restKinematic も不要）。
+        /// リリース時は BandidoCardSnap が 1×2 セル格子へ吸着し、重なれば上に積む。
+        /// カード→スロット割当は固定シード Fisher-Yates（冪等ベイク。bandy は混ぜない）。
+        /// 実運用の完全ランダムはホスト UI「バンディド配り直し」（BandidoDealer）。
+        /// </summary>
+        private static void PlaceBandido(Transform parent, float topY, float cx, float cz,
+            float hx, float hz)
+        {
+            const float cardScale = 1.2f;
+            const float cardShort = 0.044f * cardScale;      // 短辺 W ≈ 52.8mm（= 格子ピッチ p。長辺はその 2 倍）
+            const float cardThickness = 0.0015f * cardScale; // 厚み ≈ 1.8mm
+            const float p = cardShort;                        // 格子ピッチ = 短辺（1:2 なので縦幅の 1/2）
+            const float handStep = cardShort + 0.0122f;       // 手札 3 枚の X ピッチ（カード幅 + 隙間 ≈ 0.065f）
+            const float handZ = 0.24f;                        // 各席の手前列（クランプ hz-0.02 内）
+            const float deckLift = 0.0022f;                   // カード厚 1.8mm + 0.4mm 空隙（z-fight 回避）
+            const int bandidoSeed = 20260722;
+
+            // 開始札 bandy: 卓中央・yaw 0（長辺 Z）・表向き。格子原点そのもの（配り直しの対象外）
+            var bandy = PlaceModelRealScale($"{BandidoGlbDir}/bandy.glb", parent, "BANDIDO_bandy",
+                new Vector3(cx, topY, cz), 0f, grabbable: true, scale: cardScale, physics: false);
+            AttachBandidoSnap(bandy, cx, cz, p, topY, cardThickness);
+            SetSurfaceClamp(bandy, topY, cx, cz, hx, hz);
+
+            // 配りスロット 31 個（開始札を除く）: 手札 3×2（表向き平置き）+ 山札 25（裏向き積み）
+            var slots = new List<(Vector3 pos, float yaw, bool faceDown)>();
+            for (int i = 0; i < 3; i++) // 人役（-Z 側）: 長辺を人役へ向ける（yaw 0）
+                slots.Add((new Vector3(cx + (i - 1f) * handStep, topY, cz - handZ), 0f, false));
+            for (int i = 0; i < 3; i++) // 手役（+Z 側・yaw 180）
+                slots.Add((new Vector3(cx + (i - 1f) * handStep, topY, cz + handZ), 180f, false));
+            // 山札 25 枚: +X 端に裏向きで積む。X = cx + hx - 0.07（半 extent 0.0264 を足しても hx-0.02 内に収まる）
+            for (int i = 0; i < 25; i++)
+                slots.Add((new Vector3(cx + hx - 0.07f, topY + i * deckLift, cz), 0f, true));
+
+            // 開始札 bandy を除く 31 種（g1..g24 + l1..l7）を固定シード Fisher-Yates でスロットへ割当（冪等）
+            var names = new List<string>();
+            for (int i = 1; i <= 24; i++) names.Add($"g{i}");
+            for (int i = 1; i <= 7; i++) names.Add($"l{i}");
+            var rng = new System.Random(bandidoSeed);
+            for (int i = names.Count - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                (names[i], names[j]) = (names[j], names[i]);
+            }
+
+            for (int i = 0; i < slots.Count; i++)
+            {
+                var card = PlaceModelRealScale($"{BandidoGlbDir}/{names[i]}.glb", parent, $"BANDIDO_{names[i]}",
+                    slots[i].pos, slots[i].yaw, grabbable: true, scale: cardScale, physics: false,
+                    faceDown: slots[i].faceDown);
+                AttachBandidoSnap(card, cx, cz, p, topY, cardThickness);
+                SetSurfaceClamp(card, topY, cx, cz, hx, hz);
+            }
+        }
+
+        /// <summary>バンディド札に BandidoCardSnap を付け、格子・接地の焼き込みを行う。</summary>
+        private static void AttachBandidoSnap(GameObject? card, float cx, float cz, float pitch,
+            float topY, float cardThickness)
+        {
+            if (card == null) return;
+            var snap = card.AddComponent<BandidoCardSnap>();
+            var so = new SerializedObject(snap);
+            var pv = so.FindProperty("gridOriginX"); if (pv != null) pv.floatValue = cx;
+            pv = so.FindProperty("gridOriginZ"); if (pv != null) pv.floatValue = cz;
+            pv = so.FindProperty("cellPitch"); if (pv != null) pv.floatValue = pitch;
+            pv = so.FindProperty("tableTopY"); if (pv != null) pv.floatValue = topY;
+            pv = so.FindProperty("cardThickness"); if (pv != null) pv.floatValue = cardThickness;
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         /// <summary>

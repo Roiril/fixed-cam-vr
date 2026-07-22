@@ -52,6 +52,12 @@ namespace TableDuoVr.Net
                 {
                     FindObjectOfType<AlgoDealer>()?.ServerShuffleDeal();
                 }
+                // 特別ラベル: バンディド完全ランダム配り直し（手札・山札を permute。開始札は除く）。
+                //   curl "http://<hostIP>:7780/mark?label=bandido_deal"
+                else if (label == "bandido_deal")
+                {
+                    FindObjectOfType<BandidoDealer>()?.ServerShuffleDeal();
+                }
             }
         }
 

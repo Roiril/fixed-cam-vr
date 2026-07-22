@@ -21,6 +21,7 @@ namespace TableDuoVr.Net
         private GameSwitcher? _gameSwitcher;
         private BoardReset? _boardReset;
         private AlgoDealer? _algoDealer;
+        private BandidoDealer? _bandidoDealer;
         private SessionLogger? _logger;
         private string _markText = "";
 
@@ -29,6 +30,7 @@ namespace TableDuoVr.Net
             _gameSwitcher = FindObjectOfType<GameSwitcher>();
             _boardReset = FindObjectOfType<BoardReset>();
             _algoDealer = FindObjectOfType<AlgoDealer>();
+            _bandidoDealer = FindObjectOfType<BandidoDealer>();
             _logger = FindObjectOfType<SessionLogger>();
         }
 
@@ -127,6 +129,11 @@ namespace TableDuoVr.Net
             {
                 if (_algoDealer == null) _algoDealer = FindObjectOfType<AlgoDealer>();
                 _algoDealer?.ServerShuffleDeal();
+            }
+            if (GUILayout.Button("バンディド配り直し"))
+            {
+                if (_bandidoDealer == null) _bandidoDealer = FindObjectOfType<BandidoDealer>();
+                _bandidoDealer?.ServerShuffleDeal();
             }
         }
 

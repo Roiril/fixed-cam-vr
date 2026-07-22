@@ -1,4 +1,5 @@
 #nullable enable
+using System.Collections.Generic;
 using TableDuoVr.Hands;
 using UnityEngine;
 
@@ -33,6 +34,9 @@ namespace TableDuoVr.Net
         private readonly Quaternion[] _holdOffsetRot = new Quaternion[2];
         private readonly float[] _holdStart = new float[2];
         private readonly Vector3[] _landmarks = new Vector3[HandLandmarks.Count];
+        // FindNearestFree の再利用バッファ（ピンチ立ち上がり時のみ使用。毎回の new を避ける）
+        private readonly List<Grabbable> _freeBuf = new();
+        private readonly List<Vector3> _freePosBuf = new();
 
         public void Initialize(Transform seat, ulong localClientId)
         {
@@ -166,21 +170,32 @@ namespace TableDuoVr.Net
 
         private Grabbable? FindNearestFree(Vector3 worldPos)
         {
-            Grabbable? best = null;
+            _freeBuf.Clear();
+            _freePosBuf.Clear();
+            int bestIndex = -1;
             float bestSqr = GrabRadius * GrabRadius;
             // ピンチ立ち上がり時のみ（稀）に都度取得 → 動的/遅延 spawn の Grabbable も対象に入る
             // （生成時1回固定だと後から spawn したオブジェクトを永久に掴めない）
             foreach (var g in FindObjectsOfType<Grabbable>())
             {
                 if (g == null || g.IsHeld || g.IsStowed) continue; // stow = 非アクティブゲームは掴めない
-                float sqr = (g.transform.position - worldPos).sqrMagnitude;
+                Vector3 p = g.transform.position;
+                int idx = _freeBuf.Count;
+                _freeBuf.Add(g);
+                _freePosBuf.Add(p);
+                float sqr = (p - worldPos).sqrMagnitude;
                 if (sqr < bestSqr)
                 {
                     bestSqr = sqr;
-                    best = g;
+                    bestIndex = idx;
                 }
             }
-            return best;
+            if (bestIndex < 0) return null;
+            // スタック最上段優先: 最寄り候補と同じ縦スタック（XZ 15mm 以内）の中で一番上を掴む。
+            // 積んだ山札（バンディド・アルゴ）で「一番上を取る」を成立させる（間隔の広いガイスター駒・
+            // 海底探検チップは 15mm 許容に入らないので巻き込まれず挙動不変）
+            int top = StackTopPickLogic.PickStackTop(_freePosBuf, bestIndex);
+            return _freeBuf[top];
         }
     }
 }
