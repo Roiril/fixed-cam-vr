@@ -90,6 +90,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 "Assets/Scripts/Tracking/RegistrationGuidance.cs",
                 "Assets/Scripts/Tracking/CourseRegistrationController.cs",
                 "Assets/Scripts/Diagnostics/StatusHud.cs",
+                // 2026-07-23 追加: 操作ガイドパネル本文（体験者・全角：等）と、グリップ拒否時の
+                // 赤メッセージ（演出中は切り替えできません）の供給元。ここに無い文字は実機でも豆腐になる
+                // （静的ベイクのため。U+FF1A 欠落を batchmode プレビューで実測）。
+                "Assets/Scripts/Diagnostics/ControllerGuidePanel.cs",
+                "Assets/Scripts/OvrBridge/OvrControllerBridge.cs",
             };
             var set = new System.Collections.Generic.SortedSet<char>();
             for (char c = ' '; c <= '~'; c++) set.Add(c);                       // ASCII 印字可能

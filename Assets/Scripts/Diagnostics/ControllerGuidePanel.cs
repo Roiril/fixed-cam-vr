@@ -61,6 +61,11 @@ namespace FixedCamVr.Diagnostics
         // 右コントローラ接続状態。既定 true（push 前に「未接続で非表示」を誤発しない）。
         private bool _controllerConnected = true;
 
+        // 一時メッセージ（本文の上に赤 1 行で数秒だけ出す。期限で本文へ戻る）。
+        private const string TransientColor = "FF6655"; // TMP リッチテキストの赤
+        private string _transient = "";
+        private float _transientUntil;
+
         private Vector3 _posVel;      // SmoothDamp の速度状態
         private bool _seeded;         // 初回配置済みか（初回はスナップして寄せる）
         private string _lastBody = ""; // SetText の GC を避けるための直近本文
@@ -69,6 +74,17 @@ namespace FixedCamVr.Diagnostics
         public void SetMode(string label)
         {
             _modeLabel = label ?? "";
+            ApplyBody();
+        }
+
+        /// <summary>
+        /// 本文の上に赤 1 行で一時メッセージを出す（既定 2 秒）。期限で本文へ自動的に戻る。
+        /// transient 中に <see cref="SetMode"/> が来ても本文だけ差し替わり、赤行は維持される。
+        /// </summary>
+        public void ShowTransient(string message, float seconds = 2f)
+        {
+            _transient = message ?? "";
+            _transientUntil = Time.unscaledTime + Mathf.Max(0f, seconds);
             ApplyBody();
         }
 
@@ -94,6 +110,13 @@ namespace FixedCamVr.Diagnostics
         private void LateUpdate()
         {
             if (text == null) return;
+
+            // 一時メッセージの期限切れで本文へ戻す（接続状態に関わらず状態を畳んでおく）。
+            if (_transient.Length > 0 && Time.unscaledTime >= _transientUntil)
+            {
+                _transient = "";
+                ApplyBody();
+            }
 
             // 未接続 or アンカー欠落なら非表示（次に接続復帰したら再配置スナップする）。
             if (!_controllerConnected || controller == null || head == null)
@@ -131,14 +154,18 @@ namespace FixedCamVr.Diagnostics
                 transform.rotation = Quaternion.LookRotation(faceDir, Vector3.up);
         }
 
-        // 現在ラベルに対応する本文を text へ反映（変化時のみ・GC を出さない）。
+        // 現在ラベル（+ 一時メッセージ）に対応する本文を text へ反映（変化時のみ・毎フレームは走らない）。
+        // 文字列連結は mode 切替 / transient の出入りという稀なイベント時だけ起きる（毎フレームの GC ではない）。
         private void ApplyBody()
         {
             if (text == null) return;
             string body = _modeLabel == "REG" ? RegBody : NormalBody;
-            if (body == _lastBody) return;
-            text.SetText(body);
-            _lastBody = body;
+            string composed = (_transient.Length > 0 && Time.unscaledTime < _transientUntil)
+                ? "<color=#" + TransientColor + ">" + _transient + "</color>\n" + body
+                : body;
+            if (composed == _lastBody) return;
+            text.SetText(composed);
+            _lastBody = composed;
         }
 
         private static Vector3 Flatten(Vector3 v)

@@ -160,9 +160,9 @@ namespace FixedCamVr.OvrBridge
             // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。
             if (aDown || bDown || gripDown || triggerDown) haptics?.Ack();
 
-            // 右コントローラ接続状態を StatusHud / ガイドパネルへ push（Diagnostics は OVRInput 非依存のため直読み不可）。
+            // 右コントローラ接続状態をガイドパネルへ push（未接続時のパネル非表示に使う。
+            // Diagnostics は OVRInput 非依存のため直読み不可）。StatusHud の接続行は廃止したため push しない。
             bool rConnected = OVRInput.IsControllerConnected(OVRInput.Controller.RTouch);
-            statusHud?.SetControllerConnected(rConnected);
             guidePanel?.SetControllerConnected(rConnected);
 
             bool regActive = courseRegistration != null && courseRegistration.IsActive;
@@ -202,9 +202,18 @@ namespace FixedCamVr.OvrBridge
                     // A: カメラ手動送り Next（設営・リハ確認用。誤爆しても Zone 自動が復帰する）。
                     if (aDown && registry != null && registry.Count > 0)
                     {
-                        if (switchDirector != null) switchDirector.Next();
-                        else registry.Next();
-                        haptics?.Action(); // アクション実行（Ack をピーク優先で昇格）
+                        if (switchDirector != null)
+                        {
+                            if (switchDirector.Next()) haptics?.Action(); // 受理＝アクション実行（Ack を昇格）
+                            else if (switchDirector.InsertActive)
+                            {
+                                // インサート差し込み中は手動切替を破棄し、赤メッセージ + 失敗振動で伝える。
+                                guidePanel?.ShowTransient("演出中は切り替えできません");
+                                haptics?.Error();
+                            }
+                            // それ以外の false（クールダウン中等）は Ack 済みのため追加フィードバックなし。
+                        }
+                        else { registry.Next(); haptics?.Action(); }
                     }
                     // B: ステータス表示トグル（真実源 IsVisible の反転）。
                     if (bDown) { ToggleStatus(); haptics?.Action(); }

@@ -200,8 +200,11 @@ namespace FixedCamVr.Streaming
         private float switchCooldownSec = SwitchDirectorLogic.DefaultCooldownSec;
         private float minDwellSec = SwitchDirectorLogic.DefaultDwellSec;
 
-        [Tooltip("手動切替後この秒数は自動切替を抑止する（手動優先）。")]
-        [SerializeField, Min(0f)] private float manualHoldSec = 8f;
+        // manualHold は撤廃（0 固定）。手動で別カメラを覗いても、次のゾーン境界を跨いだら dwell 0.5s のみで
+        // ゾーンのカメラへ戻る「立ち止まってプレビュー」挙動にする。SerializeField だと既存シーン YAML に
+        // 焼き付いた旧 8 がコード既定を上書きし続けるため、switchCooldownSec/minDwellSec と同じく非シリアライズ
+        // 化して authored 値を無効化する。純ロジック（SwitchDirectorLogic）の manualHold 機構は変えず 0 を渡すだけ。
+        private const float manualHoldSec = 0f;
 
         [Header("Dip-to-black transition")]
         [Tooltip("黒へ落とす時間 (秒)。この終端でソースを差し替える。")]
@@ -243,6 +246,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>dip-to-black 演出の実行中か（HUD 表示用）。</summary>
         public bool Dipping => _dip != DipState.Idle;
+
+        /// <summary>インサート表示中か（手動切替は拒否される。拒否時の赤メッセージ判定に使う）。</summary>
+        public bool InsertActive => _logic.InsertActive;
 
         private void Awake()
         {
@@ -299,27 +305,37 @@ namespace FixedCamVr.Streaming
             _commitSource = SwitchSource.External;
         }
 
-        /// <summary>巡回 Next（手動）。</summary>
-        public void Next()
+        /// <summary>巡回 Next（手動）。受理したら true（インサート表示中・dip 中・クールダウン中は false）。</summary>
+        public bool Next()
         {
-            if (registry == null || registry.Count == 0) return;
-            RequestManual(CameraStreamRegistry.WrapIndex(registry.ActiveIndex + 1, registry.Count));
+            if (registry == null || registry.Count == 0) return false;
+            return RequestManual(CameraStreamRegistry.WrapIndex(registry.ActiveIndex + 1, registry.Count));
         }
 
-        /// <summary>巡回 Prev（手動）。</summary>
-        public void Prev()
+        /// <summary>巡回 Prev（手動）。受理したら true（インサート表示中・dip 中・クールダウン中は false）。</summary>
+        public bool Prev()
         {
-            if (registry == null || registry.Count == 0) return;
-            RequestManual(CameraStreamRegistry.WrapIndex(registry.ActiveIndex - 1, registry.Count));
+            if (registry == null || registry.Count == 0) return false;
+            return RequestManual(CameraStreamRegistry.WrapIndex(registry.ActiveIndex - 1, registry.Count));
         }
 
-        /// <summary>絶対指定の手動切替（キーボード数字キー等）。</summary>
-        public void RequestManual(int target)
+        /// <summary>
+        /// 絶対指定の手動切替（キーボード数字キー等）。受理したら true。
+        /// インサート表示中（<see cref="InsertActive"/>）は演出を割らないよう拒否して false。
+        /// dip 中・クールダウン中・同一 index も false。
+        /// </summary>
+        public bool RequestManual(int target)
         {
-            if (registry == null) return;
+            if (registry == null) return false;
+            if (_logic.InsertActive) return false;   // インサート差し込み中は手動切替を破棄
+            if (_dip != DipState.Idle) return false; // dip 中は新規切替を始めない（cooldown でも弾かれる）
             _logic.Configure(switchCooldownSec, minDwellSec, manualHoldSec);
-            if (_dip != DipState.Idle) return; // dip 中は新規切替を始めない（cooldown でも弾かれる）
-            if (_logic.RequestManual(target, Time.time, out int commit)) StartDip(commit, SwitchSource.Manual);
+            if (_logic.RequestManual(target, Time.time, out int commit))
+            {
+                StartDip(commit, SwitchSource.Manual);
+                return true;
+            }
+            return false;
         }
 
         /// <summary>ゾーン自動切替の要求（PlayerZoneTracker から）。dwell/cue/manualHold ガード後に適用。</summary>

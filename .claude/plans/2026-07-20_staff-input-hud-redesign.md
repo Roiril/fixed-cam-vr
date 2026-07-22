@@ -75,6 +75,34 @@
   再実行が必要**。RightHandAnchor 不在時は生成スキップ（追従先が無いと常時非表示のため）。
 - **⚠ Quest 実機未検証**（パネルの距離・大きさ・billboard の読みやすさ、StatusHud 新文言の可読性・行数は現場確認前提）。
 
+## 追記: HUD「初見で分かる」改訂 + A=立ち止まってプレビュー（2026-07-23 実装・実機未検証）
+
+**動機**: 現場スタッフが初見で読める表記へ。①カメラ健全性の丸数字+●○が非直感、②残差 m 表記が体感しにくい、
+③接続行が冗長、④スクリーン下のカメラ名ラベルが死蔵で場所を食う、⑤A 手動送り後 8 秒間ゾーン自動が止まり「別カメラを
+覗いたら戻らない」、⑥インサート演出中に A を押すと演出が割れる。
+
+- **StatusHud.BuildStatus**（GC ゼロ・updateInterval 間引きは維持）:
+  - 行3 カメラ健全性: `カメラ映像: ①● ②● ③○` → **`カメラ1○ カメラ2○ カメラ3×`**（○=映像が届いている/×=届いていない・
+    日本の○×直感・半角スペース 2 個区切り。丸数字・●・`カメラ映像:` プレフィックスは廃止）。
+  - 行5 位置合わせ: 残差を **cm 表記**へ（`Mathf.RoundToInt(m*100)` の整数 cm・`sb.Append(int)` で GC ゼロ）。
+    済み→`位置合わせOK（ずれ 5cm）`（残差 0 or 丸めて 0cm なら `位置合わせOK` のみ）/ 未実施→`⚠位置合わせが必要です` /
+    要再登録→`⚠位置合わせのやり直しが必要です`。
+  - 行6 右コントローラ接続行を**削除**。`StatusHud.SetControllerConnected` API と `_controllerConnected` フィールド、
+    OvrControllerBridge の statusHud への接続 push も削除（guidePanel への push は非表示制御に使うため残置）。
+- **スクリーン下カメラ名ラベル削除**: `MjpegScreenStage.prefab` の `SourceLabel`（`● [1/3] Phone01`）GameObject を
+  プレハブから削除し、`Assets/Scripts/Streaming/CurrentSourceLabel.cs`(+.meta) を削除（他シーン参照なし・grep 確認済み）。
+- **A=立ち止まってプレビュー**: `CameraSwitchDirector.manualHoldSec` を **非シリアライズ const 0f** 化
+  （switchCooldownSec/minDwellSec と同手法でシーン YAML 焼き付き 8 を無効化。純ロジック SwitchDirectorLogic とテストは不変・
+  Director が 0 を渡すだけ）。手動で別カメラを覗いても次のゾーン境界を跨いだら dwell 0.5s のみで即ゾーンへ戻る。
+- **インサート中 A の破棄 + 赤メッセージ**: `Next()`/`Prev()`/`RequestManual(int)` を **bool 戻り値**化（受理=true・
+  インサート表示中/dip 中/クールダウン/同一 index は false）。`CameraSwitchDirector.InsertActive` を public 公開。
+  OvrControllerBridge の A 処理は `Next()` が false かつ `InsertActive` なら `ControllerGuidePanel.ShowTransient("演出中は
+  切り替えできません")`（本文上に赤 1 行・既定 2 秒で本文へ復帰・mode 切替でも破綻しない）+ `haptics.Error()`。
+  cue 再生中の手動切替は従来どおり許可。
+- **Setup 再実行が必要**: manualHold 焼き付き除去・プレハブ変更の反映のため `Setup Main Demo Scene` を再実行
+  （新 SerializeField は増やしていないが、既存シーンの authored manualHold=8 を消すためシーン保存が要る）。
+- **⚠ Quest 実機未検証**（○×/cm 表記の可読性・プレビュー挙動の体感・インサート中赤メッセージは現場確認前提）。
+
 ## 追記: 位置合わせフィードバック改修（2026-07-21 実装・実機未検証）
 
 **動機**: 登録フローの手応え不足を埋める。①0.5 秒ホールドの進行が見えない・鳴らない、②中断/成功の触覚が非対称、
@@ -143,7 +171,7 @@
 - **テキスト UI だけが剛体 head-lock**（映像スクリーン ScreenAnchor は deadzone+SmoothDamp の緩追従を既に持つ）
 - TMP（HUD）とレガシー TextMesh（Panel/Guidance）の 2 系統混在
 - 進行状況（lap/zone/cam/cue）は heartbeat（ShowControlClient.cs:1078-1099）に全部揃っているが HMD に出していない
-- CurrentSourceLabel は実装済み・未配線（死蔵）
+- CurrentSourceLabel は実装済み・未配線（死蔵）→ **2026-07-23 に削除**（スクリプト + prefab の SourceLabel GameObject）
 
 ## 新設計
 

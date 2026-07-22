@@ -123,7 +123,7 @@ Normal / Registration）。左手・スティック・cue 試射・操作チー�
 
 | 状態 | 入力 | 機能 |
 |---|---|---|
-| Normal | A（右）短押し | カメラ手動送り Next（設営・リハ確認用。誤爆しても Zone 自動が復帰） |
+| Normal | A（右）短押し | カメラ手動送り Next（設営・リハ確認用）。手動で覗いても**次のゾーン境界を跨げば即ゾーンのカメラへ戻る**（manualHold 撤廃・立ち止まってプレビュー）。インサート演出中は破棄＋赤メッセージ |
 | Normal | B（右）短押し | ステータス表示トグル（StatusHud） |
 | Normal | 右グリップ 2 秒長押し | ランリセット（周回リセット + cue 発火済みクリア・体験者交代） |
 | Normal | 右トリガー 2 秒長押し | 位置合わせ（Registration）入場 |
@@ -187,13 +187,15 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
   Normal アクション→Action / 長押し進捗→SetHoldProgress / ModeChanged・RunReset→Fire。登録フローの節目は
   `CourseRegistrationController` の `PointCaptured`/`FitRejected`/`RegistrationConfirmed` イベントを Bridge が購読
   （Tracking asmdef は OVRInput 非依存を維持）。`haptics` 参照は null 許容（未配線でも全機能が従来通り動く）
-- **接続表示**: StatusHud 末行に `右コントローラ: 接続中`/`⚠右コントローラが見つかりません（電池・スリープを確認）`
-  （Bridge が `OVRInput.IsControllerConnected(RTouch)` を StatusHud と ControllerGuidePanel の両方へ push）。
-  「押しても振動しない」時はまずこれで切り分ける（未接続なら ControllerGuidePanel も自動で消える）。
-  StatusHud 本文は 2026-07-23 に全編日本語・平文化（`[NORMAL]` 行頭・`信号 ●●○` 等の記号表記を廃止）。
+- **接続表示**: StatusHud の接続行は**廃止**（2026-07-23）。コントローラ未接続の切り分けは ControllerGuidePanel が
+  自動で消えることで行う（Bridge が `OVRInput.IsControllerConnected(RTouch)` を **ControllerGuidePanel へのみ** push。
+  StatusHud への push は撤去）。「押しても振動しない」時はまずガイドパネルが出ているかを見る。
+  StatusHud 本文は 2026-07-23 に○×表記・cm 化へ改稿（カメラ健全性は `カメラ1○ カメラ2×`＝○届いてる/×届いてない・
+  半角スペース 2 個区切り、位置残差は `位置合わせOK（ずれ 5cm）` の整数 cm。`[NORMAL]` 行頭・`信号 ●●○`・丸数字・接続行は廃止）。
   スタッフ向け操作早見表は右コントローラ追従の [`ControllerGuidePanel`](../../Assets/Scripts/Diagnostics/ControllerGuidePanel.cs)
-  が常時表示（Bridge が `PushModeLabel` で NORMAL/REG 本文を切替）
-- **⚠ 実機未検証**（2026-07-21）。振幅・波形の体感、Rコン未接続表示は現場調整前提
+  が常時表示（Bridge が `PushModeLabel` で NORMAL/REG 本文を切替）。**インサート演出中に A を押すと手動切替は破棄**され、
+  ガイドパネル上部に赤 1 行 `演出中は切り替えできません` を数秒出す（[`ControllerGuidePanel.ShowTransient`] + 失敗振動）。
+- **⚠ 実機未検証**（2026-07-21）。振幅・波形の体感、コントローラ未接続時のガイドパネル消灯は現場調整前提
 
 ### 周回カウントと cue 自動発火（2026-07-17〜）
 

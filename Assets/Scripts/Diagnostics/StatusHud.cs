@@ -113,10 +113,6 @@ namespace FixedCamVr.Diagnostics
         // コントローラ操作モードのラベル（NORMAL/REG）。OvrControllerBridge が遷移時に push する。
         private string _modeLabel = "";
 
-        // 右コントローラ接続状態。OvrControllerBridge が毎フレーム push する（Diagnostics は OVRInput 非依存
-        // のため直読みできない）。既定 true（push 前に「未接続」を誤表示しない）。
-        private bool _controllerConnected = true;
-
         /// <summary>ステータスの表示・非表示を外部から切り替える（右 B / Editor H）。</summary>
         public void SetVisible(bool v)
         {
@@ -133,9 +129,6 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>直近に push されたモードラベル（NORMAL/REG）。</summary>
         public string ModeLabel => _modeLabel;
-
-        /// <summary>右コントローラの接続状態をステータス行へ反映する（OvrControllerBridge が push）。</summary>
-        public void SetControllerConnected(bool connected) => _controllerConnected = connected;
 
         private void Awake()
         {
@@ -270,18 +263,18 @@ namespace FixedCamVr.Diagnostics
                 sb.Append('」');
             }
 
-            // 行3: カメラ映像: ①● ②● ③○（丸数字 + ●接続/○切断）。
-            sb.Append("\nカメラ映像: ");
+            // 行3: カメラ1○ カメラ2○ カメラ3×（○=映像が届いている / ×=届いていない・半角スペース 2 個区切り）。
+            sb.Append('\n');
             if (registry != null && registry.Count > 0)
             {
                 int n = registry.Count;
                 for (int i = 0; i < n; i++)
                 {
-                    if (i > 0) sb.Append(' ');
-                    if (i < 20) sb.Append((char)('①' + i)); // ①..⑳
-                    else { sb.Append(i + 1); sb.Append(':'); }   // 21 台以降は数字+:
+                    if (i > 0) sb.Append("  ");
+                    sb.Append("カメラ");
+                    sb.Append(i + 1);
                     var s = registry.Get(i);
-                    sb.Append(s != null && s.IsConnected ? '●' : '○');
+                    sb.Append(s != null && s.IsConnected ? '○' : '×');
                 }
             }
             else sb.Append('-');
@@ -297,28 +290,26 @@ namespace FixedCamVr.Diagnostics
                 sb.Append("\nカメラ切替を一時停止中");
 
             // 行5（該当時のみ）: 位置合わせの状態（要再登録 > 未登録 > 済み の優先順位）。
+            // 残差は cm 表記（Mathf.RoundToInt で整数 cm・sb.Append(int) で GC ゼロ）。
             if (courseFrame != null)
             {
                 if (courseFrame.NeedsReRegistration) sb.Append("\n⚠位置合わせのやり直しが必要です");
-                else if (!courseFrame.HasRegistration) sb.Append("\n⚠位置合わせが未実施です");
+                else if (!courseFrame.HasRegistration) sb.Append("\n⚠位置合わせが必要です");
                 else
                 {
-                    sb.Append("\n位置合わせ: 済み");
+                    sb.Append("\n位置合わせOK");
                     if (courseFrame.MaxResidualM > 0f)
                     {
-                        sb.Append("（ずれ ");
-                        sb.Append(courseFrame.MaxResidualM.ToString("0.00"));
-                        sb.Append("m）");
+                        int cm = Mathf.RoundToInt(courseFrame.MaxResidualM * 100f);
+                        if (cm > 0) // 丸めて 0cm になる微小残差は「位置合わせOK」のみに畳む
+                        {
+                            sb.Append("（ずれ ");
+                            sb.Append(cm);
+                            sb.Append("cm）");
+                        }
                     }
                 }
             }
-
-            // 行6: 右コントローラ接続 / 未接続（未接続は目立たせる。押しても振動しない時の切り分け＝
-            // streamer 層でなくコントローラ電池切れ / スリープ / ペアリング落ちを疑うための表示）。
-            sb.Append('\n');
-            sb.Append(_controllerConnected
-                ? "右コントローラ: 接続中"
-                : "⚠右コントローラが見つかりません（電池・スリープを確認）");
         }
     }
 }
