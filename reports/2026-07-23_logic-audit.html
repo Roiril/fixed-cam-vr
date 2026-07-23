@@ -1,0 +1,242 @@
+<title>廻リ視ロジック監査 2026-07-23</title>
+<style>
+  :root {
+    --bg: #F7F8F7; --surface: #FFFFFF; --ink: #22282B; --muted: #5C6B6D;
+    --line: #DCE3E1; --accent: #1F6E66; --accent-soft: #E4F0EE;
+    --critical: #B3261E; --critical-bg: #FBEAE8;
+    --high: #BA4A0C; --high-bg: #FBEFE4;
+    --medium: #96690A; --medium-bg: #F8F1DE;
+    --low: #5B6B7E; --low-bg: #EBEFF3;
+    --ok: #1F6E43; --ok-bg: #E5F1E9;
+    --code-bg: #EFF2F1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101416; --surface: #171D1F; --ink: #E4E9E8; --muted: #91A0A0;
+      --line: #2A3336; --accent: #55B8AA; --accent-soft: #1A2E2B;
+      --critical: #F2867D; --critical-bg: #3A1D1A;
+      --high: #F0A06A; --high-bg: #392417;
+      --medium: #E0BC5E; --medium-bg: #33290F;
+      --low: #9FB0C2; --low-bg: #222A33;
+      --ok: #7FC99A; --ok-bg: #16281D;
+      --code-bg: #1E2629;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101416; --surface: #171D1F; --ink: #E4E9E8; --muted: #91A0A0;
+    --line: #2A3336; --accent: #55B8AA; --accent-soft: #1A2E2B;
+    --critical: #F2867D; --critical-bg: #3A1D1A;
+    --high: #F0A06A; --high-bg: #392417;
+    --medium: #E0BC5E; --medium-bg: #33290F;
+    --low: #9FB0C2; --low-bg: #222A33;
+    --ok: #7FC99A; --ok-bg: #16281D;
+    --code-bg: #1E2629;
+  }
+  :root[data-theme="light"] {
+    --bg: #F7F8F7; --surface: #FFFFFF; --ink: #22282B; --muted: #5C6B6D;
+    --line: #DCE3E1; --accent: #1F6E66; --accent-soft: #E4F0EE;
+    --critical: #B3261E; --critical-bg: #FBEAE8;
+    --high: #BA4A0C; --high-bg: #FBEFE4;
+    --medium: #96690A; --medium-bg: #F8F1DE;
+    --low: #5B6B7E; --low-bg: #EBEFF3;
+    --ok: #1F6E43; --ok-bg: #E5F1E9;
+    --code-bg: #EFF2F1;
+  }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", system-ui, sans-serif;
+    line-height: 1.75; margin: 0; font-size: 15px;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 1.5rem; line-height: 1.4; margin: 0 0 4px; text-wrap: balance; }
+  h2 { font-size: 1.1rem; margin: 48px 0 16px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); text-wrap: balance; }
+  h3 { font-size: 1rem; margin: 0; }
+  .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 28px; }
+  code, .mono {
+    font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+    font-size: 0.85em; background: var(--code-bg); border-radius: 4px; padding: 1px 5px;
+  }
+  .verdict {
+    background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--critical);
+    border-radius: 8px; padding: 18px 22px; margin-bottom: 24px;
+  }
+  .verdict strong { font-size: 1.05rem; }
+  .stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+  .stat {
+    flex: 1 1 150px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 16px;
+  }
+  .stat .num { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .lbl { font-size: 0.78rem; color: var(--muted); letter-spacing: 0.04em; }
+  .stat.ok .num { color: var(--ok); }
+  .stat.bad .num { color: var(--critical); }
+  .chip {
+    display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
+    border-radius: 99px; padding: 2px 10px; vertical-align: 2px; white-space: nowrap;
+  }
+  .chip.critical { color: var(--critical); background: var(--critical-bg); }
+  .chip.high { color: var(--high); background: var(--high-bg); }
+  .chip.medium { color: var(--medium); background: var(--medium-bg); }
+  .chip.low { color: var(--low); background: var(--low-bg); }
+  .chip.ok { color: var(--ok); background: var(--ok-bg); }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px 20px; margin-bottom: 16px;
+  }
+  .card.critical { border-left: 4px solid var(--critical); }
+  .card.high { border-left: 4px solid var(--high); }
+  .card.medium { border-left: 4px solid var(--medium); }
+  .card.low { border-left: 4px solid var(--low); }
+  .card .head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
+  .card .loc { font-size: 0.8rem; color: var(--muted); margin-bottom: 10px; overflow-x: auto; }
+  .card dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; }
+  .card dt { color: var(--muted); font-size: 0.82rem; font-weight: 600; white-space: nowrap; padding-top: 2px; }
+  .card dd { margin: 0; font-size: 0.92rem; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; }
+  details pre {
+    background: var(--code-bg); border-radius: 6px; padding: 10px 14px;
+    font-size: 0.8rem; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+  th, td { border: 1px solid var(--line); padding: 7px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); font-size: 0.8rem; letter-spacing: 0.03em; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; }
+  .tablewrap { overflow-x: auto; }
+  .note { font-size: 0.85rem; color: var(--muted); }
+  ul { padding-left: 1.4em; }
+  @media (max-width: 560px) { .card dl { grid-template-columns: 1fr; } .card dt { padding-top: 8px; } }
+</style>
+
+<main>
+  <h1>廻リ視 / fixed-cam-streamer ロジック監査</h1>
+  <p class="sub">2026-07-23 ｜ 対象: 廻リ視（<code>Assets/Scripts/</code> 66 ファイル）+ fixed-cam-streamer v0.5.0（Kotlin 12 ファイル）+ 境界契約（show.json / HTTP / discovery / sa://）｜ TableDuo は対象外</p>
+
+  <div class="verdict">
+    <strong>結論: 「ロジック上すべて問題なく動く」とは言えない。</strong><br>
+    テストで固定された純ロジック層は健全（EditMode 245/245 全通過）。一方、<b>テストが届いていない配線・境界契約・実機ライフサイクル層</b>に、敵対的検証を通過した確定バグが <b>8 件</b>（critical 1 / high 3 / medium 4）。うち上位 4 件は本番ショーの進行・オペレーション・フェイルソフトを実際に壊しうる。
+  </div>
+
+  <div class="stats">
+    <div class="stat ok"><div class="num">245/245</div><div class="lbl">EditMode テスト（batchmode 実測）</div></div>
+    <div class="stat bad"><div class="num">8</div><div class="lbl">確定バグ（敵対検証通過）</div></div>
+    <div class="stat"><div class="num">0</div><div class="lbl">検証で棄却された所見</div></div>
+    <div class="stat"><div class="num">3</div><div class="lbl">low・未検証（参考）</div></div>
+  </div>
+  <p class="note">検証方式: 6 領域を独立監査（opus）→ critical/high は独立 2 票・medium は 1 票の敵対的検証（反証できたら棄却）→ 全会一致のみ「確定」。さらに上位 4 件は親スレッドが grep で実コード照合済み。</p>
+
+  <h2>確定バグ（重大度順）</h2>
+
+  <div class="card critical">
+    <div class="head"><span class="chip critical">CRITICAL</span><h3>① timeline の present-flag が Unity 側で全て true に化ける（契約不整合）</h3></div>
+    <div class="loc"><code>ShowControlClient.cs:848</code> ⇄ <code>tools/web-compositor/timeline.js:476-485</code> ｜ 検証 2/2 確定</div>
+    <dl>
+      <dt>何が起きるか</dt><dd>Web 卓は hasPost / hasInsert / hasOverride が false でも既定オブジェクトを常に非 null で書き出す。Unity の <code>NormalizeTimelinePresentFlags</code> は受信した bool を捨てて <code>obj != null</code> から再導出するため、<b>全セグメント・全 cue で present-flag が無条件 true</b> になる。</dd>
+      <dt>実害</dt><dd>(1) 幽霊 exit インサート（カメラ 0 へ 4 秒差し込み）が全区間に発生 (2) カメラ別グレーディングが中立値で上書き (3) cue の authored フェード / trim が既定値で全置換。ライブ・焼き込み両経路で発生し、<b>Web 検証モードでは正しく見える</b>（実機でのみ発症）。</dd>
+      <dt>修正の方向</dt><dd>Unity 側で Web 送信の has* bool を信頼する（ライブパース直後は bool が正しく届く）か、Web 側を CameraDef と同じ「未使用キーは出力しない」方式に揃える。</dd>
+    </dl>
+    <details><summary>証跡</summary><pre>timeline.js:478-483  override: a.hasOverride ? {...} : defaultOverride() / post: s.hasPost ? {...} : {...FX_DEFAULT} / insert: ... : defaultInsert()（false でも非 null）
+ShowControlClient.cs:848-853  seg.hasPost = seg.post != null; seg.hasInsert = seg.insert != null; c.hasOverride = c.@override != null（bool を破棄）
+消費側: InsertController.cs:57（幽霊 insert 登録）/ TimelineDirector.cs:104（中立 post 適用）/ CueScheduler.cs:293-300（override 全置換）
+CameraDef.hasPost が動くのは Web が未使用 cam.post キーを削除するから（app.js:143）。timeline はキーを常に出すため同手法が破綻。</pre></details>
+  </div>
+
+  <div class="card high">
+    <div class="head"><span class="chip high">HIGH</span><h3>② 右 B ボタンが実機で全て死んでいる（prefab の SerializeField 既定値罠）</h3></div>
+    <div class="loc"><code>OvrControllerBridge.cs:42</code> / <code>Assets/Prefabs/Logic/StreamingLogic.prefab:77-84</code> ｜ 検証 2/2 確定 + 親 grep 照合済み</div>
+    <dl>
+      <dt>何が起きるか</dt><dd><code>statusButton = OVRInput.Button.Two</code> の C# 初期化子は prefab YAML に <code>statusButton</code> キーが無いため無視され、型 default（0 = <code>Button.None</code>）で読まれる。prefab には旧フィールド（prevButton / anchorToggleButton）が残存 = スクリプト改稿後に再シリアライズされていない。</dd>
+      <dt>実害</dt><dd>(1) B の StatusHud トグル不可 (2) <b>位置合わせ登録の Verify で B 確定が押せず registration.json を保存できない</b>（現地の位置合わせワークフローが実機で完結不能）。A / トリガー / グリップは YAML にキーがあり正常。</dd>
+      <dt>修正の方向</dt><dd>prefab YAML に <code>statusButton: 2</code> を追記 + 旧フィールド掃除（unity-prefab-fields スキルの手順どおり）。</dd>
+    </dl>
+  </div>
+
+  <div class="card high">
+    <div class="head"><span class="chip high">HIGH</span><h3>③ HMD 着脱後に <code>_suspended</code> が固着し、自己回復機構が全停止する</h3></div>
+    <div class="loc"><code>CameraStream.cs:253</code>（resume-gap フォールバック）｜ 検証 2/2 確定 + 親 grep 照合済み</div>
+    <dl>
+      <dt>何が起きるか</dt><dd><code>_suspended</code> の解除は OS の resume コールバック（<code>OnApplicationPause(false)</code> 等）経由のみ。だが resume-gap フォールバック自体が「Quest/Link はこのコールバックを確実に配送しない」前提で書かれており、その経路で復帰すると <code>_suspended=true</code> が恒久残留する（書き手は <code>SetSuspended</code> のみ・grep で確認済み）。</dd>
+      <dt>実害</dt><dd>表示は復帰して見えるが、以後 <b>stall watchdog・砂嵐（SignalLostFx）・discovery 自動張替の 3 つが全部無効化</b>。その後にカメラが本当に停止しても砂嵐が出ず、フリーズした最終フレームが露出したまま自己回復しない。</dd>
+      <dt>修正の方向</dt><dd>resume-gap 発火時に <code>_suspended=false</code> も揃えて解除する（registry 側から呼ぶなら全 stream 一括）。</dd>
+    </dl>
+  </div>
+
+  <div class="card high">
+    <div class="head"><span class="chip high">HIGH</span><h3>④ Web override 中に古いゾーン保留が commit し、固定カメラが外れる</h3></div>
+    <div class="loc"><code>ShowControlClient.cs:748</code> / <code>CameraSwitchDirector.cs:100,419</code> ｜ 検証 2/2 確定 + 親 grep 照合済み</div>
+    <dl>
+      <dt>何が起きるか</dt><dd>ゾーン境界を跨いだ直後（dwell 計時中）にオペレータが cameraOverride を発火すると、tracker は無効化されるが Director 内の保留は <code>_pendingZone == override先</code> の時しか消えない。別カメラの保留は生き残り、約 cooldown+dwell（既定 1 秒）後に <code>SwitchSource.Zone</code> として commit される。</dd>
+      <dt>実害</dt><dd>オペレータの固定が勝手に破れてゾーンカメラへ切り替わり、さらに <b>LapCounter が周回を誤進行</b>（Zone commit のため算入される）。既存テスト T5 は保留ゼロの条件で通るため未検出。</dd>
+      <dt>修正の方向</dt><dd>override 適用時に Director の保留を無条件クリア（<code>CancelPending</code> 相当を追加）。</dd>
+    </dl>
+  </div>
+
+  <div class="card medium">
+    <div class="head"><span class="chip medium">MEDIUM</span><h3>⑤ 動画 cue の Prepare 失敗で <code>_current</code> が残留し、ゾーン自動切替がデッドロック</h3></div>
+    <div class="loc"><code>ScreenOverlayController.cs:200</code> ｜ 検証 1/1 確定</div>
+    <dl>
+      <dt>何が起きるか</dt><dd>動画パスは Prepare 前に <code>_current=data</code> を立てるが、DL 失敗→ストリーミング URL フォールバック→Android で Prepare 失敗（既知の NuCachedSource2 -1）のとき errorReceived はログのみで <code>_current</code> を戻さない。静止画パスは安全（非対称）。</dd>
+      <dt>実害</dt><dd>不可視 cue が「再生中」扱いのまま残り、Director が cueActive で自動切替を凍結 → LapCounter / CueScheduler も止まり、<b>グリップ緊急停止までラン全体の自動進行が停止</b>（PC 不在ショーで致命的）。</dd>
+      <dt>修正の方向</dt><dd>errorReceived / Prepare タイムアウトで <code>StopOverlay</code> 相当のクリーンアップを走らせる。</dd>
+    </dl>
+  </div>
+
+  <div class="card medium">
+    <div class="head"><span class="chip medium">MEDIUM</span><h3>⑥ 位置合わせのキャンセル退場が、未確定のプレビュー変換を元に戻さない</h3></div>
+    <div class="loc"><code>CourseRegistrationController.cs:437</code> / <code>CourseFrame.cs:115-122</code> ｜ 検証 1/1 確定</div>
+    <dl>
+      <dt>何が起きるか</dt><dd>残差ガード通過時点で <code>SetRegistration(save:false)</code> が CourseFrame をプレビュー値へ書き換え（ゾーン再配置 + 要再登録警告も解除）。トリガー長押しキャンセルはこれを退避・復元しない。</dd>
+      <dt>実害</dt><dd>「保存せず終了」したのにセッションのゾーンは未保存の（目視で NG だった）フィットに整列したまま。registration.json（次回起動値）と乖離し、recenter 警告も無音で消える。</dd>
+      <dt>修正の方向</dt><dd>登録モード入場時に変換をスナップショットし、キャンセル経路で復元。</dd>
+    </dl>
+  </div>
+
+  <div class="card medium">
+    <div class="head"><span class="chip medium">MEDIUM</span><h3>⑦ stall watchdog が <code>_lastFrameTime</code> を汚し、砂嵐が約 10 秒毎に点滅消灯</h3></div>
+    <div class="loc"><code>CameraStream.cs:369</code> ｜ 検証 1/1 確定</div>
+    <dl>
+      <dt>何が起きるか</dt><dd>強制再接続時にフレーム未受信のまま <code>_lastFrameTime=now</code> を代入。SignalLostFx はこの値を配信断の真実源として読むため、10 秒毎に 0.6 秒だけ「復旧した」と誤認して砂嵐が消える。</dd>
+      <dt>実害</dt><dd>真の信号断中、砂嵐が周期的に消えてフリーズフレームが露出（「信号ロスト」演出が壊れて見える）。throttle は別変数で担保済みなのでこの代入は不要。</dd>
+      <dt>修正の方向</dt><dd><code>_lastFrameTime = now</code> の行を削除（再発火抑止は <code>_lastReconnectTime</code> が既に担う）。</dd>
+    </dl>
+  </div>
+
+  <div class="card medium">
+    <div class="head"><span class="chip medium">MEDIUM</span><h3>⑧ streamer: カメラ自動復旧後、<code>/info</code> が 0x0 に固着</h3></div>
+    <div class="loc"><code>CameraController.kt:314</code>（fixed-cam-streamer）｜ 検証 1/1 確定</div>
+    <dl>
+      <dt>何が起きるか</dt><dd><code>bind()</code> が info を widthPx=0 で再構築するのに変化検知用 <code>lastInfoW/H</code> をリセットしない。復帰後に同一解像度でフレームが来ると再設定がスキップされ 0x0 が恒久固着。deviceRotationDeg も同様に 0 へ戻る。</dd>
+      <dt>実害</dt><dd>カメラ奪取 / HAL エラーからの自動復旧（設計機能）のたびに /info と GET / の解像度メタが壊れる。映像本体と X-Width ヘッダは無事（診断メタのみ）。</dd>
+      <dt>修正の方向</dt><dd><code>bind()</code> で <code>lastInfoW/H = -1</code> にリセット。</dd>
+    </dl>
+  </div>
+
+  <h2>low・未検証（敵対検証は未実施・参考情報）</h2>
+  <ul>
+    <li><b>パスワードのみ変更で再接続されない</b> — <code>CameraSource.cs:130</code> の <code>ConnectionKey</code> が pass を含まないため、show.json で auth のパスワードだけ更新しても稼働中接続に反映されない。</li>
+    <li><b>未列挙 config 変更で配信断</b> — <code>MainActivity.kt:326</code> の onDestroy が無条件に Service を止める。uiMode（ダークモード切替）等で Activity 再生成 → 2〜3 秒の配信断。</li>
+    <li><b><code>distributor.info</code> の read-modify-write 競合</b> — <code>CameraController.kt:683</code> ほか。volatile copy→代入が複数スレッドから走り、同時発生時に片方の更新がロストしうる（メタのみ・低頻度）。</li>
+  </ul>
+
+  <h2>健全と確認できた層</h2>
+  <ul>
+    <li><b>純ロジック層は全通過</b>: EditMode 245/245（batchmode 実測・failed 0）。ゾーン Pick / LapCounter 順方向進行 / CueSchedule / InsertLogic / SwitchDirectorLogic / RigidFit2D / 触覚重畳 / 登録ガイダンス等、テストで固定された挙動はすべて仕様どおり。</li>
+    <li><b>streamer の配信中核は確定欠陥なし</b>: FrameDistributor の単一スロット配信・HttpServer の multipart 書き出し・UDP discovery 応答は監査を通過（確定はメタデータ系 1 件のみ）。</li>
+    <li><b>棄却 0 件</b>: 検証フェーズで反証された所見は無かった（監査所見の精度が高かった）。</li>
+  </ul>
+
+  <h2>手法とカバレッジ</h2>
+  <div class="tablewrap"><table>
+    <tr><th>領域</th><th>対象</th><th>所見</th></tr>
+    <tr><td>受信コア</td><td>MjpegStreamReceiver / CameraStream / Registry / MjpegScreen / SignalLostFx / Discovery ほか 10 ファイル</td><td class="num">3（確定 2・low 1）</td></tr>
+    <tr><td>ショー制御</td><td>ShowControlClient / Overlay / CueScheduler / TimelineDirector / Insert / SwitchDirector ほか 14 ファイル</td><td class="num">2（確定 2）</td></tr>
+    <tr><td>トラッキング・位置合わせ</td><td>PlayerZone(Tracker) / ZoneLayoutSolver / LapCounter / CourseFrame / 登録 ほか 12 ファイル</td><td class="num">1（確定 1）</td></tr>
+    <tr><td>入力・HUD・Fx・配線</td><td>OvrBridge / Input / Diagnostics / Fx 全部 + MainDemoSceneSetup</td><td class="num">1（確定 1）</td></tr>
+    <tr><td>streamer Android</td><td>Kotlin 全 12 ファイル（v0.5.0）</td><td class="num">3（確定 1・low 2）</td></tr>
+    <tr><td>境界契約</td><td>show.json ⇄ JsonUtility / HTTP ヘッダ / discovery / sa:// 焼き込み</td><td class="num">1（確定 1・critical）</td></tr>
+  </table></div>
+  <p class="note" style="margin-top:12px">
+    実行: 監査 6 体 + 検証 12 体（計 18 エージェント・opus・約 12 分・総 3.2M トークン）。判定は「反証者全会一致で生存した所見のみ確定」。上位 4 件（①〜④）は親スレッドが grep で実コードを直接照合済み。<br>
+    限界: 本監査は<b>静的なロジック監査</b>であり、実機挙動（レイテンシ・描画・触覚の体感等）や Wi-Fi 環境起因の問題は対象外。既知の「実機未検証」項目（timeline / discovery / 登録リチュアル等）は仕様書記載のとおり現地検証が別途必要。
+  </p>
+</main>

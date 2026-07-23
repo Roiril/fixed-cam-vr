@@ -1,5 +1,6 @@
 # Project Memory Index
 
+- [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) - 2026-07-23 全体ロジック監査の確定バグ 8 件（critical 1 / high 3 / medium 4・未修正バックログ）。修正着手はここから
 - [controller_input_final.md](controller_input_final.md) - コントローラは右手4入力が最終形（機能追加禁止・2026-07-23 ユーザー宣言）。ToggleActiveCameraCue は未配線デッドコード
 - [hud_font_and_preview.md](hud_font_and_preview.md) - HMD内文言を変えたらフォント再生成必須（静的ベイク・忘れると実機豆腐）／見た目確認は Play 禁止・HudPreviewScreenshot（batchmode可）
 
