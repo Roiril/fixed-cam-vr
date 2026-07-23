@@ -303,7 +303,7 @@ namespace FixedCamVr.Streaming
 
         // ステータス行 + ヘッダを CRLFCRLF まで読み、Content-Type と Transfer-Encoding を返す。
         // CRLFCRLF が見つかるまで 1 バイトずつ読む（ヘッダ全体は通常 <1KB なので問題なし）。
-        private static async Task<(string contentType, string transferEncoding)> ReadResponseHeadersAsync(NetworkStream stream, CancellationToken ct)
+        private static async Task<(string contentType, string transferEncoding)> ReadResponseHeadersAsync(Stream stream, CancellationToken ct)
         {
             var sb = new StringBuilder(512);
             byte[] one = new byte[1];

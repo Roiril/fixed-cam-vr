@@ -14,15 +14,7 @@
 import { FX, FX_DEFAULT, camColor, escapeHtml, createMediaCache } from './common.js';
 import { createCompositeView } from './composite-view.js';
 import { createCueEditor } from './cue-editor.js';
-
-function defaultOverride() { return { strength: 1, fadeIn: 0.5, fadeOut: 0.5, trimStart: 0, trimEnd: 0 }; }
-function newAssign(cueId) { return { cueId, delaySec: 0, once: true, override: defaultOverride(), hasOverride: false }; }
-function defaultInsert() {
-  return { anchor: 'exit', camera: 0, delaySec: 0, durationSec: 4, cueId: '', once: true, post: { ...FX_DEFAULT }, hasPost: false };
-}
-function newSeg(lap, camera) {
-  return { lap, camera, cues: [], post: { ...FX_DEFAULT }, hasPost: false, insert: defaultInsert(), hasInsert: false };
-}
+import { defaultOverride, defaultInsert, newSeg, newAssign, serializeTimeline, normalizeTimeline, migrateFromSchedule } from './timeline-model.js';
 
 export function createTimeline(container, deps) {
   // deps: { getCameras, getCues, getCourseOrder, getGlobalPost, getLiveImg,
@@ -462,66 +454,22 @@ export function createTimeline(container, deps) {
   // ---- 保存 ------------------------------------------------------------------
   q('.tl-save').onclick = async () => {
     timeline.rev = (parseInt(timeline.rev, 10) || 0) + 1;
-    const res = await deps.saveTimeline(serialize());
+    const res = await deps.saveTimeline(serializeTimeline(timeline));
     if (res && res.ok !== false) { dirty = false; renderDirty(); }
     else { dirtyEl.textContent = '✕ 保存失敗'; }
   };
-
-  // 保存用に正規化（present-flag を確定。空セグメントは落とす）。
-  function serialize() {
-    const segs = timeline.segments
-      .filter((s) => (s.cues && s.cues.length) || s.hasPost || s.hasInsert)
-      .map((s) => ({
-        lap: s.lap, camera: s.camera,
-        cues: (s.cues || []).map((a) => ({
-          cueId: a.cueId, delaySec: a.delaySec || 0, once: a.once !== false,
-          override: a.hasOverride ? { ...defaultOverride(), ...(a.override || {}) } : defaultOverride(),
-          hasOverride: !!a.hasOverride,
-        })),
-        post: s.hasPost ? { ...FX_DEFAULT, ...(s.post || {}) } : { ...FX_DEFAULT },
-        hasPost: !!s.hasPost,
-        insert: s.hasInsert ? { ...defaultInsert(), ...(s.insert || {}), post: { ...FX_DEFAULT, ...((s.insert && s.insert.post) || {}) } } : defaultInsert(),
-        hasInsert: !!s.hasInsert,
-      }));
-    return { rev: timeline.rev, segments: segs };
-  }
 
   // ---- adopt / migration ------------------------------------------------------
   function adopt(state) {
     const tl = state && state.timeline;
     const hasTl = tl && Array.isArray(tl.segments) && tl.segments.length > 0;
     if (hasTl) {
-      timeline = normalize(tl);
+      timeline = normalizeTimeline(tl);
     } else {
       // migration: schedule.entries → timeline（編集開始）。無ければ空。
       const entries = (state && state.schedule && Array.isArray(state.schedule.entries)) ? state.schedule.entries : [];
       timeline = migrateFromSchedule(entries, tl ? tl.rev : 1);
     }
-  }
-  function normalize(tl) {
-    const segs = (tl.segments || []).map((s) => {
-      const seg = newSeg(s.lap, s.camera);
-      seg.cues = Array.isArray(s.cues) ? s.cues.map((a) => ({
-        cueId: a.cueId, delaySec: a.delaySec || 0, once: a.once !== false,
-        override: { ...defaultOverride(), ...(a.override || {}) }, hasOverride: !!a.hasOverride,
-      })) : [];
-      seg.hasPost = !!s.hasPost; if (s.post) seg.post = { ...FX_DEFAULT, ...s.post };
-      seg.hasInsert = !!s.hasInsert;
-      if (s.insert) seg.insert = { ...defaultInsert(), ...s.insert, post: { ...FX_DEFAULT, ...(s.insert.post || {}) } };
-      return seg;
-    });
-    return { rev: Number.isInteger(tl.rev) ? tl.rev : 1, segments: segs };
-  }
-  function migrateFromSchedule(entries, rev) {
-    const out = { rev: Number.isInteger(rev) ? rev : 1, segments: [] };
-    for (const e of entries) {
-      if (!Number.isInteger(e.lap) || !Number.isInteger(e.camera) || !e.cueId) continue;
-      let s = out.segments.find((x) => x.lap === e.lap && x.camera === e.camera);
-      if (!s) { s = newSeg(e.lap, e.camera); out.segments.push(s); }
-      const a = newAssign(e.cueId); a.delaySec = e.delaySec || 0; a.once = e.once !== false;
-      s.cues.push(a);
-    }
-    return out;
   }
   function recomputeLapCount() {
     const maxLap = timeline.segments.reduce((m, s) => Math.max(m, s.lap || 1), 0);

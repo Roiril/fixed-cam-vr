@@ -39,6 +39,7 @@ namespace FixedCamVr.Streaming
         private float _lastManualTime = float.NegativeInfinity;
         private bool _cueActive;
         private bool _insertActive;
+        private bool _overrideActive;
 
         // ゾーン自動切替の単一保留（最新の目標だけを保持し、dwell/cue/manualHold の解除待ちで適用）。
         private bool _hasPendingZone;
@@ -60,6 +61,9 @@ namespace FixedCamVr.Streaming
         /// <summary>インサート表示中フラグ（cue と独立に自動切替を凍結する）。</summary>
         public bool InsertActive => _insertActive;
 
+        /// <summary>Web cameraOverride 中フラグ（cue/insert と独立に自動切替を凍結する）。HUD/デバッグ用。</summary>
+        public bool OverrideActive => _overrideActive;
+
         public void Configure(float cooldownSec, float minDwellSec, float manualHoldSec)
         {
             _cooldownSec = Mathf.Max(0f, cooldownSec);
@@ -78,9 +82,21 @@ namespace FixedCamVr.Streaming
             // ゾーン自動切替が始まらない事故を防ぐ（InsertController 側の後片付けと二重の保険）。
             _insertActive = false;
             _cueActive = false;
+            _overrideActive = false;
         }
 
         public void SetCueActive(bool active) => _cueActive = active;
+
+        /// <summary>
+        /// Web cameraOverride の適用/解除。凍結し、遷移のたびに stale 保留を無条件クリアする
+        /// （enter: override 前の保留を捨てる / exit: 解除後は tracker 再 Pick が権威なので保留を残さない）。
+        /// cue/insert 凍結は保留を保持するが override は保持しない（tracker 自己回復が復帰の権威のため）。
+        /// </summary>
+        public void SetOverrideActive(bool active)
+        {
+            _overrideActive = active;
+            _hasPendingZone = false;
+        }
 
         /// <summary>
         /// インサート表示中の凍結を設定する（cue 凍結と同型）。true の間ゾーン自動切替は commit しないが
@@ -146,7 +162,7 @@ namespace FixedCamVr.Streaming
             commitTarget = _current;
             if (!_hasPendingZone) return false;
             if (_pendingZone == _current) { _hasPendingZone = false; return false; }
-            if (_cueActive || _insertActive) return false;                  // cue / インサート中は凍結（保留は保つ）
+            if (_cueActive || _insertActive || _overrideActive) return false; // cue / インサート / override 中は凍結
             if (now - _lastSwitchTime < _cooldownSec) return false;         // クールダウン
             if (now - _lastManualTime < _manualHoldSec) return false;       // 手動優先の抑止
             if (now - _pendingSince < _minDwellSec) return false;           // 最小滞在
@@ -363,6 +379,12 @@ namespace FixedCamVr.Streaming
             switchCooldownSec = SwitchDirectorLogic.ResolveTiming(cooldownSec, SwitchDirectorLogic.DefaultCooldownSec);
             _logic.Configure(switchCooldownSec, minDwellSec, manualHoldSec);
         }
+
+        /// <summary>
+        /// Web cameraOverride の適用/解除を凍結として通知する（ShowControlClient.Apply から呼ぶ）。
+        /// 凍結中はゾーン自動切替を commit せず、遷移のたびに stale 保留を無条件クリアする。
+        /// </summary>
+        public void SetOverrideActive(bool active) => _logic.SetOverrideActive(active);
 
         // ---- インサートショット（InsertController 用）----
 

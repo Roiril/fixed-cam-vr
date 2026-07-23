@@ -1,32 +1,37 @@
 ---
 name: logic-audit-2026-07-23
-description: 2026-07-23 全体ロジック監査の確定バグ 8 件（未修正バックログ）。修正着手時はここから
+description: 2026-07-23 全体ロジック監査 11 件はすべて修正済み（EditMode 364/364・JVM 31/31・node 5/5）。残るは実機確認チェックリスト
 metadata: 
   node_type: memory
   type: project
   originSessionId: e786cb11-5737-4417-8d64-87e1d39bcf64
-  modified: 2026-07-23T02:52:11.134Z
+  modified: 2026-07-23T04:55:37.063Z
 ---
 
-# 2026-07-23 ロジック監査 — 確定バグバックログ
+# 2026-07-23 ロジック監査 — 全 11 件修正済み・実機確認待ち
 
-廻リ視（Assets/Scripts/）+ fixed-cam-streamer v0.5.0 + 境界契約の全体監査。
-6 領域並列監査（opus）→ 敵対的検証（critical/high 2 票・全会一致のみ確定）→ 親 grep 照合。
-EditMode 245/245 全通過（純ロジック層は健全・バグは全て配線/契約/実機ライフサイクル層）。
-詳細レポート: `reports/2026-07-23_logic-audit.html`（Artifact: https://claude.ai/code/artifact/317b18a3-f795-4a92-ba77-bb73ded27cd1）
+監査（確定 8 + low 3）→ opus 設計 6 体 → opus 実装 6 体で全件根本修正。監査レポート:
+`reports/2026-07-23_logic-audit.html`。検証済み物証: **EditMode 364/364**（+119 増）・**streamer JVM 31/31**（基盤新設）・**node 5/5**（web 契約）。
 
-**確定 8 件（未修正）**:
+**修正の骨子**（詳細は rules/streaming.md・unity-vr.md の 2026-07-23 監査修正マーク）:
 
-1. **[critical] timeline present-flag 契約不整合** — ShowControlClient.cs:848 が has* を `!=null` 再導出、Web timeline.js:476-485 は false でも非 null を常時出力 → 全 true 化（幽霊 exit インサート・グレーディング中立化・cue override 全置換）。Web 検証モードでは見えない
-2. **[high] 右 B ボタン全死** — StreamingLogic.prefab に `statusButton` キー無し → Button.None（[[unity-prefab-fields]] 罠の実例）。StatusHud トグル + 登録 Verify の B 確定が実機で不能
-3. **[high] _suspended 固着** — CameraStream.cs:253 resume-gap 復帰が _suspended を解除しない → stall watchdog / 砂嵐 / discovery 張替が全停止
-4. **[high] override 中の古いゾーン保留 commit** — ShowControlClient.cs:748 / CameraSwitchDirector.cs:100。dwell 中に override すると約 1s 後に固定が破れ LapCounter も誤進行
-5. **[medium] 動画 cue Prepare 失敗で _current 残留** — ScreenOverlayController.cs:200 → 自動切替デッドロック（グリップ停止まで復帰不能）
-6. **[medium] 登録キャンセルがプレビュー変換を復元しない** — CourseRegistrationController.cs:437（save:false 適用後、キャンセルで戻さない）
-7. **[medium] stall watchdog が _lastFrameTime を汚す** — CameraStream.cs:369 → 真の信号断中に砂嵐が 10s 毎に 0.6s 消灯
-8. **[medium] streamer 再バインド後 /info が 0x0 固着** — CameraController.kt:314（lastInfoW/H 未リセット）
+1. ✅ present-flag 契約 → `TimelinePresentFlags.Reconcile`（AND 確定・3 経路一律）+ Web は `timeline-model.js` 抽出でキー省略。共有 fixture `Assets/Tests/Fixtures/show_timeline_canonical.json`（再生成は `UPDATE_FIXTURE=1 node --test`）
+2. ✅ B ボタン全死 → StreamingLogic.prefab 全書換 + `StreamingLogicPrefabFieldsTests`（missing/stale 機械監査）
+3. ✅ _suspended 固着 → `StreamWatchdogLogic` 抽出（resume-gap で suspend 解除・Registry ラッチ二層）
+4. ✅ override 中の保留 commit → `SwitchDirectorLogic._overrideActive` 第一級凍結 + 保留無条件クリア
+5. ✅ 動画 cue デッドロック → `OverlayPlaybackLogic` 抽出 + OnVideoError / prepareTimeoutSec(6s) で AbortCurrentCue
+6. ✅ 登録キャンセル → `CourseFrame` プレビューセッション（Begin/Commit/Rollback）+ `HoldAverageSampler`
+7. ✅ stall watchdog の LastFrameRealtime 汚染 → 代入廃止・再発火ゲート 10s 化
+8. ✅ streamer /info 0x0 固着 + RMW 競合 → `StreamInfoHolder` 単一オーナー化 + rebind 時の向き再適用（v0.5.1）
+9. ✅ ConnectionKey に pass の FNV-1a 指紋（pass のみ変更で再接続）
+10. ✅ MainActivity onDestroy → `LifecyclePolicy`（config 変更で Service を止めない）+ configChanges 拡張
+11. ✅ カバレッジ P1: `CameraSourceEndpointTests` / `MjpegParserTests`（receiver に Stream seam）/ `ShowConfigPrecedenceTests`
 
-low 未検証 3 件（ConnectionKey に pass 不参加 / MainActivity onDestroy 無条件 stop / distributor.info RMW 競合）はレポート参照。
+**⚠ 実機未検証（現地/実機で確認するもの）**:
+- タイムライン区間保存 → Quest で幽霊インサート・post 中立化が出ないこと（旧バグは Web 検証モードでは見えない）
+- 実機 B ボタン（StatusHud トグル・登録 Verify 確定）
+- HMD 着脱 → カメラ停止で砂嵐が出る・自動復旧が生きていること
+- streamer: カメラ奪取→復帰後の `curl /info`（0x0 でない）・ダークモード切替で配信断しないこと・三脚固定の向き維持
+- 動画 cue の Prepare 実測が 6s に収まるか（大容量なら `prepareTimeoutSec` を SerializeField で延長）
 
-**Why:** 修正はユーザー未依頼（調査のみの依頼だった）。着手時は severity 順に。①は Web/Unity どちらを直すか設計判断が要る（CameraDef 方式=キー省略 vs bool 信頼）。
-**How to apply:** 修正したら本ファイルの該当行に「✅修正済 (commit)」を付け、全件消えたらファイルごと削除。
+**P2 テスト候補（未着手・coverage-map 設計に一覧あり）**: FlattenCues / ApplyPostForActive 4 段解決 / Registry ActiveChanged 契約 / StartupFader / SignalLostFx 純抽出。

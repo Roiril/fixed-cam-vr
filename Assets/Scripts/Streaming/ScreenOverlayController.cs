@@ -44,6 +44,10 @@ namespace FixedCamVr.Streaming
         [Tooltip("VideoClip 用 RenderTexture の縦解像度。クリップのアスペクトで横を決める。")]
         [SerializeField] private int videoHeightPx = 720;
 
+        [Tooltip("動画 cue の Prepare がこの秒数（unscaled realtime）を超えたら失敗とみなし cue を中止して live へ戻す。" +
+                 "DL 済みローカル mp4 の Prepare には十分な既定。現場で大容量動画に不足なら延長する。")]
+        [SerializeField, Min(0.5f)] private float prepareTimeoutSec = 6f;
+
         private Material? _material;
         private MjpegScreen? _screen;
         private VideoPlayer? _player;
@@ -54,11 +58,11 @@ namespace FixedCamVr.Streaming
         private readonly Dictionary<string, Texture2D> _urlTextureCache = new();
         // 動画 URL → DL 済みローカル mp4 パスのキャッシュ。
         private readonly Dictionary<string, string> _videoFileCache = new();
-        // PlayCue が非同期ロードを挟む間に次の PlayCue が来たら古い方を破棄するための世代カウンタ。
-        private int _playGeneration;
-        // Prepare() を発行した時点の世代。OnPrepared で照合し、stale な Prepare 完了
-        //（動画 cue A の準備中に cue B へ切り替えた後で A の prepareCompleted が届く）を破棄する。
-        private int _prepareGeneration = -1;
+        // 世代（stale ロード/Prepare 破棄）+ 動画 Prepare ライフサイクル（保留/タイムアウト/受理/エラー中止）の純判定。
+        // PlayCue が非同期ロードを挟む間に次の PlayCue が来たら古い方を破棄する。動画 cue の Prepare 失敗経路
+        // （errorReceived / タイムアウト）で _current を解放し、CameraSwitchDirector が cueActive=true のまま
+        // 自動切替を恒久凍結する穴を断つ（B3）。
+        private readonly OverlayPlaybackLogic _logic = new();
 
         /// <summary>現在のオーバーレイ（フェードアウト中も含む）。null なら停止。</summary>
         public OverlayCueData? Current => _current;
@@ -82,7 +86,7 @@ namespace FixedCamVr.Streaming
             _player.skipOnDrop = true;
             _player.prepareCompleted += OnPrepared;
             _player.loopPointReached += OnVideoEnd; // 自然終端 → 自動フェードアウト（ループしない cue のみ）
-            _player.errorReceived += (vp, msg) => Debug.LogWarning($"[ScreenOverlay] VideoPlayer error: {msg}");
+            _player.errorReceived += OnVideoError;
 
             ApplyStrength(0f);
         }
@@ -118,6 +122,8 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
+            CheckPrepareTimeout();
+
             for (int i = 0; i < bindings.Length; i++)
             {
                 if (bindings[i].key != KeyCode.None && Input.GetKeyDown(bindings[i].key))
@@ -163,7 +169,7 @@ namespace FixedCamVr.Streaming
         public void PlayCue(OverlayCueData data)
         {
             if (_material == null || _player == null) return;
-            int gen = ++_playGeneration;
+            int gen = _logic.BeginPlay();
             _ = RunPlayCueAsync(data, gen, destroyCancellationToken);
         }
 
@@ -183,7 +189,7 @@ namespace FixedCamVr.Streaming
             if (mask == null && !string.IsNullOrEmpty(data.maskUrl))
             {
                 mask = await LoadTextureAsync(data.maskUrl, ct);
-                if (gen != _playGeneration || ct.IsCancellationRequested) return; // 古い発火は破棄
+                if (gen != _logic.Generation || ct.IsCancellationRequested) return; // 古い発火は破棄
                 if (mask == null)
                 {
                     // maskUrl 指定ありでロード失敗 → 白フォールバックに落ちると全面差し替え（黒背景素材なら
@@ -215,12 +221,12 @@ namespace FixedCamVr.Streaming
                     // HTTP ストリーミングを扱えず NuCachedSource2 error -1 で落ちる。
                     // UnityWebRequest（=画像で実証済みのスタック）でローカルに DL してから再生する。
                     string localUrl = await GetLocalVideoUrlAsync(data.sourceUrl, ct);
-                    if (gen != _playGeneration || ct.IsCancellationRequested) return;
+                    if (gen != _logic.Generation || ct.IsCancellationRequested) return;
                     _player.source = VideoSource.Url;
                     _player.url = localUrl;
                 }
                 _player.isLooping = data.loop;
-                _prepareGeneration = gen;
+                _logic.BeginPrepare(gen, Time.realtimeSinceStartup);
                 _player.Prepare(); // 完了後 OnPrepared で RT 接続 + 再生 + フェードイン
             }
             else
@@ -229,7 +235,7 @@ namespace FixedCamVr.Streaming
                 if (still == null && !string.IsNullOrEmpty(data.sourceUrl))
                 {
                     still = await LoadTextureAsync(data.sourceUrl, ct);
-                    if (gen != _playGeneration || ct.IsCancellationRequested) return;
+                    if (gen != _logic.Generation || ct.IsCancellationRequested) return;
                 }
                 if (still == null)
                 {
@@ -253,7 +259,7 @@ namespace FixedCamVr.Streaming
             // _current==null でも世代を進める。ロード await 中の cue（PlayCueAsync が _current 代入前）は
             // _current が null のままなので、この return より前に世代を上げないと in-flight のロード完了が
             // 生き残って stop 後に live を差し替える穴が残る。
-            _playGeneration++; // ロード途中の発火も破棄
+            _logic.Stop(); // ロード途中の発火も破棄・進行中 Prepare 保留も無効化
             if (_current == null) return;
             float fade = Mathf.Max(_current.fadeOutSeconds, 1e-3f);
             _target = 0f;
@@ -344,7 +350,7 @@ namespace FixedCamVr.Streaming
         private void OnPrepared(VideoPlayer vp)
         {
             // stale な Prepare 完了（準備中に別 cue へ切り替え済み）は現行 cue を乗っ取らない。
-            if (_prepareGeneration != _playGeneration) return;
+            if (!_logic.AcceptPrepared()) return;
             var cue = _current;
             if (cue == null || _material == null) return;
 
@@ -380,6 +386,35 @@ namespace FixedCamVr.Streaming
         private void OnVideoEnd(VideoPlayer vp)
         {
             if (_current != null && !_current.loop && !_stopWhenFadedOut) StopOverlay();
+        }
+
+        private void OnVideoError(VideoPlayer vp, string message)
+        {
+            Debug.LogWarning($"[ScreenOverlay] VideoPlayer error: {message}");
+            // 現行世代の動画 cue に対するエラーなら畳んで live を守る（_current 残留で
+            // CameraSwitchDirector が cueActive=true のまま自動切替を恒久凍結するのを防ぐ）。
+            if (_current == null || !_current.SourceIsVideo) return;
+            if (_logic.ShouldAbortOnError()) AbortCurrentCue("video error");
+        }
+
+        // Update から毎フレーム呼ぶ。unscaled realtime で timeScale=0 でも進む。
+        private void CheckPrepareTimeout()
+        {
+            if (_logic.TimedOut(Time.realtimeSinceStartup, prepareTimeoutSec)
+                && _current != null && _current.SourceIsVideo)
+                AbortCurrentCue("prepare timeout");
+        }
+
+        // cue を即畳んで live へハードカット（Prepare 未完なので表示は出ていない）。_player/_material は null 安全。
+        private void AbortCurrentCue(string reason)
+        {
+            if (_player != null && _player.isPlaying) _player.Stop();
+            _current = null;
+            _stopWhenFadedOut = false;
+            _strength = 0f;
+            _target = 0f;
+            ApplyStrength(0f);
+            Debug.LogWarning($"[ScreenOverlay] cue aborted ({reason}) — live 維持");
         }
 
         private void BeginFadeIn(OverlayCueData cue)

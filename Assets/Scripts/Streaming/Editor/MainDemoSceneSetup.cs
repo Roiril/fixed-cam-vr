@@ -257,9 +257,10 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetBool(applierSo, "rebuildFromDefaultOnStart", false);
             applierSo.ApplyModifiedPropertiesWithoutUndo();
 
-            // 2.9. CourseRegistrationController（HMD 2 点登録。両グリップ 3 秒長押しで開始、
-            //      壁の凸角と北腕東端をコントローラ先端でタッチ → CourseFrame へ剛体変換を解いて渡す。
-            //      Verify でワイヤーフレーム表示 → B 確定 / A やり直し / スティック微調整。
+            // 2.9. CourseRegistrationController（HMD N 点登録。右トリガー 2 秒長押しで開始、
+            //      床の×印マーカーをコントローラ先端でタッチ → CourseFrame へ剛体変換を解いて渡す。
+            //      Verify でワイヤーフレーム表示 → B 確定 / A やり直し（プレビューはトランザクション。
+            //      キャンセル退場は確定前 state へロールバック）。
             //      OS recenter は OvrControllerBridge が検知して CourseFrame.MarkNeedsReRegistration を呼ぶ）。
             var registration = trackerGo.AddComponent<CourseRegistrationController>();
             var regSo = new SerializedObject(registration);

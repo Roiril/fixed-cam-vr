@@ -1,0 +1,27 @@
+#nullable enable
+namespace FixedCamVr.Streaming
+{
+    /// <summary>
+    /// timeline の present-flag を「宣言flag ∧ 対象オブジェクト存在」で確定する純ロジック。
+    /// 旧実装は object!=null の純代入で、Web が flag=false でも既定オブジェクトを常に送るため
+    /// 全 true に化けた（B1）。宣言 bool を gate に残すことで再発しない。live/焼き込み/キャッシュ一律に呼ぶ。
+    /// object 存在は「宣言 true なのに object 欠落」時の null-deref 防止の付帯条件にすぎない。
+    /// </summary>
+    public static class TimelinePresentFlags
+    {
+        public static void Reconcile(ShowTimelineDef? t)
+        {
+            if (t?.segments == null) return;
+            foreach (var seg in t.segments)
+            {
+                if (seg == null) continue;
+                seg.hasPost = seg.hasPost && seg.post != null;
+                seg.hasInsert = seg.hasInsert && seg.insert != null;
+                if (seg.insert != null) seg.insert.hasPost = seg.insert.hasPost && seg.insert.post != null;
+                if (seg.cues != null)
+                    foreach (var c in seg.cues)
+                        if (c != null) c.hasOverride = c.hasOverride && c.@override != null;
+            }
+        }
+    }
+}

@@ -126,8 +126,21 @@ namespace FixedCamVr.Streaming
 
         public void ClearDiscoveryEndpoint() => _hasDiscovery = false;
 
-        /// <summary>接続パラメータの変化検知キー（host|port|user）。再接続要否の判定に使う。</summary>
-        public string ConnectionKey => $"{EffectiveHost}|{EffectivePort}|{EffectiveUser}";
+        /// <summary>接続パラメータの変化検知キー（host|port|user|pass 指紋）。再接続要否の判定に使う。</summary>
+        public string ConnectionKey => $"{EffectiveHost}|{EffectivePort}|{EffectiveUser}|{PassKey}";
+
+        // 生パスワードはキー文字列に載せない（ConnectionKey は public string で将来ログに出うるため、
+        // プロジェクトの秘密非漏洩規約に沿い非可逆化）。空パスワードは空文字（認証なしカメラの後方互換）。
+        private string PassKey => string.IsNullOrEmpty(EffectivePass) ? "" : PassFingerprint(EffectivePass);
+
+        // 変化検知用の非可逆フィンガープリント。実行内 equality 比較のみに使うので暗号強度不要。
+        // FNV-1a 32bit は決定的・依存ゼロ（string.GetHashCode は .NET Core でランダム化されうり非決定的）。
+        private static string PassFingerprint(string s)
+        {
+            uint h = 2166136261u;
+            for (int i = 0; i < s.Length; i++) { h ^= s[i]; h *= 16777619u; }
+            return h.ToString("x8");
+        }
 
         /// <summary>
         /// 任意の host:port に対する /info URL を作る（discovery の切替前照合用）。

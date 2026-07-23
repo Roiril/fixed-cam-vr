@@ -78,7 +78,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   registry: {fileID: 6927847108225882352}
-  screenAnchor: {fileID: 0}
+  switchDirector: {fileID: 0}
+  signalFx: {fileID: 0}
+  showControl: {fileID: 0}
   nextButton: 1
-  prevButton: 2
-  anchorToggleButton: 4
+  statusButton: 2
+  statusHud: {fileID: 0}
+  guidePanel: {fileID: 0}
+  haptics: {fileID: 0}
+  lapCounter: {fileID: 0}
+  cueScheduler: {fileID: 0}
+  courseRegistration: {fileID: 0}
+  courseFrame: {fileID: 0}

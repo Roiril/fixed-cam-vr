@@ -149,6 +149,17 @@ Normal / Registration）。左手・スティック・cue 試射・操作チー�
 | Verify: 右トリガー 2 秒長押し | キャンセル退場 |
 
 - **スティックナッジ（平行移動・yaw 微調整）は廃止**（2026-07-20）。N 点剛体フィット + 残差ガード 0.12m が精度を担保し、やり直しが約 10 秒で安いため。
+- **登録プレビューはトランザクション**（2026-07-23 監査修正・テスト `CourseFramePreviewSessionTests`/`CourseRegistrationControllerTests`）:
+  `CourseFrame` に `BeginPreviewSession`/`CommitPreviewSession`/`RollbackPreviewSession` を実装。登録モード入場で Begin、
+  B 確定（SaveRegistration）で Commit、**キャンセル退場（トリガー長押し）で Rollback** — 変換・要再登録フラグ・品質メタを
+  コミット済み値へ復元し Changed を発火（ダーティ時のみ。Review-B の無変更退場では発火しない）。旧実装は残差ガード通過時の
+  `SetRegistration(save:false)` プレビューがキャンセル後も残り、未保存の誤フィットにゾーンが整列したままだった。
+  ホールド平均計時は純ロジック [`HoldAverageSampler`](../../Assets/Scripts/Tracking/HoldAverageSampler.cs)（dt 注入・`RegInput.deltaTime` を Bridge が供給）。
+- **prefab の SerializeField は機械監査**（2026-07-23 監査修正・テスト `StreamingLogicPrefabFieldsTests`）: StreamingLogic.prefab の
+  `OvrControllerBridge` ブロックに `statusButton` キーが無く Button.None（0）で読まれ、**実機で B ボタン全死**（StatusHud トグル +
+  登録 Verify の B 確定不能）だった。prefab YAML を現行フィールドへ全書換（statusButton:2 追加・stale キー掃除）し、
+  SerializedObject の実効値 + 生 YAML キー実在の二本立てテストで再発（missing/stale 双方）を機械検出する。
+  MonoBehaviour に [SerializeField] を足したら prefab YAML への反映と本テストの更新を対で行うこと（unity-prefab-fields スキル参照）。
 - **先端位置は RightHandAnchor の position をそのまま使う**（先端オフセット補正なし。誤差 2〜3cm は 1m ベースライン + 40cm 回廊 + 8cm オーバーラップに対して許容）。SerializeField `rightHandTransform`、null なら headTransform にフォールバック。
 - **登録直後にワイヤーフレーム検証表示**：壁ポリライン（L の 2 辺・高さ既定 1m）+ フロア外周を LineRenderer でゴースト表示。show.json layout に wall/floor があればそれを、無ければ内蔵既定（フロア 1.8×1.8・regPoint から導出）を描く。ワイヤーは毎フレーム CourseFrame 変換に追従。
 - **視界内ガイダンス**：自前 TextMesh は持たず、各ステップの指示を `GuidanceText` / `GuidanceColor` として公開し、単一サーフェス [`StatusHud`](../../Assets/Scripts/Diagnostics/StatusHud.cs) が登録中に読み取って強制表示する（旧 [CourseRegGuidance] TextMesh は廃止・Tracking→Diagnostics の asmdef 依存を作らないプロバイダ方式）。save は B 確定でのみ registration.json を書く。文言のフォーマットは純関数 [`RegistrationGuidance`](../../Assets/Scripts/Tracking/RegistrationGuidance.cs)（進捗バー・残差行・Review ヘッダ）に切り出し EditMode テスト（`RegistrationGuidanceTests`）で固定。

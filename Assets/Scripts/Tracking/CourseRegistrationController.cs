@@ -92,6 +92,7 @@ namespace FixedCamVr.Tracking
             public bool mark;         // A（右）の Down エッジ: マークサンプリング開始 / Verify 中はやり直し
             public bool markHeld;     // A（右）の押しっぱなし状態: ホールド平均サンプリングの継続判定
             public bool confirm;      // B（右）: Verify で確定
+            public float deltaTime;   // このフレームの経過時間 (秒)。ホールド平均計時に使う（EditMode 駆動可）
         }
 
         private enum Phase { Idle, Capture, Verify, Review }
@@ -103,8 +104,7 @@ namespace FixedCamVr.Tracking
         /// ホールド平均サンプリングの進捗 [0,1]（非サンプル中は 0）。Bridge が長押し進捗と Max 合成して
         /// 触覚 HoldTick へ流す（0.5 秒ホールド中も進行ランプが鳴る）。
         /// </summary>
-        public float SampleHoldProgress01 =>
-            (_sampling && MarkHoldSec > 0f) ? Mathf.Clamp01(_sampleTime / MarkHoldSec) : 0f;
+        public float SampleHoldProgress01 => _sampler.Progress01;
 
         /// <summary>
         /// 現在の登録ガイダンス文字列（登録モード中のみ非空）。StatusHud（単一サーフェス）が読み取って表示する。
@@ -163,11 +163,8 @@ namespace FixedCamVr.Tracking
         private string _transientMsg = "";      // エラー等の一時メッセージ
         private float _transientUntil;
 
-        // A ホールド平均サンプリング。Feed が毎フレーム加算する（アロケーションなし）。
-        private bool _sampling;
-        private Vector3 _sampleAccum;
-        private int _sampleCount;
-        private float _sampleTime;
+        // A ホールド平均サンプリング（dt 駆動の純ロジック。計時を EditMode でも決定的に固定できる）。
+        private readonly HoldAverageSampler _sampler = new(MarkHoldSec);
 
         // ライブ誤差 % ガイダンス（間引き更新のキャッシュ）。点 index が変わったら即更新する。
         private string _liveGuidanceText = "";
@@ -265,9 +262,10 @@ namespace FixedCamVr.Tracking
             if (on)
             {
                 ResolvePoints();                          // 最新 layout の regPoints を取り込む
+                courseFrame?.BeginPreviewSession();       // 以後の Verify プレビューをトランザクション化する
                 _capturedWorld = new Vector3[_authoredPoints.Length];
                 _pointIndex = 0;
-                _sampling = false;
+                _sampler.Reset();
                 _liveGuidanceForIndex = -1;
                 BuildViz();
 
@@ -289,8 +287,11 @@ namespace FixedCamVr.Tracking
             }
             else
             {
+                // B 確定以外の退場（トリガー長押しキャンセル / Review-B）はプレビューを確定前 state へ戻す。
+                // 確定経路は先に CommitPreviewSession 済みなので no-op（確定と共存できる）。
+                courseFrame?.RollbackPreviewSession();
                 _phase = Phase.Idle;
-                _sampling = false;
+                _sampler.Reset();
                 TearDownViz();
                 Debug.Log("[CourseReg] 登録モード OFF");
             }
@@ -342,37 +343,21 @@ namespace FixedCamVr.Tracking
             }
         }
 
-        // A ホールド平均のサンプリング進行（全点共通）。
+        // A ホールド平均のサンプリング進行（全点共通）。計時・平均は HoldAverageSampler（純ロジック）へ委譲。
         //   Down エッジで開始 → ホールド中は毎フレーム位置を加算 → MarkHoldSec 経過で平均を確定。
         //   途中で離したら不成立（ガイダンスにやり直し表示。点 index は進めないのでそのまま再トライ可）。
         private void UpdateMarkSampling(in RegInput input)
         {
-            if (!_sampling)
-            {
-                if (!input.mark) return;
-                _sampling = true;
-                _sampleAccum = Pointer(); // 押下フレームも 1 サンプル目として使う
-                _sampleCount = 1;
-                _sampleTime = 0f;
-                return;
-            }
-
-            if (!input.markHeld)
+            HoldAverageSampler.Result r =
+                _sampler.Tick(input.mark, input.markHeld, input.deltaTime, Pointer(), out Vector3 avg);
+            if (r == HoldAverageSampler.Result.Aborted)
             {
                 // MarkHoldSec 未満で離した → マーク不成立（点は採らない）。
-                _sampling = false;
                 ShowTransient("マーク不成立\n×印の真上にかざしたまま A を 0.5 秒静止してください", 2.5f);
                 SampleAborted?.Invoke(); // 触覚 Error（ホールド中断）
                 return;
             }
-
-            _sampleAccum += Pointer();
-            _sampleCount++;
-            _sampleTime += Time.deltaTime;
-            if (_sampleTime < MarkHoldSec) return;
-
-            _sampling = false;
-            CapturePoint(_sampleAccum / _sampleCount);
+            if (r == HoldAverageSampler.Result.Captured) CapturePoint(avg);
         }
 
         private Vector3 Pointer()
@@ -447,7 +432,7 @@ namespace FixedCamVr.Tracking
         {
             _phase = Phase.Capture;
             _pointIndex = 0;
-            _sampling = false;
+            _sampler.Reset();
             _liveGuidanceForIndex = -1;
             TearDownWireframe();
             Debug.Log("[CourseReg] やり直し — 点 1: 床の×印の真上に先端をかざして A を 0.5 秒ホールド");
@@ -458,6 +443,7 @@ namespace FixedCamVr.Tracking
             if (courseFrame != null)
             {
                 courseFrame.SaveRegistration();
+                courseFrame.CommitPreviewSession(); // プレビューを確定（以後の SetActive(false) の Rollback は no-op）
                 Debug.Log($"[CourseReg] 確定・保存: origin=({courseFrame.OriginXZ.x:F3},{courseFrame.OriginXZ.y:F3}) yaw={courseFrame.YawDeg:F1}°");
             }
             RegistrationConfirmed?.Invoke(); // 触覚 Fire（確定保存）
@@ -506,8 +492,9 @@ namespace FixedCamVr.Tracking
                 {
                     case Phase.Capture:
                         // サンプリング中は進捗バー付きで毎フレーム更新（ガイダンスブランチは間引きなし）。
-                        text = _sampling
-                            ? RegistrationGuidance.SamplingLine(_sampleTime, MarkHoldSec)
+                        // 経過時間は Progress01（=time/hold）から復元する（SamplingLine は elapsed を受ける）。
+                        text = _sampler.Active
+                            ? RegistrationGuidance.SamplingLine(_sampler.Progress01 * MarkHoldSec, MarkHoldSec)
                             : CaptureGuidance();
                         break;
                     case Phase.Verify:

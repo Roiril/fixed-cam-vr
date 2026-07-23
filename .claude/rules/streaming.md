@@ -109,6 +109,11 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
     ゾーンカメラへ復帰する。これが無いと同一ゾーン滞在のまま `_current` が不変で、次のゾーン跨ぎまで override カメラに表示が固着していた。
     （asmdef 循環回避のため Streaming→Tracking の型参照は作らず、再有効化＝自己回復に委ねる設計。当初案の SendMessage は EditMode テストで
     `ShouldRunBehaviour` アサートを踏むため OnEnable 自己回復へ変更した。）
+  - **Web override 中はゾーン自動切替を第一級凍結**（2026-07-23 監査修正・テスト `SwitchDirectorLogicTests`/`SwitchWiringTests.T6`）:
+    `SwitchDirectorLogic._overrideActive`（cue/insert 凍結と対称）。`ShowControlClient.Apply` が `CameraSwitchDirector.SetOverrideActive` で
+    掛け外しし、override enter/exit で **stale なゾーン保留を無条件クリア**する。旧実装は tracker 無効化だけで Director 内の保留
+    （override 直前に積まれた別カメラの dwell 計時）が残り、約 cooldown+dwell 後に `SwitchSource.Zone` で commit して固定が破れ
+    LapCounter も誤進行した。解除後の復帰は従来どおり PlayerZoneTracker OnEnable 自己回復が権威（保留は復活させない）
 - **デッドバンド自動クランプ**: [`ZoneLayoutApplier`](../../Assets/Scripts/Tracking/ZoneLayoutApplier.cs) は tracker へ渡す
   hysteresisShrink を **`min(hysteresisM, overlapM/2)`**（`ZoneLayoutSolver.ClampHysteresis`）へクランプし、逆転時に 1 回警告。
   現 show.json（overlapM=0.08 / hysteresisM=0.12）は編集なしで実効 **0.04** になり、`Pick` の shrink 保持デッドバンドが復活する
@@ -122,6 +127,12 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
   `maskUrl` 指定ありでロード失敗した場合、白フォールバック（全面差し替え＝黒背景素材なら live 全面黒）に落ちず cue 発火を中止して live を守る
   （動画/静止画パス両方）。maskUrl 未指定の意図的な全面差し替えは従来どおり白フォールバック。StopOverlay は `_current==null` でも世代を進めて
   in-flight のロード完了を無効化する（stop 後に cue が復活する穴を塞ぐ）
+- **動画 cue の Prepare 失敗/タイムアウトも cue を中止**（2026-07-23 監査修正・テスト `OverlayPlaybackLogicTests`/`OverlayVideoFailureTests`）:
+  DL 失敗→ストリーミング URL フォールバック→Android `NuCachedSource2 -1` で Prepare が失敗すると `_current` が残留し、
+  `CameraSwitchDirector` が cueActive=true のまま自動切替（LapCounter/CueScheduler 含む）を恒久凍結する穴があった。
+  `errorReceived`（`OnVideoError`）+ `prepareTimeoutSec`（既定 6s・unscaled）で**現行世代の動画 cue を `AbortCurrentCue` して live へ復帰**。
+  世代/Prepare ライフサイクルは純ロジック [`OverlayPlaybackLogic`](../../Assets/Scripts/Streaming/OverlayPlaybackLogic.cs) に分離
+  （Prepare 中の `_current` 先出し=切替凍結は正しい挙動として維持。失敗時のみ畳む）。`[ScreenOverlay] cue aborted` ログで検知可
 - **グリップ cue トグルは無条件停止優先**（2026-07-22 / 2026-07-23 補強）: [`ShowControlClient.ToggleActiveCameraCue`](../../Assets/Scripts/Streaming/ShowControlClient.cs) は
   何か再生中（`_overlay.Current != null`）なら id 一致に依存せず無条件で停止する。**停止は server 到達時も `stopCue`（空 id）送信に加えて必ずローカル `StopOverlay` を併用する**（2026-07-23 修正・テスト `GripStopLocalTests`）。
   スケジューラ発火 cue は server の activeCue が空のままなので、stopCue 送信だけでは Apply の遷移判定（cueId != _appliedCue）が起きずローカル再生が止まらない穴があった。コマンド送信は Web 表示・heartbeat との整合維持のため残す。
@@ -238,7 +249,14 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   - 切替は dip-to-black 付き（`CameraSwitchDirector` の `SwitchSource.Insert`）。insert 表示中はゾーン自動切替を凍結（cue 凍結と同型）。**周回カウントは実ゾーン移動の commit 時に通常どおり 1 回**（Insert 切替は LapCounter が数えない）
   - **insert 凍結の解除は必ず後片付け経由**（2026-07-23 修正・テスト `SwitchWiringTests.T1/T2`）: `InsertController.ResetRun` / `SetInserts` は進行中インサート（表示中）があれば先に `CleanupActiveInsert`（insert cue 停止・insert post 解除・`director.InsertReturn`）で畳んでから `InsertLogic` をリセットする。畳まないと `CameraSwitchDirector._insertActive`（凍結）が `InsertReturn` 単一経路でしか降りず、ゾーン自動切替が恒久凍結する（ショー中のタイムライン編集・体験者交代で踏む）。`SwitchDirectorLogic.Reset`（OnEnable 経路）でも `_insertActive`/`_cueActive` を false へ安全初期化する
   - **insert 中の実ゾーン移動は復帰時に Zone として反映**（2026-07-23 修正・テスト `SwitchWiringTests.T4`）: `EndInsert` の復帰先が開始時ゾーン（`InsertLogic.BaseZoneCamera`）と異なる＝insert 中に体験者が実ゾーンを移動していた場合、`InsertReturn(returnCamera, asZone:true)` で復帰 commit を `SwitchSource.Zone` として発火し、LapCounter / TimelineDirector に実ゾーン移動を反映する（従来は Insert 固定で Feed されず lap under-count・区間追跡ズレ・exit insert の誤遷移を起こしていた）。進行ポインタは順方向一致でしか進まないため二重カウントは起きない
-- **present-flag 必須**（JsonUtility 制約）: `hasPost` / `hasInsert` / `hasOverride` を必ず書く。null 入れ子は既定値で書かれるため、ライブ・焼き込みパース直後に `!=null` から確定する（`CameraDef.hasPost` と同じ手法）
+- **present-flag は宣言 bool が正**（2026-07-23 監査修正・テスト `TimelinePresentFlagsTests`/`TimelineFixtureContractTests`）:
+  `hasPost` / `hasInsert` / `hasOverride` は必ず書く。Unity は [`TimelinePresentFlags.Reconcile`](../../Assets/Scripts/Streaming/TimelinePresentFlags.cs) で
+  **`flag = 宣言bool && object != null`（AND）** に確定し、ライブ / 焼き込み / キャッシュの 3 経路一律に適用する。
+  旧実装は `!=null` 純導出で、Web（`timeline.js serialize()`）が flag=false でも既定オブジェクトを常時出力していたため
+  **全 present-flag が true に化け、全区間に幽霊 exit インサート（camera0 を 4 秒）が武装**する critical バグだった。
+  Web 側も flag=false 時に入れ子キーを省略する形へ変更（`timeline-model.js` に serialize/normalize/migrate を純関数抽出・
+  `node --test tools/web-compositor/*.test.mjs` で固定・共有 fixture `Assets/Tests/Fixtures/show_timeline_canonical.json` を生成）。
+  `CameraDef.hasPost` の `!=null` 導出は Web が未使用キーを削除するため今も正（timeline は AND 必須）
 - **JSON キー `override`** は C# 予約語のため Unity 側は `@override` フィールドで受ける（実行時フィールド名は `"override"` で JsonUtility が正しく往復。実型で確認済み）
 - **CachedConfig に timeline を保存**（オフライン発火。旧「cues 欠落」事故の教訓を踏襲）
 - **Web 検証モード**（実機不要）: Web 卓「▶ 検証」で **矢印キー**（→ 次ゾーン / ← 1手戻る / R 先頭 / Esc 終了）。Unity セマンティクス（LapCounter 順方向進行・CueScheduler・insert・post 3 段）を JS ミラーで再現し、発火順と「体験者に見える画」を WebGL プレビューで確認。**ローカルのみで show.json / 実機は書かない**
@@ -279,6 +297,10 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - **バックオフは接続確立でリセット**（2026-07-22）: 一度ヘッダのパースまで到達した接続の切断は、次リトライを 1s から始める（`MjpegStreamReceiver._connectionEstablished` を確立時に立て、catch でバックオフを 1s に戻してから倍化）。長時間安定した後の単発切断が 30s 待ちにならない
 - **バックオフ待機は RequestReconnect で中断可能**（2026-07-22）: バックオフ Delay 中も CTS を `_connectionCts` に公開し、stall watchdog 等の `RequestReconnect` が待機（最大 30s）を即中断して即リトライ（`DelayWithReconnect`）
 - **LoadImage 失敗時の再接続**（2026-07-22）: 壊れ JPEG 連続で `Texture2D.LoadImage` が false（texture 未更新＝黒/フリーズ）のとき受信統計を進めず、連続 30 枚 or 2 秒相当を超えたら（cooldown 明けで）強制再接続（`CameraStream`）。成功時のみ `_lastFrameTime`/seq/E2E を更新するので lag 検出・stall watchdog・SignalLostFx が沈黙しない
+- **健全性判定は純ロジック [`StreamWatchdogLogic`](../../Assets/Scripts/Streaming/StreamWatchdogLogic.cs) に集約**（2026-07-23 監査修正・テスト `StreamWatchdogLogicTests`）: suspend/resume-gap/stall/lag/decode-fail の判定を UnityEngine 非依存（時刻・dt 注入）で分離し、`CameraStream` は薄いシェル。挙動を変えるときはテストを先に直す
+  - **resume-gap は suspend も解除する**（A1 修正）: HMD 着脱で OS の resume コールバック（`OnApplicationPause(false)`）が来ないまま Update が再開すると `_suspended=true` が固着し、stall watchdog・砂嵐・discovery 自動張替が全停止していた。`BeginTick` の resume-gap 検知（dt>0.5s）で `_suspended=false` を揃えて解除（Registry 側ラッチも `Update` で自己回復・二層冪等）
+  - **stall watchdog は `LastFrameRealtime` を汚さない**（A2 修正）: 旧実装は再接続発火時に `_lastFrameTime=now` を代入し、SignalLostFx が「復旧した」と誤認して真の信号断中に砂嵐が約 10 秒毎に 0.6 秒消灯していた。代入を廃し、再発火ゲートを `StallReconnectSec`（10s）に変更（周期は従来どおり）
+- **`ConnectionKey` はパスワード変化も検知**（A3 修正・テスト `CameraSourceTests`）: `host|port|user|FNV-1a(pass)` 形式。show.json で auth のパスワードだけ変えても `ReapplyConnection` が発火する。生パスワードはキー文字列に露出しない（指紋のみ）
 - タイムアウトは 3 秒
 - `/info` `/health` 取得失敗は無視（DroidCam フォールバック互換）
 - 画面には接続状態を表示（VR 内デバッグ UI）

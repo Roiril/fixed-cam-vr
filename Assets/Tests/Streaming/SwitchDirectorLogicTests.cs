@@ -201,6 +201,66 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(commit, Is.EqualTo(1));
         }
 
+        // ---- override 第一級凍結（Web cameraOverride・B2） ----
+
+        [Test]
+        public void Override_Enter_ClearsStalePending()
+        {
+            var l = Make(dwell: 0f, cooldown: 0f, manualHold: 0f);
+            l.RequestZone(1, 0f);                      // override 前に保留を積む
+            Assert.That(l.HasPendingZone, Is.True);
+            l.SetOverrideActive(true);
+            Assert.That(l.HasPendingZone, Is.False, "override enter で stale 保留を無条件クリアする");
+            Assert.That(l.OverrideActive, Is.True);
+        }
+
+        [Test]
+        public void Override_FreezesTick_EvenWhenTimingGatesOpen()
+        {
+            var l = Make(dwell: 0f, cooldown: 0f, manualHold: 0f);
+            l.SetOverrideActive(true);
+            l.RequestZone(1, 0f);                      // override 中に保留が積まれても
+            Assert.That(l.Tick(10f, out _), Is.False, "cooldown/dwell 0 でも override 中は commit しない");
+            Assert.That(l.Current, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void Override_Exit_LeavesCleanSlate_NewRequestCommits()
+        {
+            var l = Make(dwell: 0f, cooldown: 0f, manualHold: 0f);
+            l.RequestZone(2, 0f);                      // override 前の stale 保留
+            l.SetOverrideActive(true);                 // クリア
+            l.SetOverrideActive(false);                // 解除（保留は残らない）
+            Assert.That(l.HasPendingZone, Is.False, "解除後も stale 保留は蘇らない");
+            Assert.That(l.OverrideActive, Is.False);
+            l.RequestZone(1, 0f);                      // 新規要求は通常経路で commit
+            Assert.That(l.Tick(1f, out int commit), Is.True);
+            Assert.That(commit, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Override_FreezesIndependentlyOfCueAndInsert()
+        {
+            var l = Make(dwell: 0f, cooldown: 0f, manualHold: 0f);
+            l.SetCueActive(false);
+            l.SetInsertActive(false);
+            l.SetOverrideActive(true);                 // override 単独で凍結する
+            l.RequestZone(1, 0f);
+            Assert.That(l.Tick(10f, out _), Is.False);
+        }
+
+        [Test]
+        public void Reset_ClearsOverrideActive()
+        {
+            var l = Make(dwell: 0f, cooldown: 0f, manualHold: 0f);
+            l.SetOverrideActive(true);
+            l.Reset(0);                                // OnEnable 経路で override 凍結が残らない
+            Assert.That(l.OverrideActive, Is.False);
+            l.RequestZone(1, 0f);
+            Assert.That(l.Tick(1f, out int commit), Is.True, "Reset 後は凍結が解けて commit する");
+            Assert.That(commit, Is.EqualTo(1));
+        }
+
         // ---- 部屋スケール向けの短い既定（2026-07-22 改修） ----
 
         [Test]

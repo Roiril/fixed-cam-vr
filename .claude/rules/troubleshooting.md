@@ -66,7 +66,8 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 ### 「Web で演出 ON にしても Quest にオーバーレイが出ない」（2026-06-17 実害）
 
 1. **cue 未保存が最多**: 演出 ON は `cue_<camId>` を発火するだけ。合成素材+マスクを選び 💾 cue 保存していないと show.json に cue が無く、Quest は「unknown cue id」で何も出せない（Web 側は未保存なら警告を出すようにした）
-2. **動画だけ出ない（画像は出る）**: ログに `E/NuCachedSource2: source returned error -1`。Android ネイティブ VideoPlayer が Python http.server(HTTP/1.0) からの HTTP ストリーミングを扱えない。→ Quest は UnityWebRequest でローカル DL してから `file://` 再生する（[`ScreenOverlayController.GetLocalVideoUrlAsync`](../Assets/Scripts/Streaming/ScreenOverlayController.cs)）。`[ScreenOverlay] video cached` ログが出れば DL 成功。画像/マスクは UnityWebRequest なので直 URL で出る（=切り分けに使える）
+2. **動画だけ出ない（画像は出る）**: ログに `E/NuCachedSource2: source returned error -1`。Android ネイティブ VideoPlayer が Python http.server(HTTP/1.0) からの HTTP ストリーミングを扱えない。→ Quest は UnityWebRequest でローカル DL してから `file://` 再生する（[`ScreenOverlayController.GetLocalVideoUrlAsync`](../Assets/Scripts/Streaming/ScreenOverlayController.cs)）。`[ScreenOverlay] video cached` ログが出れば DL 成功。画像/マスクは UnityWebRequest なので直 URL で出る（=切り分けに使える）。
+   動画 Prepare 失敗/タイムアウト時は自動で cue 中止＋live 復帰し、自動切替の恒久凍結は起きない（2026-07-23 監査修正・`OverlayPlaybackLogic`）。`[ScreenOverlay] cue aborted` ログで検知
 3. ファイル名のスペース/括弧は URL を percent-encode（Web の cue 保存で対応済み）
 
 ### 「コントローラのボタンが意図と違う / 左右どちらも同じ操作になる」（2026-06-17 実害）

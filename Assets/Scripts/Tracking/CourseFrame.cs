@@ -41,6 +41,25 @@ namespace FixedCamVr.Tracking
         private int _pointCount;
         private string _savedAtIso = "";
 
+        // プレビューセッション（登録の Verify プレビューをトランザクション化する）。
+        // BeginPreviewSession で現在の確定 state を退避し、コミット経路（B 確定）以外の退場
+        // （トリガー長押しキャンセル / Review-B）は RollbackPreviewSession で確定済み state へ戻す。
+        // _sessionDirty はプレビューが実際に適用された時のみ true（未適用のキャンセルで Changed を無駄撃ちしない）。
+        private bool _sessionActive;
+        private bool _sessionDirty;
+        private RegistrationSnapshot _snapshot;
+
+        private struct RegistrationSnapshot
+        {
+            public Vector2 originXZ;
+            public float yawDeg;
+            public bool needsReReg;
+            public bool hasReg;
+            public float maxResidualM;
+            public int pointCount;
+            public string savedAtIso;
+        }
+
         /// <summary>
         /// OS recenter（Oculus ボタン長押し等）でトラッキング原点が変わり、登録が無効になった状態。
         /// <see cref="MarkNeedsReRegistration"/> で立ち、<see cref="SetRegistration"/>/<see cref="ResetRegistration"/>
@@ -117,6 +136,9 @@ namespace FixedCamVr.Tracking
             originXZ = newOriginXZ;
             yawDeg = newYawDeg;
             _needsReRegistration = false;
+            // プレビューセッション中の適用はダーティ化（ロールバック時に復元 + Changed 発火の対象になる）。
+            // 4 引数版もこの 2 引数版を呼ぶので、ダーティ記録はここ 1 箇所で足りる。
+            if (_sessionActive) _sessionDirty = true;
             if (save) SaveRegistration();
             Changed?.Invoke();
         }
@@ -132,6 +154,59 @@ namespace FixedCamVr.Tracking
             _maxResidualM = maxResidualM;
             _pointCount = pointCount;
             SetRegistration(newOriginXZ, newYawDeg, save);
+        }
+
+        /// <summary>
+        /// プレビューセッションを開始し、現在の確定 state（変換 + 要再登録 + 品質メタ）を丸ごと退避する。
+        /// 以後の <see cref="SetRegistration"/>（Verify プレビュー）はダーティ記録され、
+        /// <see cref="RollbackPreviewSession"/> で確定済み state へ戻せるようになる。
+        /// 二重呼び出しは無害（再入場ごとに最新の確定 state で退避を上書きする）。
+        /// </summary>
+        public void BeginPreviewSession()
+        {
+            _snapshot = new RegistrationSnapshot
+            {
+                originXZ = originXZ,
+                yawDeg = yawDeg,
+                needsReReg = _needsReRegistration,
+                hasReg = _hasRegistration,
+                maxResidualM = _maxResidualM,
+                pointCount = _pointCount,
+                savedAtIso = _savedAtIso,
+            };
+            _sessionActive = true;
+            _sessionDirty = false;
+        }
+
+        /// <summary>
+        /// プレビューセッションを確定する（スナップショットを破棄し、現在の live state を確定として保持）。
+        /// B 確定経路で <see cref="SaveRegistration"/> の後に呼ぶ。冪等（セッション外は no-op）。
+        /// </summary>
+        public void CommitPreviewSession()
+        {
+            _sessionActive = false;
+        }
+
+        /// <summary>
+        /// プレビューセッションを破棄し、開始時の確定 state へ戻す。B 確定以外の退場
+        /// （トリガー長押しキャンセル / Review-B）で呼ぶ。コミット済み or セッション外は no-op（例外なし）。
+        /// プレビューが実際に適用された（ダーティ）時のみ復元し、<see cref="Changed"/> を 1 回だけ発火する
+        /// （未適用のキャンセルで ZoneLayoutApplier の不要な再生成フリッカを避ける）。
+        /// </summary>
+        public void RollbackPreviewSession()
+        {
+            if (!_sessionActive) return;
+            _sessionActive = false;
+            if (!_sessionDirty) return;
+
+            originXZ = _snapshot.originXZ;
+            yawDeg = _snapshot.yawDeg;
+            _needsReRegistration = _snapshot.needsReReg;
+            _hasRegistration = _snapshot.hasReg;
+            _maxResidualM = _snapshot.maxResidualM;
+            _pointCount = _snapshot.pointCount;
+            _savedAtIso = _snapshot.savedAtIso;
+            Changed?.Invoke();
         }
 
         /// <summary>

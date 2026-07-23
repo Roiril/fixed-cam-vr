@@ -44,6 +44,12 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
+            // resume-gap 自己回復（OS resume コールバック非依存）。Quest/Link は
+            // OnApplicationPause(false)/Focus(true) を確実に配送しないため、Update 再開時の
+            // 巨大 unscaledDeltaTime で suspend ラッチを解除する（stream 側 BeginTick と二重・冪等）。
+            // これが無いとラッチが固着し次回 Suspend() が no-op 化する（状態機械の非整合）。
+            if (_suspended && Time.unscaledDeltaTime > StreamWatchdogLogic.ResumeGapSec)
+                Resume("resume-gap");
             foreach (var s in _streams) s?.Tick();
         }
 

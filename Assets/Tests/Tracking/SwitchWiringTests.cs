@@ -311,6 +311,74 @@ namespace FixedCamVr.Tracking.Tests
             CleanupCacheFile(show);
         }
 
+        // ---- T6: Web override が stale ゾーン保留を第一級凍結し、固定破れ・LapCounter 誤進行を防ぐ ----
+
+        [Test]
+        public void T6_OverrideFreezesStalePending_NoZoneCommit_ThenReleaseReturnsToZone()
+        {
+            var reg = MakeRegistry(3, active: 0);
+            var screen = new GameObject("Screen"); _spawned.Add(screen);
+            var dir = MakeDirector(reg, screen);
+            var show = screen.AddComponent<ShowControlClient>();
+            SetField(show, "registry", reg);
+            SetField(show, "switchDirector", dir);
+            SetField(show, "server", null);
+            SetField(show, "configCacheFileName", "test_show_config_" + Guid.NewGuid().ToString("N") + ".json");
+
+            var lap = screen.AddComponent<LapCounter>();
+            SetField(lap, "registry", reg);
+            SetField(lap, "director", dir);
+            SetField(lap, "seedInitialZone", false);
+            SetField(lap, "logChanges", false);
+            Invoke(lap, "OnEnable");   // director.SwitchCommitted 購読（source==Zone のみ数える）
+            object lapLogic = GetField(lap, "_logic");
+            lapLogic.GetType().GetMethod("SetOrder")!.Invoke(lapLogic, new object[] { new[] { 0, 1, 2 } });
+
+            // tracker + zone0（override 解除後の復帰検証用）。head は原点（zone0=cam0 内）。
+            var zone0 = MakeZone("Zone0", Vector3.zero, new Vector3(2, 2, 2), cameraIndex: 0, priority: 0);
+            var head = new GameObject("Head"); _spawned.Add(head);
+            head.transform.position = Vector3.zero;
+            var trackerGo = new GameObject("Tracker"); _spawned.Add(trackerGo);
+            var tracker = trackerGo.AddComponent<PlayerZoneTracker>();
+            SetField(tracker, "registry", reg);
+            SetField(tracker, "director", dir);
+            SetField(tracker, "headTransform", head.transform);
+            SetField(tracker, "zones", new[] { zone0 });
+            SetField(tracker, "updateInterval", 0f);
+            SetField(tracker, "keepLastWhenOutside", true);
+            SetField(tracker, "logChanges", false);
+            SetField(tracker, "hysteresisShrink", 0.1f);
+            SetField(show, "zoneTrackerToDisable", tracker);
+
+            // tracker が override 前にゾーン2切替を積んだ状態を作る（Update せず保留維持）。
+            dir.RequestZone(2);
+            Assert.That(dir.SwitchSuppressed, Is.True, "override 前に stale 保留(2)が積まれている");
+            Assert.That(lap.Position, Is.EqualTo(0));
+            Assert.That(lap.CurrentLap, Is.EqualTo(1));
+
+            // Web override → cam1（"B"）。第一級凍結 + stale 保留の無条件クリア。
+            InvokeApply(show, rev: 1, cameraOverride: "B");
+            ForceZeroTiming(dir);   // Apply が既定 0.5s を再適用するため 0 へ戻す（EditMode 時間凍結対策）
+            PumpDirector(dir);
+
+            Assert.That(reg.ActiveIndex, Is.EqualTo(1),
+                "override 固定: 修正なしなら stale 保留(2)が cooldown 後に Zone commit して 2 に化ける");
+            Assert.That(lap.Position, Is.EqualTo(0), "override 中は周回ポインタが進まない（Override は数えず stale commit も起きない）");
+            Assert.That(lap.CurrentLap, Is.EqualTo(1));
+
+            // override 解除 → 同一ゾーン滞在のままゾーンカメラ(0)へ復帰（既存 T5 の自己回復と両立）。
+            InvokeApply(show, rev: 2, cameraOverride: "");
+            Assert.That(tracker.enabled, Is.True, "解除で tracker 再有効");
+            ForceZeroTiming(dir);
+            Invoke(tracker, "OnEnable");   // 再有効化 → InvalidateCurrent
+            Invoke(tracker, "Update");     // 現在位置から再 Pick → RequestZone(0)
+            PumpDirector(dir);
+            Assert.That(reg.ActiveIndex, Is.EqualTo(0),
+                "override 解除後、同一ゾーン滞在のままでもゾーンカメラ(0)へ復帰するはず");
+
+            CleanupCacheFile(show);
+        }
+
         // ShowControlClient.Apply を最小の ShowState（cameras A/B/C + control.cameraOverride）で駆動する。
         private static void InvokeApply(ShowControlClient show, int rev, string cameraOverride)
         {

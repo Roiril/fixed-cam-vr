@@ -696,7 +696,7 @@ namespace FixedCamVr.Streaming
             {
                 _timeline = state.timeline;
                 _appliedTimelineRev = state.timeline.rev;
-                NormalizeTimelinePresentFlags(_timeline);
+                TimelinePresentFlags.Reconcile(_timeline);
                 cueSourceChanged = true;
             }
 
@@ -746,6 +746,10 @@ namespace FixedCamVr.Streaming
                 // 同一ゾーン滞在のまま _current が不変で、次のゾーン跨ぎまで override カメラに表示が固着する。
                 // （asmdef 循環回避のため Tracking 型は持ち込まず、再有効化＝自己回復に委ねる。）
                 if (zoneTrackerToDisable != null) zoneTrackerToDisable.enabled = !hasOverride;
+                // override を Director の第一級凍結にする（cue/insert 凍結と対称）。enter/exit で stale 保留を
+                // 無条件クリアし、override 前に積まれたゾーン保留が cooldown 後に Zone commit して固定が破れるのを防ぐ。
+                // Director 未配線（null）なら _logic 自体が無く stale-pending バグも起きないので null-safe skip で正しい。
+                ResolveSwitchDirector()?.SetOverrideActive(hasOverride);
                 if (hasOverride && registry != null)
                 {
                     int idx = Array.FindIndex(state.cameras, c => c.id == ovr);
@@ -835,25 +839,6 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        // timeline の hasXxx present-flag をライブ / 焼き込みパース直後に確定する（CameraDef.hasPost と同手法）。
-        // JsonUtility は null の入れ子クラスを ToJson で既定オブジェクトとして書くため、キャッシュ往復後は
-        // null 判定が信頼できない。パース直後（往復前）だけ null で present を判定し bool へ焼く。
-        // 端末キャッシュ読込時はこの再導出を呼ばず、保存済み bool を信頼する（LoadAndApplyCache）。
-        private static void NormalizeTimelinePresentFlags(ShowTimelineDef t)
-        {
-            if (t?.segments == null) return;
-            foreach (var seg in t.segments)
-            {
-                if (seg == null) continue;
-                seg.hasPost = seg.post != null;
-                seg.hasInsert = seg.insert != null;
-                if (seg.insert != null) seg.insert.hasPost = seg.insert.post != null;
-                if (seg.cues != null)
-                    foreach (var c in seg.cues)
-                        if (c != null) c.hasOverride = c.@override != null;
-            }
-        }
-
         // ---- 焼き込み StreamingAssets/show/show.json の起動時ロード（最下位優先）----
 
         private async Task LoadBakedShowAsync(CancellationToken ct)
@@ -899,7 +884,7 @@ namespace FixedCamVr.Streaming
             {
                 _timeline = state.timeline;
                 _appliedTimelineRev = state.timeline.rev;
-                NormalizeTimelinePresentFlags(_timeline);
+                TimelinePresentFlags.Reconcile(_timeline);
             }
             // 焼き込み値の runEpoch を「既知値」として取り込む（端末キャッシュがあれば後で上書きされる）。
             _knownRunEpoch = state.control?.runEpoch ?? _knownRunEpoch;
@@ -1137,12 +1122,14 @@ namespace FixedCamVr.Streaming
                     _schedule = cfg.schedule;
                     _appliedScheduleRev = cfg.schedule.rev;
                 }
-                // キャッシュ済み timeline も復元。往復後は null 判定が壊れているため present-flag は
-                // 再導出せず保存済み bool を信頼する（NormalizeTimelinePresentFlags は呼ばない）。
+                // キャッシュ済み timeline も復元。TimelinePresentFlags.Reconcile を一律適用する
+                // （AND なので保存済み bool が保たれる＝実質 no-op。live/焼き込み/キャッシュで正規化経路を
+                //  一本化し「どのパスが正規化するか」の認知負荷を消す）。
                 if (cfg.timeline != null && cfg.timeline.HasData())
                 {
                     _timeline = cfg.timeline;
                     _appliedTimelineRev = cfg.timeline.rev;
+                    TimelinePresentFlags.Reconcile(_timeline);
                 }
                 // 既知の runEpoch を復元（この起動では発火しない = 同一 epoch の誤リセット防止）。
                 _knownRunEpoch = cfg.runEpoch;

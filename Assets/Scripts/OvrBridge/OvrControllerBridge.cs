@@ -194,6 +194,7 @@ namespace FixedCamVr.OvrBridge
                         mark = aDown,       // A (右) Down: サンプリング開始 / Verify やり直し
                         markHeld = aHeld,   // A (右) ホールド: 0.5s 平均サンプリングの継続
                         confirm = bDown,    // B (右): Verify で確定
+                        deltaTime = Time.deltaTime, // ホールド平均計時（純ロジック HoldAverageSampler へ供給）
                     });
                     break;
 

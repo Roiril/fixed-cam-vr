@@ -1,0 +1,228 @@
+{
+  "rev": 3,
+  "cameras": [
+    {
+      "id": "A",
+      "sourceId": "Phone01",
+      "host": "",
+      "port": 8080,
+      "auth": "",
+      "post": {
+        "exposure": -1,
+        "contrast": 1,
+        "saturation": 1,
+        "temperature": 0,
+        "vignette": 0,
+        "grain": 0,
+        "scanline": 0
+      }
+    },
+    {
+      "id": "B",
+      "sourceId": "Phone02",
+      "host": "",
+      "port": 8080,
+      "auth": "",
+      "post": {
+        "exposure": 0,
+        "contrast": 1.2,
+        "saturation": 1,
+        "temperature": 0,
+        "vignette": 0,
+        "grain": 0,
+        "scanline": 0
+      }
+    },
+    {
+      "id": "C",
+      "sourceId": "Phone03",
+      "host": "",
+      "port": 8080,
+      "auth": "",
+      "post": {
+        "exposure": 0,
+        "contrast": 1,
+        "saturation": 1,
+        "temperature": 0,
+        "vignette": 0,
+        "grain": 0,
+        "scanline": 0
+      }
+    }
+  ],
+  "cues": [
+    {
+      "id": "cue_A_1",
+      "name": "A1",
+      "camera": "A",
+      "maskUrl": "",
+      "sourceUrl": "/captures/a1.jpg",
+      "strength": 1,
+      "loop": false,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3
+    },
+    {
+      "id": "cue_A_2",
+      "name": "A2",
+      "camera": "A",
+      "maskUrl": "",
+      "sourceUrl": "/captures/a2.jpg",
+      "strength": 1,
+      "loop": false,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3
+    },
+    {
+      "id": "cue_C_1",
+      "name": "C1",
+      "camera": "C",
+      "maskUrl": "",
+      "sourceUrl": "/captures/c1.jpg",
+      "strength": 1,
+      "loop": false,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3
+    },
+    {
+      "id": "cue_C_scare",
+      "name": "Cscare",
+      "camera": "C",
+      "maskUrl": "",
+      "sourceUrl": "/captures/scare.mp4",
+      "strength": 1,
+      "loop": false,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3
+    }
+  ],
+  "post": {
+    "exposure": 0,
+    "contrast": 1,
+    "saturation": 1,
+    "temperature": 0,
+    "vignette": 0,
+    "grain": 0,
+    "scanline": 0
+  },
+  "control": {
+    "activeCue": null,
+    "cameraOverride": "",
+    "autoFollow": true
+  },
+  "layout": {
+    "rev": 1,
+    "overlapM": 0.08,
+    "hysteresisM": 0.12,
+    "grid": {
+      "tileM": 0.15,
+      "cols": 3,
+      "rows": 3,
+      "cells": [
+        "012",
+        "012",
+        "012"
+      ]
+    },
+    "course": {
+      "order": [
+        0,
+        1,
+        2
+      ]
+    }
+  },
+  "schedule": {
+    "rev": 3,
+    "entries": []
+  },
+  "timeline": {
+    "rev": 3,
+    "segments": [
+      {
+        "lap": 1,
+        "camera": 0,
+        "cues": [
+          {
+            "cueId": "cue_A_1",
+            "delaySec": 0,
+            "once": true,
+            "override": {
+              "strength": 0.5,
+              "fadeIn": 1.2,
+              "fadeOut": 0.8,
+              "trimStart": 0,
+              "trimEnd": 0
+            },
+            "hasOverride": true
+          },
+          {
+            "cueId": "cue_A_2",
+            "delaySec": 0,
+            "once": true,
+            "hasOverride": false
+          }
+        ],
+        "hasPost": false,
+        "hasInsert": false
+      },
+      {
+        "lap": 1,
+        "camera": 1,
+        "cues": [],
+        "post": {
+          "exposure": 0.3,
+          "contrast": 1,
+          "saturation": 1,
+          "temperature": 0,
+          "vignette": 0,
+          "grain": 0,
+          "scanline": 0
+        },
+        "hasPost": true,
+        "insert": {
+          "anchor": "exit",
+          "camera": 2,
+          "delaySec": 0,
+          "durationSec": 3,
+          "cueId": "",
+          "once": true,
+          "hasPost": false
+        },
+        "hasInsert": true
+      },
+      {
+        "lap": 2,
+        "camera": 2,
+        "cues": [
+          {
+            "cueId": "cue_C_1",
+            "delaySec": 0,
+            "once": true,
+            "hasOverride": false
+          }
+        ],
+        "hasPost": false,
+        "insert": {
+          "anchor": "enter",
+          "camera": 0,
+          "delaySec": 0,
+          "durationSec": 4,
+          "cueId": "cue_C_scare",
+          "once": true,
+          "post": {
+            "exposure": 0,
+            "contrast": 1,
+            "saturation": 1.5,
+            "temperature": 0,
+            "vignette": 0,
+            "grain": 0,
+            "scanline": 0
+          },
+          "hasPost": true
+        },
+        "hasInsert": true
+      }
+    ]
+  }
+}
