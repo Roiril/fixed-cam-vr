@@ -814,7 +814,7 @@ namespace TableDuoVr.EditorTools
         /// 卓上にボードゲーム「あと6画のくま」（2人協力お絵描き・2026-07-23）を開始形で置く。
         /// お題の「くま」を 2 人が交互に、各自の役割（まる役=曲線パーツのみ / 線役=直線パーツのみ）で
         /// 与えられた画数（6 画）以内に描き上げる協力ゲーム。卓中央に A4 描画パッド（素置き固定）、
-        /// その +X に裏向きお題山札 12 枚（top=01_sleepy=練習用）、各席の手前に役割カード・能力トークン・
+        /// その +X にお題カード 12 枚を 3 行（難度）×4 列で全部表向きに並べ、各席の手前に役割カード・能力トークン・
         /// 専用ペンを振り分け、-X 側に 3 分砂時計・達成条件カード・達成トークン・ルールカードを添える。
         /// スナップ/ルール裁定は一切コード化しない（「机の上に置くだけ」= 既存方針。進行は人間が運用）。
         /// トークン類はピンチ精度対策で 1.6 倍、ペンは 1.3 倍。GLB は実スケール（メートル）。
@@ -825,11 +825,12 @@ namespace TableDuoVr.EditorTools
         {
             const float tokenScale = 1.6f;   // 能力/達成トークンのピンチ精度拡大率（チップ類と同率）
             const float markerScale = 1.3f;  // 専用ペンの拡大率
-            const float deckLift = 0.0016f;   // お題カード厚 1.2mm + 0.4mm 空隙（z-fight 回避・バンディドと同値）
 
             // --- 座標定数（cx/cz からの XZ オフセット。親がプレビューを見て調整するためここに集約）---
             const float padX = 0f, padZ = 0f;          // 描画パッド = 卓中央
-            const float deckX = 0.28f, deckZ = 0f;      // お題山札 = 卓中央 +X
+            const float gridCx = 0.33f, gridCz = 0f;   // お題カード 3×4 格子の中心（卓中央 +X・パッドとペンを避ける）
+            const float colPitch = 0.09f;               // 列（X）ピッチ = カード幅 63mm + 隙間 ~27mm
+            const float rowPitch = 0.11f;               // 行（Z）ピッチ = カード高 88mm + 隙間 ~22mm
 
             const float seat0Z = -0.26f;                // まる役（seat0 = -Z 席）の手前列
             const float roleCircleX = -0.16f;           // まる役 役割カード
@@ -853,20 +854,24 @@ namespace TableDuoVr.EditorTools
             PlaceModelRealScale($"{BearGlbDir}/drawing_pad.glb", parent, "BEAR_pad",
                 new Vector3(cx + padX, topY, cz + padZ), 0f, grabbable: false);
 
-            // お題カード山札 12 枚: prompt_12 → prompt_01 の順に下から積む（top=01_sleepy=練習用）。
-            // 裏向き（faceDown）で伏せ、kinematic 追従（physics:false）
-            var deckNames = new[]
+            // お題カード 12 枚: 3 行（難度 1/2/3）×4 列の格子で全部表向きに並べる。
+            // -Z 行=難度 1(01-04) / 中央行=難度 2(05-08) / +Z 行=難度 3(09-12)。掴んで動かせる（physics:false 追従）
+            var promptRows = new[]
             {
-                "prompt_12_make_up", "prompt_11_awkward", "prompt_10_brave", "prompt_09_hiding",
-                "prompt_08_joy", "prompt_07_attention", "prompt_06_troubled", "prompt_05_waiting",
-                "prompt_04_surprised", "prompt_03_hungry", "prompt_02_cold", "prompt_01_sleepy",
+                new[] { "prompt_01_sleepy", "prompt_02_cold", "prompt_03_hungry", "prompt_04_surprised" },
+                new[] { "prompt_05_waiting", "prompt_06_troubled", "prompt_07_attention", "prompt_08_joy" },
+                new[] { "prompt_09_hiding", "prompt_10_brave", "prompt_11_awkward", "prompt_12_make_up" },
             };
-            for (int i = 0; i < deckNames.Length; i++)
+            for (int r = 0; r < promptRows.Length; r++)
             {
-                var card = PlaceModelRealScale($"{BearGlbDir}/{deckNames[i]}.glb", parent, $"BEAR_{deckNames[i]}",
-                    new Vector3(cx + deckX, topY + i * deckLift, cz + deckZ), 0f,
-                    grabbable: true, physics: false, faceDown: true);
-                SetSurfaceClamp(card, topY, cx, cz, hx, hz);
+                for (int c = 0; c < promptRows[r].Length; c++)
+                {
+                    float px = cx + gridCx + (c - 1.5f) * colPitch;
+                    float pz = cz + gridCz + (r - 1f) * rowPitch;
+                    var card = PlaceModelRealScale($"{BearGlbDir}/{promptRows[r][c]}.glb", parent, $"BEAR_{promptRows[r][c]}",
+                        new Vector3(px, topY, pz), 0f, grabbable: true, physics: false);
+                    SetSurfaceClamp(card, topY, cx, cz, hx, hz);
+                }
             }
 
             // --- まる役（seat0 = -Z 席）: 役割カード + 〇/だ円トークン + まる役ペン ---
