@@ -38,6 +38,7 @@
    - **`StartupFader`** を CenterEyeAnchor 配下に配置（Play 直後の砂時計 / 接続待ちを黒で隠してフェードイン）
    - `OvrControllerBridge.statusHud` への参照も自動で結線
    - **`ControllerHaptics`**（右コントローラ振動）を `[Streaming]` に冪等 add し `OvrControllerBridge.haptics` に結線
+   - **`[Bgm]`**（起動中ループ BGM: `Assets/Art/Audio/HorrBGM.mp3`・2D・PlayOnAwake）を Logic 配下に get-or-create（音量は Inspector 調整可・Setup 再実行で潰れない）
    - 再実行可能（既存配置は削除して再生成。旧 `DebugHud` Canvas も掃除される）
 7. [ ] **URP RendererFeature を手動配線**（Phase 3 FX を実機で出すために必須）
    - `Assets/Settings/URP-Balanced-Renderer.asset` を Inspector で開く

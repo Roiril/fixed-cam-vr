@@ -31,6 +31,8 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string DiagnosticsName = "Diagnostics";
         private const string DebugHudName = "DebugHud"; // 旧構成の掃除用（削除対象）
         private const string StartupFaderName = "StartupFader";
+        private const string BgmName = "[Bgm]";
+        private const string BgmClipPath = "Assets/Art/Audio/HorrBGM.mp3";
         // Tracker と HmdTrajectoryRecorder で同値を使う（片方だけ変えると
         // 解析 CSV と実挙動の判定がズレるため 1 本化）。
         private const float HysteresisShrink = 0.15f;
@@ -325,6 +327,10 @@ namespace FixedCamVr.Streaming.EditorTools
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
             CreateStartupFader(centerEye.transform, registry);
 
+            // 3.5. BGM（アプリ起動中ループ再生・2D）。get-or-create で冪等 —
+            //      delete+recreate にしない（現場で Inspector 調整した volume を Setup 再実行で潰さないため）。
+            CreateOrUpdateBgm(logic.transform);
+
             // 4. StatusHud（単一サーフェス・緩追従・TMP）。本番は startVisible=false・視界保護。右 B でトグル。
             //    lap / ゾーン / 次の cue / 信号 / 要再登録 を 1 枚に統合し、登録中は登録ガイダンスを強制表示。
             //    world-space（Logic 直下・head 非親）で StatusHud が自前に緩追従する。
@@ -368,7 +374,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + InsertController（show.json timeline v2: 区間 cue override / インサートショット / 区間 post 上書き。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / OvrBridge（右手 4 入力: A=Next / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + InsertController（show.json timeline v2: 区間 cue override / インサートショット / 区間 post 上書き。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（起動中ループ BGM・get-or-create） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / OvrBridge（右手 4 入力: A=Next / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
@@ -468,6 +474,39 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetColor(so, "fadeColor", Color.black);
             TrySetInt(so, "sortingOrder", 10000);
             so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        // BGM（起動中ループ再生）。[Bgm] を === Logic === 直下に get-or-create し、AudioSource へ
+        // クリップ・ループ・2D 化を書く。volume は新規作成時のみ既定値を入れる（現場調整の保持）。
+        private static void CreateOrUpdateBgm(Transform parent)
+        {
+            var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(BgmClipPath);
+            if (clip == null)
+            {
+                Debug.LogWarning($"[MainDemoSceneSetup] BGM クリップが見つかりません: {BgmClipPath}。[Bgm] の配置をスキップ。");
+                return;
+            }
+
+            var existing = parent.Find(BgmName);
+            GameObject go;
+            bool created = existing == null;
+            if (created)
+            {
+                go = new GameObject(BgmName);
+                go.transform.SetParent(parent, worldPositionStays: false);
+            }
+            else
+            {
+                go = existing!.gameObject;
+            }
+
+            var source = go.GetComponent<AudioSource>();
+            if (source == null) source = go.AddComponent<AudioSource>();
+            source.clip = clip;
+            source.loop = true;
+            source.playOnAwake = true;
+            source.spatialBlend = 0f; // 2D（HMD の向き・位置に依存しない環境 BGM）
+            if (created) source.volume = 0.5f;
         }
 
         // 単一サーフェス StatusHud を world-space（parent 直下・head 非親）に作る。StatusHud が自前で緩追従する。
