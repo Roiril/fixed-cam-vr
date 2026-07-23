@@ -30,7 +30,12 @@
       "Bash(tasklist)",
       "Bash(python -u scripts/survey.py)",
       "Bash(tee survey_result.txt)",
-      "Bash(python -u -c ' *)"
+      "Bash(python -u -c ' *)",
+      "mcp__unityMCP",
+      "mcp__UnityMCP",
+      "PowerShell(& \"C:\\Program Files\\Unity\\Hub\\Editor\\2022.3.62f2\\Editor\\Unity.exe\" *)",
+      "PowerShell(Get-Process *)",
+      "Bash(node .claude/hooks/*)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kouga\\Projects\\Web\\kougaku-lab"
