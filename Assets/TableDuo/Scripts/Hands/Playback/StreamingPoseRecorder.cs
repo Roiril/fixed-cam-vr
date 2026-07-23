@@ -63,8 +63,8 @@ namespace TableDuoVr.Hands.Playback
             try
             {
                 string tag = "";
-                if (!string.IsNullOrEmpty(StudyConfig.PairId)) tag += $"_pair{SafeTag(StudyConfig.PairId)}";
-                if (!string.IsNullOrEmpty(StudyConfig.ParticipantId)) tag += $"_pid{SafeTag(StudyConfig.ParticipantId)}";
+                if (!string.IsNullOrEmpty(StudyConfig.PairId)) tag += $"_pair{StudyFileName.SafeTag(StudyConfig.PairId)}";
+                if (!string.IsNullOrEmpty(StudyConfig.ParticipantId)) tag += $"_pid{StudyFileName.SafeTag(StudyConfig.ParticipantId)}";
                 string role = StudyConfig.ForcedRole?.ToString() ?? "auto";
                 FilePath = Path.Combine(Application.persistentDataPath,
                     $"tdv_local_{DateTime.Now:yyyyMMdd_HHmmss}{tag}_{role}.bin");
@@ -140,17 +140,6 @@ namespace TableDuoVr.Hands.Playback
             Commit();
             Debug.Log($"[TableDuo] ローカル lossless 録画保存 {_count}f → {FilePath}（adb pull で取得可）");
             CloseQuietly();
-        }
-
-        private static string SafeTag(string s)
-        {
-            var chars = s.ToCharArray();
-            for (int i = 0; i < chars.Length; i++)
-            {
-                char c = chars[i];
-                if (!(char.IsLetterOrDigit(c) || c == '.' || c == '_' || c == '-')) chars[i] = '_';
-            }
-            return new string(chars);
         }
     }
 }

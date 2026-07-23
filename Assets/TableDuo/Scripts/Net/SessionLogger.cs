@@ -50,7 +50,7 @@ namespace TableDuoVr.Net
         public void LogEvent(string label, string detail = "")
         {
             if (_writer == null) return;
-            _writer.WriteLine($"event,{EpochMs()},{Escape(label)},{Escape(detail)}");
+            _writer.WriteLine($"event,{EpochMs()},{SessionCsv.Escape(label)},{SessionCsv.Escape(detail)}");
             _writer.Flush();
             Debug.Log($"[TableDuo] mark: {label} {detail}");
             EventLogged?.Invoke(label, detail);
@@ -242,8 +242,8 @@ namespace TableDuoVr.Net
         {
             // 参加者/ペアID があればファイル名に含め、紙記録との突合・取り違え防止に使う
             string tag = "";
-            if (!string.IsNullOrEmpty(StudyConfig.PairId)) tag += $"_pair{SafeTag(StudyConfig.PairId)}";
-            if (!string.IsNullOrEmpty(StudyConfig.ParticipantId)) tag += $"_pid{SafeTag(StudyConfig.ParticipantId)}";
+            if (!string.IsNullOrEmpty(StudyConfig.PairId)) tag += $"_pair{StudyFileName.SafeTag(StudyConfig.PairId)}";
+            if (!string.IsNullOrEmpty(StudyConfig.ParticipantId)) tag += $"_pid{StudyFileName.SafeTag(StudyConfig.ParticipantId)}";
             string name = $"tdv_session_{DateTime.Now:yyyyMMdd_HHmmss}{tag}.csv";
             FilePath = Path.Combine(Application.persistentDataPath, name);
             // FileShare.Read: 記録中もファシリテータが tail / コピーできるようにする
@@ -286,22 +286,5 @@ namespace TableDuoVr.Net
         }
 
         private static long EpochMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-        // カンマは列区切り、改行は行区切りを壊すので無害化（外部 label に curl ?label= 等で混入しうる）。
-        // 二重引用符・タブも RFC4180 パーサで列崩れを起こすので無害化する。
-        private static string Escape(string s) =>
-            s.Replace(',', ';').Replace('"', '\'').Replace('\t', ' ').Replace('\n', ' ').Replace('\r', ' ');
-
-        // ファイル名に使える文字だけに落とす（英数 . _ - 以外は _）。pid/pair の取り違え防止用。
-        private static string SafeTag(string s)
-        {
-            var chars = s.ToCharArray();
-            for (int i = 0; i < chars.Length; i++)
-            {
-                char c = chars[i];
-                if (!(char.IsLetterOrDigit(c) || c == '.' || c == '_' || c == '-')) chars[i] = '_';
-            }
-            return new string(chars);
-        }
     }
 }

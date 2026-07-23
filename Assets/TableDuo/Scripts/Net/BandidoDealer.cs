@@ -80,84 +80,40 @@ namespace TableDuoVr.Net
                 return;
             }
 
-            // 1. スロットを位置から分類（子順序に依存しない = レイアウト変更に頑健）:
-            //    同一 XZ（1mm 以内）を共有する 2 枚以上のグループ = 山札スタック、単独 XZ = 手札
-            var handPoses = new List<(Vector3 pos, Quaternion rot)>();
-            var deckPoses = new List<(Vector3 pos, Quaternion rot)>();
+            // 分類→席分け→手札制約→山札充填は BandidoDealLogic（純ロジック）へ委譲。
+            // カード実体（Grabbable）↔ 位置/Kind の変換だけをここで担う。
+            // カード分類（名前 prefix）→ Kind 列、位置列を構築（スロット = カード = 同一 index）。
+            var slotPositions = new Vector3[n];
+            var cardKinds = new BandidoDealLogic.Kind[n];
             for (int i = 0; i < n; i++)
             {
-                bool shared = false;
-                for (int j = 0; j < n; j++)
-                {
-                    if (i == j) continue;
-                    float dx = _slots[i].pos.x - _slots[j].pos.x;
-                    float dz = _slots[i].pos.z - _slots[j].pos.z;
-                    if (dx * dx + dz * dz < 1e-6f) { shared = true; break; } // (1mm)^2
-                }
-                if (shared) deckPoses.Add((_slots[i].pos, _slots[i].rot));
-                else handPoses.Add((_slots[i].pos, _slots[i].rot));
-            }
-            // 手札を z でソート（席分け）: 前半 3 = 一方の席・後半 3 = もう一方（cz 不要）
-            handPoses.Sort((a, b) => a.pos.z.CompareTo(b.pos.z));
-
-            // 2. カード分類（名前 prefix）
-            var gCards = new List<Grabbable>();
-            var lCards = new List<Grabbable>();
-            foreach (var s in _slots)
-            {
-                if (s.card == null) continue;
-                if (s.card.name.StartsWith("BANDIDO_l", System.StringComparison.Ordinal)) lCards.Add(s.card);
-                else gCards.Add(s.card); // g・unknown はまとめて g 扱い
-            }
-            ShuffleCards(gCards);
-            ShuffleCards(lCards);
-
-            // 3. 割当を構築
-            var assign = new List<(Grabbable card, Vector3 pos, Quaternion rot)>();
-            if (handPoses.Count == 6)
-            {
-                // 各席の手札構成: 「l×1 + g×2」or「g×3」を 50/50（ベイクと同じ制約をランタイムでも保証）
-                for (int seat = 0; seat < 2; seat++)
-                {
-                    bool useL = Random.Range(0, 2) == 0 && lCards.Count > 0;
-                    int b = seat * 3;
-                    if (useL)
-                    {
-                        assign.Add((PopCard(lCards), handPoses[b].pos, handPoses[b].rot));
-                        assign.Add((PopCard(gCards), handPoses[b + 1].pos, handPoses[b + 1].rot));
-                        assign.Add((PopCard(gCards), handPoses[b + 2].pos, handPoses[b + 2].rot));
-                    }
-                    else
-                    {
-                        for (int k = 0; k < 3; k++)
-                            assign.Add((PopCard(gCards), handPoses[b + k].pos, handPoses[b + k].rot));
-                    }
-                }
-                // 山札 = 残りをまとめてシャッフルして積む
-                var rest = new List<Grabbable>();
-                rest.AddRange(gCards);
-                rest.AddRange(lCards);
-                ShuffleCards(rest);
-                for (int i = 0; i < deckPoses.Count && i < rest.Count; i++)
-                    assign.Add((rest[i], deckPoses[i].pos, deckPoses[i].rot));
-            }
-            else
-            {
-                // フォールバック（想定外レイアウト = 手札スロットが 6 でない）: 制約なしで全 permute
-                Debug.LogWarning($"[TableDuo] BandidoDealer: 手札スロットが 6 個でない（{handPoses.Count}）→ 制約なし配り");
-                var all = new List<Grabbable>();
-                all.AddRange(gCards);
-                all.AddRange(lCards);
-                ShuffleCards(all);
-                int idx = 0;
-                foreach (var (pos, rot) in handPoses) if (idx < all.Count) assign.Add((all[idx++], pos, rot));
-                foreach (var (pos, rot) in deckPoses) if (idx < all.Count) assign.Add((all[idx++], pos, rot));
+                slotPositions[i] = _slots[i].pos;
+                var c = _slots[i].card;
+                cardKinds[i] = (c != null && c.name.StartsWith("BANDIDO_l", System.StringComparison.Ordinal))
+                    ? BandidoDealLogic.Kind.L
+                    : BandidoDealLogic.Kind.G; // g・unknown・null はまとめて g 扱い
             }
 
-            // 4. transform 書き込み
-            foreach (var (card, pos, rot) in assign)
+            // フォールバック警告（手札スロットが 6 でない）の観測挙動を保存（分類は決定的・rng 非依存）。
+            var handSlots = new List<int>();
+            var deckSlots = new List<int>();
+            BandidoDealLogic.ClassifySlots(slotPositions, handSlots, deckSlots);
+            if (handSlots.Count != 6)
+                Debug.LogWarning($"[TableDuo] BandidoDealer: 手札スロットが 6 個でない（{handSlots.Count}）→ 制約なし配り");
+
+            // assign[slot] = card（全単射）。本番の乱数源は UnityEngine.Random.Range を注入。
+            int[] assign = BandidoDealLogic.Assign(slotPositions, cardKinds, m => Random.Range(0, m));
+
+            // transform 書き込み: スロット i の姿勢へ assign[i] のカードを置く
+            int placed = 0;
+            for (int i = 0; i < n; i++)
             {
+                int cardIdx = assign[i];
+                if (cardIdx < 0) continue;
+                var card = _slots[cardIdx].card;
                 if (card == null) continue;
+                var pos = _slots[i].pos;
+                var rot = _slots[i].rot;
                 if (card.IsHeld) card.ServerForceRelease("bandidoDeal");
                 card.transform.SetPositionAndRotation(pos, rot);
                 // 物理カード（Rigidbody あり）だった場合の防御。バンディドは physics:false なので通常は無害な no-op
@@ -170,25 +126,9 @@ namespace TableDuoVr.Net
                     rb.rotation = rot;
                 }
                 card.ServerSettleKinematic();
+                placed++;
             }
-            Debug.Log($"[TableDuo] BandidoDealer: 配り直し（{assign.Count} 枚・手札構成制約つき）");
-        }
-
-        private static void ShuffleCards(List<Grabbable> list)
-        {
-            for (int i = list.Count - 1; i > 0; i--)
-            {
-                int j = Random.Range(0, i + 1);
-                (list[i], list[j]) = (list[j], list[i]);
-            }
-        }
-
-        private static Grabbable PopCard(List<Grabbable> list)
-        {
-            int last = list.Count - 1;
-            var v = list[last];
-            list.RemoveAt(last);
-            return v;
+            Debug.Log($"[TableDuo] BandidoDealer: 配り直し（{placed} 枚・手札構成制約つき）");
         }
     }
 }

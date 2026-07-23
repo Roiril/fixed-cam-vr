@@ -23,12 +23,18 @@ namespace TableDuoVr.Net
                 if (_sceneHash == null)
                 {
                     var asset = Resources.Load<TextAsset>(ResourceName);
-                    // UTF-8 BOM(U+FEFF) は Trim では落ちないので明示除去（host/client でエンコード差が出ても一致させる）
                     string raw = asset != null ? asset.text : "";
-                    _sceneHash = raw.Replace("﻿", "").Trim().Split('\n')[0].Trim();
+                    _sceneHash = ParseHash(raw);
                 }
                 return _sceneHash;
             }
         }
+
+        /// <summary>
+        /// 焼き込みテキストから sceneHash を取り出す（BOM 除去 → trim → 先頭行 → trim）。
+        /// UTF-8 BOM(U+FEFF) は Trim では落ちないので明示除去（host/client でエンコード差が出ても一致させる）。
+        /// </summary>
+        public static string ParseHash(string raw) =>
+            raw.Replace("﻿", "").Trim().Split('\n')[0].Trim();
     }
 }

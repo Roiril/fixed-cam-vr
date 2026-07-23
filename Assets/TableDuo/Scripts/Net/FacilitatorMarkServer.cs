@@ -33,30 +33,30 @@ namespace TableDuoVr.Net
             {
                 if (logger == null) logger = FindObjectOfType<SessionLogger>();
                 logger?.LogEvent("mark", label);
-                // 特別ラベル: 盤面リセット（ラウンド/ブロック跨ぎで卓上を初期配置へ）。mark 行も残る
-                if (label == "reset_board")
+                switch (MarkLabelRouter.Classify(label, out string id))
                 {
-                    FindObjectOfType<BoardReset>()?.ResetBoard();
-                }
-                // 特別ラベル: ボドゲ切替（reset_board と同じ遠隔導線）。
-                //   curl "http://<hostIP>:7780/mark?label=game_algo"
-                else if (label.StartsWith("game_", StringComparison.Ordinal))
-                {
-                    string id = label.Substring(5);
-                    bool ok = FindObjectOfType<GameSwitcher>()?.ServerSetActiveGameById(id) ?? false;
-                    Debug.Log($"[TableDuo] MarkServer game 切替 '{id}' → {(ok ? "成功" : "失敗（id 不一致 / GameSwitcher 不在）")}");
-                }
-                // 特別ラベル: アルゴ完全ランダム配り直し（山札・手札を permute）。
-                //   curl "http://<hostIP>:7780/mark?label=algo_deal"
-                else if (label == "algo_deal")
-                {
-                    FindObjectOfType<AlgoDealer>()?.ServerShuffleDeal();
-                }
-                // 特別ラベル: バンディド完全ランダム配り直し（手札・山札を permute。開始札は除く）。
-                //   curl "http://<hostIP>:7780/mark?label=bandido_deal"
-                else if (label == "bandido_deal")
-                {
-                    FindObjectOfType<BandidoDealer>()?.ServerShuffleDeal();
+                    // 特別ラベル: 盤面リセット（ラウンド/ブロック跨ぎで卓上を初期配置へ）。mark 行も残る
+                    case MarkAction.ResetBoard:
+                        FindObjectOfType<BoardReset>()?.ResetBoard();
+                        break;
+                    // 特別ラベル: ボドゲ切替（reset_board と同じ遠隔導線）。
+                    //   curl "http://<hostIP>:7780/mark?label=game_algo"
+                    case MarkAction.GameSwitch:
+                    {
+                        bool ok = FindObjectOfType<GameSwitcher>()?.ServerSetActiveGameById(id) ?? false;
+                        Debug.Log($"[TableDuo] MarkServer game 切替 '{id}' → {(ok ? "成功" : "失敗（id 不一致 / GameSwitcher 不在）")}");
+                        break;
+                    }
+                    // 特別ラベル: アルゴ完全ランダム配り直し（山札・手札を permute）。
+                    //   curl "http://<hostIP>:7780/mark?label=algo_deal"
+                    case MarkAction.AlgoDeal:
+                        FindObjectOfType<AlgoDealer>()?.ServerShuffleDeal();
+                        break;
+                    // 特別ラベル: バンディド完全ランダム配り直し（手札・山札を permute。開始札は除く）。
+                    //   curl "http://<hostIP>:7780/mark?label=bandido_deal"
+                    case MarkAction.BandidoDeal:
+                        FindObjectOfType<BandidoDealer>()?.ServerShuffleDeal();
+                        break;
                 }
             }
         }
@@ -105,8 +105,8 @@ namespace TableDuoVr.Net
                 {
                     var ctx = listener.GetContext();
                     string label = ctx.Request.QueryString["label"] ?? "unlabeled";
-                    // 巨大 label による1行肥大化・破損を防ぐ（カンマ/引用符/改行の無害化は SessionLogger.Escape 側）
-                    if (label.Length > 200) label = label.Substring(0, 200);
+                    // 巨大 label による1行肥大化・破損を防ぐ（カンマ/引用符/改行の無害化は SessionCsv.Escape 側）
+                    label = MarkLabelRouter.TruncateLabel(label);
                     _marks.Enqueue(label);
                     var buf = System.Text.Encoding.UTF8.GetBytes($"marked: {label}\n");
                     ctx.Response.ContentLength64 = buf.Length;

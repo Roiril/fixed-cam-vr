@@ -135,28 +135,13 @@ namespace TableDuoVr.Net
             DiceRolled?.Invoke(name, _lastHolder, v);
         }
 
-        /// <summary>world up に最も揃うローカル軸から出目を読む。</summary>
+        /// <summary>world up に最も揃うローカル軸から出目を読む（面選択+値引きは DiceFaceLogic へ委譲）。</summary>
         private int ReadTopFace()
         {
-            var t = transform;
-            Vector3[] axes = { t.right, -t.right, t.up, -t.up, t.forward, -t.forward };
-            int best = 0;
-            float bestDot = float.NegativeInfinity;
-            for (int i = 0; i < axes.Length; i++)
-            {
-                float d = Vector3.Dot(axes[i], Vector3.up);
-                if (d > bestDot)
-                {
-                    bestDot = d;
-                    best = i;
-                }
-            }
+            // 警告の観測挙動は MonoBehaviour 側に残す（DiceFaceLogic は同条件で 1 を返す）
             if (faceValues == null || faceValues.Length != 6)
-            {
                 Debug.LogWarning($"[TableDuo] DiceRoller {name}: faceValues が 6 要素でないため出目 1 扱い");
-                return 1;
-            }
-            return Mathf.Clamp(faceValues[best], 1, 9);
+            return DiceFaceLogic.ReadTopFace(transform.rotation, faceValues);
         }
     }
 }

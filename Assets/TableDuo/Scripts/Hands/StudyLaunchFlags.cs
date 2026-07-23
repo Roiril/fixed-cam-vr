@@ -2,6 +2,9 @@
 using System;
 using UnityEngine;
 
+// ApplyFrom（internal・注入点）を EditMode テスト（TableDuoVr.Tests）から検証するため。
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("TableDuoVr.Tests")]
+
 namespace TableDuoVr.Hands
 {
     /// <summary>
@@ -44,46 +47,53 @@ namespace TableDuoVr.Hands
         /// tdv_role / tdv_marker / tdv_hands / tdv_pid / tdv_pair / tdv_pattern / tdv_preplace / tdv_hand を
         /// StudyConfig へ上書き適用する（無指定の項目は既存値＝Inspector 既定を保持）。
         /// </summary>
-        public static void Apply()
+        public static void Apply() => ApplyFrom(Get);
+
+        /// <summary>
+        /// フラグ取得関数を注入して <see cref="Apply"/> と同一のパース/エイリアス/上書き規則を適用する。
+        /// <paramref name="get"/> は (extraKey, cmdKey) を受け取り値を返す（無ければ null）。
+        /// Apply() は <see cref="Get"/> を渡すだけ＝挙動不変。EditMode テストは固定辞書 lambda を渡す。
+        /// </summary>
+        internal static void ApplyFrom(Func<string, string, string?> get)
         {
-            string? role = Get("tdv_role", "-tdvRole");
+            string? role = get("tdv_role", "-tdvRole");
             if (role == "full") StudyConfig.ForcedRole = StudyConfig.Role.Full;
             else if (role == "hand") StudyConfig.ForcedRole = StudyConfig.Role.Hand;
             else if (role == "spectator") StudyConfig.ForcedRole = StudyConfig.Role.Spectator;
             if (role != null) StudyConfig.LaunchedWithStudyFlags = true;
 
-            string? marker = Get("tdv_marker", "-tdvMarker");
+            string? marker = get("tdv_marker", "-tdvMarker");
             if (marker == "on") StudyConfig.ShowHeadMarker = true;
             else if (marker == "off") StudyConfig.ShowHeadMarker = false;
 
-            string? hands = Get("tdv_hands", "-tdvHands");
+            string? hands = get("tdv_hands", "-tdvHands");
             if (hands == "one") StudyConfig.OneHandMode = true;
             else if (hands == "two") StudyConfig.OneHandMode = false;
 
             // 参加者ID / ペアID（紙記録と機械的に突合・取り違え防止）。指定があれば調査セッション扱い。
-            string? pid = Get("tdv_pid", "-tdvPid");
+            string? pid = get("tdv_pid", "-tdvPid");
             if (!string.IsNullOrEmpty(pid)) { StudyConfig.ParticipantId = pid!; StudyConfig.LaunchedWithStudyFlags = true; }
-            string? pair = Get("tdv_pair", "-tdvPair");
+            string? pair = get("tdv_pair", "-tdvPair");
             if (!string.IsNullOrEmpty(pair)) { StudyConfig.PairId = pair!; StudyConfig.LaunchedWithStudyFlags = true; }
 
             // 協調配置課題（Phase 4）の目標配置パネル表示（既定 OFF・課題実施時のみ on）
-            string? pattern = Get("tdv_pattern", "-tdvPattern");
+            string? pattern = get("tdv_pattern", "-tdvPattern");
             if (pattern == "on") StudyConfig.ShowPatternPanel = true;
             else if (pattern == "off") StudyConfig.ShowPatternPanel = false;
 
             // 診断: 各席に静的アバターを先置き（描画/疎通/トラッキングの段階切り分け）
-            string? preplace = Get("tdv_preplace", "-tdvPreplace");
+            string? preplace = get("tdv_preplace", "-tdvPreplace");
             if (preplace == "on") StudyConfig.PreplaceAvatars = true;
             else if (preplace == "off") StudyConfig.PreplaceAvatars = false;
 
             // 人役の一人称自己アバター（頭を潰した Remy をローカル pose で駆動）
-            string? selfBody = Get("tdv_selfbody", "-tdvSelfBody");
+            string? selfBody = get("tdv_selfbody", "-tdvSelfBody");
             if (selfBody == "on") StudyConfig.ShowSelfBody = true;
             else if (selfBody == "off") StudyConfig.ShowSelfBody = false;
 
             // 手役の見た目（default=Meta白手 / realistic=人間の手 / robot=機械の手 / remy=フル Remy）。
             // 別名も受ける（male/human/skin→realistic、full/fullbody→remy、meta/simple→default）。指定で調査セッション扱い。
-            string? hand = Get("tdv_hand", "-tdvHand");
+            string? hand = get("tdv_hand", "-tdvHand");
             if (hand != null)
             {
                 StudyConfig.SelectedHandVariant = hand switch

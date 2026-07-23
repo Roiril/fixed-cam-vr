@@ -164,8 +164,8 @@ namespace TableDuoVr.Net
             // Remy 側の手ジオメトリ（ボーンローカル）を bind のうちに実測 → 既定アンカー基準で W を初期化
             _lGeomOk = TryMeasureRemyHand(_lHand, _lFingers, right: false, out _lFL, out _lBL);
             _rGeomOk = TryMeasureRemyHand(_rHand, _rFingers, right: true, out _rFL, out _rBL);
-            _lW = _lGeomOk ? MakeW(_lFL, _lBL, _lAnchorF, _lAnchorB) : _lHandB;
-            _rW = _rGeomOk ? MakeW(_rFL, _rBL, _rAnchorF, _rAnchorB) : _rHandB;
+            _lW = _lGeomOk ? RemyHandGeometry.MakeW(_lFL, _lBL, _lAnchorF, _lAnchorB) : _lHandB;
+            _rW = _rGeomOk ? RemyHandGeometry.MakeW(_rFL, _rBL, _rAnchorF, _rAnchorB) : _rHandB;
 
             // 初期＝休めポーズを適用。トラッキング前/ロスト中の腕が T 字（真横・手が外向き）で固まるのを防ぐ。
             // 受信 pose が来れば Drive が上書きする。bind 補正確定後に呼ぶこと（handB が bind 基準）
@@ -221,16 +221,8 @@ namespace TableDuoVr.Net
         /// wristRot はアンカー基準に依存するため定数ではなく「指=前やや下・甲=上」から逆算する。</summary>
         public void ApplyRestPose()
         {
-            SolveArm(true, RestWristL, RestRotFor(_lAnchorF, _lAnchorB), true, _lArm, _lFore, _lHand, _lArmBase, _lForeBase);
-            SolveArm(false, RestWristR, RestRotFor(_rAnchorF, _rAnchorB), true, _rArm, _rFore, _rHand, _rArmBase, _rForeBase);
-        }
-
-        /// <summary>「指=前方やや下・手の甲=上」になる wristRot をアンカー基準から逆算する。</summary>
-        private static Quaternion RestRotFor(Vector3 anchorF, Vector3 anchorB)
-        {
-            var desiredF = new Vector3(0f, -0.21f, 0.98f); // 指: 前・やや下（旧 Euler 12° 相当）
-            return Quaternion.LookRotation(desiredF, Vector3.up)
-                * Quaternion.Inverse(Quaternion.LookRotation(anchorF, anchorB));
+            SolveArm(true, RestWristL, RemyHandGeometry.RestRotFor(_lAnchorF, _lAnchorB), true, _lArm, _lFore, _lHand, _lArmBase, _lForeBase);
+            SolveArm(false, RestWristR, RemyHandGeometry.RestRotFor(_rAnchorF, _rAnchorB), true, _rArm, _rFore, _rHand, _rArmBase, _rForeBase);
         }
 
         /// <summary>受信 pose を反映（頭・腕 IK・手首向き・指リターゲット）。ロスト手は最後の姿勢で凍結。
@@ -305,7 +297,7 @@ namespace TableDuoVr.Net
             HandSkeletonLayout? layout, Quaternion wristRotLocal, bool left)
         {
             // layout 骨長が無ければ位置 FK 不能 → 従来の回転移植で近似
-            if (layout == null || layout.BoneCount < 17 || FkLive(layout, boneRots) == 0)
+            if (layout == null || layout.BoneCount < 17 || RemyHandGeometry.FkLive(layout, boneRots) == 0)
             {
                 for (int i = 0; i < fingers.Length; i++)
                 {
@@ -326,8 +318,8 @@ namespace TableDuoVr.Net
                 var bone = fingers[i];
                 if (bone == null || bone.childCount == 0) continue;
                 int c = ovrChild[i];
-                if (c < 0 || !FkDone[i] || !FkDone[c]) continue;
-                Vector3 dirAnchor = FkPos[c] - FkPos[i];
+                if (c < 0 || !RemyHandGeometry.FkDone[i] || !RemyHandGeometry.FkDone[c]) continue;
+                Vector3 dirAnchor = RemyHandGeometry.FkPos[c] - RemyHandGeometry.FkPos[i];
                 if (dirAnchor.sqrMagnitude < 1e-10f) continue;
                 Vector3 worldDir = anchorToSeat * dirAnchor;
                 AimBone(bone, bone.GetChild(0), worldDir); // 末端ボーン(Index4 等)を的に向ける
@@ -390,29 +382,6 @@ namespace TableDuoVr.Net
             }
         }
 
-        /// <summary>W = 「Remy 手ボーンローカル → OVR アンカーローカル」の回転。両側とも同じ実測基底
-        /// （指方向 f・手の甲法線 b、左手は cross 符号を反転して物理的な甲に統一）から構築する。</summary>
-        private static Quaternion MakeW(Vector3 remyF, Vector3 remyB, Vector3 anchorF, Vector3 anchorB)
-            => Quaternion.LookRotation(anchorF, anchorB)
-               * Quaternion.Inverse(Quaternion.LookRotation(remyF, remyB));
-
-        /// <summary>手首→中指付け根を指方向 f、(index1-pinky1)×f を甲法線 b とする実測基底
-        /// （左手は cross の掌性で符号が反転するため -b に統一 = 常に物理的な手の甲）。</summary>
-        private static bool TryHandBasis(Vector3 wrist, Vector3? mid, Vector3? idx, Vector3? pnk,
-            bool right, out Vector3 f, out Vector3 b)
-        {
-            f = Vector3.zero; b = Vector3.zero;
-            if (mid == null || idx == null || pnk == null) return false;
-            f = mid.Value - wrist;
-            if (f.sqrMagnitude < 1e-8f) return false;
-            f.Normalize();
-            b = Vector3.Cross(idx.Value - pnk.Value, f);
-            if (b.sqrMagnitude < 1e-8f) return false;
-            b.Normalize();
-            if (!right) b = -b; // 左手は掌性で cross が掌側を向く → 甲へ統一
-            return true;
-        }
-
         /// <summary>Remy 手の bind 実ジオメトリをボーンローカルで実測する（構築時 1 回）。</summary>
         private static bool TryMeasureRemyHand(Transform? hand, Transform?[] fingers, bool right,
             out Vector3 fL, out Vector3 bL)
@@ -420,7 +389,7 @@ namespace TableDuoVr.Net
             fL = Vector3.zero; bL = Vector3.zero;
             if (hand == null) return false;
             var mid = fingers[9]; var idx = fingers[6]; var pnk = fingers[16];
-            if (!TryHandBasis(hand.position, mid != null ? mid.position : null,
+            if (!RemyHandGeometry.TryHandBasis(hand.position, mid != null ? mid.position : null,
                     idx != null ? idx.position : null, pnk != null ? pnk.position : null,
                     right, out Vector3 fW, out Vector3 bW))
             {
@@ -440,66 +409,17 @@ namespace TableDuoVr.Net
             bool geomOk = left ? _lGeomOk : _rGeomOk;
             if (!geomOk) return; // Remy 側ジオメトリ不明なら旧フォールバックのまま
 
-            if (!TryAnchorBasisFromLayout(layout, liveRots, !left, out Vector3 f0, out Vector3 b0)) return;
+            if (!RemyHandGeometry.TryAnchorBasisFromLayout(layout, liveRots, !left, out Vector3 f0, out Vector3 b0)) return;
             if (left)
             {
                 _lWSrc = layout; _lAnchorF = f0; _lAnchorB = b0;
-                _lW = MakeW(_lFL, _lBL, f0, b0);
+                _lW = RemyHandGeometry.MakeW(_lFL, _lBL, f0, b0);
             }
             else
             {
                 _rWSrc = layout; _rAnchorF = f0; _rAnchorB = b0;
-                _rW = MakeW(_rFL, _rBL, f0, b0);
+                _rW = RemyHandGeometry.MakeW(_rFL, _rBL, f0, b0);
             }
-        }
-
-        // FK 作業バッファ（毎フレーム呼ぶので GC ゼロ化）
-        private static readonly Vector3[] FkPos = new Vector3[AvatarPose.BonesPerHand];
-        private static readonly Quaternion[] FkRot = new Quaternion[AvatarPose.BonesPerHand];
-        private static readonly bool[] FkDone = new bool[AvatarPose.BonesPerHand];
-
-        /// <summary>layout（骨長 BindLocalPos・ParentIndex）× live bone 回転をアンカー空間へ FK し、
-        /// FkPos/FkDone を埋める。戻り値は解けたボーン数（0=失敗）。ParentIndex は親→子順とは限らないので反復で解く。</summary>
-        private static int FkLive(HandSkeletonLayout layout, Quaternion[] liveRots)
-        {
-            int n = Mathf.Min(layout.BoneCount, Mathf.Min(liveRots.Length, AvatarPose.BonesPerHand));
-            if (n < 17) return 0;
-            var pos = FkPos; var rot = FkRot; var done = FkDone;
-            System.Array.Clear(done, 0, done.Length);
-            for (int pass = 0; pass < n; pass++)
-            {
-                bool progressed = false;
-                for (int i = 0; i < n; i++)
-                {
-                    if (done[i]) continue;
-                    int p = layout.ParentIndex[i];
-                    if (p < 0 || p >= n)
-                    {
-                        pos[i] = layout.BindLocalPos[i];
-                        rot[i] = liveRots[i];
-                        done[i] = true; progressed = true;
-                    }
-                    else if (done[p])
-                    {
-                        rot[i] = rot[p] * liveRots[i];
-                        pos[i] = pos[p] + rot[p] * layout.BindLocalPos[i];
-                        done[i] = true; progressed = true;
-                    }
-                }
-                if (!progressed) break;
-            }
-            return n;
-        }
-
-        /// <summary>FK 結果（FkPos/FkDone）から wrist(0)/index1(6)/middle1(9)/pinky1(16) の実基底を測る。</summary>
-        private static bool TryAnchorBasisFromLayout(HandSkeletonLayout layout, Quaternion[] liveRots,
-            bool right, out Vector3 f0, out Vector3 b0)
-        {
-            f0 = Vector3.zero; b0 = Vector3.zero;
-            if (layout.BoneCount < 17) return false;
-            if (FkLive(layout, liveRots) == 0) return false;
-            if (!FkDone[0] || !FkDone[6] || !FkDone[9] || !FkDone[16]) return false;
-            return TryHandBasis(FkPos[0], FkPos[9], FkPos[6], FkPos[16], right, out f0, out b0);
         }
 
         private void SolveArm(bool left, Vector3 wristLocal, Quaternion wristRotLocal, bool tracked,

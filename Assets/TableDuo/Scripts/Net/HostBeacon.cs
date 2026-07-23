@@ -2,7 +2,6 @@
 using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using UnityEngine;
 
 namespace TableDuoVr.Net
@@ -18,7 +17,7 @@ namespace TableDuoVr.Net
     public sealed class HostBeacon : MonoBehaviour
     {
         public const int BeaconPort = 7778;
-        public const string Magic = "TDVB1";
+        public const string Magic = HostBeaconMessage.Magic;
         private const float IntervalSeconds = 1f;
 
         private UdpClient? _udp;
@@ -29,7 +28,7 @@ namespace TableDuoVr.Net
         public void Begin(ushort ngoPort)
         {
             string hash = TableDuoBuildInfo.SceneHash;
-            _payload = Encoding.UTF8.GetBytes($"{Magic}|{ngoPort}|{hash}");
+            _payload = HostBeaconMessage.Build(ngoPort, hash);
             try
             {
                 _udp = new UdpClient { EnableBroadcast = true };

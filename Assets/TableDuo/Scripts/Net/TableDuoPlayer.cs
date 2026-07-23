@@ -82,12 +82,12 @@ namespace TableDuoVr.Net
             _role.Value == RoleUnset ? null : (StudyConfig.Role)_role.Value;
 
         /// <summary>同期済みの調査条件（host の SessionLogger が clientId 別に記録）。</summary>
-        public bool ShowHeadMarker => (_studyFlags.Value & 1) != 0;
-        public bool OneHandMode => (_studyFlags.Value & 2) != 0;
+        public bool ShowHeadMarker => StudyFlags.Marker(_studyFlags.Value);
+        public bool OneHandMode => StudyFlags.OneHand(_studyFlags.Value);
         /// <summary>この端末が一人称自己アバターを表示していたか（人役ローカル・研究記録用）。</summary>
-        public bool ShowSelfBody => (_studyFlags.Value & 16) != 0;
+        public bool ShowSelfBody => StudyFlags.SelfBody(_studyFlags.Value);
         /// <summary>この端末が申告した手バリアント（同期値。描画はローカル選択のまま — 不一致検出・記録用）。</summary>
-        public HandVariant DeclaredHandVariant => (HandVariant)((_studyFlags.Value >> 2) & 0x3);
+        public HandVariant DeclaredHandVariant => StudyFlags.Variant(_studyFlags.Value);
 
         public override void OnNetworkSpawn()
         {
@@ -158,13 +158,13 @@ namespace TableDuoVr.Net
         /// <summary>調査条件フラグを NetworkVariable へ書く（スポーン時 + バリアント切替時）。</summary>
         private void WriteStudyFlags(StudyConfig.Role role)
         {
-            _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
-                | (StudyConfig.OneHandMode ? 2 : 0)
-                | ((byte)StudyConfig.SelectedHandVariant << 2)
-                // bit4=自己ボディ（この端末が一人称自己アバターを表示しているか）。
-                // 人役=ShowSelfBody / 手役=FullBody 中のみ同条件（HandPresentation に集約）
-                | (HandPresentation.SelfBodyActive(role, StudyConfig.SelectedHandVariant,
-                    StudyConfig.ShowSelfBody) ? 16 : 0));
+            // bit4=自己ボディ（この端末が一人称自己アバターを表示しているか）。
+            // 人役=ShowSelfBody / 手役=FullBody 中のみ同条件（HandPresentation に集約）
+            _studyFlags.Value = StudyFlags.Pack(
+                StudyConfig.ShowHeadMarker,
+                StudyConfig.OneHandMode,
+                StudyConfig.SelectedHandVariant,
+                HandPresentation.SelfBodyActive(role, StudyConfig.SelectedHandVariant, StudyConfig.ShowSelfBody));
         }
 
         /// <summary>ホスト（実験者卓）からこのプレイヤーの手バリアントを強制する（server 専用）。

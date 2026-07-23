@@ -78,13 +78,7 @@ namespace TableDuoVr.Net
 
             // カード→スロットの割当を Fisher-Yates で完全ランダムに permute（白黒の区別なし）。
             // perm[i] = スロット i に置くカードの元 index
-            var perm = new int[n];
-            for (int i = 0; i < n; i++) perm[i] = i;
-            for (int i = n - 1; i > 0; i--)
-            {
-                int j = Random.Range(0, i + 1);
-                (perm[i], perm[j]) = (perm[j], perm[i]);
-            }
+            var perm = DealShuffle.BuildPermutation(n, m => Random.Range(0, m));
 
             for (int i = 0; i < n; i++)
             {

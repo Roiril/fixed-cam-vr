@@ -79,11 +79,7 @@ namespace TableDuoVr.Net
                 string text;
                 try { text = Encoding.UTF8.GetString(data); } catch { continue; }
                 // "TDVB1|<port>|<sceneHash>"
-                var parts = text.Split('|');
-                if (parts.Length < 2 || parts[0] != HostBeacon.Magic) continue;
-                if (!ushort.TryParse(parts[1], out ushort port)) continue;
-                string hash = parts.Length >= 3 ? parts[2] : "";
-                bool match = string.IsNullOrEmpty(hash) || string.IsNullOrEmpty(localHash) || hash == localHash;
+                if (!HostBeaconMessage.TryParse(text, localHash, out ushort port, out bool match)) continue;
                 _pendingIp = any.Address.ToString();
                 _pendingPort = port;
                 _pendingHashMatch = match;

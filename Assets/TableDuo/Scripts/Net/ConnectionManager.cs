@@ -487,7 +487,7 @@ namespace TableDuoVr.Net
                 // Unreliable は順序保証なし。Seq 非増加（後着・重複）は棄却する。
                 // wraparound は符号付き差分で判定（uint 一周しても正しく比較できる）
                 if (_lastAcceptedSeq.TryGetValue(originId, out uint last)
-                    && (int)(_rxScratch.Seq - last) <= 0)
+                    && !PoseSeqGate.Accept(_rxScratch.Seq, last))
                 {
                     RejectedStalePoses++;
                     return;
@@ -645,17 +645,9 @@ namespace TableDuoVr.Net
 
         private void ResolveAutoMode(out AutoMode mode, out string? ip)
         {
-            mode = autoMode;
             string? m = StudyLaunchFlags.Get("tdv_mode", "-tdvMode");
-            ip = StudyLaunchFlags.Get("tdv_ip", "-tdvIp");
-            if (string.IsNullOrEmpty(ip)) ip = null;
-
-            if (m == "host") mode = AutoMode.Host;
-            // client 指定でも IP 無しなら自動発見（IP を調べて打つ必要をなくす）
-            else if (m == "client") mode = ip != null ? AutoMode.Client : AutoMode.Discover;
-            // フラグ一切無し（＝Quest ランチャーから普通に開いた）は自動発見が既定。
-            // Inspector で Host/Client を焼き込んだシーン（L0 検証等）は従来どおりそちらが勝つ
-            else if (m == null && mode == AutoMode.None) mode = AutoMode.Discover;
+            string? ipFlag = StudyLaunchFlags.Get("tdv_ip", "-tdvIp");
+            (mode, ip) = AutoModeResolver.Resolve(autoMode, m, ipFlag);
         }
 
         private void OnGUI()

@@ -261,14 +261,14 @@ namespace TableDuoVr.Net
         {
             foreach (var stream in _clients.Values)
             {
-                int idx = Advance(stream.Times, ref stream.Cursor, t);
+                int idx = ReplayCursor.Advance(stream.Times, ref stream.Cursor, t);
                 if (idx < 0 || stream.View == null) continue;
                 stream.Current = stream.Poses[idx];
                 stream.View.Apply(stream.Current);
             }
             foreach (var ps in _props.Values)
             {
-                int idx = Advance(ps.Times, ref ps.Cursor, t);
+                int idx = ReplayCursor.Advance(ps.Times, ref ps.Cursor, t);
                 if (idx < 0 || ps.Target == null) continue;
                 ps.Target.SetPositionAndRotation(ps.Positions[idx], ps.Rotations[idx]);
             }
@@ -280,29 +280,6 @@ namespace TableDuoVr.Net
                     _audio.time = want;
                 }
             }
-        }
-
-        /// <summary>時刻 t 以下の直近 index。順方向はカーソル前進、逆方向シークは二分探索。</summary>
-        private static int Advance(List<long> times, ref int cursor, long t)
-        {
-            if (times.Count == 0 || t < times[0]) return -1;
-            if (cursor >= times.Count) cursor = times.Count - 1;
-            if (times[cursor] > t)
-            {
-                int lo = 0, hi = cursor;
-                while (lo < hi)
-                {
-                    int mid = (lo + hi + 1) / 2;
-                    if (times[mid] <= t) lo = mid;
-                    else hi = mid - 1;
-                }
-                cursor = lo;
-            }
-            else
-            {
-                while (cursor + 1 < times.Count && times[cursor + 1] <= t) cursor++;
-            }
-            return cursor;
         }
 
         private void SetPlaying(bool playing)
