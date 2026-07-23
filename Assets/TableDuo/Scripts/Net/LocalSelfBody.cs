@@ -36,6 +36,19 @@ namespace TableDuoVr.Net
             Debug.Log("[TableDuo] 一人称自己アバター ON（頭を潰した Remy をローカル pose で駆動 / 白手メッシュ非表示）");
         }
 
+        private void OnDestroy()
+        {
+            // Remy インスタンスは席アンカー直下（この GameObject の子ではない）に生成されるため明示破棄。
+            // FullBody→手だけへの復帰やプレイヤー despawn で Remy が席に残留しないように。
+            // 白手の再表示はここでは行わない（可視の権威は HandPresentation.WhiteHandVisible を
+            // 適用する LocalVariantHand / TableDuoPlayer のリコンサイル側）
+            if (_rig != null && _rig.Root != null)
+            {
+                Destroy(_rig.Root.gameObject);
+            }
+            _rig = null;
+        }
+
         private void LateUpdate()
         {
             if (_rig == null) return;

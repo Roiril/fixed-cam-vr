@@ -29,8 +29,11 @@ namespace TableDuoVr.Hands
         /// <summary>手首（BoneId 0）のメッシュ側 bone 名。placement / scale 基準に使う。</summary>
         public static string? WristBoneName(HandVariant variant, bool isRight) => BoneName(variant, 0, isRight);
 
-        /// <summary>Default 以外＝購入パックの別リグ（バインド差分リターゲット + placement/scale が要る）。</summary>
-        public static bool IsExternalRig(HandVariant variant) => variant != HandVariant.Default;
+        /// <summary>購入パックの別リグ（バインド差分リターゲット + placement/scale が要る）＝Realistic/Robot のみ。
+        /// ⚠ FullBody は手メッシュ差し替えではなくフル Remy 経路（RemoteAvatarView/LocalSelfBody）なので
+        /// ここに含めない（含めるとパック手構築へ流れて prefab 不在で失敗する）。</summary>
+        public static bool IsExternalRig(HandVariant variant)
+            => variant == HandVariant.Realistic || variant == HandVariant.Robot;
 
         // --- Male Hand（Realistic）。stem + 側サフィックス ---
         private static string? MaleName(int boneId, bool isRight)

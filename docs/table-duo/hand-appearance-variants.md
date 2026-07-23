@@ -1,10 +1,40 @@
 # 手だけアバターの見た目バリアント
 
-作成: 2026-06-29 / **実装: 2026-07-01（3 バリアント切替 実装済み・実機の指の見え方は要確認）**
+作成: 2026-06-29 / **実装: 2026-07-01（3 バリアント切替 実装済み・実機の指の見え方は要確認）/ 2026-07-23 FullBody（フル Remy 化）追加**
 関連: [study-design.md](study-design.md) / [.claude/plans/2026-06-11_table-duo_study.md](../../.claude/plans/2026-06-11_table-duo_study.md)
 
-手の見た目を 3 種類（Default=Meta 白手 / Realistic=人間の手 / Robot=機械の手）に切り替えられるようにする。
+手役の見た目を 4 種類（Default=Meta 白手 / Realistic=人間の手 / Robot=機械の手 / **FullBody=人役と同じフル Remy**）に切り替えられるようにする。
 下半分（§0〜§6.5）は実装前のリサーチ／設計メモ。**実装の実体は次の「実装済みサマリ」を正とする**。
+
+---
+
+## FullBody（手役のフル Remy 化・2026-07-23）
+
+ホスト卓から手役を**人役とまったく同じ提示仕様のフル Remy アバター**へ切り替える第 4 バリアント。実装は
+「人役の既存経路の再利用」であり、Remy 専用の新描画コードは無い:
+
+- **同期**: 既存チェーンをそのまま使う。`HandVariant.FullBody = 3`（`_studyFlags` bit2-3 の 2bit にちょうど収まる）。
+  `FacilitatorPanel`（白手/リアル/ロボ/Remy の 4 ボタン化）→ `TableDuoPlayer.ServerForceHandVariant` →
+  `_forcedVariant`（server write）→ 手役 owner `StudyConfig.ApplyForcedVariant` → 申告値書き直し → 全端末追従。
+- **提示状態の判定は純ロジック [`HandPresentation`](../../Assets/TableDuo/Scripts/Hands/HandVariant.cs) に集約**
+  （EditMode テスト `HandPresentationTests` が真理値表を固定）:
+  - `RemoteHandsOnly`: 手役でも FullBody 申告中は false → リモート view を `RemoteAvatarView.Create(handsOnly:false)`
+    ＝人役と同一の Remy IK 経路で**再構築**（`TableDuoPlayer.BuildRemoteView`。人役・ホスト観戦から顔つきの Remy が見える。
+    観戦一人称の頭潰し状態は再構築をまたいで引き継ぐ）
+  - `SelfBodyActive`: 手役 FullBody 中は人役と同じ `LocalSelfBody`（頭ボーン scale 0.01 潰し＝自分の顔が視界と干渉しない）
+    をローカル pose で駆動。`ShowSelfBody`（tdv_selfbody・既定 on）の規則も人役と共通
+  - `SuppressLeftHand`: FullBody 中は片手モード（OneHandMode）でも左手抑制を**解除**＝人役と同じ両手トラッキング。
+    戻すと再抑制
+  - `WhiteHandVisible`: FullBody 中は白手メッシュ非表示（Remy 手が代替。selfBody off 時のみ白手を残す＝人役と同じ）
+- **戻しの完全復元**: owner 側は `TableDuoPlayer.ApplyOwnerPresentation`（冪等リコンサイル）が切替のたびに
+  自己ボディ生成/破棄・左手抑制・白手可視を上記述語で整合させる。`LocalSelfBody.OnDestroy` が席下の Remy 実体を明示破棄。
+  白手/リアル/ロボへ戻すと従来の手だけアバター挙動（片手・パック手リターゲット）に一致する（`HandPresentationTests.ReturningFromFullBody_RestoresLegacyHandPresentation`）
+- **⚠ `HandVariantTable.IsExternalRig` は `Realistic || Robot` 明示**（旧 `!= Default`）。FullBody を external 扱いすると
+  パック手構築（prefab 不在）へ流れて失敗するため。ここが唯一の既存挙動に触る変更点で、3 バリアントの挙動は不変
+- 起動フラグ: `tdv_hand=remy`（別名 full / fullbody）で初期条件から FullBody にできる
+- ピンチ掴み（`PinchGrabInteractor`）は描画非依存なので FullBody でも無変化。左手が有効化されるぶん人役同様に左手掴みも効く
+- **⚠ 実機未検証（2026-07-23 実装。EditMode 375/375・コンパイル OK）**。実機確認点: 切替時の見た目遷移・
+  手役自身の視界（頭潰し・Remy 手の位置で掴み狙いがズレないか）・戻した後の手だけ挙動の退行有無
 
 ---
 

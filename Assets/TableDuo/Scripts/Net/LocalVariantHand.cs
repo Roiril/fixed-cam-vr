@@ -55,8 +55,11 @@ namespace TableDuoVr.Net
 
         private void ApplyVariantVisibility()
         {
-            bool external = HandVariantTable.IsExternalRig(StudyConfig.SelectedHandVariant);
-            SetMetaHandVisible(!external); // 外部リグ時は白手を隠す（構築は LateUpdate）
+            // 白手を見せるのは Default（と selfBody off の FullBody）だけ。Realistic/Robot はパック手が、
+            // FullBody は自己ボディ（LocalSelfBody の Remy 手）が代替する。判定は TableDuoPlayer 側の
+            // リコンサイルと同じ述語（HandPresentation）を共有し、購読順に依存しない
+            SetMetaHandVisible(HandPresentation.WhiteHandVisible(
+                StudyConfig.SelectedHandVariant, StudyConfig.ShowSelfBody));
         }
 
         /// <summary>Meta 白手の表示/非表示。SMR だけ切っても OVRMeshRenderer.Update の

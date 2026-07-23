@@ -15,6 +15,10 @@ namespace TableDuoVr.Net
         private readonly Transform _seat;   // RemoteAvatarView（席フレーム＝pose のローカル基準）
         private readonly Transform _root;   // Remy インスタンス root
 
+        /// <summary>Remy インスタンスの root（席アンカー直下に生成される）。
+        /// 生成主が席の子ではない場合（LocalSelfBody 等）は破棄時にこれを明示 Destroy すること。</summary>
+        public Transform Root => _root;
+
         private readonly Transform? _head;
         private readonly Transform? _lArm, _lFore, _lHand;
         private readonly Transform? _rArm, _rFore, _rHand;

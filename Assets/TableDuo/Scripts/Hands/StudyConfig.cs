@@ -47,7 +47,8 @@ namespace TableDuoVr.Hands
         /// ローカル描画専用＝相手に見える自分（ネット越しの Remy）は不変。条件は _studyFlags bit4 で同期・CSV 記録。</summary>
         public static bool ShowSelfBody = true;
 
-        /// <summary>手役アバターの手メッシュの見た目（Default=Meta白手 / Realistic=人間の手 / Robot=機械の手）。
+        /// <summary>手役アバターの見た目（Default=Meta白手 / Realistic=人間の手 / Robot=機械の手 /
+        /// FullBody=人役と同じフル Remy 化）。
         /// **正式な調査条件（within-pair 因子・2026-07-02 決定）**: ブロックごとに tdv_hand 起動フラグで固定する。
         /// セッション中の変更はホスト（実験者卓）強制のみ（<see cref="ApplyForcedVariant"/>）。参加者トグルは撤去済み（2026-07-18）。
         /// 自分の手＝この値。リモート描画＝相手の申告値（_studyFlags 同期）が優先される。

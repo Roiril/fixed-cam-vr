@@ -81,8 +81,8 @@ namespace TableDuoVr.Hands
             if (selfBody == "on") StudyConfig.ShowSelfBody = true;
             else if (selfBody == "off") StudyConfig.ShowSelfBody = false;
 
-            // 手メッシュの見た目（default=Meta白手 / realistic=人間の手 / robot=機械の手）。
-            // 別名も受ける（male/human/skin→realistic、meta/simple→default）。指定で調査セッション扱い。
+            // 手役の見た目（default=Meta白手 / realistic=人間の手 / robot=機械の手 / remy=フル Remy）。
+            // 別名も受ける（male/human/skin→realistic、full/fullbody→remy、meta/simple→default）。指定で調査セッション扱い。
             string? hand = Get("tdv_hand", "-tdvHand");
             if (hand != null)
             {
@@ -90,6 +90,7 @@ namespace TableDuoVr.Hands
                 {
                     "realistic" or "male" or "human" or "skin" => HandVariant.Realistic,
                     "robot" => HandVariant.Robot,
+                    "remy" or "full" or "fullbody" => HandVariant.FullBody,
                     _ => HandVariant.Default,
                 };
                 StudyConfig.LaunchedWithStudyFlags = true;

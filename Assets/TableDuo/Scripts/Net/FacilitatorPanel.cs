@@ -84,25 +84,34 @@ namespace TableDuoVr.Net
             GUILayout.EndHorizontal();
         }
 
-        // 手の見た目を変えられるのは「手役（手だけアバター）の手」だけ。
-        // 押すと Default→リアル→ロボ→… を巡回し、手役の申告値同期（_studyFlags）で
-        // 人役が見る手・ホスト観戦が見る手も自動で同じに変わる（TableDuoPlayer.ServerForceHandVariant）。
-        // 人役自身の手など他の手には触らない（要件どおり UI は手役ボタン 1 個のみ）。
+        // 手役（Role=Hand）の見た目バリアント選択ボタン。白手/リアル/ロボ=従来の手だけアバター、
+        // Remy=人役と同じフル Remy 化（本人は頭潰し自己ボディ + 両手トラッキング / 他視点は Remy IK）。
+        // 押すと申告値同期（_studyFlags）で手役本人・人役の視界・ホスト観戦の全端末に反映される
+        //（TableDuoPlayer.ServerForceHandVariant）。人役自身の見た目には触らない。
+        private static readonly HandVariant[] HandChoices =
+            { HandVariant.Default, HandVariant.Realistic, HandVariant.Robot, HandVariant.FullBody };
+
         private void DrawHandSection(NetworkManager nm)
         {
-            GUILayout.Label("― 手役の手の見た目 ―");
+            GUILayout.Label("― 手役の見た目 ―");
             var hand = FindHandPlayer(nm);
             if (hand == null)
             {
                 GUILayout.Label("(手役 未接続)");
                 return;
             }
-            // 現在の見た目 = 手役が全視点へ申告している同期値。押下で次のバリアントへ強制する。
+            // 現在の見た目 = 手役が全視点へ申告している同期値。現在値は押せない見た目で強調
             HandVariant current = hand.DeclaredHandVariant;
-            if (GUILayout.Button($"手役の手: {HandVariantCycle.Label(current)}（押して切替）"))
+            GUILayout.BeginHorizontal();
+            foreach (var v in HandChoices)
             {
-                hand.ServerForceHandVariant(HandVariantCycle.Next(current));
+                bool isActive = v == current;
+                GUI.enabled = !isActive;
+                string label = isActive ? "▶ " + HandVariantCycle.Label(v) : HandVariantCycle.Label(v);
+                if (GUILayout.Button(label)) hand.ServerForceHandVariant(v);
+                GUI.enabled = true;
             }
+            GUILayout.EndHorizontal();
         }
 
         /// <summary>接続中プレイヤーから手役（Role=Hand）を1体探す。居なければ null。</summary>

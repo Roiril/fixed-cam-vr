@@ -54,6 +54,9 @@ namespace TableDuoVr.Net
         public static event System.Action<ulong, long>? ClockOffsetReported;
 
         private RemoteAvatarView? _view;
+        private bool _viewHandsOnly;          // 現在の _view の形態（FullBody 切替の再構築判定）
+        private bool _remoteHeadCollapsed;    // 観戦一人称の頭潰し状態（view 再構築時に引き継ぐ）
+        private LocalSelfBody? _selfBody;     // owner の一人称自己ボディ（人役 / 手役 FullBody）
         private PinchGrabInteractor? _interactor;
         private RecenterWatcher? _recenterWatcher;
         private System.Action? _onRecentered;
@@ -123,9 +126,15 @@ namespace TableDuoVr.Net
         {
             _role.Value = (byte)role;
             WriteStudyFlags(role);
-            // バリアントが変わったら申告値を書き直す（リモート側の描画が追従する）。
+            // バリアントが変わったら申告値を書き直し、owner の提示状態（自己ボディ/左手抑制/白手可視）も
+            // リコンサイルする（FullBody⇄手だけの往復で人役同等の提示 ⇄ 従来の手だけ提示を完全復元）。
             // 変更源はホスト強制（下の _forcedVariant → StudyConfig.ApplyForcedVariant）。旧 Y トグルは撤去済み（2026-07-18）
-            _onOwnerVariantChanged = () => { if (IsSpawned && IsOwner) WriteStudyFlags(role); };
+            _onOwnerVariantChanged = () =>
+            {
+                if (!IsSpawned || !IsOwner) return;
+                WriteStudyFlags(role);
+                ApplyOwnerPresentation(role);
+            };
             StudyConfig.HandVariantChanged += _onOwnerVariantChanged;
             // ホスト強制バリアント（server→owner 指示チャネル）を観測。値が入ったら上の切替チェーンへ流す。
             // 遅接続で既に force 済みなら購読時に即適用する（サーバ側で先に設定されたケース）。
@@ -152,9 +161,10 @@ namespace TableDuoVr.Net
             _studyFlags.Value = (byte)((StudyConfig.ShowHeadMarker ? 1 : 0)
                 | (StudyConfig.OneHandMode ? 2 : 0)
                 | ((byte)StudyConfig.SelectedHandVariant << 2)
-                // bit4=自己ボディ。人役ローカル描画専用の条件なので人役のみ立てる
-                // （手役は描画されない＝ StudyConfig.ShowSelfBody 既定 on でも手役 CSV に selfBody=1 を刻まない）
-                | ((role == StudyConfig.Role.Full && StudyConfig.ShowSelfBody) ? 16 : 0));
+                // bit4=自己ボディ（この端末が一人称自己アバターを表示しているか）。
+                // 人役=ShowSelfBody / 手役=FullBody 中のみ同条件（HandPresentation に集約）
+                | (HandPresentation.SelfBodyActive(role, StudyConfig.SelectedHandVariant,
+                    StudyConfig.ShowSelfBody) ? 16 : 0));
         }
 
         /// <summary>ホスト（実験者卓）からこのプレイヤーの手バリアントを強制する（server 専用）。
@@ -315,29 +325,9 @@ namespace TableDuoVr.Net
             AlignLocalRig(seat);
             _nextSend = Time.time;
 
-            if (role == StudyConfig.Role.Hand && StudyConfig.OneHandMode && _sampler != null)
-            {
-                _sampler.SuppressLeftHand = true;
-                Debug.Log("[TableDuo] 片手モード: 左手を抑制");
-            }
-
-            // 人役の一人称自己アバター（tdv_selfbody=on）。頭を潰した Remy をローカル pose で駆動し、
-            // 白手メッシュは隠す。ローカル描画専用＝相手に見える自分（ネット越し Remy）は不変
-            if (role == StudyConfig.Role.Full && StudyConfig.ShowSelfBody && _sampler != null)
-            {
-                var remyPrefab = Resources.Load<GameObject>("RemyFullAvatar");
-                if (remyPrefab != null)
-                {
-                    var go = new GameObject("LocalSelfBody");
-                    go.transform.SetParent(transform, false);
-                    var self = go.AddComponent<LocalSelfBody>();
-                    self.Initialize(seat, remyPrefab, _sampler);
-                }
-                else
-                {
-                    Debug.LogWarning("[TableDuo] tdv_selfbody=on だが RemyFullAvatar prefab が無い → 自己ボディ無しで続行");
-                }
-            }
+            // 提示状態（左手抑制 / 一人称自己ボディ / 白手可視）の初期適用。ホスト強制の
+            // FullBody 切替（HandVariantChanged）でも同じ経路で再リコンサイルされる
+            ApplyOwnerPresentation(role);
 
             var interactorGo = new GameObject("PinchGrabInteractor");
             interactorGo.transform.SetParent(transform, false);
@@ -371,6 +361,59 @@ namespace TableDuoVr.Net
             }
         }
 
+        /// <summary>owner の提示状態（左手抑制 / 一人称自己ボディ / 白手メッシュ可視）を
+        /// 現在の (役割, バリアント, 起動フラグ) から整合させる冪等リコンサイル。
+        /// 初期セットアップとホスト強制のバリアント切替（FullBody⇄手だけ）の両方がここを通るので、
+        /// FullBody から戻したときは従来の手だけ提示（片手抑制・白手/パック手）へ完全復元される。</summary>
+        private void ApplyOwnerPresentation(StudyConfig.Role role)
+        {
+            if (role == StudyConfig.Role.Spectator || _sampler == null || _seat == null) return;
+            var variant = StudyConfig.SelectedHandVariant;
+
+            if (role == StudyConfig.Role.Hand)
+            {
+                bool suppress = HandPresentation.SuppressLeftHand(role, StudyConfig.OneHandMode, variant);
+                if (_sampler.SuppressLeftHand != suppress)
+                {
+                    _sampler.SuppressLeftHand = suppress;
+                    Debug.Log(suppress
+                        ? "[TableDuo] 片手モード: 左手を抑制"
+                        : "[TableDuo] FullBody: 左手抑制を解除（人役と同じ両手トラッキング）");
+                }
+            }
+
+            bool wantSelfBody = HandPresentation.SelfBodyActive(role, variant, StudyConfig.ShowSelfBody);
+            if (wantSelfBody && _selfBody == null)
+            {
+                var remyPrefab = Resources.Load<GameObject>("RemyFullAvatar");
+                if (remyPrefab != null)
+                {
+                    var go = new GameObject("LocalSelfBody");
+                    go.transform.SetParent(transform, false);
+                    _selfBody = go.AddComponent<LocalSelfBody>();
+                    _selfBody.Initialize(_seat, remyPrefab, _sampler);
+                }
+                else
+                {
+                    Debug.LogWarning("[TableDuo] 自己ボディ要求だが RemyFullAvatar prefab が無い → 自己ボディ無しで続行");
+                }
+            }
+            else if (!wantSelfBody && _selfBody != null)
+            {
+                Destroy(_selfBody.gameObject); // Remy 実体は LocalSelfBody.OnDestroy が席下から破棄
+                _selfBody = null;
+            }
+
+            // 白手可視の最終適用（手役のみ）。LocalVariantHand も HandVariantChanged で同じ述語を適用するが、
+            // イベント購読順・左手 GameObject の active 状態に依存しないようここで両手へ明示する。
+            // 人役は LocalSelfBody（Initialize で非表示化）が唯一のオーナー＝触らない
+            if (role == StudyConfig.Role.Hand)
+            {
+                _sampler.SetLocalHandMeshVisible(
+                    HandPresentation.WhiteHandVisible(variant, StudyConfig.ShowSelfBody));
+            }
+        }
+
         private void SetupRemote(StudyConfig.Role role)
         {
             // 観戦者はアバターを持たない（誰も観戦者を描画しない・席も取らない）
@@ -396,21 +439,45 @@ namespace TableDuoVr.Net
             SeatAvatarPreview.Instance?.HideSeat(SeatIndex);
 
             // 頭マーカーは「手役端末が申告した同期値」で描く（見る側のローカルフラグではなく。
-            // 端末ごとに tdv_marker が食い違っても、提示される条件＝手役の申告値で全視点一致させる）
-            _view = RemoteAvatarView.Create(seat, handsOnly: role == StudyConfig.Role.Hand,
-                showHeadMarker: ShowHeadMarker, originClientId: OwnerClientId);
-            // 手バリアントは「相手端末の申告値」で描く（見る側のローカル選択ではなく）。
-            // Y トグルで owner が _studyFlags を書き直すと OnValueChanged で追従再構築される
-            _view.SetHandVariant(DeclaredHandVariant);
+            // 端末ごとに tdv_marker が食い違っても、提示される条件＝手役の申告値で全視点一致させる）。
+            // 形態（手だけ / フル Remy）も申告バリアントで決める — 手役が FullBody 申告中は
+            // 人役と同じ Remy IK 経路で描く（HandPresentation.RemoteHandsOnly）
+            BuildRemoteView(role, seat);
+            // 申告値の変化に追従: 形態が変わる（FullBody⇄手だけ）なら view を作り直し、
+            // 手メッシュだけの変化（白手/リアル/ロボ）なら従来どおり再構築マークで済ませる
             _onRemoteFlagsChanged = (_, _) =>
             {
-                if (_view != null) _view.SetHandVariant(DeclaredHandVariant);
+                if (_view == null) return;
+                bool wantHandsOnly = HandPresentation.RemoteHandsOnly(role, DeclaredHandVariant);
+                if (wantHandsOnly != _viewHandsOnly)
+                {
+                    Destroy(_view.gameObject);
+                    BuildRemoteView(role, seat);
+                    Debug.Log($"[TableDuo] リモート(client{OwnerClientId}) の描画形態を再構築: " +
+                        $"{(wantHandsOnly ? "手だけ" : "フル(Remy)")}（申告={DeclaredHandVariant}）");
+                }
+                else
+                {
+                    _view.SetHandVariant(DeclaredHandVariant);
+                }
             };
             _studyFlags.OnValueChanged += _onRemoteFlagsChanged;
             if (ConnectionManager.Instance != null)
             {
                 ConnectionManager.Instance.RemotePoseReceived += OnRemotePose;
             }
+        }
+
+        /// <summary>リモート view の生成（初回 + FullBody⇄手だけの形態切替時の再構築）。
+        /// 手バリアントは「相手端末の申告値」で描く（見る側のローカル選択ではなく）。
+        /// 観戦一人称の頭潰し状態は再構築をまたいで引き継ぐ。</summary>
+        private void BuildRemoteView(StudyConfig.Role role, Transform seat)
+        {
+            _viewHandsOnly = HandPresentation.RemoteHandsOnly(role, DeclaredHandVariant);
+            _view = RemoteAvatarView.Create(seat, handsOnly: _viewHandsOnly,
+                showHeadMarker: ShowHeadMarker, originClientId: OwnerClientId);
+            _view.SetHandVariant(DeclaredHandVariant);
+            if (_remoteHeadCollapsed) _view.SetHeadCollapsed(true);
         }
 
         // 手バリアント＝within-pair 調査条件。全端末が同じ tdv_hand で起動している前提を検証する
@@ -523,8 +590,13 @@ namespace TableDuoVr.Net
             return false;
         }
 
-        /// <summary>観戦一人称視点で当人の頭ジオメトリを潰す/戻す（SpectatorController が視点対象に対して呼ぶ）。</summary>
-        public void SetRemoteHeadCollapsed(bool collapsed) => _view?.SetHeadCollapsed(collapsed);
+        /// <summary>観戦一人称視点で当人の頭ジオメトリを潰す/戻す（SpectatorController が視点対象に対して呼ぶ）。
+        /// 状態を保持し、FullBody 切替による view 再構築後も引き継ぐ（BuildRemoteView）。</summary>
+        public void SetRemoteHeadCollapsed(bool collapsed)
+        {
+            _remoteHeadCollapsed = collapsed;
+            _view?.SetHeadCollapsed(collapsed);
+        }
 
         private static int SeatIndexOf(StudyConfig.Role role) => role switch
         {

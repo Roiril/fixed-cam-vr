@@ -1,14 +1,26 @@
 ---
 name: table_duo_hand_variants
-description: TableDuo 手の見た目3バリアント（Default/Realistic/Robot）切替の実装状態・駆動方式・実機要確認点
+description: TableDuo 手役の見た目4バリアント（Default/Realistic/Robot/FullBody=フルRemy）切替の実装状態・駆動方式・実機要確認点
 metadata: 
   node_type: memory
   type: project
   originSessionId: 6cc78a95-31c7-4311-a90d-908df6901065
+  modified: 2026-07-23T06:37:10.151Z
 ---
 
 TableDuo（ハンド）で手役の手メッシュを **Default=Meta白手 / Realistic=Male Hand / Robot=Robot Hand** の
-3種に切り替える機能を実装（2026-07-01）。素材はユーザー購入の **VR Hands Starter Pack**。パックの
+3種に切り替える機能を実装（2026-07-01）。
+
+**第4バリアント FullBody（フル Remy 化・2026-07-23・実機未検証）**: ホスト卓 FacilitatorPanel を
+白手/リアル/ロボ/Remy の **4 ボタン化**し、「Remy」で手役を**人役と同一提示仕様のフルアバター**へ切替。
+`HandVariant.FullBody=3`（bit2-3 の 2bit にちょうど収まる）で既存同期チェーンを再利用。提示判定は純ロジック
+`HandPresentation`（HandVariant.cs・テスト `HandPresentationTests`）に集約: リモート=Remy IK 経路で view 再構築
+（`TableDuoPlayer.BuildRemoteView`・観戦頭潰し引き継ぎ）/ 本人=LocalSelfBody（頭潰し）/ 片手モードの左手抑制解除
+（両手）/ 白手非表示。戻すと `ApplyOwnerPresentation`（冪等リコンサイル）で従来の手だけ挙動へ完全復元。
+**⚠ `HandVariantTable.IsExternalRig` を `Realistic||Robot` 明示に変更**（旧 `!=Default`。FullBody がパック手構築へ
+漏れると prefab 不在で失敗するため — 今後バリアントを足す時も同じ罠に注意）。`LocalSelfBody.OnDestroy` が
+席下の Remy 実体を明示破棄（despawn 残留リークも同時修正）。起動フラグ `tdv_hand=remy|full|fullbody`。
+詳細 [docs/table-duo/hand-appearance-variants.md](../../docs/table-duo/hand-appearance-variants.md) の「FullBody」節。素材はユーザー購入の **VR Hands Starter Pack**。パックの
 Robot/Male のみ `Assets/TableDuo/ThirdParty/VRHandsStarterPack/` に GUID 保持で抽出（他7種は未インポート）。
 
 **切替**: 起動フラグ `tdv_hand=default|realistic|robot`（intent extras/CLI）＝初期条件 ＋ **セッション中はホスト（PC）の
