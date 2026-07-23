@@ -181,15 +181,28 @@ namespace FixedCamVr.Streaming
                 }
                 catch (Exception ex)
                 {
-                    // 確立していた接続の切断なら backoff を 1s に戻してから倍化判定する。
-                    if (_connectionEstablished) backoffSec = 1;
-                    _lastError = ex.Message;
                     _isConnected = false;
-                    Debug.LogWarning($"[MJPEG] disconnected: {ex.Message}. retry in {backoffSec}s");
-                    bool interrupted;
-                    try { interrupted = await DelayWithReconnect(backoffSec, ct); }
-                    catch (OperationCanceledException) { return; }
-                    backoffSec = interrupted ? 1 : Math.Min(backoffSec * 2, 30);
+                    // RequestReconnect が CTS null の隙間（接続間）に呼ばれると cancel は no-op で
+                    // フラグだけ残り、例外が OCE/ODE 以外（IOException 等）でここへ落ちることがある。
+                    // その場合も「意図した再接続」として消費し即リトライする（フラグを残すと後続の
+                    // 無関係な OCE が再接続要求と誤認され backoff を 1 回スキップする）。
+                    if (_reconnectRequested)
+                    {
+                        _reconnectRequested = false;
+                        wasReconnectRequest = true;
+                        backoffSec = 1;
+                    }
+                    else
+                    {
+                        // 確立していた接続の切断なら backoff を 1s に戻してから倍化判定する。
+                        if (_connectionEstablished) backoffSec = 1;
+                        _lastError = ex.Message;
+                        Debug.LogWarning($"[MJPEG] disconnected: {ex.Message}. retry in {backoffSec}s");
+                        bool interrupted;
+                        try { interrupted = await DelayWithReconnect(backoffSec, ct); }
+                        catch (OperationCanceledException) { return; }
+                        backoffSec = interrupted ? 1 : Math.Min(backoffSec * 2, 30);
+                    }
                 }
                 finally
                 {

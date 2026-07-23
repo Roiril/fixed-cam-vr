@@ -148,6 +148,25 @@ namespace FixedCamVr.Streaming
         public static bool ShouldSwitch(bool discoveryEnabled, bool pinned, bool frameBroken, bool hasCandidate, bool infoVerified)
             => discoveryEnabled && !pinned && frameBroken && hasCandidate && infoVerified;
 
+        /// <summary>
+        /// 接続中フィードの同一性照合（cameraId 継続照合）の純判定。
+        /// フレーム断と並ぶ第二の「実害」シグナル: streamer 側で配信を続けたまま cameraId を
+        /// A→B に切り替えると映像は途切れないため、断駆動だけでは張替評価に永遠に入らない。
+        /// 受信中 /info の cameraId（+show）が期待スロットと食い違い続けたらミスマッチとする。
+        ///   - 未接続 / メタ非新鮮（/info 失敗継続で古い値が残留）は照合不能 → 不一致にしない
+        ///   - metaId 空（旧 streamer / iPhone 等 /info 非対応・cameraId 未設定）も照合不能
+        ///   - metaShow 空は旧版互換で照合スキップ（show 不一致は隣ブースの端末を掴んでいる状態）
+        /// テストがこの真理値表を固定する。
+        /// </summary>
+        public static bool IsIdentityMismatch(
+            bool connected, bool metaFresh, string? metaId, string? metaShow, string expectedId, string showToken)
+        {
+            if (!connected || !metaFresh) return false;
+            if (string.IsNullOrEmpty(expectedId) || string.IsNullOrEmpty(metaId)) return false;
+            if (metaId != expectedId) return true;
+            return !string.IsNullOrEmpty(showToken) && !string.IsNullOrEmpty(metaShow) && metaShow != showToken;
+        }
+
         /// <summary>最も新しい live な show-server を返す。</summary>
         public bool TryGetShowServer(float now, out string ip, out int port)
         {
@@ -180,8 +199,12 @@ namespace FixedCamVr.Streaming
     ///     受信は lock 付きキューへ積み、Update で drain（MjpegStreamReceiver の単一スロット作法に倣い
     ///     メインスレッド steady-state ではアロケーションを出さない。パケットは低頻度）。
     ///
-    /// 切替（実害駆動）:
-    ///   カメラの CameraStream がフレーム断（未接続 or 受信 fps 0）5s 継続かつ発見表に別エンドポイントがある時のみ、
+    /// 切替（実害駆動・2 系統）:
+    ///   (1) フレーム断: CameraStream が未接続 or 受信 fps 0 を 5s 継続。
+    ///   (2) id 不一致: 受信中 /info の cameraId(+show) が期待スロットと 5s 不一致
+    ///       （streamer 側で配信を続けたまま cameraId を切り替えた/入れ替えたケース。断が起きないため
+    ///        (1) だけでは永遠に検知できない）。
+    ///   いずれかが確定しかつ発見表に別エンドポイントがある時のみ、
     ///   UnityWebRequest ではなく <see cref="StreamMetadataFetcher"/>（HttpClient・Player Settings の
     ///   "Allow downloads over HTTP" 影響を受けない実績経路）で /info を GET し cameraId + show を照合 → 一致時のみ張替。
     ///   pinned（卓の手動固定）カメラには適用しない。conflict（同 id・別 uuid）は切替停止 + HUD 警告。
@@ -249,11 +272,17 @@ namespace FixedCamVr.Streaming
 
         // per-camera 状態（registry.SourceCount 長）。
         private float[] _breakAccum = Array.Empty<float>();     // フレーム断の連続秒数
+        private float[] _idMismatchAccum = Array.Empty<float>(); // 受信中 /info の cameraId 不一致の連続秒数
+        private bool[] _mismatchLogged = Array.Empty<bool>();   // 不一致確定ログの重複抑止
         private bool[] _verifying = Array.Empty<bool>();        // /info 照合中フラグ
         private string[] _lastVerifyEndpoint = Array.Empty<string>();
         private float[] _lastVerifyTime = Array.Empty<float>();
         private bool[] _conflict = Array.Empty<bool>();         // HUD 用
-        private bool[] _missing = Array.Empty<bool>();          // HUD 用（フレーム断確定）
+        private bool[] _missing = Array.Empty<bool>();          // HUD 用（フレーム断 or id 不一致の確定）
+
+        // /info メタの新鮮さ閾値。CameraStream の /info ポーリング（1.5s）3 回分。
+        // これより古いメタでは id 不一致を数えない（/info だけ失敗し続けた時の誤検知防止）。
+        private const float MetaFreshSec = 4.5f;
 
         private float _probeAccum;
         private int _seq;
@@ -288,6 +317,8 @@ namespace FixedCamVr.Streaming
 
             int n = registry.SourceCount;
             _breakAccum = new float[n];
+            _idMismatchAccum = new float[n];
+            _mismatchLogged = new bool[n];
             _verifying = new bool[n];
             _lastVerifyEndpoint = new string[n];
             _lastVerifyTime = new float[n];
@@ -458,6 +489,10 @@ namespace FixedCamVr.Streaming
                 var src = registry.GetSource(i);
                 string camId = src != null ? src.CameraId : "";
                 _conflict[i] = !string.IsNullOrEmpty(camId) && _logic.HasConflict(camId, now);
+                // pin > discovery の契約はキルスイッチ中も守る（稼働済み discovery 層が pin 先をマスクしない）。
+                if (src != null && showControl != null && showControl.IsCameraPinned(i)
+                    && src.ActiveLayer == CameraSource.EndpointLayer.Discovery)
+                    registry.ClearDiscoveryEndpoint(i);
                 // missing は _breakAccum ベース。キルスイッチ中は断検知だけ回す。
                 UpdateBreakAccum(i, now);
                 _missing[i] = _breakAccum[i] >= frameBreakSwitchSec;
@@ -483,6 +518,37 @@ namespace FixedCamVr.Streaming
             bool broken = !stream.IsConnected || stream.ReceivedFps <= 0f;
             if (broken) _breakAccum[i] += Time.unscaledDeltaTime;
             else _breakAccum[i] = 0f;
+        }
+
+        /// <summary>
+        /// 受信中フィードの cameraId 継続照合（実害シグナル第二系統）。
+        /// CameraStream が 1.5s 毎にポーリングしている /info の cameraId/show を期待スロットと比べ、
+        /// 不一致の連続秒数を積む。suspend 中・メタ非新鮮・照合不能（id 空）は積まない。
+        /// frameBreakSwitchSec 継続で「配信は生きているが中身が別カメラ」として張替評価へ載る。
+        /// </summary>
+        private void UpdateIdentityAccum(int i, CameraStream stream, string camId)
+        {
+            float now = Time.realtimeSinceStartup;
+            var meta = stream.Metadata;
+            bool fresh = meta != null
+                      && stream.MetadataUpdatedRealtime > 0f
+                      && now - stream.MetadataUpdatedRealtime <= MetaFreshSec;
+            bool mismatch = DiscoveryLogic.IsIdentityMismatch(
+                stream.IsConnected && !stream.IsSuspended, fresh,
+                meta?.cameraId, meta?.show, camId, showToken);
+            if (!mismatch)
+            {
+                _idMismatchAccum[i] = 0f;
+                _mismatchLogged[i] = false;
+                return;
+            }
+            _idMismatchAccum[i] += Time.unscaledDeltaTime;
+            if (!_mismatchLogged[i] && _idMismatchAccum[i] >= frameBreakSwitchSec)
+            {
+                _mismatchLogged[i] = true;
+                Debug.LogWarning($"[Discovery] cam {camId} の受信中フィードが別 ID を申告 " +
+                                 $"(/info id={meta?.cameraId} show={meta?.show})。張替候補を探索する。");
+            }
         }
 
         private void SendProbesIfDue(float now)
@@ -544,10 +610,26 @@ namespace FixedCamVr.Streaming
                 _conflict[i] = _logic.HasConflict(camId, now);
 
                 bool pinned = showControl != null && showControl.IsCameraPinned(i);
-                if (pinned) { _breakAccum[i] = 0f; _missing[i] = false; continue; }
+                if (pinned)
+                {
+                    // 契約は pin > discovery。稼働済みの discovery 層を剥がさないと
+                    // EffectiveHost が discovery 側を返し続け、pin した host が無視される
+                    // （ClearDiscoveryEndpoint は今までどこからも呼ばれていなかった）。
+                    if (src.ActiveLayer == CameraSource.EndpointLayer.Discovery)
+                    {
+                        Debug.Log($"[Discovery] cam {camId} pinned: discovery 層を解除して pin 先へ。");
+                        registry.ClearDiscoveryEndpoint(i);
+                    }
+                    _breakAccum[i] = 0f;
+                    _idMismatchAccum[i] = 0f;
+                    _missing[i] = false;
+                    continue;
+                }
 
                 UpdateBreakAccum(i, now);
-                bool stale = _breakAccum[i] >= frameBreakSwitchSec;
+                UpdateIdentityAccum(i, stream, camId);
+                bool stale = _breakAccum[i] >= frameBreakSwitchSec
+                          || _idMismatchAccum[i] >= frameBreakSwitchSec;
                 _missing[i] = stale;
                 if (!stale) continue;
                 if (_verifying[i]) continue;
@@ -555,7 +637,20 @@ namespace FixedCamVr.Streaming
                 string curIp = src.EffectiveHostPublic;
                 int curPort = src.EffectivePortPublic;
                 var cand = _logic.FindSwitchCandidate(camId, curIp, curPort, now);
-                if (!cand.hasCandidate) continue;
+                if (!cand.hasCandidate)
+                {
+                    // 断（or id 不一致）確定なのに発見表に候補が無い。discovery 層で貼り付いた
+                    // ままだと下位層（show.json / 焼き込み）へ自動で戻る道が無い（スティッキー）ので、
+                    // 実害が出ているこのタイミングで discovery 層を解除してフォールバックを試す。
+                    if (src.ActiveLayer == CameraSource.EndpointLayer.Discovery)
+                    {
+                        Debug.Log($"[Discovery] cam {camId} 断+候補なし: discovery 層を解除し show.json/焼き込みへフォールバック。");
+                        registry.ClearDiscoveryEndpoint(i);
+                        _breakAccum[i] = 0f;
+                        _idMismatchAccum[i] = 0f;
+                    }
+                    continue;
+                }
 
                 string candEp = cand.ip + ":" + cand.port;
                 if (candEp == _lastVerifyEndpoint[i] && now - _lastVerifyTime[i] < verifyCooldownSec) continue;
@@ -592,7 +687,8 @@ namespace FixedCamVr.Streaming
                 {
                     registry.ApplyDiscoveryEndpoint(index, ip, port);
                     if (index < _breakAccum.Length) _breakAccum[index] = 0f;
-                    Debug.Log($"[Discovery] cam {camId} 断→発見で張替: {ip}:{port} (uuid={meta!.uuid})");
+                    if (index < _idMismatchAccum.Length) { _idMismatchAccum[index] = 0f; _mismatchLogged[index] = false; }
+                    Debug.Log($"[Discovery] cam {camId} 断/不一致→発見で張替: {ip}:{port} (uuid={meta!.uuid})");
                 }
                 else if (!verified)
                 {

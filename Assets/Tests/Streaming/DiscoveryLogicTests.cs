@@ -195,5 +195,81 @@ namespace FixedCamVr.Streaming.Tests
         {
             Assert.That(DiscoveryLogic.ShouldSwitch(true, false, true, true, infoVerified: false), Is.False);
         }
+
+        // ---- 受信中フィードの同一性照合（cameraId 継続照合）の真理値表 ----
+        // 配信を続けたまま streamer 側で cameraId を切り替えるとフレーム断が起きないため、
+        // この判定が「第二の実害シグナル」として張替評価に載せる。
+
+        [Test]
+        public void IdentityMismatch_ConnectedFreshDifferentId_IsMismatch()
+        {
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                connected: true, metaFresh: true, metaId: "B", metaShow: "mawarimi",
+                expectedId: "A", showToken: "mawarimi"), Is.True);
+        }
+
+        [Test]
+        public void IdentityMismatch_MatchingId_NoMismatch()
+        {
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                true, true, metaId: "A", metaShow: "mawarimi", expectedId: "A", showToken: "mawarimi"), Is.False);
+        }
+
+        [Test]
+        public void IdentityMismatch_NotConnected_NoMismatch()
+        {
+            // 未接続はフレーム断側（_breakAccum）の担当。二重カウントしない。
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                connected: false, metaFresh: true, "B", "mawarimi", "A", "mawarimi"), Is.False);
+        }
+
+        [Test]
+        public void IdentityMismatch_StaleMeta_NoMismatch()
+        {
+            // /info 失敗継続で古いメタが残留しているときは照合しない（誤検知防止）。
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                true, metaFresh: false, "B", "mawarimi", "A", "mawarimi"), Is.False);
+        }
+
+        [Test]
+        public void IdentityMismatch_EmptyMetaId_NoMismatch()
+        {
+            // 旧 streamer / cameraId 未設定端末は照合不能（後方互換）。
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                true, true, metaId: "", "mawarimi", "A", "mawarimi"), Is.False);
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                true, true, metaId: null, "mawarimi", "A", "mawarimi"), Is.False);
+        }
+
+        [Test]
+        public void IdentityMismatch_EmptyExpectedId_NoMismatch()
+        {
+            // スロット側 cameraId 空 = discovery 非対象（iPhone 等）。
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                true, true, "B", "mawarimi", expectedId: "", showToken: "mawarimi"), Is.False);
+        }
+
+        [Test]
+        public void IdentityMismatch_ShowTokenMismatch_IsMismatch()
+        {
+            // id は合っているが別ショーの端末（隣ブース混線）を掴んでいる。
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                true, true, "A", metaShow: "other-show", "A", showToken: "mawarimi"), Is.True);
+        }
+
+        [Test]
+        public void IdentityMismatch_EmptyMetaShow_SkipsShowCheck()
+        {
+            // metaShow 空は旧版互換で show 照合をスキップ（id 一致なら不一致にしない）。
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                true, true, "A", metaShow: "", "A", showToken: "mawarimi"), Is.False);
+        }
+
+        [Test]
+        public void IdentityMismatch_EmptyShowToken_SkipsShowCheck()
+        {
+            Assert.That(DiscoveryLogic.IsIdentityMismatch(
+                true, true, "A", "other-show", "A", showToken: ""), Is.False);
+        }
     }
 }

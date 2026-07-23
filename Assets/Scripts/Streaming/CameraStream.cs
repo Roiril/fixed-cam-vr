@@ -34,6 +34,12 @@ namespace FixedCamVr.Streaming
         private bool _metaInflight;
         private bool _healthInflight;
 
+        // エンドポイント世代。ReapplyConnection でインクリメントし、in-flight の /info /health
+        // フェッチが await 復帰後に「旧エンドポイント由来の結果」を書き込むのを破棄するためのトークン。
+        // これが無いと、張替直後に旧端末の rotation/cameraId が _metadata に残留し、
+        // さらに _metaInflight ガードが新エンドポイントの再取得をブロックしていた。
+        private int _endpointGen;
+
         // /health の latestFrameAgeMs と receivedTickMs から推定する E2E 遅延（ms）。
         // 「frame が capture されてから Unity がテクスチャに上げるまで」の参考値。
         public float EstimatedLatencyMs { get; private set; }
@@ -59,6 +65,13 @@ namespace FixedCamVr.Streaming
 
         /// <summary>fixed-cam-streamer の /info から取得したメタ情報。未取得 / 非対応サーバなら null。</summary>
         public StreamMetadata? Metadata => _metadata;
+
+        /// <summary>
+        /// Metadata を最後に取得成功した realtimeSinceStartup。未取得 / 張替直後は 0。
+        /// DiscoveryClient の cameraId 継続照合が「メタが新鮮なときだけ不一致を数える」ために読む
+        /// （/info が失敗し続けて古い id が残留したメタで誤検知しないため）。
+        /// </summary>
+        public float MetadataUpdatedRealtime { get; private set; }
 
         /// <summary>fixed-cam-streamer の /health から取得した最新の統計。未取得なら null。</summary>
         public StreamHealth? Health => _health;
@@ -135,12 +148,28 @@ namespace FixedCamVr.Streaming
             if (_disposed) return;
             try { _receiver.Dispose(); } catch { }
             _receiver = new MjpegStreamReceiver(_source.BuildUrl(), basicAuthToken: _source.BasicAuthToken);
-            // メタ/統計と計測ウィンドウは接続先が変わったらリセット
+            // メタ/統計と計測ウィンドウは接続先が変わったらリセット。
+            // 世代を進めて in-flight フェッチの結果を無効化し、inflight ガードも解除する
+            // （旧: 旧フェッチが in-flight だと新エンドポイントの /info 取得がブロックされ、
+            //   さらに旧端末のメタが完了時に書き戻されていた）。
+            _endpointGen++;
+            _metaInflight = false;
+            _healthInflight = false;
             _metadata = null;
             _health = null;
+            MetadataUpdatedRealtime = 0f;
+            // X-Frame-Seq は端末・接続ごとに独立した系列。旧系列を持ち越すと別端末の seq と
+            // 比較して偽の DroppedFrames を計上する。E2E 推定値も旧接続由来なのでクリア。
+            _lastSeq = 0;
+            DroppedFrames = 0;
+            EstimatedLatencyMs = 0f;
             _watchdog.NotifyEndpointChanged(Time.realtimeSinceStartup);
-            if (_started && !_watchdog.IsSuspended)
+            if (_started)
             {
+                // suspend 中でも必ず起動する。受信スレッドは suspend 中も温存する設計
+                // （SetSuspended は Tick を止めるだけ）なので起動は無害。旧実装は suspend 中の
+                // 張替（focus 喪失中に show.json / discovery 適用）で新 receiver が未起動のまま残り、
+                // resume は Start() を呼ばないため恒久黒画面になっていた。
                 _receiver.Start();
                 _ = RefreshMetadataAsync();
             }
@@ -155,12 +184,14 @@ namespace FixedCamVr.Streaming
         {
             if (_metaInflight) return;
             _metaInflight = true;
+            int gen = _endpointGen; // この呼び出しが属するエンドポイント世代
             try
             {
                 string url = _source.BuildInfoUrl();
                 if (string.IsNullOrEmpty(url)) return;
                 var meta = await StreamMetadataFetcher.FetchInfoAsync(url, basicAuthToken: _source.BasicAuthToken);
                 if (_disposed || meta == null) return;
+                if (gen != _endpointGen) return; // await 中に張替 → 旧エンドポイント由来の結果は破棄
 
                 // 比較: 向き反映に効く 4 値のいずれか変化で発火。
                 // 特に isPortrait は fixed-cam-streamer 側で rotationDeg が固定でも
@@ -172,12 +203,18 @@ namespace FixedCamVr.Streaming
                     || prev.heightPx != meta.heightPx
                     || prev.isPortrait != meta.isPortrait;
                 _metadata = meta;
+                MetadataUpdatedRealtime = Time.realtimeSinceStartup;
                 if (!changed) return;
 
                 try { MetadataUpdated?.Invoke(meta); }
                 catch (Exception ex) { Debug.LogWarning($"[CameraStream] MetadataUpdated handler threw: {ex.Message}"); }
             }
-            finally { _metaInflight = false; }
+            finally
+            {
+                // 張替後の新世代フェッチが走行中なら、その inflight フラグを旧世代の finally が
+                // 巻き添えで下ろさない（下ろすと同時 2 本目のフェッチを許してしまう）。
+                if (gen == _endpointGen) _metaInflight = false;
+            }
         }
 
         /// <summary>HudDump 等から呼ばれる任意のリフレッシュ。/health は時間経過で値が変わるので明示更新。</summary>
@@ -185,15 +222,20 @@ namespace FixedCamVr.Streaming
         {
             if (_healthInflight) return;
             _healthInflight = true;
+            int gen = _endpointGen; // この呼び出しが属するエンドポイント世代
             try
             {
                 string url = _source.BuildHealthUrl();
                 if (string.IsNullOrEmpty(url)) return;
                 var h = await StreamMetadataFetcher.FetchHealthAsync(url, basicAuthToken: _source.BasicAuthToken);
                 if (_disposed || h == null) return;
+                if (gen != _endpointGen) return; // 旧エンドポイント由来の統計は破棄（lag 判定の汚染防止）
                 _health = h;
             }
-            finally { _healthInflight = false; }
+            finally
+            {
+                if (gen == _endpointGen) _healthInflight = false;
+            }
         }
 
         /// <summary>
