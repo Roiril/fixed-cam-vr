@@ -38,6 +38,9 @@ namespace TableDuoVr.EditorTools
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Table (Bandido)", priority = 216)]
         public static void CaptureBandido() => CaptureWithActiveGame("Game_bandido");
 
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Table (SixStrokesBear)", priority = 217)]
+        public static void CaptureSixStrokesBear() => CaptureWithActiveGame("Game_bear");
+
         /// <summary>
         /// stow ベイクで不可視のゲームを撮影中だけ表示に入れ替えて撮る（他ゲームは非表示化）。
         /// GameSwitcher のランタイム挙動には触れず Renderer.enabled のみ往復する。

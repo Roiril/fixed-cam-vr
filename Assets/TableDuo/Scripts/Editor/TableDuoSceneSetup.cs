@@ -219,15 +219,21 @@ namespace TableDuoVr.EditorTools
             PlaceBandido(gameBandido.transform, topY, cx, cz, hx, hz);
             BakeStowedState(gameBandido);
 
+            // ゲーム 4: あと6画のくま（2人協力お絵描き・パッド+お題山札+能力トークン）。ベイク時 stow
+            var gameBear = new GameObject("Game_bear");
+            gameBear.transform.SetParent(props.transform, false);
+            PlaceSixStrokesBear(gameBear.transform, topY, cx, cz, hx, hz);
+            BakeStowedState(gameBear);
+
             // ランタイム切替（in-scene NetworkObject）。ホスト UI（FacilitatorPanel）/ mark?label=game_<id> が叩く
             var switcherGo = new GameObject("GameSwitcher");
             switcherGo.transform.SetParent(root.transform, false);
             switcherGo.AddComponent<NetworkObject>();
             var gameSwitcher = switcherGo.AddComponent<GameSwitcher>();
             WireGameSwitcher(gameSwitcher,
-                new[] { gameDsa, gameAlgo, gameGeister, gameBandido },
-                new[] { "dsa", "algo", "geister", "bandido" },
-                new[] { "海底探検", "アルゴ", "ガイスター", "バンディド" });
+                new[] { gameDsa, gameAlgo, gameGeister, gameBandido, gameBear },
+                new[] { "dsa", "algo", "geister", "bandido", "bear" },
+                new[] { "海底探検", "アルゴ", "ガイスター", "バンディド", "あと6画のくま" });
 
             // 協調配置課題の目標パネル（手役ローカルのみ表示）
             CreatePatternPanel(root.transform);
@@ -800,6 +806,123 @@ namespace TableDuoVr.EditorTools
             pv = so.FindProperty("tableTopY"); if (pv != null) pv.floatValue = topY;
             pv = so.FindProperty("cardThickness"); if (pv != null) pv.floatValue = cardThickness;
             so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private const string BearGlbDir = "Assets/TableDuo/ThirdParty/SixStrokesBear/glb";
+
+        /// <summary>
+        /// 卓上にボードゲーム「あと6画のくま」（2人協力お絵描き・2026-07-23）を開始形で置く。
+        /// お題の「くま」を 2 人が交互に、各自の役割（まる役=曲線パーツのみ / 線役=直線パーツのみ）で
+        /// 与えられた画数（6 画）以内に描き上げる協力ゲーム。卓中央に A4 描画パッド（素置き固定）、
+        /// その +X に裏向きお題山札 12 枚（top=01_sleepy=練習用）、各席の手前に役割カード・能力トークン・
+        /// 専用ペンを振り分け、-X 側に 3 分砂時計・達成条件カード・達成トークン・ルールカードを添える。
+        /// スナップ/ルール裁定は一切コード化しない（「机の上に置くだけ」= 既存方針。進行は人間が運用）。
+        /// トークン類はピンチ精度対策で 1.6 倍、ペンは 1.3 倍。GLB は実スケール（メートル）。
+        /// 山札は physics:false（kinematic 追従）なので restKinematic は不要。
+        /// </summary>
+        private static void PlaceSixStrokesBear(Transform parent, float topY, float cx, float cz,
+            float hx, float hz)
+        {
+            const float tokenScale = 1.6f;   // 能力/達成トークンのピンチ精度拡大率（チップ類と同率）
+            const float markerScale = 1.3f;  // 専用ペンの拡大率
+            const float deckLift = 0.0016f;   // お題カード厚 1.2mm + 0.4mm 空隙（z-fight 回避・バンディドと同値）
+
+            // --- 座標定数（cx/cz からの XZ オフセット。親がプレビューを見て調整するためここに集約）---
+            const float padX = 0f, padZ = 0f;          // 描画パッド = 卓中央
+            const float deckX = 0.28f, deckZ = 0f;      // お題山札 = 卓中央 +X
+
+            const float seat0Z = -0.26f;                // まる役（seat0 = -Z 席）の手前列
+            const float roleCircleX = -0.16f;           // まる役 役割カード
+            const float strokeCircleX0 = -0.02f, strokeCircleX1 = 0.05f; // 〇トークン ×2
+            const float strokeOvalX = 0.12f;            // だ円トークン
+            const float markerCircleX = 0.28f;          // まる役ペン
+
+            const float seat1Z = 0.26f;                 // 線役（seat1 = +Z 席）の手前列（x ミラー）
+            const float roleSegmentX = 0.16f;           // 線役 役割カード
+            const float strokeStraightX0 = 0.02f, strokeStraightX1 = -0.05f; // 直線トークン ×2
+            const float strokeBendX = -0.12f;           // 1 折トークン
+            const float markerSegmentX = -0.28f;        // 線役ペン
+
+            const float timerX = -0.20f, timerZ = 0f;   // 3 分砂時計（立像）
+            const float achieveCardX = -0.40f, achieveCardZ = -0.14f; // 達成条件カード
+            const float achieveTokenX = -0.52f;         // 達成トークン ×3（Z を段違いに）
+            const float achieveTokenZ0 = -0.07f, achieveTokenZ1 = 0f, achieveTokenZ2 = 0.07f;
+            const float ruleCardX = -0.40f, ruleCardZ = 0.14f; // ルールカード（A6）
+
+            // 描画パッド（A4 210×297）: 描画面は素置き固定（ガイスター盤と同様に掴み・物理なし）
+            PlaceModelRealScale($"{BearGlbDir}/drawing_pad.glb", parent, "BEAR_pad",
+                new Vector3(cx + padX, topY, cz + padZ), 0f, grabbable: false);
+
+            // お題カード山札 12 枚: prompt_12 → prompt_01 の順に下から積む（top=01_sleepy=練習用）。
+            // 裏向き（faceDown）で伏せ、kinematic 追従（physics:false）
+            var deckNames = new[]
+            {
+                "prompt_12_make_up", "prompt_11_awkward", "prompt_10_brave", "prompt_09_hiding",
+                "prompt_08_joy", "prompt_07_attention", "prompt_06_troubled", "prompt_05_waiting",
+                "prompt_04_surprised", "prompt_03_hungry", "prompt_02_cold", "prompt_01_sleepy",
+            };
+            for (int i = 0; i < deckNames.Length; i++)
+            {
+                var card = PlaceModelRealScale($"{BearGlbDir}/{deckNames[i]}.glb", parent, $"BEAR_{deckNames[i]}",
+                    new Vector3(cx + deckX, topY + i * deckLift, cz + deckZ), 0f,
+                    grabbable: true, physics: false, faceDown: true);
+                SetSurfaceClamp(card, topY, cx, cz, hx, hz);
+            }
+
+            // --- まる役（seat0 = -Z 席）: 役割カード + 〇/だ円トークン + まる役ペン ---
+            var roleCircle = PlaceModelRealScale($"{BearGlbDir}/role_circle.glb", parent, "BEAR_role_circle",
+                new Vector3(cx + roleCircleX, topY, cz + seat0Z), 0f, grabbable: true);
+            SetSurfaceClamp(roleCircle, topY, cx, cz, hx, hz);
+            var strokeCircle0 = PlaceModelRealScale($"{BearGlbDir}/stroke_circle.glb", parent, "BEAR_stroke_circle_0",
+                new Vector3(cx + strokeCircleX0, topY, cz + seat0Z), 0f, grabbable: true, scale: tokenScale, physics: true);
+            SetSurfaceClamp(strokeCircle0, topY, cx, cz, hx, hz);
+            var strokeCircle1 = PlaceModelRealScale($"{BearGlbDir}/stroke_circle.glb", parent, "BEAR_stroke_circle_1",
+                new Vector3(cx + strokeCircleX1, topY, cz + seat0Z), 0f, grabbable: true, scale: tokenScale, physics: true);
+            SetSurfaceClamp(strokeCircle1, topY, cx, cz, hx, hz);
+            var strokeOval = PlaceModelRealScale($"{BearGlbDir}/stroke_oval.glb", parent, "BEAR_stroke_oval",
+                new Vector3(cx + strokeOvalX, topY, cz + seat0Z), 0f, grabbable: true, scale: tokenScale, physics: true);
+            SetSurfaceClamp(strokeOval, topY, cx, cz, hx, hz);
+            // ペンは転がり防止で kinematic（physics:false）。長軸を X へ寝かせる想定 yaw90（親がプレビューで校正）
+            var markerCircle = PlaceModelRealScale($"{BearGlbDir}/marker_circle.glb", parent, "BEAR_marker_circle",
+                new Vector3(cx + markerCircleX, topY, cz + seat0Z), 90f, grabbable: true, scale: markerScale, physics: false);
+            SetSurfaceClamp(markerCircle, topY, cx, cz, hx, hz);
+
+            // --- 線役（seat1 = +Z 席・yaw180 で相手向き）: 役割カード + 直線/1折トークン + 線役ペン ---
+            var roleSegment = PlaceModelRealScale($"{BearGlbDir}/role_segment.glb", parent, "BEAR_role_segment",
+                new Vector3(cx + roleSegmentX, topY, cz + seat1Z), 180f, grabbable: true);
+            SetSurfaceClamp(roleSegment, topY, cx, cz, hx, hz);
+            var strokeStraight0 = PlaceModelRealScale($"{BearGlbDir}/stroke_straight.glb", parent, "BEAR_stroke_straight_0",
+                new Vector3(cx + strokeStraightX0, topY, cz + seat1Z), 180f, grabbable: true, scale: tokenScale, physics: true);
+            SetSurfaceClamp(strokeStraight0, topY, cx, cz, hx, hz);
+            var strokeStraight1 = PlaceModelRealScale($"{BearGlbDir}/stroke_straight.glb", parent, "BEAR_stroke_straight_1",
+                new Vector3(cx + strokeStraightX1, topY, cz + seat1Z), 180f, grabbable: true, scale: tokenScale, physics: true);
+            SetSurfaceClamp(strokeStraight1, topY, cx, cz, hx, hz);
+            var strokeBend = PlaceModelRealScale($"{BearGlbDir}/stroke_bend.glb", parent, "BEAR_stroke_bend",
+                new Vector3(cx + strokeBendX, topY, cz + seat1Z), 180f, grabbable: true, scale: tokenScale, physics: true);
+            SetSurfaceClamp(strokeBend, topY, cx, cz, hx, hz);
+            var markerSegment = PlaceModelRealScale($"{BearGlbDir}/marker_segment.glb", parent, "BEAR_marker_segment",
+                new Vector3(cx + markerSegmentX, topY, cz + seat1Z), 90f, grabbable: true, scale: markerScale, physics: false);
+            SetSurfaceClamp(markerSegment, topY, cx, cz, hx, hz);
+
+            // --- 共有プロップ（-X 側）: 3 分砂時計 / 達成条件カード / 達成トークン ×3 / ルールカード ---
+            var timer = PlaceModelRealScale($"{BearGlbDir}/timer_3min.glb", parent, "BEAR_timer",
+                new Vector3(cx + timerX, topY, cz + timerZ), 0f, grabbable: true, physics: true);
+            SetSurfaceClamp(timer, topY, cx, cz, hx, hz);
+            var achieveCard = PlaceModelRealScale($"{BearGlbDir}/achievement_card.glb", parent, "BEAR_achievement_card",
+                new Vector3(cx + achieveCardX, topY, cz + achieveCardZ), 0f, grabbable: true);
+            SetSurfaceClamp(achieveCard, topY, cx, cz, hx, hz);
+            var achieveTokenZ = new[] { achieveTokenZ0, achieveTokenZ1, achieveTokenZ2 };
+            for (int i = 0; i < 3; i++)
+            {
+                var tok = PlaceModelRealScale($"{BearGlbDir}/achievement_token.glb", parent, $"BEAR_achievement_token_{i}",
+                    new Vector3(cx + achieveTokenX, topY, cz + achieveTokenZ[i]), 0f,
+                    grabbable: true, scale: tokenScale, physics: true);
+                SetSurfaceClamp(tok, topY, cx, cz, hx, hz);
+            }
+            // ルールカード（A6 105×148）: 148 を X 方向へ寝かせる想定 yaw90
+            var ruleCard = PlaceModelRealScale($"{BearGlbDir}/rule_card.glb", parent, "BEAR_rule_card",
+                new Vector3(cx + ruleCardX, topY, cz + ruleCardZ), 90f, grabbable: true);
+            SetSurfaceClamp(ruleCard, topY, cx, cz, hx, hz);
         }
 
         /// <summary>
