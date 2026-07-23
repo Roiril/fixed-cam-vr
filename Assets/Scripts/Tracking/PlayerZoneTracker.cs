@@ -67,6 +67,19 @@ namespace FixedCamVr.Tracking
         /// <summary>ランタイムでヒステリシス幅を差し替える（layout.hysteresisM の反映用）。</summary>
         public void SetHysteresisShrink(float value) => hysteresisShrink = Mathf.Max(0f, value);
 
+        /// <summary>
+        /// 現在ゾーンの記憶（_current）を無効化し、次 Update で現在位置から再 Pick させる。
+        /// 同一ゾーンに滞在したままでも通常経路（<c>director.RequestZone</c> → dwell → Zone commit）で
+        /// ゾーンカメラへ復帰させるため（_current 不変だと Pick が現ゾーンを維持し続ける）。
+        /// </summary>
+        public void InvalidateCurrent() => _current = null;
+
+        // 再有効化のたびに現在ゾーンを再取得する。Web cameraOverride 中は ShowControlClient が
+        // 本コンポーネントを enabled=false にし、解除で enabled=true に戻す。その OnEnable で記憶ゾーンを
+        // 無効化しておくと、同一ゾーン滞在のままでも次 Update で現在位置から再 Pick し、override カメラへの
+        // 表示固着を解消できる（初回 enable では _current は既に null なので無害）。
+        private void OnEnable() => InvalidateCurrent();
+
         private void Reset()
         {
             registry = FindObjectOfType<CameraStreamRegistry>();

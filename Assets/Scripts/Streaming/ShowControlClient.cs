@@ -740,6 +740,11 @@ namespace FixedCamVr.Streaming
             {
                 _appliedOverride = ovr;
                 bool hasOverride = !string.IsNullOrEmpty(ovr);
+                // override 中は tracker を無効化（enabled=false）、解除で再有効化（enabled=true）する。
+                // 再有効化は PlayerZoneTracker.OnEnable を発火し、そこで記憶ゾーン（_current）が無効化される
+                // → 次 Update で現在位置から再 Pick して通常経路でゾーンカメラへ復帰する。これが無いと
+                // 同一ゾーン滞在のまま _current が不変で、次のゾーン跨ぎまで override カメラに表示が固着する。
+                // （asmdef 循環回避のため Tracking 型は持ち込まず、再有効化＝自己回復に委ねる。）
                 if (zoneTrackerToDisable != null) zoneTrackerToDisable.enabled = !hasOverride;
                 if (hasOverride && registry != null)
                 {
@@ -919,9 +924,12 @@ namespace FixedCamVr.Streaming
         /// 表示中だと固定一致では stop 側に入らず、黒/演出を止められない穴があった。緊急復帰の役目を果たすため、
         /// 再生中判定（<see cref="ScreenOverlayController.Current"/> が非 null）を最優先の無条件停止にする。
         ///
-        /// - server 接続中: show.json を唯一の正に保つため、ローカルで直接 PlayCue せず /command（playCue/stopCue）を
-        ///   サーバへ送る → 自分の long-poll が即座に戻り Apply が実再生/停止する（web UI 表示・heartbeat とも整合）。
-        ///   停止は id 不問の "stopCue"（空 id）。再生中かは _overlay.Current で観測する。
+        /// - server 接続中: show.json を唯一の正に保つため、再生は /command（playCue）をサーバへ送る
+        ///   → 自分の long-poll が即座に戻り Apply が実再生する（web UI 表示・heartbeat とも整合）。
+        ///   **停止は server へ "stopCue"（空 id）を送りつつ、ローカルでも必ず StopOverlay を併用する**。
+        ///   スケジューラ発火 cue は server の activeCue が空のままなので、stopCue 送信だけでは Apply の
+        ///   遷移判定（cueId != _appliedCue）が起きずローカル再生が止まらない穴があった（緊急停止の役目を果たすため
+        ///   ローカル停止を必ず走らせる。コマンド送信は Web 表示との整合維持のため残す）。
         /// - server 未設定 / 不通: 焼き込み・端末キャッシュの cue 定義から <see cref="ResolveCue"/> して
         ///   ScreenOverlayController を**ローカル直呼び**する（PC 不在では /command が届かず発火できない既知の穴を塞ぐ）。
         ///   CueScheduler が引くのと同じ _cues プールなので焼き込み cue はそのまま鳴る。
@@ -938,8 +946,12 @@ namespace FixedCamVr.Streaming
             {
                 if (ServerReachable)
                 {
+                    // server へ stopCue を送って Web 表示・heartbeat と整合させつつ、ローカルでも即停止する。
+                    // スケジューラ発火 cue は server の activeCue が空のままで Apply の遷移判定が起きないため、
+                    // stopCue 送信だけでは止まらない。ローカル StopOverlay を必ず併用する（緊急復帰の担保）。
                     SendCommand("stopCue", "");
-                    Debug.Log("[ShowControl] grip cue toggle: 再生中 -> stop（無条件）");
+                    _overlay!.StopOverlay();
+                    Debug.Log("[ShowControl] grip cue toggle: 再生中 -> stop（server + ローカル併用・無条件）");
                 }
                 else
                 {

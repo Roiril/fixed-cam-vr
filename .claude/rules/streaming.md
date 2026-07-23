@@ -103,6 +103,12 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
     ShowControlClient→Director 参照は既存シーンで未配線でも `ResolveSwitchDirector`（GetComponent→FindObjectOfType）で遅延解決。
   - **保留キャンセル**: 保留中の目標が現在表示カメラへ戻ったら pending をクリア（境界でうろついた後に古い切替が突然 commit されない）。
     無効カメラ index（ゾーン外・target<0・registry 範囲外）の要求は無視（現カメラ継続）。
+  - **Web override 解除後の自己回復**（2026-07-23 修正・テスト `SwitchWiringTests.T5`）: override 中は `ShowControlClient` が
+    `PlayerZoneTracker` を `enabled=false` にし、解除で `enabled=true` に戻す。再有効化は `PlayerZoneTracker.OnEnable` を発火し、
+    そこで記憶ゾーン（`_current`）を無効化（`InvalidateCurrent`）する → 次 Update で現在位置から再 Pick し通常経路（RequestZone→dwell→Zone commit）で
+    ゾーンカメラへ復帰する。これが無いと同一ゾーン滞在のまま `_current` が不変で、次のゾーン跨ぎまで override カメラに表示が固着していた。
+    （asmdef 循環回避のため Streaming→Tracking の型参照は作らず、再有効化＝自己回復に委ねる設計。当初案の SendMessage は EditMode テストで
+    `ShouldRunBehaviour` アサートを踏むため OnEnable 自己回復へ変更した。）
 - **デッドバンド自動クランプ**: [`ZoneLayoutApplier`](../../Assets/Scripts/Tracking/ZoneLayoutApplier.cs) は tracker へ渡す
   hysteresisShrink を **`min(hysteresisM, overlapM/2)`**（`ZoneLayoutSolver.ClampHysteresis`）へクランプし、逆転時に 1 回警告。
   現 show.json（overlapM=0.08 / hysteresisM=0.12）は編集なしで実効 **0.04** になり、`Pick` の shrink 保持デッドバンドが復活する
@@ -116,8 +122,9 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
   `maskUrl` 指定ありでロード失敗した場合、白フォールバック（全面差し替え＝黒背景素材なら live 全面黒）に落ちず cue 発火を中止して live を守る
   （動画/静止画パス両方）。maskUrl 未指定の意図的な全面差し替えは従来どおり白フォールバック。StopOverlay は `_current==null` でも世代を進めて
   in-flight のロード完了を無効化する（stop 後に cue が復活する穴を塞ぐ）
-- **グリップ cue トグルは無条件停止優先**（2026-07-22）: [`ShowControlClient.ToggleActiveCameraCue`](../../Assets/Scripts/Streaming/ShowControlClient.cs) は
-  何か再生中（`_overlay.Current != null`）なら id 一致に依存せず無条件で停止（server 中は `stopCue` 空 id / ローカルは `StopOverlay`）。
+- **グリップ cue トグルは無条件停止優先**（2026-07-22 / 2026-07-23 補強）: [`ShowControlClient.ToggleActiveCameraCue`](../../Assets/Scripts/Streaming/ShowControlClient.cs) は
+  何か再生中（`_overlay.Current != null`）なら id 一致に依存せず無条件で停止する。**停止は server 到達時も `stopCue`（空 id）送信に加えて必ずローカル `StopOverlay` を併用する**（2026-07-23 修正・テスト `GripStopLocalTests`）。
+  スケジューラ発火 cue は server の activeCue が空のままなので、stopCue 送信だけでは Apply の遷移判定（cueId != _appliedCue）が起きずローカル再生が止まらない穴があった。コマンド送信は Web 表示・heartbeat との整合維持のため残す。
   スケジューラ発火の別 id cue（cue_A_1 等）が表示中でも黒/演出を確実に止められる緊急復帰。何も再生していない時だけ `cue_<camId>` を発火
 - **切替 dip は unscaledDeltaTime で進行**（2026-07-22）: `CameraSwitchDirector.AdvanceDip` は timeScale=0 で黒凍結しないよう
   unscaledDeltaTime で進める（StartupFader と同流儀）。OnDisable で dip を解除（`_SwitchDim` を 0・状態 Idle 化）
@@ -229,6 +236,8 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   - `enter`: 進入 + delaySec 後、insert.camera を durationSec 秒表示 → 最新ゾーンカメラへ復帰
   - `exit`: **このゾーンを Zone 切替で離れる瞬間**、dip の黒中に insert.camera へ差し替え durationSec 秒 → 最新ゾーンカメラへ復帰。体験者は A→黒→C(N秒)→黒→B と見え、中間カメラのフラッシュを見せない（ユーザー要求「A→B に切り替わる前に C に演出を N 秒」の実装形）
   - 切替は dip-to-black 付き（`CameraSwitchDirector` の `SwitchSource.Insert`）。insert 表示中はゾーン自動切替を凍結（cue 凍結と同型）。**周回カウントは実ゾーン移動の commit 時に通常どおり 1 回**（Insert 切替は LapCounter が数えない）
+  - **insert 凍結の解除は必ず後片付け経由**（2026-07-23 修正・テスト `SwitchWiringTests.T1/T2`）: `InsertController.ResetRun` / `SetInserts` は進行中インサート（表示中）があれば先に `CleanupActiveInsert`（insert cue 停止・insert post 解除・`director.InsertReturn`）で畳んでから `InsertLogic` をリセットする。畳まないと `CameraSwitchDirector._insertActive`（凍結）が `InsertReturn` 単一経路でしか降りず、ゾーン自動切替が恒久凍結する（ショー中のタイムライン編集・体験者交代で踏む）。`SwitchDirectorLogic.Reset`（OnEnable 経路）でも `_insertActive`/`_cueActive` を false へ安全初期化する
+  - **insert 中の実ゾーン移動は復帰時に Zone として反映**（2026-07-23 修正・テスト `SwitchWiringTests.T4`）: `EndInsert` の復帰先が開始時ゾーン（`InsertLogic.BaseZoneCamera`）と異なる＝insert 中に体験者が実ゾーンを移動していた場合、`InsertReturn(returnCamera, asZone:true)` で復帰 commit を `SwitchSource.Zone` として発火し、LapCounter / TimelineDirector に実ゾーン移動を反映する（従来は Insert 固定で Feed されず lap under-count・区間追跡ズレ・exit insert の誤遷移を起こしていた）。進行ポインタは順方向一致でしか進まないため二重カウントは起きない
 - **present-flag 必須**（JsonUtility 制約）: `hasPost` / `hasInsert` / `hasOverride` を必ず書く。null 入れ子は既定値で書かれるため、ライブ・焼き込みパース直後に `!=null` から確定する（`CameraDef.hasPost` と同じ手法）
 - **JSON キー `override`** は C# 予約語のため Unity 側は `@override` フィールドで受ける（実行時フィールド名は `"override"` で JsonUtility が正しく往復。実型で確認済み）
 - **CachedConfig に timeline を保存**（オフライン発火。旧「cues 欠落」事故の教訓を踏襲）

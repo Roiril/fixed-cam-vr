@@ -74,6 +74,10 @@ namespace FixedCamVr.Streaming
             _lastSwitchTime = float.NegativeInfinity;
             _lastManualTime = float.NegativeInfinity;
             _hasPendingZone = false;
+            // 凍結フラグは安全側（false）へ。OnEnable 経路で insert / cue 凍結が残ったまま復帰して
+            // ゾーン自動切替が始まらない事故を防ぐ（InsertController 側の後片付けと二重の保険）。
+            _insertActive = false;
+            _cueActive = false;
         }
 
         public void SetCueActive(bool active) => _cueActive = active;
@@ -384,13 +388,16 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// インサート表示を終え、復帰カメラ（最新ゾーン）へ dip-to-black で戻す（Insert source）。
+        /// インサート表示を終え、復帰カメラ（最新ゾーン）へ dip-to-black で戻す。
         /// ゾーン凍結を解除する（dip 完了後にゾーン自動切替が再開する）。
+        /// <paramref name="asZone"/>=true のとき、この復帰 commit を Zone source として発火する
+        /// （insert 中に体験者が実ゾーンを移動していた場合。LapCounter / TimelineDirector が周回・区間追跡へ
+        /// 反映できるようにする）。false（既定）は Insert source＝周回に数えない従来挙動。
         /// </summary>
-        public void InsertReturn(int returnCamera)
+        public void InsertReturn(int returnCamera, bool asZone = false)
         {
             _logic.SetInsertActive(false);
-            StartDip(returnCamera, SwitchSource.Insert);
+            StartDip(returnCamera, asZone ? SwitchSource.Zone : SwitchSource.Insert);
         }
 
         /// <summary>

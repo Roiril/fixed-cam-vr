@@ -1,0 +1,355 @@
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using FixedCamVr.Streaming;
+using FixedCamVr.Tracking;
+using NUnit.Framework;
+using UnityEngine;
+
+namespace FixedCamVr.Tracking.Tests
+{
+    /// <summary>
+    /// L0.5 統合テスト（XR / OVR 非依存・EditMode + 手動 Tick）。MonoBehaviour 配線層
+    /// （CameraSwitchDirector ↔ InsertController ↔ TimelineDirector ↔ CueScheduler ↔ LapCounter ↔
+    ///  PlayerZoneTracker ↔ ShowControlClient）を実行時に組み立て、切替系バグの再現→修正を固定する。
+    ///
+    /// 監査バックログ（fixed_cam_review_backlog.md 2026-07-23 節）の 1/3/4 を対象:
+    ///   T1: insert 表示中に ResetRun → ゾーン凍結が解除され自動切替が再開する
+    ///   T2: insert 表示中に SetInserts（タイムライン差し替え）→ 同上
+    ///   T4: insert 中に別ゾーンへ移動 → 復帰後 LapCounter が実ゾーンに追従・lap 二重加算なし
+    ///   T5: Web override 解除 → 同一ゾーン滞在のまま表示がゾーンカメラへ復帰
+    /// （T3 グリップ緊急停止は Streaming 側 GripStopLocalTests。）
+    ///
+    /// batchmode で PlayMode に入ると本プロジェクトの Oculus XR 自動初期化が headless で落ちるため、
+    /// PlayMode ランナーは使わず EditMode で駆動する。EditMode は Awake/OnEnable/Update が自動起動しないので
+    /// reflection で明示駆動し、dip / dwell / cooldown を 0 に落として時間非依存の 1 ステップ確定にする。
+    /// 純ロジックの時間計時は別途 EditMode 単体テスト（SwitchDirectorLogicTests / InsertLogicTests 等）が固定済み。
+    /// </summary>
+    public sealed class SwitchWiringTests
+    {
+        private const BindingFlags BF = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
+
+        private readonly List<UnityEngine.Object> _spawned = new();
+
+        [TearDown]
+        public void Cleanup()
+        {
+            foreach (var o in _spawned) if (o != null) UnityEngine.Object.DestroyImmediate(o);
+            _spawned.Clear();
+        }
+
+        // ---- reflection ヘルパ ----
+
+        private static void SetField(object target, string name, object? value)
+        {
+            FieldInfo? f = target.GetType().GetField(name, BF);
+            Assert.That(f, Is.Not.Null, $"field '{name}' not found on {target.GetType().Name}");
+            f!.SetValue(target, value);
+        }
+
+        private static object GetField(object target, string name)
+        {
+            FieldInfo? f = target.GetType().GetField(name, BF);
+            Assert.That(f, Is.Not.Null, $"field '{name}' not found on {target.GetType().Name}");
+            return f!.GetValue(target);
+        }
+
+        // 引数なし private メソッド（Awake/OnEnable/Update 等）を reflection で駆動する。無ければ no-op。
+        private static void Invoke(object target, string method)
+            => target.GetType().GetMethod(method, BF)?.Invoke(target, null);
+
+        // registry の Awake（CameraStream 生成＝ネットワーク）を回避し _streams / _activeIndex を直接注入する。
+        private CameraStreamRegistry MakeRegistry(int count, int active)
+        {
+            var go = new GameObject("Registry");
+            _spawned.Add(go);
+            var reg = go.AddComponent<CameraStreamRegistry>();
+            FieldInfo streamsF = typeof(CameraStreamRegistry).GetField("_streams", BF)!;
+            Array arr = Array.CreateInstance(streamsF.FieldType.GetElementType()!, count); // CameraStream[count]（null 要素）
+            streamsF.SetValue(reg, arr);
+            typeof(CameraStreamRegistry).GetField("_activeIndex", BF)!.SetValue(reg, active);
+            return reg;
+        }
+
+        // dip / dwell / cooldown を 0 に落として時間非依存にした Director を Awake+OnEnable 済みで返す。
+        private CameraSwitchDirector MakeDirector(CameraStreamRegistry reg, GameObject host)
+        {
+            var dir = host.AddComponent<CameraSwitchDirector>();
+            SetField(dir, "registry", reg);
+            SetField(dir, "dipDownSec", 0f);
+            SetField(dir, "dipUpSec", 0f);
+            SetField(dir, "switchCooldownSec", 0f);
+            SetField(dir, "minDwellSec", 0f);
+            Invoke(dir, "Awake");     // _logic.Configure(0,0,0)・registry 解決
+            Invoke(dir, "OnEnable");  // registry.ActiveChanged 購読・_logic.Reset
+            return dir;
+        }
+
+        private PlayerZone MakeZone(string name, Vector3 center, Vector3 half, int cameraIndex, int priority)
+        {
+            var go = new GameObject(name);
+            _spawned.Add(go);
+            go.transform.position = center;
+            var z = go.AddComponent<PlayerZone>();
+            SetField(z, "halfExtents", half);
+            SetField(z, "centerOffset", Vector3.zero);
+            SetField(z, "cameraIndex", cameraIndex);
+            SetField(z, "priority", priority);
+            return z;
+        }
+
+        private static ShowTimelineSegmentDef EnterInsertSegment(int lap, int camera, int insertCam)
+            => new()
+            {
+                lap = lap,
+                camera = camera,
+                cues = Array.Empty<ShowSegmentCueDef>(),
+                post = null,
+                hasPost = false,
+                // duration/delay は 0（EditMode は時間非依存。begin→end の順序はテストが手動制御する）。
+                insert = new ShowInsertDef
+                {
+                    anchor = "enter", camera = insertCam, delaySec = 0f,
+                    durationSec = 0f, cueId = "", once = true, post = null, hasPost = false,
+                },
+                hasInsert = true,
+            };
+
+        // dip（Down→Up）を確実に畳むため Director.Update を数回叩く。
+        private static void PumpDirector(CameraSwitchDirector dir, int frames = 4)
+        {
+            for (int i = 0; i < frames; i++) Invoke(dir, "Update");
+        }
+
+        // dwell / cooldown を 0 へ戻す。ShowControlClient.Apply が ApplyTimingOverride(0,0) 経由で
+        // コード既定 0.5s を再適用するため、EditMode（時間凍結）で commit ゲートが通らなくなるのを防ぐ。
+        private static void ForceZeroTiming(CameraSwitchDirector dir)
+        {
+            SetField(dir, "minDwellSec", 0f);
+            SetField(dir, "switchCooldownSec", 0f);
+            object logic = GetField(dir, "_logic");
+            logic.GetType().GetMethod("Configure")!.Invoke(logic, new object[] { 0f, 0f, 0f });
+        }
+
+        // ---- T1: insert 表示中に ResetRun → 凍結解除 ----
+
+        [Test]
+        public void T1_ResetRunDuringInsert_UnfreezesZoneSwitching()
+        {
+            var reg = MakeRegistry(3, active: 0);
+            var host = new GameObject("Screen"); _spawned.Add(host);
+            var dir = MakeDirector(reg, host);
+            var ins = host.AddComponent<InsertController>();
+            SetField(ins, "director", dir);
+
+            // (1,0) 進入で cam2 を enter インサート。begin の insert.Update だけ叩き、end は叩かず表示状態を維持する。
+            ins.SetInserts(new[] { EnterInsertSegment(1, 0, insertCam: 2) });
+            ins.NotifyZoneCommitted(1, 0, hadPrev: false, 0, 0);
+            Invoke(ins, "Update");      // EnterDelay(0) → BeginEnter → director.InsertBegin(2)
+            PumpDirector(dir);          // begin dip 完了 → active=2
+
+            Assert.That(dir.InsertActive, Is.True, "インサートが凍結を立てているはず");
+            Assert.That(reg.ActiveIndex, Is.EqualTo(2), "insert カメラ(2)が表示中");
+
+            // 進行中インサートを畳まずに InsertLogic だけ戻すと director._insertActive が残る（修正対象バグ）。
+            ins.ResetRun();
+            PumpDirector(dir);          // 後片付けの復帰 dip 完了
+            Assert.That(dir.InsertActive, Is.False, "ResetRun で凍結が解除されるはず");
+
+            // 実際にゾーン自動切替が再開すること（凍結が残っていれば commit されない）。
+            dir.RequestZone(1);
+            PumpDirector(dir);
+            Assert.That(reg.ActiveIndex, Is.EqualTo(1), "凍結解除後はゾーン要求が commit されるはず");
+        }
+
+        // ---- T2: insert 表示中に SetInserts → 凍結解除 ----
+
+        [Test]
+        public void T2_SetInsertsDuringInsert_UnfreezesZoneSwitching()
+        {
+            var reg = MakeRegistry(3, active: 0);
+            var host = new GameObject("Screen"); _spawned.Add(host);
+            var dir = MakeDirector(reg, host);
+            var ins = host.AddComponent<InsertController>();
+            SetField(ins, "director", dir);
+
+            ins.SetInserts(new[] { EnterInsertSegment(1, 0, insertCam: 2) });
+            ins.NotifyZoneCommitted(1, 0, hadPrev: false, 0, 0);
+            Invoke(ins, "Update");
+            PumpDirector(dir);
+            Assert.That(dir.InsertActive, Is.True);
+            Assert.That(reg.ActiveIndex, Is.EqualTo(2));
+
+            // タイムライン差し替え（オペレータ編集）。進行中インサートを畳んでから定義更新するはず。
+            ins.SetInserts(Array.Empty<ShowTimelineSegmentDef>());
+            PumpDirector(dir);
+            Assert.That(dir.InsertActive, Is.False, "SetInserts で凍結が解除されるはず");
+
+            dir.RequestZone(1);
+            PumpDirector(dir);
+            Assert.That(reg.ActiveIndex, Is.EqualTo(1), "凍結解除後はゾーン要求が commit されるはず");
+        }
+
+        // ---- T4: insert 中の実ゾーン移動が復帰後に周回追跡へ反映される（二重加算なし）----
+
+        [Test]
+        public void T4_ZoneMoveDuringInsert_ReflectedInLapCounterOnReturn()
+        {
+            var reg = MakeRegistry(3, active: 0);
+            var host = new GameObject("Screen"); _spawned.Add(host);
+            var dir = MakeDirector(reg, host);
+            var cueScheduler = host.AddComponent<CueScheduler>();
+            var timeline = host.AddComponent<TimelineDirector>();
+            var ins = host.AddComponent<InsertController>();
+            var lap = host.AddComponent<LapCounter>();
+
+            SetField(timeline, "cueScheduler", cueScheduler);
+            SetField(timeline, "insertController", ins);
+            SetField(ins, "director", dir);
+            SetField(lap, "registry", reg);
+            SetField(lap, "director", dir);
+            SetField(lap, "cueScheduler", cueScheduler);
+            SetField(lap, "seedInitialZone", false);
+            SetField(lap, "logChanges", false);
+
+            Invoke(cueScheduler, "Awake");
+            Invoke(timeline, "Awake");
+            Invoke(timeline, "OnEnable");   // cueScheduler.CameraEntered 購読
+            Invoke(lap, "OnEnable");        // director.SwitchCommitted 購読
+
+            // 周回順 [0,1,2]（A→B→C）を LapCounter へ直接注入（ShowControlClient を使わない）。
+            object lapLogic = GetField(lap, "_logic");
+            lapLogic.GetType().GetMethod("SetOrder")!.Invoke(lapLogic, new object[] { new[] { 0, 1, 2 } });
+
+            // (1,0) に cam2 の enter インサート。
+            timeline.SetTimeline(new[] { EnterInsertSegment(1, 0, insertCam: 2) });
+
+            // ゾーン0進入（seed 相当）。enter インサートを武装。pos は order[0]=cam0。
+            cueScheduler.NotifyCameraEntered(0, 1);
+
+            Invoke(ins, "Update");      // BeginEnter → director.InsertBegin(2)
+            PumpDirector(dir);          // begin dip → active=2
+
+            Assert.That(dir.InsertActive, Is.True, "insert 表示中は凍結しているはず");
+            Assert.That(reg.ActiveIndex, Is.EqualTo(2), "insert カメラ(2)表示中");
+            Assert.That(lap.Position, Is.EqualTo(0), "insert 開始では周回ポインタは進まない（cam0 のまま）");
+
+            // insert 表示中に体験者がゾーン1（B）へ移動（自動切替は凍結されペンディングに積まれる）。
+            dir.RequestZone(1);
+            // end は RequestZone の後に叩く（duration 0 でも移動→復帰の順序を保つ）。
+            Invoke(ins, "Update");      // Showing → End(latest=pending 1) → InsertReturn(1, asZone=true)
+            PumpDirector(dir);          // 復帰 dip → active=1 → SwitchCommitted(1,Zone) → Feed(1)
+
+            Assert.That(reg.ActiveIndex, Is.EqualTo(1), "insert 終了後は実ゾーン(cam1)へ復帰しているはず");
+            Assert.That(lap.Position, Is.EqualTo(1), "復帰後 LapCounter の位置が実ゾーン(cam1)へ追従するはず");
+            Assert.That(lap.CurrentLap, Is.EqualTo(1), "lap は二重加算されない");
+
+            // 二重カウントが無いことの追試: 次に cam2 を Zone で踏めば pos は 2 へ 1 段だけ進む。
+            dir.SetActiveExternal(2, CameraSwitchDirector.SwitchSource.Zone);
+            Assert.That(lap.Position, Is.EqualTo(2), "ポインタは 1→2 へ 1 段進む（スキップ・二重進行なし）");
+            Assert.That(lap.CurrentLap, Is.EqualTo(1));
+        }
+
+        // ---- T5: override 解除後、同一ゾーン滞在のまま表示がゾーンカメラへ復帰 ----
+
+        [Test]
+        public void T5_OverrideRelease_ReturnsToZoneCameraWhileStayingInZone()
+        {
+            var reg = MakeRegistry(3, active: 0);
+            var screen = new GameObject("Screen"); _spawned.Add(screen);
+            var dir = MakeDirector(reg, screen);
+            var show = screen.AddComponent<ShowControlClient>();
+            SetField(show, "registry", reg);
+            SetField(show, "switchDirector", dir);
+            SetField(show, "server", null);
+            SetField(show, "configCacheFileName", "test_show_config_" + Guid.NewGuid().ToString("N") + ".json");
+
+            // ゾーン0（cam0）が原点を含む。head は原点固定。
+            var zone0 = MakeZone("Zone0", Vector3.zero, new Vector3(2, 2, 2), cameraIndex: 0, priority: 0);
+            var head = new GameObject("Head"); _spawned.Add(head);
+            head.transform.position = Vector3.zero;
+
+            var trackerGo = new GameObject("Tracker"); _spawned.Add(trackerGo);
+            var tracker = trackerGo.AddComponent<PlayerZoneTracker>();
+            SetField(tracker, "registry", reg);
+            SetField(tracker, "director", dir);
+            SetField(tracker, "headTransform", head.transform);
+            SetField(tracker, "zones", new[] { zone0 });
+            SetField(tracker, "updateInterval", 0f);
+            SetField(tracker, "keepLastWhenOutside", true);
+            SetField(tracker, "logChanges", false);
+            SetField(tracker, "hysteresisShrink", 0.1f);
+            SetField(show, "zoneTrackerToDisable", tracker);
+
+            // 初期: tracker が現ゾーン(0)を掴む（active は 0 のまま）。
+            Invoke(tracker, "Update");
+            PumpDirector(dir);
+            Assert.That(reg.ActiveIndex, Is.EqualTo(0), "初期はゾーンカメラ(0)");
+
+            // Web override → cam1（"B"）。tracker 無効化、表示は override カメラに固定。
+            InvokeApply(show, rev: 1, cameraOverride: "B");
+            PumpDirector(dir);
+            Assert.That(reg.ActiveIndex, Is.EqualTo(1), "override 中は cam1 を表示");
+            Assert.That(tracker.enabled, Is.False, "override 中は tracker 無効");
+
+            // override 解除。head は動かさない（同一ゾーン滞在）。修正が無いと _current 不変で固着する。
+            InvokeApply(show, rev: 2, cameraOverride: "");
+            Assert.That(tracker.enabled, Is.True, "解除で tracker 再有効");
+            ForceZeroTiming(dir); // Apply が既定 0.5s を再適用するため 0 へ戻す（EditMode 時間凍結対策）
+
+            // 再有効化で PlayMode なら OnEnable が発火し _current を無効化する。EditMode は自動発火しないため
+            // 明示駆動して production の再有効化を再現する（enabled=true → OnEnable → InvalidateCurrent）。
+            Invoke(tracker, "OnEnable");
+
+            // 再 Pick → ゾーンカメラ(0)へ戻る（修正が無いと _current 不変で cam1 に固着し失敗する）。
+            Invoke(tracker, "Update");
+            PumpDirector(dir);
+            Assert.That(reg.ActiveIndex, Is.EqualTo(0),
+                "override 解除後、同一ゾーン滞在のままでもゾーンカメラ(0)へ復帰するはず");
+
+            CleanupCacheFile(show);
+        }
+
+        // ShowControlClient.Apply を最小の ShowState（cameras A/B/C + control.cameraOverride）で駆動する。
+        private static void InvokeApply(ShowControlClient show, int rev, string cameraOverride)
+        {
+            Type showT = typeof(ShowControlClient);
+            Type stateT = showT.GetNestedType("ShowState", BindingFlags.NonPublic)!;
+            Type camT = showT.GetNestedType("CameraDef", BindingFlags.NonPublic)!;
+            Type ctrlT = showT.GetNestedType("ControlState", BindingFlags.NonPublic)!;
+
+            Array cams = Array.CreateInstance(camT, 3);
+            string[] ids = { "A", "B", "C" };
+            for (int i = 0; i < 3; i++)
+            {
+                object c = Activator.CreateInstance(camT)!;
+                camT.GetField("id")!.SetValue(c, ids[i]);
+                cams.SetValue(c, i);
+            }
+
+            object ctrl = Activator.CreateInstance(ctrlT)!;
+            ctrlT.GetField("cameraOverride")!.SetValue(ctrl, cameraOverride);
+
+            object state = Activator.CreateInstance(stateT)!;
+            stateT.GetField("rev")!.SetValue(state, rev);
+            stateT.GetField("cameras")!.SetValue(state, cams);
+            stateT.GetField("control")!.SetValue(state, ctrl);
+
+            showT.GetMethod("Apply", BindingFlags.NonPublic | BindingFlags.Instance)!
+                 .Invoke(show, new[] { state });
+        }
+
+        // Apply の SaveCache が書いた一時キャッシュを掃除する。
+        private static void CleanupCacheFile(ShowControlClient show)
+        {
+            try
+            {
+                var pathProp = typeof(ShowControlClient).GetProperty("ConfigCachePath", BF);
+                if (pathProp?.GetValue(show) is string p && System.IO.File.Exists(p))
+                    System.IO.File.Delete(p);
+            }
+            catch { /* テスト後始末はベストエフォート */ }
+        }
+    }
+}
