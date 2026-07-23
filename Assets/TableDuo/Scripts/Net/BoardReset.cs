@@ -15,6 +15,10 @@ namespace TableDuoVr.Net
     /// </summary>
     public sealed class BoardReset : MonoBehaviour
     {
+        /// <summary>盤面リセット完了後にサーバ側で発火する（<see cref="ResetBoard"/> 末尾）。
+        /// 掴めるプロップの姿勢復元とは別に後始末が要るシステム（例: 描画パッドのクリア = PadPaintCanvas）が購読する。</summary>
+        public static event System.Action? AfterReset;
+
         private readonly List<(Transform t, Vector3 pos, Quaternion rot)> _initial = new();
         private bool _captured;
 
@@ -74,6 +78,7 @@ namespace TableDuoVr.Net
                 restored++;
             }
             Debug.Log($"[TableDuo] BoardReset: {restored} 個を初期配置へ復元");
+            AfterReset?.Invoke();
         }
     }
 }

@@ -18,8 +18,33 @@
 - seat1（+Z・線役）手前列 z=+0.26: x ミラー + yaw180 で対称（直線×2 + 1折×1 / 緑ペン）
 - -X 側: 砂時計（物理）/ 達成条件カード / 達成トークン×3（1.6 倍・物理）/ ルールカード（yaw90）
 
+## 追補（同日 2 弾）: お題カード 3×4 表向きグリッド化
+
+裏向き山札を廃止し、難度別 3 行（黄=1/緑=2/紫=3）×4 列・全部表向きの格子へ（格子中心 +X 0.33 / 列 0.09 / 行 0.11）。
+
+## 追補（同日 3 弾）: ペン傾き + パッド描画 + 消しゴム
+
+opus 偵察 2 体（Grabbable 保持パイプライン / GLB 軸・パッド形状）→ 仕様確定 → opus 実装 1 体の委譲で実装。
+
+- **① ペン保持中の自然な俯き**: [MarkerHoldTilt](../../Assets/TableDuo/Scripts/Net/MarkerHoldTilt.cs) + 純ロジック [MarkerTiltLogic](../../Assets/TableDuo/Scripts/Net/MarkerTiltLogic.cs)。
+  手ローカル固定ではなく**ワールドピッチ制約**: heading は手追従・pitch = min(45°, asin(保持高/先端距離 0.0923))
+  → 机が邪魔なら寝る・持ち上げるほど俯く・先端は面を割らない。適用は `[DefaultExecutionOrder(120)]` の LateUpdate
+  （サーバ権威 + 保持者本人のみローカル楽観）。リリース時は heading 維持で寝かせて接地（浮き防止）
+- **② パッド描画**: [PadPaintCanvas](../../Assets/TableDuo/Scripts/Net/PadPaintCanvas.cs)（BEAR_paint・in-scene NetworkObject）+
+  [PadPaintLogic](../../Assets/TableDuo/Scripts/Net/PadPaintLogic.cs) + [PadDrawTool](../../Assets/TableDuo/Scripts/Net/PadDrawTool.cs) +
+  [TableDuoPadStamp.shader](../../Assets/TableDuo/Art/Shaders/TableDuoPadStamp.shader)。パッドの 0.3mm 上に透明オーバーレイ quad
+  （自前メッシュ・UV は接触式と同一）+ RT 1024×1448。サーバがペン先↔パッドの接触（純計算・物理不使用）から
+  セグメントを ClientRpc 配信、全 peer が CommandBuffer で円スタンプ焼き込み。遅参加リプレイ / GameSwitcher 切替・
+  reset_board（BoardReset.AfterReset 新設 = 唯一のコア変更）でクリア / SessionLogger に draw_start/draw_end
+- **③ 消しゴム**: BEAR_eraser（プリミティブ 2 個・白+deep_teal・physics:false）+ PadDrawTool(toolId2, radius 10mm)。
+  シェーダ pass1（Blend Zero OneMinusSrcAlpha）でペン線だけ消す（クマ下絵は GLB 側なので消えない）
+- **罠（恒久知見）**: ①オーバーレイ材のベイクは **_BaseColor alpha 0** で焼く（alpha 1 だと RT 未割当の Editor/Preview で
+  白 quad がパッドを覆い隠す。ランタイム RT 割当時に alpha 1 へ戻す）②接触判定の境界比較は Mono の拡張精度で
+  揺れるため ±1e-6 イプシロン（PadPaintLogic）
+
 ## 検証済み / 残
 
-- ✅ コンパイルエラー 0 / EditMode 519/519 / Setup 再実行 / Preview 4 アングル目視（配置・向き・伏せ札・自立砂時計 OK）
+- ✅ コンパイルエラー 0 / EditMode 534/534（新規 MarkerTiltLogicTests 10 + PadPaintLogicTests 5）/ Setup 再実行 /
+  Preview 目視（パッド下絵の透け・消しゴム配置・グリッド OK）
 - ⏳ 実機: [remaining-tasks.md](../../docs/table-duo/remaining-tasks.md) C 節「あと6画のくま（07-23）」参照
-- 今回スコープ外: VR 内で実際に「描く」手段（パッドは台紙のみ）。必要になったら別計画で
+  （傾きの体感 45°・描画追従/全 peer 同期・消しゴム・遅参加リプレイは実機でしか確認できない）

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e0c32ab3-a0c4-4fa9-92da-2ae99a589cff
-  modified: 2026-07-22T03:13:55.453Z
+  modified: 2026-07-23T12:36:04.291Z
 ---
 
 海底探検（Deep Sea Adventure）を TableDuo の卓上に「実際に遊べる形」で実装した知見を、**別のボードゲーム/卓上プロップを足すとき用の再利用レシピ**に一般化したもの（2026-07-18 抽出）。対象は TableDuo（`Assets/TableDuo/`）専用。廻リ視（`Assets/Scripts/`）とは無関係。
@@ -130,3 +130,9 @@ TableDuo は「手だけアバターとの無言交渉の観察」が目的な�
 5. **非フォーカス Editor のコンパイル遅延 / MCP ブリッジ wedge / prefab 未反映**は [.claude/rules/mcp-unity.md](../rules/mcp-unity.md) と [[table_duo_study_status]] に既出（DLL mtime 確認・batchmode 検証・冪等 prefab 補完）。
 6. **薄い剛体の縦積みが dynamic のまま沈み込む・すり抜ける**（山札・積みチップ）→ §4 の⚠⚠。`restKinematic`（静止時 kinematic 凍結）で物理から外すのが正解。PhysX パラメータ（contactOffset・ソルバ反復）調整では収束しない。§4 のチェック手順（`Diagnostics/アルゴ山札の静止配置チェック`）で貫入ゼロを数値確認できる。
 7. **contactOffset・solverIterations・maxDepenetrationVelocity・sleepThreshold はシーン YAML にシリアライズされない**（Editor でベイク set してもビルドに乗らない・2026-07-20 に TableDuoMain.unity 全文 grep で確認）。これらを実機で効かせたいなら実行時コンポーネントの `Awake` で set する必要がある（ただし §12-6 のとおり薄板スタックは restKinematic が正解で、そもそもこれらの調整自体が不要になる）。
+
+## 13. 保持中姿勢の後段上書き & 描画キャンバス（2026-07-23 あと6画のくま で確立）
+
+- **保持中のプロップ姿勢を曲げる**（例: ペン先を俯かせる）: Grabbable にフックは無い。`[DefaultExecutionOrder(120)]` の NetworkBehaviour サイドカーが **LateUpdate で transform.rotation を上書き**（サーバ = Grabbable.Update 追従の後に必ず勝つ・NT が複製）。**保持者本人はクライアント楽観表示（PinchGrabInteractor.LateUpdate）が別経路なので、本人にも同じ計算をローカル適用しないと本人だけ曲げ前が見える**。位置クランプは回転非依存（回転由来の最下点反映は 1 フレーム遅れ・許容）。実装形 = [MarkerHoldTilt](../../Assets/TableDuo/Scripts/Net/MarkerHoldTilt.cs) + 純ロジック MarkerTiltLogic
+- **プロップで面に描く**（ペン先で紙に線・消しゴム）: 物理を使わず「面 Transform の InverseTransformPoint → 純計算で接触/UV」→ サーバがセグメントを ClientRpc 配信 → 全 peer が RenderTexture へ CommandBuffer 円スタンプ（専用シェーダ pass0=描く/pass1=Blend Zero OneMinusSrcAlpha で消す）。表示は面の 0.3mm 上の透明オーバーレイ quad（自前メッシュ・UV を接触式と一致させる）。クリア契機 = BoardReset.AfterReset（static event・07-23 追加）+ GameSwitcher.ActiveIndex ポーリング。実装形 = [PadPaintCanvas](../../Assets/TableDuo/Scripts/Net/PadPaintCanvas.cs)
+- **罠**: ①オーバーレイ材は **_BaseColor alpha 0 でベイク**（RT はランタイム生成なので、alpha 1 だと Editor/Preview で白 quad が下地を覆い隠す。RT 割当時に alpha 1 へ戻す）②境界の float 比較は Mono 拡張精度で揺れる → ±1e-6 イプシロン ③GameSwitcher の stow/show は切替瞬間の GetComponentsInChildren 列挙 = **ランタイム生成 Renderer は対象外**（オーバーレイ quad は Setup でベイクしておく）

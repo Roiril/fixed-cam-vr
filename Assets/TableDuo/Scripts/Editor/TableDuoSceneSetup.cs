@@ -851,7 +851,7 @@ namespace TableDuoVr.EditorTools
             const float ruleCardX = -0.40f, ruleCardZ = 0.14f; // ルールカード（A6）
 
             // 描画パッド（A4 210×297）: 描画面は素置き固定（ガイスター盤と同様に掴み・物理なし）
-            PlaceModelRealScale($"{BearGlbDir}/drawing_pad.glb", parent, "BEAR_pad",
+            var pad = PlaceModelRealScale($"{BearGlbDir}/drawing_pad.glb", parent, "BEAR_pad",
                 new Vector3(cx + padX, topY, cz + padZ), 0f, grabbable: false);
 
             // お題カード 12 枚: 3 行（難度 1/2/3）×4 列の格子で全部表向きに並べる。
@@ -928,6 +928,179 @@ namespace TableDuoVr.EditorTools
             var ruleCard = PlaceModelRealScale($"{BearGlbDir}/rule_card.glb", parent, "BEAR_rule_card",
                 new Vector3(cx + ruleCardX, topY, cz + ruleCardZ), 90f, grabbable: true);
             SetSurfaceClamp(ruleCard, topY, cx, cz, hx, hz);
+
+            // --- 描画機能（2026-07-23）: ペン傾き + パッド描画 + 消しゴム ---
+            var padTf = pad != null ? pad.transform : null;
+
+            // 消しゴム: 親 GO（原点=底面中心）+ 本体/スリーブ Cube（プリミティブ Collider は削除）。
+            // 掴めるプロップ一式（NetworkObject + NetworkTransform + Grabbable・物理なし）+ 底面が作用面の PadDrawTool
+            const float eraserX = -0.20f, eraserZ = -0.12f;
+            var eraserBodyMat = EnsureMaterial($"{MaterialDir}/TableDuoEraserBody.mat",
+                "Universal Render Pipeline/Lit", new Color(1f, 1f, 252f / 255f));       // #FFFFFC
+            var eraserSleeveMat = EnsureMaterial($"{MaterialDir}/TableDuoEraserSleeve.mat",
+                "Universal Render Pipeline/Lit", new Color(39f / 255f, 67f / 255f, 74f / 255f)); // #27434A
+            var eraser = new GameObject("BEAR_eraser");
+            eraser.transform.SetParent(parent, false);
+            eraser.transform.localPosition = new Vector3(cx + eraserX, topY, cz + eraserZ);
+            eraser.transform.localRotation = Quaternion.identity;
+            AddEraserCube(eraser.transform, "Body", new Vector3(0.060f, 0.022f, 0.032f),
+                new Vector3(0f, 0.011f, 0f), eraserBodyMat);
+            AddEraserCube(eraser.transform, "Sleeve", new Vector3(0.026f, 0.024f, 0.034f),
+                new Vector3(0f, 0.012f, 0f), eraserSleeveMat);
+            AttachGrabbableNet(eraser);
+            SetSurfaceClamp(eraser, topY, cx, cz, hx, hz);
+            var eraserTool = AddPadDrawTool(eraser, toolId: 2, isEraser: true, radiusMm: 10f, tipDistance: 0f);
+
+            // ペン 2 本: 保持中の傾き（MarkerHoldTilt）+ 描画ツール（PadDrawTool）
+            var circleTool = AddPadDrawTool(markerCircle, toolId: 0, isEraser: false, radiusMm: 2.2f, tipDistance: 0.0923f);
+            AddMarkerTilt(markerCircle, tipDistance: 0.0923f, tableTopY: topY, pad: padTf);
+            var segmentTool = AddPadDrawTool(markerSegment, toolId: 1, isEraser: false, radiusMm: 2.2f, tipDistance: 0.0923f);
+            AddMarkerTilt(markerSegment, tipDistance: 0.0923f, tableTopY: topY, pad: padTf);
+
+            // パッド上面のオーバーレイ quad（描画 RT の表示先）。Game_bear 配下なので GameSwitcher の stow/show に自動追従
+            var overlay = CreateBearPaintLayer(parent, cx + padX, cz + padZ, topY);
+
+            // 描画キャンバス（in-scene NetworkObject）。全 peer が RT を持ち、サーバが接触を配って全員で描く
+            var paintGo = new GameObject("BEAR_paint");
+            paintGo.transform.SetParent(parent, false);
+            paintGo.AddComponent<NetworkObject>();
+            var canvas = paintGo.AddComponent<PadPaintCanvas>();
+            WirePadPaintCanvas(canvas, padTf, overlay,
+                new PadDrawTool?[] { circleTool, segmentTool, eraserTool },
+                Shader.Find("TableDuoVr/PadStamp"));
+        }
+
+        /// <summary>消しゴムの子 Cube を生成（プリミティブ Collider は削除 = 掴みは親 Grabbable の bounds に任せる）。</summary>
+        private static void AddEraserCube(Transform parent, string name, Vector3 size, Vector3 center, Material mat)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = center;
+            go.transform.localScale = size;
+            go.GetComponent<Renderer>().sharedMaterial = mat;
+            var col = go.GetComponent<Collider>();
+            if (col != null) Object.DestroyImmediate(col);
+        }
+
+        /// <summary>GameObject に PadDrawTool を付けて SerializedObject で値を焼く（go 未生成なら null）。</summary>
+        private static PadDrawTool? AddPadDrawTool(GameObject? go, int toolId, bool isEraser, float radiusMm, float tipDistance)
+        {
+            if (go == null) return null;
+            var tool = go.AddComponent<PadDrawTool>();
+            var so = new SerializedObject(tool);
+            SetEnum(so, "toolId", toolId);
+            SetBool(so, "isEraser", isEraser);
+            var pr = so.FindProperty("radiusMm"); if (pr != null) pr.floatValue = radiusMm;
+            var pt = so.FindProperty("tipDistance"); if (pt != null) pt.floatValue = tipDistance;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return tool;
+        }
+
+        /// <summary>ペンに MarkerHoldTilt を付けて SerializedObject で値を焼く（go 未生成なら何もしない）。</summary>
+        private static void AddMarkerTilt(GameObject? go, float tipDistance, float tableTopY, Transform? pad)
+        {
+            if (go == null) return;
+            var tilt = go.AddComponent<MarkerHoldTilt>();
+            var so = new SerializedObject(tilt);
+            var pt = so.FindProperty("tipDistance"); if (pt != null) pt.floatValue = tipDistance;
+            var py = so.FindProperty("tableTopY"); if (py != null) py.floatValue = tableTopY;
+            SetRef(so, "padTransform", pad);
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>
+        /// パッド上面の描画オーバーレイ quad（BEAR_paint_layer）を生成する。自前生成メッシュ
+        /// （頂点 (±0.105,0,±0.1485)・法線 +Y・UV は PadPaintLogic の接触 UV 式と完全一致）+ 透明 URP/Unlit。
+        /// ランタイムで PadPaintCanvas が material インスタンスへ RT を割り当てる。
+        /// </summary>
+        private static Renderer CreateBearPaintLayer(Transform parent, float worldCx, float worldCz, float topY)
+        {
+            const string meshPath = "Assets/TableDuo/Meshes/BearPaintQuad.mesh";
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+            if (mesh == null)
+            {
+                Directory.CreateDirectory("Assets/TableDuo/Meshes");
+                mesh = new Mesh { name = "BearPaintQuad" };
+                mesh.vertices = new[]
+                {
+                    new Vector3(-PadPaintLogic.HalfX, 0f, -PadPaintLogic.HalfZ),
+                    new Vector3(PadPaintLogic.HalfX, 0f, -PadPaintLogic.HalfZ),
+                    new Vector3(PadPaintLogic.HalfX, 0f, PadPaintLogic.HalfZ),
+                    new Vector3(-PadPaintLogic.HalfX, 0f, PadPaintLogic.HalfZ),
+                };
+                mesh.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+                mesh.uv = new[]
+                {
+                    new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(0f, 1f),
+                };
+                mesh.triangles = new[] { 0, 2, 1, 0, 3, 2 }; // 上（+Y）向き面
+                mesh.RecalculateBounds();
+                AssetDatabase.CreateAsset(mesh, meshPath);
+            }
+
+            var mat = EnsureBearPaintOverlayMaterial();
+            var go = new GameObject("BEAR_paint_layer");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = new Vector3(worldCx, topY + PadPaintLogic.SurfaceLocalY + 0.0003f, worldCz);
+            go.transform.localRotation = Quaternion.identity;
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+            return mr;
+        }
+
+        /// <summary>描画オーバーレイ用の透明 URP/Unlit マテリアルを生成（テクスチャはランタイムで RT を割当）。</summary>
+        private static Material EnsureBearPaintOverlayMaterial()
+        {
+            const string path = MaterialDir + "/TableDuoBearPaintOverlay.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                Directory.CreateDirectory(MaterialDir);
+                var shader = Shader.Find("Universal Render Pipeline/Unlit");
+                if (shader == null)
+                {
+                    Debug.LogError("[TableDuoSceneSetup] URP/Unlit が見つかりません");
+                    shader = Shader.Find("Universal Render Pipeline/Lit");
+                }
+                mat = new Material(shader!);
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            // 透明化を焼く（アルファブレンド・ZWrite off）。色は白 alpha1 = テクスチャの alpha で抜く
+            mat.SetFloat("_Surface", 1f); // Transparent
+            mat.SetFloat("_Blend", 0f);   // Alpha
+            mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetFloat("_ZWrite", 0f);
+            // ベイク時はテクスチャ未割当（RT はランタイム生成）なので alpha 0 = 完全透明で焼く。
+            // alpha 1 だと Editor/Preview で無地の白 quad がパッドを覆い隠す（2026-07-23 実害）。
+            // ランタイムは PadPaintCanvas が RT 割当時に alpha 1 へ戻す
+            mat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0f));
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent; // 3000
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        /// <summary>PadPaintCanvas の参照（pad / overlay / tools[3] / stampShader）を SerializedObject で焼く。</summary>
+        private static void WirePadPaintCanvas(PadPaintCanvas canvas, Transform? pad, Renderer? overlay,
+            PadDrawTool?[] tools, Shader? stampShader)
+        {
+            var so = new SerializedObject(canvas);
+            SetRef(so, "padTransform", pad);
+            SetRef(so, "overlayRenderer", overlay);
+            SetRef(so, "stampShader", stampShader);
+            var p = so.FindProperty("tools");
+            if (p != null)
+            {
+                p.arraySize = tools.Length;
+                for (int i = 0; i < tools.Length; i++)
+                    p.GetArrayElementAtIndex(i).objectReferenceValue = tools[i];
+            }
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         /// <summary>
@@ -1323,14 +1496,21 @@ namespace TableDuoVr.EditorTools
 
             if (grabbable)
             {
-                go.AddComponent<NetworkObject>();
-                var nt = go.AddComponent<Unity.Netcode.Components.NetworkTransform>();
-                nt.Interpolate = true;
-                nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
-                go.AddComponent<Grabbable>();
+                AttachGrabbableNet(go);
                 if (physics) AttachPiecePhysics(go, ccd);
             }
             return go;
+        }
+
+        /// <summary>掴めるプロップの同期一式（NetworkObject + サーバ権威 NetworkTransform(SyncScale OFF) + Grabbable）を付ける。
+        /// GLB プロップも自前生成プロップ（消しゴム等）も同一内容で配線するための共用ヘルパー。</summary>
+        private static void AttachGrabbableNet(GameObject go)
+        {
+            go.AddComponent<NetworkObject>();
+            var nt = go.AddComponent<Unity.Netcode.Components.NetworkTransform>();
+            nt.Interpolate = true;
+            nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
+            go.AddComponent<Grabbable>();
         }
 
         private static readonly string[] CardIcons =
