@@ -35,5 +35,18 @@
     "additionalDirectories": [
       "C:\\Users\\kouga\\Projects\\Web\\kougaku-lab"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*__manage_editor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/kouga/Projects/Unity/fixed-cam-vr/.claude/hooks/guard-unity-play.js\""
+          }
+        ]
+      }
+    ]
   }
 }

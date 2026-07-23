@@ -201,3 +201,6 @@ Assets/TableDuo/Resources/TableDuoBuildInfo.txt.meta
 # ビルド焼き込みエクスポート生成物（Web 卓の 📦 エクスポートが生成。show.json にカメラ host を含むためコミット禁止）
 Assets/StreamingAssets/show/
 Assets/StreamingAssets/show.meta
+
+# Unity Play ガード hook のワンショット解錠マーカー（guard-unity-play.js が消費）
+.claude/allow-unity-play
