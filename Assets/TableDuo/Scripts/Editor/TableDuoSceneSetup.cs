@@ -832,9 +832,10 @@ namespace TableDuoVr.EditorTools
             // お題カードは横倒し（下記 promptYaw）でカード長辺 88mm が X・短辺 63mm が Z に寝る
             const float colPitch = 0.11f;               // 列（X）ピッチ = カード高 88mm + 隙間 ~22mm
             const float rowPitch = 0.09f;               // 行（Z）ピッチ = カード幅 63mm + 隙間 ~27mm
-            // お題カードの向き: 上端（色帯・GLB テクスチャ抽出で確認）を机中心（-X）へ向ける横倒し。
-            // yaw0 の上端は -Z（俯瞰プレビュー実測）なので -X へは yaw90。±Z の両席から等条件で読める
-            const float promptYaw = 90f;
+            // お題カードの向き: 横倒しで上端（色帯）を +X（机の外側）へ向ける = yaw270。
+            // ±Z の両席から等条件で読める。yaw90（上端 -X）は実機で「反対向き」とフィードバックされ
+            // 180° 反転した（2026-07-24 ユーザー確定）。yaw0 の上端は -Z（俯瞰プレビュー実測）
+            const float promptYaw = 270f;
 
             const float seat0Z = -0.26f;                // まる役（seat0 = -Z 席）の手前列
             const float roleCircleX = -0.16f;           // まる役 役割カード

@@ -38,7 +38,12 @@ namespace TableDuoVr.Net
         }
 
         // --- 調整定数（要実機調整。SerializeField にしない） ---
-        private const float GripBack = 0.045f;      // ピンチ点からペン先までの前方距離（指先の 4.5cm 先＝ペン先を指より突き出す）
+        // ピンチ点からペン先までの前方距離（ペン先を指より突き出す量）。ペン位置の基準は
+        // トラッキング上のピンチ点なので、見た目の手メッシュが Meta 白手より指の長い Remy 系
+        // （人役 / Realistic / Robot / FullBody）では視覚上の指先がペン先に被る → 保持者の
+        // 役割・申告バリアント（全 peer 複製・TableDuoPlayer）で切り替える。要実機調整
+        private const float GripBackDefault = 0.045f;   // Meta 白手（実機で好感触の確定値）
+        private const float GripBackLongHand = 0.07f;   // Remy 系メッシュ（指が長い分さらに前へ）
         private const float ExtraPitchDeg = 15f;    // 手首→ピンチ線からさらに下へ倒す俯角
         private const float MaxDownDeg = 80f;        // 下向き成分の上限（LookRotation 縮退回避）
         private const float HoldDropM = 0.02f;       // フラットモードでピンチ点の下 2cm を底面に置く
@@ -120,10 +125,52 @@ namespace TableDuoVr.Net
                 wristWorld, pinchF, ExtraPitchDeg, MaxDownDeg, _smoothDir, out _);
             SmoothDir(dir, dt);
 
-            Vector3 tipXZ = pinchF + _smoothDir * GripBack;      // 面高はペン先 XZ で評価（パッド境界の精度）
+            float gripBack = ResolveGripBack();
+            Vector3 tipXZ = pinchF + _smoothDir * gripBack;      // 面高はペン先 XZ で評価（パッド境界の精度）
             float surfaceY = SurfaceYAt(tipXZ);
-            Vector3 pos = PenGripLogic.ComposeTipPose(pinchF, _smoothDir, GripBack, tipDistance, surfaceY, out _);
+            Vector3 pos = PenGripLogic.ComposeTipPose(pinchF, _smoothDir, gripBack, tipDistance, surfaceY, out _);
             transform.SetPositionAndRotation(pos, Quaternion.LookRotation(_smoothDir, Vector3.up));
+        }
+
+        /// <summary>
+        /// 保持者の見た目の手（役割 + 申告バリアント）に応じた GripBack。
+        /// 人役（Full）は常に Remy 手、手役（Hand）は Default（Meta 白手）以外が Remy 系メッシュ。
+        /// プレイヤーオブジェクト未解決（切断直後等）は Default 値へフォールバック。
+        /// </summary>
+        private float ResolveGripBack()
+        {
+            var player = ResolveHolderPlayer();
+            if (player == null) return GripBackDefault;
+            if (player.Role == StudyConfig.Role.Full) return GripBackLongHand;
+            return player.DeclaredHandVariant == HandVariant.Default ? GripBackDefault : GripBackLongHand;
+        }
+
+        // 保持者の TableDuoPlayer（役割・バリアントの複製元）。HolderClientId 変化時のみ解決し直す
+        private TableDuoPlayer? _holderPlayer;
+        private ulong _holderPlayerClientId = ulong.MaxValue;
+
+        private TableDuoPlayer? ResolveHolderPlayer()
+        {
+            if (_grab == null) return null;
+            ulong id = _grab.HolderClientId;
+            if (id == _holderPlayerClientId && _holderPlayer != null) return _holderPlayer;
+
+            _holderPlayer = null;
+            _holderPlayerClientId = id;
+            var nm = NetworkManager.Singleton;
+            if (nm == null) return null;
+            if (IsServer)
+            {
+                if (nm.ConnectedClients.TryGetValue(id, out var client) && client.PlayerObject != null)
+                    _holderPlayer = client.PlayerObject.GetComponent<TableDuoPlayer>();
+            }
+            else
+            {
+                // 非サーバでこの駆動が走るのは保持者本人だけ（適用条件）＝ローカルプレイヤーで正しい
+                var local = nm.SpawnManager != null ? nm.SpawnManager.GetLocalPlayerObject() : null;
+                if (local != null) _holderPlayer = local.GetComponent<TableDuoPlayer>();
+            }
+            return _holderPlayer;
         }
 
         private void ApplyFlat(Vector3 wristWorld, Vector3 pinchF, float dt)
