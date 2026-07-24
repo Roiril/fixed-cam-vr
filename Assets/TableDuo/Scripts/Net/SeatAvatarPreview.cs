@@ -36,8 +36,8 @@ namespace TableDuoVr.Net
         private void Start()
         {
             int ownSeat = StudyConfig.ForcedRole is { } r ? SeatIndexOf(r) : -1;
-            PlaceIfNeeded(0, ownSeat, handsOnly: false); // 席0=人役（Remy 等）
-            PlaceIfNeeded(1, ownSeat, handsOnly: true);  // 席1=手役（手メッシュ）
+            PlaceIfNeeded(0, ownSeat, handsOnly: true);  // 席0=手役（手メッシュ）
+            PlaceIfNeeded(1, ownSeat, handsOnly: false); // 席1=人役（Remy 等）
         }
 
         private void PlaceIfNeeded(int seatIndex, int ownSeat, bool handsOnly)
@@ -64,10 +64,11 @@ namespace TableDuoVr.Net
             }
         }
 
+        // 席の対応（2026-07-24 反転: 人役=席1 / 手役=席0）。TableDuoPlayer.SeatIndexOf と対で変えること
         private static int SeatIndexOf(StudyConfig.Role role) => role switch
         {
-            StudyConfig.Role.Full => 0,
-            StudyConfig.Role.Hand => 1,
+            StudyConfig.Role.Full => 1,
+            StudyConfig.Role.Hand => 0,
             _ => -1, // Spectator 等は自分の席を持たない → 両席に先置き
         };
 

@@ -152,9 +152,10 @@ namespace TableDuoVr.EditorTools
         {
             // 手役の白手を実 Meta メッシュで描くための static 環境を先に整える（＝Preview Hand Role Initial と同じ）。
             var restoreHandEnv = PrepareHandEnv();
-            // Seat0 = Full（人役）→ 座位 Remy 全身、Seat1 = Hand（手役）→ 白手 rest。SeatAvatarPreview.SeatIndexOf と対応
-            SeatOne("[TableDuo]/Seats/Seat0", outInstances, handRole: false);
-            SeatOne("[TableDuo]/Seats/Seat1", outInstances, handRole: true);
+            // Seat1 = Full（人役）→ 座位 Remy 全身、Seat0 = Hand（手役）→ 白手 rest（2026-07-24 反転）。
+            // SeatAvatarPreview.SeatIndexOf と対応
+            SeatOne("[TableDuo]/Seats/Seat0", outInstances, handRole: true);
+            SeatOne("[TableDuo]/Seats/Seat1", outInstances, handRole: false);
             return restoreHandEnv;
         }
 

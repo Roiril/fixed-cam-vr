@@ -9,7 +9,7 @@ namespace TableDuoVr.Net
     /// プレイヤーごとにスポーンされる NetworkBehaviour。
     /// - 役割（Full=フルアバター / Hand=手だけ）は StudyConfig.ForcedRole（tdv_role 起動フラグ）優先、
     ///   未指定なら従来規則（ホスト=Full / クライアント=Hand）。役割は NetworkVariable で全員に共有
-    /// - 席は役割で決まる（Full=席0 / Hand=席1）
+    /// - 席は役割で決まる（Full=席1 / Hand=席0・2026-07-24 反転）
     /// - owner: ローカルリグを席にアラインし、IHandPoseSource の pose を 60Hz 送信（sendRate）。
     ///   Hand 役 + 片手モードなら左手を抑制（送信もローカル描画も）
     /// - リモート: 役割が判明した時点で席アンカー下に RemoteAvatarView を生成
@@ -198,7 +198,7 @@ namespace TableDuoVr.Net
             }
             else
             {
-                // 席0（Full=人役）が空いていれば Full、埋まっていれば Hand（先着=人役）
+                // Full（人役）が空いていれば Full、埋まっていれば Hand（先着=人役・判定は Role 基準で席非依存）
                 bool fullTaken = false;
                 var nm = NetworkManager.Singleton;
                 foreach (var kv in nm.ConnectedClients)
@@ -598,10 +598,12 @@ namespace TableDuoVr.Net
             _view?.SetHeadCollapsed(collapsed);
         }
 
+        // 席の対応（2026-07-24 ユーザー要望で反転: 人役=席1(+Z) / 手役=席0(-Z)）。
+        // SeatAvatarPreview.SeatIndexOf と対で変えること
         private static int SeatIndexOf(StudyConfig.Role role) => role switch
         {
-            StudyConfig.Role.Full => 0,
-            StudyConfig.Role.Hand => 1,
+            StudyConfig.Role.Full => 1,
+            StudyConfig.Role.Hand => 0,
             _ => -1, // Spectator など席を持たないロール
         };
 

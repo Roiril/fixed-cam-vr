@@ -1593,7 +1593,7 @@ namespace TableDuoVr.EditorTools
             quad.GetComponent<Renderer>().sharedMaterial = mat;
         }
 
-        /// <summary>手役席（席1）の斜め上方・作業空間の外に目標配置パネルを置く。</summary>
+        /// <summary>手役席（席0・2026-07-24 の席反転後）の斜め上方・作業空間の外に目標配置パネルを置く。</summary>
         private static void CreatePatternPanel(Transform root)
         {
             var holder = new GameObject("PatternPanel");
@@ -1604,10 +1604,11 @@ namespace TableDuoVr.EditorTools
             var col = quad.GetComponent<Collider>();
             if (col != null) Object.DestroyImmediate(col);
             quad.transform.SetParent(holder.transform, false);
-            // 席1 (0,0,0.85) の斜め上・横。テーブル上の作業視線と分離した位置
-            var panelPos = new Vector3(0.8f, 1.6f, 1.4f);
+            // 席0 (0,0,-0.85) の斜め上・横。テーブル上の作業視線と分離した位置
+            //（席反転前の席1 用配置 (0.8,1.6,1.4)/(0,1.5,0.85) を Y 軸 180° 点対称で移設）
+            var panelPos = new Vector3(-0.8f, 1.6f, -1.4f);
             quad.transform.position = panelPos;
-            var lookFrom = new Vector3(0f, 1.5f, 0.85f); // 席1 の頭の想定位置
+            var lookFrom = new Vector3(0f, 1.5f, -0.85f); // 席0 の頭の想定位置
             quad.transform.rotation = Quaternion.LookRotation(panelPos - lookFrom);
             quad.transform.localScale = new Vector3(0.35f, 0.35f, 1f);
             quad.SetActive(false); // PatternPanel が手役ローカルでのみ有効化する

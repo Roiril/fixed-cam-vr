@@ -12,8 +12,8 @@ namespace TableDuoVr.Net
     ///
     /// カメラモードは3つ（PC ホスト画面左上の GUI ボタン／数字キー 1-3 で切替）:
     /// - <see cref="ViewMode.Overhead"/>: 両者を等距離で俯瞰（既定）
-    /// - <see cref="ViewMode.FullFpv"/>: 人役（席0）の一人称視点＝そのプレイヤーが見ている画
-    /// - <see cref="ViewMode.HandFpv"/>: 手役（席1）の一人称視点
+    /// - <see cref="ViewMode.FullFpv"/>: 人役（席1）の一人称視点＝そのプレイヤーが見ている画
+    /// - <see cref="ViewMode.HandFpv"/>: 手役（席0）の一人称視点
     /// 一人称時は対象プレイヤーの頭 world pose にカメラを毎フレ追従させ、当人の頭ジオメトリは潰して
     /// カメラに埋まらないようにする（胴・腕・手は残すので自分の体を見下ろせる）。純ローカル＝ネット非関与。
     /// </summary>

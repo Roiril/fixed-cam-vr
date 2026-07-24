@@ -11,10 +11,10 @@ namespace TableDuoVr.EditorTools
     /// </summary>
     public static class TableDuoEyePreview
     {
-        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Eye - Seat0 (Full)", priority = 212)]
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Eye - Seat0 (Hand)", priority = 212)]
         public static void PreviewSeat0() => AlignSceneViewTo("[TableDuo]/Seats/Seat0");
 
-        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Eye - Seat1 (Hand)", priority = 213)]
+        [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Eye - Seat1 (Full)", priority = 213)]
         public static void PreviewSeat1() => AlignSceneViewTo("[TableDuo]/Seats/Seat1");
 
         private static void AlignSceneViewTo(string path)
