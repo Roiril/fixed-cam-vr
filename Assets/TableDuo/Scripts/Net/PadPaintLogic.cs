@@ -13,7 +13,7 @@ namespace TableDuoVr.Net
     /// </summary>
     public static class PadPaintLogic
     {
-        // パッド外形（メートル）。UV とデッドバンド判定の単一ソース。MarkerHoldTilt も参照する
+        // パッド外形（メートル）。UV とデッドバンド判定の単一ソース。ToolGripDriver も参照する
         public const float WidthM = 0.210f;     // X 幅
         public const float HeightM = 0.297f;    // Z 高
         public const float HalfX = 0.105f;      // WidthM/2
@@ -32,25 +32,48 @@ namespace TableDuoVr.Net
         }
 
         /// <summary>
-        /// パッドローカル座標が描画面に接触しているかを判定し、接触なら UV（0..1）を返す。
-        /// 接触条件: |x| ≤ HalfX かつ |z| ≤ HalfZ かつ y ∈ [SurfaceLocalY−yTolBelow, SurfaceLocalY+yTolAbove]。
-        /// UV = ((x+HalfX)/WidthM, (z+HalfZ)/HeightM)。
-        /// ※ 仕様書の引数順（out を末尾）は C# の「省略可能引数は必須引数の後」制約に反するため、
-        ///   out を padLocalPoint 直後へ繰り上げた（意味・既定値は同一）。
+        /// パッドローカル座標が XZ 枠内なら UV（0..1）と面からの高さ（heightAbove = y − 面高）を返す。
+        /// Y の接触判定はここでは行わず（<see cref="ContactGate"/> がヒステリシス付きで判定する）、
+        /// 枠内かどうかだけを返す。UV = ((x+HalfX)/WidthM, (z+HalfZ)/HeightM)。
         /// </summary>
-        public static bool TryGetContactUv(Vector3 padLocalPoint, out Vector2 uv,
-            float yTolBelow = 0.004f, float yTolAbove = 0.002f)
+        public static bool TryGetUv(Vector3 padLocalPoint, out Vector2 uv, out float heightAbove)
         {
+            heightAbove = padLocalPoint.y - SurfaceLocalY;
             uv = default;
             if (Mathf.Abs(padLocalPoint.x) > HalfX) return false;
             if (Mathf.Abs(padLocalPoint.z) > HalfZ) return false;
-            // 境界ちょうど（y == 面高±許容）を接触に含める。float 和が Mono の拡張精度レジスタで
-            // 比較されると境界一致が「超過」へ揺れるため、微小イプシロンで境界側に倒す
-            const float eps = 1e-6f;
-            float y = padLocalPoint.y;
-            if (y < SurfaceLocalY - yTolBelow - eps || y > SurfaceLocalY + yTolAbove + eps) return false;
             uv = new Vector2((padLocalPoint.x + HalfX) / WidthM, (padLocalPoint.z + HalfZ) / HeightM);
             return true;
+        }
+
+        /// <summary>
+        /// 接触のヒステリシスゲート（ストローク端の欠け・チカチカ切れを消す）。
+        /// 非接触→接触は面から <see cref="DownTol"/> 以内（押し込み側含む）+ 枠内、
+        /// 接触→非接触は面から <see cref="UpTol"/> 超で離す or 枠外。境界の float 比較揺れ対策で ±eps。
+        /// mutable struct（配列要素で持つ）。
+        /// </summary>
+        public struct ContactGate
+        {
+            public const float DownTol = 0.002f;  // 接触開始しきい（面上 2mm 以内 or 押し込み）
+            public const float UpTol = 0.006f;     // 接触終了しきい（面上 6mm 超で離れる）
+            private const float Eps = 1e-6f;
+
+            private bool _contacting;
+            public bool Contacting => _contacting;
+
+            /// <summary>今フレームの (枠内, 面からの高さ) で状態を更新し、更新後の接触状態を返す。</summary>
+            public bool Tick(bool inXz, float heightAbove)
+            {
+                if (!_contacting)
+                {
+                    if (inXz && heightAbove <= DownTol + Eps) _contacting = true;
+                }
+                else
+                {
+                    if (!inXz || heightAbove > UpTol + Eps) _contacting = false;
+                }
+                return _contacting;
+            }
         }
 
         /// <summary>
@@ -63,6 +86,16 @@ namespace TableDuoVr.Net
             float dv = (uv.y - lastUv.y) * HeightM;
             return du * du + dv * dv >= minDistM * minDistM;
         }
+
+        /// <summary>保持者ローカル予測が描いた分の ClientRpc エコーを抑止する秒数（予測終了後もこの間は破棄）。</summary>
+        public const float EchoSuppressSec = 0.75f;
+
+        /// <summary>
+        /// 保持者ローカル即時インクとサーバ経由 ClientRpc の二重描画を抑止するか。
+        /// 予測中（predictingNow）、または予測終了から <see cref="EchoSuppressSec"/> 未満なら抑止する。
+        /// </summary>
+        public static bool ShouldSuppressEcho(bool predictingNow, float timeSincePredictEnd) =>
+            predictingNow || timeSincePredictEnd < EchoSuppressSec;
 
         /// <summary>
         /// セグメントをバッファへ追加する。上限 <see cref="MaxSegments"/> 超過は追加せず false を返す

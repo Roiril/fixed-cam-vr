@@ -950,12 +950,14 @@ namespace TableDuoVr.EditorTools
             AttachGrabbableNet(eraser);
             SetSurfaceClamp(eraser, topY, cx, cz, hx, hz);
             var eraserTool = AddPadDrawTool(eraser, toolId: 2, isEraser: true, radiusMm: 10f, tipDistance: 0f);
+            // 消しゴム: フラットモード（yaw のみ追従・底面を面近くに置く）
+            AddToolGripDriver(eraser, ToolGripDriver.Mode.Flat, tipDistance: 0f, tableTopY: topY, pad: padTf);
 
-            // ペン 2 本: 保持中の傾き（MarkerHoldTilt）+ 描画ツール（PadDrawTool）
+            // ペン 2 本: 保持中のグリップ姿勢（ToolGripDriver・ペンモード）+ 描画ツール（PadDrawTool）
             var circleTool = AddPadDrawTool(markerCircle, toolId: 0, isEraser: false, radiusMm: 2.2f, tipDistance: 0.0923f);
-            AddMarkerTilt(markerCircle, tipDistance: 0.0923f, tableTopY: topY, pad: padTf);
+            AddToolGripDriver(markerCircle, ToolGripDriver.Mode.Pen, tipDistance: 0.0923f, tableTopY: topY, pad: padTf);
             var segmentTool = AddPadDrawTool(markerSegment, toolId: 1, isEraser: false, radiusMm: 2.2f, tipDistance: 0.0923f);
-            AddMarkerTilt(markerSegment, tipDistance: 0.0923f, tableTopY: topY, pad: padTf);
+            AddToolGripDriver(markerSegment, ToolGripDriver.Mode.Pen, tipDistance: 0.0923f, tableTopY: topY, pad: padTf);
 
             // パッド上面のオーバーレイ quad（描画 RT の表示先）。Game_bear 配下なので GameSwitcher の stow/show に自動追従
             var overlay = CreateBearPaintLayer(parent, cx + padX, cz + padZ, topY);
@@ -997,12 +999,15 @@ namespace TableDuoVr.EditorTools
             return tool;
         }
 
-        /// <summary>ペンに MarkerHoldTilt を付けて SerializedObject で値を焼く（go 未生成なら何もしない）。</summary>
-        private static void AddMarkerTilt(GameObject? go, float tipDistance, float tableTopY, Transform? pad)
+        /// <summary>ツール（ペン/消しゴム）に ToolGripDriver を付けて SerializedObject で値を焼く（go 未生成なら何もしない）。
+        /// 調整定数（GripBack/俯角/しきい値/フィルタ係数）は ToolGripDriver 内 const なのでここでは焼かない。</summary>
+        private static void AddToolGripDriver(GameObject? go, ToolGripDriver.Mode mode,
+            float tipDistance, float tableTopY, Transform? pad)
         {
             if (go == null) return;
-            var tilt = go.AddComponent<MarkerHoldTilt>();
-            var so = new SerializedObject(tilt);
+            var driver = go.AddComponent<ToolGripDriver>();
+            var so = new SerializedObject(driver);
+            SetEnum(so, "mode", (int)mode);
             var pt = so.FindProperty("tipDistance"); if (pt != null) pt.floatValue = tipDistance;
             var py = so.FindProperty("tableTopY"); if (py != null) py.floatValue = tableTopY;
             SetRef(so, "padTransform", pad);

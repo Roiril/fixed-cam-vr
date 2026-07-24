@@ -45,15 +45,28 @@ namespace TableDuoVr.Net
         private readonly Material?[] _stampMats = new Material?[3];
         private static readonly int[] Passes = { 0, 0, 1 };
         private readonly float[] _radiiById = { 2.2f, 2.2f, 10f };
-        // 今フレーム描くべき保留セグメント（ClientRpc 受信でここへ積み、Update 末尾で一括描画）
+        // 今フレーム描くべき保留セグメント（ClientRpc 受信 + 保持者ローカル予測でここへ積み、Update 末尾で一括描画）
         private readonly List<PadPaintLogic.PaintSegment> _pending = new();
         private bool _clearRequested;
 
         // --- サーバ専用 ---
         private Grabbable?[] _serverGrabs = System.Array.Empty<Grabbable?>();
         private Vector2[] _lastUv = System.Array.Empty<Vector2>();
-        private bool[] _wasContacting = System.Array.Empty<bool>();
+        private PadPaintLogic.ContactGate[] _gates = System.Array.Empty<PadPaintLogic.ContactGate>();
         private bool _serverBound;
+
+        // --- 保持者ローカル即時インク（非サーバ・Part C） ---
+        // ローカルが保持するツールを毎フレ接触判定して即描画し、二重遅延（pose 上り→サーバ判定→RPC 下り）を消す。
+        // サーバ経由の同一セグメント ClientRpc は予測中/終了直後 0.75s 破棄する（エコー抑止）。
+        private Grabbable?[] _localGrabs = System.Array.Empty<Grabbable?>();
+        private PadPaintLogic.ContactGate[] _localGates = System.Array.Empty<PadPaintLogic.ContactGate>();
+        private Vector2[] _localLastUv = System.Array.Empty<Vector2>();
+        private bool _clientBound;
+        // toolId 索引（0..2）: 予測中フラグと予測終了時刻。エコー抑止判定に使う
+        //（終了時刻は −∞ 初期化。0 だと起動直後 0.75s 間、他 peer のセグメントまで誤って抑止される）
+        private readonly bool[] _predicting = new bool[3];
+        private readonly float[] _predictEndTime =
+            { float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity };
         private readonly List<PadPaintLogic.PaintSegment> _buffer = new();
         private GameSwitcher? _switcher;
         private int _lastActiveIndex;
@@ -131,7 +144,7 @@ namespace TableDuoVr.Net
             int n = tools.Length;
             _serverGrabs = new Grabbable?[n];
             _lastUv = new Vector2[n];
-            _wasContacting = new bool[n];
+            _gates = new PadPaintLogic.ContactGate[n];
             for (int i = 0; i < n; i++)
                 _serverGrabs[i] = tools[i] != null ? tools[i].GetComponent<Grabbable>() : null;
 
@@ -165,7 +178,77 @@ namespace TableDuoVr.Net
                 if (!_serverBound) ServerBind();
                 ServerTick();
             }
+            else
+            {
+                if (!_clientBound) ClientBind();
+                ClientPredictTick();
+            }
             FlushPending();
+        }
+
+        // 非サーバ配線: ローカル予測用の tool→Grabbable 解決（server の ServerBind と対称・遅延バインド）
+        private void ClientBind()
+        {
+            int n = tools.Length;
+            _localGrabs = new Grabbable?[n];
+            _localGates = new PadPaintLogic.ContactGate[n];
+            _localLastUv = new Vector2[n];
+            for (int i = 0; i < n; i++)
+                _localGrabs[i] = tools[i] != null ? tools[i].GetComponent<Grabbable>() : null;
+            _clientBound = true;
+        }
+
+        // 保持者ローカル即時インク（非サーバ）: local client が保持するツールを接触判定し、_pending へ直接積む。
+        // transform は ToolGripDriver（LateUpdate order120）が前フレームに置いた値を読む（1 フレーム遅れは許容）。
+        private void ClientPredictTick()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || padTransform == null) return;
+            ulong localId = nm.LocalClientId;
+
+            for (int i = 0; i < tools.Length; i++)
+            {
+                var tool = tools[i];
+                var grab = i < _localGrabs.Length ? _localGrabs[i] : null;
+                int toolId = tool != null ? tool.ToolId : -1;
+                if (toolId < 0 || toolId >= _predicting.Length) continue;
+
+                // 確定保持のみ予測対象（楽観保持中＝未確定は含めない）。両手を確認
+                bool heldLocal = tool != null && grab != null
+                    && (grab.IsHeldBy(localId, 0) || grab.IsHeldBy(localId, 1));
+
+                bool inXz = false;
+                Vector2 uv = default;
+                float h = 0f;
+                if (heldLocal)
+                {
+                    Vector3 local = padTransform.InverseTransformPoint(tool!.ContactPoint);
+                    inXz = PadPaintLogic.TryGetUv(local, out uv, out h);
+                }
+
+                bool was = _localGates[i].Contacting;
+                bool now = _localGates[i].Tick(heldLocal && inXz, h);
+                if (now)
+                {
+                    _predicting[toolId] = true;
+                    byte tid = (byte)toolId;
+                    if (!was)
+                    {
+                        _localLastUv[i] = uv;
+                        _pending.Add(new PadPaintLogic.PaintSegment { a = uv, b = uv, tool = tid });
+                    }
+                    else if (PadPaintLogic.ShouldEmit(_localLastUv[i], uv))
+                    {
+                        _pending.Add(new PadPaintLogic.PaintSegment { a = _localLastUv[i], b = uv, tool = tid });
+                        _localLastUv[i] = uv;
+                    }
+                }
+                else if (was)
+                {
+                    _predicting[toolId] = false;
+                    _predictEndTime[toolId] = Time.time; // エコー抑止の起点
+                }
+            }
         }
 
         private void ServerTick()
@@ -187,18 +270,23 @@ namespace TableDuoVr.Net
             {
                 var tool = tools[i];
                 var grab = i < _serverGrabs.Length ? _serverGrabs[i] : null;
-                bool contact = false;
+                bool held = tool != null && grab != null && grab.IsHeld;
+
+                bool inXz = false;
                 Vector2 uv = default;
-                if (tool != null && grab != null && grab.IsHeld)
+                float h = 0f;
+                if (held)
                 {
-                    Vector3 local = padTransform.InverseTransformPoint(tool.ContactPoint);
-                    contact = PadPaintLogic.TryGetContactUv(local, out uv);
+                    Vector3 local = padTransform.InverseTransformPoint(tool!.ContactPoint);
+                    inXz = PadPaintLogic.TryGetUv(local, out uv, out h);
                 }
 
-                if (contact)
+                bool was = _gates[i].Contacting;
+                bool now = _gates[i].Tick(held && inXz, h); // ヒステリシス（DownTol/UpTol）で端の欠けを消す
+                if (now)
                 {
                     byte toolId = (byte)tool!.ToolId;
-                    if (!_wasContacting[i])
+                    if (!was)
                     {
                         _lastUv[i] = uv;
                         EmitSegment(uv, uv, toolId); // 触れた瞬間に点を打つ
@@ -209,13 +297,10 @@ namespace TableDuoVr.Net
                         EmitSegment(_lastUv[i], uv, toolId);
                         _lastUv[i] = uv;
                     }
-                    _wasContacting[i] = true;
                 }
-                else
+                else if (was)
                 {
-                    if (_wasContacting[i])
-                        _logger?.LogEvent("draw_end", tool != null ? tool.name : $"tool{i}");
-                    _wasContacting[i] = false;
+                    _logger?.LogEvent("draw_end", tool != null ? tool.name : $"tool{i}");
                 }
             }
         }
@@ -266,6 +351,11 @@ namespace TableDuoVr.Net
         [ClientRpc]
         private void DrawSegmentClientRpc(Vector2 a, Vector2 b, byte toolId)
         {
+            // 保持者本人のクライアントは既にローカル予測で描いている → サーバ経由のエコーは破棄（二重描画防止）。
+            // host（IsServer）は自分の RPC を受けて描く唯一の経路なので抑止しない。
+            if (!IsServer && toolId < _predicting.Length
+                && PadPaintLogic.ShouldSuppressEcho(_predicting[toolId], Time.time - _predictEndTime[toolId]))
+                return;
             _pending.Add(new PadPaintLogic.PaintSegment { a = a, b = b, tool = toolId });
         }
 

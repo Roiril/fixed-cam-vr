@@ -26,10 +26,15 @@
 
 opus 偵察 2 体（Grabbable 保持パイプライン / GLB 軸・パッド形状）→ 仕様確定 → opus 実装 1 体の委譲で実装。
 
-- **① ペン保持中の自然な俯き**: [MarkerHoldTilt](../../Assets/TableDuo/Scripts/Net/MarkerHoldTilt.cs) + 純ロジック [MarkerTiltLogic](../../Assets/TableDuo/Scripts/Net/MarkerTiltLogic.cs)。
+- **① ペン保持中の自然な俯き**: [MarkerHoldTilt] + 純ロジック [MarkerTiltLogic]。
   手ローカル固定ではなく**ワールドピッチ制約**: heading は手追従・pitch = min(45°, asin(保持高/先端距離 0.0923))
   → 机が邪魔なら寝る・持ち上げるほど俯く・先端は面を割らない。適用は `[DefaultExecutionOrder(120)]` の LateUpdate
   （サーバ権威 + 保持者本人のみローカル楽観）。リリース時は heading 維持で寝かせて接地（浮き防止）
+  - **⚠ 2026-07-24 に [ToolGripDriver](../../Assets/TableDuo/Scripts/Net/ToolGripDriver.cs) + [PenGripLogic](../../Assets/TableDuo/Scripts/Net/PenGripLogic.cs) へ全面置換（supersede）**。
+    「手の高さで俯角を決める帯（0〜65mm）＋回転のみ上書き」は持ちにくい／書きにくいとの指摘を受け、
+    VR 一般解へ寄せた: 手首→ピンチ点線で前方を作り（手の傾き・ひねりに応答）、指先近くを軸に位置と回転を両方確定、
+    俯角 +15°・下向き 80° クランプ・ピン先の面クランプ・One Euro / dir slerp 平滑・保持者ローカル即時インク。
+    MarkerHoldTilt / MarkerTiltLogic / MarkerTiltLogicTests は削除。詳細 → [2026-07-24_tableduo-pen-grip-redesign.md](2026-07-24_tableduo-pen-grip-redesign.md)
 - **② パッド描画**: [PadPaintCanvas](../../Assets/TableDuo/Scripts/Net/PadPaintCanvas.cs)（BEAR_paint・in-scene NetworkObject）+
   [PadPaintLogic](../../Assets/TableDuo/Scripts/Net/PadPaintLogic.cs) + [PadDrawTool](../../Assets/TableDuo/Scripts/Net/PadDrawTool.cs) +
   [TableDuoPadStamp.shader](../../Assets/TableDuo/Art/Shaders/TableDuoPadStamp.shader)。パッドの 0.3mm 上に透明オーバーレイ quad

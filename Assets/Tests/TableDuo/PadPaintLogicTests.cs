@@ -15,44 +15,72 @@ namespace TableDuoVr.Tests
         private static float SurfY => PadPaintLogic.SurfaceLocalY;
 
         [Test]
-        public void TryGetContactUv_Corners_MapToUnitSquareCorners()
+        public void TryGetUv_Corners_MapToUnitSquareCorners()
         {
-            Assert.IsTrue(PadPaintLogic.TryGetContactUv(
-                new Vector3(-PadPaintLogic.HalfX, SurfY, -PadPaintLogic.HalfZ), out var uv00));
+            Assert.IsTrue(PadPaintLogic.TryGetUv(
+                new Vector3(-PadPaintLogic.HalfX, SurfY, -PadPaintLogic.HalfZ), out var uv00, out _));
             Assert.That(uv00.x, Is.EqualTo(0f).Within(1e-4f));
             Assert.That(uv00.y, Is.EqualTo(0f).Within(1e-4f));
 
-            Assert.IsTrue(PadPaintLogic.TryGetContactUv(
-                new Vector3(PadPaintLogic.HalfX, SurfY, PadPaintLogic.HalfZ), out var uv11));
+            Assert.IsTrue(PadPaintLogic.TryGetUv(
+                new Vector3(PadPaintLogic.HalfX, SurfY, PadPaintLogic.HalfZ), out var uv11, out _));
             Assert.That(uv11.x, Is.EqualTo(1f).Within(1e-4f));
             Assert.That(uv11.y, Is.EqualTo(1f).Within(1e-4f));
 
-            Assert.IsTrue(PadPaintLogic.TryGetContactUv(new Vector3(0f, SurfY, 0f), out var uvC));
+            Assert.IsTrue(PadPaintLogic.TryGetUv(new Vector3(0f, SurfY, 0f), out var uvC, out var h));
             Assert.That(uvC.x, Is.EqualTo(0.5f).Within(1e-4f));
             Assert.That(uvC.y, Is.EqualTo(0.5f).Within(1e-4f));
+            Assert.That(h, Is.EqualTo(0f).Within(1e-6f), "面高ちょうどは heightAbove=0");
         }
 
         [Test]
-        public void TryGetContactUv_OutsideXZ_ReturnsFalse()
+        public void TryGetUv_HeightAbove_IsSignedDistanceFromSurface()
         {
-            Assert.IsFalse(PadPaintLogic.TryGetContactUv(
-                new Vector3(PadPaintLogic.HalfX + 0.001f, SurfY, 0f), out _), "X 範囲外");
-            Assert.IsFalse(PadPaintLogic.TryGetContactUv(
-                new Vector3(0f, SurfY, PadPaintLogic.HalfZ + 0.001f), out _), "Z 範囲外");
+            Assert.IsTrue(PadPaintLogic.TryGetUv(new Vector3(0f, SurfY + 0.01f, 0f), out _, out var hi));
+            Assert.That(hi, Is.EqualTo(0.01f).Within(1e-5f), "浮いていれば正");
+            Assert.IsTrue(PadPaintLogic.TryGetUv(new Vector3(0f, SurfY - 0.01f, 0f), out _, out var lo));
+            Assert.That(lo, Is.EqualTo(-0.01f).Within(1e-5f), "押し込めば負");
         }
 
         [Test]
-        public void TryGetContactUv_YToleranceBoundaries()
+        public void TryGetUv_OutsideXZ_ReturnsFalse()
         {
-            // 既定 yTolBelow=0.004 / yTolAbove=0.002
-            Assert.IsTrue(PadPaintLogic.TryGetContactUv(new Vector3(0f, SurfY - 0.004f, 0f), out _),
-                "下許容ちょうど（面に押し込む側）は接触");
-            Assert.IsFalse(PadPaintLogic.TryGetContactUv(new Vector3(0f, SurfY - 0.005f, 0f), out _),
-                "下許容超過は非接触");
-            Assert.IsTrue(PadPaintLogic.TryGetContactUv(new Vector3(0f, SurfY + 0.002f, 0f), out _),
-                "上許容ちょうどは接触");
-            Assert.IsFalse(PadPaintLogic.TryGetContactUv(new Vector3(0f, SurfY + 0.003f, 0f), out _),
-                "上許容超過（浮いている）は非接触");
+            Assert.IsFalse(PadPaintLogic.TryGetUv(
+                new Vector3(PadPaintLogic.HalfX + 0.001f, SurfY, 0f), out _, out _), "X 範囲外");
+            Assert.IsFalse(PadPaintLogic.TryGetUv(
+                new Vector3(0f, SurfY, PadPaintLogic.HalfZ + 0.001f), out _, out _), "Z 範囲外");
+        }
+
+        [Test]
+        public void ContactGate_Hysteresis_EntersOnDownTolExitsOnUpTol()
+        {
+            var gate = new PadPaintLogic.ContactGate();
+            // 面上 3mm（DownTol=2mm 超）ではまだ接触しない
+            Assert.IsFalse(gate.Tick(true, 0.003f), "DownTol 超では非接触のまま");
+            // 面上 2mm ちょうどで接触開始
+            Assert.IsTrue(gate.Tick(true, PadPaintLogic.ContactGate.DownTol), "DownTol で接触開始");
+            // 面上 5mm（UpTol=6mm 未満）へ浮いても接触維持（ヒステリシス）
+            Assert.IsTrue(gate.Tick(true, 0.005f), "UpTol 未満では接触維持");
+            // 押し込み側（負）でも接触維持
+            Assert.IsTrue(gate.Tick(true, -0.01f), "押し込み中も接触");
+            // 面上 7mm（UpTol 超）で離れる
+            Assert.IsFalse(gate.Tick(true, 0.007f), "UpTol 超で非接触");
+        }
+
+        [Test]
+        public void ContactGate_ExitsWhenLeavingXz()
+        {
+            var gate = new PadPaintLogic.ContactGate();
+            Assert.IsTrue(gate.Tick(true, 0f));
+            Assert.IsFalse(gate.Tick(false, 0f), "枠外に出たら接触終了");
+        }
+
+        [Test]
+        public void ShouldSuppressEcho_WhilePredictingOrWithinWindow()
+        {
+            Assert.IsTrue(PadPaintLogic.ShouldSuppressEcho(true, 999f), "予測中は常に抑止");
+            Assert.IsTrue(PadPaintLogic.ShouldSuppressEcho(false, 0.5f), "終了直後の窓内は抑止");
+            Assert.IsFalse(PadPaintLogic.ShouldSuppressEcho(false, 1.0f), "窓を過ぎたら通す");
         }
 
         [Test]

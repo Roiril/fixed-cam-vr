@@ -28,6 +28,15 @@ namespace TableDuoVr.Net
 
         private Transform? _seat;
         private ulong _localClientId;
+
+        /// <summary>ローカルプレイヤーの席アンカー（owner が Initialize でセット）。
+        /// <see cref="ToolGripDriver"/> が保持者ローカルの手 pose を席ローカル→ワールド化するのに使う
+        /// （毎フレーム GameObject.Find を避ける）。owner のインタラクタは 1 プロセスに 1 つ。</summary>
+        public static Transform? LocalSeat { get; private set; }
+
+        // domain-reload 無効 Play で前セッションの破棄済み席参照が残るのを防ぐ
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics() => LocalSeat = null;
         private readonly bool[] _wasPinching = new bool[2];
         private readonly Grabbable?[] _heldCandidate = new Grabbable?[2];
         private readonly Vector3[] _holdOffsetPos = new Vector3[2];
@@ -42,6 +51,7 @@ namespace TableDuoVr.Net
         {
             _seat = seat;
             _localClientId = localClientId;
+            LocalSeat = seat;
         }
 
         private void Update()

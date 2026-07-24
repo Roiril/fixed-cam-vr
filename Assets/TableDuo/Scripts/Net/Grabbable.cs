@@ -156,6 +156,13 @@ namespace TableDuoVr.Net
         public bool IsHeld => _holder.Value != NoHolder;
         public ulong HolderClientId => _holder.Value;
 
+        /// <summary>保持者の手（0=L / 1=R）。<see cref="ToolGripDriver"/> がペン/消しゴムの手 pose 解決に使う。</summary>
+        public byte HolderHand => _holderHand.Value;
+
+        /// <summary>サーバ側で掴み時に解決済みの保持者の席アンカー（server のみ有効・非保持中は null）。
+        /// <see cref="ToolGripDriver"/> がリモート保持者のピンチ点 FK を席ローカル→ワールド化するのに使う。</summary>
+        public Transform? HolderSeat => _grabSeat;
+
         /// <summary>stow（気配消し）状態。<see cref="GameSwitcher"/> が全 peer で設定する。
         /// replicated var（activeGame）起点なので peer 間で一致する。stow 中は掴み対象から除外され、
         /// サーバ側 grab RPC もはじく（コライダー非依存の距離検索を二重防御）。</summary>
