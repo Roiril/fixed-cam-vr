@@ -829,8 +829,12 @@ namespace TableDuoVr.EditorTools
             // --- 座標定数（cx/cz からの XZ オフセット。親がプレビューを見て調整するためここに集約）---
             const float padX = 0f, padZ = 0f;          // 描画パッド = 卓中央
             const float gridCx = 0.33f, gridCz = 0f;   // お題カード 3×4 格子の中心（卓中央 +X・パッドとペンを避ける）
-            const float colPitch = 0.09f;               // 列（X）ピッチ = カード幅 63mm + 隙間 ~27mm
-            const float rowPitch = 0.11f;               // 行（Z）ピッチ = カード高 88mm + 隙間 ~22mm
+            // お題カードは横倒し（下記 promptYaw）でカード長辺 88mm が X・短辺 63mm が Z に寝る
+            const float colPitch = 0.11f;               // 列（X）ピッチ = カード高 88mm + 隙間 ~22mm
+            const float rowPitch = 0.09f;               // 行（Z）ピッチ = カード幅 63mm + 隙間 ~27mm
+            // お題カードの向き: 上端（色帯・GLB テクスチャ抽出で確認）を机中心（-X）へ向ける横倒し。
+            // yaw0 の上端は -Z（俯瞰プレビュー実測）なので -X へは yaw90。±Z の両席から等条件で読める
+            const float promptYaw = 90f;
 
             const float seat0Z = -0.26f;                // まる役（seat0 = -Z 席）の手前列
             const float roleCircleX = -0.16f;           // まる役 役割カード
@@ -869,7 +873,7 @@ namespace TableDuoVr.EditorTools
                     float px = cx + gridCx + (c - 1.5f) * colPitch;
                     float pz = cz + gridCz + (r - 1f) * rowPitch;
                     var card = PlaceModelRealScale($"{BearGlbDir}/{promptRows[r][c]}.glb", parent, $"BEAR_{promptRows[r][c]}",
-                        new Vector3(px, topY, pz), 0f, grabbable: true, physics: false);
+                        new Vector3(px, topY, pz), promptYaw, grabbable: true, physics: false);
                     SetSurfaceClamp(card, topY, cx, cz, hx, hz);
                 }
             }
