@@ -104,3 +104,14 @@ mono.exe 起動時の引数長の環境問題で、コード長に関係なく�
 既知の「コード長制限」とは別物。Editor 再起動で直る可能性が高い。
 代替: `mcpforunity://scene/gameobject/{id}/component/{name}` リソース読み +
 manage_* ツールで大半は代替できる（このセッションで実証）。
+
+## SkinnedMeshRenderer は per-camera のボーン状態切替が効かない（2026-07-24）
+
+スキニングは**フレームに 1 回**しか焼かれないため、`RenderPipelineManager.beginCameraRendering /
+endCameraRendering` で bone の scale/pose をカメラごとに切り替えても、**全カメラが同じスキン結果を描く**
+（TableDuo SpectatorRecorder の「FPV 録画だけ頭ボーンを潰す」が原理的に無効で、実録画に口内・目玉が
+写った実害）。per-camera で見た目を変えたいときの正攻法:
+- **near clip / cullingMask（レイヤー）/ 別インスタンス** のどれかで解く（SpectatorRecorder は
+  FPV カメラ nearClipPlane=0.15 で自頭シェルをクリップして解決）
+- 非スキンの MeshRenderer なら `beginCameraRendering` での renderer.enabled 切替は有効（カリングは
+  カメラごとに走る）— スキンドだけが特例、と覚える

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: cdf1e893-5309-4360-bb69-b442c299a6ef
-  modified: 2026-07-24T00:26:20.482Z
+  modified: 2026-07-24T04:00:34.426Z
 ---
 
 TableDuo（[[table_duo_study_status]]）の実機運用を楽にする 2026-07-06 追加分。コミット `feat：TableDuo ソロ実機検証機能＋操作性改善` 系。
@@ -37,10 +37,12 @@ PC (NGO host・spectator・L0 desktop build)  ← Quest A: client/full(人)  ←
 ## 映像記録（俯瞰+人役 FPV の 2 本 AVI・2026-07-24）
 [SpectatorRecorder](../../Assets/TableDuo/Scripts/Net/SpectatorRecorder.cs) + [MjpegAviWriter](../../Assets/TableDuo/Scripts/Net/MjpegAviWriter.cs)。**運営パネル（FacilitatorPanel・右端）の「映像記録」セクション**で開始/停止（観戦カメラが Activate 済みの PC host でのみ表示。SpectatorRecorder は on-demand 生成）。
 - **2 視点を同時録画**: 俯瞰（SpectatorController の Overhead framing/FOV=43 を流用・静止）+ 人役 FPV（Role.Full の頭 world pose に毎フレ追従・FOV=75）。表示用の 1 台の観戦カメラとは独立にオフスクリーンカメラ 2 本を生成（1280x720@30fps・JPEG q75）。
-- **頭潰しの両立**: FPV 録画カメラの描画直前だけ人役の頭を潰し（`RenderPipelineManager.beginCameraRendering`）、俯瞰では戻す。描画後は表示側の潰し状態へ復元（表示カメラの見た目を壊さない）。
+- **FPV の自頭消しは near clip 0.15m が正**（2026-07-24 実録画の実害から確定）: 初版の「`RenderPipelineManager.beginCameraRendering` で頭ボーン潰しを per-camera 切替」は **SkinnedMeshRenderer のスキニングがフレームに 1 回しか焼かれないため原理的に効かず**、実録画に口の内側・目玉が写った → 撤去し、FPV 録画カメラの `nearClipPlane=0.15`（const FpvNearClip）で自頭シェルごとクリップ。俯瞰・表示カメラの頭は無傷。副作用は顔から 15cm 以内の物体もクリップされることのみ
+- **縦反転は実測で確定済み**（2026-07-24・D3D11 PC ホスト）: `_flipVertical = !SystemInfo.graphicsUVStartsAtTop` が正（readback は既に上端始まり。初版の `!` 無しは上下逆に録れた）。コードに「検証点」コメントを残していたおかげで 1 行修正で済んだ — **判定が環境依存で自信がない箇所には反転手順コメントを残す**のは良パターン
+- **遠隔トグル**: `curl "http://localhost:7780/mark?label=rec_toggle"`（MarkLabelRouter・運営パネルのボタンと同経路）。スクリプト検証・リモート運用用
 - **保存先**: `persistentDataPath/tdv_recordings/tdv_rec_<yyyyMMdd_HHmmss>/{overhead.avi, person_fpv.avi}`。MJPG-AVI なので **Windows 標準プレイヤー / VLC でそのまま再生可**。停止/OnDestroy/OnApplicationQuit で確実に Close（ファイル破損防止）。
 - パイプライン: Update で 1/30s ごと `AsyncGPUReadback`（各カメラ in-flight 上限 4）→ メインスレッドで JPEG エンコード → bounded キュー（容量 60・満杯は drop 計上）→ writer スレッドで AVI へ書き込み。人役未接続の間は俯瞰 pose に据え置き（パネルに「人役 未接続」表示）。
-- **⚠ 実機未検証（2026-07-24 実装）**: 縦反転（`SystemInfo.graphicsUVStartsAtTop` 判定・逆なら SpectatorRecorder の `_flipVertical` 1 箇所で反転）とパフォーマンス（2 本の GPU readback + JPEG エンコード負荷）は要実機確認。
+- **AVI の中身検証は JPEG 直パースが速い**: MJPG-AVI はフレームが素の JPEG 列なので、Python で任意オフセットから `FFD8FF`〜`FFD9` を切り出せばプレイヤー無しで実フレームを目視できる（RIFF ヘッダのサイズ = 実ファイルサイズなら正常終端）。2026-07-24 の反転・頭写り込みの一次証拠はこれで取った
 
 ## 観戦カメラの視点切替（PC ホスト画面・2026-07-13）
 PC ホスト（spectator）画面**左上の GUI ボタン／数字キー 1-3** で観戦カメラを3モード切替（[SpectatorController](../../Assets/TableDuo/Scripts/Net/SpectatorController.cs)）:
@@ -52,7 +54,7 @@ PC ホスト（spectator）画面**左上の GUI ボタン／数字キー 1-3** 
 - **A（右手）単押し**: 視点リセット（席へ再センタ）。両手グリップ3秒長押しも維持（[ControllerRecenterWatcher](../../Assets/TableDuo/Scripts/Hands/ControllerRecenterWatcher.cs)）
   - **触覚フィードバック（2026-07-21）**: A 単押し=右手に Action 振動 / 両手グリップは進入=Ack →長押し中 HoldTick ランプ→3 秒で Fire（両手）。波形は両アプリ共通 [`HapticVocabulary`](../../Assets/TableDuo/Scripts/Hands/HapticPatterns.cs)、適用は [`TableDuoHaptics`](../../Assets/TableDuo/Scripts/Hands/TableDuoHaptics.cs)（Systems 直下・`Setup TableDuo Scene` が配置。watcher が Awake で FindObjectOfType）。ハンドトラッキング時・未接続時は無音（＝「押せてない/未接続」の切り分け）。実機未検証
 - **WireTap 記録**: F9（PC host）/ 左下デバッグパネルのボタン（右コントローラ B バインドは 2026-07-18 撤去）
-- **Y（左手）**: 手バリアント巡回（調査フラグ起動中は無効）
+- **手バリアント切替はホストの運営パネル（FacilitatorPanel）からの強制のみ**（左 Y トグルは 2026-07-18 撤去。Quest コントローラは視点リセット専用）
 
 ## コントローラ把持で手が消えない（マルチモーダル・2026-07-06）
 OVRManager を [TableDuoSceneSetup](../../Assets/TableDuo/Scripts/Editor/TableDuoSceneSetup.cs) で設定（シーンに override 焼き込み）:
@@ -74,6 +76,7 @@ OVRManager を [TableDuoSceneSetup](../../Assets/TableDuo/Scripts/Editor/TableDu
 - **USB 接続中の「Quest Link を開始しますか？」OS ダイアログがアプリ起動をブロック**（`Launch is blocked because: a Reprojected OS dialog is currently showing`）→ `am force-stop com.oculus.systemux`
 - **PC ホストの旧プロセス残骸が MarkServer(7780) を掴む** → `MarkServer 起動失敗` は reset_board の curl だけ死ぬ（接続/記録/診断は無影響）。kill してもゴースト socket が残ることがあり、その時は PC 再起動まで放置で可
 - adb install が「0 files pushed」で無言失敗することがある → もう一度 install（2回目で通る）
+- **⚠ 再接続ラチェット＝「接続上限(3)超過のため clientN を切断」がログに流れ続けたら全再起動**（2026-07-24 実害）: client が transport 切断（放置 HMD のサスペンド等）→ 固定 2s 間隔で自動再接続 → ホストの上限判定（新参 kick のみ）が「直前に蹴った接続のゾンビスロットが NGO から消える前に次のリトライ到着」で**恒久拒否ループ化**する（clientN が 50+ まで増える・もう片方の client も巻き込まれ全滅する）。**片 client の force-stop では復旧しない（ゾンビが残る）— PC ホスト + Quest 2 台の 3 プロセス全再起動（`tableduo-pc-host.ps1` 一発）が唯一の復旧**。恒久修正案（client 再接続の指数バックオフ + server stale kick）は [remaining-tasks.md](../../docs/table-duo/remaining-tasks.md) B 節参照
 
 ## 診断タグ一覧（手アバター不具合の切り分け）
 | タグ | 出所 | 見るもの |

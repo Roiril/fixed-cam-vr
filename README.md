@@ -89,9 +89,9 @@
 
 - **構成**: Meta XR ハンドトラッキング + Netcode for GameObjects（LAN 直結・pose 60Hz Unreliable + Seq 後着棄却・自動再接続）。役割（full/hand）と host/client は起動フラグで独立指定
 - **標準トポロジ（2026-07-06〜）**: **PC が NGO host（観戦ロール兼任・L0 デスクトップビルド）+ Quest 2 台が client**。SessionLogger/WireTap が PC に直接落ち、両者の pose が必ずワイヤを通る（計測対称）。役割交代もセッション継続のまま Quest 再起動だけ
-- **卓上タスク = ボードゲーム（複数・プレイ中切替可）**: 海底探検（Deep Sea Adventure）・アルゴ・ガイスターを卓上へベイクし、**PC ホストの FacilitatorPanel（画面右 IMGUI）か `mark?label=game_<dsa|algo|geister>` でランタイム切替**（GameSwitcher・サーバ権威・stow/show 方式＝非アクティブゲームは不可視/掴み不可、切替は両ゲームの盤面リセットを兼ねる）。全ピースが掴める（サーバ権威・ピンチグラブ）。サイコロは離すと出目 1–3 を確定表示＋CSV 記録。アルゴは実プレイ開始形（裏向き山札 16 + 各席の裏向き手札 4×2）で、**「アルゴ配り直し」（ホスト UI / `mark?label=algo_deal`）が白黒込み完全ランダムで再配布**。ガイスターは駒 各席 8 体（青4+赤4・計 16・物理なし）で、**離すと盤上は最寄り空きセルへ吸着し正面が相手を向く**（裏の色マーカーは自分にだけ見える）・盤外は直立化のみで裏面を自由に確認できる（捕獲駒の公開）。ルール裁定はコード化せず人間運用（無言交渉が研究データ）。盤面リセットは `mark?label=reset_board`
+- **卓上タスク = ボードゲーム（5 種・プレイ中切替可）**: 海底探検（Deep Sea Adventure）・アルゴ・ガイスター・バンディド・**あと6画のくま**を卓上へベイクし、**PC ホストの運営パネル（FacilitatorPanel・画面右 IMGUI）か `mark?label=game_<dsa|algo|geister|bandido|bear>` でランタイム切替**（GameSwitcher・サーバ権威・stow/show 方式＝非アクティブゲームは不可視/掴み不可、切替は盤面リセットを兼ねる）。全ピースが掴める（サーバ権威・ピンチグラブ）。サイコロは離すと出目確定＋CSV 記録。アルゴは実プレイ開始形で「配り直し」（ホスト UI / `mark?label=algo_deal`）が完全ランダム再配布。ガイスターは盤上リリースで最寄り空きセルへ吸着（裏マーカーは自分にだけ見える）。バンディドは 1×2 トンネル札の格子スナップ + 配り直し（`bandido_deal`）。**あと6画のくま**は 2 人協力お絵描き — 描画パッドに**ペンで実際に線が描け・消しゴムで消せる**（全 peer 同期・ペンは保持中に自然に俯く）。ルール裁定はコード化せず人間運用（無言交渉が研究データ）。盤面リセットは `mark?label=reset_board`
 - **手の見た目 3 バリアント = 調査条件**（within-pair・ブロック固定・`tdv_hand default|realistic|robot`。**セッション中の変更はホストの FacilitatorPanel からの強制のみ**＝参加者側トグルは撤去、端末間の不一致は検出して CSV に記録）
-- **操作系の設計思想（2026-07-18〜）**: **Quest 側=体験・PC ホスト側=運用**。Quest コントローラは視点リセット（右 A 単押し / 両グリップ 3 秒）だけ。ボドゲ切替・手バリアント・盤面リセット・マークはホストの FacilitatorPanel（F10 で表示トグル）に集約
+- **操作系の設計思想（2026-07-18〜）**: **Quest 側=体験・PC ホスト側=運用**。Quest コントローラは視点リセット（右 A 単押し / 両グリップ 3 秒）だけ。ゲーム切替・手バリアント・盤面操作・**映像記録**・記録マークはホストの運営パネル（FacilitatorPanel・F10 で表示トグル・2026-07-24 刷新: 選択グリッド化 / 配り直しはアクティブゲームのみ表示 / WireTap は左下デバッグパネルへ分離）に集約
 - **人役の一人称自己アバター**（`tdv_selfbody on`・既定 off）: 下を向くと自分の胴/腕/手が見える（頭は潰して視界を塞がない・白手は隠し Remy 手に一本化）。ローカル描画専用＝相手に見える自分は不変。条件は CSV に記録（自己身体の有無は交絡なのでパイロットで既定を決める）
 - **シーン生成**: `Tools/FixedCamVr/Setup/Setup TableDuo Scene`（冪等。**ビルド直前に再実行してクリーン状態にする**）
 
@@ -102,7 +102,8 @@
 | SessionLogger CSV | 両者 pose 30Hz + 手役 7 ランドマーク + イベント（grab / recenter / 条件 / layout 受信 / clockOffset / 欠落系） | host（=PC）の `persistentDataPath` |
 | SessionReplayRecorder | 全 bone + 小物 + イベントの一括リプレイ（Editor の ReplayViewer で自由視点再生 = stimulated recall） | 同上 |
 | StreamingPoseRecorder | 各端末ローカルの **lossless 手 pose 60Hz**（ネット遅延・量子化なしの完全忠実度バックアップ） | 各 Quest の `persistentDataPath` |
-| WireTapRecorder | 通信ワイヤ上の pose を CSV 化（送出/受信・診断ログ [TDV-WIRE]/[TDV-DRAW] 連動）。**F9・GUI ボタン（PC）**でトグル（右 B バインドは 2026-07-18 撤去 — コントローラは視点リセット専用） | 押した端末の `persistentDataPath` |
+| **SpectatorRecorder（映像記録）** | **俯瞰 + 人役 FPV の 2 視点を同時に MJPG-AVI 録画**（720p/30fps・そのまま再生可）。運営パネルのボタン / `mark?label=rec_toggle` でトグル。FPV は自頭を near clip で消し広角 75° | PC の `persistentDataPath/tdv_recordings/` |
+| WireTapRecorder | 通信ワイヤ上の pose を CSV 化（送出/受信・診断ログ [TDV-WIRE]/[TDV-DRAW] 連動）。**F9 / 左下デバッグパネル（PC）**でトグル。調査運用では通常使わない | 押した端末の `persistentDataPath` |
 | FacilitatorMarkServer | `curl http://localhost:7780/mark?label=phase2` でフェーズマーク（PC ホスト時は localhost） | CSV へ |
 
 ## 実機起動（PC ホスト + Quest 2 台・同 LAN）
@@ -118,15 +119,12 @@
 
 ## HMD 内の操作（コントローラ）
 
-| 操作 | 機能 |
-|---|---|
-| **A（右手）単押し** / 両手グリップ 3 秒 | 視点リセット（頭を席へ再センタ） |
-| **B（右手）単押し** | WireTap 通信記録の開始/停止 |
-| **Y（左手）** | 手バリアント巡回（調査フラグ起動中は封印） |
+**視点リセットのみ**（右 A 単押し / 両手グリップ 3 秒長押し・触覚フィードバック付き）。
+旧 B=WireTap・Y=手バリアント巡回は撤去済み — 運用操作はすべて PC ホストの運営パネルから行う。
 
-## 状態（2026-07-07）
+## 状態（2026-07-24）
 
-PC ホスト + Quest 2 台の運用へ移行し、手アバターの 3 大バグ（handSkeletonVersion=OpenXR 混入による手崩れ・席フレーム契約崩れによる位置ズレ・Remy 指未駆動）を根治（手役の指同期は実機確認済み、位置ズレ/Remy 指は Editor 検証済み・実機最終確認待ち）。**パイロット 1 ペア実施 → プロトコル凍結**が次のマイルストーン。
+PC ホスト + Quest 2 台の運用が確立（接続テスト済み）。手アバターの 3 大バグ（handSkeletonVersion 混入・席フレーム契約崩れ・Remy 指未駆動）は根治済み。卓上ゲームは 5 種（あと6画のくまはペン描画・消しゴム付き）、運営パネル + 映像記録（俯瞰+FPV）で観察体制も整備。**パイロット 1 ペア実施 → プロトコル凍結**が次のマイルストーン。既知の要修正: client 再接続の恒久拒否ループ（[remaining-tasks](docs/table-duo/remaining-tasks.md) 参照・復旧は 3 プロセス全再起動）。
 
 - 設計 [docs/table-duo/study-design.md](docs/table-duo/study-design.md) / 実施手順 [docs/table-duo/study-protocol.md](docs/table-duo/study-protocol.md) / 同意書 [docs/table-duo/consent-template.md](docs/table-duo/consent-template.md)
 - 最新の実装状態・既知の罠 → [.claude/memory/table_duo_study_status.md](.claude/memory/table_duo_study_status.md)

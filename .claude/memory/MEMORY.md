@@ -11,7 +11,7 @@
 - [user_name_shubie.md](user_name_shubie.md) - このClaude Codeの名前はシュビー
 - [sdk_decision.md](sdk_decision.md) - Meta XR All-in-One + XRI 採用の経緯と却下候補
 - [mcp_unity_setup.md](mcp_unity_setup.md) - Unity MCP 接続手順（user-scope登録 / `claude mcp add UnityMCP --offline --from mcpforunityserver` / 命名は大文字 UnityMCP / 再起動必須）
-- [unity_pitfalls.md](unity_pitfalls.md) - Quad向き / OVRCameraRig Gameビュー / Scene YAML直編集 / Texture初期化 / UnityMCP execute_codeのWindows長さ制限 / manage_componentsのComponentID要件 / Texture2D.width=aspect真値 / DroidCam単一クライアント / OVRCustomHandPrefabのCustomBones全null（手ポーズ駆動は名前マッピング）
+- [unity_pitfalls.md](unity_pitfalls.md) - Quad向き / OVRCameraRig Gameビュー / Scene YAML直編集 / Texture初期化 / UnityMCP execute_codeのWindows長さ制限 / manage_componentsのComponentID要件 / Texture2D.width=aspect真値 / DroidCam単一クライアント / OVRCustomHandPrefabのCustomBones全null（手ポーズ駆動は名前マッピング）/ SkinnedMeshのper-cameraボーン切替は原理的に無効（nearclip/レイヤーで解く）
 - [camera_fleet.md](camera_fleet.md) - 配信スマホ実機 3 台構成（iPhone 13 Pro=IP Camera Lite + Pixel 7a/7 Pro=streamer、スロット割当・超広角可・IPは揮発）
 - [camera_source_alternatives.md](camera_source_alternatives.md) - 配信カメラをスマホ以外に替える検討の全体像（判定=MJPEG直pull／RTSPはQuestネイティブ受信可=Vizario/vlc-unity／技適／ATOM Cam2・ESP32-CAM・C120却下）
 - [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) - 【C120は2026-07-13却下】go2rtc中継(RTSP→MJPEG)ならUnity改修ゼロの技術検証（RTSPカメラ全般に適用可）
@@ -30,4 +30,4 @@
 - [table_duo_wrist_anchor_basis.md](table_duo_wrist_anchor_basis.md) - OVR 手アンカーの実基準は「指≈(-0.27,-0.57,0.78)・グリップ様傾き」（±X 仮定は誤り）。Remy 手首ズレ真因＋prefab authored 姿勢を校正基準にしない
 - [table_duo_layout_tuning.md](table_duo_layout_tuning.md) - 卓/椅子/席/駒の初期配置をビルド不要ループで微調整（Setup 再生成→Remy 着座プレビュー→PNG 確認・数秒/周）
 - [table_duo_tabletop_prop_authoring.md](table_duo_tabletop_prop_authoring.md) - TableDuo 卓上に新ボードゲーム/プロップを追加する再利用レシピ（PlaceModelRealScale の grabbable/physics/scale/ccd/faceDown・コンポーネント一式・TableProps 手非衝突・SetSurfaceClamp・DiceRoller 静止面読み・BoardReset 全Grabbable自動・GLB前提・冪等Setup・罠）
-- [table_duo_pc_host_and_wiretap.md](table_duo_pc_host_and_wiretap.md) - PCホスト+Quest2台client運用フロー（tableduo-pc-host.ps1・起動の罠=スリープ/Linkダイアログ/ゴーストポート）/ WireTap記録(B/F9/GUI)+診断タグ4種 / 手アバター3大バグ根治記録（handSkeletonVersion・席フレーム契約・Remy指）/ 実機確認チェックリスト
+- [table_duo_pc_host_and_wiretap.md](table_duo_pc_host_and_wiretap.md) - PCホスト+Quest2台client運用フロー（tableduo-pc-host.ps1・起動の罠=スリープ/Linkダイアログ/ゴーストポート/**再接続ラチェット=「接続上限超過」連発は3プロセス全再起動**）/ 映像記録（俯瞰+FPV 2本AVI・rec_toggle・FPV自頭消し=nearclip 0.15・縦反転は実測確定済み）/ WireTap記録(F9・左下デバッグパネル)+診断タグ4種 / 手アバター3大バグ根治記録 / 実機確認チェックリスト

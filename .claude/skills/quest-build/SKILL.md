@@ -86,6 +86,16 @@ Unity のインクリメンタルビルドはランチャー stub（TableDuo.exe
 `Builds/tableduo-desktop/TableDuo_Data/level0` の mtime が正しいセンチネル。
 起動中の TableDuo.exe（PC ホスト）はビルド前に必ず kill（exe ロックで上書き失敗する）。
 
+**⚠ desktop ビルドが「DESKTOP 失敗: result=Unknown errors=0」で落ちる（2026-07-24 実害×2・コード修正済み）**:
+Editor.log に `Error building Player because scripts are compiling` が出ていたらこれ。旧
+BuildTableDuoDesktop が手動 `SwitchActiveBuildTarget`（Android→Standalone）で script 再コンパイルを
+予約した直後に BuildPlayer を呼ぶ競合で、**finally が Android へ戻すため再実行しても無限に同じ失敗を
+再現**していた（2ed040a で APK 経路と同じ「切替は BuildPlayer 内部に任せる」形へ修正済み）。
+教訓: **Editor メニューからのビルドで platform を手動切替してはいけない**（`BuildPlayerOptions.target`
+に任せる）。ビルド失敗の診断は必ず Editor.log の `BuildVariants` 前後を読む — errors=0 の失敗は
+コンパイル競合かシーン欠落で、リトライではなく原因の除去が要る。修正後の active target は
+Standalone のまま残る（Library 管理・git 差分なし・次の APK ビルドが自分で Android へ切替する）。
+
 ### 3. インストール（adb）
 
 ```
