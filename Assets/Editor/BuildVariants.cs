@@ -55,17 +55,23 @@ namespace FixedCamVr.EditorTools
         [MenuItem("Tools/FixedCamVr/Diagnostics/Build TableDuo Desktop (L0 test)", priority = 240)]
         public static void BuildTableDuoDesktop()
         {
+            // ⚠ ここで手動 SwitchActiveBuildTarget しない（2026-07-24 実害×2）。
+            // 非バッチの Editor では切替が script 再コンパイルを予約し、直後の BuildPlayer が
+            // 「Error building Player because scripts are compiling」で必ず失敗する。
+            // さらに旧実装は finally で Android へ戻していたため、再実行しても同じ競合を無限に再現した。
+            // APK 経路（BuildVariant）と同じく target 切替は BuildPlayer 内部に任せるのが正
+            // （BuildPlayer は切替とコンパイルをビルドの一部として同期処理する）。
+            // ビルド後の active target は Standalone のまま残る（APK 経路が Android のまま残すのと同じ流儀。
+            // EditorUserBuildSettings は Library 管理で git 差分にはならない）。
+            if (EditorApplication.isCompiling)
+            {
+                Debug.LogError("[BuildVariants] DESKTOP 中断: スクリプトコンパイル中。完了後にもう一度実行してください");
+                return;
+            }
             string prevProduct = PlayerSettings.productName;
-            var prevGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
-            var prevTarget = EditorUserBuildSettings.activeBuildTarget;
             try
             {
                 StampTableDuoBuildInfo();
-                if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.StandaloneWindows64)
-                {
-                    EditorUserBuildSettings.SwitchActiveBuildTarget(
-                        BuildTargetGroup.Standalone, BuildTarget.StandaloneWindows64);
-                }
                 PlayerSettings.productName = "TableDuo";
 
                 var opts = new BuildPlayerOptions
@@ -90,10 +96,6 @@ namespace FixedCamVr.EditorTools
             finally
             {
                 PlayerSettings.productName = prevProduct;
-                if (EditorUserBuildSettings.activeBuildTarget != prevTarget)
-                {
-                    EditorUserBuildSettings.SwitchActiveBuildTarget(prevGroup, prevTarget);
-                }
             }
         }
 
