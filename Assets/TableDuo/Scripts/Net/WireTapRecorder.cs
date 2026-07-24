@@ -47,7 +47,16 @@ namespace TableDuoVr.Net
         private Action<AvatarPose>? _onSent;
         private Action<ulong, AvatarPose>? _onRecv;
 
+        // デバッグ専用 GUI（左下）の遅延生成スタイル
+        private GUIStyle? _titleStyle;
+        private GUIStyle? _hintStyle;
+
         public bool IsRecording => _writer != null;
+        /// <summary>記録済み行数（送信 / 受信）。FacilitatorPanel の記録セクションが表示に使う。</summary>
+        public int SentRows => _sentRows;
+        public int RecvRows => _recvRows;
+        /// <summary>記録の開始/停止トグル（FacilitatorPanel のボタンから呼ぶ。F9 と同じ）。</summary>
+        public void ToggleRecording() => Toggle();
 
         private void Update()
         {
@@ -62,24 +71,38 @@ namespace TableDuoVr.Net
             }
         }
 
-        // PC ホスト（コントローラ無し）用の GUI ボタン。マウスで記録開始/停止できる。
-        // Quest（Android）では OnGUI ボタンにカーソルが無く押しにくいので出さない（F9 を使う）。
+        // 通信記録はデバッグ専用パネルとして画面左下に分離（2026-07-24）。運営パネル（FacilitatorPanel・
+        // 右端）は映像記録に置き換わり、WireTap は調査運用では通常使わない。旧: 独自 GUI を画面右上に
+        // 描いて FacilitatorPanel と重なり文字が潰れていた → 左下（左上 Spectator / ConnectionManager・
+        // 右端 FacilitatorPanel と非重複）へ移設。キーボード F9 トグル（Update）と公開 API
+        // （ToggleRecording / IsRecording）は従来どおり。
         private void OnGUI()
         {
-            if (Application.platform == RuntimePlatform.Android) return;
+            if (Application.platform == RuntimePlatform.Android) return; // PC ホスト専用
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsListening || !nm.IsServer) return;
 
-            const float w = 240f, h = 64f;
-            var area = new Rect(Screen.width - w - 12f, 12f, w, h);
+            if (_titleStyle == null)
+            {
+                _titleStyle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, fontSize = 13 };
+                _hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 10, wordWrap = true };
+                _hintStyle.normal.textColor = new Color(0.7f, 0.7f, 0.7f);
+            }
+
+            const float w = 250f, h = 118f;
+            var area = new Rect(12f, Screen.height - h - 12f, w, h);
             GUILayout.BeginArea(area, GUI.skin.box);
+            GUILayout.Label("【デバッグ】通信記録（WireTap）", _titleStyle);
+            GUILayout.Label("調査運用では通常使いません", _hintStyle);
             if (IsRecording)
             {
-                GUILayout.Label($"● 記録中  sent={_sentRows} recv={_recvRows}");
-                if (GUILayout.Button("■ 記録停止 (F9)")) Toggle();
+                GUILayout.Label($"● 記録中  送信 {_sentRows} / 受信 {_recvRows}");
+                if (GUILayout.Button("■ 記録を停止（F9）")) Toggle();
             }
             else
             {
-                GUILayout.Label("WireTap 記録: 停止中");
-                if (GUILayout.Button("● 記録開始 (F9)")) Toggle();
+                GUILayout.Label("停止中");
+                if (GUILayout.Button("● 記録を開始（F9）")) Toggle();
             }
             GUILayout.EndArea();
         }

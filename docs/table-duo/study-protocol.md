@@ -55,7 +55,8 @@ PC ホストは席を持たない **Spectator ロール**で参加し、両プ�
 
 - **⚠ 観戦 PC の `tdv_hand`（-tdvHand）も両 Quest と同じ値にする**: 手の見た目は端末ローカル描画のため、観戦だけ違う値だと観戦記録の見た目が条件と食い違う。なお観戦 PC は手キャプチャが無いため Realistic/Robot は自動で Default 白手にフォールバックする（警告ログが出る）— **見た目条件の映像記録は scrcpy（人役 HMD ミラー）を正とする**
 - **⚠ 同意書に観戦・記録の説明が必要**: ファシリテータが観戦画面で観察し、スクリーンショット/リプレイを記録することを事前に開示・同意取得する（[consent-template.md](consent-template.md) に項目あり）。観戦の存在が行動を変えうる点は研究者判断で開示範囲を決める
-- 通信の生データ検証が要る時は WireTap（PC 画面の GUI ボタン / F9、Quest は右 B）→ `tdv_wiretap_*.csv` + 診断ログ [TDV-WIRE]/[TDV-DRAW]（詳細 → `.claude/memory/table_duo_pc_host_and_wiretap.md`）
+- **観戦 PC の映像記録**（運営パネル右端「映像記録」→ 開始/停止）で俯瞰 + 人役 FPV の 2 視点を同時に AVI 録画できる（`persistentDataPath/tdv_recordings/tdv_rec_*/{overhead.avi, person_fpv.avi}`・MJPG-AVI で Windows 標準プレイヤー/VLC 再生可）。**ただし観戦 PC は手キャプチャが無く見た目が Default にフォールバックするため、見た目条件の正は上記 scrcpy（人役 HMD ミラー）**。俯瞰/人役 FPV 記録は行動観察・時刻合わせ用
+- 通信の生データ検証が要る時は WireTap（PC 画面左下の【デバッグ】パネルのボタン / F9。右コントローラ B バインドは撤去済み）→ `tdv_wiretap_*.csv` + 診断ログ [TDV-WIRE]/[TDV-DRAW]（詳細 → `.claude/memory/table_duo_pc_host_and_wiretap.md`）
 
 ## 1. セッション台本（40分目安）
 

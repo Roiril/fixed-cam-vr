@@ -21,8 +21,8 @@ namespace TableDuoVr.Net
     {
         public enum ViewMode { Overhead, FullFpv, HandFpv }
 
-        [Tooltip("一人称視点の視野角（フラットモニタ向け。実 HMD の 90 は歪むので狭め）")]
-        [SerializeField] private float fpvFieldOfView = 60f;
+        [Tooltip("一人称視点の視野角（フラットモニタ向け。実 HMD の 90 は歪むので狭め。俯瞰より広めに取り周辺の手・盤面を入れる）")]
+        [SerializeField] private float fpvFieldOfView = 75f;
         [Tooltip("一人称視点でカメラを頭 pose から前方（視線方向）へずらす量。頭は潰すので通常 0 でよい")]
         [SerializeField] private float fpvEyeForward = 0f;
 
@@ -42,6 +42,22 @@ namespace TableDuoVr.Net
         private TableDuoPlayer? _fpvTarget;   // 現在追従中のプレイヤー（FPV 時）
         private TableDuoPlayer? _collapsed;   // 頭を潰しているプレイヤー（戻す用）
         private bool _fpvReady;               // FPV 対象の頭 pose が取れているか（GUI 表示用）
+
+        /// <summary>観戦カメラが起動済みか。<see cref="SpectatorRecorder"/> / FacilitatorPanel が録画可否判定に使う。</summary>
+        public bool IsActive => _active;
+        /// <summary>一人称視点の視野角。録画用 FPV カメラが表示と同じ画角で撮るため参照する。</summary>
+        public float FpvFieldOfView => fpvFieldOfView;
+        /// <summary>表示側が現在頭を潰しているプレイヤー（未潰し=null）。録画カメラの per-camera 潰しを
+        /// 描画後に「表示側の状態」へ戻すため <see cref="SpectatorRecorder"/> が参照する。</summary>
+        public TableDuoPlayer? DisplayCollapsedPlayer => _collapsed;
+
+        /// <summary>俯瞰 framing（位置・注視点・FOV）を外部へ公開。録画用の静止俯瞰カメラが
+        /// <see cref="ComputeFraming"/> を重複実装せず流用するための読み取り口。</summary>
+        public void GetOverheadPose(out Vector3 camPos, out Vector3 look, out float fov)
+        {
+            ComputeFraming(out camPos, out look);
+            fov = fieldOfView;
+        }
 
         public void Activate()
         {

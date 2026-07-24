@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: cdf1e893-5309-4360-bb69-b442c299a6ef
+  modified: 2026-07-24T00:26:20.482Z
 ---
 
 TableDuo（[[table_duo_study_status]]）の実機運用を楽にする 2026-07-06 追加分。コミット `feat：TableDuo ソロ実機検証機能＋操作性改善` 系。
@@ -25,22 +26,32 @@ PC (NGO host・spectator・L0 desktop build)  ← Quest A: client/full(人)  ←
 - host を `-e tdv_fake on` で起動すると [ConnectionManager.ConfigureFakeSenderIfRequested](../../Assets/TableDuo/Scripts/Net/ConnectionManager.cs) が **FakeHandDriver を ON**（Priority=10 で実トラッキングより優先）→ 固定の合成モーションを通常経路で送信し続ける。L0 と違い OVRCameraRig は生かすので HMD 描画は通常。
 - 「相手が同じ動きをするズル」ではなく、受信側は無改変＝ネットワーク経路の実測になる。
 
-## WireTap 通信記録（B ボタン / F9）
-[WireTapRecorder](../../Assets/TableDuo/Scripts/Net/WireTapRecorder.cs)（Systems・Setup 配線）。**右コントローラ B（Quest）/ キーボード F9（PC host）**でトグル。開始〜停止の間、通信上のアバター動作を CSV 化:
+## WireTap 通信記録（F9・デバッグ専用パネル）
+[WireTapRecorder](../../Assets/TableDuo/Scripts/Net/WireTapRecorder.cs)（Systems・Setup 配線）。**キーボード F9（PC host）**でトグル（右コントローラ B バインドは 2026-07-18 撤去済み）。開始〜停止の間、通信上のアバター動作を CSV 化:
 - `dir=sent`: この端末が送出した pose（[ConnectionManager.LocalPoseSent](../../Assets/TableDuo/Scripts/Net/ConnectionManager.cs) ＝ワイヤ送出点タップ。**ローカル描画の手は経由しない**＝手側検証の主対象）
 - `dir=recv`: 受信・Seq フィルタ通過後の相手 pose
 - PC host（spectator）は送出しないので recv のみ（両 client 分＝origin 列で判別）＝両者のワイヤ全体像
 - 出力 `persistentDataPath/tdv_wiretap_yyyyMMdd_HHmmss.csv`（列: tMs,dir,origin,seq,captureMs,tracked/pinch,head pos/euler,wrist L/R pos,indexBend L/R）。2s ごと flush。
+- **GUI は画面左下の「【デバッグ】通信記録（WireTap）」パネルへ分離（2026-07-24）**。運営パネル（FacilitatorPanel・右端）は映像記録に置き換わり、WireTap は調査運用では通常使わない（デバッグ用と一目で分かる名前・「調査運用では通常使いません」注記付き）。旧: WireTap 独自 GUI を右上に描いて FacilitatorPanel と重なっていた → 左上（Spectator / ConnectionManager）・右端（FacilitatorPanel）と非重複の左下へ移設。表示条件は FacilitatorPanel と同じ（非 Android + IsServer && IsListening）で常時表示（F10 連動なし）。
+
+## 映像記録（俯瞰+人役 FPV の 2 本 AVI・2026-07-24）
+[SpectatorRecorder](../../Assets/TableDuo/Scripts/Net/SpectatorRecorder.cs) + [MjpegAviWriter](../../Assets/TableDuo/Scripts/Net/MjpegAviWriter.cs)。**運営パネル（FacilitatorPanel・右端）の「映像記録」セクション**で開始/停止（観戦カメラが Activate 済みの PC host でのみ表示。SpectatorRecorder は on-demand 生成）。
+- **2 視点を同時録画**: 俯瞰（SpectatorController の Overhead framing/FOV=43 を流用・静止）+ 人役 FPV（Role.Full の頭 world pose に毎フレ追従・FOV=75）。表示用の 1 台の観戦カメラとは独立にオフスクリーンカメラ 2 本を生成（1280x720@30fps・JPEG q75）。
+- **頭潰しの両立**: FPV 録画カメラの描画直前だけ人役の頭を潰し（`RenderPipelineManager.beginCameraRendering`）、俯瞰では戻す。描画後は表示側の潰し状態へ復元（表示カメラの見た目を壊さない）。
+- **保存先**: `persistentDataPath/tdv_recordings/tdv_rec_<yyyyMMdd_HHmmss>/{overhead.avi, person_fpv.avi}`。MJPG-AVI なので **Windows 標準プレイヤー / VLC でそのまま再生可**。停止/OnDestroy/OnApplicationQuit で確実に Close（ファイル破損防止）。
+- パイプライン: Update で 1/30s ごと `AsyncGPUReadback`（各カメラ in-flight 上限 4）→ メインスレッドで JPEG エンコード → bounded キュー（容量 60・満杯は drop 計上）→ writer スレッドで AVI へ書き込み。人役未接続の間は俯瞰 pose に据え置き（パネルに「人役 未接続」表示）。
+- **⚠ 実機未検証（2026-07-24 実装）**: 縦反転（`SystemInfo.graphicsUVStartsAtTop` 判定・逆なら SpectatorRecorder の `_flipVertical` 1 箇所で反転）とパフォーマンス（2 本の GPU readback + JPEG エンコード負荷）は要実機確認。
 
 ## 観戦カメラの視点切替（PC ホスト画面・2026-07-13）
 PC ホスト（spectator）画面**左上の GUI ボタン／数字キー 1-3** で観戦カメラを3モード切替（[SpectatorController](../../Assets/TableDuo/Scripts/Net/SpectatorController.cs)）:
-- **1=俯瞰**（既定・両者を等距離で俯瞰）/ **2=人役視点**（席0 の完全一人称）/ **3=手役視点**（席1 の完全一人称）
-- 一人称は対象プレイヤーの頭 world pose にカメラを毎フレ追従し、当人の頭だけ潰す（胴・腕・手は残る＝体を見下ろせる）。純ローカル＝ネット非関与・Quest client 無変更。未接続なら「（対象 未接続）」表示でカメラ据え置き。WireTap の GUI（右上）とは別領域
+- **1=俯瞰**（既定・両者を等距離で俯瞰・FOV=43）/ **2=人役視点**（席0 の完全一人称・FOV=75）/ **3=手役視点**（席1 の完全一人称・FOV=75）
+- 一人称は対象プレイヤーの頭 world pose にカメラを毎フレ追従し、当人の頭だけ潰す（胴・腕・手は残る＝体を見下ろせる）。純ローカル＝ネット非関与・Quest client 無変更。未接続なら「（対象 未接続）」表示でカメラ据え置き。GUI は左上（映像記録・WireTap とは別領域）
+- **FPV FOV は 60→75 に広角化（2026-07-24）**（周辺の手・盤面を画に入れるため。`SpectatorController.fpvFieldOfView`）
 
 ## 操作ボタン（2026-07-06 現在）
 - **A（右手）単押し**: 視点リセット（席へ再センタ）。両手グリップ3秒長押しも維持（[ControllerRecenterWatcher](../../Assets/TableDuo/Scripts/Hands/ControllerRecenterWatcher.cs)）
   - **触覚フィードバック（2026-07-21）**: A 単押し=右手に Action 振動 / 両手グリップは進入=Ack →長押し中 HoldTick ランプ→3 秒で Fire（両手）。波形は両アプリ共通 [`HapticVocabulary`](../../Assets/TableDuo/Scripts/Hands/HapticPatterns.cs)、適用は [`TableDuoHaptics`](../../Assets/TableDuo/Scripts/Hands/TableDuoHaptics.cs)（Systems 直下・`Setup TableDuo Scene` が配置。watcher が Awake で FindObjectOfType）。ハンドトラッキング時・未接続時は無音（＝「押せてない/未接続」の切り分け）。実機未検証
-- **B（右手）単押し**: WireTap 記録トグル
+- **WireTap 記録**: F9（PC host）/ 左下デバッグパネルのボタン（右コントローラ B バインドは 2026-07-18 撤去）
 - **Y（左手）**: 手バリアント巡回（調査フラグ起動中は無効）
 
 ## コントローラ把持で手が消えない（マルチモーダル・2026-07-06）
