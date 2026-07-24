@@ -931,3 +931,91 @@ input:-webkit-autofill:active {
 .ce-strength { width: 80px; }
 .ce-strength-v { min-width: 34px; font-variant-numeric: tabular-nums; opacity: .6; }
 .ce-trim-start, .ce-trim-end, .ce-fade { width: 46px; text-align: right; }
+
+/* ===================================================================== */
+/* ⑰ 本番運用の安全装置（2026-07-25）— index.html / app.js               */
+/*    ・サーバ ● / Unity ● の 2 灯 + 未保存バッジ（ヘッダ）              */
+/*    ・危険なラッチ（カメラ固定 / 演出再生中）の警告バー                 */
+/*    ・本番前チェック / ラン状態の一枚絵 / 緊急操作の集約                */
+/* ===================================================================== */
+.st-unit { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.st-ng { color: var(--danger-color); }
+.st-dirty { font-size: 11px; white-space: nowrap; }
+.st-dirty.on { color: var(--warn-color); }
+
+/* 警告バー（ヘッダ直下・常時表示。ライブ / オーサリング両モードで出る） */
+.latch-bar, .server-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 20px; font-size: 12px; letter-spacing: .03em;
+}
+.latch-bar { border-bottom: 1px solid var(--warn-color); color: var(--warn-color);
+  background: rgba(255, 174, 94, 0.06); }
+.latch-bar .spacer { flex: 1; min-width: 8px; }
+.latch-text { font-weight: 600; }
+.server-bar { border-bottom: 1px solid var(--danger-color); color: var(--danger-color);
+  background: rgba(255, 107, 94, 0.08); }
+/* サーバ断: 画面全体を沈めて「この表示は今の真実ではない」ことを示す */
+body.server-down .multicam, body.server-down .timeline-sec,
+body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
+
+/* 本番前チェック */
+.preflight { padding: 10px 14px 0; }
+.pf-list { display: flex; flex-direction: column; gap: 1px; max-width: 1180px;
+  border: 1px solid var(--line-soft); }
+.pf-row { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px;
+  font-size: 12px; border-bottom: 1px solid rgba(255, 250, 240, 0.06); }
+.pf-row:last-child { border-bottom: none; }
+.pf-mark { flex: none; width: 18px; }
+.pf-label { flex: none; width: 130px; letter-spacing: .06em; opacity: var(--opacity-sub); }
+.pf-detail { flex: 1; min-width: 200px; }
+.pf-row.ok .pf-detail { opacity: var(--opacity-sub); }
+.pf-row.warn { color: var(--warn-color); }
+.pf-row.ng { color: var(--danger-color); }
+
+/* ラン状態の一枚絵 */
+.run-readout { max-width: 1180px; padding: 12px 14px; margin-bottom: 10px;
+  border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); }
+.run-main { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; }
+.run-lap, .run-zone { font-size: 26px; letter-spacing: .04em; font-variant-numeric: tabular-nums;
+  opacity: var(--opacity-mute); }
+.run-lap.on, .run-zone.on { color: var(--accent-color); opacity: 1; }
+.run-mode { font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  border: 1px solid var(--line-input); padding: 2px 8px; opacity: var(--opacity-sub); }
+.run-mode.on { border-color: var(--line-input); }
+.run-mode.reg { color: var(--warn-color); border-color: var(--warn-color); opacity: 1; }
+.run-mode.off { color: var(--danger-color); border-color: var(--danger-color); opacity: 1; }
+.run-next { margin-top: 8px; font-size: 12px; opacity: var(--opacity-sub); }
+.run-next.hot { color: var(--accent-color); opacity: 1; }
+
+/* 緊急操作（本番で押すものを 1 箇所に大きく） */
+.run-bar.emergency { gap: 10px; margin-bottom: 10px; }
+.run-bar.emergency button.big {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 10px 18px; font-size: 14px; letter-spacing: .04em; min-width: 190px;
+}
+.run-bar.emergency button.big small { font-size: 10px; letter-spacing: .02em; opacity: .7; }
+.run-bar.emergency button.armed {
+  border-color: var(--warn-color); color: var(--warn-color); opacity: 1;
+  box-shadow: inset 0 0 0 1px var(--warn-color);
+}
+.lock-btn { font-size: 11px; padding: 5px 10px; }
+.lock-btn.on { border-color: var(--warn-color); color: var(--warn-color); opacity: 1; }
+/* ライブ中の画質ロック: 触れないことを見た目でも示す */
+.app.fx-locked .fx-rows, .app.fx-locked .fx-reset { opacity: .35; pointer-events: none; }
+
+/* ライブモードのカメラ列: アクティブを大きく、他を小さく */
+.app[data-mode="live"] .cams { display: flex; gap: 12px; align-items: flex-start; }
+.app[data-mode="live"] .cam-col { flex: 1 1 0; min-width: 0; }
+.app[data-mode="live"] .cam-col.active { flex: 2.2 1 0; }
+.app[data-mode="live"] .cam-col:not(.active) .col-sec:nth-child(3) { display: none; }
+.app[data-mode="live"] .cam-col:not(.active) .cap-bar { display: none; }
+@media (max-width: 1040px) {
+  .app[data-mode="live"] .cams { flex-wrap: wrap; }
+  .app[data-mode="live"] .cam-col { flex: 1 1 300px; }
+}
+
+/* エクスポート結果: 焼き込んだ接続先と欠損 cue を最上段に */
+.export-hosts { font-size: 11px; margin-bottom: 6px; line-height: 1.7; white-space: normal; }
+.export-host { display: inline-block; margin-right: 10px; font-family: monospace;
+  color: var(--accent-color); }
+.export-missing { font-size: 11px; color: var(--danger-color); margin-bottom: 6px; white-space: normal; }

@@ -721,9 +721,13 @@ export function createFloorMap(container, deps) {
   }
 
   // Unity heartbeat が更新されたら呼ぶ（alive=false や hmd 欠落時はドット非表示）。
+  //   フィールド名は Unity 側 Heartbeat の headCourseX / headCourseZ / currentZone が正。
+  //   旧名（hmdX / hmdZ / zoneLabel）も受けて古いクライアントと両立させる。
   function onUnity(alive, u) {
-    if (alive && u && Number.isFinite(u.hmdX) && Number.isFinite(u.hmdZ)) {
-      live = { x: u.hmdX, z: u.hmdZ, label: u.zoneLabel || '', activeIndex: u.activeIndex };
+    const x = u && (Number.isFinite(u.headCourseX) ? u.headCourseX : u.hmdX);
+    const z = u && (Number.isFinite(u.headCourseZ) ? u.headCourseZ : u.hmdZ);
+    if (alive && Number.isFinite(x) && Number.isFinite(z)) {
+      live = { x, z, label: (u.currentZone || u.zoneLabel || ''), activeIndex: u.activeIndex };
     } else {
       live = null;
     }
@@ -736,5 +740,5 @@ export function createFloorMap(container, deps) {
   renderRegList();
   renderDirty();
   render();
-  return { onState, onUnity };
+  return { onState, onUnity, isDirty: () => dirty };
 }

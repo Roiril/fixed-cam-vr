@@ -26,6 +26,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -156,12 +157,24 @@ _unity_status = {'at': 0.0}
 
 
 def _mutate_show(fn):
-    """_show を fn で変更し rev++ → long-poll を起こして永続化。"""
+    """_show を fn で変更し rev++ → long-poll を起こして永続化。
+
+    書き込みは「1 世代バックアップ → tmp へ書く → os.replace」の順。
+    UI 側に undo が無い破壊的編集（周回削除・タイル塗り潰し等）から手で戻せるようにする。
+    復旧は show.json.bak を show.json にリネームしてサーバ再起動。
+    """
     with _show_cond:
         fn(_show)
         _show['rev'] = int(_show.get('rev', 0)) + 1
-        with open(SHOW_FILE, 'w', encoding='utf-8') as f:
+        try:
+            if os.path.isfile(SHOW_FILE):
+                shutil.copyfile(SHOW_FILE, SHOW_FILE + '.bak')
+        except OSError:
+            pass  # バックアップ失敗で本書き込みを止めない
+        tmp = SHOW_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(_show, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, SHOW_FILE)  # 書き込み途中で落ちても show.json は壊れない
         _show_cond.notify_all()
         return _show['rev']
 
@@ -834,9 +847,16 @@ class Handler(SimpleHTTPRequestHandler):
         with open(show_path, 'w', encoding='utf-8', newline='\n') as f:
             json.dump(show, f, ensure_ascii=False, indent=2)
         total = sum(c['size'] for c in copied)
+        # 焼き込んだカメラ接続先を返す（現地 DHCP の IP が verbatim に入るため、
+        # 「いつ・どの IP で焼いたか」が APK の唯一の手がかりになる。UI が必ず表示する）。
+        hosts = [{'id': c.get('id', '?'), 'host': c.get('host', ''),
+                  'port': c.get('port', 8080), 'pinned': bool(c.get('pinned'))}
+                 for c in show.get('cameras', [])]
         return self._json({'ok': True, 'outDir': out_dir, 'showJson': show_path,
                            'copied': copied, 'count': len(copied), 'totalBytes': total,
-                           'referencedCues': len(referenced), 'missingCues': missing})
+                           'referencedCues': len(referenced), 'missingCues': missing,
+                           'exportedAt': time.strftime('%Y-%m-%d %H:%M:%S'),
+                           'showRev': show.get('rev', 0), 'hosts': hosts})
 
     # timeline（segments[].cues[].cueId + insert.cueId）/ schedule.entries / control.activeCue が
     # 参照する cueId の集合。export-build の dangling 参照検出に使う。

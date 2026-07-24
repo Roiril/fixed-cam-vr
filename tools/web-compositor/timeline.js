@@ -23,6 +23,7 @@ export function createTimeline(container, deps) {
     <div class="tl-wrap">
       <div class="tl-row">
         <button class="tl-save accent">💾 保存</button>
+        <button class="tl-undo" title="直前の編集を取り消す（Ctrl+Z）" disabled>⟲ 元に戻す</button>
         <span class="tl-dirty"></span>
         <span class="spacer"></span>
         <button class="tl-validate" title="矢印キーで周回×ゾーン進行をシミュレートし、発火順と見える画を確認（ローカルのみ）">▶ 検証</button>
@@ -56,7 +57,33 @@ export function createTimeline(container, deps) {
   let cueEditor = null;      // 遅延生成（WebGL context 節約）
   let editorOpen = false;    // cue エディタ展開中（onState でインスペクタを潰さないためのガード）
 
-  function markDirty() { dirty = true; renderDirty(); }
+  // ---- undo（直前の編集へ戻す）------------------------------------------------
+  //   markDirty() は必ず「変更した直後」に呼ばれる契約。そこで
+  //     ① 直前に控えていたスナップショット（= この変更の前の状態）を undo スタックへ積む
+  //     ② 変更後の状態を新しいスナップショットとして控え直す
+  //   とすることで、個々の編集ハンドラに手を入れずに 1 手戻しを実現する。
+  const UNDO_MAX = 30;
+  let undoStack = [];
+  let shadow = null;             // 直前の確定状態（次の編集の undo 先）
+  let savedSnap = null;          // 最後に保存 / 取り込みした状態（未保存判定の基準）
+  const snap = () => JSON.stringify({ tl: timeline, lapCount });
+  function resetUndo() { undoStack = []; shadow = snap(); savedSnap = shadow; renderUndo(); }
+  function renderUndo() { const b = q('.tl-undo'); if (b) b.disabled = !undoStack.length; }
+  function undo() {
+    if (!undoStack.length) return;
+    const prev = JSON.parse(undoStack.pop());
+    timeline = prev.tl; lapCount = prev.lapCount;
+    shadow = snap();
+    dirty = shadow !== savedSnap;   // 保存済みの内容まで戻ったら未保存表示も消す
+    sel = null; closeCueEditor();
+    renderDirty(); renderUndo(); render(); renderInspector();
+    validation.refresh();
+  }
+  function markDirty() {
+    if (shadow) { undoStack.push(shadow); if (undoStack.length > UNDO_MAX) undoStack.shift(); }
+    shadow = snap();
+    dirty = true; renderDirty(); renderUndo();
+  }
   function renderDirty() { dirtyEl.textContent = dirty ? '● 未保存' : ''; dirtyEl.className = 'tl-dirty' + (dirty ? ' on' : ''); }
 
   // ---- アクセサ ---------------------------------------------------------------
@@ -442,9 +469,22 @@ export function createTimeline(container, deps) {
 
   // ---- 周回の増減 ------------------------------------------------------------
   q('.tl-lap-add').onclick = () => { lapCount++; markDirty(); render(); };
+  q('.tl-undo').onclick = undo;
+  // Ctrl+Z（入力欄では横取りしない。タイムラインが画面に出ている時だけ効く）
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || (e.key !== 'z' && e.key !== 'Z')) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    if (!container.offsetParent) return;   // 非表示（ライブモード）なら無効
+    e.preventDefault(); undo();
+  });
+
   q('.tl-lap-del').onclick = () => {
     if (lapCount <= 1) return;
     const removed = lapCount;
+    // その周に編集済みの区間があるなら確認する（undo はあるが保存後は戻せない）
+    const lost = timeline.segments.filter((s) => s.lap >= removed).length;
+    if (lost && !confirm(`${removed} 周目には編集済みの区間が ${lost} 個あります。周ごと削除しますか？`)) return;
     timeline.segments = timeline.segments.filter((s) => s.lap < removed);
     lapCount--;
     if (sel && sel.lap >= lapCount + 1) { sel = null; closeCueEditor(); renderInspector(); }
@@ -455,7 +495,7 @@ export function createTimeline(container, deps) {
   q('.tl-save').onclick = async () => {
     timeline.rev = (parseInt(timeline.rev, 10) || 0) + 1;
     const res = await deps.saveTimeline(serializeTimeline(timeline));
-    if (res && res.ok !== false) { dirty = false; renderDirty(); }
+    if (res && res.ok !== false) { dirty = false; renderDirty(); resetUndo(); }
     else { dirtyEl.textContent = '✕ 保存失敗'; }
   };
 
@@ -690,7 +730,7 @@ export function createTimeline(container, deps) {
     cameras = deps.getCameras ? deps.getCameras() : (state?.cameras || []);
     cues = deps.getCues ? deps.getCues() : (state?.cues || []);
     order = deps.getCourseOrder ? deps.getCourseOrder() : (state?.layout?.course?.order || null);
-    if (!dirty) { adopt(state); recomputeLapCount(); }
+    if (!dirty) { adopt(state); recomputeLapCount(); resetUndo(); }
     if (sel && sel.camera >= cameras.length) { sel = null; closeCueEditor(); }
     validation.refresh();
     render();
@@ -701,8 +741,10 @@ export function createTimeline(container, deps) {
 
   onState(null);
   renderDirty();
+  resetUndo();
   return {
     onState,
+    isDirty: () => dirty,
     destroy() { validation.destroy(); if (cueEditor) cueEditor.destroy(); },
   };
 }

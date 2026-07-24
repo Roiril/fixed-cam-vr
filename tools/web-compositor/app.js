@@ -29,21 +29,84 @@ const columns = new Map();   // camId -> column controller
 let floorMap = null;
 let timeline = null;
 let lastDiscovery = { devices: [], conflicts: [] };
+// 卓サーバ（capture-server.py）の生死。落ちても画面は最後の絵で生き続けるので明示的に見張る。
+let serverAlive = false;
+let lastServerOkAt = 0;
+// ライブ中の画質スライダ誤操作ロック（ライブモードで既定 ON）。
+let fxLocked = true;
 
-// ---- ステータスバー ---------------------------------------------------------
+// タイムライン / フロアマップの未保存編集（保存先が show.json = 消えると戻せない）。
+function anyDirty() {
+  const t = timeline && timeline.isDirty && timeline.isDirty();
+  const f = floorMap && floorMap.isDirty && floorMap.isDirty();
+  return { timeline: !!t, floorMap: !!f, any: !!(t || f) };
+}
+
+// ---- ステータスバー（サーバ ● / Unity ● の 2 灯 + 未保存バッジ）--------------
 function renderStatus() {
+  const sdot = $('#stServerDot'), sinfo = $('#stServerInfo');
   const dot = $('#stDot'), info = $('#stInfo'), sync = $('#stSync');
-  dot.className = 'st-dot ' + (unityAlive ? 'on' : 'off');
-  if (!unityAlive) { info.textContent = 'Unity: 未接続'; sync.textContent = ''; return; }
-  const u = lastUnity;
-  info.textContent = `Unity: ${u.activeCamera || '?'} / ${(u.recvFps || 0).toFixed(1)}fps`
-    + (u.playingCue ? ` / 🎬 ${u.playingCue}` : '')
-    + (u.cameraOverride ? ` / 🔒 ${u.cameraOverride}` : '')
-    + (u.simulator ? '（仮想）' : '');
-  if (state && typeof u.appliedRev === 'number') {
-    sync.textContent = u.appliedRev >= state.rev ? '✓ 反映済み' : `⏳ 同期中 (${u.appliedRev}/${state.rev})`;
-    sync.className = 'st-sync ' + (u.appliedRev >= state.rev ? 'ok' : 'wait');
+  if (sdot) {
+    sdot.className = 'st-dot ' + (serverAlive ? 'on' : 'off');
+    const ago = lastServerOkAt ? Math.round((Date.now() - lastServerOkAt) / 1000) : null;
+    sinfo.textContent = serverAlive ? 'サーバ: 応答中'
+      : (ago == null ? 'サーバ: 未応答' : `サーバ: 断（最終応答 ${ago}s前）`);
+    sinfo.className = serverAlive ? '' : 'st-ng';
   }
+  const bar = $('#serverBar');
+  if (bar) bar.style.display = serverAlive ? 'none' : '';
+  document.body.classList.toggle('server-down', !serverAlive);
+
+  dot.className = 'st-dot ' + (unityAlive ? 'on' : 'off');
+  const u = lastUnity;
+  if (!unityAlive) { info.textContent = 'Unity: 未接続'; sync.textContent = ''; sync.className = 'st-sync'; }
+  else {
+    info.textContent = `Unity: ${u.activeCamera || '?'} / ${(u.recvFps || 0).toFixed(1)}fps`
+      + (u.playingCue ? ` / 🎬 ${u.playingCue}` : '')
+      + (u.cameraOverride ? ` / 🔒 ${u.cameraOverride}` : '')
+      + (u.simulator ? '（仮想）' : '');
+    if (state && typeof u.appliedRev === 'number') {
+      sync.textContent = u.appliedRev >= state.rev ? '✓ 反映済み' : `⏳ 同期中 (${u.appliedRev}/${state.rev})`;
+      sync.className = 'st-sync ' + (u.appliedRev >= state.rev ? 'ok' : 'wait');
+    }
+  }
+  renderDirtyBadge();
+}
+
+// 未保存バッジ（ライブモードでも見えるようヘッダに置く）。
+function renderDirtyBadge() {
+  const el = $('#stDirty'); if (!el) return;
+  const d = anyDirty();
+  const names = [d.timeline && 'タイムライン', d.floorMap && 'フロアマップ'].filter(Boolean);
+  el.textContent = d.any ? `● 未保存: ${names.join(' / ')}` : '';
+  el.className = 'st-dirty' + (d.any ? ' on' : '');
+}
+
+// ---- 危険なラッチの警告（show.json 由来 = Unity 未接続でも見える）------------
+//   cameraOverride（カメラ固定）と activeCue（演出再生中）は show.json に永続する。
+//   前の体験者の状態が残ったまま次を始めると「歩いても切り替わらない」事故になる。
+function renderLatchBar() {
+  const bar = $('#latchBar'); if (!bar) return;
+  const ctrl = (state && state.control) || {};
+  const ovr = ctrl.cameraOverride || '';
+  const cue = ctrl.activeCue || '';
+  const parts = [];
+  if (ovr) parts.push(`🔒 カメラ ${ovr} に固定中（ゾーン自動切替が止まっています）`);
+  if (cue) parts.push(`🎬 演出 ${cue} が再生指定中`);
+  bar.style.display = parts.length ? '' : 'none';
+  const t = $('#latchText');
+  if (t) t.textContent = '⚠ ' + parts.join(' ／ ');
+  // 🚶 ボタンの状態（固定中だけ点灯）
+  const auto = $('#emgAuto');
+  if (auto) auto.classList.toggle('armed', !!ovr);
+  const stop = $('#emgStop');
+  if (stop) stop.classList.toggle('armed', !!cue);
+}
+if ($('#latchClearAll')) {
+  $('#latchClearAll').onclick = async () => {
+    await postCommand({ type: 'setCameraOverride', camera: null });
+    await postCommand({ type: 'stopCue' });
+  };
 }
 
 // アクティブカメラ id（heartbeat の index 優先）
@@ -65,7 +128,7 @@ function buildColumn(cam, index) {
       <b class="col-name">カメラ ${cam.id}</b>
       <span class="col-src"></span>
       <span class="col-status">接続中…</span>
-      <button class="col-switch" title="Quest の表示をこのカメラに切り替える（ゾーン自律は一時オフ。戻すのは上部の 🚶）">📺 切替</button>
+      <button class="col-switch" title="Quest の表示をこのカメラに固定する（ゾーン自動切替は止まる。戻すのは上部の警告バー ⛑ か 🚨 ライブ運用の 🚶）">📺 切替</button>
     </div>
 
     <div class="col-sec">
@@ -191,17 +254,21 @@ function buildColumn(cam, index) {
   refs.liveImg.crossOrigin = 'anonymous';
   function connectLive() {
     const c = refs.cam;
+    refs.liveOk = false;
     refs.statusEl.textContent = '接続中…'; refs.statusEl.className = 'col-status';
     refs.liveImg.src = `${streamBase()}/cam?host=${encodeURIComponent(c.host || '')}`
       + `&port=${c.port || 8080}&path=/video`
       + (c.auth ? `&auth=${encodeURIComponent(c.auth)}` : '') + `&t=${Date.now()}`;
   }
+  refs.liveOk = false;   // 本番前チェックが読む「この列に実映像が来ているか」
   refs.liveImg.addEventListener('load', () => {
     refs.statusEl.textContent = '● LIVE'; refs.statusEl.className = 'col-status ok';
+    refs.liveOk = true;
     refs.applyAspect && refs.applyAspect();
   });
   refs.liveImg.addEventListener('error', () => {
     refs.statusEl.textContent = '✕ 切断 — 再試行'; refs.statusEl.className = 'col-status ng';
+    refs.liveOk = false;
     clearTimeout(refs.retry); refs.retry = setTimeout(connectLive, 5000);
   });
   refs.connectLive = connectLive;
@@ -373,6 +440,7 @@ function renderColumns() {
       columns.set(cam.id, refs);
       wrap.appendChild(refs.el);
     });
+    applyFxLock();   // 作り直した列にもライブロックを掛け直す
   }
   cams.forEach((cam) => { const r = columns.get(cam.id); if (r) syncColumn(r, cam); });
 }
@@ -421,20 +489,26 @@ async function pollState() {
       const s = await (await fetch(`/state?rev=${rev}`)).json();
       if (s.rev !== rev) {
         rev = s.rev; state = s;
-        renderColumns(); renderStatus(); renderLiveCuePanel();
+        renderColumns(); renderStatus(); renderLiveCuePanel(); renderLatchBar();
         floorMap && floorMap.onState(s); timeline && timeline.onState(s);
+        renderRunPanel(); renderPreflight();
       }
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
   }
 }
 async function pollUnity() {
   for (;;) {
+    // このポーリング（2s）が卓サーバ生存の一次判定。/state は long-poll で最大 25s
+    // ブロックするため、サーバ断の検知には使えない。
     try {
       const s = await (await fetch('/unity/status')).json();
+      serverAlive = true; lastServerOkAt = Date.now();
       unityAlive = !!s.alive; lastUnity = s.status || {};
-    } catch { unityAlive = false; lastUnity = {}; }
+    } catch { serverAlive = false; unityAlive = false; lastUnity = {}; }
     renderStatus();
     renderRunPanel();
+    renderLatchBar();
+    renderPreflight();
     floorMap && floorMap.onUnity(unityAlive, lastUnity);
     for (const r of columns.values()) {
       const aid = activeCamId();
@@ -473,7 +547,6 @@ function recordAll(kind) {
 }
 
 // ---- 起動 -------------------------------------------------------------------
-$('#autoZone').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
 $('#openRecordings').onclick = () => fetch('/open-dir?dir=recordings').catch(() => {});
 
 // ---- モードナビ（🎬 事前オーサリング / 🚨 ライブ運用）------------------------
@@ -482,33 +555,115 @@ document.querySelectorAll('.mode-btn').forEach((b) => {
   b.onclick = () => {
     if (appEl) appEl.dataset.mode = b.dataset.mode;
     document.querySelectorAll('.mode-btn').forEach((x) => x.classList.toggle('active', x === b));
+    fxLocked = true;      // ライブへ入る / 戻るたびにロックを掛け直す
+    applyFxLock();
+    renderPreflight();
   };
 });
 
-// ---- ラン状態表示（Lap / cam / mode）+ ▶ ラン開始 ---------------------------
-function renderRunPanel() {
-  const el = $('#runState'); if (!el) return;
-  if (!unityAlive) { el.textContent = 'Unity 未接続'; el.className = 'run-state off'; return; }
-  const u = lastUnity;
-  const lap = (typeof u.lap === 'number') ? `Lap ${u.lap}` : 'Lap —';
-  const cam = u.cam || activeCamId() || '—';
-  const mode = u.mode || '—';
-  el.textContent = `${lap} / cam ${cam} / ${mode}`;
-  el.className = 'run-state on';
+// ---- ライブ中の画質ロック（誤操作で体験者の見え方を変えない）------------------
+function applyFxLock() {
+  const live = appEl && appEl.dataset.mode === 'live';
+  const lock = live && fxLocked;
+  if (appEl) appEl.classList.toggle('fx-locked', lock);
+  for (const r of columns.values()) {
+    for (const k of Object.keys(r.fxInputs)) r.fxInputs[k].disabled = lock;
+    const rst = r.el.querySelector('.fx-reset'); if (rst) rst.disabled = lock;
+  }
+  const btn = $('#fxLockBtn');
+  if (btn) {
+    btn.textContent = fxLocked ? '🔒 画質ロック中' : '🔓 画質ロック解除中';
+    btn.classList.toggle('on', !fxLocked);
+  }
 }
+if ($('#fxLockBtn')) $('#fxLockBtn').onclick = () => { fxLocked = !fxLocked; applyFxLock(); };
+
+// ---- ラン状態表示（Lap / ゾーン / 次の演出）+ 緊急操作 -----------------------
+// course.order を 1 周とみなし、(lap, cameraIndex) の区間から「次に演出がある区間」を探す。
+function courseOrder() {
+  const n = (state?.cameras || []).length;
+  const o = state?.layout?.course?.order;
+  const valid = Array.isArray(o) ? o.filter((i) => Number.isInteger(i) && i >= 0 && i < n) : [];
+  return valid.length ? valid : Array.from({ length: n }, (_, i) => i);
+}
+function segmentAt(lap, camIdx) {
+  const segs = state?.timeline?.segments;
+  if (!Array.isArray(segs)) return null;
+  return segs.find((s) => s.lap === lap && s.camera === camIdx) || null;
+}
+function segFireLabel(seg) {
+  if (!seg) return null;
+  const ids = (seg.cues || []).map((c) => c.cueId).filter(Boolean);
+  if (seg.hasInsert && seg.insert) ids.push(`⏢インサート→${camLabelOf(seg.insert.camera)}`);
+  return ids.length ? ids.join(', ') : null;
+}
+function camLabelOf(idx) {
+  const c = (state?.cameras || [])[idx];
+  return c ? c.id : `#${idx}`;
+}
+// 現在区間の次から順に、演出を持つ区間を最大 2 周ぶん探す。
+function findNextFire(lap, camIdx) {
+  const order = courseOrder();
+  if (!order.length) return null;
+  let pos = order.indexOf(camIdx);
+  if (pos < 0) pos = 0;
+  let l = lap;
+  for (let step = 1; step <= order.length * 2; step++) {
+    let p = pos + step;
+    const lapAdd = Math.floor(p / order.length);
+    p %= order.length;
+    const seg = segmentAt(l + lapAdd, order[p]);
+    const label = segFireLabel(seg);
+    if (label) return { lap: l + lapAdd, camera: order[p], label, steps: step };
+  }
+  return null;
+}
+function renderRunPanel() {
+  const lapEl = $('#runLap'), zoneEl = $('#runZone'), modeEl = $('#runMode'), nextEl = $('#runNext');
+  if (!lapEl) return;
+  const u = lastUnity;
+  const hasLap = unityAlive && typeof u.lap === 'number' && u.lap > 0;
+  const camIdx = unityAlive && typeof u.cam === 'number' && u.cam >= 0 ? u.cam
+    : (unityAlive && typeof u.activeIndex === 'number' ? u.activeIndex : -1);
+  lapEl.textContent = hasLap ? `Lap ${u.lap}` : 'Lap —';
+  lapEl.className = 'run-lap' + (unityAlive ? ' on' : '');
+  zoneEl.textContent = camIdx >= 0 ? `ゾーン ${camLabelOf(camIdx)}` : 'ゾーン —';
+  zoneEl.className = 'run-zone' + (unityAlive ? ' on' : '');
+  modeEl.textContent = unityAlive ? (u.mode || 'NORMAL') : 'Unity 未接続';
+  modeEl.className = 'run-mode' + (unityAlive ? (u.mode === 'REG' ? ' reg' : ' on') : ' off');
+
+  if (!nextEl) return;
+  if (!hasLap || camIdx < 0) { nextEl.textContent = '次の演出: —（Unity 未接続 / 周回未開始）'; nextEl.className = 'run-next'; return; }
+  const here = segFireLabel(segmentAt(u.lap, camIdx));
+  const next = findNextFire(u.lap, camIdx);
+  const parts = [];
+  if (here) parts.push(`このゾーン: ${here}`);
+  parts.push(next
+    ? `次: ${next.label}（Lap ${next.lap} / ゾーン ${camLabelOf(next.camera)}・${next.steps} ゾーン先）`
+    : '次: なし（この先の区間に演出未設定）');
+  nextEl.textContent = parts.join(' ／ ');
+  nextEl.className = 'run-next' + (here ? ' hot' : '');
+}
+// ▶ ラン開始 = runEpoch++ ＋ カメラ固定解除 ＋ 演出停止（前の体験者のラッチを持ち越さない）。
 if ($('#runStart')) {
   $('#runStart').onclick = async () => {
-    if (!confirm('体験者交代時に押します。周回とワンショット演出がリセットされます。実行しますか？')) return;
+    if (!confirm('体験者交代時に押します。\n・周回とワンショット演出をリセット\n・カメラ固定を解除（ゾーン自律へ）\n・再生中の演出を停止\n実行しますか？')) return;
     const s = await getState();
     const ctrl = { ...(s.control || {}) };
     ctrl.runEpoch = (parseInt(ctrl.runEpoch, 10) || 0) + 1;
+    ctrl.cameraOverride = null;
+    ctrl.activeCue = null;
     const r = await postState({ control: ctrl });
-    const el = $('#runState');
-    if (el && r && r.ok !== false) el.textContent = `▶ ラン開始（epoch ${ctrl.runEpoch}）`;
+    const el = $('#runNext');
+    if (el && r && r.ok !== false) el.textContent = `▶ ラン開始（epoch ${ctrl.runEpoch}）— 周回 / 演出 / 固定をリセットしました`;
   };
 }
+if ($('#emgAuto')) $('#emgAuto').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
+if ($('#emgStop')) $('#emgStop').onclick = () => postCommand({ type: 'stopCue' });
+
 // ---- カメラ切替タイミング（control.minDwellSec / switchCooldownSec）------------
 // 空 / 0 = 未指定（Unity 側でコード既定 0.5s に戻る。present 判定は Unity の ResolveTiming が >0 で行う）。
+// 入力を確定（change）したらその場で反映する。「適用」ボタンの押し忘れを構造から消す。
 async function loadSwitchTiming() {
   const dEl = $('#switchDwell'), cEl = $('#switchCooldown');
   if (!dEl || !cEl) return;
@@ -517,16 +672,128 @@ async function loadSwitchTiming() {
   dEl.value = (typeof ctrl.minDwellSec === 'number' && ctrl.minDwellSec > 0) ? ctrl.minDwellSec : '';
   cEl.value = (typeof ctrl.switchCooldownSec === 'number' && ctrl.switchCooldownSec > 0) ? ctrl.switchCooldownSec : '';
 }
-if ($('#switchTimingApply')) {
-  $('#switchTimingApply').onclick = async () => {
-    const s = await getState();
-    const ctrl = { ...(s.control || {}) };
-    ctrl.minDwellSec = parseFloat($('#switchDwell').value) || 0;
-    ctrl.switchCooldownSec = parseFloat($('#switchCooldown').value) || 0;
-    await postState({ control: ctrl });
-  };
+async function applySwitchTiming() {
+  const st = $('#switchTimingState');
+  const s = await getState();
+  const ctrl = { ...(s.control || {}) };
+  ctrl.minDwellSec = parseFloat($('#switchDwell').value) || 0;
+  ctrl.switchCooldownSec = parseFloat($('#switchCooldown').value) || 0;
+  const r = await postState({ control: ctrl });
+  if (!st) return;
+  const fmt = (v) => (v > 0 ? `${v}s` : '既定 0.5s');
+  st.textContent = (r && r.ok !== false)
+    ? `✓ 適用（滞在 ${fmt(ctrl.minDwellSec)} / CD ${fmt(ctrl.switchCooldownSec)}）`
+    : '✕ 適用失敗（サーバ断）';
+  st.className = 'ed-status ' + (r && r.ok !== false ? 'ok' : 'err');
 }
+if ($('#switchDwell')) $('#switchDwell').onchange = applySwitchTiming;
+if ($('#switchCooldown')) $('#switchCooldown').onchange = applySwitchTiming;
 loadSwitchTiming();
+
+// ---- ✅ 本番前チェック（自動更新）------------------------------------------
+//   「押す前に見る場所」を 1 枚に集約する。各行がそのまま切り分けの入口。
+function preflightRows() {
+  const rows = [];
+  const cams = state?.cameras || [];
+  rows.push(serverAlive
+    ? { s: 'ok', label: '卓サーバ', detail: '応答中（保存・配信 OK）' }
+    : { s: 'ng', label: '卓サーバ', detail: '断 — serve.ps1 を再起動（この画面の操作は届いていません）' });
+
+  const u = lastUnity;
+  if (!unityAlive) rows.push({ s: 'ng', label: 'Quest（Unity）', detail: 'heartbeat 未受信 — アプリ起動 / ShowServer host を確認' });
+  else {
+    const synced = state && typeof u.appliedRev === 'number' && u.appliedRev >= state.rev;
+    rows.push({
+      s: synced ? 'ok' : 'warn',
+      label: 'Quest（Unity）',
+      detail: `${u.mode === 'REG' ? '位置合わせモード中（体験開始前に退出）' : 'NORMAL'} / ${synced ? '設定反映済み' : `同期中 ${u.appliedRev}/${state?.rev}`}`,
+    });
+  }
+
+  const devices = (lastDiscovery && lastDiscovery.devices) || [];
+  const conflicts = new Set((lastDiscovery && lastDiscovery.conflicts) || []);
+  const bad = [];
+  for (const c of cams) {
+    const col = columns.get(c.id);
+    const live = col && col.liveOk;
+    const found = devices.some((d) => d.role === 'camera' && d.id === c.id);
+    if (conflicts.has(c.id)) bad.push(`${c.id}=二重ID`);
+    else if (!live) bad.push(`${c.id}=${found ? '未受信' : '未発見'}`);
+  }
+  rows.push(bad.length
+    ? { s: 'ng', label: `カメラ ${cams.length} 台`, detail: `${bad.join(' / ')} — 🩺 疎通診断で層を切り分け` }
+    : { s: 'ok', label: `カメラ ${cams.length} 台`, detail: '全台 LIVE 受信中' });
+
+  // 2 つ以上のカメラが同じ配信元を指していると、別ゾーンなのに同じ映像が出る
+  // （切替が「効いていない」ように見える）。LIVE 判定は通ってしまうのでここで別に見る。
+  const byHost = new Map();
+  for (const c of cams) {
+    if (!c.host) continue;
+    const k = `${c.host}:${c.port || 8080}`;
+    byHost.set(k, [...(byHost.get(k) || []), c.id]);
+  }
+  const dups = [...byHost.entries()].filter(([, ids]) => ids.length > 1);
+  if (dups.length) {
+    rows.push({
+      s: 'ng', label: '配信元の重複',
+      detail: dups.map(([h, ids]) => `${ids.join(' と ')} が同じ ${h}`).join(' / ')
+        + ' — 別ゾーンで同じ映像が出ます（📡 発見済み端末で ID を確認）',
+    });
+  }
+
+  const ctrl = state?.control || {};
+  rows.push((ctrl.cameraOverride || ctrl.activeCue)
+    ? { s: 'ng', label: 'ラッチ', detail: `${ctrl.cameraOverride ? `カメラ ${ctrl.cameraOverride} 固定中 ` : ''}${ctrl.activeCue ? `演出 ${ctrl.activeCue} 指定中` : ''}— ▶ ラン開始で解除される` }
+    : { s: 'ok', label: 'ラッチ', detail: 'カメラ固定なし / 演出停止中' });
+
+  const segs = state?.timeline?.segments || [];
+  const withCue = segs.filter((s) => (s.cues || []).length || s.hasInsert).length;
+  rows.push(withCue
+    ? { s: 'ok', label: 'タイムライン', detail: `${segs.length} 区間 / うち演出あり ${withCue}` }
+    : { s: 'warn', label: 'タイムライン', detail: '演出を持つ区間がありません（体験は映像切替のみ）' });
+
+  // 参照 cue の実在 + 素材の有無（📦 エクスポート前に気づけるようにする）
+  const cueMap = new Map((state?.cues || []).map((c) => [c.id, c]));
+  const missing = [], noSrc = [];
+  for (const s of segs) {
+    const ids = (s.cues || []).map((c) => c.cueId).filter(Boolean);
+    if (s.hasInsert && s.insert && s.insert.cueId) ids.push(s.insert.cueId);
+    for (const id of ids) {
+      const cue = cueMap.get(id);
+      if (!cue) { if (!missing.includes(id)) missing.push(id); }
+      else if (!cue.sourceUrl) { if (!noSrc.includes(id)) noSrc.push(id); }
+    }
+  }
+  if (missing.length) rows.push({ s: 'ng', label: '演出素材', detail: `未定義の cue: ${missing.join(', ')}` });
+  else if (noSrc.length) rows.push({ s: 'warn', label: '演出素材', detail: `素材未設定の cue: ${noSrc.join(', ')}` });
+  else rows.push({ s: 'ok', label: '演出素材', detail: '参照 cue はすべて実在・素材あり' });
+
+  const d = anyDirty();
+  rows.push(d.any
+    ? { s: 'warn', label: '未保存', detail: `${[d.timeline && 'タイムライン', d.floorMap && 'フロアマップ'].filter(Boolean).join(' / ')} が未保存（💾 で保存）` }
+    : { s: 'ok', label: '未保存', detail: 'なし' });
+  return rows;
+}
+function renderPreflight() {
+  const wrap = $('#preflight'); if (!wrap) return;
+  const rows = preflightRows();
+  const mark = { ok: '✅', warn: '⚠', ng: '❌' };
+  wrap.innerHTML = '';
+  for (const r of rows) {
+    const el = document.createElement('div');
+    el.className = 'pf-row ' + r.s;
+    el.innerHTML = `<span class="pf-mark">${mark[r.s]}</span><span class="pf-label">${escapeHtml(r.label)}</span>`
+      + `<span class="pf-detail">${escapeHtml(r.detail)}</span>`;
+    wrap.appendChild(el);
+  }
+}
+
+// 未保存のままタブを閉じる / リロードするのを止める（show.json 保存前の編集は復元できない）。
+window.addEventListener('beforeunload', (e) => {
+  if (!anyDirty().any) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 if ($('#recAllRaw')) $('#recAllRaw').onclick = () => recordAll('raw');
 if ($('#recAllView')) $('#recAllView').onclick = () => recordAll('view');
@@ -631,14 +898,37 @@ if ($('#timeline')) {
 if ($('#exportBuild')) {
   $('#exportBuild').onclick = async () => {
     const r = $('#exportResult');
+    // 未保存の編集は show.json に無い＝焼き込まれない。黙って古い内容を焼かせない。
+    const d = anyDirty();
+    if (d.any) {
+      const names = [d.timeline && 'タイムライン', d.floorMap && 'フロアマップ'].filter(Boolean).join(' / ');
+      r.textContent = `✕ ${names}が未保存です。先に 💾 保存してからエクスポートしてください`;
+      r.className = 'ed-status err';
+      return;
+    }
     r.textContent = 'エクスポート中…'; r.className = 'ed-status';
     try {
       const res = await (await fetch('/export-build', { method: 'POST' })).json();
       if (!res.ok) throw new Error(res.error || 'エクスポート失敗');
       const mb = (res.totalBytes / 1024 / 1024).toFixed(2);
-      r.textContent = `✓ ${res.count} ファイル / ${mb}MB → ${res.outDir}`;
+      r.textContent = `✓ ${res.exportedAt || ''}（rev ${res.showRev}）/ ${res.count} ファイル ${mb}MB → ${res.outDir}`;
       r.className = 'ed-status ok';
       const fl = $('#exportFiles'); fl.innerHTML = '';
+      // 焼き込んだカメラ接続先を最上段に出す。APK には現地 DHCP の IP がそのまま入るので、
+      // 「いつ・どの IP で焼いたか」が後から追える唯一の情報になる。
+      if (res.hosts && res.hosts.length) {
+        const h = document.createElement('div');
+        h.className = 'export-hosts';
+        h.innerHTML = `<b>焼き込んだ接続先</b>（現地 IP が固定される。IP が変わったら焼き直し）: `
+          + res.hosts.map((x) => `<span class="export-host">${escapeHtml(x.id)} = ${escapeHtml(x.host || '未設定')}:${x.port}${x.pinned ? ' 📌' : ''}</span>`).join(' ');
+        fl.appendChild(h);
+      }
+      if (res.missingCues && res.missingCues.length) {
+        const w = document.createElement('div');
+        w.className = 'export-missing';
+        w.textContent = `⚠ 参照先が存在しない cue: ${res.missingCues.join(', ')}（この区間は実機で何も出ません）`;
+        fl.appendChild(w);
+      }
       for (const c of res.copied) {
         const d = document.createElement('div'); d.className = 'export-file';
         d.textContent = `${c.from} → ${c.to}（${Math.round(c.size / 1024)}KB）`;

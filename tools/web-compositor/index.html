@@ -11,17 +11,34 @@
     <header>
       <h1>廻リ視 web compositor</h1>
       <div class="status-bar">
-        <span id="stDot" class="st-dot off"></span>
-        <span id="stInfo">Unity: 未接続</span>
+        <span class="st-unit" title="この卓サーバ（capture-server.py）との通信。落ちると保存も配信設定も届かない">
+          <span id="stServerDot" class="st-dot off"></span><span id="stServerInfo">サーバ: 確認中</span>
+        </span>
+        <span class="st-unit" title="Quest（Unity）からの heartbeat">
+          <span id="stDot" class="st-dot off"></span><span id="stInfo">Unity: 未接続</span>
+        </span>
         <span id="stSync" class="st-sync"></span>
+        <span id="stDirty" class="st-dirty" title="タイムライン / フロアマップに未保存の編集があります"></span>
         <span class="spacer"></span>
         <button id="recAllRaw" class="rec-btn" title="全カメラの生フレームを同時に録画 開始/停止（recordings/ へ）">⏺ 全カメラ録画(生)</button>
         <button id="recAllView" class="rec-btn" title="全カメラの最終映像（Quest と同じ絵）を同時に録画 開始/停止（recordings/ へ）">⏺ 全カメラ録画(Quest)</button>
         <button id="openRecordings" title="撮影した画像・動画のフォルダ（recordings/）を開く">📂 撮影フォルダ</button>
-        <button id="autoZone" title="カメラ手動固定を解除しゾーン自律へ戻す">🚶 ゾーン自律</button>
         <a href="sim.html" target="_blank" class="link" title="Unity なしで動作確認する仮想クライアント">🖥 仮想Quest</a>
       </div>
     </header>
+
+    <!-- 危険なラッチ（カメラ固定 / 演出再生中）の警告。show.json 由来なので Unity 未接続でも出る。
+         これが出たまま体験を始めると「歩いても切り替わらない」「最初から演出が出ている」になる。 -->
+    <div id="latchBar" class="latch-bar" style="display:none">
+      <span id="latchText" class="latch-text"></span>
+      <span class="spacer"></span>
+      <button id="latchClearAll" class="accent">⛑ 全部解除して自律へ</button>
+    </div>
+
+    <!-- サーバ断の警告（卓サーバが落ちると保存も Quest への配信も届かない） -->
+    <div id="serverBar" class="server-bar" style="display:none">
+      <span id="serverBarText">⚠ 卓サーバに接続できません — 保存も Quest への反映も届きません（serve.ps1 を確認）</span>
+    </div>
 
     <nav class="mode-nav" aria-label="運用モード切替">
       <button class="mode-btn active" data-mode="author" title="タイムライン・cue 作成・フロアマップ・エクスポート">🎬 事前オーサリング</button>
@@ -40,7 +57,7 @@
         マルチカメラ（監視）
         <span class="hint">列＝カメラ（監視専用）。各列は下→上に ① 生映像 → ③ 画像加工（カメラ単位の画質）→ ④ Quest 実映像（合成後）。📷/⏺ は ① 生映像の上＝生フレーム、④ 実映像の上＝合成済み（Quest と同じ絵）を recordings/ へ。cue・マスクの作成はタイムラインのセグメントインスペクタで行う。</span>
       </div>
-      <div class="blend-bar">
+      <div class="blend-bar" data-group="author">
         <span class="seg-label">境界ブレンド（合成跡を消す）</span>
         <label class="sld">フェザー <input id="bFeather" type="range" min="0" max="1" step="0.01" value="0.3"></label>
         <label class="chk"><input id="bColor" type="checkbox" checked> 色統計</label>
@@ -51,21 +68,39 @@
       <div id="cams" class="cams"></div>
     </section>
 
+    <section class="preflight" data-group="live">
+      <div class="mc-title">✅ 本番前チェック
+        <span class="hint">卓サーバ・Quest・カメラ・素材・ラッチ・未保存を自動で見張る（3 秒ごと）。全部 ✅ なら体験を始めてよい状態。⚠ / ❌ の行がそのまま原因の切り分けになる。</span>
+      </div>
+      <div id="preflight" class="pf-list"></div>
+    </section>
+
     <section class="runpanel" data-group="live">
       <div class="mc-title">🚨 ライブ運用 — ラン状態
-        <span class="hint">体験者 1 人分の周回。▶ ラン開始で周回とワンショット演出（once）をリセット（runEpoch++）。ラン状態は Unity heartbeat 由来（lap / cam / mode）で、Unity 側の実装が届くまでは「—」表示。</span>
+        <span class="hint">体験者 1 人分の周回。▶ ラン開始は「周回・ワンショット演出・カメラ固定・再生中演出」を一括リセットする（次の体験者へ前の状態を持ち越さない）。ラン状態は Unity heartbeat 由来。</span>
       </div>
-      <div class="run-bar">
-        <span id="runState" class="run-state off">Unity 未接続</span>
-        <span class="spacer"></span>
-        <button id="runStart" class="accent">▶ ラン開始（周回リセット）</button>
+      <div class="run-readout">
+        <div class="run-main">
+          <span id="runLap" class="run-lap">Lap —</span>
+          <span id="runZone" class="run-zone">ゾーン —</span>
+          <span id="runMode" class="run-mode">—</span>
+        </div>
+        <div id="runNext" class="run-next">次の演出: —</div>
+      </div>
+      <div class="run-bar emergency">
+        <button id="runStart" class="accent big">▶ ラン開始<small>周回 / 演出 / 固定を全リセット</small></button>
+        <button id="emgAuto" class="big">🚶 ゾーン自律へ戻す<small>カメラ固定を解除</small></button>
+        <button id="emgStop" class="big">■ 演出を止める<small>再生中の cue を停止</small></button>
       </div>
       <div class="run-bar">
         <label class="livecue-lbl">最小滞在 <input id="switchDwell" type="number" min="0" max="5" step="0.1" placeholder="0.5"> s</label>
         <label class="livecue-lbl">クールダウン <input id="switchCooldown" type="number" min="0" max="5" step="0.1" placeholder="0.5"> s</label>
-        <button id="switchTimingApply">切替タイミングを適用</button>
+        <span id="switchTimingState" class="ed-status"></span>
         <span class="spacer"></span>
-        <span class="hint">空 / 0 = 未指定（Unity 既定 0.5s）。歩くと切替が起きない時は下げ、切替が忙しい時は上げる（control.minDwellSec / switchCooldownSec）。</span>
+        <button id="fxLockBtn" class="lock-btn" title="ライブ中の誤操作防止。カメラ列の画質スライダを触れないようにする">🔒 画質ロック中</button>
+      </div>
+      <div class="run-bar">
+        <span class="hint">切替タイミングは入力するとその場で反映（空 / 0 = 未指定 → Unity 既定 0.5s）。歩くと切替が起きない時は下げ、切替が忙しい時は上げる（control.minDwellSec / switchCooldownSec）。</span>
       </div>
     </section>
 
