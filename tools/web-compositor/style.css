@@ -1019,3 +1019,57 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .export-host { display: inline-block; margin-right: 10px; font-family: monospace;
   color: var(--accent-color); }
 .export-missing { font-size: 11px; color: var(--danger-color); margin-bottom: 6px; white-space: normal; }
+
+/* ===================================================================== */
+/* ⑱ BGM オーサリング（2026-07-25）— timeline.js / app.js                 */
+/*    タイムライン下の BGM 帯 + 区間インスペクタの BGM ブロック + ライブラリ */
+/* ===================================================================== */
+/* BGM 帯（動画編集のオーディオトラック相当。区間セルと横幅を揃える） */
+.tl-bgm-lane { display: flex; gap: 0; margin-top: 3px; }
+.tl-bgm-cell {
+  flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 5px;
+  padding: 3px 6px; font-size: 10px; text-align: left;
+  border: none; border-left: 1px solid rgba(0, 0, 0, 0.35);
+  background: color-mix(in srgb, var(--trk, #888) 26%, transparent);
+  color: var(--trk, #ccc); letter-spacing: .04em; cursor: pointer;
+  opacity: var(--opacity-sub);
+}
+.tl-bgm-cell:hover { opacity: 1; }
+.tl-bgm-cell.silent { background: transparent; color: var(--text-color); opacity: .35;
+  border-top: 1px dashed var(--line-soft); }
+.tl-bgm-cell.chg-start, .tl-bgm-cell.chg-stop { opacity: 1; font-weight: 600; }
+.tl-bgm-cell.chg-start { box-shadow: inset 2px 0 0 var(--trk, #888); }
+.tl-bgm-cell.chg-stop { box-shadow: inset 2px 0 0 var(--danger-color); color: var(--danger-color); }
+.tl-bgm-cell.chg-retune { box-shadow: inset 2px 0 0 rgba(255, 250, 240, 0.4); }
+.tl-bgm-mark { flex: none; font-size: 9px; }
+.tl-bgm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-bgm-gap { flex: 0 0 auto; width: 58px; }   /* exit インサートチップ分の空き（列を縦に揃える）*/
+
+/* 区間インスペクタの BGM ブロック */
+.tl-bgm-grid { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 6px 0; }
+.tl-bgm-grid label { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.tl-bgm-grid input[type=number] { width: 62px; text-align: right; }
+.tl-bgm-loop { border-left: 2px solid var(--line-soft); padding-left: 10px; margin-top: 6px; }
+.tl-bgm-audition { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.tl-bgm-audition button { padding: 3px 9px; font-size: 11px; }
+.tl-bgm-time { font-variant-numeric: tabular-nums; font-size: 11px; opacity: var(--opacity-sub); min-width: 46px; }
+.tl-hint2 { font-size: 9px; opacity: var(--opacity-mute); }
+
+/* BGM ライブラリ */
+.bgm-sec { padding: 10px 14px 20px; border-top: 1px solid var(--line-soft); }
+.bgm-toolbar { max-width: 1180px; }
+.bgm-list { display: flex; flex-direction: column; gap: 8px; max-width: 1180px; margin-top: 10px; }
+.bgm-empty { font-size: 11px; opacity: var(--opacity-mute); }
+.bgm-item { border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); padding: 8px 10px; }
+.bgm-item-head { display: flex; align-items: center; gap: 8px; }
+.bgm-item-head .spacer { flex: 1; }
+.bgm-item-head button { padding: 2px 8px; font-size: 11px; }
+.bgm-name { flex: 0 1 220px; }
+.bgm-id { font-family: monospace; font-size: 10px; opacity: var(--opacity-mute); }
+.bgm-time { font-variant-numeric: tabular-nums; font-size: 11px; min-width: 46px; opacity: var(--opacity-sub); }
+.bgm-item-grid { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 6px; }
+.bgm-item-grid label { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.bgm-item-grid input[type=number] { width: 62px; text-align: right; }
+.bgm-item-grid button { padding: 2px 8px; font-size: 10px; }
+.bgm-file { font-size: 10px; font-family: monospace; opacity: var(--opacity-sub);
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

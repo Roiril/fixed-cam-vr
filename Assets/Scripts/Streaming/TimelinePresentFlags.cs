@@ -17,6 +17,8 @@ namespace FixedCamVr.Streaming
                 if (seg == null) continue;
                 seg.hasPost = seg.hasPost && seg.post != null;
                 seg.hasInsert = seg.hasInsert && seg.insert != null;
+                // BGM は「幻のオブジェクト = action:continue」で無害だが、契約を揃えて宣言 bool を正にする。
+                seg.hasBgm = seg.hasBgm && seg.bgm != null;
                 if (seg.insert != null) seg.insert.hasPost = seg.insert.hasPost && seg.insert.post != null;
                 if (seg.cues != null)
                     foreach (var c in seg.cues)

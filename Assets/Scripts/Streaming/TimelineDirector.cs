@@ -28,6 +28,9 @@ namespace FixedCamVr.Streaming
         [Tooltip("区間 post 上書き層を掛け外しする ShowControlClient。")]
         [SerializeField] private ShowControlClient? showControl;
 
+        [Tooltip("区間 bgm 指示を受け取る BgmDirector。null ならシーンから探す。無ければ BGM 制御なし（後方互換）。")]
+        [SerializeField] private BgmDirector? bgmDirector;
+
         private ShowTimelineSegmentDef[] _segments = Array.Empty<ShowTimelineSegmentDef>();
         private bool _hasCurrent;
         private int _curLap, _curCam;
@@ -103,9 +106,21 @@ namespace FixedCamVr.Streaming
             ShowTimelineSegmentDef? seg = FindSegment(lap, camera);
             showControl?.SetPostOverride(seg != null && seg.hasPost ? seg.post : null);
 
+            // 区間 BGM 指示。post と違い「解除」は無く、指示のある区間だけが状態を変える
+            // （指示の無い区間では鳴っている曲がそのまま続く＝動画編集のオーディオトラックと同じ感覚）。
+            if (seg != null && seg.hasBgm) ResolveBgm()?.ApplySegment(seg.bgm, true);
+
             _hasCurrent = true;
             _curLap = lap;
             _curCam = camera;
+        }
+
+        // 既存シーンで未配線でも動くよう遅延解決する（ShowControlClient の ResolveBgmDirector と同流儀）。
+        private BgmDirector? ResolveBgm()
+        {
+            if (bgmDirector != null) return bgmDirector;
+            bgmDirector = FindObjectOfType<BgmDirector>();
+            return bgmDirector;
         }
 
         private ShowTimelineSegmentDef? FindSegment(int lap, int camera)

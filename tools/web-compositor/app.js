@@ -499,7 +499,7 @@ async function pollState() {
         rev = s.rev; state = s;
         renderColumns(); renderStatus(); renderLiveCuePanel(); renderLatchBar();
         floorMap && floorMap.onState(s); timeline && timeline.onState(s);
-        renderRunPanel(); renderPreflight();
+        renderBgmSection(); renderRunPanel(); renderPreflight();
       }
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
   }
@@ -794,6 +794,22 @@ function preflightRows() {
   else if (noSrc.length) rows.push({ s: 'warn', label: '演出素材', detail: `素材未設定の cue: ${noSrc.join(', ')}` });
   else rows.push({ s: 'ok', label: '演出素材', detail: '参照 cue はすべて実在・素材あり' });
 
+  // BGM: タイムラインとラン既定が指すトラックが実在するか（実機で無音に化けるのを防ぐ）
+  const trackIds = new Set((state?.bgmTracks || []).map((t) => t.id));
+  trackIds.add(DEFAULT_BGM_TRACK_ID);   // APK 同梱の既定クリップは常に有効
+  const badTracks = [];
+  const rb = state?.bgm;
+  if (rb && rb.action === 'play' && rb.trackId && !trackIds.has(rb.trackId)) badTracks.push(`ラン既定=${rb.trackId}`);
+  for (const s of segs) {
+    if (!s.hasBgm || !s.bgm || s.bgm.action !== 'play') continue;
+    const id = s.bgm.trackId;
+    if (!id || !trackIds.has(id)) badTracks.push(`Lap${s.lap}/${camLabelOf(s.camera)}=${id || '未選択'}`);
+  }
+  if (badTracks.length) rows.push({ s: 'ng', label: 'BGM', detail: `未定義のトラック: ${badTracks.join(', ')}` });
+  else if (state?.bgmTracks?.length || (rb && rb.action !== 'continue')) {
+    rows.push({ s: 'ok', label: 'BGM', detail: `トラック ${(state?.bgmTracks || []).length} 本 / 参照はすべて実在` });
+  }
+
   const d = anyDirty();
   rows.push(d.any
     ? { s: 'warn', label: '未保存', detail: `${[d.timeline && 'タイムライン', d.floorMap && 'フロアマップ'].filter(Boolean).join(' / ')} が未保存（💾 で保存）` }
@@ -902,6 +918,8 @@ if ($('#timeline')) {
     getCues: () => state?.cues || [],
     getCourseOrder: () => state?.layout?.course?.order || null,
     getGlobalPost: () => state?.post || FX_DEFAULT,
+    getBgmTracks: () => state?.bgmTracks || [],
+    getRootBgm: () => state?.bgm || null,
     getLiveImg: (camId) => { const c = columns.get(camId); return c ? c.liveImg : null; },
     getCaptures: () => captures.items,
     refreshCaptures: () => refreshCaptures(),
@@ -919,6 +937,161 @@ if ($('#timeline')) {
   });
   if (state) timeline.onState(state);
 }
+
+// ---- 🎵 BGM ライブラリ（audio/ の音源 → bgmTracks / ラン既定 bgm）--------------
+//   トラック = 音源 + ループ範囲 + 音量。タイムラインの区間はこの id を指すだけにして、
+//   同じ曲を複数区間から使い回せるようにする（cue と同じ考え方）。
+const DEFAULT_BGM_TRACK_ID = '__default__';   // APK 同梱の既定クリップ（Unity BgmDirector と一致）
+let audioFiles = [];
+let bgmPreviewEl = null;
+
+async function loadAudioFiles() {
+  try { audioFiles = await (await fetch('/audio/list')).json(); }
+  catch { audioFiles = []; }
+  const sel = $('#bgmFileSelect');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = audioFiles.length
+    ? audioFiles.map((f) => `<option value="${escapeHtml(f.url)}">${escapeHtml(f.name)}（${Math.round(f.size / 1024)}KB）</option>`).join('')
+    : '<option value="">（audio/ に音源がありません）</option>';
+  // 選択の復元は「その音源がまだある時だけ」。無条件に戻すと初回ロードで
+  // 空文字を書き戻して選択が外れる（＝＋登録が無反応になる）。
+  if (cur && audioFiles.some((f) => f.url === cur)) sel.value = cur;
+}
+
+function bgmTracksState() { return state?.bgmTracks || []; }
+
+async function saveBgmTracks(tracks) {
+  if (state) state.bgmTracks = tracks;
+  return postState({ bgmTracks: tracks });
+}
+
+function stopBgmLibPreview() {
+  if (bgmPreviewEl) { bgmPreviewEl.pause(); bgmPreviewEl = null; }
+}
+
+function renderBgmSection() {
+  const list = $('#bgmTrackList');
+  if (!list) return;
+  const tracks = bgmTracksState();
+
+  // ラン既定セレクタ（show.json トップレベル bgm）
+  const rootSel = $('#bgmRootTrack');
+  if (rootSel && document.activeElement !== rootSel) {
+    const rb = state?.bgm || {};
+    const curId = rb.action === 'play' ? (rb.trackId || '') : '';
+    rootSel.innerHTML = `<option value="">（APK 同梱の既定 BGM）</option>`
+      + tracks.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name || t.id)}</option>`).join('')
+      + `<option value="__silent__">（無音で始める）</option>`;
+    rootSel.value = curId === '' && rb.action === 'stop' ? '__silent__' : curId;
+  }
+
+  list.innerHTML = '';
+  if (!tracks.length) {
+    const e = document.createElement('div');
+    e.className = 'bgm-empty';
+    e.textContent = '（トラック未登録。audio/ に mp3 等を置いて「＋ トラックに登録」）';
+    list.appendChild(e);
+    return;
+  }
+  tracks.forEach((t, i) => {
+    const row = document.createElement('div');
+    row.className = 'bgm-item';
+    row.innerHTML = `
+      <div class="bgm-item-head">
+        <input class="bgm-name" type="text" value="${escapeHtml(t.name || '')}" placeholder="表示名">
+        <span class="bgm-id">${escapeHtml(t.id)}</span>
+        <span class="spacer"></span>
+        <button class="bgm-play" title="試聴（ループ範囲つき）">🔊</button>
+        <button class="bgm-stop" title="停止">■</button>
+        <span class="bgm-time">—</span>
+        <button class="bgm-del" title="トラックを削除">🗑</button>
+      </div>
+      <div class="bgm-item-grid">
+        <span class="bgm-file" title="${escapeHtml(t.url)}">${escapeHtml((t.url || '').split('/').pop())}</span>
+        <label>ループ in<input class="bgm-ls" type="number" min="0" step="0.1" value="${t.loopStartSec || 0}">s</label>
+        <label>ループ out<input class="bgm-le" type="number" min="0" step="0.1" value="${t.loopEndSec || 0}">s<span class="tl-hint2">0=末尾</span></label>
+        <label>音量<input class="bgm-vol" type="number" min="0" max="1" step="0.05" value="${t.volume ?? 1}"></label>
+        <button class="bgm-mark-in" title="試聴中の位置をループ in に">ここを in</button>
+        <button class="bgm-mark-out" title="試聴中の位置をループ out に">ここを out</button>
+      </div>`;
+    const q = (s) => row.querySelector(s);
+    const commit = () => {
+      const arr = bgmTracksState().slice();
+      arr[i] = {
+        ...arr[i],
+        name: q('.bgm-name').value,
+        loopStartSec: Math.max(0, parseFloat(q('.bgm-ls').value) || 0),
+        loopEndSec: Math.max(0, parseFloat(q('.bgm-le').value) || 0),
+        volume: Math.min(1, Math.max(0, parseFloat(q('.bgm-vol').value))) || 0,
+      };
+      saveBgmTracks(arr);
+    };
+    row.querySelectorAll('.bgm-name, .bgm-ls, .bgm-le, .bgm-vol').forEach((el) => { el.onchange = commit; });
+    q('.bgm-play').onclick = () => {
+      stopBgmLibPreview();
+      bgmPreviewEl = new Audio(t.url);
+      bgmPreviewEl.volume = Math.min(1, Math.max(0, t.volume ?? 1));
+      bgmPreviewEl.currentTime = t.loopStartSec || 0;
+      bgmPreviewEl.ontimeupdate = () => {
+        if (!bgmPreviewEl) return;
+        q('.bgm-time').textContent = `${bgmPreviewEl.currentTime.toFixed(1)}s`;
+        const le = parseFloat(q('.bgm-le').value) || 0;
+        if (le > 0 && bgmPreviewEl.currentTime >= le) bgmPreviewEl.currentTime = parseFloat(q('.bgm-ls').value) || 0;
+      };
+      bgmPreviewEl.play().catch(() => { q('.bgm-time').textContent = '再生不可'; });
+    };
+    q('.bgm-stop').onclick = () => { stopBgmLibPreview(); q('.bgm-time').textContent = '—'; };
+    q('.bgm-mark-in').onclick = () => { if (bgmPreviewEl) { q('.bgm-ls').value = bgmPreviewEl.currentTime.toFixed(1); commit(); } };
+    q('.bgm-mark-out').onclick = () => { if (bgmPreviewEl) { q('.bgm-le').value = bgmPreviewEl.currentTime.toFixed(1); commit(); } };
+    q('.bgm-del').onclick = () => {
+      const used = (state?.timeline?.segments || []).some((s) => s.hasBgm && s.bgm && s.bgm.trackId === t.id);
+      if (used && !confirm(`このトラックはタイムラインで使われています。削除すると該当区間は「未定義」になります。削除しますか？`)) return;
+      stopBgmLibPreview();
+      saveBgmTracks(bgmTracksState().filter((_, k) => k !== i));
+    };
+    list.appendChild(row);
+  });
+}
+
+if ($('#bgmAddTrack')) {
+  $('#bgmAddTrack').onclick = () => {
+    const url = $('#bgmFileSelect').value;
+    if (!url) return;
+    const base = decodeURIComponent(url.split('/').pop() || 'bgm');
+    const stem = base.replace(/\.[^.]+$/, '');
+    const tracks = bgmTracksState().slice();
+    // id は衝突しない安定値（同じ音源を別ループ範囲で 2 本登録できるよう連番）
+    let n = 1, id = `bgm_${stem}`.replace(/[^A-Za-z0-9_\-]/g, '_');
+    while (tracks.some((t) => t.id === id)) id = `bgm_${stem}_${++n}`.replace(/[^A-Za-z0-9_\-]/g, '_');
+    tracks.push({ id, name: stem, url, loopStartSec: 0, loopEndSec: 0, volume: 0.5 });
+    saveBgmTracks(tracks);
+  };
+}
+if ($('#bgmRefreshFiles')) $('#bgmRefreshFiles').onclick = () => loadAudioFiles();
+if ($('#bgmOpenDir')) $('#bgmOpenDir').onclick = () => fetch('/open-dir?dir=audio').catch(() => {});
+if ($('#bgmRootTrack')) {
+  $('#bgmRootTrack').onchange = async (e) => {
+    const v = e.target.value;
+    const cur = state?.bgm || {};
+    const next = {
+      action: v === '' ? 'continue' : (v === '__silent__' ? 'stop' : 'play'),
+      trackId: v === '' || v === '__silent__' ? '' : v,
+      loop: true, startSec: 0, loopStartSec: -1, loopEndSec: -1, volume: -1,
+      fadeInSec: cur.fadeInSec ?? 1, fadeOutSec: cur.fadeOutSec ?? 1, restart: false,
+    };
+    if (state) state.bgm = next;
+    const r = await postState({ bgm: next });
+    const st = $('#bgmRootState');
+    if (st) {
+      st.textContent = (r && r.ok !== false)
+        ? (v === '' ? '✓ APK 同梱の既定 BGM で開始' : v === '__silent__' ? '✓ 無音で開始' : '✓ 適用')
+        : '✕ 保存失敗';
+      st.className = 'ed-status ' + (r && r.ok !== false ? 'ok' : 'err');
+    }
+  };
+}
+loadAudioFiles();
 
 // ---- ビルド用エクスポート ----------------------------------------------------
 if ($('#exportBuild')) {
@@ -953,6 +1126,12 @@ if ($('#exportBuild')) {
         const w = document.createElement('div');
         w.className = 'export-missing';
         w.textContent = `⚠ 参照先が存在しない cue: ${res.missingCues.join(', ')}（この区間は実機で何も出ません）`;
+        fl.appendChild(w);
+      }
+      if (res.missingTracks && res.missingTracks.length) {
+        const w = document.createElement('div');
+        w.className = 'export-missing';
+        w.textContent = `⚠ 参照先が存在しない BGM トラック: ${res.missingTracks.join(', ')}（その区間で曲は変わりません）`;
         fl.appendChild(w);
       }
       for (const c of res.copied) {

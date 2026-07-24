@@ -126,6 +126,44 @@ namespace FixedCamVr.Streaming
         public float scanline;
     }
 
+    /// <summary>
+    /// BGM トラック 1 本（show.json トップレベル bgmTracks[]）。cue と同じく URL 参照で、
+    /// 📦 エクスポートで sa://assets/ へ焼き込まれる。ループ範囲はここが既定値（区間で上書き可）。
+    /// </summary>
+    [Serializable] public sealed class ShowBgmTrackDef
+    {
+        public string id = "";
+        public string name = "";
+        public string url = "";
+        public float loopStartSec;      // ループ先頭（秒）
+        public float loopEndSec;        // <=0 = クリップ末尾まで
+        public float volume = 1f;
+    }
+
+    /// <summary>
+    /// BGM の指示。show.json トップレベル bgm（ラン既定）と timeline.segments[].bgm（区間指示）で共用。
+    /// 区間側の -1 は「トラック既定を継承」。action の既定は continue なので、
+    /// JsonUtility が null 入れ子から作る幻のオブジェクトは何もしない（＝安全側）。
+    /// </summary>
+    [Serializable] public sealed class ShowBgmDef
+    {
+        public string action = BgmPlanLogic.ActionContinue;   // "play" | "stop" | "continue"
+        public string trackId = "";
+        public bool loop = true;
+        public float startSec;              // 頭出し位置（ループ窓の外ならの窓頭へ丸める）
+        public float loopStartSec = -1f;    // -1 = トラック既定
+        public float loopEndSec = -1f;      // -1 = トラック既定
+        public float volume = -1f;          // -1 = トラック既定
+        public float fadeInSec = 1f;
+        public float fadeOutSec = 1f;
+        public bool restart;                // 同一トラックでも頭出しし直す
+
+        /// <summary>実際に何かする指示か（play でトラック指定あり / stop）。</summary>
+        public bool IsActionable()
+            => action == BgmPlanLogic.ActionStop
+               || (action == BgmPlanLogic.ActionPlay && !string.IsNullOrEmpty(trackId));
+    }
+
     /// <summary>タイムライン区間 cue の任意上書き（強度・フェード・trim を丸ごと差し替える）。hasOverride が present-flag。</summary>
     [Serializable] public sealed class ShowCueOverrideDef
     {
@@ -179,6 +217,8 @@ namespace FixedCamVr.Streaming
         public bool hasPost;              // present-flag
         public ShowInsertDef? insert;
         public bool hasInsert;            // present-flag
+        public ShowBgmDef? bgm;           // 区間進入時の BGM 指示（無指示＝鳴っている曲が続く）
+        public bool hasBgm;               // present-flag
     }
 
     /// <summary>
@@ -247,6 +287,10 @@ namespace FixedCamVr.Streaming
                  "post 上書きへ分配する TimelineDirector。null なら timeline は無視され従来 schedule で動く（後方互換）。")]
         [SerializeField] private TimelineDirector? timelineDirector;
 
+        [Tooltip("BGM 再生器。show.json の bgmTracks / bgm と区間 bgm 指示を受ける。" +
+                 "null ならシーンから探す（[Bgm]）。見つからなければ BGM 制御なし（後方互換）。")]
+        [SerializeField] private BgmDirector? bgmDirector;
+
         private ScreenOverlayController? _overlay;
         private Material? _material;
         private int _rev = -1;
@@ -311,6 +355,10 @@ namespace FixedCamVr.Streaming
         // タイムライン（スキーマ v2・ライブ or 端末キャッシュ由来）。TimelineDirector へ供給。
         private ShowTimelineDef? _timeline;
         private int _appliedTimelineRev = -1;
+
+        // BGM ライブラリ + ラン既定（ライブ or 端末キャッシュ由来）。BgmDirector へ供給。
+        private ShowBgmTrackDef[] _bgmTracks = Array.Empty<ShowBgmTrackDef>();
+        private ShowBgmDef? _bgmDefault;
 
         // timeline が有効（rev>0 && segments 非空）で、かつ TimelineDirector が配線されているか。
         // これが true の間だけ timeline が schedule.entries を supersede する。
@@ -381,6 +429,8 @@ namespace FixedCamVr.Streaming
             public ShowLayoutDef? layout;
             public ShowScheduleDef? schedule;
             public ShowTimelineDef? timeline;   // スキーマ v2（present なら schedule を supersede）
+            public ShowBgmTrackDef[]? bgmTracks;  // BGM ライブラリ
+            public ShowBgmDef? bgm;               // ラン既定 BGM（IsActionable() が present 判定）
         }
         [Serializable] private class CameraDef
         {
@@ -409,6 +459,8 @@ namespace FixedCamVr.Streaming
             public CueDef[] cues = Array.Empty<CueDef>();
             public ShowScheduleDef? schedule;
             public ShowTimelineDef? timeline;   // スキーマ v2（オフライン supersede 用）
+            public ShowBgmTrackDef[] bgmTracks = Array.Empty<ShowBgmTrackDef>();
+            public ShowBgmDef? bgm;             // ラン既定 BGM（PC 不在起動でも同じ曲で始まる）
             // 直近に既知だった runEpoch。起動時にこれを「既知値」として復元し、
             // PC 不在の再起動で同一 epoch を誤リセットしない。
             public int runEpoch;
@@ -487,6 +539,15 @@ namespace FixedCamVr.Streaming
             ApplyPostForActive();
             // 3.5) カメラ切替タイミング（焼き込み / キャッシュ由来。未指定なら Director がコード既定へ戻す）。
             ApplySwitchTiming();
+            // 3.6) BGM。トラック表 + ラン既定を供給して再生を開始する（show.json に bgm 指定が
+            //      無ければ BgmDirector の既定クリップ = 従来の固定ループがそのまま鳴る）。
+            var bgm = ResolveBgmDirector();
+            if (bgm != null)
+            {
+                bgm.SetServer(server);
+                PushBgm();
+                bgm.Begin();
+            }
             // 4) 周回順・スケジュールを LapCounter / CueScheduler へ供給。
             PushCourseAndSchedule();
             // 5) layout / course が入っていれば通知（ZoneLayoutApplier / LapCounter が再取得）。
@@ -600,10 +661,37 @@ namespace FixedCamVr.Streaming
         // cueScheduler.ResetRun は LapCounter 未配線でもスケジューラ単独で成立させるための直接呼び（LapCounter.ResetRun でも呼ぶが冪等）。
         private void TriggerRunReset()
         {
-            Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue / タイムラインをリセット");
+            Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue / タイムライン / BGM をリセット");
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
+            ResolveBgmDirector()?.ResetRun();
             RunReset?.Invoke();
+        }
+
+        // ---- BGM（bgmTracks / ラン既定 / 区間指示は TimelineDirector 経由）----
+
+        // 既存シーンで bgmDirector が未配線でも動くよう遅延解決する（post/switch の ResolveXxx と同流儀）。
+        private BgmDirector? ResolveBgmDirector()
+        {
+            if (bgmDirector != null) return bgmDirector;
+            bgmDirector = FindObjectOfType<BgmDirector>();
+            return bgmDirector;
+        }
+
+        // トラック表と既定 BGM を BgmDirector へ流す。既定は「実際に変わった時だけ」適用する
+        // （show.json の rev はカメラ設定の変更等でも上がるため、毎回適用すると曲が鳴り直す）。
+        private string _appliedBgmSignature = " ";
+        private void PushBgm()
+        {
+            var dir = ResolveBgmDirector();
+            if (dir == null) return;
+            dir.SetTracks(_bgmTracks);
+            string sig = _bgmDefault == null ? ""
+                : $"{_bgmDefault.action}|{_bgmDefault.trackId}|{_bgmDefault.loop}|{_bgmDefault.startSec}|"
+                  + $"{_bgmDefault.loopStartSec}|{_bgmDefault.loopEndSec}|{_bgmDefault.volume}";
+            if (sig == _appliedBgmSignature) return;
+            _appliedBgmSignature = sig;
+            dir.SetShowDefault(_bgmDefault, _bgmDefault != null);
         }
 
         // ---- state long-poll ----
@@ -699,6 +787,12 @@ namespace FixedCamVr.Streaming
                 TimelinePresentFlags.Reconcile(_timeline);
                 cueSourceChanged = true;
             }
+
+            // 1.63) BGM ライブラリ + ラン既定。トラックは毎回張り直し（参照更新）、
+            //       既定はシグネチャ比較で変化時のみ適用する（rev が上がるたびに曲が鳴り直さないように）。
+            _bgmTracks = state.bgmTracks ?? Array.Empty<ShowBgmTrackDef>();
+            _bgmDefault = (state.bgm != null && state.bgm.IsActionable()) ? state.bgm : null;
+            PushBgm();
 
             // cue 解決関数は毎回張り直す（_cues の参照が更新されるため）。CueScheduler / InsertController 共通。
             cueScheduler?.SetCueResolver(ResolveCue);
@@ -886,6 +980,9 @@ namespace FixedCamVr.Streaming
                 _appliedTimelineRev = state.timeline.rev;
                 TimelinePresentFlags.Reconcile(_timeline);
             }
+            // 焼き込み BGM（ライブ / キャッシュがあれば後で上書きされる）。
+            _bgmTracks = state.bgmTracks ?? Array.Empty<ShowBgmTrackDef>();
+            _bgmDefault = (state.bgm != null && state.bgm.IsActionable()) ? state.bgm : null;
             // 焼き込み値の runEpoch を「既知値」として取り込む（端末キャッシュがあれば後で上書きされる）。
             _knownRunEpoch = state.control?.runEpoch ?? _knownRunEpoch;
             // 焼き込みのカメラ切替タイミング（端末キャッシュ / ライブがあれば後で上書きされる）。
@@ -1090,6 +1187,8 @@ namespace FixedCamVr.Streaming
                     cues = _cues,
                     schedule = _schedule,
                     timeline = _timeline,
+                    bgmTracks = _bgmTracks,
+                    bgm = _bgmDefault,
                     runEpoch = _knownRunEpoch,
                     switchDwellSec = _switchDwellSec,
                     switchCooldownSec = _switchCooldownSec,
@@ -1131,6 +1230,9 @@ namespace FixedCamVr.Streaming
                     _appliedTimelineRev = cfg.timeline.rev;
                     TimelinePresentFlags.Reconcile(_timeline);
                 }
+                // BGM（PC 不在起動でも前回と同じ曲・同じループ範囲で始まる）。
+                if (cfg.bgmTracks != null && cfg.bgmTracks.Length > 0) _bgmTracks = cfg.bgmTracks;
+                if (cfg.bgm != null && cfg.bgm.IsActionable()) _bgmDefault = cfg.bgm;
                 // 既知の runEpoch を復元（この起動では発火しない = 同一 epoch の誤リセット防止）。
                 _knownRunEpoch = cfg.runEpoch;
                 // カメラ切替タイミングを復元（0=未指定でコード既定。ApplySwitchTiming は InitializeAsync が呼ぶ）。

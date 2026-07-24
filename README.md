@@ -34,6 +34,7 @@
 | 3.7 | **タイムライン第一級オーサリング**（周回×ゾーン区間から cue 割当・画像加工 post 上書き・別カメラのインサートショットを一括編集 + APK 焼き込みで現地 PC 不要 + Web 矢印キー検証。LapCounter / CueScheduler / InsertController / TimelineDirector） | 🚧 実装済み・実機未検証 |
 | 3.8 | **接続の堅牢化**（端末に cameraId を刻印 + UDP 発見プロトコル + フレーム断時の ID 自動張り替え。DHCP 変動・入れ替わりに自動追従、Web 卓に発見/疎通診断パネル） | 🚧 streamer/PC 実測済み・Quest 実機未検証 |
 | 3.9 | **ビューア体験の改善**（yaw 追従の緩急・切替クールダウン/dip-to-black・cue 中切替凍結・信号ロスト砂嵐・HUD 既定 OFF） | 🚧 実装済み・試着未検証 |
+| 3.95 | **BGM オーサリング**（区間ごとに曲の切替・停止・ループ範囲・音量・クロスフェード。BgmDirector / BgmPlanLogic + Web 卓の BGM ライブラリと BGM 帯） | 🚧 実装済み・実機未検証 |
 | 4 | スクリーン外 3D 演出 / CG 合成 | 未着手 |
 
 主要コンポーネントの仕様（エンドポイント・遅延対策・show.json 設定契約・スクリーン合成モデル）は [.claude/rules/streaming.md](.claude/rules/streaming.md) に集約。
@@ -46,6 +47,9 @@
    - **cue 割当**（複数可・遅延秒・1 回のみ・強度/フェード/trim の区間上書き）。既存 cue の割当かその場で新規 cue 作成（素材 + マスク + フェード + 再生区間）
    - **画像加工 post の上書き**（このゾーン滞在中だけ露出・色を変える。例「2 周目の B だけ赤く」）
    - **インサートショット**（別カメラを N 秒差し込む。`退出時`=このゾーンを離れる瞬間に差し込み / `進入時`=入って N 秒後）
+   - **BGM**（このゾーンで曲を切り替える / 止める。ループ範囲 in-out・音量・フェード。指示の無い区間は前の曲が続く）。
+     音源は `tools/web-compositor/audio/` に置き「🎵 BGM ライブラリ」でトラック登録する。
+     **⚠ 初回は `Tools/FixedCamVr/Setup/Setup Main Demo Scene` を 1 回再実行**して [Bgm] を BgmDirector 化すること
 4. **▶ 検証**（矢印キー：→ 次ゾーン / ← 戻る / R 先頭 / Esc）で、実機なしに発火順と「体験者に見える画」をブラウザで確認（ローカルのみ・show.json は書かない）
 5. **📦 ビルド用エクスポート** → show.json + 参照アセットが `Assets/StreamingAssets/show/` に焼き込まれる（コミット禁止・gitignore 済み）
 6. 通常どおり APK ビルド → **Quest 単体（PC 不在）で周回に応じて自動発火**。Web 卓のライブ操作（演出 ON/OFF）は常にタイムラインより優先

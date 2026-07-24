@@ -229,6 +229,9 @@ namespace FixedCamVr.OvrBridge
         {
             if (lapCounter != null) lapCounter.ResetRun();
             else cueScheduler?.ResetRun();
+            // BGM もランの既定へ戻す（前の体験者の最後の曲を次のランへ持ち越さない）。
+            // SerializeField を増やさず遅延解決する（prefab YAML 未反映で null になる罠を避ける）。
+            FindObjectOfType<BgmDirector>()?.ResetRun();
             haptics?.Fire(); // 長押し発火（ランリセット）
             Debug.Log("[OvrBridge] Normal: ランリセット（右グリップ 2 秒長押し）");
         }

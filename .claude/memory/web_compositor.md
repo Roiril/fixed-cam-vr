@@ -1,5 +1,13 @@
 # web compositor（tools/web-compositor/）
 
+**2026-07-25 BGM オーサリング**（契約は rules/streaming.md「BGM」が正）:
+
+- 旧 = `[Bgm]` の AudioSource 1 本で固定ループ。新 = **タイムライン区間で切替/停止/ループ範囲**（`bgmTracks[]` + ラン既定 `bgm` + `segments[].bgm`）
+- 音源は `tools/web-compositor/audio/`（**gitignore**）。卓の「🎵 BGM ライブラリ」で登録 → 区間インスペクタで指示 → 📦 エクスポートで `sa://assets/` へ焼き込み
+- タイムライン下の **BGM 帯**が「今どの曲が鳴っているか」を carry-forward で表示（▶切替 / ≡同曲調整 / ■停止）。JS ミラー `resolveBgmLane` は Unity `BgmPlanLogic` と同セマンティクス（テストで固定）
+- **⚠ Unity は `Setup Main Demo Scene` の再実行が要る**（[Bgm] を BgmDirector 化。未実行なら旧固定ループのまま＝安全側に縮退）
+- 擬似トラック `__default__` = APK 同梱クリップ（音源を二重に置かず「元の曲へ戻す」を書ける）
+
 **2026-07-25 本番運用の安全装置**（設計判断ごと README「本番運用の安全装置」が正。ここは要点だけ）:
 
 - **ラッチ（cameraOverride / activeCue）は show.json に永続する**＝前の体験者の固定が次のランへ持ち越される。ヘッダ直下の警告バーで常時可視化（**show.json 由来なので Unity 未接続でも出る**。旧実装は Unity heartbeat 由来でしか出ず、準備段階で見えなかった）。**▶ ラン開始は runEpoch++ ＋ 固定解除 ＋ 演出停止のフルリセット**

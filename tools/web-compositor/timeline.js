@@ -14,7 +14,10 @@
 import { FX, FX_DEFAULT, camColor, escapeHtml, createMediaCache } from './common.js';
 import { createCompositeView } from './composite-view.js';
 import { createCueEditor } from './cue-editor.js';
-import { defaultOverride, defaultInsert, newSeg, newAssign, serializeTimeline, normalizeTimeline, migrateFromSchedule } from './timeline-model.js';
+import { defaultOverride, defaultInsert, defaultBgm, newSeg, newAssign, serializeTimeline, normalizeTimeline, migrateFromSchedule, resolveBgmLane } from './timeline-model.js';
+
+// APK 同梱の既定クリップを指す擬似トラック id（Unity BgmDirector.DefaultTrackId と一致させること）。
+export const DEFAULT_TRACK_ID = '__default__';
 
 export function createTimeline(container, deps) {
   // deps: { getCameras, getCues, getCourseOrder, getGlobalPost, getLiveImg,
@@ -104,7 +107,7 @@ export function createTimeline(container, deps) {
   }
   function pruneSeg(s) {
     if (!s) return;
-    if ((!s.cues || !s.cues.length) && !s.hasPost && !s.hasInsert) {
+    if ((!s.cues || !s.cues.length) && !s.hasPost && !s.hasInsert && !s.hasBgm) {
       timeline.segments = timeline.segments.filter((x) => x !== s);
     }
   }
@@ -126,6 +129,8 @@ export function createTimeline(container, deps) {
     noteEl.className = 'tl-note' + (needNote ? ' on' : '');
 
     const v = validation.active ? validation.current() : null;
+    // BGM 帯の解決（course 順に carry-forward。ラン開始時は show.json の既定 BGM が鳴っている）
+    const bgmLane = resolveBgmLane(timeline.segments, rs, lapCount, rootBgmTrackId());
 
     track.innerHTML = '';
     for (let lap = 1; lap <= lapCount; lap++) {
@@ -180,8 +185,57 @@ export function createTimeline(container, deps) {
         }
       });
       lapEl.appendChild(segs);
+
+      // 🎵 BGM 帯（動画編集のオーディオトラック相当）。区間ごとに「今どの曲が鳴っているか」を
+      //    carry-forward で解決して横一列に並べる。▶=曲が変わる / ≡=同じ曲のまま設定変更 / ■=停止。
+      const lane = document.createElement('div');
+      lane.className = 'tl-bgm-lane';
+      rs.forEach((ci) => {
+        const st = bgmLane.get(`${lap}:${ci}`) || { trackId: '', change: null };
+        const cell = document.createElement('button');
+        const silent = !st.trackId;
+        cell.className = 'tl-bgm-cell' + (silent ? ' silent' : '')
+          + (st.change ? ` chg-${st.change}` : '');
+        if (!silent) cell.style.setProperty('--trk', trackColor(st.trackId));
+        const mark = st.change === 'start' ? '▶' : st.change === 'retune' ? '≡' : st.change === 'stop' ? '■' : '';
+        const label = silent ? (st.change === 'stop' ? '停止' : '無音') : trackName(st.trackId);
+        cell.innerHTML = `<span class="tl-bgm-mark">${mark}</span><span class="tl-bgm-name">${escapeHtml(label)}</span>`;
+        cell.title = silent ? 'BGM 無音' : `BGM: ${trackName(st.trackId)}`;
+        cell.onclick = () => { sel = { lap, camera: ci }; render(); renderInspector(); };
+        lane.appendChild(cell);
+        // exit インサートのチップ分の隙間を BGM 帯にも空け、列を縦に揃える
+        const seg = segAt(lap, ci);
+        if (seg && seg.hasInsert && seg.insert && seg.insert.anchor === 'exit') {
+          const gap = document.createElement('div');
+          gap.className = 'tl-bgm-gap';
+          lane.appendChild(gap);
+        }
+      });
+      lapEl.appendChild(lane);
       track.appendChild(lapEl);
     }
+  }
+
+  // ---- BGM 表示ヘルパ ---------------------------------------------------------
+  function bgmTracks() { return (deps.getBgmTracks && deps.getBgmTracks()) || []; }
+  // ラン開始時に鳴っているもの（Unity BgmDirector.ApplyDefault のミラー）:
+  //   show.json bgm が play → そのトラック / stop → 無音 / 無指示（continue）→ APK 同梱の既定クリップ。
+  function rootBgmTrackId() {
+    const b = deps.getRootBgm && deps.getRootBgm();
+    if (!b || !b.action || b.action === 'continue') return DEFAULT_TRACK_ID;
+    if (b.action === 'stop') return '';
+    return b.trackId || DEFAULT_TRACK_ID;
+  }
+  const BGM_COLORS = ['#9ad6ff', '#ffd18a', '#c9a6ff', '#8fe6c1', '#ff9fb6', '#e0e0a0'];
+  function trackColor(id) {
+    if (id === DEFAULT_TRACK_ID) return '#8899aa';
+    const i = bgmTracks().findIndex((t) => t.id === id);
+    return BGM_COLORS[((i < 0 ? 0 : i) % BGM_COLORS.length)];
+  }
+  function trackName(id) {
+    if (id === DEFAULT_TRACK_ID) return '既定（APK 同梱）';
+    const t = bgmTracks().find((x) => x.id === id);
+    return t ? (t.name || t.id) : `⚠ 未定義（${id}）`;
   }
 
   // ---- セグメントインスペクタ ------------------------------------------------
@@ -211,13 +265,23 @@ export function createTimeline(container, deps) {
         <label class="tl-insp-toggle chk"><input class="tl-insert-on" type="checkbox"> ⏢ インサートショット（別カメラを N 秒差し込む）</label>
         <div class="tl-insert-body" style="display:none"></div>
       </div>
+      <div class="tl-insp-sec">
+        <label class="tl-insp-toggle chk"><input class="tl-bgm-on" type="checkbox"> 🎵 このゾーンで BGM を切り替える / 止める</label>
+        <div class="tl-bgm-body" style="display:none"></div>
+      </div>
       <div class="tl-cue-editor-host"></div>`;
 
-    inspectorEl.querySelector('.tl-insp-close').onclick = () => { sel = null; closeCueEditor(); render(); renderInspector(); };
+    inspectorEl.querySelector('.tl-insp-close').onclick = () => {
+      sel = null; stopBgmPreview(); closeCueEditor(); render(); renderInspector();
+    };
     renderCueRows();
     renderPost();
     renderInsert();
+    renderBgm();
   }
+
+  // 区間を離れる / インスペクタを閉じる時に試聴を止める（鳴りっぱなし防止）。
+  function stopBgmPreview() { if (bgmPreview) { bgmPreview.pause(); bgmPreview = null; } }
 
   // ---- cue 割当行 ------------------------------------------------------------
   function renderCueRows() {
@@ -403,6 +467,135 @@ export function createTimeline(container, deps) {
         body.style.display = 'none';
       }
       markDirty(); render(); renderInsert();
+    };
+  }
+
+  // ---- BGM 編集（区間の切替 / 停止・ループ範囲）--------------------------------
+  //   動画編集のオーディオトラックと同じ操作感を狙う: 「この区間で曲を変える / 止める」だけを書き、
+  //   指示の無い区間は前の曲が続く。ループ範囲は試聴しながら「今ここ」を in/out に取れる。
+  let bgmPreview = null;   // <audio>（試聴・区間インスペクタを閉じたら止める）
+  function renderBgm() {
+    const seg = segAt(sel.lap, sel.camera);
+    const onChk = inspectorEl.querySelector('.tl-bgm-on');
+    const body = inspectorEl.querySelector('.tl-bgm-body');
+    if (!onChk || !body) return;
+    const has = !!(seg && seg.hasBgm);
+    onChk.checked = has;
+    body.style.display = has ? '' : 'none';
+
+    const b = (seg && seg.bgm) || defaultBgm();
+    const tracks = bgmTracks();
+    let trackOpts = '<option value="">（トラックを選択）</option>';
+    for (const t of tracks) {
+      trackOpts += `<option value="${escapeHtml(t.id)}"${b.trackId === t.id ? ' selected' : ''}>${escapeHtml(t.name || t.id)}</option>`;
+    }
+    trackOpts += `<option value="${DEFAULT_TRACK_ID}"${b.trackId === DEFAULT_TRACK_ID ? ' selected' : ''}>既定 BGM（APK 同梱・元の曲へ戻す）</option>`;
+    if (b.trackId && b.trackId !== DEFAULT_TRACK_ID && !tracks.some((t) => t.id === b.trackId)) {
+      trackOpts += `<option value="${escapeHtml(b.trackId)}" selected>${escapeHtml(b.trackId)}（未定義）</option>`;
+    }
+    const playing = b.action === 'play';
+
+    body.innerHTML = `
+      <div class="tl-bgm-grid">
+        <label>動作<select class="tl-bgm-action">
+          <option value="play"${playing ? ' selected' : ''}>▶ この曲に切り替える</option>
+          <option value="stop"${b.action === 'stop' ? ' selected' : ''}>■ BGM を止める（フェードアウト）</option>
+          <option value="continue"${b.action === 'continue' ? ' selected' : ''}>― そのまま（指示なし）</option>
+        </select></label>
+        <label class="tl-bgm-track-l">トラック<select class="tl-bgm-track">${trackOpts}</select></label>
+        <label class="tl-bgm-vol-l">音量<input class="tl-bgm-vol" type="number" min="-1" max="1" step="0.05" value="${b.volume}"><span class="tl-hint2">-1=トラック既定</span></label>
+        <label>フェードイン<input class="tl-bgm-fin" type="number" min="0" step="0.1" value="${b.fadeInSec}">s</label>
+        <label>フェードアウト<input class="tl-bgm-fout" type="number" min="0" step="0.1" value="${b.fadeOutSec}">s</label>
+      </div>
+      <div class="tl-bgm-loop" style="display:${playing ? '' : 'none'}">
+        <div class="tl-insp-label">ループ範囲（この区間での上書き。-1 = トラック既定）</div>
+        <div class="tl-bgm-grid">
+          <label>開始<input class="tl-bgm-start" type="number" min="0" step="0.1" value="${b.startSec}">s</label>
+          <label>ループ in<input class="tl-bgm-ls" type="number" min="-1" step="0.1" value="${b.loopStartSec}">s</label>
+          <label>ループ out<input class="tl-bgm-le" type="number" min="-1" step="0.1" value="${b.loopEndSec}">s</label>
+          <label class="chk"><input class="tl-bgm-loop-on" type="checkbox" ${b.loop !== false ? 'checked' : ''}>ループする</label>
+          <label class="chk"><input class="tl-bgm-restart" type="checkbox" ${b.restart ? 'checked' : ''}>同じ曲でも頭出し</label>
+        </div>
+        <div class="tl-bgm-audition">
+          <button class="tl-bgm-play" title="この区間の設定で試聴（ブラウザ内・実機には影響しません）">🔊 試聴</button>
+          <button class="tl-bgm-stop">■</button>
+          <span class="tl-bgm-time">0.0s</span>
+          <button class="tl-bgm-mark-in" title="再生中の位置をループ in にする">ここを in</button>
+          <button class="tl-bgm-mark-out" title="再生中の位置をループ out にする">ここを out</button>
+        </div>
+      </div>`;
+
+    const q2 = (s) => body.querySelector(s);
+    const commit = () => {
+      const s = ensureSeg(sel.lap, sel.camera);
+      s.hasBgm = true;
+      if (!s.bgm) s.bgm = defaultBgm();
+      s.bgm.action = q2('.tl-bgm-action').value;
+      s.bgm.trackId = q2('.tl-bgm-track').value;
+      s.bgm.volume = parseFloat(q2('.tl-bgm-vol').value);
+      if (Number.isNaN(s.bgm.volume)) s.bgm.volume = -1;
+      s.bgm.fadeInSec = Math.max(0, parseFloat(q2('.tl-bgm-fin').value) || 0);
+      s.bgm.fadeOutSec = Math.max(0, parseFloat(q2('.tl-bgm-fout').value) || 0);
+      s.bgm.startSec = Math.max(0, parseFloat(q2('.tl-bgm-start').value) || 0);
+      s.bgm.loopStartSec = parseFloat(q2('.tl-bgm-ls').value);
+      if (Number.isNaN(s.bgm.loopStartSec)) s.bgm.loopStartSec = -1;
+      s.bgm.loopEndSec = parseFloat(q2('.tl-bgm-le').value);
+      if (Number.isNaN(s.bgm.loopEndSec)) s.bgm.loopEndSec = -1;
+      s.bgm.loop = !!q2('.tl-bgm-loop-on').checked;
+      s.bgm.restart = !!q2('.tl-bgm-restart').checked;
+      markDirty(); render();
+    };
+    body.querySelectorAll('input, select').forEach((el) => { el.onchange = commit; });
+    q2('.tl-bgm-action').onchange = () => { commit(); renderBgm(); };
+    q2('.tl-bgm-track').onchange = () => { commit(); renderBgm(); };
+
+    // 試聴（ブラウザ内のみ。show.json も実機も触らない）
+    const timeEl = q2('.tl-bgm-time');
+    const stopPreview = () => { if (bgmPreview) { bgmPreview.pause(); bgmPreview = null; } };
+    q2('.tl-bgm-play').onclick = () => {
+      const t = tracks.find((x) => x.id === q2('.tl-bgm-track').value);
+      if (!t) { timeEl.textContent = '音源なし'; return; }
+      stopPreview();
+      bgmPreview = new Audio(t.url);
+      const st = parseFloat(q2('.tl-bgm-start').value) || 0;
+      bgmPreview.currentTime = st;
+      bgmPreview.volume = Math.min(1, Math.max(0, parseFloat(q2('.tl-bgm-vol').value) < 0
+        ? (t.volume ?? 1) : parseFloat(q2('.tl-bgm-vol').value)));
+      bgmPreview.ontimeupdate = () => {
+        if (!bgmPreview) return;
+        timeEl.textContent = `${bgmPreview.currentTime.toFixed(1)}s`;
+        const leRaw = parseFloat(q2('.tl-bgm-le').value);
+        const le = leRaw >= 0 ? leRaw : (t.loopEndSec > 0 ? t.loopEndSec : 0);
+        const lsRaw = parseFloat(q2('.tl-bgm-ls').value);
+        const ls = lsRaw >= 0 ? lsRaw : (t.loopStartSec || 0);
+        if (le > 0 && bgmPreview.currentTime >= le) bgmPreview.currentTime = ls;
+      };
+      bgmPreview.play().catch(() => { timeEl.textContent = '再生不可'; });
+    };
+    q2('.tl-bgm-stop').onclick = () => { stopPreview(); timeEl.textContent = '0.0s'; };
+    q2('.tl-bgm-mark-in').onclick = () => {
+      if (!bgmPreview) return;
+      q2('.tl-bgm-ls').value = bgmPreview.currentTime.toFixed(1); commit();
+    };
+    q2('.tl-bgm-mark-out').onclick = () => {
+      if (!bgmPreview) return;
+      q2('.tl-bgm-le').value = bgmPreview.currentTime.toFixed(1); commit();
+    };
+
+    onChk.onchange = () => {
+      if (onChk.checked) {
+        const s = ensureSeg(sel.lap, sel.camera);
+        s.hasBgm = true;
+        if (!s.bgm) s.bgm = defaultBgm();
+        if (s.bgm.action === 'continue') s.bgm.action = 'play';   // 指示として意味のある既定へ
+        body.style.display = '';
+      } else {
+        stopPreview();
+        const s2 = segAt(sel.lap, sel.camera);
+        if (s2) { s2.hasBgm = false; pruneSeg(s2); }
+        body.style.display = 'none';
+      }
+      markDirty(); render(); renderBgm();
     };
   }
 
@@ -699,7 +892,12 @@ export function createTimeline(container, deps) {
       const camTxt = cur && cur.activeCam != null ? camLabel(cur.activeCam) : '—';
       const showTxt = transient ? transient.label
         : (cur && cur.showCueId ? `🎬 ${cueName(cur.showCueId)}` : 'ライブのみ');
+      // BGM は carry-forward の解決結果（Unity BgmPlanLogic のミラー）をそのまま出す
+      const laneNow = resolveBgmLane(timeline.segments, rows(), Math.max(lapCount, cur ? cur.lap : 1), rootBgmTrackId());
+      const bgmSt = (cur && cur.activeCam != null) ? laneNow.get(`${cur.lap}:${cur.activeCam}`) : null;
+      const bgmTxt = !bgmSt ? '—' : (bgmSt.trackId ? `🎵 ${trackName(bgmSt.trackId)}` : '🔇 無音');
       stateEl.innerHTML = `<b>${cur ? cur.lap : 1}周目</b> ／ ゾーン <b>${escapeHtml(camTxt)}</b> ／ ${escapeHtml(showTxt)}`
+        + ` ／ ${escapeHtml(bgmTxt)}`
         + `<span class="tl-val-step">step ${steps}</span>`;
       // 発火ログ（新しい順）
       const log = cur ? cur.fireLog : [];

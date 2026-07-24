@@ -164,7 +164,8 @@
           }
         ],
         "hasPost": false,
-        "hasInsert": false
+        "hasInsert": false,
+        "hasBgm": false
       },
       {
         "lap": 1,
@@ -189,7 +190,20 @@
           "once": true,
           "hasPost": false
         },
-        "hasInsert": true
+        "hasInsert": true,
+        "bgm": {
+          "action": "play",
+          "trackId": "bgm_horror",
+          "loop": true,
+          "startSec": 0,
+          "loopStartSec": 12,
+          "loopEndSec": 48,
+          "volume": 0.4,
+          "fadeInSec": 1,
+          "fadeOutSec": 1,
+          "restart": false
+        },
+        "hasBgm": true
       },
       {
         "lap": 2,
@@ -221,7 +235,20 @@
           },
           "hasPost": true
         },
-        "hasInsert": true
+        "hasInsert": true,
+        "bgm": {
+          "action": "stop",
+          "trackId": "",
+          "loop": true,
+          "startSec": 0,
+          "loopStartSec": -1,
+          "loopEndSec": -1,
+          "volume": -1,
+          "fadeInSec": 1,
+          "fadeOutSec": 2,
+          "restart": false
+        },
+        "hasBgm": true
       }
     ]
   }

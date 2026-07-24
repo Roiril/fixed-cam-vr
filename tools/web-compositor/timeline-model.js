@@ -14,8 +14,20 @@ export function newAssign(cueId) { return { cueId, delaySec: 0, once: true, over
 export function defaultInsert() {
   return { anchor: 'exit', camera: 0, delaySec: 0, durationSec: 4, cueId: '', once: true, post: { ...FX_DEFAULT }, hasPost: false };
 }
+// 区間 BGM 指示。action は continue（既定＝鳴っている曲がそのまま続く）/ play / stop。
+//   -1 は「トラック既定を継承」（Unity ShowBgmDef と同契約）。
+export function defaultBgm() {
+  return {
+    action: 'continue', trackId: '', loop: true, startSec: 0,
+    loopStartSec: -1, loopEndSec: -1, volume: -1,
+    fadeInSec: 1, fadeOutSec: 1, restart: false,
+  };
+}
 export function newSeg(lap, camera) {
-  return { lap, camera, cues: [], post: { ...FX_DEFAULT }, hasPost: false, insert: defaultInsert(), hasInsert: false };
+  return {
+    lap, camera, cues: [], post: { ...FX_DEFAULT }, hasPost: false,
+    insert: defaultInsert(), hasInsert: false, bgm: defaultBgm(), hasBgm: false,
+  };
 }
 
 // 保存用に正規化（present-flag を確定・空セグメントを落とす・has*=false の入れ子キーを省く）。
@@ -23,7 +35,7 @@ export function newSeg(lap, camera) {
 //   キー挿入順は show.json の可読性のため schema ドキュメント順（object → その直後に flag）。
 export function serializeTimeline(timeline) {
   const segs = (timeline.segments || [])
-    .filter((s) => (s.cues && s.cues.length) || s.hasPost || s.hasInsert)
+    .filter((s) => (s.cues && s.cues.length) || s.hasPost || s.hasInsert || s.hasBgm)
     .map((s) => {
       const out = { lap: s.lap, camera: s.camera };
       out.cues = (s.cues || []).map((a) => {
@@ -49,6 +61,8 @@ export function serializeTimeline(timeline) {
         out.insert = ins;                                              // false 時は insert キーごと出さない
       }
       out.hasInsert = !!s.hasInsert;
+      if (s.hasBgm) out.bgm = { ...defaultBgm(), ...(s.bgm || {}) };   // false 時は bgm キーを出さない
+      out.hasBgm = !!s.hasBgm;
       return out;
     });
   return { rev: timeline.rev, segments: segs };
@@ -65,9 +79,39 @@ export function normalizeTimeline(tl) {
     seg.hasPost = !!s.hasPost; if (s.post) seg.post = { ...FX_DEFAULT, ...s.post };
     seg.hasInsert = !!s.hasInsert;
     if (s.insert) seg.insert = { ...defaultInsert(), ...s.insert, post: { ...FX_DEFAULT, ...(s.insert.post || {}) } };
+    seg.hasBgm = !!s.hasBgm;
+    if (s.bgm) seg.bgm = { ...defaultBgm(), ...s.bgm };
     return seg;
   });
   return { rev: Number.isInteger(tl.rev) ? tl.rev : 1, segments: segs };
+}
+
+// 区間列を course.order 順に走査し、各区間で「鳴っている BGM」を carry-forward で解決する。
+//   Unity 側 BgmPlanLogic.Decide の JS ミラー（指示の無い区間は前の曲が続く / 同一トラックは retune）。
+//   タイムラインの BGM 帯（どこで曲が変わり、どこで止まるか）と ▶ 検証パネルが共有する。
+//   返り値: Map<"lap:camera", { trackId, change }>  change = 'start' | 'retune' | 'stop' | null
+export function resolveBgmLane(segments, order, lapCount, rootTrackId = '') {
+  const at = new Map();
+  const segs = segments || [];
+  let cur = rootTrackId || '';
+  for (let lap = 1; lap <= lapCount; lap++) {
+    for (const cam of order || []) {
+      const s = segs.find((x) => x.lap === lap && x.camera === cam);
+      let change = null;
+      if (s && s.hasBgm && s.bgm) {
+        const a = s.bgm.action;
+        if (a === 'play' && s.bgm.trackId) {
+          change = cur === s.bgm.trackId ? (s.bgm.restart ? 'start' : 'retune') : 'start';
+          cur = s.bgm.trackId;
+        } else if (a === 'stop') {
+          if (cur) change = 'stop';
+          cur = '';
+        }
+      }
+      at.set(`${lap}:${cam}`, { trackId: cur, change });
+    }
+  }
+  return at;
 }
 
 // schedule.entries → timeline（編集開始・(lap,camera) で cue を畳む）。

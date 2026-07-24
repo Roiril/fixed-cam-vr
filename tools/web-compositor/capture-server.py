@@ -43,9 +43,12 @@ MASKS = os.path.join(ROOT, 'masks')
 # デモ撮影専用フォルダ（静止画 📷 / 録画 ⏺ の保存先。captures とは分ける）
 RECORDINGS = os.path.join(ROOT, 'recordings')
 STATIC_INPUTS = os.path.join(ROOT, 'static-inputs')
+# BGM 音源置き場（ここに mp3/ogg/wav/m4a を放り込むと卓の BGM ライブラリに出る）
+AUDIO = os.path.join(ROOT, 'audio')
 os.makedirs(CAPTURES, exist_ok=True)
 os.makedirs(MASKS, exist_ok=True)
 os.makedirs(RECORDINGS, exist_ok=True)
+os.makedirs(AUDIO, exist_ok=True)
 
 # /save?to= と /open-dir?dir= の保存先ホワイトリスト（パストラバーサル防止）
 SAVE_DIRS = {'captures': CAPTURES, 'recordings': RECORDINGS}
@@ -56,6 +59,7 @@ LOCAL_URL_DIRS = {
     '/captures/': CAPTURES,
     '/recordings/': RECORDINGS,
     '/static-inputs/': STATIC_INPUTS,
+    '/audio/': AUDIO,
 }
 # リポジトリルート（tools/web-compositor から 2 つ上）。エクスポート先の解決に使う。
 REPO_ROOT = os.path.dirname(os.path.dirname(ROOT))
@@ -81,6 +85,13 @@ def _default_show():
         'cues': [],
         'post': {'exposure': 0.0, 'contrast': 1.0, 'saturation': 1.0, 'temperature': 0.0,
                  'vignette': 0.25, 'grain': 0.06, 'scanline': 0.0},
+        # BGM ライブラリ（audio/ の音源から作る）と、ランの既定 BGM。
+        # timeline.segments[].bgm が区間ごとに切替・停止を指示する。既定 bgm が無ければ
+        # Unity は APK 同梱の既定クリップ（従来の固定ループ）を鳴らす。
+        'bgmTracks': [],
+        'bgm': {'action': 'continue', 'trackId': '', 'loop': True, 'startSec': 0,
+                'loopStartSec': -1, 'loopEndSec': -1, 'volume': -1,
+                'fadeInSec': 1.0, 'fadeOutSec': 1.0, 'restart': False},
         # autoFollow=True: discovery で発見したカメラ IP を cameras[i].host へ自動反映する
         # （pinned カメラは除外）。UI トグルで切替。欠落は ON 扱い（後方互換）。
         # runEpoch: 体験者 1 人分の「ラン」世代。Web の ▶ ラン開始が +1 して postState
@@ -521,6 +532,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(self._list_captures())
         if path == '/prompts':
             return self._json(_load_prompts())
+        if path == '/audio/list':
+            return self._json(self._list_audio())
         if path == '/reveal':
             q = parse_qs(urlparse(self.path).query)
             return self._reveal(q.get('name', [''])[0])
@@ -709,7 +722,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     # 撮影フォルダ（recordings/ 等）をファイルマネージャで開く。
     def _open_dir(self, key):
-        target = SAVE_DIRS.get(key)
+        # 保存先ホワイトリスト + audio/（BGM 音源置き場。書き込み API は無いが開くのは許す）
+        target = SAVE_DIRS.get(key) or (AUDIO if key == 'audio' else None)
         if not target:
             return self._json({'ok': False, 'error': 'bad dir'}, 400)
         os.makedirs(target, exist_ok=True)
@@ -798,7 +812,8 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json({'ok': False, 'error': 'unknown endpoint'}, 404)
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
-    _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule', 'timeline')
+    _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule', 'timeline',
+                   'bgmTracks', 'bgm')
 
     def _post_state(self):
         body = self._read_json_body()
@@ -913,12 +928,29 @@ class Handler(SimpleHTTPRequestHandler):
             if cue.get('sourceUrl'):
                 cue['sourceUrl'] = bake(cue['sourceUrl'])
 
+        # BGM 音源も焼き込む（cue と同じ経路。sa://assets/ 化して APK 単体で鳴らせるように）。
+        for tr in show.get('bgmTracks', []):
+            if tr.get('url'):
+                tr['url'] = bake(tr['url'])
+
         # cue 参照走査: timeline / schedule / ライブ control が指す cueId が cues[] に実在するか検証。
         # 全 cue のアセットは上のループで焼き込み済み（timeline は cueId 参照のみで新規アセットを持たない）
         # ため追加コピーは不要。ここでは dangling 参照を missingCues として返し UI で気づけるようにする。
         cue_ids = {c.get('id') for c in show.get('cues', [])}
         referenced = self._referenced_cue_ids(show)
         missing = sorted(r for r in referenced if r and r not in cue_ids)
+
+        # BGM: 区間 / ラン既定が指すトラック id が bgmTracks に実在するか（dangling 検出）。
+        track_ids = {t.get('id') for t in show.get('bgmTracks', [])}
+        ref_tracks = set()
+        root_bgm = show.get('bgm') or {}
+        if root_bgm.get('action') == 'play' and root_bgm.get('trackId'):
+            ref_tracks.add(root_bgm['trackId'])
+        for seg in ((show.get('timeline') or {}).get('segments') or []):
+            b = seg.get('bgm') or {}
+            if seg.get('hasBgm') and b.get('action') == 'play' and b.get('trackId'):
+                ref_tracks.add(b['trackId'])
+        missing_tracks = sorted(t for t in ref_tracks if t not in track_ids)
 
         show_path = os.path.join(out_dir, 'show.json')
         # UTF-8 / LF 固定（Unity JsonUtility が読む契約）。
@@ -933,6 +965,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json({'ok': True, 'outDir': out_dir, 'showJson': show_path,
                            'copied': copied, 'count': len(copied), 'totalBytes': total,
                            'referencedCues': len(referenced), 'missingCues': missing,
+                           'missingTracks': missing_tracks,
                            'exportedAt': time.strftime('%Y-%m-%d %H:%M:%S'),
                            'showRev': show.get('rev', 0), 'hosts': hosts})
 
@@ -955,6 +988,18 @@ class Handler(SimpleHTTPRequestHandler):
         if ac:
             ids.add(ac)
         return ids
+
+    # BGM 音源一覧（audio/ に置いたファイル。ここから bgmTracks を作る）。
+    def _list_audio(self):
+        exts = ('.mp3', '.ogg', '.wav', '.m4a', '.aac')
+        items = []
+        for n in sorted(os.listdir(AUDIO)):
+            fp = os.path.join(AUDIO, n)
+            if not os.path.isfile(fp) or not n.lower().endswith(exts):
+                continue
+            items.append({'name': n, 'url': '/audio/' + n, 'size': os.path.getsize(fp),
+                          'mtime': os.path.getmtime(fp)})
+        return items
 
     def _list_captures(self):
         items = []

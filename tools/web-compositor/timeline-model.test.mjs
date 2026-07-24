@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { newSeg, newAssign, serializeTimeline, normalizeTimeline, migrateFromSchedule } from './timeline-model.js';
+import { newSeg, newAssign, serializeTimeline, normalizeTimeline, migrateFromSchedule, defaultBgm, resolveBgmLane } from './timeline-model.js';
 import { FX_DEFAULT } from './common.js';
 
 const FIXTURE_URL = new URL('../../Assets/Tests/Fixtures/show_timeline_canonical.json', import.meta.url);
@@ -39,7 +39,15 @@ function buildSample() {
   segC.insert.cueId = 'cue_C_scare'; segC.insert.hasPost = true;
   segC.insert.post = { ...FX_DEFAULT, saturation: 1.5 };
 
-  // seg D (lap2, cam0): 空（cues 空 && !hasPost && !hasInsert）— filter で除去される検証用
+  // seg B は BGM 切替も持つ（hasBgm:true / action:play）
+  segB.hasBgm = true;
+  segB.bgm = { ...defaultBgm(), action: 'play', trackId: 'bgm_horror', loopStartSec: 12, loopEndSec: 48, volume: 0.4 };
+
+  // seg C は BGM 停止（hasBgm:true / action:stop）。segA は hasBgm:false（入れ子キーを省く検証）
+  segC.hasBgm = true;
+  segC.bgm = { ...defaultBgm(), action: 'stop', fadeOutSec: 2 };
+
+  // seg D (lap2, cam0): 空（cues 空 && !hasPost && !hasInsert && !hasBgm）— filter で除去される検証用
   const segD = newSeg(2, 0);
 
   return { rev: 3, segments: [segA, segB, segC, segD] };
@@ -134,6 +142,47 @@ test('serialize omits nested keys when has*=false, keeps them when true', () => 
   assert.equal('post' in segC.insert, true);
   assert.equal(segC.insert.hasPost, true);
   assert.equal(segC.insert.post.saturation, 1.5);
+
+  // BGM も同じ present-flag 契約（hasBgm:false なら bgm キーごと省く）
+  assert.equal('bgm' in segA, false);
+  assert.equal(segA.hasBgm, false);
+  assert.equal('bgm' in segB, true);
+  assert.equal(segB.hasBgm, true);
+  assert.equal(segB.bgm.action, 'play');
+  assert.equal(segB.bgm.trackId, 'bgm_horror');
+  assert.equal(segB.bgm.loopStartSec, 12);
+  assert.equal(segB.bgm.loopEndSec, 48);
+  assert.equal(segC.hasBgm, true);
+  assert.equal(segC.bgm.action, 'stop');
+});
+
+// ---- BGM 帯の carry-forward（Unity BgmPlanLogic の JS ミラー）--------------------
+test('resolveBgmLane carries the current track forward across silent segments', () => {
+  const segs = [
+    { lap: 1, camera: 0, hasBgm: true, bgm: { action: 'play', trackId: 'bgm_a' } },
+    { lap: 1, camera: 2, hasBgm: true, bgm: { action: 'stop' } },
+    { lap: 2, camera: 1, hasBgm: true, bgm: { action: 'play', trackId: 'bgm_a' } },
+  ];
+  const lane = resolveBgmLane(segs, [0, 1, 2], 2, '');
+  // 1 周目: cam0 で開始 → cam1 は指示なしで継続 → cam2 で停止
+  assert.deepEqual(lane.get('1:0'), { trackId: 'bgm_a', change: 'start' });
+  assert.deepEqual(lane.get('1:1'), { trackId: 'bgm_a', change: null });
+  assert.deepEqual(lane.get('1:2'), { trackId: '', change: 'stop' });
+  // 2 周目: cam0 は無音のまま → cam1 で再開 → cam2 は継続
+  assert.deepEqual(lane.get('2:0'), { trackId: '', change: null });
+  assert.deepEqual(lane.get('2:1'), { trackId: 'bgm_a', change: 'start' });
+  assert.deepEqual(lane.get('2:2'), { trackId: 'bgm_a', change: null });
+});
+
+test('resolveBgmLane starts from the run default and marks same-track as retune', () => {
+  const segs = [
+    { lap: 1, camera: 1, hasBgm: true, bgm: { action: 'play', trackId: 'bgm_root', loopStartSec: 10 } },
+    { lap: 1, camera: 2, hasBgm: true, bgm: { action: 'play', trackId: 'bgm_root', restart: true } },
+  ];
+  const lane = resolveBgmLane(segs, [0, 1, 2], 1, 'bgm_root');
+  assert.deepEqual(lane.get('1:0'), { trackId: 'bgm_root', change: null });   // ラン既定が鳴っている
+  assert.deepEqual(lane.get('1:1'), { trackId: 'bgm_root', change: 'retune' }); // 同一トラック → 位置維持
+  assert.deepEqual(lane.get('1:2'), { trackId: 'bgm_root', change: 'start' });  // restart → 頭出し
 });
 
 // ---- 2. 空 segment の除去 -------------------------------------------------------

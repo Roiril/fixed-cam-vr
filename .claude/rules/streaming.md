@@ -262,6 +262,29 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - **Web 検証モード**（実機不要）: Web 卓「▶ 検証」で **矢印キー**（→ 次ゾーン / ← 1手戻る / R 先頭 / Esc 終了）。Unity セマンティクス（LapCounter 順方向進行・CueScheduler・insert・post 3 段）を JS ミラーで再現し、発火順と「体験者に見える画」を WebGL プレビューで確認。**ローカルのみで show.json / 実機は書かない**
 - **⚠ Quest 実機未検証**（2026-07-19 実装。Unity コンパイル・EditMode 126/126・Web 卓ロード + 検証エンジン + セグメントインスペクタはブラウザ検証済み。insert の dip 演出・post 切替の見た目は現場調整前提）
 
+### BGM（区間で切替・停止・ループ範囲）— 2026-07-25
+
+旧: `[Bgm]` の AudioSource が 1 曲を起動中ずっとループ（固定）。新: **タイムライン区間で切り替わる**。
+
+- **データ**: show.json トップレベル `bgmTracks[]`（`{id,name,url,loopStartSec,loopEndSec,volume}`）+
+  `bgm`（ラン既定）+ `timeline.segments[].bgm` / `hasBgm`（区間指示）。
+  区間指示 = `{action:"play"|"stop"|"continue", trackId, loop, startSec, loopStartSec, loopEndSec, volume, fadeInSec, fadeOutSec, restart}`。
+  **-1 = トラック既定を継承**。present-flag は `hasBgm`（[`TimelinePresentFlags`](../../Assets/Scripts/Streaming/TimelinePresentFlags.cs) が AND で確定）
+- **セマンティクス**（純ロジック [`BgmPlanLogic`](../../Assets/Scripts/Streaming/BgmPlanLogic.cs)・テスト `BgmPlanLogicTests` 16 本 /
+  JS ミラー `resolveBgmLane`）: 指示の無い区間は**曲が途切れず継続**（continue が既定）/ 同一トラックは
+  **Retune**（再生位置を保ちループ範囲・音量だけ更新）/ 別トラックは **Start**（クロスフェード）/ **Stop** はフェードアウト
+- **再生** = [`BgmDirector`](../../Assets/Scripts/Streaming/BgmDirector.cs)（AudioSource ×2 でクロスフェード・
+  ループ範囲は `Update` で監視して巻き戻す＝`AudioSource.loop` は全長専用のため）。クリップは URL から
+  `UnityWebRequestMultimedia` で取得しキャッシュ（`sa://` 焼き込み / ライブ URL 双方）。**擬似トラック id
+  `__default__` = APK 同梱の既定クリップ**（音源を web 側に二重に置かず「元の曲へ戻す」が書ける）
+- **区間への配線**: [`TimelineDirector`](../../Assets/Scripts/Streaming/TimelineDirector.cs) がゾーン進入で
+  `ApplySegment`。ラン開始（runEpoch 変化 / 右グリップ長押し）で**ラン既定へ戻る**。show.json の rev が上がる
+  たびに鳴り直さないよう、既定はシグネチャ比較で変化時のみ適用する
+- **後方互換**: show.json に bgm 指定が無ければ `BgmDirector.defaultClip`（HorrBGM）を従来どおりループ。
+  **⚠ シーンは `Setup Main Demo Scene` の再実行で [Bgm] を BgmDirector 化する必要がある**（未実行なら
+  BgmDirector 不在 → 区間指示は無視され旧 AudioSource の固定ループが鳴る＝安全側）
+- **⚠ Quest 実機未検証**（2026-07-25。EditMode 568/568・Web 卓 UI / 検証モードはブラウザ実測）
+
 ### 編集の粒度と自由度（2026-07-19 timeline v2 で更新）
 
 | 調整対象 | 周×カメラ（セグメント）粒度で変えられるか | どこで |
@@ -271,6 +294,7 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 | マスク領域・素材（動画/画像） | ✅ 区間インスペクタで既存 cue 割当 or その場で新規 cue 作成 | cue 単位（`cues[]` ライブラリ）。マスクはカメラ構図に対して作るため camera 帰属は維持 |
 | **画像加工 post（露出・コントラスト・彩度・色温度・ヴィネット・グレイン・走査線）** | ✅ **区間ごとに上書き可**（旧: カメラ単位固定で不可だった） | `timeline.segments[].post`（hasPost）。未設定は camera→global にフォールバック |
 | **別カメラのインサートショット（N 秒差し込み）** | ✅ **区間ごとに enter/exit で** | `timeline.segments[].insert`（hasInsert） |
+| **BGM（曲の切替・停止・ループ範囲・音量・フェード）** | ✅ **区間ごとに**（指示の無い区間は継続） | `timeline.segments[].bgm`（hasBgm）+ `bgmTracks[]` / ラン既定 `bgm` |
 
 - **cue（`OverlayCueData`）自体は色補正 post を持たない**（従来どおり）。画面全体のグレーディングは segment post > camera post > global の 3 段で解決される
 - キー空間は現状維持（`cues[].camera`=文字列 id / `timeline.segments[].camera`=int index。変換は Web の `cuesForCam` 流儀）。統一は Unity 共有契約の破壊を避けるため見送り

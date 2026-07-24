@@ -53,6 +53,7 @@ namespace FixedCamVr.Streaming.Tests
                 s.lap, s.camera,
                 hasPost = s.hasPost,
                 hasInsert = s.hasInsert,
+                hasBgm = s.hasBgm,
                 insertHasPost = s.insert != null && s.insert.hasPost,
                 cueFlags = (s.cues ?? Array.Empty<ShowSegmentCueDef>()).Select(c => c != null && c.hasOverride).ToArray(),
             }).ToArray();
@@ -65,6 +66,7 @@ namespace FixedCamVr.Streaming.Tests
                 var s = Seg(t, p.lap, p.camera);
                 Assert.AreEqual(p.hasPost, s.hasPost, $"seg({p.lap},{p.camera}).hasPost");
                 Assert.AreEqual(p.hasInsert, s.hasInsert, $"seg({p.lap},{p.camera}).hasInsert");
+                Assert.AreEqual(p.hasBgm, s.hasBgm, $"seg({p.lap},{p.camera}).hasBgm");
                 if (s.insert != null)
                     Assert.AreEqual(p.insertHasPost, s.insert.hasPost, $"seg({p.lap},{p.camera}).insert.hasPost");
                 var cues = s.cues ?? Array.Empty<ShowSegmentCueDef>();
@@ -105,6 +107,17 @@ namespace FixedCamVr.Streaming.Tests
             Assert.IsTrue(c.hasInsert, "seg C は insert あり");
             Assert.IsTrue(c.insert!.hasPost, "seg C insert.post あり");
             Assert.IsNotNull(c.insert!.post, "insert.post=true なら非 null");
+
+            // BGM も同じ present-flag 契約: A=指示なし / B=play（ループ範囲つき）/ C=stop。
+            Assert.IsFalse(a.hasBgm, "seg A は BGM 指示なし");
+            Assert.IsTrue(b.hasBgm, "seg B は BGM 指示あり");
+            Assert.IsNotNull(b.bgm, "hasBgm=true なら bgm 非 null");
+            Assert.AreEqual(BgmPlanLogic.ActionPlay, b.bgm!.action, "seg B は play");
+            Assert.AreEqual("bgm_horror", b.bgm!.trackId);
+            Assert.AreEqual(12f, b.bgm!.loopStartSec, 1e-4f);
+            Assert.AreEqual(48f, b.bgm!.loopEndSec, 1e-4f);
+            Assert.IsTrue(c.hasBgm, "seg C は BGM 指示あり");
+            Assert.AreEqual(BgmPlanLogic.ActionStop, c.bgm!.action, "seg C は stop");
 
             // seg D (2,0) は空区間 → serialize で除去され fixture に存在しない。
             Assert.IsFalse(t.segments.Any(s => s != null && s.lap == 2 && s.camera == 0), "空区間は fixture に無い");

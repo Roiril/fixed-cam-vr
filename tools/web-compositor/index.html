@@ -148,6 +148,22 @@
       <div id="floorMap"></div>
     </section>
 
+    <section class="bgm-sec" data-group="author">
+      <div class="mc-title">🎵 BGM ライブラリ
+        <span class="hint">tools/web-compositor/audio/ に置いた音源をトラックとして登録する（ループ範囲・音量つき）。登録したトラックをタイムラインの区間から「▶ この曲に切り替える / ■ 止める」で指定する。ラン既定 = 体験開始時に鳴っている曲（未設定なら APK 同梱の既定 BGM）。📦 エクスポートで音源も APK に焼き込まれる。</span>
+      </div>
+      <div class="row-btns bgm-toolbar">
+        <label class="livecue-lbl">音源 <select id="bgmFileSelect"></select></label>
+        <button id="bgmAddTrack" class="accent">＋ トラックに登録</button>
+        <button id="bgmRefreshFiles" title="audio/ を読み直す">↻</button>
+        <button id="bgmOpenDir" title="audio/ フォルダを開く">📂 音源フォルダ</button>
+        <span class="spacer"></span>
+        <label class="livecue-lbl">ラン既定 <select id="bgmRootTrack"></select></label>
+        <span id="bgmRootState" class="ed-status"></span>
+      </div>
+      <div id="bgmTrackList" class="bgm-list"></div>
+    </section>
+
     <section class="export-sec" data-group="author">
       <div class="mc-title">ビルド用エクスポート
         <span class="hint">現在の show.json と cue が参照するアセット（マスク・動画・画像）を Assets/StreamingAssets/show/ にコピーし、URL を sa://assets/… へ書き換える。Quest 単体（現地 PC 不在）で発火させる APK に焼き込む素材。</span>

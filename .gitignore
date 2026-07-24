@@ -192,6 +192,7 @@ tools/web-compositor/show.json
 tools/web-compositor/show.json.bak
 tools/web-compositor/show.json.tmp
 tools/web-compositor/masks/
+tools/web-compositor/audio/
 
 # ビルド成果物（BuildVariants が出力）
 Builds/
