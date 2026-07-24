@@ -38,7 +38,7 @@ namespace TableDuoVr.Net
         }
 
         // --- 調整定数（要実機調整。SerializeField にしない） ---
-        private const float GripBack = 0.025f;      // ピンチ点からペン先までの前方距離（指先の 2.5cm 先）
+        private const float GripBack = 0.045f;      // ピンチ点からペン先までの前方距離（指先の 4.5cm 先＝ペン先を指より突き出す）
         private const float ExtraPitchDeg = 15f;    // 手首→ピンチ線からさらに下へ倒す俯角
         private const float MaxDownDeg = 80f;        // 下向き成分の上限（LookRotation 縮退回避）
         private const float HoldDropM = 0.02f;       // フラットモードでピンチ点の下 2cm を底面に置く
