@@ -5,6 +5,7 @@
 - **ラッチ（cameraOverride / activeCue）は show.json に永続する**＝前の体験者の固定が次のランへ持ち越される。ヘッダ直下の警告バーで常時可視化（**show.json 由来なので Unity 未接続でも出る**。旧実装は Unity heartbeat 由来でしか出ず、準備段階で見えなかった）。**▶ ラン開始は runEpoch++ ＋ 固定解除 ＋ 演出停止のフルリセット**
 - **卓サーバ生存判定は `/unity/status` の 2 秒ポーリング**。`/state` は long-poll（最大 25s ブロック）なので断の検知に使ってはいけない。断は赤帯 + `body.server-down` でトーンダウン
 - **✅ 本番前チェック**（ライブ・自動更新）に「**配信元の重複**」判定あり — 2 カメラが同じ host を指すと別ゾーンで同じ映像が出るのに LIVE 判定は通ってしまう（実際に検証中に B/C が同 IP になっていて発覚）
+- **接続先の同一性照合**（PC が `/info` を 10s 毎に引き cameraId/show を slot と突合・`FIXEDCAM_IDCHECK=0` で無効化）。**Quest 側は前から `DiscoveryLogic.IsIdentityMismatch` で防いでいた**が PC 卓に同等の防御が無かった。**警告のみ**（映像を止めない・host を書き換えない）が設計の要点 — 自動貼り替えは物理的な置き間違いを「直った」ように見せ、ID 入替時にフラッピングする。stale IP 事故の根治は自前 AP + MAC 静的リース（DHCP 再割当を消す）で、照合は「気づける」ための保険
 - 未保存ガード: ヘッダ `● 未保存` バッジ / beforeunload / **未保存のまま 📦 エクスポート不可**。タイムラインに ⟲ undo（Ctrl+Z・30 手）。`show.json` は保存ごとに `.bak` 1 世代 + tmp→`os.replace`
 - 🚶 ゾーン自律はヘッダから**ライブの緊急バーへ移設**（▶ ラン開始 / 🚶 / ■ 演出停止 を 1 箇所に大きく）。ライブ中は**画質スライダを既定ロック**
 - **heartbeat のキー名は `headCourseX` / `headCourseZ` / `currentZone`**。floormap.js が旧名 `hmdX` / `hmdZ` / `zoneLabel` を見ていて ◇ HMD 位置が一度も出ていなかった（2026-07-25 修正・両方受ける）

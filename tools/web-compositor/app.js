@@ -218,6 +218,14 @@ function buildColumn(cam, index) {
     const devices = (disc && disc.devices) || [];
     const conflicts = new Set((disc && disc.conflicts) || []);
     const id = refs.cam.id;
+    // 同一性照合（PC → /info）の不一致が最優先。HTTP は 200・映像も流れるので
+    // 「LIVE なのに別スロットの端末」を掴んでいる状態はここでしか出せない。
+    const ident = disc && disc.identity && disc.identity[id];
+    if (ident && ident.state === 'mismatch') {
+      connDisc.textContent = `⚠ 別端末に接続中 — ${ident.detail}`;
+      connDisc.className = 'conn-disc conflict';
+      return;
+    }
     if (conflicts.has(id)) {
       connDisc.textContent = `⚠ 二重 ID（${id}）— 発見が曖昧なため自動追従停止`;
       connDisc.className = 'conn-disc conflict';
@@ -739,6 +747,24 @@ function preflightRows() {
       detail: dups.map(([h, ids]) => `${ids.join(' と ')} が同じ ${h}`).join(' / ')
         + ' — 別ゾーンで同じ映像が出ます（📡 発見済み端末で ID を確認）',
     });
+  }
+
+  // 接続先の同一性（PC が /info の cameraId を 10 秒毎に照合）。
+  //   host が生きていて映像も流れるのに「別スロットの端末」という事故を、ここだけが検出できる。
+  const ident = (lastDiscovery && lastDiscovery.identity) || {};
+  const idBad = [], idUnk = [];
+  for (const c of cams) {
+    const r = ident[c.id];
+    if (!r) continue;
+    if (r.state === 'mismatch') idBad.push(`${c.id}: ${r.detail}`);
+    else if (r.state === 'unverifiable') idUnk.push(c.id);
+  }
+  if (idBad.length) rows.push({ s: 'ng', label: '接続先の同一性', detail: idBad.join(' / ') });
+  else if (idUnk.length) {
+    rows.push({ s: 'warn', label: '接続先の同一性',
+      detail: `${idUnk.join(', ')} は cameraId を名乗らない端末（iPhone 等）— 照合できないため目視で確認` });
+  } else if (Object.values(ident).some((r) => r.state === 'ok')) {
+    rows.push({ s: 'ok', label: '接続先の同一性', detail: '各スロットが名乗る cameraId と一致' });
   }
 
   const ctrl = state?.control || {};

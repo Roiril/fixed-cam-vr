@@ -383,7 +383,11 @@ def _auto_follow():
 
 
 def _probe_info(host, port, auth, timeout=3.0):
-    """PC → カメラ /info へ実 HTTP GET。(ok, detail) を返す（疎通診断用）。"""
+    """PC → カメラ /info へ実 HTTP GET。(ok, detail, meta) を返す。
+
+    meta は /info の JSON（cameraId / uuid / show / deviceName）。JSON でない・
+    /info 非対応（iPhone の IP Camera Lite 等）なら None。
+    """
     req = urllib.request.Request(f'http://{host}:{port}/info')
     if auth:
         token = base64.b64encode(auth.encode('utf-8')).decode('ascii')
@@ -394,11 +398,79 @@ def _probe_info(host, port, auth, timeout=3.0):
         try:
             j = json.loads(body.decode('utf-8'))
             nm = j.get('deviceName') or j.get('cameraId') or j.get('name') or ''
-            return True, ('/info OK ' + str(nm)).strip()
+            return True, ('/info OK ' + str(nm)).strip(), j
         except Exception:
-            return True, f'/info HTTP {getattr(r, "status", 200)}'
+            return True, f'/info HTTP {getattr(r, "status", 200)}', None
     except Exception as e:
-        return False, str(e)[:100]
+        return False, str(e)[:100], None
+
+
+# ---- 接続先の同一性照合（stale IP で別スロットの端末を掴む事故の検出）-----------
+# DHCP でリースが移る / 端末側で cameraId を付け替える と、slot の host が
+# 「別の端末」を指したまま HTTP は 200 で MJPEG も流れる（＝ LIVE 判定は通る）。
+# Quest 側は DiscoveryLogic.IsIdentityMismatch で受信中フィードを継続照合しているが、
+# PC 卓には同等の防御が無く、別ゾーンに同じ映像が出ていても気づけなかった。
+#   方針: 定期的に /info を引いて cameraId / show を slot と突き合わせ、**警告だけ**出す。
+#         自動での host 書き換えは beacon（_auto_follow）に限定し、ここではやらない
+#         （物理的な置き間違いを「直った」ように見せない / ID 入替時のフラッピング防止）。
+#         映像も止めない（設営中に「何も見えない」方が困る）。
+# キルスイッチ: FIXEDCAM_IDCHECK=0
+IDCHECK_ENABLED = os.environ.get('FIXEDCAM_IDCHECK', '1') != '0'
+IDCHECK_INTERVAL = 10.0
+_ident_lock = threading.Lock()
+_ident = {}   # camId -> {state, detail, metaId, metaShow, uuid, name, host, port, at}
+
+
+def _ident_check_once():
+    with _show_cond:
+        cams = json.loads(json.dumps(_show.get('cameras', [])))
+    out = {}
+    for cam in cams:
+        cid = cam.get('id')
+        host = (cam.get('host') or '').strip()
+        port = int(cam.get('port') or 8080)
+        if not host:
+            out[cid] = {'state': 'nohost', 'detail': 'host 未設定', 'host': '', 'port': port,
+                        'at': time.time()}
+            continue
+        ok, detail, meta = _probe_info(host, port, cam.get('auth') or '', timeout=2.0)
+        rec = {'host': host, 'port': port, 'at': time.time(),
+               'metaId': (meta or {}).get('cameraId'), 'metaShow': (meta or {}).get('show'),
+               'uuid': (meta or {}).get('uuid'), 'name': (meta or {}).get('deviceName')}
+        if not ok:
+            rec.update(state='unreachable', detail=detail)
+        elif not meta or not rec['metaId']:
+            # /info 非対応 or cameraId 未設定（iPhone・旧 streamer）。照合不能＝不一致にしない。
+            rec.update(state='unverifiable', detail='cameraId を名乗らない端末（照合不可）')
+        elif rec['metaId'] != cid:
+            rec.update(state='mismatch',
+                       detail=f'この host は {rec["metaId"]} の端末（{rec["name"] or ""}）')
+        elif rec['metaShow'] and SHOW_TOKEN and rec['metaShow'] != SHOW_TOKEN:
+            rec.update(state='mismatch',
+                       detail=f'別のショー "{rec["metaShow"]}" の端末（隣ブース混線の疑い）')
+        else:
+            rec.update(state='ok', detail=f'{rec["name"] or ""} / cameraId={cid}')
+        out[cid] = rec
+    with _ident_lock:
+        _ident.clear()
+        _ident.update(out)
+
+
+def _ident_loop():
+    while True:
+        try:
+            _ident_check_once()
+        except Exception:
+            pass  # 照合は best-effort。失敗しても配信・保存は止めない
+        time.sleep(IDCHECK_INTERVAL)
+
+
+def _start_idcheck():
+    if not IDCHECK_ENABLED:
+        print('  接続先の同一性照合           : 無効（FIXEDCAM_IDCHECK=0）')
+        return
+    threading.Thread(target=_ident_loop, daemon=True).start()
+    print(f'  接続先の同一性照合           : /info を {int(IDCHECK_INTERVAL)}s 毎に照合（警告のみ）')
 
 
 def _start_discovery(http_port):
@@ -499,9 +571,12 @@ class Handler(SimpleHTTPRequestHandler):
         devices.sort(key=lambda d: (d['role'] != 'show-server', d['id'], d['ip']))
         with _show_cond:
             auto_follow = bool(_show.get('control', {}).get('autoFollow', True))
+        with _ident_lock:
+            identity = json.loads(json.dumps(_ident))
         return self._json({'devices': devices, 'conflicts': conflicts,
                            'autoFollow': auto_follow, 'lastFollow': _last_follow,
-                           'enabled': DISCOVERY_ENABLED, 'showToken': SHOW_TOKEN})
+                           'enabled': DISCOVERY_ENABLED, 'showToken': SHOW_TOKEN,
+                           'identity': identity, 'idCheckEnabled': IDCHECK_ENABLED})
 
     # 疎通診断: (a) PC→各カメラ /info 実接続 (b) ビーコン受信 (c) Quest heartbeat。
     # ビーコンは来るのに /info が ✕ なら AP のクライアント間遮断が濃厚（現地即判定用）。
@@ -525,9 +600,12 @@ class Handler(SimpleHTTPRequestHandler):
             auth = cam.get('auth') or ''
             row = {'id': cid, 'host': host, 'port': port, 'pinned': bool(cam.get('pinned'))}
             if host:
-                ok, detail = _probe_info(host, port, auth)
+                ok, detail, meta = _probe_info(host, port, auth)
                 row['http'] = ok
                 row['httpDetail'] = detail
+                mid = (meta or {}).get('cameraId')
+                if mid and mid != cid:
+                    row['httpDetail'] = f'{detail} ⚠ 名乗った ID={mid}'
             else:
                 row['http'] = None
                 row['httpDetail'] = 'host 未設定'
@@ -905,4 +983,5 @@ if __name__ == '__main__':
     print(f'web compositor capture-server : http://0.0.0.0:{port}/  (captures -> {CAPTURES})')
     print(f'  MJPEG stream proxy (/cam)    : http://0.0.0.0:{cam_port}/cam')
     _start_discovery(port)
+    _start_idcheck()
     ThreadingHTTPServer(('0.0.0.0', port), Handler).serve_forever()
