@@ -50,6 +50,10 @@ namespace TableDuoVr.Net
         public string GetDisplayName(int i) =>
             (i >= 0 && i < displayNames.Length) ? displayNames[i] : "?";
 
+        /// <summary>ゲーム index の id（dsa/algo/geister/bandido/bear 等。範囲外は ""）。</summary>
+        public string GetGameId(int i) =>
+            (i >= 0 && i < gameIds.Length) ? gameIds[i] : "";
+
         /// <summary>アクティブゲームを切り替える（server 専用）。範囲外/同値は no-op。</summary>
         public void ServerSetActiveGame(int idx)
         {
