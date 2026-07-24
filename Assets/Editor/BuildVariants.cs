@@ -119,6 +119,26 @@ namespace FixedCamVr.EditorTools
         private static void BuildVariant(string productName, string packageId, string scenePath, string outName,
             bool development)
         {
+            // ⚠ Android APK は「アクティブプラットフォーム = Android」でしかビルドしない（2026-07-24 実害）。
+            // Standalone アクティブのままのクロスターゲット一発ビルドは Oculus XR プラグインの
+            // マニフェスト注入（com.oculus.intent.category.VR / focusaware）が落ち、
+            // Quest 上で 2D パネルとして起動する APK が焼ける（HMD にシーンが出ない）。
+            // 切替 + 直後の BuildPlayer は「scripts are compiling」で必ず失敗する（desktop 経路の教訓）ため、
+            // ここでは切替の開始だけ行い中断する。切替完了後にもう一度メニューを実行すること。
+            if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.Android)
+            {
+                Debug.LogError("[BuildVariants] 中断: アクティブプラットフォームが Android ではありません" +
+                               $"（現在: {EditorUserBuildSettings.activeBuildTarget}）。Android への切替を開始しました — " +
+                               "切替完了後にもう一度このメニューを実行してください");
+                EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
+                return;
+            }
+            if (EditorApplication.isCompiling)
+            {
+                Debug.LogError("[BuildVariants] 中断: スクリプトコンパイル中。完了後にもう一度実行してください");
+                return;
+            }
+
             string prevProduct = PlayerSettings.productName;
             string prevId = PlayerSettings.GetApplicationIdentifier(BuildTargetGroup.Android);
             try

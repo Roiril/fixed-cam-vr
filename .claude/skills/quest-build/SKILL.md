@@ -117,6 +117,15 @@ adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastU
 
 ## 落とし穴
 
+- **⚠ APK ビルドは「アクティブプラットフォーム = Android」が前提（2026-07-24 実害・HMD にシーンが出ない事故）**:
+  desktop ビルド（2ed040a 以降）は active target を **Standalone のまま残す**。その状態で APK メニューを
+  撃つと、クロスターゲット一発ビルド（BuildPlayer 内部切替）では **Oculus XR プラグインのマニフェスト注入が
+  実行されず、`com.oculus.intent.category.VR` / `focusaware` の無い APK** が焼ける → Quest がアプリを
+  **2D パネルとして起動**し、HMD にシーンが出ない（NGO 接続は正常に成立するのが紛らわしい）。
+  BuildVariant にガード実装済み（Android 以外なら切替を開始して中断 → 完了後にメニュー再実行）。
+  検品は `aapt dump xmltree <apk> AndroidManifest.xml | grep category` に
+  `com.oculus.intent.category.VR` があること。ビルド後は active が Android のまま残るので通常は連続ビルド可。
+  desktop ビルドを挟んだ直後だけこのガードに当たる（1 回目=切替開始・2 回目=本ビルド、の 2 段になる）
 - **手動 Build Settings を使わない** — Main も TableDuoMain も同名・同 ID になり共存不可
 - `execute_menu_item` のタイムアウトを失敗と誤認しない（バックグラウンドでビルド継続中）
 - Unity がドメインリロード/コンパイル中はメニューが動かない → `unity-status` で Ready 確認してから
