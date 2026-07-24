@@ -83,8 +83,15 @@ TIMEOUT したら「ビルド失敗」ではなく「未開始」を疑って Ed
 idle 確認後にもう一度 menu を撃つ（2回目で normally 通る）。
 また **desktop ビルド（Standalone）の完成判定は exe の mtime を見ない**こと —
 Unity のインクリメンタルビルドはランチャー stub（TableDuo.exe）を書き換えない。
-`Builds/tableduo-desktop/TableDuo_Data/level0` の mtime が正しいセンチネル。
+**センチネルは変更内容で使い分ける（2026-07-24 偽 TIMEOUT の実害）**:
+シーン変更あり → `Builds/tableduo-desktop/TableDuo_Data/level0` / **スクリプトのみの変更 →
+`TableDuo_Data/Managed/TableDuoVr.Net.dll`**（level0 は書き換わらないので level0 ポーリングは
+偽陰性になる）。確実なのは Editor.log の `[BuildVariants] DESKTOP OK` 行の増加を見ること。
 起動中の TableDuo.exe（PC ホスト）はビルド前に必ず kill（exe ロックで上書き失敗する）。
+失敗ログには「scripts are compiling」の他に **「A domain reload is pending」** 変種もある
+（refresh/テスト直後に menu を撃った時）— editor_state の `is_domain_reload_pending=false` を
+確認してから撃ち直せば通る。MCP がタイムアウトした menu コマンドは**キューに残って
+reload 完了後に再実行されることがある**（＝知らない間に 2 回ビルドが走る。OK 行の重複で判別）。
 
 **⚠ desktop ビルドが「DESKTOP 失敗: result=Unknown errors=0」で落ちる（2026-07-24 実害×2・コード修正済み）**:
 Editor.log に `Error building Player because scripts are compiling` が出ていたらこれ。旧

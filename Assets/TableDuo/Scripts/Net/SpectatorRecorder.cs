@@ -17,10 +17,11 @@ namespace TableDuoVr.Net
     /// （<see cref="SpectatorController"/>）とは独立に、オフスクリーンのカメラ 2 本を生成して RenderTexture へ
     /// 描き、AsyncGPUReadback → JPEG エンコード → 別スレッドでファイル書き込みする。
     ///
-    /// 頭ジオメトリの潰し（FPV でカメラに頭が埋まらないようにする処理）はグローバル状態なので、
-    /// 録画中だけ <see cref="RenderPipelineManager"/> の begin/end で per-camera に切り替える:
-    /// - FPV 録画カメラの描画直前は人役の頭を潰し、俯瞰録画カメラの描画直前は戻す
-    /// - 自分の録画カメラの描画後は「表示側が潰している状態」へ必ず復元する（表示カメラの見た目を壊さない）
+    /// FPV に自分の頭（口の内側・目玉）が写り込む問題は **near clip（0.15m）で自頭シェルをクリップ**して解く。
+    /// 旧実装の「begin/endCameraRendering で頭ボーン潰しを per-camera 切替」は、SkinnedMeshRenderer の
+    /// スキニングがフレームに 1 回しか焼かれないため**原理的に効かない**（全カメラが同じスキン結果を描く。
+    /// 2026-07-24 実録画で口・目玉が写る実害を確認して撤去）。near clip なら描画カメラ単位で確実に効き、
+    /// 俯瞰録画・表示カメラの頭は無傷。副作用は「顔から 15cm 以内の物体もクリップされる」のみ（卓上運用では稀）。
     ///
     /// 出力: persistentDataPath/tdv_recordings/tdv_rec_&lt;yyyyMMdd_HHmmss&gt;/{overhead.avi, person_fpv.avi}。
     /// </summary>
@@ -36,6 +37,8 @@ namespace TableDuoVr.Net
 
         private const int StreamOverhead = 0;
         private const int StreamPersonFpv = 1;
+        // FPV 録画カメラの near clip。自分の頭シェルを描画から外す距離（顔前面 ~10cm・顎下 ~12cm を包含）
+        private const float FpvNearClip = 0.15f;
 
         private SpectatorController? _spectator;
         private TableDuoPlayer? _person;           // 人役（Role.Full）追従対象
@@ -68,7 +71,8 @@ namespace TableDuoVr.Net
         private byte[]? _flipScratch;
 
         // graphicsUVStartsAtTop で読み出しの上下が反転するプラットフォームがある。
-        // ⚠ 実行時検証点: 実機で上下が逆に録れていたら、この判定を反転（! を付ける/外す）1 箇所で直る。
+        // 2026-07-24 実測（D3D11・PC ホスト）: graphicsUVStartsAtTop=true で flip すると上下逆に録れた
+        // → readback は既に上端始まりで返っている。! 付きが正（検証点コメントどおり実録画で確定）。
         private bool _flipVertical;
 
         public bool IsRecording => _recording;
@@ -105,7 +109,7 @@ namespace TableDuoVr.Net
                 return;
             }
 
-            _flipVertical = SystemInfo.graphicsUVStartsAtTop;
+            _flipVertical = !SystemInfo.graphicsUVStartsAtTop;
             int bytes = RecWidth * RecHeight * 4;
             _rawScratch = new byte[bytes];
             _flipScratch = new byte[bytes];
@@ -123,13 +127,13 @@ namespace TableDuoVr.Net
             // 人役 FPV は接続前は俯瞰と同じ pose に置いておく（LateUpdate で頭 pose 取得後に追従開始）
             _fpvCam.transform.SetPositionAndRotation(camPos, overheadRot);
             _fpvCam.fieldOfView = _spectator.FpvFieldOfView;
+            // 自分の Remy 頭シェル（口内側・目玉 ≈ eye anchor から 6〜12cm）を near clip で描画から外す
+            //（クラス doc 参照。per-camera 頭ボーン潰しはスキニング都合で効かないため撤去済み）
+            _fpvCam.nearClipPlane = FpvNearClip;
 
             _queue = new BlockingCollection<(int, byte[])>(QueueCapacity);
             _writerThread = new Thread(WriterLoop) { IsBackground = true, Name = "SpectatorRecWriter" };
             _writerThread.Start();
-
-            RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
-            RenderPipelineManager.endCameraRendering += OnEndCameraRendering;
 
             _inFlightOverhead = 0;
             _inFlightFpv = 0;
@@ -145,9 +149,6 @@ namespace TableDuoVr.Net
         {
             if (!_recording) return;
             _recording = false;
-
-            RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
-            RenderPipelineManager.endCameraRendering -= OnEndCameraRendering;
 
             // 発行済み readback を最後まで処理（コールバックはメインスレッドで走り _queue へ積む）
             AsyncGPUReadback.WaitAllRequests();
@@ -169,7 +170,6 @@ namespace TableDuoVr.Net
             _rawScratch = null;
             _flipScratch = null;
 
-            RestoreHeadToDisplay();
             Debug.Log($"[TableDuo][Rec] ■ 録画終了 → {_outputDir}（俯瞰 overhead.avi / 人役 person_fpv.avi・drop={_dropped}）");
         }
 
@@ -281,28 +281,6 @@ namespace TableDuoVr.Net
             {
                 Debug.LogError($"[TableDuo][Rec] writer スレッド異常終了: {e.Message}");
             }
-        }
-
-        // ── 頭の per-camera 表示制御（グローバル潰しと録画の両立）────────────────────────
-        private void OnBeginCameraRendering(ScriptableRenderContext ctx, Camera cam)
-        {
-            if (_person == null) return;
-            if (cam == _fpvCam) _person.SetRemoteHeadCollapsed(true);       // 人役 FPV は頭を潰す
-            else if (cam == _overheadCam) _person.SetRemoteHeadCollapsed(false); // 俯瞰は頭を戻す
-        }
-
-        private void OnEndCameraRendering(ScriptableRenderContext ctx, Camera cam)
-        {
-            if (_person == null) return;
-            // 自分の録画カメラの描画が終わったら「表示側の状態」へ必ず戻す（表示カメラを壊さない）
-            if (cam == _fpvCam || cam == _overheadCam) RestoreHeadToDisplay();
-        }
-
-        private void RestoreHeadToDisplay()
-        {
-            if (_person == null) return;
-            var display = _spectator != null ? _spectator.DisplayCollapsedPlayer : null;
-            _person.SetRemoteHeadCollapsed(_person == display);
         }
 
         private void CleanupWriters()

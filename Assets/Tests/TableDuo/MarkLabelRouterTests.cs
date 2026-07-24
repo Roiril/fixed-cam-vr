@@ -44,6 +44,12 @@ namespace TableDuoVr.Tests
         }
 
         [Test]
+        public void Classify_RecToggle()
+        {
+            Assert.AreEqual(MarkAction.RecToggle, MarkLabelRouter.Classify("rec_toggle", out _));
+        }
+
+        [Test]
         public void Classify_Unknown_LogOnly()
         {
             Assert.AreEqual(MarkAction.LogOnly, MarkLabelRouter.Classify("phase2", out string id));

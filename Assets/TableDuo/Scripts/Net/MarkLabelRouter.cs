@@ -11,6 +11,7 @@ namespace TableDuoVr.Net
         GameSwitch,
         AlgoDeal,
         BandidoDeal,
+        RecToggle,
     }
 
     /// <summary>
@@ -36,6 +37,8 @@ namespace TableDuoVr.Net
             if (label == "algo_deal") return MarkAction.AlgoDeal;
             // 特別ラベル: バンディド完全ランダム配り直し
             if (label == "bandido_deal") return MarkAction.BandidoDeal;
+            // 特別ラベル: 映像記録（俯瞰+人役 FPV）の開始/停止トグル
+            if (label == "rec_toggle") return MarkAction.RecToggle;
             return MarkAction.LogOnly;
         }
 

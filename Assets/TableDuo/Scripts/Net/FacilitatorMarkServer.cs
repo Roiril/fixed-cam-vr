@@ -57,6 +57,15 @@ namespace TableDuoVr.Net
                     case MarkAction.BandidoDeal:
                         FindObjectOfType<BandidoDealer>()?.ServerShuffleDeal();
                         break;
+                    // 特別ラベル: 映像記録の開始/停止トグル（運営パネルのボタンと同じ経路の遠隔版）。
+                    //   curl "http://<hostIP>:7780/mark?label=rec_toggle"
+                    case MarkAction.RecToggle:
+                    {
+                        var rec = FindObjectOfType<SpectatorRecorder>()
+                            ?? new GameObject("SpectatorRecorder").AddComponent<SpectatorRecorder>();
+                        if (rec.IsRecording) rec.StopRecording(); else rec.StartRecording();
+                        break;
+                    }
                 }
             }
         }
