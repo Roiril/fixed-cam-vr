@@ -933,9 +933,14 @@ class Handler(SimpleHTTPRequestHandler):
             if tr.get('url'):
                 tr['url'] = bake(tr['url'])
 
+        # v3 演出（takes[].steps[].assetUrl）の素材も焼き込む。cue と違いカット自身が素材 URL を
+        # 直接持つので、ここを歩かないと「現地 PC 不在の APK で演出の映像だけ出ない」事故になる。
+        for step in self._step_asset_slots(show):
+            step['assetUrl'] = bake(step['assetUrl'])
+
         # cue 参照走査: timeline / schedule / ライブ control が指す cueId が cues[] に実在するか検証。
-        # 全 cue のアセットは上のループで焼き込み済み（timeline は cueId 参照のみで新規アセットを持たない）
-        # ため追加コピーは不要。ここでは dangling 参照を missingCues として返し UI で気づけるようにする。
+        # 全 cue のアセットは上のループで焼き込み済み（cueId 参照は新規アセットを持たない）ため
+        # 追加コピーは不要。ここでは dangling 参照を missingCues として返し UI で気づけるようにする。
         cue_ids = {c.get('id') for c in show.get('cues', [])}
         referenced = self._referenced_cue_ids(show)
         missing = sorted(r for r in referenced if r and r not in cue_ids)
@@ -969,8 +974,20 @@ class Handler(SimpleHTTPRequestHandler):
                            'exportedAt': time.strftime('%Y-%m-%d %H:%M:%S'),
                            'showRev': show.get('rev', 0), 'hosts': hosts})
 
-    # timeline（segments[].cues[].cueId + insert.cueId）/ schedule.entries / control.activeCue が
-    # 参照する cueId の集合。export-build の dangling 参照検出に使う。
+    # v3 演出のカットのうち assetUrl（事前映像 / 静止画）を持つものを列挙する。
+    # export-build が sa:// 化のために書き換える対象そのもの（走査漏れをテストで固定できるよう分離）。
+    @staticmethod
+    def _step_asset_slots(show):
+        slots = []
+        for seg in ((show.get('timeline') or {}).get('segments') or []):
+            for take in (seg.get('takes') or []):
+                for step in (take.get('steps') or []):
+                    if step.get('assetUrl'):
+                        slots.append(step)
+        return slots
+
+    # timeline（v3: segments[].takes[].steps[].cueId / v2: segments[].cues[].cueId + insert.cueId）/
+    # schedule.entries / control.activeCue が参照する cueId の集合。export-build の dangling 参照検出に使う。
     @staticmethod
     def _referenced_cue_ids(show):
         ids = set()
@@ -978,6 +995,12 @@ class Handler(SimpleHTTPRequestHandler):
             if e.get('cueId'):
                 ids.add(e['cueId'])
         for seg in ((show.get('timeline') or {}).get('segments') or []):
+            # v3: 演出のカットが参照する cue（マスク素材）
+            for take in (seg.get('takes') or []):
+                for step in (take.get('steps') or []):
+                    if step.get('cueId'):
+                        ids.add(step['cueId'])
+            # v2: 区間 cue / インサート（読み取り互換の間は残す）
             for a in (seg.get('cues') or []):
                 if a.get('cueId'):
                     ids.add(a['cueId'])
