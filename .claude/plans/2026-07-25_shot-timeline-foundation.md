@@ -172,6 +172,14 @@ status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤�
   既存の show.json を戻すだけで全部元通りになる退避路。`ShotDirector` への完全統合（cue / insert / ambient を
   1 クラスに畳む）は**やっていない** — 二重経路を作らない目的は「版で切り替える」形で達成し、
   クラス統合は締切後の整理に回す（負債として明示）
+  - **2026-07-25 追記（ユーザー判断で一本化）**: 版の分岐そのものを廃止した。`PushCueSource` は
+    `TimelineMigration.EnsureTakes` で takes[] を確定させてから常に `TakeRunner` へ渡す。
+    **旧 `InsertController` / `InsertLogic` と、区間 `cues[]` を CueScheduler へ流す経路は削除**
+    （`InsertLogicTests` も削除。凍結解除の不変条件は `TakeWiringTests` の
+    `SetTakesDuringTake_FoldsAndUnfreezes` / `ResetRunDuringTake_FoldsAndUnfreezes` が引き継ぐ）。
+    v2 データは**読み取り互換だけ**残る（`TimelineMigration` が唯一の変換点）。
+    卓側も旧グリッド `timeline.js` を削除し、オーサリング面は演出・カットのリボン 1 つになった。
+    戻したいときはこの一本化コミットを `git revert` する（データを戻すだけでは戻らない）
 - **構成**: [`ShowTakeSchema`](../../Assets/Scripts/Streaming/ShowTakeSchema.cs)（型 + 判別子 + 既定）/
   [`TimelineMigration`](../../Assets/Scripts/Streaming/TimelineMigration.cs)（v2→v3）/
   [`TakeRunnerLogic`](../../Assets/Scripts/Streaming/TakeRunnerLogic.cs)（純ロジック）/

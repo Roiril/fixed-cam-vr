@@ -140,12 +140,27 @@ Web     2 秒ごとに引き直し → 区間フッタ「実測 平均 8.2s（�
   </figure>
 </div>
 
+<h2>2026-07-25 追加: 演出・カットへの一本化</h2>
+<p>「変換ボタンを押さなくても v3 を既定にしていいのでは」という指摘から、<b>版の分岐そのものを畳みました</b>。</p>
+<div class="tbl-wrap">
+<table>
+<tr><th>面</th><th>前</th><th>後</th></tr>
+<tr><td>卓のオーサリング</td><td>v2 グリッド + 「⇪ v3 に変換」ボタン + リボン</td><td><b>リボン 1 つ</b>（旧グリッド <code>timeline.js</code> は削除）</td></tr>
+<tr><td>実機の実行体</td><td>版で分岐（v2 = InsertController + CueScheduler / v3 = TakeRunner）</td><td><b>TakeRunner 1 つ</b>（<code>InsertController</code> / <code>InsertLogic</code> は削除）</td></tr>
+<tr><td>古い show.json</td><td>そのまま旧経路で実行</td><td><b>読み込み時に演出へ変換</b>（<code>TimelineMigration</code> が唯一の変換点）。保存し直さなくても動きは同じ</td></tr>
+<tr><td>戻し方</td><td>データを v2 に戻す</td><td>一本化コミットを <code>git revert</code>（データだけでは戻らない）</td></tr>
+</table>
+</div>
+<p class="foot">これで「画面の所有者は常に 1 人」という不変条件が、経路の本数からも保証されます（凍結フラグが降りずにゾーン切替が死ぬ、というこの設計が殺したかった failure mode の再発面が 1 つ減りました）。</p>
+
 <h2>コミット</h2>
 <div class="tbl-wrap">
 <table>
 <tr><th>コミット</th><th>内容</th></tr>
 <tr><td><code>f094103</code></td><td>feat：実測滞在時間と実画プレビューで卓の演出オーサリングを仕上げる（23 ファイル・+1118 / −317）</td></tr>
 <tr><td><code>ac3c051</code></td><td>fix：卓 UI の見切れ・可読性・狭幅崩れを実画面を見て直す（7 ファイル・+154 / −29）</td></tr>
+<tr><td><code>261fd0c</code></td><td>feat：卓の編集面を演出・カット（v3）既定にする</td></tr>
+<tr><td>（この後）</td><td>refactor：演出・カットへ一本化（v2 の編集面と実行体を削除）</td></tr>
 </table>
 </div>
 <p class="foot">前スレッドの 15 本と合わせて 17 コミットを origin/master へ push 済み（<code>dc9aa67..ac3c051</code>）。</p>
@@ -156,7 +171,7 @@ Web     2 秒ごとに引き直し → 区間フッタ「実測 平均 8.2s（�
   <li><b>卓サーバを再起動</b>（<code>serve.ps1</code>）— 新しい <code>/dwell/stats</code> と <code>/scenarios/save</code> は再起動後に効きます</li>
   <li>APK をビルドして 1 周歩く。<b>演出中に歩いても周回が進むこと</b>・cue / インサートの後にゾーン切替が戻ることを確認</li>
   <li>歩いた後、卓のリボンの区間に <b>実測 平均</b> が出ることを確認（出れば Quest → 卓 → UI の経路が生きている）</li>
-  <li><b>卓の編集面は既定が v3（リボン）になりました</b>（2026-07-25 追加）。v2 の show.json も変換して表示され、<b>💾 保存を押した時点で v3 として書き出されます</b>。押すまでは v2 のままなので実機は従来経路。戻したいときは、保存前なら「▤ 旧グリッド」、保存後なら <code>show.json.bak</code>（卓サーバが 1 世代残す）を戻して再起動</li>
+  <li><b>演出・カット（v3）へ一本化しました</b>（2026-07-25 追加）。卓のオーサリング面はリボン 1 つ、実機の実行体は <code>TakeRunner</code> 1 つです。古い形式（cue 割当・インサートショット）の show.json は<b>読み込み時に変換</b>されるので、保存し直さなくても動きは同じ。旧 <code>InsertController</code> と旧グリッドは削除したので、戻したいときは一本化コミットを <code>git revert</code> します</li>
 </ol>
 
 <hr>

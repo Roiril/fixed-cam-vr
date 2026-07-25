@@ -235,7 +235,12 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - `CachedConfig`（端末キャッシュ）に cues / schedule / course を保存するようになった（旧: cues 欠落でオフライン発火不可だった）
 - **⚠ 実機未検証**（2026-07-17 実装。コンパイル・EditMode テスト 75/75・Web UI・エクスポートは検証済み）
 
-## タイムライン第一級オーサリング（show.json v2 `timeline`）— 2026-07-19
+## タイムライン第一級オーサリング（旧 `timeline` v2）— 2026-07-19 / **2026-07-25 に読み取り専用**
+
+> **この節は「過去データの意味」を読むための記録**。2026-07-25 に演出・カット（v3）へ一本化したので、
+> **卓はもう v2 を書かないし、Unity にも v2 の実行体は無い**（旧 `InsertController` / 区間 `cues[]` の
+> CueScheduler 供給は削除）。端末キャッシュ・焼き込みに残る v2 は
+> [`TimelineMigration`](../../Assets/Scripts/Streaming/TimelineMigration.cs) が読み込み時に演出へ変換する。
 
 体験オーサリングの正面を**周回×ゾーン区間（セグメント）のタイムライン**へ再設計した。計画
 [.claude/plans/2026-07-19_webui-timeline-authoring.md](../plans/2026-07-19_webui-timeline-authoring.md)（スキーマ・セマンティクスの単一ソース）。
@@ -259,7 +264,8 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 
 - **cue**: 区間進入（Zone commit）+ delaySec で発火。複数可。`override` は ResolveCue 結果（OverlayCueData 複製）への差分パッチ。`control.activeCue` 非空中は抑止（ライブ優先）
 - **post 上書き**: 解決は **segment > cameras[i].post > global** の 3 段（Unity `ApplyPostForActive` を拡張。insert 中はさらに insert post が最優先の 4 段）。区間離脱（次の Zone commit）で解除。**「1 周目の B は普通・2 周目の B は赤く」が可能になった**（旧: カメラ単位固定で不可）
-- **インサートショット** = [`InsertController`](../../Assets/Scripts/Streaming/InsertController.cs) + `InsertLogic`（純ロジック・テストあり）:
+- **インサートショット**（旧実装 `InsertController` + `InsertLogic` は 2026-07-25 に削除。
+  いまは同じ意味のものが「演出のカット（`source: live`）」として `TakeRunner` で走る）:
   - `enter`: 進入 + delaySec 後、insert.camera を durationSec 秒表示 → 最新ゾーンカメラへ復帰
   - `exit`: **このゾーンを Zone 切替で離れる瞬間**、dip の黒中に insert.camera へ差し替え durationSec 秒 → 最新ゾーンカメラへ復帰。体験者は A→黒→C(N秒)→黒→B と見え、中間カメラのフラッシュを見せない（ユーザー要求「A→B に切り替わる前に C に演出を N 秒」の実装形）
   - 切替は dip-to-black 付き（`CameraSwitchDirector` の `SwitchSource.Insert`）。insert 表示中はゾーン自動切替を凍結（cue 凍結と同型）。**周回カウントは実ゾーン移動の commit 時に通常どおり 1 回**（Insert 切替は LapCounter が数えない）
@@ -286,9 +292,9 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 **cue（オーバーレイ）と insert（カメラ差し込み）を「演出(Take) / カット(Step)」1 語彙へ畳んだ。**
 設計・スキーマの正本は [2026-07-25_shot-timeline-foundation.md](../plans/2026-07-25_shot-timeline-foundation.md)（§6 が契約）。
 
-- **切替は show.json の版で決まる**: `timeline.schema >= 3`（または `takes` を持つ区間がある）→ **v3 経路**
-  （[`TakeRunner`](../../Assets/Scripts/Streaming/TakeRunner.cs) が演出を実行し、旧 cue / insert 経路は空にされる）。
-  そうでなければ**従来経路のまま完全に不変**（＝ v2 の show.json に戻せば全部元通り＝退避路）
+- **実行体は [`TakeRunner`](../../Assets/Scripts/Streaming/TakeRunner.cs) 1 つ**（2026-07-25 に一本化）。
+  `ShowControlClient.PushCueSource` は版を見ずに `TimelineMigration.EnsureTakes` で takes[] を確定させてから
+  `TimelineDirector.SetTimeline` へ渡す。**画面の所有者は常に 1 人**という不変条件が、経路の本数からも保証される
 - **区間 = (lap, camera) は変わらない**。区間に `takes[]` が 0..N 本ぶら下がる。1 本の演出が
   **カット列**を持つ（`live:<cam>` / `inherit` / `clip` / `still` ＋ オーバーレイ cueId ＋ 尺 ＋ 遷移）
 - **`start.ifMissed`**: `enter+t` の演出が **t に達する前に体験者が区間を出たら、離脱の瞬間に発火**する
@@ -301,11 +307,11 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   `cues[]` → `inherit` カット / `insert` → `live` カット へ決定的に変換する（端末キャッシュ・焼き込みが v2 のため）。
   **1 点だけ挙動が変わる**: 旧実装は delay 待ちの cue / insert が**別の区間で遅れて誤爆**していたが、
   v3 では離脱の瞬間に決着する（設計 §8.1）
-- **⚠ Quest 実機未検証**（2026-07-25。EditMode 667/667・fixture 契約テスト・卓のブラウザ実操作は通過）。
-  **Web 卓の編集面は既定が v3（リボン）**（2026-07-25〜）。v2 の show.json も読み込み時に変換して表示し、
-  **💾 保存を押した時点で `timeline.schema=3` として書き出される**（それまで show.json は v2 のままで実機は従来経路）。
-  退避路: 保存前なら卓の「▤ 旧グリッド」、保存後は `show.json.bak`（卓サーバが 1 世代残す）を戻して再起動 —
-  Unity は版で経路が分かれるので、データを戻せば従来動作に戻る
+- **⚠ Quest 実機未検証**（2026-07-25。EditMode 655/655・fixture 契約テスト・卓のブラウザ実操作は通過）。
+  **卓のオーサリング面は演出・カットのリボン 1 つ**（旧グリッド `timeline.js` は削除）。v2 の show.json も
+  読み込み時に変換して表示し、💾 保存で `timeline.schema=3` として書き出す。
+  **v2 データはもう「退避路」ではない**（実機も v2 を演出へ変換して同じ経路で走らせる）。
+  ここまでの実装ごと戻したいときは、この一本化コミットを `git revert` する
 
 ### BGM（区間で切替・停止・ループ範囲）— 2026-07-25
 

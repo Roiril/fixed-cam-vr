@@ -991,16 +991,11 @@ namespace FixedCamVr.Streaming
         {
             if (TimelineActive && timelineDirector != null)
             {
-                if (_timeline!.IsV3())
-                {
-                    // v2 キーを持つ区間があれば takes へ変換して埋める（読み取り互換・冪等）。
-                    TimelineMigration.EnsureTakes(_timeline);
-                    timelineDirector.SetTimelineV3(_timeline.segments);
-                }
-                else
-                {
-                    timelineDirector.SetTimeline(_timeline.segments);
-                }
+                // **版に関係なく v3（演出・カット）として実行する**（2026-07-25 に一本化）。
+                // 端末キャッシュや焼き込みに残っている v2（cues[] / insert）は EnsureTakes が
+                // takes[] へ決定的に変換する（冪等・TimelineMigration が唯一の変換点）。
+                TimelineMigration.EnsureTakes(_timeline!);
+                timelineDirector.SetTimeline(_timeline!.segments);
             }
             else
             {

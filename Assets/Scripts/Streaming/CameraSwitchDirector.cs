@@ -77,7 +77,7 @@ namespace FixedCamVr.Streaming
             _lastManualTime = float.NegativeInfinity;
             _hasPendingZone = false;
             // 凍結フラグは安全側（false）へ。OnEnable 経路で insert / cue 凍結が残ったまま復帰して
-            // ゾーン自動切替が始まらない事故を防ぐ（InsertController 側の後片付けと二重の保険）。
+            // ゾーン自動切替が始まらない事故を防ぐ（TakeRunner 側の後片付けと二重の保険）。
             _insertActive = false;
             _cueActive = false;
             _overrideActive = false;
@@ -186,7 +186,7 @@ namespace FixedCamVr.Streaming
         ///   - Zone: PlayerZoneTracker（体験者のゾーン移動）
         ///   - Manual: コントローラ / キーボードのスタッフ手動切替（Next/Prev/絶対指定）
         ///   - Override: Web オペレータ卓の cameraOverride（手動固定）
-        ///   - Insert: タイムラインのインサートショット（InsertController 経由の差し込み・復帰）
+        ///   - Insert: 演出が画面を占有する差し込み・復帰（TakeRunner 経由）
         ///   - External: 上記いずれでもない registry への直接切替（後方互換の catch-all）
         /// LapCounter は Zone のみを周回へ数える（Manual/Override/Insert/External は数えない）。
         /// </summary>
@@ -271,7 +271,7 @@ namespace FixedCamVr.Streaming
         /// <see cref="FixedCamVr.Tracking.LapCounter"/> が周回カウントの駆動点として購読する。
         ///
         /// <see cref="SwitchCommitted"/>（画面が実際に切り替わった）とは**別物**。周回を画面から独立させるのが
-        /// 段 B の主眼で、これにより <c>InsertController</c> の「復帰を Zone に偽装する」ハックが不要になった。
+        /// 段 B の主眼で、これにより旧 InsertController の「復帰を Zone に偽装する」ハックが不要になった。
         /// </summary>
         public event Action<int>? ZoneCommitted;
 
@@ -420,7 +420,7 @@ namespace FixedCamVr.Streaming
             if (!active && _progress.Current >= 0) _logic.SetAmbient(_progress.Current);
         }
 
-        // ---- インサートショット（InsertController 用）----
+        // ---- 画面の占有（TakeRunner が使う差し込み・復帰）----
 
         /// <summary>
         /// exit インサート: 区間離脱の Zone dip が黒へ落ちていく最中に呼ばれ、Up で切替先を見せる代わりに
@@ -474,7 +474,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// **いま体験者が居るゾーン**のカメラ index を返す（時計 <see cref="ZoneProgressionLogic"/> の確定値）。
-        /// InsertController が演出終了時の復帰先を「復元でなく再計算」するために使う（不変条件 3）。
+        /// TakeRunner が演出終了時の復帰先を「復元でなく再計算」するために使う（不変条件 3）。
         /// 画面が何を映していたか・保留がどうなっていたかとは無関係で、演出中の移動もここに反映済み。
         /// 未確定（起動直後など）なら false。
         /// </summary>

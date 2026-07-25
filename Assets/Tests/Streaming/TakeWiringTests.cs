@@ -125,7 +125,6 @@ namespace FixedCamVr.Streaming.Tests
             runner.SetTimeSource(() => _now);
 
             SetField(timeline, "cueScheduler", scheduler);
-            SetField(timeline, "insertController", null);
             SetField(timeline, "takeRunner", runner);
             SetField(timeline, "showControl", null);
 
@@ -155,7 +154,7 @@ namespace FixedCamVr.Streaming.Tests
         public void MultiStepTake_SwitchesCamerasInOrder_ThenReturnsToCurrentZone()
         {
             Rig rig = MakeRig();
-            rig.Timeline.SetTimelineV3(new[]
+            rig.Timeline.SetTimeline(new[]
             {
                 SegWithTake(1, 0, EnterTake("final", LiveStep(3, 2f), LiveStep(1, 3f))),
             });
@@ -186,7 +185,7 @@ namespace FixedCamVr.Streaming.Tests
         public void AfterTake_ZoneAutoSwitchResumes()
         {
             Rig rig = MakeRig();
-            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 1f))) });
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 1f))) });
 
             EnterZone(rig, 0, 1);
             Frame(rig);
@@ -215,7 +214,7 @@ namespace FixedCamVr.Streaming.Tests
             };
             var take = EnterTake("stuck", step);
             take.maxDurationSec = 5f;
-            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, take) });
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, take) });
 
             EnterZone(rig, 0, 1);
             Frame(rig);
@@ -233,12 +232,12 @@ namespace FixedCamVr.Streaming.Tests
         public void SetTakesDuringTake_FoldsAndUnfreezes()
         {
             Rig rig = MakeRig();
-            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 30f))) });
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 30f))) });
             EnterZone(rig, 0, 1);
             Frame(rig);
             Assert.That(rig.Director.InsertActive, Is.True);
 
-            rig.Timeline.SetTimelineV3(Array.Empty<ShowTimelineSegmentDef>()); // ショー中のタイムライン編集
+            rig.Timeline.SetTimeline(Array.Empty<ShowTimelineSegmentDef>()); // ショー中のタイムライン編集
             PumpDirector(rig.Director);
             Assert.That(rig.Runner.IsActive, Is.False);
             Assert.That(rig.Director.InsertActive, Is.False, "差し替えで占有が残らない");
@@ -252,7 +251,7 @@ namespace FixedCamVr.Streaming.Tests
         public void ResetRunDuringTake_FoldsAndUnfreezes()
         {
             Rig rig = MakeRig();
-            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 30f))) });
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 30f))) });
             EnterZone(rig, 0, 1);
             Frame(rig);
             Assert.That(rig.Director.InsertActive, Is.True);
@@ -273,7 +272,7 @@ namespace FixedCamVr.Streaming.Tests
             // v2 の cue を持つ区間を v3 として渡す（takes が正・cues は無視されるべき）。
             var seg = SegWithTake(1, 0, EnterTake("t", LiveStep(3, 1f)));
             seg.cues = new[] { new ShowSegmentCueDef { cueId = "should_not_fire", delaySec = 0f } };
-            rig.Timeline.SetTimelineV3(new[] { seg });
+            rig.Timeline.SetTimeline(new[] { seg });
 
             object logic = typeof(CueScheduler).GetField("_logic", BF)!.GetValue(rig.Scheduler);
             var entries = (Array)logic.GetType().GetField("_entries", BF)!.GetValue(logic);
@@ -282,30 +281,47 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void SwitchingBackToV2_RestoresLegacyPath_AndStopsTakes()
+        public void ClearingTimeline_FoldsRunningTake_AndUnfreezes()
         {
             Rig rig = MakeRig();
-            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 30f))) });
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 30f))) });
             EnterZone(rig, 0, 1);
             Frame(rig);
             Assert.That(rig.Runner.IsActive, Is.True);
 
-            // show.json を v2 に戻す（退避路）。
+            // timeline が消えた（show.json から外れた / 焼き込みが空）→ 走行中の演出は畳む。
+            rig.Timeline.Clear();
+            PumpDirector(rig.Director);
+
+            Assert.That(rig.Runner.IsActive, Is.False, "timeline を外したら演出は畳まれる");
+            Assert.That(rig.Director.InsertActive, Is.False, "画面の占有も返る");
+        }
+
+        [Test]
+        public void V2Segments_AreMigratedAndRunAsTakes()
+        {
+            // v2（cues[] / insert）の show.json も、ShowControlClient が EnsureTakes で変換してから渡す。
+            // ここでは変換 → 実行までを 1 本の経路で確かめる（旧 InsertController は廃止済み）。
             var v2Seg = new ShowTimelineSegmentDef
             {
                 lap = 1, camera = 0,
-                cues = new[] { new ShowSegmentCueDef { cueId = "c", delaySec = 0f } },
+                insert = new ShowInsertDef
+                {
+                    anchor = TakeSchema.AtEnter, camera = 3, delaySec = 0f, durationSec = 30f, once = true,
+                },
+                hasInsert = true,
                 takes = Array.Empty<ShowTakeDef>(),
             };
-            rig.Timeline.SetTimeline(new[] { v2Seg });
-            PumpDirector(rig.Director);
+            var segments = new[] { v2Seg };
+            TimelineMigration.EnsureTakes(new ShowTimelineDef { rev = 1, segments = segments });
 
-            Assert.That(rig.Runner.IsActive, Is.False, "v2 へ戻したら演出は畳まれる");
-            Assert.That(rig.Director.InsertActive, Is.False);
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(segments);
+            EnterZone(rig, 0, 1);
+            Frame(rig);
 
-            object logic = typeof(CueScheduler).GetField("_logic", BF)!.GetValue(rig.Scheduler);
-            var entries = (Array)logic.GetType().GetField("_entries", BF)!.GetValue(logic);
-            Assert.That(entries.Length, Is.EqualTo(1), "旧 cue 経路が復活する");
+            Assert.That(rig.Runner.IsActive, Is.True, "v2 の insert が演出として走る");
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(3), "insert のカメラが映る");
         }
 
         // ---- clip カット（カメラを変えず画面を占有） ----
@@ -314,7 +330,7 @@ namespace FixedCamVr.Streaming.Tests
         public void ClipStep_HoldsScreenWithoutSwitchingCamera()
         {
             Rig rig = MakeRig();
-            rig.Timeline.SetTimelineV3(new[]
+            rig.Timeline.SetTimeline(new[]
             {
                 SegWithTake(1, 0, EnterTake("v", ClipStep("sa://assets/pre_01.mp4", 3f))),
             });
@@ -337,7 +353,7 @@ namespace FixedCamVr.Streaming.Tests
             Rig rig = MakeRig();
             var step = LiveStep(3, 2f);
             step.transition = TakeSchema.TransCut;
-            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, EnterTake("t", step)) });
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", step)) });
 
             EnterZone(rig, 0, 1);
             Invoke(rig.Runner, "Update");
@@ -355,7 +371,7 @@ namespace FixedCamVr.Streaming.Tests
             var step = LiveStep(3, 5f);
             step.transition = TakeSchema.TransDip;
             step.transitionMs = 1000f;        // 全体 1s → 落とし 0.4s / 立ち上げ 0.6s
-            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, EnterTake("t", step)) });
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", step)) });
 
             EnterZone(rig, 0, 1);
             Invoke(rig.Runner, "Update");
@@ -372,7 +388,7 @@ namespace FixedCamVr.Streaming.Tests
             Rig rig = MakeRig();
             var take = EnterTake("amb", LiveStep(3, 30f));
             take.policy = TakeSchema.PolicyYield;
-            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, take) });
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, take) });
 
             EnterZone(rig, 0, 1);
             Frame(rig);
@@ -398,7 +414,7 @@ namespace FixedCamVr.Streaming.Tests
             Rig rig = MakeRig();
             var take = EnterTake("bye", LiveStep(3, 2f));
             take.at = TakeSchema.AtExit;
-            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, take) });
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, take) });
 
             EnterZone(rig, 0, 1);
             Frame(rig);

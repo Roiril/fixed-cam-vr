@@ -1,5 +1,5 @@
-// 廻リ視 ショット・タイムライン v3 — リボン UI（timeline.js の v2 グリッドとは独立）。
-//   show.json の timeline が v3（schema>=3 もしくは segments[].takes を持つ）のときだけ使われる。
+// 廻リ視 ショット・タイムライン — 演出・カットのリボン UI（オーサリングの唯一の面）。
+//   show.json の timeline が古い形式（cues[] / insert）でも、読み込み時に演出へ変換して扱う。
 //   契約の正本: .claude/plans/2026-07-25_shot-timeline-foundation.md §4（UI）/ §6（スキーマ）。
 //
 //   描画の確定仕様（§4・変更不可）:
@@ -25,12 +25,11 @@ import { createCueEditor } from './cue-editor.js';
 import { durationOf, onDurationResolved } from './media-duration.js';
 import { resolveStepDuration } from './show-scenario.js';
 import {
-  TAKE, newTake, newStep, takeId, newSeg, defaultBgm,
+  TAKE, newTake, newStep, takeId, newSeg, defaultBgm, isV3,
   serializeTimelineV3, normalizeTimelineV3, resolveBgmLane,
 } from './timeline-model.js';
 
-// APK 同梱の既定クリップを指す擬似トラック id（timeline.js の同名 export と同値。
-// timeline.js → ribbon.js の一方向 import を保つためここで再宣言する）。
+// APK 同梱の既定クリップを指す擬似トラック id（Unity BgmDirector.DefaultTrackId と一致させること）。
 const DEFAULT_TRACK_ID = '__default__';
 
 // ---- 描画スケール -----------------------------------------------------------
@@ -50,7 +49,7 @@ const SRC_LABEL = {
 };
 
 export function createRibbon(container, deps) {
-  // deps は createTimeline と同一（getCameras / getCues / getCourseOrder / getGlobalPost /
+  // deps（app.js が渡す）: getCameras / getCues / getCourseOrder / getGlobalPost /
   //   getBgmTracks / getRootBgm / getLiveImg / getCaptures / refreshCaptures / saveCue / saveTimeline）
   container.innerHTML = `
     <div class="rb-wrap">
@@ -62,7 +61,6 @@ export function createRibbon(container, deps) {
         <span class="spacer"></span>
         <button class="rb-validate" title="🕹 ショーシミュレーションへ移動して、歩き（フロアマップのドット）でショーを実時間検証する">▶ 検証</button>
         <button class="rb-dwell-reset" title="区間に出ている「実測 平均滞在」の集計を消す（会場が変わった / リハをやり直す時）">⟲ 実測クリア</button>
-        <button class="rb-legacy" style="display:none" title="この show.json はまだ v2。旧グリッド（cue 割当・インサートショット）で編集する">▤ 旧グリッド</button>
         <button class="rb-lap-add" title="周回を 1 つ増やす">＋ 周回</button>
         <button class="rb-lap-del" title="最後の周回を削除">－ 周回</button>
       </div>
@@ -96,13 +94,12 @@ export function createRibbon(container, deps) {
   let lapCount = 1;
   let sel = null;             // { kind:'seg'|'take', lap, camera, id? }
   let convertNote = '';       // 案内（保存で消える）
-  let v2Source = false;       // show.json がまだ v2（保存すると v3 として書き出される）
-  let onUseLegacy = null;     // 旧グリッドへ戻る導線（timeline.js から渡る）
+  let v2Source = false;       // 読み込んだ show.json がまだ v2（保存すると v3 で書き出される）
   let cueEditor = null;
   let editorOpen = false;
   let cueEditorTarget = null; // { step } — 新規素材の保存先
 
-  // ---- undo（timeline.js と同じスナップショット方式）---------------------------
+  // ---- undo（スナップショット方式）-------------------------------------------
   const UNDO_MAX = 30;
   let undoStack = [];
   let shadow = null;
@@ -284,18 +281,16 @@ export function createRibbon(container, deps) {
     const rs = rows();
     const schemaEl = q('.rb-schema');
     if (schemaEl) {
-      schemaEl.textContent = v2Source ? 'v2 → 保存で v3' : 'v3（演出・カット）';
+      schemaEl.textContent = v2Source ? '古い形式 → 保存で更新' : '演出・カット';
       schemaEl.title = v2Source
-        ? 'この show.json はまだ v2（cue / インサートショット）。表示は v3 に変換したもので、💾 保存すると v3 として書き出される'
-        : 'この show.json は v3（演出・カット）';
+        ? 'この show.json は古い形式（cue 割当・インサートショット）。表示は変換したもので、💾 保存で新しい形式になる'
+        : 'この show.json は演出・カット形式（schema 3）';
     }
-    const legacyBtn = q('.rb-legacy');
-    if (legacyBtn) legacyBtn.style.display = v2Source && onUseLegacy ? '' : 'none';
-
     const msgs = [];
     if (v2Source) {
-      msgs.push('この show.json はまだ v2（cue / インサートショット）です。演出・カットに変換して表示しています — '
-        + '💾 保存すると v3 で書き出されます（そのあと v2 には戻せません）。');
+      msgs.push('この show.json は古い形式（cue 割当・インサートショット）です。演出・カットへ変換して表示しています — '
+        + '💾 保存すると新しい形式で書き出されます。実機は読み込み時に同じ変換をするので、'
+        + '保存しなくても動きは同じです。');
     }
     if (convertNote) msgs.push(convertNote);
     if (!orderIsExplicit && cameras.length > 0) msgs.push('コース順が未設定です。フロアマップで周回コースを設定してください（今は 0..N-1 の順で表示中）。');
@@ -1112,7 +1107,6 @@ export function createRibbon(container, deps) {
     markDirty(); render(); renderInspector();
   };
   q('.rb-undo').onclick = undo;
-  q('.rb-legacy').onclick = () => { if (onUseLegacy) onUseLegacy(); };
   // ▶ 検証 = 🕹 ショーシミュレーション（歩きで実時間検証）。卓の検証面はこれ 1 つ。
   q('.rb-validate').onclick = () => { if (deps.openSimulator) deps.openSimulator(); };
   q('.rb-dwell-reset').onclick = async () => {
@@ -1160,11 +1154,9 @@ export function createRibbon(container, deps) {
     order = deps.getCourseOrder ? deps.getCourseOrder() : (state && state.layout && state.layout.course ? state.layout.course.order : null);
   }
 
-  function onState(state, opts) {
-    if (opts) {
-      v2Source = !!opts.v2Source;
-      onUseLegacy = typeof opts.onUseLegacy === 'function' ? opts.onUseLegacy : null;
-    }
+  function onState(state) {
+    // 版はデータから自分で判定する（呼び元は版を知らなくていい）。
+    v2Source = !isV3(state && state.timeline);
     pullDeps(state);
     if (!dirty) { adoptState(state); recomputeLapCount(); resetUndo(); }
     if (sel && sel.camera >= cameras.length) { sel = null; closeCueEditor(); }
@@ -1173,39 +1165,11 @@ export function createRibbon(container, deps) {
     else if (!sel) inspectorEl.innerHTML = '';
   }
 
-  /**
-   * v2 → v3 変換の受け口（timeline.js の「v3 に変換」から呼ばれる）。
-   * まだ保存していない状態なので dirty=true で入れる（💾 保存で確定＝片道）。
-   */
-  function adoptConverted(tl, note) {
-    pullDeps(null);                // onState を待たずに描くので自分で引く
-    timeline = normalizeTimelineV3(tl);
-    assignIds(); recomputeLapCount();
-    sel = null; closeCueEditor();
-    resetUndo();
-    savedSnap = null;              // 「保存済み」に一致しない = 未保存表示を維持
-    dirty = true; convertNote = note || '';
-    renderDirty(); renderUndo(); render(); renderInspector();
-  }
-
-  // 素材の実尺が判明したら幅と「≈」表示を描き直す（測定は非同期）。
-  //   インスペクタのカット行も同じ尺を出しているので一緒に更新するが、
-  //   入力中（フォーカスがインスペクタ内）のときは触らない（打鍵中に作り直さない）。
-  const unsubDuration = onDurationResolved(() => {
-    render();
-    const t = selTake();
-    if (!t || editorOpen) return;
-    const a = document.activeElement;
-    if (a && inspectorEl.contains(a)) return;
-    renderStepRows(t);
-  });
-
   render();
   renderDirty();
   resetUndo();
   return {
     onState,
-    adoptConverted,
     /** 実測滞在時間が更新された（app.js の /dwell/stats ポーリング由来）。区間表示だけ描き直す。 */
     onDwell() { render(); },
     isDirty: () => dirty,

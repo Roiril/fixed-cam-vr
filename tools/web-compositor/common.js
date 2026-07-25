@@ -1,5 +1,5 @@
 // 廻リ視 web compositor — 共有定数・ヘルパ。
-//   app.js / cue-editor.js / timeline.js / composite-view.js が共通で使う小物を集約。
+//   app.js / cue-editor.js / ribbon.js / composite-view.js が共通で使う小物を集約。
 //   （floormap.js は自己完結のまま。ここには依存させない）
 
 // ---- 画質（cameras[i].post / segment.post）7 パラメータ -----------------------
@@ -20,7 +20,7 @@ export const MW = 640, MH = 360;
 //   app.js の blend-bar が書き換え、composite-view / cue-editor が参照する（live binding）。
 export const blendCfg = { feather: 0.3, colorMatch: true, colorStrength: 1, laplacian: true, levels: 7 };
 
-// カメラ index → 色（floormap.js / timeline.js と同配色）。
+// カメラ index → 色（floormap.js / ribbon.js と同配色）。
 export const CAM_COLORS = ['#5ad19a', '#5aa8ff', '#ffae5e', '#d98cff', '#ff6b8e', '#8ad4ff'];
 export const camColor = (i) => CAM_COLORS[((i % CAM_COLORS.length) + CAM_COLORS.length) % CAM_COLORS.length];
 

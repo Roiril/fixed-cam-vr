@@ -99,21 +99,34 @@ namespace FixedCamVr.Tracking.Tests
             return z;
         }
 
-        private static ShowTimelineSegmentDef EnterInsertSegment(int lap, int camera, int insertCam)
+        /// <summary>「進入と同時に別カメラのライブを N 秒映す」区間（v2 の enter インサート相当）。</summary>
+        private static ShowTimelineSegmentDef SegmentWithLiveTake(int lap, int camera, int takeCam, float durSec)
             => new()
             {
                 lap = lap,
                 camera = camera,
-                cues = Array.Empty<ShowSegmentCueDef>(),
                 post = null,
                 hasPost = false,
-                // duration/delay は 0（EditMode は時間非依存。begin→end の順序はテストが手動制御する）。
-                insert = new ShowInsertDef
+                takes = new[]
                 {
-                    anchor = "enter", camera = insertCam, delaySec = 0f,
-                    durationSec = 0f, cueId = "", once = true, post = null, hasPost = false,
+                    new ShowTakeDef
+                    {
+                        id = "t_live", name = "", at = TakeSchema.AtEnter, offsetSec = 0f,
+                        ifMissed = TakeSchema.MissedFireOnExit, policy = TakeSchema.PolicyHold,
+                        once = true, maxDurationSec = 0f,
+                        steps = new[]
+                        {
+                            new ShowStepDef
+                            {
+                                source = TakeSchema.SourceLive, camera = takeCam, assetUrl = "", cueId = "",
+                                strength = -1f, fadeInSec = -1f, fadeOutSec = -1f,
+                                trimStartSec = -1f, trimEndSec = -1f,
+                                durKind = TakeSchema.DurSec, durSec = durSec,
+                                transition = TakeSchema.TransDip, transitionMs = 0f, hasPost = false,
+                            },
+                        },
+                    },
                 },
-                hasInsert = true,
             };
 
         // dip（Down→Up）を確実に畳むため Director.Update を数回叩く。
@@ -135,81 +148,28 @@ namespace FixedCamVr.Tracking.Tests
             progress.GetType().GetMethod("Configure")!.Invoke(progress, new object[] { 0f });
         }
 
-        // ---- T1: insert 表示中に ResetRun → 凍結解除 ----
+        // ---- T4: 演出で画面が占有されている間の実ゾーン移動が、復帰後に周回追跡へ反映される（二重加算なし）----
+        //   旧 InsertController 廃止（2026-07-25 の v3 一本化）に伴い、実行体を TakeRunner に置き換えた。
 
         [Test]
-        public void T1_ResetRunDuringInsert_UnfreezesZoneSwitching()
-        {
-            var reg = MakeRegistry(3, active: 0);
-            var host = new GameObject("Screen"); _spawned.Add(host);
-            var dir = MakeDirector(reg, host);
-            var ins = host.AddComponent<InsertController>();
-            SetField(ins, "director", dir);
-
-            // (1,0) 進入で cam2 を enter インサート。begin の insert.Update だけ叩き、end は叩かず表示状態を維持する。
-            ins.SetInserts(new[] { EnterInsertSegment(1, 0, insertCam: 2) });
-            ins.NotifyZoneCommitted(1, 0, hadPrev: false, 0, 0);
-            Invoke(ins, "Update");      // EnterDelay(0) → BeginEnter → director.InsertBegin(2)
-            PumpDirector(dir);          // begin dip 完了 → active=2
-
-            Assert.That(dir.InsertActive, Is.True, "インサートが凍結を立てているはず");
-            Assert.That(reg.ActiveIndex, Is.EqualTo(2), "insert カメラ(2)が表示中");
-
-            // 進行中インサートを畳まずに InsertLogic だけ戻すと director._insertActive が残る（修正対象バグ）。
-            ins.ResetRun();
-            PumpDirector(dir);          // 後片付けの復帰 dip 完了
-            Assert.That(dir.InsertActive, Is.False, "ResetRun で凍結が解除されるはず");
-
-            // 実際にゾーン自動切替が再開すること（凍結が残っていれば commit されない）。
-            dir.RequestZone(1);
-            PumpDirector(dir);
-            Assert.That(reg.ActiveIndex, Is.EqualTo(1), "凍結解除後はゾーン要求が commit されるはず");
-        }
-
-        // ---- T2: insert 表示中に SetInserts → 凍結解除 ----
-
-        [Test]
-        public void T2_SetInsertsDuringInsert_UnfreezesZoneSwitching()
-        {
-            var reg = MakeRegistry(3, active: 0);
-            var host = new GameObject("Screen"); _spawned.Add(host);
-            var dir = MakeDirector(reg, host);
-            var ins = host.AddComponent<InsertController>();
-            SetField(ins, "director", dir);
-
-            ins.SetInserts(new[] { EnterInsertSegment(1, 0, insertCam: 2) });
-            ins.NotifyZoneCommitted(1, 0, hadPrev: false, 0, 0);
-            Invoke(ins, "Update");
-            PumpDirector(dir);
-            Assert.That(dir.InsertActive, Is.True);
-            Assert.That(reg.ActiveIndex, Is.EqualTo(2));
-
-            // タイムライン差し替え（オペレータ編集）。進行中インサートを畳んでから定義更新するはず。
-            ins.SetInserts(Array.Empty<ShowTimelineSegmentDef>());
-            PumpDirector(dir);
-            Assert.That(dir.InsertActive, Is.False, "SetInserts で凍結が解除されるはず");
-
-            dir.RequestZone(1);
-            PumpDirector(dir);
-            Assert.That(reg.ActiveIndex, Is.EqualTo(1), "凍結解除後はゾーン要求が commit されるはず");
-        }
-
-        // ---- T4: insert 中の実ゾーン移動が復帰後に周回追跡へ反映される（二重加算なし）----
-
-        [Test]
-        public void T4_ZoneMoveDuringInsert_ReflectedInLapCounterOnReturn()
+        public void T4_ZoneMoveDuringTake_ReflectedInLapCounterOnReturn()
         {
             var reg = MakeRegistry(3, active: 0);
             var host = new GameObject("Screen"); _spawned.Add(host);
             var dir = MakeDirector(reg, host);
             var cueScheduler = host.AddComponent<CueScheduler>();
             var timeline = host.AddComponent<TimelineDirector>();
-            var ins = host.AddComponent<InsertController>();
+            var runner = host.AddComponent<TakeRunner>();
             var lap = host.AddComponent<LapCounter>();
 
+            float now = 0f;
+            SetField(runner, "director", dir);
+            SetField(runner, "overlay", null);
+            SetField(runner, "showControl", null);
+            runner.SetTimeSource(() => now);
+
             SetField(timeline, "cueScheduler", cueScheduler);
-            SetField(timeline, "insertController", ins);
-            SetField(ins, "director", dir);
+            SetField(timeline, "takeRunner", runner);
             SetField(lap, "registry", reg);
             SetField(lap, "director", dir);
             SetField(lap, "cueScheduler", cueScheduler);
@@ -225,18 +185,18 @@ namespace FixedCamVr.Tracking.Tests
             object lapLogic = GetField(lap, "_logic");
             lapLogic.GetType().GetMethod("SetOrder")!.Invoke(lapLogic, new object[] { new[] { 0, 1, 2 } });
 
-            // (1,0) に cam2 の enter インサート。
-            timeline.SetTimeline(new[] { EnterInsertSegment(1, 0, insertCam: 2) });
+            // (1,0) に「cam2 のライブを 30 秒映す」演出（v2 の enter インサート相当）。
+            timeline.SetTimeline(new[] { SegmentWithLiveTake(1, 0, takeCam: 2, durSec: 30f) });
 
-            // ゾーン0進入（seed 相当）。enter インサートを武装。pos は order[0]=cam0。
+            // ゾーン0進入（seed 相当）。演出を武装。pos は order[0]=cam0。
             cueScheduler.NotifyCameraEntered(0, 1);
 
-            Invoke(ins, "Update");      // BeginEnter → director.InsertBegin(2)
+            Invoke(runner, "Update");   // 進入 +0s → カット開始 → director.InsertBegin(2)
             PumpDirector(dir);          // begin dip → active=2
 
-            Assert.That(dir.InsertActive, Is.True, "insert 表示中は凍結しているはず");
-            Assert.That(reg.ActiveIndex, Is.EqualTo(2), "insert カメラ(2)表示中");
-            Assert.That(lap.Position, Is.EqualTo(0), "insert 開始では周回ポインタは進まない（cam0 のまま）");
+            Assert.That(dir.InsertActive, Is.True, "演出が画面を占有している間は凍結しているはず");
+            Assert.That(reg.ActiveIndex, Is.EqualTo(2), "演出のカメラ(2)表示中");
+            Assert.That(lap.Position, Is.EqualTo(0), "演出開始では周回ポインタは進まない（cam0 のまま）");
 
             // insert 表示中に体験者がゾーン1（B）へ移動。画面は凍結されたままだが、**時計は進む**（段 B）。
             dir.RequestZone(1);
@@ -246,10 +206,11 @@ namespace FixedCamVr.Tracking.Tests
                 "演出で画面が凍結していても、体験者が歩いたら周回ポインタは即前進する（不変条件 4）");
             Assert.That(reg.ActiveIndex, Is.EqualTo(2), "画面はまだ insert カメラのまま");
 
-            Invoke(ins, "Update");      // Showing → End(latest = 時計の確定ゾーン 1) → InsertReturn(1)
+            now += 31f;                 // 尺（30s）を越えさせる
+            Invoke(runner, "Update");   // 演出終了 → 復帰先は「いま体験者がいるゾーン」= cam1
             PumpDirector(dir);          // 復帰 dip → active=1
 
-            Assert.That(reg.ActiveIndex, Is.EqualTo(1), "insert 終了後は実ゾーン(cam1)へ復帰しているはず");
+            Assert.That(reg.ActiveIndex, Is.EqualTo(1), "演出終了後は実ゾーン(cam1)へ復帰しているはず");
             Assert.That(lap.Position, Is.EqualTo(1), "復帰の画面切替では二重に進まない");
             Assert.That(lap.CurrentLap, Is.EqualTo(1), "lap は二重加算されない");
 

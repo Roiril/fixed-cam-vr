@@ -1,5 +1,5 @@
 // 廻リ視 web compositor — 1 ページ統合。
-//   🎬 事前オーサリング = タイムライン第一級（timeline.js）。カメラ列は監視専用に格下げ。
+//   🎬 事前オーサリング = 演出・カットのリボン（ribbon.js）。カメラ列は監視専用に格下げ。
 //   🚨 ライブ運用 = 発見 / 診断 / ラン状態 / cue 手動発火。
 //   show.json が唯一の正。ビューは Unity ScreenComposite を WebGL で再現（composite-view.js）。
 import {
@@ -9,7 +9,8 @@ import {
 } from './common.js';
 import { createCompositeView } from './composite-view.js';
 import { createFloorMap } from './floormap.js';
-import { createTimeline } from './timeline.js';
+import { createRibbon } from './ribbon.js';
+import { normalizeTimelineV3 } from './timeline-model.js';
 import { createShowSim } from './show-sim.js';
 
 const $ = (s) => document.querySelector(s);
@@ -658,35 +659,39 @@ function courseOrder() {
   return valid.length ? valid : Array.from({ length: n }, (_, i) => i);
 }
 function segmentAt(lap, camIdx) {
-  const segs = state?.timeline?.segments;
+  const segs = timelineSegments();
   if (!Array.isArray(segs)) return null;
   return segs.find((s) => s.lap === lap && s.camera === camIdx) || null;
 }
 function segFireLabel(seg) {
   if (!seg) return null;
   const ids = [];
-  // v3: 演出（先頭カットが何を映すかで要約する）
+  // 演出（先頭カットが何を映すかで要約する）
   for (const t of (seg.takes || [])) {
     const first = (t.steps || [])[0] || {};
     const what = first.source === 'live' ? `→${camLabelOf(first.camera)}`
       : first.cueId || (first.assetUrl ? '映像' : '');
     ids.push(`🎬${t.name || t.id || '演出'}${t.at === 'exit' ? '(離脱時)' : ''}${what ? ` ${what}` : ''}`);
   }
-  // v2（読み取り互換の間）
-  ids.push(...(seg.cues || []).map((c) => c.cueId).filter(Boolean));
-  if (seg.hasInsert && seg.insert) ids.push(`⏢インサート→${camLabelOf(seg.insert.camera)}`);
   return ids.length ? ids.join(', ') : null;
 }
 
-// 区間が参照する cue id（v3 の カット素材 + v2 の cue / insert）。診断の実在チェックに使う。
+// 区間が参照する cue id（カットが重ねる素材）。診断の実在チェックに使う。
 function segCueIds(seg) {
   const ids = [];
   for (const t of (seg.takes || [])) {
     for (const st of (t.steps || [])) if (st.cueId) ids.push(st.cueId);
   }
-  ids.push(...(seg.cues || []).map((c) => c.cueId).filter(Boolean));
-  if (seg.hasInsert && seg.insert && seg.insert.cueId) ids.push(seg.insert.cueId);
   return ids;
+}
+
+// 表示・診断で使う区間（**常に v3 として読む**）。show.json がまだ v2 でも
+// normalizeTimelineV3 が演出・カットへ変換するので、ここから先に版の分岐は無い
+// （Unity 側も同じで、TimelineMigration が変換してから TakeRunner が実行する）。
+function timelineSegments() {
+  const tl = state?.timeline;
+  if (!tl || !Array.isArray(tl.segments)) return [];
+  return normalizeTimelineV3(tl).segments;
 }
 function camLabelOf(idx) {
   const c = (state?.cameras || [])[idx];
@@ -855,8 +860,8 @@ function preflightRows() {
     ? { s: 'ng', label: 'ラッチ', detail: `${ctrl.cameraOverride ? `カメラ ${ctrl.cameraOverride} 固定中 ` : ''}${ctrl.activeCue ? `演出 ${ctrl.activeCue} 指定中` : ''}— ▶ ラン開始で解除される` }
     : { s: 'ok', label: 'ラッチ', detail: 'カメラ固定なし / 演出停止中' });
 
-  const segs = state?.timeline?.segments || [];
-  const withCue = segs.filter((s) => (s.takes || []).length || (s.cues || []).length || s.hasInsert).length;
+  const segs = timelineSegments();
+  const withCue = segs.filter((s) => (s.takes || []).length).length;
   rows.push(withCue
     ? { s: 'ok', label: 'タイムライン', detail: `${segs.length} 区間 / うち演出あり ${withCue}` }
     : { s: 'warn', label: 'タイムライン', detail: '演出を持つ区間がありません（体験は映像切替のみ）' });
@@ -1019,7 +1024,7 @@ if ($('#showSim')) {
 
 // ---- 周回タイムライン（第一級オーサリング）---------------------------------
 if ($('#timeline')) {
-  timeline = createTimeline($('#timeline'), {
+  timeline = createRibbon($('#timeline'), {
     getCameras: () => state?.cameras || [],
     getCues: () => state?.cues || [],
     getCourseOrder: () => state?.layout?.course?.order || null,
@@ -1162,7 +1167,7 @@ function renderBgmSection() {
     q('.bgm-mark-in').onclick = () => { if (bgmPreviewEl) { q('.bgm-ls').value = bgmPreviewEl.currentTime.toFixed(1); commit(); } };
     q('.bgm-mark-out').onclick = () => { if (bgmPreviewEl) { q('.bgm-le').value = bgmPreviewEl.currentTime.toFixed(1); commit(); } };
     q('.bgm-del').onclick = () => {
-      const used = (state?.timeline?.segments || []).some((s) => s.hasBgm && s.bgm && s.bgm.trackId === t.id);
+      const used = timelineSegments().some((s) => s.hasBgm && s.bgm && s.bgm.trackId === t.id);
       if (used && !confirm(`このトラックはタイムラインで使われています。削除すると該当区間は「未定義」になります。削除しますか？`)) return;
       stopBgmLibPreview();
       saveBgmTracks(bgmTracksState().filter((_, k) => k !== i));

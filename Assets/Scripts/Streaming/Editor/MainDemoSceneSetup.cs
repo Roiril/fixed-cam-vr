@@ -294,20 +294,12 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetBool(lapSo, "logChanges", true);
             lapSo.ApplyModifiedPropertiesWithoutUndo();
 
-            // 2.97. タイムライン（show.json timeline スキーマ v2）: InsertController + TimelineDirector を
-            //       [Tracker] に載せる（毎回作り直しなので冪等）。TimelineDirector は CueScheduler.CameraEntered を
-            //       購読して区間 cues[] を CueScheduler へ・insert を InsertController へ・区間 post を
-            //       ShowControlClient.SetPostOverride へ分配する。InsertController は Screen の Director / overlay と
-            //       showControl を叩く（dip-to-black 差し替え・insert 中 post 層）。
-            var insertController = trackerGo.AddComponent<InsertController>();
-            var insSo = new SerializedObject(insertController);
-            if (director != null) TrySetObjectRef(insSo, "director", director);
-            if (overlay != null) TrySetObjectRef(insSo, "overlay", overlay);
-            if (showControl != null) TrySetObjectRef(insSo, "showControl", showControl);
-            insSo.ApplyModifiedPropertiesWithoutUndo();
-
-            // v3（show.json timeline schema>=3 / takes[]）の実行体。多段カット演出を担当し、
-            // v3 のときだけ動く（v2 では TimelineDirector が旧経路へ流すので本コンポーネントは休止）。
+            // 2.97. タイムライン（show.json timeline）: TimelineDirector + TakeRunner を [Tracker] に載せる
+            //       （毎回作り直しなので冪等）。TimelineDirector は CueScheduler.CameraEntered を購読して
+            //       区間 takes[] を TakeRunner へ・区間 post を ShowControlClient.SetPostOverride へ・
+            //       区間 bgm を BgmDirector へ分配する。
+            //       **演出の実行体は TakeRunner 1 つに一本化**（2026-07-25。旧 InsertController は廃止し、
+            //       v2 の cues[] / insert は TimelineMigration が takes[] へ変換してから流れてくる）。
             var takeRunner = trackerGo.AddComponent<TakeRunner>();
             var takeSo = new SerializedObject(takeRunner);
             if (director != null) TrySetObjectRef(takeSo, "director", director);
@@ -318,7 +310,6 @@ namespace FixedCamVr.Streaming.EditorTools
             var timelineDirector = trackerGo.AddComponent<TimelineDirector>();
             var tlSo = new SerializedObject(timelineDirector);
             TrySetObjectRef(tlSo, "cueScheduler", cueScheduler);
-            TrySetObjectRef(tlSo, "insertController", insertController);
             TrySetObjectRef(tlSo, "takeRunner", takeRunner);
             if (showControl != null) TrySetObjectRef(tlSo, "showControl", showControl);
             tlSo.ApplyModifiedPropertiesWithoutUndo();
@@ -398,7 +389,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + InsertController（show.json timeline v2: 区間 cue override / インサートショット / 区間 post 上書き。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / OvrBridge（右手 4 入力: A=Next / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / OvrBridge（右手 4 入力: A=Next / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }

@@ -1,31 +1,31 @@
 #nullable enable
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// show.json timeline（スキーマ v2）を既存の実行体へ分配する薄いアダプタ。
-    ///   - 区間 cues[] → <see cref="CueScheduler"/>（override 付きの flat エントリ）
-    ///   - 区間 insert → <see cref="InsertController"/>
-    ///   - 区間 post → <see cref="ShowControlClient.SetPostOverride"/>（区間滞在中のみ・segment > camera > global）
+    /// show.json の timeline（区間 = (lap, camera)）を実行体へ分配する薄いアダプタ。
+    ///   - 区間 takes[] → <see cref="TakeRunner"/>（演出・カットの唯一の実行体）
+    ///   - 区間 post → <see cref="ShowControlClient.SetPostOverride"/>（区間滞在中のみ・segment &gt; camera &gt; global）
+    ///   - 区間 bgm → <see cref="BgmDirector.ApplySegment"/>（指示のある区間だけが状態を変える）
     ///
-    /// 現在区間は <see cref="CueScheduler.CameraEntered"/>（LapCounter 由来の deterministic (camera, lap)）で追跡する。
-    /// Insert source の切替はこの信号に来ないため、区間追跡は体験者のゾーン進行だけを見る。
-    /// timeline supersede の判定と <see cref="SetTimeline"/> / <see cref="Clear"/> の呼び出しは
-    /// <see cref="ShowControlClient"/> が行う（本アダプタは分配のみ）。
+    /// **2026-07-25 に v3（演出・カット）へ一本化した。** v2（cues[] / insert）の show.json は
+    /// <see cref="TimelineMigration.EnsureTakes"/> が takes[] へ決定的に変換してから渡ってくるので、
+    /// ここには版の分岐が無い（旧 InsertController / 区間 cues[] の CueScheduler 供給は廃止）。
+    /// <see cref="CueScheduler"/> は「もっと古い schedule.entries を焼き込みから読む」経路と
+    /// 区間追跡の信号（<see cref="CueScheduler.CameraEntered"/>）としてだけ残っている。
+    ///
+    /// 現在区間は CameraEntered（LapCounter 由来の deterministic (camera, lap)）で追跡する。
+    /// 演出の画面切替はこの信号に来ないため、区間追跡は体験者のゾーン進行だけを見る。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class TimelineDirector : MonoBehaviour
     {
-        [Tooltip("区間 cues[] を flatten して供給する CueScheduler。CameraEntered の購読元でもある。")]
+        [Tooltip("区間進入（CameraEntered）の購読元。区間 takes[] の供給先ではない（v3 は TakeRunner が実行する）。")]
         [SerializeField] private CueScheduler? cueScheduler;
 
-        [Tooltip("区間 insert を受け取る InsertController（v2 経路）。")]
-        [SerializeField] private InsertController? insertController;
-
-        [Tooltip("区間 takes[] を受け取る TakeRunner（v3 経路）。null なら同 GameObject から取得。")]
+        [Tooltip("区間 takes[] を受け取る TakeRunner。null なら同 GameObject から取得（無ければ自分で載せる）。")]
         [SerializeField] private TakeRunner? takeRunner;
 
         [Tooltip("区間 post 上書き層を掛け外しする ShowControlClient。")]
@@ -39,14 +39,10 @@ namespace FixedCamVr.Streaming
         private int _curLap, _curCam;
         private bool _subscribed;
 
-        // v3（takes[]）として実行中か。v2 の show.json では false のまま＝従来経路が動く（後方互換の退避路）。
-        private bool _v3;
-
         private void Awake()
         {
             if (cueScheduler == null) cueScheduler = GetComponent<CueScheduler>();
-            if (insertController == null) insertController = GetComponent<InsertController>();
-            // v3 経路の実行体。既存シーン / prefab には未配置なので、無ければ自分で載せる
+            // 演出の実行体。既存シーン / prefab に未配置でも動くよう、無ければ自分で載せる
             //（TakeRunner.Awake が Director / overlay / showControl をシーンから解決する）。
             // シーン配線を必須にしないのは、prefab の SerializeField 欠落で実機機能が全死した実績があるため。
             if (takeRunner == null) takeRunner = GetComponent<TakeRunner>();
@@ -69,47 +65,25 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>cueId 解決関数を実行体へ中継する（ShowControlClient.ResolveCue）。</summary>
-        public void SetCueResolver(Func<string, OverlayCueData?> resolver)
-        {
-            insertController?.SetCueResolver(resolver);
-            takeRunner?.SetCueResolver(resolver);
-        }
+        public void SetCueResolver(Func<string, OverlayCueData?> resolver) => takeRunner?.SetCueResolver(resolver);
 
         /// <summary>素材 URL（sa:// / 相対）の解決関数を TakeRunner へ中継する。</summary>
         public void SetUrlResolver(Func<string, string> resolver) => takeRunner?.SetUrlResolver(resolver);
 
         /// <summary>ライブ抑止（activeCue 非空 / cameraOverride 非 null）を実行体へ中継する。</summary>
-        public void SetSuppressed(bool suppressed)
-        {
-            insertController?.SetSuppressed(suppressed);
-            takeRunner?.SetSuppressed(suppressed);
-        }
+        public void SetSuppressed(bool suppressed) => takeRunner?.SetSuppressed(suppressed);
 
         /// <summary>
-        /// タイムラインを分配する。区間 cues[] を CueScheduler へ、insert を InsertController へ流し込む。
-        /// 区間 post は次の <see cref="OnCameraEntered"/>（seed 含む）で貼り直す（ここでは一旦解除する）。
+        /// タイムラインを分配する。区間 takes[] を <see cref="TakeRunner"/> へ流し込み、
+        /// 区間 post は次の <see cref="OnCameraEntered"/> で貼り直す（ここでは一旦解除する）。
+        /// 渡される segments は **v3（takes[] 済み）**であること（変換は ShowControlClient が行う）。
         /// </summary>
         public void SetTimeline(ShowTimelineSegmentDef[]? segments)
         {
-            _v3 = false;
             _segments = segments ?? Array.Empty<ShowTimelineSegmentDef>();
-            takeRunner?.SetTakes(null);                       // v3 経路を無効化（両経路の同時稼働を作らない）
-            cueScheduler?.SetEntries(FlattenCues(_segments));
-            insertController?.SetInserts(_segments);
-            _hasCurrent = false;
-            showControl?.SetPostOverride(null);
-        }
-
-        /// <summary>
-        /// v3 タイムライン（<c>segments[].takes[]</c>）を供給する。cue / insert の旧経路は空にして止め、
-        /// 演出の実行は <see cref="TakeRunner"/> に一本化する（不変条件 1: 画面の所有者は常に 1 人）。
-        /// </summary>
-        public void SetTimelineV3(ShowTimelineSegmentDef[]? segments)
-        {
-            _v3 = true;
-            _segments = segments ?? Array.Empty<ShowTimelineSegmentDef>();
+            // もっと古い schedule.entries が残っていても二重発火しないよう、区間経路では常に空にする
+            //（画面の所有者を 1 人に保つ）。
             cueScheduler?.SetEntries(Array.Empty<CueScheduleLogic.Entry>());
-            insertController?.SetInserts(null);
             takeRunner?.SetTakes(_segments);
             _hasCurrent = false;
             showControl?.SetPostOverride(null);
@@ -118,9 +92,7 @@ namespace FixedCamVr.Streaming
         /// <summary>タイムライン supersede を解除する（timeline 不在時）。legacy schedule は ShowControlClient が供給する。</summary>
         public void Clear()
         {
-            _v3 = false;
             _segments = Array.Empty<ShowTimelineSegmentDef>();
-            insertController?.SetInserts(_segments);
             takeRunner?.SetTakes(null);
             _hasCurrent = false;
             showControl?.SetPostOverride(null);
@@ -131,19 +103,17 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             _hasCurrent = false;
-            insertController?.ResetRun();
             takeRunner?.ResetRun();
         }
 
-        // ゾーン進入（deterministic post-Feed lap）。離脱区間の exit インサート即時 + 進入区間の
-        // enter インサート武装を InsertController へ forward し、区間 post を貼り替える。
+        // ゾーン進入（deterministic post-Feed lap）。離脱区間の exit 演出即時 + 進入区間の
+        // 演出武装を TakeRunner へ forward し、区間 post / bgm を貼り替える。
         private void OnCameraEntered(int camera, int lap)
         {
             bool hadPrev = _hasCurrent;
             int prevLap = _curLap, prevCam = _curCam;
 
-            if (_v3) takeRunner?.NotifyZoneCommitted(lap, camera, hadPrev, prevLap, prevCam);
-            else insertController?.NotifyZoneCommitted(lap, camera, hadPrev, prevLap, prevCam);
+            takeRunner?.NotifyZoneCommitted(lap, camera, hadPrev, prevLap, prevCam);
 
             // 区間 post 上書き（segment > camera > global）。区間が変わったら貼り替え。無い区間は解除。
             ShowTimelineSegmentDef? seg = FindSegment(lap, camera);
@@ -171,42 +141,6 @@ namespace FixedCamVr.Streaming
             foreach (var s in _segments)
                 if (s != null && s.lap == lap && s.camera == camera) return s;
             return null;
-        }
-
-        // 全区間の cues[] を CueScheduler の評価エントリへ平坦化する（override を載せる）。
-        private static CueScheduleLogic.Entry[] FlattenCues(ShowTimelineSegmentDef[] segments)
-        {
-            var list = new List<CueScheduleLogic.Entry>();
-            foreach (var seg in segments)
-            {
-                if (seg == null || seg.cues == null) continue;
-                foreach (var c in seg.cues)
-                {
-                    if (c == null) continue;
-                    var e = new CueScheduleLogic.Entry
-                    {
-                        lap = seg.lap,
-                        camera = seg.camera,
-                        cueId = c.cueId ?? "",
-                        delaySec = c.delaySec,
-                        once = c.once,
-                    };
-                    if (c.hasOverride && c.@override != null)
-                    {
-                        e.ov = new CueScheduleLogic.CueOverride
-                        {
-                            has = true,
-                            strength = c.@override.strength,
-                            fadeIn = c.@override.fadeIn,
-                            fadeOut = c.@override.fadeOut,
-                            trimStart = c.@override.trimStart,
-                            trimEnd = c.@override.trimEnd,
-                        };
-                    }
-                    list.Add(e);
-                }
-            }
-            return list.ToArray();
         }
     }
 }
