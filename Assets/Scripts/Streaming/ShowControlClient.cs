@@ -212,6 +212,13 @@ namespace FixedCamVr.Streaming
     {
         public int lap;
         public int camera;
+
+        /// <summary>
+        /// v3 の本体（演出）。0..N 本。v2 の <see cref="cues"/> / <see cref="insert"/> は読み取り互換のみで、
+        /// ロード時に <see cref="TimelineMigration.EnsureTakes"/> がここへ変換して埋める。
+        /// </summary>
+        public ShowTakeDef[] takes = System.Array.Empty<ShowTakeDef>();
+
         public ShowSegmentCueDef[] cues = System.Array.Empty<ShowSegmentCueDef>();
         public PostParams? post;          // 区間滞在中の post 上書き（segment > camera > global）
         public bool hasPost;              // present-flag
@@ -228,10 +235,27 @@ namespace FixedCamVr.Streaming
     [Serializable] public sealed class ShowTimelineDef
     {
         public int rev;
+
+        /// <summary>
+        /// スキーマ版。0 / 未指定 = v2（<c>cues[]</c> / <c>insert</c>）、3 = v3（<c>takes[]</c>）。
+        /// v3 なら新しい実行経路（TakeRunner）が担当し、v2 なら従来経路（CueScheduler / InsertController）が動く。
+        /// </summary>
+        public int schema;
+
         public ShowTimelineSegmentDef[] segments = System.Array.Empty<ShowTimelineSegmentDef>();
 
         /// <summary>区間が 1 つでもあれば present。</summary>
         public bool HasData() => segments != null && segments.Length > 0;
+
+        /// <summary>v3 として実行すべきか（明示 schema か、takes を持つ区間が 1 つでもあれば v3）。</summary>
+        public bool IsV3()
+        {
+            if (schema >= 3) return true;
+            if (segments == null) return false;
+            foreach (ShowTimelineSegmentDef? s in segments)
+                if (s != null && s.takes != null && s.takes.Length > 0) return true;
+            return false;
+        }
     }
 
     /// <summary>
