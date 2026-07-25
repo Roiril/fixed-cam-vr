@@ -1,0 +1,240 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>廻リ視 ショット・タイムライン（設計モック）</title>
+<style>
+:root{
+  --bg:#000; --text:#fffaf0; --accent:#ffdead;
+  --line:rgba(255,250,240,.18); --line2:rgba(255,250,240,.3);
+  --warn:#ffae5e; --mute:.55; --sub:.75;
+  --camA:#5ad19a; --camB:#5aa8ff; --camC:#ffae5e; --camD:#d98cff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  background:radial-gradient(circle at top left,#1a1a1a 0%,var(--bg) 100%) fixed;
+  color:var(--text);
+  font:13px/1.6 "Noto Sans JP",-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:20px 24px 60px;
+}
+h1{font-size:15px;letter-spacing:.08em;margin:0 0 4px}
+h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:var(--sub);
+   margin:34px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+p{margin:6px 0;opacity:var(--sub);max-width:88ch}
+small{opacity:var(--mute)}
+code{font-family:ui-monospace,Consolas,monospace;font-size:.92em;opacity:.9}
+.tag{display:inline-block;border:1px solid var(--line2);padding:1px 7px;font-size:11px;letter-spacing:.06em;opacity:var(--sub)}
+.wrap{max-width:1180px}
+
+/* ---- 3層モデル ---- */
+.layers{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:12px}
+.layer{border:1px solid var(--line);padding:12px 14px;position:relative}
+.layer h3{margin:0 0 6px;font-size:12px;letter-spacing:.1em}
+.layer ol{margin:6px 0 0 16px;padding:0;opacity:var(--sub);font-size:12px}
+.layer .who{position:absolute;top:12px;right:12px;font-size:10px;opacity:var(--mute);letter-spacing:.1em}
+.layer.l1{border-left:2px solid var(--camA)}
+.layer.l2{border-left:2px solid var(--camD)}
+.layer.l3{border-left:2px solid var(--accent)}
+
+/* ---- リボン ---- */
+.lap{margin:14px 0 6px}
+.lap-head{font-size:11px;letter-spacing:.14em;opacity:var(--mute);margin-bottom:5px}
+.ribbon{display:flex;align-items:stretch;gap:3px;min-height:62px}
+.seg,.take{border:1px solid var(--line);position:relative;cursor:pointer;text-align:left;
+  color:inherit;font:inherit;padding:7px 9px;display:flex;flex-direction:column;justify-content:space-between}
+.seg{
+  flex:1 1 auto;min-width:120px;
+  background:
+    repeating-linear-gradient(115deg,transparent 0 9px,rgba(255,250,240,.05) 9px 18px),
+    color-mix(in srgb,var(--c) 12%,transparent);
+  border-color:color-mix(in srgb,var(--c) 45%,transparent);
+}
+.seg .name{font-size:14px;letter-spacing:.08em}
+.seg .name i{display:inline-block;width:8px;height:8px;background:var(--c);margin-right:7px;vertical-align:1px}
+.seg .dur{font-size:10px;opacity:var(--mute);letter-spacing:.06em}
+.take{
+  flex:0 0 auto;background:rgba(255,222,173,.09);border-color:rgba(255,222,173,.5);
+  padding:0;overflow:hidden;
+}
+.take-head{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:4px 8px;border-bottom:1px solid rgba(255,222,173,.28);font-size:11px;letter-spacing:.06em;color:var(--accent)}
+.steps{display:flex;flex:1;align-items:stretch}
+.step{border-right:1px solid rgba(255,250,240,.14);padding:5px 7px;display:flex;flex-direction:column;justify-content:space-between;gap:3px;min-width:0}
+.step:last-child{border-right:0}
+.step .src{font-size:10.5px;line-height:1.35}
+.step .sec{font-size:10px;opacity:var(--mute)}
+.step .ov{font-size:10px;color:var(--camD)}
+.dot{display:inline-block;width:7px;height:7px;margin-right:5px;vertical-align:0}
+.sel{outline:2px solid var(--accent);outline-offset:-2px}
+.ribbon .cutmark{align-self:center;font-size:10px;opacity:var(--mute);padding:0 1px}
+
+/* ---- 比較表 ---- */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:10px}
+.cmp>div{border:1px solid var(--line);padding:12px 14px}
+.cmp h3{margin:0 0 8px;font-size:11px;letter-spacing:.14em;opacity:var(--sub)}
+.bad{color:var(--warn)}
+pre{margin:6px 0 0;padding:9px 10px;border:1px solid var(--line);overflow:auto;
+  font:11.5px/1.6 ui-monospace,Consolas,monospace;opacity:.85;background:rgba(255,250,240,.03)}
+
+/* ---- インスペクタ ---- */
+#insp{border:1px solid var(--line);padding:12px 14px;margin-top:12px;min-height:96px}
+#insp .ttl{font-size:12px;letter-spacing:.1em;color:var(--accent);margin-bottom:8px}
+#insp table{border-collapse:collapse;font-size:12px}
+#insp td{padding:2px 14px 2px 0;vertical-align:top}
+#insp td:first-child{opacity:var(--mute);white-space:nowrap}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:11px;opacity:var(--sub);margin-top:8px}
+.legend span i{display:inline-block;width:22px;height:10px;margin-right:6px;vertical-align:-1px;border:1px solid var(--line2)}
+.legend .e i{background:repeating-linear-gradient(115deg,transparent 0 5px,rgba(255,250,240,.14) 5px 10px)}
+.legend .r i{background:rgba(255,222,173,.25);border-color:rgba(255,222,173,.5)}
+</style>
+
+<div class="wrap">
+<h1>ショット・タイムライン（設計モック）</h1>
+<p><span class="tag">MOCK</span> これは見た目と読みやすさを判断するための静止モックです。show.json は読み書きしません。設計の正本は
+<code>.claude/plans/2026-07-25_shot-timeline-foundation.md</code>。</p>
+
+<h2>1. 3 層モデル — 「①体験者の切替」と「②演出の切替」の両立</h2>
+<p>両立させるのではなく、<b>同じ仕組みの既定値と上書き</b>にする。体験者の位置が決めるのは「ショーの時計（何周目のどの区間か）」だけで、
+画面に何を映すかは常にオーサリングの結果。既定の割当がたまたま「その区間のカメラのライブ」なだけ。</p>
+<div class="layers">
+  <div class="layer l1"><span class="who">体験者が決める</span><h3>人の層</h3>
+    <ol><li>HMD 位置</li><li>ゾーン判定（重なり / ヒステリシス）</li><li>dwell（一瞬の通過を捨てる）</li><li><b>確定ゾーン進行</b></li></ol></div>
+  <div class="layer l2"><span class="who">オーサリングが決める</span><h3>ショーの層</h3>
+    <ol><li>周回・区間 = ショーの時計</li><li>区間に付いた演出を解決</li><li><b>映すべき Shot の要求</b></li></ol></div>
+  <div class="layer l3"><span class="who">見せ方が決める</span><h3>画面の層</h3>
+    <ol><li>優先度調停 <small>卓 &gt; 演出 &gt; 既定</small></li><li>最小ショット長・dip / フェード</li><li>registry / overlay / post</li></ol></div>
+</div>
+<p><small>流れは一方向。画面が凍っていても時計は止まらない（＝周回が壊れない）。演出は必ず有界で、終わったら「元のカメラ」ではなく「いま体験者がいるゾーン」を映す。</small></p>
+
+<h2>2. リボン — 1 周 = 横 1 本</h2>
+<p>区間は<b>伸縮</b>（尺は体験者が決める・斜線ハッチ）、演出は<b>秒に比例した固定幅</b>。この対比がそのまま「①の時間 / ②の時間」の違いになる。
+クリックすると下に中身が出ます。</p>
+<div id="ribbons"></div>
+<div class="legend">
+  <span class="e"><i></i>区間（伸縮・体験者が決める尺）</span>
+  <span class="r"><i></i>演出（固定・秒で決まる尺）</span>
+  <span>⏵ 位置＝開始規則（進入から t 秒 / 離脱の瞬間）</span>
+</div>
+<div id="insp"><div class="ttl">クリックして選択</div><small>区間 or 演出を選ぶとここに中身が出ます。</small></div>
+
+<h2>3. 同じ内容を、今の UI / 新しい UI で書くと</h2>
+<div class="cmp">
+  <div>
+    <h3>今（区間の属性としてのインサート）</h3>
+    <p class="bad">・cue と insert が別概念で別 UI<br>
+      ・区間 1 つに insert は 1 本だけ（<code>hasInsert</code> 単数）<br>
+      ・<code>anchor: enter / exit</code> という抽象を人間が覚える必要がある<br>
+      ・多段（D→映像①→録画B→録画C）は書けない</p>
+<pre>{ "lap":3, "camera":1,
+  "cues":[ {"cueId":"cue_B_1","delaySec":20} ],
+  "hasInsert": true,
+  "insert": { "anchor":"enter", "camera":3,
+              "delaySec":20, "durationSec":4 } }</pre>
+  </div>
+  <div>
+    <h3>新（タイムライン上の要素としての演出）</h3>
+    <p>・cue と insert が「カット」1 語彙に畳まれる<br>
+      ・区間に演出を何本でも、順番どおりに置ける<br>
+      ・anchor は消え「リボン上の位置」になる（ドラッグ）<br>
+      ・多段はステップを並べるだけ</p>
+<pre>{ "lap":3, "camera":1, "takes":[
+  { "start":{"at":"enter","offsetSec":20}, "policy":"hold",
+    "steps":[
+      {"source":{"live":3},          "durSec":4},
+      {"source":{"clip":"pre_01"},   "dur":"untilClipEnd"},
+      {"source":{"clip":"rec_lap1_B"},"overlay":"cg_doll", "dur":"untilClipEnd"},
+      {"source":{"clip":"rec_lap1_C"},"overlay":"cg_doll", "dur":"untilClipEnd"}
+    ] } ] }</pre>
+  </div>
+</div>
+
+<h2>4. 既定の挙動（覆せる）</h2>
+<p>・<b>占有ポリシー既定 = hold</b>：演出中に歩いても画面は演出のまま。終わったら現在地のカメラへスナップ。<br>
+   ・<b>演出中に通過した区間の演出は捨てる</b>（遅れて流さない）。<br>
+   ・<b>「録画映像 + CG 人形」は 1 本の動画に焼き込む</b>前提（リアルタイム合成にしない）。</p>
+</div>
+
+<script>
+const CAM = { 0:{id:'A',c:'var(--camA)'}, 1:{id:'B',c:'var(--camB)'}, 2:{id:'C',c:'var(--camC)'}, 3:{id:'D',c:'var(--camD)'} };
+const PX = 11.0;     // 1 秒あたり px（演出ブロックの幅 = 尺に比例）
+const STEP_MIN = 78; // カット 1 枚の最小幅（短い尺でも文字が読める下限）
+
+// モックデータ: 周回 → 要素列（区間 / 演出）
+const LAPS = [
+  { lap:1, items:[
+    { t:'seg', cam:0 }, { t:'seg', cam:1 }, { t:'seg', cam:2 },
+  ]},
+  { lap:2, items:[
+    { t:'seg', cam:0 },
+    { t:'take', name:'足音', start:'離脱の瞬間', from:'A', policy:'hold', steps:[
+      { src:'ライブ C', cam:2, sec:3 }]},
+    { t:'seg', cam:1 },
+    { t:'seg', cam:2 },
+    { t:'take', name:'手形', start:'進入 +6s', from:'C', policy:'yield', steps:[
+      { src:'そのまま', inherit:true, ov:'手形マスク', sec:5 }]},
+  ]},
+  { lap:3, items:[
+    { t:'seg', cam:0 },
+    { t:'seg', cam:1 },
+    { t:'take', name:'終盤', start:'進入 +20s', from:'B', policy:'hold', steps:[
+      { src:'ライブ D', cam:3, sec:4 },
+      { src:'映像①', clip:true, sec:8 },
+      { src:'録画 1周目B', clip:true, ov:'CG人形', sec:7 },
+      { src:'録画 1周目C', clip:true, ov:'CG人形', sec:7 }]},
+    { t:'seg', cam:2 },
+  ]},
+];
+
+const host = document.getElementById('ribbons');
+const insp = document.getElementById('insp');
+let selEl = null;
+
+LAPS.forEach((L) => {
+  const wrap = document.createElement('div'); wrap.className = 'lap';
+  wrap.innerHTML = `<div class="lap-head">${L.lap}周目</div>`;
+  const rib = document.createElement('div'); rib.className = 'ribbon';
+  L.items.forEach((it) => {
+    if (it.t === 'seg') {
+      const b = document.createElement('button');
+      b.className = 'seg'; b.style.setProperty('--c', CAM[it.cam].c);
+      b.innerHTML = `<span class="name"><i></i>${CAM[it.cam].id}</span><span class="dur">滞在は体験者しだい</span>`;
+      b.onclick = () => select(b, {
+        ttl:`区間 ${L.lap}周目 / カメラ ${CAM[it.cam].id}`,
+        rows:[['映すもの','ライブ カメラ '+CAM[it.cam].id+'（既定）'],
+              ['尺','体験者の滞在時間（伸縮）'],
+              ['画像加工','この区間だけ上書き可（未設定＝カメラ既定）'],
+              ['BGM','この区間で切替 / 停止を指示可（未指示＝続く）'],
+              ['演出','＋ で演出ブロックを追加（何本でも・順序どおり）']]});
+      rib.appendChild(b);
+    } else {
+      const total = it.steps.reduce((s,x)=>s+x.sec,0);
+      const w = it.steps.reduce((s,x)=>s+Math.max(x.sec*PX, STEP_MIN), 0);
+      const b = document.createElement('button');
+      b.className = 'take'; b.style.width = Math.round(w) + 'px';
+      b.innerHTML = `<div class="take-head"><span>🎬 ${it.name}</span><span>${total}s</span></div>`
+        + `<div class="steps">` + it.steps.map((s) => {
+            const col = s.cam!=null ? CAM[s.cam].c : (s.clip ? 'var(--accent)' : 'rgba(255,250,240,.5)');
+            return `<div class="step" style="flex:${s.sec} 1 0">
+              <span class="src"><i class="dot" style="background:${col}"></i>${s.src}</span>
+              ${s.ov?`<span class="ov">+ ${s.ov}</span>`:''}
+              <span class="sec">${s.sec}s</span></div>`;
+          }).join('') + `</div>`;
+      b.onclick = () => select(b, {
+        ttl:`演出「${it.name}」 ${L.lap}周目 / ${it.from} の区間`,
+        rows:[['開始', it.start + '（リボン上をドラッグで変更）'],
+              ['尺', total + 's（4 カット）'],
+              ['占有', it.policy==='hold' ? 'hold — 演出中は歩いても画面は演出のまま' : 'yield — 境界を跨いだら打ち切って返す'],
+              ['終わり方','いま体験者がいるゾーンのライブへ（復元でなく再計算）'],
+              ['カット', it.steps.map((s,i)=>`${i+1}. ${s.src}${s.ov?' + '+s.ov:''} — ${s.sec}s`).join('<br>')]]});
+      rib.appendChild(b);
+    }
+  });
+  wrap.appendChild(rib); host.appendChild(wrap);
+});
+
+function select(el, data) {
+  if (selEl) selEl.classList.remove('sel');
+  selEl = el; el.classList.add('sel');
+  insp.innerHTML = `<div class="ttl">${data.ttl}</div><table>`
+    + data.rows.map(([k,v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('') + `</table>`;
+}
+</script>
