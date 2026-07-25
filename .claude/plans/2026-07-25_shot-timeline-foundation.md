@@ -2,7 +2,7 @@
 
 status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤入れを反映済み・実装は未着手）
 
-決定ログは §7。論点 1〜5 は opus アドバイザーが判断し、メインが採否を確定した。
+決定ログは §8。論点 1〜5 は opus アドバイザーが判断し、メインが採否を確定した。
 
 ## ユーザー要求（原文）
 
@@ -134,11 +134,11 @@ status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤�
 - ドラッグは**スナップ 2 種のみ**。区間ブロック内に置けば `enter+t`（t は px から算出）、**区間の右境界線に磁石で吸着**させると `離脱時`。吸着なしに滑らかに移り変わる遷移は作らない
 - `exit` の演出は**区間ブロックの外**に、境界線をまたいで描く（区間内には置かない）。「区間内の時刻ではない」ことを形で示す
 - 演出ヘッダに**常時テキスト**で `進入 +20s` / `離脱時` を出す。位置だけに意味を持たせない
-- 区間ブロックに**実測の平均滞在時間**（実機 heartbeat のログがあれば `実測 平均 12s`）を出す。`enter+20s` が発火しない危険（§7 論点 5）を作者に見せる唯一の手段
+- 区間ブロックに**実測の平均滞在時間**（実機 heartbeat のログがあれば `実測 平均 12s`）を出す。`enter+20s` が発火しない危険（§8 論点 5）を作者に見せる唯一の手段
 
 ## 5. 実装の段取り（今回は実装しない・順序と不変条件だけ確定）
 
-**順序は `0 → B → C → A → D`**（当初案 A 先行から反転。理由は §7 論点 4）。
+**順序は `0 → B → C → A → D`**（当初案 A 先行から反転。理由は §8 論点 4）。
 
 | 段 | 内容 | リスク | 得られるもの |
 |---|---|---|---|
@@ -159,10 +159,115 @@ status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤�
 5. 横取り中に通過した区間の演出は発火しない
 6. **`ifMissed:"fireOnExit"` の演出は、区間滞在が `offsetSec` 未満でも必ず 1 回発火する**
 7. **区間を離れた時点で、その区間の未発火演出は必ず決着する（発火 or 破棄）。遅れて別区間で発火してはならない**
-   （現行 `InsertLogic` はここが破れている — §7 論点 5 の実コード確認結果）
+   （現行 `InsertLogic` はここが破れている — §8 論点 5 の実コード確認結果）
 8. **ラン強制リセット（右グリップ長押し / 卓の ▶ ラン開始）は `hold` 中の演出を必ず割り込んで畳む**（体験者が固まった時のスタッフの唯一の出口）
 
-## 6. 決めた既定値と、現場で覆しうるもの
+## 6. show.json v3 スキーマ（段 0 の成果物・**確定**）
+
+以降の全段はこの契約を見る。段 C で fixture `Assets/Tests/Fixtures/show_timeline_v3_canonical.json` を作り、Web（node）と Unity（EditMode）の両側から読んで固定する（v2 の `show_timeline_canonical.json` と同じ手法）。
+
+### 6.1 形
+
+```jsonc
+"timeline": {
+  "rev": 5,
+  "schema": 3,                    // 0 / 未指定 = v2（後方互換）。3 = v3
+  "segments": [
+    {
+      "lap": 3, "camera": 1,      // 区間キー（v2 と同一・変更なし）
+
+      "takes": [                  // v3 の本体。0..N 本
+        {
+          "id": "t_3B_final",     // 区間内で一意。空なら Unity が "L3C1#0" 形式で補う
+          "name": "終盤",          // UI 表示のみ（実行に影響しない）
+
+          "at": "enter",          // "enter" | "exit"
+          "offsetSec": 20,        // at=enter のみ。at=exit では無視
+          "ifMissed": "fireOnExit", // at=enter のみ。"fireOnExit"(既定) | "skip"
+
+          "policy": "hold",       // "hold"(既定) | "yield"
+          "once": true,           // ラン内 1 回
+          "maxDurationSec": 0,    // watchdog。0 / 未指定 = コード既定 45
+
+          "steps": [
+            { "source": "live",    "camera": 3, "assetUrl": "",
+              "cueId": "", "strength": -1, "fadeInSec": -1, "fadeOutSec": -1,
+              "trimStartSec": -1, "trimEndSec": -1,
+              "durKind": "sec", "durSec": 4,
+              "transition": "dip", "transitionMs": 0, "hasPost": false },
+
+            { "source": "clip",    "camera": -1, "assetUrl": "sa://assets/pre_01.mp4",
+              "cueId": "", "strength": -1, "fadeInSec": -1, "fadeOutSec": -1,
+              "trimStartSec": -1, "trimEndSec": -1,
+              "durKind": "untilClipEnd", "durSec": 0,
+              "transition": "cut", "transitionMs": 0, "hasPost": false },
+
+            { "source": "clip",    "camera": -1, "assetUrl": "sa://assets/rec_lap1_B.mp4",
+              "cueId": "cg_doll_B", "strength": -1, "fadeInSec": -1, "fadeOutSec": -1,
+              "trimStartSec": -1, "trimEndSec": -1,
+              "durKind": "untilClipEnd", "durSec": 0,
+              "transition": "cut", "transitionMs": 0,
+              "post": { /* PostParams 7 項目 */ }, "hasPost": true }
+          ]
+        }
+      ],
+
+      "post": { }, "hasPost": false,   // 区間そのものの属性（v2 から継続・変更なし）
+      "bgm":  { }, "hasBgm":  false,
+
+      "cues": [ ], "insert": { }, "hasInsert": false   // v2 互換。**v3 の書き出しでは出さない**
+    }
+  ]
+}
+```
+
+### 6.2 フィールド規約
+
+**入れ子を極力作らない**。JsonUtility の「null 入れ子を既定値で書く」罠を踏む面を減らすため、`start` / `source` / `overlay` / `dur` はオブジェクトにせず**フラットな文字列判別子 + 値**にする。present-flag が要るのは `post` だけ。
+
+| 規約 | 内容 |
+|---|---|
+| **`-1` = 継承** | step の `strength` / `fadeInSec` / `fadeOutSec` / `trimStartSec` / `trimEndSec` は `-1` で「`cueId` の素材定義の値をそのまま使う」。v2 の `override` + `hasOverride` は**廃止**（`ShowBgmDef` の -1 継承と同じ流儀） |
+| **present-flag は `hasPost` のみ** | `TimelinePresentFlags.Reconcile` の AND 規約（宣言 bool && object != null）を踏襲。Web は `hasPost:false` のとき `post` キー自体を出さない |
+| **`0` = コード既定** | `maxDurationSec` / `transitionMs`。`SwitchDirectorLogic.ResolveTiming` と同じ「>0 で上書き」流儀 |
+| **未知の文字列は既定へ倒す** | `source` / `durKind` / `transition` / `policy` / `ifMissed` / `at` が未知値なら既定（`live` / `sec` / `dip` / `hold` / `fireOnExit` / `enter`）+ 警告ログ。例外にしない |
+
+### 6.3 実行セマンティクス（ここが契約の本体）
+
+1. **同時に走る take は 1 本**。走行中に別 take の開始条件が成立したら、その take は**待たない** — `ifMissed=fireOnExit` なら離脱時へ持ち越し、`skip` なら破棄。離脱時にもまだ走行中なら**破棄 + 警告ログ**（キューに溜めない＝不変条件 5）
+2. **同一区間の take の順序**: `at:enter` は `offsetSec` 昇順 → 同値なら配列順。`at:exit` は配列順
+3. **`ifMissed:"fireOnExit"`** — `offsetSec` に達する前に区間を離脱したら、その離脱の瞬間（dip の黒中）に発火する＝ exit へ自動降格（不変条件 6）
+4. **区間離脱時に未発火 take は必ず決着する**（発火 or 破棄）。**遅れて別区間で発火してはならない**（不変条件 7・現行 `InsertLogic` が破っている点）
+5. **`once`** はラン内 1 回。ランリセット（`control.runEpoch` 変化 / 右グリップ 2 秒長押し）で全クリア。**リセットは走行中の take を必ず畳む**（不変条件 8）
+6. **ライブ卓が最優先**: `control.activeCue` 非空 / `control.cameraOverride` 非 null の間は take を発火しない（既存挙動を維持）
+7. **watchdog**: `maxDurationSec`（既定 45）を超えた take は強制終了 + `[Take] forced end` ログ（不変条件 2）
+8. **終了時は「いま体験者がいるゾーン」へ**（復元でなく再計算・不変条件 3）
+
+### 6.4 不正値の扱い（例外にしない・既存流儀）
+
+- `steps` が空の take → 無視
+- `source:"live"` で `camera` が registry 範囲外 → その step を飛ばす（警告）
+- `source:"clip"/"still"` で `assetUrl` 空 → その step を飛ばす（警告）
+- `durKind:"untilClipEnd"` だが動画でない（静止画 / live）→ `durSec>0` があればそれ、無ければ 4s
+- 全 step が飛ばされた take → 発火しない（警告）
+
+### 6.5 v2 読み取り互換（決定的変換・両側で同一）
+
+v3 で書き出す時に v2 キーは出さないが、**読む時は必ず変換する**（既存 APK の端末キャッシュ・焼き込み show.json のため）。変換は純関数 1 箇所に置き、fixture で両側を突き合わせる:
+
+- JS: `timeline-model.js` の `migrateV2Segment(seg)`
+- C#: `TimelineMigration.FromV2(ShowTimelineSegmentDef)`
+
+| v2 | v3 |
+|---|---|
+| `cues[i]` | `take{ at:"enter", offsetSec:cues[i].delaySec, ifMissed:"fireOnExit", once, policy:"hold", steps:[{ source:"inherit", cueId, strength/fade/trim = override があればその値・無ければ -1, durKind:"untilClipEnd" }] }` |
+| `insert`（`anchor:"enter"`） | `take{ at:"enter", offsetSec:delaySec, once, steps:[{ source:"live", camera, cueId, durKind:"sec", durSec:durationSec, post/hasPost }] }` |
+| `insert`（`anchor:"exit"`） | 同上で `at:"exit"` |
+| 変換後の take の並び | `cues[]` の順 → 最後に `insert`（v2 は 1 区間 1 insert なので決定的） |
+
+**v2 の `ifMissed` は `fireOnExit` に倒す**（v2 の実挙動は「遅れて誤爆」だったが、それはバグであって仕様ではない。移行で挙動が変わることを 8.1 に明記する）。
+
+## 7. 決めた既定値と、現場で覆しうるもの
 
 設計を止めないため既定を決めておく。違う意図があれば覆す：
 
@@ -172,7 +277,7 @@ status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤�
 - **「録画映像 + CG 人形」は 1 本の動画に焼き込む**前提（`clip` 1 枚）。マスク合成で人形だけ別レイヤーにするのは、実時間の合成品質が読めないため後回し。Web 卓の合成タブは素材づくり（焼き込み前の確認）に使う
 - **演出中に通過した区間の演出は捨てる**（キューに溜めて後で流さない）。時間に紐づいた演出を遅れて出すと文脈が壊れるため
 
-## 7. 決定ログ — opus アドバイザーの赤入れ（2026-07-25）
+## 8. 決定ログ — opus アドバイザーの赤入れ（2026-07-25）
 
 ユーザー指示により、論点の判断を opus サブエージェントに委ねた。以下はその判断とメインの採否。
 
@@ -184,6 +289,13 @@ status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤�
 | 4. 段取り | **A→B→C→D を B→C→A→D へ反転**。A 先行は「UI では書けるのに実機では先頭ステップしか出ない」最悪の失敗モードを作り、アダプタは C で丸ごと捨てる廃棄コスト。A をカット可能点にする | **全面採用**（§5 を書き換え） |
 | 5. 最大のリスク | **山場の演出が体験者の歩速で発火しない**。`enter+20s` は B に 20 秒滞在する前提だが、緊張した体験者は 8 秒で抜ける。リボンは「そこに演出がある」と描き続けるので作者は気づけない。`(lap,camera)+時間オフセット` というキー設計の限界＝**スキーマなので後から覆しにくい** → `ifMissed` を v3 の最初から入れる | **全面採用**（§3・不変条件 6 に反映） |
 
+### 8.1 v2 → v3 移行で意図的に変わる挙動
+
+既存 show.json / 端末キャッシュを v3 として読むと、**1 点だけ実挙動が変わる**（バグ修正なので変える）:
+
+- 旧: 区間進入 + `delaySec` 待ちの間に体験者が離脱すると、その cue / enter インサートは**離脱後に別の区間で遅れて発火**していた（`InsertLogic.Tick` が現在ゾーンを見ない）。さらに**進入先の区間の insert は武装されず落ちて**いた（`OnZoneCommitted` の `_phase != Idle` 早期 return）
+- 新: `ifMissed:"fireOnExit"` により**離脱の瞬間に発火**する（別区間へは絶対に漏れない）。`skip` を選べば従来より素直に「出ない」
+
 ### 論点 5 の事実訂正（メインが実コードで確認）
 
 アドバイザーは「現行 `InsertLogic` も `Phase.EnterDelay` 中にゾーンが変わると enter が**静かに消える**」としたが、[`InsertLogic.cs`](../../Assets/Scripts/Streaming/InsertLogic.cs) の実挙動は違う。消えるのではなく **2 つの別々の穴**がある:
@@ -193,7 +305,7 @@ status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤�
 
 指摘の骨子（キー設計の限界）はむしろ補強される。この訂正を受けて**不変条件 7**（区間離脱時に未発火演出は必ず決着する / 遅れて別区間で発火しない）を追加した。
 
-## 8. 参照
+## 9. 参照
 
 - 現行スキーマ v2 と実装: [2026-07-19_webui-timeline-authoring.md](2026-07-19_webui-timeline-authoring.md)
 - 切替の時間軸ガード・追従・フェイルソフト: [2026-07-19_viewer-ux.md](2026-07-19_viewer-ux.md)
