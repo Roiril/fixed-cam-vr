@@ -329,6 +329,67 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(rig.Director.InsertActive, Is.False);
         }
 
+        // ---- カット遷移（cut / dip / fade）----
+
+        [Test]
+        public void CutTransition_SwitchesWithoutVisibleBlack()
+        {
+            Rig rig = MakeRig();
+            var step = LiveStep(3, 2f);
+            step.transition = TakeSchema.TransCut;
+            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, EnterTake("t", step)) });
+
+            EnterZone(rig, 0, 1);
+            Invoke(rig.Runner, "Update");
+            Invoke(rig.Director, "Update");   // dip 1 フレーム目で黒 → 差し替えまで到達する
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(3), "cut は 1 フレームで差し替わる");
+        }
+
+        [Test]
+        public void DipTransition_TakesTimeBeforeSwitching()
+        {
+            Rig rig = MakeRig();
+            // Director の dip を実尺に戻す（MakeRig は 0 に落としている）。
+            SetField(rig.Director, "dipDownSec", 1f);
+            SetField(rig.Director, "dipUpSec", 1f);
+            var step = LiveStep(3, 5f);
+            step.transition = TakeSchema.TransDip;
+            step.transitionMs = 1000f;        // 全体 1s → 落とし 0.4s / 立ち上げ 0.6s
+            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, EnterTake("t", step)) });
+
+            EnterZone(rig, 0, 1);
+            Invoke(rig.Runner, "Update");
+            Invoke(rig.Director, "Update");
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(0),
+                "dip 指定のカットは黒へ落ちきるまで差し替えない（EditMode の 1 フレームでは未到達）");
+        }
+
+        // ---- policy: yield ----
+
+        [Test]
+        public void YieldTake_AbortsWhenViewerLeaves_AndScreenFollowsZone()
+        {
+            Rig rig = MakeRig();
+            var take = EnterTake("amb", LiveStep(3, 30f));
+            take.policy = TakeSchema.PolicyYield;
+            rig.Timeline.SetTimelineV3(new[] { SegWithTake(1, 0, take) });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(3));
+            Assert.That(rig.Director.InsertActive, Is.True);
+
+            // 体験者がゾーン 1 へ（時計が確定 → 区間進入通知）。
+            rig.Director.RequestZone(1);
+            PumpDirector(rig.Director, 1);
+            EnterZone(rig, 1, 1);
+            PumpDirector(rig.Director);
+
+            Assert.That(rig.Runner.IsActive, Is.False, "yield は境界を跨いだら打ち切る");
+            Assert.That(rig.Director.InsertActive, Is.False);
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(1), "画面は体験者のゾーンに追従する");
+        }
+
         // ---- exit アンカー ----
 
         [Test]

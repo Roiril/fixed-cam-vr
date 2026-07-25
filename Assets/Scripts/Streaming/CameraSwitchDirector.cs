@@ -241,6 +241,12 @@ namespace FixedCamVr.Streaming
         private int _dipTarget;
         private SwitchSource _dipSource = SwitchSource.External;
 
+        // 進行中の dip の実尺（StartDip で確定）。演出のカット遷移が 1 回だけ上書きできる。
+        private float _curDipDown;
+        private float _curDipUp;
+        private bool _hasNextTransition;
+        private float _nextDipDown, _nextDipUp;
+
         // exit インサートの黒転換中差し替え。Zone dip が全黒で commit した直後（同期連鎖内）に
         // InsertExitRedirect が立てる。AdvanceDip がその commit 後に読み、Up へ上がる前に
         // 黒のまま insert カメラへ差し替える（中間カメラのフラッシュを見せない）。-1 = 差し替えなし。
@@ -500,13 +506,35 @@ namespace FixedCamVr.Streaming
             if (zoneCommitted) ZoneCommitted?.Invoke(zoneCam);
         }
 
+        /// <summary>
+        /// **次に開始する切替 1 回だけ** dip の尺を上書きする（演出のカット遷移 cut / dip / fade 用）。
+        /// 0/0 を渡せば実質カット（黒を見せずに差し替え）。消費されなかった予約は次の切替に効く。
+        /// </summary>
+        public void SetNextTransition(float downSec, float upSec)
+        {
+            _hasNextTransition = true;
+            _nextDipDown = Mathf.Max(0f, downSec);
+            _nextDipUp = Mathf.Max(0f, upSec);
+        }
+
         private void StartDip(int target, SwitchSource source)
         {
+            if (_hasNextTransition)
+            {
+                _curDipDown = _nextDipDown;
+                _curDipUp = _nextDipUp;
+                _hasNextTransition = false;
+            }
+            else
+            {
+                _curDipDown = dipDownSec;
+                _curDipUp = dipUpSec;
+            }
             _dipTarget = target;
             _dipSource = source;
             _dip = DipState.Down;
             _dipTimer = 0f;
-            audioCue?.Play(); // dip の黒 70ms が視覚差替に先行 → J カット相当
+            audioCue?.Play(); // dip の黒が視覚差替に先行 → J カット相当
         }
 
         private void AdvanceDip()
@@ -515,7 +543,7 @@ namespace FixedCamVr.Streaming
             _dipTimer += Time.unscaledDeltaTime;
             if (_dip == DipState.Down)
             {
-                float t = dipDownSec <= 0f ? 1f : Mathf.Clamp01(_dipTimer / dipDownSec);
+                float t = _curDipDown <= 0f ? 1f : Mathf.Clamp01(_dipTimer / _curDipDown);
                 SetDim(t);
                 if (t >= 1f)
                 {
@@ -544,7 +572,7 @@ namespace FixedCamVr.Streaming
             }
             else // Up
             {
-                float t = dipUpSec <= 0f ? 1f : Mathf.Clamp01(_dipTimer / dipUpSec);
+                float t = _curDipUp <= 0f ? 1f : Mathf.Clamp01(_dipTimer / _curDipUp);
                 SetDim(1f - t);
                 if (t >= 1f)
                 {

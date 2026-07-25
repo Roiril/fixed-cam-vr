@@ -104,6 +104,7 @@ namespace FixedCamVr.Streaming
                         skipWhenMissed = t.SkipWhenMissed,
                         once = t.once,
                         maxDurationSec = t.maxDurationSec,
+                        yieldOnZoneChange = t.IsYield,
                         stepDurSec = BuildStepDurations(t),
                     });
                 }
@@ -181,6 +182,11 @@ namespace FixedCamVr.Streaming
             // 画面の占有とカメラ。live のときだけカメラを動かす。
             if (source == TakeSchema.SourceLive && step.camera >= 0)
             {
+                // カット遷移（cut / dip / fade）をこの 1 回の切替に適用する。
+                TakeSchema.SplitTransition(TakeSchema.ResolveTransitionMs(step.transition, step.transitionMs),
+                    out float downSec, out float upSec);
+                director.SetNextTransition(downSec, upSec);
+
                 // 演出の 1 カット目が exit アンカー由来なら、離脱の dip の黒中に差し替える（中間カメラを見せない）。
                 if (d.takeStarted && exitAnchored) director.InsertExitRedirect(step.camera);
                 else director.InsertBegin(step.camera);

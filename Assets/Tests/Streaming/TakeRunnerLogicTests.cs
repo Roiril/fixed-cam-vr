@@ -340,6 +340,52 @@ namespace FixedCamVr.Streaming.Tests
                 "通過した B の演出が後から湧かない");
         }
 
+        // ---- policy: yield（体験者が区間を移ったら打ち切る） ----
+
+        [Test]
+        public void Yield_EndsTakeWhenViewerLeavesSegment()
+        {
+            var def = Enter(1, 0, 0f, 30f);
+            def.yieldOnZoneChange = true;
+            var l = Make(def);
+            Enter(l, 1, 0, 0f);
+            l.Tick(0f, 0);
+            Assert.That(l.IsActive, Is.True);
+
+            TakeRunnerLogic.Decision d = Enter(l, 1, 1, 5f, hadPrev: true, prevLap: 1, prevCam: 0);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.EndTake), "境界を跨いだら打ち切る");
+            Assert.That(d.returnCamera, Is.EqualTo(1), "復帰先は入った先のゾーン");
+            Assert.That(d.forced, Is.False, "watchdog ではなく設計どおりの終了");
+            Assert.That(l.IsActive, Is.False);
+        }
+
+        [Test]
+        public void Hold_KeepsRunningWhenViewerLeavesSegment()
+        {
+            var def = Enter(1, 0, 0f, 30f);   // 既定 = hold
+            var l = Make(def);
+            Enter(l, 1, 0, 0f);
+            l.Tick(0f, 0);
+            TakeRunnerLogic.Decision d = Enter(l, 1, 1, 5f, hadPrev: true, prevLap: 1, prevCam: 0);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.None));
+            Assert.That(l.IsActive, Is.True, "hold は歩かれても見せ切る");
+        }
+
+        [Test]
+        public void Yield_ArmsEnteringSegmentTakeAfterAborting()
+        {
+            var a = Enter(1, 0, 0f, 30f);
+            a.yieldOnZoneChange = true;
+            var b = Enter(1, 1, 0f, 3f);
+            var l = Make(a, b);
+            Enter(l, 1, 0, 0f);
+            l.Tick(0f, 0);
+            Enter(l, 1, 1, 5f, hadPrev: true, prevLap: 1, prevCam: 0);   // 打ち切り
+            TakeRunnerLogic.Decision d = l.Tick(5f, 1);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+            Assert.That(d.takeIndex, Is.EqualTo(1), "打ち切り後、入った区間の演出は通常どおり武装される");
+        }
+
         // ---- 復帰先の再計算 ----
 
         [Test]

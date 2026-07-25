@@ -33,6 +33,7 @@ namespace FixedCamVr.Streaming
             public bool skipWhenMissed; // true=skip / false=fireOnExit
             public bool once;
             public float maxDurationSec;
+            public bool yieldOnZoneChange; // true=yield（体験者が区間を移ったら打ち切る）/ false=hold
             public float[] stepDurSec;  // カットごとの尺（<0 = untilClipEnd＝外部通知待ち）
         }
 
@@ -126,6 +127,20 @@ namespace FixedCamVr.Streaming
             Decision result = default;
             bool segChanged = !hadPrev || prevLap != newLap || prevCam != newCam;
             if (!segChanged) return result;
+
+            // policy=yield: 体験者が区間を移ったら演出を打ち切って画面を返す（歩行を邪魔しない演出用）。
+            // このとき離脱区間の exit 演出は発火しない — 同時 1 本の原則を保ち、打ち切りの直後に
+            // 別の演出が始まって「返したのにまた持って行かれる」のを避けるため。
+            if (_running && _defs[_activeTake].yieldOnZoneChange)
+            {
+                Decision yielded = EndTakeDecision(newCam, forced: false);
+                ClearArmed();
+                _hasCurrent = true;
+                _curLap = newLap;
+                _curCam = newCam;
+                ArmEnterTakes(newLap, newCam, now);
+                return yielded;
+            }
 
             if (hadPrev)
             {

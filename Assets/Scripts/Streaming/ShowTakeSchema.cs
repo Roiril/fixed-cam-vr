@@ -96,8 +96,22 @@ namespace FixedCamVr.Streaming
         /// <summary>尺が決まらないカットの最終フォールバック (秒)。</summary>
         public const float FallbackStepDurSec = 4f;
 
-        public const float DefaultDipMs = 70f;
+        /// <summary>dip 遷移**全体**の既定 (ms)。落とし + 立ち上げの合計（既存の 70+100ms 相当）。</summary>
+        public const float DefaultDipMs = 170f;
+
+        /// <summary>fade 遷移全体の既定 (ms)。</summary>
         public const float DefaultFadeMs = 300f;
+
+        /// <summary>遷移全体の長さを「黒へ落とす / 黒から立ち上げる」へ配分する比（既存 70:100 に合わせる）。</summary>
+        public const float DipDownRatio = 0.4f;
+
+        /// <summary>遷移全体 (ms) を落とし・立ち上げの秒数へ分ける。cut（0）は 0/0。</summary>
+        public static void SplitTransition(float totalMs, out float downSec, out float upSec)
+        {
+            float total = totalMs > 0f ? totalMs : 0f;
+            downSec = total * DipDownRatio / 1000f;
+            upSec = total * (1f - DipDownRatio) / 1000f;
+        }
 
         public static bool IsExit(string? at) => at == AtExit;
 
