@@ -306,10 +306,20 @@ namespace FixedCamVr.Streaming.EditorTools
             if (showControl != null) TrySetObjectRef(insSo, "showControl", showControl);
             insSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // v3（show.json timeline schema>=3 / takes[]）の実行体。多段カット演出を担当し、
+            // v3 のときだけ動く（v2 では TimelineDirector が旧経路へ流すので本コンポーネントは休止）。
+            var takeRunner = trackerGo.AddComponent<TakeRunner>();
+            var takeSo = new SerializedObject(takeRunner);
+            if (director != null) TrySetObjectRef(takeSo, "director", director);
+            if (overlay != null) TrySetObjectRef(takeSo, "overlay", overlay);
+            if (showControl != null) TrySetObjectRef(takeSo, "showControl", showControl);
+            takeSo.ApplyModifiedPropertiesWithoutUndo();
+
             var timelineDirector = trackerGo.AddComponent<TimelineDirector>();
             var tlSo = new SerializedObject(timelineDirector);
             TrySetObjectRef(tlSo, "cueScheduler", cueScheduler);
             TrySetObjectRef(tlSo, "insertController", insertController);
+            TrySetObjectRef(tlSo, "takeRunner", takeRunner);
             if (showControl != null) TrySetObjectRef(tlSo, "showControl", showControl);
             tlSo.ApplyModifiedPropertiesWithoutUndo();
 

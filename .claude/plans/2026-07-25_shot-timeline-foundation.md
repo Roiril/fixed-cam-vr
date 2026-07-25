@@ -144,7 +144,7 @@ status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤�
 |---|---|---|---|
 | **0. v3 スキーマを紙で確定** | `takes[]` の形（`start.ifMissed` 込み）を確定する。コードは書かない | なし | 以降の全段が同じ契約を見る |
 | **B. 時計と画面の分離** ✅ **完了（2026-07-25）** | `ZoneProgressionLogic` を独立の純ロジックとして抽出（dwell 通過後のゾーン確定を、画面が追従したかに関係なく発火）。`LapCounter` は新イベント `CameraSwitchDirector.ZoneCommitted` を購読。**dwell（人の層）と cooldown＝最小ショット長（画面の層）を分離**。`asZone` 偽装を廃止 | 中（LapCounter / Director を触る） | 既存バグの根治。**出展の安定に単独で効く** |
-| **C. SequenceRunner** | 多段 Take の実行体（`InsertController` の後継）。有界・watchdog・返しは再計算。画面所有の調停を 1 点（`ShotDirector`）に集約。検証は **JSON 手書き + EditMode / node テスト**（UI 不要） | 中〜高 | 凝った演出が実機で本当に動く |
+| **C. TakeRunner** ✅ **完了（2026-07-25）** | 多段 Take の実行体（`InsertController` の後継）。有界・watchdog・返しは再計算。v3 の show.json のときだけ動き、旧経路は空にして所有者を 1 人に保つ。検証は **JSON fixture + EditMode テスト**（UI 不要） | 中〜高 | 凝った演出が実機で本当に動く |
 | **A. リボン UI** | リボン化 + セグメント/演出インスペクタ。JS モデル + node テスト | 低 | オーサリングが分かりやすくなる |
 | **D. 新ソース種別** | `clip` / `still` を第一級の source に（今は「マスク無し cue」で代用）。録画 + CG 合成の素材パイプライン | 低〜中 | 要求の演出が素直に書ける |
 
@@ -165,6 +165,28 @@ status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤�
   「戻るはずが insert カメラへ飛ぶ」事故になる）
 - **override 解除時に既定映し先を貼り直す**: 時計は遷移でしか発火せず、tracker の再 Pick も同一ゾーンなら
   何も要求しないため、解除時に `_logic.SetAmbient(_progress.Current)` を明示的に呼ぶ（`SwitchWiringTests` T5/T6）
+
+### 段 C 実装メモ（2026-07-25 完了・EditMode 632/632 pass・実機未検証）
+
+- **v2/v3 は show.json の版で分岐する**（`ShowControlClient.PushCueSource`）。**v3 でなければ挙動は完全に不変**＝
+  既存の show.json を戻すだけで全部元通りになる退避路。`ShotDirector` への完全統合（cue / insert / ambient を
+  1 クラスに畳む）は**やっていない** — 二重経路を作らない目的は「版で切り替える」形で達成し、
+  クラス統合は締切後の整理に回す（負債として明示）
+- **構成**: [`ShowTakeSchema`](../../Assets/Scripts/Streaming/ShowTakeSchema.cs)（型 + 判別子 + 既定）/
+  [`TimelineMigration`](../../Assets/Scripts/Streaming/TimelineMigration.cs)（v2→v3）/
+  [`TakeRunnerLogic`](../../Assets/Scripts/Streaming/TakeRunnerLogic.cs)（純ロジック）/
+  [`TakeRunner`](../../Assets/Scripts/Streaming/TakeRunner.cs)（実行体）
+- **配線は自己修復**: `TimelineDirector.Awake` が `TakeRunner` を持っていなければ自分で `AddComponent` し、
+  `TakeRunner.Awake` が Director / overlay / showControl を GetComponent → FindObjectOfType で解決する。
+  `Setup Main Demo Scene` にも正規配線を追加済み（**シーン未再生成でも v3 が動く**＝ prefab SerializeField
+  欠落で機能全死した過去の事故を繰り返さない）
+- **時刻源を差し替え可能にした**（`TakeRunner.SetTimeSource`）。EditMode は `Time.time` が進まないため、
+  配線レベル（`TakeWiringTests`）で多段カット・復帰・watchdog を実測できるようにする seam
+- **テスト**: `TakeRunnerLogicTests` 23 / `TimelineMigrationTests` 16 / `TakeWiringTests` 9 /
+  `TakeFixtureContractTests` 6。fixture `Assets/Tests/Fixtures/show_timeline_v3_canonical.json` は
+  **ユーザー要求の 4 カット演出そのもの**を含み、JsonUtility 往復でも壊れないことを固定している
+- **未着手（段 D へ）**: `policy: yield`（境界を跨いだら打ち切り）はスキーマにあるが実行はまだ `hold` 相当。
+  `transition` / `transitionMs` も解決関数はあるが dip/fade の実適用は Director の既定値のまま
 
 **A が締切のカット可能点**。UI が間に合わなければ現行グリッド UI + JSON 手書きで出展できる（退避経路が残る）。A を先にやると、カット可能点が「ランタイム」側に来て退避できなくなる。
 

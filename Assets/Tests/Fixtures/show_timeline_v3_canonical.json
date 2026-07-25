@@ -1,0 +1,183 @@
+{
+  "rev": 6,
+  "schema": 3,
+  "segments": [
+    {
+      "lap": 1,
+      "camera": 0,
+      "takes": [
+        {
+          "id": "L1C0#0",
+          "name": "手形",
+          "at": "enter",
+          "offsetSec": 2,
+          "ifMissed": "fireOnExit",
+          "policy": "hold",
+          "once": true,
+          "maxDurationSec": 0,
+          "steps": [
+            {
+              "source": "inherit",
+              "camera": -1,
+              "assetUrl": "",
+              "cueId": "cue_A_1",
+              "strength": -1,
+              "fadeInSec": -1,
+              "fadeOutSec": -1,
+              "trimStartSec": -1,
+              "trimEndSec": -1,
+              "durKind": "untilClipEnd",
+              "durSec": 0,
+              "transition": "fade",
+              "transitionMs": 0,
+              "hasPost": false
+            }
+          ]
+        }
+      ],
+      "hasPost": false,
+      "hasInsert": false,
+      "hasBgm": false
+    },
+    {
+      "lap": 2,
+      "camera": 1,
+      "takes": [
+        {
+          "id": "L2C1#0",
+          "name": "見送り",
+          "at": "exit",
+          "offsetSec": 0,
+          "ifMissed": "fireOnExit",
+          "policy": "hold",
+          "once": true,
+          "maxDurationSec": 0,
+          "steps": [
+            {
+              "source": "live",
+              "camera": 2,
+              "assetUrl": "",
+              "cueId": "",
+              "strength": -1,
+              "fadeInSec": -1,
+              "fadeOutSec": -1,
+              "trimStartSec": -1,
+              "trimEndSec": -1,
+              "durKind": "sec",
+              "durSec": 3,
+              "transition": "dip",
+              "transitionMs": 0,
+              "hasPost": false
+            }
+          ]
+        }
+      ],
+      "post": {
+        "exposure": 0.3,
+        "contrast": 1,
+        "saturation": 1,
+        "temperature": 0,
+        "vignette": 0,
+        "grain": 0,
+        "scanline": 0
+      },
+      "hasPost": true,
+      "hasInsert": false,
+      "hasBgm": false
+    },
+    {
+      "lap": 3,
+      "camera": 1,
+      "takes": [
+        {
+          "id": "L3C1#0",
+          "name": "終盤",
+          "at": "enter",
+          "offsetSec": 20,
+          "ifMissed": "fireOnExit",
+          "policy": "hold",
+          "once": true,
+          "maxDurationSec": 40,
+          "steps": [
+            {
+              "source": "live",
+              "camera": 3,
+              "assetUrl": "",
+              "cueId": "",
+              "strength": -1,
+              "fadeInSec": -1,
+              "fadeOutSec": -1,
+              "trimStartSec": -1,
+              "trimEndSec": -1,
+              "durKind": "sec",
+              "durSec": 4,
+              "transition": "dip",
+              "transitionMs": 0,
+              "hasPost": false
+            },
+            {
+              "source": "clip",
+              "camera": -1,
+              "assetUrl": "sa://assets/pre_01.mp4",
+              "cueId": "",
+              "strength": -1,
+              "fadeInSec": -1,
+              "fadeOutSec": -1,
+              "trimStartSec": -1,
+              "trimEndSec": -1,
+              "durKind": "untilClipEnd",
+              "durSec": 0,
+              "transition": "cut",
+              "transitionMs": 0,
+              "hasPost": false
+            },
+            {
+              "source": "clip",
+              "camera": -1,
+              "assetUrl": "sa://assets/rec_lap1_B.mp4",
+              "cueId": "cg_doll_B",
+              "strength": 0.8,
+              "fadeInSec": -1,
+              "fadeOutSec": -1,
+              "trimStartSec": -1,
+              "trimEndSec": -1,
+              "durKind": "untilClipEnd",
+              "durSec": 0,
+              "transition": "cut",
+              "transitionMs": 0,
+              "post": {
+                "exposure": -0.5,
+                "contrast": 1.2,
+                "saturation": 0.6,
+                "temperature": 0.1,
+                "vignette": 0.4,
+                "grain": 0.05,
+                "scanline": 0.2
+              },
+              "hasPost": true
+            },
+            {
+              "source": "clip",
+              "camera": -1,
+              "assetUrl": "sa://assets/rec_lap1_C.mp4",
+              "cueId": "cg_doll_C",
+              "strength": -1,
+              "fadeInSec": -1,
+              "fadeOutSec": -1,
+              "trimStartSec": -1,
+              "trimEndSec": -1,
+              "durKind": "untilClipEnd",
+              "durSec": 0,
+              "transition": "cut",
+              "transitionMs": 0,
+              "hasPost": false
+            }
+          ]
+        }
+      ],
+      "hasPost": false,
+      "hasInsert": false,
+      "hasBgm": false
+    }
+  ]
+}

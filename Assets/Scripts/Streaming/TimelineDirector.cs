@@ -46,7 +46,11 @@ namespace FixedCamVr.Streaming
         {
             if (cueScheduler == null) cueScheduler = GetComponent<CueScheduler>();
             if (insertController == null) insertController = GetComponent<InsertController>();
+            // v3 経路の実行体。既存シーン / prefab には未配置なので、無ければ自分で載せる
+            //（TakeRunner.Awake が Director / overlay / showControl をシーンから解決する）。
+            // シーン配線を必須にしないのは、prefab の SerializeField 欠落で実機機能が全死した実績があるため。
             if (takeRunner == null) takeRunner = GetComponent<TakeRunner>();
+            if (takeRunner == null) takeRunner = gameObject.AddComponent<TakeRunner>();
         }
 
         private void OnEnable()

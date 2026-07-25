@@ -271,6 +271,29 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - **Web 検証モード**（実機不要）: Web 卓「▶ 検証」で **矢印キー**（→ 次ゾーン / ← 1手戻る / R 先頭 / Esc 終了）。Unity セマンティクス（LapCounter 順方向進行・CueScheduler・insert・post 3 段）を JS ミラーで再現し、発火順と「体験者に見える画」を WebGL プレビューで確認。**ローカルのみで show.json / 実機は書かない**
 - **⚠ Quest 実機未検証**（2026-07-19 実装。Unity コンパイル・EditMode 126/126・Web 卓ロード + 検証エンジン + セグメントインスペクタはブラウザ検証済み。insert の dip 演出・post 切替の見た目は現場調整前提）
 
+### 演出の 1 語彙化（show.json v3 `takes[]` / 多段カット）— 2026-07-25
+
+**cue（オーバーレイ）と insert（カメラ差し込み）を「演出(Take) / カット(Step)」1 語彙へ畳んだ。**
+設計・スキーマの正本は [2026-07-25_shot-timeline-foundation.md](../plans/2026-07-25_shot-timeline-foundation.md)（§6 が契約）。
+
+- **切替は show.json の版で決まる**: `timeline.schema >= 3`（または `takes` を持つ区間がある）→ **v3 経路**
+  （[`TakeRunner`](../../Assets/Scripts/Streaming/TakeRunner.cs) が演出を実行し、旧 cue / insert 経路は空にされる）。
+  そうでなければ**従来経路のまま完全に不変**（＝ v2 の show.json に戻せば全部元通り＝退避路）
+- **区間 = (lap, camera) は変わらない**。区間に `takes[]` が 0..N 本ぶら下がる。1 本の演出が
+  **カット列**を持つ（`live:<cam>` / `inherit` / `clip` / `still` ＋ オーバーレイ cueId ＋ 尺 ＋ 遷移）
+- **`start.ifMissed`**: `enter+t` の演出が **t に達する前に体験者が区間を出たら、離脱の瞬間に発火**する
+  （既定 `fireOnExit`）。`skip` なら出さない。**歩くのが速い体験者に山場が出ないまま終わる事故**への対策で、
+  スキーマなので後から足せない＝最初から入っている
+- **必ず終わる**: `maxDurationSec`（既定 45s）の watchdog。素材の Prepare 失敗等で止まっても画面は必ず戻る
+- **戻り先は再計算**: 演出終了時は「いま体験者が居るゾーン」（時計 `ZoneCommitted` の確定値）へ。
+  開始時のカメラへは戻さない
+- **v2 は読み取り互換**: [`TimelineMigration`](../../Assets/Scripts/Streaming/TimelineMigration.cs) が
+  `cues[]` → `inherit` カット / `insert` → `live` カット へ決定的に変換する（端末キャッシュ・焼き込みが v2 のため）。
+  **1 点だけ挙動が変わる**: 旧実装は delay 待ちの cue / insert が**別の区間で遅れて誤爆**していたが、
+  v3 では離脱の瞬間に決着する（設計 §8.1）
+- **⚠ Quest 実機未検証**（2026-07-25。EditMode 632/632・fixture 契約テストは通過）。
+  Web 卓の v3 書き出し（段 A のリボン UI）は未実装なので、**現時点で実機に流れる show.json はすべて v2 = 従来経路**
+
 ### BGM（区間で切替・停止・ループ範囲）— 2026-07-25
 
 旧: `[Bgm]` の AudioSource が 1 曲を起動中ずっとループ（固定）。新: **タイムライン区間で切り替わる**。

@@ -55,9 +55,15 @@ namespace FixedCamVr.Streaming
 
         private void Awake()
         {
+            // 実配置では本コンポーネントは [Tracker]、Director / overlay / showControl は Screen に居る
+            // （InsertController と同じ構図）。SerializeField 未割当のシーンでも動くよう、同 GameObject →
+            // シーン全体の順で解決する（CameraSwitchDirector が registry を解決するのと同じ流儀）。
             if (director == null) director = GetComponent<CameraSwitchDirector>();
+            if (director == null) director = FindObjectOfType<CameraSwitchDirector>();
             if (overlay == null) overlay = GetComponent<ScreenOverlayController>();
+            if (overlay == null) overlay = FindObjectOfType<ScreenOverlayController>();
             if (showControl == null) showControl = GetComponent<ShowControlClient>();
+            if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
         }
 
         /// <summary>cueId → 素材定義の解決関数を注入する（ShowControlClient に集約）。</summary>
