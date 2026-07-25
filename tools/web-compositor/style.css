@@ -820,112 +820,209 @@ input:-webkit-autofill:active {
 
 /* ===================================================================== */
 /* ⑬b 素材工房（🧪 素材）— atelier.js / index.html                        */
-/*     カメラ別に「入力フレーム → 指示 → 生成結果」を 1 列に並べる。        */
+/*     列 = カメラ。1 列の中を上から ① 試写 ② 種 ③ 指示 ④ 棚 と流す。      */
+/*     配色・角丸ゼロ・1px 罫線は卓の他面と同じ言語（:root のコメント参照）。*/
 /* ===================================================================== */
 .atelier-sec { padding: 0 16px 24px; }
 
-.atl-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 14px; }
-.atl-tab {
-  padding: 7px 14px; font-size: 12px; letter-spacing: .04em; white-space: nowrap;
-  display: inline-flex; align-items: center; gap: 7px;
+.atl-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 8px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft);
 }
-.atl-tab.on { background: var(--accent-color); border-color: var(--accent-color); color: #000; font-weight: 600; }
-.atl-count {
-  font-size: 10px; opacity: .7; font-variant-numeric: tabular-nums;
-  padding: 1px 6px; border-radius: 99px; background: rgba(128, 128, 128, .22);
-}
-.atl-tab.on .atl-count { background: rgba(0, 0, 0, .18); opacity: .85; }
+.atl-bar .spacer { flex: 1; min-width: 8px; }
+.atl-bar button { padding: 4px 10px; font-size: 11px; }
+.atl-lead { font-size: 11.5px; opacity: var(--opacity-sub); line-height: 1.7; margin: 0; max-width: 74em; }
 
-.atl-make { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 18px; margin-bottom: 22px; }
-@media (max-width: 900px) { .atl-make { grid-template-columns: 1fr; } }
-.atl-col { min-width: 0; }
+.atl-recipes-box { margin: 0 0 12px; border: 1px solid var(--line-soft); }
+.atl-recipes-box > summary {
+  cursor: pointer; padding: 7px 11px; font-size: 11.5px; letter-spacing: .06em;
+  list-style: none; display: flex; align-items: center;
+}
+.atl-recipes-box > summary::before { content: '▸ '; opacity: .6; margin-right: 4px; }
+.atl-recipes-box[open] > summary::before { content: '▾ '; }
+.atl-recipes-box[open] > summary { border-bottom: 1px solid var(--line-soft); }
+.atl-rcount { font-size: 10px; opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
+.atl-recipes-body { padding: 10px 12px 12px; }
+
+/* ---- カメラ列（縦割り）------------------------------------------------ */
+.atl-cams {
+  display: grid; gap: 12px; align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+}
+.atl-cam { border: 1px solid var(--line-soft); display: flex; flex-direction: column; min-width: 0; }
+.atl-camhead {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-bottom: 1px solid var(--line-soft);
+}
+.atl-camhead .spacer { flex: 1; }
+.atl-camname { font-weight: 600; letter-spacing: .08em; white-space: nowrap; }
+.atl-camstat { font-size: 10.5px; letter-spacing: .08em; opacity: var(--opacity-mute); }
+.atl-camstat.ok { color: var(--accent-color); opacity: 1; }
+.atl-camcount { font-size: 10px; opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.atl-sec { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); min-width: 0; }
+.atl-sec:last-child { border-bottom: none; }
+.atl-sec.over { outline: 2px dashed var(--accent-color); outline-offset: -3px; }
 
 .atl-h {
-  font-size: 12px; font-weight: 600; letter-spacing: .05em; margin: 0 0 8px;
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: .05em; margin: 0 0 7px;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
 }
-.atl-h2 { font-size: 11px; font-weight: 600; letter-spacing: .05em; margin: 14px 0 5px; display: flex; gap: 10px; align-items: baseline; }
-.atl-sub { font-size: 10.5px; opacity: .6; font-weight: 400; letter-spacing: 0; }
-.atl-warn { font-size: 10.5px; color: #ffb066; font-weight: 400; }
-.atl-lead { font-size: 12px; opacity: .8; max-width: 62em; line-height: 1.8; }
-.atl-intent { font-size: 11px; opacity: .7; margin: 6px 0 2px; line-height: 1.7; }
-.atl-note { font-size: 10.5px; opacity: .6; margin: 8px 0 0; line-height: 1.7; }
+.atl-h2 { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; margin: 10px 0 4px; display: flex; gap: 8px; align-items: baseline; }
+.atl-sub { font-size: 10px; opacity: var(--opacity-mute); font-weight: 400; letter-spacing: 0; }
+.atl-warn { font-size: 10px; color: var(--warn-color); font-weight: 400; }
+.atl-intent { font-size: 10.5px; opacity: var(--opacity-sub); margin: 4px 0 2px; line-height: 1.7; }
+.atl-note { font-size: 10px; opacity: var(--opacity-mute); margin: 7px 0 0; line-height: 1.7; }
 .atl-empty {
-  font-size: 12px; opacity: .65; line-height: 1.8; padding: 14px 16px;
-  border: 1px dashed var(--line-soft); border-radius: 6px;
+  font-size: 11px; opacity: var(--opacity-mute); line-height: 1.8; padding: 10px 12px;
+  border: 1px dashed var(--line-soft); margin: 0;
 }
 
-.atl-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
-.atl-frame { padding: 0; border-radius: 5px; overflow: hidden; display: block; text-align: left; line-height: 0; }
-.atl-frame img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
-.atl-frame span {
-  display: block; font-size: 9.5px; padding: 3px 5px; line-height: 1.4;
-  font-variant-numeric: tabular-nums; opacity: .65;
+/* ---- ① 試写 ---------------------------------------------------------- */
+.atl-view {
+  display: block; margin: 0 auto; width: auto; height: auto;
+  max-width: 100%; max-height: 30vh; aspect-ratio: 4 / 3;
+  background: #000; border: 1px solid var(--line-soft);
 }
-.atl-frame.on { outline: 2px solid var(--accent-color); outline-offset: -2px; }
-.atl-frame.on span { opacity: 1; color: var(--accent-color); }
-
-.atl-slot { display: grid; grid-template-columns: 5.5em 1fr; gap: 8px; align-items: center; margin: 5px 0; font-size: 11px; }
-.atl-slot span { opacity: .7; }
-.atl-prompt { width: 100%; font-family: var(--mono, ui-monospace, monospace); font-size: 11px; line-height: 1.6; }
-
-.atl-params { display: flex; flex-wrap: wrap; gap: 8px; margin: 9px 0 0; }
-.atl-params label { display: flex; align-items: center; gap: 5px; font-size: 10.5px; opacity: .8; }
-.atl-params input { width: 8.5em; font-size: 11px; }
-.atl-params input[type="number"] { width: 4em; }
-
-.atl-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-
-.atl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 12px; }
-.atl-card {
-  border: 1px solid var(--line-soft); border-radius: 7px; overflow: hidden;
-  display: flex; flex-direction: column; background: rgba(128, 128, 128, .05);
+.atl-stagebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.atl-stagebar .spacer { flex: 1; min-width: 6px; }
+.atl-stagebar button { padding: 3px 9px; font-size: 10.5px; }
+.atl-seg { display: inline-flex; border: 1px solid var(--line-soft); }
+.atl-seg button { border: none; border-right: 1px solid var(--line-soft); letter-spacing: .04em; }
+.atl-seg button:last-child { border-right: none; }
+.atl-seg button.on { background: var(--accent-color); color: #000; font-weight: 600; opacity: 1; }
+.atl-seg button:disabled { opacity: .3; }
+.atl-motionbar .sld { margin: 0; font-size: 10px; }
+.atl-tocue { font-size: 10.5px !important; }
+.atl-pick {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 6px; font-size: 10px; min-height: 1.6em;
 }
+.atl-savemsg { font-size: 10px; line-height: 1.6; opacity: var(--opacity-mute); min-height: 1.6em; }
+.atl-savemsg.ok { color: var(--accent-color); opacity: 1; }
+.atl-savemsg.err { color: var(--danger-color); opacity: 1; }
+.atl-stagemsg { opacity: var(--opacity-mute); line-height: 1.6; }
+.atl-stagemsg code { font-size: 10px; opacity: 1; }
+.atl-stagemsg.ok { color: var(--accent-color); opacity: 1; }
+.atl-stagemsg.err { color: var(--danger-color); opacity: 1; }
+.atl-unpick { padding: 2px 7px; font-size: 10px; }
+
+/* ---- ② 種フレーム ---------------------------------------------------- */
+.atl-seedbar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.atl-seedbar button { padding: 3px 9px; font-size: 11px; }
+.atl-shoot.dim { opacity: .45; }   /* 生映像が来ていない（押すと理由が出る） */
+.atl-shootmsg {
+  font-size: 10px; opacity: var(--opacity-mute); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+}
+.atl-shootmsg.ok { color: var(--accent-color); opacity: 1; }
+.atl-shootmsg.err { color: var(--danger-color); opacity: 1; }
+.atl-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.atl-strip .atl-empty { flex: 1; }
+.atl-seedbtn {
+  flex: 0 0 auto; width: 92px; padding: 0; overflow: hidden;
+  display: block; text-align: left; line-height: 0; border: 1px solid var(--line-soft);
+}
+.atl-seedbtn img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
+.atl-seedbtn span {
+  display: block; font-size: 9px; padding: 2px 4px; line-height: 1.4;
+  font-variant-numeric: tabular-nums; opacity: var(--opacity-mute); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.atl-seedbtn.on { border-color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-color); }
+.atl-seedbtn.on span { opacity: 1; color: var(--accent-color); }
+
+/* ---- ③ 指示 ---------------------------------------------------------- */
+.atl-recipe { width: 100%; font-size: 11px; }
+.atl-slot { display: grid; grid-template-columns: 5em 1fr; gap: 7px; align-items: center; margin: 4px 0; font-size: 10.5px; }
+.atl-slot span { opacity: var(--opacity-sub); }
+.atl-prompt { width: 100%; font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px; line-height: 1.55; }
+.atl-params { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 0; }
+.atl-params label { display: flex; align-items: center; gap: 4px; font-size: 10px; opacity: var(--opacity-sub); }
+.atl-params input { width: 7.5em; font-size: 10.5px; }
+.atl-params input[type="number"] { width: 3.6em; }
+.atl-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 9px; }
+
+/* ---- ④ 棚 ------------------------------------------------------------ */
+.atl-shelf { display: flex; flex-direction: column; gap: 9px; max-height: 62vh; overflow-y: auto; scrollbar-width: thin; }
+.atl-card { border: 1px solid var(--line-soft); display: flex; flex-direction: column; }
 .atl-card.v-keep { border-color: rgba(90, 209, 154, .6); }
-.atl-card.v-reject { opacity: .55; }
-.atl-out { line-height: 0; background: #000; }
+.atl-card.v-reject { opacity: .5; }
+.atl-card.picked { border-color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-color); }
+.atl-out { line-height: 0; background: #000; position: relative; }
 .atl-out video, .atl-out img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; display: block; }
+.atl-out.clickable { cursor: pointer; }
+.atl-play {
+  position: absolute; inset: auto 0 0 0; padding: 3px 6px; font-size: 10px; line-height: 1.5;
+  background: rgba(0, 0, 0, .55); color: var(--accent-color); letter-spacing: .04em; opacity: 0;
+  transition: opacity .12s;
+}
+.atl-out.clickable:hover .atl-play { opacity: 1; }
+.atl-card.picked .atl-play { opacity: 1; }
 .atl-drop {
   aspect-ratio: 4 / 3; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 5px; cursor: pointer; border: 2px dashed var(--line-soft); background: transparent;
-  font-size: 11.5px; text-align: center; padding: 10px; line-height: 1.6;
+  gap: 4px; cursor: pointer; border: 2px dashed var(--line-soft); background: transparent;
+  font-size: 11px; text-align: center; padding: 10px; line-height: 1.6;
 }
-.atl-drop span { font-size: 10px; opacity: .6; }
+.atl-drop span { font-size: 9.5px; opacity: var(--opacity-mute); }
 .atl-drop:hover, .atl-drop.over { border-color: var(--accent-color); color: var(--accent-color); }
 
-.atl-meta { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 6px; font-size: 11px; }
+.atl-meta { padding: 7px 9px 9px; display: flex; flex-direction: column; gap: 5px; font-size: 10.5px; }
 .atl-cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.atl-status { font-size: 9.5px; opacity: .55; white-space: nowrap; }
-.atl-bind { font-size: 10.5px; opacity: .78; line-height: 1.6; }
-.atl-cond, .atl-src { font-size: 10px; opacity: .55; line-height: 1.6; }
-.atl-verdicts { display: flex; gap: 5px; }
-.atl-verdicts button { flex: 1; padding: 4px 6px; font-size: 10.5px; }
+.atl-cardhead strong { font-size: 11px; }
+.atl-status { font-size: 9.5px; opacity: var(--opacity-mute); white-space: nowrap; }
+.atl-bind { font-size: 10px; opacity: var(--opacity-sub); line-height: 1.6; }
+.atl-cond, .atl-src { font-size: 9.5px; opacity: var(--opacity-mute); line-height: 1.6; }
+.atl-verdicts { display: flex; gap: 4px; }
+.atl-verdicts button { flex: 1; padding: 3px 5px; font-size: 10px; }
 .atl-verdicts button.on { background: var(--accent-color); border-color: var(--accent-color); color: #000; }
-.atl-memo { width: 100%; font-size: 11px; }
-.atl-promptbox summary { font-size: 10.5px; opacity: .6; cursor: pointer; }
+.atl-memo { width: 100%; font-size: 10.5px; }
+.atl-promptbox summary { font-size: 10px; opacity: var(--opacity-mute); cursor: pointer; }
 .atl-promptbox pre {
-  white-space: pre-wrap; word-break: break-word; font-size: 10px; line-height: 1.6;
-  max-height: 190px; overflow: auto; margin: 6px 0 0; opacity: .8;
+  white-space: pre-wrap; word-break: break-word; font-size: 9.5px; line-height: 1.6;
+  max-height: 170px; overflow: auto; margin: 5px 0 0; opacity: var(--opacity-sub);
 }
-.atl-cardfoot { display: flex; gap: 5px; }
-.atl-cardfoot .atl-again { flex: 1; font-size: 10.5px; }
+.atl-cardfoot { display: flex; gap: 4px; }
+.atl-cardfoot button { padding: 3px 7px; font-size: 10px; }
+.atl-cardfoot .atl-again { flex: 1; }
 
-.atl-recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; margin: 12px 0; }
+.atl-unfiled { margin-top: 9px; }
+.atl-unfiled > summary { cursor: pointer; font-size: 10.5px; opacity: var(--opacity-sub); }
+.atl-uncount { font-size: 10px; opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
+.atl-unlist { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; max-height: 26vh; overflow-y: auto; }
+.atl-unitem {
+  display: flex; align-items: center; gap: 6px; padding: 3px 7px; font-size: 10.5px;
+  text-align: left; width: 100%;
+}
+.atl-unitem.on { border-color: var(--accent-color); color: var(--accent-color); }
+.atl-unname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- レシピカード ------------------------------------------------------ */
+.atl-recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; margin: 10px 0; }
 .atl-rcard {
-  border: 1px solid var(--line-soft); border-radius: 7px; padding: 10px 11px;
+  border: 1px solid var(--line-soft); padding: 9px 10px;
   display: flex; flex-direction: column; gap: 6px;
 }
 .atl-rhead { display: flex; gap: 7px; align-items: center; }
-.atl-rname { flex: 1; font-size: 12px; font-weight: 600; }
-.atl-rstat { font-size: 10px; opacity: .6; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.atl-rintent { font-size: 11px; }
-.atl-rbody { font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px; line-height: 1.6; }
-.atl-rslots { font-size: 10.5px; opacity: .7; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
-.atl-seed {
-  border: 1px dashed var(--line-soft); border-radius: 6px; padding: 12px 14px;
+.atl-rname { flex: 1; font-size: 11.5px; font-weight: 600; }
+.atl-rslug { width: 7em; font-size: 10.5px; }
+.atl-rstat { font-size: 10px; opacity: var(--opacity-mute); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.atl-rintent { font-size: 10.5px; }
+.atl-rbody { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; line-height: 1.6; }
+.atl-rslots { font-size: 10px; opacity: var(--opacity-sub); display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.atl-seed-box {
+  border: 1px dashed var(--line-soft); padding: 10px 12px; margin-bottom: 10px;
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
 }
-.atl-seed p { margin: 0; font-size: 12px; opacity: .8; }
+.atl-seed-box p { margin: 0; font-size: 11.5px; opacity: var(--opacity-sub); }
+
+/* 低い画面では試写と棚を詰める（1 画面で 3 列を見比べられる状態を保つ） */
+@media (max-height: 860px) {
+  .atl-view { max-height: 24vh; }
+  .atl-shelf { max-height: 52vh; }
+  .atl-sec { padding: 6px 9px; }
+}
+
 .prompts.legacy { opacity: .75; }
 
 /* ===================================================================== */

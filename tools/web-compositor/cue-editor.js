@@ -237,6 +237,7 @@ export function createCueEditor(deps) {
         overlayH: isVid ? (srcMedia.videoHeight || 0) : (srcMedia ? srcMedia.naturalHeight : 0),
         maskEl: maskIsEmpty() ? null : maskCanvas,
         overlayOn: previewOn && !!sourceUrl,
+        loopPreview: true,             // trim 区間の巻き戻しはこちらで持つ（終端で畳ませない）
         fadeSec, strength,
         feather: blendCfg.feather,     // ライブハードマスク → 焼き込み結果に寄せてフェザー適用
         post: (deps.getCamPost && camId) ? deps.getCamPost(camId) : null,

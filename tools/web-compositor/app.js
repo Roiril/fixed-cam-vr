@@ -324,6 +324,8 @@ function buildColumn(cam, index) {
       const r = await (await fetch(`/save?type=image&to=recordings&cam=${tag}`,
         { method: 'POST', body: blob })).json();
       ed(r.ok ? `📷 ${r.name}` : '保存失敗', r.ok ? 'ok' : 'err');
+      // 素材工房の種フレーム候補へ即反映（モードを往復させない・リロードさせない）。
+      if (r.ok && atelier) atelier.notifyFrameSaved(refs.cam.id, r);
     }, 'image/jpeg', 0.95);
   }
   let mediaRec = null, recChunks = [], rawTimer = 0;
@@ -506,6 +508,7 @@ async function pollState() {
         rev = s.rev; state = s;
         renderColumns(); renderStatus(); renderLiveCuePanel(); renderLatchBar();
         floorMap && floorMap.onState(s); timeline && timeline.onState(s); showSim && showSim.onState(s);
+        atelier && atelier.render();   // カメラ集合の変化を工房の列へ（署名一致なら no-op）
         renderBgmSection(); renderRunPanel(); renderPreflight();
       }
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
@@ -615,9 +618,26 @@ $('#openRecordings').onclick = () => fetch('/open-dir?dir=recordings').catch(() 
 const appEl = $('.app');
 
 // 🧪 素材（素材工房）。カメラ定義は show.json を正にする（id と index をそのまま使う）。
+//   工房は「合成の試写室」なので、監視列と同じ生ライブ <img> とカメラ画質を借りる
+//   （二重接続しない）。💾 で cue を作れるようにして、工房 → タイムラインの導線を繋ぐ。
 const atelier = createAtelier({
   root: $('#atelier'),
   getCameras: () => (state && state.cameras) || [],
+  getLiveImg: (camId) => { const c = columns.get(camId); return c ? c.liveImg : null; },
+  getCamPost: (camId) => {
+    const c = (state?.cameras || []).find((x) => x.id === camId);
+    return (c && c.post) || state?.post || FX_DEFAULT;
+  },
+  getAllCues: () => state?.cues || [],
+  saveCue: async (cue) => {
+    const r = await saveCueObject(cue);
+    if (state && r.cues) state.cues = r.cues;
+    return r;
+  },
+  onCueSaved: () => {
+    renderLiveCuePanel();
+    if (timeline && state) timeline.onState(state);
+  },
 });
 
 document.querySelectorAll('.mode-btn').forEach((b) => {

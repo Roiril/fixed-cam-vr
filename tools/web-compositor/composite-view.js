@@ -16,7 +16,11 @@
 //     post,          // {exposure,...}
 //     trimEnd,       // number 動画の自動終端（0=無し）
 //     onVideoEnd,    // fn|null 動画が trimEnd に達した時に 1 度呼ぶ
+//     loopPreview,   // bool   繰り返し試写（オーサリング面）。終端で差し替えを畳まない
 //   }
+//
+//   ⚠ loopPreview を渡さないと、素材が 1 周した瞬間に「再生終了」と判定して以後 live に
+//   戻り続ける（overlayOn が落ちるまで復帰しない）。ループさせて見る面では必ず true にする。
 import { createContext, SourceTexture } from './gl.js';
 import { Pipeline } from './pipeline.js';
 import { blendCfg, FX_DEFAULT } from './common.js';
@@ -66,7 +70,7 @@ export function createCompositeView(canvas, provider) {
     lastOn = on;
 
     // 動画の再生区間終端 → 自動終了（ループしない差し替えの復帰契機）
-    if (on && !ended && hasSrc && s.overlayEl.tagName === 'VIDEO') {
+    if (on && !ended && hasSrc && !s.loopPreview && s.overlayEl.tagName === 'VIDEO') {
       const v = s.overlayEl;
       const tEnd = (s.trimEnd > 0) ? s.trimEnd : (v.duration || 0);
       if (tEnd && v.currentTime >= tEnd - 0.03) { ended = true; s.onVideoEnd && s.onVideoEnd(); }
