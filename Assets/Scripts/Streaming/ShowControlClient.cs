@@ -936,19 +936,34 @@ namespace FixedCamVr.Streaming
         {
             cueScheduler?.SetCueResolver(ResolveCue);
             timelineDirector?.SetCueResolver(ResolveCue);
+            timelineDirector?.SetUrlResolver(ResolveAssetUrl);
             PushCueSource();
             cueScheduler?.SetLiveCueActive(!string.IsNullOrEmpty(_appliedCue));
             timelineDirector?.SetSuppressed(!string.IsNullOrEmpty(_appliedCue) || !string.IsNullOrEmpty(_appliedOverride));
         }
 
-        // cue の供給元を timeline / schedule のどちらかに一本化して分配する（timeline supersede）。
-        //   - timeline 有効 && TimelineDirector 配線あり → TimelineDirector が cues / insert / post を分配。
-        //   - それ以外 → 従来どおり schedule.entries を CueScheduler へ直接供給（timeline は無視）。
+        /// <summary>素材 URL（<c>sa://</c> / 相対）を実 URL へ解決する。TakeRunner へ注入する。</summary>
+        private string ResolveAssetUrl(string url) => ShowAssetResolver.Resolve(url, server);
+
+        // cue の供給元を timeline(v3) / timeline(v2) / schedule のいずれかに一本化して分配する。
+        //   - timeline が v3（schema>=3 または takes を持つ）→ TakeRunner が演出を実行（cue/insert 旧経路は空にする）
+        //   - timeline が v2 → 従来どおり TimelineDirector が cues / insert / post を分配
+        //   - timeline 不在 → schedule.entries を CueScheduler へ直接供給
+        // v3 判定が偽なら**一切挙動が変わらない**（既存 show.json は従来経路のまま = 退避路）。
         private void PushCueSource()
         {
             if (TimelineActive && timelineDirector != null)
             {
-                timelineDirector.SetTimeline(_timeline!.segments);
+                if (_timeline!.IsV3())
+                {
+                    // v2 キーを持つ区間があれば takes へ変換して埋める（読み取り互換・冪等）。
+                    TimelineMigration.EnsureTakes(_timeline);
+                    timelineDirector.SetTimelineV3(_timeline.segments);
+                }
+                else
+                {
+                    timelineDirector.SetTimeline(_timeline.segments);
+                }
             }
             else
             {

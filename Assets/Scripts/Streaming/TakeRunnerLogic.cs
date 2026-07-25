@@ -202,9 +202,15 @@ namespace FixedCamVr.Streaming
         /// 尺が <c>untilClipEnd</c> のカットで、素材の再生が終わったことを通知する
         /// （<see cref="TakeRunner"/> が VideoPlayer / 画像表示の終端で呼ぶ）。次の <see cref="Tick"/> で進行する。
         /// </summary>
-        public void NotifyCurrentStepFinished(float now)
+        public void NotifyCurrentStepFinished(float now) => SetCurrentStepEnd(now);
+
+        /// <summary>
+        /// 現カットの終了時刻を外部から与える（素材が無い <c>untilClipEnd</c> を既定尺で畳む等）。
+        /// watchdog は別途効き続けるので、ここで未来を指定しても演出は必ず終わる。
+        /// </summary>
+        public void SetCurrentStepEnd(float endTime)
         {
-            if (_running) _stepEnd = now;
+            if (_running) _stepEnd = endTime;
         }
 
         /// <summary>走行中の演出を外部都合で畳む（ラン開始・定義差し替え時の後片付け）。</summary>

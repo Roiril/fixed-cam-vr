@@ -437,6 +437,12 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
+        /// 演出（Take）が**カメラを変えずに**画面を占有し始めたことを通知する（全面差し替えの映像カット等）。
+        /// ゾーン自動切替を凍結するだけで dip は掛けない。解除は <see cref="InsertReturn"/>。
+        /// </summary>
+        public void TakeHoldBegin() => _logic.SetInsertActive(true);
+
+        /// <summary>
         /// enter インサート: 現在の映像から insert カメラへ dip-to-black で切り替える（Insert source ＝周回に数えない）。
         /// ゾーン自動切替を凍結する。表示中の映像から入るため通常の dip（Down→黒→切替→Up）を掛ける。
         /// </summary>
