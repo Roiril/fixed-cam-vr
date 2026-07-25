@@ -35,10 +35,10 @@ const DEFAULT_TRACK_ID = '__default__';
 
 // ---- 描画スケール -----------------------------------------------------------
 const PX = 11;          // 1 秒あたり px（演出ブロックの幅 = 尺に比例）
-const STEP_MIN = 84;    // カット 1 枚の最小幅（短い尺でも文字が読める下限）
+const STEP_MIN = 110;   // カット 1 枚の最小幅（短い尺でも「映すもの」が読める下限）
 const MAGNET = 22;      // 区間の右境界への吸着幅（px）= 「離脱時」スナップ
 const LANE_PAD = 8;     // 区間ブロック内レーンの左余白（進入 0s の位置）
-const LANE_H = 76;      // 演出 1 段の高さ（CSS .rb-seg-lane > .rb-take の height と一致させること）
+const LANE_H = 90;      // 演出 1 段の高さ（CSS .rb-seg-lane > .rb-take の height と一致させること）
 const LANE_GAP = 4;
 const SEG_MIN_W = 152;
 
@@ -66,8 +66,7 @@ export function createRibbon(container, deps) {
         <button class="rb-lap-del" title="最後の周回を削除">－ 周回</button>
       </div>
       <div class="rb-hint">区間（斜線）＝ 体験者が決める時間。演出（🎬）＝ こちらが決める時間で、幅は尺に比例する。
-        演出はドラッグで動かせる（区間の中 = 進入から t 秒 ／ 区間の右境界に吸着 = 離脱時）。クリックで中身を編集。
-        演出ヘッダを選んで <b>← →</b> で開始位置、<b>Home</b> で進入直後、<b>End</b> で離脱時。</div>
+        演出はドラッグ（マウス / 指）か <b>← →</b> キーで動かす — 区間の中 = 進入 +t 秒 ／ 右境界に吸着 = 離脱時。</div>
       <div class="rb-note"></div>
       <div class="rb-track-wrap"><div class="rb-track"></div></div>
       <div class="rb-legend">
@@ -357,7 +356,7 @@ export function createRibbon(container, deps) {
       maxRight = Math.max(maxRight, left + w);
     }
     lane.style.height = `${Math.max(1, laneEnds.length) * (LANE_H + LANE_GAP)}px`;
-    el.style.minWidth = `${Math.max(SEG_MIN_W, maxRight + 14)}px`;
+    el.style.minWidth = `${Math.max(SEG_MIN_W, maxRight + 22)}px`;
 
     const bgmEl = el.querySelector('.rb-seg-bgm');
     if (bgmSt) {
@@ -403,8 +402,10 @@ export function createRibbon(container, deps) {
            title="ドラッグ（マウス / 指）で開始位置を変える（区間の中 = 進入から t 秒 / 右境界に吸着 = 離脱時）。
 選んで ← → で 0.5s ずつ（Shift で 2s）、Home = 進入直後、End = 離脱時。">
         <span class="rb-take-name">🎬 ${escapeHtml(t.name || '演出')}</span>
-        <span class="rb-take-start">${risk ? '⏱ ' : ''}${escapeHtml(startLabel(t))}</span>
-        <span class="rb-take-dur">${total.approx ? '≈' : ''}${fmtSec(total.sec)}s</span>
+        <span class="rb-take-meta">
+          <span class="rb-take-start">${risk ? '⏱ ' : ''}${escapeHtml(startLabel(t))}</span>
+          <span class="rb-take-dur">${total.approx ? '≈' : ''}${fmtSec(total.sec)}s</span>
+        </span>
       </div>
       <div class="rb-steps">${steps}</div>`;
     if (issue) el.title = `⚠ ${issue}`;
@@ -462,10 +463,16 @@ export function createRibbon(container, deps) {
     const last = String(u).split('/').pop();
     try { return decodeURIComponent(last); } catch { return last; }
   }
+  // リボン上のカットは幅が狭い（最短 110px）。長い語で省略記号だらけになるのを避け、
+  // 種別は左の色チップで、詳細は title（ツールチップ）で補う。
   function stepLabel(s) {
-    if (s.source === TAKE.SRC_LIVE) return `ライブ ${camLabel(s.camera)}`;
+    if (s.source === TAKE.SRC_LIVE) {
+      const id = cameras[s.camera] ? cameras[s.camera].id : '?';
+      return `ライブ ${id}`;
+    }
     if (s.source === TAKE.SRC_INHERIT) return 'そのまま';
-    return `${SRC_LABEL[s.source] || s.source} ${baseName(s.assetUrl) || '（未選択）'}`;
+    const kind = s.source === TAKE.SRC_STILL ? '静止画' : '映像';
+    return `${kind} ${baseName(s.assetUrl) || '（未選択）'}`;
   }
   const DUR_KIND_LABEL = {
     exact: '尺 秒指定',
@@ -610,12 +617,14 @@ export function createRibbon(container, deps) {
   // ---- 区間インスペクタ -------------------------------------------------------
   function renderSegInspector() {
     const seg = segAt(sel.lap, sel.camera);
+    const dw = dwellFor(sel.lap, sel.camera);
     inspectorEl.innerHTML = `
       <div class="rb-insp-head">区間 — ${escapeHtml(camLabel(sel.camera))} / ${sel.lap}周目
         <span class="rb-insp-sub">滞在時間は体験者が決めます（伸縮）</span>
         <span class="spacer"></span>
         <button class="rb-insp-close">閉じる</button>
       </div>
+      <div class="rb-insp-meas" style="display:${dw ? '' : 'none'}">この区間の実測滞在: 平均 ${dw ? fmtSec(dw.meanSec) : '—'}s ／ 最短 ${dw ? fmtSec(dw.minSec) : '—'}s ／ 最長 ${dw ? fmtSec(dw.maxSec) : '—'}s（${dw ? dw.n : 0} 回）— 演出の開始位置はこの中に収める</div>
       <div class="rb-insp-sec">
         <div class="rb-insp-label">演出</div>
         <div class="rb-take-list"></div>
@@ -924,7 +933,7 @@ export function createRibbon(container, deps) {
         <button class="rb-s-asset-dir" style="display:${isAsset ? '' : 'none'}" title="撮影フォルダ（recordings/）を開く。ここに録画・合成した素材を置く">📂</button>
         <label class="rb-s-asseturl-l" style="display:${isAsset ? '' : 'none'}">URL<input class="rb-s-asseturl" type="text" value="${escapeHtml(s.assetUrl || '')}" placeholder="/captures/… または sa://assets/…"></label>
         <label>重ねる素材<select class="rb-s-cue">${cueOpts}</select></label>
-        <button class="rb-s-cue-edit" title="重ねる素材（マスク・映像・フェード）を編集">✎</button>
+        <button class="rb-s-cue-edit" title="重ねる素材（マスク・映像・フェード）を編集">✎ 編集</button>
         <button class="rb-s-cue-new" title="このカメラ向けの素材をその場で作る">＋ 新規素材</button>
       </div>
       <div class="rb-grid">

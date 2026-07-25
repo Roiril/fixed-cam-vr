@@ -77,15 +77,15 @@ header h1 {
 
 /* ---- ボタン: 透明 + 1px 罫線、ホバーでアクセント ---- */
 .btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; align-items: center; }
-button, .btns a, .sim-link {
+button, .btns a, .sim-link, a.link {
   background: transparent; color: var(--text-color);
   border: 1px solid var(--line-soft); border-radius: 0;
-  padding: 6px 10px; font-size: 12px; cursor: pointer;
+  padding: 6px 10px; font-size: 12px; cursor: pointer; white-space: nowrap;
   font-family: inherit; text-decoration: none;
   transition: color .15s ease, border-color .15s ease, opacity .15s ease;
   opacity: var(--opacity-sub);
 }
-button:hover, .btns a:hover, .sim-link:hover {
+button:hover, .btns a:hover, .sim-link:hover, a.link:hover {
   color: var(--accent-color); border-color: var(--accent-color); opacity: var(--opacity-full);
 }
 button.accent {
@@ -157,6 +157,9 @@ textarea:focus { border-color: var(--accent-color); }
   cursor: crosshair; display: block; touch-action: none;
 }
 .hint { font-size: 11px; opacity: var(--opacity-mute); margin: 4px 0 8px; }
+/* 長い説明は既定で 2 行に畳む（app.js が ▾ トグルを付ける）。読む時だけ開く */
+.hint.clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.hint-toggle { padding: 1px 7px; font-size: 10px; align-self: flex-start; flex: none; }
 
 /* ---- スライダー / チェック ---- */
 .slider, .check {
@@ -536,6 +539,9 @@ header h1 { font-size: 14px; }
   background: #000; border: 1px solid var(--line-soft); object-fit: contain;
 }
 .raw-live:not([src]) { min-height: 60px; }   /* 接続前も枠を確保 */
+/* 未接続カメラは img が壊れた状態になる。alt 文字が画の中に浮くと「何かのラベル」に見えるので出さない
+   （接続状態はヘッダの ✕ 切断 / ⚠ 未発見 が正しい表示場所） */
+.raw-live { color: transparent; font-size: 0; }
 @media (max-height: 860px) { .raw-live { max-height: 18vh; } }
 
 /* ===================================================================== */
@@ -1072,7 +1078,7 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-save { padding: 7px 16px; }
 .rb-dirty { font-size: 11px; opacity: var(--opacity-mute); letter-spacing: .04em; }
 .rb-dirty.on { color: var(--warn-color); opacity: 1; }
-.rb-schema { font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+.rb-schema { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap;
   border: 1px solid var(--line-soft); padding: 2px 7px; opacity: var(--opacity-mute); }
 .rb-lap-add, .rb-lap-del, .rb-validate { padding: 4px 10px; font-size: 11px; }
 .rb-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
@@ -1087,11 +1093,11 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-lap { display: flex; flex-direction: column; gap: 4px; }
 .rb-lap-head { font-size: 10px; text-transform: uppercase; letter-spacing: .14em;
   opacity: var(--opacity-mute); }
-.rb-ribbon { display: flex; align-items: stretch; gap: 3px; min-width: min-content; }
+.rb-ribbon { display: flex; align-items: stretch; gap: 3px; min-width: min-content; padding-right: 12px; }
 
 /* 区間 = 伸縮（斜線ハッチ） */
 .rb-seg {
-  position: relative; flex: 1 1 auto; cursor: pointer;
+  position: relative; flex: 0 1 auto; cursor: pointer;
   border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
   background:
     repeating-linear-gradient(115deg, transparent 0 9px, rgba(255, 250, 240, .05) 9px 18px),
@@ -1120,7 +1126,7 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-seg-dur { opacity: var(--opacity-mute); letter-spacing: .06em; }
 /* 実機 heartbeat 由来の実測滞在（推測ではなく観測なので少し強く出す） */
 .rb-seg-dur.meas { opacity: 1; color: var(--accent-color); }
-.rb-seg-bgm { opacity: var(--opacity-mute); margin-left: auto;
+.rb-seg-bgm { opacity: var(--opacity-sub); margin-left: auto;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 .rb-seg-bgm.chg { color: var(--accent-color); opacity: 1; }
 
@@ -1138,12 +1144,13 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-take.risk .rb-take-start { color: var(--warn-color); opacity: 1; }
 .rb-take.dragging { pointer-events: none; opacity: .55; }
 /* 進入の演出は段の高さを固定する（ribbon.js の LANE_H と一致・区間フッタに被らせない） */
-.rb-seg-lane > .rb-take { height: 76px; }
+.rb-seg-lane > .rb-take { height: 90px; }
 /* 離脱時の演出は区間の外・境界線をまたいで描く（区間内の時刻ではないことを形で示す） */
 .rb-take.exit { margin: 0 -10px; z-index: 2; border-style: dashed; border-color: var(--warn-color); }
+.rb-take.exit:last-child { margin-right: 0; }
 .rb-take.exit .rb-take-start { color: var(--warn-color); }
 .rb-take-head {
-  display: flex; align-items: center; gap: 8px; cursor: grab;
+  display: flex; flex-direction: column; gap: 1px; cursor: grab;
   padding: 3px 7px; border-bottom: 1px solid rgba(255, 222, 173, .28);
   font-size: 10px; letter-spacing: .04em; color: var(--accent-color);
 }
@@ -1152,7 +1159,9 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-take-head { touch-action: none; }
 .rb-take-head:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
 .rb-take-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rb-take-start { margin-left: auto; opacity: var(--opacity-sub); white-space: nowrap; }
+.rb-take-meta { display: flex; align-items: baseline; gap: 8px; }
+.rb-take-start { opacity: var(--opacity-sub); white-space: nowrap; }
+.rb-take-meta .rb-take-dur { margin-left: auto; }
 .rb-take-dur { opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
 .rb-steps { display: flex; flex: 1; align-items: stretch; }
 .rb-step {
@@ -1195,6 +1204,9 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-insp-sub { font-size: 10.5px; opacity: var(--opacity-mute); }
 .rb-insp-warn { font-size: 11px; color: var(--warn-color); margin-top: 6px; }
 .rb-insp-risk { font-size: 11px; color: var(--warn-color); margin-top: 6px; }
+/* リボンのインスペクタは横に広い。スライダを伸ばし切ると値がラベルから 500px 離れて読めない */
+.rb-post-fx .fx-row input[type=range], .rb-s-post .fx-row input[type=range] { max-width: 200px; }
+.rb-post-fx .fx-row, .rb-s-post .fx-row { justify-content: flex-start; gap: 8px; }
 .rb-insp-meas { font-size: 11px; opacity: var(--opacity-sub); margin-top: 4px; letter-spacing: .04em; }
 .rb-bgm-loop { display: flex; flex-direction: column; gap: 6px; }
 .rb-bgm-audition { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
@@ -1253,9 +1265,14 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 /* いま画面に映っているもの（実画プレビュー + 内訳） */
 .ss-screen { border: 1px solid var(--line-soft); padding: 10px 12px; display: flex;
   flex-wrap: wrap; gap: 12px; align-items: flex-start; }
-.ss-screen-view { flex: 0 0 auto; }
-.ss-canvas { display: block; width: 320px; max-width: 100%; aspect-ratio: 4/3;
+.ss-screen-view { flex: 0 0 auto; position: relative; }
+.ss-canvas { display: block; width: 420px; max-width: 100%; aspect-ratio: 4/3;
   background: #000; border: 1px solid var(--line-soft); }
+/* 黒い画面が「壊れている」のか「ライブが来ていない」のか、画面の上で説明する */
+.ss-screen-badge { position: absolute; left: 8px; bottom: 8px; right: 8px;
+  font-size: 11px; line-height: 1.4; color: var(--warn-color);
+  background: rgba(0, 0, 0, .72); border: 1px solid var(--warn-color); padding: 4px 7px; }
+.ss-screen-badge:empty { display: none; }
 .ss-screen-side { flex: 1 1 200px; min-width: 180px; display: flex;
   flex-direction: column; gap: 6px; }
 .ss-screen-note { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.45; }
@@ -1279,6 +1296,7 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .ss-ev { display: flex; gap: 10px; padding: 3px 9px; font-size: 12px;
   border-bottom: 1px solid rgba(255, 250, 240, 0.06); }
 .ss-ev:last-child { border-bottom: none; }
+.ss-log-empty { padding: 14px 12px; font-size: 11px; opacity: var(--opacity-mute); line-height: 1.6; }
 .ss-ev i { flex: none; font-style: normal; font-variant-numeric: tabular-nums;
   opacity: var(--opacity-mute); font-size: 11px; }
 .ss-ev.ev-screen { color: var(--accent-color); }

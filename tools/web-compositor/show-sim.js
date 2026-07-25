@@ -39,7 +39,10 @@ export function createShowSim(container, deps) {
           <b>ドット（○）の上で</b>マウスを押したままドラッグ。ドットから外れた場所を押すとタイル塗りになります。</div>
 
         <div class="ss-screen">
-          <div class="ss-screen-view"><canvas class="ss-canvas" width="480" height="360"></canvas></div>
+          <div class="ss-screen-view">
+            <canvas class="ss-canvas" width="480" height="360"></canvas>
+            <div class="ss-screen-badge"></div>
+          </div>
           <div class="ss-screen-side">
             <div class="ss-screen-chip"><i></i><b class="ss-screen-cam">—</b></div>
             <div class="ss-screen-detail">停止中</div>
@@ -100,6 +103,7 @@ export function createShowSim(container, deps) {
   const playBtn = q('.ss-play'), stopBtn = q('.ss-stop'), recBtn = q('.ss-rec');
   const clockEl = q('.ss-clock'), speedsEl = q('.ss-speeds'), recInfoEl = q('.ss-recinfo');
   const chipEl = q('.ss-screen-chip i'), chipCamEl = q('.ss-screen-cam'), detailEl = q('.ss-screen-detail');
+  const badgeEl = q('.ss-screen-badge'), howtoEl = q('.ss-howto');
   const lapEl = q('.ss-lap'), segEl = q('.ss-seg'), zoneEl = q('.ss-zone'), posEl = q('.ss-pos'), armedEl = q('.ss-armed');
   const logEl = q('.ss-log'), statusEl = q('.ss-status');
   const nameI = q('.ss-name'), saveBtn = q('.ss-save'), listSel = q('.ss-list'), replayBtn = q('.ss-replay');
@@ -133,7 +137,7 @@ export function createShowSim(container, deps) {
     meta = built.meta;
     runner = createShowRunner(cfg);
     // 時計を 0 へ戻すので、前の走行のログは残さない（時刻が対応しなくなるため）。
-    simMs = 0; acc = 0; events = []; logEl.innerHTML = '';
+    simMs = 0; acc = 0; events = []; logEl.innerHTML = ''; renderLogEmpty();
     staleConfig = false;
     renderWarnings();
     renderAll();
@@ -273,6 +277,24 @@ export function createShowSim(container, deps) {
       chipCamEl.textContent = runner && runner.takeActive ? '素材' : '—';
     }
     detailEl.textContent = d.detail;
+    badgeEl.textContent = screenIssue(d);
+  }
+
+  // 画面が黒いとき、それが「壊れている」のか「配信が来ていない」のかを画面の上で言う。
+  //   卓は現場でカメラ 3 台のうち 1 台だけ繋がっている、という状態が普通に起きる。
+  function screenIssue(d) {
+    if (!runner || !meta) return '';
+    const shot = currentShot();
+    if (shot && shot.step.playUrl) return '';                 // 素材が映っている
+    if (shot && shot.step.source !== 'live' && shot.step.source !== 'inherit') {
+      return '⚠ このカットは素材が未設定です（実機では飛ばされます）';
+    }
+    if (d.cam < 0) return '';
+    const camObj = meta.cameras[d.cam];
+    const img = (camObj && deps.getLiveImg) ? deps.getLiveImg(camObj.id) : null;
+    if (img && img.naturalWidth) return '';
+    return `${camLabel(d.cam)} のライブ映像が来ていません（卓にカメラが繋がっていないだけで、`
+      + '演出の判定・素材・画像加工はこのまま検証できます）';
   }
 
   function renderReadout() {
@@ -299,6 +321,8 @@ export function createShowSim(container, deps) {
     if (staleConfig) bits.push('⚠ show.json が更新されました（⏹ 先頭へ で反映）');
     statusEl.textContent = bits.join(' / ');
     statusEl.className = 'ss-note ss-status' + (bits.some((b) => b.startsWith('⚠')) ? ' warn' : '');
+    // 歩かせ方の説明は「まだ動かしていない人」だけに要る。走り出したら畳んで画面を空ける。
+    howtoEl.style.display = (enabled && playing) ? 'none' : '';
   }
 
   function renderWarnings() {
@@ -337,8 +361,18 @@ export function createShowSim(container, deps) {
     }
   }
 
+  // 空のログは「ただの黒い箱」に見えるので、何をすれば埋まるかを書いておく。
+  function renderLogEmpty() {
+    if (logEl.childElementCount) return;
+    logEl.innerHTML = '<div class="ss-log-empty">（まだイベントなし）<br>'
+      + 'フロアマップの「シミュレーション」を ON → ドット（○）をドラッグすると、'
+      + 'ゾーン確定・周回・区間・演出の発火がここに時刻つきで並びます。</div>';
+  }
+
   function pushEvents(list) {
     if (!list.length) return;
+    const empty = logEl.querySelector('.ss-log-empty');
+    if (empty) empty.remove();
     for (const e of list) {
       events.push(e);
       const row = document.createElement('div');
@@ -429,7 +463,7 @@ export function createShowSim(container, deps) {
     replay = null;
     notice = '';
     if (recording) { recording = false; flushRecord(); renderRecInfo(); }
-    logEl.innerHTML = '';
+    logEl.innerHTML = ''; renderLogEmpty();
     rebuild(true);
   }
   function finishReplay() {
@@ -535,7 +569,7 @@ export function createShowSim(container, deps) {
     const useSaved = useSavedChk.checked;
     if (!useSaved) rebuild(true);
     else { cfg = parsed.cfg; meta = buildScenarioConfig(state || {}).meta; runner = createShowRunner(cfg); }
-    logEl.innerHTML = '';
+    logEl.innerHTML = ''; renderLogEmpty();
     events = [];
     simMs = parsed.samples[0].tMs;
     acc = 0;

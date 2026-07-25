@@ -175,7 +175,7 @@ function buildColumn(cam, index) {
         </div>
         <div class="conn-manual-hint">discovery 非対応端末（iPhone 等）や障害時の最終手段。保存すると 📌 手動固定になり自動追従を止めます。</div>
       </details>
-      <div class="view-wrap"><img class="raw-live" alt="生リアルタイム映像"></div>
+      <div class="view-wrap"><img class="raw-live" alt=""></div>
     </div>`;
 
   const q = (s) => col.querySelector(s);
@@ -573,6 +573,38 @@ function recordAll(kind) {
   }
   renderGlobalRecState();
 }
+
+// ---- 節見出しの説明文を畳む -------------------------------------------------
+//   各セクションの説明（.hint）は運用の要点が詰まっていて消せないが、常時全文だと
+//   1 画面の情報密度が高すぎて「読まれない長文」になる。既定は 2 行クランプ + ▾ で全文。
+//   開閉は localStorage に残す（現場で毎回開き直さない）。
+function setupHintToggles() {
+  const KEY = 'mawarimi.hintsOpen';
+  let open = false;
+  try { open = localStorage.getItem(KEY) === '1'; } catch { /* プライベートモード等 */ }
+  const hints = [...document.querySelectorAll('.mc-title .hint')];
+  const btns = [];
+  const apply = () => {
+    hints.forEach((h) => h.classList.toggle('clamped', !open));
+    btns.forEach((b) => {
+      b.textContent = open ? '▴ 説明を畳む' : '▾ 説明';
+      b.title = open ? 'セクションの説明を 2 行に畳む' : 'セクションの説明を全文表示する';
+    });
+  };
+  hints.forEach((h) => {
+    const b = document.createElement('button');
+    b.className = 'hint-toggle';
+    b.onclick = () => {
+      open = !open;
+      try { localStorage.setItem(KEY, open ? '1' : '0'); } catch { /* noop */ }
+      apply();
+    };
+    h.parentElement.appendChild(b);
+    btns.push(b);
+  });
+  apply();
+}
+setupHintToggles();
 
 // ---- 起動 -------------------------------------------------------------------
 $('#openRecordings').onclick = () => fetch('/open-dir?dir=recordings').catch(() => {});
