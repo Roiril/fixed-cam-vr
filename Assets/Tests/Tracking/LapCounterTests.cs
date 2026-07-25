@@ -142,12 +142,14 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(l.CurrentLap, Is.EqualTo(1));
         }
 
-        // ---- 切替の出どころ（source）ゲート ----
-        // LapCounter（MonoBehaviour）は director.SwitchCommitted の source==Zone だけを Feed する。
-        // 手動 / Web 固定 / 外部（Manual/Override/External）は Feed しない。その振る舞いを純ロジックで固定する
-        // （LapCounter.OnSwitchCommitted の 1 行ゲートをこのヘルパで模す）。
+        // ---- 何が周回を進めるか ----
+        // 段 B 以降、LapCounter が購読するのは director.ZoneCommitted（＝ショーの時計）だけで、
+        // これは体験者のゾーンが dwell を満たして確定したときにしか発火しない。
+        // 手動 / Web 固定 / インサートの**画面**切替はこのイベントを一切出さないので、Feed に到達しない
+        // （旧実装は画面切替 SwitchCommitted を source==Zone でフィルタしていた。構造で保証する形へ変わった）。
+        // 以下のヘルパは「時計が発火したときだけ Feed される」配線を純ロジック上で模す。
 
-        /// <summary>source==Zone のときだけ Feed する（LapCounter.OnSwitchCommitted のゲート模擬）。</summary>
+        /// <summary>時計（ZoneCommitted）が発火したときだけ Feed する。</summary>
         private static bool FeedIfZone(LapCounterLogic l, int camera, bool isZone)
             => isZone && l.Feed(camera);
 
@@ -197,29 +199,36 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(l.CurrentLap, Is.EqualTo(2));
         }
 
-        // ---- インサート source のゲート（LapCounter.OnSwitchCommitted の実 source 判定を固定） ----
-        // タイムラインのインサートショットは SwitchSource.Insert で切り替わるが、周回には数えない。
-        // FeedIfSource は LapCounter.OnSwitchCommitted の「source==Zone のみ Feed」を実 enum で模す。
-
-        /// <summary>source==Zone のときだけ Feed する（LapCounter.OnSwitchCommitted のゲート・実 enum 版）。</summary>
-        private static bool FeedIfSource(LapCounterLogic l, int camera, CameraSwitchDirector.SwitchSource source)
-            => source == CameraSwitchDirector.SwitchSource.Zone && l.Feed(camera);
-
         [Test]
-        public void InsertSourceSwitches_NeverAdvanceLap()
+        public void InsertScreenSwitches_NeverAdvanceLap()
         {
+            // タイムラインのインサートは画面だけを差し替える（時計は発火しない）→ 周回に数えない。
             var l = Make(0, 1, 2);
-            FeedIfSource(l, 1, CameraSwitchDirector.SwitchSource.Zone);   // 体験者ゾーン進行 0→1
-            // exit インサート差し込み（別カメラへ Insert source で切替）→ 数えない。
-            FeedIfSource(l, 2, CameraSwitchDirector.SwitchSource.Insert);
-            // インサート復帰（Insert source）→ 数えない。
-            FeedIfSource(l, 0, CameraSwitchDirector.SwitchSource.Insert);
+            FeedIfZone(l, 1, isZone: true);    // 体験者ゾーン進行 0→1
+            FeedIfZone(l, 2, isZone: false);   // exit インサート差し込み（画面のみ）
+            FeedIfZone(l, 0, isZone: false);   // インサート復帰（画面のみ）
             Assert.That(l.Position, Is.EqualTo(1));
             Assert.That(l.CurrentLap, Is.EqualTo(1));
             // 体験者ゾーン進行だけで 1 周完了する（インサートは透過）。
-            FeedIfSource(l, 2, CameraSwitchDirector.SwitchSource.Zone);   // 1→2
-            Assert.That(FeedIfSource(l, 0, CameraSwitchDirector.SwitchSource.Zone), Is.True); // 2→0 で lap 2
+            FeedIfZone(l, 2, isZone: true);    // 1→2
+            Assert.That(FeedIfZone(l, 0, isZone: true), Is.True); // 2→0 で lap 2
             Assert.That(l.CurrentLap, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void ZoneMoveDuringFrozenScreen_AdvancesLapImmediately()
+        {
+            // 段 B の主眼: 画面が演出で凍結していても、体験者が歩けば時計は進む。
+            // （凍結中は ZoneCommitted だけが出て画面切替は起きない、という配線を模す）
+            var l = Make(0, 1, 2);
+            FeedIfZone(l, 1, isZone: true);    // 演出中に B へ移動 → 画面は演出のまま・時計は進む
+            Assert.That(l.Position, Is.EqualTo(1), "画面が追従していなくても進行ポインタは前進する");
+            FeedIfZone(l, 2, isZone: true);    // 演出中に C へも移動
+            Assert.That(l.Position, Is.EqualTo(2));
+            // 演出終了後の画面復帰（Insert source）は時計を動かさない = 二重カウントしない。
+            FeedIfZone(l, 2, isZone: false);
+            Assert.That(l.Position, Is.EqualTo(2));
+            Assert.That(l.CurrentLap, Is.EqualTo(1));
         }
     }
 }

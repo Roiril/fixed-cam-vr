@@ -214,13 +214,19 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
 [.claude/plans/2026-07-17_pre-authored-cue-schedule.md](../plans/2026-07-17_pre-authored-cue-schedule.md)）:
 
 - [`LapCounter`](../../Assets/Scripts/Tracking/LapCounter.cs)（[Tracker] に `Setup Main Demo Scene` が自動配置）が
-  `CameraStreamRegistry.ActiveChanged` を購読し、show.json `layout.course.order` の**順方向一致でのみ**進行ポインタを進める。
+  **`CameraSwitchDirector.ZoneCommitted`（ショーの時計）**を購読し、show.json `layout.course.order` の**順方向一致でのみ**進行ポインタを進める。
   `order[0]` 復帰で lap++（1 始まり）。逆走・行き来・スキップは前進しない
-- 純ロジック（`LapCounterLogic` / `CueScheduleLogic`）は MonoBehaviour から分離済みで EditMode テストがある
-  （`Assets/Tests/Tracking/LapCounterTests.cs` / `Assets/Tests/Streaming/CueSchedulerTests.cs`）。セマンティクスを変えるときはテストを先に直す
+  （2026-07-25 段 B 以前は `CameraStreamRegistry.ActiveChanged` / `SwitchCommitted` ＝**画面**を購読していた。
+   director 未割当時のフォールバックとしてのみ `ActiveChanged` 購読が残る）
+- **時計は画面から独立**（段 B）: 確定は [`ZoneProgressionLogic`](../../Assets/Scripts/Streaming/ZoneProgressionLogic.cs) が
+  dwell だけで行い、cue / インサート / override の凍結にも dip にも左右されない。**演出で画面が止まっていても、
+  体験者が歩けば周回・区間追跡は進む**。逆にスタッフ手動 A・Web 固定・インサートの画面切替は時計を動かさない
+- 純ロジック（`LapCounterLogic` / `CueScheduleLogic` / `ZoneProgressionLogic`）は MonoBehaviour から分離済みで EditMode テストがある
+  （`Assets/Tests/Tracking/LapCounterTests.cs` / `Assets/Tests/Streaming/CueSchedulerTests.cs` /
+   `Assets/Tests/Streaming/ZoneProgressionLogicTests.cs`）。セマンティクスを変えるときはテストを先に直す
 - `PlayerZoneTracker` に `ZoneChanged` イベントを公開済み（旧: イベント無し）。ただし LapCounter の駆動は
-  camera index キー（= course.order / schedule.camera と同一キー空間）のため registry 経由
-- 起動時は既にスタート領域に居て ActiveChanged が出ないため、LapCounter が現在カメラを「進入」としてシードする
+  camera index キー（= course.order / schedule.camera と同一キー空間）のため Director 経由
+- 起動時は既にスタート領域に居て確定イベントが出ないため、LapCounter が現在カメラを「進入」としてシードする
   （`seedInitialZone`。lap1 スタート領域の cue を発火可能にするため）
 
 ### 前後 (z) 方向の演出を入れる時

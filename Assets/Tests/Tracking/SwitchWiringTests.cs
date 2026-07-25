@@ -124,12 +124,15 @@ namespace FixedCamVr.Tracking.Tests
 
         // dwell / cooldown を 0 へ戻す。ShowControlClient.Apply が ApplyTimingOverride(0,0) 経由で
         // コード既定 0.5s を再適用するため、EditMode（時間凍結）で commit ゲートが通らなくなるのを防ぐ。
+        // dwell は時計（_progress）側、cooldown は画面（_logic）側に分かれている（段 B）。
         private static void ForceZeroTiming(CameraSwitchDirector dir)
         {
             SetField(dir, "minDwellSec", 0f);
             SetField(dir, "switchCooldownSec", 0f);
             object logic = GetField(dir, "_logic");
-            logic.GetType().GetMethod("Configure")!.Invoke(logic, new object[] { 0f, 0f, 0f });
+            logic.GetType().GetMethod("Configure")!.Invoke(logic, new object[] { 0f, 0f });
+            object progress = GetField(dir, "_progress");
+            progress.GetType().GetMethod("Configure")!.Invoke(progress, new object[] { 0f });
         }
 
         // ---- T1: insert 表示中に ResetRun → 凍結解除 ----
@@ -216,7 +219,7 @@ namespace FixedCamVr.Tracking.Tests
             Invoke(cueScheduler, "Awake");
             Invoke(timeline, "Awake");
             Invoke(timeline, "OnEnable");   // cueScheduler.CameraEntered 購読
-            Invoke(lap, "OnEnable");        // director.SwitchCommitted 購読
+            Invoke(lap, "OnEnable");        // director.ZoneCommitted（ショーの時計）購読
 
             // 周回順 [0,1,2]（A→B→C）を LapCounter へ直接注入（ShowControlClient を使わない）。
             object lapLogic = GetField(lap, "_logic");
@@ -235,18 +238,24 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(reg.ActiveIndex, Is.EqualTo(2), "insert カメラ(2)表示中");
             Assert.That(lap.Position, Is.EqualTo(0), "insert 開始では周回ポインタは進まない（cam0 のまま）");
 
-            // insert 表示中に体験者がゾーン1（B）へ移動（自動切替は凍結されペンディングに積まれる）。
+            // insert 表示中に体験者がゾーン1（B）へ移動。画面は凍結されたままだが、**時計は進む**（段 B）。
             dir.RequestZone(1);
-            // end は RequestZone の後に叩く（duration 0 でも移動→復帰の順序を保つ）。
-            Invoke(ins, "Update");      // Showing → End(latest=pending 1) → InsertReturn(1, asZone=true)
-            PumpDirector(dir);          // 復帰 dip → active=1 → SwitchCommitted(1,Zone) → Feed(1)
+            PumpDirector(dir, 1);       // _progress.Tick が確定 → ZoneCommitted(1) → Feed(1)（画面は凍結のまま）
+
+            Assert.That(lap.Position, Is.EqualTo(1),
+                "演出で画面が凍結していても、体験者が歩いたら周回ポインタは即前進する（不変条件 4）");
+            Assert.That(reg.ActiveIndex, Is.EqualTo(2), "画面はまだ insert カメラのまま");
+
+            Invoke(ins, "Update");      // Showing → End(latest = 時計の確定ゾーン 1) → InsertReturn(1)
+            PumpDirector(dir);          // 復帰 dip → active=1
 
             Assert.That(reg.ActiveIndex, Is.EqualTo(1), "insert 終了後は実ゾーン(cam1)へ復帰しているはず");
-            Assert.That(lap.Position, Is.EqualTo(1), "復帰後 LapCounter の位置が実ゾーン(cam1)へ追従するはず");
+            Assert.That(lap.Position, Is.EqualTo(1), "復帰の画面切替では二重に進まない");
             Assert.That(lap.CurrentLap, Is.EqualTo(1), "lap は二重加算されない");
 
-            // 二重カウントが無いことの追試: 次に cam2 を Zone で踏めば pos は 2 へ 1 段だけ進む。
-            dir.SetActiveExternal(2, CameraSwitchDirector.SwitchSource.Zone);
+            // 二重カウントが無いことの追試: 次に cam2 へゾーン移動すれば pos は 2 へ 1 段だけ進む。
+            dir.RequestZone(2);
+            PumpDirector(dir);
             Assert.That(lap.Position, Is.EqualTo(2), "ポインタは 1→2 へ 1 段進む（スキップ・二重進行なし）");
             Assert.That(lap.CurrentLap, Is.EqualTo(1));
         }
@@ -330,7 +339,7 @@ namespace FixedCamVr.Tracking.Tests
             SetField(lap, "director", dir);
             SetField(lap, "seedInitialZone", false);
             SetField(lap, "logChanges", false);
-            Invoke(lap, "OnEnable");   // director.SwitchCommitted 購読（source==Zone のみ数える）
+            Invoke(lap, "OnEnable");   // director.ZoneCommitted（ショーの時計）購読
             object lapLogic = GetField(lap, "_logic");
             lapLogic.GetType().GetMethod("SetOrder")!.Invoke(lapLogic, new object[] { new[] { 0, 1, 2 } });
 

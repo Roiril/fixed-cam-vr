@@ -105,8 +105,8 @@ namespace FixedCamVr.Streaming
             {
                 showControl?.SetInsertPostOverride(false, null);
                 int latest = _logic.BaseZoneCamera;
-                if (director.TryGetPendingZone(out int pending)) latest = pending;
-                director.InsertReturn(latest);   // 復帰は Insert source（リセット中は周回へ数えない）
+                if (director.TryGetCurrentZoneCamera(out int nowZone)) latest = nowZone;
+                director.InsertReturn(latest);   // 復帰先は時計の確定ゾーン（復元でなく再計算）
             }
         }
 
@@ -123,9 +123,9 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
-            // 復帰先 = インサート中に体験者が移動した先（Director の保留ゾーン）> 開始時ゾーン。
+            // 復帰先 = 時計が確定している「いま体験者が居るゾーン」> 開始時ゾーン（未確定時のみ）。
             int latest = _logic.BaseZoneCamera;
-            if (director != null && director.TryGetPendingZone(out int pending)) latest = pending;
+            if (director != null && director.TryGetCurrentZoneCamera(out int nowZone)) latest = nowZone;
 
             InsertLogic.Decision d = _logic.Tick(Time.time, latest);
             Apply(d);
@@ -172,16 +172,12 @@ namespace FixedCamVr.Streaming
             if (director == null) return;
             // 自分が出した insert cue だけ止める（区間 cue を巻き込まない）。
             if (_insertPlayedCue) { overlay?.StopOverlay(); _insertPlayedCue = false; }
-            // insert 中に体験者が実ゾーンを移動していた（復帰先 != 開始時ゾーン = BaseZoneCamera）なら、
-            // 復帰 commit を Zone 相当で通知して LapCounter / TimelineDirector に実ゾーン移動を反映する
-            // （insert 復帰が SwitchSource.Insert のままだと Zone ゲートで Feed されず lap under-count・
-            //  区間追跡ズレ・exit insert の誤遷移を起こす）。移動が無ければ従来どおり Insert（周回に数えない）。
-            // 進行ポインタは順方向一致でしか進まないため、この Zone 通知で二重カウントは起きない。
-            bool movedDuringInsert = returnCamera != _logic.BaseZoneCamera;
-            director.InsertReturn(returnCamera, asZone: movedDuringInsert);
+            // 復帰は常に Insert source（周回に数えない）。旧実装はここで「実ゾーンを移動していたら Zone に
+            // 偽装して commit する」ハックを持っていたが、段 B で周回の駆動を画面（SwitchCommitted）から
+            // 時計（ZoneCommitted）へ移したため不要になった。インサート中の移動はその時点で周回へ反映済み。
+            director.InsertReturn(returnCamera);
             showControl?.SetInsertPostOverride(false, null);
-            Debug.Log($"[InsertController] インサート終了 → 復帰 camera={returnCamera}" +
-                      $"{(movedDuringInsert ? "（実ゾーン移動を反映＝Zone commit）" : "")}");
+            Debug.Log($"[InsertController] インサート終了 → 復帰 camera={returnCamera}");
         }
     }
 }

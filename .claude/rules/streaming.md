@@ -92,7 +92,8 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
   deadzone 10° + SmoothDamp 0.3s + 角速度上限 110°/s + 逆走ガード（`YawFollowLogic` 純ロジック・テストあり）。
   提示 2.0m・中心 -8°・スクリーン 4/3 倍（角径維持）。再ロック/ロスト復帰はスナップ禁止・減衰合流
 - **切替は [`CameraSwitchDirector`](../../Assets/Scripts/Streaming/CameraSwitchDirector.cs) に一本化**:
-  クールダウン **0.5s**・最小滞在 **0.5s**（dwell）・**cue 再生中は自動切替凍結**・手動後 8s は自動抑止・
+  クールダウン **0.5s**（画面層 `SwitchDirectorLogic`）・最小滞在 **0.5s**（dwell＝人の層 `ZoneProgressionLogic`・2026-07-25 段 B で分離）・
+  **cue 再生中は自動切替凍結**（凍結するのは画面だけで時計は進む）・手動後 8s は自動抑止・
   dip-to-black 70/100ms + `SwitchAudioCue`（音源は空スロット）。Web cameraOverride は従来どおり即時
   - **dwell / クールダウン既定 0.5s（2026-07-22 改修）**: 旧 2s は 1.8m 四方の部屋（帯幅 ~0.45m を歩行 0.6〜1.5s で通過）に
     過大で「歩くと切替が起きず、止まった瞬間に遅れて dip 付きで切替」の不具合を出した。`minDwellSec` / `switchCooldownSec` は
@@ -211,7 +212,12 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - **`layout.regPoints[]`**: 位置合わせのタッチ基準点 `{x, z, label}`（course 座標・順序=タッチ順・2〜5 点。Web 卓フロアマップの「📍 位置合わせ点」で配置。不在なら Unity は従来既定 2 点にフォールバック）— 2026-07-19
 - **`layout.course.order`**: 順方向のカメラ巡回順（`order[0]`=スタート領域）。Web 卓フロアマップの「周回コース」で編集（grid の塗りから角度順提案 + CW/CCW トグル）
 - **`schedule.entries[]`**: `{lap, camera, cueId, delaySec, once}`。lap は **1 始まり**、camera は**カメラ index**。Web 卓の**タイムライン UI**（2026-07-19〜 マトリクスから改装。「1周目: A\|B\|C → 2周目: …」を `course.order` 順に横連結・区間クリックで cueId / delaySec / once を編集）で編集
-- **周回検知** = [`LapCounter`](../../Assets/Scripts/Tracking/LapCounter.cs)（進行ポインタ方式）: アクティブカメラが `order[(i+1)%n]` に一致した時だけ前進、`order[0]` 復帰で lap++。**逆走・行き来・スキップ・境界 jitter はカウントしない**。さらに 2026-07-19 から **Director の Zone 由来切替のみ算入**（スタッフ手動 A/B・Web cameraOverride・外部切替では周回も cue 進入通知も動かない — `SwitchSource` タグ）
+- **周回検知** = [`LapCounter`](../../Assets/Scripts/Tracking/LapCounter.cs)（進行ポインタ方式）: 確定ゾーンが `order[(i+1)%n]` に一致した時だけ前進、`order[0]` 復帰で lap++。**逆走・行き来・スキップ・境界 jitter はカウントしない**
+  - **⚠ 2026-07-25（段 B）で駆動点が変わった**: 旧「Director の `SwitchCommitted` の `SwitchSource.Zone` だけを算入」→ 新
+    **`CameraSwitchDirector.ZoneCommitted`（ショーの時計）を購読**。時計は [`ZoneProgressionLogic`](../../Assets/Scripts/Streaming/ZoneProgressionLogic.cs)
+    が dwell だけで確定させ、**画面の凍結（cue / インサート / override）にも dip にも影響されずに発火する**。
+    したがって**演出中に体験者が歩いても周回は止まらない**（設計 [2026-07-25_shot-timeline-foundation.md](../plans/2026-07-25_shot-timeline-foundation.md) 不変条件 4）。
+    スタッフ手動 A・Web cameraOverride・インサートの画面切替は `ZoneCommitted` を発火しないので、構造的に周回へ入らない
 - **ラン（体験者 1 人分）**: `control.runEpoch`（int・既定 0）の**変化**で LapCounter リセット（lap=1・再シード）+ CueScheduler の once 発火済みクリア。Web ライブ運用パネルの「▶ ラン開始」= **runEpoch++ ＋ `cameraOverride=null` ＋ `activeCue=null` を 1 回の postState で同時に書く**（2026-07-25〜。旧実装は runEpoch だけで、前の体験者のカメラ固定・再生中 cue が次のランへ持ち越された。override / activeCue は端末キャッシュには載らないが show.json には永続するため、卓を立てて Quest を繋いだ瞬間に再適用される＝「歩いても切り替わらない」事故になっていた）。armed なラッチは Web 卓ヘッダ直下の警告バーが show.json 由来で常時可視化する（Unity 未接続でも出る）。PC 不在時は **右グリップ 2 秒長押し** = ローカルランリセット（2026-07-20〜。旧: Staff 左スティック押し込み）。heartbeat に `lap` / `cam` / `mode`（NORMAL/REG）を載せる（Web でラン状態が見える）
 - **発火** = [`CueScheduler`](../../Assets/Scripts/Streaming/CueScheduler.cs): (lap, camera) 一致 + delaySec 後に `ScreenOverlayController.PlayCue` を**ローカル直接**呼ぶ（サーバ不要）。**`control.activeCue` が非空の間は抑止**（ライブ手動操作が常に優先）。once=true はラン内 1 回
 - **APK 焼き込み**: Web 卓「📦 ビルド用エクスポート」（`POST /export-build`）が show.json + 参照アセットを `Assets/StreamingAssets/show/` へコピーし、URL を `sa://assets/<file>` に書換。Unity 側は [`ShowAssetResolver`](../../Assets/Scripts/Streaming/ShowAssetResolver.cs) が `sa://` → `StreamingAssets/show/assets/` に解決（Android は jar: URL、動画は VideoPlayer 直接パス）。起動時に `StreamingAssets/show/show.json` を読み、優先順位は **焼き込み < 端末キャッシュ < ライブ**（従来の後勝ちを維持）
@@ -248,7 +254,10 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   - `exit`: **このゾーンを Zone 切替で離れる瞬間**、dip の黒中に insert.camera へ差し替え durationSec 秒 → 最新ゾーンカメラへ復帰。体験者は A→黒→C(N秒)→黒→B と見え、中間カメラのフラッシュを見せない（ユーザー要求「A→B に切り替わる前に C に演出を N 秒」の実装形）
   - 切替は dip-to-black 付き（`CameraSwitchDirector` の `SwitchSource.Insert`）。insert 表示中はゾーン自動切替を凍結（cue 凍結と同型）。**周回カウントは実ゾーン移動の commit 時に通常どおり 1 回**（Insert 切替は LapCounter が数えない）
   - **insert 凍結の解除は必ず後片付け経由**（2026-07-23 修正・テスト `SwitchWiringTests.T1/T2`）: `InsertController.ResetRun` / `SetInserts` は進行中インサート（表示中）があれば先に `CleanupActiveInsert`（insert cue 停止・insert post 解除・`director.InsertReturn`）で畳んでから `InsertLogic` をリセットする。畳まないと `CameraSwitchDirector._insertActive`（凍結）が `InsertReturn` 単一経路でしか降りず、ゾーン自動切替が恒久凍結する（ショー中のタイムライン編集・体験者交代で踏む）。`SwitchDirectorLogic.Reset`（OnEnable 経路）でも `_insertActive`/`_cueActive` を false へ安全初期化する
-  - **insert 中の実ゾーン移動は復帰時に Zone として反映**（2026-07-23 修正・テスト `SwitchWiringTests.T4`）: `EndInsert` の復帰先が開始時ゾーン（`InsertLogic.BaseZoneCamera`）と異なる＝insert 中に体験者が実ゾーンを移動していた場合、`InsertReturn(returnCamera, asZone:true)` で復帰 commit を `SwitchSource.Zone` として発火し、LapCounter / TimelineDirector に実ゾーン移動を反映する（従来は Insert 固定で Feed されず lap under-count・区間追跡ズレ・exit insert の誤遷移を起こしていた）。進行ポインタは順方向一致でしか進まないため二重カウントは起きない
+  - **insert 中の実ゾーン移動**（2026-07-25 段 B で機構が変わった・テスト `SwitchWiringTests.T4`）: insert 表示中に体験者がゾーンを移ると、
+    **その時点で時計（`ZoneCommitted`）が発火し周回・区間追跡へ即反映される**（画面は insert のまま）。insert 終了時の復帰先は
+    `CameraSwitchDirector.TryGetCurrentZoneCamera`＝**時計の確定ゾーン**を読んで決める（復元ではなく再計算）。
+    旧実装の `InsertReturn(returnCamera, asZone:true)`（復帰 commit を Zone に偽装して周回を辻褄合わせする）は**廃止**した
 - **present-flag は宣言 bool が正**（2026-07-23 監査修正・テスト `TimelinePresentFlagsTests`/`TimelineFixtureContractTests`）:
   `hasPost` / `hasInsert` / `hasOverride` は必ず書く。Unity は [`TimelinePresentFlags.Reconcile`](../../Assets/Scripts/Streaming/TimelinePresentFlags.cs) で
   **`flag = 宣言bool && object != null`（AND）** に確定し、ライブ / 焼き込み / キャッシュの 3 経路一律に適用する。

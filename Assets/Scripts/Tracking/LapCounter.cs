@@ -82,8 +82,8 @@ namespace FixedCamVr.Tracking
         [Tooltip("アクティブカメラ切替の供給元。director 未割当時のフォールバック購読に使う（後方互換）。")]
         [SerializeField] private CameraStreamRegistry? registry;
 
-        [Tooltip("切替の出どころ付き確定イベント（SwitchCommitted）の供給元。割当時はここを購読し、" +
-                 "source==Zone（体験者のゾーン進行）だけを周回へ数える。手動 / Web 固定 / 外部は数えない。" +
+        [Tooltip("ショーの時計（ZoneCommitted）の供給元。割当時はここを購読し、体験者のゾーン進行だけを" +
+                 "周回へ数える。手動 / Web 固定 / インサートの画面切替は数えない（そもそも発火しない）。" +
                  "null なら registry.ActiveChanged を無差別購読（従来挙動）。")]
         [SerializeField] private CameraSwitchDirector? director;
 
@@ -116,9 +116,10 @@ namespace FixedCamVr.Tracking
 
         private void OnEnable()
         {
-            // director があれば「出どころ付き」確定を購読し、source==Zone のみ周回へ数える。
-            // 無ければ従来どおり registry.ActiveChanged を無差別購読（後方互換）。
-            if (director != null) director.SwitchCommitted += OnSwitchCommitted;
+            // director があればショーの時計（ZoneCommitted）を購読する。画面が凍結していても発火するので
+            // 演出中に歩かれても周回が止まらない（段 B）。無ければ従来どおり registry.ActiveChanged を
+            // 無差別購読（後方互換）。
+            if (director != null) director.ZoneCommitted += OnActiveCameraChanged;
             else if (registry != null) registry.ActiveChanged += OnActiveCameraChanged;
             if (showControl != null)
             {
@@ -133,7 +134,7 @@ namespace FixedCamVr.Tracking
         private void OnDisable()
         {
             if (!_subscribed) return;
-            if (director != null) director.SwitchCommitted -= OnSwitchCommitted;
+            if (director != null) director.ZoneCommitted -= OnActiveCameraChanged;
             else if (registry != null) registry.ActiveChanged -= OnActiveCameraChanged;
             if (showControl != null)
             {
@@ -143,16 +144,6 @@ namespace FixedCamVr.Tracking
                     showControl.CurrentLapProvider = null;
             }
             _subscribed = false;
-        }
-
-        // 出どころ付き確定。体験者のゾーン進行（Zone）だけを周回・cue 進入へ写す。
-        // 手動 / Web 固定 / 外部（Manual/Override/External）は周回もカメラ進入通知も動かさない
-        // （＝表示カメラは変わっても進行ポインタは体験者のゾーン進行だけを追う。desync は
-        //   進行ポインタが順方向一致でしか進まない性質で吸収される — LapCounterTests 参照）。
-        private void OnSwitchCommitted(int camera, CameraSwitchDirector.SwitchSource source)
-        {
-            if (source != CameraSwitchDirector.SwitchSource.Zone) return;
-            OnActiveCameraChanged(camera);
         }
 
         // runEpoch 変化（Web の「ラン開始」）を ShowControlClient から受けて周回・cue をリセットする。
