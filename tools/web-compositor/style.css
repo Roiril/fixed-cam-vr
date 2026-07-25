@@ -896,20 +896,6 @@ input:-webkit-autofill:active {
 .tl-cue-editor-host:empty { display: none; }
 
 /* 検証パネル */
-.tl-validate.on { background: var(--warn-color); border-color: var(--warn-color); color: #000; font-weight: 600; opacity: 1; }
-.tl-validate-panel { margin: 8px 0; border: 1px solid var(--warn-color); padding: 10px; }
-.tl-val-head { font-size: 11px; letter-spacing: .08em; color: var(--warn-color); margin-bottom: 8px; }
-.tl-val-body { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
-.tl-val-view { flex: 0 0 auto; }
-.tl-val-canvas { display: block; width: 480px; max-width: 100%; aspect-ratio: 16/9; background: #000; border: 1px solid var(--line-soft); }
-.tl-val-keys { font-size: 11px; opacity: var(--opacity-sub); margin-top: 6px; letter-spacing: .04em; }
-.tl-val-info { flex: 1 1 260px; min-width: 240px; }
-.tl-val-state { font-size: 13px; margin-bottom: 8px; }
-.tl-val-state b { color: var(--accent-color); }
-.tl-val-step { margin-left: 10px; font-size: 11px; opacity: var(--opacity-mute); }
-.tl-val-log { display: flex; flex-direction: column; gap: 2px; max-height: 200px; overflow-y: auto; font-size: 11px; font-family: monospace; }
-.tl-val-log-row { opacity: var(--opacity-sub); }
-.tl-val-log-empty { opacity: var(--opacity-mute); }
 
 /* cue-editor（cue-editor.js）*/
 .ce-wrap { border: 1px solid var(--accent-color); margin-top: 8px; }
@@ -1089,7 +1075,6 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-schema { font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
   border: 1px solid var(--line-soft); padding: 2px 7px; opacity: var(--opacity-mute); }
 .rb-lap-add, .rb-lap-del, .rb-validate { padding: 4px 10px; font-size: 11px; }
-.rb-validate[disabled] { opacity: .3; cursor: not-allowed; }
 .rb-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
 .rb-note { font-size: 11px; color: var(--warn-color); line-height: 1.4; }
 .rb-note:empty { display: none; }
@@ -1133,6 +1118,8 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 }
 .rb-seg-foot { display: flex; align-items: baseline; gap: 8px; font-size: 10px; }
 .rb-seg-dur { opacity: var(--opacity-mute); letter-spacing: .06em; }
+/* 実機 heartbeat 由来の実測滞在（推測ではなく観測なので少し強く出す） */
+.rb-seg-dur.meas { opacity: 1; color: var(--accent-color); }
 .rb-seg-bgm { opacity: var(--opacity-mute); margin-left: auto;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 .rb-seg-bgm.chg { color: var(--accent-color); opacity: 1; }
@@ -1146,6 +1133,9 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-take:hover { border-color: var(--accent-color); }
 .rb-take.sel { box-shadow: inset 0 0 0 2px var(--accent-color); }
 .rb-take.bad { border-color: var(--warn-color); }
+/* 実測の滞在時間に対して開始位置が遅すぎる演出（歩速で出ないかもしれない） */
+.rb-take.risk { border-style: dotted; border-color: var(--warn-color); }
+.rb-take.risk .rb-take-start { color: var(--warn-color); opacity: 1; }
 .rb-take.dragging { pointer-events: none; opacity: .55; }
 /* 進入の演出は段の高さを固定する（ribbon.js の LANE_H と一致・区間フッタに被らせない） */
 .rb-seg-lane > .rb-take { height: 76px; }
@@ -1158,6 +1148,9 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
   font-size: 10px; letter-spacing: .04em; color: var(--accent-color);
 }
 .rb-take-head:active { cursor: grabbing; }
+/* タッチでドラッグ中にページがスクロール / ズームしないようにする（ribbon.js の beginDrag と対） */
+.rb-take-head { touch-action: none; }
+.rb-take-head:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
 .rb-take-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rb-take-start { margin-left: auto; opacity: var(--opacity-sub); white-space: nowrap; }
 .rb-take-dur { opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
@@ -1201,6 +1194,12 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-insp-head button { padding: 3px 10px; font-size: 11px; }
 .rb-insp-sub { font-size: 10.5px; opacity: var(--opacity-mute); }
 .rb-insp-warn { font-size: 11px; color: var(--warn-color); margin-top: 6px; }
+.rb-insp-risk { font-size: 11px; color: var(--warn-color); margin-top: 6px; }
+.rb-insp-meas { font-size: 11px; opacity: var(--opacity-sub); margin-top: 4px; letter-spacing: .04em; }
+.rb-bgm-loop { display: flex; flex-direction: column; gap: 6px; }
+.rb-bgm-audition { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.rb-bgm-audition button { padding: 3px 9px; font-size: 11px; }
+.rb-dwell-reset { padding: 4px 10px; font-size: 11px; }
 .rb-insp-sec { border-bottom: 1px solid var(--line-soft); padding: 10px 0; }
 .rb-insp-sec:last-of-type { border-bottom: 0; }
 .rb-insp-label { font-size: 9px; text-transform: uppercase; letter-spacing: .15em;
@@ -1251,9 +1250,15 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .ss-rec.on { border-color: var(--danger-color); color: var(--danger-color); opacity: 1; }
 .ss-recinfo { font-size: 11px; opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
 
-/* いま画面に映っているもの */
+/* いま画面に映っているもの（実画プレビュー + 内訳） */
 .ss-screen { border: 1px solid var(--line-soft); padding: 10px 12px; display: flex;
+  flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.ss-screen-view { flex: 0 0 auto; }
+.ss-canvas { display: block; width: 320px; max-width: 100%; aspect-ratio: 4/3;
+  background: #000; border: 1px solid var(--line-soft); }
+.ss-screen-side { flex: 1 1 200px; min-width: 180px; display: flex;
   flex-direction: column; gap: 6px; }
+.ss-screen-note { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.45; }
 .ss-screen-chip { display: flex; align-items: center; gap: 10px; }
 .ss-screen-chip i { width: 18px; height: 18px; display: inline-block; background: var(--line-input); }
 .ss-screen-cam { font-size: 18px; letter-spacing: .06em; }

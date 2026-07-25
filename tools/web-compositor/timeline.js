@@ -1,8 +1,9 @@
 // 廻リ視 タイムライン第一級オーサリング（schedule.js 後継）。
 //   区間 = 「周回 L にゾーン（カメラ）C へ滞在する区間」。lap 行 × course.order 順の区間グリッド。
 //   区間クリック → セグメントインスペクタで cue 割当 / インライン cue 編集 / post 上書き / insert を編集。
-//   ▶ 検証（矢印キー）で Unity セマンティクス（LapCounter / CueScheduler / insert / post 3 段）を
-//   JS ミラーし、体験者に見える画を WebGL プレビューで再現する（ローカルのみ・show.json は書かない）。
+//   ▶ 検証は 🕹 ショーシミュレーション（show-sim.js）へ委譲する。矢印キーの簡易シミュレーションは
+//   2026-07-25 に廃止した（同じことをする検証面を 2 つ持たない。シミュレータは Unity 純ロジックの
+//   JS ミラーで golden 照合済み・v2 の show.json も自動で v3 へ移行して読む）。
 //
 //   契約（.claude/plans/2026-07-19_webui-timeline-authoring.md が正）:
 //   timeline = { rev, segments:[{ lap, camera, cues:[{cueId,delaySec,once,override,hasOverride}],
@@ -11,8 +12,7 @@
 //   - lap は 1 始まり、camera は「カメラ index」。cueId は cues[].id（cue.camera は id 文字列）。
 //   - hasPost/hasInsert/hasOverride の present-flag を必ず書く（JsonUtility の null 入れ子対策）。
 
-import { FX, FX_DEFAULT, camColor, escapeHtml, createMediaCache } from './common.js';
-import { createCompositeView } from './composite-view.js';
+import { FX, FX_DEFAULT, camColor, escapeHtml } from './common.js';
 import { createCueEditor } from './cue-editor.js';
 import { defaultOverride, defaultInsert, defaultBgm, newSeg, newAssign, serializeTimeline, normalizeTimeline, migrateFromSchedule, resolveBgmLane, isV3, normalizeTimelineV3 } from './timeline-model.js';
 import { createRibbon } from './ribbon.js';
@@ -30,7 +30,7 @@ export function createTimeline(container, deps) {
         <button class="tl-undo" title="直前の編集を取り消す（Ctrl+Z）" disabled>⟲ 元に戻す</button>
         <span class="tl-dirty"></span>
         <span class="spacer"></span>
-        <button class="tl-validate" title="矢印キーで周回×ゾーン進行をシミュレートし、発火順と見える画を確認（ローカルのみ）">▶ 検証</button>
+        <button class="tl-validate" title="🕹 ショーシミュレーションへ移動して、歩き（フロアマップのドット）でショーを実時間検証する">▶ 検証</button>
         <button class="tl-lap-add" title="周回を 1 つ増やす">＋ 周回</button>
         <button class="tl-lap-del" title="最後の周回を削除">－ 周回</button>
         <button class="tl-to-v3" title="cue / インサートショットを「演出・カット」へ変換し、リボン編集に切り替える（片道）">⇪ v3 に変換</button>
@@ -38,7 +38,6 @@ export function createTimeline(container, deps) {
       <div class="tl-hint">区間をクリックして、その周・そのカメラの cue 割当・画像加工（post）上書き・インサートショットを編集する。空 = そのゾーンで発火なし。ライブ手動操作（演出 ON）が優先で、その間は抑止される。</div>
       <div class="tl-note"></div>
       <div class="tl-track-wrap"><div class="tl-track"></div></div>
-      <div class="tl-validate-panel" style="display:none"></div>
       <div class="tl-inspector"></div>
     </div>`;
 
@@ -48,7 +47,10 @@ export function createTimeline(container, deps) {
   const dirtyEl = q('.tl-dirty');
   const noteEl = q('.tl-note');
   const validateBtn = q('.tl-validate');
-  const validatePanel = q('.tl-validate-panel');
+  // ▶ 検証 = 🕹 ショーシミュレーションへ渡す（矢印キーの簡易シミュレーションは 2026-07-25 に廃止）。
+  //   理由: 同じことをする検証面を 2 つ持たない。シミュレータは Unity 純ロジックの JS ミラーで
+  //   golden トレース照合済み・v2 の show.json も normalizeTimelineV3 が自動で移行して読む。
+  validateBtn.onclick = () => { if (deps.openSimulator) deps.openSimulator(); };
 
   // ---- v3（リボン）モード ------------------------------------------------------
   //   モードはユーザーのトグルではなく「データの版」で決める（isV3）。v3 のときは v2 の
@@ -64,7 +66,6 @@ export function createTimeline(container, deps) {
   function ensureRibbon() { if (!ribbon) ribbon = createRibbon(ribbonHost, deps); return ribbon; }
   function enterV3Mode() {
     v3Mode = true;
-    if (validation.active) validation.stop();
     closeCueEditor();
     sel = null;
     wrapEl.style.display = 'none';
@@ -103,7 +104,6 @@ export function createTimeline(container, deps) {
     dirty = shadow !== savedSnap;   // 保存済みの内容まで戻ったら未保存表示も消す
     sel = null; closeCueEditor();
     renderDirty(); renderUndo(); render(); renderInspector();
-    validation.refresh();
   }
   function markDirty() {
     if (shadow) { undoStack.push(shadow); if (undoStack.length > UNDO_MAX) undoStack.shift(); }
@@ -151,7 +151,6 @@ export function createTimeline(container, deps) {
       ? 'コース順が未設定です。フロアマップで周回コースを設定してください（今は 0..N-1 の順で表示中）。' : '';
     noteEl.className = 'tl-note' + (needNote ? ' on' : '');
 
-    const v = validation.active ? validation.current() : null;
     // BGM 帯の解決（course 順に carry-forward。ラン開始時は show.json の既定 BGM が鳴っている）
     const bgmLane = resolveBgmLane(timeline.segments, rs, lapCount, rootBgmTrackId());
 
@@ -172,11 +171,10 @@ export function createTimeline(container, deps) {
       rs.forEach((ci) => {
         const seg = segAt(lap, ci);
         const on = sel && sel.camera === ci && sel.lap === lap;
-        const isCur = v && v.lap === lap && v.activeCam === ci && !v.transient;
         const camId = cameras[ci] ? cameras[ci].id : `#${ci}`;
         const btn = document.createElement('button');
         btn.className = 'tl-seg' + (seg && seg.cues && seg.cues.length ? ' filled' : '')
-          + (on ? ' sel' : '') + (isCur ? ' cur' : '');
+          + (on ? ' sel' : '');
         btn.style.setProperty('--cam', camColor(ci));
         // cue チップ
         let clipHtml;
@@ -747,220 +745,6 @@ export function createTimeline(container, deps) {
     lapCount = Math.max(1, maxLap, lapCount);
   }
 
-  // ==========================================================================
-  //  検証モード（矢印キーシミュレーション）— Unity セマンティクスの JS ミラー
-  // ==========================================================================
-  const validation = createValidation();
-  validateBtn.onclick = () => (validation.active ? validation.stop() : validation.start());
-
-  function createValidation() {
-    let active = false;
-    let steps = 0;
-    let cur = null;                 // computeState(steps) の結果
-    let transientQueue = [], transient = null, transientTimer = 0;
-    const valMedia = createMediaCache();
-    let view = null, canvas = null;
-
-    // --- Unity セマンティクスの純ロジック ---
-    // computeState(n): 検証開始から → を n 回押した「落ち着いた」離散状態を決定的に再計算。
-    //   LapCounter: order 順方向一致でのみ前進・order[0] 復帰で lap++・開始ゾーンをシード。
-    //   CueScheduler: (lap,camera) 一致 + delaySec で発火・once はラン内 1 回。
-    //   insert: enter/exit を fireLog に記録（表示は transient で実時間再生）。
-    function computeState(n) {
-      const ord = rows();
-      const cn = ord.length;
-      const log = [];
-      if (!cn) return { lap: 1, pointer: 0, activeCam: null, fireLog: log, showCueId: null, showPost: globalPost() };
-      const onceCue = new Set();     // `${lap}:${cam}:${cueId}`
-      const onceIns = new Set();     // `${lap}:${cam}` （そのセグメントの insert）
-      let lap = 1, pointer = 0, showCueId = null;
-
-      const fireCues = (l, cam) => {
-        const seg = segAt(l, cam);
-        let shown = null;
-        if (seg && seg.cues) for (const a of seg.cues) {
-          const key = `${l}:${cam}:${a.cueId}`;
-          if (a.once !== false && onceCue.has(key)) continue;
-          if (a.once !== false) onceCue.add(key);
-          log.push({ type: 'cue', lap: l, camera: cam, cueId: a.cueId, delaySec: a.delaySec || 0 });
-          shown = a.cueId;
-        }
-        return shown;
-      };
-      const fireInsert = (l, cam, anchor) => {
-        const seg = segAt(l, cam);
-        if (!seg || !seg.hasInsert || !seg.insert || seg.insert.anchor !== anchor) return;
-        const key = `${l}:${cam}`;
-        if (seg.insert.once !== false && onceIns.has(key)) return;
-        if (seg.insert.once !== false) onceIns.add(key);
-        log.push({
-          type: 'insert', anchor, hostLap: l, hostCam: cam,
-          camera: seg.insert.camera, cueId: seg.insert.cueId || '',
-          durationSec: seg.insert.durationSec || 4,
-          post: seg.insert.hasPost ? seg.insert.post : null, hasPost: !!seg.insert.hasPost,
-        });
-      };
-
-      // seed: 開始ゾーン（lap1, order[0]）に居る扱い
-      fireInsert(1, ord[0], 'enter');
-      showCueId = fireCues(1, ord[0]);
-      for (let step = 1; step <= n; step++) {
-        const prevCam = ord[pointer], prevLap = lap;
-        pointer = (pointer + 1) % cn;
-        if (pointer === 0) lap++;
-        const cam = ord[pointer];
-        fireInsert(prevLap, prevCam, 'exit');
-        fireInsert(lap, cam, 'enter');
-        showCueId = fireCues(lap, cam);
-      }
-      return { lap, pointer, activeCam: ord[pointer], fireLog: log, showCueId, showPost: resolvePost(lap, ord[pointer]) };
-    }
-
-    function resolvePost(lap, cam) {
-      const seg = segAt(lap, cam);
-      if (seg && seg.hasPost && seg.post) return seg.post;
-      const camObj = cameras[cam];
-      if (camObj && camObj.post) return camObj.post;
-      return globalPost();
-    }
-
-    function recompute() { cur = computeState(steps); }
-
-    // 前ステップとの差分から「今回新たに発火した insert」を抽出 → 実時間再生。
-    function playNewInserts(prevLen) {
-      const news = cur.fireLog.slice(prevLen).filter((e) => e.type === 'insert');
-      if (!news.length) return;
-      transientQueue = news.slice();
-      advanceTransient();
-    }
-    function advanceTransient() {
-      clearTimeout(transientTimer);
-      if (!active || !transientQueue.length) { transient = null; renderPanel(); render(); return; }
-      const ins = transientQueue.shift();
-      transient = {
-        cam: ins.camera, cueId: ins.cueId || null,
-        post: (ins.hasPost && ins.post) ? ins.post : (cameras[ins.camera]?.post || globalPost()),
-        label: `⏢ INSERT ${ins.anchor === 'exit' ? '退出' : '進入'} → ${camLabel(ins.camera)}（${ins.durationSec}s）`,
-      };
-      transientTimer = setTimeout(advanceTransient, Math.max(200, (ins.durationSec || 0) * 1000));
-      renderPanel(); render();
-    }
-    function cancelTransient() { clearTimeout(transientTimer); transientQueue = []; transient = null; }
-
-    // --- 操作 ---
-    function advance() { const prevLen = cur ? cur.fireLog.length : 0; steps++; cancelTransient(); recompute(); playNewInserts(prevLen); renderPanel(); render(); }
-    function back() { if (steps <= 0) return; steps--; cancelTransient(); recompute(); renderPanel(); render(); }
-    function reset() { steps = 0; cancelTransient(); recompute(); renderPanel(); render(); }
-
-    function onKey(e) {
-      if (!active) return;
-      const t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
-      if (e.key === 'ArrowRight') { e.preventDefault(); advance(); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
-      else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); reset(); }
-      else if (e.key === 'Escape') { e.preventDefault(); stop(); }
-    }
-
-    function start() {
-      active = true; steps = 0; cancelTransient(); recompute();
-      validateBtn.classList.add('on'); validateBtn.textContent = '■ 検証終了';
-      validatePanel.style.display = '';
-      buildPanel();
-      document.addEventListener('keydown', onKey);
-      renderPanel(); render();
-    }
-    function stop() {
-      active = false; cancelTransient();
-      validateBtn.classList.remove('on'); validateBtn.textContent = '▶ 検証';
-      validatePanel.style.display = 'none';
-      document.removeEventListener('keydown', onKey);
-      if (view) { view.destroy(); view = null; }
-      render();
-    }
-
-    // --- パネル + プレビュー ---
-    function buildPanel() {
-      validatePanel.innerHTML = `
-        <div class="tl-val-head">▶ 検証（ローカルシミュレーション・show.json は書きません）</div>
-        <div class="tl-val-body">
-          <div class="tl-val-view"><div class="view-wrap"><canvas class="tl-val-canvas" width="640" height="360"></canvas></div>
-            <div class="tl-val-keys">→ 次ゾーン ／ ← 1手戻る ／ R 先頭 ／ Esc 終了</div></div>
-          <div class="tl-val-info">
-            <div class="tl-val-state"></div>
-            <div class="tl-val-log"></div>
-          </div>
-        </div>`;
-      canvas = validatePanel.querySelector('.tl-val-canvas');
-      if (view) view.destroy();
-      view = createCompositeView(canvas, { sample: sampleView });
-    }
-
-    function sampleView() {
-      const camIdx = transient ? transient.cam : (cur ? cur.activeCam : null);
-      const cueId = transient ? transient.cueId : (cur ? cur.showCueId : null);
-      const post = transient ? transient.post : (cur ? cur.showPost : globalPost());
-      const camObj = (camIdx != null) ? cameras[camIdx] : null;
-      const liveImg = (camObj && deps.getLiveImg) ? deps.getLiveImg(camObj.id) : null;
-      let overlayEl = null, overlayReady = false, overlayW = 0, overlayH = 0, maskEl = null, strength = 1, fadeSec = 0.5;
-      if (cueId) {
-        const cue = cueById(cueId);
-        if (cue && cue.sourceUrl) {
-          const m = valMedia.get(cue.sourceUrl);
-          if (m && m.el) {
-            overlayEl = m.el; overlayReady = m.ready;
-            if (m.isVideo && m.ready && m.el.paused) { try { m.el.play().catch(() => {}); } catch { /* noop */ } }
-            overlayW = m.isVideo ? (m.el.videoWidth || 0) : (m.el.naturalWidth || 0);
-            overlayH = m.isVideo ? (m.el.videoHeight || 0) : (m.el.naturalHeight || 0);
-          }
-          maskEl = cue.maskUrl ? valMedia.getImage(cue.maskUrl) : null; // null => 全面差し替え
-          strength = cue.strength ?? 1; fadeSec = cue.fadeIn ?? 0.5;
-        }
-      }
-      return {
-        liveImg, overlayEl, overlayReady, overlayW, overlayH, maskEl,
-        overlayOn: !!cueId, fadeSec, strength, feather: 0, post, trimEnd: 0, onVideoEnd: null,
-      };
-    }
-
-    function renderPanel() {
-      if (!active || !validatePanel.querySelector('.tl-val-state')) return;
-      const stateEl = validatePanel.querySelector('.tl-val-state');
-      const logEl = validatePanel.querySelector('.tl-val-log');
-      const camTxt = cur && cur.activeCam != null ? camLabel(cur.activeCam) : '—';
-      const showTxt = transient ? transient.label
-        : (cur && cur.showCueId ? `🎬 ${cueName(cur.showCueId)}` : 'ライブのみ');
-      // BGM は carry-forward の解決結果（Unity BgmPlanLogic のミラー）をそのまま出す
-      const laneNow = resolveBgmLane(timeline.segments, rows(), Math.max(lapCount, cur ? cur.lap : 1), rootBgmTrackId());
-      const bgmSt = (cur && cur.activeCam != null) ? laneNow.get(`${cur.lap}:${cur.activeCam}`) : null;
-      const bgmTxt = !bgmSt ? '—' : (bgmSt.trackId ? `🎵 ${trackName(bgmSt.trackId)}` : '🔇 無音');
-      stateEl.innerHTML = `<b>${cur ? cur.lap : 1}周目</b> ／ ゾーン <b>${escapeHtml(camTxt)}</b> ／ ${escapeHtml(showTxt)}`
-        + ` ／ ${escapeHtml(bgmTxt)}`
-        + `<span class="tl-val-step">step ${steps}</span>`;
-      // 発火ログ（新しい順）
-      const log = cur ? cur.fireLog : [];
-      logEl.innerHTML = log.length ? '' : '<div class="tl-val-log-empty">（まだ発火なし）</div>';
-      log.slice().reverse().forEach((e) => {
-        const d = document.createElement('div'); d.className = 'tl-val-log-row';
-        if (e.type === 'cue') {
-          d.textContent = `${e.lap}周 ${camLabel(e.camera)}: 🎬 ${cueName(e.cueId)}${e.delaySec ? ` +${e.delaySec}s` : ''}`;
-        } else {
-          d.textContent = `${e.hostLap}周 ${camLabel(e.hostCam)} ${e.anchor === 'exit' ? '退出' : '進入'}: ⏢ ${camLabel(e.camera)}（${e.durationSec}s）${e.cueId ? ` / 🎬 ${cueName(e.cueId)}` : ''}`;
-        }
-        logEl.appendChild(d);
-      });
-    }
-
-    return {
-      get active() { return active; },
-      start, stop,
-      current: () => cur,
-      // onState 時に再計算（編集結果を検証へ反映）
-      refresh() { if (active) { recompute(); renderPanel(); } },
-      destroy() { cancelTransient(); if (view) view.destroy(); valMedia.dispose(); document.removeEventListener('keydown', onKey); },
-    };
-  }
-
   // ---- 外部 API --------------------------------------------------------------
   function onState(state) {
     // 版で分岐（データが v3 ならリボン編集）。v3 は片道なので一度入ったら戻らない。
@@ -974,7 +758,6 @@ export function createTimeline(container, deps) {
     order = deps.getCourseOrder ? deps.getCourseOrder() : (state?.layout?.course?.order || null);
     if (!dirty) { adopt(state); recomputeLapCount(); resetUndo(); }
     if (sel && sel.camera >= cameras.length) { sel = null; closeCueEditor(); }
-    validation.refresh();
     render();
     // cue エディタ展開中はインスペクタを作り直さない（開いている編集器を潰さない）。
     if (sel && !editorOpen) renderInspector();
@@ -986,7 +769,9 @@ export function createTimeline(container, deps) {
   resetUndo();
   return {
     onState,
+    // 実測滞在時間（/dwell/stats）が更新されたら v3 リボンへ流す（v2 グリッドには表示面が無い）。
+    onDwell(stats) { if (ribbon && ribbon.onDwell) ribbon.onDwell(stats); },
     isDirty: () => (v3Mode && ribbon ? ribbon.isDirty() : dirty),
-    destroy() { validation.destroy(); if (cueEditor) cueEditor.destroy(); if (ribbon) ribbon.destroy(); },
+    destroy() { if (cueEditor) cueEditor.destroy(); if (ribbon) ribbon.destroy(); },
   };
 }

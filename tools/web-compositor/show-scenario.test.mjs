@@ -151,6 +151,39 @@ test('resolveStepDuration: 秒指定 / 素材なし untilClipEnd / trim 推定 /
     { durSec: -1, kind: 'unknown' }, 'trim が無ければ尺は分からない（watchdog 任せ）');
 });
 
+test('resolveStepDuration: 素材の実尺が測れたら推定ではなく実測を使う（trim を適用）', () => {
+  const dur = (url) => (url === 'v.mp4' ? 12 : null);
+  const step = newStep({ durKind: TAKE.DUR_UNTIL_CLIP_END, cueId: 'c' });
+  assert.deepStrictEqual(resolveStepDuration(step, { sourceUrl: 'v.mp4' }, dur),
+    { durSec: 12, kind: 'measured' }, 'trim 無し = 素材の全長');
+  assert.deepStrictEqual(resolveStepDuration(step, { sourceUrl: 'v.mp4', trimStart: 2 }, dur),
+    { durSec: 10, kind: 'measured' });
+  assert.deepStrictEqual(resolveStepDuration(step, { sourceUrl: 'v.mp4', trimStart: 1, trimEnd: 5 }, dur),
+    { durSec: 4, kind: 'measured' }, 'trimEnd は素材長より早ければそこで終わる');
+  assert.deepStrictEqual(resolveStepDuration(step, { sourceUrl: 'v.mp4', trimEnd: 99 }, dur),
+    { durSec: 12, kind: 'measured' }, 'trimEnd が素材より長ければ素材の終わりで畳む');
+  // カット自身の素材（clip）はそちらが優先。測れなければ従来どおり推定 / 不明。
+  const clip = newStep({ source: TAKE.SRC_CLIP, assetUrl: 'other.mp4', durKind: TAKE.DUR_UNTIL_CLIP_END });
+  assert.deepStrictEqual(resolveStepDuration(clip, null, dur), { durSec: -1, kind: 'unknown' });
+  assert.deepStrictEqual(resolveStepDuration(step, { sourceUrl: 'v.mp4', trimStart: 1, trimEnd: 6 }, () => null),
+    { durSec: 5, kind: 'estimated' }, '測れない時は今までどおり trim 推定');
+});
+
+test('buildScenarioConfig: 実測が渡れば「推定」警告は出さない', () => {
+  const withDur = buildScenarioConfig(sampleState(), { getDuration: () => 9 }).meta;
+  assert.ok(!withDur.warnings.some((w) => w.includes('推定')), '実測できたものを推定と呼ばない');
+  assert.ok(withDur.takes.some((t) => t.steps.some((s) => s.durKind === 'measured')));
+});
+
+test('buildScenarioConfig: meta に画面プレビュー用の素材・post 解決材料が載る', () => {
+  const meta = buildScenarioConfig(sampleState()).meta;
+  const step = meta.takes.flatMap((t) => t.steps).find((s) => s.cueId);
+  assert.ok(step.playUrl, '実際に再生する素材 URL（カット自身 > 重ねる素材）');
+  assert.equal(typeof meta.segmentPosts, 'object');
+  assert.ok('globalPost' in meta);
+  assert.ok(meta.cameras.every((c) => 'post' in c));
+});
+
 test('stepCamera: camera<0 の live はカメラを動かさない', () => {
   assert.equal(stepCamera(newStep({ source: TAKE.SRC_LIVE, camera: 1 })), 1);
   assert.equal(stepCamera(newStep({ source: TAKE.SRC_LIVE, camera: -1 })), -1);

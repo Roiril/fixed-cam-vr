@@ -13,9 +13,22 @@ status: S1–S4 実装済み（2026-07-25）。Web ミラーは golden 一致（
 実装で決めた補足（§1・§2 の運用細部）:
 - **JS は時刻計算だけ `Math.fround`** で C# の float 精度に合わせる（そうしないと `t_B_late` の終了が 1 tick ずれる）。
   照合の契約は従来どおり ±1 tick だが、許容の中に drift を隠さないため実装は厳密一致を狙う
-- **ゾーン展開は `layout.grid` 専用**（cuts のみの show.json では実行しない）。Unity も grid 優先で、卓の保存は常に grid を書く
-- **`untilClipEnd` の尺**は卓では実尺が分からない → cue の trim から推定 / 推定不能なら watchdog まで。どちらも UI に ⚠ で出す
-- 旧「▶ 検証（矢印キー）」は**まだ残してある**（§5 の「S4 完成時に置き換える」は未実施）
+- **ゾーン展開は `layout.grid` 専用**（cuts のみの show.json では実行しない）。Unity も grid 優先で、卓の保存は常に grid を書く。
+  cuts しか無い show.json はフロアマップの「cuts から自動生成」→ 💾 保存で grid 化してから使う（UI にその案内を出す）
+- **`untilClipEnd` の尺**は 2026-07-25 に**素材の実尺をブラウザで実測**するようにした
+  （[media-duration.js](../../tools/web-compositor/media-duration.js)。`<video preload=metadata>` で測ってキャッシュ →
+  `resolveStepDuration` が trim を適用）。測れないもの（`sa://` 焼き込み URL・静止画）だけ従来の trim 推定 / watchdog に落ち、
+  そのときだけ ⚠ を出す
+- **旧「▶ 検証（矢印キー）」は削除した**（§5 の「S4 完成時に置き換える」を実施。timeline.js から 214 行を撤去し、
+  v2 / v3 とも ▶ 検証 = このシミュレータへ移動する導線に統一）
+
+### S4 の追加実装（2026-07-25 後半）
+
+- **画面プレビューを実画にした**: `composite-view.js`（カメラ列・cue エディタと同じ WebGL 合成器）を
+  provider で駆動し、**ライブ映像 + カット素材 + マスク + post（カット > 区間 > カメラ > 全体）** を Quest と同じ式で描く。
+  カットが変わった瞬間に素材を `trimStart` へ頭出しし、早送り時は `playbackRate` も合わせる。
+  カメラ未接続でも素材・マスク・post は出る（ライブだけ黒）。**色チップとテキストは内訳表示として残した**
+- `buildScenarioConfig(state, { getDuration })` で尺の実測値を注入。実測できたカットは警告に出さない
 
 ## ユーザーの指摘（出発点・そのまま正しい）
 

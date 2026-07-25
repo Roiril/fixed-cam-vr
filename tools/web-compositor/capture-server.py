@@ -13,6 +13,8 @@
 #   GET  /unity/status           : 直近 heartbeat + 経過秒（UI 表示用）
 #   GET  /scenarios/list         : 🕹 記録済みシナリオ一覧（本体は /scenarios/<name>.json で静的配信）
 #   POST /scenarios/save         : {name, scenario} を scenarios/<name>.json へ保存（show.json は不変）
+#   GET  /dwell/stats            : 区間 (lap,camera) の実測滞在時間の集計（heartbeat の dwell[] 由来）
+#   POST /dwell/reset            : 実測滞在の集計をクリア（会場が変わった / リハをやり直す時）
 #   POST /export-build           : 現 show.json + 参照アセットを Assets/StreamingAssets/show/
 #                                  へ焼き込み（URL を sa://assets/<file> に書換）。結果を JSON で返す
 # - GET /cam?host=&port=&path=&auth=user:pass : MJPEG プロキシ（Basic 認証肩代わり。
@@ -193,6 +195,94 @@ def _mutate_show(fn):
         os.replace(tmp, SHOW_FILE)  # 書き込み途中で落ちても show.json は壊れない
         _show_cond.notify_all()
         return _show['rev']
+
+# 実測滞在時間（区間 (lap, camera) に体験者が居た秒数）の集計。
+#   Unity が heartbeat の dwell[] で「確定した滞在」を送ってくる（SegmentDwellLog）。
+#   ここで平均・最短・最長・回数へ畳み、GET /dwell/stats で卓 UI（リボン）へ返す。
+#   リボンは「進入 +20s の演出が実測平均 8s の区間に置かれている」を作者に見せるために使う。
+#   show.json とは混ぜない（設定ではなく観測データ。rev を上げると Quest へ無駄な再適用が飛ぶ）。
+DWELL_FILE = os.path.join(ROOT, 'dwell_stats.json')
+_dwell_lock = threading.Lock()
+
+
+def _load_dwell():
+    try:
+        with open(DWELL_FILE, 'r', encoding='utf-8') as f:
+            d = json.load(f)
+        if isinstance(d, dict) and isinstance(d.get('items'), dict):
+            return d
+    except Exception:
+        pass
+    return {'items': {}, 'updatedAt': 0}
+
+
+_dwell_stats = _load_dwell()
+
+
+def _save_dwell():
+    tmp = DWELL_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(_dwell_stats, f, ensure_ascii=False, indent=2)
+        f.write('\n')
+    os.replace(tmp, DWELL_FILE)
+
+
+def _merge_dwell(samples):
+    """heartbeat の dwell[]（{lap,camera,sec}）を集計へ畳む。壊れた要素は黙って捨てる。"""
+    if not isinstance(samples, list) or not samples:
+        return 0
+    added = 0
+    with _dwell_lock:
+        items = _dwell_stats.setdefault('items', {})
+        for s in samples:
+            if not isinstance(s, dict):
+                continue
+            try:
+                lap = int(s.get('lap', -1))
+                cam = int(s.get('camera', -1))
+                sec = float(s.get('sec', 0))
+            except (TypeError, ValueError):
+                continue
+            # 上限は watchdog より十分大きい値。異常値（時計飛び）で平均を壊さない。
+            if lap < 1 or cam < 0 or not (0.05 <= sec <= 600):
+                continue
+            key = f'{lap}:{cam}'
+            e = items.get(key)
+            if not e:
+                e = {'n': 0, 'sumSec': 0.0, 'minSec': sec, 'maxSec': sec, 'lastSec': sec}
+                items[key] = e
+            e['n'] = int(e.get('n', 0)) + 1
+            e['sumSec'] = float(e.get('sumSec', 0.0)) + sec
+            e['minSec'] = min(float(e.get('minSec', sec)), sec)
+            e['maxSec'] = max(float(e.get('maxSec', sec)), sec)
+            e['lastSec'] = sec
+            added += 1
+        if added:
+            _dwell_stats['updatedAt'] = time.time()
+            try:
+                _save_dwell()
+            except OSError:
+                pass  # 保存失敗でメモリ上の集計は捨てない
+    return added
+
+
+def _dwell_payload():
+    """UI 用に平均を付けて返す（items は key='lap:camera'）。"""
+    with _dwell_lock:
+        out = {}
+        for k, e in _dwell_stats.get('items', {}).items():
+            n = int(e.get('n', 0))
+            if n <= 0:
+                continue
+            out[k] = {
+                'n': n,
+                'meanSec': round(float(e.get('sumSec', 0.0)) / n, 2),
+                'minSec': round(float(e.get('minSec', 0.0)), 2),
+                'maxSec': round(float(e.get('maxSec', 0.0)), 2),
+                'lastSec': round(float(e.get('lastSec', 0.0)), 2),
+            }
+        return {'items': out, 'updatedAt': _dwell_stats.get('updatedAt', 0)}
+
 
 # 動画生成プロンプトのストア（PC 内 prompts.json）。LAN のどの端末からも共有。
 PROMPTS_FILE = os.path.join(ROOT, 'prompts.json')
@@ -557,6 +647,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._proxy_cam(parse_qs(urlparse(self.path).query))
         if path == '/scenarios/list':
             return self._json({'items': self._list_scenarios()})
+        if path == '/dwell/stats':
+            return self._json(_dwell_payload())
         if path == '/discovery':
             return self._get_discovery()
         if path == '/diag':
@@ -772,8 +864,19 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == '/unity/heartbeat':
             body = self._read_json_body()
             body['at'] = time.time()
+            # 実測滞在（dwell[]）は集計側へ渡し、status には残さない（毎回のスナップに混ぜない）。
+            merged = _merge_dwell(body.pop('dwell', None))
             _unity_status.clear()
             _unity_status.update(body)
+            return self._json({'ok': True, 'dwellMerged': merged})
+        if parsed.path == '/dwell/reset':
+            with _dwell_lock:
+                _dwell_stats['items'] = {}
+                _dwell_stats['updatedAt'] = time.time()
+                try:
+                    _save_dwell()
+                except OSError:
+                    pass
             return self._json({'ok': True})
         if parsed.path == '/scenarios/save':
             return self._save_scenario()

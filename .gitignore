@@ -193,6 +193,9 @@ tools/web-compositor/show.json.bak
 tools/web-compositor/show.json.tmp
 tools/web-compositor/masks/
 tools/web-compositor/audio/
+# 実測滞在時間の集計（会場・体験者ごとの観測データ。設定ではないのでコミットしない）
+tools/web-compositor/dwell_stats.json
+tools/web-compositor/dwell_stats.json.tmp
 
 # ビルド成果物（BuildVariants が出力）
 Builds/

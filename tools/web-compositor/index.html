@@ -47,7 +47,7 @@
 
     <section class="timeline-sec" data-group="author">
       <div class="mc-title">周回タイムライン（事前オーサリングの主面）
-        <span class="hint">動画編集風の横長タイムライン。layout.course.order 順に「1周目: A|B|C → 2周目: …」を横に連結。区間をクリックして、その周・そのカメラの cue 割当・画像加工（post）上書き・インサートショットを編集する。💾 保存で show.json timeline に入り、📦 エクスポートで APK に焼き込む。▶ 検証で矢印キーによる周回シミュレーション。ライブ手動操作が優先。</span>
+        <span class="hint">動画編集風の横長タイムライン。layout.course.order 順に「1周目: A|B|C → 2周目: …」を横に連結。区間（＝その周・そのカメラに体験者が居る時間）をクリックして、<b>演出</b>とその<b>カット</b>（映すもの・尺・遷移）、画像加工（post）の上書き、BGM を編集する。演出はドラッグで「進入 +t 秒」「離脱時」へ動かせる。区間には実機で測った<b>平均滞在時間</b>が出るので、開始位置が歩速に対して遅すぎないかを確認する。💾 保存で show.json timeline に入り、📦 エクスポートで APK に焼き込む。▶ 検証は 🕹 ショーシミュレーションへ。ライブ手動操作が優先。<br>※ 旧 v2（cue 割当・インサートショット）の show.json は従来のグリッド編集のままで、「⇪ v3 に変換」で演出・カットへ移行できる（片道）。</span>
       </div>
       <div id="timeline"></div>
     </section>
@@ -143,14 +143,14 @@
 
     <section class="floormap" data-group="author">
       <div class="mc-title">フロアマップ（ゾーン校正）
-        <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。パレットの色（＝担当カメラ）を選び、タイルをクリック / ドラッグで塗る → 💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。シミュレーションはドットをドラッグして切替を事前確認。</span>
+        <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。パレットの色（＝担当カメラ）を選び、タイルをクリック / ドラッグで塗る → 💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。シミュレーションのチェックを入れるとドット（○）が出て、ドラッグした歩きが下の 🕹 ショーシミュレーションへ流れる。</span>
       </div>
       <div id="floorMap"></div>
     </section>
 
     <section class="showsim" data-group="author">
       <div class="mc-title">🕹 ショーシミュレーション（実機なし検証）
-        <span class="hint">フロアマップの「シミュレーション」を ON にしてドットをドラッグすると、体験者が歩いたものとしてショーが実時間で進む。ゾーン確定（最小滞在）・周回・区間・演出の発火（enter/exit・取り逃し・once・同時1本・watchdog）・画面のクールダウンまで、<b>Unity と同じ判定ロジック</b>で動く（golden トレースで機械照合済み）。歩きを記録してシナリオに保存すれば、同じ歩き方をワンクリックで再実行できる。<b>体感・遅延・VR 提示・位置合わせは検証できない</b>ので実機確認は別途必要。</span>
+        <span class="hint">フロアマップの「シミュレーション」を ON にしてドットをドラッグすると、体験者が歩いたものとしてショーが実時間で進む。ゾーン確定（最小滞在）・周回・区間・演出の発火（enter/exit・取り逃し・once・同時1本・watchdog）・画面のクールダウンまで、<b>Unity と同じ判定ロジック</b>で動く（golden トレースで機械照合済み）。「いま画面に映っているもの」は卓の合成器（Quest と同じ式）で実画表示する（ライブはカメラ接続時のみ。素材・マスク・画像加工は未接続でも出る）。歩きを記録してシナリオに保存すれば、同じ歩き方をワンクリックで再実行できる。<b>体感・遅延・VR 提示・位置合わせは検証できない</b>ので実機確認は別途必要。</span>
       </div>
       <div id="showSim"></div>
     </section>

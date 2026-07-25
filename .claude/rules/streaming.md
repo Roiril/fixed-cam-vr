@@ -219,6 +219,16 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
     したがって**演出中に体験者が歩いても周回は止まらない**（設計 [2026-07-25_shot-timeline-foundation.md](../plans/2026-07-25_shot-timeline-foundation.md) 不変条件 4）。
     スタッフ手動 A・Web cameraOverride・インサートの画面切替は `ZoneCommitted` を発火しないので、構造的に周回へ入らない
 - **ラン（体験者 1 人分）**: `control.runEpoch`（int・既定 0）の**変化**で LapCounter リセット（lap=1・再シード）+ CueScheduler の once 発火済みクリア。Web ライブ運用パネルの「▶ ラン開始」= **runEpoch++ ＋ `cameraOverride=null` ＋ `activeCue=null` を 1 回の postState で同時に書く**（2026-07-25〜。旧実装は runEpoch だけで、前の体験者のカメラ固定・再生中 cue が次のランへ持ち越された。override / activeCue は端末キャッシュには載らないが show.json には永続するため、卓を立てて Quest を繋いだ瞬間に再適用される＝「歩いても切り替わらない」事故になっていた）。armed なラッチは Web 卓ヘッダ直下の警告バーが show.json 由来で常時可視化する（Unity 未接続でも出る）。PC 不在時は **右グリップ 2 秒長押し** = ローカルランリセット（2026-07-20〜。旧: Staff 左スティック押し込み）。heartbeat に `lap` / `cam` / `mode`（NORMAL/REG）を載せる（Web でラン状態が見える）
+
+- **実測滞在時間**（2026-07-25〜）: 区間 (lap, camera) に体験者が実際に居た秒数を
+  [`SegmentDwellLog`](../../Assets/Scripts/Streaming/SegmentDwellLog.cs)（純ロジック）が測り、heartbeat の
+  `dwell[]`（`{lap,camera,sec}`）で卓へ送る。駆動は **`CueScheduler.CameraEntered`（＝ショーの時計 `ZoneCommitted` 由来）**
+  だけなので、手動 A・Web 固定・インサートの**画面切替では動かない**。スタッフ介入中（`activeCue` / `cameraOverride` 非空）と
+  ラン開始では計時中の区間を捨てる。送信失敗分は次の heartbeat へ戻す（上限 64・古い方から破棄）。
+  卓は `capture-server.py` が `dwell_stats.json` へ集計し `GET /dwell/stats`（`POST /dwell/reset` でクリア）で返す。
+  Web リボンはこれを区間フッタ（`実測 平均 8s（最短 6.5s / 2 回）`）と「開始位置が滞在を超える演出」の ⏱ 警告に使う
+  — 計画 [2026-07-25_shot-timeline-foundation.md](../plans/2026-07-25_shot-timeline-foundation.md) §4 が
+  「作者が『山場が出ない』危険に気づく唯一の手段」と位置づけたもの
 - **発火** = [`CueScheduler`](../../Assets/Scripts/Streaming/CueScheduler.cs): (lap, camera) 一致 + delaySec 後に `ScreenOverlayController.PlayCue` を**ローカル直接**呼ぶ（サーバ不要）。**`control.activeCue` が非空の間は抑止**（ライブ手動操作が常に優先）。once=true はラン内 1 回
 - **APK 焼き込み**: Web 卓「📦 ビルド用エクスポート」（`POST /export-build`）が show.json + 参照アセットを `Assets/StreamingAssets/show/` へコピーし、URL を `sa://assets/<file>` に書換。Unity 側は [`ShowAssetResolver`](../../Assets/Scripts/Streaming/ShowAssetResolver.cs) が `sa://` → `StreamingAssets/show/assets/` に解決（Android は jar: URL、動画は VideoPlayer 直接パス）。起動時に `StreamingAssets/show/show.json` を読み、優先順位は **焼き込み < 端末キャッシュ < ライブ**（従来の後勝ちを維持）
 - **⚠ `Assets/StreamingAssets/show/` はコミット禁止**（gitignore 済み）。エクスポート時点のカメラ host（現場 DHCP IP）が verbatim に焼き込まれるため。ビルド直前に現場でエクスポートし直すのが正
@@ -291,8 +301,10 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   `cues[]` → `inherit` カット / `insert` → `live` カット へ決定的に変換する（端末キャッシュ・焼き込みが v2 のため）。
   **1 点だけ挙動が変わる**: 旧実装は delay 待ちの cue / insert が**別の区間で遅れて誤爆**していたが、
   v3 では離脱の瞬間に決着する（設計 §8.1）
-- **⚠ Quest 実機未検証**（2026-07-25。EditMode 632/632・fixture 契約テストは通過）。
-  Web 卓の v3 書き出し（段 A のリボン UI）は未実装なので、**現時点で実機に流れる show.json はすべて v2 = 従来経路**
+- **⚠ Quest 実機未検証**（2026-07-25。EditMode 667/667・fixture 契約テスト・卓のブラウザ実操作は通過）。
+  **Web 卓の v3 書き出しは実装済み**（リボン UI の「⇪ v3 に変換」→ 💾 保存で `timeline.schema=3` になる。片道）。
+  **変換して保存するまでは show.json が v2 のままなので実機は従来経路で動く**（＝ v3 が不安なら v2 の
+  show.json に戻すだけで全部元通り、という退避路は生きている）
 
 ### BGM（区間で切替・停止・ループ範囲）— 2026-07-25
 

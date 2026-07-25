@@ -13,10 +13,17 @@
 //   UI 文言は「演出 / カット / 映すもの / 素材」。cue / インサートショット / anchor は出さない。
 //
 //   書き出しは serializeTimelineV3 のみ（v2 キー cues / insert / hasInsert は書かない）。
-//   ▶ 検証（矢印キーのシミュレーション）は v3 セマンティクスへ未移植のため無効化してある。
+//   ▶ 検証は 🕹 ショーシミュレーション（show-sim.js）へ委譲する（歩きで実時間検証する方が強く、
+//   検証面を 2 つ持たないため。矢印キーの簡易シミュレーションは 2026-07-25 に廃止した）。
+//
+//   区間ブロックには **実測の平均滞在時間**（capture-server が heartbeat から集計）を出す。
+//   「進入 +20s」の演出が実測平均 8s の区間に置かれている、という設計上いちばん危ない状態を
+//   作者に見せる唯一の手段（計画 §4 / §8 論点 5）。
 
 import { FX, FX_DEFAULT, camColor, escapeHtml, isVideoUrl } from './common.js';
 import { createCueEditor } from './cue-editor.js';
+import { durationOf, onDurationResolved } from './media-duration.js';
+import { resolveStepDuration } from './show-scenario.js';
 import {
   TAKE, newTake, newStep, takeId, newSeg, defaultBgm,
   serializeTimelineV3, normalizeTimelineV3, resolveBgmLane,
@@ -53,12 +60,14 @@ export function createRibbon(container, deps) {
         <span class="rb-dirty"></span>
         <span class="rb-schema">v3（演出・カット）</span>
         <span class="spacer"></span>
-        <button class="rb-validate" disabled title="v3 セマンティクス（演出・カット）へ未移植です。v2 の挙動で動かすと嘘になるため無効化しています">▶ 検証（v3 では未対応）</button>
+        <button class="rb-validate" title="🕹 ショーシミュレーションへ移動して、歩き（フロアマップのドット）でショーを実時間検証する">▶ 検証</button>
+        <button class="rb-dwell-reset" title="区間に出ている「実測 平均滞在」の集計を消す（会場が変わった / リハをやり直す時）">⟲ 実測クリア</button>
         <button class="rb-lap-add" title="周回を 1 つ増やす">＋ 周回</button>
         <button class="rb-lap-del" title="最後の周回を削除">－ 周回</button>
       </div>
       <div class="rb-hint">区間（斜線）＝ 体験者が決める時間。演出（🎬）＝ こちらが決める時間で、幅は尺に比例する。
-        演出はドラッグで動かせる（区間の中 = 進入から t 秒 ／ 区間の右境界に吸着 = 離脱時）。クリックで中身を編集。</div>
+        演出はドラッグで動かせる（区間の中 = 進入から t 秒 ／ 区間の右境界に吸着 = 離脱時）。クリックで中身を編集。
+        演出ヘッダを選んで <b>← →</b> で開始位置、<b>Home</b> で進入直後、<b>End</b> で離脱時。</div>
       <div class="rb-note"></div>
       <div class="rb-track-wrap"><div class="rb-track"></div></div>
       <div class="rb-legend">
@@ -175,17 +184,15 @@ export function createRibbon(container, deps) {
     }
   }
 
-  // ---- 尺の見積り -------------------------------------------------------------
-  //   「素材の終わりまで」は実尺が分からないので、素材（cue）の trim から推定し ≈ を付ける。
-  //   推定できないものは Unity のフォールバック（4s）に合わせる。
+  // ---- 尺の解決 ---------------------------------------------------------------
+  //   シミュレータと同じ関数（show-scenario.resolveStepDuration）を通す。「素材の終わりまで」は
+  //   素材の実尺をブラウザで測って使い（kind='measured'）、測れない時だけ trim 推定 ≈ に落ちる。
   function stepSeconds(s) {
-    if (s.durKind === TAKE.DUR_UNTIL_CLIP_END) {
-      const cue = s.cueId ? cueById(s.cueId) : null;
-      if (cue && cue.trimEnd > 0) return { sec: Math.max(0.2, cue.trimEnd - (cue.trimStart || 0)), approx: true };
-      if (s.durSec > 0) return { sec: s.durSec, approx: true };
-      return { sec: TAKE.FALLBACK_STEP_DUR_SEC, approx: true };
-    }
-    return { sec: s.durSec > 0 ? s.durSec : TAKE.FALLBACK_STEP_DUR_SEC, approx: false };
+    const cue = s.cueId ? cueById(s.cueId) : null;
+    const d = resolveStepDuration(s, cue, durationOf);
+    const approx = d.kind === 'estimated' || d.kind === 'unknown';
+    const sec = d.durSec > 0 ? d.durSec : TAKE.FALLBACK_STEP_DUR_SEC;
+    return { sec: Math.max(0.2, sec), approx, kind: d.kind };
   }
   function takeSeconds(t) {
     let sec = 0, approx = false;
@@ -218,6 +225,39 @@ export function createRibbon(container, deps) {
     if (bad.length) return bad[0];
     const total = takeSeconds(t);
     if (total.sec > maxDurOf(t)) return `尺の合計 ${fmtSec(total.sec)}s が最大長 ${maxDurOf(t)}s を超えています（超過分は強制終了されます）`;
+    return null;
+  }
+
+  // ---- 実測滞在時間（capture-server が heartbeat の dwell[] を集計）--------------
+  //   「この区間に体験者が実際に何秒居たか」。オーサリングした開始位置が現実的かを判定する材料。
+  function dwellStats() { return (deps.getDwellStats && deps.getDwellStats()) || { items: {} }; }
+  function dwellFor(lap, camera) {
+    const items = dwellStats().items || {};
+    const e = items[`${lap}:${camera}`];
+    return e && e.n > 0 ? e : null;
+  }
+  function dwellLabel(lap, camera) {
+    const e = dwellFor(lap, camera);
+    if (!e) return { text: '滞在は体験者しだい', on: false };
+    const n = e.n === 1 ? '1 回' : `${e.n} 回`;
+    return { text: `実測 平均 ${fmtSec(e.meanSec)}s（最短 ${fmtSec(e.minSec)}s / ${n}）`, on: true };
+  }
+
+  /**
+   * 「その演出が体験者の歩速で出ないかもしれない」危険（計画 §8 論点 5）。
+   * 実測が無ければ何も言わない（推測で警告しない）。
+   */
+  function takeTimingRisk(t, lap, camera) {
+    if (!t || t.at === TAKE.AT_EXIT) return null;         // 離脱時は必ず出る
+    const e = dwellFor(lap, camera);
+    if (!e) return null;
+    const off = Math.max(0, t.offsetSec || 0);
+    if (off <= 0) return null;
+    const missed = t.ifMissed === TAKE.MISSED_SKIP
+      ? '取り逃したら出ません（設定: 出さない）'
+      : '取り逃したら離脱の瞬間に出ます（設定: 離脱時に出す）';
+    if (off >= e.meanSec) return `⏱ 開始 +${fmtSec(off)}s は実測の平均滞在 ${fmtSec(e.meanSec)}s を超えています。${missed}`;
+    if (off >= e.minSec) return `⏱ 開始 +${fmtSec(off)}s は最短滞在 ${fmtSec(e.minSec)}s を超える周があります。${missed}`;
     return null;
   }
 
@@ -292,7 +332,14 @@ export function createRibbon(container, deps) {
         <button class="rb-seg-add" title="この区間に演出を足す">＋ 演出</button>
       </div>
       <div class="rb-seg-lane"></div>
-      <div class="rb-seg-foot"><span class="rb-seg-dur">滞在は体験者しだい</span><span class="rb-seg-bgm"></span></div>`;
+      <div class="rb-seg-foot"><span class="rb-seg-dur"></span><span class="rb-seg-bgm"></span></div>`;
+
+    // 実測の平均滞在（Unity heartbeat 由来）。無ければ従来どおり「滞在は体験者しだい」。
+    const dl = dwellLabel(lap, ci);
+    const durEl = el.querySelector('.rb-seg-dur');
+    durEl.textContent = dl.text;
+    durEl.className = 'rb-seg-dur' + (dl.on ? ' meas' : '');
+    if (dl.on) durEl.title = '実機で歩いた時の実測（体験ごとに更新）。演出の開始位置がこの時間に収まるかを見る';
 
     // 進入の演出はブロックの中に、進入からの秒数に比例した位置で置く（重なる時は段を分ける）。
     const lane = el.querySelector('.rb-seg-lane');
@@ -333,7 +380,9 @@ export function createRibbon(container, deps) {
     const el = document.createElement('div');
     const on = sel && sel.kind === 'take' && sel.lap === lap && sel.camera === ci && sel.id === t.id;
     const issue = takeIssue(t);
-    el.className = 'rb-take' + (t.at === TAKE.AT_EXIT ? ' exit' : '') + (on ? ' sel' : '') + (issue ? ' bad' : '');
+    const risk = takeTimingRisk(t, lap, ci);
+    el.className = 'rb-take' + (t.at === TAKE.AT_EXIT ? ' exit' : '') + (on ? ' sel' : '')
+      + (issue ? ' bad' : '') + (risk ? ' risk' : '');
     el.dataset.lap = String(lap); el.dataset.cam = String(ci); el.dataset.id = t.id;
     el.style.width = `${takeWidth(t)}px`;
     if (pos) { el.style.position = 'absolute'; el.style.left = `${pos.left}px`; el.style.top = `${pos.top}px`; }
@@ -350,21 +399,56 @@ export function createRibbon(container, deps) {
     }).join('') || '<div class="rb-step rb-step-empty">カットなし</div>';
 
     el.innerHTML = `
-      <div class="rb-take-head" title="ドラッグで開始位置を変える（区間の中 = 進入から t 秒 / 右境界に吸着 = 離脱時）">
+      <div class="rb-take-head" tabindex="0" role="button"
+           title="ドラッグ（マウス / 指）で開始位置を変える（区間の中 = 進入から t 秒 / 右境界に吸着 = 離脱時）。
+選んで ← → で 0.5s ずつ（Shift で 2s）、Home = 進入直後、End = 離脱時。">
         <span class="rb-take-name">🎬 ${escapeHtml(t.name || '演出')}</span>
-        <span class="rb-take-start">${escapeHtml(startLabel(t))}</span>
+        <span class="rb-take-start">${risk ? '⏱ ' : ''}${escapeHtml(startLabel(t))}</span>
         <span class="rb-take-dur">${total.approx ? '≈' : ''}${fmtSec(total.sec)}s</span>
       </div>
       <div class="rb-steps">${steps}</div>`;
     if (issue) el.title = `⚠ ${issue}`;
+    else if (risk) el.title = risk;
 
     el.onclick = (e) => {
       e.stopPropagation();
       if (suppressClick) return;
       sel = { kind: 'take', lap, camera: ci, id: t.id }; closeCueEditor(); render(); renderInspector();
     };
-    el.querySelector('.rb-take-head').addEventListener('pointerdown', (e) => beginDrag(e, t, lap, ci, el));
+    const head = el.querySelector('.rb-take-head');
+    head.addEventListener('pointerdown', (e) => beginDrag(e, t, lap, ci, el));
+    // キーボード操作（タッチ端末・マウスが使えない場面の代替。数値入力はインスペクタにもある）。
+    head.addEventListener('keydown', (e) => onTakeKey(e, t, lap, ci));
+    if (on && refocusTakeHead) { refocusTakeHead = false; setTimeout(() => head.focus(), 0); }
     return el;
+  }
+
+  // 演出ヘッダのキー操作。スナップは 2 種だけという規約（§4）を保ったまま、
+  // 「区間内の t 秒」を矢印で動かし、End で「離脱時」へ、Home で進入直後へ落とす。
+  let refocusTakeHead = false;
+  function onTakeKey(e, t, lap, ci) {
+    const step = e.shiftKey ? 2 : 0.5;
+    let handled = true;
+    if (e.key === 'ArrowRight') {
+      t.at = TAKE.AT_ENTER;
+      t.offsetSec = Math.round((Math.max(0, t.offsetSec || 0) + step) * 2) / 2;
+    } else if (e.key === 'ArrowLeft') {
+      if (t.at === TAKE.AT_EXIT) { t.at = TAKE.AT_ENTER; t.offsetSec = 0; }
+      else t.offsetSec = Math.max(0, Math.round((Math.max(0, t.offsetSec || 0) - step) * 2) / 2);
+    } else if (e.key === 'Home') {
+      t.at = TAKE.AT_ENTER; t.offsetSec = 0;
+    } else if (e.key === 'End') {
+      t.at = TAKE.AT_EXIT; t.offsetSec = 0;
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      sel = { kind: 'take', lap, camera: ci, id: t.id };
+      closeCueEditor(); render(); renderInspector();
+      return;
+    } else handled = false;
+    if (!handled) return;
+    e.preventDefault();
+    sel = { kind: 'take', lap, camera: ci, id: t.id };
+    refocusTakeHead = true;          // 再描画で要素が作り直されるのでフォーカスを戻す
+    markDirty(); render(); renderInspector();
   }
 
   function stepColor(s) {
@@ -383,10 +467,19 @@ export function createRibbon(container, deps) {
     if (s.source === TAKE.SRC_INHERIT) return 'そのまま';
     return `${SRC_LABEL[s.source] || s.source} ${baseName(s.assetUrl) || '（未選択）'}`;
   }
+  const DUR_KIND_LABEL = {
+    exact: '尺 秒指定',
+    measured: '尺 素材の実尺（実測）',
+    estimated: '尺 推定（素材の trim から。実機は素材の実尺で終わる）',
+    unknown: '尺 不明（実機は素材の終わりまで。卓では最大長まで走る）',
+    fallback: '尺 素材なし → 既定 4s（実機も同じ）',
+  };
   function stepTitle(s) {
     const bad = stepIssue(s);
     const tr = s.transition === TAKE.TRANS_CUT ? 'カット' : s.transition === TAKE.TRANS_FADE ? 'フェード' : '暗転';
-    return `${stepLabel(s)}${s.cueId ? ` + 素材 ${cueName(s.cueId)}` : ''} / 遷移 ${tr}${bad ? ` / ⚠ ${bad}` : ''}`;
+    const d = stepSeconds(s);
+    return `${stepLabel(s)}${s.cueId ? ` + 素材 ${cueName(s.cueId)}` : ''} / 遷移 ${tr}`
+      + ` / ${DUR_KIND_LABEL[d.kind] || ''}${bad ? ` / ⚠ ${bad}` : ''}`;
   }
 
   // ==========================================================================
@@ -396,9 +489,19 @@ export function createRibbon(container, deps) {
   let suppressClick = false;
   function beginDrag(e, t, lap, ci, el) {
     if (e.button !== 0) return;
+    // タッチ / ペンは暗黙のポインタキャプチャが掛かる。掴んだままだと下の区間を
+    // elementFromPoint で拾えない（＝ドロップ先が決まらない）ので明示的に外し、
+    // ページのスクロール・ズームジェスチャも止める（CSS の touch-action: none と対）。
+    if (e.pointerType && e.pointerType !== 'mouse') {
+      const tgt = e.currentTarget || e.target;
+      try { if (tgt.hasPointerCapture && tgt.hasPointerCapture(e.pointerId)) tgt.releasePointerCapture(e.pointerId); }
+      catch { /* 未対応ブラウザは既定挙動のまま */ }
+      e.preventDefault();
+    }
     drag = { t, lap, ci, el, x0: e.clientX, y0: e.clientY, moved: false, drop: null };
     window.addEventListener('pointermove', onDragMove);
     window.addEventListener('pointerup', onDragEnd);
+    window.addEventListener('pointercancel', onDragEnd);   // タッチが割り込みで消えた時
   }
   function onDragMove(e) {
     if (!drag) return;
@@ -438,6 +541,7 @@ export function createRibbon(container, deps) {
   function onDragEnd() {
     window.removeEventListener('pointermove', onDragMove);
     window.removeEventListener('pointerup', onDragEnd);
+    window.removeEventListener('pointercancel', onDragEnd);
     const d = drag; drag = null;
     dropHint.style.display = 'none';
     container.querySelectorAll('.rb-seg.drop, .rb-seg.drop-exit').forEach((s) => s.classList.remove('drop', 'drop-exit'));
@@ -491,8 +595,13 @@ export function createRibbon(container, deps) {
   // ==========================================================================
   //  インスペクタ
   // ==========================================================================
+  let lastInspKey = '';
   function renderInspector() {
     editorOpen = false;
+    // 選択が変わったら BGM 試聴を止める（同じ区間を描き直すだけなら鳴らし続ける）。
+    const key = sel ? `${sel.kind}:${sel.lap}:${sel.camera}:${sel.id || ''}` : '';
+    if (key !== lastInspKey) stopBgmPreview();
+    lastInspKey = key;
     if (!sel) { inspectorEl.innerHTML = ''; return; }
     if (sel.kind === 'take') { const t = selTake(); if (t) return renderTakeInspector(t); sel = { kind: 'seg', lap: sel.lap, camera: sel.camera }; }
     return renderSegInspector();
@@ -570,7 +679,9 @@ export function createRibbon(container, deps) {
   }
 
   // BGM は v3 でも区間の属性として残る（serializeTimelineV3 が書き出す）。
-  //   v2 グリッドにしか編集面が無いと変換後に触れなくなるので、要点だけをここに置く。
+  //   v2 グリッドにしか編集面が無いと変換後に触れなくなるので、試聴まで含めてここに持つ。
+  let bgmPreview = null;   // <audio>（試聴。区間を離れる / インスペクタを閉じたら止める）
+  function stopBgmPreview() { if (bgmPreview) { bgmPreview.pause(); bgmPreview = null; } }
   function renderSegBgm() {
     const onChk = inspectorEl.querySelector('.rb-bgm-on');
     const body = inspectorEl.querySelector('.rb-bgm-body');
@@ -600,12 +711,21 @@ export function createRibbon(container, deps) {
         <label>IN<input class="rb-bgm-fin" type="number" min="0" step="0.1" value="${b.fadeInSec}">s</label>
         <label>OUT<input class="rb-bgm-fout" type="number" min="0" step="0.1" value="${b.fadeOutSec}">s</label>
       </div>
-      <div class="rb-grid" style="display:${playing ? '' : 'none'}">
-        <label>開始<input class="rb-bgm-start" type="number" min="0" step="0.1" value="${b.startSec}">s</label>
-        <label>ループ in<input class="rb-bgm-ls" type="number" min="-1" step="0.1" value="${b.loopStartSec}">s</label>
-        <label>ループ out<input class="rb-bgm-le" type="number" min="-1" step="0.1" value="${b.loopEndSec}">s</label>
-        <label class="chk"><input class="rb-bgm-loop-on" type="checkbox" ${b.loop !== false ? 'checked' : ''}>ループする</label>
-        <label class="chk"><input class="rb-bgm-restart" type="checkbox" ${b.restart ? 'checked' : ''}>同じ曲でも頭出し</label>
+      <div class="rb-bgm-loop" style="display:${playing ? '' : 'none'}">
+        <div class="rb-grid">
+          <label>開始<input class="rb-bgm-start" type="number" min="0" step="0.1" value="${b.startSec}">s</label>
+          <label>ループ in<input class="rb-bgm-ls" type="number" min="-1" step="0.1" value="${b.loopStartSec}">s</label>
+          <label>ループ out<input class="rb-bgm-le" type="number" min="-1" step="0.1" value="${b.loopEndSec}">s</label>
+          <label class="chk"><input class="rb-bgm-loop-on" type="checkbox" ${b.loop !== false ? 'checked' : ''}>ループする</label>
+          <label class="chk"><input class="rb-bgm-restart" type="checkbox" ${b.restart ? 'checked' : ''}>同じ曲でも頭出し</label>
+        </div>
+        <div class="rb-bgm-audition">
+          <button class="rb-bgm-play" title="この区間の設定で試聴（ブラウザ内・実機には影響しません）">🔊 試聴</button>
+          <button class="rb-bgm-stop">■</button>
+          <span class="rb-bgm-time">0.0s</span>
+          <button class="rb-bgm-mark-in" title="再生中の位置をループ in にする">ここを in</button>
+          <button class="rb-bgm-mark-out" title="再生中の位置をループ out にする">ここを out</button>
+        </div>
       </div>`;
 
     const q2 = (s) => body.querySelector(s);
@@ -627,6 +747,41 @@ export function createRibbon(container, deps) {
     };
     body.querySelectorAll('input, select').forEach((el) => { el.onchange = commit; });
     q2('.rb-bgm-action').onchange = () => { commit(); renderSegBgm(); };
+    q2('.rb-bgm-track').onchange = () => { commit(); renderSegBgm(); };
+
+    // 試聴（ブラウザ内のみ。show.json も実機も触らない）。ループ範囲を耳で決めて
+    // 「ここを in / out」でその位置を書き込む（v2 グリッドから移植）。
+    const timeEl = q2('.rb-bgm-time');
+    if (timeEl) {
+      q2('.rb-bgm-play').onclick = () => {
+        const t = tracks.find((x) => x.id === q2('.rb-bgm-track').value);
+        if (!t || !t.url) { timeEl.textContent = '音源なし'; return; }
+        stopBgmPreview();
+        bgmPreview = new Audio(t.url);
+        bgmPreview.currentTime = Math.max(0, numOr(q2('.rb-bgm-start').value, 0));
+        const volRaw = numOr(q2('.rb-bgm-vol').value, -1);
+        bgmPreview.volume = Math.min(1, Math.max(0, volRaw < 0 ? (t.volume ?? 1) : volRaw));
+        bgmPreview.ontimeupdate = () => {
+          if (!bgmPreview) return;
+          timeEl.textContent = `${bgmPreview.currentTime.toFixed(1)}s`;
+          const leRaw = numOr(q2('.rb-bgm-le').value, -1);
+          const le = leRaw >= 0 ? leRaw : (t.loopEndSec > 0 ? t.loopEndSec : 0);
+          const lsRaw = numOr(q2('.rb-bgm-ls').value, -1);
+          const ls = lsRaw >= 0 ? lsRaw : (t.loopStartSec || 0);
+          if (le > 0 && bgmPreview.currentTime >= le) bgmPreview.currentTime = ls;
+        };
+        bgmPreview.play().catch(() => { timeEl.textContent = '再生不可'; });
+      };
+      q2('.rb-bgm-stop').onclick = () => { stopBgmPreview(); timeEl.textContent = '0.0s'; };
+      q2('.rb-bgm-mark-in').onclick = () => {
+        if (!bgmPreview) return;
+        q2('.rb-bgm-ls').value = bgmPreview.currentTime.toFixed(1); commit();
+      };
+      q2('.rb-bgm-mark-out').onclick = () => {
+        if (!bgmPreview) return;
+        q2('.rb-bgm-le').value = bgmPreview.currentTime.toFixed(1); commit();
+      };
+    }
 
     onChk.onchange = () => {
       if (onChk.checked) {
@@ -636,6 +791,7 @@ export function createRibbon(container, deps) {
         if (s.bgm.action === 'continue') s.bgm.action = 'play';
         body.style.display = '';
       } else {
+        stopBgmPreview();
         const s2 = segAt(sel.lap, sel.camera);
         if (s2) { s2.hasBgm = false; pruneSeg(s2); }
         body.style.display = 'none';
@@ -648,6 +804,8 @@ export function createRibbon(container, deps) {
   function renderTakeInspector(t) {
     const total = takeSeconds(t);
     const issue = takeIssue(t);
+    const risk = takeTimingRisk(t, sel.lap, sel.camera);
+    const dw = dwellFor(sel.lap, sel.camera);
     const enter = t.at !== TAKE.AT_EXIT;
     inspectorEl.innerHTML = `
       <div class="rb-insp-head">演出 — ${escapeHtml(camLabel(sel.camera))} / ${sel.lap}周目
@@ -657,6 +815,8 @@ export function createRibbon(container, deps) {
         <button class="rb-insp-close">閉じる</button>
       </div>
       <div class="rb-insp-warn" style="display:${issue ? '' : 'none'}">⚠ ${escapeHtml(issue || '')}</div>
+      <div class="rb-insp-risk" style="display:${risk ? '' : 'none'}">${escapeHtml(risk || '')}</div>
+      <div class="rb-insp-meas" style="display:${dw ? '' : 'none'}">この区間の実測滞在: 平均 ${dw ? fmtSec(dw.meanSec) : '—'}s ／ 最短 ${dw ? fmtSec(dw.minSec) : '—'}s ／ 最長 ${dw ? fmtSec(dw.maxSec) : '—'}s（${dw ? dw.n : 0} 回）</div>
       <div class="rb-insp-sec">
         <div class="rb-grid">
           <label>名前<input class="rb-t-name" type="text" value="${escapeHtml(t.name || '')}" placeholder="演出名（表示だけ）"></label>
@@ -699,6 +859,11 @@ export function createRibbon(container, deps) {
       t.once = !!i('.rb-t-once').checked;
       t.maxDurationSec = Math.max(0, numOr(i('.rb-t-max').value, 0));
       markDirty(); render();
+      // 開始位置を動かしたら「実測滞在に対して遅すぎないか」の警告をその場で更新する
+      //（インスペクタごと作り直すと入力中のフォーカスが飛ぶので該当行だけ差し替え）。
+      const rk = takeTimingRisk(t, sel.lap, sel.camera);
+      const rEl = i('.rb-insp-risk');
+      if (rEl) { rEl.textContent = rk || ''; rEl.style.display = rk ? '' : 'none'; }
     };
     inspectorEl.querySelectorAll('.rb-t-name, .rb-t-off, .rb-t-policy, .rb-t-once, .rb-t-max, .rb-t-missed')
       .forEach((el) => { el.onchange = commit; });
@@ -755,6 +920,8 @@ export function createRibbon(container, deps) {
         <label>映すもの<select class="rb-s-src">${srcOpts}</select></label>
         <label class="rb-s-cam-l" style="display:${isLive ? '' : 'none'}">カメラ<select class="rb-s-cam">${camOpts}</select></label>
         <label class="rb-s-asset-l" style="display:${isAsset ? '' : 'none'}">素材<select class="rb-s-asset">${assetOpts}</select></label>
+        <button class="rb-s-asset-refresh" style="display:${isAsset ? '' : 'none'}" title="いま撮った素材を読み直す（recordings/ captures/ を再走査）">↻</button>
+        <button class="rb-s-asset-dir" style="display:${isAsset ? '' : 'none'}" title="撮影フォルダ（recordings/）を開く。ここに録画・合成した素材を置く">📂</button>
         <label class="rb-s-asseturl-l" style="display:${isAsset ? '' : 'none'}">URL<input class="rb-s-asseturl" type="text" value="${escapeHtml(s.assetUrl || '')}" placeholder="/captures/… または sa://assets/…"></label>
         <label>重ねる素材<select class="rb-s-cue">${cueOpts}</select></label>
         <button class="rb-s-cue-edit" title="重ねる素材（マスク・映像・フェード）を編集">✎</button>
@@ -816,6 +983,12 @@ export function createRibbon(container, deps) {
     // 素材 select → URL 欄へ流し込む（sa:// 等の手入力も残せるように 2 段構え）
     r('.rb-s-asset').onchange = () => { r('.rb-s-asseturl').value = r('.rb-s-asset').value; commit(true); };
     r('.rb-s-asseturl').onchange = () => commit(true);
+    // 撮る → 合成する → ここで選ぶ、の導線。撮った直後に一覧へ出ないと素材が使えない。
+    r('.rb-s-asset-refresh').onclick = async () => {
+      if (deps.refreshCaptures) await deps.refreshCaptures();
+      renderStepRows(t);
+    };
+    r('.rb-s-asset-dir').onclick = () => { if (deps.openCaptureDir) deps.openCaptureDir(); };
 
     r('.rb-s-up').onclick = () => { if (idx > 0) { const a = t.steps; [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]; markDirty(); render(); renderStepRows(t); } };
     r('.rb-s-down').onclick = () => { const a = t.steps; if (idx < a.length - 1) { [a[idx + 1], a[idx]] = [a[idx], a[idx + 1]]; markDirty(); render(); renderStepRows(t); } };
@@ -913,6 +1086,15 @@ export function createRibbon(container, deps) {
     markDirty(); render(); renderInspector();
   };
   q('.rb-undo').onclick = undo;
+  // ▶ 検証 = 🕹 ショーシミュレーション（歩きで実時間検証）。卓の検証面はこれ 1 つ。
+  q('.rb-validate').onclick = () => { if (deps.openSimulator) deps.openSimulator(); };
+  q('.rb-dwell-reset').onclick = async () => {
+    if (!deps.resetDwell) return;
+    if (!confirm('区間に出ている「実測 平均滞在」の集計を消します。よろしいですか？')) return;
+    await deps.resetDwell();
+    render();
+    if (sel && !editorOpen) renderInspector();
+  };
   q('.rb-save').onclick = async () => {
     timeline.rev = (parseInt(timeline.rev, 10) || 0) + 1;
     const res = await deps.saveTimeline(serializeTimelineV3(timeline));
@@ -972,17 +1154,34 @@ export function createRibbon(container, deps) {
     renderDirty(); renderUndo(); render(); renderInspector();
   }
 
+  // 素材の実尺が判明したら幅と「≈」表示を描き直す（測定は非同期）。
+  //   インスペクタのカット行も同じ尺を出しているので一緒に更新するが、
+  //   入力中（フォーカスがインスペクタ内）のときは触らない（打鍵中に作り直さない）。
+  const unsubDuration = onDurationResolved(() => {
+    render();
+    const t = selTake();
+    if (!t || editorOpen) return;
+    const a = document.activeElement;
+    if (a && inspectorEl.contains(a)) return;
+    renderStepRows(t);
+  });
+
   render();
   renderDirty();
   resetUndo();
   return {
     onState,
     adoptConverted,
+    /** 実測滞在時間が更新された（app.js の /dwell/stats ポーリング由来）。区間表示だけ描き直す。 */
+    onDwell() { render(); },
     isDirty: () => dirty,
     destroy() {
       document.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('pointermove', onDragMove);
       window.removeEventListener('pointerup', onDragEnd);
+      window.removeEventListener('pointercancel', onDragEnd);
+      if (unsubDuration) unsubDuration();
+      stopBgmPreview();
       if (cueEditor) cueEditor.destroy();
     },
   };

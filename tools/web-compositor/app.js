@@ -31,6 +31,9 @@ let floorMap = null;
 let timeline = null;
 let showSim = null;   // 🕹 ショーシミュレーション（フロアマップのドットで駆動）
 let lastDiscovery = { devices: [], conflicts: [] };
+// 区間 (lap,camera) の実測滞在時間（capture-server が heartbeat の dwell[] を集計したもの）。
+// リボン UI が「進入 +20s の演出が平均 8s の区間に置かれている」を見せるために読む。
+let dwellStats = { items: {}, updatedAt: 0 };
 // 卓サーバ（capture-server.py）の生死。落ちても画面は最後の絵で生き続けるので明示的に見張る。
 let serverAlive = false;
 let lastServerOkAt = 0;
@@ -506,6 +509,20 @@ async function pollState() {
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
   }
 }
+// 実測滞在時間の集計を引き直す（更新があった時だけタイムラインへ通知して描き直す）。
+//   サーバ未再起動（このエンドポイントが無い版）なら 404 → 静かに何もしない。
+async function pollDwell() {
+  try {
+    const r = await fetch('/dwell/stats');
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j || typeof j !== 'object' || !j.items) return;
+    if (j.updatedAt === dwellStats.updatedAt) return;
+    dwellStats = { items: j.items, updatedAt: j.updatedAt || 0 };
+    timeline && timeline.onDwell && timeline.onDwell(dwellStats);
+  } catch { /* サーバ断は pollUnity 側が検出する */ }
+}
+
 async function pollUnity() {
   for (;;) {
     // このポーリング（2s）が卓サーバ生存の一次判定。/state は long-poll で最大 25s
@@ -514,6 +531,7 @@ async function pollUnity() {
       const s = await (await fetch('/unity/status')).json();
       serverAlive = true; lastServerOkAt = Date.now();
       unityAlive = !!s.alive; lastUnity = s.status || {};
+      await pollDwell();
     } catch { serverAlive = false; unityAlive = false; lastUnity = {}; }
     renderStatus();
     renderRunPanel();
@@ -570,6 +588,17 @@ document.querySelectorAll('.mode-btn').forEach((b) => {
     renderPreflight();
   };
 });
+
+// ▶ 検証 = 🕹 ショーシミュレーションへ（矢印キーの簡易シミュレーションは廃止・二重に持たない）。
+//   オーサリングモードへ戻し、フロアマップのドットを有効化して、シミュレータまでスクロールする。
+function focusSimulator() {
+  const authorBtn = document.querySelector('.mode-btn[data-mode="author"]');
+  if (authorBtn && appEl && appEl.dataset.mode !== 'author') authorBtn.click();
+  if (floorMap && floorMap.enableSim) floorMap.enableSim();
+  const sec = document.querySelector('.showsim');
+  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return true;
+}
 
 // ---- ライブ中の画質ロック（誤操作で体験者の見え方を変えない）------------------
 function applyFxLock() {
@@ -950,6 +979,8 @@ if ($('#showSim')) {
     getState: () => state,
     // シナリオ再実行中はシミュレータが歩きを再現するのでドットを動かす。
     setDot: (x, z) => floorMap && floorMap.setSimPos(x, z),
+    // 画面プレビュー用のライブ映像（カメラ列の <img>）。未接続なら null = 黒背景に素材だけ出る。
+    getLiveImg: (camId) => { const c = columns.get(camId); return c ? c.liveImg : null; },
   });
   if (state) showSim.onState(state);
 }
@@ -966,6 +997,17 @@ if ($('#timeline')) {
     getLiveImg: (camId) => { const c = columns.get(camId); return c ? c.liveImg : null; },
     getCaptures: () => captures.items,
     refreshCaptures: () => refreshCaptures(),
+    // 実測滞在時間（区間ごと）。無ければ空 = リボンは「滞在は体験者しだい」表示のまま。
+    getDwellStats: () => dwellStats,
+    resetDwell: async () => {
+      try { await fetch('/dwell/reset', { method: 'POST' }); } catch { return false; }
+      dwellStats = { items: {}, updatedAt: 0 };
+      return true;
+    },
+    // ▶ 検証は 🕹 ショーシミュレーションへ一本化した（矢印キーの簡易シミュレーションは廃止）。
+    openSimulator: () => focusSimulator(),
+    // 素材づくりの導線: 撮る（recordings/）→ 合成 → カットの素材に選ぶ。
+    openCaptureDir: () => fetch('/open-dir?dir=recordings').catch(() => {}),
     // cue を state.cues へ upsert（メモリ state も即反映して UI をスナップに保つ）。
     saveCue: async (cue) => {
       const r = await saveCueObject(cue);

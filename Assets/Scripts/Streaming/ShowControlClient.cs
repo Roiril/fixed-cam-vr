@@ -597,6 +597,10 @@ namespace FixedCamVr.Streaming
 
         private void OnEnable()
         {
+            // 実測滞在時間の計時はサーバの有無と無関係に回す（卓が後から立ち上がっても
+            // 直近の滞在を送れるように送信待ちへ溜めておく。上限 64 で古い方から捨てる）。
+            SubscribeDwell();
+
             // server 未設定でも component は生かす（端末キャッシュ適用・カメラ別 post の
             // ゾーン切替連動は server なしで成立する）。long-poll / heartbeat だけスキップ。
             if (server == null)
@@ -611,10 +615,39 @@ namespace FixedCamVr.Streaming
 
         private void OnDisable()
         {
+            UnsubscribeDwell();
             _loopCts?.Cancel();
             _loopCts?.Dispose();
             _loopCts = null;
         }
+
+        // ---- 実測滞在時間（区間 (lap, camera) にどれだけ居たか）----
+        //   卓のリボン UI が「進入 +20s の演出が実測平均 8s の区間に置かれている」を検出するための一次データ。
+        //   駆動はショーの時計（CueScheduler.CameraEntered = ZoneCommitted 由来）だけ＝画面の切替では動かない。
+
+        private readonly SegmentDwellLog _dwell = new SegmentDwellLog();
+        private bool _dwellSubscribed;
+
+        private void SubscribeDwell()
+        {
+            if (_dwellSubscribed) return;
+            // 既存シーンで cueScheduler が未配線でも成立させる（ResolveXxx と同流儀）。
+            if (cueScheduler == null) cueScheduler = FindObjectOfType<CueScheduler>();
+            if (cueScheduler == null) return;
+            cueScheduler.CameraEntered += OnSegmentEnteredForDwell;
+            _dwellSubscribed = true;
+        }
+
+        private void UnsubscribeDwell()
+        {
+            if (!_dwellSubscribed || cueScheduler == null) { _dwellSubscribed = false; return; }
+            cueScheduler.CameraEntered -= OnSegmentEnteredForDwell;
+            _dwellSubscribed = false;
+        }
+
+        // CueScheduler の引数順は (camera, lap)。区間キーは (lap, camera) なので入れ替えて渡す。
+        private void OnSegmentEnteredForDwell(int camera, int lap)
+            => _dwell.Enter(lap, camera, Time.realtimeSinceStartup);
 
         /// <summary>
         /// long-poll / heartbeat ループを掴み直す（server の接続先が発見で張り替わった時に呼ぶ）。
@@ -686,6 +719,7 @@ namespace FixedCamVr.Streaming
         private void TriggerRunReset()
         {
             Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue / タイムライン / BGM をリセット");
+            _dwell.Reset();   // 計時中の部分区間は「体験者 1 人分の滞在」として成立しないので捨てる
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
             ResolveBgmDirector()?.ResetRun();
@@ -881,8 +915,11 @@ namespace FixedCamVr.Streaming
             string cueId = state.control?.activeCue ?? "";
             cueScheduler?.SetLiveCueActive(!string.IsNullOrEmpty(cueId));
             // インサートも同条件で抑止する（activeCue 非空 or cameraOverride 非空中は発火しない）。
-            timelineDirector?.SetSuppressed(
-                !string.IsNullOrEmpty(cueId) || !string.IsNullOrEmpty(_appliedOverride));
+            bool liveSuppressed = !string.IsNullOrEmpty(cueId) || !string.IsNullOrEmpty(_appliedOverride);
+            timelineDirector?.SetSuppressed(liveSuppressed);
+            // スタッフが介入している間の区間は「体験者の滞在」として測らない
+            //（カメラ固定中はゾーン追跡自体が止まるので、そのまま測ると滞在が水増しされる）。
+            if (liveSuppressed) _dwell.Reset();
             if (cueId != _appliedCue)
             {
                 if (_overlay == null) return;
@@ -1308,6 +1345,26 @@ namespace FixedCamVr.Streaming
             public float headCourseX;
             public float headCourseZ;
             public string currentZone = "";
+            // 前回の heartbeat 以降に確定した区間滞在（実測）。卓が集計して
+            // リボン UI の「実測 平均 Ns」に使う。空配列で送ってよい（サーバ側は無視）。
+            public DwellHb[] dwell = Array.Empty<DwellHb>();
+        }
+
+        /// <summary>heartbeat 用の滞在サンプル（JsonUtility は入れ子クラスの配列も往復できる）。</summary>
+        [Serializable] private class DwellHb
+        {
+            public int lap;
+            public int camera;
+            public float sec;
+        }
+
+        private static DwellHb[] ToHb(SegmentDwellLog.Sample[] samples)
+        {
+            if (samples.Length == 0) return Array.Empty<DwellHb>();
+            var arr = new DwellHb[samples.Length];
+            for (int i = 0; i < samples.Length; i++)
+                arr[i] = new DwellHb { lap = samples[i].lap, camera = samples[i].camera, sec = samples[i].sec };
+            return arr;
         }
 
         private async Task HeartbeatLoopAsync(CancellationToken ct)
@@ -1315,8 +1372,12 @@ namespace FixedCamVr.Streaming
             var hb = new Heartbeat();
             while (!ct.IsCancellationRequested)
             {
+                // 取り出した分は送信が成功しなければ戻す（卓の再起動・一時断で実測を落とさない）。
+                SegmentDwellLog.Sample[] taken = Array.Empty<SegmentDwellLog.Sample>();
                 try
                 {
+                    taken = _dwell.TakePending();
+                    hb.dwell = ToHb(taken);
                     var active = registry != null ? registry.GetActive() : null;
                     hb.activeCamera = active?.DisplayName ?? "";
                     hb.activeIndex = registry != null ? registry.ActiveIndex : -1;
@@ -1345,9 +1406,10 @@ namespace FixedCamVr.Streaming
                         ct.ThrowIfCancellationRequested();
                         await Task.Yield();
                     }
+                    if (req.result != UnityWebRequest.Result.Success) _dwell.PutBack(taken);
                 }
-                catch (OperationCanceledException) { return; }
-                catch { /* heartbeat はベストエフォート */ }
+                catch (OperationCanceledException) { _dwell.PutBack(taken); return; }
+                catch { _dwell.PutBack(taken); /* heartbeat はベストエフォート */ }
 
                 try { await Task.Delay((int)(heartbeatInterval * 1000), ct); }
                 catch (OperationCanceledException) { return; }

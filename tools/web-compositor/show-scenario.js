@@ -23,26 +23,41 @@ function normalizeSource(source) {
 /** -1 = 素材定義から継承（TakeSchema.Inherit）。 */
 const inherit = (stepValue, cueValue) => (stepValue < 0 ? cueValue : stepValue);
 
+/** カットが実際に読む素材 URL（カット自身の素材 > 重ねる素材）。無ければ空文字。 */
+export function stepAssetUrl(step, cue) {
+  const source = normalizeSource(step.source);
+  if ((source === TAKE.SRC_CLIP || source === TAKE.SRC_STILL) && step.assetUrl) return step.assetUrl;
+  return (cue && cue.sourceUrl) || '';
+}
+
 /**
  * カット 1 つの尺を解く。返り値 { durSec, kind }。
  *   kind='exact'     … 秒指定（実機と同じ）
  *   kind='fallback'  … untilClipEnd だが素材が無い → Unity と同じ 4s で畳む
- *   kind='estimated' … untilClipEnd + cue の trim から推定（実機は素材の実尺で終わる）
+ *   kind='measured'  … untilClipEnd + 素材の実尺を実測（trim を適用。実機と同じ終わり方）
+ *   kind='estimated' … untilClipEnd + cue の trim から推定（実尺が測れない時の次善）
  *   kind='unknown'   … untilClipEnd で尺が分からない → -1（watchdog 任せ。実機とズレうる）
+ *
+ * getDuration(url) は「実測できていれば秒、まだ/測れないなら null」を返す関数（任意）。
+ * ブラウザ（media-duration.js）だけが供給できるので、node テストでは未指定 = 従来どおり推定。
  */
-export function resolveStepDuration(step, cue) {
+export function resolveStepDuration(step, cue, getDuration) {
   if (step.durKind !== TAKE.DUR_UNTIL_CLIP_END) {
     return { durSec: step.durSec > 0 ? step.durSec : FALLBACK_STEP_DUR_SEC, kind: 'exact' };
   }
-  const source = normalizeSource(step.source);
-  const hasAsset = (source === TAKE.SRC_CLIP || source === TAKE.SRC_STILL) && !!step.assetUrl;
-  const cueHasSource = !!(cue && cue.sourceUrl);
-  if (!hasAsset && !cueHasSource) {
+  const url = stepAssetUrl(step, cue);
+  if (!url) {
     // 素材が無いのに untilClipEnd → Unity も既定尺で畳む（TakeRunner.BeginStep）。
     return { durSec: FALLBACK_STEP_DUR_SEC, kind: 'fallback' };
   }
-  const trimStart = inherit(num(step.trimStartSec, -1), num(cue && cue.trimStart, 0));
+  const trimStart = Math.max(0, inherit(num(step.trimStartSec, -1), num(cue && cue.trimStart, 0)));
   const trimEnd = inherit(num(step.trimEndSec, -1), num(cue && cue.trimEnd, 0));
+  const measured = typeof getDuration === 'function' ? getDuration(url) : null;
+  if (Number.isFinite(measured) && measured > 0) {
+    // 実機は「trimEnd（あれば）か素材の終わり」の早い方で畳む。
+    const end = trimEnd > trimStart ? Math.min(trimEnd, measured) : measured;
+    return { durSec: Math.max(0.2, end - trimStart), kind: 'measured' };
+  }
   if (trimEnd > trimStart) return { durSec: trimEnd - trimStart, kind: 'estimated' };
   return { durSec: -1, kind: 'unknown' };
 }
@@ -57,7 +72,8 @@ export function stepCamera(step) {
  *   cfg  … scenario-engine.runScenario / createShowRunner に渡す設定
  *   meta … UI 表示用（演出の見出し・カット内容・ゾーン矩形・警告）
  */
-export function buildScenarioConfig(state) {
+export function buildScenarioConfig(state, opts = {}) {
+  const getDuration = typeof opts.getDuration === 'function' ? opts.getDuration : null;
   const s = state || {};
   const cams = s.cameras || [];
   const cues = s.cues || [];
@@ -85,17 +101,26 @@ export function buildScenarioConfig(state) {
       steps.forEach((st) => {
         const cue = st.cueId ? cues.find((c) => c.id === st.cueId) : null;
         if (st.cueId && !cue) warnings.push(`cue 未解決: ${st.cueId}（${t.id || `L${seg.lap}C${seg.camera}#${ti}`}）`);
-        const d = resolveStepDuration(st, cue);
+        const d = resolveStepDuration(st, cue, getDuration);
         durs.push(d.durSec);
         metaSteps.push({
           source: normalizeSource(st.source),
           camera: stepCamera(st),
           cueId: st.cueId || '',
           assetUrl: st.assetUrl || '',
+          // 実際に画面へ出る素材（カット自身 > 重ねる素材）。卓のプレビューが読む。
+          playUrl: stepAssetUrl(st, cue),
+          maskUrl: (cue && cue.maskUrl) || '',
+          // -1 = 素材定義から継承（TakeSchema.Inherit と同じ解決を先にやっておく）。
+          strength: inherit(num(st.strength, -1), num(cue && cue.strength, 1)),
+          fadeInSec: inherit(num(st.fadeInSec, -1), num(cue && cue.fadeIn, 0.5)),
+          trimStartSec: Math.max(0, inherit(num(st.trimStartSec, -1), num(cue && cue.trimStart, 0))),
+          trimEndSec: inherit(num(st.trimEndSec, -1), num(cue && cue.trimEnd, 0)),
           durSec: d.durSec,
           durKind: d.kind,
           transition: st.transition || TAKE.TRANS_DIP,
           hasPost: !!st.hasPost,
+          post: st.hasPost && st.post ? { ...st.post } : null,
         });
       });
 
@@ -152,10 +177,18 @@ export function buildScenarioConfig(state) {
     tickMs: DEFAULT_TICK_MS,
   };
 
+  // 画像加工（post）の解決材料。実機の優先順位は カット > 区間 > カメラ > global。
+  const segmentPosts = {};
+  tl.segments.forEach((seg) => {
+    if (seg.hasPost && seg.post) segmentPosts[`${seg.lap}:${seg.camera}`] = { ...seg.post };
+  });
+
   return {
     cfg,
     meta: {
-      cameras: cams.map((c, i) => ({ index: i, id: c.id || `#${i}` })),
+      cameras: cams.map((c, i) => ({ index: i, id: c.id || `#${i}`, post: c.post || null })),
+      segmentPosts,
+      globalPost: s.post || null,
       courseOrder: order,
       zoneRects: zoneInfo.rects,
       zoneSource: zoneInfo.source,

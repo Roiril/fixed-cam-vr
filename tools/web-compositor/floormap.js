@@ -749,11 +749,20 @@ export function createFloorMap(container, deps) {
     updateSimOut(); render();
   }
 
+  // タイムラインの「▶ 検証」から呼ばれる外部入口。シミュレーションを ON にしてドットを出す
+  // （卓の導線を 1 本にするため。既に ON なら何もしない = 位置を勝手に戻さない）。
+  function enableSim() {
+    if (simChk.checked) { emitSim(); return; }
+    simChk.checked = true;
+    if (!sim) sim = { x: 0, z: -0.7 };
+    updateSimOut(); render(); emitSim();
+  }
+
   adoptLayout(DEFAULT_LAYOUT);
   renderPalette();
   renderCourse();
   renderRegList();
   renderDirty();
   render();
-  return { onState, onUnity, isDirty: () => dirty, setSimPos };
+  return { onState, onUnity, isDirty: () => dirty, setSimPos, enableSim };
 }

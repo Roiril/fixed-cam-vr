@@ -9,7 +9,9 @@
 //   MJPEG の遅延・位置合わせ・Quest の性能は卓では分からない（パネル下部に常時明示）。
 //   卓で通っても実機確認は要る。
 
-import { camColor, escapeHtml } from './common.js';
+import { camColor, escapeHtml, createMediaCache, FX_DEFAULT } from './common.js';
+import { createCompositeView } from './composite-view.js';
+import { durationOf, onDurationResolved } from './media-duration.js';
 import { createShowRunner, parseScenario, sampleAt, DEFAULT_TICK_MS } from './scenario-engine.js';
 import { buildScenarioConfig, serializeScenario } from './show-scenario.js';
 
@@ -37,8 +39,13 @@ export function createShowSim(container, deps) {
           <b>ドット（○）の上で</b>マウスを押したままドラッグ。ドットから外れた場所を押すとタイル塗りになります。</div>
 
         <div class="ss-screen">
-          <div class="ss-screen-chip"><i></i><b class="ss-screen-cam">—</b></div>
-          <div class="ss-screen-detail">停止中</div>
+          <div class="ss-screen-view"><canvas class="ss-canvas" width="480" height="360"></canvas></div>
+          <div class="ss-screen-side">
+            <div class="ss-screen-chip"><i></i><b class="ss-screen-cam">—</b></div>
+            <div class="ss-screen-detail">停止中</div>
+            <div class="ss-screen-note">映しているのは卓の合成器（Quest と同じ式）。ライブ映像はカメラが
+              繋がっている時だけ出る。素材（事前映像・静止画）とマスク・画像加工は繋がっていなくても出る。</div>
+          </div>
         </div>
 
         <div class="ss-readout">
@@ -120,7 +127,8 @@ export function createShowSim(container, deps) {
   function rebuild(force) {
     if (!state) return;
     if (playing && !force) { staleConfig = true; renderStatus(); return; }
-    const built = buildScenarioConfig(state);
+    // 「素材の終わりまで」の尺は素材の実尺で解く（media-duration が測れた分だけ）。
+    const built = buildScenarioConfig(state, { getDuration: durationOf });
     cfg = built.cfg;
     meta = built.meta;
     runner = createShowRunner(cfg);
@@ -180,6 +188,79 @@ export function createShowSim(container, deps) {
     }
     return { cam: runner.shownCamera, detail: enabled ? 'ライブ映像' : 'ライブ映像（停止中）' };
   }
+
+  // ==========================================================================
+  //  画面プレビュー（実画）— カメラ列・cue エディタと同じ合成器を provider で駆動する。
+  //    実機の ScreenComposite と同じ式（live に素材をマスク合成 → post）。
+  //    映せないもの: カメラが繋がっていなければライブは黒（素材と post は出る）。
+  // ==========================================================================
+  const media = createMediaCache();
+  let lastShotKey = '';
+
+  /** いま演出が持っているカット（無ければ null = ライブそのまま）。 */
+  function currentShot() {
+    if (!runner || !meta || !runner.takeActive) return null;
+    const t = meta.takes[runner.activeTakeIndex];
+    const st = t && t.steps[runner.activeStepIndex];
+    if (!t || !st) return null;
+    return { take: t, step: st, key: `${t.id}#${runner.activeStepIndex}` };
+  }
+
+  /** 画像加工の解決（実機と同じ カット > 区間 > カメラ > 全体）。 */
+  function resolvePost(shot, camIdx) {
+    if (shot && shot.step.hasPost && shot.step.post) return shot.step.post;
+    const seg = runner && runner.segment;
+    const segPost = seg && meta ? meta.segmentPosts[`${seg.lap}:${seg.camera}`] : null;
+    if (segPost) return segPost;
+    const cam = (meta && camIdx >= 0) ? meta.cameras[camIdx] : null;
+    if (cam && cam.post) return cam.post;
+    return (meta && meta.globalPost) || FX_DEFAULT;
+  }
+
+  // カットが変わった瞬間に頭出し（trimStart）して再生。早送り中は再生速度も合わせる。
+  function syncVideo(el, shot) {
+    if (shot.key !== lastShotKey) {
+      lastShotKey = shot.key;
+      try { el.currentTime = Math.max(0, shot.step.trimStartSec || 0); } catch { /* metadata 前 */ }
+    }
+    el.playbackRate = Math.max(0.0625, Math.min(16, speed));
+    if (el.paused) { try { el.play().catch(() => {}); } catch { /* noop */ } }
+  }
+
+  function sampleScreen() {
+    const camIdx = runner ? runner.shownCamera : -1;
+    const camObj = (meta && camIdx >= 0) ? meta.cameras[camIdx] : null;
+    const liveImg = (camObj && deps.getLiveImg) ? deps.getLiveImg(camObj.id) : null;
+    const shot = currentShot();
+    if (!shot) lastShotKey = '';
+
+    let overlayEl = null, overlayReady = false, overlayW = 0, overlayH = 0, maskEl = null;
+    let strength = 1, fadeSec = 0.3;
+    const url = shot && shot.step.playUrl;
+    if (url) {
+      const rec = media.get(url);
+      if (rec && rec.el) {
+        overlayEl = rec.el;
+        overlayReady = rec.ready;
+        overlayW = rec.isVideo ? (rec.el.videoWidth || 0) : (rec.el.naturalWidth || 0);
+        overlayH = rec.isVideo ? (rec.el.videoHeight || 0) : (rec.el.naturalHeight || 0);
+        if (rec.isVideo && rec.ready) syncVideo(rec.el, shot);
+      }
+      // マスク無し = 全面差し替え（composite-view の既定と同じ）。
+      maskEl = shot.step.maskUrl ? media.getImage(shot.step.maskUrl) : null;
+      strength = shot.step.strength >= 0 ? shot.step.strength : 1;
+      fadeSec = shot.step.fadeInSec >= 0 ? shot.step.fadeInSec : 0.3;
+    }
+    return {
+      liveImg, overlayEl, overlayReady, overlayW, overlayH, maskEl,
+      overlayOn: !!overlayEl, fadeSec, strength, feather: 0,
+      post: resolvePost(shot, camIdx),
+      // 尺の管理は runner（Unity と同じ判定）が持つ。合成器には終端を判定させない。
+      trimEnd: 0, onVideoEnd: null,
+    };
+  }
+
+  createCompositeView(q('.ss-canvas'), { sample: sampleScreen });
 
   function renderScreen() {
     const d = describeScreen();
@@ -485,6 +566,9 @@ export function createShowSim(container, deps) {
     if (Number.isFinite(e.x) && Number.isFinite(e.z) && !replay) pos = { x: e.x, z: e.z };
     renderAll();
   }
+
+  // 素材の実尺が測れたら尺を解き直す（実行中なら「設定が変わった」扱い＝⏹ で反映）。
+  onDurationResolved(() => rebuild(false));
 
   renderSpeeds();
   renderRecInfo();
