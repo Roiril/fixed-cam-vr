@@ -42,8 +42,16 @@
 
     <nav class="mode-nav" aria-label="運用モード切替">
       <button class="mode-btn active" data-mode="author" title="タイムライン・cue 作成・フロアマップ・エクスポート">🎬 事前オーサリング</button>
+      <button class="mode-btn" data-mode="atelier" title="カメラ別のプロンプトと生成結果。入力フレーム→指示→生成物→採否を1レコードに束ねる">🧪 素材</button>
       <button class="mode-btn" data-mode="live" title="発見済み端末・疎通診断・ラン状態・cue 手動発火">🚨 ライブ運用</button>
     </nav>
+
+    <section class="atelier-sec" data-group="atelier">
+      <div class="mc-title">素材工房（カメラ別）
+        <span class="hint">固定カメラ映像から切り出した 1 枚を種にして、演出を足した動画を作るための面。<b>貯めるのはプロンプトではなく「生成」</b>——入力フレーム・使ったレシピ・束縛値・全文プロンプト・出力・採否をひとかたまりで残すので、「このプロンプトを使ったら何が出たか」が後から必ず分かる。<b>レシピ</b>＝場所に依存しない骨格（<code>{{スロット}}</code> を持つ）／<b>束縛値</b>＝そのカメラでの具体値。素材は構図に属するので、カメラ A の生成物は A のカットでしか使えない。生成は外部ツール（Dreamina 等）で行い、できた動画をカードへドロップすると <code>captures/</code> へ規約名で入る。同じ内容が <code>atelier-index.md</code> にも自動で書き出される。</span>
+      </div>
+      <div id="atelier"></div>
+    </section>
 
     <section class="timeline-sec" data-group="author">
       <div class="mc-title">周回タイムライン（事前オーサリングの主面）
@@ -182,9 +190,9 @@
       <div id="exportFiles" class="export-files"></div>
     </section>
 
-    <section class="prompts" data-group="author">
-      <div class="mc-title">生成プロンプト
-        <span class="hint">画像/動画 AI 生成用。📋 でコピーして各ツールへ。PC（show.json と同じ）に保存。</span>
+    <section class="prompts legacy" data-group="atelier">
+      <div class="mc-title">旧・生成プロンプト（移行用・そのうち消す）
+        <span class="hint">プロンプト本文だけを貯めていた旧ストア（<code>prompts.json</code>）。<b>結果と紐づかないので使えない</b>というのが素材工房を作った理由。中身を上の「📐 レシピ」へ移し終えたらこの節ごと削除する。参照用に残してあるだけで、新しく足さないこと。</span>
       </div>
       <div class="prompt-add">
         <div class="row-btns">

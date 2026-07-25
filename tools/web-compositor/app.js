@@ -12,6 +12,7 @@ import { createFloorMap } from './floormap.js';
 import { createRibbon } from './ribbon.js';
 import { normalizeTimelineV3 } from './timeline-model.js';
 import { createShowSim } from './show-sim.js';
+import { createAtelier } from './atelier.js';
 
 const $ = (s) => document.querySelector(s);
 const MW = 640, MH = 360;
@@ -612,6 +613,13 @@ $('#openRecordings').onclick = () => fetch('/open-dir?dir=recordings').catch(() 
 
 // ---- モードナビ（🎬 事前オーサリング / 🚨 ライブ運用）------------------------
 const appEl = $('.app');
+
+// 🧪 素材（素材工房）。カメラ定義は show.json を正にする（id と index をそのまま使う）。
+const atelier = createAtelier({
+  root: $('#atelier'),
+  getCameras: () => (state && state.cameras) || [],
+});
+
 document.querySelectorAll('.mode-btn').forEach((b) => {
   b.onclick = () => {
     if (appEl) appEl.dataset.mode = b.dataset.mode;
@@ -619,6 +627,8 @@ document.querySelectorAll('.mode-btn').forEach((b) => {
     fxLocked = true;      // ライブへ入る / 戻るたびにロックを掛け直す
     applyFxLock();
     renderPreflight();
+    // 素材面へ入るたびに読み直す（📷 で撮ったフレームがすぐ候補に出るように）
+    if (b.dataset.mode === 'atelier') atelier.refresh();
   };
 });
 

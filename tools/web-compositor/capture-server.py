@@ -302,6 +302,155 @@ def _save_prompts(items):
         json.dump(items, f, ensure_ascii=False, indent=2)
 
 
+# ---- 素材工房ストア（atelier.json）--------------------------------------------
+# 「プロンプトだけ貯めても、使った結果が分からないので役に立たない」への答え。
+# 保存する単位を **プロンプト → 生成（入力フレーム + 指示 + 出力 + 採否）** に変える。
+#
+#   recipes[]     場所に依存しない演出テンプレ。{{スロット}} を持つ。カメラをまたいで再利用する
+#   generations[] 1 回の生成。入力フレーム・使ったレシピ・束縛値・全文プロンプト・出力・採否を全部持つ
+#
+# 意図的な冗長: cameraLabel / recipeName を各レコードに焼き込む。1 レコードだけ読んで
+# 意味が分かる状態にしておく（人間にとっても、次のセッションのシュビーにとっても）。
+# 同じ理由で保存のたびに atelier-index.md を書き出す（Read 1 回で全体が読める索引）。
+ATELIER_FILE = os.path.join(ROOT, 'atelier.json')
+ATELIER_INDEX = os.path.join(ROOT, 'atelier-index.md')
+_atelier_lock = threading.Lock()
+
+ATELIER_EMPTY = {'rev': 0, 'recipes': [], 'generations': []}
+
+
+def _load_atelier():
+    try:
+        with open(ATELIER_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        return json.loads(json.dumps(ATELIER_EMPTY))
+    if not isinstance(data, dict):
+        return json.loads(json.dumps(ATELIER_EMPTY))
+    data.setdefault('rev', 0)
+    data.setdefault('recipes', [])
+    data.setdefault('generations', [])
+    return data
+
+
+def _atelier_stats(data):
+    """レシピごとの使用回数・採用数を毎回サーバで数え直す（クライアントに持たせない）。"""
+    used, kept = {}, {}
+    for g in data.get('generations', []):
+        rid = g.get('recipeId') or ''
+        if not rid:
+            continue
+        used[rid] = used.get(rid, 0) + 1
+        if g.get('verdict') == 'keep':
+            kept[rid] = kept.get(rid, 0) + 1
+    for r in data.get('recipes', []):
+        rid = r.get('id')
+        r['usedCount'] = used.get(rid, 0)
+        r['keptCount'] = kept.get(rid, 0)
+    return data
+
+
+VERDICT_MARK = {'keep': '✅ 採用', 'reject': '✕ 不採用', 'unrated': '― 未評価'}
+STATUS_MARK = {'draft': '📋 送信待ち', 'pending': '⏳ 生成中', 'done': '🎬 取り込み済み', 'failed': '⚠ 失敗'}
+
+
+def _atelier_index_md(data):
+    """カメラ別の素材索引を Markdown で書き出す（自動生成・手編集しない）。"""
+    gens = data.get('generations', [])
+    recipes = {r.get('id'): r for r in data.get('recipes', [])}
+    stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    out = ['# 素材インデックス（自動生成 — 手で編集しない）', '',
+           f'更新 {stamp} / rev {data.get("rev", 0)} / 生成 {len(gens)} 件 / レシピ {len(recipes)} 件',
+           '', '生成の正は `atelier.json`。このファイルはそれを人が読める形に落としたもの。', '']
+
+    if recipes:
+        out += ['## レシピ（場所に依存しない演出テンプレ）', '']
+        for r in data.get('recipes', []):
+            used, kept = r.get('usedCount', 0), r.get('keptCount', 0)
+            rate = f'{kept}/{used} 採用' if used else '未使用'
+            out.append(f'### {r.get("name") or "(無題)"} `{r.get("id")}` — {rate}')
+            if r.get('intent'):
+                out.append(f'狙い: {r["intent"]}')
+            slots = r.get('slots') or []
+            if slots:
+                out.append(f'スロット: {" / ".join(slots)}')
+            out += ['', '```', (r.get('body') or '').strip(), '```', '']
+
+    by_cam = {}
+    for g in gens:
+        by_cam.setdefault(g.get('cameraLabel') or '?', []).append(g)
+
+    for label in sorted(by_cam.keys()):
+        items = sorted(by_cam[label], key=lambda x: x.get('createdAt') or '', reverse=True)
+        keeps = sum(1 for x in items if x.get('verdict') == 'keep')
+        out += ['', f'## カメラ {label}（{len(items)} 件 / 採用 {keeps}）', '']
+        for g in items:
+            head = f'{VERDICT_MARK.get(g.get("verdict"), "― 未評価")}  {STATUS_MARK.get(g.get("status"), "")}'
+            out.append(f'### {head} `{g.get("id")}`')
+            if g.get('outputUrl'):
+                out.append(f'- 出力: `{g["outputUrl"]}`')
+            else:
+                out.append('- 出力: **まだ無い**（生成して取り込む）')
+            out.append(f'- 入力フレーム: `{g.get("sourceFrame") or "(未選択)"}`')
+            rn = g.get('recipeName') or '(レシピなし)'
+            bind = g.get('bind') or {}
+            bs = ' / '.join(f'{k}={v}' for k, v in bind.items() if str(v).strip())
+            out.append(f'- レシピ: {rn}' + (f'（{bs}）' if bs else ''))
+            p = g.get('params') or {}
+            parts = [p.get('tool'), p.get('model'), p.get('aspect'),
+                     f'{p["sec"]}s' if p.get('sec') else None]
+            tool = ' / '.join(str(x) for x in parts if x)
+            if tool:
+                out.append(f'- 生成条件: {tool}' + (f' / seed {p["seed"]}' if p.get('seed') else ''))
+            if g.get('note'):
+                out.append(f'- メモ: {g["note"]}')
+            if g.get('parentId'):
+                out.append(f'- 派生元: `{g["parentId"]}`')
+            out += ['', '```', (g.get('prompt') or '').strip(), '```', '']
+
+    if not gens:
+        out += ['', '## まだ生成がありません', '',
+                '卓の「🧪 素材」からカメラを選び、入力フレームとレシピを決めて 📋 でプロンプトをコピーする。', '']
+    return '\n'.join(out) + '\n'
+
+
+def _save_atelier(data):
+    data['rev'] = int(data.get('rev', 0)) + 1
+    _atelier_stats(data)
+    tmp = ATELIER_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, ATELIER_FILE)
+    try:
+        with open(ATELIER_INDEX, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(_atelier_index_md(data))
+    except OSError:
+        pass
+    return data
+
+
+def _atelier_slug(s, fallback='x'):
+    s = re.sub(r'[^A-Za-z0-9]+', '', str(s or ''))[:16]
+    return s or fallback
+
+
+def _atelier_new_id(prefix, taken):
+    """衝突しない id を作る。
+
+    時刻文字列だけだと、定番レシピの一括投入のような**同一秒内の連続作成で id が重複**する。
+    重複すると recipeById が常に先頭を返し、UI の選択と中身が食い違い、採用率も混ざる（実際に踏んだ）。
+    既存 id 集合と突き合わせ、衝突したら連番を足して必ず一意にする。
+    """
+    base = prefix + datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
+    if base not in taken:
+        return base
+    for n in range(1, 1000):
+        cand = f'{base}_{n}'
+        if cand not in taken:
+            return cand
+    return base + '_x'
+
+
 # ---- UDP 発見プロトコル fixedcam-discovery/1 -----------------------------------
 # 卓 PC がスマホ配信カメラ / 他 PC 卓を LAN 上で発見し、cameras[i].host を自動追従する。
 # 設計は .claude/plans/2026-07-18_connection-robustness.md が正。
@@ -627,6 +776,11 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(self._list_captures())
         if path == '/prompts':
             return self._json(_load_prompts())
+        if path == '/atelier':
+            with _atelier_lock:
+                return self._json(_atelier_stats(_load_atelier()))
+        if path == '/atelier/frames':
+            return self._json(self._list_source_frames())
         if path == '/audio/list':
             return self._json(self._list_audio())
         if path == '/reveal':
@@ -902,6 +1056,9 @@ class Handler(SimpleHTTPRequestHandler):
             url = ('/recordings/' if dest is RECORDINGS else '/captures/') + name
             return self._json({'ok': True, 'name': name, 'url': url, 'dir': to,
                                'type': typ, 'size': len(data)})
+
+        if parsed.path.startswith('/atelier'):
+            return self._atelier_post(parsed)
 
         if parsed.path == '/prompts':
             body = self._read_json_body()
@@ -1186,6 +1343,122 @@ class Handler(SimpleHTTPRequestHandler):
                           'size': st.st_size, 'mtime': st.st_mtime})
         items.sort(key=lambda x: x['mtime'], reverse=True)
         return items
+
+    # ---- 素材工房 -------------------------------------------------------------
+
+    def _list_source_frames(self):
+        """i2v の 1 枚目に使える静止画。recordings/ の camX_*.jpg をカメラ別に束ねる。"""
+        by_cam = {}
+        for n in os.listdir(RECORDINGS):
+            fp = os.path.join(RECORDINGS, n)
+            if not os.path.isfile(fp):
+                continue
+            ext = n.rsplit('.', 1)[-1].lower() if '.' in n else ''
+            if ext not in ('jpg', 'jpeg', 'png'):
+                continue
+            m = re.match(r'cam([A-Za-z0-9]+?)(?:_quest)?_\d', n)
+            label = m.group(1) if m else '?'
+            st = os.stat(fp)
+            by_cam.setdefault(label, []).append(
+                {'name': n, 'url': '/recordings/' + n, 'mtime': st.st_mtime, 'size': st.st_size})
+        for v in by_cam.values():
+            v.sort(key=lambda x: x['mtime'], reverse=True)
+        return by_cam
+
+    def _atelier_post(self, parsed):
+        path = parsed.path
+
+        # 生成物の取り込み: バイナリ本文を captures/ へ規約名で保存し、レコードへ結びつける。
+        if path == '/atelier/attach':
+            q = parse_qs(parsed.query)
+            gid = (q.get('id', [''])[0] or '').strip()
+            ext = (q.get('ext', ['mp4'])[0] or 'mp4').lower()
+            if ext not in ('mp4', 'webm', 'mov', 'gif', 'jpg', 'png'):
+                ext = 'mp4'
+            length = int(self.headers.get('Content-Length', 0))
+            data = self.rfile.read(length) if length else b''
+            if not data:
+                return self._json({'ok': False, 'error': 'empty body'}, 400)
+            with _atelier_lock:
+                st = _load_atelier()
+                rec = next((g for g in st['generations'] if g.get('id') == gid), None)
+                if rec is None:
+                    return self._json({'ok': False, 'error': 'unknown generation id'}, 404)
+                # ファイル名だけで由来が読めるようにする（gen_camB_standing_20260726_1432.mp4）。
+                # recipeSlug はレシピの ASCII 短縮名。レシピ id は時刻由来で意味を持たないので使わない。
+                stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                name = (f'gen_cam{_atelier_slug(rec.get("cameraLabel"), "X")}'
+                        f'_{_atelier_slug(rec.get("recipeSlug"), "free")}'
+                        f'_{stamp}.{ext}')
+                with open(os.path.join(CAPTURES, name), 'wb') as f:
+                    f.write(data)
+                rec['outputUrl'] = '/captures/' + name
+                rec['status'] = 'done'
+                rec['sizeBytes'] = len(data)
+                _save_atelier(st)
+                return self._json({'ok': True, 'url': rec['outputUrl'], 'state': st})
+
+        # 壊れた本文（UTF-8 でない / JSON でない）で例外を投げると、応答を返せず接続が切れて
+        # クライアントには「サーバが死んだ」ようにしか見えない。400 を返して原因を伝える。
+        try:
+            body = self._read_json_body()
+        except (UnicodeDecodeError, ValueError) as e:
+            return self._json({'ok': False, 'error': f'body must be UTF-8 JSON: {e}'}, 400)
+
+        if path == '/atelier/recipe':
+            with _atelier_lock:
+                st = _load_atelier()
+                rid = (body.get('id') or '').strip()
+                rec = next((r for r in st['recipes'] if r.get('id') == rid), None) if rid else None
+                if rec is None:
+                    rid = rid or _atelier_new_id('r_', {r.get('id') for r in st['recipes']})
+                    rec = {'id': rid}
+                    st['recipes'].append(rec)
+                for k in ('name', 'kind', 'intent', 'body', 'slug'):
+                    if k in body:
+                        rec[k] = body[k]
+                if 'slots' in body and isinstance(body['slots'], list):
+                    rec['slots'] = [str(s) for s in body['slots']]
+                rec.setdefault('kind', 'video')
+                _save_atelier(st)
+                return self._json({'ok': True, 'id': rid, 'state': st})
+
+        if path == '/atelier/recipe/delete':
+            with _atelier_lock:
+                st = _load_atelier()
+                st['recipes'] = [r for r in st['recipes'] if r.get('id') != body.get('id')]
+                _save_atelier(st)
+                return self._json({'ok': True, 'state': st})
+
+        if path == '/atelier/gen':
+            with _atelier_lock:
+                st = _load_atelier()
+                gid = (body.get('id') or '').strip()
+                rec = next((g for g in st['generations'] if g.get('id') == gid), None) if gid else None
+                if rec is None:
+                    gid = gid or _atelier_new_id('g_', {g.get('id') for g in st['generations']})
+                    rec = {'id': gid,
+                           'createdAt': datetime.datetime.now().isoformat(timespec='seconds'),
+                           'status': 'draft', 'verdict': 'unrated'}
+                    st['generations'].append(rec)
+                for k in ('camera', 'cameraLabel', 'sourceFrame', 'recipeId', 'recipeName', 'recipeSlug',
+                          'prompt', 'status', 'verdict', 'note', 'parentId', 'outputUrl', 'costUsd'):
+                    if k in body:
+                        rec[k] = body[k]
+                for k in ('bind', 'params'):
+                    if isinstance(body.get(k), dict):
+                        rec[k] = body[k]
+                _save_atelier(st)
+                return self._json({'ok': True, 'id': gid, 'state': st})
+
+        if path == '/atelier/gen/delete':
+            with _atelier_lock:
+                st = _load_atelier()
+                st['generations'] = [g for g in st['generations'] if g.get('id') != body.get('id')]
+                _save_atelier(st)
+                return self._json({'ok': True, 'state': st})
+
+        return self._json({'ok': False, 'error': 'unknown atelier path'}, 404)
 
     def log_message(self, *args):
         pass  # 静かに

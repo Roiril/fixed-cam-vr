@@ -188,6 +188,10 @@ $RECYCLE.BIN/
 tools/web-compositor/captures/
 tools/web-compositor/recordings/
 tools/web-compositor/prompts.json
+# atelier.json / atelier-index.md は **あえて追跡する**（scenarios/ と同じ判断）。
+# IP も認証情報もバイナリも含まず、プロンプトと採否だけの小さな JSON で、
+# 機材が変わっても残す価値がある（次セッションの索引にもなる）。書き込み中の一時ファイルだけ除外。
+tools/web-compositor/atelier.json.tmp
 tools/web-compositor/show.json
 tools/web-compositor/show.json.bak
 tools/web-compositor/show.json.tmp

@@ -811,8 +811,122 @@ input:-webkit-autofill:active {
   background: var(--accent-color); border-color: var(--accent-color);
   color: #000; font-weight: 600; opacity: 1;
 }
-.app[data-mode="author"] [data-group="live"] { display: none; }
-.app[data-mode="live"] [data-group="author"] { display: none; }
+.app[data-mode="author"] [data-group="live"],
+.app[data-mode="author"] [data-group="atelier"] { display: none; }
+.app[data-mode="live"] [data-group="author"],
+.app[data-mode="live"] [data-group="atelier"] { display: none; }
+.app[data-mode="atelier"] [data-group="author"],
+.app[data-mode="atelier"] [data-group="live"] { display: none; }
+
+/* ===================================================================== */
+/* ⑬b 素材工房（🧪 素材）— atelier.js / index.html                        */
+/*     カメラ別に「入力フレーム → 指示 → 生成結果」を 1 列に並べる。        */
+/* ===================================================================== */
+.atelier-sec { padding: 0 16px 24px; }
+
+.atl-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 14px; }
+.atl-tab {
+  padding: 7px 14px; font-size: 12px; letter-spacing: .04em; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.atl-tab.on { background: var(--accent-color); border-color: var(--accent-color); color: #000; font-weight: 600; }
+.atl-count {
+  font-size: 10px; opacity: .7; font-variant-numeric: tabular-nums;
+  padding: 1px 6px; border-radius: 99px; background: rgba(128, 128, 128, .22);
+}
+.atl-tab.on .atl-count { background: rgba(0, 0, 0, .18); opacity: .85; }
+
+.atl-make { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 18px; margin-bottom: 22px; }
+@media (max-width: 900px) { .atl-make { grid-template-columns: 1fr; } }
+.atl-col { min-width: 0; }
+
+.atl-h {
+  font-size: 12px; font-weight: 600; letter-spacing: .05em; margin: 0 0 8px;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+}
+.atl-h2 { font-size: 11px; font-weight: 600; letter-spacing: .05em; margin: 14px 0 5px; display: flex; gap: 10px; align-items: baseline; }
+.atl-sub { font-size: 10.5px; opacity: .6; font-weight: 400; letter-spacing: 0; }
+.atl-warn { font-size: 10.5px; color: #ffb066; font-weight: 400; }
+.atl-lead { font-size: 12px; opacity: .8; max-width: 62em; line-height: 1.8; }
+.atl-intent { font-size: 11px; opacity: .7; margin: 6px 0 2px; line-height: 1.7; }
+.atl-note { font-size: 10.5px; opacity: .6; margin: 8px 0 0; line-height: 1.7; }
+.atl-empty {
+  font-size: 12px; opacity: .65; line-height: 1.8; padding: 14px 16px;
+  border: 1px dashed var(--line-soft); border-radius: 6px;
+}
+
+.atl-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.atl-frame { padding: 0; border-radius: 5px; overflow: hidden; display: block; text-align: left; line-height: 0; }
+.atl-frame img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
+.atl-frame span {
+  display: block; font-size: 9.5px; padding: 3px 5px; line-height: 1.4;
+  font-variant-numeric: tabular-nums; opacity: .65;
+}
+.atl-frame.on { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.atl-frame.on span { opacity: 1; color: var(--accent-color); }
+
+.atl-slot { display: grid; grid-template-columns: 5.5em 1fr; gap: 8px; align-items: center; margin: 5px 0; font-size: 11px; }
+.atl-slot span { opacity: .7; }
+.atl-prompt { width: 100%; font-family: var(--mono, ui-monospace, monospace); font-size: 11px; line-height: 1.6; }
+
+.atl-params { display: flex; flex-wrap: wrap; gap: 8px; margin: 9px 0 0; }
+.atl-params label { display: flex; align-items: center; gap: 5px; font-size: 10.5px; opacity: .8; }
+.atl-params input { width: 8.5em; font-size: 11px; }
+.atl-params input[type="number"] { width: 4em; }
+
+.atl-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+.atl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 12px; }
+.atl-card {
+  border: 1px solid var(--line-soft); border-radius: 7px; overflow: hidden;
+  display: flex; flex-direction: column; background: rgba(128, 128, 128, .05);
+}
+.atl-card.v-keep { border-color: rgba(90, 209, 154, .6); }
+.atl-card.v-reject { opacity: .55; }
+.atl-out { line-height: 0; background: #000; }
+.atl-out video, .atl-out img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; display: block; }
+.atl-drop {
+  aspect-ratio: 4 / 3; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; cursor: pointer; border: 2px dashed var(--line-soft); background: transparent;
+  font-size: 11.5px; text-align: center; padding: 10px; line-height: 1.6;
+}
+.atl-drop span { font-size: 10px; opacity: .6; }
+.atl-drop:hover, .atl-drop.over { border-color: var(--accent-color); color: var(--accent-color); }
+
+.atl-meta { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 6px; font-size: 11px; }
+.atl-cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.atl-status { font-size: 9.5px; opacity: .55; white-space: nowrap; }
+.atl-bind { font-size: 10.5px; opacity: .78; line-height: 1.6; }
+.atl-cond, .atl-src { font-size: 10px; opacity: .55; line-height: 1.6; }
+.atl-verdicts { display: flex; gap: 5px; }
+.atl-verdicts button { flex: 1; padding: 4px 6px; font-size: 10.5px; }
+.atl-verdicts button.on { background: var(--accent-color); border-color: var(--accent-color); color: #000; }
+.atl-memo { width: 100%; font-size: 11px; }
+.atl-promptbox summary { font-size: 10.5px; opacity: .6; cursor: pointer; }
+.atl-promptbox pre {
+  white-space: pre-wrap; word-break: break-word; font-size: 10px; line-height: 1.6;
+  max-height: 190px; overflow: auto; margin: 6px 0 0; opacity: .8;
+}
+.atl-cardfoot { display: flex; gap: 5px; }
+.atl-cardfoot .atl-again { flex: 1; font-size: 10.5px; }
+
+.atl-recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; margin: 12px 0; }
+.atl-rcard {
+  border: 1px solid var(--line-soft); border-radius: 7px; padding: 10px 11px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.atl-rhead { display: flex; gap: 7px; align-items: center; }
+.atl-rname { flex: 1; font-size: 12px; font-weight: 600; }
+.atl-rstat { font-size: 10px; opacity: .6; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.atl-rintent { font-size: 11px; }
+.atl-rbody { font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px; line-height: 1.6; }
+.atl-rslots { font-size: 10.5px; opacity: .7; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.atl-seed {
+  border: 1px dashed var(--line-soft); border-radius: 6px; padding: 12px 14px;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+}
+.atl-seed p { margin: 0; font-size: 12px; opacity: .8; }
+.prompts.legacy { opacity: .75; }
 
 /* ===================================================================== */
 /* ⑭ ライブ運用: ラン状態 + ▶ ラン開始 — app.js / index.html                */

@@ -1,0 +1,76 @@
+{
+  "rev": 8,
+  "recipes": [
+    {
+      "id": "r_20260726_064706_799",
+      "name": "人影が立っている",
+      "kind": "video",
+      "intent": "マスク合成の本命。動きが少ないほど継ぎ目が安定するので、最初の 1 本はこれから試す。",
+      "body": "Static locked-off tripod security camera. The camera does not move, pan, zoom, or shake at all.\nA figure is standing motionless at {{位置}}, {{見た目}}. {{動き}} It never approaches the camera and stays in place for the whole clip.\nThe room, walls, partition panels, ceiling, floor, furniture, lighting and framing must stay EXACTLY as in the input image. Do not change color grading or exposure. The figure casts a soft contact shadow on the floor.\nPhotorealistic, matches the input photo's lighting and lens (wide-angle, high mounted, looking down). Practical-effects horror, no glow, no supernatural aura.\nNegative: camera movement, zoom, pan, parallax, relighting, style change, text, watermark, anime, cartoon, extra limbs, deformed hands.",
+      "slug": "standing",
+      "slots": [
+        "位置",
+        "見た目",
+        "動き"
+      ],
+      "usedCount": 0,
+      "keptCount": 0
+    },
+    {
+      "id": "r_20260726_064707_124",
+      "name": "横切る（一瞬よぎる）",
+      "kind": "video",
+      "intent": "絵コンテ A1 / A3 の「隅で何かが一瞬よぎる」。1 秒未満で通過させ、残りは完全な無人に保つ。",
+      "body": "Static locked-off tripod security camera. The camera does not move, pan, zoom, or shake at all.\nA dark human silhouette crosses the frame quickly, entering from {{入る側}} and exiting at {{出る側}}, partially occluded by {{遮蔽物}}, visible for less than one second. Motion blur consistent with a phone camera at 30fps. The rest of the clip is completely empty and static.\nThe room, walls, partition panels, ceiling, floor, furniture, lighting and framing must stay EXACTLY as in the input image. Do not change color grading or exposure.\nPhotorealistic, matches the input photo's lighting and lens (wide-angle, high mounted, looking down).\nNegative: camera movement, zoom, pan, parallax, relighting, style change, text, watermark, anime, cartoon.",
+      "slug": "crossing",
+      "slots": [
+        "入る側",
+        "出る側",
+        "遮蔽物"
+      ],
+      "usedCount": 0,
+      "keptCount": 0
+    },
+    {
+      "id": "r_20260726_064707_451",
+      "name": "無人のまま異変（人を出さない）",
+      "kind": "video",
+      "intent": "人物ブロックの切り分けにも使える保険。これが通ればパイプライン自体は生きていると分かる。",
+      "body": "Static locked-off tripod security camera. The camera does not move, pan, zoom, or shake at all.\nThe room stays completely empty of people. {{動くもの}} {{起きること}} Nothing else in the room moves.\nThe room, walls, partition panels, ceiling, floor, furniture, lighting and framing must stay EXACTLY as in the input image. Do not change color grading or exposure.\nPhotorealistic, matches the input photo's lighting and lens (wide-angle, high mounted, looking down).\nNegative: camera movement, zoom, pan, parallax, relighting, style change, text, watermark, anime, cartoon, people, figures, humans.",
+      "slug": "ambient",
+      "slots": [
+        "動くもの",
+        "起きること"
+      ],
+      "usedCount": 1,
+      "keptCount": 0
+    }
+  ],
+  "generations": [
+    {
+      "id": "g_20260726_064710_118",
+      "createdAt": "2026-07-26T06:47:10",
+      "status": "draft",
+      "verdict": "unrated",
+      "camera": 2,
+      "cameraLabel": "C",
+      "sourceFrame": "/recordings/camC_20260618_212125_578.jpg",
+      "recipeId": "r_20260726_064707_451",
+      "recipeName": "無人のまま異変（人を出さない）",
+      "recipeSlug": "ambient",
+      "prompt": "Static locked-off tripod security camera. The camera does not move, pan, zoom, or shake at all.\nThe room stays completely empty of people. パーテーションの1枚が数センチだけひとりでに動く 蛍光灯が一度だけ弱くまたたく Nothing else in the room moves.\nThe room, walls, partition panels, ceiling, floor, furniture, lighting and framing must stay EXACTLY as in the input image. Do not change color grading or exposure.\nPhotorealistic, matches the input photo's lighting and lens (wide-angle, high mounted, looking down).\nNegative: camera movement, zoom, pan, parallax, relighting, style change, text, watermark, anime, cartoon, people, figures, humans.",
+      "bind": {
+        "動くもの": "パーテーションの1枚が数センチだけひとりでに動く",
+        "起きること": "蛍光灯が一度だけ弱くまたたく"
+      },
+      "params": {
+        "tool": "dreamina",
+        "model": "seedance 4.0 pro",
+        "aspect": "4:3",
+        "sec": 4,
+        "seed": ""
+      },
+      "note": "（動作確認で作った下書き。不要なら 🗑 で消してください）"
+    }
+  ]
+}
