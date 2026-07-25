@@ -1080,7 +1080,7 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-dirty.on { color: var(--warn-color); opacity: 1; }
 .rb-schema { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap;
   border: 1px solid var(--line-soft); padding: 2px 7px; opacity: var(--opacity-mute); }
-.rb-lap-add, .rb-lap-del, .rb-validate { padding: 4px 10px; font-size: 11px; }
+.rb-lap-add, .rb-lap-del, .rb-validate, .rb-legacy { padding: 4px 10px; font-size: 11px; }
 .rb-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
 .rb-note { font-size: 11px; color: var(--warn-color); line-height: 1.4; }
 .rb-note:empty { display: none; }

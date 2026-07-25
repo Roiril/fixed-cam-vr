@@ -33,7 +33,7 @@ export function createTimeline(container, deps) {
         <button class="tl-validate" title="🕹 ショーシミュレーションへ移動して、歩き（フロアマップのドット）でショーを実時間検証する">▶ 検証</button>
         <button class="tl-lap-add" title="周回を 1 つ増やす">＋ 周回</button>
         <button class="tl-lap-del" title="最後の周回を削除">－ 周回</button>
-        <button class="tl-to-v3" title="cue / インサートショットを「演出・カット」へ変換し、リボン編集に切り替える（片道）">⇪ v3 に変換</button>
+        <button class="tl-to-v3" title="演出・カット編集（リボン）へ戻る。show.json は保存するまで変わらない">▲ 演出・カット編集へ</button>
       </div>
       <div class="tl-hint">区間をクリックして、その周・そのカメラの cue 割当・画像加工（post）上書き・インサートショットを編集する。空 = そのゾーンで発火なし。ライブ手動操作（演出 ON）が優先で、その間は抑止される。</div>
       <div class="tl-note"></div>
@@ -52,17 +52,20 @@ export function createTimeline(container, deps) {
   //   golden トレース照合済み・v2 の show.json も normalizeTimelineV3 が自動で移行して読む。
   validateBtn.onclick = () => { if (deps.openSimulator) deps.openSimulator(); };
 
-  // ---- v3（リボン）モード ------------------------------------------------------
-  //   モードはユーザーのトグルではなく「データの版」で決める（isV3）。v3 のときは v2 の
-  //   グリッド一式を隠して ribbon.js に丸ごと委ねる（v2 側の描画・インスペクタ・検証は不変）。
-  //   「⇪ v3 に変換」は片道: 押すと migrateV2Segment 経由で takes 化し、以後リボン編集になる。
+  // ---- 編集面 ------------------------------------------------------------------
+  //   **既定はリボン（v3・演出とカット）**。show.json がまだ v2 でも、読み込み時に
+  //   normalizeTimelineV3 が変換して表示する（変換ボタンを押させない）。💾 保存で v3 として書き出す。
+  //   旧グリッドは「データがまだ v2 の間だけ」戻れる退避路として残す（v3 で保存すると
+  //   多段カットは v2 では表現できないので戻れない）。
   const wrapEl = q('.tl-wrap');
   const ribbonHost = document.createElement('div');
   ribbonHost.className = 'tl-ribbon-host';
   ribbonHost.style.display = 'none';
   container.appendChild(ribbonHost);
-  let ribbon = null;      // 遅延生成（v3 のときだけ作る）
+  let ribbon = null;      // 遅延生成
   let v3Mode = false;
+  let legacyMode = false;   // 「▤ 旧グリッドで編集」を選んだ時だけ true（そのセッション限り）
+  let lastState = null;     // 面を切り替える時に描き直すための直近 state
   function ensureRibbon() { if (!ribbon) ribbon = createRibbon(ribbonHost, deps); return ribbon; }
   function enterV3Mode() {
     v3Mode = true;
@@ -70,6 +73,17 @@ export function createTimeline(container, deps) {
     sel = null;
     wrapEl.style.display = 'none';
     ribbonHost.style.display = '';
+  }
+
+  /** 旧グリッドへ退避する（データがまだ v2 の時だけ意味がある）。 */
+  function enterLegacyMode() {
+    if (ribbon && ribbon.isDirty()
+      && !confirm('リボン側に未保存の編集があります。旧グリッドへ移ると、その編集は破棄されます。よろしいですか？')) return;
+    legacyMode = true;
+    v3Mode = false;
+    ribbonHost.style.display = 'none';
+    wrapEl.style.display = '';
+    onState(lastState);
   }
 
   // ---- 状態 ------------------------------------------------------------------
@@ -705,19 +719,19 @@ export function createTimeline(container, deps) {
     markDirty(); render();
   };
 
-  // ---- v3 への変換（片道）------------------------------------------------------
+  // ---- 演出・カット編集（リボン）へ戻る -------------------------------------------
+  //   リボンは v2 の show.json も変換して表示するので、ここではデータを変えない
+  //   （保存を押したときだけ v3 として書き出される）。
   q('.tl-to-v3').onclick = () => {
-    const n = timeline.segments.length;
-    if (!confirm(`タイムラインを v3（演出・カット）へ変換します。\n\n`
-      + `・${n} 区間の cue とインサートショットが「演出」に変換されます\n`
-      + `・以後この画面はリボン編集になり、v2 のグリッド編集には戻れません\n`
-      + `・show.json に書かれるのは💾保存を押したときです\n\n実行しますか？`)) return;
-    const v3 = normalizeTimelineV3(serializeTimeline(timeline));  // v2 → takes（migrateV2Segment）
+    if (dirty && !confirm('旧グリッド側に未保存の編集があります。移ると破棄されます。よろしいですか？')) return;
     dirty = false; renderDirty();
-    resetUndo();               // v2 側の undo 履歴は破棄（隠れた v2 を Ctrl+Z で動かさない）
+    resetUndo();
+    legacyMode = false;
     enterV3Mode();
-    ensureRibbon().adoptConverted(v3,
-      '⚠ v3（演出・カット）へ変換しました。💾 保存すると確定します（v2 のグリッド編集には戻れません）。');
+    ensureRibbon().onState(lastState, {
+      v2Source: !isV3(lastState && lastState.timeline),
+      onUseLegacy: enterLegacyMode,
+    });
   };
 
   // ---- 保存 ------------------------------------------------------------------
@@ -747,10 +761,12 @@ export function createTimeline(container, deps) {
 
   // ---- 外部 API --------------------------------------------------------------
   function onState(state) {
-    // 版で分岐（データが v3 ならリボン編集）。v3 は片道なので一度入ったら戻らない。
-    if (v3Mode || isV3(state && state.timeline)) {
+    lastState = state;
+    // 既定はリボン（v3）。v2 の show.json は読み込み時に変換して表示し、保存で v3 になる。
+    if (!legacyMode) {
+      const v2Source = !isV3(state && state.timeline);
       if (!v3Mode) enterV3Mode();
-      ensureRibbon().onState(state);
+      ensureRibbon().onState(state, { v2Source, onUseLegacy: enterLegacyMode });
       return;
     }
     cameras = deps.getCameras ? deps.getCameras() : (state?.cameras || []);

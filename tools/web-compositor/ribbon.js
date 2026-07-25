@@ -58,10 +58,11 @@ export function createRibbon(container, deps) {
         <button class="rb-save accent">💾 保存</button>
         <button class="rb-undo" title="直前の編集を取り消す（Ctrl+Z）" disabled>⟲ 元に戻す</button>
         <span class="rb-dirty"></span>
-        <span class="rb-schema">v3（演出・カット）</span>
+        <span class="rb-schema"></span>
         <span class="spacer"></span>
         <button class="rb-validate" title="🕹 ショーシミュレーションへ移動して、歩き（フロアマップのドット）でショーを実時間検証する">▶ 検証</button>
         <button class="rb-dwell-reset" title="区間に出ている「実測 平均滞在」の集計を消す（会場が変わった / リハをやり直す時）">⟲ 実測クリア</button>
+        <button class="rb-legacy" style="display:none" title="この show.json はまだ v2。旧グリッド（cue 割当・インサートショット）で編集する">▤ 旧グリッド</button>
         <button class="rb-lap-add" title="周回を 1 つ増やす">＋ 周回</button>
         <button class="rb-lap-del" title="最後の周回を削除">－ 周回</button>
       </div>
@@ -94,7 +95,9 @@ export function createRibbon(container, deps) {
   let orderIsExplicit = false;
   let lapCount = 1;
   let sel = null;             // { kind:'seg'|'take', lap, camera, id? }
-  let convertNote = '';       // v3 変換直後の案内（保存で消える）
+  let convertNote = '';       // 案内（保存で消える）
+  let v2Source = false;       // show.json がまだ v2（保存すると v3 として書き出される）
+  let onUseLegacy = null;     // 旧グリッドへ戻る導線（timeline.js から渡る）
   let cueEditor = null;
   let editorOpen = false;
   let cueEditorTarget = null; // { step } — 新規素材の保存先
@@ -279,7 +282,21 @@ export function createRibbon(container, deps) {
   // ==========================================================================
   function render() {
     const rs = rows();
+    const schemaEl = q('.rb-schema');
+    if (schemaEl) {
+      schemaEl.textContent = v2Source ? 'v2 → 保存で v3' : 'v3（演出・カット）';
+      schemaEl.title = v2Source
+        ? 'この show.json はまだ v2（cue / インサートショット）。表示は v3 に変換したもので、💾 保存すると v3 として書き出される'
+        : 'この show.json は v3（演出・カット）';
+    }
+    const legacyBtn = q('.rb-legacy');
+    if (legacyBtn) legacyBtn.style.display = v2Source && onUseLegacy ? '' : 'none';
+
     const msgs = [];
+    if (v2Source) {
+      msgs.push('この show.json はまだ v2（cue / インサートショット）です。演出・カットに変換して表示しています — '
+        + '💾 保存すると v3 で書き出されます（そのあと v2 には戻せません）。');
+    }
     if (convertNote) msgs.push(convertNote);
     if (!orderIsExplicit && cameras.length > 0) msgs.push('コース順が未設定です。フロアマップで周回コースを設定してください（今は 0..N-1 の順で表示中）。');
     if (!cameras.length) msgs.push('カメラが 1 台も設定されていません。');
@@ -1095,6 +1112,7 @@ export function createRibbon(container, deps) {
     markDirty(); render(); renderInspector();
   };
   q('.rb-undo').onclick = undo;
+  q('.rb-legacy').onclick = () => { if (onUseLegacy) onUseLegacy(); };
   // ▶ 検証 = 🕹 ショーシミュレーション（歩きで実時間検証）。卓の検証面はこれ 1 つ。
   q('.rb-validate').onclick = () => { if (deps.openSimulator) deps.openSimulator(); };
   q('.rb-dwell-reset').onclick = async () => {
@@ -1107,7 +1125,10 @@ export function createRibbon(container, deps) {
   q('.rb-save').onclick = async () => {
     timeline.rev = (parseInt(timeline.rev, 10) || 0) + 1;
     const res = await deps.saveTimeline(serializeTimelineV3(timeline));
-    if (res && res.ok !== false) { dirty = false; convertNote = ''; renderDirty(); resetUndo(); render(); }
+    if (res && res.ok !== false) {
+      dirty = false; convertNote = ''; v2Source = false;
+      renderDirty(); resetUndo(); render();
+    }
     else { dirtyEl.textContent = '✕ 保存失敗'; dirtyEl.className = 'rb-dirty on'; }
   };
 
@@ -1139,7 +1160,11 @@ export function createRibbon(container, deps) {
     order = deps.getCourseOrder ? deps.getCourseOrder() : (state && state.layout && state.layout.course ? state.layout.course.order : null);
   }
 
-  function onState(state) {
+  function onState(state, opts) {
+    if (opts) {
+      v2Source = !!opts.v2Source;
+      onUseLegacy = typeof opts.onUseLegacy === 'function' ? opts.onUseLegacy : null;
+    }
     pullDeps(state);
     if (!dirty) { adoptState(state); recomputeLapCount(); resetUndo(); }
     if (sel && sel.camera >= cameras.length) { sel = null; closeCueEditor(); }
