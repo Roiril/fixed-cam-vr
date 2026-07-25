@@ -36,7 +36,6 @@
         }
       ],
       "hasPost": false,
-      "hasInsert": false,
       "hasBgm": false
     },
     {
@@ -82,7 +81,6 @@
         "scanline": 0
       },
       "hasPost": true,
-      "hasInsert": false,
       "hasBgm": false
     },
     {
@@ -176,7 +174,6 @@
         }
       ],
       "hasPost": false,
-      "hasInsert": false,
       "hasBgm": false
     }
   ]
