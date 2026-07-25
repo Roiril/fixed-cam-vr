@@ -601,9 +601,29 @@ function segmentAt(lap, camIdx) {
 }
 function segFireLabel(seg) {
   if (!seg) return null;
-  const ids = (seg.cues || []).map((c) => c.cueId).filter(Boolean);
+  const ids = [];
+  // v3: 演出（先頭カットが何を映すかで要約する）
+  for (const t of (seg.takes || [])) {
+    const first = (t.steps || [])[0] || {};
+    const what = first.source === 'live' ? `→${camLabelOf(first.camera)}`
+      : first.cueId || (first.assetUrl ? '映像' : '');
+    ids.push(`🎬${t.name || t.id || '演出'}${t.at === 'exit' ? '(離脱時)' : ''}${what ? ` ${what}` : ''}`);
+  }
+  // v2（読み取り互換の間）
+  ids.push(...(seg.cues || []).map((c) => c.cueId).filter(Boolean));
   if (seg.hasInsert && seg.insert) ids.push(`⏢インサート→${camLabelOf(seg.insert.camera)}`);
   return ids.length ? ids.join(', ') : null;
+}
+
+// 区間が参照する cue id（v3 の カット素材 + v2 の cue / insert）。診断の実在チェックに使う。
+function segCueIds(seg) {
+  const ids = [];
+  for (const t of (seg.takes || [])) {
+    for (const st of (t.steps || [])) if (st.cueId) ids.push(st.cueId);
+  }
+  ids.push(...(seg.cues || []).map((c) => c.cueId).filter(Boolean));
+  if (seg.hasInsert && seg.insert && seg.insert.cueId) ids.push(seg.insert.cueId);
+  return ids;
 }
 function camLabelOf(idx) {
   const c = (state?.cameras || [])[idx];
@@ -773,26 +793,35 @@ function preflightRows() {
     : { s: 'ok', label: 'ラッチ', detail: 'カメラ固定なし / 演出停止中' });
 
   const segs = state?.timeline?.segments || [];
-  const withCue = segs.filter((s) => (s.cues || []).length || s.hasInsert).length;
+  const withCue = segs.filter((s) => (s.takes || []).length || (s.cues || []).length || s.hasInsert).length;
   rows.push(withCue
     ? { s: 'ok', label: 'タイムライン', detail: `${segs.length} 区間 / うち演出あり ${withCue}` }
     : { s: 'warn', label: 'タイムライン', detail: '演出を持つ区間がありません（体験は映像切替のみ）' });
 
-  // 参照 cue の実在 + 素材の有無（📦 エクスポート前に気づけるようにする）
+  // 参照素材の実在チェック（📦 エクスポート前に気づけるようにする）。
+  //   v3 は カット自身が素材 URL を持つので、cue 参照とは別に assetUrl 空のカットも拾う
+  //   （空だと実機でそのカットだけ映像が出ない）。
   const cueMap = new Map((state?.cues || []).map((c) => [c.id, c]));
-  const missing = [], noSrc = [];
+  const missing = [], noSrc = [], emptyAsset = [];
   for (const s of segs) {
-    const ids = (s.cues || []).map((c) => c.cueId).filter(Boolean);
-    if (s.hasInsert && s.insert && s.insert.cueId) ids.push(s.insert.cueId);
-    for (const id of ids) {
+    for (const id of segCueIds(s)) {
       const cue = cueMap.get(id);
       if (!cue) { if (!missing.includes(id)) missing.push(id); }
       else if (!cue.sourceUrl) { if (!noSrc.includes(id)) noSrc.push(id); }
     }
+    for (const t of (s.takes || [])) {
+      for (const st of (t.steps || [])) {
+        if ((st.source === 'clip' || st.source === 'still') && !st.assetUrl) {
+          const label = t.name || t.id || '演出';
+          if (!emptyAsset.includes(label)) emptyAsset.push(label);
+        }
+      }
+    }
   }
-  if (missing.length) rows.push({ s: 'ng', label: '演出素材', detail: `未定義の cue: ${missing.join(', ')}` });
-  else if (noSrc.length) rows.push({ s: 'warn', label: '演出素材', detail: `素材未設定の cue: ${noSrc.join(', ')}` });
-  else rows.push({ s: 'ok', label: '演出素材', detail: '参照 cue はすべて実在・素材あり' });
+  if (missing.length) rows.push({ s: 'ng', label: '演出素材', detail: `未定義の素材: ${missing.join(', ')}` });
+  else if (emptyAsset.length) rows.push({ s: 'ng', label: '演出素材', detail: `映像が未選択のカットがある: ${emptyAsset.join(', ')}` });
+  else if (noSrc.length) rows.push({ s: 'warn', label: '演出素材', detail: `素材未設定: ${noSrc.join(', ')}` });
+  else rows.push({ s: 'ok', label: '演出素材', detail: '参照素材はすべて実在・映像あり' });
 
   // BGM: タイムラインとラン既定が指すトラックが実在するか（実機で無音に化けるのを防ぐ）
   const trackIds = new Set((state?.bgmTracks || []).map((t) => t.id));

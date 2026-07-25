@@ -1073,3 +1073,158 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .bgm-item-grid button { padding: 2px 8px; font-size: 10px; }
 .bgm-file { font-size: 10px; font-family: monospace; opacity: var(--opacity-sub);
   max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ==========================================================================
+   ショット・タイムライン v3（リボン UI / ribbon.js）
+   区間 = 伸縮ブロック（斜線ハッチ・尺は体験者が決める）／演出 = 尺に比例した固定幅。
+   離脱時の演出は区間ブロックの外に、境界線をまたいで描く。
+   ========================================================================== */
+.tl-ribbon-host:empty { display: none; }
+.rb-wrap { display: flex; flex-direction: column; gap: 8px; }
+.rb-row { display: flex; align-items: center; gap: 10px; }
+.rb-row .spacer { flex: 1; }
+.rb-save { padding: 7px 16px; }
+.rb-dirty { font-size: 11px; opacity: var(--opacity-mute); letter-spacing: .04em; }
+.rb-dirty.on { color: var(--warn-color); opacity: 1; }
+.rb-schema { font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  border: 1px solid var(--line-soft); padding: 2px 7px; opacity: var(--opacity-mute); }
+.rb-lap-add, .rb-lap-del, .rb-validate { padding: 4px 10px; font-size: 11px; }
+.rb-validate[disabled] { opacity: .3; cursor: not-allowed; }
+.rb-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
+.rb-note { font-size: 11px; color: var(--warn-color); line-height: 1.4; }
+.rb-note:empty { display: none; }
+.rb-hint2 { font-size: 9px; opacity: var(--opacity-mute); }
+.rb-empty { font-size: 11px; opacity: var(--opacity-mute); }
+
+/* ---- リボン本体 ---- */
+.rb-track-wrap { overflow-x: auto; padding-bottom: 8px; }
+.rb-track { display: flex; flex-direction: column; gap: 12px; min-width: min-content; }
+.rb-lap { display: flex; flex-direction: column; gap: 4px; }
+.rb-lap-head { font-size: 10px; text-transform: uppercase; letter-spacing: .14em;
+  opacity: var(--opacity-mute); }
+.rb-ribbon { display: flex; align-items: stretch; gap: 3px; min-width: min-content; }
+
+/* 区間 = 伸縮（斜線ハッチ） */
+.rb-seg {
+  position: relative; flex: 1 1 auto; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  background:
+    repeating-linear-gradient(115deg, transparent 0 9px, rgba(255, 250, 240, .05) 9px 18px),
+    color-mix(in srgb, var(--c) 12%, transparent);
+  padding: 6px 8px 5px; display: flex; flex-direction: column; gap: 4px;
+}
+.rb-seg:hover { border-color: var(--accent-color); }
+.rb-seg.sel { box-shadow: inset 0 0 0 2px var(--accent-color); }
+.rb-seg.drop { box-shadow: inset 0 0 0 2px var(--accent-color); }
+.rb-seg.drop-exit { box-shadow: inset -4px 0 0 var(--warn-color); }
+.rb-seg-head { display: flex; align-items: center; gap: 6px; }
+.rb-seg-head .spacer { flex: 1; }
+.rb-seg-name { font-size: 13px; letter-spacing: .08em; display: flex; align-items: center; gap: 6px; }
+.rb-seg-name i { width: 8px; height: 8px; background: var(--c); display: inline-block; }
+.rb-badge { font-size: 10px; opacity: .85; }
+.rb-seg-add { padding: 1px 6px; font-size: 10px; opacity: var(--opacity-mute); }
+.rb-seg-add:hover { opacity: 1; }
+/* 進入の演出はこのレーンの中に、進入からの秒数に比例した位置で置かれる（5s ごとの目盛） */
+.rb-seg-lane {
+  position: relative; min-height: 30px;
+  background-image: repeating-linear-gradient(90deg,
+    rgba(255, 250, 240, .12) 0 1px, transparent 1px 55px);
+  background-position: 8px 0;
+}
+.rb-seg-foot { display: flex; align-items: baseline; gap: 8px; font-size: 10px; }
+.rb-seg-dur { opacity: var(--opacity-mute); letter-spacing: .06em; }
+.rb-seg-bgm { opacity: var(--opacity-mute); margin-left: auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.rb-seg-bgm.chg { color: var(--accent-color); opacity: 1; }
+
+/* 演出 = 尺に比例した固定幅 */
+.rb-take {
+  flex: 0 0 auto; cursor: pointer; overflow: hidden; z-index: 1;
+  background: rgba(255, 222, 173, .10); border: 1px solid rgba(255, 222, 173, .5);
+  display: flex; flex-direction: column;
+}
+.rb-take:hover { border-color: var(--accent-color); }
+.rb-take.sel { box-shadow: inset 0 0 0 2px var(--accent-color); }
+.rb-take.bad { border-color: var(--warn-color); }
+.rb-take.dragging { pointer-events: none; opacity: .55; }
+/* 進入の演出は段の高さを固定する（ribbon.js の LANE_H と一致・区間フッタに被らせない） */
+.rb-seg-lane > .rb-take { height: 76px; }
+/* 離脱時の演出は区間の外・境界線をまたいで描く（区間内の時刻ではないことを形で示す） */
+.rb-take.exit { margin: 0 -10px; z-index: 2; border-style: dashed; border-color: var(--warn-color); }
+.rb-take.exit .rb-take-start { color: var(--warn-color); }
+.rb-take-head {
+  display: flex; align-items: center; gap: 8px; cursor: grab;
+  padding: 3px 7px; border-bottom: 1px solid rgba(255, 222, 173, .28);
+  font-size: 10px; letter-spacing: .04em; color: var(--accent-color);
+}
+.rb-take-head:active { cursor: grabbing; }
+.rb-take-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-take-start { margin-left: auto; opacity: var(--opacity-sub); white-space: nowrap; }
+.rb-take-dur { opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
+.rb-steps { display: flex; flex: 1; align-items: stretch; }
+.rb-step {
+  min-width: 0; padding: 4px 6px; display: flex; flex-direction: column; gap: 2px;
+  justify-content: space-between; border-right: 1px solid rgba(255, 250, 240, .14);
+}
+.rb-step:last-child { border-right: 0; }
+.rb-step-src { font-size: 10px; line-height: 1.3; display: flex; align-items: center; gap: 5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-step-src i { flex: none; width: 7px; height: 7px; background: var(--sc); display: inline-block; }
+.rb-step-ov { font-size: 9.5px; color: #c9a6ff;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-step-sec { font-size: 9.5px; opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
+.rb-step-empty { font-size: 10px; opacity: var(--opacity-mute); padding: 6px; }
+
+/* ドラッグ中のスナップ表示 */
+.rb-drop-hint {
+  position: fixed; z-index: 60; pointer-events: none;
+  background: #000; border: 1px solid var(--accent-color); color: var(--accent-color);
+  padding: 3px 8px; font-size: 11px; letter-spacing: .04em; white-space: nowrap;
+}
+.rb-drop-hint.exit { border-color: var(--warn-color); color: var(--warn-color); }
+.rb-drop-hint.bad { border-color: var(--danger-color); color: var(--danger-color); }
+
+/* 凡例 */
+.rb-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 10.5px;
+  opacity: var(--opacity-sub); }
+.rb-legend span { display: flex; align-items: center; gap: 6px; }
+.rb-legend i { width: 22px; height: 10px; border: 1px solid var(--line-input); display: inline-block; }
+.rb-legend .e i { background: repeating-linear-gradient(115deg, transparent 0 5px, rgba(255, 250, 240, .14) 5px 10px); }
+.rb-legend .r i { background: rgba(255, 222, 173, .25); border-color: rgba(255, 222, 173, .5); }
+.rb-legend .x i { background: transparent; border: 1px dashed var(--warn-color); }
+
+/* ---- インスペクタ ---- */
+.rb-inspector:empty { display: none; }
+.rb-insp-head { display: flex; align-items: center; gap: 10px; font-size: 12px;
+  letter-spacing: .06em; border-bottom: 1px solid var(--line-soft); padding-bottom: 6px; }
+.rb-insp-head .spacer { flex: 1; }
+.rb-insp-head button { padding: 3px 10px; font-size: 11px; }
+.rb-insp-sub { font-size: 10.5px; opacity: var(--opacity-mute); }
+.rb-insp-warn { font-size: 11px; color: var(--warn-color); margin-top: 6px; }
+.rb-insp-sec { border-bottom: 1px solid var(--line-soft); padding: 10px 0; }
+.rb-insp-sec:last-of-type { border-bottom: 0; }
+.rb-insp-label { font-size: 9px; text-transform: uppercase; letter-spacing: .15em;
+  opacity: .5; margin-bottom: 6px; }
+.rb-insp-toggle { font-size: 12px; }
+.rb-grid { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 6px 0; }
+.rb-grid label { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.rb-grid select { min-width: 96px; }
+.rb-grid input[type=number] { width: 62px; text-align: right; }
+.rb-grid input[type=text] { min-width: 150px; }
+.rb-grid button { padding: 3px 8px; font-size: 11px; }
+.rb-take-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.rb-take-pill { padding: 4px 9px; font-size: 11px; border-left: 2px solid var(--accent-color); }
+.rb-take-pill span { opacity: var(--opacity-mute); margin-left: 6px; font-size: 10px; }
+.rb-steps-edit { display: flex; flex-direction: column; gap: 8px; }
+.rb-step-row { border: 1px solid var(--line-soft); border-left: 2px solid var(--line-input);
+  padding: 6px 9px 8px; }
+.rb-step-row-head { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.rb-step-row-head .spacer { flex: 1; }
+.rb-step-row-head button { padding: 2px 7px; font-size: 10px; }
+.rb-step-no { display: flex; align-items: center; gap: 6px; letter-spacing: .06em; }
+.rb-step-no i { width: 8px; height: 8px; background: var(--sc); display: inline-block; }
+.rb-step-sum { font-size: 10px; opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
+.rb-step-warn { font-size: 10.5px; color: var(--warn-color); }
+.rb-s-ovr summary { font-size: 10px; opacity: var(--opacity-mute); cursor: pointer; letter-spacing: .06em; }
+.rb-s-ovr[open] summary { opacity: var(--opacity-sub); }
+.rb-cue-editor-host:empty { display: none; }

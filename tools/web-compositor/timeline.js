@@ -14,7 +14,8 @@
 import { FX, FX_DEFAULT, camColor, escapeHtml, createMediaCache } from './common.js';
 import { createCompositeView } from './composite-view.js';
 import { createCueEditor } from './cue-editor.js';
-import { defaultOverride, defaultInsert, defaultBgm, newSeg, newAssign, serializeTimeline, normalizeTimeline, migrateFromSchedule, resolveBgmLane } from './timeline-model.js';
+import { defaultOverride, defaultInsert, defaultBgm, newSeg, newAssign, serializeTimeline, normalizeTimeline, migrateFromSchedule, resolveBgmLane, isV3, normalizeTimelineV3 } from './timeline-model.js';
+import { createRibbon } from './ribbon.js';
 
 // APK 同梱の既定クリップを指す擬似トラック id（Unity BgmDirector.DefaultTrackId と一致させること）。
 export const DEFAULT_TRACK_ID = '__default__';
@@ -32,6 +33,7 @@ export function createTimeline(container, deps) {
         <button class="tl-validate" title="矢印キーで周回×ゾーン進行をシミュレートし、発火順と見える画を確認（ローカルのみ）">▶ 検証</button>
         <button class="tl-lap-add" title="周回を 1 つ増やす">＋ 周回</button>
         <button class="tl-lap-del" title="最後の周回を削除">－ 周回</button>
+        <button class="tl-to-v3" title="cue / インサートショットを「演出・カット」へ変換し、リボン編集に切り替える（片道）">⇪ v3 に変換</button>
       </div>
       <div class="tl-hint">区間をクリックして、その周・そのカメラの cue 割当・画像加工（post）上書き・インサートショットを編集する。空 = そのゾーンで発火なし。ライブ手動操作（演出 ON）が優先で、その間は抑止される。</div>
       <div class="tl-note"></div>
@@ -47,6 +49,27 @@ export function createTimeline(container, deps) {
   const noteEl = q('.tl-note');
   const validateBtn = q('.tl-validate');
   const validatePanel = q('.tl-validate-panel');
+
+  // ---- v3（リボン）モード ------------------------------------------------------
+  //   モードはユーザーのトグルではなく「データの版」で決める（isV3）。v3 のときは v2 の
+  //   グリッド一式を隠して ribbon.js に丸ごと委ねる（v2 側の描画・インスペクタ・検証は不変）。
+  //   「⇪ v3 に変換」は片道: 押すと migrateV2Segment 経由で takes 化し、以後リボン編集になる。
+  const wrapEl = q('.tl-wrap');
+  const ribbonHost = document.createElement('div');
+  ribbonHost.className = 'tl-ribbon-host';
+  ribbonHost.style.display = 'none';
+  container.appendChild(ribbonHost);
+  let ribbon = null;      // 遅延生成（v3 のときだけ作る）
+  let v3Mode = false;
+  function ensureRibbon() { if (!ribbon) ribbon = createRibbon(ribbonHost, deps); return ribbon; }
+  function enterV3Mode() {
+    v3Mode = true;
+    if (validation.active) validation.stop();
+    closeCueEditor();
+    sel = null;
+    wrapEl.style.display = 'none';
+    ribbonHost.style.display = '';
+  }
 
   // ---- 状態 ------------------------------------------------------------------
   let timeline = { rev: 1, segments: [] };
@@ -684,6 +707,21 @@ export function createTimeline(container, deps) {
     markDirty(); render();
   };
 
+  // ---- v3 への変換（片道）------------------------------------------------------
+  q('.tl-to-v3').onclick = () => {
+    const n = timeline.segments.length;
+    if (!confirm(`タイムラインを v3（演出・カット）へ変換します。\n\n`
+      + `・${n} 区間の cue とインサートショットが「演出」に変換されます\n`
+      + `・以後この画面はリボン編集になり、v2 のグリッド編集には戻れません\n`
+      + `・show.json に書かれるのは💾保存を押したときです\n\n実行しますか？`)) return;
+    const v3 = normalizeTimelineV3(serializeTimeline(timeline));  // v2 → takes（migrateV2Segment）
+    dirty = false; renderDirty();
+    resetUndo();               // v2 側の undo 履歴は破棄（隠れた v2 を Ctrl+Z で動かさない）
+    enterV3Mode();
+    ensureRibbon().adoptConverted(v3,
+      '⚠ v3（演出・カット）へ変換しました。💾 保存すると確定します（v2 のグリッド編集には戻れません）。');
+  };
+
   // ---- 保存 ------------------------------------------------------------------
   q('.tl-save').onclick = async () => {
     timeline.rev = (parseInt(timeline.rev, 10) || 0) + 1;
@@ -925,6 +963,12 @@ export function createTimeline(container, deps) {
 
   // ---- 外部 API --------------------------------------------------------------
   function onState(state) {
+    // 版で分岐（データが v3 ならリボン編集）。v3 は片道なので一度入ったら戻らない。
+    if (v3Mode || isV3(state && state.timeline)) {
+      if (!v3Mode) enterV3Mode();
+      ensureRibbon().onState(state);
+      return;
+    }
     cameras = deps.getCameras ? deps.getCameras() : (state?.cameras || []);
     cues = deps.getCues ? deps.getCues() : (state?.cues || []);
     order = deps.getCourseOrder ? deps.getCourseOrder() : (state?.layout?.course?.order || null);
@@ -942,7 +986,7 @@ export function createTimeline(container, deps) {
   resetUndo();
   return {
     onState,
-    isDirty: () => dirty,
-    destroy() { validation.destroy(); if (cueEditor) cueEditor.destroy(); },
+    isDirty: () => (v3Mode && ribbon ? ribbon.isDirty() : dirty),
+    destroy() { validation.destroy(); if (cueEditor) cueEditor.destroy(); if (ribbon) ribbon.destroy(); },
   };
 }
