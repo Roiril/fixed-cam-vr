@@ -131,31 +131,31 @@ namespace FixedCamVr.Tracking
         /// </summary>
         private PlayerZone? Pick(Vector3 head)
         {
-            // 1) 直近ゾーンが縮小 AABB 内ならそのまま維持（フリッカ防止）。
-            if (_current != null && _current.Contains(head, hysteresisShrink))
-            {
-                return _current;
-            }
-
-            // 2) 包含ゾーンの中で最も Priority の高いものを採用。同値は先勝ち。
-            PlayerZone? best = null;
-            int bestPriority = int.MinValue;
+            // 判定の中身は純ロジック（ZonePickLogic）へ委譲する。Web シミュレータの JS ミラーと
+            // 同じセマンティクスを共有し、drift を golden トレース比較で機械検出できるようにするため
+            // （計画 2026-07-25_show-simulator.md 段 S1）。ここは PlayerZone ↔ Box の詰め替えだけ。
+            var boxes = new ZonePickLogic.Box[zones.Length];
+            int current = -1;
             for (int i = 0; i < zones.Length; i++)
             {
-                var z = zones[i];
-                if (z == null) continue;
-                if (!z.Contains(head)) continue;
-                if (z.Priority > bestPriority)
+                PlayerZone? z = zones[i];
+                if (z == null)
                 {
-                    best = z;
-                    bestPriority = z.Priority;
+                    // null 要素は「絶対に含まれない箱」にして index の対応を崩さない。
+                    boxes[i] = ZonePickLogic.Box.Aabb(0f, 0f, 0f, -1f, -1f, -1f, 0, int.MinValue);
+                    continue;
                 }
+                if (ReferenceEquals(z, _current)) current = i;
+                Vector3 c = z.Center, h = z.HalfExtents;
+                // ゾーンの向きは yaw のみ（CourseFrame が与えるのも yaw だけ）。
+                float yaw = z.Rotation.eulerAngles.y;
+                boxes[i] = ZonePickLogic.Box.WithYaw(c.x, c.y, c.z, h.x, h.y, h.z, yaw, z.CameraIndex, z.Priority);
             }
 
-            if (best != null) return best;
-
-            // 3) どこにも入っていない → ポリシーに従う。
-            return keepLastWhenOutside ? _current : null;
+            int picked = ZonePickLogic.Pick(boxes, head.x, head.y, head.z,
+                                            current, hysteresisShrink, keepLastWhenOutside);
+            if (picked < 0) return keepLastWhenOutside ? _current : null;
+            return zones[picked];
         }
     }
 }
