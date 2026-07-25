@@ -11,6 +11,8 @@
 #   POST /masks?name=            : マスク PNG 保存 → /masks/<name>.png で配信
 #   POST /unity/heartbeat        : Unity が現状報告（アクティブカメラ等）
 #   GET  /unity/status           : 直近 heartbeat + 経過秒（UI 表示用）
+#   GET  /scenarios/list         : 🕹 記録済みシナリオ一覧（本体は /scenarios/<name>.json で静的配信）
+#   POST /scenarios/save         : {name, scenario} を scenarios/<name>.json へ保存（show.json は不変）
 #   POST /export-build           : 現 show.json + 参照アセットを Assets/StreamingAssets/show/
 #                                  へ焼き込み（URL を sa://assets/<file> に書換）。結果を JSON で返す
 # - GET /cam?host=&port=&path=&auth=user:pass : MJPEG プロキシ（Basic 認証肩代わり。
@@ -45,6 +47,9 @@ RECORDINGS = os.path.join(ROOT, 'recordings')
 STATIC_INPUTS = os.path.join(ROOT, 'static-inputs')
 # BGM 音源置き場（ここに mp3/ogg/wav/m4a を放り込むと卓の BGM ライブラリに出る）
 AUDIO = os.path.join(ROOT, 'audio')
+# 🕹 ショーシミュレーションで記録した「歩き方」（scenario JSON）。show.json とは混ぜない
+# （ショーの設定と検証入力を分ける・計画 2026-07-25_show-simulator.md §6）。
+SCENARIOS = os.path.join(ROOT, 'scenarios')
 os.makedirs(CAPTURES, exist_ok=True)
 os.makedirs(MASKS, exist_ok=True)
 os.makedirs(RECORDINGS, exist_ok=True)
@@ -550,11 +555,29 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(self._list_masks())
         if path == '/cam':
             return self._proxy_cam(parse_qs(urlparse(self.path).query))
+        if path == '/scenarios/list':
+            return self._json({'items': self._list_scenarios()})
         if path == '/discovery':
             return self._get_discovery()
         if path == '/diag':
             return self._get_diag()
         return super().do_GET()
+
+    # 🕹 記録済みシナリオ（scenarios/*.json）の一覧。本体は静的配信（/scenarios/<name>.json）で読む。
+    def _list_scenarios(self):
+        items = []
+        if not os.path.isdir(SCENARIOS):
+            return items
+        for n in os.listdir(SCENARIOS):
+            if not n.endswith('.json'):
+                continue
+            fp = os.path.join(SCENARIOS, n)
+            if not os.path.isfile(fp):
+                continue
+            items.append({'name': n[:-5], 'file': n, 'url': '/scenarios/' + n,
+                          'mtime': os.stat(fp).st_mtime})
+        items.sort(key=lambda x: x['mtime'], reverse=True)
+        return items
 
     # 発見表（camera / show-server）+ 二重 ID 警告 + 自動追従状態を返す。
     def _get_discovery(self):
@@ -752,6 +775,8 @@ class Handler(SimpleHTTPRequestHandler):
             _unity_status.clear()
             _unity_status.update(body)
             return self._json({'ok': True})
+        if parsed.path == '/scenarios/save':
+            return self._save_scenario()
         if parsed.path == '/export-build':
             return self._export_build()
         if parsed.path == '/save':
@@ -810,6 +835,27 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({'ok': True, 'items': items})
 
         return self._json({'ok': False, 'error': 'unknown endpoint'}, 404)
+
+    # 🕹 記録した歩き（scenario JSON）を scenarios/<name>.json へ保存する。
+    #   show.json には一切触らない（検証入力とショー設定を混ぜない）。
+    #   名前は英数 / 日本語可・パス区切りと拡張子は弾く（パストラバーサル防止）。
+    def _save_scenario(self):
+        body = self._read_json_body()
+        name = (body.get('name') or '').strip()
+        scenario = body.get('scenario')
+        if not name or name != os.path.basename(name) or name.startswith('.'):
+            return self._json({'ok': False, 'error': 'bad name'}, 400)
+        if re.search(r'[\\/:*?"<>|]', name):
+            return self._json({'ok': False, 'error': 'bad name'}, 400)
+        if not isinstance(scenario, dict) or not isinstance(scenario.get('samples'), list):
+            return self._json({'ok': False, 'error': 'bad scenario'}, 400)
+        os.makedirs(SCENARIOS, exist_ok=True)
+        fp = os.path.join(SCENARIOS, name + '.json')
+        with open(fp, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump(scenario, f, ensure_ascii=False, indent=2)
+            f.write('\n')
+        return self._json({'ok': True, 'name': name, 'url': '/scenarios/' + name + '.json',
+                           'path': os.path.relpath(fp, ROOT).replace('\\', '/')})
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
     _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule', 'timeline',

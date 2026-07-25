@@ -572,8 +572,14 @@ export function createFloorMap(container, deps) {
   hystI.onchange = () => { layout.hysteresisM = Math.max(0, parseFloat(hystI.value) || 0); markDirty(); };
   simChk.onchange = () => {
     if (simChk.checked && !sim) sim = { x: 0, z: -0.7 }; // 南辺中央に初期配置
-    updateSimOut(); render();
+    updateSimOut(); render(); emitSim();
   };
+  // ショーシミュレーション（show-sim.js）へドットの有効状態と位置を流す。
+  // deps.onSim 未指定なら従来どおり「タイルの色を読むだけ」の表示で完結する。
+  function emitSim() {
+    if (!deps || typeof deps.onSim !== 'function') return;
+    deps.onSim({ enabled: !!simChk.checked, x: sim ? sim.x : null, z: sim ? sim.z : null });
+  }
   function camLabel(cam) {
     return cam !== null ? (cameras[cam] ? `カメラ ${cameras[cam].id}` : `#${cam}`) : '未割当';
   }
@@ -654,7 +660,7 @@ export function createFloorMap(container, deps) {
     if (!drag) return;
     const m = mouseCourse(e);
     if (drag.mode === 'paint') paintAt(m);
-    else if (drag.mode === 'sim') { sim = { x: +m.x.toFixed(3), z: +m.z.toFixed(3) }; updateSimOut(); render(); }
+    else if (drag.mode === 'sim') { sim = { x: +m.x.toFixed(3), z: +m.z.toFixed(3) }; updateSimOut(); render(); emitSim(); }
     else if (drag.mode === 'reg') {
       const a = regArr();
       if (a && regDragIndex >= 0 && regDragIndex < a.length) {
@@ -734,11 +740,20 @@ export function createFloorMap(container, deps) {
     updateLiveOut(); render();
   }
 
+  // シナリオ再実行（show-sim.js）がドットを動かすための外部入口。
+  // emitSim は呼ばない（呼び元へ跳ね返して無限ループにしない）。
+  function setSimPos(x, z) {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+    if (!simChk.checked) simChk.checked = true;
+    sim = { x: +x.toFixed(3), z: +z.toFixed(3) };
+    updateSimOut(); render();
+  }
+
   adoptLayout(DEFAULT_LAYOUT);
   renderPalette();
   renderCourse();
   renderRegList();
   renderDirty();
   render();
-  return { onState, onUnity, isDirty: () => dirty };
+  return { onState, onUnity, isDirty: () => dirty, setSimPos };
 }

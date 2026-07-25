@@ -1,5 +1,23 @@
 # web compositor（tools/web-compositor/）
 
+**2026-07-25 🕹 ショーシミュレーション**（実機なしでショーを検証。計画 `.claude/plans/2026-07-25_show-simulator.md` が正）:
+
+- フロアマップのドットをドラッグ = 体験者の歩き → ショーが実時間で進む（画面 / 周回 / 区間 / 演出 / イベントログ）。
+  歩きを記録して `scenarios/*.json` に保存 → ワンクリック再実行（既定は**いまの show.json** で、「保存時の設定」も選べる）
+- **判定は独自実装しない**。`scenario-engine.js` は Unity 純ロジック（ZonePickLogic / ZoneProgressionLogic /
+  SwitchDirectorLogic / LapCounterLogic / TakeRunnerLogic / ShowScenarioRunner）の 1 対 1 移植で、
+  **golden トレース `Assets/Tests/Fixtures/scenario_walk.trace.json` との一致を node テストで固定**（`scenario-engine.test.mjs`）。
+  **食い違ったら直すのは JS 側**（C# が正）。fixture を書き換えて通すのは禁止
+- **JS は時刻計算だけ `Math.fround`** で C# float に合わせる（double のままだと 1 tick ずれる箇所がある）。
+  1 tick の評価順（ゾーン判定 → 時計 → ambient → 画面 commit → ゾーン通知 → 演出 Tick）は**動かすとトレースが壊れる**
+- ゾーンは**生タイルではなく `ZoneLayoutSolver.SolveGrid` と同じ矩形展開**で判定する（`zone-layout.js`）。
+  **grid 専用**（cuts のみの show.json では実行しない＝黙って別の答えを出さない）
+- `untilClipEnd` の尺は卓では分からない → cue の trim から推定 / 不能なら watchdog まで（どちらも UI に ⚠）
+- **`POST /scenarios/save` はサーバ再起動まで効かない**（2026-07-25 追加）。使えない間は自動で localStorage 退避 + その旨を表示
+- ⚠ フロアマップのドットは**ドットの上から掴む**。外すとタイル塗りになる（既存挙動。パネルに注意書きあり）
+- できないこと（パネル下部にも常時明示）: VR のスケール感・立体視、dip の体感時間、MJPEG の実レイテンシ・砂嵐、
+  位置合わせ・recenter・触覚、Quest の性能。**卓で通っても実機確認は要る**
+
 **2026-07-25 BGM オーサリング**（契約は rules/streaming.md「BGM」が正）:
 
 - 旧 = `[Bgm]` の AudioSource 1 本で固定ループ。新 = **タイムライン区間で切替/停止/ループ範囲**（`bgmTracks[]` + ラン既定 `bgm` + `segments[].bgm`）

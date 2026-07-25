@@ -35,6 +35,7 @@
 | 3.8 | **接続の堅牢化**（端末に cameraId を刻印 + UDP 発見プロトコル + フレーム断時の ID 自動張り替え。DHCP 変動・入れ替わりに自動追従、Web 卓に発見/疎通診断パネル） | 🚧 streamer/PC 実測済み・Quest 実機未検証 |
 | 3.9 | **ビューア体験の改善**（yaw 追従の緩急・切替クールダウン/dip-to-black・cue 中切替凍結・信号ロスト砂嵐・HUD 既定 OFF） | 🚧 実装済み・試着未検証 |
 | 3.95 | **BGM オーサリング**（区間ごとに曲の切替・停止・ループ範囲・音量・クロスフェード。BgmDirector / BgmPlanLogic + Web 卓の BGM ライブラリと BGM 帯） | 🚧 実装済み・実機未検証 |
+| 3.97 | **ショーシミュレータ**（フロアマップのドットを歩かせて実機なしでショーを検証。ゾーン確定・周回・演出発火・画面切替を Unity と同じ純ロジックで再現し、[golden トレース](Assets/Tests/Fixtures/scenario_walk.trace.json)で Web⇄Unity の一致を機械固定。`ShowScenarioRunner` / `ZonePickLogic` + 卓の 🕹 パネル） | ✅ 一致テスト green・ブラウザ実測済み |
 | 4 | スクリーン外 3D 演出 / CG 合成 | 未着手 |
 
 主要コンポーネントの仕様（エンドポイント・遅延対策・show.json 設定契約・スクリーン合成モデル）は [.claude/rules/streaming.md](.claude/rules/streaming.md) に集約。

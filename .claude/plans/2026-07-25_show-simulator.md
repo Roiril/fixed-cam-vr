@@ -1,6 +1,21 @@
 # 実機なしでショーを検証する — フロアマップ駆動シミュレータ
 
-status: design（2026-07-25 設計。実装は段 S1 から）
+status: S1–S4 実装済み（2026-07-25）。Web ミラーは golden 一致（23/23 イベント・時刻も厳密一致）、
+卓 UI はブラウザ実測済み（記録 → 保存 → 再実行まで通し）。設計の決定（§1 の trace 形・§6）は変更していない。
+
+| 段 | 実体 | 状態 |
+|---|---|---|
+| S1 | `Assets/Scripts/Tracking/ZonePickLogic.cs` | ✅ |
+| S2 | `Assets/Scripts/Tracking/ShowScenarioRunner.cs` + `Assets/Tests/Fixtures/scenario_walk*.json` | ✅ |
+| S3 | `tools/web-compositor/scenario-engine.js` + `scenario-engine.test.mjs`（golden 照合） | ✅ |
+| S4 | `tools/web-compositor/show-sim.js` / `show-scenario.js` / `zone-layout.js` + 卓の 🕹 パネル | ✅（実機の代わりにならない範囲は UI に明示） |
+
+実装で決めた補足（§1・§2 の運用細部）:
+- **JS は時刻計算だけ `Math.fround`** で C# の float 精度に合わせる（そうしないと `t_B_late` の終了が 1 tick ずれる）。
+  照合の契約は従来どおり ±1 tick だが、許容の中に drift を隠さないため実装は厳密一致を狙う
+- **ゾーン展開は `layout.grid` 専用**（cuts のみの show.json では実行しない）。Unity も grid 優先で、卓の保存は常に grid を書く
+- **`untilClipEnd` の尺**は卓では実尺が分からない → cue の trim から推定 / 推定不能なら watchdog まで。どちらも UI に ⚠ で出す
+- 旧「▶ 検証（矢印キー）」は**まだ残してある**（§5 の「S4 完成時に置き換える」は未実施）
 
 ## ユーザーの指摘（出発点・そのまま正しい）
 

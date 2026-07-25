@@ -148,6 +148,13 @@
       <div id="floorMap"></div>
     </section>
 
+    <section class="showsim" data-group="author">
+      <div class="mc-title">🕹 ショーシミュレーション（実機なし検証）
+        <span class="hint">フロアマップの「シミュレーション」を ON にしてドットをドラッグすると、体験者が歩いたものとしてショーが実時間で進む。ゾーン確定（最小滞在）・周回・区間・演出の発火（enter/exit・取り逃し・once・同時1本・watchdog）・画面のクールダウンまで、<b>Unity と同じ判定ロジック</b>で動く（golden トレースで機械照合済み）。歩きを記録してシナリオに保存すれば、同じ歩き方をワンクリックで再実行できる。<b>体感・遅延・VR 提示・位置合わせは検証できない</b>ので実機確認は別途必要。</span>
+      </div>
+      <div id="showSim"></div>
+    </section>
+
     <section class="bgm-sec" data-group="author">
       <div class="mc-title">🎵 BGM ライブラリ
         <span class="hint">tools/web-compositor/audio/ に置いた音源をトラックとして登録する（ループ範囲・音量つき）。登録したトラックをタイムラインの区間から「▶ この曲に切り替える / ■ 止める」で指定する。ラン既定 = 体験開始時に鳴っている曲（未設定なら APK 同梱の既定 BGM）。📦 エクスポートで音源も APK に焼き込まれる。</span>

@@ -10,6 +10,7 @@ import {
 import { createCompositeView } from './composite-view.js';
 import { createFloorMap } from './floormap.js';
 import { createTimeline } from './timeline.js';
+import { createShowSim } from './show-sim.js';
 
 const $ = (s) => document.querySelector(s);
 const MW = 640, MH = 360;
@@ -28,6 +29,7 @@ let lastUnity = {};
 const columns = new Map();   // camId -> column controller
 let floorMap = null;
 let timeline = null;
+let showSim = null;   // 🕹 ショーシミュレーション（フロアマップのドットで駆動）
 let lastDiscovery = { devices: [], conflicts: [] };
 // 卓サーバ（capture-server.py）の生死。落ちても画面は最後の絵で生き続けるので明示的に見張る。
 let serverAlive = false;
@@ -498,7 +500,7 @@ async function pollState() {
       if (s.rev !== rev) {
         rev = s.rev; state = s;
         renderColumns(); renderStatus(); renderLiveCuePanel(); renderLatchBar();
-        floorMap && floorMap.onState(s); timeline && timeline.onState(s);
+        floorMap && floorMap.onState(s); timeline && timeline.onState(s); showSim && showSim.onState(s);
         renderBgmSection(); renderRunPanel(); renderPreflight();
       }
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
@@ -936,8 +938,20 @@ if ($('#floorMap')) {
   floorMap = createFloorMap($('#floorMap'), {
     getCameras: () => state?.cameras || [],
     saveLayout: (layout) => postState({ layout }),
+    // シミュレーションドットの有効状態・位置を 🕹 ショーシミュレーションへ流す（下で生成）。
+    onSim: (e) => showSim && showSim.onSimDot(e),
   });
   if (state) floorMap.onState(state);
+}
+
+// ---- 🕹 ショーシミュレーション（実機なし検証）--------------------------------
+if ($('#showSim')) {
+  showSim = createShowSim($('#showSim'), {
+    getState: () => state,
+    // シナリオ再実行中はシミュレータが歩きを再現するのでドットを動かす。
+    setDot: (x, z) => floorMap && floorMap.setSimPos(x, z),
+  });
+  if (state) showSim.onState(state);
 }
 
 // ---- 周回タイムライン（第一級オーサリング）---------------------------------

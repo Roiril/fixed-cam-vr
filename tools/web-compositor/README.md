@@ -46,6 +46,7 @@
   🎵 BGM 帯（区間セルの下）… その区間で鳴っている曲を carry-forward で表示。▶=切替 / ≡=同じ曲のまま調整 / ■=停止
 BGM ライブラリ … audio/ の音源をトラック登録（ループ範囲・音量・試聴）+ ラン既定 BGM の選択
 フロアマップ … 担当カメラをタイル塗り + 周回コース（スタート/CW-CCW）+ 位置合わせ点
+🕹 ショーシミュレーション … ドットをドラッグ = 体験者の歩き。ショーが実時間で進む（下記）
 エクスポート … 📦 ビルド用エクスポート（show.json + 参照アセットを StreamingAssets/show/ へ焼き込み）
 生成プロンプト … 画像/動画 AI 生成プロンプトを 📋コピー / 編集 / 削除（prompts.json）
 マルチカメラ（常時・監視専用。列 = カメラ A / B / C。ライブ時はアクティブ列を大きく表示）
@@ -58,6 +59,38 @@ BGM ライブラリ … audio/ の音源をトラック登録（ループ範囲�
 - ライブ手動 cue 発火（演出 ON/OFF → `control.activeCue`）は**ライブ・モード**へ移設
 - **① 生映像の 📷/⏺** … 生フレーム（`camA_…`）／ **④ 実映像の 📷/⏺** … Quest と同じ絵（`camA_quest_…`）。ビデオデモ用
 - 合成済み静止画を撮るため WebGL は `preserveDrawingBuffer: true`（[gl.js](gl.js)）
+
+## 🕹 ショーシミュレーション（実機なし検証・2026-07-25）
+
+フロアマップの「シミュレーション」を ON にして**ドット（○）の上から**ドラッグすると、体験者が歩いたものと
+してショーが**実時間で進む**。判定は Unity の純ロジックをそのまま移植した JS ミラー（`scenario-engine.js`）で、
+**Unity が出す golden トレースと一致することをテストで固定**してある（下記）。
+
+- **見えるもの**: いま画面に映っているカメラ / 演出のカット内容、周回・区間、確定ゾーンと滞在待ち、
+  武装中の演出数、時刻つきイベントログ（画面切替 / ゾーン確定 / 周回 / 区間進入 / 演出開始・カット・終了）
+- **操作**: ▶ 再生・⏹ 先頭へ・早送り ×1 / ×4 / ×16
+- **記録と再実行**: ● 記録 でドラッグ軌跡を `samples[]` に記録 → 💾 保存（`scenarios/<name>.json`）。
+  ▶ 再実行 で同じ歩き方を再現する（既定は**いまの show.json の設定**で。「保存時の設定で再生」も選べる）。
+  保存形式は Unity の golden fixture と同じ形なので、`Assets/Tests/Fixtures/` に置けば C# 側
+  `ShowScenarioRunner` にそのまま食わせられる（現場で見つけた歩き方を回帰テストへ固定できる）
+- **検証できないもの**（パネル下部にも常時表示）: VR のスケール感・立体視、dip の体感時間、MJPEG の実レイテンシ・
+  砂嵐、位置合わせ・OS recenter・触覚、Quest の性能。**卓で通っても実機確認は要る**
+
+```powershell
+# Unity ⇄ Web の一致テスト（既存の卓テストごと全部）
+node --test "tools/web-compositor/*.test.mjs"
+```
+
+一致の仕組みと trace の形は [.claude/plans/2026-07-25_show-simulator.md](../../.claude/plans/2026-07-25_show-simulator.md)。
+食い違ったら**直すのは JS 側**（C# が正）で、fixture を書き換えて通すのは禁止。
+
+制約:
+- ゾーン展開は **`layout.grid`（タイルペイント）専用**。cuts しか無い show.json では実行しない（黙って別の
+  答えを出さないため。フロアマップの「cuts から自動生成」→ 💾 保存で grid 化する）
+- 尺が「素材の終わりまで（untilClipEnd）」のカットは卓では実尺が分からない。cue の trim から推定するか、
+  推定できなければ watchdog まで走る（どちらもパネルに ⚠ で明示される）
+- `scenarios/` への保存には capture-server の `POST /scenarios/save` が要る（**2026-07-25 追加。サーバを再起動
+  するまでは効かない**）。使えないときは自動でブラウザの localStorage に退避し、その旨をメッセージに出す
 
 ## 🎵 BGM オーサリング（2026-07-25）
 
@@ -128,14 +161,19 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 | `cue-editor.js` | cue 編集器（マスク canvas + 素材 + trim + フェード + strength + 💾保存）。区間インスペクタが埋め込む |
 | `composite-view.js` | WebGL 合成プレビュー（カメラ列 ④ と検証モードで共用） |
 | `common.js` | 共通小物（FX 定義 / getState/postState / cue 保存 / captures / mediaCache 等） |
-| `floormap.js` | フロアマップ（タイル塗り + 周回コース + 位置合わせ点） |
+| `floormap.js` | フロアマップ（タイル塗り + 周回コース + 位置合わせ点 + シミュレーションドット） |
+| `scenario-engine.js` | 🕹 **ショーシミュレータのエンジン**（Unity 純ロジックの JS ミラー: ゾーン判定 / 時計 / 周回 / 演出 / 画面）。golden トレースで Unity と機械照合（`scenario-engine.test.mjs`） |
+| `zone-layout.js` | layout.grid → ゾーン矩形の展開（`ZoneLayoutSolver.SolveGrid` のミラー。生タイルではなく**実機と同じ矩形**で判定する） |
+| `show-scenario.js` | show.json → シミュレータ入力の変換（区間 takes → 演出定義 / 尺の解決 / 記録シナリオの保存形式） |
+| `show-sim.js` | 🕹 ショーシミュレーション UI（実時間再生・早送り・イベントログ・歩きの記録 / 再実行） |
 | `pipeline.js` | 合成パイプライン（取り込み→色統計マッチング→ラプラシアン→ポスト FX、half-float RT 多パス） |
 | `gl.js` / `shaders.js` | WebGL2 ヘルパー / GLSL 全シェーダ |
-| `capture-server.py` | ローカルサーバ（静的配信 + show 制御 + /cam プロキシ + 保存/プロンプト/エクスポート/discovery API） |
+| `capture-server.py` | ローカルサーバ（静的配信 + show 制御 + /cam プロキシ + 保存/プロンプト/エクスポート/discovery/シナリオ API） |
 | `serve.ps1` | 起動スクリプト |
 | `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json を long-poll。schedule 発火再現は未対応 → タイムラインの ▶ 検証を使う） |
 
 `show.json` / `masks/` / `captures/`（合成素材）/ `recordings/`（📷 ⏺ 撮影物）/ `prompts.json` は PC ローカル運用状態のため `.gitignore` 済み。
+`scenarios/`（🕹 記録した歩き）は**あえて追跡対象**（IP・素材を含まない小さな JSON で、回帰入力として残す価値があるため）。
 
 ## 既知の制約
 
