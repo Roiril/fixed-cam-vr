@@ -133,6 +133,7 @@ export function createFloorMap(container, deps) {
           <button class="fm-mode on" data-mode="paint" title="タイルを塗ってゾーン（担当カメラ）を決める">🖌 塗る</button>
           <button class="fm-mode" data-mode="reg" title="HMD でタッチする位置合わせ点を置く">📍 位置合わせ点</button>
           <button class="fm-mode" data-mode="walk" title="体験者を歩かせる。マップのどこを押してもそこへ立つ">🚶 歩かせる</button>
+          <button class="fm-mode" data-mode="cam" title="実カメラの置き場所と向きを決める（CG 人形を立てる視点）">📐 カメラ姿勢</button>
         </div>
         <canvas class="fm-canvas" width="${SIZE}" height="${SIZE}"></canvas>
         <div class="fm-modehint"></div>
@@ -164,6 +165,11 @@ export function createFloorMap(container, deps) {
           <button class="fm-reg-add"></button>
           <div class="fm-reg-coords"></div>
           <div class="fm-hint2">床の×印テープを置く位置に点を打つ。番号＝HMD でタッチする順。最小2・最大5点。<b>📍 位置合わせ点</b>モードでキャンバスをクリック配置・ドラッグ移動・右クリック削除。未設定なら既定2点を使用。</div>
+        </div>
+        <div class="fm-campose" style="display:none">
+          <div class="fm-course-label">カメラ姿勢（CG 人形を立てる視点）</div>
+          <div class="fm-campose-list"></div>
+          <div class="fm-hint2">実カメラを置いた場所・向きを写す。<b>姿勢を著作したカメラでだけ</b> CG 人形が出る（当てずっぽうのパースで出すと床に埋まる / 宙に浮く）。高さ・俯角・画角はカメラ列の 📐 欄。扇形＝画角の目安。</div>
         </div>
         <label class="fm-num">オーバーラップ (m)<input class="fm-overlap" type="number" min="0" max="0.5" step="0.01"></label>
         <label class="fm-num">ヒステリシス (m)<input class="fm-hyst" type="number" min="0" max="0.5" step="0.01"></label>
@@ -199,8 +205,10 @@ export function createFloorMap(container, deps) {
   //   隠れた前提を作っていた。キャンバス直上の 3 択に畳んで、操作対象と選択肢を隣に置く。
   let mapMode = 'paint';
   let regDragIndex = -1;     // ドラッグ中の regPoint index
+  let camPoseIndex = 0;      // 📐 カメラ姿勢モードで選択中のカメラ index
   const isReg = () => mapMode === 'reg';
   const isWalk = () => mapMode === 'walk';
+  const isCamPose = () => mapMode === 'cam';
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function markDirty() { dirty = true; renderDirty(); }
@@ -336,6 +344,9 @@ export function createFloorMap(container, deps) {
     // 位置合わせ点（番号つきマーカー + タッチ順の破線）
     drawRegPoints();
 
+    // カメラ姿勢（著作済みのカメラだけ。📐 モードでは強調 + 向きハンドル）
+    drawCameraPoses();
+
     // シミュレーションドット
     if (isWalk() && sim) {
       const cam = camAt(sim.x, sim.z);
@@ -405,12 +416,132 @@ export function createFloorMap(container, deps) {
     });
   }
 
+  // 実カメラの置き場所・向き・画角。CG 人形のパースはこの姿勢で決まるので、
+  // 「どこに置いたか」を塗りや位置合わせ点と同じ画面で見られるようにする。
+  function drawCameraPoses() {
+    const edit = isCamPose();
+    for (let i = 0; i < cameras.length; i++) {
+      const p = poseOf(i); if (!p) continue;
+      const [px, py] = courseToPx(p.x, p.z);
+      const d = yawDir(p.yawDeg);
+      const col = camColor(i);
+      const sel = edit && i === camPoseIndex;
+
+      ctx.save();
+      ctx.globalAlpha = edit ? 1 : 0.55;
+
+      // 画角の扇（見えている範囲の目安。人形が入るかを見るために出す）
+      const fov = Math.max(10, Math.min(140, p.fovDeg || 60)) * Math.PI / 180;
+      const base = Math.atan2(d.dx, d.dz);
+      const rad = 74;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      // canvas は y 下向き。course の角度 θ（+Z 基準）→ 画面角は (sinθ, -cosθ)。
+      for (let t = -fov / 2; t <= fov / 2 + 1e-4; t += fov / 24) {
+        const a = base + t;
+        ctx.lineTo(px + Math.sin(a) * rad, py - Math.cos(a) * rad);
+      }
+      ctx.closePath();
+      ctx.fillStyle = col;
+      ctx.globalAlpha *= 0.14;
+      ctx.fill();
+      ctx.globalAlpha = edit ? 1 : 0.55;
+
+      // 向きハンドル
+      const [hx, hy] = poseHandlePx(i);
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(hx, hy);
+      ctx.strokeStyle = col; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(hx, hy, sel ? 6 : 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = sel ? '#fffaf0' : col; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.stroke();
+
+      // カメラ本体
+      ctx.beginPath(); ctx.arc(px, py, sel ? 11 : 9, 0, Math.PI * 2);
+      ctx.fillStyle = '#141820'; ctx.fill();
+      ctx.lineWidth = sel ? 3 : 2; ctx.strokeStyle = col; ctx.stroke();
+      ctx.fillStyle = col; ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(cameras[i].id || String(i), px, py + 0.5);
+      ctx.restore();
+    }
+  }
+
   // 現在の regPoints 座標をサマリ 1 行で表示。
   function updateRegCoords() {
     const a = regArr();
     regCoordsEl.textContent = (a && a.length)
       ? a.map((p, i) => `${regBadge(i)}(${p.x.toFixed(2)}, ${p.z.toFixed(2)})`).join('  ')
       : '';
+  }
+
+  // ---- カメラ姿勢（CG レイヤの視点）------------------------------------------
+  // pose は「著作したカメラだけ」が持つ（Unity は pose の有無で CG を出すか決める）。
+  const POSE_DEFAULT = { x: 0, z: 0, y: 1.2, yawDeg: 0, pitchDeg: 0, fovDeg: 60 };
+  const POSE_HIT = 14, POSE_HANDLE_PX = 40, POSE_HANDLE_HIT = 12;
+  const isFxCam = (i) => !!(cameras[i] && cameras[i].role === 'fx');
+
+  function poseOf(i) { return cameras[i] ? cameras[i].pose : null; }
+  // yaw（course +Z が 0・+X 方向へ増える）→ マップ上のピクセル方向。
+  function yawDir(yawDeg) {
+    const r = (yawDeg || 0) * Math.PI / 180;
+    return { dx: Math.sin(r), dz: Math.cos(r) };
+  }
+  function poseHandlePx(i) {
+    const p = poseOf(i); if (!p) return null;
+    const [px, py] = courseToPx(p.x, p.z);
+    const d = yawDir(p.yawDeg);
+    return [px + d.dx * POSE_HANDLE_PX, py - d.dz * POSE_HANDLE_PX];
+  }
+  // px 座標が掴んでいるもの（カメラ本体 / 向きハンドル）を返す。
+  function poseHit(px, py) {
+    for (let i = 0; i < cameras.length; i++) {
+      const p = poseOf(i); if (!p) continue;
+      const h = poseHandlePx(i);
+      if (h && Math.hypot(px - h[0], py - h[1]) <= POSE_HANDLE_HIT) return { index: i, part: 'yaw' };
+    }
+    for (let i = 0; i < cameras.length; i++) {
+      const p = poseOf(i); if (!p) continue;
+      const [cx, cy] = courseToPx(p.x, p.z);
+      if (Math.hypot(px - cx, py - cy) <= POSE_HIT) return { index: i, part: 'pos' };
+    }
+    return null;
+  }
+  // 📐 モードのカメラ一覧（選択・未設定へ戻す）。マップの印と同じ色で並べる。
+  function renderCamPoseList() {
+    const el = q('.fm-campose-list'); if (!el) return;
+    el.innerHTML = '';
+    if (!cameras.length) { el.textContent = 'カメラがありません'; return; }
+    cameras.forEach((c, i) => {
+      const row = document.createElement('div');
+      row.className = 'fm-campose-row' + (i === camPoseIndex ? ' on' : '');
+      const sw = document.createElement('i');
+      sw.className = 'fm-campose-sw'; sw.style.background = camColor(i);
+      const p = c.pose;
+      const label = document.createElement('button');
+      label.className = 'fm-campose-pick';
+      label.textContent = `カメラ ${c.id}${c.role === 'fx' ? '（演出専用）' : ''}`
+        + (p ? ` — (${(+p.x).toFixed(2)}, ${(+p.z).toFixed(2)}) ${Math.round(p.yawDeg || 0)}°` : ' — 未設定');
+      label.onclick = () => { camPoseIndex = i; renderCamPoseList(); render(); };
+      row.append(sw, label);
+      if (p) {
+        const clr = document.createElement('button');
+        clr.className = 'fm-campose-clear'; clr.textContent = '✕'; clr.title = '姿勢を未設定に戻す';
+        clr.onclick = () => { delete cameras[i].pose; saveCameras(); renderCamPoseList(); render(); };
+        row.append(clr);
+      }
+      el.appendChild(row);
+    });
+  }
+
+  function ensurePose(i) {
+    if (!cameras[i]) return null;
+    if (!cameras[i].pose) cameras[i].pose = { ...POSE_DEFAULT };
+    return cameras[i].pose;
+  }
+  // カメラの変更は layout と違い「その場保存」（カメラ列の 📐 欄と同じ挙動）。
+  function saveCameras() {
+    if (deps && typeof deps.saveCameras === 'function') deps.saveCameras(cameras);
+    window.dispatchEvent(new CustomEvent('fc-cameras-changed'));
   }
 
   // ---- パレット --------------------------------------------------------------
@@ -423,6 +554,9 @@ export function createFloorMap(container, deps) {
       -1);
     const n = Math.max(cameras.length, maxCam + 1, 1);
     for (let i = 0; i < n; i++) {
+      // 演出専用カメラ（role:"fx" = カメラ D）はゾーンに割り当てない。塗れてしまうと
+      // 「周回に出てこないカメラ」という前提そのものが壊れるのでパレットに出さない。
+      if (isFxCam(i)) continue;
       const btn = document.createElement('button');
       btn.className = 'fm-swatch' + (paintChar === String(i) ? ' on' : '');
       const sw = document.createElement('i'); sw.style.background = camColor(i);
@@ -584,6 +718,7 @@ export function createFloorMap(container, deps) {
     paint: 'パレットの色でタイルをクリック / ドラッグ。色 = 担当カメラ。',
     reg: 'クリックで点を置く / ドラッグで移動 / 右クリックで削除。番号 = HMD でタッチする順。',
     walk: 'マップのどこでも押した場所に体験者が立ちます。押したまま動かすと歩きます。',
+    cam: 'カメラ印をドラッグで移動 / 矢印の先をドラッグで向き。何も無い所をクリックすると選択中カメラをそこへ置きます。高さ・俯角・画角はカメラ列の 📐 欄。',
   };
   function setMapMode(next, opt) {
     if (!MODE_HINT[next]) return;
@@ -591,7 +726,11 @@ export function createFloorMap(container, deps) {
     container.querySelectorAll('.fm-mode').forEach((b) => b.classList.toggle('on', b.dataset.mode === next));
     canvas.classList.toggle('fm-reg-edit', isReg());
     canvas.classList.toggle('fm-walk', isWalk());
+    canvas.classList.toggle('fm-campose-edit', isCamPose());
     modeHint.textContent = MODE_HINT[next];
+    const camPanel = q('.fm-campose');
+    if (camPanel) camPanel.style.display = isCamPose() ? '' : 'none';
+    if (isCamPose()) renderCamPoseList();
     // 歩かせるモードに入った時、ドットが無ければ南辺中央に出す（旧チェックボックスと同じ初期位置）。
     if (isWalk() && !sim && !(opt && opt.keepPos)) sim = { x: 0, z: -0.7 };
     updateSimOut(); render(); emitSim();
@@ -664,6 +803,21 @@ export function createFloorMap(container, deps) {
       }
       render(); e.preventDefault(); return;
     }
+    // カメラ姿勢モード: 印を掴めば移動 / 矢印の先を掴めば向き / 空きを押せば選択中カメラを置く。
+    if (isCamPose()) {
+      const hit = poseHit(m.px, m.py);
+      if (hit) {
+        camPoseIndex = hit.index;
+        drag = { mode: 'campose', part: hit.part };
+      } else if (cameras.length) {
+        camPoseIndex = Math.min(camPoseIndex, cameras.length - 1);
+        const p = ensurePose(camPoseIndex);
+        if (p) { p.x = +m.x.toFixed(3); p.z = +m.z.toFixed(3); saveCameras(); }
+        drag = { mode: 'campose', part: 'pos' };
+      }
+      renderCamPoseList(); render();
+      e.preventDefault(); return;
+    }
     // 歩かせるモード: **押した場所へそのまま立たせる**（ドットを狙って掴む必要はない）。
     //   旧実装は半径 14px 以内を掴んだ時だけドラッグで、外すとタイル塗りに化けていた。
     if (isWalk()) {
@@ -698,8 +852,25 @@ export function createFloorMap(container, deps) {
         markDirty(); updateRegCoords(); render();
       }
     }
+    else if (drag.mode === 'campose') {
+      const p = poseOf(camPoseIndex);
+      if (p) {
+        if (drag.part === 'yaw') {
+          // 印から掴んだ点へ向く角度（course +Z が 0）。
+          p.yawDeg = Math.round(Math.atan2(m.x - p.x, m.z - p.z) * 180 / Math.PI);
+        } else {
+          p.x = +m.x.toFixed(3); p.z = +m.z.toFixed(3);
+        }
+        renderCamPoseList(); render();
+      }
+    }
   });
-  window.addEventListener('mouseup', () => { drag = null; regDragIndex = -1; });
+  window.addEventListener('mouseup', () => {
+    // カメラ姿勢はドラッグ終了時にだけ保存する（1 フレームごとに show.json を書かない）。
+    if (drag && drag.mode === 'campose') saveCameras();
+    drag = null;
+    regDragIndex = -1;
+  });
 
   // ---- 外部 API ---------------------------------------------------------------
   function adoptLayout(src) {
@@ -751,6 +922,7 @@ export function createFloorMap(container, deps) {
     cameras = (state && state.cameras) || [];
     if (!dirty) adoptLayout(state && state.layout);
     renderPalette();
+    if (isCamPose()) renderCamPoseList();
     renderCourse();
     if (!dirty) renderRegList(); // 編集中はラベル入力のフォーカスを潰さないため再構築しない
     updateSimOut(); render();

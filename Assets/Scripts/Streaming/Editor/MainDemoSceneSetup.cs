@@ -1,5 +1,6 @@
 #nullable enable
 using FixedCamVr.Diagnostics;
+using FixedCamVr.Streaming.Cg;
 using FixedCamVr.Tracking;
 using TMPro;
 using UnityEditor;
@@ -33,6 +34,8 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string StartupFaderName = "StartupFader";
         private const string BgmName = "[Bgm]";
         private const string BgmClipPath = "Assets/Art/Audio/HorrBGM.mp3";
+        /// <summary>CG 人形だけを置くレイヤ。仮想カメラだけが描き、HMD カメラからは外す。</summary>
+        private const string CgLayerName = "ShowCg";
         // Tracker と HmdTrajectoryRecorder で同値を使う（片方だけ変えると
         // 解析 CSV と実挙動の判定がズレるため 1 本化）。
         private const float HysteresisShrink = 0.15f;
@@ -43,11 +46,26 @@ namespace FixedCamVr.Streaming.EditorTools
             var scene = SceneManager.GetActiveScene();
             if (scene.path != MainScenePath)
             {
-                EditorUtility.DisplayDialog(
-                    "Main シーンを開いてから実行してください",
-                    $"アクティブシーン: {scene.path}\n期待: {MainScenePath}",
-                    "OK");
-                return;
+                // 別シーン（TableDuoMain 等）を開いたまま実行されがち。**未保存でなければ自分で Main を開く**。
+                // 旧実装はモーダルで止めていたが、MCP 経由の自動実行だとダイアログが Editor ごと固まらせ、
+                // 人がクリックするまで全部の応答が止まる（2026-07-27 実害）。
+                if (scene.isDirty)
+                {
+                    EditorUtility.DisplayDialog(
+                        "Main シーンを開いてから実行してください",
+                        $"アクティブシーン: {scene.path}（未保存変更あり）\n期待: {MainScenePath}\n\n" +
+                        "未保存の変更を失わないため自動では開きません。保存または破棄してから再実行してください。",
+                        "OK");
+                    return;
+                }
+                Debug.Log($"[MainDemoSceneSetup] アクティブシーンが {scene.path} だったので {MainScenePath} を開きます。");
+                EditorSceneManager.OpenScene(MainScenePath, OpenSceneMode.Single);
+                scene = SceneManager.GetActiveScene();
+                if (scene.path != MainScenePath)
+                {
+                    Debug.LogError($"[MainDemoSceneSetup] {MainScenePath} を開けませんでした。");
+                    return;
+                }
             }
 
             if (scene.isDirty)
@@ -168,6 +186,61 @@ namespace FixedCamVr.Streaming.EditorTools
                 TrySetObjectRef(siSo, "director", director);
                 siSo.ApplyModifiedPropertiesWithoutUndo();
             }
+
+            // 0.7. CG レイヤ（映像の上に立つ人形）。Screen の material（ScreenComposite）の 3 層目 _CgTex へ
+            //      仮想カメラの絵を書く。**HMD カメラからは ShowCg レイヤを外す**（外さないと人形が
+            //      VR 空間にそのまま浮いて見え、「映像の中に居る」が壊れる）。
+            //      体験者のハンドトラッキングは Assembly-CSharp の OvrHandTrackingBridge から push する。
+            ShowCgLayer? cgLayer = null;
+            if (screenGo != null)
+            {
+                cgLayer = screenGo.GetComponent<ShowCgLayer>();
+                if (cgLayer == null) cgLayer = screenGo.AddComponent<ShowCgLayer>();
+                var cgSo = new SerializedObject(cgLayer);
+                TrySetObjectRef(cgSo, "screenRenderer", screenGo.GetComponent<Renderer>());
+                TrySetObjectRef(cgSo, "showControl", Object.FindObjectOfType<ShowControlClient>(includeInactive: true));
+                cgSo.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            int cgLayerIndex = LayerMask.NameToLayer(CgLayerName);
+            if (cgLayerIndex < 0)
+            {
+                Debug.LogWarning($"[MainDemoSceneSetup] レイヤ '{CgLayerName}' が未定義。CG 人形は出ません" +
+                                 "（Project Settings > Tags and Layers に追加）。");
+            }
+            else
+            {
+                int mask = ~(1 << cgLayerIndex);
+                foreach (var cam in Object.FindObjectsOfType<Camera>(includeInactive: true))
+                {
+                    if ((cam.cullingMask & (1 << cgLayerIndex)) == 0) continue;
+                    cam.cullingMask &= mask;
+                    EditorUtility.SetDirty(cam);
+                }
+            }
+
+            // 体験者の素手 → 人形の腕。Editor asmdef から OVR / Assembly-CSharp を直接参照できないので
+            // ControllerHaptics と同型の reflection で解決する。
+            var handBridgeType = System.Type.GetType("FixedCamVr.OvrBridge.OvrHandTrackingBridge, Assembly-CSharp");
+            if (handBridgeType != null)
+            {
+                var handBridge = streaming.GetComponent(handBridgeType) as MonoBehaviour
+                                 ?? streaming.AddComponent(handBridgeType) as MonoBehaviour;
+                if (handBridge != null)
+                {
+                    var hbSo = new SerializedObject(handBridge);
+                    TrySetObjectRef(hbSo, "cgLayer", cgLayer);
+                    TrySetObjectRef(hbSo, "trackingSpace", centerEye.transform.parent);
+                    TrySetObjectRef(hbSo, "centerEye", centerEye.transform);
+                    hbSo.ApplyModifiedPropertiesWithoutUndo();
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[MainDemoSceneSetup] OvrHandTrackingBridge 型が解決できません（Assembly-CSharp 未コンパイル?）。人形の腕は動きません。");
+            }
+
+            EnableSimultaneousHandsAndControllers();
 
             // 1. [Zones] — 廻リ視の周回経路（企画書 図4）を ±1.3m プレイレンジに当てはめた推測配置。
             // ★パーテーションで L 字壁を組んだら [HmdTrace] 実測で必ず校正すること（unity-vr.md 原則）。
@@ -395,6 +468,44 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         // ----- helpers -----
+
+        /// <summary>
+        /// 体験者の素手（ハンドトラッキング）とスタッフのコントローラを**同時に**使えるようにする。
+        /// OVRManager の 2 フラグはビルド時に立っている必要があるのでシーンへ焼く（実行時設定では遅い）。
+        /// Editor asmdef から Meta XR を直接参照できないため reflection で触る。
+        /// </summary>
+        private static void EnableSimultaneousHandsAndControllers()
+        {
+            var type = System.Type.GetType("OVRManager, Oculus.VR");
+            if (type == null)
+            {
+                Debug.LogWarning("[MainDemoSceneSetup] OVRManager 型が解決できません。素手 + コントローラ同時使用の設定をスキップ。");
+                return;
+            }
+            var manager = Object.FindObjectOfType(type, includeInactive: true) as MonoBehaviour;
+            if (manager == null)
+            {
+                Debug.LogWarning("[MainDemoSceneSetup] シーンに OVRManager が居ません。素手 + コントローラ同時使用の設定をスキップ。");
+                return;
+            }
+
+            bool changed = false;
+            foreach (string name in new[] { "SimultaneousHandsAndControllersEnabled",
+                                            "launchSimultaneousHandsControllersOnStartup" })
+            {
+                var field = type.GetField(name);
+                if (field == null || field.FieldType != typeof(bool)) continue;
+                if (field.GetValue(manager) is bool b && b) continue;
+                field.SetValue(manager, true);
+                changed = true;
+            }
+            if (changed)
+            {
+                EditorUtility.SetDirty(manager);
+                Debug.Log("[MainDemoSceneSetup] OVRManager: 素手 + コントローラの同時使用を有効化しました" +
+                          "（CG 人形の腕を体験者の手で動かすため。スタッフの右手 4 入力は従来どおり）。");
+            }
+        }
 
         private static void DeleteIfExists(string path)
         {

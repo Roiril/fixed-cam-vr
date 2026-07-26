@@ -13,6 +13,7 @@ import { createRibbon } from './ribbon.js';
 import { normalizeTimelineV3 } from './timeline-model.js';
 import { createShowSim } from './show-sim.js';
 import { createAtelier } from './atelier.js';
+import { createActorsPanel } from './actors.js';
 
 const $ = (s) => document.querySelector(s);
 const MW = 640, MH = 360;
@@ -87,6 +88,7 @@ let unityAlive = false;
 let lastUnity = {};
 const columns = new Map();   // camId -> column controller
 let floorMap = null;
+let actorsPanel = null;
 let timeline = null;
 let showSim = null;   // 🕹 ショーシミュレーション（フロアマップのドットで駆動）
 let lastDiscovery = { devices: [], conflicts: [] };
@@ -190,6 +192,10 @@ function buildColumn(cam, index) {
   col.innerHTML = `
     <div class="col-head">
       <b class="col-name">カメラ ${cam.id}</b>
+      <select class="col-role" title="ゾーン = 周回の担当カメラ（フロアマップで塗る）。演出専用 = どのゾーンにも割り当てず、演出のカットからだけ映すカメラ（スタッフの A 巡回にも出ない）">
+        <option value="zone">ゾーン</option>
+        <option value="fx">演出専用</option>
+      </select>
       <span class="col-src"></span>
       <span class="col-status">接続中…</span>
       <button class="col-switch" title="Quest の表示をこのカメラに固定する（ゾーン自動切替は止まる。戻すのは上部の警告バー ⛑ か 🚨 ライブ運用の 🚶）">📺 切替</button>
@@ -214,6 +220,20 @@ function buildColumn(cam, index) {
         <button class="fx-copy" title="この列の画質を他のカメラにもコピーする（3 台の見えを揃える）">⇥ 他カメラにも適用</button>
         <span class="fx-msg"></span>
       </div>
+    </div>
+
+    <div class="col-sec">
+      <div class="sec-label">📐 カメラ姿勢（CG 人形を立てる視点・course 空間）</div>
+      <div class="pose-row">
+        <label>X<input class="pose-f pose-x" type="number" step="0.05"></label>
+        <label>Z<input class="pose-f pose-z" type="number" step="0.05"></label>
+        <label>高さ<input class="pose-f pose-y" type="number" step="0.05"></label>
+        <label>向き°<input class="pose-f pose-yaw" type="number" step="5"></label>
+        <label>俯角°<input class="pose-f pose-pitch" type="number" step="1" title="下向きが負"></label>
+        <label>画角°<input class="pose-f pose-fov" type="number" step="1"></label>
+        <button class="pose-clear" title="姿勢を未設定に戻す（このカメラでは CG 人形が出なくなる）">✕</button>
+      </div>
+      <div class="pose-hint">未設定のカメラでは CG 人形を出しません（当てずっぽうのパースで出す方が体験を壊すため）。フロアマップの 📐 モードでドラッグしても置けます。</div>
     </div>
 
     <div class="col-sec">
@@ -374,6 +394,58 @@ function buildColumn(cam, index) {
   refs.connectLive = connectLive;
 
   q('.col-switch').onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
+
+  // ===== 役割（ゾーン / 演出専用）=====
+  const roleSel = q('.col-role');
+  refs.syncRole = () => {
+    const fx = refs.cam.role === 'fx';
+    roleSel.value = fx ? 'fx' : 'zone';
+    refs.el.classList.toggle('fx-cam', fx);
+  };
+  roleSel.onchange = () => {
+    refs.cam.role = roleSel.value === 'fx' ? 'fx' : 'zone';
+    postState({ cameras: state.cameras });
+    refs.syncRole();
+    // フロアマップのパレット（塗れるカメラ）から即座に外す / 戻す。
+    window.dispatchEvent(new CustomEvent('fc-cameras-changed'));
+  };
+  refs.syncRole();
+
+  // ===== カメラ姿勢（CG レイヤの仮想カメラ）=====
+  //   著作するまで pose キー自体を置かない（Unity は pose の有無で hasPose を決める）。
+  const POSE_DEFAULT = { x: 0, z: 0, y: 1.2, yawDeg: 0, pitchDeg: 0, fovDeg: 60 };
+  const poseF = {
+    x: q('.pose-x'), z: q('.pose-z'), y: q('.pose-y'),
+    yawDeg: q('.pose-yaw'), pitchDeg: q('.pose-pitch'), fovDeg: q('.pose-fov'),
+  };
+  refs.syncPose = () => {
+    const p = refs.cam.pose;
+    for (const [k, inp] of Object.entries(poseF)) {
+      inp.value = p ? (p[k] ?? POSE_DEFAULT[k]) : '';
+      inp.placeholder = String(POSE_DEFAULT[k]);
+    }
+    q('.pose-clear').style.display = p ? '' : 'none';
+  };
+  const commitPose = () => {
+    // 1 個でも触れたら pose を実体化する（残りは既定値で埋める＝画面の見えと一致）。
+    const p = refs.cam.pose ? { ...refs.cam.pose } : { ...POSE_DEFAULT };
+    for (const [k, inp] of Object.entries(poseF)) {
+      const v = parseFloat(inp.value);
+      if (Number.isFinite(v)) p[k] = v;
+    }
+    refs.cam.pose = p;
+    postState({ cameras: state.cameras });
+    refs.syncPose();
+    window.dispatchEvent(new CustomEvent('fc-cameras-changed'));
+  };
+  for (const inp of Object.values(poseF)) inp.onchange = commitPose;
+  q('.pose-clear').onclick = () => {
+    delete refs.cam.pose;
+    postState({ cameras: state.cameras });
+    refs.syncPose();
+    window.dispatchEvent(new CustomEvent('fc-cameras-changed'));
+  };
+  refs.syncPose();
 
   // ===== ビュー/生映像の縦横比をカメラ実寸に合わせる（黒レターボックス背景を出さない）=====
   const viewCanvas = q('.view-canvas');
@@ -603,6 +675,7 @@ async function pollState() {
         rev = s.rev; state = s;
         renderColumns(); syncGlobalFx(); renderStatus(); renderLiveCuePanel(); renderLatchBar();
         floorMap && floorMap.onState(s); timeline && timeline.onState(s); showSim && showSim.onState(s);
+        actorsPanel && actorsPanel.onState(s);
         atelier && atelier.render();   // カメラ集合の変化を工房の列へ（署名一致なら no-op）
         renderBgmSection(); renderRunPanel(); renderPreflight();
       }
@@ -1159,11 +1232,59 @@ if ($('#floorMap')) {
   floorMap = createFloorMap($('#floorMap'), {
     getCameras: () => state?.cameras || [],
     saveLayout: (layout) => postState({ layout }),
+    // カメラ姿勢（📐 モード）は layout と違い「その場保存」。カメラ列の 📐 欄と同じ扱い。
+    saveCameras: (cams) => postState({ cameras: cams }),
     // シミュレーションドットの有効状態・位置を 🕹 ショーシミュレーションへ流す（下で生成）。
     onSim: (e) => showSim && showSim.onSimDot(e),
   });
   if (state) floorMap.onState(state);
 }
+
+// ---- カメラを増やす（4 台目＝演出専用のカメラ D 用）--------------------------
+//   index は Unity 側 CameraStreamRegistry.sources[] の並びと 1 対 1（末尾に足すので既存は動かない）。
+if ($('#camAdd')) {
+  $('#camAdd').onclick = () => {
+    if (!state) return;
+    const cams = state.cameras || (state.cameras = []);
+    const n = cams.length;
+    const id = String.fromCharCode(65 + n);            // 0→A, 3→D …
+    const sourceId = `Phone${String(n + 1).padStart(2, '0')}`;
+    // 4 台目以降は「演出専用」を既定にする（周回ゾーンは 3 台構成が前提のため）。
+    cams.push({ id, sourceId, host: '', port: 8080, auth: '', pinned: false, role: n >= 3 ? 'fx' : 'zone' });
+    postState({ cameras: cams });
+    renderColumns();
+    window.dispatchEvent(new CustomEvent('fc-cameras-changed'));
+    const msg = $('#camAddMsg');
+    if (msg) {
+      msg.textContent = `カメラ ${id} を追加（${sourceId} / ${n >= 3 ? '演出専用' : 'ゾーン'}）`;
+      setTimeout(() => { msg.textContent = ''; }, 5000);
+    }
+  };
+}
+
+// ---- 🎭 CG 人形（actors[]）---------------------------------------------------
+if ($('#actorsPanel')) {
+  actorsPanel = createActorsPanel($('#actorsPanel'), {
+    // ローカル state も即更新する（long-poll の往復を待たずにリボンの選択肢へ反映させるため）。
+    save: (actors) => { if (state) state.actors = actors; postState({ actors }); },
+  });
+  if (state) actorsPanel.onState(state);
+}
+
+// カメラの役割 / 姿勢はカメラ列とフロアマップの両方から編集できる。
+// どちらで変えても即座にもう一方へ反映する（long-poll の往復を待たせない）。
+window.addEventListener('fc-cameras-changed', () => {
+  for (const c of columns.values()) {
+    c.syncRole && c.syncRole();
+    c.syncPose && c.syncPose();
+  }
+  if (floorMap && state) floorMap.onState(state);
+});
+
+// 人形を足した / 消したら、演出リボンの「CG 人形」選択肢を即座に追従させる。
+window.addEventListener('fc-actors-changed', () => {
+  if (timeline && state) timeline.onState(state);
+});
 
 // ---- 🕹 ショーシミュレーション（実機なし検証）--------------------------------
 if ($('#showSim')) {
@@ -1182,6 +1303,7 @@ if ($('#timeline')) {
   timeline = createRibbon($('#timeline'), {
     getCameras: () => state?.cameras || [],
     getCues: () => state?.cues || [],
+    getActors: () => state?.actors || [],
     getCourseOrder: () => state?.layout?.course?.order || null,
     getGlobalPost: () => state?.post || FX_DEFAULT,
     getBgmTracks: () => state?.bgmTracks || [],

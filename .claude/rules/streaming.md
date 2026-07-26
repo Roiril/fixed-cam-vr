@@ -350,6 +350,34 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   `follow` = 体験者の HMD XZ に立つ / `fixed` = 著作位置。**姿勢が未著作のカメラでは出さない**
 - **`cameras[].role`**: `"fx"` は演出専用カメラ（＝カメラ D）。ゾーンに割り当てず、スタッフの A ボタン巡回にも出さない
 
+### 演出専用カメラ D と CG 人形の実配線（2026-07-27）
+
+計画 [2026-07-27_cg-actor-hand-tracking.md](../plans/2026-07-27_cg-actor-hand-tracking.md)（設計・不変条件の正本）。
+
+- **カメラ D は 4 本目の普通のカメラ**。`Assets/Settings/Cameras/Phone04.asset`（cameraId=D）+ `StreamingLogic.prefab` の
+  `sources[]` 4 本目。show.json の `cameras[3]` に `role:"fx"` を入れると、ゾーン塗りパレット（卓）・スタッフ巡回・
+  ゾーン自動切替から外れ、**演出のカットからだけ映る**。配信アプリは v0.8.0 で cameraId に **D** を追加済み。
+  **常時受信する**（演出のときだけ繋ぐ、はしない — 張り直しで 1〜2 秒の黒が出るため）
+- **CG 人形**（`steps[].cg` / `cgMode`）は [`ShowCgLayer`](../../Assets/Scripts/Streaming/Cg/ShowCgLayer.cs) が
+  実カメラ姿勢（`cameras[].pose`）の双子の仮想カメラで **ShowCg レイヤだけ**を RT へ描き、`_CgTex`（ポスト FX の前）で合成する。
+  腕は体験者のハンドトラッキング（[`ShowActorRig`](../../Assets/Scripts/Streaming/Cg/ShowActorRig.cs) +
+  [`TwoBoneIk`](../../Assets/Scripts/Streaming/Cg/TwoBoneIk.cs) + [`ActorArmLogic`](../../Assets/Scripts/Streaming/Cg/ActorArmLogic.cs)）。
+  入力は Assembly-CSharp の [`OvrHandTrackingBridge`](../../Assets/Scripts/OvrBridge/OvrHandTrackingBridge.cs) が
+  `ShowBodyInput`（頭 + 左右手のワールド位置のみ）で push する（**Streaming asmdef は OVR を参照しない**の維持）
+- **course→world は `CourseFrame` 経由**。`ShowControlClient.CourseToWorldProvider` / `CourseYawProvider`
+  （ZoneLayoutApplier が注入）を使う。**親子付けでは駄目**（CourseFrame は transform を動かさない）
+- **決めたこと**: 手の**回転は使わない**（位置だけ。OVR の手 basis の罠を避ける）／ 全身アニメは持たない
+  （T ポーズから腕だけ下ろす＝マネキン。AnimatorController 不要でどの humanoid FBX でも動く）／
+  follow の体の向きは**体験者の頭 yaw**（分身）。カメラ目線が欲しければ `fixed` + `fixedYawDeg`
+- **フェイルソフト**: 姿勢未著作のカメラでは出さない / actor 未定義・プレハブ欠落は代用の箱 /
+  手が取れない間は idle（体側）へ 0.35s で合流し**人形は消えない**
+- **Editor メニュー**: `Setup/Build Show Actor Prefab`（humanoid FBX → `Resources/ShowActors/<名前>.prefab`。
+  Humanoid でも Generic でも可 — Generic は手のボーン名から親を 2 つ遡って肘・肩を取る）/
+  `Diagnostics/Preview Show Actor`（Play せず 4 ポーズ × 2 角度を PNG 化）
+- **卓の著作面**: カメラ列の役割セレクトと 📐 姿勢欄・フロアマップの **📐 カメラ姿勢**モード（印ドラッグ＝位置 /
+  矢印の先ドラッグ＝向き・扇＝画角）・**🎭 CG 人形**パネル（actors[]）・カットの「CG 人形」ドロップダウン
+- **⚠ 実機未検証**（2026-07-27。EditMode 695/695・卓はブラウザ実操作・人形は Editor 静止画で確認済み）
+
 ### BGM（区間で切替・停止・ループ範囲）— 2026-07-25
 
 旧: `[Bgm]` の AudioSource が 1 曲を起動中ずっとループ（固定）。新: **タイムライン区間で切り替わる**。

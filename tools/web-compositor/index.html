@@ -84,6 +84,11 @@
         </div>
         <div id="gfxRows" class="fx-rows"></div>
       </div>
+      <div class="row-btns cams-toolbar">
+        <button id="camAdd" title="カメラを 1 台増やす（既定は演出専用＝周回ゾーンに割り当てないカメラ D 用）。配信スマホ側の cameraId も同じ文字にする">＋ カメラを追加</button>
+        <span class="cams-hint">追加したカメラは Unity 側 <b>StreamingLogic.prefab の sources[]</b> と並び順で対応する（4 台目 = Phone04）。</span>
+        <span id="camAddMsg" class="fx-msg"></span>
+      </div>
       <div id="cams" class="cams"></div>
     </section>
 
@@ -193,6 +198,13 @@
         <span id="bgmRootState" class="ed-status"></span>
       </div>
       <div id="bgmTrackList" class="bgm-list"></div>
+    </section>
+
+    <section class="actors-sec" data-group="author">
+      <div class="mc-title">🎭 CG 人形（映像の上に立たせる 3D）
+        <span class="hint">演出のカットに重ねる人形。<b>体験者のハンドトラッキングで腕が動く</b>（プレハブに ShowActorRig が付いていれば自動）。立ち位置は「体験者の位置（分身）」か「決めた位置」をカットで選ぶ。<b>実カメラの姿勢を著作したカメラでだけ出る</b>（カメラ列の 📐 欄・フロアマップの 📐 モード）。プレハブは Unity の <b>Tools/FixedCamVr/Setup/Build Show Actor Prefab</b> で humanoid の FBX（Mixamo 等）から作る。</span>
+      </div>
+      <div id="actorsPanel"></div>
     </section>
 
     <section class="export-sec" data-group="author">

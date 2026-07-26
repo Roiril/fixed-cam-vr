@@ -74,11 +74,19 @@ namespace FixedCamVr.Tracking
         private void InjectHeartbeatProviders()
         {
             if (showControl == null) return;
-            if (courseFrame != null && headTransform != null)
+            if (courseFrame != null)
             {
                 var frame = courseFrame;
-                var head = headTransform;
-                showControl.HeadCourseXZProvider = () => frame.WorldToCourse(head.position);
+                if (headTransform != null)
+                {
+                    var head = headTransform;
+                    showControl.HeadCourseXZProvider = () => frame.WorldToCourse(head.position);
+                }
+                // CG レイヤ（仮想カメラ・人形）を位置合わせ済みの実空間へ置くための course→world。
+                // CourseFrame は transform を動かさない（originXZ/yawDeg を数値で持つ）ので、
+                // 親子付けではなくこの変換を通すのが唯一正しい経路。
+                showControl.CourseToWorldProvider = (xz, y) => frame.CourseToWorld(xz, y);
+                showControl.CourseYawProvider = () => frame.YawDeg;
             }
             var trk = tracker;
             showControl.CurrentZoneLabelProvider = () => trk != null && trk.CurrentZone != null ? trk.CurrentZone.Label : "";

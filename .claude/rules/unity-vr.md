@@ -260,6 +260,12 @@ VR では **Play 開始から最初の安定フレームまで** の間、以下
 | 直下（ショートカット可） | 0〜49 | ユーザー常用（Open Main Scene 等） |
 | `Setup/` | 50〜99 | シーン構築・アセット生成（Setup Main Demo Scene 等） |
 | `Layout/` | 100〜199 | Editor レイアウト管理（ユーザー初期設定） |
-| `Diagnostics/` | 200〜299 | シュビーが叩く検証ツール（Ping / Run Tests 等） |
+| `Diagnostics/` | 200〜299 | シュビーが叩く検証ツール（Ping / Run Tests / Preview Registration Viz / Preview Show Actor 等） |
+
+**CG 人形のレイヤ規約**（2026-07-27）: 人形は専用レイヤ **`ShowCg`(slot 9)** に置き、
+**HMD カメラの cullingMask からは外す**（`Setup Main Demo Scene` が自動で外す）。外すのを忘れると
+人形が VR 空間にそのまま浮いて見え、「映像の中に居る」という前提が壊れる。
+レイヤの追加はファイル直編集ではなく MCP `manage_editor action=add_layer` で行う
+（外部編集は Unity のメモリ側に無視され、次の保存で消える — [[cg_actor_and_layer_traps]]）。
 
 新規メニュー追加時は **どの階層に置くべきか判断**してから書く。階層基準が曖昧なら直下に置かない（ゴチャゴチャ化を防ぐ）。MenuItem パスを README / TROUBLESHOOTING / docs/ で参照している箇所も同時更新する。

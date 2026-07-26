@@ -89,6 +89,7 @@ export function createRibbon(container, deps) {
   let timeline = { rev: 1, schema: 3, segments: [] };
   let dirty = false;
   let cameras = [];
+  let actors = [];          // 🎭 CG 人形（show.json actors[]）。カットの「CG 人形」選択肢。
   let cues = [];
   let order = null;
   let orderIsExplicit = false;
@@ -157,7 +158,12 @@ export function createRibbon(container, deps) {
     const id = cameras[idx] ? cameras[idx].id : null;
     return id == null ? [] : cues.filter((c) => (c.camera || '') === id);
   }
-  function camLabel(idx) { return cameras[idx] ? `カメラ ${cameras[idx].id}` : `#${idx}`; }
+  // 演出専用カメラ（role:"fx"）は周回に出てこない＝作者が「どれが D か」を選ぶ時の手がかりが要る。
+  function camLabel(idx) {
+    const c = cameras[idx];
+    if (!c) return `#${idx}`;
+    return `カメラ ${c.id}${c.role === 'fx' ? '（演出専用）' : ''}`;
+  }
   function globalPost() { return (deps.getGlobalPost && deps.getGlobalPost()) || FX_DEFAULT; }
   function captureItems() { return (deps.getCaptures && deps.getCaptures()) || []; }
 
@@ -995,6 +1001,10 @@ export function createRibbon(container, deps) {
     for (const it of real) assetOpts += opt(it);
     if (test.length) assetOpts += `<optgroup label="動作確認用（testassets）">${test.map(opt).join('')}</optgroup>`;
     if (s.assetUrl && !assets.some((it) => it.url === s.assetUrl)) assetOpts += `<option value="${escapeHtml(s.assetUrl)}" selected>${escapeHtml(baseName(s.assetUrl))}</option>`;
+    // CG 人形は 🎭 パネルで定義したものから選ぶ（id の手打ちは綴り違いで無言に出なくなる）。
+    let cgOpts = '<option value="">（出さない）</option>';
+    for (const a of actors) cgOpts += `<option value="${escapeHtml(a.id)}"${s.cg === a.id ? ' selected' : ''}>${escapeHtml(a.name || a.id)}</option>`;
+    if (s.cg && !actors.some((a) => a.id === s.cg)) cgOpts += `<option value="${escapeHtml(s.cg)}" selected>${escapeHtml(s.cg)}（未定義）</option>`;
     let cueOpts = '<option value="">（重ねない）</option>';
     for (const c of cues) cueOpts += `<option value="${escapeHtml(c.id)}"${s.cueId === c.id ? ' selected' : ''}>${escapeHtml(c.name || c.id)}</option>`;
     if (s.cueId && !cues.some((c) => c.id === s.cueId)) cueOpts += `<option value="${escapeHtml(s.cueId)}" selected>${escapeHtml(s.cueId)}（未定義）</option>`;
@@ -1037,7 +1047,7 @@ export function createRibbon(container, deps) {
         </select></label>
         <label><input class="rb-s-transms" type="number" min="0" step="10" value="${s.transitionMs || 0}">ms<span class="rb-hint2">0=既定</span></label>
         <label class="chk"><input class="rb-s-post-on" type="checkbox" ${s.hasPost ? 'checked' : ''}>🎨 画像加工を上書き</label>
-        <label title="映像の上に CG の人形を立てる。カメラ姿勢が著作済みのカメラでのみ出る">CG 人形<input class="rb-s-cg" type="text" value="${escapeHtml(s.cg || '')}" placeholder="actor id（空=出さない）" size="10"></label>
+        <label title="映像の上に CG の人形を立てる。人形は 🎭 CG 人形パネルで定義する。カメラ姿勢が著作済みのカメラでのみ出る">CG 人形<select class="rb-s-cg">${cgOpts}</select></label>
         <label class="rb-s-cgmode-l" style="display:${s.cg ? '' : 'none'}">立ち位置<select class="rb-s-cgmode">
           <option value="${TAKE.CG_FOLLOW}"${s.cgMode !== TAKE.CG_FIXED ? ' selected' : ''}>体験者の位置</option>
           <option value="${TAKE.CG_FIXED}"${s.cgMode === TAKE.CG_FIXED ? ' selected' : ''}>決めた位置</option>
@@ -1238,6 +1248,7 @@ export function createRibbon(container, deps) {
   function pullDeps(state) {
     cameras = deps.getCameras ? deps.getCameras() : ((state && state.cameras) || []);
     cues = deps.getCues ? deps.getCues() : ((state && state.cues) || []);
+    actors = deps.getActors ? deps.getActors() : ((state && state.actors) || []);
     order = deps.getCourseOrder ? deps.getCourseOrder() : (state && state.layout && state.layout.course ? state.layout.course.order : null);
   }
 

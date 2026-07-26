@@ -40,6 +40,8 @@
 | 3.9 | **ビューア体験の改善**（yaw 追従の緩急・切替クールダウン/dip-to-black・cue 中切替凍結・信号ロスト砂嵐・HUD 既定 OFF） | 🚧 実装済み・試着未検証 |
 | 3.95 | **BGM オーサリング**（区間ごとに曲の切替・停止・ループ範囲・音量・クロスフェード。BgmDirector / BgmPlanLogic + Web 卓の BGM ライブラリと BGM 帯） | 🚧 実装済み・実機未検証 |
 | 3.97 | **ショーシミュレータ**（フロアマップのドットを歩かせて実機なしでショーを検証。ゾーン確定・周回・演出発火・画面切替を Unity と同じ純ロジックで再現し、[golden トレース](Assets/Tests/Fixtures/scenario_walk.trace.json)で Web⇄Unity の一致を機械固定。`ShowScenarioRunner` / `ZonePickLogic` + 卓の 🕹 パネル） | ✅ 一致テスト green・ブラウザ実測済み |
+| 3.98 | **演出専用カメラ D**（`cameras[].role:"fx"` = どのゾーンにも割り当てず演出のカットからだけ映すカメラ。スタッフの A 巡回・ゾーン自動切替から除外。配信アプリ側も cameraId に D を追加 v0.8.0） | 🚧 実装済み・実機未検証 |
+| 3.99 | **CG 人形**（映像の上に立つ 3D。体験者の**ハンドトラッキング**で腕が動く。実カメラ姿勢の双子の仮想カメラで描き、ポスト FX の前に合成。ShowCgLayer / ShowActorRig / TwoBoneIk + 卓の 🎭 パネルと 📐 カメラ姿勢モード） | 🚧 実装済み・Editor 静止画で検証・実機未検証 |
 | 4 | スクリーン外 3D 演出 / CG 合成 | 未着手 |
 
 主要コンポーネントの仕様（エンドポイント・遅延対策・show.json 設定契約・スクリーン合成モデル）は [.claude/rules/streaming.md](.claude/rules/streaming.md) に集約。
@@ -58,6 +60,24 @@
 4. **▶ 検証**（矢印キー：→ 次ゾーン / ← 戻る / R 先頭 / Esc）で、実機なしに発火順と「体験者に見える画」をブラウザで確認（ローカルのみ・show.json は書かない）
 5. **📦 ビルド用エクスポート** → show.json + 参照アセットが `Assets/StreamingAssets/show/` に焼き込まれる（コミット禁止・gitignore 済み）
 6. 通常どおり APK ビルド → **Quest 単体（PC 不在）で周回に応じて自動発火**。Web 卓のライブ操作（演出 ON/OFF）は常にタイムラインより優先
+
+### 演出専用カメラ D と CG 人形（Phase 3.98 / 3.99 の使い方）
+
+**カメラ D＝周回に出てこないカメラ。** 演出のカットから `映すもの = ライブカメラ / カメラ D` で呼ぶ。
+
+1. 配信スマホ側で **cameraId を D** にする（[fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) v0.8.0 以降）
+2. 卓のカメラ列で **＋ カメラを追加**（4 台目は自動で「演出専用」）。Unity 側は `Phone04.asset` と `StreamingLogic.prefab` の `sources[]` 4 本目が対応済み
+3. フロアマップのゾーン塗りパレットに D は出ない（＝周回に組み込まれない）。スタッフの A ボタン巡回にも出ない
+
+**CG 人形＝映像の上に立つ 3D。体験者のハンドトラッキングで腕が動く。**
+
+1. Unity で **Tools > FixedCamVr > Setup > Build Show Actor Prefab**（humanoid の FBX を選択 or 既定の Mixamo Remy）→ `Assets/Resources/ShowActors/<名前>.prefab` ができる
+2. 卓の **🎭 CG 人形**パネルで人形を追加し、プレハブ名（`ShowActors/Remy`）と身長を入れる
+3. 卓の **📐 カメラ姿勢**（フロアマップのモード）で、その映像を撮っている実カメラの位置・向きを置く。高さ・俯角・画角はカメラ列の 📐 欄。**姿勢を著作したカメラでだけ人形が出る**
+4. 演出のカットで **CG 人形**を選び、立ち位置を「体験者の位置（分身）」か「決めた位置」から選ぶ
+5. 見た目と腕の動きは Play せずに **Tools > FixedCamVr > Diagnostics > Preview Show Actor** で確認できる（`Assets/Screenshots/actorviz/` に 4 ポーズ × 2 角度）
+
+設計・不変条件は [.claude/plans/2026-07-27_cg-actor-hand-tracking.md](.claude/plans/2026-07-27_cg-actor-hand-tracking.md)。
 
 ## 動かし方（最短）
 
@@ -194,7 +214,7 @@ fixed-cam-vr/
 │   ├── Scenes/               # Main.unity / Debug/ / Sandbox/ / FxSandbox.unity
 │   ├── Art/                  # マテリアル + 映像加工シェーダ/Compute
 │   ├── Prefabs/              # MjpegScreenStage / StreamingLogic 等
-│   ├── Settings/             # URP / Quality / CameraSource SO（Cameras/Phone01–03）
+│   ├── Settings/             # URP / Quality / CameraSource SO（Cameras/Phone01–04。04 = 演出専用カメラ D）
 │   ├── Oculus/ Resources/ XR/ # Meta XR / OVR / XR 設定（2 アプリ共有 — 片方の都合で触らない）
 │   └── Tests/                # EditMode テスト（Streaming / Tracking / TableDuo）
 ├── docs/                     # onsite-checklist / table-duo/ / ivrc-video/

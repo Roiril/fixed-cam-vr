@@ -1582,3 +1582,51 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
   line-height: 1.5; }
 .ss-limits .ss-hint { font-size: 11.5px; }
 .ss-limits b { color: var(--danger-color); opacity: 1; }
+
+/* ---- カメラの役割（ゾーン / 演出専用）と姿勢（CG 人形の視点）------------------ */
+.col-role {
+  flex: none; font-size: 11px; padding: 1px 4px;
+  background: transparent; color: inherit; border: 1px solid var(--line-input); border-radius: 3px;
+}
+.cam-col.fx-cam .col-name::after {
+  content: '演出専用'; margin-left: 6px; font-size: 10px; letter-spacing: .1em;
+  color: var(--warn-color); opacity: .9;
+}
+.pose-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pose-row label { display: flex; align-items: center; gap: 3px; font-size: 11px; opacity: var(--opacity-sub); }
+.pose-f { width: 62px; font-size: 11px; padding: 2px 4px; }
+.pose-clear { padding: 2px 7px; font-size: 11px; line-height: 1; }
+.pose-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; margin-top: 4px; }
+
+/* フロアマップの 📐 カメラ姿勢モード */
+.fm-campose {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; border: 1px solid var(--line-soft); border-left: 2px solid var(--warn-color);
+}
+.fm-campose-list { display: flex; flex-direction: column; gap: 4px; }
+.fm-campose-row { display: flex; align-items: center; gap: 6px; }
+.fm-campose-row.on .fm-campose-pick { color: var(--accent-color); }
+.fm-campose-sw { width: 12px; height: 12px; flex: none; border-radius: 2px; display: inline-block; }
+.fm-campose-pick {
+  flex: 1 1 auto; text-align: left; font-size: 11px; padding: 2px 4px;
+  border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer;
+}
+.fm-campose-row.on .fm-campose-pick { border-color: var(--accent-color); }
+.fm-campose-clear { flex: none; padding: 2px 6px; font-size: 11px; line-height: 1; }
+canvas.fm-campose-edit { cursor: crosshair; }
+
+/* ---- 🎭 CG 人形（actors[]）------------------------------------------------- */
+.actors-toolbar { align-items: center; }
+.actors-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
+.actors-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.actors-empty { font-size: 11.5px; opacity: var(--opacity-sub); }
+.actors-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 6px 8px; border: 1px solid var(--line-soft);
+}
+.ac-f { display: flex; align-items: center; gap: 4px; font-size: 11px; opacity: var(--opacity-sub); }
+.ac-f input { font-size: 11px; padding: 2px 4px; }
+.ac-f input[type=number] { width: 66px; }
+.ac-prefab-l { flex: 1 1 220px; }
+.ac-prefab-l input { flex: 1 1 auto; min-width: 0; }
+.ac-del { margin-left: auto; padding: 2px 8px; font-size: 11px; line-height: 1; }

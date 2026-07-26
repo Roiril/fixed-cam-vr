@@ -93,10 +93,15 @@ def _default_show():
         # post（カメラ別画像加工）は任意キー。未設定なら Unity は global post に従う。
         # pinned=True は「卓で host を手入力した」印。自動追従（discovery）を抑止する。
         # 既存 show.json に pinned が無くても「未固定＝追従対象」として扱う（後方互換）。
+        # role: 'zone'（既定・周回ゾーンに割り当てる）/ 'fx'（演出専用＝カメラ D）。
+        #   fx はスタッフの A ボタン巡回にもゾーン自動切替にも出ない。演出のカットからだけ映せる。
+        # pose: CG 人形を立てるための実カメラ姿勢（course 空間）。著作するまでキー自体を置かない
+        #   （Unity は pose の有無で hasPose を決める）。フロアマップの 📐 カメラ姿勢モードで編集する。
         'cameras': [
-            {'id': 'A', 'sourceId': 'Phone01', 'host': '', 'port': 8080, 'auth': '', 'pinned': False},
-            {'id': 'B', 'sourceId': 'Phone02', 'host': '', 'port': 8080, 'auth': '', 'pinned': False},
-            {'id': 'C', 'sourceId': 'Phone03', 'host': '', 'port': 8080, 'auth': '', 'pinned': False},
+            {'id': 'A', 'sourceId': 'Phone01', 'host': '', 'port': 8080, 'auth': '', 'pinned': False, 'role': 'zone'},
+            {'id': 'B', 'sourceId': 'Phone02', 'host': '', 'port': 8080, 'auth': '', 'pinned': False, 'role': 'zone'},
+            {'id': 'C', 'sourceId': 'Phone03', 'host': '', 'port': 8080, 'auth': '', 'pinned': False, 'role': 'zone'},
+            {'id': 'D', 'sourceId': 'Phone04', 'host': '', 'port': 8080, 'auth': '', 'pinned': False, 'role': 'fx'},
         ],
         'cues': [],
         # 全体グレーディングの出荷値 =「暗めの監視カメラ」（common.js FX_CCTV / Unity ScreenMjpeg.mat と同じ値）。
@@ -1156,7 +1161,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
     _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule', 'timeline',
-                   'bgmTracks', 'bgm')
+                   'bgmTracks', 'bgm', 'actors', 'record')
 
     def _post_state(self):
         body = self._read_json_body()

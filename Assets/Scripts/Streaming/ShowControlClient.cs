@@ -556,6 +556,13 @@ namespace FixedCamVr.Streaming
         public Func<Vector2>? HeadCourseXZProvider;
         /// <summary>現在ゾーンのラベルを返す供給元（null なら空文字）。</summary>
         public Func<string>? CurrentZoneLabelProvider;
+        /// <summary>
+        /// course space の (XZ, y) をワールド座標へ変換する供給元（CourseFrame.CourseToWorld を注入）。
+        /// CG レイヤの仮想カメラ・人形を位置合わせ済みの実空間へ置くのに使う。null ならワールド＝course。
+        /// </summary>
+        public Func<Vector2, float, Vector3>? CourseToWorldProvider;
+        /// <summary>course space の yaw（度）を返す供給元（CourseFrame.YawDeg を注入）。null なら 0。</summary>
+        public Func<float>? CourseYawProvider;
 
         private string ConfigCachePath => Path.Combine(Application.persistentDataPath, configCacheFileName);
 
