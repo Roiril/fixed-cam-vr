@@ -20,6 +20,14 @@ function normalizeSource(source) {
     || source === TAKE.SRC_CLIP || source === TAKE.SRC_STILL) ? source : TAKE.SRC_LIVE;
 }
 
+/**
+ * 表示用の source（`rec` を live へ潰さない）。卓は端末内録画を持たないので、録画カットは
+ * 「そのカメラのライブで代用して見せる」— 見た目は live と同じでよいが、**何のカットかは正しく言う**。
+ */
+export function displaySource(step) {
+  return step && step.source === TAKE.SRC_REC ? TAKE.SRC_REC : normalizeSource(step && step.source);
+}
+
 /** -1 = 素材定義から継承（TakeSchema.Inherit）。 */
 const inherit = (stepValue, cueValue) => (stepValue < 0 ? cueValue : stepValue);
 
@@ -104,7 +112,7 @@ export function buildScenarioConfig(state, opts = {}) {
         const d = resolveStepDuration(st, cue, getDuration);
         durs.push(d.durSec);
         metaSteps.push({
-          source: normalizeSource(st.source),
+          source: displaySource(st),
           camera: stepCamera(st),
           cueId: st.cueId || '',
           assetUrl: st.assetUrl || '',

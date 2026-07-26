@@ -28,7 +28,10 @@ namespace FixedCamVr.Streaming
                 if (seg.takes != null)
                     foreach (var take in seg.takes)
                     {
-                        if (take?.steps == null) continue;
+                        if (take == null) continue;
+                        // 演出の BGM も同じ規約（宣言 bool ∧ 入れ子存在）。幻の bgm で音が飛ばない。
+                        take.hasBgm = take.hasBgm && take.bgm != null;
+                        if (take.steps == null) continue;
                         foreach (var step in take.steps)
                             if (step != null) step.hasPost = step.hasPost && step.post != null;
                     }

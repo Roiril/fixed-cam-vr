@@ -143,5 +143,39 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(0f, ls, 1e-4f);
             Assert.AreEqual(0f, le, 1e-4f);
         }
+
+        // ---- DecideRestore（演出が音を占有した後、区間の音へ戻る）-----------------
+
+        [Test]
+        public void 演出明けは区間の曲へ戻す()
+        {
+            // 演出が別の曲を鳴らしていた → レーンの曲へクロスフェードで戻る
+            Assert.AreEqual(BgmPlanLogic.BgmChange.Start,
+                BgmPlanLogic.DecideRestore(playing: true, currentTrackId: "scare", laneTrackId: "amb"));
+        }
+
+        [Test]
+        public void 演出が曲を止めていたら区間の曲を鳴らし直す()
+        {
+            Assert.AreEqual(BgmPlanLogic.BgmChange.Start,
+                BgmPlanLogic.DecideRestore(playing: false, currentTrackId: "", laneTrackId: "amb"));
+        }
+
+        [Test]
+        public void 区間が無音なら演出明けは止める()
+        {
+            Assert.AreEqual(BgmPlanLogic.BgmChange.Stop,
+                BgmPlanLogic.DecideRestore(playing: true, currentTrackId: "scare", laneTrackId: ""));
+            Assert.AreEqual(BgmPlanLogic.BgmChange.None,
+                BgmPlanLogic.DecideRestore(playing: false, currentTrackId: "", laneTrackId: ""),
+                "元から無音なら何もしない");
+        }
+
+        [Test]
+        public void 演出が同じ曲のままなら戻す必要はない()
+        {
+            Assert.AreEqual(BgmPlanLogic.BgmChange.None,
+                BgmPlanLogic.DecideRestore(playing: true, currentTrackId: "amb", laneTrackId: "amb"));
+        }
     }
 }

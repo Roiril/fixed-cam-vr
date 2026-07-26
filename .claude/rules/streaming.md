@@ -366,6 +366,16 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - **区間への配線**: [`TimelineDirector`](../../Assets/Scripts/Streaming/TimelineDirector.cs) がゾーン進入で
   `ApplySegment`。ラン開始（runEpoch 変化 / 右グリップ長押し）で**ラン既定へ戻る**。show.json の rev が上がる
   たびに鳴り直さないよう、既定はシグネチャ比較で変化時のみ適用する
+- **演出（Take）は音も一時占有できる**（2026-07-26）: `timeline.segments[].takes[].bgm` / `hasBgm`（型は区間と同じ
+  `ShowBgmDef`）。**画面と同じ規則** — 演出開始で BGM レーンを占有し、終了・中止・ライブ卓の介入・ランリセットで
+  必ず返す（[`TakeRunner`](../../Assets/Scripts/Streaming/TakeRunner.cs) → [`BgmDirector.BeginTakeOverride` /
+  `EndTakeOverride`](../../Assets/Scripts/Streaming/BgmDirector.cs)）。
+  **戻り先は開始時のスナップショットではなく「いまのレーン」** — 演出中に体験者がゾーンを移ると、そのあいだに
+  届いた区間指示は鳴らさず**戻り先だけ更新**され、演出明けにそこへ行く（画面の「戻り先は再計算」と対称）。
+  同じ曲へ戻る時は中断位置から続く。判定は純ロジック `BgmPlanLogic.DecideRestore`（テストあり）。
+  **指示を書かなければ演出は音に触らない＝その区間（カメラ）の曲がそのまま流れる**。
+  卓は演出インスペクタに「🎵 この演出のあいだ: ◯◯（この区間の曲のまま / この演出で切り替え / 無音）」を常時表示し、
+  変える時だけリボンのチップに `♪ 曲名` / `🔇` が出る（JS ミラー `resolveTakeBgm`）
 - **後方互換**: show.json に bgm 指定が無ければ `BgmDirector.defaultClip`（HorrBGM）を従来どおりループ。
   **⚠ シーンは `Setup Main Demo Scene` の再実行で [Bgm] を BgmDirector 化する必要がある**（未実行なら
   BgmDirector 不在 → 区間指示は無視され旧 AudioSource の固定ループが鳴る＝安全側）
@@ -381,6 +391,7 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 | **画像加工 post（露出・コントラスト・彩度・色温度・ヴィネット・グレイン・走査線）** | ✅ **区間ごとに上書き可**（旧: カメラ単位固定で不可だった） | `timeline.segments[].post`（hasPost）。未設定は camera→global にフォールバック |
 | **別カメラのインサートショット（N 秒差し込み）** | ✅ **区間ごとに enter/exit で** | `timeline.segments[].insert`（hasInsert） |
 | **BGM（曲の切替・停止・ループ範囲・音量・フェード）** | ✅ **区間ごとに**（指示の無い区間は継続） | `timeline.segments[].bgm`（hasBgm）+ `bgmTracks[]` / ラン既定 `bgm` |
+| **演出中だけの BGM**（インサート・離脱時演出を含む） | ✅ **演出ごとに**（無指定＝その区間の曲のまま。終われば戻る） | `timeline.segments[].takes[].bgm`（hasBgm） |
 
 - **cue（`OverlayCueData`）自体は色補正 post を持たない**（従来どおり）。画面全体のグレーディングは segment post > camera post > global の 3 段で解決される
 - キー空間は現状維持（`cues[].camera`=文字列 id / `timeline.segments[].camera`=int index。変換は Web の `cuesForCam` 流儀）。統一は Unity 共有契約の破壊を避けるため見送り

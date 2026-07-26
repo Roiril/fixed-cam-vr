@@ -348,7 +348,11 @@ Web   app.js が 2 秒ポーリング → ribbon.js が区間フッタと演出�
               "durKind": "untilClipEnd", "durSec": 0,
               "transition": "cut", "transitionMs": 0,
               "post": { /* PostParams 7 項目 */ }, "hasPost": true }
-          ]
+          ],
+
+          // 演出のあいだだけの BGM（2026-07-26 追加）。省略 = 区間で鳴っている曲がそのまま続く。
+          // 型は区間 bgm と同じ ShowBgmDef。演出が終われば **いる区間の曲**へ中断位置から戻る。
+          "bgm": { "action": "play", "trackId": "bgm_scare", "fadeInSec": 0.2 }, "hasBgm": true
         }
       ],
 
@@ -368,7 +372,7 @@ Web   app.js が 2 秒ポーリング → ribbon.js が区間フッタと演出�
 | 規約 | 内容 |
 |---|---|
 | **`-1` = 継承** | step の `strength` / `fadeInSec` / `fadeOutSec` / `trimStartSec` / `trimEndSec` は `-1` で「`cueId` の素材定義の値をそのまま使う」。v2 の `override` + `hasOverride` は**廃止**（`ShowBgmDef` の -1 継承と同じ流儀） |
-| **present-flag は `hasPost` のみ** | `TimelinePresentFlags.Reconcile` の AND 規約（宣言 bool && object != null）を踏襲。Web は `hasPost:false` のとき `post` キー自体を出さない |
+| **present-flag は `hasPost` / `hasBgm`** | `TimelinePresentFlags.Reconcile` の AND 規約（宣言 bool && object != null）を踏襲。Web は flag=false のとき入れ子キー自体を出さない（take の `bgm` も同じ） |
 | **`0` = コード既定** | `maxDurationSec` / `transitionMs`。`SwitchDirectorLogic.ResolveTiming` と同じ「>0 で上書き」流儀 |
 | **未知の文字列は既定へ倒す** | `source` / `durKind` / `transition` / `policy` / `ifMissed` / `at` が未知値なら既定（`live` / `sec` / `dip` / `hold` / `fireOnExit` / `enter`）+ 警告ログ。例外にしない |
 
@@ -382,6 +386,11 @@ Web   app.js が 2 秒ポーリング → ribbon.js が区間フッタと演出�
 6. **ライブ卓が最優先**: `control.activeCue` 非空 / `control.cameraOverride` 非 null の間は take を発火しない（既存挙動を維持）
 7. **watchdog**: `maxDurationSec`（既定 45）を超えた take は強制終了 + `[Take] forced end` ログ（不変条件 2）
 8. **終了時は「いま体験者がいるゾーン」へ**（復元でなく再計算・不変条件 3）
+9. **音も画面と同じ規則**（2026-07-26 追加）: take の `bgm` が実際に何かする指示（`play`+トラック / `stop`）
+   なら、take 開始で BGM レーンを**一時占有**し、終了・中止・ライブ卓の介入・ランリセットで必ず返す。
+   戻り先は開始時のスナップショットではなく**いまのレーン**（演出中に体験者がゾーンを移れば、その区間の
+   指示が戻り先になる = §6.3-8 と対称）。同じ曲へ戻る時は中断位置から続けるので曲が頭に戻らない。
+   指示が無い take は音に一切触らない＝そのカメラ（区間）の曲がそのまま流れる
 
 ### 6.4 不正値の扱い（例外にしない・既存流儀）
 

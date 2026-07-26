@@ -83,6 +83,22 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void TakeBgm_ParsesAsTemporaryOverride()
+        {
+            // 演出は音も一時的に占有できる（終われば区間のレーンへ戻る）。
+            ShowTimelineDef tl = Load();
+            ShowTakeDef withBgm = Take(tl, 2, 1);
+            Assert.That(withBgm.hasBgm, Is.True);
+            Assert.That(withBgm.bgm!.IsActionable(), Is.True, "play + トラック指定 = 実際に音を変える指示");
+            Assert.That(withBgm.bgm.trackId, Is.EqualTo("bgm_scare"));
+            Assert.That(withBgm.bgm.volume, Is.EqualTo(0.8f));
+            Assert.That(withBgm.bgm.fadeOutSec, Is.EqualTo(1.5f));
+
+            // 指示の無い演出は「区間の曲がそのまま」。present-flag は false で、consumer は bgm を読まない。
+            Assert.That(Take(tl, 1, 0).hasBgm, Is.False);
+        }
+
+        [Test]
         public void RequestedShowcase_FourStepTake_ParsesInOrder()
         {
             // ユーザー要求の演出形: D 4s → 事前映像① → 1周目B録画+CG人形 → 1周目C録画+CG人形

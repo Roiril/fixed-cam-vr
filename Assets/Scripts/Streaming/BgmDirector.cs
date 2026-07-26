@@ -19,6 +19,11 @@ namespace FixedCamVr.Streaming
     /// - show.json に bgm 指定が無い場合は <see cref="defaultClip"/>（Inspector 設定・従来の固定ループ）を鳴らす。
     ///   つまり未オーサリングのショーは今までと同じ挙動になる
     /// - クリップは URL からの非同期 DL（sa:// 焼き込み / PC 卓のライブ URL 双方）。DL 中は無音のまま待つ
+    ///
+    /// **レーンと演出の関係（2026-07-26）**: 区間が決める音を「レーン」と呼ぶ。演出（Take）は画面と同じく
+    /// 音も一時的に占有でき（<see cref="BeginTakeOverride"/>）、終わったらレーンへ戻る（<see cref="EndTakeOverride"/>）。
+    /// 戻り先は開始時のスナップショットではなく **いまのレーン**（演出中に体験者がゾーンを移れば
+    /// その区間の指示が正）。同じトラックへ戻るときは中断位置から続けるので、演出を挟んでも曲が頭に戻らない。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BgmDirector : MonoBehaviour
@@ -51,6 +56,14 @@ namespace FixedCamVr.Streaming
         private readonly Dictionary<string, AudioClip> _clips = new();
         private int _generation;                       // in-flight な DL を無効化する世代トークン
         private bool _started;
+
+        // ---- レーン（区間が決めている音）と演出の占有 ----------------------------
+        // レーンは「演出が無ければ鳴っているはずの音」。演出中に届いた区間指示はここだけ更新し、
+        // 音は演出が終わってから追いつかせる（画面の占有と同じ考え方）。
+        private string _laneTrackId = "";              // レーンのトラック（無音なら空）
+        private ShowBgmDef? _laneDef;                  // レーンを作った指示（戻すときに再利用）
+        private bool _takeOverrideActive;              // 演出が音を占有中か
+        private float _laneResumeSec;                  // 占有開始時のレーン再生位置（戻る時に続きから）
 
         private struct Voice
         {
@@ -122,6 +135,8 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             if (!_started) return;
+            // 演出の占有はランをまたがない（体験者交代で音が演出のまま残らない）。
+            _takeOverrideActive = false;
             ApplyDefault();
         }
 
@@ -129,16 +144,102 @@ namespace FixedCamVr.Streaming
         {
             if (_hasShowDefault && _showDefault != null)
             {
+                UpdateLaneBook(_showDefault);
                 Apply(_showDefault, present: true, forceRestart: true);
                 return;
             }
-            if (defaultClip == null) { StopAll(0f); return; }
+            _laneDef = null;
+            _laneResumeSec = 0f;
+            if (defaultClip == null) { _laneTrackId = ""; StopAll(0f); return; }
+            _laneTrackId = DefaultTrackId;
             StartVoice(DefaultTrackId, defaultClip, startSec: 0f, loopStart: 0f, loopEnd: 0f,
                        loop: true, volume: defaultVolume, fadeIn: 0f);
         }
 
-        /// <summary>区間 BGM 指示を適用する（TimelineDirector から）。</summary>
-        public void ApplySegment(ShowBgmDef? def, bool present) => Apply(def, present, forceRestart: false);
+        /// <summary>
+        /// 区間 BGM 指示を適用する（TimelineDirector から）。
+        /// **演出が音を占有中なら鳴らさず「戻り先」だけ更新する** — 演出中に体験者がゾーンを移った場合、
+        /// 演出明けに移った先の区間の音になる（画面の「戻り先は再計算」と対称）。
+        /// </summary>
+        public void ApplySegment(ShowBgmDef? def, bool present)
+        {
+            if (!present || def == null) return;
+            UpdateLaneBook(def);
+            if (_takeOverrideActive) return;
+            Apply(def, present: true, forceRestart: false);
+        }
+
+        // ---- 演出（Take）による一時占有 -------------------------------------------
+
+        /// <summary>
+        /// 演出の BGM 指示を適用して音を占有する。指示が無い / 何もしない指示なら占有せず false
+        /// （＝区間の曲がそのまま鳴り続ける。これが「指定しなければそのカメラの曲のまま」の実体）。
+        /// </summary>
+        public bool BeginTakeOverride(ShowBgmDef? def, bool present)
+        {
+            if (!present || def == null || !def.IsActionable()) return false;
+            if (_takeOverrideActive) EndTakeOverride();   // 多重占有を作らない
+            // 同じ曲へ戻るときに頭出しし直さないよう、レーンの再生位置を覚えておく。
+            if (_cur.src != null && _cur.src.isPlaying && _cur.trackId == _laneTrackId)
+                _laneResumeSec = _cur.src.time;
+            _takeOverrideActive = true;
+            Apply(def, present: true, forceRestart: false);
+            return true;
+        }
+
+        /// <summary>演出が終わった。いまのレーン（区間が決めている音）へ戻す。</summary>
+        public void EndTakeOverride()
+        {
+            if (!_takeOverrideActive) return;
+            _takeOverrideActive = false;
+            switch (BgmPlanLogic.DecideRestore(IsPlaying, CurrentTrackId, _laneTrackId))
+            {
+                case BgmPlanLogic.BgmChange.None:
+                    return;
+                case BgmPlanLogic.BgmChange.Stop:
+                    StopAll(defaultFadeSec);
+                    return;
+                default:
+                    RestoreLane();
+                    return;
+            }
+        }
+
+        /// <summary>レーンのトラックを「中断した位置から」鳴らし直す。</summary>
+        private void RestoreLane()
+        {
+            ShowBgmDef? src = _laneDef;
+            _ = StartTrackAsync(new ShowBgmDef
+            {
+                action = BgmPlanLogic.ActionPlay,
+                trackId = _laneTrackId,
+                loop = src?.loop ?? true,
+                startSec = _laneResumeSec,
+                loopStartSec = src?.loopStartSec ?? -1f,
+                loopEndSec = src?.loopEndSec ?? -1f,
+                volume = src?.volume ?? -1f,
+                fadeInSec = src?.fadeInSec ?? defaultFadeSec,
+                fadeOutSec = src?.fadeOutSec ?? defaultFadeSec,
+                restart = true,
+            });
+        }
+
+        // レーンの帳簿（何が鳴っているべきか）を更新する。音は鳴らさない。
+        private void UpdateLaneBook(ShowBgmDef def)
+        {
+            string a = string.IsNullOrEmpty(def.action) ? BgmPlanLogic.ActionContinue : def.action;
+            if (a == BgmPlanLogic.ActionStop)
+            {
+                _laneTrackId = "";
+                _laneDef = def;
+                _laneResumeSec = 0f;
+                return;
+            }
+            if (a != BgmPlanLogic.ActionPlay || string.IsNullOrEmpty(def.trackId)) return;   // continue = 据え置き
+            if (_laneTrackId != def.trackId || def.restart) _laneResumeSec = def.startSec;
+            _laneTrackId = def.trackId;
+            _laneDef = def;
+        }
 
         private void Apply(ShowBgmDef? def, bool present, bool forceRestart)
         {

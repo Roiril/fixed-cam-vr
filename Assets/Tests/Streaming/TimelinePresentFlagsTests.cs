@@ -162,5 +162,30 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(seg.hasPost, Is.False, "宣言 true でも object null なら false（AND の安全側 downgrade）");
             Assert.That(seg.hasInsert, Is.False);
         }
+
+        // ---- 演出（Take）の BGM present-flag（2026-07-26）---------------------------
+
+        [Test]
+        public void TakeBgm_Flag_IsDeclaredBoolAndObject()
+        {
+            // 旧 Web 形式（flag=false でも既定 bgm オブジェクトを送る）でも幽霊にならないこと。
+            const string json =
+                "{\"rev\":1,\"schema\":3,\"segments\":[" +
+                "{\"lap\":1,\"camera\":0,\"takes\":[" +
+                "{\"id\":\"t0\",\"steps\":[],\"bgm\":{\"action\":\"play\",\"trackId\":\"scare\"},\"hasBgm\":false}," +
+                "{\"id\":\"t1\",\"steps\":[],\"bgm\":{\"action\":\"play\",\"trackId\":\"scare\"},\"hasBgm\":true}," +
+                "{\"id\":\"t2\",\"steps\":[],\"hasBgm\":true}" +
+                "],\"hasPost\":false,\"hasBgm\":false}]}";
+            var tl = JsonUtility.FromJson<ShowTimelineDef>(json);
+            TimelinePresentFlags.Reconcile(tl);
+
+            ShowTakeDef[] takes = tl.segments[0].takes;
+            Assert.That(takes[0].hasBgm, Is.False, "宣言 false は object があっても false（幽霊 BGM を作らない）");
+            Assert.That(takes[1].hasBgm, Is.True);
+            Assert.That(takes[1].bgm!.trackId, Is.EqualTo("scare"));
+            // t2 は bgm キー省略。JsonUtility は入れ子を既定インスタンスで作ることがあるため
+            // 「宣言 true ∧ object 存在」の AND で決まる（object が来なければ false へ落ちる）。
+            Assert.That(takes[2].hasBgm, Is.EqualTo(takes[2].bgm != null));
+        }
     }
 }

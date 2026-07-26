@@ -1394,6 +1394,14 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-take-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rb-take-meta { display: flex; align-items: baseline; gap: 8px; }
 .rb-take-start { opacity: var(--opacity-sub); white-space: nowrap; }
+/* 演出中に曲が変わる時だけ出るバッジ（変わらないなら黙っている = 情報を増やさない） */
+.rb-take-bgm {
+  max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0 4px; border-radius: 3px; opacity: .9;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+/* 演出インスペクタの「この演出のあいだ何が鳴るか」 */
+.rb-bgm-now { font-size: 11px; opacity: var(--opacity-sub); margin-bottom: 3px; }
 .rb-take-meta .rb-take-dur { margin-left: auto; }
 .rb-take-dur { opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
 .rb-steps { display: flex; flex: 1; align-items: stretch; }

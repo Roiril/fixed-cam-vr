@@ -537,5 +537,108 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(3), "その場で切り替わる");
             Assert.That(rig.Director.Dipping, Is.False, "dip 状態に入らない（1 フレーム真っ黒を出さない）");
         }
+
+        // ---- 演出の BGM（区間レーンの一時占有）--------------------------------------
+
+        private BgmDirector AttachBgm(Rig rig)
+        {
+            var go = new GameObject("Bgm"); _spawned.Add(go);
+            var bgm = go.AddComponent<BgmDirector>();
+            Invoke(bgm, "Awake");
+            SetField(rig.Runner, "bgmDirector", bgm);
+            return bgm;
+        }
+
+        private static ShowBgmDef Bgm(string action, string trackId = "")
+            => new() { action = action, trackId = trackId };
+
+        private static object? Field(object target, string name)
+            => target.GetType().GetField(name, BF)!.GetValue(target);
+
+        [Test]
+        public void TakeWithoutBgm_LeavesTheSegmentTrackPlaying()
+        {
+            Rig rig = MakeRig();
+            BgmDirector bgm = AttachBgm(rig);
+            bgm.ApplySegment(Bgm(BgmPlanLogic.ActionPlay, "amb"), present: true);
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 1f))) });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(Field(bgm, "_takeOverrideActive"), Is.False, "指示の無い演出は音を占有しない");
+            Assert.That(Field(bgm, "_laneTrackId"), Is.EqualTo("amb"), "レーン（区間の曲）はそのまま");
+        }
+
+        [Test]
+        public void TakeBgm_OccupiesDuringTake_AndReleasesAtEnd()
+        {
+            Rig rig = MakeRig();
+            BgmDirector bgm = AttachBgm(rig);
+            bgm.ApplySegment(Bgm(BgmPlanLogic.ActionPlay, "amb"), present: true);
+
+            ShowTakeDef take = EnterTake("scare", LiveStep(3, 1f));
+            take.bgm = Bgm(BgmPlanLogic.ActionPlay, "scare");
+            take.hasBgm = true;
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, take) });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(Field(bgm, "_takeOverrideActive"), Is.True, "演出が音を占有する");
+            Assert.That(Field(rig.Runner, "_bgmOverrideActive"), Is.True);
+
+            _now = 2f;
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.False);
+            Assert.That(Field(bgm, "_takeOverrideActive"), Is.False, "演出が終われば占有は必ず解ける");
+            Assert.That(Field(bgm, "_laneTrackId"), Is.EqualTo("amb"), "戻り先はレーン（区間の曲）");
+        }
+
+        [Test]
+        public void SegmentBgmDuringTake_BecomesTheRestoreTarget()
+        {
+            // 演出中に体験者が次のゾーンへ入った → 音は演出のまま、戻り先だけ新しい区間の曲になる
+            //（画面の「戻り先は再計算」と対称）。
+            Rig rig = MakeRig();
+            BgmDirector bgm = AttachBgm(rig);
+            bgm.ApplySegment(Bgm(BgmPlanLogic.ActionPlay, "amb"), present: true);
+
+            ShowTakeDef take = EnterTake("scare", LiveStep(3, 4f));
+            take.bgm = Bgm(BgmPlanLogic.ActionPlay, "scare");
+            take.hasBgm = true;
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, take) });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            bgm.ApplySegment(Bgm(BgmPlanLogic.ActionPlay, "next"), present: true);   // 次の区間の指示
+            Assert.That(Field(bgm, "_takeOverrideActive"), Is.True, "占有は続く（音は演出のまま）");
+            Assert.That(Field(bgm, "_laneTrackId"), Is.EqualTo("next"), "戻り先だけ更新される");
+
+            _now = 5f;
+            Frame(rig);
+            Assert.That(Field(bgm, "_takeOverrideActive"), Is.False);
+            Assert.That(Field(bgm, "_laneTrackId"), Is.EqualTo("next"));
+        }
+
+        [Test]
+        public void LiveDeskIntervention_ReleasesTakeBgm()
+        {
+            // ライブ卓の介入で演出が畳まれる時、音の占有も一緒に解ける（凍結ストランドを残さない）。
+            Rig rig = MakeRig();
+            BgmDirector bgm = AttachBgm(rig);
+            bgm.ApplySegment(Bgm(BgmPlanLogic.ActionPlay, "amb"), present: true);
+
+            ShowTakeDef take = EnterTake("scare", LiveStep(3, 10f));
+            take.bgm = Bgm(BgmPlanLogic.ActionStop);
+            take.hasBgm = true;
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, take) });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(Field(bgm, "_takeOverrideActive"), Is.True);
+
+            rig.Runner.SetSuppressed(true);
+            Assert.That(Field(bgm, "_takeOverrideActive"), Is.False, "介入で音も返る");
+            Assert.That(Field(rig.Runner, "_bgmOverrideActive"), Is.False);
+        }
     }
 }

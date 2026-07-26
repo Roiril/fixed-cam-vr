@@ -28,6 +28,14 @@ namespace FixedCamVr.Streaming
 
         public ShowStepDef[] steps = Array.Empty<ShowStepDef>();
 
+        /// <summary>
+        /// 演出中だけの BGM 指示（省略 = 区間で鳴っている曲がそのまま続く）。
+        /// 画面と同じ規則で扱う: <b>演出は音も一時的に占有し、終わったら「いまの区間の音」へ戻る</b>。
+        /// 型は区間 BGM と同じ <see cref="ShowBgmDef"/>（-1 = トラック既定を継承）。
+        /// </summary>
+        public ShowBgmDef? bgm;
+        public bool hasBgm;                 // present-flag（宣言 bool が正。TimelinePresentFlags 参照）
+
         public bool IsExit => TakeSchema.IsExit(at);
         public bool SkipWhenMissed => TakeSchema.SkipWhenMissed(ifMissed);
         public bool IsYield => TakeSchema.IsYield(policy);

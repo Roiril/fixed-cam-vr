@@ -169,28 +169,36 @@ export function createShowSim(container, deps) {
 
   const baseName = (u) => String(u || '').split('/').pop();
 
-  // 「いま画面に映っているもの」。演出が走っていればそのカットの内容が live より優先される
-  //   （実機では TakeRunner が CameraSwitchDirector を占有する）。
-  function describeScreen() {
-    if (!runner) return { cam: -1, detail: '—' };
-    if (runner.takeActive && meta) {
-      const t = meta.takes[runner.activeTakeIndex];
-      const st = t && t.steps[runner.activeStepIndex];
-      if (t && st) {
-        const nth = `カット ${runner.activeStepIndex + 1}/${t.steps.length}`;
-        const overlay = st.cueId ? ` + cue ${st.cueId}` : '';
-        if (st.source === 'live') {
-          const cam = st.camera >= 0 ? st.camera : runner.shownCamera;
-          return { cam, detail: `🎬 ${t.id}（${nth}: ${camLabel(cam)} のライブ${overlay}）` };
-        }
-        if (st.source === 'inherit') {
-          return { cam: runner.shownCamera, detail: `🎬 ${t.id}（${nth}: ライブに重ね${overlay}）` };
-        }
-        const label = st.source === 'clip' ? '動画' : '静止画';
-        return { cam: -1, detail: `🎬 ${t.id}（${nth}: ${label} ${baseName(st.assetUrl) || st.cueId || '素材未設定'} を全面）` };
+  // 「いま画面に映っているもの」の**唯一の解決点**。文字（チップ・説明・⚠ バッジ）も
+  //   実画（合成器へ渡すライブ映像）もここだけを見る。
+  //   演出が走っていればそのカットの内容が live より優先される
+  //   （実機では TakeRunner が CameraSwitchDirector を占有し、live カットでは表示カメラごと変わる）。
+  //   ⚠ 2 箇所で別々に解決していた頃、実画だけがゾーンのカメラのままで
+  //     「文字は カメラ A・映像は カメラ C」になっていた（2026-07-26 修正）。
+  function resolveScreen() {
+    if (!runner) return { cam: -1, shot: null, detail: '—' };
+    const shot = currentShot();
+    if (shot) {
+      const { take: t, step: st } = shot;
+      const nth = `カット ${runner.activeStepIndex + 1}/${t.steps.length}`;
+      const overlay = st.cueId ? ` + cue ${st.cueId}` : '';
+      if (st.source === 'live') {
+        // カットが指すカメラが正（未指定のときだけ「いま映っているもの」に従う）。
+        const cam = st.camera >= 0 ? st.camera : runner.shownCamera;
+        return { cam, shot, detail: `🎬 ${t.id}（${nth}: ${camLabel(cam)} のライブ${overlay}）` };
       }
+      if (st.source === 'inherit') {
+        return { cam: runner.shownCamera, shot, detail: `🎬 ${t.id}（${nth}: ライブに重ね${overlay}）` };
+      }
+      if (st.source === 'rec') {
+        // 端末内録画は「そのカメラで録った映像」。卓には録画が無いので live で代用して見せる。
+        const cam = st.camera >= 0 ? st.camera : runner.shownCamera;
+        return { cam, shot, detail: `🎬 ${t.id}（${nth}: ${camLabel(cam)} の録画${overlay}・卓ではライブで代用）` };
+      }
+      const label = st.source === 'clip' ? '動画' : '静止画';
+      return { cam: -1, shot, detail: `🎬 ${t.id}（${nth}: ${label} ${baseName(st.assetUrl) || st.cueId || '素材未設定'} を全面）` };
     }
-    return { cam: runner.shownCamera, detail: enabled ? 'ライブ映像' : 'ライブ映像（停止中）' };
+    return { cam: runner.shownCamera, shot: null, detail: enabled ? 'ライブ映像' : 'ライブ映像（停止中）' };
   }
 
   // ==========================================================================
@@ -232,10 +240,12 @@ export function createShowSim(container, deps) {
   }
 
   function sampleScreen() {
-    const camIdx = runner ? runner.shownCamera : -1;
+    // 文字表示と同じ解決を使う（カットが live なら**そのカットのカメラ**を映す）。
+    const scr = resolveScreen();
+    const camIdx = scr.cam;
     const camObj = (meta && camIdx >= 0) ? meta.cameras[camIdx] : null;
     const liveImg = (camObj && deps.getLiveImg) ? deps.getLiveImg(camObj.id) : null;
-    const shot = currentShot();
+    const shot = scr.shot;
     if (!shot) lastShotKey = '';
 
     let overlayEl = null, overlayReady = false, overlayW = 0, overlayH = 0, maskEl = null;
@@ -266,8 +276,14 @@ export function createShowSim(container, deps) {
 
   createCompositeView(q('.ss-canvas'), { sample: sampleScreen });
 
+  let lastScreenKey = '';
   function renderScreen() {
-    const d = describeScreen();
+    const d = resolveScreen();
+    const issue = screenIssue(d);
+    // 停止中も毎 tick 呼ばれるので、内容が変わった時だけ DOM を書く。
+    const key = `${d.cam}|${d.detail}|${issue}`;
+    if (key === lastScreenKey) return;
+    lastScreenKey = key;
     if (d.cam >= 0) {
       chipEl.style.background = camColor(d.cam);
       chipEl.style.visibility = 'visible';
@@ -277,17 +293,22 @@ export function createShowSim(container, deps) {
       chipCamEl.textContent = runner && runner.takeActive ? '素材' : '—';
     }
     detailEl.textContent = d.detail;
-    badgeEl.textContent = screenIssue(d);
+    badgeEl.textContent = issue;
   }
 
   // 画面が黒いとき、それが「壊れている」のか「配信が来ていない」のかを画面の上で言う。
   //   卓は現場でカメラ 3 台のうち 1 台だけ繋がっている、という状態が普通に起きる。
+  //   引数は resolveScreen() の結果（文字・実画と同じ解決を共有する）。
   function screenIssue(d) {
     if (!runner || !meta) return '';
-    const shot = currentShot();
+    const shot = d.shot;
     if (shot && shot.step.playUrl) return '';                 // 素材が映っている
-    if (shot && shot.step.source !== 'live' && shot.step.source !== 'inherit') {
-      return '⚠ このカットは素材が未設定です（実機では飛ばされます）';
+    // ライブを映すカット（live / inherit / 卓ではライブ代用の rec）は、素材が無くて当たり前。
+    const liveLike = !shot || shot.step.source === 'live' || shot.step.source === 'inherit'
+      || shot.step.source === 'rec';
+    if (!liveLike) return '⚠ このカットは素材が未設定です（実機では飛ばされます）';
+    if (shot && shot.step.source === 'rec') {
+      return `${camLabel(d.cam)} の録画を映すカットです（卓には端末内録画が無いのでライブで代用表示）`;
     }
     if (d.cam < 0) return '';
     const camObj = meta.cameras[d.cam];
@@ -433,7 +454,13 @@ export function createShowSim(container, deps) {
 
   // rAF はタブ非表示で止まる（裏タブで凍る）ので壁時計駆動。
   setInterval(() => {
-    if (!playing || !runner) return;
+    if (!runner) return;
+    if (!playing) {
+      // 停止中も画面表示だけは追う。カメラの MJPEG は起動直後まだ 1 枚も来ていないことがあり、
+      // 一度だけ描いた「ライブ映像が来ていません」が繋がった後も残っていた（2026-07-26 修正）。
+      renderScreen();
+      return;
+    }
     const now = performance.now();
     const dt = Math.min(now - lastWall, 250) * speed;   // タブ復帰の巨大 dt は捨てる
     lastWall = now;

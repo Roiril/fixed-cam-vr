@@ -12,6 +12,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import {
   TAKE, newTake, newStep, takeId, isV3,
   serializeTimelineV3, normalizeTimelineV3, migrateV2Segment, newSeg,
+  resolveTakeBgm, defaultBgm,
 } from './timeline-model.js';
 import { FX_DEFAULT } from './common.js';
 
@@ -70,6 +71,51 @@ test('hasPost=true のとき post を FX 既定で埋めて出す', () => {
   const out = serializeTimelineV3({ rev: 1, segments: [seg] });
   assert.equal(out.segments[0].takes[0].steps[0].post.saturation, 0.6);
   assert.equal(out.segments[0].takes[0].steps[0].hasPost, true);
+});
+
+// ---- 演出の BGM（区間レーンの一時占有）---------------------------------------
+
+test('hasBgm=false の演出は bgm キーを出さない（幽霊指示を作らない）', () => {
+  const seg = newSeg(1, 0);
+  seg.takes = [newTake('t', { steps: [newStep()] })];
+  const out = serializeTimelineV3({ rev: 1, segments: [seg] }).segments[0].takes[0];
+  assert.equal('bgm' in out, false);
+  assert.equal(out.hasBgm, false);
+});
+
+test('hasBgm=true の演出は bgm を既定で埋めて出し、往復する', () => {
+  const seg = newSeg(1, 0);
+  seg.takes = [newTake('t', {
+    steps: [newStep()],
+    hasBgm: true,
+    bgm: { ...defaultBgm(), action: 'play', trackId: 'scare', fadeInSec: 0.2 },
+  })];
+  const tl = { rev: 1, segments: [seg] };
+  const out = serializeTimelineV3(tl).segments[0].takes[0];
+  assert.equal(out.hasBgm, true);
+  assert.equal(out.bgm.trackId, 'scare');
+  assert.equal(out.bgm.fadeInSec, 0.2);
+  // load → serialize の往復で失われない
+  const back = serializeTimelineV3(normalizeTimelineV3(serializeTimelineV3(tl))).segments[0].takes[0];
+  assert.deepStrictEqual(back.bgm, out.bgm);
+});
+
+test('指示の無い演出は区間の曲がそのまま鳴る', () => {
+  const t = newTake('t', { steps: [newStep()] });
+  assert.deepStrictEqual(resolveTakeBgm(t, 'amb'), { trackId: 'amb', change: null });
+  // continue（＝指示なし）も同じ
+  t.hasBgm = true; t.bgm = { ...defaultBgm(), action: 'continue' };
+  assert.deepStrictEqual(resolveTakeBgm(t, 'amb'), { trackId: 'amb', change: null });
+});
+
+test('演出の play / stop は演出中だけ効く', () => {
+  const play = newTake('t', { hasBgm: true, bgm: { ...defaultBgm(), action: 'play', trackId: 'scare' } });
+  assert.deepStrictEqual(resolveTakeBgm(play, 'amb'), { trackId: 'scare', change: 'start' });
+  // 区間と同じ曲を指しただけなら「変わらない」
+  assert.deepStrictEqual(resolveTakeBgm(play, 'scare'), { trackId: 'scare', change: null });
+  const stop = newTake('t', { hasBgm: true, bgm: { ...defaultBgm(), action: 'stop' } });
+  assert.deepStrictEqual(resolveTakeBgm(stop, 'amb'), { trackId: '', change: 'stop' });
+  assert.deepStrictEqual(resolveTakeBgm(stop, ''), { trackId: '', change: null }, '元から無音なら変化なし');
 });
 
 test('v2 キー（cues / insert）は v3 書き出しに出さない', () => {

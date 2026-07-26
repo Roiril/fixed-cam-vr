@@ -53,6 +53,23 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
+        /// 演出（Take）が音を占有した後、レーン（区間が決めている音）へ戻るときの遷移を決める。
+        ///
+        /// 画面の「戻り先は再計算」と対称: <b>戻り先は演出開始時のスナップショットではなく、
+        /// いまレーンがどうあるべきか</b>（演出中に体験者がゾーンを移れば、その区間の指示が正）。
+        /// </summary>
+        /// <param name="playing">いま音が鳴っているか（＝演出の曲）。</param>
+        /// <param name="currentTrackId">いま鳴っているトラック id。</param>
+        /// <param name="laneTrackId">レーンが鳴らしているべきトラック id（無音なら空）。</param>
+        public static BgmChange DecideRestore(bool playing, string? currentTrackId, string? laneTrackId)
+        {
+            bool laneSilent = string.IsNullOrEmpty(laneTrackId);
+            if (laneSilent) return playing ? BgmChange.Stop : BgmChange.None;
+            if (playing && currentTrackId == laneTrackId) return BgmChange.None;   // 演出が触っていない
+            return BgmChange.Start;
+        }
+
+        /// <summary>
         /// ループ範囲を実クリップ長へ丸める。
         /// loopEnd &lt;= loopStart（未設定 0 を含む）なら「末尾まで」＝ clipLength。
         /// 返り値は (start, loopStart, loopEnd) の秒。すべて [0, clipLength] に収まり loopStart &lt; loopEnd を保証する。

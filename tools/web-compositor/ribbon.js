@@ -26,7 +26,7 @@ import { durationOf, onDurationResolved } from './media-duration.js';
 import { resolveStepDuration } from './show-scenario.js';
 import {
   TAKE, newTake, newStep, takeId, newSeg, defaultBgm, isV3,
-  serializeTimelineV3, normalizeTimelineV3, resolveBgmLane,
+  serializeTimelineV3, normalizeTimelineV3, resolveBgmLane, resolveTakeBgm,
 } from './timeline-model.js';
 
 // APK 同梱の既定クリップを指す擬似トラック id（Unity BgmDirector.DefaultTrackId と一致させること）。
@@ -414,12 +414,19 @@ export function createRibbon(container, deps) {
       </div>`;
     }).join('') || '<div class="rb-step rb-step-empty">カットなし</div>';
 
+    // この演出のあいだ鳴る曲（区間から変わる時だけバッジを出す。変わらないなら黙っている）。
+    const bgmChip = t.hasBgm && t.bgm && t.bgm.action !== 'continue'
+      ? `<span class="rb-take-bgm" title="${escapeHtml(takeBgmLabel(t, lap, ci))}">${t.bgm.action === 'stop'
+        ? '🔇' : `♪ ${escapeHtml(trackName(t.bgm.trackId))}`}</span>`
+      : '';
+
     el.innerHTML = `
       <div class="rb-take-head" tabindex="0" role="button"
            title="ドラッグ（マウス / 指）で開始位置を変える（区間の中 = 進入から t 秒 / 右境界に吸着 = 離脱時）。
 選んで ← → で 0.5s ずつ（Shift で 2s）、Home = 進入直後、End = 離脱時。">
         <span class="rb-take-name">🎬 ${escapeHtml(t.name || '演出')}</span>
         <span class="rb-take-meta">
+          ${bgmChip}
           <span class="rb-take-start">${risk ? '⏱ ' : ''}${escapeHtml(startLabel(t))}</span>
           <span class="rb-take-dur">${total.approx ? '≈' : ''}${fmtSec(total.sec)}s</span>
         </span>
@@ -704,19 +711,51 @@ export function createRibbon(container, deps) {
     };
   }
 
-  // BGM は v3 でも区間の属性として残る（serializeTimelineV3 が書き出す）。
-  //   v2 グリッドにしか編集面が無いと変換後に触れなくなるので、試聴まで含めてここに持つ。
+  // BGM は「区間で切り替わるレーン」＋「演出が一時的に占有する層」の 2 段。編集面は同じ部品を使う
+  //   （host = チェックボックスと本体を持つ DOM、target = 書き込む対象 = 区間 or 演出）。
   let bgmPreview = null;   // <audio>（試聴。区間を離れる / インスペクタを閉じたら止める）
   function stopBgmPreview() { if (bgmPreview) { bgmPreview.pause(); bgmPreview = null; } }
+
   function renderSegBgm() {
-    const onChk = inspectorEl.querySelector('.rb-bgm-on');
-    const body = inspectorEl.querySelector('.rb-bgm-body');
-    const seg = segAt(sel.lap, sel.camera);
-    const has = !!(seg && seg.hasBgm);
+    renderBgmEditor({
+      onChk: inspectorEl.querySelector('.rb-bgm-on'),
+      body: inspectorEl.querySelector('.rb-bgm-body'),
+      get: () => segAt(sel.lap, sel.camera),
+      ensure: () => ensureSeg(sel.lap, sel.camera),
+      prune: (s) => pruneSeg(s),
+      redraw: renderSegBgm,
+    });
+  }
+
+  // 演出の BGM（区間と同じ部品・書き込む対象だけが違う）。
+  function renderTakeBgm(t) {
+    updateTakeBgmLabel(t);
+    renderBgmEditor({
+      onChk: inspectorEl.querySelector('.rb-t-bgm-on'),
+      body: inspectorEl.querySelector('.rb-t-bgm-body'),
+      get: () => t,
+      ensure: () => t,
+      prune: () => {},
+      redraw: () => renderTakeBgm(t),
+      // 値を触るたびに「この演出のあいだ何が鳴るか」を出し直す（インスペクタは作り直さない）。
+      onCommit: () => updateTakeBgmLabel(t),
+    });
+  }
+
+  function updateTakeBgmLabel(t) {
+    const el = inspectorEl.querySelector('.rb-bgm-now');
+    if (el && sel) el.textContent = takeBgmLabel(t, sel.lap, sel.camera);
+  }
+
+  function renderBgmEditor(ctx) {
+    const { onChk, body } = ctx;
+    if (!onChk || !body) return;
+    const target = ctx.get();
+    const has = !!(target && target.hasBgm);
     onChk.checked = has;
     body.style.display = has ? '' : 'none';
 
-    const b = (seg && seg.bgm) || defaultBgm();
+    const b = (target && target.bgm) || defaultBgm();
     const tracks = bgmTracks();
     let trackOpts = '<option value="">（トラックを選択）</option>';
     for (const t of tracks) trackOpts += `<option value="${escapeHtml(t.id)}"${b.trackId === t.id ? ' selected' : ''}>${escapeHtml(t.name || t.id)}</option>`;
@@ -756,7 +795,7 @@ export function createRibbon(container, deps) {
 
     const q2 = (s) => body.querySelector(s);
     const commit = () => {
-      const s = ensureSeg(sel.lap, sel.camera);
+      const s = ctx.ensure();
       s.hasBgm = true;
       if (!s.bgm) s.bgm = defaultBgm();
       s.bgm.action = q2('.rb-bgm-action').value;
@@ -770,10 +809,11 @@ export function createRibbon(container, deps) {
       s.bgm.loop = !!q2('.rb-bgm-loop-on').checked;
       s.bgm.restart = !!q2('.rb-bgm-restart').checked;
       markDirty(); render();
+      if (ctx.onCommit) ctx.onCommit();
     };
     body.querySelectorAll('input, select').forEach((el) => { el.onchange = commit; });
-    q2('.rb-bgm-action').onchange = () => { commit(); renderSegBgm(); };
-    q2('.rb-bgm-track').onchange = () => { commit(); renderSegBgm(); };
+    q2('.rb-bgm-action').onchange = () => { commit(); ctx.redraw(); };
+    q2('.rb-bgm-track').onchange = () => { commit(); ctx.redraw(); };
 
     // 試聴（ブラウザ内のみ。show.json も実機も触らない）。ループ範囲を耳で決めて
     // 「ここを in / out」でその位置を書き込む（v2 グリッドから移植）。
@@ -811,18 +851,19 @@ export function createRibbon(container, deps) {
 
     onChk.onchange = () => {
       if (onChk.checked) {
-        const s = ensureSeg(sel.lap, sel.camera);
+        const s = ctx.ensure();
         s.hasBgm = true;
         if (!s.bgm) s.bgm = defaultBgm();
         if (s.bgm.action === 'continue') s.bgm.action = 'play';
         body.style.display = '';
       } else {
         stopBgmPreview();
-        const s2 = segAt(sel.lap, sel.camera);
-        if (s2) { s2.hasBgm = false; pruneSeg(s2); }
+        const s2 = ctx.get();
+        if (s2) { s2.hasBgm = false; ctx.prune(s2); }
         body.style.display = 'none';
       }
-      markDirty(); render(); renderSegBgm();
+      markDirty(); render(); ctx.redraw();
+      if (ctx.onCommit) ctx.onCommit();
     };
   }
 
@@ -868,6 +909,13 @@ export function createRibbon(container, deps) {
         <div class="rb-steps-edit"></div>
         <div class="row-btns"><button class="rb-step-add accent">＋ カットを追加</button></div>
       </div>
+      <div class="rb-insp-sec">
+        <div class="rb-bgm-now">${escapeHtml(takeBgmLabel(t, sel.lap, sel.camera))}</div>
+        <label class="rb-insp-toggle chk"><input class="rb-t-bgm-on" type="checkbox"> 🎵 この演出のあいだだけ BGM を変える / 止める</label>
+        <div class="rb-t-bgm-body" style="display:none"></div>
+        <div class="rb-hint2">指定しなければ、その区間で鳴っている曲がそのまま流れます。演出が終わると、
+          <b>いる区間の曲</b>へ中断した位置から戻ります（演出中に歩いて次のゾーンへ入っていれば、その区間の曲）。</div>
+      </div>
       <div class="rb-cue-editor-host"></div>`;
 
     const i = (s) => inspectorEl.querySelector(s);
@@ -899,6 +947,21 @@ export function createRibbon(container, deps) {
       markDirty(); render(); renderTakeInspector(t);
     };
     renderStepRows(t);
+    renderTakeBgm(t);
+  }
+
+  // 「この演出のあいだ何が鳴るか」。指示が無ければ区間のレーンをそのまま言う（＝黙っていても分かる）。
+  function takeBgmLabel(t, lap, camera) {
+    const lane = resolveBgmLane(timeline.segments, rows(), lapCount, rootBgmTrackId()).get(`${lap}:${camera}`);
+    const laneId = lane ? lane.trackId : '';
+    const r = resolveTakeBgm(t, laneId);
+    if (!r.trackId) {
+      return r.change === 'stop' ? '🎵 この演出のあいだ: 無音（この演出で止める）' : '🎵 この演出のあいだ: 無音';
+    }
+    const name = trackName(r.trackId);
+    return r.change === 'start'
+      ? `🎵 この演出のあいだ: ${name}（この演出で切り替え）`
+      : `🎵 この演出のあいだ: ${name}（この区間の曲のまま）`;
   }
 
   function renderStepRows(t) {

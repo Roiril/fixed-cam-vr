@@ -35,7 +35,8 @@
               "cgMode": "follow",
               "hasPost": false
             }
-          ]
+          ],
+          "hasBgm": false
         }
       ],
       "hasPost": false,
@@ -74,7 +75,20 @@
               "cgMode": "follow",
               "hasPost": false
             }
-          ]
+          ],
+          "bgm": {
+            "action": "play",
+            "trackId": "bgm_scare",
+            "loop": false,
+            "startSec": 0,
+            "loopStartSec": -1,
+            "loopEndSec": -1,
+            "volume": 0.8,
+            "fadeInSec": 0.2,
+            "fadeOutSec": 1.5,
+            "restart": true
+          },
+          "hasBgm": true
         }
       ],
       "post": {
@@ -188,7 +202,8 @@
               "cgMode": "follow",
               "hasPost": false
             }
-          ]
+          ],
+          "hasBgm": false
         }
       ],
       "hasPost": false,

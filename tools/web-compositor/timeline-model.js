@@ -58,6 +58,25 @@ export function resolveBgmLane(segments, order, lapCount, rootTrackId = '') {
   return at;
 }
 
+/**
+ * 演出（Take）の実行中に鳴っている BGM を解く。
+ *   Unity 側の対応: TakeRunner が BgmDirector.BeginTakeOverride / EndTakeOverride を呼ぶ。
+ *   指示が無い（hasBgm=false / continue / トラック未指定）演出は**区間の曲がそのまま続く**
+ *   （＝「カメラ A の演出なら、A の区間で鳴っている曲のまま」）。
+ *   演出が終われば必ずレーン（区間の曲）へ戻るので、レーンの carry-forward は演出に影響されない。
+ *
+ * 返り値: { trackId, change } — change = 'start'（演出で曲が変わる）/ 'stop'（演出中は無音）/ null（そのまま）
+ */
+export function resolveTakeBgm(take, laneTrackId = '') {
+  const b = take && take.hasBgm ? take.bgm : null;
+  if (!b) return { trackId: laneTrackId, change: null };
+  if (b.action === 'stop') return { trackId: '', change: laneTrackId ? 'stop' : null };
+  if (b.action === 'play' && b.trackId) {
+    return { trackId: b.trackId, change: b.trackId === laneTrackId && !b.restart ? null : 'start' };
+  }
+  return { trackId: laneTrackId, change: null };
+}
+
 // ===========================================================================
 // v3（演出 Take / カット Step）— 契約の正本は
 //   .claude/plans/2026-07-25_shot-timeline-foundation.md §6
@@ -100,6 +119,8 @@ export function newTake(id, over = {}) {
     at: TAKE.AT_ENTER, offsetSec: 0, ifMissed: TAKE.MISSED_FIRE_ON_EXIT,
     policy: TAKE.POLICY_HOLD, once: true, maxDurationSec: 0,
     steps: [],
+    // 演出中だけの BGM（hasBgm=false = 区間で鳴っている曲がそのまま続く）。
+    bgm: defaultBgm(), hasBgm: false,
     ...over,
   };
 }
@@ -134,7 +155,7 @@ function serializeStep(s) {
 }
 
 function serializeTake(t) {
-  return {
+  const out = {
     id: t.id || '',
     name: t.name || '',
     at: t.at === TAKE.AT_EXIT ? TAKE.AT_EXIT : TAKE.AT_ENTER,
@@ -145,6 +166,10 @@ function serializeTake(t) {
     maxDurationSec: num(t.maxDurationSec, 0),
     steps: (t.steps || []).map(serializeStep),
   };
+  // present-flag 規約: false のときは入れ子キー自体を出さない（幽霊指示を作らない）。
+  if (t.hasBgm) out.bgm = { ...defaultBgm(), ...(t.bgm || {}) };
+  out.hasBgm = !!t.hasBgm;
+  return out;
 }
 
 const num = (v, def) => (Number.isFinite(v) ? v : def);
@@ -191,6 +216,8 @@ function normalizeTake(t) {
     policy: t.policy === TAKE.POLICY_YIELD ? TAKE.POLICY_YIELD : TAKE.POLICY_HOLD,
     once: t.once !== false,
     maxDurationSec: num(t.maxDurationSec, 0),
+    hasBgm: !!t.hasBgm,
+    bgm: { ...defaultBgm(), ...(t.bgm || {}) },
   });
   out.steps = (t.steps || []).map((s) => newStep({
     ...s,

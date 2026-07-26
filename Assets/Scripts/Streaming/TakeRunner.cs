@@ -30,6 +30,9 @@ namespace FixedCamVr.Streaming
         [Tooltip("演出中の post 層を掛け外しする ShowControlClient。null なら post 上書きなし。")]
         [SerializeField] private ShowControlClient? showControl;
 
+        [Tooltip("演出中だけ BGM を差し替える BgmDirector。null ならシーンから探す。無ければ BGM は区間のまま。")]
+        [SerializeField] private BgmDirector? bgmDirector;
+
         private readonly TakeRunnerLogic _logic = new();
 
         // 実行に必要な定義本体（_logic の Def と同じ並び）。
@@ -49,6 +52,9 @@ namespace FixedCamVr.Streaming
 
         // 現カットが開いている端末内録画（source:"rec"）。所有はここ — カットが変わったら必ず閉じる。
         private RecordedFramePlayer? _stepFrames;
+
+        // この演出が BGM を占有したか（占有した時だけ終了時にレーンへ返す）。
+        private bool _bgmOverrideActive;
 
         // 端末内録画の在り処を引く（source:"rec" の解決）。null なら rec カットは飛ばす。
         private SegmentRecorder? _recorder;
@@ -79,6 +85,7 @@ namespace FixedCamVr.Streaming
             if (showControl == null) showControl = GetComponent<ShowControlClient>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
             _recorder = FindObjectOfType<SegmentRecorder>();
+            if (bgmDirector == null) bgmDirector = FindObjectOfType<BgmDirector>();
             // CG レイヤはスクリーンのマテリアルを共有する必要があるので overlay と同じ GameObject に置く。
             // シーン未再生成でも効くよう、無ければ自分で載せる（prefab の SerializeField 欠落で
             // 機能が全死した過去の事故を繰り返さない）。
@@ -205,6 +212,9 @@ namespace FixedCamVr.Streaming
             }
             ShowStepDef? step = GetStep(d.takeIndex, d.stepIndex);
             if (step == null) return;
+
+            // 音は演出の単位（カットではない）。指示が無ければ何も起きず、区間の曲が鳴り続ける。
+            if (d.takeStarted) BeginTakeBgm(d.takeIndex);
 
             string source = TakeSchema.NormalizeSource(step.source, out bool known);
             if (!known)
@@ -334,8 +344,28 @@ namespace FixedCamVr.Streaming
             return true;
         }
 
+        // 演出の BGM 指示を掛ける（占有できた時だけ終了時に返す）。
+        private void BeginTakeBgm(int takeIndex)
+        {
+            if (takeIndex < 0 || takeIndex >= _takes.Length) return;
+            ShowTakeDef take = _takes[takeIndex];
+            if (bgmDirector == null) bgmDirector = FindObjectOfType<BgmDirector>();
+            if (bgmDirector == null) return;
+            _bgmOverrideActive = bgmDirector.BeginTakeOverride(take.bgm, take.hasBgm && take.bgm != null);
+        }
+
+        // 演出が終わった / 畳まれた。占有していたならレーン（区間の曲）へ返す。
+        private void EndTakeBgm()
+        {
+            if (!_bgmOverrideActive) return;
+            _bgmOverrideActive = false;
+            bgmDirector?.EndTakeOverride();
+        }
+
         private void EndTake(TakeRunnerLogic.Decision d)
         {
+            // 音は director の有無に関係なく必ず返す（画面が無くても占有だけ残さない）。
+            EndTakeBgm();
             if (director == null) return;
             ReleaseStepState();
             showControl?.SetInsertPostOverride(false, null);
@@ -350,6 +380,7 @@ namespace FixedCamVr.Streaming
         private void CleanupActive(bool releaseScreen = true)
         {
             if (!_logic.IsActive) return;
+            EndTakeBgm();
             ReleaseStepState();
             if (director != null && director.InsertActive)
             {
