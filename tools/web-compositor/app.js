@@ -196,6 +196,12 @@ function buildColumn(cam, index) {
   };
 
   // ===== 画質スライダー（cameras[i].post）=====
+  //   スライダは常に「実効値」（カメラ post > 全体 post > FX 既定）を表示する。読み出しもそこから。
+  const readFx = () => Object.fromEntries(FX.map(([k, , , , , d]) => {
+    const inp = refs.fxInputs[k];
+    const v = inp ? parseFloat(inp.value) : NaN;
+    return [k, Number.isFinite(v) ? v : (state?.post?.[k] ?? d)];
+  }));
   const fxRows = q('.fx-rows');
   for (const [key, label, min, max, step] of FX) {
     const row = document.createElement('label');
@@ -205,7 +211,11 @@ function buildColumn(cam, index) {
     inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step;
     const val = document.createElement('span');
     inp.oninput = () => {
-      if (!refs.cam.post) refs.cam.post = { ...FX_DEFAULT };
+      // ⚠ 1 本目のスライダを触った瞬間に**カメラ post が生まれる**。その種を FX 既定（露出 0 / コントラスト 1）
+      //   にすると、画面に出ている値（＝全体グレーディング）を捨てて既定へ飛ぶ — 「露出を動かしたら
+      //   コントラストまで動いた」「どう調整しても初期化時の絵に戻せない」の正体（2026-07-26 修正）。
+      //   種は**いま画面に出ている値そのもの**にする（表示 = 実データ）。
+      if (!refs.cam.post) refs.cam.post = readFx();
       refs.cam.post[key] = parseFloat(inp.value);
       val.textContent = inp.value;
       pushCamerasDebounced();
@@ -222,7 +232,8 @@ function buildColumn(cam, index) {
   q('.fx-copy').onclick = () => {
     const others = (state?.cameras || []).filter((c) => c.id !== refs.cam.id);
     if (!others.length) return fxNote('他のカメラがいません');
-    const src = refs.cam.post ? { ...FX_DEFAULT, ...refs.cam.post } : null;
+    // 「この列と同じ見え方にする」なので、配るのは**画面に出ている実効値**（部分的な post でも欠けない）。
+    const src = refs.cam.post ? readFx() : null;
     for (const c of others) { if (src) c.post = { ...src }; else delete c.post; }
     postState({ cameras: state.cameras });
     renderColumns();   // 他列のスライダを即座に追従させる（long-poll を待たない）
@@ -428,7 +439,9 @@ function buildColumn(cam, index) {
         liveImg: refs.liveImg,
         overlayEl, overlayReady, overlayW, overlayH, maskEl,
         overlayOn: !!cue, fadeSec, strength, feather: 0,
-        post: refs.cam.post || state?.post || FX_DEFAULT,
+        // カメラ post は**層まるごと**の上書き（実機 ApplyPostForActive と同じ）。
+        // 欠けたキーは FX 既定で埋める（undefined をシェーダへ渡さない）。
+        post: refs.cam.post ? { ...FX_DEFAULT, ...refs.cam.post } : (state?.post || FX_DEFAULT),
         trimEnd,
         onVideoEnd: () => { if (state?.control?.activeCue) postCommand({ type: 'stopCue' }); },
       };
@@ -448,11 +461,13 @@ function syncColumn(refs, cam) {
   setV(refs.portI, cam.port || 8080);
   setV(refs.authI, cam.auth || '');
   refs.syncPin && refs.syncPin();
+  // 表示は描画と同じ解決（カメラ post があれば**層まるごと**それ・無ければ全体 post）。
+  // キー単位で全体へフォールバックすると「表示 ≠ 実際の絵」になる。
   const hasPost = !!cam.post;
   for (const [key, , , , , d] of FX) {
     const inp = refs.fxInputs[key];
     if (document.activeElement === inp) continue;
-    const v = hasPost && (key in cam.post) ? cam.post[key] : (state?.post?.[key] ?? d);
+    const v = hasPost ? (cam.post[key] ?? d) : (state?.post?.[key] ?? d);
     inp.value = v; refs.fxVals[key].textContent = String(v);
   }
   const key = `${cam.host || ''}|${cam.port || 8080}|${cam.auth || ''}`;

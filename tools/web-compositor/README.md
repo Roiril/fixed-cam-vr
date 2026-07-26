@@ -253,6 +253,10 @@ node --test "tools/web-compositor/*.test.mjs"
 - `cameras[i].host/port/auth` を **Unity 実機が読む**（DHCP ズレを Web から復旧。変化時のみ再接続）
 - `cameras[i].post`（任意）= カメラ別画質。未設定は global `post` にフォールバック。
   列の **⇥ 他カメラにも適用** は「この列の値を他へコピー」（この列が初期化済み＝post 無しなら**他も初期化**して global に揃える）
+- **カメラ post は「層まるごと」の上書き**（実機 `ApplyPostForActive` と同じ。キー単位で global と混ぜない）。
+  スライダを 1 本触った瞬間にカメラ post が生まれるので、**種は画面に出ている実効値**にしてある
+  （2026-07-26 修正。以前は FX 既定を種にしていたため「露出を動かしたらコントラストまで既定へ飛ぶ」
+  「どう触っても初期化時の絵に戻せない」が起きた）
 - `Assets/Settings/ShowServer.asset` の host をこの PC に向ける（Editor+Link は 127.0.0.1、Quest 単体は LAN IP）
 - 詳細は [.claude/rules/streaming.md](../../.claude/rules/streaming.md)「show.json = 設定契約」
 
