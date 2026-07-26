@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  廻リ視（FixedCam）システム構成図
+  規範: ~/.claude/reference/figure-standards.md §1.5（物理システムは実物と空間を描く）
+  参照: ~/.claude/reference/figure-gallery/ ref-14 / ref-07 / ref-03
+
+  右＝斜投影の会場（三脚のスマホ・HMD を装着した体験者）
+  左上＝Quest の中の処理（各段にアイコン）／ 左下＝オペレータ卓
+  グレースケール基調。赤は「無線で飛ぶ映像」だけに割り当てる。
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 170 110" width="170mm" height="110mm"
+     role="img" aria-labelledby="figTitle figDesc">
+
+  <title id="figTitle">廻リ視のシステム構成</title>
+  <desc id="figDesc">会場の床に三脚で固定した Android スマホを 3 台置き、HMD を装着した体験者がその中を歩く。各スマホは MJPEG を Wi-Fi 配信し、体験者の Quest 3 が受信して HMD の位置からゾーンを判定してカメラを選び、演出を重ねて VR スクリーンに描画する。PC のオペレータ卓は本番前にタイムラインと素材をオーサリングして show.json を APK へ焼き込み、本番中は緊急の制御と疎通診断だけを行う。</desc>
+
+  <style>
+    .t    { font-family: "Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+            font-size: 2.5px; fill: #2b2723; }
+    .ts   { font-size: 2.2px; fill: #6a6257; }
+    .tl   { font-size: 2.3px; fill: #6a6257; }
+    .hd   { font-size: 2.7px; fill: #2b2723; font-weight: 700; }
+
+    .grp  { fill: none; stroke: #6a6257; stroke-width: .25; stroke-dasharray: 1.4 1; }
+    .proc { fill: #ece4d4; stroke: #2b2723; stroke-width: .3; }
+
+    .floor{ fill: #ece4d4; stroke: #6a6257; stroke-width: .3; }
+    .grid { fill: none;    stroke: #d8cdb8; stroke-width: .2; }
+    .sil  { fill: #2b2723; stroke: none; }                        /* 人のシルエット */
+    .dev  { fill: #f5efe2; stroke: #2b2723; stroke-width: .3; }   /* 機器の外形 */
+    .ink  { fill: #2b2723; stroke: none; }
+    .scr  { fill: #d8cdb8; stroke: none; }                        /* 画面の面 */
+    .ic   { fill: none; stroke: #2b2723; stroke-width: .25; }     /* アイコンの線 */
+
+    .flow { fill: none; stroke: #2b2723; stroke-width: .3;  marker-end: url(#a); }
+    .ops  { fill: none; stroke: #2b2723; stroke-width: .3;  stroke-dasharray: 1.4 1;
+            marker-end: url(#a); }
+    .video{ fill: none; stroke: #b85042; stroke-width: .3;  marker-end: url(#av); }
+    .lead { fill: none; stroke: #6a6257; stroke-width: .2;  stroke-dasharray: .5 .7; }
+  </style>
+
+  <defs>
+    <marker id="a" viewBox="0 0 2 1.6" refX="2" refY=".8"
+            markerWidth="2" markerHeight="1.6" markerUnits="userSpaceOnUse"
+            orient="auto-start-reverse">
+      <path d="M0,0 L2,.8 L0,1.6 z" fill="#2b2723"/>
+    </marker>
+    <marker id="av" viewBox="0 0 2 1.6" refX="2" refY=".8"
+            markerWidth="2" markerHeight="1.6" markerUnits="userSpaceOnUse"
+            orient="auto-start-reverse">
+      <path d="M0,0 L2,.8 L0,1.6 z" fill="#b85042"/>
+    </marker>
+
+    <!-- 固定カメラ = 三脚に載せた Android スマホ -->
+    <g id="cam">
+      <path d="M0,-6 L-2.6,0 M0,-6 L2.6,0 M0,-6 L0,0" class="ic"/>
+      <rect x="-2.2" y="-13" width="4.4" height="7" class="dev"/>
+      <circle cx="0" cy="-11.9" r=".65" class="ink"/>
+      <rect x="-1.5" y="-10.4" width="3" height="3.4" class="scr"/>
+    </g>
+
+    <!-- HMD を装着した体験者 -->
+    <g id="visitor">
+      <path d="M-2.6,0 L-.5,0 L-.5,-6 L-2.6,-6 Z" class="sil"/>
+      <path d="M.5,0 L2.6,0 L2.6,-6 L.5,-6 Z" class="sil"/>
+      <path d="M-3,-5.6 L3,-5.6 L2.4,-13 L-2.4,-13 Z" class="sil"/>
+      <path d="M-2.9,-12.4 L-4.1,-8 L-3.2,-7.7 L-2.1,-12.1 Z" class="sil"/>
+      <path d="M2.9,-12.4 L4.1,-8 L3.2,-7.7 L2.1,-12.1 Z" class="sil"/>
+      <circle cx="0" cy="-15.4" r="2.6" class="sil"/>
+      <rect x="-2.9" y="-16.5" width="5.8" height="2.2" class="dev"/>
+    </g>
+  </defs>
+
+  <!-- 地。GitHub のダークテーマでも線が消えないように敷く。
+       論文・予稿に貼るときは白（#ffffff）に変えるか、この 1 行を消す。 -->
+  <rect width="170" height="110" fill="#f5efe2"/>
+
+  <!-- ============ 会場（斜投影） ============ -->
+  <g id="layer-venue">
+    <path d="M78,98 L158,98 L164,66 L84,66 Z" class="floor"/>
+    <path d="M82.5,90 L162.5,90 M81,82 L161,82 M79.5,74 L159.5,74" class="grid"/>
+    <path d="M104,66 L98,98 M124,66 L118,98 M144,66 L138,98" class="grid"/>
+    <text x="78" y="102"   class="ts">実空間（会場）— 体験者はこの中を歩き、カメラは動かない</text>
+    <text x="78" y="105.4" class="ts">A / B / C ＝ 三脚に載せた Android スマホ（MJPEG 配信 :8080）</text>
+
+    <use href="#cam" x="96"  y="74"/>
+    <text x="100" y="66" class="t">A</text>
+    <use href="#cam" x="130" y="70"/>
+    <text x="134" y="62" class="t">B</text>
+    <use href="#cam" x="152" y="78"/>
+    <text x="156" y="70" class="t">C</text>
+
+    <use href="#visitor" x="114" y="90"/>
+    <text x="120" y="84"   class="t">体験者</text>
+    <text x="120" y="87.4" class="ts">Quest 3 を装着</text>
+  </g>
+
+  <!-- ============ Quest の中の処理 ============ -->
+  <g id="layer-quest">
+    <rect x="4" y="10" width="58" height="64" class="grp"/>
+    <text x="6" y="15.8" class="hd">Quest 3 の中</text>
+
+    <!-- 1. 受信 -->
+    <rect x="8" y="19" width="50" height="11" class="proc"/>
+    <g transform="translate(11,21.5)">
+      <rect x="0" y="1.4" width="6" height="4.4" class="dev"/>
+      <rect x="1.2" y=".7" width="6" height="4.4" class="dev"/>
+      <rect x="2.4" y="0"  width="6" height="4.4" class="dev"/>
+    </g>
+    <text x="23" y="26.2" class="t">MJPEG 受信・ID 照合</text>
+
+    <!-- 2. ゾーン判定 -->
+    <rect x="8" y="32" width="50" height="11" class="proc"/>
+    <g transform="translate(11,34.5)">
+      <path d="M0,5.6 L7.4,5.6 L9,1 L1.6,1 Z" class="ic"/>
+      <path d="M3.6,1 L2,5.6 M5.4,1 L3.8,5.6" class="ic"/>
+      <circle cx="4.4" cy="3.8" r=".9" class="ink"/>
+    </g>
+    <text x="23" y="39.2" class="t">ゾーン判定（HMD 位置）</text>
+
+    <!-- 3. 演出・加工 -->
+    <rect x="8" y="45" width="50" height="11" class="proc"/>
+    <g transform="translate(11,47.5)">
+      <rect x="0" y="0" width="8.4" height="5.8" class="dev"/>
+      <path d="M0,1.6 L8.4,1.6 M0,3.2 L8.4,3.2 M0,4.8 L8.4,4.8" class="ic"/>
+    </g>
+    <text x="23" y="52.2" class="t">演出・映像加工</text>
+
+    <!-- 4. VR スクリーン -->
+    <rect x="8" y="58" width="50" height="11" class="proc"/>
+    <g transform="translate(11,60.5)">
+      <rect x="3.4" y="0" width="5.4" height="5.8" class="scr"/>
+      <rect x="3.4" y="0" width="5.4" height="5.8" class="ic"/>
+      <circle cx=".9" cy="2.4" r="1.4" class="sil"/>
+      <path d="M2.3,2.9 L3.4,1.4 M2.3,3.5 L3.4,5" class="ic"/>
+    </g>
+    <text x="23" y="65.2" class="t">VR スクリーンへ描画</text>
+
+    <path d="M33,30 L33,31.6" class="flow"/>
+    <path d="M33,43 L33,44.6" class="flow"/>
+    <path d="M33,56 L33,57.6" class="flow"/>
+  </g>
+
+  <!-- ============ オペレータ卓 ============ -->
+  <g id="layer-ops">
+    <rect x="4" y="82" width="58" height="24" class="grp"/>
+    <text x="6" y="87.8" class="hd">オペレータ卓（本番前が主）</text>
+
+    <path d="M9,99 L19,99 L22,92 L12,92 Z" class="dev"/>
+    <path d="M9,99 L19,99 L21.4,101.6 L11.4,101.6 Z" class="dev"/>
+    <path d="M11.6,98 L19.4,98 L21.8,92.8 L14,92.8 Z" fill="#6a6257"/>
+
+    <rect x="26" y="90"  width="32" height="7" class="proc"/>
+    <text x="42" y="94.8" class="t" text-anchor="middle">事前オーサリング</text>
+    <rect x="26" y="98" width="32" height="6" class="proc"/>
+    <text x="42" y="102.2" class="ts" text-anchor="middle">緊急制御・疎通診断</text>
+  </g>
+
+  <!-- ============ 経路 ============ -->
+  <g id="layer-edges">
+    <path d="M96,61  L60,25" class="video"/>
+    <path d="M130,57 L60,25" class="video"/>
+    <path d="M152,65 L60,25" class="video"/>
+    <text x="64" y="21.5" class="tl" fill="#b85042">MJPEG 映像（Wi-Fi）</text>
+
+    <path d="M111,76 L63,70" class="lead"/>
+
+    <path d="M33,82 L33,75" class="ops"/>
+    <text x="35" y="79.6" class="tl">本番前：show.json を APK へ焼き込み</text>
+  </g>
+</svg>
