@@ -115,3 +115,23 @@ endCameraRendering` で bone の scale/pose をカメラごとに切り替えて
   FPV カメラ nearClipPlane=0.15 で自頭シェルをクリップして解決）
 - 非スキンの MeshRenderer なら `beginCameraRendering` での renderer.enabled 切替は有効（カリングは
   カメラごとに走る）— スキンドだけが特例、と覚える
+
+## Editor が別セッションに握られている時の検証手順（2026-07-26 実害）
+
+`Unity.exe -runTests -batchmode` は **`HandleProjectAlreadyOpenInAnotherInstance` でクラッシュする**
+（別のシュビー / ユーザーが Editor で同じプロジェクトを開いていると起きる。ログ末尾にこの関数名が出る）。
+Editor を奪わずに検証する手順:
+
+1. `Get-Process Unity` で誰が握っているか確認する（**kill しない** — rules/parallel-projects.md）
+2. MCP `execute_code` で `AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate)` → `read_console`（errors）
+3. `run_tests` → `get_test_job`
+
+罠:
+- **`RequestScriptCompilation(CleanBuildCache)` を渡すと全アセンブリの再ビルド（実測 25 分）が走る。**
+  Meta XR SDK 込みの本プロジェクトでは絶対に使わない。`Refresh(ForceUpdate)` だけで足りる
+- **コンパイルエラーは「console が 0 件」でも安心できない。** リフレッシュが走る前に読むと空で返る。
+  `Library/ScriptAssemblies/<asm>.dll` の mtime がソースより新しくなったのを確認してから console を読む
+- 失敗したコンパイルのエラーは console `clear` しても**再表示される**（コンパイル状態が正）。
+  直したのに同じ行番号のエラーが出続けるときは、まだ再コンパイルが走っていないだけのことが多い
+- `run_tests` が `busy: compiling` を返す間は待つ。テストは**古いアセンブリで走ることがある**ので、
+  テスト数（`total`）が期待どおり増えているかで新コードが載ったか判定する
