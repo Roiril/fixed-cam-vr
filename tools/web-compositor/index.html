@@ -149,19 +149,23 @@
       <div id="diagResult" class="diag-result"></div>
     </section>
 
-    <section class="floormap" data-group="author">
+    <!-- 操作（フロアマップ）と結果（シミュレーションの画面）は横並びにする。
+         上下に離すと「ドラッグしている場所」と「何が起きたか」が同時に見えない。 -->
+    <div class="sim-row" data-group="author">
+    <section class="floormap">
       <div class="mc-title">フロアマップ（ゾーン校正）
-        <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。パレットの色（＝担当カメラ）を選び、タイルをクリック / ドラッグで塗る → 💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。シミュレーションのチェックを入れるとドット（○）が出て、ドラッグした歩きが下の 🕹 ショーシミュレーションへ流れる。</span>
+        <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。マップ上の <b>🖌 塗る / 📍 位置合わせ点 / 🚶 歩かせる</b> で操作が切り替わる。塗る＝パレットの色（＝担当カメラ）でタイルを塗り、💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。<b>🚶 歩かせる</b>ではマップのどこを押してもそこに体験者が立ち、押したまま動かすと歩く → 右の 🕹 ショーシミュレーションが同時に動く。</span>
       </div>
       <div id="floorMap"></div>
     </section>
 
-    <section class="showsim" data-group="author">
+    <section class="showsim">
       <div class="mc-title">🕹 ショーシミュレーション（実機なし検証）
-        <span class="hint">フロアマップの「シミュレーション」を ON にしてドットをドラッグすると、体験者が歩いたものとしてショーが実時間で進む。ゾーン確定（最小滞在）・周回・区間・演出の発火（enter/exit・取り逃し・once・同時1本・watchdog）・画面のクールダウンまで、<b>Unity と同じ判定ロジック</b>で動く（golden トレースで機械照合済み）。「いま画面に映っているもの」は卓の合成器（Quest と同じ式）で実画表示する（ライブはカメラ接続時のみ。素材・マスク・画像加工は未接続でも出る）。歩きを記録してシナリオに保存すれば、同じ歩き方をワンクリックで再実行できる。<b>体感・遅延・VR 提示・位置合わせは検証できない</b>ので実機確認は別途必要。</span>
+        <span class="hint">左のフロアマップを <b>🚶 歩かせる</b> にしてドラッグすると、体験者が歩いたものとしてショーが実時間で進む。ゾーン確定（最小滞在）・周回・区間・演出の発火（enter/exit・取り逃し・once・同時1本・watchdog）・画面のクールダウンまで、<b>Unity と同じ判定ロジック</b>で動く（golden トレースで機械照合済み）。「いま画面に映っているもの」は卓の合成器（Quest と同じ式）で実画表示する（ライブはカメラ接続時のみ。素材・マスク・画像加工は未接続でも出る）。歩きを記録してシナリオに保存すれば、同じ歩き方をワンクリックで再実行できる。<b>体感・遅延・VR 提示・位置合わせは検証できない</b>ので実機確認は別途必要。</span>
       </div>
       <div id="showSim"></div>
     </section>
+    </div>
 
     <section class="bgm-sec" data-group="author">
       <div class="mc-title">🎵 BGM ライブラリ

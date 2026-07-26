@@ -350,6 +350,8 @@ function buildColumn(cam, index) {
     let stream;
     try { stream = streamCanvas.captureStream(30); }
     catch (e) { clearInterval(rawTimer); ed('録画不可: ' + e.message, 'err'); return false; }
+    // 合成ビューは画面外だと描画を止める（省 GPU）。録画中はコマが凍るので回し続けさせる。
+    if (isView && refs.view && refs.view.setForced) refs.view.setForced(true);
     recChunks = [];
     const mime = (window.MediaRecorder && MediaRecorder.isTypeSupported('video/webm;codecs=vp9'))
       ? 'video/webm;codecs=vp9' : 'video/webm';
@@ -357,6 +359,7 @@ function buildColumn(cam, index) {
     mediaRec.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
     mediaRec.onstop = async () => {
       clearInterval(rawTimer);
+      if (refs.view && refs.view.setForced) refs.view.setForced(false);
       refs.recording = null; updateColRecUI(); renderGlobalRecState();
       const blob = new Blob(recChunks, { type: 'video/webm' });
       const r = await (await fetch(`/save?type=video&to=recordings&cam=${tag}`,
@@ -377,7 +380,10 @@ function buildColumn(cam, index) {
   refs.isRecording = () => !!refs.recording;
   q('.cap-raw').onclick = () => saveStill(rawDraw() ? rawCanvas : null, rawTag(), '生');
   recRawBtn.onclick = () => { if (refs.recording === 'raw') colStopRecord(); else if (!refs.recording) colStartRecord('raw'); renderGlobalRecState(); };
-  q('.cap-view').onclick = () => saveStill(viewCanvas, viewTag(), 'Quest最終');
+  q('.cap-view').onclick = () => {
+    if (refs.view && refs.view.renderOnce) refs.view.renderOnce();  // 画面外でも最新の 1 枚にしてから撮る
+    saveStill(viewCanvas, viewTag(), 'Quest最終');
+  };
   recViewBtn.onclick = () => { if (refs.recording === 'view') colStopRecord(); else if (!refs.recording) colStartRecord('view'); renderGlobalRecState(); };
 
   // ===== WebGL ビュー（ScreenComposite 再現）: アクティブ cue を overlay =====
@@ -1012,9 +1018,29 @@ function promptCard(it) {
     $('#pTitle').value = it.title || ''; $('#pText').value = it.text; $('#pText').dataset.id = it.id || '';
     $('#pText').scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
+  // 旧ストアの役目は「素材工房のレシピへ移し終えるまでの置き場」。1 クリックで移せないと
+  // 移行が進まず、この節がいつまでも残る（＝結果と紐づかないプロンプトが残り続ける）。
+  const toRecipe = document.createElement('button');
+  toRecipe.textContent = '📐 レシピへ';
+  toRecipe.title = '素材工房のレシピとして登録する（本文の {{…}} はスロットとして拾う）';
+  toRecipe.onclick = async () => {
+    toRecipe.disabled = true;
+    const slots = [...new Set([...String(it.text).matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[1].trim()))];
+    try {
+      await fetch('/atelier/recipe', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: it.title || '(無題)', kind: it.kind || 'video', body: it.text, slots, intent: '旧プロンプトから移行',
+        }),
+      });
+      toRecipe.textContent = '✓ 移しました';
+      atelier && atelier.refresh();
+    } catch { toRecipe.textContent = '✕ 失敗'; }
+    setTimeout(() => { toRecipe.textContent = '📐 レシピへ'; toRecipe.disabled = false; }, 1600);
+  };
   const del = document.createElement('button'); del.textContent = '🗑'; del.title = '削除';
   del.onclick = async () => { try { await fetch('/prompts/delete', { method: 'POST', body: JSON.stringify({ id: it.id }) }); } catch {} loadPrompts(); };
-  btns.append(copy, edit, del);
+  btns.append(copy, toRecipe, edit, del);
   card.append(head, body, btns);
   return card;
 }

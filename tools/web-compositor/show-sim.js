@@ -35,8 +35,8 @@ export function createShowSim(container, deps) {
           <span class="ss-recinfo"></span>
         </div>
 
-        <div class="ss-note ss-howto">歩かせ方: フロアマップの「シミュレーション」を ON にして、
-          <b>ドット（○）の上で</b>マウスを押したままドラッグ。ドットから外れた場所を押すとタイル塗りになります。</div>
+        <div class="ss-note ss-howto">歩かせ方: 左のフロアマップを <b>🚶 歩かせる</b> にして、
+          マップの上をマウスで押したままドラッグ（押した場所に体験者が立ちます）。</div>
 
         <div class="ss-screen">
           <div class="ss-screen-view">
@@ -314,9 +314,9 @@ export function createShowSim(container, deps) {
     if (notice) bits.push(notice);
     if (!state) bits.push('show.json 待ち');
     else if (!meta || meta.zoneSource !== 'grid') bits.push('⚠ ゾーンを展開できません（フロアマップを確認）');
-    else if (!enabled) bits.push('フロアマップの「シミュレーション（ドットをドラッグ）」を ON にすると動きます');
+    else if (!enabled) bits.push('左のフロアマップを 🚶 歩かせる にすると動きます');
     else if (replay) bits.push(`▶ 再実行中: ${replay.name}`);
-    else if (playing) bits.push(recording ? '● 記録中（ドットをドラッグ）' : '実行中（ドットをドラッグ）');
+    else if (playing) bits.push(recording ? '● 記録中（マップをドラッグ）' : '実行中（マップをドラッグ）');
     else bits.push('一時停止中');
     if (staleConfig) bits.push('⚠ show.json が更新されました（⏹ 先頭へ で反映）');
     statusEl.textContent = bits.join(' / ');
@@ -365,7 +365,7 @@ export function createShowSim(container, deps) {
   function renderLogEmpty() {
     if (logEl.childElementCount) return;
     logEl.innerHTML = '<div class="ss-log-empty">（まだイベントなし）<br>'
-      + 'フロアマップの「シミュレーション」を ON → ドット（○）をドラッグすると、'
+      + '左のフロアマップを 🚶 歩かせる にしてドラッグすると、'
       + 'ゾーン確定・周回・区間・演出の発火がここに時刻つきで並びます。</div>';
   }
 
@@ -597,7 +597,13 @@ export function createShowSim(container, deps) {
       enabled = e.enabled;
       if (!enabled) pause();
     }
-    if (Number.isFinite(e.x) && Number.isFinite(e.z) && !replay) pos = { x: e.x, z: e.z };
+    if (Number.isFinite(e.x) && Number.isFinite(e.z) && !replay) {
+      const moved = !pos || Math.abs(pos.x - e.x) > 1e-6 || Math.abs(pos.z - e.z) > 1e-6;
+      pos = { x: e.x, z: e.z };
+      // **歩かせたら勝手に走り出す**。ドラッグそのものが「体験者が歩いた」という入力なので、
+      // その後に ▶ 再生 を押させるのは隠れた前提でしかない（押し忘れると「動かない」に見える）。
+      if (moved && enabled && !playing) play();
+    }
     renderAll();
   }
 

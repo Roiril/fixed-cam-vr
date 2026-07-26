@@ -153,8 +153,6 @@ export function createAtelier(deps) {
       root.dataset.built = '1';
       root.innerHTML = `
         <div class="atl-bar">
-          <span class="atl-lead">列 = カメラ。上の<b>試写</b>が主役で、下の 種 → 指示 → 生成物 はその材料。
-            生成物をクリックすると試写に載ります。</span>
           <span class="spacer"></span>
           <button class="atl-reload" title="種フレームと生成レコードを読み直す">↻ 読み直す</button>
           <button class="atl-opendir" title="撮影フォルダ（recordings/）を開く">📂 撮影</button>
@@ -381,12 +379,28 @@ export function createAtelier(deps) {
       if (st.seedUrl) {
         const im = new Image();
         im.crossOrigin = 'anonymous';
-        im.onload = () => { /* naturalWidth が入った時点で試写が使う */ };
+        im.onload = () => applyViewAspect();   // 実寸が入った時点で試写の枠を合わせる
         im.src = st.seedUrl;
         seedImg = im;
       }
       renderSeeds();
       syncStage();
+    }
+
+    // 試写の枠を背景ソースの実寸比に合わせる（監視列の applyAspect と同じ流儀）。
+    //   固定 4:3 だと 16:9 のカメラで左右に黒帯が出て、素材の見えを判断しにくい。
+    let viewAspect = '';
+    function applyViewAspect() {
+      const src = st.bg === 'live' ? (deps.getLiveImg && deps.getLiveImg(cam.id)) : seedImg;
+      const w = src ? src.naturalWidth : 0, h = src ? src.naturalHeight : 0;
+      if (!w || !h) return;
+      const aStr = (w / h).toFixed(4);
+      if (viewAspect === aStr) return;
+      viewAspect = aStr;
+      const cv = q('.atl-view');
+      cv.style.aspectRatio = aStr;
+      cv.width = Math.max(2, Math.round(480 * (w / h)));
+      cv.height = 480;
     }
 
     let seedSig = '';
@@ -537,6 +551,7 @@ export function createAtelier(deps) {
         st.bg = b.dataset.bg;
         el.querySelectorAll('[data-bg]').forEach((x) => x.classList.toggle('on', x === b));
         resetMotion();
+        applyViewAspect();
       };
     });
     el.querySelectorAll('.atl-stagebar [data-mask]').forEach((b) => {
@@ -610,6 +625,7 @@ export function createAtelier(deps) {
     function syncStage() {
       const live = deps.getLiveImg && deps.getLiveImg(cam.id);
       const hasLive = !!(live && live.naturalWidth);
+      applyViewAspect();
       const bLive = el.querySelector('[data-bg="live"]');
       bLive.disabled = !hasLive;
       bLive.title = hasLive ? '生ライブ映像を背景にする' : '監視列がこのカメラに接続していません';
@@ -735,9 +751,9 @@ export function createAtelier(deps) {
       const on = g.outputUrl && g.outputUrl === st.pickUrl;
       const thumb = g.outputUrl
         ? (isVideoUrl(g.outputUrl)
-          ? `<video src="${esc(g.outputUrl)}#t=0.1" muted playsinline preload="metadata"></video><span class="atl-play">▶ 試写に載せる</span>`
-          : `<img src="${esc(g.outputUrl)}" alt=""><span class="atl-play">試写に載せる</span>`)
-        : `<div class="atl-drop" data-drop="${esc(g.id)}"><b>⬇ 生成した動画をここへ</b><span>ドラッグ / クリック</span></div>`;
+          ? `<video src="${esc(g.outputUrl)}#t=0.1" muted playsinline preload="metadata"></video><span class="atl-play">▶ 試写へ</span>`
+          : `<img src="${esc(g.outputUrl)}" alt=""><span class="atl-play">試写へ</span>`)
+        : `<div class="atl-drop" data-drop="${esc(g.id)}"><b>⬇ 動画を<br>ここへ</b><span>ドラッグ / クリック</span></div>`;
       return `
       <article class="atl-card v-${esc(g.verdict || 'unrated')}${on ? ' picked' : ''}" data-gen="${esc(g.id)}">
         <div class="atl-out${g.outputUrl ? ' clickable' : ''}" ${g.outputUrl ? `data-pick="${esc(g.outputUrl)}"` : ''}>${thumb}</div>

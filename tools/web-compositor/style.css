@@ -578,6 +578,17 @@ input:-webkit-autofill:active {
 .floormap { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
 .fm-wrap { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
 .fm-canvas-col { flex: 0 0 auto; }
+
+/* マップの操作モード。**キャンバスの直上**に置く（操作対象と選択肢を隣に）。 */
+.fm-modes { display: flex; margin-bottom: 6px; border: 1px solid var(--line-soft); width: max-content; }
+.fm-mode {
+  border: none; border-right: 1px solid var(--line-soft);
+  padding: 4px 11px; font-size: 11px; letter-spacing: .04em;
+}
+.fm-mode:last-child { border-right: none; }
+.fm-mode.on { background: var(--accent-color); color: #000; font-weight: 600; opacity: 1; }
+.fm-modehint { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.6; margin: 5px 0 3px; }
+.fm-canvas.fm-walk { cursor: crosshair; }
 .fm-canvas {
   display: block; width: 460px; max-width: 100%; height: auto; aspect-ratio: 1 / 1;
   background: #000; border: 1px solid var(--line-soft); touch-action: none; cursor: crosshair;
@@ -592,8 +603,9 @@ input:-webkit-autofill:active {
 .fm-dirty { font-size: 11px; opacity: var(--opacity-mute); letter-spacing: .04em; }
 .fm-dirty.on { color: var(--warn-color); opacity: 1; }
 
+/* ラベルと入力は隣に置く（space-between で端まで引き離すと、どの値がどのラベルか目で追えない）。 */
 .fm-num {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; align-items: center; gap: 8px; width: max-content;
   font-size: 11px; opacity: var(--opacity-sub); text-transform: uppercase; letter-spacing: .06em;
 }
 .fm-num input { flex: 0 0 72px; width: 72px; text-align: right; }
@@ -818,6 +830,12 @@ input:-webkit-autofill:active {
 .app[data-mode="atelier"] [data-group="author"],
 .app[data-mode="atelier"] [data-group="live"] { display: none; }
 
+/* 監視列（マルチカメラ）は全モードに出るが、**主役はモードで違う**。
+   作る面（オーサリング / 素材）では編集面を先に見せ、監視は最後へ回す
+   （.app は flex 列なので order が効く）。ライブ運用では監視が主役なので先頭のまま。 */
+.app[data-mode="author"] .multicam,
+.app[data-mode="atelier"] .multicam { order: 9; }
+
 /* ===================================================================== */
 /* ⑬b 素材工房（🧪 素材）— atelier.js / index.html                        */
 /*     列 = カメラ。1 列の中を上から ① 試写 ② 種 ③ 指示 ④ 棚 と流す。      */
@@ -944,30 +962,33 @@ input:-webkit-autofill:active {
 .atl-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 9px; }
 
 /* ---- ④ 棚 ------------------------------------------------------------ */
-.atl-shelf { display: flex; flex-direction: column; gap: 9px; max-height: 62vh; overflow-y: auto; scrollbar-width: thin; }
-.atl-card { border: 1px solid var(--line-soft); display: flex; flex-direction: column; }
+/* 棚は「並べて見比べる一覧」。カードは横並びの行にして 1 枚あたりの縦を詰める
+   （旧: サムネが 4:3 で列幅いっぱい = 1 枚で列の高さが倍になり、他が見えなくなっていた）。 */
+.atl-shelf { display: flex; flex-direction: column; gap: 7px; max-height: 62vh; overflow-y: auto; scrollbar-width: thin; }
+.atl-card { border: 1px solid var(--line-soft); display: flex; align-items: stretch; min-width: 0; }
 .atl-card.v-keep { border-color: rgba(90, 209, 154, .6); }
 .atl-card.v-reject { opacity: .5; }
 .atl-card.picked { border-color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-color); }
-.atl-out { line-height: 0; background: #000; position: relative; }
+.atl-out { line-height: 0; background: #000; position: relative; flex: 0 0 148px; display: flex; }
 .atl-out video, .atl-out img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; display: block; }
 .atl-out.clickable { cursor: pointer; }
 .atl-play {
-  position: absolute; inset: auto 0 0 0; padding: 3px 6px; font-size: 10px; line-height: 1.5;
+  position: absolute; inset: auto 0 0 0; padding: 2px 5px; font-size: 9.5px; line-height: 1.5;
   background: rgba(0, 0, 0, .55); color: var(--accent-color); letter-spacing: .04em; opacity: 0;
-  transition: opacity .12s;
+  transition: opacity .12s; text-align: center;
 }
 .atl-out.clickable:hover .atl-play { opacity: 1; }
 .atl-card.picked .atl-play { opacity: 1; }
 .atl-drop {
-  aspect-ratio: 4 / 3; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 4px; cursor: pointer; border: 2px dashed var(--line-soft); background: transparent;
-  font-size: 11px; text-align: center; padding: 10px; line-height: 1.6;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; cursor: pointer; border: 2px dashed var(--line-soft); background: transparent;
+  font-size: 10px; text-align: center; padding: 4px; line-height: 1.45;
+  width: 100%; min-height: 100px;   /* カード高さいっぱいに伸びる（余白の黒を残さない） */
 }
-.atl-drop span { font-size: 9.5px; opacity: var(--opacity-mute); }
+.atl-drop span { font-size: 9px; opacity: var(--opacity-mute); }
 .atl-drop:hover, .atl-drop.over { border-color: var(--accent-color); color: var(--accent-color); }
 
-.atl-meta { padding: 7px 9px 9px; display: flex; flex-direction: column; gap: 5px; font-size: 10.5px; }
+.atl-meta { flex: 1 1 auto; min-width: 0; padding: 6px 9px 7px; display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; }
 .atl-cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .atl-cardhead strong { font-size: 11px; }
 .atl-status { font-size: 9.5px; opacity: var(--opacity-mute); white-space: nowrap; }
@@ -1455,6 +1476,15 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 /* 🕹 ショーシミュレーション（実機なし検証・show-sim.js）                  */
 /*    フロアマップのドットで駆動。判定は Unity 純ロジックの JS ミラー。     */
 /* ===================================================================== */
+/* 操作（フロアマップ）と結果（シミュレーションの画面）を横並びに置く行。
+   上下に離すと、ドラッグしている場所と「何が起きたか」を同時に見られない。 */
+.sim-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+.sim-row > .floormap { border-right: 1px solid var(--line-soft); }
+@media (max-width: 1320px) {
+  .sim-row { grid-template-columns: minmax(0, 1fr); }
+  .sim-row > .floormap { border-right: none; }
+}
+
 .showsim { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
 .ss-wrap { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; max-width: 1180px; }
 .ss-left { flex: 1 1 520px; min-width: 320px; display: flex; flex-direction: column; gap: 10px; }

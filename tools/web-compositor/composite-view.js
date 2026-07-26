@@ -108,7 +108,29 @@ export function createCompositeView(canvas, provider) {
     }, { fbo: null, w: W, h: H });
   };
 
+  // 画面に出ていないビューは描かない。
+  //   卓は 1 ページに合成ビューを何面も持つ（監視 3 + 素材工房 3 + cue エディタ + シミュレータ）。
+  //   全部を常時 25fps で回すと、モードで隠れている面・スクロールで画面外の面まで
+  //   ラプラシアンピラミッドを積み続け、GPU が詰まってページ全体が固まる（実際に固まった）。
+  //   `offsetParent === null` でモード非表示（display:none）を、IntersectionObserver で
+  //   スクロール外を落とす。可視化条件が消えている間は timer だけ回して即 return する。
+  let onScreen = true;
+  let forced = false;   // 録画中は画面外でも描き続ける（止めるとコマが凍る）
+  const io = ('IntersectionObserver' in window)
+    ? new IntersectionObserver((es) => { onScreen = es.some((e) => e.isIntersecting); }, { rootMargin: '120px' })
+    : null;
+  if (io) io.observe(canvas);
+  const visible = () => forced || (onScreen && canvas.offsetParent !== null);
+
+  const tick = () => { if (visible()) render(); };
   // RAF は非表示タブで停止するので setInterval（multicam の教訓）
-  const timer = setInterval(render, 40);
-  return { destroy() { clearInterval(timer); }, canvas };
+  const timer = setInterval(tick, 40);
+  return {
+    destroy() { clearInterval(timer); if (io) io.disconnect(); },
+    canvas,
+    /** 隠れている間も 1 枚だけ描きたい時（📷 キャプチャ）に使う */
+    renderOnce: render,
+    /** 録画中など、可視判定に関わらず回し続けたい時 */
+    setForced(v) { forced = !!v; },
+  };
 }

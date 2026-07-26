@@ -129,7 +129,13 @@ export function createFloorMap(container, deps) {
   container.innerHTML = `
     <div class="fm-wrap">
       <div class="fm-canvas-col">
+        <div class="fm-modes" role="group" aria-label="マップの操作">
+          <button class="fm-mode on" data-mode="paint" title="タイルを塗ってゾーン（担当カメラ）を決める">🖌 塗る</button>
+          <button class="fm-mode" data-mode="reg" title="HMD でタッチする位置合わせ点を置く">📍 位置合わせ点</button>
+          <button class="fm-mode" data-mode="walk" title="体験者を歩かせる。マップのどこを押してもそこへ立つ">🚶 歩かせる</button>
+        </div>
         <canvas class="fm-canvas" width="${SIZE}" height="${SIZE}"></canvas>
+        <div class="fm-modehint"></div>
         <div class="fm-palette"></div>
       </div>
       <div class="fm-controls">
@@ -153,16 +159,14 @@ export function createFloorMap(container, deps) {
         </div>
         <div class="fm-reg">
           <div class="fm-course-label">位置合わせ点（HMD タッチ順）</div>
-          <label class="fm-chk"><input class="fm-regmode" type="checkbox"> 📍 位置合わせ点を編集</label>
           <div class="fm-reg-note"></div>
           <div class="fm-reg-list"></div>
           <button class="fm-reg-add"></button>
           <div class="fm-reg-coords"></div>
-          <div class="fm-hint2">床の×印テープを置く位置に点を打つ。番号＝HMD でタッチする順。最小2・最大5点。編集 ON でキャンバスをクリック配置・ドラッグ移動・右クリック削除。未設定なら既定2点を使用。</div>
+          <div class="fm-hint2">床の×印テープを置く位置に点を打つ。番号＝HMD でタッチする順。最小2・最大5点。<b>📍 位置合わせ点</b>モードでキャンバスをクリック配置・ドラッグ移動・右クリック削除。未設定なら既定2点を使用。</div>
         </div>
         <label class="fm-num">オーバーラップ (m)<input class="fm-overlap" type="number" min="0" max="0.5" step="0.01"></label>
         <label class="fm-num">ヒステリシス (m)<input class="fm-hyst" type="number" min="0" max="0.5" step="0.01"></label>
-        <label class="fm-chk"><input class="fm-sim" type="checkbox"> シミュレーション（ドットをドラッグ）</label>
         <div class="fm-sim-out"></div>
         <div class="fm-live-out"></div>
       </div>
@@ -172,10 +176,11 @@ export function createFloorMap(container, deps) {
   const canvas = q('.fm-canvas');
   const ctx = canvas.getContext('2d');
   const overlapI = q('.fm-overlap'), hystI = q('.fm-hyst');
-  const simChk = q('.fm-sim'), simOut = q('.fm-sim-out'), liveOut = q('.fm-live-out');
+  const simOut = q('.fm-sim-out'), liveOut = q('.fm-live-out');
   const dirtyEl = q('.fm-dirty'), paletteEl = q('.fm-palette');
   const courseStartSel = q('.fm-course-start'), courseDirBtn = q('.fm-course-dir'), courseOrderEl = q('.fm-course-order');
-  const regModeChk = q('.fm-regmode'), regNoteEl = q('.fm-reg-note'), regListEl = q('.fm-reg-list');
+  const regNoteEl = q('.fm-reg-note'), regListEl = q('.fm-reg-list');
+  const modeHint = q('.fm-modehint');
   const regAddBtn = q('.fm-reg-add'), regCoordsEl = q('.fm-reg-coords');
 
   // 状態
@@ -188,8 +193,14 @@ export function createFloorMap(container, deps) {
   let drag = null;           // { mode:'paint'|'sim' }
   let courseStart = 0;       // 周回スタートのカメラ index（order[0]）
   let courseDir = 'ccw';     // 巡回の向き 'cw' | 'ccw'
-  let regMode = false;       // 位置合わせ点の編集モード（ON でキャンバス操作が点編集になる）
+  // マップの操作モード。'paint'（タイルを塗る）/ 'reg'（位置合わせ点）/ 'walk'（歩かせる）。
+  //   旧実装はチェックボックス 2 個（位置合わせ点編集 / シミュレーション）が
+  //   コントロール列の下の方にあり、**マップから遠い上に「ON にしないと歩かせられない」**という
+  //   隠れた前提を作っていた。キャンバス直上の 3 択に畳んで、操作対象と選択肢を隣に置く。
+  let mapMode = 'paint';
   let regDragIndex = -1;     // ドラッグ中の regPoint index
+  const isReg = () => mapMode === 'reg';
+  const isWalk = () => mapMode === 'walk';
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function markDirty() { dirty = true; renderDirty(); }
@@ -326,7 +337,7 @@ export function createFloorMap(container, deps) {
     drawRegPoints();
 
     // シミュレーションドット
-    if (simChk.checked && sim) {
+    if (isWalk() && sim) {
       const cam = camAt(sim.x, sim.z);
       const [dx, dy] = courseToPx(sim.x, sim.z);
       drawDot(dx, dy, cam !== null ? camColor(cam) : '#fff', true);
@@ -555,7 +566,7 @@ export function createFloorMap(container, deps) {
     regAddBtn.disabled = !unset && a.length >= REG_MAX;
     updateRegCoords();
   }
-  regModeChk.onchange = () => { regMode = regModeChk.checked; canvas.classList.toggle('fm-reg-edit', regMode); render(); };
+
   regAddBtn.onclick = () => {
     if (isRegUnset()) {
       layout.regPoints = clone(DEFAULT_REG_POINTS);
@@ -564,27 +575,43 @@ export function createFloorMap(container, deps) {
       if (a.length >= REG_MAX) return;
       a.push({ x: +(-0.3 + 0.2 * (a.length % 3)).toFixed(3), z: 0, label: '' });
     }
-    if (!regMode) { regMode = true; regModeChk.checked = true; canvas.classList.add('fm-reg-edit'); }
+    setMapMode('reg');
     markDirty(); renderRegList(); render();
   };
 
+  // ---- マップの操作モード（🖌 塗る / 📍 位置合わせ点 / 🚶 歩かせる）----------------
+  const MODE_HINT = {
+    paint: 'パレットの色でタイルをクリック / ドラッグ。色 = 担当カメラ。',
+    reg: 'クリックで点を置く / ドラッグで移動 / 右クリックで削除。番号 = HMD でタッチする順。',
+    walk: 'マップのどこでも押した場所に体験者が立ちます。押したまま動かすと歩きます。',
+  };
+  function setMapMode(next, opt) {
+    if (!MODE_HINT[next]) return;
+    mapMode = next;
+    container.querySelectorAll('.fm-mode').forEach((b) => b.classList.toggle('on', b.dataset.mode === next));
+    canvas.classList.toggle('fm-reg-edit', isReg());
+    canvas.classList.toggle('fm-walk', isWalk());
+    modeHint.textContent = MODE_HINT[next];
+    // 歩かせるモードに入った時、ドットが無ければ南辺中央に出す（旧チェックボックスと同じ初期位置）。
+    if (isWalk() && !sim && !(opt && opt.keepPos)) sim = { x: 0, z: -0.7 };
+    updateSimOut(); render(); emitSim();
+  }
+  container.querySelectorAll('.fm-mode').forEach((b) => { b.onclick = () => setMapMode(b.dataset.mode); });
+
   overlapI.onchange = () => { layout.overlapM = Math.max(0, parseFloat(overlapI.value) || 0); markDirty(); };
   hystI.onchange = () => { layout.hysteresisM = Math.max(0, parseFloat(hystI.value) || 0); markDirty(); };
-  simChk.onchange = () => {
-    if (simChk.checked && !sim) sim = { x: 0, z: -0.7 }; // 南辺中央に初期配置
-    updateSimOut(); render(); emitSim();
-  };
+
   // ショーシミュレーション（show-sim.js）へドットの有効状態と位置を流す。
   // deps.onSim 未指定なら従来どおり「タイルの色を読むだけ」の表示で完結する。
   function emitSim() {
     if (!deps || typeof deps.onSim !== 'function') return;
-    deps.onSim({ enabled: !!simChk.checked, x: sim ? sim.x : null, z: sim ? sim.z : null });
+    deps.onSim({ enabled: isWalk(), x: sim ? sim.x : null, z: sim ? sim.z : null });
   }
   function camLabel(cam) {
     return cam !== null ? (cameras[cam] ? `カメラ ${cameras[cam].id}` : `#${cam}`) : '未割当';
   }
   function updateSimOut() {
-    if (!simChk.checked || !sim) { simOut.textContent = ''; return; }
+    if (!isWalk() || !sim) { simOut.textContent = ''; return; }
     const cam = camAt(sim.x, sim.z);
     simOut.innerHTML = `SIM (${sim.x.toFixed(2)}, ${sim.z.toFixed(2)}) → <b>${camLabel(cam)}</b>`;
   }
@@ -626,7 +653,7 @@ export function createFloorMap(container, deps) {
   canvas.addEventListener('mousedown', (e) => {
     const m = mouseCourse(e);
     // 位置合わせ点編集モードが最優先（掴む / 追加）。
-    if (regMode) {
+    if (isReg()) {
       const hit = regHitIndex(m.px, m.py);
       materializeReg();                 // 未設定ゴーストは実データへ昇格（index は既定と一致）
       const a = regArr();
@@ -637,10 +664,13 @@ export function createFloorMap(container, deps) {
       }
       render(); e.preventDefault(); return;
     }
-    // シミュレーションドット優先（ドラッグで動かす）
-    if (simChk.checked && sim) {
-      const [sx, sy] = courseToPx(sim.x, sim.z);
-      if (Math.hypot(m.px - sx, m.py - sy) <= 14) { drag = { mode: 'sim' }; e.preventDefault(); return; }
+    // 歩かせるモード: **押した場所へそのまま立たせる**（ドットを狙って掴む必要はない）。
+    //   旧実装は半径 14px 以内を掴んだ時だけドラッグで、外すとタイル塗りに化けていた。
+    if (isWalk()) {
+      sim = { x: +m.x.toFixed(3), z: +m.z.toFixed(3) };
+      drag = { mode: 'sim' };
+      updateSimOut(); render(); emitSim();
+      e.preventDefault(); return;
     }
     ensureGrid();
     drag = { mode: 'paint' };
@@ -649,7 +679,7 @@ export function createFloorMap(container, deps) {
   });
   // 右クリックで位置合わせ点を削除（編集モード時のみ）。
   canvas.addEventListener('contextmenu', (e) => {
-    if (!regMode) return;
+    if (!isReg()) return;
     const m = mouseCourse(e);
     const hit = regHitIndex(m.px, m.py);
     const a = regArr();
@@ -744,21 +774,20 @@ export function createFloorMap(container, deps) {
   // emitSim は呼ばない（呼び元へ跳ね返して無限ループにしない）。
   function setSimPos(x, z) {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
-    if (!simChk.checked) simChk.checked = true;
+    if (!isWalk()) setMapMode('walk', { keepPos: true });
     sim = { x: +x.toFixed(3), z: +z.toFixed(3) };
     updateSimOut(); render();
   }
 
-  // タイムラインの「▶ 検証」から呼ばれる外部入口。シミュレーションを ON にしてドットを出す
-  // （卓の導線を 1 本にするため。既に ON なら何もしない = 位置を勝手に戻さない）。
+  // タイムラインの「▶ 検証」から呼ばれる外部入口。歩かせるモードへ入れてドットを出す
+  // （卓の導線を 1 本にするため。既に歩かせる中なら位置は動かさない）。
   function enableSim() {
-    if (simChk.checked) { emitSim(); return; }
-    simChk.checked = true;
-    if (!sim) sim = { x: 0, z: -0.7 };
-    updateSimOut(); render(); emitSim();
+    if (isWalk()) { emitSim(); return; }
+    setMapMode('walk');
   }
 
   adoptLayout(DEFAULT_LAYOUT);
+  setMapMode('paint');
   renderPalette();
   renderCourse();
   renderRegList();
