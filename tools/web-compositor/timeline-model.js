@@ -73,7 +73,9 @@ export const TAKE = {
   AT_ENTER: 'enter', AT_EXIT: 'exit',
   MISSED_FIRE_ON_EXIT: 'fireOnExit', MISSED_SKIP: 'skip',
   POLICY_HOLD: 'hold', POLICY_YIELD: 'yield',
-  SRC_LIVE: 'live', SRC_INHERIT: 'inherit', SRC_CLIP: 'clip', SRC_STILL: 'still',
+  SRC_LIVE: 'live', SRC_INHERIT: 'inherit', SRC_CLIP: 'clip', SRC_STILL: 'still', SRC_REC: 'rec',
+  CG_FOLLOW: 'follow', CG_FIXED: 'fixed',
+  SLOT_SCHEME: 'slot://',
   DUR_SEC: 'sec', DUR_UNTIL_CLIP_END: 'untilClipEnd',
   TRANS_CUT: 'cut', TRANS_DIP: 'dip', TRANS_FADE: 'fade',
   DEFAULT_MAX_DURATION_SEC: 45,
@@ -82,10 +84,11 @@ export const TAKE = {
 
 export function newStep(over = {}) {
   return {
-    source: TAKE.SRC_LIVE, camera: -1, assetUrl: '',
+    source: TAKE.SRC_LIVE, camera: -1, assetUrl: '', recLap: 0,
     cueId: '', strength: -1, fadeInSec: -1, fadeOutSec: -1, trimStartSec: -1, trimEndSec: -1,
     durKind: TAKE.DUR_SEC, durSec: TAKE.FALLBACK_STEP_DUR_SEC,
     transition: TAKE.TRANS_DIP, transitionMs: 0,
+    cg: '', cgMode: TAKE.CG_FOLLOW,
     post: { ...FX_DEFAULT }, hasPost: false,
     ...over,
   };
@@ -111,9 +114,10 @@ const oneOf = (v, allowed, def) => (allowed.includes(v) ? v : def);
 
 function serializeStep(s) {
   const out = {
-    source: oneOf(s.source, [TAKE.SRC_LIVE, TAKE.SRC_INHERIT, TAKE.SRC_CLIP, TAKE.SRC_STILL], TAKE.SRC_LIVE),
+    source: oneOf(s.source, [TAKE.SRC_LIVE, TAKE.SRC_INHERIT, TAKE.SRC_CLIP, TAKE.SRC_STILL, TAKE.SRC_REC], TAKE.SRC_LIVE),
     camera: Number.isInteger(s.camera) ? s.camera : -1,
     assetUrl: s.assetUrl || '',
+    recLap: Number.isInteger(s.recLap) ? s.recLap : 0,
     cueId: s.cueId || '',
     strength: num(s.strength, -1), fadeInSec: num(s.fadeInSec, -1), fadeOutSec: num(s.fadeOutSec, -1),
     trimStartSec: num(s.trimStartSec, -1), trimEndSec: num(s.trimEndSec, -1),
@@ -121,6 +125,8 @@ function serializeStep(s) {
     durSec: num(s.durSec, 0),
     transition: oneOf(s.transition, [TAKE.TRANS_CUT, TAKE.TRANS_DIP, TAKE.TRANS_FADE], TAKE.TRANS_DIP),
     transitionMs: num(s.transitionMs, 0),
+    cg: s.cg || '',
+    cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED], TAKE.CG_FOLLOW),
   };
   if (s.hasPost) out.post = { ...FX_DEFAULT, ...(s.post || {}) };
   out.hasPost = !!s.hasPost;

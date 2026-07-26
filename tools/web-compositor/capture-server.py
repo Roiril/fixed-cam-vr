@@ -106,7 +106,13 @@ def _default_show():
         # once 発火済みフラグをリセット（既定 0・欠落は 0 扱い）。
         'control': {'activeCue': None, 'cameraOverride': None, 'autoFollow': True, 'runEpoch': 0,
                     # Quest 内の発見プロトコルのキルスイッチ。欠落は ON 扱い（後方互換）。
-                    'discoveryEnabled': True},
+                    'discoveryEnabled': True,
+                    # 素材スロットの束縛（slot://name → 実 URL）。ラン中に差し替える素材はここ。
+                    'slots': []},
+        # 端末内録画（1 周目を録って 3 周目の演出で流す）。既定は無効。
+        'record': {'enabled': False, 'laps': [1], 'maxSegmentSec': 60, 'maxTotalMB': 200, 'fpsCap': 15},
+        # CG レイヤに立てる人形の定義（cameras[i].pose が著作済みのカメラでのみ出る）。
+        'actors': [],
         # ゾーン校正レイアウト（course space）。Web フロアマップが編集し Unity が展開する。
         # grid = タイルペイント（12×12・0.15m）。cells は rows 本の文字列、rows[0]=北端
         # （z=+0.9）・col0=西端（x=-0.9）。文字 '0'..'8'=カメラ index、'.'=未割当。
@@ -1168,6 +1174,18 @@ class Handler(SimpleHTTPRequestHandler):
                 show.setdefault('post', {}).update(body.get('post') or {})
             elif typ == 'setAutoFollow':
                 ctrl['autoFollow'] = bool(body.get('on'))
+            elif typ == 'bindSlot':
+                # 素材スロット（slot://name）の束縛。**timeline は触らない**のが要点 —
+                # timeline を保存し直すと発火済み（once）の演出が再武装されるため、
+                # 「入口で撮って生成した人形動画をラン中に差し込む」は必ずこの経路で行う。
+                name = (body.get('name') or '').strip()
+                if not name:
+                    raise ValueError('bindSlot: name が空')
+                slots = [x for x in (ctrl.get('slots') or []) if x.get('name') != name]
+                url = (body.get('url') or '').strip()
+                if url:
+                    slots.append({'name': name, 'url': url})
+                ctrl['slots'] = slots
             elif typ == 'setDiscoveryEnabled':
                 # Quest 内の発見プロトコル（fixedcam-discovery/1）のキルスイッチ。
                 # autoFollow は卓側の host 書き換えを止めるだけで、Quest 内の張替は止まらない。

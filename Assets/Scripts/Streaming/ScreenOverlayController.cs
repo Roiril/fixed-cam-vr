@@ -67,6 +67,9 @@ namespace FixedCamVr.Streaming
         /// <summary>現在のオーバーレイ（フェードアウト中も含む）。null なら停止。</summary>
         public OverlayCueData? Current => _current;
 
+        // フレーム列ソースの再生開始時刻（Time.time）。
+        private float _framesStart;
+
         // フェード状態。target に向かって _strength を進める。
         private float _strength;
         private float _target;
@@ -123,6 +126,7 @@ namespace FixedCamVr.Streaming
         private void Update()
         {
             CheckPrepareTimeout();
+            TickFrames();
 
             for (int i = 0; i < bindings.Length; i++)
             {
@@ -224,7 +228,19 @@ namespace FixedCamVr.Streaming
             }
 
             // 2) ソース
-            if (data.SourceIsVideo)
+            if (data.SourceIsFrames)
+            {
+                // 端末内録画（JPEG フレーム列）。デコード経路はライブ映像とまったく同じなので絵が一致する。
+                _current = data;
+                _stopWhenFadedOut = false;
+                _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
+                _player!.Stop();
+                _framesStart = Time.time;
+                data.frames!.Tick(0f);
+                SetOverlayTexture(data.frames.Texture, data.frames.Aspect);
+                BeginFadeIn(data);
+            }
+            else if (data.SourceIsVideo)
             {
                 _current = data;
                 // StopOverlay のフェードアウト進行中に新 cue が来たケース:
@@ -418,6 +434,15 @@ namespace FixedCamVr.Streaming
             // CameraSwitchDirector が cueActive=true のまま自動切替を恒久凍結するのを防ぐ）。
             if (_current == null || !_current.SourceIsVideo) return;
             if (_logic.ShouldAbortOnError()) AbortCurrentCue("video error");
+        }
+
+        // フレーム列ソース（端末内録画）を進める。終端に達したら動画の自然終端と同じ扱いで畳む
+        // （＝ untilClipEnd のカットがここで終わる）。
+        private void TickFrames()
+        {
+            if (_current == null || !_current.SourceIsFrames || _stopWhenFadedOut) return;
+            var seq = _current.frames!;
+            if (!seq.Tick(Time.time - _framesStart)) StopOverlay();
         }
 
         // Update から毎フレーム呼ぶ。unscaled realtime で timeScale=0 でも進む。

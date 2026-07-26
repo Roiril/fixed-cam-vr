@@ -350,18 +350,42 @@ namespace FixedCamVr.Streaming
             _commitSource = SwitchSource.External;
         }
 
+        /// <summary>
+        /// 「このカメラはスタッフの巡回・ゾーン自動切替に出してよいか」を判定する述語
+        /// （<c>role:"fx"</c> の演出専用カメラ = カメラ D を除くために ShowControlClient が注入する）。
+        /// 未注入なら全カメラが対象（従来どおり）。
+        /// </summary>
+        public void SetCameraSelectable(Func<int, bool>? predicate) => _selectable = predicate;
+
+        private Func<int, bool>? _selectable;
+
+        private bool Selectable(int index) => _selectable == null || _selectable(index);
+
         /// <summary>巡回 Next（手動）。受理したら true（インサート表示中・dip 中・クールダウン中は false）。</summary>
         public bool Next()
         {
             if (registry == null || registry.Count == 0) return false;
-            return RequestManual(CameraStreamRegistry.WrapIndex(registry.ActiveIndex + 1, registry.Count));
+            return RequestManual(NextSelectable(+1));
+        }
+
+        // 演出専用カメラ（role:"fx"）を飛ばして次の巡回先を返す。全部 fx なら現在地を返す（切替しない）。
+        private int NextSelectable(int dir)
+        {
+            int n = registry!.Count;
+            int idx = registry.ActiveIndex;
+            for (int step = 1; step <= n; step++)
+            {
+                int cand = CameraStreamRegistry.WrapIndex(idx + dir * step, n);
+                if (Selectable(cand)) return cand;
+            }
+            return idx;
         }
 
         /// <summary>巡回 Prev（手動）。受理したら true（インサート表示中・dip 中・クールダウン中は false）。</summary>
         public bool Prev()
         {
             if (registry == null || registry.Count == 0) return false;
-            return RequestManual(CameraStreamRegistry.WrapIndex(registry.ActiveIndex - 1, registry.Count));
+            return RequestManual(NextSelectable(-1));
         }
 
         /// <summary>

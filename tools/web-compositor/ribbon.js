@@ -46,6 +46,7 @@ const SRC_LABEL = {
   [TAKE.SRC_INHERIT]: 'そのまま',
   [TAKE.SRC_CLIP]: '事前映像',
   [TAKE.SRC_STILL]: '静止画',
+  [TAKE.SRC_REC]: '録画（この体験の）',
 };
 
 export function createRibbon(container, deps) {
@@ -211,6 +212,10 @@ export function createRibbon(container, deps) {
   function stepIssue(s) {
     if (s.source === TAKE.SRC_LIVE && !(Number.isInteger(s.camera) && s.camera >= 0 && s.camera < cameras.length)) {
       return 'ライブのカメラが未選択（実機ではこのカットは飛ばされます）';
+    }
+    if (s.source === TAKE.SRC_REC
+        && !(Number.isInteger(s.camera) && s.camera >= 0 && s.camera < cameras.length && s.recLap > 0)) {
+      return '録画のカメラ／周が未指定（実機ではこのカットは飛ばされます）';
     }
     if ((s.source === TAKE.SRC_CLIP || s.source === TAKE.SRC_STILL) && !s.assetUrl) {
       return '素材が未選択（実機ではこのカットは飛ばされます）';
@@ -913,7 +918,7 @@ export function createRibbon(container, deps) {
     const d = stepSeconds(s);
     const bad = stepIssue(s);
 
-    const srcOpts = [TAKE.SRC_LIVE, TAKE.SRC_INHERIT, TAKE.SRC_CLIP, TAKE.SRC_STILL]
+    const srcOpts = [TAKE.SRC_LIVE, TAKE.SRC_INHERIT, TAKE.SRC_CLIP, TAKE.SRC_STILL, TAKE.SRC_REC]
       .map((k) => `<option value="${k}"${s.source === k ? ' selected' : ''}>${SRC_LABEL[k]}</option>`).join('');
     const camOpts = cameras.map((c, k) => `<option value="${k}"${s.camera === k ? ' selected' : ''}>${escapeHtml(camLabel(k))}</option>`).join('');
     const wantVideo = s.source !== TAKE.SRC_STILL;
@@ -926,6 +931,7 @@ export function createRibbon(container, deps) {
     if (s.cueId && !cues.some((c) => c.id === s.cueId)) cueOpts += `<option value="${escapeHtml(s.cueId)}" selected>${escapeHtml(s.cueId)}（未定義）</option>`;
 
     const isLive = s.source === TAKE.SRC_LIVE;
+    const isRec = s.source === TAKE.SRC_REC;
     const isAsset = s.source === TAKE.SRC_CLIP || s.source === TAKE.SRC_STILL;
     const bySec = s.durKind !== TAKE.DUR_UNTIL_CLIP_END;
     row.innerHTML = `
@@ -939,7 +945,8 @@ export function createRibbon(container, deps) {
       </div>
       <div class="rb-grid">
         <label>映すもの<select class="rb-s-src">${srcOpts}</select></label>
-        <label class="rb-s-cam-l" style="display:${isLive ? '' : 'none'}">カメラ<select class="rb-s-cam">${camOpts}</select></label>
+        <label class="rb-s-cam-l" style="display:${isLive || isRec ? '' : 'none'}">カメラ<select class="rb-s-cam">${camOpts}</select></label>
+        <label class="rb-s-reclap-l" style="display:${isRec ? '' : 'none'}" title="この体験のうち何周目に録った映像か（録れていなければ実機ではこのカットは飛ばされます）">録った周<input class="rb-s-reclap" type="number" min="1" step="1" value="${s.recLap > 0 ? s.recLap : 1}">周目</label>
         <label class="rb-s-asset-l" style="display:${isAsset ? '' : 'none'}">素材<select class="rb-s-asset">${assetOpts}</select></label>
         <button class="rb-s-asset-refresh" style="display:${isAsset ? '' : 'none'}" title="いま撮った素材を読み直す（recordings/ captures/ を再走査）">↻</button>
         <button class="rb-s-asset-dir" style="display:${isAsset ? '' : 'none'}" title="撮影フォルダ（recordings/）を開く。ここに録画・合成した素材を置く">📂</button>
@@ -961,6 +968,11 @@ export function createRibbon(container, deps) {
         </select></label>
         <label><input class="rb-s-transms" type="number" min="0" step="10" value="${s.transitionMs || 0}">ms<span class="rb-hint2">0=既定</span></label>
         <label class="chk"><input class="rb-s-post-on" type="checkbox" ${s.hasPost ? 'checked' : ''}>🎨 画像加工を上書き</label>
+        <label title="映像の上に CG の人形を立てる。カメラ姿勢が著作済みのカメラでのみ出る">CG 人形<input class="rb-s-cg" type="text" value="${escapeHtml(s.cg || '')}" placeholder="actor id（空=出さない）" size="10"></label>
+        <label class="rb-s-cgmode-l" style="display:${s.cg ? '' : 'none'}">立ち位置<select class="rb-s-cgmode">
+          <option value="${TAKE.CG_FOLLOW}"${s.cgMode !== TAKE.CG_FIXED ? ' selected' : ''}>体験者の位置</option>
+          <option value="${TAKE.CG_FIXED}"${s.cgMode === TAKE.CG_FIXED ? ' selected' : ''}>決めた位置</option>
+        </select></label>
       </div>
       <details class="rb-s-ovr"><summary>素材の上書き（-1 = 素材の設定のまま）</summary>
         <div class="rb-grid">
@@ -979,7 +991,10 @@ export function createRibbon(container, deps) {
       s.source = r('.rb-s-src').value;
       s.camera = parseInt(r('.rb-s-cam').value, 10);
       if (!Number.isInteger(s.camera)) s.camera = -1;
-      if (s.source !== TAKE.SRC_LIVE) s.camera = -1;
+      if (s.source !== TAKE.SRC_LIVE && s.source !== TAKE.SRC_REC) s.camera = -1;
+      s.recLap = s.source === TAKE.SRC_REC ? Math.max(1, Math.round(numOr(r('.rb-s-reclap').value, 1))) : 0;
+      s.cg = r('.rb-s-cg').value.trim();
+      s.cgMode = r('.rb-s-cgmode').value === TAKE.CG_FIXED ? TAKE.CG_FIXED : TAKE.CG_FOLLOW;
       s.assetUrl = r('.rb-s-asseturl').value.trim();
       if (!isAssetSource(s.source)) s.assetUrl = '';
       s.cueId = r('.rb-s-cue').value;
@@ -999,6 +1014,9 @@ export function createRibbon(container, deps) {
       .forEach((el) => { el.onchange = () => commit(false); });
     r('.rb-s-src').onchange = () => commit(true);
     r('.rb-s-cam').onchange = () => commit(true);
+    r('.rb-s-reclap').onchange = () => commit(true);
+    r('.rb-s-cg').onchange = () => commit(true);
+    r('.rb-s-cgmode').onchange = () => commit(true);
     r('.rb-s-durkind').onchange = () => commit(true);
     r('.rb-s-dur').onchange = () => commit(true);
     // 素材 select → URL 欄へ流し込む（sa:// 等の手入力も残せるように 2 段構え）

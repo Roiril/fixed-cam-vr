@@ -107,6 +107,13 @@ namespace FixedCamVr.Streaming
         /// <summary>Metadata が更新された時に呼ばれる。MjpegScreen 等が orientation を反映するためのフック。</summary>
         public event Action<StreamMetadata>? MetadataUpdated;
 
+        /// <summary>
+        /// デコード成功したフレームの**生 JPEG バイト列**を渡すフック（buffer, length）。
+        /// 端末内録画（<c>SegmentRecorder</c>）が使う。**同期的にコピーすること** — 戻った時点で
+        /// バッファは次のフレームで上書きされる。壊れ JPEG では呼ばれない。
+        /// </summary>
+        public Action<byte[], int>? FrameTap;
+
         public CameraStream(CameraSource source)
         {
             _source = source;
@@ -272,6 +279,14 @@ namespace FixedCamVr.Streaming
                 if (decoded)
                 {
                     _watchdog.OnFrameDecoded(now);
+
+                    // 端末内録画。null チェックだけなので非録画時のコストはゼロに近い。
+                    // 例外で受信ループを殺さない（録画は体験を止めない）。
+                    if (FrameTap != null)
+                    {
+                        try { FrameTap(_scratch, len); }
+                        catch (Exception e) { Debug.LogWarning($"[CameraStream] FrameTap 例外: {e.Message}"); }
+                    }
 
                     if (_lastSeq != 0 && meta.seq > _lastSeq + 1)
                         DroppedFrames += (meta.seq - _lastSeq - 1);

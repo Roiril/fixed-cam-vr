@@ -1,6 +1,8 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using FixedCamVr.Streaming.Cg;
+using FixedCamVr.Streaming.Recording;
 using UnityEngine;
 
 namespace FixedCamVr.Streaming
@@ -45,6 +47,15 @@ namespace FixedCamVr.Streaming
         // Current==null を直接見るとロード中を「終わった」と誤判定する（2026-07-26 監査 HIGH）。
         private int _clipToken = -1;
 
+        // 現カットが開いている端末内録画（source:"rec"）。所有はここ — カットが変わったら必ず閉じる。
+        private RecordedFramePlayer? _stepFrames;
+
+        // 端末内録画の在り処を引く（source:"rec" の解決）。null なら rec カットは飛ばす。
+        private SegmentRecorder? _recorder;
+
+        // 映像の上に人形を描く層（step.cg）。null なら CG は出ない（機能未配置でも演出は動く）。
+        private ShowCgLayer? _cgLayer;
+
         // 時刻源。既定は Time.time。EditMode テストは時間が進まないため差し替える
         //（純ロジックは既に時刻を引数で受けており、束縛しているのはこの実行体だけ）。
         private Func<float>? _timeSource;
@@ -67,6 +78,12 @@ namespace FixedCamVr.Streaming
             if (overlay == null) overlay = FindObjectOfType<ScreenOverlayController>();
             if (showControl == null) showControl = GetComponent<ShowControlClient>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            _recorder = FindObjectOfType<SegmentRecorder>();
+            // CG レイヤはスクリーンのマテリアルを共有する必要があるので overlay と同じ GameObject に置く。
+            // シーン未再生成でも効くよう、無ければ自分で載せる（prefab の SerializeField 欠落で
+            // 機能が全死した過去の事故を繰り返さない）。
+            _cgLayer = FindObjectOfType<ShowCgLayer>();
+            if (_cgLayer == null && overlay != null) _cgLayer = overlay.gameObject.AddComponent<ShowCgLayer>();
         }
 
         /// <summary>cueId → 素材定義の解決関数を注入する（ShowControlClient に集約）。</summary>
@@ -201,12 +218,21 @@ namespace FixedCamVr.Streaming
             // 「範囲外カメラを registry の clamp 任せで無言に別カメラへ」「素材無しで数秒画面が固まる」を作らない。
             if (!IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex))
             {
+                cue?.frames?.Dispose();   // 開いた録画をリークさせない
                 _logic.SetCurrentStepEnd(Now);
                 return;
             }
 
             // post 層はカットごとに掛け替える（無指定のカットでは解除して区間 / カメラ / global へ戻す）。
             showControl?.SetInsertPostOverride(step.hasPost && step.post != null, step.hasPost ? step.post : null);
+
+            // CG 人形もカットごとに掛け替える。構図を決めるのは「その映像を撮った実カメラ」なので、
+            // live でも rec でも step.camera を渡す（未指定なら今映しているカメラ）。
+            if (_cgLayer != null)
+            {
+                if (step.HasCg) _cgLayer.Apply(step.cg, step.cgMode, step.camera >= 0 ? step.camera : ResolveLatestZoneCamera());
+                else _cgLayer.Hide();
+            }
 
             // カット遷移（cut / dip / fade）。**source によって効かせ方が違う**:
             //   live   … 画面のライブ層は 1 枚しかないのでクロスフェードできない。cut=瞬時 / dip・fade=黒経由
@@ -247,11 +273,18 @@ namespace FixedCamVr.Streaming
         {
             if (cue != null && overlay != null)
             {
-                bool isVideo = cue.SourceIsVideo;
+                // 前のカットの録画を閉じ、このカットの録画を引き取る（所有はこのクラス）。
+                if (!ReferenceEquals(_stepFrames, cue.frames))
+                {
+                    _stepFrames?.Dispose();
+                    _stepFrames = cue.frames as RecordedFramePlayer;
+                }
+                // 「終端イベントを持つ素材」= 動画 / 録画フレーム列。静止画は持たない。
+                bool hasNaturalEnd = cue.SourceIsVideo || cue.SourceIsFrames;
                 _clipToken = overlay.PlayCue(cue);
                 _stepOverlayPlayed = true;
-                _awaitingClipEnd = step.IsUntilClipEnd && isVideo;
-                if (step.IsUntilClipEnd && !isVideo)
+                _awaitingClipEnd = step.IsUntilClipEnd && hasNaturalEnd;
+                if (step.IsUntilClipEnd && !hasNaturalEnd)
                 {
                     float sec = step.durSec > 0f ? step.durSec : TakeSchema.FallbackStepDurSec;
                     _logic.SetCurrentStepEnd(Now + sec);
@@ -264,6 +297,8 @@ namespace FixedCamVr.Streaming
             _stepOverlayPlayed = false;
             _awaitingClipEnd = false;
             _clipToken = -1;
+            _stepFrames?.Dispose();
+            _stepFrames = null;
             if (step.IsUntilClipEnd)
             {
                 // 素材が無いのに untilClipEnd → 尺が決まらない。watchdog 任せにせず既定尺で畳む。
@@ -290,7 +325,7 @@ namespace FixedCamVr.Streaming
                 }
                 return true;
             }
-            if (TakeSchema.IsAssetSource(source) && cue == null)
+            if ((TakeSchema.IsAssetSource(source) || TakeSchema.IsRecSource(source)) && cue == null)
             {
                 Debug.LogWarning($"[TakeRunner] {source} だが素材が解決できない → " +
                                  $"このカットを飛ばす（take={TakeId(takeIndex)} step={stepIndex}）");
@@ -325,13 +360,16 @@ namespace FixedCamVr.Streaming
             _logic.AbortActive();
         }
 
-        // カット単位の状態（オーバーレイ・クリップ待ち）を落とす。
+        // カット単位の状態（オーバーレイ・クリップ待ち・開いている録画）を落とす。
         private void ReleaseStepState()
         {
             if (_stepOverlayPlayed) overlay?.StopOverlay();
             _stepOverlayPlayed = false;
             _awaitingClipEnd = false;
             _clipToken = -1;
+            _stepFrames?.Dispose();
+            _stepFrames = null;
+            _cgLayer?.Hide();
         }
 
         private ShowStepDef? GetStep(int takeIndex, int stepIndex)
@@ -362,6 +400,25 @@ namespace FixedCamVr.Streaming
                     Debug.LogWarning($"[TakeRunner] cue 未解決: {step.cueId}（take={TakeId(takeIndex)} step={stepIndex}）");
             }
 
+            // 端末内録画（source:"rec"）。録れていなければ null を返し、このカットは飛ばされる。
+            if (TakeSchema.IsRecSource(source))
+            {
+                RecordedFramePlayer? rec = OpenRecording(step, takeIndex, stepIndex);
+                if (rec == null) return null;
+                return new OverlayCueData
+                {
+                    id = $"{TakeId(takeIndex)}#{stepIndex}",
+                    displayName = _takes[takeIndex].name ?? "",
+                    frames = rec,
+                    maskTexture = cue?.maskTexture,
+                    maskUrl = cue?.maskUrl ?? "",
+                    strength = TakeSchema.Inherit(step.strength, cue?.strength ?? 1f),
+                    loop = false,
+                    fadeInSeconds = TakeSchema.Inherit(step.fadeInSec, cue?.fadeInSeconds ?? 0.5f),
+                    fadeOutSeconds = TakeSchema.Inherit(step.fadeOutSec, cue?.fadeOutSeconds ?? 0.5f),
+                };
+            }
+
             string assetUrl = "";
             if (TakeSchema.IsAssetSource(source) && !string.IsNullOrEmpty(step.assetUrl))
                 assetUrl = _urlResolver != null ? _urlResolver(step.assetUrl) : step.assetUrl;
@@ -389,6 +446,33 @@ namespace FixedCamVr.Streaming
                 trimStart = TakeSchema.Inherit(step.trimStartSec, cue?.trimStart ?? 0f),
                 trimEnd = TakeSchema.Inherit(step.trimEndSec, cue?.trimEnd ?? 0f),
             };
+        }
+
+        /// <summary>
+        /// <c>source:"rec"</c> のカットが指す端末内録画を開く。
+        /// 「1 周目を録っていない」「ランを途中で開始した」等で録れていなければ null
+        /// （§6.4 の扱いでそのカットを飛ばす。演出が無い分には体験は壊れない）。
+        /// </summary>
+        private RecordedFramePlayer? OpenRecording(ShowStepDef step, int takeIndex, int stepIndex)
+        {
+            if (_recorder == null) _recorder = FindObjectOfType<SegmentRecorder>();
+            if (_recorder == null)
+            {
+                Debug.LogWarning($"[TakeRunner] SegmentRecorder が居ないので録画カットを飛ばす（take={TakeId(takeIndex)} step={stepIndex}）");
+                return null;
+            }
+            if (step.recLap <= 0 || step.camera < 0)
+            {
+                Debug.LogWarning($"[TakeRunner] rec の周 / カメラが未指定（recLap={step.recLap} camera={step.camera}）→ 飛ばす");
+                return null;
+            }
+            string path = _recorder.ResolveRecorded(step.recLap, step.camera);
+            if (string.IsNullOrEmpty(path))
+            {
+                Debug.LogWarning($"[TakeRunner] 録画が無い（lap={step.recLap} camera={step.camera}）→ このカットを飛ばす");
+                return null;
+            }
+            return RecordedFramePlayer.Open(path);
         }
 
         // カットの尺配列（untilClipEnd は負値＝外部通知待ち）。

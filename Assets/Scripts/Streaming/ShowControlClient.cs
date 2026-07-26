@@ -164,6 +164,72 @@ namespace FixedCamVr.Streaming
                || (action == BgmPlanLogic.ActionPlay && !string.IsNullOrEmpty(trackId));
     }
 
+    /// <summary>
+    /// カメラの役割。<c>fx</c>（演出専用）はどのゾーンにも割り当てず、スタッフの巡回にも出さない
+    /// （＝「カメラ D」のような、演出のカットからしか映らないカメラ）。未知値は <c>zone</c> へ倒す。
+    /// </summary>
+    public static class CameraRoles
+    {
+        public const string Zone = "zone";
+        public const string Fx = "fx";
+
+        public static bool IsFx(string? role) => role == Fx;
+    }
+
+    /// <summary>
+    /// 実カメラの course 空間での姿勢（CG レイヤの仮想カメラがこの姿勢で構える）。
+    /// course 空間は <c>CourseFrame</c> の 3DOF で実空間へ登録済みなので、体験者の位置と同じ座標系に乗る。
+    /// 卓のフロアマップで著作する。<c>hasPose</c> が present-flag。
+    /// </summary>
+    [Serializable] public sealed class ShowCameraPoseDef
+    {
+        public float x;          // course 空間 X (m)
+        public float z;          // course 空間 Z (m)
+        public float y = 1.2f;   // 床からの高さ (m)
+        public float yawDeg;     // course +Z を 0 とする水平角
+        public float pitchDeg;   // 下向きが負
+        public float fovDeg = 60f;
+    }
+
+    /// <summary>端末内録画（1 周目を録って 3 周目に流す）の設定。show.json トップレベル <c>record</c>。</summary>
+    [Serializable] public sealed class ShowRecordDef
+    {
+        public bool enabled;
+        public int[] laps = { 1 };          // 録る周（既定は 1 周目だけ）
+        public float maxSegmentSec = 60f;   // 1 区間の上限（超えたら古いフレームから捨てる）
+        public int maxTotalMB = 200;        // ラン全体の上限
+        public float fpsCap = 15f;          // 録画側の間引き（受信 fps より低くしてよい）
+
+        public bool RecordsLap(int lap)
+        {
+            if (!enabled || laps == null) return false;
+            foreach (int l in laps) if (l == lap) return true;
+            return false;
+        }
+    }
+
+    /// <summary>CG レイヤに立てる人形の定義。show.json トップレベル <c>actors</c>。</summary>
+    [Serializable] public sealed class ShowActorDef
+    {
+        public string id = "";
+        public string name = "";
+        public string prefab = "";      // Resources 配下のプレハブ名
+        public float heightM = 1.6f;
+        public float fixedX;            // cgMode="fixed" のときの course 空間位置
+        public float fixedZ;
+        public float fixedYawDeg;
+    }
+
+    /// <summary>
+    /// 素材スロットの束縛（<c>slot://name</c> → 実 URL）。**ラン中に卓が差し替える**ので
+    /// timeline ではなく control に置く（timeline を書き換えると発火済み演出が再武装される）。
+    /// </summary>
+    [Serializable] public sealed class ShowSlotDef
+    {
+        public string name = "";
+        public string url = "";
+    }
+
     /// <summary>タイムライン区間 cue の任意上書き（強度・フェード・trim を丸ごと差し替える）。hasOverride が present-flag。</summary>
     [Serializable] public sealed class ShowCueOverrideDef
     {
@@ -375,6 +441,44 @@ namespace FixedCamVr.Streaming
         private ShowLayoutDef? _layout;
         private int _appliedLayoutRev = -1;
 
+        // 素材スロットの束縛（control.slots 由来）。slot://name を実 URL へ解決するのに引く。
+        // ラン中に卓が差し替えるので timeline とは独立に持つ（timeline を触ると once が再武装される）。
+        private ShowSlotDef[] _slots = Array.Empty<ShowSlotDef>();
+
+        // 端末内録画の設定（record 由来）。SegmentRecorder が読む。
+        private ShowRecordDef? _record;
+
+        /// <summary>端末内録画の設定（show.json <c>record</c>）。未指定なら null。</summary>
+        public ShowRecordDef? RecordConfig => _record;
+
+        // CG レイヤの人形定義（actors 由来）。ShowCgLayer が id で引く。
+        private ShowActorDef[] _actors = Array.Empty<ShowActorDef>();
+
+        /// <summary>CG レイヤの人形定義を id で引く。未定義なら null。</summary>
+        public ShowActorDef? FindActor(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            foreach (ShowActorDef? a in _actors)
+                if (a != null && a.id == id) return a;
+            return null;
+        }
+
+        /// <summary>index 番カメラの course 空間姿勢（CG レイヤ用）。未著作なら false。</summary>
+        public bool TryGetCameraPose(int index, out ShowCameraPoseDef pose)
+        {
+            pose = null!;
+            if (index < 0 || index >= _cameras.Length) return false;
+            CameraDef? c = _cameras[index];
+            if (c == null || !c.hasPose || c.pose == null) return false;
+            pose = c.pose;
+            return true;
+        }
+
+        /// <summary>index 番カメラが演出専用（<c>role:"fx"</c>）か。ゾーン割当・スタッフ巡回から外す。</summary>
+        public bool IsFxCamera(int index)
+            => index >= 0 && index < _cameras.Length && _cameras[index] != null
+               && CameraRoles.IsFx(_cameras[index]!.role);
+
         // cue 定義（scheduler の cue 解決 + 手動 activeCue 発火の両方が引く）。
         private CueDef[] _cues = Array.Empty<CueDef>();
         // 事前オーサリング済みスケジュール（ライブ or 端末キャッシュ由来）。CueScheduler へ供給。
@@ -459,6 +563,8 @@ namespace FixedCamVr.Streaming
             public ShowTimelineDef? timeline;   // スキーマ v2（present なら schedule を supersede）
             public ShowBgmTrackDef[]? bgmTracks;  // BGM ライブラリ
             public ShowBgmDef? bgm;               // ラン既定 BGM（IsActionable() が present 判定）
+            public ShowRecordDef? record;         // 端末内録画の設定（欠落 = 無効）
+            public ShowActorDef[]? actors;        // CG レイヤの人形定義
         }
         [Serializable] private class CameraDef
         {
@@ -475,6 +581,11 @@ namespace FixedCamVr.Streaming
             // 卓で host を手入力すると自動で true。true のカメラには DiscoveryClient が
             // 発見層を適用しない（手動固定を尊重）。キャッシュへも往復させる（CachedConfig.cameras 経由）。
             public bool pinned;
+            // "zone"（既定・ゾーンに割り当てる）| "fx"（演出専用。ゾーン自動切替にもスタッフ巡回にも出さない）
+            public string role = CameraRoles.Zone;
+            // CG レイヤの仮想カメラが構える姿勢（course 空間）。hasPose が present-flag。
+            public ShowCameraPoseDef? pose;
+            public bool hasPose;
         }
 
         // 端末ローカルへ保存する設定キャッシュ（show.json のうち実機が参照する部分のみ）。
@@ -489,6 +600,8 @@ namespace FixedCamVr.Streaming
             public ShowTimelineDef? timeline;   // スキーマ v2（オフライン supersede 用）
             public ShowBgmTrackDef[] bgmTracks = Array.Empty<ShowBgmTrackDef>();
             public ShowBgmDef? bgm;             // ラン既定 BGM（PC 不在起動でも同じ曲で始まる）
+            public ShowRecordDef? record;       // 端末内録画の設定（PC 不在でも録れるように往復させる）
+            public ShowActorDef[] actors = Array.Empty<ShowActorDef>();
             // 直近に既知だった runEpoch。起動時にこれを「既知値」として復元し、
             // PC 不在の再起動で同一 epoch を誤リセットしない。
             public int runEpoch;
@@ -524,6 +637,8 @@ namespace FixedCamVr.Streaming
             // カメラ切替の現場調整（CameraSwitchDirector へ流す）。present 判定は「>0 で適用 / 0=未指定でコード既定」。
             public float minDwellSec;
             public float switchCooldownSec;
+            // 素材スロットの束縛（slot://name → 実 URL）。timeline を触らずに素材だけ差し替えるための面。
+            public ShowSlotDef[] slots = Array.Empty<ShowSlotDef>();
         }
 
         private void Awake()
@@ -727,7 +842,34 @@ namespace FixedCamVr.Streaming
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
             ResolveBgmDirector()?.ResetRun();
+            // 端末内録画も世代を切り替える（前の体験者の映像を次のランへ持ち越さない・端末に残さない）。
+            ResolveRecorder()?.ResetRun(_knownRunEpoch);
             RunReset?.Invoke();
+        }
+
+        // 既存シーンで未配線でも動くよう遅延解決する（BgmDirector と同流儀）。
+        private Recording.SegmentRecorder? _recorder;
+
+        private Recording.SegmentRecorder? ResolveRecorder()
+        {
+            if (_recorder != null) return _recorder;
+            _recorder = FindObjectOfType<Recording.SegmentRecorder>();
+            return _recorder;
+        }
+
+        /// <summary>
+        /// show.json の <c>record.enabled</c> が立っていて録画係がシーンに居なければ自分で載せる。
+        /// prefab / シーンの SerializeField 欠落で機能が全死した過去の事故を繰り返さないための自己修復
+        /// （<see cref="TimelineDirector"/> が <see cref="TakeRunner"/> を載せるのと同じ流儀）。
+        /// </summary>
+        private void EnsureRecorder()
+        {
+            if (_record == null || !_record.enabled) return;
+            if (ResolveRecorder() != null) return;
+            var go = new GameObject("[SegmentRecorder]");
+            _recorder = go.AddComponent<Recording.SegmentRecorder>();
+            _recorder.ResetRun(_knownRunEpoch);
+            Debug.Log("[ShowControl] 端末内録画が有効なので SegmentRecorder を自動生成した");
         }
 
         // ---- BGM（bgmTracks / ラン既定 / 区間指示は TimelineDirector 経由）----
@@ -806,14 +948,24 @@ namespace FixedCamVr.Streaming
         {
             // 1) カメラ設定（IP / 認証 / カメラ別画像加工）を反映
             _cameras = state.cameras ?? Array.Empty<CameraDef>();
-            // ライブ受信パース直後だけ post の null 判定が信頼できる → ここで hasPost を確定
-            foreach (var c in _cameras) if (c != null) c.hasPost = c.post != null;
+            // ライブ受信パース直後だけ post / pose の null 判定が信頼できる → ここで present-flag を確定
+            foreach (var c in _cameras)
+            {
+                if (c == null) continue;
+                c.hasPost = c.post != null;
+                c.hasPose = c.pose != null;
+            }
             ApplyCameraEndpoints();
             if (state.post != null) _globalPost = state.post;
             ApplyPostForActive(); // global + アクティブカメラの個別 post をマテリアルへ
 
             // 1.3) cue 定義を保持（scheduler の cue 解決 + 手動 activeCue 発火が引く）。
             _cues = state.cues ?? Array.Empty<CueDef>();
+            // 1.35) 端末内録画の設定 / CG 人形の定義 / 素材スロットの束縛。
+            _record = state.record;
+            _actors = state.actors ?? Array.Empty<ShowActorDef>();
+            _slots = state.control?.slots ?? Array.Empty<ShowSlotDef>();
+            EnsureRecorder();
 
             // 1.5) ゾーン layout（cuts/floor/overlap/course）。JsonUtility は null 入れ子を既定値で書くため
             //      「cuts が空でない」を present 判定に使い、rev で変更検出する。course は layout に内包。
@@ -978,13 +1130,43 @@ namespace FixedCamVr.Streaming
             cueScheduler?.SetCueResolver(ResolveCue);
             timelineDirector?.SetCueResolver(ResolveCue);
             timelineDirector?.SetUrlResolver(ResolveAssetUrl);
+            // 演出専用カメラ（role:"fx" = カメラ D）はスタッフ巡回・ゾーン自動切替に出さない。
+            ResolveSwitchDirector()?.SetCameraSelectable(i => !IsFxCamera(i));
             PushCueSource();
             cueScheduler?.SetLiveCueActive(!string.IsNullOrEmpty(_appliedCue));
             timelineDirector?.SetSuppressed(!string.IsNullOrEmpty(_appliedCue) || !string.IsNullOrEmpty(_appliedOverride));
         }
 
-        /// <summary>素材 URL（<c>sa://</c> / 相対）を実 URL へ解決する。TakeRunner へ注入する。</summary>
-        private string ResolveAssetUrl(string url) => ShowAssetResolver.Resolve(url, server);
+        /// <summary>
+        /// 素材 URL（<c>slot://</c> / <c>sa://</c> / 相対）を実 URL へ解決する。TakeRunner へ注入する。
+        ///
+        /// <c>slot://&lt;name&gt;</c> は **ラン中に卓が束縛する素材**（入口で撮って生成した人形動画など）。
+        /// 未束縛なら空文字を返し、TakeRunner がそのカットを飛ばす（§6.4）。
+        /// timeline を書き換えずに素材だけ差し替えられるのがこの仕組みの要点
+        /// （timeline を保存し直すと発火済みの once 演出が再武装されてしまう）。
+        /// </summary>
+        private string ResolveAssetUrl(string url)
+        {
+            string slot = TakeSchema.SlotName(url);
+            if (!string.IsNullOrEmpty(slot))
+            {
+                string bound = LookupSlot(slot);
+                if (string.IsNullOrEmpty(bound))
+                {
+                    Debug.LogWarning($"[ShowControl] 素材スロット '{slot}' は未束縛 → このカットは飛ばす");
+                    return "";
+                }
+                url = bound;
+            }
+            return ShowAssetResolver.Resolve(url, server);
+        }
+
+        private string LookupSlot(string name)
+        {
+            foreach (ShowSlotDef? s in _slots)
+                if (s != null && s.name == name) return s.url ?? "";
+            return "";
+        }
 
         // cue の供給元を timeline(v3) / timeline(v2) / schedule のいずれかに一本化して分配する。
         //   - timeline が v3（schema>=3 または takes を持つ）→ TakeRunner が演出を実行（cue/insert 旧経路は空にする）
@@ -1035,8 +1217,15 @@ namespace FixedCamVr.Streaming
         {
             if (_rev >= 0) return;
             _cameras = state.cameras ?? Array.Empty<CameraDef>();
-            foreach (var c in _cameras) if (c != null) c.hasPost = c.post != null;
+            foreach (var c in _cameras)
+            {
+                if (c == null) continue;
+                c.hasPost = c.post != null;
+                c.hasPose = c.pose != null;
+            }
             if (state.post != null) _globalPost = state.post;
+            if (state.record != null) _record = state.record;
+            if (state.actors != null && state.actors.Length > 0) _actors = state.actors;
             if (state.layout != null && state.layout.HasData())
             {
                 _layout = state.layout;
@@ -1264,6 +1453,8 @@ namespace FixedCamVr.Streaming
                     timeline = _timeline,
                     bgmTracks = _bgmTracks,
                     bgm = _bgmDefault,
+                    record = _record,
+                    actors = _actors,
                     runEpoch = _knownRunEpoch,
                     switchDwellSec = _switchDwellSec,
                     switchCooldownSec = _switchCooldownSec,
@@ -1291,6 +1482,8 @@ namespace FixedCamVr.Streaming
                     _appliedLayoutRev = cfg.layout.rev;
                 }
                 if (cfg.cues != null && cfg.cues.Length > 0) _cues = cfg.cues;
+                if (cfg.record != null) _record = cfg.record;
+                if (cfg.actors != null && cfg.actors.Length > 0) _actors = cfg.actors;
                 if (cfg.schedule != null && cfg.schedule.HasData())
                 {
                     _schedule = cfg.schedule;

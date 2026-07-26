@@ -39,9 +39,10 @@ namespace FixedCamVr.Streaming
     /// </summary>
     [Serializable] public sealed class ShowStepDef
     {
-        public string source = TakeSchema.SourceLive;   // "live" | "inherit" | "clip" | "still"
-        public int camera = -1;                         // source=live のみ有効
-        public string assetUrl = "";                    // source=clip/still のみ有効（sa:// 可）
+        public string source = TakeSchema.SourceLive;   // "live" | "inherit" | "clip" | "still" | "rec"
+        public int camera = -1;                         // source=live / rec で有効（rec は録画元カメラ）
+        public string assetUrl = "";                    // source=clip/still のみ有効（sa:// / slot:// 可）
+        public int recLap;                              // source=rec のみ。録画元の周（0 = 未指定 → 飛ばす）
 
         public string cueId = "";                       // オーバーレイ素材。空 = 重ねない
         public float strength = -1f;                    // 以下 -1 = 素材定義から継承
@@ -56,10 +57,15 @@ namespace FixedCamVr.Streaming
         public string transition = TakeSchema.TransDip; // "cut" | "dip" | "fade"
         public float transitionMs;                      // 0 = 種別ごとのコード既定
 
+        // CG レイヤ（映像の上に立つ人形）。空 = 出さない。actors[] の id を指す。
+        public string cg = "";
+        public string cgMode = TakeSchema.CgFollow;     // "follow"(体験者 XZ に追従) | "fixed"(actor の著作位置)
+
         public PostParams? post;
         public bool hasPost;
 
         public bool IsUntilClipEnd => TakeSchema.IsUntilClipEnd(durKind);
+        public bool HasCg => !string.IsNullOrEmpty(cg);
     }
 
     /// <summary>
@@ -82,6 +88,14 @@ namespace FixedCamVr.Streaming
         public const string SourceInherit = "inherit";
         public const string SourceClip = "clip";
         public const string SourceStill = "still";
+        /// <summary>端末内に録っておいた区間の映像（<c>camera</c> + <c>recLap</c> で指す）。</summary>
+        public const string SourceRec = "rec";
+
+        public const string CgFollow = "follow";
+        public const string CgFixed = "fixed";
+
+        /// <summary>ラン中に卓が実体を差し替える素材の URL スキーム（<c>slot://&lt;name&gt;</c>）。</summary>
+        public const string SlotScheme = "slot://";
 
         public const string DurSec = "sec";
         public const string DurUntilClipEnd = "untilClipEnd";
@@ -125,13 +139,29 @@ namespace FixedCamVr.Streaming
         public static string NormalizeSource(string? source, out bool known)
         {
             known = source == SourceLive || source == SourceInherit
-                    || source == SourceClip || source == SourceStill;
+                    || source == SourceClip || source == SourceStill || source == SourceRec;
             return known ? source! : SourceLive;
+        }
+
+        /// <summary>cgMode 判別子を正規化する。未知は <see cref="CgFollow"/> へ倒し known=false。</summary>
+        public static string NormalizeCgMode(string? mode, out bool known)
+        {
+            known = mode == CgFollow || mode == CgFixed;
+            return known ? mode! : CgFollow;
         }
 
         /// <summary>「このカットは映像素材（動画 / 静止画）を全面に出すか」。</summary>
         public static bool IsAssetSource(string? source)
             => source == SourceClip || source == SourceStill;
+
+        /// <summary>「このカットは端末内録画を映すか」。</summary>
+        public static bool IsRecSource(string? source) => source == SourceRec;
+
+        /// <summary>素材スロット URL（<c>slot://name</c>）ならスロット名を返す。違えば空文字。</summary>
+        public static string SlotName(string? url)
+            => !string.IsNullOrEmpty(url) && url!.StartsWith(SlotScheme, StringComparison.Ordinal)
+                ? url.Substring(SlotScheme.Length)
+                : "";
 
         /// <summary>watchdog の上限を解決する（0 / 負値 = コード既定）。</summary>
         public static float ResolveMaxDuration(float v)

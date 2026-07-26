@@ -20,6 +20,7 @@
               "source": "inherit",
               "camera": -1,
               "assetUrl": "",
+              "recLap": 0,
               "cueId": "cue_A_1",
               "strength": -1,
               "fadeInSec": -1,
@@ -30,6 +31,8 @@
               "durSec": 0,
               "transition": "fade",
               "transitionMs": 0,
+              "cg": "",
+              "cgMode": "follow",
               "hasPost": false
             }
           ]
@@ -56,6 +59,7 @@
               "source": "live",
               "camera": 2,
               "assetUrl": "",
+              "recLap": 0,
               "cueId": "",
               "strength": -1,
               "fadeInSec": -1,
@@ -66,6 +70,8 @@
               "durSec": 3,
               "transition": "dip",
               "transitionMs": 0,
+              "cg": "",
+              "cgMode": "follow",
               "hasPost": false
             }
           ]
@@ -101,6 +107,7 @@
               "source": "live",
               "camera": 3,
               "assetUrl": "",
+              "recLap": 0,
               "cueId": "",
               "strength": -1,
               "fadeInSec": -1,
@@ -111,12 +118,15 @@
               "durSec": 4,
               "transition": "dip",
               "transitionMs": 0,
+              "cg": "",
+              "cgMode": "follow",
               "hasPost": false
             },
             {
               "source": "clip",
               "camera": -1,
               "assetUrl": "sa://assets/pre_01.mp4",
+              "recLap": 0,
               "cueId": "",
               "strength": -1,
               "fadeInSec": -1,
@@ -127,12 +137,15 @@
               "durSec": 0,
               "transition": "cut",
               "transitionMs": 0,
+              "cg": "",
+              "cgMode": "follow",
               "hasPost": false
             },
             {
               "source": "clip",
               "camera": -1,
               "assetUrl": "sa://assets/rec_lap1_B.mp4",
+              "recLap": 0,
               "cueId": "cg_doll_B",
               "strength": 0.8,
               "fadeInSec": -1,
@@ -143,6 +156,8 @@
               "durSec": 0,
               "transition": "cut",
               "transitionMs": 0,
+              "cg": "",
+              "cgMode": "follow",
               "post": {
                 "exposure": -0.5,
                 "contrast": 1.2,
@@ -158,6 +173,7 @@
               "source": "clip",
               "camera": -1,
               "assetUrl": "sa://assets/rec_lap1_C.mp4",
+              "recLap": 0,
               "cueId": "cg_doll_C",
               "strength": -1,
               "fadeInSec": -1,
@@ -168,6 +184,8 @@
               "durSec": 0,
               "transition": "cut",
               "transitionMs": 0,
+              "cg": "",
+              "cgMode": "follow",
               "hasPost": false
             }
           ]

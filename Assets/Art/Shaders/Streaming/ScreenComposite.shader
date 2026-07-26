@@ -9,10 +9,12 @@ Shader "FixedCamVr/ScreenComposite"
         _LiveTex("Live (MJPEG)", 2D) = "black" {}
         _OverlayTex("Overlay (Pre-recorded)", 2D) = "black" {}
         _MaskTex("Overlay Mask (R, screen space)", 2D) = "black" {}
+        _CgTex("CG Layer (RGBA, screen space)", 2D) = "black" {}
         _LiveScale("Live Contain Scale (xy)", Vector) = (1, 1, 0, 0)
         _OverlayScale("Overlay Contain Scale (xy)", Vector) = (1, 1, 0, 0)
         _UvRotSteps("Live UV Rotation (90deg steps, 0-3)", Float) = 0
         _OverlayStrength("Overlay Strength", Range(0, 1)) = 0
+        _CgStrength("CG Layer Strength", Range(0, 1)) = 0
         [Header(Post FX inside screen)]
         _Exposure("Exposure (EV)", Range(-2, 2)) = 0
         _Contrast("Contrast", Range(0.5, 2)) = 1
@@ -45,12 +47,15 @@ Shader "FixedCamVr/ScreenComposite"
             TEXTURE2D(_LiveTex);    SAMPLER(sampler_LiveTex);
             TEXTURE2D(_OverlayTex); SAMPLER(sampler_OverlayTex);
             TEXTURE2D(_MaskTex);    SAMPLER(sampler_MaskTex);
+            // CG レイヤ（実カメラの双子の仮想カメラが描く人形）。スクリーン空間・アルファ = 被覆率。
+            TEXTURE2D(_CgTex);      SAMPLER(sampler_CgTex);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _LiveScale;
                 float4 _OverlayScale;
                 float _UvRotSteps;
                 float _OverlayStrength;
+                float _CgStrength;
                 float _Exposure;
                 float _Contrast;
                 float _Saturation;
@@ -129,6 +134,16 @@ Shader "FixedCamVr/ScreenComposite"
                 half3 overlay = SAMPLE_TEXTURE2D(_OverlayTex, sampler_OverlayTex, uvO).rgb * ovIn;
                 half mask = SAMPLE_TEXTURE2D(_MaskTex, sampler_MaskTex, screenUv).r;
                 half3 col = lerp(live, overlay, saturate(mask * _OverlayStrength));
+
+                // 2.5) CG レイヤ（人形）。**ポスト FX の前**に重ねるのが要点 —
+                //      映像と同じ露出・彩度・ヴィネット・走査線・グレインを浴びて初めて
+                //      「映像の中に居る」ように見える（後段に足すと必ず浮く）。
+                //      スクリーン空間なので contain-fit は掛けない（仮想カメラの画角＝スクリーン枠）。
+                if (_CgStrength > 0.001)
+                {
+                    half4 cg = SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, screenUv);
+                    col = lerp(col, cg.rgb, saturate(cg.a * _CgStrength));
+                }
 
                 // 3) ポスト FX（web-compositor の FS_POST と数式・順序を一致させる）
                 col *= exp2(_Exposure);

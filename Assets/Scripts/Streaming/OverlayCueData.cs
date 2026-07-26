@@ -25,6 +25,10 @@ namespace FixedCamVr.Streaming
         public string sourceUrl = "";
         public string maskUrl = "";
 
+        // フレーム列ソース（端末内録画）。非 null なら clip / stillImage / sourceUrl より優先する。
+        // ScreenOverlayController が毎フレーム Tick し、終端で自動的に畳む。
+        public Recording.IFrameSequence? frames;
+
         public float strength = 1f;
         public bool loop = true;
         public float fadeInSeconds = 0.5f;
@@ -34,10 +38,14 @@ namespace FixedCamVr.Streaming
         public float trimStart = 0f;
         public float trimEnd = 0f;
 
+        /// <summary>フレーム列ソース（端末内録画）か。動画・静止画より優先する。</summary>
+        public bool SourceIsFrames => frames != null;
+
         public bool SourceIsVideo
         {
             get
             {
+                if (frames != null) return false;
                 if (clip != null) return true;
                 if (stillImage != null) return false;
                 // クエリ/フラグメント（?v=2 等のキャッシュバスター）を除いた末尾で判定する。

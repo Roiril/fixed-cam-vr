@@ -232,6 +232,8 @@ namespace FixedCamVr.OvrBridge
             // 次の体験者が once:true の演出を 1 本も見られない（2026-07-26 監査 HIGH）。
             // SerializeField を増やさず遅延解決する（prefab YAML 未反映で null になる罠を避ける）。
             FindObjectOfType<TimelineDirector>()?.ResetRun();
+            // 端末内録画も世代を切り替える（前の体験者の映像を持ち越さない）。
+            FindObjectOfType<FixedCamVr.Streaming.Recording.SegmentRecorder>()?.ResetRunLocal();
             if (lapCounter != null) lapCounter.ResetRun();
             else cueScheduler?.ResetRun();
             // BGM もランの既定へ戻す（前の体験者の最後の曲を次のランへ持ち越さない）。
