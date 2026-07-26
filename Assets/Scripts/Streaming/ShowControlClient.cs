@@ -167,11 +167,15 @@ namespace FixedCamVr.Streaming
     /// <summary>タイムライン区間 cue の任意上書き（強度・フェード・trim を丸ごと差し替える）。hasOverride が present-flag。</summary>
     [Serializable] public sealed class ShowCueOverrideDef
     {
-        public float strength = 1f;
-        public float fadeIn = 0.5f;
-        public float fadeOut = 0.5f;
-        public float trimStart;
-        public float trimEnd;
+        // 初期値は **-1 = 素材定義から継承**（v3 step の -1 継承と同じ流儀）。
+        // JsonUtility は JSON に無いキーを初期値のまま残すので、キーが一部しか無い v2 JSON では
+        // ここが「明示値」として効いてしまう。JS 側（timeline-model.js）は欠落キーを -1 にするため、
+        // 初期値を 1f/0.5f のままにすると両側の移行結果が食い違う（2026-07-26 監査 LOW）。
+        public float strength = -1f;
+        public float fadeIn = -1f;
+        public float fadeOut = -1f;
+        public float trimStart = -1f;
+        public float trimEnd = -1f;
     }
 
     /// <summary>タイムライン区間で発火する cue 1 本（従来 schedule.entries 相当 + 任意 override）。</summary>
@@ -738,7 +742,7 @@ namespace FixedCamVr.Streaming
 
         // トラック表と既定 BGM を BgmDirector へ流す。既定は「実際に変わった時だけ」適用する
         // （show.json の rev はカメラ設定の変更等でも上がるため、毎回適用すると曲が鳴り直す）。
-        private string _appliedBgmSignature = " ";
+        private string _appliedBgmSignature = "\u0000";
         private void PushBgm()
         {
             var dir = ResolveBgmDirector();
@@ -1321,8 +1325,13 @@ namespace FixedCamVr.Streaming
 
         [Serializable] private class Heartbeat
         {
+            // 卓の他の全表示（ラッチ帯・プリフライト・リボン）が使うカメラ ID（A/B/C）に揃える。
+            // 以前は DisplayName（"Phone 01"）を送っており、ヘッダだけ表記が違って現場の照合が増えていた。
             public string activeCamera = "";
             public int activeIndex = -1;
+            // Unity が実際に受信しているカメラ本数。卓の「show.json の cameras 数と合っているか」検査用
+            // （合っていないと演出のカメラ index が無言で別カメラへずれる）。
+            public int cameraCount;
             public float recvFps;
             public string playingCue = "";
             public string cameraOverride = "";
@@ -1374,8 +1383,12 @@ namespace FixedCamVr.Streaming
                     taken = _dwell.TakePending();
                     hb.dwell = ToHb(taken);
                     var active = registry != null ? registry.GetActive() : null;
-                    hb.activeCamera = active?.DisplayName ?? "";
+                    string activeId = registry != null
+                        ? (registry.GetSource(registry.ActiveIndex)?.CameraId ?? "")
+                        : "";
+                    hb.activeCamera = !string.IsNullOrEmpty(activeId) ? activeId : (active?.DisplayName ?? "");
                     hb.activeIndex = registry != null ? registry.ActiveIndex : -1;
+                    hb.cameraCount = registry != null ? registry.Count : 0;
                     hb.recvFps = active?.ReceivedFps ?? 0f;
                     hb.playingCue = _overlay?.Current?.id ?? "";
                     hb.cameraOverride = _appliedOverride;

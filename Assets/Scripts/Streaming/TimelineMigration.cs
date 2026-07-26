@@ -47,7 +47,10 @@ namespace FixedCamVr.Streaming
                 {
                     ShowSegmentCueDef? c = seg.cues[i];
                     if (c == null || string.IsNullOrEmpty(c.cueId)) continue;
-                    list.Add(FromV2Cue(seg, c, i));
+                    // 採番は「出力済み take 数」で行う（配列添字ではない）。添字だと空 cueId で飛ばした分も
+                    // 番号を消費し、後続の insert（list.Count 採番）と id が衝突する。JS 側
+                    // （timeline-model.js の takeId(..., takes.length)）と規則を揃える。
+                    list.Add(FromV2Cue(seg, c, list.Count));
                 }
             }
 

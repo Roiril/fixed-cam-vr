@@ -781,6 +781,11 @@ if ($('#runStart')) {
   $('#runStart').onclick = async () => {
     if (!confirm('体験者交代時に押します。\n・周回とワンショット演出をリセット\n・カメラ固定を解除（ゾーン自律へ）\n・再生中の演出を停止\n実行しますか？')) return;
     const s = await getState();
+    const el0 = $('#runNext');
+    if (!s) {
+      if (el0) el0.textContent = '✕ ラン開始できません（卓サーバに接続できません）';
+      return;
+    }
     const ctrl = { ...(s.control || {}) };
     ctrl.runEpoch = (parseInt(ctrl.runEpoch, 10) || 0) + 1;
     ctrl.cameraOverride = null;
@@ -807,6 +812,10 @@ async function loadSwitchTiming() {
 async function applySwitchTiming() {
   const st = $('#switchTimingState');
   const s = await getState();
+  if (!s) {
+    if (st) { st.textContent = '✕ 適用失敗（サーバ断）'; st.className = 'ed-status err'; }
+    return;
+  }
   const ctrl = { ...(s.control || {}) };
   ctrl.minDwellSec = parseFloat($('#switchDwell').value) || 0;
   ctrl.switchCooldownSec = parseFloat($('#switchCooldown').value) || 0;
@@ -1300,6 +1309,13 @@ if ($('#exportBuild')) {
           + res.hosts.map((x) => `<span class="export-host">${escapeHtml(x.id)} = ${escapeHtml(x.host || '未設定')}:${x.port}${x.pinned ? ' 📌' : ''}</span>`).join(' ');
         fl.appendChild(h);
       }
+      if (res.unresolvedAssets && res.unresolvedAssets.length) {
+        const w = document.createElement('div');
+        w.className = 'export-missing';
+        w.textContent = `⚠ 実ファイルが見つからない素材: ${res.unresolvedAssets.join(', ')}`
+          + '（APK に入りません。現地で PC が無いとこのカットは無映像になります）';
+        fl.appendChild(w);
+      }
       if (res.missingCues && res.missingCues.length) {
         const w = document.createElement('div');
         w.className = 'export-missing';
@@ -1335,6 +1351,8 @@ function renderDiscovery(data) {
   const devices = data.devices || [];
   const af = $('#autoFollow');
   if (af && document.activeElement !== af) af.checked = data.autoFollow !== false;
+  const de = $('#discoveryEnabled');
+  if (de && document.activeElement !== de) de.checked = data.discoveryEnabled !== false;
   const info = $('#autoFollowInfo');
   if (info) {
     if (data.lastFollow && data.lastFollow.changes && data.lastFollow.changes.length) {
@@ -1382,6 +1400,9 @@ async function pollDiscovery() {
     } catch { /* offline */ }
     await new Promise((r) => setTimeout(r, 3000));
   }
+}
+if ($('#discoveryEnabled')) {
+  $('#discoveryEnabled').onchange = (e) => postCommand({ type: 'setDiscoveryEnabled', on: e.target.checked });
 }
 if ($('#autoFollow')) {
   $('#autoFollow').onchange = (e) => postCommand({ type: 'setAutoFollow', on: e.target.checked });

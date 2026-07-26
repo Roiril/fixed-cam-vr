@@ -23,6 +23,15 @@ namespace FixedCamVr.Streaming
                 if (seg.cues != null)
                     foreach (var c in seg.cues)
                         if (c != null) c.hasOverride = c.hasOverride && c.@override != null;
+                // v3 のカット（step）の post も同じ規約で確定させる。使用時（TakeRunner）にも AND を掛けて
+                // いるが、present-flag の確定点は Reconcile 1 箇所という不変条件をここで保つ。
+                if (seg.takes != null)
+                    foreach (var take in seg.takes)
+                    {
+                        if (take?.steps == null) continue;
+                        foreach (var step in take.steps)
+                            if (step != null) step.hasPost = step.hasPost && step.post != null;
+                    }
             }
         }
     }

@@ -193,8 +193,27 @@ status: design-fixed（2026-07-25 設計確定。opus アドバイザーの赤�
 - **テスト**: `TakeRunnerLogicTests` 23 / `TimelineMigrationTests` 16 / `TakeWiringTests` 9 /
   `TakeFixtureContractTests` 6。fixture `Assets/Tests/Fixtures/show_timeline_v3_canonical.json` は
   **ユーザー要求の 4 カット演出そのもの**を含み、JsonUtility 往復でも壊れないことを固定している
-- **未着手（段 D へ）**: `policy: yield`（境界を跨いだら打ち切り）はスキーマにあるが実行はまだ `hold` 相当。
-  `transition` / `transitionMs` も解決関数はあるが dip/fade の実適用は Director の既定値のまま
+- **~~未着手（段 D へ）: `policy: yield` は hold 相当 / `transition` は未適用~~ → どちらも実装済み**
+  （2026-07-26 の監査で、この自己申告が古いことが判明した。`yield` は `TakeRunnerLogic` にあり
+  `TakeWiringTests` で固定済み、`transition` は live カットに実適用されていた）。
+  2026-07-26 に**素材カット（clip / still / inherit）にも遷移を効かせた**（§段 D 監査反映）
+
+### 2026-07-26 の監査で見つかった契約違反と修正
+
+3 体の独立監査（スキーマ往復 / 実行セマンティクス / 卓プロトコル）の結果。詳細は
+[2026-07-26_show-sources-and-cg-layer.md](2026-07-26_show-sources-and-cg-layer.md) と同日のコミット。
+
+| 症状 | 原因 | 修正 |
+|---|---|---|
+| `untilClipEnd` のカットがマスク付き cue で**1 フレームで終わる** | `PlayCue` が非同期なのに `overlay.Current == null` を終端判定にしていた（ロード中と終了後が区別できない） | `PlayCue` がトークンを返し `IsFinished(token)` で判定 |
+| 同じく**静止画では 45s 画面が固まる** | 静止画は終端イベントを持たないのに `_awaitingClipEnd` に入れていた | 非動画は §6.4 どおり `durSec>0 ? durSec : 4s` で畳む |
+| 現地のランリセットで演出が畳まれない | `OvrControllerBridge.ResetRun` が `TimelineDirector.ResetRun` を呼んでいない（不変条件 8 が卓経由だけで成立） | 呼ぶ。併せて `LapCounter.SeedCurrentZone` を画面ではなく時計から読む |
+| 走行中の演出がライブ卓の cue / 固定を奪い返す | `SetSuppressed` が新規発火の抑止だけで、走行中を畳まなかった | 走行中なら即畳む。override 中はカメラを返さない |
+| 素材カットに遷移が効かない | `SetNextTransition` が live 分岐の中でしか呼ばれていなかった | source 別に効かせる（上表）。予約方式そのものを廃し引数で渡す |
+| exit 差し替えで遷移の予約が次の切替へ漏れる | `InsertExitRedirect` の早期 return が予約を消費しなかった | 予約方式の廃止で構造的に消滅 |
+| `cut`（瞬時）でも 1 フレーム真っ黒 | 尺 0 でも dip 状態機械を Down→Up と通していた | 0/0 は状態機械に入れず即差し替え |
+| v2→v3 の take id が両側で食い違う | C# が配列添字・JS が出力済み take 数で採番 | C# を `list.Count` に統一 |
+| 部分キーの v2 `override` で両側の結果が違う | `ShowCueOverrideDef` の初期値が 1f/0.5f（JS は -1＝継承） | 初期値を -1 に揃える |
 
 ### 段 A-2（リボン UI 本体）— ✅ **実装完了（2026-07-25）・実運用未使用**
 

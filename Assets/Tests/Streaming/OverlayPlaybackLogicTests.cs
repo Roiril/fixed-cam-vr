@@ -97,6 +97,38 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.AcceptPrepared(), Is.False);
         }
 
+        // ---- ロード中フラグ（untilClipEnd の終端誤判定を防ぐ・2026-07-26 監査 HIGH）----
+
+        [Test]
+        public void BeginPlay_MarksLoading_UntilEndLoad()
+        {
+            var l = new OverlayPlaybackLogic();
+            int g = l.BeginPlay();
+            Assert.That(l.IsLoading(g), Is.True, "発火直後はロード中（＝まだ終わっていない）");
+            l.EndLoad(g);
+            Assert.That(l.IsLoading(g), Is.False);
+        }
+
+        [Test]
+        public void EndLoad_FromStaleGeneration_DoesNotClearCurrentLoading()
+        {
+            var l = new OverlayPlaybackLogic();
+            int g0 = l.BeginPlay();
+            int g1 = l.BeginPlay();          // 置き換え発火
+            l.EndLoad(g0);                   // 古い発火のロードが遅れて完了
+            Assert.That(l.IsLoading(g1), Is.True, "現行世代のロード中を古い完了で下ろさない");
+            Assert.That(l.IsLoading(g0), Is.False, "古い世代はそもそもロード中とみなさない");
+        }
+
+        [Test]
+        public void Stop_ClearsLoading()
+        {
+            var l = new OverlayPlaybackLogic();
+            int g = l.BeginPlay();
+            l.Stop();
+            Assert.That(l.IsLoading(g), Is.False, "停止でロード中は消える（終端判定が固まらない）");
+        }
+
         [Test]
         public void StillImagePath_NoPrepare_NeverPending_NeverTimesOut()
         {

@@ -41,7 +41,12 @@ export function encPath(u) {
 }
 
 // ---- サーバ I/O -------------------------------------------------------------
-export async function getState() { return (await fetch('/state')).json(); }
+// サーバ断でも呼び元が落ちないよう null を返す（postState / postCommand と同じ流儀）。
+// 素通しにすると「▶ ラン開始を押したが何も起きず、エラーも出ない」になる。
+export async function getState() {
+  try { return await (await fetch('/state')).json(); }
+  catch { return null; }
+}
 export async function postState(patch) {
   try { return await (await fetch('/state', { method: 'POST', body: JSON.stringify(patch) })).json(); }
   catch { return { ok: false }; }

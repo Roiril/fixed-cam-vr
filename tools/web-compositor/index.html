@@ -130,6 +130,7 @@
         <span class="hint">LAN 上の配信カメラ / PC 卓を UDP ビーコン（fixedcam-discovery/1）で発見。ID が同じで uuid が違う端末は二重 ID ＝赤警告。自動追従 ON なら発見した IP をカメラ列へ反映する（📌 手動固定を除く）。</span>
       </div>
       <div class="disc-bar">
+        <label class="chk" title="Quest 内の発見プロトコルそのものを止める。現地で発見が暴走した時に静的 IP 運用へ縮退させる非常用"><input id="discoveryEnabled" type="checkbox"> Quest の端末発見を使う</label>
         <label class="chk"><input id="autoFollow" type="checkbox"> 発見した IP を自動追従</label>
         <span id="autoFollowInfo" class="disc-follow"></span>
         <span class="spacer"></span>

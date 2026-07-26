@@ -165,21 +165,44 @@ namespace FixedCamVr.Streaming
         /// <summary>ScriptableObject 版 cue を発火（互換 API）。</summary>
         public void PlayCue(OverlayCue cue) => PlayCue(OverlayCueData.From(cue));
 
-        /// <summary>cue を発火。再生中の cue があれば置き換える（最後の命令が勝つ）。</summary>
-        public void PlayCue(OverlayCueData data)
+        /// <summary>
+        /// cue を発火。再生中の cue があれば置き換える（最後の命令が勝つ）。
+        /// 戻り値は**この発火を指すトークン**で、<see cref="IsFinished"/> に渡すと終端を判定できる。
+        /// 発火できなかった場合（未初期化）は -1。
+        /// </summary>
+        public int PlayCue(OverlayCueData data)
         {
-            if (_material == null || _player == null) return;
+            if (_material == null || _player == null) return -1;
             int gen = _logic.BeginPlay();
             _ = RunPlayCueAsync(data, gen, destroyCancellationToken);
+            return gen;
+        }
+
+        /// <summary>
+        /// <see cref="PlayCue(OverlayCueData)"/> が返したトークンの再生が決着したか
+        /// （自然終端 / 中止 / 別 cue や停止で置き換えられた）。
+        ///
+        /// **<c>Current == null</c> を直接見てはいけない**。<see cref="PlayCue(OverlayCueData)"/> は
+        /// マスク / 静止画 / 動画のロードを await するため、発火直後の数フレームは <c>Current</c> が
+        /// まだ null で、素朴に見ると「1 フレームで終わった」と誤判定する（2026-07-26 監査 HIGH）。
+        /// </summary>
+        public bool IsFinished(int token)
+        {
+            if (token < 0) return true;
+            if (token != _logic.Generation) return true;   // 新しい発火 / 停止で置き換わった
+            if (_logic.IsLoading(token)) return false;     // ロード中（Current 未確定）
+            return _current == null;
         }
 
         // fire-and-forget の例外を無音で失わないための wrapper。
         // ここで catch しないと unobserved task exception になり「演出が出ないのにログも無い」になる。
+        // finally で必ずロード中フラグを下ろす（どの return 経路・例外でも IsFinished が固まらないように）。
         private async Task RunPlayCueAsync(OverlayCueData data, int gen, CancellationToken ct)
         {
             try { await PlayCueAsync(data, gen, ct); }
             catch (OperationCanceledException) { }
             catch (Exception e) { Debug.LogError($"[ScreenOverlay] PlayCue '{data.displayName}' failed: {e}"); }
+            finally { _logic.EndLoad(gen); }
         }
 
         private async Task PlayCueAsync(OverlayCueData data, int gen, CancellationToken ct)

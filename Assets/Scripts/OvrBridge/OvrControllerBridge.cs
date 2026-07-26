@@ -227,10 +227,14 @@ namespace FixedCamVr.OvrBridge
         // LapCounter 未配線なら CueScheduler 単独で発火済みだけクリアする（周回は動かないが安全側）。
         private void ResetRun()
         {
+            // 走行中の演出を先に畳む（不変条件 8）。これが無いと、演出が画面を凍結したまま周回だけ
+            // リセットされ、卓が無い現場では watchdog（45s）まで出口が無くなる。once もクリアされないので
+            // 次の体験者が once:true の演出を 1 本も見られない（2026-07-26 監査 HIGH）。
+            // SerializeField を増やさず遅延解決する（prefab YAML 未反映で null になる罠を避ける）。
+            FindObjectOfType<TimelineDirector>()?.ResetRun();
             if (lapCounter != null) lapCounter.ResetRun();
             else cueScheduler?.ResetRun();
             // BGM もランの既定へ戻す（前の体験者の最後の曲を次のランへ持ち越さない）。
-            // SerializeField を増やさず遅延解決する（prefab YAML 未反映で null になる罠を避ける）。
             FindObjectOfType<BgmDirector>()?.ResetRun();
             haptics?.Fire(); // 長押し発火（ランリセット）
             Debug.Log("[OvrBridge] Normal: ランリセット（右グリップ 2 秒長押し）");

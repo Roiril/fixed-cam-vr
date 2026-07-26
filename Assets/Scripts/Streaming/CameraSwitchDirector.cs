@@ -241,11 +241,12 @@ namespace FixedCamVr.Streaming
         private int _dipTarget;
         private SwitchSource _dipSource = SwitchSource.External;
 
-        // 進行中の dip の実尺（StartDip で確定）。演出のカット遷移が 1 回だけ上書きできる。
+        // 進行中の dip の実尺（StartDip の引数で確定。負値ならインスペクタ既定）。
         private float _curDipDown;
         private float _curDipUp;
-        private bool _hasNextTransition;
-        private float _nextDipDown, _nextDipUp;
+
+        // 黒の瞬間に 1 回だけ呼ぶ処理（素材カットの差し替え）。TakeHoldBegin が積み、AdvanceDip が消費する。
+        private Action? _blackAction;
 
         // exit インサートの黒転換中差し替え。Zone dip が全黒で commit した直後（同期連鎖内）に
         // InsertExitRedirect が立てる。AdvanceDip がその commit 後に読み、Up へ上がる前に
@@ -283,6 +284,13 @@ namespace FixedCamVr.Streaming
 
         /// <summary>インサート表示中か（手動切替は拒否される。拒否時の赤メッセージ判定に使う）。</summary>
         public bool InsertActive => _logic.InsertActive;
+
+        /// <summary>
+        /// 受信カメラの本数（registry 未配線なら 0）。演出のカットが指すカメラ index が
+        /// 実在するかを TakeRunner が事前判定するために読む（範囲外を registry の clamp 任せにすると
+        /// 「無言で別カメラに切り替わる」= 現場で原因が読めない症状になる）。
+        /// </summary>
+        public int CameraCount => registry != null ? registry.Count : 0;
 
         private void Awake()
         {
@@ -431,36 +439,60 @@ namespace FixedCamVr.Streaming
         /// 消化されるべき dip が存在せず、次に起きる無関係な dip（インサート復帰など）に持ち越されて
         /// 「戻るはずが insert カメラへ飛ぶ」事故になる。その場合は通常の dip で素直に切り替える。
         /// </summary>
-        public void InsertExitRedirect(int insertCamera)
+        public void InsertExitRedirect(int insertCamera, float downSec = -1f, float upSec = -1f)
         {
             _logic.SetInsertActive(true);
             if (_dip == DipState.Down)
             {
-                _blackRedirect = insertCamera;   // 進行中の黒転換に相乗り（中間カメラのフラッシュを出さない）
+                // 進行中の黒転換に相乗り（中間カメラのフラッシュを出さない）。
+                // **カットの遷移尺は捨てる**（尺は進行中の Zone dip のもの）。持ち越すと、消化されない
+                // まま次の切替＝演出終了の復帰 dip に乗り、作者が 1 カット目に選んだ「瞬時」が
+                // 復帰の暗転を消す事故になる（2026-07-26 監査 MED）。
+                _blackRedirect = insertCamera;
                 return;
             }
-            StartDip(insertCamera, SwitchSource.Insert);
+            StartDip(insertCamera, SwitchSource.Insert, downSec, upSec);
         }
 
         /// <summary>
-        /// 演出（Take）が**カメラを変えずに**画面を占有し始めたことを通知する（全面差し替えの映像カット等）。
-        /// ゾーン自動切替を凍結するだけで dip は掛けない。解除は <see cref="InsertReturn"/>。
+        /// 演出（Take）が**カメラを変えずに**画面を占有する（全面差し替えの映像カット等）。
+        /// ゾーン自動切替を凍結し、遷移が指定されていれば dip を掛けて**黒の瞬間に
+        /// <paramref name="onBlack"/> を 1 回だけ呼ぶ**（素材の差し替えを黒中で行うため）。
+        /// 遷移なし（cut）なら即座に <paramref name="onBlack"/> を呼ぶ。解除は <see cref="InsertReturn"/>。
         /// </summary>
-        public void TakeHoldBegin() => _logic.SetInsertActive(true);
+        public void TakeHoldBegin(float downSec = 0f, float upSec = 0f, Action? onBlack = null)
+        {
+            _logic.SetInsertActive(true);
+            if (downSec <= 0f && upSec <= 0f)
+            {
+                onBlack?.Invoke();   // カット（瞬時）: 黒を挟まず即差し替え
+                return;
+            }
+            if (_dip == DipState.Down)
+            {
+                _blackAction = onBlack;   // 進行中の黒転換に相乗り
+                return;
+            }
+            _blackAction = onBlack;
+            // カメラは変えない。registry.SetActive(同じ index) は早期 return するので切替イベントも出ない。
+            StartDip(_logic.Current, SwitchSource.Insert, downSec, upSec);
+        }
 
         /// <summary>
         /// enter インサート: 現在の映像から insert カメラへ dip-to-black で切り替える（Insert source ＝周回に数えない）。
         /// ゾーン自動切替を凍結する。表示中の映像から入るため通常の dip（Down→黒→切替→Up）を掛ける。
         /// </summary>
-        public void InsertBegin(int insertCamera)
+        public void InsertBegin(int insertCamera, float downSec = -1f, float upSec = -1f)
         {
             _logic.SetInsertActive(true);
-            StartDip(insertCamera, SwitchSource.Insert);
+            StartDip(insertCamera, SwitchSource.Insert, downSec, upSec);
         }
 
         /// <summary>
         /// インサート表示を終え、復帰カメラ（最新ゾーン）へ dip-to-black で戻す。
         /// ゾーン凍結を解除する（dip 完了後にゾーン自動切替が再開する）。
+        ///
+        /// カメラを動かさずに凍結だけ解きたい場合は <see cref="TakeHoldEnd"/>。
         ///
         /// 旧実装にあった <c>asZone</c>（復帰を Zone source に偽装して周回へ数えさせる）は**廃止**。
         /// 周回は画面ではなく <see cref="ZoneCommitted"/>（時計）が駆動するようになり、インサート中の
@@ -468,9 +500,23 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void InsertReturn(int returnCamera)
         {
+            _blackAction = null;   // 未消化の素材差し替えを次の dip へ持ち越さない
             _logic.SetInsertActive(false);
             StartDip(returnCamera, SwitchSource.Insert);
         }
+
+        /// <summary>
+        /// 演出の**画面占有だけ**を解く（dip も切替もしない）。ライブ卓が既に画面を取っている状況で
+        /// 演出を畳むときに使う（ここで <see cref="InsertReturn"/> を掛けると卓の cameraOverride を外してしまう）。
+        /// </summary>
+        public void TakeHoldEnd()
+        {
+            _blackAction = null;
+            _logic.SetInsertActive(false);
+        }
+
+        /// <summary>Web cameraOverride による凍結中か（演出を畳むときに「カメラを返してよいか」の判定に使う）。</summary>
+        public bool OverrideActive => _logic.OverrideActive;
 
         /// <summary>
         /// **いま体験者が居るゾーン**のカメラ index を返す（時計 <see cref="ZoneProgressionLogic"/> の確定値）。
@@ -507,29 +553,33 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// **次に開始する切替 1 回だけ** dip の尺を上書きする（演出のカット遷移 cut / dip / fade 用）。
-        /// 0/0 を渡せば実質カット（黒を見せずに差し替え）。消費されなかった予約は次の切替に効く。
+        /// dip を開始する。<paramref name="downSec"/> / <paramref name="upSec"/> が負なら
+        /// インスペクタ既定（<see cref="dipDownSec"/> / <see cref="dipUpSec"/>）を使う。
+        ///
+        /// **尺は必ず引数で渡す**（旧 <c>SetNextTransition</c> の「次の切替に効く予約」方式は廃止）。
+        /// 予約方式は「消化されなかった予約が無関係な次の切替に漏れる」事故を構造的に許していた。
         /// </summary>
-        public void SetNextTransition(float downSec, float upSec)
+        private void StartDip(int target, SwitchSource source, float downSec = -1f, float upSec = -1f)
         {
-            _hasNextTransition = true;
-            _nextDipDown = Mathf.Max(0f, downSec);
-            _nextDipUp = Mathf.Max(0f, upSec);
-        }
+            _curDipDown = downSec >= 0f ? downSec : dipDownSec;
+            _curDipUp = upSec >= 0f ? upSec : dipUpSec;
 
-        private void StartDip(int target, SwitchSource source)
-        {
-            if (_hasNextTransition)
+            // 「瞬時（cut）」は dip 状態機械に入れずその場で差し替える。
+            // 旧実装は Down→黒→Up を必ず 1 フレームずつ通したため、尺 0 でも 1 フレーム真っ黒が出た。
+            if (_curDipDown <= 0f && _curDipUp <= 0f)
             {
-                _curDipDown = _nextDipDown;
-                _curDipUp = _nextDipUp;
-                _hasNextTransition = false;
+                _commitSource = source;
+                registry?.SetActive(target);
+                _commitSource = SwitchSource.External;
+                Action? act = _blackAction;
+                _blackAction = null;
+                act?.Invoke();
+                SetDim(0f);
+                _dip = DipState.Idle;
+                audioCue?.Play();
+                return;
             }
-            else
-            {
-                _curDipDown = dipDownSec;
-                _curDipUp = dipUpSec;
-            }
+
             _dipTarget = target;
             _dipSource = source;
             _dip = DipState.Down;
@@ -564,6 +614,14 @@ namespace FixedCamVr.Streaming
                         registry?.SetActive(rc);
                         _commitSource = SwitchSource.External;
                         _dipTarget = rc;
+                    }
+
+                    // 素材カットの差し替えは黒の瞬間に行う（Up で新しい絵が立ち上がる）。
+                    if (_blackAction != null)
+                    {
+                        Action act = _blackAction;
+                        _blackAction = null;
+                        act();
                     }
 
                     _dip = DipState.Up;

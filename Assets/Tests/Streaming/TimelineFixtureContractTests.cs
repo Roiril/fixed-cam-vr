@@ -139,6 +139,53 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(2, b.insert!.camera, "seg B insert.camera");
         }
 
+        /// <summary>
+        /// **v2 → v3 移行の実値**を共有 fixture で固定する（Web の timeline-model.test.mjs と同じ値を見る）。
+        ///
+        /// 現行の本番 show.json は純 v2 なので、移行は実機の唯一の実行経路。それなのに従来この
+        /// 契約テストは present-flag しか見ておらず、片側だけ移行規則を変えても緑のまま通った
+        /// （2026-07-26 監査 MED）。手書きミラーの単体テストではなく、共有成果物で突き合わせる。
+        /// </summary>
+        [Test]
+        public void EnsureTakes_MigratesV2Fixture_ToSameShapeAsWeb()
+        {
+            var t = LoadTimeline();
+            TimelinePresentFlags.Reconcile(t);
+            TimelineMigration.EnsureTakes(t);
+
+            // 区間 (1,0): cue 2 本 → 「そのまま + 重ねる素材」のカット 1 枚ずつ。override は明示値へ。
+            var a = Seg(t, 1, 0);
+            Assert.AreEqual(2, a.takes.Length, "seg A の take 数");
+            Assert.AreEqual("L1C0#0", a.takes[0].id, "take id は区間内で一意・Web と同じ規則");
+            Assert.AreEqual("L1C0#1", a.takes[1].id);
+            var a0 = a.takes[0].steps[0];
+            Assert.AreEqual(TakeSchema.SourceInherit, a0.source, "v2 cue は inherit カット");
+            Assert.AreEqual("cue_A_1", a0.cueId);
+            Assert.AreEqual(TakeSchema.DurUntilClipEnd, a0.durKind);
+            Assert.AreEqual(0.5f, a0.strength, 1e-4f, "override.strength は明示値になる");
+            Assert.AreEqual(1.2f, a0.fadeInSec, 1e-4f, "override.fadeIn は明示値になる");
+            // override 無しの cue は -1（素材定義から継承）のまま。
+            Assert.AreEqual(-1f, a.takes[1].steps[0].strength, 1e-4f, "override 無しは継承マーカー -1");
+
+            // 区間 (1,1): exit インサート → 離脱時の live カット。
+            var b = Seg(t, 1, 1);
+            Assert.AreEqual(1, b.takes.Length, "seg B の take 数");
+            Assert.IsTrue(b.takes[0].IsExit, "anchor:exit は at:exit へ");
+            Assert.AreEqual(0f, b.takes[0].offsetSec, 1e-4f, "exit は offset を持ち込まない");
+            var b0 = b.takes[0].steps[0];
+            Assert.AreEqual(TakeSchema.SourceLive, b0.source);
+            Assert.AreEqual(2, b0.camera, "insert.camera");
+            Assert.AreEqual(3f, b0.durSec, 1e-4f, "insert.durationSec");
+
+            // 区間 (2,2): cue → enter インサート の並び（cues[] の順 → 最後に insert）。
+            var c = Seg(t, 2, 2);
+            Assert.AreEqual(2, c.takes.Length, "seg C の take 数");
+            Assert.AreEqual(TakeSchema.SourceInherit, c.takes[0].steps[0].source);
+            Assert.IsFalse(c.takes[1].IsExit, "anchor:enter は at:enter のまま");
+            Assert.IsTrue(c.takes[1].steps[0].hasPost, "insert.post は present-flag つきで引き継ぐ");
+            Assert.AreEqual(1.5f, c.takes[1].steps[0].post!.saturation, 1e-4f);
+        }
+
         [Test]
         public void Reconcile_NullAndEmpty_DoNotThrow()
         {

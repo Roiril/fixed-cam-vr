@@ -39,7 +39,7 @@ import time
 import urllib.request
 import uuid as _uuidlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote, unquote
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CAPTURES = os.path.join(ROOT, 'captures')
@@ -104,7 +104,9 @@ def _default_show():
         # runEpoch: 体験者 1 人分の「ラン」世代。Web の ▶ ラン開始が +1 して postState
         # （control を shallow 置換で送り直す）。値が変わると Unity は周回カウントと
         # once 発火済みフラグをリセット（既定 0・欠落は 0 扱い）。
-        'control': {'activeCue': None, 'cameraOverride': None, 'autoFollow': True, 'runEpoch': 0},
+        'control': {'activeCue': None, 'cameraOverride': None, 'autoFollow': True, 'runEpoch': 0,
+                    # Quest 内の発見プロトコルのキルスイッチ。欠落は ON 扱い（後方互換）。
+                    'discoveryEnabled': True},
         # ゾーン校正レイアウト（course space）。Web フロアマップが編集し Unity が展開する。
         # grid = タイルペイント（12×12・0.15m）。cells は rows 本の文字列、rows[0]=北端
         # （z=+0.9）・col0=西端（x=-0.9）。文字 '0'..'8'=カメラ index、'.'=未割当。
@@ -172,6 +174,15 @@ def _load_show():
 _show = _load_show()
 # Unity の直近 heartbeat（メモリのみ。再起動で消えてよい）
 _unity_status = {'at': 0.0}
+# _unity_status は heartbeat スレッドが書き、/unity/status と /diag が読む（ThreadingHTTPServer =
+# リクエストごとに別スレッド）。clear()+update() の隙間で読むと KeyError / dict changed size で 500 になり、
+# 卓が「サーバ断」を誤表示する（2026-07-26 監査 MED）。読み書きを必ずこのロックで囲む。
+_unity_status_lock = threading.Lock()
+
+
+def _unity_status_snapshot():
+    with _unity_status_lock:
+        return dict(_unity_status)
 
 
 def _mutate_show(fn):
@@ -792,8 +803,9 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/state':
             return self._get_state()
         if path == '/unity/status':
-            age = (time.time() - _unity_status['at']) if _unity_status['at'] else None
-            return self._json({'status': _unity_status, 'ageSec': age,
+            snap = _unity_status_snapshot()
+            age = (time.time() - snap['at']) if snap.get('at') else None
+            return self._json({'status': snap, 'ageSec': age,
                                'alive': age is not None and age < 6.0})
         if path == '/masks/list':
             return self._json(self._list_masks())
@@ -856,7 +868,9 @@ class Handler(SimpleHTTPRequestHandler):
         with _ident_lock:
             identity = json.loads(json.dumps(_ident))
         return self._json({'devices': devices, 'conflicts': conflicts,
-                           'autoFollow': auto_follow, 'lastFollow': _last_follow,
+                           'autoFollow': auto_follow,
+                           'discoveryEnabled': bool(_show.get('control', {}).get('discoveryEnabled', True)),
+                           'lastFollow': _last_follow,
                            'enabled': DISCOVERY_ENABLED, 'showToken': SHOW_TOKEN,
                            'identity': identity, 'idCheckEnabled': IDCHECK_ENABLED})
 
@@ -896,10 +910,12 @@ class Handler(SimpleHTTPRequestHandler):
             row['beaconAgeSec'] = round(now - e['lastSeen'], 1) if e else None
             row['beaconIp'] = e['ip'] if e else None
             results.append(row)
-        age = (now - _unity_status['at']) if _unity_status['at'] else None
+        snap = _unity_status_snapshot()
+        age = (now - snap['at']) if snap.get('at') else None
         quest = {'alive': age is not None and age < 6.0,
                  'ageSec': round(age, 1) if age is not None else None,
-                 'activeCamera': _unity_status.get('activeCamera')}
+                 'activeCamera': snap.get('activeCamera'),
+                 'cameraCount': snap.get('cameraCount')}
         return self._json({'cameras': results, 'quest': quest,
                            'discoveryEnabled': DISCOVERY_ENABLED})
 
@@ -959,7 +975,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if remain <= 0:
                     break
                 _show_cond.wait(remain)
-            return self._json(_show)
+            # 送信はロック外で行う（スリープした Quest 等の TCP backpressure が
+            # 卓の全保存操作をブロックしないように、ロック内ではスナップだけ取る）。
+            snapshot = json.loads(json.dumps(_show))
+        return self._json(snapshot)
 
     def _list_masks(self):
         items = []
@@ -1020,8 +1039,9 @@ class Handler(SimpleHTTPRequestHandler):
             body['at'] = time.time()
             # 実測滞在（dwell[]）は集計側へ渡し、status には残さない（毎回のスナップに混ぜない）。
             merged = _merge_dwell(body.pop('dwell', None))
-            _unity_status.clear()
-            _unity_status.update(body)
+            with _unity_status_lock:
+                _unity_status.clear()
+                _unity_status.update(body)
             return self._json({'ok': True, 'dwellMerged': merged})
         if parsed.path == '/dwell/reset':
             with _dwell_lock:
@@ -1148,6 +1168,11 @@ class Handler(SimpleHTTPRequestHandler):
                 show.setdefault('post', {}).update(body.get('post') or {})
             elif typ == 'setAutoFollow':
                 ctrl['autoFollow'] = bool(body.get('on'))
+            elif typ == 'setDiscoveryEnabled':
+                # Quest 内の発見プロトコル（fixedcam-discovery/1）のキルスイッチ。
+                # autoFollow は卓側の host 書き換えを止めるだけで、Quest 内の張替は止まらない。
+                # 現地で発見が暴走したとき静的 IP 運用へ縮退させる唯一の手段（2026-07-26 監査 MED）。
+                ctrl['discoveryEnabled'] = bool(body.get('on'))
             else:
                 raise ValueError(f'unknown command type: {typ}')
         try:
@@ -1179,7 +1204,6 @@ class Handler(SimpleHTTPRequestHandler):
         clean = url.split('?', 1)[0]
         for prefix, base in LOCAL_URL_DIRS.items():
             if clean.startswith(prefix):
-                from urllib.parse import unquote
                 name = unquote(clean[len(prefix):])
                 fp = os.path.abspath(os.path.join(base, name))
                 # base の外へ出る参照は拒否
@@ -1192,7 +1216,8 @@ class Handler(SimpleHTTPRequestHandler):
     # cues の maskUrl/sourceUrl の実ファイルを assets/ へコピーし URL を sa://assets/<file> に書換。
     def _export_build(self):
         import shutil
-        show = json.loads(json.dumps(_show))  # deep copy（現物 _show は不変）
+        with _show_cond:  # _mutate_show / _auto_follow と同時に走ると dumps が iteration 中変更で落ちる
+            show = json.loads(json.dumps(_show))  # deep copy（現物 _show は不変）
         out_dir = os.path.join(REPO_ROOT, 'Assets', 'StreamingAssets', 'show')
         assets_dir = os.path.join(out_dir, 'assets')
         os.makedirs(assets_dir, exist_ok=True)
@@ -1208,13 +1233,19 @@ class Handler(SimpleHTTPRequestHandler):
         copied = []            # [{from, to, size}]
         used_names = set()     # 本エクスポートで割当済みのファイル名
         src_to_dest = {}       # 実ファイル abs → dest 名（同一ファイルは 1 回だけコピー）
+        unresolved = []        # ローカル URL なのに実ファイルが無いもの（APK に入らない = 現地で無映像）
 
         def bake(url):
             fp = self._resolve_local_asset(url)
             if not fp:
+                # ローカル URL（/captures/... 等）なのに解決できない＝実ファイルが無い。
+                # 黙って素通しすると APK に素材が入らず、現地 PC 不在でそのカットだけ無映像になる
+                # （卓には ✓ としか出ないので気づけない。2026-07-26 監査 HIGH）。
+                if url.startswith('/') and url not in unresolved:
+                    unresolved.append(url)
                 return url  # 外部 URL / 空 / 解決不能はそのまま
             if fp in src_to_dest:
-                return 'sa://assets/' + src_to_dest[fp]
+                return 'sa://assets/' + quote(src_to_dest[fp])
             base = os.path.basename(fp)
             stem, ext = os.path.splitext(base)
             name, i = base, 1
@@ -1226,7 +1257,7 @@ class Handler(SimpleHTTPRequestHandler):
             dest = os.path.join(assets_dir, name)
             shutil.copy2(fp, dest)
             copied.append({'from': url, 'to': 'assets/' + name, 'size': os.path.getsize(dest)})
-            return 'sa://assets/' + name
+            return 'sa://assets/' + quote(name)
 
         for cue in show.get('cues', []):
             if cue.get('maskUrl'):
@@ -1276,7 +1307,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json({'ok': True, 'outDir': out_dir, 'showJson': show_path,
                            'copied': copied, 'count': len(copied), 'totalBytes': total,
                            'referencedCues': len(referenced), 'missingCues': missing,
-                           'missingTracks': missing_tracks,
+                           'missingTracks': missing_tracks, 'unresolvedAssets': unresolved,
                            'exportedAt': time.strftime('%Y-%m-%d %H:%M:%S'),
                            'showRev': show.get('rev', 0), 'hosts': hosts})
 
@@ -1331,16 +1362,27 @@ class Handler(SimpleHTTPRequestHandler):
         return items
 
     def _list_captures(self):
+        """演出のカット素材に使えるファイル一覧。
+
+        **captures/ と recordings/ の両方**を返す（📷 いま撮る / ⏺ 録画の保存先は recordings/ なので、
+        captures/ だけ見ていると「撮ったのに素材の一覧に出ない」= 導線が切れる。2026-07-26 監査 HIGH）。
+        同名衝突はディレクトリ違いで別物として並ぶ（url が違うので実害なし）。
+        """
         items = []
-        for n in os.listdir(CAPTURES):
-            fp = os.path.join(CAPTURES, n)
-            if not os.path.isfile(fp):
+        for base, prefix in ((CAPTURES, '/captures/'), (RECORDINGS, '/recordings/')):
+            if not os.path.isdir(base):
                 continue
-            ext = n.rsplit('.', 1)[-1].lower() if '.' in n else ''
-            typ = 'video' if ext in ('webm', 'mp4', 'mov') else 'image'
-            st = os.stat(fp)
-            items.append({'name': n, 'url': '/captures/' + n, 'type': typ,
-                          'size': st.st_size, 'mtime': st.st_mtime})
+            for n in os.listdir(base):
+                fp = os.path.join(base, n)
+                if not os.path.isfile(fp):
+                    continue
+                ext = n.rsplit('.', 1)[-1].lower() if '.' in n else ''
+                if ext not in ('webm', 'mp4', 'mov', 'jpg', 'jpeg', 'png'):
+                    continue
+                typ = 'video' if ext in ('webm', 'mp4', 'mov') else 'image'
+                st = os.stat(fp)
+                items.append({'name': n, 'url': prefix + n, 'dir': prefix.strip('/'),
+                              'type': typ, 'size': st.st_size, 'mtime': st.st_mtime})
         items.sort(key=lambda x: x['mtime'], reverse=True)
         return items
 

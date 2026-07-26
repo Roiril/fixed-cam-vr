@@ -374,10 +374,13 @@ namespace FixedCamVr.Streaming.Tests
             rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", step)) });
 
             EnterZone(rig, 0, 1);
-            Invoke(rig.Runner, "Update");
-            Invoke(rig.Director, "Update");
-            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(0),
-                "dip 指定のカットは黒へ落ちきるまで差し替えない（EditMode の 1 フレームでは未到達）");
+            Invoke(rig.Runner, "Update");   // ここで演出が始まり dip が起動する
+            // Director.Update（dip を進める側）を 1 回も回していない時点で見る。
+            // 以前は 1 フレーム回してから ActiveIndex を見ていたが、EditMode の Time.unscaledDeltaTime は
+            // エディタの実フレーム間隔（非フォーカス時は数百 ms）なので、1 フレームで黒に届いて落ちることがあった
+            // （2026-07-26 に実際に落ちた）。時間に依存しない観測点へ移す。
+            Assert.That(rig.Director.Dipping, Is.True, "dip 指定のカットは dip 状態に入る");
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(0), "黒へ落ちきるまで差し替えない");
         }
 
         // ---- policy: yield ----
@@ -430,6 +433,109 @@ namespace FixedCamVr.Streaming.Tests
             _now = 2f;
             Frame(rig);
             Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(1), "終わったら新しいゾーンのカメラへ");
+        }
+
+        // ---- §6.4 不正値のカットは飛ばす（2026-07-26 監査で未実装が判明した契約）----
+
+        [Test]
+        public void OutOfRangeLiveCamera_SkipsStep_InsteadOfClampingToAnotherCamera()
+        {
+            Rig rig = MakeRig(cameraCount: 4, active: 0);
+            // 1 カット目のカメラ 9 は registry に無い。旧実装は registry.SetActive の clamp で
+            // 無言に最終カメラ(3)へ飛んでいた。契約は「その step を飛ばす」。
+            rig.Timeline.SetTimeline(new[]
+            {
+                SegWithTake(1, 0, EnterTake("bad", LiveStep(9, 5f), LiveStep(1, 3f))),
+            });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(rig.Registry.ActiveIndex, Is.Not.EqualTo(3), "範囲外を末尾カメラへ clamp しない");
+
+            Frame(rig);   // 飛ばした step は即終了 → 次のカットへ
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(1), "2 カット目は通常どおり実行される");
+        }
+
+        [Test]
+        public void AllStepsInvalid_TakeDoesNotDisturbTheScreen()
+        {
+            Rig rig = MakeRig(cameraCount: 4, active: 2);
+            var clipWithoutAsset = new ShowStepDef
+            {
+                source = TakeSchema.SourceClip, camera = -1, assetUrl = "",
+                durKind = TakeSchema.DurSec, durSec = 5f,
+            };
+            rig.Timeline.SetTimeline(new[]
+            {
+                SegWithTake(1, 0, EnterTake("empty", clipWithoutAsset)),
+            });
+
+            EnterZone(rig, 0, 1);
+            for (int i = 0; i < 4; i++) Frame(rig);
+
+            Assert.That(rig.Runner.IsActive, Is.False, "全 step が飛べば演出は残らない");
+            Assert.That(rig.Director.InsertActive, Is.False, "画面を掴んだままにしない");
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(2), "画面に触っていないので暗転も切替も起きない");
+        }
+
+        // ---- §6.3-6 ライブ卓が最優先（走行中の演出も畳む）----
+
+        [Test]
+        public void LiveDeskIntervention_FoldsRunningTake()
+        {
+            Rig rig = MakeRig(cameraCount: 4, active: 0);
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 30f))) });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.True);
+            Assert.That(rig.Director.InsertActive, Is.True);
+
+            // 卓が cue を出した（cameraOverride は無し）→ 演出は即畳み、カメラは体験者のゾーンへ返す。
+            rig.Timeline.SetSuppressed(true);
+            PumpDirector(rig.Director);
+
+            Assert.That(rig.Runner.IsActive, Is.False, "抑止フラグだけでなく走行中の演出を畳む");
+            Assert.That(rig.Director.InsertActive, Is.False, "凍結も解ける");
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(0), "カメラは体験者のゾーンへ戻る");
+        }
+
+        [Test]
+        public void LiveDeskCameraOverride_FoldsTake_WithoutStealingTheCamera()
+        {
+            Rig rig = MakeRig(cameraCount: 4, active: 0);
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 30f))) });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(rig.Director.InsertActive, Is.True);
+
+            // 卓がカメラを握った（override）→ 演出は畳むが、カメラは卓のものなので動かさない。
+            rig.Director.SetOverrideActive(true);
+            rig.Director.SetActiveExternal(2, CameraSwitchDirector.SwitchSource.Override);
+            rig.Timeline.SetSuppressed(true);
+            PumpDirector(rig.Director);
+
+            Assert.That(rig.Runner.IsActive, Is.False);
+            Assert.That(rig.Director.InsertActive, Is.False);
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(2), "卓の固定カメラを演出の復帰 dip で外さない");
+        }
+
+        // ---- 「瞬時（cut）」は黒を挟まない ----
+
+        [Test]
+        public void CutTransition_SwitchesWithoutABlackFrame()
+        {
+            Rig rig = MakeRig(cameraCount: 4, active: 0);
+            var step = LiveStep(3, 5f);
+            step.transition = TakeSchema.TransCut;
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("cut", step)) });
+
+            EnterZone(rig, 0, 1);
+            Invoke(rig.Runner, "Update");   // Director.Update を回す前に見る
+
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(3), "その場で切り替わる");
+            Assert.That(rig.Director.Dipping, Is.False, "dip 状態に入らない（1 フレーム真っ黒を出さない）");
         }
     }
 }

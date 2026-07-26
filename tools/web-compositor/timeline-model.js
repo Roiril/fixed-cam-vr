@@ -105,17 +105,21 @@ export function newTake(id, over = {}) {
 export const takeId = (lap, camera, index) => `L${lap}C${camera}#${index}`;
 
 // 保存用（キー順は schema ドキュメント順。has*=false のとき post キー自体を出さない）。
+// 判別子は保存時に既定へ倒す（Unity 側 TakeSchema.Normalize* と同じ倒し先）。
+// 未知値をそのまま書き戻すと、実機で毎回警告ログが出るだけの無効値が show.json に残る。
+const oneOf = (v, allowed, def) => (allowed.includes(v) ? v : def);
+
 function serializeStep(s) {
   const out = {
-    source: s.source || TAKE.SRC_LIVE,
+    source: oneOf(s.source, [TAKE.SRC_LIVE, TAKE.SRC_INHERIT, TAKE.SRC_CLIP, TAKE.SRC_STILL], TAKE.SRC_LIVE),
     camera: Number.isInteger(s.camera) ? s.camera : -1,
     assetUrl: s.assetUrl || '',
     cueId: s.cueId || '',
     strength: num(s.strength, -1), fadeInSec: num(s.fadeInSec, -1), fadeOutSec: num(s.fadeOutSec, -1),
     trimStartSec: num(s.trimStartSec, -1), trimEndSec: num(s.trimEndSec, -1),
-    durKind: s.durKind || TAKE.DUR_SEC,
+    durKind: oneOf(s.durKind, [TAKE.DUR_SEC, TAKE.DUR_UNTIL_CLIP_END], TAKE.DUR_SEC),
     durSec: num(s.durSec, 0),
-    transition: s.transition || TAKE.TRANS_DIP,
+    transition: oneOf(s.transition, [TAKE.TRANS_CUT, TAKE.TRANS_DIP, TAKE.TRANS_FADE], TAKE.TRANS_DIP),
     transitionMs: num(s.transitionMs, 0),
   };
   if (s.hasPost) out.post = { ...FX_DEFAULT, ...(s.post || {}) };

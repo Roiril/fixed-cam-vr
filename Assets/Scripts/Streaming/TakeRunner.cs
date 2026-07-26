@@ -41,6 +41,9 @@ namespace FixedCamVr.Streaming
         private bool _stepOverlayPlayed;
         // 現カットが untilClipEnd で、オーバーレイの終了を待っているか。
         private bool _awaitingClipEnd;
+        // 待っている発火のトークン（ScreenOverlayController.PlayCue の戻り）。
+        // Current==null を直接見るとロード中を「終わった」と誤判定する（2026-07-26 監査 HIGH）。
+        private int _clipToken = -1;
 
         // 時刻源。既定は Time.time。EditMode テストは時間が進まないため差し替える
         //（純ロジックは既に時刻を引数で受けており、束縛しているのはこの実行体だけ）。
@@ -72,8 +75,20 @@ namespace FixedCamVr.Streaming
         /// <summary>素材 URL（sa:// / 相対）の解決関数を注入する（ShowControlClient に集約）。</summary>
         public void SetUrlResolver(Func<string, string> resolver) => _urlResolver = resolver;
 
-        /// <summary>ライブ卓の抑止（activeCue 非空 / cameraOverride 非 null）を通知する。</summary>
-        public void SetSuppressed(bool suppressed) => _logic.SetSuppressed(suppressed);
+        /// <summary>
+        /// ライブ卓の抑止（activeCue 非空 / cameraOverride 非 null）を通知する。
+        ///
+        /// **走行中の演出は即畳む**（§6.3-6「ライブ卓が最優先」）。抑止フラグだけ立てて走らせ続けると、
+        /// 演出のカット終了が卓の cue を <c>StopOverlay</c> で消し、演出の復帰 dip が卓の cameraOverride を
+        /// 外す（オペレータが介入した瞬間ほど壊れる。2026-07-26 監査 MED）。
+        /// 卓がカメラも握っている（override 中）ならカメラは返さず占有だけ解く。
+        /// </summary>
+        public void SetSuppressed(bool suppressed)
+        {
+            if (suppressed && _logic.IsActive)
+                CleanupActive(releaseScreen: director == null || !director.OverrideActive);
+            _logic.SetSuppressed(suppressed);
+        }
 
         /// <summary>タイムライン区間から演出定義を（再）構築する。走行中の演出は先に畳む（不変条件 8）。</summary>
         public void SetTakes(ShowTimelineSegmentDef[]? segments)
@@ -130,10 +145,12 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
-            // untilClipEnd のカットは、オーバーレイが自然終端 / 中止で消えた時点を「終わり」とする。
-            if (_awaitingClipEnd && overlay != null && overlay.Current == null)
+            // untilClipEnd のカットは、オーバーレイが自然終端 / 中止で決着した時点を「終わり」とする。
+            // 判定は必ずトークン経由（Current==null はロード中と区別が付かない）。
+            if (_awaitingClipEnd && overlay != null && overlay.IsFinished(_clipToken))
             {
                 _awaitingClipEnd = false;
+                _clipToken = -1;
                 _logic.NotifyCurrentStepFinished(Now);
             }
 
@@ -176,78 +193,145 @@ namespace FixedCamVr.Streaming
             if (!known)
                 Debug.LogWarning($"[TakeRunner] 未知の source '{step.source}' → live として扱う（take={TakeId(d.takeIndex)}）");
 
+            // オーバーレイ（cue / 全面差し替え素材）を先に組む。§6.4 の「飛ばす」判定に素材の有無が要るため、
+            // 画面（カメラ・post）を触る前に決める。
+            OverlayCueData? cue = BuildStepOverlay(step, source, d.takeIndex, d.stepIndex);
+
+            // --- §6.4 不正値: このカットは実行できない → 画面も post も触らずに即次のカットへ送る ---
+            // 「範囲外カメラを registry の clamp 任せで無言に別カメラへ」「素材無しで数秒画面が固まる」を作らない。
+            if (!IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex))
+            {
+                _logic.SetCurrentStepEnd(Now);
+                return;
+            }
+
             // post 層はカットごとに掛け替える（無指定のカットでは解除して区間 / カメラ / global へ戻す）。
             showControl?.SetInsertPostOverride(step.hasPost && step.post != null, step.hasPost ? step.post : null);
 
+            // カット遷移（cut / dip / fade）。**source によって効かせ方が違う**:
+            //   live   … 画面のライブ層は 1 枚しかないのでクロスフェードできない。cut=瞬時 / dip・fade=黒経由
+            //   素材   … cut=瞬時に差し替え / dip=黒経由 / fade=素材のクロスフェード（overlay の fadeIn。従来どおり）
+            // 旧実装は素材カットに遷移を一切効かせず、卓は 4 カット全部に遷移欄を出していた（嘘の UI）。
+            TakeSchema.SplitTransition(TakeSchema.ResolveTransitionMs(step.transition, step.transitionMs),
+                out float downSec, out float upSec);
+
             // 画面の占有とカメラ。live のときだけカメラを動かす。
-            if (source == TakeSchema.SourceLive && step.camera >= 0)
+            if (source == TakeSchema.SourceLive)
             {
-                // カット遷移（cut / dip / fade）をこの 1 回の切替に適用する。
-                TakeSchema.SplitTransition(TakeSchema.ResolveTransitionMs(step.transition, step.transitionMs),
-                    out float downSec, out float upSec);
-                director.SetNextTransition(downSec, upSec);
-
+                PlayStepOverlay(cue, step);   // live カットでも cue 重ねは即時（dip の黒で隠れる）
                 // 演出の 1 カット目が exit アンカー由来なら、離脱の dip の黒中に差し替える（中間カメラを見せない）。
-                if (d.takeStarted && exitAnchored) director.InsertExitRedirect(step.camera);
-                else director.InsertBegin(step.camera);
-            }
-            else if (d.takeStarted)
-            {
-                director.TakeHoldBegin(); // カメラは変えないが画面は演出が持つ
-            }
-
-            // オーバーレイ（cue / 全面差し替え素材）。
-            OverlayCueData? cue = BuildStepOverlay(step, source, d.takeIndex, d.stepIndex);
-            if (cue != null && overlay != null)
-            {
-                overlay.PlayCue(cue);
-                _stepOverlayPlayed = true;
-                _awaitingClipEnd = step.IsUntilClipEnd;
+                if (d.takeStarted && exitAnchored) director.InsertExitRedirect(step.camera, downSec, upSec);
+                else director.InsertBegin(step.camera, downSec, upSec);
             }
             else
             {
-                // 前カットのオーバーレイを引きずらない（live カットへ戻る等）。
-                if (_stepOverlayPlayed) overlay?.StopOverlay();
-                _stepOverlayPlayed = false;
-                _awaitingClipEnd = false;
-                if (step.IsUntilClipEnd)
-                {
-                    // 素材が無いのに untilClipEnd → 尺が決まらない。watchdog 任せにせず既定尺で畳む。
-                    Debug.LogWarning($"[TakeRunner] untilClipEnd だが素材が無い（take={TakeId(d.takeIndex)} step={d.stepIndex}）→ " +
-                                     $"{TakeSchema.FallbackStepDurSec}s で進める");
-                    _logic.SetCurrentStepEnd(Now + TakeSchema.FallbackStepDurSec);
-                }
+                bool throughBlack = step.transition == TakeSchema.TransDip;
+                if (step.transition == TakeSchema.TransCut && cue != null && step.fadeInSec < 0f)
+                    cue.fadeInSeconds = 0f;   // 「瞬時」はフェードも掛けない（明示指定があればそれを尊重）
+                // カメラは変えないが画面は演出が持つ。dip のときだけ素材の差し替えを**黒の瞬間**に行う。
+                director.TakeHoldBegin(throughBlack ? downSec : 0f, throughBlack ? upSec : 0f,
+                    () => PlayStepOverlay(cue, step));
             }
 
             Debug.Log($"[TakeRunner] {(d.takeStarted ? "演出開始" : "カット")} take={TakeId(d.takeIndex)} " +
                       $"step={d.stepIndex} source={source}" +
-                      $"{(step.camera >= 0 && source == TakeSchema.SourceLive ? $" camera={step.camera}" : "")}");
+                      $"{(source == TakeSchema.SourceLive ? $" camera={step.camera}" : "")}");
+        }
+
+        /// <summary>
+        /// カットのオーバーレイを実際に出す（遷移が dip なら黒の瞬間に呼ばれる）。
+        /// <c>untilClipEnd</c> の待ちはここで確定させる — 静止画は終端イベントを持たないため
+        /// §6.4 のとおり <c>durSec&gt;0 ? durSec : 4s</c> で畳む（watchdog 任せにすると 45 秒画面が固まる）。
+        /// </summary>
+        private void PlayStepOverlay(OverlayCueData? cue, ShowStepDef step)
+        {
+            if (cue != null && overlay != null)
+            {
+                bool isVideo = cue.SourceIsVideo;
+                _clipToken = overlay.PlayCue(cue);
+                _stepOverlayPlayed = true;
+                _awaitingClipEnd = step.IsUntilClipEnd && isVideo;
+                if (step.IsUntilClipEnd && !isVideo)
+                {
+                    float sec = step.durSec > 0f ? step.durSec : TakeSchema.FallbackStepDurSec;
+                    _logic.SetCurrentStepEnd(Now + sec);
+                }
+                return;
+            }
+
+            // 前カットのオーバーレイを引きずらない（live カットへ戻る等）。
+            if (_stepOverlayPlayed) overlay?.StopOverlay();
+            _stepOverlayPlayed = false;
+            _awaitingClipEnd = false;
+            _clipToken = -1;
+            if (step.IsUntilClipEnd)
+            {
+                // 素材が無いのに untilClipEnd → 尺が決まらない。watchdog 任せにせず既定尺で畳む。
+                _logic.SetCurrentStepEnd(Now + TakeSchema.FallbackStepDurSec);
+            }
+        }
+
+        /// <summary>
+        /// §6.4 の不正値判定。false のカットは飛ばす（全 step が飛べば演出は実質発火しない）。
+        ///   - live: camera が registry の範囲外
+        ///   - clip / still: 出せる素材が 1 つも解決できない
+        ///   - inherit: 常に有効（「そのままの画を保つ」カットは素材が無くて当然）
+        /// </summary>
+        private bool IsStepPlayable(ShowStepDef step, string source, OverlayCueData? cue, int takeIndex, int stepIndex)
+        {
+            if (source == TakeSchema.SourceLive)
+            {
+                int count = director != null ? director.CameraCount : 0;
+                if (step.camera < 0 || (count > 0 && step.camera >= count))
+                {
+                    Debug.LogWarning($"[TakeRunner] live のカメラ {step.camera} が範囲 [0,{count}) 外 → " +
+                                     $"このカットを飛ばす（take={TakeId(takeIndex)} step={stepIndex}）");
+                    return false;
+                }
+                return true;
+            }
+            if (TakeSchema.IsAssetSource(source) && cue == null)
+            {
+                Debug.LogWarning($"[TakeRunner] {source} だが素材が解決できない → " +
+                                 $"このカットを飛ばす（take={TakeId(takeIndex)} step={stepIndex}）");
+                return false;
+            }
+            return true;
         }
 
         private void EndTake(TakeRunnerLogic.Decision d)
         {
             if (director == null) return;
-            if (_stepOverlayPlayed) overlay?.StopOverlay();
-            _stepOverlayPlayed = false;
-            _awaitingClipEnd = false;
+            ReleaseStepState();
             showControl?.SetInsertPostOverride(false, null);
-            director.InsertReturn(d.returnCamera);
+            // 画面を実際に持っていた時だけ返す。全 step が §6.4 で飛ばされた演出は画面に触っていないので、
+            // ここで dip を掛けると「何も起きていないのに暗転する」ことになる。
+            if (director.InsertActive) director.InsertReturn(d.returnCamera);
             Debug.Log($"[TakeRunner] 演出終了{(d.forced ? "（watchdog 強制）" : "")} → 復帰 camera={d.returnCamera}");
         }
 
-        // 走行中の演出を安全に畳む（SetTakes / ResetRun の前に呼ぶ。凍結ストランドを残さない）。
-        private void CleanupActive()
+        // 走行中の演出を安全に畳む（SetTakes / ResetRun / ライブ卓の介入の前に呼ぶ。凍結ストランドを残さない）。
+        // releaseScreen=false なら「画面の占有だけ解いてカメラは動かさない」（ライブ卓が既に画面を取っている場合）。
+        private void CleanupActive(bool releaseScreen = true)
         {
             if (!_logic.IsActive) return;
-            if (_stepOverlayPlayed) overlay?.StopOverlay();
-            _stepOverlayPlayed = false;
-            _awaitingClipEnd = false;
+            ReleaseStepState();
             if (director != null && director.InsertActive)
             {
                 showControl?.SetInsertPostOverride(false, null);
-                director.InsertReturn(ResolveLatestZoneCamera());
+                if (releaseScreen) director.InsertReturn(ResolveLatestZoneCamera());
+                else director.TakeHoldEnd();
             }
             _logic.AbortActive();
+        }
+
+        // カット単位の状態（オーバーレイ・クリップ待ち）を落とす。
+        private void ReleaseStepState()
+        {
+            if (_stepOverlayPlayed) overlay?.StopOverlay();
+            _stepOverlayPlayed = false;
+            _awaitingClipEnd = false;
+            _clipToken = -1;
         }
 
         private ShowStepDef? GetStep(int takeIndex, int stepIndex)
@@ -285,12 +369,8 @@ namespace FixedCamVr.Streaming
             bool hasAsset = !string.IsNullOrEmpty(assetUrl);
             bool cueHasSource = cue != null &&
                                 (!string.IsNullOrEmpty(cue.sourceUrl) || cue.clip != null || cue.stillImage != null);
-            if (!hasAsset && !cueHasSource)
-            {
-                if (TakeSchema.IsAssetSource(source))
-                    Debug.LogWarning($"[TakeRunner] {source} だが素材が無い（take={TakeId(takeIndex)} step={stepIndex}）→ このカットは映像なし");
-                return null;
-            }
+            // 出すものが無い（警告は IsStepPlayable が 1 回だけ出す）。
+            if (!hasAsset && !cueHasSource) return null;
 
             return new OverlayCueData
             {

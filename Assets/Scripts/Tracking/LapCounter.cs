@@ -179,7 +179,13 @@ namespace FixedCamVr.Tracking
         private void SeedCurrentZone()
         {
             if (!seedInitialZone || registry == null || registry.Count == 0) return;
-            cueScheduler?.NotifyCameraEntered(registry.ActiveIndex, _logic.CurrentLap);
+            // **時計（いま体験者が居るゾーン）を第一候補にする**。registry.ActiveIndex は「画面」なので、
+            // 演出が画面を横取りしている最中にリセットすると、ゾーンとして存在しないインサート先カメラを
+            // 「進入」として流し込んでしまう（2026-07-26 監査 HIGH）。時計が未確定のときだけ画面へ落ちる。
+            int camera = director != null && director.TryGetCurrentZoneCamera(out int zoneCam)
+                ? zoneCam
+                : registry.ActiveIndex;
+            cueScheduler?.NotifyCameraEntered(camera, _logic.CurrentLap);
         }
 
         private void OnCourseChanged() => ApplyOrder();
