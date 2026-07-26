@@ -73,6 +73,17 @@
         <label class="chk"><input id="bLap" type="checkbox" checked> ラプラシアン</label>
         <label class="sld">レベル <input id="bLevels" type="range" min="2" max="9" step="1" value="7"><span id="bLevelsV">7</span></label>
       </div>
+      <div class="global-fx">
+        <div class="gfx-head">
+          <b>🎥 全体グレーディング</b>
+          <span class="gfx-sub">カメラ個別の画質を設定していない列は全部これになる（＝列の「↺ 画質を初期化」の戻り先）</span>
+          <span class="spacer"></span>
+          <button id="gfxPreset" title="暗めの監視カメラ調（露出 -0.72 / 黒浮き 0.065 / 緑寄り / ヴィネット・グレイン・走査線）に戻す">🎥 監視カメラ既定へ</button>
+          <button id="gfxNeutral" title="加工なし（素の映像）に戻す">◻ 加工なし</button>
+          <span id="gfxMsg" class="fx-msg"></span>
+        </div>
+        <div id="gfxRows" class="fx-rows"></div>
+      </div>
       <div id="cams" class="cams"></div>
     </section>
 

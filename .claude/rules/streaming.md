@@ -170,7 +170,9 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 - **再生区間 trim**: `cue.trimStart` へシークして再生、`trimEnd>0` で停止（`trimEnd<=0`=最後まで）
 - **⚠ 動画 URL は UnityWebRequest でローカル DL してから `file://` 再生**（[`GetLocalVideoUrlAsync`](../Assets/Scripts/Streaming/ScreenOverlayController.cs)）。Android ネイティブ VideoPlayer は Python http.server(HTTP/1.0) からの HTTP ストリーミングを扱えず `NuCachedSource2 error -1` で落ちるため（画像/マスクは UnityWebRequest なので直 URL で OK）。URL 毎にキャッシュ。スペース入りファイル名は Web 側が percent-encode
 - **マスクのフェザー**は Web が cue 保存時に PNG へ焼き込む（Quest はマスクをそのままサンプル）。**色統計マッチング・ラプラシアンは Web プレビュー専用**で Quest 実機の ScreenComposite はハード合成（`lerp(live,overlay,mask)`）
-- **post-FX 数式**は ScreenComposite と Web の `FS_POST` を一致させてある（露出/温度/コントラスト/彩度/ヴィネット/走査線/グレインの順・式）
+- **post-FX 数式**は ScreenComposite と Web の `FS_POST` を一致させてある
+  （露出 → 色温度 → **色かぶり** → コントラスト → **黒浮き** → 彩度 → ヴィネット → 走査線 → グレイン の順・式）。
+  **色かぶり（tint・緑↔マゼンタ）と黒浮き（lift）は 2026-07-26 追加**（監視カメラらしさに要る 2 軸。既定 0 = 旧データと同じ絵）
 
 ## カメラ管理
 
@@ -256,7 +258,7 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
     "cues": [ { "cueId": "cue_A_1", "delaySec": 0, "once": true,
                 "override": { "strength": 0.5, "fadeIn": 1.2, "fadeOut": 0.8,
                               "trimStart": 0, "trimEnd": 0 }, "hasOverride": true } ],
-    "post": { /* PostParams 7項目 */ }, "hasPost": true,           // このゾーン滞在中の post 上書き
+    "post": { /* PostParams 9 項目 */ }, "hasPost": true,          // このゾーン滞在中の post 上書き
     "insert": { "anchor": "exit", "camera": 2, "durationSec": 4,   // 別カメラを N 秒差し込む
                 "delaySec": 0, "cueId": "cue_C_scare", "once": true,
                 "post": { /* PostParams */ }, "hasPost": false }, "hasInsert": true } ] }

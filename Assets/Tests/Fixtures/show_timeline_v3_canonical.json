@@ -96,6 +96,8 @@
         "contrast": 1,
         "saturation": 1,
         "temperature": 0,
+        "tint": 0,
+        "lift": 0,
         "vignette": 0,
         "grain": 0,
         "scanline": 0
@@ -177,6 +179,8 @@
                 "contrast": 1.2,
                 "saturation": 0.6,
                 "temperature": 0.1,
+                "tint": 0,
+                "lift": 0,
                 "vignette": 0.4,
                 "grain": 0.05,
                 "scanline": 0.2

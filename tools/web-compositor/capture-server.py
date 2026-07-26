@@ -99,8 +99,10 @@ def _default_show():
             {'id': 'C', 'sourceId': 'Phone03', 'host': '', 'port': 8080, 'auth': '', 'pinned': False},
         ],
         'cues': [],
-        'post': {'exposure': 0.0, 'contrast': 1.0, 'saturation': 1.0, 'temperature': 0.0,
-                 'vignette': 0.25, 'grain': 0.06, 'scanline': 0.0},
+        # 全体グレーディングの出荷値 =「暗めの監視カメラ」（common.js FX_CCTV / Unity ScreenMjpeg.mat と同じ値）。
+        # 現場が明るくて見えない時に動かすのは露出だけでよい。
+        'post': {'exposure': -0.72, 'contrast': 1.28, 'saturation': 0.35, 'temperature': -0.18,
+                 'tint': 0.16, 'lift': 0.065, 'vignette': 0.45, 'grain': 0.065, 'scanline': 0.20},
         # BGM ライブラリ（audio/ の音源から作る）と、ランの既定 BGM。
         # timeline.segments[].bgm が区間ごとに切替・停止を指示する。既定 bgm が無ければ
         # Unity は APK 同梱の既定クリップ（従来の固定ループ）を鳴らす。

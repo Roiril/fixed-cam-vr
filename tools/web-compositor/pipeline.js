@@ -173,6 +173,8 @@ export class Pipeline {
       uGrain: p.grain,
       uAberration: p.aberration,
       uScanline: p.scanline,
+      uLift: p.lift || 0,
+      uTint: p.tint || 0,
       uShowMask: p.showMask ? 1 : 0,
       uTexel: [1 / screen.w, 1 / screen.h],
     });

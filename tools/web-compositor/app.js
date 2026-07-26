@@ -3,7 +3,7 @@
 //   🚨 ライブ運用 = 発見 / 診断 / ラン状態 / cue 手動発火。
 //   show.json が唯一の正。ビューは Unity ScreenComposite を WebGL で再現（composite-view.js）。
 import {
-  FX, FX_DEFAULT, blendCfg, camColor, escapeHtml,
+  FX, FX_DEFAULT, FX_CCTV, blendCfg, camColor, escapeHtml,
   streamBase, getState, postState, postCommand,
   captures, refreshCaptures, createMediaCache, saveCueObject,
 } from './common.js';
@@ -22,6 +22,63 @@ let pushTimer = 0;
 function pushCamerasDebounced() {
   clearTimeout(pushTimer);
   pushTimer = setTimeout(() => postState({ cameras: state.cameras }), 140);
+}
+
+// ---- 全体グレーディング（show.json トップレベル post）------------------------
+//   カメラ post を持たない列はここが実効値になる（列の「↺ 画質を初期化」の戻り先）。
+//   ここを触る面が無いと、既定の見た目を現場で直せない（2026-07-26 追加）。
+const gfxInputs = {}, gfxVals = {};
+let gfxPushTimer = 0;
+function gfxNote(m) {
+  const el = $('#gfxMsg');
+  if (!el) return;
+  el.textContent = m;
+  clearTimeout(gfxNote._t);
+  gfxNote._t = setTimeout(() => { el.textContent = ''; }, 4000);
+}
+function readGlobalFx() {
+  return Object.fromEntries(FX.map(([k, , , , , d]) => {
+    const v = gfxInputs[k] ? parseFloat(gfxInputs[k].value) : NaN;
+    return [k, Number.isFinite(v) ? v : d];
+  }));
+}
+function buildGlobalFx() {
+  const rows = $('#gfxRows');
+  if (!rows) return;
+  for (const [key, label, min, max, step] of FX) {
+    const row = document.createElement('label');
+    row.className = 'sld fx-row';
+    row.append(`${label} `);
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step;
+    const val = document.createElement('span');
+    inp.oninput = () => {
+      val.textContent = inp.value;
+      if (state) state.post = readGlobalFx();
+      clearTimeout(gfxPushTimer);
+      gfxPushTimer = setTimeout(() => postState({ post: readGlobalFx() }), 140);
+    };
+    row.append(inp, val);
+    rows.appendChild(row);
+    gfxInputs[key] = inp; gfxVals[key] = val;
+  }
+  const apply = (post, msg) => {
+    if (state) state.post = { ...post };
+    postState({ post });
+    syncGlobalFx();
+    renderColumns();      // カメラ post を持たない列の表示も即追従させる
+    gfxNote(msg);
+  };
+  if ($('#gfxPreset')) $('#gfxPreset').onclick = () => apply({ ...FX_CCTV }, '🎥 監視カメラ既定に戻しました');
+  if ($('#gfxNeutral')) $('#gfxNeutral').onclick = () => apply({ ...FX_DEFAULT }, '◻ 加工なしに戻しました');
+}
+function syncGlobalFx() {
+  for (const [key, , , , , d] of FX) {
+    const inp = gfxInputs[key];
+    if (!inp || document.activeElement === inp) continue;
+    const v = state?.post?.[key] ?? d;
+    inp.value = v; gfxVals[key].textContent = String(v);
+  }
 }
 
 // ---- グローバル状態 ---------------------------------------------------------
@@ -544,7 +601,7 @@ async function pollState() {
       const s = await (await fetch(`/state?rev=${rev}`)).json();
       if (s.rev !== rev) {
         rev = s.rev; state = s;
-        renderColumns(); renderStatus(); renderLiveCuePanel(); renderLatchBar();
+        renderColumns(); syncGlobalFx(); renderStatus(); renderLiveCuePanel(); renderLatchBar();
         floorMap && floorMap.onState(s); timeline && timeline.onState(s); showSim && showSim.onState(s);
         atelier && atelier.render();   // カメラ集合の変化を工房の列へ（署名一致なら no-op）
         renderBgmSection(); renderRunPanel(); renderPreflight();
@@ -1478,6 +1535,7 @@ if ($('#runDiag')) {
   };
 }
 
+buildGlobalFx();
 pollState();
 pollUnity();
 pollDiscovery();

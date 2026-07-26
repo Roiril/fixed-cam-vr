@@ -126,7 +126,7 @@ void main(){
 // 後段ポストFX + 画面出力
 //   ★ ビューの最終見た目（= Quest と同じ絵）はこの FS_POST。Unity
 //      Assets/Art/Shaders/Streaming/ScreenComposite.shader と数式・順序を一致させてある
-//      （露出→色温度[乗算]→コントラスト→彩度→ヴィネット[dot*2.2]→走査線→グレイン）。
+//      （露出→色温度[乗算]→色かぶり[乗算]→コントラスト→黒浮き→彩度→ヴィネット[dot*2.2]→走査線→グレイン）。
 //      合成（contain-fit / マスク / 色統計 / ラプラシアン）は pipeline.js の多パスで行う。
 export const FS_POST = `#version 300 es
 precision highp float;
@@ -142,6 +142,8 @@ uniform float uVignette;     // 0..1
 uniform float uGrain;        // 0..1
 uniform float uAberration;   // px 相当 0..~20
 uniform float uScanline;     // 0..1
+uniform float uLift;         // 0..0.3 黒浮き（コントラストの後に床上げ）
+uniform float uTint;         // -1..1 色かぶり（+ 緑 / - マゼンタ）
 uniform float uShowMask;     // 0/1 マスク境界オーバーレイ
 uniform vec2  uTexel;
 
@@ -170,8 +172,14 @@ void main(){
   // 色温度
   col.r *= 1.0 + 0.25 * uTemperature;
   col.b *= 1.0 - 0.25 * uTemperature;
+  // 色かぶり（緑↔マゼンタ・色温度と直交）
+  col.g *= 1.0 + 0.25 * uTint;
+  col.r *= 1.0 - 0.12 * uTint;
+  col.b *= 1.0 - 0.12 * uTint;
   // コントラスト
   col = (col - 0.5) * uContrast + 0.5;
+  // 黒浮き（コントラストの後。前だと潰れて効かない）
+  col = col * (1.0 - uLift) + uLift;
   // 彩度
   float l = dot(col, vec3(0.299, 0.587, 0.114));
   col = mix(vec3(l), col, uSaturation);

@@ -347,7 +347,7 @@ Web   app.js が 2 秒ポーリング → ribbon.js が区間フッタと演出�
               "trimStartSec": -1, "trimEndSec": -1,
               "durKind": "untilClipEnd", "durSec": 0,
               "transition": "cut", "transitionMs": 0,
-              "post": { /* PostParams 7 項目 */ }, "hasPost": true }
+              "post": { /* PostParams 9 項目 */ }, "hasPost": true }
           ],
 
           // 演出のあいだだけの BGM（2026-07-26 追加）。省略 = 区間で鳴っている曲がそのまま続く。

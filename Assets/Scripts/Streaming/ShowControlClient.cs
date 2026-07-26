@@ -124,6 +124,12 @@ namespace FixedCamVr.Streaming
         public float vignette;
         public float grain;
         public float scanline;
+
+        // 監視カメラらしさのための 2 項目（2026-07-26 追加。既定 0 = 何もしない＝旧データと同じ絵）。
+        /// <summary>黒浮き（0..0.3）。コントラストの後に黒側の床を持ち上げる（安物センサーの締まらない黒）。</summary>
+        public float lift;
+        /// <summary>色かぶり（-1..1）。+ = 緑（蛍光灯 / 安物 CMOS）、- = マゼンタ。temperature の直交軸。</summary>
+        public float tint;
     }
 
     /// <summary>
@@ -354,6 +360,8 @@ namespace FixedCamVr.Streaming
         private static readonly int VignetteId = Shader.PropertyToID("_Vignette");
         private static readonly int GrainId = Shader.PropertyToID("_Grain");
         private static readonly int ScanlineId = Shader.PropertyToID("_Scanline");
+        private static readonly int LiftId = Shader.PropertyToID("_Lift");
+        private static readonly int TintId = Shader.PropertyToID("_Tint");
 
         [SerializeField] private ShowServerSource? server;
         [SerializeField] private CameraStreamRegistry? registry;
@@ -1425,6 +1433,8 @@ namespace FixedCamVr.Streaming
             _material.SetFloat(VignetteId, p.vignette);
             _material.SetFloat(GrainId, p.grain);
             _material.SetFloat(ScanlineId, p.scanline);
+            _material.SetFloat(LiftId, p.lift);
+            _material.SetFloat(TintId, p.tint);
         }
 
         private static void SplitAuth(string auth, out string user, out string pass)

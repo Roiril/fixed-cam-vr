@@ -24,6 +24,8 @@ Shader "FixedCamVr/ScreenComposite"
         _Grain("Grain", Range(0, 0.3)) = 0
         _Scanline("Scanline", Range(0, 1)) = 0
         _ScanlineCount("Scanline Count", Float) = 240
+        _Lift("Lift (raised black)", Range(0, 0.3)) = 0
+        _Tint("Tint (green-magenta)", Range(-1, 1)) = 0
         [Header(Switch and Signal FX (out of FS_POST parity))]
         // ↓ これらは web-compositor の FS_POST 一致規約の対象外（別系統 uniform）。
         //   dip-to-black（切替演出）と信号ロスト（配信断のフェイルソフト＝砂嵐）を post FX の後段にかける。
@@ -64,6 +66,8 @@ Shader "FixedCamVr/ScreenComposite"
                 float _Grain;
                 float _Scanline;
                 float _ScanlineCount;
+                float _Lift;
+                float _Tint;
                 // FS_POST 一致規約の対象外（別系統）。CameraSwitchDirector / SignalLostFx が駆動。
                 float _SwitchDim;
                 float _SignalLost;
@@ -149,7 +153,13 @@ Shader "FixedCamVr/ScreenComposite"
                 col *= exp2(_Exposure);
                 col.r *= 1.0 + 0.25 * _Temperature;
                 col.b *= 1.0 - 0.25 * _Temperature;
+                // 色かぶり（緑↔マゼンタ）: 色温度と直交する軸。安物 CMOS + 蛍光灯の緑寄りを作る。
+                col.g *= 1.0 + 0.25 * _Tint;
+                col.r *= 1.0 - 0.12 * _Tint;
+                col.b *= 1.0 - 0.12 * _Tint;
                 col = (col - 0.5) * _Contrast + 0.5;
+                // 黒浮き: **コントラストの後**に黒の床を上げる（前だと潰されて意味が無い）。
+                col = col * (1.0 - _Lift) + _Lift;
                 half luma = dot(col, half3(0.299, 0.587, 0.114));
                 col = lerp(luma.xxx, col, _Saturation);
 

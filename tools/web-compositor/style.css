@@ -512,6 +512,11 @@ header h1 { font-size: 14px; }
 .sld span { min-width: 28px; }
 .fx-row { overflow: hidden; }
 .fx-reset, .fx-copy { font-size: 10px; padding: 2px 7px; margin-top: 3px; }
+/* 全体グレーディング（カメラ列の上・未設定カメラの既定） */
+.global-fx { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; }
+.gfx-head { display: flex; align-items: center; gap: 8px; font-size: 11px; flex-wrap: wrap; }
+.gfx-sub { font-size: 10px; opacity: var(--opacity-mute); }
+.global-fx .fx-rows { grid-template-columns: repeat(3, 1fr); }
 .fx-msg { font-size: 10px; opacity: .75; margin-left: 4px; }
 
 .col-sec .src-url { margin-top: 3px; }
