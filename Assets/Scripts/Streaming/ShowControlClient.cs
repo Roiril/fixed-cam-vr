@@ -839,8 +839,17 @@ namespace FixedCamVr.Streaming
         // ShowControlClient は Screen GameObject（Director と同居）に付くため GetComponent が第一選択。
         private CameraSwitchDirector? ResolveSwitchDirector()
         {
-            if (switchDirector == null)
-                switchDirector = GetComponent<CameraSwitchDirector>() ?? FindObjectOfType<CameraSwitchDirector>();
+            if (switchDirector != null) return switchDirector;
+
+            switchDirector = GetComponent<CameraSwitchDirector>();
+            if (switchDirector != null) return switchDirector;
+
+            // シーン全体からの拾い上げは最後の手段。**自分と違う registry を回している Director は採らない**
+            // （別リグ・EditMode テストの偽 registry と本物のシーンが混ざると、切替が別のカメラ群へ飛ぶ。
+            //   2026-07-27 実害: Main.unity を開いたまま EditMode を回すと override のテストが赤くなった）。
+            CameraSwitchDirector? found = FindObjectOfType<CameraSwitchDirector>();
+            if (found != null && (registry == null || found.Registry == null || found.Registry == registry))
+                switchDirector = found;
             return switchDirector;
         }
 

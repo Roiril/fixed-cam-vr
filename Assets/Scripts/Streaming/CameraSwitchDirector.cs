@@ -292,6 +292,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public int CameraCount => registry != null ? registry.Count : 0;
 
+        /// <summary>
+        /// この Director が切り替える registry（未配線なら null）。
+        /// 「自分と同じ registry を回している Director か」を呼び出し側が確かめるために公開する
+        /// （<see cref="ShowControlClient"/> の遅延解決が別リグの Director を掴むのを防ぐ）。
+        /// </summary>
+        public CameraStreamRegistry? Registry => registry;
+
         private void Awake()
         {
             if (registry == null) registry = GetComponentInParent<CameraStreamRegistry>();
