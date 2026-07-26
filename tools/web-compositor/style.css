@@ -511,7 +511,8 @@ header h1 { font-size: 14px; }
 .sld input[type=range] { min-width: 40px; }
 .sld span { min-width: 28px; }
 .fx-row { overflow: hidden; }
-.fx-reset { font-size: 10px; padding: 2px 7px; margin-top: 3px; }
+.fx-reset, .fx-copy { font-size: 10px; padding: 2px 7px; margin-top: 3px; }
+.fx-msg { font-size: 10px; opacity: .75; margin-left: 4px; }
 
 .col-sec .src-url { margin-top: 3px; }
 .ed-status { margin-top: 3px; min-height: 1em; }
@@ -1225,7 +1226,7 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .lock-btn { font-size: 11px; padding: 5px 10px; }
 .lock-btn.on { border-color: var(--warn-color); color: var(--warn-color); opacity: 1; }
 /* ライブ中の画質ロック: 触れないことを見た目でも示す */
-.app.fx-locked .fx-rows, .app.fx-locked .fx-reset { opacity: .35; pointer-events: none; }
+.app.fx-locked .fx-rows, .app.fx-locked .fx-reset, .app.fx-locked .fx-copy { opacity: .35; pointer-events: none; }
 
 /* ライブモードのカメラ列: アクティブを大きく、他を小さく */
 .app[data-mode="live"] .cams { display: flex; gap: 12px; align-items: flex-start; }

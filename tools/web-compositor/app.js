@@ -152,7 +152,11 @@ function buildColumn(cam, index) {
     <div class="col-sec">
       <div class="sec-label">③ 画像加工（カメラ単位の画質グレーディング = cameras[i].post）</div>
       <div class="fx-rows"></div>
-      <div class="row-btns"><button class="fx-reset">↺ 画質を初期化</button></div>
+      <div class="row-btns">
+        <button class="fx-reset">↺ 画質を初期化</button>
+        <button class="fx-copy" title="この列の画質を他のカメラにもコピーする（3 台の見えを揃える）">⇥ 他カメラにも適用</button>
+        <span class="fx-msg"></span>
+      </div>
     </div>
 
     <div class="col-sec">
@@ -210,7 +214,20 @@ function buildColumn(cam, index) {
     fxRows.appendChild(row);
     refs.fxInputs[key] = inp; refs.fxVals[key] = val;
   }
+  const fxMsg = q('.fx-msg');
+  const fxNote = (m) => { if (!fxMsg) return; fxMsg.textContent = m; clearTimeout(refs.fxMsgTimer); refs.fxMsgTimer = setTimeout(() => { fxMsg.textContent = ''; }, 4000); };
   q('.fx-reset').onclick = () => { delete refs.cam.post; postState({ cameras: state.cameras }); };
+  // 3 台の見えを揃える導線。1 台で追い込んだ値を他へ配る（1 スライダずつ真似るのは非現実的）。
+  // この列が「初期化済み（post 無し = 全体グレーディングのまま）」なら、他も初期化に揃える。
+  q('.fx-copy').onclick = () => {
+    const others = (state?.cameras || []).filter((c) => c.id !== refs.cam.id);
+    if (!others.length) return fxNote('他のカメラがいません');
+    const src = refs.cam.post ? { ...FX_DEFAULT, ...refs.cam.post } : null;
+    for (const c of others) { if (src) c.post = { ...src }; else delete c.post; }
+    postState({ cameras: state.cameras });
+    renderColumns();   // 他列のスライダを即座に追従させる（long-poll を待たない）
+    fxNote(src ? `→ ${others.map((c) => c.id).join(' / ')} に適用` : `→ ${others.map((c) => c.id).join(' / ')} も初期化`);
+  };
 
   // ===== 接続表示（発見ベース）+ 緊急手動接続 =====
   const connDisc = q('.conn-disc'), connPin = q('.conn-pin'), pinClear = q('.pin-clear');
@@ -677,6 +694,7 @@ function applyFxLock() {
   for (const r of columns.values()) {
     for (const k of Object.keys(r.fxInputs)) r.fxInputs[k].disabled = lock;
     const rst = r.el.querySelector('.fx-reset'); if (rst) rst.disabled = lock;
+    const cpy = r.el.querySelector('.fx-copy'); if (cpy) cpy.disabled = lock;
   }
   const btn = $('#fxLockBtn');
   if (btn) {

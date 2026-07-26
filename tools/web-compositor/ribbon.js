@@ -923,8 +923,14 @@ export function createRibbon(container, deps) {
     const camOpts = cameras.map((c, k) => `<option value="${k}"${s.camera === k ? ' selected' : ''}>${escapeHtml(camLabel(k))}</option>`).join('');
     const wantVideo = s.source !== TAKE.SRC_STILL;
     const assets = captureItems().filter((it) => (wantVideo ? it.type === 'video' || isVideoUrl(it.url) : it.type !== 'video'));
+    // 実素材（撮影・合成したもの）と動作確認用のダミー（testassets/）を分けて出す。
+    // 混ぜると「いま何を選んでいるのか」が分からなくなる。
+    const opt = (it) => `<option value="${escapeHtml(it.url)}"${s.assetUrl === it.url ? ' selected' : ''}>${escapeHtml(it.name)}</option>`;
     let assetOpts = '<option value="">（素材を選ぶ）</option>';
-    for (const it of assets) assetOpts += `<option value="${escapeHtml(it.url)}"${s.assetUrl === it.url ? ' selected' : ''}>${escapeHtml(it.name)}</option>`;
+    const real = assets.filter((it) => it.kind !== 'test');
+    const test = assets.filter((it) => it.kind === 'test');
+    for (const it of real) assetOpts += opt(it);
+    if (test.length) assetOpts += `<optgroup label="動作確認用（testassets）">${test.map(opt).join('')}</optgroup>`;
     if (s.assetUrl && !assets.some((it) => it.url === s.assetUrl)) assetOpts += `<option value="${escapeHtml(s.assetUrl)}" selected>${escapeHtml(baseName(s.assetUrl))}</option>`;
     let cueOpts = '<option value="">（重ねない）</option>';
     for (const c of cues) cueOpts += `<option value="${escapeHtml(c.id)}"${s.cueId === c.id ? ' selected' : ''}>${escapeHtml(c.name || c.id)}</option>`;

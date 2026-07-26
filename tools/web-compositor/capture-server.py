@@ -47,6 +47,11 @@ MASKS = os.path.join(ROOT, 'masks')
 # デモ撮影専用フォルダ（静止画 📷 / 録画 ⏺ の保存先。captures とは分ける）
 RECORDINGS = os.path.join(ROOT, 'recordings')
 STATIC_INPUTS = os.path.join(ROOT, 'static-inputs')
+# 動作確認用のダミー素材（「演出A」等の文字だけ）。make-test-assets.py で再生成できる。
+# 実素材（captures/recordings）と混ざらないよう別フォルダに置き、素材一覧では末尾に並べる。
+TESTASSETS = os.path.join(ROOT, 'testassets')
+# 旧環境で撮った素材の退避先。**素材一覧には出さない**（もう使えないものを選ばせない）。
+ARCHIVE = os.path.join(ROOT, 'archive')
 # BGM 音源置き場（ここに mp3/ogg/wav/m4a を放り込むと卓の BGM ライブラリに出る）
 AUDIO = os.path.join(ROOT, 'audio')
 # 🕹 ショーシミュレーションで記録した「歩き方」（scenario JSON）。show.json とは混ぜない
@@ -56,9 +61,12 @@ os.makedirs(CAPTURES, exist_ok=True)
 os.makedirs(MASKS, exist_ok=True)
 os.makedirs(RECORDINGS, exist_ok=True)
 os.makedirs(AUDIO, exist_ok=True)
+os.makedirs(TESTASSETS, exist_ok=True)
 
 # /save?to= と /open-dir?dir= の保存先ホワイトリスト（パストラバーサル防止）
 SAVE_DIRS = {'captures': CAPTURES, 'recordings': RECORDINGS}
+# /open-dir?dir= だけで開いてよいフォルダ（保存はしない）
+OPEN_DIRS = {'testassets': TESTASSETS, 'archive': ARCHIVE, 'audio': AUDIO, 'masks': MASKS}
 
 # エクスポート時に「ローカル URL → 実ファイル」を解決するディレクトリ対応表。
 LOCAL_URL_DIRS = {
@@ -67,6 +75,7 @@ LOCAL_URL_DIRS = {
     '/recordings/': RECORDINGS,
     '/static-inputs/': STATIC_INPUTS,
     '/audio/': AUDIO,
+    '/testassets/': TESTASSETS,
 }
 # リポジトリルート（tools/web-compositor から 2 つ上）。エクスポート先の解決に使う。
 REPO_ROOT = os.path.dirname(os.path.dirname(ROOT))
@@ -1016,8 +1025,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     # 撮影フォルダ（recordings/ 等）をファイルマネージャで開く。
     def _open_dir(self, key):
-        # 保存先ホワイトリスト + audio/（BGM 音源置き場。書き込み API は無いが開くのは許す）
-        target = SAVE_DIRS.get(key) or (AUDIO if key == 'audio' else None)
+        # 保存先ホワイトリスト + 読み取り専用フォルダ（BGM 音源・テスト素材・旧素材の退避先）
+        target = SAVE_DIRS.get(key) or OPEN_DIRS.get(key)
         if not target:
             return self._json({'ok': False, 'error': 'bad dir'}, 400)
         os.makedirs(target, exist_ok=True)
@@ -1385,9 +1394,13 @@ class Handler(SimpleHTTPRequestHandler):
         **captures/ と recordings/ の両方**を返す（📷 いま撮る / ⏺ 録画の保存先は recordings/ なので、
         captures/ だけ見ていると「撮ったのに素材の一覧に出ない」= 導線が切れる。2026-07-26 監査 HIGH）。
         同名衝突はディレクトリ違いで別物として並ぶ（url が違うので実害なし）。
+
+        testassets/（動作確認用のダミー素材）も返すが `kind='test'` を付け、UI は実素材の後ろへ
+        まとめて並べる。archive/（旧環境の素材）は**返さない** — もう使えないものを選ばせないため。
         """
         items = []
-        for base, prefix in ((CAPTURES, '/captures/'), (RECORDINGS, '/recordings/')):
+        for base, prefix in ((CAPTURES, '/captures/'), (RECORDINGS, '/recordings/'),
+                             (TESTASSETS, '/testassets/')):
             if not os.path.isdir(base):
                 continue
             for n in os.listdir(base):
@@ -1400,8 +1413,12 @@ class Handler(SimpleHTTPRequestHandler):
                 typ = 'video' if ext in ('webm', 'mp4', 'mov') else 'image'
                 st = os.stat(fp)
                 items.append({'name': n, 'url': prefix + n, 'dir': prefix.strip('/'),
+                              'kind': 'test' if base is TESTASSETS else 'real',
                               'type': typ, 'size': st.st_size, 'mtime': st.st_mtime})
-        items.sort(key=lambda x: x['mtime'], reverse=True)
+        # 実素材が新しい順 → テスト素材が名前順（テストは常に末尾でよい）
+        items.sort(key=lambda x: (x['kind'] == 'test',
+                                  x['name'] if x['kind'] == 'test' else '',
+                                  -x['mtime']))
         return items
 
     # ---- 素材工房 -------------------------------------------------------------

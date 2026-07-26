@@ -187,6 +187,9 @@ $RECYCLE.BIN/
 # web compositor のキャプチャ/録画（PC ローカル成果物・コミットしない）
 tools/web-compositor/captures/
 tools/web-compositor/recordings/
+# 旧環境で撮った素材の退避先（素材一覧には出さない。捨てずに残すだけ）
+tools/web-compositor/archive/
+# testassets/ は **あえて追跡する**（文字だけの軽いダミー素材。どの PC でも動作確認できる）
 tools/web-compositor/prompts.json
 # atelier.json / atelier-index.md は **あえて追跡する**（scenarios/ と同じ判断）。
 # IP も認証情報もバイナリも含まず、プロンプトと採否だけの小さな JSON で、

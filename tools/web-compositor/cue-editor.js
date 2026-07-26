@@ -158,11 +158,20 @@ export function createCueEditor(deps) {
   function populateSources() {
     const items = (deps.getCaptures && deps.getCaptures()) || [];
     const cur = srcSelect.value;
-    srcSelect.innerHTML = '<option value="">（captures/ から選ぶ）</option>';
-    for (const it of items) {
+    srcSelect.innerHTML = '<option value="">（素材を選ぶ）</option>';
+    const mkOpt = (it) => {
       const o = document.createElement('option');
       o.value = it.url; o.textContent = `${it.type === 'video' ? '🎞' : '🖼'} ${it.name}`;
-      srcSelect.appendChild(o);
+      return o;
+    };
+    // 実素材が先・動作確認用のダミー（testassets/）は別グループで末尾に。
+    for (const it of items) if (it.kind !== 'test') srcSelect.appendChild(mkOpt(it));
+    const test = items.filter((it) => it.kind === 'test');
+    if (test.length) {
+      const g = document.createElement('optgroup');
+      g.label = '動作確認用（testassets）';
+      for (const it of test) g.appendChild(mkOpt(it));
+      srcSelect.appendChild(g);
     }
     srcSelect.value = cur;
   }

@@ -129,6 +129,19 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 - 保存先 = **`tools/web-compositor/captures/`**（`.gitignore` 済み）。`/save?type=image|video` に POST
 - **💾 保存済み（PC内）** ギャラリー: 一覧表示、各々「白/黒に接続」で再利用、**サムネ/📂ボタンで保存場所をエクスプローラーで開く**（`/reveal?name=` → `explorer /select`）
 
+## 素材フォルダの区分（2026-07-26）
+
+| フォルダ | 中身 | 素材一覧に出る？ | git |
+|---|---|---|---|
+| `captures/` `recordings/` | 実素材（📷 ⏺ で撮ったもの・AI 生成物） | ○ 新しい順 | ignore |
+| `testassets/` | 動作確認用ダミー（「演出 A」等の文字だけ・静止画 4 / 6 秒動画 3） | ○ 末尾の optgroup「動作確認用」 | **追跡**（軽量・どの PC でも検証可） |
+| `archive/<日付>_<理由>/` | 旧環境で撮って使えなくなった素材 | **×**（選ばせない） | ignore・静的配信はされる |
+
+ダミーの作り直し = `python tools/web-compositor/make-test-assets.py`（PIL + imageio-ffmpeg 同梱の
+ffmpeg。H.264/yuv420p/音声なし = Quest の VideoPlayer が最も確実に再生できる形）。
+2026-07-26 に 6/18 の旧環境素材（3 台構成が違う）を archive へ退避し、それを指していた
+`cues[]`（cue_A/B/C 他）を testassets の clip / still へ張り替えた。
+
 ## 生成プロンプト管理
 
 - **🎬 生成プロンプト**: PC 内 `prompts.json`（`.gitignore` 済み）に保存。`GET/POST /prompts`, `POST /prompts/delete`
@@ -139,7 +152,7 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 
 | メソッド | パス | 用途 |
 |---|---|---|
-| GET | `/captures/list` | 保存物一覧（新しい順） |
+| GET | `/captures/list` | カット素材一覧。`captures/` + `recordings/` は新しい順、`testassets/`（`kind:"test"`）を末尾に。**`archive/` は返さない**（2026-07-26） |
 | POST | `/save?type=image\|video` | body のバイナリを captures/ に保存 |
 | GET | `/reveal?name=<file>` | captures/ の当該ファイルをファイルマネージャで選択表示（Win=explorer /select、mac=open -R、Linux=xdg-open）。パストラバーサル拒否 |
 | GET | `/cam?host=&port=&path=&auth=user:pass` | **MJPEG プロキシ**。Basic 認証をサーバが肩代わり（ブラウザは `<img>` の URL 埋め込み認証をブロックするため iPhone/IP Camera Lite はこれ必須）。`multicam.html`（3 台同時ビュー、IP 編集可・localStorage 保存・自動再接続・クリック拡大）とコンソールのカメラカードが利用 |

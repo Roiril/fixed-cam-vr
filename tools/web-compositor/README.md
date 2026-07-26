@@ -54,6 +54,7 @@ BGM ライブラリ … audio/ の音源をトラック登録（ループ範囲�
 マルチカメラ（常時・監視専用。列 = カメラ A / B / C。ライブ時はアクティブ列を大きく表示）
   ④ メタクエスト実映像 … 画質を当てた最終見た目（Quest と同じ絵）+ 📷1枚 / ⏺録画。ヘッダに 📺切替
   ③ 画像加工           … カメラ別 画質 7 スライダ（カメラ単位グレーディング。cue 編集は撤去 → タイムラインへ移設）
+                         ↺ 画質を初期化 ／ ⇥ 他カメラにも適用（1 台で追い込んだ値を残り 2 台へ配る）
   ① 生リアルタイム映像 … 生 MJPEG + 📷1枚 / ⏺録画 / 配信元 IP・port・認証
 ```
 
@@ -88,6 +89,9 @@ BGM ライブラリ … audio/ の音源をトラック登録（ループ範囲�
 - **カットの尺**「素材の終わりまで」は**素材の実尺をブラウザで測って**表示する（測れない時だけ `≈` 推定）
 - **素材の導線**: カット行の `↻`（撮った素材を読み直す）／`📂`（recordings/ を開く）。
   「⏺ 全カメラ録画(Quest)」で合成後の絵をそのまま録れるので、**録画 → ↻ → カットの素材に選ぶ**で繋がる
+- **素材リストは 2 群**（2026-07-26）: 実素材（`captures/` `recordings/`）が先、
+  末尾の optgroup **「動作確認用（testassets）」**が `testassets/` のダミー（「演出 A」等の文字だけ）。
+  旧環境で撮って使えなくなった素材は `archive/` へ退避してあり**一覧に出ない**
 - BGM（区間で切替・停止・ループ範囲）は v3 でも区間の属性。**試聴 + 「ここを in / out」も使える**
 
 **画面の作法（2026-07-25 のデザイン修正で確定）**:
@@ -230,13 +234,14 @@ node --test "tools/web-compositor/*.test.mjs"
 | GET | `/cam?host=&port=&path=&auth=` | MJPEG プロキシ（Basic 認証肩代わり。別ポート 8100 で listen） |
 | POST | `/save?type=image\|video&to=recordings&cam=A` | 📷 静止画 / ⏺ 録画の保存（`to=recordings` で撮影フォルダ、`cam` でファイル名接頭辞。生=`A` / 合成済み=`A_quest`） |
 | GET | `/open-dir?dir=recordings` | 撮影フォルダをファイルマネージャで開く（📂 撮影フォルダ ボタン） |
-| GET | `/captures/list` | 合成素材一覧（`captures/`、PC ローカル） |
+| GET | `/captures/list` | カット素材一覧。`captures/` + `recordings/` + `testassets/`（`kind:"test"` 付き・UI は末尾の optgroup へ）。`archive/` は**返さない** |
 | POST/GET | `/unity/heartbeat` / `/unity/status` | Unity の生存・アクティブカメラ報告（**卓サーバ生存判定もこの 2 秒ポーリングが担う**。`/state` は long-poll で最大 25s ブロックするため断の検知に使えない） |
 | POST | `/export-build` | 焼き込み。レスポンスに `exportedAt` / `showRev` / `hosts[]`（焼き込んだカメラ接続先）/ `missingCues[]` を含む |
 | GET/POST | `/dwell/stats` / `/dwell/reset` | 区間 (lap,camera) の**実測滞在時間**（heartbeat の `dwell[]` を集計・`dwell_stats.json` に永続化）。リボンの「実測 平均 Ns」が読む |
 
 - `cameras[i].host/port/auth` を **Unity 実機が読む**（DHCP ズレを Web から復旧。変化時のみ再接続）
-- `cameras[i].post`（任意）= カメラ別画質。未設定は global `post` にフォールバック
+- `cameras[i].post`（任意）= カメラ別画質。未設定は global `post` にフォールバック。
+  列の **⇥ 他カメラにも適用** は「この列の値を他へコピー」（この列が初期化済み＝post 無しなら**他も初期化**して global に揃える）
 - `Assets/Settings/ShowServer.asset` の host をこの PC に向ける（Editor+Link は 127.0.0.1、Quest 単体は LAN IP）
 - 詳細は [.claude/rules/streaming.md](../../.claude/rules/streaming.md)「show.json = 設定契約」
 
@@ -274,9 +279,13 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 | `gl.js` / `shaders.js` | WebGL2 ヘルパー / GLSL 全シェーダ |
 | `capture-server.py` | ローカルサーバ（静的配信 + show 制御 + /cam プロキシ + 保存/プロンプト/エクスポート/discovery/シナリオ API） |
 | `serve.ps1` | 起動スクリプト |
+| `make-test-assets.py` | 動作確認用のダミー素材（`testassets/`）を作り直す。「演出 A」等の文字だけの静止画 4 + 6 秒動画 3（H.264/yuv420p・音声なし） |
 | `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json を long-poll。発火の検証は 🕹 ショーシミュレーションを使う） |
 
-`show.json` / `masks/` / `captures/`（合成素材）/ `recordings/`（📷 ⏺ 撮影物）/ `prompts.json` は PC ローカル運用状態のため `.gitignore` 済み。
+`show.json` / `masks/` / `captures/`（合成素材）/ `recordings/`（📷 ⏺ 撮影物）/ `archive/`（旧環境の素材の退避先）/ `prompts.json` は PC ローカル運用状態のため `.gitignore` 済み。
+`testassets/`（`make-test-assets.py` が作る文字だけのダミー素材。静止画 4 + 動画 3・計 130KB 程度）は
+**追跡対象** — どの PC でも「演出が差し替わったか」だけを即確認できるようにするため。作り直しは
+`python tools/web-compositor/make-test-assets.py`。
 `scenarios/`（🕹 記録した歩き）と `atelier.json` / `atelier-index.md`（🧪 素材工房のレシピと生成記録）は
 **あえて追跡対象**（IP・素材を含まない小さな JSON / テキストで、資産として残す価値があるため）。
 
