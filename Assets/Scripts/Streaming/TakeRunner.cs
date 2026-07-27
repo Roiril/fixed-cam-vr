@@ -91,6 +91,11 @@ namespace FixedCamVr.Streaming
 
         private void Awake()
         {
+            // 演出を捨てたら必ず言う（黙って消さない）。著作した山場が出ないのは事故なので警告で出す。
+            _logic.TakeDropped = (index, reason) => Debug.LogWarning(
+                $"[TakeRunner] 演出が出ないまま区間が終わった: take={TakeId(index)}" +
+                $"（{(reason == TakeRunnerLogic.DropReason.ScreenBusyAtExit ? "別の演出 / ライブ卓が画面を使用中" : "同じ区間の別の演出が先に選ばれた")}）");
+
             // 実配置では本コンポーネントは [Tracker]、Director / overlay / showControl は Screen に居る
             // （InsertController と同じ構図）。SerializeField 未割当のシーンでも動くよう、同 GameObject →
             // シーン全体の順で解決する（CameraSwitchDirector が registry を解決するのと同じ流儀）。

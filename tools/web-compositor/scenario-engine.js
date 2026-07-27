@@ -358,9 +358,13 @@ export class LapCounter {
 /** TakeRunnerLogic.Action。 */
 export const TAKE_ACTION = { NONE: 'none', BEGIN_STEP: 'beginStep', END_TAKE: 'endTake' };
 
-// 武装中の enter 演出の状態（TakeRunnerLogic.Armed）。
-const ARMED_WAITING = 0;
-const ARMED_DEFERRED_TO_EXIT = 1;
+// 武装中の enter / line 演出の状態（TakeRunnerLogic.Armed）。
+const ARMED_WAITING = 0;          // まだ開始条件を満たしていない
+const ARMED_DEFERRED_TO_EXIT = 1; // ライブ卓の介入中に条件を満たした → 離脱時のみ発火しうる
+const ARMED_READY = 2;            // 条件を満たした。画面が空き次第この区間で発火する
+
+/** TakeRunnerLogic.DropReason（演出が出ないまま終わった理由）。 */
+export const DROP_REASON = { SCREEN_BUSY: 'screenBusy', LOST: 'lostToAnotherTake' };
 
 const noDecision = () => ({
   action: TAKE_ACTION.NONE, takeIndex: -1, stepIndex: -1,
@@ -369,10 +373,11 @@ const noDecision = () => ({
 
 /**
  * 演出の純判定・計時。契約（.claude/plans/2026-07-25_shot-timeline-foundation.md §6.3）:
- *   1. 同時に走る演出は 1 本。走行中に別演出の開始条件が来ても**待たせない**
+ *   1. 同時に走る演出は 1 本。**別の演出が画面を持っているあいだは、その区間に居る限り待つ**
+ *      （2026-07-27 変更。旧実装は待たずに捨てていた＝著作した演出が黙って消えた）
  *   2. 同一区間の順序: at=enter は offsetSec 昇順 → 同値なら配列順 / at=exit は配列順
  *   3. ifMissed=fireOnExit: offsetSec 到達前に離脱したら、その離脱の瞬間に発火
- *   4. 区間を離れた時点で未発火の演出は必ず決着する（発火 or 破棄）
+ *   4. 区間を離れた時点で未発火の演出は必ず決着する（発火 or 破棄）。破棄は onTakeDropped で必ず報告する
  *   5. once はラン内 1 回 / 6. 抑止中は発火しない / 7. maxDurationSec で強制終了
  *   8. 終了時の復帰先は「いま体験者が居るゾーン」（引数で受ける）
  */
@@ -393,6 +398,8 @@ export class TakeRunner {
     this._stepEnd = 0;
     this._deadline = 0;
     this._baseZoneCam = 0;
+    /** 演出を捨てた時の通知 (takeIndex, DROP_REASON)。TakeRunnerLogic.TakeDropped の対。 */
+    this.onTakeDropped = null;
   }
 
   get isActive() { return this._running; }
@@ -444,14 +451,16 @@ export class TakeRunner {
     }
 
     if (hadPrev) {
-      // 離脱の瞬間: 配列順で最初に該当する 1 本だけ発火し、残りは破棄する。
-      if (!this._running && !this._suppressed) {
-        const pick = this._findExitCandidate(prevLap, prevCam);
-        if (pick >= 0) {
-          this._startTake(pick, now, newCam);
-          result = this._beginStepDecision(true);
-        }
+      // 離脱の瞬間: 配列順で最初に該当する 1 本だけ発火し、残りは破棄する（破棄は必ず報告する）。
+      const screenBusy = this._running || this._suppressed;
+      let pick = this._findExitCandidate(prevLap, prevCam);
+      if (pick >= 0 && !screenBusy) {
+        this._startTake(pick, now, newCam);
+        result = this._beginStepDecision(true);
+      } else {
+        pick = -1;
       }
+      this._reportRemainingDrops(prevLap, prevCam, pick, screenBusy);
       this._clearArmed();
     }
 
@@ -467,10 +476,15 @@ export class TakeRunner {
    * lines は通過ラインの今フレームの結果（LineCross.stateView）。null なら at=line は発火しない。
    */
   tick(now, latestZoneCam, lines = null) {
+    // ① 開始条件を満たした瞬間を必ず記録する（画面が塞がっていても取りこぼさない）。
+    //    ライントリガーは事象なので、ここで拾わないと猶予（0.6s）で消える。
+    this._latchReady(now, lines);
+
     if (this._running) {
       if (now >= this._deadline) return this._endTakeDecision(latestZoneCam, true);
 
-      this._resolveOverdueWhileBlocked(now, lines);
+      // ⚠ ここで武装中の演出を決着させない（旧実装はしていた）。画面が塞がっているのはシステム内部の
+      //   都合なので、著作された演出を捨てる理由にならない。同じ区間に居るあいだは Ready のまま待つ。
 
       if (now >= this._stepEnd) {
         const next = this._activeStep + 1;
@@ -486,21 +500,17 @@ export class TakeRunner {
     }
 
     if (this._suppressed) {
-      // 抑止中に発火条件を満たしたものも「待たせない」（離脱時発火 or 破棄へ落とす）。
-      this._resolveOverdueWhileBlocked(now, lines);
+      // ライブ卓の介入は人間の明示的な判断なので、その間に条件を満たした演出は待たせずに決着させる。
+      this._settleReadyWhileSuppressed();
       return noDecision();
     }
 
-    const pick = this._findDue(now, lines);
-    if (pick < 0) {
-      this._resolveOverdueWhileBlocked(now, lines);
-      return noDecision();
-    }
+    const pick = this._findReady();
+    if (pick < 0) return noDecision();
 
     const takeIndex = this._removeArmedAt(pick);
     this._startTake(takeIndex, now, this._hasCurrent ? this._curCam : 0);
-    // 同時に発火条件を迎えていた他の演出は、この 1 本に譲って決着する。
-    this._resolveOverdueWhileBlocked(now, lines);
+    // 同時に条件を満たした他の演出は武装したまま残り、この 1 本が終わったら順に出る。
     return this._beginStepDecision(true);
   }
 
@@ -573,10 +583,19 @@ export class TakeRunner {
     }
   }
 
-  // 発火条件を満たした Waiting のうち先頭（無ければ -1）。
-  _findDue(now, lines) {
+  // 開始条件を満たした武装スロットを Ready にする（事象の取りこぼしを防ぐ唯一の場所）。
+  _latchReady(now, lines) {
     for (let k = 0; k < this._armedIndex.length; k++) {
-      if (this._armedState[k] === ARMED_WAITING && this._isDue(k, now, lines)) return k;
+      if (this._armedState[k] === ARMED_WAITING && this._isDue(k, now, lines)) {
+        this._armedState[k] = ARMED_READY;
+      }
+    }
+  }
+
+  // 発火を待っている先頭の Ready（無ければ -1）。
+  _findReady() {
+    for (let k = 0; k < this._armedIndex.length; k++) {
+      if (this._armedState[k] === ARMED_READY) return k;
     }
     return -1;
   }
@@ -593,13 +612,33 @@ export class TakeRunner {
     return s.camera < 0 || s.camera === d.camera;
   }
 
-  // 走行中 / 抑止中に発火条件を満たしたものを決着させる（待たせない）。
-  //   skip → 破棄 / fireOnExit → 離脱時のみ発火しうる状態へ
-  _resolveOverdueWhileBlocked(now, lines) {
+  // ライブ卓の介入中に発火条件を満たしたものを決着させる（待たせない）。
+  //   skip → 破棄（報告する）/ fireOnExit → 離脱時のみ発火しうる状態へ
+  _settleReadyWhileSuppressed() {
     for (let k = this._armedIndex.length - 1; k >= 0; k--) {
-      if (this._armedState[k] !== ARMED_WAITING || !this._isDue(k, now, lines)) continue;
-      if (this._defs[this._armedIndex[k]].skipWhenMissed) this._removeArmedAt(k);
-      else this._armedState[k] = ARMED_DEFERRED_TO_EXIT;
+      if (this._armedState[k] !== ARMED_READY) continue;
+      if (this._defs[this._armedIndex[k]].skipWhenMissed) {
+        const dropped = this._armedIndex[k];
+        this._removeArmedAt(k);
+        if (this.onTakeDropped) this.onTakeDropped(dropped, DROP_REASON.SCREEN_BUSY);
+      } else {
+        this._armedState[k] = ARMED_DEFERRED_TO_EXIT;
+      }
+    }
+  }
+
+  // 離脱時、「出る資格があったのに出られずに終わる」演出を報告する（黙って消さない）。
+  // skip 指定のものは著作者が「出さない」と言っているので報告しない。
+  _reportRemainingDrops(lap, camera, firedIndex, screenBusy) {
+    if (!this.onTakeDropped) return;
+    for (let i = 0; i < this._defs.length; i++) {
+      if (i === firedIndex) continue;
+      const d = this._defs[i];
+      if (d.lap !== lap || d.camera !== camera) continue;
+      if (d.stepDurSec.length === 0) continue;
+      if (d.once && this._fired[i]) continue;
+      if (!d.onExit && (d.skipWhenMissed || !this._isArmed(i))) continue;
+      this.onTakeDropped(i, screenBusy ? DROP_REASON.SCREEN_BUSY : DROP_REASON.LOST);
     }
   }
 
@@ -706,6 +745,13 @@ export function createShowRunner(cfg) {
   const takes = new TakeRunner();
   takes.setDefs(c.takes);
 
+  // 「出ないまま終わった演出」をトレースへ出す（黙って消さない）。コールバックは
+  // onZoneCommitted の中で呼ばれるので、その tick の出力配列へ差し込む。
+  let sink = null;
+  takes.onTakeDropped = (index, reason) => {
+    if (sink) sink.push(ev('drop', sink.tMs, reason === DROP_REASON.SCREEN_BUSY ? 0 : 1, -1, takeIdOf(c, index)));
+  };
+
   // 通過ライン（人の層）。dt は C# と同じ float 精度の tick 秒。
   const lines = new LineCross();
   lines.setLines(c.lines);
@@ -722,6 +768,8 @@ export function createShowRunner(cfg) {
   function step(tMs, x, z) {
     const now = f32(tMs / 1000);   // C# は `float now = tMs / 1000f`
     const out = [];
+    out.tMs = tMs;
+    sink = out;
 
     // ⓪ 起動時のシード（スタート区間を「進入した」ことにする / ShowScenarioRunner.Run と同じ）。
     //    体験者は最初からスタート領域に居るので時計は確定イベントを出さない。実機はこの穴を
@@ -775,6 +823,7 @@ export function createShowRunner(cfg) {
     // 演出が画面を占有しているかを画面層へ反映する（本番の insert 凍結と同じ役割）。
     screen.setInsertActive(takes.isActive);
 
+    sink = null;
     return out;
   }
 

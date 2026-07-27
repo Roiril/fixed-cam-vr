@@ -104,6 +104,16 @@ namespace FixedCamVr.Tracking
             var takes = new TakeRunnerLogic();
             takes.SetDefs(cfg.Takes);
 
+            // 「出ないまま終わった演出」をトレースへ出す（黙って消さない）。コールバックは
+            // OnZoneCommitted の中で呼ばれるので、その tick の時刻を捕まえて差し込む。
+            int dropAtMs = 0;
+            takes.TakeDropped = (index, reason) => trace.Add(new Event
+            {
+                kind = "drop", t = dropAtMs,
+                a = reason == TakeRunnerLogic.DropReason.ScreenBusyAtExit ? 0 : 1,
+                b = -1, id = TakeId(cfg, index),
+            });
+
             // 通過ライン（人の層）。歩きのサンプルから毎 tick 更新する。
             var lines = new LineCrossLogic();
             lines.SetLines(cfg.Lines);
@@ -133,6 +143,7 @@ namespace FixedCamVr.Tracking
             for (int tMs = startMs; tMs <= endMs; tMs += tick)
             {
                 float now = tMs / 1000f;
+                dropAtMs = tMs;
                 SampleAt(samples, tMs, out float x, out float z);
 
                 // ① ゾーン判定 → 時計へ要求（通過ラインも同じ「人の層」なのでここで進める）

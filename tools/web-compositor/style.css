@@ -1580,6 +1580,9 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .ss-ev.ev-lap { color: var(--warn-color); }
 .ss-ev.ev-zone, .ss-ev.ev-seg { opacity: var(--opacity-sub); }
 .ss-ev.ev-end { opacity: var(--opacity-sub); border-left: 2px solid var(--line-input); padding-left: 7px; }
+/* 「出ないまま終わった演出」= 著作した山場が届かなかった事故。埋もれさせない。 */
+.ss-ev.ev-drop { color: var(--danger-color); opacity: 1;
+  border-left: 2px solid var(--danger-color); padding-left: 7px; }
 
 .ss-block { border: 1px solid var(--line-soft); padding: 8px 10px;
   display: flex; flex-direction: column; gap: 7px; }

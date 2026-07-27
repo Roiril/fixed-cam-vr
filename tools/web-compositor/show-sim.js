@@ -361,6 +361,7 @@ export function createShowSim(container, deps) {
   const EVENT_STYLE = {
     screen: 'ev-screen', zone: 'ev-zone', lap: 'ev-lap',
     seg: 'ev-seg', take: 'ev-take', step: 'ev-step', end: 'ev-end',
+    drop: 'ev-drop',
   };
 
   function describeEvent(e) {
@@ -380,7 +381,10 @@ export function createShowSim(container, deps) {
           : (e.b >= 0 ? camLabel(e.b) : '');
         return `カット ${e.a + 1} ${e.id}${what ? `: ${what}` : ''}`;
       }
-      case 'end': return `演出終了 ${e.id}${e.flag ? '（⚠ watchdog 強制）' : ''} → 復帰 ${camLabel(e.a)}`;
+      // 「出ないまま区間が終わった」= 著作した山場が体験者に届かなかったということ。必ず見せる。
+      case 'drop': return `✖ 出ませんでした ${e.id}（${e.a === 0
+        ? '別の演出 / ライブ卓が画面を使用中のまま区間が終わった'
+        : '同じ区間の別の演出が先に選ばれた'}）`;
       default: return e.kind;
     }
   }

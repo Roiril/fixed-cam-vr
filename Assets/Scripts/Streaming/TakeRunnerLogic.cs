@@ -10,10 +10,14 @@ namespace FixedCamVr.Streaming
     /// <see cref="InsertLogic"/> の後継で、**1 本の演出が複数カットを持てる**点が本質的な差。
     ///
     /// 契約の正本は <c>.claude/plans/2026-07-25_shot-timeline-foundation.md</c> §6.3。要点:
-    ///   1. 同時に走る演出は 1 本。走行中に別演出の開始条件が来ても**待たせない**
+    ///   1. 同時に走る演出は 1 本。**別の演出が画面を持っているあいだは、その区間に居る限り武装したまま待つ**
+    ///      （2026-07-27 変更。旧実装は待たずに即決着させて捨てていた ＝ 著作した演出が黙って消えた。
+    ///      設計 §7 の「捨てる」根拠は「**演出中に通過した**区間の演出を遅れて出すと文脈が壊れる」であって、
+    ///      **まだ同じ区間に居るなら文脈は壊れない**。区間を出れば従来どおり武装ごと消えるので不変条件 4 は不変）
     ///   2. 同一区間の順序: at=enter は offsetSec 昇順 → 同値なら配列順 / at=exit は配列順
     ///   3. ifMissed=fireOnExit: offsetSec に達する前に離脱したら、その離脱の瞬間に発火
     ///   4. 区間を離れた時点で未発火の演出は必ず決着する（発火 or 破棄）。**遅れて別区間で発火しない**
+    ///      破棄したら必ず <see cref="TakeDropped"/> で報告する（黙って消さない）
     ///   5. once はラン内 1 回（<see cref="ResetRun"/> でクリア）
     ///   6. ライブ卓の抑止中は発火しない
     ///   6b. **開始規則「このラインを通過したら」（at=line）** は時刻ではなく床のラインの横断で due になる
@@ -59,12 +63,29 @@ namespace FixedCamVr.Streaming
             public bool forced;        // EndTake: watchdog による強制終了
         }
 
-        // 武装中の enter 演出の状態。
+        // 武装中の enter / line 演出の状態。
         private enum Armed : byte
         {
-            Waiting = 0,        // まだ発火時刻に達していない
-            DeferredToExit = 1, // 発火時刻を過ぎたが他が走っていた → 離脱時のみ発火しうる
+            Waiting = 0,        // まだ開始条件を満たしていない
+            DeferredToExit = 1, // ライブ卓の介入中に条件を満たした → 離脱時のみ発火しうる
+            Ready = 2,          // 開始条件を満たした。画面が空き次第この区間で発火する
         }
+
+        /// <summary>演出が破棄された理由。</summary>
+        public enum DropReason
+        {
+            /// <summary>区間を離れる瞬間、画面が空いていなかった（別の演出 / ライブ卓が使用中）。</summary>
+            ScreenBusyAtExit = 0,
+            /// <summary>区間を離れる瞬間、他の演出が先に選ばれた（同時 1 本の原則）。</summary>
+            LostToAnotherTake = 1,
+        }
+
+        /// <summary>
+        /// 演出を破棄したときの通知（takeIndex, 理由）。**黙って消さない**ための唯一の出口。
+        /// 設計 §6.3-1 が約束していた「破棄 + 警告ログ」の実体（2026-07-27 に実装）。
+        /// <see cref="TakeRunner"/> は警告ログへ、シミュレータはトレースの <c>drop</c> イベントへ流す。
+        /// </summary>
+        public Action<int, DropReason>? TakeDropped;
 
         private Def[] _defs = Array.Empty<Def>();
         private bool[] _fired = Array.Empty<bool>();
@@ -154,15 +175,20 @@ namespace FixedCamVr.Streaming
             if (hadPrev)
             {
                 // 離脱の瞬間: 配列順で最初に該当する 1 本だけ発火し、残りは破棄する（不変条件 7）。
-                if (!_running && !_suppressed)
+                bool screenBusy = _running || _suppressed;
+                int pick = FindExitCandidate(prevLap, prevCam);
+                if (pick >= 0 && !screenBusy)
                 {
-                    int pick = FindExitCandidate(prevLap, prevCam);
-                    if (pick >= 0)
-                    {
-                        StartTake(pick, now, newCam);
-                        result = BeginStepDecision(takeStarted: true);
-                    }
+                    StartTake(pick, now, newCam);
+                    result = BeginStepDecision(takeStarted: true);
                 }
+                else
+                {
+                    // 画面が空いていない / 出す資格のあるものが無い。出せなかったものは**黙って消さず報告する**
+                    //（設計 §6.3-1「離脱時にもまだ走行中なら破棄 + 警告ログ」の実体）。
+                    pick = -1;
+                }
+                ReportRemainingDrops(prevLap, prevCam, pick, screenBusy);
                 ClearArmed();
             }
 
@@ -181,12 +207,20 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Decision Tick(float now, int latestZoneCam, LineCrossLogic.State[]? lines = null)
         {
+            // ① 開始条件を満たした瞬間を **必ず記録する**（画面が塞がっていても取りこぼさない）。
+            //    ライントリガーは「横切った」という事象で、猶予 CrossLatchSec（0.6s）で消えるため、
+            //    ここで拾わないと「別の演出が走っていた」だけで永久に失われる。
+            LatchReady(now, lines);
+
             if (_running)
             {
                 if (now >= _deadline)
                     return EndTakeDecision(latestZoneCam, forced: true);
 
-                ResolveOverdueWhileBlocked(now, lines);
+                // ⚠ ここで武装中の演出を決着させない（旧実装はしていた）。
+                //   画面が塞がっているのは**システム内部の都合**なので、著作された演出を捨てる理由にならない。
+                //   その区間に居るあいだは Ready のまま待ち、この演出が終わった次の Tick で発火する。
+                //   区間を出れば OnZoneCommitted が ifMissed どおりに決着させる（不変条件 4 は不変）。
 
                 if (now >= _stepEnd)
                 {
@@ -205,22 +239,19 @@ namespace FixedCamVr.Streaming
 
             if (_suppressed)
             {
-                // 抑止中に発火条件を満たしたものも「待たせない」（離脱時発火 or 破棄へ落とす）。
-                ResolveOverdueWhileBlocked(now, lines);
+                // ライブ卓の介入は**人間の明示的な判断**なので、その間に条件を満たした演出は待たせずに決着させる
+                //（オペレータが画面を握っている最中に、解放した瞬間へ演出を溜め込まない）。
+                SettleReadyWhileSuppressed();
                 return default;
             }
 
-            int pick = FindDue(now, lines);
-            if (pick < 0)
-            {
-                ResolveOverdueWhileBlocked(now, lines);
-                return default;
-            }
+            int pick = FindReady();
+            if (pick < 0) return default;
 
             RemoveArmedAt(pick, out int takeIndex);
             StartTake(takeIndex, now, _hasCurrent ? _curCam : 0);
-            // 同時に発火条件を迎えていた他の演出は、この 1 本に譲って決着する。
-            ResolveOverdueWhileBlocked(now, lines);
+            // 同時に条件を満たした他の演出は Ready のまま残り、この 1 本が終わったら順に出る
+            //（同一区間に居るあいだだけ。区間を出れば決着する）。
             return BeginStepDecision(takeStarted: true);
         }
 
@@ -315,11 +346,18 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        // 発火条件を満たした Waiting のうち先頭を返す（無ければ -1）。
-        private int FindDue(float now, LineCrossLogic.State[]? lines)
+        // 開始条件を満たした武装スロットを Ready にする（**事象の取りこぼしを防ぐ唯一の場所**）。
+        private void LatchReady(float now, LineCrossLogic.State[]? lines)
         {
             for (int k = 0; k < _armedIndex.Count; k++)
-                if (_armedState[k] == Armed.Waiting && IsDue(k, now, lines)) return k;
+                if (_armedState[k] == Armed.Waiting && IsDue(k, now, lines)) _armedState[k] = Armed.Ready;
+        }
+
+        // 発火を待っている先頭の Ready を返す（無ければ -1）。
+        private int FindReady()
+        {
+            for (int k = 0; k < _armedIndex.Count; k++)
+                if (_armedState[k] == Armed.Ready) return k;
             return -1;
         }
 
@@ -339,16 +377,39 @@ namespace FixedCamVr.Streaming
             return s.camera < 0 || s.camera == d.camera;
         }
 
-        // 走行中 / 抑止中に発火条件を満たしたものを決着させる（待たせない）。
-        //   skip        → 武装から外して破棄
+        // ライブ卓の介入中に条件を満たしたものを決着させる（待たせない）。
+        //   skip        → 武装から外して破棄（報告する）
         //   fireOnExit  → 離脱時のみ発火しうる状態へ落とす
-        private void ResolveOverdueWhileBlocked(float now, LineCrossLogic.State[]? lines)
+        private void SettleReadyWhileSuppressed()
         {
             for (int k = _armedIndex.Count - 1; k >= 0; k--)
             {
-                if (_armedState[k] != Armed.Waiting || !IsDue(k, now, lines)) continue;
-                if (_defs[_armedIndex[k]].skipWhenMissed) RemoveArmedAt(k, out _);
+                if (_armedState[k] != Armed.Ready) continue;
+                if (_defs[_armedIndex[k]].skipWhenMissed)
+                {
+                    int dropped = _armedIndex[k];
+                    RemoveArmedAt(k, out _);
+                    TakeDropped?.Invoke(dropped, DropReason.ScreenBusyAtExit);
+                }
                 else _armedState[k] = Armed.DeferredToExit;
+            }
+        }
+
+        // 離脱時、「出る資格があったのに出られずに終わる」演出を報告する。
+        // 「同時 1 本」で捨てるのは設計どおりだが、**捨てたことは必ず言う**（黙って消さない）。
+        // skip 指定のものは著作者が「出さない」と言っているので報告しない。
+        private void ReportRemainingDrops(int lap, int camera, int firedIndex, bool screenBusy)
+        {
+            if (TakeDropped == null) return;
+            for (int i = 0; i < _defs.Length; i++)
+            {
+                if (i == firedIndex) continue;
+                Def d = _defs[i];
+                if (d.lap != lap || d.camera != camera) continue;
+                if (d.stepDurSec.Length == 0) continue;
+                if (d.once && _fired[i]) continue;
+                if (!d.onExit && (d.skipWhenMissed || !IsArmed(i))) continue;
+                TakeDropped.Invoke(i, screenBusy ? DropReason.ScreenBusyAtExit : DropReason.LostToAnotherTake);
             }
         }
 

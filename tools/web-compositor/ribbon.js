@@ -281,6 +281,19 @@ export function createRibbon(container, deps) {
     return null;
   }
 
+  // ---- 「作っても実機が honour できない組み合わせ」を作らせないための判定 -------------
+  //   実行側は「画面は 1 つ・同時に走る演出は 1 本」なので、構造的に必ず死ぬ組み合わせがある。
+  //   それらは警告ではなく **UI で選べなくする**（ユーザー指示 2026-07-27）。
+
+  /** その区間のカメラが担当する通過ライン（これが無ければ at=line は発火しようがない）。 */
+  function ownLinesOf(camera) { return lines.filter((l) => l.camera === camera); }
+
+  /** その区間に既にある「離脱時」の演出（except を除く）。離脱時に出られるのは 1 本だけ。 */
+  function exitTakeOf(lap, camera, except) {
+    const seg = segAt(lap, camera);
+    return ((seg && seg.takes) || []).find((t) => t.at === TAKE.AT_EXIT && t !== except) || null;
+  }
+
   function takeIssue(t, camera) {
     if (!t.steps || !t.steps.length) return 'カットが 1 枚もありません（発火しません）';
     const lineBad = lineIssue(t, camera);
@@ -618,7 +631,7 @@ export function createRibbon(container, deps) {
       drag.el.classList.add('dragging');   // pointer-events:none（下の区間を拾うため）
       dropHint.style.display = '';
     }
-    const info = dropAt(e.clientX, e.clientY);
+    const info = dropAt(e.clientX, e.clientY, drag.t);
     drag.drop = info;
     container.querySelectorAll('.rb-seg.drop, .rb-seg.drop-exit').forEach((s) => s.classList.remove('drop', 'drop-exit'));
     if (info) {
@@ -638,14 +651,18 @@ export function createRibbon(container, deps) {
     dropHint.style.left = `${e.clientX + 14}px`;
     dropHint.style.top = `${e.clientY + 16}px`;
   }
-  function dropAt(cx, cy) {
+  function dropAt(cx, cy, dragged) {
     const hit = document.elementFromPoint(cx, cy);
     const segEl = hit && hit.closest ? hit.closest('.rb-seg') : null;
     if (!segEl || !container.contains(segEl)) return null;
     const lap = parseInt(segEl.dataset.lap, 10);
     const cam = parseInt(segEl.dataset.cam, 10);
     const r = segEl.getBoundingClientRect();
-    if (cx > r.right - MAGNET) return { lap, cam, at: TAKE.AT_EXIT, el: segEl };
+    // 右端へ吸着＝離脱時。ただし既に離脱時の演出がある区間へは吸着させない
+    //（2 本目は配列順で必ず負けて出ないので、そもそも作らせない）。
+    if (cx > r.right - MAGNET && !exitTakeOf(lap, cam, dragged)) {
+      return { lap, cam, at: TAKE.AT_EXIT, el: segEl };
+    }
     const sec = Math.max(0, Math.round(((cx - r.left - LANE_PAD) / PX) * 2) / 2);
     return { lap, cam, at: TAKE.AT_ENTER, offsetSec: sec, el: segEl };
   }
@@ -765,9 +782,19 @@ export function createRibbon(container, deps) {
       list.appendChild(b);
     });
     inspectorEl.querySelector('.rb-add-enter').onclick = () => addTake(sel.lap, sel.camera, TAKE.AT_ENTER);
-    inspectorEl.querySelector('.rb-add-exit').onclick = () => addTake(sel.lap, sel.camera, TAKE.AT_EXIT);
+
+    // 「離脱時」は 1 区間 1 本まで。2 本目は配列順で必ず負けて出ないので、作らせない。
+    const addExitBtn = inspectorEl.querySelector('.rb-add-exit');
+    const existingExit = exitTakeOf(sel.lap, sel.camera, null);
+    if (existingExit) {
+      addExitBtn.disabled = true;
+      addExitBtn.title = `離脱時に出せるのは 1 本だけです（既に「${existingExit.name || '離脱の演出'}」があります）`;
+    } else {
+      addExitBtn.onclick = () => addTake(sel.lap, sel.camera, TAKE.AT_EXIT);
+    }
+
     const addLineBtn = inspectorEl.querySelector('.rb-add-line');
-    const ownLines = lines.filter((l) => l.camera === sel.camera);
+    const ownLines = ownLinesOf(sel.camera);
     if (!ownLines.length) {
       // この区間のカメラが担当するラインが無い状態で作らせない（作っても発火しない演出が増えるだけ）。
       addLineBtn.disabled = true;
@@ -975,7 +1002,9 @@ export function createRibbon(container, deps) {
     const enter = t.at === TAKE.AT_ENTER;
     // ラインの選択肢は **この区間のカメラが担当するものだけ**（他カメラのラインは実機で発火しない）。
     // すでに別担当のラインが入っている show.json は、それも出して警告つきで見せる。
-    const ownLines = lines.filter((l) => l.camera === sel.camera);
+    const ownLines = ownLinesOf(sel.camera);
+    // 「離脱時」に出られるのは 1 区間 1 本だけ。既に別の 1 本があるなら選ばせない。
+    const otherExit = exitTakeOf(sel.lap, sel.camera, t);
     const lineOpts = ['<option value="">（ラインを選ぶ）</option>']
       .concat(ownLines.map((l) => `<option value="${escapeHtml(l.id)}"${t.lineId === l.id ? ' selected' : ''}>`
         + `${escapeHtml(l.label || l.id)}${escapeHtml(dirMark(l.dir))}</option>`))
@@ -999,8 +1028,8 @@ export function createRibbon(container, deps) {
           <label>名前<input class="rb-t-name" type="text" value="${escapeHtml(t.name || '')}" placeholder="演出名（表示だけ）"></label>
           <label>開始<select class="rb-t-at">
             <option value="${TAKE.AT_ENTER}"${enter ? ' selected' : ''}>進入から</option>
-            <option value="${TAKE.AT_EXIT}"${t.at === TAKE.AT_EXIT ? ' selected' : ''}>離脱時（この区間を離れる瞬間）</option>
-            <option value="${TAKE.AT_LINE}"${onLine ? ' selected' : ''}${lines.length ? '' : ' disabled'}>このラインを通過したら</option>
+            <option value="${TAKE.AT_EXIT}"${t.at === TAKE.AT_EXIT ? ' selected' : ''}${otherExit ? ' disabled' : ''}>離脱時（この区間を離れる瞬間）${otherExit ? '— 既に 1 本あります' : ''}</option>
+            <option value="${TAKE.AT_LINE}"${onLine ? ' selected' : ''}${ownLines.length ? '' : ' disabled'}>このラインを通過したら${ownLines.length ? '' : `— ${camLabel(sel.camera)} 担当のラインがありません`}</option>
           </select></label>
           <label class="rb-t-off-l" style="display:${enter ? '' : 'none'}">+<input class="rb-t-off" type="number" min="0" step="0.5" value="${t.offsetSec || 0}">s</label>
           <label class="rb-t-line-l" style="display:${onLine ? '' : 'none'}"

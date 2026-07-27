@@ -19,6 +19,7 @@ import {
   runScenario, parseScenario, createShowRunner, sampleAt,
   pickZone, containsBox, boxAabb, ZoneProgression, SwitchDirector, LapCounter,
   LineCross, line, lineUndefined, LINE_REARM_MARGIN_M, LINE_MAX_STEP_M,
+  TakeRunner, TAKE_ACTION, DROP_REASON,
   DEFAULT_TICK_MS,
 } from './scenario-engine.js';
 
@@ -116,6 +117,66 @@ test('スタート区間の演出は、一度出て戻らなくても武装さ�
   const tr = runScenario(c, still);
   assert.ok(tr.some((e) => e.kind === 'take' && e.id === 't_start'),
     'スタート領域に居るだけで 1 周目の演出が発火する');
+});
+
+// ---- 画面待ち（2026-07-27 改訂）: 同じ区間に居るあいだは捨てずに待つ ------------
+
+test('走行中に条件を満たした演出は、画面が空いたら同じ区間で出る', () => {
+  // 実害の再現: B の離脱演出 8 秒が C の滞在を覆い、C の進入演出が一度も出なかった。
+  const r = new TakeRunner();
+  r.setDefs([
+    { lap: 1, camera: 0, onExit: false, offsetSec: 0, skipWhenMissed: false, once: true,
+      maxDurationSec: 0, yieldOnZoneChange: false, stepDurSec: [10], onLine: false, lineIndex: -1 },
+    { lap: 1, camera: 0, onExit: false, offsetSec: 2, skipWhenMissed: true, once: true,
+      maxDurationSec: 0, yieldOnZoneChange: false, stepDurSec: [3], onLine: false, lineIndex: -1 },
+  ]);
+  r.onZoneCommitted(1, 0, false, 1, 0, 0);
+  assert.equal(r.tick(0, 0).takeIndex, 0, '先に来た方が走る');
+  r.tick(2, 0);
+  assert.equal(r.armedCount, 1, '捨てずに武装したまま待つ');
+  assert.equal(r.tick(10, 0).action, TAKE_ACTION.END_TAKE);
+  const d = r.tick(10, 0);
+  assert.equal(d.action, TAKE_ACTION.BEGIN_STEP);
+  assert.equal(d.takeIndex, 1, '画面が空いたら出る');
+});
+
+test('待っても間に合わなければ捨てるが、必ず報告する', () => {
+  const r = new TakeRunner();
+  r.setDefs([
+    { lap: 1, camera: 0, onExit: false, offsetSec: 0, skipWhenMissed: false, once: true,
+      maxDurationSec: 0, yieldOnZoneChange: false, stepDurSec: [30], onLine: false, lineIndex: -1 },
+    { lap: 1, camera: 0, onExit: false, offsetSec: 2, skipWhenMissed: false, once: true,
+      maxDurationSec: 0, yieldOnZoneChange: false, stepDurSec: [3], onLine: false, lineIndex: -1 },
+  ]);
+  const dropped = [];
+  r.onTakeDropped = (i, reason) => dropped.push([i, reason]);
+  r.onZoneCommitted(1, 0, false, 1, 0, 0);
+  r.tick(0, 0);
+  r.tick(2, 0);
+  r.onZoneCommitted(1, 1, true, 1, 0, 5);   // 画面が塞がったまま離脱
+  assert.equal(r.armedCount, 0, '離脱で必ず決着する');
+  assert.deepStrictEqual(dropped, [[1, DROP_REASON.SCREEN_BUSY]]);
+});
+
+test('走行中に横切ったラインは覚えていて、画面が空いたら出る', () => {
+  // 横断は事象で猶予 0.6s しか残らない。ラッチしないと「別の演出が走っていた」だけで永久に失われる。
+  const crossed = (t, cam) => [{ crossed: true, crossedAtSec: t, camera: cam }];
+  const notCrossed = (cam) => [{ crossed: false, crossedAtSec: -Infinity, camera: cam }];
+  const r = new TakeRunner();
+  r.setDefs([
+    { lap: 2, camera: 1, onExit: false, offsetSec: 0, skipWhenMissed: false, once: true,
+      maxDurationSec: 0, yieldOnZoneChange: false, stepDurSec: [10], onLine: false, lineIndex: -1 },
+    { lap: 2, camera: 1, onExit: false, offsetSec: 0, skipWhenMissed: true, once: true,
+      maxDurationSec: 0, yieldOnZoneChange: false, stepDurSec: [3], onLine: true, lineIndex: 0 },
+  ]);
+  r.onZoneCommitted(2, 1, false, 2, 1, 0);
+  r.tick(0, 1, notCrossed(1));
+  r.tick(2, 1, crossed(2, 1));          // 走行中に横切った
+  assert.equal(r.armedCount, 1, '横断を覚えておく（猶予切れで消さない）');
+  r.tick(10, 1, notCrossed(1));         // 走行中の演出が終了
+  const d = r.tick(10, 1, notCrossed(1));
+  assert.equal(d.action, TAKE_ACTION.BEGIN_STEP);
+  assert.equal(d.takeIndex, 1);
 });
 
 test('dwell 未満の踏み込みは確定しない（境界のうろつき）', () => {

@@ -180,22 +180,62 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.Tick(5f, 1).action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
         }
 
-        // ---- 不変条件 1 / §6.3-1: 同時 1 本・待たせない ----
+        // ---- 不変条件 1 / §6.3-1: 同時 1 本・同じ区間に居るあいだは画面を待つ ----
 
         [Test]
-        public void SecondTake_DoesNotWait_WhileAnotherRuns()
+        public void SecondTake_WaitsForTheScreen_ThenFiresInTheSameSegment()
         {
+            // 2026-07-27 変更。旧実装は「待たせない」＝ここで捨てていたため、
+            // 著作した演出が黙って消えた（ユーザー報告: B の離脱演出中に C へ入ると C の演出が出ない）。
             var a = Enter(1, 0, 0f, 10f);
             var b = Enter(1, 0, 2f, 3f);
-            b.skipWhenMissed = true;
+            b.skipWhenMissed = true;   // skip でも「画面待ち」では捨てない（skip は体験者が通り過ぎた時の話）
             var l = Make(a, b);
             Enter(l, 1, 0, 0f);
             Assert.That(l.Tick(0f, 0).takeIndex, Is.EqualTo(0), "先に来た方が走る");
-            l.Tick(2f, 0);                                   // b の発火時刻を跨ぐ（skip なので破棄）
-            Assert.That(l.ArmedCount, Is.EqualTo(0));
+            l.Tick(2f, 0);                                   // b の発火時刻を跨ぐ（捨てずに待つ）
+            Assert.That(l.ArmedCount, Is.EqualTo(1), "武装したまま画面の空きを待つ");
             Assert.That(l.Tick(10f, 0).action, Is.EqualTo(TakeRunnerLogic.Action.EndTake));
-            Assert.That(l.Tick(11f, 0).action, Is.EqualTo(TakeRunnerLogic.Action.None),
-                "終了後に取り逃した演出が遅れて始まらない");
+            TakeRunnerLogic.Decision d = l.Tick(10f, 0);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+            Assert.That(d.takeIndex, Is.EqualTo(1), "画面が空いたら同じ区間で出る");
+        }
+
+        [Test]
+        public void WaitingTake_IsDroppedAndReported_WhenSegmentEndsWhileScreenBusy()
+        {
+            // 待っても間に合わなかった場合は捨てる（遅れて別区間で出さない = 不変条件 4）。
+            // ただし **黙っては消さない** — 設計 §6.3-1 が約束していた「破棄 + 警告ログ」。
+            var a = Enter(1, 0, 0f, 30f);   // 長い演出が画面を占有し続ける
+            var b = Enter(1, 0, 2f, 3f);
+            var l = Make(a, b);
+            var dropped = new List<(int, TakeRunnerLogic.DropReason)>();
+            l.TakeDropped = (i, r) => dropped.Add((i, r));
+
+            Enter(l, 1, 0, 0f);
+            l.Tick(0f, 0);                  // a 開始
+            l.Tick(2f, 0);                  // b は条件を満たすが画面待ち
+            Enter(l, 1, 1, 5f, hadPrev: true, prevLap: 1, prevCam: 0);   // 画面が塞がったまま離脱
+
+            Assert.That(l.ArmedCount, Is.EqualTo(0), "離脱で必ず決着する");
+            Assert.That(dropped, Is.EqualTo(new[] { (1, TakeRunnerLogic.DropReason.ScreenBusyAtExit) }),
+                "出せなかったことを必ず報告する");
+        }
+
+        [Test]
+        public void LosingTake_IsReported_WhenAnotherWinsAtExit()
+        {
+            // 離脱時に出られるのは 1 本だけ。選ばれなかった方も報告する。
+            var a = Exit(1, 0, 2f);
+            var b = Exit(1, 0, 2f);
+            var l = Make(a, b);
+            var dropped = new List<(int, TakeRunnerLogic.DropReason)>();
+            l.TakeDropped = (i, r) => dropped.Add((i, r));
+
+            Enter(l, 1, 0, 0f);
+            TakeRunnerLogic.Decision d = Enter(l, 1, 1, 1f, hadPrev: true, prevLap: 1, prevCam: 0);
+            Assert.That(d.takeIndex, Is.EqualTo(0), "配列順で先頭が勝つ");
+            Assert.That(dropped, Is.EqualTo(new[] { (1, TakeRunnerLogic.DropReason.LostToAnotherTake) }));
         }
 
         [Test]
@@ -336,8 +376,13 @@ namespace FixedCamVr.Streaming.Tests
             TakeRunnerLogic.Decision end = l.Tick(30f, 2);
             Assert.That(end.action, Is.EqualTo(TakeRunnerLogic.Action.EndTake));
             Assert.That(end.returnCamera, Is.EqualTo(2), "復帰先はいまの C");
-            Assert.That(l.Tick(31f, 2).action, Is.EqualTo(TakeRunnerLogic.Action.None),
-                "通過した B の演出が後から湧かない");
+
+            // 不変条件 4 が守るのは「**もう居ない**区間の演出が後から湧かないこと」。
+            // いま居る C の演出は画面待ちだっただけなので、空いたら出る（2026-07-27 変更）。
+            TakeRunnerLogic.Decision after = l.Tick(31f, 2);
+            Assert.That(after.takeIndex, Is.Not.EqualTo(1), "通過した B の演出は後から湧かない");
+            Assert.That(after.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+            Assert.That(after.takeIndex, Is.EqualTo(2), "いま居る C の演出は画面が空いて出る");
         }
 
         // ---- policy: yield（体験者が区間を移ったら打ち切る） ----
@@ -501,19 +546,40 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Line_CrossedWhileAnotherTakeRuns_DoesNotWait()
+        public void Line_CrossedWhileAnotherTakeRuns_FiresWhenTheScreenFrees()
         {
+            // 横断は**事象**で猶予 0.6s しか残らない。走行中に Ready へラッチしておかないと
+            // 「別の演出が走っていた」だけで永久に失われる（2026-07-27 の取りこぼし対策）。
             var running = Enter(2, 1, 0f, 10f);
             var line = Line(2, 1, 0, 3f);
             line.skipWhenMissed = true;
             var l = Make(running, line);
             Enter(l, 2, 1, 0f);
-            l.Tick(0f, 1, NotCrossed(1));                          // 先の演出が走る
-            l.Tick(2f, 1, Crossed(2f, 1));                             // 走行中に横切った → 破棄
-            Assert.That(l.ArmedCount, Is.EqualTo(0));
-            l.Tick(10f, 1, NotCrossed(1));                         // 走行中の演出が終了
-            Assert.That(l.Tick(11f, 1, NotCrossed(1)).action, Is.EqualTo(TakeRunnerLogic.Action.None),
-                "終わった後にライントリガーが遅れて始まらない（§6.3-1 待たせない）");
+            l.Tick(0f, 1, NotCrossed(1));                    // 先の演出が走る
+            l.Tick(2f, 1, Crossed(2f, 1));                   // 走行中に横切った → Ready で保持
+            Assert.That(l.ArmedCount, Is.EqualTo(1), "横断は覚えておく（猶予切れで消さない）");
+            l.Tick(10f, 1, NotCrossed(1));                   // 走行中の演出が終了
+            TakeRunnerLogic.Decision d = l.Tick(10f, 1, NotCrossed(1));
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep),
+                "画面が空いたら、同じ区間に居る限り出る");
+            Assert.That(d.takeIndex, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Line_CrossedWhileAnotherTakeRuns_DroppedAndReported_IfSegmentEndsFirst()
+        {
+            var running = Enter(2, 1, 0f, 30f);
+            var line = Line(2, 1, 0, 3f);
+            var l = Make(running, line);
+            var dropped = new List<(int, TakeRunnerLogic.DropReason)>();
+            l.TakeDropped = (i, r) => dropped.Add((i, r));
+
+            Enter(l, 2, 1, 0f);
+            l.Tick(0f, 1, NotCrossed(1));
+            l.Tick(2f, 1, Crossed(2f, 1));                   // 走行中に横切った
+            Enter(l, 2, 2, 5f, hadPrev: true, prevLap: 2, prevCam: 1);
+            Assert.That(dropped, Is.EqualTo(new[] { (1, TakeRunnerLogic.DropReason.ScreenBusyAtExit) }),
+                "線を踏んだのに出せなかったことは必ず報告する");
         }
 
         [Test]
