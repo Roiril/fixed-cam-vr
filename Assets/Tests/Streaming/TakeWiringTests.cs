@@ -63,6 +63,10 @@ namespace FixedCamVr.Streaming.Tests
             SetField(dir, "dipUpSec", 0f);
             SetField(dir, "switchCooldownSec", 0f);
             SetField(dir, "minDwellSec", 0f);
+            // dip の dt を固定する（EditMode の Time.unscaledDeltaTime = エディタの実フレーム間隔だと
+            // カットの遷移秒（既定 170ms）が run ごとの fps で満たされたり満たされなかったりする）。
+            // 1 フレーム = 1 秒とみなすので、Director.Update 1 回で dip の各相が必ず終わる。
+            dir.SetDeltaSource(() => 1f);
             Invoke(dir, "Awake");
             Invoke(dir, "OnEnable");
             return dir;
@@ -75,10 +79,16 @@ namespace FixedCamVr.Streaming.Tests
 
         // ---- show.json v3 のミニ定義 ----
 
+        // 遷移は **cut（瞬時）** を既定にする。既定の dip にすると 1 カットあたり 170ms の実時間が要り、
+        // EditMode の Time.unscaledDeltaTime（= エディタの実フレーム間隔。フォーカス中は 7〜16ms、
+        // 非フォーカス時は数百 ms）に結果が左右されて **run ごとに落ちる / 通る** が変わる
+        // （2026-07-27 に実際に 7 件同時に落ちた）。遷移そのものの検査は
+        // CutTransition_* / DipTransition_* が明示的に指定して行う。
         private static ShowStepDef LiveStep(int camera, float durSec) => new()
         {
             source = TakeSchema.SourceLive, camera = camera,
             durKind = TakeSchema.DurSec, durSec = durSec,
+            transition = TakeSchema.TransCut,
         };
 
         private static ShowStepDef ClipStep(string url, float durSec) => new()
@@ -211,6 +221,7 @@ namespace FixedCamVr.Streaming.Tests
             {
                 source = TakeSchema.SourceLive, camera = 3,
                 durKind = TakeSchema.DurUntilClipEnd, durSec = 0f,
+                transition = TakeSchema.TransCut,   // 実フレーム時間に依存させない（LiveStep と同じ理由）
             };
             var take = EnterTake("stuck", step);
             take.maxDurationSec = 5f;
@@ -314,6 +325,10 @@ namespace FixedCamVr.Streaming.Tests
             };
             var segments = new[] { v2Seg };
             TimelineMigration.EnsureTakes(new ShowTimelineDef { rev = 1, segments = segments });
+            // 変換結果の遷移は dip（v2 insert の意味として正しい）。ここは「変換 → 実行」の経路検査なので、
+            // 実フレーム時間に依存しない cut へ落としてから走らせる（LiveStep と同じ理由）。
+            // dip 自体の計時は DipTransition_TakesTimeBeforeSwitching が見ている。
+            v2Seg.takes[0].steps[0].transition = TakeSchema.TransCut;
 
             Rig rig = MakeRig();
             rig.Timeline.SetTimeline(segments);

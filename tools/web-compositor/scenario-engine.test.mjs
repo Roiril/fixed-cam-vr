@@ -18,11 +18,14 @@ import { readFileSync } from 'node:fs';
 import {
   runScenario, parseScenario, createShowRunner, sampleAt,
   pickZone, containsBox, boxAabb, ZoneProgression, SwitchDirector, LapCounter,
+  SpotTrigger, spot, spotUndefined, SPOT_EXIT_MARGIN_M, SPOT_MIN_RADIUS_M,
   DEFAULT_TICK_MS,
 } from './scenario-engine.js';
 
 const SCENARIO_URL = new URL('../../Assets/Tests/Fixtures/scenario_walk.json', import.meta.url);
 const TRACE_URL = new URL('../../Assets/Tests/Fixtures/scenario_walk.trace.json', import.meta.url);
+const SPOT_SCENARIO_URL = new URL('../../Assets/Tests/Fixtures/scenario_spot.json', import.meta.url);
+const SPOT_TRACE_URL = new URL('../../Assets/Tests/Fixtures/scenario_spot.trace.json', import.meta.url);
 
 const scenario = JSON.parse(readFileSync(SCENARIO_URL, 'utf8'));
 const golden = JSON.parse(readFileSync(TRACE_URL, 'utf8'));
@@ -102,6 +105,78 @@ test('dwell 未満の踏み込みは確定しない（境界のうろつき）',
     { tMs: 2000, x: -0.6, z: 0 },
   ];
   assert.ok(!runScenario(cfg, wobble).some((e) => e.kind === 'zone'));
+});
+
+// ---- 位置トリガー（at=spot・golden は Unity 側が生成した正本）--------------------
+
+const spotScenario = JSON.parse(readFileSync(SPOT_SCENARIO_URL, 'utf8'));
+const spotGolden = JSON.parse(readFileSync(SPOT_TRACE_URL, 'utf8'));
+const spotRun = parseScenario(spotScenario);
+const spotTrace = runScenario(spotRun.cfg, spotRun.samples);
+
+test('golden(spot): イベント列が Unity トレースと完全一致する', () => {
+  assert.deepStrictEqual(spotTrace.map(shape), spotGolden.map(shape),
+    `位置トリガーのトレースが golden と違う。\n JS  : ${spotTrace.map(fmt).join('\n JS  : ')}`
+    + `\n GOLD: ${spotGolden.map(fmt).join('\n GOLD: ')}`);
+});
+
+test('golden(spot): 各イベントの時刻が ±1 tick 以内', () => {
+  assert.equal(spotTrace.length, spotGolden.length, 'イベント数が違う');
+  spotTrace.forEach((e, i) => {
+    assert.ok(Math.abs(e.t - spotGolden[i].t) <= DEFAULT_TICK_MS,
+      `#${i} ${e.kind} の時刻が ${Math.abs(e.t - spotGolden[i].t)}ms ずれている`);
+  });
+});
+
+test('位置トリガー: 立ち止まれば出る / 長すぎる hold は出ない / 踏んだ瞬間に出る', () => {
+  const ids = spotTrace.filter((e) => e.kind === 'take').map((e) => e.id);
+  assert.ok(ids.includes('t_C_stand'), '0.5s 立ち止まったので出る');
+  assert.ok(!ids.includes('t_C_long'), '3s の立ち止まりは満たさない');
+  assert.ok(ids.includes('t_B_pass'), 'hold 0 は踏んだ瞬間に出る');
+  assert.ok(ids.includes('t_C_miss'), '踏まないまま離脱 → fireOnExit で出る');
+});
+
+test('位置トリガー: 円が無ければ（layout.spots 未著作）沈黙する', () => {
+  const c = parseScenario(spotScenario);
+  c.cfg.spots = [];
+  const ids = runScenario(c.cfg, c.samples).filter((e) => e.kind === 'take').map((e) => e.id);
+  assert.deepStrictEqual(ids, ['t_C_miss'], 'fireOnExit の 1 本だけが離脱時に出る');
+});
+
+test('SpotTrigger: 入るのは半径 / 出るのはヒステリシス込み', () => {
+  const s = new SpotTrigger();
+  s.setSpots([spot(0, 0, 0.25)]);
+  s.tick(0.28, 0, 0.02);
+  assert.equal(s.isInside(0), false, '入る判定は素の半径');
+  s.tick(0.2, 0, 0.02);
+  assert.equal(s.isInside(0), true);
+  s.tick(0.25 + SPOT_EXIT_MARGIN_M - 0.01, 0, 0.02);
+  assert.equal(s.isInside(0), true, 'マージンの内はまだ中');
+  s.tick(0.25 + SPOT_EXIT_MARGIN_M + 0.01, 0, 0.02);
+  assert.equal(s.isInside(0), false);
+});
+
+test('SpotTrigger: 滞在秒は連続で数え、出たら 0 / dt 不連続でも数え直す', () => {
+  const s = new SpotTrigger();
+  s.setSpots([spot(0, 0, 0.25)]);
+  s.tick(0, 0, 0.02);
+  assert.equal(s.insideSecOf(0), 0, '入った瞬間は 0');
+  for (let i = 0; i < 25; i++) s.tick(0, 0, 0.02);
+  assert.ok(Math.abs(s.insideSecOf(0) - 0.5) < 0.01);
+  s.tick(0, 0, 3);                    // 復帰（HMD 着脱）相当の飛び
+  assert.equal(s.isInside(0), true);
+  assert.equal(s.insideSecOf(0), 0);
+  s.tick(2, 0, 0.02);
+  assert.equal(s.insideSecOf(0), 0, '出たら 0');
+});
+
+test('SpotTrigger: 実体の無い枠は常に外 / 半径 0 は下限へクランプ', () => {
+  const s = new SpotTrigger();
+  s.setSpots([spotUndefined(), spot(0, 0, 0)]);
+  s.tick(0, 0, 0.02);
+  assert.equal(s.isInside(0), false);
+  assert.equal(s.isInside(1), true, `半径 0 は ${SPOT_MIN_RADIUS_M}m へクランプ`);
+  assert.equal(s.count, 2, 'スロットは保たれる（index が動かない）');
 });
 
 // ---- 部品の単体（ZonePickLogic / 時計 / 画面 / 周回）---------------------------

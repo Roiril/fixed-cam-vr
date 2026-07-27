@@ -35,6 +35,22 @@ namespace FixedCamVr.Streaming
 
         private readonly TakeRunnerLogic _logic = new();
 
+        // 位置トリガー（床の円）の内外・滞在計時。show.json layout.spots から作る。
+        private readonly SpotTriggerLogic _spotTrigger = new();
+
+        // spotId → スロット index の割当。**session 内で不変**（layout が更新されても並べ替えない）。
+        // Def.spotIndex は SetTakes 時に確定するので、ここが動くと走行中の once 状態と食い違う。
+        private readonly List<string> _spotSlots = new();
+
+        // 位置トリガーを持つ演出があるか（無ければ HMD 位置を引きに行かない）。
+        private bool _hasSpotTakes;
+        private bool _warnedNoHeadProvider;
+        private string _warnedMissingSpots = "";
+
+        // 滞在計時用の前回時刻（dt は Now の差分で作る＝テストの時刻源差し替えでも動く）。
+        private bool _hasLastNow;
+        private float _lastNow;
+
         // 実行に必要な定義本体（_logic の Def と同じ並び）。
         private ShowTakeDef[] _takes = Array.Empty<ShowTakeDef>();
 
@@ -93,6 +109,18 @@ namespace FixedCamVr.Streaming
             if (_cgLayer == null && overlay != null) _cgLayer = overlay.gameObject.AddComponent<ShowCgLayer>();
         }
 
+        private void OnEnable()
+        {
+            // 位置トリガーの円は layout（ライブ / 端末キャッシュ / 焼き込み）から来る。
+            if (showControl != null) showControl.LayoutChanged += ApplySpotsFromLayout;
+            ApplySpotsFromLayout();
+        }
+
+        private void OnDisable()
+        {
+            if (showControl != null) showControl.LayoutChanged -= ApplySpotsFromLayout;
+        }
+
         /// <summary>cueId → 素材定義の解決関数を注入する（ShowControlClient に集約）。</summary>
         public void SetCueResolver(Func<string, OverlayCueData?> resolver) => _cueResolver = resolver;
 
@@ -127,6 +155,7 @@ namespace FixedCamVr.Streaming
 
             var takes = new List<ShowTakeDef>();
             var defs = new List<TakeRunnerLogic.Def>();
+            bool anySpot = false;
             foreach (ShowTimelineSegmentDef? seg in segments)
             {
                 if (seg?.takes == null) continue;
@@ -134,6 +163,9 @@ namespace FixedCamVr.Streaming
                 {
                     if (t == null) continue;
                     takes.Add(t);
+                    // 位置トリガーは spotId → スロット（未知 id も枠を取る = 円が後から来ても index が動かない）。
+                    bool onSpot = t.IsSpot && !string.IsNullOrEmpty(t.spotId);
+                    anySpot |= onSpot;
                     defs.Add(new TakeRunnerLogic.Def
                     {
                         lap = seg.lap,
@@ -145,11 +177,73 @@ namespace FixedCamVr.Streaming
                         maxDurationSec = t.maxDurationSec,
                         yieldOnZoneChange = t.IsYield,
                         stepDurSec = BuildStepDurations(t),
+                        onSpot = onSpot,
+                        spotIndex = onSpot ? SpotSlot(t.spotId) : -1,
+                        holdSec = t.holdSec,
                     });
+                    if (t.IsSpot && string.IsNullOrEmpty(t.spotId))
+                        Debug.LogWarning($"[TakeRunner] 位置トリガーの演出に位置が未指定 → 発火しない" +
+                                         $"（take={(string.IsNullOrEmpty(t.id) ? "?" : t.id)}）");
                 }
             }
             _takes = takes.ToArray();
+            _hasSpotTakes = anySpot;
             _logic.SetDefs(defs.ToArray());
+            // 新しく取った枠も含めて円を貼り直す（layout が既に来ていれば geometry が入る）。
+            ApplySpotsFromLayout();
+        }
+
+        // spotId のスロットを引く（無ければ末尾へ追加）。並べ替え・削除はしない。
+        private int SpotSlot(string id)
+        {
+            int i = _spotSlots.IndexOf(id);
+            if (i >= 0) return i;
+            _spotSlots.Add(id);
+            return _spotSlots.Count - 1;
+        }
+
+        /// <summary>
+        /// show.json <c>layout.spots</c> を位置トリガーの円へ取り込む。スロット割当（<see cref="_spotSlots"/>）は
+        /// 保ったまま geometry だけ差し替えるので、走行中に卓が円を動かしても once 状態は壊れない。
+        /// 演出が参照しているのに layout に無い id は「実体の無い枠」＝常に外（発火しない）。
+        /// </summary>
+        private void ApplySpotsFromLayout()
+        {
+            ShowSpotDef[] src = showControl != null && showControl.Layout != null && showControl.Layout.spots != null
+                ? showControl.Layout.spots
+                : Array.Empty<ShowSpotDef>();
+
+            foreach (ShowSpotDef? s in src)
+                if (s != null && !string.IsNullOrEmpty(s.id)) SpotSlot(s.id);
+
+            var spots = new SpotTriggerLogic.Spot[_spotSlots.Count];
+            foreach (ShowSpotDef? s in src)
+            {
+                if (s == null || string.IsNullOrEmpty(s.id)) continue;
+                int slot = _spotSlots.IndexOf(s.id);
+                if (slot >= 0) spots[slot] = SpotTriggerLogic.Spot.At(s.x, s.z, s.rM);
+            }
+            _spotTrigger.SetSpots(spots);
+            WarnMissingSpots(spots);
+        }
+
+        // 演出が参照しているのに layout に円が無い id を 1 回だけ列挙して警告する
+        //（黙って発火しない状態を作らない。卓側は保存時に警告を出す）。
+        private void WarnMissingSpots(SpotTriggerLogic.Spot[] spots)
+        {
+            var missing = new List<string>();
+            foreach (ShowTakeDef t in _takes)
+            {
+                if (!t.IsSpot || string.IsNullOrEmpty(t.spotId)) continue;
+                int slot = _spotSlots.IndexOf(t.spotId);
+                if (slot < 0 || slot >= spots.Length || !spots[slot].defined)
+                    if (!missing.Contains(t.spotId)) missing.Add(t.spotId);
+            }
+            string key = string.Join(",", missing);
+            if (key == _warnedMissingSpots) return;
+            _warnedMissingSpots = key;
+            if (missing.Count > 0)
+                Debug.LogWarning($"[TakeRunner] layout.spots に無い位置を参照している演出がある → 発火しない: {key}");
         }
 
         /// <summary>ラン開始（体験者交代）。走行中の演出を畳み、once をクリアする。</summary>
@@ -157,6 +251,9 @@ namespace FixedCamVr.Streaming
         {
             CleanupActive();
             _logic.ResetRun();
+            // 前の体験者が円の中に立っていた分の滞在計時を持ち越さない。
+            _spotTrigger.Reset();
+            _hasLastNow = false;
         }
 
         /// <summary>ゾーン確定（TimelineDirector 経由の deterministic (lap,camera)）を受ける。</summary>
@@ -178,9 +275,43 @@ namespace FixedCamVr.Streaming
                 _logic.NotifyCurrentStepFinished(Now);
             }
 
+            SpotTriggerLogic.State[]? spots = TickSpots();
             int latest = ResolveLatestZoneCamera();
-            TakeRunnerLogic.Decision d = _logic.Tick(Now, latest);
+            TakeRunnerLogic.Decision d = _logic.Tick(Now, latest, spots);
             Apply(d, exitAnchored: false);
+        }
+
+        /// <summary>
+        /// 位置トリガーを体験者の course 空間 XZ で進める。位置が取れない
+        /// （<see cref="ShowControlClient.HeadCourseXZProvider"/> 未注入 = 未登録 / HMD 参照なし）間は
+        /// null を返し、at=spot の演出は発火しない（従来の時刻トリガーは無影響）。
+        /// </summary>
+        private SpotTriggerLogic.State[]? TickSpots()
+        {
+            if (!_hasSpotTakes || _spotTrigger.Count == 0) return null;
+
+            Func<Vector2>? head = showControl != null ? showControl.HeadCourseXZProvider : null;
+            if (head == null)
+            {
+                if (!_warnedNoHeadProvider)
+                {
+                    _warnedNoHeadProvider = true;
+                    Debug.LogWarning("[TakeRunner] 体験者の位置が取れないため位置トリガーは発火しない" +
+                                     "（ZoneLayoutApplier の HMD 参照 / 位置合わせを確認）");
+                }
+                _spotTrigger.Reset();
+                _hasLastNow = false;
+                return null;
+            }
+
+            float now = Now;
+            float dt = _hasLastNow ? now - _lastNow : 0f;
+            _lastNow = now;
+            _hasLastNow = true;
+
+            Vector2 xz = head();
+            _spotTrigger.Tick(xz.x, xz.y, dt);
+            return _spotTrigger.StateView;
         }
 
         // 復帰先 = 時計が確定している「いま体験者が居るゾーン」> 演出開始時のゾーン（未確定時のみ）。

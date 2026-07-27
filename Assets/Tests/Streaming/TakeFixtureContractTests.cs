@@ -127,6 +127,26 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void SpotTake_ParsesPositionStartRule()
+        {
+            // 開始規則「この位置に来たら」（2026-07-27 追加）。時刻ではなく layout.spots の円で発火する。
+            ShowTakeDef t = Take(Load(), 3, 2);
+            Assert.That(t.at, Is.EqualTo(TakeSchema.AtSpot));
+            Assert.That(t.IsSpot, Is.True);
+            Assert.That(t.IsExit, Is.False);
+            Assert.That(t.spotId, Is.EqualTo("spot_doll"));
+            Assert.That(t.holdSec, Is.EqualTo(0.5f), "円の中に 0.5s 立ち止まったら発火");
+            Assert.That(t.offsetSec, Is.EqualTo(0f), "位置トリガーは進入からの秒数を持たない");
+            Assert.That(t.SkipWhenMissed, Is.True, "来なかったら出さない（卓の既定）");
+
+            // 時刻トリガーの演出は spot のキーを持たない（幽霊の位置指定を作らない）。
+            ShowTakeDef enter = Take(Load(), 1, 0);
+            Assert.That(enter.IsSpot, Is.False);
+            Assert.That(enter.spotId, Is.Empty);
+            Assert.That(enter.holdSec, Is.EqualTo(0f));
+        }
+
+        [Test]
         public void JsonUtility_RoundTrip_PreservesContract()
         {
             // 端末キャッシュ（persistentDataPath へ ToJson で書き戻す）を経ても契約が壊れないこと。
@@ -142,6 +162,11 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(t.steps[2].hasPost, Is.True);
             Assert.That(t.steps[3].hasPost, Is.False);
             Assert.That(t.at, Is.EqualTo(TakeSchema.AtEnter));
+
+            ShowTakeDef spot = Take(back, 3, 2);
+            Assert.That(spot.at, Is.EqualTo(TakeSchema.AtSpot), "位置トリガーの判別子が往復で壊れない");
+            Assert.That(spot.spotId, Is.EqualTo("spot_doll"));
+            Assert.That(spot.holdSec, Is.EqualTo(0.5f));
         }
 
         [Test]

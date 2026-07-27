@@ -10,13 +10,62 @@
 //   常に grid を書くため実運用では grid が存在する。cuts しか無い show.json ではシミュレーションを
 //   行わず、UI にその旨を出す（黙って別の答えを出さない）。
 
-import { boxAabb } from './scenario-engine.js';
+import { boxAabb, pickZone } from './scenario-engine.js';
 
 /** ZoneLayoutApplier の生成ゾーン既定（中心 y / 半高）。 */
 export const ZONE_CENTER_Y = 1;
 export const ZONE_HALF_HEIGHT = 2;
 /** HMD の高さ（course space）。ゾーンの y 判定に使うだけ。 */
 export const HEAD_Y = 1.6;
+
+// ---- 位置トリガー（layout.spots の円）------------------------------------------
+//   移植元（**C# が正**）: Assets/Scripts/Streaming/SpotTriggerLogic.cs の定数。
+//   契約: .claude/plans/2026-07-27_position-trigger.md §3
+
+/** 円の既定半径 (m)。SpotTriggerLogic.DefaultRadiusM と一致させること。 */
+export const SPOT_DEFAULT_RADIUS_M = 0.25;
+/** 出る側のヒステリシス (m)。SpotTriggerLogic.ExitMarginM。 */
+export const SPOT_EXIT_MARGIN_M = 0.08;
+/** 半径の下限 / 上限（上限は UI 都合。実機は下限だけクランプする）。 */
+export const SPOT_MIN_RADIUS_M = 0.05;
+export const SPOT_MAX_RADIUS_M = 1.0;
+
+export const clampSpotRadius = (r) =>
+  Math.min(SPOT_MAX_RADIUS_M, Math.max(SPOT_MIN_RADIUS_M, Number.isFinite(r) ? r : SPOT_DEFAULT_RADIUS_M));
+
+/**
+ * layout.spots を正規化して返す（不正要素は落とす / 半径はクランプ / id 重複は後勝ちを捨てる）。
+ * Unity 側は id をキーにスロットを割り当てるので、**id が空の円は無効**。
+ */
+export function spotsFromLayout(layout) {
+  const src = (layout && Array.isArray(layout.spots)) ? layout.spots : [];
+  const out = [];
+  const seen = new Set();
+  for (const s of src) {
+    if (!s || typeof s.id !== 'string' || !s.id) continue;
+    if (!Number.isFinite(s.x) || !Number.isFinite(s.z)) continue;
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+    out.push({
+      id: s.id,
+      x: s.x,
+      z: s.z,
+      rM: clampSpotRadius(s.rM),
+      label: typeof s.label === 'string' ? s.label : '',
+    });
+  }
+  return out;
+}
+
+/**
+ * 点 (x,z) を担当するカメラ index（実機のゾーン判定と同じ = 展開済み矩形 + Pick の先頭勝ち）。
+ * どのゾーンにも入らなければ -1。**生タイルの色ではなく実機の判定**を使うのが要点
+ * （重なり帯でどちらが勝つかまで含めて作者に見せる）。
+ */
+export function cameraAtPoint(boxes, x, z) {
+  const i = pickZone(boxes || [], x, HEAD_Y, z, -1, 0, false);
+  return i >= 0 ? boxes[i].camera : -1;
+}
 
 /** ZoneLayoutSolver.CellRect（NW 角アンカー: col0 = x 最小 / row0 = z 最大）。 */
 export function cellRect(r, c, rows, cols, tileM) {

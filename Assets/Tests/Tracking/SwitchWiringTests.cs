@@ -81,6 +81,9 @@ namespace FixedCamVr.Tracking.Tests
             SetField(dir, "dipUpSec", 0f);
             SetField(dir, "switchCooldownSec", 0f);
             SetField(dir, "minDwellSec", 0f);
+            // カット側が持つ遷移秒（既定 170ms）は Director の dipDownSec=0 を上書きするので、
+            // dip の dt も固定して実エディタ fps から切り離す（1 フレーム = 1 秒扱い）。
+            dir.SetDeltaSource(() => 1f);
             Invoke(dir, "Awake");     // _logic.Configure(0,0,0)・registry 解決
             Invoke(dir, "OnEnable");  // registry.ActiveChanged 購読・_logic.Reset
             return dir;
@@ -122,7 +125,12 @@ namespace FixedCamVr.Tracking.Tests
                                 strength = -1f, fadeInSec = -1f, fadeOutSec = -1f,
                                 trimStartSec = -1f, trimEndSec = -1f,
                                 durKind = TakeSchema.DurSec, durSec = durSec,
-                                transition = TakeSchema.TransDip, transitionMs = 0f, hasPost = false,
+                                // 遷移は cut（瞬時）。dip にすると **カット側の遷移秒**（既定 170ms）が
+                                // Director の dipDownSec=0 を上書きするため、PumpDirector の 4 フレームで
+                                // 実 unscaledDeltaTime が 68ms 貯まるかどうかで結果が変わる
+                                // （Editor がフォーカス中＝高 fps だと貯まらず落ちる flaky）。
+                                // このクラスは配線・凍結の検査で、dip の計時は SwitchDirectorLogicTests の担当。
+                                transition = TakeSchema.TransCut, transitionMs = 0f, hasPost = false,
                             },
                         },
                     },

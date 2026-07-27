@@ -139,6 +139,8 @@ def _default_show():
         # course.order = 周回の巡回順（カメラ index の配列。order[0]=スタート領域）。
         # フロアマップ UI が grid の塗りから角度順で提案し CW/CCW で反転できる。周回カウント
         # （schedule 発火）はこの順に沿って進む。
+        # spots = 位置トリガー（演出の発火点となる床の円）。各要素 {id, x, z, rM, label}。
+        # timeline の演出が at:"spot" + spotId で参照する（TakeRunner が読む）。未著作なら省略。
         # regPoints = HMD 位置合わせのタッチ基準点（course space・順序=タッチ順・2〜5 点）。
         # 各要素 {x, z, label?}。フロアマップ UI が編集。未設定（下記のように省略）なら Unity は
         # 既定 2 点 (-0.5,0.5)/(0.5,0.5) へフォールバックする。フィールドを足さなくても layout は

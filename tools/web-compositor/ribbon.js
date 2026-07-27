@@ -24,6 +24,7 @@ import { FX, FX_DEFAULT, camColor, escapeHtml, isVideoUrl } from './common.js';
 import { createCueEditor } from './cue-editor.js';
 import { durationOf, onDurationResolved } from './media-duration.js';
 import { resolveStepDuration } from './show-scenario.js';
+import { spotsFromLayout, cameraAtPoint, zonesFromLayout } from './zone-layout.js';
 import {
   TAKE, newTake, newStep, takeId, newSeg, defaultBgm, isV3,
   serializeTimelineV3, normalizeTimelineV3, resolveBgmLane, resolveTakeBgm,
@@ -73,6 +74,7 @@ export function createRibbon(container, deps) {
         <span class="e"><i></i>区間（伸縮・滞在は体験者しだい）</span>
         <span class="r"><i></i>演出（尺に比例した固定幅）</span>
         <span class="x"><i></i>離脱時の演出（区間の外・境界をまたぐ）</span>
+        <span class="s"><i></i>🎯 位置の演出（時間軸に乗らない）</span>
       </div>
       <div class="rb-inspector"></div>
     </div>
@@ -91,6 +93,8 @@ export function createRibbon(container, deps) {
   let cameras = [];
   let actors = [];          // 🎭 CG 人形（show.json actors[]）。カットの「CG 人形」選択肢。
   let cues = [];
+  let spots = [];           // 🎯 位置トリガー（layout.spots）。演出の開始規則「この位置に来たら」で選ぶ。
+  let zoneBoxes = [];       // 展開済みゾーン矩形（円がどのカメラのゾーンかを実機と同じ判定で出す）
   let order = null;
   let orderIsExplicit = false;
   let lapCount = 1;
@@ -212,7 +216,27 @@ export function createRibbon(container, deps) {
   }
   const fmtSec = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
   const maxDurOf = (t) => (t.maxDurationSec > 0 ? t.maxDurationSec : TAKE.DEFAULT_MAX_DURATION_SEC);
-  const startLabel = (t) => (t.at === TAKE.AT_EXIT ? '離脱時' : `進入 +${fmtSec(t.offsetSec || 0)}s`);
+
+  // ---- 位置トリガー（開始規則「この位置に来たら」）--------------------------------
+  const spotById = (id) => spots.find((s) => s.id === id) || null;
+  const spotName = (id) => { const s = spotById(id); return s ? (s.label || s.id) : id; };
+  /** その円を担当するカメラ index（実機のゾーン判定と同じ / -1 = 未割当・判定不能）。 */
+  function spotOwner(id) {
+    const s = spotById(id);
+    if (!s || !zoneBoxes.length) return -1;
+    return cameraAtPoint(zoneBoxes, s.x, s.z);
+  }
+  const isSpotTake = (t) => t.at === TAKE.AT_SPOT;
+
+  function startLabel(t) {
+    if (t.at === TAKE.AT_EXIT) return '離脱時';
+    if (isSpotTake(t)) {
+      if (!t.spotId) return '位置 未選択';
+      const hold = t.holdSec > 0 ? `・${fmtSec(t.holdSec)}s 滞在` : '';
+      return `位置「${spotName(t.spotId)}」${hold}`;
+    }
+    return `進入 +${fmtSec(t.offsetSec || 0)}s`;
+  }
 
   // ---- 不正値の検出（§6.4 と同じ判定。保存はできるが警告する）------------------
   function stepIssue(s) {
@@ -229,8 +253,26 @@ export function createRibbon(container, deps) {
     if (s.cueId && !cueById(s.cueId)) return `重ねる素材 ${s.cueId} が見つかりません`;
     return null;
   }
-  function takeIssue(t) {
+  // 位置トリガーの不整合（実機で「黙って出ない」状態を作らないため、ここで必ず言う）。
+  function spotIssue(t, camera) {
+    if (!isSpotTake(t)) return null;
+    if (!t.spotId) return '位置が未選択です（フロアマップの 🎯 位置トリガーで置いて選んでください）';
+    if (!spotById(t.spotId)) return `位置「${t.spotId}」がフロアマップにありません（発火しません）`;
+    const owner = spotOwner(t.spotId);
+    if (owner < 0 && zoneBoxes.length) {
+      return `位置「${spotName(t.spotId)}」はゾーン未割当の場所です（そこに立っても区間が決まらないので出ません）`;
+    }
+    if (owner >= 0 && owner !== camera) {
+      return `位置「${spotName(t.spotId)}」は ${camLabel(owner)} のゾーンです`
+        + `（この演出は ${camLabel(camera)} の区間なので出ません。演出をそちらの区間へ移してください）`;
+    }
+    return null;
+  }
+
+  function takeIssue(t, camera) {
     if (!t.steps || !t.steps.length) return 'カットが 1 枚もありません（発火しません）';
+    const spotBad = spotIssue(t, camera);
+    if (spotBad) return spotBad;
     const bad = t.steps.map(stepIssue).filter(Boolean);
     if (bad.length) return bad[0];
     const total = takeSeconds(t);
@@ -365,7 +407,8 @@ export function createRibbon(container, deps) {
 
     // 進入の演出はブロックの中に、進入からの秒数に比例した位置で置く（重なる時は段を分ける）。
     const lane = el.querySelector('.rb-seg-lane');
-    const sorted = enters.slice().sort((a, b) => (a.offsetSec || 0) - (b.offsetSec || 0));
+    const timed = enters.filter((t) => !isSpotTake(t));
+    const sorted = timed.slice().sort((a, b) => (a.offsetSec || 0) - (b.offsetSec || 0));
     const laneEnds = [];
     let maxRight = 0;
     for (const t of sorted) {
@@ -378,7 +421,16 @@ export function createRibbon(container, deps) {
       lane.appendChild(te);
       maxRight = Math.max(maxRight, left + w);
     }
-    lane.style.height = `${Math.max(1, laneEnds.length) * (LANE_H + LANE_GAP)}px`;
+    // 位置トリガーの演出は**時間軸に乗らない**（いつ来るかは体験者しだい）。
+    // 進入 +t の段の下に、左端揃えで 1 本ずつ置く（位置に意味を持たせない・§4 と同じ理由）。
+    let rows = laneEnds.length;
+    for (const t of enters.filter(isSpotTake)) {
+      const te = renderTake(t, lap, ci, { left: LANE_PAD, top: rows * (LANE_H + LANE_GAP) });
+      lane.appendChild(te);
+      maxRight = Math.max(maxRight, LANE_PAD + takeWidth(t));
+      rows++;
+    }
+    lane.style.height = `${Math.max(1, rows) * (LANE_H + LANE_GAP)}px`;
     el.style.minWidth = `${Math.max(SEG_MIN_W, maxRight + 22)}px`;
 
     const bgmEl = el.querySelector('.rb-seg-bgm');
@@ -401,10 +453,10 @@ export function createRibbon(container, deps) {
   function renderTake(t, lap, ci, pos) {
     const el = document.createElement('div');
     const on = sel && sel.kind === 'take' && sel.lap === lap && sel.camera === ci && sel.id === t.id;
-    const issue = takeIssue(t);
+    const issue = takeIssue(t, ci);
     const risk = takeTimingRisk(t, lap, ci);
-    el.className = 'rb-take' + (t.at === TAKE.AT_EXIT ? ' exit' : '') + (on ? ' sel' : '')
-      + (issue ? ' bad' : '') + (risk ? ' risk' : '');
+    el.className = 'rb-take' + (t.at === TAKE.AT_EXIT ? ' exit' : '') + (isSpotTake(t) ? ' spot' : '')
+      + (on ? ' sel' : '') + (issue ? ' bad' : '') + (risk ? ' risk' : '');
     el.dataset.lap = String(lap); el.dataset.cam = String(ci); el.dataset.id = t.id;
     el.style.width = `${takeWidth(t)}px`;
     if (pos) { el.style.position = 'absolute'; el.style.left = `${pos.left}px`; el.style.top = `${pos.top}px`; }
@@ -426,11 +478,14 @@ export function createRibbon(container, deps) {
         ? '🔇' : `♪ ${escapeHtml(trackName(t.bgm.trackId))}`}</span>`
       : '';
 
+    const headTitle = isSpotTake(t)
+      ? 'この演出は「体験者がこの位置に来たら」始まる（時間軸の上に位置を持たない）。'
+        + 'ドラッグで別の区間へ移せる（開始規則は位置のまま）。円の場所はフロアマップの 🎯 位置トリガーで動かす。'
+      : `ドラッグ（マウス / 指）で開始位置を変える（区間の中 = 進入から t 秒 / 右境界に吸着 = 離脱時）。
+選んで ← → で 0.5s ずつ（Shift で 2s）、Home = 進入直後、End = 離脱時。`;
     el.innerHTML = `
-      <div class="rb-take-head" tabindex="0" role="button"
-           title="ドラッグ（マウス / 指）で開始位置を変える（区間の中 = 進入から t 秒 / 右境界に吸着 = 離脱時）。
-選んで ← → で 0.5s ずつ（Shift で 2s）、Home = 進入直後、End = 離脱時。">
-        <span class="rb-take-name">🎬 ${escapeHtml(t.name || '演出')}</span>
+      <div class="rb-take-head" tabindex="0" role="button" title="${escapeHtml(headTitle)}">
+        <span class="rb-take-name">${isSpotTake(t) ? '🎯' : '🎬'} ${escapeHtml(t.name || '演出')}</span>
         <span class="rb-take-meta">
           ${bgmChip}
           <span class="rb-take-start">${risk ? '⏱ ' : ''}${escapeHtml(startLabel(t))}</span>
@@ -460,6 +515,9 @@ export function createRibbon(container, deps) {
   function onTakeKey(e, t, lap, ci) {
     const step = e.shiftKey ? 2 : 0.5;
     let handled = true;
+    // 位置トリガーは時間軸に乗らないので矢印・Home/End で動かさない
+    //（黙って「進入 +t 秒」へ化けると円の指定が消える）。開始規則の変更はインスペクタで。
+    if (isSpotTake(t) && e.key !== 'Enter' && e.key !== ' ') return;
     if (e.key === 'ArrowRight') {
       t.at = TAKE.AT_ENTER;
       t.offsetSec = Math.round((Math.max(0, t.offsetSec || 0) + step) * 2) / 2;
@@ -552,11 +610,15 @@ export function createRibbon(container, deps) {
     drag.drop = info;
     container.querySelectorAll('.rb-seg.drop, .rb-seg.drop-exit').forEach((s) => s.classList.remove('drop', 'drop-exit'));
     if (info) {
-      info.el.classList.add(info.at === TAKE.AT_EXIT ? 'drop-exit' : 'drop');
-      dropHint.textContent = info.at === TAKE.AT_EXIT
-        ? `${camLabel(info.cam)} ${info.lap}周目 — 離脱時`
-        : `${camLabel(info.cam)} ${info.lap}周目 — 進入 +${fmtSec(info.offsetSec)}s`;
-      dropHint.className = 'rb-drop-hint' + (info.at === TAKE.AT_EXIT ? ' exit' : '');
+      // 位置トリガーの演出は区間だけ移す（開始規則は位置のまま。落とした x は意味を持たない）。
+      const keepSpot = isSpotTake(drag.t);
+      info.el.classList.add(!keepSpot && info.at === TAKE.AT_EXIT ? 'drop-exit' : 'drop');
+      dropHint.textContent = keepSpot
+        ? `${camLabel(info.cam)} ${info.lap}周目 — ${startLabel(drag.t)}（区間を移動）`
+        : info.at === TAKE.AT_EXIT
+          ? `${camLabel(info.cam)} ${info.lap}周目 — 離脱時`
+          : `${camLabel(info.cam)} ${info.lap}周目 — 進入 +${fmtSec(info.offsetSec)}s`;
+      dropHint.className = 'rb-drop-hint' + (!keepSpot && info.at === TAKE.AT_EXIT ? ' exit' : '');
     } else {
       dropHint.textContent = '区間の上に置いてください';
       dropHint.className = 'rb-drop-hint bad';
@@ -600,7 +662,8 @@ export function createRibbon(container, deps) {
       to.takes.push(t);
       pruneSeg(from);
     }
-    if (drop.at === TAKE.AT_EXIT) { t.at = TAKE.AT_EXIT; t.offsetSec = 0; }
+    if (isSpotTake(t)) { t.offsetSec = 0; }   // 位置トリガーは開始規則を保つ（区間だけ移す）
+    else if (drop.at === TAKE.AT_EXIT) { t.at = TAKE.AT_EXIT; t.offsetSec = 0; }
     else { t.at = TAKE.AT_ENTER; t.offsetSec = drop.offsetSec; }
     sel = { kind: 'take', lap: to.lap, camera: to.camera, id: t.id };
     markDirty(); render(); renderInspector();
@@ -611,9 +674,16 @@ export function createRibbon(container, deps) {
   // ==========================================================================
   function addTake(lap, camera, at) {
     const seg = ensureSeg(lap, camera);
+    // 位置トリガーは「その区間のゾーンにある円」を既定で選ぶ（作者が選び直す手間と取り違えを減らす）。
+    const spot = at === TAKE.AT_SPOT
+      ? (spots.find((s) => spotOwner(s.id) === camera) || spots[0] || null)
+      : null;
     const t = newTake(uniqueTakeId(seg, takeId(lap, camera, seg.takes.length)), {
       at, offsetSec: 0,
-      name: at === TAKE.AT_EXIT ? '離脱の演出' : '演出',
+      spotId: spot ? spot.id : '',
+      // 位置指定の演出は「来なかったら出さない」が既定（時刻トリガーの fireOnExit と違う）。
+      ifMissed: at === TAKE.AT_SPOT ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT,
+      name: at === TAKE.AT_EXIT ? '離脱の演出' : at === TAKE.AT_SPOT ? '位置の演出' : '演出',
       steps: [newStep({ source: TAKE.SRC_LIVE, camera, durKind: TAKE.DUR_SEC, durSec: 4 })],
     });
     seg.takes.push(t);
@@ -661,6 +731,7 @@ export function createRibbon(container, deps) {
         <div class="row-btns">
           <button class="rb-add-enter accent">＋ 進入で始まる演出</button>
           <button class="rb-add-exit">＋ 離脱時の演出</button>
+          <button class="rb-add-spot" title="体験者がフロアマップで置いた円へ来たら始まる演出">🎯 ＋ 位置で始まる演出</button>
         </div>
       </div>
       <div class="rb-insp-sec">
@@ -679,12 +750,20 @@ export function createRibbon(container, deps) {
     takes.forEach((t) => {
       const b = document.createElement('button');
       b.className = 'rb-take-pill';
-      b.innerHTML = `🎬 ${escapeHtml(t.name || '演出')} <span>${escapeHtml(startLabel(t))} / ${fmtSec(takeSeconds(t).sec)}s</span>`;
+      b.innerHTML = `${isSpotTake(t) ? '🎯' : '🎬'} ${escapeHtml(t.name || '演出')} <span>${escapeHtml(startLabel(t))} / ${fmtSec(takeSeconds(t).sec)}s</span>`;
       b.onclick = () => { sel = { kind: 'take', lap: sel.lap, camera: sel.camera, id: t.id }; render(); renderInspector(); };
       list.appendChild(b);
     });
     inspectorEl.querySelector('.rb-add-enter').onclick = () => addTake(sel.lap, sel.camera, TAKE.AT_ENTER);
     inspectorEl.querySelector('.rb-add-exit').onclick = () => addTake(sel.lap, sel.camera, TAKE.AT_EXIT);
+    const addSpotBtn = inspectorEl.querySelector('.rb-add-spot');
+    if (!spots.length) {
+      // 円が 1 つも無い状態で作らせない（作っても発火しない演出が増えるだけ）。
+      addSpotBtn.disabled = true;
+      addSpotBtn.title = 'フロアマップの 🎯 位置トリガーで円を置いてから使えます';
+    } else {
+      addSpotBtn.onclick = () => addTake(sel.lap, sel.camera, TAKE.AT_SPOT);
+    }
 
     renderSegPost();
     renderSegBgm();
@@ -876,10 +955,23 @@ export function createRibbon(container, deps) {
   // ---- 演出インスペクタ -------------------------------------------------------
   function renderTakeInspector(t) {
     const total = takeSeconds(t);
-    const issue = takeIssue(t);
+    const issue = takeIssue(t, sel.camera);
     const risk = takeTimingRisk(t, sel.lap, sel.camera);
     const dw = dwellFor(sel.lap, sel.camera);
-    const enter = t.at !== TAKE.AT_EXIT;
+    const onSpot = isSpotTake(t);
+    const enter = t.at === TAKE.AT_ENTER;
+    // 位置の選択肢。この区間のゾーンにある円を上に出す（取り違えを減らす）。
+    const spotOpts = ['<option value="">（位置を選ぶ）</option>']
+      .concat(spots.map((s) => {
+        const owner = spotOwner(s.id);
+        const mark = owner === sel.camera ? '' : owner < 0 ? '（ゾーン未割当）' : `（${camLabel(owner)} のゾーン）`;
+        return `<option value="${escapeHtml(s.id)}"${t.spotId === s.id ? ' selected' : ''}>`
+          + `${escapeHtml(s.label || s.id)}${mark}</option>`;
+      }))
+      .concat(t.spotId && !spotById(t.spotId)
+        ? [`<option value="${escapeHtml(t.spotId)}" selected>${escapeHtml(t.spotId)}（見つかりません）</option>`]
+        : [])
+      .join('');
     inspectorEl.innerHTML = `
       <div class="rb-insp-head">演出 — ${escapeHtml(camLabel(sel.camera))} / ${sel.lap}周目
         <span class="rb-insp-sub">${escapeHtml(startLabel(t))} ／ ${total.approx ? '約' : ''}${fmtSec(total.sec)}s</span>
@@ -895,12 +987,19 @@ export function createRibbon(container, deps) {
           <label>名前<input class="rb-t-name" type="text" value="${escapeHtml(t.name || '')}" placeholder="演出名（表示だけ）"></label>
           <label>開始<select class="rb-t-at">
             <option value="${TAKE.AT_ENTER}"${enter ? ' selected' : ''}>進入から</option>
-            <option value="${TAKE.AT_EXIT}"${enter ? '' : ' selected'}>離脱時（この区間を離れる瞬間）</option>
+            <option value="${TAKE.AT_EXIT}"${t.at === TAKE.AT_EXIT ? ' selected' : ''}>離脱時（この区間を離れる瞬間）</option>
+            <option value="${TAKE.AT_SPOT}"${onSpot ? ' selected' : ''}${spots.length ? '' : ' disabled'}>この位置に来たら</option>
           </select></label>
           <label class="rb-t-off-l" style="display:${enter ? '' : 'none'}">+<input class="rb-t-off" type="number" min="0" step="0.5" value="${t.offsetSec || 0}">s</label>
-          <label class="rb-t-missed-l" style="display:${enter ? '' : 'none'}">取り逃した時<select class="rb-t-missed">
-            <option value="${TAKE.MISSED_FIRE_ON_EXIT}"${t.ifMissed !== TAKE.MISSED_SKIP ? ' selected' : ''}>離脱時に出す（既定）</option>
-            <option value="${TAKE.MISSED_SKIP}"${t.ifMissed === TAKE.MISSED_SKIP ? ' selected' : ''}>出さない</option>
+          <label class="rb-t-spot-l" style="display:${onSpot ? '' : 'none'}"
+                 title="フロアマップの 🎯 位置トリガーで置いた円。この区間のゾーンにある円を選ぶこと">
+            位置<select class="rb-t-spot">${spotOpts}</select></label>
+          <label class="rb-t-hold-l" style="display:${onSpot ? '' : 'none'}"
+                 title="円の中に連続でこの秒数居たら発火（0 = 入った瞬間）。通り抜けで出したくない時に使う">
+            滞在<input class="rb-t-hold" type="number" min="0" step="0.1" value="${t.holdSec || 0}">s</label>
+          <label class="rb-t-missed-l" style="display:${t.at === TAKE.AT_EXIT ? 'none' : ''}">${onSpot ? '来なかった時' : '取り逃した時'}<select class="rb-t-missed">
+            <option value="${TAKE.MISSED_FIRE_ON_EXIT}"${t.ifMissed !== TAKE.MISSED_SKIP ? ' selected' : ''}>離脱時に出す${onSpot ? '' : '（既定）'}</option>
+            <option value="${TAKE.MISSED_SKIP}"${t.ifMissed === TAKE.MISSED_SKIP ? ' selected' : ''}>出さない${onSpot ? '（既定）' : ''}</option>
           </select></label>
           <label>占有<select class="rb-t-policy">
             <option value="${TAKE.POLICY_HOLD}"${t.policy !== TAKE.POLICY_YIELD ? ' selected' : ''}>見せ切る（歩いても演出のまま）</option>
@@ -932,8 +1031,11 @@ export function createRibbon(container, deps) {
     };
     const commit = () => {
       t.name = i('.rb-t-name').value;
-      t.at = i('.rb-t-at').value === TAKE.AT_EXIT ? TAKE.AT_EXIT : TAKE.AT_ENTER;
-      t.offsetSec = t.at === TAKE.AT_EXIT ? 0 : Math.max(0, numOr(i('.rb-t-off').value, 0));
+      const atSel = i('.rb-t-at').value;
+      t.at = atSel === TAKE.AT_EXIT ? TAKE.AT_EXIT : atSel === TAKE.AT_SPOT ? TAKE.AT_SPOT : TAKE.AT_ENTER;
+      t.offsetSec = t.at === TAKE.AT_ENTER ? Math.max(0, numOr(i('.rb-t-off').value, 0)) : 0;
+      t.spotId = t.at === TAKE.AT_SPOT ? i('.rb-t-spot').value : '';
+      t.holdSec = t.at === TAKE.AT_SPOT ? Math.max(0, numOr(i('.rb-t-hold').value, 0)) : 0;
       t.ifMissed = i('.rb-t-missed').value === TAKE.MISSED_SKIP ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT;
       t.policy = i('.rb-t-policy').value === TAKE.POLICY_YIELD ? TAKE.POLICY_YIELD : TAKE.POLICY_HOLD;
       t.once = !!i('.rb-t-once').checked;
@@ -944,10 +1046,22 @@ export function createRibbon(container, deps) {
       const rk = takeTimingRisk(t, sel.lap, sel.camera);
       const rEl = i('.rb-insp-risk');
       if (rEl) { rEl.textContent = rk || ''; rEl.style.display = rk ? '' : 'none'; }
+      // 位置の取り違え（別ゾーンの円を選んだ 等）もその場で出す。
+      const isu = takeIssue(t, sel.camera);
+      const wEl = i('.rb-insp-warn');
+      if (wEl) { wEl.textContent = isu ? `⚠ ${isu}` : ''; wEl.style.display = isu ? '' : 'none'; }
     };
-    inspectorEl.querySelectorAll('.rb-t-name, .rb-t-off, .rb-t-policy, .rb-t-once, .rb-t-max, .rb-t-missed')
+    inspectorEl.querySelectorAll('.rb-t-name, .rb-t-off, .rb-t-policy, .rb-t-once, .rb-t-max, .rb-t-missed, .rb-t-spot, .rb-t-hold')
       .forEach((el) => { el.onchange = commit; });
-    i('.rb-t-at').onchange = () => { commit(); renderTakeInspector(t); };
+    i('.rb-t-at').onchange = () => {
+      commit();
+      // 位置に切り替えた直後に「未選択」で放置しない（この区間のゾーンにある円を既定で入れる）。
+      if (isSpotTake(t) && !t.spotId) {
+        const pick = spots.find((s) => spotOwner(s.id) === sel.camera) || spots[0];
+        if (pick) { t.spotId = pick.id; markDirty(); render(); }
+      }
+      renderTakeInspector(t);
+    };
     i('.rb-step-add').onclick = () => {
       t.steps.push(newStep({ source: TAKE.SRC_LIVE, camera: sel.camera, durKind: TAKE.DUR_SEC, durSec: 4 }));
       markDirty(); render(); renderTakeInspector(t);
@@ -1249,7 +1363,11 @@ export function createRibbon(container, deps) {
     cameras = deps.getCameras ? deps.getCameras() : ((state && state.cameras) || []);
     cues = deps.getCues ? deps.getCues() : ((state && state.cues) || []);
     actors = deps.getActors ? deps.getActors() : ((state && state.actors) || []);
-    order = deps.getCourseOrder ? deps.getCourseOrder() : (state && state.layout && state.layout.course ? state.layout.course.order : null);
+    const layout = deps.getLayout ? deps.getLayout() : (state && state.layout) || null;
+    order = deps.getCourseOrder ? deps.getCourseOrder() : (layout && layout.course ? layout.course.order : null);
+    // 位置トリガー（円）と、その円がどのカメラのゾーンかを判定するための展開済みゾーン。
+    spots = spotsFromLayout(layout);
+    zoneBoxes = spots.length ? zonesFromLayout(layout).boxes : [];
   }
 
   function onState(state) {

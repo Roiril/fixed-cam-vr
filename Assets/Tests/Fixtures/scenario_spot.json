@@ -1,0 +1,41 @@
+{
+  "tickMs": 20,
+  "dwellSec": 0.5,
+  "cooldownSec": 0.5,
+  "hysteresisShrink": 0.04,
+  "headY": 1,
+  "startCamera": 0,
+  "courseOrder": [0,1,2],
+  "zones": [
+    {"cx":-0.6,"cy":1,"cz":0,"hx":0.34,"hy":2,"hz":0.9,"yawDeg":0,"camera":0,"priority":0},
+    {"cx":0,"cy":1,"cz":0,"hx":0.34,"hy":2,"hz":0.9,"yawDeg":0,"camera":1,"priority":0},
+    {"cx":0.6,"cy":1,"cz":0,"hx":0.34,"hy":2,"hz":0.9,"yawDeg":0,"camera":2,"priority":0}
+  ],
+  "spots": [
+    {"x":0.6,"z":0.5,"rM":0.25,"defined":true},
+    {"x":0,"z":-0.5,"rM":0.25,"defined":true}
+  ],
+  "takes": [
+    {"id":"t_C_stand","lap":1,"camera":2,"onExit":false,"offsetSec":0,"skipWhenMissed":true,"once":true,"maxDurationSec":0,"yieldOnZoneChange":false,"onSpot":true,"spotIndex":0,"holdSec":0.5,"stepDurSec":[1],"stepCameras":[-1]},
+    {"id":"t_C_long","lap":1,"camera":2,"onExit":false,"offsetSec":0,"skipWhenMissed":true,"once":true,"maxDurationSec":0,"yieldOnZoneChange":false,"onSpot":true,"spotIndex":0,"holdSec":3,"stepDurSec":[0.5],"stepCameras":[-1]},
+    {"id":"t_B_pass","lap":1,"camera":1,"onExit":false,"offsetSec":0,"skipWhenMissed":true,"once":true,"maxDurationSec":0,"yieldOnZoneChange":false,"onSpot":true,"spotIndex":1,"holdSec":0,"stepDurSec":[0.6],"stepCameras":[-1]},
+    {"id":"t_C_miss","lap":2,"camera":2,"onExit":false,"offsetSec":0,"skipWhenMissed":false,"once":true,"maxDurationSec":0,"yieldOnZoneChange":false,"onSpot":true,"spotIndex":0,"holdSec":0,"stepDurSec":[0.4],"stepCameras":[-1]}
+  ],
+  "samples": [
+    {"tMs":0,"x":-0.6,"z":0},
+    {"tMs":800,"x":-0.6,"z":0},
+    {"tMs":2800,"x":-0.6,"z":0},
+    {"tMs":3600,"x":0,"z":-0.5},
+    {"tMs":5600,"x":0,"z":-0.5},
+    {"tMs":6400,"x":0.6,"z":0.5},
+    {"tMs":8400,"x":0.6,"z":0.5},
+    {"tMs":9200,"x":-0.6,"z":0.5},
+    {"tMs":11200,"x":-0.6,"z":0.5},
+    {"tMs":12000,"x":0,"z":0.5},
+    {"tMs":14000,"x":0,"z":0.5},
+    {"tMs":14800,"x":0.6,"z":-0.5},
+    {"tMs":16800,"x":0.6,"z":-0.5},
+    {"tMs":17600,"x":-0.6,"z":-0.5},
+    {"tMs":19600,"x":-0.6,"z":-0.5}
+  ]
+}

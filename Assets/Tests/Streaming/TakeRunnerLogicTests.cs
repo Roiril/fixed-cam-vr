@@ -398,5 +398,163 @@ namespace FixedCamVr.Streaming.Tests
             TakeRunnerLogic.Decision end = l.Tick(5f, 2);
             Assert.That(end.returnCamera, Is.EqualTo(2), "開始時ゾーン(0)ではなく現在地(2)へ戻る");
         }
+
+        // ---- 開始規則「この位置に来たら」（at=spot・2026-07-27）----
+        //   契約: .claude/plans/2026-07-27_position-trigger.md §3.2 / §3.3
+        //   時刻の代わりに床の円の滞在で due になるだけで、武装・決着・once・ifMissed は enter と同じ。
+
+        private static TakeRunnerLogic.Def Spot(int lap, int cam, int spotIndex, float holdSec,
+            params float[] steps) => new()
+        {
+            lap = lap, camera = cam, onExit = false, offsetSec = 0f,
+            skipWhenMissed = false, once = true, maxDurationSec = 0f, stepDurSec = steps,
+            onSpot = true, spotIndex = spotIndex, holdSec = holdSec,
+        };
+
+        private static SpotTriggerLogic.State[] Outside() => new SpotTriggerLogic.State[1];
+
+        private static SpotTriggerLogic.State[] Inside(float sec)
+            => new[] { new SpotTriggerLogic.State { inside = true, insideSec = sec } };
+
+        [Test]
+        public void Spot_FiresWhenViewerStepsIntoTheCircle()
+        {
+            var l = Make(Spot(2, 1, 0, 0f, 3f));
+            Enter(l, 2, 1, 0f);
+            Assert.That(l.Tick(1f, 1, Outside()).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                "区間に居るだけでは出ない（時刻では due にならない）");
+            TakeRunnerLogic.Decision d = l.Tick(2f, 1, Inside(0f));
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+            Assert.That(d.takeStarted, Is.True);
+        }
+
+        [Test]
+        public void Spot_HoldSec_RequiresContinuousStay()
+        {
+            var l = Make(Spot(2, 1, 0, 1f, 3f));
+            Enter(l, 2, 1, 0f);
+            Assert.That(l.Tick(1f, 1, Inside(0f)).action, Is.EqualTo(TakeRunnerLogic.Action.None));
+            Assert.That(l.Tick(1.5f, 1, Inside(0.5f)).action, Is.EqualTo(TakeRunnerLogic.Action.None));
+            Assert.That(l.Tick(2f, 1, Inside(1f)).action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep),
+                "1 秒立ち止まったら発火");
+        }
+
+        [Test]
+        public void Spot_WithoutPositionState_NeverFires()
+        {
+            // 位置が取れない環境（HeadCourseXZProvider 未注入）では発火しない = 従来の動きを壊さない。
+            var l = Make(Spot(2, 1, 0, 0f, 3f));
+            Enter(l, 2, 1, 0f);
+            for (float t = 0f; t < 10f; t += 1f)
+                Assert.That(l.Tick(t, 1).action, Is.EqualTo(TakeRunnerLogic.Action.None));
+        }
+
+        [Test]
+        public void Spot_UnknownSlot_NeverFires()
+        {
+            // layout に円が無い（＝実体の無い枠）／範囲外 index。黙って別の円で出したりしない。
+            var l = Make(Spot(2, 1, 5, 0f, 3f));
+            Enter(l, 2, 1, 0f);
+            Assert.That(l.Tick(1f, 1, Inside(9f)).action, Is.EqualTo(TakeRunnerLogic.Action.None));
+        }
+
+        [Test]
+        public void Spot_NeverVisited_FiresAtExit_WhenFireOnExit()
+        {
+            var l = Make(Spot(2, 1, 0, 0f, 3f));      // ifMissed 既定 = fireOnExit
+            Enter(l, 2, 1, 0f);
+            l.Tick(1f, 1, Outside());
+            TakeRunnerLogic.Decision d = Enter(l, 2, 2, 5f, hadPrev: true, prevLap: 2, prevCam: 1);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep),
+                "その円へ来ないまま離脱したら、離脱の瞬間に出す（時刻トリガーと同じ規則）");
+        }
+
+        [Test]
+        public void Spot_NeverVisited_IsDropped_WhenSkip()
+        {
+            // 卓の既定はこちら（場所に意味を持たせた演出を、来なかったのに出さない）。
+            var def = Spot(2, 1, 0, 0f, 3f);
+            def.skipWhenMissed = true;
+            var l = Make(def);
+            Enter(l, 2, 1, 0f);
+            l.Tick(1f, 1, Outside());
+            Assert.That(Enter(l, 2, 2, 5f, hadPrev: true, prevLap: 2, prevCam: 1).action,
+                Is.EqualTo(TakeRunnerLogic.Action.None));
+            Assert.That(l.ArmedCount, Is.EqualTo(0), "離脱で必ず決着する（不変条件 7）");
+        }
+
+        [Test]
+        public void Spot_SatisfiedWhileAnotherTakeRuns_DoesNotWait()
+        {
+            var running = Enter(2, 1, 0f, 10f);
+            var spot = Spot(2, 1, 0, 0f, 3f);
+            spot.skipWhenMissed = true;
+            var l = Make(running, spot);
+            Enter(l, 2, 1, 0f);
+            l.Tick(0f, 1, Outside());                              // 先の演出が走る
+            l.Tick(2f, 1, Inside(0f));                             // 走行中に円へ入った → 破棄
+            Assert.That(l.ArmedCount, Is.EqualTo(0));
+            l.Tick(10f, 1, Inside(8f));                            // 走行中の演出が終了
+            Assert.That(l.Tick(11f, 1, Inside(9f)).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                "終わった後に位置トリガーが遅れて始まらない（§6.3-1 待たせない）");
+        }
+
+        [Test]
+        public void Spot_SatisfiedWhileSuppressed_FiresAtExit_WhenFireOnExit()
+        {
+            var l = Make(Spot(2, 1, 0, 0f, 3f));
+            l.SetSuppressed(true);
+            Enter(l, 2, 1, 0f);
+            l.Tick(1f, 1, Inside(0f));                             // ライブ卓が握っている間は出さない
+            Assert.That(l.IsActive, Is.False);
+            l.SetSuppressed(false);
+            TakeRunnerLogic.Decision d = Enter(l, 2, 2, 5f, hadPrev: true, prevLap: 2, prevCam: 1);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+        }
+
+        [Test]
+        public void Spot_FiresAtMostOncePerVisit_EvenWhenNotOnce()
+        {
+            var def = Spot(1, 0, 0, 0f, 1f);
+            def.once = false;
+            var l = Make(def);
+            Enter(l, 1, 0, 0f);
+            Assert.That(l.Tick(0f, 0, Inside(0f)).action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+            l.Tick(1f, 0, Inside(1f));                                    // 終了
+            Assert.That(l.Tick(2f, 0, Inside(2f)).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                "円に立ち続けても 1 区間滞在につき 1 回");
+
+            Enter(l, 1, 1, 3f, hadPrev: true, prevLap: 1, prevCam: 0);    // 区間を出て
+            Enter(l, 1, 0, 4f, hadPrev: true, prevLap: 1, prevCam: 1);    // 戻ると再武装
+            Assert.That(l.Tick(4f, 0, Inside(0f)).action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+        }
+
+        [Test]
+        public void Spot_Once_DoesNotFireAgainInTheSameRun()
+        {
+            var l = Make(Spot(1, 0, 0, 0f, 1f));
+            Enter(l, 1, 0, 0f);
+            l.Tick(0f, 0, Inside(0f));
+            l.Tick(1f, 0, Inside(1f));
+            Enter(l, 1, 1, 2f, hadPrev: true, prevLap: 1, prevCam: 0);
+            Enter(l, 1, 0, 3f, hadPrev: true, prevLap: 1, prevCam: 1);
+            Assert.That(l.Tick(3f, 0, Inside(0f)).action, Is.EqualTo(TakeRunnerLogic.Action.None));
+
+            l.ResetRun();
+            Enter(l, 1, 0, 10f);
+            Assert.That(l.Tick(10f, 0, Inside(0f)).action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep),
+                "ラン開始でクリアされ再び出る");
+        }
+
+        [Test]
+        public void Spot_OnlyArmedInItsOwnSegment()
+        {
+            var l = Make(Spot(3, 2, 0, 0f, 3f));
+            Enter(l, 1, 0, 0f);
+            Assert.That(l.Tick(1f, 0, Inside(5f)).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                "別の区間で同じ円を踏んでも出ない（周・カメラのキーは効いている）");
+            Enter(l, 3, 2, 5f, hadPrev: true, prevLap: 1, prevCam: 0);
+            Assert.That(l.Tick(5f, 2, Inside(0f)).action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+        }
     }
 }

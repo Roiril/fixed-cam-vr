@@ -34,6 +34,21 @@ namespace FixedCamVr.Streaming
     [Serializable] public sealed class ShowRegPointDef { public float x; public float z; public string label = ""; }
 
     /// <summary>
+    /// 位置トリガー（course space の円）。「体験者がここへ来たら演出を始める」発火点。
+    /// 卓のフロアマップ（🎯 モード）で著作し、演出（<see cref="ShowTakeDef"/>）が <c>spotId</c> で参照する。
+    /// 判定は HMD の course 空間 XZ と中心の距離のみ（高さは見ない）。契約は
+    /// <c>.claude/plans/2026-07-27_position-trigger.md</c> §3。
+    /// </summary>
+    [Serializable] public sealed class ShowSpotDef
+    {
+        public string id = "";
+        public float x;
+        public float z;
+        public float rM = SpotTriggerLogic.DefaultRadiusM;
+        public string label = "";
+    }
+
+    /// <summary>
     /// v2: タイルペイント（grid）モデル。フロアを正方タイルに切り、cells の各文字でカメラを塗る。
     /// cells は rows 本の文字列。row 0 = 北端（z=+d/2 側）、col 0 = 西端（x=-w/2）。
     /// 文字 '0'..'8' = カメラ index、'.' = 未割当。JsonUtility は string[] をパースできる。
@@ -79,6 +94,9 @@ namespace FixedCamVr.Streaming
         // HMD 位置合わせの N 点基準（順序つき・2〜5）。不在（空）なら CourseRegistrationController は
         // 既定 2 点へフォールバックする。ゾーン生成・HasData() には関与しない（純粋に登録用データ）。
         public ShowRegPointDef[] regPoints = System.Array.Empty<ShowRegPointDef>();
+        // 位置トリガー（演出の発火点となる床の円）。ゾーン生成・HasData() には関与しない純データで、
+        // TakeRunner だけが読む（regPoints と同じ立ち位置）。
+        public ShowSpotDef[] spots = System.Array.Empty<ShowSpotDef>();
         public float overlapM = 0.08f;
         public float hysteresisM = 0.12f;
 

@@ -7,9 +7,10 @@
 // 変換で「卓では決まらない」ものは黙って捏造せず warnings に出す（シミュレータが嘘をついたら価値はマイナス）。
 
 import { normalizeTimelineV3, TAKE } from './timeline-model.js';
-import { zonesFromLayout, HEAD_Y } from './zone-layout.js';
+import { zonesFromLayout, spotsFromLayout, cameraAtPoint, HEAD_Y } from './zone-layout.js';
 import {
   resolveTiming, DEFAULT_DWELL_SEC, DEFAULT_COOLDOWN_SEC, FALLBACK_STEP_DUR_SEC, DEFAULT_TICK_MS,
+  spot as makeSpot,
 } from './scenario-engine.js';
 
 const num = (v, def) => (Number.isFinite(v) ? v : def);
@@ -95,6 +96,11 @@ export function buildScenarioConfig(state, opts = {}) {
   const order = (layout.course && Array.isArray(layout.course.order)) ? layout.course.order.slice() : [];
   if (!order.length) warnings.push('周回コース（layout.course.order）が空です。周回・区間が進みません。');
 
+  // 位置トリガー（床の円）。配列順 = Unity のスロット順（TakeRunnerLogic.Def.spotIndex が指す）。
+  const spotDefs = spotsFromLayout(layout);
+  const spotSlot = new Map(spotDefs.map((s, i) => [s.id, i]));
+  const spotOwner = new Map(spotDefs.map((s) => [s.id, cameraAtPoint(zoneInfo.boxes, s.x, s.z)]));
+
   const tl = normalizeTimelineV3(s.timeline || { rev: 1, segments: [] });
   const takes = [];
   const takeIds = [];
@@ -132,6 +138,25 @@ export function buildScenarioConfig(state, opts = {}) {
         });
       });
 
+      // 開始規則「この位置に来たら」。円が無い / 未選択なら発火しない（黙って別の円で出さない）。
+      const takeLabel = t.id || `L${seg.lap}C${seg.camera}#${ti}`;
+      const onSpot = t.at === TAKE.AT_SPOT;
+      let slot = -1;
+      if (onSpot) {
+        if (!t.spotId) warnings.push(`${takeLabel} は位置が未選択です（発火しません）`);
+        else if (!spotSlot.has(t.spotId)) warnings.push(`${takeLabel} の位置「${t.spotId}」が layout.spots にありません（発火しません）`);
+        else {
+          slot = spotSlot.get(t.spotId);
+          const owner = spotOwner.get(t.spotId);
+          if (owner !== seg.camera) {
+            const name = (i) => (cams[i] && cams[i].id ? `カメラ ${cams[i].id}` : `#${i}`);
+            warnings.push(owner < 0
+              ? `${takeLabel} の位置「${t.spotId}」はゾーン未割当の場所です（その場所に立ってもこの区間になりません）`
+              : `${takeLabel} の位置「${t.spotId}」は${name(owner)}のゾーンです（この演出は${name(seg.camera)}の区間なので出ません）`);
+          }
+        }
+      }
+
       takes.push({
         lap: seg.lap,
         camera: seg.camera,
@@ -142,6 +167,9 @@ export function buildScenarioConfig(state, opts = {}) {
         maxDurationSec: num(t.maxDurationSec, 0),
         yieldOnZoneChange: t.policy === TAKE.POLICY_YIELD,
         stepDurSec: durs,
+        onSpot: onSpot && slot >= 0,
+        spotIndex: slot,
+        holdSec: num(t.holdSec, 0),
       });
       takeIds.push(t.id || '');
       stepCameras.push(metaSteps.map((m) => m.camera));
@@ -150,8 +178,10 @@ export function buildScenarioConfig(state, opts = {}) {
         name: t.name || '',
         lap: seg.lap,
         camera: seg.camera,
-        at: t.at === TAKE.AT_EXIT ? TAKE.AT_EXIT : TAKE.AT_ENTER,
+        at: t.at === TAKE.AT_EXIT || t.at === TAKE.AT_SPOT ? t.at : TAKE.AT_ENTER,
         offsetSec: num(t.offsetSec, 0),
+        spotId: onSpot ? (t.spotId || '') : '',
+        holdSec: onSpot ? num(t.holdSec, 0) : 0,
         ifMissed: t.ifMissed === TAKE.MISSED_SKIP ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT,
         policy: t.policy === TAKE.POLICY_YIELD ? TAKE.POLICY_YIELD : TAKE.POLICY_HOLD,
         once: t.once !== false,
@@ -180,6 +210,7 @@ export function buildScenarioConfig(state, opts = {}) {
     courseOrder: order,
     takes,
     takeIds,
+    spots: spotDefs.map((s) => makeSpot(s.x, s.z, s.rM)),
     stepCameras,
     startCamera: order.length ? order[0] : 0,
     tickMs: DEFAULT_TICK_MS,
@@ -200,6 +231,8 @@ export function buildScenarioConfig(state, opts = {}) {
       courseOrder: order,
       zoneRects: zoneInfo.rects,
       zoneSource: zoneInfo.source,
+      // 位置トリガー（描画・注釈用。owner = その場所を担当するカメラ index / -1 = 未割当）。
+      spots: spotDefs.map((s) => ({ ...s, owner: spotOwner.get(s.id) ?? -1 })),
       takes: metaTakes,
       warnings,
       layoutRev: num(layout.rev, 0),
@@ -230,6 +263,9 @@ export function serializeScenario(cfg, samples, extra = {}) {
       hx: round(b.hx, 4), hy: round(b.hy, 4), hz: round(b.hz, 4),
       yawDeg: 0, camera: b.camera, priority: b.priority,
     })),
+    spots: (cfg.spots || []).map((s) => ({
+      x: round(s.x, 4), z: round(s.z, 4), rM: round(s.rM, 4), defined: s.defined !== false,
+    })),
     takes: cfg.takes.map((t, i) => ({
       id: cfg.takeIds[i] || '',
       lap: t.lap, camera: t.camera, onExit: t.onExit,
@@ -237,6 +273,8 @@ export function serializeScenario(cfg, samples, extra = {}) {
       maxDurationSec: t.maxDurationSec, yieldOnZoneChange: t.yieldOnZoneChange,
       stepDurSec: t.stepDurSec.slice(),
       stepCameras: (cfg.stepCameras && cfg.stepCameras[i]) ? cfg.stepCameras[i].slice() : [],
+      onSpot: !!t.onSpot, spotIndex: Number.isInteger(t.spotIndex) ? t.spotIndex : -1,
+      holdSec: t.holdSec || 0,
     })),
     samples: samples.map((p) => ({ tMs: p.tMs, x: round(p.x, 3), z: round(p.z, 3) })),
   };

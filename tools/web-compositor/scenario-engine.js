@@ -92,6 +92,57 @@ export function pickZone(boxes, x, y, z, currentIndex, hysteresisShrink, keepLas
   return keepLastWhenOutside ? currentIndex : -1;
 }
 
+// ---- 位置トリガー（SpotTriggerLogic）-------------------------------------------
+
+export const SPOT_DEFAULT_RADIUS_M = 0.25;   // SpotTriggerLogic.DefaultRadiusM
+export const SPOT_EXIT_MARGIN_M = 0.08;      // SpotTriggerLogic.ExitMarginM
+export const SPOT_MIN_RADIUS_M = 0.05;       // SpotTriggerLogic.MinRadiusM
+export const SPOT_MAX_CONTINUOUS_DT_SEC = 0.5; // SpotTriggerLogic.MaxContinuousDtSec
+
+/** SpotTriggerLogic.Spot.At（defined=true の円）。 */
+export const spot = (x, z, rM) => ({ x, z, rM, defined: true });
+/** SpotTriggerLogic.Spot.Undefined（id だけあって layout に実体が無い枠 = 常に外）。 */
+export const spotUndefined = () => ({ x: 0, z: 0, rM: 0, defined: false });
+
+/**
+ * 床の円の内外判定と滞在計時（SpotTriggerLogic の移植）。
+ *   入る = dist <= rM / 出る = dist > rM + SPOT_EXIT_MARGIN_M（出のヒステリシス）
+ *   滞在秒は連続（出たら 0）／ dt が不連続なら計り直す／ 高さは見ない
+ */
+export class SpotTrigger {
+  constructor() { this._spots = []; this._state = []; }
+
+  get count() { return this._spots.length; }
+  /** TakeRunner.tick へそのまま渡す状態配列（書き換えない）。 */
+  get stateView() { return this._state; }
+
+  setSpots(spots) {
+    this._spots = spots || [];
+    this._state = this._spots.map(() => ({ inside: false, insideSec: 0 }));
+  }
+
+  reset() { this._state = this._state.map(() => ({ inside: false, insideSec: 0 })); }
+
+  isInside(slot) { return slot >= 0 && slot < this._state.length && this._state[slot].inside; }
+
+  insideSecOf(slot) { return slot >= 0 && slot < this._state.length ? this._state[slot].insideSec : 0; }
+
+  tick(x, z, dt) {
+    const continuous = dt > 0 && dt <= SPOT_MAX_CONTINUOUS_DT_SEC;
+    for (let i = 0; i < this._spots.length; i++) {
+      const s = this._spots[i];
+      if (!s || !s.defined) { this._state[i] = { inside: false, insideSec: 0 }; continue; }
+      const r = s.rM < SPOT_MIN_RADIUS_M ? SPOT_MIN_RADIUS_M : s.rM;
+      const threshold = this._state[i].inside ? r + SPOT_EXIT_MARGIN_M : r;
+      const dx = x - s.x, dz = z - s.z;
+      const inside = dx * dx + dz * dz <= threshold * threshold;
+      if (!inside) { this._state[i] = { inside: false, insideSec: 0 }; continue; }
+      const sec = this._state[i].inside && continuous ? f32(this._state[i].insideSec + dt) : 0;
+      this._state[i] = { inside: true, insideSec: sec };
+    }
+  }
+}
+
 // ---- 時計（ZoneProgressionLogic）---------------------------------------------
 
 /**
@@ -369,12 +420,15 @@ export class TakeRunner {
     return result;
   }
 
-  /** 毎フレーム評価。走行中は watchdog / カット進行 / 終了、非走行中は発火判定。 */
-  tick(now, latestZoneCam) {
+  /**
+   * 毎フレーム評価。走行中は watchdog / カット進行 / 終了、非走行中は発火判定。
+   * spots は位置トリガーの状態（SpotTrigger.stateView）。null なら at=spot は発火しない。
+   */
+  tick(now, latestZoneCam, spots = null) {
     if (this._running) {
       if (now >= this._deadline) return this._endTakeDecision(latestZoneCam, true);
 
-      this._resolveOverdueWhileBlocked(now);
+      this._resolveOverdueWhileBlocked(now, spots);
 
       if (now >= this._stepEnd) {
         const next = this._activeStep + 1;
@@ -390,21 +444,21 @@ export class TakeRunner {
     }
 
     if (this._suppressed) {
-      // 抑止中に発火時刻を過ぎたものも「待たせない」（離脱時発火 or 破棄へ落とす）。
-      this._resolveOverdueWhileBlocked(now);
+      // 抑止中に発火条件を満たしたものも「待たせない」（離脱時発火 or 破棄へ落とす）。
+      this._resolveOverdueWhileBlocked(now, spots);
       return noDecision();
     }
 
-    const pick = this._findDue(now);
+    const pick = this._findDue(now, spots);
     if (pick < 0) {
-      this._resolveOverdueWhileBlocked(now);
+      this._resolveOverdueWhileBlocked(now, spots);
       return noDecision();
     }
 
     const takeIndex = this._removeArmedAt(pick);
     this._startTake(takeIndex, now, this._hasCurrent ? this._curCam : 0);
-    // 同時に発火時刻を迎えていた他の演出は、この 1 本に譲って決着する。
-    this._resolveOverdueWhileBlocked(now);
+    // 同時に発火条件を迎えていた他の演出は、この 1 本に譲って決着する。
+    this._resolveOverdueWhileBlocked(now, spots);
     return this._beginStepDecision(true);
   }
 
@@ -477,19 +531,28 @@ export class TakeRunner {
     }
   }
 
-  // 発火時刻に達した Waiting のうち先頭（無ければ -1）。
-  _findDue(now) {
+  // 発火条件を満たした Waiting のうち先頭（無ければ -1）。
+  _findDue(now, spots) {
     for (let k = 0; k < this._armedIndex.length; k++) {
-      if (this._armedState[k] === ARMED_WAITING && now >= this._armedDue[k]) return k;
+      if (this._armedState[k] === ARMED_WAITING && this._isDue(k, now, spots)) return k;
     }
     return -1;
   }
 
-  // 走行中 / 抑止中に発火時刻を過ぎたものを決着させる（待たせない）。
+  // 武装スロット k の発火条件（時刻トリガー = due 時刻 / 位置トリガー = 円の滞在）。
+  _isDue(k, now, spots) {
+    const d = this._defs[this._armedIndex[k]];
+    if (!d.onSpot) return now >= this._armedDue[k];
+    if (!spots || d.spotIndex < 0 || d.spotIndex >= spots.length) return false;
+    const s = spots[d.spotIndex];
+    return !!s.inside && s.insideSec >= (d.holdSec > 0 ? d.holdSec : 0);
+  }
+
+  // 走行中 / 抑止中に発火条件を満たしたものを決着させる（待たせない）。
   //   skip → 破棄 / fireOnExit → 離脱時のみ発火しうる状態へ
-  _resolveOverdueWhileBlocked(now) {
+  _resolveOverdueWhileBlocked(now, spots) {
     for (let k = this._armedIndex.length - 1; k >= 0; k--) {
-      if (this._armedState[k] !== ARMED_WAITING || now < this._armedDue[k]) continue;
+      if (this._armedState[k] !== ARMED_WAITING || !this._isDue(k, now, spots)) continue;
       if (this._defs[this._armedIndex[k]].skipWhenMissed) this._removeArmedAt(k);
       else this._armedState[k] = ARMED_DEFERRED_TO_EXIT;
     }
@@ -538,6 +601,7 @@ function normalizeConfig(cfg) {
     courseOrder: c.courseOrder || [],
     takes: c.takes || [],
     takeIds: c.takeIds || [],
+    spots: c.spots || [],
     stepCameras: c.stepCameras || null,
     startCamera: num(c.startCamera, 0),
     tickMs: c.tickMs > 0 ? c.tickMs : DEFAULT_TICK_MS,
@@ -597,6 +661,11 @@ export function createShowRunner(cfg) {
   const takes = new TakeRunner();
   takes.setDefs(c.takes);
 
+  // 位置トリガー（人の層）。dt は C# と同じ float 精度の tick 秒。
+  const spots = new SpotTrigger();
+  spots.setSpots(c.spots);
+  const spotDt = f32(c.tickMs / 1000);
+
   let zoneIndex = -1;                 // pickZone の直近選択
   let curCam = c.startCamera;         // 時計が確定しているゾーンのカメラ
   let hasSeg = false;
@@ -608,7 +677,8 @@ export function createShowRunner(cfg) {
     const now = f32(tMs / 1000);   // C# は `float now = tMs / 1000f`
     const out = [];
 
-    // ① ゾーン判定 → 時計へ要求
+    // ① ゾーン判定 → 時計へ要求（位置トリガーも同じ「人の層」なのでここで進める）
+    spots.tick(x, z, spotDt);
     zoneIndex = pickZone(c.zones, x, c.headY, z, zoneIndex, c.hysteresisShrink, c.keepLastWhenOutside);
     if (zoneIndex >= 0) progress.request(c.zones[zoneIndex].camera, now);
 
@@ -640,8 +710,8 @@ export function createShowRunner(cfg) {
       segCam = zoneCam;
     }
 
-    // ⑥ 演出 Tick（カット進行 / 終了 / 発火）
-    emit(out, c, takes.tick(now, curCam), tMs);
+    // ⑥ 演出 Tick（カット進行 / 終了 / 発火・位置トリガーの滞在も見る）
+    emit(out, c, takes.tick(now, curCam, spots.stateView), tMs);
 
     // 演出が画面を占有しているかを画面層へ反映する（本番の insert 凍結と同じ役割）。
     screen.setInsertActive(takes.isActive);
@@ -664,6 +734,8 @@ export function createShowRunner(cfg) {
     get activeStepIndex() { return takes.activeStepIndex; },
     get armedCount() { return takes.armedCount; },
     get pendingZone() { return progress.hasPending ? progress.pending : -1; },
+    /** 位置トリガーの現在状態（UI で「いまどの円に居るか」を出すため。判定には使わない）。 */
+    get spotStates() { return spots.stateView; },
   };
 }
 
@@ -728,8 +800,14 @@ export function parseScenario(json) {
       maxDurationSec: num(t.maxDurationSec, 0),
       yieldOnZoneChange: !!t.yieldOnZoneChange,
       stepDurSec: (t.stepDurSec || []).map((v) => num(v, 0)),
+      onSpot: !!t.onSpot,
+      spotIndex: Number.isInteger(t.spotIndex) ? t.spotIndex : -1,
+      holdSec: num(t.holdSec, 0),
     })),
     takeIds: takesSrc.map((t) => t.id || ''),
+    spots: (j.spots || []).map((s) => (s && s.defined !== false
+      ? spot(num(s.x, 0), num(s.z, 0), num(s.rM, SPOT_DEFAULT_RADIUS_M))
+      : spotUndefined())),
     stepCameras: takesSrc.map((t) => (t.stepCameras || []).map((v) => num(v, -1))),
     startCamera: num(j.startCamera, 0),
     tickMs: num(j.tickMs, DEFAULT_TICK_MS),

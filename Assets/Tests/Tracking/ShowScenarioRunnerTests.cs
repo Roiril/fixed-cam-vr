@@ -24,6 +24,8 @@ namespace FixedCamVr.Tracking.Tests
         private static string FixtureDir => Path.Combine(Application.dataPath, "Tests/Fixtures");
         private static string TracePath => Path.Combine(FixtureDir, "scenario_walk.trace.json");
         private static string ScenarioPath => Path.Combine(FixtureDir, "scenario_walk.json");
+        private static string SpotTracePath => Path.Combine(FixtureDir, "scenario_spot.trace.json");
+        private static string SpotScenarioPath => Path.Combine(FixtureDir, "scenario_spot.json");
 
         // 3 ゾーン（A/B/C）を x 方向に並べ、0.08m ずつ重ねた 1.8m 四方相当のコース。
         private static ZonePickLogic.Box[] Zones() => new[]
@@ -165,6 +167,127 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(ShowScenarioRunner.Run(MakeConfig(), wobble).Any(e => e.kind == "zone"), Is.False);
         }
 
+        // ---- 位置トリガー（at=spot・2026-07-27）----
+        //   契約: .claude/plans/2026-07-27_position-trigger.md
+
+        private static TakeRunnerLogic.Def SpotTake(int lap, int cam, int slot, float holdSec,
+            bool skipWhenMissed, params float[] steps) => new()
+        {
+            lap = lap, camera = cam, onExit = false, offsetSec = 0f,
+            skipWhenMissed = skipWhenMissed, once = true, maxDurationSec = 0f,
+            yieldOnZoneChange = false, stepDurSec = steps,
+            onSpot = true, spotIndex = slot, holdSec = holdSec,
+        };
+
+        // 位置トリガー版のシナリオ。円は 2 つ:
+        //   slot0 spot_stand … C ゾーンの中（0.6, +0.5）— 立ち止まりを要求する演出に使う
+        //   slot1 spot_pass  … B ゾーンの中（0.0, -0.5）— 踏んだ瞬間に出す演出に使う
+        private static ShowScenarioRunner.Config MakeSpotConfig()
+        {
+            var takes = new[]
+            {
+                // 1 周目 C: 円の中に 0.5s 立ち止まったら出す（通り抜けでは出ない）
+                SpotTake(1, 2, 0, 0.5f, skipWhenMissed: true, 1.0f),
+                // 1 周目 C: 3s 立ち止まりを要求 → この歩き方では満たさない = 出ない
+                SpotTake(1, 2, 0, 3.0f, skipWhenMissed: true, 0.5f),
+                // 1 周目 B: 踏んだ瞬間（hold 0）に出す
+                SpotTake(1, 1, 1, 0f, skipWhenMissed: true, 0.6f),
+                // 2 周目 C: 円を踏まないまま離脱 → fireOnExit で離脱の瞬間に出る
+                SpotTake(2, 2, 0, 0f, skipWhenMissed: false, 0.4f),
+            };
+            return new ShowScenarioRunner.Config
+            {
+                Zones = Zones(),
+                HysteresisShrink = 0.04f,
+                KeepLastWhenOutside = true,
+                HeadY = 1f,
+                DwellSec = 0.5f,
+                CooldownSec = 0.5f,
+                CourseOrder = new[] { 0, 1, 2 },
+                Takes = takes,
+                TakeIds = new[] { "t_C_stand", "t_C_long", "t_B_pass", "t_C_miss" },
+                Spots = new[]
+                {
+                    SpotTriggerLogic.Spot.At(0.6f, 0.5f, 0.25f),
+                    SpotTriggerLogic.Spot.At(0.0f, -0.5f, 0.25f),
+                },
+                StepCameras = new[] { new[] { -1 }, new[] { -1 }, new[] { -1 }, new[] { -1 } },
+                StartCamera = 0,
+                TickMs = ShowScenarioRunner.DefaultTickMs,
+            };
+        }
+
+        // A →（円を踏んで）B → C の円で立ち止まる → A（2 周目）→ B → C（円を踏まない）→ A。
+        private static ShowScenarioRunner.Sample[] SpotWalk()
+        {
+            var wp = new[]
+            {
+                new Vector2(-0.6f, 0.0f),   // A 開始
+                new Vector2(0.0f, -0.5f),   // B・spot_pass の上
+                new Vector2(0.6f, 0.5f),    // C・spot_stand の上（立ち止まる）
+                new Vector2(-0.6f, 0.5f),   // A へ（2 周目）
+                new Vector2(0.0f, 0.5f),    // B（spot_pass は踏まない）
+                new Vector2(0.6f, -0.5f),   // C（spot_stand は踏まない）
+                new Vector2(-0.6f, -0.5f),  // A へ（3 周目・ここで 2 周目 C の離脱）
+            };
+            var list = new List<ShowScenarioRunner.Sample>
+            {
+                new() { tMs = 0, x = wp[0].x, z = wp[0].y },
+            };
+            int t = 0;
+            foreach (Vector2 p in wp)
+            {
+                t += 800;  list.Add(new ShowScenarioRunner.Sample { tMs = t, x = p.x, z = p.y }); // 移動
+                t += 2000; list.Add(new ShowScenarioRunner.Sample { tMs = t, x = p.x, z = p.y }); // 滞在
+            }
+            return list.ToArray();
+        }
+
+        [Test]
+        public void Spot_FiresWhenViewerStandsInTheCircle_AndNotWhenHoldIsTooLong()
+        {
+            List<ShowScenarioRunner.Event> tr = ShowScenarioRunner.Run(MakeSpotConfig(), SpotWalk());
+            Assert.That(tr.Any(e => e.kind == "take" && e.id == "t_C_stand"), Is.True,
+                "0.5s 立ち止まったので出る");
+            Assert.That(tr.Any(e => e.kind == "take" && e.id == "t_C_long"), Is.False,
+                "3s の立ち止まりは満たさないので出ない（skip）");
+        }
+
+        [Test]
+        public void Spot_FiresImmediatelyWhenSteppedOn_WhenHoldIsZero()
+        {
+            List<ShowScenarioRunner.Event> tr = ShowScenarioRunner.Run(MakeSpotConfig(), SpotWalk());
+            Assert.That(tr.Any(e => e.kind == "take" && e.id == "t_B_pass"), Is.True);
+        }
+
+        [Test]
+        public void Spot_NotVisited_FiresAtExit_WhenFireOnExit()
+        {
+            List<ShowScenarioRunner.Event> tr = ShowScenarioRunner.Run(MakeSpotConfig(), SpotWalk());
+            Assert.That(tr.Any(e => e.kind == "take" && e.id == "t_C_miss"), Is.True,
+                "2 周目は円を踏まなかったが、離脱の瞬間に出る（ifMissed=fireOnExit）");
+        }
+
+        [Test]
+        public void Spot_WithoutSpots_NothingFires()
+        {
+            // 円が 1 つも無い（layout.spots 未著作）show.json では位置トリガーは沈黙する。
+            ShowScenarioRunner.Config cfg = MakeSpotConfig();
+            cfg.Spots = System.Array.Empty<SpotTriggerLogic.Spot>();
+            List<ShowScenarioRunner.Event> tr = ShowScenarioRunner.Run(cfg, SpotWalk());
+            Assert.That(tr.Any(e => e.kind == "take" && e.id != "t_C_miss"), Is.False,
+                "円を参照する演出は出ない（fireOnExit の t_C_miss だけは離脱時に出る）");
+        }
+
+        [Test]
+        public void Spot_EveryTakeThatStarts_AlsoEnds()
+        {
+            List<ShowScenarioRunner.Event> tr = ShowScenarioRunner.Run(MakeSpotConfig(), SpotWalk());
+            var started = tr.Where(e => e.kind == "take").Select(e => e.id).ToList();
+            var ended = tr.Where(e => e.kind == "end").Select(e => e.id).ToList();
+            CollectionAssert.AreEquivalent(started, ended, "位置トリガーでも必ず終わる（不変条件 2）");
+        }
+
         // ---- golden fixture（Web ミラーとの照合用） ----
 
         [Test]
@@ -177,7 +300,7 @@ namespace FixedCamVr.Tracking.Tests
             {
                 Directory.CreateDirectory(FixtureDir);
                 File.WriteAllText(TracePath, json);
-                File.WriteAllText(ScenarioPath, ScenarioJson());
+                File.WriteAllText(ScenarioPath, ScenarioJson(MakeConfig(), Walk()));
                 Assert.Pass($"golden fixture を生成した: {TracePath}（次回から照合される）");
             }
 
@@ -187,10 +310,28 @@ namespace FixedCamVr.Tracking.Tests
                 + "Web 側 scenario-engine.js のテストも通ることを確認すること");
         }
 
-        // Web 側が同じ入力を組めるよう、シナリオを JSON で書き出す（人間が読める形）。
-        private static string ScenarioJson()
+        [Test]
+        public void GoldenSpotTrace_MatchesFixture_OrIsGenerated()
         {
-            ShowScenarioRunner.Config c = MakeConfig();
+            List<ShowScenarioRunner.Event> tr = ShowScenarioRunner.Run(MakeSpotConfig(), SpotWalk());
+            string json = ShowScenarioRunner.ToJson(tr);
+
+            if (!File.Exists(SpotTracePath))
+            {
+                Directory.CreateDirectory(FixtureDir);
+                File.WriteAllText(SpotTracePath, json);
+                File.WriteAllText(SpotScenarioPath, ScenarioJson(MakeSpotConfig(), SpotWalk()));
+                Assert.Pass($"位置トリガーの golden fixture を生成した: {SpotTracePath}");
+            }
+
+            string expected = File.ReadAllText(SpotTracePath).Replace("\r\n", "\n");
+            Assert.That(json.Replace("\r\n", "\n"), Is.EqualTo(expected),
+                "位置トリガーのトレースが golden と違う（Web 側 scenario-engine.js のテストも通ること）");
+        }
+
+        // Web 側が同じ入力を組めるよう、シナリオを JSON で書き出す（人間が読める形）。
+        private static string ScenarioJson(ShowScenarioRunner.Config c, ShowScenarioRunner.Sample[] w)
+        {
             var sb = new System.Text.StringBuilder();
             sb.Append("{\n  \"tickMs\": ").Append(c.TickMs)
               .Append(",\n  \"dwellSec\": ").Append(c.DwellSec)
@@ -213,6 +354,20 @@ namespace FixedCamVr.Tracking.Tests
             }
             sb.Append("  ]");
 
+            if (c.Spots.Length > 0)
+            {
+                sb.Append(",\n  \"spots\": [\n");
+                for (int i = 0; i < c.Spots.Length; i++)
+                {
+                    SpotTriggerLogic.Spot s = c.Spots[i];
+                    sb.Append("    {\"x\":").Append(F(s.x)).Append(",\"z\":").Append(F(s.z))
+                      .Append(",\"rM\":").Append(F(s.rM))
+                      .Append(",\"defined\":").Append(s.defined ? "true" : "false").Append('}')
+                      .Append(i < c.Spots.Length - 1 ? ",\n" : "\n");
+                }
+                sb.Append("  ]");
+            }
+
             sb.Append(",\n  \"takes\": [\n");
             for (int i = 0; i < c.Takes.Length; i++)
             {
@@ -225,6 +380,9 @@ namespace FixedCamVr.Tracking.Tests
                   .Append(",\"once\":").Append(d.once ? "true" : "false")
                   .Append(",\"maxDurationSec\":").Append(F(d.maxDurationSec))
                   .Append(",\"yieldOnZoneChange\":").Append(d.yieldOnZoneChange ? "true" : "false")
+                  .Append(",\"onSpot\":").Append(d.onSpot ? "true" : "false")
+                  .Append(",\"spotIndex\":").Append(d.spotIndex)
+                  .Append(",\"holdSec\":").Append(F(d.holdSec))
                   .Append(",\"stepDurSec\":[").Append(string.Join(",", d.stepDurSec.Select(F)))
                   .Append("],\"stepCameras\":[").Append(string.Join(",", c.StepCameras![i]))
                   .Append("]}").Append(i < c.Takes.Length - 1 ? ",\n" : "\n");
@@ -232,7 +390,6 @@ namespace FixedCamVr.Tracking.Tests
             sb.Append("  ]");
 
             sb.Append(",\n  \"samples\": [\n");
-            ShowScenarioRunner.Sample[] w = Walk();
             for (int i = 0; i < w.Length; i++)
                 sb.Append("    {\"tMs\":").Append(w[i].tMs).Append(",\"x\":").Append(F(w[i].x))
                   .Append(",\"z\":").Append(F(w[i].z)).Append('}')

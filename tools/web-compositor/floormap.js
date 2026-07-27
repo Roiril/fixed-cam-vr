@@ -15,6 +15,11 @@
 //     区間ロジックで初期塗りを生成（歩行回廊のタイルのみ。壁内側・判定不能は '.'）。
 //   - cuts は後方互換でデータとして保持（編集 UI は無し。grid が正）。
 
+import {
+  zonesFromLayout, cameraAtPoint, spotsFromLayout, clampSpotRadius,
+  SPOT_DEFAULT_RADIUS_M,
+} from './zone-layout.js';
+
 // カメラ index → 色（unity-vr.md の校正フットプリント配色に合わせる: 緑=0 / 青=1 / 橙=2）。
 const CAM_COLORS = ['#5ad19a', '#5aa8ff', '#ffae5e', '#d98cff', '#ff6b8e', '#8ad4ff'];
 const camColor = (i) => CAM_COLORS[((i % CAM_COLORS.length) + CAM_COLORS.length) % CAM_COLORS.length];
@@ -26,6 +31,9 @@ const CORRIDOR_HALF = 0.20;
 
 // 位置合わせ点（HMD タッチ基準点）。course space・順序=タッチ順・最小 2・最大 5。
 const REG_MIN = 2, REG_MAX = 5, REG_HIT = 15; // REG_HIT = マーカー掴み判定半径(px)
+
+// 位置トリガー（演出の発火点）。course space の円。中心を掴んで移動 / 縁を掴んで半径。
+const SPOT_HIT = 14, SPOT_EDGE_HIT = 10, SPOT_MAX = 12;
 // regPoints 未設定 show.json の既定表示（L 字壁の外角側 2 点）。クリックで実データ化する。
 const DEFAULT_REG_POINTS = [
   { x: -0.5, z: 0.5, label: '' },
@@ -134,6 +142,7 @@ export function createFloorMap(container, deps) {
           <button class="fm-mode" data-mode="reg" title="HMD でタッチする位置合わせ点を置く">📍 位置合わせ点</button>
           <button class="fm-mode" data-mode="walk" title="体験者を歩かせる。マップのどこを押してもそこへ立つ">🚶 歩かせる</button>
           <button class="fm-mode" data-mode="cam" title="実カメラの置き場所と向きを決める（CG 人形を立てる視点）">📐 カメラ姿勢</button>
+          <button class="fm-mode" data-mode="spot" title="演出の発火点（体験者がここへ来たら）を置く">🎯 位置トリガー</button>
         </div>
         <canvas class="fm-canvas" width="${SIZE}" height="${SIZE}"></canvas>
         <div class="fm-modehint"></div>
@@ -165,6 +174,15 @@ export function createFloorMap(container, deps) {
           <button class="fm-reg-add"></button>
           <div class="fm-reg-coords"></div>
           <div class="fm-hint2">床の×印テープを置く位置に点を打つ。番号＝HMD でタッチする順。最小2・最大5点。<b>📍 位置合わせ点</b>モードでキャンバスをクリック配置・ドラッグ移動・右クリック削除。未設定なら既定2点を使用。</div>
+        </div>
+        <div class="fm-spots" style="display:none">
+          <div class="fm-course-label">位置トリガー（演出の発火点）</div>
+          <div class="fm-spot-note"></div>
+          <div class="fm-spot-list"></div>
+          <button class="fm-spot-add">＋ 位置を追加</button>
+          <div class="fm-hint2">体験者がこの円へ入ったら演出が始まります（タイムラインの演出で「この位置に来たら」を選ぶ）。
+            円は<b>そのゾーンの中</b>に置くこと — 別のカメラのゾーンにあると、その演出は出ません。
+            円をクリックで追加・中心をドラッグで移動・<b>縁をドラッグで大きさ</b>・右クリックで削除。</div>
         </div>
         <div class="fm-campose" style="display:none">
           <div class="fm-course-label">カメラ姿勢（CG 人形を立てる視点）</div>
@@ -206,9 +224,12 @@ export function createFloorMap(container, deps) {
   let mapMode = 'paint';
   let regDragIndex = -1;     // ドラッグ中の regPoint index
   let camPoseIndex = 0;      // 📐 カメラ姿勢モードで選択中のカメラ index
+  let spotDragIndex = -1;    // ドラッグ中の位置トリガー index
+  let spotUses = {};         // spotId → それを使っている演出の数（timeline 由来・削除の警告に使う）
   const isReg = () => mapMode === 'reg';
   const isWalk = () => mapMode === 'walk';
   const isCamPose = () => mapMode === 'cam';
+  const isSpot = () => mapMode === 'spot';
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function markDirty() { dirty = true; renderDirty(); }
@@ -266,6 +287,38 @@ export function createFloorMap(container, deps) {
       if (d <= bd) { bd = d; best = i; }
     });
     return best;
+  }
+
+  // ---- 位置トリガー（演出の発火点）アクセサ --------------------------------------
+  function spotArr() {
+    if (!Array.isArray(layout.spots)) layout.spots = [];
+    return layout.spots;
+  }
+  // 新しい id（spot_1, spot_2, …）。既存の最大番号 + 1（削除しても衝突しない）。
+  function nextSpotId() {
+    let max = 0;
+    for (const s of spotArr()) {
+      const m = /^spot_(\d+)$/.exec(s.id || '');
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    }
+    return `spot_${max + 1}`;
+  }
+  // 円の中心 / 縁のどちらを掴んだか（縁が優先。半径を触りたい時に中心を掴むと事故る）。
+  function spotHit(px, py) {
+    const arr = spotArr();
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const [cx, cy] = courseToPx(arr[i].x, arr[i].z);
+      const d = Math.hypot(px - cx, py - cy);
+      const rpx = clampSpotRadius(arr[i].rM) * scale;
+      if (Math.abs(d - rpx) <= SPOT_EDGE_HIT && rpx > SPOT_HIT) return { index: i, part: 'radius' };
+      if (d <= Math.max(SPOT_HIT, rpx)) return { index: i, part: 'pos' };
+    }
+    return null;
+  }
+  // その円を担当するカメラ index（実機のゾーン判定と同じ / -1 = 未割当）。
+  function spotOwner(s) {
+    const { boxes } = zonesFromLayout(layout);
+    return cameraAtPoint(boxes, s.x, s.z);
   }
 
   // ---- 描画 -----------------------------------------------------------------
@@ -346,6 +399,9 @@ export function createFloorMap(container, deps) {
 
     // カメラ姿勢（著作済みのカメラだけ。📐 モードでは強調 + 向きハンドル）
     drawCameraPoses();
+
+    // 位置トリガー（演出の発火点。どのモードでも薄く見せる = 塗りながら位置関係が分かる）
+    drawSpots();
 
     // シミュレーションドット
     if (isWalk() && sim) {
@@ -464,6 +520,122 @@ export function createFloorMap(container, deps) {
       ctx.fillText(cameras[i].id || String(i), px, py + 0.5);
       ctx.restore();
     }
+  }
+
+  // 位置トリガーの円。編集モードでは縁のハンドルつきで強調する。
+  //   色は「発火点」の意味を持たせて 1 色（赤系）に固定する — カメラ色と混ぜると
+  //   「この円はカメラ X 専用」と誤読される（円はゾーンに属するが、演出が指すのは周×カメラの区間）。
+  function drawSpots() {
+    const arr = Array.isArray(layout.spots) ? layout.spots : [];
+    if (!arr.length) return;
+    const edit = isSpot();
+    arr.forEach((s, i) => {
+      const [cx, cy] = courseToPx(s.x, s.z);
+      const rpx = clampSpotRadius(s.rM) * scale;
+      const sel = edit && i === spotDragIndex;
+      ctx.save();
+      ctx.globalAlpha = edit ? 1 : 0.4;
+
+      // 円（内側は薄く塗る = 「ここに入ったら」が面として見える）
+      ctx.beginPath(); ctx.arc(cx, cy, rpx, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,107,142,0.13)'; ctx.fill();
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = sel ? 3 : 2; ctx.strokeStyle = '#ff6b8e'; ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 中心
+      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff6b8e'; ctx.fill();
+
+      // 半径ハンドル（NE 45°）
+      if (edit) {
+        const hx = cx + rpx * Math.SQRT1_2, hy = cy - rpx * Math.SQRT1_2;
+        ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#fffaf0'; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = '#ff6b8e'; ctx.stroke();
+      }
+
+      // ラベル（🎯 + 名前）
+      const name = s.label || s.id || '';
+      if (name) {
+        ctx.fillStyle = 'rgba(255,250,240,0.92)';
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText(`🎯 ${name}`, cx, cy - rpx - 4);
+      }
+      ctx.restore();
+    });
+  }
+
+  // 位置トリガーの一覧（ラベル / 半径 / どのゾーンか / 使っている演出数 / 削除）。
+  function renderSpotList() {
+    const noteEl = q('.fm-spot-note'), listEl = q('.fm-spot-list'), addBtn = q('.fm-spot-add');
+    if (!noteEl || !listEl || !addBtn) return;
+    const arr = Array.isArray(layout.spots) ? layout.spots : [];
+    noteEl.textContent = arr.length
+      ? `${arr.length} 個（タイムラインの演出から「この位置に来たら」で選ぶ）`
+      : '未設定 — キャンバスをクリック / 下のボタンで追加';
+    noteEl.className = 'fm-spot-note';
+    listEl.innerHTML = '';
+    const { boxes } = zonesFromLayout(layout);
+    arr.forEach((s, i) => {
+      const row = document.createElement('div'); row.className = 'fm-spot-item';
+      const badge = document.createElement('span'); badge.className = 'fm-spot-badge'; badge.textContent = '🎯';
+
+      const lab = document.createElement('input');
+      lab.type = 'text'; lab.className = 'fm-spot-label'; lab.placeholder = s.id; lab.value = s.label || '';
+      lab.oninput = () => { s.label = lab.value; markDirty(); render(); };
+
+      const rad = document.createElement('input');
+      rad.type = 'number'; rad.className = 'fm-spot-r'; rad.min = '0.05'; rad.max = '1'; rad.step = '0.05';
+      rad.value = String(clampSpotRadius(s.rM));
+      rad.title = '円の半径 (m)';
+      rad.onchange = () => { s.rM = clampSpotRadius(parseFloat(rad.value)); rad.value = String(s.rM); markDirty(); render(); };
+
+      const owner = cameraAtPoint(boxes, s.x, s.z);
+      const info = document.createElement('span');
+      info.className = 'fm-spot-info' + (owner < 0 ? ' warn' : '');
+      const uses = spotUses[s.id] || 0;
+      info.textContent = (owner < 0 ? '⚠ ゾーン未割当' : camLabelIdx(owner))
+        + (uses ? ` / ${uses} 演出` : ' / 未使用');
+      info.title = owner < 0
+        ? 'この場所はどのカメラのゾーンにも入っていません。ここに立っても区間が決まらないため演出は出ません。'
+        : `この場所は ${camLabelIdx(owner)} のゾーンです。演出はこのカメラの区間に置くこと。`;
+
+      const del = document.createElement('button');
+      del.className = 'fm-reg-btn fm-reg-del'; del.textContent = '🗑'; del.title = '削除';
+      del.onclick = () => deleteSpot(i);
+
+      row.append(badge, lab, rad, info, del);
+      listEl.appendChild(row);
+    });
+    addBtn.disabled = arr.length >= SPOT_MAX;
+  }
+
+  function deleteSpot(i) {
+    const arr = spotArr();
+    const s = arr[i];
+    if (!s) return;
+    const uses = spotUses[s.id] || 0;
+    if (uses && !confirm(`「${s.label || s.id}」は ${uses} 個の演出が使っています。削除すると、その演出は発火しなくなります。削除しますか？`)) return;
+    arr.splice(i, 1);
+    spotDragIndex = -1;
+    markDirty(); renderSpotList(); render();
+  }
+
+  function addSpot(x, z) {
+    const arr = spotArr();
+    if (arr.length >= SPOT_MAX) return -1;
+    const id = nextSpotId();
+    arr.push({
+      id,
+      x: +x.toFixed(3),
+      z: +z.toFixed(3),
+      rM: SPOT_DEFAULT_RADIUS_M,
+      label: `位置${arr.length + 1}`,
+    });
+    markDirty(); renderSpotList();
+    return arr.length - 1;
   }
 
   // 現在の regPoints 座標をサマリ 1 行で表示。
@@ -719,6 +891,7 @@ export function createFloorMap(container, deps) {
     reg: 'クリックで点を置く / ドラッグで移動 / 右クリックで削除。番号 = HMD でタッチする順。',
     walk: 'マップのどこでも押した場所に体験者が立ちます。押したまま動かすと歩きます。',
     cam: 'カメラ印をドラッグで移動 / 矢印の先をドラッグで向き。何も無い所をクリックすると選択中カメラをそこへ置きます。高さ・俯角・画角はカメラ列の 📐 欄。',
+    spot: 'クリックで発火点の円を置く / 中心をドラッグで移動 / 縁をドラッグで大きさ / 右クリックで削除。',
   };
   function setMapMode(next, opt) {
     if (!MODE_HINT[next]) return;
@@ -727,10 +900,14 @@ export function createFloorMap(container, deps) {
     canvas.classList.toggle('fm-reg-edit', isReg());
     canvas.classList.toggle('fm-walk', isWalk());
     canvas.classList.toggle('fm-campose-edit', isCamPose());
+    canvas.classList.toggle('fm-spot-edit', isSpot());
     modeHint.textContent = MODE_HINT[next];
     const camPanel = q('.fm-campose');
     if (camPanel) camPanel.style.display = isCamPose() ? '' : 'none';
+    const spotPanel = q('.fm-spots');
+    if (spotPanel) spotPanel.style.display = isSpot() ? '' : 'none';
     if (isCamPose()) renderCamPoseList();
+    if (isSpot()) renderSpotList();
     // 歩かせるモードに入った時、ドットが無ければ南辺中央に出す（旧チェックボックスと同じ初期位置）。
     if (isWalk() && !sim && !(opt && opt.keepPos)) sim = { x: 0, z: -0.7 };
     updateSimOut(); render(); emitSim();
@@ -763,6 +940,14 @@ export function createFloorMap(container, deps) {
     liveOut.classList.add('on');
   }
 
+  q('.fm-spot-add').onclick = () => {
+    const i = addSpot(0, 0);
+    if (i < 0) return;
+    setMapMode('spot');
+    spotDragIndex = i;
+    renderSpotList(); render();
+  };
+
   q('.fm-save').onclick = async () => {
     ensureGrid();
     // regPoints: 2 点未満は書かない（Unity 既定 2 点へフォールバック）。5 点超は切り詰め。
@@ -770,10 +955,13 @@ export function createFloorMap(container, deps) {
     const rp = regArr();
     if (rp && rp.length < REG_MIN) { delete layout.regPoints; regFellBack = true; }
     else if (rp && rp.length > REG_MAX) { layout.regPoints = rp.slice(0, REG_MAX); }
+    // 位置トリガー: 正規化（id 必須 / 半径クランプ）。空なら書かない（キーごと省く = 未著作）。
+    const spots = spotsFromLayout(layout);
+    if (spots.length) layout.spots = spots; else delete layout.spots;
     layout.rev = (parseInt(layout.rev, 10) || 0) + 1;
     const res = await deps.saveLayout(clone(layout));
     if (res && res.ok !== false) {
-      dirty = false; renderDirty(); renderRegList();
+      dirty = false; renderDirty(); renderRegList(); renderSpotList();
       if (regFellBack) regNoteEl.textContent = '⚠ 2 点未満のため regPoints を保存せず既定にフォールバックしました';
     } else { dirtyEl.textContent = '✕ 保存失敗'; }
   };
@@ -818,6 +1006,19 @@ export function createFloorMap(container, deps) {
       renderCamPoseList(); render();
       e.preventDefault(); return;
     }
+    // 位置トリガーモード: 円を掴めば移動 / 縁を掴めば半径 / 空きを押せば新しい円を置く。
+    if (isSpot()) {
+      const hit = spotHit(m.px, m.py);
+      if (hit) {
+        spotDragIndex = hit.index;
+        drag = { mode: 'spot', part: hit.part };
+      } else {
+        const i = addSpot(m.x, m.z);
+        if (i >= 0) { spotDragIndex = i; drag = { mode: 'spot', part: 'pos' }; }
+      }
+      renderSpotList(); render();
+      e.preventDefault(); return;
+    }
     // 歩かせるモード: **押した場所へそのまま立たせる**（ドットを狙って掴む必要はない）。
     //   旧実装は半径 14px 以内を掴んだ時だけドラッグで、外すとタイル塗りに化けていた。
     if (isWalk()) {
@@ -831,8 +1032,14 @@ export function createFloorMap(container, deps) {
     paintAt(m);
     e.preventDefault();
   });
-  // 右クリックで位置合わせ点を削除（編集モード時のみ）。
+  // 右クリックで位置合わせ点 / 位置トリガーを削除（それぞれの編集モード時のみ）。
   canvas.addEventListener('contextmenu', (e) => {
+    if (isSpot()) {
+      const m = mouseCourse(e);
+      const hit = spotHit(m.px, m.py);
+      if (hit) deleteSpot(hit.index);
+      e.preventDefault(); return;
+    }
     if (!isReg()) return;
     const m = mouseCourse(e);
     const hit = regHitIndex(m.px, m.py);
@@ -850,6 +1057,18 @@ export function createFloorMap(container, deps) {
       if (a && regDragIndex >= 0 && regDragIndex < a.length) {
         a[regDragIndex].x = +m.x.toFixed(3); a[regDragIndex].z = +m.z.toFixed(3);
         markDirty(); updateRegCoords(); render();
+      }
+    }
+    else if (drag.mode === 'spot') {
+      const arr = spotArr();
+      const s = arr[spotDragIndex];
+      if (s) {
+        if (drag.part === 'radius') {
+          s.rM = clampSpotRadius(Math.hypot(m.x - s.x, m.z - s.z));
+        } else {
+          s.x = +m.x.toFixed(3); s.z = +m.z.toFixed(3);
+        }
+        markDirty(); renderSpotList(); render();
       }
     }
     else if (drag.mode === 'campose') {
@@ -888,6 +1107,9 @@ export function createFloorMap(container, deps) {
     } else if (layout.regPoints !== undefined) {
       delete layout.regPoints;
     }
+    // 位置トリガー: 不正要素を落とし半径をクランプ（未著作なら配列そのものを持たない）。
+    const spots = spotsFromLayout(layout);
+    if (spots.length) layout.spots = spots; else delete layout.spots;
     // grid が無ければ cuts から初期塗りを生成。dims 不整合や cells 欠落も同様に正規化。
     const g = layout.grid;
     const okGrid = g && Number.isFinite(g.tileM) && Number.isInteger(g.cols) && Number.isInteger(g.rows)
@@ -921,11 +1143,26 @@ export function createFloorMap(container, deps) {
   function onState(state) {
     cameras = (state && state.cameras) || [];
     if (!dirty) adoptLayout(state && state.layout);
+    spotUses = countSpotUses(state);
     renderPalette();
     if (isCamPose()) renderCamPoseList();
     renderCourse();
-    if (!dirty) renderRegList(); // 編集中はラベル入力のフォーカスを潰さないため再構築しない
+    if (!dirty) { renderRegList(); renderSpotList(); } // 編集中は入力フォーカスを潰さないため再構築しない
     updateSimOut(); render();
+  }
+
+  // 「この円を使っている演出が何本あるか」（削除時の警告・一覧の注記に使う）。
+  function countSpotUses(state) {
+    const out = {};
+    const segs = (state && state.timeline && Array.isArray(state.timeline.segments))
+      ? state.timeline.segments : [];
+    for (const seg of segs) {
+      for (const t of (seg && Array.isArray(seg.takes) ? seg.takes : [])) {
+        if (!t || t.at !== 'spot' || !t.spotId) continue;
+        out[t.spotId] = (out[t.spotId] || 0) + 1;
+      }
+    }
+    return out;
   }
 
   // Unity heartbeat が更新されたら呼ぶ（alive=false や hmd 欠落時はドット非表示）。
@@ -963,6 +1200,7 @@ export function createFloorMap(container, deps) {
   renderPalette();
   renderCourse();
   renderRegList();
+  renderSpotList();
   renderDirty();
   render();
   return { onState, onUnity, isDirty: () => dirty, setSimPos, enableSim };

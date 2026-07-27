@@ -18,9 +18,14 @@ namespace FixedCamVr.Streaming
         public string id = "";              // 区間内で一意。空なら実行時に "L<lap>C<cam>#<i>" で補う
         public string name = "";            // UI 表示のみ（実行に影響しない）
 
-        public string at = TakeSchema.AtEnter;              // "enter" | "exit"
+        public string at = TakeSchema.AtEnter;              // "enter" | "exit" | "spot"
         public float offsetSec;                             // at=enter のみ（区間進入からの遅延）
-        public string ifMissed = TakeSchema.MissedFireOnExit; // at=enter のみ。"fireOnExit" | "skip"
+        public string ifMissed = TakeSchema.MissedFireOnExit; // at=enter / spot。"fireOnExit" | "skip"
+
+        /// <summary>at=spot のみ。<c>layout.spots[].id</c>（床の円）。空 / 未定義 id は発火しない。</summary>
+        public string spotId = "";
+        /// <summary>at=spot のみ。円の中に**連続で**この秒数居たら発火（0 = 入った瞬間）。</summary>
+        public float holdSec;
 
         public string policy = TakeSchema.PolicyHold;       // "hold" | "yield"
         public bool once = true;                            // ラン内 1 回
@@ -37,6 +42,8 @@ namespace FixedCamVr.Streaming
         public bool hasBgm;                 // present-flag（宣言 bool が正。TimelinePresentFlags 参照）
 
         public bool IsExit => TakeSchema.IsExit(at);
+        /// <summary>開始規則が「この位置に来たら」か（<see cref="spotId"/> の円へ体験者が入ったら発火）。</summary>
+        public bool IsSpot => TakeSchema.IsSpot(at);
         public bool SkipWhenMissed => TakeSchema.SkipWhenMissed(ifMissed);
         public bool IsYield => TakeSchema.IsYield(policy);
     }
@@ -85,6 +92,8 @@ namespace FixedCamVr.Streaming
     {
         public const string AtEnter = "enter";
         public const string AtExit = "exit";
+        /// <summary>「体験者が床の円（<c>layout.spots</c>）へ来たら」。時刻ではなく場所の開始規則。</summary>
+        public const string AtSpot = "spot";
 
         public const string MissedFireOnExit = "fireOnExit";
         public const string MissedSkip = "skip";
@@ -136,6 +145,8 @@ namespace FixedCamVr.Streaming
         }
 
         public static bool IsExit(string? at) => at == AtExit;
+
+        public static bool IsSpot(string? at) => at == AtSpot;
 
         public static bool SkipWhenMissed(string? ifMissed) => ifMissed == MissedSkip;
 

@@ -618,10 +618,22 @@ namespace FixedCamVr.Streaming
             audioCue?.Play(); // dip の黒が視覚差替に先行 → J カット相当
         }
 
+        // dip を進める dt の供給元。既定は Time.unscaledDeltaTime。
+        // **EditMode テスト用の seam**（TakeRunner.SetTimeSource と同じ流儀）: EditMode では
+        // unscaledDeltaTime が「エディタの実フレーム間隔」（フォーカス中 7〜16ms / 非フォーカス数百 ms）に
+        // なるため、Update を数回叩くだけの配線テストが run ごとに通る / 落ちるを繰り返す
+        // （2026-07-27 に TakeWiringTests / SwitchWiringTests で実際に発生）。
+        private Func<float>? _deltaSource;
+
+        /// <summary>dip 進行の dt を差し替える（EditMode テスト用。null で <c>Time.unscaledDeltaTime</c> に戻る）。</summary>
+        public void SetDeltaSource(Func<float>? source) => _deltaSource = source;
+
+        private float DipDeltaTime => _deltaSource != null ? _deltaSource() : Time.unscaledDeltaTime;
+
         private void AdvanceDip()
         {
             // unscaledDeltaTime で進める（StartupFader と同流儀）。timeScale=0 で黒凍結するのを防ぐ。
-            _dipTimer += Time.unscaledDeltaTime;
+            _dipTimer += DipDeltaTime;
             if (_dip == DipState.Down)
             {
                 float t = _curDipDown <= 0f ? 1f : Mathf.Clamp01(_dipTimer / _curDipDown);

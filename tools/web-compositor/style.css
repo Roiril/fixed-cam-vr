@@ -677,6 +677,24 @@ input:-webkit-autofill:active {
 .fm-reg-coords { font-size: 11px; font-family: monospace; opacity: var(--opacity-sub); letter-spacing: .01em; min-height: 1.3em; }
 .fm-canvas.fm-reg-edit { cursor: cell; }
 
+/* 位置トリガー（演出の発火点となる床の円）エディタ — フロアマップ内 */
+.fm-spots {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; border: 1px solid var(--line-soft); border-left: 2px solid #ff6b8e;
+}
+.fm-spot-note { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.4; min-height: 1.3em; }
+.fm-spot-note.warn { color: var(--warn-color); opacity: 1; }
+.fm-spot-list { display: flex; flex-direction: column; gap: 4px; }
+.fm-spot-item { display: flex; align-items: center; gap: 6px; }
+.fm-spot-badge { flex: 0 0 auto; width: 18px; text-align: center; font-size: 12px; color: #ff6b8e; }
+.fm-spot-label { flex: 1 1 auto; min-width: 60px; font-size: 11px; padding: 2px 4px; }
+.fm-spot-r { flex: 0 0 auto; width: 62px; font-size: 11px; padding: 2px 4px; }
+.fm-spot-info { flex: 0 0 auto; font-size: 10px; opacity: var(--opacity-sub); white-space: nowrap; }
+.fm-spot-info.warn { color: var(--warn-color); opacity: 1; }
+.fm-spot-add { align-self: flex-start; padding: 4px 10px; font-size: 11px; }
+.fm-spot-add:disabled { opacity: .4; cursor: default; }
+.fm-canvas.fm-spot-edit { cursor: crosshair; }
+
 /* ===================================================================== */
 /* ⑦ cue 管理（1 カメラ複数 cue）— app.js ③ 画像加工セクション内            */
 /* ===================================================================== */
@@ -1387,6 +1405,10 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-take.exit { margin: 0 -10px; z-index: 2; border-style: dashed; border-color: var(--warn-color); }
 .rb-take.exit:last-child { margin-right: 0; }
 .rb-take.exit .rb-take-start { color: var(--warn-color); }
+/* 位置トリガーの演出は「時間軸に乗らない」ことを形で示す（左端に太い破線 + 別色） */
+.rb-take.spot { border-color: #ff6b8e; border-left-width: 3px; border-left-style: dashed; }
+.rb-take.spot .rb-take-head { color: #ff6b8e; border-bottom-color: rgba(255, 107, 142, .32); }
+.rb-take.spot .rb-take-start { color: #ff6b8e; opacity: 1; }
 .rb-take-head {
   display: flex; flex-direction: column; gap: 1px; cursor: grab;
   padding: 3px 7px; border-bottom: 1px solid rgba(255, 222, 173, .28);
@@ -1440,6 +1462,7 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-legend .e i { background: repeating-linear-gradient(115deg, transparent 0 5px, rgba(255, 250, 240, .14) 5px 10px); }
 .rb-legend .r i { background: rgba(255, 222, 173, .25); border-color: rgba(255, 222, 173, .5); }
 .rb-legend .x i { background: transparent; border: 1px dashed var(--warn-color); }
+.rb-legend .s i { background: rgba(255, 107, 142, .18); border: 1px dashed #ff6b8e; }
 
 /* ---- インスペクタ ---- */
 .rb-inspector:empty { display: none; }

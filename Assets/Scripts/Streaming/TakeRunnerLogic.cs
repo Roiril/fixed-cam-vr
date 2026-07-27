@@ -16,6 +16,10 @@ namespace FixedCamVr.Streaming
     ///   4. 区間を離れた時点で未発火の演出は必ず決着する（発火 or 破棄）。**遅れて別区間で発火しない**
     ///   5. once はラン内 1 回（<see cref="ResetRun"/> でクリア）
     ///   6. ライブ卓の抑止中は発火しない
+    ///   6b. **開始規則「この位置に来たら」（at=spot）** は時刻ではなく床の円で due になる
+    ///       （<see cref="SpotTriggerLogic"/> の滞在状態を <see cref="Tick"/> で受ける）。
+    ///       それ以外（武装・決着・once・ifMissed）は enter と完全に同じ扱い
+    ///       — 契約は <c>.claude/plans/2026-07-27_position-trigger.md</c> §3
     ///   7. maxDurationSec（既定 45s）を超えたら強制終了する
     ///   8. 終了時の復帰先は「いま体験者が居るゾーン」（引数で受ける・復元ではなく再計算）
     ///
@@ -28,13 +32,18 @@ namespace FixedCamVr.Streaming
         {
             public int lap;
             public int camera;          // 区間キーのカメラ
-            public bool onExit;         // true=exit アンカー / false=enter アンカー
+            public bool onExit;         // true=exit アンカー / false=enter or spot アンカー
             public float offsetSec;     // enter のみ
             public bool skipWhenMissed; // true=skip / false=fireOnExit
             public bool once;
             public float maxDurationSec;
             public bool yieldOnZoneChange; // true=yield（体験者が区間を移ったら打ち切る）/ false=hold
             public float[] stepDurSec;  // カットごとの尺（<0 = untilClipEnd＝外部通知待ち）
+
+            // 開始規則「この位置に来たら」（at=spot）。onExit=false と併用する。
+            public bool onSpot;         // true = 時刻ではなく床の円で発火する
+            public int spotIndex;       // SpotTriggerLogic のスロット（範囲外 = 発火しない）
+            public float holdSec;       // 円の中に連続でこの秒数居たら発火（0 = 入った瞬間）
         }
 
         public enum Action { None, BeginStep, EndTake }
@@ -167,15 +176,17 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 毎フレーム評価。走行中は watchdog / カット進行 / 終了を、非走行中は発火判定を行う。
         /// <paramref name="latestZoneCam"/> は「いま体験者が居るゾーンのカメラ」（終了時の復帰先）。
+        /// <paramref name="spots"/> は位置トリガーの現在状態（<see cref="SpotTriggerLogic.StateView"/>）。
+        /// null なら at=spot の演出は発火しない（位置が取れない環境＝従来どおりの動き）。
         /// </summary>
-        public Decision Tick(float now, int latestZoneCam)
+        public Decision Tick(float now, int latestZoneCam, SpotTriggerLogic.State[]? spots = null)
         {
             if (_running)
             {
                 if (now >= _deadline)
                     return EndTakeDecision(latestZoneCam, forced: true);
 
-                ResolveOverdueWhileBlocked(now);
+                ResolveOverdueWhileBlocked(now, spots);
 
                 if (now >= _stepEnd)
                 {
@@ -194,22 +205,22 @@ namespace FixedCamVr.Streaming
 
             if (_suppressed)
             {
-                // 抑止中に発火時刻を過ぎたものも「待たせない」（離脱時発火 or 破棄へ落とす）。
-                ResolveOverdueWhileBlocked(now);
+                // 抑止中に発火条件を満たしたものも「待たせない」（離脱時発火 or 破棄へ落とす）。
+                ResolveOverdueWhileBlocked(now, spots);
                 return default;
             }
 
-            int pick = FindDue(now);
+            int pick = FindDue(now, spots);
             if (pick < 0)
             {
-                ResolveOverdueWhileBlocked(now);
+                ResolveOverdueWhileBlocked(now, spots);
                 return default;
             }
 
             RemoveArmedAt(pick, out int takeIndex);
             StartTake(takeIndex, now, _hasCurrent ? _curCam : 0);
-            // 同時に発火時刻を迎えていた他の演出は、この 1 本に譲って決着する。
-            ResolveOverdueWhileBlocked(now);
+            // 同時に発火条件を迎えていた他の演出は、この 1 本に譲って決着する。
+            ResolveOverdueWhileBlocked(now, spots);
             return BeginStepDecision(takeStarted: true);
         }
 
@@ -277,7 +288,9 @@ namespace FixedCamVr.Streaming
             };
         }
 
-        // 進入区間の enter 演出を武装する（offsetSec 昇順 → 同値は配列順）。
+        // 進入区間の enter / spot 演出を武装する（offsetSec 昇順 → 同値は配列順）。
+        // 位置トリガー（onSpot）は offsetSec を持たない（契約上 0）ので、同値タイブレーク＝配列順で並ぶ。
+        // 武装さえすれば due 判定（IsDue）が時刻と位置を出し分けるので、ここに分岐は要らない。
         private void ArmEnterTakes(int lap, int camera, float now)
         {
             var order = new List<int>();
@@ -302,22 +315,32 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        // 発火時刻に達した Waiting のうち先頭を返す（無ければ -1）。
-        private int FindDue(float now)
+        // 発火条件を満たした Waiting のうち先頭を返す（無ければ -1）。
+        private int FindDue(float now, SpotTriggerLogic.State[]? spots)
         {
             for (int k = 0; k < _armedIndex.Count; k++)
-                if (_armedState[k] == Armed.Waiting && now >= _armedDue[k]) return k;
+                if (_armedState[k] == Armed.Waiting && IsDue(k, now, spots)) return k;
             return -1;
         }
 
-        // 走行中 / 抑止中に発火時刻を過ぎたものを決着させる（待たせない）。
+        // 武装スロット k の発火条件。時刻トリガーは due 時刻、位置トリガーは円の滞在で決まる。
+        private bool IsDue(int k, float now, SpotTriggerLogic.State[]? spots)
+        {
+            Def d = _defs[_armedIndex[k]];
+            if (!d.onSpot) return now >= _armedDue[k];
+            if (spots == null || d.spotIndex < 0 || d.spotIndex >= spots.Length) return false;
+            SpotTriggerLogic.State s = spots[d.spotIndex];
+            return s.inside && s.insideSec >= (d.holdSec > 0f ? d.holdSec : 0f);
+        }
+
+        // 走行中 / 抑止中に発火条件を満たしたものを決着させる（待たせない）。
         //   skip        → 武装から外して破棄
         //   fireOnExit  → 離脱時のみ発火しうる状態へ落とす
-        private void ResolveOverdueWhileBlocked(float now)
+        private void ResolveOverdueWhileBlocked(float now, SpotTriggerLogic.State[]? spots)
         {
             for (int k = _armedIndex.Count - 1; k >= 0; k--)
             {
-                if (_armedState[k] != Armed.Waiting || now < _armedDue[k]) continue;
+                if (_armedState[k] != Armed.Waiting || !IsDue(k, now, spots)) continue;
                 if (_defs[_armedIndex[k]].skipWhenMissed) RemoveArmedAt(k, out _);
                 else _armedState[k] = Armed.DeferredToExit;
             }
@@ -325,7 +348,8 @@ namespace FixedCamVr.Streaming
 
         // 離脱の瞬間に発火する候補を配列順で 1 つ選ぶ。
         //   - at=exit で未発火のもの
-        //   - 武装中の enter 演出のうち ifMissed=fireOnExit のもの（時刻未達・超過どちらでも）
+        //   - 武装中の enter / spot 演出のうち ifMissed=fireOnExit のもの
+        //     （時刻未達・超過どちらでも / 位置トリガーなら「その円へ来なかった」場合）
         private int FindExitCandidate(int lap, int camera)
         {
             for (int i = 0; i < _defs.Length; i++)
