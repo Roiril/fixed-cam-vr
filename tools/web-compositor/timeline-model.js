@@ -89,8 +89,8 @@ export function resolveTakeBgm(take, laneTrackId = '') {
 // ===========================================================================
 
 export const TAKE = {
-  // 開始規則: 進入 +t 秒（時刻）/ 離脱時（事象）/ この位置に来たら（場所・layout.spots の円）。
-  AT_ENTER: 'enter', AT_EXIT: 'exit', AT_SPOT: 'spot',
+  // 開始規則: 進入 +t 秒（時刻）/ 離脱時（事象）/ このラインを通過したら（場所・layout.lines の線分）。
+  AT_ENTER: 'enter', AT_EXIT: 'exit', AT_LINE: 'line',
   MISSED_FIRE_ON_EXIT: 'fireOnExit', MISSED_SKIP: 'skip',
   POLICY_HOLD: 'hold', POLICY_YIELD: 'yield',
   SRC_LIVE: 'live', SRC_INHERIT: 'inherit', SRC_CLIP: 'clip', SRC_STILL: 'still', SRC_REC: 'rec',
@@ -118,8 +118,8 @@ export function newTake(id, over = {}) {
   return {
     id, name: '',
     at: TAKE.AT_ENTER, offsetSec: 0, ifMissed: TAKE.MISSED_FIRE_ON_EXIT,
-    // at=spot のとき: どの円か（layout.spots[].id）と、円の中に連続で居る秒数（0 = 入った瞬間）。
-    spotId: '', holdSec: 0,
+    // at=line のとき: どのラインか（layout.lines[].id）。ラインは担当カメラに紐づく。
+    lineId: '',
     policy: TAKE.POLICY_HOLD, once: true, maxDurationSec: 0,
     steps: [],
     // 演出中だけの BGM（hasBgm=false = 区間で鳴っている曲がそのまま続く）。
@@ -158,16 +158,15 @@ function serializeStep(s) {
 }
 
 function serializeTake(t) {
-  const at = oneOf(t.at, [TAKE.AT_ENTER, TAKE.AT_EXIT, TAKE.AT_SPOT], TAKE.AT_ENTER);
+  const at = oneOf(t.at, [TAKE.AT_ENTER, TAKE.AT_EXIT, TAKE.AT_LINE], TAKE.AT_ENTER);
   const out = {
     id: t.id || '',
     name: t.name || '',
     at,
-    // 進入 +t 秒だけが offsetSec を持つ（exit は事象・spot は場所なので 0 で書き出す）。
+    // 進入 +t 秒だけが offsetSec を持つ（exit は事象・line は場所なので 0 で書き出す）。
     offsetSec: at === TAKE.AT_ENTER ? num(t.offsetSec, 0) : 0,
     ifMissed: t.ifMissed === TAKE.MISSED_SKIP ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT,
-    spotId: at === TAKE.AT_SPOT ? (t.spotId || '') : '',
-    holdSec: at === TAKE.AT_SPOT ? Math.max(0, num(t.holdSec, 0)) : 0,
+    lineId: at === TAKE.AT_LINE ? (t.lineId || '') : '',
     policy: t.policy === TAKE.POLICY_YIELD ? TAKE.POLICY_YIELD : TAKE.POLICY_HOLD,
     once: t.once !== false,
     maxDurationSec: num(t.maxDurationSec, 0),
@@ -217,10 +216,9 @@ export function normalizeTimelineV3(tl) {
 function normalizeTake(t) {
   const out = newTake(t.id || '', {
     name: t.name || '',
-    at: oneOf(t.at, [TAKE.AT_ENTER, TAKE.AT_EXIT, TAKE.AT_SPOT], TAKE.AT_ENTER),
+    at: oneOf(t.at, [TAKE.AT_ENTER, TAKE.AT_EXIT, TAKE.AT_LINE], TAKE.AT_ENTER),
     offsetSec: num(t.offsetSec, 0),
-    spotId: typeof t.spotId === 'string' ? t.spotId : '',
-    holdSec: Math.max(0, num(t.holdSec, 0)),
+    lineId: typeof t.lineId === 'string' ? t.lineId : '',
     ifMissed: t.ifMissed === TAKE.MISSED_SKIP ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT,
     policy: t.policy === TAKE.POLICY_YIELD ? TAKE.POLICY_YIELD : TAKE.POLICY_HOLD,
     once: t.once !== false,

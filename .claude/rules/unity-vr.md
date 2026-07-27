@@ -116,9 +116,10 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 2. **位置合わせ = 剛体 3 DOF**（XZ 平行移動 + yaw）だけを [`CourseFrame`](../Assets/Scripts/Tracking/CourseFrame.cs) が持ち、[`CourseRegistrationController`](../Assets/Scripts/Tracking/CourseRegistrationController.cs) の **HMD 2 点登録**で解く（[Tracker] 上、`Setup Main Demo Scene` が自動配線）。
 
 **フロアマップ（卓）の 5 モード**: 🖌 塗る（ゾーン）/ 📍 位置合わせ点（`layout.regPoints`）/ 🚶 歩かせる（シミュレータ）/
-📐 カメラ姿勢（`cameras[].pose`・CG 人形の視点）/ **🎯 位置トリガー（`layout.spots` = 演出の発火点となる床の円。
-2026-07-27〜・契約は [streaming.md](streaming.md) の「開始規則『この位置に来たら』」）**。
-どのモードでも円・カメラ印は薄く描かれる（塗りながら位置関係が見える）。
+📐 カメラ姿勢（`cameras[].pose`・CG 人形の視点）/ **📏 通過ライン（`layout.lines` = 演出の発火点となる床の線分。
+2026-07-27〜・契約は [streaming.md](streaming.md) の「開始規則『このラインを通過したら』」）**。
+ラインは**担当カメラの色**で描かれる（どの区間のものかが目で分かる）。
+どのモードでもライン・カメラ印は薄く描かれる（塗りながら位置関係が見える）。
 
 #### 入力モデル（右コントローラ 4 入力のみ・2026-07-20〜）
 

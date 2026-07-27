@@ -18,14 +18,14 @@ import { readFileSync } from 'node:fs';
 import {
   runScenario, parseScenario, createShowRunner, sampleAt,
   pickZone, containsBox, boxAabb, ZoneProgression, SwitchDirector, LapCounter,
-  SpotTrigger, spot, spotUndefined, SPOT_EXIT_MARGIN_M, SPOT_MIN_RADIUS_M,
+  LineCross, line, lineUndefined, LINE_REARM_MARGIN_M, LINE_MAX_STEP_M,
   DEFAULT_TICK_MS,
 } from './scenario-engine.js';
 
 const SCENARIO_URL = new URL('../../Assets/Tests/Fixtures/scenario_walk.json', import.meta.url);
 const TRACE_URL = new URL('../../Assets/Tests/Fixtures/scenario_walk.trace.json', import.meta.url);
-const SPOT_SCENARIO_URL = new URL('../../Assets/Tests/Fixtures/scenario_spot.json', import.meta.url);
-const SPOT_TRACE_URL = new URL('../../Assets/Tests/Fixtures/scenario_spot.trace.json', import.meta.url);
+const LINE_SCENARIO_URL = new URL('../../Assets/Tests/Fixtures/scenario_line.json', import.meta.url);
+const LINE_TRACE_URL = new URL('../../Assets/Tests/Fixtures/scenario_line.trace.json', import.meta.url);
 
 const scenario = JSON.parse(readFileSync(SCENARIO_URL, 'utf8'));
 const golden = JSON.parse(readFileSync(TRACE_URL, 'utf8'));
@@ -107,76 +107,93 @@ test('dwell 未満の踏み込みは確定しない（境界のうろつき）',
   assert.ok(!runScenario(cfg, wobble).some((e) => e.kind === 'zone'));
 });
 
-// ---- 位置トリガー（at=spot・golden は Unity 側が生成した正本）--------------------
+// ---- 通過ライン（at=line・golden は Unity 側が生成した正本）----------------------
 
-const spotScenario = JSON.parse(readFileSync(SPOT_SCENARIO_URL, 'utf8'));
-const spotGolden = JSON.parse(readFileSync(SPOT_TRACE_URL, 'utf8'));
-const spotRun = parseScenario(spotScenario);
-const spotTrace = runScenario(spotRun.cfg, spotRun.samples);
+const lineScenario = JSON.parse(readFileSync(LINE_SCENARIO_URL, 'utf8'));
+const lineGolden = JSON.parse(readFileSync(LINE_TRACE_URL, 'utf8'));
+const lineRun = parseScenario(lineScenario);
+const lineTrace = runScenario(lineRun.cfg, lineRun.samples);
 
-test('golden(spot): イベント列が Unity トレースと完全一致する', () => {
-  assert.deepStrictEqual(spotTrace.map(shape), spotGolden.map(shape),
-    `位置トリガーのトレースが golden と違う。\n JS  : ${spotTrace.map(fmt).join('\n JS  : ')}`
-    + `\n GOLD: ${spotGolden.map(fmt).join('\n GOLD: ')}`);
+test('golden(line): イベント列が Unity トレースと完全一致する', () => {
+  assert.deepStrictEqual(lineTrace.map(shape), lineGolden.map(shape),
+    `通過ラインのトレースが golden と違う。\n JS  : ${lineTrace.map(fmt).join('\n JS  : ')}`
+    + `\n GOLD: ${lineGolden.map(fmt).join('\n GOLD: ')}`);
 });
 
-test('golden(spot): 各イベントの時刻が ±1 tick 以内', () => {
-  assert.equal(spotTrace.length, spotGolden.length, 'イベント数が違う');
-  spotTrace.forEach((e, i) => {
-    assert.ok(Math.abs(e.t - spotGolden[i].t) <= DEFAULT_TICK_MS,
-      `#${i} ${e.kind} の時刻が ${Math.abs(e.t - spotGolden[i].t)}ms ずれている`);
+test('golden(line): 各イベントの時刻が ±1 tick 以内', () => {
+  assert.equal(lineTrace.length, lineGolden.length, 'イベント数が違う');
+  lineTrace.forEach((e, i) => {
+    assert.ok(Math.abs(e.t - lineGolden[i].t) <= DEFAULT_TICK_MS,
+      `#${i} ${e.kind} の時刻が ${Math.abs(e.t - lineGolden[i].t)}ms ずれている`);
   });
 });
 
-test('位置トリガー: 立ち止まれば出る / 長すぎる hold は出ない / 踏んだ瞬間に出る', () => {
-  const ids = spotTrace.filter((e) => e.kind === 'take').map((e) => e.id);
-  assert.ok(ids.includes('t_C_stand'), '0.5s 立ち止まったので出る');
-  assert.ok(!ids.includes('t_C_long'), '3s の立ち止まりは満たさない');
-  assert.ok(ids.includes('t_B_pass'), 'hold 0 は踏んだ瞬間に出る');
-  assert.ok(ids.includes('t_C_miss'), '踏まないまま離脱 → fireOnExit で出る');
+test('通過ライン: 自分の区間の線は出る / 別カメラ担当は出ない / 通らなければ離脱時に出る', () => {
+  const ids = lineTrace.filter((e) => e.kind === 'take').map((e) => e.id);
+  assert.ok(ids.includes('t_B_line'), 'B の線を通過して出る');
+  assert.ok(ids.includes('t_C_line'), 'C の線を通過して出る');
+  assert.ok(!ids.includes('t_B_wrongline'), '別カメラ担当のラインを踏んでも出ない（区間紐づけ）');
+  assert.ok(ids.includes('t_C_miss'), '通らないまま離脱 → fireOnExit で出る');
 });
 
-test('位置トリガー: 円が無ければ（layout.spots 未著作）沈黙する', () => {
-  const c = parseScenario(spotScenario);
-  c.cfg.spots = [];
+test('通過ライン: 線が無ければ（layout.lines 未著作）沈黙する', () => {
+  const c = parseScenario(lineScenario);
+  c.cfg.lines = [];
   const ids = runScenario(c.cfg, c.samples).filter((e) => e.kind === 'take').map((e) => e.id);
   assert.deepStrictEqual(ids, ['t_C_miss'], 'fireOnExit の 1 本だけが離脱時に出る');
 });
 
-test('SpotTrigger: 入るのは半径 / 出るのはヒステリシス込み', () => {
-  const s = new SpotTrigger();
-  s.setSpots([spot(0, 0, 0.25)]);
-  s.tick(0.28, 0, 0.02);
-  assert.equal(s.isInside(0), false, '入る判定は素の半径');
-  s.tick(0.2, 0, 0.02);
-  assert.equal(s.isInside(0), true);
-  s.tick(0.25 + SPOT_EXIT_MARGIN_M - 0.01, 0, 0.02);
-  assert.equal(s.isInside(0), true, 'マージンの内はまだ中');
-  s.tick(0.25 + SPOT_EXIT_MARGIN_M + 0.01, 0, 0.02);
-  assert.equal(s.isInside(0), false);
+test('LineCross: 横切ったフレームだけ true / 端の外を回り込んだら出ない', () => {
+  const l = new LineCross();
+  l.setLines([line(0, -0.5, 0, 0.5)]);          // x=0 の縦線（z ∈ [-0.5, 0.5]）
+  let fired = 0;
+  let t0 = 0;
+  for (let i = 0; i <= 20; i++) { t0 += 0.02; l.tick(t0, -0.3 + i * 0.03, 0, 0.02); if (l.crossed(0)) fired++; }
+  assert.equal(fired, 1, '事象なので 1 フレームだけ');
+
+  const around = new LineCross();
+  around.setLines([line(0, -0.5, 0, 0.5)]);
+  let any = false;
+  let ta = 0;
+  const step = (x, z) => { ta += 0.02; around.tick(ta, x, z, 0.02); any = any || around.crossed(0); };
+  for (let i = 0; i <= 10; i++) step(-0.4, i * 0.09);      // 北へ
+  for (let i = 0; i <= 10; i++) step(-0.4 + i * 0.08, 0.9); // 端の外を東へ
+  for (let i = 0; i <= 10; i++) step(0.4, 0.9 - i * 0.09);  // 南へ
+  assert.equal(any, false, '線分の外を回り込んだら横切っていない');
 });
 
-test('SpotTrigger: 滞在秒は連続で数え、出たら 0 / dt 不連続でも数え直す', () => {
-  const s = new SpotTrigger();
-  s.setSpots([spot(0, 0, 0.25)]);
-  s.tick(0, 0, 0.02);
-  assert.equal(s.insideSecOf(0), 0, '入った瞬間は 0');
-  for (let i = 0; i < 25; i++) s.tick(0, 0, 0.02);
-  assert.ok(Math.abs(s.insideSecOf(0) - 0.5) < 0.01);
-  s.tick(0, 0, 3);                    // 復帰（HMD 着脱）相当の飛び
-  assert.equal(s.isInside(0), true);
-  assert.equal(s.insideSecOf(0), 0);
-  s.tick(2, 0, 0.02);
-  assert.equal(s.insideSecOf(0), 0, '出たら 0');
+test('LineCross: 線の上での往復は連発しない / 離れれば再検出する', () => {
+  const l = new LineCross();
+  l.setLines([line(0, -0.5, 0, 0.5)]);
+  let fired = 0;
+  let tb = 0;
+  const step = (x) => { tb += 0.02; l.tick(tb, x, 0, 0.02); if (l.crossed(0)) fired++; };
+  step(-0.02); step(0.01); step(-0.01); step(0.01);
+  assert.equal(fired, 1, `線から ${LINE_REARM_MARGIN_M}m 離れるまで再検出しない`);
+  step(-0.3); step(0.1);
+  assert.equal(fired, 2);
 });
 
-test('SpotTrigger: 実体の無い枠は常に外 / 半径 0 は下限へクランプ', () => {
-  const s = new SpotTrigger();
-  s.setSpots([spotUndefined(), spot(0, 0, 0)]);
-  s.tick(0, 0, 0.02);
-  assert.equal(s.isInside(0), false);
-  assert.equal(s.isInside(1), true, `半径 0 は ${SPOT_MIN_RADIUS_M}m へクランプ`);
-  assert.equal(s.count, 2, 'スロットは保たれる（index が動かない）');
+test('LineCross: 向き指定 / dt 不連続 / テレポート / 実体なし', () => {
+  const fwd = new LineCross();
+  fwd.setLines([line(0, -0.5, 0, 0.5, 1)]);     // 法線（+X）向きだけ
+  fwd.tick(0.02, -0.3, 0, 0.02); fwd.tick(0.04, 0.3, 0, 0.02);
+  assert.equal(fwd.crossed(0), true);
+  fwd.tick(0.06, 0.3, 0, 0.02); fwd.tick(0.08, -0.3, 0, 0.02);
+  assert.equal(fwd.crossed(0), false, '逆向きは出ない');
+
+  const jump = new LineCross();
+  jump.setLines([line(0, -0.5, 0, 0.5)]);
+  jump.tick(0.02, -0.3, 0, 0.02); jump.tick(3.02, 0.3, 0, 3);
+  assert.equal(jump.crossed(0), false, 'dt 不連続は数えない');
+  jump.tick(3.04, -1.0, 0, 0.02); jump.tick(3.06, 0.5, 0, 0.02);
+  assert.equal(jump.crossed(0), false, `1 フレーム ${LINE_MAX_STEP_M}m 超は teleport 扱い`);
+
+  const undef = new LineCross();
+  undef.setLines([lineUndefined()]);
+  undef.tick(0.02, -0.3, 0, 0.02); undef.tick(0.04, 0.3, 0, 0.02);
+  assert.equal(undef.crossed(0), false, '実体の無い枠は横切れない');
+  assert.equal(undef.count, 1, 'スロットは保たれる');
 });
 
 // ---- 部品の単体（ZonePickLogic / 時計 / 画面 / 周回）---------------------------

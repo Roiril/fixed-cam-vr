@@ -1305,7 +1305,7 @@ if ($('#timeline')) {
     getCues: () => state?.cues || [],
     getActors: () => state?.actors || [],
     getCourseOrder: () => state?.layout?.course?.order || null,
-    // 位置トリガー（layout.spots）と grid をリボンが読む（開始規則「この位置に来たら」の選択肢・警告）。
+    // 通過ライン（layout.lines）と grid をリボンが読む（開始規則「このラインを通過したら」の選択肢・警告）。
     getLayout: () => state?.layout || null,
     getGlobalPost: () => state?.post || FX_DEFAULT,
     getBgmTracks: () => state?.bgmTracks || [],

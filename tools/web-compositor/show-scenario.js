@@ -7,10 +7,13 @@
 // 変換で「卓では決まらない」ものは黙って捏造せず warnings に出す（シミュレータが嘘をついたら価値はマイナス）。
 
 import { normalizeTimelineV3, TAKE } from './timeline-model.js';
-import { zonesFromLayout, spotsFromLayout, cameraAtPoint, HEAD_Y } from './zone-layout.js';
+import {
+  zonesFromLayout, linesFromLayout, cameraAtPoint, lineMid, lineLength,
+  parseLineDir, LINE_MIN_LENGTH_M, HEAD_Y,
+} from './zone-layout.js';
 import {
   resolveTiming, DEFAULT_DWELL_SEC, DEFAULT_COOLDOWN_SEC, FALLBACK_STEP_DUR_SEC, DEFAULT_TICK_MS,
-  spot as makeSpot,
+  line as makeLine,
 } from './scenario-engine.js';
 
 const num = (v, def) => (Number.isFinite(v) ? v : def);
@@ -96,10 +99,28 @@ export function buildScenarioConfig(state, opts = {}) {
   const order = (layout.course && Array.isArray(layout.course.order)) ? layout.course.order.slice() : [];
   if (!order.length) warnings.push('周回コース（layout.course.order）が空です。周回・区間が進みません。');
 
-  // 位置トリガー（床の円）。配列順 = Unity のスロット順（TakeRunnerLogic.Def.spotIndex が指す）。
-  const spotDefs = spotsFromLayout(layout);
-  const spotSlot = new Map(spotDefs.map((s, i) => [s.id, i]));
-  const spotOwner = new Map(spotDefs.map((s) => [s.id, cameraAtPoint(zoneInfo.boxes, s.x, s.z)]));
+  // 通過ライン（床の線分）。配列順 = Unity のスロット順（TakeRunnerLogic.Def.lineIndex が指す）。
+  const lineDefs = linesFromLayout(layout);
+  const lineSlot = new Map(lineDefs.map((l, i) => [l.id, i]));
+  // 線が実際に置かれているゾーン（担当カメラの著作値と食い違っていたら卓が警告する）。
+  const lineZone = new Map(lineDefs.map((l) => {
+    const m = lineMid(l);
+    return [l.id, cameraAtPoint(zoneInfo.boxes, m.x, m.z)];
+  }));
+  const camName = (i) => (cams[i] && cams[i].id ? `カメラ ${cams[i].id}` : `#${i}`);
+  for (const l of lineDefs) {
+    if (lineLength(l) < LINE_MIN_LENGTH_M) {
+      warnings.push(`ライン「${l.label || l.id}」が短すぎます（${LINE_MIN_LENGTH_M}m 未満は無効）`);
+      continue;
+    }
+    const zone = lineZone.get(l.id);
+    if (l.camera < 0) {
+      warnings.push(`ライン「${l.label || l.id}」の担当カメラが未指定です（どの区間からでも使えてしまう）`);
+    } else if (zone >= 0 && zone !== l.camera) {
+      warnings.push(`ライン「${l.label || l.id}」は ${camName(l.camera)} 担当ですが、`
+        + `線が置かれているのは ${camName(zone)} のゾーンです（体験者がそこを通る時の区間と食い違います）`);
+    }
+  }
 
   const tl = normalizeTimelineV3(s.timeline || { rev: 1, segments: [] });
   const takes = [];
@@ -138,22 +159,20 @@ export function buildScenarioConfig(state, opts = {}) {
         });
       });
 
-      // 開始規則「この位置に来たら」。円が無い / 未選択なら発火しない（黙って別の円で出さない）。
+      // 開始規則「このラインを通過したら」。ラインが無い / 未選択 / 別カメラ担当なら発火しない。
       const takeLabel = t.id || `L${seg.lap}C${seg.camera}#${ti}`;
-      const onSpot = t.at === TAKE.AT_SPOT;
+      const onLine = t.at === TAKE.AT_LINE;
       let slot = -1;
-      if (onSpot) {
-        if (!t.spotId) warnings.push(`${takeLabel} は位置が未選択です（発火しません）`);
-        else if (!spotSlot.has(t.spotId)) warnings.push(`${takeLabel} の位置「${t.spotId}」が layout.spots にありません（発火しません）`);
-        else {
-          slot = spotSlot.get(t.spotId);
-          const owner = spotOwner.get(t.spotId);
-          if (owner !== seg.camera) {
-            const name = (i) => (cams[i] && cams[i].id ? `カメラ ${cams[i].id}` : `#${i}`);
-            warnings.push(owner < 0
-              ? `${takeLabel} の位置「${t.spotId}」はゾーン未割当の場所です（その場所に立ってもこの区間になりません）`
-              : `${takeLabel} の位置「${t.spotId}」は${name(owner)}のゾーンです（この演出は${name(seg.camera)}の区間なので出ません）`);
-          }
+      if (onLine) {
+        const def = t.lineId ? lineDefs.find((l) => l.id === t.lineId) : null;
+        if (!t.lineId) warnings.push(`${takeLabel} はラインが未選択です（発火しません）`);
+        else if (!def) warnings.push(`${takeLabel} のライン「${t.lineId}」が layout.lines にありません（発火しません）`);
+        else if (def.camera >= 0 && def.camera !== seg.camera) {
+          // 実機も同じ理由で発火しない（ラインは担当カメラに紐づく）。
+          warnings.push(`${takeLabel} のライン「${def.label || def.id}」は ${camName(def.camera)} 担当です`
+            + `（この演出は ${camName(seg.camera)} の区間なので出ません）`);
+        } else {
+          slot = lineSlot.get(t.lineId);
         }
       }
 
@@ -167,9 +186,8 @@ export function buildScenarioConfig(state, opts = {}) {
         maxDurationSec: num(t.maxDurationSec, 0),
         yieldOnZoneChange: t.policy === TAKE.POLICY_YIELD,
         stepDurSec: durs,
-        onSpot: onSpot && slot >= 0,
-        spotIndex: slot,
-        holdSec: num(t.holdSec, 0),
+        onLine: onLine && slot >= 0,
+        lineIndex: slot,
       });
       takeIds.push(t.id || '');
       stepCameras.push(metaSteps.map((m) => m.camera));
@@ -178,10 +196,9 @@ export function buildScenarioConfig(state, opts = {}) {
         name: t.name || '',
         lap: seg.lap,
         camera: seg.camera,
-        at: t.at === TAKE.AT_EXIT || t.at === TAKE.AT_SPOT ? t.at : TAKE.AT_ENTER,
+        at: t.at === TAKE.AT_EXIT || t.at === TAKE.AT_LINE ? t.at : TAKE.AT_ENTER,
         offsetSec: num(t.offsetSec, 0),
-        spotId: onSpot ? (t.spotId || '') : '',
-        holdSec: onSpot ? num(t.holdSec, 0) : 0,
+        lineId: onLine ? (t.lineId || '') : '',
         ifMissed: t.ifMissed === TAKE.MISSED_SKIP ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT,
         policy: t.policy === TAKE.POLICY_YIELD ? TAKE.POLICY_YIELD : TAKE.POLICY_HOLD,
         once: t.once !== false,
@@ -210,7 +227,7 @@ export function buildScenarioConfig(state, opts = {}) {
     courseOrder: order,
     takes,
     takeIds,
-    spots: spotDefs.map((s) => makeSpot(s.x, s.z, s.rM)),
+    lines: lineDefs.map((l) => makeLine(l.x1, l.z1, l.x2, l.z2, parseLineDir(l.dir), l.camera)),
     stepCameras,
     startCamera: order.length ? order[0] : 0,
     tickMs: DEFAULT_TICK_MS,
@@ -231,8 +248,8 @@ export function buildScenarioConfig(state, opts = {}) {
       courseOrder: order,
       zoneRects: zoneInfo.rects,
       zoneSource: zoneInfo.source,
-      // 位置トリガー（描画・注釈用。owner = その場所を担当するカメラ index / -1 = 未割当）。
-      spots: spotDefs.map((s) => ({ ...s, owner: spotOwner.get(s.id) ?? -1 })),
+      // 通過ライン（描画・注釈用。zone = 線が置かれているゾーンのカメラ / -1 = 未割当）。
+      lines: lineDefs.map((l) => ({ ...l, zone: lineZone.get(l.id) ?? -1 })),
       takes: metaTakes,
       warnings,
       layoutRev: num(layout.rev, 0),
@@ -263,8 +280,9 @@ export function serializeScenario(cfg, samples, extra = {}) {
       hx: round(b.hx, 4), hy: round(b.hy, 4), hz: round(b.hz, 4),
       yawDeg: 0, camera: b.camera, priority: b.priority,
     })),
-    spots: (cfg.spots || []).map((s) => ({
-      x: round(s.x, 4), z: round(s.z, 4), rM: round(s.rM, 4), defined: s.defined !== false,
+    lines: (cfg.lines || []).map((l) => ({
+      x1: round(l.ax, 4), z1: round(l.az, 4), x2: round(l.bx, 4), z2: round(l.bz, 4),
+      dir: l.dir | 0, camera: Number.isInteger(l.camera) ? l.camera : -1, defined: l.defined !== false,
     })),
     takes: cfg.takes.map((t, i) => ({
       id: cfg.takeIds[i] || '',
@@ -273,8 +291,7 @@ export function serializeScenario(cfg, samples, extra = {}) {
       maxDurationSec: t.maxDurationSec, yieldOnZoneChange: t.yieldOnZoneChange,
       stepDurSec: t.stepDurSec.slice(),
       stepCameras: (cfg.stepCameras && cfg.stepCameras[i]) ? cfg.stepCameras[i].slice() : [],
-      onSpot: !!t.onSpot, spotIndex: Number.isInteger(t.spotIndex) ? t.spotIndex : -1,
-      holdSec: t.holdSec || 0,
+      onLine: !!t.onLine, lineIndex: Number.isInteger(t.lineIndex) ? t.lineIndex : -1,
     })),
     samples: samples.map((p) => ({ tMs: p.tMs, x: round(p.x, 3), z: round(p.z, 3) })),
   };

@@ -92,55 +92,97 @@ export function pickZone(boxes, x, y, z, currentIndex, hysteresisShrink, keepLas
   return keepLastWhenOutside ? currentIndex : -1;
 }
 
-// ---- 位置トリガー（SpotTriggerLogic）-------------------------------------------
+// ---- 通過ライン（LineCrossLogic）------------------------------------------------
 
-export const SPOT_DEFAULT_RADIUS_M = 0.25;   // SpotTriggerLogic.DefaultRadiusM
-export const SPOT_EXIT_MARGIN_M = 0.08;      // SpotTriggerLogic.ExitMarginM
-export const SPOT_MIN_RADIUS_M = 0.05;       // SpotTriggerLogic.MinRadiusM
-export const SPOT_MAX_CONTINUOUS_DT_SEC = 0.5; // SpotTriggerLogic.MaxContinuousDtSec
+export const LINE_REARM_MARGIN_M = 0.06;        // LineCrossLogic.RearmMarginM
+export const LINE_MAX_CONTINUOUS_DT_SEC = 0.5;  // LineCrossLogic.MaxContinuousDtSec
+export const LINE_MAX_STEP_M = 1.0;             // LineCrossLogic.MaxStepM
+export const LINE_MIN_LENGTH_M = 0.05;          // LineCrossLogic.MinLengthM
+export const LINE_CROSS_LATCH_SEC = 0.6;        // LineCrossLogic.CrossLatchSec
 
-/** SpotTriggerLogic.Spot.At（defined=true の円）。 */
-export const spot = (x, z, rM) => ({ x, z, rM, defined: true });
-/** SpotTriggerLogic.Spot.Undefined（id だけあって layout に実体が無い枠 = 常に外）。 */
-export const spotUndefined = () => ({ x: 0, z: 0, rM: 0, defined: false });
+/** LineCrossLogic.Line.Between（dir: 0=両方向 / +1=法線向き / -1=逆向き）。 */
+export const line = (x1, z1, x2, z2, dir = 0, camera = -1) =>
+  ({ ax: x1, az: z1, bx: x2, bz: z2, dir, camera, defined: true });
+/** LineCrossLogic.Line.Undefined（id だけあって layout に実体が無い枠）。 */
+export const lineUndefined = () => ({ ax: 0, az: 0, bx: 0, bz: 0, dir: 0, camera: -1, defined: false });
 
 /**
- * 床の円の内外判定と滞在計時（SpotTriggerLogic の移植）。
- *   入る = dist <= rM / 出る = dist > rM + SPOT_EXIT_MARGIN_M（出のヒステリシス）
- *   滞在秒は連続（出たら 0）／ dt が不連続なら計り直す／ 高さは見ない
+ * 通過ラインの横断検出（LineCrossLogic の移植）。
+ *   判定は毎フレームの移動線分 × ライン線分の交差（端の外を回り込んだら横切っていない）。
+ *   横切った直後は線から LINE_REARM_MARGIN_M 離れるまで再検出しない。
+ *   dt 不連続 / 1 フレーム LINE_MAX_STEP_M 超の移動は数えない（HMD 着脱・recenter）。
  */
-export class SpotTrigger {
-  constructor() { this._spots = []; this._state = []; }
+export class LineCross {
+  constructor() { this._lines = []; this._state = []; this._suppressed = []; this._hasPrev = false; }
 
-  get count() { return this._spots.length; }
+  get count() { return this._lines.length; }
   /** TakeRunner.tick へそのまま渡す状態配列（書き換えない）。 */
   get stateView() { return this._state; }
 
-  setSpots(spots) {
-    this._spots = spots || [];
-    this._state = this._spots.map(() => ({ inside: false, insideSec: 0 }));
+  setLines(lines) {
+    this._lines = lines || [];
+    this._suppressed = this._lines.map(() => false);
+    this.reset();
   }
 
-  reset() { this._state = this._state.map(() => ({ inside: false, insideSec: 0 })); }
+  reset() {
+    this._state = this._lines.map((l) => ({
+      crossed: false, crossedAtSec: -Infinity, camera: l ? l.camera : -1,
+    }));
+    this._suppressed = this._lines.map(() => false);
+    this._hasPrev = false;
+  }
 
-  isInside(slot) { return slot >= 0 && slot < this._state.length && this._state[slot].inside; }
+  crossed(slot) { return slot >= 0 && slot < this._state.length && this._state[slot].crossed; }
 
-  insideSecOf(slot) { return slot >= 0 && slot < this._state.length ? this._state[slot].insideSec : 0; }
-
-  tick(x, z, dt) {
-    const continuous = dt > 0 && dt <= SPOT_MAX_CONTINUOUS_DT_SEC;
-    for (let i = 0; i < this._spots.length; i++) {
-      const s = this._spots[i];
-      if (!s || !s.defined) { this._state[i] = { inside: false, insideSec: 0 }; continue; }
-      const r = s.rM < SPOT_MIN_RADIUS_M ? SPOT_MIN_RADIUS_M : s.rM;
-      const threshold = this._state[i].inside ? r + SPOT_EXIT_MARGIN_M : r;
-      const dx = x - s.x, dz = z - s.z;
-      const inside = dx * dx + dz * dz <= threshold * threshold;
-      if (!inside) { this._state[i] = { inside: false, insideSec: 0 }; continue; }
-      const sec = this._state[i].inside && continuous ? f32(this._state[i].insideSec + dt) : 0;
-      this._state[i] = { inside: true, insideSec: sec };
+  tick(now, x, z, dt) {
+    let continuous = this._hasPrev && dt > 0 && dt <= LINE_MAX_CONTINUOUS_DT_SEC;
+    if (continuous) {
+      const mx = x - this._prevX, mz = z - this._prevZ;
+      if (mx * mx + mz * mz > LINE_MAX_STEP_M * LINE_MAX_STEP_M) continuous = false;
     }
+    for (let i = 0; i < this._lines.length; i++) {
+      const l = this._lines[i];
+      let crossed = false;
+      let crossedAt = this._state[i].crossedAtSec;
+      const n = l && l.defined ? lineNormal(l) : null;
+      if (n) {
+        const side = (x - l.ax) * n.x + (z - l.az) * n.z;
+        if (this._suppressed[i]) {
+          if (Math.abs(side) >= LINE_REARM_MARGIN_M) this._suppressed[i] = false;
+        } else if (continuous && segmentsIntersect(this._prevX, this._prevZ, x, z, l)) {
+          const sign = side >= 0 ? 1 : -1;
+          crossed = l.dir === 0 || l.dir === sign;
+          if (crossed) crossedAt = now;
+          this._suppressed[i] = true;
+        }
+      }
+      this._state[i] = { crossed, crossedAtSec: crossedAt, camera: l ? l.camera : -1 };
+    }
+    this._prevX = x;
+    this._prevZ = z;
+    this._hasPrev = true;
   }
+}
+
+// ラインの単位法線（A→B を左に 90° 回した向き）。短すぎる線は null。
+function lineNormal(l) {
+  const dx = l.bx - l.ax, dz = l.bz - l.az;
+  const len = Math.hypot(dx, dz);
+  if (len < LINE_MIN_LENGTH_M) return null;
+  return { x: dz / len, z: -dx / len };
+}
+
+// 移動線分 (p0→p1) と ライン線分 (A→B) の交差（端点を含む）。
+function segmentsIntersect(p0x, p0z, p1x, p1z, l) {
+  const rx = p1x - p0x, rz = p1z - p0z;
+  const sx = l.bx - l.ax, sz = l.bz - l.az;
+  const denom = rx * sz - rz * sx;
+  if (Math.abs(denom) < 1e-9) return false;
+  const qx = l.ax - p0x, qz = l.az - p0z;
+  const t = (qx * sz - qz * sx) / denom;
+  const u = (qx * rz - qz * rx) / denom;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
 }
 
 // ---- 時計（ZoneProgressionLogic）---------------------------------------------
@@ -422,13 +464,13 @@ export class TakeRunner {
 
   /**
    * 毎フレーム評価。走行中は watchdog / カット進行 / 終了、非走行中は発火判定。
-   * spots は位置トリガーの状態（SpotTrigger.stateView）。null なら at=spot は発火しない。
+   * lines は通過ラインの今フレームの結果（LineCross.stateView）。null なら at=line は発火しない。
    */
-  tick(now, latestZoneCam, spots = null) {
+  tick(now, latestZoneCam, lines = null) {
     if (this._running) {
       if (now >= this._deadline) return this._endTakeDecision(latestZoneCam, true);
 
-      this._resolveOverdueWhileBlocked(now, spots);
+      this._resolveOverdueWhileBlocked(now, lines);
 
       if (now >= this._stepEnd) {
         const next = this._activeStep + 1;
@@ -445,20 +487,20 @@ export class TakeRunner {
 
     if (this._suppressed) {
       // 抑止中に発火条件を満たしたものも「待たせない」（離脱時発火 or 破棄へ落とす）。
-      this._resolveOverdueWhileBlocked(now, spots);
+      this._resolveOverdueWhileBlocked(now, lines);
       return noDecision();
     }
 
-    const pick = this._findDue(now, spots);
+    const pick = this._findDue(now, lines);
     if (pick < 0) {
-      this._resolveOverdueWhileBlocked(now, spots);
+      this._resolveOverdueWhileBlocked(now, lines);
       return noDecision();
     }
 
     const takeIndex = this._removeArmedAt(pick);
     this._startTake(takeIndex, now, this._hasCurrent ? this._curCam : 0);
     // 同時に発火条件を迎えていた他の演出は、この 1 本に譲って決着する。
-    this._resolveOverdueWhileBlocked(now, spots);
+    this._resolveOverdueWhileBlocked(now, lines);
     return this._beginStepDecision(true);
   }
 
@@ -532,27 +574,30 @@ export class TakeRunner {
   }
 
   // 発火条件を満たした Waiting のうち先頭（無ければ -1）。
-  _findDue(now, spots) {
+  _findDue(now, lines) {
     for (let k = 0; k < this._armedIndex.length; k++) {
-      if (this._armedState[k] === ARMED_WAITING && this._isDue(k, now, spots)) return k;
+      if (this._armedState[k] === ARMED_WAITING && this._isDue(k, now, lines)) return k;
     }
     return -1;
   }
 
-  // 武装スロット k の発火条件（時刻トリガー = due 時刻 / 位置トリガー = 円の滞在）。
-  _isDue(k, now, spots) {
+  // 武装スロット k の発火条件（時刻トリガー = due 時刻 / ライントリガー = 今フレームの横断）。
+  _isDue(k, now, lines) {
     const d = this._defs[this._armedIndex[k]];
-    if (!d.onSpot) return now >= this._armedDue[k];
-    if (!spots || d.spotIndex < 0 || d.spotIndex >= spots.length) return false;
-    const s = spots[d.spotIndex];
-    return !!s.inside && s.insideSec >= (d.holdSec > 0 ? d.holdSec : 0);
+    if (!d.onLine) return now >= this._armedDue[k];
+    if (!lines || d.lineIndex < 0 || d.lineIndex >= lines.length) return false;
+    const s = lines[d.lineIndex];
+    // 横断は事象だが、武装がゾーン確定（dwell）で起きるため猶予を持たせる（LINE_CROSS_LATCH_SEC）。
+    if (now - s.crossedAtSec > LINE_CROSS_LATCH_SEC) return false;
+    // ラインは担当カメラに紐づく（別ゾーンのラインを踏んでも発火しない）。
+    return s.camera < 0 || s.camera === d.camera;
   }
 
   // 走行中 / 抑止中に発火条件を満たしたものを決着させる（待たせない）。
   //   skip → 破棄 / fireOnExit → 離脱時のみ発火しうる状態へ
-  _resolveOverdueWhileBlocked(now, spots) {
+  _resolveOverdueWhileBlocked(now, lines) {
     for (let k = this._armedIndex.length - 1; k >= 0; k--) {
-      if (this._armedState[k] !== ARMED_WAITING || !this._isDue(k, now, spots)) continue;
+      if (this._armedState[k] !== ARMED_WAITING || !this._isDue(k, now, lines)) continue;
       if (this._defs[this._armedIndex[k]].skipWhenMissed) this._removeArmedAt(k);
       else this._armedState[k] = ARMED_DEFERRED_TO_EXIT;
     }
@@ -601,7 +646,7 @@ function normalizeConfig(cfg) {
     courseOrder: c.courseOrder || [],
     takes: c.takes || [],
     takeIds: c.takeIds || [],
-    spots: c.spots || [],
+    lines: c.lines || [],
     stepCameras: c.stepCameras || null,
     startCamera: num(c.startCamera, 0),
     tickMs: c.tickMs > 0 ? c.tickMs : DEFAULT_TICK_MS,
@@ -661,10 +706,10 @@ export function createShowRunner(cfg) {
   const takes = new TakeRunner();
   takes.setDefs(c.takes);
 
-  // 位置トリガー（人の層）。dt は C# と同じ float 精度の tick 秒。
-  const spots = new SpotTrigger();
-  spots.setSpots(c.spots);
-  const spotDt = f32(c.tickMs / 1000);
+  // 通過ライン（人の層）。dt は C# と同じ float 精度の tick 秒。
+  const lines = new LineCross();
+  lines.setLines(c.lines);
+  const lineDt = f32(c.tickMs / 1000);
 
   let zoneIndex = -1;                 // pickZone の直近選択
   let curCam = c.startCamera;         // 時計が確定しているゾーンのカメラ
@@ -677,8 +722,8 @@ export function createShowRunner(cfg) {
     const now = f32(tMs / 1000);   // C# は `float now = tMs / 1000f`
     const out = [];
 
-    // ① ゾーン判定 → 時計へ要求（位置トリガーも同じ「人の層」なのでここで進める）
-    spots.tick(x, z, spotDt);
+    // ① ゾーン判定 → 時計へ要求（通過ラインも同じ「人の層」なのでここで進める）
+    lines.tick(now, x, z, lineDt);
     zoneIndex = pickZone(c.zones, x, c.headY, z, zoneIndex, c.hysteresisShrink, c.keepLastWhenOutside);
     if (zoneIndex >= 0) progress.request(c.zones[zoneIndex].camera, now);
 
@@ -710,8 +755,8 @@ export function createShowRunner(cfg) {
       segCam = zoneCam;
     }
 
-    // ⑥ 演出 Tick（カット進行 / 終了 / 発火・位置トリガーの滞在も見る）
-    emit(out, c, takes.tick(now, curCam, spots.stateView), tMs);
+    // ⑥ 演出 Tick（カット進行 / 終了 / 発火・通過ラインの横断も見る）
+    emit(out, c, takes.tick(now, curCam, lines.stateView), tMs);
 
     // 演出が画面を占有しているかを画面層へ反映する（本番の insert 凍結と同じ役割）。
     screen.setInsertActive(takes.isActive);
@@ -734,8 +779,8 @@ export function createShowRunner(cfg) {
     get activeStepIndex() { return takes.activeStepIndex; },
     get armedCount() { return takes.armedCount; },
     get pendingZone() { return progress.hasPending ? progress.pending : -1; },
-    /** 位置トリガーの現在状態（UI で「いまどの円に居るか」を出すため。判定には使わない）。 */
-    get spotStates() { return spots.stateView; },
+    /** 通過ラインの今フレームの結果（UI 表示用。判定には使わない）。 */
+    get lineStates() { return lines.stateView; },
   };
 }
 
@@ -800,14 +845,14 @@ export function parseScenario(json) {
       maxDurationSec: num(t.maxDurationSec, 0),
       yieldOnZoneChange: !!t.yieldOnZoneChange,
       stepDurSec: (t.stepDurSec || []).map((v) => num(v, 0)),
-      onSpot: !!t.onSpot,
-      spotIndex: Number.isInteger(t.spotIndex) ? t.spotIndex : -1,
-      holdSec: num(t.holdSec, 0),
+      onLine: !!t.onLine,
+      lineIndex: Number.isInteger(t.lineIndex) ? t.lineIndex : -1,
     })),
     takeIds: takesSrc.map((t) => t.id || ''),
-    spots: (j.spots || []).map((s) => (s && s.defined !== false
-      ? spot(num(s.x, 0), num(s.z, 0), num(s.rM, SPOT_DEFAULT_RADIUS_M))
-      : spotUndefined())),
+    lines: (j.lines || []).map((l) => (l && l.defined !== false
+      ? line(num(l.x1, 0), num(l.z1, 0), num(l.x2, 0), num(l.z2, 0),
+             Number.isInteger(l.dir) ? l.dir : 0, Number.isInteger(l.camera) ? l.camera : -1)
+      : lineUndefined())),
     stepCameras: takesSrc.map((t) => (t.stepCameras || []).map((v) => num(v, -1))),
     startCamera: num(j.startCamera, 0),
     tickMs: num(j.tickMs, DEFAULT_TICK_MS),

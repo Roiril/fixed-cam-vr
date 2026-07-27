@@ -127,23 +127,21 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void SpotTake_ParsesPositionStartRule()
+        public void LineTake_ParsesCrossingStartRule()
         {
-            // 開始規則「この位置に来たら」（2026-07-27 追加）。時刻ではなく layout.spots の円で発火する。
+            // 開始規則「このラインを通過したら」（2026-07-27 追加）。時刻ではなく layout.lines の横断で発火する。
             ShowTakeDef t = Take(Load(), 3, 2);
-            Assert.That(t.at, Is.EqualTo(TakeSchema.AtSpot));
-            Assert.That(t.IsSpot, Is.True);
+            Assert.That(t.at, Is.EqualTo(TakeSchema.AtLine));
+            Assert.That(t.IsLine, Is.True);
             Assert.That(t.IsExit, Is.False);
-            Assert.That(t.spotId, Is.EqualTo("spot_doll"));
-            Assert.That(t.holdSec, Is.EqualTo(0.5f), "円の中に 0.5s 立ち止まったら発火");
-            Assert.That(t.offsetSec, Is.EqualTo(0f), "位置トリガーは進入からの秒数を持たない");
-            Assert.That(t.SkipWhenMissed, Is.True, "来なかったら出さない（卓の既定）");
+            Assert.That(t.lineId, Is.EqualTo("line_doll"));
+            Assert.That(t.offsetSec, Is.EqualTo(0f), "ライントリガーは進入からの秒数を持たない");
+            Assert.That(t.SkipWhenMissed, Is.True, "通らなかったら出さない（卓の既定）");
 
-            // 時刻トリガーの演出は spot のキーを持たない（幽霊の位置指定を作らない）。
+            // 時刻トリガーの演出は line のキーを持たない（幽霊のライン指定を作らない）。
             ShowTakeDef enter = Take(Load(), 1, 0);
-            Assert.That(enter.IsSpot, Is.False);
-            Assert.That(enter.spotId, Is.Empty);
-            Assert.That(enter.holdSec, Is.EqualTo(0f));
+            Assert.That(enter.IsLine, Is.False);
+            Assert.That(enter.lineId, Is.Empty);
         }
 
         [Test]
@@ -163,10 +161,9 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(t.steps[3].hasPost, Is.False);
             Assert.That(t.at, Is.EqualTo(TakeSchema.AtEnter));
 
-            ShowTakeDef spot = Take(back, 3, 2);
-            Assert.That(spot.at, Is.EqualTo(TakeSchema.AtSpot), "位置トリガーの判別子が往復で壊れない");
-            Assert.That(spot.spotId, Is.EqualTo("spot_doll"));
-            Assert.That(spot.holdSec, Is.EqualTo(0.5f));
+            ShowTakeDef line = Take(back, 3, 2);
+            Assert.That(line.at, Is.EqualTo(TakeSchema.AtLine), "ライントリガーの判別子が往復で壊れない");
+            Assert.That(line.lineId, Is.EqualTo("line_doll"));
         }
 
         [Test]

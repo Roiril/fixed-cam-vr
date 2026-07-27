@@ -136,44 +136,41 @@ test('exit 演出は offsetSec を持ち込まない', () => {
   assert.equal(out.segments[0].takes[0].offsetSec, 0);
 });
 
-// ---- 開始規則「この位置に来たら」（at=spot・2026-07-27）------------------------
+// ---- 開始規則「このラインを通過したら」（at=line・2026-07-27）--------------------
 
-test('fixture に位置トリガーの演出が入っている', () => {
+test('fixture にライントリガーの演出が入っている', () => {
   const seg = fixture.segments.find((s) => s.lap === 3 && s.camera === 2);
   const t = seg.takes[0];
-  assert.equal(t.at, TAKE.AT_SPOT);
-  assert.equal(t.spotId, 'spot_doll');
-  assert.equal(t.holdSec, 0.5);
-  assert.equal(t.offsetSec, 0, '位置トリガーは進入からの秒数を持たない');
-  assert.equal(t.ifMissed, TAKE.MISSED_SKIP, '来なかったら出さない（卓の既定）');
+  assert.equal(t.at, TAKE.AT_LINE);
+  assert.equal(t.lineId, 'line_doll');
+  assert.equal(t.offsetSec, 0, 'ライントリガーは進入からの秒数を持たない');
+  assert.equal(t.ifMissed, TAKE.MISSED_SKIP, '通らなかったら出さない（卓の既定）');
 });
 
-test('spot 演出は spotId / holdSec を往復し、offsetSec を持ち込まない', () => {
+test('line 演出は lineId を往復し、offsetSec を持ち込まない', () => {
   const seg = newSeg(3, 2);
   seg.takes = [newTake('t', {
-    at: TAKE.AT_SPOT, spotId: 'spot_1', holdSec: 1.5, offsetSec: 9,
+    at: TAKE.AT_LINE, lineId: 'line_1', offsetSec: 9,
     ifMissed: TAKE.MISSED_SKIP, steps: [newStep()],
   })];
   const out = serializeTimelineV3({ rev: 1, segments: [seg] }).segments[0].takes[0];
-  assert.equal(out.at, TAKE.AT_SPOT);
-  assert.equal(out.spotId, 'spot_1');
-  assert.equal(out.holdSec, 1.5);
+  assert.equal(out.at, TAKE.AT_LINE);
+  assert.equal(out.lineId, 'line_1');
   assert.equal(out.offsetSec, 0);
   // load → serialize の往復で失われない
   const back = normalizeTimelineV3({ rev: 1, segments: [{ lap: 3, camera: 2, takes: [out] }] });
-  assert.equal(back.segments[0].takes[0].at, TAKE.AT_SPOT);
-  assert.equal(back.segments[0].takes[0].spotId, 'spot_1');
-  assert.equal(back.segments[0].takes[0].holdSec, 1.5);
+  assert.equal(back.segments[0].takes[0].at, TAKE.AT_LINE);
+  assert.equal(back.segments[0].takes[0].lineId, 'line_1');
 });
 
-test('時刻トリガーの演出は位置の指定を持ち込まない（幽霊の位置指定を作らない）', () => {
+test('時刻トリガーの演出はラインの指定を持ち込まない（幽霊のライン指定を作らない）', () => {
   const seg = newSeg(1, 0);
   seg.takes = [
-    newTake('a', { at: TAKE.AT_ENTER, offsetSec: 3, spotId: 'spot_1', holdSec: 2, steps: [newStep()] }),
-    newTake('b', { at: TAKE.AT_EXIT, spotId: 'spot_1', holdSec: 2, steps: [newStep()] }),
+    newTake('a', { at: TAKE.AT_ENTER, offsetSec: 3, lineId: 'line_1', steps: [newStep()] }),
+    newTake('b', { at: TAKE.AT_EXIT, lineId: 'line_1', steps: [newStep()] }),
   ];
   const takes = serializeTimelineV3({ rev: 1, segments: [seg] }).segments[0].takes;
-  assert.deepStrictEqual(takes.map((t) => [t.spotId, t.holdSec]), [['', 0], ['', 0]]);
+  assert.deepStrictEqual(takes.map((t) => t.lineId), ['', '']);
   assert.equal(takes[0].offsetSec, 3, 'enter は offsetSec を保つ');
 });
 

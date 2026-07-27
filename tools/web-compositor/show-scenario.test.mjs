@@ -10,7 +10,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   cellRect, parseGridCells, solveGridZones, clampHysteresis, zonesFromLayout,
-  spotsFromLayout, cameraAtPoint, clampSpotRadius, SPOT_DEFAULT_RADIUS_M,
+  linesFromLayout, cameraAtPoint, lineMid, lineLength,
+  LINE_DIR_BOTH, LINE_DIR_FWD,
 } from './zone-layout.js';
 import { buildScenarioConfig, resolveStepDuration, stepCamera, serializeScenario } from './show-scenario.js';
 import { pickZone, runScenario, parseScenario, FALLBACK_STEP_DUR_SEC } from './scenario-engine.js';
@@ -84,26 +85,34 @@ test('zonesFromLayout: grid があれば箱を作り、cuts だけなら実行�
   assert.match(cutsOnly.warning, /grid/);
 });
 
-// ---- 位置トリガー（layout.spots）------------------------------------------------
+// ---- 通過ライン（layout.lines）--------------------------------------------------
 
-test('spotsFromLayout: id 無し・座標不正・重複を落とし、半径をクランプする', () => {
-  const spots = spotsFromLayout({
-    spots: [
-      { id: 'a', x: 0.1, z: -0.2 },                       // 半径未指定 → 既定
-      { id: 'b', x: 0, z: 0, rM: 99, label: '大きい' },     // 上限クランプ
-      { id: '', x: 0, z: 0 },                             // id 無し → 落とす
-      { id: 'c', x: NaN, z: 0 },                          // 座標不正 → 落とす
-      { id: 'a', x: 5, z: 5 },                            // 重複 id → 先勝ち
+test('linesFromLayout: id 無し・座標不正・重複を落とし、既定を埋める', () => {
+  const lines = linesFromLayout({
+    lines: [
+      { id: 'a', x1: 0, z1: -0.3, x2: 0, z2: 0.3 },                        // 既定（担当なし・両方向）
+      { id: 'b', x1: -1, z1: 0, x2: 1, z2: 0, camera: 2, dir: LINE_DIR_FWD, label: '入口' },
+      { id: '', x1: 0, z1: 0, x2: 1, z2: 1 },                              // id 無し → 落とす
+      { id: 'c', x1: NaN, z1: 0, x2: 1, z2: 0 },                           // 座標不正 → 落とす
+      { id: 'a', x1: 9, z1: 9, x2: 8, z2: 8 },                             // 重複 id → 先勝ち
     ],
   });
-  assert.deepStrictEqual(spots.map((s) => s.id), ['a', 'b']);
-  assert.equal(spots[0].rM, SPOT_DEFAULT_RADIUS_M);
-  assert.equal(spots[1].rM, clampSpotRadius(99));
-  assert.equal(spots[1].label, '大きい');
-  assert.deepStrictEqual(spotsFromLayout({}), [], '未著作は空配列');
+  assert.deepStrictEqual(lines.map((l) => l.id), ['a', 'b']);
+  assert.equal(lines[0].camera, -1, '担当未指定は -1');
+  assert.equal(lines[0].dir, LINE_DIR_BOTH);
+  assert.equal(lines[1].camera, 2);
+  assert.equal(lines[1].dir, LINE_DIR_FWD);
+  assert.equal(lines[1].label, '入口');
+  assert.deepStrictEqual(linesFromLayout({}), [], '未著作は空配列');
 });
 
-test('cameraAtPoint: 円がどのカメラのゾーンかは実機と同じ判定で決まる', () => {
+test('lineMid / lineLength: 中点と長さ', () => {
+  const l = { x1: -0.5, z1: 0, x2: 0.5, z2: 0 };
+  assert.deepStrictEqual(lineMid(l), { x: 0, z: 0 });
+  assert.equal(lineLength(l), 1);
+});
+
+test('cameraAtPoint: 線がどのカメラのゾーンに置かれているかは実機と同じ判定で決まる', () => {
   const layout = {
     floor: { w: 3, d: 3 }, overlapM: 0.2, hysteresisM: 0.5,
     grid: { tileM: 1, cols: 3, rows: 3, cells: ['000', '111', '222'] },
@@ -115,40 +124,43 @@ test('cameraAtPoint: 円がどのカメラのゾーンかは実機と同じ判�
   assert.equal(cameraAtPoint([], 0, 0), -1, 'ゾーンが無ければ判定不能');
 });
 
-test('buildScenarioConfig: 位置トリガーは円のスロットへ解決され、取り違えは警告される', () => {
+test('buildScenarioConfig: ライントリガーはスロットへ解決され、担当違いは警告される', () => {
   const st = sampleState();
-  st.layout.spots = [{ id: 'spot_1', x: 0, z: 1, rM: 0.25, label: '人形の前' }];  // カメラ 0 のゾーン
+  // カメラ 0 のゾーン（北の行 z=+1）に引いた線。担当もカメラ 0。
+  st.layout.lines = [{ id: 'line_1', camera: 0, x1: -0.4, z1: 1, x2: 0.4, z2: 1, dir: 'both', label: '玄関前' }];
   const segA = newSeg(1, 0);
-  segA.takes = [newTake('t_spot_ok', {
-    at: TAKE.AT_SPOT, spotId: 'spot_1', holdSec: 0.5, ifMissed: TAKE.MISSED_SKIP,
+  segA.takes = [newTake('t_line_ok', {
+    at: TAKE.AT_LINE, lineId: 'line_1', ifMissed: TAKE.MISSED_SKIP,
     steps: [newStep({ source: TAKE.SRC_LIVE, camera: 1, durSec: 2 })],
   })];
   const segB = newSeg(1, 1);
   segB.takes = [
-    newTake('t_spot_wrongzone', { at: TAKE.AT_SPOT, spotId: 'spot_1', steps: [newStep({ durSec: 1 })] }),
-    newTake('t_spot_missing', { at: TAKE.AT_SPOT, spotId: 'nope', steps: [newStep({ durSec: 1 })] }),
-    newTake('t_spot_unset', { at: TAKE.AT_SPOT, spotId: '', steps: [newStep({ durSec: 1 })] }),
+    newTake('t_line_wrongcam', { at: TAKE.AT_LINE, lineId: 'line_1', steps: [newStep({ durSec: 1 })] }),
+    newTake('t_line_missing', { at: TAKE.AT_LINE, lineId: 'nope', steps: [newStep({ durSec: 1 })] }),
+    newTake('t_line_unset', { at: TAKE.AT_LINE, lineId: '', steps: [newStep({ durSec: 1 })] }),
   ];
   st.timeline = { rev: 1, schema: 3, segments: [segA, segB] };
 
   const { cfg, meta } = buildScenarioConfig(st);
-  assert.equal(cfg.spots.length, 1);
-  assert.deepStrictEqual(cfg.spots[0], { x: 0, z: 1, rM: 0.25, defined: true });
+  assert.equal(cfg.lines.length, 1);
+  assert.deepStrictEqual(cfg.lines[0],
+    { ax: -0.4, az: 1, bx: 0.4, bz: 1, dir: 0, camera: 0, defined: true });
 
   const byId = Object.fromEntries(cfg.takes.map((t, i) => [cfg.takeIds[i], t]));
   assert.deepStrictEqual(
-    [byId.t_spot_ok.onSpot, byId.t_spot_ok.spotIndex, byId.t_spot_ok.holdSec, byId.t_spot_ok.skipWhenMissed],
-    [true, 0, 0.5, true]);
-  assert.equal(byId.t_spot_missing.onSpot, false, '円が無い参照は発火させない');
-  assert.equal(byId.t_spot_missing.spotIndex, -1);
-  assert.equal(byId.t_spot_unset.onSpot, false, '未選択は発火させない');
+    [byId.t_line_ok.onLine, byId.t_line_ok.lineIndex, byId.t_line_ok.skipWhenMissed],
+    [true, 0, true]);
+  assert.equal(byId.t_line_wrongcam.onLine, false, '別カメラ担当のラインは発火させない（区間紐づけ）');
+  assert.equal(byId.t_line_wrongcam.lineIndex, -1);
+  assert.equal(byId.t_line_missing.onLine, false, 'ラインが無い参照は発火させない');
+  assert.equal(byId.t_line_unset.onLine, false, '未選択は発火させない');
 
   const w = meta.warnings.join('\n');
-  assert.match(w, /t_spot_wrongzone .*ゾーンです/, '別ゾーンの円は警告する');
-  assert.match(w, /t_spot_missing .*layout\.spots にありません/);
-  assert.match(w, /t_spot_unset .*位置が未選択/);
-  assert.match(w, /カメラ A.*カメラ B/, '警告はカメラ index ではなく id で言う');
-  assert.equal(meta.spots[0].owner, 0, 'meta にはその円を担当するカメラが乗る');
+  assert.match(w, /t_line_wrongcam .*担当です/, '別カメラ担当のラインは警告する');
+  assert.match(w, /t_line_missing .*layout\.lines にありません/);
+  assert.match(w, /t_line_unset .*ラインが未選択/);
+  assert.match(w, /カメラ A/, '警告はカメラ index ではなく id で言う');
+  assert.equal(meta.lines[0].zone, 0, 'meta には線が置かれているゾーンのカメラが乗る');
 });
 
 // ---- 演出定義の変換（TakeRunner.SetTakes / BuildStepDurations）----------------

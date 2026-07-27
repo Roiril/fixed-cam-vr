@@ -18,40 +18,50 @@ export const ZONE_HALF_HEIGHT = 2;
 /** HMD の高さ（course space）。ゾーンの y 判定に使うだけ。 */
 export const HEAD_Y = 1.6;
 
-// ---- 位置トリガー（layout.spots の円）------------------------------------------
-//   移植元（**C# が正**）: Assets/Scripts/Streaming/SpotTriggerLogic.cs の定数。
+// ---- 通過ライン（layout.lines の線分）------------------------------------------
+//   移植元（**C# が正**）: Assets/Scripts/Streaming/LineCrossLogic.cs の定数。
 //   契約: .claude/plans/2026-07-27_position-trigger.md §3
 
-/** 円の既定半径 (m)。SpotTriggerLogic.DefaultRadiusM と一致させること。 */
-export const SPOT_DEFAULT_RADIUS_M = 0.25;
-/** 出る側のヒステリシス (m)。SpotTriggerLogic.ExitMarginM。 */
-export const SPOT_EXIT_MARGIN_M = 0.08;
-/** 半径の下限 / 上限（上限は UI 都合。実機は下限だけクランプする）。 */
-export const SPOT_MIN_RADIUS_M = 0.05;
-export const SPOT_MAX_RADIUS_M = 1.0;
+/** 通過方向の判別子（LineCrossLogic.Dir*）。 */
+export const LINE_DIR_BOTH = 'both';
+export const LINE_DIR_FWD = 'fwd';
+export const LINE_DIR_BACK = 'back';
+/** 短すぎる線は無効（LineCrossLogic.MinLengthM）。 */
+export const LINE_MIN_LENGTH_M = 0.05;
 
-export const clampSpotRadius = (r) =>
-  Math.min(SPOT_MAX_RADIUS_M, Math.max(SPOT_MIN_RADIUS_M, Number.isFinite(r) ? r : SPOT_DEFAULT_RADIUS_M));
+/** dir 文字列 → 内部表現（0=両方向 / +1=法線向き / -1=逆向き）。未知は両方向。 */
+export function parseLineDir(dir) {
+  if (dir === LINE_DIR_FWD) return 1;
+  if (dir === LINE_DIR_BACK) return -1;
+  return 0;
+}
+
+/** ラインの長さ (m)。 */
+export const lineLength = (l) => Math.hypot((l.x2 - l.x1), (l.z2 - l.z1));
+
+/** ラインの中点（担当カメラの推定・ラベル描画に使う）。 */
+export const lineMid = (l) => ({ x: (l.x1 + l.x2) / 2, z: (l.z1 + l.z2) / 2 });
 
 /**
- * layout.spots を正規化して返す（不正要素は落とす / 半径はクランプ / id 重複は後勝ちを捨てる）。
- * Unity 側は id をキーにスロットを割り当てるので、**id が空の円は無効**。
+ * layout.lines を正規化して返す（不正要素・短すぎる線・id 重複は落とす）。
+ * Unity 側は id をキーにスロットを割り当てるので、**id が空のラインは無効**。
+ * camera = 担当カメラ index（-1 = 未指定）。この区間のカメラと違うラインは実機でも発火しない。
  */
-export function spotsFromLayout(layout) {
-  const src = (layout && Array.isArray(layout.spots)) ? layout.spots : [];
+export function linesFromLayout(layout) {
+  const src = (layout && Array.isArray(layout.lines)) ? layout.lines : [];
   const out = [];
   const seen = new Set();
-  for (const s of src) {
-    if (!s || typeof s.id !== 'string' || !s.id) continue;
-    if (!Number.isFinite(s.x) || !Number.isFinite(s.z)) continue;
-    if (seen.has(s.id)) continue;
-    seen.add(s.id);
+  for (const l of src) {
+    if (!l || typeof l.id !== 'string' || !l.id) continue;
+    if (![l.x1, l.z1, l.x2, l.z2].every(Number.isFinite)) continue;
+    if (seen.has(l.id)) continue;
+    seen.add(l.id);
     out.push({
-      id: s.id,
-      x: s.x,
-      z: s.z,
-      rM: clampSpotRadius(s.rM),
-      label: typeof s.label === 'string' ? s.label : '',
+      id: l.id,
+      camera: Number.isInteger(l.camera) ? l.camera : -1,
+      x1: l.x1, z1: l.z1, x2: l.x2, z2: l.z2,
+      dir: [LINE_DIR_BOTH, LINE_DIR_FWD, LINE_DIR_BACK].includes(l.dir) ? l.dir : LINE_DIR_BOTH,
+      label: typeof l.label === 'string' ? l.label : '',
     });
   }
   return out;

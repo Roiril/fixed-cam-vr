@@ -332,29 +332,35 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   **v2 データはもう「退避路」ではない**（実機も v2 を演出へ変換して同じ経路で走らせる）。
   ここまでの実装ごと戻したいときは、この一本化コミットを `git revert` する
 
-### 開始規則「この位置に来たら」（位置トリガー）— 2026-07-27
+### 開始規則「このラインを通過したら」（通過ライン）— 2026-07-27
 
 設計の正本は [2026-07-27_position-trigger.md](../plans/2026-07-27_position-trigger.md)。v3 への**追加のみ**（既存 show.json はそのまま読める）。
 
-- **演出（Take）の開始規則が 3 つになった**: `at:"enter"`（進入 +t 秒）/ `at:"exit"`（離脱時）/ **`at:"spot"`（床の円へ来たら）**。
-  演出は今までどおり**区間 (lap, camera) に属する** — 変わるのは due になる条件だけなので、
-  `once` / `ifMissed` / 「同時 1 本」/ 離脱時の決着 / ランリセットは**すべてそのまま効く**
-- **円は `layout.spots[]`**（`{id, x, z, rM, label}`・course 空間・既定半径 **0.25m**）。卓のフロアマップ
-  **🎯 位置トリガー**モードで著作し、`layout` の一部なので端末キャッシュ・APK 焼き込み・shallow 置換保存に自動で乗る
+- **演出（Take）の開始規則が 3 つになった**: `at:"enter"`（進入 +t 秒）/ `at:"exit"`（離脱時）/
+  **`at:"line"`（床の線分を横切ったら）**。演出は今までどおり**区間 (lap, camera) に属する** — 変わるのは
+  due になる条件だけなので、`once` / `ifMissed` / 「同時 1 本」/ 離脱時の決着 / ランリセットは**すべてそのまま効く**
+  - 当初案は円（エリア進入・`layout.spots` / `at:"spot"`）だったが、同日にユーザー指示で
+    **ライン通過へ変更**した（エリア＝状態 / ライン＝事象で、開始規則と型が合うのは後者）。円版は 1 コミットで消えたので互換読みは無い
+- **線は `layout.lines[]`**（`{id, camera, x1, z1, x2, z2, dir, label}`・course 空間）。卓のフロアマップ
+  **📏 通過ライン**モードでドラッグして引く。`layout` の一部なので端末キャッシュ・APK 焼き込み・shallow 置換保存に自動で乗る
   （`regPoints` と同じ立ち位置。サーバ側の変更は不要）
-- **take 側**: `spotId`（空 / 未定義 id は**発火しない** + ログ 1 回）/ `holdSec`（円の中に**連続で**この秒数居たら発火・
-  既定 0 = 入った瞬間）。**`offsetSec` は at=spot では無視**（卓は 0 で書き出す。円を出た後に発火するのは事故なので採らない）
-- **判定** = [`SpotTriggerLogic`](../../Assets/Scripts/Streaming/SpotTriggerLogic.cs)（純ロジック）: 入る = `dist<=rM` /
-  出る = `dist>rM+0.08`（出のヒステリシス）/ 滞在は連続（出たら 0）/ **高さは見ない** /
-  dt が不連続（HMD 着脱・復帰）なら滞在を数え直す。位置は `ShowControlClient.HeadCourseXZProvider`（登録済み course 座標）
-- **発火は 1 区間滞在につき最大 1 回**（武装は区間進入時のみ）。`once=true` ならラン内 1 回
-- **`ifMissed` はそのまま効く**（この区間に居るあいだに来なかった時）。**卓の既定は `skip`**（時刻トリガーの `fireOnExit` と違う）
-- **⚠ 構造的な制約**: 位置トリガーは「その区間に居ると時計が確定しているあいだ」しか発火しない。
-  円をゾーン境界のすぐ内側に置くと dwell（既定 0.5s）の確定待ちで取り逃す。
-  卓は円の担当カメラを**実機と同じゾーン判定**（`zonesFromLayout` + `pickZone`）で出し、演出の区間と食い違えば警告する
-- **▶ 検証（シミュレータ）でも発火する**（JS ミラー `SpotTrigger`）。一致は golden
-  [`scenario_spot.trace.json`](../../Assets/Tests/Fixtures/scenario_spot.trace.json)（C# が生成・JS が照合）で機械固定
-- **⚠ Quest 実機未検証**（2026-07-27。EditMode 723/724〈既知の flaky 1 件〉・node 80/80・卓はブラウザ実操作で確認）
+- **⚠ ラインは担当カメラに紐づく（二重の縛り）**: ①演出の武装は区間限定（既存機構）＋
+  ②`lines[].camera` と演出の区間カメラが**一致しないと due にしない**（`TakeRunnerLogic.IsDue`）。
+  これで「手違いで別の領域のラインを踏んでも何も起こらない」が構造的に成立する。卓も担当が一致する線しか選択肢に出さない
+- **take 側**: `lineId`（空 / 未定義 id / 担当違いは**発火しない** + ログ 1 回）。`offsetSec` は at=line では無視
+- **通過方向** `dir`: `both`（既定）/ `fwd`（卓の矢印の向きだけ）/ `back`（逆だけ）
+- **判定** = [`LineCrossLogic`](../../Assets/Scripts/Streaming/LineCrossLogic.cs)（純ロジック）:
+  **毎フレームの移動線分 × ライン線分の交差**（端の外を回り込んだら横切っていない）/ 横断直後は
+  線から 0.06m 離れるまで再検出しない / dt 不連続（>0.5s）・1 フレーム 1m 超の移動は数えない（HMD 着脱・recenter）/
+  **高さは見ない** / 0.05m 未満の線は無効。位置は `ShowControlClient.HeadCourseXZProvider`（登録済み course 座標）
+- **横断には 0.6s の猶予（`CrossLatchSec`）**: 武装はゾーン確定（dwell 既定 0.5s）で起きるので、
+  ゾーンの入口すぐに引いた線は「入った瞬間に横切る → 0.5s 後に武装」で**永久に沈黙する**。
+  横断時刻を覚えて猶予内なら due と認める（担当カメラ照合は猶予中も効く）
+- **発火は 1 区間滞在につき最大 1 回**。`once=true` ならラン内 1 回
+- **`ifMissed` はそのまま効く**（この区間に居るあいだに通らなかった時）。**卓の既定は `skip`**（時刻トリガーの `fireOnExit` と違う）
+- **▶ 検証（シミュレータ）でも発火する**（JS ミラー `LineCross`）。一致は golden
+  [`scenario_line.trace.json`](../../Assets/Tests/Fixtures/scenario_line.trace.json)（C# が生成・JS が照合）で機械固定
+- **⚠ Quest 実機未検証**（2026-07-27。EditMode 730/730・node 81/81・卓はブラウザ実操作で確認）
 
 ### 演出の素材と層を増やす（録画 / スロット / CG / 演出専用カメラ）— 2026-07-26
 
@@ -446,7 +452,7 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 | **別カメラのインサートショット（N 秒差し込み）** | ✅ **区間ごとに enter/exit で** | `timeline.segments[].insert`（hasInsert） |
 | **BGM（曲の切替・停止・ループ範囲・音量・フェード）** | ✅ **区間ごとに**（指示の無い区間は継続） | `timeline.segments[].bgm`（hasBgm）+ `bgmTracks[]` / ラン既定 `bgm` |
 | **演出中だけの BGM**（インサート・離脱時演出を含む） | ✅ **演出ごとに**（無指定＝その区間の曲のまま。終われば戻る） | `timeline.segments[].takes[].bgm`（hasBgm） |
-| **開始規則**（進入 +t 秒 / 離脱時 / **この位置に来たら**） | ✅ **演出ごとに**（位置トリガーは円 + 滞在秒。円は周・カメラに依存しない共有資産） | `takes[].at` / `spotId` / `holdSec` + `layout.spots[]` |
+| **開始規則**（進入 +t 秒 / 離脱時 / **ライン通過**） | ✅ **演出ごとに**（ラインは担当カメラに紐づく共有資産。周は演出側が決める） | `takes[].at` / `lineId` + `layout.lines[]` |
 
 - **cue（`OverlayCueData`）自体は色補正 post を持たない**（従来どおり）。画面全体のグレーディングは segment post > camera post > global の 3 段で解決される
 - キー空間は現状維持（`cues[].camera`=文字列 id / `timeline.segments[].camera`=int index。変換は Web の `cuesForCam` 流儀）。統一は Unity 共有契約の破壊を避けるため見送り

@@ -52,10 +52,10 @@ namespace FixedCamVr.Tracking
             public string[] TakeIds = Array.Empty<string>();   // Takes と同じ並び（トレース表示用）
 
             /// <summary>
-            /// 位置トリガーの円（<c>layout.spots</c> 由来・スロット順）。
-            /// <see cref="TakeRunnerLogic.Def.spotIndex"/> がこの配列を指す。
+            /// 通過ライン（<c>layout.lines</c> 由来・スロット順）。
+            /// <see cref="TakeRunnerLogic.Def.lineIndex"/> がこの配列を指す。
             /// </summary>
-            public SpotTriggerLogic.Spot[] Spots = Array.Empty<SpotTriggerLogic.Spot>();
+            public LineCrossLogic.Line[] Lines = Array.Empty<LineCrossLogic.Line>();
 
             /// <summary>
             /// 演出ごとの「カットが切り替えるカメラ」（Takes と同じ並び / カットごとに 1 要素）。
@@ -104,9 +104,9 @@ namespace FixedCamVr.Tracking
             var takes = new TakeRunnerLogic();
             takes.SetDefs(cfg.Takes);
 
-            // 位置トリガー（人の層）。歩きのサンプルから毎 tick 更新する。
-            var spots = new SpotTriggerLogic();
-            spots.SetSpots(cfg.Spots);
+            // 通過ライン（人の層）。歩きのサンプルから毎 tick 更新する。
+            var lines = new LineCrossLogic();
+            lines.SetLines(cfg.Lines);
 
             int zoneIndex = -1;                 // ZonePickLogic の直近選択
             int curCam = cfg.StartCamera;       // 時計が確定しているゾーンのカメラ
@@ -119,8 +119,8 @@ namespace FixedCamVr.Tracking
                 float now = tMs / 1000f;
                 SampleAt(samples, tMs, out float x, out float z);
 
-                // ① ゾーン判定 → 時計へ要求（位置トリガーも同じ「人の層」なのでここで進める）
-                spots.Tick(x, z, tick / 1000f);
+                // ① ゾーン判定 → 時計へ要求（通過ラインも同じ「人の層」なのでここで進める）
+                lines.Tick(now, x, z, tick / 1000f);
                 zoneIndex = ZonePickLogic.Pick(cfg.Zones, x, cfg.HeadY, z,
                     zoneIndex, cfg.HysteresisShrink, cfg.KeepLastWhenOutside);
                 if (zoneIndex >= 0) progress.Request(cfg.Zones[zoneIndex].CameraIndex, now);
@@ -157,8 +157,8 @@ namespace FixedCamVr.Tracking
                     segCam = zoneCam;
                 }
 
-                // ⑥ 演出 Tick（カット進行 / 終了 / 発火・位置トリガーの滞在も見る）
-                Emit(trace, cfg, takes.Tick(now, curCam, spots.StateView), tMs);
+                // ⑥ 演出 Tick（カット進行 / 終了 / 発火・通過ラインの横断も見る）
+                Emit(trace, cfg, takes.Tick(now, curCam, lines.StateView), tMs);
 
                 // 演出が画面を占有しているかを画面層へ反映する（本番の insert 凍結と同じ役割）。
                 screen.SetInsertActive(takes.IsActive);
