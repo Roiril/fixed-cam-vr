@@ -43,6 +43,7 @@ namespace FixedCamVr.Streaming.Cg
         private static readonly int CgScaleId = Shader.PropertyToID("_CgScale");
         private static readonly int CgLensId = Shader.PropertyToID("_CgLens");
         private static readonly int CgFocalId = Shader.PropertyToID("_CgFocalN");
+        private static readonly int CgSoftenId = Shader.PropertyToID("_CgSoften");
         private static readonly int LightDirId = Shader.PropertyToID("_LightDir");
         private static readonly int ShadowPlaneYId = Shader.PropertyToID("_ShadowPlaneY");
         private static readonly int ShadowLightDirId = Shader.PropertyToID("_ShadowLightDir");
@@ -52,6 +53,15 @@ namespace FixedCamVr.Streaming.Cg
 
         /// <summary>身体入力がこの秒数届かなければ「手は取れていない」とみなす。</summary>
         private const float BodyInputTimeoutSec = 0.5f;
+
+        /// <summary>
+        /// 映像の遅延 (秒)。**スクリーンに映っているのは撮影からこの秒数だけ前の姿**なので、
+        /// 人形も同じ時刻の体験者を写さないと、歩いているあいだずっと先行してずれる（1m/s なら 15cm）。
+        /// 現状は固定値。`CameraStream.EstimatedLatencyMs` は「Unity 受信からテクスチャ反映まで」しか
+        /// 測れておらず（撮影・エンコード・伝送を含まない）、そのまま足すと過小補償になるので使わない。
+        /// 現場で値の調整が要ると分かったら show.json の control へ出す。
+        /// </summary>
+        private const float VideoLatencySec = 0.15f;
 
         // 影 / 接地影のマテリアル。**Resources に置くのは build で剥がされないため** —
         // どのアセットからも参照されないシェーダはビルドから除去され、実行時 Shader.Find が null を返す。
@@ -71,6 +81,13 @@ namespace FixedCamVr.Streaming.Cg
 
         /// <summary>接地影を床から浮かせる量 (m)。投影シャドウ（+0.002）より上に置く。</summary>
         private const float BlobLiftM = 0.004f;
+
+        /// <summary>
+        /// CG を実映像の粗さへ寄せるぼかし量（テクセル）。RT を映像実寸まで落としたうえで、さらにこれを掛ける。
+        /// **SerializeField にしない** — 既存シーン / prefab の YAML に無いフィールドは型の default（0）で
+        /// 読まれ、意図せず無効化される（このプロジェクトで何度も踏んでいる罠）。現場調整の対象でもない。
+        /// </summary>
+        private const float CgSoftenTexels = 0.7f;
 
         /// <summary>ソース実寸が取れないときに仮定するアスペクト（streamer / IP Camera Lite とも 4:3）。</summary>
         private const float FallbackSourceAspect = 4f / 3f;
@@ -132,6 +149,8 @@ namespace FixedCamVr.Streaming.Cg
 
         private ShowBodyInput _body;
         private float _bodyStamp = -999f;
+        // 映像の遅延ぶん過去を読むための履歴（歩行中のズレを消す）。
+        private readonly BodyInputHistory _bodyHistory = new BodyInputHistory();
 
         /// <summary>いま CG を出しているか（HUD / 診断用）。</summary>
         public bool IsVisible => _visible && _rendering;
@@ -147,6 +166,7 @@ namespace FixedCamVr.Streaming.Cg
         {
             _body = body;
             _bodyStamp = Time.unscaledTime;
+            _bodyHistory.Push(_bodyStamp, body);
         }
 
         private void Awake()
@@ -160,6 +180,8 @@ namespace FixedCamVr.Streaming.Cg
             if (_layer < 0)
                 Debug.LogWarning($"[ShowCgLayer] レイヤ '{cgLayerName}' が未定義。CG 人形は出ない" +
                                  "（Project Settings > Tags and Layers に追加すると有効になる）。");
+            // マテリアルアセットに焼かれた古い値に引きずられないよう、なじませ量はここで明示する。
+            _material?.SetFloat(CgSoftenId, CgSoftenTexels);
             SetStrength(0f);
         }
 
@@ -295,8 +317,13 @@ namespace FixedCamVr.Streaming.Cg
         }
 
         // 供給が止まった（橋渡し未配置 / アプリ suspend）ときは「手は取れていない」へ倒す。
+        // 生きているときは **映像の遅延ぶん過去**を読む — 「いま」の体験者を描くと歩行中ずっと先行する。
         private ShowBodyInput CurrentBody()
-            => (Time.unscaledTime - _bodyStamp) <= BodyInputTimeoutSec ? _body : ShowBodyInput.None;
+        {
+            float now = Time.unscaledTime;
+            if (now - _bodyStamp > BodyInputTimeoutSec) return ShowBodyInput.None;
+            return _bodyHistory.Sample(now - VideoLatencySec);
+        }
 
         // ---- course 空間 → ワールド ----
 

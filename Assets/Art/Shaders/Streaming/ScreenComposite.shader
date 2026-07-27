@@ -19,6 +19,8 @@ Shader "FixedCamVr/ScreenComposite"
         // k1=0 のときは何もしない（較正が無い＝概算姿勢のとき）。
         _CgLens("CG Lens (k1, cxN, cyN, unused)", Vector) = (0, 0.5, 0.5, 0)
         _CgFocalN("CG Focal normalized (fx/W, fy/H)", Vector) = (1, 1, 0, 0)
+        // CG を実映像の粗さへ寄せる弱いぼかし（テクセル単位のオフセット。0 = 無効）。
+        _CgSoften("CG Soften (texels)", Range(0, 2)) = 0.7
         _UvRotSteps("Live UV Rotation (90deg steps, 0-3)", Float) = 0
         _OverlayStrength("Overlay Strength", Range(0, 1)) = 0
         _CgStrength("CG Layer Strength", Range(0, 1)) = 0
@@ -65,6 +67,8 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _CgScale;
                 float4 _CgLens;
                 float4 _CgFocalN;
+                float4 _CgTex_TexelSize;   // Unity が自動で埋める (1/w, 1/h, w, h)
+                float _CgSoften;
                 float _UvRotSteps;
                 float _OverlayStrength;
                 float _CgStrength;
@@ -126,6 +130,31 @@ Shader "FixedCamVr/ScreenComposite"
                 return saturate(p);
             }
 
+            // CG レイヤを実映像の粗さへ寄せる 9-tap tent ぼかし。
+            //
+            // CG はピンホールで完璧に鮮鋭だが、実映像は JPEG q40 で高周波が落ちている。RT を映像実寸まで
+            // 下げたうえで、さらに少しだけ鈍らせないと**輪郭のクッキリ度が食い違って「貼り付けた絵」に見える**。
+            // 合成物が偽物に見える最大の要因のひとつが「camera / lens settings の不整合」で、その一番安い対処。
+            //
+            // ⚠ premultiplied なので **rgb と a を同じ重みでぼかす**。別々にぼかすと rgb > a の画素ができて
+            //    人形の縁に明るい滲みが出る（over 合成の前提が壊れる）。
+            half4 SampleCgSoft(float2 uv)
+            {
+                half4 c = SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv);
+                if (_CgSoften <= 0.001) return c;
+                float2 t = _CgTex_TexelSize.xy * _CgSoften;
+                half4 s = c * 4.0;
+                s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2( t.x, 0.0)) * 2.0;
+                s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2(-t.x, 0.0)) * 2.0;
+                s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2(0.0,  t.y)) * 2.0;
+                s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2(0.0, -t.y)) * 2.0;
+                s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2( t.x,  t.y));
+                s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2(-t.x, -t.y));
+                s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2( t.x, -t.y));
+                s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2(-t.x,  t.y));
+                return s * (1.0 / 16.0);
+            }
+
             float Hash21(float2 p)
             {
                 p = frac(p * float2(123.34, 456.21));
@@ -172,7 +201,7 @@ Shader "FixedCamVr/ScreenComposite"
                         float2 n = (uvC - _CgLens.yz) / max(_CgFocalN.xy, 1e-4);
                         uvC = _CgLens.yz + n / (1.0 + _CgLens.x * dot(n, n)) * _CgFocalN.xy;
                     }
-                    half4 cg = SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uvC);
+                    half4 cg = SampleCgSoft(uvC);
                     // premultiplied over（Porter-Duff 1984）。straight alpha の lerp から変えたのは、
                     // **影が「乗算」だから** — 影を rgb=0 / a=濃さ の断片として同じ RT に描けば、
                     // この式が自動的に背景を (1-a) 倍する。不透明な人形（a=1）に対しては lerp と同値。
