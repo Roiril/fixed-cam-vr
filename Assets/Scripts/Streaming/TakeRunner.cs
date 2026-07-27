@@ -384,7 +384,18 @@ namespace FixedCamVr.Streaming
             // live でも rec でも step.camera を渡す（未指定なら今映しているカメラ）。
             if (_cgLayer != null)
             {
-                if (step.HasCg)
+                // **素材カット（clip / still）に人形は重ねない。**
+                // 素材は「いつどこで撮ったか分からない画」で、step.camera の較正とはパースが一致しない
+                // （camera 未指定なら直前のゾーンのカメラへ落ちるので、なおさら無関係な構図になる）。
+                // 重ねれば必ず浮いた絵になるので、出さずに理由を言う方がよい。
+                // rec（端末内録画）は step.camera で撮った画なので、そのカメラの較正がそのまま効く。
+                bool assetShot = TakeSchema.IsAssetSource(step.source);
+                if (step.HasCg && assetShot)
+                {
+                    Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} は素材（{step.source}）なので " +
+                                     $"CG 人形 '{step.cg}' は出さない（素材の構図と人形のパースが合わないため）");
+                }
+                if (step.HasCg && !assetShot)
                     _cgLayer.Apply(step.cg, step.cgMode,
                                    step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
                                    step.hasPlacement ? step.placement : null);

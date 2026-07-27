@@ -221,6 +221,12 @@ export function createRibbon(container, deps) {
   function cgIssue(s) {
     if (!s.cg) return null;
     if (!actorById(s.cg)) return `人形「${s.cg}」は 🎭 CG 人形に定義がありません（出ません）`;
+    // 素材（動画・静止画）はいつどこで撮ったか分からない画で、どのカメラの較正を当てても
+    // 人形のパースが合わない。**実機（TakeRunner）も素材カットでは人形を出さない。**
+    if (s.source === 'clip' || s.source === 'still') {
+      return '素材（動画・静止画）のカットなので**実機でも人形は出ません**'
+        + '（素材の構図と人形のパースが合わないため）。ライブか録画のカットへ置いてください';
+    }
     const cam = cameras[stepCameraIndex(s)];
     if (!cam) return 'このカットが映すカメラが決まっていません（人形も出ません）';
     if (!(cam.calib && cam.calib.fxPx > 1) && !cam.pose) {
