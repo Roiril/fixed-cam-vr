@@ -13,6 +13,12 @@ Shader "FixedCamVr/ScreenComposite"
         _LiveScale("Live Contain Scale (xy)", Vector) = (1, 1, 0, 0)
         _OverlayScale("Overlay Contain Scale (xy)", Vector) = (1, 1, 0, 0)
         _CgScale("CG Contain Scale (xy)", Vector) = (1, 1, 0, 0)
+        // 実レンズの歪みを CG にも掛けるための係数（ShowCgLayer が較正から供給）。
+        //   _CgLens   = (k1, 主点 cx/W, 主点 cy/H, 未使用)
+        //   _CgFocalN = (fx/W, fy/H, 0, 0)
+        // k1=0 のときは何もしない（較正が無い＝概算姿勢のとき）。
+        _CgLens("CG Lens (k1, cxN, cyN, unused)", Vector) = (0, 0.5, 0.5, 0)
+        _CgFocalN("CG Focal normalized (fx/W, fy/H)", Vector) = (1, 1, 0, 0)
         _UvRotSteps("Live UV Rotation (90deg steps, 0-3)", Float) = 0
         _OverlayStrength("Overlay Strength", Range(0, 1)) = 0
         _CgStrength("CG Layer Strength", Range(0, 1)) = 0
@@ -57,6 +63,8 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _LiveScale;
                 float4 _OverlayScale;
                 float4 _CgScale;
+                float4 _CgLens;
+                float4 _CgFocalN;
                 float _UvRotSteps;
                 float _OverlayStrength;
                 float _CgStrength;
@@ -154,6 +162,16 @@ Shader "FixedCamVr/ScreenComposite"
                 {
                     float cgIn;
                     float2 uvC = ContainUv(screenUv, _CgScale.xy, cgIn);
+                    // 実レンズの歪みを CG にも掛ける。CG はピンホール、実映像は樽型に歪んでいるので、
+                    // 掛けないと画面の端で必ずずれる（広角ほど大きい）。
+                    // **除算モデル**（Fitzgibbon）: r_u = r_d / (1 + k1 r_d^2)。多項式モデルと違って
+                    // 順・逆の両方に解析解があるので、卓の順投影（較正・ワイヤー重畳）とこの逆変換が
+                    // **厳密に一致する**。互いに近似の逆だと画面端で食い違い、較正の検証が成立しない。
+                    if (abs(_CgLens.x) > 1e-5)
+                    {
+                        float2 n = (uvC - _CgLens.yz) / max(_CgFocalN.xy, 1e-4);
+                        uvC = _CgLens.yz + n / (1.0 + _CgLens.x * dot(n, n)) * _CgFocalN.xy;
+                    }
                     half4 cg = SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uvC);
                     // premultiplied over（Porter-Duff 1984）。straight alpha の lerp から変えたのは、
                     // **影が「乗算」だから** — 影を rgb=0 / a=濃さ の断片として同じ RT に描けば、

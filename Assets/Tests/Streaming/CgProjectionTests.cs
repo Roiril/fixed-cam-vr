@@ -63,6 +63,71 @@ namespace FixedCamVr.Streaming.Tests
             Assert.IsFalse(float.IsInfinity(v));
         }
 
+        // ---- 較正の内部行列 → 射影行列（卓の JS と同じ画素を出すこと）----
+
+        [Test]
+        public void Projection_MatchesPinholeFormula()
+        {
+            // ⚠ **卓の calib.test.mjs「投影は Unity と同じ画素を出す」と同一の入力・同一の期待値**。
+            //    片方だけ直すと沈黙して食い違い、「卓では合うのに実機が違う」になる。必ず両方直すこと。
+            //    カメラ (0, 1.2, -1.5) から 30° 下向き、fx=fy=480 / 主点中心 / 640x480。
+            //    course 原点の床 (0,0,0) は u=320, v=313.1058 に写る（v は画像の上原点）。
+            var go = new GameObject("calib-test-cam");
+            try
+            {
+                var cam = go.AddComponent<Camera>();
+                cam.enabled = false;                       // 描画はしない（行列の検算だけ）
+                cam.nearClipPlane = 0.05f;
+                cam.farClipPlane = 30f;
+                cam.aspect = 640f / 480f;
+                cam.projectionMatrix = ShowCgLayer.BuildProjectionMatrix(
+                    480f, 480f, 320f, 240f, 640, 480, 0.05f, 30f);
+                go.transform.position = new Vector3(0f, 1.2f, -1.5f);
+                go.transform.rotation = Quaternion.Euler(30f, 0f, 0f);   // pose の pitchDeg = -30
+
+                Vector3 vp = cam.WorldToViewportPoint(Vector3.zero);
+                Assert.Greater(vp.z, 0f, "カメラ前方にあること");
+
+                float u = vp.x * 640f;
+                float v = (1f - vp.y) * 480f;              // viewport は下原点、画像は上原点
+                Assert.AreEqual(320f, u, 0.01f, "u");
+                Assert.AreEqual(313.1058f, v, 0.01f, "v");
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        [Test]
+        public void Projection_PrincipalPointOffset_ShiftsImageCenter()
+        {
+            // 主点をずらせる（＝非対称 frustum）ことが、physical camera を経由せず
+            // projectionMatrix を直接入れている理由。三脚のセンサー中心ズレを吸収できる。
+            var go = new GameObject("calib-test-cam2");
+            try
+            {
+                var cam = go.AddComponent<Camera>();
+                cam.enabled = false;
+                cam.nearClipPlane = 0.05f;
+                cam.farClipPlane = 30f;
+                cam.projectionMatrix = ShowCgLayer.BuildProjectionMatrix(
+                    480f, 480f, 400f, 240f, 640, 480, 0.05f, 30f);   // cx を 320 → 400
+                go.transform.position = Vector3.zero;
+                go.transform.rotation = Quaternion.identity;
+
+                // 光軸上（真正面）の点は主点へ写る。
+                Vector3 vp = cam.WorldToViewportPoint(new Vector3(0f, 0f, 2f));
+                Assert.AreEqual(400f, vp.x * 640f, 0.01f, "主点 cx へ写ること");
+                Assert.AreEqual(240f, (1f - vp.y) * 480f, 0.01f, "cy は動かしていない");
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        [Test]
+        public void Projection_DegenerateFocal_DoesNotProduceNaN()
+        {
+            Matrix4x4 p = ShowCgLayer.BuildProjectionMatrix(0f, 0f, 0f, 0f, 0, 0, 0.05f, 30f);
+            for (int i = 0; i < 16; i++) Assert.IsFalse(float.IsNaN(p[i]), $"m[{i}]");
+        }
+
         // ---- course 空間の光の向き → ワールド ----
 
         [Test]

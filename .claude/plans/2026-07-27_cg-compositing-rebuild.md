@@ -1,6 +1,8 @@
 # CG 人形の合成を作り直す — 実写になじませる基盤
 
-status: 設計確定（2026-07-27）。実装はこれから。
+status: **Step 0 完了 / Step 1 は数学と Unity 側の適用まで完了**（2026-07-27・Quest 実機未検証）。
+残りは Step 1 の卓 UI（点をクリックして較正・ワイヤー重畳の検証表示）と Step 2 以降。
+検証: EditMode 750/750・node 115/115。
 前提文書: [2026-07-27_cg-actor-hand-tracking.md](2026-07-27_cg-actor-hand-tracking.md)（人形とハンドトラッキングの現行設計）/
 [2026-07-26_show-sources-and-cg-layer.md](2026-07-26_show-sources-and-cg-layer.md)（CG レイヤの導入）。
 **この文書は上 2 つの「合成」部分を置き換える**（腕の駆動・素材・演出の語彙はそのまま生きる）。
@@ -207,6 +209,12 @@ present-flag は既存の **AND 規約**（`TimelinePresentFlags.Reconcile`＝�
 |---|---|---|---|
 | **0. 土台の是正 + スキーマ骨格** | 欠陥 A/B/C/E/F/G の修正。`_CgTex` を live と同じ `uvL` でサンプル / RT アスペクト＝映像実寸 / `hfovDeg` へ一本化 / **RT 解像度を映像相当まで落とす**（鮮明すぎ対策・むしろ軽くなる）/ premultiplied 合成 / 未登録なら CG を出さないガード / 光の向きを course 相対に。同時に `calib` / `room` / `placement` のキーを切る（中身は後段で埋める） | Editor 静止画。既知の床マーカーに人形を置き、実写フレーム上の同じ点に載るか。**実機不要** | 単体では小。**ここまでやらないと以降が測定不能** |
 | **1. 較正 + 検証表示** | 卓に［🎯 姿勢を合わせる］。床点クリック → k1 込みホモグラフィ分解 → `cameras[].calib`。Unity は `projectionMatrix` 直接。**実映像に部屋ワイヤーを重ねる検証表示を必ず同梱** | 卓が rmsPx を出す + ワイヤー重ね。**この重ね表示がこの体験で唯一の反証可能な一次証拠** | **最大**。人形が床に立つ |
+
+> **Step 1 の進捗（2026-07-27）**: 数学（`tools/web-compositor/calib.js`）と Unity 側の適用
+> （`ShowCgLayer.ApplyCameraCalib` / 歪みシェーダ）は完了。卓と実機の投影一致も両側のテストで固定済み。
+> **残りは卓の UI**（静止フレームの上で床点をクリック → 解く → ワイヤー重畳で確認 → `cameras[].calib` へ保存）。
+> 実測で判明した運用制約は [streaming.md](../rules/streaming.md) の「較正の実装と、現場運用がそうでなければならない理由」に集約した。
+> 要点は **「画角は一度だけ丁寧に測って固定、置き場所は現場で毎回」**（f を推定すると位置が 27cm ずれ、固定すれば 2cm）。
 | **2. 部屋プロキシ + 影 + 光** | `layout.room` の編集（卓）と生成（Unity・卓）。シャドウキャッチャー + 接地 blob。Rendering Layers で照明分離。`room.light` 著作。**登録ワイヤーを `layout.room` へ寄せる** | Editor 多角度静止画（[visual-verification](../rules/visual-verification.md)） | **大**。「浮いている」が消える |
 | **3. オクルージョン + 配置 UX** | プロキシ depth-only（MRUK の `Blend Zero One` 方式）。`steps[].placement` の実装。**映像クリックで床に配置**（較正の逆写像）。卓の輪郭プロキシ + golden trace 照合 | 人形を壁の裏に置いた静止画 / node テスト | 中〜大 |
 | **4. Editor 合成プレビュー** | `Diagnostics/Preview Show Composite` — 実写プレート（`captures/`）× 実カメラ姿勢 × 実リグで**カットごとの合成 PNG** を焼く。卓がサムネ表示 | PNG そのものが証拠 | 著作の速度が変わる |

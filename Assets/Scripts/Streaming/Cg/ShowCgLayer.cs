@@ -33,6 +33,8 @@ namespace FixedCamVr.Streaming.Cg
         private static readonly int CgTexId = Shader.PropertyToID("_CgTex");
         private static readonly int CgStrengthId = Shader.PropertyToID("_CgStrength");
         private static readonly int CgScaleId = Shader.PropertyToID("_CgScale");
+        private static readonly int CgLensId = Shader.PropertyToID("_CgLens");
+        private static readonly int CgFocalId = Shader.PropertyToID("_CgFocalN");
         private static readonly int LightDirId = Shader.PropertyToID("_LightDir");
 
         /// <summary>身体入力がこの秒数届かなければ「手は取れていない」とみなす。</summary>
@@ -62,6 +64,9 @@ namespace FixedCamVr.Streaming.Cg
         [Tooltip("show.json の actors / カメラ姿勢の供給元。null ならシーンから探す。")]
         [SerializeField] private ShowControlClient? showControl;
 
+        [Tooltip("較正の照合（/info の lensId）に使う受信レジストリ。null ならシーンから探す。")]
+        [SerializeField] private CameraStreamRegistry? registry;
+
         private Material? _material;
         private MjpegScreen? _screen;
         private Camera? _virtualCam;
@@ -79,6 +84,10 @@ namespace FixedCamVr.Streaming.Cg
         private ShowActorDef? _actorDef;
         private ShowCameraPoseDef? _pose;
         private ShowPlacementDef? _placement;
+        private ShowCameraCalibDef? _calibRaw;   // カメラ index から引いた較正（ソース照合はフレーム毎）
+        private int _cameraIndex = -1;
+        private bool _warnedCalibMismatch;
+        private bool _projectionOverridden;
 
         private ShowBodyInput _body;
         private float _bodyStamp = -999f;
@@ -105,6 +114,7 @@ namespace FixedCamVr.Streaming.Cg
             _material = screenRenderer != null ? screenRenderer.material : null;
             _screen = screenRenderer != null ? screenRenderer.GetComponent<MjpegScreen>() : null;
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            if (registry == null) registry = FindObjectOfType<CameraStreamRegistry>();
             _layer = LayerMask.NameToLayer(cgLayerName);
             if (_layer < 0)
                 Debug.LogWarning($"[ShowCgLayer] レイヤ '{cgLayerName}' が未定義。CG 人形は出ない" +
@@ -154,6 +164,11 @@ namespace FixedCamVr.Streaming.Cg
             _actorDef = def;
             _pose = pose;
             _placement = placement;
+            _cameraIndex = cameraIndex;
+            // 較正の解があればそれが姿勢の正（pose は人がドラッグした概算にすぎない）。
+            // ただしレンズ・解像度の照合は毎フレーム行う（起動直後は実寸が未確定なので Apply では決まらない）。
+            _calibRaw = showControl.TryGetCameraCalib(cameraIndex, out ShowCameraCalibDef calib) ? calib : null;
+            _warnedCalibMismatch = false;
             _actorRig?.ResetPose();
             _visible = true;
             _warnedUnregistered = false;
@@ -200,7 +215,9 @@ namespace FixedCamVr.Streaming.Cg
             SetRendering(true);
 
             EnsureRenderTexture();
-            ApplyCameraPose(_pose);
+            ShowCameraCalibDef? calib = ResolveCalib();
+            if (calib != null) ApplyCameraCalib(calib);
+            else ApplyCameraPose(_pose);
             ApplyLight();
             PlaceActor(_actorDef);
             if (_actorRig != null && _actorRig.HasRig)
@@ -284,7 +301,13 @@ namespace FixedCamVr.Streaming.Cg
             if (_rt == null || _rt.width != w || _rt.height != h)
             {
                 ReleaseRenderTexture();
-                _rt = new RenderTexture(w, h, 16, RenderTextureFormat.ARGB32) { name = "ShowCgLayer", useMipMap = false };
+                _rt = new RenderTexture(w, h, 16, RenderTextureFormat.ARGB32)
+                {
+                    name = "ShowCgLayer",
+                    useMipMap = false,
+                    // レンズ歪み補正で UV が枠外を指すことがある。繰り返すと反対側の人形が出る。
+                    wrapMode = TextureWrapMode.Clamp,
+                };
                 _rt.Create();
                 if (_virtualCam != null) _virtualCam.targetTexture = _rt;
                 _material?.SetTexture(CgTexId, _rt);
@@ -304,10 +327,93 @@ namespace FixedCamVr.Streaming.Cg
             _rt = null;
         }
 
+        /// <summary>
+        /// 使える較正か**毎フレーム**判定する。内部パラメータは撮り方（解像度・レンズ）に従属するので、
+        /// 配信設定を変えた瞬間に無効へ倒さないと黙って狂う。実寸が未確定のうちは概算 pose で出す。
+        /// </summary>
+        private ShowCameraCalibDef? ResolveCalib()
+        {
+            if (_calibRaw == null) return null;
+            int w = _screen != null ? _screen.SourceWidth : 0;
+            int h = _screen != null ? _screen.SourceHeight : 0;
+            if (w <= 0 || h <= 0) return null;                     // まだ 1 枚も来ていない
+            string lens = LensIdOf(_cameraIndex);
+            if (_calibRaw.MatchesSource(w, h, lens)) return _calibRaw;
+
+            if (!_warnedCalibMismatch)
+            {
+                _warnedCalibMismatch = true;
+                Debug.LogWarning($"[ShowCgLayer] カメラ {_cameraIndex} の較正は撮り方が違う" +
+                                 $"（較正時 {_calibRaw.srcW}x{_calibRaw.srcH} lens'{_calibRaw.lensId}'" +
+                                 $" / いま {w}x{h} lens'{lens}'）→ 概算の姿勢で出す。較正し直すこと");
+            }
+            return null;
+        }
+
+        private string LensIdOf(int index)
+        {
+            CameraStream? s = registry != null ? registry.Get(index) : null;
+            StreamMetadata? m = s != null ? s.Metadata : null;
+            return m != null ? (m.lensId ?? "") : "";
+        }
+
+        /// <summary>
+        /// **較正の解**を仮想カメラへ適用する。内部パラメータは <c>projectionMatrix</c> へ直接入れる —
+        /// Unity の physical camera（sensorSize / lensShift / gateFit）を経由すると符号と軸の
+        /// 取り違えが必ず起きるうえ、主点ズレの表現に余計な変換が挟まる。
+        /// </summary>
+        private void ApplyCameraCalib(ShowCameraCalibDef c)
+        {
+            if (_virtualCam == null) return;
+            Transform t = _virtualCam.transform;
+            t.position = CourseToWorld(new Vector2(c.x, c.z), c.y);
+            // roll は三脚の傾き。符号は卓のワイヤー重畳（較正の検証表示）で確定させる。
+            t.rotation = Quaternion.Euler(-c.pitchDeg, CourseYawDeg() + c.yawDeg, c.rollDeg);
+
+            _virtualCam.aspect = (float)c.srcW / Mathf.Max(1, c.srcH);
+            _virtualCam.projectionMatrix = BuildProjectionMatrix(
+                c.fxPx, c.fyPx, c.cxPx, c.cyPx, c.srcW, c.srcH,
+                _virtualCam.nearClipPlane, _virtualCam.farClipPlane);
+            _projectionOverridden = true;
+
+            // 実レンズの歪みを **CG 側にも掛けて**合わせる（CG はピンホール、実映像は樽型に歪んでいる）。
+            // 係数は OpenCV と同じ「正規化画像座標に対する k1」。
+            SetLensDistortion(c.k1, c.cxPx / c.srcW, c.cyPx / c.srcH, c.fxPx / c.srcW, c.fyPx / c.srcH);
+        }
+
+        /// <summary>
+        /// ピンホール内部行列 (fx, fy, cx, cy [px]) → Unity の射影行列。
+        /// 画像は左上原点、Unity の frustum は下が bottom なので y を反転して渡す。
+        /// </summary>
+        public static Matrix4x4 BuildProjectionMatrix(float fxPx, float fyPx, float cxPx, float cyPx,
+                                                      int wPx, int hPx, float near, float far)
+        {
+            float fx = Mathf.Max(1e-3f, fxPx), fy = Mathf.Max(1e-3f, fyPx);
+            float w = Mathf.Max(1, wPx), h = Mathf.Max(1, hPx);
+            float left = -cxPx * near / fx;
+            float right = (w - cxPx) * near / fx;
+            float top = cyPx * near / fy;
+            float bottom = -(h - cyPx) * near / fy;
+            return Matrix4x4.Frustum(left, right, bottom, top, near, far);
+        }
+
+        private void SetLensDistortion(float k1, float cxN, float cyN, float fxN, float fyN)
+        {
+            _material?.SetVector(CgLensId, new Vector4(k1, cxN, cyN, 0f));
+            _material?.SetVector(CgFocalId, new Vector4(Mathf.Max(1e-4f, fxN), Mathf.Max(1e-4f, fyN), 0f, 0f));
+        }
+
         // course 空間の姿勢 → 仮想カメラのワールド姿勢（位置合わせ済みの course フレーム上）。
+        // **較正が無い / 使えないときのフォールバック**（人がフロアマップで置いた概算）。
         private void ApplyCameraPose(ShowCameraPoseDef pose)
         {
             if (_virtualCam == null) return;
+            if (_projectionOverridden)
+            {
+                _virtualCam.ResetProjectionMatrix();   // fieldOfView 駆動へ戻す
+                _projectionOverridden = false;
+            }
+            SetLensDistortion(0f, 0.5f, 0.5f, 1f, 1f);   // 概算に歪み補正は無い
             Transform t = _virtualCam.transform;
             t.position = CourseToWorld(new Vector2(pose.x, pose.z), pose.y);
             t.rotation = Quaternion.Euler(-pose.pitchDeg, CourseYawDeg() + pose.yawDeg, 0f);
