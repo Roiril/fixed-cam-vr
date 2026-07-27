@@ -714,6 +714,64 @@ IDCHECK_INTERVAL = 10.0
 _ident_lock = threading.Lock()
 _ident = {}   # camId -> {state, detail, metaId, metaShow, uuid, name, host, port, at}
 
+# ---- 受信の鮮度（/cam プロキシが実際に upstream から読めているか）----
+# ⚠ ブラウザの <img> の load / error は生存判定に使えない:
+#   ・upstream 断（スマホの熱落ち・Wi-Fi 切断）はこのプロキシが握り潰して正常終了するので error が飛ばない
+#   ・multipart の各フレームで load が発火するかはブラウザ実装依存（実測で発火しない環境があった）
+#   その結果、旧実装は「最後のフレームを表示したまま ● LIVE / ✅ 全台 LIVE 受信中」と言い続けていた。
+#   プロキシは実際に upstream からバイトを読んでいる唯一の場所なので、ここを鮮度の一次情報にする。
+_live_lock = threading.Lock()
+_live = {}   # "host:port" -> {'at': monotonic, 'bytes': int, 'since': monotonic, 'clients': int}
+
+
+def _live_key(host, port):
+    return f'{host}:{port}'
+
+
+def _live_open(key):
+    now = time.monotonic()
+    with _live_lock:
+        e = _live.setdefault(key, {'at': 0.0, 'bytes': 0, 'since': now, 'clients': 0})
+        e['clients'] += 1
+        e['since'] = now
+
+
+def _live_touch(key, n):
+    now = time.monotonic()
+    with _live_lock:
+        e = _live.get(key)
+        if e is not None:
+            e['at'] = now
+            e['bytes'] += n
+
+
+def _live_close(key):
+    with _live_lock:
+        e = _live.get(key)
+        if e is not None:
+            e['clients'] = max(0, e['clients'] - 1)
+
+
+def _live_snapshot():
+    """{"host:port": {ageMs, bytes, clients}}。ageMs は最後にバイトが流れてからの経過。
+    一度もバイトが来ていない接続は ageMs=None（＝未受信。停止とは区別する）。"""
+    now = time.monotonic()
+    with _live_lock:
+        # 誰も見ておらず 5 分以上動きの無い配信元は落とす（現場で host を変えるたびに
+        # 古い "host:port" が積み残るのを防ぐ。表示にも出したくない）。
+        for k in [k for k, v in _live.items()
+                  if v['clients'] <= 0 and now - max(v['at'], v['since']) > 300]:
+            del _live[k]
+        return {
+            k: {
+                'ageMs': None if not v['at'] else int((now - v['at']) * 1000),
+                'openMs': int((now - v['since']) * 1000),
+                'bytes': v['bytes'],
+                'clients': v['clients'],
+            }
+            for k, v in _live.items()
+        }
+
 
 def _ident_check_once():
     with _show_cond:
@@ -839,6 +897,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(self._list_masks())
         if path == '/cam':
             return self._proxy_cam(parse_qs(urlparse(self.path).query))
+        if path == '/cam/liveness':
+            # 卓が 2 秒ごとに読む「各配信元から実際にバイトが来ているか」。
+            return self._json({'ok': True, 'cams': _live_snapshot()})
         if path == '/scenarios/list':
             return self._json({'items': self._list_scenarios()})
         if path == '/dwell/stats':
@@ -970,19 +1031,29 @@ class Handler(SimpleHTTPRequestHandler):
             upstream = urllib.request.urlopen(req, timeout=5)
         except Exception as e:
             return self._json({'ok': False, 'error': f'upstream: {e}'}, 502)
+        key = _live_key(host, port)
+        _live_open(key)
         try:
             self.send_response(200)
             ctype = upstream.headers.get('Content-Type', 'multipart/x-mixed-replace')
             self.send_header('Content-Type', ctype)
             self.end_headers()
             while True:
-                chunk = upstream.read(64 * 1024)
+                # ⚠ read() ではなく read1(): read は「64KB 溜まるまで」ブロックするので、
+                #   ビットレートが低い配信では中継そのものが遅れ、鮮度の分解能も 64KB 単位になる
+                #   （実測: 161B/frame の配信では 2 秒経っても 1 バイトも返らなかった）。
+                #   read1 は「いま来ている分」を即返すので、低遅延中継と正確な鮮度が同時に成立する。
+                chunk = upstream.read1(64 * 1024)
                 if not chunk:
                     break
+                # 「いま upstream からバイトが来ている」ことを記録する。卓の ● LIVE はこれを読む
+                # （<img> の load/error は当てにならない — 上の _live のコメント参照）。
+                _live_touch(key, len(chunk))
                 self.wfile.write(chunk)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
             pass  # クライアント側がタブを閉じた等。正常系
         finally:
+            _live_close(key)
             try:
                 upstream.close()
             except Exception:

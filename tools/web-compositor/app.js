@@ -389,10 +389,8 @@ function buildColumn(cam, index) {
       + `&port=${c.port || 8080}&path=/video`
       + (c.auth ? `&auth=${encodeURIComponent(c.auth)}` : '') + `&t=${Date.now()}`;
   }
-  refs.liveOk = false;   // 本番前チェックが読む「この列に実映像が来ているか」
+  refs.liveOk = false;   // 本番前チェックが読む「この列に実映像が来ているか」（鮮度は下の applyLiveness が正）
   refs.liveImg.addEventListener('load', () => {
-    refs.statusEl.textContent = '● LIVE'; refs.statusEl.className = 'col-status ok';
-    refs.liveOk = true;
     refs.applyAspect && refs.applyAspect();
     // 実寸が分かって初めて「較正はこの解像度用か」を判定できる（px 焦点距離は解像度に従属）。
     refs.syncCalib && refs.syncCalib();
@@ -403,6 +401,27 @@ function buildColumn(cam, index) {
     clearTimeout(refs.retry); refs.retry = setTimeout(connectLive, 5000);
   });
   refs.connectLive = connectLive;
+
+  // 卓サーバが測った鮮度を列の表示へ落とす。「接続した」ではなく「いまバイトが来ている」を ● LIVE の意味にする。
+  //   ⚠ フレームが途絶えても <img> は最後の絵を出したまま = 画面は嘘をつく。ここで必ず言う。
+  refs.applyLiveness = (e) => {
+    if (!e) {                       // プロキシがこの配信元をまだ開いていない
+      refs.liveOk = false;
+      if (refs.cam.host) { refs.statusEl.textContent = '接続中…'; refs.statusEl.className = 'col-status'; }
+      else { refs.statusEl.textContent = '配信元 未設定'; refs.statusEl.className = 'col-status ng'; }
+      return;
+    }
+    if (e.ageMs == null) {          // 開いてはいるが 1 バイトも来ていない
+      refs.liveOk = false;
+      refs.statusEl.textContent = e.openMs > 4000 ? '✕ 応答なし' : '接続中…';
+      refs.statusEl.className = e.openMs > 4000 ? 'col-status ng' : 'col-status';
+      return;
+    }
+    const fresh = e.ageMs < LIVE_STALE_MS;
+    refs.liveOk = fresh;
+    refs.statusEl.textContent = fresh ? '● LIVE' : `⏸ 停止 ${Math.round(e.ageMs / 1000)}s`;
+    refs.statusEl.className = fresh ? 'col-status ok' : 'col-status ng';
+  };
 
   q('.col-switch').onclick = () => postCommand({ type: 'setCameraOverride', camera: refs.cam.id });
 
@@ -733,6 +752,25 @@ async function pollDwell() {
   } catch { /* サーバ断は pollUnity 側が検出する */ }
 }
 
+// ---- 受信の鮮度（● LIVE の意味を「接続した」から「いまバイトが来ている」へ）------------
+//   卓サーバの /cam プロキシだけが upstream を実際に読んでいるので、そこで測った鮮度を正とする。
+//   ブラウザ側の <img> load/error は当てにならない（upstream 断はプロキシが握り潰し、
+//   multipart の各フレームで load が飛ぶかは実装依存 — 実測で飛ばない環境があった）。
+const LIVE_STALE_MS = 2500;
+let lastLiveness = {};
+async function pollLiveness() {
+  try {
+    const r = await fetch('/cam/liveness');
+    if (!r.ok) return;
+    const j = await r.json();
+    lastLiveness = (j && j.cams) || {};
+  } catch { lastLiveness = {}; }   // サーバ断。列は下で「接続中…」へ落ちる
+  for (const refs of columns.values()) {
+    const c = refs.cam;
+    refs.applyLiveness && refs.applyLiveness(lastLiveness[`${c.host || ''}:${c.port || 8080}`]);
+  }
+}
+
 async function pollUnity() {
   for (;;) {
     // このポーリング（2s）が卓サーバ生存の一次判定。/state は long-poll で最大 25s
@@ -743,6 +781,7 @@ async function pollUnity() {
       unityAlive = !!s.alive; lastUnity = s.status || {};
       await pollDwell();
     } catch { serverAlive = false; unityAlive = false; lastUnity = {}; }
+    await pollLiveness();
     renderStatus();
     renderRunPanel();
     renderLatchBar();
@@ -1054,12 +1093,18 @@ function preflightRows() {
     const col = columns.get(c.id);
     const live = col && col.liveOk;
     const found = devices.some((d) => d.role === 'camera' && d.id === c.id);
+    // 「一度も来ていない（未受信 / 未発見）」と「来ていたのに止まった（停止）」を区別する。
+    // 後者はスマホの熱落ち・Wi-Fi 断で、現場での打ち手がまるで違う。
+    const e = lastLiveness[`${c.host || ''}:${c.port || 8080}`];
     if (conflicts.has(c.id)) bad.push(`${c.id}=二重ID`);
-    else if (!live) bad.push(`${c.id}=${found ? '未受信' : '未発見'}`);
+    else if (!live) {
+      const stalled = e && e.ageMs != null;
+      bad.push(`${c.id}=${stalled ? `停止 ${Math.round(e.ageMs / 1000)}s` : (found ? '未受信' : '未発見')}`);
+    }
   }
   rows.push(bad.length
     ? { s: 'ng', label: `カメラ ${cams.length} 台`, detail: `${bad.join(' / ')} — 🩺 疎通診断で層を切り分け` }
-    : { s: 'ok', label: `カメラ ${cams.length} 台`, detail: '全台 LIVE 受信中' });
+    : { s: 'ok', label: `カメラ ${cams.length} 台`, detail: `全台 受信中（${LIVE_STALE_MS / 1000}s 以内にフレーム到着）` });
 
   // 2 つ以上のカメラが同じ配信元を指していると、別ゾーンなのに同じ映像が出る
   // （切替が「効いていない」ように見える）。LIVE 判定は通ってしまうのでここで別に見る。
