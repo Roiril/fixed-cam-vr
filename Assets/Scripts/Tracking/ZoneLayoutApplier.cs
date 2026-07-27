@@ -90,6 +90,9 @@ namespace FixedCamVr.Tracking
                 // 未登録のまま CG を出すと course→world が identity へ落ち、人形が全く違う場所に立つ
                 // （2026-07-27 監査 HIGH 4）。ShowCgLayer がこれを見て「出さない」へ倒す。
                 showControl.CourseRegisteredProvider = () => frame.HasRegistration;
+                // OS recenter でズレた状態のまま体験を始めさせない。HMD 内の警告は体験者が
+                // 被っている間スタッフに見えないので、卓の本番前チェックへ届ける（2026-07-28）。
+                showControl.CourseNeedsReRegProvider = () => frame.NeedsReRegistration;
             }
             var trk = tracker;
             showControl.CurrentZoneLabelProvider = () => trk != null && trk.CurrentZone != null ? trk.CurrentZone.Label : "";

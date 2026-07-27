@@ -1133,11 +1133,24 @@ function preflightRows() {
   if (!unityAlive) rows.push({ s: 'ng', label: 'Quest（Unity）', detail: 'heartbeat 未受信 — アプリ起動 / ShowServer host を確認' });
   else {
     const synced = state && typeof u.appliedRev === 'number' && u.appliedRev >= state.rev;
+    // ⚠ 位置合わせモード（REG）中は体験を始められない。旧実装は detail に書きながら ✅ を出していた。
+    const inReg = u.mode === 'REG';
     rows.push({
-      s: synced ? 'ok' : 'warn',
+      s: inReg ? 'ng' : (synced ? 'ok' : 'warn'),
       label: 'Quest（Unity）',
-      detail: `${u.mode === 'REG' ? '位置合わせモード中（体験開始前に退出）' : 'NORMAL'} / ${synced ? '設定反映済み' : `同期中 ${u.appliedRev}/${state?.rev}`}`,
+      detail: inReg
+        ? '位置合わせモード中 — 体験開始前に退出（右トリガー 2 秒長押し）'
+        : `NORMAL / ${synced ? '設定反映済み' : `同期中 ${u.appliedRev}/${state?.rev}`}`,
     });
+    // 位置合わせの状態。ここがズレたまま始めると「歩いても切り替わらない」になる。
+    // HMD 内には出るが、体験者が被っている間スタッフには見えないので卓で言う。
+    if (u.needsReReg) {
+      rows.push({ s: 'ng', label: '位置合わせ', detail: 'トラッキング原点が変わりました（OS の recenter）— 再登録するまでゾーンがズレたまま動きます' });
+    } else if (u.registered === false) {
+      rows.push({ s: 'ng', label: '位置合わせ', detail: '未登録 — 右トリガー 2 秒長押しで登録（ゾーンが実空間に合いません）' });
+    } else if (u.registered === true) {
+      rows.push({ s: 'ok', label: '位置合わせ', detail: '登録済み' });
+    }
   }
 
   const devices = (lastDiscovery && lastDiscovery.devices) || [];

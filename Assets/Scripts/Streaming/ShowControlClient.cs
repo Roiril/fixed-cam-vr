@@ -760,6 +760,14 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Func<bool>? CourseRegisteredProvider;
 
+        /// <summary>
+        /// 「要再登録」の供給元（CourseFrame.NeedsReRegistration を注入）。OS の recenter で立つ。
+        /// **これが立ったまま体験を始めると、ゾーンが実空間に対してズレたまま動く**
+        /// （「歩いても切り替わらない」の最有力原因）。HMD 内には出るが体験者が被っている間は
+        /// 誰も読めないので、heartbeat で卓の本番前チェックへ届ける（2026-07-28）。
+        /// </summary>
+        public Func<bool>? CourseNeedsReRegProvider;
+
         private string ConfigCachePath => Path.Combine(Application.persistentDataPath, configCacheFileName);
 
         [Serializable] private class ShowState
@@ -1800,6 +1808,9 @@ namespace FixedCamVr.Streaming
             public int zoneCam = -1;
             // 走行中の演出 id（空 = 演出なし）。卓の「いま画面を握っているのは誰か」表示に使う。
             public string takeId = "";
+            // 位置合わせの状態。registered=false / needsReReg=true のまま体験を始めるとゾーンがズレたまま動く。
+            public bool registered;
+            public bool needsReReg;
             // 前回の heartbeat 以降に確定した区間滞在（実測）。卓が集計して
             // リボン UI の「実測 平均 Ns」に使う。空配列で送ってよい（サーバ側は無視）。
             public DwellHb[] dwell = Array.Empty<DwellHb>();
@@ -1858,6 +1869,8 @@ namespace FixedCamVr.Streaming
                     CameraSwitchDirector? zd = ResolveSwitchDirector();   // UnityEngine.Object の偽 null を踏まないよう != で判定する
                     hb.zoneCam = (zd != null && zd.TryGetCurrentZoneCamera(out int zc)) ? zc : -1;
                     hb.takeId = timelineDirector != null ? timelineDirector.ActiveTakeId : "";
+                    hb.registered = CourseRegisteredProvider == null || CourseRegisteredProvider();
+                    hb.needsReReg = CourseNeedsReRegProvider != null && CourseNeedsReRegProvider();
 
                     string json = JsonUtility.ToJson(hb);
                     using var req = UnityWebRequest.Post(
