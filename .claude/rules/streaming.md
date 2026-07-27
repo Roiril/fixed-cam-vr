@@ -542,8 +542,13 @@ premultiplied 断片なので、合成側の over が自動的に乗算（背景
   数値入力とも双方向。向きは矢印の先をドラッグ。**較正済みでないカメラでは「実機では人形が出ません」と出す**
 - **輪郭プロキシ**（足元の楕円・身長ボックス・頭・向き矢印）を映像とシミュレータに重ねる。
   **意図的に写実にしない**（寒色の半透明の線だけ）— 写実に見えると著作者がそれを信じて Unity の最終確認を飛ばす
-- **⚠ 照明の 4 項目（`tempK` / `intensity` / `ambient` / `shadowSoftM`）は Unity 側がまだ読んでいない**。
-  卓は「（未適用）」と明示している。読むようにしたら `room-model.js` の `LIGHT_FIELDS.applied` を true に戻すこと
+- **照明の 7 項目はすべて絵に効く**（2026-07-27 に接続）。向き・仰角は影の方向、`tempK` × `intensity` は
+  人形に当たる光の色（`ShowCgLayer.KelvinToLinearColor` → `ShowActor.shader` の `_LightColor`）、
+  `ambient` は影側の持ち上げ、`shadowDensity` は影の濃さ、`shadowSoftM` は**接地影の縁のぼけ幅**。
+  - 色温度の式は**卓と C# で同一**（`room-model.js` の `kelvinToRgb` / `ShowCgLayer.KelvinToLinearColor`）。
+    4000K の期待値を両側のテストにハードコードして突き合わせている。**片方だけ直すと沈黙して食い違う**
+  - `shadowSoftM` を**平面投影シャドウには効かせない**（形をそのまま床へ潰すので縁をぼかす場所が無い）。
+    受け口だけ作って効かせないのは著作者への嘘なので、シェーダからプロパティごと削除した
 - `placementOf` は「placement の 3 成分がすべて 0 なら actor の既定へ落とす」ヒューリスティックを使っている
   （正規化が常に `{0,0,0}` を作るため「著作された (0,0,0)」と「未著作」を区別できない。actor 既定も通常 0 なので実害なし）
 

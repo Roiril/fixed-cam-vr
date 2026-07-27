@@ -274,3 +274,20 @@ test('kelvinToRgb は壊れた入力・範囲外でも 0..255 に収まる', () 
   }
   assert.equal(kelvinToCss(6500), 'rgb(255, 254, 250)');
 });
+
+// ---- 色温度は Unity と同じ値を出すこと ----------------------------------------
+//   ⚠ C# 側 CgProjectionTests.Kelvin_MatchesConsoleFormula と**同一の期待値**。
+//   卓のスウォッチと実機の人形の色が食い違うと、著作者は何を信じればいいのか分からなくなる。
+//   片方だけ直すと沈黙して食い違うので、変えるときは必ず両方を直すこと。
+
+test('kelvinToRgb は Unity と同じ値を出す（4000K）', () => {
+  const c = kelvinToRgb(4000);
+  assert.ok(Math.abs(c.r - 255) < 0.5, `R=${c.r}`);
+  assert.ok(Math.abs(c.g - 205.8) < 0.5, `G=${c.g}`);
+  assert.ok(Math.abs(c.b - 166.1) < 0.5, `B=${c.b}`);
+});
+
+test('低い色温度ほど赤が青より強い', () => {
+  const warm = kelvinToRgb(2500), cool = kelvinToRgb(7500);
+  assert.ok(warm.r / Math.max(1, warm.b) > cool.r / Math.max(1, cool.b));
+});

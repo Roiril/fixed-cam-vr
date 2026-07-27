@@ -18,6 +18,11 @@ Shader "FixedCamVr/ShowActor"
         // ここの既定は Editor プレビュー / 単体確認用のフォールバックにすぎない。
         // ワールド固定のままだと Quest のトラッキング原点の向き次第で部屋に対する光の向きが変わる。
         _LightDir("Light Direction (world)", Vector) = (0.35, 0.85, -0.40, 0)
+        // 主光源の色（**linear**・色温度 × 強さを掛け込んだもの）。ShowCgLayer が
+        // layout.room.light の tempK / intensity から作って毎フレーム供給する。
+        _LightColor("Light Color (linear, tempK x intensity)", Vector) = (1, 1, 1, 1)
+        // 環境光: 影側をどれだけ持ち上げるか。0 = 影が _ShadeColor のまま沈む / 1 = 影が消える。
+        _Ambient("Ambient", Range(0, 1)) = 0.35
         _Wrap("Light Wrap", Range(0, 1)) = 0.45
         _Rim("Rim Strength", Range(0, 1)) = 0.25
         _RimPower("Rim Power", Range(1, 8)) = 3
@@ -43,6 +48,8 @@ Shader "FixedCamVr/ShowActor"
                 float4 _ShadeColor;
                 float4 _RimColor;
                 float4 _LightDir;
+                float4 _LightColor;
+                float _Ambient;
                 float _Wrap;
                 float _Rim;
                 float _RimPower;
@@ -82,7 +89,13 @@ Shader "FixedCamVr/ShowActor"
                 // wrap lighting: 影側を完全に潰さない（監視カメラの粗い絵で形が読める程度に残す）
                 float ndl = dot(n, l);
                 float t = saturate((ndl + _Wrap) / (1.0 + _Wrap));
-                half3 col = lerp(_ShadeColor.rgb, _BaseColor.rgb, t);
+
+                // 影側は「環境光がどれだけ持ち上げるか」、光側は「主光源の色 × 強さ」。
+                // 卓（💡 CG 照明パネル）で著作した tempK / intensity / ambient がここで初めて絵に効く。
+                // これを繋ぐまでは、著作者がスライダを動かしても何も変わらなかった。
+                half3 shade = lerp(_ShadeColor.rgb, _BaseColor.rgb, saturate(_Ambient));
+                half3 lit = _BaseColor.rgb * _LightColor.rgb;
+                half3 col = lerp(shade, lit, t);
 
                 // リム: 輪郭をわずかに立てる（映像に埋もれて「居るのに見えない」を防ぐ）
                 float rim = pow(saturate(1.0 - saturate(dot(n, v))), _RimPower) * _Rim;

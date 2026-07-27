@@ -268,7 +268,7 @@ VR では **Play 開始から最初の安定フレームまで** の間、以下
 | 直下（ショートカット可） | 0〜49 | ユーザー常用（Open Main Scene 等） |
 | `Setup/` | 50〜99 | シーン構築・アセット生成（Setup Main Demo Scene 等） |
 | `Layout/` | 100〜199 | Editor レイアウト管理（ユーザー初期設定） |
-| `Diagnostics/` | 200〜299 | シュビーが叩く検証ツール（Ping / Run Tests / Preview Registration Viz / Preview Show Actor 等） |
+| `Diagnostics/` | 200〜299 | シュビーが叩く検証ツール（Ping / Run Tests / Preview Registration Viz / Preview Show Actor / Preview Show Composite 等） |
 
 **CG 人形のレイヤ規約**（2026-07-27）: 人形は専用レイヤ **`ShowCg`(slot 9)** に置き、
 **HMD カメラの cullingMask からは外す**（`Setup Main Demo Scene` が自動で外す）。外すのを忘れると

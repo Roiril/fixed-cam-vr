@@ -182,6 +182,60 @@ namespace FixedCamVr.Streaming.Tests
                 }
         }
 
+        // ---- 色温度 → 光の色（卓のスウォッチと同じ式であること）----
+
+        [Test]
+        public void Kelvin_MatchesConsoleFormula()
+        {
+            // ⚠ **卓の room-model.test.mjs「kelvinToRgb は Unity と同じ値を出す」と同一の期待値**。
+            //    卓のスウォッチと実機の人形の色が食い違うと、著作者は何を信じればいいのか分からなくなる。
+            //    比較は sRGB(0..255) で行う（C# 側は Linear を返すので戻してから）。
+            Color c = ShowCgLayer.KelvinToLinearColor(4000f);
+            Assert.AreEqual(255f, Mathf.LinearToGammaSpace(c.r) * 255f, 0.5f, "R");
+            Assert.AreEqual(205.8f, Mathf.LinearToGammaSpace(c.g) * 255f, 0.5f, "G");
+            Assert.AreEqual(166.1f, Mathf.LinearToGammaSpace(c.b) * 255f, 0.5f, "B");
+        }
+
+        [Test]
+        public void Kelvin_WarmIsRedder_CoolIsBluer()
+        {
+            Color warm = ShowCgLayer.KelvinToLinearColor(2500f);
+            Color cool = ShowCgLayer.KelvinToLinearColor(7500f);
+            Assert.Greater(warm.r / Mathf.Max(1e-4f, warm.b), cool.r / Mathf.Max(1e-4f, cool.b),
+                "低い色温度ほど赤が青より強い");
+        }
+
+        [Test]
+        public void Kelvin_OutOfRange_IsClampedAndFinite()
+        {
+            foreach (float k in new[] { -100f, 0f, 500f, 20000f, float.NaN })
+            {
+                Color c = ShowCgLayer.KelvinToLinearColor(k);
+                Assert.IsFalse(float.IsNaN(c.r) || float.IsNaN(c.g) || float.IsNaN(c.b), $"k={k}");
+                Assert.GreaterOrEqual(c.r, 0f); Assert.LessOrEqual(c.r, 1f);
+                Assert.GreaterOrEqual(c.g, 0f); Assert.LessOrEqual(c.g, 1f);
+                Assert.GreaterOrEqual(c.b, 0f); Assert.LessOrEqual(c.b, 1f);
+            }
+        }
+
+        // ---- 接地影のにじみ ----
+
+        [Test]
+        public void BlobFeather_IsRatioOfRadius()
+        {
+            // にじみは m 指定、シェーダは半径比で受ける。半径が変われば比も変わる。
+            Assert.AreEqual(0.4f, ShowCgLayer.BlobFeatherFromSoftM(0.12f, 0.3f), 1e-4f);
+            Assert.AreEqual(0.24f, ShowCgLayer.BlobFeatherFromSoftM(0.12f, 0.5f), 1e-4f);
+        }
+
+        [Test]
+        public void BlobFeather_IsClamped()
+        {
+            Assert.AreEqual(1f, ShowCgLayer.BlobFeatherFromSoftM(10f, 0.3f), 1e-4f, "全域ぼけで頭打ち");
+            Assert.AreEqual(0.05f, ShowCgLayer.BlobFeatherFromSoftM(0f, 0.3f), 1e-4f, "0 でも縁は少し落とす");
+            Assert.IsFalse(float.IsNaN(ShowCgLayer.BlobFeatherFromSoftM(0.1f, 0f)), "半径 0 で NaN を出さない");
+        }
+
         [Test]
         public void Light_ExtremePitch_IsClamped()
         {

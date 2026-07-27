@@ -217,3 +217,8 @@ Assets/StreamingAssets/show.meta
 
 # Unity Play ガード hook のワンショット解錠マーカー（guard-unity-play.js が消費）
 .claude/allow-unity-play
+
+# CG 合成プレビューの出力（Preview Show Composite で再生成できる。実データ由来なので現場の IP が
+# 焼き込まれた画も混ざる）。証拠として残したい 1 枚は手で別名保存すること。
+Assets/Screenshots/cgviz/
+Assets/Screenshots/cgviz.meta

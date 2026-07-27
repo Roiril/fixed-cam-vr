@@ -29,6 +29,10 @@ globs:
 
 ## 具体（このプロジェクト）
 
+- **合成結果（廻リ視・CG 人形）**: `Tools/FixedCamVr/Diagnostics/Preview Show Composite`（実写プレート × CG 人形をカットごとに PNG 化 → `Assets/Screenshots/cgviz/`。Play 不要）。
+  実機確認はユーザーの手作業に依存して頻繁には回せず、卓（Web）は意図的に人形を描かないので、**合成品質の一次証拠はここだけ**。
+  各カメラの `calibcheck_<n>.png`（プレート + 部屋ワイヤー + 床格子・post なし）で較正のズレを判定する。
+  1 枚ごとに条件（カメラ / 較正の有無 / 人形 / 立ち位置 / プレートの有無）を画面下の帯へ焼くので、後から並べても何の絵か分かる。
 - 位置合わせ検証ビュー（廻リ視）: `Tools/FixedCamVr/Diagnostics/Preview Registration Viz`（ZoneGridFootprint + 登録ワイヤーフレームを identity/登録後 × 真上/斜め/目線で PNG 化 → `Assets/Screenshots/regviz/`。Play 不要・南北反転/変換ズレの机上検証）。
 - Editor 単体の多角度スクショ: `Tools/FixedCamVr/Diagnostics/Preview Hand Variants`（3種並べ）/ `Preview Robot Only`（背景排して周回）
   ＝ [TableDuoHandVariantPreview.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoHandVariantPreview.cs)。実録画データを当てるので Play 不要。

@@ -48,8 +48,10 @@ namespace FixedCamVr.Streaming.Cg
         private static readonly int ShadowPlaneYId = Shader.PropertyToID("_ShadowPlaneY");
         private static readonly int ShadowLightDirId = Shader.PropertyToID("_ShadowLightDir");
         private static readonly int ShadowDensityId = Shader.PropertyToID("_ShadowDensity");
-        private static readonly int ShadowSoftId = Shader.PropertyToID("_ShadowSoftM");
         private static readonly int BlobDensityId = Shader.PropertyToID("_BlobDensity");
+        private static readonly int BlobFeatherId = Shader.PropertyToID("_BlobFeather");
+        private static readonly int LightColorId = Shader.PropertyToID("_LightColor");
+        private static readonly int AmbientId = Shader.PropertyToID("_Ambient");
 
         /// <summary>身体入力がこの秒数届かなければ「手は取れていない」とみなす。</summary>
         private const float BodyInputTimeoutSec = 0.5f;
@@ -70,8 +72,10 @@ namespace FixedCamVr.Streaming.Cg
         private const string BlobMaterialResource = "ShowCg/ShowGroundBlob";
         private const string BlobShaderName = "FixedCamVr/ShowGroundBlob";
 
-        /// <summary><c>layout.room.light</c> が無いときの影の濃さ / にじみ（スキーマ既定値と同じ）。</summary>
+        /// <summary><c>layout.room.light</c> が無いときの既定（**スキーマ既定値と同じ**にする）。</summary>
         private const float DefaultShadowDensity = 0.55f;
+        private const float DefaultLightTempK = 4000f;
+        private const float DefaultAmbient = 0.35f;
         private const float DefaultShadowSoftM = 0.12f;
 
         /// <summary>接地影の半径 = 身長 × これ（成人 1.6m で約 0.35m。人の影の広がりの実感値）。</summary>
@@ -550,15 +554,49 @@ namespace FixedCamVr.Streaming.Cg
             Vector3 dir = CourseLightDirToWorld(yaw, pitch, CourseYawDeg());
 
             if (_actorRenderers.Length == 0) return dir;
+
+            // 主光源の色 = 色温度 × 強さ。環境光は影側の持ち上げ量。
+            // **卓で著作したこの 3 つが絵に効くのはここだけ** — 繋ぐまではスライダを動かしても
+            // 何も変わらず、著作者にはその理由に到達する手段が無かった。
+            float tempK = light != null ? light.tempK : DefaultLightTempK;
+            float intensity = light != null ? Mathf.Max(0f, light.intensity) : 1f;
+            float ambient = light != null ? Mathf.Clamp01(light.ambient) : DefaultAmbient;
+            Color lc = KelvinToLinearColor(tempK) * intensity;
+
             _mpb ??= new MaterialPropertyBlock();
             foreach (Renderer r in _actorRenderers)
             {
                 if (r == null) continue;
                 r.GetPropertyBlock(_mpb);
                 _mpb.SetVector(LightDirId, new Vector4(dir.x, dir.y, dir.z, 0f));
+                _mpb.SetVector(LightColorId, new Vector4(lc.r, lc.g, lc.b, 1f));
+                _mpb.SetFloat(AmbientId, ambient);
                 r.SetPropertyBlock(_mpb);
             }
             return dir;
+        }
+
+        /// <summary>
+        /// 色温度 (K) → **linear** の RGB。卓（`room-model.js` の `kelvinToRgb`）と**同じ近似式**を使う
+        /// — 卓のスウォッチと実機の人形の色が食い違うと、著作者は何を信じればいいのか分からなくなる。
+        /// プロジェクトは Linear 色空間なので、sRGB のまま渡すと色が浅くなる（ここで変換する）。
+        /// </summary>
+        public static Color KelvinToLinearColor(float tempK)
+        {
+            // ⚠ NaN は Mathf.Clamp を素通りする（比較がすべて false になるため）。
+            //    show.json のキー欠落や壊れた値で人形が真っ黒／真っ白になるのを防ぐ。
+            if (!(tempK > 0f)) tempK = DefaultLightTempK;
+            float t = Mathf.Clamp(tempK, 2000f, 8000f) / 100f;
+            float r = t <= 66f ? 255f : 329.698727446f * Mathf.Pow(t - 60f, -0.1332047592f);
+            float g = t <= 66f
+                ? 99.4708025861f * Mathf.Log(t) - 161.1195681661f
+                : 288.1221695283f * Mathf.Pow(t - 60f, -0.0755148492f);
+            float b = t >= 66f ? 255f : (t <= 19f ? 0f : 138.5177312231f * Mathf.Log(t - 10f) - 305.0447927307f);
+            return new Color(
+                Mathf.GammaToLinearSpace(Mathf.Clamp01(r / 255f)),
+                Mathf.GammaToLinearSpace(Mathf.Clamp01(g / 255f)),
+                Mathf.GammaToLinearSpace(Mathf.Clamp01(b / 255f)),
+                1f);
         }
 
         /// <summary><c>layout.room.light</c>（present-flag 込み）。未著作なら null。</summary>
@@ -607,14 +645,15 @@ namespace FixedCamVr.Streaming.Cg
                 _shadowMat.SetVector(ShadowLightDirId,
                     new Vector4(lightDirWorld.x, lightDirWorld.y, lightDirWorld.z, 0f));
                 _shadowMat.SetFloat(ShadowDensityId, density);
-                _shadowMat.SetFloat(ShadowSoftId, softM);
             }
-            PlaceGroundBlob(def, floorWorldY, density);
+            // にじみ（shadowSoftM）は平面投影では表現できない（形をそのまま潰すため）。
+            // 接地影の縁のぼけ幅として効かせる — 受け口だけ作って効かせないのは著作者への嘘。
+            PlaceGroundBlob(def, floorWorldY, density, softM);
         }
 
         // 足元の接地影（Quad 1 枚）。投影シャドウだけだと、光が斜めのとき足元そのものは暗くならず
         // 「浮いている」が残る。人形と床の接点を落とすのはこの blob の仕事。
-        private void PlaceGroundBlob(ShowActorDef def, float floorWorldY, float density)
+        private void PlaceGroundBlob(ShowActorDef def, float floorWorldY, float density, float softM)
         {
             if (!EnsureBlob() || _actorInstance == null) return;
             Vector3 p = _actorInstance.transform.position;
@@ -625,7 +664,13 @@ namespace FixedCamVr.Streaming.Cg
             _blob.rotation = Quaternion.Euler(90f, 0f, 0f);
             _blob.localScale = new Vector3(radius * 2f, radius * 2f, 1f);
             _blobMat?.SetFloat(BlobDensityId, density);
+            // にじみは m 指定。シェーダは半径に対する比で受けるのでここで割る（全域ぼけ = 1 で頭打ち）。
+            _blobMat?.SetFloat(BlobFeatherId, BlobFeatherFromSoftM(softM, radius));
         }
+
+        /// <summary>にじみ (m) → 接地影の縁のぼけ幅（半径に対する比）。半径が変われば比も変わる。</summary>
+        public static float BlobFeatherFromSoftM(float softM, float radiusM)
+            => Mathf.Clamp(softM / Mathf.Max(0.01f, radiusM), 0.05f, 1f);
 
         private bool EnsureBlob()
         {

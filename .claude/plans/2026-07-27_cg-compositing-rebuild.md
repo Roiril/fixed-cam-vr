@@ -5,9 +5,8 @@ status: **Step 0 / 1 / 2 / 3 / 5 完了**（2026-07-27・Quest 実機未検証�
 
 ### 積み残し（この計画の中で未着手のもの）
 
-1. **照明の 4 項目が Unity 側で未使用** — `tempK` / `intensity` / `ambient` / `shadowSoftM`。
-   卓では著作できるが `ShowActor.shader` は `_LightDir` しか読まない。**著作しても何も変わらない**ので、
-   これは「著作したものが黙って消える」と同型。読むようにしたら `room-model.js` の `LIGHT_FIELDS.applied` を戻す
+1. ~~照明の 4 項目が Unity 側で未使用~~ → **2026-07-27 に接続済み**（`tempK`×`intensity` → `_LightColor`、
+   `ambient` → 影側の持ち上げ、`shadowSoftM` → 接地影の縁）。色温度の式は卓と C# で同一・両側のテストで固定
 2. **`cgMode:"follow"` × 素材カット（`clip`/`still`/`rec`）の意味が壊れている**（§5 罠 9）。
    卓は輪郭を出さず事実だけ言う実装。スキーマで禁止するか素材に calib を紐づけるかの決着が要る
 3. **登録リチュアルの壁ワイヤーを `layout.room` へ寄せる**（§5 罠 6）。いまは `layout.wall` と二重管理
@@ -227,6 +226,23 @@ present-flag は既存の **AND 規約**（`TimelinePresentFlags.Reconcile`＝�
 | **2. 部屋プロキシ + 影 + 光** | `layout.room` の編集（卓）と生成（Unity・卓）。シャドウキャッチャー + 接地 blob。Rendering Layers で照明分離。`room.light` 著作。**登録ワイヤーを `layout.room` へ寄せる** | Editor 多角度静止画（[visual-verification](../rules/visual-verification.md)） | **大**。「浮いている」が消える |
 | **3. オクルージョン + 配置 UX** | プロキシ depth-only（MRUK の `Blend Zero One` 方式）。`steps[].placement` の実装。**映像クリックで床に配置**（較正の逆写像）。卓の輪郭プロキシ + golden trace 照合 | 人形を壁の裏に置いた静止画 / node テスト | 中〜大 |
 | **4. Editor 合成プレビュー** | `Diagnostics/Preview Show Composite` — 実写プレート（`captures/`）× 実カメラ姿勢 × 実リグで**カットごとの合成 PNG** を焼く。卓がサムネ表示 | PNG そのものが証拠 | 著作の速度が変わる |
+
+> **Step 4 実装済み（2026-07-27）**: `Assets/Scripts/Streaming/Editor/ShowCompositePreview.cs`。
+> 合成は**実シェーダ** `ScreenComposite`（premultiplied over + post FX）、射影・画角・光は `ShowCgLayer` の
+> public static、部屋は実 `ShowRoomProxy`、影 / 接地影は Resources の実マテリアル — 写経した式を持たないので
+> 本番とズレない。撮る対象・カメラ・プレート・post・ファイル名の決め方は純ロジック
+> `ShowCompositePreviewPlan`（EditMode テスト 19 本）に分離した（**撮り漏らしや別カメラのプレート当ては
+> 絵を見ても気づけない**ため、目視ではなくテストで止める）。
+> 出力 `Assets/Screenshots/cgviz/`: カットごとの合成 + カメラごとの `calibcheck_<n>.png`（プレート + 部屋ワイヤー
+> + 床格子・post なし）。1 枚ごとに条件を画面下の帯へ焼く。プレートは `captures/` → `recordings/` の順に
+> `cam<ID>_<stamp>` の最新を当て、無ければ灰色板 + 「NO PLATE」表示。
+> **卓のサムネ表示は未実装**（PNG を焼くところまで）。
+>
+> ⚠ 実行して分かった**現データの状態**: `cameras[].hasPose` が全カメラ false（カメラ D は pose の値が
+> 入っているのに flag が false ＋ 旧 `fovDeg` キーのまま）。本番 `ShowCgLayer` と同じ判定なので
+> **いまの show.json では人形は出ない**。プレビューはその理由を PNG に焼く
+> （`pose:PRESENT-BUT-hasPose=false (console not migrated)`）。卓の姿勢著作 UI が `hfovDeg` + `hasPose` を
+> 書けば、そのまま人形が出る（姿勢を注入した show.json では人形・影・接地影・ワイヤーの描画を確認済み）。
 | **5. 仕上げ** | 映像遅延の補償（body input のタイムスタンプ付きリングバッファ）/ 色収差 / CG 側だけの微ブラー / roll | 実機（遅延補償のみ実機必須） | 上積み |
 
 **Step 0 と 1 の間に他を挟まない。** 壊れた投影に対して較正すると誤差を焼き込む。

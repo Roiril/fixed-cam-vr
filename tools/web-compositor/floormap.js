@@ -1087,14 +1087,16 @@ export function createFloorMap(container, deps) {
       hint: 'マップ上の ☀ が光源。course の +Z（マップ上＝北）が 0 で、+X（東）へ増える' },
     { key: 'pitchDeg', label: '高さ（仰角）', unit: '°', applied: true,
       hint: '0 = 真横から / 90 = 真上から。天井照明なら 50〜70° あたり' },
-    { key: 'tempK', label: '色温度', unit: 'K', applied: false,
+    { key: 'tempK', label: '色温度', unit: 'K', applied: true,
       hint: '蛍光灯 4000K / 電球 2700K / 昼光 6500K' },
-    { key: 'intensity', label: '強さ', unit: '', applied: false, hint: '' },
-    { key: 'ambient', label: '環境光', unit: '', applied: false,
+    { key: 'intensity', label: '強さ', unit: '', applied: true,
+      hint: '1 が基準。上げると人形が明るく、下げると沈む' },
+    { key: 'ambient', label: '環境光', unit: '', applied: true,
       hint: '影側をどれだけ持ち上げるか（0 = 影が真っ黒）' },
     { key: 'shadowDensity', label: '影の濃さ', unit: '', applied: true,
       hint: '0 = 影なし。人形が床に着いて見えるかを決める一番効く値' },
-    { key: 'shadowSoftM', label: '影のにじみ', unit: 'm', applied: false, hint: '' },
+    { key: 'shadowSoftM', label: '影のにじみ', unit: 'm', applied: true,
+      hint: '接地影（足元）の縁のぼけ幅。床への投影シャドウの形は変わらない' },
   ];
 
   function renderLight() {

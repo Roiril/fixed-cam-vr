@@ -24,9 +24,10 @@ Shader "FixedCamVr/ShowShadowProjector"
         // （ワールド固定にするとトラッキング原点の向き次第で影の向きが変わる）。
         _ShadowLightDir("Light Direction (world, upward positive)", Vector) = (0.35, 0.85, -0.40, 0)
         _ShadowDensity("Shadow Density", Range(0, 1)) = 0.55
-        // にじみ（m 相当）。**まだ適用していない**受け口（layout.room.light.shadowSoftM の流し込み先）。
-        // SRP Batcher の都合で Properties と CBUFFER は一致していなければならないので宣言だけ置く。
-        _ShadowSoftM("Shadow Softness (m, reserved)", Float) = 0.12
+        // ⚠ にじみ（`layout.room.light.shadowSoftM`）は**ここでは扱わない**。平面投影は人形の形を
+        //    そのまま床へ潰すので、縁をぼかす自然な場所が無い（ステンシルで 1 回しか描かない制約もある）。
+        //    にじみは接地影 blob の `_BlobFeather` が引き受ける（ShowCgLayer.PlaceGroundBlob）。
+        //    「受け口だけあって効かないプロパティ」は著作者に嘘をつくので置かない。
     }
 
     SubShader
@@ -54,7 +55,6 @@ Shader "FixedCamVr/ShowShadowProjector"
                 float4 _ShadowLightDir;
                 float _ShadowPlaneY;
                 float _ShadowDensity;
-                float _ShadowSoftM;
             CBUFFER_END
 
             struct Attributes
