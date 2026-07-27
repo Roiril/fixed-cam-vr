@@ -86,6 +86,7 @@ golden トレースがこの経路を固定している（`t_B_line` は「ゾ�
 |---|---|
 | `at: "line"` | 3 つ目の判別子（未知値は従来どおり `enter` へ倒す） |
 | `lineId` | `layout.lines[].id`。空 / 未定義 id / **担当カメラ不一致**は発火しない（卓が警告・実機はログ 1 回） |
+| ↑ の実装規約 | **使えないラインでも `onLine` は下ろさない**。下ろすと時刻トリガー扱いになり `offsetSec`(=0) で**区間に入った瞬間に出る**＝契約の真逆になる。「決して due にならない」は `lineIndex = -1`（`TakeRunnerLogic.IsDue` が常に false）で表す。武装自体はされるので `ifMissed=fireOnExit` は従来どおり効く。<br>2026-07-27 監査で両側とも修正（実機＝空 lineId が進入即発火 / 卓＝3 ケースすべて進入即発火。卓は「発火しません」と警告した当の演出を再生していた）。固定: `TakeWiringTests.LineTake_WithoutLineId_*` / node `使えないラインの演出は区間に入っても出ない` |
 | `offsetSec` | **at=line では無視**（卓は 0 で書き出す） |
 | `ifMissed` | そのまま効く（この区間に居るあいだに通らなかった時）。`skip`=出さない（**卓の既定**）/ `fireOnExit`=離脱の瞬間に出す |
 | `once` / `policy` / `maxDurationSec` / `steps` / `bgm` | 変更なし |

@@ -655,5 +655,57 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(Field(bgm, "_takeOverrideActive"), Is.False, "介入で音も返る");
             Assert.That(Field(rig.Runner, "_bgmOverrideActive"), Is.False);
         }
+
+        // ---- 開始規則「このラインを通過したら」の使えないライン（2026-07-27 監査） ----
+
+        private static ShowTakeDef LineTake(string id, string lineId, string ifMissed, params ShowStepDef[] steps) => new()
+        {
+            id = id, at = TakeSchema.AtLine, offsetSec = 0f, lineId = lineId,
+            ifMissed = ifMissed, policy = TakeSchema.PolicyHold,
+            once = true, maxDurationSec = 0f, steps = steps,
+        };
+
+        [Test]
+        public void LineTake_WithoutLineId_DoesNotFireOnZoneEnter()
+        {
+            // 契約（.claude/plans/2026-07-27_position-trigger.md）: lineId が空の演出は**発火しない**。
+            // 旧実装は onLine を下ろして時刻トリガーへ落としていたため、offsetSec=0 と相まって
+            // **区間に入った瞬間に出てしまう**（警告文と真逆の挙動）。
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(new[]
+            {
+                SegWithTake(1, 0, LineTake("noline", "", TakeSchema.MissedSkip, LiveStep(3, 5f))),
+            });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.False, "ラインが無い演出は進入で発火しない");
+            Assert.That(rig.Director.InsertActive, Is.False, "画面も占有しない");
+
+            _now = 3f;
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.False, "時間が経っても発火しない（時刻トリガーに化けていない）");
+        }
+
+        [Test]
+        public void LineTake_WithoutLineId_StillFiresOnExit_WhenFireOnExit()
+        {
+            // 「通らなかったら離脱時に出す」設定なら、ライン不備でも離脱の瞬間には出る
+            //（＝武装はされている。ライントリガーとしてだけ死んでいる）。
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(new[]
+            {
+                SegWithTake(1, 0, LineTake("noline", "", TakeSchema.MissedFireOnExit, LiveStep(3, 5f))),
+            });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.False);
+
+            _now = 2f;
+            EnterZone(rig, 1, 1);   // 区間を離れる
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.True, "離脱の瞬間には出る（ifMissed=fireOnExit）");
+        }
     }
 }

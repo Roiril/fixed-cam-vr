@@ -92,9 +92,30 @@ test('始まった演出は必ず終わる（不変条件 2）', () => {
   assert.deepStrictEqual(started, ended);
 });
 
-test('動かなければ何も起きない', () => {
+test('動かなければ、スタート区間のシードだけが出る', () => {
+  // 起動時のシード（実機の LapCounter.SeedCurrentZone 相当）で「1 周目 / スタートカメラ」に居ることは
+  // 記録される。それ以外（ゾーン確定・周回・演出）は動かない限り起きない。
   const still = [{ tMs: 0, x: -0.6, z: 0 }, { tMs: 5000, x: -0.6, z: 0 }];
-  assert.deepStrictEqual(runScenario(cfg, still), []);
+  const tr = runScenario(cfg, still);
+  assert.deepStrictEqual(tr.map(fmt), ['seg|a=1|b=0|id=|flag=false@0']);
+});
+
+test('スタート区間の演出は、一度出て戻らなくても武装される', () => {
+  // 実害の再現（2026-07-27）: シードが無いと 1 周目スタート領域の演出が永久に武装されず、
+  // **実機では出るのに卓だけ沈黙する**（ユーザー報告「1周目チュートリアルラインで何も起きない」）。
+  const c = {
+    ...cfg,
+    takes: [{
+      lap: 1, camera: 0, onExit: false, offsetSec: 0.5, skipWhenMissed: true, once: true,
+      maxDurationSec: 0, yieldOnZoneChange: false, stepDurSec: [1.0], onLine: false, lineIndex: -1,
+    }],
+    takeIds: ['t_start'],
+    stepCameras: [[-1]],
+  };
+  const still = [{ tMs: 0, x: -0.6, z: 0 }, { tMs: 3000, x: -0.6, z: 0 }];
+  const tr = runScenario(c, still);
+  assert.ok(tr.some((e) => e.kind === 'take' && e.id === 't_start'),
+    'スタート領域に居るだけで 1 周目の演出が発火する');
 });
 
 test('dwell 未満の踏み込みは確定しない（境界のうろつき）', () => {

@@ -150,10 +150,13 @@ test('buildScenarioConfig: ライントリガーはスロットへ解決され�
   assert.deepStrictEqual(
     [byId.t_line_ok.onLine, byId.t_line_ok.lineIndex, byId.t_line_ok.skipWhenMissed],
     [true, 0, true]);
-  assert.equal(byId.t_line_wrongcam.onLine, false, '別カメラ担当のラインは発火させない（区間紐づけ）');
-  assert.equal(byId.t_line_wrongcam.lineIndex, -1);
-  assert.equal(byId.t_line_missing.onLine, false, 'ラインが無い参照は発火させない');
-  assert.equal(byId.t_line_unset.onLine, false, '未選択は発火させない');
+  // 使えないラインは **onLine を保ったまま lineIndex=-1**（＝決して due にならない枠）。
+  // onLine を下ろすと時刻トリガー扱いになり offsetSec=0 で区間進入と同時に発火してしまう
+  // （警告文と真逆・実機は出ない = 卓が嘘をつく。2026-07-27 監査で修正）。
+  for (const id of ['t_line_wrongcam', 't_line_missing', 't_line_unset']) {
+    assert.equal(byId[id].onLine, true, `${id}: 時刻トリガーへ化けない`);
+    assert.equal(byId[id].lineIndex, -1, `${id}: 決して発火しない枠`);
+  }
 
   const w = meta.warnings.join('\n');
   assert.match(w, /t_line_wrongcam .*担当です/, '別カメラ担当のラインは警告する');
@@ -161,6 +164,23 @@ test('buildScenarioConfig: ライントリガーはスロットへ解決され�
   assert.match(w, /t_line_unset .*ラインが未選択/);
   assert.match(w, /カメラ A/, '警告はカメラ index ではなく id で言う');
   assert.equal(meta.lines[0].zone, 0, 'meta には線が置かれているゾーンのカメラが乗る');
+});
+
+test('buildScenarioConfig: 使えないラインの演出は区間に入っても出ない（警告どおり沈黙する）', () => {
+  // 「発火しません」と警告した当の演出が卓では再生される、という嘘を出さない。
+  const st = sampleState();
+  st.layout.lines = [];
+  const seg = newSeg(1, 0);
+  seg.takes = [newTake('t_unset', {
+    at: TAKE.AT_LINE, lineId: '', ifMissed: TAKE.MISSED_SKIP,
+    steps: [newStep({ source: TAKE.SRC_LIVE, camera: 1, durSec: 2 })],
+  })];
+  st.timeline = { rev: 1, schema: 3, segments: [seg] };
+
+  const { cfg } = buildScenarioConfig(st);
+  // スタート区間（1周目 / カメラ0）にそのまま立ち続ける歩き。
+  const tr = runScenario(cfg, [{ tMs: 0, x: 0, z: 1 }, { tMs: 6000, x: 0, z: 1 }]);
+  assert.equal(tr.filter((e) => e.kind === 'take').length, 0, 'ラインが無い演出は出ない');
 });
 
 // ---- 演出定義の変換（TakeRunner.SetTakes / BuildStepDurations）----------------

@@ -348,6 +348,11 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   ②`lines[].camera` と演出の区間カメラが**一致しないと due にしない**（`TakeRunnerLogic.IsDue`）。
   これで「手違いで別の領域のラインを踏んでも何も起こらない」が構造的に成立する。卓も担当が一致する線しか選択肢に出さない
 - **take 側**: `lineId`（空 / 未定義 id / 担当違いは**発火しない** + ログ 1 回）。`offsetSec` は at=line では無視
+  - **⚠ 実装規約（2026-07-27 監査で両側修正）**: 使えないラインでも **`onLine` を下ろしてはいけない**。
+    下ろすと時刻トリガー扱いになり `offsetSec`(=0) で**区間に入った瞬間に発火**する（契約の真逆）。
+    「決して発火しない」は `lineIndex = -1`（`TakeRunnerLogic.IsDue` が常に false）で表す。武装はされるので
+    `ifMissed=fireOnExit` は従来どおり効く。旧実装は実機＝空 lineId が進入即発火、卓＝3 ケースすべて進入即発火で、
+    卓は「発火しません」と警告した当の演出を再生していた（`TakeWiringTests.LineTake_WithoutLineId_*` で固定）
 - **通過方向** `dir`: `both`（既定）/ `fwd`（卓の矢印の向きだけ）/ `back`（逆だけ）
 - **判定** = [`LineCrossLogic`](../../Assets/Scripts/Streaming/LineCrossLogic.cs)（純ロジック）:
   **毎フレームの移動線分 × ライン線分の交差**（端の外を回り込んだら横切っていない）/ 横断直後は
@@ -360,6 +365,12 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - **`ifMissed` はそのまま効く**（この区間に居るあいだに通らなかった時）。**卓の既定は `skip`**（時刻トリガーの `fireOnExit` と違う）
 - **▶ 検証（シミュレータ）でも発火する**（JS ミラー `LineCross`）。一致は golden
   [`scenario_line.trace.json`](../../Assets/Tests/Fixtures/scenario_line.trace.json)（C# が生成・JS が照合）で機械固定
+  - **⚠ シミュレータは起動時にスタート区間をシードする**（トレース先頭の `seg`）。実機の
+    [`LapCounter.SeedCurrentZone`](../../Assets/Scripts/Tracking/LapCounter.cs) と対。これが無いと
+    **1 周目スタート領域の演出が永久に武装されない**（2026-07-27 実害: 1 周目の通過ラインが卓で沈黙。実機では出る）
+  - **⚠ ドラッグ位置は tick へ等速で分配する**（`show-sim.js` の `advance`）。1 フレーム分の tick に同じ位置を
+    配ると「テレポートして立ち止まる」動きになり、1 tick の移動が 1m（`LINE_MAX_STEP_M`）を超えた瞬間に
+    **横断が数えられない**（×4 / ×16 の早送りでは普通のドラッグで超える）
 - **⚠ Quest 実機未検証**（2026-07-27。EditMode 730/730・node 81/81・卓はブラウザ実操作で確認）
 
 ### 演出の素材と層を増やす（録画 / スロット / CG / 演出専用カメラ）— 2026-07-26

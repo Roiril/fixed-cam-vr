@@ -716,11 +716,25 @@ export function createShowRunner(cfg) {
   let hasSeg = false;
   let segLap = 1;
   let segCam = c.startCamera;
+  let seeded = false;
 
   /** 1 tick 進める。返すのはこの tick で発生したイベント配列（発生順）。 */
   function step(tMs, x, z) {
     const now = f32(tMs / 1000);   // C# は `float now = tMs / 1000f`
     const out = [];
+
+    // ⓪ 起動時のシード（スタート区間を「進入した」ことにする / ShowScenarioRunner.Run と同じ）。
+    //    体験者は最初からスタート領域に居るので時計は確定イベントを出さない。実機はこの穴を
+    //    LapCounter.SeedCurrentZone が塞いでいる。ここに同じシードが無いと **1 周目スタート領域の
+    //    演出（at=enter / at=line）が永久に武装されない** — 実機では出るのに卓だけ沈黙する。
+    if (!seeded) {
+      seeded = true;
+      hasSeg = true;
+      segLap = lap.currentLap;
+      segCam = c.startCamera;
+      out.push(ev('seg', tMs, segLap, segCam));
+      emit(out, c, takes.onZoneCommitted(segLap, segCam, false, segLap, segCam, now), tMs);
+    }
 
     // ① ゾーン判定 → 時計へ要求（通過ラインも同じ「人の層」なのでここで進める）
     lines.tick(now, x, z, lineDt);

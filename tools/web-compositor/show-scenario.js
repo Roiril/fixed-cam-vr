@@ -186,7 +186,12 @@ export function buildScenarioConfig(state, opts = {}) {
         maxDurationSec: num(t.maxDurationSec, 0),
         yieldOnZoneChange: t.policy === TAKE.POLICY_YIELD,
         stepDurSec: durs,
-        onLine: onLine && slot >= 0,
+        // ⚠ 使えないライン（未選択 / layout に無い / 別カメラ担当）でも onLine は下ろさない。
+        //   下ろすと時刻トリガー扱いになり offsetSec(=0) で**区間進入と同時に発火**してしまい、
+        //   すぐ上で「発火しません」と警告した当の演出を卓が再生する（実機は出ない = 卓が嘘をつく）。
+        //   lineIndex=-1 は「決して due にならない枠」＝ Unity の TakeRunner と同じ扱い
+        //   （ifMissed=fireOnExit なら離脱時に出る点まで一致する）。
+        onLine,
         lineIndex: slot,
       });
       takeIds.push(t.id || '');

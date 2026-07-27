@@ -1,4 +1,5 @@
 [
+  {"kind":"seg","t":0,"a":1,"b":0,"id":"","flag":false},
   {"kind":"screen","t":3640,"a":1,"b":-1,"id":"","flag":false},
   {"kind":"zone","t":3640,"a":1,"b":-1,"id":"","flag":false},
   {"kind":"seg","t":3640,"a":1,"b":1,"id":"","flag":false},

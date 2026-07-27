@@ -84,6 +84,19 @@ scenario.json（共有 fixture）
 浮動小数の境界（`now - since >= dwell`）が C# float と JS double で 1 tick ずれても、
 セマンティクスの drift だけを検出できるようにするため。
 
+#### 起動時のシード（先頭の `seg`）— 2026-07-27 修正
+
+トレースの先頭は必ず `seg{t=samples[0].tMs, lap=1, cam=startCamera}`。体験者は最初から
+スタート領域に居るので**時計（`ZoneProgressionLogic`）は確定イベントを出さない**。実機はこの穴を
+[`LapCounter.SeedCurrentZone`](../../Assets/Scripts/Tracking/LapCounter.cs) が塞いでいる
+（現在ゾーンを「初回進入」として CueScheduler → TimelineDirector → TakeRunner へ流す）。
+
+**両ランナーにこのシードが無く、1 周目スタート領域の演出（`at=enter` / `at=line`）が永久に武装されなかった**
+（2026-07-27 実害: 1 周目の通過ラインを跨いでも卓では何も起きない。実機では出る＝**シミュレータが嘘をついた**側）。
+`hasSeg=false` のままだと離脱時の決着（`ifMissed=fireOnExit`）も働かない。
+固定テスト: `ShowScenarioRunnerTests.StartSegmentTake_IsArmed_WithoutLeavingAndComingBack` /
+node 側 `スタート区間の演出は、一度出て戻らなくても武装される`。
+
 ## 2. 何が置き換えられて、何が置き換えられないか（正直に）
 
 **置き換えられる（＝バグが棲んでいる場所）**

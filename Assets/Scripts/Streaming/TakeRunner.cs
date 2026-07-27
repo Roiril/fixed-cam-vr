@@ -164,8 +164,12 @@ namespace FixedCamVr.Streaming
                     if (t == null) continue;
                     takes.Add(t);
                     // ライントリガーは lineId → スロット（未知 id も枠を取る = 線が後から来ても index が動かない）。
-                    bool onLine = t.IsLine && !string.IsNullOrEmpty(t.lineId);
-                    anyLine |= onLine;
+                    // **ラインが未指定でも onLine は下ろさない**。下ろすと時刻トリガー扱いになり
+                    // offsetSec(=0) で区間進入と同時に発火する ＝ 契約「空 lineId は発火しない」の真逆になる
+                    // （2026-07-27 監査。lineIndex=-1 は TakeRunnerLogic.IsDue が常に false を返す枠）。
+                    bool onLine = t.IsLine;
+                    bool hasLine = onLine && !string.IsNullOrEmpty(t.lineId);
+                    anyLine |= hasLine;
                     defs.Add(new TakeRunnerLogic.Def
                     {
                         lap = seg.lap,
@@ -178,7 +182,7 @@ namespace FixedCamVr.Streaming
                         yieldOnZoneChange = t.IsYield,
                         stepDurSec = BuildStepDurations(t),
                         onLine = onLine,
-                        lineIndex = onLine ? LineSlot(t.lineId) : -1,
+                        lineIndex = hasLine ? LineSlot(t.lineId) : -1,
                     });
                     if (t.IsLine && string.IsNullOrEmpty(t.lineId))
                         Debug.LogWarning($"[TakeRunner] ライントリガーの演出にラインが未指定 → 発火しない" +

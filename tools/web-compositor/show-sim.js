@@ -120,6 +120,7 @@ export function createShowSim(container, deps) {
   let simMs = 0;
   let acc = 0, lastWall = 0;
   let pos = { x: 0, z: -0.7 };
+  let fedPos = { x: pos.x, z: pos.z };   // 直近の tick へ実際に供給した位置（tick 間の補間の始点）
   let events = [];
   let recording = false, recSamples = [], recHoldAt = null;
   let replay = null;             // { samples, endMs, name }
@@ -137,7 +138,9 @@ export function createShowSim(container, deps) {
     meta = built.meta;
     runner = createShowRunner(cfg);
     // 時計を 0 へ戻すので、前の走行のログは残さない（時刻が対応しなくなるため）。
-    simMs = 0; acc = 0; events = []; logEl.innerHTML = ''; renderLogEmpty();
+    // 位置の補間始点も今の立ち位置へ揃える（先頭 tick で古い位置から一気に歩いたことにしない）。
+    simMs = 0; acc = 0; fedPos = { x: pos.x, z: pos.z };
+    events = []; logEl.innerHTML = ''; renderLogEmpty();
     staleConfig = false;
     renderWarnings();
     renderAll();
@@ -434,18 +437,30 @@ export function createShowSim(container, deps) {
   }
 
   // ---- 時計 -------------------------------------------------------------------
+  // ⚠ ドラッグ位置は「このフレームで歩いた先」であって「瞬間移動した先」ではない。
+  //   1 フレーム分の tick 全部に同じ位置を配ると、体験者は **テレポートして立ち止まる** 動き方になる。
+  //   通過ラインの判定は「前 tick の位置 → 今 tick の位置」の線分交差なので、
+  //   1 tick の移動が 1m（LINE_MAX_STEP_M）を超えるとテレポート扱いで**横断が数えられない**。
+  //   ×4 / ×16 の早送りでは 1 フレームで sim 時間が 0.5 秒進むため普通のドラッグでも簡単に超える。
+  //   → 前回供給した位置から今の位置まで tick 数で等速に分配する（replay の sampleAt と同じ扱い）。
   function advance(dtMs) {
     acc += dtMs;
-    let guard = 4000;   // 早送り中の 1 フレームあたり tick 数の上限（暴走防止）
-    while (acc >= DEFAULT_TICK_MS && guard-- > 0) {
+    const total = Math.min(Math.floor(acc / DEFAULT_TICK_MS), 4000); // 早送り中の tick 数上限（暴走防止）
+    const from = { x: fedPos.x, z: fedPos.z };
+    const to = { x: pos.x, z: pos.z };
+    for (let i = 1; i <= total; i++) {
       acc -= DEFAULT_TICK_MS;
       simMs += DEFAULT_TICK_MS;
-      let p = pos;
+      let p;
       if (replay) {
         p = sampleAt(replay.samples, simMs);
         pos = p;
         if (deps.setDot) deps.setDot(p.x, p.z);
+      } else {
+        const u = i / total;
+        p = { x: from.x + (to.x - from.x) * u, z: from.z + (to.z - from.z) * u };
       }
+      fedPos = p;
       pushEvents(runner.step(simMs, p.x, p.z));
       if (recording) recordSample(simMs, p);
       if (replay && simMs >= replay.endMs) { finishReplay(); break; }
@@ -606,6 +621,7 @@ export function createShowSim(container, deps) {
       name: s.name + (useSaved ? '（保存時の設定）' : '（今の設定）'),
     };
     pos = { x: parsed.samples[0].x, z: parsed.samples[0].z };
+    fedPos = { x: pos.x, z: pos.z };
     if (deps.setDot) deps.setDot(pos.x, pos.z);
     play();
   };

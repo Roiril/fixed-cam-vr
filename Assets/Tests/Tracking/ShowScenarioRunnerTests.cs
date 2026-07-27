@@ -142,15 +142,41 @@ namespace FixedCamVr.Tracking.Tests
         }
 
         [Test]
-        public void StandingStill_ProducesNoEvents()
+        public void StandingStill_ProducesOnlyTheStartSegmentSeed()
         {
             var still = new[]
             {
                 new ShowScenarioRunner.Sample { tMs = 0, x = -0.6f, z = 0f },
                 new ShowScenarioRunner.Sample { tMs = 5000, x = -0.6f, z = 0f },
             };
-            Assert.That(ShowScenarioRunner.Run(MakeConfig(), still), Is.Empty,
-                "動かなければ何も起きない（開始ゾーンに居るだけ）");
+            List<ShowScenarioRunner.Event> tr = ShowScenarioRunner.Run(MakeConfig(), still);
+            // 起動時のシード（実機の LapCounter.SeedCurrentZone 相当）で「1 周目 / スタートカメラ」に
+            // 居ることだけは記録される。動かない限りそれ以外は起きない。
+            Assert.That(tr.Count, Is.EqualTo(1), "シードの seg 1 件のみ");
+            Assert.That(tr[0].kind, Is.EqualTo("seg"));
+            Assert.That(tr[0].t, Is.EqualTo(0));
+            Assert.That(tr[0].a, Is.EqualTo(1), "1 周目");
+            Assert.That(tr[0].b, Is.EqualTo(0), "スタートカメラ");
+        }
+
+        [Test]
+        public void StartSegmentTake_IsArmed_WithoutLeavingAndComingBack()
+        {
+            // 実害の再現（2026-07-27）: 1 周目スタート領域の演出が、シードが無いと永久に武装されず
+            // 「実機では出るのに卓だけ沈黙する」。スタート区間 (1, カメラ0) の enter 演出が出ることを固定する。
+            ShowScenarioRunner.Config cfg = MakeConfig();
+            cfg.Takes = new[] { Take(1, 0, onExit: false, offset: 0.5f, skipWhenMissed: true, 1.0f) };
+            cfg.TakeIds = new[] { "t_start" };
+            cfg.StepCameras = new[] { new[] { -1 } };
+
+            var still = new[]
+            {
+                new ShowScenarioRunner.Sample { tMs = 0, x = -0.6f, z = 0f },
+                new ShowScenarioRunner.Sample { tMs = 3000, x = -0.6f, z = 0f },
+            };
+            List<ShowScenarioRunner.Event> tr = ShowScenarioRunner.Run(cfg, still);
+            Assert.That(tr.Any(e => e.kind == "take" && e.id == "t_start"), Is.True,
+                "スタート領域に居るだけで 1 周目の演出が発火する（一度出て戻る必要はない）");
         }
 
         [Test]

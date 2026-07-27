@@ -113,8 +113,24 @@ namespace FixedCamVr.Tracking
             bool hasSeg = false;
             int segLap = 1, segCam = cfg.StartCamera;
 
+            int startMs = samples[0].tMs;
             int endMs = samples[samples.Length - 1].tMs;
-            for (int tMs = samples[0].tMs; tMs <= endMs; tMs += tick)
+
+            // ---- 起動時のシード（スタート区間を「進入した」ことにする）----
+            // 体験者は最初からスタート領域に居るので、時計（ZoneProgressionLogic）は確定イベントを出さない。
+            // 実機はこの穴を <see cref="LapCounter.SeedCurrentZone"/> が塞いでいる（現在ゾーンを初回進入として
+            // CueScheduler → TimelineDirector → TakeRunner へ流す）。ここに同じシードが無いと
+            // **1 周目スタート領域の演出（at=enter / at=line）が永久に武装されない** — 実機では出るのに
+            // シミュレータだけ「何も起きない」と嘘をつくことになる（2026-07-27 実害: 1 周目の通過ラインが
+            // 卓で沈黙した）。離脱時の決着（ifMissed=fireOnExit）も hasSeg=false のままだと働かない。
+            trace.Add(new Event { kind = "seg", t = startMs, a = lap.CurrentLap, b = cfg.StartCamera, id = "" });
+            Emit(trace, cfg, takes.OnZoneCommitted(lap.CurrentLap, cfg.StartCamera,
+                hadPrev: false, prevLap: lap.CurrentLap, prevCam: cfg.StartCamera, now: startMs / 1000f), startMs);
+            hasSeg = true;
+            segLap = lap.CurrentLap;
+            segCam = cfg.StartCamera;
+
+            for (int tMs = startMs; tMs <= endMs; tMs += tick)
             {
                 float now = tMs / 1000f;
                 SampleAt(samples, tMs, out float x, out float z);
