@@ -1227,6 +1227,11 @@ input:-webkit-autofill:active {
 }
 .latch-bar { border-bottom: 1px solid var(--warn-color); color: var(--warn-color);
   background: rgba(255, 174, 94, 0.06); }
+/* 体験を壊すラッチが無く、意図的かもしれない設定（📌 手動固定・発見 OFF）だけが残っている状態。
+   同じ橙で出すと「毎回出ている警告」になって効き目が落ちるので、一段落として区別する。 */
+.latch-bar.warn-only { border-bottom-color: var(--line-soft); background: transparent;
+  color: var(--text-color); opacity: var(--opacity-sub); }
+.latch-bar.warn-only .latch-text { font-weight: 400; }
 .latch-bar .spacer { flex: 1; min-width: 8px; }
 .latch-text { font-weight: 600; }
 .server-bar { border-bottom: 1px solid var(--danger-color); color: var(--danger-color);

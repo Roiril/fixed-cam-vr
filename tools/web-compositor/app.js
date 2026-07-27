@@ -149,34 +149,62 @@ function renderDirtyBadge() {
   el.className = 'st-dirty' + (d.any ? ' on' : '');
 }
 
-// ---- 危険なラッチの警告（show.json 由来 = Unity 未接続でも見える）------------
-//   cameraOverride（カメラ固定）と activeCue（演出再生中）は show.json に永続する。
-//   前の体験者の状態が残ったまま次を始めると「歩いても切り替わらない」事故になる。
+// ---- ラッチ = show.json に永続し、次の体験者へ持ち越されると事故になる状態 ------
+//   ⚠ 列挙はこの 1 関数だけが持つ。警告バー・本番前チェック・⛑ 全部解除・▶ ラン開始 が
+//     同じ配列を消費するので、ラッチを増やしてもどこかで見落とす、が起きない
+//     （2026-07-28 まで 3 箇所が独立に cameraOverride と activeCue の 2 つだけを見ていて、
+//      素材スロットの束縛・発見 OFF・📌 手動固定はどこからも警告されなかった）。
+//   sev: 'ng' = 体験を壊す（⛑ が解除する） / 'warn' = 意図的な設定かもしれない（警告のみ）
+function latches() {
+  const ctrl = (state && state.control) || {};
+  const out = [];
+  if (ctrl.cameraOverride) {
+    out.push({ sev: 'ng', text: `🔒 カメラ ${ctrl.cameraOverride} に固定中（ゾーン自動切替が止まっています）` });
+  }
+  if (ctrl.activeCue) out.push({ sev: 'ng', text: `🎬 演出 ${ctrl.activeCue} が再生指定中` });
+  const slots = (ctrl.slots || []).filter((s) => s && s.name && s.url);
+  if (slots.length) {
+    out.push({ sev: 'ng', slots, text: `🎞 素材スロット束縛中: ${slots.map((s) => s.name).join(' / ')}（前の体験者の素材が次の演出に出ます）` });
+  }
+  if (ctrl.discoveryEnabled === false) out.push({ sev: 'warn', text: '📡 端末発見が OFF（IP が変わっても追従しません）' });
+  if (ctrl.autoFollow === false) out.push({ sev: 'warn', text: '📡 IP の自動追従が OFF' });
+  const pinned = ((state && state.cameras) || []).filter((c) => c.pinned).map((c) => c.id);
+  // 📌 は iPhone 等 discovery 非対応端末で意図的に使う。⛑ では外さない（外すと配信が切れる）。
+  if (pinned.length) out.push({ sev: 'warn', text: `📌 手動固定: ${pinned.join(' / ')}（発見の自動追従は効きません）` });
+  return out;
+}
+
+// ⛑ が解除する対象（体験を壊すものだけ）。▶ ラン開始 も同じ集合を消す。
+async function clearBreakingLatches() {
+  await postCommand({ type: 'setCameraOverride', camera: null });
+  await postCommand({ type: 'stopCue' });
+  // 走行中の演出も畳む（stopCue だけでは自動発火の演出に届かない。2026-07-28）。
+  await postCommand({ type: 'abortTake' });
+  // ⚠ ここで latches()（＝卓のメモリ state）を見ない。long-poll 遅延で古いことがあり、
+  //    取りこぼすと「前の体験者の素材が次の演出に出る」という最悪の形で残る。必ず取り直す。
+  const s = await getState();
+  for (const sl of ((s && s.control && s.control.slots) || [])) {
+    if (sl && sl.name) await postCommand({ type: 'bindSlot', name: sl.name, url: '' });
+  }
+}
+
 function renderLatchBar() {
   const bar = $('#latchBar'); if (!bar) return;
-  const ctrl = (state && state.control) || {};
-  const ovr = ctrl.cameraOverride || '';
-  const cue = ctrl.activeCue || '';
-  const parts = [];
-  if (ovr) parts.push(`🔒 カメラ ${ovr} に固定中（ゾーン自動切替が止まっています）`);
-  if (cue) parts.push(`🎬 演出 ${cue} が再生指定中`);
-  bar.style.display = parts.length ? '' : 'none';
+  const ls = latches();
+  const breaking = ls.filter((l) => l.sev === 'ng');
+  bar.style.display = ls.length ? '' : 'none';
+  bar.classList.toggle('warn-only', ls.length > 0 && breaking.length === 0);
   const t = $('#latchText');
-  if (t) t.textContent = '⚠ ' + parts.join(' ／ ');
-  // 🚶 ボタンの状態（固定中だけ点灯）
+  if (t) t.textContent = (breaking.length ? '⚠ ' : '注意 ') + ls.map((l) => l.text).join(' ／ ');
+  const btn = $('#latchClearAll');
+  if (btn) btn.style.display = breaking.length ? '' : 'none';
+  const ctrl = (state && state.control) || {};
   const auto = $('#emgAuto');
-  if (auto) auto.classList.toggle('armed', !!ovr);
+  if (auto) auto.classList.toggle('armed', !!ctrl.cameraOverride);
   const stop = $('#emgStop');
-  if (stop) stop.classList.toggle('armed', !!cue);
+  if (stop) stop.classList.toggle('armed', !!ctrl.activeCue);
 }
-if ($('#latchClearAll')) {
-  $('#latchClearAll').onclick = async () => {
-    await postCommand({ type: 'setCameraOverride', camera: null });
-    await postCommand({ type: 'stopCue' });
-    // 走行中の演出も畳む（stopCue だけでは自動発火の演出に届かない。2026-07-28）。
-    await postCommand({ type: 'abortTake' });
-  };
-}
+if ($('#latchClearAll')) $('#latchClearAll').onclick = () => clearBreakingLatches();
 
 // アクティブカメラ id（heartbeat の index 優先）
 function activeCamId() {
@@ -1003,7 +1031,9 @@ function renderRunPanel() {
 // ▶ ラン開始 = runEpoch++ ＋ カメラ固定解除 ＋ 演出停止（前の体験者のラッチを持ち越さない）。
 if ($('#runStart')) {
   $('#runStart').onclick = async () => {
-    if (!confirm('体験者交代時に押します。\n・周回とワンショット演出をリセット\n・カメラ固定を解除（ゾーン自律へ）\n・再生中の演出を停止\n実行しますか？')) return;
+    // 確認は残す（周回リセットは取り消せない。runEpoch を戻しても Unity 側の once 発火済みは復元されない）。
+    // 文言は暗所で 1 秒で読める長さに畳む — 長文の confirm は読まれずに Enter される。
+    if (!confirm('次の体験者へ。周回・演出・カメラ固定を全部リセットします。')) return;
     const s = await getState();
     const el0 = $('#runNext');
     if (!s) {
@@ -1014,9 +1044,12 @@ if ($('#runStart')) {
     ctrl.runEpoch = (parseInt(ctrl.runEpoch, 10) || 0) + 1;
     ctrl.cameraOverride = null;
     ctrl.activeCue = null;
+    ctrl.slots = [];   // 前の体験者のために束縛した素材を持ち越さない（2026-07-28）
     const r = await postState({ control: ctrl });
+    // 走行中の演出は control の書き換えでは畳まれない（activeCue を使わないため）。世代カウンタで確実に止める。
+    await postCommand({ type: 'abortTake' });
     const el = $('#runNext');
-    if (el && r && r.ok !== false) el.textContent = `▶ ラン開始（epoch ${ctrl.runEpoch}）— 周回 / 演出 / 固定をリセットしました`;
+    if (el && r && r.ok !== false) el.textContent = `▶ ラン開始（epoch ${ctrl.runEpoch}）— 周回 / 演出 / 固定 / 素材スロットをリセットしました`;
   };
 }
 if ($('#emgAuto')) $('#emgAuto').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
@@ -1141,10 +1174,20 @@ function preflightRows() {
     rows.push({ s: 'ok', label: '接続先の同一性', detail: '各スロットが名乗る cameraId と一致' });
   }
 
-  const ctrl = state?.control || {};
-  rows.push((ctrl.cameraOverride || ctrl.activeCue)
-    ? { s: 'ng', label: 'ラッチ', detail: `${ctrl.cameraOverride ? `カメラ ${ctrl.cameraOverride} 固定中 ` : ''}${ctrl.activeCue ? `演出 ${ctrl.activeCue} 指定中` : ''}— ▶ ラン開始で解除される` }
-    : { s: 'ok', label: 'ラッチ', detail: 'カメラ固定なし / 演出停止中' });
+  // ラッチは latches() が単一の正（警告バー・⛑・▶ ラン開始 と同じ配列を見る）。
+  const ls = latches();
+  const breaking = ls.filter((l) => l.sev === 'ng');
+  rows.push(breaking.length
+    ? { s: 'ng', label: 'ラッチ', detail: `${breaking.map((l) => l.text).join(' / ')} — ⛑ か ▶ ラン開始で解除` }
+    : ls.length
+      ? { s: 'warn', label: 'ラッチ', detail: `${ls.map((l) => l.text).join(' / ')}（意図的なら問題ありません）` }
+      : { s: 'ok', label: 'ラッチ', detail: 'カメラ固定なし / 演出停止中 / 素材スロット未束縛' });
+
+  // 前の体験者の周回が残ったまま次を始めると、1 周目の演出が出ない（lap が進んだ状態から始まる）。
+  const lapNow = parseInt(lastUnity && lastUnity.lap, 10) || 0;
+  if (unityAlive && lapNow > 1) {
+    rows.push({ s: 'warn', label: 'ラン', detail: `${lapNow} 周目の途中です — 次の体験者なら ▶ ラン開始を押す` });
+  }
 
   const segs = timelineSegments();
   const withCue = segs.filter((s) => (s.takes || []).length).length;
