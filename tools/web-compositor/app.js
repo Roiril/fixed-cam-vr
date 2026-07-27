@@ -1007,19 +1007,40 @@ function renderRunPanel() {
   if (!lapEl) return;
   const u = lastUnity;
   const hasLap = unityAlive && typeof u.lap === 'number' && u.lap > 0;
-  const camIdx = unityAlive && typeof u.cam === 'number' && u.cam >= 0 ? u.cam
+  // ⚠ 「体験者が居るゾーン」と「画面に映っているカメラ」は別物。演出のカットが別カメラを映している間、
+  //    両者は食い違う。旧実装は画面のカメラ（cam）を「ゾーン」と称して出し、しかもその index で
+  //    区間を引いていたので、演出中は「次の演出」まで別区間の内容になっていた（2026-07-28）。
+  const screenIdx = unityAlive && typeof u.cam === 'number' && u.cam >= 0 ? u.cam
     : (unityAlive && typeof u.activeIndex === 'number' ? u.activeIndex : -1);
+  const zoneIdx = unityAlive && typeof u.zoneCam === 'number' && u.zoneCam >= 0 ? u.zoneCam : -1;
+  // zoneCam を送らない旧 Unity と繋いだときは画面のカメラで代用する（表示はするが意味が違う旨は出さない）。
+  const walkIdx = zoneIdx >= 0 ? zoneIdx : screenIdx;
   lapEl.textContent = hasLap ? `Lap ${u.lap}` : 'Lap —';
   lapEl.className = 'run-lap' + (unityAlive ? ' on' : '');
-  zoneEl.textContent = camIdx >= 0 ? `ゾーン ${camLabelOf(camIdx)}` : 'ゾーン —';
+  zoneEl.textContent = walkIdx >= 0 ? `ゾーン ${camLabelOf(walkIdx)}` : 'ゾーン —';
   zoneEl.className = 'run-zone' + (unityAlive ? ' on' : '');
   modeEl.textContent = unityAlive ? (u.mode || 'NORMAL') : 'Unity 未接続';
   modeEl.className = 'run-mode' + (unityAlive ? (u.mode === 'REG' ? ' reg' : ' on') : ' off');
 
+  // 「いま画面を握っているのは誰か」— 本番中にいちばん知りたい 1 行。
+  const ctrl = (state && state.control) || {};
+  const ownEl = $('#runOwner');
+  if (ownEl) {
+    let own = { t: '画面: —', c: '' };
+    if (!unityAlive) own = { t: '画面: —（Unity 未接続）', c: 'off' };
+    else if (ctrl.cameraOverride) own = { t: `画面: 卓が カメラ ${ctrl.cameraOverride} に固定中`, c: 'held' };
+    else if (u.takeId) own = { t: `画面: 演出「${u.takeId}」が再生中${screenIdx >= 0 ? `（${camLabelOf(screenIdx)}）` : ''}`, c: 'held' };
+    else if (ctrl.activeCue) own = { t: `画面: 卓が発火した演出 ${ctrl.activeCue}`, c: 'held' };
+    else own = { t: `画面: 自律${screenIdx >= 0 ? `（${camLabelOf(screenIdx)}）` : ''}`, c: 'auto' };
+    ownEl.textContent = own.t;
+    ownEl.className = 'run-owner ' + own.c;
+  }
+
   if (!nextEl) return;
-  if (!hasLap || camIdx < 0) { nextEl.textContent = '次の演出: —（Unity 未接続 / 周回未開始）'; nextEl.className = 'run-next'; return; }
-  const here = segFireLabel(segmentAt(u.lap, camIdx));
-  const next = findNextFire(u.lap, camIdx);
+  if (!hasLap || walkIdx < 0) { nextEl.textContent = '次の演出: —（Unity 未接続 / 周回未開始）'; nextEl.className = 'run-next'; return; }
+  // 区間は必ず「人の居場所」で引く（画面のカメラで引くと演出中に別区間の内容が出る）。
+  const here = segFireLabel(segmentAt(u.lap, walkIdx));
+  const next = findNextFire(u.lap, walkIdx);
   const parts = [];
   if (here) parts.push(`このゾーン: ${here}`);
   parts.push(next

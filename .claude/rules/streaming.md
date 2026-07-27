@@ -234,6 +234,17 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
     したがって**演出中に体験者が歩いても周回は止まらない**（設計 [2026-07-25_shot-timeline-foundation.md](../plans/2026-07-25_shot-timeline-foundation.md) 不変条件 4）。
     スタッフ手動 A・Web cameraOverride・インサートの画面切替は `ZoneCommitted` を発火しないので、構造的に周回へ入らない
 - **ラン（体験者 1 人分）**: `control.runEpoch`（int・既定 0）の**変化**で LapCounter リセット（lap=1・再シード）+ CueScheduler の once 発火済みクリア。Web ライブ運用パネルの「▶ ラン開始」= **runEpoch++ ＋ `cameraOverride=null` ＋ `activeCue=null` を 1 回の postState で同時に書く**（2026-07-25〜。旧実装は runEpoch だけで、前の体験者のカメラ固定・再生中 cue が次のランへ持ち越された。override / activeCue は端末キャッシュには載らないが show.json には永続するため、卓を立てて Quest を繋いだ瞬間に再適用される＝「歩いても切り替わらない」事故になっていた）。armed なラッチは Web 卓ヘッダ直下の警告バーが show.json 由来で常時可視化する（Unity 未接続でも出る）。PC 不在時は **右グリップ 2 秒長押し** = ローカルランリセット（2026-07-20〜。旧: Staff 左スティック押し込み）。heartbeat に `lap` / `cam` / `mode`（NORMAL/REG）を載せる（Web でラン状態が見える）
+  - **2026-07-28 追記**: 「▶ ラン開始」は `slots=[]`（素材スロットの束縛解除）も書き、`abortTake` を併送する。
+    旧実装は**前の体験者のために束縛した素材が次のランの演出に出る**穴があり、走行中の演出も畳めなかった。
+    卓のラッチ列挙は `latches()` が単一の正で、警告バー・本番前チェック・⛑・▶ ラン開始 が同じ配列を消費する
+    （固定 / 演出 / スロット = 解除対象、📌 手動固定 / 発見 OFF = 警告のみで外さない）
+  - **⚠ heartbeat の `cam` は「画面に映っているカメラ」で、体験者の居場所ではない**（2026-07-28）。
+    演出のカットが別カメラを映している間、両者は食い違う。人の居場所は **`zoneCam`**（ショーの時計
+    `CameraSwitchDirector.TryGetCurrentZoneCamera` の確定値・-1 = 未確定）を新設して別に送る。
+    卓は `cam` を「ゾーン」と称して出し、しかもその index で区間を引いていたため、
+    **演出中は「このゾーン / 次の演出」が別区間の内容になっていた**。区間の照会は必ず `zoneCam` で行う。
+    あわせて **`takeId`**（走行中の演出 id・空 = 演出なし）を送り、卓が「いま画面を握っているのは誰か」
+    （自律 / 演出 / 卓が固定 / 手動 cue）を 1 行で出す
 
 - **実測滞在時間**（2026-07-25〜）: 区間 (lap, camera) に体験者が実際に居た秒数を
   [`SegmentDwellLog`](../../Assets/Scripts/Streaming/SegmentDwellLog.cs)（純ロジック）が測り、heartbeat の

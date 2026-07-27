@@ -86,6 +86,12 @@ namespace FixedCamVr.Streaming
         /// <summary>演出が画面を占有中か（HUD・診断用）。</summary>
         public bool IsActive => _logic.IsActive;
 
+        /// <summary>
+        /// 走行中の演出の id（卓のモニタ用。走っていなければ空）。
+        /// 本番中に「いま画面を握っているのは誰か」を人が知る唯一の手段なので公開する。
+        /// </summary>
+        public string ActiveTakeId => _logic.IsActive ? TakeId(_logic.ActiveTakeIndex) : "";
+
         /// <summary>時刻源を差し替える（EditMode テスト用。null で <c>Time.time</c> に戻る）。</summary>
         public void SetTimeSource(Func<float>? source) => _timeSource = source;
 

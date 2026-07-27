@@ -1793,6 +1793,13 @@ namespace FixedCamVr.Streaming
             public float headCourseX;
             public float headCourseZ;
             public string currentZone = "";
+            // ⚠ cam（上）は**画面に映っているカメラ**で、体験者の居場所ではない。
+            //   演出のカットが別カメラを映している間、両者は食い違う。卓が「ゾーン」と称して cam を
+            //   出していたため、演出中は別区間の「次の演出」を表示していた（2026-07-28）。
+            //   zoneCam = ショーの時計が確定した**体験者の居るゾーンの担当カメラ index**（-1 = 未確定）。
+            public int zoneCam = -1;
+            // 走行中の演出 id（空 = 演出なし）。卓の「いま画面を握っているのは誰か」表示に使う。
+            public string takeId = "";
             // 前回の heartbeat 以降に確定した区間滞在（実測）。卓が集計して
             // リボン UI の「実測 平均 Ns」に使う。空配列で送ってよい（サーバ側は無視）。
             public DwellHb[] dwell = Array.Empty<DwellHb>();
@@ -1847,6 +1854,10 @@ namespace FixedCamVr.Streaming
                         hb.headCourseZ = c.y;
                     }
                     hb.currentZone = CurrentZoneLabelProvider != null ? CurrentZoneLabelProvider() : "";
+                    // 人の居場所（時計の確定ゾーン）と画面のカメラを別々に送る。混ぜると卓が嘘をつく。
+                    CameraSwitchDirector? zd = ResolveSwitchDirector();   // UnityEngine.Object の偽 null を踏まないよう != で判定する
+                    hb.zoneCam = (zd != null && zd.TryGetCurrentZoneCamera(out int zc)) ? zc : -1;
+                    hb.takeId = timelineDirector != null ? timelineDirector.ActiveTakeId : "";
 
                     string json = JsonUtility.ToJson(hb);
                     using var req = UnityWebRequest.Post(

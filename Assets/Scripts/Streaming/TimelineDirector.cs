@@ -76,6 +76,9 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中の演出だけを畳んで画面をライブへ返す（卓の ■ 画面を取り返す）。</summary>
         public void AbortActive() => takeRunner?.AbortActive();
 
+        /// <summary>走行中の演出の id（卓のモニタ用。走っていなければ空）。</summary>
+        public string ActiveTakeId => takeRunner != null ? takeRunner.ActiveTakeId : "";
+
         /// <summary>
         /// タイムラインを分配する。区間 takes[] を <see cref="TakeRunner"/> へ流し込み、
         /// 区間 post は次の <see cref="OnCameraEntered"/> で貼り直す（ここでは一旦解除する）。
