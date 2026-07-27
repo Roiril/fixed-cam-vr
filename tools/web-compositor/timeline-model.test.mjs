@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalizeTimelineV3, resolveBgmLane, TAKE } from './timeline-model.js';
+import { normalizeTimelineV3, serializeTimelineV3, resolveBgmLane, TAKE } from './timeline-model.js';
 
 const FIXTURE_URL = new URL('../../Assets/Tests/Fixtures/show_timeline_canonical.json', import.meta.url);
 const fixture = JSON.parse(readFileSync(FIXTURE_URL, { encoding: 'utf-8' }));
@@ -92,4 +92,63 @@ test('resolveBgmLane starts from the run default and marks same-track as retune'
   assert.deepEqual(lane.get('1:0'), { trackId: 'bgm_root', change: null });   // ラン既定が鳴っている
   assert.deepEqual(lane.get('1:1'), { trackId: 'bgm_root', change: 'retune' }); // 同一トラック → 位置維持
   assert.deepEqual(lane.get('1:2'), { trackId: 'bgm_root', change: 'start' });  // restart → 頭出し
+});
+
+// ---- CG 人形の立ち位置（steps[].placement）------------------------------------
+//   位置は「人形」ではなく「カット」が持つ。同じ人形を別のカットで別の場所に立たせるため
+//   （2026-07-27 の作り直し）。present-flag は宣言 bool ∧ 実体の AND 規約。
+
+test('立ち位置は宣言 bool が false なら書き出さない（幽霊 placement を作らない）', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 1, camera: 0,
+      takes: [{ id: 'L1C0#0', steps: [{ source: 'live', camera: 0, cg: 'doll', cgMode: 'fixed' }] }],
+    }],
+  });
+  const step = tl.segments[0].takes[0].steps[0];
+  assert.equal(step.hasPlacement, false);
+
+  const out = serializeTimelineV3(tl);
+  const s = out.segments[0].takes[0].steps[0];
+  assert.equal(s.hasPlacement, false);
+  assert.equal('placement' in s, false, 'flag=false のとき入れ子キー自体を出さない');
+});
+
+test('立ち位置は読み込み → 書き出しで値が保たれる', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 2, camera: 1,
+      takes: [{
+        id: 'L2C1#0',
+        steps: [{
+          source: 'live', camera: 1, cg: 'doll', cgMode: 'fixed',
+          placement: { x: 0.35, z: -0.4, yawDeg: 180 }, hasPlacement: true,
+        }],
+      }],
+    }],
+  });
+  const step = tl.segments[0].takes[0].steps[0];
+  assert.equal(step.hasPlacement, true);
+  assert.deepEqual(step.placement, { x: 0.35, z: -0.4, yawDeg: 180 });
+
+  const s = serializeTimelineV3(tl).segments[0].takes[0].steps[0];
+  assert.equal(s.hasPlacement, true);
+  assert.deepEqual(s.placement, { x: 0.35, z: -0.4, yawDeg: 180 });
+});
+
+test('立ち位置の欠けた軸は 0 で埋まる（NaN を書き出さない）', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 1, camera: 0,
+      takes: [{
+        id: 'L1C0#0',
+        steps: [{ source: 'live', cg: 'doll', placement: { x: 0.2 }, hasPlacement: true }],
+      }],
+    }],
+  });
+  const s = serializeTimelineV3(tl).segments[0].takes[0].steps[0];
+  assert.deepEqual(s.placement, { x: 0.2, z: 0, yawDeg: 0 });
 });

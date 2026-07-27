@@ -13,7 +13,10 @@ Shader "FixedCamVr/ShowActor"
         _BaseColor("Base Color", Color) = (0.72, 0.70, 0.67, 1)
         _ShadeColor("Shade Color", Color) = (0.10, 0.10, 0.12, 1)
         _RimColor("Rim Color", Color) = (0.85, 0.85, 0.90, 1)
-        // ライト方向（ワールド）。既定は「やや上手前から」。
+        // 光が来る向き（ワールド・正規化）。**ShowCgLayer が毎フレーム course 空間基準で上書きする**
+        // （MaterialPropertyBlock 経由。show.json の layout.room.light が正）。
+        // ここの既定は Editor プレビュー / 単体確認用のフォールバックにすぎない。
+        // ワールド固定のままだと Quest のトラッキング原点の向き次第で部屋に対する光の向きが変わる。
         _LightDir("Light Direction (world)", Vector) = (0.35, 0.85, -0.40, 0)
         _Wrap("Light Wrap", Range(0, 1)) = 0.45
         _Rim("Rim Strength", Range(0, 1)) = 0.25

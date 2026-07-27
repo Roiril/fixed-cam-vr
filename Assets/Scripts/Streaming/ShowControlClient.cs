@@ -26,6 +26,70 @@ namespace FixedCamVr.Streaming
     /// <summary>ループ上の切れ目。s ∈ [0,1)、camAfter = このカット以降のカメラ index。</summary>
     [Serializable] public sealed class ShowCutDef { public float s; public int camAfter; }
 
+    // ---- 部屋の 3D プロキシ（layout.room）----
+    // 実物と同じ位置に置く不可視の幾何。**1 つの幾何で 3 用途を兼ねる**:
+    //   ①CG 人形のオクルーダ（壁の裏へ回れる） ②影の落ち先（シャドウキャッチャー） ③較正の参照点
+    // 別々の幾何を持つと必ずズレるので分けない。レンダリング属性だけを用途ごとに切り替える。
+    // 設計の正本: .claude/plans/2026-07-27_cg-compositing-rebuild.md §2.5
+
+    /// <summary>プロキシの壁 1 枚（course 空間の線分 + 高さ + 厚み）。</summary>
+    [Serializable] public sealed class ShowRoomWallDef
+    {
+        public string id = "";
+        public float x1, z1;
+        public float x2, z2;
+        public float h = 1.0f;       // 床からの高さ (m)
+        public float thick = 0.04f;  // 厚み (m)
+
+        public bool IsUsable()
+        {
+            float dx = x2 - x1, dz = z2 - z1;
+            return h > 0.01f && (dx * dx + dz * dz) > 1e-4f;
+        }
+    }
+
+    /// <summary>プロキシの箱（机・柱など）。yawDeg 回転つきの直方体。</summary>
+    [Serializable] public sealed class ShowRoomBoxDef
+    {
+        public string id = "";
+        public float x, z;           // 中心の course 空間 XZ
+        public float y;              // 床からの底面高さ（浮かせたい時だけ）
+        public float w = 0.5f, d = 0.5f, h = 0.7f;
+        public float yawDeg;
+
+        public bool IsUsable() => w > 0.01f && d > 0.01f && h > 0.01f;
+    }
+
+    /// <summary>
+    /// CG レイヤ専用の照明。**部屋で 1 つ**（カメラごとに持つと切替のたび人形の陰影が飛ぶ）。
+    /// Quest に環境光推定 API は無いので人が著作する。卓の 5 スライダで合わせる。
+    /// </summary>
+    [Serializable] public sealed class ShowRoomLightDef
+    {
+        public float yawDeg = 30f;      // course +Z 基準の方位角
+        public float pitchDeg = 55f;    // 仰角（真上が 90）
+        public float tempK = 4000f;     // 色温度 (K)
+        public float intensity = 1f;
+        public float ambient = 0.35f;
+        public float shadowDensity = 0.55f;  // 影の濃さ（0=影なし）
+        public float shadowSoftM = 0.12f;    // 影のにじみ (m 相当)
+    }
+
+    /// <summary>部屋の 3D プロキシ。<c>layout.room</c>・present-flag は <c>layout.hasRoom</c>。</summary>
+    [Serializable] public sealed class ShowRoomDef
+    {
+        public float floorY;               // 床の高さ（course y。通常 0）
+        public float floorW = 1.8f;
+        public float floorD = 1.8f;
+        public ShowRoomWallDef[] walls = System.Array.Empty<ShowRoomWallDef>();
+        public ShowRoomBoxDef[] props = System.Array.Empty<ShowRoomBoxDef>();
+        public ShowRoomLightDef? light;
+        public bool hasLight;
+
+        /// <summary>床が正なら最低限プロキシとして成立する（壁ゼロでも影は落ちる）。</summary>
+        public bool HasData() => floorW > 0.05f && floorD > 0.05f;
+    }
+
     /// <summary>
     /// HMD 位置合わせのタッチ基準点（course space XZ、床マーカー運用）。順序 = タッチ順。
     /// フロアマップ UI で 2〜5 点をオーサリングする。label は HMD ガイダンス表示用（空可）。
@@ -101,6 +165,11 @@ namespace FixedCamVr.Streaming
         // 通過ライン（演出の発火点となる床の線分）。ゾーン生成・HasData() には関与しない純データで、
         // TakeRunner だけが読む（regPoints と同じ立ち位置）。
         public ShowLineDef[] lines = System.Array.Empty<ShowLineDef>();
+        // 部屋の 3D プロキシ（CG のオクルーダ / 影の落ち先 / 較正参照）。ゾーン生成・HasData() には関与しない。
+        // 既存の floor / wall は「登録リチュアルのワイヤー表示」専用だったもので、room はその上位互換。
+        // room があれば登録ワイヤーも room から描く（二重管理を作らない）。
+        public ShowRoomDef? room;
+        public bool hasRoom;
         public float overlapM = 0.08f;
         public float hysteresisM = 0.12f;
 
@@ -207,7 +276,10 @@ namespace FixedCamVr.Streaming
     /// <summary>
     /// 実カメラの course 空間での姿勢（CG レイヤの仮想カメラがこの姿勢で構える）。
     /// course 空間は <c>CourseFrame</c> の 3DOF で実空間へ登録済みなので、体験者の位置と同じ座標系に乗る。
-    /// 卓のフロアマップで著作する。<c>hasPose</c> が present-flag。
+    /// 卓のフロアマップで**人が印をドラッグして置く概算**。<c>hasPose</c> が present-flag。
+    ///
+    /// **これは較正結果ではない**。実測の解は <see cref="ShowCameraCalibDef"/>（<c>cameras[].calib</c>）が持ち、
+    /// あればそちらが勝つ。同居させないと卓のドラッグが解を破壊する。
     /// </summary>
     [Serializable] public sealed class ShowCameraPoseDef
     {
@@ -216,7 +288,68 @@ namespace FixedCamVr.Streaming
         public float y = 1.2f;   // 床からの高さ (m)
         public float yawDeg;     // course +Z を 0 とする水平角
         public float pitchDeg;   // 下向きが負
-        public float fovDeg = 60f;
+        // **水平**画角 (度)。0 = 未著作（コード既定を使う）。
+        // 旧 `fovDeg` は読まない — Unity 側が垂直として使い、卓の扇は水平で描いていて約 25% 食い違っていた
+        // （2026-07-27 監査）。黙って意味を変えると「卓では合うのに実機が違う」を再生産するのでキーごと変える。
+        public float hfovDeg;
+    }
+
+    /// <summary>
+    /// 実カメラの**較正結果**。卓が実映像上の床点（<c>layout.regPoints</c> と同じ × 印）をクリックさせ、
+    /// 平面ホモグラフィ分解で姿勢・焦点距離・歪みを解いた値。<c>hasCalib</c> が present-flag。
+    ///
+    /// **レンズと解像度に従属する**ので <see cref="srcW"/>/<see cref="srcH"/>/<see cref="lensId"/> をキーに保存し、
+    /// 受信中のフレームと一致しないときは較正無効へ倒す（配信設定を変えた瞬間に黙って狂うのを防ぐ）。
+    /// 内部パラメータは px 単位で持つ（正規化すると幅基準か高さ基準かで必ず取り違える）。
+    /// </summary>
+    [Serializable] public sealed class ShowCameraCalibDef
+    {
+        public float x;          // course 空間 (m)
+        public float z;
+        public float y;
+        public float yawDeg;     // course +Z を 0 とする水平角
+        public float pitchDeg;   // 下向きが負
+        public float rollDeg;    // 三脚は必ず傾くので持つ
+
+        public float fxPx;       // 焦点距離 (px)
+        public float fyPx;
+        public float cxPx;       // 主点 (px・画像左上原点)
+        public float cyPx;
+        public float k1;         // 半径方向歪み 1 係数（超広角で効く）
+
+        public int srcW;         // 解いたときのフレーム実寸
+        public int srcH;
+        public string lensId = "";   // /info の lensId（レンズを切り替えたら別物）
+
+        public float rmsPx;      // 再投影誤差（品質。登録リチュアルの maxResidualM と同じ立ち位置）
+        public int pointCount;
+        public string solvedAtIso = "";
+        public ShowCalibRefDef[] refs = Array.Empty<ShowCalibRefDef>();   // 再解決用の対応点
+
+        /// <summary>解ける値が入っているか（焦点距離と実寸が正）。</summary>
+        public bool IsUsable() => fxPx > 1f && fyPx > 1f && srcW > 1 && srcH > 1;
+
+        /// <summary>
+        /// いま受信しているフレームに対して有効か。実寸が違えば内部パラメータは意味を失う。
+        /// lensId は**両方が非空のときだけ**照合する（/info を持たない配信アプリを排除しない）。
+        /// </summary>
+        public bool MatchesSource(int w, int h, string? lens)
+        {
+            if (!IsUsable()) return false;
+            if (w != srcW || h != srcH) return false;
+            if (!string.IsNullOrEmpty(lensId) && !string.IsNullOrEmpty(lens) && lensId != lens) return false;
+            return true;
+        }
+    }
+
+    /// <summary>較正の対応点 1 個（映像上の画素 ↔ course 空間の床点）。再解決のために残す。</summary>
+    [Serializable] public sealed class ShowCalibRefDef
+    {
+        public float u;   // 画像内の正規化座標 (0..1・左上原点)
+        public float v;
+        public float x;   // course 空間 (m)
+        public float z;
+        public float y;   // 床なら 0
     }
 
     /// <summary>端末内録画（1 周目を録って 3 周目に流す）の設定。show.json トップレベル <c>record</c>。</summary>
@@ -504,6 +637,21 @@ namespace FixedCamVr.Streaming
             return true;
         }
 
+        /// <summary>
+        /// index 番カメラの**較正結果**（実映像から解いた実測値）。未較正なら false。
+        /// 呼び出し側は受信中フレームの実寸・lensId で <see cref="ShowCameraCalibDef.MatchesSource"/> を
+        /// 必ず確認すること（解像度やレンズを変えたら較正は無効）。
+        /// </summary>
+        public bool TryGetCameraCalib(int index, out ShowCameraCalibDef calib)
+        {
+            calib = null!;
+            if (index < 0 || index >= _cameras.Length) return false;
+            CameraDef? c = _cameras[index];
+            if (c == null || !c.hasCalib || c.calib == null || !c.calib.IsUsable()) return false;
+            calib = c.calib;
+            return true;
+        }
+
         /// <summary>index 番カメラが演出専用（<c>role:"fx"</c>）か。ゾーン割当・スタッフ巡回から外す。</summary>
         public bool IsFxCamera(int index)
             => index >= 0 && index < _cameras.Length && _cameras[index] != null
@@ -530,6 +678,21 @@ namespace FixedCamVr.Streaming
 
         /// <summary>現在の layout（未設定なら null）。ZoneLayoutApplier が Rebuild で参照する。</summary>
         public ShowLayoutDef? Layout => _layout;
+
+        /// <summary>
+        /// 部屋の 3D プロキシ（<c>layout.room</c>）。未著作なら null。
+        /// present-flag は **宣言 bool AND 実データ**で確定する（JsonUtility が null 入れ子を既定オブジェクトとして
+        /// 書き戻すため、`!=null` 純導出だと端末キャッシュ往復で幽霊の部屋が湧く）。
+        /// </summary>
+        public ShowRoomDef? Room
+        {
+            get
+            {
+                ShowLayoutDef? l = _layout;
+                if (l == null || !l.hasRoom) return null;
+                return (l.room != null && l.room.HasData()) ? l.room : null;
+            }
+        }
 
         /// <summary>layout（cuts/floor/overlap 等）が変わった時に発火する。</summary>
         public event Action? LayoutChanged;
@@ -585,6 +748,12 @@ namespace FixedCamVr.Streaming
         public Func<Vector2, float, Vector3>? CourseToWorldProvider;
         /// <summary>course space の yaw（度）を返す供給元（CourseFrame.YawDeg を注入）。null なら 0。</summary>
         public Func<float>? CourseYawProvider;
+        /// <summary>
+        /// HMD 位置合わせ（登録）が済んでいるかの供給元（CourseFrame.HasRegistration を注入）。
+        /// **未登録のまま CG を出すと人形が全く違う場所に立つ**（course→world が identity へ落ちるため）。
+        /// null なら「登録の有無を知らない」＝ CG を止めない（オフラインテスト・Editor プレビュー用）。
+        /// </summary>
+        public Func<bool>? CourseRegisteredProvider;
 
         private string ConfigCachePath => Path.Combine(Application.persistentDataPath, configCacheFileName);
 
@@ -621,8 +790,13 @@ namespace FixedCamVr.Streaming
             // "zone"（既定・ゾーンに割り当てる）| "fx"（演出専用。ゾーン自動切替にもスタッフ巡回にも出さない）
             public string role = CameraRoles.Zone;
             // CG レイヤの仮想カメラが構える姿勢（course 空間）。hasPose が present-flag。
+            // **人がドラッグして置く概算**で、較正の解ではない（calib があればそちらが勝つ）。
             public ShowCameraPoseDef? pose;
             public bool hasPose;
+            // 較正の解（卓が実映像上の床点から解いた実測値）。hasCalib が present-flag。
+            // 空の既定オブジェクトが来ても IsUsable() が false になるので幽霊武装しない。
+            public ShowCameraCalibDef? calib;
+            public bool hasCalib;
         }
 
         // 端末ローカルへ保存する設定キャッシュ（show.json のうち実機が参照する部分のみ）。
@@ -1000,6 +1174,7 @@ namespace FixedCamVr.Streaming
                 if (c == null) continue;
                 c.hasPost = c.post != null;
                 c.hasPose = c.pose != null;
+                c.hasCalib = c.calib != null && c.calib.IsUsable();
             }
             ApplyCameraEndpoints();
             if (state.post != null) _globalPost = state.post;
@@ -1268,6 +1443,7 @@ namespace FixedCamVr.Streaming
                 if (c == null) continue;
                 c.hasPost = c.post != null;
                 c.hasPose = c.pose != null;
+                c.hasCalib = c.calib != null && c.calib.IsUsable();
             }
             if (state.post != null) _globalPost = state.post;
             if (state.record != null) _record = state.record;

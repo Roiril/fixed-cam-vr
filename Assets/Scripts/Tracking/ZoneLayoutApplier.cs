@@ -87,6 +87,9 @@ namespace FixedCamVr.Tracking
                 // 親子付けではなくこの変換を通すのが唯一正しい経路。
                 showControl.CourseToWorldProvider = (xz, y) => frame.CourseToWorld(xz, y);
                 showControl.CourseYawProvider = () => frame.YawDeg;
+                // 未登録のまま CG を出すと course→world が identity へ落ち、人形が全く違う場所に立つ
+                // （2026-07-27 監査 HIGH 4）。ShowCgLayer がこれを見て「出さない」へ倒す。
+                showControl.CourseRegisteredProvider = () => frame.HasRegistration;
             }
             var trk = tracker;
             showControl.CurrentZoneLabelProvider = () => trk != null && trk.CurrentZone != null ? trk.CurrentZone.Label : "";

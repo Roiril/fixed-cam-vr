@@ -33,7 +33,12 @@ namespace FixedCamVr.Streaming
                         take.hasBgm = take.hasBgm && take.bgm != null;
                         if (take.steps == null) continue;
                         foreach (var step in take.steps)
-                            if (step != null) step.hasPost = step.hasPost && step.post != null;
+                        {
+                            if (step == null) continue;
+                            step.hasPost = step.hasPost && step.post != null;
+                            // CG 人形の立ち位置も同じ規約。幽霊の placement で人形が原点に立たない。
+                            step.hasPlacement = step.hasPlacement && step.placement != null;
+                        }
                     }
             }
         }

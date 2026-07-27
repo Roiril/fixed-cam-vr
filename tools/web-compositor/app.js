@@ -230,7 +230,7 @@ function buildColumn(cam, index) {
         <label>高さ<input class="pose-f pose-y" type="number" step="0.05"></label>
         <label>向き°<input class="pose-f pose-yaw" type="number" step="5"></label>
         <label>俯角°<input class="pose-f pose-pitch" type="number" step="1" title="下向きが負"></label>
-        <label>画角°<input class="pose-f pose-fov" type="number" step="1"></label>
+        <label>水平画角°<input class="pose-f pose-fov" type="number" step="1" title="レンズの横方向の画角。フロアマップの扇と同じ軸（縦ではない）"></label>
         <button class="pose-clear" title="姿勢を未設定に戻す（このカメラでは CG 人形が出なくなる）">✕</button>
       </div>
       <div class="pose-hint">未設定のカメラでは CG 人形を出しません（当てずっぽうのパースで出す方が体験を壊すため）。フロアマップの 📐 モードでドラッグしても置けます。</div>
@@ -413,13 +413,27 @@ function buildColumn(cam, index) {
 
   // ===== カメラ姿勢（CG レイヤの仮想カメラ）=====
   //   著作するまで pose キー自体を置かない（Unity は pose の有無で hasPose を決める）。
-  const POSE_DEFAULT = { x: 0, z: 0, y: 1.2, yawDeg: 0, pitchDeg: 0, fovDeg: 60 };
+  //   画角は **水平**（hfovDeg）が正 — この卓の扇も、レンズのスペックも水平だから。
+  const POSE_DEFAULT = { x: 0, z: 0, y: 1.2, yawDeg: 0, pitchDeg: 0, hfovDeg: 70 };
   const poseF = {
     x: q('.pose-x'), z: q('.pose-z'), y: q('.pose-y'),
-    yawDeg: q('.pose-yaw'), pitchDeg: q('.pose-pitch'), fovDeg: q('.pose-fov'),
+    yawDeg: q('.pose-yaw'), pitchDeg: q('.pose-pitch'), hfovDeg: q('.pose-fov'),
+  };
+  // 旧 `fovDeg` からの移行。Unity 側はこれを**垂直**画角として使い、この卓は**水平**の扇で描いていて
+  // 実効画角が約 25% 食い違っていた（2026-07-27 監査 HIGH 3）。4:3 前提で垂直→水平へ直し、
+  // 旧キーは落とす（Unity はもう読まない）。
+  const vfovToHfov = (v) =>
+    Math.round(2 * Math.atan(Math.tan(Math.max(1, Math.min(179, v)) * Math.PI / 360) * 4 / 3) * 1800 / Math.PI) / 10;
+  const migratePose = (p) => {
+    if (!p || typeof p !== 'object') return false;
+    let changed = false;
+    if (!(p.hfovDeg > 0) && p.fovDeg > 0) { p.hfovDeg = vfovToHfov(p.fovDeg); changed = true; }
+    if ('fovDeg' in p) { delete p.fovDeg; changed = true; }
+    return changed;
   };
   refs.syncPose = () => {
     const p = refs.cam.pose;
+    if (migratePose(p)) postState({ cameras: state.cameras });
     for (const [k, inp] of Object.entries(poseF)) {
       inp.value = p ? (p[k] ?? POSE_DEFAULT[k]) : '';
       inp.placeholder = String(POSE_DEFAULT[k]);

@@ -109,6 +109,9 @@ export function newStep(over = {}) {
     durKind: TAKE.DUR_SEC, durSec: TAKE.FALLBACK_STEP_DUR_SEC,
     transition: TAKE.TRANS_DIP, transitionMs: 0,
     cg: '', cgMode: TAKE.CG_FOLLOW,
+    // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
+    // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
+    placement: { x: 0, z: 0, yawDeg: 0 }, hasPlacement: false,
     post: { ...FX_DEFAULT }, hasPost: false,
     ...over,
   };
@@ -154,6 +157,15 @@ function serializeStep(s) {
   };
   if (s.hasPost) out.post = { ...FX_DEFAULT, ...(s.post || {}) };
   out.hasPost = !!s.hasPost;
+  // 立ち位置は宣言 bool を正にする（flag=false のとき入れ子キーを出さない = 幽霊 placement を作らない）。
+  if (s.hasPlacement && s.placement) {
+    out.placement = {
+      x: num(s.placement.x, 0), z: num(s.placement.z, 0), yawDeg: num(s.placement.yawDeg, 0),
+    };
+    out.hasPlacement = true;
+  } else {
+    out.hasPlacement = false;
+  }
   return out;
 }
 
@@ -230,6 +242,8 @@ function normalizeTake(t) {
     ...s,
     post: { ...FX_DEFAULT, ...(s.post || {}) },
     hasPost: !!s.hasPost,
+    placement: { x: 0, z: 0, yawDeg: 0, ...(s.placement || {}) },
+    hasPlacement: !!s.hasPlacement,
   }));
   return out;
 }

@@ -189,7 +189,7 @@ export function createFloorMap(container, deps) {
         <div class="fm-campose" style="display:none">
           <div class="fm-course-label">カメラ姿勢（CG 人形を立てる視点）</div>
           <div class="fm-campose-list"></div>
-          <div class="fm-hint2">実カメラを置いた場所・向きを写す。<b>姿勢を著作したカメラでだけ</b> CG 人形が出る（当てずっぽうのパースで出すと床に埋まる / 宙に浮く）。高さ・俯角・画角はカメラ列の 📐 欄。扇形＝画角の目安。</div>
+          <div class="fm-hint2">実カメラを置いた場所・向きを写す。<b>姿勢を著作したカメラでだけ</b> CG 人形が出る（当てずっぽうのパースで出すと床に埋まる / 宙に浮く）。高さ・俯角・水平画角はカメラ列の 📐 欄。扇形＝画角の目安。</div>
         </div>
         <label class="fm-num">オーバーラップ (m)<input class="fm-overlap" type="number" min="0" max="0.5" step="0.01"></label>
         <label class="fm-num">ヒステリシス (m)<input class="fm-hyst" type="number" min="0" max="0.5" step="0.01"></label>
@@ -506,8 +506,9 @@ export function createFloorMap(container, deps) {
       ctx.save();
       ctx.globalAlpha = edit ? 1 : 0.55;
 
-      // 画角の扇（見えている範囲の目安。人形が入るかを見るために出す）
-      const fov = Math.max(10, Math.min(140, p.fovDeg || 60)) * Math.PI / 180;
+      // 画角の扇（見えている範囲の目安。人形が入るかを見るために出す）。
+      // **水平**画角（hfovDeg）。旧 `fovDeg` は Unity が垂直として使っていて食い違っていたので読まない。
+      const fov = Math.max(10, Math.min(170, p.hfovDeg || 70)) * Math.PI / 180;
       const base = Math.atan2(d.dx, d.dz);
       const rad = 74;
       ctx.beginPath();
@@ -716,7 +717,7 @@ export function createFloorMap(container, deps) {
 
   // ---- カメラ姿勢（CG レイヤの視点）------------------------------------------
   // pose は「著作したカメラだけ」が持つ（Unity は pose の有無で CG を出すか決める）。
-  const POSE_DEFAULT = { x: 0, z: 0, y: 1.2, yawDeg: 0, pitchDeg: 0, fovDeg: 60 };
+  const POSE_DEFAULT = { x: 0, z: 0, y: 1.2, yawDeg: 0, pitchDeg: 0, hfovDeg: 70 };
   const POSE_HIT = 14, POSE_HANDLE_PX = 40, POSE_HANDLE_HIT = 12;
   const isFxCam = (i) => !!(cameras[i] && cameras[i].role === 'fx');
 
@@ -958,7 +959,7 @@ export function createFloorMap(container, deps) {
     paint: 'パレットの色でタイルをクリック / ドラッグ。色 = 担当カメラ。',
     reg: 'クリックで点を置く / ドラッグで移動 / 右クリックで削除。番号 = HMD でタッチする順。',
     walk: 'マップのどこでも押した場所に体験者が立ちます。押したまま動かすと歩きます。',
-    cam: 'カメラ印をドラッグで移動 / 矢印の先をドラッグで向き。何も無い所をクリックすると選択中カメラをそこへ置きます。高さ・俯角・画角はカメラ列の 📐 欄。',
+    cam: 'カメラ印をドラッグで移動 / 矢印の先をドラッグで向き。何も無い所をクリックすると選択中カメラをそこへ置きます。高さ・俯角・水平画角はカメラ列の 📐 欄。',
     line: 'ドラッグで発火点のラインを引く / 端点をドラッグで伸縮 / 線をドラッグで平行移動 / 右クリックで削除。',
   };
   function setMapMode(next, opt) {

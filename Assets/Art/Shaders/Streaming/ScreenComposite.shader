@@ -12,6 +12,7 @@ Shader "FixedCamVr/ScreenComposite"
         _CgTex("CG Layer (RGBA, screen space)", 2D) = "black" {}
         _LiveScale("Live Contain Scale (xy)", Vector) = (1, 1, 0, 0)
         _OverlayScale("Overlay Contain Scale (xy)", Vector) = (1, 1, 0, 0)
+        _CgScale("CG Contain Scale (xy)", Vector) = (1, 1, 0, 0)
         _UvRotSteps("Live UV Rotation (90deg steps, 0-3)", Float) = 0
         _OverlayStrength("Overlay Strength", Range(0, 1)) = 0
         _CgStrength("CG Layer Strength", Range(0, 1)) = 0
@@ -55,6 +56,7 @@ Shader "FixedCamVr/ScreenComposite"
             CBUFFER_START(UnityPerMaterial)
                 float4 _LiveScale;
                 float4 _OverlayScale;
+                float4 _CgScale;
                 float _UvRotSteps;
                 float _OverlayStrength;
                 float _CgStrength;
@@ -142,11 +144,22 @@ Shader "FixedCamVr/ScreenComposite"
                 // 2.5) CG レイヤ（人形）。**ポスト FX の前**に重ねるのが要点 —
                 //      映像と同じ露出・彩度・ヴィネット・走査線・グレインを浴びて初めて
                 //      「映像の中に居る」ように見える（後段に足すと必ず浮く）。
-                //      スクリーン空間なので contain-fit は掛けない（仮想カメラの画角＝スクリーン枠）。
+                //
+                //      **ライブ映像と同じ contain-fit 枠に収める**（_CgScale = MjpegScreen.ContainScale）。
+                //      旧実装は生の screenUv で枠いっぱいに描いており、4:3 の映像が 16:9 の枠へ
+                //      レターボックスされている分（_LiveScale.x=0.75）だけ人形が水平 1.33 倍外側へずれていた
+                //      ＝ 姿勢を完璧に測っても絶対に合わない（2026-07-27 監査 CRITICAL 1）。
+                //      letterbox 帯に人形が出ないのは正しい挙動（映像の外に人形は居ない）。
                 if (_CgStrength > 0.001)
                 {
-                    half4 cg = SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, screenUv);
-                    col = lerp(col, cg.rgb, saturate(cg.a * _CgStrength));
+                    float cgIn;
+                    float2 uvC = ContainUv(screenUv, _CgScale.xy, cgIn);
+                    half4 cg = SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uvC);
+                    // premultiplied over（Porter-Duff 1984）。straight alpha の lerp から変えたのは、
+                    // **影が「乗算」だから** — 影を rgb=0 / a=濃さ の断片として同じ RT に描けば、
+                    // この式が自動的に背景を (1-a) 倍する。不透明な人形（a=1）に対しては lerp と同値。
+                    float s = saturate(_CgStrength) * cgIn;
+                    col = col * (1.0 - saturate(cg.a) * s) + cg.rgb * s;
                 }
 
                 // 3) ポスト FX（web-compositor の FS_POST と数式・順序を一致させる）

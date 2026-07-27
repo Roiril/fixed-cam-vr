@@ -384,7 +384,10 @@ namespace FixedCamVr.Streaming
             // live でも rec でも step.camera を渡す（未指定なら今映しているカメラ）。
             if (_cgLayer != null)
             {
-                if (step.HasCg) _cgLayer.Apply(step.cg, step.cgMode, step.camera >= 0 ? step.camera : ResolveLatestZoneCamera());
+                if (step.HasCg)
+                    _cgLayer.Apply(step.cg, step.cgMode,
+                                   step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
+                                   step.hasPlacement ? step.placement : null);
                 else _cgLayer.Hide();
             }
 

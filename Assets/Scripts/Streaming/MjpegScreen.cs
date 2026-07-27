@@ -44,6 +44,7 @@ namespace FixedCamVr.Streaming
         private int _lastTexH;
         private float _lastScreenAspect;
         private int _lastUvRotSteps = int.MinValue; // 実行中の手動補正（uvRotSteps 変更）も反映するため dirty 判定に含める
+        private Vector2 _containScale = Vector2.one; // 直近の contain-fit スケール（CG レイヤが読む）
 
         private bool UseRegistry => registry != null;
 
@@ -57,6 +58,43 @@ namespace FixedCamVr.Streaming
                 return s.y > 1e-5f ? Mathf.Abs(s.x / s.y) : 1f;
             }
         }
+
+        // ---- ソース映像の実寸（CG レイヤが RT の寸法・画角・contain 枠を合わせるために読む）----
+        // **枠のアスペクトではなく映像のアスペクトが正**。ここを取り違えると CG だけ枠いっぱいに描かれ、
+        // レターボックスされた映像に対して水平にずれる（2026-07-27 監査 CRITICAL 1）。
+
+        /// <summary>いま映しているソース映像の幅 (px)。未デコード（2x2 placeholder）なら 0。</summary>
+        public int SourceWidth
+        {
+            get { Texture? t = _lastAssigned; return (t != null && t.width > 4) ? t.width : 0; }
+        }
+
+        /// <summary>いま映しているソース映像の高さ (px)。未デコードなら 0。</summary>
+        public int SourceHeight
+        {
+            get { Texture? t = _lastAssigned; return (t != null && t.height > 4) ? t.height : 0; }
+        }
+
+        /// <summary>
+        /// ソース映像の**見かけの**アスペクト (W/H)。<see cref="uvRotSteps"/> の 90/270 度回転を織り込む。
+        /// 未デコードなら 0（呼び出し側がフォールバックを決める）。
+        /// </summary>
+        public float SourceAspect
+        {
+            get
+            {
+                int w = SourceWidth, h = SourceHeight;
+                if (w <= 0 || h <= 0) return 0f;
+                float a = (float)w / h;
+                return ((uvRotSteps & 1) == 1) ? 1f / a : a;
+            }
+        }
+
+        /// <summary>
+        /// ソースを枠へ contain-fit したときのスケール（シェーダの <c>_LiveScale</c> と同一の値）。
+        /// CG レイヤはこれをそのまま <c>_CgScale</c> に使う — 二重計算すると必ずいつか食い違う。
+        /// </summary>
+        public Vector2 ContainScale => _containScale;
 
         private void Awake()
         {
@@ -146,6 +184,7 @@ namespace FixedCamVr.Streaming
             Vector2 scale = srcAspect < screenAspect
                 ? new Vector2(srcAspect / screenAspect, 1f)
                 : new Vector2(1f, screenAspect / srcAspect);
+            _containScale = scale;
 
             _material.SetVector(LiveScaleId, new Vector4(scale.x, scale.y, 0f, 0f));
             _material.SetFloat(UvRotStepsId, uvRotSteps);

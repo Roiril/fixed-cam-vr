@@ -430,6 +430,37 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   矢印の先ドラッグ＝向き・扇＝画角）・**🎭 CG 人形**パネル（actors[]）・カットの「CG 人形」ドロップダウン
 - **⚠ 実機未検証**（2026-07-27。EditMode 695/695・卓はブラウザ実操作・人形は Editor 静止画で確認済み）
 
+### 合成の作り直し — 像空間・較正・影・部屋プロキシ（2026-07-27）
+
+設計の正本は [2026-07-27_cg-compositing-rebuild.md](../plans/2026-07-27_cg-compositing-rebuild.md)。**Step 0（土台の是正 + スキーマ骨格）まで実装済み**。
+
+人形が映像に合わなかった真因は姿勢の精度**以前**で、像空間の対応付けが 3 箇所ずれていた
+（設計批評とコード監査が独立に同一結論へ到達）。**姿勢を完璧に測っても旧実装では合わない**：
+
+| 何を | 旧 | 新 |
+|---|---|---|
+| 合成 UV | CG は生の `screenUv`（枠いっぱい） | ライブと**同じ contain-fit 枠**（`_CgScale` = [`MjpegScreen.ContainScale`](../../Assets/Scripts/Streaming/MjpegScreen.cs)）。4:3 の映像が 16:9 の枠へ letterbox される分（`_LiveScale.x=0.75`）だけ人形が水平 1.33 倍外側にずれていた |
+| RT | スクリーン枠の 16:9・1280×720 | **ソース映像の実寸**（640×480）。映像より鮮明な CG は「貼り付けた絵」に見えるのでわざと同じ粗さへ落とす（`renderHeightPx` は上限） |
+| 画角 | `fovDeg` を Unity は**垂直**、卓は**水平**の扇で描画（約 25% 相違） | **`hfovDeg`（水平）が正**。Unity が映像アスペクトから垂直へ変換（`ShowCgLayer.HorizontalToVerticalFovDeg`）。旧キーは読まない（卓が 4:3 前提で 1 回だけ移行して落とす） |
+| 合成式 | `lerp(bg, cg.rgb, cg.a)`（straight alpha） | `bg*(1-a*s) + rgb*s`（**premultiplied over**）。影を「rgb=0 / a=濃さ」の断片として同じ RT に描けば、この式が自動的に乗算になる。不透明な人形に対しては旧式と同値 |
+| 未登録時 | course→world が identity へ落ち、人形が全く違う場所に立つ（警告も無し） | **出さない**（`ShowControlClient.CourseRegisteredProvider` を `ZoneLayoutApplier` が注入）。登録が入れば次フレームから出る |
+| 光の向き | `_LightDir` がワールド固定 → トラッキング原点の向き次第で部屋に対する陰影が変わる | **course 相対**（`ShowCgLayer.CourseLightDirToWorld` が MaterialPropertyBlock で毎フレーム供給。将来は `layout.room.light` が正） |
+
+**新スキーマ（キーは切ってあり、中身を埋めるのは後段）**:
+
+- **`cameras[].calib`** — 較正の解（卓が実映像上の床点から平面ホモグラフィで解く。位置・向き・roll・内部行列 px・k1）。
+  **`pose` と同居させない**（pose = 人がフロアマップでドラッグする概算 / calib = 実測。統合すると卓のドラッグが解を壊す）。
+  **レンズ・解像度に従属する**ので `srcW/srcH/lensId` で照合し、不一致なら較正無効（`ShowCameraCalibDef.MatchesSource`）。
+  `refs[]` に対応点を残して再解決を 30 秒にする
+- **`layout.room`** — 部屋の 3D プロキシ（壁・箱・床・光源）。**1 幾何で 3 用途**（CG のオクルーダ / 影の落ち先 / 較正参照）。
+  別々に持つと必ずズレる。Blender FBX や Meta Scene API を使わないのは「卓が読めない＝シミュレータが必ず嘘をつく」から
+- **`steps[].placement`** — 人形の立ち位置は**カットが持つ**。actor 側に持たせていた旧設計では
+  「同じ人形を別のカットで別の場所に立たせる」ができなかった。未指定なら actor の `fixedX/Z/YawDeg` へフォールバック（後方互換）
+
+**卓は CG 人形を描かない**（実描画の正は Unity。glTF + スキニング + IK + 影を素の WebGL2 で二重実装すると一致を検証する手段が無い）。
+卓が持つのは投影計算のミラーと輪郭プロキシだけ。**シミュレータは「人形が出るカット」を必ず文字で明示する**
+（`show-sim.js` の `resolveScreen`。黙って落とすのは「著作した演出が黙って消える」と同型の罪）。
+
 ### BGM（区間で切替・停止・ループ範囲）— 2026-07-25
 
 旧: `[Bgm]` の AudioSource が 1 曲を起動中ずっとループ（固定）。新: **タイムライン区間で切り替わる**。

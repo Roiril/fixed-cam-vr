@@ -178,7 +178,20 @@ export function createShowSim(container, deps) {
   //   （実機では TakeRunner が CameraSwitchDirector を占有し、live カットでは表示カメラごと変わる）。
   //   ⚠ 2 箇所で別々に解決していた頃、実画だけがゾーンのカメラのままで
   //     「文字は カメラ A・映像は カメラ C」になっていた（2026-07-26 修正）。
+  // この卓は CG 人形を**描かない**（実描画の正は Unity。glTF + スキニング + IK + 影を二重実装すると
+  // 一致を検証する手段が無くなる）。だからといって黙って落とすと「著作した演出が画から消えたのに
+  // 誰も気づかない」— この現場が何度も潰してきた罪と同型になる。**必ず文字で言う。**
   function resolveScreen() {
+    const d = resolveScreenInner();
+    const st = d.shot && d.shot.step;
+    if (st && st.cg) {
+      const where = st.cgMode === 'fixed' ? '決めた位置' : '体験者の位置';
+      d.detail += `　👤 CG 人形「${st.cg}」が${where}に立ちます（この画には出ません）`;
+    }
+    return d;
+  }
+
+  function resolveScreenInner() {
     if (!runner) return { cam: -1, shot: null, detail: '—' };
     const shot = currentShot();
     if (shot) {

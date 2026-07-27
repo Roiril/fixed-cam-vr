@@ -75,13 +75,28 @@ namespace FixedCamVr.Streaming
 
         // CG レイヤ（映像の上に立つ人形）。空 = 出さない。actors[] の id を指す。
         public string cg = "";
-        public string cgMode = TakeSchema.CgFollow;     // "follow"(体験者 XZ に追従) | "fixed"(actor の著作位置)
+        public string cgMode = TakeSchema.CgFollow;     // "follow"(体験者 XZ に追従) | "fixed"(下の placement)
+
+        // cgMode="fixed" のときの立ち位置。**人形ではなくカットが持つ**のが要点 —
+        // actor 側に位置を持たせていた旧設計では「同じ人形を別のカットで別の場所に立たせる」ができず、
+        // 人形を複製する羽目になっていた（2026-07-27 設計批評）。hasPlacement が present-flag。
+        // 未指定なら actor の fixedX/fixedZ/fixedYawDeg へフォールバックする（後方互換）。
+        public ShowPlacementDef? placement;
+        public bool hasPlacement;
 
         public PostParams? post;
         public bool hasPost;
 
         public bool IsUntilClipEnd => TakeSchema.IsUntilClipEnd(durKind);
         public bool HasCg => !string.IsNullOrEmpty(cg);
+    }
+
+    /// <summary>CG 人形の立ち位置（course 空間）。カット（<see cref="ShowStepDef"/>）が持つ。</summary>
+    [Serializable] public sealed class ShowPlacementDef
+    {
+        public float x;
+        public float z;
+        public float yawDeg;   // course +Z を 0 とする向き
     }
 
     /// <summary>
