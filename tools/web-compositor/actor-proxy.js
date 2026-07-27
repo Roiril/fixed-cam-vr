@@ -200,6 +200,78 @@ export function actorProxyGeometry(calib, placement, heightM, opts = {}) {
   return { foot, footprint, box, head, arrow, bbox, visible, clipped, behind: false };
 }
 
+// ---- 人型シルエット ---------------------------------------------------------
+//   箱のワイヤーだけでは「そこに人が立っている」が掴めず、事前オーサリングの段階で
+//   構図（大きさ・立ち位置・向き）を判断できなかった（2026-07-28 ユーザー指摘）。
+//   ⚠ 意図的に**写実にしない**。実描画の正は Unity で、卓は投影計算のミラーでしかない
+//     （写実に見えると著作者がそれを信じて Unity の最終確認を飛ばす — 卓が CG を描かない元の理由）。
+//   姿勢は実機と同じ「T ポーズから腕を下ろしたマネキン」（ShowActorRig の idle）に揃える。
+//   身長 h に対する比率で定義する（人体の標準比率・正面向きローカル: [right, up, fwd]）。
+const RIG = {
+  head: { y: 0.935, r: 0.055 },
+  neck: [0, 0.860], hipC: [0, 0.530],
+  shoulder: [0.105, 0.855], elbow: [0.135, 0.680], hand: [0.145, 0.500],
+  hip: [0.050, 0.520], knee: [0.055, 0.280], foot: [0.060, 0.020],
+  // 太さ（身長比）。線幅で表すのでシルエットとして自然に見える
+  wTorso: 0.150, wArm: 0.052, wLeg: 0.070,
+};
+
+/**
+ * 人型シルエットの骨格を映像画素で返す（純関数）。`actorProxyGeometry` の補助。
+ * @returns {{head:{u,v,rPx}|null, bones:{a:{u,v}, b:{u,v}, wPx:number}[]}}
+ */
+export function actorBodyGeometry(calib, placement, heightM, opts = {}) {
+  const none = { head: null, bones: [] };
+  if (!calib || !(calib.fxPx > 0)) return none;
+  const p = placement || {};
+  const px = num(p.x, 0), pz = num(p.z, 0);
+  const h = clamp(num(heightM, DEFAULT_HEIGHT_M), 0.2, 3);
+  const { fwd, right } = axes(p.yawDeg);
+  // ローカル (右方向オフセット, 高さ) → course の 3D 点
+  const P = (rx, up) => [px + right[0] * rx * h, up * h, pz + right[1] * rx * h];
+  const pr = (q) => projectPoint(calib, q[0], q[1], q[2]);
+
+  // その位置での「1m あたり何画素か」。太さを画素へ落とすのに使う（遠いほど細くなる）。
+  const pxPerM = (q) => {
+    const a = projectPoint(calib, q[0], q[1], q[2]);
+    const b = projectPoint(calib, q[0], q[1] + 0.1, q[2]);
+    if (!a || !b) return 0;
+    return Math.hypot(b.u - a.u, b.v - a.v) / 0.1;
+  };
+
+  const bones = [];
+  const bone = (A, B, wRatio) => {
+    const a = pr(A), b = pr(B);
+    if (!a || !b) return;
+    const mid = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2, (A[2] + B[2]) / 2];
+    const wPx = pxPerM(mid) * wRatio * h;
+    if (wPx > 0) bones.push({ a, b, wPx });
+  };
+
+  const neck = P(RIG.neck[0], RIG.neck[1]);
+  const hipC = P(RIG.hipC[0], RIG.hipC[1]);
+  bone(neck, hipC, RIG.wTorso);
+  for (const s of [-1, 1]) {
+    const sh = P(s * RIG.shoulder[0], RIG.shoulder[1]);
+    const el = P(s * RIG.elbow[0], RIG.elbow[1]);
+    const ha = P(s * RIG.hand[0], RIG.hand[1]);
+    const hp = P(s * RIG.hip[0], RIG.hip[1]);
+    const kn = P(s * RIG.knee[0], RIG.knee[1]);
+    const ft = P(s * RIG.foot[0], RIG.foot[1]);
+    bone(neck, sh, RIG.wArm);      // 肩
+    bone(sh, el, RIG.wArm);
+    bone(el, ha, RIG.wArm);
+    bone(hipC, hp, RIG.wLeg);
+    bone(hp, kn, RIG.wLeg);
+    bone(kn, ft, RIG.wLeg);
+  }
+
+  const hc = P(0, RIG.head.y);
+  const hq = pr(hc);
+  const head = hq ? { u: hq.u, v: hq.v, rPx: pxPerM(hc) * RIG.head.r * h } : null;
+  return { head, bones };
+}
+
 /**
  * 「この画に人形が出るか」を人間の言葉にする（卓がそのまま出す）。
  * **黙って出ない**のが一番悪い — 著作した人形が画から消えたのに誰も気づかない、を作らない。
@@ -235,6 +307,25 @@ export function drawActorProxy(ctx, geom, opts = {}) {
   const stroke = opts.dim ? PROXY_DIM : PROXY_COLOR;
 
   ctx.save();
+  // 人型シルエット（opts.body があるとき）。箱より先に描いて、箱・足元を上に重ねる。
+  //   同色の太い線で描くので、腕が胴に重なってもムラにならず 1 つのシルエットに見える。
+  if (opts.body && opts.body.bones && opts.body.bones.length) {
+    ctx.strokeStyle = opts.dim ? 'rgba(122, 214, 255, 0.30)' : 'rgba(122, 214, 255, 0.52)';
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const bn of opts.body.bones) {
+      const p = toPx(bn.a), q = toPx(bn.b);
+      ctx.lineWidth = Math.max(1.5 * s, bn.wPx * s);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    }
+    if (opts.body.head && opts.body.head.rPx > 0) {
+      const p = toPx(opts.body.head);
+      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(2 * s, opts.body.head.rPx * s), 0, Math.PI * 2);
+      ctx.fillStyle = opts.dim ? 'rgba(122, 214, 255, 0.30)' : 'rgba(122, 214, 255, 0.52)';
+      ctx.fill();
+    }
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  }
+
   // 身長ボックス（薄い）→ 足元（濃い）の順。足元が最後なので接地位置が必ず読める。
   ctx.strokeStyle = opts.dim ? PROXY_DIM : 'rgba(122, 214, 255, 0.55)';
   ctx.lineWidth = 1 * s;

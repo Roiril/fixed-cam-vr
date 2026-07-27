@@ -239,3 +239,68 @@ test('解像度の食い違う較正は使わず概算 pose へ落ちる（実�
   assert.equal(r.source, 'pose');
   assert.match(r.note, /1280×720 用/);
 });
+
+// ---- (D) 人型シルエット（2026-07-28）-----------------------------------------
+//   箱のワイヤーでは事前オーサリングで構図を判断できなかったので人型を足した。
+//   ⚠ 写実性は求めない（実描画の正は Unity）。**位置・大きさ・距離感が正しいこと**だけを守る。
+
+test('人型の骨格は 13 本（胴 + 肩腕 ×2 + 脚 ×2）で、頭が付く', async () => {
+  const { actorBodyGeometry } = await import('./actor-proxy.js');
+  const b = actorBodyGeometry(CAM, { x: 0, z: 0, yawDeg: 0 }, 1.6);
+  assert.equal(b.bones.length, 13);
+  assert.ok(b.head && b.head.rPx > 0);
+});
+
+test('頭の直径は身長の 12〜15%（人体比率。ここが崩れると「人に見えない」）', async () => {
+  const { actorBodyGeometry } = await import('./actor-proxy.js');
+  // ⚠ 近距離では頭がカメラに近い分だけ透視で大きく写る（実測: 1.5m で 18%・4.5m で 13%）。
+  //    これは正しい挙動なので、人体比率は**正射影に近い遠距離**で見る。
+  const at = (z) => {
+    const g = actorProxyGeometry(CAM, { x: 0, z, yawDeg: 0 }, 1.6);
+    const b = actorBodyGeometry(CAM, { x: 0, z, yawDeg: 0 }, 1.6);
+    return (b.head.rPx * 2) / Math.abs(g.foot.v - g.head.v);
+  };
+  const far = at(3);
+  assert.ok(far > 0.12 && far < 0.15, `遠距離での 頭/身長 = ${far.toFixed(3)}`);
+  assert.ok(at(0) > far, '近いほど頭が大きく写る（透視が効いている）');
+});
+
+test('遠いほど細く描かれる（太さが画素で解かれている＝距離感が出る）', async () => {
+  const { actorBodyGeometry } = await import('./actor-proxy.js');
+  const near = actorBodyGeometry(CAM, { x: 0, z: -0.6, yawDeg: 0 }, 1.6);
+  const far = actorBodyGeometry(CAM, { x: 0, z: 2.5, yawDeg: 0 }, 1.6);
+  assert.ok(near.bones[0].wPx > far.bones[0].wPx * 1.8,
+    `near=${near.bones[0].wPx.toFixed(1)} far=${far.bones[0].wPx.toFixed(1)}`);
+  assert.ok(near.head.rPx > far.head.rPx);
+});
+
+test('身長を変えると骨格全体が比例する（actors[].heightM が効く）', async () => {
+  const { actorBodyGeometry } = await import('./actor-proxy.js');
+  const small = actorBodyGeometry(CAM, { x: 0, z: 0, yawDeg: 0 }, 1.0);
+  const tall = actorBodyGeometry(CAM, { x: 0, z: 0, yawDeg: 0 }, 2.0);
+  assert.ok(tall.head.v < small.head.v, '背が高いほど頭は画の上へ来る');
+  assert.ok(tall.head.rPx > small.head.rPx);
+});
+
+test('向きを 90° 変えると肩の投影幅が変わる（yaw が骨格に効いている）', async () => {
+  const { actorBodyGeometry } = await import('./actor-proxy.js');
+  const width = (yaw) => {
+    const b = actorBodyGeometry(CAM, { x: 0, z: 0, yawDeg: yaw }, 1.6);
+    const us = b.bones.flatMap((x) => [x.a.u, x.b.u]);
+    return Math.max(...us) - Math.min(...us);
+  };
+  const front = width(0), side = width(90);
+  assert.ok(Math.abs(front - side) > 4, `正面 ${front.toFixed(1)} / 横 ${side.toFixed(1)}`);
+});
+
+test('カメラ後方では骨格を返さない（幽霊の人形を描かない）', async () => {
+  const { actorBodyGeometry } = await import('./actor-proxy.js');
+  const b = actorBodyGeometry(CAM, { x: 0, z: -4, yawDeg: 0 }, 1.6);
+  assert.equal(b.bones.length, 0);
+  assert.equal(b.head, null);
+});
+
+test('較正が無ければ何も返さない（姿勢未著作のカメラでは実機も出さない）', async () => {
+  const { actorBodyGeometry } = await import('./actor-proxy.js');
+  assert.deepEqual(actorBodyGeometry(null, { x: 0, z: 0, yawDeg: 0 }, 1.6), { head: null, bones: [] });
+});

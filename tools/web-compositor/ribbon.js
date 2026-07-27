@@ -21,7 +21,7 @@
 //   作者に見せる唯一の手段（計画 §4 / §8 論点 5）。
 
 import {
-  actorProxyGeometry, drawActorProxy, proxyIssueText, resolveProxyCalib, DEFAULT_HEIGHT_M,
+  actorProxyGeometry, actorBodyGeometry, drawActorProxy, proxyIssueText, resolveProxyCalib, DEFAULT_HEIGHT_M,
 } from './actor-proxy.js';
 import { projectPoint, unprojectToFloor } from './calib.js';
 // 較正 UI の純関数（部屋のワイヤー）だけ借りる。**同じ線を 2 度書かない** —
@@ -1576,7 +1576,9 @@ export function createRibbon(container, deps) {
       }
 
       const g = geometry();
-      drawActorProxy(ctx, g, { scale: s2, label: actorLabel() });
+      // 人型シルエットを重ねる（箱だけでは大きさ・向きの当たりが付かない）。
+      const body = actorBodyGeometry(res.calib, place, heightM, { srcW: frame.w, srcH: frame.h });
+      drawActorProxy(ctx, g, { scale: s2, body, label: actorLabel() });
       renderIssue(g);
     }
 

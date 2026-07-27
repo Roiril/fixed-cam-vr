@@ -10,7 +10,7 @@
 //   卓で通っても実機確認は要る。
 
 import {
-  actorProxyGeometry, drawActorProxy, proxyIssueText, resolveProxyCalib, DEFAULT_HEIGHT_M,
+  actorProxyGeometry, actorBodyGeometry, drawActorProxy, proxyIssueText, resolveProxyCalib, DEFAULT_HEIGHT_M,
 } from './actor-proxy.js';
 import { camColor, escapeHtml, createMediaCache, FX_DEFAULT } from './common.js';
 import { createCompositeView } from './composite-view.js';
@@ -127,6 +127,10 @@ export function createShowSim(container, deps) {
   let acc = 0, lastWall = 0;
   let pos = { x: 0, z: -0.7 };
   let fedPos = { x: pos.x, z: pos.z };   // 直近の tick へ実際に供給した位置（tick 間の補間の始点）
+  // 体の向きの近似。実機の follow は**体験者の頭 yaw**を使うが、卓は頭の向きを持っていないので
+  // 歩いた方向で代用する（止まっている間は最後の向きを保つ）。厳密には違うので UI で必ず注記する。
+  let walkYawDeg = 0;
+  let hasWalkYaw = false;
   let events = [];
   let recording = false, recSamples = [], recHoldAt = null;
   let replay = null;             // { samples, endMs, name }
@@ -145,7 +149,7 @@ export function createShowSim(container, deps) {
     runner = createShowRunner(cfg);
     // 時計を 0 へ戻すので、前の走行のログは残さない（時刻が対応しなくなるため）。
     // 位置の補間始点も今の立ち位置へ揃える（先頭 tick で古い位置から一気に歩いたことにしない）。
-    simMs = 0; acc = 0; fedPos = { x: pos.x, z: pos.z };
+    simMs = 0; acc = 0; fedPos = { x: pos.x, z: pos.z }; hasWalkYaw = false; walkYawDeg = 0;
     events = []; logEl.innerHTML = ''; renderLogEmpty();
     staleConfig = false;
     renderWarnings();
@@ -250,22 +254,32 @@ export function createShowSim(container, deps) {
     // follow は体験者の足元（＝いまドラッグしている点）。向きは卓が持っていないので矢印を出さない
     // （適当な向きを描くと、それが著作値だと誤読される）。
     const fixed = st.cgMode === 'fixed';
+    // follow は体験者の足元（＝いま歩かせている点）。向きは実機だと頭の yaw だが卓は持っていないので
+    // 歩いた方向で代用する（下の注記でそう言う）。止まっている間は最後に向いた方を保つ。
     const place = fixed
       ? (st.hasPlacement && st.placement ? st.placement : placementFromActor(actor))
-      : { x: pos.x, z: pos.z, yawDeg: 0 };
+      : { x: pos.x, z: pos.z, yawDeg: hasWalkYaw ? walkYawDeg : 0 };
     let g = actorProxyGeometry(res.calib, place, heightM, { srcW: imgW, srcH: imgH });
+    // follow の矢印は「著作した向き」ではないので、掴めるハンドルの見た目にはしない。
     if (!fixed) g = { ...g, arrow: null };
+    const body = actorBodyGeometry(res.calib, place, heightM, { srcW: imgW, srcH: imgH });
 
     if (g.visible) {
       drawActorProxy(proxyCtx, g, {
         toPx: frameToCanvas(imgW, imgH),
         scale: proxyCanvas.width / 640,
         dim: res.source !== 'calib',
+        body,
         label: (actor.name || actor.id) + (res.source === 'pose' ? '（概算）' : ''),
       });
     }
     const issue = proxyIssueText(g, res.source);
-    return issue ? `👤 ${actor.name || actor.id}: ${issue}` : '';
+    if (issue) return `👤 ${actor.name || actor.id}: ${issue}`;
+    if (!fixed) {
+      return `👤 ${actor.name || actor.id}: 体験者の位置に追従中`
+        + (hasWalkYaw ? '（体の向きは歩いた方向で代用。実機は頭の向き）' : '（歩かせると体の向きが付きます）');
+    }
+    return '';
   }
   function placementFromActor(a) {
     return a ? { x: a.fixedX || 0, z: a.fixedZ || 0, yawDeg: a.fixedYawDeg || 0 } : { x: 0, z: 0, yawDeg: 0 };
@@ -558,6 +572,11 @@ export function createShowSim(container, deps) {
       } else {
         const u = i / total;
         p = { x: from.x + (to.x - from.x) * u, z: from.z + (to.z - from.z) * u };
+      }
+      const dx = p.x - fedPos.x, dz = p.z - fedPos.z;
+      if (Math.hypot(dx, dz) > 0.01) {   // 1cm 未満の揺れでは向きを変えない
+        walkYawDeg = Math.atan2(dx, dz) * 180 / Math.PI;
+        hasWalkYaw = true;
       }
       fedPos = p;
       pushEvents(runner.step(simMs, p.x, p.z));
