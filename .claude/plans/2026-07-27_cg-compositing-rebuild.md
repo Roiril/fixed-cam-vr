@@ -1,8 +1,8 @@
 # CG 人形の合成を作り直す — 実写になじませる基盤
 
-status: **Step 0 完了 / Step 1 は数学と Unity 側の適用まで完了**（2026-07-27・Quest 実機未検証）。
-残りは Step 1 の卓 UI（点をクリックして較正・ワイヤー重畳の検証表示）と Step 2 以降。
-検証: EditMode 750/750・node 115/115。
+status: **Step 0 / Step 1 / Step 2（影・接地・オクルージョン）完了**（2026-07-27・Quest 実機未検証）。
+残りは Step 2 の卓側（`layout.room` の著作 UI）・Step 3（映像クリックでの人形配置）・Step 4（Editor 合成プレビュー）・Step 5（仕上げ）。
+検証: EditMode 773/773・node 139/139。
 前提文書: [2026-07-27_cg-actor-hand-tracking.md](2026-07-27_cg-actor-hand-tracking.md)（人形とハンドトラッキングの現行設計）/
 [2026-07-26_show-sources-and-cg-layer.md](2026-07-26_show-sources-and-cg-layer.md)（CG レイヤの導入）。
 **この文書は上 2 つの「合成」部分を置き換える**（腕の駆動・素材・演出の語彙はそのまま生きる）。

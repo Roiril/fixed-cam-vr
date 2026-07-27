@@ -487,6 +487,35 @@ Unity 側の適用は [`ShowCgLayer.ApplyCameraCalib`](../../Assets/Scripts/Stre
 - 較正は **レンズ・解像度に従属**する。`ShowCgLayer.ResolveCalib` が受信フレームの実寸と `/info` の
   `lensId` を毎フレーム照合し、食い違えば概算 pose へ落として警告を出す（黙って狂わせない）
 
+**卓の較正 UI** = [`calib-ui.js`](../../tools/web-compositor/calib-ui.js)。カメラ列の［🎯 姿勢を合わせる］から入る。
+ライブ映像を 1 枚静止させ、候補点（`layout.regPoints` → 部屋の角 → タイルの角 → 手入力）を選んでクリックし、
+✨ 解く → **床格子・壁・通過ラインのワイヤーを実映像に重ねて目で検証** → 💾 保存。
+前回の `refs`（正規化 uv）を復元するので「ずれた点だけ直して解き直す」が回る。**解像度が食い違う較正では
+ワイヤーを引かず理由を出す**（Unity の `MatchesSource` と同判定 — ずれの原因が「解」か「前提」か分からなくなるため）。
+
+#### 影・接地・オクルージョン（2026-07-27）
+
+**人形だけを描くと必ず浮いて見える**ので、同じ RT へ 3 つを重ねる。すべて「rgb=0 / a=濃さ」の
+premultiplied 断片なので、合成側の over が自動的に乗算（背景を (1-a) 倍）になる。
+
+| 何を | 実装 | 要点 |
+|---|---|---|
+| 床への影 | [`ShowShadowProjector.shader`](../../Assets/Art/Shaders/Cg/ShowShadowProjector.shader) | **平面投影シャドウ**。人形メッシュを光線方向で床平面へ潰して描く。URP のシャドウマップは使わない |
+| 接地影 | [`ShowGroundBlob.shader`](../../Assets/Art/Shaders/Cg/ShowGroundBlob.shader) | 足元の楕円。**「浮いている」に一番効くのはこれ** |
+| オクルージョン | [`ShowOccluder.shader`](../../Assets/Art/Shaders/Cg/ShowOccluder.shader) + [`ShowRoomProxy`](../../Assets/Scripts/Streaming/Cg/ShowRoomProxy.cs) | `Blend Zero One` + ZWrite On で色を書かず深度だけ置く。人形が壁・箱の裏へ回れる |
+
+- **なぜ URP のシャドウマップを使わないか**: 人形は「シーンのライトを一切参照しない」のが不変条件
+  （現場の照明・URP 設定・同居アプリの都合で見えが変わると演出が壊れる／URP の Light は cullingMask を
+  尊重せず HMD が見る実 VR 空間まで照らす）。シャドウマップ方式は未検証の仕掛け（`beginCameraRendering` での
+  ライト on/off とシャドウマップ culling の順序）が要り、失敗時の代替が共有 URP Asset の変更＝同居 2 アプリの規約と衝突する。
+  平面投影ならライトが 1 つも要らない。セルフシャドウは出ないが、この画質では観測できない
+- **⚠ ステンシルを外すと影が「濃い斑」になる**（腕と胴の投影が重なった所だけ二重に暗くなる）。
+  `Stencil { Ref 1 Comp NotEqual Pass Replace }` で 1 画素 1 回だけ描く。そのため
+  **RT の depth buffer は 24（depth24 + stencil8）でなければならない** — 16 に戻すと沈黙して斑に化ける
+- **`layout.room` が未著作でも人形と影は出す**（床は course y=0 の無限平面）。プロキシに依存するのは
+  オクルージョンだけ。ここを止めるとフェイルソフトが壊れる
+- 描画順は Queue で決まる: オクルーダ(-200) → 影(-100) → 接地影(-99) → 人形(Geometry)
+
 ### BGM（区間で切替・停止・ループ範囲）— 2026-07-25
 
 旧: `[Bgm]` の AudioSource が 1 曲を起動中ずっとループ（固定）。新: **タイムライン区間で切り替わる**。

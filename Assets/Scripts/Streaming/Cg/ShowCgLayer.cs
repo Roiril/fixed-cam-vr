@@ -26,6 +26,14 @@ namespace FixedCamVr.Streaming.Cg
     ///   - カメラ姿勢が未著作
     ///   - **HMD 位置合わせ（登録）が未完了** — course→world が identity へ落ちて全く違う場所に立つ
     /// 腕の駆動は <see cref="ShowActorRig"/>（体験者のハンドトラッキング）。
+    ///
+    /// **接地（2026-07-27 追加）**: 人形だけを描くと必ず「浮いて」見えるので、同じ RT へ
+    ///   - 床への平面投影シャドウ（<c>FixedCamVr/ShowShadowProjector</c> を人形の Renderer に足す）
+    ///   - 足元の接地影 blob（<c>FixedCamVr/ShowGroundBlob</c> の Quad 1 枚）
+    ///   - 部屋プロキシによるオクルージョン（<see cref="ShowRoomProxy"/>）
+    /// を重ねる。影は「rgb=0 / a=濃さ」の premultiplied 断片なので、合成側の over が自動的に乗算になる。
+    /// **<c>layout.room</c> が未著作でも人形と影は出す**（床は course y=0 の無限平面）。
+    /// プロキシに依存するのはオクルージョンだけ — ここを止めるとフェイルソフトが壊れる。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class ShowCgLayer : MonoBehaviour
@@ -36,9 +44,33 @@ namespace FixedCamVr.Streaming.Cg
         private static readonly int CgLensId = Shader.PropertyToID("_CgLens");
         private static readonly int CgFocalId = Shader.PropertyToID("_CgFocalN");
         private static readonly int LightDirId = Shader.PropertyToID("_LightDir");
+        private static readonly int ShadowPlaneYId = Shader.PropertyToID("_ShadowPlaneY");
+        private static readonly int ShadowLightDirId = Shader.PropertyToID("_ShadowLightDir");
+        private static readonly int ShadowDensityId = Shader.PropertyToID("_ShadowDensity");
+        private static readonly int ShadowSoftId = Shader.PropertyToID("_ShadowSoftM");
+        private static readonly int BlobDensityId = Shader.PropertyToID("_BlobDensity");
 
         /// <summary>身体入力がこの秒数届かなければ「手は取れていない」とみなす。</summary>
         private const float BodyInputTimeoutSec = 0.5f;
+
+        // 影 / 接地影のマテリアル。**Resources に置くのは build で剥がされないため** —
+        // どのアセットからも参照されないシェーダはビルドから除去され、実行時 Shader.Find が null を返す。
+        private const string ShadowMaterialResource = "ShowCg/ShowShadowProjector";
+        private const string ShadowShaderName = "FixedCamVr/ShowShadowProjector";
+        private const string BlobMaterialResource = "ShowCg/ShowGroundBlob";
+        private const string BlobShaderName = "FixedCamVr/ShowGroundBlob";
+
+        /// <summary><c>layout.room.light</c> が無いときの影の濃さ / にじみ（スキーマ既定値と同じ）。</summary>
+        private const float DefaultShadowDensity = 0.55f;
+        private const float DefaultShadowSoftM = 0.12f;
+
+        /// <summary>接地影の半径 = 身長 × これ（成人 1.6m で約 0.35m。人の影の広がりの実感値）。</summary>
+        private const float BlobRadiusPerHeight = 0.22f;
+        private const float BlobRadiusMinM = 0.15f;
+        private const float BlobRadiusMaxM = 0.6f;
+
+        /// <summary>接地影を床から浮かせる量 (m)。投影シャドウ（+0.002）より上に置く。</summary>
+        private const float BlobLiftM = 0.004f;
 
         /// <summary>ソース実寸が取れないときに仮定するアスペクト（streamer / IP Camera Lite とも 4:3）。</summary>
         private const float FallbackSourceAspect = 4f / 3f;
@@ -89,6 +121,15 @@ namespace FixedCamVr.Streaming.Cg
         private bool _warnedCalibMismatch;
         private bool _projectionOverridden;
 
+        // 接地（影 / 接地影 / 部屋プロキシ）。すべて実行時生成で、シーン・prefab には現れない。
+        private ShowRoomProxy? _roomProxy;
+        private Material? _shadowMat;
+        private Material? _blobMat;
+        private Transform? _blob;
+        private bool _warnedShadowMissing;
+        private bool _warnedBlobMissing;
+        private bool _warnedMultiSubMesh;
+
         private ShowBodyInput _body;
         private float _bodyStamp = -999f;
 
@@ -127,6 +168,11 @@ namespace FixedCamVr.Streaming.Cg
             Hide();
             if (_virtualCam != null) Destroy(_virtualCam.gameObject);
             if (_actorInstance != null) Destroy(_actorInstance);
+            if (_roomProxy != null) Destroy(_roomProxy.gameObject);
+            if (_blob != null) Destroy(_blob.gameObject);
+            // 実行時複製したマテリアルは自分で始末する（Resources の .mat 資産そのものは触っていない）。
+            if (_shadowMat != null) Destroy(_shadowMat);
+            if (_blobMat != null) Destroy(_blobMat);
             ReleaseRenderTexture();
         }
 
@@ -158,6 +204,7 @@ namespace FixedCamVr.Streaming.Cg
             }
 
             EnsureCamera();
+            EnsureRoomProxy();
             EnsureActor(def);
             _mode = TakeSchema.NormalizeCgMode(cgMode, out bool known);
             if (!known) Debug.LogWarning($"[ShowCgLayer] 未知の cgMode '{cgMode}' → follow として扱う");
@@ -186,6 +233,8 @@ namespace FixedCamVr.Streaming.Cg
             SetStrength(0f);
             if (_virtualCam != null) _virtualCam.enabled = false;
             if (_actorInstance != null) _actorInstance.SetActive(false);
+            if (_roomProxy != null) _roomProxy.gameObject.SetActive(false);
+            if (_blob != null) _blob.gameObject.SetActive(false);
         }
 
         private void LateUpdate()
@@ -218,8 +267,11 @@ namespace FixedCamVr.Streaming.Cg
             ShowCameraCalibDef? calib = ResolveCalib();
             if (calib != null) ApplyCameraCalib(calib);
             else ApplyCameraPose(_pose);
-            ApplyLight();
+            // 部屋プロキシを先に置く（床の高さがこの後の影の落ち先になる）。
+            _roomProxy?.Sync();
+            Vector3 lightDir = ApplyLight();
             PlaceActor(_actorDef);
+            ApplyGroundContact(_actorDef, lightDir);
             if (_actorRig != null && _actorRig.HasRig)
                 _actorRig.Drive(CurrentBody(), _actorInstance!.transform.eulerAngles.y, Time.deltaTime);
         }
@@ -236,6 +288,9 @@ namespace FixedCamVr.Streaming.Cg
             _rendering = on;
             if (_virtualCam != null) _virtualCam.enabled = on;
             if (_actorInstance != null) _actorInstance.SetActive(on);
+            // プロキシと接地影は人形と生死を共にする（人形が居ないのに部屋の深度だけ書いても意味が無い）。
+            if (_roomProxy != null) _roomProxy.gameObject.SetActive(on);
+            if (_blob != null) _blob.gameObject.SetActive(on);
             SetStrength(on ? 1f : 0f);
         }
 
@@ -287,6 +342,22 @@ namespace FixedCamVr.Streaming.Cg
         }
 
         /// <summary>
+        /// 部屋プロキシ（オクルーダ + 床の高さ）を実行時に用意する。仮想カメラと同じく
+        /// **シーンには置かない** — 生成物が ShowCg レイヤに閉じているので、シーン側の配線が要らない。
+        /// </summary>
+        private void EnsureRoomProxy()
+        {
+            if (_roomProxy == null)
+            {
+                var go = new GameObject("[CgRoomProxy]");
+                if (_layer >= 0) go.layer = _layer;
+                _roomProxy = go.AddComponent<ShowRoomProxy>();
+                _roomProxy.Initialize(showControl, _layer);
+            }
+            _roomProxy.gameObject.SetActive(true);
+        }
+
+        /// <summary>
         /// RT を**ソース映像の実寸**に合わせる（枠のアスペクトではない）。
         /// 解像度も映像に合わせて落とす — 640x480 の JPEG に 1280x720 の鮮鋭な CG を重ねると
         /// 輪郭のクッキリ度が食い違って「貼り付けた絵」に見える。<see cref="renderHeightPx"/> は上限。
@@ -301,7 +372,9 @@ namespace FixedCamVr.Streaming.Cg
             if (_rt == null || _rt.width != w || _rt.height != h)
             {
                 ReleaseRenderTexture();
-                _rt = new RenderTexture(w, h, 16, RenderTextureFormat.ARGB32)
+                // depth は **24**（depth24 + stencil8）。16 だとステンシルが無く、平面投影シャドウの
+                // 「1 画素 1 回だけ描く」が効かなくなって腕と胴の重なりが二重に暗くなる（濃い斑）。
+                _rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32)
                 {
                     name = "ShowCgLayer",
                     useMipMap = false,
@@ -441,19 +514,15 @@ namespace FixedCamVr.Streaming.Cg
         /// 旧実装はワールド固定のベクトルで、Quest のトラッキング原点の向き次第で
         /// 部屋に対する光の向きが変わっていた（＝毎回違う陰影になる）。
         /// </summary>
-        private void ApplyLight()
+        /// <returns>「光が来る向き」のワールドベクトル（正規化）。影の投影にも同じ値を使う。</returns>
+        private Vector3 ApplyLight()
         {
-            if (_actorRenderers.Length == 0) return;
-
-            float yaw = DefaultLightYawDeg, pitch = DefaultLightPitchDeg;
-            ShowRoomDef? room = showControl?.Room;
-            if (room != null && room.hasLight && room.light != null)
-            {
-                yaw = room.light.yawDeg;
-                pitch = room.light.pitchDeg;
-            }
-
+            ShowRoomLightDef? light = ResolveLight();
+            float yaw = light != null ? light.yawDeg : DefaultLightYawDeg;
+            float pitch = light != null ? light.pitchDeg : DefaultLightPitchDeg;
             Vector3 dir = CourseLightDirToWorld(yaw, pitch, CourseYawDeg());
+
+            if (_actorRenderers.Length == 0) return dir;
             _mpb ??= new MaterialPropertyBlock();
             foreach (Renderer r in _actorRenderers)
             {
@@ -462,6 +531,14 @@ namespace FixedCamVr.Streaming.Cg
                 _mpb.SetVector(LightDirId, new Vector4(dir.x, dir.y, dir.z, 0f));
                 r.SetPropertyBlock(_mpb);
             }
+            return dir;
+        }
+
+        /// <summary><c>layout.room.light</c>（present-flag 込み）。未著作なら null。</summary>
+        private ShowRoomLightDef? ResolveLight()
+        {
+            ShowRoomDef? room = showControl?.Room;
+            return (room != null && room.hasLight && room.light != null) ? room.light : null;
         }
 
         /// <summary>
@@ -474,6 +551,156 @@ namespace FixedCamVr.Streaming.Cg
             float pitch = Mathf.Clamp(lightPitchDeg, -90f, 90f) * Mathf.Deg2Rad;
             float cp = Mathf.Cos(pitch);
             return new Vector3(Mathf.Sin(yaw) * cp, Mathf.Sin(pitch), Mathf.Cos(yaw) * cp).normalized;
+        }
+
+        // ---- 接地（平面投影シャドウ / 接地影 blob）----
+
+        /// <summary>
+        /// 影の落ち先と接地影を毎フレーム更新する。**<see cref="PlaceActor"/> の後**に呼ぶこと
+        /// （足元 XZ が決まる前に呼ぶと接地影が 1 フレーム遅れて足からずれる）。
+        /// </summary>
+        private void ApplyGroundContact(ShowActorDef def, Vector3 lightDirWorld)
+        {
+            if (_actorInstance == null) return;
+
+            ShowRoomLightDef? light = ResolveLight();
+            float density = light != null ? Mathf.Clamp01(light.shadowDensity) : DefaultShadowDensity;
+            float softM = light != null ? Mathf.Max(0f, light.shadowSoftM) : DefaultShadowSoftM;
+
+            // 部屋が未著作なら course y=0 の無限平面。**ここで諦めない**のが要点で、
+            // プロキシに依存するのはオクルージョンだけ（影と接地影は room 無しでも出す）。
+            float floorCourseY = _roomProxy != null ? _roomProxy.FloorCourseY : 0f;
+            // course→world を通す（CourseFrame は XZ+yaw の剛体変換で y は素通しだが、
+            // 生値を使うとその前提が変わった時に黙ってずれる）。
+            float floorWorldY = CourseToWorld(Vector2.zero, floorCourseY).y;
+
+            if (EnsureShadowMaterial())
+            {
+                _shadowMat!.SetFloat(ShadowPlaneYId, floorWorldY);
+                _shadowMat.SetVector(ShadowLightDirId,
+                    new Vector4(lightDirWorld.x, lightDirWorld.y, lightDirWorld.z, 0f));
+                _shadowMat.SetFloat(ShadowDensityId, density);
+                _shadowMat.SetFloat(ShadowSoftId, softM);
+            }
+            PlaceGroundBlob(def, floorWorldY, density);
+        }
+
+        // 足元の接地影（Quad 1 枚）。投影シャドウだけだと、光が斜めのとき足元そのものは暗くならず
+        // 「浮いている」が残る。人形と床の接点を落とすのはこの blob の仕事。
+        private void PlaceGroundBlob(ShowActorDef def, float floorWorldY, float density)
+        {
+            if (!EnsureBlob() || _actorInstance == null) return;
+            Vector3 p = _actorInstance.transform.position;
+            float radius = Mathf.Clamp(Mathf.Max(0.2f, def.heightM) * BlobRadiusPerHeight,
+                                       BlobRadiusMinM, BlobRadiusMaxM);
+            _blob!.position = new Vector3(p.x, floorWorldY + BlobLiftM, p.z);
+            // Quad を床へ寝かせる。シェーダが Cull Off なので表裏の取り違えで消えることはない。
+            _blob.rotation = Quaternion.Euler(90f, 0f, 0f);
+            _blob.localScale = new Vector3(radius * 2f, radius * 2f, 1f);
+            _blobMat?.SetFloat(BlobDensityId, density);
+        }
+
+        private bool EnsureBlob()
+        {
+            if (_blob != null) { _blob.gameObject.SetActive(true); return true; }
+            if (!EnsureBlobMaterial()) return false;
+
+            var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            go.name = "[CgGroundBlob]";
+            if (_layer >= 0) go.layer = _layer;
+            Collider? col = go.GetComponent<Collider>();
+            if (col != null) Destroy(col);
+            var r = go.GetComponent<MeshRenderer>();
+            r.sharedMaterial = _blobMat;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            r.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            r.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+            _blob = go.transform;
+            return true;
+        }
+
+        private bool EnsureShadowMaterial()
+        {
+            if (_shadowMat != null) return true;
+            _shadowMat = LoadRuntimeMaterial(ShadowMaterialResource, ShadowShaderName,
+                                             "影（平面投影シャドウ）", ref _warnedShadowMissing);
+            return _shadowMat != null;
+        }
+
+        private bool EnsureBlobMaterial()
+        {
+            if (_blobMat != null) return true;
+            _blobMat = LoadRuntimeMaterial(BlobMaterialResource, BlobShaderName,
+                                           "接地影", ref _warnedBlobMissing);
+            return _blobMat != null;
+        }
+
+        /// <summary>
+        /// Resources の .mat を**複製して**返す（資産そのものを実行時に汚さない）。
+        /// Resources 経由なのはビルドのシェーダ剥がし対策 — どのアセットからも参照されないシェーダは
+        /// ビルドから除去され、実機だけ <c>Shader.Find</c> が null を返して影が消える。
+        /// 見つからなければ警告 1 回で null（**影が出ないだけで人形は出る**）。
+        /// </summary>
+        private static Material? LoadRuntimeMaterial(string resourcePath, string shaderName,
+                                                     string label, ref bool warned)
+        {
+            var loaded = Resources.Load<Material>(resourcePath);
+            Shader? shader = loaded != null ? loaded.shader : Shader.Find(shaderName);
+            if (shader == null)
+            {
+                if (!warned)
+                {
+                    warned = true;
+                    Debug.LogWarning($"[ShowCgLayer] {label}のマテリアル '{resourcePath}' も" +
+                                     $" シェーダ '{shaderName}' も見つからない → {label}なしで続行");
+                }
+                return null;
+            }
+            var mat = loaded != null ? new Material(loaded) : new Material(shader);
+            mat.name = $"{shaderName} (runtime)";
+            return mat;
+        }
+
+        /// <summary>
+        /// 人形の各 Renderer に**影マテリアルを 1 枚足す**（本体 + 影 = 同じメッシュが 2 回描かれる）。
+        /// SkinnedMeshRenderer でもスキニング後の頂点に効くので、腕を上げれば影も腕を上げる。
+        ///
+        /// ⚠ Unity は「マテリアル数 &gt; サブメッシュ数」のとき、余ったマテリアルを**最後のサブメッシュ**に
+        ///    しか適用しない。サブメッシュが複数あるモデルでは最後の 1 つ分しか影が出ないので警告を出す
+        ///    （<c>Build Show Actor Prefab</c> が作るプレハブは全サブメッシュが同一マテリアルなので、
+        ///     1 メッシュ 1 サブメッシュに書き出したモデルなら踏まない）。
+        /// </summary>
+        private void AttachShadowMaterial()
+        {
+            if (!EnsureShadowMaterial()) return;
+            foreach (Renderer r in _actorRenderers)
+            {
+                if (r == null) continue;
+                Material[] mats = r.sharedMaterials;
+                if (mats.Length > 0 && mats[mats.Length - 1] == _shadowMat) continue;   // 二重付与しない
+
+                var next = new Material[mats.Length + 1];
+                for (int i = 0; i < mats.Length; i++) next[i] = mats[i];
+                next[mats.Length] = _shadowMat;
+                r.sharedMaterials = next;
+
+                if (!_warnedMultiSubMesh && SubMeshCountOf(r) > 1)
+                {
+                    _warnedMultiSubMesh = true;
+                    Debug.LogWarning($"[ShowCgLayer] '{r.name}' はサブメッシュが複数あるため、" +
+                                     "影が出るのは最後のサブメッシュだけになる" +
+                                     "（人形を 1 メッシュ 1 マテリアルに書き出すと全身に影が出る）");
+                }
+            }
+        }
+
+        private static int SubMeshCountOf(Renderer r)
+        {
+            if (r is SkinnedMeshRenderer smr)
+                return smr.sharedMesh != null ? smr.sharedMesh.subMeshCount : 0;
+            return r.TryGetComponent(out MeshFilter mf) && mf.sharedMesh != null
+                ? mf.sharedMesh.subMeshCount : 0;
         }
 
         // ---- 人形 ----
@@ -519,6 +746,8 @@ namespace FixedCamVr.Streaming.Cg
             _actorInstance.name = $"[CgActor:{def.id}]";
             SetLayerRecursive(_actorInstance.transform, _layer);
             _actorRenderers = _actorInstance.GetComponentsInChildren<Renderer>(true);
+            _warnedMultiSubMesh = false;
+            AttachShadowMaterial();
             _actorId = def.id;
         }
 

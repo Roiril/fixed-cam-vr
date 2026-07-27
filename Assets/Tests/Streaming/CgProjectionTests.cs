@@ -190,5 +190,100 @@ namespace FixedCamVr.Streaming.Tests
             Assert.IsFalse(float.IsNaN(d.x) || float.IsNaN(d.y) || float.IsNaN(d.z));
             Assert.AreEqual(1f, d.magnitude, 1e-3f);
         }
+
+        // ---- 平面投影シャドウ（ShowShadowProjector.shader と同じ式）----
+        //
+        // ⚠ ここの期待値とシェーダの頂点計算は**必ず対で直す**。片方だけ直すとテストは通るのに
+        //    実機の影だけがずれる（このプロジェクトが何度も踏んでいる形）。
+
+        [Test]
+        public void Shadow_LightStraightUp_DropsVertically()
+        {
+            Assert.IsTrue(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(1f, 2f, 3f), 0f, Vector3.up, out Vector3 p));
+            Assert.AreEqual(1f, p.x, 1e-4f);
+            Assert.AreEqual(0f, p.y, 1e-4f);
+            Assert.AreEqual(3f, p.z, 1e-4f);
+        }
+
+        [Test]
+        public void Shadow_SlantedLight_FallsAwayFromTheLight()
+        {
+            // 光が -Z 側の高さ 45° から来る → 影は +Z 側へ、高さと同じだけ伸びる。
+            Vector3 l = new Vector3(0f, 1f, -1f).normalized;
+            Assert.IsTrue(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(0f, 1f, 0f), 0f, l, out Vector3 p));
+            Assert.AreEqual(0f, p.x, 1e-4f);
+            Assert.AreEqual(0f, p.y, 1e-4f);
+            Assert.AreEqual(1f, p.z, 1e-4f, "45° なら高さ 1m の点の影は 1m 先");
+        }
+
+        [Test]
+        public void Shadow_UsesCourseLightDirection()
+        {
+            // ApplyLight が渡すのと同じベクトルで動くこと（course 相対の向きがそのまま影の向きになる）。
+            Vector3 l = ShowCgLayer.CourseLightDirToWorld(0f, 45f, 0f);   // course +Z の 45° 上から
+            Assert.IsTrue(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(0f, 1f, 0f), 0f, l, out Vector3 p));
+            Assert.Less(p.z, -0.9f, "光が +Z から来るなら影は -Z へ落ちる");
+        }
+
+        [Test]
+        public void Shadow_RaisedFloor_ShortensTheProjection()
+        {
+            // 床が高いほど影は短い（机の上に立つケース）。plane を無視すると影が床下へ抜ける。
+            Vector3 l = new Vector3(0f, 1f, -1f).normalized;
+            Assert.IsTrue(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(0f, 1f, 0f), 0.5f, l, out Vector3 p));
+            Assert.AreEqual(0.5f, p.y, 1e-4f);
+            Assert.AreEqual(0.5f, p.z, 1e-4f);
+        }
+
+        [Test]
+        public void Shadow_PointOnPlane_StaysPut()
+        {
+            // 床に接している足の頂点は動かない（＝影と足が必ず繋がる）。
+            Vector3 l = new Vector3(0.4f, 1f, -0.2f).normalized;
+            Assert.IsTrue(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(0.7f, 0f, -0.3f), 0f, l, out Vector3 p));
+            Assert.AreEqual(0.7f, p.x, 1e-4f);
+            Assert.AreEqual(-0.3f, p.z, 1e-4f);
+        }
+
+        [Test]
+        public void Shadow_HorizontalLight_IsRejected()
+        {
+            // 真横から来る光では床との交点が無限遠。**そのまま描くと画面いっぱいの黒帯**になるので
+            // シェーダ側も同じ閾値で三角形を潰す（影を出さない）。
+            Assert.IsFalse(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(0f, 1f, 0f), 0f, new Vector3(1f, 0f, 0f), out _));
+        }
+
+        [Test]
+        public void Shadow_LightFromBelow_IsRejected()
+        {
+            Assert.IsFalse(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(0f, 1f, 0f), 0f, new Vector3(0f, -1f, 0f), out _));
+        }
+
+        [Test]
+        public void Shadow_ZeroLightVector_IsRejected()
+        {
+            // 未設定のベクトル（0,0,0）を「真上」と誤解しない。誤解すると影の向きが黙って変わる。
+            Assert.IsFalse(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(0f, 1f, 0f), 0f, Vector3.zero, out _));
+        }
+
+        [Test]
+        public void Shadow_UnnormalizedLight_GivesSameResult()
+        {
+            // マテリアルに入る値は正規化済みとは限らない（卓の著作値・MPB 経由）。
+            Vector3 l = new Vector3(0f, 1f, -1f);
+            Assert.IsTrue(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(0f, 1f, 0f), 0f, l, out Vector3 a));
+            Assert.IsTrue(ShadowProjectionLogic.TryProjectToPlane(
+                new Vector3(0f, 1f, 0f), 0f, l * 7.3f, out Vector3 b));
+            Assert.AreEqual(a.z, b.z, 1e-4f);
+        }
     }
 }

@@ -5,6 +5,76 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>廻リ視 web compositor</title>
   <link rel="stylesheet" href="style.css">
+  <!-- 🎯 カメラ姿勢の較正（calib-ui.js）。全画面オーバーレイなので他の面と干渉しない範囲で独立。
+       デザイン言語は style.css と同じ（純黒 + クリーム文字 #fffaf0 / アクセント #ffdead / 角丸ゼロ）。 -->
+  <style>
+    .calib-ui { position: fixed; inset: 0; z-index: 200; display: flex; }
+    .cu-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .82); }
+    .cu-panel {
+      position: relative; margin: auto; width: min(1180px, 96vw); max-height: 94vh;
+      display: flex; flex-direction: column; overflow: hidden;
+      background: radial-gradient(circle at top left, #1a1a1a 0%, #000 100%);
+      border: 1px solid var(--line-soft);
+    }
+    .cu-head {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .cu-head .spacer { flex: 1; }
+    .cu-frameinfo { font-size: 11px; opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
+    .cu-body { display: flex; gap: 14px; padding: 12px 14px 16px; overflow: auto; }
+    .cu-viewcol { flex: 1 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+    .cu-canvas-wrap { position: relative; border: 1px solid var(--line-soft); background: #000; }
+    .cu-canvas { display: block; width: 100%; height: auto; cursor: crosshair; touch-action: none; }
+    .cu-noframe {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      text-align: center; padding: 20px; font-size: 12px; color: var(--warn-color);
+    }
+    .cu-ptlist { display: flex; flex-wrap: wrap; gap: 5px; min-height: 24px; }
+    .cu-pt {
+      display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 6px;
+      border: 1px solid var(--line-soft); font-size: 11px; font-variant-numeric: tabular-nums;
+    }
+    .cu-pt b { color: var(--accent-color); }
+    .cu-pt button { padding: 0 4px; font-size: 10px; line-height: 1.4; }
+    .cu-pt-empty { font-size: 11px; opacity: var(--opacity-mute); }
+    .cu-hint { font-size: 11px; opacity: var(--opacity-mute); line-height: 1.5; }
+    .cu-side { flex: 0 0 330px; display: flex; flex-direction: column; gap: 8px; }
+    .cu-lbl { display: flex; flex-direction: column; gap: 3px; font-size: 11px; opacity: var(--opacity-sub); }
+    .cu-cand { max-width: 100%; font-size: 12px; }
+    .cu-manual { display: flex; align-items: center; gap: 5px; }
+    .cu-manual label { display: flex; align-items: center; gap: 3px; font-size: 11px; opacity: var(--opacity-sub); }
+    .cu-manual input { width: 62px; font-size: 11px; padding: 2px 4px; }
+    .cu-lockhint { font-size: 11px; opacity: var(--opacity-mute); line-height: 1.45; }
+    .cu-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+    .cu-actions button:disabled { opacity: .35; cursor: default; filter: none; }
+    .cu-msg { font-size: 11px; min-height: 1.2em; opacity: var(--opacity-sub); }
+    .cu-msg.ok { color: var(--accent-color); opacity: 1; }
+    .cu-msg.err { color: var(--danger-color); opacity: 1; }
+    .cu-result { display: flex; flex-direction: column; gap: 3px; padding: 8px; border: 1px solid var(--line-soft); }
+    .cu-res-line { font-size: 12px; line-height: 1.45; }
+    .cu-res-line.sub { font-size: 11px; opacity: var(--opacity-sub); font-variant-numeric: tabular-nums; }
+    .cu-res-line.good { color: var(--accent-color); }
+    .cu-res-line.ok { color: var(--warn-color); }
+    .cu-res-line.bad { color: var(--danger-color); }
+    .cu-res-line.warn { color: var(--warn-color); font-size: 11px; line-height: 1.45; }
+    .cu-res-line.saved { opacity: var(--opacity-sub); }
+    .cu-lockto { margin-top: 4px; font-size: 11px; align-self: flex-start; }
+    .cu-wirekey { font-size: 11px; opacity: var(--opacity-mute); line-height: 1.6; }
+    .cu-wirekey .k-floor { color: #ffdead; }
+    .cu-wirekey .k-grid { color: rgba(255, 222, 173, .6); }
+    .cu-wirekey .k-wall { color: #78dcff; }
+    .cu-wirekey .k-line { color: #fffaf0; }
+    .cu-wirekey .k-mark { color: #ffdead; }
+    .cu-wirekey .k-reproj { color: #5ad19a; }
+    .cu-danger { margin-top: auto; padding-top: 6px; }
+    .cu-danger button { font-size: 11px; }
+    /* カメラ列の 📐 欄に足す較正の入口とバッジ */
+    .calib-row { margin-top: 6px; }
+    .calib-badge { font-size: 11px; opacity: var(--opacity-mute); }
+    .calib-badge.ok { color: var(--accent-color); opacity: 1; }
+    .calib-badge.warn { color: var(--warn-color); opacity: 1; }
+  </style>
 </head>
 <body>
   <div class="app" data-mode="author">

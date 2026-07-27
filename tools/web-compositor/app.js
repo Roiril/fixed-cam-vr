@@ -14,6 +14,7 @@ import { normalizeTimelineV3 } from './timeline-model.js';
 import { createShowSim } from './show-sim.js';
 import { createAtelier } from './atelier.js';
 import { createActorsPanel } from './actors.js';
+import { createCalibUi, calibBadgeText } from './calib-ui.js';
 
 const $ = (s) => document.querySelector(s);
 const MW = 640, MH = 360;
@@ -89,6 +90,7 @@ let lastUnity = {};
 const columns = new Map();   // camId -> column controller
 let floorMap = null;
 let actorsPanel = null;
+let calibUi = null;   // 🎯 カメラ姿勢の較正パネル（カメラ列から開く全画面オーバーレイ）
 let timeline = null;
 let showSim = null;   // 🕹 ショーシミュレーション（フロアマップのドットで駆動）
 let lastDiscovery = { devices: [], conflicts: [] };
@@ -233,7 +235,11 @@ function buildColumn(cam, index) {
         <label>水平画角°<input class="pose-f pose-fov" type="number" step="1" title="レンズの横方向の画角。フロアマップの扇と同じ軸（縦ではない）"></label>
         <button class="pose-clear" title="姿勢を未設定に戻す（このカメラでは CG 人形が出なくなる）">✕</button>
       </div>
-      <div class="pose-hint">未設定のカメラでは CG 人形を出しません（当てずっぽうのパースで出す方が体験を壊すため）。フロアマップの 📐 モードでドラッグしても置けます。</div>
+      <div class="pose-row calib-row">
+        <button class="calib-open" title="実映像の床の点をクリックして姿勢・画角・レンズ歪みを実測する。手で置いた概算より桁違いに正確で、較正があればそちらが使われる">🎯 姿勢を合わせる</button>
+        <span class="calib-badge"></span>
+      </div>
+      <div class="pose-hint">未設定のカメラでは CG 人形を出しません（当てずっぽうのパースで出す方が体験を壊すため）。フロアマップの 📐 モードでドラッグしても置けます。<b>🎯 で較正すると、この概算より較正の方が使われます</b>（数値は残るので較正を捨てれば戻ります）。</div>
     </div>
 
     <div class="col-sec">
@@ -385,6 +391,8 @@ function buildColumn(cam, index) {
     refs.statusEl.textContent = '● LIVE'; refs.statusEl.className = 'col-status ok';
     refs.liveOk = true;
     refs.applyAspect && refs.applyAspect();
+    // 実寸が分かって初めて「較正はこの解像度用か」を判定できる（px 焦点距離は解像度に従属）。
+    refs.syncCalib && refs.syncCalib();
   });
   refs.liveImg.addEventListener('error', () => {
     refs.statusEl.textContent = '✕ 切断 — 再試行'; refs.statusEl.className = 'col-status ng';
@@ -460,6 +468,18 @@ function buildColumn(cam, index) {
     window.dispatchEvent(new CustomEvent('fc-cameras-changed'));
   };
   refs.syncPose();
+
+  // ===== 🎯 較正（実測の解 = cameras[i].calib）=====
+  //   pose（人が置く概算）とは別枠。較正があれば Unity はそちらを使うので、
+  //   「較正済みかどうか」と「いまの映像と合っているか（解像度）」をここで常に見せる。
+  const calibBadge = q('.calib-badge');
+  refs.syncCalib = () => {
+    const txt = calibBadgeText(refs.cam, refs.liveImg.naturalWidth, refs.liveImg.naturalHeight);
+    calibBadge.textContent = txt || '未較正（📐 の概算を使用）';
+    calibBadge.className = 'calib-badge' + (txt ? (txt.includes('⚠') ? ' warn' : ' ok') : '');
+  };
+  q('.calib-open').onclick = () => calibUi && calibUi.open(refs.cam.id);
+  refs.syncCalib();
 
   // ===== ビュー/生映像の縦横比をカメラ実寸に合わせる（黒レターボックス背景を出さない）=====
   const viewCanvas = q('.view-canvas');
@@ -604,6 +624,7 @@ function syncColumn(refs, cam) {
   setV(refs.portI, cam.port || 8080);
   setV(refs.authI, cam.auth || '');
   refs.syncPin && refs.syncPin();
+  refs.syncCalib && refs.syncCalib();
   // 表示は描画と同じ解決（カメラ post があれば**層まるごと**それ・無ければ全体 post）。
   // キー単位で全体へフォールバックすると「表示 ≠ 実際の絵」になる。
   const hasPost = !!cam.post;
@@ -689,7 +710,7 @@ async function pollState() {
         rev = s.rev; state = s;
         renderColumns(); syncGlobalFx(); renderStatus(); renderLiveCuePanel(); renderLatchBar();
         floorMap && floorMap.onState(s); timeline && timeline.onState(s); showSim && showSim.onState(s);
-        actorsPanel && actorsPanel.onState(s);
+        actorsPanel && actorsPanel.onState(s); calibUi && calibUi.onState(s);
         atelier && atelier.render();   // カメラ集合の変化を工房の列へ（署名一致なら no-op）
         renderBgmSection(); renderRunPanel(); renderPreflight();
       }
@@ -1254,6 +1275,24 @@ if ($('#floorMap')) {
   if (state) floorMap.onState(state);
 }
 
+// ---- 🎯 カメラ姿勢の較正（実映像の床点から解く）------------------------------
+//   カメラ列の［🎯 姿勢を合わせる］から開く全画面オーバーレイ。保存先は cameras[i].calib で、
+//   pose（フロアマップでドラッグする概算）とは別枠のまま置く（同居させると解が壊れる）。
+calibUi = createCalibUi(document.body, {
+  getCameras: () => state?.cameras || [],
+  getLayout: () => state?.layout || null,
+  // 静止フレームの元。カメラ列の <img>（卓サーバの /cam プロキシ + crossOrigin=anonymous なので
+  // canvas が汚染されず読み出せる。列の 📷 キャプチャと同じ経路）。
+  getLiveImg: (camId) => { const c = columns.get(camId); return c ? c.liveImg : null; },
+  saveCameras: async (cams) => {
+    if (state) state.cameras = cams;
+    const r = await postState({ cameras: cams });
+    renderColumns();                                    // 列のバッジを即更新（long-poll を待たない）
+    window.dispatchEvent(new CustomEvent('fc-cameras-changed'));
+    return r;
+  },
+});
+
 // ---- カメラを増やす（4 台目＝演出専用のカメラ D 用）--------------------------
 //   index は Unity 側 CameraStreamRegistry.sources[] の並びと 1 対 1（末尾に足すので既存は動かない）。
 if ($('#camAdd')) {
@@ -1291,6 +1330,7 @@ window.addEventListener('fc-cameras-changed', () => {
   for (const c of columns.values()) {
     c.syncRole && c.syncRole();
     c.syncPose && c.syncPose();
+    c.syncCalib && c.syncCalib();
   }
   if (floorMap && state) floorMap.onState(state);
 });
