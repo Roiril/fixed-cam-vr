@@ -264,6 +264,48 @@ export function projectPoint(calib, x, y, z) {
   return { u: calib.cxPx + calib.fxPx * nd[0], v: calib.cyPx - calib.fyPx * nd[1] };
 }
 
+/**
+ * 映像上の画素 → 床平面 (y=planeY) 上の course 座標。**`projectPoint` の厳密な逆**。
+ *
+ * なぜ要るか: 人形の立ち位置を数値で打たせると誰も置けない（ユーザーからの明示的な指摘）。
+ * 「映像の床をクリックしたらそこに立つ」を成立させるのがこの関数。較正が解けているカメラなら、
+ * 画素 1 個から床の 1 点が一意に決まる（床が平面だと分かっているので奥行きの不定性が消える）。
+ *
+ * 順序は projectPoint の逆をそのまま辿る: 画素 → 歪んだ正規化 → **undistort** → カメラ座標のレイ →
+ * ワールド方向 → 床との交点。ここで undistort を飛ばすと、広角レンズの画面端で数十 cm ずれた
+ * 場所に人形が立ち、しかも「クリックした場所に出ない」理由が誰にも分からなくなる。
+ *
+ * @param {object} calib 較正（projectPoint と同じキー）
+ * @param {number} u @param {number} v 画素座標（左上原点）
+ * @param {number} [planeY] 交わらせる水平面の高さ (m)。既定は床 (0)
+ * @returns {{x:number, z:number, t:number}|null} course 座標と、カメラからのレイ長。
+ *   地平線より上（床と交わらない）・カメラ後方へ伸びる方向なら null
+ */
+export function unprojectToFloor(calib, u, v, planeY = 0) {
+  if (!calib) return null;
+  const fx = calib.fxPx, fy = calib.fyPx > 0 ? calib.fyPx : calib.fxPx;
+  if (!(fx > 0) || !(fy > 0)) return null;
+
+  // v は下向きなので符号が反転する（projectPoint の `v = cy - fy * ny` の逆）。
+  const [nx, ny] = undistortNorm((u - calib.cxPx) / fx, (calib.cyPx - v) / fy, calib.k1 || 0);
+
+  // p_cam = t * (nx, ny, 1) をワールドへ。projectPoint は p_cam = R^T d なので d = R p_cam。
+  const R = unityEulerToMatrix(-calib.pitchDeg, calib.yawDeg, calib.rollDeg || 0);
+  const dx = R[0][0] * nx + R[0][1] * ny + R[0][2];
+  const dy = R[1][0] * nx + R[1][1] * ny + R[1][2];
+  const dz = R[2][0] * nx + R[2][1] * ny + R[2][2];
+
+  // 床と平行なレイ（地平線）はここで弾く。弾かないと t が発散して、画面のわずか上を
+  // クリックしただけで人形が数百 m 先へ飛ぶ。
+  if (Math.abs(dy) < 1e-9) return null;
+  const t = (planeY - calib.y) / dy;
+  if (!(t > 1e-6) || !Number.isFinite(t)) return null;    // カメラ後方 / 自分自身の位置
+
+  const x = calib.x + t * dx, z = calib.z + t * dz;
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  return { x, z, t };
+}
+
 /** Unity の Euler（ZXY 順・度）→ 回転行列（行優先・ローカル→ワールド）。 */
 export function unityEulerToMatrix(xDeg, yDeg, zDeg) {
   const r = Math.PI / 180;

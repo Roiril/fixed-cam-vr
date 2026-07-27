@@ -74,6 +74,93 @@
     .calib-badge { font-size: 11px; opacity: var(--opacity-mute); }
     .calib-badge.ok { color: var(--accent-color); opacity: 1; }
     .calib-badge.warn { color: var(--warn-color); opacity: 1; }
+
+    /* 🧱 部屋の 3D プロキシ / 💡 CG 照明（floormap.js の 🧱 モードと照明パネル）。
+       既存の .fm-reg / .fm-lines と同じ骨格（1px 罫線 + 左 2px のアクセント帯）に揃える。
+       壁の水色 #78dcff は較正 UI のワイヤー配色（cu-wirekey .k-wall）と同じ色で、
+       「同じ幾何を別の面から見ている」ことを配色で示す。 */
+    .fm-room {
+      display: flex; flex-direction: column; gap: 6px;
+      padding: 8px; border: 1px solid var(--line-soft); border-left: 2px solid #78dcff;
+    }
+    .fm-room-note { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.4; min-height: 1.3em; }
+    .fm-room-note.warn { color: var(--warn-color); opacity: 1; }
+    .fm-room-tool { padding: 4px 10px; font-size: 11px; }
+    .fm-room-tool.on { border-color: #78dcff; color: #78dcff; }
+    .fm-room-sel { display: flex; flex-direction: column; gap: 5px; }
+    .fm-room-sel.hint-only { font-size: 11px; opacity: var(--opacity-mute); line-height: 1.4; }
+    .fm-room-list { display: flex; flex-direction: column; gap: 4px; }
+    .fm-room-item { display: flex; align-items: center; gap: 5px; }
+    .fm-room-badge { flex: 0 0 auto; width: 16px; text-align: center; font-size: 12px; }
+    .fm-room-pick {
+      flex: 1 1 auto; min-width: 0; text-align: left; padding: 2px 6px; font-size: 11px;
+      border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .fm-room-item.on .fm-room-pick { border-color: #78dcff; color: #78dcff; }
+    .fm-room-info { font-size: 10.5px; opacity: var(--opacity-mute); white-space: nowrap; }
+    .fm-room-info.warn { color: var(--danger-color); opacity: 1; }
+    .fm-room-import, .fm-room-clear { padding: 4px 10px; font-size: 11px; }
+    .fm-canvas.fm-room-edit { cursor: crosshair; }
+
+    .fm-light {
+      display: flex; flex-direction: column; gap: 6px;
+      padding: 8px; border: 1px solid var(--line-soft); border-left: 2px solid #ffdead;
+    }
+    .fm-light-note { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.4; min-height: 1.3em; }
+    .fm-light-note.ghost { opacity: var(--opacity-mute); }
+    .fm-light-rows { display: flex; flex-direction: column; gap: 4px; }
+    .fm-light-row { display: flex; align-items: center; gap: 6px; }
+    /* まだ Unity が読んでいない項目。押しても実機が変わらないので、著作面で先に落として見せる */
+    .fm-light-row.pending { opacity: var(--opacity-mute); }
+    .fm-light-lbl { flex: 0 0 108px; font-size: 11px; }
+    .fm-light-row input[type="range"] { flex: 1 1 auto; min-width: 70px; accent-color: var(--accent-color); }
+    .fm-light-num { flex: 0 0 62px; width: 62px; font-size: 11px; padding: 2px 4px; text-align: right; }
+    .fm-light-unit { flex: 0 0 14px; font-size: 10px; opacity: var(--opacity-mute); }
+    .fm-light-sw { flex: 0 0 auto; width: 14px; height: 14px; display: inline-block; border: 1px solid var(--line-soft); }
+    .fm-light-clear { padding: 4px 10px; font-size: 11px; }
+
+    /* 📍 CG 人形の立ち位置（ribbon.js の openPlaceUi）。較正 UI と同じ作法の全画面オーバーレイ。
+       人形の輪郭は寒色 #7ad6ff で、部屋のワイヤー（暖色 #ffdead）と必ず見分けが付くようにする
+       — 同系色にすると「線がずれているのか人形がずれているのか」が判別できなくなる。 */
+    .place-ui { position: fixed; inset: 0; z-index: 200; display: flex; }
+    .pu-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .82); }
+    .pu-panel {
+      position: relative; margin: auto; width: min(1100px, 96vw); max-height: 94vh;
+      display: flex; flex-direction: column; overflow: hidden;
+      background: radial-gradient(circle at top left, #1a1a1a 0%, #000 100%);
+      border: 1px solid var(--line-soft);
+    }
+    .pu-head {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .pu-head .spacer { flex: 1; }
+    .pu-frameinfo { font-size: 11px; opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
+    .pu-body { display: flex; gap: 14px; padding: 12px 14px 16px; overflow: auto; }
+    .pu-viewcol { flex: 1 1 620px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+    .pu-canvas-wrap { position: relative; border: 1px solid var(--line-soft); background: #000; }
+    .pu-canvas { display: block; width: 100%; height: auto; cursor: crosshair; touch-action: none; }
+    .pu-hint { font-size: 11px; opacity: var(--opacity-mute); line-height: 1.5; }
+    .pu-side { flex: 0 0 300px; display: flex; flex-direction: column; gap: 8px; }
+    .pu-warn { font-size: 11px; line-height: 1.45; display: none; }
+    .pu-warn.on { display: block; color: var(--warn-color); }
+    .pu-grid { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+    .pu-grid label { display: flex; align-items: center; gap: 4px; font-size: 11px; opacity: var(--opacity-sub); }
+    .pu-grid input { width: 68px; text-align: right; font-variant-numeric: tabular-nums; }
+    .pu-issue { font-size: 11px; line-height: 1.45; display: none; }
+    .pu-issue.on { display: block; color: var(--warn-color); }
+    .pu-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pu-key { font-size: 11px; opacity: var(--opacity-mute); line-height: 1.6; }
+    .pu-key .k-floor { color: #ffdead; }
+    .pu-key .k-wall { color: #78dcff; }
+    .pu-key .k-proxy { color: #7ad6ff; }
+    .pu-note { margin-top: auto; font-size: 11px; opacity: var(--opacity-mute); line-height: 1.5; }
+    /* カット編集の「立ち位置」行（📍 画面で置く の入口） */
+    .rb-s-cgmode-l { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; }
+    .rb-s-place-note { font-size: 11px; color: var(--warn-color); }
+    /* 🕹 検証の画面に重ねる人形の輪郭（show-sim.js）。合成器の WebGL キャンバスの上に載せる。 */
+    .ss-proxy { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   </style>
 </head>
 <body>
@@ -241,7 +328,7 @@
     <div class="sim-row" data-group="author">
     <section class="floormap">
       <div class="mc-title">フロアマップ（ゾーン校正）
-        <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。マップ上の <b>🖌 塗る / 📍 位置合わせ点 / 🚶 歩かせる / 📐 カメラ姿勢 / 📏 通過ライン</b> で操作が切り替わる。<b>📏 通過ライン</b>＝「体験者がここを通過したら演出」の発火点（線分）をドラッグで引く。<b>ラインは担当カメラに紐づく</b>ので、他の領域で踏んでも何も起きない。塗る＝パレットの色（＝担当カメラ）でタイルを塗り、💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。<b>🚶 歩かせる</b>ではマップのどこを押してもそこに体験者が立ち、押したまま動かすと歩く → 右の 🕹 ショーシミュレーションが同時に動く。</span>
+        <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。マップ上の <b>🖌 塗る / 📍 位置合わせ点 / 🚶 歩かせる / 📐 カメラ姿勢 / 📏 通過ライン / 🧱 部屋</b> で操作が切り替わる。<b>🧱 部屋</b>＝実物の壁・什器を写した<b>不可視の 3D プロキシ</b>（VR には映らない）。1 つの幾何が <b>CG 人形を隠す壁・影の落ち先・較正の参照</b>を兼ねるので、用途ごとに別々に作らないこと。人形の陰影と影は下の <b>💡 CG 照明</b> で決める（Quest に環境光の推定は無いので人が実際の部屋を見て合わせる）。<b>📏 通過ライン</b>＝「体験者がここを通過したら演出」の発火点（線分）をドラッグで引く。<b>ラインは担当カメラに紐づく</b>ので、他の領域で踏んでも何も起きない。塗る＝パレットの色（＝担当カメラ）でタイルを塗り、💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。<b>🚶 歩かせる</b>ではマップのどこを押してもそこに体験者が立ち、押したまま動かすと歩く → 右の 🕹 ショーシミュレーションが同時に動く。</span>
       </div>
       <div id="floorMap"></div>
     </section>

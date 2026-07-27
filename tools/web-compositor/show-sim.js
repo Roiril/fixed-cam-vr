@@ -9,6 +9,9 @@
 //   MJPEG の遅延・位置合わせ・Quest の性能は卓では分からない（パネル下部に常時明示）。
 //   卓で通っても実機確認は要る。
 
+import {
+  actorProxyGeometry, drawActorProxy, proxyIssueText, resolveProxyCalib, DEFAULT_HEIGHT_M,
+} from './actor-proxy.js';
 import { camColor, escapeHtml, createMediaCache, FX_DEFAULT } from './common.js';
 import { createCompositeView } from './composite-view.js';
 import { durationOf, onDurationResolved } from './media-duration.js';
@@ -41,6 +44,9 @@ export function createShowSim(container, deps) {
         <div class="ss-screen">
           <div class="ss-screen-view">
             <canvas class="ss-canvas" width="480" height="360"></canvas>
+            <!-- CG 人形の**輪郭だけ**を重ねる層。合成器は WebGL なので 2D を上に載せる。
+                 卓は人形を実描画しない（設計 §2.1）ので、ここに出るのは足元・身長・向きの線。 -->
+            <canvas class="ss-proxy" width="480" height="360"></canvas>
             <div class="ss-screen-badge"></div>
           </div>
           <div class="ss-screen-side">
@@ -186,9 +192,83 @@ export function createShowSim(container, deps) {
     const st = d.shot && d.shot.step;
     if (st && st.cg) {
       const where = st.cgMode === 'fixed' ? '決めた位置' : '体験者の位置';
-      d.detail += `　👤 CG 人形「${st.cg}」が${where}に立ちます（この画には出ません）`;
+      // 輪郭は重ねるが、それは**見た目ではない**。文字の明示は残す（輪郭を「実際の絵」と
+      // 読まれると、著作者が Unity での最終確認を飛ばす）。
+      d.detail += `　👤 CG 人形「${st.cg}」が${where}に立ちます（輪郭だけ・実際の見た目は Unity で確認）`;
     }
     return d;
+  }
+
+  // ---- CG 人形の輪郭プロキシ（画に重ねる）--------------------------------------
+  //   ribbon の 📍 画面で置く と**同じ幾何・同じ描画関数**を使う（別々に描くと、どちらが
+  //   正しいのか分からなくなる）。ここは読み取り専用 — シミュレータから立ち位置は変えられない。
+  const proxyCanvas = q('.ss-proxy');
+  const proxyCtx = proxyCanvas.getContext('2d');
+
+  /** 合成器の contain-fit（composite-view の preScale）と同じ写像。映像実寸 → キャンバス画素。 */
+  function frameToCanvas(imgW, imgH) {
+    const W = proxyCanvas.width, H = proxyCanvas.height;
+    const fa = W / H, a = (imgW > 0 && imgH > 0) ? imgW / imgH : fa;
+    const [sx, sy] = a > fa ? [1, fa / a] : [a / fa, 1];
+    return (p) => ({
+      x: W / 2 + (p.u / imgW - 0.5) * sx * W,
+      y: H / 2 + (p.v / imgH - 0.5) * sy * H,
+    });
+  }
+
+  /**
+   * 人形の輪郭を画へ重ねる。**出ない時はその理由を返す**（返り値はバッジに出る）。
+   * 黙って落とすのは「著作した演出が黙って消える」と同型の罪。
+   */
+  function drawProxyOverlay(d) {
+    proxyCtx.clearRect(0, 0, proxyCanvas.width, proxyCanvas.height);
+    const st = d.shot && d.shot.step;
+    if (!st || !st.cg || !state || !meta) return '';
+    // 素材（事前映像・静止画）のカットには構図を決めるカメラが無い。実機は最後のゾーンのカメラへ
+    // フォールバックして人形を立てるので、**素材の構図とは無関係な向きで出る**（設計 §5 罠 9・未決着）。
+    // 卓が輪郭を出すとその嘘を追認することになるので、出さずに事実だけ言う。
+    if (d.cam < 0) {
+      return `👤 人形「${st.cg}」は素材のカットに置かれています — この画には重ねられません`
+        + '（実機は直前のゾーンのカメラで投影するので、素材の構図とは合いません）';
+    }
+    const cam = (state.cameras || [])[d.cam];
+    if (!cam) return '';
+
+    // 実寸はライブ映像が真（来ていなければ較正の焼き込み値で代用する）。
+    const camObj = meta.cameras[d.cam];
+    const img = (camObj && deps.getLiveImg) ? deps.getLiveImg(camObj.id) : null;
+    const imgW = (img && img.naturalWidth) || (cam.calib && cam.calib.srcW) || 640;
+    const imgH = (img && img.naturalHeight) || (cam.calib && cam.calib.srcH) || 480;
+
+    const res = resolveProxyCalib(cam, imgW, imgH);
+    // 姿勢が無いカメラでは実機も人形を出さない。卓だけ出すと「卓では出たのに実機で出ない」になる。
+    if (!res.calib) return `👤 ${res.note}`;
+    const actor = (state.actors || []).find((a) => a.id === st.cg) || null;
+    if (!actor) return `👤 人形「${st.cg}」は 🎭 CG 人形に定義がありません（実機でも出ません）`;
+    const heightM = actor.heightM > 0 ? actor.heightM : DEFAULT_HEIGHT_M;
+
+    // follow は体験者の足元（＝いまドラッグしている点）。向きは卓が持っていないので矢印を出さない
+    // （適当な向きを描くと、それが著作値だと誤読される）。
+    const fixed = st.cgMode === 'fixed';
+    const place = fixed
+      ? (st.hasPlacement && st.placement ? st.placement : placementFromActor(actor))
+      : { x: pos.x, z: pos.z, yawDeg: 0 };
+    let g = actorProxyGeometry(res.calib, place, heightM, { srcW: imgW, srcH: imgH });
+    if (!fixed) g = { ...g, arrow: null };
+
+    if (g.visible) {
+      drawActorProxy(proxyCtx, g, {
+        toPx: frameToCanvas(imgW, imgH),
+        scale: proxyCanvas.width / 640,
+        dim: res.source !== 'calib',
+        label: (actor.name || actor.id) + (res.source === 'pose' ? '（概算）' : ''),
+      });
+    }
+    const issue = proxyIssueText(g, res.source);
+    return issue ? `👤 ${actor.name || actor.id}: ${issue}` : '';
+  }
+  function placementFromActor(a) {
+    return a ? { x: a.fixedX || 0, z: a.fixedZ || 0, yawDeg: a.fixedYawDeg || 0 } : { x: 0, z: 0, yawDeg: 0 };
   }
 
   function resolveScreenInner() {
@@ -295,7 +375,9 @@ export function createShowSim(container, deps) {
   let lastScreenKey = '';
   function renderScreen() {
     const d = resolveScreen();
-    const issue = screenIssue(d);
+    // 輪郭は毎 tick 描き直す（follow は体験者の足元に付いて動くので、DOM の差分では間引けない）。
+    const proxy = drawProxyOverlay(d);
+    const issue = [screenIssue(d), proxy].filter(Boolean).join(' / ');
     // 停止中も毎 tick 呼ばれるので、内容が変わった時だけ DOM を書く。
     const key = `${d.cam}|${d.detail}|${issue}`;
     if (key === lastScreenKey) return;

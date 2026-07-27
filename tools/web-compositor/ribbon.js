@@ -20,6 +20,13 @@
 //   「進入 +20s」の演出が実測平均 8s の区間に置かれている、という設計上いちばん危ない状態を
 //   作者に見せる唯一の手段（計画 §4 / §8 論点 5）。
 
+import {
+  actorProxyGeometry, drawActorProxy, proxyIssueText, resolveProxyCalib, DEFAULT_HEIGHT_M,
+} from './actor-proxy.js';
+import { projectPoint, unprojectToFloor } from './calib.js';
+// 較正 UI の純関数（部屋のワイヤー）だけ借りる。**同じ線を 2 度書かない** —
+// 較正で見た絵と人形を置く時の絵が食い違うと、どちらがずれているのか判断できなくなる。
+import { wireSegments } from './calib-ui.js';
 import { FX, FX_DEFAULT, camColor, escapeHtml, isVideoUrl } from './common.js';
 import { createCueEditor } from './cue-editor.js';
 import { durationOf, onDurationResolved } from './media-duration.js';
@@ -173,6 +180,55 @@ export function createRibbon(container, deps) {
   }
   function globalPost() { return (deps.getGlobalPost && deps.getGlobalPost()) || FX_DEFAULT; }
   function captureItems() { return (deps.getCaptures && deps.getCaptures()) || []; }
+
+  // ---- CG 人形の立ち位置 -------------------------------------------------------
+  //   位置は**人形ではなくカット**が持つ（同じ人形を別のカットで別の場所に立たせるため。
+  //   設計 2026-07-27_cg-compositing-rebuild.md §2.6）。actor 側の fixedX/Z/YawDeg は
+  //   「まだカットに置いていない時の初期値」としてだけ読む（旧データの後方互換）。
+  function actorById(id) { return actors.find((a) => a.id === id) || null; }
+  function actorHeight(id) {
+    const a = actorById(id);
+    return a && a.heightM > 0 ? a.heightM : DEFAULT_HEIGHT_M;
+  }
+  function placementOf(s) {
+    // hasPlacement は**書き出しの**present-flag であって「編集中に値を覚えているか」ではない。
+    // 「体験者の位置」へ切り替えると flag は false になるが、値は残す — 戻した時に
+    // 苦労して置いた立ち位置が 0 に戻るのは事故に見える。
+    // 値が丸ごと 0 のときだけ actor の既定へ落とす（正規化が入れる空の placement と、
+    // 著作された placement を、これ以外に見分ける手段が無い。actor 既定も普通は 0 なので実害は出ない）。
+    const p = s.placement;
+    if (p && (numOr(p.x, 0) || numOr(p.z, 0) || numOr(p.yawDeg, 0))) {
+      return { x: numOr(p.x, 0), z: numOr(p.z, 0), yawDeg: numOr(p.yawDeg, 0) };
+    }
+    const a = actorById(s.cg);
+    return {
+      x: a ? numOr(a.fixedX, 0) : 0, z: a ? numOr(a.fixedZ, 0) : 0, yawDeg: a ? numOr(a.fixedYawDeg, 0) : 0,
+    };
+  }
+  function setPlacement(s, p) {
+    s.placement = { x: p.x, z: p.z, yawDeg: p.yawDeg };
+    s.hasPlacement = !!s.cg && s.cgMode === TAKE.CG_FIXED;
+  }
+  /** 人形の投影に使うカメラ。ライブ／録画はカットのカメラ、素材カットは区間のカメラ。 */
+  function stepCameraIndex(s) {
+    if ((s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC) && s.camera >= 0) return s.camera;
+    return sel ? sel.camera : -1;
+  }
+  /**
+   * 人形が**黙って出ない**条件をここで言い切る。実機のガードと同じ判定
+   * （姿勢も較正も無いカメラでは ShowCgLayer が人形を出さない）。
+   */
+  function cgIssue(s) {
+    if (!s.cg) return null;
+    if (!actorById(s.cg)) return `人形「${s.cg}」は 🎭 CG 人形に定義がありません（出ません）`;
+    const cam = cameras[stepCameraIndex(s)];
+    if (!cam) return 'このカットが映すカメラが決まっていません（人形も出ません）';
+    if (!(cam.calib && cam.calib.fxPx > 1) && !cam.pose) {
+      return `${camLabel(stepCameraIndex(s))} は姿勢が未著作です（実機では人形が出ません。`
+        + '📐 カメラ姿勢 で置くか 🎯 姿勢を合わせる で較正してください）';
+    }
+    return null;
+  }
 
   // 演出 id は区間内で一意（Unity は空なら L<lap>C<cam>#<i> を補うが、UI 側の選択キーにも使う）。
   function uniqueTakeId(seg, base) {
@@ -1159,6 +1215,10 @@ export function createRibbon(container, deps) {
     let cueOpts = '<option value="">（重ねない）</option>';
     for (const c of cues) cueOpts += `<option value="${escapeHtml(c.id)}"${s.cueId === c.id ? ' selected' : ''}>${escapeHtml(c.name || c.id)}</option>`;
     if (s.cueId && !cues.some((c) => c.id === s.cueId)) cueOpts += `<option value="${escapeHtml(s.cueId)}" selected>${escapeHtml(s.cueId)}（未定義）</option>`;
+    // 立ち位置のラジオはカットごとに別グループにする（name が衝突すると別カットのカットを選び直す）。
+    const cgModeName = `rb-cgmode-${t.id}-${idx}`;
+    const fixedPlace = !!s.cg && s.cgMode === TAKE.CG_FIXED;
+    const pl = placementOf(s);
 
     const isLive = s.source === TAKE.SRC_LIVE;
     const isRec = s.source === TAKE.SRC_REC;
@@ -1199,10 +1259,17 @@ export function createRibbon(container, deps) {
         <label><input class="rb-s-transms" type="number" min="0" step="10" value="${s.transitionMs || 0}">ms<span class="rb-hint2">0=既定</span></label>
         <label class="chk"><input class="rb-s-post-on" type="checkbox" ${s.hasPost ? 'checked' : ''}>🎨 画像加工を上書き</label>
         <label title="映像の上に CG の人形を立てる。人形は 🎭 CG 人形パネルで定義する。カメラ姿勢が著作済みのカメラでのみ出る">CG 人形<select class="rb-s-cg">${cgOpts}</select></label>
-        <label class="rb-s-cgmode-l" style="display:${s.cg ? '' : 'none'}">立ち位置<select class="rb-s-cgmode">
-          <option value="${TAKE.CG_FOLLOW}"${s.cgMode !== TAKE.CG_FIXED ? ' selected' : ''}>体験者の位置</option>
-          <option value="${TAKE.CG_FIXED}"${s.cgMode === TAKE.CG_FIXED ? ' selected' : ''}>決めた位置</option>
-        </select></label>
+        <span class="rb-s-cgmode-l" style="display:${s.cg ? '' : 'none'}">立ち位置
+          <label class="chk"><input type="radio" name="${cgModeName}" class="rb-s-cgmode-follow" ${fixedPlace ? '' : 'checked'}>体験者の位置</label>
+          <label class="chk"><input type="radio" name="${cgModeName}" class="rb-s-cgmode-fixed" ${fixedPlace ? 'checked' : ''}>決めた位置</label>
+          <span class="rb-s-place-note">${escapeHtml(cgIssue(s) || '')}</span>
+        </span>
+      </div>
+      <div class="rb-grid rb-s-place" style="display:${fixedPlace ? '' : 'none'}">
+        <label title="course 空間の X（東西）。フロアマップと同じ座標系">X<input class="rb-s-px" type="number" step="0.05" value="${round2(pl.x)}">m</label>
+        <label title="course 空間の Z（南北）。フロアマップと同じ座標系">Z<input class="rb-s-pz" type="number" step="0.05" value="${round2(pl.z)}">m</label>
+        <label title="人形が向く方向。0° = course +Z（フロアマップの上・体験者から見て奥）">向き<input class="rb-s-pyaw" type="number" step="5" value="${Math.round(pl.yawDeg)}">°</label>
+        <button class="rb-s-place-open accent" title="このカットが映すカメラの実映像を出して、床をクリックで立ち位置を置く">📍 画面で置く</button>
       </div>
       <details class="rb-s-ovr"><summary>素材の上書き（-1 = 素材の設定のまま）</summary>
         <div class="rb-grid">
@@ -1224,7 +1291,14 @@ export function createRibbon(container, deps) {
       if (s.source !== TAKE.SRC_LIVE && s.source !== TAKE.SRC_REC) s.camera = -1;
       s.recLap = s.source === TAKE.SRC_REC ? Math.max(1, Math.round(numOr(r('.rb-s-reclap').value, 1))) : 0;
       s.cg = r('.rb-s-cg').value.trim();
-      s.cgMode = r('.rb-s-cgmode').value === TAKE.CG_FIXED ? TAKE.CG_FIXED : TAKE.CG_FOLLOW;
+      s.cgMode = r('.rb-s-cgmode-fixed').checked ? TAKE.CG_FIXED : TAKE.CG_FOLLOW;
+      // 立ち位置は「決めた位置」を選んでいる間だけ実体を持つ（present-flag は宣言 bool ∧ 実体の AND 規約）。
+      // 体験者追従に戻した時に placement を書き残すと、Unity 側で幽霊の立ち位置が武装する。
+      setPlacement(s, {
+        x: numOr(r('.rb-s-px').value, pl.x),
+        z: numOr(r('.rb-s-pz').value, pl.z),
+        yawDeg: numOr(r('.rb-s-pyaw').value, pl.yawDeg),
+      });
       s.assetUrl = r('.rb-s-asseturl').value.trim();
       if (!isAssetSource(s.source)) s.assetUrl = '';
       s.cueId = r('.rb-s-cue').value;
@@ -1246,7 +1320,10 @@ export function createRibbon(container, deps) {
     r('.rb-s-cam').onchange = () => commit(true);
     r('.rb-s-reclap').onchange = () => commit(true);
     r('.rb-s-cg').onchange = () => commit(true);
-    r('.rb-s-cgmode').onchange = () => commit(true);
+    row.querySelectorAll('.rb-s-cgmode-follow, .rb-s-cgmode-fixed').forEach((el) => { el.onchange = () => commit(true); });
+    row.querySelectorAll('.rb-s-px, .rb-s-pz, .rb-s-pyaw').forEach((el) => { el.onchange = () => commit(false); });
+    // 📍 画面で置く: 実映像の床をクリック → 立ち位置。数値だけでは誰も置けない（ユーザーの明示的な指摘）。
+    r('.rb-s-place-open').onclick = () => openPlaceUi(t, s, idx);
     r('.rb-s-durkind').onchange = () => commit(true);
     r('.rb-s-dur').onchange = () => commit(true);
     // 素材 select → URL 欄へ流し込む（sa:// 等の手入力も残せるように 2 段構え）
@@ -1341,6 +1418,270 @@ export function createRibbon(container, deps) {
     editorOpen = true;
   }
   function closeCueEditor() { if (cueEditor) cueEditor.el.style.display = 'none'; editorOpen = false; cueEditorTarget = null; }
+
+  // ---- 📍 画面で置く（CG 人形の立ち位置）---------------------------------------
+  //
+  //   「座標指定でしか人形を配置できないのも難しい」（ユーザー原文）への答え。
+  //   実映像の床をクリックすると、較正の**逆写像**（calib.unprojectToFloor）で course 座標が
+  //   一意に決まる — 床が平面だと分かっているので奥行きの不定性が消える。
+  //
+  //   ⚠ ここに描くのは**輪郭プロキシだけ**。卓は CG 人形を実描画しない（設計 §2.1）。
+  //     写実に見せると著作者がそれを信じて Unity での最終確認を飛ばす。半透明の輪郭・単色を守る。
+  let placeUi = null;
+
+  function ensurePlaceUi() {
+    if (placeUi) return placeUi;
+    const root = document.createElement('div');
+    root.className = 'place-ui';
+    root.style.display = 'none';
+    root.innerHTML = `
+      <div class="pu-backdrop"></div>
+      <div class="pu-panel" role="dialog" aria-modal="true" aria-label="CG 人形の立ち位置">
+        <div class="pu-head">
+          <b class="pu-title">📍 画面で人形を置く</b>
+          <span class="pu-frameinfo"></span>
+          <span class="spacer"></span>
+          <button class="pu-close">✕ 閉じる</button>
+        </div>
+        <div class="pu-body">
+          <div class="pu-viewcol">
+            <div class="pu-canvas-wrap"><canvas class="pu-canvas" width="640" height="480"></canvas></div>
+            <div class="pu-hint">映像の<b>床をクリック</b>すると、そこに人形が立ちます。
+              足元の丸をドラッグで移動、<b>矢印の先</b>をドラッグで向きを回します。</div>
+          </div>
+          <div class="pu-side">
+            <div class="pu-warn"></div>
+            <div class="pu-grid">
+              <label>X<input class="pu-x" type="number" step="0.05">m</label>
+              <label>Z<input class="pu-z" type="number" step="0.05">m</label>
+              <label>向き<input class="pu-yaw" type="number" step="5">°</label>
+            </div>
+            <div class="pu-issue"></div>
+            <div class="pu-actions">
+              <button class="pu-refresh" title="いまのライブ映像で静止フレームを取り直す">🔄 フレームを取り直す</button>
+              <button class="pu-done accent">できた</button>
+            </div>
+            <div class="pu-key">重ねている線: <span class="k-floor">床・0.3m 格子</span>
+              <span class="k-wall">壁</span> ／ <span class="k-proxy">人形の輪郭（足元・身長・向き）</span></div>
+            <div class="pu-note">これは<b>輪郭だけ</b>です。見た目・影・腕の動きは Unity が描きます
+              （卓が人形を実描画すると、実機と一致しているか確かめる手段が無くなるため）。</div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(root);
+
+    const pq = (sq) => root.querySelector(sq);
+    const canvas = pq('.pu-canvas');
+    const ctx = canvas.getContext('2d');
+    const xI = pq('.pu-x'), zI = pq('.pu-z'), yawI = pq('.pu-yaw');
+    const warnEl = pq('.pu-warn'), issueEl = pq('.pu-issue'), infoEl = pq('.pu-frameinfo');
+
+    // 状態
+    let step = null, take = null, stepIdx = 0;
+    let frame = null;            // { canvas|null, w, h } — 映像が無くても w/h は決める（線だけで置ける）
+    let res = { calib: null, source: 'none', note: '' };
+    let place = { x: 0, z: 0, yawDeg: 0 };
+    let heightM = DEFAULT_HEIGHT_M;
+    let drag = '';               // '' | 'move' | 'yaw'
+    let farNote = '';
+
+    function grabFrame(camId) {
+      const img = deps.getLiveImg ? deps.getLiveImg(camId) : null;
+      if (img && img.naturalWidth && img.naturalHeight) {
+        const cv = document.createElement('canvas');
+        cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+        cv.getContext('2d').drawImage(img, 0, 0);
+        return { canvas: cv, w: cv.width, h: cv.height };
+      }
+      return null;
+    }
+
+    /** 映像が来ていなくても置けるようにする（現場でカメラ 1 台だけ繋がっている状況は普通に起きる）。 */
+    function resolveFrame(cam) {
+      const live = grabFrame(cam ? cam.id : null);
+      if (live) return live;
+      const c = cam && cam.calib;
+      return { canvas: null, w: (c && c.srcW > 1) ? c.srcW : 640, h: (c && c.srcH > 1) ? c.srcH : 480 };
+    }
+
+    function syncInputs() {
+      xI.value = round2(place.x); zI.value = round2(place.z); yawI.value = Math.round(place.yawDeg);
+    }
+
+    function geometry() {
+      return actorProxyGeometry(res.calib, place, heightM, { srcW: frame.w, srcH: frame.h });
+    }
+
+    function draw() {
+      canvas.width = frame.w; canvas.height = frame.h;
+      canvas.style.aspectRatio = `${frame.w} / ${frame.h}`;
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, frame.w, frame.h);
+      if (frame.canvas) ctx.drawImage(frame.canvas, 0, 0);
+      const s2 = Math.max(1, frame.w / 640);
+
+      // 部屋のワイヤー（較正 UI と同じ線）。概算 pose のときは薄くする —
+      // 「この線はだいたいの位置」と見て分かるようにするため。
+      if (res.calib) {
+        ctx.globalAlpha = res.source === 'calib' ? 1 : 0.45;
+        for (const seg of wireSegments(deps.getLayout ? deps.getLayout() : null)) {
+          const a = projectPoint(res.calib, seg.a[0], seg.a[1], seg.a[2]);
+          const b = projectPoint(res.calib, seg.b[0], seg.b[1], seg.b[2]);
+          if (!a || !b) continue;
+          ctx.strokeStyle = seg.color || (seg.kind === 'wall' ? 'rgba(120,220,255,0.9)'
+            : seg.kind === 'grid' ? 'rgba(255,222,173,0.3)' : 'rgba(255,222,173,0.9)');
+          ctx.lineWidth = (seg.kind === 'grid' ? 1 : 2) * s2;
+          ctx.beginPath(); ctx.moveTo(a.u, a.v); ctx.lineTo(b.u, b.v); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      const g = geometry();
+      drawActorProxy(ctx, g, { scale: s2, label: actorLabel() });
+      renderIssue(g);
+    }
+
+    function actorLabel() {
+      const a = actorById(step ? step.cg : '');
+      return a ? (a.name || a.id) : (step && step.cg ? step.cg : '人形');
+    }
+
+    function renderIssue(g) {
+      const bits = [];
+      const p = proxyIssueText(g, res.source);
+      if (p) bits.push(p);
+      if (farNote) bits.push(farNote);
+      if (!frame.canvas) {
+        bits.push('このカメラのライブ映像が来ていません（部屋の線と輪郭だけで置いています）。'
+          + '実際の絵に合わせるには映像を繋いでから置き直してください。');
+      }
+      issueEl.textContent = bits.join(' / ');
+      issueEl.className = 'pu-issue' + (bits.length ? ' on' : '');
+    }
+
+    // 画素 ↔ 表示の対応は**フレーム実寸**で持つ（表示サイズで持つとパネル幅が変わるだけで崩れる）。
+    function toFramePx(ev) {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
+      return {
+        u: (ev.clientX - rect.left) / rect.width * frame.w,
+        v: (ev.clientY - rect.top) / rect.height * frame.h,
+        hit: 14 * frame.w / rect.width,
+      };
+    }
+
+    /** クリック点を床へ落として立ち位置にする。部屋から遠すぎる解は「置けた」ことにしない。 */
+    function moveTo(u, v) {
+      const p = unprojectToFloor(res.calib, u, v);
+      if (!p) {
+        farNote = 'そこは床ではありません（地平線より上をクリックしています）';
+        return false;
+      }
+      // 俯角の深いカメラでは画の上端でも床に当たる（遥か遠く）。数十 m 先へ人形を飛ばすと、
+      // 画には点も出ず「押したのに何も起きない」に見えるので、理由を言って弾く。
+      if (Math.abs(p.x) > 6 || Math.abs(p.z) > 6) {
+        farNote = `そこは ${Math.max(Math.abs(p.x), Math.abs(p.z)).toFixed(1)}m 先の床です（部屋の外なので置きません）`;
+        return false;
+      }
+      farNote = '';
+      place.x = p.x; place.z = p.z;
+      return true;
+    }
+
+    function aimTo(u, v) {
+      const p = unprojectToFloor(res.calib, u, v);
+      if (!p) return false;
+      const dx = p.x - place.x, dz = p.z - place.z;
+      if (Math.hypot(dx, dz) < 1e-4) return false;
+      // yaw は course +Z が 0（Unity の Quaternion.Euler(0, yaw, 0) と同じ向き）。
+      place.yawDeg = Math.atan2(dx, dz) * 180 / Math.PI;
+      farNote = '';
+      return true;
+    }
+
+    function commit(full) {
+      if (!step) return;
+      setPlacement(step, place);
+      syncInputs();
+      markDirty();
+      if (full) { render(); if (take) renderStepRows(take); }
+    }
+
+    canvas.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0 || !res.calib) return;
+      const tpx = toFramePx(ev);
+      if (!tpx) return;
+      canvas.setPointerCapture(ev.pointerId);
+      const g = geometry();
+      // 矢印の先を掴んでいれば回転、それ以外は移動（掴み判定は矢印を優先 —
+      // 足元と矢印が重なる俯瞰では、回せないほうが困る）。
+      const tip = g.arrow ? g.arrow.tip : null;
+      drag = (tip && Math.hypot(tip.u - tpx.u, tip.v - tpx.v) <= tpx.hit) ? 'yaw' : 'move';
+      if (drag === 'yaw') aimTo(tpx.u, tpx.v); else moveTo(tpx.u, tpx.v);
+      commit(false); draw();
+    });
+    canvas.addEventListener('pointermove', (ev) => {
+      if (!drag) return;
+      const tpx = toFramePx(ev);
+      if (!tpx) return;
+      if (drag === 'yaw') aimTo(tpx.u, tpx.v); else moveTo(tpx.u, tpx.v);
+      commit(false); draw();
+    });
+    const endDrag = () => { if (drag) { drag = ''; commit(true); } };
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', endDrag);
+
+    for (const el of [xI, zI, yawI]) {
+      el.onchange = () => {
+        place = { x: numOr(xI.value, place.x), z: numOr(zI.value, place.z), yawDeg: numOr(yawI.value, place.yawDeg) };
+        farNote = '';
+        commit(true); draw();
+      };
+    }
+    pq('.pu-refresh').onclick = () => { openFor(step, take, stepIdx); };
+    pq('.pu-done').onclick = () => close();
+    pq('.pu-close').onclick = () => close();
+    pq('.pu-backdrop').onclick = () => close();
+    const onKey = (ev) => { if (ev.key === 'Escape' && root.style.display !== 'none') close(); };
+
+    function openFor(s, t, i) {
+      step = s; take = t; stepIdx = i;
+      const camIdx = stepCameraIndex(s);
+      const cam = cameras[camIdx] || null;
+      frame = resolveFrame(cam);
+      res = resolveProxyCalib(cam, frame.w, frame.h);
+      place = placementOf(s);
+      heightM = actorHeight(s.cg);
+      drag = ''; farNote = '';
+      pq('.pu-title').textContent = `📍 ${actorLabel()} を ${camLabel(camIdx)} の画で置く`;
+      infoEl.textContent = `${frame.w}×${frame.h}`
+        + (res.source === 'calib' ? ' / 🎯 較正済み' : res.source === 'pose' ? ' / 📐 概算 pose' : ' / 姿勢なし');
+      warnEl.textContent = res.note || '';
+      warnEl.className = 'pu-warn' + (res.note ? ' on' : '');
+      syncInputs();
+      root.style.display = '';
+      document.addEventListener('keydown', onKey);
+      draw();
+    }
+    function close() {
+      root.style.display = 'none';
+      document.removeEventListener('keydown', onKey);
+      commit(true);
+      step = null; take = null; frame = null; res = { calib: null, source: 'none', note: '' };
+    }
+
+    placeUi = { openFor };
+    return placeUi;
+  }
+
+  // 関数宣言にしておく（const だと、初回 render がこの行より前に走った時に TDZ で落ちる）。
+  function round2(v) { return Math.round(v * 100) / 100; }
+
+  function openPlaceUi(t, s, idx) {
+    // 「決めた位置」でないと押せない導線だが、念のためここでも実体化しておく
+    // （押した直後に hasPlacement が false のままだと、閉じた時に立ち位置が消える）。
+    s.cgMode = TAKE.CG_FIXED;
+    ensurePlaceUi().openFor(s, t, idx);
+  }
 
   // ---- 周回の増減 / 保存 -------------------------------------------------------
   q('.rb-lap-add').onclick = () => { lapCount++; markDirty(); render(); };

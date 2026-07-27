@@ -19,6 +19,14 @@ import {
   zonesFromLayout, cameraAtPoint, linesFromLayout, lineMid, lineLength,
   LINE_DIR_BOTH, LINE_DIR_FWD, LINE_DIR_BACK, LINE_MIN_LENGTH_M,
 } from './zone-layout.js';
+import {
+  newWall, newBox, defaultLight, nextRoomId,
+  roomFromLayout, writeRoomToLayout, wallsFromLegacyWall,
+  wallFootprint, boxFootprint, floorRect,
+  isWallUsable, isBoxUsable, roomHasData, wallLength,
+  lightDirCourse, kelvinToCss,
+  LIGHT_RANGE, WALL_ID_PREFIX, BOX_ID_PREFIX, WALL_MIN_LENGTH_M, MIN_DIM_M,
+} from './room-model.js';
 
 // カメラ index → 色（unity-vr.md の校正フットプリント配色に合わせる: 緑=0 / 青=1 / 橙=2）。
 const CAM_COLORS = ['#5ad19a', '#5aa8ff', '#ffae5e', '#d98cff', '#ff6b8e', '#8ad4ff'];
@@ -145,6 +153,7 @@ export function createFloorMap(container, deps) {
           <button class="fm-mode" data-mode="walk" title="体験者を歩かせる。マップのどこを押してもそこへ立つ">🚶 歩かせる</button>
           <button class="fm-mode" data-mode="cam" title="実カメラの置き場所と向きを決める（CG 人形を立てる視点）">📐 カメラ姿勢</button>
           <button class="fm-mode" data-mode="line" title="演出の発火点（体験者がここを通過したら）を引く">📏 通過ライン</button>
+          <button class="fm-mode" data-mode="room" title="実物の壁・什器を写した不可視の 3D プロキシ（CG のオクルーダ / 影の落ち先 / 較正の参照）">🧱 部屋</button>
         </div>
         <canvas class="fm-canvas" width="${SIZE}" height="${SIZE}"></canvas>
         <div class="fm-modehint"></div>
@@ -191,6 +200,39 @@ export function createFloorMap(container, deps) {
           <div class="fm-campose-list"></div>
           <div class="fm-hint2">実カメラを置いた場所・向きを写す。<b>姿勢を著作したカメラでだけ</b> CG 人形が出る（当てずっぽうのパースで出すと床に埋まる / 宙に浮く）。高さ・俯角・水平画角はカメラ列の 📐 欄。扇形＝画角の目安。</div>
         </div>
+        <div class="fm-room" style="display:none">
+          <div class="fm-course-label">部屋の 3D プロキシ（CG のオクルーダ / 影の落ち先 / 較正の参照）</div>
+          <div class="fm-room-note"></div>
+          <div class="fm-row">
+            <button class="fm-room-tool on" data-tool="wall" title="ドラッグで壁（線分＋厚み）を引く">▬ 壁を引く</button>
+            <button class="fm-room-tool" data-tool="box" title="ドラッグで箱（机・柱）を作る">◻ 箱を作る</button>
+          </div>
+          <div class="fm-row">
+            <label class="fm-num">床 幅 (m)<input class="fm-room-fw" type="number" min="0.1" max="12" step="0.05"></label>
+            <label class="fm-num">床 奥行 (m)<input class="fm-room-fd" type="number" min="0.1" max="12" step="0.05"></label>
+          </div>
+          <div class="fm-room-sel"></div>
+          <div class="fm-room-list"></div>
+          <div class="fm-row">
+            <button class="fm-room-import" title="登録リチュアルが使っている L 字壁（layout.wall）と同じ形を、プロキシの壁として起こす">L 字壁を取り込む</button>
+            <button class="fm-room-clear" title="部屋そのものを未著作に戻す（Unity は既定の無限床へフォールバックする）">✕ 未著作に戻す</button>
+          </div>
+          <div class="fm-hint2"><b>実物と同じ位置に置く不可視の幾何</b>です（VR には映りません）。1 つの幾何が
+            <b>①CG 人形を隠す壁 ②影の落ち先 ③較正の参照</b>を兼ねるので、用途ごとに別々に作らないこと。
+            壁 / 箱をクリックで選択・ドラッグで移動・端点や角をドラッグで伸縮・右クリックで削除。
+            高さ・厚み・向きは選択中の欄で調整します。</div>
+        </div>
+        <div class="fm-light">
+          <div class="fm-course-label">💡 CG 照明（人形の陰影と影・部屋で 1 つ）</div>
+          <div class="fm-light-note"></div>
+          <div class="fm-light-rows"></div>
+          <div class="fm-row">
+            <button class="fm-light-clear" title="照明を未著作に戻す（Unity 内蔵の既定へフォールバック）">✕ 未著作に戻す</button>
+          </div>
+          <div class="fm-hint2">Quest に環境光の自動推定はありません。<b>人が実際の部屋を見て合わせます</b>。
+            とはいえ監視カメラ画質で観客が読めるのは<b>主光源の向きと影の濃さ</b>だけなので、そこだけ合っていれば足ります。
+            マップ上の ☀ が「光が来ている方向」です。</div>
+        </div>
         <label class="fm-num">オーバーラップ (m)<input class="fm-overlap" type="number" min="0" max="0.5" step="0.01"></label>
         <label class="fm-num">ヒステリシス (m)<input class="fm-hyst" type="number" min="0" max="0.5" step="0.01"></label>
         <div class="fm-sim-out"></div>
@@ -229,10 +271,18 @@ export function createFloorMap(container, deps) {
   let lineDragIndex = -1;    // ドラッグ中の通過ライン index
   let lineUses = {};         // lineId → それを使っている演出の数（timeline 由来・削除の警告に使う）
   let drawing = null;        // 新規ラインの引き始め { x, z }（ドラッグ中のプレビュー）
+  // 部屋の 3D プロキシ。**layout に直接持たず編集モデルを別に持つ**（regPoints / lines と同じ流儀）。
+  //   layout へ書き戻すのは 💾 保存の瞬間だけで、そこで present-flag（hasRoom）と退化の除外が確定する。
+  let roomModel = null;      // room-model.js の編集モデル（adoptLayout で必ず入る）
+  let roomAuthored = false;  // layout.hasRoom（AND 規約で解決済み）
+  let roomTool = 'wall';     // 空きをドラッグした時に作るもの 'wall' | 'box'
+  let roomSel = null;        // 選択中 { kind:'wall'|'prop', id }
+  let roomDrawing = null;    // 引きかけ { x, z, cur:{x,z} }
   const isReg = () => mapMode === 'reg';
   const isWalk = () => mapMode === 'walk';
   const isCamPose = () => mapMode === 'cam';
   const isLine = () => mapMode === 'line';
+  const isRoom = () => mapMode === 'room';
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function markDirty() { dirty = true; renderDirty(); }
@@ -414,6 +464,10 @@ export function createFloorMap(container, deps) {
     p = courseToPx(w.endX[0], w.endX[1]); ctx.lineTo(p[0], p[1]);       // 北腕の先端
     ctx.stroke();
 
+    // 部屋の 3D プロキシ（壁・箱・部屋の床外周）。位置合わせ点やラインの下に敷く
+    // — プロキシは「実物の形」なので、その上に発火点や基準点が乗って見えるのが正しい重なり。
+    drawRoom();
+
     // 位置合わせ点（番号つきマーカー + タッチ順の破線）
     drawRegPoints();
 
@@ -422,6 +476,9 @@ export function createFloorMap(container, deps) {
 
     // 通過ライン（演出の発火点。どのモードでも薄く見せる = 塗りながら位置関係が分かる）
     drawLines();
+
+    // 光が来ている方向（床の外側に出るので最後に描く）
+    drawLightArrow();
 
     // シミュレーションドット
     if (isWalk() && sim) {
@@ -715,6 +772,397 @@ export function createFloorMap(container, deps) {
       : '';
   }
 
+  // ---- 部屋の 3D プロキシ（layout.room）-----------------------------------------
+  //   実物と同じ位置に置く不可視の幾何。**1 つの幾何が 3 用途を兼ねる**（CG のオクルーダ /
+  //   影の落ち先 / 較正の参照）。別々に作ると必ずズレるので、ここが唯一の著作面。
+  //   幾何・既定値・退化の判定は room-model.js（Unity の ShowRoomProxy / ShowRoomDef のミラー）。
+  const ROOM_END_HIT = 11;      // 壁の端点・箱の角の掴み判定 (px)
+  const ROOM_BODY_HIT = 8;      // 壁本体の掴み判定 (px)
+  // ドラッグで新規作成する最小サイズ (m)。room-model の退化しきい値（1cm）より**わざと大きい**
+  // — クリックのつもりの数 px が「実機で見えない極小の壁」になると、消し方が分からず残り続ける。
+  const ROOM_DRAW_MIN_M = 0.05;
+  const ROOM_WALL_COLOR = '#78dcff';   // 較正 UI のワイヤー配色（cu-wirekey .k-wall）と揃える
+  const ROOM_PROP_COLOR = '#9fd8a8';
+
+  function roomWalls() { return roomModel ? roomModel.walls : []; }
+  function roomProps() { return roomModel ? roomModel.props : []; }
+  function roomLight() { return roomModel ? roomModel.light : defaultLight(); }
+  // 部屋を触ったら著作済みにする。**触っていないのに hasRoom を立てない**のが要点で、
+  // 未著作の部屋を書き出すと Unity が「著作された既定の部屋」として組んでしまう。
+  function markRoomDirty() {
+    roomAuthored = true;
+    markDirty();
+  }
+  function selectedRoomItem() {
+    if (!roomSel) return null;
+    const list = roomSel.kind === 'wall' ? roomWalls() : roomProps();
+    return list.find((o) => o.id === roomSel.id) || null;
+  }
+
+  // 点 (px) が多角形（course 座標の四隅）の中か。ray casting。
+  function pointInFootprint(px, py, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [ax, ay] = courseToPx(pts[i].x, pts[i].z);
+      const [bx, by] = courseToPx(pts[j].x, pts[j].z);
+      if ((ay > py) !== (by > py) && px < ((bx - ax) * (py - ay)) / (by - ay) + ax) inside = !inside;
+    }
+    return inside;
+  }
+
+  // 何を掴んだか。**端点・角が本体より優先**（伸縮したい時に平行移動になると事故る）。
+  function roomHit(px, py) {
+    const walls = roomWalls(), props = roomProps();
+    for (let i = walls.length - 1; i >= 0; i--) {
+      const [ax, ay] = courseToPx(walls[i].x1, walls[i].z1);
+      const [bx, by] = courseToPx(walls[i].x2, walls[i].z2);
+      if (Math.hypot(px - ax, py - ay) <= ROOM_END_HIT) return { kind: 'wall', id: walls[i].id, part: 'a' };
+      if (Math.hypot(px - bx, py - by) <= ROOM_END_HIT) return { kind: 'wall', id: walls[i].id, part: 'b' };
+    }
+    for (let i = props.length - 1; i >= 0; i--) {
+      const fp = boxFootprint(props[i]);
+      for (let k = 0; k < fp.length; k++) {
+        const [cx, cy] = courseToPx(fp[k].x, fp[k].z);
+        if (Math.hypot(px - cx, py - cy) <= ROOM_END_HIT) return { kind: 'prop', id: props[i].id, part: `c${k}` };
+      }
+    }
+    for (let i = walls.length - 1; i >= 0; i--) {
+      const [ax, ay] = courseToPx(walls[i].x1, walls[i].z1);
+      const [bx, by] = courseToPx(walls[i].x2, walls[i].z2);
+      if (distToSegmentPx(px, py, ax, ay, bx, by) <= ROOM_BODY_HIT) return { kind: 'wall', id: walls[i].id, part: 'body' };
+    }
+    for (let i = props.length - 1; i >= 0; i--) {
+      if (pointInFootprint(px, py, boxFootprint(props[i]))) return { kind: 'prop', id: props[i].id, part: 'body' };
+    }
+    return null;
+  }
+
+  // 箱のローカル軸（Unity の Euler Y と同じ: ローカル +X=(cos,-sin) / +Z=(sin,cos)）。
+  function boxAxes(b) {
+    const yaw = (b.yawDeg || 0) * Math.PI / 180;
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    return { ex: { x: c, z: -s }, ez: { x: s, z: c } };
+  }
+
+  function deleteRoomItem(kind, id) {
+    const list = kind === 'wall' ? roomWalls() : roomProps();
+    const i = list.findIndex((o) => o.id === id);
+    if (i < 0) return;
+    list.splice(i, 1);
+    if (roomSel && roomSel.id === id) roomSel = null;
+    markRoomDirty(); renderRoom(); render();
+  }
+
+  // ---- 部屋の描画 -------------------------------------------------------------
+  //   どのモードでも薄く描く（塗りながら / 線を引きながら実物との位置関係が見える）。
+  function drawRoom() {
+    if (!roomModel) return;
+    const edit = isRoom();
+    const ghost = !roomAuthored;
+    ctx.save();
+    ctx.globalAlpha = edit ? 1 : (ghost ? 0.22 : 0.4);
+
+    // 部屋の床外周（layout.floor の外周とは別データ。ズレていたら目で分かるように破線で出す）
+    if (roomHasData(roomModel)) {
+      const f = floorRect(roomModel);
+      const [x0, y0] = courseToPx(f.xLo, f.zHi);
+      const [x1, y1] = courseToPx(f.xHi, f.zLo);
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = ROOM_WALL_COLOR; ctx.lineWidth = 1;
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.setLineDash([]);
+    }
+
+    for (const w of roomWalls()) drawRoomShape(wallFootprint(w), ROOM_WALL_COLOR, edit,
+      roomSel && roomSel.kind === 'wall' && roomSel.id === w.id, !isWallUsable(w));
+    for (const b of roomProps()) drawRoomShape(boxFootprint(b), ROOM_PROP_COLOR, edit,
+      roomSel && roomSel.kind === 'prop' && roomSel.id === b.id, !isBoxUsable(b));
+
+    // 壁の端点ハンドル（編集モードのみ。箱は四隅がそのままハンドル）
+    if (edit) {
+      for (const w of roomWalls()) {
+        for (const [hx, hy] of [courseToPx(w.x1, w.z1), courseToPx(w.x2, w.z2)]) {
+          ctx.beginPath(); ctx.arc(hx, hy, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#fffaf0'; ctx.fill();
+          ctx.lineWidth = 1.5; ctx.strokeStyle = ROOM_WALL_COLOR; ctx.stroke();
+        }
+      }
+    }
+
+    // 引きかけ（壁は線・箱は矩形のプレビュー）
+    if (roomDrawing && roomDrawing.cur) {
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = roomTool === 'wall' ? ROOM_WALL_COLOR : ROOM_PROP_COLOR;
+      ctx.lineWidth = 2;
+      const [ax, ay] = courseToPx(roomDrawing.x, roomDrawing.z);
+      const [bx, by] = courseToPx(roomDrawing.cur.x, roomDrawing.cur.z);
+      ctx.beginPath();
+      if (roomTool === 'wall') { ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }
+      else ctx.rect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  // footprint（四隅）を塗り + 縁で描く。退化しているものは赤の破線（＝保存されないことを目で示す）。
+  function drawRoomShape(pts, color, edit, selected, degenerate) {
+    if (!pts.length) return;
+    ctx.save();
+    ctx.beginPath();
+    pts.forEach((p, i) => { const [x, y] = courseToPx(p.x, p.z); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.globalAlpha *= selected ? 0.42 : 0.24;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    pts.forEach((p, i) => { const [x, y] = courseToPx(p.x, p.z); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.closePath();
+    if (degenerate) { ctx.setLineDash([4, 3]); ctx.strokeStyle = '#ff6b5e'; }
+    else ctx.strokeStyle = color;
+    ctx.lineWidth = selected && edit ? 2.5 : 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 光が来ている方向を ☀ で描く。**方向が一目で分かる**ことが要点で、精密さは要らない
+  // （監視カメラ画質で観客が読めるのは主光源の向きと影の濃さだけ）。
+  function drawLightArrow() {
+    const l = roomLight();
+    const dir = lightDirCourse(l.yawDeg, l.pitchDeg);
+    const horiz = Math.hypot(dir.x, dir.z);
+    const authored = !!(roomModel && roomModel.hasLight);
+    const col = authored ? kelvinToCss(l.tempK) : 'rgba(255,250,240,0.5)';
+    const R = SIZE / 2 - PAD + 24;
+    ctx.save();
+    ctx.globalAlpha = authored ? (isRoom() ? 1 : 0.7) : 0.35;
+    const cx = SIZE / 2, cy = SIZE / 2;
+    // 仰角が高いほど光源は中心へ寄る（真上なら中心の ☀ だけ = 方位角に意味が無い状態が見える）
+    const r = R * horiz;
+    const sx = cx + dir.x * r, sy = cy - dir.z * r;
+    if (r > 14) {
+      const ang = Math.atan2(cy - sy, cx - sx);
+      const tipX = sx + Math.cos(ang) * (r - 26), tipY = sy + Math.sin(ang) * (r - 26);
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tipX, tipY);
+      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - Math.cos(ang - 0.4) * 8, tipY - Math.sin(ang - 0.4) * 8);
+      ctx.lineTo(tipX - Math.cos(ang + 0.4) * 8, tipY - Math.sin(ang + 0.4) * 8);
+      ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,250,240,0.85)'; ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(`☀ ${Math.round(l.pitchDeg)}°`, sx, sy + 10);
+    ctx.restore();
+  }
+
+  // ---- 部屋の UI --------------------------------------------------------------
+  function renderRoom() { renderRoomNote(); renderRoomList(); renderRoomSel(); }
+
+  function renderRoomNote() {
+    const el = q('.fm-room-note'); if (!el) return;
+    const nw = roomWalls().filter(isWallUsable).length;
+    const np = roomProps().filter(isBoxUsable).length;
+    if (!roomAuthored) {
+      el.textContent = '未設定 — 壁か箱を引くと著作されます（それまで Unity は床だけの既定で影を落とします）';
+      el.className = 'fm-room-note';
+    } else if (!roomHasData(roomModel)) {
+      el.textContent = `⚠ 床が小さすぎます（${roomModel.floorW}×${roomModel.floorD}m）— このままでは Unity が部屋ごと無視します`;
+      el.className = 'fm-room-note warn';
+    } else {
+      el.textContent = `壁 ${nw} 枚 / 箱 ${np} 個（床 ${roomModel.floorW}×${roomModel.floorD}m）`;
+      el.className = 'fm-room-note';
+    }
+  }
+
+  function renderRoomList() {
+    const el = q('.fm-room-list'); if (!el) return;
+    el.innerHTML = '';
+    const items = [
+      ...roomWalls().map((w) => ({ kind: 'wall', o: w })),
+      ...roomProps().map((b) => ({ kind: 'prop', o: b })),
+    ];
+    if (!items.length) return;
+    for (const { kind, o } of items) {
+      const row = document.createElement('div');
+      row.className = 'fm-room-item' + (roomSel && roomSel.kind === kind && roomSel.id === o.id ? ' on' : '');
+      const badge = document.createElement('span');
+      badge.className = 'fm-room-badge';
+      badge.textContent = kind === 'wall' ? '▬' : '◻';
+      badge.style.color = kind === 'wall' ? ROOM_WALL_COLOR : ROOM_PROP_COLOR;
+
+      const pick = document.createElement('button');
+      pick.className = 'fm-room-pick';
+      pick.textContent = kind === 'wall'
+        ? `${o.id} — 長さ ${wallLength(o).toFixed(2)}m / 高さ ${(+o.h).toFixed(2)}m / 厚み ${(+o.thick).toFixed(3)}m`
+        : `${o.id} — ${(+o.w).toFixed(2)}×${(+o.d).toFixed(2)}m / 高さ ${(+o.h).toFixed(2)}m / ${Math.round(o.yawDeg || 0)}°`;
+      pick.onclick = () => { roomSel = { kind, id: o.id }; setMapMode('room'); renderRoom(); render(); };
+
+      const bad = (kind === 'wall' ? !isWallUsable(o) : !isBoxUsable(o));
+      if (bad) {
+        const warn = document.createElement('span');
+        warn.className = 'fm-room-info warn';
+        warn.textContent = '⚠ 保存されません';
+        warn.title = '潰れた壁 / 箱は Unity が黙って捨てるので、卓も書き出しません（1cm 以上にしてください）';
+        row.append(badge, pick, warn);
+      } else row.append(badge, pick);
+
+      const del = document.createElement('button');
+      del.className = 'fm-reg-btn fm-reg-del'; del.textContent = '🗑'; del.title = '削除';
+      del.onclick = () => deleteRoomItem(kind, o.id);
+      row.append(del);
+      el.appendChild(row);
+    }
+  }
+
+  // 選択中の 1 個だけを数値で詰める欄。**選択していない時は何も出さない**
+  // （全部の壁の高さ欄を並べると、どれを触っているのか分からなくなる）。
+  function renderRoomSel() {
+    const el = q('.fm-room-sel'); if (!el) return;
+    el.innerHTML = '';
+    const o = selectedRoomItem();
+    if (!o) {
+      el.textContent = roomWalls().length || roomProps().length
+        ? '（マップか一覧で壁 / 箱を選ぶと寸法を調整できます）' : '';
+      el.className = 'fm-room-sel hint-only';
+      return;
+    }
+    el.className = 'fm-room-sel';
+    const head = document.createElement('div');
+    head.className = 'fm-course-label';
+    head.textContent = roomSel.kind === 'wall' ? `選択中: 壁 ${o.id}` : `選択中: 箱 ${o.id}`;
+    el.appendChild(head);
+
+    const numField = (label, min, max, step, get, set) => {
+      const lab = document.createElement('label');
+      lab.className = 'fm-num';
+      lab.appendChild(document.createTextNode(label));
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.min = String(min); inp.max = String(max); inp.step = String(step);
+      inp.value = String(get());
+      inp.oninput = () => {
+        const v = parseFloat(inp.value);
+        if (!Number.isFinite(v)) return;
+        set(Math.max(min, Math.min(max, v)));
+        markRoomDirty(); renderRoomNote(); renderRoomList(); render();
+      };
+      lab.appendChild(inp);
+      return lab;
+    };
+
+    const row = document.createElement('div'); row.className = 'fm-row';
+    if (roomSel.kind === 'wall') {
+      row.append(
+        numField('高さ (m)', MIN_DIM_M, 4, 0.05, () => o.h, (v) => { o.h = v; }),
+        numField('厚み (m)', 0.005, 0.5, 0.005, () => o.thick, (v) => { o.thick = v; }));
+    } else {
+      row.append(
+        numField('高さ (m)', MIN_DIM_M, 4, 0.05, () => o.h, (v) => { o.h = v; }),
+        numField('向き (°)', -180, 180, 1, () => Math.round(o.yawDeg || 0), (v) => { o.yawDeg = v; }));
+    }
+    el.appendChild(row);
+
+    const meta = document.createElement('div');
+    meta.className = 'fm-room-info';
+    meta.textContent = roomSel.kind === 'wall'
+      ? `長さ ${wallLength(o).toFixed(2)}m（マップで端点をドラッグ）`
+      : `${(+o.w).toFixed(2)}×${(+o.d).toFixed(2)}m（マップで角をドラッグ）`;
+    el.appendChild(meta);
+  }
+
+  // ---- 照明 UI ----------------------------------------------------------------
+  //   ⚠ applied:false = **Unity がまだこの値を読んでいない**（ShowCgLayer が使うのは
+  //   yawDeg / pitchDeg / shadowDensity の 3 つだけ）。スライダを動かして何も変わらない時に
+  //   「壊れている」と誤解しないよう、著作面のほうで正直に出す。
+  const LIGHT_FIELDS = [
+    { key: 'yawDeg', label: '向き（方位角）', unit: '°', applied: true,
+      hint: 'マップ上の ☀ が光源。course の +Z（マップ上＝北）が 0 で、+X（東）へ増える' },
+    { key: 'pitchDeg', label: '高さ（仰角）', unit: '°', applied: true,
+      hint: '0 = 真横から / 90 = 真上から。天井照明なら 50〜70° あたり' },
+    { key: 'tempK', label: '色温度', unit: 'K', applied: false,
+      hint: '蛍光灯 4000K / 電球 2700K / 昼光 6500K' },
+    { key: 'intensity', label: '強さ', unit: '', applied: false, hint: '' },
+    { key: 'ambient', label: '環境光', unit: '', applied: false,
+      hint: '影側をどれだけ持ち上げるか（0 = 影が真っ黒）' },
+    { key: 'shadowDensity', label: '影の濃さ', unit: '', applied: true,
+      hint: '0 = 影なし。人形が床に着いて見えるかを決める一番効く値' },
+    { key: 'shadowSoftM', label: '影のにじみ', unit: 'm', applied: false, hint: '' },
+  ];
+
+  function renderLight() {
+    const rowsEl = q('.fm-light-rows'), noteEl = q('.fm-light-note');
+    if (!rowsEl) return;
+    const l = roomLight();
+    const authored = !!(roomModel && roomModel.hasLight);
+    if (noteEl) {
+      noteEl.textContent = authored
+        ? '著作済み（この値で人形の陰影と影が決まります）'
+        : '未設定 — スライダを動かすと著作されます（それまでは Unity 内蔵の既定）';
+      noteEl.className = 'fm-light-note' + (authored ? '' : ' ghost');
+    }
+    rowsEl.innerHTML = '';
+    for (const f of LIGHT_FIELDS) {
+      const r = LIGHT_RANGE[f.key];
+      const row = document.createElement('div');
+      row.className = 'fm-light-row' + (f.applied ? '' : ' pending');
+
+      const lab = document.createElement('span');
+      lab.className = 'fm-light-lbl';
+      lab.textContent = f.label + (f.applied ? '' : '（未適用）');
+      lab.title = (f.hint ? f.hint + '\n' : '')
+        + (f.applied ? '' : '⚠ Unity 側がまだこの値を読んでいません（保存はされます）。動かしても実機の見た目は変わりません。');
+
+      const range = document.createElement('input');
+      range.type = 'range'; range.min = String(r.min); range.max = String(r.max); range.step = String(r.step);
+      range.value = String(l[f.key]);
+
+      const numI = document.createElement('input');
+      numI.type = 'number'; numI.className = 'fm-light-num';
+      numI.min = String(r.min); numI.max = String(r.max); numI.step = String(r.step);
+      numI.value = String(l[f.key]);
+
+      const apply = (raw) => {
+        const v = parseFloat(raw);
+        if (!Number.isFinite(v)) return;
+        const clamped = Math.max(r.min, Math.min(r.max, v));
+        l[f.key] = clamped;
+        range.value = String(clamped); numI.value = String(clamped);
+        if (roomModel) roomModel.hasLight = true;
+        markRoomDirty();
+        renderLightSwatch(); renderRoomNote();
+        if (noteEl) { noteEl.textContent = '著作済み（この値で人形の陰影と影が決まります）'; noteEl.className = 'fm-light-note'; }
+        render();
+      };
+      range.oninput = () => apply(range.value);
+      numI.oninput = () => apply(numI.value);
+
+      const unit = document.createElement('span');
+      unit.className = 'fm-light-unit'; unit.textContent = f.unit;
+
+      row.append(lab, range, numI, unit);
+      if (f.key === 'tempK') {
+        const sw = document.createElement('i');
+        sw.className = 'fm-light-sw';
+        row.appendChild(sw);
+      }
+      rowsEl.appendChild(row);
+    }
+    renderLightSwatch();
+  }
+
+  function renderLightSwatch() {
+    const sw = q('.fm-light-sw');
+    if (sw) sw.style.background = kelvinToCss(roomLight().tempK);
+  }
+
   // ---- カメラ姿勢（CG レイヤの視点）------------------------------------------
   // pose は「著作したカメラだけ」が持つ（Unity は pose の有無で CG を出すか決める）。
   const POSE_DEFAULT = { x: 0, z: 0, y: 1.2, yawDeg: 0, pitchDeg: 0, hfovDeg: 70 };
@@ -954,6 +1402,63 @@ export function createFloorMap(container, deps) {
     markDirty(); renderRegList(); render();
   };
 
+  // ---- 部屋パネルのボタン・数値欄 -------------------------------------------------
+  container.querySelectorAll('.fm-room-tool').forEach((b) => {
+    b.onclick = () => {
+      roomTool = b.dataset.tool;
+      container.querySelectorAll('.fm-room-tool').forEach((x) => x.classList.toggle('on', x.dataset.tool === roomTool));
+      modeHint.textContent = roomModeHint();
+    };
+  });
+  const roomFwI = q('.fm-room-fw'), roomFdI = q('.fm-room-fd');
+  roomFwI.onchange = () => {
+    const v = parseFloat(roomFwI.value);
+    if (!Number.isFinite(v) || !roomModel) return;
+    roomModel.floorW = Math.max(0.1, v);
+    roomFwI.value = String(roomModel.floorW);
+    markRoomDirty(); renderRoomNote(); render();
+  };
+  roomFdI.onchange = () => {
+    const v = parseFloat(roomFdI.value);
+    if (!Number.isFinite(v) || !roomModel) return;
+    roomModel.floorD = Math.max(0.1, v);
+    roomFdI.value = String(roomModel.floorD);
+    markRoomDirty(); renderRoomNote(); render();
+  };
+  // L 字壁（layout.wall）→ プロキシの壁 2 本。**layout.wall は消さない**
+  // （HMD 位置合わせリチュアルのワイヤー表示がまだ読んでいる。ここは移行ではなく取り込み）。
+  q('.fm-room-import').onclick = () => {
+    const walls = wallsFromLegacyWall(layout.wall || DEFAULT_LAYOUT.wall);
+    if (!walls.length) return;
+    if (roomWalls().length
+        && !confirm(`いまの壁 ${roomWalls().length} 枚を、L 字壁から起こした ${walls.length} 枚で置き換えますか？`)) return;
+    roomModel.walls = walls;
+    roomSel = { kind: 'wall', id: walls[0].id };
+    markRoomDirty(); renderRoom(); render();
+  };
+  q('.fm-room-clear').onclick = () => {
+    if (!roomAuthored && !roomWalls().length && !roomProps().length) return;
+    if (!confirm('部屋を未著作に戻します（壁・箱・照明の設定を捨てます）。よろしいですか？')) return;
+    const seeded = roomFromLayout({ floor: layout.floor });
+    roomModel = seeded.room;
+    roomAuthored = false;
+    roomSel = null;
+    markDirty();   // markRoomDirty ではない（hasRoom を立て直してしまう）
+    syncRoomInputs(); renderRoom(); renderLight(); render();
+  };
+  q('.fm-light-clear').onclick = () => {
+    if (!roomModel || !roomModel.hasLight) return;
+    roomModel.light = defaultLight();
+    roomModel.hasLight = false;
+    markDirty();   // 照明を捨てただけで部屋の著作状態は変えない
+    renderLight(); render();
+  };
+  function syncRoomInputs() {
+    if (!roomModel) return;
+    if (document.activeElement !== roomFwI) roomFwI.value = String(roomModel.floorW);
+    if (document.activeElement !== roomFdI) roomFdI.value = String(roomModel.floorD);
+  }
+
   // ---- マップの操作モード（🖌 塗る / 📍 位置合わせ点 / 🚶 歩かせる）----------------
   const MODE_HINT = {
     paint: 'パレットの色でタイルをクリック / ドラッグ。色 = 担当カメラ。',
@@ -961,22 +1466,33 @@ export function createFloorMap(container, deps) {
     walk: 'マップのどこでも押した場所に体験者が立ちます。押したまま動かすと歩きます。',
     cam: 'カメラ印をドラッグで移動 / 矢印の先をドラッグで向き。何も無い所をクリックすると選択中カメラをそこへ置きます。高さ・俯角・水平画角はカメラ列の 📐 欄。',
     line: 'ドラッグで発火点のラインを引く / 端点をドラッグで伸縮 / 線をドラッグで平行移動 / 右クリックで削除。',
+    room: '',   // 引くもの（壁 / 箱）で文言が変わるので roomModeHint() が組み立てる
   };
+  // 部屋モードのヒントは「いま何を引くか」で変わる（壁と箱で操作が違う）。
+  function roomModeHint() {
+    return roomTool === 'wall'
+      ? 'ドラッグで壁を引く / 端点をドラッグで伸縮 / 壁をドラッグで平行移動 / 右クリックで削除。高さ・厚みは下の欄。'
+      : 'ドラッグで箱（机・柱）を作る / 角をドラッグでサイズ変更 / 箱をドラッグで移動 / 右クリックで削除。高さ・向きは下の欄。';
+  }
   function setMapMode(next, opt) {
-    if (!MODE_HINT[next]) return;
+    if (MODE_HINT[next] === undefined) return;
     mapMode = next;
     container.querySelectorAll('.fm-mode').forEach((b) => b.classList.toggle('on', b.dataset.mode === next));
     canvas.classList.toggle('fm-reg-edit', isReg());
     canvas.classList.toggle('fm-walk', isWalk());
     canvas.classList.toggle('fm-campose-edit', isCamPose());
     canvas.classList.toggle('fm-line-edit', isLine());
-    modeHint.textContent = MODE_HINT[next];
+    canvas.classList.toggle('fm-room-edit', isRoom());
+    modeHint.textContent = isRoom() ? roomModeHint() : MODE_HINT[next];
     const camPanel = q('.fm-campose');
     if (camPanel) camPanel.style.display = isCamPose() ? '' : 'none';
     const linePanel = q('.fm-lines');
     if (linePanel) linePanel.style.display = isLine() ? '' : 'none';
+    const roomPanel = q('.fm-room');
+    if (roomPanel) roomPanel.style.display = isRoom() ? '' : 'none';
     if (isCamPose()) renderCamPoseList();
     if (isLine()) renderLineList();
+    if (isRoom()) { syncRoomInputs(); renderRoom(); }
     // 歩かせるモードに入った時、ドットが無ければ南辺中央に出す（旧チェックボックスと同じ初期位置）。
     if (isWalk() && !sim && !(opt && opt.keepPos)) sim = { x: 0, z: -0.7 };
     updateSimOut(); render(); emitSim();
@@ -1019,10 +1535,13 @@ export function createFloorMap(container, deps) {
     // 通過ライン: 正規化（id 必須 / 座標が有限 / 重複 id を落とす）。空なら書かない（未著作）。
     const lines = linesFromLayout(layout);
     if (lines.length) layout.lines = lines; else delete layout.lines;
+    // 部屋: present-flag を確定して書き戻す（未著作 / 床が退化していれば room キーごと消える）。
+    writeRoomToLayout(layout, roomModel, roomAuthored);
+    roomAuthored = !!layout.hasRoom;
     layout.rev = (parseInt(layout.rev, 10) || 0) + 1;
     const res = await deps.saveLayout(clone(layout));
     if (res && res.ok !== false) {
-      dirty = false; renderDirty(); renderRegList(); renderLineList();
+      dirty = false; renderDirty(); renderRegList(); renderLineList(); renderRoom(); renderLight();
       if (regFellBack) regNoteEl.textContent = '⚠ 2 点未満のため regPoints を保存せず既定にフォールバックしました';
     } else { dirtyEl.textContent = '✕ 保存失敗'; }
   };
@@ -1081,6 +1600,30 @@ export function createFloorMap(container, deps) {
       renderLineList(); render();
       e.preventDefault(); return;
     }
+    // 部屋モード: 端点 / 角 / 本体を掴めば編集、空きからドラッグで新しい壁 or 箱を作る。
+    if (isRoom()) {
+      const hit = roomHit(m.px, m.py);
+      if (hit) {
+        roomSel = { kind: hit.kind, id: hit.id };
+        const o = selectedRoomItem();
+        if (o) {
+          const d = { mode: 'room', kind: hit.kind, part: hit.part, grabX: m.x, grabZ: m.z, orig: { ...o } };
+          // 箱の角ドラッグは**対角を世界座標で固定**して詰める（yaw を保ったままサイズだけ変える）。
+          if (hit.kind === 'prop' && hit.part.startsWith('c')) {
+            const k = parseInt(hit.part.slice(1), 10);
+            d.opp = boxFootprint(o)[(k + 2) % 4];
+            d.axes = boxAxes(o);
+          }
+          drag = d;
+        }
+      } else {
+        roomSel = null;
+        roomDrawing = { x: m.x, z: m.z, cur: { x: m.x, z: m.z } };
+        drag = { mode: 'roomdraw' };
+      }
+      renderRoom(); render();
+      e.preventDefault(); return;
+    }
     // 歩かせるモード: **押した場所へそのまま立たせる**（ドットを狙って掴む必要はない）。
     //   旧実装は半径 14px 以内を掴んだ時だけドラッグで、外すとタイル塗りに化けていた。
     if (isWalk()) {
@@ -1096,6 +1639,12 @@ export function createFloorMap(container, deps) {
   });
   // 右クリックで位置合わせ点 / 通過ラインを削除（それぞれの編集モード時のみ）。
   canvas.addEventListener('contextmenu', (e) => {
+    if (isRoom()) {
+      const m = mouseCourse(e);
+      const hit = roomHit(m.px, m.py);
+      if (hit) deleteRoomItem(hit.kind, hit.id);
+      e.preventDefault(); return;
+    }
     if (isLine()) {
       const m = mouseCourse(e);
       const hit = lineHit(m.px, m.py);
@@ -1138,6 +1687,36 @@ export function createFloorMap(container, deps) {
         markDirty(); renderLineList(); render();
       }
     }
+    else if (drag.mode === 'roomdraw') {
+      if (roomDrawing) { roomDrawing.cur = { x: m.x, z: m.z }; render(); }
+    }
+    else if (drag.mode === 'room') {
+      const o = selectedRoomItem();
+      if (o) {
+        const dx = m.x - drag.grabX, dz = m.z - drag.grabZ;
+        if (drag.kind === 'wall') {
+          if (drag.part === 'a') { o.x1 = +m.x.toFixed(3); o.z1 = +m.z.toFixed(3); }
+          else if (drag.part === 'b') { o.x2 = +m.x.toFixed(3); o.z2 = +m.z.toFixed(3); }
+          else {
+            o.x1 = +(drag.orig.x1 + dx).toFixed(3); o.z1 = +(drag.orig.z1 + dz).toFixed(3);
+            o.x2 = +(drag.orig.x2 + dx).toFixed(3); o.z2 = +(drag.orig.z2 + dz).toFixed(3);
+          }
+        } else if (drag.part === 'body') {
+          o.x = +(drag.orig.x + dx).toFixed(3); o.z = +(drag.orig.z + dz).toFixed(3);
+        } else if (drag.opp) {
+          // 対角（drag.opp）を固定したまま、箱のローカル軸へ射影して幅・奥行を取り直す。
+          // 世界の XZ で幅を測ると yaw のある箱が回転してしまう。
+          const px = m.x - drag.opp.x, pz = m.z - drag.opp.z;
+          const du = px * drag.axes.ex.x + pz * drag.axes.ex.z;
+          const dv = px * drag.axes.ez.x + pz * drag.axes.ez.z;
+          o.w = +Math.max(MIN_DIM_M, Math.abs(du)).toFixed(3);
+          o.d = +Math.max(MIN_DIM_M, Math.abs(dv)).toFixed(3);
+          o.x = +(drag.opp.x + drag.axes.ex.x * du / 2 + drag.axes.ez.x * dv / 2).toFixed(3);
+          o.z = +(drag.opp.z + drag.axes.ex.z * du / 2 + drag.axes.ez.z * dv / 2).toFixed(3);
+        }
+        markRoomDirty(); renderRoomNote(); renderRoomList(); renderRoomSel(); render();
+      }
+    }
     else if (drag.mode === 'campose') {
       const p = poseOf(camPoseIndex);
       if (p) {
@@ -1161,9 +1740,35 @@ export function createFloorMap(container, deps) {
       drawing = null;
       renderLineList(); render();
     }
+    // 引き終わった壁 / 箱を確定（小さすぎるドラッグは作らない = クリックの取り消しになる）。
+    if (drag && drag.mode === 'roomdraw' && roomDrawing) {
+      addRoomShape(roomDrawing.x, roomDrawing.z, roomDrawing.cur.x, roomDrawing.cur.z);
+      roomDrawing = null;
+      renderRoom(); render();
+    }
     drag = null;
     regDragIndex = -1;
   });
+
+  // ドラッグ矩形 → 壁（線分）or 箱。ROOM_DRAW_MIN_M 未満は作らない。
+  function addRoomShape(x1, z1, x2, z2) {
+    if (!roomModel) return;
+    if (roomTool === 'wall') {
+      if (Math.hypot(x2 - x1, z2 - z1) < Math.max(ROOM_DRAW_MIN_M, WALL_MIN_LENGTH_M)) return;
+      const w = newWall(+x1.toFixed(3), +z1.toFixed(3), +x2.toFixed(3), +z2.toFixed(3),
+        { id: nextRoomId(roomModel.walls, WALL_ID_PREFIX) });
+      roomModel.walls.push(w);
+      roomSel = { kind: 'wall', id: w.id };
+    } else {
+      const w = Math.abs(x2 - x1), d = Math.abs(z2 - z1);
+      if (w < ROOM_DRAW_MIN_M || d < ROOM_DRAW_MIN_M) return;
+      const b = newBox(+((x1 + x2) / 2).toFixed(3), +((z1 + z2) / 2).toFixed(3), +w.toFixed(3), +d.toFixed(3),
+        { id: nextRoomId(roomModel.props, BOX_ID_PREFIX) });
+      roomModel.props.push(b);
+      roomSel = { kind: 'prop', id: b.id };
+    }
+    markRoomDirty();
+  }
 
   // ---- 外部 API ---------------------------------------------------------------
   function adoptLayout(src) {
@@ -1184,6 +1789,12 @@ export function createFloorMap(container, deps) {
     // 通過ライン: 不正要素を落とす（未著作なら配列そのものを持たない）。
     const lines = linesFromLayout(layout);
     if (lines.length) layout.lines = lines; else delete layout.lines;
+    // 部屋の 3D プロキシ: present-flag（hasRoom）の AND 規約で解決して編集モデルへ。
+    // 未著作なら layout.floor を種にする（部屋を作り始めた瞬間に床が 1.8m へ化けないように）。
+    const rm = roomFromLayout(layout);
+    roomModel = rm.room;
+    roomAuthored = rm.hasRoom;
+    if (roomSel && !selectedRoomItem()) roomSel = null;
     // grid が無ければ cuts から初期塗りを生成。dims 不整合や cells 欠落も同様に正規化。
     const g = layout.grid;
     const okGrid = g && Number.isFinite(g.tileM) && Number.isInteger(g.cols) && Number.isInteger(g.rows)
@@ -1221,7 +1832,8 @@ export function createFloorMap(container, deps) {
     renderPalette();
     if (isCamPose()) renderCamPoseList();
     renderCourse();
-    if (!dirty) { renderRegList(); renderLineList(); } // 編集中は入力フォーカスを潰さないため再構築しない
+    if (!dirty) { renderRegList(); renderLineList(); syncRoomInputs(); renderRoom(); renderLight(); }
+    // ↑ 編集中は入力フォーカスを潰さないため再構築しない
     updateSimOut(); render();
   }
 
@@ -1275,6 +1887,9 @@ export function createFloorMap(container, deps) {
   renderCourse();
   renderRegList();
   renderLineList();
+  syncRoomInputs();
+  renderRoom();
+  renderLight();
   renderDirty();
   render();
   return { onState, onUnity, isDirty: () => dirty, setSimPos, enableSim };

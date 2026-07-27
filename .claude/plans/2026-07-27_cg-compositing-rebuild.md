@@ -1,8 +1,17 @@
 # CG 人形の合成を作り直す — 実写になじませる基盤
 
-status: **Step 0 / Step 1 / Step 2（影・接地・オクルージョン）完了**（2026-07-27・Quest 実機未検証）。
-残りは Step 2 の卓側（`layout.room` の著作 UI）・Step 3（映像クリックでの人形配置）・Step 4（Editor 合成プレビュー）・Step 5（仕上げ）。
-検証: EditMode 773/773・node 139/139。
+status: **Step 0 / 1 / 2 / 3 / 5 完了**（2026-07-27・Quest 実機未検証）。残るは Step 4（Editor 合成プレビュー）と、
+下の「積み残し」。検証: EditMode 784/784・node 188/188。
+
+### 積み残し（この計画の中で未着手のもの）
+
+1. **照明の 4 項目が Unity 側で未使用** — `tempK` / `intensity` / `ambient` / `shadowSoftM`。
+   卓では著作できるが `ShowActor.shader` は `_LightDir` しか読まない。**著作しても何も変わらない**ので、
+   これは「著作したものが黙って消える」と同型。読むようにしたら `room-model.js` の `LIGHT_FIELDS.applied` を戻す
+2. **`cgMode:"follow"` × 素材カット（`clip`/`still`/`rec`）の意味が壊れている**（§5 罠 9）。
+   卓は輪郭を出さず事実だけ言う実装。スキーマで禁止するか素材に calib を紐づけるかの決着が要る
+3. **登録リチュアルの壁ワイヤーを `layout.room` へ寄せる**（§5 罠 6）。いまは `layout.wall` と二重管理
+4. `roomOutlineSegments`（`room-model.js`）が未使用 — 較正 UI のワイヤー重畳に載せるのが本来の落とし先
 前提文書: [2026-07-27_cg-actor-hand-tracking.md](2026-07-27_cg-actor-hand-tracking.md)（人形とハンドトラッキングの現行設計）/
 [2026-07-26_show-sources-and-cg-layer.md](2026-07-26_show-sources-and-cg-layer.md)（CG レイヤの導入）。
 **この文書は上 2 つの「合成」部分を置き換える**（腕の駆動・素材・演出の語彙はそのまま生きる）。

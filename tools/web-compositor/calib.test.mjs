@@ -12,7 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  projectPoint, calibrateFromFloorPoints, solveHomography, focalFromHomography,
+  projectPoint, unprojectToFloor, calibrateFromFloorPoints, solveHomography, focalFromHomography,
   matrixToUnityEuler, unityEulerToMatrix, distortNorm, undistortNorm, isDegenerate,
   reprojectionRms, calibQualityLabel, MIN_POINTS_FOR_K1,
 } from './calib.js';
@@ -298,4 +298,54 @@ test('焦点距離は 2 つの直交拘束から一致して出る', () => {
   const H3 = solveHomography(synth(TRUTH));
   const f = focalFromHomography(H3, W / 2, H / 2);
   assert.ok(Math.abs(f - TRUTH.fxPx) < 2, `f=${f}`);
+});
+
+// ---- 逆写像（映像クリック → 床の点）------------------------------------------
+//   「映像の床をクリックして人形を置く」の土台。projectPoint の**厳密な逆**でなければ、
+//   クリックした場所と人形の立つ場所が食い違い、しかも誰もその理由に辿り着けない。
+
+test('unprojectToFloor は projectPoint の厳密な逆（歪み・roll 込み）', () => {
+  const cams = [
+    TRUTH,
+    { ...TRUTH, k1: 0.22 },                       // 樽型の広角
+    { ...TRUTH, k1: -0.18, rollDeg: 7 },          // 糸巻き + 傾き
+    { x: 0, y: 1.2, z: -1.5, yawDeg: 0, pitchDeg: -30, rollDeg: 0, fxPx: 480, fyPx: 480, cxPx: 320, cyPx: 240, k1: 0, srcW: W, srcH: H },
+  ];
+  for (const c of cams) {
+    for (const f of [{ x: -0.6, z: -0.6 }, { x: 0.6, z: 0.6 }, { x: 0, z: 0 }, { x: 0.3, z: -0.45 }]) {
+      const q = projectPoint(c, f.x, 0, f.z);
+      if (!q) continue;
+      const p = unprojectToFloor(c, q.u, q.v);
+      assert.ok(p, `逆写像できない (${f.x},${f.z}) k1=${c.k1}`);
+      assert.ok(Math.abs(p.x - f.x) < 1e-9, `x ${p.x} vs ${f.x} (k1=${c.k1})`);
+      assert.ok(Math.abs(p.z - f.z) < 1e-9, `z ${p.z} vs ${f.z} (k1=${c.k1})`);
+    }
+  }
+});
+
+test('地平線より上（床と交わらない方向）は null', () => {
+  // 俯角 10°・垂直半画角 26.6° なので、画の上端のレイは 16.6° 上向き＝床と永遠に交わらない。
+  // ⚠ 俯角が半画角より深いカメラでは画の上端すら床に当たる（ただし遥か遠く）。
+  //    「地平線が画に写っているか」はカメラ次第なので、卓は距離でも歯止めをかけること。
+  const c = { x: 0, y: 1.2, z: -1.5, yawDeg: 0, pitchDeg: -10, rollDeg: 0, fxPx: 480, fyPx: 480, cxPx: 320, cyPx: 240, k1: 0, srcW: W, srcH: H };
+  assert.equal(unprojectToFloor(c, 320, 0), null);
+  // 真下寄り（画の下端）は必ず床に当たる。
+  assert.ok(unprojectToFloor(c, 320, 470));
+});
+
+test('水平に構えたカメラの水平線ちょうども null（t が発散する所を弾く）', () => {
+  const c = { x: 0, y: 1.2, z: -1.5, yawDeg: 0, pitchDeg: 0, rollDeg: 0, fxPx: 480, fyPx: 480, cxPx: 320, cyPx: 240, k1: 0, srcW: W, srcH: H };
+  assert.equal(unprojectToFloor(c, 320, 240), null);
+});
+
+test('床以外の高さの平面にも落とせる（planeY）', () => {
+  const c = { x: 0, y: 1.2, z: -1.5, yawDeg: 0, pitchDeg: -30, rollDeg: 0, fxPx: 480, fyPx: 480, cxPx: 320, cyPx: 240, k1: 0, srcW: W, srcH: H };
+  const q = projectPoint(c, 0.4, 0.7, 0.2);
+  const p = unprojectToFloor(c, q.u, q.v, 0.7);
+  assert.ok(Math.abs(p.x - 0.4) < 1e-9 && Math.abs(p.z - 0.2) < 1e-9);
+});
+
+test('較正が無ければ null（原点を返して黙って置かない）', () => {
+  assert.equal(unprojectToFloor(null, 100, 100), null);
+  assert.equal(unprojectToFloor({ fxPx: 0 }, 100, 100), null);
 });
