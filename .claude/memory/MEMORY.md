@@ -2,6 +2,8 @@
 
 - [sim_device_divergence.md](sim_device_divergence.md) - 卓のシミュレータが実機と食い違った3件（2026-07-27）。「卓で沈黙／卓だけ再生」を疑う時の最初の3点＋node で show.json を直接食わせる再現手順
 
+- [cg_compositing.md](cg_compositing.md) - CG合成を触る前に：像空間の3点／卓とUnityで数値を突き合わせる箇所2つ／画角は一度だけ測って固定（27cm→2cm）／ステンシルとRT depth24
+
 - [cg_actor_and_layer_traps.md](cg_actor_and_layer_traps.md) - CG人形を触る前に：レイヤ外部編集は消える(add_layerで足す)／EditModeスキニング固着／Remyは Generic・3.72m／Setupメニューのモーダルで Editor が止まる
 
 - [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) - 2026-07-23 監査 11 件は全修正済み（EditMode 364/364・JVM 31/31）。実機確認チェックリストと P2 テスト候補はここ
