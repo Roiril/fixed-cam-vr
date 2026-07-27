@@ -164,7 +164,7 @@
   </style>
 </head>
 <body>
-  <div class="app" data-mode="author">
+  <div class="app" data-mode="show">
     <header>
       <h1>廻リ視 web compositor</h1>
       <div class="status-bar">
@@ -197,32 +197,36 @@
       <span id="serverBarText">⚠ 卓サーバに接続できません — 保存も Quest への反映も届きません（serve.ps1 を確認）</span>
     </div>
 
-    <nav class="mode-nav" aria-label="運用モード切替">
-      <button class="mode-btn active" data-mode="author" title="タイムライン・cue 作成・フロアマップ・エクスポート">🎬 事前オーサリング</button>
-      <button class="mode-btn" data-mode="atelier" title="カメラ別のプロンプトと生成結果。入力フレーム→指示→生成物→採否を1レコードに束ねる">🧪 素材</button>
-      <button class="mode-btn" data-mode="live" title="発見済み端末・疎通診断・ラン状態・cue 手動発火">🚨 ライブ運用</button>
+    <!-- 作業の段。並びは**依存の順序**（場所が無ければ区間が無く、較正が無ければ CG 人形が出ない）。
+         上から下へ進めば必要なものが必要な順に出てくる、という順路そのものをナビにしている。
+         既定は 🎬 演出（一番長く居る面）。段の判定基準は「会場でカメラと部屋が目の前にある時にしかできないか」。 -->
+    <nav class="mode-nav" aria-label="作業の段">
+      <button class="mode-btn" data-mode="place" title="会場でしかできないこと。ゾーンの塗り・位置合わせ点・通過ライン・部屋の形・カメラの姿勢と較正・端末の発見と疎通">📍 場所</button>
+      <button class="mode-btn" data-mode="material" title="カメラ別の合成の試写室。種フレーム→指示→生成物→採否を 1 レコードに束ねる">🧪 素材</button>
+      <button class="mode-btn active" data-mode="show" title="周回タイムラインで演出とカットを組む。画質・BGM・CG 人形・焼き込みもここ">🎬 演出</button>
+      <button class="mode-btn" data-mode="live" title="本番。始めてよいかの確認・ラン状態・緊急操作・カメラの監視">🚨 本番</button>
     </nav>
 
-    <section class="atelier-sec" data-group="atelier">
+    <section class="atelier-sec" data-group="material">
       <div class="mc-title">素材工房（カメラ別・合成の試写室）
         <span class="hint">列＝カメラ。1 列の中を上から <b>① 試写 → ② 種フレーム → ③ 指示 → ④ 生成物</b> と流す（上ほど作業中よく見るもの）。判断基準は「動画単体の出来」ではなく<b>その構図の live に載せた時に破綻しないか</b>なので、<b>合成の見えを常に出したまま</b>作る。生成物をクリックすると試写に載り、<b>全面差し替え</b>と<b>動くところだけ（種フレームとの差分＝足されたものだけ）</b>を切り替えて確かめられる。良ければ <b>💾 カットの素材にする</b> で cue になり（差分マスクは PNG に焼かれる）、そのままタイムラインの演出で選べる。<b>📷 いま撮る</b> は下の監視列の生映像から 1 枚切り出して即座に種の候補へ入る（リロード不要）。<br>貯めるのはプロンプトではなく<b>「生成」</b>——種フレーム・レシピ・束縛値・全文プロンプト・出力・採否をひとかたまりで残すので「このプロンプトで何が出たか」が後から必ず分かる（同じ内容が <code>atelier-index.md</code> にも自動で書き出される）。<b>レシピ</b>＝場所に依存しない骨格（<code>{{スロット}}</code> を持つ）／<b>束縛値</b>＝そのカメラでの具体値。生成は外部ツール（Dreamina 等）で行い、できた動画を棚へドロップすると <code>captures/</code> へ規約名で入る。</span>
       </div>
       <div id="atelier"></div>
     </section>
 
-    <section class="timeline-sec" data-group="author">
+    <section class="timeline-sec" data-group="show">
       <div class="mc-title">周回タイムライン（事前オーサリングの主面）
         <span class="hint">動画編集風の横長タイムライン。layout.course.order 順に「1周目: A|B|C → 2周目: …」を横に連結。区間（＝その周・そのカメラに体験者が居る時間）をクリックして、<b>演出</b>とその<b>カット</b>（映すもの・尺・遷移）、画像加工（post）の上書き、BGM を編集する。演出はドラッグで「進入 +t 秒」「離脱時」へ動かせる。<b>📏 ラインの演出</b>（体験者がフロアマップで引いた線を通過したら始まる）は時間軸に乗らないので、区間の中に段を分けて置かれる — 線の場所と<b>担当カメラ</b>はフロアマップの <b>📏 通過ライン</b>で決める（担当と違う区間からは選べない）。区間には実機で測った<b>平均滞在時間</b>が出るので、開始位置が歩速に対して遅すぎないかを確認する。💾 保存で show.json timeline に入り、📦 エクスポートで APK に焼き込む。▶ 検証は 🕹 ショーシミュレーションへ。ライブ手動操作が優先。<br>※ <b>編集は演出・カット（v3）が既定</b>。show.json がまだ v2（cue 割当・インサートショット）でも変換して表示し、💾 保存で v3 として書き出す（そのあと v2 には戻せない）。保存前なら「▤ 旧グリッド」で従来編集にも戻れる。</span>
       </div>
       <div id="timeline"></div>
     </section>
 
-    <section class="multicam">
+    <section class="multicam" data-group="place show live">
       <div class="mc-title">
         マルチカメラ（監視）
         <span class="hint">列＝カメラ（監視専用）。各列は下→上に ① 生映像 → ③ 画像加工（カメラ単位の画質）→ ④ Quest 実映像（合成後）。📷/⏺ は ① 生映像の上＝生フレーム、④ 実映像の上＝合成済み（Quest と同じ絵）を recordings/ へ。cue・マスクの作成はタイムラインのセグメントインスペクタで行う。</span>
       </div>
-      <div class="blend-bar" data-group="author">
+      <div class="blend-bar" data-group="show">
         <span class="seg-label">境界ブレンド（合成跡を消す）</span>
         <label class="sld">フェザー <input id="bFeather" type="range" min="0" max="1" step="0.01" value="0.3"></label>
         <label class="chk"><input id="bColor" type="checkbox" checked> 色統計</label>
@@ -230,7 +234,7 @@
         <label class="chk"><input id="bLap" type="checkbox" checked> ラプラシアン</label>
         <label class="sld">レベル <input id="bLevels" type="range" min="2" max="9" step="1" value="7"><span id="bLevelsV">7</span></label>
       </div>
-      <div class="global-fx">
+      <div class="global-fx" data-group="show">
         <div class="gfx-head">
           <b>🎥 全体グレーディング</b>
           <span class="gfx-sub">カメラ個別の画質を設定していない列は全部これになる（＝列の「↺ 画質を初期化」の戻り先）</span>
@@ -241,7 +245,7 @@
         </div>
         <div id="gfxRows" class="fx-rows"></div>
       </div>
-      <div class="row-btns cams-toolbar">
+      <div class="row-btns cams-toolbar" data-group="place">
         <button id="camAdd" title="カメラを 1 台増やす（既定は演出専用＝周回ゾーンに割り当てないカメラ D 用）。配信スマホ側の cameraId も同じ文字にする">＋ カメラを追加</button>
         <span class="cams-hint">追加したカメラは Unity 側 <b>StreamingLogic.prefab の sources[]</b> と並び順で対応する（4 台目 = Phone04）。</span>
         <span id="camAddMsg" class="fx-msg"></span>
@@ -278,8 +282,6 @@
         <label class="livecue-lbl">最小滞在 <input id="switchDwell" type="number" min="0" max="5" step="0.1" placeholder="0.5"> s</label>
         <label class="livecue-lbl">クールダウン <input id="switchCooldown" type="number" min="0" max="5" step="0.1" placeholder="0.5"> s</label>
         <span id="switchTimingState" class="ed-status"></span>
-        <span class="spacer"></span>
-        <button id="fxLockBtn" class="lock-btn" title="ライブ中の誤操作防止。カメラ列の画質スライダを触れないようにする">🔒 画質ロック中</button>
       </div>
       <div class="run-bar">
         <span class="hint">切替タイミングは入力するとその場で反映（空 / 0 = 未指定 → Unity 既定 0.5s）。歩くと切替が起きない時は下げ、切替が忙しい時は上げる（control.minDwellSec / switchCooldownSec）。</span>
@@ -299,7 +301,7 @@
       </div>
     </section>
 
-    <section class="discovery" data-group="live">
+    <section class="discovery" data-group="place live">
       <div class="mc-title">📡 発見済み端末
         <span class="hint">LAN 上の配信カメラ / PC 卓を UDP ビーコン（fixedcam-discovery/1）で発見。ID が同じで uuid が違う端末は二重 ID ＝赤警告。自動追従 ON なら発見した IP をカメラ列へ反映する（📌 手動固定を除く）。</span>
       </div>
@@ -313,7 +315,7 @@
       <div id="discList" class="disc-list"></div>
     </section>
 
-    <section class="diag" data-group="live">
+    <section class="diag" data-group="place live">
       <div class="mc-title">🩺 疎通診断
         <span class="hint">PC から各カメラの /info へ実 HTTP 接続 + ビーコン受信状況 + Quest heartbeat を 1 画面で確認。ビーコンは ✅ なのに /info が ❌ なら、AP がクライアント間通信を遮断している疑いが濃い（自前 AP 持ち込みを検討）。</span>
       </div>
@@ -326,7 +328,7 @@
 
     <!-- 操作（フロアマップ）と結果（シミュレーションの画面）は横並びにする。
          上下に離すと「ドラッグしている場所」と「何が起きたか」が同時に見えない。 -->
-    <div class="sim-row" data-group="author">
+    <div class="sim-row" data-group="place show">
     <section class="floormap">
       <div class="mc-title">フロアマップ（ゾーン校正）
         <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。マップ上の <b>🖌 塗る / 📍 位置合わせ点 / 🚶 歩かせる / 📐 カメラ姿勢 / 📏 通過ライン / 🧱 部屋</b> で操作が切り替わる。<b>🧱 部屋</b>＝実物の壁・什器を写した<b>不可視の 3D プロキシ</b>（VR には映らない）。1 つの幾何が <b>CG 人形を隠す壁・影の落ち先・較正の参照</b>を兼ねるので、用途ごとに別々に作らないこと。人形の陰影と影は下の <b>💡 CG 照明</b> で決める（Quest に環境光の推定は無いので人が実際の部屋を見て合わせる）。<b>📏 通過ライン</b>＝「体験者がここを通過したら演出」の発火点（線分）をドラッグで引く。<b>ラインは担当カメラに紐づく</b>ので、他の領域で踏んでも何も起きない。塗る＝パレットの色（＝担当カメラ）でタイルを塗り、💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。<b>🚶 歩かせる</b>ではマップのどこを押してもそこに体験者が立ち、押したまま動かすと歩く → 右の 🕹 ショーシミュレーションが同時に動く。</span>
@@ -342,7 +344,7 @@
     </section>
     </div>
 
-    <section class="bgm-sec" data-group="author">
+    <section class="bgm-sec" data-group="show">
       <div class="mc-title">🎵 BGM ライブラリ
         <span class="hint">tools/web-compositor/audio/ に置いた音源をトラックとして登録する（ループ範囲・音量つき）。登録したトラックをタイムラインの区間から「▶ この曲に切り替える / ■ 止める」で指定する。ラン既定 = 体験開始時に鳴っている曲（未設定なら APK 同梱の既定 BGM）。📦 エクスポートで音源も APK に焼き込まれる。</span>
       </div>
@@ -358,14 +360,14 @@
       <div id="bgmTrackList" class="bgm-list"></div>
     </section>
 
-    <section class="actors-sec" data-group="author">
+    <section class="actors-sec" data-group="show">
       <div class="mc-title">🎭 CG 人形（映像の上に立たせる 3D）
         <span class="hint">演出のカットに重ねる人形。<b>体験者のハンドトラッキングで腕が動く</b>（プレハブに ShowActorRig が付いていれば自動）。立ち位置は「体験者の位置（分身）」か「決めた位置」をカットで選ぶ。<b>実カメラの姿勢を著作したカメラでだけ出る</b>（カメラ列の 📐 欄・フロアマップの 📐 モード）。プレハブは Unity の <b>Tools/FixedCamVr/Setup/Build Show Actor Prefab</b> で humanoid の FBX（Mixamo 等）から作る。</span>
       </div>
       <div id="actorsPanel"></div>
     </section>
 
-    <section class="export-sec" data-group="author">
+    <section class="export-sec" data-group="show">
       <div class="mc-title">ビルド用エクスポート
         <span class="hint">現在の show.json と cue が参照するアセット（マスク・動画・画像）を Assets/StreamingAssets/show/ にコピーし、URL を sa://assets/… へ書き換える。Quest 単体（現地 PC 不在）で発火させる APK に焼き込む素材。</span>
       </div>
@@ -374,22 +376,6 @@
         <span id="exportResult" class="ed-status"></span>
       </div>
       <div id="exportFiles" class="export-files"></div>
-    </section>
-
-    <section class="prompts legacy" data-group="atelier">
-      <div class="mc-title">旧・生成プロンプト（移行用・そのうち消す）
-        <span class="hint">プロンプト本文だけを貯めていた旧ストア（<code>prompts.json</code>）。<b>結果と紐づかないので使えない</b>というのが素材工房を作った理由。中身を上の「📐 レシピ」へ移し終えたらこの節ごと削除する。参照用に残してあるだけで、新しく足さないこと。</span>
-      </div>
-      <div class="prompt-add">
-        <div class="row-btns">
-          <label class="chk"><input type="radio" name="pkind" value="image" checked> 🖼 画像</label>
-          <label class="chk"><input type="radio" name="pkind" value="video"> 🎬 動画</label>
-          <input id="pTitle" type="text" placeholder="タイトル（任意）">
-        </div>
-        <textarea id="pText" rows="3" placeholder="プロンプト本文を貼り付け / 入力…"></textarea>
-        <div class="row-btns"><button id="pSave" class="accent">＋ 保存 / 更新</button></div>
-      </div>
-      <div id="promptList" class="prompt-list"></div>
     </section>
   </div>
   <script type="module" src="app.js"></script>

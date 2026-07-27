@@ -839,8 +839,9 @@ input:-webkit-autofill:active {
   border: 1px solid var(--warn-color); padding: 8px 10px; }
 
 /* ===================================================================== */
-/* ⑬ モードナビ（🎬 事前オーサリング / 🚨 ライブ運用）— index.html          */
-/*    セクションを data-group="author|live" でタグ付けし、無タグは常時表示。 */
+/* ⑬ 作業の段ナビ（📍 場所 / 🧪 素材 / 🎬 演出 / 🚨 本番）— index.html      */
+/*    並びは**依存の順序**。data-group は空白区切りで複数所属を書ける          */
+/*    （例: data-group="place live"）。所属タグの無い要素は全段に出る。        */
 /* ===================================================================== */
 .mode-nav { display: flex; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line-soft); }
 .mode-btn { padding: 7px 16px; font-size: 12px; letter-spacing: .06em; }
@@ -848,18 +849,32 @@ input:-webkit-autofill:active {
   background: var(--accent-color); border-color: var(--accent-color);
   color: #000; font-weight: 600; opacity: 1;
 }
-.app[data-mode="author"] [data-group="live"],
-.app[data-mode="author"] [data-group="atelier"] { display: none; }
-.app[data-mode="live"] [data-group="author"],
-.app[data-mode="live"] [data-group="atelier"] { display: none; }
-.app[data-mode="atelier"] [data-group="author"],
-.app[data-mode="atelier"] [data-group="live"] { display: none; }
+.app[data-mode="place"]    [data-group]:not([data-group~="place"]),
+.app[data-mode="material"] [data-group]:not([data-group~="material"]),
+.app[data-mode="show"]     [data-group]:not([data-group~="show"]),
+.app[data-mode="live"]     [data-group]:not([data-group~="live"]) { display: none; }
 
-/* 監視列（マルチカメラ）は全モードに出るが、**主役はモードで違う**。
-   作る面（オーサリング / 素材）では編集面を先に見せ、監視は最後へ回す
-   （.app は flex 列なので order が効く）。ライブ運用では監視が主役なので先頭のまま。 */
-.app[data-mode="author"] .multicam,
-.app[data-mode="atelier"] .multicam { order: 9; }
+/* カメラ列は 1 部品で 3 役を担う（監視 / 著作の画質 / 現場の設営）。
+   どの段にも属せないので旧実装は「常時表示」に逃げ、その代償を .col-sec の
+   nth-child ハックと「触れるように見えて触れない」減光で払っていた。
+   役を data-col-role で宣言し、段ごとに出し分ける（2026-07-28）。
+     place = 生映像 + 接続 + 姿勢/較正（画質は触らない）
+     show  = 画質 + 見えの確認（設営は触らない）
+     live  = 監視だけ（画質も設営も触らせない） */
+.app[data-mode="place"] .cam-col [data-col-role="grade"],
+.app[data-mode="show"]  .cam-col [data-col-role="setup"],
+.app[data-mode="live"]  .cam-col [data-col-role="grade"],
+.app[data-mode="live"]  .cam-col [data-col-role="setup"] { display: none; }
+
+/* 監視列の位置は段で変わる。演出を組む面では編集が主役なので最後へ回し、
+   場所合わせ・本番ではカメラそのものが主役なので先頭に置く
+   （.app は flex 列なので order が効く）。 */
+.app[data-mode="show"] .multicam { order: 9; }
+
+/* 本番の縦の並びは「まず始めてよいかを言う → 体験中ずっと見るもの → 監視 → 詳細」。
+   旧実装は監視列（986px）が最上段で、✅ 本番前チェックも ラン状態も初期表示の外にあった。 */
+.app[data-mode="live"] .preflight { order: -2; }
+.app[data-mode="live"] .runpanel  { order: -1; }
 
 /* ⚠ 2026-07-28: 「監視が主役」の帰結として、本番モードでは緊急操作（▶ ラン開始 / 🚶 自律へ戻す /
    ■ 画面を取り返す）が監視列の下＝**初期表示の 2 画面先**に落ちていた（実測 y=1455 / viewport 720）。
@@ -1263,13 +1278,11 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .lock-btn { font-size: 11px; padding: 5px 10px; }
 .lock-btn.on { border-color: var(--warn-color); color: var(--warn-color); opacity: 1; }
 /* ライブ中の画質ロック: 触れないことを見た目でも示す */
-.app.fx-locked .fx-rows, .app.fx-locked .fx-reset, .app.fx-locked .fx-copy { opacity: .35; pointer-events: none; }
 
 /* ライブモードのカメラ列: アクティブを大きく、他を小さく */
 .app[data-mode="live"] .cams { display: flex; gap: 12px; align-items: flex-start; }
 .app[data-mode="live"] .cam-col { flex: 1 1 0; min-width: 0; }
 .app[data-mode="live"] .cam-col.active { flex: 2.2 1 0; }
-.app[data-mode="live"] .cam-col:not(.active) .col-sec:nth-child(3) { display: none; }
 .app[data-mode="live"] .cam-col:not(.active) .cap-bar { display: none; }
 @media (max-width: 1040px) {
   .app[data-mode="live"] .cams { flex-wrap: wrap; }

@@ -101,7 +101,6 @@ let dwellStats = { items: {}, updatedAt: 0 };
 let serverAlive = false;
 let lastServerOkAt = 0;
 // ライブ中の画質スライダ誤操作ロック（ライブモードで既定 ON）。
-let fxLocked = true;
 
 // タイムライン / フロアマップの未保存編集（保存先が show.json = 消えると戻せない）。
 function anyDirty() {
@@ -205,7 +204,7 @@ function buildColumn(cam, index) {
       <button class="col-switch" title="Quest の表示をこのカメラに固定する（ゾーン自動切替は止まる。戻すのは上部の警告バー ⛑ か 🚨 ライブ運用の 🚶）">📺 切替</button>
     </div>
 
-    <div class="col-sec">
+    <div class="col-sec" data-col-role="monitor">
       <div class="sec-label">④ メタクエストで見えている映像（最終 = 加工 + 合成）</div>
       <div class="cap-bar">
         <button class="cap-btn cap-view" title="この最終映像を 1 枚 recordings/ に保存">📷 1枚</button>
@@ -216,7 +215,7 @@ function buildColumn(cam, index) {
       <div class="view-wrap"><canvas class="view-canvas" width="${MW}" height="${MH}"></canvas></div>
     </div>
 
-    <div class="col-sec">
+    <div class="col-sec" data-col-role="grade">
       <div class="sec-label">③ 画像加工（カメラ単位の画質グレーディング = cameras[i].post）</div>
       <div class="fx-rows"></div>
       <div class="row-btns">
@@ -226,7 +225,7 @@ function buildColumn(cam, index) {
       </div>
     </div>
 
-    <div class="col-sec">
+    <div class="col-sec" data-col-role="setup">
       <div class="sec-label">📐 カメラ姿勢（CG 人形を立てる視点・course 空間）</div>
       <div class="pose-row">
         <label>X<input class="pose-f pose-x" type="number" step="0.05"></label>
@@ -244,14 +243,17 @@ function buildColumn(cam, index) {
       <div class="pose-hint">未設定のカメラでは CG 人形を出しません（当てずっぽうのパースで出す方が体験を壊すため）。フロアマップの 📐 モードでドラッグしても置けます。<b>🎯 で較正すると、この概算より較正の方が使われます</b>（数値は残るので較正を捨てれば戻ります）。</div>
     </div>
 
-    <div class="col-sec">
+    <div class="col-sec" data-col-role="monitor">
       <div class="sec-label">① 生リアルタイム映像（加工前）</div>
       <div class="cap-bar">
         <button class="cap-btn cap-raw" title="生フレームを 1 枚 recordings/ に保存">📷 1枚</button>
         <button class="rec-btn rec-raw" title="生フレームを録画（recordings/ へ）">⏺ 録画</button>
-        <span class="spacer"></span>
-        <span class="ip-mini-label">配信元</span>
       </div>
+      <div class="view-wrap"><img class="raw-live" alt=""></div>
+    </div>
+
+    <div class="col-sec" data-col-role="setup">
+      <div class="sec-label">配信元（この列がどの端末を掴んでいるか）</div>
       <div class="conn-row">
         <span class="conn-disc" title="LAN 上で発見されたこのカメラ ID の端末（読み取り専用・自動追従）">📡 …</span>
         <span class="conn-pin"></span>
@@ -266,7 +268,6 @@ function buildColumn(cam, index) {
         </div>
         <div class="conn-manual-hint">discovery 非対応端末（iPhone 等）や障害時の最終手段。保存すると 📌 手動固定になり自動追従を止めます。</div>
       </details>
-      <div class="view-wrap"><img class="raw-live" alt=""></div>
     </div>`;
 
   const q = (s) => col.querySelector(s);
@@ -661,7 +662,6 @@ function renderColumns() {
       columns.set(cam.id, refs);
       wrap.appendChild(refs.el);
     });
-    applyFxLock();   // 作り直した列にもライブロックを掛け直す
   }
   cams.forEach((cam) => { const r = columns.get(cam.id); if (r) syncColumn(r, cam); });
 }
@@ -849,42 +849,27 @@ document.querySelectorAll('.mode-btn').forEach((b) => {
   b.onclick = () => {
     if (appEl) appEl.dataset.mode = b.dataset.mode;
     document.querySelectorAll('.mode-btn').forEach((x) => x.classList.toggle('active', x === b));
-    fxLocked = true;      // ライブへ入る / 戻るたびにロックを掛け直す
-    applyFxLock();
     renderPreflight();
     // 素材面へ入るたびに読み直す（📷 で撮ったフレームがすぐ候補に出るように）
-    if (b.dataset.mode === 'atelier') atelier.refresh();
+    if (b.dataset.mode === 'material') atelier.refresh();
   };
 });
 
 // ▶ 検証 = 🕹 ショーシミュレーションへ（矢印キーの簡易シミュレーションは廃止・二重に持たない）。
 //   オーサリングモードへ戻し、フロアマップのドットを有効化して、シミュレータまでスクロールする。
 function focusSimulator() {
-  const authorBtn = document.querySelector('.mode-btn[data-mode="author"]');
-  if (authorBtn && appEl && appEl.dataset.mode !== 'author') authorBtn.click();
+  const showBtn = document.querySelector('.mode-btn[data-mode="show"]');
+  if (showBtn && appEl && appEl.dataset.mode !== 'show') showBtn.click();
   if (floorMap && floorMap.enableSim) floorMap.enableSim();
   const sec = document.querySelector('.showsim');
   if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
   return true;
 }
 
-// ---- ライブ中の画質ロック（誤操作で体験者の見え方を変えない）------------------
-function applyFxLock() {
-  const live = appEl && appEl.dataset.mode === 'live';
-  const lock = live && fxLocked;
-  if (appEl) appEl.classList.toggle('fx-locked', lock);
-  for (const r of columns.values()) {
-    for (const k of Object.keys(r.fxInputs)) r.fxInputs[k].disabled = lock;
-    const rst = r.el.querySelector('.fx-reset'); if (rst) rst.disabled = lock;
-    const cpy = r.el.querySelector('.fx-copy'); if (cpy) cpy.disabled = lock;
-  }
-  const btn = $('#fxLockBtn');
-  if (btn) {
-    btn.textContent = fxLocked ? '🔒 画質ロック中' : '🔓 画質ロック解除中';
-    btn.classList.toggle('on', !fxLocked);
-  }
-}
-if ($('#fxLockBtn')) $('#fxLockBtn').onclick = () => { fxLocked = !fxLocked; applyFxLock(); };
+// ---- 画質ロックは 2026-07-28 に撤去した ----
+//   本番（🚨）ではカメラ列の画質欄（data-col-role="grade"）自体が出なくなったので、
+//   「触れるように見えて触れない」減光 + ロックボタンという偽の防護が要らなくなった。
+//   触らせたくないものは隠す（構造）方が、触れるが無効（状態）より強い。
 
 // ---- ラン状態表示（Lap / ゾーン / 次の演出）+ 緊急操作 -----------------------
 // course.order を 1 周とみなし、(lap, cameraIndex) の区間から「次に演出がある区間」を探す。
@@ -1202,78 +1187,10 @@ bindBlend('bLap', (el) => { blendCfg.laplacian = el.checked; });
 bindBlend('bLevels', (el) => { blendCfg.levels = parseInt(el.value, 10); $('#bLevelsV').textContent = el.value; });
 refreshCaptures();
 
-// ---- 生成プロンプト（下部・コピー用）。バックエンドは既存 /prompts（prompts.json）----
-async function loadPrompts() {
-  let items = [];
-  try { items = await (await fetch('/prompts')).json(); } catch { /* offline */ }
-  const wrap = $('#promptList'); wrap.innerHTML = '';
-  for (const [kind, label] of [['image', '🖼 画像生成'], ['video', '🎬 動画生成']]) {
-    const list = items.filter((p) => (p.kind || 'video') === kind);
-    if (!list.length) continue;
-    const h = document.createElement('div'); h.className = 'prompt-group'; h.textContent = label;
-    wrap.appendChild(h);
-    for (const it of list) wrap.appendChild(promptCard(it));
-  }
-}
-function copyText(text, btn) {
-  const flash = () => { btn.textContent = '✓ コピー'; setTimeout(() => (btn.textContent = '📋 コピー'), 1200); };
-  const fallback = () => {
-    const ta = document.createElement('textarea'); ta.value = text;
-    ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); flash(); } catch { /* noop */ } ta.remove();
-  };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(flash).catch(fallback);
-  else fallback();
-}
-function promptCard(it) {
-  const card = document.createElement('div'); card.className = 'prompt-item';
-  const head = document.createElement('div'); head.className = 'prompt-head'; head.textContent = it.title || '(無題)';
-  const body = document.createElement('div'); body.className = 'prompt-body'; body.textContent = it.text;
-  const btns = document.createElement('div'); btns.className = 'row-btns';
-  const copy = document.createElement('button'); copy.className = 'accent'; copy.textContent = '📋 コピー';
-  copy.onclick = () => copyText(it.text, copy);
-  const edit = document.createElement('button'); edit.textContent = '✎'; edit.title = '編集に読み込む';
-  edit.onclick = () => {
-    const r = document.querySelector(`input[name=pkind][value="${it.kind || 'video'}"]`); if (r) r.checked = true;
-    $('#pTitle').value = it.title || ''; $('#pText').value = it.text; $('#pText').dataset.id = it.id || '';
-    $('#pText').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
-  // 旧ストアの役目は「素材工房のレシピへ移し終えるまでの置き場」。1 クリックで移せないと
-  // 移行が進まず、この節がいつまでも残る（＝結果と紐づかないプロンプトが残り続ける）。
-  const toRecipe = document.createElement('button');
-  toRecipe.textContent = '📐 レシピへ';
-  toRecipe.title = '素材工房のレシピとして登録する（本文の {{…}} はスロットとして拾う）';
-  toRecipe.onclick = async () => {
-    toRecipe.disabled = true;
-    const slots = [...new Set([...String(it.text).matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[1].trim()))];
-    try {
-      await fetch('/atelier/recipe', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: it.title || '(無題)', kind: it.kind || 'video', body: it.text, slots, intent: '旧プロンプトから移行',
-        }),
-      });
-      toRecipe.textContent = '✓ 移しました';
-      atelier && atelier.refresh();
-    } catch { toRecipe.textContent = '✕ 失敗'; }
-    setTimeout(() => { toRecipe.textContent = '📐 レシピへ'; toRecipe.disabled = false; }, 1600);
-  };
-  const del = document.createElement('button'); del.textContent = '🗑'; del.title = '削除';
-  del.onclick = async () => { try { await fetch('/prompts/delete', { method: 'POST', body: JSON.stringify({ id: it.id }) }); } catch {} loadPrompts(); };
-  btns.append(copy, toRecipe, edit, del);
-  card.append(head, body, btns);
-  return card;
-}
-$('#pSave').onclick = async () => {
-  const kind = (document.querySelector('input[name=pkind]:checked') || {}).value || 'image';
-  const title = $('#pTitle').value.trim(), text = $('#pText').value.trim();
-  if (!text) return;
-  const id = $('#pText').dataset.id || undefined;
-  try { await fetch('/prompts', { method: 'POST', body: JSON.stringify({ id, kind, title, text }) }); } catch {}
-  $('#pTitle').value = ''; $('#pText').value = ''; delete $('#pText').dataset.id;
-  loadPrompts();
-};
-loadPrompts();
+// ---- 生成プロンプト（旧 prompts.json）は 2026-07-28 に UI ごと撤去した ----
+//   結果と紐づかないプロンプト本文だけのストアで、素材工房（atelier）が「生成」を
+//   種フレーム・レシピ・束縛値・出力・採否のひとかたまりで残す形に置き換えている。
+//   サーバの /prompts と prompts.json は参照用に残置（読み出す UI はもう無い）。
 
 // ---- フロアマップ（ゾーン校正）---------------------------------------------
 if ($('#floorMap')) {
