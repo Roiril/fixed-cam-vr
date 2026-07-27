@@ -73,6 +73,9 @@ namespace FixedCamVr.Streaming
         /// <summary>ライブ抑止（activeCue 非空 / cameraOverride 非 null）を実行体へ中継する。</summary>
         public void SetSuppressed(bool suppressed) => takeRunner?.SetSuppressed(suppressed);
 
+        /// <summary>走行中の演出だけを畳んで画面をライブへ返す（卓の ■ 画面を取り返す）。</summary>
+        public void AbortActive() => takeRunner?.AbortActive();
+
         /// <summary>
         /// タイムラインを分配する。区間 takes[] を <see cref="TakeRunner"/> へ流し込み、
         /// 区間 post は次の <see cref="OnCameraEntered"/> で貼り直す（ここでは一旦解除する）。

@@ -724,6 +724,11 @@ namespace FixedCamVr.Streaming
         // （起動のたびに誤リセットしない）。
         private int _knownRunEpoch;
 
+        // 走行中の演出を中止する世代（control.takeAbortEpoch）。runEpoch と同じ「変化のみ発火」方式。
+        // 起動時は初回 Apply / 焼き込みロードで現在値へ同期し、そこからの増分だけを中止として扱う。
+        private int _knownTakeAbortEpoch;
+        private bool _takeAbortEpochKnown;
+
         // カメラ切替の現場調整（control 由来。0=未指定でコード既定）。ライブ / キャッシュ / 焼き込みで更新し
         // ApplySwitchTiming で CameraSwitchDirector へ流す。キャッシュへ往復させ PC 不在起動でも値を保つ。
         private float _switchDwellSec;
@@ -845,6 +850,9 @@ namespace FixedCamVr.Streaming
             public bool discoveryEnabled = true;
             // 体験者 1 人分のラン識別子。Web の「ラン開始」で ++ される。変化＝周回 / cue のリセット。
             public int runEpoch;
+            // 走行中の演出（Take）の中止世代。Web の「■ 画面を取り返す」で ++ される。
+            // ⚠ activeCue を空にする形では伝わらない（自動発火の演出は activeCue が空のまま走るため）。
+            public int takeAbortEpoch;
             // カメラ切替の現場調整（CameraSwitchDirector へ流す）。present 判定は「>0 で適用 / 0=未指定でコード既定」。
             public float minDwellSec;
             public float switchCooldownSec;
@@ -1242,6 +1250,25 @@ namespace FixedCamVr.Streaming
             {
                 _knownRunEpoch = epoch;
                 TriggerRunReset();
+            }
+
+            // 1.655) 演出の緊急中止（control.takeAbortEpoch）。卓の「■ 画面を取り返す」が増分する。
+            //        走行中の演出だけを畳む（ラン・周回・once は保つ）。初回は現在値へ同期するだけで発火しない
+            //        （起動のたびに「中止」が走らないように）。
+            int abortEpoch = state.control?.takeAbortEpoch ?? _knownTakeAbortEpoch;
+            if (!_takeAbortEpochKnown)
+            {
+                _knownTakeAbortEpoch = abortEpoch;
+                _takeAbortEpochKnown = true;
+            }
+            else if (abortEpoch != _knownTakeAbortEpoch)
+            {
+                _knownTakeAbortEpoch = abortEpoch;
+                Debug.Log($"[ShowControl] 演出の中止要求（takeAbortEpoch={abortEpoch}）");
+                //  責務はタイムライン発火の演出だけ。卓の手動 cue は同時に送られる stopCue が
+                //  activeCue の遷移として畳む（ここで StopOverlay すると _appliedCue と実状態がずれ、
+                //  同じ cue を次に発火できなくなる）。
+                timelineDirector?.AbortActive();
             }
 
             // 1.66) カメラ切替の現場調整（control.minDwellSec / switchCooldownSec）。

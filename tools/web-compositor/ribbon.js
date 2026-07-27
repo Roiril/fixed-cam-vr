@@ -168,9 +168,19 @@ export function createRibbon(container, deps) {
   function selTake() { return sel && sel.kind === 'take' ? takeById(sel.lap, sel.camera, sel.id) : null; }
   function cueById(id) { return cues.find((c) => c.id === id) || null; }
   function cueName(id) { const c = cueById(id); return c ? (c.name || c.id) : id; }
-  function cuesForCam(idx) {
+  // 重ねる素材（cue）のマスクは**そのカメラの構図に対して**焼かれる（素材工房が種フレームとの差分を
+  // PNG にする）。別カメラの cue を重ねると実機で位置が合わないので、選ばせない
+  // （2026-07-27「作れない組み合わせは卓が選ばせない」をラインから素材へ延長・2026-07-28）。
+  // カメラ未指定の cue は場所に依らない汎用素材として通す。
+  function cueFitsCam(c, idx) {
+    if (!c.camera) return true;
     const id = cameras[idx] ? cameras[idx].id : null;
-    return id == null ? [] : cues.filter((c) => (c.camera || '') === id);
+    return id != null && c.camera === id;
+  }
+  // このカットで画面の下地になるカメラ。live / rec は自分で指し、それ以外は区間のカメラを継ぐ。
+  function stepScreenCam(s) {
+    if ((s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC) && Number.isInteger(s.camera)) return s.camera;
+    return sel ? sel.camera : -1;
   }
   // 演出専用カメラ（role:"fx"）は周回に出てこない＝作者が「どれが D か」を選ぶ時の手がかりが要る。
   function camLabel(idx) {
@@ -320,6 +330,16 @@ export function createRibbon(container, deps) {
       return '素材が未選択（実機ではこのカットは飛ばされます）';
     }
     if (s.cueId && !cueById(s.cueId)) return `重ねる素材 ${s.cueId} が見つかりません`;
+    // 既存データが別カメラの素材を指しているケース（選択肢は塞いだが、過去の割当は残りうる）。
+    // マスクはカメラの構図に対して焼かれるので、実機では位置がずれたまま出る＝黙って壊れる。
+    if (s.cueId) {
+      const c = cueById(s.cueId);
+      const scam = stepScreenCam(s);
+      if (c && !cueFitsCam(c, scam)) {
+        return `重ねる素材「${cueName(s.cueId)}」は ${camLabel(cameras.findIndex((x) => x.id === c.camera))} 用です`
+          + `（このカットの下地は ${camLabel(scam)}。マスクの位置が実機でずれます）`;
+      }
+    }
     return null;
   }
   // ライントリガーの不整合（実機で「黙って出ない」状態を作らないため、ここで必ず言う）。
@@ -1218,8 +1238,22 @@ export function createRibbon(container, deps) {
     let cgOpts = '<option value="">（出さない）</option>';
     for (const a of actors) cgOpts += `<option value="${escapeHtml(a.id)}"${s.cg === a.id ? ' selected' : ''}>${escapeHtml(a.name || a.id)}</option>`;
     if (s.cg && !actors.some((a) => a.id === s.cg)) cgOpts += `<option value="${escapeHtml(s.cg)}" selected>${escapeHtml(s.cg)}（未定義）</option>`;
+    // 構図が合う cue だけを選べるようにする。合わないものは理由付きで無効化して見せる
+    //（隠すと「あるはずの素材が無い」に見えるので、無効の理由ごと出す）。
+    const scam = stepScreenCam(s);
     let cueOpts = '<option value="">（重ねない）</option>';
-    for (const c of cues) cueOpts += `<option value="${escapeHtml(c.id)}"${s.cueId === c.id ? ' selected' : ''}>${escapeHtml(c.name || c.id)}</option>`;
+    const fitCues = cues.filter((c) => cueFitsCam(c, scam));
+    const offCues = cues.filter((c) => !cueFitsCam(c, scam));
+    for (const c of fitCues) cueOpts += `<option value="${escapeHtml(c.id)}"${s.cueId === c.id ? ' selected' : ''}>${escapeHtml(c.name || c.id)}</option>`;
+    if (offCues.length) {
+      cueOpts += '<optgroup label="他カメラの素材（構図が合いません）">';
+      for (const c of offCues) {
+        // 既に割り当て済みのものだけは選択状態を保てるよう有効にしておく（無効化すると編集で黙って消える）。
+        const cur = s.cueId === c.id;
+        cueOpts += `<option value="${escapeHtml(c.id)}"${cur ? ' selected' : ' disabled'}>${escapeHtml(c.name || c.id)}（カメラ ${escapeHtml(c.camera || '?')}）</option>`;
+      }
+      cueOpts += '</optgroup>';
+    }
     if (s.cueId && !cues.some((c) => c.id === s.cueId)) cueOpts += `<option value="${escapeHtml(s.cueId)}" selected>${escapeHtml(s.cueId)}（未定義）</option>`;
     // 立ち位置のラジオはカットごとに別グループにする（name が衝突すると別カットのカットを選び直す）。
     const cgModeName = `rb-cgmode-${t.id}-${idx}`;

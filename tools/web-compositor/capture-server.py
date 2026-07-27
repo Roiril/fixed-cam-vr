@@ -120,7 +120,10 @@ def _default_show():
         # runEpoch: 体験者 1 人分の「ラン」世代。Web の ▶ ラン開始が +1 して postState
         # （control を shallow 置換で送り直す）。値が変わると Unity は周回カウントと
         # once 発火済みフラグをリセット（既定 0・欠落は 0 扱い）。
+        # takeAbortEpoch: 走行中の演出（Take）の中止世代。Web の ■ 画面を取り返す が +1 する。
+        # activeCue と違い「空にする」形では伝わらない（自動発火の演出は activeCue が空のまま走るため）。
         'control': {'activeCue': None, 'cameraOverride': None, 'autoFollow': True, 'runEpoch': 0,
+                    'takeAbortEpoch': 0,
                     # Quest 内の発見プロトコルのキルスイッチ。欠落は ON 扱い（後方互換）。
                     'discoveryEnabled': True,
                     # 素材スロットの束縛（slot://name → 実 URL）。ラン中に差し替える素材はここ。
@@ -1187,6 +1190,13 @@ class Handler(SimpleHTTPRequestHandler):
                 ctrl['activeCue'] = body.get('id')
             elif typ == 'stopCue':
                 ctrl['activeCue'] = None
+            elif typ == 'abortTake':
+                # タイムラインが自動発火した演出（Take）を中止させる。
+                # ⚠ stopCue では止まらない: 自動発火の演出は activeCue を使わず空のまま走るので、
+                #    「空を空にする」書き換えは Unity から見て状態変化ゼロ＝ no-op になる
+                #    （ShowControlClient は control の差分でしか動けない long-poll モデル）。
+                #    そこで runEpoch と同じ「世代カウンタの増分」で確実に伝える（2026-07-28）。
+                ctrl['takeAbortEpoch'] = int(ctrl.get('takeAbortEpoch') or 0) + 1
             elif typ == 'setCameraOverride':
                 ctrl['cameraOverride'] = body.get('camera')  # None = ゾーン自律へ戻す
             elif typ == 'setPost':

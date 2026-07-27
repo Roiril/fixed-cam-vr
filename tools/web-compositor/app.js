@@ -174,6 +174,8 @@ if ($('#latchClearAll')) {
   $('#latchClearAll').onclick = async () => {
     await postCommand({ type: 'setCameraOverride', camera: null });
     await postCommand({ type: 'stopCue' });
+    // 走行中の演出も畳む（stopCue だけでは自動発火の演出に届かない。2026-07-28）。
+    await postCommand({ type: 'abortTake' });
   };
 }
 
@@ -994,7 +996,18 @@ if ($('#runStart')) {
   };
 }
 if ($('#emgAuto')) $('#emgAuto').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
-if ($('#emgStop')) $('#emgStop').onclick = () => postCommand({ type: 'stopCue' });
+// ■ 画面を取り返す = 卓の手動 cue（activeCue）**と**タイムラインが自動発火した演出（Take）の両方を畳む。
+// ⚠ stopCue だけでは自動発火の演出は止まらない（activeCue が空のまま走るので Unity 側で状態変化が起きない）。
+//    2026-07-28 まで、本番中に演出が出たまま戻せない実バグだった。abortTake は世代カウンタなので必ず届く。
+if ($('#emgStop')) {
+  $('#emgStop').onclick = async () => {
+    const el = $('#emgStopMsg');
+    const a = await postCommand({ type: 'stopCue' });
+    const b = await postCommand({ type: 'abortTake' });
+    const ok = a && a.ok !== false && b && b.ok !== false;
+    if (el) el.textContent = ok ? '画面をライブへ戻しました' : '⚠ 卓サーバに届きませんでした';
+  };
+}
 
 // ---- カメラ切替タイミング（control.minDwellSec / switchCooldownSec）------------
 // 空 / 0 = 未指定（Unity 側でコード既定 0.5s に戻る。present 判定は Unity の ResolveTiming が >0 で行う）。

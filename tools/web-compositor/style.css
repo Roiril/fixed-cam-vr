@@ -513,7 +513,10 @@ header h1 { font-size: 14px; }
 .fx-row { overflow: hidden; }
 .fx-reset, .fx-copy { font-size: 10px; padding: 2px 7px; margin-top: 3px; }
 /* 全体グレーディング（カメラ列の上・未設定カメラの既定） */
-.global-fx { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; }
+/* ⚠ 2026-07-28: `var(--line)` は未定義（正は --line-soft）だった。CSS は無効な var() を含む宣言を
+   丸ごと捨てるので、この枠は一度も描かれていなかった。あわせて角丸をハウススタイルの 0 へ戻す
+   （ファイル唯一の 6px だった）。 */
+.global-fx { border: 1px solid var(--line-soft); border-radius: 0; padding: 6px 8px; margin-bottom: 6px; }
 .gfx-head { display: flex; align-items: center; gap: 8px; font-size: 11px; flex-wrap: wrap; }
 .gfx-sub { font-size: 10px; opacity: var(--opacity-mute); }
 .global-fx .fx-rows { grid-template-columns: repeat(3, 1fr); }
@@ -857,6 +860,19 @@ input:-webkit-autofill:active {
    （.app は flex 列なので order が効く）。ライブ運用では監視が主役なので先頭のまま。 */
 .app[data-mode="author"] .multicam,
 .app[data-mode="atelier"] .multicam { order: 9; }
+
+/* ⚠ 2026-07-28: 「監視が主役」の帰結として、本番モードでは緊急操作（▶ ラン開始 / 🚶 自律へ戻す /
+   ■ 画面を取り返す）が監視列の下＝**初期表示の 2 画面先**に落ちていた（実測 y=1455 / viewport 720）。
+   暗い部屋で焦っている人間にスクロールをさせない。監視を主役のまま残しつつ、操作だけを画面下端へ
+   常駐させる（.con-cues .btns と同じ「操作は端に貼る」作法）。
+   sticky ではなく fixed なのは、親 .runpanel 自体が画面外にある間は sticky が効かないため。 */
+.app[data-mode="live"] .run-bar.emergency {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  margin: 0; padding: 8px 16px;
+  background: var(--bg-color); border-top: 1px solid var(--line-soft);
+}
+/* .app は height:100vh の flex 列なので padding では溢れた分を押し下げられない。flex item の spacer で稼ぐ。 */
+.app[data-mode="live"]::after { content: ""; display: block; flex: 0 0 72px; }
 
 /* ===================================================================== */
 /* ⑬b 素材工房（🧪 素材）— atelier.js / index.html                        */

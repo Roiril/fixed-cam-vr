@@ -147,6 +147,24 @@ namespace FixedCamVr.Streaming
             _logic.SetSuppressed(suppressed);
         }
 
+        /// <summary>
+        /// 走行中の演出だけを畳んで画面をライブへ返す（緊急の出口）。
+        ///
+        /// ⚠ <see cref="SetSuppressed"/> では代替できない。卓の「■ 画面を取り返す」が送るのは
+        /// control の書き換えだが、**タイムラインが自動発火した演出は activeCue を使わず空のまま走る**ため
+        /// 「空を空にする」stopCue は状態変化ゼロ＝ no-op になり、suppressed も false→false で畳まれなかった
+        /// （2026-07-28 まで卓の停止ボタンが本番の演出に効いていなかった実バグ）。
+        ///
+        /// 抑止フラグは立てない — 中止した直後から次の演出は通常どおり武装する（ラン全体を殺さない）。
+        /// once 発火済み・周回はそのまま（体験をやり直しにしない。全部戻すのは <see cref="ResetRun"/>）。
+        /// </summary>
+        public void AbortActive()
+        {
+            if (!_logic.IsActive) return;
+            CleanupActive(releaseScreen: director == null || !director.OverrideActive);
+            Debug.Log("[TakeRunner] 走行中の演出を中止した（卓からの緊急停止）");
+        }
+
         /// <summary>タイムライン区間から演出定義を（再）構築する。走行中の演出は先に畳む（不変条件 8）。</summary>
         public void SetTakes(ShowTimelineSegmentDef[]? segments)
         {

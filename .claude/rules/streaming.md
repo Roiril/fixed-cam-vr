@@ -138,6 +138,19 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
   何か再生中（`_overlay.Current != null`）なら id 一致に依存せず無条件で停止する。**停止は server 到達時も `stopCue`（空 id）送信に加えて必ずローカル `StopOverlay` を併用する**（2026-07-23 修正・テスト `GripStopLocalTests`）。
   スケジューラ発火 cue は server の activeCue が空のままなので、stopCue 送信だけでは Apply の遷移判定（cueId != _appliedCue）が起きずローカル再生が止まらない穴があった。コマンド送信は Web 表示・heartbeat との整合維持のため残す。
   スケジューラ発火の別 id cue（cue_A_1 等）が表示中でも黒/演出を確実に止められる緊急復帰。何も再生していない時だけ `cue_<camId>` を発火
+- **⚠ 卓の停止ボタンには同じ穴が 2026-07-28 まで残っていた**（グリップ側だけ 2026-07-23 に塞がれていた）:
+  Web の `■ 演出を止める` / `⛑ 全部解除して自律へ` は `stopCue` + `setCameraOverride:null` しか送らず、
+  **タイムラインが自動発火した演出（Take）を一切止められなかった**。Take は `activeCue` を使わず空のまま走るので
+  `liveSuppressed`（`ShowControlClient.cs` の `activeCue非空 || override非空`）が false→false で
+  `TakeRunner.SetSuppressed` が畳む条件に入らない。皮肉にも「📺 カメラ固定 → 🚶 解除」の 2 段だけが実際に畳んでいた（UI に記載なし）。
+  → **`control.takeAbortEpoch: int`（世代カウンタ）を追加**。`runEpoch` と同じ「値の変化で伝える」流儀
+  （long-poll は control の差分でしか動けないので、「空を空にする」形の停止は原理的に届かない）。
+  Web の `POST /command {type:"abortTake"}` が ++ し、`ShowControlClient` の変化検知が
+  [`TimelineDirector.AbortActive`](../../Assets/Scripts/Streaming/TimelineDirector.cs) →
+  [`TakeRunner.AbortActive`](../../Assets/Scripts/Streaming/TakeRunner.cs) を呼ぶ。
+  **抑止フラグは立てず、once・周回も保つ**（走行中の 1 本だけを畳む＝体験をやり直しにしない）。
+  ボタンは `■ 画面を取り返す` に改名し `stopCue` と `abortTake` を両方送る（卓 cue と Take の両系統を畳む）。
+  初回 Apply は現在値へ同期するだけで発火しない（起動のたびに中止が走らない）
 - **切替 dip は unscaledDeltaTime で進行**（2026-07-22）: `CameraSwitchDirector.AdvanceDip` は timeScale=0 で黒凍結しないよう
   unscaledDeltaTime で進める（StartupFader と同流儀）。OnDisable で dip を解除（`_SwitchDim` を 0・状態 Idle 化）
 - **⚠ ScreenComposite の `_SwitchDim` / `_SignalLost` は post FX 数式（Web FS_POST 一致規約）の対象外**（別系統 uniform）
