@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [show_json_is_live_config.md](show_json_is_live_config.md) - show.json は git 管理外の現場設定。卓の検証で書き換えると復元できない（検証サーバもポートを分けただけでは隔離にならない）
+
 - [sim_device_divergence.md](sim_device_divergence.md) - 卓のシミュレータが実機と食い違った3件（2026-07-27）。「卓で沈黙／卓だけ再生」を疑う時の最初の3点＋node で show.json を直接食わせる再現手順
 
 - [cg_compositing.md](cg_compositing.md) - CG合成を触る前に：像空間の3点／卓とUnityで数値を突き合わせる箇所2つ／画角は一度だけ測って固定（27cm→2cm）／ステンシルとRT depth24
