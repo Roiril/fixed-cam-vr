@@ -171,7 +171,25 @@ course 空間（フロアマップで著作・CourseFrame で実空間に登録�
 |---|---|---|
 | D-0 スキーマ | ✅ 完了 | C# [`ShowTakeSchema`](../../Assets/Scripts/Streaming/ShowTakeSchema.cs)（`rec` / `recLap` / `cg` / `cgMode` / `slot://`）+ `ShowCameraPoseDef` / `ShowRecordDef` / `ShowActorDef` / `ShowSlotDef` / `CameraRoles`。JS [`timeline-model.js`](../../tools/web-compositor/timeline-model.js) と fixture 往復も更新済み |
 | D-1 素材スロット | ✅ 完了 | `ShowControlClient.ResolveAssetUrl` が `slot://` を解決（未束縛は空文字 → カットを飛ばす）。卓は `POST /command {type:'bindSlot'}` で `control.slots` だけを更新（timeline 不変＝ `once` の再武装なし） |
-| D-2 端末内録画 | ✅ 完了（実機未検証） | [`RecordedSegmentFormat`](../../Assets/Scripts/Streaming/Recording/RecordedSegmentFormat.cs) / [`SegmentRecordWriter`](../../Assets/Scripts/Streaming/Recording/SegmentRecordWriter.cs)（背景スレッド） / [`RecordedFramePlayer`](../../Assets/Scripts/Streaming/Recording/RecordedFramePlayer.cs) / [`SegmentRecorder`](../../Assets/Scripts/Streaming/Recording/SegmentRecorder.cs)。`CameraStream.FrameTap` で生 JPEG を分岐。オーバーレイに 3 種目「フレーム列」を追加 |
+| D-2 端末内録画 | ✅ 完了（実機未検証）／**2026-07-29 に 3 件修正 + 卓の著作面を追加** | [`RecordedSegmentFormat`](../../Assets/Scripts/Streaming/Recording/RecordedSegmentFormat.cs) / [`SegmentRecordWriter`](../../Assets/Scripts/Streaming/Recording/SegmentRecordWriter.cs)（背景スレッド） / [`RecordedFramePlayer`](../../Assets/Scripts/Streaming/Recording/RecordedFramePlayer.cs) / [`SegmentRecorder`](../../Assets/Scripts/Streaming/Recording/SegmentRecorder.cs)。`CameraStream.FrameTap` で生 JPEG を分岐。オーバーレイに 3 種目「フレーム列」を追加 |
+
+**2026-07-29 の修正（D-2 は「実装はあるが、この構成では 1 フレームも録れない」状態だった）**:
+
+1. **録画係が生成される経路がライブ受信しか無かった** — `ShowControlClient.EnsureRecorder` の呼び出しが
+   `Apply`（卓からの long-poll）1 箇所にしか無く、焼き込み / 端末キャッシュから `record.enabled` を
+   読んでも `SegmentRecorder` が作られなかった。`SegmentRecorder` はシーンにも prefab にも置かれていないので、
+   **卓が居ない現地では録画が全死**していた。`InitializeAsync`（起動時）にも呼び出しを追加
+2. **`maxTotalMB` が区間ごとに満額配られていた** — 名前どおり**ラン全体**の上限になるよう残量を配る方式に変更
+   （`SegmentRecordWriter.WrittenBytes` を追加し `SegmentRecorder` が加算）。使い切ったら以降の区間は録らない
+3. **ラン開始が現ランの epoch を残していた** — 現地リセット（`ResetRunLocal` が epoch を +1 する）で進んだ番号に
+   卓の `runEpoch` が後から追いつくと、**前の体験者の録画がこのランの録画として再生される**。
+   ラン開始では端末の録画を全部消す（このランの録画はまだ 1 本も無いので消して困らない）
+4. **卓に `record` の著作面が無かった** — show.json を手で書くしかなく、書き忘れても卓は何も言わなかった
+   （実機だけがカットを黙って飛ばす）。**⏺ 端末内録画パネル**（ON/OFF・録る周・上限）と、
+   「録画」カットの参照との**照合**（⏺ パネル / 本番前チェック / カットの警告 / ▶ 検証の 4 面）を追加。
+   判定は [`record-model.js`](../../tools/web-compositor/record-model.js) が単一の正・node テストあり
+5. 卓の尺表示: 「録画」カットの長さは**録った区間の実測滞在**から出す（重ねる素材の長さで代用しない）。
+   実測が無ければ既定 4s を仮置きして `≈` を付ける
 | D-3 カメラ D | ✅ **完了**（2026-07-27・実機未検証）。下表は当時の記録。実配線は [2026-07-27_cg-actor-hand-tracking.md](2026-07-27_cg-actor-hand-tracking.md) | `cameras[].role:"fx"` を導入し、スタッフ巡回（A ボタン）とゾーン自動切替から除外。**4 本目の `CameraSource`（Phone04.asset）と prefab `sources[]` への追加はしていない**（実機が増えたときに行う。手順は下記） |
 | D-4 CG レイヤ | ✅ **完了**（2026-07-27・実機未検証）。腕のハンドトラッキング駆動・人形プレハブ生成・卓の姿勢/actors 著作まで [2026-07-27_cg-actor-hand-tracking.md](2026-07-27_cg-actor-hand-tracking.md) | シェーダ 3 層目 `_CgTex`（post FX の**前**で合成）+ [`ShowCgLayer`](../../Assets/Scripts/Streaming/Cg/ShowCgLayer.cs)（仮想カメラ・actor 配置・follow/fixed）+ レイヤ `ShowCg`(9) を追加。**ハンドトラッキングによる腕の駆動と人形プレハブは未実装**（プレハブ未用意なら代用のカプセルが立つ） |
 
@@ -193,7 +211,10 @@ course 空間（フロアマップで著作・CourseFrame で実空間に登録�
 2. 録画が無い `rec` カットは飛ばす。飛ばした結果 step が全滅した take は発火しない
 3. 未束縛の `slot://` カットは飛ばす（同上）
 4. スロット束縛は timeline を変更しない（`once` の発火済み状態を保つ）
-5. ラン開始で前ランの録画が消える
+5. ラン開始で端末の録画が消える（現ランの epoch も含めて全部。前の体験者の映像を次のランへ持ち越さない）
+5.1. `maxTotalMB` は**ラン全体**の上限（区間ごとに残量を配る）
+5.2. **卓が居なくても録れる**（焼き込み / 端末キャッシュの `record.enabled` でも録画係が立つ）
+5.3. **録れない設定の `rec` カットは卓が必ず言う**（実機だけが黙って飛ばす状態を作らない）
 6. 姿勢未著作のカメラでは CG を出さない
 7. ハンドトラッキング不在でも CG は idle ポーズで出続ける（演出は止まらない）
 8. `role:"fx"` のカメラはスタッフ巡回に現れず、ゾーン自動切替でも選ばれない

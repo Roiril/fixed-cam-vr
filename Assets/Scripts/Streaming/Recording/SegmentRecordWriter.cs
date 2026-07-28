@@ -57,6 +57,12 @@ namespace FixedCamVr.Streaming.Recording
         /// <summary>書き込み中に容量上限へ達したか（HUD / ログ用）。</summary>
         public bool Capped => _capped;
 
+        /// <summary>
+        /// 実際にファイルへ書けたバイト数。**<see cref="Dispose"/> の後に読むこと**
+        /// （書き込みは背景スレッドなので、それ以前は途中経過）。ラン全体の容量配分に使う。
+        /// </summary>
+        public long WrittenBytes => Interlocked.Read(ref _written);
+
         /// <summary>このセグメントのファイルパス。</summary>
         public string Path => _path;
 
@@ -98,18 +104,18 @@ namespace FixedCamVr.Streaming.Recording
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(_path)!);
                 fs = new FileStream(_path, FileMode.Create, FileAccess.Write, FileShare.Read, 64 * 1024);
                 RecordedSegmentFormat.WriteHeader(fs, 0, 0);
-                _written = RecordedSegmentFormat.HeaderBytes;
+                Interlocked.Exchange(ref _written, RecordedSegmentFormat.HeaderBytes);
 
                 foreach (Item item in _queue.GetConsumingEnumerable())
                 {
-                    if (_written + RecordedSegmentFormat.FrameHeaderBytes + item.length > _limits.maxBytes)
+                    if (Interlocked.Read(ref _written) + RecordedSegmentFormat.FrameHeaderBytes + item.length > _limits.maxBytes)
                     {
                         _capped = true;   // 以降の TryAppend は即 false（体験は止めない）
                         _pool.Add(item.buf);
                         continue;
                     }
                     RecordedSegmentFormat.WriteFrame(fs, item.buf, item.length, item.ptsMs);
-                    _written += RecordedSegmentFormat.FrameHeaderBytes + item.length;
+                    Interlocked.Add(ref _written, RecordedSegmentFormat.FrameHeaderBytes + item.length);
                     _pool.Add(item.buf);
                 }
                 fs.Flush();

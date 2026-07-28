@@ -28,6 +28,7 @@ import { projectPoint, unprojectToFloor } from './calib.js';
 // 較正で見た絵と人形を置く時の絵が食い違うと、どちらがずれているのか判断できなくなる。
 import { wireSegments } from './calib-ui.js';
 import { FX, FX_DEFAULT, camColor, escapeHtml, isVideoUrl } from './common.js';
+import { recStepIssue } from './record-model.js';
 import { createCueEditor } from './cue-editor.js';
 import { durationOf, onDurationResolved } from './media-duration.js';
 import { resolveStepDuration } from './show-scenario.js';
@@ -104,6 +105,7 @@ export function createRibbon(container, deps) {
   let actors = [];          // 🎭 CG 人形（show.json actors[]）。カットの「CG 人形」選択肢。
   let cues = [];
   let lines = [];           // 📏 通過ライン（layout.lines）。演出の開始規則「このラインを通過したら」で選ぶ。
+  let record = null;        // ⏺ 端末内録画の設定（show.json record）。「録画」カットが本当に録れるかの照合に使う。
   let zoneBoxes = [];       // 展開済みゾーン矩形（線がどのカメラのゾーンに置かれているかを実機と同じ判定で出す）
   let order = null;
   let orderIsExplicit = false;
@@ -274,7 +276,7 @@ export function createRibbon(container, deps) {
   //   素材の実尺をブラウザで測って使い（kind='measured'）、測れない時だけ trim 推定 ≈ に落ちる。
   function stepSeconds(s) {
     const cue = s.cueId ? cueById(s.cueId) : null;
-    const d = resolveStepDuration(s, cue, durationOf);
+    const d = resolveStepDuration(s, cue, durationOf, recSecondsOf);
     const approx = d.kind === 'estimated' || d.kind === 'unknown';
     const sec = d.durSec > 0 ? d.durSec : TAKE.FALLBACK_STEP_DUR_SEC;
     return { sec: Math.max(0.2, sec), approx, kind: d.kind };
@@ -322,10 +324,10 @@ export function createRibbon(container, deps) {
     if (s.source === TAKE.SRC_LIVE && !(Number.isInteger(s.camera) && s.camera >= 0 && s.camera < cameras.length)) {
       return 'ライブのカメラが未選択（実機ではこのカットは飛ばされます）';
     }
-    if (s.source === TAKE.SRC_REC
-        && !(Number.isInteger(s.camera) && s.camera >= 0 && s.camera < cameras.length && s.recLap > 0)) {
-      return '録画のカメラ／周が未指定（実機ではこのカットは飛ばされます）';
-    }
+    // 「録画」カットは録画設定との照合まで見る（判定は record-model が単一の正）。
+    // ここが食い違うと実機は録っていない映像を探して、そのカットを黙って飛ばす。
+    const recBad = recStepIssue(record, s, cameras.length);
+    if (recBad) return recBad;
     if ((s.source === TAKE.SRC_CLIP || s.source === TAKE.SRC_STILL) && !s.assetUrl) {
       return '素材が未選択（実機ではこのカットは飛ばされます）';
     }
@@ -394,6 +396,22 @@ export function createRibbon(container, deps) {
     const items = dwellStats().items || {};
     const e = items[`${lap}:${camera}`];
     return e && e.n > 0 ? e : null;
+  }
+  /**
+   * 「録画」カットの尺。録画の長さ = 録った区間に体験者が居た時間なので、実測滞在の平均で見積もる
+   * （最短ではなく平均。最短で見ると尺を過小に見せて「最大長に収まる」と誤解させる）。
+   * 実測が無ければ null → 既定尺で仮置きされ、表示は ≈ のまま。
+   */
+  function recSecondsOf(s) {
+    if (!s || s.source !== TAKE.SRC_REC) return null;
+    const e = dwellFor(s.recLap, s.camera);
+    return e && e.meanSec > 0 ? e.meanSec : null;
+  }
+  /** 「録画」カットの尺の説明（著作時には確定しないので、根拠ごと言う）。 */
+  function recLenNote(s) {
+    const sec = recSecondsOf(s);
+    if (sec) return `長さ ≈${fmtSec(sec)}s（この区間の実測 平均滞在）`;
+    return '長さ = その人がこの区間に居た時間（実測が出ると出ます）';
   }
   function dwellLabel(lap, camera) {
     const e = dwellFor(lap, camera);
@@ -1276,7 +1294,7 @@ export function createRibbon(container, deps) {
       <div class="rb-grid">
         <label>映すもの<select class="rb-s-src">${srcOpts}</select></label>
         <label class="rb-s-cam-l" style="display:${isLive || isRec ? '' : 'none'}">カメラ<select class="rb-s-cam">${camOpts}</select></label>
-        <label class="rb-s-reclap-l" style="display:${isRec ? '' : 'none'}" title="この体験のうち何周目に録った映像か（録れていなければ実機ではこのカットは飛ばされます）">録った周<input class="rb-s-reclap" type="number" min="1" step="1" value="${s.recLap > 0 ? s.recLap : 1}">周目</label>
+        <label class="rb-s-reclap-l" style="display:${isRec ? '' : 'none'}" title="この体験のうち何周目に録った映像か（録れていなければ実機ではこのカットは飛ばされます）">録った周<input class="rb-s-reclap" type="number" min="1" step="1" value="${s.recLap > 0 ? s.recLap : 1}">周目<span class="rb-hint2">${escapeHtml(recLenNote(s))}</span></label>
         <label class="rb-s-asset-l" style="display:${isAsset ? '' : 'none'}">素材<select class="rb-s-asset">${assetOpts}</select></label>
         <button class="rb-s-asset-refresh" style="display:${isAsset ? '' : 'none'}" title="いま撮った素材を読み直す（recordings/ captures/ を再走査）">↻</button>
         <button class="rb-s-asset-dir" style="display:${isAsset ? '' : 'none'}" title="撮影フォルダ（recordings/）を開く。ここに録画・合成した素材を置く">📂</button>
@@ -1783,6 +1801,7 @@ export function createRibbon(container, deps) {
     cameras = deps.getCameras ? deps.getCameras() : ((state && state.cameras) || []);
     cues = deps.getCues ? deps.getCues() : ((state && state.cues) || []);
     actors = deps.getActors ? deps.getActors() : ((state && state.actors) || []);
+    record = deps.getRecord ? deps.getRecord() : ((state && state.record) || null);
     const layout = deps.getLayout ? deps.getLayout() : (state && state.layout) || null;
     order = deps.getCourseOrder ? deps.getCourseOrder() : (layout && layout.course ? layout.course.order : null);
     // 通過ライン（線分）と、その線がどのカメラのゾーンに置かれているかを判定するための展開済みゾーン。

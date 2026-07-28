@@ -17,6 +17,7 @@ import { createCompositeView } from './composite-view.js';
 import { durationOf, onDurationResolved } from './media-duration.js';
 import { createShowRunner, parseScenario, sampleAt, DEFAULT_TICK_MS } from './scenario-engine.js';
 import { buildScenarioConfig, serializeScenario } from './show-scenario.js';
+import { recordConfig, recStepIssue } from './record-model.js';
 
 const LS_KEY = 'mawarimi.scenarios.v1';
 const MAX_EVENTS = 300;
@@ -301,9 +302,10 @@ export function createShowSim(container, deps) {
         return { cam: runner.shownCamera, shot, detail: `🎬 ${t.id}（${nth}: ライブに重ね${overlay}）` };
       }
       if (st.source === 'rec') {
-        // 端末内録画は「そのカメラで録った映像」。卓には録画が無いので live で代用して見せる。
+        // 端末内録画は「その周・そのカメラで録った映像」。卓には録画が無いので live で代用して見せる。
         const cam = st.camera >= 0 ? st.camera : runner.shownCamera;
-        return { cam, shot, detail: `🎬 ${t.id}（${nth}: ${camLabel(cam)} の録画${overlay}・卓ではライブで代用）` };
+        const lap = st.recLap > 0 ? `${st.recLap}周目 ` : '';
+        return { cam, shot, detail: `🎬 ${t.id}（${nth}: ${lap}${camLabel(cam)} の録画${overlay}・卓ではライブで代用）` };
       }
       const label = st.source === 'clip' ? '動画' : '静止画';
       return { cam: -1, shot, detail: `🎬 ${t.id}（${nth}: ${label} ${baseName(st.assetUrl) || st.cueId || '素材未設定'} を全面）` };
@@ -408,6 +410,14 @@ export function createShowSim(container, deps) {
     badgeEl.textContent = issue;
   }
 
+  /**
+   * 「録画」カットが実機で本当に録れているか（show.json record との照合）。
+   * 判定は record-model が単一の正（卓のパネル・本番前チェック・リボンと同じ文言になる）。
+   */
+  function recCoverageIssue(step) {
+    return recStepIssue(recordConfig(state), step, (meta && meta.cameras ? meta.cameras.length : 0));
+  }
+
   // 画面が黒いとき、それが「壊れている」のか「配信が来ていない」のかを画面の上で言う。
   //   卓は現場でカメラ 3 台のうち 1 台だけ繋がっている、という状態が普通に起きる。
   //   引数は resolveScreen() の結果（文字・実画と同じ解決を共有する）。
@@ -420,6 +430,10 @@ export function createShowSim(container, deps) {
       || shot.step.source === 'rec';
     if (!liveLike) return '⚠ このカットは素材が未設定です（実機では飛ばされます）';
     if (shot && shot.step.source === 'rec') {
+      // 「録れない設定の録画」を黙ってライブで代用すると、卓では成立しているのに実機では
+      // カットごと消える（著作者に発見手段が無い）。設定と照合して必ず言う。
+      const miss = recCoverageIssue(shot.step);
+      if (miss) return `⚠ ${miss}`;
       return `${camLabel(d.cam)} の録画を映すカットです（卓には端末内録画が無いのでライブで代用表示）`;
     }
     if (d.cam < 0) return '';

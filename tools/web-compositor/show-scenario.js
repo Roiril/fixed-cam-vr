@@ -52,10 +52,21 @@ export function stepAssetUrl(step, cue) {
  *
  * getDuration(url) は「実測できていれば秒、まだ/測れないなら null」を返す関数（任意）。
  * ブラウザ（media-duration.js）だけが供給できるので、node テストでは未指定 = 従来どおり推定。
+ *
+ * getRecSeconds(step) は「録画」カットの尺（＝体験者がその区間に居た時間）。卓は録画そのものを
+ * 持たないので、実測滞在時間の集計から推定する（任意）。**重ねる素材の長さで代用してはいけない** —
+ * 録画カットの下地は録画で、cue はその上のマスクにすぎない。
  */
-export function resolveStepDuration(step, cue, getDuration) {
+export function resolveStepDuration(step, cue, getDuration, getRecSeconds) {
   if (step.durKind !== TAKE.DUR_UNTIL_CLIP_END) {
     return { durSec: step.durSec > 0 ? step.durSec : FALLBACK_STEP_DUR_SEC, kind: 'exact' };
+  }
+  // 「録画」カットは素材 URL を持たない。長さは録った区間の滞在時間そのもので、著作時には確定しない。
+  // 実測が無ければ既定尺で仮置きする（-1 にすると卓のシミュレータが watchdog まで走って嘘をつく）。
+  // どちらの場合も kind='estimated' ＝ 卓の表示は必ず ≈ が付く。
+  if (step.source === TAKE.SRC_REC) {
+    const sec = typeof getRecSeconds === 'function' ? getRecSeconds(step) : null;
+    return { durSec: Number.isFinite(sec) && sec > 0 ? sec : FALLBACK_STEP_DUR_SEC, kind: 'estimated' };
   }
   const url = stepAssetUrl(step, cue);
   if (!url) {
@@ -86,6 +97,8 @@ export function stepCamera(step) {
  */
 export function buildScenarioConfig(state, opts = {}) {
   const getDuration = typeof opts.getDuration === 'function' ? opts.getDuration : null;
+  // 「録画」カットの尺（＝録った区間の実測滞在時間）。供給が無ければ既定尺で仮置きする。
+  const getRecSeconds = typeof opts.getRecSeconds === 'function' ? opts.getRecSeconds : null;
   const s = state || {};
   const cams = s.cameras || [];
   const cues = s.cues || [];
@@ -136,11 +149,15 @@ export function buildScenarioConfig(state, opts = {}) {
       steps.forEach((st) => {
         const cue = st.cueId ? cues.find((c) => c.id === st.cueId) : null;
         if (st.cueId && !cue) warnings.push(`cue 未解決: ${st.cueId}（${t.id || `L${seg.lap}C${seg.camera}#${ti}`}）`);
-        const d = resolveStepDuration(st, cue, getDuration);
+        const d = resolveStepDuration(st, cue, getDuration, getRecSeconds);
         durs.push(d.durSec);
         metaSteps.push({
           source: displaySource(st),
           camera: stepCamera(st),
+          // 「録画」カットの録画元の周。camera は rec でも「録画元カメラ」が入る
+          //（normalizeSource が rec を live へ倒すため。卓はそのカメラのライブを代用表示する）が、
+          // 周は camera だけでは分からないので別に持つ。録画設定との照合に要る。
+          recLap: st.source === TAKE.SRC_REC ? (parseInt(st.recLap, 10) || 0) : 0,
           cueId: st.cueId || '',
           assetUrl: st.assetUrl || '',
           // 実際に画面へ出る素材（カット自身 > 重ねる素材）。卓のプレビューが読む。

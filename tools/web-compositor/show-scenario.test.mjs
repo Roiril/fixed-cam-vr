@@ -269,6 +269,36 @@ test('resolveStepDuration: 素材の実尺が測れたら推定ではなく実�
     { durSec: 5, kind: 'estimated' }, '測れない時は今までどおり trim 推定');
 });
 
+test('resolveStepDuration: 「録画」カットの尺は重ねる素材ではなく実測滞在で決まる', () => {
+  const rec = newStep({ source: TAKE.SRC_REC, camera: 1, recLap: 1, durKind: TAKE.DUR_UNTIL_CLIP_END, cueId: 'c' });
+  const cue = { sourceUrl: 'v.mp4' };
+  const dur = () => 12;   // 重ねる素材の長さ。録画カットの尺とは無関係
+  assert.deepStrictEqual(resolveStepDuration(rec, cue, dur),
+    { durSec: FALLBACK_STEP_DUR_SEC, kind: 'estimated' },
+    '実測滞在が無ければ既定尺で仮置き（-1 にすると卓が watchdog まで走って嘘をつく）');
+  assert.deepStrictEqual(resolveStepDuration(rec, cue, dur, () => 8.5),
+    { durSec: 8.5, kind: 'estimated' }, '録った区間の実測滞在が尺');
+  // 秒指定なら録画でも実機どおり厳密（頭から durSec 秒で畳む）。
+  assert.deepStrictEqual(
+    resolveStepDuration(newStep({ source: TAKE.SRC_REC, durKind: TAKE.DUR_SEC, durSec: 3 }), null, dur, () => 8.5),
+    { durSec: 3, kind: 'exact' });
+});
+
+test('buildScenarioConfig: 「録画」カットは録画元（周・カメラ）が meta に残る', () => {
+  const state = sampleState();
+  const seg = newSeg(3, 1);
+  seg.takes = [newTake('L3C1#0', {
+    at: TAKE.AT_EXIT,
+    steps: [newStep({ source: TAKE.SRC_REC, camera: 2, recLap: 1, durKind: TAKE.DUR_SEC, durSec: 5 })],
+  })];
+  state.timeline.segments.push(seg);
+  const meta = buildScenarioConfig(state).meta;
+  const step = meta.takes.flatMap((t) => t.steps).find((s) => s.source === TAKE.SRC_REC);
+  assert.equal(step.camera, 2, '卓はそのカメラのライブを代用表示するので camera は録画元');
+  assert.equal(step.recLap, 1, '周は camera だけでは分からない（録画設定との照合に要る）');
+  assert.equal(step.durKind, 'exact', '秒指定なら録画でも尺は厳密');
+});
+
 test('buildScenarioConfig: 実測が渡れば「推定」警告は出さない', () => {
   const withDur = buildScenarioConfig(sampleState(), { getDuration: () => 9 }).meta;
   assert.ok(!withDur.warnings.some((w) => w.includes('推定')), '実測できたものを推定と呼ばない');

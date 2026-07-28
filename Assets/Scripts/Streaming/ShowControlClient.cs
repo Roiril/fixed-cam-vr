@@ -904,6 +904,11 @@ namespace FixedCamVr.Streaming
             await LoadBakedShowAsync(ct);
             // 2) 端末キャッシュ（焼き込みを上書き）。ライブが既に適用済みなら両方スキップ（ライブ優先）。
             if (_rev < 0) LoadAndApplyCache();
+            // 2.5) 録画係。**卓が居なくても録れなければならない**（1 周目を録って 3 周目に流すのは
+            //      現地 PC 不在でも成立する体験）。旧実装はライブ受信の Apply でしか EnsureRecorder を
+            //      呼んでおらず、焼き込み / 端末キャッシュの record.enabled は読むだけで録画係が
+            //      生成されず、Quest 単体では 1 フレームも録れなかった（2026-07-29 修正）。
+            EnsureRecorder();
             // 3) 統合後の接続先・post を一度反映（焼き込み/キャッシュのどちらが勝っても 1 回）。
             ApplyCameraEndpoints();
             ApplyPostForActive();

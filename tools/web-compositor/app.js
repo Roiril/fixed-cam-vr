@@ -11,6 +11,7 @@ import { createCompositeView } from './composite-view.js';
 import { createFloorMap } from './floormap.js';
 import { createRibbon } from './ribbon.js';
 import { normalizeTimelineV3 } from './timeline-model.js';
+import { recordConfig, recordLaps, recordCoverage, missingRecordLaps } from './record-model.js';
 import { createShowSim } from './show-sim.js';
 import { createAtelier } from './atelier.js';
 import { createActorsPanel } from './actors.js';
@@ -761,7 +762,7 @@ async function pollState() {
         floorMap && floorMap.onState(s); timeline && timeline.onState(s); showSim && showSim.onState(s);
         actorsPanel && actorsPanel.onState(s); calibUi && calibUi.onState(s);
         atelier && atelier.render();   // カメラ集合の変化を工房の列へ（署名一致なら no-op）
-        renderBgmSection(); renderRunPanel(); renderPreflight();
+        renderBgmSection(); renderRecordPanel(); renderRunPanel(); renderPreflight();
       }
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
   }
@@ -1135,6 +1136,93 @@ if ($('#switchDwell')) $('#switchDwell').onchange = applySwitchTiming;
 if ($('#switchCooldown')) $('#switchCooldown').onchange = applySwitchTiming;
 loadSwitchTiming();
 
+// ---- ⏺ 端末内録画（show.json record）----------------------------------------
+//   「前の周を録って後の周の演出で流す」の唯一の入口。ここが OFF だと実機は 1 フレームも録らず、
+//   「録画」カットは黙って飛ばされる（気づけるのは実機のログだけ）。だから設定と参照の照合まで卓で出す。
+//   判定そのものは record-model.js が単一の正（リボン・シミュレータも同じ関数を読む）。
+const recordCfg = () => recordConfig(state);
+const recordLapSet = () => recordLaps(recordCfg());
+const recCoverage = () => recordCoverage(state, timelineSegments(), camLabelOf);
+function recMaxLap() {
+  let m = 3;
+  for (const s of timelineSegments()) m = Math.max(m, parseInt(s.lap, 10) || 0);
+  for (const r of recCoverage().refs) m = Math.max(m, r.lap);
+  for (const l of recordLapSet()) m = Math.max(m, l);
+  return m;
+}
+async function saveRecord(patch) {
+  const next = { ...recordCfg(), ...patch };
+  next.laps = [...new Set((next.laps || []).map((n) => parseInt(n, 10)).filter((n) => n > 0))].sort((a, b) => a - b);
+  if (state) state.record = next;
+  const r = await postState({ record: next });
+  const st = $('#recState');
+  const ok = r && r.ok !== false;
+  if (st) {
+    st.textContent = ok ? `✓ 保存（${next.enabled ? `録る周 ${next.laps.join(', ') || 'なし'}` : 'OFF'}）` : '✕ 保存できません（卓サーバ断）';
+    st.className = 'ed-status ' + (ok ? 'ok' : 'err');
+  }
+  renderRecordPanel(); renderPreflight();
+}
+function renderRecUse() {
+  const el = $('#recUse');
+  if (!el) return;
+  const { refs, bad } = recCoverage();
+  if (!refs.length) {
+    el.innerHTML = '<div class="rec-row muted">「録画」カットはまだありません（タイムラインのカットで <b>映すもの → 録画</b> を選ぶと、ここに対応が出ます）</div>';
+    return;
+  }
+  const rows = refs.map((r) => {
+    const what = r.camera >= 0 && r.lap > 0 ? `${r.lap}周目 ${camLabelOf(r.camera)}` : '（未指定）';
+    return `<div class="rec-row ${r.ok ? 'ok' : 'ng'}">${r.ok ? '✅' : '❌'} <b>${escapeHtml(what)}</b> の録画 → ${escapeHtml(r.where)} の「${escapeHtml(r.take)}」`
+      + (r.ok ? '' : ` <span class="rec-why">${escapeHtml(r.reason)} → ${escapeHtml(r.fix)}</span>`) + '</div>';
+  });
+  const fixable = bad.some((r) => r.lap > 0 && r.camera >= 0);
+  if (fixable) {
+    rows.push('<div class="rec-row"><button id="recFixLaps" class="accent">⟲ 参照している周を録る対象にする</button>'
+      + '<span class="rec-why">録画を ON にして、足りない周を追加します</span></div>');
+  }
+  el.innerHTML = rows.join('');
+  const fix = $('#recFixLaps');
+  if (fix) {
+    fix.onclick = () => {
+      const laps = new Set(recordLapSet());
+      for (const l of missingRecordLaps(state, timelineSegments())) laps.add(l);
+      saveRecord({ enabled: true, laps: [...laps] });
+    };
+  }
+}
+function renderRecordPanel() {
+  const box = $('#recLaps');
+  if (!box) return;
+  const cfg = recordCfg();
+  const laps = recordLapSet();
+  const n = recMaxLap();
+  let html = '';
+  for (let i = 1; i <= n; i++) {
+    html += `<label class="chk"><input type="checkbox" data-lap="${i}"${laps.has(i) ? ' checked' : ''}${cfg.enabled ? '' : ' disabled'}> ${i}周目</label>`;
+  }
+  box.innerHTML = html;
+  for (const el of box.querySelectorAll('input[data-lap]')) {
+    el.onchange = () => {
+      const set = new Set(recordLapSet());
+      const v = parseInt(el.dataset.lap, 10);
+      if (el.checked) set.add(v); else set.delete(v);
+      saveRecord({ laps: [...set] });
+    };
+  }
+  const setVal = (sel, v) => { const e = $(sel); if (e && document.activeElement !== e) e.value = v; };
+  const en = $('#recEnabled');
+  if (en && document.activeElement !== en) en.checked = !!cfg.enabled;
+  setVal('#recMaxSeg', cfg.maxSegmentSec);
+  setVal('#recMaxMB', cfg.maxTotalMB);
+  setVal('#recFps', cfg.fpsCap);
+  renderRecUse();
+}
+if ($('#recEnabled')) $('#recEnabled').onchange = () => saveRecord({ enabled: $('#recEnabled').checked });
+if ($('#recMaxSeg')) $('#recMaxSeg').onchange = () => saveRecord({ maxSegmentSec: Math.max(5, parseFloat($('#recMaxSeg').value) || 60) });
+if ($('#recMaxMB')) $('#recMaxMB').onchange = () => saveRecord({ maxTotalMB: Math.max(10, parseInt($('#recMaxMB').value, 10) || 200) });
+if ($('#recFps')) $('#recFps').onchange = () => saveRecord({ fpsCap: Math.max(1, parseFloat($('#recFps').value) || 15) });
+
 // ---- ✅ 本番前チェック（自動更新）------------------------------------------
 //   「押す前に見る場所」を 1 枚に集約する。各行がそのまま切り分けの入口。
 function preflightRows() {
@@ -1268,6 +1356,19 @@ function preflightRows() {
   else if (emptyAsset.length) rows.push({ s: 'ng', label: '演出素材', detail: `映像が未選択のカットがある: ${emptyAsset.join(', ')}` });
   else if (noSrc.length) rows.push({ s: 'warn', label: '演出素材', detail: `素材未設定: ${noSrc.join(', ')}` });
   else rows.push({ s: 'ok', label: '演出素材', detail: '参照素材はすべて実在・映像あり' });
+
+  // 端末内録画: 「録画」カットが指す (周, カメラ) を実機が本当に録るか。
+  //   ここが食い違うと実機はそのカットを黙って飛ばす（卓には何も出ない）。参照が無ければ行ごと出さない。
+  const rec = recCoverage();
+  if (rec.refs.length) {
+    rows.push(rec.bad.length
+      ? {
+        s: 'ng', label: '端末内録画',
+        detail: `${rec.bad.map((r) => `${r.lap > 0 ? `${r.lap}周目 ${camLabelOf(r.camera)}` : '未指定'}（${r.reason}）`).join(' / ')}`
+          + ' — ⏺ 端末内録画パネルで直す（このままだと実機はそのカットを飛ばします）',
+      }
+      : { s: 'ok', label: '端末内録画', detail: `録る周 ${[...rec.laps].sort((a, b) => a - b).join(', ')} / 「録画」カット ${rec.refs.length} 本はすべて録る対象` });
+  }
 
   // BGM: タイムラインとラン既定が指すトラックが実在するか（実機で無音に化けるのを防ぐ）
   const trackIds = new Set((state?.bgmTracks || []).map((t) => t.id));
@@ -1425,6 +1526,8 @@ if ($('#timeline')) {
     getCameras: () => state?.cameras || [],
     getCues: () => state?.cues || [],
     getActors: () => state?.actors || [],
+    // ⏺ 端末内録画の設定。「録画」カットが実機で本当に録れるかをリボンが照合する。
+    getRecord: () => state?.record || null,
     getCourseOrder: () => state?.layout?.course?.order || null,
     // 通過ライン（layout.lines）と grid をリボンが読む（開始規則「このラインを通過したら」の選択肢・警告）。
     getLayout: () => state?.layout || null,

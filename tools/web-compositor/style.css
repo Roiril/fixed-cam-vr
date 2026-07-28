@@ -1152,6 +1152,21 @@ input:-webkit-autofill:active {
 /* ===================================================================== */
 .timeline-sec { padding: 10px 14px 22px; border-bottom: 1px solid var(--line-soft); }
 
+/* ⏺ 端末内録画（show.json record）— 設定と「録画」カットの参照を 1 枚で照合する */
+.recpanel { padding: 10px 14px 20px; border-bottom: 1px solid var(--line-soft); }
+.recpanel .run-bar + .run-bar { border-top: none; }
+.rec-laps { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+.rec-laps .chk { margin-left: 4px; }
+.rec-use { display: flex; flex-direction: column; gap: 1px; max-width: 1180px; margin-top: 8px;
+  border: 1px solid var(--line-soft); }
+.rec-row { padding: 6px 10px; font-size: 12px;
+  border-bottom: 1px solid rgba(255, 250, 240, 0.06); }
+.rec-row:last-child { border-bottom: none; }
+.rec-row.ok { opacity: var(--opacity-sub); }
+.rec-row.ng { color: var(--danger-color); }
+.rec-row.muted { opacity: var(--opacity-mute); }
+.rec-why { margin-left: 10px; opacity: var(--opacity-sub); }
+
 /* 区間内 cue チップ（複数） */
 .tl-seg-clip { display: flex; flex-wrap: wrap; gap: 3px; }
 .tl-cue-chip {

@@ -36,8 +36,16 @@ namespace FixedCamVr.Streaming.Recording
         private int _runEpoch = -1;
         private bool _subscribed;
 
+        // このランで書いた総バイト数（確定した区間の合計）。maxTotalMB は**ラン全体**の上限なので、
+        // 区間ごとに使い切らせず残量を配る（旧実装は各区間へ満額を渡しており、区間数だけ端末を食えた）。
+        private long _runBytes;
+        private bool _budgetWarned;
+
         /// <summary>いま録画中か（HUD / 診断用）。</summary>
         public bool IsRecording => _writer != null;
+
+        /// <summary>このランで録画に使った総バイト数（診断用）。</summary>
+        public long RunBytes => _runBytes;
 
         private void Awake()
         {
@@ -67,12 +75,20 @@ namespace FixedCamVr.Streaming.Recording
 
         private void OnDestroy() => StopSegment();
 
-        /// <summary>ラン開始（体験者交代・卓の runEpoch 由来）。走行中の録画を閉じ、前ランのファイルを消す。</summary>
+        /// <summary>
+        /// ラン開始（体験者交代・卓の runEpoch 由来）。走行中の録画を閉じ、**端末に残っている録画を全部消す**。
+        ///
+        /// 現ランの epoch だけ残す実装だと、現地リセット（<see cref="ResetRunLocal"/> が epoch を自分で +1 する）で
+        /// 進んだ番号に卓の runEpoch が後から追いつくと、前の体験者のファイルが「このランの録画」として
+        /// 再生される。ラン開始時点でこのランの録画はまだ 1 本も無いので、全部消して困る場面は無い。
+        /// </summary>
         public void ResetRun(int runEpoch)
         {
             StopSegment();
             _runEpoch = runEpoch;
-            PurgeOtherRuns(runEpoch);
+            _runBytes = 0;
+            _budgetWarned = false;
+            PurgeAllRuns();
         }
 
         /// <summary>
@@ -93,9 +109,21 @@ namespace FixedCamVr.Streaming.Recording
             CameraStream? stream = registry != null ? registry.Get(camera) : null;
             if (stream == null) return;
 
+            // ラン全体の残量を配る。使い切ったら以降の区間は録らない（体験は止めない）。
+            long budget = (long)Mathf.Max(1, cfg.maxTotalMB) * 1024 * 1024;
+            long remaining = budget - _runBytes;
+            if (remaining <= RecordedSegmentFormat.HeaderBytes)
+            {
+                if (!_budgetWarned)
+                {
+                    _budgetWarned = true;
+                    Debug.LogWarning($"[SegmentRecorder] ラン全体の録画容量 {cfg.maxTotalMB}MB を使い切った。以降の区間は録らない");
+                }
+                return;
+            }
+
             string path = SegmentPath(CurrentEpoch, lap, camera);
-            long maxBytes = (long)Mathf.Max(1, cfg.maxTotalMB) * 1024 * 1024;
-            var limits = new SegmentRecordWriter.Limits(maxBytes, cfg.fpsCap);
+            var limits = new SegmentRecordWriter.Limits(remaining, cfg.fpsCap);
 
             try { _writer = new SegmentRecordWriter(path, limits); }
             catch (Exception e)
@@ -125,7 +153,8 @@ namespace FixedCamVr.Streaming.Recording
             if (_writer == null) return;
             bool capped = _writer.Capped;
             string path = _writer.Path;
-            _writer.Dispose();
+            _writer.Dispose();          // 書き切るのを待つ（この後で WrittenBytes が確定する）
+            _runBytes += _writer.WrittenBytes;
             _writer = null;
             Debug.Log($"[SegmentRecorder] 録画終了{(capped ? "（容量上限で打ち切り）" : "")} → {path}");
         }
@@ -149,8 +178,8 @@ namespace FixedCamVr.Streaming.Recording
 
         private static string RunDir(int runEpoch) => Path.Combine(RootDir(), runEpoch.ToString());
 
-        // 現ラン以外のディレクトリを消す。体験者の映像を端末に残さないための運用要件でもある。
-        private static void PurgeOtherRuns(int keepEpoch)
+        // 端末に残っている録画を全部消す。体験者の映像を端末に残さないための運用要件でもある。
+        private static void PurgeAllRuns()
         {
             try
             {
@@ -158,7 +187,6 @@ namespace FixedCamVr.Streaming.Recording
                 if (!Directory.Exists(root)) return;
                 foreach (string dir in Directory.GetDirectories(root))
                 {
-                    if (Path.GetFileName(dir) == keepEpoch.ToString()) continue;
                     try { Directory.Delete(dir, true); } catch { }
                 }
             }

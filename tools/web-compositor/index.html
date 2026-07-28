@@ -221,6 +221,24 @@
       <div id="timeline"></div>
     </section>
 
+    <section class="recpanel" data-group="show">
+      <div class="mc-title">⏺ 端末内録画（前の周を録って後の周の演出で流す）
+        <span class="hint">体験者が歩いた区間のライブ映像を <b>Quest 本体に録画</b>しておき、後の周の演出で「録画」カットとして流す。録るのは<b>体験者が実際に居た区間だけ</b>で、長さはその人がそこに居た時間そのまま（画面が演出に取られていても録り続ける）。<b>ラン開始で前の体験者の録画は消える</b>。ここを OFF にしたまま「録画」カットを置くと、実機ではそのカットが黙って飛ばされる（下の一覧が対応を照合する）。卓の ⏺ 録画（recordings/ へ保存する PC 側の記録）とは別物。</span>
+      </div>
+      <div class="run-bar">
+        <label class="chk" title="show.json の record.enabled。OFF なら 1 フレームも録らない"><input id="recEnabled" type="checkbox"> 端末内録画を使う</label>
+        <span class="rec-laps">録る周 <span id="recLaps"></span></span>
+        <span class="spacer"></span>
+        <span id="recState" class="ed-status"></span>
+      </div>
+      <div class="run-bar">
+        <label class="livecue-lbl" title="1 区間あたりの上限。長居されても打ち切る">1区間の上限 <input id="recMaxSeg" type="number" min="5" max="300" step="5"> s</label>
+        <label class="livecue-lbl" title="ラン全体で使う端末ストレージの上限。使い切ると以降の区間は録らない">ラン全体の上限 <input id="recMaxMB" type="number" min="10" max="2000" step="10"> MB</label>
+        <label class="livecue-lbl" title="録画側の間引き。受信 fps より低くてよい（15 で十分）">録画 fps <input id="recFps" type="number" min="1" max="30" step="1"></label>
+      </div>
+      <div id="recUse" class="rec-use"></div>
+    </section>
+
     <section class="multicam" data-group="place show live">
       <div class="mc-title">
         マルチカメラ（監視）
