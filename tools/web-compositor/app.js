@@ -912,15 +912,30 @@ const atelier = createAtelier({
   },
 });
 
+// 段は覚えておく。誤ってリロードしただけで作業面が変わると、本番中なら事故に近い
+//   （本番を見ていたつもりが演出面に戻っている）。?mode= を付ければ 1 回だけ上書きできる。
+const MODE_KEY = 'mawarimi.mode';
+const MODES = ['place', 'material', 'show', 'live'];
+function restoreMode() {
+  let m = null;
+  try { m = new URLSearchParams(location.search).get('mode'); } catch { /* noop */ }
+  if (!MODES.includes(m)) { try { m = localStorage.getItem(MODE_KEY); } catch { m = null; } }
+  if (!MODES.includes(m)) return;
+  const btn = document.querySelector(`.mode-btn[data-mode="${m}"]`);
+  if (btn) btn.click();
+}
+
 document.querySelectorAll('.mode-btn').forEach((b) => {
   b.onclick = () => {
     if (appEl) appEl.dataset.mode = b.dataset.mode;
+    try { localStorage.setItem(MODE_KEY, b.dataset.mode); } catch { /* プライベートモード等 */ }
     document.querySelectorAll('.mode-btn').forEach((x) => x.classList.toggle('active', x === b));
     renderPreflight();
     // 素材面へ入るたびに読み直す（📷 で撮ったフレームがすぐ候補に出るように）
     if (b.dataset.mode === 'material') atelier.refresh();
   };
 });
+restoreMode();
 
 // ▶ 検証 = 🕹 ショーシミュレーションへ（矢印キーの簡易シミュレーションは廃止・二重に持たない）。
 //   オーサリングモードへ戻し、フロアマップのドットを有効化して、シミュレータまでスクロールする。

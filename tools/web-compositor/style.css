@@ -871,6 +871,35 @@ input:-webkit-autofill:active {
    （.app は flex 列なので order が効く）。 */
 .app[data-mode="show"] .multicam { order: 9; }
 
+/* ---- 🎬 演出は「編集と結果を同時に見る」形にする（2026-07-28）--------------- */
+/*   本番（🚨）の 1 画面主義とは目的が違う。演出を組むのは明るい部屋で時間をかける作業で、
+     大事なのは「直したものが体験者にどう見えるか」がその場で分かること。
+     旧レイアウトは縦 4541px（6 画面）で、リボンを編集するとシミュレータが画面外にあった。
+     → リボンに高さの上限を与えて中でスクロールさせ、その下の結果面を常に画面へ残す。 */
+/*   横スクロールは内側の .rb-track-wrap が持つので、ここで出るのは縦だけ。
+     52vh は「リボン + 下の結果面が 1 画面に収まる」ための当たり値で、
+     周回数や画面の高さによっては窮屈になる。合わなければこの 1 箇所を変える。 */
+.app[data-mode="show"] .timeline-sec {
+  max-height: 52vh; overflow: auto;
+  border-bottom: 1px solid var(--line-soft);
+}
+/* 結果（シミュレータ）は下段でも貼り付かせる。フロアマップを歩かせながら画を見続けるため。 */
+.app[data-mode="show"] .sim-row > .showsim { position: sticky; top: 0; align-self: start; }
+
+/* 補助の面（BGM・人形・焼き込み）は普段畳んでおく。演出を組む間ずっと見るものではない。
+   ドロワーにするのは**本番面ではない**からで、🚨 では畳まない（探す時間がない）。 */
+.drawer { border-top: 1px solid var(--line-soft); padding: 0 14px; }
+.drawer > summary {
+  cursor: pointer; padding: 10px 2px; font-size: 12px; letter-spacing: .06em;
+  opacity: var(--opacity-sub); list-style: none; display: flex; align-items: center; gap: 8px;
+}
+.drawer > summary::-webkit-details-marker { display: none; }
+.drawer > summary::before { content: "▸"; font-size: 10px; opacity: var(--opacity-mute); }
+.drawer[open] > summary::before { content: "▾"; }
+.drawer > summary:hover { opacity: 1; color: var(--accent-color); }
+.drawer > summary .drawer-note { font-size: 11px; opacity: var(--opacity-mute); font-weight: 400; letter-spacing: normal; }
+.drawer > section { border-top: none; }
+
 /* 本番の縦の並びは「まず始めてよいかを言う → 体験中ずっと見るもの → 監視 → 詳細」。
    旧実装は監視列（986px）が最上段で、✅ 本番前チェックも ラン状態も初期表示の外にあった。 */
 .app[data-mode="live"] .preflight { order: -2; }
