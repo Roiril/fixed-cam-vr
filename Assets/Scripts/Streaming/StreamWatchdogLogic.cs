@@ -114,7 +114,20 @@ namespace FixedCamVr.Streaming
         /// stall は _lastFrameTime を書き換えない（A2 中核。SignalLostFx の砂嵐が消灯しないため）。
         /// </summary>
         public ReconnectReason EndTick(float now, float unscaledDt, float phoneFps)
+            => EndTick(now, unscaledDt, phoneFps, sourceThrottling: false);
+
+        /// <summary>
+        /// recv-fps 窓ロール + lag + stall watchdog。
+        /// <paramref name="sourceThrottling"/> が true（配信側が熱で fps・画質を自動降格中）のときは
+        /// <b>lag 判定を行わない</b>。熱で落ちた fps は経路の詰まりではないので、張り直しても直らないどころか
+        /// 黒 / 砂嵐が出たうえに再接続の負荷でさらに熱が上がる（5 秒ごとの再接続ループになる）。
+        /// stall は熱でも「本当にフレームが来ていない」ので従来どおり効かせる。
+        /// </summary>
+        public ReconnectReason EndTick(float now, float unscaledDt, float phoneFps, bool sourceThrottling)
         {
+            // lag 判定の前提（phoneFps>1）を外し、溜まった窓も捨てる
+            // （捨てないと熱が引いた瞬間に古い蓄積で即再接続する）。
+            if (sourceThrottling) { phoneFps = 0f; _lagWindowAccum = 0f; }
             // 1. 受信 fps 計測（1 秒ウィンドウ）
             if (_recvWindowStart == 0f) _recvWindowStart = now;
             if (now - _recvWindowStart >= 1f)

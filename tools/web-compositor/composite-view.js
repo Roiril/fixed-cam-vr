@@ -104,7 +104,8 @@ export function createCompositeView(canvas, provider) {
       exposure: p.exposure ?? 0, contrast: p.contrast ?? 1, saturation: p.saturation ?? 1,
       temperature: p.temperature ?? 0, tint: p.tint ?? 0, lift: p.lift ?? 0,
       vignette: p.vignette ?? 0, grain: p.grain ?? 0,
-      aberration: 0, scanline: p.scanline ?? 0, showMask: 0,
+      aberration: p.aberration ?? 0, pixelate: p.pixelate ?? 0,
+      scanline: p.scanline ?? 0, scanlineCount: p.scanlineCount ?? 0, showMask: 0,
       time: (performance.now() - t0) / 1000,
     }, { fbo: null, w: W, h: H });
   };

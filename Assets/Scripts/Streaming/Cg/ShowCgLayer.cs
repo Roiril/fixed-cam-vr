@@ -221,12 +221,24 @@ namespace FixedCamVr.Streaming.Cg
                 Hide();
                 return;
             }
+            bool hasCalibForPose = showControl.TryGetCameraCalib(cameraIndex, out ShowCameraCalibDef calibForPose);
             if (!showControl.TryGetCameraPose(cameraIndex, out ShowCameraPoseDef pose))
             {
-                // 当てずっぽうのパースで人形を出すと「浮いている / 床に埋まっている」になる。出さない方が良い。
-                Debug.LogWarning($"[ShowCgLayer] カメラ {cameraIndex} の姿勢が未著作 → CG を出さない");
-                Hide();
-                return;
+                // 較正の解があるなら、そこから概算姿勢を作って出す。
+                // 較正は「実測した姿勢」そのものなので、pose（人がドラッグした概算）が無いことを理由に
+                // 出さないのは筋が通らない。卓は前から「較正があれば人形は出る」と判定して輪郭を描いており、
+                // **卓で ✅ に見えて実機だけ出ない**という食い違いになっていた（2026-07-29 是正）。
+                if (hasCalibForPose && calibForPose.IsUsable())
+                {
+                    pose = PoseFromCalib(calibForPose);
+                }
+                else
+                {
+                    // 当てずっぽうのパースで人形を出すと「浮いている / 床に埋まっている」になる。出さない方が良い。
+                    Debug.LogWarning($"[ShowCgLayer] カメラ {cameraIndex} の姿勢も較正も未著作 → CG を出さない");
+                    Hide();
+                    return;
+                }
             }
 
             EnsureCamera();
@@ -240,12 +252,32 @@ namespace FixedCamVr.Streaming.Cg
             _cameraIndex = cameraIndex;
             // 較正の解があればそれが姿勢の正（pose は人がドラッグした概算にすぎない）。
             // ただしレンズ・解像度の照合は毎フレーム行う（起動直後は実寸が未確定なので Apply では決まらない）。
-            _calibRaw = showControl.TryGetCameraCalib(cameraIndex, out ShowCameraCalibDef calib) ? calib : null;
+            _calibRaw = hasCalibForPose ? calibForPose : null;
             _warnedCalibMismatch = false;
             _actorRig?.ResetPose();
             _visible = true;
             _warnedUnregistered = false;
             Tick();
+        }
+
+        /// <summary>
+        /// 較正の解から概算姿勢を作る（<c>cameras[].pose</c> が未著作でも人形を出すため）。
+        /// 水平画角は内部行列から <c>2·atan(W / 2fx)</c> で戻す。較正が使える限りこの pose は
+        /// 実際には使われない（毎フレームの <c>ResolveCalib</c> が calib を採る）が、
+        /// レンズ・解像度が食い違ったときのフォールバック先として意味を持つ。
+        /// </summary>
+        private static ShowCameraPoseDef PoseFromCalib(ShowCameraCalibDef c)
+        {
+            float hfov = 2f * Mathf.Atan(c.srcW / (2f * Mathf.Max(c.fxPx, 1f))) * Mathf.Rad2Deg;
+            return new ShowCameraPoseDef
+            {
+                x = c.x,
+                z = c.z,
+                y = c.y,
+                yawDeg = c.yawDeg,
+                pitchDeg = c.pitchDeg,
+                hfovDeg = Mathf.Clamp(hfov, 10f, 170f),
+            };
         }
 
         /// <summary>CG を消す（カットが終わった / 指定の無いカットへ移った）。</summary>

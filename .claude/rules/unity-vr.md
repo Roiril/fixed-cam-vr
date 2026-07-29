@@ -216,6 +216,20 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
   ガイドパネル上部に赤 1 行 `演出中は切り替えできません` を数秒出す（[`ControllerGuidePanel.ShowTransient`] + 失敗振動）。
 - **⚠ 実機未検証**（2026-07-21）。振幅・波形の体感、コントローラ未接続時のガイドパネル消灯は現場調整前提
 
+### 体験の骨格（導入 → 3 周 → 終了）— 2026-07-29〜
+
+企画書（学会論文版）の「3 区間を 3 周・導入を含め 3 分以内」を状態機械にしたもの。契約は
+[streaming.md](streaming.md) の「体験の骨格」節が正本。Unity 側で押さえるべき点だけ:
+
+- 相は `Intro` / `Run` / `Finished`。実行体 [`ShowRunDirector`](../../Assets/Scripts/Streaming/ShowRunDirector.cs) は
+  `Setup Main Demo Scene` が [Tracker] に載せる（未配置なら ShowControlClient が実行時に自動生成する）。
+- 導入・終了の間は **`CueScheduler.SetShowGate(false)`** で区間進行を止める。これ 1 点で演出・端末内録画・
+  区間 post / BGM・実測滞在が全部止まる。**画面のカメラ切替は止めない**（導入では映像を出したいから）。
+- 終了の黒は [`ShowEndingFader`](../../Assets/Scripts/Diagnostics/ShowEndingFader.cs)（CenterEyeAnchor 直下）。
+  `StartupFader` は解除後に自分を Destroy するので再利用できない。
+- StatusHud の 1 行目が相と経過を出す（`導入中 0:12` / `2周目/全3周 ・ 経過 1:05` / `体験おわり…`）。
+  **HMD 内の文言を足したら `Tools/FixedCamVr/Setup/Generate Japanese HUD Font` を再実行**（忘れると実機で豆腐）。
+
 ### 周回カウントと cue 自動発火（2026-07-17〜）
 
 「何周目のどのゾーンで cue を出すか」の事前オーサリング（詳細は [streaming.md](streaming.md) の該当節と

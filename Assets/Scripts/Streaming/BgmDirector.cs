@@ -371,7 +371,11 @@ namespace FixedCamVr.Streaming
             _cur = next;
         }
 
-        private void StopAll(float fadeOutSec)
+        /// <summary>
+        /// 鳴っている音を全部止める（<paramref name="fadeOutSec"/> でフェードアウト）。
+        /// 体験の終了（<see cref="ShowRunDirector"/>）が暗転と一緒に呼ぶ。
+        /// </summary>
+        public void StopAll(float fadeOutSec)
         {
             _generation++;   // in-flight な DL の結果で鳴り出さないようにする
             if (_cur.src != null && _cur.src.isPlaying)

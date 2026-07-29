@@ -136,6 +136,7 @@ export function createShowSim(container, deps) {
   let recording = false, recSamples = [], recHoldAt = null;
   let replay = null;             // { samples, endMs, name }
   let staleConfig = false;       // 実行中に show.json が変わった
+  let runFinished = false;       // 走り切った（run.totalLaps）。実機は暗転して終わるので卓も止める
   let notice = '';               // 一時メッセージ（再実行おわり 等）。renderStatus が毎回描き直す
   let scenarios = [];            // { name, url? , local? }
 
@@ -153,6 +154,7 @@ export function createShowSim(container, deps) {
     simMs = 0; acc = 0; fedPos = { x: pos.x, z: pos.z }; hasWalkYaw = false; walkYawDeg = 0;
     events = []; logEl.innerHTML = ''; renderLogEmpty();
     staleConfig = false;
+    runFinished = false;
     renderWarnings();
     renderAll();
   }
@@ -465,6 +467,7 @@ export function createShowSim(container, deps) {
     else if (replay) bits.push(`▶ 再実行中: ${replay.name}`);
     else if (playing) bits.push(recording ? '● 記録中（マップをドラッグ）' : '実行中（マップをドラッグ）');
     else bits.push('一時停止中');
+    if (runFinished) bits.push(`🏁 体験おわり（${totalLaps()} 周を走り切りました。⏹ 先頭へ でやり直す）`);
     if (staleConfig) bits.push('⚠ show.json が更新されました（⏹ 先頭へ で反映）');
     statusEl.textContent = bits.join(' / ');
     statusEl.className = 'ss-note ss-status' + (bits.some((b) => b.startsWith('⚠')) ? ' warn' : '');
@@ -484,7 +487,7 @@ export function createShowSim(container, deps) {
   const EVENT_STYLE = {
     screen: 'ev-screen', zone: 'ev-zone', lap: 'ev-lap',
     seg: 'ev-seg', take: 'ev-take', step: 'ev-step', end: 'ev-end',
-    drop: 'ev-drop',
+    drop: 'ev-drop', finish: 'ev-lap',
   };
 
   function describeEvent(e) {
@@ -492,6 +495,8 @@ export function createShowSim(container, deps) {
       case 'screen': return `画面 → ${camLabel(e.a)}`;
       case 'zone': return `ゾーン確定 ${camLabel(e.a)}`;
       case 'lap': return `周回 → ${e.a} 周目`;
+      // 実機はここで暗転して終わる（次の体験者を待つ）。卓も同じところで止める。
+      case 'finish': return `🏁 体験おわり（${e.a} 周を走り切りました）`;
       case 'seg': return `区間 L${e.a}・${camLabel(e.b)} へ進入`;
       case 'take': return `演出開始 ${e.id}`;
       case 'step': {
@@ -596,7 +601,32 @@ export function createShowSim(container, deps) {
       pushEvents(runner.step(simMs, p.x, p.z));
       if (recording) recordSample(simMs, p);
       if (replay && simMs >= replay.endMs) { finishReplay(); break; }
+      if (checkRunFinished()) break;
     }
+  }
+
+  // 体験の終端（show.json run.totalLaps）。実機は走り切ると暗転して終わるので、卓でも同じところで止める。
+  // 止めないと「3 周で終わる設定なのに 4 周目の演出が卓では動いて見える」という嘘になり、
+  // 逆に**3 周目の最後に置いた離脱時の演出が出るかどうか**を卓で確かめられない。
+  //
+  // 走行中の演出は見せ切る（実機の ShowRunLogic と同じ規則）— ここを合わせないと
+  // 「卓では山場が出たのに実機では出ない」の逆パターンを作る。
+  function checkRunFinished() {
+    if (runFinished || !runner) return false;
+    const total = totalLaps();
+    if (total <= 0 || runner.lap <= total) return false;
+    if (runner.takeActive) return false;   // 見せ切ってから畳む
+    runFinished = true;
+    pause();
+    pushEvents([{ kind: 'finish', tMs: simMs, a: totalLaps() }]);
+    renderAll();
+    return true;
+  }
+
+  function totalLaps() {
+    const r = (state && state.run) || {};
+    const n = parseInt(r.totalLaps, 10);
+    return Number.isFinite(n) && n > 0 ? n : 3;   // 既定は実機と同じ 3 周
   }
 
   // rAF はタブ非表示で止まる（裏タブで凍る）ので壁時計駆動。
@@ -619,6 +649,9 @@ export function createShowSim(container, deps) {
   function play() {
     if (!runner) rebuild(true);
     if (!runner) return;
+    // 走り切った後の ▶ は先頭からやり直す（そのまま再開しても即また終わるだけで、
+    // 「押したのに動かない」に見える）。
+    if (runFinished) { resetRun(); return; }
     notice = '';
     playing = true;
     lastWall = performance.now();

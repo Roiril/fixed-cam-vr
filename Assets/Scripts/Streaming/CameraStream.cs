@@ -40,9 +40,15 @@ namespace FixedCamVr.Streaming
         // さらに _metaInflight ガードが新エンドポイントの再取得をブロックしていた。
         private int _endpointGen;
 
-        // /health の latestFrameAgeMs と receivedTickMs から推定する E2E 遅延（ms）。
-        // 「frame が capture されてから Unity がテクスチャに上げるまで」の参考値。
+        // 受信スレッドの払い出し → メインスレッドの展開完了 (ms)。**これは E2E ではない**。
+        // 内訳つきの推定は <see cref="Latency"/> を読むこと。
         public float EstimatedLatencyMs { get; private set; }
+
+        // 遅延の内訳（到着の揺らぎ / 展開 / 提示 / 配信側の鮮度）。
+        private readonly LatencyEstimatorLogic _latency = new LatencyEstimatorLogic();
+
+        /// <summary>遅延の内訳（企画書「100ms 程度以内を目標として管理する」の観測面）。</summary>
+        public LatencyEstimatorLogic Latency => _latency;
 
         // 直近フレームの seq。歯抜け検出用。
         private long _lastSeq;
@@ -170,6 +176,8 @@ namespace FixedCamVr.Streaming
             _lastSeq = 0;
             DroppedFrames = 0;
             EstimatedLatencyMs = 0f;
+            // 遅延の窓も捨てる（別端末の時計を基準にした最小値を持ち越すと揺らぎが嘘になる）。
+            _latency.Reset();
             _watchdog.NotifyEndpointChanged(Time.realtimeSinceStartup);
             if (_started)
             {
@@ -292,10 +300,16 @@ namespace FixedCamVr.Streaming
                         DroppedFrames += (meta.seq - _lastSeq - 1);
                     _lastSeq = meta.seq;
 
-                    // E2E 遅延推定: /health の clockSkew 補正は無いので、ここでは「Unity 受信からテクスチャ反映」までを表示
+                    // 遅延の内訳（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
+                    //   展開ぶん = 受信スレッドの払い出し → メインスレッドの LoadImage 完了
+                    //   揺らぎぶん = 撮影時刻付きフレームの到着差（窓内最小からの超過）
+                    // **絶対の end-to-end は測っていない**（端末間の時計の基準が違い、引き算できない）。
+                    double decodeMs = MjpegStreamReceiver.NowMs() - meta.receivedTickMs;
+                    EstimatedLatencyMs = (float)decodeMs;
+                    _latency.ObserveDecode((float)decodeMs);
                     if (meta.captureNs != 0)
                     {
-                        EstimatedLatencyMs = MjpegStreamReceiver.NowMs() - meta.receivedTickMs;
+                        _latency.ObserveArrival(meta.captureNs / 1_000_000.0, meta.receivedTickMs);
                     }
                 }
                 else
@@ -326,8 +340,11 @@ namespace FixedCamVr.Streaming
             }
 
             // recv-fps 窓ロール + lag 検出 + stall watchdog を純ロジックに委譲。
+            // 配信側が熱で自動降格している間は lag 判定を抑止する（張り直しても直らず、悪化させるだけ）。
             float phoneFps = _health?.fps ?? 0f;
-            var reason = _watchdog.EndTick(now, udt, phoneFps);
+            _latency.SetDisplayRate(DisplayRateInfo.CurrentHz);
+            _latency.SetSourceAgeMs(_health?.latestFrameAgeMs ?? 0f);
+            var reason = _watchdog.EndTick(now, udt, phoneFps, _health?.IsThrottling ?? false);
             if (reason == StreamWatchdogLogic.ReconnectReason.Lag)
             {
                 Debug.Log($"[CameraStream] lag detected (recv={_watchdog.ReceivedFps:F1}/phone={phoneFps:F1}). reconnecting.");

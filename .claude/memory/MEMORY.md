@@ -1,5 +1,8 @@
 # Project Memory Index
 
+- [show_run_skeleton.md](show_run_skeleton.md) - 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／凍結を増やさない
+- [glitch_and_latency.md](glitch_and_latency.md) - 乱れ演出と遅延計測：_Glitch と _SignalLost は別系統／post は 4 箇所同時に直す／絶対 E2E は測っていない（配信側に /clock が要る）
+
 - [show_json_is_live_config.md](show_json_is_live_config.md) - show.json は git 管理外の現場設定。卓の検証で書き換えると復元できない（検証サーバもポートを分けただけでは隔離にならない）
 
 - [sim_device_divergence.md](sim_device_divergence.md) - 卓のシミュレータが実機と食い違った3件（2026-07-27）。「卓で沈黙／卓だけ再生」を疑う時の最初の3点＋node で show.json を直接食わせる再現手順

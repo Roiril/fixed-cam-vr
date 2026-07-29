@@ -233,16 +233,58 @@ namespace FixedCamVr.Diagnostics
         }
 
         // 全編を日本語・直感表記へ（記号を廃し、意味を平文で）。既存参照の append のみで新規 GC を出さない。
+        // 体験の骨格。ShowControlClient が実行時に自動生成することがあるので遅延解決する。
+        private ShowRunDirector? _run;
+
+        private ShowRunDirector? ResolveRun()
+        {
+            if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
+            return _run;
+        }
+
+        // m:ss（GC ゼロ。sb.Append(int) だけで組む）。
+        private static void AppendClock(StringBuilder sb, float sec)
+        {
+            if (sec < 0f) sec = 0f;
+            int total = Mathf.FloorToInt(sec);
+            sb.Append(total / 60);
+            sb.Append(':');
+            int s = total % 60;
+            if (s < 10) sb.Append('0');
+            sb.Append(s);
+        }
+
         // モードラベル（[NORMAL]/[REG]）は行頭に出さない（REG 中は登録ガイダンスが強制表示されるため不要。
         // SetModeLabel API と heartbeat 連携は別途維持）。
         private void BuildStatus(StringBuilder sb)
         {
             sb.Clear();
 
-            // 行1: {lap}周目 ・ いまの場所: {zone} ・ 表示中: カメラ{active+1}
-            bool hasLap = lapCounter != null && lapCounter.CurrentLap >= 1;
-            if (hasLap) { sb.Append(lapCounter!.CurrentLap); sb.Append("周目"); }
-            else sb.Append("周回 -");
+            // 行1: 体験の相と周回。導入中・終了は周回より先にそれを言う（スタッフが最初に知りたいのはここ）。
+            ShowRunDirector? run = ResolveRun();
+            if (run != null && run.Phase == ShowPhase.Intro)
+            {
+                sb.Append("導入中 ");
+                AppendClock(sb, run.IntroElapsedSec);
+            }
+            else if (run != null && run.Phase == ShowPhase.Finished)
+            {
+                sb.Append("体験おわり（次の体験者へ） ");
+                AppendClock(sb, run.RunElapsedSec);
+            }
+            else
+            {
+                bool hasLap = lapCounter != null && lapCounter.CurrentLap >= 1;
+                if (hasLap) { sb.Append(lapCounter!.CurrentLap); sb.Append("周目"); }
+                else sb.Append("周回 -");
+                if (run != null)
+                {
+                    sb.Append('/');
+                    sb.Append(run.TotalLaps);
+                    sb.Append("周 ・ 経過 ");
+                    AppendClock(sb, run.RunElapsedSec);
+                }
+            }
             sb.Append(" ・ いまの場所: ");
             var zone = tracker != null ? tracker.CurrentZone : null;
             sb.Append(zone != null ? zone.Label : "-");
@@ -278,6 +320,25 @@ namespace FixedCamVr.Diagnostics
                 }
             }
             else sb.Append('-');
+
+            // 行3.5: 映像の遅れ（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
+            // **絶対の end-to-end ではない** — Unity が観測できる分（到着の揺らぎ + 展開 + 提示）だけ。
+            // 配信端末が熱で品質を落としている時はそれも言う（原因が経路だと誤解させない）。
+            var activeStream = registry != null ? registry.GetActive() : null;
+            if (activeStream != null)
+            {
+                sb.Append("\n映像の遅れ ");
+                sb.Append(Mathf.RoundToInt(activeStream.Latency.ObservedMs));
+                sb.Append("ms");
+                int jitter = Mathf.RoundToInt(activeStream.Latency.ArrivalJitterMs);
+                if (jitter > 0)
+                {
+                    sb.Append("（うち揺らぎ ");
+                    sb.Append(jitter);
+                    sb.Append("ms）");
+                }
+                if ((activeStream.Health?.throttleStage ?? 0) > 0) sb.Append(" ⚠配信端末が発熱で品質を下げています");
+            }
 
             // 行4（該当時のみ・複数該当なら優先度順に 1 つだけ）: 信号断 / 追従凍結 / 切替中 / 切替抑止。
             if (signalFx != null && signalFx.SignalLost)

@@ -59,5 +59,25 @@ namespace FixedCamVr.Streaming
 
         /// <summary>最新フレームの経過時間 (ms)。大きい時はカメラ stall（配信側で映像が更新されていない）。</summary>
         public long latestFrameAgeMs;
+
+        // ---- 発熱抑制（streamer v0.7.0〜）----
+        // 熱で fps が自動降下している間は「経路が詰まった」わけではないので、
+        // lag 判定（recvFps/phoneFps 比）で MJPEG を張り直してはいけない。
+        // 張り直すと黒 or 砂嵐が出るうえ再接続でさらに熱が上がり、事態を悪化させる。
+
+        /// <summary>Android の熱ステータス（0=none … 6=shutdown）。</summary>
+        public int thermalStatus;
+
+        /// <summary>熱の余裕（0-1・1 に近いほど余裕がない）。</summary>
+        public float thermalHeadroom;
+
+        /// <summary>配信側の自動降格の段（0=なし / 1,2=fps・画質を落としている）。</summary>
+        public int throttleStage;
+
+        /// <summary>電池温度 (℃)。現場で「熱いから落ちた」を人が確認するための表示用。</summary>
+        public float batteryTempC;
+
+        /// <summary>配信側が熱で降格しているか（lag 判定を抑止する条件）。</summary>
+        public bool IsThrottling => throttleStage > 0;
     }
 }

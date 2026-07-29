@@ -140,8 +140,10 @@ uniform float uSaturation;   // 1=neutral
 uniform float uTemperature;  // -1..1 (cool..warm)
 uniform float uVignette;     // 0..1
 uniform float uGrain;        // 0..1
-uniform float uAberration;   // px 相当 0..~20
+uniform float uAberration;   // 0..1（画面端で最大 2% ずれ。Unity の _Aberration と同式）
+uniform float uPixelate;     // 0..1（サンプル位置の量子化。Unity の _Pixelate と同式）
 uniform float uScanline;     // 0..1
+uniform float uScanlineCount;// 走査線の本数（0 = 既定 240）
 uniform float uLift;         // 0..0.3 黒浮き（コントラストの後に床上げ）
 uniform float uTint;         // -1..1 色かぶり（+ 緑 / - マゼンタ）
 uniform float uShowMask;     // 0/1 マスク境界オーバーレイ
@@ -155,11 +157,24 @@ float hash(vec2 p){
 
 void main(){
   vec2 uv = vUv;
-  // 色収差: 中心からの放射方向に RGB をずらす
   vec2 dir = uv - 0.5;
+
+  // 低解像度化: サンプル位置を量子化する（撮像側が粗い、という表現なので色ではなく位置）。
+  // ブロックが正方に見えるよう縦は枠アスペクトで割る。
+  if(uPixelate > 0.001){
+    float frameAspect = (uTexel.y > 0.0 ? (1.0/uTexel.x) / (1.0/uTexel.y) : 1.0);
+    float bx = max(6.0, floor(mix(400.0, 18.0, clamp(uPixelate, 0.0, 1.0))));
+    float by = max(4.0, floor(bx / max(frameAspect, 1e-3)));
+    vec2 b = vec2(bx, by);
+    uv = (floor(uv * b) + 0.5) / b;
+  }
+
+  // 色収差: 中心からの放射方向に RGB をずらす（端ほど強い）。
   vec3 col;
   if(uAberration > 0.001){
-    vec2 off = dir * uAberration * uTexel.x;
+    vec2 c = uv - 0.5;
+    float r = clamp(length(c) * 2.0, 0.0, 1.0);
+    vec2 off = c * (r * r) * uAberration * 0.02;
     col.r = texture(uTex, uv + off).r;
     col.g = texture(uTex, uv).g;
     col.b = texture(uTex, uv - off).b;
@@ -188,15 +203,19 @@ void main(){
   float vig = 1.0 - uVignette * dot(dir, dir) * 2.2;
   col *= clamp(vig, 0.0, 1.0);
 
-  // 走査線
+  // 走査線。**本数は uScanlineCount（0 = 既定 240）**。
+  // canvas の縦画素を使っていた頃は、面ごとに 360〜480 とばらつき、同じ値でも実機（240 固定）と
+  // 縞のピッチが 1.5〜2 倍食い違っていた。
   if(uScanline > 0.001){
-    float s = 0.5 + 0.5 * sin(uv.y * (1.0/uTexel.y) * 3.14159);
+    float lines = uScanlineCount > 0.0 ? uScanlineCount : 240.0;
+    float s = 0.5 + 0.5 * sin(vUv.y * lines * 3.14159265);
     col *= 1.0 - uScanline * (1.0 - s) * 0.6;
   }
 
-  // フィルムグレイン
+  // フィルムグレイン。Unity と同じ等方 480 グリッド + fract(時間) にする
+  // （canvas 実寸を使うと面ごとに粒の大きさが変わり、実機と食い違う）。
   if(uGrain > 0.001){
-    float n = hash(uv * vec2(1.0/uTexel.x, 1.0/uTexel.y) + uTime);
+    float n = hash(vUv * 480.0 + fract(uTime));
     col += (n - 0.5) * uGrain;
   }
 

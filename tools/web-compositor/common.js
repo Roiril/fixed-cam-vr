@@ -2,8 +2,10 @@
 //   app.js / cue-editor.js / ribbon.js / composite-view.js が共通で使う小物を集約。
 //   （floormap.js は自己完結のまま。ここには依存させない）
 
-// ---- 画質（cameras[i].post / segment.post）7 パラメータ -----------------------
+// ---- 画質（cameras[i].post / segment.post）12 パラメータ ----------------------
 //   [key, label, min, max, step, default]
+//   ⚠ ここを増やしたら **shaders.js の FS_POST と Unity の ScreenComposite.shader を同時に直す**。
+//     数式・順序を一致させる規約で結ばれていて、片方だけ直すと沈黙して食い違う。
 export const FX = [
   ['exposure', '露出', -2, 2, 0.01, 0],
   ['contrast', 'コントラスト', 0.5, 2, 0.01, 1],
@@ -14,6 +16,9 @@ export const FX = [
   ['vignette', 'ヴィネット', 0, 1, 0.01, 0],
   ['grain', 'グレイン', 0, 0.3, 0.005, 0],
   ['scanline', '走査線', 0, 1, 0.01, 0],
+  ['scanlineCount', '走査線の本数', 0, 720, 10, 0],  // 0 = 既定 240（実機と卓で本数を揃えるために持つ）
+  ['aberration', '色収差', 0, 1, 0.01, 0],           // 安いレンズの色ずれ（放射方向）
+  ['pixelate', '低解像度化', 0, 1, 0.01, 0],         // 伝送の劣化を装うブロック化
 ];
 export const FX_DEFAULT = Object.fromEntries(FX.map(([k, , , , , d]) => [k, d]));
 

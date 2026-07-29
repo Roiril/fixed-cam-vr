@@ -367,6 +367,121 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   **v2 データはもう「退避路」ではない**（実機も v2 を演出へ変換して同じ経路で走らせる）。
   ここまでの実装ごと戻したいときは、この一本化コミットを `git revert` する
 
+### 体験の骨格（導入 → 3 周 → 終了）と「映像の乱れ」— 2026-07-29
+
+企画書が学会論文版（`PR0490_1.pdf`）に差し替わり、体験構成が「**3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒**」に確定した。
+計画・要求対応表は [2026-07-29_proposal-v3-implementation.md](../plans/2026-07-29_proposal-v3-implementation.md)。
+
+#### run（体験 1 回の骨格）
+
+show.json トップレベルに `run` を新設。**キーが無くてもコード既定（3 周・導入あり）で終わる** — 終端が無いことが欠落だったので、既定でも走り切ったら終わる。
+
+```jsonc
+"run": { "totalLaps": 3, "introEnabled": true, "introMinSec": 20, "introAutoAdvance": true,
+         "targetSec": 180, "hardLimitSec": 300, "endFadeSec": 1.5 }
+```
+
+相は `Intro`（導入）→ `Run`（本編）→ `Finished`（終了）の 3 つ。判定は純ロジック
+[`ShowRunLogic`](../../Assets/Scripts/Streaming/ShowRunLogic.cs)、配線は [`ShowRunDirector`](../../Assets/Scripts/Streaming/ShowRunDirector.cs)。
+
+- **導入はランの第 1 相**であって「ラン開始前の待機」ではない。Intro→Run は
+  `ShowControlClient.BeginMainRun()`（周回・演出・BGM・滞在ログだけ初期化）を打ち、
+  **端末内録画の世代は切り替えない**。ここを録画のリセット系統に載せるとラン開始が複数系統に増え、
+  遅れて届いた runEpoch が 1 周目の録画を消す（＝ 3 周目の素材が黙って消える）。
+- 導入の自動終了は「`introMinSec` 経過 **かつ** スタート区間（`course.order[0]`）に居る」の AND。
+  `introAutoAdvance:false` にすればスタッフの明示操作だけで進む（現地の物理手順に合わせられる）。
+- **終了の判定は必ず次フレームの `Tick`**。周回の確定と離脱時演出の発火は同じ同期連鎖の中で起きるので、
+  周回の変化を受けたその場で終了させると 3 周目最後の区間の離脱時演出が始まる前に終わる。
+  走行中の演出があれば見せ切る（上限 `ShowRunLogic.MaxEndHoldSec` = 12s）。
+- **凍結ラッチは増やしていない。** 終了しても画面のカメラ切替は裏で回り続け、見えなくなるのは
+  [`ShowEndingFader`](../../Assets/Scripts/Diagnostics/ShowEndingFader.cs) の黒のおかげ。
+  凍結を足すと「解除されずに残る」事故を新しく作る（この codebase は 4 回踏んでいる）。
+- 導入・終了の間は [`CueScheduler.SetShowGate(false)`](../../Assets/Scripts/Streaming/CueScheduler.cs) で
+  区間進行を下流へ流さない。**演出の武装・端末内録画・区間 post / BGM・実測滞在がまとめて止まる単一の首**
+  （下流それぞれに条件を配ると必ず片方を忘れる）。画面のカメラ切替は Director 側なので止まらない。
+- 現地の右グリップ長押しは `ShowControlClient.BeginNewVisitorRunLocal()` を通す（卓の ▶ ラン開始と同じ号令元）。
+  旧実装は個別に叩いており、実測滞在が前の体験者と混ざる非対称があった。
+- 卓: `/command` の `advanceIntro` / `endRun`（いずれも世代カウンタ）、ラン状態パネルに相・経過・目安、
+  ⚙ 欄で run を編集。**本番前チェックが「走り切る周数を超えた周の演出」を ❌ で出す**（実機だけが黙って落とすため）。
+- ▶ 検証（シミュレータ）も `run.totalLaps` で止まる。止めないと「3 周で終わる設定なのに 4 周目が卓では動く」嘘になり、
+  逆に 3 周目最後の離脱時演出が出るかを卓で確かめられない。
+
+#### 映像の乱れ（グリッチ）
+
+企画書 2.3「ノイズやグリッチ等の乱れを一時的に重畳でき、差し替えの継ぎ目の隠蔽や、体験者の注意・移動の誘導に用いる」。
+
+- uniform は **`_Glitch` / `_GlitchSeed`**。障害表示の `_SignalLost` とは別系統で、書き手は
+  [`GlitchFx`](../../Assets/Scripts/Streaming/GlitchFx.cs) 1 つだけ（SignalLostFx と同じ流儀）。
+  シェーダでは 乱れ → 障害表示 の順に掛かるので、**実際に信号が切れたら障害表示が勝つ**。
+- 乱れの中身は 2 段: ①帯ごとの水平シフト + 垂直の同期ずれを**全層のサンプル前の uv** に掛ける
+  （ライブ・素材・マスク・CG が一緒にずれる = 差し替えの継ぎ目も一緒に乱れる）②post の後に砂嵐混合と明滅。
+- 出し方は 4 つ:
+  - カットの遷移 `transition:"glitch"`（既定 220ms）。dip と同じ状態機械を通り、黒の代わりに乱れで覆って
+    その最中に差し替える。live / 素材の両経路に一様に効く
+  - カット頭の単発 `steps[].glitch` / `glitchSec`（注意・移動の誘導）
+  - ゾーン切替への重畳 `control.switchGlitch`
+  - 卓の手動 `⚡ 乱れ` → `/command {type:"glitch"}` → `control.glitchEpoch`（世代カウンタ）
+- 時間包絡は純ロジック [`GlitchEnvelopeLogic`](../../Assets/Scripts/Streaming/GlitchEnvelopeLogic.cs)。
+  持続と単発は **max で合成**（加算だと 1 を超えて飽和し遷移の形が潰れる）。
+
+#### 進入カットも切替の黒に相乗りする
+
+企画書 2.3「差し替えは体験者の歩行や提示映像の切替のタイミングに同期させ、差し替えの知覚的検出を抑える」。
+`CameraSwitchDirector.InsertBegin` に「進行中の dip が Down 相なら相乗り」を追加した
+（`TakeHoldBegin` / `InsertExitRedirect` には元からあり、ここだけ欠けていて **at=enter の演出が暗転を 2 回出していた**）。
+
+#### post が 12 項目になった（色収差・低解像度化・走査線の本数）
+
+`aberration` / `pixelate` / `scanlineCount` を追加。既定 0（`scanlineCount` の 0 は「未指定 → 240」）で旧データと同じ絵。
+
+- 色収差と低解像度化は**色ではなくサンプル位置**を動かすので合成の前段に入る。実機・卓とも同じ式。
+- 走査線の本数を持たせたのは、実機が material の 240 固定・卓が canvas の縦画素（360〜480）で、
+  **同じ値でも縞のピッチが 1.5〜2 倍食い違っていた**ため。グレインの座標も等方 480 + `fract(時間)` へ揃えた。
+- ⚠ post に項を足すときは **ScreenComposite.shader / shaders.js の FS_POST / common.js の FX 表 / pipeline.js の uniform 受け渡し**
+  の 4 箇所を同時に直す（機械テストが無く、片方だけだと沈黙して食い違う）。
+
+#### 色統計マッチングが実機に届くようになった
+
+企画書 2.3「差し替え素材の全体には色統計マッチングを施し、実写映像と継ぎ目なく合成する」。
+
+卓が Reinhard per-channel を解いて **RGB の gain/offset（6 float）へ落とし cue へ焼く**
+（[`color-match.js`](../../tools/web-compositor/color-match.js)・node テストあり）。実機は
+`_OverlayGain` / `_OverlayOffset` を掛けるだけ。**向きは「素材を実写へ寄せる」**（実機で動かせるのは素材の側だけ）。
+焼くかどうかは卓の「境界ブレンド」の色統計トグルに従う。
+多重帯域ブレンディングは Quest で重いので実装していない（企画書は「フェザリング**や**多重帯域」と選択で書いている）。
+
+#### 遅延の「管理」で測っているもの / 測っていないもの
+
+企画書 2.3「映像伝送の視覚遅延は 100 ms 程度以内を目標として管理する」。
+
+**絶対の end-to-end は測っていない。** `X-Capture-Ns` は配信端末の monotonic、Unity 側は自前の Stopwatch で
+基準が違い、引き算すると端末間の時計のずれがそのまま遅延として出る。推定の定数を足して「100ms でした」と言うより、
+測れる 3 つを分けて出す方が正しい（[`LatencyEstimatorLogic`](../../Assets/Scripts/Streaming/LatencyEstimatorLogic.cs)）:
+
+| 出しているもの | 何 |
+|---|---|
+| `ArrivalJitterMs` | 到着の揺らぎ。`受信 − 撮影` の 10 秒窓の**最小値からの超過**。時計のずれは最小値の側に吸われるので差分だけは正しい |
+| `DecodeMs` | 受信スレッドの払い出し → メインスレッドの展開完了 |
+| `PresentMs` | 表示レートから 1.5 フレーム |
+| `SourceAgeMs` | `/health.latestFrameAgeMs`（配信側のカメラ stall） |
+
+絶対値が要るなら**配信アプリ側に「`X-Capture-Ns` と同じ基準の現在時刻」を返す口**（例 `/clock`）が要る。
+それが入れば `ObserveArrival` のオフセット推定に差し替えるだけで済む形にしてある。
+
+あわせて `/health` の熱フィールド（`thermalStatus` / `throttleStage` / `thermalHeadroom` / `batteryTempC`）を
+DTO へ追加し、**熱で降格している間は lag 判定を抑止**する。旧実装は熱で落ちた fps を経路の詰まりと誤認して
+5 秒ごとに MJPEG を張り直し、黒 / 砂嵐を出しながら事態を悪化させていた。
+
+表示レートは [`DisplayRateRequester`](../../Assets/Scripts/OvrBridge/DisplayRateRequester.cs) が実行時に 90Hz を要求する
+（共有 ProjectSettings は触らない）。**遅延対策の主役ではない** — 縮むのは提示ぶん約 4ms で、快適性の項目。
+
+#### CG 人形は較正だけでも出るようになった
+
+実機は `cameras[].pose` が無いと人形を出さず、卓は「較正があれば出る」と判定して輪郭を描いていた
+（卓で ✅ に見えて実機で出ない）。較正の解から概算姿勢を作って出すようにして両者を揃えた。
+
+**⚠ ここまで Quest 実機未検証**（2026-07-29。EditMode 849/849・node 219/219・卓はブラウザで DOM と GLSL の実測確認）。
+
 ### 開始規則「このラインを通過したら」（通過ライン）— 2026-07-27
 
 設計の正本は [2026-07-27_position-trigger.md](../plans/2026-07-27_position-trigger.md)。v3 への**追加のみ**（既存 show.json はそのまま読める）。

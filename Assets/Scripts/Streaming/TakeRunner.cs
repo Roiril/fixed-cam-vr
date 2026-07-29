@@ -426,30 +426,37 @@ namespace FixedCamVr.Streaming
                 else _cgLayer.Hide();
             }
 
-            // カット遷移（cut / dip / fade）。**source によって効かせ方が違う**:
+            // カット遷移（cut / dip / fade / glitch）。**source によって効かせ方が違う**:
             //   live   … 画面のライブ層は 1 枚しかないのでクロスフェードできない。cut=瞬時 / dip・fade=黒経由
             //   素材   … cut=瞬時に差し替え / dip=黒経由 / fade=素材のクロスフェード（overlay の fadeIn。従来どおり）
+            //   glitch … 黒の代わりに「映像の乱れ」で覆い、その最中に差し替える（live / 素材とも同じ）
             // 旧実装は素材カットに遷移を一切効かせず、卓は 4 カット全部に遷移欄を出していた（嘘の UI）。
             TakeSchema.SplitTransition(TakeSchema.ResolveTransitionMs(step.transition, step.transitionMs),
                 out float downSec, out float upSec);
+            bool glitchTrans = TakeSchema.IsGlitchTransition(step.transition);
 
             // 画面の占有とカメラ。live のときだけカメラを動かす。
             if (source == TakeSchema.SourceLive)
             {
                 PlayStepOverlay(cue, step);   // live カットでも cue 重ねは即時（dip の黒で隠れる）
                 // 演出の 1 カット目が exit アンカー由来なら、離脱の dip の黒中に差し替える（中間カメラを見せない）。
-                if (d.takeStarted && exitAnchored) director.InsertExitRedirect(step.camera, downSec, upSec);
-                else director.InsertBegin(step.camera, downSec, upSec);
+                if (d.takeStarted && exitAnchored) director.InsertExitRedirect(step.camera, downSec, upSec, glitchTrans);
+                else director.InsertBegin(step.camera, downSec, upSec, glitchTrans);
             }
             else
             {
-                bool throughBlack = step.transition == TakeSchema.TransDip;
+                // dip と glitch は「覆いの最中に差し替える」点で同じ扱い。fade / cut は覆いを作らない。
+                bool throughCover = step.transition == TakeSchema.TransDip || glitchTrans;
                 if (step.transition == TakeSchema.TransCut && cue != null && step.fadeInSec < 0f)
                     cue.fadeInSeconds = 0f;   // 「瞬時」はフェードも掛けない（明示指定があればそれを尊重）
-                // カメラは変えないが画面は演出が持つ。dip のときだけ素材の差し替えを**黒の瞬間**に行う。
-                director.TakeHoldBegin(throughBlack ? downSec : 0f, throughBlack ? upSec : 0f,
-                    () => PlayStepOverlay(cue, step));
+                // カメラは変えないが画面は演出が持つ。覆いがあるときだけ素材の差し替えをその最中に行う。
+                director.TakeHoldBegin(throughCover ? downSec : 0f, throughCover ? upSec : 0f,
+                    () => PlayStepOverlay(cue, step), glitchTrans);
             }
+
+            // カット頭の単発の乱れ（遷移とは別物。企画書 2.3 の「注意・移動の誘導」に使う）。
+            if (step.glitch > 0.001f)
+                director.PulseGlitch(step.glitch, step.glitchSec > 0f ? step.glitchSec : 0.25f);
 
             Debug.Log($"[TakeRunner] {(d.takeStarted ? "演出開始" : "カット")} take={TakeId(d.takeIndex)} " +
                       $"step={d.stepIndex} source={source}" +

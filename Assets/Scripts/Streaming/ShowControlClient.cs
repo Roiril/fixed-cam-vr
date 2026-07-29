@@ -221,6 +221,25 @@ namespace FixedCamVr.Streaming
         public float lift;
         /// <summary>色かぶり（-1..1）。+ = 緑（蛍光灯 / 安物 CMOS）、- = マゼンタ。temperature の直交軸。</summary>
         public float tint;
+
+        // 2026-07-29 追加。企画書「合成後の映像全体に色調補正や走査線・粒状感などの効果を施し、
+        // 固定カメラ映像らしい質感に整える」の残り 2 軸と、走査線の本数。既定 0 / 0 は旧データと同じ絵。
+        /// <summary>色収差（0..1）。放射方向に RGB をずらす。安いレンズの色ずれ。</summary>
+        public float aberration;
+        /// <summary>低解像度化（0..1）。サンプル位置を量子化してブロックを作る。伝送の劣化を装う。</summary>
+        public float pixelate;
+        /// <summary>
+        /// 走査線の本数。0 = 未指定（コード既定 <see cref="DefaultScanlineCount"/>）。
+        /// 実機は material の 240 固定で、卓は canvas の縦画素（360〜480）を使っていたため、
+        /// 同じ scanline 値でも縞のピッチが 1.5〜2 倍食い違っていた。値を持たせて両者を揃える。
+        /// </summary>
+        public float scanlineCount;
+
+        /// <summary>走査線本数のコード既定（従来 material に焼かれていた値）。</summary>
+        public const float DefaultScanlineCount = 240f;
+
+        /// <summary>走査線本数を解決する（0 / 負値 = コード既定）。</summary>
+        public float ResolveScanlineCount() => scanlineCount > 0f ? scanlineCount : DefaultScanlineCount;
     }
 
     /// <summary>
@@ -367,6 +386,44 @@ namespace FixedCamVr.Streaming
             foreach (int l in laps) if (l == lap) return true;
             return false;
         }
+    }
+
+    /// <summary>
+    /// 体験 1 回の骨格。show.json トップレベル <c>run</c>。企画書 3 章
+    /// 「経路を 3 周する／体験全体は導入を含め 3 分以内／各周およそ 30 秒／導入で固定視点に慣れてから開始」を
+    /// データにしたもの。**キーが無い show.json でも既定値で成立する**（従来どおり無限に走る、にはしない —
+    /// 終端が無いことこそが現状の欠落なので、既定でも 3 周で終わる）。
+    /// </summary>
+    [Serializable] public sealed class ShowRunDef
+    {
+        /// <summary>走り切る周数。0 / 負値 = コード既定 3。</summary>
+        public int totalLaps = 3;
+
+        /// <summary>導入（固定視点に慣らす自由歩行）を挟むか。</summary>
+        public bool introEnabled = true;
+
+        /// <summary>導入の最低尺 (秒)。これを過ぎ、かつスタート区間に居れば本編へ移る。</summary>
+        public float introMinSec = 20f;
+
+        /// <summary>導入を自動で終わらせるか。false ならスタッフの明示操作（卓 / 現地）だけで進む。</summary>
+        public bool introAutoAdvance = true;
+
+        /// <summary>
+        /// 目安の尺 (秒)。**体験を止めない** — 超過を卓に知らせるだけの表示用。
+        /// 著作した演出を黙って間引く実装にはしない（作者に発見手段が無くなる）。
+        /// </summary>
+        public float targetSec = 180f;
+
+        /// <summary>強制終了 (秒)。動かない・固まった体験者への保険。0 / 負値 = 無効。</summary>
+        public float hardLimitSec = 300f;
+
+        /// <summary>終了時に黒へ落とす時間 (秒)。</summary>
+        public float endFadeSec = 1.5f;
+
+        /// <summary>コード既定の周数。</summary>
+        public const int DefaultTotalLaps = 3;
+
+        public int ResolveTotalLaps() => totalLaps > 0 ? totalLaps : DefaultTotalLaps;
     }
 
     /// <summary>CG レイヤに立てる人形の定義。show.json トップレベル <c>actors</c>。</summary>
@@ -517,6 +574,9 @@ namespace FixedCamVr.Streaming
         private static readonly int ScanlineId = Shader.PropertyToID("_Scanline");
         private static readonly int LiftId = Shader.PropertyToID("_Lift");
         private static readonly int TintId = Shader.PropertyToID("_Tint");
+        private static readonly int AberrationId = Shader.PropertyToID("_Aberration");
+        private static readonly int PixelateId = Shader.PropertyToID("_Pixelate");
+        private static readonly int ScanlineCountId = Shader.PropertyToID("_ScanlineCount");
 
         [SerializeField] private ShowServerSource? server;
         [SerializeField] private CameraStreamRegistry? registry;
@@ -613,6 +673,20 @@ namespace FixedCamVr.Streaming
 
         /// <summary>端末内録画の設定（show.json <c>record</c>）。未指定なら null。</summary>
         public ShowRecordDef? RecordConfig => _record;
+
+        // 体験の骨格（run 由来）。ShowRunDirector が読む。欠落ならコード既定で 3 周・導入あり。
+        private ShowRunDef? _run;
+
+        /// <summary>体験の骨格（show.json <c>run</c>）。未指定なら null（＝コード既定）。</summary>
+        public ShowRunDef? RunConfig => _run;
+
+        // 卓からの手動グリッチ / 導入終了 / 体験終了の世代カウンタ（runEpoch と同じ「変化のみ発火」方式）。
+        private int _knownGlitchEpoch;
+        private bool _glitchEpochKnown;
+        private int _knownIntroEpoch;
+        private bool _introEpochKnown;
+        private int _knownRunEndEpoch;
+        private bool _runEndEpochKnown;
 
         // CG レイヤの人形定義（actors 由来）。ShowCgLayer が id で引く。
         private ShowActorDef[] _actors = Array.Empty<ShowActorDef>();
@@ -784,6 +858,7 @@ namespace FixedCamVr.Streaming
             public ShowBgmDef? bgm;               // ラン既定 BGM（IsActionable() が present 判定）
             public ShowRecordDef? record;         // 端末内録画の設定（欠落 = 無効）
             public ShowActorDef[]? actors;        // CG レイヤの人形定義
+            public ShowRunDef? run;               // 体験の骨格（周数・導入・終端）。欠落 = コード既定
         }
         [Serializable] private class CameraDef
         {
@@ -826,6 +901,8 @@ namespace FixedCamVr.Streaming
             public ShowBgmDef? bgm;             // ラン既定 BGM（PC 不在起動でも同じ曲で始まる）
             public ShowRecordDef? record;       // 端末内録画の設定（PC 不在でも録れるように往復させる）
             public ShowActorDef[] actors = Array.Empty<ShowActorDef>();
+            // 体験の骨格（PC 不在の現地でも 3 周で終わるように往復させる）。
+            public ShowRunDef? run;
             // 直近に既知だった runEpoch。起動時にこれを「既知値」として復元し、
             // PC 不在の再起動で同一 epoch を誤リセットしない。
             public int runEpoch;
@@ -845,6 +922,15 @@ namespace FixedCamVr.Streaming
             public float fadeOut = 0.5f;
             public float trimStart = 0f;
             public float trimEnd = 0f;   // <=0 = 最後まで
+
+            // 色統計マッチング（企画書 2.3「差し替え素材の全体には色統計マッチングを施し、実写映像と
+            // 継ぎ目なく合成する」）。卓が cue 保存時に Reinhard per-channel を解いて **gain/offset へ落として**
+            // 焼く。実機は overlay サンプル後に out = src*gain + offset を掛けるだけ（6 float・ほぼ無料）。
+            // 統計そのものを実機で毎フレーム取ると Quest には重く、しかもマスク領域が動かない固定視点では
+            // 事前に解ける値なので、卓で解いて配るのが正しい分担。
+            public bool hasMatch;
+            public float[] matchGain = { 1f, 1f, 1f };
+            public float[] matchOffset = { 0f, 0f, 0f };
         }
         // PostParams は public トップレベルへ昇格済み（ファイル冒頭）。CameraDef.post / _globalPost /
         // タイムライン各定義 / SetPostOverride が共有する。
@@ -866,6 +952,18 @@ namespace FixedCamVr.Streaming
             public float switchCooldownSec;
             // 素材スロットの束縛（slot://name → 実 URL）。timeline を触らずに素材だけ差し替えるための面。
             public ShowSlotDef[] slots = Array.Empty<ShowSlotDef>();
+
+            // ゾーン切替そのものに重ねる「映像の乱れ」の強さ（0 = 重ねない）。
+            public float switchGlitch;
+            // 卓からの手動発火。**変化**で 1 回走る（「空を空にする」形では伝わらないため世代カウンタ）。
+            public int glitchEpoch;
+            public float glitchLevel;
+            public float glitchSec;
+
+            // 導入を終えて本編へ進める合図（世代カウンタ）。卓の「⏭ 導入を終える」。
+            public int introAdvanceEpoch;
+            // 体験を終える合図（世代カウンタ）。卓の「■ 体験を終える」。
+            public int runEndEpoch;
         }
 
         private void Awake()
@@ -909,6 +1007,9 @@ namespace FixedCamVr.Streaming
             //      呼んでおらず、焼き込み / 端末キャッシュの record.enabled は読むだけで録画係が
             //      生成されず、Quest 単体では 1 フレームも録れなかった（2026-07-29 修正）。
             EnsureRecorder();
+            // 2.6) 体験の骨格。録画係と同じ理由で**卓が居なくても成立させる**（3 周で終わることは
+            //      現地 PC 不在でも体験の一部）。相は Intro から始まる（起動＝導入）。
+            ResolveRunDirector()?.Configure(_run);
             // 3) 統合後の接続先・post を一度反映（焼き込み/キャッシュのどちらが勝っても 1 回）。
             ApplyCameraEndpoints();
             ApplyPostForActive();
@@ -1086,7 +1187,66 @@ namespace FixedCamVr.Streaming
             // 端末内録画も世代を切り替える（前の体験者の映像を次のランへ持ち越さない・端末に残さない）。
             ResolveRecorder()?.ResetRun(_knownRunEpoch);
             RunReset?.Invoke();
+            // 骨格も頭から（導入があれば導入から）。ここが「新しい体験者」の唯一の入口。
+            ResolveRunDirector()?.BeginRun();
         }
+
+        /// <summary>
+        /// 現地の「新しい体験者」（右グリップ 2 秒長押し）。卓の ▶ ラン開始と**同じ号令元**を通す。
+        ///
+        /// 旧実装はコントローラ側が TimelineDirector / SegmentRecorder / LapCounter / BgmDirector を
+        /// 個別に叩いており、ラン開始が 2 系統に割れていた（実測滞在が前の体験者の分と混ざる・
+        /// 骨格の相が戻らない）。処理を 1 か所へ寄せる。
+        /// </summary>
+        public void BeginNewVisitorRunLocal()
+        {
+            Debug.Log("[ShowControl] ラン開始（現地・右グリップ長押し）");
+            _dwell.Reset();
+            cueScheduler?.ResetRun();
+            timelineDirector?.ResetRun();
+            ResolveBgmDirector()?.ResetRun();
+            // 現地は卓と runEpoch を共有できないので、録画側は自分で世代を進める。
+            ResolveRecorder()?.ResetRunLocal();
+            RunReset?.Invoke();
+            ResolveRunDirector()?.BeginRun();
+        }
+
+        /// <summary>
+        /// 導入を終えて本編（1 周目）を始める。<see cref="ShowRunDirector"/> だけが呼ぶ。
+        ///
+        /// <b>端末内録画の世代は切り替えない。</b> 録画のリセットは「新しい体験者」だけの仕事で、
+        /// ここに載せるとラン開始が複数系統に増え、遅れて届いた runEpoch が 1 周目の録画を消す経路ができる
+        /// （企画書 3 周目の素材が黙って消える）。
+        /// </summary>
+        public void BeginMainRun()
+        {
+            _dwell.Reset();
+            cueScheduler?.ResetRun();
+            timelineDirector?.ResetRun();
+            ResolveBgmDirector()?.ResetRun();
+            RunReset?.Invoke();   // LapCounter が lap=1 / pos=0 / 現在ゾーンの再シード
+        }
+
+        // 骨格の実行体。既存シーンに未配置でも自分で載せる（prefab / シーンの SerializeField 欠落で
+        // 機能が全死した過去の事故対策。EnsureRecorder と同流儀）。
+        private ShowRunDirector? _runDirector;
+
+        private ShowRunDirector? ResolveRunDirector()
+        {
+            if (_runDirector != null) return _runDirector;
+            _runDirector = FindObjectOfType<ShowRunDirector>();
+            if (_runDirector == null)
+            {
+                var go = new GameObject("[ShowRun]");
+                _runDirector = go.AddComponent<ShowRunDirector>();
+                _runDirector.Configure(_run);
+                Debug.Log("[ShowControl] 体験の骨格（ShowRunDirector）をシーンへ自動生成した");
+            }
+            return _runDirector;
+        }
+
+        /// <summary>体験の骨格（相・経過・周数）。卓の heartbeat と HMD 表示が読む。</summary>
+        public ShowRunDirector? RunDirector => ResolveRunDirector();
 
         // 既存シーンで未配線でも動くよう遅延解決する（BgmDirector と同流儀）。
         private Recording.SegmentRecorder? _recorder;
@@ -1208,6 +1368,9 @@ namespace FixedCamVr.Streaming
             _actors = state.actors ?? Array.Empty<ShowActorDef>();
             _slots = state.control?.slots ?? Array.Empty<ShowSlotDef>();
             EnsureRecorder();
+            // 1.37) 体験の骨格。設定の反映だけで、相は動かさない（相を動かすのは runEpoch と明示操作だけ）。
+            _run = state.run;
+            ResolveRunDirector()?.Configure(_run);
 
             // 1.5) ゾーン layout（cuts/floor/overlap/course）。JsonUtility は null 入れ子を既定値で書くため
             //      「cuts が空でない」を present 判定に使い、rev で変更検出する。course は layout に内包。
@@ -1290,6 +1453,37 @@ namespace FixedCamVr.Streaming
             _switchDwellSec = state.control?.minDwellSec ?? 0f;
             _switchCooldownSec = state.control?.switchCooldownSec ?? 0f;
             ApplySwitchTiming();
+
+            // 1.67) ゾーン切替へ重ねる乱れ（control.switchGlitch）。
+            ResolveSwitchDirector()?.SetSwitchGlitch(state.control?.switchGlitch ?? 0f);
+
+            // 1.68) 世代カウンタ 3 種（手動の乱れ / 導入を終える / 体験を終える）。
+            //       いずれも初回は現在値へ同期するだけで発火しない（起動のたびに走らないように）。
+            int glitchEpoch = state.control?.glitchEpoch ?? _knownGlitchEpoch;
+            if (!_glitchEpochKnown) { _knownGlitchEpoch = glitchEpoch; _glitchEpochKnown = true; }
+            else if (glitchEpoch != _knownGlitchEpoch)
+            {
+                _knownGlitchEpoch = glitchEpoch;
+                float lv = state.control?.glitchLevel ?? 0f;
+                float sec = state.control?.glitchSec ?? 0f;
+                ResolveSwitchDirector()?.PulseGlitch(lv > 0f ? lv : 0.8f, sec > 0f ? sec : 0.3f);
+            }
+
+            int introEpoch = state.control?.introAdvanceEpoch ?? _knownIntroEpoch;
+            if (!_introEpochKnown) { _knownIntroEpoch = introEpoch; _introEpochKnown = true; }
+            else if (introEpoch != _knownIntroEpoch)
+            {
+                _knownIntroEpoch = introEpoch;
+                ResolveRunDirector()?.RequestAdvanceIntro();
+            }
+
+            int endEpoch = state.control?.runEndEpoch ?? _knownRunEndEpoch;
+            if (!_runEndEpochKnown) { _knownRunEndEpoch = endEpoch; _runEndEpochKnown = true; }
+            else if (endEpoch != _knownRunEndEpoch)
+            {
+                _knownRunEndEpoch = endEpoch;
+                ResolveRunDirector()?.RequestFinish();
+            }
 
             // 端末キャッシュへ保存（次回 PC 不在起動で参照）
             SaveCache();
@@ -1382,7 +1576,19 @@ namespace FixedCamVr.Streaming
                 fadeOutSeconds = def.fadeOut,
                 trimStart = def.trimStart,
                 trimEnd = def.trimEnd,
+                hasMatch = def.hasMatch,
+                matchGain = ToVec3(def.matchGain, 1f),
+                matchOffset = ToVec3(def.matchOffset, 0f),
             };
+        }
+
+        // JsonUtility が配列長を保証しないので、欠けた成分は既定値で埋める（黙って 0 倍にしない）。
+        private static Vector3 ToVec3(float[]? a, float fallback)
+        {
+            float x = a != null && a.Length > 0 ? a[0] : fallback;
+            float y = a != null && a.Length > 1 ? a[1] : fallback;
+            float z = a != null && a.Length > 2 ? a[2] : fallback;
+            return new Vector3(x, y, z);
         }
 
         // 焼き込み StreamingAssets / 端末キャッシュ由来の schedule / timeline / course を消費者へ供給する。
@@ -1488,6 +1694,7 @@ namespace FixedCamVr.Streaming
             if (state.post != null) _globalPost = state.post;
             if (state.record != null) _record = state.record;
             if (state.actors != null && state.actors.Length > 0) _actors = state.actors;
+            if (state.run != null) _run = state.run;
             if (state.layout != null && state.layout.HasData())
             {
                 _layout = state.layout;
@@ -1689,6 +1896,11 @@ namespace FixedCamVr.Streaming
             _material.SetFloat(ScanlineId, p.scanline);
             _material.SetFloat(LiftId, p.lift);
             _material.SetFloat(TintId, p.tint);
+            _material.SetFloat(AberrationId, p.aberration);
+            _material.SetFloat(PixelateId, p.pixelate);
+            // 走査線の本数は「0 = 未指定」。実機 material の 240 固定と卓の canvas 高さで
+            // 縞のピッチが 1.5〜2 倍食い違っていたので、値を持たせて両者を揃える。
+            _material.SetFloat(ScanlineCountId, p.ResolveScanlineCount());
         }
 
         private static void SplitAuth(string auth, out string user, out string pass)
@@ -1719,6 +1931,7 @@ namespace FixedCamVr.Streaming
                     bgm = _bgmDefault,
                     record = _record,
                     actors = _actors,
+                    run = _run,
                     runEpoch = _knownRunEpoch,
                     switchDwellSec = _switchDwellSec,
                     switchCooldownSec = _switchCooldownSec,
@@ -1748,6 +1961,7 @@ namespace FixedCamVr.Streaming
                 if (cfg.cues != null && cfg.cues.Length > 0) _cues = cfg.cues;
                 if (cfg.record != null) _record = cfg.record;
                 if (cfg.actors != null && cfg.actors.Length > 0) _actors = cfg.actors;
+                if (cfg.run != null) _run = cfg.run;
                 if (cfg.schedule != null && cfg.schedule.HasData())
                 {
                     _schedule = cfg.schedule;
@@ -1816,10 +2030,33 @@ namespace FixedCamVr.Streaming
             // 位置合わせの状態。registered=false / needsReReg=true のまま体験を始めるとゾーンがズレたまま動く。
             public bool registered;
             public bool needsReReg;
+            // 体験の骨格（ShowRunDirector 由来）。卓のラン状態パネルが「導入中 0:12」「2 周目 ・
+            // 経過 1:05 / 目安 3:00」「終了（次の体験者へ）」を出すのに要る。
+            //   phase: "INTRO" | "RUN" | "END"
+            public string phase = "RUN";
+            public float runSec;        // 本編の経過（導入は含まない）
+            public float lapSec;        // いまの周の経過
+            public float introSec;      // 導入の経過
+            public float targetSec;     // 目安の尺（超過は警告するだけで体験は止めない）
+            public int totalLaps;       // 走り切る周数
+            public bool endHolding;     // 終了条件は満たしたが走行中の演出を見せ切っている
+
+            // 遅延の内訳（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
+            // **絶対の end-to-end ではない** — 配信端末と Unity で時計の基準が違い引き算できないため、
+            // Unity が観測できる 3 つ（到着の揺らぎ / 展開 / 提示）と配信側の鮮度だけを送る。
+            public float latencyJitterMs;
+            public float latencyDecodeMs;
+            public float latencyPresentMs;
+            public float sourceAgeMs;
+            public float displayHz;
+            public int throttleStage;   // 配信側の熱による自動降格（0 = なし）
             // 前回の heartbeat 以降に確定した区間滞在（実測）。卓が集計して
             // リボン UI の「実測 平均 Ns」に使う。空配列で送ってよい（サーバ側は無視）。
             public DwellHb[] dwell = Array.Empty<DwellHb>();
         }
+
+        private static string PhaseCode(ShowPhase p)
+            => p == ShowPhase.Intro ? "INTRO" : (p == ShowPhase.Finished ? "END" : "RUN");
 
         /// <summary>heartbeat 用の滞在サンプル（JsonUtility は入れ子クラスの配列も往復できる）。</summary>
         [Serializable] private class DwellHb
@@ -1876,6 +2113,29 @@ namespace FixedCamVr.Streaming
                     hb.takeId = timelineDirector != null ? timelineDirector.ActiveTakeId : "";
                     hb.registered = CourseRegisteredProvider == null || CourseRegisteredProvider();
                     hb.needsReReg = CourseNeedsReRegProvider != null && CourseNeedsReRegProvider();
+
+                    if (active != null)
+                    {
+                        LatencyEstimatorLogic lat = active.Latency;
+                        hb.latencyJitterMs = lat.ArrivalJitterMs;
+                        hb.latencyDecodeMs = lat.DecodeMs;
+                        hb.latencyPresentMs = lat.PresentMs;
+                        hb.sourceAgeMs = lat.SourceAgeMs;
+                        hb.throttleStage = active.Health?.throttleStage ?? 0;
+                    }
+                    hb.displayHz = DisplayRateInfo.CurrentHz;
+
+                    ShowRunDirector? run = ResolveRunDirector();
+                    if (run != null)
+                    {
+                        hb.phase = PhaseCode(run.Phase);
+                        hb.runSec = run.RunElapsedSec;
+                        hb.lapSec = run.LapElapsedSec;
+                        hb.introSec = run.IntroElapsedSec;
+                        hb.targetSec = run.TargetSec;
+                        hb.totalLaps = run.TotalLaps;
+                        hb.endHolding = run.EndHolding;
+                    }
 
                     string json = JsonUtility.ToJson(hb);
                     using var req = UnityWebRequest.Post(

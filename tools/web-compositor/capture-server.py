@@ -122,12 +122,25 @@ def _default_show():
         # once 発火済みフラグをリセット（既定 0・欠落は 0 扱い）。
         # takeAbortEpoch: 走行中の演出（Take）の中止世代。Web の ■ 画面を取り返す が +1 する。
         # activeCue と違い「空にする」形では伝わらない（自動発火の演出は activeCue が空のまま走るため）。
+        # glitchEpoch / introAdvanceEpoch / runEndEpoch も同じ「値の変化で伝える」流儀。
+        # 「空を空にする」形の指示は long-poll では原理的に届かないので、単発の合図は必ず世代カウンタにする。
         'control': {'activeCue': None, 'cameraOverride': None, 'autoFollow': True, 'runEpoch': 0,
                     'takeAbortEpoch': 0,
                     # Quest 内の発見プロトコルのキルスイッチ。欠落は ON 扱い（後方互換）。
                     'discoveryEnabled': True,
                     # 素材スロットの束縛（slot://name → 実 URL）。ラン中に差し替える素材はここ。
-                    'slots': []},
+                    'slots': [],
+                    # ゾーン切替そのものに重ねる「映像の乱れ」の強さ（0 = 重ねない）。
+                    'switchGlitch': 0,
+                    # 卓からの手動の乱れ（⚡ ボタン）。
+                    'glitchEpoch': 0, 'glitchLevel': 0.8, 'glitchSec': 0.3,
+                    # 導入を終える / 体験を終える の合図。
+                    'introAdvanceEpoch': 0, 'runEndEpoch': 0},
+        # 体験 1 回の骨格（企画書 3 章「3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒」）。
+        # totalLaps を走り切ると Unity は暗転して終了する。targetSec は表示専用（超過しても止めない）。
+        # hardLimitSec は動かない体験者への保険（0 で無効）。
+        'run': {'totalLaps': 3, 'introEnabled': True, 'introMinSec': 20, 'introAutoAdvance': True,
+                'targetSec': 180, 'hardLimitSec': 300, 'endFadeSec': 1.5},
         # 端末内録画（1 周目を録って 3 周目の演出で流す）。既定は無効。
         'record': {'enabled': False, 'laps': [1], 'maxSegmentSec': 60, 'maxTotalMB': 200, 'fpsCap': 15},
         # CG レイヤに立てる人形の定義（cameras[i].pose が著作済みのカメラでのみ出る）。
@@ -1238,7 +1251,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
     _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule', 'timeline',
-                   'bgmTracks', 'bgm', 'actors', 'record')
+                   'bgmTracks', 'bgm', 'actors', 'record', 'run')
 
     def _post_state(self):
         body = self._read_json_body()
@@ -1286,6 +1299,20 @@ class Handler(SimpleHTTPRequestHandler):
                 if url:
                     slots.append({'name': name, 'url': url})
                 ctrl['slots'] = slots
+            elif typ == 'glitch':
+                # 「映像の乱れ」を 1 回走らせる（企画書 2.3 の「体験者の注意・移動の誘導」）。
+                # abortTake と同じ世代カウンタ方式。強さ・秒も一緒に書いてから増分する。
+                lv = body.get('level')
+                sec = body.get('sec')
+                if lv is not None: ctrl['glitchLevel'] = max(0.0, min(1.0, float(lv)))
+                if sec is not None: ctrl['glitchSec'] = max(0.05, min(5.0, float(sec)))
+                ctrl['glitchEpoch'] = int(ctrl.get('glitchEpoch') or 0) + 1
+            elif typ == 'advanceIntro':
+                # 導入を終えて本編へ（企画書「固定視点による移動に慣れた後、追跡体験を開始する」）。
+                ctrl['introAdvanceEpoch'] = int(ctrl.get('introAdvanceEpoch') or 0) + 1
+            elif typ == 'endRun':
+                # 体験を終える（暗転）。走行中の演出は待たない。
+                ctrl['runEndEpoch'] = int(ctrl.get('runEndEpoch') or 0) + 1
             elif typ == 'setDiscoveryEnabled':
                 # Quest 内の発見プロトコル（fixedcam-discovery/1）のキルスイッチ。
                 # autoFollow は卓側の host 書き換えを止めるだけで、Quest 内の張替は止まらない。

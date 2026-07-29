@@ -38,6 +38,13 @@ namespace FixedCamVr.Streaming
         public float trimStart = 0f;
         public float trimEnd = 0f;
 
+        // 色統計マッチング（企画書 2.3）。卓が「差し替え素材の統計を実写プレートへ合わせる」Reinhard を解き、
+        // per-channel の gain/offset に落として配る。実機は out = src*gain + offset を掛けるだけ。
+        // hasMatch=false なら恒等（従来どおりのハード合成）。
+        public bool hasMatch;
+        public Vector3 matchGain = Vector3.one;
+        public Vector3 matchOffset = Vector3.zero;
+
         /// <summary>フレーム列ソース（端末内録画）か。動画・静止画より優先する。</summary>
         public bool SourceIsFrames => frames != null;
 

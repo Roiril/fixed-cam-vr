@@ -32,6 +32,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string DiagnosticsName = "Diagnostics";
         private const string DebugHudName = "DebugHud"; // 旧構成の掃除用（削除対象）
         private const string StartupFaderName = "StartupFader";
+        private const string EndingFaderName = "ShowEndingFader";
         private const string BgmName = "[Bgm]";
         private const string BgmClipPath = "Assets/Art/Audio/HorrBGM.mp3";
         /// <summary>CG 人形だけを置くレイヤ。仮想カメラだけが描き、HMD カメラからは外す。</summary>
@@ -86,6 +87,7 @@ namespace FixedCamVr.Streaming.EditorTools
             DeleteIfExists($"{LogicGroupName}/{DiagnosticsName}");
             DeleteIfExists($"{CenterEyePath}/{DebugHudName}");   // 旧 HUD Canvas（統合前）
             DeleteIfExists($"{CenterEyePath}/{StartupFaderName}");
+            DeleteIfExists($"{CenterEyePath}/{EndingFaderName}");
 
             var logic = GameObject.Find(LogicGroupName);
             if (logic == null)
@@ -159,13 +161,18 @@ namespace FixedCamVr.Streaming.EditorTools
                 TrySetObjectRef(audioSo, "source", audioSource);
                 audioSo.ApplyModifiedPropertiesWithoutUndo();
 
-                // カメラ切替 Director（時間ガード + dip-to-black）。
+                // 演出としての「映像の乱れ」（_Glitch の唯一の writer）。障害表示の砂嵐とは別系統。
+                var glitchFx = screenGo.GetComponent<GlitchFx>();
+                if (glitchFx == null) glitchFx = screenGo.AddComponent<GlitchFx>();
+
+                // カメラ切替 Director（時間ガード + dip-to-black / 乱れ遷移）。
                 director = screenGo.GetComponent<CameraSwitchDirector>();
                 if (director == null) director = screenGo.AddComponent<CameraSwitchDirector>();
                 var dirSo = new SerializedObject(director);
                 TrySetObjectRef(dirSo, "registry", registry);
                 TrySetObjectRef(dirSo, "overlay", overlay);
                 TrySetObjectRef(dirSo, "audioCue", audioCue);
+                TrySetObjectRef(dirSo, "glitchFx", glitchFx);
                 dirSo.ApplyModifiedPropertiesWithoutUndo();
 
                 // フェイルソフト（信号断 → 砂嵐 / トラッキングロスト → 追従凍結 + 弱ノイズ）。
@@ -387,6 +394,16 @@ namespace FixedCamVr.Streaming.EditorTools
             if (showControl != null) TrySetObjectRef(tlSo, "showControl", showControl);
             tlSo.ApplyModifiedPropertiesWithoutUndo();
 
+            // 2.98. 体験の骨格（導入 → 本編 3 周 → 終了）。CueScheduler のゲートを開け閉めして
+            //       演出・録画・区間 post / BGM・実測滞在をまとめて止める単一の首。
+            var runDirector = trackerGo.AddComponent<ShowRunDirector>();
+            var runSo = new SerializedObject(runDirector);
+            TrySetObjectRef(runSo, "cueScheduler", cueScheduler);
+            TrySetObjectRef(runSo, "timelineDirector", timelineDirector);
+            if (showControl != null) TrySetObjectRef(runSo, "showControl", showControl);
+            if (director != null) TrySetObjectRef(runSo, "switchDirector", director);
+            runSo.ApplyModifiedPropertiesWithoutUndo();
+
             // ShowControlClient.cueScheduler を新 CueScheduler へ配線（毎回 Tracker を作り直すため必須）。
             // switchDirector（cameraOverride を出どころ Override として通す）・timelineDirector も配線。
             if (showControl != null)
@@ -400,6 +417,8 @@ namespace FixedCamVr.Streaming.EditorTools
 
             // 3. StartupFader（OVR 初期化 / 砂時計 / MJPEG 接続待ちを黒で覆い隠す）
             CreateStartupFader(centerEye.transform, registry);
+            // 3.1. ShowEndingFader（体験の終わりを黒で閉じる）。相の変化だけを購読する。
+            CreateEndingFader(centerEye.transform);
 
             // 3.5. BGM（BgmDirector・2D）。get-or-create で冪等 — delete+recreate にしない
             //      （現場で Inspector 調整した音量を Setup 再実行で潰さないため）。
@@ -597,6 +616,24 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetFloat(so, "minHoldSec", 0.5f);
             TrySetFloat(so, "maxWaitSec", 4f);
             TrySetFloat(so, "fadeDuration", 0.5f);
+            TrySetColor(so, "fadeColor", Color.black);
+            TrySetInt(so, "sortingOrder", 10000);
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        // 体験の終わりを閉じる黒。StartupFader は解除後に自分を Destroy するので再利用できない。
+        // 起動フェードと同じ CenterEyeAnchor 直下に置き、相の変化だけを購読する。
+        private static void CreateEndingFader(Transform parent)
+        {
+            var go = new GameObject(EndingFaderName);
+            go.transform.SetParent(parent, worldPositionStays: false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+
+            var fader = go.AddComponent<ShowEndingFader>();
+            var so = new SerializedObject(fader);
+            TrySetFloat(so, "distance", 0.3f);
+            TrySetVector2(so, "worldSize", new Vector2(2f, 2f));
             TrySetColor(so, "fadeColor", Color.black);
             TrySetInt(so, "sortingOrder", 10000);
             so.ApplyModifiedPropertiesWithoutUndo();

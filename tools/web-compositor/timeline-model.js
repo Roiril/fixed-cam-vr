@@ -97,9 +97,11 @@ export const TAKE = {
   CG_FOLLOW: 'follow', CG_FIXED: 'fixed',
   SLOT_SCHEME: 'slot://',
   DUR_SEC: 'sec', DUR_UNTIL_CLIP_END: 'untilClipEnd',
-  TRANS_CUT: 'cut', TRANS_DIP: 'dip', TRANS_FADE: 'fade',
+  // TRANS_GLITCH = 黒ではなく「映像の乱れ」で覆って、その最中に差し替える（企画書 2.3）。
+  TRANS_CUT: 'cut', TRANS_DIP: 'dip', TRANS_FADE: 'fade', TRANS_GLITCH: 'glitch',
   DEFAULT_MAX_DURATION_SEC: 45,
   FALLBACK_STEP_DUR_SEC: 4,
+  DEFAULT_STEP_GLITCH_SEC: 0.25,
 };
 
 export function newStep(over = {}) {
@@ -108,6 +110,8 @@ export function newStep(over = {}) {
     cueId: '', strength: -1, fadeInSec: -1, fadeOutSec: -1, trimStartSec: -1, trimEndSec: -1,
     durKind: TAKE.DUR_SEC, durSec: TAKE.FALLBACK_STEP_DUR_SEC,
     transition: TAKE.TRANS_DIP, transitionMs: 0,
+    // カット頭で 1 回だけ走らせる乱れ（遷移の glitch とは別物。注意・移動の誘導に使う）。
+    glitch: 0, glitchSec: 0,
     cg: '', cgMode: TAKE.CG_FOLLOW,
     // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
@@ -150,8 +154,11 @@ function serializeStep(s) {
     trimStartSec: num(s.trimStartSec, -1), trimEndSec: num(s.trimEndSec, -1),
     durKind: oneOf(s.durKind, [TAKE.DUR_SEC, TAKE.DUR_UNTIL_CLIP_END], TAKE.DUR_SEC),
     durSec: num(s.durSec, 0),
-    transition: oneOf(s.transition, [TAKE.TRANS_CUT, TAKE.TRANS_DIP, TAKE.TRANS_FADE], TAKE.TRANS_DIP),
+    transition: oneOf(s.transition,
+      [TAKE.TRANS_CUT, TAKE.TRANS_DIP, TAKE.TRANS_FADE, TAKE.TRANS_GLITCH], TAKE.TRANS_DIP),
     transitionMs: num(s.transitionMs, 0),
+    glitch: num(s.glitch, 0),
+    glitchSec: num(s.glitchSec, 0),
     cg: s.cg || '',
     cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED], TAKE.CG_FOLLOW),
   };

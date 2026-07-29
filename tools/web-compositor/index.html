@@ -284,17 +284,23 @@
       </div>
       <div class="run-readout">
         <div class="run-main">
+          <span id="runPhase" class="run-mode" title="体験の相。導入 = 固定視点に慣らす自由歩行（演出は武装しない）／本編 = 周回中／終了 = 暗転して次の体験者待ち">—</span>
           <span id="runLap" class="run-lap">Lap —</span>
+          <span id="runClock" class="run-zone" title="本編の経過 / 目安の尺。目安を超えても体験は止まらない（警告だけ）">—</span>
           <span id="runZone" class="run-zone" title="体験者が実際に居るゾーン（ショーの時計が確定した担当カメラ）。画面に映っているカメラとは別物">ゾーン —</span>
           <span id="runMode" class="run-mode">—</span>
         </div>
         <div id="runOwner" class="run-owner" title="いま画面を握っているのは誰か。自律 = ゾーンの自動切替、それ以外は演出か卓が握っている">画面: —</div>
         <div id="runNext" class="run-next">次の演出: —</div>
+        <div id="runLatency" class="run-next" title="Unity が観測できる遅延だけ（到着の揺らぎ + 展開 + 提示）。撮影・エンコード・伝送の下限は含まない">映像の遅れ: —</div>
       </div>
       <div class="run-bar emergency">
         <button id="runStart" class="accent big">▶ ラン開始<small>周回 / 演出 / 固定を全リセット</small></button>
+        <button id="runIntroDone" class="big">⏭ 導入を終える<small>本編（1 周目）を始める</small></button>
+        <button id="runEnd" class="big">🏁 体験を終える<small>暗転して次の体験者へ</small></button>
         <button id="emgAuto" class="big">🚶 ゾーン自律へ戻す<small>カメラ固定を解除</small></button>
         <button id="emgStop" class="big">■ 画面を取り返す<small>再生中の演出を中止してライブへ</small></button>
+        <button id="emgGlitch" class="big" title="映像の乱れを 1 回走らせる。体験者の注意を引く / 移動を促すのに使う">⚡ 乱れ<small>1 回だけ走らせる</small></button>
         <span id="emgStopMsg" class="ed-status"></span>
       </div>
       <div class="run-bar">
@@ -304,6 +310,19 @@
       </div>
       <div class="run-bar">
         <span class="hint">切替タイミングは入力するとその場で反映（空 / 0 = 未指定 → Unity 既定 0.5s）。歩くと切替が起きない時は下げ、切替が忙しい時は上げる（control.minDwellSec / switchCooldownSec）。</span>
+      </div>
+      <div class="run-bar">
+        <label class="livecue-lbl">走り切る周数 <input id="runLaps" type="number" min="1" max="9" step="1"></label>
+        <label class="livecue-lbl"><input id="runIntroOn" type="checkbox"> 導入を挟む</label>
+        <label class="livecue-lbl">導入の最低尺 <input id="runIntroSec" type="number" min="0" max="120" step="1"> s</label>
+        <label class="livecue-lbl"><input id="runIntroAuto" type="checkbox"> 自動で本編へ</label>
+        <label class="livecue-lbl">目安 <input id="runTargetSec" type="number" min="0" max="900" step="10"> s</label>
+        <label class="livecue-lbl">強制終了 <input id="runHardSec" type="number" min="0" max="1800" step="10"> s</label>
+        <label class="livecue-lbl">切替に乱れ <input id="runSwitchGlitch" type="number" min="0" max="1" step="0.05"></label>
+        <span id="runCfgState" class="ed-status"></span>
+      </div>
+      <div class="run-bar">
+        <span class="hint">体験の骨格（show.json <code>run</code>）。企画書は「3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒」。走り切ると Quest が暗転して終わる。導入の自動終了は「最低尺を過ぎ、かつスタート区間に居る」の両方が要る（自動を切ればスタッフの ⏭ だけで進む）。目安を超えても体験は止まらない（警告だけ）。強制終了は動かない体験者への保険で 0 = 無効。</span>
       </div>
     </section>
 

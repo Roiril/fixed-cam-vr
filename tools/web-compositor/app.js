@@ -762,7 +762,7 @@ async function pollState() {
         floorMap && floorMap.onState(s); timeline && timeline.onState(s); showSim && showSim.onState(s);
         actorsPanel && actorsPanel.onState(s); calibUi && calibUi.onState(s);
         atelier && atelier.render();   // カメラ集合の変化を工房の列へ（署名一致なら no-op）
-        renderBgmSection(); renderRecordPanel(); renderRunPanel(); renderPreflight();
+        renderBgmSection(); renderRecordPanel(); renderRunPanel(); renderRunCfg(s); renderPreflight();
       }
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
   }
@@ -1018,6 +1018,12 @@ function findNextFire(lap, camIdx) {
   }
   return null;
 }
+// 秒 → m:ss（暗所で 1 秒で読める形。小数は出さない）。
+function mmss(sec) {
+  const t = Math.max(0, Math.floor(Number(sec) || 0));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
+
 function renderRunPanel() {
   const lapEl = $('#runLap'), zoneEl = $('#runZone'), modeEl = $('#runMode'), nextEl = $('#runNext');
   if (!lapEl) return;
@@ -1031,8 +1037,46 @@ function renderRunPanel() {
   const zoneIdx = unityAlive && typeof u.zoneCam === 'number' && u.zoneCam >= 0 ? u.zoneCam : -1;
   // zoneCam を送らない旧 Unity と繋いだときは画面のカメラで代用する（表示はするが意味が違う旨は出さない）。
   const walkIdx = zoneIdx >= 0 ? zoneIdx : screenIdx;
-  lapEl.textContent = hasLap ? `Lap ${u.lap}` : 'Lap —';
+  // 体験の相（導入 / 本編 / 終了）。企画書 3 章の「導入を含め 3 分以内」を現場で守る唯一の面。
+  const phaseEl = $('#runPhase'), clockEl = $('#runClock');
+  const phase = unityAlive ? (u.phase || 'RUN') : '';
+  if (phaseEl) {
+    const label = phase === 'INTRO' ? '導入中' : phase === 'END' ? '🏁 終了' : phase === 'RUN' ? '本編' : '—';
+    phaseEl.textContent = unityAlive ? label : '—';
+    phaseEl.className = 'run-mode' + (!unityAlive ? ' off' : phase === 'END' ? ' reg' : ' on');
+  }
+  if (clockEl) {
+    const target = Number(u.targetSec) || 0;
+    let txt = '—';
+    if (unityAlive && phase === 'INTRO') txt = `導入 ${mmss(u.introSec)}`;
+    else if (unityAlive && phase === 'END') txt = `${mmss(u.runSec)}（終了）`;
+    else if (unityAlive) txt = target > 0 ? `${mmss(u.runSec)} / 目安 ${mmss(target)}` : mmss(u.runSec);
+    clockEl.textContent = txt;
+    const over = unityAlive && phase === 'RUN' && target > 0 && Number(u.runSec) > target;
+    clockEl.className = 'run-zone' + (unityAlive ? (over ? ' reg' : ' on') : '');
+  }
+  const totalLaps = Number(u.totalLaps) || 0;
+  lapEl.textContent = hasLap ? (totalLaps > 0 ? `Lap ${u.lap}/${totalLaps}` : `Lap ${u.lap}`) : 'Lap —';
   lapEl.className = 'run-lap' + (unityAlive ? ' on' : '');
+
+  // 映像の遅れ（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
+  // **絶対の end-to-end ではない**（配信端末と Unity で時計の基準が違い引き算できない）ので、
+  // 観測できる 3 つと配信側の鮮度を並べ、何を測っているかを明示する。
+  const latEl = $('#runLatency');
+  if (latEl) {
+    if (!unityAlive) { latEl.textContent = '映像の遅れ: —（Unity 未接続）'; latEl.className = 'run-next'; }
+    else {
+      const j = Number(u.latencyJitterMs) || 0, d = Number(u.latencyDecodeMs) || 0,
+            p = Number(u.latencyPresentMs) || 0, age = Number(u.sourceAgeMs) || 0;
+      const sum = Math.round(j + d + p);
+      const bits = [`観測 ${sum}ms`, `揺らぎ ${Math.round(j)}`, `展開 ${Math.round(d)}`, `提示 ${Math.round(p)}`];
+      if (age > 0) bits.push(`配信側の鮮度 ${Math.round(age)}ms`);
+      if (u.displayHz) bits.push(`${Math.round(u.displayHz)}Hz`);
+      if (Number(u.throttleStage) > 0) bits.push('⚠ 配信端末が発熱で降格中');
+      latEl.textContent = '映像の遅れ: ' + bits.join(' / ') + '（撮影・エンコード・伝送の下限は含まない）';
+      latEl.className = 'run-next' + (sum > 60 || Number(u.throttleStage) > 0 ? ' hot' : '');
+    }
+  }
   zoneEl.textContent = walkIdx >= 0 ? `ゾーン ${camLabelOf(walkIdx)}` : 'ゾーン —';
   zoneEl.className = 'run-zone' + (unityAlive ? ' on' : '');
   modeEl.textContent = unityAlive ? (u.mode || 'NORMAL') : 'Unity 未接続';
@@ -1089,6 +1133,30 @@ if ($('#runStart')) {
     if (el && r && r.ok !== false) el.textContent = `▶ ラン開始（epoch ${ctrl.runEpoch}）— 周回 / 演出 / 固定 / 素材スロットをリセットしました`;
   };
 }
+// ⏭ 導入を終える / 🏁 体験を終える / ⚡ 乱れ — いずれも世代カウンタで届ける
+// （「空を空にする」形の指示は long-poll では原理的に伝わらない）。
+if ($('#runIntroDone')) {
+  $('#runIntroDone').onclick = async () => {
+    const r = await postCommand({ type: 'advanceIntro' });
+    const el = $('#emgStopMsg');
+    if (el) el.textContent = (r && r.ok !== false) ? '導入を終えて本編へ' : '⚠ 卓サーバに届きませんでした';
+  };
+}
+if ($('#runEnd')) {
+  $('#runEnd').onclick = async () => {
+    if (!confirm('体験を終えます（暗転）。走行中の演出は待たずに畳みます。')) return;
+    const r = await postCommand({ type: 'endRun' });
+    const el = $('#emgStopMsg');
+    if (el) el.textContent = (r && r.ok !== false) ? '🏁 体験を終了しました' : '⚠ 卓サーバに届きませんでした';
+  };
+}
+if ($('#emgGlitch')) {
+  $('#emgGlitch').onclick = async () => {
+    const r = await postCommand({ type: 'glitch', level: 0.85, sec: 0.3 });
+    const el = $('#emgStopMsg');
+    if (el) el.textContent = (r && r.ok !== false) ? '⚡ 乱れを走らせました' : '⚠ 卓サーバに届きませんでした';
+  };
+}
 if ($('#emgAuto')) $('#emgAuto').onclick = () => postCommand({ type: 'setCameraOverride', camera: null });
 // ■ 画面を取り返す = 卓の手動 cue（activeCue）**と**タイムラインが自動発火した演出（Take）の両方を畳む。
 // ⚠ stopCue だけでは自動発火の演出は止まらない（activeCue が空のまま走るので Unity 側で状態変化が起きない）。
@@ -1132,6 +1200,61 @@ async function applySwitchTiming() {
     : '✕ 適用失敗（サーバ断）';
   st.className = 'ed-status ' + (r && r.ok !== false ? 'ok' : 'err');
 }
+// ---- 体験の骨格（show.json run + control.switchGlitch）------------------------
+// 企画書 3 章「3 区間を 3 周・導入を含め 3 分以内」。ここが空だと Unity はコード既定（3 周・導入 20s）で走る。
+const RUN_CFG_DEFAULT = {
+  totalLaps: 3, introEnabled: true, introMinSec: 20, introAutoAdvance: true,
+  targetSec: 180, hardLimitSec: 300, endFadeSec: 1.5,
+};
+
+function runCfgEls() {
+  return {
+    laps: $('#runLaps'), introOn: $('#runIntroOn'), introSec: $('#runIntroSec'),
+    introAuto: $('#runIntroAuto'), target: $('#runTargetSec'), hard: $('#runHardSec'),
+    glitch: $('#runSwitchGlitch'),
+  };
+}
+
+function renderRunCfg(s) {
+  const e = runCfgEls();
+  if (!e.laps) return;
+  const r = { ...RUN_CFG_DEFAULT, ...((s && s.run) || {}) };
+  e.laps.value = r.totalLaps;
+  e.introOn.checked = r.introEnabled !== false;
+  e.introSec.value = r.introMinSec;
+  e.introAuto.checked = r.introAutoAdvance !== false;
+  e.target.value = r.targetSec;
+  e.hard.value = r.hardLimitSec;
+  e.glitch.value = Number((s && s.control && s.control.switchGlitch) || 0);
+}
+
+async function applyRunCfg() {
+  const e = runCfgEls();
+  const st = $('#runCfgState');
+  const s = await getState();
+  if (!s) { if (st) { st.textContent = '✕ 適用失敗（サーバ断）'; st.className = 'ed-status err'; } return; }
+  const run = {
+    ...RUN_CFG_DEFAULT, ...(s.run || {}),
+    totalLaps: Math.max(1, Math.round(parseFloat(e.laps.value) || RUN_CFG_DEFAULT.totalLaps)),
+    introEnabled: !!e.introOn.checked,
+    introMinSec: Math.max(0, parseFloat(e.introSec.value) || 0),
+    introAutoAdvance: !!e.introAuto.checked,
+    targetSec: Math.max(0, parseFloat(e.target.value) || 0),
+    hardLimitSec: Math.max(0, parseFloat(e.hard.value) || 0),
+  };
+  // control は shallow 置換なので、必ず取り直した control を土台にする（runEpoch / slots を飛ばさない）。
+  const ctrl = { ...(s.control || {}) };
+  ctrl.switchGlitch = Math.max(0, Math.min(1, parseFloat(e.glitch.value) || 0));
+  const r = await postState({ run, control: ctrl });
+  if (!st) return;
+  st.textContent = (r && r.ok !== false)
+    ? `✓ 適用（${run.totalLaps} 周 / 導入 ${run.introEnabled ? `${run.introMinSec}s` : 'なし'} / 目安 ${run.targetSec}s）`
+    : '✕ 適用失敗（サーバ断）';
+  st.className = 'ed-status ' + (r && r.ok !== false ? 'ok' : 'err');
+}
+
+for (const el of Object.values(runCfgEls())) if (el) el.onchange = applyRunCfg;
+
 if ($('#switchDwell')) $('#switchDwell').onchange = applySwitchTiming;
 if ($('#switchCooldown')) $('#switchCooldown').onchange = applySwitchTiming;
 loadSwitchTiming();
@@ -1331,6 +1454,40 @@ function preflightRows() {
   rows.push(withCue
     ? { s: 'ok', label: 'タイムライン', detail: `${segs.length} 区間 / うち演出あり ${withCue}` }
     : { s: 'warn', label: 'タイムライン', detail: '演出を持つ区間がありません（体験は映像切替のみ）' });
+
+  // 体験の骨格。走り切る周数を超えた周に演出を書いても**絶対に出ない**（そこへ到達する前に終わる）。
+  // 実機だけが黙って落とすので、著作の段階で気づける唯一の面がここ。
+  {
+    const run = { ...RUN_CFG_DEFAULT, ...((state && state.run) || {}) };
+    const authoredMax = segs.reduce((m, s) => Math.max(m, s.lap || 0), 0);
+    const dead = segs.filter((s) => (s.takes || []).length && (s.lap || 0) > run.totalLaps);
+    if (dead.length) {
+      rows.push({ s: 'ng', label: '体験の骨格',
+        detail: `${run.totalLaps} 周で終わる設定なのに ${dead.map((s) => `${s.lap}周目`).join(' / ')} に演出があります — 出ません（周数を増やすか演出を移す）` });
+    } else if (authoredMax > 0 && authoredMax < run.totalLaps) {
+      rows.push({ s: 'warn', label: '体験の骨格',
+        detail: `${run.totalLaps} 周走る設定ですが演出は ${authoredMax} 周目までです（最後の周は映像切替だけになります）` });
+    } else {
+      rows.push({ s: 'ok', label: '体験の骨格',
+        detail: `${run.totalLaps} 周 / 導入 ${run.introEnabled ? `${run.introMinSec}s` : 'なし'} / 目安 ${run.targetSec}s` });
+    }
+  }
+
+  // 映像の遅れ。企画書は 100ms 程度以内を目標に「管理する」と書いている。
+  // ここで出すのは Unity が観測できる分だけ（絶対の end-to-end は端末間の時計を結べないと測れない）。
+  if (unityAlive) {
+    const u = lastUnity || {};
+    const sum = Math.round((Number(u.latencyJitterMs) || 0) + (Number(u.latencyDecodeMs) || 0)
+      + (Number(u.latencyPresentMs) || 0));
+    if (Number(u.throttleStage) > 0) {
+      rows.push({ s: 'ng', label: '映像の遅れ',
+        detail: `配信端末が発熱で品質を落としています（段 ${u.throttleStage}）— 冷ますか送風。観測 ${sum}ms` });
+    } else if (sum > 60) {
+      rows.push({ s: 'warn', label: '映像の遅れ', detail: `観測 ${sum}ms（揺らぎ ${Math.round(Number(u.latencyJitterMs) || 0)}ms）— Wi-Fi の混雑を疑う` });
+    } else {
+      rows.push({ s: 'ok', label: '映像の遅れ', detail: `観測 ${sum}ms（撮影・エンコード・伝送の下限は含まない）` });
+    }
+  }
 
   // 参照素材の実在チェック（📦 エクスポート前に気づけるようにする）。
   //   v3 は カット自身が素材 URL を持つので、cue 参照とは別に assetUrl 空のカットも拾う

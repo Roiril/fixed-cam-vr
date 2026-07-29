@@ -237,6 +237,23 @@ namespace FixedCamVr.Streaming
             _pending = false;
         }
 
+        // 本編（Run 相）かどうか。導入中と終了後は false。既定 true = ShowRunDirector が居ないシーン・
+        // 旧ビルドでは従来どおり常に流れる（自己修復の流儀: 新機能の不在で既存機能を止めない）。
+        private bool _showGateOpen = true;
+
+        /// <summary>
+        /// 区間進行を下流へ流すかを切り替える（<see cref="ShowRunDirector"/> が導入・終了で閉じる）。
+        /// 閉じている間は保留中の発火も捨てる。
+        /// </summary>
+        public void SetShowGate(bool open)
+        {
+            _showGateOpen = open;
+            if (!open) _pending = false;
+        }
+
+        /// <summary>本編の区間進行が下流へ流れているか（HUD / 診断表示用）。</summary>
+        public bool ShowGateOpen => _showGateOpen;
+
         /// <summary>
         /// ゾーン進入（アクティブカメラ切替）を LapCounter から受ける。enter 時点で 1 回評価する。
         /// 一致エントリがあれば delaySec 経過後に発火予約（delaySec&lt;=0 は即発火）。
@@ -245,6 +262,11 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void NotifyCameraEntered(int camera, int lap)
         {
+            // 本編の外（導入中・終了後）は区間進行を一切下流へ流さない。演出の武装・端末内録画・
+            // 区間 post / BGM・実測滞在がまとめて止まる（下流それぞれに条件を配ると必ず片方を忘れる）。
+            // 画面のカメラ切替は Director 側なのでここでは止まらない — 導入では映像は出したいから。
+            if (!_showGateOpen) { _pending = false; return; }
+
             CueScheduleLogic.Decision d = _logic.Evaluate(lap, camera, _liveCueActive);
             if (!d.fire)
             {

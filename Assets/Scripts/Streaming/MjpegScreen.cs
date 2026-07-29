@@ -21,6 +21,7 @@ namespace FixedCamVr.Streaming
         private static readonly int LiveTexId = Shader.PropertyToID("_LiveTex");
         private static readonly int LiveScaleId = Shader.PropertyToID("_LiveScale");
         private static readonly int UvRotStepsId = Shader.PropertyToID("_UvRotSteps");
+        private static readonly int FrameAspectId = Shader.PropertyToID("_FrameAspect");
 
         [SerializeField] private CameraStreamRegistry? registry;
         [SerializeField] private CameraSource? source;
@@ -188,6 +189,8 @@ namespace FixedCamVr.Streaming
 
             _material.SetVector(LiveScaleId, new Vector4(scale.x, scale.y, 0f, 0f));
             _material.SetFloat(UvRotStepsId, uvRotSteps);
+            // 低解像度化のブロックを正方に保つために枠の縦横比が要る（枠は 16:9、映像は 4:3）。
+            _material.SetFloat(FrameAspectId, screenAspect);
         }
 
         private void Update()

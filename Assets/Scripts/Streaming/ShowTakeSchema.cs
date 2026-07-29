@@ -70,8 +70,13 @@ namespace FixedCamVr.Streaming
         public string durKind = TakeSchema.DurSec;      // "sec" | "untilClipEnd"
         public float durSec;
 
-        public string transition = TakeSchema.TransDip; // "cut" | "dip" | "fade"
+        public string transition = TakeSchema.TransDip; // "cut" | "dip" | "fade" | "glitch"
         public float transitionMs;                      // 0 = 種別ごとのコード既定
+
+        // カット頭で 1 回だけ走らせる「映像の乱れ」（企画書 2.3 の注意・移動の誘導）。
+        // 遷移の glitch とは別物で、こちらはカットが始まってから単発で走る。0 = 出さない。
+        public float glitch;
+        public float glitchSec;
 
         // CG レイヤ（映像の上に立つ人形）。空 = 出さない。actors[] の id を指す。
         public string cg = "";
@@ -139,6 +144,12 @@ namespace FixedCamVr.Streaming
         public const string TransCut = "cut";
         public const string TransDip = "dip";
         public const string TransFade = "fade";
+        /// <summary>
+        /// 黒ではなく「映像の乱れ」で継ぎ目を覆う遷移。dip と同じ状態機械（落とし → 差し替え → 立ち上げ）を
+        /// 通り、黒の代わりに <see cref="GlitchFx"/> の持続成分を上げ下げする。企画書 2.3 の
+        /// 「差し替えの前後に映像の乱れを挿入し、伝送の劣化を装って継ぎ目を隠す」がこれ。
+        /// </summary>
+        public const string TransGlitch = "glitch";
 
         /// <summary>演出の最大長 (秒)。超えたらランタイムが強制終了する（不変条件 2）。</summary>
         public const float DefaultMaxDurationSec = 45f;
@@ -151,6 +162,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>fade 遷移全体の既定 (ms)。</summary>
         public const float DefaultFadeMs = 300f;
+
+        /// <summary>glitch 遷移全体の既定 (ms)。黒より少し長く取らないと「壊れた」に見えない。</summary>
+        public const float DefaultGlitchMs = 220f;
+
+        /// <summary>glitch 遷移で到達する乱れの強さ。</summary>
+        public const float GlitchTransitionLevel = 0.85f;
 
         /// <summary>遷移全体の長さを「黒へ落とす / 黒から立ち上げる」へ配分する比（既存 70:100 に合わせる）。</summary>
         public const float DipDownRatio = 0.4f;
@@ -210,8 +227,12 @@ namespace FixedCamVr.Streaming
         {
             if (transition == TransCut) return 0f;
             if (ms > 0f) return ms;
-            return transition == TransFade ? DefaultFadeMs : DefaultDipMs;
+            if (transition == TransFade) return DefaultFadeMs;
+            return transition == TransGlitch ? DefaultGlitchMs : DefaultDipMs;
         }
+
+        /// <summary>遷移の見た目が「黒」ではなく「乱れ」か。</summary>
+        public static bool IsGlitchTransition(string? transition) => transition == TransGlitch;
 
         /// <summary>
         /// 素材定義の値と step の上書きを合成する（<c>-1</c> = 継承）。

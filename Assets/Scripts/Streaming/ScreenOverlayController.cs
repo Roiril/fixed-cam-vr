@@ -27,6 +27,8 @@ namespace FixedCamVr.Streaming
         private static readonly int OverlayScaleId = Shader.PropertyToID("_OverlayScale");
         private static readonly int MaskTexId = Shader.PropertyToID("_MaskTex");
         private static readonly int OverlayStrengthId = Shader.PropertyToID("_OverlayStrength");
+        private static readonly int OverlayGainId = Shader.PropertyToID("_OverlayGain");
+        private static readonly int OverlayOffsetId = Shader.PropertyToID("_OverlayOffset");
 
         [Serializable]
         public struct CueBinding
@@ -234,6 +236,7 @@ namespace FixedCamVr.Streaming
                 _current = data;
                 _stopWhenFadedOut = false;
                 _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
+                ApplyColorMatch(data);
                 _player!.Stop();
                 _framesStart = Time.time;
                 data.frames!.Tick(0f);
@@ -248,6 +251,7 @@ namespace FixedCamVr.Streaming
                 // _current を null にして、新 cue が無言で殺される。
                 _stopWhenFadedOut = false;
                 _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
+                ApplyColorMatch(data);
                 _player!.Stop();
                 if (data.clip != null)
                 {
@@ -284,12 +288,28 @@ namespace FixedCamVr.Streaming
                 _current = data;
                 _stopWhenFadedOut = false; // 動画パスと同じくフェードアウト完了分岐から守る
                 _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
+                ApplyColorMatch(data);
                 // 無条件 Stop: preparing 中（isPlaying=false）の動画 cue も中断しないと、
                 // 後から prepareCompleted が届いてこの静止画を動画 RT で上書きする。
                 _player!.Stop();
                 SetOverlayTexture(still, (float)still.width / still.height);
                 BeginFadeIn(data);
             }
+        }
+
+        /// <summary>
+        /// 色統計マッチング（企画書 2.3）を素材へ掛ける係数をマテリアルへ書く。
+        /// 卓が cue 保存時に「素材の統計を実写プレートへ合わせる」Reinhard を解き、per-channel の
+        /// gain/offset に落として配っている。ここは 2 本の SetVector だけ。
+        /// **指定が無い cue でも必ず書く**（前の cue の係数が残って次の素材の色が変わるのを防ぐ）。
+        /// </summary>
+        private void ApplyColorMatch(OverlayCueData data)
+        {
+            if (_material == null) return;
+            Vector3 g = data.hasMatch ? data.matchGain : Vector3.one;
+            Vector3 o = data.hasMatch ? data.matchOffset : Vector3.zero;
+            _material.SetVector(OverlayGainId, new Vector4(g.x, g.y, g.z, 0f));
+            _material.SetVector(OverlayOffsetId, new Vector4(o.x, o.y, o.z, 0f));
         }
 
         /// <summary>現在のオーバーレイをフェードアウトして停止。</summary>

@@ -146,6 +146,10 @@ namespace FixedCamVr.OvrBridge
                 signalFx.ReportTrackingLost(!present);
             }
 
+            // 表示レートの要求（起動直後だけ。成功か時間切れで以後は何もしない）。
+            // ここに置くのは、既存シーン / prefab へコンポーネントを 1 個増やさずに済ませるため。
+            DisplayRateRequester.Tick(Time.unscaledDeltaTime);
+
             // ---- 入力を 1 回だけ読む（右手のみ。同じボタンを複数箇所で拾わないため）----
             // Button.One/Two はコントローラ未指定だと両手から拾う（One=A|X 等）ため、必ず RTouch を明示する。
             bool aDown = OVRInput.GetDown(nextButton, OVRInput.Controller.RTouch);   // A: Next / マーク・やり直し
@@ -227,17 +231,26 @@ namespace FixedCamVr.OvrBridge
         // LapCounter 未配線なら CueScheduler 単独で発火済みだけクリアする（周回は動かないが安全側）。
         private void ResetRun()
         {
-            // 走行中の演出を先に畳む（不変条件 8）。これが無いと、演出が画面を凍結したまま周回だけ
-            // リセットされ、卓が無い現場では watchdog（45s）まで出口が無くなる。once もクリアされないので
-            // 次の体験者が once:true の演出を 1 本も見られない（2026-07-26 監査 HIGH）。
-            // SerializeField を増やさず遅延解決する（prefab YAML 未反映で null になる罠を避ける）。
-            FindObjectOfType<TimelineDirector>()?.ResetRun();
-            // 端末内録画も世代を切り替える（前の体験者の映像を持ち越さない）。
-            FindObjectOfType<FixedCamVr.Streaming.Recording.SegmentRecorder>()?.ResetRunLocal();
-            if (lapCounter != null) lapCounter.ResetRun();
-            else cueScheduler?.ResetRun();
-            // BGM もランの既定へ戻す（前の体験者の最後の曲を次のランへ持ち越さない）。
-            FindObjectOfType<BgmDirector>()?.ResetRun();
+            // **号令元は ShowControlClient 1 か所に寄せる**（卓の ▶ ラン開始と同じ経路）。
+            // 個別に叩いていた旧実装は、実測滞在が前の体験者の分と混ざる・体験の骨格（相）が
+            // 戻らない、という非対称を持っていた。
+            var show = FindObjectOfType<ShowControlClient>();
+            if (show != null)
+            {
+                show.BeginNewVisitorRunLocal();
+            }
+            else
+            {
+                // ShowControlClient が居ないシーン（診断用の最小構成など）向けのフォールバック。
+                // 走行中の演出を先に畳む（不変条件 8）。これが無いと、演出が画面を凍結したまま周回だけ
+                // リセットされ、卓が無い現場では watchdog（45s）まで出口が無くなる。
+                FindObjectOfType<TimelineDirector>()?.ResetRun();
+                FindObjectOfType<FixedCamVr.Streaming.Recording.SegmentRecorder>()?.ResetRunLocal();
+                if (lapCounter != null) lapCounter.ResetRun();
+                else cueScheduler?.ResetRun();
+                FindObjectOfType<BgmDirector>()?.ResetRun();
+                FindObjectOfType<ShowRunDirector>()?.BeginRun();
+            }
             haptics?.Fire(); // 長押し発火（ランリセット）
             Debug.Log("[OvrBridge] Normal: ランリセット（右グリップ 2 秒長押し）");
         }

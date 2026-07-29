@@ -204,6 +204,9 @@ namespace FixedCamVr.Streaming
         [Tooltip("切替開始と同時に鳴らす音マスク。null なら無音。")]
         [SerializeField] private SwitchAudioCue? audioCue;
 
+        [Tooltip("遷移 glitch と切替への乱れ重畳を掛ける GlitchFx。null なら同 GameObject から取得。")]
+        [SerializeField] private GlitchFx? glitchFx;
+
         [Header("Timing")]
         // switchCooldownSec / minDwellSec は **非シリアライズ**（既定 0.5s）。旧 2/2 が 1.8m 四方の部屋スケールに
         // 過大で「歩くとカメラ切替が起きず、止まった瞬間に遅れて切替わる」不具合の原因だった。SerializeField だと
@@ -244,6 +247,13 @@ namespace FixedCamVr.Streaming
         // 進行中の dip の実尺（StartDip の引数で確定。負値ならインスペクタ既定）。
         private float _curDipDown;
         private float _curDipUp;
+
+        // 進行中の遷移を「黒」ではなく「映像の乱れ」で見せるか（transition:"glitch"）。
+        // 状態機械（Down → 差し替え → Up）は黒と完全に同じで、見た目だけが変わる。
+        private bool _curDipGlitch;
+
+        // ゾーン切替そのものへ重ねる乱れの強さ（show.json control.switchGlitch）。0 = 重ねない。
+        private float _switchGlitch;
 
         // 黒の瞬間に 1 回だけ呼ぶ処理（素材カットの差し替え）。TakeHoldBegin が積み、AdvanceDip が消費する。
         private Action? _blackAction;
@@ -305,6 +315,7 @@ namespace FixedCamVr.Streaming
             if (registry == null) registry = FindObjectOfType<CameraStreamRegistry>();
             if (overlay == null) overlay = GetComponent<ScreenOverlayController>();
             if (audioCue == null) audioCue = GetComponent<SwitchAudioCue>();
+            if (glitchFx == null) glitchFx = GetComponent<GlitchFx>();
             var r = GetComponent<Renderer>();
             _material = r != null ? r.material : null;
             _logic.Configure(switchCooldownSec, manualHoldSec);
@@ -320,17 +331,18 @@ namespace FixedCamVr.Streaming
                 registry.ActiveChanged += OnRegistryActiveChanged;
                 _subscribed = true;
             }
-            SetDim(0f);
+            ClearTransitionVisual();
         }
 
         private void OnDisable()
         {
             if (registry != null && _subscribed) registry.ActiveChanged -= OnRegistryActiveChanged;
             _subscribed = false;
-            // dip 中に無効化されると _SwitchDim が黒のまま残る。解除して状態も畳んでおく。
-            SetDim(0f);
+            // dip 中に無効化されると _SwitchDim（や乱れの持続成分）が残る。解除して状態も畳んでおく。
+            ClearTransitionVisual();
             _dip = DipState.Idle;
             _dipTimer = 0f;
+            _curDipGlitch = false;
             _blackRedirect = -1;   // 消化されない予約を次の dip へ持ち越さない
         }
 
@@ -470,7 +482,7 @@ namespace FixedCamVr.Streaming
         /// 消化されるべき dip が存在せず、次に起きる無関係な dip（インサート復帰など）に持ち越されて
         /// 「戻るはずが insert カメラへ飛ぶ」事故になる。その場合は通常の dip で素直に切り替える。
         /// </summary>
-        public void InsertExitRedirect(int insertCamera, float downSec = -1f, float upSec = -1f)
+        public void InsertExitRedirect(int insertCamera, float downSec = -1f, float upSec = -1f, bool glitch = false)
         {
             _logic.SetInsertActive(true);
             if (_dip == DipState.Down)
@@ -482,7 +494,7 @@ namespace FixedCamVr.Streaming
                 _blackRedirect = insertCamera;
                 return;
             }
-            StartDip(insertCamera, SwitchSource.Insert, downSec, upSec);
+            StartDip(insertCamera, SwitchSource.Insert, downSec, upSec, glitch);
         }
 
         /// <summary>
@@ -491,7 +503,7 @@ namespace FixedCamVr.Streaming
         /// <paramref name="onBlack"/> を 1 回だけ呼ぶ**（素材の差し替えを黒中で行うため）。
         /// 遷移なし（cut）なら即座に <paramref name="onBlack"/> を呼ぶ。解除は <see cref="InsertReturn"/>。
         /// </summary>
-        public void TakeHoldBegin(float downSec = 0f, float upSec = 0f, Action? onBlack = null)
+        public void TakeHoldBegin(float downSec = 0f, float upSec = 0f, Action? onBlack = null, bool glitch = false)
         {
             _logic.SetInsertActive(true);
             if (downSec <= 0f && upSec <= 0f)
@@ -506,17 +518,27 @@ namespace FixedCamVr.Streaming
             }
             _blackAction = onBlack;
             // カメラは変えない。registry.SetActive(同じ index) は早期 return するので切替イベントも出ない。
-            StartDip(_logic.Current, SwitchSource.Insert, downSec, upSec);
+            StartDip(_logic.Current, SwitchSource.Insert, downSec, upSec, glitch);
         }
 
         /// <summary>
         /// enter インサート: 現在の映像から insert カメラへ dip-to-black で切り替える（Insert source ＝周回に数えない）。
-        /// ゾーン自動切替を凍結する。表示中の映像から入るため通常の dip（Down→黒→切替→Up）を掛ける。
+        /// ゾーン自動切替を凍結する。
+        ///
+        /// **進行中の Zone dip が Down 相なら、そこへ相乗りする**（<see cref="InsertExitRedirect"/> と同じ機構）。
+        /// 相乗りしないと、区間進入と同時に始まる演出が、いま始まったばかりのゾーン切替の暗転を打ち切って
+        /// 自分の dip をやり直す＝**暗転が 2 回続けて出る**。企画書 2.3 の「差し替えを提示映像の切替の
+        /// タイミングに同期させ、差し替えの知覚的検出を抑える」は、この相乗りが無いと成立しない。
         /// </summary>
-        public void InsertBegin(int insertCamera, float downSec = -1f, float upSec = -1f)
+        public void InsertBegin(int insertCamera, float downSec = -1f, float upSec = -1f, bool glitch = false)
         {
             _logic.SetInsertActive(true);
-            StartDip(insertCamera, SwitchSource.Insert, downSec, upSec);
+            if (_dip == DipState.Down)
+            {
+                _blackRedirect = insertCamera;
+                return;
+            }
+            StartDip(insertCamera, SwitchSource.Insert, downSec, upSec, glitch);
         }
 
         /// <summary>
@@ -590,10 +612,12 @@ namespace FixedCamVr.Streaming
         /// **尺は必ず引数で渡す**（旧 <c>SetNextTransition</c> の「次の切替に効く予約」方式は廃止）。
         /// 予約方式は「消化されなかった予約が無関係な次の切替に漏れる」事故を構造的に許していた。
         /// </summary>
-        private void StartDip(int target, SwitchSource source, float downSec = -1f, float upSec = -1f)
+        private void StartDip(int target, SwitchSource source, float downSec = -1f, float upSec = -1f,
+                              bool glitch = false)
         {
             _curDipDown = downSec >= 0f ? downSec : dipDownSec;
             _curDipUp = upSec >= 0f ? upSec : dipUpSec;
+            _curDipGlitch = glitch;
 
             // 「瞬時（cut）」は dip 状態機械に入れずその場で差し替える。
             // 旧実装は Down→黒→Up を必ず 1 フレームずつ通したため、尺 0 でも 1 フレーム真っ黒が出た。
@@ -605,9 +629,11 @@ namespace FixedCamVr.Streaming
                 Action? act = _blackAction;
                 _blackAction = null;
                 act?.Invoke();
-                SetDim(0f);
+                _curDipGlitch = false;
+                ClearTransitionVisual();
                 _dip = DipState.Idle;
                 audioCue?.Play();
+                if (source == SwitchSource.Zone) PulseSwitchGlitch(0f);
                 return;
             }
 
@@ -616,6 +642,45 @@ namespace FixedCamVr.Streaming
             _dip = DipState.Down;
             _dipTimer = 0f;
             audioCue?.Play(); // dip の黒が視覚差替に先行 → J カット相当
+            // ゾーン切替そのものへ乱れを重ねる（企画書 2.3「提示映像の切替と同様に…乱れを一時的に重畳」）。
+            // 遷移 glitch とは独立で、黒の dip に乗せる形で使う。
+            if (source == SwitchSource.Zone) PulseSwitchGlitch(_curDipDown + _curDipUp);
+        }
+
+        private void PulseSwitchGlitch(float sec)
+        {
+            if (_switchGlitch <= 0.001f || glitchFx == null) return;
+            glitchFx.Pulse(_switchGlitch, sec > 0f ? sec : 0.12f);
+        }
+
+        /// <summary>
+        /// ゾーン切替に重ねる乱れの強さを設定する（show.json <c>control.switchGlitch</c>・0 で無効）。
+        /// <see cref="ShowControlClient"/> が焼き込み / 端末キャッシュ / ライブのいずれからも流す。
+        /// </summary>
+        public void SetSwitchGlitch(float level) => _switchGlitch = Mathf.Clamp01(level);
+
+        /// <summary>単発の乱れを外から走らせる（カット頭のアクセント・卓からの手動発火）。</summary>
+        public void PulseGlitch(float level, float sec) => glitchFx?.Pulse(level, sec);
+
+        /// <summary>遷移の見た目（黒 or 乱れ）を 0 に戻す。</summary>
+        private void ClearTransitionVisual()
+        {
+            SetDim(0f);
+            glitchFx?.SetSustain(0f);
+        }
+
+        /// <summary>遷移の進み具合 (0-1) を、黒 or 乱れのどちらかへ流す。</summary>
+        private void ApplyTransitionLevel(float t)
+        {
+            if (_curDipGlitch)
+            {
+                SetDim(0f);
+                glitchFx?.SetSustain(t * TakeSchema.GlitchTransitionLevel);
+            }
+            else
+            {
+                SetDim(t);
+            }
         }
 
         // dip を進める dt の供給元。既定は Time.unscaledDeltaTime。
@@ -637,7 +702,7 @@ namespace FixedCamVr.Streaming
             if (_dip == DipState.Down)
             {
                 float t = _curDipDown <= 0f ? 1f : Mathf.Clamp01(_dipTimer / _curDipDown);
-                SetDim(t);
+                ApplyTransitionLevel(t);
                 if (t >= 1f)
                 {
                     // 全黒でソース差替 → ActiveChanged → OnRegistryActiveChanged で
@@ -674,10 +739,11 @@ namespace FixedCamVr.Streaming
             else // Up
             {
                 float t = _curDipUp <= 0f ? 1f : Mathf.Clamp01(_dipTimer / _curDipUp);
-                SetDim(1f - t);
+                ApplyTransitionLevel(1f - t);
                 if (t >= 1f)
                 {
-                    SetDim(0f);
+                    ClearTransitionVisual();
+                    _curDipGlitch = false;
                     _dip = DipState.Idle;
                 }
             }
