@@ -46,13 +46,16 @@ const cameras = cams.map((c) => {
   return { ...c, pose: { ...pose } };
 });
 
-// 素材: 足りないものだけ足す（既存の cue は名前も含めて触らない）。
+// 素材: この体験が使う cue は **mawarimi-show.mjs が正**（素材 URL・マスク・フェードごと上書き）。
+// それ以外の cue（卓で作ったもの）は触らない。
 const cues = (state.cues || []).slice();
 const addedCues = [];
 for (const c of REQUIRED_CUES) {
-  if (cues.some((x) => x.id === c.id)) continue;
-  cues.push({ ...c });
-  addedCues.push(c.id);
+  const i = cues.findIndex((x) => x.id === c.id);
+  if (i < 0) { cues.push({ ...c }); addedCues.push(`${c.id}（新規）`); continue; }
+  if (JSON.stringify(cues[i]) === JSON.stringify({ ...cues[i], ...c })) continue;
+  cues[i] = { ...cues[i], ...c };
+  addedCues.push(`${c.id}（更新）`);
 }
 
 const timeline = buildTimeline(indexOfCam, (state.timeline && state.timeline.rev) || 0);

@@ -1609,6 +1609,9 @@ calibUi = createCalibUi(document.body, {
   // 静止フレームの元。カメラ列の <img>（卓サーバの /cam プロキシ + crossOrigin=anonymous なので
   // canvas が汚染されず読み出せる。列の 📷 キャプチャと同じ経路）。
   getLiveImg: (camId) => { const c = columns.get(camId); return c ? c.liveImg : null; },
+  // 較正の基準点（`layout.calibPoints`）を地図から置けるようにするための保存口。
+  // フロアマップと同じ経路（show.json の layout を丸ごと置く）を通す。
+  saveLayout: (layout) => { if (state) state.layout = layout; return postState({ layout }); },
   saveCameras: async (cams) => {
     if (state) state.cameras = cams;
     const r = await postState({ cameras: cams });

@@ -34,6 +34,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -79,6 +80,98 @@ LOCAL_URL_DIRS = {
 }
 # リポジトリルート（tools/web-compositor から 2 つ上）。エクスポート先の解決に使う。
 REPO_ROOT = os.path.dirname(os.path.dirname(ROOT))
+
+# ---- 画像生成ジョブ（🪄 Codex に生成させる）--------------------------------
+#
+#   卓のボタンから「いまのライブ映像を種にした差し替え素材」を作れるようにする。
+#   実体はこの PC の Codex CLI（~/.claude/scripts/codex-run.ps1 -Mode image）で、1 枚 60〜150 秒。
+#
+#   安全のための約束（現場で本番運用する卓に載せるため）:
+#     ・**127.0.0.1 からの要求だけ**受ける（サーバは 0.0.0.0 で listen しているので、
+#       これが無いと同一 LAN の誰でもこの PC で外部プロセスを走らせられる）
+#     ・Mode / 作業ディレクトリ / 出力ファイル名は**サーバが決める**（UI 入力から作らない）
+#     ・作業ディレクトリは**リポジトリの外**の一時フォルダ。Codex は image モードでそこへ
+#       書き込み権限を持つので、show.json のある場所を渡さない
+#     ・同時 1 ジョブ・上限 300 秒。超えたら子ごと殺す（Windows は powershell を殺しても
+#       codex の子が残るので taskkill /T /F）
+#     ・生成は show.json を一切書かない（cue にするのは既存の 💾 経路だけ）
+GEN_WORK = os.path.join(tempfile.gettempdir(), 'fixedcam-gen')
+GEN_TIMEOUT_SEC = 300
+CODEX_RUNNER = os.path.join(os.path.expanduser('~'), '.claude', 'scripts', 'codex-run.ps1')
+_gen_lock = threading.Lock()
+_gen_jobs = {}          # id -> {status, url, error, startedAt, finishedAt, cam, prompt, genId}
+
+
+def _gen_running():
+    return any(j['status'] == 'running' for j in _gen_jobs.values())
+
+
+def _gen_run(job_id, cam_label, seed_path, prompt, slug):
+    """別スレッドで Codex を回し、できた PNG を captures/ へ置く。"""
+    job = _gen_jobs[job_id]
+    work = os.path.join(GEN_WORK, job_id)
+    os.makedirs(work, exist_ok=True)
+    proc = None
+    try:
+        seed_copy = os.path.join(work, 'seed' + os.path.splitext(seed_path)[1])
+        shutil.copyfile(seed_path, seed_copy)
+        out_png = os.path.join(work, 'out.png')
+        prompt_file = os.path.join(work, 'prompt.txt')
+        # 種フレームは**作業フォルダへコピーした方**を指す（リポジトリを触らせない）。
+        full = (f'{prompt}\n\n--- 入力画像（必ず開いて見てから作業すること）---\n{seed_copy}\n'
+                '\n--- 合成に必要な条件（必ず守る）---\n'
+                '1. カメラ位置・画角・構図を入力画像とまったく同じにする\n'
+                '2. 解像度は入力画像と同じ\n'
+                '3. 照明・色温度・露出・ホワイトバランスを入力と揃える\n'
+                '4. 入力画像に写っているものを消したり動かしたりしない（足すものだけ足す）\n'
+                '5. 写真として自然であること（イラスト調・CG 調にしない）\n')
+        with open(prompt_file, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(full)
+
+        cmd = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', CODEX_RUNNER,
+               '-PromptFile', prompt_file, '-Mode', 'image', '-Cwd', work,
+               '-OutImage', out_png, '-OutDir', work]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                cwd=work, creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+        job['pid'] = proc.pid
+        try:
+            out, _ = proc.communicate(timeout=GEN_TIMEOUT_SEC)
+        except subprocess.TimeoutExpired:
+            subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'],
+                           capture_output=True, check=False)
+            raise TimeoutError(f'{GEN_TIMEOUT_SEC} 秒を超えました')
+        tail = (out or b'').decode('utf-8', 'replace')[-1200:]
+        job['log'] = tail
+        if not os.path.exists(out_png):
+            raise RuntimeError('画像ができませんでした（Codex の応答は log を参照）')
+
+        stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        name = f'gen_cam{_atelier_slug(cam_label, "X")}_{_atelier_slug(slug, "free")}_{stamp}.png'
+        shutil.copyfile(out_png, os.path.join(CAPTURES, name))
+        url = '/captures/' + name
+        job.update(status='done', url=url, finishedAt=time.time())
+        _gen_record(job.get('genId'), {'status': 'done', 'outputUrl': url})
+    except Exception as e:                                    # noqa: BLE001 - 何で落ちても UI へ返す
+        job.update(status='failed', error=str(e), finishedAt=time.time())
+        _gen_record(job.get('genId'), {'status': 'failed', 'note': str(e)})
+    finally:
+        if proc is not None and proc.poll() is None:
+            subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'],
+                           capture_output=True, check=False)
+
+
+def _gen_record(gen_id, patch):
+    """素性（種フレーム・プロンプト・結果）を atelier.json の生成記録へ残す。"""
+    if not gen_id:
+        return
+    with _atelier_lock:
+        st = _load_atelier()
+        rec = next((g for g in st['generations'] if g.get('id') == gen_id), None)
+        if rec is None:
+            return
+        rec.update(patch)
+        _save_atelier(st)
+
 
 # ---- ショー状態（show.json = 状態の正）----------------------------------
 SHOW_FILE = os.path.join(ROOT, 'show.json')
@@ -891,6 +984,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(_atelier_stats(_load_atelier()))
         if path == '/atelier/frames':
             return self._json(self._list_source_frames())
+        if path == '/generate/status':
+            return self._get_generate_status(parse_qs(urlparse(self.path).query))
         if path == '/audio/list':
             return self._json(self._list_audio())
         if path == '/reveal':
@@ -1164,6 +1259,8 @@ class Handler(SimpleHTTPRequestHandler):
                 except OSError:
                     pass
             return self._json({'ok': True})
+        if parsed.path == '/generate':
+            return self._post_generate()
         if parsed.path == '/scenarios/save':
             return self._save_scenario()
         if parsed.path == '/export-build':
@@ -1559,6 +1656,61 @@ class Handler(SimpleHTTPRequestHandler):
         for v in by_cam.values():
             v.sort(key=lambda x: x['mtime'], reverse=True)
         return by_cam
+
+    # ---- 🪄 画像生成（Codex CLI）------------------------------------------------
+    def _post_generate(self):
+        # 卓は LAN 全体へ出ているので、外部プロセスを起こす口だけはこの PC からに限る。
+        if self.client_address[0] not in ('127.0.0.1', '::1'):
+            return self._json({'ok': False, 'error': 'この操作は卓を動かしている PC からだけ実行できます'}, 403)
+        if not os.path.exists(CODEX_RUNNER):
+            return self._json({'ok': False, 'error': f'Codex のラッパが見つかりません: {CODEX_RUNNER}'}, 500)
+        body = self._read_json_body()
+        prompt = (body.get('prompt') or '').strip()
+        seed_url = (body.get('seedUrl') or '').strip()
+        cam_label = (body.get('cam') or 'X').strip()
+        slug = (body.get('slug') or 'free').strip()
+        if len(prompt) < 8:
+            return self._json({'ok': False, 'error': '何を足すのかを書いてください'}, 400)
+        seed_path = self._resolve_local_asset(seed_url)
+        if not seed_path:
+            return self._json({'ok': False, 'error': '種フレームが見つかりません（先に 📷 で 1 枚撮る）'}, 400)
+
+        with _gen_lock:
+            if _gen_running():
+                return self._json({'ok': False, 'error': '生成はいま 1 件だけ走っています（終わってから）'}, 409)
+            job_id = _atelier_new_id('j_', set(_gen_jobs))
+            # 素性は**先に**記録する。ジョブ表はメモリなので、サーバが落ちても
+            # 「何を頼んだか」は atelier.json に残る（後から手で attach できる）。
+            gen_id = None
+            with _atelier_lock:
+                st = _load_atelier()
+                gen_id = _atelier_new_id('g_', {g.get('id') for g in st['generations']})
+                st['generations'].append({
+                    'id': gen_id,
+                    'createdAt': datetime.datetime.now().isoformat(timespec='seconds'),
+                    'status': 'running', 'verdict': 'unrated',
+                    'cameraLabel': cam_label, 'sourceFrame': seed_url,
+                    'recipeSlug': slug, 'prompt': prompt,
+                    'params': {'tool': 'codex', 'mode': 'image'},
+                })
+                _save_atelier(st)
+            _gen_jobs[job_id] = {'status': 'running', 'url': '', 'error': '', 'log': '',
+                                 'startedAt': time.time(), 'finishedAt': 0,
+                                 'cam': cam_label, 'genId': gen_id}
+            threading.Thread(target=_gen_run, name='gen-' + job_id, daemon=True,
+                             args=(job_id, cam_label, seed_path, prompt, slug)).start()
+        return self._json({'ok': True, 'id': job_id, 'genId': gen_id})
+
+    def _get_generate_status(self, q):
+        job_id = (q.get('id', [''])[0] or '').strip()
+        job = _gen_jobs.get(job_id)
+        if not job:
+            return self._json({'ok': False, 'error': 'unknown job'}, 404)
+        return self._json({
+            'ok': True, 'status': job['status'], 'url': job['url'], 'error': job['error'],
+            'log': job.get('log', '')[-400:],
+            'elapsedSec': round((job['finishedAt'] or time.time()) - job['startedAt'], 1),
+        })
 
     def _atelier_post(self, parsed):
         path = parsed.path

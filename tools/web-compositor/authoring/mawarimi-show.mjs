@@ -22,25 +22,47 @@
 import { FX_DEFAULT } from '../common.js';
 import { TAKE, newStep, newTake, newSeg, takeId, defaultBgm, serializeTimelineV3 } from '../timeline-model.js';
 
-// ---- テスト素材（本番素材ができたら差し替える）---------------------------------
-const A = { CLIP: '/testassets/test_clip_A.mp4', STILL: '/testassets/test_still_A.png' };
-const B = { STILL: '/testassets/test_still_B.png' };
-const C = { STILL: '/testassets/test_still_C.png' };
+// ---- 素材 ---------------------------------------------------------------------
+//   `gen_*` は **2026-07-29 に現地の生映像を種にして Codex で作った実素材**（卓の 🪄 と同じ作り方）。
+//   種フレームは同日 18:51 の captures/camcam[ABC]_*.jpg で、構図・照明はそのまま。
+//   マスクは種と生成の差分から起こしてある（make-diff-mask.py）。
+const A = { NINGYO: '/captures/gen_monsterA_01.png', CLIP: '/testassets/test_clip_A.mp4' };
+const B = { HAND: '/captures/gen_handB_01.png' };
+const C = {
+  CLOSE: '/captures/gen_closeC_01.png',
+  // 締めは**日本人形そのもの**が床に立っている 1 枚（卓の 🪄 ボタン経由で作ったもの）。
+  // 直前まで「過去の自分」を見ていた画面に、追ってきた本体が置き去りのように立っている。
+  FINALE: '/captures/gen_camC_doll_20260729_191238.png',
+};
 
-/** この体験が要求する cue（無ければ足す。既にあれば触らない）。 */
+/**
+ * この体験が使う cue（素材 + マスク + フェード）。**この配列が正**で、apply が show.json へ上書きする。
+ * cue は「重ねる素材」の定義だけを持ち、**尺は持たない**（尺はカット側が単一の正）。
+ */
 export const REQUIRED_CUES = [
   {
     id: 'cue_hand_B',
     name: '血の手形（壁・1周目）',
     camera: 'B',
-    maskUrl: '/masks/cue_B.png',        // ⚠ テスト用の流用。本番は壁の領域で焼き直す
-    sourceUrl: B.STILL,
+    maskUrl: '/masks/cue_hand_B.png',   // 種との差分（左のパーテーション面だけ）
+    sourceUrl: B.HAND,
     strength: 1,
     loop: true,
     // フェードは 0 に近づける。滲み出てくると「差し替わった」と気づかれる。
     // 企画書の手形は「切り替わった瞬間、すでにそこに在った」もの。
     fadeIn: 0,
     fadeOut: 0.35,
+  },
+  {
+    id: 'cue_ningyo_A',
+    name: '人形が覗いている（2周目）',
+    camera: 'A',
+    maskUrl: '/masks/cue_ningyo_A.png', // 種との差分（カーテンの隙間の人影だけ）
+    sourceUrl: A.NINGYO,
+    strength: 1,
+    loop: true,
+    fadeIn: 0.35,
+    fadeOut: 0.4,
   },
 ];
 
@@ -134,28 +156,27 @@ export function buildTimeline(cameraIndex, prevRev = 0) {
       hasBgm: true,
       bgm: { ...defaultBgm(), action: 'stop', fadeOutSec: 0.3 },
       steps: [
-        // ① 乱れの中で人形だけを差し替える（マスク）。まだ遠い。
-        overlay('cue_A_1', 2.4, glitchCut(260)),
-        // ② 画面を埋めて襲いかかる（マスクを使わない全面の差し替え）。頭に単発の乱れ。
-        clip(A.CLIP, 1.8, { ...glitchCut(200), glitch: 0.9, glitchSec: 0.35, trimStartSec: 0, trimEndSec: 1.8 }),
-        // ③ 乱れて実写へ戻る。何が起きたのか確かめられないまま歩き続けることになる。
+        // ① 乱れの中で、カーテンの隙間に人影だけを差し替えで足す（マスク）。まだ遠い。
+        overlay('cue_ningyo_A', 2.6, glitchCut(260)),
+        // ② 乱れて実写へ戻る。居たのかどうか確かめられないまま歩き続けることになる。
         live(A_i, 0.5, glitchCut(300)),
       ],
     })],
   }));
 
-  //  差し替えのない乱れ。伝送の劣化を装って、注意と足を先へ送る（企画書 2.3）。
+  //  襲いかかる。画面を埋める全面の差し替え（マスクを使わない）。
+  //  ここだけ音を止めない — 直前まで鳴っていた曲が続いたまま顔が来る方が逃げ場が無い。
   segments.push(seg(2, C_i, {
     takes: [newTake(takeId(2, C_i, 0), {
-      name: '伝送が乱れる',
+      name: '襲いかかる',
       at: TAKE.AT_ENTER,
-      offsetSec: 4,
+      offsetSec: 3.5,
       ifMissed: TAKE.MISSED_SKIP,      // 速く歩いた人には出さない（無理に出すと間が悪い）
       steps: [
-        newStep({
-          source: TAKE.SRC_INHERIT, durKind: TAKE.DUR_SEC, durSec: 1.4,
-          ...glitchCut(220), glitch: 0.85, glitchSec: 0.6,
-        }),
+        // ① 乱れの中で画面いっぱいに迫る（生成した実写調の 1 枚）。
+        still(C.CLOSE, 1.6, { ...glitchCut(200), glitch: 0.95, glitchSec: 0.4 }),
+        // ② 乱れて実写へ戻る。
+        live(C_i, 0.5, glitchCut(300)),
       ],
     })],
   }));
@@ -193,7 +214,7 @@ export function buildTimeline(cameraIndex, prevRev = 0) {
     takes: [pastTake(3, C_i, 0, [
       // 締め。人形がこちらを見て終わる。**離脱時に置かない**（画面が塞がっていると出ないため）、
       // 最後の演出の最後から 2 番目のカットとして必ず順番に出す。
-      still(C.STILL, 2.4, { ...glitchCut(300), glitch: 0.7, glitchSec: 0.5 }),
+      still(C.FINALE, 2.4, { ...glitchCut(300), glitch: 0.7, glitchSec: 0.5 }),
     ], { wait: TAKE.WAIT_CHAIN })],
   }));
 

@@ -1016,6 +1016,22 @@ input:-webkit-autofill:active {
 }
 .atl-shootmsg.ok { color: var(--accent-color); opacity: 1; }
 .atl-shootmsg.err { color: var(--danger-color); opacity: 1; }
+/* 🪄 Codex に生成させる（種フレーム → 1 枚描かせる）。生成は制作作業なので 🧪 素材の段だけに出す */
+.atl-genbox {
+  display: flex; flex-direction: column; gap: 5px; margin-top: 8px;
+  padding: 7px 8px; border: 1px solid var(--line-soft);
+}
+.atl-genrow { display: flex; align-items: center; gap: 8px; }
+.atl-genrow button { padding: 3px 9px; font-size: 11px; }
+.atl-genmsg {
+  font-size: 10px; opacity: var(--opacity-mute); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+}
+.atl-genmsg.ok { color: var(--accent-color); opacity: 1; }
+.atl-genmsg.err { color: var(--danger-color); opacity: 1; }
+.atl-genprompt { width: 100%; font-size: 11px; line-height: 1.5; resize: vertical; }
+.atl-genhint { font-size: 10px; opacity: var(--opacity-mute); line-height: 1.5; }
+
 .atl-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
 .atl-strip .atl-empty { flex: 1; }
 .atl-seedbtn {

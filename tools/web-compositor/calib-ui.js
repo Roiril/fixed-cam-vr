@@ -21,9 +21,13 @@
 
 import {
   calibrateFromFloorPoints, projectPoint, calibQualityLabel, MIN_POINTS_FOR_K1,
+  hasCollinearTriple, isDegenerate,
 } from './calib.js';
 import { linesFromLayout, parseGridCells } from './zone-layout.js';
 import { streamBase, camColor, escapeHtml } from './common.js';
+import {
+  sketchView, drawFloorSketch, snapToGrid, nearestRoomCorner, roomCorners, hitPoint,
+} from './floor-sketch.js';
 
 // ---- 純関数（DOM 非依存・calib-ui.test.mjs が固定する）------------------------
 
@@ -66,6 +70,14 @@ export function candidatePoints(layout, used = []) {
     out.push({ key, x, z, kind, label });
   };
 
+  // 作者が地図に置いた印（`layout.calibPoints`）。**位置合わせ点のコピーではなく別の集合**で、
+  // 現場の床に実物の目印があるものだけを置く（ラベル必須）。候補としては union で並べ、
+  // どちらかへコピーはしない（2 コピーは必ずずれる）。
+  for (const p of Array.isArray(layout?.calibPoints) ? layout.calibPoints : []) {
+    if (!p) continue;
+    push(p.x, p.z, 'mark', p.label ? `印・${p.label}` : '印');
+  }
+
   const regSrc = Array.isArray(layout?.regPoints) && layout.regPoints.length
     ? layout.regPoints : DEFAULT_REG_POINTS;
   regSrc.forEach((p, i) => {
@@ -87,6 +99,9 @@ export function candidatePoints(layout, used = []) {
     push(hw, -hd, 'room', '床の角（南東）');
     push(-hw, -hd, 'room', '床の角（南西）');
   }
+  // 部屋のプロキシ（🧱 で著作した壁の端・箱の角）。**映像で最も見つけやすい物理特徴**で、
+  // しかも床の上にあるので較正に使える。
+  for (const c of roomCorners(layout)) push(c.x, c.z, 'room', c.label);
 
   const g = layout?.grid;
   if (g && g.tileM > 0 && g.rows > 0 && g.cols > 0) {
@@ -287,11 +302,49 @@ export function clearCalibFromCameras(cameras, camId) {
 // ---- UI ---------------------------------------------------------------------
 
 const CAND_GROUPS = [
+  ['mark', '自分で置いた印'],
   ['reg', '位置合わせ点（床の×印テープ）'],
   ['room', '部屋の角（壁・床の縁）'],
   ['grid', 'タイルの角（0.15m 格子）'],
   ['manual', '手入力'],
 ];
+
+/**
+ * 打った点の**質**を、解く前に言えるだけ言う。
+ *   実測（calib.test.mjs）で分かっている効き方:
+ *     画角を推定するなら 6 点以上（4〜5 点だと歪みを f に吸わせた偽解に落ちる）
+ *     画角を固定するなら 4 点でよいが、どの 3 点も一直線でないこと
+ *     床で散っていても**画面の隅に固まっていれば**解は暴れる（両方を見る）
+ *
+ * @param {{x:number,z:number,u:number,v:number}[]} pts
+ * @param {number} frameW @param {number} frameH
+ * @param {boolean} focalLocked 画角を固定して解くか
+ */
+export function pointQuality(pts, frameW, frameH, focalLocked) {
+  const n = (pts || []).length;
+  const need = focalLocked ? 4 : MIN_POINTS_FOR_K1;
+  const span = (arr) => (arr.length ? Math.max(...arr) - Math.min(...arr) : 0);
+  const floorSpread = n >= 2
+    ? Math.hypot(span(pts.map((p) => p.x)), span(pts.map((p) => p.z))) : 0;
+  const imgDiag = Math.hypot(frameW || 0, frameH || 0) || 1;
+  const imgSpread = n >= 2
+    ? Math.hypot(span(pts.map((p) => p.u)), span(pts.map((p) => p.v))) / imgDiag : 0;
+  const collinear = n >= 3 && hasCollinearTriple(pts);
+  const degenerate = n >= 3 && isDegenerate(pts);
+
+  const issues = [];
+  if (n < 4) issues.push(`あと ${4 - n} 点（最低 4 点）`);
+  else if (n < need) issues.push(`画角も一緒に解くなら あと ${need - n} 点（${need} 点以上）`);
+  if (degenerate) issues.push('点が一直線に近い（部屋の広がりを使って離す）');
+  else if (collinear && n <= 5) issues.push('3 点が一直線に並んでいる（4 点ちょうどだと解けない）');
+  if (n >= 4 && imgSpread < 0.35) issues.push('画面の中で点が固まっている（画の端まで使う）');
+  if (n >= 4 && floorSpread < 0.6) issues.push('床の上で点が近すぎる（離れた場所の点を混ぜる）');
+
+  return {
+    n, need, floorSpread, imgSpread, collinear, degenerate, issues,
+    ready: n >= 4 && !degenerate && !(n === 4 && collinear),
+  };
+}
 
 /**
  * 較正パネルを作る。カメラ列の［🎯 姿勢を合わせる］から `open(camId)` で開く。
@@ -326,12 +379,25 @@ export function createCalibUi(container, deps) {
             4 点以上で <b>✨ 解く</b>（4 点ちょうどのときは 3 点が一直線に並ばないように）。</div>
         </div>
         <div class="cu-side">
+          <div class="cu-mapblock">
+            <div class="cu-maphead">部屋を上から見た図<span class="cu-mapmode-hint"></span></div>
+            <canvas class="cu-map" width="300" height="300"></canvas>
+            <div class="cu-maprow">
+              <label class="chk"><input class="cu-mapadd" type="checkbox"> 印を置く</label>
+              <input class="cu-marklabel" type="text" placeholder="目印の名前（例: 棚の脚）" maxlength="24">
+              <button class="cu-markdel" title="選んでいる印を消す">🗑</button>
+            </div>
+            <div class="cu-maphint">図の点をクリックすると「打つ点」がそこに切り替わります。
+              <b>印を置く</b>にすると、クリックした場所に自分の基準点を作れます（タイルの角と部屋の角へ吸着）。
+              <b>点は床の上にあるもの・実物が現場にあるものだけ</b>にしてください（机の上の印は使えません）。</div>
+          </div>
           <label class="cu-lbl">打つ点 <select class="cu-cand"></select></label>
           <div class="cu-manual">
             <label>X<input class="cu-mx" type="number" step="0.05" placeholder="0.00"></label>
             <label>Z<input class="cu-mz" type="number" step="0.05" placeholder="0.00"></label>
             <button class="cu-madd" title="course 座標が分かっている点を候補に足す（テープを増やした時など）">＋ 座標を足す</button>
           </div>
+          <div class="cu-quality"></div>
           <label class="chk cu-locklbl"><input class="cu-lock" type="checkbox"> <span class="cu-locktext"></span></label>
           <div class="cu-lockhint"></div>
           <div class="cu-actions">
@@ -358,6 +424,8 @@ export function createCalibUi(container, deps) {
   const lockChk = q('.cu-lock'), lockText = q('.cu-locktext'), lockHint = q('.cu-lockhint');
   const msgEl = q('.cu-msg'), resultEl = q('.cu-result'), ptListEl = q('.cu-ptlist');
   const saveBtn = q('.cu-save'), discardBtn = q('.cu-discard');
+  const mapCanvas = q('.cu-map'), mapCtx = mapCanvas.getContext('2d');
+  const mapAddChk = q('.cu-mapadd'), markLabelInput = q('.cu-marklabel'), qualityEl = q('.cu-quality');
 
   // 状態
   let camId = '';
@@ -459,6 +527,81 @@ export function createCalibUi(container, deps) {
   }
   const selectedCandidate = () => allCandidates().find((c) => c.key === candSel.value) || null;
 
+  // ---- ミニ地図（部屋を上から見た図）------------------------------------------
+  //   セレクトの文字列（「タイルの角 (0.30, -0.45)」）だけでは、それが部屋のどこなのか
+  //   作者には分からない。ここで**候補と打った点を絵にして**、地図の上で選べるようにする。
+  //   置ける点（`layout.calibPoints`）は「現場の床に実物の目印があるもの」に限る — 地図で
+  //   決めた座標は、床に印が無ければ現場で同定できず、誤差として表面化しないまま解を歪める。
+  const camPose = (c) => ((c.calib && c.calib.fxPx > 1) ? c.calib : c.pose) || null;
+  function drawMap() {
+    const lay = layout();
+    const view = sketchView(lay, mapCanvas, 12);
+    drawFloorSketch(mapCtx, lay, view, {
+      points: pts.map((p) => ({ x: p.x, z: p.z, done: true })),
+      marks: allCandidates().map((c) => ({ x: c.x, z: c.z, key: c.key, kind: c.kind })),
+      activeKey: candSel.value,
+      cameras: cameras().map((c, i) => ({ index: i, id: c.id, pose: camPose(c) }))
+        .filter((c) => c.pose),
+    });
+    return view;
+  }
+  /** 地図のクリック位置 → course 座標（吸着つき）。 */
+  function mapToCourse(ev) {
+    const rect = mapCanvas.getBoundingClientRect();
+    if (!rect.width) return null;
+    const view = sketchView(layout(), mapCanvas, 12);
+    const px = (ev.clientX - rect.left) / rect.width * mapCanvas.width;
+    const py = (ev.clientY - rect.top) / rect.height * mapCanvas.height;
+    return { view, px, py, ...view.toCourse(px, py) };
+  }
+  function onMapClick(ev) {
+    const hit = mapToCourse(ev);
+    if (!hit) return;
+    const cands = allCandidates();
+    if (!mapAddChk.checked) {
+      // 近い候補を「打つ点」にする（地図から選ぶ）。
+      const view = hit.view;
+      const i = hitPoint(cands, view, hit.px, hit.py, 14);
+      if (i < 0) return note('その辺りに候補点がありません（印を置くならチェックを入れる）', 'err');
+      candSel.value = cands[i].key;
+      afterCandidateChanged();
+      return;
+    }
+    // 自分の印を置く。物理の目印がある所を指すのが前提なので**ラベル必須**。
+    const label = markLabelInput.value.trim();
+    if (!label) return note('印の名前を入れてください（例: 棚の脚・テープの×）', 'err');
+    const room = nearestRoomCorner(layout(), hit.x, hit.z, 0.12);
+    const p = room || snapToGrid(layout(), hit.x, hit.z);
+    saveMarks([...(layout()?.calibPoints || []), { x: p.x, z: p.z, label }]);
+    note(`印「${label}」を (${p.x.toFixed(2)}, ${p.z.toFixed(2)}) に置きました — 現場の床にも印を付けてください`, 'ok');
+  }
+  async function saveMarks(list) {
+    const lay = { ...(layout() || {}), calibPoints: list };
+    if (typeof deps.saveLayout === 'function') await deps.saveLayout(lay);
+    renderCandidates();
+    afterCandidateChanged();
+  }
+  function deleteSelectedMark() {
+    const c = selectedCandidate();
+    if (!c || c.kind !== 'mark') return note('消せるのは自分で置いた印だけです', 'err');
+    const list = (layout()?.calibPoints || []).filter((p) => pointKey(p.x, p.z) !== c.key);
+    saveMarks(list);
+    note('印を消しました', 'ok');
+  }
+  /** 「打つ点」が変わった時（地図・セレクトの両方から呼ぶ）。 */
+  function afterCandidateChanged() { drawMap(); renderQuality(); }
+
+  // ---- 点の質（解く前に言う）--------------------------------------------------
+  function renderQuality() {
+    const qy = pointQuality(pts, frame?.w || 0, frame?.h || 0, lockChk.checked && lockedFocalPx > 0);
+    const head = `点 ${qy.n} 個 / ${qy.ready ? '解けます' : `${qy.need} 点まであと ${Math.max(0, qy.need - qy.n)}`}`;
+    const detail = qy.n >= 2
+      ? `　床の広がり ${qy.floorSpread.toFixed(2)}m ・ 画面の広がり ${Math.round(qy.imgSpread * 100)}%` : '';
+    qualityEl.innerHTML = `<b>${escapeHtml(head)}</b><span class="cu-qdetail">${escapeHtml(detail)}</span>`
+      + (qy.issues.length ? `<ul>${qy.issues.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>` : '');
+    qualityEl.className = 'cu-quality' + (qy.ready ? ' ok' : '');
+  }
+
   // ---- 打った点 --------------------------------------------------------------
   function renderPointList() {
     ptListEl.innerHTML = '';
@@ -488,6 +631,8 @@ export function createCalibUi(container, deps) {
     renderCandidates();
     renderPointList();
     renderResult();
+    renderQuality();
+    drawMap();
     draw();
   }
 
@@ -703,7 +848,14 @@ export function createCalibUi(container, deps) {
     syncFrameInfo(); syncLockUi(); draw();
     note('フレームを取り直しました（点はそのまま）', 'ok');
   };
-  lockChk.onchange = () => syncLockUi();
+  lockChk.onchange = () => { syncLockUi(); renderQuality(); };
+  candSel.onchange = () => afterCandidateChanged();
+  mapCanvas.addEventListener('click', onMapClick);
+  mapAddChk.onchange = () => {
+    q('.cu-mapmode-hint').textContent = mapAddChk.checked
+      ? '（クリックした場所に印を置きます）' : '（点をクリックすると「打つ点」が切り替わります）';
+  };
+  q('.cu-markdel').onclick = () => deleteSelectedMark();
   q('.cu-madd').onclick = () => {
     const x = parseFloat(q('.cu-mx').value), z = parseFloat(q('.cu-mz').value);
     if (!Number.isFinite(x) || !Number.isFinite(z)) return note('X と Z を入れてください', 'err');
@@ -729,7 +881,10 @@ export function createCalibUi(container, deps) {
     lockChk.checked = lockedFocalPx > 0;
     root.style.display = '';
     document.addEventListener('keydown', onKey);
-    syncFrameInfo(); syncLockUi(); renderCandidates(); renderPointList(); renderResult(); draw();
+    mapAddChk.checked = false;
+    mapAddChk.onchange();
+    syncFrameInfo(); syncLockUi(); renderCandidates(); renderPointList(); renderResult();
+    renderQuality(); drawMap(); draw();
     note('', '');
     fetchLensId();
   }

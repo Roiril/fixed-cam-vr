@@ -46,6 +46,19 @@
     .cu-manual label { display: flex; align-items: center; gap: 3px; font-size: 11px; opacity: var(--opacity-sub); }
     .cu-manual input { width: 62px; font-size: 11px; padding: 2px 4px; }
     .cu-lockhint { font-size: 11px; opacity: var(--opacity-mute); line-height: 1.45; }
+    /* 部屋を上から見た図（floor-sketch.js が描く）。候補点が部屋のどこかを絵で示す面 */
+    .cu-mapblock { display: flex; flex-direction: column; gap: 5px; }
+    .cu-maphead { font-size: 11px; opacity: var(--opacity-sub); display: flex; gap: 6px; align-items: baseline; }
+    .cu-mapmode-hint { font-size: 10px; opacity: var(--opacity-mute); }
+    .cu-map { width: 100%; height: auto; aspect-ratio: 1 / 1; border: 1px solid var(--line-soft); cursor: crosshair; }
+    .cu-maprow { display: flex; align-items: center; gap: 6px; }
+    .cu-maprow .cu-marklabel { flex: 1; min-width: 0; font-size: 11px; padding: 2px 4px; }
+    .cu-maprow button { padding: 2px 6px; font-size: 11px; }
+    .cu-maphint { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.5; }
+    .cu-quality { font-size: 11px; padding: 6px 8px; border: 1px solid var(--line-soft); line-height: 1.5; }
+    .cu-quality.ok { border-color: color-mix(in srgb, var(--accent-color) 45%, transparent); }
+    .cu-quality .cu-qdetail { opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
+    .cu-quality ul { margin: 4px 0 0; padding-left: 16px; color: var(--warn-color); }
     .cu-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
     .cu-actions button:disabled { opacity: .35; cursor: default; filter: none; }
     .cu-msg { font-size: 11px; min-height: 1.2em; opacity: var(--opacity-sub); }

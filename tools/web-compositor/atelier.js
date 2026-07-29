@@ -337,6 +337,18 @@ export function createAtelier(deps) {
           <span class="atl-shootmsg"></span>
         </div>
         <div class="atl-strip"></div>
+        <!-- 種フレームを入力にして、この PC の Codex に 1 枚描かせる（60〜150 秒）。
+             構図・照明を保ったまま「足すものだけ」を足させるので、差分がそのままマスクになる。 -->
+        <div class="atl-genbox" data-group="material">
+          <div class="atl-genrow">
+            <button class="atl-gen accent" title="選んでいる種フレームを入力にして Codex に 1 枚描かせる">🪄 Codex に生成させる</button>
+            <span class="atl-genmsg"></span>
+          </div>
+          <textarea class="atl-genprompt" rows="3"
+            placeholder="この構図に何を足すか（例: 画面奥のカーテンの隙間から、白い着物の人影が半分だけ覗いている。血は入れない）"></textarea>
+          <div class="atl-genhint">構図・画角・照明を保つ指示はサーバが自動で足します。
+            書くのは<b>足すものだけ</b>。できた画像は下の棚（未記録の素材）に出ます。</div>
+        </div>
       </div>
 
       <div class="atl-sec atl-brief">
@@ -443,6 +455,51 @@ export function createAtelier(deps) {
         selectSeed(r.url);
         msg(`📷 ${r.name}`, 'ok');
       } catch { msg('保存失敗（サーバ断）', 'err'); }
+    };
+
+    // ===== 🪄 Codex に生成させる =====
+    //   サーバ（/generate）が別スレッドで Codex CLI を回す。ここは投げて待つだけ。
+    //   ⚠ 生成は**卓を動かしている PC からしか実行できない**（サーバが 127.0.0.1 に限っている）。
+    const genMsg = (m, cls = '') => {
+      const e = q('.atl-genmsg'); e.textContent = m; e.className = 'atl-genmsg ' + cls;
+    };
+    let genTimer = 0;
+    q('.atl-gen').onclick = async () => {
+      if (!st.seedUrl) return genMsg('先に種フレームを選んでください（📷 いま撮る）', 'err');
+      const prompt = q('.atl-genprompt').value.trim();
+      if (prompt.length < 8) return genMsg('何を足すのかを書いてください', 'err');
+      const btn = q('.atl-gen');
+      btn.disabled = true;
+      genMsg('生成中… 0s（1〜2 分かかります）');
+      try {
+        const r = await (await fetch('/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cam: cam.id, seedUrl: st.seedUrl, prompt, slug: 'codex' }),
+        })).json();
+        if (!r.ok) { btn.disabled = false; return genMsg(r.error || '生成を始められませんでした', 'err'); }
+        clearInterval(genTimer);
+        genTimer = setInterval(async () => {
+          let s;
+          try { s = await (await fetch(`/generate/status?id=${encodeURIComponent(r.id)}`)).json(); }
+          catch { return; }                       // 一時的な断は次の周期で拾う
+          if (!s.ok) return;
+          if (s.status === 'running') return genMsg(`生成中… ${Math.round(s.elapsedSec)}s`);
+          clearInterval(genTimer);
+          btn.disabled = false;
+          if (s.status === 'done') {
+            genMsg('できました（棚に追加）', 'ok');
+            // captures/ の一覧を取り直す → onCaptures 経由で「未記録の素材」の棚が更新される。
+            await refreshCaptures();
+            loadPick(s.url, '');
+          } else {
+            genMsg(s.error || '生成に失敗しました', 'err');
+          }
+        }, 2000);
+      } catch {
+        btn.disabled = false;
+        genMsg('サーバに繋がりません', 'err');
+      }
     };
 
     // ===== 試写（合成プレビュー）=====

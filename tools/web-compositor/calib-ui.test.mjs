@@ -14,7 +14,7 @@ import { calibrateFromFloorPoints, projectPoint } from './calib.js';
 import {
   candidatePoints, wireSegments, pointsFromRefs, lockableFocalPx, hfovFromFocal, calibMatchesSource,
   calibSummaryLines, calibWarnings, calibBadgeText, formatSolvedAt, localIsoNow,
-  applyCalibToCameras, clearCalibFromCameras, pointKey, DEFAULT_REG_POINTS,
+  applyCalibToCameras, clearCalibFromCameras, pointKey, DEFAULT_REG_POINTS, pointQuality,
 } from './calib-ui.js';
 
 // ---- (A) 候補点 --------------------------------------------------------------
@@ -282,4 +282,65 @@ test('解いた結果をそのまま保存すると Unity 契約のキーが揃�
   assert.deepEqual(pointsFromRefs(saved.refs, 640, 480).map((p) => [p.x, p.z]), floor);
   // 固定した画角のまま解けている（＝次回も同じ値で固定できる）
   assert.equal(lockableFocalPx(saved, 640, 480), 430);
+});
+
+// ---- (A2) 自分で置いた印 / 部屋のプロキシの角 ---------------------------------
+//   地図から置いた印（layout.calibPoints）は**候補の先頭**に出す。regPoints へコピーはしない
+//   （2 コピーはいつか必ずずれる）。部屋のプロキシ（🧱 の壁・箱）の角は映像で見つけやすいので候補に混ぜる。
+
+test('自分で置いた印は候補の先頭に出て、位置合わせ点を置き換えない', () => {
+  const lay = { ...LAYOUT, calibPoints: [{ x: 0.2, z: 0.3, label: '棚の脚' }] };
+  const list = candidatePoints(lay);
+  assert.equal(list[0].kind, 'mark');
+  assert.match(list[0].label, /棚の脚/);
+  // regPoints は消えない（別の集合として両方出る）
+  assert.ok(list.some((c) => c.kind === 'reg'));
+});
+
+test('部屋のプロキシの壁の端・箱の角が候補に入る', () => {
+  const lay = {
+    ...LAYOUT,
+    hasRoom: true,
+    room: {
+      floorW: 1.8, floorD: 1.8,
+      walls: [{ id: 'w1', x1: -0.4, z1: 0.4, x2: 0.4, z2: 0.4, h: 1, thick: 0.04 }],
+      props: [{ id: 'p1', x: 0.6, z: -0.6, w: 0.4, d: 0.4, h: 0.7, yawDeg: 0 }],
+    },
+  };
+  const room = candidatePoints(lay).filter((c) => c.kind === 'room');
+  assert.ok(room.some((c) => Math.abs(c.x + 0.4) < 1e-6 && Math.abs(c.z - 0.4) < 1e-6), '壁の端');
+  assert.ok(room.some((c) => Math.abs(c.x - 0.4) < 1e-6 && Math.abs(c.z + 0.4) < 1e-6), '箱の角');
+});
+
+// ---- (A3) 打つ前に言える点の質 ------------------------------------------------
+//   実測（calib.test.mjs）で分かっている効き方を、解く前に作者へ返す。
+
+const SQUARE = [
+  { x: -0.6, z: 0.6, u: 60, v: 90 }, { x: 0.6, z: 0.6, u: 560, v: 100 },
+  { x: 0.6, z: -0.6, u: 590, v: 400 }, { x: -0.6, z: -0.6, u: 40, v: 390 },
+];
+
+test('画角を固定するなら 4 点で解ける / 推定するなら 6 点要ると言う', () => {
+  const locked = pointQuality(SQUARE, 640, 480, true);
+  assert.equal(locked.ready, true);
+  assert.deepEqual(locked.issues, []);
+  const free = pointQuality(SQUARE, 640, 480, false);
+  assert.equal(free.need, 6);
+  assert.match(free.issues.join(' '), /6 点/);
+});
+
+test('一直線に近い点・画面の隅に固まった点を、解く前に指摘する', () => {
+  const line = [
+    { x: -0.6, z: 0, u: 50, v: 240 }, { x: -0.2, z: 0, u: 200, v: 240 },
+    { x: 0.2, z: 0, u: 350, v: 240 }, { x: 0.6, z: 0, u: 500, v: 240 },
+  ];
+  const qy = pointQuality(line, 640, 480, true);
+  assert.equal(qy.degenerate, true);
+  assert.equal(qy.ready, false);
+
+  const clustered = [
+    { x: -0.6, z: 0.6, u: 300, v: 240 }, { x: 0.6, z: 0.6, u: 320, v: 245 },
+    { x: 0.6, z: -0.6, u: 330, v: 260 }, { x: -0.6, z: -0.6, u: 305, v: 262 },
+  ];
+  assert.match(pointQuality(clustered, 640, 480, true).issues.join(' '), /画面の中で点が固まって/);
 });
