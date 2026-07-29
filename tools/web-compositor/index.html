@@ -65,6 +65,30 @@
     .cu-heighthint { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.5; }
     .cu-pt.up { border-color: #78dcff; }
     .cu-pt.up b { color: #78dcff; }
+    /* 高さの点は打った後も高さを直せる（壁 1.8m と箱 0.9m が混ざる現場がある） */
+    .cu-pt .cu-pth { width: 48px; font-size: 10.5px; padding: 1px 3px; }
+    .cu-pt .cu-ptunit { font-size: 10px; opacity: var(--opacity-mute); margin-left: -3px; }
+    /* 実測した基準点が足りないことは、点の打ち方より先に言う（合わない原因の第一位） */
+    .cu-srcwarn:empty { display: none; }
+    .cu-srcwarn {
+      font-size: 11px; line-height: 1.55; padding: 6px 8px;
+      border: 1px solid color-mix(in srgb, var(--warn-color) 55%, transparent);
+      color: var(--warn-color);
+    }
+    .cu-assumedlbl { font-size: 10.5px; opacity: var(--opacity-mute); }
+    /* レンズ（内部パラメータ）。「内部は一度だけ丁寧に / 外部は現場で毎回」を UI に出す口 */
+    .cu-lensbox { display: flex; flex-direction: column; gap: 4px; }
+    .cu-lensrow { display: flex; gap: 4px; align-items: center; }
+    .cu-lensrow select { flex: 1; min-width: 0; font-size: 12px; }
+    .cu-lensrow button { padding: 2px 6px; font-size: 11px; }
+    .cu-lensinfo { font-size: 10.5px; line-height: 1.5; opacity: var(--opacity-mute); }
+    .cu-lensinfo .warn { color: var(--warn-color); opacity: 1; }
+    .cu-lensinfo .bad { color: var(--danger-color); opacity: 1; }
+    /* 保存した映像から較正する（現場で撮って後で解く / ライブが切れていても進める） */
+    .cu-plate { display: flex; flex-direction: column; gap: 4px; }
+    .cu-plate button { font-size: 11px; align-self: flex-start; }
+    .cu-plate select { font-size: 11px; max-width: 100%; }
+    .cu-frameinfo.plate { color: var(--warn-color); opacity: 1; }
     .cu-quality { font-size: 11px; padding: 6px 8px; border: 1px solid var(--line-soft); line-height: 1.5; }
     .cu-quality.ok { border-color: color-mix(in srgb, var(--accent-color) 45%, transparent); }
     .cu-quality .cu-qdetail { opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
@@ -90,6 +114,7 @@
     .cu-wirekey .k-line { color: #fffaf0; }
     .cu-wirekey .k-mark { color: #ffdead; }
     .cu-wirekey .k-reproj { color: #5ad19a; }
+    .cu-wirekey .k-assumed { color: var(--warn-color); }
     .cu-danger { margin-top: auto; padding-top: 6px; }
     .cu-danger button { font-size: 11px; }
     /* カメラ列の 📐 欄に足す較正の入口とバッジ */

@@ -238,6 +238,13 @@ def _default_show():
         'record': {'enabled': False, 'laps': [1], 'maxSegmentSec': 60, 'maxTotalMB': 200, 'fpsCap': 15},
         # CG レイヤに立てる人形の定義（cameras[i].pose が著作済みのカメラでのみ出る）。
         'actors': [],
+        # レンズ（内部パラメータ）。cameras[i].lensRef が参照する。
+        # 較正で「画角を固定して解く」ときの供給源で、**同型機で共有できる**のが要点
+        # （旧: 供給源が「そのカメラの前回の解」だけで、4 点で雑に解いた f が翌日
+        #  「正確な内部パラメータ」として再利用されていた。f を固定すると rms は下がるので
+        #  誤りが良い数字に化けて発見できない）。測定条件を一緒に焼いて素性を追えるようにする。
+        # ⚠ Unity は lenses を読まない（cameras[i].calib.fxPx に解決済みの値が入る）。
+        'lenses': [],
         # ゾーン校正レイアウト（course space）。Web フロアマップが編集し Unity が展開する。
         # grid = タイルペイント（12×12・0.15m）。cells は rows 本の文字列、rows[0]=北端
         # （z=+0.9）・col0=西端（x=-0.9）。文字 '0'..'8'=カメラ index、'.'=未割当。
@@ -1348,7 +1355,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
     _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule', 'timeline',
-                   'bgmTracks', 'bgm', 'actors', 'record', 'run')
+                   'bgmTracks', 'bgm', 'actors', 'record', 'run', 'lenses')
 
     def _post_state(self):
         body = self._read_json_body()

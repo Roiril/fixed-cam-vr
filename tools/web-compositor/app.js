@@ -15,7 +15,8 @@ import { recordConfig, recordLaps, recordCoverage, missingRecordLaps } from './r
 import { createShowSim } from './show-sim.js';
 import { createAtelier } from './atelier.js';
 import { createActorsPanel } from './actors.js';
-import { createCalibUi, calibBadgeText } from './calib-ui.js';
+import { createCalibUi } from './calib-ui.js';
+import { calibBadgeText, lensesOf, lensTrustIssues } from './calib-session.js';
 
 const $ = (s) => document.querySelector(s);
 const MW = 640, MH = 360;
@@ -1455,6 +1456,56 @@ function preflightRows() {
     ? { s: 'ok', label: 'タイムライン', detail: `${segs.length} 区間 / うち演出あり ${withCue}` }
     : { s: 'warn', label: 'タイムライン', detail: '演出を持つ区間がありません（体験は映像切替のみ）' });
 
+  // 🎯 較正。**CG 人形を出すカットが指すカメラ**が未較正だと、実機は概算 pose へ落ちるか
+  // 人形を出さない。卓の側は輪郭プロキシを描けてしまうので、押す前に見る場所で言わないと
+  // 「卓では出るのに実機で出ない / 場所が違う」を現場で初めて知ることになる。
+  {
+    const needCalib = new Set();
+    for (const s of segs) {
+      for (const t of s.takes || []) {
+        for (const st of t.steps || []) {
+          if (!st.cg) continue;
+          // カットが live:<cam> ならそのカメラ、素材・inherit なら区間のカメラに映る
+          const idx = (st.source === 'live' && st.camera >= 0) ? st.camera : s.camera;
+          if (Number.isInteger(idx) && idx >= 0) needCalib.add(idx);
+        }
+      }
+    }
+    // 同じ理由はまとめて 1 文にする（3 台に同じ文が並ぶと読む気が失せて見落とす）。
+    const missing = [], stale = [], warn = [], ok = [];
+    const lensList = lensesOf({ lenses: state?.lenses || [] });
+    cams.forEach((c, i) => {
+      const col = columns.get(c.id);
+      const w = col?.liveImg?.naturalWidth || 0, h = col?.liveImg?.naturalHeight || 0;
+      const cal = c.calib && c.calib.fxPx > 1 ? c.calib : null;
+      if (!cal) {
+        if (needCalib.has(i)) missing.push(c.id);
+        return;                            // 人形を出さないカメラの未較正は黙る（要らないので）
+      }
+      if (w > 1 && h > 1 && (cal.srcW !== w || cal.srcH !== h)) {
+        const t = `${c.id} は ${cal.srcW}×${cal.srcH} 用（いま ${w}×${h}）`;
+        (needCalib.has(i) ? stale : warn).push(t);
+        return;
+      }
+      if (cal.accuracyM > 0.15) { warn.push(`${c.id} はずれ ${Math.round(cal.accuracyM * 100)}cm`); return; }
+      if (lensTrustIssues(lensList.find((l) => l.id === c.lensRef)).length) {
+        warn.push(`${c.id} のレンズは素性が弱い（点が少ない / 高さの点なしで測った画角）`);
+        return;
+      }
+      ok.push(c.id);
+    });
+    const ng = [];
+    if (missing.length) ng.push(`${missing.join(' / ')} が未較正（CG 人形を出すカットがあります）`);
+    ng.push(...stale);
+    if (ng.length) {
+      rows.push({ s: 'ng', label: '🎯 較正', detail: `${ng.join(' ・ ')} — カメラ列の［🎯 姿勢を合わせる］で解く` });
+    } else if (warn.length) {
+      rows.push({ s: 'warn', label: '🎯 較正', detail: `${warn.join(' ・ ')}（人形の立ち位置がずれます）` });
+    } else if (ok.length) {
+      rows.push({ s: 'ok', label: '🎯 較正', detail: `${ok.join(', ')} が較正済み` });
+    }
+  }
+
   // 体験の骨格。走り切る周数を超えた周に演出を書いても**絶対に出ない**（そこへ到達する前に終わる）。
   // 実機だけが黙って落とすので、著作の段階で気づける唯一の面がここ。
   {
@@ -1612,6 +1663,10 @@ calibUi = createCalibUi(document.body, {
   // 較正の基準点（`layout.calibPoints`）を地図から置けるようにするための保存口。
   // フロアマップと同じ経路（show.json の layout を丸ごと置く）を通す。
   saveLayout: (layout) => { if (state) state.layout = layout; return postState({ layout }); },
+  // レンズ（内部パラメータ）。**卓だけの概念**で Unity は読まない（解いた値は calib.fxPx に入る）。
+  // 画角を固定する値の供給源をカメラから切り離すことで、同型機で使い回せて素性も追えるようになる。
+  getLenses: () => state?.lenses || [],
+  saveLenses: (lenses) => { if (state) state.lenses = lenses; return postState({ lenses }); },
   saveCameras: async (cams) => {
     if (state) state.cameras = cams;
     const r = await postState({ cameras: cams });
