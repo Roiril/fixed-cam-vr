@@ -52,6 +52,14 @@ export function floorLooksDefault(layout) {
 export const pointKey = (x, z) => `${x.toFixed(3)},${z.toFixed(3)}`;
 
 /**
+ * 「高さの点（床から浮いている）」の下限。**`calib.js` の `calibrateFromFloorPoints` と同じ値**
+ * でなければならない — 数学側が床として扱う点を UI が高さとして数えると、必要点数・一直線判定・
+ * 精度の測り方が静かにずれる。
+ */
+export const RAISED_MIN_Y = 0.01;
+export const isRaised = (p) => !!p && p.y > RAISED_MIN_Y;
+
+/**
  * 候補点の**出典**。「実物が現場にあるか」で分ける。
  *
  * これが要る理由: `layout.wall` の既定値（1m×1m の L）や `layout.grid` の定数格子
@@ -414,6 +422,35 @@ export function rescaleCalib(calib, w, h) {
   };
 }
 
+/**
+ * 保存する較正を決める。**保存した映像（プレート）で解いた場合、その寸法は配信そのままとは限らない**
+ * （Quest 経由の記録は 480×360 / 配信は 640×480）。縦横比が同じなら配信の実寸へ移す。
+ *
+ * ⚠ `liveSize` は「**そのカメラの**配信実寸」でなければならない。別カメラの実寸を渡すと、
+ * 移した先が実在しない解像度になり Unity の `MatchesSource` が落ちて人形が出ない
+ * （しかも卓は「較正済み」と表示する）。UI 側でカメラを跨いで持ち越さないこと。
+ *
+ * @returns {{calib:object|null, moved:string, warn:string}}
+ */
+export function decideSaveCalib(calib, frameSource, liveSize) {
+  if (!calib) return { calib: null, moved: '', warn: '' };
+  if (!frameSource) return { calib, moved: '', warn: '' };     // ライブで解いた＝そのまま
+  const live = liveSize && liveSize.w > 1 && liveSize.h > 1 ? liveSize : null;
+  if (!live) {
+    return { calib, moved: '',
+      warn: `この較正は ${calib.srcW}×${calib.srcH} 用として保存します`
+        + '（このカメラの配信実寸が分からないため）。実機の配信が違う寸法なら無効になります' };
+  }
+  if (live.w === calib.srcW && live.h === calib.srcH) return { calib, moved: '', warn: '' };
+  const moved = rescaleCalib(calib, live.w, live.h);
+  if (moved) {
+    return { calib: moved, moved: `${calib.srcW}×${calib.srcH} → ${live.w}×${live.h}`, warn: '' };
+  }
+  return { calib, moved: '',
+    warn: `この較正は ${calib.srcW}×${calib.srcH} 用のまま保存します`
+      + `（配信 ${live.w}×${live.h} とは縦横比が違うので移せません）— 実機では無効になります` };
+}
+
 /** 較正を捨てる（pose へ戻す）。誤った解を残す方が「出ない」より危ないので出口を必ず作る。 */
 export function clearCalibFromCameras(cameras, camId) {
   return (cameras || []).map((c) => {
@@ -444,7 +481,7 @@ export function clearCalibFromCameras(cameras, camId) {
  */
 export function pointQuality(pts, frameW, frameH, focalLocked) {
   const all = pts || [];
-  const floor = all.filter((p) => !(p.y > 0));
+  const floor = all.filter((p) => !isRaised(p));
   const nRaised = all.length - floor.length;
   const n = floor.length;
   // 歪みまで解ける点数。高さの点が 2 本あれば平面の縮退が解けるので床 4 点で足りる。
@@ -542,7 +579,18 @@ export function refreshSession(prev, frame, saved, layout, lens = null) {
   const lockedFocalPx = lensFocalFor(lens, frame.w, frame.h) || lockableFocalPx(saved, frame.w, frame.h);
   const keepLock = lockedFocalPx > 0 && !!prev?.lockFocal;
 
-  const sameSize = old && old.w === frame.w && old.h === frame.h;
+  // まだ 1 枚も持っていなかった（映像前に開いた / プレートが最初の 1 枚）。
+  // 「解像度が変わった」ではないので、そう言ってはいけない。
+  if (!old) {
+    const restored = oldPts.length
+      ? oldPts : resolvePointLabels(pointsFromRefs(saved?.refs, frame.w, frame.h), layout);
+    return {
+      pts: restored, lockedFocalPx, lockFocal: lockedFocalPx > 0,
+      restored: oldPts.length ? 0 : restored.length, resized: false, dropped: 0,
+    };
+  }
+
+  const sameSize = old.w === frame.w && old.h === frame.h;
   if (sameSize) {
     // 映像が来る前に開いていて点が空なら、ここで復元する（旧実装は open() でしか復元せず、
     // LIVE 前に開いた作業者は全点を打ち直していた）。
@@ -578,18 +626,22 @@ export function refreshSession(prev, frame, saved, layout, lens = null) {
  *
  * @returns {{suspect:boolean, medianPx:number}} 点が無ければ suspect=false
  */
-export function relocateSuspicion(saved, pts, thresholdPx = 24) {
+export function relocateSuspicion(saved, pts, thresholdPx = 0) {
   const list = (pts || []).filter((p) => p && Number.isFinite(p.u) && Number.isFinite(p.v));
   if (!saved || list.length < 3) return { suspect: false, medianPx: 0 };
+  // 閾値は**画の対角の 3%**。固定 px にすると 480 幅と 1920 幅で意味が変わる
+  // （小さい映像では過敏に、大きい映像では鈍感になる）。
+  const diag = Math.hypot(saved.srcW || 640, saved.srcH || 480);
+  const limit = thresholdPx > 0 ? thresholdPx : diag * 0.03;
   const d = [];
   for (const p of list) {
-    const q = projectPoint(saved, p.x, p.y > 0 ? p.y : 0, p.z);
+    const q = projectPoint(saved, p.x, isRaised(p) ? p.y : 0, p.z);
     if (!q) return { suspect: true, medianPx: Number.POSITIVE_INFINITY };
     d.push(Math.hypot(q.u - p.u, q.v - p.v));
   }
   d.sort((a, b) => a - b);
   const median = d[Math.floor(d.length / 2)];
-  return { suspect: median > thresholdPx, medianPx: median };
+  return { suspect: median > limit, medianPx: median };
 }
 
 // ---- 精度（当てはまりではなく、人形が何 cm ずれるか）--------------------------
@@ -606,7 +658,7 @@ export function relocateSuspicion(saved, pts, thresholdPx = 24) {
  */
 export function leaveOneOutError(pts, w, h, opts = {}) {
   const all = (pts || []).filter((p) => p && Number.isFinite(p.u) && Number.isFinite(p.v));
-  const floor = all.filter((p) => !(p.y > 0));
+  const floor = all.filter((p) => !isRaised(p));
   // 1 点抜いても解ける（床 4 点）だけの余裕が要る。
   if (floor.length < 5) return { ok: false, medianPx: 0, medianM: 0, worstPx: 0, samples: 0,
     reason: `床の点が ${floor.length} 個では精度を測れません（5 個以上で測れます）` };
@@ -616,16 +668,20 @@ export function leaveOneOutError(pts, w, h, opts = {}) {
     const held = all[i];
     // 高さの点を抜いても床 4 点は残るが、床の点を抜くときだけ最小点数を割らないか確認する。
     const rest = all.filter((_, j) => j !== i);
-    if (rest.filter((p) => !(p.y > 0)).length < 4) continue;
+    if (rest.filter((p) => !isRaised(p)).length < 4) continue;
     const r = calibrateFromFloorPoints(rest, w, h, opts);
     if (!r.ok) continue;
-    const q = projectPoint(r.calib, held.x, held.y > 0 ? held.y : 0, held.z);
+    const q = projectPoint(r.calib, held.x, isRaised(held) ? held.y : 0, held.z);
     if (!q) continue;
     const px = Math.hypot(q.u - held.u, q.v - held.v);
     errsPx.push(px);
     // 画素 → メートル。その点の位置で 1px が床の上で何 m かを、隣接画素の逆投影で測る。
+    // **床の点だけ**で測る: 高さの点の画素は水平線より上に来ることがあり、床への逆投影が
+    // 成立しない（`pixelToMeters` が 0 を返す）。0 を混ぜると中央値が下へ引かれて
+    // **精度が実際より良く出る**（そのまま `calib.accuracyM` に焼かれ、本番前チェックの判定も甘くなる）。
+    if (isRaised(held)) continue;
     const m = pixelToMeters(r.calib, held.u, held.v, px);
-    if (Number.isFinite(m)) errsM.push(m);
+    if (m > 0) errsM.push(m);
   }
   if (!errsPx.length) return { ok: false, medianPx: 0, medianM: 0, worstPx: 0, samples: 0,
     reason: '点を 1 つ抜くと解けなくなります（点を増やすと精度が測れます）' };

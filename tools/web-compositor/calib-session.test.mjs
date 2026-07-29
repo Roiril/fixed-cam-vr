@@ -22,7 +22,7 @@ import {
   focalFromHfov, SOURCE_MEASURED, SOURCE_ASSUMED,
   normalizeLens, lensesOf, resolveLens, lensFocalFor, lensFromSolve, upsertLens, removeLens,
   nextLensId, applyLensToCameras, detachLensFromCameras, lensSummary, lensTrustIssues,
-  rescaleCalib,
+  rescaleCalib, decideSaveCalib, isRaised, RAISED_MIN_Y,
 } from './calib-session.js';
 
 // ---- (A) 候補点 --------------------------------------------------------------
@@ -447,6 +447,15 @@ test('映像が来る前に開くと点は空だが、🔄 で取り直したと
   assert.equal(r.restored, 5);
   assert.equal(r.pts.length, 5);
   assert.equal(r.lockedFocalPx, 452);
+  // 1 枚も持っていなかったのだから「解像度が変わった」ではない（そう言うと嘘になる）
+  assert.equal(r.resized, false);
+  assert.equal(r.dropped, 0);
+  // 保存済みの解が無いカメラでも、初回フレームは静かに載る
+  const fresh = refreshSession({ frame: null, pts: [], lockFocal: false },
+    { w: 480, h: 360 }, null, MEASURED_LAYOUT);
+  assert.deepEqual(fresh.pts, []);
+  assert.equal(fresh.resized, false);
+  assert.equal(fresh.restored, 0);
 });
 
 test('🔄 で解像度が変わったら固定画角を捨てる（別解像度の焦点距離で解かせない）', () => {
@@ -761,6 +770,73 @@ test('縦横比が違えば移さない（切り取られた映像で嘘の較�
   assert.equal(rescaleCalib(null, 640, 480), null);
   assert.equal(rescaleCalib({ fxPx: 0 }, 640, 480), null);
   assert.deepEqual(rescaleCalib(c, 640, 480), { ...c });      // 同寸法はそのまま複製
+});
+
+test('保存する較正は、プレートで解いたときだけ配信の実寸へ移す', () => {
+  const c = { ...TRUE_CALIB, srcW: 480, srcH: 360, fxPx: 339, fyPx: 339, cxPx: 240, cyPx: 180 };
+  // ライブで解いたなら触らない
+  assert.equal(decideSaveCalib(c, '', { w: 640, h: 480 }).moved, '');
+  assert.deepEqual(decideSaveCalib(c, '', { w: 640, h: 480 }).calib, c);
+  // プレート × 配信実寸が分からない → そのまま保存して理由を言う
+  const unknown = decideSaveCalib(c, 'plate.jpg', null);
+  assert.equal(unknown.calib.srcW, 480);
+  assert.match(unknown.warn, /配信実寸が分からない/);
+  // プレート × 同じ寸法 → 何もしない
+  assert.equal(decideSaveCalib(c, 'plate.jpg', { w: 480, h: 360 }).moved, '');
+  // プレート × 縦横比が同じ → 移す
+  const moved = decideSaveCalib(c, 'plate.jpg', { w: 640, h: 480 });
+  assert.equal(moved.calib.srcW, 640);
+  assert.ok(Math.abs(moved.calib.fxPx - 452) < 1e-9);
+  assert.match(moved.moved, /480×360 → 640×480/);
+  assert.equal(moved.warn, '');
+  // プレート × 縦横比が違う → 移さずに理由を言う（クロップで嘘の較正を作らない）
+  const bad = decideSaveCalib(c, 'plate.jpg', { w: 640, h: 360 });
+  assert.equal(bad.calib.srcW, 480);
+  assert.equal(bad.moved, '');
+  assert.match(bad.warn, /縦横比が違うので移せません/);
+});
+
+test('高さの点は精度（cm）の計算に混ぜない（0 が積まれて実際より良く出ていた）', () => {
+  // 高さの点の画素は水平線より上に来ることがあり、床への逆投影が成立しない。
+  // 旧実装は `Number.isFinite(0)` で 0 を積み、中央値を下へ引いて精度を良く見せていた。
+  const raised = [{ x: -0.8, z: 0.8, y: 1.8 }, { x: 0.8, z: 0.8, y: 1.8 }, { x: 0.8, z: -0.6, y: 1.8 }]
+    .map((p) => { const s = projectPoint(TRUE_CALIB, p.x, p.y, p.z); return { ...p, u: s.u, v: s.v }; });
+  const jitter = [1.5, -1.2, 0.9, -1.6, 1.1, -0.8, 1.4];
+  const obs = observe(FLOOR_GRID).map((p, i) => ({ ...p, u: p.u + jitter[i], v: p.v - jitter[i] }));
+  const loo = leaveOneOutError([...obs, ...raised], 640, 480, { fixedFocalPx: TRUE_CALIB.fxPx });
+  assert.equal(loo.ok, true);
+  assert.ok(loo.samples >= 8, `高さの点も px の指標には入る: ${loo.samples}`);
+  assert.ok(loo.medianM > 0, 'cm 換算が 0 に潰れていない');
+  // 床だけで測った値と大きく違わない（高さの点の 0 に引っ張られていない）
+  const floorOnly = leaveOneOutError(obs, 640, 480, { fixedFocalPx: TRUE_CALIB.fxPx });
+  assert.ok(Math.abs(loo.medianM - floorOnly.medianM) < floorOnly.medianM * 0.6,
+    `${loo.medianM} vs ${floorOnly.medianM}`);
+});
+
+test('床と高さの境界は数学側（calib.js）と同じ 1cm', () => {
+  assert.equal(RAISED_MIN_Y, 0.01);
+  assert.equal(isRaised({ y: 0 }), false);
+  assert.equal(isRaised({ y: 0.005 }), false);      // 旧実装はここを高さの点として数えていた
+  assert.equal(isRaised({ y: 0.02 }), true);
+  assert.equal(isRaised(null), false);
+  const near = [
+    { x: -0.6, z: 0.6, y: 0.005, u: 120, v: 300 }, { x: 0.6, z: 0.6, y: 0, u: 520, v: 300 },
+    { x: 0.6, z: -0.6, y: 0, u: 480, v: 430 }, { x: -0.6, z: -0.6, y: 0, u: 160, v: 430 },
+  ];
+  assert.equal(pointQuality(near, 640, 480, true).n, 4);       // 4 点とも床として数える
+  assert.equal(pointQuality(near, 640, 480, true).nRaised, 0);
+});
+
+test('置き直しの疑いは画の大きさに比例して判定する（固定 px だと意味が変わる）', () => {
+  const pts = pointsFromRefs(SAVED.refs, 640, 480);
+  const off = (d) => pts.map((p) => ({ ...p, u: p.u + d, v: p.v }));
+  // 640×480 の 3% ≒ 24px
+  assert.equal(relocateSuspicion(SAVED, off(10)).suspect, false);
+  assert.equal(relocateSuspicion(SAVED, off(40)).suspect, true);
+  // 同じ 40px でも、4 倍の映像なら「よくあるドリフト」の範囲
+  const big = { ...SAVED, srcW: 2560, srcH: 1920 };
+  assert.equal(relocateSuspicion(big, off(40)).suspect, false);
+  assert.equal(relocateSuspicion(SAVED, off(40), 200).suspect, false);   // 明示指定は優先
 });
 
 test('固定する画角はレンズが優先（前回の解より素性が分かっているため）', () => {

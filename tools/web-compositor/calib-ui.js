@@ -37,6 +37,7 @@ import {
   relocateSuspicion, leaveOneOutError, accuracyLine, SOURCE_ASSUMED, SOURCE_MEASURED,
   lensesOf, resolveLens, lensFocalFor, lensFromSolve, upsertLens, removeLens, nextLensId,
   applyLensToCameras, detachLensFromCameras, lensSummary, lensTrustIssues, rescaleCalib,
+  decideSaveCalib,
 } from './calib-session.js';
 
 // 純関数は calib-session.js が正本。既存の import 元（app.js など）を壊さないよう再輸出する。
@@ -184,7 +185,13 @@ export function createCalibUi(container, deps) {
   let prevSaved = null;    // 直前に保存した calib（↩ 元に戻す 用の 1 世代）
   let accuracy = null;     // leave-one-out の精度（解くたびに測り直す）
   let frameSource = '';    // 静止フレームの出どころ（空 = ライブ / それ以外 = 保存した映像の名前）
-  let liveSize = null;     // 最後に見たライブ映像の実寸（プレートで解いた較正をここへ合わせる）
+  // **開いているカメラの**配信実寸（プレートで解いた較正をここへ合わせる）。
+  // ⚠ カメラを跨いで持ち越すと、別カメラの実寸へ移した嘘の較正が「較正済み」として焼かれる。
+  // open / close で必ず null に戻すこと。
+  let liveSize = null;
+  // await を跨ぐ処理（プレート読み込み・レンズ ID 取得）の世代。カメラを切り替えたり閉じたりした後に
+  // 前のカメラの結果が着地すると、B のパネルに A の絵と点が載る。
+  let gen = 0;
   let lensId = '';         // いま流れている映像の /info レンズ ID（機種側の識別子・lenses[] とは別物）
   let lockedFocalPx = 0;
   let focalFrom = '';      // 固定画角の出どころ: 'lens'（登録レンズ）/ 'last'（前回の解）
@@ -228,6 +235,22 @@ export function createCalibUi(container, deps) {
   /** 未保存の解を抱えているか（閉じる前に確認する）。 */
   const hasUnsaved = () => !!(solved && solved.ok);
 
+  /**
+   * いま見ているフレームに重ねるための較正。
+   *
+   * 保存された解像度がフレームと違っても、**縦横比が同じなら移して描く**。
+   * プレートで解いて配信実寸へ移して保存した直後がまさにこれで、そこで「解像度が違うので
+   * 無効です」と線を消すと、**成功した瞬間に唯一の一次証拠が消えて虚偽の失敗を告げる**ことになる。
+   * レンズが違う / 縦横比が違うときだけ null — そこは前提そのものが違うので重ねてはいけない。
+   */
+  function viewCalib(c0) {
+    const c = c0 === undefined ? shownCalib() : c0;
+    if (!c || !frame) return null;
+    if (c.lensId && lensId && c.lensId !== lensId) return null;
+    if (c.srcW === frame.w && c.srcH === frame.h) return c;
+    return rescaleCalib(c, frame.w, frame.h);
+  }
+
   function note(m, cls = '') {
     msgEl.textContent = m;
     msgEl.className = 'cu-msg ' + cls;
@@ -256,10 +279,16 @@ export function createCalibUi(container, deps) {
     return true;
   }
 
-  /** いま配信されている映像の実寸（プレートで解いた較正をここへ合わせるために覚えておく）。 */
+  /**
+   * **いま開いているカメラの**配信実寸（プレートで解いた較正をここへ合わせるために覚えておく）。
+   * ライブが取れていればそれが正。取れないときだけ、このカメラを開いてから見た最後の値を使う。
+   */
   function currentLiveSize() {
     const img = deps.getLiveImg(camId);
-    if (img && img.naturalWidth > 1) return { w: img.naturalWidth, h: img.naturalHeight };
+    if (img && img.naturalWidth > 1) {
+      liveSize = { w: img.naturalWidth, h: img.naturalHeight };
+      return liveSize;
+    }
     return liveSize;
   }
 
@@ -279,10 +308,13 @@ export function createCalibUi(container, deps) {
   //   現場では「撮るだけ撮って後で解く」ことがあるし、ライブが切れている間も作業を進めたい。
   //   ⚠ ただしプレートは**撮った時のカメラ位置**の絵。その後に動かしていれば解は今と合わない。
   async function openPlates() {
+    const my = gen;
     plateBtn.disabled = true;
     try {
       const r = await fetch('/captures/list');
+      if (my !== gen) return;                    // 閉じた / 別カメラへ移った
       const list = (await r.json()).filter((x) => x && x.type === 'image');
+      if (my !== gen) return;
       if (!list.length) return note('保存された画像がありません（📷 キャプチャで撮れます）', 'err');
       // このカメラの名前（camA 等）を含むものを先に出す。無ければ全部。
       const mine = list.filter((x) => new RegExp(`cam${camId}[_.]`, 'i').test(x.name));
@@ -308,6 +340,9 @@ export function createCalibUi(container, deps) {
 
   async function usePlate(url) {
     if (!url) return;
+    // 読み込みは await を跨ぐ。閉じた後・別カメラへ移った後に着地すると、そのカメラのパネルへ
+    // **前のカメラのプレートと点**が載る（そのまま保存すると別カメラ由来の較正が焼かれる）。
+    const my = gen;
     const before = { frame: frame ? { w: frame.w, h: frame.h } : null, pts, lockFocal: lockChk.checked };
     // `<img>` の load / decode は描画パイプラインに依存し、裏タブ・非表示ウィンドウでは
     // 永久に解決しないことがある。fetch + createImageBitmap は描画に依存しないので確実。
@@ -317,8 +352,10 @@ export function createCalibUi(container, deps) {
       if (!res.ok) throw new Error(String(res.status));
       bmp = await createImageBitmap(await res.blob());
     } catch (e) {
+      if (my !== gen) return;
       return note(`その画像を読めませんでした（${e && e.message ? e.message : '読み込み失敗'}）`, 'err');
     }
+    if (my !== gen) return;
     if (!(bmp.width > 1) || !(bmp.height > 1)) return note('その画像は空でした', 'err');
     setFrameFromImage(bmp, bmp.width, bmp.height, url.split('/').pop());
     applyFrameChange(before, '保存した映像を静止フレームにしました');
@@ -328,6 +365,7 @@ export function createCalibUi(container, deps) {
   async function fetchLensId() {
     // 開き直し / 別カメラへの切り替えを跨いで結果が返ることがある。**別カメラのレンズ ID を
     // 焼き込むと較正が黙って無効化される**（Unity が lensId で照合する）ので世代を照合する。
+    const my = gen;
     const id = camId;
     lensId = '';
     const cam = camOf(id);
@@ -340,7 +378,7 @@ export function createCalibUi(container, deps) {
       const j = await r.json();
       if (j && typeof j.lensId === 'string') found = j.lensId;
     } catch { /* /info を持たない配信アプリ（IP Camera Lite 等）は普通にある */ }
-    if (id !== camId) return;
+    if (my !== gen || id !== camId) return;
     lensId = found;
     syncFrameInfo();
     renderResult();          // レンズが分かると「この解は今の映像に有効か」の判定が変わる
@@ -391,8 +429,17 @@ export function createCalibUi(container, deps) {
    * 現場の床に目印が無い点をいくら丁寧にクリックしても合わないので、**点の打ち方より前**に
    * ここを疑わせる（この道具が一度も成功していない最有力の原因）。
    */
+  /**
+   * この layout が持っている実測点の総数（**打った点を除かない**）。
+   * `allCandidates` は「まだ打っていない候補」なので、前回の点を全部復元した状態だと 0 になる。
+   * それで警告を出すと「実測点が 0 個です」と嘘をつき、⚠未測定 のタイル角まで候補に混ぜてしまう。
+   */
+  function measuredPool() {
+    return [...candidatePoints(layout(), []), ...manual].filter((c) => c.source === SOURCE_MEASURED);
+  }
+
   function renderSourceWarning() {
-    const measured = allCandidates(true).filter((c) => c.source === SOURCE_MEASURED);
+    const measured = measuredPool();
     if (measured.length >= 4) { srcWarnEl.textContent = ''; srcWarnEl.className = 'cu-srcwarn'; return; }
     srcWarnEl.className = 'cu-srcwarn warn';
     srcWarnEl.innerHTML = `⚠ <b>実測した基準点が ${measured.length} 個しかありません。</b>`
@@ -584,9 +631,8 @@ export function createCalibUi(container, deps) {
     if (!frame) { ctx.clearRect(0, 0, canvas.width, canvas.height); return; }
     ctx.drawImage(frame.canvas, 0, 0);
     const s = Math.max(1, frame.w / 640);        // 640px 基準で線幅・字を拡縮
-    const c0 = shownCalib();
-    // 解像度・レンズが食い違う較正で線を引くと、ずれの原因が「解」なのか「前提」なのか分からなくなる。
-    const calib = calibMatchesSource(c0, frame.w, frame.h, lensId) ? c0 : null;
+    // レンズ・縦横比が食い違う較正で線を引くと、ずれの原因が「解」なのか「前提」なのか分からなくなる。
+    const calib = viewCalib();
 
     if (calib) {
       for (const seg of wireSegments(layout(), { wallH: wireWallHeight() })) {
@@ -802,12 +848,19 @@ export function createCalibUi(container, deps) {
       const qy = Number.isFinite(saved.rmsPx) ? calibQualityLabel(saved.rmsPx).text : '誤差の記録なし';
       addLine(`保存済みの較正を表示中 — ${qy}`, 'saved');
       for (const l of calibSummaryLines(saved)) addLine(l, 'sub');
-      if (frame && !calibMatchesSource(saved, frame.w, frame.h, lensId)) {
+      const view = viewCalib(saved);
+      if (frame && !view) {
         const why = saved.lensId && lensId && saved.lensId !== lensId
           ? `レンズが違います（この較正は ${saved.lensId} 用・いまは ${lensId}）`
-          : `解像度が違います（この較正は ${saved.srcW}×${saved.srcH} 用・いまは ${frame.w}×${frame.h}）`;
+          : `映像の縦横比が違います（この較正は ${saved.srcW}×${saved.srcH} 用・いまは ${frame.w}×${frame.h}）`;
         addLine(`⚠ ${why}。ワイヤーは重ねません — 実機でも較正は無効になるので解き直してください。`, 'bad');
       } else {
+        // 解像度だけ違う（縦横比は同じ）なら、移して重ねている。黙って移すと
+        // 「なぜ寸法が違うのに線が出るのか」が分からないので言う。
+        if (frame && (saved.srcW !== frame.w || saved.srcH !== frame.h)) {
+          addLine(`この較正は ${saved.srcW}×${saved.srcH} 用です。いまの映像（${frame.w}×${frame.h}）へ`
+            + '合わせて重ねています（縦横比が同じなので画角と姿勢はそのまま使えます）。', 'sub');
+        }
         addLine('ワイヤーが実物とずれていれば、点を直して ✨ 解く。', 'sub');
         // カメラを置き直した後は、復元した点が無関係な画素に散らばる。開いた瞬間に問う。
         const rel = relocateSuspicion(saved, pts);
@@ -910,15 +963,10 @@ export function createCalibUi(container, deps) {
     // 直前の解を 1 世代だけ持つ。焦った作業者が悪い解で良い解を潰したときの唯一の出口。
     prevSaved = saved ? { ...saved } : null;
     // 保存した映像で解いた場合、その寸法は配信そのままとは限らない（Quest 経由の記録は縮む）。
-    // 縦横比が同じなら内部行列を比例で移せる — 移せないなら**そのまま保存して警告**する
+    // 判断は `decideSaveCalib`（純関数・テスト済み）。移せないなら**そのまま保存して警告**する
     // （黙って比例で移すとクロップされた映像で嘘の較正になる）。
-    let out = solved.calib;
-    let moved = null;
-    const live = currentLiveSize();
-    if (frameSource && live && (live.w !== out.srcW || live.h !== out.srcH)) {
-      const r = rescaleCalib(out, live.w, live.h);
-      if (r) { moved = `${out.srcW}×${out.srcH} → ${live.w}×${live.h}`; out = r; }
-    }
+    const dec = decideSaveCalib(solved.calib, frameSource, currentLiveSize());
+    const out = dec.calib;
     const next = applyCalibToCameras(cameras(), camId, out);
     await deps.saveCameras(next);
     saved = { ...out };
@@ -928,9 +976,9 @@ export function createCalibUi(container, deps) {
     syncLockUi();
     renderResult();
     draw();
-    note(moved
-      ? `💾 保存しました（配信の実寸に合わせて ${moved} へ移しました）`
-      : '💾 保存しました（Unity へは long-poll で届きます）', 'ok');
+    if (dec.warn) note(`💾 保存しました — ⚠ ${dec.warn}`, 'err');
+    else if (dec.moved) note(`💾 保存しました（配信の実寸に合わせて ${dec.moved} へ移しました）`, 'ok');
+    else note('💾 保存しました（Unity へは long-poll で届きます）', 'ok');
   }
 
   /** 直前に保存した較正へ戻す（1 世代）。 */
@@ -1090,6 +1138,10 @@ export function createCalibUi(container, deps) {
     refreshLockSource();
     lockChk.checked = lockChk.checked && lockedFocalPx > 0;
     syncFrameInfo(); syncLockUi(); renderLensUi();
+    // ⚠ 候補セレクトも作り直す。復元した点は候補から除かれるので、ここを飛ばすと
+    // セレクトの選択値が実体を失い、映像をクリックしても「打つ点を選んでください」で止まる
+    // （＝「映像前に開いて 🔄 で復元」という今回作った経路がそのまま行き止まりになる）。
+    renderCandidates();
     renderPointList(); renderQuality(); renderResult(); drawMap(); draw();
     if (r.resized && r.dropped) {
       note(`映像の縦横比が変わったので、打っていた ${r.dropped} 点は使えません`
@@ -1108,8 +1160,10 @@ export function createCalibUi(container, deps) {
     const cam = camOf(id);
     if (!cam) return;
     q('.cu-title').textContent = `🎯 カメラ ${cam.id} の姿勢を合わせる`;
+    gen++;                   // in-flight のプレート読み込み・レンズ ID 取得を無効化する
     manual = []; solved = null; accuracy = null; prevSaved = null; dragIdx = -1;
-    frame = null; frameSource = '';
+    // ⚠ liveSize は**このカメラの**配信実寸。持ち越すと別カメラの実寸へ移した較正が焼かれる。
+    frame = null; frameSource = ''; liveSize = null; lockedFocalPx = 0; focalFrom = ''; lensId = '';
     plateSel.style.display = 'none';
     grabFrame();
     const s = openSession(cam, frame ? { w: frame.w, h: frame.h } : null, layout(),
@@ -1125,7 +1179,7 @@ export function createCalibUi(container, deps) {
     mapAddChk.onchange();
     // 実測点が 4 個未満しか無い show.json では、測っていない点も出さないと何も打てない。
     // ただし ⚠未測定 の印と警告文は必ず出す（黙って推測の点を打たせない）。
-    assumedChk.checked = allCandidates(true).filter((c) => c.source === SOURCE_MEASURED).length < 4;
+    assumedChk.checked = measuredPool().length < 4;
     topFor = null;
     syncTopUi();
     syncFrameInfo(); renderLensUi(); syncLockUi(); renderCandidates(); renderPointList();
@@ -1144,8 +1198,10 @@ export function createCalibUi(container, deps) {
     if (hasUnsaved() && !confirm('解いた結果をまだ保存していません。閉じると失われます。閉じますか？')) return;
     root.style.display = 'none';
     document.removeEventListener('keydown', onKey);
-    frame = null; frameSource = ''; pts = []; solved = null; saved = null; prevSaved = null;
-    accuracy = null; camId = ''; lensId = '';
+    gen++;                   // in-flight の非同期処理が閉じた後のパネルへ着地しないように
+    frame = null; frameSource = ''; liveSize = null; pts = []; manual = [];
+    solved = null; saved = null; prevSaved = null; accuracy = null;
+    lockedFocalPx = 0; focalFrom = ''; camId = ''; lensId = '';
   }
 
   return {
