@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6841e293-f127-41c1-9c9f-172f7a816f5f
-  modified: 2026-07-27T23:21:03.486Z
+  modified: 2026-07-29T09:34:18.044Z
 ---
 
 `tools/web-compositor/show.json` は **gitignore されていて git 管理外**（現場の DHCP IP や
@@ -14,6 +14,11 @@ metadata:
 - **`git checkout` では戻せない。** 検証で書き換えたら、値を覚えておいて手で戻すしかない
 - **検証サーバ（8299）も本番の卓（8099）も同じ `show.json` を読み書きする**。
   ポートを分けても隔離にならない（同一ディレクトリ）
+- **さらに悪い: 2 つ立てると互いを上書きし合う**（2026-07-29 実測）。`capture-server.py` は起動時に
+  ファイルを読んで**メモリ上の `_show` を正**にし、書き込みのたびにそれを丸ごと書き戻す。
+  片方が rev 683、もう片方が rev 674 という乖離が実際に起きていた。しかも `autoFollow` の
+  discovery スレッドが beacon 受信で勝手に `_mutate_show` を呼ぶので、**誰も操作していなくても**
+  古い方が新しい方を巻き戻す。→ **卓は 1 プロセスだけにする**。検証で立てたら必ず止めてから本番卓を使う
 - `show.json.bak` は postState のたびに上書きされる 1 世代のみ。検証中に何度も command を送ると、
   bak も検証後の状態に化けて復元の役に立たない
 

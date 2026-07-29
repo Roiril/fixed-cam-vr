@@ -338,6 +338,7 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 | `serve.ps1` | 起動スクリプト |
 | `make-test-assets.py` | 動作確認用のダミー素材（`testassets/`）を作り直す。「演出 A」等の文字だけの静止画 4 + 6 秒動画 3（H.264/yuv420p・音声なし） |
 | `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json を long-poll。発火の検証は 🕹 ショーシミュレーションを使う） |
+| `authoring/` | **タイムラインをコードから組む**（node）。企画書の 3 周構成を書いた `mawarimi-show.mjs` + 実機で黙って落ちる条件の検査 + 決定的な歩きでの発火検証 + 卓への書き込み。→ [authoring/README.md](authoring/README.md) |
 
 `show.json` / `masks/` / `captures/`（合成素材）/ `recordings/`（📷 ⏺ 撮影物）/ `archive/`（旧環境の素材の退避先）/ `prompts.json` は PC ローカル運用状態のため `.gitignore` 済み。
 `testassets/`（`make-test-assets.py` が作る文字だけのダミー素材。静止画 4 + 動画 3・計 130KB 程度）は
