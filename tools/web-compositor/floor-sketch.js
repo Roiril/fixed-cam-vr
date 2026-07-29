@@ -6,7 +6,7 @@
 //
 //   座標系は course 空間（x = 東が +、z = 北が +）。画面は「北が上」で描く。
 
-import { zonesFromLayout, linesFromLayout } from './zone-layout.js';
+import { linesFromLayout, parseGridCells, cellRect } from './zone-layout.js';
 import { roomFromLayout, isWallUsable, isBoxUsable, boxFootprint } from './room-model.js';
 import { camColor } from './common.js';
 
@@ -106,22 +106,35 @@ export function drawFloorSketch(ctx, layout, view, opts = {}) {
   ctx.fillStyle = '#0d0f12';
   ctx.fillRect(0, 0, cv.width, cv.height);
 
-  // ゾーンの塗り（どのカメラの担当かが薄く分かる程度に）
-  if (opts.showZones !== false) {
-    const { rects } = zonesFromLayout(layout || {});
-    for (const r of rects || []) {
-      const a = view.toPx(r.x - r.w / 2, r.z + r.d / 2);
-      ctx.fillStyle = camColor(r.camera);
-      ctx.globalAlpha = 0.16;
-      ctx.fillRect(a.px, a.py, r.w * view.scale, r.d * view.scale);
-      ctx.globalAlpha = 1;
+  // 塗ったタイル（フロアマップと**同じ絵**にする。解いた矩形ではなく生タイルを、同じ濃さで）。
+  //   ここが薄いと「較正の地図」と「フロアマップ」が別物に見えて、どこを指しているのか分からなくなる。
+  const g = layout && layout.grid;
+  if (opts.showZones !== false && g && g.tileM > 0 && g.rows > 0 && g.cols > 0) {
+    const rows = g.rows | 0; const cols = g.cols | 0;
+    const cells = parseGridCells(g.cells, rows, cols);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cam = cells[r * cols + c];
+        const rect = cellRect(r, c, rows, cols, g.tileM);
+        const a = view.toPx(rect.xLo, rect.zHi);
+        const b = view.toPx(rect.xHi, rect.zLo);
+        if (cam >= 0) {
+          ctx.fillStyle = camColor(cam);
+          ctx.globalAlpha = 0.62;
+        } else {
+          ctx.fillStyle = 'rgba(255,250,240,0.02)';
+          ctx.globalAlpha = 1;
+        }
+        ctx.fillRect(a.px, a.py, b.px - a.px, b.py - a.py);
+        ctx.globalAlpha = 1;
+      }
     }
   }
 
   // タイル格子（スナップ先が見える）
-  const tile = layout && layout.grid && layout.grid.tileM > 0 ? layout.grid.tileM : 0;
-  if (tile > 0 && tile * view.scale >= 6) {
-    ctx.strokeStyle = 'rgba(255,250,240,.07)';
+  const tile = g && g.tileM > 0 ? g.tileM : 0;
+  if (tile > 0 && tile * view.scale >= 4) {
+    ctx.strokeStyle = 'rgba(255,250,240,0.08)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = -w / 2; x <= w / 2 + 1e-6; x += tile) {
@@ -137,9 +150,35 @@ export function drawFloorSketch(ctx, layout, view, opts = {}) {
 
   // 床の外周
   const tl = view.toPx(-w / 2, d / 2);
-  ctx.strokeStyle = 'rgba(255,250,240,.45)';
+  ctx.strokeStyle = 'rgba(255,250,240,0.30)';
   ctx.lineWidth = 1.5;
   ctx.strokeRect(tl.px, tl.py, w * view.scale, d * view.scale);
+
+  // 方位（フロアマップと同じ。北が上）
+  ctx.fillStyle = 'rgba(255,250,240,0.4)';
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('N', cv.width / 2, 6);
+  ctx.fillText('S', cv.width / 2, cv.height - 6);
+  ctx.fillText('W', 6, cv.height / 2);
+  ctx.fillText('E', cv.width - 6, cv.height / 2);
+  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+
+  // L 字壁（`layout.wall` = 位置合わせの儀式が使っている壁）。部屋のプロキシとは別データで、
+  // フロアマップは両方描く。**較正で映像と突き合わせる時に一番の手がかりになるのはこの線**。
+  const lw = layout && layout.wall;
+  if (opts.showWall !== false && lw
+    && Array.isArray(lw.corner) && Array.isArray(lw.endX) && Array.isArray(lw.endZ)) {
+    ctx.strokeStyle = 'rgba(255,222,173,0.85)';
+    ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const a = view.toPx(lw.endZ[0], lw.endZ[1]);
+    const b = view.toPx(lw.corner[0], lw.corner[1]);
+    const c = view.toPx(lw.endX[0], lw.endX[1]);
+    ctx.moveTo(a.px, a.py); ctx.lineTo(b.px, b.py); ctx.lineTo(c.px, c.py);
+    ctx.stroke();
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  }
 
   // 部屋のプロキシ（壁・箱）
   if (opts.showRoom !== false) {
@@ -198,26 +237,34 @@ export function drawFloorSketch(ctx, layout, view, opts = {}) {
   }
 
   // 候補点（まだ打っていない点）。小さく出す — 主役は「打った点」なので数字は振らない。
+  //   塗ったタイルの上に乗るので、暗い縁を先に置いて色に負けないようにする。
   const activeKey = opts.activeKey;
   for (const m of opts.marks || []) {
     const q = view.toPx(m.x, m.z);
     const on = activeKey && m.key === activeKey;
     ctx.beginPath();
-    ctx.arc(q.px, q.py, on ? 6.5 : 3, 0, Math.PI * 2);
-    ctx.strokeStyle = on ? '#ffd479' : (m.kind === 'mark' ? 'rgba(126,231,135,.8)' : 'rgba(255,250,240,.4)');
+    ctx.arc(q.px, q.py, on ? 7.5 : 4, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,0,0,.55)';
+    ctx.lineWidth = on ? 4 : 3;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(q.px, q.py, on ? 7 : 3.5, 0, Math.PI * 2);
+    ctx.strokeStyle = on ? '#ffd479' : (m.kind === 'mark' ? '#7ee787' : 'rgba(255,250,240,.85)');
     ctx.lineWidth = on ? 2.5 : 1.5;
     ctx.stroke();
     if (on) {
-      ctx.fillStyle = 'rgba(255,212,121,.25)';
+      ctx.fillStyle = 'rgba(255,212,121,.3)';
       ctx.fill();
     }
   }
 
-  // 基準点
+  // 基準点（打った点）
   (opts.points || []).forEach((pt, i) => {
     const q = view.toPx(pt.x, pt.z);
     const active = i === opts.activeIndex;
-    const r = active ? 7 : 5;
+    const r = active ? 7 : 6;
+    ctx.beginPath(); ctx.arc(q.px, q.py, r + 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fill();
     ctx.beginPath(); ctx.arc(q.px, q.py, r, 0, Math.PI * 2);
     ctx.fillStyle = pt.done ? '#7ee787' : (active ? '#ffd479' : 'rgba(255,250,240,.55)');
     ctx.fill();

@@ -97,11 +97,27 @@ test('略図は落ちずに、床・壁・ライン・カメラ・点をすべ�
   });
   const names = ctx.calls.map((c) => c.name);
   assert.ok(names.includes('strokeRect'), '床の外周');
+  // フロアマップと同じ絵にする: 塗ったタイル（生セル）を同じ濃さで敷き、L 字壁を描く
+  assert.ok(ctx.calls.filter((c) => c.name === 'fillRect').length > 12 * 12, '塗ったタイル');
+  assert.ok(ctx.calls.some((c) => c.name === 'fillText' && c.args[0] === 'N'), '方位');
   assert.ok(names.filter((n) => n === 'arc').length >= 3, 'カメラ・候補・打った点');
   assert.ok(names.includes('setLineDash'), '通過ライン');
   assert.ok(names.includes('fillText'), 'カメラ名と点の番号');
   // 打った点の番号は 1 始まりで振る
   assert.ok(ctx.calls.some((c) => c.name === 'fillText' && c.args[0] === '1'));
+});
+
+test('L 字壁（layout.wall）を描く — 較正で映像と突き合わせる一番の手がかり', () => {
+  const ctx = fakeCtx();
+  const lay = { ...LAYOUT, wall: { corner: [-0.5, 0.5], endX: [0.5, 0.5], endZ: [-0.5, -0.5] } };
+  const view = sketchView(lay, ctx.canvas, 10);
+  drawFloorSketch(ctx, lay, view, {});
+  // 端 → 外角 → 端 の折れ線が引かれている（並び順には依存させない）
+  const lineTos = ctx.calls.filter((c) => c.name === 'lineTo');
+  assert.ok(lineTos.length >= 2, '折れ線');
+  const corner = view.toPx(-0.5, 0.5);
+  assert.ok(lineTos.some((c) => Math.abs(c.args[0] - corner.px) < 1e-6
+    && Math.abs(c.args[1] - corner.py) < 1e-6), '外角を通る');
 });
 
 test('レイアウトが空でも落ちない（現場で layout が未著作のことがある）', () => {
