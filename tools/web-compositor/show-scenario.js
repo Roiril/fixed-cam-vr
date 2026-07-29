@@ -202,6 +202,8 @@ export function buildScenarioConfig(state, opts = {}) {
         once: t.once !== false,
         maxDurationSec: num(t.maxDurationSec, 0),
         yieldOnZoneChange: t.policy === TAKE.POLICY_YIELD,
+        // 離脱時の演出は持ち越せない（Unity 側 ShowTakeDef.IsChainWait と同条件）。
+        chainWait: t.wait === TAKE.WAIT_CHAIN && t.at !== TAKE.AT_EXIT,
         stepDurSec: durs,
         // ⚠ 使えないライン（未選択 / layout に無い / 別カメラ担当）でも onLine は下ろさない。
         //   下ろすと時刻トリガー扱いになり offsetSec(=0) で**区間進入と同時に発火**してしまい、
@@ -311,6 +313,7 @@ export function serializeScenario(cfg, samples, extra = {}) {
       lap: t.lap, camera: t.camera, onExit: t.onExit,
       offsetSec: t.offsetSec, skipWhenMissed: t.skipWhenMissed, once: t.once,
       maxDurationSec: t.maxDurationSec, yieldOnZoneChange: t.yieldOnZoneChange,
+      chainWait: !!t.chainWait,
       stepDurSec: t.stepDurSec.slice(),
       stepCameras: (cfg.stepCameras && cfg.stepCameras[i]) ? cfg.stepCameras[i].slice() : [],
       onLine: !!t.onLine, lineIndex: Number.isInteger(t.lineIndex) ? t.lineIndex : -1,

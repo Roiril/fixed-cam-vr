@@ -48,9 +48,22 @@ namespace FixedCamVr.Streaming
             // 開始規則「このラインを通過したら」（at=line）。onExit=false と併用する。
             public bool onLine;         // true = 時刻ではなく床のラインの横断で発火する
             public int lineIndex;       // LineCrossLogic のスロット（範囲外 = 発火しない）
+
+            /// <summary>
+            /// true = 「自分を塞いでいた演出が終わるまで、区間を出ても待つ」（wait="chain"）。
+            /// 持ち越すのは因果がはっきりしている場合だけ（離脱の瞬間に実際に画面が塞がっていて、
+            /// かつ開始条件は満たしていた）。時刻に届かなかっただけのものは持ち越さない。
+            /// </summary>
+            public bool chainWait;
         }
 
         public enum Action { None, BeginStep, EndTake }
+
+        /// <summary>区間を越えて待てるスロットの上限。超えたら古い方から捨てて報告する。</summary>
+        public const int MaxCarrySlots = 2;
+
+        /// <summary>持ち越しの寿命 (秒)。演出の watchdog（既定 45s）より少し長く取る。</summary>
+        public const float CarryMaxWaitSec = 60f;
 
         /// <summary>1 回の評価結果。action=None なら他フィールドは無効。</summary>
         public struct Decision
@@ -61,6 +74,15 @@ namespace FixedCamVr.Streaming
             public bool takeStarted;   // BeginStep: この演出の 1 カット目（＝画面の占有を開始する）
             public int returnCamera;   // EndTake: 復帰先
             public bool forced;        // EndTake: watchdog による強制終了
+
+            /// <summary>
+            /// EndTake: この直後に次の演出が始まる（＝画面を返さずそのまま渡す）。
+            /// これが true のとき <see cref="TakeRunner"/> は復帰の暗転を打たない —
+            /// 打つと「演出の終わりの黒」と「次の演出の入りの遷移」が二重に出て、
+            /// しかも次の演出の 1 カット目が必ずその黒へ相乗りして自分の遷移指定を失う。
+            /// watchdog による強制終了（<see cref="forced"/>）では立てない（壊れて止まったので素直に画面を返す）。
+            /// </summary>
+            public bool chainNext;
         }
 
         // 武装中の enter / line 演出の状態。
@@ -78,6 +100,10 @@ namespace FixedCamVr.Streaming
             ScreenBusyAtExit = 0,
             /// <summary>区間を離れる瞬間、他の演出が先に選ばれた（同時 1 本の原則）。</summary>
             LostToAnotherTake = 1,
+            /// <summary>持ち越し（wait="chain"）が上限（本数 / 寿命）に掛かった。</summary>
+            CarryExpired = 2,
+            /// <summary>持ち越し中に、塞いでいた演出が人為的に消えた（卓の緊急停止・介入・定義差し替え）。</summary>
+            BlockerGone = 3,
         }
 
         /// <summary>
@@ -94,6 +120,12 @@ namespace FixedCamVr.Streaming
         private readonly List<int> _armedIndex = new();
         private readonly List<float> _armedDue = new();
         private readonly List<Armed> _armedState = new();
+
+        // 持ち越し（wait="chain"）。区間を出ても「塞いでいた演出が終わるまで」待ち続ける演出。
+        // **武装リストとは別に持つ**のが要点 — いま居る区間の演出を必ず優先し、持ち越しは劣後させる。
+        // （持ち越しが先に出ると、体験者がいま居る場所の演出が毎回後ろへずれていく。）
+        private readonly List<int> _carryIndex = new();
+        private readonly List<float> _carryUntil = new();
 
         private bool _hasCurrent;
         private int _curLap, _curCam;
@@ -128,6 +160,7 @@ namespace FixedCamVr.Streaming
             _defs = defs ?? Array.Empty<Def>();
             _fired = new bool[_defs.Length];
             ClearArmed();
+            DropAllCarry(DropReason.BlockerGone, report: false); // 定義が変わった＝ index の意味が変わる
             _running = false;
             _activeTake = -1;
             _activeStep = -1;
@@ -139,6 +172,7 @@ namespace FixedCamVr.Streaming
         {
             for (int i = 0; i < _fired.Length; i++) _fired[i] = false;
             ClearArmed();
+            DropAllCarry(DropReason.BlockerGone, report: false); // ラン境界なので報告不要
             _running = false;
             _activeTake = -1;
             _activeStep = -1;
@@ -164,6 +198,8 @@ namespace FixedCamVr.Streaming
             if (_running && _defs[_activeTake].yieldOnZoneChange)
             {
                 Decision yielded = EndTakeDecision(newCam, forced: false);
+                // 打ち切りで消える武装も**黙って消さない**（旧実装はここだけ報告が漏れていた）。
+                if (hadPrev) ReportRemainingDrops(prevLap, prevCam, -1, screenBusy: true);
                 ClearArmed();
                 _hasCurrent = true;
                 _curLap = newLap;
@@ -188,6 +224,9 @@ namespace FixedCamVr.Streaming
                     //（設計 §6.3-1「離脱時にもまだ走行中なら破棄 + 警告ログ」の実体）。
                     pick = -1;
                 }
+                // 持ち越し（wait="chain"）を先に確定させる。持ち越したものは「まだ生きている」ので
+                // 破棄として報告しない。
+                CarryOverArmed(screenBusy, pick, now);
                 ReportRemainingDrops(prevLap, prevCam, pick, screenBusy);
                 ClearArmed();
             }
@@ -212,6 +251,10 @@ namespace FixedCamVr.Streaming
             //    ここで拾わないと「別の演出が走っていた」だけで永久に失われる。
             LatchReady(now, lines);
 
+            // ② 持ち越しの寿命。塞いでいた演出がいつまでも終わらない / 体験者が遠くまで行ってしまった
+            //    場合に、著作した演出が延々と待ち続けるのを止める（捨てるときは必ず報告する）。
+            ExpireCarry(now);
+
             if (_running)
             {
                 if (now >= _deadline)
@@ -232,7 +275,8 @@ namespace FixedCamVr.Streaming
                         _stepEnd = StepEndTime(now, durs[next]);
                         return BeginStepDecision(takeStarted: false);
                     }
-                    return EndTakeDecision(latestZoneCam, forced: false);
+                    // 次に出るものが既に控えているなら、画面を返さずそのまま渡す（連続の繋ぎ目に黒を挟まない）。
+                    return EndTakeDecision(latestZoneCam, forced: false, chainNext: HasNextReady());
                 }
                 return default;
             }
@@ -242,17 +286,30 @@ namespace FixedCamVr.Streaming
                 // ライブ卓の介入は**人間の明示的な判断**なので、その間に条件を満たした演出は待たせずに決着させる
                 //（オペレータが画面を握っている最中に、解放した瞬間へ演出を溜め込まない）。
                 SettleReadyWhileSuppressed();
+                // 持ち越しも同じ理由で畳む（人が画面を取ったのに、後から溜まっていた演出が噴き出さない）。
+                DropAllCarry(DropReason.BlockerGone);
                 return default;
             }
 
             int pick = FindReady();
-            if (pick < 0) return default;
+            if (pick >= 0)
+            {
+                RemoveArmedAt(pick, out int takeIndex);
+                StartTake(takeIndex, now, _hasCurrent ? _curCam : 0);
+                // 同時に条件を満たした他の演出は Ready のまま残り、この 1 本が終わったら順に出る
+                //（同一区間に居るあいだだけ。区間を出れば決着するか、chain なら持ち越す）。
+                return BeginStepDecision(takeStarted: true);
+            }
 
-            RemoveArmedAt(pick, out int takeIndex);
-            StartTake(takeIndex, now, _hasCurrent ? _curCam : 0);
-            // 同時に条件を満たした他の演出は Ready のまま残り、この 1 本が終わったら順に出る
-            //（同一区間に居るあいだだけ。区間を出れば決着する）。
-            return BeginStepDecision(takeStarted: true);
+            // いま居る区間に出すものが無ければ、持ち越しを出す（劣後）。
+            if (_carryIndex.Count > 0)
+            {
+                int carried = _carryIndex[0];
+                RemoveCarryAt(0);
+                StartTake(carried, now, _hasCurrent ? _curCam : 0);
+                return BeginStepDecision(takeStarted: true);
+            }
+            return default;
         }
 
         /// <summary>
@@ -270,12 +327,14 @@ namespace FixedCamVr.Streaming
             if (_running) _stepEnd = endTime;
         }
 
-        /// <summary>走行中の演出を外部都合で畳む（ラン開始・定義差し替え時の後片付け）。</summary>
+        /// <summary>走行中の演出を外部都合で畳む（卓の「■ 画面を取り返す」・ラン開始・定義差し替えの後片付け）。</summary>
         public void AbortActive()
         {
             _running = false;
             _activeTake = -1;
             _activeStep = -1;
+            // 画面を取り返した直後に、溜まっていた持ち越しが噴き出さないようにする。
+            DropAllCarry(DropReason.BlockerGone);
         }
 
         // ---- 内部 ----
@@ -304,7 +363,7 @@ namespace FixedCamVr.Streaming
             takeStarted = takeStarted,
         };
 
-        private Decision EndTakeDecision(int latestZoneCam, bool forced)
+        private Decision EndTakeDecision(int latestZoneCam, bool forced, bool chainNext = false)
         {
             int take = _activeTake;
             _running = false;
@@ -316,8 +375,12 @@ namespace FixedCamVr.Streaming
                 takeIndex = take,
                 returnCamera = latestZoneCam,
                 forced = forced,
+                chainNext = chainNext,
             };
         }
+
+        /// <summary>この演出が終わった直後に出せるものが控えているか（連続の判定）。</summary>
+        private bool HasNextReady() => !_suppressed && (FindReady() >= 0 || _carryIndex.Count > 0);
 
         // 進入区間の enter / line 演出を武装する（offsetSec 昇順 → 同値は配列順）。
         // ライントリガー（onLine）は offsetSec を持たない（契約上 0）ので、同値タイブレーク＝配列順で並ぶ。
@@ -409,6 +472,8 @@ namespace FixedCamVr.Streaming
                 if (d.stepDurSec.Length == 0) continue;
                 if (d.once && _fired[i]) continue;
                 if (!d.onExit && (d.skipWhenMissed || !IsArmed(i))) continue;
+                // 持ち越したものはまだ生きている（捨てていない）ので報告しない。
+                if (_carryIndex.Contains(i)) continue;
                 TakeDropped.Invoke(i, screenBusy ? DropReason.ScreenBusyAtExit : DropReason.LostToAnotherTake);
             }
         }
@@ -431,6 +496,71 @@ namespace FixedCamVr.Streaming
         }
 
         private bool IsArmed(int takeIndex) => _armedIndex.Contains(takeIndex);
+
+        // ---- 持ち越し（wait="chain"）----
+
+        /// <summary>持ち越し中の演出数（テスト・診断用）。</summary>
+        public int CarryCount => _carryIndex.Count;
+
+        /// <summary>
+        /// 離脱の瞬間、**画面が塞がっていたせいで**出られなかった演出を持ち越す。
+        ///
+        /// 条件は 4 つとも必須:
+        ///   ①著作者が wait="chain" と明示している ②離脱の瞬間に実際に画面が塞がっていた（因果）
+        ///   ③開始条件は既に満たしていた（Ready / DeferredToExit。時刻に届かなかっただけのものは持ち越さない）
+        ///   ④at=exit ではない（離脱時の演出を別の区間で出すと文脈が最も壊れる）
+        ///
+        /// 「歩くのが速かっただけ」で持ち越さないのがこの機構の芯。持ち越しの根拠が
+        /// 「別の演出が画面を持っていた」という**システム内部の都合**に限られるので、
+        /// 体験者から見れば「前の演出が終わってから続けて出た」1 つの流れになる。
+        /// </summary>
+        private void CarryOverArmed(bool screenBusy, int firedIndex, float now)
+        {
+            if (!screenBusy) return;
+            for (int k = 0; k < _armedIndex.Count; k++)
+            {
+                int i = _armedIndex[k];
+                if (i == firedIndex) continue;
+                if (!_defs[i].chainWait || _defs[i].onExit) continue;
+                if (_armedState[k] != Armed.Ready && _armedState[k] != Armed.DeferredToExit) continue;
+                if (_carryIndex.Contains(i)) continue;
+                _carryIndex.Add(i);
+                _carryUntil.Add(now + CarryMaxWaitSec);
+            }
+            // 上限を超えたら**古い方から**捨てる（新しい因果の方が体験に近い）。捨てたら必ず報告する。
+            while (_carryIndex.Count > MaxCarrySlots)
+            {
+                int dropped = _carryIndex[0];
+                RemoveCarryAt(0);
+                TakeDropped?.Invoke(dropped, DropReason.CarryExpired);
+            }
+        }
+
+        private void ExpireCarry(float now)
+        {
+            for (int k = _carryIndex.Count - 1; k >= 0; k--)
+            {
+                if (now < _carryUntil[k]) continue;
+                int dropped = _carryIndex[k];
+                RemoveCarryAt(k);
+                TakeDropped?.Invoke(dropped, DropReason.CarryExpired);
+            }
+        }
+
+        /// <summary>持ち越しを全部畳む。<paramref name="report"/> が false のときはラン境界（報告不要）。</summary>
+        private void DropAllCarry(DropReason reason, bool report = true)
+        {
+            if (report && TakeDropped != null)
+                for (int k = 0; k < _carryIndex.Count; k++) TakeDropped.Invoke(_carryIndex[k], reason);
+            _carryIndex.Clear();
+            _carryUntil.Clear();
+        }
+
+        private void RemoveCarryAt(int k)
+        {
+            _carryIndex.RemoveAt(k);
+            _carryUntil.RemoveAt(k);
+        }
 
         private void RemoveArmedAt(int k, out int takeIndex)
         {

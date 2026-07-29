@@ -424,7 +424,48 @@ export function createRibbon(container, deps) {
    * 「その演出が体験者の歩速で出ないかもしれない」危険（計画 §8 論点 5）。
    * 実測が無ければ何も言わない（推測で警告しない）。
    */
+  // ひとつ前の区間（周回コース順）。1 周目の先頭には前が無い。
+  function prevSegKey(lap, camera) {
+    const rs = rows();
+    const i = rs.indexOf(camera);
+    if (i < 0) return null;
+    if (i > 0) return { lap, camera: rs[i - 1] };
+    return lap > 1 ? { lap: lap - 1, camera: rs[rs.length - 1] } : null;
+  }
+
+  /**
+   * 「ひとつ前の区間の離脱時演出が、この区間の滞在を食い尽くす」危険。
+   *
+   * 実行側は**画面が空くまで待つ**（それ自体は正しい）。問題は、待っているあいだに体験者が
+   * この区間を出てしまうと、著作した演出が一度も出ないまま終わること。
+   * 卓はこれを一度も言っていなかったので、シミュレータを回さないと気づけなかった。
+   */
+  function blockedByPrevExit(t, lap, camera) {
+    if (!t || t.at === TAKE.AT_EXIT) return null;
+    const p = prevSegKey(lap, camera);
+    if (!p) return null;
+    const ex = exitTakeOf(p.lap, p.camera, null);
+    if (!ex) return null;
+    const exSec = takeSeconds(ex).sec;
+    if (!(exSec > 0)) return null;
+    const waits = t.wait === TAKE.WAIT_CHAIN;
+    const e = dwellFor(lap, camera);
+    const head = `⏳ ひとつ前（${p.lap}周目 ${camLabel(p.camera)}）の離脱時の演出が ${fmtSec(exSec)}s あります`;
+    if (waits) {
+      return `${head}。この演出は「前の演出が終わるまで待つ」ので、`
+        + `${e ? `実測 ${fmtSec(e.meanSec)}s のこの区間を出たあとでも` : 'この区間を出たあとでも'}続けて出ます。`;
+    }
+    if (e && exSec >= e.minSec) {
+      return `${head}。実測の最短滞在 ${fmtSec(e.minSec)}s を超えるので、`
+        + `この演出は出ないまま終わる周があります — インスペクタの「前の演出が終わるまで待つ」を入れてください。`;
+    }
+    return `${head}。この区間の滞在がそれより短いと、この演出は出ないまま終わります`
+      + `（「前の演出が終わるまで待つ」で救えます）。`;
+  }
+
   function takeTimingRisk(t, lap, camera) {
+    const blocked = blockedByPrevExit(t, lap, camera);
+    if (blocked) return blocked;
     if (!t || t.at === TAKE.AT_EXIT) return null;         // 離脱時は必ず出る
     const e = dwellFor(lap, camera);
     if (!e) return null;
@@ -696,7 +737,9 @@ export function createRibbon(container, deps) {
   };
   function stepTitle(s) {
     const bad = stepIssue(s);
-    const tr = s.transition === TAKE.TRANS_CUT ? 'カット' : s.transition === TAKE.TRANS_FADE ? 'フェード' : '暗転';
+    const tr = s.transition === TAKE.TRANS_CUT ? 'カット'
+      : s.transition === TAKE.TRANS_FADE ? 'フェード'
+      : s.transition === TAKE.TRANS_GLITCH ? '乱れ' : '暗転';
     const d = stepSeconds(s);
     return `${stepLabel(s)}${s.cueId ? ` + 素材 ${cueName(s.cueId)}` : ''} / 遷移 ${tr}`
       + ` / ${DUR_KIND_LABEL[d.kind] || ''}${bad ? ` / ⚠ ${bad}` : ''}`;
@@ -805,8 +848,14 @@ export function createRibbon(container, deps) {
     const seg = ensureSeg(lap, camera);
     // ライントリガーは「この区間のカメラが担当するライン」だけを既定にする（取り違えを構造的に防ぐ）。
     const line = at === TAKE.AT_LINE ? (lines.find((l) => l.camera === camera) || null) : null;
+    // 2 本目以降は「前の進入演出が終わったあたり」に置く。全部 +0s に積むと、リボンの絵と
+    // 実際の発火時刻（1 本目が終わってから順に出る）が食い違って読めなくなる。
+    const prior = (seg.takes || []).filter((x) => x.at === TAKE.AT_ENTER);
+    const stacked = at === TAKE.AT_ENTER
+      ? prior.reduce((m, x) => Math.max(m, (x.offsetSec || 0) + takeSeconds(x).sec), 0)
+      : 0;
     const t = newTake(uniqueTakeId(seg, takeId(lap, camera, seg.takes.length)), {
-      at, offsetSec: 0,
+      at, offsetSec: Math.round(stacked * 10) / 10,
       lineId: line ? line.id : '',
       // ライン指定の演出は「通らなかったら出さない」が既定（時刻トリガーの fireOnExit と違う）。
       ifMissed: at === TAKE.AT_LINE ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT,
@@ -1143,6 +1192,9 @@ export function createRibbon(container, deps) {
             <option value="${TAKE.POLICY_HOLD}"${t.policy !== TAKE.POLICY_YIELD ? ' selected' : ''}>見せ切る（歩いても演出のまま）</option>
             <option value="${TAKE.POLICY_YIELD}"${t.policy === TAKE.POLICY_YIELD ? ' selected' : ''}>境界を跨いだら打ち切る</option>
           </select></label>
+          <label class="chk" title="画面が塞がっていて出られなかったとき、区間を出ても『塞いでいた演出が終わるまで』待ちます。前の区間の離脱時演出が長くて、この区間の滞在が短いときに、著作した演出が消えるのを防ぎます。">
+            <input class="rb-t-wait" type="checkbox" ${t.wait === TAKE.WAIT_CHAIN ? 'checked' : ''}
+              ${t.at === TAKE.AT_EXIT ? 'disabled' : ''}>前の演出が終わるまで待つ</label>
           <label class="chk"><input class="rb-t-once" type="checkbox" ${t.once !== false ? 'checked' : ''}>ラン内 1 回</label>
           <label>最大長<input class="rb-t-max" type="number" min="0" step="1" value="${t.maxDurationSec || 0}"><span class="rb-hint2">0=既定 ${TAKE.DEFAULT_MAX_DURATION_SEC}s</span></label>
         </div>
@@ -1175,6 +1227,8 @@ export function createRibbon(container, deps) {
       t.lineId = t.at === TAKE.AT_LINE ? i('.rb-t-line').value : '';
       t.ifMissed = i('.rb-t-missed').value === TAKE.MISSED_SKIP ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT;
       t.policy = i('.rb-t-policy').value === TAKE.POLICY_YIELD ? TAKE.POLICY_YIELD : TAKE.POLICY_HOLD;
+      // 離脱時の演出は持ち越せない（別の区間で出すと文脈が最も壊れる）。
+      t.wait = (i('.rb-t-wait').checked && t.at !== TAKE.AT_EXIT) ? TAKE.WAIT_CHAIN : TAKE.WAIT_SEGMENT;
       t.once = !!i('.rb-t-once').checked;
       t.maxDurationSec = Math.max(0, numOr(i('.rb-t-max').value, 0));
       markDirty(); render();
@@ -1188,7 +1242,7 @@ export function createRibbon(container, deps) {
       const wEl = i('.rb-insp-warn');
       if (wEl) { wEl.textContent = isu ? `⚠ ${isu}` : ''; wEl.style.display = isu ? '' : 'none'; }
     };
-    inspectorEl.querySelectorAll('.rb-t-name, .rb-t-off, .rb-t-policy, .rb-t-once, .rb-t-max, .rb-t-missed, .rb-t-line')
+    inspectorEl.querySelectorAll('.rb-t-name, .rb-t-off, .rb-t-policy, .rb-t-wait, .rb-t-once, .rb-t-max, .rb-t-missed, .rb-t-line')
       .forEach((el) => { el.onchange = commit; });
     i('.rb-t-at').onchange = () => {
       commit();

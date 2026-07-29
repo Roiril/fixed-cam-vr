@@ -485,15 +485,7 @@ namespace FixedCamVr.Streaming
         public void InsertExitRedirect(int insertCamera, float downSec = -1f, float upSec = -1f, bool glitch = false)
         {
             _logic.SetInsertActive(true);
-            if (_dip == DipState.Down)
-            {
-                // 進行中の黒転換に相乗り（中間カメラのフラッシュを出さない）。
-                // **カットの遷移尺は捨てる**（尺は進行中の Zone dip のもの）。持ち越すと、消化されない
-                // まま次の切替＝演出終了の復帰 dip に乗り、作者が 1 カット目に選んだ「瞬時」が
-                // 復帰の暗転を消す事故になる（2026-07-26 監査 MED）。
-                _blackRedirect = insertCamera;
-                return;
-            }
+            if (HandoffDip(insertCamera, null, downSec, upSec, glitch)) return;
             StartDip(insertCamera, SwitchSource.Insert, downSec, upSec, glitch);
         }
 
@@ -506,17 +498,13 @@ namespace FixedCamVr.Streaming
         public void TakeHoldBegin(float downSec = 0f, float upSec = 0f, Action? onBlack = null, bool glitch = false)
         {
             _logic.SetInsertActive(true);
+            if (HandoffDip(null, onBlack, downSec, upSec, glitch)) return;
             if (downSec <= 0f && upSec <= 0f)
             {
-                onBlack?.Invoke();   // カット（瞬時）: 黒を挟まず即差し替え
+                onBlack?.Invoke();   // カット（瞬時）: 進行中の遷移が無いなら本当に瞬時
                 return;
             }
-            if (_dip == DipState.Down)
-            {
-                _blackAction = onBlack;   // 進行中の黒転換に相乗り
-                return;
-            }
-            _blackAction = onBlack;
+            SetBlackAction(onBlack);
             // カメラは変えない。registry.SetActive(同じ index) は早期 return するので切替イベントも出ない。
             StartDip(_logic.Current, SwitchSource.Insert, downSec, upSec, glitch);
         }
@@ -533,13 +521,66 @@ namespace FixedCamVr.Streaming
         public void InsertBegin(int insertCamera, float downSec = -1f, float upSec = -1f, bool glitch = false)
         {
             _logic.SetInsertActive(true);
-            if (_dip == DipState.Down)
-            {
-                _blackRedirect = insertCamera;
-                return;
-            }
+            if (HandoffDip(insertCamera, null, downSec, upSec, glitch)) return;
             StartDip(insertCamera, SwitchSource.Insert, downSec, upSec, glitch);
         }
+
+        /// <summary>
+        /// 進行中の遷移へ**割り込む**。進行中が無ければ false（呼び出し側が普通に <see cref="StartDip"/> する）。
+        ///
+        /// 規律は 1 行:「継ぎ目の遷移は、いま画面を取る側が所有する」。
+        /// 体験者にとっての単位は『ゾーン切替』でも『演出の入り』でもなく**継ぎ目**で、
+        /// 継ぎ目は 1 回だけ起き、その見え方は演出の作者が決めるのが正しい。
+        ///
+        /// 旧実装（相乗り）は前半（1 回にする）だけを満たし、後半（作者が決める）を捨てていた。
+        /// しかも捨てるかどうかが「進行中が Down 相か Up 相か」＝実行時のフレームタイミングで決まるので、
+        /// **同じ show.json が実行のたびに違う絵になる**（再現しないものは著作できない）。
+        ///
+        ///   Down（まだ暗くなっている途中）… 暗さを比率で保ったまま、残りの尺と見た目を割り込む側へ差し替える
+        ///   Up  （明るくなっている途中）  … いまの暗さから Down へ**折り返す**。
+        ///                                   旧実装は 0 から張り直していたので「黒 → 明るくなりかけ → また黒」に
+        ///                                   なっていた（隠すべき継ぎ目を逆に目立たせる）。
+        ///   瞬時（0/0）                  … 進行中の尺をそのまま使い、差し替え先だけ変える。
+        ///                                   作者の「瞬時」は「自分から暗転を足さない」意図であって
+        ///                                   「既にある暗転を打ち切る」意図ではない（打ち切ると明るさが飛ぶ）。
+        /// </summary>
+        private bool HandoffDip(int? redirect, Action? onBlack, float downSec, float upSec, bool glitch)
+        {
+            if (_dip == DipState.Idle) return false;
+
+            if (redirect.HasValue) _blackRedirect = redirect.Value;
+            if (onBlack != null) SetBlackAction(onBlack);
+
+            if (downSec <= 0f && upSec <= 0f) return true;   // 瞬時: 進行中の遷移に乗る
+
+            // いまの暗さ（0=明るい / 1=真っ黒）を保って、新しい尺・見た目へ乗り換える。
+            float level = _dip == DipState.Down
+                ? (_curDipDown <= 0f ? 1f : Mathf.Clamp01(_dipTimer / _curDipDown))
+                : 1f - (_curDipUp <= 0f ? 1f : Mathf.Clamp01(_dipTimer / _curDipUp));
+            _curDipDown = downSec >= 0f ? downSec : dipDownSec;
+            _curDipUp = upSec >= 0f ? upSec : dipUpSec;
+            _curDipGlitch = glitch;
+            _dip = DipState.Down;
+            _dipTimer = level * _curDipDown;
+            return true;
+        }
+
+        /// <summary>
+        /// 黒の瞬間に 1 回だけ呼ぶ処理を予約する。**未消化のものを上書きするときは報告する** —
+        /// 上書きされたカットは一度も画面に出ないまま消えるので、演出層の
+        /// 「捨てたら必ず報告する」（<see cref="TakeRunnerLogic.TakeDropped"/>）と同じ規律を遷移層にも通す。
+        /// </summary>
+        private void SetBlackAction(Action? onBlack)
+        {
+            if (_blackAction != null && onBlack != null) TransitionPreempted?.Invoke();
+            _blackAction = onBlack;
+        }
+
+        /// <summary>
+        /// 黒の瞬間の予約が、消化される前に次の予約で上書きされた（＝そのカットが画面に出なかった）。
+        /// <see cref="TakeRunner"/> が警告ログへ流す。
+        /// </summary>
+        public event Action? TransitionPreempted;
 
         /// <summary>
         /// インサート表示を終え、復帰カメラ（最新ゾーン）へ dip-to-black で戻す。
@@ -551,11 +592,11 @@ namespace FixedCamVr.Streaming
         /// 周回は画面ではなく <see cref="ZoneCommitted"/>（時計）が駆動するようになり、インサート中の
         /// 実ゾーン移動はその時点で既に周回へ反映済みだから（段 B）。
         /// </summary>
-        public void InsertReturn(int returnCamera)
+        public void InsertReturn(int returnCamera, float downSec = -1f, float upSec = -1f, bool glitch = false)
         {
             _blackAction = null;   // 未消化の素材差し替えを次の dip へ持ち越さない
             _logic.SetInsertActive(false);
-            StartDip(returnCamera, SwitchSource.Insert);
+            StartDip(returnCamera, SwitchSource.Insert, downSec, upSec, glitch);
         }
 
         /// <summary>

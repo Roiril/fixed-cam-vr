@@ -99,8 +99,7 @@ namespace FixedCamVr.Streaming
         {
             // 演出を捨てたら必ず言う（黙って消さない）。著作した山場が出ないのは事故なので警告で出す。
             _logic.TakeDropped = (index, reason) => Debug.LogWarning(
-                $"[TakeRunner] 演出が出ないまま区間が終わった: take={TakeId(index)}" +
-                $"（{(reason == TakeRunnerLogic.DropReason.ScreenBusyAtExit ? "別の演出 / ライブ卓が画面を使用中" : "同じ区間の別の演出が先に選ばれた")}）");
+                $"[TakeRunner] 演出が出ないまま終わった: take={TakeId(index)}（{DropReasonText(reason)}）");
 
             // 実配置では本コンポーネントは [Tracker]、Director / overlay / showControl は Screen に居る
             // （InsertController と同じ構図）。SerializeField 未割当のシーンでも動くよう、同 GameObject →
@@ -118,6 +117,25 @@ namespace FixedCamVr.Streaming
             // 機能が全死した過去の事故を繰り返さない）。
             _cgLayer = FindObjectOfType<ShowCgLayer>();
             if (_cgLayer == null && overlay != null) _cgLayer = overlay.gameObject.AddComponent<ShowCgLayer>();
+
+            // 遷移層でカットが画面に出ないまま上書きされたら報告する（演出層と同じ規律を通す）。
+            if (director != null) director.TransitionPreempted += OnTransitionPreempted;
+        }
+
+        private static string DropReasonText(TakeRunnerLogic.DropReason reason) => reason switch
+        {
+            TakeRunnerLogic.DropReason.ScreenBusyAtExit => "別の演出 / ライブ卓が画面を使用中のまま区間が終わった",
+            TakeRunnerLogic.DropReason.LostToAnotherTake => "同じ区間の別の演出が先に選ばれた",
+            TakeRunnerLogic.DropReason.CarryExpired => "待ち続けたが上限（本数 / 時間）に掛かった",
+            _ => "待っているあいだに、塞いでいた演出が人の操作で消えた",
+        };
+
+        private void OnTransitionPreempted() => Debug.LogWarning(
+            "[TakeRunner] カットが一度も画面に出ないまま次のカットに上書きされた（尺が遷移より短い）");
+
+        private void OnDestroy()
+        {
+            if (director != null) director.TransitionPreempted -= OnTransitionPreempted;
         }
 
         private void OnEnable()
@@ -209,6 +227,7 @@ namespace FixedCamVr.Streaming
                         once = t.once,
                         maxDurationSec = t.maxDurationSec,
                         yieldOnZoneChange = t.IsYield,
+                        chainWait = t.IsChainWait,
                         stepDurSec = BuildStepDurations(t),
                         onLine = onLine,
                         lineIndex = hasLine ? LineSlot(t.lineId) : -1,
@@ -316,7 +335,29 @@ namespace FixedCamVr.Streaming
             int latest = ResolveLatestZoneCamera();
             TakeRunnerLogic.Decision d = _logic.Tick(Now, latest, lines);
             Apply(d, exitAnchored: false);
+
+            // 連続の渡し（chainNext）で画面を返さなかったのに、次の演出が始まらなかった場合の安全網。
+            // 判定と発火のあいだ（1 フレーム）に持ち越しが期限切れになる等で「次」が消えると、
+            // 占有が降りないまま画面が固まる。**凍結が解けない事故を新しく作らない**ため、
+            // 次のフレームで必ず決着させる。
+            if (_chainPending)
+            {
+                bool started = d.action == TakeRunnerLogic.Action.BeginStep && d.takeStarted;
+                if (!started && !_logic.IsActive)
+                {
+                    _chainPending = false;
+                    if (director != null && director.InsertActive)
+                    {
+                        Debug.LogWarning("[TakeRunner] 次の演出が始まらなかったので画面を返す（連続の渡しを取り消し）");
+                        director.InsertReturn(ResolveLatestZoneCamera());
+                    }
+                }
+                else if (started) _chainPending = false;
+            }
         }
+
+        // 連続の渡しで画面を返さずに待っている状態。次のフレームで必ず決着させる（上の安全網）。
+        private bool _chainPending;
 
         /// <summary>
         /// 通過ラインの横断検出を体験者の course 空間 XZ で進める。位置が取れない
@@ -558,6 +599,20 @@ namespace FixedCamVr.Streaming
             if (director == null) return;
             ReleaseStepState();
             showControl?.SetInsertPostOverride(false, null);
+
+            // **次の演出が控えているなら画面を返さない**（連続の繋ぎ目に黒を挟まない）。
+            // 返してしまうと、復帰の暗転（既定 70/100ms）と次の演出の入りの遷移が二重に出るうえ、
+            // 次の演出の 1 カット目が必ずその暗転へ割り込むことになり、作者が選んだ遷移が消える。
+            // 占有（InsertActive）は保ったままなので、画面の所有者が空白になる瞬間は無い。
+            // watchdog の強制終了だけは素直に返す（壊れて止まったので仕切り直す）。
+            if (d.chainNext && !d.forced && director.InsertActive)
+            {
+                _chainPending = true;
+                Debug.Log($"[TakeRunner] 演出終了 → 次の演出へそのまま渡す（復帰の暗転を挟まない）");
+                return;
+            }
+            _chainPending = false;
+
             // 画面を実際に持っていた時だけ返す。全 step が §6.4 で飛ばされた演出は画面に触っていないので、
             // ここで dip を掛けると「何も起きていないのに暗転する」ことになる。
             if (director.InsertActive) director.InsertReturn(d.returnCamera);
@@ -568,6 +623,7 @@ namespace FixedCamVr.Streaming
         // releaseScreen=false なら「画面の占有だけ解いてカメラは動かさない」（ライブ卓が既に画面を取っている場合）。
         private void CleanupActive(bool releaseScreen = true)
         {
+            _chainPending = false;
             if (!_logic.IsActive) return;
             EndTakeBgm();
             ReleaseStepState();

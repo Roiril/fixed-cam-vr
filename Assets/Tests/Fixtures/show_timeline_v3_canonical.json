@@ -14,6 +14,7 @@
           "ifMissed": "fireOnExit",
           "lineId": "",
           "policy": "hold",
+          "wait": "segment",
           "once": true,
           "maxDurationSec": 0,
           "steps": [
@@ -58,6 +59,7 @@
           "ifMissed": "fireOnExit",
           "lineId": "",
           "policy": "hold",
+          "wait": "segment",
           "once": true,
           "maxDurationSec": 0,
           "steps": [
@@ -128,6 +130,7 @@
           "ifMissed": "fireOnExit",
           "lineId": "",
           "policy": "hold",
+          "wait": "segment",
           "once": true,
           "maxDurationSec": 40,
           "steps": [
@@ -252,6 +255,7 @@
           "ifMissed": "skip",
           "lineId": "line_doll",
           "policy": "hold",
+          "wait": "segment",
           "once": true,
           "maxDurationSec": 0,
           "steps": [

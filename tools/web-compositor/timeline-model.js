@@ -93,6 +93,10 @@ export const TAKE = {
   AT_ENTER: 'enter', AT_EXIT: 'exit', AT_LINE: 'line',
   MISSED_FIRE_ON_EXIT: 'fireOnExit', MISSED_SKIP: 'skip',
   POLICY_HOLD: 'hold', POLICY_YIELD: 'yield',
+  // 画面が塞がっていて出られなかったときの待ちの寿命。
+  //   segment（既定）= 自分の区間まで（従来の挙動）
+  //   chain          = 自分を塞いでいた演出が終わるまで、区間を出ても待つ
+  WAIT_SEGMENT: 'segment', WAIT_CHAIN: 'chain',
   SRC_LIVE: 'live', SRC_INHERIT: 'inherit', SRC_CLIP: 'clip', SRC_STILL: 'still', SRC_REC: 'rec',
   CG_FOLLOW: 'follow', CG_FIXED: 'fixed',
   SLOT_SCHEME: 'slot://',
@@ -127,7 +131,7 @@ export function newTake(id, over = {}) {
     at: TAKE.AT_ENTER, offsetSec: 0, ifMissed: TAKE.MISSED_FIRE_ON_EXIT,
     // at=line のとき: どのラインか（layout.lines[].id）。ラインは担当カメラに紐づく。
     lineId: '',
-    policy: TAKE.POLICY_HOLD, once: true, maxDurationSec: 0,
+    policy: TAKE.POLICY_HOLD, wait: TAKE.WAIT_SEGMENT, once: true, maxDurationSec: 0,
     steps: [],
     // 演出中だけの BGM（hasBgm=false = 区間で鳴っている曲がそのまま続く）。
     bgm: defaultBgm(), hasBgm: false,
@@ -187,6 +191,8 @@ function serializeTake(t) {
     ifMissed: t.ifMissed === TAKE.MISSED_SKIP ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT,
     lineId: at === TAKE.AT_LINE ? (t.lineId || '') : '',
     policy: t.policy === TAKE.POLICY_YIELD ? TAKE.POLICY_YIELD : TAKE.POLICY_HOLD,
+    // 離脱時の演出は持ち越せない（別の区間で出すと文脈が最も壊れる）。
+    wait: (t.wait === TAKE.WAIT_CHAIN && t.at !== TAKE.AT_EXIT) ? TAKE.WAIT_CHAIN : TAKE.WAIT_SEGMENT,
     once: t.once !== false,
     maxDurationSec: num(t.maxDurationSec, 0),
     steps: (t.steps || []).map(serializeStep),
@@ -240,6 +246,8 @@ function normalizeTake(t) {
     lineId: typeof t.lineId === 'string' ? t.lineId : '',
     ifMissed: t.ifMissed === TAKE.MISSED_SKIP ? TAKE.MISSED_SKIP : TAKE.MISSED_FIRE_ON_EXIT,
     policy: t.policy === TAKE.POLICY_YIELD ? TAKE.POLICY_YIELD : TAKE.POLICY_HOLD,
+    // 離脱時の演出は持ち越せない（別の区間で出すと文脈が最も壊れる）。
+    wait: (t.wait === TAKE.WAIT_CHAIN && t.at !== TAKE.AT_EXIT) ? TAKE.WAIT_CHAIN : TAKE.WAIT_SEGMENT,
     once: t.once !== false,
     maxDurationSec: num(t.maxDurationSec, 0),
     hasBgm: !!t.hasBgm,

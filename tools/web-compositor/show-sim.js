@@ -22,6 +22,13 @@ import { recordConfig, recStepIssue } from './record-model.js';
 const LS_KEY = 'mawarimi.scenarios.v1';
 const MAX_EVENTS = 300;
 const SPEEDS = [1, 4, 16];
+// drop の理由（scenario-engine の DROP_CODE と同じ並び）。
+const DROP_TEXT = [
+  '別の演出 / ライブ卓が画面を使用中のまま区間が終わった',
+  '同じ区間の別の演出が先に選ばれた',
+  '待ち続けたが上限（本数 / 時間）に掛かった',
+  '待っているあいだに、塞いでいた演出が人の操作で消えた',
+];
 
 export function createShowSim(container, deps) {
   // deps: { getState: () => showJson, setDot: (x, z) => void }
@@ -454,7 +461,7 @@ export function createShowSim(container, deps) {
     const pend = runner.pendingZone;
     zoneEl.textContent = camLabel(runner.zoneCamera) + (pend >= 0 ? `（${camLabel(pend)} へ滞在待ち）` : '');
     posEl.textContent = `(${pos.x.toFixed(2)}, ${pos.z.toFixed(2)})`;
-    armedEl.textContent = `${runner.armedCount} 本`;
+    armedEl.textContent = `${runner.armedCount} 本` + (runner.carryCount > 0 ? `（持ち越し ${runner.carryCount}）` : '');
     clockEl.textContent = fmtClock(simMs);
   }
 
@@ -510,9 +517,7 @@ export function createShowSim(container, deps) {
         return `カット ${e.a + 1} ${e.id}${what ? `: ${what}` : ''}`;
       }
       // 「出ないまま区間が終わった」= 著作した山場が体験者に届かなかったということ。必ず見せる。
-      case 'drop': return `✖ 出ませんでした ${e.id}（${e.a === 0
-        ? '別の演出 / ライブ卓が画面を使用中のまま区間が終わった'
-        : '同じ区間の別の演出が先に選ばれた'}）`;
+      case 'drop': return `✖ 出ませんでした ${e.id}（${DROP_TEXT[e.a] || '理由不明'}）`;
       default: return e.kind;
     }
   }

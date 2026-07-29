@@ -364,7 +364,22 @@ const ARMED_DEFERRED_TO_EXIT = 1; // ライブ卓の介入中に条件を満た�
 const ARMED_READY = 2;            // 条件を満たした。画面が空き次第この区間で発火する
 
 /** TakeRunnerLogic.DropReason（演出が出ないまま終わった理由）。 */
-export const DROP_REASON = { SCREEN_BUSY: 'screenBusy', LOST: 'lostToAnotherTake' };
+export const DROP_REASON = {
+  SCREEN_BUSY: 'screenBusy', LOST: 'lostToAnotherTake',
+  CARRY_EXPIRED: 'carryExpired',   // 持ち越しが上限（本数 / 時間）に掛かった
+  BLOCKER_GONE: 'blockerGone',     // 待っているあいだに、塞いでいた演出が人の操作で消えた
+};
+
+/**
+ * drop の理由 → トレースの数値コード。**既存 2 値（0/1）は動かさない**
+ * （golden トレースがバイト単位で不変であることが「既定の挙動は変えていない」の証拠になる）。
+ */
+export const DROP_CODE = { screenBusy: 0, lostToAnotherTake: 1, carryExpired: 2, blockerGone: 3 };
+
+/** 区間を越えて待てるスロットの上限（TakeRunnerLogic.MaxCarrySlots）。 */
+export const MAX_CARRY_SLOTS = 2;
+/** 持ち越しの寿命 (秒)（TakeRunnerLogic.CarryMaxWaitSec）。 */
+export const CARRY_MAX_WAIT_SEC = 60;
 
 const noDecision = () => ({
   action: TAKE_ACTION.NONE, takeIndex: -1, stepIndex: -1,
@@ -398,6 +413,10 @@ export class TakeRunner {
     this._stepEnd = 0;
     this._deadline = 0;
     this._baseZoneCam = 0;
+    // 持ち越し（wait="chain"）。区間を出ても「塞いでいた演出が終わるまで」待つ演出。
+    // 武装リストとは別に持ち、いま居る区間の演出に**劣後**させる（TakeRunnerLogic と同じ）。
+    this._carryIndex = [];
+    this._carryUntil = [];
     /** 演出を捨てた時の通知 (takeIndex, DROP_REASON)。TakeRunnerLogic.TakeDropped の対。 */
     this.onTakeDropped = null;
   }
@@ -407,11 +426,13 @@ export class TakeRunner {
   get activeStepIndex() { return this._activeStep; }
   get baseZoneCamera() { return this._baseZoneCam; }
   get armedCount() { return this._armedIndex.length; }
+  get carryCount() { return this._carryIndex.length; }
 
   setDefs(defs) {
     this._defs = defs || [];
     this._fired = new Array(this._defs.length).fill(false);
     this._clearArmed();
+    this._dropAllCarry(DROP_REASON.BLOCKER_GONE, false);
     this._running = false;
     this._activeTake = -1;
     this._activeStep = -1;
@@ -442,6 +463,8 @@ export class TakeRunner {
     // このとき離脱区間の exit 演出は発火しない（同時 1 本の原則を保つ）。
     if (this._running && this._defs[this._activeTake].yieldOnZoneChange) {
       const yielded = this._endTakeDecision(newCam, false);
+      // 打ち切りで消える武装も黙って消さない（C# 側と同じ）。
+      if (hadPrev) this._reportRemainingDrops(prevLap, prevCam, -1, true);
       this._clearArmed();
       this._hasCurrent = true;
       this._curLap = newLap;
@@ -460,6 +483,7 @@ export class TakeRunner {
       } else {
         pick = -1;
       }
+      this._carryOverArmed(screenBusy, pick, now);
       this._reportRemainingDrops(prevLap, prevCam, pick, screenBusy);
       this._clearArmed();
     }
@@ -480,6 +504,9 @@ export class TakeRunner {
     //    ライントリガーは事象なので、ここで拾わないと猶予（0.6s）で消える。
     this._latchReady(now, lines);
 
+    // ② 持ち越しの寿命。捨てるときは必ず報告する。
+    this._expireCarry(now);
+
     if (this._running) {
       if (now >= this._deadline) return this._endTakeDecision(latestZoneCam, true);
 
@@ -494,7 +521,8 @@ export class TakeRunner {
           this._stepEnd = stepEndTime(now, durs[next]);
           return this._beginStepDecision(false);
         }
-        return this._endTakeDecision(latestZoneCam, false);
+        // 次に出せるものが控えているなら画面を返さない（連続の繋ぎ目に黒を挟まない）。
+        return this._endTakeDecision(latestZoneCam, false, this._hasNextReady());
       }
       return noDecision();
     }
@@ -502,16 +530,26 @@ export class TakeRunner {
     if (this._suppressed) {
       // ライブ卓の介入は人間の明示的な判断なので、その間に条件を満たした演出は待たせずに決着させる。
       this._settleReadyWhileSuppressed();
+      this._dropAllCarry(DROP_REASON.BLOCKER_GONE);
       return noDecision();
     }
 
     const pick = this._findReady();
-    if (pick < 0) return noDecision();
+    if (pick >= 0) {
+      const takeIndex = this._removeArmedAt(pick);
+      this._startTake(takeIndex, now, this._hasCurrent ? this._curCam : 0);
+      // 同時に条件を満たした他の演出は武装したまま残り、この 1 本が終わったら順に出る。
+      return this._beginStepDecision(true);
+    }
 
-    const takeIndex = this._removeArmedAt(pick);
-    this._startTake(takeIndex, now, this._hasCurrent ? this._curCam : 0);
-    // 同時に条件を満たした他の演出は武装したまま残り、この 1 本が終わったら順に出る。
-    return this._beginStepDecision(true);
+    // いま居る区間に出すものが無ければ、持ち越しを出す（劣後）。
+    if (this._carryIndex.length > 0) {
+      const carried = this._carryIndex.shift();
+      this._carryUntil.shift();
+      this._startTake(carried, now, this._hasCurrent ? this._curCam : 0);
+      return this._beginStepDecision(true);
+    }
+    return noDecision();
   }
 
   /** untilClipEnd のカットで素材の再生が終わったことを通知する。 */
@@ -521,7 +559,11 @@ export class TakeRunner {
   setCurrentStepEnd(endTime) { if (this._running) this._stepEnd = endTime; }
 
   /** 走行中の演出を外部都合で畳む。 */
-  abortActive() { this._running = false; this._activeTake = -1; this._activeStep = -1; }
+  abortActive() {
+    this._running = false; this._activeTake = -1; this._activeStep = -1;
+    // 画面を取り返した直後に、溜まっていた持ち越しが噴き出さないようにする。
+    this._dropAllCarry(DROP_REASON.BLOCKER_GONE);
+  }
 
   // ---- 内部 ----
 
@@ -547,7 +589,7 @@ export class TakeRunner {
     };
   }
 
-  _endTakeDecision(latestZoneCam, forced) {
+  _endTakeDecision(latestZoneCam, forced, chainNext = false) {
     const take = this._activeTake;
     this._running = false;
     this._activeTake = -1;
@@ -559,6 +601,7 @@ export class TakeRunner {
       takeStarted: false,
       returnCamera: latestZoneCam,
       forced,
+      chainNext,
     };
   }
 
@@ -638,6 +681,7 @@ export class TakeRunner {
       if (d.stepDurSec.length === 0) continue;
       if (d.once && this._fired[i]) continue;
       if (!d.onExit && (d.skipWhenMissed || !this._isArmed(i))) continue;
+      if (this._carryIndex.includes(i)) continue;   // 持ち越したものはまだ生きている
       this.onTakeDropped(i, screenBusy ? DROP_REASON.SCREEN_BUSY : DROP_REASON.LOST);
     }
   }
@@ -652,6 +696,48 @@ export class TakeRunner {
       if (d.onExit || (!d.skipWhenMissed && this._isArmed(i))) return i; // 配列順で先頭が勝つ
     }
     return -1;
+  }
+
+  // 離脱の瞬間、画面が塞がっていたせいで出られなかった演出を持ち越す（因果条件つき）。
+  _carryOverArmed(screenBusy, firedIndex, now) {
+    if (!screenBusy) return;
+    for (let k = 0; k < this._armedIndex.length; k++) {
+      const i = this._armedIndex[k];
+      if (i === firedIndex) continue;
+      const d = this._defs[i];
+      if (!d.chainWait || d.onExit) continue;
+      if (this._armedState[k] !== ARMED_READY && this._armedState[k] !== ARMED_DEFERRED_TO_EXIT) continue;
+      if (this._carryIndex.includes(i)) continue;
+      this._carryIndex.push(i);
+      this._carryUntil.push(f32(now + CARRY_MAX_WAIT_SEC));
+    }
+    while (this._carryIndex.length > MAX_CARRY_SLOTS) {
+      const dropped = this._carryIndex.shift();
+      this._carryUntil.shift();
+      if (this.onTakeDropped) this.onTakeDropped(dropped, DROP_REASON.CARRY_EXPIRED);
+    }
+  }
+
+  _expireCarry(now) {
+    for (let k = this._carryIndex.length - 1; k >= 0; k--) {
+      if (now < this._carryUntil[k]) continue;
+      const dropped = this._carryIndex[k];
+      this._carryIndex.splice(k, 1);
+      this._carryUntil.splice(k, 1);
+      if (this.onTakeDropped) this.onTakeDropped(dropped, DROP_REASON.CARRY_EXPIRED);
+    }
+  }
+
+  _dropAllCarry(reason, report = true) {
+    if (report && this.onTakeDropped) {
+      for (const i of this._carryIndex) this.onTakeDropped(i, reason);
+    }
+    this._carryIndex = [];
+    this._carryUntil = [];
+  }
+
+  _hasNextReady() {
+    return !this._suppressed && (this._findReady() >= 0 || this._carryIndex.length > 0);
   }
 
   _isArmed(takeIndex) { return this._armedIndex.includes(takeIndex); }
@@ -749,7 +835,7 @@ export function createShowRunner(cfg) {
   // onZoneCommitted の中で呼ばれるので、その tick の出力配列へ差し込む。
   let sink = null;
   takes.onTakeDropped = (index, reason) => {
-    if (sink) sink.push(ev('drop', sink.tMs, reason === DROP_REASON.SCREEN_BUSY ? 0 : 1, -1, takeIdOf(c, index)));
+    if (sink) sink.push(ev('drop', sink.tMs, DROP_CODE[reason] ?? 1, -1, takeIdOf(c, index)));
   };
 
   // 通過ライン（人の層）。dt は C# と同じ float 精度の tick 秒。

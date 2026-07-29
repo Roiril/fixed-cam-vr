@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import {
   runScenario, parseScenario, createShowRunner, sampleAt,
   pickZone, containsBox, boxAabb, ZoneProgression, SwitchDirector, LapCounter,
+  CARRY_MAX_WAIT_SEC,
   LineCross, line, lineUndefined, LINE_REARM_MARGIN_M, LINE_MAX_STEP_M,
   TakeRunner, TAKE_ACTION, DROP_REASON,
   DEFAULT_TICK_MS,
@@ -363,4 +364,96 @@ test('createShowRunner: UI 用の観測値が step と整合する（テスト�
   assert.equal(r.lap, 2);
   assert.equal(r.shownCamera, 2);
   assert.deepStrictEqual(r.segment, { lap: 2, camera: 2 });
+});
+
+// ---- 演出の連続（2026-07-29）: 持ち越し（wait="chain"）と繋ぎ目 -----------------
+//   C# 側 TakeChainWaitTests と同じケースを両側に置く（drop 系と同じ流儀）。
+
+const chainDef = (lap, camera, over = {}) => ({
+  lap, camera, onExit: false, offsetSec: 0, skipWhenMissed: false, once: true,
+  maxDurationSec: 0, yieldOnZoneChange: false, chainWait: false,
+  stepDurSec: [3], onLine: false, lineIndex: -1, ...over,
+});
+const exitDef = (lap, camera, sec) => ({
+  lap, camera, onExit: true, offsetSec: 0, skipWhenMissed: false, once: true,
+  maxDurationSec: 0, yieldOnZoneChange: false, chainWait: false,
+  stepDurSec: [sec], onLine: false, lineIndex: -1,
+});
+
+// B の離脱時演出（8 秒）が C の滞在（5 秒）を食う状況。
+function chainScenario(chain) {
+  const r = new TakeRunner();
+  r.setDefs([exitDef(1, 1, 8), chainDef(1, 2, { chainWait: chain })]);
+  const dropped = [];
+  r.onTakeDropped = (i, reason) => dropped.push([i, reason]);
+  r.onZoneCommitted(1, 1, false, 0, 0, 0);
+  r.onZoneCommitted(1, 2, true, 1, 1, 5);   // B → C: 離脱時演出が発火
+  r.tick(5.02, 2);
+  r.onZoneCommitted(1, 0, true, 1, 2, 10);  // 8 秒が終わる前に C を出る
+  return { r, dropped };
+}
+
+test('chain: 画面が塞がっていて出られなかった演出は、区間を出ても持ち越して出る', () => {
+  const { r, dropped } = chainScenario(true);
+  assert.equal(r.carryCount, 1);
+  assert.deepStrictEqual(dropped, [], '持ち越したものは捨てていないので報告しない');
+  const end = r.tick(13.1, 0);
+  assert.equal(end.action, TAKE_ACTION.END_TAKE);
+  assert.equal(end.chainNext, true, '次が控えている＝画面を返さない');
+  const d = r.tick(13.12, 0);
+  assert.equal(d.action, TAKE_ACTION.BEGIN_STEP);
+  assert.equal(d.takeIndex, 1);
+});
+
+test('segment（既定）は従来どおり離脱で捨てて報告する', () => {
+  const { r, dropped } = chainScenario(false);
+  assert.equal(r.carryCount, 0);
+  assert.deepStrictEqual(dropped, [[1, DROP_REASON.SCREEN_BUSY]]);
+});
+
+test('chain: 画面が空いていたなら持ち越さない（歩くのが速かっただけ）', () => {
+  const r = new TakeRunner();
+  r.setDefs([chainDef(1, 2, { chainWait: true, offsetSec: 20 })]);
+  r.onZoneCommitted(1, 2, false, 0, 0, 0);
+  r.tick(1, 2);
+  r.onZoneCommitted(1, 0, true, 1, 2, 5);
+  assert.equal(r.carryCount, 0);
+});
+
+test('chain: 持ち越しは寿命で必ず決着し、報告する', () => {
+  const { r, dropped } = chainScenario(true);
+  r.tick(10 + CARRY_MAX_WAIT_SEC + 0.1, 0);
+  assert.equal(r.carryCount, 0);
+  assert.deepStrictEqual(dropped, [[1, DROP_REASON.CARRY_EXPIRED]]);
+});
+
+test('chain: 画面を取り返したら持ち越しも畳んで報告する', () => {
+  const { r, dropped } = chainScenario(true);
+  r.abortActive();
+  assert.equal(r.carryCount, 0);
+  assert.deepStrictEqual(dropped, [[1, DROP_REASON.BLOCKER_GONE]]);
+});
+
+test('連続: 同じ区間の 2 本目へは画面を返さずに渡す', () => {
+  const r = new TakeRunner();
+  r.setDefs([chainDef(1, 0, { stepDurSec: [1] }), chainDef(1, 0, { stepDurSec: [1] })]);
+  r.onZoneCommitted(1, 0, false, 0, 0, 0);
+  assert.equal(r.tick(0.02, 0).takeIndex, 0);
+  const end = r.tick(1.1, 0);
+  assert.equal(end.chainNext, true);
+  assert.equal(r.tick(1.12, 0).takeIndex, 1);
+});
+
+test('yield の打ち切りでも武装の破棄を報告する', () => {
+  const r = new TakeRunner();
+  r.setDefs([
+    chainDef(1, 0, { yieldOnZoneChange: true, stepDurSec: [10] }),
+    chainDef(1, 0, { offsetSec: 5 }),
+  ]);
+  const dropped = [];
+  r.onTakeDropped = (i, reason) => dropped.push([i, reason]);
+  r.onZoneCommitted(1, 0, false, 0, 0, 0);
+  r.tick(0.02, 0);
+  r.onZoneCommitted(1, 1, true, 1, 0, 1);
+  assert.deepStrictEqual(dropped, [[1, DROP_REASON.SCREEN_BUSY]]);
 });

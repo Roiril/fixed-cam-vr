@@ -29,6 +29,21 @@ namespace FixedCamVr.Streaming
         public string lineId = "";
 
         public string policy = TakeSchema.PolicyHold;       // "hold" | "yield"
+
+        /// <summary>
+        /// 画面が塞がっていて出られなかったときの待ちの寿命。"segment"（既定）| "chain"。
+        ///
+        /// <b>chain = 「自分を塞いでいた演出が終わるまで待つ」</b>。区間を出ても待ち続ける。
+        /// 「前の区間の離脱時演出が 8 秒あって、この区間の滞在が 5 秒しかない」ときに、
+        /// 著作した演出が黙って消えるのを防ぐためのもの。
+        ///
+        /// 持ち越すのは**因果がはっきりしている場合だけ** — 離脱の瞬間に実際に別の演出（かライブ卓）が
+        /// 画面を持っていて、かつ開始条件は既に満たしていた（Ready だった）演出に限る。
+        /// 「歩くのが速くて時刻に届かなかった」ものは持ち越さない（それは ifMissed の担当）。
+        /// at=exit には指定できない（離脱時の演出を別の区間で出すと文脈が最も壊れる）。
+        /// </summary>
+        public string wait = TakeSchema.WaitSegment;
+
         public bool once = true;                            // ラン内 1 回
         public float maxDurationSec;                        // watchdog。0 / 未指定 = コード既定 45
 
@@ -41,6 +56,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public ShowBgmDef? bgm;
         public bool hasBgm;                 // present-flag（宣言 bool が正。TimelinePresentFlags 参照）
+
+        /// <summary>「自分を塞いでいた演出が終わるまで、区間を出ても待つ」か。at=exit では常に false。</summary>
+        public bool IsChainWait => !IsExit && TakeSchema.IsChainWait(wait);
 
         public bool IsExit => TakeSchema.IsExit(at);
         /// <summary>開始規則が「このラインを通過したら」か（<see cref="lineId"/> の線分を横切ったら発火）。</summary>
@@ -124,6 +142,20 @@ namespace FixedCamVr.Streaming
 
         public const string PolicyHold = "hold";
         public const string PolicyYield = "yield";
+
+        /// <summary>待ちは自分の区間まで（既定・従来の挙動）。</summary>
+        public const string WaitSegment = "segment";
+        /// <summary>自分を塞いでいた演出が終わるまで、区間を出ても待つ。</summary>
+        public const string WaitChain = "chain";
+
+        /// <summary>wait 判別子を正規化する。未知は <see cref="WaitSegment"/> へ倒し known=false。</summary>
+        public static string NormalizeWait(string? w, out bool known)
+        {
+            known = w == WaitSegment || w == WaitChain;
+            return known ? w! : WaitSegment;
+        }
+
+        public static bool IsChainWait(string? w) => w == WaitChain;
 
         public const string SourceLive = "live";
         public const string SourceInherit = "inherit";
