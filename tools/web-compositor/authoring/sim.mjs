@@ -53,10 +53,13 @@ export function simulate(state, opts = {}) {
   const trace = [];
   for (let tMs = walk.samples[0].tMs; tMs <= endMs; tMs += tick) {
     const p = sampleAt(walk.samples, tMs);
-    for (const e of runner.step(tMs, p.x, p.z)) trace.push(e);
+    const out = runner.step(tMs, p.x, p.z);
+    // 横断の判定は step の**中の先頭**（人の層）で起きる。トレースでも演出の発火より前に置く
+    //（「ラインで出たのか、取り逃して離脱時に出たのか」を読み違えないため）。
     runner.lineStates.forEach((st, i) => {
       if (st.crossed) trace.push({ kind: 'line', t: tMs, a: i, b: -1, id: '', flag: false });
     });
+    for (const e of out) trace.push(e);
   }
   return { cfg, meta, walk, trace };
 }

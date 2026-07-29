@@ -21,7 +21,11 @@ const val = (f, d) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : d;
 };
 
-const dwellSec = Number(val("--dwell", "7.5"));
+const dwellSec = Number(val('--dwell', '7.5'));
+if (!Number.isFinite(dwellSec) || dwellSec <= 0) {
+  console.error(`--dwell の値が数値ではありません: ${val('--dwell', '')}`);
+  process.exit(2);
+}
 const doApply = has('--apply');
 
 const { state, from } = await getState();
@@ -118,8 +122,37 @@ if (fatal && !has('--force')) {
 }
 const backup = backupShow();
 console.log(`\n退避: ${backup}`);
+
+// ⚠ ここまでの `state` は読んだ時点のスナップショット。書くまでの間に discovery が
+// `cameras[].host` を更新したり、卓が世代カウンタ（runEpoch / takeAbortEpoch / glitchEpoch）を
+// 進めたりしうる。それを古い値で送り返すと**戻し自体が中止・乱れ・ラン終了を発火させる**
+//（世代カウンタは「値の変化」で伝わるため）。直前に読み直して、自分が変えるものだけを重ねる。
+const { state: fresh } = await getState(DEFAULT_BASE);
+if (fresh.rev !== state.rev) console.log(`（読み込み後に卓が rev ${state.rev} → ${fresh.rev} へ動いたので、最新へ重ねます）`);
+
+const freshCams = fresh.cameras || [];
+const camerasNow = freshCams.map((c) => {
+  const pose = CAMERA_POSES[c.id];
+  if (!pose || c.pose || (c.calib && c.calib.fxPx > 1)) return c;
+  return { ...c, pose: { ...pose } };
+});
+const cuesNow = (fresh.cues || []).slice();
+for (const c of REQUIRED_CUES) if (!cuesNow.some((x) => x.id === c.id)) cuesNow.push({ ...c });
+const controlNow = { ...(fresh.control || {}), switchGlitch: SWITCH_GLITCH };
+
+// 変えるものは変えると言う（record.laps を狭める等は黙ってやらない）。
+const diff = (name, before, after) => {
+  if (JSON.stringify(before) === JSON.stringify(after)) return;
+  console.log(`  ${name}: ${JSON.stringify(before ?? null)} → ${JSON.stringify(after)}`);
+};
+console.log('変更:');
+diff('run', fresh.run, next.run);
+diff('record', fresh.record, next.record);
+diff('control.switchGlitch', (fresh.control || {}).switchGlitch, SWITCH_GLITCH);
+console.log(`  timeline: ${((fresh.timeline || {}).segments || []).length} 区間 → ${timeline.segments.length} 区間（作り直し）`);
+
 const res = await patchState({
-  cameras: next.cameras, cues: next.cues, timeline: next.timeline,
-  control: next.control, run: next.run, record: next.record,
+  cameras: camerasNow, cues: cuesNow, timeline: next.timeline,
+  control: controlNow, run: next.run, record: next.record,
 }, DEFAULT_BASE);
 console.log(`書き込み完了: rev ${res.rev}（${DEFAULT_BASE}）`);

@@ -54,6 +54,13 @@ export function buildWalk({
   const centroids = zoneCentroids(layout);
   const route = (order || []).filter((c) => centroids.has(c));
   if (route.length < 2) throw new Error('コース（layout.course.order）が 2 区間未満です');
+  // 塗られていないカメラを黙って落とすと、周回カウンタ（order の全要素で進む）だけが進まなくなり、
+  // 「2・3 周目の演出が全部出ない」という無関係に見える結果になる。ここで止めて原因を言う。
+  if (route.length !== (order || []).length) {
+    const missing = (order || []).filter((c) => !centroids.has(c));
+    throw new Error(`コースにあるカメラ ${missing.join(', ')} のゾーンが塗られていません`
+      + '（フロアマップの 🖌 塗る で塗るか、周回コースから外してください）');
+  }
 
   const r = Math.max(0.2, floorHalf(layout) - 0.15);
   const stand = new Map(route.map((cam) => [cam, toRing(centroids.get(cam), r, centroids.get(cam))]));

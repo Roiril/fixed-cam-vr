@@ -18,10 +18,14 @@ import { ROOT } from './show-api.mjs';
 
 const LOCAL_DIRS = ['masks', 'captures', 'recordings', 'testassets', 'audio', 'static-inputs'];
 
-/** ローカル URL（/testassets/... 等）が実ファイルとして在るか。外部 URL は判定対象外。 */
+/**
+ * ローカル URL（/testassets/... 等）が実ファイルとして在るか。外部 URL は判定対象外。
+ * 卓は cue 保存時に各セグメントを percent-encode する（common.js の encPath）ので、必ず戻してから探す。
+ */
 function localAssetMissing(url) {
   if (!url || !url.startsWith('/')) return false;
-  const rel = url.split('?')[0].replace(/^\//, '');
+  let rel = url.split('?')[0].replace(/^\//, '');
+  try { rel = decodeURIComponent(rel); } catch { /* 壊れた % 列はそのまま探す */ }
   const top = rel.split('/')[0];
   if (!LOCAL_DIRS.includes(top)) return false;
   return !fs.existsSync(path.join(ROOT, rel));
@@ -99,8 +103,11 @@ export function checkShow(state, opts = {}) {
           ? s.camera : seg.camera;
         total += s.durKind === TAKE.DUR_SEC ? Math.max(0, s.durSec) : dwellSec;
 
-        if ((s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC) && s.camera >= cams.length) {
-          err(`${sLabel}: カメラ index ${s.camera} は存在しません（このカットは飛ばされます）`);
+        // 実機（TakeRunner.BeginStep）は camera<0 の live / rec カットを**画面に触らず飛ばす**。
+        // 既定値が -1 なので「カメラを選び忘れた」形がそのまま通ってしまう。
+        if ((s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC)
+          && (!Number.isInteger(s.camera) || s.camera < 0 || s.camera >= cams.length)) {
+          err(`${sLabel}: 映すカメラが決まっていません（camera=${s.camera}。このカットは飛ばされます）`);
         }
 
         // 重ねる素材（cue）。マスクはそのカメラの構図に焼かれているので、別カメラの cue は合わない。

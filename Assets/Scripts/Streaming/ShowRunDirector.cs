@@ -126,10 +126,18 @@ namespace FixedCamVr.Streaming
             bool takeRunning = timelineDirector != null && !string.IsNullOrEmpty(timelineDirector.ActiveTakeId);
 
             ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning);
+
+            // ⚠ ゲートは**イベントを配る前に**合わせる。RunBegan の処理は
+            // BeginMainRun → LapCounter.ResetRun → SeedCurrentZone → CueScheduler.NotifyCameraEntered
+            // を通る。ここが後だと、その進入が**まだ閉じているゲートに捨てられる**。
+            // 周回は進行ポインタ方式なので、捨てられた (lap 1, course.order[0]) は二度と来ない
+            //（次に order[0] へ入る時は lap 2）。結果、**スタート区間だけが 1 周目に録画されず**、
+            // それを背景に使う 3 周目の録画カットが実機で無言で飛ぶ（2026-07-29 監査）。
+            ApplyGate();
+
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             else if (ev == ShowRunEvent.RunFinished) OnRunFinished();
 
-            ApplyGate();
             NotifyPhaseIfChanged();
         }
 

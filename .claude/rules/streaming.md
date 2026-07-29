@@ -474,6 +474,11 @@ show.json トップレベルに `run` を新設。**キーが無くてもコー�
 - 導入・終了の間は [`CueScheduler.SetShowGate(false)`](../../Assets/Scripts/Streaming/CueScheduler.cs) で
   区間進行を下流へ流さない。**演出の武装・端末内録画・区間 post / BGM・実測滞在がまとめて止まる単一の首**
   （下流それぞれに条件を配ると必ず片方を忘れる）。画面のカメラ切替は Director 側なので止まらない。
+  - **⚠ ゲートの適用は必ずイベント配布の前**（2026-07-29 監査で修正）。`RunBegan` の処理は
+    `BeginMainRun` → `LapCounter.ResetRun` → `SeedCurrentZone` → `CueScheduler.NotifyCameraEntered` を通る。
+    旧実装は `ApplyGate()` がこの後にあったため、**本編 1 周目のスタート区間の進入が閉じたゲートに捨てられていた**。
+    周回は進行ポインタ方式で、次に `course.order[0]` へ入る時は lap 2 なので (1, order[0]) は二度と来ない
+    → **スタート区間だけ 1 周目が録画されず**、それを背景に使う 3 周目の録画カットが実機で無言で飛ぶ。
 - 現地の右グリップ長押しは `ShowControlClient.BeginNewVisitorRunLocal()` を通す（卓の ▶ ラン開始と同じ号令元）。
   旧実装は個別に叩いており、実測滞在が前の体験者と混ざる非対称があった。
 - 卓: `/command` の `advanceIntro` / `endRun`（いずれも世代カウンタ）、ラン状態パネルに相・経過・目安、

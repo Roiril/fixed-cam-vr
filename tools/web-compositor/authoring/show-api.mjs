@@ -18,8 +18,12 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const SHOW_FILE = path.join(ROOT, 'show.json');
 
-/** 既定の卓 URL。`SHOW_API=http://127.0.0.1:8099 node ...` で差し替えられる。 */
-export const DEFAULT_BASE = process.env.SHOW_API || 'http://127.0.0.1:8299';
+/**
+ * 既定の卓 URL。`serve.ps1` の既定ポート = 8099。`SHOW_API=... node ...` で差し替えられる。
+ * ⚠ 卓は **1 プロセスだけ**にすること。2 つ立てると各々がメモリ上の show.json を正として
+ * 書き戻すので、古い方が新しい方を黙って巻き戻す（discovery スレッドが勝手に書くので無操作でも起きる）。
+ */
+export const DEFAULT_BASE = process.env.SHOW_API || 'http://127.0.0.1:8099';
 
 async function req(base, url, init, timeoutMs = 8000) {
   const ac = new AbortController();
