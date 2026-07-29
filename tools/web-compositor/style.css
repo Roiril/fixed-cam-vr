@@ -1426,6 +1426,8 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-empty { font-size: 11px; opacity: var(--opacity-mute); }
 
 /* ---- リボン本体 ---- */
+/* 通常は横スクロールを出さない（ribbon.js が一番長い周を枠に収まる倍率へ縮める）。
+   下限まで縮めても収まらない極端なデータのときだけ、保険としてスクロールが出る。 */
 .rb-track-wrap { overflow-x: auto; padding-bottom: 8px; }
 .rb-track { display: flex; flex-direction: column; gap: 12px; min-width: min-content; }
 .rb-lap { display: flex; flex-direction: column; gap: 4px; }
@@ -1453,7 +1455,8 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-badge { font-size: 10px; opacity: .85; }
 .rb-seg-add { padding: 1px 6px; font-size: 10px; opacity: var(--opacity-mute); }
 .rb-seg-add:hover { opacity: 1; }
-/* 進入の演出はこのレーンの中に、進入からの秒数に比例した位置で置かれる（5s ごとの目盛） */
+/* 進入の演出はこのレーンの中に、進入からの秒数に比例した位置で置かれる。
+   5s ごとの目盛はいまの倍率に合わせて ribbon.js が inline で上書きする（ここは等倍時の値） */
 .rb-seg-lane {
   position: relative; min-height: 30px;
   background-image: repeating-linear-gradient(90deg,
