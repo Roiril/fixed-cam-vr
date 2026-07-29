@@ -4,7 +4,7 @@
 //     node authoring/apply.mjs                 … 組み立てて検証と歩き検証を出すだけ（書き込まない）
 //     node authoring/apply.mjs --apply         … 退避コピーを取ってから卓へ書き込む
 //     node authoring/apply.mjs --dwell 6       … 速く歩く人（1 区間 6 秒）で検証する
-//     SHOW_API=http://127.0.0.1:8099 node ...  … 卓のポートを変える（既定 8299）
+//     SHOW_API=http://127.0.0.1:8299 node ...  … 卓のポートを変える（既定 8099）
 //
 //   ⚠ 書き込みは show.json を**丸ごと作り直す**（timeline / run / record / cameras.pose / cues）。
 //     実行のたびに退避コピーを取るが、サーバ側の .bak は 1 世代しかないので当てにしない。
@@ -48,15 +48,22 @@ const cameras = cams.map((c) => {
 
 // 素材: この体験が使う cue は **mawarimi-show.mjs が正**（素材 URL・マスク・フェードごと上書き）。
 // それ以外の cue（卓で作ったもの）は触らない。
-const cues = (state.cues || []).slice();
-const addedCues = [];
-for (const c of REQUIRED_CUES) {
-  const i = cues.findIndex((x) => x.id === c.id);
-  if (i < 0) { cues.push({ ...c }); addedCues.push(`${c.id}（新規）`); continue; }
-  if (JSON.stringify(cues[i]) === JSON.stringify({ ...cues[i], ...c })) continue;
-  cues[i] = { ...cues[i], ...c };
-  addedCues.push(`${c.id}（更新）`);
+// ⚠ 下書き表示と**書き込み直前の再読み込み**の両方で同じ関数を通すこと。
+//    片方だけを upsert にしていたせいで「画面には更新と出るのに書かれていない」を一度作った。
+function mergeCues(existing) {
+  const out = (existing || []).slice();
+  const changed = [];
+  for (const c of REQUIRED_CUES) {
+    const i = out.findIndex((x) => x.id === c.id);
+    if (i < 0) { out.push({ ...c }); changed.push(`${c.id}（新規）`); continue; }
+    const merged = { ...out[i], ...c };
+    if (JSON.stringify(out[i]) === JSON.stringify(merged)) continue;
+    out[i] = merged;
+    changed.push(`${c.id}（更新）`);
+  }
+  return { cues: out, changed };
 }
+const { cues, changed: addedCues } = mergeCues(state.cues);
 
 const timeline = buildTimeline(indexOfCam, (state.timeline && state.timeline.rev) || 0);
 // control は**丸ごと置き換わる**（POST /state はトップレベルの浅い置換）。現場の値
@@ -139,8 +146,7 @@ const camerasNow = freshCams.map((c) => {
   if (!pose || c.pose || (c.calib && c.calib.fxPx > 1)) return c;
   return { ...c, pose: { ...pose } };
 });
-const cuesNow = (fresh.cues || []).slice();
-for (const c of REQUIRED_CUES) if (!cuesNow.some((x) => x.id === c.id)) cuesNow.push({ ...c });
+const { cues: cuesNow, changed: cuesChanged } = mergeCues(fresh.cues);
 const controlNow = { ...(fresh.control || {}), switchGlitch: SWITCH_GLITCH };
 
 // 変えるものは変えると言う（record.laps を狭める等は黙ってやらない）。
@@ -149,6 +155,7 @@ const diff = (name, before, after) => {
   console.log(`  ${name}: ${JSON.stringify(before ?? null)} → ${JSON.stringify(after)}`);
 };
 console.log('変更:');
+if (cuesChanged.length) console.log(`  素材: ${cuesChanged.join(', ')}`);
 diff('run', fresh.run, next.run);
 diff('record', fresh.record, next.record);
 diff('control.switchGlitch', (fresh.control || {}).switchGlitch, SWITCH_GLITCH);
