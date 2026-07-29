@@ -15,6 +15,7 @@ import {
   candidatePoints, wireSegments, pointsFromRefs, lockableFocalPx, hfovFromFocal, calibMatchesSource,
   calibSummaryLines, calibWarnings, calibBadgeText, formatSolvedAt, localIsoNow,
   applyCalibToCameras, clearCalibFromCameras, pointKey, DEFAULT_REG_POINTS, pointQuality, raisedRefCount,
+  wallLooksDefault,
 } from './calib-ui.js';
 
 // ---- (A) 候補点 --------------------------------------------------------------
@@ -369,4 +370,10 @@ test('一直線に近い点・画面の隅に固まった点を、解く前に�
     { x: 0.6, z: -0.6, u: 330, v: 260 }, { x: -0.6, z: -0.6, u: 305, v: 262 },
   ];
   assert.match(pointQuality(clustered, 640, 480, true).issues.join(' '), /画面の中で点が固まって/);
+});
+
+test('壁の座標が既定のままなら、それが分かる（点の打ち方より先に疑う所）', () => {
+  assert.equal(wallLooksDefault(null), true);
+  assert.equal(wallLooksDefault({ wall: { corner: [-0.5, 0.5], endX: [0.5, 0.5], endZ: [-0.5, -0.5] } }), true);
+  assert.equal(wallLooksDefault({ wall: { corner: [-0.62, 0.71], endX: [0.55, 0.71], endZ: [-0.62, -0.4] } }), false);
 });

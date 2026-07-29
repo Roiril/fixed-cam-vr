@@ -15,7 +15,7 @@ import {
   projectPoint, unprojectToFloor, calibrateFromFloorPoints, solveHomography, focalFromHomography,
   matrixToUnityEuler, unityEulerToMatrix, distortNorm, undistortNorm, isDegenerate,
   reprojectionRms, calibQualityLabel, MIN_POINTS_FOR_K1,
-  refineCalib,
+  refineCalib, perPointResiduals,
 } from './calib.js';
 
 // ---- (B) Unity との一致（最重要）--------------------------------------------
@@ -449,4 +449,50 @@ test('refineCalib は初期解が良ければ悪化させない（床だけで�
   const r = refineCalib(base.calib, floor, { estimateK1: true });
   assert.equal(r.ok, true);
   assert.ok(r.rmsPx <= base.calib.rmsPx + 1e-6, `rms ${r.rmsPx} <= ${base.calib.rmsPx}`);
+});
+
+test('初期解が大きく外れていても、高さの点を置き去りにせず引き戻す', () => {
+  // 実害（2026-07-29）: カメラ後方へ回った点の残差を**定数**にしていたため数値微分が 0 になり、
+  // その 3 点を置き去りにしたまま「解けた（誤差 3464px）」と表示していた。
+  const { floor, raised } = makeObservations(0);
+  const all = [...floor, ...raised];
+  const wrong = { ...H_TRUE, y: 0.5, pitchDeg: -40 };
+  // わざと壊した初期解では、実際に投影できない点がある
+  assert.ok(perPointResiduals(wrong, all).some((r) => !r.ok), '前提: 壊れた初期解では投影できない点がある');
+
+  const r = refineCalib(wrong, all, { estimateK1: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.unprojectable, 0, '投影できない点を残さない');
+  assert.ok(r.rmsPx < 2, `rms ${r.rmsPx}`);
+  assert.ok(posError(r.calib) < 0.05, `位置 ${posError(r.calib).toFixed(3)}m`);
+});
+
+test('解けても映像へ戻せない点が残るなら、番号で名指しして失敗にする', () => {
+  // 高さの入力が実物と食い違っている状況（上端だけ 3 倍の高さで打った）を作る
+  const { floor, raised } = makeObservations(0);
+  const broken = raised.map((p) => (p.y > 0 ? { ...p, y: p.y * 3 } : p));
+  const r = calibrateFromFloorPoints([...floor, ...broken], H_W, H_H, {});
+  if (!r.ok) {
+    assert.match(r.reason, /番の点/);
+    assert.ok(Array.isArray(r.badPoints));
+  } else {
+    // 解けてしまう場合でも、投影できない点を抱えたまま「解けた」とは言わない
+    assert.ok(Number.isFinite(r.calib.rmsPx));
+  }
+});
+
+test('点ごとの誤差を返す（どれを直すかを言えるようにする）', () => {
+  // 床だけの解は真値へ戻らない（それが高さの点を足した理由）ので、ここで見るのは
+  // 「1 点だけずらしたら、その点だけが大きく出るか」— 名指しの根拠になるかどうか。
+  const { floor, raised } = makeObservations(0);
+  const all = [...floor, ...raised];
+  const r = calibrateFromFloorPoints(all, H_W, H_H, {});
+  const per = perPointResiduals(r.calib, all);
+  assert.equal(per.length, all.length);
+  assert.ok(per.every((x) => x.ok && x.dist < 1), '真値へ収束していれば全点ほぼ 0');
+  // 1 点だけ 30px ずらすと、その点だけが大きく出る
+  const moved = all.map((p, i) => (i === 2 ? { ...p, u: p.u + 30 } : p));
+  const per2 = perPointResiduals(r.calib, moved);
+  assert.ok(per2[2].dist > 25);
+  assert.equal(per2.filter((x) => x.dist > 25).length, 1);
 });

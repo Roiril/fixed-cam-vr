@@ -21,7 +21,7 @@
 
 import {
   calibrateFromFloorPoints, projectPoint, calibQualityLabel, MIN_POINTS_FOR_K1,
-  hasCollinearTriple, isDegenerate,
+  hasCollinearTriple, isDegenerate, perPointResiduals,
 } from './calib.js';
 import { linesFromLayout, parseGridCells } from './zone-layout.js';
 import { streamBase, camColor, escapeHtml } from './common.js';
@@ -40,6 +40,21 @@ export const DEFAULT_REG_POINTS = [
   { x: -0.5, z: 0.5, label: '' },
   { x: 0.5, z: 0.5, label: '' },
 ];
+
+/**
+ * `layout.wall` が卓の既定値のままか（＝**実物の壁を測っていない**）。
+ *
+ * 既定は 1m × 1m の L で、現場の壁がこの寸法である保証はどこにも無い。
+ * 既定のまま「壁の外角」を打つと、**打った点の座標が実物と違う**ので、いくら丁寧に
+ * クリックしても解が合わない（2026-07-29 ユーザー報告「結構あってると思うのに合わない」）。
+ * これは点の打ち方の問題ではないので、UI が先に言う。
+ */
+export function wallLooksDefault(layout) {
+  const w = layout?.wall;
+  if (!w || !Array.isArray(w.corner) || !Array.isArray(w.endX) || !Array.isArray(w.endZ)) return true;
+  const same = (a, b) => Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
+  return same(w.corner, [-0.5, 0.5]) && same(w.endX, [0.5, 0.5]) && same(w.endZ, [-0.5, -0.5]);
+}
 
 /** 同一点判定のキー（mm 丸め）。course 座標の浮動小数差で重複が漏れるのを防ぐ。 */
 export const pointKey = (x, z) => `${x.toFixed(3)},${z.toFixed(3)}`;
@@ -756,7 +771,13 @@ export function createCalibUi(container, deps) {
       if (calib) {
         const rp = projectPoint(calib, p.x, p.y || 0, p.z);
         if (rp) {
-          ctx.strokeStyle = '#5ad19a'; ctx.lineWidth = 2 * s;
+          // 打った点と「解が言う位置」を結ぶ。これが残差そのもので、長い線＝直すべき点。
+          const far = Math.hypot(rp.u - p.u, rp.v - p.v) > 6 * s;
+          if (far) {
+            ctx.strokeStyle = 'rgba(255,90,90,0.9)'; ctx.lineWidth = 1.5 * s;
+            ctx.beginPath(); ctx.moveTo(p.u, p.v); ctx.lineTo(rp.u, rp.v); ctx.stroke();
+          }
+          ctx.strokeStyle = far ? '#ff5a5a' : '#5ad19a'; ctx.lineWidth = 2 * s;
           ctx.beginPath();
           ctx.moveTo(rp.u - 6 * s, rp.v - 6 * s); ctx.lineTo(rp.u + 6 * s, rp.v + 6 * s);
           ctx.moveTo(rp.u + 6 * s, rp.v - 6 * s); ctx.lineTo(rp.u - 6 * s, rp.v + 6 * s);
@@ -789,6 +810,13 @@ export function createCalibUi(container, deps) {
       return d;
     };
 
+    // 壁の座標が既定のままなら、**点の打ち方より先に**そこを疑わせる。
+    if (wallLooksDefault(layout())) {
+      addLine('⚠ 壁の座標（layout.wall）が卓の既定値（1m × 1m の L）のままです。'
+        + '現場の壁がこの寸法でないなら、「壁の外角」などを打っても座標が実物と違うので合いません。'
+        + 'フロアマップの 🧱 部屋 で実物を測って置くか、床のタイルの角など寸法が確かな点だけで解いてください。',
+      'warn');
+    }
     if (!r && saved) {
       const qy = Number.isFinite(saved.rmsPx) ? calibQualityLabel(saved.rmsPx).text : '誤差の記録なし';
       addLine(`保存済みの較正を表示中 — ${qy}`, 'saved');
@@ -803,6 +831,19 @@ export function createCalibUi(container, deps) {
       const qy = calibQualityLabel(r.calib.rmsPx);
       addLine(`結果: ${qy.text}`, qy.level);
       for (const l of calibSummaryLines(r.calib)) addLine(l, 'sub');
+      // どの点が悪いのかを名指しする。「点を打ち直してください」だけでは、
+      // 9 点のうちどれを直せばいいのか分からない（2026-07-29 ユーザー報告）。
+      const worst = perPointResiduals(r.calib, pts)
+        .map((x, i) => ({ ...x, no: i + 1, up: pts[i].y > 0 }))
+        .sort((a, b) => b.dist - a.dist)
+        .filter((x) => !x.ok || x.dist > Math.max(4, r.calib.rmsPx * 1.8))
+        .slice(0, 3);
+      if (worst.length) {
+        addLine(`ずれの大きい点: ${worst.map((x) => `${x.no}番${x.up ? '（高さ）' : ''} `
+          + `${x.ok ? `${Math.round(x.dist)}px` : '投影できない'}`).join(' / ')}`, 'bad');
+        addLine('その点だけ掴んで直すか、右クリックで消してから解き直してください。'
+          + '高さの点なら「壁の高さ」の値が実物と合っているかも確かめてください。', 'sub');
+      }
       for (const w of calibWarnings(r)) addLine(w, 'warn');
       if (!r.focalLocked && r.calib.fxPx > 1) {
         const b = document.createElement('button');
@@ -820,6 +861,9 @@ export function createCalibUi(container, deps) {
       }
     } else if (r && !r.ok) {
       addLine(`解けません: ${r.reason}`, 'bad');
+      if (Array.isArray(r.badPoints) && r.badPoints.length) {
+        addLine('その番号の点を掴んで直すか、右クリックで消してから解き直してください。', 'sub');
+      }
     } else {
       // 未較正で開いた直後。空箱にすると「何をすれば進むのか」が画面から消える。
       addLine('まだ較正していません。床の点を 4 個以上打って ✨ 解く。', 'sub');

@@ -459,6 +459,7 @@ export function calibrateFromFloorPoints(all, w, h, opts = {}) {
   // 高さの点があるならここで精密化する。**平面の外の拘束が入って初めて**画角・高さ・傾きが
   // まとめて決まる（床だけだと「f を伸ばして遠ざける解」と「縮めて近づける解」が区別できない）。
   let refined = false;
+  let unprojectable = 0;
   if (raised.length > 0) {
     // 比較は**同じ点の集合**で行う。初期解の rms は床の点だけで測ったものなので、
     // そのまま全点の rms と比べると「点が増えたぶん悪化した」を退化と誤判定する。
@@ -467,9 +468,23 @@ export function calibrateFromFloorPoints(all, w, h, opts = {}) {
     if (r.ok && Number.isFinite(r.rmsPx) && (!Number.isFinite(beforeAll) || r.rmsPx <= beforeAll)) {
       best = { calib: r.calib, rms: r.rmsPx };
       refined = true;
+      unprojectable = r.unprojectable || 0;
     } else if (Number.isFinite(beforeAll)) {
       best = { calib: best.calib, rms: beforeAll };   // 精密化しなくても rms は全点で言う
     }
+  }
+
+  // 解けたのに映像へ戻せない点が残るのは、**その点の打ち間違いか高さの入力違い**が濃厚。
+  // 平均に混ぜて「誤差 3464px」と出しても直しようがないので、名指しで返す。
+  if (unprojectable > 0) {
+    const bad = perPointResiduals(best.calib, src)
+      .map((r, i) => ({ ...r, no: i + 1 })).filter((r) => !r.ok).map((r) => r.no);
+    return {
+      ok: false,
+      reason: `${bad.join(', ')} 番の点が、解いた結果では映像の外へ出てしまいます`
+        + '（その点の位置か、高さの入力が実物と違う可能性が高いです）',
+      badPoints: bad,
+    };
   }
 
   // カメラが床下に潜る / 天井を突き抜ける解は物理的にありえない。
@@ -539,7 +554,10 @@ export function isDegenerate(pts) {
 //   卓の中では合っているのに実機で合わない、という最悪の破れ方をする。
 
 const LM_STEPS = { pos: 2e-3, ang: 2e-2, f: 0.4, k1: 2e-4 };   // 数値微分の刻み（単位ごと）
-const LM_BEHIND_PENALTY = 4000;   // カメラ後方へ回った解を弾き返すための残差
+// カメラ後方へ回った点の残差。**定数にしてはいけない** — 定数だと数値微分が 0 になり、
+// 「後ろに回っている」ことを直す勾配が消えて、その点を置き去りにしたまま収束する
+// （実害 2026-07-29: 高さの点 3 つが後方のまま rms 3464px で「解けた」と表示された）。
+const LM_BEHIND_SLOPE = 2000;
 
 /** 較正 → LM のパラメータ配列（free で選んだものだけ）。 */
 function lmPack(c, free) {
@@ -556,16 +574,50 @@ function lmUnpack(c, free, v) {
 const lmStep = (k) => (k === 'f' ? LM_STEPS.f : k === 'k1' ? LM_STEPS.k1
   : (k === 'x' || k === 'y' || k === 'z') ? LM_STEPS.pos : LM_STEPS.ang);
 
-/** 残差ベクトル（点ごとに u,v の 2 本）。カメラ後方は大きな値で弾き返す。 */
+/**
+ * 残差ベクトル（点ごとに 2 本）。**理想（歪み無し）正規化座標**で測る。
+ *
+ * なぜ画素で測らないか: 画素残差は「理想 → 歪んだ」向きの変換（distortNorm）を通るが、
+ * 除算モデルのこの向きは**半径が大きいと解が存在しない**（null）。探索の途中で
+ * 予測が画面外へ飛ぶと残差が定義できず、そこで勾配が死ぬ。観測を歪み無しへ戻す向き
+ * （undistortNorm）は常に定義できるので、そちら側で比べる。単位は f を掛けて画素相当。
+ */
 function lmResiduals(c, obs) {
+  const R = unityEulerToMatrix(-c.pitchDeg, c.yawDeg, c.rollDeg || 0);
+  const f = c.fxPx > 1 ? c.fxPx : 1;
+  const fy = c.fyPx > 1 ? c.fyPx : f;
   const r = new Array(obs.length * 2);
   for (let i = 0; i < obs.length; i++) {
-    const p = projectPoint(c, obs[i].x, obs[i].y || 0, obs[i].z);
-    if (!p) { r[i * 2] = LM_BEHIND_PENALTY; r[i * 2 + 1] = LM_BEHIND_PENALTY; continue; }
-    r[i * 2] = p.u - obs[i].u;
-    r[i * 2 + 1] = p.v - obs[i].v;
+    const o = obs[i];
+    const d = [o.x - c.x, (o.y || 0) - c.y, o.z - c.z];
+    const pz = R[0][2] * d[0] + R[1][2] * d[1] + R[2][2] * d[2];
+    if (!(pz > 1e-3)) {
+      // カメラ後方 / 焦点面上。pz に比例した残差にして「前へ出ろ」という勾配を残す。
+      const push = LM_BEHIND_SLOPE * (1e-3 - pz + 1);
+      r[i * 2] = push; r[i * 2 + 1] = push;
+      continue;
+    }
+    const px = R[0][0] * d[0] + R[1][0] * d[1] + R[2][0] * d[2];
+    const py = R[0][1] * d[0] + R[1][1] * d[1] + R[2][1] * d[2];
+    const [ox, oy] = undistortNorm((o.u - c.cxPx) / f, (c.cyPx - o.v) / fy, c.k1 || 0);
+    r[i * 2] = f * (px / pz - ox);
+    r[i * 2 + 1] = fy * (py / pz - oy);
   }
   return r;
+}
+
+/**
+ * 点ごとの再投影誤差（画素）。**どの点が悪いのかを名指しする**ための関数。
+ * 「点を打ち直してください」だけでは、9 点のうちどれを直せばいいのか分からない。
+ * @returns {{index:number, du:number, dv:number, dist:number, ok:boolean}[]}
+ */
+export function perPointResiduals(calib, pts) {
+  return (pts || []).map((p, index) => {
+    const q = projectPoint(calib, p.x, p.y > 0 ? p.y : 0, p.z);
+    if (!q) return { index, du: NaN, dv: NaN, dist: Infinity, ok: false };
+    const du = q.u - p.u, dv = q.v - p.v;
+    return { index, du, dv, dist: Math.hypot(du, dv), ok: true };
+  });
 }
 const lmCost = (r) => r.reduce((a, v) => a + v * v, 0);
 
@@ -638,8 +690,13 @@ export function refineCalib(calib, obs, opts = {}) {
     if (!improved || lambda > 1e9) break;
   }
 
-  const rms = Math.sqrt(cost / obs.length);
-  return { ok: true, calib: cur, rmsPx: rms, iterations: iter };
+  // 返す rms は**画素で測り直す**（LM の内部残差は理想座標なので、人に見せる数字と混ぜない）。
+  // 投影できない点があるなら、それは平均に混ぜずに件数で言う（3464px のような無意味な数字を出さない）。
+  const per = perPointResiduals(cur, obs);
+  const good = per.filter((r) => r.ok);
+  const rms = good.length
+    ? Math.sqrt(good.reduce((a, r) => a + r.dist * r.dist, 0) / good.length) : Infinity;
+  return { ok: true, calib: cur, rmsPx: rms, iterations: iter, unprojectable: per.length - good.length };
 }
 
 /** 較正の品質を人間の言葉にする（卓の表示用）。 */
