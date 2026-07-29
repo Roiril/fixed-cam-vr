@@ -45,22 +45,13 @@ import {
 const DEFAULT_TRACK_ID = '__default__';
 
 // ---- 描画スケール -----------------------------------------------------------
-// 周回タイムラインは**横スクロールを出さない**（並べて見比べるものなので、隠れた瞬間に
-// 比較できなくなる。2026-07-29 ユーザー指摘）。基準は「1 秒 = PX_BASE px」で、
-// 一番長い周が枠に収まる倍率（scale）へ全体を一律で縮めて描く。
-// 下限（MIN_SCALE）まで縮めても収まらない極端なデータのときだけ、保険で横スクロールが出る。
-const PX_BASE = 11;         // 1 秒あたり px（等倍時。演出ブロックの幅 = 尺に比例）
-const STEP_MIN_BASE = 110;  // カット 1 枚の最小幅（等倍時。「映すもの」が読める下限）
-const STEP_MIN_FLOOR = 54;  // 縮めてもカット 1 枚はこれ以下にしない
-const SEG_MIN_W_BASE = 152;
-const SEG_MIN_W_FLOOR = 96;
-const MIN_SCALE = 0.34;     // これ以上は縮めない
+const PX = 11;          // 1 秒あたり px（演出ブロックの幅 = 尺に比例）
+const STEP_MIN = 110;   // カット 1 枚の最小幅（短い尺でも「映すもの」が読める下限）
 const MAGNET = 22;      // 区間の右境界への吸着幅（px）= 「離脱時」スナップ
 const LANE_PAD = 8;     // 区間ブロック内レーンの左余白（進入 0s の位置）
 const LANE_H = 90;      // 演出 1 段の高さ（CSS .rb-seg-lane > .rb-take の height と一致させること）
 const LANE_GAP = 4;
-const RIB_GAP = 3;      // 区間どうしの隙間（CSS .rb-ribbon の gap と一致させること）
-const RIB_PAD_R = 12;   // CSS .rb-ribbon の padding-right と一致させること
+const SEG_MIN_W = 152;
 
 const SRC_LABEL = {
   [TAKE.SRC_LIVE]: 'ライブカメラ',
@@ -125,13 +116,6 @@ export function createRibbon(container, deps) {
   let cueEditor = null;
   let editorOpen = false;
   let cueEditorTarget = null; // { step } — 新規素材の保存先
-
-  // 描画倍率（横スクロールを出さないために、一番長い周が枠に収まるまで一律で縮める）。
-  let scale = 1;
-  let lastWrapW = 0;
-  const pxPerSec = () => PX_BASE * scale;
-  const stepMinW = () => Math.max(STEP_MIN_BASE * scale, STEP_MIN_FLOOR);
-  const segMinW = () => Math.max(SEG_MIN_W_BASE * scale, SEG_MIN_W_FLOOR);
 
   // ---- undo（スナップショット方式）-------------------------------------------
   const UNDO_MAX = 30;
@@ -302,10 +286,10 @@ export function createRibbon(container, deps) {
     for (const s of t.steps || []) { const d = stepSeconds(s); sec += d.sec; approx = approx || d.approx; }
     return { sec, approx };
   }
-  const stepWidth = (s) => Math.max(stepSeconds(s).sec * pxPerSec(), stepMinW());
+  const stepWidth = (s) => Math.max(stepSeconds(s).sec * PX, STEP_MIN);
   function takeWidth(t) {
     const w = (t.steps || []).reduce((a, s) => a + stepWidth(s), 0);
-    return Math.max(w, stepMinW());
+    return Math.max(w, STEP_MIN);
   }
   const fmtSec = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
   const maxDurOf = (t) => (t.maxDurationSec > 0 ? t.maxDurationSec : TAKE.DEFAULT_MAX_DURATION_SEC);
@@ -510,78 +494,10 @@ export function createRibbon(container, deps) {
   }
 
   // ==========================================================================
-  //  レイアウト（描画と「収まる倍率」の計算で同じ式を使う）
-  // ==========================================================================
-  /** 区間ブロック内の演出の置き場所と、そのブロックの幅を、いまの倍率で解く。 */
-  function segLayout(lap, ci) {
-    const seg = segAt(lap, ci);
-    const enters = ((seg && seg.takes) || []).filter((t) => t.at !== TAKE.AT_EXIT);
-    const sorted = enters.filter((t) => !isLineTake(t))
-      .slice().sort((a, b) => (a.offsetSec || 0) - (b.offsetSec || 0));
-    const items = [];
-    const laneEnds = [];
-    let maxRight = 0;
-    for (const t of sorted) {
-      const left = LANE_PAD + Math.max(0, t.offsetSec || 0) * pxPerSec();
-      const w = takeWidth(t);
-      let row = laneEnds.findIndex((end) => left >= end + 6);
-      if (row < 0) { row = laneEnds.length; laneEnds.push(0); }
-      laneEnds[row] = left + w;
-      items.push({ t, left, top: row * (LANE_H + LANE_GAP) });
-      maxRight = Math.max(maxRight, left + w);
-    }
-    // ライントリガーの演出は**時間軸に乗らない**（いつ通るかは体験者しだい）。
-    // 進入 +t の段の下に、左端揃えで 1 本ずつ置く（位置に意味を持たせない・§4 と同じ理由）。
-    let rowCount = laneEnds.length;
-    for (const t of enters.filter(isLineTake)) {
-      items.push({ t, left: LANE_PAD, top: rowCount * (LANE_H + LANE_GAP) });
-      maxRight = Math.max(maxRight, LANE_PAD + takeWidth(t));
-      rowCount++;
-    }
-    return { items, rows: rowCount, width: Math.max(segMinW(), maxRight + 22) };
-  }
-  /** 一番長い周の横幅（離脱時の演出は区間の外へはみ出す分だけ足す）。 */
-  function maxLapWidth(rs) {
-    let max = 0;
-    for (let lap = 1; lap <= lapCount; lap++) {
-      let w = RIB_PAD_R;
-      rs.forEach((ci, i) => {
-        w += segLayout(lap, ci).width + (i ? RIB_GAP : 0);
-        const seg = segAt(lap, ci);
-        for (const t of (seg && seg.takes) || []) {
-          // 離脱時の演出は margin: 0 -10px で境界へ食い込む（CSS .rb-take.exit と対）
-          if (t.at === TAKE.AT_EXIT) w += Math.max(0, takeWidth(t) - 20) + RIB_GAP;
-        }
-      });
-      max = Math.max(max, w);
-    }
-    return max;
-  }
-  /**
-   * 横スクロールを出さないための倍率。1.0 から下げていき、最初に枠へ収まった値を採る
-   * （幅は最小幅の床があって倍率に対して線形でないので、解かずに走査する）。
-   */
-  function fitScale(rs) {
-    const wrap = q('.rb-track-wrap');
-    const avail = (wrap ? wrap.clientWidth : 0) - 2;
-    if (!(avail > 40)) return scale;      // まだレイアウトされていない（初回描画）
-    lastWrapW = wrap.clientWidth;
-    const prev = scale;
-    let best = MIN_SCALE;
-    for (let s = 1; s >= MIN_SCALE - 1e-6; s -= 0.02) {
-      scale = s;
-      if (maxLapWidth(rs) <= avail) { best = s; break; }
-    }
-    scale = prev;
-    return best;
-  }
-
-  // ==========================================================================
   //  リボン描画
   // ==========================================================================
   function render() {
     const rs = rows();
-    scale = fitScale(rs);
     const schemaEl = q('.rb-schema');
     if (schemaEl) {
       schemaEl.textContent = v2Source ? '古い形式 → 保存で更新' : '演出・カット';
@@ -627,6 +543,7 @@ export function createRibbon(container, deps) {
 
   function renderSeg(lap, ci, bgmSt) {
     const seg = segAt(lap, ci);
+    const enters = ((seg && seg.takes) || []).filter((t) => t.at !== TAKE.AT_EXIT);
     const on = sel && sel.kind === 'seg' && sel.lap === lap && sel.camera === ci;
 
     const el = document.createElement('div');
@@ -656,13 +573,31 @@ export function createRibbon(container, deps) {
 
     // 進入の演出はブロックの中に、進入からの秒数に比例した位置で置く（重なる時は段を分ける）。
     const lane = el.querySelector('.rb-seg-lane');
-    const lay = segLayout(lap, ci);
-    for (const it of lay.items) lane.appendChild(renderTake(it.t, lap, ci, { left: it.left, top: it.top }));
-    lane.style.height = `${Math.max(1, lay.rows) * (LANE_H + LANE_GAP)}px`;
-    // 5 秒ごとの目盛（CSS 側の 55px 固定ではなく、いまの倍率に合わせる）
-    lane.style.backgroundImage = 'repeating-linear-gradient(90deg, '
-      + `rgba(255, 250, 240, .12) 0 1px, transparent 1px ${(5 * pxPerSec()).toFixed(1)}px)`;
-    el.style.minWidth = `${lay.width}px`;
+    const timed = enters.filter((t) => !isLineTake(t));
+    const sorted = timed.slice().sort((a, b) => (a.offsetSec || 0) - (b.offsetSec || 0));
+    const laneEnds = [];
+    let maxRight = 0;
+    for (const t of sorted) {
+      const left = LANE_PAD + Math.max(0, t.offsetSec || 0) * PX;
+      const w = takeWidth(t);
+      let row = laneEnds.findIndex((end) => left >= end + 6);
+      if (row < 0) { row = laneEnds.length; laneEnds.push(0); }
+      laneEnds[row] = left + w;
+      const te = renderTake(t, lap, ci, { left, top: row * (LANE_H + LANE_GAP) });
+      lane.appendChild(te);
+      maxRight = Math.max(maxRight, left + w);
+    }
+    // ライントリガーの演出は**時間軸に乗らない**（いつ通るかは体験者しだい）。
+    // 進入 +t の段の下に、左端揃えで 1 本ずつ置く（位置に意味を持たせない・§4 と同じ理由）。
+    let rows = laneEnds.length;
+    for (const t of enters.filter(isLineTake)) {
+      const te = renderTake(t, lap, ci, { left: LANE_PAD, top: rows * (LANE_H + LANE_GAP) });
+      lane.appendChild(te);
+      maxRight = Math.max(maxRight, LANE_PAD + takeWidth(t));
+      rows++;
+    }
+    lane.style.height = `${Math.max(1, rows) * (LANE_H + LANE_GAP)}px`;
+    el.style.minWidth = `${Math.max(SEG_MIN_W, maxRight + 22)}px`;
 
     const bgmEl = el.querySelector('.rb-seg-bgm');
     if (bgmSt) {
@@ -871,7 +806,7 @@ export function createRibbon(container, deps) {
     if (cx > r.right - MAGNET && !exitTakeOf(lap, cam, dragged)) {
       return { lap, cam, at: TAKE.AT_EXIT, el: segEl };
     }
-    const sec = Math.max(0, Math.round(((cx - r.left - LANE_PAD) / pxPerSec()) * 2) / 2);
+    const sec = Math.max(0, Math.round(((cx - r.left - LANE_PAD) / PX) * 2) / 2);
     return { lap, cam, at: TAKE.AT_ENTER, offsetSec: sec, el: segEl };
   }
   function onDragEnd() {
@@ -1948,18 +1883,6 @@ export function createRibbon(container, deps) {
     else if (!sel) inspectorEl.innerHTML = '';
   }
 
-  // 枠の幅が変わったら倍率を取り直す（タブ切替・ウィンドウ幅・サイドパネルの開閉）。
-  // 変化したときだけ描き直す（描画は枠の幅を変えないので、監視が自分を呼び続けることはない）。
-  let ro = null;
-  const wrapEl = q('.rb-track-wrap');
-  if (wrapEl && typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(() => {
-      const w = wrapEl.clientWidth;
-      if (w > 40 && Math.abs(w - lastWrapW) > 2) render();
-    });
-    ro.observe(wrapEl);
-  }
-
   render();
   renderDirty();
   resetUndo();
@@ -1969,7 +1892,6 @@ export function createRibbon(container, deps) {
     onDwell() { render(); },
     isDirty: () => dirty,
     destroy() {
-      if (ro) ro.disconnect();
       document.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('pointermove', onDragMove);
       window.removeEventListener('pointerup', onDragEnd);
