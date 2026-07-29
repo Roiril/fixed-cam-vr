@@ -1,0 +1,360 @@
+<title>企画書の要求と、いま動いているもの — 廻リ視 / IVRC2026</title>
+<style>
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;
+  --radius: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li {
+  border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4);
+  position: relative; margin: 0;
+}
+.tl > li::before {
+  content: ""; position: absolute; left: -5px; top: .55em;
+  width: 8px; height: 8px; background: var(--accent);
+}
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+td.j { white-space: nowrap; font-weight: 700; }
+td.j-none { white-space: nowrap; font-weight: 700; color: var(--accent-strong); }
+
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+
+<div class="wrap">
+
+<p class="eyebrow">IVRC2026 · 廻リ視（FixedCam）</p>
+<h1>企画書の要求と、いま動いているもの</h1>
+<p class="sub">docs/ivrc-proposal.md ＋ 同 v2 を実装と突き合わせた結果 ／ 2026-07-29</p>
+
+<div class="lead">
+<p>企画書の要求を 33 項目に分けて実装と照合しました。映像を受け取って画面に出すまでは、ほぼ動く形であります。演出を著作する道具も揃っています。</p>
+<p>足りないのは、体験を成立させる条件です。<strong>3 分で終わること、暗転して終わること、始める前に立ち位置を確かめること</strong>は、どれも実装がありません。恐怖の演出として企画書が名指ししたもののうち、<strong>画角外から鳴る音</strong>と、<strong>しゃがみ・振り向き・着座の検知</strong>もコードが 1 行もありません。</p>
+</div>
+
+<h2>読み方</h2>
+
+<p>判定を 2 列に分けました。コードがあるかと、Quest 実機で確かめたかです。この作品はほぼ全機能が実機未検証なので、1 列にまとめると実態より進んで見えます。</p>
+
+<div class="grid">
+  <div class="card"><b>ある</b><span>要求を満たすコードが本番経路にある</span></div>
+  <div class="card"><b>一部</b><span>仕組みはあるが要求の一部だけ／素材や配線が欠けている</span></div>
+  <div class="card"><b>無い</b><span>該当するコードが存在しない</span></div>
+</div>
+
+<p class="muted">実機列の「確認済」は、Quest 3 の実機で動いた記録が残っているものだけに付けています。EditMode テストの通過や、ブラウザでのオペレータ卓の操作確認は「未確認」に含めます。</p>
+
+<h2>映像を届ける</h2>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>企画書が求めたもの</th><th>コード</th><th>実機</th><th>実態</th></tr></thead>
+<tbody>
+<tr><td>スマホ 3 台の MJPEG を Wi-Fi で受け取り、HMD 内のスクリーンに出す</td><td class="j">ある</td><td class="j">確認済</td><td>生ソケットで multipart を解き、最新の 1 枚だけを保持して毎フレーム展開する。Basic 認証にも対応（iPhone 側アプリ用）</td></tr>
+<tr><td>現実の視覚的な手がかりを排除する</td><td class="j">ある</td><td class="j">確認済</td><td>パススルーは有効化するコードもプロジェクト設定も無い。視界は黒地とスクリーンだけになる</td></tr>
+<tr><td>会場回線に依存しない構成。IP が変わっても運用が壊れない</td><td class="j">ある</td><td class="j">一部</td><td>端末に焼いた ID（A/B/C）で対応を持ち、UDP の発見と <code>/info</code> の照合で張り替える。配信側 3 台と PC 卓は実測済み、Quest 側は未確認</td></tr>
+<tr><td>フレーム内の GC アロケーションを排除する</td><td class="j">ある</td><td class="j">未確認</td><td>バッファは所有権を入れ替えて再利用し、ヘッダ解析も文字列を作らずバイト走査で済ませている。実測記録は無い</td></tr>
+<tr><td>3 本を同時に受信し続ける</td><td class="j">ある</td><td class="j">未確認</td><td>4 本（演出用カメラ D を含む）を常時受信し、表示しない分も毎フレーム展開する。間引きや優先度の制御は無い</td></tr>
+<tr><td>MJPEG を<strong>非同期に</strong>デコードする</td><td class="j">一部</td><td class="j">未確認</td><td>非同期なのは受信と解析まで。JPEG の展開（<code>Texture2D.LoadImage</code>）はメインスレッドで同期実行する</td></tr>
+<tr><td><strong>全体遅延 100ms 以内</strong></td><td class="j">一部</td><td class="j">未確認</td><td>測れているのは配信側の fps とフレームの鮮度、受信 fps との比まで。撮影から表示までを測る手段が無く、100ms に対する実測値も記録が無い</td></tr>
+<tr><td><strong>90Hz を維持する</strong></td><td class="j-none">無い</td><td class="j">—</td><td><code>Assets/</code> 全体に <code>targetFrameRate</code> と <code>displayFrequency</code> の記述が 0 件。Quest 3 の既定 72Hz のまま動いている</td></tr>
+<tr><td><strong>導入</strong>：装着後にニュートラルな映像で立ち位置を確認してから、固定カメラ映像へ切り替えて開始する</td><td class="j-none">無い</td><td class="j">—</td><td>起動時の黒フェードから直接カメラ映像へ移る。体験者に開始位置を示す表示も、そこに立ったことの確認も無い</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>映像を加工する</h2>
+
+<p>企画書 2.3 と 5.1 が名指しした 5 つのフィルタを、1 つずつ見ました。</p>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>企画書が求めたもの</th><th>コード</th><th>実機</th><th>実態</th></tr></thead>
+<tbody>
+<tr><td>走査線</td><td class="j">ある</td><td class="j">未確認</td><td>強度と本数を区間ごとに指定できる</td></tr>
+<tr><td>ノイズ（フィルムグレイン）</td><td class="j">ある</td><td class="j">未確認</td><td>量を区間ごとに指定できる。砂嵐は別系統で、配信が切れたときと未受信のカメラにだけ出る（演出としては出せない）</td></tr>
+<tr><td>ビネット</td><td class="j">ある</td><td class="j">未確認</td><td>同上</td></tr>
+<tr><td><strong>色収差</strong></td><td class="j">一部</td><td class="j">—</td><td>オペレータ卓のプレビューには項目があるが、本番の <code>ScreenComposite.shader</code> には式も uniform も無い。<em>卓で見えて実機で出ない</em>状態。独立したシェーダが実験用シーンにだけ残っている</td></tr>
+<tr><td><strong>低解像度化</strong></td><td class="j-none">無い</td><td class="j">—</td><td>該当する項がシェーダに無い。ソースが 640×480 なので結果的に粗いだけで、演出として強弱を付ける手段が無い</td></tr>
+<tr><td>CG 合成（<strong>血痕・落書き・歪んだ人影</strong>）を映像に重ねる</td><td class="j">一部</td><td class="j">未確認</td><td>素材をマスクで貼る経路と、実カメラの姿勢を較正して CG 人形を合成する経路の 2 系統が動く形である。人形（Remy）が「歪んだ人影」に相当する。<strong>血痕と落書きの素材はリポジトリに無い</strong></td></tr>
+<tr><td><strong>90 年代の監視カメラ風 UI</strong>（カメラ番号・タイムスタンプ）</td><td class="j-none">無い</td><td class="j">—</td><td>映像に重なる UI が本番のスクリーンに無い。スタッフ用のステータス表示は別の 3D パネルで、既定は非表示。時刻の表示はどこにも無い</td></tr>
+<tr><td>カメラ切替時の<strong>暗転</strong></td><td class="j">ある</td><td class="j">未確認</td><td>70ms かけて黒へ落とし、切り替えて 100ms で戻す</td></tr>
+<tr><td>カメラ切替時の<strong>ノイズ</strong></td><td class="j-none">無い</td><td class="j">—</td><td>暗転にノイズを重ねる経路が無い。暗転と砂嵐は独立した値で、切替は前者しか書かない</td></tr>
+<tr><td>画面端に「何か」が一瞬映る</td><td class="j">ある</td><td class="j">未確認</td><td>短い尺のカットを 1 本置き、マスクで画面端に限定すれば作れる。専用の素材とプリセットは無く、毎回組む</td></tr>
+<tr><td>演出を Unity を開かずに著作する</td><td class="j">ある</td><td class="j">未確認</td><td>ブラウザのオペレータ卓と show.json が契約になっている。焼き込み・端末キャッシュ・ライブの 3 段で、PC が居ない現地でも動く。卓には実機なしの検証シミュレータもある</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>位置で動かす、体験を進める</h2>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>企画書が求めたもの</th><th>コード</th><th>実機</th><th>実態</th></tr></thead>
+<tbody>
+<tr><td>ゾーンを移動するとカメラが切り替わる</td><td class="j">ある</td><td class="j">未確認</td><td>頭の位置でゾーンを判定し、滞在 0.5 秒で確定して暗転付きで切り替える。ゾーンの形は卓で床タイルを塗って決める</td></tr>
+<tr><td>特定の場所を通ったことを演出のきっかけにする</td><td class="j">ある</td><td class="j">未確認</td><td>床に引いた線を横切ると発火する。線は担当カメラに紐づき、別の領域の線を踏んでも何も起きない</td></tr>
+<tr><td>体験者の入れ替え</td><td class="j">ある</td><td class="j">未確認</td><td>卓の「ラン開始」が周回・発火済み・カメラ固定・演出・素材の束縛をまとめて戻す。PC が居なければ右グリップ 2 秒長押し</td></tr>
+<tr><td><strong>屈む・しゃがむ</strong>を演出のきっかけにする</td><td class="j-none">無い</td><td class="j">—</td><td>頭の高さを演出の判定に使っている箇所が 1 つも無い。ゾーンの箱は高さ 2m を一律に貼るので実質いつも真。線の判定も高さを見ない</td></tr>
+<tr><td><strong>振り向き</strong>を演出のきっかけにする</td><td class="j-none">無い</td><td class="j">—</td><td>頭の向きを読むのは表示物の配置（スクリーン追従・ステータス表示・CG 人形の体の向き）だけ。演出の開始条件は「進入して t 秒」「離脱時」「線の通過」の 3 つのみ</td></tr>
+<tr><td><strong>着座</strong>（シーン 3：椅子に座り正面カメラに大きく映る）</td><td class="j-none">無い</td><td class="j">—</td><td>座位を扱うコードが存在しない。「その区間のカメラが正面を向いている」という設置の問題としてしか表現できない</td></tr>
+<tr><td>線形の 3 シーン（廊下 → 角を曲がる → 部屋）を通す</td><td class="j">一部</td><td class="j">未確認</td><td>進行モデルは「何周目の、どのカメラの区間か」の 2 キー。順路を 3 ゾーンにして 1 周目として書けば、企画書の 3 シーンはそのまま著作できる。ただし進行に前後の向きが無く、終端の概念も無い</td></tr>
+<tr><td><strong>約 3 分で終わる</strong></td><td class="j-none">無い</td><td class="j">—</td><td>体験全体の経過時間を持つ仕組みが無い。時間を持つのは演出 1 本の尺（既定 45 秒の打ち切り）と区間の滞在計測だけ。進行は完全に位置で駆動する</td></tr>
+<tr><td><strong>暗転して終了する</strong></td><td class="j-none">無い</td><td class="j">—</td><td>起動時の黒フェードは起動専用で、解除後に自分を破棄する。終わりを告げる暗転も、終了という状態そのものも無い</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>周回モデルの落とし穴</h3>
+
+<p>順路の最後のゾーンからスタート領域へ戻ると、周回が 2 に上がります。1 周だけの構成で全演出を 1 周目に置いていると、<strong>そこから先はすべての演出が沈黙します</strong>。逆走では上がりません（順路の次のゾーンに一致したときだけ前進するため）。上がるのは最後まで行ってから最初に戻ったときだけです。</p>
+
+<p>迷った体験者、怖くて引き返した体験者ほど、何も起きない画面を見続けることになります。</p>
+
+<h3>スクリーンが頭に追従することについて</h3>
+
+<p>本番シーンのスクリーンは頭に追従する設定です（左右のみ・10° の不感帯・0.3 秒の減衰）。2026-07-19 の計画で、追従することを前提に緩急を設計しています。</p>
+
+<p>映像の中身は固定カメラのままなので、企画書の「振り返ってもカメラは動かないので自分の後頭部しか見えない」は成立します。一方で「<strong>正面の</strong>固定カメラに自分が大きく映る」の「正面」は、スクリーンが常に視界の中央にあると意味を失います。あの位置から見られている、という空間的な参照が消えるためです。追従を切ればワールドに据えられたモニタになります。<em>どちらで行くかを企画書の被観測感と突き合わせた記録は残っていません</em>。</p>
+
+<h2>音</h2>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>企画書が求めたもの</th><th>コード</th><th>実機</th><th>実態</th></tr></thead>
+<tbody>
+<tr><td><strong>空間音響</strong>で画角外から音を鳴らす</td><td class="j-none">無い</td><td class="j">—</td><td>プロジェクト内の AudioSource は 3 つだけで、<em>すべて <code>spatialBlend = 0</code> の 2D 再生</em>。定位の指定も spatializer の使用も 1 箇所も無い</td></tr>
+<tr><td>環境音（通気口・ハム音・遠くの足音）</td><td class="j">一部</td><td class="j">未確認</td><td>再生器は BGM の 1 レーンのみ。音源は <code>HorrBGM.mp3</code> の 1 本だけで、環境音の素材が無い。卓で URL 音源を足せば BGM として流せるが、曲と重ねられない</td></tr>
+<tr><td>移動・着座・振り向きに応じた効果音</td><td class="j">一部</td><td class="j">—</td><td>カメラ切替音の枠だけがある。<strong>クリップが未設定で現状は無音</strong>。着座・振り向きに反応する音は、検知そのものが無い</td></tr>
+<tr><td>音を Unity を開かずに著作する</td><td class="j">一部</td><td class="j">未確認</td><td>卓が扱えるのは BGM だけ。区間ごと・演出ごとに曲の切替・停止・ループ範囲・音量を指定できる。効果音と音の 3D 配置を著作する面は無い</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>現地で運用する</h2>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>企画書が求めたもの</th><th>コード</th><th>実機</th><th>実態</th></tr></thead>
+<tbody>
+<tr><td>オペレータが体験の進行を外から見る</td><td class="j">ある</td><td class="j">未確認</td><td>Quest が heartbeat で体験者の位置・居るゾーン・走行中の演出・区間ごとの実測滞在を卓へ送る。卓のフロアマップに体験者のドットが出る。体験者が見ている合成後の画そのものは映らない</td></tr>
+<tr><td>設営 3 時間以内（カメラ設置・較正・ゾーン調整）</td><td class="j">ある</td><td class="j">一部</td><td>較正は卓で実映像の床点をクリックして解き、ワイヤーを重ねて目で確かめる。ゾーンは床タイルを塗るだけ。現地の位置合わせは HMD 内で基準点を数点タッチして約 10 秒。所要時間の実測は無い</td></tr>
+<tr><td>トラブルの切り分け</td><td class="j">ある</td><td class="j">一部</td><td>卓の疎通診断が「PC からカメラ」「発見ビーコン」「Quest の heartbeat」の 3 経路を出す。ビーコンが通ってHTTP が通らなければ AP の分離設定と即断できる</td></tr>
+<tr><td>1.8m × 1.8m に収まる</td><td class="j">ある</td><td class="j">未確認</td><td>床の既定が 1.8×1.8 でタイルは 0.15m。ただし show.json が無いときの静的なゾーンは ±1.35m（2.7m 四方相当）で値が食い違う</td></tr>
+<tr><td>1 体験 3 分・5 分回転の時間管理</td><td class="j-none">無い</td><td class="j">—</td><td>残り時間も経過時間も、体験側にも卓側にも無い</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>埋まっている場所と、空いている場所</h2>
+
+<p>偏りには理由があります。7 月の 215 コミットは、ほぼすべてが<strong>演出を作れるようにすること</strong>に向いていました。オペレータ卓、show.json の契約、演出とカット、通過ライン、CG 人形と較正、実機なしの検証シミュレータ。</p>
+
+<p>道具は揃いました。残っているのは 2 つです。ひとつは道具で作られる中身（血痕・落書きの素材、環境音、効果音、演出の本番データ）。もうひとつは、体験を体験として成立させる外側の枠です。始まりと終わり、時間、姿勢。これらは道具の問題ではないので、演出面をいくら磨いても埋まりません。</p>
+
+<h2>重い順に並べたギャップ</h2>
+
+<ol>
+<li><strong>体験が終わらない</strong> — 進行が完全に位置で駆動し、時間による前進も終端もありません。動かない体験者、固まる体験者、引き返す体験者に出口がない。しかも順路の最後からスタートへ戻ると周回が上がり、以後の演出が全部沈黙します。展示では必ず起きる動きです</li>
+<li><strong>90Hz を要求していない</strong> — 企画書が技術的チャレンジとして名指しした数値に対し、設定するコードが 1 行もなく既定の 72Hz で動いています。共有設定に触る変更なので、同居アプリへの影響を見てから行う必要があります</li>
+<li><strong>空間音響がゼロ</strong> — 「見えない方向から音がする」は企画書の恐怖設計の柱のひとつです。実装が無く、著作する面も無い</li>
+<li><strong>姿勢が読めない</strong> — シーン 2 の「屈む・覗き込む」とシーン 3 の「着座」を発火条件にできません。「覗き込む位置に踏み込む」は通過ラインで代替できますが、しゃがむこと自体は取れません</li>
+<li><strong>監視カメラ風 UI が無い</strong> — カメラ番号とタイムスタンプは、90 年代の見た目を一目で伝える記号です。映像の説得力に直結します</li>
+<li><strong>色収差が卓と実機で食い違う</strong> — 卓のプレビューで見えているものが実機で出ません。オーサリングの信頼を損なう種類の乖離です</li>
+<li><strong>遅延を測る手段が無い</strong> — 100ms 目標に対して、撮影から表示までを測る方法がありません。現在測れているのは受信側の指標だけです</li>
+<li><strong>導入の欠落</strong> — 立ち位置を確認させてから始める流れがありません。開始位置に居ない状態で始まると、スタート領域の演出が出ないまま進みます</li>
+<li><strong>ほぼ全機能が実機未検証</strong> — 上の 8 項目を埋めても、Quest で通しで動かした記録が無い状態は変わりません</li>
+</ol>
+
+<h2>企画書の側が古くなった記述</h2>
+
+<p>実装が先に進んで、企画書の記述が追いついていない箇所があります。提出前に直す対象です。</p>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>企画書の記述</th><th>実際</th></tr></thead>
+<tbody>
+<tr><td>映像入力は DroidCam / IP Webcam</td><td>Android は自作の fixed-cam-streamer が標準。DroidCam はフォールバック。iPhone は IP Camera Lite。<code>/info</code> と <code>/health</code> で品質と同一性を監視する</td></tr>
+<tr><td>Shader Graph によるリアルタイムフィルタ</td><td>手書きの HLSL 1 パス（<code>ScreenComposite.shader</code>）。オペレータ卓のプレビューと数式・順序を一致させる規約がある</td></tr>
+<tr><td>CG 合成は Quad/Plane + α ブレンド</td><td>実カメラの姿勢・画角・レンズ歪みを実映像から解いた較正に基づくピンホール投影。影・接地影・遮蔽を含む。企画書の記述より進んでいる</td></tr>
+<tr><td>カメラ 3 台</td><td>4 台目（演出専用カメラ D）が入っている。ゾーンには割り当てず、演出のカットからだけ映る</td></tr>
+<tr><td>ネットワークは「モバイルルーターによる閉じたローカル AP」とだけ</td><td>IP 変動に対する仕組み（端末内在 ID + UDP 発見 + 自動張り替え）が実装されている。技術的な工夫として書ける内容</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>企画書のスケジュールとの照合</h2>
+
+<ul class="tl">
+<li><span class="date">2026 年 4 月 — プロト</span><span class="headline">単一カメラの MJPEG 表示・基本フィルタ</span>
+<p class="muted">到達済み。</p></li>
+<li><span class="date">2026 年 6 月 — α版</span><span class="headline">複数カメラ切替・位置トラッキング連動・基本シナリオ動作</span>
+<p class="muted">カメラ切替と位置連動は到達。基本シナリオの通し動作は未到達（終端が無いため通しにならない）。</p></li>
+<li><span class="date">2026 年 7 月 — β版</span><span class="headline">CG 合成・サウンド・全シーン通し動作、外部テスター 3 名以上で検証</span>
+<p class="muted">CG 合成は到達（企画書の想定を超える精度）。サウンドは BGM のみ。全シーン通し動作と外部テスター検証は未着手。<strong>今日が 7 月 29 日</strong>。</p></li>
+<li><span class="date">2026 年 8 月 — 完成</span><span class="headline">設営手順確立、回転率検証、ビデオプレビュー素材撮影</span>
+<p class="muted">設営手順は道具が揃っている。回転率の検証には体験の終端が要る。</p></li>
+</ul>
+
+<h2>この調査のやり方</h2>
+
+<p>企画書 2 本から要求を 33 項目に分け、5 つの視点で並列に実装を調べました（映像の取り込み / 映像の演出 / 位置と進行 / 音と運用 / 体験構造の設計批評）。「実装されている」の判定にはすべてファイルと行番号の根拠を求め、主要な指摘は自分で grep して裏を取っています。</p>
+
+<p>裏取りしたのは次の 4 点です。<code>Assets/</code> 全体に <code>targetFrameRate</code> と <code>displayFrequency</code> が 0 件であること。<code>ScreenComposite.shader</code> にビネット・グレイン・走査線があり色収差とピクセル化が無いこと。AudioSource が 3 つですべて 2D であること。姿勢・着座・ラン経過時間のコードが存在しないこと。</p>
+
+<p class="note">コードは変更していません。この文書は突き合わせの結果だけを述べています。／ 廻リ視（<code>Assets/Scripts/</code>・<code>FixedCamVr.*</code>）のみを対象とし、同居する別アプリは調査範囲に入れていません。</p>
+
+</div>
