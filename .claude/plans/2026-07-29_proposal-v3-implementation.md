@@ -1,7 +1,7 @@
 # 企画書（学会論文版・2026-07-29）の要求を実装する
 
-正本：`C:\Users\kouga\Downloads\PR0490_1.pdf`（第31回日本VR学会大会論文集・「廻リ視：固定視点を用いた実世界ホラー体験」）。
-旧 `docs/ivrc-proposal.md` / `docs/ivrc-proposal-v2.md` からは体験構成が入れ替わっている。**要求の正はこの論文版**。
+正本：**[docs/proposal/](../../docs/proposal/)**（第31回日本VR学会大会論文集・「廻リ視：固定視点を用いた実世界ホラー体験」）。
+**企画書はこの 1 本だけ**。旧版は `docs/archive/` へ廃止マーク付きで移した（体験構成が別物なので参照しない）。
 
 前提となる現状把握：[reports/2026-07-29_proposal-vs-implementation.html](../../reports/2026-07-29_proposal-vs-implementation.html)（旧企画書との突き合わせ）と、
 本作業で取り直した 7 視点の実装調査。

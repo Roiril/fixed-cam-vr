@@ -215,6 +215,8 @@ adb -s <serial> install -r --no-streaming Builds\tableduo.apk
 
 | ファイル | 内容 |
 |---|---|
+| **[docs/proposal/](docs/proposal/)** | **企画書（唯一の正）**。体験の要求はすべてここが根拠 |
+| [docs/archive/](docs/archive/) | 廃止した資料（旧版の企画書）。**参照しない** |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 配信不通 / HMD 真っ黒 / FPS 低下 / 実機検証で得た知見 |
 | [docs/onsite-checklist.md](docs/onsite-checklist.md) | 現場での 60 秒チェック → 切り分けフロー |
 | [docs/table-duo/](docs/table-duo/) | TableDuo の要件・調査設計・実施プロトコル・同意書・手バリアント設計 |

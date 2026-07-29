@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [proposal_single_source.md](proposal_single_source.md) - 企画書の正は docs/proposal/ の 1 本だけ。docs/archive/ の旧版は体験構成が別物なので読まない（新旧の要求対応表つき）
+
 - [take_continuity.md](take_continuity.md) - 演出の待ち・連続・継ぎ目：持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が所有する／相乗り分岐にテストが無い
 - [show_run_skeleton.md](show_run_skeleton.md) - 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／凍結を増やさない
 - [glitch_and_latency.md](glitch_and_latency.md) - 乱れ演出と遅延計測：_Glitch と _SignalLost は別系統／post は 4 箇所同時に直す／絶対 E2E は測っていない（配信側に /clock が要る）
