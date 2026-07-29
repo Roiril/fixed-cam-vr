@@ -332,6 +332,12 @@ const K1_MIN = -0.45, K1_MAX = 0.45, K1_STEP = 0.01;
  */
 export const MIN_POINTS_FOR_K1 = 6;
 
+/**
+ * 高さの点（壁の縦エッジの上端）がこれだけあれば、床の点が少なくても k1 を推定してよい。
+ * 平面 1 枚の縮退は「平面から出た点」で解ける — 縦エッジ 2 本で f と k1 が分離する。
+ */
+export const MIN_RAISED_FOR_K1 = 2;
+
 /** k1 探索で許す焦点距離の変動幅（k1=0 の解に対する比）。これを超える解は縮退とみなして捨てる。 */
 const K1_FOCAL_TOLERANCE = 0.3;
 
@@ -376,7 +382,9 @@ function buildCalib(pts, w, h, k1, fixedFocalPx = 0) {
 export function reprojectionRms(calib, pts) {
   let sum = 0;
   for (const p of pts) {
-    const q = projectPoint(calib, p.x, 0, p.z);
+    // y は床の点なら 0、壁の縦エッジの上端ならその高さ。ここで 0 に潰すと
+    // **高さの点の残差が常に巨大になり**、精密化した解ほど「悪い」と判定される。
+    const q = projectPoint(calib, p.x, p.y > 0 ? p.y : 0, p.z);
     if (!q) return Number.POSITIVE_INFINITY;
     sum += (q.u - p.u) ** 2 + (q.v - p.v) ** 2;
   }
@@ -398,8 +406,13 @@ export function reprojectionRms(calib, pts) {
  * @param {{lensId?:string, solvedAtIso?:string, estimateK1?:boolean, fixedFocalPx?:number}} [opts]
  * @returns {{ok:true, calib:object, k1Estimated:boolean, focalLocked:boolean}|{ok:false, reason:string}}
  */
-export function calibrateFromFloorPoints(pts, w, h, opts = {}) {
-  if (!Array.isArray(pts) || pts.length < 4) {
+export function calibrateFromFloorPoints(all, w, h, opts = {}) {
+  // 高さの点（壁の縦エッジの上端・y>0）は**平面の外**なので、ホモグラフィには入れられない。
+  // 床の点で初期解を作り、最後に全点で LM 精密化する（refineCalib）。
+  const src = Array.isArray(all) ? all : [];
+  const pts = src.filter((p) => !(p.y > 0.01));
+  const raised = src.filter((p) => p.y > 0.01);
+  if (pts.length < 4) {
     return { ok: false, reason: '床の点が足りません（4 点以上）' };
   }
   if (!(w > 1) || !(h > 1)) return { ok: false, reason: '映像の実寸が分かりません' };
@@ -426,8 +439,9 @@ export function calibrateFromFloorPoints(pts, w, h, opts = {}) {
   // 画面の端で必ずずれ、それが姿勢誤差と区別できなくなる（＝ワイヤー重畳での検証が成立しない）。
   // f を固定していれば k1 との縮退が起きないので点数を問わない。
   // f も推定するときは点が少ないと縮退するので、そのときは歪み無しのまま置く。
+  // 高さの点が 2 本以上あれば平面の縮退が解けるので、床の点が少なくても k1 を推定してよい。
   const estimateK1 = opts.estimateK1 !== false
-    && (fixedF > 0 || pts.length >= MIN_POINTS_FOR_K1);
+    && (fixedF > 0 || pts.length >= MIN_POINTS_FOR_K1 || raised.length >= MIN_RAISED_FOR_K1);
   if (estimateK1) {
     const steps = Math.round((K1_MAX - K1_MIN) / K1_STEP) + 1;
     for (let i = 0; i < steps; i++) {
@@ -442,6 +456,22 @@ export function calibrateFromFloorPoints(pts, w, h, opts = {}) {
     }
   }
 
+  // 高さの点があるならここで精密化する。**平面の外の拘束が入って初めて**画角・高さ・傾きが
+  // まとめて決まる（床だけだと「f を伸ばして遠ざける解」と「縮めて近づける解」が区別できない）。
+  let refined = false;
+  if (raised.length > 0) {
+    // 比較は**同じ点の集合**で行う。初期解の rms は床の点だけで測ったものなので、
+    // そのまま全点の rms と比べると「点が増えたぶん悪化した」を退化と誤判定する。
+    const beforeAll = reprojectionRms(best.calib, src);
+    const r = refineCalib(best.calib, src, { fixedFocalPx: fixedF, estimateK1 });
+    if (r.ok && Number.isFinite(r.rmsPx) && (!Number.isFinite(beforeAll) || r.rmsPx <= beforeAll)) {
+      best = { calib: r.calib, rms: r.rmsPx };
+      refined = true;
+    } else if (Number.isFinite(beforeAll)) {
+      best = { calib: best.calib, rms: beforeAll };   // 精密化しなくても rms は全点で言う
+    }
+  }
+
   // カメラが床下に潜る / 天井を突き抜ける解は物理的にありえない。
   if (!(best.calib.y > 0.05) || best.calib.y > 5) {
     return { ok: false, reason: `カメラの高さが ${best.calib.y.toFixed(2)}m と出ました（点の対応が入れ違っている可能性）` };
@@ -449,6 +479,9 @@ export function calibrateFromFloorPoints(pts, w, h, opts = {}) {
 
   return {
     ok: true,
+    // 高さの点で精密化したか（卓が「床だけ / 高さも使った」を出し分ける）。
+    refined,
+    raisedCount: raised.length,
     // 歪みを推定できたか。false なら卓が「点を増やせば歪みも直せる」と案内する。
     k1Estimated: estimateK1 && best.calib.k1 !== 0,
     // 焦点距離を固定して解いたか。false（＝推定した）なら位置は数十 cm ずれうるので、
@@ -458,9 +491,10 @@ export function calibrateFromFloorPoints(pts, w, h, opts = {}) {
       ...best.calib,
       lensId: opts.lensId || '',
       rmsPx: best.rms,
-      pointCount: pts.length,
+      pointCount: src.length,
       solvedAtIso: opts.solvedAtIso || '',
-      refs: pts.map((p) => ({ u: p.u / w, v: p.v / h, x: p.x, z: p.z, y: 0 })),
+      // refs は**高さの点も含めて**残す（次回は「ずれた点だけ直して解き直す」が現場の通常運転）。
+      refs: src.map((p) => ({ u: p.u / w, v: p.v / h, x: p.x, z: p.z, y: p.y > 0 ? p.y : 0 })),
     },
   };
 }
@@ -489,6 +523,123 @@ export function isDegenerate(pts) {
         if (area > maxArea) maxArea = area;
       }
   return maxArea < 0.02;   // 0.02 m^2 = 20cm 四方の三角形すら作れない
+}
+
+// ---- 高さの点を使った精密化（LM）----------------------------------------------
+//
+//   **床の点だけでは足りない**（ユーザー報告 2026-07-29「床だけじゃ精度に不安が残る／うまくいかない」）。
+//   理由は幾何にある: 1 枚の平面だけを見ていると、
+//     ・焦点距離を伸ばして遠ざける解と、縮めて近づける解が、床の上ではほとんど同じ絵になる
+//     ・歪み k1 も「像を広げる／縮める」効果なので f と縮退する（MIN_POINTS_FOR_K1 の注記）
+//   壁の縦エッジ（床の角と、その真上 h[m] の点）を入れると**平面から出た拘束**が入り、
+//   この縮退が原理的に解ける。3 本も入れれば画角・高さ・傾きがまとめて決まる。
+//
+//   やり方は「ホモグラフィで初期解 → 全点（床 + 高さ）で Levenberg–Marquardt」。
+//   **順投影は projectPoint をそのまま使う**（＝ Unity / シェーダと同じ式）。ここで別式を書くと、
+//   卓の中では合っているのに実機で合わない、という最悪の破れ方をする。
+
+const LM_STEPS = { pos: 2e-3, ang: 2e-2, f: 0.4, k1: 2e-4 };   // 数値微分の刻み（単位ごと）
+const LM_BEHIND_PENALTY = 4000;   // カメラ後方へ回った解を弾き返すための残差
+
+/** 較正 → LM のパラメータ配列（free で選んだものだけ）。 */
+function lmPack(c, free) {
+  const all = { x: c.x, y: c.y, z: c.z, yawDeg: c.yawDeg, pitchDeg: c.pitchDeg, rollDeg: c.rollDeg || 0, f: c.fxPx, k1: c.k1 || 0 };
+  return free.map((k) => all[k]);
+}
+function lmUnpack(c, free, v) {
+  const out = { ...c };
+  free.forEach((k, i) => {
+    if (k === 'f') { out.fxPx = v[i]; out.fyPx = v[i]; } else out[k] = v[i];
+  });
+  return out;
+}
+const lmStep = (k) => (k === 'f' ? LM_STEPS.f : k === 'k1' ? LM_STEPS.k1
+  : (k === 'x' || k === 'y' || k === 'z') ? LM_STEPS.pos : LM_STEPS.ang);
+
+/** 残差ベクトル（点ごとに u,v の 2 本）。カメラ後方は大きな値で弾き返す。 */
+function lmResiduals(c, obs) {
+  const r = new Array(obs.length * 2);
+  for (let i = 0; i < obs.length; i++) {
+    const p = projectPoint(c, obs[i].x, obs[i].y || 0, obs[i].z);
+    if (!p) { r[i * 2] = LM_BEHIND_PENALTY; r[i * 2 + 1] = LM_BEHIND_PENALTY; continue; }
+    r[i * 2] = p.u - obs[i].u;
+    r[i * 2 + 1] = p.v - obs[i].v;
+  }
+  return r;
+}
+const lmCost = (r) => r.reduce((a, v) => a + v * v, 0);
+
+/**
+ * 3D 対応点で較正を精密化する。**床の点だけのときも呼んでよい**（悪化しない）。
+ *
+ * @param {object} calib 初期解（ホモグラフィの結果）
+ * @param {{x:number,y:number,z:number,u:number,v:number}[]} obs 対応点（y は床なら 0、壁の上端なら高さ）
+ * @param {{fixedFocalPx?:number, estimateK1?:boolean, maxIter?:number}} [opts]
+ * @returns {{ok:boolean, calib:object, rmsPx:number, iterations:number}}
+ */
+export function refineCalib(calib, obs, opts = {}) {
+  if (!calib || !Array.isArray(obs) || obs.length < 4) {
+    return { ok: false, calib, rmsPx: NaN, iterations: 0 };
+  }
+  const free = ['x', 'y', 'z', 'yawDeg', 'pitchDeg', 'rollDeg'];
+  if (!(opts.fixedFocalPx > 1)) free.push('f');
+  if (opts.estimateK1) free.push('k1');
+
+  let cur = { ...calib };
+  let v = lmPack(cur, free);
+  let res = lmResiduals(cur, obs);
+  let cost = lmCost(res);
+  let lambda = 1e-3;
+  const n = free.length;
+  const maxIter = opts.maxIter > 0 ? opts.maxIter : 80;
+  let iter = 0;
+
+  for (; iter < maxIter; iter++) {
+    // 数値ヤコビアン（前進差分）。パラメータは 8 個までなので素直に作ってよい。
+    const J = [];
+    for (let k = 0; k < n; k++) {
+      const step = lmStep(free[k]);
+      const vv = v.slice();
+      vv[k] += step;
+      const rk = lmResiduals(lmUnpack(cur, free, vv), obs);
+      J.push(rk.map((val, i) => (val - res[i]) / step));
+    }
+    // 正規方程式 (JtJ + λI) δ = -Jt r
+    const JtJ = Array.from({ length: n }, (_, a) => Array.from({ length: n }, (_, b) => {
+      let s = 0;
+      for (let i = 0; i < res.length; i++) s += J[a][i] * J[b][i];
+      return s;
+    }));
+    const Jtr = Array.from({ length: n }, (_, a) => {
+      let s = 0;
+      for (let i = 0; i < res.length; i++) s += J[a][i] * res[i];
+      return -s;
+    });
+
+    let improved = false;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const A = JtJ.map((row, a) => row.map((val, b) => (a === b ? val * (1 + lambda) : val)));
+      const delta = solveLinear(A, Jtr);
+      if (!delta || delta.some((d) => !Number.isFinite(d))) { lambda *= 10; continue; }
+      const vNext = v.map((val, i) => val + delta[i]);
+      const cNext = lmUnpack(cur, free, vNext);
+      // 物理的にありえない解へ落ちるのを止める（床下・天井裏・負の焦点距離）。
+      if (!(cNext.y > 0.05) || cNext.y > 5 || !(cNext.fxPx > 20)) { lambda *= 10; continue; }
+      const rNext = lmResiduals(cNext, obs);
+      const costNext = lmCost(rNext);
+      if (costNext < cost) {
+        cur = cNext; v = vNext; res = rNext; cost = costNext;
+        lambda = Math.max(1e-9, lambda / 3);
+        improved = true;
+        break;
+      }
+      lambda *= 10;
+    }
+    if (!improved || lambda > 1e9) break;
+  }
+
+  const rms = Math.sqrt(cost / obs.length);
+  return { ok: true, calib: cur, rmsPx: rms, iterations: iter };
 }
 
 /** 較正の品質を人間の言葉にする（卓の表示用）。 */

@@ -184,7 +184,9 @@ export function pointsFromRefs(refs, w, h) {
   const out = [];
   for (const r of refs) {
     if (!r || ![r.u, r.v, r.x, r.z].every(Number.isFinite)) continue;
-    out.push({ x: r.x, z: r.z, u: r.u * w, v: r.v * h });
+    // y は「床の点なら 0 / 壁の縦エッジの上端ならその高さ」。復元しないと、次に解いた時に
+    // 高さの拘束が黙って消える（＝前回より精度が落ちるのに理由が分からない）。
+    out.push({ x: r.x, z: r.z, y: Number.isFinite(r.y) && r.y > 0 ? r.y : 0, u: r.u * w, v: r.v * h });
   }
   return out;
 }
@@ -227,8 +229,14 @@ export function calibSummaryLines(calib) {
   return [
     `カメラ位置 (${calib.x.toFixed(2)}, ${calib.z.toFixed(2)}) 高さ ${calib.y.toFixed(2)}m`,
     `水平画角 ${hfov.toFixed(1)}° / 俯角 ${calib.pitchDeg.toFixed(1)}°（下向きが負） / 傾き ${(calib.rollDeg || 0).toFixed(1)}°`,
-    `歪み k1 ${k1 >= 0 ? '+' : ''}${k1.toFixed(2)} / 焦点距離 ${Math.round(calib.fxPx)}px / 点 ${calib.pointCount || 0} 個`,
+    `歪み k1 ${k1 >= 0 ? '+' : ''}${k1.toFixed(2)} / 焦点距離 ${Math.round(calib.fxPx)}px / 点 ${calib.pointCount || 0} 個`
+      + (raisedRefCount(calib) ? `（うち高さ ${raisedRefCount(calib)} 点）` : ''),
   ];
+}
+
+/** 保存された対応点のうち、床から浮いている（壁の縦エッジの上端）点の数。 */
+export function raisedRefCount(calib) {
+  return (calib && Array.isArray(calib.refs) ? calib.refs : []).filter((r) => r && r.y > 0.01).length;
 }
 
 /**
@@ -246,6 +254,13 @@ export function calibWarnings(result) {
   if (!result.k1Estimated && n < MIN_POINTS_FOR_K1) {
     out.push(`⚠ 点が ${n} 個なのでレンズ歪みは推定していません（${MIN_POINTS_FOR_K1} 個以上、`
       + 'または画角を固定すれば歪みも解きます）。広角レンズだと画面の端でワイヤーがずれます。');
+  }
+  // 高さの点は「あると良い」ではなく、**無いと画角と距離が原理的に分離しない**（実測で桁が変わる）。
+  const raised = result.raisedCount ?? raisedRefCount(result.calib);
+  if (!result.focalLocked && raised < 2) {
+    out.push(`⚠ 高さの点が ${raised} 本です。床の点だけだと「画角を広げて近づける解」と`
+      + '「狭めて遠ざける解」がほとんど同じ絵になります（実測: 誤差 7cm → 高さ 3 本で 1cm）。'
+      + '壁の縦エッジを 2〜3 本足してください。');
   }
   return out;
 }
@@ -397,6 +412,16 @@ export function createCalibUi(container, deps) {
             <label>Z<input class="cu-mz" type="number" step="0.05" placeholder="0.00"></label>
             <button class="cu-madd" title="course 座標が分かっている点を候補に足す（テープを増やした時など）">＋ 座標を足す</button>
           </div>
+          <!-- 高さの点。床だけでは画角と距離が縮退するので、縦エッジを入れて平面の外から拘束する -->
+          <div class="cu-heightbox">
+            <div class="cu-heightrow">
+              <button class="cu-addtop" title="いま打った点の真上（壁の上端）を次のクリックで打つ">▲ 高さの点を足す</button>
+              <label>壁の高さ<input class="cu-height" type="number" step="0.05" min="0.1" value="1.80">m</label>
+            </div>
+            <div class="cu-heighthint">床の点だけだと<b>画角と距離が区別できません</b>（同じ絵になる解が無数にある）。
+              壁の縦エッジを 2〜3 本入れると、画角・高さ・傾きがまとめて決まります。
+              打ち方は「床の角を打つ → ▲ を押す → <b>同じ角の真上（壁の上端）</b>をクリック」。</div>
+          </div>
           <div class="cu-quality"></div>
           <label class="chk cu-locklbl"><input class="cu-lock" type="checkbox"> <span class="cu-locktext"></span></label>
           <div class="cu-lockhint"></div>
@@ -425,6 +450,7 @@ export function createCalibUi(container, deps) {
   const msgEl = q('.cu-msg'), resultEl = q('.cu-result'), ptListEl = q('.cu-ptlist');
   const saveBtn = q('.cu-save'), discardBtn = q('.cu-discard');
   const mapCanvas = q('.cu-map'), mapCtx = mapCanvas.getContext('2d');
+  const heightInput = q('.cu-height'), addTopBtn = q('.cu-addtop');
   const mapAddChk = q('.cu-mapadd'), markLabelInput = q('.cu-marklabel'), qualityEl = q('.cu-quality');
 
   // 状態
@@ -438,7 +464,17 @@ export function createCalibUi(container, deps) {
   let lockedFocalPx = 0;
   let dragIdx = -1;
   let msgTimer = 0;
+  // 「次のクリックはこの床点の真上（高さ wallHeight）」という予約。null なら通常の床点。
+  let topFor = null;
 
+  /**
+   * 壁の高さ（m）。**高さの点の y** と **検証ワイヤーの壁の高さ**の両方に効く単一の値。
+   * 分けて持つと「打った上端」と「重ねた線」が違う高さになり、ずれの原因が分からなくなる。
+   */
+  const wallHeight = () => {
+    const v = parseFloat(heightInput.value);
+    return Number.isFinite(v) && v > 0.05 ? v : 1.8;
+  };
   const cameras = () => deps.getCameras() || [];
   const camOf = (id) => cameras().find((c) => c.id === id) || null;
   const layout = () => deps.getLayout() || null;
@@ -537,7 +573,8 @@ export function createCalibUi(container, deps) {
     const lay = layout();
     const view = sketchView(lay, mapCanvas, 12);
     drawFloorSketch(mapCtx, lay, view, {
-      points: pts.map((p) => ({ x: p.x, z: p.z, done: true })),
+      // 地図は床の図なので、高さの点（同じ床位置の上端）は重ねて描かない。
+      points: pts.filter((p) => !(p.y > 0)).map((p) => ({ x: p.x, z: p.z, done: true })),
       marks: allCandidates().map((c) => ({ x: c.x, z: c.z, key: c.key, kind: c.kind })),
       activeKey: candSel.value,
       cameras: cameras().map((c, i) => ({ index: i, id: c.id, pose: camPose(c) }))
@@ -591,14 +628,43 @@ export function createCalibUi(container, deps) {
   /** 「打つ点」が変わった時（地図・セレクトの両方から呼ぶ）。 */
   function afterCandidateChanged() { drawMap(); renderQuality(); }
 
+  // ---- 高さの点（壁の縦エッジ）------------------------------------------------
+  function syncTopUi() {
+    addTopBtn.classList.toggle('armed', !!topFor);
+    addTopBtn.textContent = topFor ? '▲ 上端をクリック（Esc で取消）' : '▲ 高さの点を足す';
+  }
+  /** 直近に打った床の点の真上を、次のクリックで打てるようにする。 */
+  function armTop() {
+    // 上端をぶら下げられるのは**床の点**だけ（上端の上端は無い）。
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      if (p.y > 0) continue;
+      // 同じ床位置に既に上端があるなら二度打たせない（同じ拘束が重複しても精度は上がらない）。
+      if (pts.some((q) => q.y > 0 && Math.abs(q.x - p.x) < 1e-6 && Math.abs(q.z - p.z) < 1e-6)) continue;
+      topFor = { x: p.x, z: p.z, h: wallHeight(), label: p.label || `(${p.x.toFixed(2)}, ${p.z.toFixed(2)})` };
+      syncTopUi();
+      note(`${topFor.label} の真上（高さ ${topFor.h.toFixed(2)}m）を映像でクリックしてください`, 'ok');
+      return;
+    }
+    note('先に床の点を打ってください（その真上が高さの点になります）', 'err');
+  }
+
   // ---- 点の質（解く前に言う）--------------------------------------------------
   function renderQuality() {
     const qy = pointQuality(pts, frame?.w || 0, frame?.h || 0, lockChk.checked && lockedFocalPx > 0);
-    const head = `点 ${qy.n} 個 / ${qy.ready ? '解けます' : `${qy.need} 点まであと ${Math.max(0, qy.need - qy.n)}`}`;
+    const raised = pts.filter((p) => p.y > 0).length;
+    const head = `床 ${qy.n - raised} 点 + 高さ ${raised} 点 / `
+      + `${qy.ready ? '解けます' : `${qy.need} 点まであと ${Math.max(0, qy.need - qy.n)}`}`;
     const detail = qy.n >= 2
       ? `　床の広がり ${qy.floorSpread.toFixed(2)}m ・ 画面の広がり ${Math.round(qy.imgSpread * 100)}%` : '';
+    const tips = qy.issues.slice();
+    if (raised < 2) {
+      tips.push(raised === 0
+        ? '高さの点がありません（壁の縦エッジを 2〜3 本入れると画角と距離の縮退が解けます）'
+        : '高さの点が 1 本だけです（もう 1 本入れると画角が決まります）');
+    }
     qualityEl.innerHTML = `<b>${escapeHtml(head)}</b><span class="cu-qdetail">${escapeHtml(detail)}</span>`
-      + (qy.issues.length ? `<ul>${qy.issues.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>` : '');
+      + (tips.length ? `<ul>${tips.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>` : '');
     qualityEl.className = 'cu-quality' + (qy.ready ? ' ok' : '');
   }
 
@@ -615,7 +681,9 @@ export function createCalibUi(container, deps) {
     pts.forEach((p, i) => {
       const chip = document.createElement('span');
       chip.className = 'cu-pt';
-      chip.innerHTML = `<b>${i + 1}</b> ${escapeHtml(p.label || '')} (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`;
+      chip.className = 'cu-pt' + (p.y > 0 ? ' up' : '');
+      chip.innerHTML = `<b>${i + 1}</b> ${p.y > 0 ? '▲ ' : ''}${escapeHtml(p.label || '')} `
+        + `(${p.x.toFixed(2)}, ${p.z.toFixed(2)}${p.y > 0 ? `, 高さ ${p.y.toFixed(2)}m` : ''})`;
       const del = document.createElement('button');
       del.textContent = '✕';
       del.title = 'この点を消す';
@@ -653,7 +721,7 @@ export function createCalibUi(container, deps) {
     const calib = calibMatchesSource(c0, frame.w, frame.h) ? c0 : null;
 
     if (calib) {
-      for (const seg of wireSegments(layout())) {
+      for (const seg of wireSegments(layout(), { wallH: wallHeight() })) {
         const a = projectPoint(calib, seg.a[0], seg.a[1], seg.a[2]);
         const b = projectPoint(calib, seg.b[0], seg.b[1], seg.b[2]);
         // 片端がカメラ後方なら描かない。無理に伸ばすと画面外へ暴れて「較正が壊れた」ように見える。
@@ -668,14 +736,25 @@ export function createCalibUi(container, deps) {
     // 打った点（○ + 番号）と、解が言う位置（✕）。この 2 つのズレが残差そのもの。
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `bold ${11 * s}px system-ui, sans-serif`;
+    // 高さの点は「同じ床位置の点」と線で結ぶ。縦エッジが実物の柱・壁の角に重なっているかは、
+    // この線が実際の縦の稜線に乗っているかで一目で分かる（打ち間違いの最有力な検出手段）。
+    ctx.strokeStyle = 'rgba(120,220,255,0.85)';
+    ctx.lineWidth = 2 * s;
+    pts.forEach((p) => {
+      if (!(p.y > 0)) return;
+      const base = pts.find((q) => !(q.y > 0) && Math.abs(q.x - p.x) < 1e-6 && Math.abs(q.z - p.z) < 1e-6);
+      if (!base) return;
+      ctx.beginPath(); ctx.moveTo(base.u, base.v); ctx.lineTo(p.u, p.v); ctx.stroke();
+    });
     pts.forEach((p, i) => {
+      const up = p.y > 0;
       ctx.beginPath(); ctx.arc(p.u, p.v, 9 * s, 0, Math.PI * 2);
       // 塗ってから縁取る（逆にすると半透明の塗りが縁を食って番号が読みにくくなる）
       ctx.fillStyle = 'rgba(20,24,32,0.75)'; ctx.fill();
-      ctx.strokeStyle = '#ffdead'; ctx.lineWidth = 2 * s; ctx.stroke();
-      ctx.fillStyle = '#ffdead'; ctx.fillText(String(i + 1), p.u, p.v + 0.5 * s);
+      ctx.strokeStyle = up ? '#78dcff' : '#ffdead'; ctx.lineWidth = 2 * s; ctx.stroke();
+      ctx.fillStyle = up ? '#78dcff' : '#ffdead'; ctx.fillText(String(i + 1), p.u, p.v + 0.5 * s);
       if (calib) {
-        const rp = projectPoint(calib, p.x, 0, p.z);
+        const rp = projectPoint(calib, p.x, p.y || 0, p.z);
         if (rp) {
           ctx.strokeStyle = '#5ad19a'; ctx.lineWidth = 2 * s;
           ctx.beginPath();
@@ -752,7 +831,9 @@ export function createCalibUi(container, deps) {
 
   function solve() {
     if (!frame) return note('映像がありません（🔄 フレームを取り直す）', 'err');
-    if (pts.length < 4) return note(`点が ${pts.length} 個です（4 点以上必要）`, 'err');
+    // 床の点が 4 つ要る（高さの点は平面の外なのでホモグラフィには入らない）。
+    const floorCount = pts.filter((p) => !(p.y > 0)).length;
+    if (floorCount < 4) return note(`床の点が ${floorCount} 個です（4 点以上必要）`, 'err');
     solved = calibrateFromFloorPoints(pts, frame.w, frame.h, {
       lensId,
       solvedAtIso: localIsoNow(),
@@ -812,9 +893,16 @@ export function createCalibUi(container, deps) {
       canvas.setPointerCapture(ev.pointerId);
       return;
     }
+    if (topFor) {
+      pts.push({ x: topFor.x, z: topFor.z, y: topFor.h, u: t.u, v: t.v, label: `${topFor.label} の上端` });
+      topFor = null;
+      syncTopUi();
+      afterPointsChanged();
+      return;
+    }
     const cand = selectedCandidate();
     if (!cand) return note('打つ点を選んでください（候補が無ければ座標を手入力）', 'err');
-    pts.push({ x: cand.x, z: cand.z, u: t.u, v: t.v, label: cand.label });
+    pts.push({ x: cand.x, z: cand.z, y: 0, u: t.u, v: t.v, label: cand.label });
     afterPointsChanged();
   });
   canvas.addEventListener('pointermove', (ev) => {
@@ -856,6 +944,8 @@ export function createCalibUi(container, deps) {
       ? '（クリックした場所に印を置きます）' : '（点をクリックすると「打つ点」が切り替わります）';
   };
   q('.cu-markdel').onclick = () => deleteSelectedMark();
+  addTopBtn.onclick = () => { if (topFor) { topFor = null; syncTopUi(); note('', ''); } else armTop(); };
+  heightInput.onchange = () => { if (topFor) topFor.h = wallHeight(); draw(); };
   q('.cu-madd').onclick = () => {
     const x = parseFloat(q('.cu-mx').value), z = parseFloat(q('.cu-mz').value);
     if (!Number.isFinite(x) || !Number.isFinite(z)) return note('X と Z を入れてください', 'err');
@@ -864,7 +954,12 @@ export function createCalibUi(container, deps) {
     renderCandidates(key);
     note(`候補に (${x.toFixed(2)}, ${z.toFixed(2)}) を足しました`, 'ok');
   };
-  const onKey = (ev) => { if (ev.key === 'Escape' && root.style.display !== 'none') close(); };
+  const onKey = (ev) => {
+    if (ev.key !== 'Escape' || root.style.display === 'none') return;
+    // 上端の予約中は「予約の取消」を先に食わせる（間違えて閉じると打った点が消える）。
+    if (topFor) { topFor = null; syncTopUi(); note('高さの点をやめました', ''); return; }
+    close();
+  };
 
   function open(id) {
     camId = id;
@@ -883,6 +978,8 @@ export function createCalibUi(container, deps) {
     document.addEventListener('keydown', onKey);
     mapAddChk.checked = false;
     mapAddChk.onchange();
+    topFor = null;
+    syncTopUi();
     syncFrameInfo(); syncLockUi(); renderCandidates(); renderPointList(); renderResult();
     renderQuality(); drawMap(); draw();
     note('', '');

@@ -55,6 +55,16 @@
     .cu-maprow .cu-marklabel { flex: 1; min-width: 0; font-size: 11px; padding: 2px 4px; }
     .cu-maprow button { padding: 2px 6px; font-size: 11px; }
     .cu-maphint { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.5; }
+    /* 高さの点（壁の縦エッジ）。床だけでは解けない縮退をここで解く */
+    .cu-heightbox { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--line-soft); }
+    .cu-heightrow { display: flex; align-items: center; gap: 8px; }
+    .cu-heightrow button { padding: 3px 9px; font-size: 11px; }
+    .cu-heightrow button.armed { border-color: #78dcff; color: #78dcff; }
+    .cu-heightrow label { display: flex; align-items: center; gap: 3px; font-size: 11px; opacity: var(--opacity-sub); }
+    .cu-heightrow input { width: 62px; font-size: 11px; padding: 2px 4px; }
+    .cu-heighthint { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.5; }
+    .cu-pt.up { border-color: #78dcff; }
+    .cu-pt.up b { color: #78dcff; }
     .cu-quality { font-size: 11px; padding: 6px 8px; border: 1px solid var(--line-soft); line-height: 1.5; }
     .cu-quality.ok { border-color: color-mix(in srgb, var(--accent-color) 45%, transparent); }
     .cu-quality .cu-qdetail { opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }

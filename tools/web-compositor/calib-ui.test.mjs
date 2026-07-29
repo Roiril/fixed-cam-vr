@@ -14,7 +14,7 @@ import { calibrateFromFloorPoints, projectPoint } from './calib.js';
 import {
   candidatePoints, wireSegments, pointsFromRefs, lockableFocalPx, hfovFromFocal, calibMatchesSource,
   calibSummaryLines, calibWarnings, calibBadgeText, formatSolvedAt, localIsoNow,
-  applyCalibToCameras, clearCalibFromCameras, pointKey, DEFAULT_REG_POINTS, pointQuality,
+  applyCalibToCameras, clearCalibFromCameras, pointKey, DEFAULT_REG_POINTS, pointQuality, raisedRefCount,
 } from './calib-ui.js';
 
 // ---- (A) 候補点 --------------------------------------------------------------
@@ -142,12 +142,20 @@ test('ワイヤーは実際に映像へ投影できる（較正 → projectPoint
 test('保存済み refs（正規化 uv）は解像度が変わっても画素へ戻せる', () => {
   const refs = [{ u: 0.25, v: 0.5, x: -0.5, z: 0.5, y: 0 }, { u: 0.75, v: 0.5, x: 0.5, z: 0.5, y: 0 }];
   assert.deepEqual(pointsFromRefs(refs, 640, 480), [
-    { x: -0.5, z: 0.5, u: 160, v: 240 },
-    { x: 0.5, z: 0.5, u: 480, v: 240 },
+    { x: -0.5, z: 0.5, y: 0, u: 160, v: 240 },
+    { x: 0.5, z: 0.5, y: 0, u: 480, v: 240 },
   ]);
-  assert.deepEqual(pointsFromRefs(refs, 1280, 720)[0], { x: -0.5, z: 0.5, u: 320, v: 360 });
+  assert.deepEqual(pointsFromRefs(refs, 1280, 720)[0], { x: -0.5, z: 0.5, y: 0, u: 320, v: 360 });
   assert.deepEqual(pointsFromRefs(null, 640, 480), []);
   assert.deepEqual(pointsFromRefs([{ u: 0.1 }], 640, 480), []);   // 壊れた要素は落とす
+});
+
+test('高さの点（refs の y>0）は復元しても高さを保つ', () => {
+  // 復元で y が落ちると、次に解いた時に**平面の外の拘束が黙って消える**（精度が戻る理由が分からなくなる）
+  const refs = [{ u: 0.5, v: 0.2, x: -0.5, z: 0.5, y: 1.8 }, { u: 0.5, v: 0.7, x: -0.5, z: 0.5, y: 0 }];
+  const pts = pointsFromRefs(refs, 640, 480);
+  assert.equal(pts[0].y, 1.8);
+  assert.equal(pts[1].y, 0);
 });
 
 test('画角の固定は同じ解像度のときだけ許す（px 焦点距離は解像度に従属する）', () => {
@@ -191,10 +199,28 @@ test('結果の本文は位置・高さ・水平画角・俯角・歪みを人�
 });
 
 test('画角を推定したときは「位置が数十 cm ずれうる」と必ず言う', () => {
-  const warn = calibWarnings({ ok: true, focalLocked: false, k1Estimated: true, calib: { pointCount: 8 } });
+  // 高さの点を 2 本入れてある解（raisedCount: 2）は、画角の警告だけが出る
+  const warn = calibWarnings({ ok: true, focalLocked: false, k1Estimated: true, raisedCount: 2, calib: { pointCount: 8 } });
   assert.equal(warn.length, 1);
   assert.match(warn[0], /画角も推定/);
   assert.deepEqual(calibWarnings({ ok: true, focalLocked: true, k1Estimated: true, calib: { pointCount: 8 } }), []);
+});
+
+test('高さの点が足りないまま画角も推定しているときは、両方言う', () => {
+  // 床だけで解いた場合。**画角と距離が分離しない**ことを実測値つきで言う
+  const warn = calibWarnings({ ok: true, focalLocked: false, k1Estimated: true, raisedCount: 0, calib: { pointCount: 8 } });
+  assert.equal(warn.length, 2);
+  assert.match(warn[1], /高さの点が 0 本/);
+  // 画角を固定してあるなら、高さの点が無くても縮退は起きない（余計な警告を出さない）
+  assert.deepEqual(
+    calibWarnings({ ok: true, focalLocked: true, k1Estimated: true, raisedCount: 0, calib: { pointCount: 8 } }), [],
+  );
+});
+
+test('保存済みの解からも高さの点の本数を数える（refs の y>0）', () => {
+  const calib = { refs: [{ y: 0 }, { y: 1.8 }, { y: 1.8 }, {}] };
+  assert.equal(raisedRefCount(calib), 2);
+  assert.equal(raisedRefCount(null), 0);
 });
 
 test('点が足りず歪みを推定していないときも黙らない', () => {

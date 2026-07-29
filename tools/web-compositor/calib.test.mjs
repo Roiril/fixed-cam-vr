@@ -15,6 +15,7 @@ import {
   projectPoint, unprojectToFloor, calibrateFromFloorPoints, solveHomography, focalFromHomography,
   matrixToUnityEuler, unityEulerToMatrix, distortNorm, undistortNorm, isDegenerate,
   reprojectionRms, calibQualityLabel, MIN_POINTS_FOR_K1,
+  refineCalib,
 } from './calib.js';
 
 // ---- (B) Unity との一致（最重要）--------------------------------------------
@@ -348,4 +349,104 @@ test('床以外の高さの平面にも落とせる（planeY）', () => {
 test('較正が無ければ null（原点を返して黙って置かない）', () => {
   assert.equal(unprojectToFloor(null, 100, 100), null);
   assert.equal(unprojectToFloor({ fxPx: 0 }, 100, 100), null);
+});
+
+
+// ---- 高さの点（壁の縦エッジ）--------------------------------------------------
+//
+//   ユーザー報告（2026-07-29）「床だけじゃ解く精度に不安が残る。というかうまくいかない」。
+//   幾何的にそのとおりで、平面 1 枚だけ見ていると「f を伸ばして遠ざける解」と
+//   「縮めて近づける解」が床の上ではほとんど同じ絵になる（k1 も同じ効き方をするので巻き込む）。
+//   壁の縦エッジ（床の角と、その真上 h[m]）を入れると平面の外から拘束が入って縮退が解ける。
+//   **ここは「入れたら本当に良くなる」ことを数値で固定するテスト**（体感や見た目では判定しない）。
+
+const H_TRUE = {
+  fxPx: 430, fyPx: 430, cxPx: 320, cyPx: 240, k1: 0.18,
+  x: -1.4, y: 1.35, z: 1.4, yawDeg: 135, pitchDeg: -20, rollDeg: 0,
+};
+const H_W = 640, H_H = 480, WALL_H = 1.0;
+
+// 決定的な擬似乱数（毎回同じ「クリックのぶれ」を再現する）
+function makeNoise(seed0) {
+  let seed = seed0;
+  return (px) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return ((seed / 0x7fffffff) - 0.5) * 2 * px;
+  };
+}
+const inFrame = (p) => p && p.u > 2 && p.u < H_W - 2 && p.v > 2 && p.v < H_H - 2;
+
+function makeObservations(noisePx, seed = 12345) {
+  const jitter = makeNoise(seed);
+  const floorXZ = [[-0.6, 0.6], [0.9, 0.9], [0.9, -0.9], [-0.9, -0.6], [0, 0], [0.6, 0.3], [-0.3, -0.6], [0.3, 0.9]];
+  const wallXZ = [[0.5, 0.5], [-0.5, 0.5], [-0.5, -0.5]];   // 壁の右端 / 外角 / 左下端
+  const floor = [];
+  for (const [x, z] of floorXZ) {
+    const p = projectPoint(H_TRUE, x, 0, z);
+    if (!inFrame(p)) continue;
+    floor.push({ x, z, y: 0, u: p.u + jitter(noisePx), v: p.v + jitter(noisePx) });
+  }
+  const raised = [];
+  for (const [x, z] of wallXZ) {
+    const b = projectPoint(H_TRUE, x, 0, z);
+    const t = projectPoint(H_TRUE, x, WALL_H, z);
+    if (!inFrame(b) || !inFrame(t)) continue;
+    raised.push({ x, z, y: 0, u: b.u + jitter(noisePx), v: b.v + jitter(noisePx) });
+    raised.push({ x, z, y: WALL_H, u: t.u + jitter(noisePx), v: t.v + jitter(noisePx) });
+  }
+  return { floor, raised };
+}
+const posError = (c) => Math.hypot(c.x - H_TRUE.x, c.y - H_TRUE.y, c.z - H_TRUE.z);
+
+test('高さの点を入れると、床だけより桁で精度が上がる（クリック誤差 1.5px）', () => {
+  const a = makeObservations(1.5);
+  const floorOnly = calibrateFromFloorPoints(a.floor, H_W, H_H, {});
+  const b = makeObservations(1.5);
+  const withHeight = calibrateFromFloorPoints([...b.floor, ...b.raised], H_W, H_H, {});
+
+  assert.equal(floorOnly.ok, true);
+  assert.equal(withHeight.ok, true);
+  assert.equal(withHeight.refined, true, '高さの点があれば精密化を通る');
+  assert.equal(withHeight.raisedCount, 3);
+
+  // 実測（このテストが固定する値）: 床だけ 7.4cm → 高さ込み 1.2cm
+  assert.ok(posError(floorOnly.calib) > 0.05, `床だけの誤差 ${posError(floorOnly.calib).toFixed(3)}m`);
+  assert.ok(posError(withHeight.calib) < 0.03, `高さ込みの誤差 ${posError(withHeight.calib).toFixed(3)}m`);
+  assert.ok(posError(withHeight.calib) < posError(floorOnly.calib) / 3, '3 倍以上良くなる');
+  // 画角と歪みも真値へ寄る（床だけだと歪みを f に吸わせた解に落ちる）
+  assert.ok(Math.abs(withHeight.calib.fxPx - H_TRUE.fxPx) < 4);
+  assert.ok(Math.abs(withHeight.calib.k1 - H_TRUE.k1) < 0.05);
+});
+
+test('クリック誤差ゼロなら高さ込みで真値へ収束する', () => {
+  const { floor, raised } = makeObservations(0);
+  const r = calibrateFromFloorPoints([...floor, ...raised], H_W, H_H, {});
+  assert.equal(r.ok, true);
+  assert.ok(posError(r.calib) < 0.005, `誤差 ${posError(r.calib).toFixed(4)}m`);
+  assert.ok(r.calib.rmsPx < 0.1);
+});
+
+test('高さの点は refs に y つきで残り、復元しても拘束が消えない', () => {
+  const { floor, raised } = makeObservations(0);
+  const r = calibrateFromFloorPoints([...floor, ...raised], H_W, H_H, {});
+  const ups = r.calib.refs.filter((x) => x.y > 0);
+  assert.equal(ups.length, 3);
+  assert.ok(ups.every((x) => Math.abs(x.y - WALL_H) < 1e-9));
+  assert.equal(r.calib.pointCount, floor.length + raised.length);
+});
+
+test('高さの点だけでは解かない（床の点が 4 つ要る）', () => {
+  const { floor, raised } = makeObservations(0);
+  const tops = raised.filter((p) => p.y > 0);            // 上端だけ = 平面の外の点
+  const r = calibrateFromFloorPoints([...floor.slice(0, 3), ...tops], H_W, H_H, {});
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /床の点が足りません/);
+});
+
+test('refineCalib は初期解が良ければ悪化させない（床だけでも呼べる）', () => {
+  const { floor } = makeObservations(1.5);
+  const base = calibrateFromFloorPoints(floor, H_W, H_H, {});
+  const r = refineCalib(base.calib, floor, { estimateK1: true });
+  assert.equal(r.ok, true);
+  assert.ok(r.rmsPx <= base.calib.rmsPx + 1e-6, `rms ${r.rmsPx} <= ${base.calib.rmsPx}`);
 });
