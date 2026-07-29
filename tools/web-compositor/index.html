@@ -76,6 +76,13 @@
       color: var(--warn-color);
     }
     .cu-assumedlbl { font-size: 10.5px; opacity: var(--opacity-mute); }
+    /* 実測点が足りないときだけ出る。床を測って入れれば四隅が実測点になる（最短の道） */
+    .cu-floorfix { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--line-soft); }
+    .cu-floorrow { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .cu-floorrow label { display: flex; align-items: center; gap: 3px; font-size: 11px; opacity: var(--opacity-sub); }
+    .cu-floorrow input { width: 60px; font-size: 11px; padding: 2px 4px; }
+    .cu-floorrow button { padding: 3px 8px; font-size: 11px; }
+    .cu-floorhint { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.5; }
     /* レンズ（内部パラメータ）。「内部は一度だけ丁寧に / 外部は現場で毎回」を UI に出す口 */
     .cu-lensbox { display: flex; flex-direction: column; gap: 4px; }
     .cu-lensrow { display: flex; gap: 4px; align-items: center; }

@@ -102,6 +102,17 @@ export function createCalibUi(container, deps) {
               <b>点は床の上にあるもの・実物が現場にあるものだけ</b>にしてください（机の上の印は使えません）。</div>
           </div>
           <div class="cu-srcwarn"></div>
+          <!-- 実測点が足りないときだけ出る。床の寸法はメジャーで 30 秒で測れて、入れた瞬間に
+               四隅が「実物のある実測点」になる（＝この道具が動き始める最短の道）。 -->
+          <div class="cu-floorfix" style="display:none">
+            <div class="cu-floorrow">
+              <label>床の実寸 幅<input class="cu-floorw" type="number" step="0.05" min="0.3" max="12">m</label>
+              <label>× 奥行<input class="cu-floord" type="number" step="0.05" min="0.3" max="12">m</label>
+              <button class="cu-floorsave">測った値にする</button>
+            </div>
+            <div class="cu-floorhint">部屋の床をメジャーで測って入れると、<b>四隅が打てる実測点になります</b>。
+              壁や箱はフロアマップの 🧱 部屋 で置けます（そちらの角も候補に出ます）。</div>
+          </div>
           <label class="cu-lbl">打つ点 <select class="cu-cand"></select></label>
           <label class="chk cu-assumedlbl"><input class="cu-assumed" type="checkbox">
             <span>測っていない点も出す（既定値の壁・仮想の格子）</span></label>
@@ -172,6 +183,7 @@ export function createCalibUi(container, deps) {
   const heightInput = q('.cu-height'), addTopBtn = q('.cu-addtop');
   const mapAddChk = q('.cu-mapadd'), markLabelInput = q('.cu-marklabel'), qualityEl = q('.cu-quality');
   const assumedChk = q('.cu-assumed'), srcWarnEl = q('.cu-srcwarn');
+  const floorFixEl = q('.cu-floorfix'), floorWInput = q('.cu-floorw'), floorDInput = q('.cu-floord');
   const lensSel = q('.cu-lens'), lensInfoEl = q('.cu-lensinfo'), lensDelBtn = q('.cu-lensdel');
   const plateBtn = q('.cu-plateopen'), plateSel = q('.cu-plates');
 
@@ -440,14 +452,56 @@ export function createCalibUi(container, deps) {
 
   function renderSourceWarning() {
     const measured = measuredPool();
-    if (measured.length >= 4) { srcWarnEl.textContent = ''; srcWarnEl.className = 'cu-srcwarn'; return; }
+    const lay = layout();
+    if (measured.length >= 4) {
+      srcWarnEl.textContent = ''; srcWarnEl.className = 'cu-srcwarn';
+      floorFixEl.style.display = 'none';
+      return;
+    }
     srcWarnEl.className = 'cu-srcwarn warn';
     srcWarnEl.innerHTML = `⚠ <b>実測した基準点が ${measured.length} 個しかありません。</b>`
       + '較正には「course 座標が分かっていて、<b>現場の床に実物の目印がある</b>」点が 4 個以上要ります。'
       + '既定値の壁（1m×1m の L）や仮想のタイル格子は床に線が引かれていないので、'
       + 'それを打っても<b>座標が実物と違うまま解く</b>ことになります。'
-      + '<br>先にフロアマップの <b>🧱 部屋</b> で壁・箱を実測して置くか、'
-      + '上の図で <b>印を置く</b> にして「棚の脚」「テープの×」など<b>実物のある場所</b>を登録してください。';
+      + '<br>いちばん早いのは <b>床の寸法を測って入れる</b>ことです（四隅が実測点になります）。'
+      + '上の図で <b>印を置く</b> にして「棚の脚」「テープの×」など実物のある場所を登録するのでも構いません。';
+    // 床の寸法はメジャーで測れば 30 秒。ここで直せるようにしておかないと、
+    // 「🧱 部屋 で測ってください」と言われた作業者はパネルを閉じて別の面へ行くことになる。
+    floorFixEl.style.display = typeof deps.saveLayout === 'function' ? '' : 'none';
+    if (document.activeElement !== floorWInput && document.activeElement !== floorDInput) {
+      floorWInput.value = (lay?.floor?.w > 0 ? lay.floor.w : 1.8).toFixed(2);
+      floorDInput.value = (lay?.floor?.d > 0 ? lay.floor.d : 1.8).toFixed(2);
+    }
+  }
+
+  /** 床の実寸を layout へ書く。入れた瞬間に四隅が「実測点」になり、候補と検証線に出る。 */
+  async function saveFloorSize() {
+    const w = parseFloat(floorWInput.value), d = parseFloat(floorDInput.value);
+    if (!(w > 0.3) || !(d > 0.3)) return note('床の幅と奥行を m で入れてください（0.3m 以上）', 'err');
+    if (typeof deps.saveLayout !== 'function') {
+      return note('この卓では床の寸法を保存できません（layout の保存口がありません）', 'err');
+    }
+    const lay = { ...(layout() || {}) };
+    lay.floor = { ...(lay.floor || {}), w, d };
+    try {
+      await deps.saveLayout(lay);
+    } catch (e) {
+      return note(`床の寸法を保存できませんでした（${e && e.message ? e.message : '通信エラー'}）`, 'err');
+    }
+    // 実測点が揃ったなら、推測の点は既定で隠す（172 個の中から選ばせない）。
+    const enough = measuredPool().length >= 4;
+    const hid = enough && assumedChk.checked;
+    if (hid) assumedChk.checked = false;
+    renderCandidates();
+    afterCandidateChanged();
+    renderResult();
+    draw();
+    const stillDefault = Math.abs(w - 1.8) < 1e-6 && Math.abs(d - 1.8) < 1e-6;
+    note(stillDefault
+      ? `床を ${w.toFixed(2)}×${d.toFixed(2)}m にしました（これは卓の既定値と同じなので、`
+        + '実際に測った値かどうかは判定できません）'
+      : `床を ${w.toFixed(2)}×${d.toFixed(2)}m にしました — 四隅が打てる実測点になりました`
+        + `${hid ? '（測っていない点は候補から隠しました）' : ''}`, 'ok');
   }
 
   // ---- ミニ地図（部屋を上から見た図）------------------------------------------
@@ -1096,6 +1150,7 @@ export function createCalibUi(container, deps) {
   lensDelBtn.onclick = () => deleteLens();
   plateBtn.onclick = () => openPlates();
   plateSel.onchange = () => usePlate(plateSel.value);
+  q('.cu-floorsave').onclick = () => saveFloorSize();
   addTopBtn.onclick = () => { if (topFor) { topFor = null; syncTopUi(); note('', ''); } else armTop(); };
   heightInput.onchange = () => { if (topFor) topFor.h = nextHeight(); draw(); };
   q('.cu-madd').onclick = () => {
