@@ -268,6 +268,16 @@ export function introPreflightRow({ run, layout, cameras } = {}) {
         + ' — 演出が終わった直後に本編のスタート区間へ入り直すことになります');
     }
   }
+  // 慣らし歩行（introMinSec）は**導入相全体の下限**なので、演出がそれを食う。
+  //   演出 13.1s に対し introMinSec が 10s だと、演出の途中で本編へ移って**演出が切り落とされる**。
+  //   RestartIntroClock は演出が終わった時にしか打たれないので、実機は黙って途中で切り替わる。
+  const warmSec = Math.max(0, parseFloat(run && run.introMinSec) || 0);
+  const stageSec = introStageSec(intro);
+  if (warmSec > 0 && warmSec < stageSec) {
+    warn.push(`慣らし歩行 ${warmSec}s が演出 ${stageSec}s より短いので、演出が途中で切り落とされます`
+      + '（⚙ 欄の「導入（慣らし歩行）」を演出より長くする）');
+  }
+
   const sec = introStageSec(intro);
   if (sec > intro.maxSec) {
     warn.push(`演出 ${sec}s が上限 ${intro.maxSec}s を超えています（超えた段は飛ばして枠を出します）`);

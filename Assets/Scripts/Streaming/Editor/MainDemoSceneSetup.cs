@@ -33,6 +33,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string DebugHudName = "DebugHud"; // 旧構成の掃除用（削除対象）
         private const string StartupFaderName = "StartupFader";
         private const string EndingFaderName = "ShowEndingFader";
+        private const string IntroPromptName = "IntroPrompt";
         private const string IntroVeilName = "IntroVeil";
         private const string IntroDirectorName = "IntroDirector";
         private const string BgmName = "[Bgm]";
@@ -90,6 +91,7 @@ namespace FixedCamVr.Streaming.EditorTools
             DeleteIfExists($"{CenterEyePath}/{DebugHudName}");   // 旧 HUD Canvas（統合前）
             DeleteIfExists($"{CenterEyePath}/{StartupFaderName}");
             DeleteIfExists($"{CenterEyePath}/{EndingFaderName}");
+            DeleteIfExists($"{CenterEyePath}/{IntroPromptName}");
             DeleteIfExists($"{CenterEyePath}/{IntroVeilName}");
             DeleteIfExists($"{LogicGroupName}/{IntroDirectorName}");
 
@@ -429,9 +431,14 @@ namespace FixedCamVr.Streaming.EditorTools
             //      show.json の run.intro が無い / enabled=false なら何も起きない（従来の見えになる）。
             var screenTf = screenGo != null ? screenGo.transform : null;
             var introVeil = CreateIntroVeil(centerEye.transform, screenTf);
-            CreateIntroDirector(logic.transform, runDirector, introVeil,
+            var introDirector = CreateIntroDirector(logic.transform, runDirector, introVeil,
                 screenGo != null ? screenGo.GetComponent<GlitchFx>() : null,
                 registry, showControl, centerEye.transform, screenTf);
+            // 体験者向けの合図（段 5 の「右手を上げて」・開始位置の案内・中止・歩き出し）。
+            //   IntroDirector.PromptText は 2026-07-30 の実装時から**読む者が居なかった**ので、
+            //   §2 の伏線（3 周目の反転）が張られないままだった。StatusHud はスタッフ用で既定 OFF
+            //   なので相乗りできず、体験者専用の面を分けてある。
+            CreateIntroPrompt(centerEye.transform, introDirector);
             // 段 3 の構造の線（部屋の輪郭とカメラの印）。LineRenderer は world 空間で描くので
             // 親の transform には依存しない（IntroDirector と同じオブジェクトに載せる）。
             // パススルー自体の見た目（彩度・輪郭線）は Assembly-CSharp 側の PassthroughStyler が当てる。
@@ -727,6 +734,24 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
             if (rig.GetComponent(stylerType) == null) rig.gameObject.AddComponent(stylerType);
+        }
+
+        // 導入の合図（体験者向け・head-lock の 1 行）。覆いより後に描かないと潰されるので、
+        // renderQueue は IntroPrompt が自分で設定する（IntroVeil の 5000 と対）。
+        private static void CreateIntroPrompt(Transform parent, IntroDirector director)
+        {
+            var existing = parent.Find(IntroPromptName);
+            if (existing != null) Object.DestroyImmediate(existing.gameObject);
+
+            var go = new GameObject(IntroPromptName);
+            go.transform.SetParent(parent, worldPositionStays: false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+
+            var prompt = go.AddComponent<FixedCamVr.Diagnostics.IntroPrompt>();
+            var so = new SerializedObject(prompt);
+            TrySetObjectRef(so, "director", director);
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         // 体験の終わりを閉じる黒。StartupFader は解除後に自分を Destroy するので再利用できない。

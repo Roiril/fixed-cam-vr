@@ -82,20 +82,33 @@ namespace FixedCamVr.Streaming
         {
             get
             {
+                // 中止は最優先。体験者が歩き出す前に止める。
+                if (_aborted) return "いちど止めます。スタッフをお呼びください";
+
                 if (_logic.Stage == IntroStage.Swap)
                     return _def.raiseHandPrompt ? "右手を上げてみてください" : string.Empty;
+
+                // 演出が終わった直後の数秒だけ、歩き出す合図を出す（慣らし歩行の入口）。
+                if (!_logic.Active && _walkPromptUntil > 0f && Time.unscaledTime < _walkPromptUntil)
+                    return "そのまま歩いてみてください";
 
                 // 段 0 は「何を待っているのか」を出す。開始位置を置いてあるのに位置合わせが
                 // 済んでいないと、体験者がそこに立っても始まらない — 黙っていると原因が分からない。
                 if (_logic.Stage == IntroStage.Black)
                 {
-                    if (showControl?.Layout?.startSpot == null) return string.Empty;   // スタッフ操作の運用
+                    if (showControl?.Layout?.ResolveStartSpot() == null) return string.Empty;   // スタッフ操作の運用
                     if (!IsCourseRegistered()) return "位置合わせがまだです（スタッフが始めます）";
                     return "スタート位置に立ってください";
                 }
                 return string.Empty;
             }
         }
+
+        /// <summary>継ぎ目で「歩いてみてください」を出す秒数（慣らし歩行の 20 秒から借りる）。</summary>
+        private const float WalkPromptSec = 4f;
+
+        private float _walkPromptUntil = -1f;
+        private bool _aborted;
 
         private void Awake()
         {
@@ -110,6 +123,7 @@ namespace FixedCamVr.Streaming
             {
                 runDirector.PhaseChanged += OnPhaseChanged;
                 runDirector.IntroDefChanged += OnIntroDefChanged;
+                runDirector.RunRestarted += OnRunRestarted;
                 _subscribed = true;
                 OnIntroDefChanged(runDirector.IntroDef);
                 // 起動直後は Intro 相なので、そのまま演出を始める。
@@ -118,12 +132,20 @@ namespace FixedCamVr.Streaming
             }
         }
 
+        // ▶ ラン開始（体験者交代）。相が Intro → Intro だと PhaseChanged が発火しないので、
+        // ここで武装し直さないと次の体験者に演出が出ない。
+        private void OnRunRestarted()
+        {
+            if (runDirector != null && runDirector.Phase == ShowPhase.Intro) BeginIntro();
+        }
+
         private void OnDisable()
         {
             if (runDirector != null && _subscribed)
             {
                 runDirector.PhaseChanged -= OnPhaseChanged;
                 runDirector.IntroDefChanged -= OnIntroDefChanged;
+                runDirector.RunRestarted -= OnRunRestarted;
             }
             _subscribed = false;
             // 自分が出した覆いを残して去らない（外したら従来どおり本編の見えになる）。
@@ -171,6 +193,8 @@ namespace FixedCamVr.Streaming
         private void BeginIntro()
         {
             _clockRestarted = false;
+            _walkPromptUntil = -1f;
+            _aborted = false;
             if (!_def.enabled)
             {
                 // 演出なし。従来どおり最初からスクリーンだけが見える。
@@ -261,7 +285,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private bool IsAtStartSpot()
         {
-            var spot = showControl?.Layout?.startSpot;
+            var spot = showControl?.Layout?.ResolveStartSpot();
             if (spot == null || !IsCourseRegistered()) { _inSpotSec = 0f; return false; }
             var head2 = showControl?.HeadCourseXZProvider;
             if (head2 == null) { _inSpotSec = 0f; return false; }
@@ -311,6 +335,10 @@ namespace FixedCamVr.Streaming
             _logic.Disable();
             if (!restartClock || _clockRestarted) return;
             _clockRestarted = true;
+            // 演出は終わったが Intro 相（慣らし歩行）は続く。**ここで合図を切らない** —
+            // 「現実が映像になった」直後に何をすればいいか分からないまま立ち尽くす時間が生まれる
+            // （2026-07-30 の設計批評: 継ぎ目に歩き出す合図が 1 つも無い）。
+            _walkPromptUntil = Time.unscaledTime + WalkPromptSec;
             // ここから慣らし歩行。企画書 3 章「固定視点による移動に慣れた後、追跡体験を開始する」。
             runDirector?.RestartIntroClock();
             Debug.Log("[Intro] 導入演出が終わり、慣らし歩行へ（固定視点に慣れる時間）");
@@ -322,7 +350,9 @@ namespace FixedCamVr.Streaming
             structureWire?.SetHidden();
             glitch?.ResetAll();
             _logic.Disable();
-            // 続行すると壁の位置が違う世界を見せることになる（体験者は壁を手でたどる）。
+            // 体験者にも伝える。黙って本編の画に切り替わると、体験者は「始まった」と思って歩き出し、
+            // 壁の位置が違う世界を手でたどることになる（計画 §9 の中止行が求めているのはこれ）。
+            _aborted = true;
             Debug.LogWarning("[Intro] トラッキング原点が変わったので導入演出を中止しました — 位置合わせをやり直してください");
         }
     }

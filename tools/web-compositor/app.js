@@ -1608,8 +1608,17 @@ function preflightRows() {
       rows.push({ s: 'warn', label: '体験の骨格',
         detail: `${run.totalLaps} 周走る設定ですが演出は ${authoredMax} 周目までです（最後の周は映像切替だけになります）` });
     } else {
+      // ⚠ 導入は「演出（run.intro の段の合計）＋ 慣らし歩行（introMinSec）」。
+      //   introMinSec だけを出すと**演出のぶん（既定 13.1s）が予算から丸ごと落ちる**。
+      //   3 分の予算を現場で守るための行なので、実際に流れる秒を出す。
+      const introSec = run.introEnabled
+        ? (run.intro && run.intro.enabled !== false ? introStageSec(introConfig(run)) : 0) + (run.introMinSec || 0)
+        : 0;
+      const introTxt = run.introEnabled
+        ? `導入 ${Math.round(introSec)}s（${introDurationLabel(run.intro, run.introMinSec)}）`
+        : '導入なし';
       rows.push({ s: 'ok', label: '体験の骨格',
-        detail: `${run.totalLaps} 周 / 導入 ${run.introEnabled ? `${run.introMinSec}s` : 'なし'} / 目安 ${run.targetSec}s` });
+        detail: `${run.totalLaps} 周 / ${introTxt} / 目安 ${run.targetSec}s` });
     }
   }
 

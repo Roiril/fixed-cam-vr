@@ -271,3 +271,22 @@ test('卓の既定値と capture-server.py の _default_show が一致してい�
     assert.match(body, new RegExp(`'${k}':\\s*True`), `${k} が食い違っている`);
   }
 });
+
+test('慣らし歩行が演出より短いと切り落とされることを警告する', () => {
+  // introMinSec は導入相全体の下限。演出 13.1s に対し 10s だと演出の途中で本編へ移る。
+  // RestartIntroClock は演出の終わりにしか打たれないので、実機は黙って切り替わる。
+  const row = introPreflightRow({
+    run: { introEnabled: true, introMinSec: 10, intro: { enabled: true } },
+    layout: measuredLayout(), cameras: calibratedCams(),
+  });
+  assert.equal(row.s, 'warn');
+  assert.match(row.detail, /慣らし歩行 10s が演出 13\.1s より短い/);
+});
+
+test('慣らし歩行が演出より長ければその警告は出ない', () => {
+  const row = introPreflightRow({
+    run: { introEnabled: true, introMinSec: 20, intro: { enabled: true } },
+    layout: measuredLayout(), cameras: calibratedCams(),
+  });
+  assert.ok(!/慣らし歩行/.test(row ? row.detail : ''));
+});

@@ -116,6 +116,13 @@ namespace FixedCamVr.Streaming
 
         /// <summary>実際に使える半径（0 / 負値・極端な値はコード既定へ）。</summary>
         public float ResolveRadiusM() => radiusM >= 0.1f && radiusM <= 2f ? radiusM : DefaultRadiusM;
+
+        /// <summary>
+        /// JsonUtility がキー欠落で作った空の実体か。座標もラベルも無く半径が既定のままなら、
+        /// 誰も著作していない。**(0,0) を著作したいなら卓がラベルを付ける**（UI が必須にしている）。
+        /// </summary>
+        public bool LooksUnset =>
+            Mathf.Approximately(x, 0f) && Mathf.Approximately(z, 0f) && string.IsNullOrEmpty(label);
     }
 
     /// <summary>
@@ -198,8 +205,28 @@ namespace FixedCamVr.Streaming
         /// という別の制約を持つので、兼用すると片方を動かしたときにもう片方が壊れる。
         /// </summary>
         public ShowStartSpotDef? startSpot;
+        /// <summary>
+        /// 卓が「開始位置を著作した」と宣言したか。**`startSpot != null` を信じてはいけない** —
+        /// JsonUtility はキーが無くても入れ子の実体を作るので、未著作でも (0,0) の円が生きてしまう
+        /// （`hasRoom` / `hasPost` / `ShowIntroDef.LooksUnset` を置いているのと同じ罠）。
+        /// 計画 §11.5 が「勝手に (0,0) へ置くと『立っても始まらない』の原因になる」と名指しで禁じた状態。
+        /// </summary>
+        public bool hasStartSpot;
         public float overlapM = 0.08f;
         public float hysteresisM = 0.12f;
+
+        /// <summary>
+        /// 実際に使える開始位置。宣言 bool と実体の AND で確定する（`TimelinePresentFlags` と同じ流儀）。
+        /// 卓が `hasStartSpot` を書く前の古い show.json は `LooksUnset` で救う。
+        /// **未設定なら null** ＝ スタッフ操作だけで始める運用。
+        /// </summary>
+        public ShowStartSpotDef? ResolveStartSpot()
+        {
+            if (startSpot == null) return null;
+            if (startSpot.LooksUnset) return null;
+            // 宣言が来ている show.json ではそれに従う。宣言そのものが無い（古い）なら実体の中身で判断する。
+            return hasStartSpot || !string.IsNullOrEmpty(startSpot.label) ? startSpot : null;
+        }
 
         /// <summary>ゾーン生成に使える layout データ（grid か cuts）を持つか。grid 優先の判定は Applier 側。</summary>
         public bool HasData()
@@ -1323,6 +1350,19 @@ namespace FixedCamVr.Streaming
         // 機能が全死した過去の事故対策。EnsureRecorder と同流儀）。
         private ShowRunDirector? _runDirector;
 
+        /// <summary>
+        /// 導入演出の実行体。**居なければ null を返すだけで自動生成はしない** — 導入は
+        /// シーンに焼かれた覆い・線・パススルー面と組でしか成立しないので、
+        /// コンポーネントだけ湧かせても何も見えない（`Setup Main Demo Scene` の再実行が要る）。
+        /// </summary>
+        private IntroDirector? _introDirector;
+        private IntroDirector? ResolveIntroDirector()
+        {
+            if (_introDirector != null) return _introDirector;
+            _introDirector = FindObjectOfType<IntroDirector>();
+            return _introDirector;
+        }
+
         private ShowRunDirector? ResolveRunDirector()
         {
             if (_runDirector != null) return _runDirector;
@@ -1566,7 +1606,14 @@ namespace FixedCamVr.Streaming
             else if (introEpoch != _knownIntroEpoch)
             {
                 _knownIntroEpoch = introEpoch;
-                ResolveRunDirector()?.RequestAdvanceIntro();
+                // ⏭ は**文脈で意味が変わる**。演出がまだ走っているなら「次の段へ」、
+                //   演出が終わっている（慣らし歩行中）なら「導入相を終えて本編へ」。
+                //   旧実装は常に相ごと終わらせていたので、**開始位置が使えない現場では
+                //   演出が一度も出ないまま本編に入っていた**（段 0 を抜ける手段が startSpot しか
+                //   無く、IntroDirector.RequestAdvanceStage の呼び出し元がゼロだった）。
+                var intro = ResolveIntroDirector();
+                if (intro != null && intro.Active) intro.RequestAdvanceStage();
+                else ResolveRunDirector()?.RequestAdvanceIntro();
             }
 
             int endEpoch = state.control?.runEndEpoch ?? _knownRunEndEpoch;

@@ -440,11 +440,17 @@ export function createFloorMap(container, deps) {
       radiusM: cur ? cur.radiusM : START_SPOT_DEFAULT.radiusM,
       label: cur ? cur.label : START_SPOT_DEFAULT.label,
     };
+    // ⚠ 宣言 bool を必ず対で書く。Unity の JsonUtility は **キーが無くても入れ子の実体を作る**ので、
+    //   「startSpot が無い」を実体の有無では表せない（未著作でも (0,0) の円が生きて、体験者が
+    //   そこに立つと導入が勝手に始まる／正しい場所に立っても始まらない）。
+    //   hasRoom / hasPost / hasBgm と同じ流儀。Unity 側は ShowLayoutDef.ResolveStartSpot() が AND で確定する。
+    layout.hasStartSpot = true;
     markDirty();
   }
   function clearStart() {
     if (!startSpot()) return;
     delete layout.startSpot;
+    layout.hasStartSpot = false;
     markDirty(); renderStart(); render();
   }
 

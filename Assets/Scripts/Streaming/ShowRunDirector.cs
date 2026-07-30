@@ -75,6 +75,14 @@ namespace FixedCamVr.Streaming
         /// <summary>導入設定が更新された（<c>IntroDirector</c> が購読して尺を入れ替える）。</summary>
         public event Action<ShowIntroDef>? IntroDefChanged;
 
+        /// <summary>
+        /// ランを頭から始め直した（体験者交代）。**相が変わらなくても必ず発火する。**
+        /// 導入演出はこれを購読して武装し直す — 慣らし歩行の途中で ▶ ラン開始を押すと
+        /// 相は Intro → Intro で <see cref="PhaseChanged"/> が発火せず、
+        /// **次の体験者に演出が一度も出なかった**（2026-07-30 の監査 high 7）。
+        /// </summary>
+        public event Action? RunRestarted;
+
         /// <summary>新しい体験者のランを頭から始める（導入があれば導入から）。</summary>
         public void BeginRun()
         {
@@ -82,6 +90,7 @@ namespace FixedCamVr.Streaming
             ApplyGate();
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             NotifyPhaseIfChanged();
+            RunRestarted?.Invoke();
         }
 
         /// <summary>導入を今すぐ終える（卓 / 現地のスタッフ操作）。</summary>

@@ -289,8 +289,21 @@ namespace FixedCamVr.Streaming
                 return false;
             }
             _mat = new Material(shader) { name = "IntroStructureWire (runtime)" };
+
+            // ⚠ **覆い（IntroVeil）より後に描く。** 覆いは Passthrough Windows 方式で
+            //   `Blend Zero SrcAlpha`（結果 rgb = srcAlpha × 背景）を Queue 5000 で全画面に掛ける。
+            //   段 2 / 段 3 は枠がまだ開いていて `_Frame=0` → `inside=1` → `alpha = 1 - _Passthrough = 0`
+            //   なので、**先に描いた線は rgb ごと 0 に潰される**（＝段 3 が丸ごと画面に出ない）。
+            //   線を後に置けば、線の画素だけフレームバッファの alpha が 1 に戻り、
+            //   そこだけパススルーが隠れて線が見える。線は細いので実物の視認を妨げない。
+            //   2026-07-30 の設計批評で「段 3 は原理的に見えない」と指摘されて判明。ブレンド式から
+            //   決まる話なので実機を待たずに直せる。
+            _mat.renderQueue = VeilRenderQueue + 100;
             return true;
         }
+
+        /// <summary>覆い（<see cref="IntroVeil"/>）の描画順。線はこれより後に描かなければ潰される。</summary>
+        private const int VeilRenderQueue = 5000;   // IntroVeil.shader の "Queue" = "Overlay+1000"
 
         // ---- 追従（course → world）----
 

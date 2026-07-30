@@ -95,6 +95,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 // （静的ベイクのため。U+FF1A 欠落を batchmode プレビューで実測）。
                 "Assets/Scripts/Diagnostics/ControllerGuidePanel.cs",
                 "Assets/Scripts/OvrBridge/OvrControllerBridge.cs",
+                // 2026-07-30 追加: 導入演出の合図（段 5「右手を上げてみてください」・開始位置の案内・
+                // 中止・歩き出し）。**導入の文言はすべて IntroDirector.PromptText にある**ので、
+                // ここに無いと合図を出せるようにしても実機は 1 文字残らず豆腐になる。
+                // 実装時（同日）から漏れていたが、読む者が居なかったので露見していなかった。
+                "Assets/Scripts/Streaming/IntroDirector.cs",
             };
             var set = new System.Collections.Generic.SortedSet<char>();
             for (char c = ' '; c <= '~'; c++) set.Add(c);                       // ASCII 印字可能
