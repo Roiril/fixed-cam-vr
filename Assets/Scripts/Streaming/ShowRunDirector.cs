@@ -30,6 +30,7 @@ namespace FixedCamVr.Streaming
 
         private BgmDirector? _bgm;
         private GlitchFx? _glitch;
+        private IntroDirector? _intro;
         private bool _subscribed;
         private ShowPhase _lastPhase = ShowPhase.Intro;
         private float _endFadeSec = ShowRunDefaults.EndFadeSec;
@@ -141,6 +142,7 @@ namespace FixedCamVr.Streaming
             if (switchDirector == null) switchDirector = FindObjectOfType<CameraSwitchDirector>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_glitch == null) _glitch = FindObjectOfType<GlitchFx>();
+            if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
         }
 
         // 周回は「本編の区間進行」からだけ受ける（ゲートが閉じている導入・終了では来ない）。
@@ -150,8 +152,12 @@ namespace FixedCamVr.Streaming
         {
             bool atStart = AtStartZone();
             bool takeRunning = timelineDirector != null && !string.IsNullOrEmpty(timelineDirector.ActiveTakeId);
+            // 演出が「進行中」か。足踏み（段 0 で開始条件を待っている状態）は含めない —
+            // 含めると開始位置に立つまで永久に本編へ進めなくなる。
+            if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
+            bool introPlaying = _intro != null && _intro.Active && !_intro.Holding;
 
-            ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning);
+            ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning, introPlaying);
 
             // ⚠ ゲートは**イベントを配る前に**合わせる。RunBegan の処理は
             // BeginMainRun → LapCounter.ResetRun → SeedCurrentZone → CueScheduler.NotifyCameraEntered

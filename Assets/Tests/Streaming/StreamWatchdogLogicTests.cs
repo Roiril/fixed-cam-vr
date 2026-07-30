@@ -126,6 +126,44 @@ namespace FixedCamVr.Streaming.Tests
 
         // ---- Lag ---------------------------------------------------------------------
 
+        // recvFps を任意の値へ立ち上げるヘルパー（窓 1.0s に frames 枚 ＝ recvFps = frames）。
+        private static StreamWatchdogLogic PrimeRecvFpsN(int frames)
+        {
+            var w = new StreamWatchdogLogic();
+            w.EndTick(now: 10f, unscaledDt: 0.016f, phoneFps: 0f);
+            for (int i = 0; i < frames; i++) w.OnFrameDecoded(10f + 0.9f * i / frames);
+            w.EndTick(now: 11.0f, unscaledDt: 0.016f, phoneFps: 0f);
+            return w;
+        }
+
+        [Test]
+        public void Lag_DoesNotFire_WhenReceivingEnough_EvenIfPhoneRunsFast()
+        {
+            // 配信は明るい場所で 60fps に張り付く。素の比で測ると受信 40fps でも ratio=0.67 で誤爆し、
+            // 再接続がフレームを落として悪化する（2026-07-30 実機: 本編 69 秒で再接続 152 回）。
+            var w = PrimeRecvFpsN(40);
+            Assert.That(w.ReceivedFps, Is.EqualTo(40f).Within(0.5f));
+            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 60f), Is.EqualTo(Reason.None),
+                "配信 60fps でも受信 40fps は十分な品質 — 張り直さない");
+        }
+
+        [Test]
+        public void Lag_StillFires_WhenReceptionIsActuallyBad_WithFastPhone()
+        {
+            var w = PrimeRecvFpsN(15);
+            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 60f), Is.EqualTo(Reason.Lag),
+                "受信 15fps は実用上限 30fps の 7 割を割る — 本物の詰まりは今までどおり拾う");
+        }
+
+        [Test]
+        public void Lag_UsesPhoneFps_WhenSourceIsSlowerThanReference()
+        {
+            // 暗所で配信が 15fps へ落ちた場合。分母は配信 fps のままなので従来の感度を保つ。
+            var w = PrimeRecvFpsN(9);
+            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 15f), Is.EqualTo(Reason.Lag),
+                "9/15=0.6 < 0.7");
+        }
+
         [Test]
         public void Lag_FiresAfterWindow_AndResets()
         {

@@ -15,6 +15,20 @@ namespace FixedCamVr.Streaming
         // Lag 検出（PHONE_FPS に対して RECV_FPS が一定割合を下回る状態が連続したら再接続）。
         public const float LagDetectWindowSec = 1.5f;
         public const float LagThresholdRatio = 0.7f;
+
+        /// <summary>
+        /// lag 判定で分母に使う「受信側が必要とする fps」の上限。
+        ///
+        /// 配信側は <c>AE_TARGET_FPS_RANGE=[30,60]</c> なので、明るい場所では 60fps に張り付く。
+        /// 素の比（<c>recv/phone</c>）で測ると、**受信 40fps という十分な品質でも ratio=0.67 で誤爆**し、
+        /// 再接続がフレームを落としてさらに受信を下げる正のフィードバックに入る
+        /// （2026-07-30 の実機テスト: 69 秒の本編で再接続 152 回・取りこぼし 9,000 フレーム超。
+        ///  `lag detected (recv=39.8/phone=59.4)` のような明らかな誤爆がログに並んだ）。
+        ///
+        /// 受信側が要るのは 30fps 程度なので、分母をここで頭打ちにする。配信がそれ未満（暗所で
+        /// 15fps へ落ちた等）のときは従来どおり配信 fps を分母にする ＝ 本物の詰まりは今までどおり拾う。
+        /// </summary>
+        public const float LagReferenceFps = 30f;
         public const float LagReconnectCooldownSec = 5.0f;
         // この秒数を超える unscaledDeltaTime は「フリーズ明け（HMD 着脱 / OS pause）」とみなす。
         // Registry も resume-gap ラッチ自己回復で参照するため public 必須。
@@ -140,7 +154,8 @@ namespace FixedCamVr.Streaming
             // 2. Lag 検出。PHONE_FPS と RECV_FPS が両方読めるときのみ評価。
             if (phoneFps > 1f && _recvFps > 0f)
             {
-                float ratio = _recvFps / phoneFps;
+                float reference = phoneFps < LagReferenceFps ? phoneFps : LagReferenceFps;
+                float ratio = _recvFps / reference;
                 if (ratio < LagThresholdRatio)
                 {
                     _lagWindowAccum += unscaledDt;

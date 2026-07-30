@@ -205,6 +205,59 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(r.TotalLaps, Is.EqualTo(ShowRunDefaults.TotalLaps));
         }
 
+        // --- 導入演出を最後まで見せる（2026-07-30 実機テストで見つけた穴）---
+        // introElapsed は起動から数え始めるので、設営や待機で introMinSec はとうに過ぎている。
+        // そこへ体験者が開始位置に立つと、演出が始まったその瞬間に本編へ飛んでいた。
+
+        [Test]
+        public void Intro_DoesNotAutoAdvance_WhileIntroPlaying()
+        {
+            var r = Make();
+            // 起動から時間が経ち、条件（時間・場所）は揃っている状態を作る。
+            Assert.That(r.Tick(IntroMin + 5f, atStartZone: false, takeRunning: false),
+                        Is.EqualTo(ShowRunEvent.None));
+            // ここで体験者が開始位置に立ち、演出が動き出す。
+            Assert.That(r.Tick(0.1f, atStartZone: true, takeRunning: false, introPlaying: true),
+                        Is.EqualTo(ShowRunEvent.None), "演出の最中に本編へ飛ばさない");
+            Assert.That(r.Tick(10f, atStartZone: true, takeRunning: false, introPlaying: true),
+                        Is.EqualTo(ShowRunEvent.None));
+            Assert.That(r.Phase, Is.EqualTo(ShowPhase.Intro));
+        }
+
+        [Test]
+        public void Intro_Advances_AfterIntroFinishesAndWalkAroundElapsed()
+        {
+            var r = Make();
+            r.Tick(IntroMin + 5f, atStartZone: false, takeRunning: false);
+            r.Tick(13f, atStartZone: true, takeRunning: false, introPlaying: true);
+
+            // 演出が終わった合図。ここから慣らし歩行の計時が始まる。
+            r.RestartIntroClock();
+            Assert.That(r.Tick(IntroMin - 1f, atStartZone: true, takeRunning: false),
+                        Is.EqualTo(ShowRunEvent.None), "慣らし歩行がまだ足りない");
+            Assert.That(r.Tick(2f, atStartZone: true, takeRunning: false),
+                        Is.EqualTo(ShowRunEvent.RunBegan));
+        }
+
+        [Test]
+        public void StaffAdvance_Works_EvenWhileIntroPlaying()
+        {
+            var r = Make();
+            r.RequestAdvance();
+            Assert.That(r.Tick(0.1f, atStartZone: false, takeRunning: false, introPlaying: true),
+                        Is.EqualTo(ShowRunEvent.RunBegan), "人の明示操作は演出より優先する");
+        }
+
+        [Test]
+        public void Intro_StillHolds_WhenPlayerNotAtStartZone_EvenAfterIntroPlayed()
+        {
+            var r = Make();
+            r.Tick(IntroMin + 5f, atStartZone: false, takeRunning: false);
+            r.RestartIntroClock();
+            Assert.That(r.Tick(IntroMin + 1f, atStartZone: false, takeRunning: false),
+                        Is.EqualTo(ShowRunEvent.None), "スタート区間に居ないなら進まない（従来どおり）");
+        }
+
         private static ShowRunLogic ToRun(float hardLimit = 300f)
         {
             var r = Make(hardLimit: hardLimit);

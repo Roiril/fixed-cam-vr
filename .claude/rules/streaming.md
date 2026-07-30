@@ -81,7 +81,7 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 | Multipart header | `X-Capture-Ns` / `X-Frame-Seq` 付与 | 受信側で歯抜け検出・古フレ判定が可能 |
 | Receive (Unity) | 単一スロット + バッファ swap、毎フレ new ゼロ | GC 圧ゼロ |
 | Drain (Unity) | 受信時点で「最新のみ」上書き | 古フレが Tick まで生き残らない |
-| Lag detect | `recv_fps / phone_fps < 0.7` が 1.5s 続いたら強制再接続 | TCP cwnd 縮みっぱなし状態を自動復旧 |
+| Lag detect | `recv_fps / min(phone_fps, 30) < 0.7` が 1.5s 続いたら強制再接続 | TCP cwnd 縮みっぱなし状態を自動復旧 |
 | Monitor | `/health` の `latestFrameAgeMs` / `sentFrames` で原因切り分け | 配信側 stall vs ネットワーク詰まりを判別 |
 
 ## ビューア体験レイヤ（追従・切替・フェイルソフト）— 2026-07-19
@@ -477,8 +477,19 @@ show.json トップレベルに `run` を新設。**キーが無くてもコー�
   `ShowControlClient.BeginMainRun()`（周回・演出・BGM・滞在ログだけ初期化）を打ち、
   **端末内録画の世代は切り替えない**。ここを録画のリセット系統に載せるとラン開始が複数系統に増え、
   遅れて届いた runEpoch が 1 周目の録画を消す（＝ 3 周目の素材が黙って消える）。
-- 導入の自動終了は「`introMinSec` 経過 **かつ** スタート区間（`course.order[0]`）に居る」の AND。
-  `introAutoAdvance:false` にすればスタッフの明示操作だけで進む（現地の物理手順に合わせられる）。
+- 導入の自動終了は「`introMinSec` 経過 **かつ** スタート区間（`course.order[0]`）に居る **かつ
+  導入演出が進行中でない**」の AND。`introAutoAdvance:false` にすればスタッフの明示操作だけで進む。
+  - **⚠ 3 つめ（演出が進行中でない）は 2026-07-30 の実機テストで足した。** `introElapsed` は
+    アプリ起動から数え始めるので、設営や待機で `introMinSec`（既定 20 秒）はとうに過ぎている。
+    そこへ体験者が開始位置に立つと、**演出が始まったその瞬間に本編へ飛ぶ**。実測では
+    Real → Degrade の 3.5 秒だけ流れ、核心（枠が閉じて中がカメラ映像へ変わる Structure /
+    Frame / Swap）が一度も出なかった。起動から 20 秒以内に体験者が立つ運用は非現実的なので、
+    **この穴があると導入演出はほぼ常に打ち切られる**。
+  - 判定は `IntroDirector.Active && !Holding`（足踏み＝開始待ちは含めない — 含めると
+    開始位置に立つまで永久に本編へ進めない）。スタッフの明示操作（`RequestAdvance`）は
+    演出中でも従来どおり効く（人の判断を優先する）。
+  - 演出が終われば `RestartIntroClock()` で計時が 0 に戻り、そこから `introMinSec` ぶんの
+    慣らし歩行が始まる ＝ 「演出 → 慣らし歩行」の順序が設計どおりになる。
 - **終了の判定は必ず次フレームの `Tick`**。周回の確定と離脱時演出の発火は同じ同期連鎖の中で起きるので、
   周回の変化を受けたその場で終了させると 3 周目最後の区間の離脱時演出が始まる前に終わる。
   走行中の演出があれば見せ切る（上限 `ShowRunLogic.MaxEndHoldSec` = 12s）。

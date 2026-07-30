@@ -137,7 +137,20 @@ namespace FixedCamVr.Streaming
         /// <param name="dt">経過秒。</param>
         /// <param name="atStartZone">体験者がスタート区間に居るか（導入の自動終了条件）。</param>
         /// <param name="takeRunning">演出が走行中か（終了を保留するかの判定）。</param>
-        public ShowRunEvent Tick(float dt, bool atStartZone, bool takeRunning)
+        /// <param name="introPlaying">
+        /// 導入演出（パススルー → スクリーン）が**進行中**か。足踏み（開始待ち）は含めない。
+        ///
+        /// これが無いと、<b>実運用で導入演出はほぼ確実に途中で打ち切られる</b>。
+        /// <see cref="_introElapsed"/> は起動から数え始めるので、設営や待機で
+        /// <see cref="_introMinSec"/>（既定 20 秒）はとうに過ぎている。そこへ体験者が開始位置に立つと、
+        /// 演出が始まったその瞬間に「時間経過 ＋ スタート区間に居る」が揃って本編へ飛ぶ。
+        /// 2026-07-30 の実機テストでは、演出が Real → Degrade の 3.5 秒だけ流れて打ち切られ、
+        /// 核心（枠が閉じて中がカメラ映像へ変わる Structure / Frame / Swap）が一度も出なかった。
+        ///
+        /// 演出が終われば <see cref="RestartIntroClock"/> で計時が 0 に戻るので、そこから
+        /// <see cref="_introMinSec"/> ぶんの慣らし歩行が始まる ＝ 設計どおりの順序になる。
+        /// </param>
+        public ShowRunEvent Tick(float dt, bool atStartZone, bool takeRunning, bool introPlaying = false)
         {
             if (dt < 0f) dt = 0f;
 
@@ -152,7 +165,10 @@ namespace FixedCamVr.Streaming
                         _phase = ShowPhase.Finished;
                         return ShowRunEvent.RunFinished;
                     }
-                    bool auto = _introAutoAdvance && _introElapsed >= _introMinSec && atStartZone;
+                    // 演出の最中は自動では進めない（明示操作 _advanceRequested は従来どおり効く —
+                    // スタッフが「いま進めたい」と言っているなら演出より人の判断を優先する）。
+                    bool auto = _introAutoAdvance && _introElapsed >= _introMinSec
+                                && atStartZone && !introPlaying;
                     if (_advanceRequested || auto)
                     {
                         _advanceRequested = false;
