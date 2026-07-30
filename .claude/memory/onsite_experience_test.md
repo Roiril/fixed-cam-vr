@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 83b2ae19-6926-4454-a4df-b5d350711b24
-  modified: 2026-07-30T09:55:21.139Z
+  modified: 2026-07-30T10:55:26.900Z
 ---
 
 # 実機で体験を丸ごと検証する
@@ -19,7 +19,7 @@ metadata:
 | 何 | どこ | 役割 |
 |---|---|---|
 | テレメトリ | [`ShowTelemetryHost`](../../Assets/Scripts/Diagnostics/ShowTelemetryHost.cs) | `[XP]` タグで 1 行 1 イベント + 2 秒ごとの集計。**観測専用**（既存の公開イベントとプロパティを読むだけ・状態を書き換えない）。Development ビルドでのみ `RuntimeInitializeOnLoadMethod` で自動生成されるので**シーン再生成は要らない** |
-| 自動走行 | [`ShowWalkDebugDriver`](../../Assets/Scripts/Tracking/ShowWalkDebugDriver.cs) | `OVRCameraRig` を動かして歩行を合成。既存コードは無改変。経路は `layout.grid` から BFS で解く（出発と到着のタイル以外を踏まない） |
+| 自動走行 | [`ShowWalkDebugDriver`](../../Assets/Scripts/Tracking/ShowWalkDebugDriver.cs) | `OVRCameraRig` を動かして歩行を合成。既存コードは無改変。経路は `layout.grid` から BFS で解く（出発と到着のタイル以外を踏まない）。**導入の開始ライン（`run.intro.startLineId`）があれば線の中点を法線方向に横切ってから中へ入り**、被り検知（`UserPresentProvider`）を true で上書きする — HMD を被らずに走らせるので、これが無いと導入が永久に始まらない |
 | 判定 | [`tools/analyze-xp-log.py`](../../tools/analyze-xp-log.py) | show.json を期待値にして突き合わせ。**起きなかったことを引き算で見つける**のが主目的 |
 
 実行は [`tools/run-quest-xp-test.sh`](../../tools/run-quest-xp-test.sh):
@@ -74,18 +74,36 @@ bash tools/run-quest-xp-test.sh walk 300    # 自動走行（導入 → 3 周 �
   配信 60fps のとき受信 40fps でも誤爆していた（`recv=39.8/phone=59.4`）。
   修正後は再接続の率が半分になった（0.43 回/秒 → 0.21 回/秒）
 
-## まだ残っている 2 件（次に見るところ）
+## 画像加工が実機に届いていなかった（2026-07-30・ユーザーが実機で気づいた）
 
-- **導入演出の最後の段 Swap（枠の中がカメラ映像へ変わる＝この演出の核心）が出ない。**
-  `Frame` の尺（2.5 秒）が終わる瞬間に `stage=Off` へ飛ぶ（実測 t=27.17 Frame → t=29.70 Off）。
-  `ShowRunLogic` 側は直したので、**残りは `IntroLogic` の段遷移**。Frame → Swap の境界で
-  `Active` が落ちるか `Holding` が立つ 1 フレームがあると、そこで導入終了条件が通ってしまう。
-  `IntroLogic` の `Swap` 段への遷移と `ShowRunDirector.Update` の実行順序を疑う
-- **2 周目 A の演出が区間の滞在（9.3 秒）の中で出ず、離脱の瞬間に決着している**（2 回とも再現）。
-  ログの呼び出し元が `TakeRunner.NotifyZoneCommitted` なので `ifMissed:"fireOnExit"` の経路。
-  著作は `at:"enter" / offsetSec:0` なので**進入の次フレームで出るはず**。
-  1 周目 B（同じ at=enter）は進入と同時に出ているので、条件付きで起きる。
-  `TakeRunnerLogic` の `_suppressed` / `_running` が立っていた可能性を疑う
+**卓では正しく見えて実機だけ素通し**という最悪の破れ方をしていた。実機の実効値を出したら
+134 サンプル中 122 が `sat1.00 / vig0.00`（無加工）で、3 周目の区間 post が効いた 12 だけが加工されていた。
+
+- 原因: show.json が `cameras[].post` に **`null` を明示的に書いている**。JsonUtility は
+  `null` の入れ子を**既定値の実体**で埋めるので `hasPost = (post != null)` が true に化け、
+  **素通しのカメラ個別 post が global の加工を上書き**していた
+- 卓は JS の `??` で null → global へフォールバックするので**プレビューは正しい**。
+  だから実機を見るまで誰も気づけない
+- 修正: `post != null && !post.IsDefaultLike()`（全 11 軸が既定かを見る）。
+  契約は [streaming.md](../rules/streaming.md)、回帰は `TimelinePresentFlagsTests`
+- **教訓**: 「卓がどう書くか」に依存する present 判定は破れる。**Unity 側で防御する**。
+  そして `[XP]` の `mat=` / `post=` のように**実効値をログに出す**のが唯一の発見手段だった
+
+## まだ残っている件（次に見るところ）
+
+- ~~導入演出の最後の段 Swap が出ない~~ → **原因判明・修正済み（実機検証待ち）**。
+  `introPlaying` の判定に `!Holding` を使ったのが誤りだった。`IntroLogic.Holding` は段 0 の
+  開始待ちだけでなく **段 3・段 4 の条件待ち**（頭を振っている / 枠を見ていない）でも立つ。
+  枠が出た直後に足踏みへ入った瞬間 `introPlaying` が false へ落ち、本編へ飛んでいた。
+  → `Active && Stage != IntroStage.Black` に変更。
+  **段 4 → 段 5 の進行条件（`fresh` / `centered`）を `[XP]` に出すようにした** —
+  どちらで足踏みしているかはログでしか分からない
+- ~~2 周目 A の演出が離脱の瞬間に決着している~~ → **仕様どおり。不具合ではない**（誤読だった）。
+  この演出は `at:"line"`（`line_2` を横切ったら発火）で著作されていて、自動走行の経路が
+  その線を通らなかったので due にならず、`ifMissed:"fireOnExit"` の契約どおり離脱時に決着した。
+  他の演出の「遅れ」も全部 `offsetSec`（1.2 / 2.5 / 0.5 秒）と一致する。
+  **教訓**: 発火時刻を「区間進入との差」だけで見ると誤診する。**必ず `at` / `offsetSec` /
+  `lineId` と突き合わせる**（解析スクリプトも突き合わせるようにした）
 
 ## ⚠ ログ収集はまだ不安定（3 回とも別の形で失われた）
 

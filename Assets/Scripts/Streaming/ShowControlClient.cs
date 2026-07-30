@@ -283,6 +283,19 @@ namespace FixedCamVr.Streaming
         public float aberration;
         /// <summary>低解像度化（0..1）。サンプル位置を量子化してブロックを作る。伝送の劣化を装う。</summary>
         public float pixelate;
+
+        /// <summary>
+        /// 全項目が既定（＝何も加工しない）か。**「著作されていない post」を見分けるために要る。**
+        ///
+        /// JsonUtility は <c>"post": null</c> と書かれていても入れ子の実体を既定値で作るので、
+        /// <c>post != null</c> だけで「著作された」と判定すると、**素通しの実体が
+        /// global の加工を上書きして絵から加工が丸ごと消える**（2026-07-30 実機で発覚。
+        /// 卓は未設定のカメラに `"post": null` を書いていた）。
+        /// </summary>
+        public bool IsDefaultLike()
+            => exposure == 0f && contrast == 1f && saturation == 1f && temperature == 0f
+               && vignette == 0f && grain == 0f && scanline == 0f && lift == 0f && tint == 0f
+               && aberration == 0f && pixelate == 0f;
         /// <summary>
         /// 走査線の本数。0 = 未指定（コード既定 <see cref="DefaultScanlineCount"/>）。
         /// 実機は material の 240 固定で、卓は canvas の縦画素（360〜480）を使っていたため、
@@ -525,6 +538,17 @@ namespace FixedCamVr.Streaming
 
         /// <summary>段 5 のすり替えに重ねる乱れの強さ。</summary>
         public float glitchOnSwap = 0.8f;
+
+        /// <summary>
+        /// 導入演出を始める**通過ライン**の id（<c>layout.lines[].id</c>）。空なら
+        /// 従来どおり <c>layout.startSpot</c> の円に留まることで始まる。
+        ///
+        /// 円（その場所に立つ＝状態）ではなく線（横切る＝事象）にしたのは、体験者が
+        /// **歩いて入ってくる動きのまま**始められるようにするため。開始位置に立ち止まって
+        /// 待つ必要が無くなる。ラインは担当カメラを持つので、順路の入口に引いておけば
+        /// 「入ってきた人が最初に踏む線」になる。
+        /// </summary>
+        public string startLineId = "";
 
         /// <summary>段 5 で「右手を上げて」の合図を出すか（3 周目の反転の伏線）。</summary>
         public bool raiseHandPrompt = true;
@@ -1485,7 +1509,7 @@ namespace FixedCamVr.Streaming
             foreach (var c in _cameras)
             {
                 if (c == null) continue;
-                c.hasPost = c.post != null;
+                c.hasPost = c.post != null && !c.post.IsDefaultLike();  // 素通しの実体は「未著作」扱い（卓が "post": null を書くため）
                 c.hasPose = c.pose != null;
                 c.hasCalib = c.calib != null && c.calib.IsUsable();
             }
@@ -1826,7 +1850,7 @@ namespace FixedCamVr.Streaming
             foreach (var c in _cameras)
             {
                 if (c == null) continue;
-                c.hasPost = c.post != null;
+                c.hasPost = c.post != null && !c.post.IsDefaultLike();  // 素通しの実体は「未著作」扱い（卓が "post": null を書くため）
                 c.hasPose = c.pose != null;
                 c.hasCalib = c.calib != null && c.calib.IsUsable();
             }
@@ -2013,6 +2037,27 @@ namespace FixedCamVr.Streaming
         ///   4. global post
         /// インサート層と区間層は排他（インサート中は区間層を素通りせず insert 側で解決する）。
         /// </summary>
+        /// <summary>
+        /// いま画面へ書いた post（テレメトリ・診断用）。null = 一度も適用していない。
+        /// <see cref="HasScreenMaterial"/> が false なら **画像加工は 1 つも効いていない**
+        /// （ShowControlClient がスクリーンの Renderer と同じ GameObject に無い）。
+        /// </summary>
+        public PostParams? AppliedPost { get; private set; }
+
+        /// <summary>post を書き込む material を解決できているか。false なら画像加工が丸ごと不発。</summary>
+        public bool HasScreenMaterial => _material != null;
+
+        /// <summary>
+        /// HMD を実際に被っているか（<c>OVRManager.isUserPresent</c>）。
+        /// Streaming asmdef は OVR を参照しない規約なので、Assembly-CSharp 側の
+        /// <c>OvrControllerBridge</c> が実行時に差し込む。未設定なら true（被っている扱い）＝
+        /// Editor / Standalone の検証では従来どおり動く。
+        ///
+        /// 導入演出は**被った状態でだけ始める**（机に置いた HMD が位置条件をたまたま満たして
+        /// 勝手に始まり、体験者が被ったときには終わっている、という事故を防ぐ）。
+        /// </summary>
+        public Func<bool>? UserPresentProvider;
+
         private void ApplyPostForActive()
         {
             if (_material == null) return;
@@ -2040,6 +2085,7 @@ namespace FixedCamVr.Streaming
             // 走査線の本数は「0 = 未指定」。実機 material の 240 固定と卓の canvas 高さで
             // 縞のピッチが 1.5〜2 倍食い違っていたので、値を持たせて両者を揃える。
             _material.SetFloat(ScanlineCountId, p.ResolveScanlineCount());
+            AppliedPost = p;
         }
 
         private static void SplitAuth(string auth, out string user, out string pass)

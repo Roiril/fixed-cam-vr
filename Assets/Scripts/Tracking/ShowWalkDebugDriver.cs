@@ -122,7 +122,22 @@ namespace FixedCamVr.Tracking
             }
             Debug.Log($"[XPWalk] 経路: {routeLog}");
 
-            // --- 導入: 開始位置に立って待つ ---
+            // --- 導入 ---
+            // HMD を被っていない前提で走らせるので、被り検知を無効化する（Development ビルド限定）。
+            // これが無いと run.intro.startLineId を使う設定では導入が永久に始まらない。
+            if (_show != null) _show.UserPresentProvider = () => true;
+
+            // 開始ラインが著作されていれば、実機と同じ入り方をする ＝ その線を横切ってから中へ入る。
+            string startLineId = _run != null ? (_run.IntroDef?.startLineId ?? "") : "";
+            if (!string.IsNullOrEmpty(startLineId) && TryLineCrossing(layout, startLineId,
+                    out Vector2 before, out Vector2 after))
+            {
+                Debug.Log($"[XPWalk] 開始ライン '{startLineId}' を横切る " +
+                          $"({before.x:F2},{before.y:F2}) → ({after.x:F2},{after.y:F2})");
+                yield return StartCoroutine(WalkTo(before));
+                yield return StartCoroutine(WalkTo(after));
+            }
+
             Vector2 startCourse = ResolveStartCourse(layout, map, rows, cols, grid.tileM, order[0]);
             Debug.Log($"[XPWalk] 開始位置へ ({startCourse.x:F2},{startCourse.y:F2})");
             yield return StartCoroutine(WalkTo(startCourse));
@@ -388,6 +403,33 @@ namespace FixedCamVr.Tracking
             }
             log = sb.ToString().TrimEnd();
             return route;
+        }
+
+        /// <summary>
+        /// 開始ラインを確実に横切る 2 点（線の中点から法線方向へ前後 <c>CrossMarginM</c>）を返す。
+        /// 「たまたま経路が横切る」に頼ると、部屋の形や登録のずれで沈黙して検証にならない。
+        /// </summary>
+        private static bool TryLineCrossing(ShowLayoutDef? layout, string lineId,
+            out Vector2 before, out Vector2 after)
+        {
+            const float CrossMarginM = 0.35f;
+            before = after = Vector2.zero;
+            ShowLineDef[]? lines = layout?.lines;
+            if (lines == null) return false;
+            foreach (ShowLineDef? l in lines)
+            {
+                if (l == null || l.id != lineId) continue;
+                var a = new Vector2(l.x1, l.z1);
+                var b = new Vector2(l.x2, l.z2);
+                Vector2 d = b - a;
+                if (d.sqrMagnitude < 1e-6f) return false;
+                Vector2 n = new Vector2(-d.y, d.x).normalized;   // 線の法線
+                Vector2 m = (a + b) * 0.5f;
+                before = m - n * CrossMarginM;
+                after = m + n * CrossMarginM;
+                return true;
+            }
+            return false;
         }
 
         /// <summary>導入の開始位置。<c>layout.startSpot</c> が著作されていればそれ、無ければ順路先頭の代表点。</summary>

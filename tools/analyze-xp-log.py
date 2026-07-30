@@ -77,6 +77,7 @@ def expected_from_show(show: dict):
     exp["totalLaps"] = run.get("totalLaps") or 3
     exp["introEnabled"] = bool(run.get("introEnabled", True))
     exp["introMinSec"] = run.get("introMinSec", 20)
+    exp["introStartLineId"] = (run.get("intro") or {}).get("startLineId") or ""
     exp["targetSec"] = run.get("targetSec", 180)
     exp["order"] = ((show.get("layout") or {}).get("course") or {}).get("order") or []
 
@@ -229,7 +230,21 @@ def analyze(events, others, exp):
             dur = ""
             if ended.get(tid):
                 dur = f" / 尺 {ended[tid][0] - starts[0]:.1f}s"
-            w(f"  ✅ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出た t={starts[0]:.0f}s{dur} [{kinds}]")
+            # 「区間進入からの差」だけを見ると誤診する。著作の開始規則と突き合わせる。
+            seg_t = next((s for s, lap, cam in seg_seq
+                          if lap == t["lap"] and cam == t["camera"]), None)
+            how = ""
+            if seg_t is not None:
+                delay = starts[0] - seg_t
+                if t["at"] == "line":
+                    how = (f" / ライン {t['lineId']} を通って +{delay:.1f}s"
+                           if delay < 1.0 else
+                           f" / 進入 +{delay:.1f}s（ラインを通らず離脱時に決着＝ifMissed どおり）")
+                else:
+                    want = float(t["offsetSec"] or 0)
+                    how = (f" / 進入 +{delay:.1f}s（著作 +{want:.1f}s）"
+                           + ("" if abs(delay - want) <= 1.5 else " ⚠ ずれている"))
+            w(f"  ✅ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出た t={starts[0]:.0f}s{dur}{how} [{kinds}]")
         else:
             reason = ""
             if stayed is None:
@@ -414,6 +429,11 @@ def analyze(events, others, exp):
 
     # ---------------- 導入演出 ----------------
     w("## 導入演出")
+    line_id = exp.get("introStartLineId") or ""
+    w(f"  開始の合図: {'通過ライン ' + line_id if line_id else '開始位置の円'}")
+    for tag, ln in others:
+        if tag == "XPWalk" and ("開始ライン" in ln or "開始位置へ" in ln):
+            w(f"  {ln}")
     intro = [e for e in events if e.get("ev") == "intro"]
     for e in intro:
         w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} pass={e.get('pass')} live={e.get('live')} frame={e.get('frame')}")

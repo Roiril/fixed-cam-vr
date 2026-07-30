@@ -84,6 +84,10 @@ namespace FixedCamVr.OvrBridge
         {
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
 
+            // 導入演出は「HMD を被った状態で」始める。Streaming asmdef は OVR を参照しない規約なので、
+            // Assembly-CSharp 側のここから判定を差し込む（未設定なら被っている扱いで従来どおり動く）。
+            if (showControl != null) showControl.UserPresentProvider = () => OVRPlugin.userPresent;
+
             _modeLogic.Configure(LongPressSec);
             _modeLogic.Reset(ControllerModeLogic.Mode.Normal);
             _modeLogic.ModeChanged += OnModeChanged;

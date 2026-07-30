@@ -187,5 +187,33 @@ namespace FixedCamVr.Streaming.Tests
             // 「宣言 true ∧ object 存在」の AND で決まる（object が来なければ false へ落ちる）。
             Assert.That(takes[2].hasBgm, Is.EqualTo(takes[2].bgm != null));
         }
+
+        // --- カメラ個別 post の present 判定（2026-07-30 実機で発覚した実害の回帰）---
+        // 卓は未設定のカメラに `"post": null` を書く。JsonUtility はそれを**既定値の実体**で埋めるので、
+        // `post != null` だけで「著作された」と判定すると、素通しの実体が global の加工を上書きして
+        // **画面から画像加工が丸ごと消える**（実機で 122/134 サンプルが sat1.00 / vig0.00 の素通しだった）。
+
+        [Test]
+        public void PostParams_IsDefaultLike_TrueForUntouched()
+        {
+            Assert.That(new PostParams().IsDefaultLike(), Is.True,
+                "既定コンストラクタ＝何も加工しない＝「未著作」と見分けたい状態");
+        }
+
+        [Test]
+        public void PostParams_IsDefaultLike_FalseWhenAnyAxisAuthored()
+        {
+            Assert.That(new PostParams { saturation = 0.35f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { contrast = 1.28f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { exposure = -0.72f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { vignette = 0.45f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { lift = 0.065f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { tint = 0.16f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { aberration = 0.12f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { pixelate = 0.2f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { grain = 0.065f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { scanline = 0.2f }.IsDefaultLike(), Is.False);
+            Assert.That(new PostParams { temperature = -0.18f }.IsDefaultLike(), Is.False);
+        }
     }
 }

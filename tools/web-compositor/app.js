@@ -1228,7 +1228,7 @@ function renderRunCfg(s) {
   e.target.value = r.targetSec;
   e.hard.value = r.hardLimitSec;
   e.glitch.value = Number((s && s.control && s.control.switchGlitch) || 0);
-  renderIntroCfg(r);
+  renderIntroCfg(r, s);
 }
 
 // ---- 導入の遷移演出（show.json run.intro）------------------------------------
@@ -1243,6 +1243,8 @@ const INTRO_BOOL = {
   enabled: '#introOn', showCameraMarks: '#introCamMarks',
   showRoomWire: '#introRoomWire', raiseHandPrompt: '#introRaiseHand',
 };
+// 文字列の設定。開始ラインは選択肢を layout.lines から作るので render 側で別に埋める。
+const INTRO_STR = { startLineId: '#introStartLine' };
 
 /** DOM → 正規化した intro（UI に無いキー（edgeColor 等）は現状値を引き継ぐ）。 */
 function readIntroCfg(baseRun) {
@@ -1254,6 +1256,10 @@ function readIntroCfg(baseRun) {
   for (const [k, sel] of Object.entries(INTRO_BOOL)) {
     const el = $(sel);
     if (el) raw[k] = !!el.checked;
+  }
+  for (const [k, sel] of Object.entries(INTRO_STR)) {
+    const el = $(sel);
+    if (el) raw[k] = String(el.value || '');
   }
   return introConfig({ intro: raw });
 }
@@ -1268,12 +1274,43 @@ function renderIntroSum(run) {
   el.className = 'ed-status ' + (over ? 'err' : 'ok');
 }
 
-function renderIntroCfg(r) {
+function renderIntroCfg(r, s) {
   if (!$('#introOn')) return;
   const intro = introConfig(r);
   for (const [k, sel] of Object.entries(INTRO_NUM)) { const el = $(sel); if (el) el.value = intro[k]; }
   for (const [k, sel] of Object.entries(INTRO_BOOL)) { const el = $(sel); if (el) el.checked = !!intro[k]; }
+  renderIntroStartLine(intro.startLineId, s);
   renderIntroSum(r);
+}
+
+/**
+ * 開始ラインの選択肢を layout.lines から作る。
+ * **著作した id が lines から消えていたら黙って空へ戻さず、選択肢に残して警告する** —
+ * 黙って戻すと「線を消したせいで導入が始まらない」に現場で気づけない。
+ */
+function renderIntroStartLine(current, s) {
+  const sel = $('#introStartLine');
+  if (!sel) return;
+  const lines = (s && s.layout && s.layout.lines) || [];
+  const cams = (s && s.cameras) || [];
+  const camName = (i) => (cams[i] && cams[i].id) ? cams[i].id : (i >= 0 ? `#${i}` : '—');
+  const opts = ['<option value="">（開始位置の円を使う）</option>'];
+  for (const l of lines) {
+    if (!l || !l.id) continue;
+    const label = l.label || l.id;
+    opts.push(`<option value="${l.id}">${label}（カメラ ${camName(l.camera)}）</option>`);
+  }
+  const missing = current && !lines.some(l => l && l.id === current);
+  if (missing) opts.push(`<option value="${current}">⚠ ${current}（この線は今の地図に無い）</option>`);
+  sel.innerHTML = opts.join('');
+  sel.value = current || '';
+  const note = $('#introStartLineNote');
+  if (note) {
+    note.textContent = missing
+      ? '⚠ この線がフロアマップに無い。導入はスタッフ操作でしか始められない'
+      : (current ? '被った体験者がこの線を横切ると導入が始まる' : '開始位置の円に 0.5 秒留まると始まる');
+    note.className = 'ed-status ' + (missing ? 'err' : 'ok');
+  }
 }
 
 async function applyRunCfg() {
@@ -1311,7 +1348,7 @@ async function applyRunCfg() {
 
 for (const el of Object.values(runCfgEls())) if (el) el.onchange = applyRunCfg;
 // 導入も run の一部なので保存先は applyRunCfg（同じ 1 経路）。合計秒だけは打ちながら追従させる。
-for (const sel of [...Object.values(INTRO_NUM), ...Object.values(INTRO_BOOL)]) {
+for (const sel of [...Object.values(INTRO_NUM), ...Object.values(INTRO_BOOL), ...Object.values(INTRO_STR)]) {
   const el = $(sel);
   if (!el) continue;
   el.onchange = applyRunCfg;

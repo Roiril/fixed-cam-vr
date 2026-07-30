@@ -83,6 +83,26 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(w.EndTick(now: 31f, unscaledDt: 0.016f, phoneFps: 0f), Is.EqualTo(Reason.Stall));
         }
 
+        [Test]
+        public void Stall_NeverFires_WhenStreamHasNeverReceivedAFrame()
+        {
+            // 現場に居ないカメラ（show.json 未設定 → 焼き込みの古い IP へ繋ぎに行く）に対して、
+            // 10 秒ごとに永久に張り直しを続けていた（走行 240 秒で 24 回 ＝ 再接続ログの約半分）。
+            var w = new StreamWatchdogLogic();
+            Assert.That(w.EndTick(now: 30f, unscaledDt: 0.016f, phoneFps: 0f), Is.EqualTo(Reason.None));
+            Assert.That(w.EndTick(now: 60f, unscaledDt: 0.016f, phoneFps: 0f), Is.EqualTo(Reason.None),
+                "一度も映っていない stream は watchdog では直せない — receiver のバックオフに任せる");
+        }
+
+        [Test]
+        public void Stall_FiresOnceStreamHasReceived_ThenGoesQuiet()
+        {
+            // 一度でも映ったなら、以後の無フレームは本物の stall として扱う（従来どおり）。
+            var w = new StreamWatchdogLogic();
+            w.OnFrameDecoded(1f);
+            Assert.That(w.EndTick(now: 12f, unscaledDt: 0.016f, phoneFps: 0f), Is.EqualTo(Reason.Stall));
+        }
+
         // ---- A2: stall watchdog が LastFrameRealtime を汚さない ---------------------
 
         [Test]

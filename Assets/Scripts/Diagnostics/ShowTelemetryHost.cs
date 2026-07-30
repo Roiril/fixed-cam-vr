@@ -64,6 +64,7 @@ namespace FixedCamVr.Diagnostics
         private ScreenOverlayController? _overlay;
         private LapCounter? _lap;
         private CourseFrame? _frame;
+        private ShowControlClient? _show;
 
         // --- 購読状態（多重購読を防ぐ）---
         private bool _subSwitch, _subRun, _subCues, _subRegistry;
@@ -140,6 +141,7 @@ namespace FixedCamVr.Diagnostics
             if (_overlay == null) _overlay = FindObjectOfType<ScreenOverlayController>();
             if (_lap == null) _lap = FindObjectOfType<LapCounter>();
             if (_frame == null) _frame = FindObjectOfType<CourseFrame>();
+            if (_show == null) _show = FindObjectOfType<ShowControlClient>();
 
             if (!_subSwitch && _switch != null)
             {
@@ -207,7 +209,10 @@ namespace FixedCamVr.Diagnostics
             {
                 _lastStage = _intro.Stage;
                 IntroWeights w = _intro.Weights;
+                // fresh / centered は段 4 → 段 5 の進行条件。false のまま足踏みすると
+                // 最後の段（枠の中がカメラ映像へ変わる）が出ないので、必ず一緒に出す。
                 Emit($"ev=intro stage={_lastStage} hold={(_intro.Holding ? 1 : 0)} " +
+                     $"fresh={(_intro.LiveFresh ? 1 : 0)} centered={(_intro.FrameCentered ? 1 : 0)} " +
                      $"pass={w.passthrough:F2} live={w.live:F2} frame={w.frame:F2} edge={w.edge:F2}");
             }
 
@@ -324,6 +329,21 @@ namespace FixedCamVr.Diagnostics
                    .Append(" recMB=").Append((_recorder.RunBytes / 1048576.0).ToString("F1"));
             if (_frame != null)
                 _sb.Append(" reg=").Append(_frame.HasRegistration ? 1 : 0);
+
+            // 画像加工が実際に画面へ効いているか。mat=0 なら material 未解決＝加工は 1 つも出ていない。
+            if (_show != null)
+            {
+                _sb.Append(" mat=").Append(_show.HasScreenMaterial ? 1 : 0);
+                PostParams? p = _show.AppliedPost;
+                if (p == null) _sb.Append(" post=none");
+                else
+                    _sb.Append(" post=exp").Append(p.exposure.ToString("F2"))
+                       .Append("/con").Append(p.contrast.ToString("F2"))
+                       .Append("/sat").Append(p.saturation.ToString("F2"))
+                       .Append("/vig").Append(p.vignette.ToString("F2"))
+                       .Append("/scan").Append(p.scanline.ToString("F2"))
+                       .Append("/grain").Append(p.grain.ToString("F2"));
+            }
 
             // カメラごとの受信品質。ここが体験の土台（映像が安定しているか）。
             if (_registry != null)

@@ -277,7 +277,9 @@ namespace FixedCamVr.Streaming
         };
 
         /// <summary>
-        /// 体験者が開始位置（<c>layout.startSpot</c>）に留まっているか。
+        /// 導入を始める合図が来たか。<b>HMD を被っていることが前提</b>で、その上で
+        /// <c>run.intro.startLineId</c> があれば**そのラインを横切ったら**、無ければ従来どおり
+        /// <c>layout.startSpot</c> の円に留まったら true になる。
         ///
         /// ⚠ <b>course 座標なので位置合わせが済んでいないと判定できない。</b> 未登録なら常に false を返し、
         /// スタッフ操作へ縮退する（<see cref="PromptText"/> がその理由を HMD 内で言う）。
@@ -285,17 +287,69 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private bool IsAtStartSpot()
         {
-            var spot = showControl?.Layout?.ResolveStartSpot();
-            if (spot == null || !IsCourseRegistered()) { _inSpotSec = 0f; return false; }
+            // 置いてある HMD が位置条件をたまたま満たして勝手に始まるのを防ぐ。
+            // 被り直すまでラッチも落とす（前の体験者が踏んだ線で次が始まらない）。
+            if (!IsUserPresent()) { _inSpotSec = 0f; _startLineCrossed = false; return false; }
+            if (!IsCourseRegistered()) { _inSpotSec = 0f; return false; }
             var head2 = showControl?.HeadCourseXZProvider;
             if (head2 == null) { _inSpotSec = 0f; return false; }
-
             Vector2 p = head2();
+
+            // ライン指定があればそちらが正（円は見ない）。
+            string lineId = _def.startLineId ?? "";
+            if (!string.IsNullOrEmpty(lineId))
+            {
+                SyncStartLine(lineId);
+                _startLine.Tick(Time.unscaledTime, p.x, p.y, Time.unscaledDeltaTime);
+                LineCrossLogic.State[] st = _startLine.StateView;
+                // 横切ったら以後ずっと true（段 0 を抜けるまで保持する）。横断は事象なので、
+                // その 1 フレームを取り逃すと永久に始まらない。
+                if (st.Length > 0 && st[0].crossed) _startLineCrossed = true;
+                return _startLineCrossed;
+            }
+
+            var spot = showControl?.Layout?.ResolveStartSpot();
+            if (spot == null) { _inSpotSec = 0f; return false; }
             float r = spot.ResolveRadiusM();
             bool inside = (p - new Vector2(spot.x, spot.z)).sqrMagnitude <= r * r;
             // 通りすがりで始めない。少し留まってから。
             _inSpotSec = inside ? _inSpotSec + Time.unscaledDeltaTime : 0f;
             return _inSpotSec >= startSpotHoldSec;
+        }
+
+        private bool IsUserPresent()
+        {
+            var f = showControl?.UserPresentProvider;
+            return f == null || f();      // provider が無い環境（Editor 等）では邪魔しない
+        }
+
+        // --- 開始ライン（run.intro.startLineId → layout.lines[] の 1 本）---
+        private readonly LineCrossLogic _startLine = new LineCrossLogic();
+        private string _startLineApplied = " ";   // 未同期を表す番兵（"" は「指定なし」と区別する）
+        private bool _startLineCrossed;
+
+        private void SyncStartLine(string lineId)
+        {
+            if (lineId == _startLineApplied) return;
+            _startLineApplied = lineId;
+            _startLineCrossed = false;
+
+            LineCrossLogic.Line line = LineCrossLogic.Line.Undefined;
+            ShowLineDef[]? defs = showControl?.Layout?.lines;
+            if (defs != null)
+            {
+                foreach (ShowLineDef? d in defs)
+                {
+                    if (d == null || d.id != lineId) continue;
+                    int dir = LineCrossLogic.ParseDir(d.dir, out _);
+                    line = LineCrossLogic.Line.Between(d.x1, d.z1, d.x2, d.z2, dir, d.camera);
+                    break;
+                }
+            }
+            if (!line.defined)
+                Debug.LogWarning($"[Intro] 開始ライン '{lineId}' が layout.lines に無い — " +
+                                 $"スタッフ操作でしか導入を始められない");
+            _startLine.SetLines(new[] { line });
         }
 
         private bool IsCourseRegistered()
@@ -315,6 +369,16 @@ namespace FixedCamVr.Streaming
             if (to.sqrMagnitude < 1e-4f) return true;
             return Vector3.Angle(head.forward, to) <= centeredHalfAngleDeg;
         }
+
+        /// <summary>
+        /// 段 4（枠）が段 5（すり替え）へ進むための 2 条件。テレメトリ・診断用。
+        /// **どちらが false で足踏みしているのかはログでしか分からない** —
+        /// 実機で「枠までは出るのに映像へ変わらない」を追うときの唯一の手掛かりになる。
+        /// </summary>
+        public bool LiveFresh => IsLiveFresh();
+
+        /// <inheritdoc cref="LiveFresh"/>
+        public bool FrameCentered => IsScreenCentered();
 
         /// <summary>いま映すカメラのフレームが新鮮に届いているか（砂嵐を見せないための条件）。</summary>
         private bool IsLiveFresh()

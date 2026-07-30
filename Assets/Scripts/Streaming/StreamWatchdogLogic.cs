@@ -100,7 +100,15 @@ namespace FixedCamVr.Streaming
             _decodeFailStreak = 0;
             _recvFramesInWindow++;
             _lastFrameTime = now;
+            _everReceived = true;
         }
+
+        /// <summary>
+        /// この stream が一度でもフレームを受けたことがあるか。stall watchdog の前提。
+        /// **エンドポイント変更ではリセットしない** — 「実在するカメラかどうか」を表す性質で、
+        /// 一度でも映ったなら以後の無フレームは本物の stall として扱ってよい。
+        /// </summary>
+        private bool _everReceived;
 
         /// <summary>
         /// LoadImage 失敗時。連続失敗が枚数 or 時間の閾値を超え、かつ cooldown 明けなら true（要再接続）。
@@ -177,7 +185,13 @@ namespace FixedCamVr.Streaming
             // suspend 中は表示を止めているだけなので発火させない。初回はここで基準時刻をシード。
             // 再発火ゲートは StallReconnectSec（元の 10s 周期を保つ。cooldown に落とすと 5s 周期になる）。
             if (_lastFrameTime == 0f) _lastFrameTime = now;
-            if (!_suspended
+            // ⚠ **一度もフレームを受けたことがない stream では発火しない。** host が現場に居ない
+            // カメラ（show.json で未設定 → 焼き込み .asset の古い IP へ繋ぎに行く）に対して、
+            // 10 秒ごとに永久に張り直しを続けていた（走行 240 秒で 24 回 ＝ 再接続ログの約半分）。
+            // 居ないものは watchdog では直せない。接続の再試行は MjpegStreamReceiver 自身の
+            // 指数バックオフが回しているので、後から現れたカメラもそちらが拾う。
+            if (_everReceived
+                && !_suspended
                 && now - _lastFrameTime >= StallReconnectSec
                 && now - _lastReconnectTime >= StallReconnectSec)
             {

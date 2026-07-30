@@ -152,10 +152,15 @@ namespace FixedCamVr.Streaming
         {
             bool atStart = AtStartZone();
             bool takeRunning = timelineDirector != null && !string.IsNullOrEmpty(timelineDirector.ActiveTakeId);
-            // 演出が「進行中」か。足踏み（段 0 で開始条件を待っている状態）は含めない —
-            // 含めると開始位置に立つまで永久に本編へ進めなくなる。
+            // 演出が「進行中」か。**段 0（Black＝開始待ち）だけを除く。**
+            //
+            // ⚠ ここで `Holding` を使ってはいけない（2026-07-30 実機で踏んだ）。`Holding` は
+            // 段 0 の開始待ちだけでなく **段 3・段 4 の条件待ち**（頭を振っている／枠を見ていない）でも
+            // 立つ。そこで introPlaying が false へ落ち、**枠が出た直後に本編へ飛んで
+            // 最後の段（Swap＝枠の中がカメラ映像へ変わる）が一度も出なかった**。
+            // 段 0 は開始条件を満たすまで進まないので、除外しても「永久に本編へ進めない」は起きない。
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
-            bool introPlaying = _intro != null && _intro.Active && !_intro.Holding;
+            bool introPlaying = _intro != null && _intro.Active && _intro.Stage != IntroStage.Black;
 
             ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning, introPlaying);
 
