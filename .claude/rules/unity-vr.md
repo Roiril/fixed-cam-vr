@@ -104,7 +104,14 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 
 **⚠ 2026-06-11 時点で実測未校正**。パーテーションで L 字壁を組んだら `[HmdTrace]` を取り、
 `MainDemoSceneSetup.cs` の値を上書きして `Setup Main Demo Scene` を再実行（冪等）。
-再実行は [Tracker] を作り直すため、**Screen の ShowControlClient.zoneTrackerToDisable を再アサイン**すること。
+再実行は [Tracker] を作り直すが、**`ShowControlClient.zoneTrackerToDisable` は Setup が新 Tracker へ自動で再配線する**
+（`MainDemoSceneSetup` 2.7 節。手でアサインし直す必要はない。見つからなければ警告を出す）。
+
+**⚠ 導入演出・終了の暗転を実機で試すなら Setup の再実行が必須**（2026-07-30 実害）。
+`IntroDirector` / `IntroVeil` / `IntroStructureWire` / `ShowEndingFader` / `OVRPassthroughLayer` は
+**シーンに焼かれた GameObject** なので、コードを実装しただけでは APK に入らない。
+シーンの保存日がコードの実装日より古いときは、**ビルド前に必ず `Setup Main Demo Scene` を再実行**する
+（`grep "m_Name: Intro" Assets/Scenes/Main.unity` で 1 行も出なければ未配線）。
 
 ### ゾーン校正の再設計（2026-07-16〜・形状は PC / 位置合わせは HMD 2 点登録）
 
