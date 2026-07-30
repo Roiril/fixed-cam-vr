@@ -966,11 +966,22 @@ input:-webkit-autofill:active {
 .atl-recipes-body { padding: 10px 12px 12px; }
 
 /* ---- カメラ列（縦割り）------------------------------------------------ */
+/* 列 = カメラ。**構図を並べて見比べる**のがこの面の芯なので、折り返しと高さの不揃いは
+   どちらも芯を壊す。演出専用カメラ（role:"fx"）を畳んで実質 3 列に収め、棚の高さを抑えて
+   列の丈を揃える（2026-07-30。カメラが 4 台になって 1280px で 4 列目が 2 画面半下へ落ちていた）。 */
 .atl-cams {
-  display: grid; gap: 12px; align-items: start;
-  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  display: grid; gap: 12px; align-items: stretch;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
 }
 .atl-cam { border: 1px solid var(--line-soft); display: flex; flex-direction: column; min-width: 0; }
+/* 演出専用カメラ: ゾーンを持たず種フレームも来ないので、既定は見出しだけ。押すと開く。 */
+.atl-cam.folded { align-self: start; }
+.atl-cam.folded > :not(.atl-camhead) { display: none; }
+.atl-cam.folded .atl-camhead { cursor: pointer; }
+.atl-camfold {
+  font-size: 9.5px; letter-spacing: .06em; border: 1px solid var(--line-soft);
+  padding: 0 4px; opacity: var(--opacity-mute); cursor: pointer;
+}
 .atl-camhead {
   display: flex; align-items: center; gap: 8px;
   padding: 7px 10px; border-bottom: 1px solid var(--line-soft);
@@ -978,6 +989,10 @@ input:-webkit-autofill:active {
 .atl-camhead .spacer { flex: 1; }
 .atl-camname { font-weight: 600; letter-spacing: .08em; white-space: nowrap; }
 .atl-camstat { font-size: 10.5px; letter-spacing: .08em; opacity: var(--opacity-mute); }
+.atl-camrole {
+  font-size: 9.5px; letter-spacing: .06em; border: 1px solid var(--line-soft);
+  padding: 0 4px; opacity: var(--opacity-mute);
+}
 .atl-camstat.ok { color: var(--accent-color); opacity: 1; }
 .atl-camcount { font-size: 10px; opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
@@ -1083,7 +1098,7 @@ input:-webkit-autofill:active {
 /* ---- ④ 棚 ------------------------------------------------------------ */
 /* 棚は「並べて見比べる一覧」。カードは横並びの行にして 1 枚あたりの縦を詰める
    （旧: サムネが 4:3 で列幅いっぱい = 1 枚で列の高さが倍になり、他が見えなくなっていた）。 */
-.atl-shelf { display: flex; flex-direction: column; gap: 7px; max-height: 62vh; overflow-y: auto; scrollbar-width: thin; }
+.atl-shelf { display: flex; flex-direction: column; gap: 7px; max-height: 34vh; overflow-y: auto; scrollbar-width: thin; }
 .atl-card { border: 1px solid var(--line-soft); display: flex; align-items: stretch; min-width: 0; }
 /* 「使われている」は show.json からの導出（cues[].sourceUrl がこの出力を指している）。
    手で押す採否ボタンは 2026-07-30 に撤去した — 押し忘れると台帳が現実の逆を言うため。 */
@@ -1163,7 +1178,7 @@ input:-webkit-autofill:active {
 /* 低い画面では試写と棚を詰める（1 画面で 3 列を見比べられる状態を保つ） */
 @media (max-height: 860px) {
   .atl-view { max-height: 24vh; }
-  .atl-shelf { max-height: 52vh; }
+  .atl-shelf { max-height: 30vh; }
   .atl-sec { padding: 6px 9px; }
 }
 

@@ -91,8 +91,10 @@ export function createAtelier(deps) {
   let camsSig = '';
 
   const cams = () => {
-    const list = (deps.getCameras() || []).map((c, i) => ({ id: c.id || String(i), index: i }));
-    return list.length ? list : [{ id: 'A', index: 0 }];
+    const list = (deps.getCameras() || []).map((c, i) => ({
+      id: c.id || String(i), index: i, role: c.role === 'fx' ? 'fx' : 'zone',
+    }));
+    return list.length ? list : [{ id: 'A', index: 0, role: 'zone' }];
   };
 
   // ---- サーバ I/O -----------------------------------------------------------
@@ -296,13 +298,18 @@ export function createAtelier(deps) {
     };
 
     const el = document.createElement('section');
-    el.className = 'atl-cam';
+    // 演出専用カメラ（role:"fx"）は既定で畳む。ゾーンを持たず種フレームも来ないので、
+    //   他と同じ重さで並べると 4 台目で列が折り返し、構図を並べて見比べるという芯が壊れる。
+    el.className = 'atl-cam' + (cam.role === 'fx' ? ' folded' : '');
+    el.dataset.role = cam.role;
     el.innerHTML = `
       <header class="atl-camhead">
         <b class="atl-camname">カメラ ${esc(cam.id)}</b>
+        ${cam.role === 'fx' ? '<span class="atl-camrole">演出専用</span>' : ''}
         <span class="atl-camstat"></span>
         <span class="spacer"></span>
         <span class="atl-camcount"></span>
+        ${cam.role === 'fx' ? '<button class="atl-camfold" title="この列を開く / 畳む">開く</button>' : ''}
       </header>
 
       <div class="atl-sec atl-stage">
@@ -388,6 +395,16 @@ export function createAtelier(deps) {
       </div>`;
 
     const q = (s) => el.querySelector(s);
+
+    // 演出専用カメラの列の開閉。開けば普通の列と同じに振る舞う（試写も差分マスクも動く）。
+    const foldBtn = q('.atl-camfold');
+    if (foldBtn) {
+      const syncFold = () => { foldBtn.textContent = el.classList.contains('folded') ? '開く' : '畳む'; };
+      const toggle = () => { el.classList.toggle('folded'); syncFold(); };
+      foldBtn.onclick = (e) => { e.stopPropagation(); toggle(); };
+      q('.atl-camhead').onclick = () => { if (el.classList.contains('folded')) toggle(); };
+      syncFold();
+    }
     const msg = (m, cls = '') => { const e = q('.atl-shootmsg'); e.textContent = m; e.className = 'atl-shootmsg ' + cls; };
 
     // ===== 種フレーム =====
