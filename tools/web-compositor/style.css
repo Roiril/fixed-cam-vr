@@ -1083,8 +1083,13 @@ input:-webkit-autofill:active {
    （旧: サムネが 4:3 で列幅いっぱい = 1 枚で列の高さが倍になり、他が見えなくなっていた）。 */
 .atl-shelf { display: flex; flex-direction: column; gap: 7px; max-height: 62vh; overflow-y: auto; scrollbar-width: thin; }
 .atl-card { border: 1px solid var(--line-soft); display: flex; align-items: stretch; min-width: 0; }
-.atl-card.v-keep { border-color: rgba(90, 209, 154, .6); }
-.atl-card.v-reject { opacity: .5; }
+/* 「使われている」は show.json からの導出（cues[].sourceUrl がこの出力を指している）。
+   手で押す採否ボタンは 2026-07-30 に撤去した — 押し忘れると台帳が現実の逆を言うため。 */
+.atl-card.v-used { border-color: rgba(90, 209, 154, .6); }
+.atl-status.atl-used { color: #5ad19a; opacity: 1; }
+/* 台帳に無いまま本番で使われている素材。隠さずに先頭へ出し、記録を足す導線を持たせる。 */
+.atl-card-unlogged { border-color: var(--warn-color); }
+.atl-unlogged-note { font-size: 10px; color: var(--warn-color); }
 .atl-card.picked { border-color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-color); }
 .atl-out { line-height: 0; background: #000; position: relative; flex: 0 0 148px; display: flex; }
 .atl-out video, .atl-out img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; display: block; }
@@ -1111,9 +1116,6 @@ input:-webkit-autofill:active {
 .atl-status { font-size: 9.5px; opacity: var(--opacity-mute); white-space: nowrap; }
 .atl-bind { font-size: 10px; opacity: var(--opacity-sub); line-height: 1.6; }
 .atl-cond, .atl-src { font-size: 9.5px; opacity: var(--opacity-mute); line-height: 1.6; }
-.atl-verdicts { display: flex; gap: 4px; }
-.atl-verdicts button { flex: 1; padding: 3px 5px; font-size: 10px; }
-.atl-verdicts button.on { background: var(--accent-color); border-color: var(--accent-color); color: #000; }
 .atl-memo { width: 100%; font-size: 10.5px; }
 .atl-promptbox summary { font-size: 10px; opacity: var(--opacity-mute); cursor: pointer; }
 .atl-promptbox pre {

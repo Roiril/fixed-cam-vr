@@ -805,7 +805,7 @@ export function createAtelier(deps) {
         sourceFrame: st.seedUrl, recipeId: st.recipeId, recipeName: r ? r.name : '',
         recipeSlug: r ? (r.slug || '') : '',
         bind: { ...st.bind }, params: { ...st.params }, prompt,
-        parentId: st.parentId || '', status: 'draft', verdict: 'unrated',
+        parentId: st.parentId || '', status: 'draft',
       });
       st.parentId = '';
       copyBtn.disabled = false;
@@ -820,19 +820,62 @@ export function createAtelier(deps) {
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     }
 
+    /** この構図の「台帳に無いまま本番で使われている素材」（サーバが show.json から導出して寄越す）。 */
+    function myUnlogged() {
+      const mine = new Set((((deps.getAllCues && deps.getAllCues()) || [])).filter((c) => c.camera === cam.id)
+        .map((c) => decodeURI(String(c.sourceUrl || ''))));
+      return (data.unlogged || []).filter((u) => mine.has(decodeURI(String(u.sourceUrl || ''))));
+    }
+
     function renderShelf(force) {
       const gens = myGens();
-      const sig = gens.map((g) => `${g.id}:${g.verdict}:${g.outputUrl || ''}`).join('|')
+      const unlogged = myUnlogged();
+      const sig = gens.map((g) => `${g.id}:${(g.usedByCues || []).map((c) => c.id).join(',')}:${g.outputUrl || ''}`).join('|')
+        + '#' + unlogged.map((u) => u.sourceUrl).join('|')
         + '#' + st.pickGenId + '#' + st.pickUrl;
       if (!force && sig === shelfSig) return;
       shelfSig = sig;
       const host = q('.atl-shelf');
-      host.innerHTML = gens.length ? gens.map(genCard).join('')
-        : '<p class="atl-empty">まだ生成がありません。上でレシピを選んで 📋 を押すか、ここへ動画を落としてください。</p>';
+      host.innerHTML = (unlogged.map(unloggedCard).join('')
+        + (gens.length ? gens.map(genCard).join('')
+          : '<p class="atl-empty">まだ生成がありません。上でレシピを選んで 📋 を押すか、ここへ動画を落としてください。</p>'));
       host.querySelectorAll('.atl-card').forEach((card) => wireCard(card));
-      const k = gens.filter((g) => g.verdict === 'keep').length;
-      q('.atl-camcount').textContent = gens.length ? `素材 ${gens.length}（採用 ${k}）` : '素材なし';
+      // 「採用したか」は show.json が持っている（cues[].sourceUrl）。台帳の札ではなく導出値を出す
+      //   — 手で押す 3 択にしていた頃は、押し忘れた瞬間に「素材なし」と嘘をついていた（2026-07-30）。
+      const used = gens.filter((g) => (g.usedByCues || []).length).length;
+      const parts = [];
+      if (gens.length) parts.push(`素材 ${gens.length}（本番で使用 ${used}）`);
+      if (unlogged.length) parts.push(`⚠ 台帳外 ${unlogged.length}`);
+      q('.atl-camcount').textContent = parts.join(' / ') || '素材なし';
       renderUnfiled();
+    }
+
+    /**
+     * 台帳に記録が無いのに cue が使っている素材のカード。
+     * 外部ツールで作って直接 cue にした分・過去分がここに出る。**黙って隠さない** —
+     * 隠していたから「工房は素材なしと言うのに本番では出ている」という状態が半年続いた。
+     */
+    function unloggedCard(u) {
+      const url = u.sourceUrl;
+      const on = url === st.pickUrl;
+      const ids = (u.cues || []).map((c) => c.id).join(', ');
+      const thumb = isVideoUrl(url)
+        ? `<video src="${esc(url)}#t=0.1" muted playsinline preload="metadata"></video><span class="atl-play">▶ 試写へ</span>`
+        : `<img src="${esc(url)}" alt=""><span class="atl-play">試写へ</span>`;
+      return `
+      <article class="atl-card atl-card-unlogged${on ? ' picked' : ''}" data-unlogged="${esc(url)}">
+        <div class="atl-out clickable" data-pick="${esc(url)}">${thumb}</div>
+        <div class="atl-meta">
+          <div class="atl-cardhead">
+            <strong>${esc(fileOf(url))}</strong>
+            <span class="atl-status atl-used">✅ ${esc(ids)}</span>
+          </div>
+          <div class="atl-unlogged-note">本番で使われていますが、作り方の記録がありません。</div>
+          <div class="atl-cardfoot">
+            <button class="atl-adopt" title="この素材の生成レコードを作り、プロンプトを書き足す">✎ 作り方を書き足す</button>
+          </div>
+        </div>
+      </article>`;
     }
 
     function genCard(g) {
@@ -847,22 +890,22 @@ export function createAtelier(deps) {
           ? `<video src="${esc(g.outputUrl)}#t=0.1" muted playsinline preload="metadata"></video><span class="atl-play">▶ 試写へ</span>`
           : `<img src="${esc(g.outputUrl)}" alt=""><span class="atl-play">試写へ</span>`)
         : `<div class="atl-drop" data-drop="${esc(g.id)}"><b>⬇ 動画を<br>ここへ</b><span>ドラッグ / クリック</span></div>`;
+      // 「採用」は show.json 由来の導出値。押すボタンではないので、状態としてだけ出す。
+      const hits = g.usedByCues || [];
+      const useMark = hits.length
+        ? `<span class="atl-status atl-used" title="この素材を使っている演出素材">✅ ${esc(hits.map((c) => c.id).join(', '))}</span>`
+        : `<span class="atl-status">${g.outputUrl ? '未使用' : '送信待ち'}</span>`;
       return `
-      <article class="atl-card v-${esc(g.verdict || 'unrated')}${on ? ' picked' : ''}" data-gen="${esc(g.id)}">
+      <article class="atl-card${hits.length ? ' v-used' : ''}${on ? ' picked' : ''}" data-gen="${esc(g.id)}">
         <div class="atl-out${g.outputUrl ? ' clickable' : ''}" ${g.outputUrl ? `data-pick="${esc(g.outputUrl)}"` : ''}>${thumb}</div>
         <div class="atl-meta">
           <div class="atl-cardhead">
             <strong>${esc(g.recipeName || '(レシピなし)')}</strong>
-            <span class="atl-status">${g.outputUrl ? '取り込み済み' : '送信待ち'}</span>
+            ${useMark}
           </div>
           ${bind ? `<div class="atl-bind">${esc(bind)}</div>` : ''}
           ${cond ? `<div class="atl-cond">${esc(cond)}</div>` : ''}
           ${g.sourceFrame ? `<div class="atl-src">種 <code>${esc(fileOf(g.sourceFrame))}</code></div>` : ''}
-          <div class="atl-verdicts">
-            <button data-v="keep" class="${g.verdict === 'keep' ? 'on' : ''}">✅ 採用</button>
-            <button data-v="reject" class="${g.verdict === 'reject' ? 'on' : ''}">✕ 不採用</button>
-            <button data-v="unrated" class="${(g.verdict || 'unrated') === 'unrated' ? 'on' : ''}">― 未評価</button>
-          </div>
           <input class="atl-memo" type="text" value="${esc(g.note || '')}" placeholder="メモ（何が良かった / 悪かった）">
           <details class="atl-promptbox"><summary>プロンプト全文</summary><pre>${esc(g.prompt || '')}</pre></details>
           <div class="atl-cardfoot">
@@ -875,15 +918,32 @@ export function createAtelier(deps) {
     }
 
     function wireCard(card) {
+      // 台帳外カード（記録の無い素材）は「試写へ」と「作り方を書き足す」だけ。
+      if (card.dataset.unlogged) {
+        const u = card.dataset.unlogged;
+        const outEl = $('.atl-out', card);
+        if (outEl) outEl.onclick = () => loadPick(u, '');
+        const adopt = $('.atl-adopt', card);
+        if (adopt) {
+          adopt.onclick = async () => {
+            adopt.disabled = true;
+            // 出力だけ埋めた空のレコードを起こす。プロンプトは ③ 指示に書いて 📋 で結びつける。
+            await api('/atelier/gen', {
+              camera: cam.index, cameraLabel: cam.id, outputUrl: u,
+              sourceFrame: st.seedUrl || '', status: 'done', prompt: '',
+              note: '（本番で使用中。作り方をここに書き足す）',
+            });
+            loadPick(u, '');
+          };
+        }
+        return;
+      }
+
       const id = card.dataset.gen;
       const rec = data.generations.find((g) => g.id === id);
 
       const out = $('.atl-out', card);
       if (out && out.dataset.pick) out.onclick = () => loadPick(out.dataset.pick, id);
-
-      card.querySelectorAll('.atl-verdicts button').forEach((b) => {
-        b.onclick = () => api('/atelier/gen', { id, verdict: b.dataset.v });
-      });
 
       const memo = $('.atl-memo', card);
       if (memo) {
@@ -936,7 +996,7 @@ export function createAtelier(deps) {
         camera: cam.index, cameraLabel: cam.id, sourceFrame: st.seedUrl,
         recipeId: st.recipeId, recipeName: r ? r.name : '', recipeSlug: r ? (r.slug || '') : '',
         bind: { ...st.bind }, params: { ...st.params }, prompt: promptTa.value || compose(st),
-        status: 'draft', verdict: 'unrated',
+        status: 'draft',
       });
       return res && res.id;
     }, true);

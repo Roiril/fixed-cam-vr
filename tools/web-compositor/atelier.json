@@ -1,5 +1,5 @@
 {
-  "rev": 13,
+  "rev": 16,
   "recipes": [
     {
       "id": "r_20260726_064706_799",
@@ -12,9 +12,7 @@
         "位置",
         "見た目",
         "動き"
-      ],
-      "usedCount": 0,
-      "keptCount": 0
+      ]
     },
     {
       "id": "r_20260726_064707_124",
@@ -27,9 +25,7 @@
         "入る側",
         "出る側",
         "遮蔽物"
-      ],
-      "usedCount": 0,
-      "keptCount": 0
+      ]
     },
     {
       "id": "r_20260726_064707_451",
@@ -41,9 +37,7 @@
       "slots": [
         "動くもの",
         "起きること"
-      ],
-      "usedCount": 1,
-      "keptCount": 0
+      ]
     }
   ],
   "generations": [
@@ -51,7 +45,6 @@
       "id": "g_20260726_064710_118",
       "createdAt": "2026-07-26T06:47:10",
       "status": "draft",
-      "verdict": "unrated",
       "camera": 2,
       "cameraLabel": "C",
       "sourceFrame": "/archive/2026-06-18_old-env/camC_20260618_212125_578.jpg",
@@ -71,6 +64,20 @@
         "seed": ""
       },
       "note": "（動作確認で作った下書き。不要なら 🗑 で消してください）"
+    },
+    {
+      "id": "g_20260729_191019_008",
+      "createdAt": "2026-07-29T19:10:19",
+      "status": "done",
+      "cameraLabel": "C",
+      "sourceFrame": "/captures/camcamC_20260729_185120_421.jpg",
+      "recipeSlug": "doll",
+      "prompt": "床の上に、小さな日本人形が 1 体だけ置かれてこちらを向いている。高さ 30cm ほど。血は入れない",
+      "params": {
+        "tool": "codex",
+        "mode": "image"
+      },
+      "outputUrl": "/captures/gen_camC_doll_20260729_191238.png"
     }
   ]
 }

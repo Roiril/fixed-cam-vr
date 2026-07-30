@@ -26,6 +26,7 @@
 # キャプチャ/録画は全てブラウザ側で行い、ここはその受け皿。スマホ側には何も書かない。
 
 import base64
+import copy
 import datetime
 import json
 import os
@@ -499,24 +500,60 @@ def _load_atelier():
     return data
 
 
-def _atelier_stats(data):
-    """レシピごとの使用回数・採用数を毎回サーバで数え直す（クライアントに持たせない）。"""
+def _norm_asset_url(u):
+    """素材 URL の突合キー。percent-encode の有無で別物にしない。"""
+    return unquote(str(u or '')).strip()
+
+
+def _atelier_derive(data):
+    """
+    **採用状態は保存しない。show.json から導出する**（2026-07-30）。
+
+    「この生成物を採用したか」の答えは show.json が既に持っている
+    — `cues[].sourceUrl` がその出力ファイルを指していれば、それは採用されたということ。
+    台帳に別の札（`verdict` の 3 択ボタン）を置いていたので、押し忘れた瞬間に食い違った。
+    実際、本番に載っていた 2 枚は台帳では「未評価」で、台帳が持つ唯一の完成品はどの cue からも
+    参照されていなかった。**押されないボタンは「無い」のではなく、嘘をつく分だけ有害**。
+
+    突合キーは出力ファイルの URL。新しい id を作らないので、cue を消しても孤児が出ない。
+
+    返すのは**表示用のコピー**。`atelier.json` に導出値は書かない（原則: 状態を二重に持たない）。
+    """
+    view = copy.deepcopy(data)
+    cues = (_show or {}).get('cues') or []
+    by_src = {}
+    for c in cues:
+        key = _norm_asset_url(c.get('sourceUrl'))
+        if key:
+            by_src.setdefault(key, []).append({'id': c.get('id'), 'name': c.get('name') or ''})
+
     used, kept = {}, {}
-    for g in data.get('generations', []):
+    for g in view.get('generations', []):
+        g.pop('verdict', None)          # 旧・手動の採否札は読まない（残っていても無視する）
+        hits = by_src.get(_norm_asset_url(g.get('outputUrl')), [])
+        g['usedByCues'] = hits          # 導出（レスポンス限り）
         rid = g.get('recipeId') or ''
-        if not rid:
-            continue
-        used[rid] = used.get(rid, 0) + 1
-        if g.get('verdict') == 'keep':
-            kept[rid] = kept.get(rid, 0) + 1
-    for r in data.get('recipes', []):
+        if rid:
+            used[rid] = used.get(rid, 0) + 1
+            if hits:
+                kept[rid] = kept.get(rid, 0) + 1
+    for r in view.get('recipes', []):
         rid = r.get('id')
         r['usedCount'] = used.get(rid, 0)
         r['keptCount'] = kept.get(rid, 0)
-    return data
+
+    # 台帳に記録の無い生成物（先に作ってから記録する順序・過去分）も、cue が使っているなら見せる。
+    #   testassets/ は動作確認用のダミー（「演出 A」の文字だけ）なので除く — 作り方を記録する対象ではなく、
+    #   混ぜると本物の取りこぼしがノイズに埋もれる。
+    known = {_norm_asset_url(g.get('outputUrl')) for g in view.get('generations', []) if g.get('outputUrl')}
+    view['unlogged'] = [
+        {'sourceUrl': src, 'cues': hits}
+        for src, hits in sorted(by_src.items())
+        if src and src not in known and not src.startswith('/testassets/')
+    ]
+    return view
 
 
-VERDICT_MARK = {'keep': '✅ 採用', 'reject': '✕ 不採用', 'unrated': '― 未評価'}
 STATUS_MARK = {'draft': '📋 送信待ち', 'pending': '⏳ 生成中', 'done': '🎬 取り込み済み', 'failed': '⚠ 失敗'}
 
 
@@ -548,10 +585,12 @@ def _atelier_index_md(data):
 
     for label in sorted(by_cam.keys()):
         items = sorted(by_cam[label], key=lambda x: x.get('createdAt') or '', reverse=True)
-        keeps = sum(1 for x in items if x.get('verdict') == 'keep')
-        out += ['', f'## カメラ {label}（{len(items)} 件 / 採用 {keeps}）', '']
+        keeps = sum(1 for x in items if x.get('usedByCues'))
+        out += ['', f'## カメラ {label}（{len(items)} 件 / 本番で使用 {keeps}）', '']
         for g in items:
-            head = f'{VERDICT_MARK.get(g.get("verdict"), "― 未評価")}  {STATUS_MARK.get(g.get("status"), "")}'
+            hits = g.get('usedByCues') or []
+            mark = ('✅ 使用: ' + ', '.join(str(c.get('id')) for c in hits)) if hits else '― 未使用'
+            head = f'{mark}  {STATUS_MARK.get(g.get("status"), "")}'
             out.append(f'### {head} `{g.get("id")}`')
             if g.get('outputUrl'):
                 out.append(f'- 出力: `{g["outputUrl"]}`')
@@ -574,6 +613,18 @@ def _atelier_index_md(data):
                 out.append(f'- 派生元: `{g["parentId"]}`')
             out += ['', '```', (g.get('prompt') or '').strip(), '```', '']
 
+    # 台帳に記録が無いのに本番で使われている素材。**これが出ていたら台帳が現実を映していない**。
+    # 2026-07-30 の時点で実際に 2 件あり（工房は「素材なし」と表示していた）、それが台帳を
+    # 導出方式へ変える決め手になった。ここに出しておけば次に同じ状態になったとき気づける。
+    unlogged = data.get('unlogged') or []
+    if unlogged:
+        out += ['', '## ⚠ 台帳に無いまま本番で使われている素材', '',
+                '（外部ツールで作って直接 cue にしたもの。工房の棚から「プロンプトを書き足す」で記録できる）', '']
+        for u in unlogged:
+            ids = ', '.join(str(c.get('id')) for c in (u.get('cues') or []))
+            out.append(f'- `{u.get("sourceUrl")}` — {ids}')
+        out.append('')
+
     if not gens:
         out += ['', '## まだ生成がありません', '',
                 '卓の「🧪 素材」からカメラを選び、入力フレームとレシピを決めて 📋 でプロンプトをコピーする。', '']
@@ -581,15 +632,24 @@ def _atelier_index_md(data):
 
 
 def _save_atelier(data):
+    """
+    atelier.json には**素のデータだけ**を書く（採用状態・採用率は導出値なので保存しない）。
+    人間向けの `atelier-index.md` は導出を掛けた view から書く。
+    """
     data['rev'] = int(data.get('rev', 0)) + 1
-    _atelier_stats(data)
+    for g in data.get('generations', []):
+        g.pop('verdict', None)          # 旧・手動の採否札を保存し続けない
+        g.pop('usedByCues', None)       # 導出値が混ざって保存されるのを防ぐ
+    for r in data.get('recipes', []):
+        r.pop('usedCount', None)
+        r.pop('keptCount', None)
     tmp = ATELIER_FILE + '.tmp'
     with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, ATELIER_FILE)
     try:
         with open(ATELIER_INDEX, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(_atelier_index_md(data))
+            f.write(_atelier_index_md(_atelier_derive(data)))
     except OSError:
         pass
     return data
@@ -1002,7 +1062,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(_load_prompts())
         if path == '/atelier':
             with _atelier_lock:
-                return self._json(_atelier_stats(_load_atelier()))
+                return self._json(_atelier_derive(_load_atelier()))
         if path == '/atelier/frames':
             return self._json(self._list_source_frames())
         if path == '/generate/status':
@@ -1764,7 +1824,7 @@ class Handler(SimpleHTTPRequestHandler):
                 rec['status'] = 'done'
                 rec['sizeBytes'] = len(data)
                 _save_atelier(st)
-                return self._json({'ok': True, 'url': rec['outputUrl'], 'state': st})
+                return self._json({'ok': True, 'url': rec['outputUrl'], 'state': _atelier_derive(st)})
 
         # 壊れた本文（UTF-8 でない / JSON でない）で例外を投げると、応答を返せず接続が切れて
         # クライアントには「サーバが死んだ」ようにしか見えない。400 を返して原因を伝える。
@@ -1789,14 +1849,14 @@ class Handler(SimpleHTTPRequestHandler):
                     rec['slots'] = [str(s) for s in body['slots']]
                 rec.setdefault('kind', 'video')
                 _save_atelier(st)
-                return self._json({'ok': True, 'id': rid, 'state': st})
+                return self._json({'ok': True, 'id': rid, 'state': _atelier_derive(st)})
 
         if path == '/atelier/recipe/delete':
             with _atelier_lock:
                 st = _load_atelier()
                 st['recipes'] = [r for r in st['recipes'] if r.get('id') != body.get('id')]
                 _save_atelier(st)
-                return self._json({'ok': True, 'state': st})
+                return self._json({'ok': True, 'state': _atelier_derive(st)})
 
         if path == '/atelier/gen':
             with _atelier_lock:
@@ -1807,24 +1867,25 @@ class Handler(SimpleHTTPRequestHandler):
                     gid = gid or _atelier_new_id('g_', {g.get('id') for g in st['generations']})
                     rec = {'id': gid,
                            'createdAt': datetime.datetime.now().isoformat(timespec='seconds'),
-                           'status': 'draft', 'verdict': 'unrated'}
+                           'status': 'draft'}
                     st['generations'].append(rec)
+                # `verdict` は受け取らない（採用は show.json から導出する・_atelier_derive 参照）。
                 for k in ('camera', 'cameraLabel', 'sourceFrame', 'recipeId', 'recipeName', 'recipeSlug',
-                          'prompt', 'status', 'verdict', 'note', 'parentId', 'outputUrl', 'costUsd'):
+                          'prompt', 'status', 'note', 'parentId', 'outputUrl', 'costUsd'):
                     if k in body:
                         rec[k] = body[k]
                 for k in ('bind', 'params'):
                     if isinstance(body.get(k), dict):
                         rec[k] = body[k]
                 _save_atelier(st)
-                return self._json({'ok': True, 'id': gid, 'state': st})
+                return self._json({'ok': True, 'id': gid, 'state': _atelier_derive(st)})
 
         if path == '/atelier/gen/delete':
             with _atelier_lock:
                 st = _load_atelier()
                 st['generations'] = [g for g in st['generations'] if g.get('id') != body.get('id')]
                 _save_atelier(st)
-                return self._json({'ok': True, 'state': st})
+                return self._json({'ok': True, 'state': _atelier_derive(st)})
 
         return self._json({'ok': False, 'error': 'unknown atelier path'}, 404)
 
@@ -1842,4 +1903,11 @@ if __name__ == '__main__':
     print(f'  MJPEG stream proxy (/cam)    : http://0.0.0.0:{cam_port}/cam')
     _start_discovery(port)
     _start_idcheck()
+    # 素材索引は導出値（採用状態）を含むので、show.json 側が変わっただけでも古くなる。
+    #   起動のたびに書き直す — 人間と次セッションのシュビーが読むファイルが嘘をつく状態を残さない。
+    try:
+        with _atelier_lock:
+            _save_atelier(_load_atelier())
+    except Exception as e:
+        print(f'  (素材索引の再生成に失敗: {e})')
     ThreadingHTTPServer(('0.0.0.0', port), Handler).serve_forever()

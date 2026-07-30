@@ -1,6 +1,6 @@
 # 素材インデックス（自動生成 — 手で編集しない）
 
-更新 2026-07-26 09:25 / rev 13 / 生成 1 件 / レシピ 3 件
+更新 2026-07-30 14:50 / rev 16 / 生成 2 件 / レシピ 3 件
 
 生成の正は `atelier.json`。このファイルはそれを人が読める形に落としたもの。
 
@@ -43,11 +43,21 @@ Negative: camera movement, zoom, pan, parallax, relighting, style change, text, 
 ```
 
 
-## カメラ C（1 件 / 採用 0）
+## カメラ C（2 件 / 本番で使用 0）
 
-### ― 未評価  📋 送信待ち `g_20260726_064710_118`
+### ― 未使用  🎬 取り込み済み `g_20260729_191019_008`
+- 出力: `/captures/gen_camC_doll_20260729_191238.png`
+- 入力フレーム: `/captures/camcamC_20260729_185120_421.jpg`
+- レシピ: (レシピなし)
+- 生成条件: codex
+
+```
+床の上に、小さな日本人形が 1 体だけ置かれてこちらを向いている。高さ 30cm ほど。血は入れない
+```
+
+### ― 未使用  📋 送信待ち `g_20260726_064710_118`
 - 出力: **まだ無い**（生成して取り込む）
-- 入力フレーム: `/recordings/camC_20260618_212125_578.jpg`
+- 入力フレーム: `/archive/2026-06-18_old-env/camC_20260618_212125_578.jpg`
 - レシピ: 無人のまま異変（人を出さない）（動くもの=パーテーションの1枚が数センチだけひとりでに動く / 起きること=蛍光灯が一度だけ弱くまたたく）
 - 生成条件: dreamina / seedance 4.0 pro / 4:3 / 4s
 - メモ: （動作確認で作った下書き。不要なら 🗑 で消してください）
@@ -59,4 +69,12 @@ The room, walls, partition panels, ceiling, floor, furniture, lighting and frami
 Photorealistic, matches the input photo's lighting and lens (wide-angle, high mounted, looking down).
 Negative: camera movement, zoom, pan, parallax, relighting, style change, text, watermark, anime, cartoon, people, figures, humans.
 ```
+
+
+## ⚠ 台帳に無いまま本番で使われている素材
+
+（外部ツールで作って直接 cue にしたもの。工房の棚から「プロンプトを書き足す」で記録できる）
+
+- `/captures/gen_handB_01.png` — cue_hand_B
+- `/captures/gen_monsterA_01.png` — cue_ningyo_A
 
