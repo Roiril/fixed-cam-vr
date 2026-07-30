@@ -9,6 +9,12 @@
 #         --out masks/cue_x.png [--threshold 30] [--feather 6] [--dilate 3] [--min-area 400]
 #
 #   ⚠ マスクは**そのカメラの構図**に対して焼かれる。別カメラの素材には使えない。
+#
+#   ⚠ 出力は **スクリーン枠空間（16:9）**。差分は種フレームの画素座標（ふつう 4:3）で取れるので、
+#   実機で素材が置かれる矩形（シェーダの `_OverlayScale` と同じ contain-fit）へ収めてから書き出す。
+#   実機はマスクだけ contain-fit を通さず生 uv で読む（`_MaskScale` は無い）ため、ソース座標のまま
+#   焼くと水平 1.33 倍・枠幅の最大 12.5% 外側にずれる。common.js の MW/MH と対で、片方だけ
+#   変えると沈黙して食い違う。
 
 import argparse
 import os
@@ -16,6 +22,20 @@ import sys
 
 import numpy as np
 from PIL import Image, ImageFilter
+
+# スクリーン枠空間。tools/web-compositor/common.js の MW / MH と同じ値でなければならない。
+FRAME_W, FRAME_H = 640, 360
+
+
+def contain_rect(sw: int, sh: int, fw: int, fh: int):
+    """ソース aspect を枠 fw×fh の中央に contain-fit した矩形 (x, y, w, h)。"""
+    fa = fw / fh
+    a = (sw / sh) if (sw and sh) else fa
+    if a > fa:
+        w, h = fw, max(1, round(fw / a))
+    else:
+        w, h = max(1, round(fh * a)), fh
+    return (fw - w) // 2, (fh - h) // 2, w, h
 
 
 def largest_blob(mask: np.ndarray, min_area: int) -> np.ndarray:
@@ -85,15 +105,26 @@ def main() -> int:
 
     img = Image.fromarray((mask * 255).astype(np.uint8), mode='L')
     if a.dilate > 0:
+        # 領域を広げるのはソース解像度で（px 指定が種フレームの画素基準になる）。
         img = img.filter(ImageFilter.MaxFilter(a.dilate * 2 + 1))
+
+    # ソース座標 → スクリーン枠空間。ぼかしは縮小後（枠空間の px）に掛けるので、
+    # 実機で見える滲み幅がそのまま feather の値になる。矩形の外へは滲まない
+    # （滲むと「マスクは白いが素材が無い」領域ができ、live が隠れて黒が出る）。
+    x, y, w, h = contain_rect(base.width, base.height, FRAME_W, FRAME_H)
+    img = img.resize((w, h), Image.LANCZOS)
     if a.feather > 0:
         img = img.filter(ImageFilter.GaussianBlur(a.feather))
+    canvas = Image.new('L', (FRAME_W, FRAME_H), 0)
+    canvas.paste(img, (x, y))
+    img = canvas
 
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     # 実機は R チャンネルだけを見る。グレースケールのまま RGB へ複製して保存する。
     Image.merge('RGB', (img, img, img)).save(a.out)
     cover = float((np.asarray(img) > 127).mean())
-    print(f'ok out={a.out} size={img.size[0]}x{img.size[1]} coverage={cover * 100:.1f}%')
+    print(f'ok out={a.out} size={img.size[0]}x{img.size[1]} coverage={cover * 100:.1f}% '
+          f'（枠空間 {FRAME_W}x{FRAME_H} / 素材の矩形 {w}x{h} at {x},{y}）')
     return 0
 
 

@@ -173,6 +173,20 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 
 - cue = 事前撮影 VideoClip / 静止画 / URL ソース + マスク Texture（R チャンネル、スクリーン枠空間、白=差し替え）+ フェード時間 + 再生区間
 - 固定視点なのでマスクは事前撮影フレームから作ればそのまま位置が合う（web-compositor で検証済みの理屈）
+- **⚠ マスクだけは contain-fit を通らない。座標系は必ず「スクリーン枠空間」（16:9）**（2026-07-30 に是正）。
+  シェーダは live / overlay / CG を `_LiveScale` / `_OverlayScale` / `_CgScale` で contain-fit するが、
+  **`_MaskScale` は存在せず生 uv で読む**（[`ScreenComposite.shader`](../Assets/Art/Shaders/Streaming/ScreenComposite.shader) の `SampleBase`）。
+  したがって 4:3 のソース座標のままマスクを焼くと、実機でだけ水平 1.33 倍・枠幅の最大 12.5% 外側へずれる。
+  - **卓では原理的に見えない**バグだった（工房が 640×480 の枠でプレビューしていたため）。
+    実際に現地の実素材 2 件（`cue_hand_B` / `cue_ningyo_A`）がずれたまま合成されていた
+  - 生成器 3 つはすべて枠空間で焼く: 素材工房の自動差分（`atelier.js` の `bakeMask`）/
+    cue エディタのスライダ / [`make-diff-mask.py`](../../tools/web-compositor/make-diff-mask.py)。
+    寸法の正は `common.js` の `MW`/`MH`（640×360）で、CLI の `FRAME_W`/`FRAME_H` と対
+  - **枠が 16:9 であることは Unity 側のテストが固定する**（`ScreenFrameAspectTests`）。
+    Quad の localScale・`screenAspectOverride=0`・卓の 2 定数・シェーダに `_MaskScale` が無いこと を突き合わせる。
+    **枠のアスペクトを変えるならこの 4 つを同時に直す**（片方だけだと沈黙して食い違う）
+  - マスクは「素材のどこを使うか」ではなく「**スクリーン枠のどこを差し替えるか**」。素材が letterbox される
+    領域に白を置いても、そこに overlay は無いので live が消えて黒が出るだけ（`ContainUv` が範囲外を 0 にする）
 - 発火: キーボード（CueBinding.key、Editor+Link オペレータ用）/ `PlayCue()` / `StopOverlay()` / **Web オペレータ卓の演出 ON/OFF（show.json `control.activeCue`）**
 - ポスト FX（vignette/grain/scanline 等）はシェーダ内 = スクリーン内容にだけかかる。視界全体への FullScreenPass とは独立
 
@@ -582,6 +596,18 @@ show.json トップレベルに `run` を新設。**キーが無くてもコー�
 `_OverlayGain` / `_OverlayOffset` を掛けるだけ。**向きは「素材を実写へ寄せる」**（実機で動かせるのは素材の側だけ）。
 焼くかどうかは卓の「境界ブレンド」の色統計トグルに従う。
 多重帯域ブレンディングは Quest で重いので実装していない（企画書は「フェザリング**や**多重帯域」と選択で書いている）。
+
+**焼く経路は [`bakeColorMatch`](../../tools/web-compositor/color-match.js) 1 本**（2026-07-30 に一本化）。
+cue を作る面はすべてこれを通す — 素材工房は通っておらず、**卓は色を合わせた絵を出すのに実機は素の色**
+という食い違いが出ていた。
+
+- **動画は尺全体から複数点サンプルして畳む**（`statsFromMedia` → `averageStats`）。実機が持てる補正は
+  1 組だけなので、保存した瞬間の 1 フレームで解くと暗→明の素材で後半が破綻する。
+  プールした sd は**群平均のばらつきを含める**（単純平均だと明暗の振れ幅がまるごと落ち、gain が倍以上ずれる。
+  `color-match.test.mjs` が数値で固定）
+- **ラプラシアン（多重帯域）は卓プレビュー専用なので既定 OFF**（`common.js` の `blendCfg`）。
+  ON にすると卓だけ継ぎ目が消えて見えるので、チェックボックスに「卓だけ」の印を出す。
+  色統計は焼かれて実機に届くので既定 ON のまま。**この 2 つを同じ見た目で並べない**
 
 #### 遅延の「管理」で測っているもの / 測っていないもの
 

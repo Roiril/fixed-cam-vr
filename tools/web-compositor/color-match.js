@@ -89,6 +89,33 @@ export function statsFromImageData(data) {
 }
 
 /**
+ * 複数の統計をプールして 1 つにまとめる（動画を何点かサンプルした結果を畳む）。
+ *
+ * sd は各群の sd の単純平均**ではない**。全体の分散 = 群内分散の平均 + 群平均の分散 で、
+ * 後者を落とすと「尺の中で明るさが変わる素材」の振れ幅がまるごと消える。
+ * 暗→明のクリップで gain が過大になるのはこの項を取りこぼしたときに起きる。
+ */
+export function averageStats(list) {
+  const items = (list || []).filter((s) => s && s.count);
+  if (!items.length) return { mean: [0, 0, 0], sd: [0, 0, 0], count: 0 };
+  const n = items.length;
+  const mean = [0, 0, 0];
+  const varSum = [0, 0, 0];
+  for (const s of items) for (let c = 0; c < 3; c++) mean[c] += s.mean[c] / n;
+  for (const s of items) {
+    for (let c = 0; c < 3; c++) {
+      const d = s.mean[c] - mean[c];
+      varSum[c] += (s.sd[c] * s.sd[c] + d * d) / n;
+    }
+  }
+  return {
+    mean,
+    sd: [Math.sqrt(varSum[0]), Math.sqrt(varSum[1]), Math.sqrt(varSum[2])],
+    count: items.reduce((a, s) => a + s.count, 0),
+  };
+}
+
+/**
  * 描画可能な要素（img / video / canvas）を小さな canvas へ縮小して統計を取る。
  * 縮小するのは、統計に必要なのは分布であって解像度ではないから（32×32 でも実用上ぶれない）。
  * ブラウザ専用（node のテストは上の純関数だけを触る）。
@@ -107,4 +134,60 @@ export function statsFromElement(el, size = 48) {
   } catch {
     return null;   // 別オリジンの画像（tainted canvas）は諦めて恒等にする
   }
+}
+
+/** シーク完了を待つ（1.2 秒で諦める。壊れた素材で焼き込みを止めない）。 */
+const seekTo = (v, t) => new Promise((resolve) => {
+  let done = false;
+  const finish = () => { if (done) return; done = true; clearTimeout(timer); v.removeEventListener('seeked', finish); resolve(); };
+  const timer = setTimeout(finish, 1200);
+  v.addEventListener('seeked', finish, { once: true });
+  try { v.currentTime = t; } catch { finish(); }
+});
+
+/**
+ * 素材の統計。**動画は尺全体から複数点サンプルして畳む**。
+ *
+ * 実機が持てる補正は 1 組（gain/offset ×3）だけなので、保存した瞬間の 1 フレームで解くと
+ * 「その明るさ」に固定された補正が焼かれる。暗く始まって明るくなる素材では、後半が破綻する。
+ * 再生位置は元へ戻し、再生中だったものは再生を続ける（試写を乱さない）。
+ */
+export async function statsFromMedia(el, samples = 5) {
+  if (!el) return null;
+  if (el.tagName !== 'VIDEO') return statsFromElement(el);
+  const dur = el.duration;
+  if (!Number.isFinite(dur) || dur <= 0.05) return statsFromElement(el);
+  const wasPaused = el.paused;
+  const t0 = el.currentTime;
+  const acc = [];
+  try {
+    el.pause();
+    for (let i = 0; i < samples; i++) {
+      await seekTo(el, (dur * (i + 0.5)) / samples);
+      const s = statsFromElement(el);
+      if (s && s.count) acc.push(s);
+    }
+  } catch { /* シークできない素材は現フレームで妥協する */ }
+  try {
+    await seekTo(el, t0);
+    if (!wasPaused) el.play().catch(() => {});
+  } catch { /* 戻せなくても焼き込みは続ける */ }
+  return acc.length ? averageStats(acc) : statsFromElement(el);
+}
+
+/**
+ * 実機へ焼く 6 float を解く。**素材を実写へ寄せる**（実機で動かせるのは素材の側だけ）。
+ * 卓のプレビューと同じ意思決定（境界ブレンドの色統計トグル）を使うので、cue を作るどの面も
+ * この 1 関数を通すこと — 通し忘れると「卓で色が合って見えたのに実機は素の色」になる。
+ */
+export async function bakeColorMatch(liveEl, srcEl, cfg) {
+  const none = { hasMatch: false, matchGain: [1, 1, 1], matchOffset: [0, 0, 0] };
+  if (!cfg || !cfg.colorMatch || !(cfg.colorStrength > 1e-4)) return none;
+  const liveStats = statsFromElement(liveEl);
+  const srcStats = await statsFromMedia(srcEl);
+  // 実写か素材のどちらかが読めない（未接続・別オリジン）ときは黙って恒等にする。
+  if (!liveStats || !srcStats || !liveStats.count || !srcStats.count) return none;
+  const m = solveMatch(liveStats, srcStats, cfg.colorStrength);
+  if (isIdentity(m)) return none;
+  return { hasMatch: true, matchGain: m.gain, matchOffset: m.offset };
 }

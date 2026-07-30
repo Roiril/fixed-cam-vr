@@ -23,13 +23,7 @@
 //   戻り続ける（overlayOn が落ちるまで復帰しない）。ループさせて見る面では必ず true にする。
 import { createContext, SourceTexture } from './gl.js';
 import { Pipeline } from './pipeline.js';
-import { blendCfg, FX_DEFAULT } from './common.js';
-
-const containScale = (w, h, fa) => {
-  if (!w || !h) return [1, 1];
-  const a = w / h;
-  return a > fa ? [1, fa / a] : [a / fa, 1];
-};
+import { blendCfg, containScale, FX_DEFAULT } from './common.js';
 
 export function createCompositeView(canvas, provider) {
   let ctx;

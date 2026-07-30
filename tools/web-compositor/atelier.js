@@ -13,16 +13,21 @@
 //   束縛値 = そのカメラでの具体値（位置・動作）。ここだけが場所依存
 //   生成   = レシピ × 束縛値 × 種フレームの 1 回の試行。全文プロンプトを焼き込んで残す
 import { createCompositeView } from './composite-view.js';
-import { captures, refreshCaptures, onCaptures, isVideoUrl, encPath, FX_DEFAULT } from './common.js';
+import {
+  captures, refreshCaptures, onCaptures, isVideoUrl, encPath, FX_DEFAULT,
+  MW, MH, FRAME_ASPECT, containRect, blendCfg,
+} from './common.js';
+import { bakeColorMatch } from './color-match.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fileOf = (u) => String(u || '').split('/').pop();
 
-// 差分マスクの作業解像度（ぼかして使うので粗くてよい）と、書き出すマスク PNG の解像度。
+// 差分マスクの作業解像度（ぼかして使うので粗くてよい）。素材と種を同じ寸法へ潰して画素差を取る。
+//   書き出す PNG は common.js の MW×MH（= スクリーン枠空間 16:9）。作業解像度とは座標系が違い、
+//   ソース座標 → 枠空間の contain-fit 変換を挟む（`bakeMask`）。ここを素通しすると実機だけずれる。
 const DW = 192, DH = 144;
-const MASK_W = 640, MASK_H = 480;
 
 // 固定カメラ i2v の不変部。マスク合成が前提なので「足す」より「変えるな」を強く書く。
 const SPINE = `Static locked-off tripod security camera. The camera does not move, pan, zoom, or shake at all.
@@ -300,7 +305,7 @@ export function createAtelier(deps) {
 
       <div class="atl-sec atl-stage">
         <div class="atl-h">① 試写<span class="atl-sub">Quest と同じ合成式で「載せた見え」を出す</span></div>
-        <div class="view-wrap"><canvas class="atl-view" width="640" height="480"></canvas></div>
+        <div class="view-wrap"><canvas class="atl-view" width="640" height="360"></canvas></div>
         <div class="atl-stagebar">
           <span class="atl-seg" role="group" aria-label="背景">
             <button data-bg="seed" class="on" title="選んだ種フレームを背景にする（カメラ未接続でも見える）">背景: 種</button>
@@ -402,17 +407,16 @@ export function createAtelier(deps) {
     // 試写の枠を背景ソースの実寸比に合わせる（監視列の applyAspect と同じ流儀）。
     //   固定 4:3 だと 16:9 のカメラで左右に黒帯が出て、素材の見えを判断しにくい。
     let viewAspect = '';
+    // 試写枠は **実機のスクリーン枠と同じ 16:9 固定**。ソースのアスペクトに追従させてはいけない。
+    //   実機の枠（MjpegScreenStage の Quad）は 16:9 で、4:3 の映像は左右 12.5% ずつ黒帯になる。
+    //   卓が枠をソースに合わせると、その黒帯が消え、マスクの端も枠の端に見えてしまう
+    //   ＝「卓で合っていたのに実機でずれる」を卓の側から見えなくする（2026-07-30）。
     function applyViewAspect() {
-      const src = st.bg === 'live' ? (deps.getLiveImg && deps.getLiveImg(cam.id)) : seedImg;
-      const w = src ? src.naturalWidth : 0, h = src ? src.naturalHeight : 0;
-      if (!w || !h) return;
-      const aStr = (w / h).toFixed(4);
-      if (viewAspect === aStr) return;
-      viewAspect = aStr;
+      if (viewAspect === 'fixed') return;
+      viewAspect = 'fixed';
       const cv = q('.atl-view');
-      cv.style.aspectRatio = aStr;
-      cv.width = Math.max(2, Math.round(480 * (w / h)));
-      cv.height = 480;
+      cv.style.aspectRatio = String(FRAME_ASPECT);
+      cv.width = MW; cv.height = MH;
     }
 
     let seedSig = '';
@@ -533,7 +537,7 @@ export function createAtelier(deps) {
     //   Quest 側は静的マスク PNG を使うので、瞬間差分ではなく **累積の最大値** を取る。
     //   再生が進むほど「その素材で動きうる領域」に収束し、実運用と同じ形になる。
     const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
-    const seedC = mk(DW, DH), ovC = mk(DW, DH), accC = mk(DW, DH), maskC = mk(MASK_W, MASK_H);
+    const seedC = mk(DW, DH), ovC = mk(DW, DH), accC = mk(DW, DH), maskC = mk(MW, MH);
     const seedCtx = seedC.getContext('2d', { willReadFrequently: true });
     const ovCtx = ovC.getContext('2d', { willReadFrequently: true });
     const accCtx = accC.getContext('2d');
@@ -542,8 +546,36 @@ export function createAtelier(deps) {
 
     function resetMotion() {
       seedData = null; acc = null; accImg = null; motionPixels = 0;
-      maskCtx.clearRect(0, 0, MASK_W, MASK_H);
+      maskCtx.clearRect(0, 0, MW, MH);
       const b = q('.atl-tocue'); if (b) b.disabled = !st.pickUrl;
+    }
+
+    /**
+     * 累積差分（ソース映像の座標 DW×DH）を **スクリーン枠空間**（MW×MH = 16:9）へ焼く。
+     *
+     * 差分は素材の画素座標で取れているので、実機で素材が置かれる矩形（シェーダの `_OverlayScale`
+     * と同じ contain-fit）へそのまま収める。**枠いっぱいに引き伸ばしてはいけない** — マスクだけは
+     * 実機で contain-fit を通らず生 uv で読まれるため、4:3 素材なら水平 1.33 倍にずれる。
+     *
+     * ぼかしは矩形の内側でクリップする。外へ滲ませると「マスクは白いが素材が無い」領域ができ、
+     * live が隠されて黒が出る（`ContainUv` が範囲外の overlay を 0 にするため）。
+     */
+    function bakeMask() {
+      const isVid = ovEl && ovEl.tagName === 'VIDEO';
+      const ow = isVid ? (ovEl.videoWidth || 0) : (ovEl ? ovEl.naturalWidth : 0);
+      const oh = isVid ? (ovEl.videoHeight || 0) : (ovEl ? ovEl.naturalHeight : 0);
+      const sw = ow || (seedImg ? seedImg.naturalWidth : 0);
+      const sh = oh || (seedImg ? seedImg.naturalHeight : 0);
+      const [x, y, w, h] = containRect(sw, sh, MW, MH);
+      maskCtx.clearRect(0, 0, MW, MH);
+      maskCtx.save();
+      maskCtx.beginPath();
+      maskCtx.rect(x, y, w, h);
+      maskCtx.clip();
+      maskCtx.filter = 'blur(6px)';
+      maskCtx.drawImage(accC, x, y, w, h);
+      maskCtx.filter = 'none';
+      maskCtx.restore();
     }
 
     function updateMotion() {
@@ -571,9 +603,7 @@ export function createAtelier(deps) {
           d[p] = d[p + 1] = d[p + 2] = acc[i]; d[p + 3] = 255;
         }
         accCtx.putImageData(accImg, 0, 0);
-        maskCtx.filter = 'blur(6px)';
-        maskCtx.drawImage(accC, 0, 0, MASK_W, MASK_H);
-        maskCtx.filter = 'none';
+        bakeMask();
         motionDirty = true;
       }
       return motionPixels > 0 ? maskC : null;
@@ -654,6 +684,12 @@ export function createAtelier(deps) {
           strength: st.strength, loop: false, fadeIn: 0.5, fadeOut: 0.5,
           trimStart: 0, trimEnd: 0,
         };
+        // 色統計マッチングを 6 float に焼く（cue エディタと同じ経路）。
+        //   これを忘れると、工房のプレビューは色を合わせた絵を出すのに実機は素の色で出る
+        //   ＝「卓で見て良かったから採用した」という判断そのものが嘘になる（2026-07-30 に是正）。
+        //   基準の実写はライブ優先・無ければ種フレーム（工房はカメラ未接続の自宅作業を前提にしている）。
+        const refEl = (st.bg === 'live' && deps.getLiveImg && deps.getLiveImg(cam.id)) || seedImg;
+        Object.assign(cue, await bakeColorMatch(refEl, ovEl, blendCfg));
         const r = deps.saveCue ? await deps.saveCue(cue) : { ok: false };
         if (!r || r.ok === false) throw new Error('show.json 保存失敗');
         deps.onCueSaved && deps.onCueSaved(cue);

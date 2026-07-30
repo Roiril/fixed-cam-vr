@@ -38,11 +38,38 @@ export const FX_CCTV = {
   temperature: -0.18, tint: 0.16, lift: 0.065,
   vignette: 0.45, grain: 0.065, scanline: 0.20,
 };
+// マスク PNG の寸法 = **スクリーン枠空間**（16:9）。マスクを作る面はすべてこれを使う。
+//   ⚠ 実機シェーダはマスクだけ contain-fit を通さず生 uv で読む（`_MaskScale` は存在しない。
+//   live / overlay / CG は各々 `_LiveScale` / `_OverlayScale` / `_CgScale` を通る）。
+//   つまりマスクは「素材のどこを使うか」ではなく「**スクリーン枠のどこを差し替えるか**」で、
+//   4:3 のソース座標のまま焼くと、実機でだけ水平 1.33 倍・枠幅の最大 12.5% 外側へずれる
+//   （卓が 4:3 枠でプレビューしていると原理的に露見しない）。2026-07-30 に工房と CLI をここへ寄せた。
 export const MW = 640, MH = 360;
+export const FRAME_ASPECT = MW / MH;
+
+/**
+ * contain-fit のスケール (sx, sy)。`MjpegScreen.cs` / `ScreenComposite.shader` の ContainUv と同式。
+ * 4:3 のソースを 16:9 の枠に収めると (0.75, 1) — 左右に 12.5% ずつ黒帯が出る。
+ */
+export const containScale = (w, h, fa = FRAME_ASPECT) => {
+  if (!w || !h) return [1, 1];
+  const a = w / h;
+  return a > fa ? [1, fa / a] : [a / fa, 1];
+};
+
+/** contain-fit した矩形 [x, y, w, h]（枠寸法 fw×fh の中でソース aspect を中央に収める）。 */
+export const containRect = (srcW, srcH, fw, fh) => {
+  const [sx, sy] = containScale(srcW, srcH, fw / fh);
+  const w = fw * sx, h = fh * sy;
+  return [(fw - w) / 2, (fh - h) / 2, w, h];
+};
 
 // 境界ブレンド（合成跡を消す）設定。全カメラ・全プレビュー共通の可変オブジェクト。
 //   app.js の blend-bar が書き換え、composite-view / cue-editor が参照する（live binding）。
-export const blendCfg = { feather: 0.3, colorMatch: true, colorStrength: 1, laplacian: true, levels: 7 };
+//   ⚠ `laplacian` は **卓プレビュー専用**（Quest 側は `lerp(live, overlay, mask)` の一発で、
+//   多重帯域ブレンディングを持たない）。既定 ON にすると「卓で見た絵」と実機が食い違うので既定 OFF。
+//   `colorMatch` は cue へ 6 float に焼いて実機へ届くので既定 ON のままでよい。
+export const blendCfg = { feather: 0.3, colorMatch: true, colorStrength: 1, laplacian: false, levels: 7 };
 
 // カメラ index → 色（floormap.js / ribbon.js と同配色）。
 export const CAM_COLORS = ['#5ad19a', '#5aa8ff', '#ffae5e', '#d98cff', '#ff6b8e', '#8ad4ff'];

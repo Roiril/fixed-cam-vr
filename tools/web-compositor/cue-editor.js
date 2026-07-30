@@ -13,7 +13,7 @@
 //   }
 import { blendCfg, encPath, isVideoUrl, onCaptures } from './common.js';
 import { createCompositeView } from './composite-view.js';
-import { isIdentity, solveMatch, statsFromElement } from './color-match.js';
+import { bakeColorMatch } from './color-match.js';
 
 const MW = 640, MH = 360;
 
@@ -198,26 +198,6 @@ export function createCueEditor(deps) {
     return res.url;
   }
 
-  // ---- 色統計マッチングの焼き込み ------------------------------------------
-  // 卓のプレビューは GPU の縮約で毎フレーム統計を取るが、実機は同じことをしない（Quest で重い、
-  // かつ固定視点では事前に解ける）。ここで per-channel の gain/offset へ落として cue に持たせる。
-  // 向きは「素材を実写へ寄せる」— 実機で動かせるのは素材の側だけだから。
-  function bakeColorMatch() {
-    if (!blendCfg.colorMatch || !(blendCfg.colorStrength > 0.0001)) {
-      return { hasMatch: false, matchGain: [1, 1, 1], matchOffset: [0, 0, 0] };
-    }
-    const liveEl = (deps.getLiveImg && camId) ? deps.getLiveImg(camId) : null;
-    const liveStats = statsFromElement(liveEl);
-    const srcStats = statsFromElement(srcMedia);
-    if (!liveStats || !srcStats || !liveStats.count || !srcStats.count) {
-      // 実写か素材のどちらかが読めない（未接続・別オリジン）ときは黙って恒等にする。
-      return { hasMatch: false, matchGain: [1, 1, 1], matchOffset: [0, 0, 0] };
-    }
-    const m = solveMatch(liveStats, srcStats, blendCfg.colorStrength);
-    if (isIdentity(m)) return { hasMatch: false, matchGain: [1, 1, 1], matchOffset: [0, 0, 0] };
-    return { hasMatch: true, matchGain: m.gain, matchOffset: m.offset };
-  }
-
   // cue_<camId>_<n> の空き番号。
   function nextCueId() {
     const base = `cue_${camId}_`;
@@ -247,7 +227,8 @@ export function createCueEditor(deps) {
       };
       // 色統計マッチングを 6 つの数へ落として焼く（実機はこれを掛けるだけ）。
       // プレビューの「境界ブレンド」の色統計トグルと同じ意思決定を使う。
-      Object.assign(cue, bakeColorMatch());
+      Object.assign(cue, await bakeColorMatch(
+        (deps.getLiveImg && camId) ? deps.getLiveImg(camId) : null, srcMedia, blendCfg));
       const r = await deps.saveCue(cue);
       if (!r || r.ok === false) throw new Error('state 保存失敗');
       cueId = id; selMaskUrl = cue.maskUrl; maskEdited = false;

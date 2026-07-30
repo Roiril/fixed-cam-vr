@@ -361,6 +361,13 @@ select option { background: #111; color: var(--text-color); }
 .col-sec .src-url { font-size: 11px; margin-top: 4px; }
 .chk { display: flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap; }
 .chk input { accent-color: var(--accent-color); }
+/* 「卓のプレビューにしか効かない」印。実機に届く設定（色統計）と届かない設定（ラプラシアン）を
+   同じ見た目で並べると、卓で作った判断が実機で崩れる理由が画面から読めない。 */
+.chk-note {
+  font-size: 9px; font-weight: 400; letter-spacing: .06em;
+  color: var(--warn-color); border: 1px solid var(--warn-color);
+  padding: 0 3px; margin-left: 3px; opacity: .8;
+}
 .ed-status { display: block; margin-top: 6px; font-size: 11px; min-height: 1.2em; opacity: var(--opacity-sub); }
 .ed-status.ok { color: var(--accent-color); opacity: 1; }
 .ed-status.err { color: var(--danger-color); opacity: 1; }

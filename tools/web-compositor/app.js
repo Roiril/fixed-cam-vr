@@ -1701,6 +1701,20 @@ bindBlend('bColor', (el) => { blendCfg.colorMatch = el.checked; });
 bindBlend('bColorStr', (el) => { blendCfg.colorStrength = parseFloat(el.value); });
 bindBlend('bLap', (el) => { blendCfg.laplacian = el.checked; });
 bindBlend('bLevels', (el) => { blendCfg.levels = parseInt(el.value, 10); $('#bLevelsV').textContent = el.value; });
+
+// 既定は common.js の blendCfg が単一の正。DOM の初期値はそこから流す。
+//   HTML の value/checked と JS の既定を二重に書くと、片方だけ変えたときに沈黙して食い違う
+//   （ラプラシアンを既定 OFF にしたとき実際に踏みかけた）。
+const syncBlendUi = () => {
+  const set = (id, fn) => { const el = $('#' + id); if (el) fn(el); };
+  set('bFeather', (el) => { el.value = blendCfg.feather; });
+  set('bColor', (el) => { el.checked = blendCfg.colorMatch; });
+  set('bColorStr', (el) => { el.value = blendCfg.colorStrength; });
+  set('bLap', (el) => { el.checked = blendCfg.laplacian; });
+  set('bLevels', (el) => { el.value = blendCfg.levels; });
+  set('bLevelsV', (el) => { el.textContent = String(blendCfg.levels); });
+};
+syncBlendUi();
 refreshCaptures();
 
 // ---- 生成プロンプト（旧 prompts.json）は 2026-07-28 に UI ごと撤去した ----

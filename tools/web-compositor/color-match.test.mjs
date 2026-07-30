@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   GAIN_MAX, GAIN_MIN, IDENTITY, OFFSET_LIMIT,
-  isIdentity, solveMatch, statsFromImageData,
+  averageStats, isIdentity, solveMatch, statsFromImageData,
 } from './color-match.js';
 
 const stats = (mean, sd) => ({ mean, sd });
@@ -93,4 +93,35 @@ test('ImageData の統計（透過画素は数えない）', () => {
 test('全部透過なら count 0（呼び出し側が恒等へ倒せる）', () => {
   const s = statsFromImageData(new Uint8ClampedArray([10, 20, 30, 0]));
   assert.equal(s.count, 0);
+});
+
+// ---- averageStats（動画を尺全体からサンプルして畳む）------------------------
+
+const stat = (m, sd, count = 100) => ({ mean: [m, m, m], sd: [sd, sd, sd], count });
+
+test('プールした sd は群平均のばらつきを含む（単純平均ではない）', () => {
+  // 暗い前半（平均 0.2）と明るい後半（平均 0.6）。どちらも群内 sd は 0.1。
+  const a = averageStats([stat(0.2, 0.1), stat(0.6, 0.1)]);
+  assert.ok(Math.abs(a.mean[0] - 0.4) < 1e-9);
+  // 全体分散 = 群内分散の平均 0.01 + 群平均の分散 0.04 = 0.05
+  assert.ok(Math.abs(a.sd[0] - Math.sqrt(0.05)) < 1e-9);
+  // 単純平均（0.1）で済ませると、明暗の振れ幅がまるごと落ちる
+  assert.ok(a.sd[0] > 0.2);
+  assert.equal(a.count, 200);
+});
+
+test('1 フレームだけで解くと gain が倍以上ずれる（尺全体で取る理由）', () => {
+  const live = stat(0.4, Math.sqrt(0.05));
+  const whole = averageStats([stat(0.2, 0.1), stat(0.6, 0.1)]);
+  const oneFrame = stat(0.2, 0.1);          // 暗い頭のフレームだけを見た場合
+  assert.ok(Math.abs(solveMatch(live, whole).gain[0] - 1) < 1e-6);
+  assert.ok(solveMatch(live, oneFrame).gain[0] > 2);
+});
+
+test('空・count 0 の群は無視する', () => {
+  assert.equal(averageStats([]).count, 0);
+  assert.equal(averageStats(null).count, 0);
+  const a = averageStats([stat(0.5, 0.1), { mean: [0, 0, 0], sd: [0, 0, 0], count: 0 }]);
+  assert.ok(Math.abs(a.mean[0] - 0.5) < 1e-9);
+  assert.ok(Math.abs(a.sd[0] - 0.1) < 1e-9);
 });
