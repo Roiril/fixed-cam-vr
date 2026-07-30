@@ -1137,6 +1137,8 @@ input:-webkit-autofill:active {
   text-align: left; width: 100%;
 }
 .atl-unitem.on { border-color: var(--accent-color); color: var(--accent-color); }
+/* 名前にこの構図のカメラ id が入るものを先頭へ。絞り込みはしない（命名が揃っていないため）。 */
+.atl-unitem.mine { border-color: color-mix(in srgb, var(--accent-color) 40%, transparent); }
 .atl-unname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- レシピカード ------------------------------------------------------ */

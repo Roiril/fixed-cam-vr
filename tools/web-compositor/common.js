@@ -118,6 +118,18 @@ export async function saveCueObject(cue) {
   return { ok: r && r.ok !== false, cues };
 }
 
+/**
+ * cue を消す。**呼ぶ前に参照が無いことを確かめること**（この関数は確認しない）。
+ * 消す面がどこにも無かったので、試作で作った cue と孤児の `masks/<id>.png` が
+ * show.json に溜まり続けていた（2026-07-30 に追加）。
+ */
+export async function deleteCueObject(id) {
+  const s = await getState();
+  const cues = (Array.isArray(s.cues) ? s.cues : []).filter((c) => c.id !== id);
+  const r = await postState({ cues });
+  return { ok: r && r.ok !== false, cues };
+}
+
 // ---- captures/ 素材一覧（全モジュール共有・購読可）-----------------------------
 export const captures = { items: [] };
 const captureListeners = new Set();

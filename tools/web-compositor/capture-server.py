@@ -1362,6 +1362,25 @@ class Handler(SimpleHTTPRequestHandler):
             return self._save_scenario()
         if parsed.path == '/export-build':
             return self._export_build()
+
+        # 参照している素材が実際にディスクにあるか。本番前チェックが使う。
+        #   卓は「cue の id が定義されているか」しか見ておらず、**ファイルを消しても ✅ が出た**
+        #   （気づけるのは 📦 エクスポートの時か、卓を使わない現場なら実機で映像が出ない瞬間）。
+        #   masks / captures / recordings / testassets / audio を 1 つの口でまとめて解決する
+        #   （種類ごとの一覧 API を増やすと、増えた種類を照合し忘れる）。
+        if parsed.path == '/assets/check':
+            body = self._read_json_body()
+            urls = body.get('urls') if isinstance(body.get('urls'), list) else []
+            missing, external = [], []
+            for u in urls[:400]:
+                u = str(u or '')
+                if not u:
+                    continue
+                if not u.startswith('/'):
+                    external.append(u)        # http(s):// や sa:// は卓からは確かめられない
+                elif not self._resolve_local_asset(u):
+                    missing.append(u)
+            return self._json({'ok': True, 'missing': missing, 'external': external})
         if parsed.path == '/save':
             q = parse_qs(parsed.query)
             typ = q.get('type', ['image'])[0]

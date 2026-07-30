@@ -1531,6 +1531,31 @@ export function createRibbon(container, deps) {
       refreshCaptures: () => deps.refreshCaptures && deps.refreshCaptures(),
       getAllCues: () => cues,
       saveCue: (cue) => deps.saveCue(cue),
+      // 使っている演出がある cue は消させない（消せると演出が黙って映らなくなる）。
+      getCueUsage: (id) => {
+        const out = [];
+        for (const s of (timeline.segments || [])) {
+          for (const t of (s.takes || [])) {
+            for (const st of (t.steps || [])) {
+              if (st.cueId !== id) continue;
+              const label = `${s.lap}周目 ${camLabel(s.camera)}「${t.name || t.id || '演出'}」`;
+              if (!out.includes(label)) out.push(label);
+            }
+          }
+        }
+        return out;
+      },
+      deleteCue: (id) => deps.deleteCue(id),
+      onDeleted: (id) => {
+        const k = cues.findIndex((c) => c.id === id);
+        if (k >= 0) cues.splice(k, 1);
+        if (cueEditorTarget && cueEditorTarget.step && cueEditorTarget.step.cueId === id) {
+          cueEditorTarget.step.cueId = '';
+          markDirty();
+        }
+        render();
+        const t = selTake(); if (t) renderStepRows(t);
+      },
       onSaved: (cue) => {
         if (cueEditorTarget && cueEditorTarget.step) cueEditorTarget.step.cueId = cue.id;
         const k = cues.findIndex((c) => c.id === cue.id);

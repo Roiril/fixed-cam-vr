@@ -5,7 +5,7 @@
 import {
   FX, FX_DEFAULT, FX_CCTV, blendCfg, camColor, escapeHtml,
   streamBase, getState, postState, postCommand,
-  captures, refreshCaptures, createMediaCache, saveCueObject,
+  captures, refreshCaptures, createMediaCache, saveCueObject, deleteCueObject,
 } from './common.js';
 import { createCompositeView } from './composite-view.js';
 import { createFloorMap } from './floormap.js';
@@ -1411,6 +1411,25 @@ if ($('#recFps')) $('#recFps').onchange = () => saveRecord({ fpsCap: Math.max(1,
 
 // ---- ✅ 本番前チェック（自動更新）------------------------------------------
 //   「押す前に見る場所」を 1 枚に集約する。各行がそのまま切り分けの入口。
+// 参照している素材が**ディスクに実在するか**はサーバに聞く（ブラウザからファイルの有無は見えない）。
+//   本番前チェックは 3 秒ごとに走るので、参照 URL の集合が変わった時だけ 1 回投げ、
+//   描画はキャッシュを読む（結果は 1 周遅れで出る）。
+let assetCheckSig = '';
+let assetMissing = [];
+let assetChecking = false;
+function checkAssetsExist(urls) {
+  const uniq = [...new Set(urls.filter(Boolean))].sort();
+  const sig = uniq.join('|');
+  if (!uniq.length) { assetCheckSig = sig; assetMissing = []; return; }
+  if (sig === assetCheckSig || assetChecking) return;
+  assetChecking = true;
+  fetch('/assets/check', { method: 'POST', body: JSON.stringify({ urls: uniq }) })
+    .then((r) => r.json())
+    .then((j) => { assetCheckSig = sig; assetMissing = (j && j.missing) || []; })
+    .catch(() => { /* サーバ断: 別の行が赤くなるのでここでは黙る */ })
+    .finally(() => { assetChecking = false; });
+}
+
 function preflightRows() {
   const rows = [];
   const cams = state?.cameras || [];
@@ -1614,26 +1633,33 @@ function preflightRows() {
   //   v3 は カット自身が素材 URL を持つので、cue 参照とは別に assetUrl 空のカットも拾う
   //   （空だと実機でそのカットだけ映像が出ない）。
   const cueMap = new Map((state?.cues || []).map((c) => [c.id, c]));
-  const missing = [], noSrc = [], emptyAsset = [];
+  const missing = [], noSrc = [], emptyAsset = [], refUrls = [];
   for (const s of segs) {
     for (const id of segCueIds(s)) {
       const cue = cueMap.get(id);
       if (!cue) { if (!missing.includes(id)) missing.push(id); }
       else if (!cue.sourceUrl) { if (!noSrc.includes(id)) noSrc.push(id); }
+      else { refUrls.push(cue.sourceUrl); if (cue.maskUrl) refUrls.push(cue.maskUrl); }
     }
     for (const t of (s.takes || [])) {
       for (const st of (t.steps || [])) {
-        if ((st.source === 'clip' || st.source === 'still') && !st.assetUrl) {
+        if (st.source !== 'clip' && st.source !== 'still') continue;
+        if (!st.assetUrl) {
           const label = t.name || t.id || '演出';
           if (!emptyAsset.includes(label)) emptyAsset.push(label);
-        }
+        } else refUrls.push(st.assetUrl);
       }
     }
   }
+  checkAssetsExist(refUrls);
+  // ファイルが消えている / 名前が変わっている参照。これを見ないと 📦 エクスポートまで気づけず、
+  //   卓を使わない現場なら実機でその映像が出ない瞬間まで分からない。
+  const gone = assetMissing.filter((u) => refUrls.includes(u));
   if (missing.length) rows.push({ s: 'ng', label: '演出素材', detail: `未定義の素材: ${missing.join(', ')}` });
   else if (emptyAsset.length) rows.push({ s: 'ng', label: '演出素材', detail: `映像が未選択のカットがある: ${emptyAsset.join(', ')}` });
+  else if (gone.length) rows.push({ s: 'ng', label: '演出素材', detail: `ファイルが見つからない: ${gone.map((u) => u.split('/').pop()).join(', ')} — 消したか名前を変えた可能性` });
   else if (noSrc.length) rows.push({ s: 'warn', label: '演出素材', detail: `素材未設定: ${noSrc.join(', ')}` });
-  else rows.push({ s: 'ok', label: '演出素材', detail: '参照素材はすべて実在・映像あり' });
+  else rows.push({ s: 'ok', label: '演出素材', detail: `参照素材 ${new Set(refUrls).size} 件はすべて実在・映像あり` });
 
   // 端末内録画: 「録画」カットが指す (周, カメラ) を実機が本当に録るか。
   //   ここが食い違うと実機はそのカットを黙って飛ばす（卓には何も出ない）。参照が無ければ行ごと出さない。
@@ -1850,6 +1876,11 @@ if ($('#timeline')) {
     // cue を state.cues へ upsert（メモリ state も即反映して UI をスナップに保つ）。
     saveCue: async (cue) => {
       const r = await saveCueObject(cue);
+      if (state && r.cues) state.cues = r.cues;
+      return r;
+    },
+    deleteCue: async (id) => {
+      const r = await deleteCueObject(id);
       if (state && r.cues) state.cues = r.cues;
       return r;
     },

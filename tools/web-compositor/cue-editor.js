@@ -62,7 +62,10 @@ export function createCueEditor(deps) {
           <button class="ce-mask-clear" title="全面差し替え（マスク無し）に戻す">全消去</button>
         </div>
 
-        <div class="row-btns"><button class="ce-save accent">💾 cue を保存</button></div>
+        <div class="row-btns">
+          <button class="ce-save accent">💾 cue を保存</button>
+          <button class="ce-del" title="この cue を消す（使っている演出があるうちは消せません）">🗑 削除</button>
+        </div>
         <span class="ce-status ed-status"></span>
       </div>
     </div>`;
@@ -234,10 +237,37 @@ export function createCueEditor(deps) {
       cueId = id; selMaskUrl = cue.maskUrl; maskEdited = false;
       ed(`✓ 保存（${maskUrl ? 'マスク付き' : '全面差し替え'}）`, 'ok');
       deps.onSaved && deps.onSaved(cue);
+      syncDelState();
     } catch (e) { ed('保存失敗: ' + e.message, 'err'); }
   };
 
   q('.ce-close').onclick = () => { el.dispatchEvent(new CustomEvent('ce-close')); };
+
+  // 使っている演出があるうちは消せない（「作れない組み合わせは卓が選ばせない」の延長）。
+  //   消す面がどこにも無かったので、試作の cue と孤児の masks/*.png が溜まり続けていた。
+  const delBtn = q('.ce-del');
+  function syncDelState() {
+    const usage = (cueId && deps.getCueUsage) ? (deps.getCueUsage(cueId) || []) : [];
+    const saved = !!(cueId && (deps.getAllCues && deps.getAllCues() || []).some((c) => c.id === cueId));
+    delBtn.disabled = !saved || usage.length > 0;
+    delBtn.title = !saved ? 'まだ保存されていません'
+      : usage.length ? `使っている演出があります: ${usage.join(' / ')} — 先にそちらから外してください`
+        : 'この cue を消す';
+  }
+  delBtn.onclick = async () => {
+    const usage = (cueId && deps.getCueUsage) ? (deps.getCueUsage(cueId) || []) : [];
+    if (usage.length) return ed(`使用中のため消せません: ${usage.join(' / ')}`, 'err');
+    if (!confirm(`${cueId} を消します。マスク PNG はディスクに残ります。`)) return;
+    delBtn.disabled = true;
+    try {
+      const r = deps.deleteCue ? await deps.deleteCue(cueId) : { ok: false };
+      if (!r || r.ok === false) throw new Error('state 保存失敗');
+      ed(`✓ ${cueId} を削除`, 'ok');
+      deps.onDeleted && deps.onDeleted(cueId);
+      el.dispatchEvent(new CustomEvent('ce-close'));
+    } catch (e) { ed('削除失敗: ' + e.message, 'err'); }
+    syncDelState();
+  };
 
   // ---- プレビュー（composite-view）-------------------------------------------
   const view = createCompositeView(q('.ce-view'), {
@@ -279,6 +309,7 @@ export function createCueEditor(deps) {
     // 保存時は maskEdited=false のため既存 maskUrl を維持する。
     drawMask();
     populateSources();
+    syncDelState();
     ed(cue ? '' : '素材を選び 💾 保存', '');
   }
 

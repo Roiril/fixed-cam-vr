@@ -382,7 +382,7 @@ export function createAtelier(deps) {
       <div class="atl-sec atl-shelfsec">
         <div class="atl-h">④ 生成物<span class="atl-sub">クリックで試写に載る。ここへ動画を落とすと素材だけ先に入る</span></div>
         <div class="atl-shelf"></div>
-        <details class="atl-unfiled"><summary>📁 未記録の素材（captures/）<span class="atl-uncount"></span></summary>
+        <details class="atl-unfiled"><summary>📁 まだ記録していないファイル（撮影・素材・動作確認用）<span class="atl-uncount"></span></summary>
           <div class="atl-unfiled-body"></div>
         </details>
       </div>`;
@@ -1020,21 +1020,33 @@ export function createAtelier(deps) {
 
     // 未記録素材（captures/ にあるが生成レコードに紐づいていないファイル）
     let unfiledSig = '';
+    /**
+     * まだ生成レコードに紐づいていないファイルの一覧。
+     *
+     * ⚠ 中身は `captures/` だけではない（`/captures/list` は撮影・素材・動作確認用ダミーの合併）。
+     * 名乗りと中身が食い違っていたので 2026-07-30 に文言を直した。
+     * **カメラで絞り込みはしない** — 命名規約が揃っておらず（`camB_*` / `gen_handB_*` が混在）、
+     * 絞ると本物が消える。代わりにこの構図に関係しそうなものを先頭へ並べる。
+     */
     function renderUnfiled() {
       const known = new Set(data.generations.map((g) => g.outputUrl).filter(Boolean));
-      const items = (captures.items || []).filter((it) => !known.has(it.url));
+      const all = (captures.items || []).filter((it) => !known.has(it.url));
+      const mine = (it) => new RegExp(`(^|[^A-Za-z])cam${cam.id}[_.]|${cam.id}[_.-]?\\d`, 'i').test(it.name);
+      const items = [...all.filter(mine), ...all.filter((it) => !mine(it))];
+      const nMine = all.filter(mine).length;
       const sig = items.map((i) => i.url).join('|') + '#' + st.pickUrl;
       if (sig === unfiledSig) return;
       unfiledSig = sig;
       q('.atl-uncount').textContent = items.length ? `　${items.length}` : '　0';
       const host = q('.atl-unfiled-body');
-      host.innerHTML = items.length ? `<div class="atl-unlist">${items.map((it) => `
-        <button class="atl-unitem${it.url === st.pickUrl ? ' on' : ''}" data-url="${esc(it.url)}" title="${esc(it.name)}">
+      host.innerHTML = items.length ? `<div class="atl-unlist">${items.map((it, i) => `
+        <button class="atl-unitem${it.url === st.pickUrl ? ' on' : ''}${i < nMine ? ' mine' : ''}" data-url="${esc(it.url)}" title="${esc(it.name)}${it.kind === 'test' ? '（動作確認用）' : ''}">
           <span class="atl-unkind">${it.type === 'video' ? '🎞' : '🖼'}</span>
           <span class="atl-unname">${esc(it.name)}</span>
         </button>`).join('')}</div>
-        <p class="atl-note">クリックで試写に載ります。良かったら <b>💾 カットの素材にする</b> で cue になります。</p>`
-        : '<p class="atl-empty">captures/ に未記録のファイルはありません。</p>';
+        <p class="atl-note">名前にこの構図（${esc(cam.id)}）が入っているものを先に並べています。
+          クリックで試写に載り、良ければ <b>💾 カットの素材にする</b> で cue になります。</p>`
+        : '<p class="atl-empty">まだ記録していないファイルはありません。</p>';
       host.querySelectorAll('.atl-unitem').forEach((b) => { b.onclick = () => loadPick(b.dataset.url, ''); });
     }
 
