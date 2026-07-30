@@ -1,8 +1,11 @@
 ---
 name: hud-font-and-preview
 description: HMD内テキストの文言を変えたらフォント再生成が必須（静的ベイク）／HUD見た目確認は Play 禁止・HudPreviewScreenshot（batchmode可）で撮る
-metadata:
+metadata: 
+  node_type: memory
   type: project
+  originSessionId: 2d1c5a0d-26a4-43f3-9ef9-6c8a4816b72a
+  modified: 2026-07-30T07:09:02.904Z
 ---
 
 # HMD 内テキストのフォントと見た目検証（2026-07-23 確立）
@@ -15,7 +18,11 @@ metadata:
 - 再生成: `Tools/FixedCamVr/Setup/Generate Japanese HUD Font`、または batchmode
   `-executeMethod FixedCamVr.Streaming.EditorTools.JapaneseHudFontSetup.Generate`
 - ベイク対象は **JapaneseHudFontSetup.cs の sources 配列の .cs から自動収集**。HMD に文字列を出す
-  スクリプトを新設したら sources へ追加すること（2026-07-23 に ControllerGuidePanel / OvrControllerBridge を追加）
+  スクリプトを新設したら sources へ追加すること（2026-07-23 に ControllerGuidePanel / OvrControllerBridge、
+  **2026-07-30 に IntroDirector** を追加）
+- **⚠ 追加漏れは「文字を出す面が無い」と同時に起きると露見しない。** 導入演出（2026-07-30）は
+  文言（`IntroDirector.PromptText`）を書いたが**読む面を作っていなかった**ので、フォント収集の
+  漏れもテストも警告も何も鳴らなかった。**文言を書いたら、それを出す面と sources 追加を対で確認する**
 - 生成ログの「欠落 N 文字」を確認（📍 等の絵文字サロゲートは Web 卓専用なので無視可）
 
 ## 2. HUD の見た目確認 = HudPreviewScreenshot（Play モード禁止）
