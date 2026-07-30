@@ -1,0 +1,70 @@
+---
+name: material-flow
+description: 素材フロー（マスク・合成・プロンプト管理）を触る前に。マスクは枠空間 16:9／採用は導出／卓と実機で違う設定
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 2d1c5a0d-26a4-43f3-9ef9-6c8a4816b72a
+  modified: 2026-07-30T06:16:58.583Z
+---
+
+**素材まわりを触る前に、この 4 つを確認する。**（2026-07-30 に立て直した。設計は
+[[.claude/plans/2026-07-30_material-flow-rebuild.md]]、契約は `rules/streaming.md`）
+
+## 1. マスクは「スクリーン枠空間 16:9」で焼く。素材の座標系ではない
+
+実機シェーダは live / overlay / CG を `_LiveScale` / `_OverlayScale` / `_CgScale` で contain-fit するが、
+**マスクだけ生 uv で読む**（`_MaskScale` は存在しない）。4:3 のソース座標のまま焼くと実機でだけ
+水平 1.33 倍・枠幅の最大 12.5% 外側へずれる。**卓が 4:3 枠でプレビューしていると原理的に見えない**
+（実際に現地の実素材 2 件がずれたまま合成されていた）。
+
+- 寸法の正は `common.js` の `MW`/`MH`（640×360）。`make-diff-mask.py` の `FRAME_W`/`FRAME_H` と対
+- **枠が 16:9 であることは `ScreenFrameAspectTests`（EditMode）が固定する** — Quad の localScale・
+  `screenAspectOverride=0`・卓の 2 定数・シェーダに `_MaskScale` が無いこと を突き合わせる。
+  枠のアスペクトを変えるならこの 4 つを同時に直す
+- 工房の試写枠も 16:9 固定。**ソースのアスペクトに追従させてはいけない**（追従させると実機で出る
+  黒帯が消え、ずれが卓から見えなくなる）
+
+## 2. 「採用したか」は保存しない。show.json から導出する
+
+`cues[].sourceUrl` が生成物の `outputUrl` を指していれば採用。突合キーは**出力ファイルの URL**で、
+新しい id は作らない（cue を消しても孤児が出ない）。
+
+**Why:** 手で押す 3 択の札（`verdict`）にしていたら一度も押されず、**本番に載っている 2 枚を
+工房が「素材なし」と表示**していた。ディスクに生成物 5 枚・台帳が知るのは 1 枚・その 1 枚は
+どの cue からも参照されていない、という逆相関になっていた。
+
+**How to apply:** 導出は `capture-server.py` の `_atelier_derive`（レスポンス限り・JSON には書かない）。
+台帳に無いまま使われている素材は `unlogged` で返り、棚の先頭に ⚠ 付きで出る。
+
+## 3. 卓のプレビューには実機に届かない設定が混ざる
+
+| 設定 | 実機に届く？ |
+|---|---|
+| 色統計マッチング | ✅ 6 float（`matchGain`/`matchOffset`）に焼かれる。**焼く経路は `bakeColorMatch` 1 本** |
+| フェザー | ✅ マスク PNG に焼き込まれる |
+| ラプラシアン（多重帯域） | ❌ **卓だけ**。既定 OFF + チェックボックスに「卓だけ」の印 |
+
+動画素材の色統計は**尺全体から複数点サンプル**して畳む（`statsFromMedia` → `averageStats`）。
+1 フレームで解くと暗→明の素材で後半が破綻する。プールした sd は群平均のばらつきを含める
+（単純平均だと gain が倍以上ずれる。`color-match.test.mjs` が数値で固定）。
+
+## 4. プロンプトの棚は 1 つ。穴埋めスロットは無い
+
+「保存した指示」（データのキー名は `recipes` のまま）を選ぶと本文がそのまま指示欄に入る。
+`{{スロット}}` の穴埋めは撤去した — 骨格は `/generate` がサーバ側で自動付与するので、
+テンプレに残るのは作者が書く一行だけになった。
+
+- 📋 は**コピーするだけ**。記録は戻ってきたファイルを棚へ落とした時に本文ごと 1 回で作る
+  （書きかけの本文は `localStorage['atl.prompt.<camId>']` に残るのでリロードを挟んでも繋がる）
+- 旧 `prompts.json` の 7 件は台帳へ移行済み（`promptsMigratedAt`）。API は撤去、ファイルは移行元として残置
+- **作風のコツ（静止→異常な一拍 / 瞬間移動）は卓に出さない**。陳腐化して嘘になるので [[web_compositor]] に置いたまま。
+  卓に出すのは道具選びに効く 1 行だけ（Veo / Flow は弾かれる・Kling とローカル Wan は寛容）
+
+## 卓サーバを再起動すると起きること
+
+`capture-server.py` を変えたら再起動が要る。起動時に **旧 prompts の取り込み**と
+**`atelier-index.md` の書き直し**が走る（索引は導出値を含むので show.json 側が変わるだけで古くなる）。
+再起動前にブラウザの未保存を確認する（本番前チェックの「未保存」行）。
+
+関連: [[web_compositor]] / [[codex_image_pipeline]] / [[show_json_is_live_config]] / [[cg_compositing]]

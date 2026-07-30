@@ -1794,3 +1794,15 @@ canvas.fm-campose-edit { cursor: crosshair; }
 .ac-prefab-l { flex: 1 1 220px; }
 .ac-prefab-l input { flex: 1 1 auto; min-width: 0; }
 .ac-del { margin-left: auto; padding: 2px 8px; font-size: 11px; line-height: 1; }
+
+/* cue → その素材の作り方（素材台帳から sourceUrl 一致で引く）。
+   本番に載っている絵の作り方が失われると、同じ系統の 2 枚目が作れない。 */
+.ce-origin:empty { display: none; }
+.ce-originbox summary { font-size: 11px; opacity: var(--opacity-sub); cursor: pointer; }
+.ce-originbox pre {
+  margin: 4px 0 0; padding: 6px 8px; border: 1px solid var(--line-soft);
+  font-size: 10.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+  max-height: 22vh; overflow-y: auto;
+}
+.ce-originsrc { margin: 4px 0 0; font-size: 10.5px; opacity: var(--opacity-mute); }
+.ce-originnone { margin: 0; font-size: 10.5px; opacity: var(--opacity-mute); }

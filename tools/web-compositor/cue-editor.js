@@ -42,6 +42,7 @@ export function createCueEditor(deps) {
           <button class="ce-src-refresh" title="一覧を更新">↻</button>
           <button class="ce-src-folder" title="素材フォルダ（captures/）を開く">📂</button>
         </div>
+        <div class="ce-origin"></div>
         <div class="row-btns ce-trim-row" style="display:none">
           <span class="sld">再生区間 <input class="ce-trim-start" type="number" min="0" step="0.1" value="0" title="開始秒">–<input class="ce-trim-end" type="number" min="0" step="0.1" value="0" title="終了秒（0=最後まで）">s</span>
         </div>
@@ -143,7 +144,7 @@ export function createCueEditor(deps) {
       try { srcMedia.currentTime = trimStart || 0; srcMedia.play().catch(() => {}); } catch { /* noop */ }
     }
   }
-  srcSelect.onchange = () => { trimStart = 0; trimEnd = 0; trimStartI.value = 0; trimEndI.value = 0; loadSource(srcSelect.value); };
+  srcSelect.onchange = () => { trimStart = 0; trimEnd = 0; trimStartI.value = 0; trimEndI.value = 0; loadSource(srcSelect.value); renderOrigin(); };
   q('.ce-src-refresh').onclick = () => deps.refreshCaptures && deps.refreshCaptures();
   // captures/ が更新されたら素材 select を張り直す（録画・キャプチャの反映）。
   const unsubCaptures = onCaptures(() => populateSources());
@@ -241,6 +242,36 @@ export function createCueEditor(deps) {
     } catch (e) { ed('保存失敗: ' + e.message, 'err'); }
   };
 
+  // ---- この素材の作り方（素材台帳から sourceUrl 一致で引く）----------------------
+  //   cue からプロンプトへ戻る線がどこにも無く、本番に載っている絵の作り方が失われていた
+  //   （同じ系統の 2 枚目を作れない）。突合は出力ファイルの URL — 新しい id を作らない。
+  let atelierGens = null;
+  function loadAtelier() {
+    if (atelierGens) return Promise.resolve(atelierGens);
+    return fetch('/atelier').then((r) => r.json())
+      .then((j) => { atelierGens = (j && j.generations) || []; return atelierGens; })
+      .catch(() => { atelierGens = []; return atelierGens; });
+  }
+  function renderOrigin() {
+    const host = q('.ce-origin');
+    if (!host) return;
+    const url = sourceUrl || '';
+    if (!url) { host.innerHTML = ''; return; }
+    loadAtelier().then((gens) => {
+      if ((sourceUrl || '') !== url) return;          // 選び直された後の結果は捨てる
+      const key = decodeURI(url);
+      const g = gens.find((x) => decodeURI(String(x.outputUrl || '')) === key);
+      host.innerHTML = g && (g.prompt || '').trim()
+        ? `<details class="ce-originbox"><summary>この素材の作り方${g.recipeName ? `（${escHtml(g.recipeName)}）` : ''}</summary>
+             <pre>${escHtml(g.prompt)}</pre>
+             ${g.sourceFrame ? `<p class="ce-originsrc">種フレーム <code>${escHtml(String(g.sourceFrame).split('/').pop())}</code></p>` : ''}
+           </details>`
+        : '<p class="ce-originnone">作り方の記録がありません（🧪 素材の棚から書き足せます）。</p>';
+    });
+  }
+  const escHtml = (t) => String(t ?? '').replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
   q('.ce-close').onclick = () => { el.dispatchEvent(new CustomEvent('ce-close')); };
 
   // 使っている演出があるうちは消せない（「作れない組み合わせは卓が選ばせない」の延長）。
@@ -310,6 +341,7 @@ export function createCueEditor(deps) {
     drawMask();
     populateSources();
     syncDelState();
+    renderOrigin();
     ed(cue ? '' : '素材を選び 💾 保存', '');
   }
 
