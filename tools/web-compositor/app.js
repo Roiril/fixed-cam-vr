@@ -17,6 +17,7 @@ import { createAtelier } from './atelier.js';
 import { createActorsPanel } from './actors.js';
 import { createCalibUi } from './calib-ui.js';
 import { calibBadgeText, lensesOf, lensTrustIssues } from './calib-session.js';
+import { introConfig, introStageSec, introDurationLabel, introPreflightRow } from './intro-model.js';
 
 const $ = (s) => document.querySelector(s);
 const MW = 640, MH = 360;
@@ -1227,6 +1228,52 @@ function renderRunCfg(s) {
   e.target.value = r.targetSec;
   e.hard.value = r.hardLimitSec;
   e.glitch.value = Number((s && s.control && s.control.switchGlitch) || 0);
+  renderIntroCfg(r);
+}
+
+// ---- 導入の遷移演出（show.json run.intro）------------------------------------
+//   現実 → 固定カメラの映像へ格下げする約 33 秒（設計 2026-07-30_intro-passthrough-to-screen.md）。
+//   run の一部なので**保存は applyRunCfg の 1 経路に乗せる**（新しい保存口を作らない）。
+//   判定と既定は intro-model.js が単一の正（本番前チェックも同じ関数を読む）。
+const INTRO_NUM = {
+  realSec: '#introReal', degradeSec: '#introDegrade', structureSec: '#introStructure',
+  frameSec: '#introFrame', swapSec: '#introSwap', maxSec: '#introMaxSec', glitchOnSwap: '#introGlitch',
+};
+const INTRO_BOOL = {
+  enabled: '#introOn', showCameraMarks: '#introCamMarks',
+  showRoomWire: '#introRoomWire', raiseHandPrompt: '#introRaiseHand',
+};
+
+/** DOM → 正規化した intro（UI に無いキー（edgeColor 等）は現状値を引き継ぐ）。 */
+function readIntroCfg(baseRun) {
+  const raw = { ...((baseRun && baseRun.intro) || {}) };
+  for (const [k, sel] of Object.entries(INTRO_NUM)) {
+    const el = $(sel);
+    if (el) raw[k] = parseFloat(el.value);
+  }
+  for (const [k, sel] of Object.entries(INTRO_BOOL)) {
+    const el = $(sel);
+    if (el) raw[k] = !!el.checked;
+  }
+  return introConfig({ intro: raw });
+}
+
+/** 合計秒を出す。上限を超えたら警告色（超えた段は実機が飛ばす）。 */
+function renderIntroSum(run) {
+  const el = $('#introSum');
+  if (!el) return;
+  const intro = readIntroCfg(run);
+  const over = introStageSec(intro) > intro.maxSec;
+  el.textContent = `${introDurationLabel(intro, run && run.introMinSec)}${over ? ` ⚠ 上限 ${intro.maxSec}s 超` : ''}`;
+  el.className = 'ed-status ' + (over ? 'err' : 'ok');
+}
+
+function renderIntroCfg(r) {
+  if (!$('#introOn')) return;
+  const intro = introConfig(r);
+  for (const [k, sel] of Object.entries(INTRO_NUM)) { const el = $(sel); if (el) el.value = intro[k]; }
+  for (const [k, sel] of Object.entries(INTRO_BOOL)) { const el = $(sel); if (el) el.checked = !!intro[k]; }
+  renderIntroSum(r);
 }
 
 async function applyRunCfg() {
@@ -1243,11 +1290,19 @@ async function applyRunCfg() {
     targetSec: Math.max(0, parseFloat(e.target.value) || 0),
     hardLimitSec: Math.max(0, parseFloat(e.hard.value) || 0),
   };
+  run.intro = readIntroCfg(s.run);
   // control は shallow 置換なので、必ず取り直した control を土台にする（runEpoch / slots を飛ばさない）。
   const ctrl = { ...(s.control || {}) };
   ctrl.switchGlitch = Math.max(0, Math.min(1, parseFloat(e.glitch.value) || 0));
   const r = await postState({ run, control: ctrl });
   if (!st) return;
+  const intoState = $('#introCfgState');
+  if (intoState) {
+    intoState.textContent = (r && r.ok !== false)
+      ? `✓ 適用（${run.intro.enabled ? introDurationLabel(run.intro, run.introMinSec) : '導入演出なし'}）`
+      : '✕ 適用失敗（サーバ断）';
+    intoState.className = 'ed-status ' + (r && r.ok !== false ? 'ok' : 'err');
+  }
   st.textContent = (r && r.ok !== false)
     ? `✓ 適用（${run.totalLaps} 周 / 導入 ${run.introEnabled ? `${run.introMinSec}s` : 'なし'} / 目安 ${run.targetSec}s）`
     : '✕ 適用失敗（サーバ断）';
@@ -1255,6 +1310,13 @@ async function applyRunCfg() {
 }
 
 for (const el of Object.values(runCfgEls())) if (el) el.onchange = applyRunCfg;
+// 導入も run の一部なので保存先は applyRunCfg（同じ 1 経路）。合計秒だけは打ちながら追従させる。
+for (const sel of [...Object.values(INTRO_NUM), ...Object.values(INTRO_BOOL)]) {
+  const el = $(sel);
+  if (!el) continue;
+  el.onchange = applyRunCfg;
+  el.oninput = () => renderIntroSum({ ...RUN_CFG_DEFAULT, ...((state && state.run) || {}) });
+}
 
 if ($('#switchDwell')) $('#switchDwell').onchange = applySwitchTiming;
 if ($('#switchCooldown')) $('#switchCooldown').onchange = applySwitchTiming;
@@ -1504,6 +1566,14 @@ function preflightRows() {
     } else if (ok.length) {
       rows.push({ s: 'ok', label: '🎯 較正', detail: `${ok.join(', ')} が較正済み` });
     }
+  }
+
+  // 🎬 導入。段 3（構造）は**現実に線を直接重ねる**ので、部屋の寸法が既定値のままだと
+  // 位置合わせがどれだけ良くても線が実物に合わない（＝段 3 が現地検証を兼ねる意味も消える）。
+  // 導入が無効なら行ごと出さない（判定は intro-model.js が単一の正）。
+  {
+    const introRow = introPreflightRow({ run: state?.run, layout: state?.layout, cameras: cams });
+    if (introRow) rows.push(introRow);
   }
 
   // 体験の骨格。走り切る周数を超えた周に演出を書いても**絶対に出ない**（そこへ到達する前に終わる）。

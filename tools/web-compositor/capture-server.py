@@ -232,8 +232,16 @@ def _default_show():
         # 体験 1 回の骨格（企画書 3 章「3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒」）。
         # totalLaps を走り切ると Unity は暗転して終了する。targetSec は表示専用（超過しても止めない）。
         # hardLimitSec は動かない体験者への保険（0 で無効）。
+        # run.intro = 導入の遷移演出（現実 → 固定カメラの映像）。段ごとの秒と on/off だけを持つ。
+        # 導入は 1 種類でよく、演出（takes）として著作可能にしない（自由度を持たせると
+        # 「導入が壊れている show.json」を作れてしまう）。
         'run': {'totalLaps': 3, 'introEnabled': True, 'introMinSec': 20, 'introAutoAdvance': True,
-                'targetSec': 180, 'hardLimitSec': 300, 'endFadeSec': 1.5},
+                'targetSec': 180, 'hardLimitSec': 300, 'endFadeSec': 1.5,
+                'intro': {'enabled': True, 'maxSec': 40,
+                          'realSec': 4, 'degradeSec': 8, 'structureSec': 6,
+                          'frameSec': 5, 'swapSec': 8,
+                          'edgeColor': '#ffffff', 'showCameraMarks': True, 'showRoomWire': True,
+                          'glitchOnSwap': 0.8, 'raiseHandPrompt': True}},
         # 端末内録画（1 周目を録って 3 周目の演出で流す）。既定は無効。
         'record': {'enabled': False, 'laps': [1], 'maxSegmentSec': 60, 'maxTotalMB': 200, 'fpsCap': 15},
         # CG レイヤに立てる人形の定義（cameras[i].pose が著作済みのカメラでのみ出る）。

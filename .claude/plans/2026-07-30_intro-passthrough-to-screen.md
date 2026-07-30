@@ -264,7 +264,41 @@
 
 ---
 
-## 11. やらないこと（この設計の外）
+## 11. 実装（2026-07-30）と、設計から変えた点
+
+| 何を | どこに |
+|---|---|
+| 段の状態機械（判断の全部） | [`IntroLogic`](../../Assets/Scripts/Streaming/IntroLogic.cs)（UnityEngine 非依存・dt 注入）+ [`IntroLogicTests`](../../Assets/Tests/Streaming/IntroLogicTests.cs) 22 本 |
+| 覆い（枠・粒・走査線・乱れ） | [`IntroVeil`](../../Assets/Scripts/Streaming/IntroVeil.cs) + [`IntroVeil.shader`](../../Assets/Art/Shaders/Intro/IntroVeil.shader) |
+| 観測と配布 | [`IntroDirector`](../../Assets/Scripts/Streaming/IntroDirector.cs) |
+| パススルーの見た目 | [`PassthroughStyler`](../../Assets/Scripts/OvrBridge/PassthroughStyler.cs)（Assembly-CSharp 側） |
+| 慣らし歩行の計時 | `ShowRunLogic.RestartIntroClock()` / `ShowRunDirector.RestartIntroClock()`（追加はこの 1 本だけ） |
+| show.json の受け | `ShowIntroDef`（`ShowControlClient.cs`）。`run.intro` |
+| シーン生成 | `MainDemoSceneSetup`（`CreateIntroVeil` / `CreateIntroDirector` / `EnsurePassthroughStyler`） |
+| 卓（編集欄・本番前チェック） | `intro-model.js` + `app.js` + `capture-server.py` の既定値 |
+
+**設計から変えた点**（実装して分かったこと）:
+
+1. **枠は head-lock にした**（設計は「開始時点の頭 yaw に出す」＝ワールド固定と書いていた）。
+   ワールド固定にすると、頭を振ったときに覆いの外が見えてしまう。段 4・段 5 は体験者が静止している
+   前提（段 4 の開始条件で頭の角速度を見ている）なので、head-lock で困らない
+2. **`frameCentered` の意味を変えた**。枠が head-lock なら「枠が視野中心にあるか」は常に真で無意味。
+   見るべきは「**本編のスクリーンの側が正面に来ているか**」（スクリーンは yaw を緩く追従する）
+3. **`textureOpacity` は触らない**。Underlay では「暗くする」意味しか持たないので、枠の外を黒にするのは
+   `IntroVeil`（alpha を書く面）の仕事に一本化した。役割を混ぜると、どちらが効いているのか分からなくなる
+4. **パススルーは演出が終わってから切る**。切ると数百 ms の黒が出るが、その時点で覆いが黒いので
+   体験者には見えない。本編は黒背景なのでパススルーを回し続ける理由が無い（90Hz を守る）
+5. **`ShowIntroDef.LooksUnset` を足した**。JsonUtility はキーが無いと「全部 0 / false」の実体を作るので、
+   それを検出して既定へ落とす。これが無いと `enabled=false` に化けて**演出が黙って出なくなる**
+   （焼き込み・端末キャッシュに古い show.json が残っている場合に踏む）
+6. **枠の開口は本編のスクリーンから逆算する**（`IntroVeil.ResolveAperture`）。同じ見かけ角にしておくと、
+   枠が閉じ切った瞬間の枠と本編のスクリーンが同じ大きさになる
+
+**検証**: EditMode 861 → **883/883**（+22）。DLL に型が入っていることを直接確認済み
+（`run_tests` の pass は再コンパイルの証明にならないため）。卓は node 284 → 299（+15）。
+**⚠ Quest 実機未検証** — パススルーの見た目・枠の閉じ方・段 5 の「自分だと分かるか」は実機でしか判定できない。
+
+## 12. やらないこと（この設計の外）
 
 - **視点の移動**（幽体離脱・飛行）。§1 の理由
 - **Scene API / 部屋スキャン**。`layout.room` を既に持っているので要らない。

@@ -65,7 +65,15 @@ namespace FixedCamVr.Streaming
             _targetSec = def != null && def.targetSec > 0f ? def.targetSec : ShowRunDefaults.TargetSec;
             _endFadeSec = def != null && def.endFadeSec >= 0f ? def.endFadeSec : ShowRunDefaults.EndFadeSec;
             _logic.Configure(introEnabled, introMin, introAuto, laps, hard);
+            // JsonUtility は `intro` キーが無くても「全部 0」の実体を作るので、それは未設定として扱う
+            // （そのまま渡すと enabled=false に化けて導入演出が黙って出なくなる）。
+            var i = def?.intro;
+            IntroDef = (i == null || i.LooksUnset) ? new ShowIntroDef() : i;
+            IntroDefChanged?.Invoke(IntroDef);
         }
+
+        /// <summary>導入設定が更新された（<c>IntroDirector</c> が購読して尺を入れ替える）。</summary>
+        public event Action<ShowIntroDef>? IntroDefChanged;
 
         /// <summary>新しい体験者のランを頭から始める（導入があれば導入から）。</summary>
         public void BeginRun()
@@ -78,6 +86,15 @@ namespace FixedCamVr.Streaming
 
         /// <summary>導入を今すぐ終える（卓 / 現地のスタッフ操作）。</summary>
         public void RequestAdvanceIntro() => _logic.RequestAdvance();
+
+        /// <summary>
+        /// 慣らし歩行の計時を今から始める（導入演出が終わった合図）。<c>IntroDirector</c> が呼ぶ。
+        /// これが無いと、演出の秒数が <c>introMinSec</c> を食って慣らし歩行が短くなる。
+        /// </summary>
+        public void RestartIntroClock() => _logic.RestartIntroClock();
+
+        /// <summary>show.json の導入設定（<c>IntroDirector</c> が読む）。未設定ならコード既定。</summary>
+        public ShowIntroDef IntroDef { get; private set; } = new ShowIntroDef();
 
         /// <summary>体験を今すぐ終える（卓のスタッフ操作）。</summary>
         public void RequestFinish() => _logic.RequestFinish();

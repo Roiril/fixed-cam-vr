@@ -379,6 +379,26 @@
       <div class="run-bar">
         <span class="hint">体験の骨格（show.json <code>run</code>）。企画書は「3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒」。走り切ると Quest が暗転して終わる。導入の自動終了は「最低尺を過ぎ、かつスタート区間に居る」の両方が要る（自動を切ればスタッフの ⏭ だけで進む）。目安を超えても体験は止まらない（警告だけ）。強制終了は動かない体験者への保険で 0 = 無効。</span>
       </div>
+      <div class="run-bar">
+        <label class="livecue-lbl"><input id="introOn" type="checkbox"> 導入演出を出す</label>
+        <label class="livecue-lbl">現実 <input id="introReal" type="number" min="0" max="20" step="1"> s</label>
+        <label class="livecue-lbl">格下げ <input id="introDegrade" type="number" min="0" max="20" step="1"> s</label>
+        <label class="livecue-lbl">構造 <input id="introStructure" type="number" min="0" max="20" step="1"> s</label>
+        <label class="livecue-lbl">枠 <input id="introFrame" type="number" min="0" max="20" step="1"> s</label>
+        <label class="livecue-lbl">すり替え <input id="introSwap" type="number" min="0" max="20" step="1"> s</label>
+        <label class="livecue-lbl">上限 <input id="introMaxSec" type="number" min="10" max="60" step="1"> s</label>
+        <span id="introSum" class="ed-status"></span>
+      </div>
+      <div class="run-bar">
+        <label class="livecue-lbl"><input id="introCamMarks" type="checkbox"> カメラの印を出す</label>
+        <label class="livecue-lbl"><input id="introRoomWire" type="checkbox"> 壁と床の線を出す</label>
+        <label class="livecue-lbl"><input id="introRaiseHand" type="checkbox"> 右手を上げる合図を出す</label>
+        <label class="livecue-lbl">乱れの強さ <input id="introGlitch" type="number" min="0" max="1" step="0.05"></label>
+        <span id="introCfgState" class="ed-status"></span>
+      </div>
+      <div class="run-bar">
+        <span class="hint">導入の遷移演出（show.json <code>run.intro</code>）。段は体験者が見る順に <b>現実 → 格下げ → 構造 → 枠 → すり替え</b>。「現実」を削ると次の格下げが変化として読めなくなる。「構造」は輪郭だけの世界に壁・床とカメラの位置を重ねる段で、<b>線が実物に重なるかは位置合わせの現地検証も兼ねる</b>（重ならなければそこで中止して再登録する）。上限を超えた分は段を飛ばして枠を出す。<b>部屋の寸法が既定値のままだと「構造」は成立しない</b>（［🎯 姿勢を合わせる］の床の寸法入力で測る）。</span>
+      </div>
     </section>
 
     <section class="livecue" data-group="live">

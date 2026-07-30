@@ -115,6 +115,19 @@ namespace FixedCamVr.Streaming
         /// <summary>導入を今すぐ終える（卓 / 現地のスタッフ操作）。</summary>
         public void RequestAdvance() => _advanceRequested = true;
 
+        /// <summary>
+        /// 導入の計時を今から始め直す。<b>導入演出（パススルー → スクリーン）が終わって
+        /// 「慣らし歩行」に入る合図</b>で、<c>IntroDirector</c> が 1 回だけ呼ぶ。
+        ///
+        /// 演出のあいだ <c>introMinSec</c> を数えてしまうと、慣らし歩行の時間が演出に食われて
+        /// 「固定視点に慣れる」という導入の本来の目的（企画書 3 章）が果たせない。
+        /// </summary>
+        public void RestartIntroClock()
+        {
+            if (_phase != ShowPhase.Intro) return;
+            _introElapsed = 0f;
+        }
+
         /// <summary>体験を今すぐ終える（卓のスタッフ操作）。走行中の演出は待たない。</summary>
         public void RequestFinish() => _finishRequested = true;
 

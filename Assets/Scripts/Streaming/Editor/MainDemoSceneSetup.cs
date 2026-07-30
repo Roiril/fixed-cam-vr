@@ -33,6 +33,8 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string DebugHudName = "DebugHud"; // 旧構成の掃除用（削除対象）
         private const string StartupFaderName = "StartupFader";
         private const string EndingFaderName = "ShowEndingFader";
+        private const string IntroVeilName = "IntroVeil";
+        private const string IntroDirectorName = "IntroDirector";
         private const string BgmName = "[Bgm]";
         private const string BgmClipPath = "Assets/Art/Audio/HorrBGM.mp3";
         /// <summary>CG 人形だけを置くレイヤ。仮想カメラだけが描き、HMD カメラからは外す。</summary>
@@ -88,6 +90,8 @@ namespace FixedCamVr.Streaming.EditorTools
             DeleteIfExists($"{CenterEyePath}/{DebugHudName}");   // 旧 HUD Canvas（統合前）
             DeleteIfExists($"{CenterEyePath}/{StartupFaderName}");
             DeleteIfExists($"{CenterEyePath}/{EndingFaderName}");
+            DeleteIfExists($"{CenterEyePath}/{IntroVeilName}");
+            DeleteIfExists($"{LogicGroupName}/{IntroDirectorName}");
 
             var logic = GameObject.Find(LogicGroupName);
             if (logic == null)
@@ -420,6 +424,19 @@ namespace FixedCamVr.Streaming.EditorTools
             // 3.1. ShowEndingFader（体験の終わりを黒で閉じる）。相の変化だけを購読する。
             CreateEndingFader(centerEye.transform);
 
+            // 3.2. 導入演出（パススルー → 2D スクリーン）。計画 2026-07-30_intro-passthrough-to-screen.md。
+            //      覆い（枠）は head-lock なので CenterEyeAnchor 直下、進行役は Logic 直下に置く。
+            //      show.json の run.intro が無い / enabled=false なら何も起きない（従来の見えになる）。
+            var screenTf = screenGo != null ? screenGo.transform : null;
+            var introVeil = CreateIntroVeil(centerEye.transform, screenTf);
+            CreateIntroDirector(logic.transform, runDirector, introVeil,
+                screenGo != null ? screenGo.GetComponent<GlitchFx>() : null,
+                registry, showControl, centerEye.transform, screenTf);
+            // パススルー自体の見た目（彩度・輪郭線）は Assembly-CSharp 側の PassthroughStyler が当てる。
+            // Editor asmdef から OVR / Assembly-CSharp を直接参照できないので reflection で付ける
+            // （OvrControllerBridge / ControllerHaptics と同型の作法）。
+            EnsurePassthroughStyler(GameObject.Find("OVRCameraRig"));
+
             // 3.5. BGM（BgmDirector・2D）。get-or-create で冪等 — delete+recreate にしない
             //      （現場で Inspector 調整した音量を Setup 再実行で潰さないため）。
             //      show.json の bgmTracks / bgm / 区間 bgm 指示で切り替わる。未オーサリングなら
@@ -619,6 +636,88 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetColor(so, "fadeColor", Color.black);
             TrySetInt(so, "sortingOrder", 10000);
             so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        // 導入演出の覆い（現実を枠の中へ閉じ込める面）。head-lock なので CenterEyeAnchor 直下。
+        // 開口の大きさは screenQuad から逆算するので、枠が閉じ切ると本編のスクリーンと同じ見かけ角になる。
+        private static IntroVeil CreateIntroVeil(Transform parent, Transform? screenQuad)
+        {
+            var go = new GameObject(IntroVeilName);
+            go.transform.SetParent(parent, worldPositionStays: false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+
+            var veil = go.AddComponent<IntroVeil>();
+            var so = new SerializedObject(veil);
+            TrySetFloat(so, "distance", 0.3f);
+            TrySetVector2(so, "veilSize", new Vector2(2f, 2f));
+            if (screenQuad != null) TrySetObjectRef(so, "screenQuad", screenQuad);
+            TrySetFloat(so, "feather", 0.08f);
+            TrySetFloat(so, "scanlineCount", 240f);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return veil;
+        }
+
+        // 導入演出の進行役。ShowPhase は増やさず Intro の内側のサブ状態を持つ。
+        // show.json の run.intro が無い / enabled=false なら何もしない（従来の見えになる）。
+        private static IntroDirector CreateIntroDirector(
+            Transform parent, ShowRunDirector runDirector, IntroVeil veil, GlitchFx? glitch,
+            CameraStreamRegistry registry, ShowControlClient? showControl,
+            Transform head, Transform? screenQuad)
+        {
+            var go = new GameObject(IntroDirectorName);
+            go.transform.SetParent(parent, worldPositionStays: false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+
+            var dir = go.AddComponent<IntroDirector>();
+            var so = new SerializedObject(dir);
+            TrySetObjectRef(so, "runDirector", runDirector);
+            TrySetObjectRef(so, "veil", veil);
+            if (glitch != null) TrySetObjectRef(so, "glitch", glitch);
+            TrySetObjectRef(so, "registry", registry);
+            if (showControl != null) TrySetObjectRef(so, "showControl", showControl);
+            TrySetObjectRef(so, "head", head);
+            if (screenQuad != null) TrySetObjectRef(so, "screenQuad", screenQuad);
+            TrySetFloat(so, "blackClearSec", 5f);
+            TrySetFloat(so, "centeredHalfAngleDeg", 25f);
+            TrySetFloat(so, "freshFrameSec", 1.5f);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return dir;
+        }
+
+        /// <summary>
+        /// OVRCameraRig に <c>OVRPassthroughLayer</c> と <c>PassthroughStyler</c> を用意する。
+        /// どちらも Editor asmdef から型を直接参照できない（Oculus.VR / Assembly-CSharp）ので
+        /// reflection で解決する。見つからなければ警告だけ出して続ける — 導入演出のうち
+        /// パススルーの見た目（彩度・輪郭線）が効かなくなるだけで、枠と映像のすり替えは動く。
+        /// </summary>
+        private static void EnsurePassthroughStyler(GameObject? rig)
+        {
+            if (rig == null)
+            {
+                Debug.LogWarning("[MainDemoSceneSetup] OVRCameraRig が見つかりません。導入演出のパススルー加工はスキップ。");
+                return;
+            }
+            var layerType = System.Type.GetType("OVRPassthroughLayer, Oculus.VR");
+            if (layerType == null)
+            {
+                Debug.LogWarning("[MainDemoSceneSetup] OVRPassthroughLayer が見つかりません（Meta XR SDK 未導入？）。導入演出のパススルー加工はスキップ。");
+                return;
+            }
+            if (rig.GetComponent(layerType) == null)
+            {
+                rig.gameObject.AddComponent(layerType);
+                Debug.Log("[MainDemoSceneSetup] OVRCameraRig に OVRPassthroughLayer を追加（導入演出用・既定 Underlay）。");
+            }
+
+            var stylerType = System.Type.GetType("FixedCamVr.OvrBridge.PassthroughStyler, Assembly-CSharp");
+            if (stylerType == null)
+            {
+                Debug.LogWarning("[MainDemoSceneSetup] PassthroughStyler が見つかりません。導入演出のパススルー加工はスキップ。");
+                return;
+            }
+            if (rig.GetComponent(stylerType) == null) rig.gameObject.AddComponent(stylerType);
         }
 
         // 体験の終わりを閉じる黒。StartupFader は解除後に自分を Destroy するので再利用できない。

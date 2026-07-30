@@ -420,10 +420,68 @@ namespace FixedCamVr.Streaming
         /// <summary>終了時に黒へ落とす時間 (秒)。</summary>
         public float endFadeSec = 1.5f;
 
+        /// <summary>
+        /// 導入演出（パススルー → 2D スクリーン）。キーが無ければコード既定で成立する。
+        /// 計画 2026-07-30_intro-passthrough-to-screen.md §7。
+        /// </summary>
+        public ShowIntroDef? intro;
+
         /// <summary>コード既定の周数。</summary>
         public const int DefaultTotalLaps = 3;
 
         public int ResolveTotalLaps() => totalLaps > 0 ? totalLaps : DefaultTotalLaps;
+    }
+
+    /// <summary>
+    /// 導入演出の設定。show.json <c>run.intro</c>。
+    ///
+    /// ⚠ <b>present-flag は持たない。</b> JsonUtility はキーが無いと「全部 0 / false」の実体を作るので、
+    /// それを <see cref="LooksUnset"/> で検出して既定へ落とす（`enabled=false` に化けて演出が
+    /// 黙って出なくなるのを防ぐ）。焼き込み・端末キャッシュに古い show.json が残っていても効く。
+    /// </summary>
+    [Serializable] public sealed class ShowIntroDef
+    {
+        /// <summary>導入演出を出すか。false なら従来どおり最初からスクリーンだけが見える。</summary>
+        public bool enabled = true;
+
+        /// <summary>演出の上限 (秒)。超えたら段を飛ばして枠を出す（条件待ちで固まらないための保険）。</summary>
+        public float maxSec = 40f;
+
+        public float realSec = 4f;
+        public float degradeSec = 8f;
+        public float structureSec = 6f;
+        public float frameSec = 5f;
+        public float swapSec = 8f;
+
+        /// <summary>実物の輪郭線の色（<c>#rrggbb</c>）。</summary>
+        public string edgeColor = "#ffffff";
+
+        /// <summary>段 3 でカメラの位置に印を出すか。</summary>
+        public bool showCameraMarks = true;
+
+        /// <summary>段 3 で壁・床の線を出すか。</summary>
+        public bool showRoomWire = true;
+
+        /// <summary>段 5 のすり替えに重ねる乱れの強さ。</summary>
+        public float glitchOnSwap = 0.8f;
+
+        /// <summary>段 5 で「右手を上げて」の合図を出すか（3 周目の反転の伏線）。</summary>
+        public bool raiseHandPrompt = true;
+
+        /// <summary>JsonUtility が既定値で埋めただけの実体か（＝ show.json に <c>intro</c> が無い）。</summary>
+        public bool LooksUnset =>
+            !enabled && maxSec <= 0f && realSec <= 0f && degradeSec <= 0f && swapSec <= 0f;
+
+        public IntroTiming ToTiming() => new IntroTiming
+        {
+            realSec = realSec, degradeSec = degradeSec, structureSec = structureSec,
+            frameSec = frameSec, swapSec = swapSec, maxSec = maxSec,
+        }.Sanitized();
+
+        /// <summary>輪郭線の色を解く（解けなければ白）。</summary>
+        public Color ResolveEdgeColor()
+            => ColorUtility.TryParseHtmlString(string.IsNullOrEmpty(edgeColor) ? "#ffffff" : edgeColor,
+                out var c) ? c : Color.white;
     }
 
     /// <summary>CG レイヤに立てる人形の定義。show.json トップレベル <c>actors</c>。</summary>
