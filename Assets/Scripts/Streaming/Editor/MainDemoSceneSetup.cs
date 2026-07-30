@@ -432,6 +432,8 @@ namespace FixedCamVr.Streaming.EditorTools
             CreateIntroDirector(logic.transform, runDirector, introVeil,
                 screenGo != null ? screenGo.GetComponent<GlitchFx>() : null,
                 registry, showControl, centerEye.transform, screenTf);
+            // 段 3 の構造の線（部屋の輪郭とカメラの印）。LineRenderer は world 空間で描くので
+            // 親の transform には依存しない（IntroDirector と同じオブジェクトに載せる）。
             // パススルー自体の見た目（彩度・輪郭線）は Assembly-CSharp 側の PassthroughStyler が当てる。
             // Editor asmdef から OVR / Assembly-CSharp を直接参照できないので reflection で付ける
             // （OvrControllerBridge / ControllerHaptics と同型の作法）。
@@ -671,9 +673,16 @@ namespace FixedCamVr.Streaming.EditorTools
             go.transform.localRotation = Quaternion.identity;
 
             var dir = go.AddComponent<IntroDirector>();
+            // 段 3 の構造の線。LineRenderer は world 空間で描くので親の transform に依存しない。
+            var wire = go.AddComponent<IntroStructureWire>();
+            var wireSo = new SerializedObject(wire);
+            if (showControl != null) TrySetObjectRef(wireSo, "showControl", showControl);
+            wireSo.ApplyModifiedPropertiesWithoutUndo();
+
             var so = new SerializedObject(dir);
             TrySetObjectRef(so, "runDirector", runDirector);
             TrySetObjectRef(so, "veil", veil);
+            TrySetObjectRef(so, "structureWire", wire);
             if (glitch != null) TrySetObjectRef(so, "glitch", glitch);
             TrySetObjectRef(so, "registry", registry);
             if (showControl != null) TrySetObjectRef(so, "showControl", showControl);

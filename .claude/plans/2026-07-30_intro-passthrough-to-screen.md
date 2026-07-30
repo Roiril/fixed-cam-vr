@@ -270,6 +270,7 @@
 |---|---|
 | 段の状態機械（判断の全部） | [`IntroLogic`](../../Assets/Scripts/Streaming/IntroLogic.cs)（UnityEngine 非依存・dt 注入）+ [`IntroLogicTests`](../../Assets/Tests/Streaming/IntroLogicTests.cs) 22 本 |
 | 覆い（枠・粒・走査線・乱れ） | [`IntroVeil`](../../Assets/Scripts/Streaming/IntroVeil.cs) + [`IntroVeil.shader`](../../Assets/Art/Shaders/Intro/IntroVeil.shader) |
+| 段 3 の構造の線（部屋の輪郭・カメラの印） | [`IntroStructureWire`](../../Assets/Scripts/Streaming/IntroStructureWire.cs)（壁・箱は `ShowRoomProxyLogic.Build` の結果をそのまま線に起こすので、**線と CG のオクルーダが同じ幾何**になる）+ テスト 14 本 |
 | 観測と配布 | [`IntroDirector`](../../Assets/Scripts/Streaming/IntroDirector.cs) |
 | パススルーの見た目 | [`PassthroughStyler`](../../Assets/Scripts/OvrBridge/PassthroughStyler.cs)（Assembly-CSharp 側） |
 | 慣らし歩行の計時 | `ShowRunLogic.RestartIntroClock()` / `ShowRunDirector.RestartIntroClock()`（追加はこの 1 本だけ） |

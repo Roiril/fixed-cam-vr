@@ -26,6 +26,7 @@ namespace FixedCamVr.Streaming
         [Header("References (未配線でも実行時に自己解決する)")]
         [SerializeField] private ShowRunDirector? runDirector;
         [SerializeField] private IntroVeil? veil;
+        [SerializeField] private IntroStructureWire? structureWire;
         [SerializeField] private GlitchFx? glitch;
         [SerializeField] private CameraStreamRegistry? registry;
         [SerializeField] private ShowControlClient? showControl;
@@ -114,6 +115,7 @@ namespace FixedCamVr.Streaming
             // 自分が出した覆いを残して去らない（外したら従来どおり本編の見えになる）。
             _logic.Disable();
             veil?.SetHidden();
+            structureWire?.SetHidden();
             glitch?.ResetAll();
         }
 
@@ -121,6 +123,7 @@ namespace FixedCamVr.Streaming
         {
             if (runDirector == null) runDirector = FindObjectOfType<ShowRunDirector>();
             if (veil == null) veil = FindObjectOfType<IntroVeil>();
+            if (structureWire == null) structureWire = FindObjectOfType<IntroStructureWire>();
             if (glitch == null) glitch = FindObjectOfType<GlitchFx>();
             if (registry == null) registry = FindObjectOfType<CameraStreamRegistry>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
@@ -146,6 +149,7 @@ namespace FixedCamVr.Streaming
             {
                 _logic.Disable();
                 veil?.SetHidden();
+                structureWire?.SetHidden();
                 glitch?.ResetAll();
             }
         }
@@ -158,6 +162,7 @@ namespace FixedCamVr.Streaming
                 // 演出なし。従来どおり最初からスクリーンだけが見える。
                 _logic.Disable();
                 veil?.SetHidden();
+                structureWire?.SetHidden();
                 return;
             }
             _logic.Begin();
@@ -193,6 +198,17 @@ namespace FixedCamVr.Streaming
             var ev = _logic.Tick(Time.unscaledDeltaTime, BuildInput());
             var w = _logic.Weights;
             veil?.Apply(w);
+            // 段 3 の構造の線。show.json で部屋・カメラを個別に切れるので、
+            // どちらも off なら重みを 0 にして畳む（線を出さない設定を「薄い線」にしない）。
+            if (structureWire != null)
+            {
+                if (_def.showRoomWire || _def.showCameraMarks)
+                {
+                    var sw = w;
+                    structureWire.Apply(sw);
+                }
+                else structureWire.SetHidden();
+            }
             // 段 5 の乱れはスクリーン内にも掛ける（継ぎ目は両側で隠す）。
             glitch?.SetSustain(w.glitch * Mathf.Clamp01(_def.glitchOnSwap));
 
@@ -247,6 +263,7 @@ namespace FixedCamVr.Streaming
         private void FinishIntro(bool restartClock)
         {
             veil?.SetHidden();
+            structureWire?.SetHidden();
             glitch?.ResetAll();
             _logic.Disable();
             if (!restartClock || _clockRestarted) return;
@@ -259,6 +276,7 @@ namespace FixedCamVr.Streaming
         private void AbortIntro()
         {
             veil?.SetHidden();
+            structureWire?.SetHidden();
             glitch?.ResetAll();
             _logic.Disable();
             // 続行すると壁の位置が違う世界を見せることになる（体験者は壁を手でたどる）。
