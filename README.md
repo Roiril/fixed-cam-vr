@@ -221,6 +221,16 @@ adb -s <serial> install -r --no-streaming Builds\tableduo.apk
 | TableDuo L0 | 実機ゼロで host/client/観戦 | Standalone ビルドを CLI 起動（`tdv_l0=on`・[memory](.claude/memory/table_duo_l0_desktop_test.md)） |
 | Quest Link | 実機に近い Editor Play | Build Target = Standalone のまま、XR Plug-in（Windows）で Oculus を有効化 → Link 接続 → Play。**72Hz 上限**なので性能評価は実機 APK で |
 
+**HMD を被らずに体験を丸ごと通す**（実機 APK は要る・被る必要は無い）:
+
+```bash
+bash tools/run-quest-xp-test.sh walk 300
+```
+
+導入 → 3 周 → 終了を自動走行し、`[XP]` テレメトリを取って show.json の著作と突き合わせる。
+「出るはずで出なかった演出」「録れなかった区間」「砂嵐の割合」「受信 fps」が数値で出る。
+手順・収集の罠・ベースライン実測 → [.claude/memory/onsite_experience_test.md](.claude/memory/onsite_experience_test.md)
+
 ⚠ **Link/HMD 無しの Editor で OVR シーンを Play するとハングする**（TableDuo 検証は L0 経由が正。[.claude/rules/mcp-unity.md](.claude/rules/mcp-unity.md)）。
 
 # ドキュメント一覧

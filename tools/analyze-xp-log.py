@@ -1,0 +1,479 @@
+#!/usr/bin/env python3
+"""実機 logcat の [XP] 行を読んで「体験が著作どおりに起きたか」を判定する。
+
+使い方:
+    python tools/analyze-xp-log.py <logcat.txt> [--show tools/web-compositor/show.json]
+                                   [--out reports/xp-YYYYMMDD.md]
+
+判定の考え方:
+  - **show.json が期待値の正**。著作された演出・周回数・録画設定と、実機で起きたことを突き合わせる。
+  - 「起きなかったこと」を最重視する。演出が黙って消える・録画が飛ぶのがこの系の代表的な壊れ方で、
+    ログに何も出ないので、期待値の側から引き算しないと気づけない。
+  - 映像の質（受信 fps・砂嵐・遅延・表示 fps）は分布で出す。平均だけだと一過性の破綻が消える。
+
+レポートは UTF-8 のファイルへ書く（Windows 端末は cp932 で日本語表示が壊れるため）。
+標準出力へは ASCII の要約だけ出す。
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from collections import defaultdict
+
+XP = re.compile(r"\[XP\]\s+(.*)$")
+# 体験に関わる既存タグ（テレメトリ以外の一次情報）。理由まで書いてあるのはこちら。
+OTHER_TAGS = re.compile(
+    r"\[(TakeRunner|ScreenOverlay|SegmentRecorder|CameraStream|MJPEG|ShowRun|Intro|"
+    r"LapCounter|CueScheduler|ShowControl|Discovery|HmdLife|ShowCgLayer|XPWalk|CourseFrame)\]\s*(.*)$"
+)
+
+
+def parse_kv(body: str) -> dict:
+    out = {}
+    for tok in body.split():
+        if "=" in tok:
+            k, _, v = tok.partition("=")
+            out[k] = v
+    return out
+
+
+def load_events(path: str):
+    """[XP] イベントと、参考にする既存タグ行を返す。"""
+    events, others = [], []
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for raw in fh:
+            m = XP.search(raw)
+            if m:
+                body = m.group(1)
+                head, *cams = body.split("|")
+                ev = parse_kv(head)
+                ev["_cams"] = [parse_kv(c) for c in cams]
+                # "|c0 con=1 ..." の c0 はキー無しトークンなので拾い直す
+                for c, raw_c in zip(ev["_cams"], cams):
+                    first = raw_c.split()[0] if raw_c.split() else ""
+                    c["_idx"] = first[1:] if first.startswith("c") else "?"
+                events.append(ev)
+                continue
+            m2 = OTHER_TAGS.search(raw)
+            if m2:
+                others.append((m2.group(1), m2.group(2).rstrip()))
+    return events, others
+
+
+def fnum(d: dict, key: str, default=None):
+    try:
+        return float(d[key])
+    except (KeyError, ValueError, TypeError):
+        return default
+
+
+def expected_from_show(show: dict):
+    """show.json から期待値を作る。"""
+    exp = {}
+    run = show.get("run") or {}
+    exp["totalLaps"] = run.get("totalLaps") or 3
+    exp["introEnabled"] = bool(run.get("introEnabled", True))
+    exp["introMinSec"] = run.get("introMinSec", 20)
+    exp["targetSec"] = run.get("targetSec", 180)
+    exp["order"] = ((show.get("layout") or {}).get("course") or {}).get("order") or []
+
+    # host が空のカメラは接続しないのが正しい（show.json で未設定＝現場に置いていない）。
+    # 判定に混ぜると「受信 0fps」で常に FAIL が出て、本物の不具合が埋もれる。
+    exp["activeCams"] = {i for i, c in enumerate(show.get("cameras") or [])
+                         if (c.get("host") or "").strip()}
+
+    rec = show.get("record") or {}
+    exp["recEnabled"] = bool(rec.get("enabled"))
+    exp["recLaps"] = rec.get("laps") or []
+
+    takes = []
+    for seg in ((show.get("timeline") or {}).get("segments") or []):
+        for t in (seg.get("takes") or []):
+            # 開始規則は take 直下にある（C# の ShowTakeDef と同じフラット形）。
+            # `start` という入れ子は存在しない — そこを見ると全部 None になり、
+            # 「著作されていない」と誤読する。
+            takes.append({
+                "id": t.get("id"),
+                "lap": seg.get("lap"),
+                "camera": seg.get("camera"),
+                "at": t.get("at") or "enter",
+                "offsetSec": t.get("offsetSec") or 0,
+                "ifMissed": t.get("ifMissed") or "fireOnExit",
+                "lineId": t.get("lineId"),
+                "wait": t.get("wait") or "segment",
+                "steps": t.get("steps") or [],
+            })
+    exp["takes"] = takes
+
+    # 3 周目の録画カットが必要とする (周, カメラ)。ここが録れていないと実機は黙ってカットを飛ばす。
+    needed = set()
+    for t in takes:
+        for s in t["steps"]:
+            if s.get("source") == "rec":
+                needed.add((s.get("recLap") or 1, s.get("camera")))
+    exp["recNeeded"] = needed
+    return exp
+
+
+def analyze(events, others, exp):
+    rep = []          # レポート行
+    verdicts = []     # (level, text) level: OK / WARN / FAIL
+
+    def w(line=""):
+        rep.append(line)
+
+    def verdict(level, text):
+        verdicts.append((level, text))
+
+    sums = [e for e in events if e.get("ev") == "sum"]
+    if not events:
+        verdict("FAIL", "[XP] 行が 1 つも無い。Development ビルドか、テレメトリの起動を確認する")
+        return rep, verdicts
+
+    t_end = fnum(events[-1], "t", 0.0)
+    w(f"観測時間: {t_end:.0f} 秒 / [XP] 行 {len(events)} 本（うちサマリ {len(sums)}）")
+    w()
+
+    # ---------------- 体験の骨格 ----------------
+    w("## 体験の骨格")
+    phases = [e for e in events if e.get("ev") == "phase"]
+    for p in phases:
+        w(f"  t={fnum(p,'t',0):7.1f}  相={p.get('v')}  lap={p.get('lap','-')}  経過={p.get('elapsed','-')}")
+    seen = [p.get("v") for p in phases]
+    if exp["introEnabled"] and "Intro" not in seen:
+        verdict("WARN", "導入相 (Intro) の記録が無い")
+    if "Run" not in seen:
+        verdict("FAIL", "本編 (Run) に入っていない — 導入が終わっていない")
+    else:
+        intro_end = next((fnum(p, "t", 0) for p in phases if p.get("v") == "Run"), None)
+        if intro_end is not None:
+            verdict("OK", f"導入 → 本編へ遷移した（t={intro_end:.0f}s）")
+    if "Finished" in seen:
+        fin = next(fnum(p, "t", 0) for p in phases if p.get("v") == "Finished")
+        verdict("OK", f"体験が終了した（t={fin:.0f}s）")
+        if fin > exp["targetSec"] * 1.3:
+            verdict("WARN", f"目安 {exp['targetSec']:.0f}s に対し {fin:.0f}s かかった")
+    else:
+        verdict("FAIL", f"体験が終了していない（{exp['totalLaps']} 周ぶん歩いても Finished が来ていない）")
+    w()
+
+    # ---------------- 周回と区間 ----------------
+    w("## 周回と区間（ショーの時計）")
+    segs = [e for e in events if e.get("ev") == "seg"]
+    order = exp["order"]
+    seg_seq = []
+    for s in segs:
+        # ⚠ `fnum(...) or -1` と書くと **カメラ 0 が falsy なので -1 に化ける**。
+        # 順路の先頭カメラが常に 0 なので、この 1 文字で判定が全部ずれる。
+        lap = int(fnum(s, "lap", -1))
+        cam = int(fnum(s, "cam", -1))
+        seg_seq.append((fnum(s, "t", 0), lap, cam))
+    for t, lap, cam in seg_seq:
+        w(f"  t={t:7.1f}  {lap} 周目 / カメラ {cam}")
+    laps_seen = sorted({l for _, l, _ in seg_seq if l > 0})
+    w(f"  観測した周: {laps_seen}")
+    if not laps_seen:
+        verdict("FAIL", "区間の進入が 1 度も記録されていない（歩行かゾーン判定が効いていない）")
+    else:
+        if max(laps_seen) < exp["totalLaps"]:
+            verdict("FAIL", f"{exp['totalLaps']} 周のはずが {max(laps_seen)} 周までしか進んでいない")
+        else:
+            verdict("OK", f"{max(laps_seen)} 周まで進んだ")
+    # 順路どおりか
+    if order:
+        bad = []
+        for i in range(1, len(seg_seq)):
+            prev_cam, cam = seg_seq[i - 1][2], seg_seq[i][2]
+            if prev_cam not in order or cam not in order:
+                continue
+            want = order[(order.index(prev_cam) + 1) % len(order)]
+            if cam != want:
+                bad.append((seg_seq[i][0], prev_cam, cam, want))
+        if bad:
+            verdict("WARN", f"順路どおりでない進入が {len(bad)} 回（例: t={bad[0][0]:.0f}s "
+                            f"カメラ{bad[0][1]}→{bad[0][2]}、順路では {bad[0][3]}）")
+
+    # 区間ごとの実測滞在
+    w()
+    w("### 区間ごとの実測滞在")
+    dwell = {}
+    for i, (t, lap, cam) in enumerate(seg_seq):
+        end = seg_seq[i + 1][0] if i + 1 < len(seg_seq) else t_end
+        dwell[(lap, cam)] = dwell.get((lap, cam), 0.0) + (end - t)
+    for (lap, cam), sec in sorted(dwell.items()):
+        w(f"  {lap} 周目 カメラ {cam}: {sec:.1f} 秒")
+    w()
+
+    # ---------------- 演出 ----------------
+    w("## 演出（著作 vs 実機）")
+    takes_ev = [e for e in events if e.get("ev") == "take"]
+    began = {}
+    for e in takes_ev:
+        if e.get("st") == "begin":
+            began.setdefault(e.get("id"), []).append(fnum(e, "t", 0))
+    ended = defaultdict(list)
+    for e in takes_ev:
+        if e.get("st") == "end":
+            ended[e.get("id")].append(fnum(e, "t", 0))
+
+    for t in exp["takes"]:
+        tid = t["id"]
+        starts = began.get(tid, [])
+        seg_key = (t["lap"], t["camera"])
+        stayed = dwell.get(seg_key)
+        kinds = "+".join(s.get("source", "?") for s in t["steps"])
+        if starts:
+            dur = ""
+            if ended.get(tid):
+                dur = f" / 尺 {ended[tid][0] - starts[0]:.1f}s"
+            w(f"  ✅ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出た t={starts[0]:.0f}s{dur} [{kinds}]")
+        else:
+            reason = ""
+            if stayed is None:
+                reason = " — その区間に一度も入っていない"
+            elif t["at"] == "line":
+                reason = f" — ライン {t['lineId']} を通っていない可能性（滞在 {stayed:.0f}s）"
+            else:
+                reason = f" — 区間には {stayed:.0f}s 居たのに出ていない"
+            w(f"  ❌ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出ていない{reason} [{kinds}]")
+            verdict("FAIL", f"演出 {tid} が出なかった{reason}")
+    if exp["takes"] and all(began.get(t["id"]) for t in exp["takes"]):
+        verdict("OK", f"著作された演出 {len(exp['takes'])} 本すべてが出た")
+
+    # 演出が区間の滞在に収まったか。はみ出す＝体験者が次の場所へ移った後も画面を握り続ける。
+    # 設計上は許される（復帰先は「いま居るゾーン」を再計算する）が、著作の意図とはずれるので出す。
+    w()
+    w("### 演出の尺と区間の滞在")
+    for t in exp["takes"]:
+        tid = t["id"]
+        if not began.get(tid) or not ended.get(tid):
+            continue
+        start, end = began[tid][0], ended[tid][0]
+        dur = end - start
+        # この演出が属する区間の終わり（次の seg の時刻）
+        seg_start = next((s for s, lap, cam in seg_seq
+                          if lap == t["lap"] and cam == t["camera"]), None)
+        if seg_start is None:
+            continue
+        seg_end = next((s for s, _, _ in seg_seq if s > seg_start), t_end)
+        over = end - seg_end
+        stay = seg_end - seg_start
+        if over > 0.3:
+            w(f"  ⚠ {tid}: 尺 {dur:.1f}s / 滞在 {stay:.1f}s — {over:.1f}s はみ出した")
+            verdict("WARN", f"演出 {tid} が区間の滞在を {over:.1f}s 超えた"
+                            f"（尺 {dur:.1f}s / 滞在 {stay:.1f}s）— 速く歩く体験者では途中で場所が変わる")
+        else:
+            w(f"  ✅ {tid}: 尺 {dur:.1f}s / 滞在 {stay:.1f}s（余裕 {-over:.1f}s）")
+
+    drops = [ln for tag, ln in others if tag == "TakeRunner" and ("出ないまま" in ln or "drop" in ln.lower())]
+    if drops:
+        w()
+        w("### 演出が捨てられた記録")
+        for d in drops[:20]:
+            w(f"  {d}")
+        verdict("WARN", f"演出の drop が {len(drops)} 件（TakeRunner の警告）")
+    w()
+
+    # ---------------- 端末内録画 ----------------
+    w("## 端末内録画（3 周目の素材）")
+    rec_ev = [e for e in events if e.get("ev") == "rec"]
+    rec_lines = [ln for tag, ln in others if tag == "SegmentRecorder"]
+    for ln in rec_lines[:40]:
+        w(f"  {ln}")
+    if not exp["recEnabled"]:
+        w("  （show.json で録画は無効）")
+    else:
+        # 区間の切れ目は同一フレームで stop→start になることがあり、テレメトリのポーリングでは
+        # 1 回に見える。区間数はレコーダ自身のログ（区間ごとに 1 行）を正とする。
+        started = [ln for ln in rec_lines if "録画開始" in ln]
+        polled = [e for e in rec_ev if e.get("v") == "start"]
+        w(f"  録画した区間 {len(started)} / 期待する区間 {sorted(exp['recNeeded'])}")
+        if not started and not polled:
+            verdict("FAIL", "録画が 1 度も始まっていない — 3 周目の録画カットは実機で黙って飛ぶ")
+        else:
+            verdict("OK", f"録画が {max(len(started), len(polled))} 区間で走った")
+        # 実際に録れた区間はレコーダのログにしか出ないので、そちらを頼りに突き合わせる
+        for lap, cam in sorted(exp["recNeeded"]):
+            hit = any(f"L{lap}C{cam}" in ln for ln in rec_lines)
+            if not hit:
+                verdict("WARN", f"{lap} 周目 カメラ {cam} の録画が確認できない"
+                                f"（3 周目のこのカットは飛ぶ可能性）")
+    w()
+
+    # ---------------- 映像の安定性 ----------------
+    w("## 映像の安定性")
+    per_cam = defaultdict(lambda: {"rx": [], "tx": [], "jit": [], "dec": [], "age": [], "drop": 0, "off": 0, "n": 0})
+    for s in sums:
+        for c in s["_cams"]:
+            idx = c.get("_idx", "?")
+            d = per_cam[idx]
+            d["n"] += 1
+            for k in ("rx", "tx", "jit", "dec", "age"):
+                v = fnum(c, k)
+                if v is not None:
+                    d[k].append(v)
+            dv = fnum(c, "drop", 0)
+            if dv:
+                d["drop"] = max(d["drop"], dv)
+            if c.get("con") == "0":
+                d["off"] += 1
+
+    def stats(vals):
+        if not vals:
+            return "-"
+        vs = sorted(vals)
+        return (f"平均 {sum(vs)/len(vs):5.1f} / 最小 {vs[0]:5.1f} / "
+                f"下位5% {vs[max(0,int(len(vs)*0.05))]:5.1f} / 最大 {vs[-1]:5.1f}")
+
+    for idx in sorted(per_cam):
+        d = per_cam[idx]
+        try:
+            active = int(idx) in exp["activeCams"]
+        except ValueError:
+            active = True
+        if not active:
+            w(f"  カメラ {idx}: show.json で host 未設定（接続しないのが正しい）")
+            continue
+        w(f"  カメラ {idx}:")
+        w(f"    受信 fps  {stats(d['rx'])}")
+        w(f"    配信 fps  {stats(d['tx'])}")
+        w(f"    到着の揺らぎ ms {stats(d['jit'])}")
+        w(f"    展開 ms   {stats(d['dec'])}")
+        w(f"    配信側の鮮度 ms {stats(d['age'])}")
+        w(f"    取りこぼし累計 {d['drop']:.0f} / 未接続だったサマリ {d['off']}/{d['n']}")
+        if d["rx"]:
+            lowest = min(d["rx"])
+            avg = sum(d["rx"]) / len(d["rx"])
+            if avg < 12:
+                verdict("FAIL", f"カメラ {idx} の受信 fps が平均 {avg:.1f} — 体験に耐えない")
+            elif lowest < 5:
+                verdict("WARN", f"カメラ {idx} の受信 fps が一時 {lowest:.1f} まで落ちた")
+            else:
+                verdict("OK", f"カメラ {idx} の受信 fps 平均 {avg:.1f}（最小 {lowest:.1f}）")
+        if d["off"]:
+            verdict("WARN", f"カメラ {idx} が {d['off']}/{d['n']} 回のサマリで未接続だった")
+
+    recon = [ln for tag, ln in others if tag == "CameraStream" and ("reconnect" in ln or "detected" in ln)]
+    if recon:
+        w()
+        w("### 再接続")
+        for ln in recon[:25]:
+            w(f"  {ln}")
+        verdict("WARN" if len(recon) > 2 else "OK", f"MJPEG の再接続が {len(recon)} 回")
+    w()
+
+    # ---------------- 砂嵐 ----------------
+    w("## 砂嵐（信号ロスト）")
+    storms = [e for e in events if e.get("ev") == "storm"]
+    spans, open_t = [], None
+    for e in storms:
+        if e.get("v") == "on":
+            open_t = (fnum(e, "t", 0), e.get("cam"))
+        elif open_t is not None:
+            spans.append((open_t[0], fnum(e, "t", 0) - open_t[0], open_t[1]))
+            open_t = None
+    if open_t is not None:
+        spans.append((open_t[0], t_end - open_t[0], open_t[1]))
+    for t, dur, cam in spans:
+        w(f"  t={t:7.1f}  {dur:5.1f} 秒  カメラ {cam}")
+    last_pct = fnum(sums[-1], "stormPct", 0.0) if sums else 0.0
+    weak_pct = fnum(sums[-1], "weakPct", 0.0) if sums else 0.0
+    w(f"  強い砂嵐の累計 {last_pct:.1f}% / 弱い砂嵐（トラッキング明け） {weak_pct:.1f}%")
+    w(f"  発生回数 {len(spans)}")
+    if last_pct >= 10:
+        verdict("FAIL", f"体験時間の {last_pct:.1f}% が砂嵐 — 多すぎる")
+    elif last_pct >= 3:
+        verdict("WARN", f"体験時間の {last_pct:.1f}% が砂嵐（{len(spans)} 回）")
+    else:
+        verdict("OK", f"砂嵐は体験時間の {last_pct:.1f}%（{len(spans)} 回）")
+    long_spans = [s for s in spans if s[1] >= 2.0]
+    if long_spans:
+        verdict("WARN", f"2 秒以上続いた砂嵐が {len(long_spans)} 回（最長 {max(s[1] for s in long_spans):.1f}s）")
+    w()
+
+    # ---------------- 表示 fps ----------------
+    w("## 表示（VR の快適性）")
+    fps = [fnum(s, "fps") for s in sums if fnum(s, "fps") is not None]
+    worst = [fnum(s, "worst") for s in sums if fnum(s, "worst") is not None]
+    if fps:
+        w(f"  アプリ fps {stats(fps)}")
+        w(f"  最悪フレーム時間 ms {stats(worst)}")
+        avg = sum(fps) / len(fps)
+        if avg < 60:
+            verdict("FAIL", f"表示 fps が平均 {avg:.1f} — VR として破綻している")
+        elif avg < 80:
+            verdict("WARN", f"表示 fps が平均 {avg:.1f}（90 を目標）")
+        else:
+            verdict("OK", f"表示 fps 平均 {avg:.1f}")
+        if worst and max(worst) > 100:
+            verdict("WARN", f"最悪フレーム時間が {max(worst):.0f}ms — 引っかかりが体感される")
+    w()
+
+    # ---------------- 導入演出 ----------------
+    w("## 導入演出")
+    intro = [e for e in events if e.get("ev") == "intro"]
+    for e in intro:
+        w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} pass={e.get('pass')} live={e.get('live')} frame={e.get('frame')}")
+    stages = [e.get("stage") for e in intro]
+    if exp["introEnabled"]:
+        if not intro:
+            verdict("FAIL", "導入演出の段が 1 つも記録されていない（IntroDirector 未配線か enabled=false）")
+        else:
+            for want in ("Real", "Degrade", "Structure", "Frame", "Swap"):
+                if want not in stages:
+                    verdict("WARN", f"導入演出の段 {want} が出ていない")
+            if "Swap" in stages:
+                verdict("OK", "導入演出が最後の段（Swap）まで進んだ")
+    w()
+
+    # ---------------- 位置合わせ ----------------
+    reg = [s for s in sums if "reg" in s]
+    if reg and reg[-1].get("reg") == "0":
+        verdict("FAIL", "位置合わせが未登録 — 開始位置の判定と CG が働かない")
+    w()
+
+    return rep, verdicts
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("log")
+    ap.add_argument("--show", default="tools/web-compositor/show.json")
+    ap.add_argument("--out", default=None)
+    args = ap.parse_args()
+
+    events, others = load_events(args.log)
+    show = {}
+    if os.path.exists(args.show):
+        with open(args.show, "r", encoding="utf-8") as fh:
+            show = json.load(fh)
+    exp = expected_from_show(show)
+
+    rep, verdicts = analyze(events, others, exp)
+
+    out = args.out or os.path.splitext(args.log)[0] + "-report.md"
+    order = {"FAIL": 0, "WARN": 1, "OK": 2}
+    verdicts.sort(key=lambda v: order.get(v[0], 3))
+    with open(out, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(f"# 実機テスト所見 — {os.path.basename(args.log)}\n\n")
+        fh.write("## 判定\n\n")
+        for lv, tx in verdicts:
+            mark = {"FAIL": "❌", "WARN": "⚠", "OK": "✅"}.get(lv, "・")
+            fh.write(f"- {mark} {tx}\n")
+        fh.write("\n---\n\n")
+        fh.write("\n".join(rep))
+        fh.write("\n")
+
+    n_fail = sum(1 for lv, _ in verdicts if lv == "FAIL")
+    n_warn = sum(1 for lv, _ in verdicts if lv == "WARN")
+    n_ok = sum(1 for lv, _ in verdicts if lv == "OK")
+    print(f"events={len(events)} other={len(others)} FAIL={n_fail} WARN={n_warn} OK={n_ok}")
+    print(f"report -> {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

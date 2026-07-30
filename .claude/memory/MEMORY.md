@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [onsite_experience_test.md](onsite_experience_test.md) - 体験を実機で丸ごと検証する 3 点セット（[XP] テレメトリ / HMD 不要の自動走行 / 判定スクリプト）＋ logcat 収集の罠と 2026-07-30 のベースライン実測
+
 - [proposal_single_source.md](proposal_single_source.md) - 企画書の正は docs/proposal/ の 1 本だけ。docs/archive/ の旧版は体験構成が別物なので読まない（新旧の要求対応表つき）
 
 - [take_continuity.md](take_continuity.md) - 演出の待ち・連続・継ぎ目：持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が所有する／相乗り分岐にテストが無い

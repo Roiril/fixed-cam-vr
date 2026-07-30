@@ -1,0 +1,405 @@
+#nullable enable
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using FixedCamVr.Streaming;
+using UnityEngine;
+
+namespace FixedCamVr.Tracking
+{
+    /// <summary>
+    /// 体験者の歩行を合成して、体験 1 回（導入 → 3 周 → 終了）を **HMD を被らずに**走らせる
+    /// デバッグ起動フック。<see cref="RegVizDebugDriver"/> と同じ流儀で、Development ビルド +
+    /// 起動フラグの時だけ動く。
+    ///
+    /// <b>既存コードは 1 行も変更していない。</b> 動かすのは <c>OVRCameraRig</c> の Transform だけで、
+    /// 結果として <c>CenterEyeAnchor</c> のワールド位置が動く ＝ ゾーン判定・通過ライン・周回・
+    /// CG の follow・開始位置の判定が、実際に歩いたときと同じ経路を通る。
+    ///
+    /// <b>なぜ course 座標で歩くか</b>: 位置合わせ（registration）が現地とズレていても、
+    /// course 空間では一貫している。物理的にどこに立っているかはズレても、**体験の論理**
+    /// （どの区間に居るか・何周目か・どの演出が出るか）の検証はそのまま成立する。
+    ///
+    /// <b>経路は grid から機械的に作る</b>（手書きの座標を焼かない）。カメラ間の移動は
+    /// 「出発カメラと到着カメラのタイルだけを通る」BFS で解くので、**途中で第三のカメラの領域を
+    /// 横切らない**。手書きの直線だと、部屋の形によっては意図しない区間へ一瞬入って
+    /// 予定外の演出が武装する（実際にこのレイアウトの B→C 直線は A を横切る）。
+    ///
+    /// 起動:
+    ///   <c>adb shell am start -e xpwalk 1 -n com.roiril.mawarimi/com.unity3d.player.UnityPlayerActivity</c>
+    /// ログは全て <c>[XPWalk]</c> タグ。体験そのものの観測は <c>[XP]</c>（ShowTelemetryHost）が出す。
+    /// </summary>
+    [DisallowMultipleComponent]
+    public sealed class ShowWalkDebugDriver : MonoBehaviour
+    {
+        /// <summary>起動してから歩き始めるまでの待ち（show.json 受信・ゾーン生成・登録ロードを待つ）。</summary>
+        private const float StartupDelaySec = 8f;
+
+        /// <summary>歩く速さ (m/s)。実際の体験者はもっと速いが、区間を飛ばさない速度にしてある。</summary>
+        private const float WalkSpeed = 0.5f;
+
+        /// <summary>カメラの代表点に着いてから次へ向かうまでの滞在 (秒)。演出の尺を見せ切るため。</summary>
+        private const float DwellSec = 6f;
+
+        /// <summary>到達判定の半径 (m)。</summary>
+        private const float ArriveEps = 0.05f;
+
+        /// <summary>何があっても打ち切る上限 (秒)。ドライバが居座って次のテストを邪魔しないため。</summary>
+        private const float HardLimitSec = 600f;
+
+        /// <summary>導入が終わるのを待つ上限 (秒)。超えたら諦めて歩き出す（導入の不具合も観測対象）。</summary>
+        private const float IntroWaitLimitSec = 90f;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void Bootstrap()
+        {
+            if (!Debug.isDebugBuild) return;
+            if (!FlagPresent()) return;
+            var go = new GameObject("[XPWalkDriver]");
+            DontDestroyOnLoad(go);
+            go.AddComponent<ShowWalkDebugDriver>();
+            Debug.Log("[XPWalk] 起動フラグ検出 — 自動走行を予約（8 秒後）");
+        }
+
+        private static bool FlagPresent()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using var up = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+                using var act = up.GetStatic<AndroidJavaObject>("currentActivity");
+                using var intent = act.Call<AndroidJavaObject>("getIntent");
+                string v = intent.Call<string>("getStringExtra", "xpwalk");
+                return !string.IsNullOrEmpty(v);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[XPWalk] intent extra 読取失敗: {e.Message}");
+                return false;
+            }
+#else
+            foreach (string a in Environment.GetCommandLineArgs())
+                if (string.Equals(a, "-xpwalk", StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+#endif
+        }
+
+        private Transform? _rig;
+        private Transform? _head;
+        private CourseFrame? _frame;
+        private ShowControlClient? _show;
+        private ShowRunDirector? _run;
+
+        private void Start() => StartCoroutine(DriveRoutine());
+
+        private IEnumerator DriveRoutine()
+        {
+            yield return new WaitForSeconds(StartupDelaySec);
+
+            if (!Resolve()) yield break;
+
+            ShowLayoutDef? layout = _show!.Layout;
+            ShowGridDef? grid = layout?.grid;
+            if (grid == null || !grid.HasData())
+            {
+                Debug.LogError("[XPWalk] layout.grid が無い — 経路を作れないので終了");
+                yield break;
+            }
+
+            int[] order = _show.CourseOrder ?? Array.Empty<int>();
+            if (order.Length == 0)
+            {
+                Debug.LogError("[XPWalk] layout.course.order が空 — 終了");
+                yield break;
+            }
+
+            var map = BuildCells(grid, out int rows, out int cols);
+            var route = BuildRoute(map, rows, cols, grid.tileM, order, out string routeLog);
+            if (route.Count == 0)
+            {
+                Debug.LogError("[XPWalk] 経路生成に失敗 — 終了");
+                yield break;
+            }
+            Debug.Log($"[XPWalk] 経路: {routeLog}");
+
+            // --- 導入: 開始位置に立って待つ ---
+            Vector2 startCourse = ResolveStartCourse(layout, map, rows, cols, grid.tileM, order[0]);
+            Debug.Log($"[XPWalk] 開始位置へ ({startCourse.x:F2},{startCourse.y:F2})");
+            yield return StartCoroutine(WalkTo(startCourse));
+
+            float introWait = 0f;
+            while (_run != null && _run.Phase == ShowPhase.Intro && introWait < IntroWaitLimitSec)
+            {
+                introWait += Time.deltaTime;
+                yield return null;
+            }
+            if (_run != null && _run.Phase == ShowPhase.Intro)
+                Debug.LogWarning($"[XPWalk] 導入が {IntroWaitLimitSec:F0}s で終わらなかった — そのまま歩き出す");
+            else
+                Debug.Log($"[XPWalk] 本編開始（導入 {introWait:F1}s）— 周回に入る");
+
+            // --- 本編: 経路を辿る ---
+            float t0 = Time.realtimeSinceStartup;
+            foreach (Waypoint wp in route)
+            {
+                if (Time.realtimeSinceStartup - t0 > HardLimitSec)
+                {
+                    Debug.LogWarning("[XPWalk] 上限時間に達したので打ち切る");
+                    break;
+                }
+                if (_run != null && _run.Phase == ShowPhase.Finished)
+                {
+                    Debug.Log("[XPWalk] 体験が終了したので歩行を止める");
+                    break;
+                }
+
+                yield return StartCoroutine(WalkTo(wp.Course));
+                if (wp.HoldSec > 0f)
+                {
+                    Debug.Log($"[XPWalk] 到着 cam={wp.Camera} ({wp.Course.x:F2},{wp.Course.y:F2}) — {wp.HoldSec:F0}s 滞在");
+                    yield return new WaitForSeconds(wp.HoldSec);
+                }
+            }
+
+            // 終了の判定は ShowRunDirector が握っている。歩き終わっても終わらないなら、
+            // それ自体が観測結果（3 周したのに終わらない = 周回検知の不具合）。
+            float tail = 0f;
+            while (_run != null && _run.Phase != ShowPhase.Finished && tail < 30f)
+            {
+                tail += Time.deltaTime;
+                yield return null;
+            }
+            Debug.Log($"[XPWalk] 走行終了 phase={(_run != null ? _run.Phase.ToString() : "?")} " +
+                      $"lap={(_run != null ? _run.Lap : -1)} 経過={Time.realtimeSinceStartup - t0:F0}s");
+        }
+
+        // ---------------------------------------------------------------- 参照
+
+        private bool Resolve()
+        {
+            _frame = FindObjectOfType<CourseFrame>();
+            _show = FindObjectOfType<ShowControlClient>();
+            _run = FindObjectOfType<ShowRunDirector>();
+
+            var cam = Camera.main;
+            _head = cam != null ? cam.transform : null;
+            if (_head == null)
+            {
+                var go = GameObject.Find("OVRCameraRig/TrackingSpace/CenterEyeAnchor");
+                _head = go != null ? go.transform : null;
+            }
+            if (_head != null)
+            {
+                // CenterEyeAnchor の祖先で OVRCameraRig を探す（親に === Rig === 等が居ても効く）。
+                Transform? t = _head;
+                while (t != null && t.name != "OVRCameraRig") t = t.parent;
+                _rig = t != null ? t : (_head.parent != null ? _head.parent.parent : null);
+                if (_rig == null) _rig = _head.root;
+            }
+
+            if (_frame == null || _show == null || _head == null || _rig == null)
+            {
+                Debug.LogError($"[XPWalk] 必要な参照が揃わない: frame={_frame != null} show={_show != null} " +
+                               $"head={_head != null} rig={_rig != null} — 終了");
+                return false;
+            }
+            Debug.Log($"[XPWalk] rig='{_rig.name}' head='{_head.name}' " +
+                      $"reg={(_frame.HasRegistration ? "あり" : "なし")} run={_run != null}");
+            return true;
+        }
+
+        // ---------------------------------------------------------------- 歩行
+
+        private IEnumerator WalkTo(Vector2 courseTarget)
+        {
+            float guard = 0f;
+            while (guard < 60f)
+            {
+                guard += Time.deltaTime;
+                if (_frame == null || _head == null || _rig == null) yield break;
+
+                Vector3 headW = _head.position;
+                Vector3 targetW = _frame.CourseToWorld(courseTarget, headW.y);
+                var d = new Vector2(targetW.x - headW.x, targetW.z - headW.z);
+                float dist = d.magnitude;
+                if (dist <= ArriveEps) yield break;
+
+                float step = WalkSpeed * Time.deltaTime;
+                Vector2 move = dist <= step ? d : d.normalized * step;
+                _rig.position += new Vector3(move.x, 0f, move.y);
+                yield return null;
+            }
+            Debug.LogWarning($"[XPWalk] 到達できないまま 60s ({courseTarget.x:F2},{courseTarget.y:F2})");
+        }
+
+        // ---------------------------------------------------------------- 経路生成
+
+        private readonly struct Waypoint
+        {
+            public readonly Vector2 Course;
+            public readonly float HoldSec;
+            public readonly int Camera;
+            public Waypoint(Vector2 c, float hold, int cam) { Course = c; HoldSec = hold; Camera = cam; }
+        }
+
+        /// <summary>cells（rows 本の文字列）を [row, col] → カメラ index（未割当 -1）へ。</summary>
+        private static int[,] BuildCells(ShowGridDef g, out int rows, out int cols)
+        {
+            rows = Mathf.Max(0, g.rows);
+            cols = Mathf.Max(0, g.cols);
+            var map = new int[rows, cols];
+            for (int r = 0; r < rows; r++)
+            {
+                string line = g.cells != null && r < g.cells.Length ? (g.cells[r] ?? "") : "";
+                for (int c = 0; c < cols; c++)
+                {
+                    char ch = c < line.Length ? line[c] : '.';
+                    map[r, c] = ch >= '0' && ch <= '8' ? ch - '0' : -1;
+                }
+            }
+            return map;
+        }
+
+        private static Vector2 CellCenter(int r, int c, int rows, int cols, float tileM)
+        {
+            ZoneLayoutSolver.CellRect(r, c, rows, cols, tileM,
+                out float xLo, out float xHi, out float zLo, out float zHi);
+            return new Vector2((xLo + xHi) * 0.5f, (zLo + zHi) * 0.5f);
+        }
+
+        /// <summary>そのカメラのタイル集合の重心にいちばん近いタイル（＝代表点）。</summary>
+        private static bool RepresentativeCell(int[,] map, int rows, int cols, int camera, out int rr, out int cc)
+        {
+            float sr = 0f, sc = 0f;
+            int n = 0;
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                    if (map[r, c] == camera) { sr += r; sc += c; n++; }
+            rr = cc = -1;
+            if (n == 0) return false;
+            sr /= n; sc /= n;
+
+            float best = float.MaxValue;
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                {
+                    if (map[r, c] != camera) continue;
+                    float d = (r - sr) * (r - sr) + (c - sc) * (c - sc);
+                    if (d >= best) continue;
+                    best = d; rr = r; cc = c;
+                }
+            return rr >= 0;
+        }
+
+        /// <summary>
+        /// from セルから to セルへ、<paramref name="camA"/> か <paramref name="camB"/> のタイルだけを通る
+        /// 最短経路（4 近傍 BFS）。第三のカメラの領域を横切らないことがこの関数の存在理由。
+        /// </summary>
+        private static List<(int r, int c)>? BfsPath(int[,] map, int rows, int cols,
+            (int r, int c) from, (int r, int c) to, int camA, int camB)
+        {
+            var prev = new int[rows, cols];
+            for (int r = 0; r < rows; r++) for (int c = 0; c < cols; c++) prev[r, c] = -2;
+
+            var q = new Queue<(int r, int c)>();
+            q.Enqueue(from);
+            prev[from.r, from.c] = -1;
+            int[] dr = { 1, -1, 0, 0 };
+            int[] dc = { 0, 0, 1, -1 };
+
+            while (q.Count > 0)
+            {
+                var cur = q.Dequeue();
+                if (cur == to) break;
+                for (int k = 0; k < 4; k++)
+                {
+                    int nr = cur.r + dr[k], nc = cur.c + dc[k];
+                    if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+                    if (prev[nr, nc] != -2) continue;
+                    int cam = map[nr, nc];
+                    if (cam != camA && cam != camB) continue;
+                    prev[nr, nc] = cur.r * cols + cur.c;
+                    q.Enqueue((nr, nc));
+                }
+            }
+            if (prev[to.r, to.c] == -2) return null;
+
+            var path = new List<(int r, int c)>();
+            var p = to;
+            while (true)
+            {
+                path.Add(p);
+                int back = prev[p.r, p.c];
+                if (back < 0) break;
+                p = (back / cols, back % cols);
+            }
+            path.Reverse();
+            return path;
+        }
+
+        /// <summary>
+        /// order を 3 周ぶん（+ 最後に order[0] へ戻る）辿るウェイポイント列。
+        /// 曲がり角だけを残す（直線区間の中間セルは間引く）。
+        /// </summary>
+        private static List<Waypoint> BuildRoute(int[,] map, int rows, int cols, float tileM,
+            int[] order, out string log)
+        {
+            var route = new List<Waypoint>();
+            log = "";
+            var reps = new Dictionary<int, (int r, int c)>();
+            foreach (int cam in order)
+            {
+                if (RepresentativeCell(map, rows, cols, cam, out int r, out int c)) reps[cam] = (r, c);
+                else Debug.LogWarning($"[XPWalk] カメラ {cam} のタイルが grid に無い");
+            }
+            if (reps.Count < 2) return route;
+
+            // 3 周 + 締めの 1 区間（order[0] へ戻ると周回が確定するため）。
+            var seq = new List<int>();
+            for (int lap = 0; lap < 3; lap++)
+                foreach (int cam in order) seq.Add(cam);
+            seq.Add(order[0]);
+
+            var sb = new System.Text.StringBuilder();
+            for (int i = 1; i < seq.Count; i++)
+            {
+                int from = seq[i - 1], to = seq[i];
+                if (!reps.ContainsKey(from) || !reps.ContainsKey(to)) continue;
+                List<(int r, int c)>? path = BfsPath(map, rows, cols, reps[from], reps[to], from, to);
+                if (path == null)
+                {
+                    Debug.LogWarning($"[XPWalk] {from}->{to} の経路が無い（タイルが繋がっていない）— 直行する");
+                    route.Add(new Waypoint(CellCenter(reps[to].r, reps[to].c, rows, cols, tileM), DwellSec, to));
+                    sb.Append(from).Append("~>").Append(to).Append(' ');
+                    continue;
+                }
+
+                // 曲がり角だけ残す（直線の途中は歩行で自然に通る）。
+                for (int k = 1; k < path.Count - 1; k++)
+                {
+                    var a = path[k - 1]; var b = path[k]; var c2 = path[k + 1];
+                    bool straight = (a.r == b.r && b.r == c2.r) || (a.c == b.c && b.c == c2.c);
+                    if (straight) continue;
+                    route.Add(new Waypoint(CellCenter(b.r, b.c, rows, cols, tileM), 0f, -1));
+                }
+                var last = path[path.Count - 1];
+                route.Add(new Waypoint(CellCenter(last.r, last.c, rows, cols, tileM), DwellSec, to));
+                sb.Append(from).Append("->").Append(to).Append(' ');
+            }
+            log = sb.ToString().TrimEnd();
+            return route;
+        }
+
+        /// <summary>導入の開始位置。<c>layout.startSpot</c> が著作されていればそれ、無ければ順路先頭の代表点。</summary>
+        private static Vector2 ResolveStartCourse(ShowLayoutDef? layout, int[,] map, int rows, int cols,
+            float tileM, int firstCamera)
+        {
+            // hasStartSpot を見る（JsonUtility はキーが無くても実体を作るので startSpot != null は信じない）。
+            if (layout != null && layout.hasStartSpot && layout.startSpot != null)
+                return new Vector2(layout.startSpot.x, layout.startSpot.z);
+            if (RepresentativeCell(map, rows, cols, firstCamera, out int r, out int c))
+                return CellCenter(r, c, rows, cols, tileM);
+            return Vector2.zero;
+        }
+    }
+}

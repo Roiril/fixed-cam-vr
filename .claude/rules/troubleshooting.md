@@ -54,6 +54,20 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 3. `adb-logcat` スキル (unity) で `Unity` タグの初期化エラー
 4. `adb-logcat` スキル (xr) で OVRPlugin / VrApi 初期化失敗
 
+### 「体験が思ったとおりに起きない」（演出が出ない / 周回が進まない / 映像が不安定）
+
+**推測で触る前にログの数値で確かめる。** HMD を被らずに導入 → 3 周 → 終了を通せる:
+
+```bash
+bash tools/run-quest-xp-test.sh walk 300
+```
+
+`[XP]` テレメトリ（[`ShowTelemetryHost`](../../Assets/Scripts/Diagnostics/ShowTelemetryHost.cs)）が
+相・周回・区間・演出・録画・砂嵐・遅延・表示 fps を出し、
+[`analyze-xp-log.py`](../../tools/analyze-xp-log.py) が show.json の著作と突き合わせて
+**「出るはずで出なかった演出」を名指しする**。手順・収集の罠・ベースライン実測は
+[.claude/memory/onsite_experience_test.md](../memory/onsite_experience_test.md)。
+
 ### 「コンパイルが通らない / Unity 重い」
 
 1. `unity-status` スキル — 接続・コンパイル状態
