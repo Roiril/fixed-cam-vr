@@ -451,9 +451,11 @@ def _dwell_payload():
         return {'items': out, 'updatedAt': _dwell_stats.get('updatedAt', 0)}
 
 
-# 動画生成プロンプトのストア（PC 内 prompts.json）。LAN のどの端末からも共有。
+# 旧「生成プロンプト」ストア。**読み出し専用の移行元**（API は 2026-07-30 に撤去した）。
+#   プロンプト本文しか持たず「それで何が出たのか」が分からないので実質使えず、UI は 2026-07-28 に
+#   撤去済みだった。中身は起動時に一度だけ素材台帳へ移す（_migrate_prompts_into_atelier）。
+#   ファイル自体は消さない — 移行が失敗しても手で拾えるように残す。
 PROMPTS_FILE = os.path.join(ROOT, 'prompts.json')
-_prompts_lock = threading.Lock()
 
 
 def _load_prompts():
@@ -462,11 +464,6 @@ def _load_prompts():
             return json.load(f)
     except Exception:
         return []
-
-
-def _save_prompts(items):
-    with open(PROMPTS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(items, f, ensure_ascii=False, indent=2)
 
 
 # ---- 素材工房ストア（atelier.json）--------------------------------------------
@@ -503,6 +500,38 @@ def _load_atelier():
 def _norm_asset_url(u):
     """素材 URL の突合キー。percent-encode の有無で別物にしない。"""
     return unquote(str(u or '')).strip()
+
+
+def _migrate_prompts_into_atelier(st):
+    """
+    旧 `/prompts`（prompts.json）の中身を素材台帳へ **1 回だけ**移す。
+
+    UI は 2026-07-28 に撤去されたが、そこには 700〜1000 字の作り込まれたプロンプトが 7 件
+    残っていて、**作者からは見えないのに消すと二度と戻らない**状態だった。撤去の前に移す。
+    元ファイルは消さない（移行が失敗しても手で拾えるように）。
+    """
+    if st.get('promptsMigratedAt'):
+        return st
+    items = _load_prompts()
+    if isinstance(items, list) and items:
+        have = {(r.get('body') or '').strip() for r in st.get('recipes', [])}
+        taken = {r.get('id') for r in st.get('recipes', [])}
+        for it in items:
+            body = (it.get('text') or '').strip()
+            if not body or body in have:
+                continue
+            rid = _atelier_new_id('r_', taken)
+            taken.add(rid)
+            st.setdefault('recipes', []).append({
+                'id': rid,
+                'name': (it.get('title') or '（無題）').strip(),
+                'kind': it.get('kind') if it.get('kind') in ('image', 'video') else 'video',
+                'intent': '旧「生成プロンプト」から移行',
+                'body': body,
+                'slug': '',
+            })
+    st['promptsMigratedAt'] = datetime.datetime.now().isoformat(timespec='seconds')
+    return st
 
 
 def _atelier_derive(data):
@@ -1058,8 +1087,6 @@ class Handler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == '/captures/list':
             return self._json(self._list_captures())
-        if path == '/prompts':
-            return self._json(_load_prompts())
         if path == '/atelier':
             with _atelier_lock:
                 return self._json(_atelier_derive(_load_atelier()))
@@ -1082,8 +1109,6 @@ class Handler(SimpleHTTPRequestHandler):
             age = (time.time() - snap['at']) if snap.get('at') else None
             return self._json({'status': snap, 'ageSec': age,
                                'alive': age is not None and age < 6.0})
-        if path == '/masks/list':
-            return self._json(self._list_masks())
         if path == '/cam':
             return self._proxy_cam(parse_qs(urlparse(self.path).query))
         if path == '/cam/liveness':
@@ -1268,15 +1293,6 @@ class Handler(SimpleHTTPRequestHandler):
             snapshot = json.loads(json.dumps(_show))
         return self._json(snapshot)
 
-    def _list_masks(self):
-        items = []
-        for n in os.listdir(MASKS):
-            fp = os.path.join(MASKS, n)
-            if os.path.isfile(fp):
-                items.append({'name': n, 'url': '/masks/' + n, 'mtime': os.stat(fp).st_mtime})
-        items.sort(key=lambda x: x['mtime'], reverse=True)
-        return items
-
     # captures/<name> をファイルマネージャで開く（選択状態）。サーバは PC 上で動くので可能。
     def _reveal(self, name):
         if not name or name != os.path.basename(name):
@@ -1370,39 +1386,6 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path.startswith('/atelier'):
             return self._atelier_post(parsed)
 
-        if parsed.path == '/prompts':
-            body = self._read_json_body()
-            title = (body.get('title') or '').strip()
-            text = (body.get('text') or '').strip()
-            kind = body.get('kind') or 'video'
-            if kind not in ('image', 'video'):
-                kind = 'video'
-            if not text:
-                return self._json({'ok': False, 'error': 'empty text'}, 400)
-            now = datetime.datetime.now().timestamp()
-            with _prompts_lock:
-                items = _load_prompts()
-                pid = body.get('id')
-                if pid:  # 更新
-                    for it in items:
-                        if it.get('id') == pid:
-                            it['title'], it['text'], it['kind'], it['mtime'] = title, text, kind, now
-                            break
-                    else:
-                        pid = None
-                if not pid:  # 新規
-                    pid = 'p_' + datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
-                    items.append({'id': pid, 'title': title, 'text': text, 'kind': kind, 'mtime': now})
-                _save_prompts(items)
-            return self._json({'ok': True, 'id': pid, 'items': _load_prompts()})
-
-        if parsed.path == '/prompts/delete':
-            body = self._read_json_body()
-            pid = body.get('id')
-            with _prompts_lock:
-                items = [it for it in _load_prompts() if it.get('id') != pid]
-                _save_prompts(items)
-            return self._json({'ok': True, 'items': items})
 
         return self._json({'ok': False, 'error': 'unknown endpoint'}, 404)
 
@@ -1905,9 +1888,11 @@ if __name__ == '__main__':
     _start_idcheck()
     # 素材索引は導出値（採用状態）を含むので、show.json 側が変わっただけでも古くなる。
     #   起動のたびに書き直す — 人間と次セッションのシュビーが読むファイルが嘘をつく状態を残さない。
+    #   旧 prompts.json の取り込みも同じ機会に 1 回だけ行う。
     try:
         with _atelier_lock:
-            _save_atelier(_load_atelier())
+            st = _migrate_prompts_into_atelier(_load_atelier())
+            _save_atelier(st)
     except Exception as e:
         print(f'  (素材索引の再生成に失敗: {e})')
     ThreadingHTTPServer(('0.0.0.0', port), Handler).serve_forever()

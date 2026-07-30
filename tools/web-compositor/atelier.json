@@ -1,5 +1,5 @@
 {
-  "rev": 16,
+  "rev": 17,
   "recipes": [
     {
       "id": "r_20260726_064706_799",
@@ -38,6 +38,62 @@
         "動くもの",
         "起きること"
       ]
+    },
+    {
+      "id": "r_20260730_145450_996",
+      "name": "① 静止画インペイント（貞子を描き足す / Flux Fill・Kontext）",
+      "kind": "image",
+      "intent": "旧「生成プロンプト」から移行",
+      "body": "Add a Japanese yūrei (vengeful ghost) woman standing in the far corner of THIS room, long stringy wet black hair completely covering her face, white burial kimono (shini-shōzoku), pale greyish skin, one bloodshot eye barely visible through the hair, unnaturally hunched, with a soft contact shadow on the floor beneath her feet.\nPhotorealistic, practical-effects horror, hyper-detailed skin and fabric texture, dim low light matching the scene, shot on a phone camera, subtle film grain.\nKeep the room, walls, floor, furniture, lighting and camera framing exactly the same. Change nothing except adding the figure.\nNegative: glow, ethereal, ukiyo-e, anime, cartoon, well-lit, extra limbs, deformed face.",
+      "slug": ""
+    },
+    {
+      "id": "r_20260730_145450_996_1",
+      "name": "② 画像→動画（静止カメラで貞子を動かす / Runway・Kling・Wan）",
+      "kind": "video",
+      "intent": "旧「生成プロンプト」から移行",
+      "body": "Static shot, locked-off tripod camera, no camera movement, the background stays perfectly still the whole time.\nThe yūrei woman slowly tilts her head, her long black hair drifting, then takes one jerky step toward the camera. Undercranked, unnatural stuttering motion like footage from an old tape. Her white kimono sways slightly.\nEverything else in the room — walls, floor, furniture, lighting — stays completely static and unchanged.\nDuration ~4 seconds, minimal motion. Photorealistic, dim low light, phone-camera look, film grain.\nNegative: camera movement, pan, zoom, dolly, glow, ethereal, anime, cartoon, warping background, extra limbs.",
+      "slug": ""
+    },
+    {
+      "id": "r_20260730_145450_996_2",
+      "name": "貞子 / 右パネル右脇に出現（背景不変）",
+      "kind": "image",
+      "intent": "旧「生成プロンプト」から移行",
+      "body": "Add one motionless ghostly woman standing on the right side, just past the right edge of the gray partition screen, against the white wall. She wears a long, dirty white burial gown; her face is completely hidden behind long, wet, stringy black hair hanging straight down; pale grey skin, one bare foot showing, body slightly hunched, head tilted at an unnatural angle, silently facing the camera. Keep absolutely everything else unchanged - the same room, partition, desks, chair, carpet, wall outlet, tripod and the existing cool fluorescent lighting must stay exactly as in the original photo. Match the wide-angle surveillance-camera look: same perspective, slight grain, soft focus and white balance, and cast a faint soft shadow at her feet so she looks naturally captured by the same fixed camera. Photorealistic, eerie, still, bloodless. Negative: no blood, no gore, no extra people, do not alter the background, no text or watermark.",
+      "slug": ""
+    },
+    {
+      "id": "r_20260730_145450_996_3",
+      "name": "貞子（検閲ゆるめ版・民俗劇フレーミング）",
+      "kind": "image",
+      "intent": "旧「生成プロンプト」から移行",
+      "body": "Editorial documentary photo: a butoh / folk-theatre performer in a white mourning robe stands quietly to the right of the gray partition, against the wall, her long black hair hanging over her face, head slightly tilted toward the camera, one bare foot showing. Keep the rest of the office scene, furniture, lighting and grain exactly unchanged. Photorealistic, same wide-angle camera look, subtle shadow at her feet.",
+      "slug": ""
+    },
+    {
+      "id": "r_20260730_145450_996_4",
+      "name": "貞子 / 右端の棚脇に出現（背景不変）",
+      "kind": "image",
+      "intent": "旧「生成プロンプト」から移行",
+      "body": "Add one motionless ghostly woman standing at the far-right edge of the frame, partly emerging from the shadows beside the shelving and wooden ladder on the right. She wears a long, dirty white burial gown; her face is completely hidden behind long, wet, stringy black hair hanging straight down; pale grey skin, body slightly hunched, head tilted at an unnatural angle, silently facing the camera, only partly inside the frame at the right edge. Keep absolutely everything else unchanged - the two gray partition panels, the whiteboard on the left, the shelves, the black round objects, the wooden ladder and equipment, and the existing lighting must stay exactly as in the original photo. Match the wide-angle surveillance-camera look: same perspective, slight grain, soft focus and white balance, with a faint soft shadow at her feet so she looks naturally captured by the same fixed camera. Photorealistic, eerie, still, bloodless. Negative: no blood, no gore, no extra people, do not alter the background, no text or watermark.",
+      "slug": ""
+    },
+    {
+      "id": "r_20260730_145450_996_5",
+      "name": "貞子 / 右端から半身→一歩（image-to-video・直球）",
+      "kind": "video",
+      "intent": "旧「生成プロンプト」から移行",
+      "body": "Image-to-video. Fixed locked-off security camera, absolutely no camera movement. The pale woman in the white robe at the far-right edge holds perfectly still for two seconds, then makes one sudden unnatural motion - her head tilts sharply and her long black hair sways - and she slowly leans out from beside the shelving and takes one quiet, halting step toward the camera, always staring at it. Everything else in the room stays completely static (partition, whiteboard, shelves, ladder unchanged). Slow, eerie, silent, dreamlike, uncanny stillness broken by one twitch. Subtle film grain, faint fluorescent flicker. Photorealistic, bloodless, no running, no quick motion.",
+      "slug": ""
+    },
+    {
+      "id": "r_20260730_145450_996_6",
+      "name": "貞子 / 検閲ゆるめ版（民俗舞踏フレーミング・Veo向け）",
+      "kind": "video",
+      "intent": "旧「生成プロンプト」から移行",
+      "body": "Image-to-video, static tripod shot. A butoh dance performer in a white robe stands at the right edge of the room for a quiet folk-theatre piece. She remains motionless, then slowly tilts her head and takes one slow, deliberate step forward, gazing calmly toward the camera. The rest of the room is perfectly still. Gentle, dreamlike, slow and theatrical, soft grain, photorealistic.",
+      "slug": ""
     }
   ],
   "generations": [
@@ -79,5 +135,6 @@
       },
       "outputUrl": "/captures/gen_camC_doll_20260729_191238.png"
     }
-  ]
+  ],
+  "promptsMigratedAt": "2026-07-30T14:54:50"
 }

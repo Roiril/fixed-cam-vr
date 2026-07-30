@@ -951,6 +951,8 @@ input:-webkit-autofill:active {
 .atl-bar .spacer { flex: 1; min-width: 8px; }
 .atl-bar button { padding: 4px 10px; font-size: 11px; }
 .atl-lead { font-size: 11.5px; opacity: var(--opacity-sub); line-height: 1.7; margin: 0; max-width: 74em; }
+/* 道具選びに効く知見だけを面に出す（作風のコツは陳腐化するので memory に置いたまま）。 */
+.atl-toolhint { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.6; margin: 0; }
 
 .atl-recipes-box { margin: 0 0 12px; border: 1px solid var(--line-soft); }
 .atl-recipes-box > summary {

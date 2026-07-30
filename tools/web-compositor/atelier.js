@@ -3,15 +3,17 @@
 // 設計の芯（.claude/plans/2026-07-26_material-atelier.md）:
 //   固定カメラ映像に AI 生成の異変を重ねる作り方の判断基準は「動画単体の出来」ではなく
 //   **その構図の live に載せた時に破綻しないか** の 1 点しかない。だから工房の中心は
-//   生成レコードの一覧ではなく **合成の見え** であり、記録（レシピ・束縛値・全文プロンプト・
+//   生成レコードの一覧ではなく **合成の見え** であり、記録（指示・全文プロンプト・
 //   採否）はその作業の副産物として自動で溜まればよい。
 //
 //   列 = 1 カメラ。1 列の中で「種フレーム → 指示 → 生成物 → 合成の見え」が閉じる。
 //   上から ① 試写 ② 種 ③ 指示 ④ 棚。**作業順ではなく重要度順**（試写は作業中いちばん長く見る）。
 //
-//   レシピ = 場所に依存しない演出テンプレ。{{スロット}} を持ち、カメラをまたいで再利用する
-//   束縛値 = そのカメラでの具体値（位置・動作）。ここだけが場所依存
-//   生成   = レシピ × 束縛値 × 種フレームの 1 回の試行。全文プロンプトを焼き込んで残す
+//   保存した指示 = よく使うプロンプトの棚（旧「レシピ」）。選ぶと本文がそのまま ③ の欄に入る。
+//     穴埋めスロットは 2026-07-30 に撤去した — 骨格はサーバが自動で足すようになり、
+//     残るのは作者が書く一行なので、スロットを命名するコストの方が高くついていた
+//   生成 = 指示 × 種フレームの 1 回の試行。全文プロンプトを焼き込んで残す
+//   採用 = **保存しない**。show.json の cues[].sourceUrl がその出力を指していれば採用（導出）
 import { createCompositeView } from './composite-view.js';
 import {
   captures, refreshCaptures, onCaptures, isVideoUrl, encPath, FX_DEFAULT,
@@ -40,10 +42,9 @@ const STARTER_RECIPES = [
     name: '人影が立っている',
     slug: 'standing',
     kind: 'video',
-    intent: 'マスク合成の本命。動きが少ないほど継ぎ目が安定するので、最初の 1 本はこれから試す。',
-    slots: ['位置', '見た目', '動き'],
+    intent: 'マスク合成の本命。動きが少ないほど継ぎ目が安定するので、最初の 1 本はこれから試す。太字の所を書き換えて使う。',
     body: `Static locked-off tripod security camera. The camera does not move, pan, zoom, or shake at all.
-A figure is standing motionless at {{位置}}, {{見た目}}. {{動き}} It never approaches the camera and stays in place for the whole clip.
+A figure is standing motionless at the far left corner of the room, wearing a long dirty white robe, long black hair covering the face. It stays completely still, only the hair drifts slightly. It never approaches the camera and stays in place for the whole clip.
 The room, walls, partition panels, ceiling, floor, furniture, lighting and framing must stay EXACTLY as in the input image. Do not change color grading or exposure. The figure casts a soft contact shadow on the floor.
 Photorealistic, matches the input photo's lighting and lens (wide-angle, high mounted, looking down). Practical-effects horror, no glow, no supernatural aura.
 Negative: camera movement, zoom, pan, parallax, relighting, style change, text, watermark, anime, cartoon, extra limbs, deformed hands.`,
@@ -52,10 +53,9 @@ Negative: camera movement, zoom, pan, parallax, relighting, style change, text, 
     name: '横切る（一瞬よぎる）',
     slug: 'crossing',
     kind: 'video',
-    intent: '絵コンテ A1 / A3 の「隅で何かが一瞬よぎる」。1 秒未満で通過させ、残りは完全な無人に保つ。',
-    slots: ['入る側', '出る側', '遮蔽物'],
+    intent: '絵コンテ A1 / A3 の「隅で何かが一瞬よぎる」。1 秒未満で通過させ、残りは完全な無人に保つ。入る側・出る側・遮蔽物を書き換えて使う。',
     body: `Static locked-off tripod security camera. The camera does not move, pan, zoom, or shake at all.
-A dark human silhouette crosses the frame quickly, entering from {{入る側}} and exiting at {{出る側}}, partially occluded by {{遮蔽物}}, visible for less than one second. Motion blur consistent with a phone camera at 30fps. The rest of the clip is completely empty and static.
+A dark human silhouette crosses the frame quickly, entering from the right edge and exiting behind the partition panel, partially occluded by the partition, visible for less than one second. Motion blur consistent with a phone camera at 30fps. The rest of the clip is completely empty and static.
 The room, walls, partition panels, ceiling, floor, furniture, lighting and framing must stay EXACTLY as in the input image. Do not change color grading or exposure.
 Photorealistic, matches the input photo's lighting and lens (wide-angle, high mounted, looking down).
 Negative: camera movement, zoom, pan, parallax, relighting, style change, text, watermark, anime, cartoon.`,
@@ -64,10 +64,9 @@ Negative: camera movement, zoom, pan, parallax, relighting, style change, text, 
     name: '無人のまま異変（人を出さない）',
     slug: 'ambient',
     kind: 'video',
-    intent: '人物ブロックの切り分けにも使える保険。これが通ればパイプライン自体は生きていると分かる。',
-    slots: ['動くもの', '起きること'],
+    intent: '人物ブロックの切り分けにも使える保険。これが通ればパイプライン自体は生きていると分かる。動くもの・起きることを書き換えて使う。',
     body: `Static locked-off tripod security camera. The camera does not move, pan, zoom, or shake at all.
-The room stays completely empty of people. {{動くもの}} {{起きること}} Nothing else in the room moves.
+The room stays completely empty of people. One of the partition panels shifts a few centimeters by itself. The fluorescent light flickers once, weakly. Nothing else in the room moves.
 The room, walls, partition panels, ceiling, floor, furniture, lighting and framing must stay EXACTLY as in the input image. Do not change color grading or exposure.
 Photorealistic, matches the input photo's lighting and lens (wide-angle, high mounted, looking down).
 Negative: camera movement, zoom, pan, parallax, relighting, style change, text, watermark, anime, cartoon, people, figures, humans.`,
@@ -134,21 +133,23 @@ export function createAtelier(deps) {
 
   const recipeById = (id) => data.recipes.find((r) => r.id === id) || null;
 
-  // {{スロット}} を束縛値で置換する。空のスロットは印を残して未入力だと分かるようにする。
+  /**
+   * 保存したプロンプトを選ぶと、その本文が**そのまま**テキストエリアに入る。
+   *
+   * `{{スロット}}` の穴埋め機構は 2026-07-30 に撤去した。不変部（locked-off / 部屋を変えるな /
+   * negative 列）はサーバが `/generate` で自動付与するようになり、テンプレに残るのは作者が書く
+   * 一行だけになった。その一行を穴埋めの形に分解して名前を付けるコストは、文をそのまま書く
+   * コストを上回る（レシピ 3 本に対し実際の生成は 1 件で、しかもレシピを使っていなかった）。
+   */
   function compose(st) {
     if (st.promptOverride) return st.promptOverride;
     const r = recipeById(st.recipeId);
-    if (!r) return '';
-    return String(r.body || '').replace(/\{\{([^}]+)\}\}/g, (m, k) => {
-      const v = (st.bind || {})[k.trim()];
-      return v && String(v).trim() ? String(v).trim() : m;
-    });
+    return r ? String(r.body || '') : '';
   }
 
-  const missingSlots = (st) => {
-    const r = recipeById(st.recipeId);
-    return r ? (r.slots || []).filter((s) => !((st.bind || {})[s] || '').trim()) : [];
-  };
+  /** 埋め忘れの `{{…}}` が残っていないか（移行してきた古い本文に含まれることがある）。 */
+  const leftoverSlots = (text) =>
+    [...new Set([...String(text || '').matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[1].trim()))];
 
   // ---- 全体の骨組み ---------------------------------------------------------
 
@@ -163,7 +164,7 @@ export function createAtelier(deps) {
           <button class="atl-opendir" title="撮影フォルダ（recordings/）を開く">📂 撮影</button>
           <button class="atl-opencap" title="素材フォルダ（captures/）を開く">📂 素材</button>
         </div>
-        <details class="atl-recipes-box"><summary>📐 レシピ（場所に依存しない演出テンプレ）<span class="atl-rcount"></span></summary>
+        <details class="atl-recipes-box"><summary>📝 保存した指示（よく使うプロンプト）<span class="atl-rcount"></span></summary>
           <div class="atl-recipes-body"></div>
         </details>
         <div class="atl-cams"></div>`;
@@ -204,7 +205,7 @@ export function createAtelier(deps) {
     for (const p of panes.values()) p.applyData();
   }
 
-  // ---- レシピ面（全カメラ共通）----------------------------------------------
+  // ---- 保存した指示（全カメラ共通の棚）----------------------------------------
 
   let recipeSig = '';
   function renderRecipes() {
@@ -215,35 +216,34 @@ export function createAtelier(deps) {
       // 使用回数だけは更新する（本文の編集中に作り直さない）。
       data.recipes.forEach((r) => {
         const s = host.querySelector(`.atl-rcard[data-rec="${CSS.escape(r.id)}"] .atl-rstat`);
-        if (s) s.textContent = r.usedCount ? `${r.keptCount}/${r.usedCount} 採用` : '未使用';
+        if (s) s.textContent = r.usedCount ? `${r.keptCount}/${r.usedCount} 本番で使用` : '未使用';
       });
       return;
     }
     recipeSig = sig;
     host.innerHTML = `
-      <p class="atl-lead">レシピは<b>場所に依存しない骨格</b>だけを持ちます。「奥の左隅に」のような場所の話は
-        <code>{{スロット}}</code> にして、カメラごとの束縛値で埋めます。これで同じ演出を別のカメラでも使い回せます。</p>
+      <p class="atl-lead">よく使う指示を置いておく棚です。選ぶと本文が ③ の欄にそのまま入るので、
+        その場で書き換えて 📋 で持っていきます。<b>穴埋めのスロットは持ちません</b> — 構図・画角・照明を
+        保つ骨格は 🪄 生成のときサーバが自動で足すので、ここに残るのは作者が書く一行だからです。</p>
       ${data.recipes.length ? '' : `<div class="atl-seed-box">
-        <p>まだレシピがありません。固定カメラ i2v 用の定番 3 本を入れて始められます。</p>
-        <button class="atl-starter accent">＋ 定番レシピを入れる</button></div>`}
+        <p>まだ 1 つもありません。固定カメラ i2v 用の定番 3 本を入れて始められます。</p>
+        <button class="atl-starter accent">＋ 定番を入れる</button></div>`}
       <div class="atl-recipes">
         ${data.recipes.map((r) => `
         <article class="atl-rcard" data-rec="${esc(r.id)}">
           <div class="atl-rhead">
-            <input class="atl-rname" type="text" value="${esc(r.name || '')}" placeholder="レシピ名">
+            <input class="atl-rname" type="text" value="${esc(r.name || '')}" placeholder="名前">
             <input class="atl-rslug" type="text" value="${esc(r.slug || '')}" placeholder="slug"
               title="生成物のファイル名に入る ASCII の短縮名（例 standing）">
-            <span class="atl-rstat">${r.usedCount ? `${r.keptCount}/${r.usedCount} 採用` : '未使用'}</span>
-            <button class="atl-rdel" title="このレシピを削除">🗑</button>
+            <span class="atl-rstat">${r.usedCount ? `${r.keptCount}/${r.usedCount} 本番で使用` : '未使用'}</span>
+            <button class="atl-rdel" title="これを削除">🗑</button>
           </div>
           <input class="atl-rintent" type="text" value="${esc(r.intent || '')}" placeholder="狙い（いつ使うか）">
           <textarea class="atl-rbody" rows="6" spellcheck="false">${esc(r.body || '')}</textarea>
-          <div class="atl-rslots">スロット <code>${esc((r.slots || []).join(' / ') || '—')}</code>
-            <span class="atl-sub">本文の <code>{{…}}</code> から自動で拾います</span></div>
         </article>`).join('')}
       </div>
       <div class="atl-actions">
-        <button class="atl-rnew">＋ 空のレシピ</button>
+        <button class="atl-rnew">＋ 空の指示</button>
         <button class="atl-spine">📋 共通の骨格だけコピー</button>
       </div>`;
 
@@ -252,7 +252,7 @@ export function createAtelier(deps) {
       starter.disabled = true;
       for (const r of STARTER_RECIPES) await api('/atelier/recipe', r);
     };
-    $('.atl-rnew', host).onclick = () => api('/atelier/recipe', { name: '新しいレシピ', kind: 'video', body: SPINE, slots: [] });
+    $('.atl-rnew', host).onclick = () => api('/atelier/recipe', { name: '新しい指示', kind: 'video', body: SPINE });
     const sp = $('.atl-spine', host);
     sp.onclick = async () => {
       try { await navigator.clipboard.writeText(SPINE); } catch { /* 権限なし */ }
@@ -262,20 +262,16 @@ export function createAtelier(deps) {
     host.querySelectorAll('.atl-rcard').forEach((card) => {
       const id = card.dataset.rec;
       const save = debounce(async () => {
-        const body = $('.atl-rbody', card).value;
-        const slots = [...new Set([...body.matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[1].trim()))];
         await api('/atelier/recipe', {
           id, name: $('.atl-rname', card).value, intent: $('.atl-rintent', card).value,
           slug: $('.atl-rslug', card).value.replace(/[^A-Za-z0-9]/g, '').slice(0, 16),
-          body, slots,
+          body: $('.atl-rbody', card).value,
         });
-        const el = $('.atl-rslots code', card);
-        if (el) el.textContent = slots.join(' / ') || '—';
         for (const p of panes.values()) p.refreshRecipeOptions();
       }, 600);
       ['.atl-rname', '.atl-rslug', '.atl-rintent', '.atl-rbody'].forEach((s) => { $(s, card).oninput = save; });
       $('.atl-rdel', card).onclick = () => {
-        if (!confirm('このレシピを消します（過去の生成レコードは残ります）。')) return;
+        if (!confirm('この指示を消します（過去の生成レコードは残ります）。')) return;
         api('/atelier/recipe/delete', { id });
       };
     });
@@ -284,11 +280,17 @@ export function createAtelier(deps) {
   // ---- カメラ列 -------------------------------------------------------------
 
   function createPane(cam) {
+    // 書きかけのプロンプトは端末に残す。📋 でコピーして外部ツールへ行き、できたファイルを持って
+    //   戻るまでの間にリロードが挟まっても、記録が本文ごと繋がるようにするため。
+    const draftKey = `atl.prompt.${cam.id}`;
+    const loadDraft = () => { try { return localStorage.getItem(draftKey) || ''; } catch { return ''; } };
+    const saveDraft = (v) => { try { localStorage.setItem(draftKey, v || ''); } catch { /* private mode */ } };
+
     const st = {
       seedUrl: '', bg: 'seed',
       pickUrl: '', pickGenId: '',
       maskMode: 'full', thresh: 0.12, strength: 1, graded: true,
-      recipeId: '', bind: {}, promptOverride: '',
+      recipeId: '', bind: {}, promptOverride: loadDraft(),
       params: { tool: 'dreamina', model: 'seedance 4.0 pro', aspect: '4:3', sec: 4, seed: '' },
       parentId: '',
     };
@@ -357,10 +359,9 @@ export function createAtelier(deps) {
       </div>
 
       <div class="atl-sec atl-brief">
-        <div class="atl-h">③ 指示<span class="atl-sub">レシピ＝骨格 / 束縛＝このカメラでの具体値</span></div>
+        <div class="atl-h">③ 指示<span class="atl-sub">保存した指示を選ぶか、直接書く</span></div>
         <select class="atl-recipe"></select>
         <div class="atl-intentbox"></div>
-        <div class="atl-slots"></div>
         <div class="atl-h2">合成プロンプト<span class="atl-warn"></span></div>
         <textarea class="atl-prompt" rows="6" spellcheck="false"></textarea>
         <div class="atl-params">
@@ -370,8 +371,10 @@ export function createAtelier(deps) {
           <label>秒<input type="number" data-p="sec" min="1" max="15" value="${esc(st.params.sec)}"></label>
           <label>seed<input type="text" data-p="seed" value="" placeholder="任意"></label>
         </div>
+        <p class="atl-toolhint">動画を作る道具は検閲の強さが違う。<b>Veo / Flow</b> は horror・ghost・blood 等で弾かれる。
+          <b>Kling</b> と<b>ローカル Wan</b> は寛容。弾かれたら言葉ではなく道具を替えるのが速い。</p>
         <div class="atl-actions">
-          <button class="atl-copy accent">📋 コピーして記録する</button>
+          <button class="atl-copy accent">📋 コピーする</button>
         </div>
         <p class="atl-note">コピーと同時に<b>送信待ちのレコード</b>ができます。生成したら棚のカードへ動画を落としてください。</p>
       </div>
@@ -750,13 +753,13 @@ export function createAtelier(deps) {
       }
     }
 
-    // ===== 指示（レシピ + 束縛 + プロンプト）=====
+    // ===== 指示（保存した指示 + プロンプト本文）=====
     const recipeSel = q('.atl-recipe'), promptTa = q('.atl-prompt');
 
     function refreshRecipeOptions() {
       const cur = st.recipeId;
-      recipeSel.innerHTML = '<option value="">— レシピを選ぶ —</option>'
-        + data.recipes.map((x) => `<option value="${esc(x.id)}"${x.id === cur ? ' selected' : ''}>${esc(x.name)}${x.usedCount ? `（${x.keptCount}/${x.usedCount} 採用）` : ''}</option>`).join('');
+      recipeSel.innerHTML = '<option value="">— 保存した指示から選ぶ —</option>'
+        + data.recipes.map((x) => `<option value="${esc(x.id)}"${x.id === cur ? ' selected' : ''}>${esc(x.name)}${x.usedCount ? `（${x.keptCount}/${x.usedCount} 使用）` : ''}</option>`).join('');
       recipeSel.value = cur;
       renderSlots();
     }
@@ -764,31 +767,18 @@ export function createAtelier(deps) {
     function renderSlots() {
       const r = recipeById(st.recipeId);
       q('.atl-intentbox').innerHTML = r && r.intent ? `<p class="atl-intent">${esc(r.intent)}</p>` : '';
-      const host = q('.atl-slots');
-      host.innerHTML = r ? (r.slots || []).map((s) => `
-        <label class="atl-slot"><span>${esc(s)}</span>
-          <input type="text" data-slot="${esc(s)}" value="${esc((st.bind || {})[s] || '')}"
-            placeholder="このカメラでの具体値…"></label>`).join('') : '';
-      host.querySelectorAll('input[data-slot]').forEach((inp) => {
-        inp.oninput = () => {
-          st.bind[inp.dataset.slot] = inp.value;
-          st.promptOverride = '';
-          promptTa.value = compose(st);
-          syncWarn();
-        };
-      });
       promptTa.value = compose(st);
       syncWarn();
     }
 
     function syncWarn() {
-      const miss = missingSlots(st);
+      const left = leftoverSlots(promptTa.value);
       const w = q('.atl-warn');
-      w.textContent = miss.length ? `未入力: ${miss.join(' / ')}` : '';
+      w.textContent = left.length ? `${left.map((s) => `{{${s}}}`).join(' / ')} が残っています — 実際の言葉に置き換えてください` : '';
     }
 
-    recipeSel.onchange = () => { st.recipeId = recipeSel.value; st.promptOverride = ''; renderSlots(); };
-    promptTa.oninput = () => { st.promptOverride = promptTa.value; };
+    recipeSel.onchange = () => { st.recipeId = recipeSel.value; st.promptOverride = ''; saveDraft(''); renderSlots(); };
+    promptTa.oninput = () => { st.promptOverride = promptTa.value; saveDraft(promptTa.value); syncWarn(); };
     el.querySelectorAll('.atl-params input').forEach((inp) => {
       inp.oninput = () => { st.params[inp.dataset.p] = inp.type === 'number' ? +inp.value : inp.value; };
     });
@@ -796,20 +786,15 @@ export function createAtelier(deps) {
     const copyBtn = q('.atl-copy');
     copyBtn.onclick = async () => {
       const prompt = promptTa.value || compose(st);
-      if (!prompt.trim()) return msg('先にレシピを選ぶかプロンプトを書いてください', 'err');
+      if (!prompt.trim()) return msg('先にプロンプトを選ぶか書いてください', 'err');
       copyBtn.disabled = true;
       try { await navigator.clipboard.writeText(prompt); } catch { /* 権限なし */ }
-      const r = recipeById(st.recipeId);
-      await api('/atelier/gen', {
-        camera: cam.index, cameraLabel: cam.id,
-        sourceFrame: st.seedUrl, recipeId: st.recipeId, recipeName: r ? r.name : '',
-        recipeSlug: r ? (r.slug || '') : '',
-        bind: { ...st.bind }, params: { ...st.params }, prompt,
-        parentId: st.parentId || '', status: 'draft',
-      });
-      st.parentId = '';
       copyBtn.disabled = false;
-      flash(copyBtn, '📋 コピーしました');
+      // **ここでレコードは作らない**（2026-07-30）。先に「送信待ち」を起こす方式は、外部ツールへ
+      //   行ったきり戻らない下書きが溜まるだけだった（作られた 1 件は 4 日後もそのまま）。
+      //   記録は「戻ってきたファイルを棚へ落とした時」に、この本文ごと 1 回で作る。
+      //   本文は端末に覚えるので、途中でリロードしても繋がる。
+      flash(copyBtn, '📋 コピー — できたファイルを下の棚へ落とすと記録されます');
     };
 
     // ===== 棚（生成物 + 未記録素材）=====
@@ -838,7 +823,7 @@ export function createAtelier(deps) {
       const host = q('.atl-shelf');
       host.innerHTML = (unlogged.map(unloggedCard).join('')
         + (gens.length ? gens.map(genCard).join('')
-          : '<p class="atl-empty">まだ生成がありません。上でレシピを選んで 📋 を押すか、ここへ動画を落としてください。</p>'));
+          : '<p class="atl-empty">まだ生成がありません。上で指示を書いて 📋 を押すか、ここへ動画を落としてください。</p>'));
       host.querySelectorAll('.atl-card').forEach((card) => wireCard(card));
       // 「採用したか」は show.json が持っている（cues[].sourceUrl）。台帳の札ではなく導出値を出す
       //   — 手で押す 3 択にしていた頃は、押し忘れた瞬間に「素材なし」と嘘をついていた（2026-07-30）。
@@ -900,7 +885,7 @@ export function createAtelier(deps) {
         <div class="atl-out${g.outputUrl ? ' clickable' : ''}" ${g.outputUrl ? `data-pick="${esc(g.outputUrl)}"` : ''}>${thumb}</div>
         <div class="atl-meta">
           <div class="atl-cardhead">
-            <strong>${esc(g.recipeName || '(レシピなし)')}</strong>
+            <strong>${esc(g.recipeName || '(指示の記録なし)')}</strong>
             ${useMark}
           </div>
           ${bind ? `<div class="atl-bind">${esc(bind)}</div>` : ''}
