@@ -115,13 +115,20 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
    - **v1: cuts（ループ切れ目）モデル**は後方互換で残す（`grid` があれば grid 優先。端末キャッシュに古い cuts しか無くても動く）。選択は `ZoneLayoutSolver.ChooseSource(hasGrid, hasCuts)`（grid 優先）。show.json layout present 判定は `ShowLayoutDef.HasData()`（grid か cuts）。
 2. **位置合わせ = 剛体 3 DOF**（XZ 平行移動 + yaw）だけを [`CourseFrame`](../Assets/Scripts/Tracking/CourseFrame.cs) が持ち、[`CourseRegistrationController`](../Assets/Scripts/Tracking/CourseRegistrationController.cs) の **HMD 2 点登録**で解く（[Tracker] 上、`Setup Main Demo Scene` が自動配線）。
 
-**フロアマップ（卓）の 6 モード**: 🖌 塗る（ゾーン）/ 📍 位置合わせ点（`layout.regPoints`）/ 🚶 歩かせる（シミュレータ）/
+**フロアマップ（卓）の 7 モード**: 🖌 塗る（ゾーン）/ 📍 位置合わせ点（`layout.regPoints`）/ 🚶 歩かせる（シミュレータ）/
 📐 カメラ姿勢（`cameras[].pose`・CG 人形の視点）/ **📏 通過ライン（`layout.lines` = 演出の発火点となる床の線分。
 2026-07-27〜・契約は [streaming.md](streaming.md) の「開始規則『このラインを通過したら』」）** /
 **🧱 部屋（`layout.room` = 壁・箱の 3D プロキシ。CG のオクルーダ／影の落ち先／較正参照を 1 幾何で兼ねる。
-2026-07-27〜）**。加えてモードに紐づかない **💡 CG 照明**パネル（`layout.room.light`）が常時出る。
+2026-07-27〜）** / **🎬 開始位置（`layout.startSpot` = 体験者がここに 0.5 秒留まると導入演出が始まる床の円。
+1 点だけ。2026-07-30〜・契約は [streaming.md](streaming.md) の「導入演出」）**。
+加えてモードに紐づかない **💡 CG 照明**パネル（`layout.room.light`）が常時出る。
 ラインは**担当カメラの色**で描かれる（どの区間のものかが目で分かる）。
-どのモードでもライン・カメラ印は薄く描かれる（塗りながら位置関係が見える）。
+どのモードでもライン・カメラ印・開始位置は薄く描かれる（塗りながら位置関係が見える）。
+
+⚠ **点を置く面が 4 つある**（位置合わせ点 / 較正の印 / 通過ライン / 開始位置）。**どれも別の集合**で、
+コピーし合わない。兼用すると片方を動かしたときにもう片方が壊れる — 制約が違うため
+（位置合わせ点は HMD で手が届く必要があり順序に意味がある / 較正の印は映像に写る必要がある /
+通過ラインは事象 / 開始位置は立って待つ場所）。
 
 #### 入力モデル（右コントローラ 4 入力のみ・2026-07-20〜）
 

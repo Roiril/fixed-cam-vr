@@ -98,6 +98,27 @@ namespace FixedCamVr.Streaming
     [Serializable] public sealed class ShowRegPointDef { public float x; public float z; public string label = ""; }
 
     /// <summary>
+    /// 導入演出を始める床の位置（course space の円）。卓のフロアマップ（🎬 モード）で 1 点だけ置く。
+    /// 体験者の頭がこの円の中に少し留まったら、導入演出が段 0 を抜けて始まる。
+    ///
+    /// ⚠ course 座標なので<b>位置合わせが済んでいないと判定できない</b>。未登録のときは
+    /// スタッフ操作へ縮退し、HMD 内でその理由を言う（黙って「立っても始まらない」を起こさない）。
+    /// </summary>
+    [Serializable] public sealed class ShowStartSpotDef
+    {
+        public float x;
+        public float z;
+        /// <summary>半径 (m)。小さすぎると立ち位置がシビアになり、大きすぎると通りすがりで始まる。</summary>
+        public float radiusM = 0.35f;
+        public string label = "";
+
+        public const float DefaultRadiusM = 0.35f;
+
+        /// <summary>実際に使える半径（0 / 負値・極端な値はコード既定へ）。</summary>
+        public float ResolveRadiusM() => radiusM >= 0.1f && radiusM <= 2f ? radiusM : DefaultRadiusM;
+    }
+
+    /// <summary>
     /// 通過ライン（course space の線分）。「体験者がこのラインを通過したら演出を始める」発火点。
     /// 卓のフロアマップ（📏 モード）で著作し、演出（<see cref="ShowTakeDef"/>）が <c>lineId</c> で参照する。
     ///
@@ -170,6 +191,13 @@ namespace FixedCamVr.Streaming
         // room があれば登録ワイヤーも room から描く（二重管理を作らない）。
         public ShowRoomDef? room;
         public bool hasRoom;
+
+        /// <summary>
+        /// 導入演出を始める床の位置（体験者がここへ移動したら段 0 を抜ける）。未設定ならスタッフ操作のみ。
+        /// **`regPoints` とは別の集合**にしてある — 位置合わせ点は「HMD で手が届く」「タッチ順に意味がある」
+        /// という別の制約を持つので、兼用すると片方を動かしたときにもう片方が壊れる。
+        /// </summary>
+        public ShowStartSpotDef? startSpot;
         public float overlapM = 0.08f;
         public float hysteresisM = 0.12f;
 

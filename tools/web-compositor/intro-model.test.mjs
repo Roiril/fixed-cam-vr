@@ -4,12 +4,30 @@ import assert from 'node:assert/strict';
 import {
   INTRO_DEFAULT, INTRO_STAGE_KEYS, introConfig, introStageSec,
   introDurationLabel, calibratedCameraCount, introPreflightRow,
+  START_SPOT_DEFAULT, START_RADIUS_MIN, START_RADIUS_MAX,
+  normalizeStartSpot, startSpotOf, startSpotZoneIssue,
 } from './intro-model.js';
 
 // 測った壁（既定 1m×1m の L から外れている）。これが無いと段 3 が成立しない。
 const MEASURED_WALL = { corner: [-0.9, 0.9], endX: [0.9, 0.9], endZ: [-0.9, -0.9] };
-const measuredLayout = () => ({ wall: { ...MEASURED_WALL } });
+// 「導入が成立している layout」= 測った壁 + 開始位置あり。開始位置が無いだけで ⚠ が出るので、
+// 他の条件を試すテストにはこれを渡す（ノイズで判定が読めなくなるのを防ぐ）。
+const measuredLayout = () => ({ wall: { ...MEASURED_WALL }, startSpot: { x: 0, z: -0.6 } });
 const calibratedCams = () => ([{ id: 'A', calib: { fxPx: 431.2 } }]);
+
+// ゾーン判定つきの layout。12×12 タイルの上半分（北）をカメラ 1・下半分（南）をカメラ 0 に塗る。
+// row0 = 北端（z=+0.9）・col0 = 西端（x=-0.9）。
+const zonedLayout = (startSpot, order = [0, 1]) => ({
+  wall: { ...MEASURED_WALL },
+  floor: { w: 1.8, d: 1.8 },
+  course: { order },
+  overlapM: 0.08,
+  grid: {
+    tileM: 0.15, cols: 12, rows: 12,
+    cells: [...Array(6).fill('1'.repeat(12)), ...Array(6).fill('0'.repeat(12))],
+  },
+  startSpot,
+});
 
 test('intro が無い show.json はコード既定で成立する（既存データを壊さない）', () => {
   const cfg = introConfig({ totalLaps: 3 });
@@ -41,19 +59,24 @@ test('チェック類は false を明示した時だけ落ちる（欠落は ON�
   assert.deepEqual([on.enabled, on.showCameraMarks, on.showRoomWire, on.raiseHandPrompt], [true, true, true, true]);
 });
 
-test('合計秒は段 1〜5 の単純和（既定は 31s）', () => {
-  assert.equal(introStageSec(introConfig({})), 31);
-  const sum = INTRO_STAGE_KEYS.reduce((a, k) => a + INTRO_DEFAULT[k], 0);
-  assert.equal(introStageSec(introConfig({})), sum);
+test('合計秒は実際に流れる長さ（段 3 は段 2 と重なるので二度足さない・既定は 13.1s）', () => {
+  // ⚠ この数字は Unity の IntroLogicTests.TotalSec_CountsTheOverlappingStageOnce と**同じ値**。
+  //   own = 2.5 - 3.5 × (1 - 0.6) = 1.1 / 計 = 1.5 + 3.5 + 1.1 + 2.5 + 4.5 = 13.1
+  //   片方だけ直すと、卓の表示と実機の尺が沈黙して食い違う。
+  assert.equal(introStageSec(introConfig({})), 13.1);
+  // 単純和より短い（重なりの分だけ）。ここが同じになったら式が壊れている。
+  const naive = INTRO_STAGE_KEYS.reduce((x, k) => x + INTRO_DEFAULT[k], 0);
+  assert.ok(introStageSec(introConfig({})) < naive, `${introStageSec(introConfig({}))} < ${naive}`);
 });
 
 test('合計秒は正規化前の生データからも出せる（欠落は既定で埋まる）', () => {
-  assert.equal(introStageSec(introConfig({ intro: { realSec: 2, swapSec: 10 } })), 2 + 8 + 6 + 5 + 10);
+  // own = max(0.5, 2.5 - 3.5 × 0.4) = 1.1
+  assert.equal(introStageSec(introConfig({ intro: { realSec: 2, swapSec: 10 } })), 2 + 3.5 + 1.1 + 2.5 + 10);
 });
 
 test('尺の表示は「演出 Ns / 慣らし Ms」', () => {
-  assert.equal(introDurationLabel(introConfig({}), 20), '演出 31s / 慣らし 20s');
-  assert.equal(introDurationLabel(introConfig({}), undefined), '演出 31s / 慣らし 0s');
+  assert.equal(introDurationLabel(introConfig({}), 20), '演出 13.1s / 慣らし 20s');
+  assert.equal(introDurationLabel(introConfig({}), undefined), '演出 13.1s / 慣らし 0s');
 });
 
 test('較正済みの数え方は fxPx > 1 のカメラ（本番前チェックの 🎯 較正 行と同じ）', () => {
@@ -97,7 +120,77 @@ test('未測定と上限超が同時なら ❌ が勝つ（直す順が決まる
 
 test('成立していれば ✅ に尺を出す', () => {
   const row = introPreflightRow({ run: { introMinSec: 20 }, layout: measuredLayout(), cameras: calibratedCams() });
-  assert.deepEqual(row, { s: 'ok', label: '🎬 導入', detail: '演出 31s / 慣らし 20s' });
+  assert.deepEqual(row, { s: 'ok', label: '🎬 導入', detail: '演出 13.1s / 慣らし 20s' });
+});
+
+// ---- 開始位置（layout.startSpot）------------------------------------------------
+
+test('開始位置は座標が無ければ未設定（null）', () => {
+  assert.equal(normalizeStartSpot(null), null);
+  assert.equal(normalizeStartSpot({}), null);
+  assert.equal(normalizeStartSpot({ x: 0 }), null);
+  assert.equal(normalizeStartSpot({ x: 'abc', z: 0 }), null);
+  assert.equal(startSpotOf({}), null);
+  assert.equal(startSpotOf(null), null);
+});
+
+test('開始位置は半径を 0.15〜1.0 に丸め、ラベル空欄は「スタート」で埋める', () => {
+  assert.deepEqual(normalizeStartSpot({ x: 0.12345, z: -0.6 }),
+    { x: 0.123, z: -0.6, radiusM: START_SPOT_DEFAULT.radiusM, label: START_SPOT_DEFAULT.label });
+  assert.equal(normalizeStartSpot({ x: 0, z: 0, radiusM: 0.01 }).radiusM, START_RADIUS_MIN);
+  assert.equal(normalizeStartSpot({ x: 0, z: 0, radiusM: 9 }).radiusM, START_RADIUS_MAX);
+  assert.equal(normalizeStartSpot({ x: 0, z: 0, radiusM: 'x' }).radiusM, START_SPOT_DEFAULT.radiusM);
+  assert.equal(normalizeStartSpot({ x: 0, z: 0, label: '  ' }).label, START_SPOT_DEFAULT.label);
+  assert.equal(normalizeStartSpot({ x: 0, z: 0, label: '入口' }).label, '入口');
+});
+
+test('開始位置がスタート区間の中なら黙る', () => {
+  // order[0] = 0（南半分）。z=-0.6 は南 → 一致。
+  assert.equal(startSpotZoneIssue(zonedLayout({ x: 0, z: -0.6 })), null);
+});
+
+test('開始位置がスタート区間の外なら、そこの担当カメラごと返す', () => {
+  // order[0] = 0（南半分）なのに z=+0.6（北半分 = カメラ 1）に置いた。
+  assert.deepEqual(startSpotZoneIssue(zonedLayout({ x: 0, z: 0.6 })), { startCamera: 0, spotCamera: 1 });
+});
+
+test('開始位置が未割当タイルの上でもスタート区間の外として返す（spotCamera=-1）', () => {
+  const lay = zonedLayout({ x: 0, z: 0.6 });
+  lay.grid.cells = [...Array(6).fill('.'.repeat(12)), ...Array(6).fill('0'.repeat(12))];
+  assert.deepEqual(startSpotZoneIssue(lay), { startCamera: 0, spotCamera: -1 });
+});
+
+test('ゾーンが解決できない layout では黙る（直しようのない ⚠ を出さない）', () => {
+  // 開始位置が無い / course.order が無い / grid が無い / 1 枚も塗っていない
+  assert.equal(startSpotZoneIssue(zonedLayout(undefined)), null);
+  assert.equal(startSpotZoneIssue({ ...zonedLayout({ x: 0, z: 0.6 }), course: {} }), null);
+  assert.equal(startSpotZoneIssue({ startSpot: { x: 0, z: 0.6 }, course: { order: [0] } }), null);
+  const blank = zonedLayout({ x: 0, z: 0.6 });
+  blank.grid.cells = Array(12).fill('.'.repeat(12));
+  assert.equal(startSpotZoneIssue(blank), null);
+});
+
+test('開始位置が未設定なら ⚠（スタッフが手で始める運用になる）', () => {
+  const lay = measuredLayout(); delete lay.startSpot;
+  const row = introPreflightRow({ run: {}, layout: lay, cameras: calibratedCams() });
+  assert.equal(row.s, 'warn');
+  assert.match(row.detail, /開始位置が未設定/);
+});
+
+test('開始位置がスタート区間の外なら ⚠ にカメラ名を出す', () => {
+  const row = introPreflightRow({
+    run: { introMinSec: 20 },
+    layout: zonedLayout({ x: 0, z: 0.6 }),
+    cameras: [{ id: 'A', calib: { fxPx: 431.2 } }, { id: 'B' }],
+  });
+  assert.equal(row.s, 'warn');
+  assert.match(row.detail, /スタート区間（カメラ A）の外/);
+  assert.match(row.detail, /カメラ B/);
+});
+
+test('導入が無効なら開始位置が未設定でも黙る', () => {
+  const lay = measuredLayout(); delete lay.startSpot;
+  assert.equal(introPreflightRow({ run: { intro: { enabled: false } }, layout: lay, cameras: calibratedCams() }), null);
 });
 
 test('卓の既定値と capture-server.py の _default_show が一致している', async () => {

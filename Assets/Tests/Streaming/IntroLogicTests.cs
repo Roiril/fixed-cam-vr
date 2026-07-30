@@ -16,10 +16,12 @@ namespace FixedCamVr.Streaming.Tests
     /// </summary>
     public sealed class IntroLogicTests
     {
+        // コード既定と同じ尺で試す（2026-07-30 に 33 秒 → 12 秒へ詰めた）。
+        // 独自の長い尺で試すと、条件待ちの上限（MaxHoldSec）との関係が実運用とずれる。
         private static readonly IntroTiming T = new IntroTiming
         {
-            realSec = 4f, degradeSec = 8f, structureSec = 6f,
-            frameSec = 5f, swapSec = 8f, maxSec = 40f,
+            realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
+            frameSec = 2.5f, swapSec = 4.5f, maxSec = 20f,
         };
 
         private static IntroLogic Make()
@@ -280,7 +282,7 @@ namespace FixedCamVr.Streaming.Tests
         public void MaxSec_DoesNotCutTheSwapInHalf()
         {
             // すり替えの最中に打ち切ると、いちばん見せたい一撃が途中で消える。
-            var t = T; t.maxSec = 5f;
+            var t = T; t.maxSec = 2f;
             var l = new IntroLogic();
             l.Configure(t);
             l.Begin();
@@ -289,8 +291,10 @@ namespace FixedCamVr.Streaming.Tests
             for (int i = 0; i < 4; i++) { l.RequestAdvance(); l.Tick(0.1f, Ready()); }
             Assert.AreEqual(IntroStage.Swap, l.Stage);
 
-            Advance(l, 6f, Ready());
+            // maxSec は超えるが swapSec には達しない長さだけ進める
+            Advance(l, 3f, Ready());
             Assert.Greater(l.TotalElapsedSec, t.maxSec, "maxSec は既に超えている");
+            Assert.Less(l.StageElapsedSec, t.swapSec, "Swap はまだ自然終了していない");
             Assert.AreEqual(IntroStage.Swap, l.Stage, "それでも Swap は畳まない");
         }
 
@@ -385,8 +389,13 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void TotalSec_CountsTheOverlappingStageOnce()
         {
-            // 段 3 は段 2 と重なるので、合計に二重で足さない（卓の「演出 31s」と一致させる）。
-            Assert.AreEqual(4f + 8f + 5f + 8f, T.TotalSec, 0.001f);
+            // 段 3 は段 2 の後半から始まるので、重なった分は二度流れない。
+            //   own = 2.5 - 3.5 × (1 - 0.6) = 1.1
+            //   計 = 1.5 + 3.5 + 1.1 + 2.5 + 4.5 = 13.1
+            // ⚠ この数字は卓の `intro-model.test.mjs` と**同じ値**にしてある。
+            // 片方だけ直すと、卓の表示と実機の尺が沈黙して食い違う。
+            Assert.AreEqual(13.1f, T.TotalSec, 0.001f);
+            Assert.AreEqual(13.1f, IntroTiming.Default.TotalSec, 0.001f);
         }
 
         [Test]
@@ -397,6 +406,67 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(IntroTiming.Default.realSec, s.realSec, 0.001f);
             Assert.AreEqual(IntroTiming.Default.maxSec, s.maxSec, 0.001f);
             Assert.Greater(s.TotalSec, 0f, "0 秒の段を黙って作らない");
+        }
+
+        // ---- 開始位置（体験者がそこへ移動したら始まる）--------------------------
+
+        [Test]
+        public void Black_AlsoAdvancesWhenTheVisitorStandsOnTheStartSpot()
+        {
+            var l = Make();
+            var onSpot = Ready();
+            onSpot.atStartSpot = true;
+            l.Tick(0.1f, onSpot);
+            Assert.AreEqual(IntroStage.Real, l.Stage, "スタッフの合図を待たずに始まる");
+        }
+
+        [Test]
+        public void Black_DoesNotStartFromTheSpotBeforeTheBlackClears()
+        {
+            // 明ける前に始めても何も見えない（段 1 の「現実を見せる」が成立しない）。
+            var l = Make();
+            l.Tick(0.1f, new IntroInput { blackCleared = false, atStartSpot = true });
+            Assert.AreEqual(IntroStage.Black, l.Stage);
+        }
+
+        [Test]
+        public void Black_StaysWhenTheVisitorIsNotOnTheSpot()
+        {
+            var l = Make();
+            Advance(l, 20f, Ready());          // Ready() は atStartSpot=false
+            Assert.AreEqual(IntroStage.Black, l.Stage);
+        }
+
+        // ---- 尺（体験の入口として飽きない長さか）--------------------------------
+
+        [Test]
+        public void Default_FitsInTheOpeningBudget()
+        {
+            // 当初 33 秒で設計したが「テンポが遅く飽びる」ので 10〜15 秒へ詰めた（2026-07-30）。
+            var d = IntroTiming.Default;
+            Assert.GreaterOrEqual(d.TotalSec, 10f, $"短すぎる: {d.TotalSec}s");
+            Assert.LessOrEqual(d.TotalSec, 15f, $"長すぎる: {d.TotalSec}s");
+            // クロスフェードの後に「自分だ」と気づく時間が残っていること
+            Assert.Greater(d.swapSec - IntroLogic.SwapCrossfadeSec, 2.5f);
+            // 条件待ちの上限が演出全体に対して長すぎないこと（待つと「止まった」ように見える）
+            Assert.Less(IntroLogic.MaxHoldSec, d.TotalSec / 3f);
+        }
+
+        [Test]
+        public void Default_RunsEndToEndWithinMaxSec()
+        {
+            var l = new IntroLogic();
+            l.Configure(IntroTiming.Default);
+            l.Begin();
+            l.RequestAdvance();
+            l.Tick(0.1f, Ready());
+
+            var ev = IntroEvent.None;
+            int ticks = 0;
+            while (ev == IntroEvent.None && ticks < 600) { ev = l.Tick(0.05f, Ready()); ticks++; }
+            Assert.AreEqual(IntroEvent.Finished, ev);
+            Assert.LessOrEqual(l.TotalElapsedSec, IntroTiming.Default.maxSec,
+                $"打ち切りに頼らず自力で終わること（{l.TotalElapsedSec}s）");
         }
 
         // ---- 補助関数 ----------------------------------------------------------

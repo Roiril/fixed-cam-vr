@@ -51,10 +51,18 @@ namespace FixedCamVr.Streaming
         /// <summary>これを超えたら段を飛ばして枠を出す（保険）。</summary>
         public float maxSec;
 
+        /// <summary>
+        /// コード既定。**合計 12 秒**（段 3 は段 2 と重なるので合計に入らない）。
+        ///
+        /// 当初は 33 秒で設計したが、体験の入口としてテンポが遅く飽びるため 2026-07-30 に詰めた。
+        /// ここは「現実が映像になった」と分かればよく、**驚きの本体は本編 3 周にある**。
+        /// 段 5 の「枠の中に自分が居る」は気づかせるだけで足りる — 慣らし歩行に入っても
+        /// 枠の中に自分が映っている状態は続くので、歩きながら確かめられる。
+        /// </summary>
         public static IntroTiming Default => new IntroTiming
         {
-            realSec = 4f, degradeSec = 8f, structureSec = 6f,
-            frameSec = 5f, swapSec = 8f, maxSec = 40f,
+            realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
+            frameSec = 2.5f, swapSec = 4.5f, maxSec = 20f,
         };
 
         /// <summary>不正値を潰した複製。0 や負値はコード既定へ戻す（黙って 0 秒の段を作らない）。</summary>
@@ -72,13 +80,21 @@ namespace FixedCamVr.Streaming
             };
         }
 
-        /// <summary>演出の合計秒（慣らし歩行は含まない）。卓の表示と一致させる。</summary>
+        /// <summary>
+        /// 演出が実際に流れる秒数（慣らし歩行は含まない）。
+        ///
+        /// ⚠ **単純和ではない。** 段 3 は段 2 の後半から始まるので、重なった分は二度流れない。
+        /// 卓の `intro-model.js` の `introStageSec` と**同じ式**にしてある — 片方だけ直すと
+        /// 卓の表示と実機の尺が沈黙して食い違い、作者は尺を信じられなくなる。
+        /// </summary>
         public float TotalSec
         {
             get
             {
                 var s = Sanitized();
-                return s.realSec + s.degradeSec + s.frameSec + s.swapSec;
+                float own = s.structureSec - s.degradeSec * (1f - IntroLogic.StructureOverlapAt);
+                if (own < IntroLogic.StructureMinOwnSec) own = IntroLogic.StructureMinOwnSec;
+                return s.realSec + s.degradeSec + own + s.frameSec + s.swapSec;
             }
         }
     }
@@ -119,6 +135,13 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>起動時の黒が明けたか（<c>StartupFader</c> が消えた）。</summary>
         public bool blackCleared;
+
+        /// <summary>
+        /// 体験者が<b>開始位置</b>（<c>layout.startSpot</c> の円）に留まっているか。
+        /// これが立てばスタッフの合図を待たずに演出が始まる。未設定 / 位置合わせ未登録のときは
+        /// 常に false になり、従来どおりスタッフ操作だけで進む（縮退）。
+        /// </summary>
+        public bool atStartSpot;
         /// <summary>頭の角速度 (度/秒)。大きいうちは枠を出さない（見ていない方向に枠が出る事故を防ぐ）。</summary>
         public float headTurnDegPerSec;
         /// <summary>枠の方向が視野中心の近くにあるか。</summary>
@@ -147,14 +170,26 @@ namespace FixedCamVr.Streaming
         /// <summary>段 5 を始める前に、枠が視野中心の近くにあり続ける必要のある秒数。</summary>
         public const float FrameCenteredHoldSec = 0.5f;
 
-        /// <summary>段 5 のクロスフェードの秒数。ここは急がない（遅延と視差が同時に来る唯一の点）。</summary>
-        public const float SwapCrossfadeSec = 1.5f;
+        /// <summary>
+        /// 段 5 のクロスフェードの秒数。ここは急がない（遅延と視差が同時に来る唯一の点）。
+        /// 段 5 が 4.5 秒なので、フェード後に「自分だ」と気づく時間が 3 秒以上残る。
+        /// </summary>
+        public const float SwapCrossfadeSec = 1.2f;
 
-        /// <summary>段 2 の進行度がこれを超えたら、段 3 の構造の線が出始める（段の重なり）。</summary>
+        /// <summary>
+        /// 段 2 の進行度がこれを超えたら、段 3 の構造の線が出始める（段の重なり）。
+        /// **卓の `intro-model.js` の `STRUCTURE_OVERLAP_AT` と同じ値**（尺の表示が食い違うため）。
+        /// </summary>
         public const float StructureOverlapAt = 0.6f;
 
-        /// <summary>段 4・段 5 の開始条件を待てる上限 (秒)。超えたら条件を無視して進む。</summary>
-        public const float MaxHoldSec = 6f;
+        /// <summary>段 3 が段 2 に飲み込まれても、これだけは単独で流れる。</summary>
+        public const float StructureMinOwnSec = 0.5f;
+
+        /// <summary>
+        /// 段 4・段 5 の開始条件を待てる上限 (秒)。超えたら条件を無視して進む。
+        /// 演出全体が 12 秒なので、ここで 6 秒待つと「止まった」ように見える。
+        /// </summary>
+        public const float MaxHoldSec = 3f;
 
         private IntroTiming _t = IntroTiming.Default;
         private IntroStage _stage = IntroStage.Off;
@@ -255,10 +290,12 @@ namespace FixedCamVr.Streaming
             switch (_stage)
             {
                 case IntroStage.Black:
-                    // 落ち着いたかは人間しか判定できないので、ここは時間で進めない。
-                    // 黒が明けていて、かつスタッフが合図したら段 1 へ。
-                    if (input.blackCleared && advance) Enter(IntroStage.Real);
-                    // 段 0 は maxSec の計時に含めない（スタッフを待つ時間は演出の尺ではない）。
+                    // ここは**時間で進めない**。始めてよいかは体験者の居場所か人間の判断で決まる。
+                    //   - 体験者が開始位置（layout.startSpot）へ移動した、または
+                    //   - スタッフが合図した
+                    // どちらも「黒が明けている」ことが前提（明ける前に始めても何も見えない）。
+                    if (input.blackCleared && (advance || input.atStartSpot)) Enter(IntroStage.Real);
+                    // 段 0 は maxSec の計時に含めない（待っている時間は演出の尺ではない）。
                     _totalElapsed = 0f;
                     return IntroEvent.None;
 
@@ -273,8 +310,9 @@ namespace FixedCamVr.Streaming
                 case IntroStage.Structure:
                 {
                     // 段 3 の尺は「段 2 の後半から始まって段 3 が終わるまで」。重なる分を引く。
+                    // ⚠ この式は IntroTiming.TotalSec と卓の introStageSec が共有している。
                     float own = _t.structureSec - _t.degradeSec * (1f - StructureOverlapAt);
-                    if (own < 0.5f) own = 0.5f;
+                    if (own < StructureMinOwnSec) own = StructureMinOwnSec;
                     if (!advance && _stageElapsed < own) return IntroEvent.None;
                     // 頭を振っている間は枠を出さない（見ていない方向に枠が出ると台無し）。
                     if (!advance && input.headTurnDegPerSec > MaxHeadTurnForFrame && _holdSec < MaxHoldSec)

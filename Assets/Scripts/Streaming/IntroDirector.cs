@@ -46,6 +46,9 @@ namespace FixedCamVr.Streaming
         [Tooltip("フレームが「新鮮」とみなす経過 (秒)。これより古ければ段 5 へ進まない。")]
         [SerializeField, Min(0.1f)] private float freshFrameSec = 1.5f;
 
+        [Tooltip("開始位置に留まったとみなす秒数。短いと通りすがりで始まる。")]
+        [SerializeField, Min(0f)] private float startSpotHoldSec = 0.5f;
+
         private readonly IntroLogic _logic = new IntroLogic();
         private ShowIntroDef _def = new ShowIntroDef();
         private float _sinceStart;
@@ -53,6 +56,7 @@ namespace FixedCamVr.Streaming
         private float _headTurn;
         private bool _subscribed;
         private bool _clockRestarted;
+        private float _inSpotSec;
 
         /// <summary>いまの重み。<c>PassthroughStyler</c> がここを読む。</summary>
         public IntroWeights Weights => _logic.Weights;
@@ -78,8 +82,18 @@ namespace FixedCamVr.Streaming
         {
             get
             {
-                if (_logic.Stage != IntroStage.Swap || !_def.raiseHandPrompt) return string.Empty;
-                return "右手を上げてみてください";
+                if (_logic.Stage == IntroStage.Swap)
+                    return _def.raiseHandPrompt ? "右手を上げてみてください" : string.Empty;
+
+                // 段 0 は「何を待っているのか」を出す。開始位置を置いてあるのに位置合わせが
+                // 済んでいないと、体験者がそこに立っても始まらない — 黙っていると原因が分からない。
+                if (_logic.Stage == IntroStage.Black)
+                {
+                    if (showControl?.Layout?.startSpot == null) return string.Empty;   // スタッフ操作の運用
+                    if (!IsCourseRegistered()) return "位置合わせがまだです（スタッフが始めます）";
+                    return "スタート位置に立ってください";
+                }
+                return string.Empty;
             }
         }
 
@@ -231,11 +245,40 @@ namespace FixedCamVr.Streaming
         private IntroInput BuildInput() => new IntroInput
         {
             blackCleared = _sinceStart >= blackClearSec,
+            atStartSpot = IsAtStartSpot(),
             headTurnDegPerSec = _headTurn,
             frameCentered = IsScreenCentered(),
             liveFresh = IsLiveFresh(),
             recentered = showControl?.CourseNeedsReRegProvider?.Invoke() ?? false,
         };
+
+        /// <summary>
+        /// 体験者が開始位置（<c>layout.startSpot</c>）に留まっているか。
+        ///
+        /// ⚠ <b>course 座標なので位置合わせが済んでいないと判定できない。</b> 未登録なら常に false を返し、
+        /// スタッフ操作へ縮退する（<see cref="PromptText"/> がその理由を HMD 内で言う）。
+        /// 黙って false を返すだけだと、現場で「立っても始まらない」が理由なしに起きる。
+        /// </summary>
+        private bool IsAtStartSpot()
+        {
+            var spot = showControl?.Layout?.startSpot;
+            if (spot == null || !IsCourseRegistered()) { _inSpotSec = 0f; return false; }
+            var head2 = showControl?.HeadCourseXZProvider;
+            if (head2 == null) { _inSpotSec = 0f; return false; }
+
+            Vector2 p = head2();
+            float r = spot.ResolveRadiusM();
+            bool inside = (p - new Vector2(spot.x, spot.z)).sqrMagnitude <= r * r;
+            // 通りすがりで始めない。少し留まってから。
+            _inSpotSec = inside ? _inSpotSec + Time.unscaledDeltaTime : 0f;
+            return _inSpotSec >= startSpotHoldSec;
+        }
+
+        private bool IsCourseRegistered()
+        {
+            var f = showControl?.CourseRegisteredProvider;
+            return f == null || f();      // provider が無い環境では邪魔しない
+        }
 
         /// <summary>
         /// 枠の中に本編のスクリーンが来ているか。<b>枠は head-lock なので常に正面</b>で、

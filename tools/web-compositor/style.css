@@ -696,6 +696,19 @@ input:-webkit-autofill:active {
 .fm-line-info.warn { color: var(--warn-color); opacity: 1; }
 .fm-canvas.fm-line-edit { cursor: crosshair; }
 
+/* 開始位置（導入演出が始まる床の 1 点）エディタ — フロアマップ内 */
+.fm-start {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; border: 1px solid var(--line-soft); border-left: 2px solid #5ad1c8;
+}
+.fm-start-note { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.4; min-height: 1.3em; }
+.fm-start-note.warn { color: var(--warn-color); opacity: 1; }
+.fm-start-lbl-cap { font-size: 11px; opacity: var(--opacity-sub); text-transform: uppercase; letter-spacing: .06em; }
+.fm-start-label { flex: 1 1 auto; min-width: 60px; font-size: 11px; padding: 2px 4px; }
+.fm-start-del { padding: 4px 10px; font-size: 11px; white-space: nowrap; }
+.fm-start-del:disabled { opacity: .4; cursor: default; }
+.fm-canvas.fm-start-edit { cursor: cell; }
+
 /* ===================================================================== */
 /* ⑦ cue 管理（1 カメラ複数 cue）— app.js ③ 画像加工セクション内            */
 /* ===================================================================== */

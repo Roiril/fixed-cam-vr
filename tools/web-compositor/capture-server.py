@@ -237,9 +237,12 @@ def _default_show():
         # 「導入が壊れている show.json」を作れてしまう）。
         'run': {'totalLaps': 3, 'introEnabled': True, 'introMinSec': 20, 'introAutoAdvance': True,
                 'targetSec': 180, 'hardLimitSec': 300, 'endFadeSec': 1.5,
-                'intro': {'enabled': True, 'maxSec': 40,
-                          'realSec': 4, 'degradeSec': 8, 'structureSec': 6,
-                          'frameSec': 5, 'swapSec': 8,
+                # 尺は 2026-07-30 に 33s → 14.5s へ詰めた（同じ絵の前で待たされる時間は演出ではない）。
+                # ⚠ この値は tools/web-compositor/intro-model.js の INTRO_DEFAULT と一致していること
+                #   （intro-model.test.mjs が両者を突き合わせる。片方だけ直すと沈黙して食い違う）。
+                'intro': {'enabled': True, 'maxSec': 20,
+                          'realSec': 1.5, 'degradeSec': 3.5, 'structureSec': 2.5,
+                          'frameSec': 2.5, 'swapSec': 4.5,
                           'edgeColor': '#ffffff', 'showCameraMarks': True, 'showRoomWire': True,
                           'glitchOnSwap': 0.8, 'raiseHandPrompt': True}},
         # 端末内録画（1 周目を録って 3 周目の演出で流す）。既定は無効。
@@ -270,6 +273,9 @@ def _default_show():
         # 各要素 {x, z, label?}。フロアマップ UI が編集。未設定（下記のように省略）なら Unity は
         # 既定 2 点 (-0.5,0.5)/(0.5,0.5) へフォールバックする。フィールドを足さなくても layout は
         # shallow 置換で丸ごと通るため、UI が保存すれば自動で乗る（focus: 後方互換維持）。
+        # startSpot = 導入演出を始める床の 1 点 {x, z, radiusM, label}。**既定を書かない**
+        # （未設定＝スタッフが手で始める運用が既定の姿。勝手に (0,0) へ置くと「立っても
+        #  始まらない」を現場で初めて知ることになる）。フロアマップの 🎬 開始位置 で置く。
         'layout': {
             'rev': 1,
             'floor': {'w': 1.8, 'd': 1.8},

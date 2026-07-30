@@ -10,22 +10,39 @@
 // ので、列挙と判定はこの 1 ファイルが単一の正（record-model.js と同じ流儀）。
 
 import { wallLooksDefault } from './calib-session.js';
+import { zonesFromLayout, cameraAtPoint } from './zone-layout.js';
 
-/** show.json `run.intro` が欠けている時の既定（capture-server.py の _default_show と同じ値）。 */
+/**
+ * show.json `run.intro` が欠けている時の既定（capture-server.py の _default_show と同じ値）。
+ *
+ * 尺は 2026-07-30 に 33s → 14.5s へ詰めた。**同じ絵の前で待たされる時間は演出ではなく待ち時間**で、
+ * 段 1（現実）を 4 秒見せても比較対象としては 1.5 秒で足りる。3 分の予算のうち導入が食う分を
+ * 削ると、3 周目の反転を見せ切る余地が残る（設計 §3）。
+ */
 export const INTRO_DEFAULT = {
   enabled: true,
-  maxSec: 40,
-  realSec: 4,
-  degradeSec: 8,
-  structureSec: 6,
-  frameSec: 5,
-  swapSec: 8,
+  maxSec: 20,
+  realSec: 1.5,
+  degradeSec: 3.5,
+  structureSec: 2.5,
+  frameSec: 2.5,
+  swapSec: 4.5,
   edgeColor: '#ffffff',
   showCameraMarks: true,
   showRoomWire: true,
   glitchOnSwap: 0.8,
   raiseHandPrompt: true,
 };
+
+/**
+ * 開始位置（`layout.startSpot`）の既定。**show.json には既定を書かない**
+ * — 未設定＝スタッフが手で始める運用、が既定の姿。勝手に (0,0) へ置くと
+ * 「立っても始まらない」を現場で初めて知ることになる。
+ */
+export const START_SPOT_DEFAULT = { radiusM: 0.35, label: 'スタート' };
+/** 半径の入力範囲。0.15 未満は踏み外し、1.0 超は部屋（1.8m 四方）の半分を超えて意味を失う。 */
+export const START_RADIUS_MIN = 0.15;
+export const START_RADIUS_MAX = 1.0;
 
 /** 段の秒（この 5 つの和が「演出」の尺）。UI の並び順もこの順（体験者が見る順）。 */
 export const INTRO_STAGE_KEYS = ['realSec', 'degradeSec', 'structureSec', 'frameSec', 'swapSec'];
@@ -68,14 +85,30 @@ export function introConfig(run) {
  * 短くなる。**それでも和で出す** — 上限（maxSec）は打ち切りの保険で、重なりを見込んだ短い方で
  * 判定すると「和が上限を超えているのに卓が黙る」ことになり、打ち切られた段を現場で初めて知る。
  */
+/**
+ * 段 3（構造）が段 2（格下げ）の後半から始まる比。**Unity の `IntroLogic.StructureOverlapAt` と
+ * 同じ値でなければならない** — 片方だけ直すと、卓の表示と実機の尺が沈黙して食い違う。
+ */
+export const STRUCTURE_OVERLAP_AT = 0.6;
+/** 段 3 が段 2 に飲み込まれても、これだけは単独で流れる（`IntroLogic` と同じ下限）。 */
+export const STRUCTURE_MIN_OWN_SEC = 0.5;
+
+/**
+ * 演出が実際に流れる秒数。
+ *
+ * ⚠ **単純和ではない。** 段 3 は段 2 の後半から始まるので、重なった分は二度流れない。
+ * 実機（`IntroLogic`）が消費するのと同じ式にしてある — ここを単純和にすると
+ * 卓が「14.5 秒」と言うのに実機は 13.1 秒で終わり、作者は尺を信じられなくなる。
+ */
 export function introStageSec(intro) {
   const cfg = intro && intro.realSec !== undefined ? intro : introConfig({ intro });
-  let sum = 0;
-  for (const k of INTRO_STAGE_KEYS) sum += cfg[k];
+  const own = Math.max(STRUCTURE_MIN_OWN_SEC,
+    cfg.structureSec - cfg.degradeSec * (1 - STRUCTURE_OVERLAP_AT));
+  const sum = cfg.realSec + cfg.degradeSec + own + cfg.frameSec + cfg.swapSec;
   return Math.round(sum * 10) / 10;
 }
 
-/** 「演出 31s / 慣らし 20s」— ⚙ 欄と本番前チェックで同じ文を出す。 */
+/** 「演出 14.5s / 慣らし 20s」— ⚙ 欄と本番前チェックで同じ文を出す。 */
 export function introDurationLabel(intro, introMinSec) {
   const warm = Math.max(0, parseFloat(introMinSec) || 0);
   return `演出 ${introStageSec(intro)}s / 慣らし ${warm}s`;
@@ -86,6 +119,61 @@ export function calibratedCameraCount(cameras) {
   return (cameras || []).filter((c) => c && c.calib && c.calib.fxPx > 1).length;
 }
 
+// ---- 開始位置（layout.startSpot）------------------------------------------------
+
+/**
+ * `layout.startSpot` を正規化する（座標が無ければ **null** = 未設定）。
+ * フロアマップの編集も本番前チェックもこの 1 本を通す（2 箇所で別々に丸めない）。
+ */
+export function normalizeStartSpot(src) {
+  if (!src) return null;
+  const x = parseFloat(src.x), z = parseFloat(src.z);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  const label = typeof src.label === 'string' ? src.label.trim() : '';
+  return {
+    x: +x.toFixed(3),
+    z: +z.toFixed(3),
+    radiusM: clamp(src.radiusM, START_RADIUS_MIN, START_RADIUS_MAX, START_SPOT_DEFAULT.radiusM),
+    label: label || START_SPOT_DEFAULT.label,
+  };
+}
+
+/** show.json layout → 正規化した開始位置（未設定なら null）。 */
+export function startSpotOf(layout) {
+  return normalizeStartSpot(layout && layout.startSpot);
+}
+
+/**
+ * 開始位置が**スタート区間の外**にあるか（あれば `{ startCamera, spotCamera }`・無ければ null）。
+ *
+ * 外にあると、導入が終わった直後に体験者は本編のスタート区間へ**入り直す**ことになる。
+ * 判定は `zone-layout.js` の展開（実機のゾーン判定と同じ）を通す — 生タイルの色で見ると
+ * 重なり帯でどちらが勝つかが食い違い、**卓だけが通る / 卓だけが警告する**が起きる。
+ *
+ * ゾーンが解決できない layout（grid 不在・1 枚も塗っていない・course.order 未設定）では
+ * **黙る**。判定できないことを警告にすると、直しようのない ⚠ が出続けて読まれなくなる。
+ */
+export function startSpotZoneIssue(layout) {
+  const spot = startSpotOf(layout);
+  if (!spot) return null;
+  const order = layout && layout.course && layout.course.order;
+  if (!Array.isArray(order) || !order.length) return null;
+  const startCamera = order[0];
+  if (!Number.isInteger(startCamera) || startCamera < 0) return null;
+  const z = zonesFromLayout(layout);
+  if (z.source !== 'grid' || !z.boxes.length) return null;
+  const spotCamera = cameraAtPoint(z.boxes, spot.x, spot.z);
+  if (spotCamera === startCamera) return null;
+  return { startCamera, spotCamera };
+}
+
+/** カメラ index → 表示名（cameras が無ければ index で呼ぶ）。 */
+function cameraName(cameras, i) {
+  if (i < 0) return '未割当';
+  const c = (cameras || [])[i];
+  return c && c.id ? `カメラ ${c.id}` : `#${i}`;
+}
+
 /**
  * 本番前チェックの `🎬 導入` 行。導入が無効なら **null**（行を出さない = 黙る）。
  *
@@ -93,6 +181,7 @@ export function calibratedCameraCount(cameras) {
  *   3. 部屋の実寸が入っている — 段 3 は現実に線を直接重ねるので、既定の壁のままでは成立しない（❌）
  *   1. 開始カメラが較正済み  — 段 3 のカメラの印が出せない（⚠。印を消せば導入自体は成立する）
  *   §3 上限                  — 和が maxSec を超えると段を飛ばして枠を出す（⚠）
+ *   開始位置（startSpot）    — 未設定なら手動開始・スタート区間の外なら入り直しになる（⚠）
  */
 export function introPreflightRow({ run, layout, cameras } = {}) {
   const intro = introConfig(run);
@@ -113,6 +202,17 @@ export function introPreflightRow({ run, layout, cameras } = {}) {
   const warn = [];
   if (calibratedCameraCount(cameras) === 0) {
     warn.push('較正済みのカメラが 1 台もありません（段 3 のカメラの印が出せません）');
+  }
+  if (!startSpotOf(layout)) {
+    warn.push('開始位置が未設定です — スタッフが手で始める運用になります'
+      + '（フロアマップの 🎬 開始位置 で床に 1 点置く）');
+  } else {
+    const issue = startSpotZoneIssue(layout);
+    if (issue) {
+      warn.push(`開始位置がスタート区間（${cameraName(cameras, issue.startCamera)}）の外`
+        + `（いまは ${cameraName(cameras, issue.spotCamera)} の領域）`
+        + ' — 演出が終わった直後に本編のスタート区間へ入り直すことになります');
+    }
   }
   const sec = introStageSec(intro);
   if (sec > intro.maxSec) {

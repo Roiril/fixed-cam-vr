@@ -27,6 +27,9 @@ import {
   lightDirCourse, kelvinToCss,
   LIGHT_RANGE, WALL_ID_PREFIX, BOX_ID_PREFIX, WALL_MIN_LENGTH_M, MIN_DIM_M,
 } from './room-model.js';
+import {
+  normalizeStartSpot, START_SPOT_DEFAULT, START_RADIUS_MIN, START_RADIUS_MAX,
+} from './intro-model.js';
 
 // カメラ index → 色（unity-vr.md の校正フットプリント配色に合わせる: 緑=0 / 青=1 / 橙=2）。
 const CAM_COLORS = ['#5ad19a', '#5aa8ff', '#ffae5e', '#d98cff', '#ff6b8e', '#8ad4ff'];
@@ -44,6 +47,12 @@ const REG_MIN = 2, REG_MAX = 5, REG_HIT = 15; // REG_HIT = マーカー掴み判
 const LINE_END_HIT = 11;     // 端点の掴み判定 (px)
 const LINE_BODY_HIT = 8;     // 線本体の掴み判定 (px)
 const LINE_MAX = 12;         // 引ける本数の上限（増やしすぎると現場で見分けがつかない）
+
+// 開始位置（導入演出の発火点）。course space の 1 点 + 半径。
+// カメラ色（CAM_COLORS）とも壁（#ffdead）ともライン（担当カメラ色）とも被らない色にする
+// — どのモードでも薄く描くので、他の要素と見間違えると「塗ったはずの色が違う」と誤読される。
+const START_COLOR = '#5ad1c8';
+const START_HIT = 13;        // 中心マーカーの掴み判定 (px)
 // regPoints 未設定 show.json の既定表示（L 字壁の外角側 2 点）。クリックで実データ化する。
 const DEFAULT_REG_POINTS = [
   { x: -0.5, z: 0.5, label: '' },
@@ -154,6 +163,7 @@ export function createFloorMap(container, deps) {
           <button class="fm-mode" data-mode="cam" title="実カメラの置き場所と向きを決める（CG 人形を立てる視点）">📐 カメラ姿勢</button>
           <button class="fm-mode" data-mode="line" title="演出の発火点（体験者がここを通過したら）を引く">📏 通過ライン</button>
           <button class="fm-mode" data-mode="room" title="実物の壁・什器を写した不可視の 3D プロキシ（CG のオクルーダ / 影の落ち先 / 較正の参照）">🧱 部屋</button>
+          <button class="fm-mode" data-mode="start" title="体験者がここへ来たら導入演出が始まる床の 1 点">🎬 開始位置</button>
         </div>
         <canvas class="fm-canvas" width="${SIZE}" height="${SIZE}"></canvas>
         <div class="fm-modehint"></div>
@@ -222,6 +232,24 @@ export function createFloorMap(container, deps) {
             壁 / 箱をクリックで選択・ドラッグで移動・端点や角をドラッグで伸縮・右クリックで削除。
             高さ・厚み・向きは選択中の欄で調整します。</div>
         </div>
+        <div class="fm-start" style="display:none">
+          <div class="fm-course-label">🎬 開始位置（導入演出が始まる床の 1 点）</div>
+          <div class="fm-start-note"></div>
+          <div class="fm-row">
+            <label class="fm-num">半径 (m)<input class="fm-start-r" type="number"
+              min="${START_RADIUS_MIN}" max="${START_RADIUS_MAX}" step="0.05"></label>
+            <button class="fm-start-del" title="開始位置を未設定に戻す（スタッフが手で始める運用）">✕ 未設定に戻す</button>
+          </div>
+          <div class="fm-row">
+            <span class="fm-start-lbl-cap">ラベル</span>
+            <input class="fm-start-label" type="text" placeholder="${START_SPOT_DEFAULT.label}">
+          </div>
+          <div class="fm-hint2">体験者がこの円の中に入ったら導入演出（現実 → 映像）が始まります。
+            <b>置くのは 1 点だけ</b>（2 回目のクリックは移動）。ドラッグで移動・右クリックで削除。
+            <b>未設定なら自動では始まりません</b> — スタッフが卓の「導入を進める」で手動開始する運用になります。
+            <b>周回コースのスタート区間の中に置く</b>こと（外に置くと、演出が終わった直後に体験者は
+            本編のスタート区間へ入り直すことになります）。</div>
+        </div>
         <div class="fm-light">
           <div class="fm-course-label">💡 CG 照明（人形の陰影と影・部屋で 1 つ）</div>
           <div class="fm-light-note"></div>
@@ -283,6 +311,7 @@ export function createFloorMap(container, deps) {
   const isCamPose = () => mapMode === 'cam';
   const isLine = () => mapMode === 'line';
   const isRoom = () => mapMode === 'room';
+  const isStart = () => mapMode === 'start';
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function markDirty() { dirty = true; renderDirty(); }
@@ -391,6 +420,34 @@ export function createFloorMap(container, deps) {
     return { x: dz / len, z: -dx / len };
   }
 
+  // ---- 開始位置（導入演出の発火点）アクセサ ---------------------------------------
+  // 1 点だけ。正規化は intro-model.js の normalizeStartSpot が単一の正
+  // （本番前チェックと丸め方を分けると「卓の絵と卓の警告が食い違う」が起きる）。
+  function startSpot() {
+    const s = layout.startSpot;
+    return (s && Number.isFinite(s.x) && Number.isFinite(s.z)) ? s : null;
+  }
+  function startHit(px, py) {
+    const s = startSpot(); if (!s) return false;
+    const [x, y] = courseToPx(s.x, s.z);
+    return Math.hypot(px - x, py - y) <= START_HIT;
+  }
+  // クリック位置へ置く / 移す。半径とラベルは既にあれば引き継ぐ（置き直しで設定が消えない）。
+  function setStartAt(x, z) {
+    const cur = startSpot();
+    layout.startSpot = {
+      x: +x.toFixed(3), z: +z.toFixed(3),
+      radiusM: cur ? cur.radiusM : START_SPOT_DEFAULT.radiusM,
+      label: cur ? cur.label : START_SPOT_DEFAULT.label,
+    };
+    markDirty();
+  }
+  function clearStart() {
+    if (!startSpot()) return;
+    delete layout.startSpot;
+    markDirty(); renderStart(); render();
+  }
+
   // ---- 描画 -----------------------------------------------------------------
   function render() {
     ctx.clearRect(0, 0, SIZE, SIZE);
@@ -476,6 +533,9 @@ export function createFloorMap(container, deps) {
 
     // 通過ライン（演出の発火点。どのモードでも薄く見せる = 塗りながら位置関係が分かる）
     drawLines();
+
+    // 開始位置（導入演出の発火点。ラインと同じくどのモードでも薄く見せる）
+    drawStartSpot();
 
     // 光が来ている方向（床の外側に出るので最後に描く）
     drawLightArrow();
@@ -673,6 +733,40 @@ export function createFloorMap(container, deps) {
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
       ctx.restore();
     }
+  }
+
+  // 開始位置。円（半径 = 実寸）と中心の点。編集モードでは実線 + ラベル、他モードでは薄い破線。
+  function drawStartSpot() {
+    const s = startSpot(); if (!s) return;
+    const edit = isStart();
+    const [px, py] = courseToPx(s.x, s.z);
+    const r = Math.max(3, (Number(s.radiusM) || START_SPOT_DEFAULT.radiusM) * scale);
+    ctx.save();
+    ctx.globalAlpha = edit ? 1 : 0.4;
+
+    // 半径の円（体験者がこの中に入ったら始まる）
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fillStyle = START_COLOR; ctx.globalAlpha *= 0.12; ctx.fill();
+    ctx.globalAlpha = edit ? 1 : 0.4;
+    ctx.setLineDash(edit ? [] : [5, 4]);
+    ctx.strokeStyle = START_COLOR; ctx.lineWidth = edit ? 2 : 1.5; ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 中心（掴む場所）
+    ctx.beginPath(); ctx.arc(px, py, edit ? 8 : 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#141820'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = START_COLOR; ctx.stroke();
+    ctx.fillStyle = START_COLOR; ctx.font = 'bold 9px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('▶', px + 0.5, py + 0.5);
+
+    if (edit && s.label) {
+      ctx.fillStyle = 'rgba(255,250,240,0.92)';
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`🎬 ${s.label}`, px, py + r + 4);
+    }
+    ctx.restore();
   }
 
   // 通過ラインの一覧（ラベル / 担当カメラ / 通過方向 / 置かれているゾーン / 使用中の演出数 / 削除）。
@@ -1461,6 +1555,43 @@ export function createFloorMap(container, deps) {
     if (document.activeElement !== roomFdI) roomFdI.value = String(roomModel.floorD);
   }
 
+  // ---- 開始位置パネル -------------------------------------------------------------
+  const startNoteEl = q('.fm-start-note'), startRadiusI = q('.fm-start-r'), startLabelI = q('.fm-start-label');
+  function renderStart() {
+    const s = startSpot();
+    if (s) {
+      startNoteEl.textContent = `(${(+s.x).toFixed(2)}, ${(+s.z).toFixed(2)}) / 半径 ${(+s.radiusM).toFixed(2)}m`;
+      startNoteEl.className = 'fm-start-note';
+    } else {
+      startNoteEl.textContent = '未設定 — 自動では始まりません（スタッフが卓の「導入を進める」で開始）。'
+        + 'キャンバスをクリックすると置けます。';
+      startNoteEl.className = 'fm-start-note warn';
+    }
+    if (document.activeElement !== startRadiusI) {
+      startRadiusI.value = s ? s.radiusM : START_SPOT_DEFAULT.radiusM;
+    }
+    if (document.activeElement !== startLabelI) startLabelI.value = s ? (s.label || '') : '';
+    startRadiusI.disabled = !s;
+    startLabelI.disabled = !s;
+    q('.fm-start-del').disabled = !s;
+  }
+  startRadiusI.onchange = () => {
+    const s = startSpot(); if (!s) return;
+    const v = parseFloat(startRadiusI.value);
+    s.radiusM = Number.isFinite(v)
+      ? Math.min(START_RADIUS_MAX, Math.max(START_RADIUS_MIN, v))
+      : START_SPOT_DEFAULT.radiusM;
+    startRadiusI.value = s.radiusM;
+    markDirty(); renderStart(); render();
+  };
+  // ラベルはリストを再構築しない（フォーカス保持。位置合わせ点のラベル入力と同じ流儀）。
+  startLabelI.oninput = () => {
+    const s = startSpot(); if (!s) return;
+    s.label = startLabelI.value;
+    markDirty(); render();
+  };
+  q('.fm-start-del').onclick = () => clearStart();
+
   // ---- マップの操作モード（🖌 塗る / 📍 位置合わせ点 / 🚶 歩かせる）----------------
   const MODE_HINT = {
     paint: 'パレットの色でタイルをクリック / ドラッグ。色 = 担当カメラ。',
@@ -1469,6 +1600,7 @@ export function createFloorMap(container, deps) {
     cam: 'カメラ印をドラッグで移動 / 矢印の先をドラッグで向き。何も無い所をクリックすると選択中カメラをそこへ置きます。高さ・俯角・水平画角はカメラ列の 📐 欄。',
     line: 'ドラッグで発火点のラインを引く / 端点をドラッグで伸縮 / 線をドラッグで平行移動 / 右クリックで削除。',
     room: '',   // 引くもの（壁 / 箱）で文言が変わるので roomModeHint() が組み立てる
+    start: 'クリックで開始位置を置く（1 点だけ・2 回目は移動）/ ドラッグで移動 / 右クリックで削除。',
   };
   // 部屋モードのヒントは「いま何を引くか」で変わる（壁と箱で操作が違う）。
   function roomModeHint() {
@@ -1485,6 +1617,7 @@ export function createFloorMap(container, deps) {
     canvas.classList.toggle('fm-campose-edit', isCamPose());
     canvas.classList.toggle('fm-line-edit', isLine());
     canvas.classList.toggle('fm-room-edit', isRoom());
+    canvas.classList.toggle('fm-start-edit', isStart());
     modeHint.textContent = isRoom() ? roomModeHint() : MODE_HINT[next];
     const camPanel = q('.fm-campose');
     if (camPanel) camPanel.style.display = isCamPose() ? '' : 'none';
@@ -1492,9 +1625,12 @@ export function createFloorMap(container, deps) {
     if (linePanel) linePanel.style.display = isLine() ? '' : 'none';
     const roomPanel = q('.fm-room');
     if (roomPanel) roomPanel.style.display = isRoom() ? '' : 'none';
+    const startPanel = q('.fm-start');
+    if (startPanel) startPanel.style.display = isStart() ? '' : 'none';
     if (isCamPose()) renderCamPoseList();
     if (isLine()) renderLineList();
     if (isRoom()) { syncRoomInputs(); renderRoom(); }
+    if (isStart()) renderStart();
     // 歩かせるモードに入った時、ドットが無ければ南辺中央に出す（旧チェックボックスと同じ初期位置）。
     if (isWalk() && !sim && !(opt && opt.keepPos)) sim = { x: 0, z: -0.7 };
     updateSimOut(); render(); emitSim();
@@ -1540,10 +1676,13 @@ export function createFloorMap(container, deps) {
     // 部屋: present-flag を確定して書き戻す（未著作 / 床が退化していれば room キーごと消える）。
     writeRoomToLayout(layout, roomModel, roomAuthored);
     roomAuthored = !!layout.hasRoom;
+    // 開始位置: 正規化（座標が無ければキーごと消える = 未設定＝スタッフが手で始める運用）。
+    const spot = normalizeStartSpot(layout.startSpot);
+    if (spot) layout.startSpot = spot; else delete layout.startSpot;
     layout.rev = (parseInt(layout.rev, 10) || 0) + 1;
     const res = await deps.saveLayout(clone(layout));
     if (res && res.ok !== false) {
-      dirty = false; renderDirty(); renderRegList(); renderLineList(); renderRoom(); renderLight();
+      dirty = false; renderDirty(); renderRegList(); renderLineList(); renderRoom(); renderLight(); renderStart();
       if (regFellBack) regNoteEl.textContent = '⚠ 2 点未満のため regPoints を保存せず既定にフォールバックしました';
     } else { dirtyEl.textContent = '✕ 保存失敗'; }
   };
@@ -1626,6 +1765,13 @@ export function createFloorMap(container, deps) {
       renderRoom(); render();
       e.preventDefault(); return;
     }
+    // 開始位置モード: 印を掴めば移動、空きを押せばそこへ置く（1 点だけなので追加と移動は同じ操作）。
+    if (isStart()) {
+      if (!startHit(m.px, m.py)) setStartAt(m.x, m.z);
+      drag = { mode: 'start' };
+      renderStart(); render();
+      e.preventDefault(); return;
+    }
     // 歩かせるモード: **押した場所へそのまま立たせる**（ドットを狙って掴む必要はない）。
     //   旧実装は半径 14px 以内を掴んだ時だけドラッグで、外すとタイル塗りに化けていた。
     if (isWalk()) {
@@ -1639,8 +1785,13 @@ export function createFloorMap(container, deps) {
     paintAt(m);
     e.preventDefault();
   });
-  // 右クリックで位置合わせ点 / 通過ラインを削除（それぞれの編集モード時のみ）。
+  // 右クリックで位置合わせ点 / 通過ライン / 開始位置を削除（それぞれの編集モード時のみ）。
   canvas.addEventListener('contextmenu', (e) => {
+    if (isStart()) {
+      const m = mouseCourse(e);
+      if (startHit(m.px, m.py)) clearStart();
+      e.preventDefault(); return;
+    }
     if (isRoom()) {
       const m = mouseCourse(e);
       const hit = roomHit(m.px, m.py);
@@ -1671,6 +1822,10 @@ export function createFloorMap(container, deps) {
         a[regDragIndex].x = +m.x.toFixed(3); a[regDragIndex].z = +m.z.toFixed(3);
         markDirty(); updateRegCoords(); render();
       }
+    }
+    else if (drag.mode === 'start') {
+      const s = startSpot();
+      if (s) { s.x = +m.x.toFixed(3); s.z = +m.z.toFixed(3); markDirty(); renderStart(); render(); }
     }
     else if (drag.mode === 'draw') {
       if (drawing) { drawing.cur = { x: m.x, z: m.z }; render(); }
@@ -1791,6 +1946,9 @@ export function createFloorMap(container, deps) {
     // 通過ライン: 不正要素を落とす（未著作なら配列そのものを持たない）。
     const lines = linesFromLayout(layout);
     if (lines.length) layout.lines = lines; else delete layout.lines;
+    // 開始位置: 座標が無ければキーごと落とす（未設定＝スタッフが手で始める運用）。
+    const spot = normalizeStartSpot(layout.startSpot);
+    if (spot) layout.startSpot = spot; else delete layout.startSpot;
     // 部屋の 3D プロキシ: present-flag（hasRoom）の AND 規約で解決して編集モデルへ。
     // 未著作なら layout.floor を種にする（部屋を作り始めた瞬間に床が 1.8m へ化けないように）。
     const rm = roomFromLayout(layout);
@@ -1834,7 +1992,7 @@ export function createFloorMap(container, deps) {
     renderPalette();
     if (isCamPose()) renderCamPoseList();
     renderCourse();
-    if (!dirty) { renderRegList(); renderLineList(); syncRoomInputs(); renderRoom(); renderLight(); }
+    if (!dirty) { renderRegList(); renderLineList(); syncRoomInputs(); renderRoom(); renderLight(); renderStart(); }
     // ↑ 編集中は入力フォーカスを潰さないため再構築しない
     updateSimOut(); render();
   }
@@ -1892,6 +2050,7 @@ export function createFloorMap(container, deps) {
   syncRoomInputs();
   renderRoom();
   renderLight();
+  renderStart();
   renderDirty();
   render();
   return { onState, onUnity, isDirty: () => dirty, setSimPos, enableSim };

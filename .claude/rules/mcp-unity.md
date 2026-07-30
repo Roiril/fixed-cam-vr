@@ -46,6 +46,16 @@ Unity プロジェクトの編集はまず MCP for Unity 経由を試し、ダ�
 - 新規シーンは Camera/Light が一切ない（Unity 通常の "New Scene" と挙動違い）
 - `Connection closed before reading expected bytes` は Unity 側のドメインリロード/コンパイル中。`refresh_unity wait_for_ready=true` でリトライ
 - **Editor が非フォーカス（裏に回っている）と `refresh_unity compile=request` は .cs 変更を拾ってもコンパイルを遅延し、DLL が再生成されない**（`Library/ScriptAssemblies/*.dll` の mtime が古いまま）。MCP 編集で .cs を直しても「コンパイル検証できない」状態になる。→ **`run_tests`（EditMode）はテスト前に必ずコンパイルを強制する**ので、非フォーカスでもこれでコンパイル＋検証できる（2026-06-29 実害: refresh を数回タイムアウトさせた末に発見）。検証は `run_tests`→`get_test_job(wait_timeout=60)` が確実。DLL mtime で再コンパイルの実否を確認できる
+- **⚠ `refresh_unity` が効かないことがある。そのときは `execute_menu_item "Assets/Refresh"`**（2026-07-30 実害）。
+  非フォーカス Editor で `editor_state` の `assets.external_changes_dirty=true` が続き、`refresh_unity`
+  （タイムアウトしても "recovered" と返る）を何度打っても `Library/ScriptAssemblies/*.dll` の mtime が
+  動かない状態になった。`Assets/Refresh` を叩くと即座に再コンパイルされた。**DLL の mtime が編集より
+  古いまま run_tests が pass したら、それは stale DLL での結果**なので、この手を打ってから測り直す
+- **⚠ 複数インスタンスは `unity_instance` を渡しても混線する**（2026-07-30 実害）。
+  `unity_instance: "fixed-cam-vr@..."` を明示していたのに、**別プロジェクト（unity-game-studio）の
+  テストが走って 162/162 pass と返った**（テスト名が `Whiteout.Core.Tests.*` で気づいた）。
+  `run_tests` の結果は**テスト総数とテスト名で自分のプロジェクトか確認する**こと。混線したら
+  `set_active_instance` を打ち直す。あわせて `get_test_job` が `Unknown job_id` を返す症状も出る
 - **⚠ ただし `run_tests` の pass も再コンパイルの証明にはならない**（2026-07-16 実害×2: .cs 編集→run_tests 37/37 pass→メニュー実行が**旧 DLL のまま走った**。テストが直前コンパイル済みアセンブリで実行されるケースがある）。**「編集 → 実行」の間は必ず `Library/ScriptAssemblies/<該当>.dll` の mtime が編集時刻より新しいことを確認**してから execute_menu_item / ビルドを呼ぶ。mtime が古ければ `refresh_unity mode=force compile=request` を打って mtime 更新を待つ。手順: ①.cs 編集 ②refresh_unity force ③DLL mtime 確認（古ければ再 refresh）④read_console でエラー 0 ⑤実行
 - **`execute_code` は Windows で「ファイル名または拡張子が長すぎます」で失敗しがち**（mono コマンドライン長制限）。live シーンの値設定等は YAML 直編集＋`manage_scene load` 再ロード、強制コンパイルは `run_tests` で代替する
 - **新規作成した .cs は build / run_tests の前に明示インポートが要る**（2026-06-29 実害）。Write で作っただけだと非フォーカス Editor は AssetDatabase に取り込まず、それを参照する既存 .cs が `CS0246`（型が見つからない）でビルド失敗する（しかも run_tests は stale DLL で通ってしまい気付けない）。→ 新規ファイル追加後は `refresh_unity mode=force scope=all` で取り込み、`read_console types=["Error"]` でエラーゼロを確認してからビルド。`run_tests` の 6/6 を信じる前に `Library/ScriptAssemblies/*.dll` の mtime が更新されたかも見る
