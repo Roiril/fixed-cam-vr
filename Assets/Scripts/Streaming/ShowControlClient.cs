@@ -472,14 +472,20 @@ namespace FixedCamVr.Streaming
         /// <summary>導入演出を出すか。false なら従来どおり最初からスクリーンだけが見える。</summary>
         public bool enabled = true;
 
-        /// <summary>演出の上限 (秒)。超えたら段を飛ばして枠を出す（条件待ちで固まらないための保険）。</summary>
-        public float maxSec = 40f;
+        // ⚠ 尺の既定は 3 箇所（ここ / <see cref="IntroTiming.Default"/> / 卓の intro-model.js
+        //    INTRO_DEFAULT）に現れる。**値は一致していること** — 2026-07-30 に 33s → 13.1s へ詰めた際
+        //    ここだけ旧値（4/8/6/5/8, maxSec 40）が残り、「卓は 13.1s と言うのにコードは 33s を持つ」
+        //    状態になっていた。実害は出ていない（JsonUtility が埋めた 0 は Sanitized() が
+        //    IntroTiming.Default で上書きするため）が、直接フィールドを読む経路が増えた瞬間に食い違う。
 
-        public float realSec = 4f;
-        public float degradeSec = 8f;
-        public float structureSec = 6f;
-        public float frameSec = 5f;
-        public float swapSec = 8f;
+        /// <summary>演出の上限 (秒)。超えたら段を飛ばして枠を出す（条件待ちで固まらないための保険）。</summary>
+        public float maxSec = 20f;
+
+        public float realSec = 1.5f;
+        public float degradeSec = 3.5f;
+        public float structureSec = 2.5f;
+        public float frameSec = 2.5f;
+        public float swapSec = 4.5f;
 
         /// <summary>実物の輪郭線の色（<c>#rrggbb</c>）。</summary>
         public string edgeColor = "#ffffff";

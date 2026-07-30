@@ -9,8 +9,8 @@
 // 尺の合計・成立条件は 卓の ⚙ 欄 と 本番前チェック の 2 箇所で同じ答えを出さなければならない
 // ので、列挙と判定はこの 1 ファイルが単一の正（record-model.js と同じ流儀）。
 
-import { wallLooksDefault } from './calib-session.js';
 import { zonesFromLayout, cameraAtPoint } from './zone-layout.js';
+import { roomFromLayout, roomHasData, isWallUsable, isBoxUsable, FLOOR_MIN_M } from './room-model.js';
 
 /**
  * show.json `run.intro` が欠けている時の既定（capture-server.py の _default_show と同じ値）。
@@ -167,6 +167,47 @@ export function startSpotZoneIssue(layout) {
   return { startCamera, spotCamera };
 }
 
+// ---- 段 3（構造）が実際に描く幾何 ------------------------------------------------
+
+/**
+ * 卓の既定の L 字壁（1m × 1m）の 3 点。**「測った値かどうかは判定できない」ことを言うためだけ**に持つ。
+ * 現場が本当に 1m × 1m なら形が一致するのは正しいので、これは ❌ ではなく ⚠ の材料。
+ */
+const DEFAULT_L_POINTS = [[-0.5, 0.5], [0.5, 0.5], [-0.5, -0.5]];
+const ptKey = (x, z) => `${x.toFixed(3)},${z.toFixed(3)}`;
+
+/** 壁の端点が卓の既定 L と同じ 3 点か（＝寸法を触っていない疑い）。 */
+function wallsLookLikeDefaultL(walls) {
+  if (!walls.length) return false;
+  const keys = new Set();
+  for (const w of walls) { keys.add(ptKey(w.x1, w.z1)); keys.add(ptKey(w.x2, w.z2)); }
+  if (keys.size !== DEFAULT_L_POINTS.length) return false;
+  return DEFAULT_L_POINTS.every(([x, z]) => keys.has(ptKey(x, z)));
+}
+
+/**
+ * 段 3 が現実の上に重ねる線の内訳。
+ *
+ * ⚠ **見る鍵は `layout.room` と `layout.floor`。`layout.wall` ではない。**
+ * 実機の `IntroStructureWireLogic` は壁と箱を `AppendRoom`（= `layout.room` だけ）から起こし、
+ * 床の外周を `TryFloorExtents`（`layout.floor` → `room.floorW/D` の順）から起こす。
+ * `layout.wall` は HMD 位置合わせリチュアルのワイヤー専用の旧データで、**段 3 は 1 本も読まない**。
+ * ここを取り違えると、卓が指す直し方（床の寸法入力）を実行しても ❌ が消えない。
+ */
+export function introWireGeometry(layout) {
+  const { room, hasRoom } = roomFromLayout(layout);
+  const walls = hasRoom ? (room.walls || []).filter(isWallUsable) : [];
+  const props = hasRoom ? (room.props || []).filter(isBoxUsable) : [];
+  const f = (layout && layout.floor) || null;
+  const hasFloor = !!(f && f.w > FLOOR_MIN_M && f.d > FLOOR_MIN_M) || (hasRoom && roomHasData(room));
+  return {
+    hasFloor,
+    wallCount: walls.length,
+    propCount: props.length,
+    looksDefaultL: wallsLookLikeDefaultL(walls),
+  };
+}
+
 /** カメラ index → 表示名（cameras が無ければ index で呼ぶ）。 */
 function cameraName(cameras, i) {
   if (i < 0) return '未割当';
@@ -178,7 +219,7 @@ function cameraName(cameras, i) {
  * 本番前チェックの `🎬 導入` 行。導入が無効なら **null**（行を出さない = 黙る）。
  *
  * 見るのは設計 §8 の成立条件のうち卓で判定できる 2 つと、尺の打ち切り:
- *   3. 部屋の実寸が入っている — 段 3 は現実に線を直接重ねるので、既定の壁のままでは成立しない（❌）
+ *   3. 部屋の幾何が入っている — 段 3 は現実に線を直接重ねるので、線が 1 本も無ければ成立しない（❌）
  *   1. 開始カメラが較正済み  — 段 3 のカメラの印が出せない（⚠。印を消せば導入自体は成立する）
  *   §3 上限                  — 和が maxSec を超えると段を飛ばして枠を出す（⚠）
  *   開始位置（startSpot）    — 未設定なら手動開始・スタート区間の外なら入り直しになる（⚠）
@@ -189,17 +230,30 @@ export function introPreflightRow({ run, layout, cameras } = {}) {
 
   const label = '🎬 導入';
   const dur = introDurationLabel(intro, run && run.introMinSec);
+  const geo = introWireGeometry(layout);
 
-  if (wallLooksDefault(layout)) {
+  if (intro.showRoomWire && !geo.hasFloor) {
     return {
       s: 'ng',
       label,
-      detail: '部屋の寸法が卓の既定値のままです — 段 3 の壁・床の線が実物に重なりません'
+      detail: '床の寸法が入っていません — 段 3 の線が 1 本も出ません'
         + '（［🎯 姿勢を合わせる］の床の寸法入力で測った値を入れる）',
+    };
+  }
+  if (intro.showRoomWire && geo.wallCount === 0 && geo.propCount === 0) {
+    return {
+      s: 'ng',
+      label,
+      detail: '部屋の壁が著作されていません — 段 3 は床の外周とカメラの印だけになり、'
+        + '線が実物に重なるかを確かめられません（フロアマップの 🧱 部屋 で壁を引く）',
     };
   }
 
   const warn = [];
+  if (geo.looksDefaultL) {
+    warn.push('壁の形が卓の既定の L（1m × 1m）と同じです'
+      + ' — 実際に測った値かどうかは判定できません（現場でメジャーを当てて確かめる）');
+  }
   if (calibratedCameraCount(cameras) === 0) {
     warn.push('較正済みのカメラが 1 台もありません（段 3 のカメラの印が出せません）');
   }

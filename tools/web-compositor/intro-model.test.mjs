@@ -3,22 +3,34 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   INTRO_DEFAULT, INTRO_STAGE_KEYS, introConfig, introStageSec,
-  introDurationLabel, calibratedCameraCount, introPreflightRow,
+  introDurationLabel, calibratedCameraCount, introPreflightRow, introWireGeometry,
   START_SPOT_DEFAULT, START_RADIUS_MIN, START_RADIUS_MAX,
   normalizeStartSpot, startSpotOf, startSpotZoneIssue,
 } from './intro-model.js';
 
-// 測った壁（既定 1m×1m の L から外れている）。これが無いと段 3 が成立しない。
-const MEASURED_WALL = { corner: [-0.9, 0.9], endX: [0.9, 0.9], endZ: [-0.9, -0.9] };
-// 「導入が成立している layout」= 測った壁 + 開始位置あり。開始位置が無いだけで ⚠ が出るので、
+// 段 3 が描く幾何は **layout.room の壁 + layout.floor** から来る（layout.wall は読まない）。
+// 既定の L（1m × 1m）から外れた形を「測った壁」として渡す。
+const MEASURED_ROOM = () => ({
+  floorY: 0, floorW: 1.8, floorD: 1.8,
+  walls: [
+    { id: 'w1', x1: -0.9, z1: 0.9, x2: 0.9, z2: 0.9, h: 1.8, thick: 0.04 },
+    { id: 'w2', x1: -0.9, z1: 0.9, x2: -0.9, z2: -0.9, h: 1.8, thick: 0.04 },
+  ],
+  props: [],
+});
+// 「導入が成立している layout」= 床 + 測った壁 + 開始位置あり。開始位置が無いだけで ⚠ が出るので、
 // 他の条件を試すテストにはこれを渡す（ノイズで判定が読めなくなるのを防ぐ）。
-const measuredLayout = () => ({ wall: { ...MEASURED_WALL }, startSpot: { x: 0, z: -0.6 } });
+const measuredLayout = () => ({
+  floor: { w: 1.8, d: 1.8 },
+  room: MEASURED_ROOM(), hasRoom: true,
+  startSpot: { x: 0, z: -0.6 },
+});
 const calibratedCams = () => ([{ id: 'A', calib: { fxPx: 431.2 } }]);
 
 // ゾーン判定つきの layout。12×12 タイルの上半分（北）をカメラ 1・下半分（南）をカメラ 0 に塗る。
 // row0 = 北端（z=+0.9）・col0 = 西端（x=-0.9）。
 const zonedLayout = (startSpot, order = [0, 1]) => ({
-  wall: { ...MEASURED_WALL },
+  room: MEASURED_ROOM(), hasRoom: true,
   floor: { w: 1.8, d: 1.8 },
   course: { order },
   overlapM: 0.08,
@@ -90,11 +102,61 @@ test('導入を出さない設定なら本番前チェックの行を出さな�
   assert.equal(row, null);
 });
 
-test('部屋の寸法が既定値のままなら ❌（段 3 の線が実物に重ならない）', () => {
+test('床の寸法が無ければ ❌（段 3 の線が 1 本も出ない）', () => {
   const row = introPreflightRow({ run: {}, layout: {}, cameras: calibratedCams() });
   assert.equal(row.s, 'ng');
   assert.equal(row.label, '🎬 導入');
-  assert.match(row.detail, /寸法/);
+  assert.match(row.detail, /床の寸法/);
+});
+
+// 段 3 の壁は layout.room だけから起きる（IntroStructureWireLogic.AppendRoom）。
+// 旧 layout.wall を見ていた頃は、壁を著作しても ❌ が消えず / room を著作しても ❌ のままだった。
+test('壁が著作されていなければ ❌（床の外周とカメラの印だけになる）', () => {
+  const row = introPreflightRow({
+    run: {}, layout: { floor: { w: 1.8, d: 1.8 }, startSpot: { x: 0, z: -0.6 } }, cameras: calibratedCams(),
+  });
+  assert.equal(row.s, 'ng');
+  assert.match(row.detail, /部屋の壁/);
+});
+
+test('段 3 の判定は layout.wall ではなく layout.room を見る', () => {
+  const legacyOnly = { floor: { w: 1.8, d: 1.8 }, wall: { corner: [-0.9, 0.9], endX: [0.9, 0.9], endZ: [-0.9, -0.9] } };
+  assert.equal(introWireGeometry(legacyOnly).wallCount, 0);
+  assert.equal(introWireGeometry(measuredLayout()).wallCount, 2);
+});
+
+test('部屋の present-flag が false なら壁は無いものとして数える（幽霊の壁を作らない）', () => {
+  const geo = introWireGeometry({ floor: { w: 1.8, d: 1.8 }, room: MEASURED_ROOM(), hasRoom: false });
+  assert.equal(geo.wallCount, 0);
+});
+
+test('壁が既定の L と同じ形なら ⚠（測った値かは判定できないと言う）', () => {
+  const layout = {
+    floor: { w: 1.8, d: 1.8 },
+    startSpot: { x: 0, z: -0.6 },
+    hasRoom: true,
+    room: {
+      floorY: 0, floorW: 1.8, floorD: 1.8,
+      walls: [
+        { id: 'w1', x1: -0.5, z1: -0.5, x2: -0.5, z2: 0.5, h: 1.8, thick: 0.04 },
+        { id: 'w2', x1: -0.5, z1: 0.5, x2: 0.5, z2: 0.5, h: 1.8, thick: 0.04 },
+      ],
+      props: [],
+    },
+  };
+  assert.equal(introWireGeometry(layout).looksDefaultL, true);
+  const row = introPreflightRow({ run: {}, layout, cameras: calibratedCams() });
+  assert.equal(row.s, 'warn');
+  assert.match(row.detail, /既定の L/);
+});
+
+test('壁と床の線を出さない設定なら幾何を要求しない（黙って ❌ にしない）', () => {
+  const row = introPreflightRow({
+    run: { intro: { showRoomWire: false } },
+    layout: { startSpot: { x: 0, z: -0.6 } },
+    cameras: calibratedCams(),
+  });
+  assert.equal(row.s, 'ok');
 });
 
 test('較正済みのカメラが 1 台も無ければ ⚠（カメラの印が出せない）', () => {

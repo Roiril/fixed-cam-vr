@@ -180,8 +180,16 @@ export function createRibbon(container, deps) {
     return id != null && c.camera === id;
   }
   // このカットで画面の下地になるカメラ。live / rec は自分で指し、それ以外は区間のカメラを継ぐ。
-  function stepScreenCam(s) {
-    if ((s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC) && Number.isInteger(s.camera)) return s.camera;
+  //
+  // ⚠ 継ぐ先は**そのカットが属する区間**で、選択中の区間ではない。`segCam` を渡さないと
+  //    リボンを描いている最中（まだ何も選んでいない = sel が null）は -1 に落ち、
+  //    「そのまま」カットの下地が毎回「未割当」と判定されて、正しく著作された
+  //    オーバーレイに「マスクの位置が実機でずれます」の ⚠ が出る（実際に出ていた）。
+  function stepScreenCam(s, segCam) {
+    if ((s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC) && Number.isInteger(s.camera) && s.camera >= 0) {
+      return s.camera;
+    }
+    if (Number.isInteger(segCam)) return segCam;
     return sel ? sel.camera : -1;
   }
   // 演出専用カメラ（role:"fx"）は周回に出てこない＝作者が「どれが D か」を選ぶ時の手がかりが要る。
@@ -320,7 +328,8 @@ export function createRibbon(container, deps) {
   }
 
   // ---- 不正値の検出（§6.4 と同じ判定。保存はできるが警告する）------------------
-  function stepIssue(s) {
+  // `segCam` = このカットが属する区間のカメラ。「そのまま」「素材」カットの下地の判定に使う。
+  function stepIssue(s, segCam) {
     if (s.source === TAKE.SRC_LIVE && !(Number.isInteger(s.camera) && s.camera >= 0 && s.camera < cameras.length)) {
       return 'ライブのカメラが未選択（実機ではこのカットは飛ばされます）';
     }
@@ -336,7 +345,7 @@ export function createRibbon(container, deps) {
     // マスクはカメラの構図に対して焼かれるので、実機では位置がずれたまま出る＝黙って壊れる。
     if (s.cueId) {
       const c = cueById(s.cueId);
-      const scam = stepScreenCam(s);
+      const scam = stepScreenCam(s, segCam);
       if (c && !cueFitsCam(c, scam)) {
         return `重ねる素材「${cueName(s.cueId)}」は ${camLabel(cameras.findIndex((x) => x.id === c.camera))} 用です`
           + `（このカットの下地は ${camLabel(scam)}。マスクの位置が実機でずれます）`;
@@ -382,7 +391,7 @@ export function createRibbon(container, deps) {
     if (!t.steps || !t.steps.length) return 'カットが 1 枚もありません（発火しません）';
     const lineBad = lineIssue(t, camera);
     if (lineBad) return lineBad;
-    const bad = t.steps.map(stepIssue).filter(Boolean);
+    const bad = t.steps.map((s) => stepIssue(s, camera)).filter(Boolean);
     if (bad.length) return bad[0];
     const total = takeSeconds(t);
     if (total.sec > maxDurOf(t)) return `尺の合計 ${fmtSec(total.sec)}s が最大長 ${maxDurOf(t)}s を超えています（超過分は強制終了されます）`;
@@ -630,8 +639,8 @@ export function createRibbon(container, deps) {
     const total = takeSeconds(t);
     const steps = (t.steps || []).map((s) => {
       const d = stepSeconds(s);
-      const bad = stepIssue(s);
-      return `<div class="rb-step" style="flex:${d.sec} 1 0;--sc:${stepColor(s)}" title="${escapeHtml(stepTitle(s))}">
+      const bad = stepIssue(s, ci);
+      return `<div class="rb-step" style="flex:${d.sec} 1 0;--sc:${stepColor(s)}" title="${escapeHtml(stepTitle(s, ci))}">
         <span class="rb-step-src"><i></i>${escapeHtml(stepLabel(s))}</span>
         ${s.cueId ? `<span class="rb-step-ov">+ ${escapeHtml(cueName(s.cueId))}</span>` : ''}
         <span class="rb-step-sec">${bad ? '⚠ ' : ''}${d.approx ? '≈' : ''}${fmtSec(d.sec)}s</span>
@@ -725,6 +734,13 @@ export function createRibbon(container, deps) {
       return `ライブ ${id}`;
     }
     if (s.source === TAKE.SRC_INHERIT) return 'そのまま';
+    // 「録画」カットは assetUrl を持たない（素材は体験中に端末が作る）。ここを素材カットと
+    // 同じ扱いにすると「映像（未選択）」と出て、正しく著作された 3 周目のカットが
+    // 未完成に見える（実際にそう見えていた）。指しているのは (録った周, カメラ)。
+    if (s.source === TAKE.SRC_REC) {
+      const id = cameras[s.camera] ? cameras[s.camera].id : '?';
+      return `録画 ${s.recLap > 0 ? s.recLap : 1}周目 ${id}`;
+    }
     const kind = s.source === TAKE.SRC_STILL ? '静止画' : '映像';
     return `${kind} ${baseName(s.assetUrl) || '（未選択）'}`;
   }
@@ -735,8 +751,8 @@ export function createRibbon(container, deps) {
     unknown: '尺 不明（実機は素材の終わりまで。卓では最大長まで走る）',
     fallback: '尺 素材なし → 既定 4s（実機も同じ）',
   };
-  function stepTitle(s) {
-    const bad = stepIssue(s);
+  function stepTitle(s, segCam) {
+    const bad = stepIssue(s, segCam);
     const tr = s.transition === TAKE.TRANS_CUT ? 'カット'
       : s.transition === TAKE.TRANS_FADE ? 'フェード'
       : s.transition === TAKE.TRANS_GLITCH ? '乱れ' : '暗転';
