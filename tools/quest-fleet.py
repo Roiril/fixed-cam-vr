@@ -318,6 +318,66 @@ def fmt_row(d, state):
         mark, d["serial"], d["wake"], soc, lvs, tname, wifi, apps, regs, used)
 
 
+# APK より新しいソースがあるかを見るディレクトリ。**Assets/ 全部は走査しない**
+# （Library/ と違って数は少ないが、Meta XR SDK の中身まで見ると遅いだけで意味が無い）。
+# ここに無いものを変えても APK には入らない、という対応にしてある。
+SOURCE_DIRS = [
+    os.path.join("Assets", "Scripts"),
+    os.path.join("Assets", "Scenes"),
+    os.path.join("Assets", "Art"),
+    os.path.join("Assets", "Editor"),
+    os.path.join("Assets", "Settings"),
+    os.path.join("Assets", "Resources"),
+    "ProjectSettings",
+]
+
+# ビルド中に触られたファイルを「APK より新しいソース」と読まないための猶予（秒）。
+BUILD_TOUCH_SLACK_SEC = 180
+
+
+def newest_source():
+    """APK に入るソースのうち、いちばん新しいものの (mtime, パス) を返す。"""
+    newest, newest_path = 0.0, ""
+    for root in SOURCE_DIRS:
+        if not os.path.isdir(root):
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in ("Editor Default Resources",)]
+            for fn in filenames:
+                if fn.endswith(".meta"):
+                    continue   # .meta は中身と一緒に動くので見る意味が無い
+                p = os.path.join(dirpath, fn)
+                try:
+                    m = os.path.getmtime(p)
+                except OSError:
+                    continue
+                if m > newest:
+                    newest, newest_path = m, p
+    return newest, newest_path
+
+
+def apk_freshness(apk=DEFAULT_APK):
+    """APK とソースの新旧を比べる。返り値は (行, 古いか)。APK が無ければ (行, True)。
+
+    「ビルドし直したつもりで古い APK を配る」は実際に起きる（2026-07-31 に手で git log と
+    mtime を突き合わせて確認した）。毎回やる比較なので道具の側に持たせる。
+    """
+    if not os.path.exists(apk):
+        return "apk: %s が無い（まだビルドしていない）" % apk, True
+    apk_m = os.path.getmtime(apk)
+    src_m, src_p = newest_source()
+    apk_s = datetime.fromtimestamp(apk_m).strftime("%m-%d %H:%M")
+    # ⚠ ビルド自身が触るファイルを「新しいソース」と読まない。BuildVariants は productName と
+    #    applicationIdentifier を書き換えて finally で戻すので、ProjectSettings.asset は
+    #    **必ず APK とほぼ同時刻**になる。閾値なしだと毎回この偽の警告が出る。
+    if src_m <= apk_m + BUILD_TOUCH_SLACK_SEC:
+        return "apk: %s（ソースより新しい）" % apk_s, False
+    gap = (src_m - apk_m) / 60.0
+    src_s = datetime.fromtimestamp(src_m).strftime("%m-%d %H:%M")
+    return ("apk: %s ← ソースの方が %.0f 分新しい（%s %s）。焼き直さないと直したものが入らない"
+            % (apk_s, gap, src_s, src_p)), True
+
+
 def cmd_list(args):
     state = load_state()
     devs = collect()
@@ -337,6 +397,9 @@ def cmd_list(args):
         for s, r in runs.items():
             print("  %-15s %d run(s), %d s total, last %s" % (
                 s, r.get("count", 0), int(r.get("sec", 0)), r.get("lastAtIso", "-")))
+    line, stale = apk_freshness()
+    print()
+    print(("WARN: " if stale else "") + line)
     best, reason, warns = pick(devs, state)
     for w in warns:
         print("WARN: " + w)

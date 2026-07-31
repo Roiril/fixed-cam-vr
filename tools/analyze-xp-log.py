@@ -38,6 +38,25 @@ OTHER_TAGS = re.compile(
 )
 
 
+# logcat の 1 行。`07-31 16:49:58.057 W/Unity   (10831): 本文`（`-v time` 以外の形でも拾えるよう search）
+LOGCAT_LINE = re.compile(r"\b([VDIWEF])/([\w.\-]+)\s*\(\s*\d+\s*\):\s?(.*)$")
+# Unity がスタックトレースとして吐く行。`Namespace.Class:Method(引数)` の形で、本文ではない。
+STACK_FRAME = re.compile(r"^[\w.`<>+\[\]]+:[\w.`<>+\[\]]+\s*\(.*\)\s*$")
+# `[./Runtime/Camera/Camera.cpp line 169299656]` / `(Filename: X Line: 12)` もスタックの付属物。
+STACK_NOISE = re.compile(r"^(\[.*line \d+\]|\(Filename:.*\))\s*$")
+JP_WARN = re.compile(r"見つかりません|失敗|出ません|出ない")
+# 同じ本文が複数のレベルで出たときに残す方の順位（大きい方が重い）。
+LEVEL_RANK = {"V": 0, "D": 0, "I": 0, "W": 1, "E": 2, "F": 3}
+
+# 毎フレーム出るが害の無いもの。**なぜ無害かを書く**（書かないと次の人が消せない）。
+HARMLESS = (
+    # Meta の OpenXR ランタイムは遮蔽メッシュを返さない。URP は無ければ描かないだけで、絵に影響しない。
+    "Failed to get occlusion mesh",
+    # 上と同じ経路（可視矩形の算出）。同じ理由で毎フレーム出る。
+    "line loop data",
+)
+
+
 def parse_kv(body: str) -> dict:
     out = {}
     for tok in body.split():
@@ -45,6 +64,48 @@ def parse_kv(body: str) -> dict:
             k, _, v = tok.partition("=")
             out[k] = v
     return out
+
+
+def load_warnings(path: str):
+    """実機ログの警告・エラーを数え上げる。
+
+    `.claude/memory/onsite_experience_test.md` は「走行後は必ず grep しろ」と書いているのに、
+    判定はこれを見ていなかった（人が手で grep する前提のまま）。2026-07-31 に見つけた 3 件は
+    すべてここに出ていたのに、[XP] だけ見ていて気づけなかった。
+
+    返すのは {本文: (レベル, 件数, 日本語か)}。スタックトレースの行は本文ではないので落とす
+    （1 つの警告に 10 行以上ぶら下がり、数えると原因が埋もれる）。
+
+    **日本語かどうかを持つ**のは、日本語の警告がこの codebase の人間が「これが起きたら困る」と
+    思って書いたものだから。engine 由来の英語警告は数で勝つが、直すべきは前者のことが多い
+    （実測: `[IntroVeil] シェーダが見つかりません` 1 行が、MJPEG の再接続 9 行に埋もれていた）。
+    """
+    hits = {}
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for raw in fh:
+            m = LOGCAT_LINE.search(raw)
+            if not m:
+                continue
+            level, tag, msg = m.group(1), m.group(2), m.group(3).rstrip()
+            if tag != "Unity" or not msg:
+                continue
+            jp = bool(JP_WARN.search(msg))
+            if level not in ("W", "E", "F") and not jp:
+                continue
+            if STACK_FRAME.match(msg) or STACK_NOISE.match(msg):
+                continue
+            # 1 語だけの行はスタックの切れ端（`System.Threa` 等）。本文なら空白か [タグ] を持つ。
+            if " " not in msg and not msg.startswith("["):
+                continue
+            if any(h in msg for h in HARMLESS):
+                continue
+            key = msg[:200]
+            prev = hits.get(key)
+            # 同じ本文が W と E の両方で出たら、重い方を残す。
+            worst = level if prev is None or LEVEL_RANK.get(level, 0) > LEVEL_RANK.get(prev[0], 0) \
+                else prev[0]
+            hits[key] = (worst, (prev[1] if prev else 0) + 1, jp)
+    return hits
 
 
 def load_events(path: str):
@@ -197,7 +258,7 @@ def config_from_show(show: dict) -> dict:
     }
 
 
-def analyze(events, others, exp):
+def analyze(events, others, exp, warns=None):
     rep = []          # レポート行
     verdicts = []     # (level, text) level: OK / WARN / FAIL
 
@@ -207,9 +268,50 @@ def analyze(events, others, exp):
     def verdict(level, text):
         verdicts.append((level, text))
 
+    def emit_warnings():
+        # [XP] は「こちらが観測しようと決めたもの」しか出さない。実機が自分から言っていることは
+        # ここにしか出ない。2026-07-31 の 3 件（シェーダの剥がれ・パススルー未初期化・背景が不透明）は
+        # すべてこの節に出ていたのに、人が手で grep する前提だったので誰も見ていなかった。
+        w("## 実機ログの警告")
+        if warns is None:
+            w("  （収集していない）")
+        elif not warns:
+            w("  警告・エラーは 1 件も無い")
+            verdict("OK", "実機ログに警告・エラーが無い")
+        else:
+            errs = {k: v for k, v in warns.items() if v[0] in ("E", "F")}
+            jp = {k: v for k, v in warns.items() if k not in errs and v[2]}
+            rest = {k: v for k, v in warns.items() if k not in errs and k not in jp}
+
+            # 重い順 → 日本語優先 → 件数順。数で勝つ engine 由来のノイズを上に置かない。
+            def rank(kv):
+                return (-LEVEL_RANK.get(kv[1][0], 0), 0 if kv[1][2] else 1, -kv[1][1], kv[0])
+
+            for msg, (lv, n, _jp) in sorted(warns.items(), key=rank):
+                mark = {"E": "❌", "F": "❌", "W": "⚠"}.get(lv, "・")
+                w(f"  {mark} ×{n}  {msg}")
+
+            def name(d, limit=3):
+                # 件数の多い順に名指しする。1 種だけ出すと、頻発する無害なものが本命を隠す
+                # （実測: 描画の警告 28 行がパススルー初期化失敗 1 行を押しのけた）。
+                top = [m for m, _ in sorted(d.items(), key=lambda kv: -kv[1][1])][:limit]
+                return " / ".join(m[:90] for m in top)
+
+            if errs:
+                verdict("FAIL", f"実機ログにエラーが {sum(v[1] for v in errs.values())} 行"
+                                f"（{len(errs)} 種）: " + name(errs))
+            if jp:
+                verdict("WARN", f"実機が「見つかりません・失敗・出ません」と言っている"
+                                f"（{len(jp)} 種）: " + name(jp))
+            if rest:
+                verdict("WARN", f"実機ログにほかの警告が {sum(v[1] for v in rest.values())} 行"
+                                f"（{len(rest)} 種）— 最多: " + name(rest, 1))
+        w()
+
     sums = [e for e in events if e.get("ev") == "sum"]
     if not events:
         verdict("FAIL", "[XP] 行が 1 つも無い。Development ビルドか、テレメトリの起動を確認する")
+        emit_warnings()
         return rep, verdicts
 
     t_end = fnum(events[-1], "t", 0.0)
@@ -735,6 +837,9 @@ def analyze(events, others, exp):
                         "画が出たかは tools/quest-record.py で確かめる")
     w()
 
+    # ---------------- 実機ログの警告 ----------------
+    emit_warnings()
+
     # ---------------- 位置合わせ ----------------
     reg = [s for s in sums if "reg" in s]
     if reg and reg[-1].get("reg") == "0":
@@ -752,13 +857,14 @@ def main():
     args = ap.parse_args()
 
     events, others = load_events(args.log)
+    warns = load_warnings(args.log)
     show = {}
     if os.path.exists(args.show):
         with open(args.show, "r", encoding="utf-8") as fh:
             show = json.load(fh)
     exp = expected_from_show(show)
 
-    rep, verdicts = analyze(events, others, exp)
+    rep, verdicts = analyze(events, others, exp, warns)
 
     out = args.out or os.path.splitext(args.log)[0] + "-report.md"
     order = {"FAIL": 0, "WARN": 1, "OK": 2}
@@ -776,7 +882,8 @@ def main():
     n_fail = sum(1 for lv, _ in verdicts if lv == "FAIL")
     n_warn = sum(1 for lv, _ in verdicts if lv == "WARN")
     n_ok = sum(1 for lv, _ in verdicts if lv == "OK")
-    print(f"events={len(events)} other={len(others)} FAIL={n_fail} WARN={n_warn} OK={n_ok}")
+    print(f"events={len(events)} other={len(others)} logwarn={len(warns)} "
+          f"FAIL={n_fail} WARN={n_warn} OK={n_ok}")
     print(f"report -> {out}")
     return 0
 

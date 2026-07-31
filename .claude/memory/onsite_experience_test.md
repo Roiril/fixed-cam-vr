@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 83b2ae19-6926-4454-a4df-b5d350711b24
-  modified: 2026-07-31T08:02:06.673Z
+  modified: 2026-07-31T08:35:35.773Z
 ---
 
 # 実機で体験を丸ごと検証する
@@ -14,13 +14,15 @@ metadata:
 体験の論理（周回・演出・録画）と映像の質（受信 fps・砂嵐・遅延・表示 fps）を、
 どちらもログの数値で判定する。
 
-## 3 点セット
+## 道具
 
 | 何 | どこ | 役割 |
 |---|---|---|
 | テレメトリ | [`ShowTelemetryHost`](../../Assets/Scripts/Diagnostics/ShowTelemetryHost.cs) | `[XP]` タグで 1 行 1 イベント + 2 秒ごとの集計。**観測専用**（既存の公開イベントとプロパティを読むだけ・状態を書き換えない）。Development ビルドでのみ `RuntimeInitializeOnLoadMethod` で自動生成されるので**シーン再生成は要らない** |
 | 自動走行 | [`ShowWalkDebugDriver`](../../Assets/Scripts/Tracking/ShowWalkDebugDriver.cs) | `OVRCameraRig` を動かして歩行を合成。既存コードは無改変。経路は `layout.grid` から BFS で解く（出発と到着のタイル以外を踏まない）。**導入の開始ライン（`run.intro.startLineId`）があれば線の中点を法線方向に横切ってから中へ入り**、被り検知（`UserPresentProvider`）を true で上書きする — HMD を被らずに走らせるので、これが無いと導入が永久に始まらない |
-| 判定 | [`tools/analyze-xp-log.py`](../../tools/analyze-xp-log.py) | show.json を期待値にして突き合わせ。**起きなかったことを引き算で見つける**のが主目的 |
+| 判定 | [`tools/analyze-xp-log.py`](../../tools/analyze-xp-log.py) | show.json を期待値にして突き合わせ。**起きなかったことを引き算で見つける**のが主目的。**実機ログの警告・エラーも数える**（下記） |
+| 画の証拠 | [`tools/xp-evidence.py`](../../tools/xp-evidence.py) | ログの時刻を録画の時刻へ写し、**その瞬間の画をフル解像度で切り出す**。導入の各段・演出の始まりと終わり・相・砂嵐 |
+| 録画 | [`tools/quest-record.py`](../../tools/quest-record.py) | 走行 1 回で画・ログ・判定・画の証拠をまとめて出す（下記「画を録る」） |
 | 機の選択 | [`tools/quest-fleet.py`](../../tools/quest-fleet.py) | Quest 2 台を交互に使う（熱の低い方を選ぶ・使わない機は寝かせる・APK と設定を揃える）。詳細 [[quest_fleet_two_devices]] |
 
 実行は [`tools/run-quest-xp-test.sh`](../../tools/run-quest-xp-test.sh):
@@ -90,7 +92,17 @@ FAIL ゼロで演出 7 本すべて OK と判定された走行の画を初め�
   `[IntroVeil] シェーダが見つかりません` で枠が描かれない
 
 どちらも実機ログに警告として出ていた。**`[XP]` だけを見て、他のタグの警告を読んでいなかった**のが
-発見を遅らせた。走行後は `grep -iE "見つかりません|Failed to|Error" <log>` を必ず通すこと。
+発見を遅らせた。
+
+→ **この grep は判定に入れた**（2026-07-31）。レポートの **「## 実機ログの警告」**節が
+`E/Unity` / `W/Unity` と日本語の警告を同一メッセージごとに数える。エラーがあれば FAIL。
+スタックトレースの行は落とし（1 つの警告に 10 行以上ぶら下がって原因が埋もれる）、
+毎フレーム出る無害なもの（`Failed to get occlusion mesh` 等）は
+`analyze-xp-log.py` の `HARMLESS` で除く。**除くときは無害な理由を必ず書く**。
+日本語で「見つかりません・失敗・出ません」と言っている警告は別立てで名指しする
+— この codebase の人間が「これが起きたら困る」と思って書いた文だから、数で勝つ engine 由来の
+ノイズに埋もれさせない（実測: `[IntroVeil] シェーダが見つかりません` 1 行が MJPEG の再接続 9 行に
+負けていた）。
 
 ### 画を録る
 
@@ -98,6 +110,22 @@ FAIL ゼロで演出 7 本すべて OK と判定された走行の画を初め�
 python tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る
 python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換するだけ
 ```
+
+**走行 1 回で次が全部そろう**（`--no-log` / `--no-evidence` で外せる）:
+
+| 出るもの | 何 |
+|---|---|
+| `logs/capture/<日時>_eye.mp4` | 片眼の動画 |
+| `logs/capture/<日時>_meta.json` | **録画開始の壁時計**とカメラの健康。xp-evidence.py が時刻を合わせるのに使う |
+| `logs/capture/<日時>_xp.log` | 今回の走行ぶんだけに絞った logcat（`_logcat.log` が絞る前） |
+| `logs/capture/<日時>-report.md` | analyze-xp-log.py の判定 |
+| `logs/evidence/<日時>/` | xp-evidence.py が切り出した画 + `index.md` |
+
+- **走行ぶんの切り出しは pid で行う。** 最後の `ev=boot` 行から切ると、**起動直後の警告
+  （シェーダが見つからない 等）が boot より前に出るので落ちる**。切るのは Unity プロセスの始まりから
+- **走行の前後で配信カメラの `/health` を控える。** ISO が 2 倍以上動いていたら「部屋の明るさが
+  変わった」と言う — 映像が暗くなった原因を自分の修正と取り違えないため（実測 188 → 788）。
+  ⚠ 走行前は視聴者が居ないので `fps=0` が正常（需要駆動でエンコードを止めている）
 
 `adb screenrecord` が撮るのは**コンポジタ後の最終フレーム**で、**パススルーも映る**（実測）。
 両眼が横に並び、各眼は 40 度ほど回転した台形（レンズの逆歪みが掛かった状態）なので、
@@ -115,6 +143,42 @@ python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換す
 Quest の内蔵録画（`/sdcard/Oculus/VideoShots/`）は 1920x1080・片眼・正立・歪み補正済みで見た目は理想だが、
 **adb からは起動できない**（`START_SPATIAL_CAPTURE` / `vrshell LAUNCH systemux://capture` /
 `keyevent 130` をいずれも試して result=0）。人が被って手で録るならそちらが良い。
+
+### 画の証拠を切り出す
+
+```bash
+python tools/xp-evidence.py <logfile> <eye.mp4> [--out <dir>] [--offset <秒>]
+```
+
+`[XP] t=` はアプリ起動からの経過、録画はその数秒後に始まる。**録画秒 = XP秒 + オフセット**で、
+オフセットは `t=0 の壁時計 − 録画開始の壁時計`。`t=0 の壁時計`は logcat の行頭と `t=` の組から出る。
+
+**録画開始の壁時計をどこから取るかで確からしさが変わる。**
+
+1. `--offset`（人が実測した値）
+2. サイドカー `<日時>_meta.json` の `record_started_iso` ← **quest-record.py が書く。これが正**
+3. mp4 のファイル名の日時 + 7 秒 ← **推定**。`index.md` にそう書く
+
+3 は quest-record.py の「起動 → VR モードを 5 秒待つ → 録り始める」に由来する概算で、
+**`--serial` を渡さないと機の探索ぶんだけさらに遅れる**。実測（2026-07-31 の走行）では推定 −2.68 秒に
+対して実測 約 −2.8 秒だった。ずれたまま黙って対応表を出さないこと。
+
+- **縮小しない。** 切り出しはフル解像度・無加工。コンタクトシートは索引にすぎない
+  （1cm の線が縮小で消えて「0 本」に見えた実害がある）
+- **段が 2 秒未満なら 0.2 秒刻みで全部撮る**（構造の線が出る段は実測 1.1 秒しかない）
+- ログに走行が 2 回入っていたら**最後のプロセスの分だけ**使う（`--all-runs` で無効化）
+- **段 Black が黒くないのは正常なので見張っていない。** 開始の合図を待つ区間で、実測 17 秒ある。
+  真っ黒にすると体験者が何も見えないまま歩いて線を越えることになるので意図的に現実を見せている
+  （`IntroLogic.cs` の Black 段のコメント）。ここを警告にすると「時刻がずれている」と誤読される
+
+### ⚠ まだ実走行を通していない経路（2026-07-31 夕方時点）
+
+`xp-evidence.py` と `analyze-xp-log.py` は当日の実ログ・実録画で確認済み。
+**`quest-record.py` の統合部分（走行 1 回で画・ログ・判定・証拠）は実機を通していない。**
+未確認なのは adb を叩く 3 経路 — logcat のバッファ拡張と clear / `collect_log` / サイドカーの時刻。
+次に走らせるときは、まず `logs/capture/<日時>_meta.json` の `record_started_iso` が入っていて、
+`index.md` の対応が「推定」でなく「サイドカー」由来になることを確かめる（ここが入れば
+オフセットの推定が要らなくなり、時刻ずれの誤読が構造的に消える）。
 
 ## `layout.grid` を course 座標へ
 

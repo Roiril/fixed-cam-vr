@@ -103,6 +103,52 @@ BuildTableDuoDesktop が手動 `SwitchActiveBuildTarget`（Android→Standalone�
 コンパイル競合かシーン欠落で、リトライではなく原因の除去が要る。修正後の active target は
 Standalone のまま残る（Library 管理・git 差分なし・次の APK ビルドが自分で Android へ切替する）。
 
+### 2.5 MCP が wedge して menu が届かないとき → batchmode で焼く（2026-07-31 実害・15 分溶かした）
+
+上の「タイムアウト ≠ ビルド開始」は **menu が握り潰される**話だが、それとは別に
+**MCP ブリッジ自体が死んで、どんなコマンドも Unity に届かない**状態がある。
+
+**見分け方**（この 3 つが揃ったら wedge）:
+
+1. `refresh_unity` / `read_console` / `run_tests` / `execute_menu_item` が**すべて** timeout（データ返却系が全滅）
+2. `Library/ScriptAssemblies/*.dll` の mtime が **.cs の編集より古いまま数分動かない**
+3. それでも **Unity 本体は健全**（`Get-Process Unity` の `Responding=True`）
+
+この状態では待っても永久に進まない。**Editor を閉じて batchmode で焼く**のがいちばん速い。
+
+```bash
+# ① 閉じる前に未保存を確認 — タイトルバーに `*` が付いていなければ未保存の変更は無い
+#    （Editor のメモリ側に未保存があると、閉じるときの保存で外部編集を上書きされる）
+```
+```powershell
+Get-Process Unity | Where-Object { $_.MainWindowTitle -ne "" } | Select-Object Id, MainWindowTitle
+```
+```bash
+# ② 閉じる（`*` が無いことを確認してから）。プロセスが消えるまで待つ
+```
+```bash
+until ! tasklist //FI "PID eq <PID>" 2>/dev/null | grep -q <PID>; do sleep 3; done
+```
+```bash
+# ③ batchmode で焼く。ログは必ずファイルへ（run_in_background 推奨・5〜10 分）
+"/c/Program Files/Unity/Hub/Editor/2022.3.62f2/Editor/Unity.exe" -batchmode -quit \
+  -projectPath "C:/Users/kouga/Projects/Unity/fixed-cam-vr" \
+  -executeMethod FixedCamVr.EditorTools.BuildVariants.BuildFixedCam \
+  -logFile "C:/Users/kouga/Projects/Unity/fixed-cam-vr/logs/build-batch-$(date +%H%M%S).log"
+```
+
+- **`-buildTarget` は付けない**。既に Android なら不要で、付けるとターゲット切替の再インポートで
+  何倍も時間がかかる（付けるべきなのは desktop ビルドを挟んだ直後だけ）
+- メソッド名は `FixedCamVr.EditorTools.BuildVariants.<BuildFixedCam|BuildTableDuo|BuildFixedCamRelease|…>`
+- **コンパイルの成否はビルドログで見る**: `Tundra build success` の直後に `error CS` が無いこと。
+  `warning CS` は既存分（`ShowRoomProxy.DestroyObject` 等）なので無視してよい
+- 完了判定は `Builds/mawarimi.apk` の mtime 更新 + サイズ安定（上のポーリングと同じ）
+- **終わったら Editor を開き直す**（ユーザーが使うもの）:
+  `nohup "/c/Program Files/Unity/Hub/Editor/2022.3.62f2/Editor/Unity.exe" -projectPath "<repo>" > /dev/null 2>&1 &`
+
+⚠ **Editor が起動したままでは batchmode は使えない**（同じプロジェクトを 2 つ開けない）。
+逆に言えば、Editor を閉じる判断がこの手順の唯一のリスクなので、①の未保存確認を飛ばさないこと。
+
 ### 3. インストール（adb）
 
 ```
