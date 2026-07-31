@@ -292,6 +292,25 @@ Unity は「どのマテリアルからも参照されていないシェーダ�
 - **新しく `Shader.Find` を書いたら、その場で Always Included に入れる。**
   忘れても Editor では動くので、実機で画が出なくなるまで気づけない
 
+**全自作シェーダの安全性を 10 秒で確認する**（`mat`=マテリアル経由 / `always`=Always Included。
+**どちらも 0 で `Shader.Find` されているものが危険**）:
+
+```bash
+for s in $(grep -rh '^Shader "' Assets/Art/Shaders --include=*.shader | sed -E 's/Shader "([^"]+)".*/\1/'); do
+  f=$(grep -rl "Shader \"$s\"" Assets --include=*.shader | head -1)
+  g=$(grep "guid:" "${f}.meta" | head -1 | sed -E 's/.*guid: ([a-f0-9]+).*/\1/')
+  printf "  %-38s mat=%s always=%s find=%s\n" "$s" \
+    "$(grep -rl "$g" Assets --include=*.mat | wc -l)" \
+    "$(grep -c "$g" ProjectSettings/GraphicsSettings.asset)" \
+    "$(grep -rc "Shader.Find(\"$s\")" Assets/Scripts --include=*.cs | grep -v ':0' | wc -l)"
+done
+```
+
+2026-07-31 時点の結果: CG 人形の 4 つ（ShowActor / ShowGroundBlob / ShowOccluder /
+ShowShadowProjector）は **mat 経由で安全**。Fx の 3 つ（ChromaticAberration / CrtPostFx /
+TestPattern）はどこからも参照されていない = **現在未使用**（使うときに mat か Always Included が要る）。
+IntroVeil だけが `Shader.Find` のみで、剥がれていた。
+
 ## 起動時の視界保護（StartupFader）
 
 VR では **Play 開始から最初の安定フレームまで** の間、以下が同時に起こり「不安定な絵」が露出する：
