@@ -380,8 +380,14 @@ namespace FixedCamVr.Streaming
                         return IntroWeights.Inactive;
 
                     case IntroStage.Black:
-                        // まだ黒。パススルーは出しておく（黒面が覆っているので見えない）。
-                        // ここで passthrough を 0 にすると、黒が明けた瞬間に真っ暗が見える。
+                        // ⚠ **段の名前に反して、ここは黒くない。現実が見えている。**
+                        // 旧コメントは「StartupFader の黒面が覆っているので見えない」と書いていたが、
+                        // StartupFader は UI Canvas（queue 3000）で覆い（5000）より先に描かれるため
+                        // rgb ごと潰される。つまりこの段は最初から素通しのパススルーだった。
+                        //
+                        // **それでよい**（2026-07-31 に確認して意図的に残した）。この段は開始の合図
+                        // （通過ライン line_1 を横切る）を待つ区間で、実測 17 秒ある。真っ黒にすると
+                        // 体験者は何も見えないまま歩いて線を越えることになり、運用が成立しない。
                         return new IntroWeights { passthrough = 1f, frame = 0f, live = 0f };
 
                     case IntroStage.Real:

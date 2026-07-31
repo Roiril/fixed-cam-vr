@@ -92,6 +92,32 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public string ActiveTakeId => _logic.IsActive ? TakeId(_logic.ActiveTakeIndex) : "";
 
+        /// <summary>
+        /// カット 1 つを解決した瞬間に上がる<b>観測専用</b>イベント。
+        /// 引数は (演出 id, カット index, source, camera, 画面を取ったか, 理由トークン)。
+        ///
+        /// <b>これが無いと「演出は走ったのに画に何も出ていない」を検出できない。</b>
+        /// §6.4 で全カットが飛んだ演出は画面を掴まずに終わるが、<see cref="ActiveTakeId"/> は立つので
+        /// 外からは <c>begin</c> → <c>end</c> が正常に見え、解析は「演出 OK」と判定してしまう
+        /// （2026-07-31 の事故と同型）。
+        ///
+        /// 理由トークンは <see cref="StepOkReason"/> / <see cref="StepSkipCameraRange"/> /
+        /// <see cref="StepSkipNoAsset"/> / <see cref="StepSkipNoRecording"/>。
+        /// </summary>
+        public event Action<string, int, string, int, bool, string>? StepResolved;
+
+        /// <summary>カットが画面を取れた（<see cref="StepResolved"/> の理由トークン）。</summary>
+        public const string StepOkReason = "ok";
+
+        /// <summary>live のカメラ index が registry の範囲外だったので飛ばした。</summary>
+        public const string StepSkipCameraRange = "camrange";
+
+        /// <summary>clip / still の素材が 1 つも解決できなかったので飛ばした。</summary>
+        public const string StepSkipNoAsset = "noasset";
+
+        /// <summary>指定の (周, カメラ) の端末内録画が無かったので飛ばした。</summary>
+        public const string StepSkipNoRecording = "norec";
+
         /// <summary>時刻源を差し替える（EditMode テスト用。null で <c>Time.time</c> に戻る）。</summary>
         public void SetTimeSource(Func<float>? source) => _timeSource = source;
 
@@ -435,7 +461,10 @@ namespace FixedCamVr.Streaming
 
             // --- §6.4 不正値: このカットは実行できない → 画面も post も触らずに即次のカットへ送る ---
             // 「範囲外カメラを registry の clamp 任せで無言に別カメラへ」「素材無しで数秒画面が固まる」を作らない。
-            if (!IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex))
+            bool playable = IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex, out string why);
+            // 飛ばしたことも取れたことも外へ出す（観測専用。全カットが飛んだ演出を解析が名指しできる）。
+            StepResolved?.Invoke(TakeId(d.takeIndex), d.stepIndex, source, step.camera, playable, why);
+            if (!playable)
             {
                 cue?.frames?.Dispose();   // 開いた録画をリークさせない
                 _logic.SetCurrentStepEnd(Now);
@@ -551,9 +580,13 @@ namespace FixedCamVr.Streaming
         ///   - live: camera が registry の範囲外
         ///   - clip / still: 出せる素材が 1 つも解決できない
         ///   - inherit: 常に有効（「そのままの画を保つ」カットは素材が無くて当然）
+        ///
+        /// <paramref name="reason"/> には <see cref="StepResolved"/> へ流す理由トークンを返す。
         /// </summary>
-        private bool IsStepPlayable(ShowStepDef step, string source, OverlayCueData? cue, int takeIndex, int stepIndex)
+        private bool IsStepPlayable(ShowStepDef step, string source, OverlayCueData? cue,
+                                    int takeIndex, int stepIndex, out string reason)
         {
+            reason = StepOkReason;
             if (source == TakeSchema.SourceLive)
             {
                 int count = director != null ? director.CameraCount : 0;
@@ -561,6 +594,7 @@ namespace FixedCamVr.Streaming
                 {
                     Debug.LogWarning($"[TakeRunner] live のカメラ {step.camera} が範囲 [0,{count}) 外 → " +
                                      $"このカットを飛ばす（take={TakeId(takeIndex)} step={stepIndex}）");
+                    reason = StepSkipCameraRange;
                     return false;
                 }
                 return true;
@@ -569,6 +603,8 @@ namespace FixedCamVr.Streaming
             {
                 Debug.LogWarning($"[TakeRunner] {source} だが素材が解決できない → " +
                                  $"このカットを飛ばす（take={TakeId(takeIndex)} step={stepIndex}）");
+                // rec だけは理由が違う（「録れていない」＝ 3 周目の素材が無い）。混ぜると原因を取り違える。
+                reason = TakeSchema.IsRecSource(source) ? StepSkipNoRecording : StepSkipNoAsset;
                 return false;
             }
             return true;

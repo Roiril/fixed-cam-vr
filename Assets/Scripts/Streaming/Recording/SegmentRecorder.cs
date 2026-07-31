@@ -41,11 +41,25 @@ namespace FixedCamVr.Streaming.Recording
         private long _runBytes;
         private bool _budgetWarned;
 
+        // 最後に開いた区間の (周, カメラ)。**閉じても消さない** — 録画は区間の切れ目で
+        // stop→start が同一フレームに起きるので、消すと閉じた区間が何だったのか観測側から辿れない。
+        private int _curLap = -1;
+        private int _curCamera = -1;
+
         /// <summary>いま録画中か（HUD / 診断用）。</summary>
         public bool IsRecording => _writer != null;
 
         /// <summary>このランで録画に使った総バイト数（診断用）。</summary>
         public long RunBytes => _runBytes;
+
+        /// <summary>
+        /// 最後に開いた区間の周（1 始まり・まだ 1 度も開いていなければ -1）。
+        /// <b>画面に映っているカメラとは別物</b>（演出中は食い違う）。診断・テレメトリ用。
+        /// </summary>
+        public int CurrentLap => _curLap;
+
+        /// <summary>最後に開いた区間の録画対象カメラ index（まだ開いていなければ -1）。</summary>
+        public int CurrentCamera => _curCamera;
 
         private void Awake()
         {
@@ -88,6 +102,8 @@ namespace FixedCamVr.Streaming.Recording
             _runEpoch = runEpoch;
             _runBytes = 0;
             _budgetWarned = false;
+            _curLap = -1;
+            _curCamera = -1;
             PurgeAllRuns();
         }
 
@@ -134,6 +150,8 @@ namespace FixedCamVr.Streaming.Recording
             }
 
             _segmentStart = Time.realtimeSinceStartup;
+            _curLap = lap;
+            _curCamera = camera;
             _tapped = stream;
             float maxSec = cfg.maxSegmentSec > 0f ? cfg.maxSegmentSec : 60f;
             SegmentRecordWriter writer = _writer;

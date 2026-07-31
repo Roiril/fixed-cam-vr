@@ -2,6 +2,7 @@
 using System;
 using System.Text;
 using FixedCamVr.Streaming;
+using FixedCamVr.Streaming.Cg;
 using FixedCamVr.Streaming.Recording;
 using FixedCamVr.Tracking;
 using UnityEngine;
@@ -18,8 +19,16 @@ namespace FixedCamVr.Diagnostics
     /// 残しても害が無く、次の現地テストでもそのまま使える（計装のために本番コードを汚さない）。
     ///
     /// 出す行は 2 種類:
-    ///   - <b>遷移</b>: 起きた瞬間に 1 行（phase / zone / screen / seg / take / cue / intro / storm / rec）
+    ///   - <b>遷移</b>: 起きた瞬間に 1 行（phase / zone / screen / seg / take / step / cue / intro / storm / rec / bgm）
     ///   - <b>サマリ</b>: <see cref="SummaryIntervalSec"/> 秒ごとに 1 行（fps・遅延・受信 fps・砂嵐の累計）
+    ///
+    /// <b>「状態が進んだ」ではなく「効果が出た」を観測する。</b> 2026-07-31、この計装が
+    /// 「FAIL ゼロ・演出 7 本すべて OK」と判定した走行の画を録ったら、<b>導入演出が 1 段も画に
+    /// 出ていなかった</b>（パススルーの初期化失敗 / シェーダのビルド剥がれ / カメラ背景が不透明が
+    /// 同時に起きていた）。状態機械の遷移は完璧に進んでいて、「その段で画に何かが実際に出たか」を
+    /// 1 つも観測していなかったのが原因。以後、遷移だけの観測項目を足さない —
+    /// <c>veil</c> / <c>pt</c> / <c>bg</c> / <c>wire</c> / <c>ovl</c> / <c>cg</c> / <c>bgm</c> /
+    /// <c>font</c> / <c>ev=step</c> はすべてこの「効果の実在」を出すための項目。
     ///
     /// 形式は <c>key=value</c> の空白区切りに固定する。解析スクリプトが正規表現ではなく
     /// 素直な split で読めるようにするため（現地で崩れたログを手で読む時にも効く）。
@@ -70,9 +79,14 @@ namespace FixedCamVr.Diagnostics
         private LapCounter? _lap;
         private CourseFrame? _frame;
         private ShowControlClient? _show;
+        private IntroVeil? _veil;
+        private IntroStructureWire? _wire;
+        private BgmDirector? _bgm;
+        private ShowCgLayer? _cg;
+        private TakeRunner? _takes;
 
         // --- 購読状態（多重購読を防ぐ）---
-        private bool _subSwitch, _subRun, _subCues, _subRegistry;
+        private bool _subSwitch, _subRun, _subCues, _subRegistry, _subTakes;
 
         // --- 遷移検出のための前回値 ---
         private IntroStage _lastStage = IntroStage.Off;
@@ -83,6 +97,14 @@ namespace FixedCamVr.Diagnostics
         private bool _lastRecording;
         private bool _lastGateOpen = true;
         private string _lastConfig = "";
+        private string _lastBgmTrack = "";
+        private bool _lastBgmPlaying;
+
+        // 開いている録画区間。**画面に映っているカメラではなく録画対象の (周, カメラ)** を持つ
+        // （演出中は両者が食い違う。旧実装は registry.ActiveIndex を出していて誤りだった）。
+        private int _recLap = -1;
+        private int _recCam = -1;
+        private long _recBytesAtStart;
 
         // --- サマリ集計 ---
         private float _resolveAccum;
@@ -100,7 +122,10 @@ namespace FixedCamVr.Diagnostics
         private void Start()
         {
             Resolve();
-            Emit($"ev=boot build=dev dev={SystemInfo.deviceModel} rate={DisplayRateInfo.CurrentHz:F0}");
+            // bg / font は**シーンとアセットに焼かれた値**なので、コードを直しても走行のたびに変わらない。
+            // 起動時に 1 回出せば足りるし、ここで出さないと「実機でだけ画が出ない」原因に辿り着けない。
+            Emit($"ev=boot build=dev dev={SystemInfo.deviceModel} rate={DisplayRateInfo.CurrentHz:F0} " +
+                 $"bg={DescribeCameraBackgrounds()} font={(JapaneseHudFont.TryGet() != null ? 1 : 0)}");
         }
 
         private void OnDisable() => Unsubscribe();
@@ -149,7 +174,17 @@ namespace FixedCamVr.Diagnostics
             if (_lap == null) _lap = FindObjectOfType<LapCounter>();
             if (_frame == null) _frame = FindObjectOfType<CourseFrame>();
             if (_show == null) _show = FindObjectOfType<ShowControlClient>();
+            if (_veil == null) _veil = FindObjectOfType<IntroVeil>();
+            if (_wire == null) _wire = FindObjectOfType<IntroStructureWire>();
+            if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
+            if (_cg == null) _cg = FindObjectOfType<ShowCgLayer>();
+            if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
 
+            if (!_subTakes && _takes != null)
+            {
+                _takes.StepResolved += OnStepResolved;
+                _subTakes = true;
+            }
             if (!_subSwitch && _switch != null)
             {
                 _switch.ZoneCommitted += OnZoneCommitted;
@@ -184,7 +219,8 @@ namespace FixedCamVr.Diagnostics
             if (_subRun && _run != null) _run.PhaseChanged -= OnPhaseChanged;
             if (_subCues && _cues != null) _cues.CameraEntered -= OnCameraEntered;
             if (_subRegistry && _registry != null) _registry.ActiveChanged -= OnActiveChanged;
-            _subSwitch = _subRun = _subCues = _subRegistry = false;
+            if (_subTakes && _takes != null) _takes.StepResolved -= OnStepResolved;
+            _subSwitch = _subRun = _subCues = _subRegistry = _subTakes = false;
         }
 
         // ---------------------------------------------------------------- イベント
@@ -206,6 +242,71 @@ namespace FixedCamVr.Diagnostics
                     $"elapsed={(_run != null ? _run.RunElapsedSec : 0f):F1}");
 
         private void OnActiveChanged(int index) => Emit($"ev=active cam={index}");
+
+        /// <summary>
+        /// 演出のカット 1 つが画面を取ったか、飛ばされたか。<b>この計装の要</b>。
+        ///
+        /// §6.4 の規約で全カットが飛んだ演出は画面を掴まずに終わるが、<c>ActiveTakeId</c> は立つので
+        /// <c>ev=take st=begin</c> → <c>st=end</c> が正常に出て、解析は「演出 OK」と判定する。
+        /// 実際には何も起きていない。2026-07-31 の事故と完全に同型なので、カットの粒度で出す。
+        /// </summary>
+        private void OnStepResolved(string takeId, int stepIndex, string source, int camera,
+                                    bool played, string why)
+            => Emit($"ev=step take={(string.IsNullOrEmpty(takeId) ? "?" : takeId)} i={stepIndex} " +
+                    $"src={source} cam={camera} played={(played ? 1 : 0)} why={why}");
+
+        // ---------------------------------------------------------------- 効果の実在（読み取りだけ）
+
+        /// <summary>
+        /// OVRCameraRig のカメラ背景が透明か（<c>透明なカメラ数/全カメラ数</c>）。
+        ///
+        /// Underlay パススルーは「アプリが描かない画素」(alpha 0) にしか出ない。既定の不透明な黒のままだと
+        /// パススルーを有効にしても<b>アプリが上から塗り潰して何も見えない</b>（2026-07-31 実害）。
+        /// <b>シーンに焼かれた値なのでコードを直しても変わらない</b>類の事故なので、起動時に必ず出す。
+        /// </summary>
+        private static string DescribeCameraBackgrounds()
+        {
+            Camera[] cams = Camera.allCameras;
+            int clear = 0;
+            for (int i = 0; i < cams.Length; i++)
+            {
+                Camera c = cams[i];
+                if (c == null) continue;
+                if (c.clearFlags == CameraClearFlags.SolidColor && c.backgroundColor.a <= 0.004f) clear++;
+            }
+            return $"{clear}/{cams.Length}";
+        }
+
+        /// <summary>導入の覆いが描画状態か。<c>-</c>=シーンに居ない / <c>0</c>=非描画 / <c>1</c>=描画中。</summary>
+        private string VeilState => _veil == null ? "-" : (_veil.IsActive ? "1" : "0");
+
+        /// <summary>覆いの実体を組めたか。<c>0</c> なら <c>Shader.Find</c> が null ＝ 枠は一生出ない。</summary>
+        private string VeilBuiltState => _veil == null ? "-" : (_veil.IsBuilt ? "1" : "0");
+
+        /// <summary>段 3 の構造の線の本数。<c>-</c>=シーンに居ない。</summary>
+        private string WireState => _wire == null ? "-" : _wire.LineCount.ToString();
+
+        /// <summary>パススルーをアプリから有効化できているか。<c>-</c>=読み口が無い / -1=判定不能 / 0=無効 / 1=有効。</summary>
+        private string PassthroughState
+        {
+            get
+            {
+                // ⚠ `_show?.` は C# の null（Unity の破棄済みオブジェクトを見逃す）。
+                //    破棄後にフィールドを触ると MissingReferenceException になるので Unity の == で見る。
+                if (_show == null) return "-";
+                Func<int>? f = _show.PassthroughStateProvider;
+                return f == null ? "-" : f().ToString();
+            }
+        }
+
+        /// <summary>いま画面へ書いている合成の重み（素材が実際に混ざっているか）。</summary>
+        private float OverlayStrength => _overlay != null ? _overlay.Strength : 0f;
+
+        /// <summary>合成のマテリアルを掴めているか。<c>-</c>=シーンに居ない / 0=未解決 / 1=解決済み。</summary>
+        private string OverlayMaterial => _overlay == null ? "-" : (_overlay.HasMaterial ? "1" : "0");
+
+        /// <summary>CG 人形が実際に描画されているか。<c>-</c>=シーンに居ない。</summary>
+        private string CgState => _cg == null ? "-" : (_cg.IsVisible ? "1" : "0");
 
         // ---------------------------------------------------------------- 設定の出所
 
@@ -238,9 +339,12 @@ namespace FixedCamVr.Diagnostics
                 IntroWeights w = _intro.Weights;
                 // fresh / centered は段 4 → 段 5 の進行条件。false のまま足踏みすると
                 // 最後の段（枠の中がカメラ映像へ変わる）が出ないので、必ず一緒に出す。
+                // veil / veilBuilt / wire / pt は「重みが動いた」ではなく「画に出た」の側。
+                // 段だけ見て OK と判定した 2026-07-31 の事故を繰り返さないため必ず一緒に出す。
                 Emit($"ev=intro stage={_lastStage} hold={(_intro.Holding ? 1 : 0)} " +
                      $"fresh={(_intro.LiveFresh ? 1 : 0)} centered={(_intro.FrameCentered ? 1 : 0)} " +
-                     $"pass={w.passthrough:F2} live={w.live:F2} frame={w.frame:F2} edge={w.edge:F2}");
+                     $"pass={w.passthrough:F2} live={w.live:F2} frame={w.frame:F2} edge={w.edge:F2} " +
+                     $"veil={VeilState} veilBuilt={VeilBuiltState} wire={WireState} pt={PassthroughState}");
             }
 
             // 演出（Take）の出入り。TakeRunner のログと突き合わせると理由まで分かる。
@@ -253,12 +357,30 @@ namespace FixedCamVr.Diagnostics
             }
 
             // 画面に出ている素材（cue）。演出のカットが素材へ切り替わった瞬間が見える。
+            // ⚠ Current は動画の Prepare 完了**前**に代入されるので、これだけでは「素材が来た」証明にならない。
+            //    合成の重み ovl（シェーダの _OverlayStrength そのもの）を必ず添える。
             string cueId = _overlay != null && _overlay.Current != null ? (_overlay.Current.id ?? "?") : "";
             if (cueId != _lastCueId)
             {
-                if (!string.IsNullOrEmpty(_lastCueId)) Emit($"ev=cue id={_lastCueId} st=off");
-                if (!string.IsNullOrEmpty(cueId)) Emit($"ev=cue id={cueId} st=on");
+                if (!string.IsNullOrEmpty(_lastCueId))
+                    Emit($"ev=cue id={_lastCueId} st=off ovl={OverlayStrength:F2} ovlMat={OverlayMaterial}");
+                if (!string.IsNullOrEmpty(cueId))
+                    Emit($"ev=cue id={cueId} st=on ovl={OverlayStrength:F2} ovlMat={OverlayMaterial}");
                 _lastCueId = cueId;
+            }
+
+            // BGM が実際に鳴っているか。クリップ取得に失敗すると BgmDirector は**無音のまま黙って戻る**ので、
+            // 指示（区間 / 演出）の側をいくら見ても音の不在は分からない。
+            if (_bgm != null)
+            {
+                string trk = _bgm.CurrentTrackId;
+                bool playing = _bgm.IsPlaying;
+                if (trk != _lastBgmTrack || playing != _lastBgmPlaying)
+                {
+                    _lastBgmTrack = trk;
+                    _lastBgmPlaying = playing;
+                    Emit($"ev=bgm trk={(string.IsNullOrEmpty(trk) ? "-" : trk)} play={(playing ? 1 : 0)}");
+                }
             }
 
             // 砂嵐（配信断＝強 / トラッキング明け＝弱）。累計は「多すぎないか」の直接の答えになる。
@@ -285,14 +407,33 @@ namespace FixedCamVr.Diagnostics
             }
 
             // 端末内録画（3 周目の素材はここが録れていないと黙って飛ぶ）。
+            //
+            // ⚠ 出すのは**録画対象の (周, カメラ)** で、画面に映っているカメラではない
+            //    （演出中は食い違う。旧実装は registry.ActiveIndex を出しており誤りだった）。
+            // ⚠ 区間の切れ目では stop→start が同一フレームに起きて IsRecording が変わらないので、
+            //    (周, カメラ) の変化も遷移として扱う。見ないと閉じた区間が 1 本まるごと消える。
             if (_recorder != null)
             {
                 bool rec = _recorder.IsRecording;
-                if (rec != _lastRecording)
+                int lap = _recorder.CurrentLap;
+                int cam = _recorder.CurrentCamera;
+                if (rec != _lastRecording || (rec && (lap != _recLap || cam != _recCam)))
                 {
+                    // 閉じた区間を先に出す。RunBytes は StopSegment の中で加算済みなので、
+                    // 開始時との差分がその区間で実際に書いたバイト数になる（0 なら 1 フレームも録れていない）。
+                    if (_lastRecording)
+                        Emit($"ev=rec v=stop lap={_recLap} cam={_recCam} " +
+                             $"bytes={_recorder.RunBytes - _recBytesAtStart} " +
+                             $"mb={_recorder.RunBytes / 1048576.0:F1}");
+                    if (rec)
+                    {
+                        _recLap = lap;
+                        _recCam = cam;
+                        _recBytesAtStart = _recorder.RunBytes;
+                        Emit($"ev=rec v=start lap={lap} cam={cam} bytes=0 " +
+                             $"mb={_recorder.RunBytes / 1048576.0:F1}");
+                    }
                     _lastRecording = rec;
-                    Emit($"ev=rec v={(rec ? "start" : "stop")} mb={_recorder.RunBytes / 1048576.0:F1} " +
-                         $"cam={(_registry != null ? _registry.ActiveIndex : -1)}");
                 }
             }
 
@@ -326,7 +467,13 @@ namespace FixedCamVr.Diagnostics
                     _sb.Append(" intro=").Append(_run.IntroElapsedSec.ToString("F0"));
                 if (_run.EndHolding) _sb.Append(" endhold=1");
             }
-            if (_intro != null && _intro.Active) _sb.Append(" istage=").Append(_intro.Stage);
+            if (_intro != null && _intro.Active)
+            {
+                _sb.Append(" istage=").Append(_intro.Stage);
+                // 段の遷移（ev=intro）は 1 瞬の値しか持たない。線は Apply の中で組まれるので、
+                // 遷移の瞬間はまだ 0 本のことがある。段に居るあいだの実数はここでしか取れない。
+                _sb.Append(" wire=").Append(WireState);
+            }
 
             int active = _registry != null ? _registry.ActiveIndex : -1;
             _sb.Append(" cam=").Append(active);
@@ -343,6 +490,19 @@ namespace FixedCamVr.Diagnostics
             if (!string.IsNullOrEmpty(_lastCueId)) _sb.Append(" cue=").Append(_lastCueId);
             if (_glitch != null && _glitch.Level > 0.005f)
                 _sb.Append(" glitch=").Append(_glitch.Level.ToString("F2"));
+
+            // --- 効果の実在（「段が進んだ」ではなく「画・音に出たか」）---
+            // ここが全部揃っていても遷移は正常に見える、という壊れ方を 2026-07-31 に踏んだ。
+            _sb.Append(" veil=").Append(VeilState);
+            _sb.Append(" veilBuilt=").Append(VeilBuiltState);
+            _sb.Append(" pt=").Append(PassthroughState);
+            _sb.Append(" cg=").Append(CgState);
+            if (_overlay != null)
+                _sb.Append(" ovl=").Append(OverlayStrength.ToString("F2"))
+                   .Append(" ovlMat=").Append(OverlayMaterial);
+            if (_bgm != null)
+                _sb.Append(" bgm=").Append(_bgm.IsPlaying ? 1 : 0)
+                   .Append(" bgmTrk=").Append(string.IsNullOrEmpty(_bgm.CurrentTrackId) ? "-" : _bgm.CurrentTrackId);
 
             // 砂嵐は「いまのレベル」と「累計の割合」を両方出す。体感の判定は割合の方が効く。
             if (_signal != null)

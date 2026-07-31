@@ -36,7 +36,14 @@ Shader "FixedCamVr/IntroVeil"
 
     SubShader
     {
-        Tags { "Queue" = "Overlay+1000" "RenderType" = "Overlay" "IgnoreProjector" = "True" }
+        // ⚠ **Queue は 4900 まで。5000 を超えてはいけない**（2026-07-31 実害）。
+        // URP の透明パスは `RenderQueueRange.transparent` = **[2501, 5000]** しか描かない
+        // （`UniversalRenderer.cs` / Unity 公式 API リファレンス「render queue value should be
+        // in [0..5000] range to work properly」）。この覆いより**後**に描く必要があるもの
+        // （構造の線 = IntroStructureWire / HMD 内の指示 = IntroPrompt）が 5000 に入るので、
+        // 覆いはその手前の 4900 に置く。以前は覆い 5000 / 後続 5100 にしていて、
+        // **後続が範囲外で 1 つも描画されていなかった**（段 3 の線も導入の指示も画に出ていなかった）。
+        Tags { "Queue" = "Overlay+900" "RenderType" = "Overlay" "IgnoreProjector" = "True" }
 
         Pass
         {

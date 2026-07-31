@@ -31,6 +31,9 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("導入演出の実行体。null なら実行時に探す。")]
         [SerializeField] private IntroDirector? director;
 
+        [Tooltip("パススルーの状態をテレメトリへ逆流させる先。null なら実行時に探す。")]
+        [SerializeField] private ShowControlClient? showControl;
+
         [Tooltip("格下げが最大のときの明るさ。わずかに落とす（-1..0）。")]
         [SerializeField, Range(-1f, 0f)] private float brightnessAtFull = -0.15f;
 
@@ -65,6 +68,25 @@ namespace FixedCamVr.OvrBridge
         {
             if (layer == null) layer = FindObjectOfType<OVRPassthroughLayer>();
             if (director == null) director = FindObjectOfType<IntroDirector>();
+            if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+
+            // テレメトリは Streaming asmdef 越しにしかパススルーを見られない（OVR を参照しない規約）。
+            // UserPresentProvider と同じ形で、OVR を知っているこちら側から読み口を差し込む。
+            if (showControl != null) showControl.PassthroughStateProvider = ReadPassthroughState;
+        }
+
+        /// <summary>
+        /// パススルーが<b>アプリから実際に有効化できているか</b>を返す（-1=判定不能 / 0=無効 / 1=有効）。
+        /// <b>観測専用</b> — ここで状態を書き換えない。
+        ///
+        /// 1 の条件は「<c>OVRManager</c> が有効を報告し、かつ <see cref="OVRPassthroughLayer"/> がシーンに居る」。
+        /// レイヤが無ければ見た目を当てる先が無く、画には何も出ない（＝無効と同じ）。
+        /// </summary>
+        private int ReadPassthroughState()
+        {
+            var m = OVRManager.instance;
+            if (m == null) return -1;
+            return m.isInsightPassthroughEnabled && layer != null ? 1 : 0;
         }
 
         private void Update()

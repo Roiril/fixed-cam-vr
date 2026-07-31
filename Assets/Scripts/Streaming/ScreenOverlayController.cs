@@ -69,6 +69,16 @@ namespace FixedCamVr.Streaming
         /// <summary>現在のオーバーレイ（フェードアウト中も含む）。null なら停止。</summary>
         public OverlayCueData? Current => _current;
 
+        /// <summary>
+        /// いま画面へ書いている合成の重み（シェーダの <c>_OverlayStrength</c> そのもの）。
+        /// <b>「素材が実際に画面へ混ざったか」の唯一の証拠</b> — <see cref="Current"/> は動画の
+        /// Prepare 完了<b>前</b>に代入されるので、cue の発火だけでは素材が来た証明にならない。
+        /// </summary>
+        public float Strength => _strength;
+
+        /// <summary>スクリーンの material を掴めているか。false なら合成は 1 画素も効かない。</summary>
+        public bool HasMaterial => _material != null;
+
         // フレーム列ソースの再生開始時刻（Time.time）。
         private float _framesStart;
 

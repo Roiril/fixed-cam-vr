@@ -30,13 +30,17 @@ globs:
   `insightPassthroughEnabled`（bool）は **`[Obsolete]` で効果が無い** — 触るのは `_insightPassthroughSupport`。
   `Required (2)` は非対応機で起動しなくなるので `Supported (1)`。**この .asset は同居 2 アプリの共有資源**
 - **有効化**: `OVRManager.isInsightPassthroughEnabled = true`
-- **⚠ そして OVRCameraRig の全カメラの背景を透明にする**（2026-07-31 実害）。
-  **Underlay パススルーは「アプリが描かない画素」(alpha 0) にしか出ない。** OVRCameraRig の既定は
-  不透明な黒 (`m_BackGroundColor.a = 1`) なので、パススルーを有効にしても**アプリが上から塗り潰して
-  何も見えない**（実測: 導入演出の主役である現実の映像が一切出ず、画はグレー一色だった）。
-  `clearFlags = SolidColor` + `backgroundColor = (0,0,0,0)` を全カメラへ。
-  **本編でパススルーを見せない用途とは両立する** — `isInsightPassthroughEnabled` を落とせば黒く出るので、
-  背景は常に透明にしておいてよい。`MainDemoSceneSetup.EnsurePassthroughStyler` が設定する
+- **⚠ カメラの背景は不透明な黒 (a=1) のままにする。透明 (a=0) にしてはいけない**（2026-07-31 に
+  一度 a=0 にして同日戻した）。**Underlay パススルーは「アプリが描かない画素」(alpha 0) にしか
+  出ない**のは事実だが、**穴を開けるのは覆い (`IntroVeil`) の仕事で、カメラの背景ではない**。
+  覆いは `Blend Zero SrcAlpha`（出力 = dst × srcAlpha）で全画面に掛かり、パススルーを見せたい段では
+  srcAlpha=0 を書くので、背景が不透明でも全面パススルーになる。
+  逆に背景を a=0 にすると、**乗算ブレンドは alpha を減らすことしかできない**ので 0 を 1 へ戻せず、
+  **枠の外を黒く閉じる演出が原理的に起こらない**（実測: 枠の外に現実が残り続け、次の段で
+  パススルーが切れて一気に黒くなった）。
+  「パススルーが一切出ない」の真因は `_insightPassthroughSupport = 0` と、
+  `IntroVeil` シェーダがビルドから剥がれていたこと（下記 `Shader.Find` の罠）の 2 つ。
+  設定するのは `MainDemoSceneSetup.EnsurePassthroughStyler`
 - **レイヤー**: `OVRPassthroughLayer` コンポーネント
   - `Underlay`（背景として全画面パススルー）
   - `Overlay`（前景。`textureOpacity` が VR とのブレンドになる）

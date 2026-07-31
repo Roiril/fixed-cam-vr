@@ -278,6 +278,29 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
 ### 前後 (z) 方向の演出を入れる時
 現在 z は全ゾーン共通 [-1.2, +1.2]。**前後で挙動を変えたいなら別軸のロジックを足す**（zone は左右専用にしておく）。`PlayerStateBus` のような中央集約は Phase 4（CG 合成）着手時に検討、それまでは Tracker と並列に小さな BehaviourScript で済ませる。
 
+## ⚠ `renderQueue` が 5000 を超えると URP はそれを 1 度も描かない（2026-07-31 実害）
+
+URP の透明パスが描くのは **`RenderQueueRange.transparent` = [2501, 5000]** だけ
+（`Library/PackageCache/com.unity.render-pipelines.universal@14.0.12/Runtime/UniversalRenderer.cs`）。
+Unity 公式 API リファレンスも `Material.renderQueue` は **「[0..5000] の範囲でなければ正しく動かない」**
+と書いている。**5000 を超えた値を入れると、どの描画パスにも入らず 1 ピクセルも出ない。**
+
+実害（同日に 2 件、原因は同一）:
+
+- **導入の構造線**（`IntroStructureWire`・部屋の壁とカメラの印）が `5000 + 100 = 5100` で、実機で **1 本も描かれていなかった**
+- **HMD 内の指示テキスト**（`IntroPrompt`・「右手を上げてみてください」）も `5100` で同様。
+  段 5 の合図は**言葉でしか伝えない**ので、3 周目の反転の伏線が丸ごと成立していなかった
+
+**気づけなかった理由**: `Shader.Find` は成功し、`_renderers.Count > 0` になり、`Place()` も走って
+`lr.enabled = true` になる。**コードは「出した」と思っていて警告が 1 件も出ない。**
+実機録画をフル解像度で 0.2 秒刻みに見て初めて「0 本」だと分かった。
+
+どちらも「覆い（`IntroVeil`）より後に描く」ために queue を上げていたもので、順序を作る意図は正しい。
+**上げるのではなく、覆いの側を下げて全員を 5000 以内に収める**（現在は覆い 4900 / 後続 5000）。
+
+→ **`renderQueue` を明示的に代入する / シェーダの `Queue` タグに `Overlay+N` を書くときは、
+実効値が 5000 を超えていないか必ず計算する**（`Overlay` = 4000）。
+
 ## ⚠ 実行時 `Shader.Find` するシェーダはビルドで剥がれる（2026-07-31 実害）
 
 Unity は「どのマテリアルからも参照されていないシェーダ」をビルドから外す。だから

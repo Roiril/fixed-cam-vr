@@ -56,6 +56,15 @@ namespace FixedCamVr.Streaming
         /// <summary>いま覆いが何かを隠しているか（＝導入演出中か）。</summary>
         public bool IsActive => _renderer != null && _renderer.enabled;
 
+        /// <summary>
+        /// 覆いの実体（Quad + マテリアル）を組めたか。<b>false なら枠は一生出ない</b> —
+        /// <see cref="Build"/> がシェーダを見つけられずに早期 return した状態で、
+        /// 実行時 <c>Shader.Find</c> のシェーダがビルドから剥がれたときにこうなる
+        /// （2026-07-31 実害。Editor では通るので実機の画を見るまで気づけない）。
+        /// テレメトリが <c>veilBuilt=</c> で出し、解析が「導入の覆いが描画されていない」を名指しする。
+        /// </summary>
+        public bool IsBuilt => _renderer != null;
+
         private void Awake()
         {
             Build();
@@ -119,7 +128,13 @@ namespace FixedCamVr.Streaming
         {
             if (screenQuad == null) return apertureUv;
             var s = screenQuad.lossyScale;
-            float dist = screenQuad.localPosition.magnitude;
+            // ⚠ **眼からスクリーンまでの距離**。`screenQuad.localPosition.magnitude` は
+            // 「親（原点の空グループ）からの距離」で、ScreenAnchor が `transform.position` を
+            // ワールドで書く以上まったく別の値になる（実測: 真値 2.02m に対し 2.40m ＝ 開口が 16% 小さい）。
+            // 開口が小さいと段 4 で「枠の縁とスクリーンの縁の間」に映像の帯が露出し、
+            // 「枠は現れるだけで、既にそこにある」という設計が崩れる。この覆いは
+            // CenterEyeAnchor 直下なので自分の位置がそのまま眼の位置。
+            float dist = Vector3.Distance(transform.position, screenQuad.position);
             if (!(dist > 0.01f) || !(s.x > 0.001f) || !(s.y > 0.001f)) return apertureUv;
             float k = distance / dist;
             float x = s.x * k / Mathf.Max(veilSize.x, 0.001f);

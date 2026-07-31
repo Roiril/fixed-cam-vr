@@ -80,9 +80,15 @@ bash tools/run-quest-xp-test.sh walk 300
 Quest が複数繋がっているときの機の選択・APK と設定の同期・使わない機のスリープは
 [`tools/quest-fleet.py`](../../tools/quest-fleet.py)（[.claude/memory/quest_fleet_two_devices.md](../memory/quest_fleet_two_devices.md)）。
 
-**⚠ ログが OK でも画は壊れていることがある。** テレメトリは「段が進んだ」を出すが「画に何か出た」は
-出さない。2026-07-31 に、FAIL ゼロ・演出 7 本 OK と判定された走行の画を録って見たら、
-**導入演出が 1 段も出ていなかった**（パススルーの初期化失敗 + シェーダのビルド剥がれ）。
+**⚠ ログが OK でも画は壊れていることがある。** 2026-07-31 に、FAIL ゼロ・演出 7 本 OK と
+判定された走行の画を録って見たら、**導入演出が 1 段も出ていなかった**（パススルーの初期化失敗 +
+シェーダのビルド剥がれ）。当時のテレメトリは「段が進んだ」しか出しておらず、
+「画に何か出た」を 1 つも観測していなかった。
+→ **同日、「効果の実在」を出す 10 項目を足した**（`veil` / `veilBuilt` / `pt` / `wire` / `bg` /
+`font` / `ovl` / `cg` / `bgm` / `ev=step`）。解析レポートの
+**「## 効果の実在（画・音に出たか）」**節がこれを判定する。一覧と取得元は
+[.claude/memory/onsite_experience_test.md](../memory/onsite_experience_test.md)。
+それでも**立体視のスケール感・見た目の質**は計測に置き換えられないので、
 見た目に関わる変更をしたら画を録って確かめる:
 
 ```bash

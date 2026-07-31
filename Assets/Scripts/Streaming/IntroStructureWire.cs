@@ -298,12 +298,24 @@ namespace FixedCamVr.Streaming
             //   そこだけパススルーが隠れて線が見える。線は細いので実物の視認を妨げない。
             //   2026-07-30 の設計批評で「段 3 は原理的に見えない」と指摘されて判明。ブレンド式から
             //   決まる話なので実機を待たずに直せる。
-            _mat.renderQueue = VeilRenderQueue + 100;
+            _mat.renderQueue = WireRenderQueue;
             return true;
         }
 
         /// <summary>覆い（<see cref="IntroVeil"/>）の描画順。線はこれより後に描かなければ潰される。</summary>
-        private const int VeilRenderQueue = 5000;   // IntroVeil.shader の "Queue" = "Overlay+1000"
+        private const int VeilRenderQueue = 4900;   // IntroVeil.shader の "Queue" = "Overlay+900"
+
+        /// <summary>線の描画順。<b>5000 を超えてはいけない</b>（2026-07-31 実害）。
+        ///
+        /// URP の透明パスが描くのは <c>RenderQueueRange.transparent</c> = **[2501, 5000]** だけで、
+        /// Unity 公式も「render queue value should be in [0..5000] range to work properly」と書いている。
+        /// 旧実装は覆い 5000 に対して線を <c>5000 + 100 = 5100</c> に置いており、**範囲外なので
+        /// どの描画パスにも入らず 1 本も描かれていなかった**（実機録画をフル解像度で 0.2 秒刻みに
+        /// 確認して 0 本。`EnsureMaterial` は成功し `Place()` も走るので警告は 1 件も出ず、
+        /// コードは「出した」と思っている ＝ 気づく手段が無かった）。
+        /// 同じ理由で <c>IntroPrompt</c> の指示テキストも出ていなかった。
+        /// **覆いを 4900 へ下げて、後続を 5000 に収める**ことで順序と範囲を両立させる。</summary>
+        private const int WireRenderQueue = 5000;
 
         // ---- 追従（course → world）----
 

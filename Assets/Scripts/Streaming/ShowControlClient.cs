@@ -2093,6 +2093,18 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Func<bool>? UserPresentProvider;
 
+        /// <summary>
+        /// パススルーを<b>アプリから実際に有効化できているか</b>（<c>-1</c>=判定不能 / <c>0</c>=無効 / <c>1</c>=有効）。
+        /// <see cref="UserPresentProvider"/> と同じ理由で Assembly-CSharp 側の
+        /// <c>PassthroughStyler</c> が実行時に差し込む（Streaming asmdef は OVR を参照しない規約）。
+        ///
+        /// 導入演出は主役が現実の映像なので、<c>OculusProjectConfig</c> の
+        /// <c>_insightPassthroughSupport</c> が 0 だと <c>Failure_NotInitialized</c> で
+        /// <b>演出が丸ごと死ぬ</b>。それでも段は進むのでテレメトリの遷移からは気づけない
+        /// （2026-07-31 実害）。ここが「効果の実在」を出す口。
+        /// </summary>
+        public Func<int>? PassthroughStateProvider;
+
         private void ApplyPostForActive()
         {
             if (_material == null) return;

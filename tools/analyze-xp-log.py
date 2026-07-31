@@ -9,7 +9,14 @@
   - **show.json が期待値の正**。著作された演出・周回数・録画設定と、実機で起きたことを突き合わせる。
   - 「起きなかったこと」を最重視する。演出が黙って消える・録画が飛ぶのがこの系の代表的な壊れ方で、
     ログに何も出ないので、期待値の側から引き算しないと気づけない。
+  - **「状態が進んだ」ではなく「効果が出た」を見る。** 2026-07-31、この解析が「FAIL ゼロ・演出 7 本
+    すべて OK」と判定した走行の画を録ったら、導入演出が 1 段も画に出ていなかった。段の遷移は完璧に
+    進んでいて、「その段で画に何かが実際に出たか」を 1 つも観測していなかった。以後
+    `veil` / `pt` / `bg` / `wire` / `ovl` / `cg` / `bgm` / `font` / `ev=step` を判定に入れる。
   - 映像の質（受信 fps・砂嵐・遅延・表示 fps）は分布で出す。平均だけだと一過性の破綻が消える。
+
+⚠ **観測項目は C# の ShowTelemetryHost と対で直す**（片方だけだと沈黙して食い違う）。
+   新しいキーが無い古いログでも例外を出さずに動くこと（すべて存在チェックで囲む）。
 
 レポートは UTF-8 のファイルへ書く（Windows 端末は cp932 で日本語表示が壊れるため）。
 標準出力へは ASCII の要約だけ出す。
@@ -68,6 +75,34 @@ def fnum(d: dict, key: str, default=None):
         return float(d[key])
     except (KeyError, ValueError, TypeError):
         return default
+
+
+# ev=step の理由トークン → 日本語（C# の TakeRunner.StepSkip* と対）。
+STEP_SKIP_REASONS = {
+    "camrange": "live のカメラが registry の範囲外",
+    "noasset": "素材（clip / still）が解決できない",
+    "norec": "端末内録画が無い",
+}
+
+
+def effect_samples(events, key: str, t_from: float = None, t_to: float = None):
+    """ev=intro / ev=sum が持つ「効果の実在」キーの値列を、時間窓で切って返す。
+
+    このキーを出していないビルドのログでは空リストになる（＝判定を黙って飛ばす）。
+    値は文字列のまま返す — `-`（そもそもシーンに居ない）と `0`（居るが出ていない）を
+    区別しないと、未配線を「壊れている」と誤診する。
+    """
+    out = []
+    for e in events:
+        if e.get("ev") not in ("intro", "sum") or key not in e:
+            continue
+        t = fnum(e, "t", 0.0)
+        if t_from is not None and t < t_from:
+            continue
+        if t_to is not None and t > t_to:
+            continue
+        out.append(e[key])
+    return out
 
 
 def expected_from_show(show: dict):
@@ -178,6 +213,11 @@ def analyze(events, others, exp):
         return rep, verdicts
 
     t_end = fnum(events[-1], "t", 0.0)
+    # 体験の終わり。Finished 以降は「その区間に居続けた」のではなく「終わって黒に覆われていた」ので、
+    # 滞在の計算はここで打ち切る。打ち切らないと最後の区間が観測時間ぶん膨らみ（実測で 182.7 秒）、
+    # 演出のはみ出し判定も卓へ出す実測滞在も、まとめて嘘になる。
+    _fin = [fnum(e, "t", 0.0) for e in events if e.get("ev") == "phase" and e.get("v") == "Finished"]
+    t_show_end = _fin[0] if _fin else t_end
     w(f"観測時間: {t_end:.0f} 秒 / [XP] 行 {len(events)} 本（うちサマリ {len(sums)}）")
     w()
 
@@ -254,8 +294,13 @@ def analyze(events, others, exp):
     if not laps_seen:
         verdict("FAIL", "区間の進入が 1 度も記録されていない（歩行かゾーン判定が効いていない）")
     else:
+        # 周回は進行ポインタ方式で、order[0] へ戻った時点で lap が上がる。だから 3 周を走り切ると
+        # 「4 周目に入った」記録が必ず出る。これを素で出すと「3 周のはずが 4 周した」と読めてしまう。
         if max(laps_seen) < exp["totalLaps"]:
             verdict("FAIL", f"{exp['totalLaps']} 周のはずが {max(laps_seen)} 周までしか進んでいない")
+        elif max(laps_seen) > exp["totalLaps"]:
+            verdict("OK", f"{exp['totalLaps']} 周を完走した"
+                          f"（{max(laps_seen)} 周目のスタート区間に入った時点で終了）")
         else:
             verdict("OK", f"{max(laps_seen)} 周まで進んだ")
     # 順路どおりか
@@ -277,7 +322,9 @@ def analyze(events, others, exp):
     w("### 区間ごとの実測滞在")
     dwell = {}
     for i, (t, lap, cam) in enumerate(seg_seq):
-        end = seg_seq[i + 1][0] if i + 1 < len(seg_seq) else t_end
+        end = seg_seq[i + 1][0] if i + 1 < len(seg_seq) else t_show_end
+        if end <= t:
+            continue   # 体験が終わった後に入った区間（滞在ゼロ）
         dwell[(lap, cam)] = dwell.get((lap, cam), 0.0) + (end - t)
     for (lap, cam), sec in sorted(dwell.items()):
         w(f"  {lap} 周目 カメラ {cam}: {sec:.1f} 秒")
@@ -348,10 +395,16 @@ def analyze(events, others, exp):
                           if lap == t["lap"] and cam == t["camera"]), None)
         if seg_start is None:
             continue
-        seg_end = next((s for s, _, _ in seg_seq if s > seg_start), t_end)
+        seg_end = next((s for s, _, _ in seg_seq if s > seg_start), t_show_end)
         over = end - seg_end
         stay = seg_end - seg_start
-        if over > 0.3:
+        # ⚠ 離脱の瞬間に決着した演出（at=exit / ifMissed=fireOnExit）は、**契約上そもそも区間を出てから走る**。
+        #    これを「滞在をはみ出した」と呼ぶと、仕様どおりの動作を毎回 WARN で報告することになる
+        #    （実際に前セッションが同じ行を読んで「2 周目 A の演出が壊れている」と誤診した）。
+        #    著作の調整が要るのは「区間の中で始まったのに終わりきらなかった」場合だけ。
+        if start >= seg_end - 0.05:
+            w(f"  ✅ {tid}: 尺 {dur:.1f}s — 離脱の瞬間に決着（区間外で走るのが契約）")
+        elif over > 0.3:
             w(f"  ⚠ {tid}: 尺 {dur:.1f}s / 滞在 {stay:.1f}s — {over:.1f}s はみ出した")
             verdict("WARN", f"演出 {tid} が区間の滞在を {over:.1f}s 超えた"
                             f"（尺 {dur:.1f}s / 滞在 {stay:.1f}s）— 速く歩く体験者では途中で場所が変わる")
@@ -522,6 +575,164 @@ def analyze(events, others, exp):
                     verdict("WARN", f"導入演出の段 {want} が出ていない")
             if "Swap" in stages:
                 verdict("OK", "導入演出が最後の段（Swap）まで進んだ")
+    w()
+
+    # ---------------- 効果の実在 ----------------
+    # 「段が進んだ」「演出が走った」は、画・音に何かが出たことを意味しない。
+    # 2026-07-31 に FAIL ゼロ・演出 7 本 OK と判定した走行の画を録ったら、導入演出が 1 段も
+    # 出ていなかった（パススルー未初期化 / シェーダのビルド剥がれ / カメラ背景が不透明）。
+    # ここは「その結果、画・音に何かが出たか」だけを見る節。
+    w("## 効果の実在（画・音に出たか）")
+    any_effect_key = False
+
+    # -- 起動時に焼かれている前提（コードを直しても走行のたびには変わらない層）
+    boot = next((e for e in events if e.get("ev") == "boot"), None)
+    if boot and "bg" in boot:
+        any_effect_key = True
+        bg = str(boot["bg"])
+        try:
+            clear_n, total_n = (int(x) for x in bg.split("/", 1))
+        except ValueError:
+            clear_n = total_n = -1
+        # ⚠ **期待するのは「不透明」**。パススルーの穴を開けるのは覆い (IntroVeil) の仕事で、
+        #    カメラの背景ではない。背景を透明にすると `Blend Zero SrcAlpha`（乗算）が alpha を
+        #    1 へ戻せなくなり、**段 4 で枠の外を黒く閉じる演出が原理的に出ない**
+        #    （2026-07-31 に一度 a=0 にして同日戻した。契約は .claude/rules/meta-xr.md）。
+        w(f"  カメラ背景が透明なもの: {bg}（透明/全体・**0 が正常**）")
+        if total_n > 0 and clear_n > 0:
+            verdict("FAIL", f"カメラ背景が透明なカメラが {clear_n} 台ある（{bg}）— "
+                            "枠の外を黒く閉じる演出が原理的に出ない（乗算ブレンドは alpha を戻せない）。"
+                            "MainDemoSceneSetup は (0,0,0,1) を焼くので Setup Main Demo Scene を再実行する")
+        elif total_n > 0:
+            verdict("OK", f"カメラ背景は全て不透明（{bg}）— 覆いが穴を開ける方式で正しい")
+    if boot and "font" in boot:
+        any_effect_key = True
+        font_ok = str(boot["font"]) == "1"
+        w(f"  日本語フォント: {'解決できた' if font_ok else '解決できていない'}")
+        if not font_ok:
+            verdict("WARN", "日本語フォントが解決できていない（HMD 内の文字が豆腐になる）— "
+                            "Tools/FixedCamVr/Setup/Generate Japanese HUD Font を再実行する")
+
+    # -- 導入演出（覆い・パススルー・構造の線）
+    # 段 Real 以降 → 本編へ入るまでを窓にする。それ以前は「まだ出さないのが正しい」。
+    real_t = next((fnum(e, "t", 0.0) for e in intro if e.get("stage") == "Real"), None)
+    run_t = next((fnum(p, "t", 0.0) for p in phases if p.get("v") == "Run"), None)
+
+    built = effect_samples(events, "veilBuilt")
+    if built:
+        any_effect_key = True
+        if "0" in built:
+            verdict("FAIL", "導入の覆いを組めていない（IntroVeil の Shader.Find が null）— "
+                            "シェーダがビルドから剥がれた疑い。GraphicsSettings の "
+                            "m_AlwaysIncludedShaders に FixedCamVr/IntroVeil を入れる")
+        elif "1" in built:
+            w("  導入の覆い: 実体を組めている")
+
+    if exp["introEnabled"] and real_t is not None:
+        veil = effect_samples(events, "veil", t_from=real_t, t_to=run_t)
+        if veil:
+            any_effect_key = True
+            w(f"  導入の覆いが描画された標本: {veil.count('1')}/{len(veil)}")
+            if "1" not in veil and "-" not in veil:
+                verdict("FAIL", "導入の覆いが一度も描画されていない（段は進んでいるのに画には何も出ていない）"
+                                "— シェーダがビルドで剥がれた疑い")
+            elif "1" in veil:
+                verdict("OK", f"導入の覆いが描画された（{veil.count('1')}/{len(veil)} 標本）")
+
+        pt = effect_samples(events, "pt", t_from=real_t, t_to=run_t)
+        if pt:
+            any_effect_key = True
+            w(f"  パススルーが有効だった標本: {pt.count('1')}/{len(pt)}")
+            if "1" not in pt and "-" not in pt:
+                verdict("FAIL", "パススルーがアプリから有効化できていない（導入の主役は現実の映像なので"
+                                "演出が丸ごと死ぬ）— OculusProjectConfig の _insightPassthroughSupport を "
+                                "1 (Supported) にする")
+            elif "1" in pt:
+                verdict("OK", "パススルーがアプリから有効化できていた")
+
+    if "Structure" in stages:
+        wires = [v for v in effect_samples(events, "wire") if v not in ("", "-")]
+        nums = []
+        for v in wires:
+            try:
+                nums.append(int(v))
+            except ValueError:
+                pass
+        if nums:
+            any_effect_key = True
+            w(f"  構造の線: 最大 {max(nums)} 本")
+            if max(nums) == 0:
+                verdict("WARN", "段 Structure に達したのに構造の線が 1 本も引けていない — "
+                                "位置合わせの現地検証（線が実物に重なるか）ができない。"
+                                "卓の 🧱 部屋 で壁を引くか、較正パネルで床の実寸を入れる")
+            else:
+                verdict("OK", f"構造の線が {max(nums)} 本引けた")
+
+    # -- 演出のカット（画面を取ったか / 飛ばされたか）
+    steps_ev = [e for e in events if e.get("ev") == "step"]
+    if steps_ev:
+        any_effect_key = True
+        w()
+        w("### 演出のカット（画面を取ったか）")
+        by_take = defaultdict(lambda: {"played": 0, "skipped": 0, "why": defaultdict(int)})
+        skipped_why = defaultdict(int)
+        for e in steps_ev:
+            d = by_take[e.get("take", "?")]
+            if e.get("played") == "1":
+                d["played"] += 1
+            else:
+                d["skipped"] += 1
+                why = e.get("why", "?")
+                d["why"][why] += 1
+                skipped_why[why] += 1
+        for tid in sorted(by_take):
+            d = by_take[tid]
+            detail = ""
+            if d["why"]:
+                detail = "（" + " / ".join(
+                    f"{STEP_SKIP_REASONS.get(k, k)} {n}" for k, n in sorted(d["why"].items())) + "）"
+            mark = "✅" if d["played"] else "❌"
+            w(f"  {mark} {tid}: 出たカット {d['played']} / 飛ばしたカット {d['skipped']}{detail}")
+            if d["played"] == 0:
+                verdict("FAIL", f"演出 {tid} は走ったが画面に何も出していない"
+                                f"（全 {d['skipped']} カットが飛んだ）{detail}")
+        for why, n in sorted(skipped_why.items()):
+            verdict("WARN", f"飛ばされたカットが {n} 件: {STEP_SKIP_REASONS.get(why, why)}")
+        if not skipped_why:
+            verdict("OK", f"演出のカットは全て画面を取った（{len(steps_ev)} カット）")
+
+    # -- 端末内録画が 0 バイトで閉じていないか
+    zero_rec = [e for e in rec_ev if e.get("v") == "stop" and fnum(e, "bytes") == 0]
+    if any("bytes" in e for e in rec_ev):
+        any_effect_key = True
+        if zero_rec:
+            w()
+            w("### 0 バイトで閉じた録画")
+            for e in zero_rec:
+                w(f"  t={fnum(e,'t',0):7.1f}  {e.get('lap','?')} 周目 / カメラ {e.get('cam','?')}")
+                verdict("FAIL", f"録画が 0 バイトで閉じた（{e.get('lap','?')} 周目 カメラ {e.get('cam','?')}）"
+                                "— この区間を指す録画カットは実機で黙って飛ぶ")
+
+    # -- BGM（クリップ取得に失敗すると BgmDirector は無音のまま黙って戻る）
+    bgm_vals = [e["bgm"] for e in sums if "bgm" in e]
+    bgm_ev = [e for e in events if e.get("ev") == "bgm"]
+    if bgm_vals:
+        any_effect_key = True
+        played = bgm_vals.count("1")
+        w()
+        w(f"  BGM が鳴っていた標本: {played}/{len(bgm_vals)}")
+        tracks = sorted({e.get("trk", "-") for e in bgm_ev if e.get("play") == "1"})
+        if tracks:
+            w(f"  鳴ったトラック: {', '.join(tracks)}")
+        if played == 0 and not tracks:
+            verdict("WARN", "BGM が体験中に一度も鳴っていない（クリップの取得に失敗している可能性）")
+        elif played:
+            verdict("OK", f"BGM が鳴っていた（{played}/{len(bgm_vals)} 標本）")
+
+    if not any_effect_key:
+        w("  効果の実在を出すキーが 1 つも無い（この計装より前のビルドのログ）")
+        verdict("WARN", "「効果の実在」を観測していないビルドのログ — 段が進んだことしか分からない。"
+                        "画が出たかは tools/quest-record.py で確かめる")
     w()
 
     # ---------------- 位置合わせ ----------------

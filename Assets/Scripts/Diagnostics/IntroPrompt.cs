@@ -44,8 +44,13 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("出入りのフェード秒。ぱっと出ると実物の観察から注意を奪いすぎる。")]
         [SerializeField] private float fadeSec = 0.35f;
 
-        /// <summary>覆いより後に描くための Queue。<see cref="IntroVeil"/> の 5000 と対で管理する。</summary>
-        private const int RenderQueue = 5100;
+        /// <summary>覆いより後に描くための Queue。IntroVeil の 4900 と対で管理する。
+        ///
+        /// ⚠ **5000 を超えてはいけない**（2026-07-31 実害）。URP の透明パスが描くのは
+        /// <c>RenderQueueRange.transparent</c> = [2501, 5000] だけなので、旧値 5100 では
+        /// **この指示テキストが一度も描画されていなかった**。段 5 の「右手を上げてみてください」は
+        /// 言葉でしか伝えないので、出ないと 3 周目の反転の伏線が丸ごと成立しない。</summary>
+        private const int RenderQueue = 5000;
 
         private TMP_Text? _text;
         private string _shown = string.Empty;

@@ -83,7 +83,13 @@ namespace FixedCamVr.Streaming
             get
             {
                 // 中止は最優先。体験者が歩き出す前に止める。
-                if (_aborted) return "いちど止めます。スタッフをお呼びください";
+                // ⚠ ただし**導入相の間だけ**。ShowRunLogic は中止と無関係に Intro → Run へ進むので、
+                // 相を見ないと本編 3 周のあいだ顔の前に警告が浮きっぱなしになり、終了の暗転にも
+                // 重なって残る（IntroPrompt は queue 5100 で ShowEndingFader の黒より手前）。
+                // `_aborted` を落とすのは BeginIntro だけで、中止の原因（要再登録フラグ）は
+                // sticky なので、フラグ側では消えない。
+                if (_aborted && (runDirector == null || runDirector.Phase == ShowPhase.Intro))
+                    return "いちど止めます。スタッフをお呼びください";
 
                 if (_logic.Stage == IntroStage.Swap)
                     return _def.raiseHandPrompt ? "右手を上げてみてください" : string.Empty;

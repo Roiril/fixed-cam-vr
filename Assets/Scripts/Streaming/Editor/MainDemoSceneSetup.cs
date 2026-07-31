@@ -727,16 +727,25 @@ namespace FixedCamVr.Streaming.EditorTools
                 Debug.Log("[MainDemoSceneSetup] OVRCameraRig に OVRPassthroughLayer を追加（導入演出用・既定 Underlay）。");
             }
 
-            // ⚠ **Underlay パススルーは「アプリが描かない画素」(alpha 0) にしか出ない。**
-            // OVRCameraRig の既定は不透明な黒 (a=1) なので、パススルーを有効にしても
-            // アプリが上から塗り潰して何も見えない（2026-07-31 実害: 導入演出の主役である
-            // 現実の映像が一切出ず、画はグレー一色だった）。
-            // 本編でパススルーを見せないのは PassthroughStyler が isInsightPassthroughEnabled を
-            // 落とすことで成立するので、**背景は常に透明にしておいてよい**（off なら黒く出る）。
+            // ⚠ **背景は不透明な黒 (a=1) にする。透明 (a=0) にしてはいけない。**
+            //
+            // Underlay パススルーは「アプリが描かない画素」(alpha 0) にしか出ないが、**穴を開けるのは
+            // 覆い (IntroVeil) の仕事**で、カメラの背景ではない。覆いは `Blend Zero SrcAlpha`
+            // （出力 = dst × srcAlpha）で全画面に掛かり、段 1〜3 では srcAlpha=0 を書くので
+            // 背景が不透明でも全面パススルーになる。
+            //
+            // 逆に背景を透明にすると、乗算ブレンドは **alpha を減らすことしかできない**ため
+            // 0 を 1 へ戻せない ＝ **段 4 で「周縁から黒が寄せて正面に長方形が残る」演出が
+            // 原理的に起こらない**（2026-07-31 実測: 枠の外に現実が残り続け、次の段で
+            // パススルーが切れて一気に黒くなっていた）。
+            //
+            // 2026-07-31 に一度 a=0 にしたのは「パススルーが一切出ない」の対処だったが、
+            // 真因は `OculusProjectConfig._insightPassthroughSupport` が 0 だったことと
+            // IntroVeil シェーダがビルドから剥がれていたことの 2 つで、この行は不要だった。
             foreach (var cam in rig.GetComponentsInChildren<Camera>(includeInactive: true))
             {
                 cam.clearFlags = CameraClearFlags.SolidColor;
-                cam.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                cam.backgroundColor = new Color(0f, 0f, 0f, 1f);
                 EditorUtility.SetDirty(cam);
             }
 
