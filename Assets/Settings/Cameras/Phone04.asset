@@ -11,15 +11,15 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7861d97340981b74c951b4449d74f9a7, type: 3}
   m_Name: Phone04
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
   displayName: Phone 04 (FX)
   cameraId: D
-  host: 192.168.11.40
+  host:
   port: 8080
   videoPath: /video
   infoPath: /info
   healthPath: /health
-  username:
-  password:
+  username: 
+  password: 
   width: 1280
   height: 720

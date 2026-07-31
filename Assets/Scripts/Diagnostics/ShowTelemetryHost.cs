@@ -46,6 +46,11 @@ namespace FixedCamVr.Diagnostics
         private static void Bootstrap()
         {
             if (!Debug.isDebugBuild) return;
+            // logcat のリングバッファを食い潰していた主犯は本文ではなく **Debug.Log に付くスタックトレース**
+            // （実測: 265 秒の走行で 3,941 行 179KB が別行として出ていた）。情報量はほぼ無いのに、
+            // これが原因で走行の前半が丸ごと落ちた回がある。Warning / Error のスタックは原因究明に
+            // 要るので残す。Development ビルドでしか通らないので本番の挙動は変わらない。
+            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
             var go = new GameObject("[XPTelemetry]");
             DontDestroyOnLoad(go);
             go.AddComponent<ShowTelemetryHost>();
@@ -77,6 +82,7 @@ namespace FixedCamVr.Diagnostics
         private bool _lastTrackingFrozen;
         private bool _lastRecording;
         private bool _lastGateOpen = true;
+        private string _lastConfig = "";
 
         // --- サマリ集計 ---
         private float _resolveAccum;
@@ -113,6 +119,7 @@ namespace FixedCamVr.Diagnostics
             {
                 _resolveAccum = 0f;
                 Resolve();
+                PollConfig();  // 毎フレームだと DescribeConfig の文字列生成が無駄になるのでここで
             }
 
             PollTransitions(udt);
@@ -199,6 +206,26 @@ namespace FixedCamVr.Diagnostics
                     $"elapsed={(_run != null ? _run.RunElapsedSec : 0f):F1}");
 
         private void OnActiveChanged(int index) => Emit($"ev=active cam={index}");
+
+        // ---------------------------------------------------------------- 設定の出所
+
+        /// <summary>実機がどの設定で走っているかを出す。**これが無いと解析が嘘をつく。**
+        ///
+        /// 解析（tools/analyze-xp-log.py）は PC の show.json を期待値にして「出るはずで出なかった演出」を
+        /// 引き算で見つける。ところが実機が読むのは端末キャッシュ（persistentDataPath/show_config.json）で、
+        /// これは**焼き込みより優先される**。実測（2026-07-31）で 2 台の Quest のキャッシュを比べたら
+        /// 片方にだけ <c>run.intro.startLineId</c> が無く、導入の始まり方が機ごとに違っていた。
+        /// その状態で解析すると「導入の演出が出なかった」と報告されるが、原因はコードではなく設定のずれ。
+        ///
+        /// 設定が変わるのは起動直後の数秒（焼き込み → キャッシュ → ライブ）なので、変化した時だけ出す。</summary>
+        private void PollConfig()
+        {
+            if (_show == null) return;
+            string cfg = _show.DescribeConfig();
+            if (cfg == _lastConfig) return;
+            _lastConfig = cfg;
+            Emit($"ev=config {cfg}");
+        }
 
         // ---------------------------------------------------------------- ポーリング遷移
 

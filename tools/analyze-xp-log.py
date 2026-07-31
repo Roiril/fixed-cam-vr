@@ -116,7 +116,50 @@ def expected_from_show(show: dict):
             if s.get("source") == "rec":
                 needed.add((s.get("recLap") or 1, s.get("camera")))
     exp["recNeeded"] = needed
+    exp["config"] = config_from_show(show)
     return exp
+
+
+def config_from_show(show: dict) -> dict:
+    """実機の `ShowControlClient.DescribeConfig()` と**同じ項目**を PC の show.json から作る。
+
+    実機が読むのは端末キャッシュ (persistentDataPath/show_config.json) で、これは APK の焼き込みより
+    優先される。だから「ビルドし直した = 設定も新しい」は成り立たない。実測 (2026-07-31) では 2 台の
+    Quest のキャッシュで `run.intro.startLineId` が食い違い、導入の始まり方が機ごとに違っていた。
+    しかも `timeline.rev` は両方 21 で一致していたので、rev では検出できない。
+
+    設定がずれたまま解析すると「著作した演出が出なかった」と報告されるが、原因はコードではなく設定。
+    **項目を足すときは C# の DescribeConfig と対で直すこと**（片方だけだと沈黙して食い違う）。
+    既定値も C# 側 (ShowRunDef / ShowIntroDef / ShowRecordDef のフィールド初期値) に合わせてある
+    — JsonUtility はキーが無ければ既定値で埋めるので、PC 側で「キーが無い = None」にすると偽の差分が出る。
+    """
+    tl = show.get("timeline") or {}
+    segs = tl.get("segments") or []
+    layout = show.get("layout") or {}
+
+    has_run = isinstance(show.get("run"), dict)
+    run = show.get("run") or {}
+    has_intro = isinstance(run.get("intro"), dict)
+    intro = run.get("intro") or {}
+
+    # C#: (_run?.introEnabled ?? true) && (intro == null || intro.enabled)
+    intro_on = bool(run.get("introEnabled", True)) and (not has_intro or bool(intro.get("enabled", True)))
+    start_line = (intro.get("startLineId") or "").strip() if has_intro else ""
+
+    rec = show.get("record") if isinstance(show.get("record"), dict) else None
+
+    return {
+        "tlrev": tl.get("rev", -1),
+        "segs": len(segs),
+        "takes": sum(len(s.get("takes") or []) for s in segs),
+        "cues": len(show.get("cues") or []),
+        "cams": len(show.get("cameras") or []),
+        "lines": len(layout.get("lines") or []),
+        "laps": run.get("totalLaps", 3) if has_run else -1,
+        "intro": 1 if intro_on else 0,
+        "startLine": start_line or "-",
+        "rec": 1 if (rec or {}).get("enabled") else 0,
+    }
 
 
 def analyze(events, others, exp):
@@ -136,6 +179,38 @@ def analyze(events, others, exp):
 
     t_end = fnum(events[-1], "t", 0.0)
     w(f"観測時間: {t_end:.0f} 秒 / [XP] 行 {len(events)} 本（うちサマリ {len(sums)}）")
+    w()
+
+    # ---------------- 実機が使った設定 ----------------
+    # ここが show.json と違えば、以下の演出・周回・録画の判定は**全部あてにならない**。
+    # 実機は端末キャッシュを焼き込みより優先して読むので、APK を焼き直しても設定は変わらない。
+    w("## 実機が使った設定")
+    cfgs = [e for e in events if e.get("ev") == "config"]
+    if not cfgs:
+        w("  ev=config が無い（この計装より前のビルド）")
+        verdict("WARN", "実機がどの設定で走ったか分からない — 以下の演出判定は show.json と"
+                        "食い違っている可能性がある")
+    else:
+        last = cfgs[-1]
+        src = last.get("src", "?")
+        w(f"  出所: {src}  (live=卓が配った / cache=端末に残っていた / baked=APK 焼き込み)"
+          f"  rev={last.get('rev')}")
+        diffs = []
+        for key, want in (exp.get("config") or {}).items():
+            got = last.get(key)
+            if got is None:
+                continue  # 実機が出していない項目（古いビルド）は責めない
+            if str(got) != str(want):
+                diffs.append((key, got, want))
+        if diffs:
+            for k, got, want in diffs:
+                w(f"  ! {k}: 実機={got} / show.json={want}")
+            verdict("FAIL", "実機の設定が PC の show.json と違う（"
+                    + ", ".join(f"{k} {g}!={wv}" for k, g, wv in diffs)
+                    + "） — 端末キャッシュを消して配り直す: "
+                      "python tools/quest-fleet.py reset-config <serial>")
+        else:
+            verdict("OK", f"実機は show.json と同じ設定で走った（出所 {src}）")
     w()
 
     # ---------------- 体験の骨格 ----------------

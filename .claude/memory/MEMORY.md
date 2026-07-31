@@ -1,6 +1,7 @@
 # Project Memory Index
 
-- [onsite_experience_test.md](onsite_experience_test.md) - 体験を実機で丸ごと検証する 3 点セット（[XP] テレメトリ / HMD 不要の自動走行 / 判定スクリプト）＋ logcat 収集の罠と 2026-07-30 のベースライン実測
+- [onsite_experience_test.md](onsite_experience_test.md) - 体験を実機で丸ごと検証する 4 点セット（[XP] テレメトリ / HMD 不要の自動走行 / 判定スクリプト / 機の選択）＋ logcat 収集の真因（他プロセスが 76%）と「解析が嘘をつく経路」
+- [quest_fleet_two_devices.md](quest_fleet_two_devices.md) - Quest 2 台を交互に使う道具と、機ごとに違って必ず食い違う 4 つ（キャッシュ / APK / 帯域 / 位置合わせ）。熱で選ぶ理由・adb pull が使えない話
 
 - [proposal_single_source.md](proposal_single_source.md) - 企画書の正は docs/proposal/ の 1 本だけ。docs/archive/ の旧版は体験構成が別物なので読まない（新旧の要求対応表つき）
 

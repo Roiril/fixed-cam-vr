@@ -75,8 +75,15 @@ Unity プロジェクトは Web と違い `localhost` でブラウザ検証が�
 
 1. **コンパイル検証**: Unity を `-batchmode -quit` で起動してエラー有無確認（時間かかる）
 2. **Play Mode テスト**: Unity Test Framework（EditMode/PlayMode）で書ける範囲はテスト化
-3. **実機 Quest 3 動作確認**: シュビーから自動化不可。ビルド & デプロイ後の動作確認はユーザーに依頼
-4. 完了報告時は「コンパイル OK / 実機未検証（手動確認お願いします）」を明示
+3. **実機での体験検証は自動化してある**（旧「自動化不可」は 2026-07-30 に解消）:
+   `bash tools/run-quest-xp-test.sh walk 300` で **HMD を被らずに導入 → 3 周 → 終了を通して観測できる**。
+   `[XP]` テレメトリ + 自動走行 + show.json との突き合わせで、**出るはずで出なかった演出を名指しする**。
+   手順と罠 → [.claude/memory/onsite_experience_test.md](.claude/memory/onsite_experience_test.md)。
+   Quest が複数繋がっているときの機の選択・APK と設定の同期・使わない機のスリープは
+   `tools/quest-fleet.py`（[.claude/memory/quest_fleet_two_devices.md](.claude/memory/quest_fleet_two_devices.md)）
+4. **被らないと分からないものはユーザーに依頼する**: 立体視のスケール感・見た目の質・酔い・
+   枠やワイヤーが実物に重なるか。これは計測に置き換えられない
+5. 完了報告時は「コンパイル OK / 実機で何をどこまで見たか」を明示（「実機未検証」で止めない）
 
 ## 禁止事項
 

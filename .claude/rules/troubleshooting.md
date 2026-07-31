@@ -68,6 +68,18 @@ bash tools/run-quest-xp-test.sh walk 300
 **「出るはずで出なかった演出」を名指しする**。手順・収集の罠・ベースライン実測は
 [.claude/memory/onsite_experience_test.md](../memory/onsite_experience_test.md)。
 
+**⚠ 「演出が出なかった」を信じる前に 2 つ確かめる**（どちらも実測で踏んだ）:
+
+1. **実機が使った設定**。レポート冒頭の「実機が使った設定」が FAIL なら、原因はコードではなく
+   設定のずれ。端末キャッシュは焼き込みより優先されるので、APK を焼き直しても変わらない
+   → `python tools/quest-fleet.py reset-config <serial>`
+2. **Wi-Fi の帯域**。2.4GHz だと受信 fps が配信の 2/3 まで落ち、導入の最後の段（Swap）は
+   映像が届いていることを要求するので**帯域が細いだけで演出が出ない**
+   → `python tools/quest-fleet.py list` の wifi 列（run スクリプトが走行前に警告も出す）
+
+Quest が複数繋がっているときの機の選択・APK と設定の同期・使わない機のスリープは
+[`tools/quest-fleet.py`](../../tools/quest-fleet.py)（[.claude/memory/quest_fleet_two_devices.md](../memory/quest_fleet_two_devices.md)）。
+
 ### 「コンパイルが通らない / Unity 重い」
 
 1. `unity-status` スキル — 接続・コンパイル状態

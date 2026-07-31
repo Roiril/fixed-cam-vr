@@ -222,3 +222,7 @@ Assets/StreamingAssets/show.meta
 # 焼き込まれた画も混ざる）。証拠として残したい 1 枚は手で別名保存すること。
 Assets/Screenshots/cgviz/
 Assets/Screenshots/cgviz.meta
+
+# Python のキャッシュ（tools/ 配下のスクリプトが作る）
+__pycache__/
+*.pyc

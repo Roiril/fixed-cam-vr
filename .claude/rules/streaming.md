@@ -229,6 +229,17 @@ Web オペレータ卓（`tools/web-compositor/`）の `show.json` が **Web と
 - **永続化（PC 不在でも参照）**: 受信 show.json を `persistentDataPath/show_config.json` にキャッシュし、
   起動時に再適用。**優先順位は 焼き込み .asset < 端末キャッシュ < ライブ long-poll（後勝ち）**。
   キャッシュは「一度ライブ受信した後」生成されるので、完全新規インストール＋PC 不在の初回は焼き込み値で起動
+  - **⚠ この優先順位は「APK を焼き直せば設定も新しい」を成り立たなくする。** キャッシュが焼き込みより
+    上なので、古いキャッシュが残っている端末はビルドし直しても前の設定で走る。実測（2026-07-31）で
+    PC の show.json・焼き込み・Quest 2 台のキャッシュの **4 者がずれていて正しいのは 1 つだけ**だった
+    （片方の Quest にだけ `run.intro.startLineId` があり、導入の始まり方が機ごとに違った）。
+    しかも `timeline.rev` は全部 21 で一致していて **rev では気づけない**
+  - → 実機は [`ShowControlClient.ConfigOrigin`](../../Assets/Scripts/Streaming/ShowControlClient.cs) /
+    `DescribeConfig()` で**使った設定の出所と骨格**を持ち、`[XP] ev=config` として吐く。
+    [`analyze-xp-log.py`](../../tools/analyze-xp-log.py) の `config_from_show()` が PC の show.json から
+    同じ要約を作って突き合わせ、違えば **FAIL**（「出なかった演出」を設定ずれのせいで誤検出しないため）。
+    **項目を足すときは C# と Python を対で直す** — 片方だけだと沈黙して食い違う。
+    キャッシュの掃除は `python tools/quest-fleet.py reset-config <serial>`
 - **server 不在でも ShowControlClient は動く**（旧コードは `enabled=false` で自滅していた）。
   long-poll / heartbeat だけスキップし、キャッシュ適用とカメラ別 post のゾーン切替連動は成立する
 

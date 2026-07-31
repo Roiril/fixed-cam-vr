@@ -823,6 +823,39 @@ namespace FixedCamVr.Streaming
         /// <summary>体験の骨格（show.json <c>run</c>）。未指定なら null（＝コード既定）。</summary>
         public ShowRunDef? RunConfig => _run;
 
+        /// <summary>いま効いている設定がどこから来たか（<c>none</c> / <c>baked</c> / <c>cache</c> / <c>live</c>）。
+        ///
+        /// **端末キャッシュは焼き込みより優先される**ので、古いキャッシュが残っていると APK を焼き直しても
+        /// 設定が変わらない。実測（2026-07-31）で 2 台の Quest のキャッシュを突き合わせたところ、
+        /// 片方にだけ <c>run.intro.startLineId</c> が無く、**導入の始まり方が機ごとに違っていた**。
+        /// しかも <c>timeline.rev</c> は両方 21 で一致しており、rev では検出できない。
+        ///
+        /// 解析（tools/analyze-xp-log.py）は PC の show.json を期待値にするので、実機がどの設定で
+        /// 走ったのかを言えないと「出なかった演出」を誤検出する。<see cref="DescribeConfig"/> と対で使う。</summary>
+        public string ConfigOrigin { get; private set; } = "none";
+
+        /// <summary>効いている設定の骨格を 1 行で要約する。解析器が PC の show.json から同じ要約を作って
+        /// 突き合わせる。ハッシュではなく**項目を並べる**のは、食い違ったときにどこが違うかを名指しするため
+        /// （ハッシュだと「違う」としか言えず、現場で直せない）。</summary>
+        public string DescribeConfig()
+        {
+            int segs = _timeline?.segments?.Length ?? 0;
+            int takes = 0;
+            if (_timeline?.segments != null)
+                foreach (var s in _timeline.segments) takes += s?.takes?.Length ?? 0;
+
+            ShowIntroDef? intro = _run?.intro;
+            bool introOn = (_run?.introEnabled ?? true) && (intro == null || intro.enabled);
+            string startLine = intro != null && !string.IsNullOrEmpty(intro.startLineId)
+                ? intro.startLineId : "-";
+
+            return $"src={ConfigOrigin} rev={_rev} tlrev={(_timeline?.rev ?? -1)} " +
+                   $"segs={segs} takes={takes} cues={_cues.Length} cams={_cameras.Length} " +
+                   $"lines={(_layout?.lines?.Length ?? 0)} laps={(_run?.totalLaps ?? -1)} " +
+                   $"intro={(introOn ? 1 : 0)} startLine={startLine} " +
+                   $"rec={((_record?.enabled ?? false) ? 1 : 0)}";
+        }
+
         // 卓からの手動グリッチ / 導入終了 / 体験終了の世代カウンタ（runEpoch と同じ「変化のみ発火」方式）。
         private int _knownGlitchEpoch;
         private bool _glitchEpochKnown;
@@ -1503,6 +1536,7 @@ namespace FixedCamVr.Streaming
 
         private void Apply(ShowState state)
         {
+            ConfigOrigin = "live";  // 卓が配った設定。以後キャッシュ・焼き込みでは上書きされない
             // 1) カメラ設定（IP / 認証 / カメラ別画像加工）を反映
             _cameras = state.cameras ?? Array.Empty<CameraDef>();
             // ライブ受信パース直後だけ post / pose の null 判定が信頼できる → ここで present-flag を確定
@@ -1846,6 +1880,7 @@ namespace FixedCamVr.Streaming
         private void ApplyBaked(ShowState state)
         {
             if (_rev >= 0) return;
+            ConfigOrigin = "baked";
             _cameras = state.cameras ?? Array.Empty<CameraDef>();
             foreach (var c in _cameras)
             {
@@ -2135,6 +2170,7 @@ namespace FixedCamVr.Streaming
                 if (!File.Exists(ConfigCachePath)) return;
                 var cfg = JsonUtility.FromJson<CachedConfig>(File.ReadAllText(ConfigCachePath));
                 if (cfg == null) return;
+                ConfigOrigin = "cache";  // 焼き込みより優先。古いまま残ると APK を焼き直しても設定が変わらない
                 if (cfg.cameras != null && cfg.cameras.Length > 0) _cameras = cfg.cameras;
                 if (cfg.post != null) _globalPost = cfg.post;
                 // キャッシュ済み layout も復元（grid か cuts があるもののみ / course も内包）。
