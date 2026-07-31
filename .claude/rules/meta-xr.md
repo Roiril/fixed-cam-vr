@@ -21,7 +21,22 @@ globs:
 以前ここに書いてあった「部分透過は Surface-projected passthrough」は**非推奨になった**（下記）。
 導入演出での使い方は [2026-07-30_intro-passthrough-to-screen.md](../plans/2026-07-30_intro-passthrough-to-screen.md) §6 が正本。
 
+- **⚠ その前に `OculusProjectConfig` の `_insightPassthroughSupport` を 1 (Supported) にする**（2026-07-31 実害）。
+  0 (None) のままだと実機で `Failed to initialize Insight Passthrough ... Failure_NotInitialized` が出て、
+  **アプリからパススルーを一切制御できない**。画面にはシステム側のパススルーが映り続けるので
+  「出ている」ように見えるが、彩度・輪郭線・不透明度の API は全部無効。導入演出は主役が現実の映像なので、
+  この 1 行で演出が丸ごと死ぬ。しかも**テレメトリ上は段が進む**ので、ログを見ている限り気づけない
+  （`.claude/memory/onsite_experience_test.md` の「画を見ないと分からないもの」）。
+  `insightPassthroughEnabled`（bool）は **`[Obsolete]` で効果が無い** — 触るのは `_insightPassthroughSupport`。
+  `Required (2)` は非対応機で起動しなくなるので `Supported (1)`。**この .asset は同居 2 アプリの共有資源**
 - **有効化**: `OVRManager.isInsightPassthroughEnabled = true`
+- **⚠ そして OVRCameraRig の全カメラの背景を透明にする**（2026-07-31 実害）。
+  **Underlay パススルーは「アプリが描かない画素」(alpha 0) にしか出ない。** OVRCameraRig の既定は
+  不透明な黒 (`m_BackGroundColor.a = 1`) なので、パススルーを有効にしても**アプリが上から塗り潰して
+  何も見えない**（実測: 導入演出の主役である現実の映像が一切出ず、画はグレー一色だった）。
+  `clearFlags = SolidColor` + `backgroundColor = (0,0,0,0)` を全カメラへ。
+  **本編でパススルーを見せない用途とは両立する** — `isInsightPassthroughEnabled` を落とせば黒く出るので、
+  背景は常に透明にしておいてよい。`MainDemoSceneSetup.EnsurePassthroughStyler` が設定する
 - **レイヤー**: `OVRPassthroughLayer` コンポーネント
   - `Underlay`（背景として全画面パススルー）
   - `Overlay`（前景。`textureOpacity` が VR とのブレンドになる）

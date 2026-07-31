@@ -1112,6 +1112,21 @@ premultiplied 断片なので、合成側の over が自動的に乗算（背景
 - **守れない障害**: AP のクライアントアイソレーション（c2c 全遮断）は技術で救えない → 診断パネルで即検出し**自前 AP 持ち込み**へ切替（運用の第一選択は自前 AP + MAC 静的リース。発見機構は保険）
 - **⚠ Quest 実機未検証**（2026-07-18。streamer 3 台 + PC 卓は実測検証済み）
 
+## ⚠ host 未設定のカメラは「異常」ではない（2026-07-31 実害）
+
+現場に置いていないカメラ枠（`cameras[].host` が空・焼き込み .asset も空）は**接続しないのが正しい**。
+解析器も「show.json で host 未設定（接続しないのが正しい）」と扱う。ところが実装は例外を投げていた:
+
+- `MjpegStreamReceiver` のコンストラクタが `new Uri("http://:8080/video")` で `UriFormatException`
+- `CameraStreamRegistry.Awake` は**全カメラを 1 本の for で作る**ので、1 台が投げると
+  **残り全部が初期化されない** → 実測で 3 台とも `con=0`、体験が丸ごと砂嵐（96%）になった
+- 表面化していなかったのは、たまたま全カメラに host が焼かれていたから。
+  **`Phone04.asset` の host を空にした瞬間に全カメラが死んだ**
+
+→ 二重に堰き止めてある: (1) receiver は `Uri.TryCreate` で失敗を許容し、`Start()` が
+`_uri == null` なら何もしない（後から show.json / discovery で host が入れば `ReapplyConnection` が
+作り直す）、(2) Registry の生成ループを try/catch で包み、1 台の失敗が他を巻き込まないようにした。
+
 ## エラーハンドリング
 
 - 接続失敗時は **指数バックオフ**で再接続（1s → 2s → 4s、上限 30s）

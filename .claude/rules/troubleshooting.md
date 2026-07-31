@@ -80,6 +80,19 @@ bash tools/run-quest-xp-test.sh walk 300
 Quest が複数繋がっているときの機の選択・APK と設定の同期・使わない機のスリープは
 [`tools/quest-fleet.py`](../../tools/quest-fleet.py)（[.claude/memory/quest_fleet_two_devices.md](../memory/quest_fleet_two_devices.md)）。
 
+**⚠ ログが OK でも画は壊れていることがある。** テレメトリは「段が進んだ」を出すが「画に何か出た」は
+出さない。2026-07-31 に、FAIL ゼロ・演出 7 本 OK と判定された走行の画を録って見たら、
+**導入演出が 1 段も出ていなかった**（パススルーの初期化失敗 + シェーダのビルド剥がれ）。
+見た目に関わる変更をしたら画を録って確かめる:
+
+```bash
+python tools/quest-record.py --sec 45 --walk
+```
+
+`adb screenrecord` の出力（両眼・レンズ逆歪みの台形）から片眼を切り出して矩形へ戻す。
+**パススルーも映る**。走行後は `grep -iE "見つかりません|Failed to|Error" <log>` も必ず通すこと
+（今回の 2 件はどちらも実機ログに警告として出ていたのに、`[XP]` だけ見ていて気づけなかった）。
+
 ### 「コンパイルが通らない / Unity 重い」
 
 1. `unity-status` スキル — 接続・コンパイル状態

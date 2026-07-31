@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 83b2ae19-6926-4454-a4df-b5d350711b24
-  modified: 2026-07-31T03:36:48.059Z
+  modified: 2026-07-31T04:34:25.704Z
 ---
 
 # 実機で体験を丸ごと検証する
@@ -75,6 +75,46 @@ SERIAL=<serial> bash tools/run-quest-xp-test.sh walk 300   # 機を指名する
 
 食い違ったときの直し方: `python tools/quest-fleet.py reset-config <serial>` でキャッシュを消し、
 卓の「📦 ビルド用エクスポート」(`POST /export-build`) で焼き込みを更新してからビルドし直す。
+
+## ⚠ ログでは分からないことがある — 画を見る（2026-07-31）
+
+**テレメトリは「段が進んだ」を出すが、「画に何か出た」は出さない。** 2026-07-31 に、
+FAIL ゼロで演出 7 本すべて OK と判定された走行の画を初めて録って見たところ、
+**導入演出が 1 段も画に出ていなかった**（16〜32 秒ずっと素のパススルー）。原因は 2 つとも
+「見た目の実体が実機で死んでいた」で、ログ上は `IntroDirector` が正常に段を進めていた:
+
+- `OculusProjectConfig` の `_insightPassthroughSupport` が 0 →
+  `Failed to initialize Insight Passthrough ... Failure_NotInitialized`。
+  **アプリからパススルーを制御できない**（画面にはシステム側のパススルーが映り続けるので気づけない）
+- `FixedCamVr/IntroVeil` が Always Included Shaders に無く**ビルドで剥がれていた** →
+  `[IntroVeil] シェーダが見つかりません` で枠が描かれない
+
+どちらも実機ログに警告として出ていた。**`[XP]` だけを見て、他のタグの警告を読んでいなかった**のが
+発見を遅らせた。走行後は `grep -iE "見つかりません|Failed to|Error" <log>` を必ず通すこと。
+
+### 画を録る
+
+```bash
+python tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る
+python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換するだけ
+```
+
+`adb screenrecord` が撮るのは**コンポジタ後の最終フレーム**で、**パススルーも映る**（実測）。
+両眼が横に並び、各眼は 40 度ほど回転した台形（レンズの逆歪みが掛かった状態）なので、
+片眼を切り出してホモグラフィで矩形へ戻す。中央はほぼ見たまま、周辺は樽型歪みが残る。
+
+踏んだ罠 3 つ:
+
+- **screenrecord を先に始めて VR アプリを起動すると、画面モード変更で録画が黙って止まり 0 バイトになる。**
+  アプリを先に起動し、VR モードが安定してから録り始める
+- **H.264 は黒を 0 にしない**（16 前後）。輪郭検出の閾値が低いと画面全体を拾い、
+  視野が黒枠の中に小さく収まった動画になる
+- **角度ソートの開始点は視野の回転量で変わる**。「元画像でいちばん左上の隅」を出力の左上に固定しないと、
+  同じコードで 90 度回った動画ができる
+
+Quest の内蔵録画（`/sdcard/Oculus/VideoShots/`）は 1920x1080・片眼・正立・歪み補正済みで見た目は理想だが、
+**adb からは起動できない**（`START_SPATIAL_CAPTURE` / `vrshell LAUNCH systemux://capture` /
+`keyevent 130` をいずれも試して result=0）。人が被って手で録るならそちらが良い。
 
 ## `layout.grid` を course 座標へ
 

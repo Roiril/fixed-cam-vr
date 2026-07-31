@@ -271,6 +271,20 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
 ### 前後 (z) 方向の演出を入れる時
 現在 z は全ゾーン共通 [-1.2, +1.2]。**前後で挙動を変えたいなら別軸のロジックを足す**（zone は左右専用にしておく）。`PlayerStateBus` のような中央集約は Phase 4（CG 合成）着手時に検討、それまでは Tracker と並列に小さな BehaviourScript で済ませる。
 
+## ⚠ 実行時 `Shader.Find` するシェーダはビルドで剥がれる（2026-07-31 実害）
+
+Unity は「どのマテリアルからも参照されていないシェーダ」をビルドから外す。だから
+`Shader.Find("FixedCamVr/Xxx")` で実行時に探す型のコードは、**Editor では動くのに実機で null になる**。
+
+- 実害: `FixedCamVr/IntroVeil`（導入演出の覆い）が剥がれ、実機で
+  `[IntroVeil] シェーダ FixedCamVr/IntroVeil が見つかりません` が出て**枠が一切描かれなかった**。
+  `FixedCamVr/ScreenComposite` が無事だったのは、シーンの Screen Quad のマテリアルが参照しているから
+- 対策: **`ProjectSettings/GraphicsSettings.asset` の `m_AlwaysIncludedShaders` に加える**
+  （`- {fileID: 4800000, guid: <shader の guid>, type: 3}`）。
+  マテリアル経由で参照させる／`Resources/` に置く でも可
+- **新しく `Shader.Find` を書いたら、その場で Always Included に入れる。**
+  忘れても Editor では動くので、実機で画が出なくなるまで気づけない
+
 ## 起動時の視界保護（StartupFader）
 
 VR では **Play 開始から最初の安定フレームまで** の間、以下が同時に起こり「不安定な絵」が露出する：

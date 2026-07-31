@@ -727,6 +727,19 @@ namespace FixedCamVr.Streaming.EditorTools
                 Debug.Log("[MainDemoSceneSetup] OVRCameraRig に OVRPassthroughLayer を追加（導入演出用・既定 Underlay）。");
             }
 
+            // ⚠ **Underlay パススルーは「アプリが描かない画素」(alpha 0) にしか出ない。**
+            // OVRCameraRig の既定は不透明な黒 (a=1) なので、パススルーを有効にしても
+            // アプリが上から塗り潰して何も見えない（2026-07-31 実害: 導入演出の主役である
+            // 現実の映像が一切出ず、画はグレー一色だった）。
+            // 本編でパススルーを見せないのは PassthroughStyler が isInsightPassthroughEnabled を
+            // 落とすことで成立するので、**背景は常に透明にしておいてよい**（off なら黒く出る）。
+            foreach (var cam in rig.GetComponentsInChildren<Camera>(includeInactive: true))
+            {
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                EditorUtility.SetDirty(cam);
+            }
+
             var stylerType = System.Type.GetType("FixedCamVr.OvrBridge.PassthroughStyler, Assembly-CSharp");
             if (stylerType == null)
             {

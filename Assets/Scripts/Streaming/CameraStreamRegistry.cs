@@ -32,7 +32,19 @@ namespace FixedCamVr.Streaming
                     Debug.LogError($"[CameraStreamRegistry] sources[{i}] is null.");
                     continue;
                 }
-                _streams[i] = new CameraStream(sources[i]);
+                // ⚠ 1 台の初期化失敗で**残り全部を巻き込まない**（2026-07-31 実害）。
+                // host 未設定のカメラで MjpegStreamReceiver が UriFormatException を投げ、
+                // この for ごと落ちて 3 台とも con=0 になり、体験が丸ごと砂嵐になった。
+                // receiver 側でも空 URL を許容するようにしたが、ここでも堰き止めておく。
+                try
+                {
+                    _streams[i] = new CameraStream(sources[i]);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[CameraStreamRegistry] sources[{i}] ({sources[i].DisplayName}) " +
+                                   $"の初期化に失敗（このカメラだけ無効・他は継続）: {e.Message}");
+                }
             }
             _activeIndex = (n == 0) ? 0 : Mathf.Clamp(initialIndex, 0, n - 1);
         }

@@ -49,7 +49,8 @@ namespace FixedCamVr.Streaming
         private readonly TimeSpan _connectTimeout;
         private readonly CancellationTokenSource _cts = new();
         private Task? _loop;
-        private readonly Uri _uri;
+        // host 未設定のカメラでは URL が組めないので null になりうる。詳細はコンストラクタの注記。
+        private readonly Uri? _uri;
 
         private CancellationTokenSource? _connectionCts;
         private readonly object _connectionCtsLock = new();
@@ -95,7 +96,15 @@ namespace FixedCamVr.Streaming
         public MjpegStreamReceiver(string url, TimeSpan? connectTimeout = null, string? basicAuthToken = null)
         {
             _url = url;
-            _uri = new Uri(url);
+            // ⚠ **URL が組めなくても例外を投げない。**
+            // host 未設定のカメラ（現場に置いていない枠）では "http://:8080/video" になり
+            // `new Uri` が UriFormatException を投げる。ところが CameraStreamRegistry.Awake は
+            // 全カメラを 1 本の for で作るので、**1 台が投げると残り全部が初期化されない**
+            // （2026-07-31 実害: Phone04 の焼き込み host を空にしたら 3 台とも con=0 になり、
+            //  体験が丸ごと砂嵐になった。空 host は「接続しないのが正しい」状態であって異常ではない）。
+            // 接続しないまま生かしておけば、後から show.json / discovery で host が入ったときに
+            // CameraStream.ReapplyConnection が作り直す。
+            Uri.TryCreate(url, UriKind.Absolute, out _uri);
             _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(3);
             _basicAuthToken = basicAuthToken;
         }
@@ -103,6 +112,7 @@ namespace FixedCamVr.Streaming
         public void Start()
         {
             if (_loop != null) return;
+            if (_uri == null) return;  // 接続先が無い。黙って何もしない（IsConnected は false のまま）
             _loop = Task.Run(() => RunLoopAsync(_cts.Token));
         }
 
@@ -267,8 +277,9 @@ namespace FixedCamVr.Streaming
             connectCts.CancelAfter(_connectTimeout);
 
             // ホスト名解決 + 接続。OperationCanceledException はそのまま伝播させる。
-            string host = _uri.Host;
-            int port = _uri.Port > 0 ? _uri.Port : 80;
+            Uri uri = _uri!;  // Start() が null をはじいているのでここには来ない
+            string host = uri.Host;
+            int port = uri.Port > 0 ? uri.Port : 80;
             using (connectCts.Token.Register(() => { try { socket.Close(); } catch { } }))
             {
                 await socket.ConnectAsync(host, port);
@@ -276,7 +287,7 @@ namespace FixedCamVr.Streaming
             connectCts.Token.ThrowIfCancellationRequested();
 
             // HTTP/1.1 GET を手書きで送る（最小ヘッダ）
-            string path = string.IsNullOrEmpty(_uri.PathAndQuery) ? "/" : _uri.PathAndQuery;
+            string path = string.IsNullOrEmpty(uri.PathAndQuery) ? "/" : uri.PathAndQuery;
             string authLine = _basicAuthToken == null ? "" : $"Authorization: Basic {_basicAuthToken}\r\n";
             string reqLine =
                 $"GET {path} HTTP/1.1\r\n" +
