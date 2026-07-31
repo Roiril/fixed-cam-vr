@@ -9,7 +9,7 @@
 - [show_run_skeleton.md](show_run_skeleton.md) - 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／凍結を増やさない
 - [glitch_and_latency.md](glitch_and_latency.md) - 乱れ演出と遅延計測：_Glitch と _SignalLost は別系統／post は 4 箇所同時に直す／絶対 E2E は測っていない（配信側に /clock が要る）
 
-- [material_flow.md](material_flow.md) - 素材フローを触る前に：マスクは枠空間 16:9（実機は contain-fit を通さない）／採用は show.json から導出／ラプラシアンは卓だけ／プロンプトの棚は 1 つでスロット無し
+- [material_flow.md](material_flow.md) - 素材フローを触る前に：マスクは枠空間 16:9（実機は contain-fit を通さない）／**マスクの決め方は未着手＝工房の差分は見た秒数で変わる**／採用は show.json から導出／ラプラシアンは卓だけ／プロンプトの棚は 1 つでスロット無し
 - [codex_image_pipeline.md](codex_image_pipeline.md) - 卓の 🪄 から Codex で素材生成。背景保存は実測で成立（差分＝マスク）／入力画像はプロンプトに絶対パス／生成は 127.0.0.1 のみ
 
 - [show_json_is_live_config.md](show_json_is_live_config.md) - show.json は git 管理外の現場設定。卓の検証で書き換えると復元できない（検証サーバもポートを分けただけでは隔離にならない）
