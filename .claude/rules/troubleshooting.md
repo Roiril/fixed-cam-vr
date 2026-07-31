@@ -129,6 +129,7 @@ python tools/quest-record.py --sec 45 --walk
 |---|---|
 | `unity-status` | Unity MCP / Editor / コンソールエラー一括 |
 | `adb-logcat` | 実機 Quest / Pixel のログ取得（`unity` / `xr` / `streamer` / `crash` フィルタ） |
+| `quest-capture` | **実機の「見ている絵」を動画で取り出す**（HMD 不要・パススルーも映る）。ログが OK でも画が壊れている時 |
 | `unity-mcp` | MCP 接続診断と再接続 |
 | `streaming-offline-test` | スマホ無しで Unity の MJPEG パイプライン検証 |
 | `quest-build` | 廻リ視 / TableDuo の APK を Quest にビルド & インストール |

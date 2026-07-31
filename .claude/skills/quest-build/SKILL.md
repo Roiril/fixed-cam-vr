@@ -143,5 +143,8 @@ adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastU
 ## 関連
 
 - [adb-logcat](../adb-logcat/SKILL.md) — インストール後の実機ログ確認
+- [quest-capture](../quest-capture/SKILL.md) — **入れた後、実機の画を録って見た目を確かめる**（HMD 不要）
+- `python tools/quest-fleet.py sync` — Quest が複数あるとき、mtime を比べて古い機だけへ配る
+  （[quest_fleet_two_devices](../../memory/quest_fleet_two_devices.md)）
 - [streamer-android-build](../streamer-android-build/SKILL.md) — 配信側スマホアプリのビルド（同じ adb の罠）
 - [unity-status](../unity-status/SKILL.md) — ビルド前の Editor 状態確認

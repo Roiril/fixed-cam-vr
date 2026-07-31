@@ -46,5 +46,6 @@ logcat 生出力をそのまま貼らず、以下に整形して返す：
 
 ## 関連スキル
 
+- `quest-capture` — **ログが OK でも画が壊れていることがある**。見た目に関わる件は実機の画を録って確かめる
 - `streamer-android-build` — installDebug が落ちる時の adb 復旧手順
 - `.claude/rules/troubleshooting.md` — どの層を疑うかの判定フロー

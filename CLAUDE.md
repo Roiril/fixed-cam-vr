@@ -111,6 +111,8 @@ Unity プロジェクトは Web と違い `localhost` でブラウザ検証が�
   - `unity-status` — Unity MCP / Editor 状態 / コンソールエラーを一括取得（Unity 作業の入り口）
   - `unity-mcp` — Unity MCP 接続診断と再登録（`unity-status` でツール不在を確認した時の次手）
   - `adb-logcat` — Quest 3 / Android 実機ログ取得（unity / xr / streamer / crash フィルタ）
+  - `quest-capture` — **実機の「見ている絵」を動画で取り出す**（HMD 不要・パススルーも映る）。
+    見た目に関わる変更をしたら必ず通す — ログが OK でも画が壊れていることがある
   - `handoff` — 次セッション向けの引き継ぎプロンプト生成
   - `quest-build` — 廻リ視 / TableDuo の APK を Quest にビルド & インストール（BuildVariants メニュー / 2 アプリ分離 / adb）
   - `streamer-android-build` — 姉妹リポ APK ビルド & 実機インストール

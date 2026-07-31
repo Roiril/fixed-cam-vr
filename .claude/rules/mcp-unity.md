@@ -57,6 +57,12 @@ Unity プロジェクトの編集はまず MCP for Unity 経由を試し、ダ�
   `run_tests` の結果は**テスト総数とテスト名で自分のプロジェクトか確認する**こと。混線したら
   `set_active_instance` を打ち直す。あわせて `get_test_job` が `Unknown job_id` を返す症状も出る
 - **⚠ ただし `run_tests` の pass も再コンパイルの証明にはならない**（2026-07-16 実害×2: .cs 編集→run_tests 37/37 pass→メニュー実行が**旧 DLL のまま走った**。テストが直前コンパイル済みアセンブリで実行されるケースがある）。**「編集 → 実行」の間は必ず `Library/ScriptAssemblies/<該当>.dll` の mtime が編集時刻より新しいことを確認**してから execute_menu_item / ビルドを呼ぶ。mtime が古ければ `refresh_unity mode=force compile=request` を打って mtime 更新を待つ。手順: ①.cs 編集 ②refresh_unity force ③DLL mtime 確認（古ければ再 refresh）④read_console でエラー 0 ⑤実行
+- **⚠ `manage_scriptable_object` は成功を返しても書けていないことがある**（2026-07-31 実害）。
+  `Assets/Settings/Cameras/Phone04.asset` の `host` を空文字にする patch が
+  `{"op":"set","ok":true,"message":"Set string."}` を返したのに、**ディスク上の値は変わっていなかった**
+  （差分は末尾スペースの再シリアライズだけ）。空文字への set が握り潰されたと思われる。
+  → **書いた後は必ず `git diff <asset>` か Read で実値を確認する**（delegation.md §8 の
+  「完了報告を物証で検証する」は MCP ツールの戻り値にも当てはまる）。確実に書きたいなら YAML 直編集 + refresh
 - **`execute_code` は Windows で「ファイル名または拡張子が長すぎます」で失敗しがち**（mono コマンドライン長制限）。live シーンの値設定等は YAML 直編集＋`manage_scene load` 再ロード、強制コンパイルは `run_tests` で代替する
 - **新規作成した .cs は build / run_tests の前に明示インポートが要る**（2026-06-29 実害）。Write で作っただけだと非フォーカス Editor は AssetDatabase に取り込まず、それを参照する既存 .cs が `CS0246`（型が見つからない）でビルド失敗する（しかも run_tests は stale DLL で通ってしまい気付けない）。→ 新規ファイル追加後は `refresh_unity mode=force scope=all` で取り込み、`read_console types=["Error"]` でエラーゼロを確認してからビルド。`run_tests` の 6/6 を信じる前に `Library/ScriptAssemblies/*.dll` の mtime が更新されたかも見る
 - **⚠ `manage_editor action=play` は PreToolUse hook（.claude/hooks/guard-unity-play.js）が機械ブロックする**（2026-07-23〜。実害 2 回目を受け、ルール参照頼みを廃止）。Link / Meta XR Simulator を確認した上で `.claude/allow-unity-play` を touch するとワンショット解錠（実行時に自動削除）。以下は背景の原記録：
