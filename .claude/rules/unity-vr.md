@@ -113,6 +113,13 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 シーンの保存日がコードの実装日より古いときは、**ビルド前に必ず `Setup Main Demo Scene` を再実行**する
 （`grep "m_Name: Intro" Assets/Scenes/Main.unity` で 1 行も出なければ未配線）。
 
+**⚠ ただし「コンポーネントが付いているか」は GameObject 名では確認できない**（2026-07-31 に誤診した）。
+`IntroStructureWire` は `IntroDirector` と同じ GameObject に `AddComponent` されるので
+`m_Name: IntroStructureWire` は**存在しないのが正常**。`OVRPassthroughLayer` も同様で、シーン YAML には
+型名ではなく script guid で記録されるため `grep OVRPassthroughLayer` は 0 件になる。
+これを「未配線」と読むと、実際には別にある原因（今回はパススルーの初期化失敗とシェーダの
+ビルド剥がれ）を見落とす。**確実なのは実機ログを読むこと** — 今回の 3 件はすべてログに出ていた。
+
 ### ゾーン校正の再設計（2026-07-16〜・形状は PC / 位置合わせは HMD 2 点登録）
 
 **旧 ZoneCalibrator（ゾーンを HMD 内でドラッグ・リサイズ・回転）は廃止**。校正を 2 つに分解した（設計 [.claude/plans/2026-07-16_zone-authoring-redesign.md](../plans/2026-07-16_zone-authoring-redesign.md)）：
