@@ -37,14 +37,13 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public sealed class ShowRunLogic
     {
-        /// <summary>走行中の演出を待つ上限 (秒)。これを超えたら演出が終わらなくても終了する。</summary>
-        public const float MaxEndHoldSec = 12f;
-
         private bool _introEnabled = true;
         private float _introMinSec = 20f;
         private bool _introAutoAdvance = true;
         private int _totalLaps = ShowRunDefaults.TotalLaps;
         private float _hardLimitSec = 300f;
+        private float _endGraceSec = ShowRunDefaults.EndGraceSec;
+        private float _endHoldMaxSec = ShowRunDefaults.EndHoldMaxSec;
 
         private ShowPhase _phase = ShowPhase.Intro;
         private float _introElapsed;
@@ -70,14 +69,28 @@ namespace FixedCamVr.Streaming
         /// <summary>本編の区間進行を下流へ流してよい相か（＝ CueScheduler のゲート）。</summary>
         public bool GateOpen => _phase == ShowPhase.Run;
 
+        /// <param name="endGraceSec">
+        /// 終了条件が成立してから、**演出が走っていなくても必ず待つ**秒数。
+        ///
+        /// これが無いと <b>帰りの A（lap = totalLaps + 1 の <c>order[0]</c>）に置いた演出が
+        /// 始まる前に暗転する</b>。その区間に入ったフレームで周回が上がって終了条件が立つ一方、
+        /// <c>at:"enter"</c> の演出はその同じ連鎖では**武装されるだけ**で、開始は次フレーム以降の
+        /// <c>TakeRunner.Update</c> だから。スクリプト実行順は未定義なので、
+        /// 「演出が走っているか」だけを見ると走り出す前に終わる順序が実在する。
+        /// </param>
+        /// <param name="endHoldMaxSec">走行中の演出を見せ切る上限 (秒)。これを超えたら終わらなくても終了する。</param>
         public void Configure(bool introEnabled, float introMinSec, bool introAutoAdvance,
-                              int totalLaps, float hardLimitSec)
+                              int totalLaps, float hardLimitSec,
+                              float endGraceSec = ShowRunDefaults.EndGraceSec,
+                              float endHoldMaxSec = ShowRunDefaults.EndHoldMaxSec)
         {
             _introEnabled = introEnabled;
             _introMinSec = introMinSec > 0f ? introMinSec : 0f;
             _introAutoAdvance = introAutoAdvance;
             _totalLaps = totalLaps > 0 ? totalLaps : ShowRunDefaults.TotalLaps;
             _hardLimitSec = hardLimitSec;
+            _endGraceSec = endGraceSec > 0f ? endGraceSec : 0f;
+            _endHoldMaxSec = endHoldMaxSec > 0f ? endHoldMaxSec : 0f;
         }
 
         /// <summary>
@@ -202,11 +215,22 @@ namespace FixedCamVr.Streaming
                         return ShowRunEvent.None;
                     }
 
-                    // 終了条件を満たした。走行中の演出は見せ切る（上限つき）。
-                    if (takeRunning && _endHeldSec < MaxEndHoldSec)
+                    // 時間切れは待たない（待つと hardLimitSec の意味が壊れる）。
+                    if (timedOut)
+                    {
+                        _endHolding = false;
+                        _phase = ShowPhase.Finished;
+                        return ShowRunEvent.RunFinished;
+                    }
+
+                    // 周回を走り切った。
+                    //   - grace のあいだは演出が走っていなくても必ず待つ（帰りの A の演出が始まる猶予）
+                    //   - 走り出した演出は上限まで見せ切る
+                    // 分岐を 2 本に割らず 1 つの式で表す（新しい状態・ラッチを増やさない）。
+                    _endHeldSec += dt;
+                    if (_endHeldSec < _endGraceSec || (takeRunning && _endHeldSec < _endHoldMaxSec))
                     {
                         _endHolding = true;
-                        _endHeldSec += dt;
                         return ShowRunEvent.None;
                     }
                     _endHolding = false;
@@ -230,5 +254,46 @@ namespace FixedCamVr.Streaming
         public const float TargetSec = 180f;
         public const float HardLimitSec = 300f;
         public const float EndFadeSec = 1.5f;
+
+        /// <summary>終了条件成立後、演出が始まるのを必ず待つ秒数。</summary>
+        public const float EndGraceSec = 3f;
+
+        /// <summary>走行中の演出を見せ切る上限 (秒)。帰りの A で流す録画は 20〜40 秒になる。</summary>
+        public const float EndHoldMaxSec = 60f;
+    }
+
+    /// <summary>
+    /// 区間 (lap, camera) が体験中に踏まれうるか。
+    ///
+    /// 周回は進行ポインタ方式で <c>course.order[0]</c> へ戻った時に上がるので、
+    /// <b><c>lap = totalLaps + 1</c> の <c>order[0]</c>（＝帰りの A）は構造的に必ず踏む。</b>
+    /// 体験は「元の位置に戻って終わる」ので、この 1 区間だけは到達可能として扱う
+    /// （<c>totalLaps</c> を 4 に上げると帰りの B・C まで生きてしまい、企画書の「3 周」とも食い違う）。
+    ///
+    /// ⚠ <b>同じ式が 3 箇所にある。</b> ここ / 卓の <c>run-model.mjs</c> の <c>isSegmentReachable</c> /
+    /// <c>tools/analyze-xp-log.py</c> の <c>is_segment_reachable</c>。片方だけ直すと沈黙して食い違うので、
+    /// 期待値を 3 者のテストにハードコードして突き合わせてある。
+    /// </summary>
+    public static class ShowRunReach
+    {
+        public static bool IsSegmentReachable(int lap, int camera, int totalLaps, int[]? order)
+        {
+            if (lap < 1) return false;
+            if (totalLaps < 1) totalLaps = ShowRunDefaults.TotalLaps;
+            if (lap <= totalLaps) return true;
+            if (lap != totalLaps + 1) return false;
+            // 順路が未著作なら判定できない。到達可能側に倒す（著作を黙って殺さない）。
+            if (order == null || order.Length == 0) return true;
+            return camera == order[0];
+        }
+
+        /// <summary>その区間が「帰りの A」か（表示の文言を変えるのに使う）。</summary>
+        public static bool IsReturnSegment(int lap, int camera, int totalLaps, int[]? order)
+        {
+            if (totalLaps < 1) totalLaps = ShowRunDefaults.TotalLaps;
+            if (lap != totalLaps + 1) return false;
+            if (order == null || order.Length == 0) return true;
+            return camera == order[0];
+        }
     }
 }

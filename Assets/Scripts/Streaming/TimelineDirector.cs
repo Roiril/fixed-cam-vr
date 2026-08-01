@@ -79,6 +79,15 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中の演出の id（卓のモニタ用。走っていなければ空）。</summary>
         public string ActiveTakeId => takeRunner != null ? takeRunner.ActiveTakeId : "";
 
+        /// <summary>再生中の端末内録画（テレメトリ用）。null なら録画カットではない。</summary>
+        public Recording.RecordedFramePlayer? ActiveRecording => takeRunner?.ActiveRecording;
+
+        /// <summary>再生中の録画が指す周（1 始まり）。無ければ -1。</summary>
+        public int ActiveRecordingLap => takeRunner != null ? takeRunner.ActiveRecordingLap : -1;
+
+        /// <summary>再生中の録画が指すカメラ index。無ければ -1。</summary>
+        public int ActiveRecordingCamera => takeRunner != null ? takeRunner.ActiveRecordingCamera : -1;
+
         /// <summary>
         /// タイムラインを分配する。区間 takes[] を <see cref="TakeRunner"/> へ流し込み、
         /// 区間 post は次の <see cref="OnCameraEntered"/> で貼り直す（ここでは一旦解除する）。

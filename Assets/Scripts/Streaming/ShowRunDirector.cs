@@ -63,9 +63,11 @@ namespace FixedCamVr.Streaming
             bool introAuto = def?.introAutoAdvance ?? true;
             int laps = def?.ResolveTotalLaps() ?? ShowRunDefaults.TotalLaps;
             float hard = def != null ? def.hardLimitSec : ShowRunDefaults.HardLimitSec;
+            float grace = def?.ResolveEndGraceSec() ?? ShowRunDefaults.EndGraceSec;
+            float hold = def?.ResolveEndHoldMaxSec() ?? ShowRunDefaults.EndHoldMaxSec;
             _targetSec = def != null && def.targetSec > 0f ? def.targetSec : ShowRunDefaults.TargetSec;
             _endFadeSec = def != null && def.endFadeSec >= 0f ? def.endFadeSec : ShowRunDefaults.EndFadeSec;
-            _logic.Configure(introEnabled, introMin, introAuto, laps, hard);
+            _logic.Configure(introEnabled, introMin, introAuto, laps, hard, grace, hold);
             // JsonUtility は `intro` キーが無くても「全部 0」の実体を作るので、それは未設定として扱う
             // （そのまま渡すと enabled=false に化けて導入演出が黙って出なくなる）。
             var i = def?.intro;

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 83b2ae19-6926-4454-a4df-b5d350711b24
-  modified: 2026-07-31T08:35:35.773Z
+  modified: 2026-08-01T15:38:21.200Z
 ---
 
 # 実機で体験を丸ごと検証する
@@ -367,6 +367,26 @@ stream」では発火しないようにした）で、これが**前回のビル
 **`ev=rec` のキーを直した。** 旧実装の `cam=` は `registry.ActiveIndex`＝**画面に映っている
 カメラ**で、録画対象ではなかった（演出中は食い違う）。いまは `lap=` / `cam=` が録画対象の区間で、
 `bytes=` がその区間で実際に書いたバイト数（**0 なら 1 フレームも録れていない ＝ 3 周目の素材が無い**）。
+
+### 録画は「録れた」と「画に出た」を分けて観測する（2026-08-02 追加）
+
+暗い部屋では**録画が再生されたかを目視で確かめられない**。しかもファイルを開けただけのカットは
+絵が 1 枚も出ないまま尺を消費し、`ev=take` は正常に begin→end する ＝ §6.4 と完全に同型の壊れ方をする。
+→ 記録側と再生側を別のイベントにした。
+
+| キー | 何を証明するか | 取得元 |
+|---|---|---|
+| `ev=rec v=stop … frames=` | その区間に**書けた枚数**。バイト数はヘッダだけの空ファイルでも 0 にならないので、判定に使えるのは枚数 | `SegmentRecorder.LastSegmentFrames`（`SegmentRecordWriter.WrittenFrames` 新設） |
+| `ev=recplay v=open … frames= dur=` | 録画ファイルを**開けた**（＝カットが飛んでいない） | `TimelineDirector.ActiveRecording` |
+| `ev=recplay v=close … presented= failed= luma=` | **実際にテクスチャへ載せた枚数**と輝度（暗所で「開けたが真っ黒しか出ていない」を見分ける） | `RecordedFramePlayer.PresentedCount` |
+| `sum` の `recPlay=n/N` | 再生中に何枚目まで出したか（尺だけ進んで絵が出ていないのを見る） | 同上 |
+| `sum` の `floorY=` `headY=` `regv=` | 床の高さが解けたか・頭が床から何 m か（`regv<2` は床を測っていない登録） | `CourseFrame` |
+
+解析は「## 端末内録画 — 録れたか / 再生されたか」の 2 節で判定する。
+**`presented=0` は FAIL**（開けたのに画に出ていない）。`luma<0.02` は WARN（撮影時に映像が来ていたか）。
+
+⚠ **この計装より前のログを「起きなかった」と読まない。** `recplay` も `rec … frames=` も無ければ
+旧ビルドなので WARN で切り抜ける（`has_rec_telemetry`）。直っているものを壊しに行くことになる。
 
 ⚠ **観測項目は C# の `ShowTelemetryHost` と Python の `analyze-xp-log.py` を対で直す。**
 片方だけだと沈黙して食い違う（`ev=config` と同じ罠）。新しいキーが無い古いログでも

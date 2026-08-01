@@ -278,14 +278,24 @@ namespace FixedCamVr.Diagnostics
             else
             {
                 bool hasLap = lapCounter != null && lapCounter.CurrentLap >= 1;
-                if (hasLap) { sb.Append(lapCounter!.CurrentLap); sb.Append("周目"); }
-                else sb.Append("周回 -");
-                if (run != null)
+                // 走り切る周数を超えた周＝「帰りのスタート区間」（体験はここで終わる）。
+                // 「4周目/3周」と出ると壊れて見えるので、そこだけ言い方を変える。
+                if (hasLap && run != null && lapCounter!.CurrentLap > run.TotalLaps)
                 {
-                    sb.Append('/');
-                    sb.Append(run.TotalLaps);
-                    sb.Append("周 ・ 経過 ");
+                    sb.Append("もどり ・ 経過 ");
                     AppendClock(sb, run.RunElapsedSec);
+                }
+                else
+                {
+                    if (hasLap) { sb.Append(lapCounter!.CurrentLap); sb.Append("周目"); }
+                    else sb.Append("周回 -");
+                    if (run != null)
+                    {
+                        sb.Append('/');
+                        sb.Append(run.TotalLaps);
+                        sb.Append("周 ・ 経過 ");
+                        AppendClock(sb, run.RunElapsedSec);
+                    }
                 }
             }
             sb.Append(" ・ いまの場所: ");
@@ -372,6 +382,8 @@ namespace FixedCamVr.Diagnostics
                             sb.Append("cm）");
                         }
                     }
+                    // 床の高さを測っていない登録＝ワイヤーや人形が沈んで見える原因。名指しする。
+                    if (!courseFrame.HasFloorY) sb.Append(" ⚠床の高さは未測定");
                 }
             }
         }

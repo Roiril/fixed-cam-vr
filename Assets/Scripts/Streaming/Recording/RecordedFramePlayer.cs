@@ -47,6 +47,18 @@ namespace FixedCamVr.Streaming.Recording
         /// <summary>フレーム数（0 なら再生するものが無い）。</summary>
         public int FrameCount => _index.Length;
 
+        /// <summary>
+        /// 実際にテクスチャへ載せたフレーム数。**ファイルを開けたことと画に出たことは別**なので、
+        /// 「録画が再生された」を証明できるのはこちら（暗所で目視できない現場ではこれが唯一の証拠）。
+        /// </summary>
+        public int PresentedCount { get; private set; }
+
+        /// <summary>読み出しに失敗したフレーム数（壊れ JPEG・途中で切れたファイル）。</summary>
+        public int FailedCount { get; private set; }
+
+        /// <summary>直近に載せたフレームの平均輝度 0..1（暗所で「黒しか出ていない」を見分ける）。</summary>
+        public float LastLuma { get; private set; }
+
         private RecordedFramePlayer(FileStream fs, RecordedSegmentFormat.FrameRef[] index)
         {
             _fs = fs;
@@ -107,14 +119,42 @@ namespace FixedCamVr.Streaming.Recording
                     if (n <= 0) break;
                     got += n;
                 }
-                if (got != f.length) return;                 // 途中で切れている → 前のフレームを保つ
-                if (!_tex.LoadImage(_buf, markNonReadable: false)) return;  // 壊れ JPEG は無視
+                if (got != f.length) { FailedCount++; return; }             // 途中で切れている → 前のフレームを保つ
+                if (!_tex.LoadImage(_buf, markNonReadable: false)) { FailedCount++; return; }  // 壊れ JPEG は無視
                 if (_tex.height > 0) Aspect = (float)_tex.width / _tex.height;
+                PresentedCount++;
+                // 最初の 1 枚だけ輝度を測る（毎フレーム GetPixels32 すると重い）。暗所での
+                // 「開けたが真っ黒しか出ていない」を、目視ではなくログで見分けるため。
+                if (PresentedCount == 1) LastLuma = SampleLuma();
             }
             catch (Exception e)
             {
+                FailedCount++;
                 Debug.LogWarning($"[RecordedFrame] フレーム読み出し失敗: {e.Message}");
             }
+        }
+
+        // 16x16 に縮めた画素の平均輝度。RGB24 の Texture2D は CPU から読めるので
+        // GetPixels の矩形読みで済む（RenderTexture の読み戻しは要らない）。
+        private float SampleLuma()
+        {
+            try
+            {
+                int w = _tex.width, h = _tex.height;
+                if (w <= 0 || h <= 0) return 0f;
+                int stepX = Mathf.Max(1, w / 16), stepY = Mathf.Max(1, h / 16);
+                float sum = 0f;
+                int n = 0;
+                for (int y = 0; y < h; y += stepY)
+                    for (int x = 0; x < w; x += stepX)
+                    {
+                        Color c = _tex.GetPixel(x, y);
+                        sum += 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+                        n++;
+                    }
+                return n > 0 ? sum / n : 0f;
+            }
+            catch { return 0f; }
         }
 
         public void Dispose()

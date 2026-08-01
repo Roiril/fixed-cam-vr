@@ -114,7 +114,8 @@ namespace FixedCamVr.Tracking
             }
 
             var map = BuildCells(grid, out int rows, out int cols);
-            var route = BuildRoute(map, rows, cols, grid.tileM, order, out string routeLog);
+            int laps = _run != null ? _run.TotalLaps : 3;
+            var route = BuildRoute(map, rows, cols, grid.tileM, order, laps, out string routeLog);
             if (route.Count == 0)
             {
                 Debug.LogError("[XPWalk] 経路生成に失敗 — 終了");
@@ -177,9 +178,11 @@ namespace FixedCamVr.Tracking
             }
 
             // 終了の判定は ShowRunDirector が握っている。歩き終わっても終わらないなら、
-            // それ自体が観測結果（3 周したのに終わらない = 周回検知の不具合）。
+            // それ自体が観測結果（周回したのに終わらない = 周回検知の不具合）。
+            // 帰りの A では前の周の録画が流れ切るのを待つので、run.endHoldMaxSec ぶんの余裕を見る。
+            float tailLimit = _run != null ? Mathf.Max(30f, ShowRunDefaults.EndHoldMaxSec + 10f) : 30f;
             float tail = 0f;
-            while (_run != null && _run.Phase != ShowPhase.Finished && tail < 30f)
+            while (_run != null && _run.Phase != ShowPhase.Finished && tail < tailLimit)
             {
                 tail += Time.deltaTime;
                 yield return null;
@@ -234,7 +237,9 @@ namespace FixedCamVr.Tracking
                 if (_frame == null || _head == null || _rig == null) yield break;
 
                 Vector3 headW = _head.position;
-                Vector3 targetW = _frame.CourseToWorld(courseTarget, headW.y);
+                // 高さは使わない（XZ だけを見て水平に歩かせる）。CourseToWorld の第 2 引数は
+                // 2026-08-02 から「床からの高さ」なので、ここに headW.y を渡すと意味が違う。
+                Vector3 targetW = _frame.CourseToWorld(courseTarget, 0f);
                 var d = new Vector2(targetW.x - headW.x, targetW.z - headW.z);
                 float dist = d.magnitude;
                 if (dist <= ArriveEps) yield break;
@@ -353,11 +358,14 @@ namespace FixedCamVr.Tracking
         }
 
         /// <summary>
-        /// order を 3 周ぶん（+ 最後に order[0] へ戻る）辿るウェイポイント列。
-        /// 曲がり角だけを残す（直線区間の中間セルは間引く）。
+        /// order を <paramref name="laps"/> 周ぶん（+ 最後に order[0] へ戻る＝**帰りの A**）辿る
+        /// ウェイポイント列。曲がり角だけを残す（直線区間の中間セルは間引く）。
+        ///
+        /// 締めの order[0] は「周回を確定させるためのおまけ」ではなく<b>体験の最後の区間</b>で、
+        /// ここで前の周の録画が流れる。だから滞在も他と同じだけ取る（録画の再生を観測するため）。
         /// </summary>
         private static List<Waypoint> BuildRoute(int[,] map, int rows, int cols, float tileM,
-            int[] order, out string log)
+            int[] order, int laps, out string log)
         {
             var route = new List<Waypoint>();
             log = "";
@@ -369,9 +377,10 @@ namespace FixedCamVr.Tracking
             }
             if (reps.Count < 2) return route;
 
-            // 3 周 + 締めの 1 区間（order[0] へ戻ると周回が確定するため）。
+            // laps 周 + 帰りの A（order[0] へ戻ると周回が上がり、そこが最後の区間になる）。
+            if (laps < 1) laps = 3;
             var seq = new List<int>();
-            for (int lap = 0; lap < 3; lap++)
+            for (int lap = 0; lap < laps; lap++)
                 foreach (int cam in order) seq.Add(cam);
             seq.Add(order[0]);
 

@@ -96,11 +96,52 @@ namespace FixedCamVr.Streaming.Tests
             r.NotifyLap(2);
             r.NotifyLap(3);
             Assert.That(r.Tick(1f, true, false), Is.EqualTo(ShowRunEvent.None), "3 周目は本編のまま");
-            // 3 周目の最後の区間からスタート領域へ戻ると lap=4 になる = 走り切った
+            // 3 周目の最後の区間からスタート領域へ戻ると lap=4 になる = 走り切った。
+            // ただしそこは**帰りの A**（体験の最後の区間）なので、演出が始まる猶予（endGraceSec）を
+            // 必ず待ってから終わる。
             r.NotifyLap(4);
-            Assert.That(r.Tick(0.02f, true, false), Is.EqualTo(ShowRunEvent.RunFinished));
+            Assert.That(r.Tick(0.02f, true, false), Is.EqualTo(ShowRunEvent.None), "猶予のあいだは終わらない");
+            Assert.That(r.Tick(ShowRunDefaults.EndGraceSec, true, false), Is.EqualTo(ShowRunEvent.RunFinished));
             Assert.That(r.Phase, Is.EqualTo(ShowPhase.Finished));
             Assert.That(r.GateOpen, Is.False);
+        }
+
+        [Test]
+        public void Run_WaitsGrace_SoTheReturnSegmentTakeCanStart()
+        {
+            // 帰りの A に入ったフレームで終了条件が立つが、その区間の at:"enter" 演出は
+            // まだ武装されただけで走っていない（開始は次フレーム以降の TakeRunner.Update で、
+            // スクリプト実行順は未定義）。takeRunning だけを見ると走り出す前に暗転する。
+            var r = ToRun();
+            r.NotifyLap(4);
+            for (int i = 0; i < 10; i++)   // 猶予 3 秒ぶん（0.1s × 10 = 1.0s）はまだ終わらない
+                Assert.That(r.Tick(0.1f, true, takeRunning: false), Is.EqualTo(ShowRunEvent.None));
+            Assert.That(r.EndHolding, Is.True);
+
+            // 猶予のあいだに演出が始まれば、そのまま見せ切る側へ移る
+            Assert.That(r.Tick(0.1f, true, takeRunning: true), Is.EqualTo(ShowRunEvent.None));
+            Assert.That(r.Tick(30f, true, takeRunning: true), Is.EqualTo(ShowRunEvent.None),
+                "旧実装の上限 12 秒では帰りの A の録画（20〜40 秒）が途中で切れた");
+            Assert.That(r.Phase, Is.EqualTo(ShowPhase.Run));
+        }
+
+        [Test]
+        public void Run_GraceCanBeDisabled()
+        {
+            var r = new ShowRunLogic();
+            r.Configure(false, IntroMin, true, 3, 300f, endGraceSec: 0f, endHoldMaxSec: 60f);
+            r.BeginRun();
+            r.NotifyLap(4);
+            Assert.That(r.Tick(0.02f, true, false), Is.EqualTo(ShowRunEvent.RunFinished),
+                "猶予 0 なら従来どおり即終了する");
+        }
+
+        [Test]
+        public void Run_HardLimitDoesNotWaitForGraceOrTake()
+        {
+            // 時間切れで待つと hardLimitSec の意味が壊れる（動かない体験者の保険なので）。
+            var r = ToRun(hardLimit: 30f);
+            Assert.That(r.Tick(31f, true, takeRunning: true), Is.EqualTo(ShowRunEvent.RunFinished));
         }
 
         [Test]
@@ -122,7 +163,9 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(r.EndHolding, Is.True);
             Assert.That(r.Phase, Is.EqualTo(ShowPhase.Run));
 
-            // 演出が終われば次の Tick で終了する
+            // 演出が終われば次の Tick で終了する（猶予を過ぎていること）
+            Assert.That(r.Tick(ShowRunDefaults.EndGraceSec, true, takeRunning: true),
+                Is.EqualTo(ShowRunEvent.None));
             Assert.That(r.Tick(0.02f, true, takeRunning: false), Is.EqualTo(ShowRunEvent.RunFinished));
         }
 
@@ -131,8 +174,9 @@ namespace FixedCamVr.Streaming.Tests
         {
             var r = ToRun();
             r.NotifyLap(4);
-            // 演出が終わらなくても必ず終わる
-            for (int i = 0; i < 100; i++)
+            // 演出が終わらなくても必ず終わる（上限は endHoldMaxSec）
+            int steps = (int)(ShowRunDefaults.EndHoldMaxSec / 0.5f) + 10;
+            for (int i = 0; i < steps; i++)
             {
                 if (r.Tick(0.5f, true, takeRunning: true) == ShowRunEvent.RunFinished) break;
             }

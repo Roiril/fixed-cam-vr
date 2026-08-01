@@ -106,6 +106,11 @@ namespace FixedCamVr.Diagnostics
         private int _recCam = -1;
         private long _recBytesAtStart;
 
+        // 再生中の録画（記録側とは別系統）。閉じるときに「画に出た枚数」を出すために参照を持つ。
+        private RecordedFramePlayer? _lastRecPlayer;
+        private int _recPlayLap = -1;
+        private int _recPlayCam = -1;
+
         // --- サマリ集計 ---
         private float _resolveAccum;
         private float _summaryAccum;
@@ -280,6 +285,21 @@ namespace FixedCamVr.Diagnostics
         /// <summary>導入の覆いが描画状態か。<c>-</c>=シーンに居ない / <c>0</c>=非描画 / <c>1</c>=描画中。</summary>
         private string VeilState => _veil == null ? "-" : (_veil.IsActive ? "1" : "0");
 
+        // 頭の高さ（床基準）を出すためだけの参照。Camera.main は毎回タグ検索するのでキャッシュする。
+        private Transform? _head;
+        private Transform? HeadTransform
+        {
+            get
+            {
+                if (_head == null)
+                {
+                    Camera? c = Camera.main;
+                    _head = c != null ? c.transform : null;
+                }
+                return _head;
+            }
+        }
+
         /// <summary>覆いの実体を組めたか。<c>0</c> なら <c>Shader.Find</c> が null ＝ 枠は一生出ない。</summary>
         private string VeilBuiltState => _veil == null ? "-" : (_veil.IsBuilt ? "1" : "0");
 
@@ -424,6 +444,7 @@ namespace FixedCamVr.Diagnostics
                     if (_lastRecording)
                         Emit($"ev=rec v=stop lap={_recLap} cam={_recCam} " +
                              $"bytes={_recorder.RunBytes - _recBytesAtStart} " +
+                             $"frames={_recorder.LastSegmentFrames} " +
                              $"mb={_recorder.RunBytes / 1048576.0:F1}");
                     if (rec)
                     {
@@ -443,6 +464,45 @@ namespace FixedCamVr.Diagnostics
                 _lastGateOpen = _cues.ShowGateOpen;
                 Emit($"ev=gate v={(_lastGateOpen ? "open" : "closed")}");
             }
+
+            TickRecordingPlayback();
+        }
+
+        // 録画の**再生**（記録側の ev=rec とは別系統）。
+        //
+        // 「録れた」と「画に出た」は別で、暗い現場では目視で区別できない。ファイルを開けただけの
+        // カットは絵が 1 枚も出ないまま尺を消費する（ログ上は演出が走ったように見える）ので、
+        // 閉じるときに **実際にテクスチャへ載せた枚数**（presented）と輝度を出す。
+        private void TickRecordingPlayback()
+        {
+            if (_timeline == null) return;
+            RecordedFramePlayer? cur = _timeline.ActiveRecording;
+            bool active = cur != null;
+
+            if (active && !ReferenceEquals(cur, _lastRecPlayer))
+            {
+                // 直前の録画を閉じずに別のを開いた（カットが連続している）。先に閉じる。
+                if (_lastRecPlayer != null) EmitRecPlayClose();
+                _lastRecPlayer = cur;
+                _recPlayLap = _timeline.ActiveRecordingLap;
+                _recPlayCam = _timeline.ActiveRecordingCamera;
+                Emit($"ev=recplay v=open lap={_recPlayLap} cam={_recPlayCam} " +
+                     $"frames={cur!.FrameCount} dur={cur.DurationSec:F1}");
+            }
+            else if (!active && _lastRecPlayer != null)
+            {
+                EmitRecPlayClose();
+            }
+        }
+
+        private void EmitRecPlayClose()
+        {
+            RecordedFramePlayer? p = _lastRecPlayer;
+            _lastRecPlayer = null;
+            if (p == null) return;
+            // Dispose 済みでもマネージドなカウンタは読める（テクスチャには触らない）。
+            Emit($"ev=recplay v=close lap={_recPlayLap} cam={_recPlayCam} " +
+                 $"presented={p.PresentedCount} failed={p.FailedCount} luma={p.LastLuma:F2}");
         }
 
         // ---------------------------------------------------------------- サマリ
@@ -514,8 +574,21 @@ namespace FixedCamVr.Diagnostics
             if (_recorder != null)
                 _sb.Append(" rec=").Append(_recorder.IsRecording ? 1 : 0)
                    .Append(" recMB=").Append((_recorder.RunBytes / 1048576.0).ToString("F1"));
+            // 録画を再生中なら、いま何枚目まで画に出したか（尺だけ進んで絵が出ていないのを見分ける）。
+            if (_lastRecPlayer != null)
+                _sb.Append(" recPlay=").Append(_lastRecPlayer.PresentedCount)
+                   .Append('/').Append(_lastRecPlayer.FrameCount);
             if (_frame != null)
+            {
                 _sb.Append(" reg=").Append(_frame.HasRegistration ? 1 : 0);
+                // 床の高さ。regv<2 は「測っていない登録」で、ワイヤーや人形が沈む原因になる。
+                _sb.Append(" regv=").Append(_frame.RegSchema);
+                _sb.Append(" floorY=").Append(_frame.FloorY.ToString("F2"));
+                // 頭が床から何 m にあるか。1.2〜2.0 の外なら床の基準がおかしい。
+                Transform? head = HeadTransform;
+                if (head != null)
+                    _sb.Append(" headY=").Append(_frame.HeightAboveFloor(head.position.y).ToString("F2"));
+            }
 
             // 画像加工が実際に画面へ効いているか。mat=0 なら material 未解決＝加工は 1 つも出ていない。
             if (_show != null)

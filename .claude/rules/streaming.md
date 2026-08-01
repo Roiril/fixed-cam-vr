@@ -498,11 +498,39 @@ show.json トップレベルに `run` を新設。**キーが無くてもコー�
 
 ```jsonc
 "run": { "totalLaps": 3, "introEnabled": true, "introMinSec": 20, "introAutoAdvance": true,
-         "targetSec": 180, "hardLimitSec": 300, "endFadeSec": 1.5 }
+         "targetSec": 180, "hardLimitSec": 300, "endFadeSec": 1.5,
+         "endGraceSec": 3, "endHoldMaxSec": 60 }
 ```
 
 相は `Intro`（導入）→ `Run`（本編）→ `Finished`（終了）の 3 つ。判定は純ロジック
 [`ShowRunLogic`](../../Assets/Scripts/Streaming/ShowRunLogic.cs)、配線は [`ShowRunDirector`](../../Assets/Scripts/Streaming/ShowRunDirector.cs)。
+
+##### 帰りの A まで体験する（2026-08-02）
+
+体験は「3 周 ＋ **元の位置に戻った A 区間**」で終わる。周回は進行ポインタ方式で `order[0]` へ戻った時に
+上がるので、**`lap = totalLaps + 1` の `order[0]` は構造的に必ず踏む**。`totalLaps` は 3 のままで、
+この 1 区間だけを追加で到達可能として扱う（`totalLaps=4` にすると帰りの B・C まで生き、
+企画書の「3 周」とも表示上食い違う）。
+
+到達可能な区間の式は **3 箇所が同じものを持つ**（[`ShowRunReach.IsSegmentReachable`](../../Assets/Scripts/Streaming/ShowRunLogic.cs) /
+卓の [`run-model.js`](../../tools/web-compositor/run-model.js) / [`analyze-xp-log.py`](../../tools/analyze-xp-log.py) の
+`is_segment_reachable`）。期待値を 3 者のテストにハードコードして突き合わせてある。
+
+```
+lap <= totalLaps || (lap == totalLaps + 1 && camera == order[0])
+```
+
+- **⚠ `endGraceSec` が無いと帰りの A の演出は始まる前に暗転する。** その区間に入ったフレームで
+  周回が上がって終了条件が立つ一方、`at:"enter"` の演出はその同じ連鎖では**武装されるだけ**で、
+  開始は次フレーム以降の `TakeRunner.Update`。スクリプト実行順は未定義なので、「演出が走っているか」
+  だけを見ると走り出す前に終わる順序が実在する。**終了条件成立後は演出が走っていなくても
+  `endGraceSec`（既定 3s）のあいだ必ず待つ。**
+- 走行中の演出は `endHoldMaxSec`（既定 **60s**・旧 const 12s）まで見せ切る。帰りの A で流す録画は
+  前の周の実滞在ぶん（20〜40 秒）になるので、12 秒では途中で切れた。
+- **時間切れ（`hardLimitSec`）では待たない。** 待つと hardLimit の意味が壊れる。
+- 実機は起動時に「踏まれない区間に置かれた演出」を名指しで 1 回警告する
+  （`ShowControlClient.WarnUnreachableSegments`）。**実行は止めない**。
+- StatusHud の 1 行目は帰りの区間だけ「もどり ・ 経過 2:05」と出す（「4周目/全3周」は壊れて見える）。
 
 - **導入はランの第 1 相**であって「ラン開始前の待機」ではない。Intro→Run は
   `ShowControlClient.BeginMainRun()`（周回・演出・BGM・滞在ログだけ初期化）を打ち、
@@ -523,7 +551,7 @@ show.json トップレベルに `run` を新設。**キーが無くてもコー�
     慣らし歩行が始まる ＝ 「演出 → 慣らし歩行」の順序が設計どおりになる。
 - **終了の判定は必ず次フレームの `Tick`**。周回の確定と離脱時演出の発火は同じ同期連鎖の中で起きるので、
   周回の変化を受けたその場で終了させると 3 周目最後の区間の離脱時演出が始まる前に終わる。
-  走行中の演出があれば見せ切る（上限 `ShowRunLogic.MaxEndHoldSec` = 12s）。
+  走行中の演出があれば見せ切る（上限 `run.endHoldMaxSec` = 既定 60s）。
 - **凍結ラッチは増やしていない。** 終了しても画面のカメラ切替は裏で回り続け、見えなくなるのは
   [`ShowEndingFader`](../../Assets/Scripts/Diagnostics/ShowEndingFader.cs) の黒のおかげ。
   凍結を足すと「解除されずに残る」事故を新しく作る（この codebase は 4 回踏んでいる）。
@@ -770,6 +798,11 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
   （mp4 化しない＝再エンコード劣化ゼロ・デコード経路はライブと同一）。**ラン開始で端末の録画を全部消す**
   （現ランの epoch だけ残すと、現地リセットで進んだ番号に卓の runEpoch が後から追いつき、
   前の体験者の映像が「このランの録画」として再生される）。録れていなければそのカットを飛ばす（§6.4）
+  - **⚠ 「録れた」と「画に出た」は別**（2026-08-02 に観測を分けた）。ファイルを開けただけのカットは
+    絵が 1 枚も出ないまま尺を消費し、ログ上は演出が走ったように見える。**暗い現場では目視で区別できない。**
+    → `[XP] ev=rec v=stop … frames=`（書けた枚数。バイト数はヘッダだけの空ファイルでも 0 にならない）と
+    `ev=recplay v=open/close … presented= failed= luma=`（**実際にテクスチャへ載せた枚数**と輝度）を出す。
+    `analyze-xp-log.py` の「## 端末内録画 — 録れたか / 再生されたか」が両方を FAIL 判定する
 - **設定は show.json トップレベル `record`（既定 無効）** — 卓の **⏺ 端末内録画パネル**（タイムラインの下）で編集する。
   `laps` は**録る周の配列**で、既定 `[1]`。「1周目 B・1周目 C・2周目 A を録って 3 周目で流す」なら `[1,2]` が要る
   - **録画係（[`SegmentRecorder`](../../Assets/Scripts/Streaming/Recording/SegmentRecorder.cs)）はシーンに置かれていない。**

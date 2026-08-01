@@ -43,6 +43,30 @@ namespace FixedCamVr.Tracking
             => $"最大残差 {Fmt2(maxResidualM)}m（合格 ≤{Fmt2(acceptM)}m）";
 
         /// <summary>
+        /// タッチする高さの指示。<paramref name="touchHeightM"/> が 0 なら「床に着ける」、
+        /// 正なら「床から N cm の高さ」。<paramref name="label"/> は基準点の名前（空なら省く）。
+        /// </summary>
+        public static string TouchInstruction(string? label, float touchHeightM)
+        {
+            string where = string.IsNullOrEmpty(label) ? "床の×印" : $"「{label}」の床の×印";
+            if (touchHeightM <= 0f) return $"{where}にコントローラの先を着けて";
+            return $"{where}の上、床から {Cm(touchHeightM)}cm の高さで";
+        }
+
+        /// <summary>
+        /// Verify の床の高さ 1 行。例: "床の高さ +0.08m"。ばらつきが大きいときは理由も添える。
+        /// </summary>
+        public static string FloorLine(float floorY, float spreadM, float spreadWarnM)
+        {
+            string head = $"床の高さ {(floorY >= 0f ? "+" : "")}{Fmt2(floorY)}m";
+            if (spreadM > spreadWarnM)
+                return head + $"（⚠ タッチ高さが {Fmt2(spreadM)}m ばらついています）";
+            return head;
+        }
+
+        private static string Cm(float m) => (m * 100f).ToString("0", CultureInfo.InvariantCulture);
+
+        /// <summary>
         /// Review ヘッダ 1 行。保存日時・残差・点数を示す（旧ファイル等で未記録なら「記録なし」）。
         /// 例: "登録済みの位置合わせを表示中（保存: 2026-07-21 14:03 / 残差 0.05m / 4点）"。
         /// </summary>

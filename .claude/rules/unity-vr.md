@@ -193,6 +193,23 @@ Normal / Registration）。左手・スティック・cue 試射・操作チー�
   SerializedObject の実効値 + 生 YAML キー実在の二本立てテストで再発（missing/stale 双方）を機械検出する。
   MonoBehaviour に [SerializeField] を足したら prefab YAML への反映と本テストの更新を対で行うこと（unity-prefab-fields スキル参照）。
 - **先端位置は RightHandAnchor の position をそのまま使う**（先端オフセット補正なし。誤差 2〜3cm は 1m ベースライン + 40cm 回廊 + 8cm オーバーラップに対して許容）。SerializeField `rightHandTransform`、null なら headTransform にフォールバック。
+- **床の高さも同じタッチから測る**（2026-08-02〜）。それまで登録は 3 DOF（XZ + yaw）で **y を捨てていた**ため、
+  壁や床のワイヤー・ゾーンのタイル・CG 人形が実際の床より下に出ていた。トラッキング原点は既に FloorLevel
+  設定（`Main.unity` の `_trackingOriginType = 1`）なので**設定では直らない** — 実測して合わせる。
+  - `floorY = median(タッチ位置の y) − layout.regTouchHeightM`（[`FloorHeightSolver`](../../Assets/Scripts/Tracking/FloorHeightSolver.cs)）。
+    **中央値**を使うのは、1 点だけ床に着け損ねた登録で床が引っ張られないため
+  - `layout.regTouchHeightM` は「コントローラを床から何 m の高さに構えるか」。**既定 0 = 床に着ける**。
+    空中でホバーすると XZ が確実にぶれて残差ゲート 0.12m を圧迫するので、精度としては 0 が最善
+  - y のばらつき（max−min）が 6cm を超えたら**警告を出す**（不合格にはしない）。「床に着けていない点がある」を
+    現地で気づける、無料の品質ゲート
+  - **⚠ `CourseFrame.CourseToWorld` の第 2 引数の意味が変わった**（旧: ワールド y の直指定 → 新: **床からの高さ**）。
+    呼び出し側が渡していた定数（ワイヤー 0.03 / タイル 0.015 / ゾーン中心 1.0 / CG 人形の 0）はすべて
+    「床からの高さ」のつもりの値なので、意味の変更で全部が正しく持ち上がる。**新しく呼ぶときは床基準で渡すこと**
+  - `registration.json` に `originY` / `floorSpreadM` / `regSchema`(=2) を追加。旧ファイルは `regSchema=0` で
+    読まれ、**originY は捨てて 0 にする**（測っていない 0 を「床が一致している」と読むと、ずれたまま
+    「合っている」と表示することになる）。StatusHud と Review 画面が「床の高さは未測定」と名指しする
+  - 較正（`cameras[].calib`）は不変。course 空間で解かれ、人形・影・部屋プロキシも同じ `CourseToWorld` を
+    通るので、床ごと一様に平行移動するだけ
 - **登録直後にワイヤーフレーム検証表示**：壁ポリライン（L の 2 辺・高さ既定 1m）+ フロア外周を LineRenderer でゴースト表示。show.json layout に wall/floor があればそれを、無ければ内蔵既定（フロア 1.8×1.8・regPoint から導出）を描く。ワイヤーは毎フレーム CourseFrame 変換に追従。
 - **視界内ガイダンス**：自前 TextMesh は持たず、各ステップの指示を `GuidanceText` / `GuidanceColor` として公開し、単一サーフェス [`StatusHud`](../../Assets/Scripts/Diagnostics/StatusHud.cs) が登録中に読み取って強制表示する（旧 [CourseRegGuidance] TextMesh は廃止・Tracking→Diagnostics の asmdef 依存を作らないプロバイダ方式）。save は B 確定でのみ registration.json を書く。文言のフォーマットは純関数 [`RegistrationGuidance`](../../Assets/Scripts/Tracking/RegistrationGuidance.cs)（進捗バー・残差行・Review ヘッダ）に切り出し EditMode テスト（`RegistrationGuidanceTests`）で固定。
 - **確認（Review）フェーズ**（2026-07-21〜）：確定後でも位置ズレを見直せる道。登録開始時に `CourseFrame.HasRegistration`（json ロード済み or 今セッション確定済み）なら Capture でなく Review に着地し、既存登録のワイヤーフレーム + ゾーン床フットプリント + ヘッダ `登録済みの位置合わせを表示中（保存: <日時> / 残差 <X.XXm> / <N>点）` を出す。A=点 1 から再登録 / B=保存せず終了。recenter フラグが立っていれば橙で「⚠トラッキング原点が変わっています — 再登録を推奨」を追加。

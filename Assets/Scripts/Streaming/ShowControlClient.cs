@@ -190,6 +190,16 @@ namespace FixedCamVr.Streaming
         // HMD 位置合わせの N 点基準（順序つき・2〜5）。不在（空）なら CourseRegistrationController は
         // 既定 2 点へフォールバックする。ゾーン生成・HasData() には関与しない（純粋に登録用データ）。
         public ShowRegPointDef[] regPoints = System.Array.Empty<ShowRegPointDef>();
+
+        /// <summary>
+        /// 位置合わせで基準点をタッチするとき、コントローラを**床から何 m の高さに構えるか**。
+        /// 登録はここから床の高さ（course y=0 のワールド高さ）を逆算する
+        /// （<c>floorY = median(タッチ位置の y) − regTouchHeightM</c>）。
+        ///
+        /// **既定 0 = 床に着ける。** 空中でホバーすると XZ が確実にぶれて残差ゲート 0.12m を圧迫するので、
+        /// 精度としては 0 が最善。現場で腰高のマーカーを使う等の事情があれば、その高さを入れる。
+        /// </summary>
+        public float regTouchHeightM;
         // 通過ライン（演出の発火点となる床の線分）。ゾーン生成・HasData() には関与しない純データで、
         // TakeRunner だけが読む（regPoints と同じ立ち位置）。
         public ShowLineDef[] lines = System.Array.Empty<ShowLineDef>();
@@ -494,10 +504,29 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public ShowIntroDef? intro;
 
+        /// <summary>
+        /// 終了条件が成立してから、演出が走っていなくても必ず待つ秒数。
+        /// **帰りの A（lap = totalLaps + 1 の order[0]）に置いた演出が始まる猶予**で、
+        /// これが 0 だと演出が走り出す前に暗転する順序が実在する（<see cref="ShowRunLogic.Configure"/>）。
+        /// 0 / 未指定 = コード既定 <see cref="ShowRunDefaults.EndGraceSec"/>。
+        /// </summary>
+        public float endGraceSec = ShowRunDefaults.EndGraceSec;
+
+        /// <summary>
+        /// 走行中の演出を見せ切る上限 (秒)。帰りの A で流す録画は 2 周目 A の実滞在ぶん（20〜40 秒）に
+        /// なるので、旧実装の 12 秒固定では途中で切れた。0 / 未指定 = コード既定
+        /// <see cref="ShowRunDefaults.EndHoldMaxSec"/>。
+        /// </summary>
+        public float endHoldMaxSec = ShowRunDefaults.EndHoldMaxSec;
+
         /// <summary>コード既定の周数。</summary>
         public const int DefaultTotalLaps = 3;
 
         public int ResolveTotalLaps() => totalLaps > 0 ? totalLaps : DefaultTotalLaps;
+
+        public float ResolveEndGraceSec() => endGraceSec > 0f ? endGraceSec : ShowRunDefaults.EndGraceSec;
+
+        public float ResolveEndHoldMaxSec() => endHoldMaxSec > 0f ? endHoldMaxSec : ShowRunDefaults.EndHoldMaxSec;
     }
 
     /// <summary>
@@ -856,11 +885,17 @@ namespace FixedCamVr.Streaming
             string startLine = intro != null && !string.IsNullOrEmpty(intro.startLineId)
                 ? intro.startLineId : "-";
 
+            // 録る周は指紋に入れる。ここがずれていると **rec カットが全部無言で飛ぶ**（録画は
+            // ラン中にしか作れないので、後から気づいても取り返せない）。
+            string recLaps = "-";
+            if (_record != null && _record.enabled && _record.laps != null && _record.laps.Length > 0)
+                recLaps = string.Join(",", _record.laps);
+
             return $"src={ConfigOrigin} rev={_rev} tlrev={(_timeline?.rev ?? -1)} " +
                    $"segs={segs} takes={takes} cues={_cues.Length} cams={_cameras.Length} " +
                    $"lines={(_layout?.lines?.Length ?? 0)} laps={(_run?.totalLaps ?? -1)} " +
                    $"intro={(introOn ? 1 : 0)} startLine={startLine} " +
-                   $"rec={((_record?.enabled ?? false) ? 1 : 0)}";
+                   $"rec={((_record?.enabled ?? false) ? 1 : 0)} recLaps={recLaps}";
         }
 
         // 卓からの手動グリッチ / 導入終了 / 体験終了の世代カウンタ（runEpoch と同じ「変化のみ発火」方式）。
@@ -1853,12 +1888,45 @@ namespace FixedCamVr.Streaming
                 // takes[] へ決定的に変換する（冪等・TimelineMigration が唯一の変換点）。
                 TimelineMigration.EnsureTakes(_timeline!);
                 timelineDirector.SetTimeline(_timeline!.segments);
+                WarnUnreachableSegments();
             }
             else
             {
                 timelineDirector?.Clear();
                 cueScheduler?.SetScheduleFromDefs(_schedule?.entries);
             }
+        }
+
+        // 直近で警告した内容（同じ設定で毎回吠えない）。
+        private string _lastUnreachableWarn = "";
+
+        /// <summary>
+        /// 体験中に踏まれない区間に演出が置かれていたら名指しで警告する。
+        ///
+        /// 卓の本番前チェックも同じ判定を持つが、**実機が使う設定は卓と食い違いうる**
+        /// （焼き込み / 端末キャッシュ / ライブの 3 系統）。黙って落とすと著作者には発見手段が無いので、
+        /// 実機ログにも 1 回出す。<b>実行は止めない</b>（区間が来れば従来どおり演出は走る）。
+        /// </summary>
+        private void WarnUnreachableSegments()
+        {
+            ShowTimelineSegmentDef[]? segs = _timeline?.segments;
+            if (segs == null || segs.Length == 0) return;
+
+            int laps = _run?.ResolveTotalLaps() ?? ShowRunDefaults.TotalLaps;
+            int[]? order = CourseOrder;
+            string dead = "";
+            foreach (ShowTimelineSegmentDef? s in segs)
+            {
+                if (s == null || s.takes == null || s.takes.Length == 0) continue;
+                if (ShowRunReach.IsSegmentReachable(s.lap, s.camera, laps, order)) continue;
+                if (dead.Length > 0) dead += " ";
+                dead += $"{s.lap}周目/カメラ{s.camera + 1}({s.takes.Length}本)";
+            }
+            if (dead.Length == 0) { _lastUnreachableWarn = ""; return; }
+            if (dead == _lastUnreachableWarn) return;
+            _lastUnreachableWarn = dead;
+            Debug.LogWarning($"[ShowControl] 体験中に踏まれない区間に演出があります（出ません）: {dead} " +
+                             $"— 走り切るのは {laps} 周と帰りのスタート区間まで");
         }
 
         // ---- 焼き込み StreamingAssets/show/show.json の起動時ロード（最下位優先）----

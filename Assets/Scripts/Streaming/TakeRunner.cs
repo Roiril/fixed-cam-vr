@@ -69,6 +69,23 @@ namespace FixedCamVr.Streaming
         // 現カットが開いている端末内録画（source:"rec"）。所有はここ — カットが変わったら必ず閉じる。
         private RecordedFramePlayer? _stepFrames;
 
+        // その録画が指す (周, カメラ)。テレメトリが「どの区間の録画が再生されたか」を言うのに要る
+        // （player 自身はファイルパスしか知らない）。
+        private int _stepFramesLap = -1;
+        private int _stepFramesCam = -1;
+
+        /// <summary>
+        /// いま再生している端末内録画（テレメトリ用・所有はこのクラス）。null なら録画カットではない。
+        /// <c>PresentedCount</c> が「開けた」ではなく「**画に出た**」の証拠になる。
+        /// </summary>
+        public RecordedFramePlayer? ActiveRecording => _stepFrames;
+
+        /// <summary>再生中の録画が指す周（1 始まり）。無ければ -1。</summary>
+        public int ActiveRecordingLap => _stepFrames != null ? _stepFramesLap : -1;
+
+        /// <summary>再生中の録画が指すカメラ index。無ければ -1。</summary>
+        public int ActiveRecordingCamera => _stepFrames != null ? _stepFramesCam : -1;
+
         // この演出が BGM を占有したか（占有した時だけ終了時にレーンへ返す）。
         private bool _bgmOverrideActive;
 
@@ -784,7 +801,15 @@ namespace FixedCamVr.Streaming
                 Debug.LogWarning($"[TakeRunner] 録画が無い（lap={step.recLap} camera={step.camera}）→ このカットを飛ばす");
                 return null;
             }
-            return RecordedFramePlayer.Open(path);
+            RecordedFramePlayer? player = RecordedFramePlayer.Open(path);
+            if (player != null)
+            {
+                _stepFramesLap = step.recLap;
+                _stepFramesCam = step.camera;
+                Debug.Log($"[TakeRunner] 録画を開いた lap={step.recLap} camera={step.camera} " +
+                          $"frames={player.FrameCount} dur={player.DurationSec:F1}s");
+            }
+            return player;
         }
 
         // カットの尺配列（untilClipEnd は負値＝外部通知待ち）。

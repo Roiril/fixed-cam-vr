@@ -212,8 +212,37 @@ def expected_from_show(show: dict):
             if s.get("source") == "rec":
                 needed.add((s.get("recLap") or 1, s.get("camera")))
     exp["recNeeded"] = needed
+
+    # 録るべき区間（record.laps × course.order）。1 つでも欠けると、それを指す録画カットは
+    # 実機で無言に飛ぶ。recNeeded（要求する側）と対で見ると「録り忘れ」と「使い忘れ」を切り分けられる。
+    exp["recShould"] = ({(lap, cam) for lap in exp["recLaps"] for cam in exp["order"]}
+                        if exp["recEnabled"] else set())
+
     exp["config"] = config_from_show(show)
     return exp
+
+
+def is_segment_reachable(lap, camera, total_laps, order):
+    """区間 (lap, camera) が体験中に踏まれうるか。
+
+    ⚠ **同じ式が 3 箇所にある。** ここ / C# の `ShowRunReach.IsSegmentReachable` /
+    卓の `run-model.mjs` の `isSegmentReachable`。片方だけ直すと沈黙して食い違うので、
+    期待値を 3 者のテストにハードコードして突き合わせてある。
+
+    周回は進行ポインタ方式で `order[0]` へ戻った時に上がるので、`lap = totalLaps + 1` の
+    `order[0]`（＝帰りの A）は構造的に必ず踏む。体験はそこで終わる。
+    """
+    if lap is None or camera is None or lap < 1:
+        return False
+    if not total_laps or total_laps < 1:
+        total_laps = 3
+    if lap <= total_laps:
+        return True
+    if lap != total_laps + 1:
+        return False
+    if not order:
+        return True          # 順路が未著作なら判定できない。到達可能側に倒す
+    return camera == order[0]
 
 
 def config_from_show(show: dict) -> dict:
@@ -255,6 +284,10 @@ def config_from_show(show: dict) -> dict:
         "intro": 1 if intro_on else 0,
         "startLine": start_line or "-",
         "rec": 1 if (rec or {}).get("enabled") else 0,
+        # 録る周。ここがずれていると録画カットが全部無言で飛ぶ（録画はラン中にしか作れないので、
+        # 後から気づいても取り返せない）。C# の DescribeConfig と対。
+        "recLaps": (",".join(str(l) for l in ((rec or {}).get("laps") or []))
+                    if (rec or {}).get("enabled") and ((rec or {}).get("laps") or []) else "-"),
     }
 
 
@@ -401,8 +434,8 @@ def analyze(events, others, exp, warns=None):
         if max(laps_seen) < exp["totalLaps"]:
             verdict("FAIL", f"{exp['totalLaps']} 周のはずが {max(laps_seen)} 周までしか進んでいない")
         elif max(laps_seen) > exp["totalLaps"]:
-            verdict("OK", f"{exp['totalLaps']} 周を完走した"
-                          f"（{max(laps_seen)} 周目のスタート区間に入った時点で終了）")
+            verdict("OK", f"{exp['totalLaps']} 周を完走して帰りのスタート区間まで来た"
+                          f"（観測 {max(laps_seen)} 周目 = 帰りの区間）")
         else:
             verdict("OK", f"{max(laps_seen)} 周まで進んだ")
     # 順路どおりか
@@ -522,8 +555,45 @@ def analyze(events, others, exp, warns=None):
         verdict("WARN", f"演出の drop が {len(drops)} 件（TakeRunner の警告）")
     w()
 
-    # ---------------- 端末内録画 ----------------
-    w("## 端末内録画（3 周目の素材）")
+    # ---------------- 著作の到達可能性 ----------------
+    # 体験中に踏まれない区間に置いた演出は絶対に出ない。実機は黙って落とすので、著作者には
+    # 発見手段が無い（卓の本番前チェックも同じ判定を持つが、実機が使う設定は卓と食い違いうる）。
+    unreachable = [t for t in exp["takes"]
+                   if not is_segment_reachable(t["lap"], t["camera"], exp["totalLaps"], exp["order"])]
+    if unreachable:
+        w("## 踏まれない区間の演出")
+        for t in unreachable:
+            w(f"  {t['id']}（{t['lap']} 周目 カメラ {t['camera']}）")
+        verdict("WARN", f"体験中に踏まれない区間に演出が {len(unreachable)} 本ある（出ません）"
+                        f" — 走り切るのは {exp['totalLaps']} 周と帰りのスタート区間まで")
+        w()
+
+    # ---------------- 位置合わせ（床の高さ） ----------------
+    w("## 位置合わせ")
+    floor_ys = [fnum(s, "floorY") for s in sums if fnum(s, "floorY") is not None]
+    head_ys = [fnum(s, "headY") for s in sums if fnum(s, "headY") is not None]
+    regvs = [s.get("regv") for s in sums if s.get("regv") is not None]
+    if not floor_ys and not head_ys:
+        w("  （床の高さのテレメトリが無い — 旧ビルド）")
+    else:
+        if floor_ys:
+            w(f"  床の高さ {floor_ys[-1]:+.2f}m")
+        if head_ys:
+            lo, hi = min(head_ys), max(head_ys)
+            w(f"  頭の高さ（床から）{lo:.2f}〜{hi:.2f}m")
+            # 立って歩く体験なので、頭は床から 1.2〜2.0m の間にあるはず。
+            # 外れていれば床の基準がずれている（ワイヤーや人形が沈む / 浮く）。
+            mid = sorted(head_ys)[len(head_ys) // 2]
+            if mid < 1.2 or mid > 2.0:
+                verdict("WARN", f"頭の高さが床から {mid:.2f}m — 床の基準がずれている疑い"
+                                f"（位置合わせをやり直すと合う）")
+        if regvs and all(int(v) < 2 for v in regvs):
+            verdict("WARN", "床の高さを測っていない登録で走っている"
+                            "（右トリガー長押しで登録し直すとワイヤーと人形の高さが合う）")
+    w()
+
+    # ---------------- 端末内録画（記録） ----------------
+    w("## 端末内録画 — 録れたか")
     rec_ev = [e for e in events if e.get("ev") == "rec"]
     rec_lines = [ln for tag, ln in others if tag == "SegmentRecorder"]
     for ln in rec_lines[:40]:
@@ -535,17 +605,92 @@ def analyze(events, others, exp, warns=None):
         # 1 回に見える。区間数はレコーダ自身のログ（区間ごとに 1 行）を正とする。
         started = [ln for ln in rec_lines if "録画開始" in ln]
         polled = [e for e in rec_ev if e.get("v") == "start"]
-        w(f"  録画した区間 {len(started)} / 期待する区間 {sorted(exp['recNeeded'])}")
+        w(f"  録画した区間 {len(started)} / 録る設定の区間 {sorted(exp['recShould'])}"
+          f" / 演出が要求する区間 {sorted(exp['recNeeded'])}")
         if not started and not polled:
-            verdict("FAIL", "録画が 1 度も始まっていない — 3 周目の録画カットは実機で黙って飛ぶ")
+            verdict("FAIL", "録画が 1 度も始まっていない — 録画カットは実機で黙って飛ぶ")
         else:
             verdict("OK", f"録画が {max(len(started), len(polled))} 区間で走った")
-        # 実際に録れた区間はレコーダのログにしか出ないので、そちらを頼りに突き合わせる
+
+        # 「録れた」の判定は**フレーム数**で行う。バイト数はヘッダだけの空ファイルでも 0 にならない。
+        stops = [e for e in rec_ev if e.get("v") == "stop"]
+        wrote = {}
+        for e in stops:
+            lap, cam = e.get("lap"), e.get("cam")
+            if lap is None or cam is None:
+                continue
+            frames = e.get("frames")
+            frames = int(frames) if frames is not None else -1
+            key = (int(lap), int(cam))
+            wrote[key] = max(wrote.get(key, -1), frames)
+        for key, frames in sorted(wrote.items()):
+            w(f"  L{key[0]}C{key[1]}: {frames} 枚")
+            if frames == 0:
+                verdict("FAIL", f"{key[0]} 周目 カメラ {key[1]} の録画が 0 枚 "
+                                f"— この区間を指す録画カットは実機で黙って飛ぶ")
+
+        # 演出が要求する区間が録れているか（ここが本丸。欠けたら 3 周目・帰りの A の画が出ない）。
         for lap, cam in sorted(exp["recNeeded"]):
-            hit = any(f"L{lap}C{cam}" in ln for ln in rec_lines)
-            if not hit:
-                verdict("WARN", f"{lap} 周目 カメラ {cam} の録画が確認できない"
-                                f"（3 周目のこのカットは飛ぶ可能性）")
+            frames = wrote.get((lap, cam))
+            if frames is None:
+                hit = any(f"L{lap}C{cam}" in ln for ln in rec_lines)
+                if not hit:
+                    verdict("FAIL", f"{lap} 周目 カメラ {cam} を録っていない "
+                                    f"— これを流す演出は出ない（record.laps に {lap} は入っているか）")
+            elif frames <= 0:
+                verdict("FAIL", f"{lap} 周目 カメラ {cam} の録画が空 — これを流す演出は出ない")
+
+        # 録る設定なのに 1 度も走らなかった区間（体験者がそこを通らなかった / ゲートが閉じていた）。
+        for lap, cam in sorted(exp["recShould"] - set(wrote.keys())):
+            if any(f"L{lap}C{cam}" in ln for ln in rec_lines):
+                continue
+            verdict("WARN", f"{lap} 周目 カメラ {cam} は録る設定だが録画が走っていない")
+    w()
+
+    # ---------------- 端末内録画（再生） ----------------
+    # 「録れた」と「画に出た」は別。ファイルを開けただけのカットは絵が 1 枚も出ないまま尺を消費し、
+    # ログ上は演出が走ったように見える。暗い現場では目視で区別できないのでここで判定する。
+    w("## 端末内録画 — 再生されたか")
+    play = [e for e in events if e.get("ev") == "recplay"]
+    # この計装（2026-08-02）より前のビルドは recplay も rec の frames も出さない。
+    # 「観測していない」を「起きなかった」と読むと、直っているものを壊しに行くことになる。
+    has_rec_telemetry = bool(play) or any("frames" in e for e in rec_ev if e.get("v") == "stop")
+    if not exp["recNeeded"]:
+        w("  （録画を流すカットは著作されていない）")
+    elif not has_rec_telemetry:
+        w("  （録画の再生を観測していないビルドのログ）")
+        verdict("WARN", "録画の再生を観測していないビルドのログ — 「ファイルを開けた」までしか分からない")
+    elif not play:
+        verdict("FAIL", "録画カットが著作されているのに、録画が 1 度も再生されていない")
+    else:
+        opened = {}
+        for e in play:
+            lap, cam = e.get("lap"), e.get("cam")
+            if lap is None or cam is None:
+                continue
+            key = (int(lap), int(cam))
+            if e.get("v") == "open":
+                opened.setdefault(key, {"frames": 0, "presented": -1, "luma": None})
+                opened[key]["frames"] = int(e.get("frames") or 0)
+            else:
+                d = opened.setdefault(key, {"frames": 0, "presented": -1, "luma": None})
+                d["presented"] = max(d["presented"], int(e.get("presented") or 0))
+                d["failed"] = int(e.get("failed") or 0)
+                d["luma"] = fnum(e, "luma")
+        for key, d in sorted(opened.items()):
+            luma = "" if d.get("luma") is None else f" 輝度 {d['luma']:.2f}"
+            w(f"  L{key[0]}C{key[1]}: {d['frames']} 枚のうち {max(d['presented'], 0)} 枚を画に出した{luma}")
+            if d["presented"] == 0:
+                verdict("FAIL", f"{key[0]} 周目 カメラ {key[1]} の録画を開いたが 1 枚も画に出ていない")
+            elif d.get("failed", 0) > 0:
+                verdict("WARN", f"{key[0]} 周目 カメラ {key[1]} の録画で {d['failed']} 枚の読み出しに失敗")
+            elif d.get("luma") is not None and d["luma"] < 0.02:
+                verdict("WARN", f"{key[0]} 周目 カメラ {key[1]} の録画が真っ黒に近い"
+                                f"（輝度 {d['luma']:.2f}）— 撮影時に映像が来ていたか")
+        for lap, cam in sorted(exp["recNeeded"]):
+            if (lap, cam) not in opened:
+                verdict("FAIL", f"{lap} 周目 カメラ {cam} の録画が 1 度も再生されていない"
+                                f"（カットが飛んだか、区間に到達していない）")
     w()
 
     # ---------------- 映像の安定性 ----------------

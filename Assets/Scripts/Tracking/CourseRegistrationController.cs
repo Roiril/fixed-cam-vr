@@ -152,6 +152,24 @@ namespace FixedCamVr.Tracking
         // Verify ガイダンスへ出す、直近フィットの最大残差 (m)。SolveAndVerify で確定する。
         private float _verifyMaxResidualM;
 
+        // 直近フィットで解いた床の高さとタッチ高さのばらつき (m)。Verify 表示に使う。
+        private float _verifyFloorY;
+        private float _verifyFloorSpreadM;
+
+        /// <summary>
+        /// 基準点をタッチするときに構える高さ（床から m）。<c>layout.regTouchHeightM</c>。
+        /// 未設定（0）＝床に着ける運用。
+        /// </summary>
+        private float TouchHeightM
+        {
+            get
+            {
+                ShowLayoutDef? lay = showControl != null ? showControl.Layout : null;
+                float h = lay != null ? lay.regTouchHeightM : 0f;
+                return h > 0f ? h : 0f;
+            }
+        }
+
         // authored 基準点（course space XZ）とラベル。SetActive / LayoutChanged で resolve する。
         private Vector2[] _authoredPoints = Array.Empty<Vector2>();
         private string[] _authoredLabels = Array.Empty<string>();
@@ -417,14 +435,27 @@ namespace FixedCamVr.Tracking
                 return;
             }
 
+            // 床の高さ（XZ + yaw とは別の測定）。基準点はすべて床のマーカーなので、構えた高さが
+            // 既知ならタッチ位置の y から床が出る。ばらつきが大きい時は警告するだけで止めない。
+            var sampleY = new float[n];
+            for (int i = 0; i < n; i++) sampleY[i] = _capturedWorld[i].y;
+            FloorHeightSolver.Result floor = FloorHeightSolver.Solve(sampleY, TouchHeightM);
+
             // 保存はまだしない（Verify で B 確定するまで registration.json は書かない）。品質メタは stash され、
             // 確定時に json へ焼き込まれる（Review / StatusHud 表示に使う）。
+            if (floor.Ok) courseFrame.SetFloorY(floor.FloorY, floor.SpreadM, save: false);
             courseFrame.SetRegistration(fit.originXZ, fit.yawDeg, fit.maxResidualM, n, save: false);
             _verifyMaxResidualM = fit.maxResidualM;
+            _verifyFloorY = floor.Ok ? floor.FloorY : 0f;
+            _verifyFloorSpreadM = floor.Ok ? floor.SpreadM : 0f;
             _phase = Phase.Verify;
             BuildWireframe();
             FitAccepted?.Invoke(); // 触覚 Fire（残差ガード通過・Verify 遷移。FitRejected と対称）
+            if (floor.Suspicious)
+                Debug.LogWarning($"[CourseReg] タッチ高さのばらつきが大きい（{floor.SpreadM:F2}m）— " +
+                                 $"床に着けていない点がありそうです。床の高さがずれます");
             Debug.Log($"[CourseReg] 登録解決: origin=({fit.originXZ.x:F3},{fit.originXZ.y:F3}) yaw={fit.yawDeg:F1}° " +
+                      $"床y={floor.FloorY:F3}m(ばらつき {floor.SpreadM:F3}m / 構え {TouchHeightM:F2}m) " +
                       $"(max残差 {fit.maxResidualM:F3}m / RMS {fit.rmsResidualM:F3}m) — 壁・×印に重なるか確認して B=確定 / A=やり直し");
         }
 
@@ -435,7 +466,7 @@ namespace FixedCamVr.Tracking
             _sampler.Reset();
             _liveGuidanceForIndex = -1;
             TearDownWireframe();
-            Debug.Log("[CourseReg] やり直し — 点 1: 床の×印の真上に先端をかざして A を 0.5 秒ホールド");
+            Debug.Log($"[CourseReg] やり直し — 点 1: {RegistrationGuidance.TouchInstruction(null, TouchHeightM)}A を 0.5 秒ホールド");
         }
 
         private void ConfirmAndExit()
@@ -444,7 +475,8 @@ namespace FixedCamVr.Tracking
             {
                 courseFrame.SaveRegistration();
                 courseFrame.CommitPreviewSession(); // プレビューを確定（以後の SetActive(false) の Rollback は no-op）
-                Debug.Log($"[CourseReg] 確定・保存: origin=({courseFrame.OriginXZ.x:F3},{courseFrame.OriginXZ.y:F3}) yaw={courseFrame.YawDeg:F1}°");
+                Debug.Log($"[CourseReg] 確定・保存: origin=({courseFrame.OriginXZ.x:F3},{courseFrame.OriginXZ.y:F3}) " +
+                          $"yaw={courseFrame.YawDeg:F1}° 床y={courseFrame.FloorY:F3}m");
             }
             RegistrationConfirmed?.Invoke(); // 触覚 Fire（確定保存）
             SetActive(false);
@@ -499,6 +531,8 @@ namespace FixedCamVr.Tracking
                         break;
                     case Phase.Verify:
                         text = RegistrationGuidance.ResidualLine(_verifyMaxResidualM, maxResidualM)
+                             + "\n" + RegistrationGuidance.FloorLine(
+                                   _verifyFloorY, _verifyFloorSpreadM, FloorHeightSolver.SpreadWarnM)
                              + "\nワイヤーが実物の壁・床の×印に重なるか確認\nB = 確定    A = やり直し";
                         break;
                     case Phase.Review:
@@ -528,9 +562,9 @@ namespace FixedCamVr.Tracking
 
             int k = _pointIndex + 1, n = _authoredPoints.Length;
             string label = _authoredLabels[_pointIndex];
-            string head = string.IsNullOrEmpty(label)
-                ? "床の×印の真上に先端をかざして"
-                : $"「{label}」の床の×印の真上に先端をかざして";
+            // 床の高さもここで測るので、「かざす」ではなく高さを決めた指示を出す
+            // （既定は着ける＝高さ 0。空中でホバーすると XZ もぶれる）。
+            string head = RegistrationGuidance.TouchInstruction(label, TouchHeightM);
             string text = $"点 {k}/{n}\n{head}\nA を押しながら 0.5 秒静止";
 
             if (_pointIndex >= 1)
@@ -560,7 +594,13 @@ namespace FixedCamVr.Tracking
                 courseFrame != null ? courseFrame.SavedAtIso : "",
                 courseFrame != null ? courseFrame.MaxResidualM : 0f,
                 courseFrame != null ? courseFrame.PointCount : 0);
-            string text = header
+            // 床の高さを測っていない登録（旧ファイル）は、ワイヤーが沈んで見える原因そのものなので名指しする。
+            string floor = courseFrame == null ? ""
+                : courseFrame.HasFloorY
+                    ? "\n" + RegistrationGuidance.FloorLine(courseFrame.FloorY, courseFrame.FloorSpreadM,
+                                                            FloorHeightSolver.SpreadWarnM)
+                    : "\n<color=#FF8C40>床の高さは未測定です — A で登録し直すと合います</color>";
+            string text = header + floor
                         + "\nワイヤーが実物に重ならなければ A で再登録"
                         + "\nA = 点1から再登録    B = OK（終了）";
             if (courseFrame != null && courseFrame.NeedsReRegistration)

@@ -50,6 +50,7 @@ namespace FixedCamVr.Streaming.Recording
         private readonly string _path;
 
         private long _written;
+        private int _writtenFrames;
         private volatile bool _stopped;
         private volatile bool _capped;
         private int _lastPtsMs = -1;
@@ -62,6 +63,13 @@ namespace FixedCamVr.Streaming.Recording
         /// （書き込みは背景スレッドなので、それ以前は途中経過）。ラン全体の容量配分に使う。
         /// </summary>
         public long WrittenBytes => Interlocked.Read(ref _written);
+
+        /// <summary>
+        /// 実際にファイルへ書けたフレーム数。**バイト数だけでは足りない** — ヘッダだけの空ファイルでも
+        /// バイト数は 0 にならないので、「録れたか」を判定できるのはこちら。
+        /// <see cref="Dispose"/> の後に読むこと。
+        /// </summary>
+        public int WrittenFrames => Interlocked.CompareExchange(ref _writtenFrames, 0, 0);
 
         /// <summary>このセグメントのファイルパス。</summary>
         public string Path => _path;
@@ -116,6 +124,7 @@ namespace FixedCamVr.Streaming.Recording
                     }
                     RecordedSegmentFormat.WriteFrame(fs, item.buf, item.length, item.ptsMs);
                     Interlocked.Add(ref _written, RecordedSegmentFormat.FrameHeaderBytes + item.length);
+                    Interlocked.Increment(ref _writtenFrames);
                     _pool.Add(item.buf);
                 }
                 fs.Flush();

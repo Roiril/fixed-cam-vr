@@ -61,6 +61,17 @@ namespace FixedCamVr.Streaming.Recording
         /// <summary>最後に開いた区間の録画対象カメラ index（まだ開いていなければ -1）。</summary>
         public int CurrentCamera => _curCamera;
 
+        // 最後に閉じた区間の実績。**バイト数だけでは「録れた」を判定できない**
+        // （ヘッダだけの空ファイルでもバイト数は 0 にならない）ので、フレーム数を対で持つ。
+        private int _lastFrames;
+        private long _lastBytes;
+
+        /// <summary>最後に閉じた区間に書けたフレーム数（0 = 1 枚も録れていない）。</summary>
+        public int LastSegmentFrames => _lastFrames;
+
+        /// <summary>最後に閉じた区間に書けたバイト数。</summary>
+        public long LastSegmentBytes => _lastBytes;
+
         private void Awake()
         {
             if (cueScheduler == null) cueScheduler = GetComponent<CueScheduler>();
@@ -172,9 +183,15 @@ namespace FixedCamVr.Streaming.Recording
             bool capped = _writer.Capped;
             string path = _writer.Path;
             _writer.Dispose();          // 書き切るのを待つ（この後で WrittenBytes が確定する）
+            _lastBytes = _writer.WrittenBytes;
+            _lastFrames = _writer.WrittenFrames;
             _runBytes += _writer.WrittenBytes;
             _writer = null;
-            Debug.Log($"[SegmentRecorder] 録画終了{(capped ? "（容量上限で打ち切り）" : "")} → {path}");
+            Debug.Log($"[SegmentRecorder] 録画終了{(capped ? "（容量上限で打ち切り）" : "")} " +
+                      $"lap={_curLap} camera={_curCamera} frames={_lastFrames} bytes={_lastBytes} → {path}");
+            if (_lastFrames == 0)
+                Debug.LogWarning($"[SegmentRecorder] 1 枚も録れていない lap={_curLap} camera={_curCamera} " +
+                                 $"— この区間を指す録画カットは無言で飛びます");
         }
 
         // ---- 参照（再生側）----
