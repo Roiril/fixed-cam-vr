@@ -19,6 +19,12 @@ python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換す
 ```
 
 機を指定しなければ `quest-fleet.py pick` が選ぶ。**HMD を被らずに導入から本編まで通して撮れる**。
+
+⚠ **電池は勝手に減る。** Quest は起きたまま置くだけで減り、走行 1 回でも数分ぶん食う。
+`quest-record.py` は**走る前に残量を見て、充電していない & 25% 未満なら中止**し、
+**走り終わったら実機を寝かせる**（続けて何度も走らせるなら `--keep-awake`）。
+`quest-fleet.py pick` も電池の乏しい機を候補から外す。残量が回復するまで待つときは
+`python tools/quest-fleet.py sleep <serial>`。
 **走行 1 回で次が全部そろう**（`--no-log` / `--no-evidence` で外せる）:
 
 | 出るもの | 何 |

@@ -238,6 +238,18 @@ def save_state(st):
 
 # ---------------------------------------------------------------- 選択
 
+# 充電していない機がこれを下回っていたら pick から外す（走行の途中で切れると撮り直しになる）。
+LOW_BATTERY_PCT = 25
+
+
+def _battery_weak(dev):
+    batt = dev.get("batt") or {}
+    if batt.get("charging"):
+        return False
+    level = batt.get("level")
+    return level is not None and level < LOW_BATTERY_PCT
+
+
 def score(dev, state):
     """小さいほど「次に走らせるのに向いている」。"""
     soc = dev.get("soc_c")
@@ -266,6 +278,15 @@ def pick(devs, state, require_app=True, require_reg=False):
             warns.append("no device has registration.json (course alignment)")
         else:
             cand = with_reg
+
+    # 電池が乏しい機は外す。走行 1 回で数分ずつ食うので、選んだ先で切れると走行が無駄になる
+    # （2026-08-01 ユーザー指摘「バッテリーが意外とすぐ切れる」）。充電中なら気にしない。
+    weak = [d for d in cand if _battery_weak(d)]
+    if weak and len(weak) < len(cand):
+        warns.append("%d device(s) low on battery and not charging; excluded" % len(weak))
+        cand = [d for d in cand if d not in weak]
+    elif weak:
+        warns.append("ALL devices are low on battery -- charge or sleep them and wait")
 
     hot = [d for d in cand
            if d.get("thermal_status") is not None and d["thermal_status"] >= THERMAL_BLOCK]

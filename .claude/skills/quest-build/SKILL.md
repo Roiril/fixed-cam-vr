@@ -160,6 +160,9 @@ adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastU
 - **`--no-streaming` 必須級**: Quest/Pixel は streaming install が固まることがある（streamer-android-build スキルと同じ罠）
 - 複数台繋がっている時は `-s <serial>` で明示（`adb devices` の左列）
 - `lastUpdateTime` が今の時刻 = 確実に新ビルドが入った証拠
+- **⚠ 用が済んだら寝かせる**: `adb -s <serial> shell input keyevent KEYCODE_SLEEP`
+  （または `python tools/quest-fleet.py sleep <serial>`）。Quest は起きたまま置くと
+  何もしていなくても減り、検証を続けたいときに残量が無くなる（2026-08-01 ユーザー指摘）
 
 ## 落とし穴
 

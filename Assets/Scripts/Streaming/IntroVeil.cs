@@ -164,9 +164,20 @@ namespace FixedCamVr.Streaming
 
             float dist = Mathf.Max(c.magnitude, 0.01f);
             float k = Mathf.Clamp01(frameClose);
-            // 閉じ方は「覆いの面の上での半径を線形に縮める」＝旧実装と同じ見え方。
-            float w = Mathf.Lerp(dist * OpenTan, hw, k);
-            float h = Mathf.Lerp(dist * OpenTan, hh, k);
+
+            // 枠は**スクリーンの形のまま**縮む。縦横を別々に補間してはいけない
+            // （2026-08-01 実害・ユーザー報告「灰色の迫りが枠とずれている」）。
+            // 旧実装は幅と高さを同じ値（dist × OpenTan）から別々に lerp していたため、
+            // 枠は**ほぼ正方形のまま迫ってきて、最後にだけ 16:9 へ変形**していた。
+            // 「枠は現れるだけで、既にそこにある」（計画 §4）が、閉じている間だけ崩れる。
+            //
+            // 比を保つので、駆動するのは**縦**（高さの方が閉じ切りの角度が小さく、
+            // 全開時に覆いを覆い切れるかの制約もこちらが握る）。角度で線形に閉じる。
+            float aOpen = Mathf.Atan(OpenTan);
+            float aClosed = Mathf.Atan2(hh, dist);
+            float scale = dist * Mathf.Tan(Mathf.Lerp(aOpen, aClosed, k)) / Mathf.Max(hh, 1e-4f);
+            float w = hw * scale;
+            float h = hh * scale;
 
             Vector3 p0 = c - right * w - up * h;
             Vector3 p1 = c + right * w - up * h;

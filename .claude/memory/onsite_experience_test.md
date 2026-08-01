@@ -131,6 +131,49 @@ python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換す
 両眼が横に並び、各眼は 40 度ほど回転した台形（レンズの逆歪みが掛かった状態）なので、
 片眼を切り出してホモグラフィで矩形へ戻す。中央はほぼ見たまま、周辺は樽型歪みが残る。
 
+### ⚠⚠ `screencap` はパススルーを拾わない（2026-08-01・40 分溶かした）
+
+**同じ画面でも `exec-out screencap` は返さない。** 少なくとも HMD が頭に乗っていないとき
+（`mProximityPositive=false`）、アプリ自身のアイバッファしか返り、システムの絵もパススルーも黒になる。
+実測: アプリを止めて**ホーム画面**を `screencap` で撮ると 910 万画素すべて 0（`mScreenState=ON` なのに）。
+
+この真っ黒を根拠に「パススルーが合成されていない」と結論し、Quest 再起動・URP の MSAA 変更まで追った。
+**同じ場面を `screenrecord` で撮ったら普通に映っていた。**
+
+- **見た目の判定は `screenrecord`（`quest-record.py`）でやる。** 静止画が要るなら録画からフレームを抜く
+- 近接センサーを止める旧来の手（`am broadcast -a com.oculus.vrpowermanager.prox_close`）は
+  **Quest 3 では効かない**（`result=0` で状態が変わらない）＝「被っている状態」は作れない
+- 「以前は映った録画がある」も根拠にならない。2026-07-31 12:19 に部屋が写っていたのは
+  **カメラ背景が alpha 0 でアプリのバッファが素通しだった**時期のもので、経路が違う
+
+### ⚠ 暗い部屋では H.264 が暗部を丸ごと 0 へ潰す（2026-08-01）
+
+照明を消した部屋のパススルーは平均 3/255 しかない。画面がほぼ全面その暗さだと、
+**エンコーダが 0 に落として「何も映っていない」録画になる**。
+実測: 通常走行の録画は平均 0.03、同じ部屋で明るい背景を混ぜた録画は平均 3.1 で中身が残った。
+
+```bash
+FF=$(python -c "import imageio_ffmpeg,sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())")
+"$FF" -i raw.mp4 -vf "colorlevels=rimax=0.085:gimax=0.085:bimax=0.085" boost.mp4   # 約 11 倍
+```
+
+**照明を点けて撮り直すのがいちばん速い。** 持ち上げは「本当に写っていないのか」を確かめる手段。
+
+### 被らずに幾何を測る（VeilAlignmentProbe・2026-08-01）
+
+暗い部屋でも、**アプリが alpha をどう書いたかは撮れる**。
+[`VeilAlignmentProbe`](../../Assets/Scripts/Diagnostics/VeilAlignmentProbe.cs) は
+カメラ背景を明るい灰にする（alpha は 1 のまま）ので、覆いが alpha 0 にした領域が
+**「明るい面に空いた黒い矩形」＝枠そのもの**として写る。スクリーンの外周を線で重ねればずれが画素で測れ、
+リグのヨーを台形波で振れば追従の残差が出る。
+
+```bash
+adb -s <serial> shell am start -e veilprobe 1 -e xpwalk 1 -n com.roiril.mawarimi/com.unity3d.player.UnityPlayerActivity
+```
+
+実測（2026-08-01）: 枠とスクリーンのずれは四辺とも中央値 6px ≒ 0.29 度（重ねた線の太さ 0.34 度の内側）。
+追従は頭を止めてから 0.99〜1.12 秒で残差 0.00 度へ到達し、そこで張り付く。
+
 踏んだ罠 3 つ:
 
 - **screenrecord を先に始めて VR アプリを起動すると、画面モード変更で録画が黙って止まり 0 バイトになる。**

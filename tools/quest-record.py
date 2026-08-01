@@ -391,6 +391,64 @@ def record(serial, secs, walk, size=None, warmup=5.0, with_log=True):
     return app_started, rec_started
 
 
+# ---- 電池 -------------------------------------------------------------------
+#
+# Quest は思ったより早く空になる。走行のたびに数分ずつ食うので、気づいたら
+# 「検証を続けたいのに残量が無い」になる（2026-08-01 ユーザー指摘）。
+#   - 走る前に残量を見て、**充電されていない & 少ない**なら止める
+#   - 走り終わったら**寝かせる**。起きたまま放置すると何もしていなくても減る
+LOW_BATTERY_PCT = 25      # これを下回っていて充電もされていなければ走らない
+WARN_BATTERY_PCT = 40     # 走るが、先に充電を勧める
+
+
+def read_battery(serial):
+    """(残量%, 充電中か) を返す。読めなければ (None, None)。"""
+    try:
+        out = subprocess.run(["adb", "-s", serial, "shell", "dumpsys", "battery"],
+                             capture_output=True, text=True, timeout=15).stdout
+    except Exception:
+        return None, None
+    level = charging = None
+    for ln in out.splitlines():
+        k, _, v = ln.partition(":")
+        k, v = k.strip(), v.strip()
+        if k == "level" and v.isdigit():
+            level = int(v)
+        elif k in ("AC powered", "USB powered", "Wireless powered", "Dock powered"):
+            charging = charging or (v == "true")
+    return level, charging
+
+
+def check_battery(serial):
+    """走ってよいかを返す。False なら呼び手は中止する。"""
+    level, charging = read_battery(serial)
+    if level is None:
+        print("  battery: 読めなかった（続行する）")
+        return True
+    state = "充電中" if charging else "充電していない"
+    print("  battery: %d%% / %s" % (level, state))
+    if charging or level >= WARN_BATTERY_PCT:
+        return True
+    if level < LOW_BATTERY_PCT:
+        print("  ! 残量 %d%% で充電もされていない。走行を中止する。" % level,
+              file=sys.stderr)
+        print("    充電ケーブルを挿すか、`python tools/quest-fleet.py sleep %s` で"
+              "寝かせて回復を待つ。" % serial, file=sys.stderr)
+        return False
+    print("  ! 残量が少ない。続けるが、充電ケーブルを挿しておくと途中で切れない。")
+    return True
+
+
+def sleep_device(serial):
+    """走り終わったら寝かせる。起きたまま放置すると何もしなくても減る。"""
+    try:
+        subprocess.run(["adb", "-s", serial, "shell", "input", "keyevent", "KEYCODE_SLEEP"],
+                       capture_output=True, timeout=15)
+        print("  device   : スリープさせた（次に使うときは自動で起きる）")
+    except Exception as e:
+        print("  device   : スリープさせられなかった: %s" % e)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -404,6 +462,8 @@ def main():
     ap.add_argument("--show", default=SHOW_JSON, help="カメラの接続先を読む show.json")
     ap.add_argument("--no-log", action="store_true", help="logcat の収集と判定を飛ばす")
     ap.add_argument("--no-evidence", action="store_true", help="画の切り出しを飛ばす")
+    ap.add_argument("--keep-awake", action="store_true",
+                    help="走行後に実機を寝かせない（続けて何度も走らせるとき）")
     args = ap.parse_args()
 
     os.makedirs(OUTDIR, exist_ok=True)
@@ -419,6 +479,8 @@ def main():
         print("no usable Quest found", file=sys.stderr)
         return 1
     print("device: %s" % serial)
+    if not check_battery(serial):
+        return 2
 
     cams = read_cameras(args.show)
     before = health_snapshot(cams)
@@ -500,6 +562,8 @@ def main():
             print("    ! " + n)
     elif cams:
         print("  cameras  : no change worth reporting (%d checked)" % len(cams))
+    if not args.keep_awake:
+        sleep_device(serial)
     return 0
 
 

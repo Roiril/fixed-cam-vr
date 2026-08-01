@@ -173,6 +173,39 @@ namespace FixedCamVr.Streaming.Tests
             }
         }
 
+        /// <summary>
+        /// 点 <c>中心 + 軸 × 半径 × s</c> が枠の縁に乗る s を二分探索で求める。
+        /// 「枠はスクリーンを何倍したものか」を軸ごとに測るための道具。
+        /// </summary>
+        private float EdgeScale(Vector3 axis, float half, float frameClose)
+        {
+            float lo = 0.05f, hi = 40f;
+            for (int i = 0; i < 60; i++)
+            {
+                float mid = 0.5f * (lo + hi);
+                Vector3 p = _screen!.transform.position + axis * (half * mid);
+                if (_veil!.SignedDistance(p, frameClose) < 0f) lo = mid; else hi = mid;
+            }
+            return 0.5f * (lo + hi);
+        }
+
+        [Test]
+        public void Frame_KeepsScreenAspect_WhileClosing()
+        {
+            PlaceScreen(screenYawDeg: 0f);
+            // 閉じている**途中**でも、枠はスクリーンを縦横同じ倍率で拡大した形であること。
+            // 旧実装は幅と高さを同じ絶対値から別々に補間していたため、途中は正方形に近く
+            // （倍率が横 1.4 倍に対し縦 2.5 倍などになり）、最後だけ 16:9 へ変形していた。
+            foreach (float k in new[] { 0.25f, 0.5f, 0.75f, 1f })
+            {
+                float sx = EdgeScale(_screen!.transform.right, ScreenScale.x * 0.5f, k);
+                float sy = EdgeScale(_screen.transform.up, ScreenScale.y * 0.5f, k);
+                Assert.That(sx, Is.EqualTo(sy).Within(0.02f * sy),
+                    $"閉じ具合 {k:F2} で枠の形がスクリーンと違う（横 {sx:F2} 倍 / 縦 {sy:F2} 倍）。" +
+                    "迫ってくる枠が画面と別の形に見える。");
+            }
+        }
+
         [Test]
         public void Frame_Closing_ShrinksMonotonically()
         {
