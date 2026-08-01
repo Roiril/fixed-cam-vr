@@ -47,30 +47,43 @@ adb -s <serial> exec-out screencap -p > shot.png
 - 各眼の視野が **40 度ほど回転した台形**（レンズ用の逆歪みが掛かった状態）。
   HMD ではレンズがこれを打ち消すので、生のままでは「見ている絵」にならない
 
-## ⚠⚠ 被っていない間は、アプリが描いたものしか撮れない（2026-08-01 実害・40 分溶かした）
+片眼を切り出し、台形の 4 隅を矩形へ戻す（ホモグラフィ）。中央はほぼ見たまま、周辺は樽型歪みが残る。
 
-**HMD が頭に乗っていないと（`mProximityPositive=false`）、`screencap` / `screenrecord` は
-アプリ自身のアイバッファしか拾わない。システムの絵もパススルーも黒で返る。**
+## ⚠⚠ `screencap` はパススルーを拾わない。`screenrecord` は拾う（2026-08-01 実害）
 
-確かめ方は 10 秒: アプリを止めて**ホーム画面**を撮る。
+**パススルーも映るのは `screenrecord` の方だけ。** `exec-out screencap` は
+（少なくとも HMD が頭に乗っていない `mProximityPositive=false` のとき）
+**アプリ自身のアイバッファしか返さない** — システムの絵もパススルーも黒になる。
+実測: アプリを止めてホーム画面を `screencap` で撮ると 910 万画素すべて 0（`mScreenState=ON` なのに）。
 
-```bash
-adb -s <serial> shell am force-stop <pkg>; sleep 5; adb -s <serial> exec-out screencap -p > home.png
-```
+この日、その `screencap` の真っ黒を根拠に「パススルーが合成されていない」と結論し、
+Quest 再起動・URP の MSAA 変更まで 40 分追った。**同じ場面を `screenrecord` で撮ったら普通に映っていた。**
 
-ホームは必ず何か表示しているので、これが**真っ黒なら撮影系が死んでいる**（実測: 910 万画素すべて 0 /
-`mScreenState=ON` なのに）。この状態の録画から見た目を語ってはいけない。
-
+- **見た目の判定は `screenrecord`（＝このスキルの `quest-record.py`）で撮る。** 静止画が要るなら
+  録画からフレームを抜く。`screencap` は「アプリが何を描いたか」だけを見たいときの道具
 - 近接センサーを止める旧来の手（`am broadcast -a com.oculus.vrpowermanager.prox_close`）は
   **Quest 3 では効かない**（`result=0` で状態が変わらない）
-- 「以前はパススルーが映った」録画があっても根拠にならない。2026-07-31 に映っていたのは
-  **カメラ背景が alpha 0 でアプリのバッファが素通しだった**ため、システムのパススルーが
-  アプリのアイバッファ経由で入っていたもの。背景を不透明へ戻した現構成ではその経路が無い
 - **判定できないことを「出ていない」と読むと、実在しない不具合を追うことになる**（この日それをやった）
 
-### 被らずにパススルー絡みの見た目を測る（VeilAlignmentProbe）
+## ⚠ 暗い部屋では H.264 が暗部を 0 へ潰す
 
-現実の上に何が重なるかは撮れないが、**アプリが alpha をどう書いたかは撮れる**。
+照明を消した部屋のパススルーは平均 3/255 ほどしかない。画面がほぼ全面その暗さだと
+**エンコーダが丸ごと 0 に落とし、録画からは「何も映っていない」ように見える**
+（実測: 通常走行の録画は平均 0.03、同じ部屋で明るい背景を混ぜた録画は平均 3.1 で中身が残った）。
+
+- 暗い録画は**持ち上げてから判定する**。`colorlevels` で 10 倍前後に伸ばせば部屋が見える
+
+```bash
+FF=$(python -c "import imageio_ffmpeg,sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())")
+"$FF" -i raw.mp4 -vf "colorlevels=rimax=0.085:gimax=0.085:bimax=0.085" boost.mp4
+```
+
+- 走行前後の `/health` の ISO を見る（`quest-record.py` が出す）。ISO が張り付いていたら
+  「暗くて写らない」を先に疑う。**照明を点けて撮り直すのがいちばん速い**
+
+### 枠の位置と追従を数値で測る（VeilAlignmentProbe）
+
+暗い部屋ではパススルーが写らず、枠がどこにあるか目で追えない。
 [`VeilAlignmentProbe`](../../../Assets/Scripts/Diagnostics/VeilAlignmentProbe.cs) は
 カメラ背景を明るい灰（alpha は 1 のまま）にするので、**覆いが alpha 0 にした領域が
 「明るい面に空いた黒い矩形」として写る**。そこへスクリーンの外周を線で重ねれば、
@@ -78,15 +91,13 @@ adb -s <serial> shell am force-stop <pkg>; sleep 5; adb -s <serial> exec-out scr
 `頭の向き − 画面の向き` の残差を 0.25 秒ごとに吐く（追従が正面で止まるかの判定）。
 
 ```bash
-adb -s <serial> shell am start -e veilprobe 1 -n com.roiril.mawarimi/com.unity3d.player.UnityPlayerActivity
-# 段 4（枠が閉じ切って passthrough=1 のまま）を狙って撮る
-adb -s <serial> exec-out screencap -p > frame.png
+adb -s <serial> shell am start -e veilprobe 1 -e xpwalk 1 -n com.roiril.mawarimi/com.unity3d.player.UnityPlayerActivity
+adb -s <serial> shell screenrecord --time-limit 40 --bit-rate 8000000 /sdcard/probe.mp4   # MSYS_NO_PATHCONV=1
 adb -s <serial> logcat -d | grep "VeilProbe"
 ```
 
 フラグが無ければ何もしない（Development ビルド専用）。`-e xpwalk 1` と併用すると導入まで自動で進む。
 
-片眼を切り出し、台形の 4 隅を矩形へ戻す（ホモグラフィ）。中央はほぼ見たまま、周辺は樽型歪みが残る。
 
 ## ⚠ 画の見方を間違えると「出ている」ものを「出ていない」と読む（2026-07-31 実害）
 
