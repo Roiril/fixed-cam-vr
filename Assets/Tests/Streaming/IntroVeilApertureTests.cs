@@ -190,6 +190,22 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void VeilPlane_SitsAtTheScreenDistance()
+        {
+            // **両眼視差を消すための条件**（2026-08-01 実害・ユーザーが録画で発見）。
+            // 穴は中央眼から解くが描画は左右それぞれの眼から行うので、覆いの面がスクリーンより
+            // 手前にあると、同じ穴が左眼では右へ・右眼では左へ寄り、枠の外にスクリーンがはみ出す
+            // （実測: 左眼は右側だけ 33,616px / 右眼は左側だけ 27,948px の漏れ）。
+            // 面をスクリーンと同じ距離へ置けば、穴の縁のワールド位置がスクリーンの縁と一致する。
+            PlaceScreen(screenYawDeg: 0f);
+            _veil!.SignedDistance(_screen!.transform.position, Closed);   // 解かせる
+            float eye = Vector3.Distance(_veil.transform.position, _screen.transform.position);
+            Assert.That(_veil.PlaneDistanceResolved, Is.EqualTo(eye).Within(0.01f),
+                $"覆いの面が {_veil.PlaneDistanceResolved:F2}m にある（スクリーンは {eye:F2}m）。" +
+                "手前に置くと両眼で枠がずれ、スクリーンが枠からはみ出す。");
+        }
+
+        [Test]
         public void Frame_KeepsScreenAspect_WhileClosing()
         {
             PlaceScreen(screenYawDeg: 0f);

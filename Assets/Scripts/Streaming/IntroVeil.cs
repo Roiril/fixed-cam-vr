@@ -100,6 +100,7 @@ namespace FixedCamVr.Streaming
             var mf = go.AddComponent<MeshFilter>();
             mf.sharedMesh = _mesh;
 
+            _quad = go.transform;
             _renderer = go.AddComponent<MeshRenderer>();
             _mat = new Material(shader) { name = "IntroVeil (runtime)" };
             _renderer.sharedMaterial = _mat;
@@ -111,6 +112,24 @@ namespace FixedCamVr.Streaming
 
         // インスタンスごとに持つ（static で共有すると、片方の Destroy でもう片方のメッシュが消える）。
         private Mesh? _mesh;
+        private Transform? _quad;
+
+        /// <summary>
+        /// 覆いの面を <see cref="PlaneDistanceResolved"/> へ運ぶ。**覆う画角は変えない**ので、
+        /// 大きさは距離に比例させる（<see cref="distance"/> / <see cref="veilSize"/> はその基準）。
+        /// </summary>
+        private Vector2 PlaceQuad()
+        {
+            float d = Mathf.Max(PlaneDistanceResolved, 0.01f);
+            float k = d / Mathf.Max(distance, 0.001f);
+            Vector2 size = veilSize * k;
+            if (_quad != null)
+            {
+                _quad.localPosition = new Vector3(0f, 0f, d);
+                _quad.localScale = new Vector3(size.x, size.y, 1f);
+            }
+            return size;
+        }
 
         private static Mesh BuildQuad()
         {
@@ -139,6 +158,19 @@ namespace FixedCamVr.Streaming
         private readonly Vector4[] _planes = new Vector4[4];
 
         /// <summary>
+        /// 覆いの面を置く距離 (m)。<b>スクリーンと同じ距離に置く</b>のが要点で、
+        /// <see cref="distance"/> は「その距離での大きさ」を決める基準にしか使わない。
+        ///
+        /// ⚠ <b>近くに置くと両眼視差でずれる</b>（2026-08-01 実害・ユーザーが録画で発見）。
+        /// 穴は中央眼から解くが、描画は左右それぞれの眼から行う。覆いの面が 0.3m・スクリーンが 2m だと、
+        /// 同じ穴が左眼では右へ、右眼では左へ寄って見え、<b>枠の外にスクリーンがはみ出す</b>
+        /// （実測: 左眼は右側だけ、右眼は左側だけに漏れる）。
+        /// 面をスクリーンと同じ距離へ置けば、穴の縁の<b>ワールド位置</b>がスクリーンの縁と一致するので、
+        /// どちらの眼から見ても合う。
+        /// </summary>
+        public float PlaneDistanceResolved { get; private set; }
+
+        /// <summary>
         /// 枠の 4 辺（眼と辺を通る平面）を組む。<b>スクリーンの見かけの形そのもの</b>で、
         /// 頭の向き・追従の遅れ・首の傾きに関係なく厳密。
         ///
@@ -163,6 +195,7 @@ namespace FixedCamVr.Streaming
             }
 
             float dist = Mathf.Max(c.magnitude, 0.01f);
+            PlaneDistanceResolved = dist;   // 覆いの面はここへ置く（両眼視差を消すため）
             float k = Mathf.Clamp01(frameClose);
 
             // 枠は**スクリーンの形のまま**縮む。縦横を別々に補間してはいけない
@@ -248,9 +281,11 @@ namespace FixedCamVr.Streaming
             _renderer.enabled = true;
             _seed += Time.unscaledDeltaTime;
             float featherAng = BuildFramePlanes(w.frame);
+            // 面をスクリーンと同じ距離へ運び、見かけの大きさ（＝覆う画角）は変えない。
+            Vector2 size = PlaceQuad();
             for (int i = 0; i < FramePlaneIds.Length; i++) _mat.SetVector(FramePlaneIds[i], _planes[i]);
             _mat.SetFloat(PassthroughId, Mathf.Clamp01(w.passthrough));
-            _mat.SetVector(VeilSizeId, new Vector4(veilSize.x, veilSize.y, distance, 0f));
+            _mat.SetVector(VeilSizeId, new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
             _mat.SetFloat(FeatherAngId, featherAng);
             _mat.SetFloat(GrainId, Mathf.Clamp01(w.grain));
             _mat.SetFloat(ScanCountId, scanlineCount);
