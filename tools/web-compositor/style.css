@@ -1474,7 +1474,9 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-dirty.on { color: var(--warn-color); opacity: 1; }
 .rb-schema { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap;
   border: 1px solid var(--line-soft); padding: 2px 7px; opacity: var(--opacity-mute); }
-.rb-lap-add, .rb-lap-del, .rb-validate, .rb-legacy { padding: 4px 10px; font-size: 11px; }
+.rb-validate, .rb-legacy { padding: 4px 10px; font-size: 11px; }
+.rb-laps { font-size: 10px; letter-spacing: .12em; white-space: nowrap;
+  border: 1px solid var(--line-soft); padding: 2px 7px; opacity: var(--opacity-mute); }
 .rb-hint { font-size: 11px; opacity: var(--opacity-sub); line-height: 1.45; }
 .rb-note { font-size: 11px; color: var(--warn-color); line-height: 1.4; }
 .rb-note:empty { display: none; }
@@ -1487,6 +1489,9 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .rb-lap { display: flex; flex-direction: column; gap: 4px; }
 .rb-lap-head { font-size: 10px; text-transform: uppercase; letter-spacing: .14em;
   opacity: var(--opacity-mute); }
+/* もどり = 元の位置へ戻って終わる区間。周と同じ見た目にすると「4 周目」と読まれる。 */
+.rb-lap.ret .rb-lap-head { opacity: 1; color: var(--warn-color); }
+.rb-lap-note { font-size: 10px; opacity: var(--opacity-mute); line-height: 1.4; }
 .rb-ribbon { display: flex; align-items: stretch; gap: 3px; min-width: min-content; padding-right: 12px; }
 
 /* 区間 = 伸縮（斜線ハッチ） */

@@ -29,6 +29,12 @@ import { projectPoint, unprojectToFloor } from './calib.js';
 import { wireSegments } from './calib-ui.js';
 import { FX, FX_DEFAULT, camColor, escapeHtml, isVideoUrl } from './common.js';
 import { recStepIssue } from './record-model.js';
+// 周の並び（3 周 ＋ もどり）と「その区間を踏むか」の判定は run-model.js が単一の正
+// （本番前チェック・シミュレータ・実機と同じ答えを出さないと、卓だけが嘘をつく）。
+import {
+  lapHeadings, totalLaps as runTotalLaps, isSegmentReachable, isReturnSegment,
+  returnTakeTooLate, RUN_DEFAULT,
+} from './run-model.js';
 import { createCueEditor } from './cue-editor.js';
 import { durationOf, onDurationResolved } from './media-duration.js';
 import { resolveStepDuration } from './show-scenario.js';
@@ -74,8 +80,7 @@ export function createRibbon(container, deps) {
         <span class="spacer"></span>
         <button class="rb-validate" title="🕹 ショーシミュレーションへ移動して、歩き（フロアマップのドット）でショーを実時間検証する">▶ 検証</button>
         <button class="rb-dwell-reset" title="区間に出ている「実測 平均滞在」の集計を消す（会場が変わった / リハをやり直す時）">⟲ 実測クリア</button>
-        <button class="rb-lap-add" title="周回を 1 つ増やす">＋ 周回</button>
-        <button class="rb-lap-del" title="最後の周回を削除">－ 周回</button>
+        <span class="rb-laps"></span>
       </div>
       <div class="rb-hint">区間（斜線）＝ 体験者が決める時間。演出（🎬）＝ こちらが決める時間で、幅は尺に比例する。
         演出はドラッグ（マウス / 指）か <b>← →</b> キーで動かす — 区間の中 = 進入 +t 秒 ／ 右境界に吸着 = 離脱時。</div>
@@ -109,7 +114,9 @@ export function createRibbon(container, deps) {
   let zoneBoxes = [];       // 展開済みゾーン矩形（線がどのカメラのゾーンに置かれているかを実機と同じ判定で出す）
   let order = null;
   let orderIsExplicit = false;
-  let lapCount = 1;
+  // 走り切る周数は **show.json run.totalLaps が単一の正**（「ライブ運用」の走り切る周数で決める）。
+  // リボン側で別に増減できると、卓に出ている周数と実機が走る周数が食い違ったまま著作できてしまう。
+  let run = null;
   let sel = null;             // { kind:'seg'|'take', lap, camera, id? }
   let convertNote = '';       // 案内（保存で消える）
   let v2Source = false;       // 読み込んだ show.json がまだ v2（保存すると v3 で書き出される）
@@ -122,13 +129,13 @@ export function createRibbon(container, deps) {
   let undoStack = [];
   let shadow = null;
   let savedSnap = null;
-  const snap = () => JSON.stringify({ tl: timeline, lapCount });
+  const snap = () => JSON.stringify({ tl: timeline });
   function resetUndo() { undoStack = []; shadow = snap(); savedSnap = shadow; renderUndo(); }
   function renderUndo() { const b = q('.rb-undo'); if (b) b.disabled = !undoStack.length; }
   function undo() {
     if (!undoStack.length) return;
     const prev = JSON.parse(undoStack.pop());
-    timeline = prev.tl; lapCount = prev.lapCount;
+    timeline = prev.tl;
     shadow = snap();
     dirty = shadow !== savedSnap;
     sel = null; closeCueEditor();
@@ -150,6 +157,17 @@ export function createRibbon(container, deps) {
       if (valid.length) { orderIsExplicit = true; return valid; }
     }
     return cameras.map((_, i) => i);
+  }
+  /** 走り切る周数（show.json run.totalLaps）。もどりの区間はこの外側に 1 つ足される。 */
+  function lapsOf() { return runTotalLaps({ run }); }
+  /** リボンが並べる周（1..周数 ＋ もどり）。 */
+  function lapRows() { return lapHeadings(lapsOf()); }
+  /** その周で並べるカメラ。もどりの周はスタート領域だけ（ほかは踏まないので出さない）。 */
+  function camsForLap(lap) {
+    const rs = rows();
+    const laps = lapsOf();
+    if (lap <= laps) return rs;
+    return rs.filter((ci) => isSegmentReachable(lap, ci, laps, rs));
   }
   function segAt(lap, camera) { return timeline.segments.find((s) => s.lap === lap && s.camera === camera) || null; }
   function ensureSeg(lap, camera) {
@@ -476,6 +494,14 @@ export function createRibbon(container, deps) {
     const blocked = blockedByPrevExit(t, lap, camera);
     if (blocked) return blocked;
     if (!t || t.at === TAKE.AT_EXIT) return null;         // 離脱時は必ず出る
+    // もどりの区間は入った瞬間に終了へ向かうので、猶予を過ぎた開始位置の演出は**実機で必ず出ない**。
+    // 本番前チェックだけでなくここでも言う（作れない組み合わせは選ばせない、の流儀）。
+    if (isReturnSegment(lap, camera, lapsOf(), rows())
+        && t.at !== TAKE.AT_LINE && returnTakeTooLate(t.offsetSec, run)) {
+      const grace = Number((run && run.endGraceSec) || RUN_DEFAULT.endGraceSec);
+      return `⏱ もどりの区間は入った直後に体験が終わります。開始 +${fmtSec(t.offsetSec || 0)}s は`
+           + ` 猶予 ${fmtSec(grace)}s を超えるので実機では出ません`;
+    }
     const e = dwellFor(lap, camera);
     if (!e) return null;
     const off = Math.max(0, t.offsetSec || 0);
@@ -523,31 +549,59 @@ export function createRibbon(container, deps) {
     if (convertNote) msgs.push(convertNote);
     if (!orderIsExplicit && cameras.length > 0) msgs.push('コース順が未設定です。フロアマップで周回コースを設定してください（今は 0..N-1 の順で表示中）。');
     if (!cameras.length) msgs.push('カメラが 1 台も設定されていません。');
+    // 走り切る周数を超えた区間は、この画面に出ないまま show.json に残る。黙って隠すと
+    // 「著作したのに出ない」に現場で初めて気づくので、残っていることをここで言う。
+    const laps = lapsOf();
+    const hidden = timeline.segments.filter((s) => (s.takes || []).length
+      && !isSegmentReachable(s.lap || 0, s.camera, laps, rs));
+    if (hidden.length) {
+      const n = hidden.reduce((m, s) => m + s.takes.length, 0);
+      msgs.push(`踏まない区間に演出が ${n} 本残っています`
+        + `（${[...new Set(hidden.map((s) => `${s.lap}周目`))].join(' / ')}）。`
+        + '出したいなら「ライブ運用」の走り切る周数を増やしてください。');
+    }
     noteEl.textContent = msgs.join(' / ');
     noteEl.className = 'rb-note' + (msgs.length ? ' on' : '');
+    renderLapsLabel();
 
-    const bgmLane = resolveBgmLane(timeline.segments, rs, lapCount, rootBgmTrackId());
+    // BGM は「指示が無い区間は前の曲が続く」ので、もどりの区間まで通して解く。
+    const bgmLane = resolveBgmLane(timeline.segments, rs, laps + 1, rootBgmTrackId());
     track.innerHTML = '';
-    for (let lap = 1; lap <= lapCount; lap++) {
+    for (const h of lapRows()) {
       const lapEl = document.createElement('div');
-      lapEl.className = 'rb-lap';
+      lapEl.className = 'rb-lap' + (h.isReturn ? ' ret' : '');
       const head = document.createElement('div');
       head.className = 'rb-lap-head';
-      head.textContent = `${lap}周目`;
+      head.textContent = h.label;
+      if (h.isReturn) head.title = '元の位置に戻って体験が終わる区間';
       lapEl.appendChild(head);
 
       const rib = document.createElement('div');
       rib.className = 'rb-ribbon';
-      rs.forEach((ci) => {
-        rib.appendChild(renderSeg(lap, ci, bgmLane.get(`${lap}:${ci}`)));
-        const seg = segAt(lap, ci);
+      camsForLap(h.lap).forEach((ci) => {
+        rib.appendChild(renderSeg(h.lap, ci, bgmLane.get(`${h.lap}:${ci}`)));
+        const seg = segAt(h.lap, ci);
         for (const t of (seg && seg.takes) || []) {
-          if (t.at === TAKE.AT_EXIT) rib.appendChild(renderTake(t, lap, ci, null));
+          if (t.at === TAKE.AT_EXIT) rib.appendChild(renderTake(t, h.lap, ci, null));
         }
       });
       lapEl.appendChild(rib);
+      if (h.isReturn) {
+        const note = document.createElement('div');
+        note.className = 'rb-lap-note';
+        note.textContent = '元の位置に戻って体験が終わります。ここに置いた演出は入った直後にしか始まりません。';
+        lapEl.appendChild(note);
+      }
       track.appendChild(lapEl);
     }
+  }
+
+  /** 周数の出どころを常に見せる（リボンからは増減できない＝食い違いを作らない）。 */
+  function renderLapsLabel() {
+    const el = q('.rb-laps');
+    if (!el) return;
+    el.textContent = `${lapsOf()} 周 ＋ もどり`;
+    el.title = '走り切る周数は「ライブ運用」タブの走り切る周数（show.json run.totalLaps）で決まります';
   }
 
   function renderSeg(lap, ci, bgmSt) {
@@ -1279,7 +1333,7 @@ export function createRibbon(container, deps) {
 
   // 「この演出のあいだ何が鳴るか」。指示が無ければ区間のレーンをそのまま言う（＝黙っていても分かる）。
   function takeBgmLabel(t, lap, camera) {
-    const lane = resolveBgmLane(timeline.segments, rows(), lapCount, rootBgmTrackId()).get(`${lap}:${camera}`);
+    const lane = resolveBgmLane(timeline.segments, rows(), lapsOf() + 1, rootBgmTrackId()).get(`${lap}:${camera}`);
     const laneId = lane ? lane.trackId : '';
     const r = resolveTakeBgm(t, laneId);
     if (!r.trackId) {
@@ -1847,18 +1901,9 @@ export function createRibbon(container, deps) {
     ensurePlaceUi().openFor(s, t, idx);
   }
 
-  // ---- 周回の増減 / 保存 -------------------------------------------------------
-  q('.rb-lap-add').onclick = () => { lapCount++; markDirty(); render(); };
-  q('.rb-lap-del').onclick = () => {
-    if (lapCount <= 1) return;
-    const removed = lapCount;
-    const lost = timeline.segments.filter((s) => s.lap >= removed).length;
-    if (lost && !confirm(`${removed} 周目には編集済みの区間が ${lost} 個あります。周ごと削除しますか？`)) return;
-    timeline.segments = timeline.segments.filter((s) => s.lap < removed);
-    lapCount--;
-    if (sel && sel.lap >= lapCount + 1) { sel = null; closeCueEditor(); }
-    markDirty(); render(); renderInspector();
-  };
+  // ---- 保存 -------------------------------------------------------------------
+  // 周回の増減ボタンは廃止した（2026-08-02）。走り切る周数は show.json run.totalLaps だけが正で、
+  // リボン側にも持たせると「卓に出ている周数 ≠ 実機が走る周数」を著作中に作れてしまう。
   q('.rb-undo').onclick = undo;
   // ▶ 検証 = 🕹 ショーシミュレーション（歩きで実時間検証）。卓の検証面はこれ 1 つ。
   q('.rb-validate').onclick = () => { if (deps.openSimulator) deps.openSimulator(); };
@@ -1895,14 +1940,11 @@ export function createRibbon(container, deps) {
     timeline = normalizeTimelineV3(tl && Array.isArray(tl.segments) ? tl : { rev: (tl && tl.rev) || 1, segments: [] });
     assignIds();
   }
-  function recomputeLapCount() {
-    const maxLap = timeline.segments.reduce((m, s) => Math.max(m, s.lap || 1), 0);
-    lapCount = Math.max(1, maxLap, lapCount);
-  }
-
   // カメラ / 素材 / コース順は deps 側（app.js の state）が正。描画の前に必ず引き直す。
   function pullDeps(state) {
     cameras = deps.getCameras ? deps.getCameras() : ((state && state.cameras) || []);
+    // 走り切る周数（run.totalLaps）。リボンはこれを読むだけで書かない。
+    run = deps.getRun ? deps.getRun() : ((state && state.run) || null);
     cues = deps.getCues ? deps.getCues() : ((state && state.cues) || []);
     actors = deps.getActors ? deps.getActors() : ((state && state.actors) || []);
     record = deps.getRecord ? deps.getRecord() : ((state && state.record) || null);
@@ -1917,8 +1959,10 @@ export function createRibbon(container, deps) {
     // 版はデータから自分で判定する（呼び元は版を知らなくていい）。
     v2Source = !isV3(state && state.timeline);
     pullDeps(state);
-    if (!dirty) { adoptState(state); recomputeLapCount(); resetUndo(); }
+    if (!dirty) { adoptState(state); resetUndo(); }
     if (sel && sel.camera >= cameras.length) { sel = null; closeCueEditor(); }
+    // 周数を減らすと選択中の区間が画面から消えることがある（選択だけ残すと編集不能な状態になる）。
+    if (sel && !isSegmentReachable(sel.lap, sel.camera, lapsOf(), rows())) { sel = null; closeCueEditor(); }
     render();
     if (sel && !editorOpen) renderInspector();
     else if (!sel) inspectorEl.innerHTML = '';

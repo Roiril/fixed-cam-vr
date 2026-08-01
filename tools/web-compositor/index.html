@@ -373,11 +373,16 @@
         <label class="livecue-lbl"><input id="runIntroAuto" type="checkbox"> 自動で本編へ</label>
         <label class="livecue-lbl">目安 <input id="runTargetSec" type="number" min="0" max="900" step="10"> s</label>
         <label class="livecue-lbl">強制終了 <input id="runHardSec" type="number" min="0" max="1800" step="10"> s</label>
+        <label class="livecue-lbl">演出を待つ猶予 <input id="runEndGrace" type="number" min="0" max="30" step="0.5"> s</label>
+        <label class="livecue-lbl">演出を見せ切る上限 <input id="runEndHold" type="number" min="0" max="180" step="5"> s</label>
         <label class="livecue-lbl">切替に乱れ <input id="runSwitchGlitch" type="number" min="0" max="1" step="0.05"></label>
         <span id="runCfgState" class="ed-status"></span>
       </div>
       <div class="run-bar">
-        <span class="hint">体験の骨格（show.json <code>run</code>）。企画書は「3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒」。走り切ると Quest が暗転して終わる。導入の自動終了は「最低尺を過ぎ、かつスタート区間に居る」の両方が要る（自動を切ればスタッフの ⏭ だけで進む）。目安を超えても体験は止まらない（警告だけ）。強制終了は動かない体験者への保険で 0 = 無効。</span>
+        <span class="hint">体験の骨格（show.json <code>run</code>）。企画書は「3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒」。<b>走り切る周数を回ったあと、元の位置（スタート領域）へ戻ったところで終わる</b>ので、タイムラインには「もどり」の区間が 1 つ増える。導入の自動終了は「最低尺を過ぎ、かつスタート区間に居る」の両方が要る（自動を切ればスタッフの ⏭ だけで進む）。目安を超えても体験は止まらない（警告だけ）。強制終了は動かない体験者への保険で 0 = 無効。</span>
+      </div>
+      <div class="run-bar">
+        <span class="hint">演出を待つ猶予＝終わる条件が揃ったあと、演出が始まるのをこの秒数だけ必ず待つ（もどりの区間に置いた演出はこの中で始まらないと出ない）。演出を見せ切る上限＝そのとき走っている演出を最後まで見せる上限。どちらも 0 なら Quest の既定（3s / 60s）。</span>
       </div>
       <div class="run-bar">
         <label class="livecue-lbl"><input id="introOn" type="checkbox"> 導入演出を出す</label>

@@ -18,6 +18,8 @@ import { durationOf, onDurationResolved } from './media-duration.js';
 import { createShowRunner, parseScenario, sampleAt, DEFAULT_TICK_MS } from './scenario-engine.js';
 import { buildScenarioConfig, serializeScenario } from './show-scenario.js';
 import { recordConfig, recStepIssue } from './record-model.js';
+// 終端の判定は run-model.js が単一の正（リボン・本番前チェック・実機と同じ式）。
+import { isSegmentReachable, totalLaps as runTotalLaps, courseOrder } from './run-model.js';
 
 const LS_KEY = 'mawarimi.scenarios.v1';
 const MAX_EVENTS = 300;
@@ -474,7 +476,7 @@ export function createShowSim(container, deps) {
     else if (replay) bits.push(`▶ 再実行中: ${replay.name}`);
     else if (playing) bits.push(recording ? '● 記録中（マップをドラッグ）' : '実行中（マップをドラッグ）');
     else bits.push('一時停止中');
-    if (runFinished) bits.push(`🏁 体験おわり（${totalLaps()} 周を走り切りました。⏹ 先頭へ でやり直す）`);
+    if (runFinished) bits.push(`🏁 体験おわり（${totalLaps()} 周を走り切って元の位置へ戻りました。⏹ 先頭へ でやり直す）`);
     if (staleConfig) bits.push('⚠ show.json が更新されました（⏹ 先頭へ で反映）');
     statusEl.textContent = bits.join(' / ');
     statusEl.className = 'ss-note ss-status' + (bits.some((b) => b.startsWith('⚠')) ? ' warn' : '');
@@ -503,7 +505,7 @@ export function createShowSim(container, deps) {
       case 'zone': return `ゾーン確定 ${camLabel(e.a)}`;
       case 'lap': return `周回 → ${e.a} 周目`;
       // 実機はここで暗転して終わる（次の体験者を待つ）。卓も同じところで止める。
-      case 'finish': return `🏁 体験おわり（${e.a} 周を走り切りました）`;
+      case 'finish': return `🏁 体験おわり（${e.a} 周を走り切って元の位置へ戻りました）`;
       case 'seg': return `区間 L${e.a}・${camLabel(e.b)} へ進入`;
       case 'take': return `演出開始 ${e.id}`;
       case 'step': {
@@ -610,29 +612,31 @@ export function createShowSim(container, deps) {
     }
   }
 
-  // 体験の終端（show.json run.totalLaps）。実機は走り切ると暗転して終わるので、卓でも同じところで止める。
-  // 止めないと「3 周で終わる設定なのに 4 周目の演出が卓では動いて見える」という嘘になり、
-  // 逆に**3 周目の最後に置いた離脱時の演出が出るかどうか**を卓で確かめられない。
+  // 体験の終端。実機は「走り切る周数を回り、元の位置（スタート領域）へ戻ったところ」で暗転して
+  // 終わるので、卓でも同じところで止める。
+  //
+  // ⚠ **もどりの区間を出てから止める**。周数で止めると、もどりの区間に置いた演出を
+  //   卓で一度も確かめられない（実機では出るのに卓では出ない、という一番たちの悪い食い違い）。
   //
   // 走行中の演出は見せ切る（実機の ShowRunLogic と同じ規則）— ここを合わせないと
   // 「卓では山場が出たのに実機では出ない」の逆パターンを作る。
   function checkRunFinished() {
     if (runFinished || !runner) return false;
     const total = totalLaps();
-    if (total <= 0 || runner.lap <= total) return false;
+    if (total <= 0) return false;
+    // 順路は「いま走らせている設定」から読む（state から読み直すと、実行中に show.json が
+    // 変わった時だけ卓の終わり方が変わる）。
+    const order = (cfg && cfg.courseOrder) || courseOrder(state);
+    if (isSegmentReachable(runner.lap, runner.zoneCamera, total, order)) return false;
     if (runner.takeActive) return false;   // 見せ切ってから畳む
     runFinished = true;
     pause();
-    pushEvents([{ kind: 'finish', tMs: simMs, a: totalLaps() }]);
+    pushEvents([{ kind: 'finish', tMs: simMs, a: total }]);
     renderAll();
     return true;
   }
 
-  function totalLaps() {
-    const r = (state && state.run) || {};
-    const n = parseInt(r.totalLaps, 10);
-    return Number.isFinite(n) && n > 0 ? n : 3;   // 既定は実機と同じ 3 周
-  }
+  function totalLaps() { return runTotalLaps(state); }
 
   // rAF はタブ非表示で止まる（裏タブで凍る）ので壁時計駆動。
   setInterval(() => {

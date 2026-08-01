@@ -18,6 +18,13 @@ import { createActorsPanel } from './actors.js';
 import { createCalibUi } from './calib-ui.js';
 import { calibBadgeText, lensesOf, lensTrustIssues } from './calib-session.js';
 import { introConfig, introStageSec, introDurationLabel, introPreflightRow } from './intro-model.js';
+// 体験の骨格（走り切る周数 ＋ もどりの区間）。既定値と「その区間を踏むか」の判定はここが単一の正。
+// ⚠ 順路は app.js の courseOrder()（カメラ台数でクランプする方）を渡す — リボンが並べる順と
+//   同じでなければ、卓の中で「踏む区間」の答えが 2 つできる。
+import {
+  RUN_DEFAULT, runConfig, totalLaps as runTotalLaps,
+  isSegmentReachable, returnTakeTooLate,
+} from './run-model.js';
 
 const $ = (s) => document.querySelector(s);
 const MW = 640, MH = 360;
@@ -1204,15 +1211,13 @@ async function applySwitchTiming() {
 }
 // ---- 体験の骨格（show.json run + control.switchGlitch）------------------------
 // 企画書 3 章「3 区間を 3 周・導入を含め 3 分以内」。ここが空だと Unity はコード既定（3 周・導入 20s）で走る。
-const RUN_CFG_DEFAULT = {
-  totalLaps: 3, introEnabled: true, introMinSec: 20, introAutoAdvance: true,
-  targetSec: 180, hardLimitSec: 300, endFadeSec: 1.5,
-};
+// 既定値と「どの区間を踏むか」の判定は run-model.js が単一の正（リボン・シミュレータも同じ関数を読む）。
 
 function runCfgEls() {
   return {
     laps: $('#runLaps'), introOn: $('#runIntroOn'), introSec: $('#runIntroSec'),
     introAuto: $('#runIntroAuto'), target: $('#runTargetSec'), hard: $('#runHardSec'),
+    endGrace: $('#runEndGrace'), endHold: $('#runEndHold'),
     glitch: $('#runSwitchGlitch'),
   };
 }
@@ -1220,13 +1225,15 @@ function runCfgEls() {
 function renderRunCfg(s) {
   const e = runCfgEls();
   if (!e.laps) return;
-  const r = { ...RUN_CFG_DEFAULT, ...((s && s.run) || {}) };
+  const r = runConfig(s);
   e.laps.value = r.totalLaps;
   e.introOn.checked = r.introEnabled !== false;
   e.introSec.value = r.introMinSec;
   e.introAuto.checked = r.introAutoAdvance !== false;
   e.target.value = r.targetSec;
   e.hard.value = r.hardLimitSec;
+  if (e.endGrace) e.endGrace.value = r.endGraceSec;
+  if (e.endHold) e.endHold.value = r.endHoldMaxSec;
   e.glitch.value = Number((s && s.control && s.control.switchGlitch) || 0);
   renderIntroCfg(r, s);
 }
@@ -1319,13 +1326,16 @@ async function applyRunCfg() {
   const s = await getState();
   if (!s) { if (st) { st.textContent = '✕ 適用失敗（サーバ断）'; st.className = 'ed-status err'; } return; }
   const run = {
-    ...RUN_CFG_DEFAULT, ...(s.run || {}),
-    totalLaps: Math.max(1, Math.round(parseFloat(e.laps.value) || RUN_CFG_DEFAULT.totalLaps)),
+    ...runConfig(s),
+    totalLaps: Math.max(1, Math.round(parseFloat(e.laps.value) || RUN_DEFAULT.totalLaps)),
     introEnabled: !!e.introOn.checked,
     introMinSec: Math.max(0, parseFloat(e.introSec.value) || 0),
     introAutoAdvance: !!e.introAuto.checked,
     targetSec: Math.max(0, parseFloat(e.target.value) || 0),
     hardLimitSec: Math.max(0, parseFloat(e.hard.value) || 0),
+    // 0 は「未指定」として Unity が既定へ落とすので、卓も 0 を素通しにする（勝手に既定へ書き換えない）。
+    endGraceSec: e.endGrace ? Math.max(0, parseFloat(e.endGrace.value) || 0) : runConfig(s).endGraceSec,
+    endHoldMaxSec: e.endHold ? Math.max(0, parseFloat(e.endHold.value) || 0) : runConfig(s).endHoldMaxSec,
   };
   run.intro = readIntroCfg(s.run);
   // control は shallow 置換なので、必ず取り直した control を土台にする（runEpoch / slots を飛ばさない）。
@@ -1352,7 +1362,7 @@ for (const sel of [...Object.values(INTRO_NUM), ...Object.values(INTRO_BOOL), ..
   const el = $(sel);
   if (!el) continue;
   el.onchange = applyRunCfg;
-  el.oninput = () => renderIntroSum({ ...RUN_CFG_DEFAULT, ...((state && state.run) || {}) });
+  el.oninput = () => renderIntroSum(runConfig(state));
 }
 
 if ($('#switchDwell')) $('#switchDwell').onchange = applySwitchTiming;
@@ -1632,18 +1642,37 @@ function preflightRows() {
     if (introRow) rows.push(introRow);
   }
 
-  // 体験の骨格。走り切る周数を超えた周に演出を書いても**絶対に出ない**（そこへ到達する前に終わる）。
+  // 体験の骨格。踏まない区間に演出を書いても**絶対に出ない**（そこへ到達する前に終わる）。
   // 実機だけが黙って落とすので、著作の段階で気づける唯一の面がここ。
+  // ⚠ 体験は「3 周 ＋ 元の位置へ戻る区間」で終わるので、もどりの区間（lap = 周数 + 1 の
+  //   スタート領域）は**死んでいない**。判定は run-model.js が単一の正。
   {
-    const run = { ...RUN_CFG_DEFAULT, ...((state && state.run) || {}) };
+    const run = runConfig(state);
+    const laps = runTotalLaps(state);
+    const order = courseOrder();
     const authoredMax = segs.reduce((m, s) => Math.max(m, s.lap || 0), 0);
-    const dead = segs.filter((s) => (s.takes || []).length && (s.lap || 0) > run.totalLaps);
+    const dead = segs.filter((s) => (s.takes || []).length
+      && !isSegmentReachable(s.lap || 0, s.camera, laps, order));
+    // もどりの区間は入った瞬間に終了へ向かうので、猶予を超える開始位置の演出は実機で必ず出ない。
+    const late = [];
+    for (const s of segs) {
+      if (!isSegmentReachable(s.lap || 0, s.camera, laps, order)) continue;
+      if ((s.lap || 0) !== laps + 1) continue;
+      for (const t of s.takes || []) {
+        if (t.at !== 'enter' || !returnTakeTooLate(t.offsetSec, run)) continue;
+        late.push(`${t.name || t.id || '演出'}（+${t.offsetSec}s）`);
+      }
+    }
     if (dead.length) {
       rows.push({ s: 'ng', label: '体験の骨格',
-        detail: `${run.totalLaps} 周で終わる設定なのに ${dead.map((s) => `${s.lap}周目`).join(' / ')} に演出があります — 出ません（周数を増やすか演出を移す）` });
-    } else if (authoredMax > 0 && authoredMax < run.totalLaps) {
+        detail: `${laps} 周＋もどりで終わる設定なのに ${dead.map((s) => `${s.lap}周目 ${camLabelOf(s.camera)}`).join(' / ')} に演出があります — 出ません（周数を増やすか演出を移す）` });
+    } else if (late.length) {
+      rows.push({ s: 'ng', label: '体験の骨格',
+        detail: `もどりの区間は入った直後に終了へ向かいます（待つのは ${run.endGraceSec}s）。`
+          + `${late.join(' / ')} はこの開始位置では実機で出ません — 開始を早めるか離脱時にする` });
+    } else if (authoredMax > 0 && authoredMax < laps) {
       rows.push({ s: 'warn', label: '体験の骨格',
-        detail: `${run.totalLaps} 周走る設定ですが演出は ${authoredMax} 周目までです（最後の周は映像切替だけになります）` });
+        detail: `${laps} 周走る設定ですが演出は ${authoredMax} 周目までです（最後の周は映像切替だけになります）` });
     } else {
       // ⚠ 導入は「演出（run.intro の段の合計）＋ 慣らし歩行（introMinSec）」。
       //   introMinSec だけを出すと**演出のぶん（既定 13.1s）が予算から丸ごと落ちる**。
@@ -1655,7 +1684,7 @@ function preflightRows() {
         ? `導入 ${Math.round(introSec)}s（${introDurationLabel(run.intro, run.introMinSec)}）`
         : '導入なし';
       rows.push({ s: 'ok', label: '体験の骨格',
-        detail: `${run.totalLaps} 周 / ${introTxt} / 目安 ${run.targetSec}s` });
+        detail: `${laps} 周＋もどり / ${introTxt} / 目安 ${run.targetSec}s` });
     }
   }
 
@@ -1899,6 +1928,8 @@ if ($('#timeline')) {
     getActors: () => state?.actors || [],
     // ⏺ 端末内録画の設定。「録画」カットが実機で本当に録れるかをリボンが照合する。
     getRecord: () => state?.record || null,
+    // 体験の骨格（走り切る周数）。リボンが並べる周はこれだけが正で、リボン側からは書き換えない。
+    getRun: () => state?.run || null,
     getCourseOrder: () => state?.layout?.course?.order || null,
     // 通過ライン（layout.lines）と grid をリボンが読む（開始規則「このラインを通過したら」の選択肢・警告）。
     getLayout: () => state?.layout || null,

@@ -231,13 +231,19 @@ def _default_show():
                     # 導入を終える / 体験を終える の合図。
                     'introAdvanceEpoch': 0, 'runEndEpoch': 0},
         # 体験 1 回の骨格（企画書 3 章「3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒」）。
-        # totalLaps を走り切ると Unity は暗転して終了する。targetSec は表示専用（超過しても止めない）。
-        # hardLimitSec は動かない体験者への保険（0 で無効）。
+        # totalLaps 周を回り、元の位置（course.order[0]）へ戻ったところで Unity は暗転して終了する
+        # （lap = totalLaps + 1 の order[0] ＝「もどり」の区間だけは必ず踏む）。
+        # targetSec は表示専用（超過しても止めない）。hardLimitSec は動かない体験者への保険（0 で無効）。
+        # endGraceSec = 終わる条件が揃ってから演出の開始を待つ秒数（もどりの区間の演出はこの中でしか始まれない）。
+        # endHoldMaxSec = そのとき走っている演出を見せ切る上限。どちらも 0 は「未指定」で Unity 既定へ。
+        # ⚠ この 2 つは tools/web-compositor/run-model.js の RUN_DEFAULT と一致していること
+        #   （run-wiring.test.mjs が両者を突き合わせる。片方だけ直すと沈黙して食い違う）。
         # run.intro = 導入の遷移演出（現実 → 固定カメラの映像）。段ごとの秒と on/off だけを持つ。
         # 導入は 1 種類でよく、演出（takes）として著作可能にしない（自由度を持たせると
         # 「導入が壊れている show.json」を作れてしまう）。
         'run': {'totalLaps': 3, 'introEnabled': True, 'introMinSec': 20, 'introAutoAdvance': True,
                 'targetSec': 180, 'hardLimitSec': 300, 'endFadeSec': 1.5,
+                'endGraceSec': 3.0, 'endHoldMaxSec': 60.0,
                 # 尺は 2026-07-30 に 33s → 14.5s へ詰めた（同じ絵の前で待たされる時間は演出ではない）。
                 # ⚠ この値は tools/web-compositor/intro-model.js の INTRO_DEFAULT と一致していること
                 #   （intro-model.test.mjs が両者を突き合わせる。片方だけ直すと沈黙して食い違う）。
@@ -276,6 +282,8 @@ def _default_show():
         # 各要素 {x, z, label?}。フロアマップ UI が編集。未設定（下記のように省略）なら Unity は
         # 既定 2 点 (-0.5,0.5)/(0.5,0.5) へフォールバックする。フィールドを足さなくても layout は
         # shallow 置換で丸ごと通るため、UI が保存すれば自動で乗る（focus: 後方互換維持）。
+        # regTouchHeightM = 位置合わせでコントローラを構える高さ（床から m）。0 = 床に着ける。
+        # 実機はここから床の高さを測るので、実際の構え方と食い違うとゾーンが上下にずれる。
         # startSpot = 導入演出を始める床の 1 点 {x, z, radiusM, label}。**既定を書かない**
         # （未設定＝スタッフが手で始める運用が既定の姿。勝手に (0,0) へ置くと「立っても
         #  始まらない」を現場で初めて知ることになる）。フロアマップの 🎬 開始位置 で置く。
@@ -308,6 +316,7 @@ def _default_show():
             ],
             'overlapM': 0.08,
             'hysteresisM': 0.12,
+            'regTouchHeightM': 0,
         },
         # schedule = 旧・事前オーサリング（何周目 lap のどのゾーン camera で cueId を発火するか）。
         # timeline（下記）が存在すれば supersede される（後方互換のため残す）。

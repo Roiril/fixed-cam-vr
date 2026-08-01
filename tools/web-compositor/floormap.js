@@ -42,6 +42,9 @@ const CORRIDOR_HALF = 0.20;
 
 // 位置合わせ点（HMD タッチ基準点）。course space・順序=タッチ順・最小 2・最大 5。
 const REG_MIN = 2, REG_MAX = 5, REG_HIT = 15; // REG_HIT = マーカー掴み判定半径(px)
+// 位置合わせでコントローラを構える高さ（床から m）。0 = 床に着ける。
+// 実機はここから床の高さを測るので、実際の構え方と食い違うとゾーン全体が上下にずれる。
+const REG_TOUCH_H_DEFAULT = 0, REG_TOUCH_H_MAX = 2;
 
 // 通過ライン（演出の発火点）。course space の線分。端点を掴んで伸縮 / 線を掴んで平行移動。
 const LINE_END_HIT = 11;     // 端点の掴み判定 (px)
@@ -194,6 +197,11 @@ export function createFloorMap(container, deps) {
           <div class="fm-reg-list"></div>
           <button class="fm-reg-add"></button>
           <div class="fm-reg-coords"></div>
+          <div class="fm-row">
+            <label class="fm-num">構える高さ (m)<input class="fm-reg-h" type="number"
+              min="0" max="${REG_TOUCH_H_MAX}" step="0.01"></label>
+          </div>
+          <div class="fm-hint2">位置合わせのとき、コントローラを床から何 m の高さに構えるか。0 なら床に着ける。<b>ここから床の高さを測ります</b> — 実際の構え方と違う値を入れると、ゾーンが上下にずれたまま体験が始まります。</div>
           <div class="fm-hint2">床の×印テープを置く位置に点を打つ。番号＝HMD でタッチする順。最小2・最大5点。<b>📍 位置合わせ点</b>モードでキャンバスをクリック配置・ドラッグ移動・右クリック削除。未設定なら既定2点を使用。</div>
         </div>
         <div class="fm-lines" style="display:none">
@@ -277,7 +285,7 @@ export function createFloorMap(container, deps) {
   const courseStartSel = q('.fm-course-start'), courseDirBtn = q('.fm-course-dir'), courseOrderEl = q('.fm-course-order');
   const regNoteEl = q('.fm-reg-note'), regListEl = q('.fm-reg-list');
   const modeHint = q('.fm-modehint');
-  const regAddBtn = q('.fm-reg-add'), regCoordsEl = q('.fm-reg-coords');
+  const regAddBtn = q('.fm-reg-add'), regCoordsEl = q('.fm-reg-coords'), regHeightI = q('.fm-reg-h');
 
   // 状態
   let layout = clone(DEFAULT_LAYOUT);
@@ -357,6 +365,11 @@ export function createFloorMap(container, deps) {
   // 未設定の既定ゴーストを実データへ昇格（クリック / ＋ボタンで発火）。
   function materializeReg() {
     if (isRegUnset()) { layout.regPoints = clone(DEFAULT_REG_POINTS); markDirty(); }
+  }
+  // コントローラを構える高さ（床から m）。未設定は 0 = 床に着ける。
+  function regTouchHeight() {
+    const v = parseFloat(layout.regTouchHeightM);
+    return Number.isFinite(v) && v > 0 ? Math.min(REG_TOUCH_H_MAX, v) : REG_TOUCH_H_DEFAULT;
   }
   const regBadge = (i) => (i < 20 ? String.fromCodePoint(0x2460 + i) : String(i + 1)); // ①②…
   // px 座標に最も近い表示点の index（REG_HIT 内、無ければ -1）。
@@ -1489,7 +1502,18 @@ export function createFloorMap(container, deps) {
     }
     regAddBtn.textContent = unset ? '✎ 既定を編集可能にする' : '＋ 点を追加';
     regAddBtn.disabled = !unset && a.length >= REG_MAX;
+    if (regHeightI && document.activeElement !== regHeightI) regHeightI.value = regTouchHeight();
     updateRegCoords();
+  }
+
+  if (regHeightI) {
+    regHeightI.onchange = () => {
+      const v = parseFloat(regHeightI.value);
+      const h = Number.isFinite(v) && v > 0 ? Math.min(REG_TOUCH_H_MAX, v) : REG_TOUCH_H_DEFAULT;
+      layout.regTouchHeightM = +h.toFixed(3);
+      regHeightI.value = layout.regTouchHeightM;
+      markDirty();
+    };
   }
 
   regAddBtn.onclick = () => {
@@ -1676,6 +1700,8 @@ export function createFloorMap(container, deps) {
     const rp = regArr();
     if (rp && rp.length < REG_MIN) { delete layout.regPoints; regFellBack = true; }
     else if (rp && rp.length > REG_MAX) { layout.regPoints = rp.slice(0, REG_MAX); }
+    // 構える高さ: 入力途中の値をそのまま書かない（範囲へ丸めてから保存する）。
+    layout.regTouchHeightM = regTouchHeight();
     // 通過ライン: 正規化（id 必須 / 座標が有限 / 重複 id を落とす）。空なら書かない（未著作）。
     const lines = linesFromLayout(layout);
     if (lines.length) layout.lines = lines; else delete layout.lines;
@@ -1949,6 +1975,9 @@ export function createFloorMap(container, deps) {
     } else if (layout.regPoints !== undefined) {
       delete layout.regPoints;
     }
+    // 構える高さ: 数値でなければ 0（床に着ける）へ落とす。regPoints と違い常にキーを持つ
+    // （0 と未設定が同じ意味なので、揺れる余地を残さない）。
+    layout.regTouchHeightM = regTouchHeight();
     // 通過ライン: 不正要素を落とす（未著作なら配列そのものを持たない）。
     const lines = linesFromLayout(layout);
     if (lines.length) layout.lines = lines; else delete layout.lines;
