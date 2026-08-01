@@ -148,7 +148,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public string BuildInfoUrlFor(string host, int port)
         {
-            if (string.IsNullOrEmpty(infoPath)) return "";
+            if (string.IsNullOrEmpty(infoPath) || string.IsNullOrWhiteSpace(host)) return "";
             var prefixed = infoPath.StartsWith("/") ? infoPath : "/" + infoPath;
             return $"http://{host}:{port}{prefixed}";
         }
@@ -163,8 +163,19 @@ namespace FixedCamVr.Streaming
         public string BuildInfoUrl() => string.IsNullOrEmpty(infoPath) ? "" : BuildUrlWith(infoPath);
         public string BuildHealthUrl() => string.IsNullOrEmpty(healthPath) ? "" : BuildUrlWith(healthPath);
 
+        /// <summary>
+        /// <b>host が空なら空文字を返す。</b> 現場に置いていないカメラ枠（show.json で host 未設定）は
+        /// 接続しないのが正しく、異常ではない。
+        ///
+        /// ⚠ ここを素通しにすると <c>http://:8080/info</c> という URL ができ、呼び出し側の
+        /// 「空なら叩かない」ガードをすり抜ける。2026-08-02 の実機走行では毎秒 1 行の失敗警告が
+        /// **359 行**出て、logcat のリングバッファの先頭（<c>ev=boot</c> / <c>ev=config</c> / 導入の記録）を
+        /// 押し流した ＝ **観測が丸ごと落ちて「導入が動いていない」と誤読した**。
+        /// 2026-07-31 に <c>MjpegStreamReceiver</c> 側は直したが、ここは残っていた。
+        /// </summary>
         private string BuildUrlWith(string p)
         {
+            if (string.IsNullOrWhiteSpace(EffectiveHost)) return "";
             var prefixed = string.IsNullOrEmpty(p) ? "/" : (p.StartsWith("/") ? p : "/" + p);
             return $"http://{EffectiveHost}:{EffectivePort}{prefixed}";
         }

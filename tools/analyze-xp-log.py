@@ -312,9 +312,18 @@ def analyze(events, others, exp, warns=None):
             w("  警告・エラーは 1 件も無い")
             verdict("OK", "実機ログに警告・エラーが無い")
         else:
-            errs = {k: v for k, v in warns.items() if v[0] in ("E", "F")}
-            jp = {k: v for k, v in warns.items() if k not in errs and v[2]}
-            rest = {k: v for k, v in warns.items() if k not in errs and k not in jp}
+            # XR の描画が立ち上がるまでの数秒、URP が視錐台の外の点を投影しようとして大量に吐く。
+            # 発生源は UniversalRenderPipeline → XRSystem → XRLayout（**Unity 内部**）で、
+            # アプリのコードでは直せず、体験にも影響しない（実測 2026-08-02: 起動から 4.3 秒に閉じ、
+            # 472 行）。ここを FAIL のままにすると毎回赤くなり、**本物のエラーが埋もれる**。
+            # 無視はせず別枠で数える（後半に出るようになったら行数の変化で気づける）。
+            boot_noise = {k: v for k, v in warns.items()
+                          if v[0] in ("E", "F")
+                          and ("out of view frustum" in k or "Runtime/Camera/Camera.cpp" in k)}
+            errs = {k: v for k, v in warns.items() if v[0] in ("E", "F") and k not in boot_noise}
+            jp = {k: v for k, v in warns.items() if k not in errs and k not in boot_noise and v[2]}
+            rest = {k: v for k, v in warns.items()
+                    if k not in errs and k not in jp and k not in boot_noise}
 
             # 重い順 → 日本語優先 → 件数順。数で勝つ engine 由来のノイズを上に置かない。
             def rank(kv):
@@ -333,6 +342,9 @@ def analyze(events, others, exp, warns=None):
             if errs:
                 verdict("FAIL", f"実機ログにエラーが {sum(v[1] for v in errs.values())} 行"
                                 f"（{len(errs)} 種）: " + name(errs))
+            if boot_noise:
+                verdict("WARN", f"XR の起動時に URP が視錐台の外を投影した {sum(v[1] for v in boot_noise.values())} 行"
+                                f"（Unity 内部・体験には影響しない）")
             if jp:
                 verdict("WARN", f"実機が「見つかりません・失敗・出ません」と言っている"
                                 f"（{len(jp)} 種）: " + name(jp))
@@ -354,6 +366,19 @@ def analyze(events, others, exp, warns=None):
     _fin = [fnum(e, "t", 0.0) for e in events if e.get("ev") == "phase" and e.get("v") == "Finished"]
     t_show_end = _fin[0] if _fin else t_end
     w(f"観測時間: {t_end:.0f} 秒 / [XP] 行 {len(events)} 本（うちサマリ {len(sums)}）")
+
+    # ⚠ **ログの先頭が落ちていないか先に見る。**
+    # logcat はリングバッファなので、他の行がうるさいと走行の前半が押し流される。実測（2026-08-02）では
+    # host が空のカメラへの /info 失敗が毎秒 1 行・計 359 行出て、`ev=boot` / `ev=config` / 導入の記録が
+    # 丸ごと消えた。それを「起きなかった」と読むと **導入が動いていないと誤診する**
+    # （visual-verification §8「撮れていないと出ていないを混同しない」と同じ罠）。
+    truncated = not any(e.get("ev") == "boot" for e in events)
+    if truncated:
+        w()
+        w("⚠ **ログの先頭が落ちている**（ev=boot が無い）。起動・設定・導入の判定は保留する。")
+        w("   原因はたいてい logcat のリングバッファ溢れ。実機ログの警告の行数を見ること。")
+        verdict("WARN", "ログの先頭が落ちている（ev=boot なし）— 導入と設定については"
+                        "「記録が無い」だけで、起きなかった証拠にはならない")
     w()
 
     # ---------------- 実機が使った設定 ----------------
@@ -394,9 +419,14 @@ def analyze(events, others, exp, warns=None):
     for p in phases:
         w(f"  t={fnum(p,'t',0):7.1f}  相={p.get('v')}  lap={p.get('lap','-')}  経過={p.get('elapsed','-')}")
     seen = [p.get("v") for p in phases]
-    if exp["introEnabled"] and "Intro" not in seen:
+    # ログの先頭が落ちているときは「相の記録が無い」を欠落として扱わない（そこは観測できていない）。
+    # 区間が進んでいる＝本編に入った証拠なので、そちらを見る。
+    ran = truncated and any(e.get("ev") == "seg" for e in events)
+    if exp["introEnabled"] and "Intro" not in seen and not truncated:
         verdict("WARN", "導入相 (Intro) の記録が無い")
-    if "Run" not in seen:
+    if "Run" not in seen and ran:
+        verdict("WARN", "本編に入った記録が落ちている（区間は進んでいるので走ってはいる）")
+    elif "Run" not in seen:
         verdict("FAIL", "本編 (Run) に入っていない — 導入が終わっていない")
     else:
         intro_end = next((fnum(p, "t", 0) for p in phases if p.get("v") == "Run"), None)
@@ -814,7 +844,10 @@ def analyze(events, others, exp, warns=None):
         w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} pass={e.get('pass')} live={e.get('live')} frame={e.get('frame')}")
     stages = [e.get("stage") for e in intro]
     if exp["introEnabled"]:
-        if not intro:
+        if not intro and truncated:
+            w("  （ログの先頭が落ちているので導入は観測できていない）")
+            verdict("WARN", "導入演出を観測できていない（ログの先頭が落ちた）— 出なかった証拠ではない")
+        elif not intro:
             verdict("FAIL", "導入演出の段が 1 つも記録されていない（IntroDirector 未配線か enabled=false）")
         else:
             for want in ("Real", "Degrade", "Structure", "Frame", "Swap"):

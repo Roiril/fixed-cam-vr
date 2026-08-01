@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 83b2ae19-6926-4454-a4df-b5d350711b24
-  modified: 2026-08-01T15:38:21.200Z
+  modified: 2026-08-01T16:08:46.136Z
 ---
 
 # 実機で体験を丸ごと検証する
@@ -387,6 +387,23 @@ stream」では発火しないようにした）で、これが**前回のビル
 
 ⚠ **この計装より前のログを「起きなかった」と読まない。** `recplay` も `rec … frames=` も無ければ
 旧ビルドなので WARN で切り抜ける（`has_rec_telemetry`）。直っているものを壊しに行くことになる。
+
+### ログの先頭は簡単に落ちる — `ev=boot` が無ければ判定を保留する（2026-08-02）
+
+logcat はリングバッファなので、**うるさい行が 1 種あるだけで走行の前半が丸ごと消える**。
+実測: `host` が空のカメラ枠が `http://:8080/info` を毎秒叩いて失敗し、360 秒で **359 行**。
+これが `ev=boot` / `ev=config` / 導入の記録を押し流し、解析は
+「本編に入っていない」「導入演出の段が 1 つも記録されていない」と **FAIL を 2 つ出した**。
+実際には 3 周完走して終了しており、**観測が落ちていただけ**（visual-verification §8 と同型）。
+
+- 原因は `CameraSource.BuildUrlWith` が空 host でも URL を組んでいたこと（2026-08-02 に修正）。
+  2026-07-31 に `MjpegStreamReceiver` 側は直したが、こちらは残っていた
+- 解析は `ev=boot` の不在で「先頭が落ちている」と判定し、**導入と設定の判定を WARN へ落とす**
+- **走行後に `logwarn=` の数を見る**。実機ログの警告が数百行あったら、それがバッファを食っている
+
+**起動直後 4 秒の `Screen position out of view frustum`（472 行）は Unity 内部**
+（`UniversalRenderPipeline` → `XRSystem` → `XRLayout`）で、アプリでは直せず体験にも影響しない。
+無視はせず別枠で数える（後半に出るようになったら行数の変化で気づける）。
 
 ⚠ **観測項目は C# の `ShowTelemetryHost` と Python の `analyze-xp-log.py` を対で直す。**
 片方だけだと沈黙して食い違う（`ev=config` と同じ罠）。新しいキーが無い古いログでも

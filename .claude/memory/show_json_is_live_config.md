@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6841e293-f127-41c1-9c9f-172f7a816f5f
-  modified: 2026-07-30T03:56:45.207Z
+  modified: 2026-08-01T16:08:28.144Z
 ---
 
 `tools/web-compositor/show.json` は **gitignore されていて git 管理外**（現場の DHCP IP や
@@ -36,6 +36,26 @@ discovery スレッドが beacon 受信で勝手に mutation を呼ぶので、*
 2026-07-30 に実際に踏んだ: `layout.startSpot` / `layout.room` / `run.intro` / 2 周目 B の演出を
 Edit ツールで書き込み → EditMode テストを回している数分のあいだに rev 695→696 で全部巻き戻った
 （`git diff` も取れないので、消えたことに気づけるのは値を読み直した時だけ）。
+
+### 消えなくても、実機には届かない（2026-08-02 実害・実機テストを 1 回無駄にした）
+
+上は「書いた値が次の mutation で消える」話。**消えなくても実機には届かない**という別の症状がある。
+
+サーバは起動時に読んだメモリを配る。だから mutation が起きなければファイルは新しいまま残るが、
+**long-poll で実機へ流れるのは古いメモリの方**。実測: `record.laps` を `[1]`→`[1,2]` にし、
+帰りの A の区間を足して APK を焼き直し、端末キャッシュも消したのに、実機は **rev 718（古い設定）で走った**
+（ファイルは rev 719 のまま無傷）。2 周目が録れず、帰りの A の区間そのものが存在しなかった。
+
+**紛らわしいのは、実機のテレメトリが `src=live` と報告すること。** 「卓が配った」は正しいが、
+配られた中身が古い。`ev=config` の `rev=` を見れば分かるが、その行が logcat から落ちていると
+何も分からないまま「著作した演出が出ない」と読む。
+
+→ **実機テストの前に必ず `curl /state` でサーバのメモリを確認する**（ファイルではなく）。
+食い違っていたらサーバを止めて起動し直す（`capture-server.py` に終了時の保存は無いので kill して安全）。
+
+```bash
+curl.exe -m 3 -s http://127.0.0.1:8099/state | python -c "import sys,json;d=json.load(sys.stdin);print('rev',d['rev'],d['record'])"
+```
 
 **How to apply（正しい手順）:**
 1. `netstat -ano | grep :8099` でサーバが生きているか見る
