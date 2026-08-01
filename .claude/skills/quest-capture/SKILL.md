@@ -46,8 +46,45 @@ adb -s <serial> exec-out screencap -p > shot.png
 - 両眼が横に並ぶ（左半分＝左眼 / 右半分＝右眼）
 - 各眼の視野が **40 度ほど回転した台形**（レンズ用の逆歪みが掛かった状態）。
   HMD ではレンズがこれを打ち消すので、生のままでは「見ている絵」にならない
-- **パススルーも映る**（コンポジタ後を撮っているため）。Unity 側に 2D カメラを置いて撮る方式では
-  パススルーが黒く抜けるので、現実が絡む演出の確認にはこちらを使う
+
+## ⚠⚠ 被っていない間は、アプリが描いたものしか撮れない（2026-08-01 実害・40 分溶かした）
+
+**HMD が頭に乗っていないと（`mProximityPositive=false`）、`screencap` / `screenrecord` は
+アプリ自身のアイバッファしか拾わない。システムの絵もパススルーも黒で返る。**
+
+確かめ方は 10 秒: アプリを止めて**ホーム画面**を撮る。
+
+```bash
+adb -s <serial> shell am force-stop <pkg>; sleep 5; adb -s <serial> exec-out screencap -p > home.png
+```
+
+ホームは必ず何か表示しているので、これが**真っ黒なら撮影系が死んでいる**（実測: 910 万画素すべて 0 /
+`mScreenState=ON` なのに）。この状態の録画から見た目を語ってはいけない。
+
+- 近接センサーを止める旧来の手（`am broadcast -a com.oculus.vrpowermanager.prox_close`）は
+  **Quest 3 では効かない**（`result=0` で状態が変わらない）
+- 「以前はパススルーが映った」録画があっても根拠にならない。2026-07-31 に映っていたのは
+  **カメラ背景が alpha 0 でアプリのバッファが素通しだった**ため、システムのパススルーが
+  アプリのアイバッファ経由で入っていたもの。背景を不透明へ戻した現構成ではその経路が無い
+- **判定できないことを「出ていない」と読むと、実在しない不具合を追うことになる**（この日それをやった）
+
+### 被らずにパススルー絡みの見た目を測る（VeilAlignmentProbe）
+
+現実の上に何が重なるかは撮れないが、**アプリが alpha をどう書いたかは撮れる**。
+[`VeilAlignmentProbe`](../../../Assets/Scripts/Diagnostics/VeilAlignmentProbe.cs) は
+カメラ背景を明るい灰（alpha は 1 のまま）にするので、**覆いが alpha 0 にした領域が
+「明るい面に空いた黒い矩形」として写る**。そこへスクリーンの外周を線で重ねれば、
+枠とスクリーンのずれが 1 枚の画で測れる。あわせてリグのヨーを台形波で振り、
+`頭の向き − 画面の向き` の残差を 0.25 秒ごとに吐く（追従が正面で止まるかの判定）。
+
+```bash
+adb -s <serial> shell am start -e veilprobe 1 -n com.roiril.mawarimi/com.unity3d.player.UnityPlayerActivity
+# 段 4（枠が閉じ切って passthrough=1 のまま）を狙って撮る
+adb -s <serial> exec-out screencap -p > frame.png
+adb -s <serial> logcat -d | grep "VeilProbe"
+```
+
+フラグが無ければ何もしない（Development ビルド専用）。`-e xpwalk 1` と併用すると導入まで自動で進む。
 
 片眼を切り出し、台形の 4 隅を矩形へ戻す（ホモグラフィ）。中央はほぼ見たまま、周辺は樽型歪みが残る。
 
