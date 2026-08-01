@@ -530,11 +530,18 @@ namespace FixedCamVr.Streaming
         /// <summary>実物の輪郭線の色（<c>#rrggbb</c>）。</summary>
         public string edgeColor = "#ffffff";
 
+        // ⚠ 既定は**どちらも false**（2026-08-01 ユーザー判断「雰囲気ぶち壊しだから要らない」）。
+        //    細い寒色の線は現実の上に重なると計測器に見え、「現実がそのまま格下げされていく」という
+        //    段 2 → 段 4 の筋を切る。位置合わせの現地検証は登録リチュアル（Review フェーズ）の
+        //    ワイヤー表示が担うので、導入から消しても検証手段は残る。
+        //    卓（⚙ 欄）で on にすれば従来どおり出る。
+        //    JsonUtility は show.json に無いキーを false で埋めるので、この既定と一致する。
+
         /// <summary>段 3 でカメラの位置に印を出すか。</summary>
-        public bool showCameraMarks = true;
+        public bool showCameraMarks;
 
         /// <summary>段 3 で壁・床の線を出すか。</summary>
-        public bool showRoomWire = true;
+        public bool showRoomWire;
 
         /// <summary>段 5 のすり替えに重ねる乱れの強さ。</summary>
         public float glitchOnSwap = 0.8f;

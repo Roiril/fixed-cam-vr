@@ -27,6 +27,10 @@ const measuredLayout = () => ({
 });
 const calibratedCams = () => ([{ id: 'A', calib: { fxPx: 431.2 } }]);
 
+// 構造の線は既定で出さない（run.intro.showRoomWire / showCameraMarks が既定 false）。
+// 「線を出す設定にしたときだけ幾何を要求する」ので、その経路を試すテストは明示で on にする。
+const wireOn = (extra = {}) => ({ intro: { showRoomWire: true, showCameraMarks: true, ...extra } });
+
 // ゾーン判定つきの layout。12×12 タイルの上半分（北）をカメラ 1・下半分（南）をカメラ 0 に塗る。
 // row0 = 北端（z=+0.9）・col0 = 西端（x=-0.9）。
 const zonedLayout = (startSpot, order = [0, 1]) => ({
@@ -61,14 +65,21 @@ test('乱れの強さは 0〜1 に丸め、数値でない値は既定へ落と�
   assert.equal(introConfig({ intro: { realSec: 'abc' } }).realSec, INTRO_DEFAULT.realSec);
 });
 
-test('チェック類は false を明示した時だけ落ちる（欠落は ON）', () => {
+test('チェック類の既定（構造の線だけ欠落＝OFF・他は欠落＝ON）', () => {
   const off = introConfig({ intro: { enabled: false, showCameraMarks: false, showRoomWire: false, raiseHandPrompt: false } });
   assert.deepEqual(
     [off.enabled, off.showCameraMarks, off.showRoomWire, off.raiseHandPrompt],
     [false, false, false, false],
   );
-  const on = introConfig({ intro: {} });
-  assert.deepEqual([on.enabled, on.showCameraMarks, on.showRoomWire, on.raiseHandPrompt], [true, true, true, true]);
+  // ⚠ 構造の線（壁・カメラの印）だけ既定が OFF。Unity 側は JsonUtility が欠落キーを false で
+  //    埋めるので、`!== false` で読むと**卓だけ ON**になって沈黙して食い違う。
+  const missing = introConfig({ intro: {} });
+  assert.deepEqual(
+    [missing.enabled, missing.showCameraMarks, missing.showRoomWire, missing.raiseHandPrompt],
+    [true, false, false, true],
+  );
+  const wired = introConfig({ intro: { showCameraMarks: true, showRoomWire: true } });
+  assert.deepEqual([wired.showCameraMarks, wired.showRoomWire], [true, true]);
 });
 
 test('合計秒は実際に流れる長さ（段 3 は段 2 と重なるので二度足さない・既定は 13.1s）', () => {
@@ -102,8 +113,9 @@ test('導入を出さない設定なら本番前チェックの行を出さな�
   assert.equal(row, null);
 });
 
+// 幾何の要求は「壁と床の線を出す」と著作したときだけ。既定は線を出さないので run.intro で明示する。
 test('床の寸法が無ければ ❌（段 3 の線が 1 本も出ない）', () => {
-  const row = introPreflightRow({ run: {}, layout: {}, cameras: calibratedCams() });
+  const row = introPreflightRow({ run: wireOn(), layout: {}, cameras: calibratedCams() });
   assert.equal(row.s, 'ng');
   assert.equal(row.label, '🎬 導入');
   assert.match(row.detail, /床の寸法/);
@@ -113,7 +125,7 @@ test('床の寸法が無ければ ❌（段 3 の線が 1 本も出ない）', (
 // 旧 layout.wall を見ていた頃は、壁を著作しても ❌ が消えず / room を著作しても ❌ のままだった。
 test('壁が著作されていなければ ❌（床の外周とカメラの印だけになる）', () => {
   const row = introPreflightRow({
-    run: {}, layout: { floor: { w: 1.8, d: 1.8 }, startSpot: { x: 0, z: -0.6 } }, cameras: calibratedCams(),
+    run: wireOn(), layout: { floor: { w: 1.8, d: 1.8 }, startSpot: { x: 0, z: -0.6 } }, cameras: calibratedCams(),
   });
   assert.equal(row.s, 'ng');
   assert.match(row.detail, /部屋の壁/);
@@ -145,14 +157,14 @@ test('壁が既定の L と同じ形なら ⚠（測った値かは判定でき�
     },
   };
   assert.equal(introWireGeometry(layout).looksDefaultL, true);
-  const row = introPreflightRow({ run: {}, layout, cameras: calibratedCams() });
+  const row = introPreflightRow({ run: wireOn(), layout, cameras: calibratedCams() });
   assert.equal(row.s, 'warn');
   assert.match(row.detail, /既定の L/);
 });
 
-test('壁と床の線を出さない設定なら幾何を要求しない（黙って ❌ にしない）', () => {
+test('壁と床の線を出さない設定なら幾何を要求しない（既定・黙って ❌ にしない）', () => {
   const row = introPreflightRow({
-    run: { intro: { showRoomWire: false } },
+    run: {},
     layout: { startSpot: { x: 0, z: -0.6 } },
     cameras: calibratedCams(),
   });
@@ -160,7 +172,7 @@ test('壁と床の線を出さない設定なら幾何を要求しない（黙�
 });
 
 test('較正済みのカメラが 1 台も無ければ ⚠（カメラの印が出せない）', () => {
-  const row = introPreflightRow({ run: {}, layout: measuredLayout(), cameras: [{ id: 'A' }] });
+  const row = introPreflightRow({ run: wireOn(), layout: measuredLayout(), cameras: [{ id: 'A' }] });
   assert.equal(row.s, 'warn');
   assert.match(row.detail, /較正済みのカメラ/);
 });
@@ -176,7 +188,7 @@ test('合計秒が上限を超えたら ⚠（超えた段は実機が飛ばす�
 });
 
 test('未測定と上限超が同時なら ❌ が勝つ（直す順が決まる）', () => {
-  const row = introPreflightRow({ run: { intro: { maxSec: 10 } }, layout: {}, cameras: [] });
+  const row = introPreflightRow({ run: wireOn({ maxSec: 10 }), layout: {}, cameras: [] });
   assert.equal(row.s, 'ng');
 });
 
@@ -267,8 +279,13 @@ test('卓の既定値と capture-server.py の _default_show が一致してい�
   assert.match(body, new RegExp(`'maxSec':\\s*${INTRO_DEFAULT.maxSec}\\b`));
   assert.match(body, new RegExp(`'glitchOnSwap':\\s*${INTRO_DEFAULT.glitchOnSwap}`));
   assert.match(body, /'edgeColor':\s*'#ffffff'/);
-  for (const k of ['enabled', 'showCameraMarks', 'showRoomWire', 'raiseHandPrompt']) {
+  for (const k of ['enabled', 'raiseHandPrompt']) {
     assert.match(body, new RegExp(`'${k}':\\s*True`), `${k} が食い違っている`);
+  }
+  // 構造の線は 3 者（Unity の ShowIntroDef / 卓の INTRO_DEFAULT / サーバの既定）で OFF。
+  for (const k of ['showCameraMarks', 'showRoomWire']) {
+    assert.match(body, new RegExp(`'${k}':\\s*False`), `${k} が食い違っている`);
+    assert.equal(INTRO_DEFAULT[k], false, `${k} の卓既定が食い違っている`);
   }
 });
 

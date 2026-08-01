@@ -33,11 +33,15 @@ namespace FixedCamVr.Streaming
         [Tooltip("layout / cameras の供給元。null なら実行時に探す。")]
         [SerializeField] private ShowControlClient? showControl;
 
-        [Tooltip("壁・箱・床の線を出すか（呼び出し側の on/off とは別の、現場の切り分け用）。")]
-        [SerializeField] private bool showRoomWire = true;
+        // ⚠ 既定は**どちらも false**（2026-08-01）。線は現実の見えを壊すので、
+        //    出すのは show.json（run.intro.showRoomWire / showCameraMarks）で明示したときだけにする。
+        //    値は <see cref="SetSources"/> 経由で IntroDirector が毎回上書きするので、
+        //    ここは「配線が届かなかったときに何も描かない」ための安全側の初期値。
+        [Tooltip("壁・箱・床の線を出すか。show.json の run.intro.showRoomWire が実行時に上書きする。")]
+        [SerializeField] private bool showRoomWire;
 
-        [Tooltip("カメラの位置の印を出すか。")]
-        [SerializeField] private bool showCameraMarks = true;
+        [Tooltip("カメラの位置の印を出すか。show.json の run.intro.showCameraMarks が実行時に上書きする。")]
+        [SerializeField] private bool showCameraMarks;
 
         [Tooltip("線の太さ (m)。登録リチュアルの検証ワイヤーと同じ 0.01 に揃える。")]
         [SerializeField, Range(0.002f, 0.05f)] private float lineWidth = 0.01f;
@@ -107,6 +111,31 @@ namespace FixedCamVr.Streaming
         }
 
         private void MarkDirty() => _dirty = true;
+
+        /// <summary>
+        /// どの線を出すかを設定する（show.json の <c>run.intro.showRoomWire</c> / <c>showCameraMarks</c>）。
+        ///
+        /// ⚠ <b>2026-08-01 まで、この 2 つの値は実行体へ 1 度も届いていなかった</b>。
+        /// <see cref="IntroDirector"/> は 2 フラグの OR で <see cref="Apply"/> を呼ぶかだけを決めており、
+        /// 個別の値は SerializeField（どちらも true）のままだった ＝
+        /// <b>卓で「壁の線を出さない」にしても壁の線が出続けた</b>。
+        /// </summary>
+        public void SetSources(bool room, bool cameras)
+        {
+            if (showRoomWire == room && showCameraMarks == cameras) return;
+            showRoomWire = room;
+            showCameraMarks = cameras;
+            _dirty = true;
+            // カメラの印を切ったなら、次の PollMarks を待たずに現在の印を捨てる
+            // （捨てないと Rebuild が「変化なし」と見て古い印を残す）。
+            if (!cameras) _marks.Clear();
+        }
+
+        /// <summary>いま壁・床の線を出す設定か（診断・テスト用）。</summary>
+        public bool RoomWireEnabled => showRoomWire;
+
+        /// <summary>いまカメラの印を出す設定か（診断・テスト用）。</summary>
+        public bool CameraMarksEnabled => showCameraMarks;
 
         /// <summary>導入演出の重みを線へ流す。<b>判断はしない</b>（重み 1 本で見え方が決まる）。</summary>
         public void Apply(in IntroWeights w)

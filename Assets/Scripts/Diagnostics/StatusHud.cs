@@ -67,7 +67,7 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("パネルの前傾角 (deg)。負で上向きに傾け、下方配置でも視線に正対させる。")]
         [SerializeField] private float pitchDeg = -15f;
 
-        [Tooltip("この範囲の頭の動きではパネル不動（微小 jitter 吸収）。")]
+        [Tooltip("この範囲の頭の動きではパネル不動（微小 jitter 吸収）。頭の手前この角度でパネルは止まる。")]
         [SerializeField] private float yawDeadzoneDeg = 10f;
 
         [Tooltip("臨界減衰の時定数 (秒)。大きいほどゆっくり追う。")]
@@ -177,8 +177,11 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
 
-            float yaw = _yawFollow.Step(headYaw, Time.deltaTime, yawDeadzoneDeg, smoothTime,
-                                        maxYawSpeedDegPerSec, catchUpThresholdDeg, catchUpBoost);
+            // HUD は<b>頭の正面まで来ない方が正しい</b>（視界の真ん中に居座ると本編の映像を隠す）ので、
+            // 動き出す閾値と止まる位置を従来どおり同じ値にする。スクリーン（ScreenAnchor）とは意図が逆。
+            float yaw = _yawFollow.Step(headYaw, Time.deltaTime, yawDeadzoneDeg, yawDeadzoneDeg,
+                                        smoothTime, maxYawSpeedDegPerSec,
+                                        catchUpThresholdDeg, catchUpBoost);
             ApplyPose(yaw);
         }
 

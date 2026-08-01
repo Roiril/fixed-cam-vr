@@ -28,8 +28,11 @@ export const INTRO_DEFAULT = {
   frameSec: 2.5,
   swapSec: 4.5,
   edgeColor: '#ffffff',
-  showCameraMarks: true,
-  showRoomWire: true,
+  // ⚠ 既定は**どちらも false**（2026-08-01）。細い寒色の線が現実に重なると計測器に見え、
+  //    「現実がそのまま格下げされていく」という筋を切る。Unity 側 ShowIntroDef の既定と対。
+  //    片方だけ直すと沈黙して食い違う（卓は「出さない」なのに実機は出す）。
+  showCameraMarks: false,
+  showRoomWire: false,
   glitchOnSwap: 0.8,
   raiseHandPrompt: true,
   // 空 = 開始位置の円（layout.startSpot）で始める。Unity 側 ShowIntroDef.startLineId と対。
@@ -69,8 +72,10 @@ export function introConfig(run) {
     enabled: src.enabled !== false,
     maxSec: clamp(src.maxSec, MAX_SEC_MIN, MAX_SEC_MAX, INTRO_DEFAULT.maxSec),
     edgeColor: typeof src.edgeColor === 'string' && src.edgeColor ? src.edgeColor : INTRO_DEFAULT.edgeColor,
-    showCameraMarks: src.showCameraMarks !== false,
-    showRoomWire: src.showRoomWire !== false,
+    // ⚠ 既定 false なので **=== true** で読む（`!== false` のままだと未指定が true に化け、
+    //    JsonUtility が false で埋める実機と食い違う）。
+    showCameraMarks: src.showCameraMarks === true,
+    showRoomWire: src.showRoomWire === true,
     glitchOnSwap: clamp(src.glitchOnSwap, 0, 1, INTRO_DEFAULT.glitchOnSwap),
     raiseHandPrompt: src.raiseHandPrompt !== false,
     // 導入を始める通過ライン（layout.lines[].id）。空 = 開始位置の円（layout.startSpot）を使う。
@@ -256,11 +261,13 @@ export function introPreflightRow({ run, layout, cameras } = {}) {
   }
 
   const warn = [];
-  if (geo.looksDefaultL) {
+  // ⚠ この 2 つは**線を出す設定のときだけ**言う。出さない設定で言うと、
+  //    起きようのない不備を直させることになる（既定は線を出さない）。
+  if (intro.showRoomWire && geo.looksDefaultL) {
     warn.push('壁の形が卓の既定の L（1m × 1m）と同じです'
       + ' — 実際に測った値かどうかは判定できません（現場でメジャーを当てて確かめる）');
   }
-  if (calibratedCameraCount(cameras) === 0) {
+  if (intro.showCameraMarks && calibratedCameraCount(cameras) === 0) {
     warn.push('較正済みのカメラが 1 台もありません（段 3 のカメラの印が出せません）');
   }
   if (!startSpotOf(layout)) {

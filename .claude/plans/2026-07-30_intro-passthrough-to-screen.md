@@ -207,8 +207,8 @@
     "frameSec": 5,              // 段 4 枠
     "swapSec": 8,               // 段 5 すり替え（クロスフェードは最低 1.5s）
     "edgeColor": "#ffffff",     // 輪郭線の色
-    "showCameraMarks": true,    // 段 3 のカメラの印
-    "showRoomWire": true,       // 段 3 の壁・床の線
+    "showCameraMarks": false,   // 段 3 のカメラの印（2026-08-01 に既定 false へ）
+    "showRoomWire": false,      // 段 3 の壁・床の線（同上・rules/streaming.md「段 3 の構造の線」参照）
     "glitchOnSwap": 0.8,        // 段 5 の乱れの強さ
     "raiseHandPrompt": true     // 段 5 の「右手を上げる」の合図を出すか
   }

@@ -244,7 +244,9 @@ def _default_show():
                 'intro': {'enabled': True, 'maxSec': 20,
                           'realSec': 1.5, 'degradeSec': 3.5, 'structureSec': 2.5,
                           'frameSec': 2.5, 'swapSec': 4.5,
-                          'edgeColor': '#ffffff', 'showCameraMarks': True, 'showRoomWire': True,
+                          # 構造の線は既定で出さない（2026-08-01。細い線が現実に重なると計測器に見える）。
+                          # Unity の ShowIntroDef / 卓の INTRO_DEFAULT と 3 者で揃えること。
+                          'edgeColor': '#ffffff', 'showCameraMarks': False, 'showRoomWire': False,
                           'glitchOnSwap': 0.8, 'raiseHandPrompt': True}},
         # 端末内録画（1 周目を録って 3 周目の演出で流す）。既定は無効。
         'record': {'enabled': False, 'laps': [1], 'maxSegmentSec': 60, 'maxTotalMB': 200, 'fpsCap': 15},

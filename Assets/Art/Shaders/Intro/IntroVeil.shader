@@ -18,14 +18,20 @@ Shader "FixedCamVr/IntroVeil"
 {
     Properties
     {
-        // 枠の閉じ具合。0 = 全画面が「中」（何も覆わない）/ 1 = 開口だけが「中」
-        _Frame("Frame close (0..1)", Range(0, 1)) = 0
         // 枠の中のパススルーの見え。1 = 現実が見える / 0 = 枠の中も VR の絵（＝映像）になる
         _Passthrough("Passthrough inside frame (0..1)", Range(0, 1)) = 1
-        // 閉じ切ったときの開口の半径（uv の中心からの比。x=横 y=縦）。
-        // 本編のスクリーンの見かけの大きさに合わせて IntroVeil が供給する。
-        _Aperture("Aperture radius (uv)", Vector) = (0.42, 0.24, 0, 0)
-        _Feather("Edge feather", Range(0.002, 0.4)) = 0.08
+        // 枠の 4 辺の平面の法線（眼と辺を通る平面・**内側で dot(dir, n) < 0**）。
+        // 本編のスクリーンの見かけの形から IntroVeil が毎フレーム組む。閉じ具合もここに畳んである。
+        // ⚠ **覆いの面へ矩形として投影する方式ではない** — スクリーンは水平（ヨーだけ追従）なので、
+        //    頭を上下に振ると必ず両面が傾き、矩形近似では四隅が数度ずれる（2026-08-01）。
+        _FramePlane0("Frame edge plane 0", Vector) = (0, 0, -1, 0)
+        _FramePlane1("Frame edge plane 1", Vector) = (0, 0, -1, 0)
+        _FramePlane2("Frame edge plane 2", Vector) = (0, 0, -1, 0)
+        _FramePlane3("Frame edge plane 3", Vector) = (0, 0, -1, 0)
+        // 覆いの面の実寸 (m) と距離。uv → 視線ベクトルへ直すのに要る。
+        _VeilSize("Veil size m (xy) / distance (z)", Vector) = (2, 2, 0.3, 0)
+        // 縁のぼけ幅。単位は「辺の平面からの角度の sin」（IntroVeil が feather から換算する）。
+        _FeatherAng("Edge feather (sin of angle)", Float) = 0.02
         // 粒と走査線（質感の格下げ）。alpha を揺らすので「暗い粒」になる。
         _Grain("Grain and scanline", Range(0, 1)) = 0
         _ScanlineCount("Scanline count", Float) = 240
@@ -71,10 +77,13 @@ Shader "FixedCamVr/IntroVeil"
                 float2 uv : TEXCOORD0;
             };
 
-            float _Frame;
             float _Passthrough;
-            float4 _Aperture;
-            float _Feather;
+            float4 _FramePlane0;
+            float4 _FramePlane1;
+            float4 _FramePlane2;
+            float4 _FramePlane3;
+            float4 _VeilSize;
+            float _FeatherAng;
             float _Grain;
             float _ScanlineCount;
             float _Glitch;
@@ -97,14 +106,15 @@ Shader "FixedCamVr/IntroVeil"
 
             float4 frag(Varyings i) : SV_Target
             {
-                // 中心からの距離（0..1）。枠は矩形なので軸ごとに正規化して max を取る。
-                float2 d = abs(i.uv - 0.5) * 2.0;
+                // この画素を見ている視線（覆いのローカル空間）。覆いの面はローカル z = _VeilSize.z。
+                float3 dir = normalize(float3((i.uv - 0.5) * _VeilSize.xy, _VeilSize.z));
 
-                // 開口の半径。枠が開いているときは画面の外（1.4）まで広げて「覆いが無い」状態にする。
-                float2 r = lerp(float2(1.4, 1.4), max(_Aperture.xy, 0.02), saturate(_Frame));
-                float m = max(d.x / r.x, d.y / r.y);
+                // 枠の 4 辺の平面からの符号付き距離（角度の sin）。**すべて負なら枠の中**。
+                // 除算が無いので、視線がスクリーン面と平行になっても壊れない。
+                float m = max(max(dot(dir, _FramePlane0.xyz), dot(dir, _FramePlane1.xyz)),
+                              max(dot(dir, _FramePlane2.xyz), dot(dir, _FramePlane3.xyz)));
                 // inside = 1 が枠の中。縁は feather でぼかす（硬い矩形は「UI の窓」に見える）。
-                float inside = 1.0 - smoothstep(1.0 - _Feather, 1.0, m);
+                float inside = 1.0 - smoothstep(-_FeatherAng, 0.0, m);
 
                 // 枠の中は「パススルーを透かす」= alpha を落とす。外は 1（＝ VR の絵 = 黒）。
                 float alpha = lerp(1.0, 1.0 - saturate(_Passthrough), inside);

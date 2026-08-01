@@ -5,7 +5,11 @@ namespace FixedCamVr.Streaming
 {
     /// <summary>
     /// ワールド空間に置いた Screen を「頭の前に追従」⇄「その場で凍結」を動的に切り替える。
-    /// Locked=true: 毎 LateUpdate でカメラ前方へ追従（yawOnly 時は緩急付き＝deadzone + 減衰 + 速度上限）。
+    /// Locked=true: 毎 LateUpdate でカメラ前方へ追従（yawOnly 時は緩急付き＝減衰 + 速度上限）。
+    ///
+    /// <b>目標は常に頭の正面</b>で、滑らかに寄って<b>そこで止まる</b>（<see cref="YawTrailDeg"/> = 0）。
+    /// 2026-08-01 まではヨー差 10° を「動き出す閾値」と「止まる位置」に兼用していたため、
+    /// スクリーンは頭の正面へ一度も到達しなかった。
     /// Locked=false: 直前位置で凍結（ワールド固定）。
     /// 映像の向き・アスペクト補正は ScreenComposite シェーダ側（UV 空間）で完結するため、
     /// ここでは Transform の回転補正を一切持たない。
@@ -26,8 +30,25 @@ namespace FixedCamVr.Streaming
         [SerializeField] private bool yawOnly = true;
 
         [Header("Follow easing (yaw / yawOnly のみ)")]
-        [Tooltip("この範囲の頭の動きではスクリーン不動（微小 jitter 吸収）。")]
-        [SerializeField] private float yawDeadzoneDeg = 10f;
+
+        /// <summary>
+        /// 止まっている状態から追従を始める閾値 (度)。**微小 jitter を吸収するためだけの値**で、
+        /// ここを大きくすると「頭を向けてもスクリーンが来ない」死角になる。
+        ///
+        /// ⚠ <b>SerializeField にしない</b>。旧実装はこれを 10° で焼いており、しかも
+        /// 「止まる位置」と兼用していたため<b>スクリーンは常に頭の 10° 手前で止まっていた</b>
+        /// （2026-08-01 ユーザー指摘「頭の前までぎりぎり到達しないとかはやめて」）。
+        /// SerializeField に戻すと既存シーン / prefab の 10 がそのまま効いて再発する。
+        /// </summary>
+        private const float YawDeadzoneDeg = 0.5f;
+
+        /// <summary>
+        /// 頭の手前どこで止まるか (度)。<b>0 = 頭の正面ちょうどを目指して、そこで止まる</b>。
+        /// 導入演出の覆い（<see cref="IntroVeil"/>）は開口をスクリーンの実位置から逆算するので、
+        /// ここに 0 以外を入れても枠はついてくる。それでも 0 にしているのは、
+        /// 「見た方向に画がある」を体験の既定にするため。
+        /// </summary>
+        private const float YawTrailDeg = 0f;
 
         [Tooltip("臨界減衰の時定数 (秒)。大きいほどゆっくり行き過ぎず追う。")]
         [SerializeField] private float smoothTime = 0.30f;
@@ -143,8 +164,9 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            float screenYaw = _yawFollow.Step(headYaw, Time.deltaTime, yawDeadzoneDeg, smoothTime,
-                                              maxYawSpeedDegPerSec, catchUpThresholdDeg, catchUpBoost);
+            float screenYaw = _yawFollow.Step(headYaw, Time.deltaTime, YawDeadzoneDeg, YawTrailDeg,
+                                              smoothTime, maxYawSpeedDegPerSec,
+                                              catchUpThresholdDeg, catchUpBoost);
             ApplyPose(screenYaw);
         }
 

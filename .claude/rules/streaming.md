@@ -89,8 +89,18 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 計画 [.claude/plans/2026-07-19_viewer-ux.md](../plans/2026-07-19_viewer-ux.md)（設計契約・初期パラメータ表はここが正）。
 
 - **追従の緩急**: [`ScreenAnchor`](../../Assets/Scripts/Streaming/ScreenAnchor.cs) は yaw 純スナップを廃止し
-  deadzone 10° + SmoothDamp 0.3s + 角速度上限 110°/s + 逆走ガード（`YawFollowLogic` 純ロジック・テストあり）。
+  SmoothDamp 0.3s + 角速度上限 110°/s + 逆走ガード（`YawFollowLogic` 純ロジック・テストあり）。
   提示 2.0m・中心 -8°・スクリーン 4/3 倍（角径維持）。再ロック/ロスト復帰はスナップ禁止・減衰合流
+  - **⚠ 目標は「頭の正面ちょうど」で、そこで止まる**（2026-08-01 改訂・ユーザー指摘
+    「頭の前までぎりぎり到達しないとかはやめて」）。`YawFollowLogic` は
+    **deadzone（動き出す閾値）と trail（止まる位置）を別の引数で取る**。旧実装は 1 つの値（10°）を
+    両方に使い、目標を `headYaw − sign(e)·10°` に置いていたので、**スクリーンは頭の正面へ一度も
+    到達しなかった**。加えて「動き出した後も deadzone を効かせる」と目標へ寄る途中で止まるので、
+    **動き出したら deadzone は見ない**（`_moving` のヒステリシス）。到達後は目標へ吸着して静止する
+  - スクリーンは trail=0 / deadzone 0.5°（**非シリアライズ const** — SerializeField に戻すと
+    シーン・prefab に焼かれた 10 がそのまま効いて再発する）。
+    **[`StatusHud`](../../Assets/Scripts/Diagnostics/StatusHud.cs) は逆で trail=deadzone=10° のまま**
+    （HUD が視界の真ん中に居座ると映像を隠す）
 - **切替は [`CameraSwitchDirector`](../../Assets/Scripts/Streaming/CameraSwitchDirector.cs) に一本化**:
   クールダウン **0.5s**（画面層 `SwitchDirectorLogic`）・最小滞在 **0.5s**（dwell＝人の層 `ZoneProgressionLogic`・2026-07-25 段 B で分離）・
   **cue 再生中は自動切替凍結**（凍結するのは画面だけで時計は進む）・手動後 8s は自動抑止・
@@ -568,13 +578,40 @@ show.json トップレベルに `run` を新設。**キーが無くてもコー�
 - **判断は [`IntroLogic`](../../Assets/Scripts/Streaming/IntroLogic.cs)**（dt 注入・テスト 22 本）。
   各層への配布は `IntroWeights`（passthrough / degrade / edge / structure / frame / live / grain / glitch）1 本で、
   **見え方の判断を Director に散らさない**。段 2 と段 3 は時間的に重なるので、段の直列ではなく重みで表す
-- **枠は本編のスクリーンそのもの**。開口の大きさと不透明度だけを動かす（`IntroVeil` が
-  `ScreenAnchor` の Quad から見かけ角を逆算）。だから「枠を運ぶ」処理が無く、
+- **枠は本編のスクリーンそのもの**。開口の形と不透明度だけを動かす（`IntroVeil` が
+  `ScreenAnchor` の Quad の見かけの形を逆算）。だから「枠を運ぶ」処理が無く、
   「入ったのに前方にスクリーンが浮いている」矛盾も発生しない
+- **⚠ 枠の判定は「眼とスクリーンの 4 辺を通る平面」**（2026-08-01 に置き換え）。
+  覆いの面は head-lock（視界を必ず覆い切るため）だが、**開口はスクリーンの実位置から毎フレーム解く**。
+  - 旧実装は開口を覆いの面の **uv 中心に固定**していた。本編のスクリーンは頭から
+    `heightOffset`（-0.28m / 2.0m ＝ 約 8°）下に置かれるので、**半画角 18.4° に対して 43% 縦にずれていた**
+    （ユーザー報告「四角だけになるこの領域とスクリーンの位置が一致していない」）
+  - 中心を動かすだけでも足りない。**スクリーンは水平（ヨーだけ追従）なので、頭を上下に振ると
+    スクリーン面と覆い面が必ず傾く**。矩形として投影する方式は両面が平行なときしか正しくなく、
+    20° の見下ろしで四隅が約 2.8° ずれる。平面 4 枚なら頭の向き・追従の遅れ・首の傾きに関係なく厳密で、
+    除算も特異点も無い（シェーダは `dot` 4 回 + `max`）
+  - **縁のぼけ幅は「閉じ切った枠」を基準にする**。いまの大きさに比例させると、開いているとき
+    6° 以上に膨らんで**覆いの四隅がぼけ帯に入り、段 1〜3 で現実が四隅で翳る**
+  - C# の [`IntroVeil.SignedDistance`](../../Assets/Scripts/Streaming/IntroVeil.cs) が
+    **シェーダと同じ式**を持ち、`IntroVeilApertureTests` がスクリーンの実点を食わせて
+    枠の縁との一致を固定する（Play 不要）。**片方だけ直すと沈黙して食い違う**
 - **⚠ `run.intro` が無い show.json では JsonUtility が「全部 0」の実体を作る**。
   `ShowIntroDef.LooksUnset` で検出して既定へ落とす — これが無いと `enabled=false` に化けて
   **演出が黙って出なくなる**（焼き込み・端末キャッシュが古いときに踏む）
-- **⚠ 段 3 の壁の線は `layout.room` からしか出ない**（2026-07-30 追記）。
+- **⚠ 段 3 の構造の線は既定で出さない**（2026-08-01・ユーザー判断「雰囲気ぶち壊しだから要らない」）。
+  細い寒色の線が現実に重なると計測器に見え、「現実がそのまま格下げされていく」という段 2 → 段 4 の筋を切る。
+  位置合わせの現地検証は登録リチュアル（Review フェーズ）のワイヤー表示が担うので、導入から消しても検証手段は残る。
+  - 既定 false は **4 者で揃える**（`ShowIntroDef` / 卓の `INTRO_DEFAULT` / `capture-server.py` の
+    `_default_show` / `IntroStructureWire` の SerializeField）。卓は `src.x === true` で読む
+    （`!== false` だと未指定が true に化け、欠落キーを false で埋める JsonUtility と食い違う）
+  - **⚠ それまで `run.intro.showRoomWire` / `showCameraMarks` は実行体へ 1 度も届いていなかった**。
+    `IntroDirector` は 2 フラグの **OR** で `Apply` を呼ぶかだけを決めており、個別の値は
+    `IntroStructureWire` の SerializeField（どちらも true）のままだった ＝
+    **卓で「壁の線を出さない」にしても壁の線が出続けた**。`SetSources` で渡すようにした
+  - 段 3 自体は残す（線が出なくても「輪郭だけの世界」が保たれる溜めとして働く。実尺 1.1 秒）
+  - 本番前チェックの幾何要求（床の寸法・部屋の壁）と「較正済みのカメラが 0 台」の警告は、
+    **線を出す設定のときだけ**言う（起きようのない不備を直させない）
+- **⚠ 段 3 の壁の線を出す設定にしたときは `layout.room` からしか出ない**（2026-07-30 追記）。
   `IntroStructureWireLogic` は壁と箱を `AppendRoom`（= `layout.room` だけ）から起こし、床の外周を
   `TryFloorExtents`（`layout.floor` → `room.floorW/D`）から起こす。**旧 `layout.wall` は 1 本も読まない**
   （あれは HMD 位置合わせリチュアルのワイヤー専用）。卓のフロアマップ **🧱 部屋**で壁を引いていないと、

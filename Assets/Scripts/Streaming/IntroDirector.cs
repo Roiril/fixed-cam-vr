@@ -242,15 +242,13 @@ namespace FixedCamVr.Streaming
             var ev = _logic.Tick(Time.unscaledDeltaTime, BuildInput());
             var w = _logic.Weights;
             veil?.Apply(w);
-            // 段 3 の構造の線。show.json で部屋・カメラを個別に切れるので、
-            // どちらも off なら重みを 0 にして畳む（線を出さない設定を「薄い線」にしない）。
+            // 段 3 の構造の線。show.json で部屋・カメラを個別に切れる。
+            // ⚠ **個別のフラグを実行体へ渡すこと**（2026-08-01 修正）。旧実装は OR で
+            //    「Apply を呼ぶか」だけを決めていて、壁だけ切る / 印だけ切るができなかった。
             if (structureWire != null)
             {
-                if (_def.showRoomWire || _def.showCameraMarks)
-                {
-                    var sw = w;
-                    structureWire.Apply(sw);
-                }
+                structureWire.SetSources(_def.showRoomWire, _def.showCameraMarks);
+                if (_def.showRoomWire || _def.showCameraMarks) structureWire.Apply(w);
                 else structureWire.SetHidden();
             }
             // 段 5 の乱れはスクリーン内にも掛ける（継ぎ目は両側で隠す）。

@@ -29,8 +29,14 @@ namespace FixedCamVr.Streaming.Tests
         /// <summary>Unity の組み込み Queue 名。"Overlay" = 4000。</summary>
         private const int OverlayQueue = 4000;
 
+        /// <summary>
+        /// 覆いの Queue。<b>4900</b>（後続を 5000 に収めるため 2026-07-31 に 5000 から下げた）。
+        /// URP の透明パスは [2501, 5000] しか描かないので、覆いを 5000 にすると後続が範囲外へ落ちる。
+        /// </summary>
+        private const int ExpectedVeilQueue = 4900;
+
         [Test]
-        public void Veil_RenderQueue_Is5000()
+        public void Veil_RenderQueue_LeavesRoomForFollowers()
         {
             string src = File.ReadAllText(ShaderPath);
             Match m = Regex.Match(src, @"""Queue""\s*=\s*""Overlay\+(\d+)""");
@@ -38,9 +44,12 @@ namespace FixedCamVr.Streaming.Tests
                 "IntroVeil.shader の Queue 宣言を読み取れない（形が変わった？）。" +
                 "IntroStructureWire.VeilRenderQueue と対で管理している。");
             int queue = OverlayQueue + int.Parse(m.Groups[1].Value);
-            Assert.That(queue, Is.EqualTo(5000),
+            Assert.That(queue, Is.EqualTo(ExpectedVeilQueue),
                 $"覆いの描画順が変わった（{queue}）。IntroStructureWire.VeilRenderQueue も直すこと — " +
                 "線が覆いより前に描かれると、段 3 は画面に 1 本も出なくなる（黒く潰される）。");
+            Assert.That(queue, Is.LessThan(5000),
+                "覆いを 5000 に置くと、その後に描くもの（構造の線・HMD 内の指示）が 5000 超になり、" +
+                "URP の透明パス [2501, 5000] の外へ落ちて 1 つも描画されない（2026-07-31 実害）。");
         }
 
         [Test]
@@ -71,9 +80,12 @@ namespace FixedCamVr.Streaming.Tests
                         .GetValue(wire) as Material
                     : null;
                 Assert.That(mat, Is.Not.Null, "構造の線のマテリアルを作れない（Sprites/Default が無い？）");
-                Assert.That(mat!.renderQueue, Is.GreaterThan(5000),
-                    $"構造の線が覆い（Queue 5000）より前に描かれる（実測 {mat.renderQueue}）。" +
+                Assert.That(mat!.renderQueue, Is.GreaterThan(ExpectedVeilQueue),
+                    $"構造の線が覆い（Queue {ExpectedVeilQueue}）より前に描かれる（実測 {mat.renderQueue}）。" +
                     "段 2 / 段 3 では覆いの alpha が 0 なので、線は rgb ごと 0 に潰されて 1 本も見えない。");
+                Assert.That(mat.renderQueue, Is.LessThanOrEqualTo(5000),
+                    $"構造の線が URP の透明パス [2501, 5000] の外（実測 {mat.renderQueue}）。" +
+                    "どの描画パスにも入らないので、警告も出ないまま 1 本も描かれない（2026-07-31 実害）。");
             }
             finally { Object.DestroyImmediate(go); }
         }

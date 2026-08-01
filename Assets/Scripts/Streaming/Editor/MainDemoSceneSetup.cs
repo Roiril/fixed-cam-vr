@@ -684,6 +684,11 @@ namespace FixedCamVr.Streaming.EditorTools
             var wire = go.AddComponent<IntroStructureWire>();
             var wireSo = new SerializedObject(wire);
             if (showControl != null) TrySetObjectRef(wireSo, "showControl", showControl);
+            // 既定は線を出さない（2026-08-01）。実行時は show.json の run.intro が
+            // IntroStructureWire.SetSources で上書きするので、ここはシーンを見た人が
+            // 「既定では出ない」と分かるための明示。
+            TrySetBool(wireSo, "showRoomWire", false);
+            TrySetBool(wireSo, "showCameraMarks", false);
             wireSo.ApplyModifiedPropertiesWithoutUndo();
 
             var so = new SerializedObject(dir);
