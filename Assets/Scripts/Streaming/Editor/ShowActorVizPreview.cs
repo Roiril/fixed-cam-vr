@@ -59,6 +59,23 @@ namespace FixedCamVr.Streaming.EditorTools
             new() { name = "oblique", pos = new Vector3(1.9f, 1.6f, -1.9f), lookAt = new Vector3(0f, 0.95f, 0f) },
         };
 
+        /// <summary>
+        /// 見る人形を決める。**Project ウィンドウで選んだ人形があればそれ**（Build Show Actor Prefab と
+        /// 同じ流儀）。人形を作ったらそのまま確認へ進めるようにするため — 既定固定だと、
+        /// 新しく作った人形を見るのにコードを書き換えることになる。
+        /// </summary>
+        private static GameObject? ResolveActorPrefab()
+        {
+            foreach (Object obj in Selection.objects)
+            {
+                string path = AssetDatabase.GetAssetPath(obj);
+                if (string.IsNullOrEmpty(path) || !path.Contains("/Resources/ShowActors/")) continue;
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (go != null) return go;
+            }
+            return Resources.Load<GameObject>(DefaultActorResource);
+        }
+
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Show Actor", priority = 251)]
         private static void Run()
         {
@@ -69,13 +86,14 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
 
-            GameObject? prefab = Resources.Load<GameObject>(DefaultActorResource);
+            GameObject? prefab = ResolveActorPrefab();
             if (prefab == null)
             {
                 Debug.LogError($"[ActorViz] Resources/{DefaultActorResource} が見つかりません。" +
                                "先に Tools/FixedCamVr/Setup/Build Show Actor Prefab を実行してください。");
                 return;
             }
+            Debug.Log($"[ActorViz] 対象: {prefab.name}");
 
             GameObject? root = null;
             RenderTexture? rt = null;
