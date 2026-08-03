@@ -862,6 +862,17 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
 - **Editor メニュー**: `Setup/Build Show Actor Prefab`（humanoid FBX → `Resources/ShowActors/<名前>.prefab`。
   Humanoid でも Generic でも可 — Generic は手のボーン名から親を 2 つ遡って肘・肩を取る）/
   `Diagnostics/Preview Show Actor`（Play せず 4 ポーズ × 2 角度を PNG 化）
+- **人形は実物の色を持てる**（2026-08-03〜）: `ShowActor.shader` の `_BaseMap` に元モデルのアルベドが乗る。
+  ビルダーが FBX のテクスチャを拾って**人形ごとのマテリアル**（`ShowActor_<名前>.mat`）を作る。
+  テクスチャを持たないモデルは従来どおり共有 `ShowActor.mat` で灰色のマネキンになる（見た目不変）。
+  実物をスキャンした人形（市松人形など）を入れる前提で足したもので、
+  これが無いと**赤い着物を撮ってきても灰色で映る**。計画は
+  [2026-08-03_doll-scan-to-showactor.md](../plans/2026-08-03_doll-scan-to-showactor.md)
+  - ⚠ **テクスチャは 1 枚へまとめる**。人形は 1 マテリアルへ潰す設計で、これは影の付け方
+    （`ShowCgLayer.AttachShadowMaterial` が `sharedMaterials` の末尾へ 1 枚足す）と対になっている。
+    サブメッシュが複数あると**影が最後の 1 つにしか出ない**。2 枚以上あればビルダーが警告する
+  - ⚠ **シェーダの陰影は wrap lighting で作る**ので、テクスチャに撮影時の影が焼き込まれていると二重になる。
+    スキャン撮影で影を消す理由がこれ
 - **卓の著作面**: カメラ列の役割セレクトと 📐 姿勢欄・フロアマップの **📐 カメラ姿勢**モード（印ドラッグ＝位置 /
   矢印の先ドラッグ＝向き・扇＝画角）・**🎭 CG 人形**パネル（actors[]）・カットの「CG 人形」ドロップダウン
 - **⚠ 実機未検証**（2026-07-27。EditMode 695/695・卓はブラウザ実操作・人形は Editor 静止画で確認済み）

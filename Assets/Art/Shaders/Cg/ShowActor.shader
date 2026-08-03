@@ -10,6 +10,11 @@ Shader "FixedCamVr/ShowActor"
 {
     Properties
     {
+        // 実物をスキャンした人形はここへアルバイド（色）を入れる。**未設定なら白**なので、
+        // テクスチャを持たない人形（Mixamo のマネキン等）は _BaseColor だけが効き従来と同じ絵になる。
+        // 陰影は下の wrap lighting で作るので、テクスチャ側に焼き込まれた影は無い方がよい
+        // （フォトグラメトリの出力は撮影時の照明が焼き込まれている。撮影で影を消す理由がこれ）。
+        _BaseMap("Base Map (albedo)", 2D) = "white" {}
         _BaseColor("Base Color", Color) = (0.72, 0.70, 0.67, 1)
         _ShadeColor("Shade Color", Color) = (0.10, 0.10, 0.12, 1)
         _RimColor("Rim Color", Color) = (0.85, 0.85, 0.90, 1)
@@ -43,7 +48,12 @@ Shader "FixedCamVr/ShowActor"
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
+            // ⚠ テクスチャの宣言は CBUFFER の外（SRP Batcher 互換。中に入れるとバッチが壊れる）。
+            TEXTURE2D(_BaseMap);
+            SAMPLER(sampler_BaseMap);
+
             CBUFFER_START(UnityPerMaterial)
+                float4 _BaseMap_ST;
                 float4 _BaseColor;
                 float4 _ShadeColor;
                 float4 _RimColor;
@@ -59,6 +69,7 @@ Shader "FixedCamVr/ShowActor"
             {
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
+                float2 uv : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -67,6 +78,7 @@ Shader "FixedCamVr/ShowActor"
                 float4 positionHCS : SV_POSITION;
                 float3 normalWS : TEXCOORD0;
                 float3 viewWS : TEXCOORD1;
+                float2 uv : TEXCOORD2;
             };
 
             Varyings vert(Attributes input)
@@ -77,6 +89,7 @@ Shader "FixedCamVr/ShowActor"
                 o.positionHCS = TransformWorldToHClip(posWS);
                 o.normalWS = TransformObjectToWorldNormal(input.normalOS);
                 o.viewWS = GetWorldSpaceViewDir(posWS);
+                o.uv = TRANSFORM_TEX(input.uv, _BaseMap);
                 return o;
             }
 
@@ -90,11 +103,14 @@ Shader "FixedCamVr/ShowActor"
                 float ndl = dot(n, l);
                 float t = saturate((ndl + _Wrap) / (1.0 + _Wrap));
 
+                // アルベド = テクスチャ × 色。テクスチャ未設定なら白が返るので _BaseColor だけが効く。
+                half3 albedo = _BaseColor.rgb * SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv).rgb;
+
                 // 影側は「環境光がどれだけ持ち上げるか」、光側は「主光源の色 × 強さ」。
                 // 卓（💡 CG 照明パネル）で著作した tempK / intensity / ambient がここで初めて絵に効く。
                 // これを繋ぐまでは、著作者がスライダを動かしても何も変わらなかった。
-                half3 shade = lerp(_ShadeColor.rgb, _BaseColor.rgb, saturate(_Ambient));
-                half3 lit = _BaseColor.rgb * _LightColor.rgb;
+                half3 shade = lerp(_ShadeColor.rgb, albedo, saturate(_Ambient));
+                half3 lit = albedo * _LightColor.rgb;
                 half3 col = lerp(shade, lit, t);
 
                 // リム: 輪郭をわずかに立てる（映像に埋もれて「居るのに見えない」を防ぐ）

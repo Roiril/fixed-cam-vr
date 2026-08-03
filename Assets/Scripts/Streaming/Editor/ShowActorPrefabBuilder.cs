@@ -1,5 +1,7 @@
 #nullable enable
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using FixedCamVr.Streaming.Cg;
 using UnityEditor;
 using UnityEngine;
@@ -13,7 +15,8 @@ namespace FixedCamVr.Streaming.EditorTools
     /// ここで作った <c>Assets/Resources/ShowActors/&lt;名前&gt;.prefab</c> をそのまま指せばよい。
     /// やることは 4 つだけ:
     ///   1. モデルを配置して <see cref="ShowActorRig"/>（腕をハンドトラッキングで動かす）を付ける
-    ///   2. マテリアルを <c>FixedCamVr/ShowActor</c>（シーンライトに依存しない）へ差し替える
+    ///   2. マテリアルを <c>FixedCamVr/ShowActor</c>（シーンライトに依存しない）へ差し替える。
+    ///      **元モデルがアルベドを持っていればそれを引き継ぐ**（実物をスキャンした人形の色）
     ///   3. レイヤを ShowCg に統一する（仮想カメラだけが描く）
     ///   4. 実寸の身長をログに出す（show.json の heightM を書くときの目安）
     ///
@@ -25,9 +28,13 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string DefaultModelPath = "Assets/ThirdParty/Mixamo/Remy.fbx";
         private const string OutputDir = "Assets/Resources/ShowActors";
         private const string MaterialDir = "Assets/Art/Materials/Cg";
-        private const string MaterialPath = MaterialDir + "/ShowActor.mat";
+        // テクスチャを持たない人形（Mixamo のマネキン等）が共有する 1 枚。従来からあるもの。
+        private const string SharedMaterialPath = MaterialDir + "/ShowActor.mat";
         private const string ShaderName = "FixedCamVr/ShowActor";
         private const string CgLayerName = "ShowCg";
+
+        private static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
+        private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
 
         [MenuItem("Tools/FixedCamVr/Setup/Build Show Actor Prefab", priority = 52)]
         public static void Build()
@@ -63,7 +70,6 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
 
-            Material mat = LoadOrCreateMaterial();
             int layer = LayerMask.NameToLayer(CgLayerName);
             if (layer < 0)
                 Debug.LogWarning($"[ShowActor] レイヤ '{CgLayerName}' が未定義。プレハブのレイヤ設定はスキップします" +
@@ -74,6 +80,10 @@ namespace FixedCamVr.Streaming.EditorTools
             instance.transform.position = Vector3.zero;
             instance.transform.rotation = Quaternion.identity;
             instance.transform.localScale = Vector3.one;
+
+            // ⚠ アルベドの収集は**マテリアルを差し替える前**に行う（差し替えた後では元の色が失われる）。
+            string modelName = Path.GetFileNameWithoutExtension(modelPath);
+            Material mat = ResolveMaterial(instance, modelName);
 
             foreach (Renderer r in instance.GetComponentsInChildren<Renderer>(true))
             {
@@ -102,9 +112,8 @@ namespace FixedCamVr.Streaming.EditorTools
             float height = rig.MeasuredHeightM;
 
             Directory.CreateDirectory(OutputDir);
-            string name = Path.GetFileNameWithoutExtension(modelPath);
             // 同じモデルで作り直したら**上書き**する（Remy 1.prefab のような重複を作らない）。
-            string outPath = $"{OutputDir}/{name}.prefab";
+            string outPath = $"{OutputDir}/{modelName}.prefab";
             GameObject saved = PrefabUtility.SaveAsPrefabAsset(instance, outPath);
             Object.DestroyImmediate(instance);
             AssetDatabase.SaveAssets();
@@ -131,20 +140,70 @@ namespace FixedCamVr.Streaming.EditorTools
             return File.Exists(DefaultModelPath) ? DefaultModelPath : "";
         }
 
-        private static Material LoadOrCreateMaterial()
+        /// <summary>
+        /// 人形へ差すマテリアルを決める。**元モデルがアルベドを持っていれば、その 1 枚を焼いた
+        /// 専用マテリアル**（<c>ShowActor_&lt;モデル名&gt;.mat</c>）を作る。実物をスキャンした人形は
+        /// 色が命なので、ここで拾わないと灰色のマネキンとして映る。
+        ///
+        /// テクスチャを持たないモデルは従来どおり共有の <c>ShowActor.mat</c> を使う（見た目は不変）。
+        ///
+        /// ⚠ 呼ぶのは**マテリアルを差し替える前**。差し替えた後では元の色が消えている。
+        /// </summary>
+        private static Material ResolveMaterial(GameObject instance, string modelName)
         {
-            var existing = AssetDatabase.LoadAssetAtPath<Material>(MaterialPath);
-            if (existing != null) return existing;
-
-            Shader? shader = Shader.Find(ShaderName);
-            if (shader == null)
+            var textures = new List<Texture>();
+            foreach (Renderer r in instance.GetComponentsInChildren<Renderer>(true))
             {
-                Debug.LogWarning($"[ShowActor] シェーダ '{ShaderName}' が見つかりません。URP/Unlit で代用します。");
-                shader = Shader.Find("Universal Render Pipeline/Unlit");
+                foreach (Material m in r.sharedMaterials)
+                {
+                    if (m == null) continue;
+                    Texture? tex = m.HasProperty(BaseMapId) ? m.GetTexture(BaseMapId) : null;
+                    if (tex == null && m.HasProperty(MainTexId)) tex = m.GetTexture(MainTexId);
+                    if (tex != null && !textures.Contains(tex)) textures.Add(tex);
+                }
             }
-            Directory.CreateDirectory(MaterialDir);
-            var mat = new Material(shader) { name = "ShowActor" };
-            AssetDatabase.CreateAsset(mat, MaterialPath);
+
+            if (textures.Count == 0) return LoadOrCreateMaterial(SharedMaterialPath, "ShowActor", null);
+
+            if (textures.Count > 1)
+            {
+                // 人形は 1 マテリアルへ潰す。これは影の付け方（ShowCgLayer.AttachShadowMaterial が
+                // sharedMaterials の末尾へ 1 枚足す）と対で、サブメッシュが複数あると
+                // **影が最後のサブメッシュにしか出ない**。書き出し前に 1 枚へまとめるのが正しい。
+                Debug.LogWarning($"[ShowActor] アルベドが {textures.Count} 枚あります" +
+                                 $"（{string.Join(", ", textures.Select(t => t.name))}）。" +
+                                 "先頭の 1 枚だけを使います。全身に色と影を出すには、書き出す前に" +
+                                 "テクスチャを 1 枚へまとめて 1 メッシュ 1 マテリアルにしてください。");
+            }
+
+            return LoadOrCreateMaterial($"{MaterialDir}/ShowActor_{modelName}.mat",
+                                        $"ShowActor_{modelName}", textures[0]);
+        }
+
+        // 既存があれば拾って albedo だけ更新し、無ければ作る（作り直しで .mat が増殖しない）。
+        private static Material LoadOrCreateMaterial(string path, string name, Texture? albedo)
+        {
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                Shader? shader = Shader.Find(ShaderName);
+                if (shader == null)
+                {
+                    Debug.LogWarning($"[ShowActor] シェーダ '{ShaderName}' が見つかりません。URP/Unlit で代用します。");
+                    shader = Shader.Find("Universal Render Pipeline/Unlit");
+                }
+                Directory.CreateDirectory(MaterialDir);
+                mat = new Material(shader) { name = name };
+                AssetDatabase.CreateAsset(mat, path);
+            }
+
+            if (albedo != null && mat.HasProperty(BaseMapId))
+            {
+                mat.SetTexture(BaseMapId, albedo);
+                // テクスチャの色をそのまま出す。既定の _BaseColor（マネキンの肌色）が乗ると濁る。
+                mat.SetColor("_BaseColor", Color.white);
+                EditorUtility.SetDirty(mat);
+            }
             return mat;
         }
 
