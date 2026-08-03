@@ -27,6 +27,9 @@ description: 1 Unity プロジェクトに同居する 廻リ視(FixedCam) と T
 ## 1. コードは完全分離（既存・厳守）
 
 - `FixedCamVr.*` と `TableDuoVr.*` の **asmdef 相互参照禁止**（どちらも自己完結）
+  - **機械で守っている**: [`AppIsolationTests`](../../Assets/Tests/Tracking/AppIsolationTests.cs)
+    が相互参照と置き場所違いを EditMode で落とす（2026-08-03 追加。移植元は unity-game-studio の
+    `AssemblyIsolationTests`）。**文章の規約は守られない**が、テストは守られる
 - 名前空間も混ぜない。TableDuo のコードは `Assets/TableDuo/` 配下のみ、本体は `Assets/Scripts/` 配下のみ
 - 片方の作業で他方の `.cs` / `.asmdef` / シーン / prefab を触らない。触る必要が出たら**それは設計の越境**なので一旦止めてユーザーに確認
 
