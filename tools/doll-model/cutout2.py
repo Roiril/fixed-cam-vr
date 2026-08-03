@@ -8,7 +8,7 @@
 #   着物 = 赤マスク → 閉じる → 穴埋め（帯・襟・前身頃の白はここで入る）
 #   頭部 = **頭だけに絞った矩形**で GrabCut（狭い矩形なら顔と背景の色分布が分かれる）
 #   腕・手 = 取らない。袖から出る白磁の腕は CG 側で作る（テクスチャに要らない）
-import cv2, numpy as np, os, json
+import cv2, numpy as np, os, json, math
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -63,19 +63,31 @@ def keep_big(m, min_ratio=0.004):
 
 
 def head_mask(src, spec):
-    """頭部は**楕円で塗る**。
+    """頭部は**おかっぱの形で塗る**（行ごとに幅を決める）。
 
     GrabCut を頭に掛ける案は捨てた。顔（H22 S25 V207）と机（H40 S11 V210）、髪（V63）と
     黒シャツ（V50）が色で分かれないため、矩形をわずかに動かすだけで
     「頭が丸ごと消える / 頭上に黒い柱が生える」の間を往復して収束しない（実測 4 回）。
 
-    おかっぱ頭は楕円に近く、合成先は 640x480 の暗い映像で人形は数百画素。
-    輪郭が楕円か実形かの差はそこでは観測されない。**色と質感はテクスチャ側が運ぶ**ので、
-    ここで要るのは「どこまでが頭か」だけ。決定的に決まる方を採る。"""
+    ⚠ 単純な楕円で塗ると **CG の頭が箱に見える**（写真と並べて判明）。実物のおかっぱは
+    頭頂が丸く、頬から下はほぼ垂直に落ちて顎の下で終わり、毛先でわずかに内へ入る。
+    その形を上から下へ幅の式で作る。色と質感はテクスチャ側が運ぶので、ここで要るのは輪郭だけ。"""
     H, W = src.shape[:2]
     cx, cy, rx, ry = spec[0] * W, spec[1] * H, spec[2] * W, spec[3] * H
     out = np.zeros((H, W), np.uint8)
-    cv2.ellipse(out, (int(cx), int(cy)), (int(rx), int(ry)), 0, 0, 360, 255, -1)
+    top, bot = cy - ry, cy + ry
+    ROUND = 0.40          # ここまでが丸い頭頂。以降はほぼ垂直に落ちる
+    for yy in range(max(0, int(top)), min(H, int(bot) + 1)):
+        t = (yy - top) / max(1.0, bot - top)
+        if t < ROUND:
+            k = (ROUND - t) / ROUND
+            w = rx * math.sqrt(max(0.0, 1.0 - k * k))
+        else:
+            k = (t - ROUND) / (1.0 - ROUND)
+            w = rx * (1.0 - 0.20 * k * k)          # 毛先へ向けてわずかに絞る
+        if w <= 1.0:
+            continue
+        cv2.line(out, (int(cx - w), yy), (int(cx + w), yy), 255, 1)
     return out
 
 
@@ -90,11 +102,16 @@ def build(name):
     robe = keep_big(robe, 0.010)   # 本棚の赤い本を落とす
 
     head = head_mask(src, HEAD[name])
+    hy, _hx = np.nonzero(head)
+    head_top = int(hy.min()) if len(hy) else 0
 
     # 帯（背面の蝶結び）と首は赤を上下に分断する。**縦長のカーネル**で閉じて繋ぐ
     # ＝ 横に広い袖どうしを繋げずに、縦の分断だけを埋められる。
+    # ⚠ close は**赤だけ**に掛ける。頭も一緒に閉じると、丸い頭頂が縦へ膨張して
+    #    **平らな箱**になり、さらに画像の端では収縮で戻り切らず頭の上に柱が残る（実測）。
     vk = np.ones((max(9, int(H * 0.09)) | 1, max(3, int(W * 0.012)) | 1), np.uint8)
-    full = cv2.morphologyEx(cv2.bitwise_or(robe, head), cv2.MORPH_CLOSE, vk)
+    full = cv2.bitwise_or(cv2.morphologyEx(robe, cv2.MORPH_CLOSE, vk), head)
+    full[:head_top] = 0
     full = fill_holes(full)
     full = keep_big(full, 0.006)
     full = cv2.medianBlur(full, 9)

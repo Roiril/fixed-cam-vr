@@ -1,0 +1,9 @@
+# 中間生成物。photos/ の写真をここへコピーして走らせると出るもの。
+*.jpg
+*.png
+*.json
+*.fbx
+*.blend
+*.blend1
+*.fbm/
+!photos/*.jpg

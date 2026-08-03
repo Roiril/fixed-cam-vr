@@ -4,8 +4,12 @@
 #   手 = "left"/"right" を含み "hand" を含む（指の名前は含めない）
 #   その **親を 2 つ遡って** 肘・肩を取るので、捻りボーンを挟んではいけない
 #   頭 = "head" を含み "top"/"end" を含まない
-# 袖と身頃は Root に 1.0。ShowActorRig は上腕ボーンそのものを回すので、袖を肩へ付けると
-# 腕を動かすたび袖が丸ごと回る（着物の袖は実物でも上腕に追従せず垂れたまま）。
+#
+# 袖のウェイト（2026-08-03 改訂）:
+#   最初は袖を Root に 1.0 で固定していた（＝腕を振っても袖は不動）。
+#   実物の袖は上腕の回転に剛体で付いてくるわけではないが、**付け根は腕に持ち上げられ、
+#   下端は垂れたまま**になる。そこで「腕の高さからどれだけ下か」で腕→Root へ配分し、
+#   横方向は肩・肘・手首へ配分する。布シミュレーションの一次近似。
 import bpy, bmesh, json, math, os, sys
 from mathutils import Vector
 
@@ -14,14 +18,16 @@ D = json.load(open(os.path.join(OUT, "shell.json")))
 H = D["height"]
 ARM_Z = D["arm"]["z"]
 TIP_X = D["arm"]["tip_x"]
+BODY_HALF = D.get("body_half", 0.054)
 
 SHOULDER_X = TIP_X * 0.17          # 胴の中
 ELBOW_X = TIP_X * 0.58
 WRIST_X = TIP_X * 0.90
 HAND_X = TIP_X + 0.026             # 袖口から出る手の先
 ARM_R = 0.0068
+SLEEVE_FALL = 0.105                # 袖が腕に追従しなくなるまでの落差 (m)
 FACE_UV = (0.244, 0.854)           # 腕・手はテクスチャに写っていないので顔の白磁を引く
-SEG = 12
+SEG = 14
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -41,13 +47,17 @@ for p in me.polygons:
 
 # --- 腕（白磁）--------------------------------------------------------------
 def arm_mesh(side):
-    xs = [SHOULDER_X, ELBOW_X, WRIST_X, HAND_X - 0.012, HAND_X]
-    rr = [ARM_R * 1.5, ARM_R, ARM_R * 0.9, ARM_R * 1.25, ARM_R * 0.45]
+    """肩から手先までの筒。**手だけ断面を平たくする**（前後に薄く上下に広い）。
+    円柱のままだと棒に見え、写真の「袖から出た手のひら」に見えない。"""
+    xs = [SHOULDER_X, ELBOW_X, WRIST_X, HAND_X - 0.014, HAND_X]
+    #     (前後 ry, 上下 rz)
+    rr = [(ARM_R * 1.5, ARM_R * 1.5), (ARM_R, ARM_R), (ARM_R * 0.9, ARM_R * 0.9),
+          (ARM_R * 0.62, ARM_R * 1.75), (ARM_R * 0.42, ARM_R * 1.05)]
     verts, faces = [], []
-    for x, r in zip(xs, rr):
+    for x, (ry, rz) in zip(xs, rr):
         for i in range(SEG):
             a = 2 * math.pi * i / SEG
-            verts.append((side * x, r * math.sin(a), ARM_Z + r * math.cos(a)))
+            verts.append((side * x, ry * math.sin(a), ARM_Z + rz * math.cos(a)))
     for k in range(len(xs) - 1):
         a0, b0 = k * SEG, (k + 1) * SEG
         for i in range(SEG):
@@ -95,9 +105,8 @@ mat = bpy.data.materials.new("Ichimatsu")
 mat.use_nodes = True
 nt = mat.node_tree
 bsdf = nt.nodes["Principled BSDF"]
-tex_path = os.path.join(OUT, "doll_albedo.png")
 img_node = nt.nodes.new("ShaderNodeTexImage")
-img_node.image = bpy.data.images.load(tex_path)
+img_node.image = bpy.data.images.load(os.path.join(OUT, "doll_albedo.png"))
 nt.links.new(bsdf.inputs["Base Color"], img_node.outputs["Color"])
 bsdf.inputs["Roughness"].default_value = 0.9
 if "Specular IOR Level" in bsdf.inputs:
@@ -136,30 +145,53 @@ names = ["Root", "Head", "LeftArm", "LeftForeArm", "LeftHand",
 g = {n: doll.vertex_groups.new(name=n) for n in names}
 mark = doll.vertex_groups.get("ARMMARK")
 mark_idx = mark.index if mark else -1
-n_arm = 0
+
+
+def clamp01(v):
+    return 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
+
+
+def spread_along_arm(v, tag, ax, w):
+    """腕方向の位置 ax を 肩→肘→手首 へ配分し、合計 w を配る。"""
+    if ax <= ELBOW_X:
+        s = clamp01((ax - SHOULDER_X) / max(1e-6, ELBOW_X - SHOULDER_X))
+        g[tag + "Arm"].add([v], w * (1.0 - s), 'REPLACE')
+        g[tag + "ForeArm"].add([v], w * s, 'REPLACE')
+    elif ax <= WRIST_X:
+        s = clamp01((ax - ELBOW_X) / max(1e-6, WRIST_X - ELBOW_X))
+        g[tag + "ForeArm"].add([v], w * (1.0 - s), 'REPLACE')
+        g[tag + "Hand"].add([v], w * s, 'REPLACE')
+    else:
+        g[tag + "Hand"].add([v], w, 'REPLACE')
+
+
+n_arm = n_sleeve = 0
 for v in me.vertices:
     co = v.co
     ax = abs(co.x)
-    # 腕メッシュの頂点だけを拾う（印で判定する。座標だと袖を巻き込む）
     on_arm = False
     for gel in v.groups:
         if gel.group == mark_idx and gel.weight > 0.5:
             on_arm = True
             break
-    if on_arm:
+
+    if on_arm:                                   # 白磁の腕: 全部を腕ボーンへ
         n_arm += 1
-        tag = "Left" if co.x > 0 else "Right"
-        if ax <= ELBOW_X:
-            w = (ax - SHOULDER_X) / max(1e-6, ELBOW_X - SHOULDER_X)
-            g[f"{tag}Arm"].add([v.index], 1.0 - max(0.0, min(1.0, w)), 'REPLACE')
-            g[f"{tag}ForeArm"].add([v.index], max(0.0, min(1.0, w)), 'REPLACE')
-        elif ax <= WRIST_X:
-            w = (ax - ELBOW_X) / max(1e-6, WRIST_X - ELBOW_X)
-            g[f"{tag}ForeArm"].add([v.index], 1.0 - max(0.0, min(1.0, w)), 'REPLACE')
-            g[f"{tag}Hand"].add([v.index], max(0.0, min(1.0, w)), 'REPLACE')
-        else:
-            g[f"{tag}Hand"].add([v.index], 1.0, 'REPLACE')
-    elif co.z > HEAD_BASE and ax < H * 0.16:
+        spread_along_arm(v.index, "Left" if co.x > 0 else "Right", ax, 1.0)
+        continue
+
+    if ax > BODY_HALF * 0.92:                    # 胴より外へ張り出している = 袖
+        drop = max(0.0, ARM_Z - co.z)            # 腕の高さからどれだけ下か
+        w = clamp01(1.0 - drop / SLEEVE_FALL)
+        w = w * w * (3.0 - 2.0 * w)              # smoothstep（付け根から滑らかに減衰）
+        if w > 0.02:
+            n_sleeve += 1
+            spread_along_arm(v.index, "Left" if co.x > 0 else "Right", ax, w)
+            if w < 1.0:
+                g["Root"].add([v.index], 1.0 - w, 'REPLACE')
+            continue
+
+    if co.z > HEAD_BASE and ax < H * 0.16:
         g["Head"].add([v.index], 1.0, 'REPLACE')
     else:
         g["Root"].add([v.index], 1.0, 'REPLACE')
@@ -178,5 +210,5 @@ bpy.ops.export_scene.fbx(
     add_leaf_bones=False, bake_anim=False,
     path_mode='COPY', embed_textures=False, mesh_smooth_type='FACE')
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "doll.blend"))
-print(f"[doll] verts={len(me.vertices)} polys={len(me.polygons)} armverts={n_arm}")
-print(f"[doll] armZ={ARM_Z:.3f} tip={TIP_X:.3f} hand={HAND_X:.3f} exported")
+print(f"[doll] verts={len(me.vertices)} polys={len(me.polygons)} arm={n_arm} sleeve={n_sleeve}")
+print(f"[doll] armZ={ARM_Z:.3f} tip={TIP_X:.3f} bodyHalf={BODY_HALF:.3f} exported")
