@@ -383,24 +383,27 @@ namespace FixedCamVr.Streaming
             // 判定と発火のあいだ（1 フレーム）に持ち越しが期限切れになる等で「次」が消えると、
             // 占有が降りないまま画面が固まる。**凍結が解けない事故を新しく作らない**ため、
             // 次のフレームで必ず決着させる。
-            if (_chainPending)
+            // ⚠ 必ず「次のフレーム以降」で判定する。EndTake は上の Apply(d) の中で呼ばれて
+            // _chainPending を立てるので、同じフレームで見ると次の演出は**まだ始まりようがない**。
+            // フレーム境界を跨がないと、chainNext は毎回ここで取り消され、避けたかった復帰の暗転が
+            // 必ず入る（実測 2026-08-03: 2 回とも「渡す」と「取り消し」が同じ ms に出て、
+            // 次の演出はその 9ms 後＝次フレームに始まっていた）。
+            if (_chainPending && Time.frameCount > _chainPendingFrame)
             {
-                bool started = d.action == TakeRunnerLogic.Action.BeginStep && d.takeStarted;
-                if (!started && !_logic.IsActive)
+                _chainPending = false;
+                // 次が始まっていれば渡しは成立（IsActive は d.takeStarted を含む上位条件）。
+                if (!_logic.IsActive && director != null && director.InsertActive)
                 {
-                    _chainPending = false;
-                    if (director != null && director.InsertActive)
-                    {
-                        Debug.LogWarning("[TakeRunner] 次の演出が始まらなかったので画面を返す（連続の渡しを取り消し）");
-                        director.InsertReturn(ResolveLatestZoneCamera());
-                    }
+                    Debug.LogWarning("[TakeRunner] 次の演出が始まらなかったので画面を返す（連続の渡しを取り消し）");
+                    director.InsertReturn(ResolveLatestZoneCamera());
                 }
-                else if (started) _chainPending = false;
             }
         }
 
         // 連続の渡しで画面を返さずに待っている状態。次のフレームで必ず決着させる（上の安全網）。
         private bool _chainPending;
+        // _chainPending を立てたフレーム。同一フレームでの誤った取り消しを防ぐ番人。
+        private int _chainPendingFrame = -1;
 
         /// <summary>
         /// 通過ラインの横断検出を体験者の course 空間 XZ で進める。位置が取れない
@@ -661,6 +664,7 @@ namespace FixedCamVr.Streaming
             if (d.chainNext && !d.forced && director.InsertActive)
             {
                 _chainPending = true;
+                _chainPendingFrame = Time.frameCount;
                 Debug.Log($"[TakeRunner] 演出終了 → 次の演出へそのまま渡す（復帰の暗転を挟まない）");
                 return;
             }
