@@ -174,6 +174,11 @@ def expected_from_show(show: dict):
     exp["introEnabled"] = bool(run.get("introEnabled", True))
     exp["introMinSec"] = run.get("introMinSec", 20)
     exp["introStartLineId"] = (run.get("intro") or {}).get("startLineId") or ""
+    # 段 3 の構造の線は既定 false（2026-08-01）。出す設定のときだけ「引けたか」を判定する。
+    # 既定を true 側に取ると、線を出さない現行の著作で毎回 WARN が出て報告が信用されなくなる。
+    _intro = run.get("intro") or {}
+    exp["introWireWanted"] = bool(_intro.get("showRoomWire") is True
+                                  or _intro.get("showCameraMarks") is True)
     exp["targetSec"] = run.get("targetSec", 180)
     exp["order"] = ((show.get("layout") or {}).get("course") or {}).get("order") or []
 
@@ -941,12 +946,19 @@ def analyze(events, others, exp, warns=None):
         if nums:
             any_effect_key = True
             w(f"  構造の線: 最大 {max(nums)} 本")
-            if max(nums) == 0:
-                verdict("WARN", "段 Structure に達したのに構造の線が 1 本も引けていない — "
-                                "位置合わせの現地検証（線が実物に重なるか）ができない。"
-                                "卓の 🧱 部屋 で壁を引くか、較正パネルで床の実寸を入れる")
-            else:
-                verdict("OK", f"構造の線が {max(nums)} 本引けた")
+            # 線を出す設定のときだけ言う。showRoomWire / showCameraMarks は 2026-08-01 に
+            # 既定 false になった（ユーザー判断「雰囲気ぶち壊しだから要らない」）ので、
+            # 0 本は**正常**。ここを無条件に WARN にすると毎回赤くなり、直しようのない不備を
+            # 直させることになる（卓の本番前チェックは既に「出す設定のときだけ」で判定している）。
+            if exp.get("introWireWanted"):
+                if max(nums) == 0:
+                    verdict("WARN", "段 Structure に達したのに構造の線が 1 本も引けていない — "
+                                    "位置合わせの現地検証（線が実物に重なるか）ができない。"
+                                    "卓の 🧱 部屋 で壁を引くか、較正パネルで床の実寸を入れる")
+                else:
+                    verdict("OK", f"構造の線が {max(nums)} 本引けた")
+            elif max(nums) == 0:
+                w("  （show.json が構造の線を出さない設定なので 0 本が正常）")
 
     # -- 演出のカット（画面を取ったか / 飛ばされたか）
     steps_ev = [e for e in events if e.get("ev") == "step"]

@@ -54,8 +54,10 @@ def adb(serial, *args, timeout=20):
         cmd += ["-s", serial]
     cmd += [str(a) for a in args]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
-                           timeout=timeout)
+        # encoding 明示は必須。locale 既定（cp932）だと実機ログ・端末名の日本語が
+        # U+FFFD へ潰れて復元できなくなる（quest-record.py の adb() と同じ理由）。
+        p = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout)
         return p.returncode, p.stdout.replace("\r", ""), p.stderr.replace("\r", "")
     except subprocess.TimeoutExpired:
         return 124, "", "timeout"

@@ -97,13 +97,18 @@ def adb(serial, *args, **kw):
         cmd += ["-s", serial]
     cmd += [str(a) for a in args]
     env = dict(os.environ, MSYS_NO_PATHCONV="1")  # Git Bash が /sdcard/... を勝手に変換する
-    return subprocess.run(cmd, capture_output=True, text=True, errors="replace",
-                          env=env, **kw)
+    # ⚠ encoding を書かないと locale 既定（Windows は cp932）で復号され、実機ログの日本語が
+    # 壊れる。壊れた字は U+FFFD になるので**復元できない**。analyze-xp-log.py の
+    # JP_WARN（見つかりません・失敗・出ません）が永久に一致しなくなる＝ 2026-07-31 に
+    # 「日本語の警告を埋もれさせない」ために入れた仕掛けが丸ごと死ぬ。
+    return subprocess.run(cmd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", env=env, **kw)
 
 
 def pick_serial():
     out = subprocess.run(["python", "tools/quest-fleet.py", "pick"],
-                         capture_output=True, text=True).stdout.strip()
+                         capture_output=True, text=True,
+                         encoding="utf-8", errors="replace").stdout.strip()
     return out.splitlines()[0] if out else ""
 
 
@@ -221,7 +226,11 @@ def run_tool(script, *argv):
     """付属のツールを呼ぶ。落ちても録画そのものは残っているので、止めずに続ける。"""
     cmd = [sys.executable, os.path.join("tools", script), *[str(a) for a in argv]]
     print("$ " + " ".join(cmd))
-    r = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+    # 子ツールの print も UTF-8 で揃える（pipe 越しだと子側は locale 既定＝cp932 になり、
+    # 日本語の要約が壊れて返る）。
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", env=env)
     out = (r.stdout or "").strip()
     if out:
         print("\n".join("  " + ln for ln in out.splitlines()))
@@ -405,7 +414,8 @@ def read_battery(serial):
     """(残量%, 充電中か) を返す。読めなければ (None, None)。"""
     try:
         out = subprocess.run(["adb", "-s", serial, "shell", "dumpsys", "battery"],
-                             capture_output=True, text=True, timeout=15).stdout
+                             capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=15).stdout
     except Exception:
         return None, None
     level = charging = None
