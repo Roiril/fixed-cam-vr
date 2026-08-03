@@ -15,6 +15,14 @@ Shader "FixedCamVr/ShowActor"
         // 陰影は下の wrap lighting で作るので、テクスチャ側に焼き込まれた影は無い方がよい
         // （フォトグラメトリの出力は撮影時の照明が焼き込まれている。撮影で影を消す理由がこれ）。
         _BaseMap("Base Map (albedo)", 2D) = "white" {}
+        // 布の襞をライトに反応させる。無ければ平ら（"bump" は法線の既定テクスチャ）。
+        // ⚠ 撮影時の陰影はアルベドにも残っているので、強くすると二重に暗くなる。
+        _BumpMap("Normal Map", 2D) = "bump" {}
+        _BumpScale("Normal Scale", Range(0, 2)) = 0.75
+        // 鏡面。胡粉の顔・手も絹も実物には照りがある。リムは視線だけで決まるので
+        // **光を動かしても動かず**、それ自体が「CG である」合図になっていた。
+        _Spec("Specular", Range(0, 1)) = 0.10
+        _Gloss("Glossiness", Range(4, 128)) = 26
         _BaseColor("Base Color", Color) = (0.72, 0.70, 0.67, 1)
         _ShadeColor("Shade Color", Color) = (0.10, 0.10, 0.12, 1)
         _RimColor("Rim Color", Color) = (0.85, 0.85, 0.90, 1)
@@ -51,6 +59,8 @@ Shader "FixedCamVr/ShowActor"
             // ⚠ テクスチャの宣言は CBUFFER の外（SRP Batcher 互換。中に入れるとバッチが壊れる）。
             TEXTURE2D(_BaseMap);
             SAMPLER(sampler_BaseMap);
+            TEXTURE2D(_BumpMap);
+            SAMPLER(sampler_BumpMap);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseMap_ST;
@@ -59,6 +69,9 @@ Shader "FixedCamVr/ShowActor"
                 float4 _RimColor;
                 float4 _LightDir;
                 float4 _LightColor;
+                float _BumpScale;
+                float _Spec;
+                float _Gloss;
                 float _Ambient;
                 float _Wrap;
                 float _Rim;
@@ -69,6 +82,7 @@ Shader "FixedCamVr/ShowActor"
             {
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
+                float4 tangentOS : TANGENT;
                 float2 uv : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
@@ -79,6 +93,7 @@ Shader "FixedCamVr/ShowActor"
                 float3 normalWS : TEXCOORD0;
                 float3 viewWS : TEXCOORD1;
                 float2 uv : TEXCOORD2;
+                float4 tangentWS : TEXCOORD3;   // xyz = 接線 / w = 従法線の符号
             };
 
             Varyings vert(Attributes input)
@@ -90,6 +105,8 @@ Shader "FixedCamVr/ShowActor"
                 o.normalWS = TransformObjectToWorldNormal(input.normalOS);
                 o.viewWS = GetWorldSpaceViewDir(posWS);
                 o.uv = TRANSFORM_TEX(input.uv, _BaseMap);
+                float3 tWS = TransformObjectToWorldDir(input.tangentOS.xyz);
+                o.tangentWS = float4(tWS, input.tangentOS.w * GetOddNegativeScale());
                 return o;
             }
 
@@ -98,6 +115,13 @@ Shader "FixedCamVr/ShowActor"
                 float3 n = normalize(input.normalWS);
                 float3 l = normalize(_LightDir.xyz);
                 float3 v = normalize(input.viewWS);
+
+                // 接空間の法線を world へ。布の襞がここで初めてライトに反応する。
+                float3 tanWS = normalize(input.tangentWS.xyz);
+                float3 bitWS = cross(n, tanWS) * input.tangentWS.w;
+                float3 nTS = UnpackNormalScale(
+                    SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, input.uv), _BumpScale);
+                n = normalize(nTS.x * tanWS + nTS.y * bitWS + nTS.z * n);
 
                 // wrap lighting: 影側を完全に潰さない（監視カメラの粗い絵で形が読める程度に残す）
                 float ndl = dot(n, l);
@@ -112,6 +136,12 @@ Shader "FixedCamVr/ShowActor"
                 half3 shade = lerp(_ShadeColor.rgb, albedo, saturate(_Ambient));
                 half3 lit = albedo * _LightColor.rgb;
                 half3 col = lerp(shade, lit, t);
+
+                // 鏡面（Blinn-Phong 1 ローブ）。**光を動かすとハイライトが動く**のが要点で、
+                // これが無いと、どれだけ形を作っても「塗った絵」に見える。
+                float3 h = normalize(l + v);
+                float spec = pow(saturate(dot(n, h)), _Gloss) * _Spec * saturate(ndl + _Wrap);
+                col += _LightColor.rgb * spec;
 
                 // リム: 輪郭をわずかに立てる（映像に埋もれて「居るのに見えない」を防ぐ）
                 float rim = pow(saturate(1.0 - saturate(dot(n, v))), _RimPower) * _Rim;

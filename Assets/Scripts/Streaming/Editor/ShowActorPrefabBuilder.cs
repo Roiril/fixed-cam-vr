@@ -35,6 +35,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
         private static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
+        private static readonly int BumpMapId = Shader.PropertyToID("_BumpMap");
 
         [MenuItem("Tools/FixedCamVr/Setup/Build Show Actor Prefab", priority = 52)]
         public static void Build()
@@ -202,9 +203,41 @@ namespace FixedCamVr.Streaming.EditorTools
                 mat.SetTexture(BaseMapId, albedo);
                 // テクスチャの色をそのまま出す。既定の _BaseColor（マネキンの肌色）が乗ると濁る。
                 mat.SetColor("_BaseColor", Color.white);
+
+                // 同じ場所の `<...>_normal` を法線として拾う（布の襞をライトに反応させる）。
+                // 無ければ既定のフラットのまま＝従来と同じ絵。
+                Texture? bump = FindSibling(albedo, "_albedo", "_normal");
+                if (bump != null && mat.HasProperty(BumpMapId))
+                {
+                    mat.SetTexture(BumpMapId, bump);
+                    var path = AssetDatabase.GetAssetPath(bump);
+                    if (AssetImporter.GetAtPath(path) is TextureImporter ti
+                        && ti.textureType != TextureImporterType.NormalMap)
+                    {
+                        ti.textureType = TextureImporterType.NormalMap;
+                        ti.SaveAndReimport();
+                    }
+                }
                 EditorUtility.SetDirty(mat);
             }
             return mat;
+        }
+
+        /// <summary>同じフォルダにある「名前の一部を差し替えた」テクスチャを探す。</summary>
+        private static Texture? FindSibling(Texture albedo, string from, string to)
+        {
+            string path = AssetDatabase.GetAssetPath(albedo);
+            if (string.IsNullOrEmpty(path)) return null;
+            string dir = Path.GetDirectoryName(path)?.Replace('\\', '/') ?? "";
+            string name = Path.GetFileNameWithoutExtension(path);
+            string want = name.Contains(from) ? name.Replace(from, to) : name + to;
+            foreach (string guid in AssetDatabase.FindAssets($"{want} t:Texture", new[] { dir }))
+            {
+                string p = AssetDatabase.GUIDToAssetPath(guid);
+                if (Path.GetFileNameWithoutExtension(p) == want)
+                    return AssetDatabase.LoadAssetAtPath<Texture>(p);
+            }
+            return null;
         }
 
         private static void SetLayerRecursive(Transform t, int layer)

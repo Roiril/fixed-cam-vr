@@ -66,7 +66,7 @@ namespace FixedCamVr.Streaming.EditorTools
         /// </summary>
         private static GameObject? ResolveActorPrefab()
         {
-            foreach (Object obj in Selection.objects)
+            foreach (UnityEngine.Object obj in Selection.objects)
             {
                 string path = AssetDatabase.GetAssetPath(obj);
                 if (string.IsNullOrEmpty(path) || !path.Contains("/Resources/ShowActors/")) continue;

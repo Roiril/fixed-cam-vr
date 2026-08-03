@@ -12,7 +12,7 @@
 #   3. 行の中の位置（楕円断面）          … 縁で 0・中央で最大
 #
 # 出力: shell.json（頂点 / 面 / UV / 腕の取り付け位置）→ Blender が読んで組み立てる
-import cv2, numpy as np, json, os
+import cv2, numpy as np, json, os, math
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROWS, COLS = 144, 34         # 縦の刻み / 各行の横分割
@@ -27,9 +27,22 @@ x0, x1, y0, y1 = int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
 bw, bh = x1 - x0, y1 - y0
 scale = DOLL_H / bh
 
+# アトラスの下段（手のストリップ）ぶん v が詰まる。texture.py と対で直すこと。
+try:
+    _atlas = json.load(open(os.path.join(HERE, "atlas.json"), encoding="utf-8"))
+    BODY_V0 = float(_atlas["body_v0"])
+    ATLAS_W, ATLAS_H = int(_atlas["width"]), int(_atlas["height"])
+except Exception:
+    BODY_V0, ATLAS_W, ATLAS_H = 0.0, 1024, 1024
+BODY_VS = 1.0 - BODY_V0
+
 side = json.load(open(os.path.join(HERE, "profile.json"), encoding="utf-8"))["sideB"]["rows"]
 side_t = np.array([r["t"] for r in side])
 side_h = np.array([r["half"] for r in side])
+# ⚠ 側面プロファイルは 48 行しかない。それを 144 行へ線形補間すると 8mm ごとに折れ、
+#    行間の深さが最大 7mm 段differ する（行の刻み 2.8mm に対し 15〜68 度の法線の振れ）。
+#    上から照らすと**横縞**として出る。補間の前に均す。
+side_h = np.convolve(np.pad(side_h, 2, mode="edge"), np.ones(5) / 5.0, mode="valid")
 
 # 行ごとの左右端。1 行だけ見ると縁がざらつくので、上下 1 行を足した中央値で均す。
 raw = []
@@ -60,23 +73,45 @@ body_half_px = BODY_HALF_N * bh
 verts, uvs = [], []
 grid = [[[0, 0] for _ in range(COLS + 1)] for _ in range(ROWS + 1)]
 
+HALF_TEXEL_U = 0.5 / ATLAS_W          # UV をパネル境界から半テクセル内へ寄せる
+HALF_TEXEL_V = 0.5 / ATLAS_H
+
 for j in range(ROWS + 1):
     py = y1 - bh * j / ROWS
     xl, xr = span[j]
     cx = (xl + xr) / 2
+    half_w = max(1.0, (xr - xl) / 2)
     t = 1.0 - j / ROWS                                   # 0 = 頭頂 / 1 = 足元
     depth = float(np.interp(t, side_t, side_h)) * DOLL_H
+    sleeve_d = depth * SLEEVE_THIN
+    # 上下の端は深さを 0 へ落として自然に閉じる。フタ（前後を直結する面）を張ると
+    # **1 面が u を 0.5 跨いでアトラス 1 枚ぶんを引き伸ばす**（見下ろしで頭頂に円盤が出た）。
+    cap = min(1.0, min(j, ROWS - j) / 2.0)
     for i in range(COLS + 1):
         u = i / COLS
         px = xl + (xr - xl) * u
-        lat = max(0.0, abs(px - cx) / max(body_half_px, 1.0) - 1.0)
-        lat = min(1.0, lat / 1.2)
-        d = depth * (1.0 - (1.0 - SLEEVE_THIN) * lat)
-        d *= float(np.sqrt(max(0.0, 1.0 - (2.0 * u - 1.0) ** 2))) ** 0.85
+        dx = abs(px - cx)
+        # ⚠ 断面は**胴と袖で別々の楕円**にする。行の全幅（袖先から袖先）で 1 つの楕円を
+        #    張ると、幅の狭い胴はその「てっぺん」だけを使うことになり、実測で胴の法線の
+        #    傾きが中央値 5.9 度しか出ない ＝ どの向きから照らしても胴が 1 色になる。
+        if dx <= body_half_px:
+            q = dx / body_half_px
+            # 縁でも少し厚みを残す（0.92）。ここを 1.0 にすると胴と袖の境目が折れる
+            d = depth * math.sqrt(max(0.0, 1.0 - 0.92 * q * q))
+        else:
+            outer = max(1.0, half_w - body_half_px)
+            q = min(1.0, (dx - body_half_px) / outer)
+            d = sleeve_d * math.sqrt(max(0.0, 1.0 - q * q))
+        # ⚠ **行の左右端では必ず 0 にする**。ここが 0 でないと前後が閉じず、
+        #    側面から見たときに人形が縦に裂けて見える（胴だけの行＝裾で踏んだ）。
+        edge = math.sqrt(max(0.0, 1.0 - (dx / half_w) ** 2))
+        d *= min(1.0, edge * 3.2) * cap
         x = (px - (x0 + x1) / 2) * scale
         z = (y1 - py) * scale
-        uu = (px - x0) / bw * 0.5
-        vv = (y1 - py) / bh
+        # ⚠ u をパネル境界（0 / 0.5）へ張り付けない。テクスチャは Repeat + ミップなので
+        #    バイリニアが反対側のパネルを吸い、袖先と頭頂で前後の絵が混ざる。
+        uu = HALF_TEXEL_U + (px - x0) / bw * (0.5 - 2.0 * HALF_TEXEL_U)
+        vv = BODY_V0 + min((y1 - py) / bh, 1.0) * (BODY_VS - HALF_TEXEL_V)
         for back in (0, 1):
             verts.append((x, d if back else -d, z))
             uvs.append((uu + 0.5 * back, vv))
@@ -90,17 +125,10 @@ for j in range(ROWS):
         b = [grid[j][i][1], grid[j][i + 1][1], grid[j + 1][i + 1][1], grid[j + 1][i][1]]
         faces.append([b[3], b[2], b[1], b[0]])                        # 背面（+Y 向き）
 
-# 縁を閉じる（左右の側面 + 上端 + 下端）
-for j in range(ROWS):
-    for i in (0, COLS):
-        f0, f1 = grid[j][i][0], grid[j + 1][i][0]
-        b0, b1 = grid[j][i][1], grid[j + 1][i][1]
-        faces.append([f0, f1, b1, b0] if i == 0 else [b0, b1, f1, f0])
-for i in range(COLS):
-    for j, flip in ((ROWS, False), (0, True)):
-        f0, f1 = grid[j][i][0], grid[j][i + 1][0]
-        b0, b1 = grid[j][i][1], grid[j][i + 1][1]
-        faces.append([b0, b1, f1, f0] if flip else [f0, f1, b1, b0])
+# 左右の縁は、断面の式が i=0 / i=COLS で d=0 を返すので前後の頂点が一致し、
+# remove_doubles で自然に閉じる（面積ゼロの帯を張る必要はない）。
+# 上下の端も cap で d を 0 へ落としてあるので閉じる。**フタは張らない**
+# （1 面が u を 0.5 跨ぐと、そこにアトラス 1 枚が引き伸ばされる）。
 
 # 腕の取り付け位置（袖口）＝ マスクが最も横に広い行
 widest = int(np.argmax([r - l for l, r in span]))
@@ -108,6 +136,6 @@ arm_t = 1.0 - widest / ROWS
 tip_x = (span[widest][1] - span[widest][0]) / 2 * scale
 with open(os.path.join(HERE, "shell.json"), "w") as f:
     json.dump(dict(height=DOLL_H, verts=verts, uvs=uvs, faces=faces,
-                   body_half=BODY_HALF_N * DOLL_H,
+                   body_half=BODY_HALF_N * DOLL_H, arm_v0=BODY_V0,
                    arm=dict(t=arm_t, z=(1.0 - arm_t) * DOLL_H, tip_x=tip_x)), f)
 print(f"verts={len(verts)} faces={len(faces)} arm_t={arm_t:.3f} tip_x={tip_x:.3f}m")

@@ -16,7 +16,9 @@ from mathutils import Vector
 OUT = sys.argv[sys.argv.index("--") + 1]
 D = json.load(open(os.path.join(OUT, "shell.json")))
 H = D["height"]
-ARM_Z = D["arm"]["z"]
+# ⚠ 袖の上端と同じ高さに置くと、腕の上半分が袖からはみ出して「棒が刺さっている」ように見える。
+#    実物は袖に包まれていて、袖口から先だけが出ている。少し沈める。
+ARM_Z = D["arm"]["z"] - 0.013
 TIP_X = D["arm"]["tip_x"]
 BODY_HALF = D.get("body_half", 0.054)
 
@@ -24,10 +26,10 @@ SHOULDER_X = TIP_X * 0.17          # 胴の中
 ELBOW_X = TIP_X * 0.58
 WRIST_X = TIP_X * 0.90
 HAND_X = TIP_X + 0.026             # 袖口から出る手の先
-ARM_R = 0.0068
+ARM_R = 0.0060
 SLEEVE_FALL = 0.105                # 袖が腕に追従しなくなるまでの落差 (m)
-FACE_UV = (0.244, 0.854)           # 腕・手はテクスチャに写っていないので顔の白磁を引く
-SEG = 14
+ARM_V0 = D.get("arm_v0", 0.0)      # アトラス下段（手のストリップ）の v 上限
+SEG = 16
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -48,16 +50,31 @@ for p in me.polygons:
 # --- 腕（白磁）--------------------------------------------------------------
 def arm_mesh(side):
     """肩から手先までの筒。**手だけ断面を平たくする**（前後に薄く上下に広い）。
-    円柱のままだと棒に見え、写真の「袖から出た手のひら」に見えない。"""
-    xs = [SHOULDER_X, ELBOW_X, WRIST_X, HAND_X - 0.014, HAND_X]
+    円柱のままだと棒に見え、写真の「袖から出た手のひら」に見えない。
+
+    UV はアトラス下段の「手のストリップ」を引く（旧: 顔の白磁の 1 点に固定＝完全な単色で、
+    ライトを当てると滑らかな円柱の陰影だけが出て、いかにも CG の棒に見えた）。
+      u = 腕の長さ方向（手先がストリップの外側）
+      v = 周方向を上下に写す（上面が画像の上・下面が画像の下）
+    """
+    # ⚠ 肩から作らない。袖は前後に薄いので、袖の中を通る腕が布を貫通して見える。
+    #    実物で見えるのは袖口から先だけ。メッシュは袖の中程から始める（ボーンは肩から）。
+    x0 = TIP_X * 0.62
+    xs = [x0, (x0 + WRIST_X) * 0.5, WRIST_X, HAND_X - 0.014, HAND_X]
     #     (前後 ry, 上下 rz)
     rr = [(ARM_R * 1.5, ARM_R * 1.5), (ARM_R, ARM_R), (ARM_R * 0.9, ARM_R * 0.9),
           (ARM_R * 0.62, ARM_R * 1.75), (ARM_R * 0.42, ARM_R * 1.05)]
-    verts, faces = [], []
+    verts, faces, vuv = [], [], []
     for x, (ry, rz) in zip(xs, rr):
+        prog = (x - x0) / max(1e-6, HAND_X - x0)                     # 0=袖の中 1=手先
         for i in range(SEG):
             a = 2 * math.pi * i / SEG
             verts.append((side * x, ry * math.sin(a), ARM_Z + rz * math.cos(a)))
+            # ストリップは 左腕 = u[0,0.5] / 右腕 = u[0.5,1]。切り出しの外側が手先。
+            uu = (0.5 * (1.0 - prog)) if side > 0 else (0.5 + 0.5 * prog)
+            # ストリップの**下半分だけ**使う（上半分は切り出しに混じった背景）
+            vv = ARM_V0 * (0.06 + 0.46 * (0.5 + 0.5 * math.cos(a)))
+            vuv.append((uu, vv))
     for k in range(len(xs) - 1):
         a0, b0 = k * SEG, (k + 1) * SEG
         for i in range(SEG):
@@ -72,8 +89,8 @@ def arm_mesh(side):
     m2.from_pydata(verts, [], faces)
     m2.validate()
     u2 = m2.uv_layers.new(name="UVMap")
-    for li in range(len(m2.loops)):
-        u2.data[li].uv = FACE_UV
+    for li, loop in enumerate(m2.loops):
+        u2.data[li].uv = vuv[loop.vertex_index]
     ob = bpy.data.objects.new(f"Arm{side}", m2)
     bpy.context.collection.objects.link(ob)
     # 腕の頂点に印を付ける。join した後は座標だけでは袖と区別できない
@@ -108,9 +125,20 @@ bsdf = nt.nodes["Principled BSDF"]
 img_node = nt.nodes.new("ShaderNodeTexImage")
 img_node.image = bpy.data.images.load(os.path.join(OUT, "doll_albedo.png"))
 nt.links.new(bsdf.inputs["Base Color"], img_node.outputs["Color"])
-bsdf.inputs["Roughness"].default_value = 0.9
+bsdf.inputs["Roughness"].default_value = 0.78
 if "Specular IOR Level" in bsdf.inputs:
-    bsdf.inputs["Specular IOR Level"].default_value = 0.15
+    bsdf.inputs["Specular IOR Level"].default_value = 0.28
+
+# 法線マップ（布の襞をライトに反応させる）。Unity 側は ShowActor.shader の _BumpMap。
+nrm_path = os.path.join(OUT, "doll_normal.png")
+if os.path.exists(nrm_path):
+    nimg = nt.nodes.new("ShaderNodeTexImage")
+    nimg.image = bpy.data.images.load(nrm_path)
+    nimg.image.colorspace_settings.name = 'Non-Color'
+    nmap = nt.nodes.new("ShaderNodeNormalMap")
+    nmap.inputs["Strength"].default_value = 0.45
+    nt.links.new(nmap.inputs["Color"], nimg.outputs["Color"])
+    nt.links.new(bsdf.inputs["Normal"], nmap.outputs["Normal"])
 me.materials.append(mat)
 
 # --- ボーン -----------------------------------------------------------------
