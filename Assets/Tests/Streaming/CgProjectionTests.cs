@@ -72,20 +72,13 @@ namespace FixedCamVr.Streaming.Tests
             //    片方だけ直すと沈黙して食い違い、「卓では合うのに実機が違う」になる。必ず両方直すこと。
             //    カメラ (0, 1.2, -1.5) から 30° 下向き、fx=fy=480 / 主点中心 / 640x480。
             //    course 原点の床 (0,0,0) は u=320, v=313.1058 に写る（v は画像の上原点）。
-            var go = new GameObject("calib-test-cam");
+            var rig = new ProbeCam(320f);
             try
             {
-                var cam = go.AddComponent<Camera>();
-                cam.enabled = false;                       // 描画はしない（行列の検算だけ）
-                cam.nearClipPlane = 0.05f;
-                cam.farClipPlane = 30f;
-                cam.aspect = 640f / 480f;
-                cam.projectionMatrix = ShowCgLayer.BuildProjectionMatrix(
-                    480f, 480f, 320f, 240f, 640, 480, 0.05f, 30f);
-                go.transform.position = new Vector3(0f, 1.2f, -1.5f);
-                go.transform.rotation = Quaternion.Euler(30f, 0f, 0f);   // pose の pitchDeg = -30
+                rig.Camera.transform.position = new Vector3(0f, 1.2f, -1.5f);
+                rig.Camera.transform.rotation = Quaternion.Euler(30f, 0f, 0f);   // pose の pitchDeg = -30
 
-                Vector3 vp = cam.WorldToViewportPoint(Vector3.zero);
+                Vector3 vp = rig.Camera.WorldToViewportPoint(Vector3.zero);
                 Assert.Greater(vp.z, 0f, "カメラ前方にあること");
 
                 float u = vp.x * 640f;
@@ -93,7 +86,46 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreEqual(320f, u, 0.01f, "u");
                 Assert.AreEqual(313.1058f, v, 0.01f, "v");
             }
-            finally { Object.DestroyImmediate(go); }
+            finally { rig.Dispose(); }
+        }
+
+        /// <summary>
+        /// 検算用のカメラ一式。**実行時の <see cref="ShowCgLayer"/> の仮想カメラと同じ条件**にする。
+        ///
+        /// ⚠ **640x480 の RenderTexture を必ず割り当てる。** `Camera.WorldToViewportPoint` は
+        /// いったん画素空間を経由するので、描画先が無いカメラは **Editor の Game ビューの幅**を
+        /// 使ってしまい、結果がウィンドウサイズ依存になる。2026-08-03 に実測したときは
+        /// Game ビューが 311px で、u が一律 +0.107%（例: 400 → 400.429）ずれて 2 本落ちていた。
+        /// 実行時は `_virtualCam.targetTexture = _rt`（映像の実寸）なので**実機は無影響**
+        /// ＝ 落ちていたのはテストが実行時を写していなかったから。
+        /// 射影行列自体は正しい（`m02` は期待どおり -0.25 で格納されていた）。
+        /// </summary>
+        private sealed class ProbeCam : System.IDisposable
+        {
+            private readonly GameObject _go;
+            private readonly RenderTexture _rt;
+            public Camera Camera { get; }
+
+            public ProbeCam(float cxPx)
+            {
+                _go = new GameObject("calib-probe-cam");
+                _rt = new RenderTexture(640, 480, 24);
+                Camera = _go.AddComponent<Camera>();
+                Camera.enabled = false;                              // 描画はしない（行列の検算だけ）
+                Camera.stereoTargetEye = StereoTargetEyeMask.None;   // 実行時と同じ片眼扱い
+                Camera.nearClipPlane = 0.05f;
+                Camera.farClipPlane = 30f;
+                Camera.targetTexture = _rt;                          // ← 画素空間を 640x480 に固定する
+                Camera.projectionMatrix = ShowCgLayer.BuildProjectionMatrix(
+                    480f, 480f, cxPx, 240f, 640, 480, 0.05f, 30f);
+            }
+
+            public void Dispose()
+            {
+                Camera.targetTexture = null;
+                Object.DestroyImmediate(_go);
+                Object.DestroyImmediate(_rt);
+            }
         }
 
         [Test]
@@ -101,24 +133,19 @@ namespace FixedCamVr.Streaming.Tests
         {
             // 主点をずらせる（＝非対称 frustum）ことが、physical camera を経由せず
             // projectionMatrix を直接入れている理由。三脚のセンサー中心ズレを吸収できる。
-            var go = new GameObject("calib-test-cam2");
+            var rig = new ProbeCam(400f);                            // cx を 320 → 400
             try
             {
-                var cam = go.AddComponent<Camera>();
-                cam.enabled = false;
-                cam.nearClipPlane = 0.05f;
-                cam.farClipPlane = 30f;
-                cam.projectionMatrix = ShowCgLayer.BuildProjectionMatrix(
-                    480f, 480f, 400f, 240f, 640, 480, 0.05f, 30f);   // cx を 320 → 400
-                go.transform.position = Vector3.zero;
-                go.transform.rotation = Quaternion.identity;
+                var cam = rig.Camera;
+                cam.transform.position = Vector3.zero;
+                cam.transform.rotation = Quaternion.identity;
 
                 // 光軸上（真正面）の点は主点へ写る。
                 Vector3 vp = cam.WorldToViewportPoint(new Vector3(0f, 0f, 2f));
                 Assert.AreEqual(400f, vp.x * 640f, 0.01f, "主点 cx へ写ること");
                 Assert.AreEqual(240f, (1f - vp.y) * 480f, 0.01f, "cy は動かしていない");
             }
-            finally { Object.DestroyImmediate(go); }
+            finally { rig.Dispose(); }
         }
 
         [Test]
