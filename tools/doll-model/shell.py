@@ -16,9 +16,11 @@ import cv2, numpy as np, json, os, math
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROWS, COLS = 144, 34         # 縦の刻み / 各行の横分割
-SLEEVE_THIN = 0.42           # 胴から張り出した部分（袖）の厚みを胴の何倍まで落とすか
+SLEEVE_THIN = 0.50           # 胴から張り出した部分（袖）の厚みを胴の何倍まで落とすか
 BODY_HALF_N = 0.135          # 胴の半幅（全高 = 1 に正規化）。これより外を「張り出し」と見る
 DOLL_H = 0.40
+HAIR_BULGE = 0.24            # 髪は顔より前後に張り出す（下の説明）
+FOOT_CUT = 0.014             # 足元の最下部を切る割合（台の潰れた面が乱れて見えるため）
 
 m = cv2.imread(os.path.join(HERE, "mask_front.png"), cv2.IMREAD_GRAYSCALE)
 H, W = m.shape
@@ -69,7 +71,31 @@ for j in range(ROWS + 1):
     rs = sorted(raw[k][1] for k in range(lo, hi + 1))
     span.append((ls[len(ls) // 2], rs[len(rs) // 2]))
 
+# **髪は顔より前後に張り出している。** 一枚の殻を同じ厚みで押し出すと、髪と顔が同じ面に
+# 乗るので、頭が「兜」に見える（実物は髪が張り出し、その内側に顔が窪む）。
+# アトラスの暗い領域＝髪として、そこだけ押し出しを厚くする。境界で段差が出ないよう大きくぼかす。
+try:
+    _alb = cv2.imread(os.path.join(HERE, "doll_albedo.png"), cv2.IMREAD_COLOR)
+    _g = cv2.cvtColor(_alb, cv2.COLOR_BGR2GRAY)
+    HAIR_MAP = cv2.GaussianBlur((_g < 88).astype(np.float32), (0, 0), 14.0)
+    HAIR_H, HAIR_W = HAIR_MAP.shape
+except Exception:
+    HAIR_MAP, HAIR_H, HAIR_W = None, 1, 1
+
+
+def hair_at(uu, vv):
+    """アトラス座標での「髪らしさ」0..1。"""
+    if HAIR_MAP is None:
+        return 0.0
+    px = int(min(HAIR_W - 1, max(0, uu * HAIR_W)))
+    py = int(min(HAIR_H - 1, max(0, (1.0 - vv) * HAIR_H)))
+    return float(HAIR_MAP[py, px])
+
+
 body_half_px = BODY_HALF_N * bh
+foot_px = bh * FOOT_CUT
+y1_mesh = y1 - foot_px            # 足元の台の潰れた面を切る（UV は元の bbox のまま）
+bh_mesh = bh - foot_px
 verts, uvs = [], []
 grid = [[[0, 0] for _ in range(COLS + 1)] for _ in range(ROWS + 1)]
 
@@ -77,7 +103,7 @@ HALF_TEXEL_U = 0.5 / ATLAS_W          # UV をパネル境界から半テクセ�
 HALF_TEXEL_V = 0.5 / ATLAS_H
 
 for j in range(ROWS + 1):
-    py = y1 - bh * j / ROWS
+    py = y1_mesh - bh_mesh * j / ROWS
     xl, xr = span[j]
     cx = (xl + xr) / 2
     half_w = max(1.0, (xr - xl) / 2)
@@ -111,11 +137,13 @@ for j in range(ROWS + 1):
         edge = math.sqrt(max(0.0, 1.0 - (dx / half_w) ** 2))
         d *= min(1.0, edge * 7.0) * cap
         x = (px - (x0 + x1) / 2) * scale
-        z = (y1 - py) * scale
+        z = (y1_mesh - py) * scale
         # ⚠ u をパネル境界（0 / 0.5）へ張り付けない。テクスチャは Repeat + ミップなので
         #    バイリニアが反対側のパネルを吸い、袖先と頭頂で前後の絵が混ざる。
         uu = HALF_TEXEL_U + (px - x0) / bw * (0.5 - 2.0 * HALF_TEXEL_U)
         vv = BODY_V0 + min((y1 - py) / bh, 1.0) * (BODY_VS - HALF_TEXEL_V)
+        # 髪はここで初めて顔より前後へ出る（頭が「兜」に見えなくなる）
+        d *= 1.0 + HAIR_BULGE * hair_at(uu, vv)
         for back in (0, 1):
             verts.append((x, d if back else -d, z))
             uvs.append((uu + 0.5 * back, vv))
