@@ -15,7 +15,7 @@
 // ⚠ 動かすのは**カメラ**であって部屋ではない。`layout.room` は 4 台 × 3 用途
 //   （オクルーダ / 影の落ち先 / 較正参照）の共有資産で、1 台に合わせて頂点をずらすと
 //   他のカメラの合成が黙って狂い、人形の course 座標がカメラごとに食い違う。
-import { projectPoint, unprojectToFloor, unityEulerToMatrix } from './calib.js';
+import { projectPoint, unprojectToFloor, unityEulerToMatrix, matrixToUnityEuler } from './calib.js';
 import { calibMatchesSource } from './calib-session.js';
 
 export const DEFAULT_HFOV_DEG = 77.4;   // 現 show.json の 4 台が持つ値（人が打ったレンズ諸元）
@@ -128,6 +128,82 @@ export function dolly(calib, meters) {
     y: calib.y + fwd[1] * meters,
     z: calib.z + fwd[2] * meters,
   });
+}
+
+// ---- 軸拘束（Blender / CAD 流）---------------------------------------------
+// 自由ドラッグは速いが、**あと一歩を詰められない**（1 軸だけ直したいのに他の軸が動く）。
+// 軸を指定すると、その軸「だけ」が動く。X / Y / Z はワールド（course 空間）の軸。
+
+export const AXES = ['x', 'y', 'z'];
+const AXIS_VEC = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+
+/** ワールド軸まわりの回転行列（右手・行優先）。 */
+function axisRotation(axis, deg) {
+  const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+  if (axis === 'x') return [[1, 0, 0], [0, c, -s], [0, s, c]];
+  if (axis === 'y') return [[c, 0, s], [0, 1, 0], [-s, 0, c]];
+  return [[c, -s, 0], [s, c, 0], [0, 0, 1]];
+}
+
+const mul33 = (A, B) => A.map((row) => [0, 1, 2].map((j) =>
+  row[0] * B[0][j] + row[1] * B[1][j] + row[2] * B[2][j]));
+
+/**
+ * **ワールド軸まわりにカメラを回す。**
+ * yaw/pitch/roll のどれか 1 つを足すのではなく、回転行列を合成してから Euler へ戻す
+ * （X や Z 軸まわりの回転は yaw/pitch/roll のどれか 1 つでは表せない）。
+ */
+export function rotateAboutWorldAxis(calib, axis, deg) {
+  if (!AXIS_VEC[axis] || !deg) return calib;
+  const R = unityEulerToMatrix(-calib.pitchDeg, calib.yawDeg, calib.rollDeg || 0);
+  const e = matrixToUnityEuler(mul33(axisRotation(axis, deg), R));
+  return clampCalib({ ...calib, pitchDeg: -e.x, yawDeg: e.y, rollDeg: e.z });
+}
+
+/** ワールド軸に沿ってカメラを平行移動する。 */
+export function translateAlongWorldAxis(calib, axis, meters) {
+  const v = AXIS_VEC[axis];
+  if (!v || !meters) return calib;
+  return clampCalib({
+    ...calib,
+    x: calib.x + v[0] * meters, y: calib.y + v[1] * meters, z: calib.z + v[2] * meters,
+  });
+}
+
+/**
+ * 軸の**画面上での向き**（単位ベクトル）と、1m あたりの画素数。
+ * ドラッグ量をその軸へ落とすのに使う（軸が画面で寝ているほど、同じドラッグで大きく動く）。
+ * 軸が画面でほぼ点に潰れている（カメラ正面を向いている）ときは null。
+ */
+export function axisScreenDir(calib, axis, atPoint) {
+  const v = AXIS_VEC[axis];
+  if (!v) return null;
+  const p = atPoint || [calib.x + 0, 0, calib.z + 0];
+  const eps = 0.05;
+  const a = projectPoint(calib, p[0], p[1], p[2]);
+  const b = projectPoint(calib, p[0] + v[0] * eps, p[1] + v[1] * eps, p[2] + v[2] * eps);
+  if (!a || !b) return null;
+  const du = b.u - a.u, dv = b.v - a.v;
+  const len = Math.hypot(du, dv);
+  if (!(len > 1e-3)) return null;              // 画面で点に潰れている＝この軸では動かせない
+  return { dir: [du / len, dv / len], pxPerM: len / eps };
+}
+
+/**
+ * 軸拘束つきのドラッグ。ドラッグを軸の画面方向へ**射影**してから、その軸だけ動かす。
+ * `kind` は 'move'（平行移動）か 'rotate'（回転）。
+ */
+export function dragConstrained(calib, axis, kind, dxPx, dyPx, opts = {}) {
+  const at = opts.at || [0, 0, 0];
+  const sd = axisScreenDir(calib, axis, at);
+  if (!sd) return calib;
+  const along = dxPx * sd.dir[0] + dyPx * sd.dir[1];     // 画面上で軸に沿った成分だけ拾う
+  if (kind === 'rotate') {
+    // 回転は「画面 100px のドラッグで 30°」を目安にする（細かく詰められる速さ）
+    return rotateAboutWorldAxis(calib, axis, -along * 0.30);
+  }
+  // ⚠ 世界が along だけ動いて見えるように、カメラは**逆へ**動かす
+  return translateAlongWorldAxis(calib, axis, -along / sd.pxPerM);
 }
 
 /** 床の上でカメラを置き直す（上から見た図のドラッグ用）。高さと向きは変えない。 */

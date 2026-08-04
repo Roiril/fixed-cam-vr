@@ -28,7 +28,15 @@ python shell.py       # 殻の頂点・面・UV → shell.json
 python texture.py     # 4 枚を殻へ投影して焼く → doll_albedo.png / doll_normal.png
 "/c/Program Files/Blender Foundation/Blender 4.1/blender.exe" --background \
   --python assemble.py -- "$(pwd -W)"     # 腕・ボーン・FBX
+"/c/Program Files/Blender Foundation/Blender 4.1/blender.exe" --background \
+  --python export_web.py -- "$(pwd -W)"   # 卓用のメッシュ + 半分に縮めたアルベド
 ```
+
+`export_web.py` は**オペレータ卓のカメラ合わせ**（`tools/web-compositor/align-ui.js`）が
+人形を実メッシュで描くためのもの。glTF ではなく位置・法線・UV の生配列で出す
+（卓に要るのは静止ポーズの 1 メッシュだけで、パーサを持ち込む理由が無い）。
+⚠ **Blender 同梱の Python に cv2 は無い**（他の段はシステム側の Python なので入っている）。
+テクスチャの縮小は Blender の画像機能で行う。
 
 ⚠ **`shell.py` と `texture.py` の順序はどちらでもよくなった**（2026-08-04）。旧実装は
 `shell.py` が `texture.py` の出力（アルベド）を読んで髪の張り出しを決める**隠れた帰還路**を

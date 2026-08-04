@@ -13,10 +13,12 @@
 import {
   initialCalib, dragRotate, dragPan, dolly, setGroundPos, setField, setLens,
   toManualCalib, isManual, summaryLines, refDistance, hfovFromFocalPx,
-  projectPoint, unprojectToFloor,
+  dragConstrained, AXES, projectPoint, unprojectToFloor,
 } from './align-model.js';
 import { wireSegments, calibMatchesSource, applyCalibToCameras } from './calib-session.js';
 import { actorProxyGeometry, actorBodyGeometry, drawActorProxy, proxyIssueText } from './actor-proxy.js';
+import { createDollView } from './doll-view.js';
+import { defaultLight } from './room-model.js';
 
 // Ichimatsu の実寸。Unity のプレハブの renderer bounds を実測した値
 // （高さ 0.410 / 幅 0.321 は腕を広げた状態なので、腕を下ろした胴の幅として 0.18 を採る）。
@@ -37,6 +39,7 @@ export function createAlignUi(container, deps) {
   const root = document.createElement('div');
   root.className = 'calib-ui align-ui';
   root.style.display = 'none';
+  root.tabIndex = -1;                  // X / Y / Z キーを受けるのに要る
   root.innerHTML = `
     <div class="cu-backdrop"></div>
     <div class="cu-panel" role="dialog" aria-modal="true" aria-label="カメラを手で合わせる">
@@ -57,10 +60,17 @@ export function createAlignUi(container, deps) {
             <button class="au-mode is-on" data-mode="rotate">🔄 回す</button>
             <button class="au-mode" data-mode="pan">✋ 平行に動かす</button>
             <button class="au-mode" data-mode="doll">🧍 人形を置く</button>
+            <span class="au-axes">軸
+              <button class="au-axis is-on" data-axis="">自由</button>
+              <button class="au-axis" data-axis="x">X</button>
+              <button class="au-axis" data-axis="y">Y</button>
+              <button class="au-axis" data-axis="z">Z</button>
+            </span>
             <span class="au-modehint"></span>
           </div>
           <div class="cu-hint">静止フレームです（合わせている間に絵が動かないよう固定しています）。
             <b>ドラッグ</b>で操作・<b>ホイール</b>で前後・<b>Shift+ドラッグ</b>で一時的に平行移動。
+            <b>X / Y / Z キー</b>でその軸だけに拘束（もう一度押すか Esc で解除）。
             床の線と壁の縦線が実物に重なれば合っています。</div>
         </div>
         <div class="cu-side">
@@ -82,8 +92,26 @@ export function createAlignUi(container, deps) {
               <label>向き<input class="au-dollyaw" type="number" step="5">°</label>
             </div>
             <div class="au-blockhint">「🧍 人形を置く」にして<b>映像の床をクリック</b>すると、そこに立ちます。
-              <b>これは幾何の目安です</b>（陰影と素材は描いていません）。見た目の良し悪しは
-              Unity の <code>Preview Show Composite</code> で見てください。</div>
+              <b>陰影は「上から光が当たっている」が読める最小限</b>です（法線・鏡面は描いていません）。
+              見た目の良し悪しは Unity の <code>Preview Show Composite</code> で見てください。</div>
+            <div class="au-dollstatus"></div>
+          </div>
+
+          <div class="au-block">
+            <div class="au-blockhead">💡 光（部屋で 1 つ・全カメラ共有）</div>
+            <div class="au-dollrow">
+              <label>向き<input class="au-l" data-k="yawDeg" type="number" step="5">°</label>
+              <label>高さ<input class="au-l" data-k="pitchDeg" type="number" step="5" min="-90" max="90">°</label>
+            </div>
+            <div class="au-dollrow">
+              <label>色温度<input class="au-l" data-k="tempK" type="number" step="100" min="1000" max="12000">K</label>
+              <label>強さ<input class="au-l" data-k="intensity" type="number" step="0.05" min="0" max="3"></label>
+            </div>
+            <div class="au-dollrow">
+              <label>環境光<input class="au-l" data-k="ambient" type="number" step="0.05" min="0" max="1"></label>
+              <label>影の濃さ<input class="au-l" data-k="shadowDensity" type="number" step="0.05" min="0" max="1"></label>
+            </div>
+            <div class="au-dollrow"><button class="au-lightsave">💡 この光を保存</button></div>
           </div>
 
           <div class="au-block">
@@ -127,9 +155,11 @@ export function createAlignUi(container, deps) {
   const msgEl = $('.au-msg');
 
   let camId = null, calib = null, opening = null, frame = null, liveSize = null;
-  let mode = 'rotate';
+  let mode = 'rotate', axis = '';
   let doll = { on: true, x: 0, z: 0, yawDeg: 0, heightM: DOLL_H_M };
+  let light = defaultLight();
   let drag = null, msgTimer = 0;
+  const dollView = createDollView();
 
   const cams = () => deps.getCameras() || [];
   const cam = () => cams().find((c) => c && c.id === camId) || null;
@@ -185,6 +215,14 @@ export function createAlignUi(container, deps) {
 
   function drawDoll(w) {
     const placement = { x: doll.x, z: doll.z, yawDeg: doll.yawDeg };
+
+    // 実メッシュ + 実テクスチャ + 影（WebGL）。読めていればこちらを出す。
+    if (dollView.ready) {
+      const layer = dollView.render(calib, placement, doll.heightM, light, canvas.width, canvas.height);
+      if (layer) { ctx.drawImage(layer, 0, 0); return; }
+    }
+
+    // ⚠ 読めないときだけ輪郭へ落とす（黙って何も出さない、はしない）。
     const opts = { srcW: canvas.width, srcH: canvas.height, ...dollDims(doll.heightM) };
     const geom = actorProxyGeometry(calib, placement, doll.heightM, opts);
     const body = actorBodyGeometry(calib, placement, doll.heightM, opts);
@@ -240,7 +278,13 @@ export function createAlignUi(container, deps) {
     const p = toCanvas(ev);
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y;
     drag.last = p;
-    calib = drag.pan ? dragPan(calib, dx, dy, drag.dist) : dragRotate(calib, dx, dy);
+    if (axis) {
+      // 軸拘束。効き目は「いま合わせている物」の位置で決める（人形の足元を基準にする）
+      calib = dragConstrained(calib, axis, drag.pan ? 'move' : 'rotate', dx, dy,
+        { at: [doll.x, 0, doll.z] });
+    } else {
+      calib = drag.pan ? dragPan(calib, dx, dy, drag.dist) : dragRotate(calib, dx, dy);
+    }
     syncFields(); draw();
   });
 
@@ -266,10 +310,36 @@ export function createAlignUi(container, deps) {
   root.querySelectorAll('.au-mode').forEach((b) => b.addEventListener('click', () => {
     mode = b.dataset.mode;
     root.querySelectorAll('.au-mode').forEach((o) => o.classList.toggle('is-on', o === b));
-    $('.au-modehint').textContent = mode === 'rotate' ? 'ドラッグ＝カメラを回す'
-      : mode === 'pan' ? 'ドラッグ＝カメラを平行に動かす' : '映像の床をクリックして人形を置く';
+    refreshModeHint();
     canvas.style.cursor = mode === 'doll' ? 'copy' : 'grab';
   }));
+
+  root.querySelectorAll('.au-axis').forEach((b) => b.addEventListener('click', () => setAxis(b.dataset.axis)));
+
+  function setAxis(a) {
+    axis = AXES.includes(a) ? a : '';
+    root.querySelectorAll('.au-axis').forEach((o) => o.classList.toggle('is-on', o.dataset.axis === axis));
+    refreshModeHint();
+  }
+
+  function refreshModeHint() {
+    const what = mode === 'rotate' ? 'カメラを回す' : mode === 'pan' ? 'カメラを平行に動かす' : '';
+    $('.au-modehint').textContent = mode === 'doll'
+      ? '映像の床をクリックして人形を置く'
+      : axis ? `ドラッグ＝${axis.toUpperCase()} 軸だけで ${what}` : `ドラッグ＝${what}（自由）`;
+  }
+
+  // Blender / CAD 流のキー。X / Y / Z で軸を切り替え、もう一度押すか Esc で解除。
+  root.addEventListener('keydown', (ev) => {
+    if (root.style.display === 'none') return;
+    const t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    const k = ev.key.toLowerCase();
+    if (AXES.includes(k)) { setAxis(axis === k ? '' : k); ev.preventDefault(); }
+    else if (ev.key === 'Escape') { if (axis) { setAxis(''); ev.preventDefault(); } else close(); }
+    else if (k === 'g') { root.querySelector('.au-mode[data-mode="pan"]').click(); }
+    else if (k === 'r') { root.querySelector('.au-mode[data-mode="rotate"]').click(); }
+  });
 
   root.querySelectorAll('.au-f').forEach((inp) => inp.addEventListener('change', () => {
     if (!calib) return;
@@ -282,6 +352,19 @@ export function createAlignUi(container, deps) {
     doll.heightM = Math.max(0.1, Math.min(2, Number(e.target.value) || DOLL_H_M)); draw();
   });
   $('.au-dollyaw').addEventListener('change', (e) => { doll.yawDeg = Number(e.target.value) || 0; draw(); });
+
+  root.querySelectorAll('.au-l').forEach((inp) => inp.addEventListener('input', () => {
+    const v = Number(inp.value);
+    if (Number.isFinite(v)) { light = { ...light, [inp.dataset.k]: v }; draw(); }
+  }));
+
+  $('.au-lightsave').addEventListener('click', async () => {
+    if (!deps.saveLayout) { note('この面からは光を保存できません', 'warn'); return; }
+    const lay = { ...(layout() || {}) };
+    lay.room = { ...(lay.room || {}), light: { ...light } };
+    await deps.saveLayout(lay);
+    note('光を保存しました（部屋で 1 つ・全カメラ共有）');
+  });
 
   $('.au-hfov').addEventListener('change', (e) => {
     calib = setLens(calib, { hfovDeg: Number(e.target.value) });
@@ -338,6 +421,19 @@ export function createAlignUi(container, deps) {
     $('.au-hfov').value = hfovFromFocalPx(calib.fxPx, calib.srcW).toFixed(1);
     $('.au-k1').value = (calib.k1 || 0).toFixed(2);
     $('.au-readout').innerHTML = summaryLines(calib).map((l) => `<div>${l}</div>`).join('');
+    for (const inp of root.querySelectorAll('.au-l')) {
+      if (document.activeElement !== inp) inp.value = light[inp.dataset.k];
+    }
+  }
+
+  function syncDollStatus() {
+    const el = $('.au-dollstatus');
+    if (dollView.ready) { el.textContent = ''; el.className = 'au-dollstatus'; return; }
+    // ⚠ 実メッシュが出せないことを黙らない（輪郭だけ出て「これが人形」と誤解される）
+    el.textContent = dollView.error
+      ? `⚠ 実メッシュを描けないので輪郭で代用しています（${dollView.error}）。`
+      : '人形を読み込み中…';
+    el.className = 'au-dollstatus' + (dollView.error ? ' warn' : '');
   }
 
   function updateFrameInfo() {
@@ -367,14 +463,18 @@ export function createAlignUi(container, deps) {
     opening = { ...calib };
     const lay = layout();
     doll = { on: true, x: 0, z: 0, yawDeg: 0, heightM: DOLL_H_M };
+    light = { ...defaultLight(), ...(lay?.room?.light || {}) };
     $('.au-dollh').value = DOLL_H_M;
     $('.au-dollyaw').value = 0;
     $('.au-floorw').value = lay?.floor?.w ?? 1.8;
     $('.au-floord').value = lay?.floor?.d ?? 1.8;
-    $('.au-modehint').textContent = 'ドラッグ＝カメラを回す';
+    setAxis('');
     canvas.style.cursor = 'grab';
-    syncFields(); updateFrameInfo(); draw();
+    syncFields(); updateFrameInfo(); syncDollStatus(); draw();
     root.style.display = 'flex';
+    root.focus();
+    // 人形は重い（実メッシュ 1.9MB + アルベド）。読めた時点で描き直す。
+    dollView.load().then(() => { syncDollStatus(); draw(); });
   }
 
   function close() { root.style.display = 'none'; camId = null; drag = null; }

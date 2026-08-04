@@ -159,3 +159,72 @@ test('カメラ軸は正規直交', () => {
   assert.ok(Math.abs(dot(right, up)) < 1e-9);
   assert.ok(Math.abs(dot(right, fwd)) < 1e-9);
 });
+
+// --- 軸拘束（Blender / CAD 流）-------------------------------------------
+import {
+  rotateAboutWorldAxis, translateAlongWorldAxis, axisScreenDir, dragConstrained, AXES,
+} from './align-model.js';
+
+test('ワールド軸の平行移動はその軸だけ動かす', () => {
+  const c = base();
+  for (const ax of AXES) {
+    const m = translateAlongWorldAxis(c, ax, 0.5);
+    const d = { x: m.x - c.x, y: m.y - c.y, z: m.z - c.z };
+    for (const k of ['x', 'y', 'z']) {
+      assert.ok(Math.abs(d[k] - (k === ax ? 0.5 : 0)) < 1e-9, `${ax} で ${k} が動いた`);
+    }
+    assert.deepEqual([m.yawDeg, m.pitchDeg, m.rollDeg], [c.yawDeg, c.pitchDeg, c.rollDeg]);
+  }
+});
+
+test('Y 軸まわりの回転は yaw だけを変える', () => {
+  const c = { ...base(), rollDeg: 0 };
+  const r = rotateAboutWorldAxis(c, 'y', 20);
+  assert.ok(Math.abs(r.yawDeg - (c.yawDeg + 20)) < 1e-6, `${r.yawDeg} vs ${c.yawDeg + 20}`);
+  assert.ok(Math.abs(r.pitchDeg - c.pitchDeg) < 1e-6);
+  assert.deepEqual([r.x, r.y, r.z], [c.x, c.y, c.z], '回転は位置を動かさない');
+});
+
+test('ワールド軸まわりの回転は往復する（合成して Euler へ戻せている）', () => {
+  const c = base();
+  for (const ax of AXES) {
+    const back = rotateAboutWorldAxis(rotateAboutWorldAxis(c, ax, 17), ax, -17);
+    for (const k of ['yawDeg', 'pitchDeg', 'rollDeg']) {
+      assert.ok(Math.abs(back[k] - c[k]) < 1e-4, `${ax}/${k}: ${back[k]} vs ${c[k]}`);
+    }
+  }
+});
+
+test('X / Z 軸まわりの回転は roll を生む（yaw だけでは表せない）', () => {
+  const c = { ...base(), rollDeg: 0 };
+  const r = rotateAboutWorldAxis(c, 'z', 15);
+  assert.ok(Math.abs(r.rollDeg) > 1, 'Z 軸回転が roll に現れること');
+});
+
+test('軸の画面方向は 1m あたりの画素数を返す', () => {
+  const c = base();
+  const sd = axisScreenDir(c, 'x', [0, 0, 0]);
+  assert.ok(sd && sd.pxPerM > 1, `pxPerM=${sd && sd.pxPerM}`);
+  assert.ok(Math.abs(Math.hypot(...sd.dir) - 1) < 1e-9);
+});
+
+test('軸拘束ドラッグはその軸だけ動かし、軸に直交するドラッグでは動かない', () => {
+  const c = base();
+  const sd = axisScreenDir(c, 'x', [0, 0, 0]);
+  // 軸に沿ったドラッグ → 動く
+  const along = dragConstrained(c, 'x', 'move', sd.dir[0] * 40, sd.dir[1] * 40, { at: [0, 0, 0] });
+  assert.ok(Math.abs(along.x - c.x) > 1e-3);
+  assert.ok(Math.abs(along.y - c.y) < 1e-9 && Math.abs(along.z - c.z) < 1e-9);
+  // 軸に直交するドラッグ → ほぼ動かない
+  const perp = dragConstrained(c, 'x', 'move', -sd.dir[1] * 40, sd.dir[0] * 40, { at: [0, 0, 0] });
+  assert.ok(Math.abs(perp.x - c.x) < 1e-9, '直交成分は拾わない');
+});
+
+test('カメラ正面を向いた軸では拘束ドラッグが暴れない', () => {
+  // yaw=0 で真正面（+Z）を見ているとき、Z 軸は画面でほぼ点に潰れる
+  const c = { ...base(), yawDeg: 0, pitchDeg: 0, x: 0, z: -3 };
+  const sd = axisScreenDir(c, 'z', [0, 0, 0]);
+  const out = dragConstrained(c, 'z', 'move', 40, 40, { at: [0, 0, 0] });
+  if (!sd) assert.deepEqual([out.x, out.y, out.z], [c.x, c.y, c.z]);
+  else assert.ok(Number.isFinite(out.z), '潰れかけでも有限に留まること');
+});
