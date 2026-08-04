@@ -21,6 +21,7 @@ BODY_HALF_N = 0.135          # 胴の半幅（全高 = 1 に正規化）。こ�
 DOLL_H = 0.40
 HAIR_BULGE = 0.24            # 髪は顔より前後に張り出す（下の説明）
 FOOT_CUT = 0.014             # 足元の最下部を切る割合（台の潰れた面が乱れて見えるため）
+TOP_ROUND = 0.085            # 頭頂を球で閉じる区間（全高に対する割合）
 
 m = cv2.imread(os.path.join(HERE, "mask_front.png"), cv2.IMREAD_GRAYSCALE)
 H, W = m.shape
@@ -107,6 +108,14 @@ for j in range(ROWS + 1):
     xl, xr = span[j]
     cx = (xl + xr) / 2
     half_w = max(1.0, (xr - xl) / 2)
+    # ⚠ **頭頂は球で終わらせる。** マスクの最上行の幅がそのまま天井になるので、
+    #    何もしないと頭のてっぺんが平らな面になる（実測で頭の最大幅の 6 割の幅が残った）。
+    #    上端から数行を球の断面で絞る。深さにも同じ係数を掛けるので、丸く閉じる。
+    top_u = (ROWS - j) / max(1.0, TOP_ROUND * ROWS)
+    top_k = 1.0 if top_u >= 1.0 else math.sqrt(max(0.0, 1.0 - (1.0 - top_u) ** 2))
+    half_w *= max(top_k, 0.02)
+    cxl, cxr = cx - half_w, cx + half_w
+    xl, xr = cxl, cxr
     t = 1.0 - j / ROWS                                   # 0 = 頭頂 / 1 = 足元
     depth = float(np.interp(t, side_t, side_h)) * DOLL_H
     sleeve_d = depth * SLEEVE_THIN
@@ -135,7 +144,7 @@ for j in range(ROWS + 1):
         # 端の**ごく近く**だけで 0 へ落とす。ここを緩やかにすると（係数が小さいと）
         # 袖口の手前から厚みが痩せ、そこを通る腕が布から出てしまう。
         edge = math.sqrt(max(0.0, 1.0 - (dx / half_w) ** 2))
-        d *= min(1.0, edge * 7.0) * cap
+        d *= min(1.0, edge * 7.0) * cap * max(top_k, 0.02)
         x = (px - (x0 + x1) / 2) * scale
         z = (y1_mesh - py) * scale
         # ⚠ u をパネル境界（0 / 0.5）へ張り付けない。テクスチャは Repeat + ミップなので

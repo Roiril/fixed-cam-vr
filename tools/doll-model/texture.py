@@ -126,6 +126,62 @@ atlas[:BODY_H, HALF_W:] = b_img
 atlas = blend_seam(atlas)
 atlas[BODY_H:] = arm_strip()
 
+def synth_hair(atlas):
+    """髪を**一方向の手続きテクスチャ**へ置き換える。
+
+    前面と背面で別々の写真を貼ると、側面（パネルの境界）で毛の流れが食い違い、
+    繋ぎ目が縦の線としてはっきり出る。クロスフェードでは二重像になるだけで消えない。
+    **上から下へ流れる筋を全周で共通にすれば、繋ぎ目は原理的に無くなる。**
+
+    色は実物の髪から取る（平均と分散）。生え際と毛先の境界は実写を残したいので、
+    マスクを収縮してからぼかして合成する。
+    """
+    hsv = cv2.cvtColor(atlas, cv2.COLOR_BGR2HSV)
+    v = hsv[:, :, 2].astype(np.float32)
+    sat = hsv[:, :, 1].astype(np.float32)
+    # ⚠ 明るさだけで拾うと**着物の影**まで髪に入り、平均色が赤へ転ぶ（実測で髪が赤茶になった）。
+    #    髪は暗くて彩度が低い（S 13〜43）、着物は暗くても彩度が高い（S 217）。
+    hair = ((v < 102) & (sat < 125)).astype(np.uint8) * 255
+    hair = cv2.morphologyEx(hair, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
+    hair = cv2.morphologyEx(hair, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+    if hair.sum() < 255 * 500:
+        return atlas
+    # ⚠ **前面と背面で同じ領域・同じ筋にする。** ここを別々に作ると、せっかく手続きに
+    #    しても側面（パネル境界）で筋が食い違い、繋ぎ目が残る（実測で縦の線が出た）。
+    #    back は左右反転済みなので、同じ x が人形の同じ位置に対応する。
+    hair[:, :HALF_W] = np.maximum(hair[:, :HALF_W], hair[:, HALF_W:])
+    hair[:, HALF_W:] = hair[:, :HALF_W]
+    # ⚠ 芯を広げすぎると**前髪が顔へ流れ込み、目まで覆う**（実測）。
+    #    生え際と顔の境界は実写を残す。繋ぎ目は「前後で同じ筋」で消えるので、
+    #    ここを広げる必要はない。
+    core = cv2.erode(hair, np.ones((21, 21), np.uint8))
+    w = cv2.GaussianBlur(core.astype(np.float32) / 255.0, (0, 0), 9.0)[:, :, None]
+
+    h, wd = v.shape
+    rng = np.random.default_rng(3)
+    # 縦に強く相関したノイズ ＝ 毛の筋。横は細く、縦は長く伸ばす
+    n = rng.normal(0.0, 1.0, (h, wd)).astype(np.float32)
+    n = cv2.GaussianBlur(n, (0, 0), sigmaX=0.7, sigmaY=30.0)
+    n = (n - n.mean()) / (n.std() + 1e-6)
+    # 細い筋（1 本 1 本）と、太い房（束）の 2 スケールを重ねる
+    n2 = rng.normal(0.0, 1.0, (h, wd)).astype(np.float32)
+    n2 = cv2.GaussianBlur(n2, (0, 0), sigmaX=3.2, sigmaY=60.0)
+    n2 = (n2 - n2.mean()) / (n2.std() + 1e-6)
+    streak = 0.62 * n + 0.38 * n2
+    streak[:, HALF_W:] = streak[:, :HALF_W]     # 前後で同じ筋（繋ぎ目を消す）
+
+    px = atlas[hair > 0]
+    base = px.reshape(-1, 3).mean(axis=0).astype(np.float32)
+    # 頭頂が明るく毛先へ向かって沈む（上から光が当たるので、そう見えるのが自然）
+    grad = np.linspace(1.20, 0.80, h).astype(np.float32).reshape(-1, 1)
+
+    synth = np.zeros_like(atlas, np.float32)
+    for c in range(3):
+        synth[:, :, c] = base[c] * grad * (1.0 + 0.26 * streak)
+    synth = np.clip(synth, 0, 255)
+    return np.clip(atlas.astype(np.float32) * (1 - w) + synth * w, 0, 255).astype(np.uint8)
+
+
 def gloss_mask(albedo):
     """**部位ごとの光沢の強さ**をアルベドの色から起こす（アルベドのアルファへ入れる）。
 
@@ -184,6 +240,8 @@ def make_normal(albedo):
     return np.clip(out * 255, 0, 255).astype(np.uint8)
 
 
+# 髪だけ全周共通の一方向テクスチャへ（前後で毛の流れが食い違う繋ぎ目を消す）
+atlas[:BODY_H] = synth_hair(atlas[:BODY_H])
 cv2.imwrite(os.path.join(HERE, "doll_normal.png"), make_normal(atlas))
 # アルベドの**アルファに光沢マスク**を入れる（テクスチャを 1 枚増やさずに部位を分ける）
 rgba = np.dstack([atlas, gloss_mask(atlas)])
