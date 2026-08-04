@@ -16,7 +16,7 @@ import cv2, numpy as np, json, os, math
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROWS, COLS = 144, 34         # 縦の刻み / 各行の横分割
-SLEEVE_THIN = 0.30           # 胴から張り出した部分（袖）の厚みを胴の何倍まで落とすか
+SLEEVE_THIN = 0.42           # 胴から張り出した部分（袖）の厚みを胴の何倍まで落とすか
 BODY_HALF_N = 0.135          # 胴の半幅（全高 = 1 に正規化）。これより外を「張り出し」と見る
 DOLL_H = 0.40
 
@@ -101,11 +101,15 @@ for j in range(ROWS + 1):
         else:
             outer = max(1.0, half_w - body_half_px)
             q = min(1.0, (dx - body_half_px) / outer)
-            d = sleeve_d * math.sqrt(max(0.0, 1.0 - q * q))
+            # ⚠ 4 乗にして**袖口の近くまで厚みを保つ**。2 乗（素の楕円）だと袖の端で
+            #    厚みが 0 へ向かうので、そこを通る腕が必ず布から飛び出して見える。
+            d = sleeve_d * math.sqrt(max(0.0, 1.0 - q ** 4))
         # ⚠ **行の左右端では必ず 0 にする**。ここが 0 でないと前後が閉じず、
         #    側面から見たときに人形が縦に裂けて見える（胴だけの行＝裾で踏んだ）。
+        # 端の**ごく近く**だけで 0 へ落とす。ここを緩やかにすると（係数が小さいと）
+        # 袖口の手前から厚みが痩せ、そこを通る腕が布から出てしまう。
         edge = math.sqrt(max(0.0, 1.0 - (dx / half_w) ** 2))
-        d *= min(1.0, edge * 3.2) * cap
+        d *= min(1.0, edge * 7.0) * cap
         x = (px - (x0 + x1) / 2) * scale
         z = (y1 - py) * scale
         # ⚠ u をパネル境界（0 / 0.5）へ張り付けない。テクスチャは Repeat + ミップなので
