@@ -15,7 +15,7 @@ import { recordConfig, recordLaps, recordCoverage, missingRecordLaps } from './r
 import { createShowSim } from './show-sim.js';
 import { createAtelier } from './atelier.js';
 import { createActorsPanel } from './actors.js';
-import { createCalibUi } from './calib-ui.js';
+import { createAlignUi } from './align-ui.js';
 import { calibBadgeText, lensesOf, lensTrustIssues } from './calib-session.js';
 import { introConfig, introStageSec, introDurationLabel, introPreflightRow } from './intro-model.js';
 // 体験の骨格（走り切る周数 ＋ もどりの区間）。既定値と「その区間を踏むか」の判定はここが単一の正。
@@ -275,7 +275,7 @@ function buildColumn(cam, index) {
         <button class="pose-clear" title="姿勢を未設定に戻す（このカメラでは CG 人形が出なくなる）">✕</button>
       </div>
       <div class="pose-row calib-row">
-        <button class="calib-open" title="実映像の床の点をクリックして姿勢・画角・レンズ歪みを実測する。手で置いた概算より桁違いに正確で、較正があればそちらが使われる">🎯 姿勢を合わせる</button>
+        <button class="calib-open" title="実映像に部屋のワイヤーと人形を重ねて、見ながら手でカメラを合わせる。合わせた値は cameras[].calib に入り、実機の合成に使われる">🎯 カメラを合わせる</button>
         <span class="calib-badge"></span>
       </div>
       <div class="pose-hint">未設定のカメラでは CG 人形を出しません（当てずっぽうのパースで出す方が体験を壊すため）。フロアマップの 📐 モードでドラッグしても置けます。<b>🎯 で較正すると、この概算より較正の方が使われます</b>（数値は残るので較正を捨てれば戻ります）。</div>
@@ -1626,7 +1626,7 @@ function preflightRows() {
     if (missing.length) ng.push(`${missing.join(' / ')} が未較正（CG 人形を出すカットがあります）`);
     ng.push(...stale);
     if (ng.length) {
-      rows.push({ s: 'ng', label: '🎯 較正', detail: `${ng.join(' ・ ')} — カメラ列の［🎯 姿勢を合わせる］で解く` });
+      rows.push({ s: 'ng', label: '🎯 較正', detail: `${ng.join(' ・ ')} — カメラ列の［🎯 カメラを合わせる］で合わせる` });
     } else if (warn.length) {
       rows.push({ s: 'warn', label: '🎯 較正', detail: `${warn.join(' ・ ')}（人形の立ち位置がずれます）` });
     } else if (ok.length) {
@@ -1836,10 +1836,12 @@ if ($('#floorMap')) {
   if (state) floorMap.onState(state);
 }
 
-// ---- 🎯 カメラ姿勢の較正（実映像の床点から解く）------------------------------
-//   カメラ列の［🎯 姿勢を合わせる］から開く全画面オーバーレイ。保存先は cameras[i].calib で、
-//   pose（フロアマップでドラッグする概算）とは別枠のまま置く（同居させると解が壊れる）。
-calibUi = createCalibUi(document.body, {
+// ---- 🎯 カメラを手で合わせる ---------------------------------------------------
+//   カメラ列の［🎯 カメラを合わせる］から開く全画面オーバーレイ。保存先は cameras[i].calib。
+//   **自動求解はやめた**（2026-08-04）— 実測で 4 台とも一度も解けておらず、原因は数値ではなく
+//   入力（既定値の壁・仮想の格子から作った、現場に実在しない候補点）だった。
+//   いまは実映像へ部屋のワイヤーと人形を重ねて、人が見ながらカメラを動かす。
+calibUi = createAlignUi(document.body, {
   getCameras: () => state?.cameras || [],
   getLayout: () => state?.layout || null,
   // 静止フレームの元。カメラ列の <img>（卓サーバの /cam プロキシ + crossOrigin=anonymous なので

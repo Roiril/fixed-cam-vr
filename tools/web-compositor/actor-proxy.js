@@ -18,7 +18,7 @@
 // 唯一の例外が末尾の drawActorProxy（Canvas2D へ描くだけの薄いヘルパ。ribbon と show-sim が共有する）。
 
 import { projectPoint } from './calib.js';
-import { calibMatchesSource } from './calib-ui.js';
+import { calibMatchesSource } from './calib-session.js';
 
 // ---- プロキシの寸法（人体の概形。厳密さは要らないが、変えると「収まるか」の判断がずれる）----
 export const FOOT_RADIUS_M = 0.2;    // 足元マーカーの半径

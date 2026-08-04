@@ -5,10 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>廻リ視 web compositor</title>
   <link rel="stylesheet" href="style.css">
-  <!-- 🎯 カメラ姿勢の較正（calib-ui.js）。全画面オーバーレイなので他の面と干渉しない範囲で独立。
+  <!-- 🎯 カメラを手で合わせる面（align-ui.js）。全画面オーバーレイなので他の面と干渉しない範囲で独立。
        デザイン言語は style.css と同じ（純黒 + クリーム文字 #fffaf0 / アクセント #ffdead / 角丸ゼロ）。 -->
   <style>
     .calib-ui { position: fixed; inset: 0; z-index: 200; display: flex; }
+    /* 🎯 手で合わせる面（align-ui.js）。旧・較正パネルと同じ骨格 + 操作用の追加分。 */
+    .au-modes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .au-mode { font-size: 11px; padding: 3px 8px; }
+    .au-mode.is-on { border-color: var(--accent-color); color: var(--accent-color); }
+    .au-modehint { font-size: 10.5px; opacity: var(--opacity-mute); }
+    .au-readout { font-size: 11px; line-height: 1.7; font-variant-numeric: tabular-nums;
+      padding: 6px 8px; border: 1px solid var(--line-soft); }
+    .au-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+    .au-grid label { display: flex; align-items: center; justify-content: space-between; gap: 4px;
+      font-size: 11px; opacity: var(--opacity-sub); }
+    .au-grid input { width: 74px; font-size: 11px; padding: 2px 4px; font-variant-numeric: tabular-nums; }
+    .au-block { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border: 1px solid var(--line-soft); }
+    .au-blockhead { font-size: 11px; color: var(--accent-color); }
+    .au-blockhint { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.5; }
+    .au-dollrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .au-dollrow label { display: flex; align-items: center; gap: 3px; font-size: 11px; opacity: var(--opacity-sub); }
+    .au-dollrow input { width: 66px; font-size: 11px; padding: 2px 4px; }
+    .au-msg { font-size: 11px; min-height: 15px; line-height: 1.5; }
+    .au-msg.warn { color: var(--warn-color); }
+    .au-actions { display: flex; gap: 6px; }
+    .au-actions button { flex: 1; font-size: 12px; padding: 5px; }
+    /* 「ここで見た目を判定しない」は常に見えていること（過去 3 回、卓の絵を信じて失敗している） */
+    .au-authority { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.5;
+      border-top: 1px solid var(--line-soft); padding-top: 6px; }
     .cu-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .82); }
     .cu-panel {
       position: relative; margin: auto; width: min(1180px, 96vw); max-height: 94vh;

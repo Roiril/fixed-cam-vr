@@ -26,7 +26,7 @@ import {
 import { projectPoint, unprojectToFloor } from './calib.js';
 // 較正 UI の純関数（部屋のワイヤー）だけ借りる。**同じ線を 2 度書かない** —
 // 較正で見た絵と人形を置く時の絵が食い違うと、どちらがずれているのか判断できなくなる。
-import { wireSegments } from './calib-ui.js';
+import { wireSegments } from './calib-session.js';
 import { FX, FX_DEFAULT, camColor, escapeHtml, isVideoUrl } from './common.js';
 import { recStepIssue } from './record-model.js';
 // 周の並び（3 周 ＋ もどり）と「その区間を踏むか」の判定は run-model.js が単一の正
