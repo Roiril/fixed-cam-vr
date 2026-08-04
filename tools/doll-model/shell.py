@@ -86,7 +86,7 @@ for j in range(ROWS + 1):
     sleeve_d = depth * SLEEVE_THIN
     # 上下の端は深さを 0 へ落として自然に閉じる。フタ（前後を直結する面）を張ると
     # **1 面が u を 0.5 跨いでアトラス 1 枚ぶんを引き伸ばす**（見下ろしで頭頂に円盤が出た）。
-    cap = min(1.0, min(j, ROWS - j) / 2.0)
+    cap = min(1.0, min(j, ROWS - j) / 1.15)
     for i in range(COLS + 1):
         u = i / COLS
         px = xl + (xr - xl) * u

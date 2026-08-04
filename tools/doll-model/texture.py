@@ -126,6 +126,32 @@ atlas[:BODY_H, HALF_W:] = b_img
 atlas = blend_seam(atlas)
 atlas[BODY_H:] = arm_strip()
 
+def gloss_mask(albedo):
+    """**部位ごとの光沢の強さ**をアルベドの色から起こす（アルベドのアルファへ入れる）。
+
+    素材が違えば光り方が違う、という当たり前を絵に入れるためのもの。全部を同じ鏡面で光らせると
+    「一様に濡れたプラスチック」に見え、それ自体が CG の合図になる。
+
+      白磁の顔・手 … 胡粉を塗った陶器。**最も鋭く強い**
+      帯・襟      … 絹の織物。金銀糸が入るので中〜強
+      髪          … 人毛。中程度（流れに沿った照りは法線側で作る）
+      赤い着物    … 縮緬の絹。柔らかく弱い
+      絞りの帯揚げ … 表面が凹凸なので**ほとんど光らない**
+    """
+    hsv = cv2.cvtColor(albedo, cv2.COLOR_BGR2HSV)
+    h = hsv[:, :, 0].astype(np.float32)
+    s = hsv[:, :, 1].astype(np.float32)
+    v = hsv[:, :, 2].astype(np.float32)
+    m = np.full(v.shape, 0.30, np.float32)                     # 既定（布）
+    m[((h < 14) | (h > 165)) & (s > 90)] = 0.28                # 赤い縮緬
+    m[(s > 45) & (s < 110) & (v > 150) & (h > 150)] = 0.16     # 絞り（淡いピンク）
+    m[(s < 80) & (v > 130)] = 0.70                             # 帯・襟
+    m[(s < 55) & (v > 178)] = 1.00                             # 白磁
+    m[v < 85] = 0.52                                           # 髪
+    m = cv2.GaussianBlur(m, (0, 0), 2.0)
+    return np.clip(m * 255, 0, 255).astype(np.uint8)
+
+
 def make_normal(albedo):
     """アルベドの**中周波**から法線を起こす。
 
@@ -143,6 +169,14 @@ def make_normal(albedo):
     gx = cv2.Sobel(mid, cv2.CV_32F, 1, 0, ksize=5)
     gy = cv2.Sobel(mid, cv2.CV_32F, 0, 1, ksize=5)
     s = 0.85          # 強くすると顔の目や帯の柄まで凹凸になり、彫刻のように見える
+
+    # **髪は上から下へ流れる。** 横方向の法線変化を強め、縦方向を抑えると、毛の筋に沿った
+    # 縦の溝ができ、ハイライトが**横に走る帯**になる（人毛の照りの出方）。
+    # 等方の鏡面のままだと、髪が「つるつるのヘルメット」に見える。
+    hair = cv2.GaussianBlur((g < 0.33).astype(np.float32), (0, 0), 3.0)
+    gx = gx * (1.0 + 1.7 * hair)
+    gy = gy * (1.0 - 0.55 * hair)
+
     nx, ny, nz = -gx * s, gy * s, np.ones_like(gx)
     ln = np.sqrt(nx * nx + ny * ny + nz * nz)
     # OpenCV は BGR 順で書くので [B=z, G=y, R=x] を並べる
@@ -151,7 +185,9 @@ def make_normal(albedo):
 
 
 cv2.imwrite(os.path.join(HERE, "doll_normal.png"), make_normal(atlas))
-cv2.imwrite(os.path.join(HERE, "doll_albedo.png"), atlas)
+# アルベドの**アルファに光沢マスク**を入れる（テクスチャを 1 枚増やさずに部位を分ける）
+rgba = np.dstack([atlas, gloss_mask(atlas)])
+cv2.imwrite(os.path.join(HERE, "doll_albedo.png"), rgba)
 with open(os.path.join(HERE, "atlas.json"), "w") as f:
     json.dump(dict(width=HALF_W * 2, height=TEX_H, body_h=BODY_H, arm_h=ARM_H,
                    body_v0=ARM_H / TEX_H), f)

@@ -125,6 +125,15 @@ bsdf = nt.nodes["Principled BSDF"]
 img_node = nt.nodes.new("ShaderNodeTexImage")
 img_node.image = bpy.data.images.load(os.path.join(OUT, "doll_albedo.png"))
 nt.links.new(bsdf.inputs["Base Color"], img_node.outputs["Color"])
+# アルベドのアルファ = 部位ごとの光沢。粗さへ反転して繋ぐと、白磁がつるつる・布がざらつく
+inv = nt.nodes.new("ShaderNodeMath"); inv.operation = 'SUBTRACT'
+inv.inputs[0].default_value = 0.94
+nt.links.new(inv.inputs[1], img_node.outputs["Alpha"])
+rmap = nt.nodes.new("ShaderNodeMapRange")
+rmap.inputs[1].default_value = 0.0; rmap.inputs[2].default_value = 1.0
+rmap.inputs[3].default_value = 0.14; rmap.inputs[4].default_value = 0.92
+nt.links.new(rmap.inputs[0], inv.outputs[0])
+nt.links.new(bsdf.inputs["Roughness"], rmap.outputs[0])
 bsdf.inputs["Roughness"].default_value = 0.78
 if "Specular IOR Level" in bsdf.inputs:
     bsdf.inputs["Specular IOR Level"].default_value = 0.28

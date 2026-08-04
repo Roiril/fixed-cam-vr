@@ -128,7 +128,11 @@ Shader "FixedCamVr/ShowActor"
                 float t = saturate((ndl + _Wrap) / (1.0 + _Wrap));
 
                 // アルベド = テクスチャ × 色。テクスチャ未設定なら白が返るので _BaseColor だけが効く。
-                half3 albedo = _BaseColor.rgb * SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv).rgb;
+                half4 baseTex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv);
+                half3 albedo = _BaseColor.rgb * baseTex.rgb;
+                // アルファは**部位ごとの光沢の強さ**（白磁 1.0 / 帯 0.7 / 髪 0.5 / 絹 0.28 / 絞り 0.16）。
+                // 素材が違えば光り方が違う。全部を同じ鏡面で光らせると濡れたプラスチックに見える。
+                float gm = baseTex.a;
 
                 // 影側は「環境光がどれだけ持ち上げるか」、光側は「主光源の色 × 強さ」。
                 // 卓（💡 CG 照明パネル）で著作した tempK / intensity / ambient がここで初めて絵に効く。
@@ -139,8 +143,11 @@ Shader "FixedCamVr/ShowActor"
 
                 // 鏡面（Blinn-Phong 1 ローブ）。**光を動かすとハイライトが動く**のが要点で、
                 // これが無いと、どれだけ形を作っても「塗った絵」に見える。
+                // 陶器は**鋭く強く**、布は**広く弱く**光る。1 枚のマスクで鋭さと強さを同時に振る。
                 float3 h = normalize(l + v);
-                float spec = pow(saturate(dot(n, h)), _Gloss) * _Spec * saturate(ndl + _Wrap);
+                float gloss = lerp(7.0, _Gloss, gm);
+                float spec = pow(saturate(dot(n, h)), gloss) * _Spec * lerp(0.18, 1.0, gm)
+                             * saturate(ndl + _Wrap);
                 col += _LightColor.rgb * spec;
 
                 // リム: 輪郭をわずかに立てる（映像に埋もれて「居るのに見えない」を防ぐ）

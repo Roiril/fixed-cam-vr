@@ -34,16 +34,16 @@ Material:
     m_Ints: []
     m_Floats:
     - _Ambient: 0.35
-    - _BumpScale: 0.7
-    - _Gloss: 26
-    - _Rim: 0.25
-    - _RimPower: 3
-    - _Spec: 0.11
-    - _Wrap: 0.45
+    - _BumpScale: 0.72
+    - _Gloss: 46
+    - _Rim: 0.07
+    - _RimPower: 4.5
+    - _Spec: 0.2
+    - _Wrap: 0.38
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _LightColor: {r: 1, g: 1, b: 1, a: 1}
     - _LightDir: {r: 0.35, g: 0.85, b: -0.4, a: 0}
-    - _RimColor: {r: 0.85, g: 0.85, b: 0.9, a: 1}
-    - _ShadeColor: {r: 0.09999997, g: 0.09999997, b: 0.11999995, a: 1}
+    - _RimColor: {r: 0.92, g: 0.9, b: 0.86, a: 1}
+    - _ShadeColor: {r: 0.115, g: 0.105, b: 0.098, a: 1}
   m_BuildTextureStacks: []
