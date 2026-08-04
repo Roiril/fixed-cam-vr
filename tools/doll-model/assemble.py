@@ -113,7 +113,10 @@ me = doll.data
 bpy.ops.object.mode_set(mode='EDIT')
 bpy.ops.mesh.select_all(action='SELECT')
 bpy.ops.mesh.remove_doubles(threshold=1e-6)
-bpy.ops.mesh.normals_make_consistent(inside=False)
+# ⚠ normals_make_consistent は使わない。**面の向きは shell.py / arm_mesh が
+#    明示的に決めている**（前面 = -Y 向き / 背面 = +Y 向き）。再計算に任せると
+#    形が変わったときに内外の判定が反転し、Unity で前後が入れ替わる（実測）。
+#    Blender のプレビューは両面を描くので気づけない。
 bpy.ops.object.mode_set(mode='OBJECT')
 bpy.ops.object.shade_smooth()
 
