@@ -210,8 +210,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (bump != null && mat.HasProperty(BumpMapId))
                 {
                     mat.SetTexture(BumpMapId, bump);
-                    var path = AssetDatabase.GetAssetPath(bump);
-                    if (AssetImporter.GetAtPath(path) is TextureImporter ti
+                    // ⚠ 外側の `path`（マテリアルの保存先）と名前が衝突するので別名にする。
+                    //    ここを `path` にすると CS0136 でエディタアセンブリ全体がコンパイルできず、
+                    //    Unity が**古い DLL のまま動き続ける**（メニューを叩いても前の版が走る）。
+                    var bumpPath = AssetDatabase.GetAssetPath(bump);
+                    if (AssetImporter.GetAtPath(bumpPath) is TextureImporter ti
                         && ti.textureType != TextureImporterType.NormalMap)
                     {
                         ti.textureType = TextureImporterType.NormalMap;

@@ -65,6 +65,16 @@ Unity プロジェクトの編集はまず MCP for Unity 経由を試し、ダ�
   「完了報告を物証で検証する」は MCP ツールの戻り値にも当てはまる）。確実に書きたいなら YAML 直編集 + refresh
 - **`execute_code` は Windows で「ファイル名または拡張子が長すぎます」で失敗しがち**（mono コマンドライン長制限）。live シーンの値設定等は YAML 直編集＋`manage_scene load` 再ロード、強制コンパイルは `run_tests` で代替する
 - **新規作成した .cs は build / run_tests の前に明示インポートが要る**（2026-06-29 実害）。Write で作っただけだと非フォーカス Editor は AssetDatabase に取り込まず、それを参照する既存 .cs が `CS0246`（型が見つからない）でビルド失敗する（しかも run_tests は stale DLL で通ってしまい気付けない）。→ 新規ファイル追加後は `refresh_unity mode=force scope=all` で取り込み、`read_console types=["Error"]` でエラーゼロを確認してからビルド。`run_tests` の 6/6 を信じる前に `Library/ScriptAssemblies/*.dll` の mtime が更新されたかも見る
+- **⚠⚠ コンパイルエラーが 1 個でもあると、Unity は古い DLL のまま動き続ける**（2026-08-04 実害）。
+  `ShowActorPrefabBuilder.cs` の CS0136（変数名の衝突）が**コミット済みで入っていた**ため、
+  `execute_menu_item` が `success` を返すのに**前の版のコードが走った**（選んだ人形ではなく
+  既定の Remy が出続けた）。メニュー実行は「叩いた」ことしか報告しないので、戻り値では気づけない。
+  → **メニューを叩く前に `read_console types=["Error"]` で 0 件を確認する。**
+  スクリーンショット等の出力ファイルは mtime が更新されるので「実行された」ようにも見える。
+  実際にどの版が走ったかは、そのツールが出す `Debug.Log` の中身で確かめる
+- **⚠ `Selection.objects` への代入は同じ `execute_code` の中では効かない**（2026-08-04 実害）。
+  選択を設定する呼び出しと、それを読むメニュー実行は**別の呼び出しに分ける**
+  （同一呼び出し内で `EditorApplication.ExecuteMenuItem` すると、まだ前の選択が見える）
 - **⚠ `manage_editor action=play` は PreToolUse hook（.claude/hooks/guard-unity-play.js）が機械ブロックする**（2026-07-23〜。実害 2 回目を受け、ルール参照頼みを廃止）。Link / Meta XR Simulator を確認した上で `.claude/allow-unity-play` を touch するとワンショット解錠（実行時に自動削除）。以下は背景の原記録：
 - **⚠ `manage_editor action=play` を Link/HMD 無しの Editor で OVR シーンに対して呼ぶと EnterPlayMode がハングする**（2026-06-29 実害: TableDuoMain を Play→`Application.EnterPlayMode: Waiting for Unity's code to finish executing` で Editor 完全デッドロック、`Responding=False`・CPU 進まず→Unity 強制終了で復旧）。OVRManager/OVRPlugin の XR 初期化が HMD/Link を待つため。**OVR を持つシーンの Play 検証は Link 接続 or Meta XR Simulator(`MetaXRSimulator` インストール済み) 前提**。PC 単体で動かす用途（観戦カメラ等）は「spectator 時は XR を初期化しない」対応が要る。Play 突入中（ドメインリロード中）に MCP を連打するのも避ける（ブリッジ競合の疑い）
 - **⚠⚠ MCP ブリッジは連続多用で wedge する（最重要・2026-06-30 で半日溶かした真因）**。`telemetry_ping` は通る（fire-and-forget）が `find_gameobjects`/`read_console`/`manage_scene`/`run_tests` 等の**データ返却系が全部 timeout** になる。Play 往復＋大量の MCP 呼び出しの後に起きやすい。**Unity 本体は健全（`Responding=True`）でブリッジだけ死ぬ**。復旧は **Unity 再起動**（kill→`Unity.exe -projectPath` 再起動でブリッジリセット）か Unity の MCP UI で手動再接続。再起動後も Claude 側に自動接続せず手動再接続が要る場合がある。→ **教訓: 長時間・多数の Unity 検証は MCP を信用しない。MCP-free な検証経路（下記）を最初から使う**

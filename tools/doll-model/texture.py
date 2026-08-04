@@ -1,105 +1,28 @@
 # テクスチャアトラスを作る。
 #
-#   上段 左半分 = 前から見た絵 / 上段 右半分 = 後ろから見た絵（左右反転）
+#   上段 左半分 = 前から見た絵 / 上段 右半分 = 後ろから見た絵
 #   下段（高さ ARM_H）= 袖から出た白磁の手。左右の腕ぶんを並べる
 #
-# モデル側は法線の前後で上段を貼り分け、腕メッシュだけ下段を引く。
-# UV は「マスク bbox を 0..1 に正規化した座標」なので、bbox をそのまま矩形へ引き伸ばせば
-# モデルの (x, z) から直に引ける。**v は下段のぶんだけ詰まる**ので shell.py と対で直すこと。
+# 上段は **bake.py が殻の表面から逆に引いて焼く**（写真をパネルへ引き伸ばして並べるのではなく、
+# 各テクセルが写真のどこに写っているかを解いてサンプルする）。理由と旧方式の壊れ方は bake.py。
 #
-# 直している問題:
-#   - マスクの外は inpaint で埋める（背景の白い机や緑が縁に滲むと暗い映像でも輪郭が浮く）
-#   - **前面と背面の露出差**を合わせる（別々に撮った写真なので、そのままだと側面で色が飛ぶ）
-#   - **側面の縫い目**をクロスフェードで消す（前面の左端と背面の左端は人形の同じ側面）
-import cv2, numpy as np, os, json
+# ⚠ **髪を手続きテクスチャへ置き換える `synth_hair()` は削除した**（2026-08-04）。
+#   「前後で同じ縦縞にすれば継ぎ目は原理的に消える」という理屈は正しかったが、
+#   前後のパネルは互いに位置合わせされていないので `hair[:, HALF_W:] = hair[:, :HALF_W]` が
+#   **幾何的に破綻していた**（実測: front 側の x=230 は「顔」、back 側の同じ x は「後頭部の髪」）。
+#   結果、縞は**背景の inpaint 領域と額**に塗られ（額で重み 0.71・輝度 189）、本物の後頭部の髪は
+#   そのまま残っていた。おまけに合成した髪は明るい（gray≈156）ので、
+#   `make_normal` の髪の異方性（`g < 0.33`）も `gloss_mask` の髪（`v < 85`）も**一度も発火していなかった**。
+#   実写の髪には前髪の切り口・生え際・毛の流れが写っている。置き換えずに使う。
+import cv2, numpy as np, os, json, geom, bake
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HALF_W, BODY_H = 512, 1024
-ARM_H = 160                       # 下段（手）の高さ
-TEX_H = BODY_H + ARM_H
-SEAM = 72                         # 側面のクロスフェード幅 (px)
+HALF_W, BODY_H = geom.HALF_W, geom.BODY_H
+ARM_H, TEX_H = geom.ARM_H, geom.TEX_H
 
 # 写真の中の「袖から出た手」の位置（比率）。front 写真から目で取った。
 ARM_BOX = {"L": (0.010, 0.317, 0.118, 0.360),
            "R": (0.883, 0.322, 0.994, 0.365)}
-
-
-def panel(name, flip):
-    src = cv2.imread(os.path.join(HERE, f"{name}.jpg"))
-    m = cv2.imread(os.path.join(HERE, f"mask_{name}.png"), cv2.IMREAD_GRAYSCALE)
-    ys, xs = np.nonzero(m)
-    x0, x1, y0, y1 = int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
-
-    crop = src[y0:y1 + 1, x0:x1 + 1].copy()
-    cm = m[y0:y1 + 1, x0:x1 + 1].copy()
-
-    # 行ごとに左端〜右端を塗りつぶす。背面は帯（白い蝶結び）がマスクの穴になっていて、
-    # そのまま inpaint すると背中の中央に大きな白い滲みが出る（実測）。
-    # 左端・右端は変えないので輪郭は保たれる。テクスチャ用のマスクなので形には影響しない。
-    for yy in range(cm.shape[0]):
-        cols = np.nonzero(cm[yy])[0]
-        if len(cols):
-            cm[yy, cols.min():cols.max() + 1] = 255
-
-    # ⚠ マスクを数画素**収縮**してから埋める。頂点の u は行の実際の左右端と一致するので、
-    #    縁の「人形と背景が混ざった画素」をそのまま引いてしまい、輪郭に暗い線が出る
-    #    （頭では 1 列が写真の 16 画素しかないので特に目立つ）。ミップが上がるほど内側へ滲む。
-    er = max(3, int(min(crop.shape[:2]) * 0.006)) | 1
-    cm_in = cv2.erode(cm, np.ones((er, er), np.uint8))
-
-    # 背景を人形の色で埋める。inpaint は重いので縮小して解き、拡大して合成。
-    sc = 400 / crop.shape[0]
-    small = cv2.resize(crop, (max(8, int(crop.shape[1] * sc)), 400), interpolation=cv2.INTER_AREA)
-    sm = cv2.resize(cm_in, (small.shape[1], small.shape[0]), interpolation=cv2.INTER_NEAREST)
-    filled = cv2.inpaint(small, cv2.bitwise_not(sm), 9, cv2.INPAINT_TELEA)
-    filled = cv2.resize(filled, (crop.shape[1], crop.shape[0]), interpolation=cv2.INTER_LINEAR)
-    out = np.where(cm_in[:, :, None] > 0, crop, filled)
-
-    out = cv2.resize(out, (HALF_W, BODY_H), interpolation=cv2.INTER_AREA)
-    if flip:
-        out = cv2.flip(out, 1)
-    inside = cv2.resize(cm, (HALF_W, BODY_H), interpolation=cv2.INTER_NEAREST)
-    if flip:
-        inside = cv2.flip(inside, 1)
-    return out, inside
-
-
-def match_exposure(dst, dst_in, ref, ref_in):
-    """前面の写真に合わせて背面の露出・色かぶりを寄せる。
-
-    2 枚は別々に撮られていて露出もホワイトバランスも違う。合わせないと**側面で色が飛ぶ**
-    （繋ぎ目が線として見える）。人形が写っている画素だけで統計を取る。"""
-    out = dst.astype(np.float32)
-    dm = dst_in > 0
-    rm = ref_in > 0
-    if dm.sum() < 100 or rm.sum() < 100:
-        return dst
-    for c in range(3):
-        a, b = out[:, :, c][dm], ref[:, :, c][rm].astype(np.float32)
-        sd = a.std()
-        gain = (b.std() / sd) if sd > 1e-3 else 1.0
-        gain = float(np.clip(gain, 0.92, 1.10))   # 効かせすぎると赤が飛ぶ
-        # 中央値も合わせる（平均だけだと、面積の大きい赤に引きずられて白い帯がずれる）
-        med_shift = float(np.median(b)) - float(np.median(a))
-        out[:, :, c] = (out[:, :, c] - a.mean()) * gain + a.mean() + med_shift
-    return np.clip(out, 0, 255).astype(np.uint8)
-
-
-def blend_seam(atlas):
-    """人形の側面で前面と背面をクロスフェードする。
-
-    front の u=0 と back の u=0.5 は**人形の同じ左側面**（back は左右反転済み）。
-    そこが不連続だと、側面から見たとき縦の線として出る。
-    アトラス上では front x=0 と back x=HALF_W、front x=HALF_W-1 と back x=W-1 が対。"""
-    a = atlas.astype(np.float32)
-    for i in range(SEAM):
-        w = 0.5 * (1.0 - i / SEAM) ** 1.4      # 縁で half-and-half、内側へ行くほど元の色
-        for pf, pb in ((i, HALF_W + i), (HALF_W - 1 - i, 2 * HALF_W - 1 - i)):
-            f = a[:BODY_H, pf].copy()
-            b = a[:BODY_H, pb].copy()
-            a[:BODY_H, pf] = f * (1 - w) + b * w
-            a[:BODY_H, pb] = b * (1 - w) + f * w
-    return np.clip(a, 0, 255).astype(np.uint8)
 
 
 def arm_strip():
@@ -115,71 +38,6 @@ def arm_strip():
         piece = cv2.resize(piece, (HALF_W, ARM_H), interpolation=cv2.INTER_AREA)
         strip[:, k * HALF_W:(k + 1) * HALF_W] = piece
     return strip
-
-
-atlas = np.zeros((TEX_H, HALF_W * 2, 3), np.uint8)
-f_img, f_in = panel("front", flip=False)
-b_img, b_in = panel("back", flip=True)     # 背面は後ろから見るので左右が入れ替わる
-b_img = match_exposure(b_img, b_in, f_img, f_in)
-atlas[:BODY_H, :HALF_W] = f_img
-atlas[:BODY_H, HALF_W:] = b_img
-atlas = blend_seam(atlas)
-atlas[BODY_H:] = arm_strip()
-
-def synth_hair(atlas):
-    """髪を**一方向の手続きテクスチャ**へ置き換える。
-
-    前面と背面で別々の写真を貼ると、側面（パネルの境界）で毛の流れが食い違い、
-    繋ぎ目が縦の線としてはっきり出る。クロスフェードでは二重像になるだけで消えない。
-    **上から下へ流れる筋を全周で共通にすれば、繋ぎ目は原理的に無くなる。**
-
-    色は実物の髪から取る（平均と分散）。生え際と毛先の境界は実写を残したいので、
-    マスクを収縮してからぼかして合成する。
-    """
-    hsv = cv2.cvtColor(atlas, cv2.COLOR_BGR2HSV)
-    v = hsv[:, :, 2].astype(np.float32)
-    sat = hsv[:, :, 1].astype(np.float32)
-    # ⚠ 明るさだけで拾うと**着物の影**まで髪に入り、平均色が赤へ転ぶ（実測で髪が赤茶になった）。
-    #    髪は暗くて彩度が低い（S 13〜43）、着物は暗くても彩度が高い（S 217）。
-    hair = ((v < 102) & (sat < 125)).astype(np.uint8) * 255
-    hair = cv2.morphologyEx(hair, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
-    hair = cv2.morphologyEx(hair, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
-    if hair.sum() < 255 * 500:
-        return atlas
-    # ⚠ **前面と背面で同じ領域・同じ筋にする。** ここを別々に作ると、せっかく手続きに
-    #    しても側面（パネル境界）で筋が食い違い、繋ぎ目が残る（実測で縦の線が出た）。
-    #    back は左右反転済みなので、同じ x が人形の同じ位置に対応する。
-    hair[:, :HALF_W] = np.maximum(hair[:, :HALF_W], hair[:, HALF_W:])
-    hair[:, HALF_W:] = hair[:, :HALF_W]
-    # ⚠ 芯を広げすぎると**前髪が顔へ流れ込み、目まで覆う**（実測）。
-    #    生え際と顔の境界は実写を残す。繋ぎ目は「前後で同じ筋」で消えるので、
-    #    ここを広げる必要はない。
-    core = cv2.erode(hair, np.ones((21, 21), np.uint8))
-    w = cv2.GaussianBlur(core.astype(np.float32) / 255.0, (0, 0), 9.0)[:, :, None]
-
-    h, wd = v.shape
-    rng = np.random.default_rng(3)
-    # 縦に強く相関したノイズ ＝ 毛の筋。横は細く、縦は長く伸ばす
-    n = rng.normal(0.0, 1.0, (h, wd)).astype(np.float32)
-    n = cv2.GaussianBlur(n, (0, 0), sigmaX=0.7, sigmaY=30.0)
-    n = (n - n.mean()) / (n.std() + 1e-6)
-    # 細い筋（1 本 1 本）と、太い房（束）の 2 スケールを重ねる
-    n2 = rng.normal(0.0, 1.0, (h, wd)).astype(np.float32)
-    n2 = cv2.GaussianBlur(n2, (0, 0), sigmaX=3.2, sigmaY=60.0)
-    n2 = (n2 - n2.mean()) / (n2.std() + 1e-6)
-    streak = 0.62 * n + 0.38 * n2
-    streak[:, HALF_W:] = streak[:, :HALF_W]     # 前後で同じ筋（繋ぎ目を消す）
-
-    px = atlas[hair > 0]
-    base = px.reshape(-1, 3).mean(axis=0).astype(np.float32)
-    # 頭頂が明るく毛先へ向かって沈む（上から光が当たるので、そう見えるのが自然）
-    grad = np.linspace(1.20, 0.80, h).astype(np.float32).reshape(-1, 1)
-
-    synth = np.zeros_like(atlas, np.float32)
-    for c in range(3):
-        synth[:, :, c] = base[c] * grad * (1.0 + 0.26 * streak)
-    synth = np.clip(synth, 0, 255)
-    return np.clip(atlas.astype(np.float32) * (1 - w) + synth * w, 0, 255).astype(np.uint8)
 
 
 def gloss_mask(albedo):
@@ -240,13 +98,18 @@ def make_normal(albedo):
     return np.clip(out * 255, 0, 255).astype(np.uint8)
 
 
-# 髪だけ全周共通の一方向テクスチャへ（前後で毛の流れが食い違う繋ぎ目を消す）
-atlas[:BODY_H] = synth_hair(atlas[:BODY_H])
+body, cover = bake.body_atlas()
+atlas = np.zeros((TEX_H, HALF_W * 2, 3), np.uint8)
+atlas[:BODY_H] = body
+atlas[BODY_H:] = arm_strip()
+
 cv2.imwrite(os.path.join(HERE, "doll_normal.png"), make_normal(atlas))
 # アルベドの**アルファに光沢マスク**を入れる（テクスチャを 1 枚増やさずに部位を分ける）
-rgba = np.dstack([atlas, gloss_mask(atlas)])
-cv2.imwrite(os.path.join(HERE, "doll_albedo.png"), rgba)
+cv2.imwrite(os.path.join(HERE, "doll_albedo.png"), np.dstack([atlas, gloss_mask(atlas)]))
 with open(os.path.join(HERE, "atlas.json"), "w") as f:
-    json.dump(dict(width=HALF_W * 2, height=TEX_H, body_h=BODY_H, arm_h=ARM_H,
-                   body_v0=ARM_H / TEX_H), f)
-print(f"atlas {atlas.shape} body_v0={ARM_H / TEX_H:.4f}")
+    json.dump(dict(width=geom.TEX_W, height=TEX_H, body_h=BODY_H, arm_h=ARM_H,
+                   body_v0=geom.BODY_V0), f)
+
+g = cv2.cvtColor(atlas[:BODY_H], cv2.COLOR_BGR2GRAY)
+print(f"atlas {atlas.shape} body_v0={geom.BODY_V0:.4f} covered={cover.mean() * 100:.1f}% "
+      f"髪の異方性が効く画素(g<0.33)={(g < 84).mean() * 100:.1f}%")
