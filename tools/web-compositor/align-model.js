@@ -12,7 +12,9 @@
 //   位置が 27cm・固定すれば 2cm。手ドラッグは曖昧さを消さず**残差の表示だけ**を消すので、
 //   掴めるようにした瞬間 solver より悪くなる。レンズ単位で一度だけ決める。
 //
-// ⚠ 動かすのは**カメラ**であって部屋ではない。`layout.room` は 4 台 × 3 用途
+// ⚠ **掴むのは床と壁だが、書き換えるのはカメラ。** 部屋を剛体で動かすのとカメラを逆に動かすのは
+//   数学的に等価なので（下の「床と壁を掴む」節）、作業者の見たままの操作を保ったまま
+//   `layout.room` を一切汚さずに済む。`layout.room` は 4 台 × 3 用途
 //   （オクルーダ / 影の落ち先 / 較正参照）の共有資産で、1 台に合わせて頂点をずらすと
 //   他のカメラの合成が黙って狂い、人形の course 座標がカメラごとに食い違う。
 import { projectPoint, unprojectToFloor, unityEulerToMatrix, matrixToUnityEuler } from './calib.js';
@@ -74,50 +76,26 @@ export function initialCalib(cam, srcW, srcH) {
   };
 }
 
+/**
+ * 角度を正規化し、値が壊れていないことだけ保証する。
+ *
+ * ⚠ **高さはここで詰めない**（広い健全性チェックだけ）。床を傾ける操作では、等価なカメラの
+ *   高さが一時的に床より下へ回り込むことがある。そこで 0.05m へ詰めると、
+ *   **掴んだ点が動かない**という不変条件が黙って破れる（実測: X 軸 23° の回転で 18px ずれた）。
+ *   人が数値欄へ直接打つときだけ `setField` が現実的な範囲へ詰める。
+ */
 export function clampCalib(c) {
   return {
     ...c,
-    y: clamp(num(c.y, 1.2), MIN_HEIGHT_M, MAX_HEIGHT_M),
+    y: clamp(num(c.y, 1.2), -20, 40),
     yawDeg: wrapDeg(num(c.yawDeg, 0)),
     pitchDeg: clamp(num(c.pitchDeg, 0), -MAX_PITCH_DEG, MAX_PITCH_DEG),
-    rollDeg: clamp(num(c.rollDeg, 0), -45, 45),
+    rollDeg: clamp(num(c.rollDeg, 0), -89, 89),
   };
 }
 
-/**
- * 画面をドラッグして**世界を掴んで回す**。カーソルの下にあったものがカーソルに付いてくる。
- *
- * 符号は理屈で決めずに `align-model.test.mjs` が「ドラッグ後、その点が (u+dx, v+dy) に来る」で
- * 固定している。ここを勘で書くと、上下左右のどれかが必ず逆になる。
- */
-export function dragRotate(calib, dxPx, dyPx) {
-  const fx = calib.fxPx > 0 ? calib.fxPx : 1;
-  const fy = calib.fyPx > 0 ? calib.fyPx : fx;
-  const dYaw = -Math.atan2(dxPx, fx) * 180 / Math.PI;
-  // ⚠ 上下だけ符号が逆（`projectPoint` の v = cy - fy*ny で v が下向きなため）。
-  //    左右と同じ符号にすると、上下だけ逆に動く道具になる。
-  const dPitch = Math.atan2(dyPx, fy) * 180 / Math.PI;
-  return clampCalib({ ...calib, yawDeg: calib.yawDeg + dYaw, pitchDeg: calib.pitchDeg + dPitch });
-}
-
-/**
- * 画面をドラッグして**カメラを平行移動**する（回さずにずらす）。
- * `refDistM` はドラッグの効き目を決める基準距離＝いま合わせている物までのおよその距離。
- */
-export function dragPan(calib, dxPx, dyPx, refDistM = 3.0) {
-  const fx = calib.fxPx > 0 ? calib.fxPx : 1;
-  const fy = calib.fyPx > 0 ? calib.fyPx : fx;
-  const d = clamp(num(refDistM, 3), 0.2, 50);
-  const { right, up } = cameraBasis(calib);
-  const sx = -(dxPx / fx) * d;      // 世界が右へ動く = カメラが左へ動く
-  const sy = (dyPx / fy) * d;       // 世界が下へ動く = カメラが上へ動く
-  return clampCalib({
-    ...calib,
-    x: calib.x + right[0] * sx + up[0] * sy,
-    y: calib.y + right[1] * sx + up[1] * sy,
-    z: calib.z + right[2] * sx + up[2] * sy,
-  });
-}
+/** カメラが床より下にいる（＝合わせが物理的にありえない場所へ行った）。UI が警告に使う。 */
+export const isBelowFloor = (c) => !!c && c.y <= 0;
 
 /** 視線方向へ前後する（近づく / 遠ざかる）。画角を変えるのではなく**動く**のが正しい。 */
 export function dolly(calib, meters) {
@@ -189,21 +167,74 @@ export function axisScreenDir(calib, axis, atPoint) {
   return { dir: [du / len, dv / len], pxPerM: len / eps };
 }
 
+// ---- 床と壁を掴む（保存されるのはカメラ）-----------------------------------
+//
+// 「部屋を動かす」と「カメラを動かす」は**数学的に同じもの**。部屋を剛体変換 (Rt, t) で
+// 動かすのは、カメラを Rc' = Rt^T Rc / C' = Rt^T (C − t) で動かすのと画の上で完全に等価:
+//
+//   部屋を動かす:   p_cam = Rc^T (Rt·p + t − C)
+//   カメラを動かす: p_cam = Rc'^T (p − C') = Rc^T Rt (p − Rt^T(C − t)) = 同じ
+//
+// だから**掴む対象は床と壁**にしつつ、**保存するのはカメラ**にできる。
+// これで `layout.room`（4 台のカメラ × 3 用途で共有）を一切書き換えずに、
+// 「ワイヤーを実物へ合わせる」という作業者の見たままの操作が成立する。
+//
+// ⚠ 部屋の**形**（床の寸法・壁の位置）を直すのは別の操作で、そちらは共有データを書き換える。
+//   剛体で動かすこと（合わせ）と、寸法を直すこと（実測の訂正）を混ぜない。
+
+const transpose33 = (A) => [0, 1, 2].map((i) => [0, 1, 2].map((j) => A[j][i]));
+
+/** 床と壁を平行移動する（見た目どおり）。保存されるのはカメラの逆移動。 */
+export function moveRoom(calib, delta) {
+  const d = delta || [0, 0, 0];
+  return clampCalib({ ...calib, x: calib.x - d[0], y: calib.y - d[1], z: calib.z - d[2] });
+}
+
 /**
- * 軸拘束つきのドラッグ。ドラッグを軸の画面方向へ**射影**してから、その軸だけ動かす。
- * `kind` は 'move'（平行移動）か 'rotate'（回転）。
+ * 床と壁を `pivot` を中心に回す。保存されるのはカメラの逆回転。
+ * **pivot の投影は動かない**（掴んだ場所を軸に回る）— `align-model.test.mjs` が固定している。
  */
-export function dragConstrained(calib, axis, kind, dxPx, dyPx, opts = {}) {
-  const at = opts.at || [0, 0, 0];
-  const sd = axisScreenDir(calib, axis, at);
-  if (!sd) return calib;
-  const along = dxPx * sd.dir[0] + dyPx * sd.dir[1];     // 画面上で軸に沿った成分だけ拾う
+export function rotateRoom(calib, axis, deg, pivot = [0, 0, 0]) {
+  if (!AXIS_VEC[axis] || !deg) return calib;
+  const RtT = transpose33(axisRotation(axis, deg));
+  const Rc = unityEulerToMatrix(-calib.pitchDeg, calib.yawDeg, calib.rollDeg || 0);
+  const e = matrixToUnityEuler(mul33(RtT, Rc));
+  const d = [calib.x - pivot[0], calib.y - pivot[1], calib.z - pivot[2]];
+  const c = [0, 1, 2].map((i) => RtT[i][0] * d[0] + RtT[i][1] * d[1] + RtT[i][2] * d[2] + pivot[i]);
+  return clampCalib({ ...calib, x: c[0], y: c[1], z: c[2], pitchDeg: -e.x, yawDeg: e.y, rollDeg: e.z });
+}
+
+/**
+ * 床と壁のドラッグ。`kind` は 'move' か 'rotate'、`axis` が空なら自由。
+ *
+ * 自由回転は **Y 軸まわり（床を回す）だけ**にしてある。床の四角を写真の床へ合わせるとき、
+ * 欲しいのはほぼこれだから。傾け（X / Z）は軸キーで明示的に選ぶ — 縦ドラッグに割り当てると
+ * 「水平に合わせたつもりが傾いた」が起きる。
+ */
+export function dragRoom(calib, axis, kind, dxPx, dyPx, opts = {}) {
+  const pivot = opts.pivot || [0, 0, 0];
   if (kind === 'rotate') {
-    // 回転は「画面 100px のドラッグで 30°」を目安にする（細かく詰められる速さ）
-    return rotateAboutWorldAxis(calib, axis, -along * 0.30);
+    if (!axis) return rotateRoom(calib, 'y', dxPx * 0.30, pivot);
+    const sd = axisScreenDir(calib, axis, pivot);
+    if (!sd) return calib;
+    const along = dxPx * sd.dir[0] + dyPx * sd.dir[1];
+    return rotateRoom(calib, axis, along * 0.30, pivot);
   }
-  // ⚠ 世界が along だけ動いて見えるように、カメラは**逆へ**動かす
-  return translateAlongWorldAxis(calib, axis, -along / sd.pxPerM);
+  const dist = opts.dist > 0 ? opts.dist : 3.0;
+  const fx = calib.fxPx > 0 ? calib.fxPx : 1;
+  const fy = calib.fyPx > 0 ? calib.fyPx : fx;
+  if (axis) {
+    const sd = axisScreenDir(calib, axis, pivot);
+    if (!sd) return calib;
+    const along = dxPx * sd.dir[0] + dyPx * sd.dir[1];
+    return moveRoom(calib, AXIS_VEC[axis].map((v) => v * (along / sd.pxPerM)));
+  }
+  // 自由移動はカメラの右 / 上の面内で動かす（画面に沿って素直に動く）
+  const { right, up } = cameraBasis(calib);
+  const sx = (dxPx / fx) * dist, sy = -(dyPx / fy) * dist;
+  return moveRoom(calib, [
+    right[0] * sx + up[0] * sy, right[1] * sx + up[1] * sy, right[2] * sx + up[2] * sy,
+  ]);
 }
 
 /** 床の上でカメラを置き直す（上から見た図のドラッグ用）。高さと向きは変えない。 */
@@ -213,7 +244,10 @@ export function setGroundPos(calib, x, z) {
 
 export function setField(calib, key, value) {
   if (!(key in calib) && !['x', 'y', 'z', 'yawDeg', 'pitchDeg', 'rollDeg'].includes(key)) return calib;
-  return clampCalib({ ...calib, [key]: num(Number(value), calib[key]) });
+  const v = num(Number(value), calib[key]);
+  // 人が打つときだけ現実的な高さへ詰める（ドラッグ中は詰めない — clampCalib の注意書き参照）
+  const out = key === 'y' ? clamp(v, MIN_HEIGHT_M, MAX_HEIGHT_M) : v;
+  return clampCalib({ ...calib, [key]: out });
 }
 
 /** レンズ（画角・歪み）を差し替える。**現場では触らない**想定の、別枠の操作。 */

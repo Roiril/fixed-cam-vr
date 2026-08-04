@@ -11,9 +11,9 @@
 // ⚠ **合成の見た目の正は Unity**（Preview Show Composite）。卓の人形は幾何の目安で、
 //   陰影・素材は描かない。ここで「馴染んでいる」を判定しない。
 import {
-  initialCalib, dragRotate, dragPan, dolly, setGroundPos, setField, setLens,
+  initialCalib, dolly, setGroundPos, setField, setLens,
   toManualCalib, isManual, summaryLines, refDistance, hfovFromFocalPx,
-  dragConstrained, AXES, projectPoint, unprojectToFloor,
+  dragRoom, isBelowFloor, AXES, projectPoint, unprojectToFloor,
 } from './align-model.js';
 import { wireSegments, calibMatchesSource, applyCalibToCameras } from './calib-session.js';
 import { actorProxyGeometry, actorBodyGeometry, drawActorProxy, proxyIssueText } from './actor-proxy.js';
@@ -57,8 +57,8 @@ export function createAlignUi(container, deps) {
             <div class="cu-noframe"></div>
           </div>
           <div class="au-modes">
-            <button class="au-mode is-on" data-mode="rotate">🔄 回す</button>
-            <button class="au-mode" data-mode="pan">✋ 平行に動かす</button>
+            <button class="au-mode is-on" data-mode="rotate">🔄 床と壁を回す</button>
+            <button class="au-mode" data-mode="pan">✋ 床と壁を動かす</button>
             <button class="au-mode" data-mode="doll">🧍 人形を置く</button>
             <span class="au-axes">軸
               <button class="au-axis is-on" data-axis="">自由</button>
@@ -71,6 +71,7 @@ export function createAlignUi(container, deps) {
           <div class="cu-hint">静止フレームです（合わせている間に絵が動かないよう固定しています）。
             <b>ドラッグ</b>で操作・<b>ホイール</b>で前後・<b>Shift+ドラッグ</b>で一時的に平行移動。
             <b>X / Y / Z キー</b>でその軸だけに拘束（もう一度押すか Esc で解除）。
+            回転は<b>掴んだ床の点を軸</b>に回ります。自由回転は床を回す（Y 軸）だけ — 傾けたいときは X / Z を選んでください。
             床の線と壁の縦線が実物に重なれば合っています。</div>
         </div>
         <div class="cu-side">
@@ -270,7 +271,12 @@ export function createAlignUi(container, deps) {
     const p = toCanvas(ev);
     if (mode === 'doll') { placeDoll(p); return; }
     canvas.setPointerCapture(ev.pointerId);
-    drag = { last: p, pan: ev.shiftKey || mode === 'pan', dist: refDistance(calib) };
+    // 掴んだ床の点を回転の中心にする（Blender の 3D カーソル相当）。
+    // 床と交わらない所を掴んだら course 原点へ落とす。
+    const hit = unprojectToFloor(calib, p.x, p.y, 0);
+    const pivot = hit ? [hit.x, 0, hit.z] : [0, 0, 0];
+    const dist = hit ? hit.t : refDistance(calib);
+    drag = { last: p, pan: ev.shiftKey || mode === 'pan', pivot, dist };
   });
 
   canvas.addEventListener('pointermove', (ev) => {
@@ -278,13 +284,9 @@ export function createAlignUi(container, deps) {
     const p = toCanvas(ev);
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y;
     drag.last = p;
-    if (axis) {
-      // 軸拘束。効き目は「いま合わせている物」の位置で決める（人形の足元を基準にする）
-      calib = dragConstrained(calib, axis, drag.pan ? 'move' : 'rotate', dx, dy,
-        { at: [doll.x, 0, doll.z] });
-    } else {
-      calib = drag.pan ? dragPan(calib, dx, dy, drag.dist) : dragRotate(calib, dx, dy);
-    }
+    // ⚠ 掴むのは**床と壁**。保存されるのはカメラ（等価な逆変換）で、layout.room は書き換えない。
+    calib = dragRoom(calib, axis, drag.pan ? 'move' : 'rotate', dx, dy,
+      { pivot: drag.pivot, dist: drag.dist });
     syncFields(); draw();
   });
 
@@ -323,10 +325,11 @@ export function createAlignUi(container, deps) {
   }
 
   function refreshModeHint() {
-    const what = mode === 'rotate' ? 'カメラを回す' : mode === 'pan' ? 'カメラを平行に動かす' : '';
+    const what = mode === 'rotate' ? '床と壁を回す' : mode === 'pan' ? '床と壁を動かす' : '';
     $('.au-modehint').textContent = mode === 'doll'
       ? '映像の床をクリックして人形を置く'
-      : axis ? `ドラッグ＝${axis.toUpperCase()} 軸だけで ${what}` : `ドラッグ＝${what}（自由）`;
+      : axis ? `ドラッグ＝${axis.toUpperCase()} 軸だけで ${what}`
+      : mode === 'rotate' ? 'ドラッグ＝床を回す（Y 軸・掴んだ点が中心）' : `ドラッグ＝${what}（自由）`;
   }
 
   // Blender / CAD 流のキー。X / Y / Z で軸を切り替え、もう一度押すか Esc で解除。
@@ -420,7 +423,13 @@ export function createAlignUi(container, deps) {
     }
     $('.au-hfov').value = hfovFromFocalPx(calib.fxPx, calib.srcW).toFixed(1);
     $('.au-k1').value = (calib.k1 || 0).toFixed(2);
-    $('.au-readout').innerHTML = summaryLines(calib).map((l) => `<div>${l}</div>`).join('');
+    // 保存されるのはカメラの値。掴んでいるのは床と壁なので、そこは見出しで言う。
+    const rows = summaryLines(calib).map((l) => `<div>${l}</div>`).join('');
+    // ⚠ 床を大きく傾けると、等価なカメラが床より下へ回り込む。詰めると合わせが黙って壊れるので、
+    //    詰めずに**言う**（そのまま保存すると実機で人形が床下から見上げた絵になる）。
+    const warn = isBelowFloor(calib)
+      ? '<div class="au-below">⚠ カメラが床より下にあります（傾けすぎ）。戻してから保存してください。</div>' : '';
+    $('.au-readout').innerHTML = `<div class="au-rohead">カメラ（保存される値）</div>${rows}${warn}`;
     for (const inp of root.querySelectorAll('.au-l')) {
       if (document.activeElement !== inp) inp.value = light[inp.dataset.k];
     }
