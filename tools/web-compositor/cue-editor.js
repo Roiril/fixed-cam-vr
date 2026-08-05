@@ -231,8 +231,10 @@ export function createCueEditor(deps) {
       };
       // 色統計マッチングを 6 つの数へ落として焼く（実機はこれを掛けるだけ）。
       // プレビューの「境界ブレンド」の色統計トグルと同じ意思決定を使う。
+      // マスクがあるなら**差し替えない所**だけで解く（差し替える所は素材にしか無いものが居る）。
       Object.assign(cue, await bakeColorMatch(
-        (deps.getLiveImg && camId) ? deps.getLiveImg(camId) : null, srcMedia, blendCfg));
+        (deps.getLiveImg && camId) ? deps.getLiveImg(camId) : null, srcMedia, blendCfg,
+        maskIsEmpty() ? null : maskCanvas));
       const r = await deps.saveCue(cue);
       if (!r || r.ok === false) throw new Error('state 保存失敗');
       cueId = id; selMaskUrl = cue.maskUrl; maskEdited = false;

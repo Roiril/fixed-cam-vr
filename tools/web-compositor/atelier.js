@@ -709,7 +709,9 @@ export function createAtelier(deps) {
         //   ＝「卓で見て良かったから採用した」という判断そのものが嘘になる（2026-07-30 に是正）。
         //   基準の実写はライブ優先・無ければ種フレーム（工房はカメラ未接続の自宅作業を前提にしている）。
         const refEl = (st.bg === 'live' && deps.getLiveImg && deps.getLiveImg(cam.id)) || seedImg;
-        Object.assign(cue, await bakeColorMatch(refEl, ovEl, blendCfg));
+        // マスクがあるなら**差し替えない所**だけで解く。差し替える所には素材にしか無いもの
+        //（人形・手形）が居るので、混ぜると合っていた背景の方がずれる。
+        Object.assign(cue, await bakeColorMatch(refEl, ovEl, blendCfg, maskUrl ? maskC : null));
         const r = deps.saveCue ? await deps.saveCue(cue) : { ok: false };
         if (!r || r.ok === false) throw new Error('show.json 保存失敗');
         deps.onCueSaved && deps.onCueSaved(cue);

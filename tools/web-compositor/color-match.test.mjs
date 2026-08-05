@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   GAIN_MAX, GAIN_MIN, IDENTITY, OFFSET_LIMIT,
-  averageStats, isIdentity, solveMatch, statsFromImageData,
+  averageStats, isIdentity, solveMatch, statsFromImageData, maskRectForSource,
 } from './color-match.js';
 
 const stats = (mean, sd) => ({ mean, sd });
@@ -124,4 +124,31 @@ test('空・count 0 の群は無視する', () => {
   const a = averageStats([stat(0.5, 0.1), { mean: [0, 0, 0], sd: [0, 0, 0], count: 0 }]);
   assert.ok(Math.abs(a.mean[0] - 0.5) < 1e-9);
   assert.ok(Math.abs(a.sd[0] - 0.1) < 1e-9);
+});
+
+// ---- マスクを素材と同じ格子で読むための矩形 ----------------------------------
+//   実機は overlay を contain-fit で枠へ収め、**マスクだけは生 uv で読む**。
+//   統計をマスクで絞るときは、その対応を逆にたどらないと別の場所を見ることになる。
+
+test('maskRectForSource: 4:3 の素材は 16:9 マスクの中央 75% に対応する', () => {
+  const r = maskRectForSource(640, 480, 640, 360);
+  assert.deepStrictEqual(r, { sx: 80, sy: 0, sw: 480, sh: 360 });
+});
+
+test('maskRectForSource: 素材と枠のアスペクトが同じなら全面', () => {
+  assert.deepStrictEqual(maskRectForSource(1920, 1080, 640, 360),
+    { sx: 0, sy: 0, sw: 640, sh: 360 });
+});
+
+test('maskRectForSource: 素材の方が横長なら上下に余白が付く', () => {
+  const r = maskRectForSource(1000, 250, 640, 360);   // 4:1
+  assert.equal(r.sw, 640);
+  assert.equal(r.sh, 160);
+  assert.equal(r.sx, 0);
+  assert.equal(r.sy, 100);
+});
+
+test('maskRectForSource: 寸法が取れないときは枠いっぱいに倒す', () => {
+  assert.deepStrictEqual(maskRectForSource(0, 0, 640, 360),
+    { sx: 0, sy: 0, sw: 640, sh: 360 });
 });

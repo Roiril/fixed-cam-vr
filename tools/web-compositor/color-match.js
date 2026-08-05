@@ -116,11 +116,32 @@ export function averageStats(list) {
 }
 
 /**
+ * マスク（枠空間 16:9）を、素材／実写の画素と**同じ格子**で読むための矩形を返す。
+ *
+ * 実機のシェーダは overlay を contain-fit で枠へ収め、**マスクだけは生 uv で読む**。
+ * だから「素材のこの画素はマスクのどこか」は contain-fit の逆写像で決まる。
+ * 4:3 の素材が 16:9 の枠に入るなら、素材の全幅はマスクの中央 75%（x 0.125–0.875）に対応する。
+ */
+export function maskRectForSource(srcW, srcH, maskW, maskH) {
+  const fa = maskW / maskH;
+  const a = (srcW && srcH) ? srcW / srcH : fa;
+  const w = a > fa ? maskW : Math.max(1, Math.round(maskH * a));
+  const h = a > fa ? Math.max(1, Math.round(maskW / a)) : maskH;
+  return { sx: (maskW - w) / 2, sy: (maskH - h) / 2, sw: w, sh: h };
+}
+
+/**
  * 描画可能な要素（img / video / canvas）を小さな canvas へ縮小して統計を取る。
  * 縮小するのは、統計に必要なのは分布であって解像度ではないから（32×32 でも実用上ぶれない）。
  * ブラウザ専用（node のテストは上の純関数だけを触る）。
+ *
+ * `maskEl` を渡すと、**マスクが白い（＝差し替える）画素を統計から外す**。
+ * 差し替える所には人形や手形そのものが居て、実写側には居ない。そこを平均に混ぜると
+ * 「主題が背景と違う」ぶんまで補正しようとして、**もともと合っていた背景がずれる**
+ * （2026-08-05 実測: 全画素で解いた結果、背景の一致が 1.5 → 20.4 に悪化した）。
+ * 残るのは「実写と素材が同じものを写している所」＝そこを合わせるのが正しい。
  */
-export function statsFromElement(el, size = 48) {
+export function statsFromElement(el, size = 48, maskEl = null) {
   if (!el) return null;
   const w = el.videoWidth || el.naturalWidth || el.width || 0;
   const h = el.videoHeight || el.naturalHeight || el.height || 0;
@@ -130,10 +151,44 @@ export function statsFromElement(el, size = 48) {
   const g = c.getContext('2d', { willReadFrequently: true });
   g.drawImage(el, 0, 0, size, size);
   try {
-    return statsFromImageData(g.getImageData(0, 0, size, size).data);
+    const img = g.getImageData(0, 0, size, size);
+    // マスクの外がほとんど残らない（画面いっぱいの素材）なら、絞らずに全体で解く。
+    applyMaskAlpha(img, maskEl, w, h, size);
+    return statsFromImageData(img.data);
   } catch {
     return null;   // 別オリジンの画像（tainted canvas）は諦めて恒等にする
   }
+}
+
+/**
+ * マスクが白い画素の alpha を 0 にする（`statsFromImageData` は alpha<8 を数えない）。
+ * 十分な画素が残らなければ何もせず false を返す＝呼び出し側は全体で解く。
+ */
+function applyMaskAlpha(img, maskEl, srcW, srcH, size) {
+  if (!maskEl) return false;
+  const mw = maskEl.naturalWidth || maskEl.width || 0;
+  const mh = maskEl.naturalHeight || maskEl.height || 0;
+  if (!mw || !mh) return false;
+  const r = maskRectForSource(srcW, srcH, mw, mh);
+  const mc = document.createElement('canvas');
+  mc.width = size; mc.height = size;
+  const mg = mc.getContext('2d', { willReadFrequently: true });
+  mg.drawImage(maskEl, r.sx, r.sy, r.sw, r.sh, 0, 0, size, size);
+  let md;
+  try {
+    md = mg.getImageData(0, 0, size, size).data;
+  } catch {
+    return false;
+  }
+  const keep = new Uint8Array(size * size);
+  let n = 0;
+  for (let i = 0; i < keep.length; i++) {
+    // R チャンネルが正（マスクは R に白で焼く）。少しでも掛かっている所は使わない。
+    if (md[i * 4] < 24) { keep[i] = 1; n++; }
+  }
+  if (n < keep.length * 0.1) return false;   // 残りが 1 割未満 = 絞る意味がない
+  for (let i = 0; i < keep.length; i++) if (!keep[i]) img.data[i * 4 + 3] = 0;
+  return true;
 }
 
 /** シーク完了を待つ（1.2 秒で諦める。壊れた素材で焼き込みを止めない）。 */
@@ -152,11 +207,11 @@ const seekTo = (v, t) => new Promise((resolve) => {
  * 「その明るさ」に固定された補正が焼かれる。暗く始まって明るくなる素材では、後半が破綻する。
  * 再生位置は元へ戻し、再生中だったものは再生を続ける（試写を乱さない）。
  */
-export async function statsFromMedia(el, samples = 5) {
+export async function statsFromMedia(el, samples = 5, maskEl = null) {
   if (!el) return null;
-  if (el.tagName !== 'VIDEO') return statsFromElement(el);
+  if (el.tagName !== 'VIDEO') return statsFromElement(el, 48, maskEl);
   const dur = el.duration;
-  if (!Number.isFinite(dur) || dur <= 0.05) return statsFromElement(el);
+  if (!Number.isFinite(dur) || dur <= 0.05) return statsFromElement(el, 48, maskEl);
   const wasPaused = el.paused;
   const t0 = el.currentTime;
   const acc = [];
@@ -164,7 +219,7 @@ export async function statsFromMedia(el, samples = 5) {
     el.pause();
     for (let i = 0; i < samples; i++) {
       await seekTo(el, (dur * (i + 0.5)) / samples);
-      const s = statsFromElement(el);
+      const s = statsFromElement(el, 48, maskEl);
       if (s && s.count) acc.push(s);
     }
   } catch { /* シークできない素材は現フレームで妥協する */ }
@@ -172,7 +227,7 @@ export async function statsFromMedia(el, samples = 5) {
     await seekTo(el, t0);
     if (!wasPaused) el.play().catch(() => {});
   } catch { /* 戻せなくても焼き込みは続ける */ }
-  return acc.length ? averageStats(acc) : statsFromElement(el);
+  return acc.length ? averageStats(acc) : statsFromElement(el, 48, maskEl);
 }
 
 /**
@@ -180,11 +235,12 @@ export async function statsFromMedia(el, samples = 5) {
  * 卓のプレビューと同じ意思決定（境界ブレンドの色統計トグル）を使うので、cue を作るどの面も
  * この 1 関数を通すこと — 通し忘れると「卓で色が合って見えたのに実機は素の色」になる。
  */
-export async function bakeColorMatch(liveEl, srcEl, cfg) {
+export async function bakeColorMatch(liveEl, srcEl, cfg, maskEl = null) {
   const none = { hasMatch: false, matchGain: [1, 1, 1], matchOffset: [0, 0, 0] };
   if (!cfg || !cfg.colorMatch || !(cfg.colorStrength > 1e-4)) return none;
-  const liveStats = statsFromElement(liveEl);
-  const srcStats = await statsFromMedia(srcEl);
+  // マスクがあるなら**差し替えない所**（実写と素材が同じものを写している所）だけで解く。
+  const liveStats = statsFromElement(liveEl, 48, maskEl);
+  const srcStats = await statsFromMedia(srcEl, 5, maskEl);
   // 実写か素材のどちらかが読めない（未接続・別オリジン）ときは黙って恒等にする。
   if (!liveStats || !srcStats || !liveStats.count || !srcStats.count) return none;
   const m = solveMatch(liveStats, srcStats, cfg.colorStrength);
