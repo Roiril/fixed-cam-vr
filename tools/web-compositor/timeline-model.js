@@ -98,9 +98,11 @@ export const TAKE = {
   //   chain          = 自分を塞いでいた演出が終わるまで、区間を出ても待つ
   WAIT_SEGMENT: 'segment', WAIT_CHAIN: 'chain',
   SRC_LIVE: 'live', SRC_INHERIT: 'inherit', SRC_CLIP: 'clip', SRC_STILL: 'still', SRC_REC: 'rec',
+  // そのカメラで撮った無人プレート。still と絵は同じだが CG 人形を重ねられる（パースが一致するため）。
+  SRC_PLATE: 'plate',
   CG_FOLLOW: 'follow', CG_FIXED: 'fixed',
   SLOT_SCHEME: 'slot://',
-  DUR_SEC: 'sec', DUR_UNTIL_CLIP_END: 'untilClipEnd',
+  DUR_SEC: 'sec', DUR_UNTIL_CLIP_END: 'untilClipEnd', DUR_UNTIL_ZONE_CHANGE: 'untilZoneChange',
   // TRANS_GLITCH = 黒ではなく「映像の乱れ」で覆って、その最中に差し替える（企画書 2.3）。
   TRANS_CUT: 'cut', TRANS_DIP: 'dip', TRANS_FADE: 'fade', TRANS_GLITCH: 'glitch',
   DEFAULT_MAX_DURATION_SEC: 45,
@@ -149,14 +151,15 @@ const oneOf = (v, allowed, def) => (allowed.includes(v) ? v : def);
 
 function serializeStep(s) {
   const out = {
-    source: oneOf(s.source, [TAKE.SRC_LIVE, TAKE.SRC_INHERIT, TAKE.SRC_CLIP, TAKE.SRC_STILL, TAKE.SRC_REC], TAKE.SRC_LIVE),
+    source: oneOf(s.source, [TAKE.SRC_LIVE, TAKE.SRC_INHERIT, TAKE.SRC_CLIP, TAKE.SRC_STILL, TAKE.SRC_REC,
+                             TAKE.SRC_PLATE], TAKE.SRC_LIVE),
     camera: Number.isInteger(s.camera) ? s.camera : -1,
     assetUrl: s.assetUrl || '',
     recLap: Number.isInteger(s.recLap) ? s.recLap : 0,
     cueId: s.cueId || '',
     strength: num(s.strength, -1), fadeInSec: num(s.fadeInSec, -1), fadeOutSec: num(s.fadeOutSec, -1),
     trimStartSec: num(s.trimStartSec, -1), trimEndSec: num(s.trimEndSec, -1),
-    durKind: oneOf(s.durKind, [TAKE.DUR_SEC, TAKE.DUR_UNTIL_CLIP_END], TAKE.DUR_SEC),
+    durKind: oneOf(s.durKind, [TAKE.DUR_SEC, TAKE.DUR_UNTIL_CLIP_END, TAKE.DUR_UNTIL_ZONE_CHANGE], TAKE.DUR_SEC),
     durSec: num(s.durSec, 0),
     transition: oneOf(s.transition,
       [TAKE.TRANS_CUT, TAKE.TRANS_DIP, TAKE.TRANS_FADE, TAKE.TRANS_GLITCH], TAKE.TRANS_DIP),

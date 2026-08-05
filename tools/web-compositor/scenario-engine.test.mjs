@@ -21,7 +21,7 @@ import {
   CARRY_MAX_WAIT_SEC,
   LineCross, line, lineUndefined, LINE_REARM_MARGIN_M, LINE_MAX_STEP_M,
   TakeRunner, TAKE_ACTION, DROP_REASON,
-  DEFAULT_TICK_MS,
+  DEFAULT_TICK_MS, DEFAULT_MAX_DURATION_SEC, WAIT_CLIP_END, WAIT_ZONE_CHANGE,
 } from './scenario-engine.js';
 
 const SCENARIO_URL = new URL('../../Assets/Tests/Fixtures/scenario_walk.json', import.meta.url);
@@ -157,6 +157,49 @@ test('待っても間に合わなければ捨てるが、必ず報告する', ()
   r.onZoneCommitted(1, 1, true, 1, 0, 5);   // 画面が塞がったまま離脱
   assert.equal(r.armedCount, 0, '離脱で必ず決着する');
   assert.deepStrictEqual(dropped, [[1, DROP_REASON.SCREEN_BUSY]]);
+});
+
+// ---- 尺「次にカメラが切り替わるまで」（2026-08-05）--------------------------------
+//   移植元は TakeRunnerLogic.NotifyZoneChanged / TakeRunner.NotifyZoneCommitted。
+//   卓は実機と**同じ所で**畳める（ゾーン確定が卓にもある）。秒へ推定に落とすと卓だけ違う所で終わる。
+
+const zoneChangeTake = (steps) => ({
+  lap: 1, camera: 0, onExit: false, offsetSec: 0, skipWhenMissed: false, once: true,
+  maxDurationSec: 0, yieldOnZoneChange: false, stepDurSec: steps, onLine: false, lineIndex: -1,
+});
+
+test('untilZoneChange のカットは、素材が終わっても畳まずゾーン確定で畳む', () => {
+  const r = new TakeRunner();
+  r.setDefs([zoneChangeTake([WAIT_ZONE_CHANGE, 3])]);
+  r.onZoneCommitted(1, 0, false, 1, 0, 0);
+  r.tick(0, 0);
+
+  r.notifyCurrentStepFinished(5);
+  assert.equal(r.tick(5, 0).action, TAKE_ACTION.NONE, '素材の終端では終わらない');
+
+  r.notifyZoneChanged(8);
+  assert.equal(r.tick(8, 0).stepIndex, 1, '区間が確定したら次のカットへ');
+});
+
+test('untilClipEnd のカットは、ゾーンが変わっても畳まない', () => {
+  const r = new TakeRunner();
+  r.setDefs([zoneChangeTake([WAIT_CLIP_END, 3])]);
+  r.onZoneCommitted(1, 0, false, 1, 0, 0);
+  r.tick(0, 0);
+
+  r.notifyZoneChanged(5);
+  assert.equal(r.tick(5, 0).action, TAKE_ACTION.NONE, '待っている相手が違う');
+
+  r.notifyCurrentStepFinished(6);
+  assert.equal(r.tick(6, 0).stepIndex, 1);
+});
+
+test('untilZoneChange でも watchdog は効く（体験者が動かなくても必ず終わる）', () => {
+  const r = new TakeRunner();
+  r.setDefs([zoneChangeTake([WAIT_ZONE_CHANGE])]);
+  r.onZoneCommitted(1, 0, false, 1, 0, 0);
+  r.tick(0, 0);
+  assert.equal(r.tick(DEFAULT_MAX_DURATION_SEC + 1, 0).action, TAKE_ACTION.END_TAKE);
 });
 
 test('走行中に横切ったラインは覚えていて、画面が空いたら出る', () => {

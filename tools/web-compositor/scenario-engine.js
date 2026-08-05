@@ -36,6 +36,10 @@ export const DEFAULT_COOLDOWN_SEC = 0.5;    // SwitchDirectorLogic.DefaultCooldo
 export const DEFAULT_MAX_DURATION_SEC = 45; // TakeSchema.DefaultMaxDurationSec
 export const FALLBACK_STEP_DUR_SEC = 4;     // TakeSchema.FallbackStepDurSec
 
+// カットの尺が負値なら「外部通知待ち」。値が待つ相手を表す（TakeRunnerLogic の対）。
+export const WAIT_CLIP_END = -1;    // 素材の終わり（卓は実尺が測れないので秒へ推定する）
+export const WAIT_ZONE_CHANGE = -2; // 次の区間が確定するまで（卓も実機と同じ所で畳める）
+
 /** TakeSchema.ResolveMaxDuration（0 / 負値 = コード既定）。 */
 export const resolveMaxDuration = (v) => (v > 0 ? v : DEFAULT_MAX_DURATION_SEC);
 
@@ -552,8 +556,25 @@ export class TakeRunner {
     return noDecision();
   }
 
-  /** untilClipEnd のカットで素材の再生が終わったことを通知する。 */
-  notifyCurrentStepFinished(now) { this.setCurrentStepEnd(now); }
+  /**
+   * untilClipEnd のカットで素材の再生が終わったことを通知する。
+   * ⚠ untilZoneChange のカットは**この通知では終わらない**（素材が短くても区間に居るあいだ出し続ける）。
+   */
+  notifyCurrentStepFinished(now) {
+    if (this._currentStepWait() === WAIT_CLIP_END) this.setCurrentStepEnd(now);
+  }
+
+  /** untilZoneChange のカットを、次の区間が確定した時点で畳む（TakeRunner.NotifyZoneCommitted の対）。 */
+  notifyZoneChanged(now) {
+    if (this._currentStepWait() === WAIT_ZONE_CHANGE) this.setCurrentStepEnd(now);
+  }
+
+  /** 走行中のカットの尺（負値なら待っている相手）。走行していなければ 0。 */
+  _currentStepWait() {
+    if (!this._running || this._activeTake < 0 || this._activeTake >= this._defs.length) return 0;
+    const d = this._defs[this._activeTake].stepDurSec;
+    return (d && this._activeStep >= 0 && this._activeStep < d.length) ? d[this._activeStep] : 0;
+  }
 
   /** 現カットの終了時刻を外部から与える（watchdog は別途効き続ける）。 */
   setCurrentStepEnd(endTime) { if (this._running) this._stepEnd = endTime; }
@@ -890,6 +911,10 @@ export function createShowRunner(cfg) {
     if (zoneStep.committed) {
       const zoneCam = zoneStep.camera;
       out.push(ev('zone', tMs, zoneCam));
+
+      // 「次にカメラが切り替わるまで」のカットはここで終わる。**新しい区間の判定より先に**畳まないと、
+      // 同じ tick で武装された次の演出とどちらが画面を取るかが順序依存になる（TakeRunner と同じ順）。
+      takes.notifyZoneChanged(now);
 
       if (lap.feed(zoneCam)) out.push(ev('lap', tMs, lap.currentLap));
 

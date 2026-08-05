@@ -358,6 +358,11 @@ namespace FixedCamVr.Streaming
         /// <summary>ゾーン確定（TimelineDirector 経由の deterministic (lap,camera)）を受ける。</summary>
         public void NotifyZoneCommitted(int newLap, int newCam, bool hadPrev, int prevLap, int prevCam)
         {
+            // 「次にカメラが切り替わるまで」のカットはここで終わる。**新しい区間の判定より先に**
+            // 畳まないと、同じフレームで武装された次の演出とどちらが画面を取るかが順序依存になる。
+            // 畳むのは尺だけで、演出を終わらせるのは次の Tick（そこで chainNext が繋ぎ目の黒を省く）。
+            _logic.NotifyZoneChanged(Now);
+
             TakeRunnerLogic.Decision d =
                 _logic.OnZoneCommitted(newLap, newCam, hadPrev, prevLap, prevCam, Now);
             Apply(d, exitAnchored: true);
@@ -503,13 +508,16 @@ namespace FixedCamVr.Streaming
                 // （camera 未指定なら直前のゾーンのカメラへ落ちるので、なおさら無関係な構図になる）。
                 // 重ねれば必ず浮いた絵になるので、出さずに理由を言う方がよい。
                 // rec（端末内録画）は step.camera で撮った画なので、そのカメラの較正がそのまま効く。
-                bool assetShot = TakeSchema.IsAssetSource(step.source);
-                if (step.HasCg && assetShot)
+                // 素材のうち、**そのカメラで撮った画**（rec / plate）だけは人形を重ねてよい。
+                // 一般の素材（clip / still）は撮影条件が分からないので、重ねれば必ず浮く。
+                bool cgBlocked = TakeSchema.IsAssetSource(step.source)
+                                 && !TakeSchema.MatchesCameraPerspective(step.source);
+                if (step.HasCg && cgBlocked)
                 {
                     Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} は素材（{step.source}）なので " +
                                      $"CG 人形 '{step.cg}' は出さない（素材の構図と人形のパースが合わないため）");
                 }
-                if (step.HasCg && !assetShot)
+                if (step.HasCg && !cgBlocked)
                     _cgLayer.Apply(step.cg, step.cgMode,
                                    step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
                                    step.hasPlacement ? step.placement : null);
@@ -816,7 +824,7 @@ namespace FixedCamVr.Streaming
             return player;
         }
 
-        // カットの尺配列（untilClipEnd は負値＝外部通知待ち）。
+        // カットの尺配列（負値＝外部通知待ち。-1 は素材の終端、-2 は次の区間確定を待つ）。
         private static float[] BuildStepDurations(ShowTakeDef take)
         {
             ShowStepDef[] steps = take.steps ?? Array.Empty<ShowStepDef>();
@@ -825,7 +833,8 @@ namespace FixedCamVr.Streaming
             {
                 ShowStepDef s = steps[i];
                 if (s == null) { durs[i] = TakeSchema.FallbackStepDurSec; continue; }
-                if (s.IsUntilClipEnd) { durs[i] = -1f; continue; }
+                if (s.IsUntilClipEnd) { durs[i] = TakeRunnerLogic.WaitClipEnd; continue; }
+                if (s.IsUntilZoneChange) { durs[i] = TakeRunnerLogic.WaitZoneChange; continue; }
                 durs[i] = s.durSec > 0f ? s.durSec : TakeSchema.FallbackStepDurSec;
             }
             return durs;

@@ -97,6 +97,48 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.Tick(10f, 0).stepIndex, Is.EqualTo(1));
         }
 
+        [Test]
+        public void UntilZoneChange_WaitsForZoneCommit_NotClipEnd()
+        {
+            var l = Make(Enter(1, 0, 0f, TakeRunnerLogic.WaitZoneChange, 3f));
+            Enter(l, 1, 0, 0f);
+            l.Tick(0f, 0);
+
+            // 素材が終わっても畳まない（そのモードの意味は「区間に居るあいだ出し続ける」）
+            l.NotifyCurrentStepFinished(5f);
+            Assert.That(l.Tick(5f, 0).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                "素材の終端では終わらない");
+
+            l.NotifyZoneChanged(8f);
+            Assert.That(l.Tick(8f, 0).stepIndex, Is.EqualTo(1), "区間が確定したら次のカットへ");
+        }
+
+        [Test]
+        public void UntilClipEnd_IsNotFoldedByZoneChange()
+        {
+            var l = Make(Enter(1, 0, 0f, TakeRunnerLogic.WaitClipEnd, 3f));
+            Enter(l, 1, 0, 0f);
+            l.Tick(0f, 0);
+
+            l.NotifyZoneChanged(5f);
+            Assert.That(l.Tick(5f, 0).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                "素材の終端を待つカットは、区間が変わっても畳まない");
+
+            l.NotifyCurrentStepFinished(6f);
+            Assert.That(l.Tick(6f, 0).stepIndex, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void UntilZoneChange_StillBoundedByWatchdog()
+        {
+            var l = Make(Enter(1, 0, 0f, TakeRunnerLogic.WaitZoneChange));
+            Enter(l, 1, 0, 0f);
+            l.Tick(0f, 0);
+            // 体験者が動かなければ通知は来ない。上限は watchdog が保証する。
+            Assert.That(l.Tick(TakeSchema.DefaultMaxDurationSec + 1f, 0).action,
+                Is.EqualTo(TakeRunnerLogic.Action.EndTake));
+        }
+
         // ---- 不変条件 2: 必ず終わる（watchdog） ----
 
         [Test]

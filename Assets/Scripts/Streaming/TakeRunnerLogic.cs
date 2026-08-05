@@ -43,7 +43,9 @@ namespace FixedCamVr.Streaming
             public bool once;
             public float maxDurationSec;
             public bool yieldOnZoneChange; // true=yield（体験者が区間を移ったら打ち切る）/ false=hold
-            public float[] stepDurSec;  // カットごとの尺（<0 = untilClipEnd＝外部通知待ち）
+            // カットごとの尺。負値は「外部通知待ち」で、値が待つ相手を表す:
+            //   WaitClipEnd (-1) = 素材の終端  /  WaitZoneChange (-2) = 次の区間確定
+            public float[] stepDurSec;
 
             // 開始規則「このラインを通過したら」（at=line）。onExit=false と併用する。
             public bool onLine;         // true = 時刻ではなく床のラインの横断で発火する
@@ -312,11 +314,38 @@ namespace FixedCamVr.Streaming
             return default;
         }
 
+        /// <summary>外部通知待ちの印。<see cref="Def.stepDurSec"/> にこの値が入っていると尺は無限大になる。</summary>
+        public const float WaitClipEnd = -1f;
+        public const float WaitZoneChange = -2f;
+
         /// <summary>
         /// 尺が <c>untilClipEnd</c> のカットで、素材の再生が終わったことを通知する
         /// （<see cref="TakeRunner"/> が VideoPlayer / 画像表示の終端で呼ぶ）。次の <see cref="Tick"/> で進行する。
+        ///
+        /// ⚠ <c>untilZoneChange</c> のカットは**この通知では終わらない**。素材が短くても、
+        ///   体験者が次の区間へ移るまで出し続けるのがそのモードの意味だから。
         /// </summary>
-        public void NotifyCurrentStepFinished(float now) => SetCurrentStepEnd(now);
+        public void NotifyCurrentStepFinished(float now)
+        {
+            if (CurrentStepWait() == WaitClipEnd) SetCurrentStepEnd(now);
+        }
+
+        /// <summary>
+        /// 尺が <c>untilZoneChange</c> のカットを、次の区間が確定した時点で畳む
+        /// （<see cref="TakeRunner.NotifyZoneCommitted"/> から呼ぶ）。
+        /// </summary>
+        public void NotifyZoneChanged(float now)
+        {
+            if (CurrentStepWait() == WaitZoneChange) SetCurrentStepEnd(now);
+        }
+
+        /// <summary>走行中のカットの尺（負値なら待っている相手）。走行していなければ 0。</summary>
+        private float CurrentStepWait()
+        {
+            if (!_running || _activeTake < 0 || _activeTake >= _defs.Length) return 0f;
+            float[] d = _defs[_activeTake].stepDurSec;
+            return (d != null && _activeStep >= 0 && _activeStep < d.Length) ? d[_activeStep] : 0f;
+        }
 
         /// <summary>
         /// 現カットの終了時刻を外部から与える（素材が無い <c>untilClipEnd</c> を既定尺で畳む等）。
@@ -351,7 +380,7 @@ namespace FixedCamVr.Streaming
             _deadline = now + TakeSchema.ResolveMaxDuration(_defs[index].maxDurationSec);
         }
 
-        // 尺が負（untilClipEnd）なら外部通知待ち = 無限大。watchdog が上限を保証する。
+        // 尺が負（untilClipEnd / untilZoneChange）なら外部通知待ち = 無限大。watchdog が上限を保証する。
         private static float StepEndTime(float now, float durSec)
             => durSec < 0f ? float.PositiveInfinity : now + durSec;
 

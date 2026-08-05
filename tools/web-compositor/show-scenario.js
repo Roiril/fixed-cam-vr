@@ -13,7 +13,7 @@ import {
 } from './zone-layout.js';
 import {
   resolveTiming, DEFAULT_DWELL_SEC, DEFAULT_COOLDOWN_SEC, FALLBACK_STEP_DUR_SEC, DEFAULT_TICK_MS,
-  line as makeLine,
+  WAIT_ZONE_CHANGE, line as makeLine,
 } from './scenario-engine.js';
 
 const num = (v, def) => (Number.isFinite(v) ? v : def);
@@ -21,7 +21,8 @@ const num = (v, def) => (Number.isFinite(v) ? v : def);
 /** TakeSchema.NormalizeSource（未知は live へ倒す）。 */
 function normalizeSource(source) {
   return (source === TAKE.SRC_LIVE || source === TAKE.SRC_INHERIT
-    || source === TAKE.SRC_CLIP || source === TAKE.SRC_STILL) ? source : TAKE.SRC_LIVE;
+    || source === TAKE.SRC_CLIP || source === TAKE.SRC_STILL
+    || source === TAKE.SRC_PLATE) ? source : TAKE.SRC_LIVE;
 }
 
 /**
@@ -32,13 +33,22 @@ export function displaySource(step) {
   return step && step.source === TAKE.SRC_REC ? TAKE.SRC_REC : normalizeSource(step && step.source);
 }
 
+/**
+ * 「この画は step.camera の構図そのものか」＝ CG 人形を重ねてパースが合うか
+ * （TakeSchema.MatchesCameraPerspective の対）。録画と無人プレートだけが該当する。
+ */
+export function matchesCameraPerspective(source) {
+  return source === TAKE.SRC_REC || source === TAKE.SRC_PLATE;
+}
+
 /** -1 = 素材定義から継承（TakeSchema.Inherit）。 */
 const inherit = (stepValue, cueValue) => (stepValue < 0 ? cueValue : stepValue);
 
 /** カットが実際に読む素材 URL（カット自身の素材 > 重ねる素材）。無ければ空文字。 */
 export function stepAssetUrl(step, cue) {
   const source = normalizeSource(step.source);
-  if ((source === TAKE.SRC_CLIP || source === TAKE.SRC_STILL) && step.assetUrl) return step.assetUrl;
+  if ((source === TAKE.SRC_CLIP || source === TAKE.SRC_STILL || source === TAKE.SRC_PLATE)
+      && step.assetUrl) return step.assetUrl;
   return (cue && cue.sourceUrl) || '';
 }
 
@@ -49,6 +59,7 @@ export function stepAssetUrl(step, cue) {
  *   kind='measured'  … untilClipEnd + 素材の実尺を実測（trim を適用。実機と同じ終わり方）
  *   kind='estimated' … untilClipEnd + cue の trim から推定（実尺が測れない時の次善）
  *   kind='unknown'   … untilClipEnd で尺が分からない → -1（watchdog 任せ。実機とズレうる）
+ *   kind='untilZone' … untilZoneChange → -2（体験者が次の区間へ移るまで。シミュレータも同じ所で畳む）
  *
  * getDuration(url) は「実測できていれば秒、まだ/測れないなら null」を返す関数（任意）。
  * ブラウザ（media-duration.js）だけが供給できるので、node テストでは未指定 = 従来どおり推定。
@@ -58,6 +69,11 @@ export function stepAssetUrl(step, cue) {
  * 録画カットの下地は録画で、cue はその上のマスクにすぎない。
  */
 export function resolveStepDuration(step, cue, getDuration, getRecSeconds) {
+  // 「次にカメラが切り替わるまで」は秒に落とさない。**シミュレータは実機と同じ所で畳める**
+  // （ゾーン確定が卓にもある）ので、推定に化けさせると卓だけが違う所で終わる。
+  if (step.durKind === TAKE.DUR_UNTIL_ZONE_CHANGE) {
+    return { durSec: WAIT_ZONE_CHANGE, kind: 'untilZone' };
+  }
   if (step.durKind !== TAKE.DUR_UNTIL_CLIP_END) {
     return { durSec: step.durSec > 0 ? step.durSec : FALLBACK_STEP_DUR_SEC, kind: 'exact' };
   }
@@ -85,9 +101,15 @@ export function resolveStepDuration(step, cue, getDuration, getRecSeconds) {
   return { durSec: -1, kind: 'unknown' };
 }
 
-/** カットが切り替えるカメラ（live かつ camera>=0 のときだけ画面が動く）。 */
+/**
+ * そのカットの**構図を決めるカメラ**。live は画面ごとそのカメラへ動き、rec / plate は画面は動かないが
+ * 「そのカメラで撮った画」なので較正がそのまま効く（＝ CG 人形を重ねられる）。
+ * clip / still は撮影条件が分からないので -1（どのカメラの較正も当てられない）。
+ */
 export function stepCamera(step) {
-  return (normalizeSource(step.source) === TAKE.SRC_LIVE && step.camera >= 0) ? step.camera : -1;
+  const source = displaySource(step);
+  const usesCamera = source === TAKE.SRC_LIVE || source === TAKE.SRC_REC || source === TAKE.SRC_PLATE;
+  return (usesCamera && step.camera >= 0) ? step.camera : -1;
 }
 
 /**

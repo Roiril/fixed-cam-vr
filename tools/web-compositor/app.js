@@ -945,7 +945,10 @@ document.querySelectorAll('.mode-btn').forEach((b) => {
     if (b.dataset.mode === 'material') atelier.refresh();
   };
 });
-restoreMode();
+// ⚠ 呼ぶのはこのファイルの末尾（`restoreMode` の定義位置ではない）。
+//   復元は `.mode-btn` の click を発火し、その先で本番前チェックが走る。チェックは下の方で
+//   `let` 宣言している状態（assetCheckSig 等）を読むので、ここで呼ぶと TDZ で例外になり、
+//   **その後の初期化がまるごと止まる**（実際に止まっていた）。
 
 // ▶ 検証 = 🕹 ショーシミュレーションへ（矢印キーの簡易シミュレーションは廃止・二重に持たない）。
 //   オーサリングモードへ戻し、フロアマップのドットを有効化して、シミュレータまでスクロールする。
@@ -2293,6 +2296,8 @@ if ($('#runDiag')) {
 }
 
 buildGlobalFx();
+// 作業面の復元は全部の初期化が済んでから（上の restoreMode の注意書きを参照）。
+restoreMode();
 pollState();
 pollUnity();
 pollDiscovery();

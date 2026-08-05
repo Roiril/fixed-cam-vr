@@ -14,6 +14,7 @@ import path from 'node:path';
 import { normalizeTimelineV3, TAKE } from '../timeline-model.js';
 import { recordCoverage } from '../record-model.js';
 import { buildScenarioConfig } from '../show-scenario.js';
+import { isSegmentReachable } from '../run-model.js';
 import { ROOT } from './show-api.mjs';
 
 const LOCAL_DIRS = ['masks', 'captures', 'recordings', 'testassets', 'audio', 'static-inputs'];
@@ -52,6 +53,8 @@ export function checkShow(state, opts = {}) {
   const tracks = state.bgmTracks || [];
   const tl = normalizeTimelineV3(state.timeline || { rev: 1, segments: [] });
   const totalLaps = (state.run && state.run.totalLaps > 0) ? state.run.totalLaps : 3;
+  const courseOrder = (state.layout && state.layout.course && Array.isArray(state.layout.course.order))
+    ? state.layout.course.order : [];
 
   // 卓のシミュレータが出す警告（cue 未解決・ラインの担当違い・尺不明 …）をそのまま引き継ぐ。
   const { meta } = buildScenarioConfig(state, { getRecSeconds: () => dwellSec });
@@ -66,7 +69,10 @@ export function checkShow(state, opts = {}) {
 
   for (const seg of tl.segments) {
     const where = `${seg.lap}周目 / ${camName(seg.camera)}`;
-    if (seg.lap > totalLaps) {
+    // ⚠ 到達可能かの式は **run-model.isSegmentReachable が単一の正**（ShowRunReach / analyze-xp-log と対）。
+    //   ここに `lap > totalLaps` と書くと**帰りの A**（lap=totalLaps+1 の order[0]）を到達不能と誤判定し、
+    //   実機では出る演出に ❌ が出る。実際に出ていた。
+    if (!isSegmentReachable(seg.lap, seg.camera, totalLaps, courseOrder)) {
       err(`${where}: この体験は ${totalLaps} 周で終わるので、この区間には到達しません（演出が出ません）`);
     }
     if (seg.camera < 0 || seg.camera >= cams.length) err(`${where}: カメラ index が範囲外です`);
@@ -97,10 +103,17 @@ export function checkShow(state, opts = {}) {
       }
 
       let total = 0;
+      // 「この演出は区間の終わりで必ず畳まれるか」。畳まれるなら滞在を食い潰す心配は無い:
+      //   policy=yield          … 体験者が区間を移った瞬間に打ち切る
+      //   untilZoneChange のカット … その所で終わる（＝この演出は区間より長くなりようがない）
+      let boundedBySegment = t.policy === TAKE.POLICY_YIELD;
       t.steps.forEach((s, i) => {
+        if (s.durKind === TAKE.DUR_UNTIL_ZONE_CHANGE) boundedBySegment = true;
         const sLabel = `${label} カット${i + 1}`;
-        const screenCam = (s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC) && s.camera >= 0
-          ? s.camera : seg.camera;
+        // カットが自分でカメラを指す集合（live / 録画 / 無人プレート）。それ以外は区間のカメラを継ぐ。
+        const usesCam = s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC
+          || s.source === TAKE.SRC_PLATE;
+        const screenCam = usesCam && s.camera >= 0 ? s.camera : seg.camera;
         total += s.durKind === TAKE.DUR_SEC ? Math.max(0, s.durSec) : dwellSec;
 
         // 実機（TakeRunner.BeginStep）は camera<0 の live / rec カットを**画面に触らず飛ばす**。
@@ -108,6 +121,11 @@ export function checkShow(state, opts = {}) {
         if ((s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC)
           && (!Number.isInteger(s.camera) || s.camera < 0 || s.camera >= cams.length)) {
           err(`${sLabel}: 映すカメラが決まっていません（camera=${s.camera}。このカットは飛ばされます）`);
+        }
+        // 無人プレートはカメラを指さないと人形の構図が決まらない（実機は概算姿勢にも落とせない）。
+        if (s.source === TAKE.SRC_PLATE
+          && (!Number.isInteger(s.camera) || s.camera < 0 || s.camera >= cams.length)) {
+          err(`${sLabel}: どのカメラの無人の部屋かが決まっていません（camera=${s.camera}）`);
         }
 
         // 重ねる素材（cue）。マスクはそのカメラの構図に焼かれているので、別カメラの cue は合わない。
@@ -125,7 +143,8 @@ export function checkShow(state, opts = {}) {
           }
         }
 
-        if (s.source === TAKE.SRC_CLIP || s.source === TAKE.SRC_STILL) {
+        if (s.source === TAKE.SRC_CLIP || s.source === TAKE.SRC_STILL
+          || s.source === TAKE.SRC_PLATE) {
           const cue = s.cueId ? cues.find((c) => c.id === s.cueId) : null;
           const url = s.assetUrl || (cue && cue.sourceUrl) || '';
           if (!url) err(`${sLabel}: 素材が指定されていません（実機はこのカットを飛ばします）`);
@@ -134,6 +153,8 @@ export function checkShow(state, opts = {}) {
 
         if (s.cg) {
           if (!actors.some((a) => a.id === s.cg)) err(`${sLabel}: CG 人形「${s.cg}」が actors にありません`);
+          // 一般の素材（clip / still）は撮影条件が分からないので人形が必ず浮く。
+          // 録画と無人プレートは step.camera で撮った画なので、そのカメラの較正がそのまま効く。
           if (s.source === TAKE.SRC_CLIP || s.source === TAKE.SRC_STILL) {
             err(`${sLabel}: 素材のカットには CG 人形を出せません（実機も出しません）`);
           }
@@ -149,7 +170,7 @@ export function checkShow(state, opts = {}) {
         }
       });
 
-      if (t.at === TAKE.AT_ENTER && t.offsetSec + total > dwellSec) {
+      if (t.at === TAKE.AT_ENTER && !boundedBySegment && t.offsetSec + total > dwellSec) {
         warn(`${label}: 開始 +${t.offsetSec}s ＋ 尺 ${total.toFixed(1)}s が想定滞在 ${dwellSec}s を超えます`
           + '（体験者が先に次の区間へ行き、画面だけ前の演出が続きます）');
       }

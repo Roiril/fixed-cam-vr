@@ -13,8 +13,13 @@ import {
   linesFromLayout, cameraAtPoint, lineMid, lineLength,
   LINE_DIR_BOTH, LINE_DIR_FWD,
 } from './zone-layout.js';
-import { buildScenarioConfig, resolveStepDuration, stepCamera, serializeScenario } from './show-scenario.js';
-import { pickZone, runScenario, parseScenario, FALLBACK_STEP_DUR_SEC } from './scenario-engine.js';
+import {
+  buildScenarioConfig, resolveStepDuration, stepCamera, serializeScenario,
+  matchesCameraPerspective,
+} from './show-scenario.js';
+import {
+  pickZone, runScenario, parseScenario, FALLBACK_STEP_DUR_SEC, WAIT_ZONE_CHANGE,
+} from './scenario-engine.js';
 import { TAKE, newTake, newStep, newSeg } from './timeline-model.js';
 
 // ---- grid → 矩形（ZoneLayoutSolver）------------------------------------------
@@ -318,6 +323,28 @@ test('stepCamera: camera<0 の live はカメラを動かさない', () => {
   assert.equal(stepCamera(newStep({ source: TAKE.SRC_LIVE, camera: 1 })), 1);
   assert.equal(stepCamera(newStep({ source: TAKE.SRC_LIVE, camera: -1 })), -1);
   assert.equal(stepCamera(newStep({ source: TAKE.SRC_CLIP, camera: 1 })), -1);
+});
+
+test('stepCamera: 無人プレートは構図を決めるカメラを持つ（人形を重ねられる）', () => {
+  // 実機の TakeSchema.MatchesCameraPerspective と同じ集合。ここが -1 に落ちると、卓は
+  // 「素材のカットなので人形は出ません」と嘘をつく（実機は出す）。
+  assert.equal(stepCamera(newStep({ source: TAKE.SRC_PLATE, camera: 2 })), 2);
+  assert.equal(stepCamera(newStep({ source: TAKE.SRC_REC, camera: 2 })), 2);
+  assert.equal(stepCamera(newStep({ source: TAKE.SRC_STILL, camera: 2 })), -1);
+  assert.equal(matchesCameraPerspective(TAKE.SRC_PLATE), true);
+  assert.equal(matchesCameraPerspective(TAKE.SRC_STILL), false);
+});
+
+test('resolveStepDuration: 「次にカメラが切り替わるまで」は秒へ推定しない', () => {
+  // 秒へ落とすと卓だけが違う所で畳む。ゾーン確定は卓にもあるので、実機と同じ所で終われる。
+  assert.deepStrictEqual(
+    resolveStepDuration(newStep({ durKind: TAKE.DUR_UNTIL_ZONE_CHANGE }), null),
+    { durSec: WAIT_ZONE_CHANGE, kind: 'untilZone' });
+  // 素材があっても、その長さでは畳まない（区間に居るあいだ出し続けるのがこのモードの意味）。
+  assert.deepStrictEqual(
+    resolveStepDuration(newStep({ durKind: TAKE.DUR_UNTIL_ZONE_CHANGE, cueId: 'c' }),
+      { sourceUrl: 'v.mp4', trimStart: 1, trimEnd: 6 }, () => 30),
+    { durSec: WAIT_ZONE_CHANGE, kind: 'untilZone' });
 });
 
 test('buildScenarioConfig: 推定・不明の尺と未解決 cue は警告に出る（黙って捏造しない）', () => {

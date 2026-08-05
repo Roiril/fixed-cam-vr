@@ -59,12 +59,21 @@ const LANE_H = 90;      // 演出 1 段の高さ（CSS .rb-seg-lane > .rb-take �
 const LANE_GAP = 4;
 const SEG_MIN_W = 152;
 
+/**
+ * そのカットが**自分でカメラを指す**か。live は画面ごとそのカメラへ動き、rec / plate は画面は
+ * 動かないが「そのカメラで撮った画」なので較正が効く（＝ CG 人形を重ねられる）。
+ * TakeSchema 側の `SourceLive || MatchesCameraPerspective` と同じ集合。
+ */
+const usesStepCamera = (src) =>
+  src === TAKE.SRC_LIVE || src === TAKE.SRC_REC || src === TAKE.SRC_PLATE;
+
 const SRC_LABEL = {
   [TAKE.SRC_LIVE]: 'ライブカメラ',
   [TAKE.SRC_INHERIT]: 'そのまま',
   [TAKE.SRC_CLIP]: '事前映像',
   [TAKE.SRC_STILL]: '静止画',
   [TAKE.SRC_REC]: '録画（この体験の）',
+  [TAKE.SRC_PLATE]: '無人の部屋（このカメラ）',
 };
 
 export function createRibbon(container, deps) {
@@ -204,7 +213,7 @@ export function createRibbon(container, deps) {
   //    「そのまま」カットの下地が毎回「未割当」と判定されて、正しく著作された
   //    オーバーレイに「マスクの位置が実機でずれます」の ⚠ が出る（実際に出ていた）。
   function stepScreenCam(s, segCam) {
-    if ((s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC) && Number.isInteger(s.camera) && s.camera >= 0) {
+    if (usesStepCamera(s.source) && Number.isInteger(s.camera) && s.camera >= 0) {
       return s.camera;
     }
     if (Number.isInteger(segCam)) return segCam;
@@ -247,9 +256,9 @@ export function createRibbon(container, deps) {
     s.placement = { x: p.x, z: p.z, yawDeg: p.yawDeg };
     s.hasPlacement = !!s.cg && s.cgMode === TAKE.CG_FIXED;
   }
-  /** 人形の投影に使うカメラ。ライブ／録画はカットのカメラ、素材カットは区間のカメラ。 */
+  /** 人形の投影に使うカメラ。ライブ／録画／無人プレートはカットのカメラ、素材カットは区間のカメラ。 */
   function stepCameraIndex(s) {
-    if ((s.source === TAKE.SRC_LIVE || s.source === TAKE.SRC_REC) && s.camera >= 0) return s.camera;
+    if (usesStepCamera(s.source) && s.camera >= 0) return s.camera;
     return sel ? sel.camera : -1;
   }
   /**
@@ -303,7 +312,9 @@ export function createRibbon(container, deps) {
   function stepSeconds(s) {
     const cue = s.cueId ? cueById(s.cueId) : null;
     const d = resolveStepDuration(s, cue, durationOf, recSecondsOf);
-    const approx = d.kind === 'estimated' || d.kind === 'unknown';
+    // 「次にカメラが切り替わるまで」は著作時に秒が決まらない（体験者が歩いた分だけ続く）。
+    // 絵の幅は仮置きし、必ず ≈ を付ける — 確定した秒に見せると、リボンの絵が嘘になる。
+    const approx = d.kind === 'estimated' || d.kind === 'unknown' || d.kind === 'untilZone';
     const sec = d.durSec > 0 ? d.durSec : TAKE.FALLBACK_STEP_DUR_SEC;
     return { sec: Math.max(0.2, sec), approx, kind: d.kind };
   }
@@ -357,6 +368,13 @@ export function createRibbon(container, deps) {
     if (recBad) return recBad;
     if ((s.source === TAKE.SRC_CLIP || s.source === TAKE.SRC_STILL) && !s.assetUrl) {
       return '素材が未選択（実機ではこのカットは飛ばされます）';
+    }
+    // 無人プレートは素材を直に指しても、重ねる素材（cue）から取ってもよい。どちらも無ければ出ない。
+    if (s.source === TAKE.SRC_PLATE && !s.assetUrl && !s.cueId) {
+      return '無人の部屋の画が未選択（実機ではこのカットは飛ばされます）';
+    }
+    if (s.source === TAKE.SRC_PLATE && !(Number.isInteger(s.camera) && s.camera >= 0)) {
+      return 'どのカメラの部屋かが未選択（人形を重ねる構図が決まりません）';
     }
     if (s.cueId && !cueById(s.cueId)) return `重ねる素材 ${s.cueId} が見つかりません`;
     // 既存データが別カメラの素材を指しているケース（選択肢は塞いだが、過去の割当は残りうる）。
@@ -773,6 +791,8 @@ export function createRibbon(container, deps) {
     if (s.source === TAKE.SRC_LIVE) return camColor(Number.isInteger(s.camera) && s.camera >= 0 ? s.camera : 0);
     if (s.source === TAKE.SRC_CLIP) return 'var(--accent-color)';
     if (s.source === TAKE.SRC_STILL) return '#c9a6ff';
+    // 無人プレートは「そのカメラで撮った画」なので、そのカメラの色を淡く使う（録画と同じ考え方）。
+    if (s.source === TAKE.SRC_PLATE) return camColor(Number.isInteger(s.camera) && s.camera >= 0 ? s.camera : 0);
     return 'rgba(255,250,240,.45)';
   }
   function baseName(u) {
@@ -795,6 +815,11 @@ export function createRibbon(container, deps) {
       const id = cameras[s.camera] ? cameras[s.camera].id : '?';
       return `録画 ${s.recLap > 0 ? s.recLap : 1}周目 ${id}`;
     }
+    // 無人プレートも「どのカメラの部屋か」が要点なので、ファイル名ではなくカメラで呼ぶ。
+    if (s.source === TAKE.SRC_PLATE) {
+      const id = cameras[s.camera] ? cameras[s.camera].id : '?';
+      return `無人 ${id}`;
+    }
     const kind = s.source === TAKE.SRC_STILL ? '静止画' : '映像';
     return `${kind} ${baseName(s.assetUrl) || '（未選択）'}`;
   }
@@ -804,6 +829,7 @@ export function createRibbon(container, deps) {
     estimated: '尺 推定（素材の trim から。実機は素材の実尺で終わる）',
     unknown: '尺 不明（実機は素材の終わりまで。卓では最大長まで走る）',
     fallback: '尺 素材なし → 既定 4s（実機も同じ）',
+    untilZone: '尺 次にカメラが切り替わるまで（体験者がこの区間を出るまで出し続ける。絵の幅は仮）',
   };
   function stepTitle(s, segCam) {
     const bad = stepIssue(s, segCam);
@@ -1362,10 +1388,11 @@ export function createRibbon(container, deps) {
     const d = stepSeconds(s);
     const bad = stepIssue(s);
 
-    const srcOpts = [TAKE.SRC_LIVE, TAKE.SRC_INHERIT, TAKE.SRC_CLIP, TAKE.SRC_STILL, TAKE.SRC_REC]
+    const srcOpts = [TAKE.SRC_LIVE, TAKE.SRC_INHERIT, TAKE.SRC_CLIP, TAKE.SRC_STILL, TAKE.SRC_REC,
+                     TAKE.SRC_PLATE]
       .map((k) => `<option value="${k}"${s.source === k ? ' selected' : ''}>${SRC_LABEL[k]}</option>`).join('');
     const camOpts = cameras.map((c, k) => `<option value="${k}"${s.camera === k ? ' selected' : ''}>${escapeHtml(camLabel(k))}</option>`).join('');
-    const wantVideo = s.source !== TAKE.SRC_STILL;
+    const wantVideo = s.source !== TAKE.SRC_STILL && s.source !== TAKE.SRC_PLATE;
     const assets = captureItems().filter((it) => (wantVideo ? it.type === 'video' || isVideoUrl(it.url) : it.type !== 'video'));
     // 実素材（撮影・合成したもの）と動作確認用のダミー（testassets/）を分けて出す。
     // 混ぜると「いま何を選んでいるのか」が分からなくなる。
@@ -1404,8 +1431,9 @@ export function createRibbon(container, deps) {
 
     const isLive = s.source === TAKE.SRC_LIVE;
     const isRec = s.source === TAKE.SRC_REC;
-    const isAsset = s.source === TAKE.SRC_CLIP || s.source === TAKE.SRC_STILL;
-    const bySec = s.durKind !== TAKE.DUR_UNTIL_CLIP_END;
+    const isAsset = isAssetSource(s.source);
+    const hasCam = usesStepCamera(s.source);
+    const bySec = s.durKind === TAKE.DUR_SEC;
     row.innerHTML = `
       <div class="rb-step-row-head">
         <span class="rb-step-no" style="--sc:${stepColor(s)}"><i></i>カット ${idx + 1}</span>
@@ -1417,7 +1445,7 @@ export function createRibbon(container, deps) {
       </div>
       <div class="rb-grid">
         <label>映すもの<select class="rb-s-src">${srcOpts}</select></label>
-        <label class="rb-s-cam-l" style="display:${isLive || isRec ? '' : 'none'}">カメラ<select class="rb-s-cam">${camOpts}</select></label>
+        <label class="rb-s-cam-l" style="display:${hasCam ? '' : 'none'}" title="${s.source === TAKE.SRC_PLATE ? 'どのカメラで撮った無人の部屋か。人形はこのカメラの較正で重なる' : ''}">カメラ<select class="rb-s-cam">${camOpts}</select></label>
         <label class="rb-s-reclap-l" style="display:${isRec ? '' : 'none'}" title="この体験のうち何周目に録った映像か（録れていなければ実機ではこのカットは飛ばされます）">録った周<input class="rb-s-reclap" type="number" min="1" step="1" value="${s.recLap > 0 ? s.recLap : 1}">周目<span class="rb-hint2">${escapeHtml(recLenNote(s))}</span></label>
         <label class="rb-s-asset-l" style="display:${isAsset ? '' : 'none'}">素材<select class="rb-s-asset">${assetOpts}</select></label>
         <button class="rb-s-asset-refresh" style="display:${isAsset ? '' : 'none'}" title="いま撮った素材を読み直す（recordings/ captures/ を再走査）">↻</button>
@@ -1430,7 +1458,8 @@ export function createRibbon(container, deps) {
       <div class="rb-grid">
         <label>尺<select class="rb-s-durkind">
           <option value="${TAKE.DUR_SEC}"${bySec ? ' selected' : ''}>秒で指定</option>
-          <option value="${TAKE.DUR_UNTIL_CLIP_END}"${bySec ? '' : ' selected'}>素材の終わりまで</option>
+          <option value="${TAKE.DUR_UNTIL_CLIP_END}"${s.durKind === TAKE.DUR_UNTIL_CLIP_END ? ' selected' : ''}>素材の終わりまで</option>
+          <option value="${TAKE.DUR_UNTIL_ZONE_CHANGE}"${s.durKind === TAKE.DUR_UNTIL_ZONE_CHANGE ? ' selected' : ''}>次にカメラが切り替わるまで</option>
         </select></label>
         <label class="rb-s-dur-l" style="display:${bySec ? '' : 'none'}"><input class="rb-s-dur" type="number" min="0.2" step="0.1" value="${s.durSec > 0 ? s.durSec : TAKE.FALLBACK_STEP_DUR_SEC}">s</label>
         <label>遷移<select class="rb-s-trans">
@@ -1473,7 +1502,7 @@ export function createRibbon(container, deps) {
       s.source = r('.rb-s-src').value;
       s.camera = parseInt(r('.rb-s-cam').value, 10);
       if (!Number.isInteger(s.camera)) s.camera = -1;
-      if (s.source !== TAKE.SRC_LIVE && s.source !== TAKE.SRC_REC) s.camera = -1;
+      if (!usesStepCamera(s.source)) s.camera = -1;
       s.recLap = s.source === TAKE.SRC_REC ? Math.max(1, Math.round(numOr(r('.rb-s-reclap').value, 1))) : 0;
       s.cg = r('.rb-s-cg').value.trim();
       s.cgMode = r('.rb-s-cgmode-fixed').checked ? TAKE.CG_FIXED : TAKE.CG_FOLLOW;
@@ -1487,7 +1516,8 @@ export function createRibbon(container, deps) {
       s.assetUrl = r('.rb-s-asseturl').value.trim();
       if (!isAssetSource(s.source)) s.assetUrl = '';
       s.cueId = r('.rb-s-cue').value;
-      s.durKind = r('.rb-s-durkind').value === TAKE.DUR_UNTIL_CLIP_END ? TAKE.DUR_UNTIL_CLIP_END : TAKE.DUR_SEC;
+      const dk = r('.rb-s-durkind').value;
+      s.durKind = (dk === TAKE.DUR_UNTIL_CLIP_END || dk === TAKE.DUR_UNTIL_ZONE_CHANGE) ? dk : TAKE.DUR_SEC;
       s.durSec = s.durKind === TAKE.DUR_SEC ? Math.max(0.2, numOr(r('.rb-s-dur').value, TAKE.FALLBACK_STEP_DUR_SEC)) : 0;
       s.transition = r('.rb-s-trans').value;
       s.transitionMs = Math.max(0, numOr(r('.rb-s-transms').value, 0));
@@ -1549,7 +1579,8 @@ export function createRibbon(container, deps) {
     return row;
   }
 
-  const isAssetSource = (src) => src === TAKE.SRC_CLIP || src === TAKE.SRC_STILL;
+  // 画面を素材で埋めるカット（TakeSchema.IsAssetSource の対）。無人プレートもここに入る。
+  const isAssetSource = (src) => src === TAKE.SRC_CLIP || src === TAKE.SRC_STILL || src === TAKE.SRC_PLATE;
   function numOr(v, def) { const n = parseFloat(v); return Number.isFinite(n) ? n : def; }
 
   // ---- FX スライダ（区間 post / カット post 共用）------------------------------

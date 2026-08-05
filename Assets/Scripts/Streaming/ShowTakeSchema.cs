@@ -73,7 +73,7 @@ namespace FixedCamVr.Streaming
     /// </summary>
     [Serializable] public sealed class ShowStepDef
     {
-        public string source = TakeSchema.SourceLive;   // "live" | "inherit" | "clip" | "still" | "rec"
+        public string source = TakeSchema.SourceLive;   // "live" | "inherit" | "clip" | "still" | "rec" | "plate"
         public int camera = -1;                         // source=live / rec で有効（rec は録画元カメラ）
         public string assetUrl = "";                    // source=clip/still のみ有効（sa:// / slot:// 可）
         public int recLap;                              // source=rec のみ。録画元の周（0 = 未指定 → 飛ばす）
@@ -85,7 +85,7 @@ namespace FixedCamVr.Streaming
         public float trimStartSec = -1f;
         public float trimEndSec = -1f;
 
-        public string durKind = TakeSchema.DurSec;      // "sec" | "untilClipEnd"
+        public string durKind = TakeSchema.DurSec;      // "sec" | "untilClipEnd" | "untilZoneChange"
         public float durSec;
 
         public string transition = TakeSchema.TransDip; // "cut" | "dip" | "fade" | "glitch"
@@ -111,6 +111,7 @@ namespace FixedCamVr.Streaming
         public bool hasPost;
 
         public bool IsUntilClipEnd => TakeSchema.IsUntilClipEnd(durKind);
+        public bool IsUntilZoneChange => TakeSchema.IsUntilZoneChange(durKind);
         public bool HasCg => !string.IsNullOrEmpty(cg);
     }
 
@@ -164,6 +165,15 @@ namespace FixedCamVr.Streaming
         /// <summary>端末内に録っておいた区間の映像（<c>camera</c> + <c>recLap</c> で指す）。</summary>
         public const string SourceRec = "rec";
 
+        /// <summary>
+        /// **そのカメラで撮った無人の実写プレート**。誰も居ない部屋だけが映り、その上に CG 人形を重ねられる。
+        ///
+        /// `still` と絵の出し方は同じだが、**CG 人形を許す点が違う**。一般の素材は「いつどこで撮ったか
+        /// 分からない画」なので人形のパースが合わず、重ねると必ず浮く。プレートは `rec` と同じく
+        /// **step.camera で撮った画**なので、そのカメラの較正がそのまま効く。
+        /// </summary>
+        public const string SourcePlate = "plate";
+
         public const string CgFollow = "follow";
         public const string CgFixed = "fixed";
 
@@ -172,6 +182,17 @@ namespace FixedCamVr.Streaming
 
         public const string DurSec = "sec";
         public const string DurUntilClipEnd = "untilClipEnd";
+
+        /// <summary>
+        /// 「次にカメラが切り替わるまで」。体験者が次の区間へ移って**ショーの時計**が確定した瞬間に畳む
+        /// （<see cref="TakeRunner.NotifyZoneCommitted"/>）。素材の尺に縛られず、その区間に居るあいだ
+        /// ずっと出しておける。
+        ///
+        /// ⚠ 畳むのは **ZoneCommitted（体験者の移動）だけ**。スタッフの手動送り・Web の cameraOverride・
+        ///    インサートの画面切替は時計を動かさないので、これらでは終わらない（設計どおり）。
+        /// ⚠ 体験者が動かなければ終わらないので、watchdog（<see cref="DefaultMaxDurationSec"/>）が上限を保証する。
+        /// </summary>
+        public const string DurUntilZoneChange = "untilZoneChange";
 
         public const string TransCut = "cut";
         public const string TransDip = "dip";
@@ -222,11 +243,14 @@ namespace FixedCamVr.Streaming
 
         public static bool IsUntilClipEnd(string? durKind) => durKind == DurUntilClipEnd;
 
+        public static bool IsUntilZoneChange(string? durKind) => durKind == DurUntilZoneChange;
+
         /// <summary>source 判別子を正規化する。未知は <see cref="SourceLive"/> へ倒し known=false。</summary>
         public static string NormalizeSource(string? source, out bool known)
         {
             known = source == SourceLive || source == SourceInherit
-                    || source == SourceClip || source == SourceStill || source == SourceRec;
+                    || source == SourceClip || source == SourceStill || source == SourceRec
+                    || source == SourcePlate;
             return known ? source! : SourceLive;
         }
 
@@ -237,9 +261,16 @@ namespace FixedCamVr.Streaming
             return known ? mode! : CgFollow;
         }
 
-        /// <summary>「このカットは映像素材（動画 / 静止画）を全面に出すか」。</summary>
+        /// <summary>「このカットは映像素材（動画 / 静止画 / プレート）を全面に出すか」＝ cue が要るか。</summary>
         public static bool IsAssetSource(string? source)
-            => source == SourceClip || source == SourceStill;
+            => source == SourceClip || source == SourceStill || source == SourcePlate;
+
+        /// <summary>
+        /// 「この画は step.camera の構図そのものか」＝ CG 人形を重ねてパースが合うか。
+        /// 端末内録画とプレートだけが該当する（どちらもそのカメラで撮っている）。
+        /// </summary>
+        public static bool MatchesCameraPerspective(string? source)
+            => source == SourceRec || source == SourcePlate;
 
         /// <summary>「このカットは端末内録画を映すか」。</summary>
         public static bool IsRecSource(string? source) => source == SourceRec;

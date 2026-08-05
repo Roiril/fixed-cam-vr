@@ -318,6 +318,12 @@ export function createShowSim(container, deps) {
         const lap = st.recLap > 0 ? `${st.recLap}周目 ` : '';
         return { cam, shot, detail: `🎬 ${t.id}（${nth}: ${lap}${camLabel(cam)} の録画${overlay}・卓ではライブで代用）` };
       }
+      // 無人プレートは「そのカメラで撮った部屋だけの画」。素材だが構図はカメラのものなので、
+      // 人形を重ねてよい（実機の TakeSchema.MatchesCameraPerspective と同じ扱い）。
+      if (st.source === 'plate') {
+        const cam = st.camera >= 0 ? st.camera : runner.shownCamera;
+        return { cam, shot, detail: `🎬 ${t.id}（${nth}: ${camLabel(cam)} の無人の部屋を全面）` };
+      }
       const label = st.source === 'clip' ? '動画' : '静止画';
       return { cam: -1, shot, detail: `🎬 ${t.id}（${nth}: ${label} ${baseName(st.assetUrl) || st.cueId || '素材未設定'} を全面）` };
     }
@@ -801,10 +807,43 @@ export function createShowSim(container, deps) {
   };
 
   // ---- 外部 API ---------------------------------------------------------------
+  /**
+   * 走らせている設定に効く部分だけの署名。**現場では show.json が絶えず書き換わる**
+   * （heartbeat・discovery のカメラ追従・卓の接続先入力）ので、変更を一律に「著作が変わった」と
+   * 扱うと走行が毎回リセットされる。逆に一律に無視すると、著作を直しても反映されない。
+   */
+  function authoringSignature(s) {
+    if (!s) return '';
+    const c = s.control || {};
+    return JSON.stringify({
+      timeline: s.timeline, cues: s.cues, layout: s.layout, run: s.run,
+      record: s.record, bgmTracks: s.bgmTracks, bgm: s.bgm, actors: s.actors,
+      // 接続先（host / auth / pinned）は走りに影響しない。構図と加工だけを見る。
+      cameras: (s.cameras || []).map((x) => ({
+        id: x.id, role: x.role, pose: x.pose, calib: x.calib, post: x.post, hasPost: x.hasPost,
+      })),
+      timing: { dwell: c.minDwellSec, cooldown: c.switchCooldownSec },
+    });
+  }
+  let lastAuthoringSig = '';
+
   /** show.json が更新されたら呼ぶ。 */
   function onState(s) {
+    const sig = authoringSignature(s);
+    const authoringChanged = sig !== lastAuthoringSig;
+    lastAuthoringSig = sig;
     state = s;
-    rebuild(false);
+    // 著作が変わったら走行中でも作り直す。**黙って古い設定で走り続けるのが一番たちが悪い**
+    //（「offset を 0 にしたのに 1 秒遅れて出る」は、実際にこれで起きた）。
+    if (playing && authoringChanged) {
+      rebuild(true);
+      notice = '⚠ 演出の設定が変わったので先頭へ戻しました（この位置から歩き直してください）';
+    } else if (!playing) {
+      rebuild(false);
+    }
+    // 走行中で著作が変わっていないなら何もしない。ここで rebuild(false) を呼ぶと
+    // 「⚠ show.json が更新されました」だけが立ち、**関係ない書き込み**（heartbeat・カメラの
+    // 接続先追従）のたびに嘘の警告が出る。
     renderStatus();
   }
 

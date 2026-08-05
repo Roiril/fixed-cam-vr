@@ -838,6 +838,43 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
   `follow` = 体験者の HMD XZ に立つ / `fixed` = 著作位置。**姿勢が未著作のカメラでは出さない**
 - **`cameras[].role`**: `"fx"` は演出専用カメラ（＝カメラ D）。ゾーンに割り当てず、スタッフの A ボタン巡回にも出さない
 
+### 無人プレート（`source:"plate"`）と「次にカメラが切り替わるまで」（`durKind:"untilZoneChange"`）— 2026-08-05
+
+3 周目の「録画を流す → 流し終わったら**無人の部屋だけ**が映り、そこに体験者の分身（CG 人形）が立っている」
+を作るための 2 つ。どちらも**追加のみ**で、既存 show.json はそのまま読める。
+
+- **`source:"plate"`** = そのカメラで撮った**無人の実写プレート**（`camera` + `cueId` / `assetUrl`）。
+  絵の出し方は `still` と同じだが、**CG 人形を許す点が違う**。判定は
+  [`TakeSchema.MatchesCameraPerspective`](../../Assets/Scripts/Streaming/ShowTakeSchema.cs)（`rec` と `plate` だけ true）。
+  一般の素材（`clip` / `still`）は「いつどこで撮ったか分からない画」なので、どのカメラの較正を当てても
+  人形のパースが合わない。プレートは `rec` と同じく step.camera で撮った画なので較正がそのまま効く
+  - **`camera` を必ず指す**。指さないと人形の構図が決まらない（卓の本番前チェックが ❌ で止める）
+  - 画面のカメラは動かさない（`rec` と同じ非 live 経路 = `TakeHoldBegin`）。プレートが枠を覆う
+- **`durKind:"untilZoneChange"`** = 体験者が**次の区間へ移るまで**そのカットを出し続ける。
+  畳むのは **ショーの時計（`ZoneCommitted`）だけ**で、素材の終端では畳まない
+  （[`TakeRunnerLogic.NotifyZoneChanged`](../../Assets/Scripts/Streaming/TakeRunnerLogic.cs)）。
+  スタッフの手動送り・Web の cameraOverride・インサートの画面切替は時計を動かさないので終わらない
+  - **尺の負値は「待つ相手」を表す**: `WaitClipEnd = -1`（素材の終端）/ `WaitZoneChange = -2`（次の区間）。
+    `NotifyCurrentStepFinished` と `NotifyZoneChanged` は**それぞれ自分の待ち相手のカットしか畳まない**
+  - 体験者が動かなければ終わらないので、上限は watchdog（`maxDurationSec` 既定 45s）が保証する。
+    録画（前の周の滞在ぶん）＋ プレート（この区間に居るあいだ）は 45s を超えうるので、
+    **3 周目の演出には `maxDurationSec` を明示する**（現行 show.json は 120）
+  - **卓は秒へ推定しない**。ゾーン確定は卓にもあるので実機と同じ所で畳める
+    （`show-scenario.resolveStepDuration` → `WAIT_ZONE_CHANGE` / `scenario-engine.notifyZoneChanged`）。
+    リボンの幅は仮置きで、必ず `≈` が付く
+
+**3 周目の演出は `policy:"yield"` + `wait:"segment"` + `ifMissed:"skip"`**（2026-08-05 に組み直し）。
+録画の長さは「前の周にその区間へ居た時間」なので、3 周目に速く歩くと録画が終わらないまま区間を出る。
+旧設定（`hold` + `chain`）だとその演出が持ち越され、**3 周目 B の演出が C の区間で 12.7 秒遅れて出ていた**
+（実測）。yield なら区間を出た瞬間に畳まれ、次の区間の演出が定刻で始まる。
+
+⚠ **その代わり「録画が終わらなければ無人プレートは出ない」**。プレートが出るのは、体験者が
+3 周目にその区間へ 1 周目と同じかそれ以上とどまった時だけ。これは仕様（録画の再生が終わってから
+無人へ変わる、という筋がそのまま出ている）。
+
+**⚠ Quest 実機未検証**（2026-08-05。EditMode 1008/1008・node 386/386・卓のブラウザ実操作で
+「録画 → 無人の部屋を全面」まで確認）。
+
 ### 演出専用カメラ D と CG 人形の実配線（2026-07-27）
 
 計画 [2026-07-27_cg-actor-hand-tracking.md](../plans/2026-07-27_cg-actor-hand-tracking.md)（設計・不変条件の正本）。
