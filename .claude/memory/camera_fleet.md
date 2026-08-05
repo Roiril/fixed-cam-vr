@@ -5,24 +5,45 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6d7a1a02-c926-4301-b3e5-40f96aeedf21
-  modified: 2026-08-05T02:15:41.648Z
+  modified: 2026-08-05T08:07:27.051Z
 ---
 
-# 配信カメラ実機フリート（2026-08-05 更新）
+# 配信カメラ実機フリート（2026-08-05 17:10 更新）
 
-| スロット | 端末 | アプリ | IP（DHCP・揮発） | 検証 |
+**⚠ スロットは serial ではなく端末内の `camera_id` が正**（画面に大書され、beacon と `/info` に載る）。
+下表の serial 対応は 2026-08-05 17:10 の実測。**それ以前の記録（Phone01=3C251 等）は誤りだった** —
+同日 17:00 に実物の prefs を読んで判明した（下の事故を参照）。
+
+| スロット | 端末 serial | install uuid（IP より確か） | 版 | 無線 adb |
 |---|---|---|---|---|
-| Phone01 / cam A | Pixel 7a（3C251JEHN03582） | fixed-cam-streamer **実機 v0.7.0**（:8080・cameraId 刻印済み） | 192.168.11.17（8/5） | `/info` 応答・配信中 |
-| Phone02 / cam B | Pixel 7a（37081JEHN03028） | fixed-cam-streamer **実機 v0.7.0**（:8080・cameraId 刻印済み） | 192.168.11.20（8/5） | `/info` 応答・配信中 |
-| Phone03 / cam C | Pixel 7a（37201JEHN14152） | fixed-cam-streamer **実機 v0.7.0**（:8080・cameraId 刻印済み） | 192.168.11.23（8/5） | `/info` 応答・配信中 |
+| cam **A** | Pixel 7a（37201JEHN14152） | `b9ffed4c-18e2-4570-a8b8-2012c1e6559e` | **v0.9.0** | :5555 開 |
+| cam **B** | Pixel 7a（3C251JEHN03582） | `429a472b-8131-401b-81a3-9cfb91ad2165` | **v0.9.0** | :5555 開 |
+| cam **C** | Pixel 7a（37081JEHN03028） | `de2d8bea-7d42-4e6a-8823-c777a8901cae` | v0.7.0（未更新） | 閉（USB 未承認） |
 
-**⚠ v0.9.0（端末の傾きを配る）はビルド済みだが 3 台とも未インストール**（2026-08-05）。
-実機は v0.7.0 なので `/info` に `tiltState` が無く、卓の 📱 端末の傾きパネルは
-「この端末は傾きを送っていません」と出る。**入れるには USB 接続が要る**
-（無線 adb は 3 台とも 5555 が閉じていて `adb connect` は拒否される。実測）。
-入れ方は skill `streamer-android-build`（`./gradlew installDebug`）。
-入れた後は**端末を水平に置いて上下が 0° 付近になるか**を必ず見る
+IP は DHCP で毎回変わる（8/5 17:10 は A=.39 / B=.20 / C=.23）。**IP を覚えず beacon か
+`/discovery` で引く。** `adb -s <serial> shell "ip -f inet addr show wlan0"` が serial ↔ IP の唯一確実な対応。
+
+**⚠ 端末の設定は勝手に変わっていることがある**（2026-08-05 実害）。3 台を USB へ集めたあと読んだら、
+1 台（3C251）が **cameraId=A・レンズ 2x（画角 37.7°）** になっていた ＝ **A が 2 台・B が 0 台**で、
+しかも較正が前提にしている超広角 104.3° と全く違う画角。`install -r` は prefs を消さないので、
+画面操作で変わったと思われる。前セッションの beacon 実測（uuid 429a472b が B を名乗っていた）から
+**B・超広角へ戻した**。→ **アプリを入れ直したら必ず 3 台の `/info` で `cameraId` と `lensId` を並べて見る。**
+直すのは prefs を直接書けば速い（`run-as com.fixedcamvr.streamer` / `shared_prefs/streamer_prefs.xml` /
+キー `camera_id` `lens_zoom` `lens_name`。**force-stop してから書き、起動して `/info` で確認**）。
+超広角の値は `lens_zoom=0.5304938` / `lens_name=超広角`。
+
+**⚠ `/health` の `totalFrames=0` `fps=0` は故障ではない**（v0.7.0〜の需要駆動 encode）。
+`clientCount=0` なら encode を止めるのが正常。生死は `curl -m 3 http://<ip>:8080/video -o /dev/null -w "%{size_download}"`
+で見る（3 秒で 300〜500KB 出れば正常。exit 28 = timeout はエンドレスストリームなので正常）。
+
+**無線 adb（`adb tcpip 5555`）は USB を繋いだついでに開けておく**（A と B は開いた）。
+**端末を再起動すると閉じる。** C は USB デバッグ未承認（`unauthorized`）のままなので、
+更新には端末画面での許可ダイアログ承認が要る — `adb kill-server && adb start-server` でも出ない場合は
+ケーブルを挿し直す。
+
+**入れた後は端末を水平に置いて `tiltPitchDeg` が 0° 付近になるかを見る**
 （センサの符号と `targetRotation` の対応は実機でしか確かめられない唯一の箇所）。
+机に平置きだと `tiltState="steep"`（pitch 88°）が正常＝カメラが真下を向いている。
 
 **2026-07-17 から現行フリートは Pixel 7a ×3 に統一**（全台 streamer v0.2.0・認証なし・:8080）。iPhone 13 Pro + IP Camera Lite（:8081・Basic admin/admin）は予備構成へ降格 — 使う時は該当カメラの auth を戻す。
 
