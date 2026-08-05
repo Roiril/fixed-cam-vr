@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6d7a1a02-c926-4301-b3e5-40f96aeedf21
-  modified: 2026-08-05T08:12:22.667Z
+  modified: 2026-08-05T09:14:03.079Z
 ---
 
 # 配信カメラ実機フリート（2026-08-05 17:10 更新）
@@ -34,6 +34,24 @@ IP は DHCP で毎回変わる（8/5 17:10 は A=.39 / B=.20 / C=.23）。**IP �
 直すのは prefs を直接書けば速い（`run-as com.fixedcamvr.streamer` / `shared_prefs/streamer_prefs.xml` /
 キー `camera_id` `lens_zoom` `lens_name`。**force-stop してから書き、起動して `/info` で確認**）。
 超広角の値は `lens_zoom=0.5304938` / `lens_name=超広角`。
+
+**⚠ AE/AWB は既定でロックされていない。** 露出が自動で動くので、**素材を作った時と本番で色が変わる**
+（2026-08-05 実害: 素材工房の試写と卓のライブ列で「加工後の絵が違う」とユーザーが気づいた。
+真因は ①工房の背景が既定「種」＝撮った時の静止画 ②3 台とも `aeLock=false` の 2 つ）。
+固定視点で露出が動くと差し替えの継ぎ目が出るので、**設営が済んだら本番の照明でロックする**。
+
+ロックは端末画面の `🔓 露出/AF ロック` トグルだが、**adb から押せる**（HTTP API は無い）:
+
+```bash
+adb -s <ip>:5555 shell uiautomator dump /sdcard/ui.xml
+adb -s <ip>:5555 shell cat /sdcard/ui.xml        # resource-id が lockToggle の bounds を読む
+adb -s <ip>:5555 shell input tap <x> <y>
+curl.exe -s http://<ip>:8080/health               # aeLock / awbLock が true になったか確認
+```
+
+⚠ **座標は端末ごとに違う**（画面の向きが違うため。実測で 2 台が 2232,470 / 1 台が 2252,435）。
+必ず dump して読む。ロックは prefs に残るのでアプリを再起動しても復元される。
+**照明を変えたら押し直す**（トグルなので 2 回押せば解除）。
 
 **⚠ `/health` の `totalFrames=0` `fps=0` は故障ではない**（v0.7.0〜の需要駆動 encode）。
 `clientCount=0` なら encode を止めるのが正常。生死は
