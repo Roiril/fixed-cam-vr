@@ -70,7 +70,9 @@ export function initialCalib(cam, srcW, srcH) {
   const fx = focalFromHfov(p.hfovDeg, w);
   return {
     x: num(p.x, 0), y: num(p.y, 1.2), z: num(p.z, 0),
-    yawDeg: num(p.yawDeg, 0), pitchDeg: num(p.pitchDeg, 0), rollDeg: 0,
+    // ⚠ roll も pose から読む。読まずに 0 で始めると、傾けて据えたカメラ（実測 9°）で
+    //   初期のワイヤーが必ず傾いて出る。既存データに rollDeg が無ければ従来どおり 0。
+    yawDeg: num(p.yawDeg, 0), pitchDeg: num(p.pitchDeg, 0), rollDeg: num(p.rollDeg, 0),
     fxPx: fx, fyPx: fx, cxPx: w / 2, cyPx: h / 2, k1: num(c && c.k1, 0),
     srcW: w, srcH: h,
   };
@@ -188,6 +190,34 @@ const transpose33 = (A) => [0, 1, 2].map((i) => [0, 1, 2].map((j) => A[j][i]));
 export function moveRoom(calib, delta) {
   const d = delta || [0, 0, 0];
   return clampCalib({ ...calib, x: calib.x - d[0], y: calib.y - d[1], z: calib.z - d[2] });
+}
+
+/**
+ * 回転の基準点＝**L 字の角と床の接点**（course 空間）。
+ *
+ * ⚠ 掴んだ場所を軸にすると、回すたびに軸が変わって「どこを中心に回っているか分からない」
+ *   （2026-08-05 ユーザー指摘）。部屋の中で誰が見ても同じ 1 点に固定する。
+ *   壁が 2 本あればその共有端点、無ければ床の中心（course 原点）。
+ */
+export function roomCornerPivot(layout) {
+  const walls = (layout && layout.room && layout.room.walls) || [];
+  const y = Number(layout && layout.room && layout.room.floorY) || 0;
+  const ends = [];
+  for (const w of walls) {
+    if (!w) continue;
+    ends.push([Number(w.x1), Number(w.z1)], [Number(w.x2), Number(w.z2)]);
+  }
+  for (let i = 0; i < ends.length; i++) {
+    for (let j = i + 1; j < ends.length; j++) {
+      const a = ends[i], b = ends[j];
+      if (!Number.isFinite(a[0]) || !Number.isFinite(b[0])) continue;
+      // 別々の壁の端どうしが重なっている点＝角
+      if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6 && Math.floor(i / 2) !== Math.floor(j / 2)) {
+        return [a[0], y, a[1]];
+      }
+    }
+  }
+  return [0, y, 0];
 }
 
 /**

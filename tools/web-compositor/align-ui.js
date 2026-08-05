@@ -13,7 +13,7 @@
 import {
   initialCalib, dolly, setGroundPos, setField, setLens,
   toManualCalib, isManual, summaryLines, refDistance, hfovFromFocalPx,
-  dragRoom, isBelowFloor, AXES, projectPoint, unprojectToFloor,
+  dragRoom, isBelowFloor, AXES, projectPoint, unprojectToFloor, roomCornerPivot,
   readTilt, applyTilt, tiltMismatchDeg, tiltLockAllows,
 } from './align-model.js';
 import { wireSegments, calibMatchesSource, applyCalibToCameras } from './calib-session.js';
@@ -72,7 +72,8 @@ export function createAlignUi(container, deps) {
           <div class="cu-hint">静止フレームです（合わせている間に絵が動かないよう固定しています）。
             <b>ドラッグ</b>で操作・<b>ホイール</b>で前後・<b>Shift+ドラッグ</b>で一時的に平行移動。
             <b>X / Y / Z キー</b>でその軸だけに拘束（もう一度押すか Esc で解除）。
-            回転は<b>掴んだ床の点を軸</b>に回ります。自由回転は床を回す（Y 軸）だけ — 傾けたいときは X / Z を選んでください。
+            回転の軸は <b style="color:#ff5f8d">✛ の点（L 字の角と床の接点）</b>に固定しています。
+            自由回転は床を回す（Y 軸）だけ — 傾けたいときは X / Z を選んでください。
             床の線と壁の縦線が実物に重なれば合っています。</div>
         </div>
         <div class="cu-side">
@@ -228,6 +229,36 @@ export function createAlignUi(container, deps) {
 
     if (doll.on) drawDoll(w);
     drawHorizon(w, h);
+    drawPivot(w);
+  }
+
+  /** 回転の基準点（L 字の角と床の接点）。**どこを軸に回っているかを目で見えるようにする。** */
+  function drawPivot(w) {
+    const pv = roomCornerPivot(layout());
+    const p = projectPoint(calib, pv[0], pv[1], pv[2]);
+    if (!p) return;
+    const h = canvas.height;
+    const s = Math.max(1, w / 640), r = 9 * s;
+    // ⚠ 基準点はよく画角の外に落ちる（カメラが高い / 下を向いていない）。
+    //   そのまま描かないと「軸が見えない」ままなので、縁へ寄せて方向だけ示す。
+    const off = p.u < 0 || p.u > w || p.v < 0 || p.v > h;
+    const u = Math.min(w - r - 2, Math.max(r + 2, p.u));
+    const v = Math.min(h - r - 2, Math.max(r + 2, p.v));
+    ctx.save();
+    ctx.lineWidth = 1.6 * s;
+    ctx.strokeStyle = '#ff5f8d';
+    ctx.globalAlpha = off ? 0.55 : 1;
+    ctx.beginPath();
+    ctx.moveTo(u - r, v); ctx.lineTo(u + r, v);
+    ctx.moveTo(u, v - r); ctx.lineTo(u, v + r);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(u, v, r * 0.55, 0, Math.PI * 2); ctx.stroke();
+    if (off) {
+      ctx.setLineDash([3 * s, 3 * s]);
+      ctx.beginPath(); ctx.arc(u, v, r * 1.7, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
   }
 
   function drawDoll(w) {
@@ -392,10 +423,11 @@ export function createAlignUi(container, deps) {
     const p = toCanvas(ev);
     if (mode === 'doll') { placeDoll(p); return; }
     canvas.setPointerCapture(ev.pointerId);
-    // 掴んだ床の点を回転の中心にする（Blender の 3D カーソル相当）。
-    // 床と交わらない所を掴んだら course 原点へ落とす。
+    // 回転の中心は **L 字の角と床の接点**に固定（画面に ✛ で描いてある）。
+    // 掴んだ場所を軸にすると回すたびに軸が変わり、どこを中心に回っているか分からなくなる。
+    // 平行移動の距離感（画素→m）だけは掴んだ床の点から取る。
     const hit = unprojectToFloor(calib, p.x, p.y, 0);
-    const pivot = hit ? [hit.x, 0, hit.z] : [0, 0, 0];
+    const pivot = roomCornerPivot(layout());
     const dist = hit ? hit.t : refDistance(calib);
     drag = { last: p, pan: ev.shiftKey || mode === 'pan', pivot, dist };
   });
@@ -456,7 +488,7 @@ export function createAlignUi(container, deps) {
     const base = mode === 'doll'
       ? '映像の床をクリックして人形を置く'
       : axis ? `ドラッグ＝${axis.toUpperCase()} 軸だけで ${what}`
-      : mode === 'rotate' ? 'ドラッグ＝床を回す（Y 軸・掴んだ点が中心）' : `ドラッグ＝${what}（自由）`;
+      : mode === 'rotate' ? 'ドラッグ＝床を回す（Y 軸・✛ の点が中心）' : `ドラッグ＝${what}（自由）`;
     $('.au-modehint').textContent = tiltLock ? `${base}　／　📱 傾きは端末の値で固定中` : base;
   }
 
