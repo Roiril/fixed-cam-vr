@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6d7a1a02-c926-4301-b3e5-40f96aeedf21
-  modified: 2026-08-05T08:07:27.051Z
+  modified: 2026-08-05T08:12:22.667Z
 ---
 
 # 配信カメラ実機フリート（2026-08-05 17:10 更新）
@@ -18,7 +18,10 @@ metadata:
 |---|---|---|---|---|
 | cam **A** | Pixel 7a（37201JEHN14152） | `b9ffed4c-18e2-4570-a8b8-2012c1e6559e` | **v0.9.0** | :5555 開 |
 | cam **B** | Pixel 7a（3C251JEHN03582） | `429a472b-8131-401b-81a3-9cfb91ad2165` | **v0.9.0** | :5555 開 |
-| cam **C** | Pixel 7a（37081JEHN03028） | `de2d8bea-7d42-4e6a-8823-c777a8901cae` | v0.7.0（未更新） | 閉（USB 未承認） |
+| cam **C** | Pixel 7a（37081JEHN03028） | `de2d8bea-7d42-4e6a-8823-c777a8901cae` | **v0.9.0** | :5555 開 |
+
+3 台とも 2026-08-05 17:00〜17:20 に v0.9.0（傾きを配る）を入れ、レンズ 超広角 104.3°・
+`tiltState` あり・配信中を実測で確認した。
 
 IP は DHCP で毎回変わる（8/5 17:10 は A=.39 / B=.20 / C=.23）。**IP を覚えず beacon か
 `/discovery` で引く。** `adb -s <serial> shell "ip -f inet addr show wlan0"` が serial ↔ IP の唯一確実な対応。
@@ -33,8 +36,14 @@ IP は DHCP で毎回変わる（8/5 17:10 は A=.39 / B=.20 / C=.23）。**IP �
 超広角の値は `lens_zoom=0.5304938` / `lens_name=超広角`。
 
 **⚠ `/health` の `totalFrames=0` `fps=0` は故障ではない**（v0.7.0〜の需要駆動 encode）。
-`clientCount=0` なら encode を止めるのが正常。生死は `curl -m 3 http://<ip>:8080/video -o /dev/null -w "%{size_download}"`
-で見る（3 秒で 300〜500KB 出れば正常。exit 28 = timeout はエンドレスストリームなので正常）。
+`clientCount=0` なら encode を止めるのが正常。生死は
+`curl.exe -m 3 http://<ip>:8080/video -o NUL -w "%{size_download}"` で見る
+（3 秒で 260〜530KB 出れば正常。exit 28 = timeout はエンドレスストリームなので正常）。
+
+⚠ **`-o /dev/null` と `MSYS_NO_PATHCONV=1` を同時に使うと 0 バイトに見える**（2026-08-05 に踏んだ）。
+adb 用に立てた `MSYS_NO_PATHCONV=1` が `/dev/null` の変換まで止めるので、Windows の `curl.exe` が
+生の `/dev/null` を作ろうとして exit 23（書き込み失敗）。**3 台とも 0 バイトに見えて配信が死んだと誤読した。**
+出力先は `NUL` と書く。
 
 **無線 adb（`adb tcpip 5555`）は USB を繋いだついでに開けておく**（A と B は開いた）。
 **端末を再起動すると閉じる。** C は USB デバッグ未承認（`unauthorized`）のままなので、
