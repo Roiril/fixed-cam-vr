@@ -27,7 +27,12 @@ ELBOW_X = TIP_X * 0.58
 WRIST_X = TIP_X * 0.90
 HAND_X = TIP_X + 0.026             # 袖口から出る手の先
 ARM_R = 0.0060
-SLEEVE_FALL = 0.105                # 袖が腕に追従しなくなるまでの落差 (m)
+# 袖が腕に追従する範囲。**腕の軸からの距離**で測る（上下だけでなく前後も）。
+# ⚠ 旧実装は「腕の高さからの落差」だけを見ていた。袖は腕を筒状に包んでいるので、
+#    前後に膨らんだ頂点が体（Root）に残り、腕を動かすと**手が袖を突き抜けた**。
+SLEEVE_REACH = 0.11
+# ⚠ 脇（体に近い側）は着物が体に縫い付けられている。ここまで腕に付けると、腕を上げたときに
+#    **袖が体から剥がれて脇に裂け目**ができる（実測でそうなった）。横方向の重みを掛けて残す。
 ARM_V0 = D.get("arm_v0", 0.0)      # アトラス下段（手のストリップ）の v 上限
 SEG = 16
 
@@ -206,6 +211,8 @@ def spread_along_arm(v, tag, ax, w):
 
 
 n_arm = n_sleeve = 0
+sleeve_w_sum = 0.0
+n_body = 0
 for v in me.vertices:
     co = v.co
     ax = abs(co.x)
@@ -221,11 +228,19 @@ for v in me.vertices:
         continue
 
     if ax > BODY_HALF * 0.92:                    # 胴より外へ張り出している = 袖
-        drop = max(0.0, ARM_Z - co.z)            # 腕の高さからどれだけ下か
-        w = clamp01(1.0 - drop / SLEEVE_FALL)
+        # 腕の軸（高さ ARM_Z・前後 0 の X 方向の線）からの距離。袖は腕を筒状に包んでいるので、
+        # 上下だけで測ると前後へ膨らんだ頂点が体に残り、腕を動かすと手が袖を突き抜ける。
+        d = math.hypot(co.z - ARM_Z, co.y)
+        w_near = clamp01(1.0 - d / SLEEVE_REACH)
+        # 袖口へ近いほど腕に付く（脇は体に縫い付けられている）。積にするのは、
+        # 「腕の軸に近く**かつ**袖口寄り」の布だけが腕と動くから。
+        along = clamp01((ax - BODY_HALF) / max(1e-6, TIP_X - BODY_HALF))
+        along = along * along * (3.0 - 2.0 * along)
+        w = w_near * along
         w = w * w * (3.0 - 2.0 * w)              # smoothstep（付け根から滑らかに減衰）
         if w > 0.02:
             n_sleeve += 1
+            sleeve_w_sum += w
             spread_along_arm(v.index, "Left" if co.x > 0 else "Right", ax, w)
             if w < 1.0:
                 g["Root"].add([v.index], 1.0 - w, 'REPLACE')
@@ -234,6 +249,7 @@ for v in me.vertices:
     if co.z > HEAD_BASE and ax < H * 0.16:
         g["Head"].add([v.index], 1.0, 'REPLACE')
     else:
+        n_body += 1
         g["Root"].add([v.index], 1.0, 'REPLACE')
 
 if mark:
@@ -250,5 +266,7 @@ bpy.ops.export_scene.fbx(
     add_leaf_bones=False, bake_anim=False,
     path_mode='COPY', embed_textures=False, mesh_smooth_type='FACE')
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "doll.blend"))
-print(f"[doll] verts={len(me.vertices)} polys={len(me.polygons)} arm={n_arm} sleeve={n_sleeve}")
+print(f"[doll] verts={len(me.vertices)} polys={len(me.polygons)} arm={n_arm} sleeve={n_sleeve} body={n_body}")
+print(f"[doll] 袖の腕追従ウェイト 平均 {sleeve_w_sum / max(1, n_sleeve):.3f}"
+      f"（1.0 = 完全に腕へ / 0 = 体に残る）")
 print(f"[doll] armZ={ARM_Z:.3f} tip={TIP_X:.3f} bodyHalf={BODY_HALF:.3f} exported")
