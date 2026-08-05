@@ -10,6 +10,13 @@
 #
 #   ⚠ マスクは**そのカメラの構図**に対して焼かれる。別カメラの素材には使えない。
 #
+#   ⚠ 領域の内側の穴は既定で埋める（`--no-fill-holes` で切れる）。生成画像の中に種フレームと
+#   たまたま色が近い画素があると黒く抜け、合成でそこだけライブが透ける（人形の顔に穴が空く）。
+#
+#   ⚠ 生成のゆらぎで背景まで差が出ることがある。カバー率が対象の面積より明らかに大きければ
+#   `--roi` で領域を絞る（2026-08-05 実測: 壁の前に人形を足した 1 枚が、カーテンの皺の描き直しで
+#   42% を覆った。roi で絞ると 14%）。
+#
 #   ⚠ 出力は **スクリーン枠空間（16:9）**。差分は種フレームの画素座標（ふつう 4:3）で取れるので、
 #   実機で素材が置かれる矩形（シェーダの `_OverlayScale` と同じ contain-fit）へ収めてから書き出す。
 #   実機はマスクだけ contain-fit を通さず生 uv で読む（`_MaskScale` は無い）ため、ソース座標のまま
@@ -66,6 +73,35 @@ def largest_blob(mask: np.ndarray, min_area: int) -> np.ndarray:
     return labels == best_label
 
 
+def fill_holes(mask: np.ndarray) -> np.ndarray:
+    """領域の内側にできた穴を埋める（縁から到達できない黒を白に倒す）。
+
+    ⚠ 生成画像の中に、種フレームとたまたま色が近い画素があると黒く抜ける。合成では
+    そこだけライブが透けるので、**人形の顔に穴が空く**（2026-08-05 に実際に出た）。
+    差し替えたいのは「輪郭の内側ぜんぶ」なので、穴は常に埋めてよい。
+    """
+    h, w = mask.shape
+    outside = np.zeros_like(mask, dtype=bool)
+    stack = []
+    for x in range(w):
+        for y in (0, h - 1):
+            if not mask[y, x] and not outside[y, x]:
+                outside[y, x] = True
+                stack.append((y, x))
+    for y in range(h):
+        for x in (0, w - 1):
+            if not mask[y, x] and not outside[y, x]:
+                outside[y, x] = True
+                stack.append((y, x))
+    while stack:
+        y, x = stack.pop()
+        for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+            if 0 <= ny < h and 0 <= nx < w and not mask[ny, nx] and not outside[ny, nx]:
+                outside[ny, nx] = True
+                stack.append((ny, nx))
+    return mask | (~outside)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--base', required=True, help='種フレーム（生映像から撮ったもの）')
@@ -76,6 +112,8 @@ def main() -> int:
     ap.add_argument('--feather', type=int, default=6, help='縁のぼかし（px）。継ぎ目を隠す')
     ap.add_argument('--min-area', type=int, default=400, help='最大領域がこれ未満なら分離をやめる')
     ap.add_argument('--keep-all', action='store_true', help='最大領域だけに絞らない')
+    ap.add_argument('--no-fill-holes', action='store_true',
+                    help='領域の内側の穴を埋めない（既定は埋める。埋めないと合成でそこだけライブが透ける）')
     ap.add_argument('--roi', default='', help='この矩形の中だけを差し替える（x0,y0,x1,y1 の比率 0..1）。'
                                              '生成のゆらぎで背景まで差し替わるのを防ぐ')
     a = ap.parse_args()
@@ -102,6 +140,8 @@ def main() -> int:
         return 2
     if not a.keep_all:
         mask = largest_blob(mask, a.min_area)
+    if not a.no_fill_holes:
+        mask = fill_holes(mask)
 
     img = Image.fromarray((mask * 255).astype(np.uint8), mode='L')
     if a.dilate > 0:
