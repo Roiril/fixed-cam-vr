@@ -137,6 +137,40 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void PickPlate_PrefersPlateOverOldCamRecording()
+        {
+            // 卓の「無人プレート」は、実演出（source:"plate"）が使うのと同じ絵。Quest 録画由来の
+            // cam<ID>_ より優先する。混ざると解像度が配信と違い（480x360）、較正の srcW/srcH 照合が
+            // 落ちて概算姿勢へ黙って降格する — 絵は出るので気づけない。
+            var files = new[]
+            {
+                "camB_quest_20260729_192140_693.jpg",
+                "plate_B_20260805_174526.jpg",
+                "plate_B_20260805_172738.jpg",
+            };
+            Assert.AreEqual("plate_B_20260805_174526.jpg", ShowCompositePreviewPlan.PickPlate(files, "B"));
+        }
+
+        [Test]
+        public void PickPlate_PrefersTimestampedOverHandNamed()
+        {
+            // 手置きの確認用（plate_B_check.jpg）は辞書順で数字より後に来て勝ってしまう。
+            // それが人物入りの絵だったので、無人プレートのつもりで人が写った絵を合成していた。
+            var files = new[] { "plate_B_check.jpg", "plate_B_20260805_174526.jpg" };
+            Assert.AreEqual("plate_B_20260805_174526.jpg", ShowCompositePreviewPlan.PickPlate(files, "B"));
+            // 時刻つきが 1 枚も無ければ手置きでも使う（何も出ないより良い）。
+            Assert.AreEqual("plate_B_check.jpg",
+                ShowCompositePreviewPlan.PickPlate(new[] { "plate_B_check.jpg" }, "B"));
+        }
+
+        [Test]
+        public void PickPlate_FallsBackToCamRecordingWhenNoPlate()
+        {
+            var files = new[] { "camB_quest_20260729_192140_693.jpg", "plate_A_20260805_174526.jpg" };
+            Assert.AreEqual("camB_quest_20260729_192140_693.jpg", ShowCompositePreviewPlan.PickPlate(files, "B"));
+        }
+
+        [Test]
         public void PickPlate_RequiresExactIdBeforeUnderscore()
         {
             // "camAB_" は id "A" のプレートではない（前方一致だけで拾うと隣のカメラを掴む）。

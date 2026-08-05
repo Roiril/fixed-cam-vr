@@ -66,6 +66,13 @@ HMD を被らずに撮れるので、実機確認をユーザーの手作業に�
   実機確認はユーザーの手作業に依存して頻繁には回せず、卓（Web）は意図的に人形を描かないので、**合成品質の一次証拠はここだけ**。
   各カメラの `calibcheck_<n>.png`（プレート + 部屋ワイヤー + 床格子・post なし）で較正のズレを判定する。
   1 枚ごとに条件（カメラ / 較正の有無 / 人形 / 立ち位置 / プレートの有無）を画面下の帯へ焼くので、後から並べても何の絵か分かる。
+  - **`cgMode=follow` の人形はその区間のゾーンの重心に立つ**（2026-08-06〜）。体験者は区間のゾーンに
+    居るので、そこが「その映像が出ているとき立っているはずの場所」になる。向きだけはカメラの方
+    （顔が見える）で、実機の頭 yaw とは意図的に違う。帯の `**` 注記に毎回書いてある
+  - ⚠ **帯の `geom` が `calib` か `pose approx` かを必ず見る。** `pose approx` なら較正が使われていない
+    ＝そのカメラの合成は実機と違う。原因はたいてい**プレートの解像度が配信と違う**こと
+    （`calib.srcW/srcH` と一致しないと `MatchesSource` が落ちて概算姿勢へ黙って降格する）。
+    プレートは `plate_<ID>_<時刻>.jpg`（卓の無人プレート）を最優先で拾う
 - 位置合わせ検証ビュー（廻リ視）: `Tools/FixedCamVr/Diagnostics/Preview Registration Viz`（ZoneGridFootprint + 登録ワイヤーフレームを identity/登録後 × 真上/斜め/目線で PNG 化 → `Assets/Screenshots/regviz/`。Play 不要・南北反転/変換ズレの机上検証）。
 - Editor 単体の多角度スクショ: `Tools/FixedCamVr/Diagnostics/Preview Hand Variants`（3種並べ）/ `Preview Robot Only`（背景排して周回）
   ＝ [TableDuoHandVariantPreview.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoHandVariantPreview.cs)。実録画データを当てるので Play 不要。

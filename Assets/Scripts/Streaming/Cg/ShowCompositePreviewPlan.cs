@@ -129,16 +129,40 @@ namespace FixedCamVr.Streaming.Cg
         public static string? PickPlate(IEnumerable<string>? fileNames, string? cameraId)
         {
             if (fileNames == null || string.IsNullOrEmpty(cameraId)) return null;
-            string prefix = "cam" + cameraId + "_";
-            string? best = null;
-            foreach (string? name in fileNames)
+            // 2 つの命名を受ける。**plate_ を先に見る** — 卓の「無人プレート」はまさにこの用途で
+            // 撮ったもので、実演出（source:"plate"）が使うのと同じ絵になる。cam<ID>_ は Quest 録画由来の
+            // 古い素材で、解像度が配信と違うことがある（480x360）。混ざると較正の srcW/srcH 照合が
+            // 落ちて**概算姿勢へ黙って降格する** — 絵は出るので気づけない（2026-08-06 実害）。
+            string[] prefixes = { "plate_" + cameraId + "_", "cam" + cameraId + "_" };
+            foreach (string prefix in prefixes)
             {
-                if (string.IsNullOrEmpty(name)) continue;
-                if (!name!.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-                if (!HasPlateExtension(name)) continue;
-                if (best == null || string.CompareOrdinal(name, best) > 0) best = name;
+                // 「時刻つき」を優先する。時刻の無い手置き（plate_B_check.jpg 等）が辞書順で
+                // 数字より後に来て勝ってしまい、**確認用に撮った人物入りの絵**を掴んでいた（2026-08-06 実害）。
+                string? stamped = null;
+                string? any = null;
+                foreach (string? name in fileNames)
+                {
+                    if (string.IsNullOrEmpty(name)) continue;
+                    if (!name!.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!HasPlateExtension(name)) continue;
+                    // 名前の時刻部分は固定幅なので、辞書順の最大 = 最新。
+                    if (any == null || string.CompareOrdinal(name, any) > 0) any = name;
+                    if (!LooksTimestamped(name, prefix.Length)) continue;
+                    if (stamped == null || string.CompareOrdinal(name, stamped) > 0) stamped = name;
+                }
+                if (stamped != null) return stamped;
+                if (any != null) return any;
             }
-            return best;
+            return null;
+        }
+
+        /// <summary>接頭辞の直後が 8 桁の日付（YYYYMMDD）で始まるか。</summary>
+        private static bool LooksTimestamped(string name, int offset)
+        {
+            if (name.Length < offset + 8) return false;
+            for (int i = offset; i < offset + 8; i++)
+                if (name[i] < '0' || name[i] > '9') return false;
+            return true;
         }
 
         private static bool HasPlateExtension(string name)

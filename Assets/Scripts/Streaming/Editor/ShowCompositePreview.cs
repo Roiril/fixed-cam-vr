@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using FixedCamVr.Streaming.Cg;
+using FixedCamVr.Tracking;
 using TMPro;
 using UnityEditor;
 using UnityEngine;
@@ -207,15 +208,32 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 // 立ち位置は本番と同じ「カットの placement が優先 / 無ければ actor の既定」。
                 bool hasPlacement = step.hasPlacement && step.placement != null;
-                standXz = hasPlacement
-                    ? new Vector2(step.placement!.x, step.placement.z)
-                    : new Vector2(actor.fixedX, actor.fixedZ);
-                standYaw = hasPlacement ? step.placement!.yawDeg : actor.fixedYawDeg;
+                bool follow = TakeSchema.NormalizeCgMode(step.cgMode, out _) != TakeSchema.CgFixed;
 
-                // ⚠ follow（体験者の HMD 位置に立つ）は**プレビューでは再現できない** — 体験者が居ないため。
-                //    黙って別の場所へ立たせると「ずれている」と誤診するので、著作位置で代用したと明示する。
-                if (TakeSchema.NormalizeCgMode(step.cgMode, out _) != TakeSchema.CgFixed)
-                    notes.Add("cgMode=follow -> stands at authored pos (no wearer in Editor)");
+                if (hasPlacement)
+                {
+                    standXz = new Vector2(step.placement!.x, step.placement.z);
+                    standYaw = step.placement.yawDeg;
+                }
+                else if (follow && TryFollowStand(show, shot, cam, out Vector2 fXz, out float fYaw))
+                {
+                    // follow は体験者の HMD 位置に立つ。Editor に体験者は居ないが、**その区間のゾーンの重心**
+                    // なら「その映像が出ているとき体験者が居るはずの場所」になる（区間とゾーンは同義なので）。
+                    // 著作位置 (0,0) へ置くより実際に近く、大きさ・接地・遮蔽の判定に使える。
+                    // 向きはカメラの方へ向ける。実機は体験者の頭の向きなので**ここだけは本番と違う** —
+                    // 顔が見える向きの方が、人形の大きさとパースを確かめる目的に合う。
+                    standXz = fXz;
+                    standYaw = fYaw;
+                    notes.Add("cgMode=follow -> zone centroid (where the wearer would stand), facing camera");
+                }
+                else
+                {
+                    standXz = new Vector2(actor.fixedX, actor.fixedZ);
+                    standYaw = actor.fixedYawDeg;
+                    // ゾーンが読めないときだけ著作位置で代用する。黙って別の場所へ立たせると
+                    // 「ずれている」と誤診するので、代用したことを明示する。
+                    if (follow) notes.Add("cgMode=follow -> stands at authored pos (no zone grid)");
+                }
 
                 stage.PlaceActor(actor, standXz, standYaw, geom);
             }
@@ -271,6 +289,54 @@ namespace FixedCamVr.Streaming.EditorTools
                                      $"plate {plate.label} | geom {geom.label}\n{note}");
             saved.Add(stage.Save(ShowCompositePreviewPlan.CalibCheckFileName(index)));
             stage.ShowWire(false);
+        }
+
+        /// <summary>
+        /// <c>cgMode=follow</c> のカットで、体験者が居ると想定される立ち位置と向きを解く。
+        ///
+        /// 体験者は**その区間のゾーン**に居る（区間 = (lap, camera) で、camera はゾーンのカメラ）。
+        /// だから重心を取れば「その映像が出ているとき体験者が立っているはずの場所」になる。
+        /// ⚠ 見る視点は <c>shot.camera</c>（そのカットを撮ったカメラ）で、立ち位置は
+        ///   <c>shot.segmentCamera</c>（体験者が居る区間）から取る。インサートでは両者が食い違う。
+        ///
+        /// 向きはカメラの方（顔が見える向き）。実機は体験者の頭の向きなので、ここは意図的に本番と違う。
+        /// </summary>
+        private static bool TryFollowStand(ShowJson show, ShowCompositePreviewPlan.Shot shot,
+            PreviewCameraDef? cam, out Vector2 standXz, out float yawDeg)
+        {
+            standXz = Vector2.zero;
+            yawDeg = 0f;
+            ShowGridDef? g = show.layout?.grid;
+            if (g == null || g.rows <= 0 || g.cols <= 0 || g.tileM <= 0f) return false;
+
+            int[] cells = ZoneLayoutSolver.ParseGridCells(g.cells, g.rows, g.cols);
+            double sx = 0, sz = 0;
+            int n = 0;
+            for (int r = 0; r < g.rows; r++)
+            {
+                for (int c = 0; c < g.cols; c++)
+                {
+                    if (cells[r * g.cols + c] != shot.segmentCamera) continue;
+                    ZoneLayoutSolver.CellRect(r, c, g.rows, g.cols, g.tileM,
+                        out float xLo, out float xHi, out float zLo, out float zHi);
+                    sx += (xLo + xHi) * 0.5;
+                    sz += (zLo + zHi) * 0.5;
+                    n++;
+                }
+            }
+            if (n == 0) return false;
+            standXz = new Vector2((float)(sx / n), (float)(sz / n));
+
+            // カメラの XZ は較正が正（無ければ概算姿勢）。どちらも無ければ向きは 0 のままにする。
+            float camX, camZ;
+            if (cam != null && cam.hasCalib && cam.calib != null && cam.calib.IsUsable())
+            { camX = cam.calib.x; camZ = cam.calib.z; }
+            else if (cam?.pose != null) { camX = cam.pose.x; camZ = cam.pose.z; }
+            else return true;
+
+            Vector2 toCam = new Vector2(camX - standXz.x, camZ - standXz.y);
+            if (toCam.sqrMagnitude > 1e-6f) yawDeg = Mathf.Atan2(toCam.x, toCam.y) * Mathf.Rad2Deg;
+            return true;
         }
 
         // ---- 合成ステージ（生成物一式。finally で必ず畳む）----
