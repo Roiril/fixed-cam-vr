@@ -56,6 +56,51 @@ curl -s -m 3 http://<phone-ip>:8080/video -o /dev/null -w "size=%{size_download}
 
 `/health` の `totalBytes / uptimeMs` で平均帯域 (Mbps) を計算できる。Quality 40 で 1080² @ 30fps なら **8〜12 Mbps** 程度が目安。
 
+## 無線で更新できるようにする（設営中に 1 回だけ USB を繋ぐ）
+
+三脚に固定した 3 台を USB で抜き差しするのは現実的でないので、**USB を繋いだそのついでに
+無線 adb を開けておく**。以後は PC から更新・再起動・配信再開まで完結する。
+
+```bash
+adb -s <usb-serial> tcpip 5555
+```
+
+これで端末の 5555 が開き、`adb connect 192.168.11.17:5555` で繋がる。**ポートが固定**なので
+3 台分をスクリプトに書ける。⚠ **端末を再起動すると解除される**（また USB が要る）。
+
+Android 11+ の「ワイヤレスデバッグ」（開発者オプション → ペア設定コード → `adb pair <ip>:<port>`）
+でもよく、こちらは**ペアリングが端末再起動をまたいで残る**。ただし**接続ポートが毎回変わる**ので、
+更新のたびに 3 台の画面を見に行くことになる。三脚に固定した現場では `tcpip 5555` の方が楽。
+
+### 3 台まとめて更新する
+
+```bash
+cd "C:/Users/kouga/Projects/Mobile/fixed-cam-streamer"
+export JAVA_HOME="/c/Program Files/Unity/Hub/Editor/2022.3.62f2/Editor/Data/PlaybackEngines/AndroidPlayer/OpenJDK"
+export PATH="$JAVA_HOME/bin:$PATH"
+./gradlew assembleDebug
+APK=app/build/outputs/apk/debug/app-debug.apk
+for ip in 192.168.11.17 192.168.11.20 192.168.11.23; do
+  adb connect $ip:5555
+  adb -s $ip:5555 install -r --no-streaming "$APK"
+  # ⚠ インストールはアプリを kill する。画面を起こしてから起動しないとフレーム 0 で固着する
+  adb -s $ip:5555 shell input keyevent KEYCODE_WAKEUP
+  adb -s $ip:5555 shell wm dismiss-keyguard
+  adb -s $ip:5555 shell am force-stop com.fixedcamvr.streamer
+  adb -s $ip:5555 shell am start -n com.fixedcamvr.streamer/.MainActivity
+done
+for ip in 192.168.11.17 192.168.11.20 192.168.11.23; do
+  curl -s -m 3 "http://$ip:8080/info"; echo
+done
+```
+
+最後の `/info` で `appVersion` が上がっていることを確認する（**インストールできたことと配信が
+戻ったことは別**。Doze 中の起動でカメラが bind 直後に閉じると HTTP だけ生きてフレーム 0 になる —
+[camera_fleet.md](../../memory/camera_fleet.md) の罠）。
+
+⚠ **繋がるかどうかは事前に確かめられる**。`adb connect <ip>:5555` が
+`cannot connect ... (10061)` なら 5555 は開いていない＝ USB が要る（2026-08-05 に 3 台とも実測）。
+
 ## 落とし穴
 
 - `JAVA_HOME` 未設定だと `'java' command could be found in your PATH.` で即死。エラーメッセージを誤読しがちなので JAVA_HOME 設定を最初にやる
