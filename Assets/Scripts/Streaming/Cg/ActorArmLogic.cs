@@ -121,6 +121,76 @@ namespace FixedCamVr.Streaming.Cg
             return actorShoulderWorld + yaw * rel;
         }
 
+        // ---- 人形の可動域 ---------------------------------------------------
+        //
+        // **人形は人間ほど腕が動かない。** 着物の袖のように体へ付いた布は、腕が体から離れるほど
+        // 引き伸ばされる。市松人形で実測（`Preview Actor Motion` の sweep）すると、腕を下ろした
+        // 向きから **30° までは袖が自然に垂れ、45° で袖の先から手が突き出て破綻**した。
+        //
+        // 実物の市松人形も肩の球体関節がわずかに動くだけで、真横に上げたり万歳したりはしない。
+        // だから可動域を絞るのは「妥協」ではなく**人形として正しい**。体験者が大きく動かしても、
+        // 人形は控えめにしか動かない — 遠くから見て「人形が動いた」と伝わればよい。
+
+        /// <summary>腕を下ろした向きから振れてよい角度の上限（度）。</summary>
+        public const float DefaultMaxSwingDeg = 45f;
+
+        /// <summary>この割合までは体験者の動きをそのまま写し、そこから先で飽和させる。</summary>
+        public const float SwingKneeRatio = 0.6f;
+
+        /// <summary>肩から手首までの上限（腕長に対する比）。**常に肘を少し曲げておく**。</summary>
+        public const float DefaultMaxReachRatio = 0.85f;
+
+        /// <summary>
+        /// 角度を上限へ滑らかに寄せる。<paramref name="knee"/> までは 1:1、そこから指数で飽和する。
+        /// 単純に切ると、体験者が動かしているのに人形が途中で止まってカクつく。
+        /// </summary>
+        public static float SoftLimitDeg(float deg, float maxDeg, float kneeRatio = SwingKneeRatio)
+        {
+            float max = Mathf.Max(0f, maxDeg);
+            if (max <= 1e-4f) return 0f;
+            float knee = Mathf.Clamp01(kneeRatio) * max;
+            float d = Mathf.Abs(deg);
+            if (d <= knee) return deg;
+            float span = max - knee;
+            if (span <= 1e-4f) return Mathf.Sign(deg) * max;
+            float over = 1f - Mathf.Exp(-(d - knee) / span);
+            return Mathf.Sign(deg) * (knee + span * over);
+        }
+
+        /// <summary>
+        /// 手首の目標を人形の可動域へ収める。
+        /// <paramref name="restDir"/> は腕を下ろした向き（そこからの振れ角を測る基準）。
+        /// 角度は <see cref="SoftLimitDeg"/> で飽和させ、距離は腕長の
+        /// <paramref name="maxReachRatio"/> までに詰める。
+        /// </summary>
+        public static Vector3 LimitToDollRange(Vector3 shoulder, Vector3 target, Vector3 restDir,
+                                               float armLengthM,
+                                               float maxSwingDeg = DefaultMaxSwingDeg,
+                                               float maxReachRatio = DefaultMaxReachRatio)
+        {
+            Vector3 v = target - shoulder;
+            float dist = v.magnitude;
+            if (dist < 1e-5f || restDir.sqrMagnitude < 1e-8f) return target;
+
+            Vector3 dir = v / dist;
+            Vector3 rest = restDir.normalized;
+            float swing = Vector3.Angle(rest, dir);
+            float limited = SoftLimitDeg(swing, maxSwingDeg);
+
+            Vector3 outDir = dir;
+            if (swing > 1e-3f && limited < swing - 1e-3f)
+            {
+                Vector3 axis = Vector3.Cross(rest, dir);
+                // rest と正反対（真上）を向いていると軸が定まらない。そのときは動かさない。
+                outDir = axis.sqrMagnitude < 1e-8f
+                    ? rest
+                    : Quaternion.AngleAxis(limited, axis.normalized) * rest;
+            }
+
+            float maxDist = Mathf.Max(1e-3f, armLengthM * Mathf.Clamp01(maxReachRatio));
+            return shoulder + outDir * Mathf.Min(dist, maxDist);
+        }
+
         /// <summary>
         /// 追従の重み（0=idle / 1=手に追従）を時間で動かす。dt / blendSec ずつ線形に寄せる。
         /// </summary>

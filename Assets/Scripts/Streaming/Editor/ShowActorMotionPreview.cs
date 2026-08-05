@@ -86,6 +86,28 @@ namespace FixedCamVr.Streaming.EditorTools
             new("back0",   RestL, RestR, holdSec: 0.8f, moveSec: 0.8f, headYawDeg: 0f),
         };
 
+        /// <summary>
+        /// 腕を体の横へ開いていく（外転）。**どの角度から人形のメッシュが破綻するか**を見るためのもの。
+        /// 着物の袖のように体に付いた布は、腕が離れるほど引き伸ばされる。
+        /// 肩から腕長の 0.9 の距離に手を置き、角度だけを変える。
+        /// </summary>
+        private static Key[] BuildAbductionSweep()
+        {
+            float armLen = ActorArmLogic.EstimateArmLengthM(HeadHeightM);
+            Vector3 sh = ActorArmLogic.EstimateShoulder(Vector3.zero, 0f, +1f, HeadHeightM); // 頭からの相対
+            var keys = new List<Key>();
+            foreach (float deg in new[] { 0f, 15f, 30f, 45f, 60f, 75f, 90f })
+            {
+                float r = deg * Mathf.Deg2Rad;
+                Vector3 off = new Vector3(Mathf.Sin(r), -Mathf.Cos(r), 0f) * (armLen * 0.9f);
+                keys.Add(new Key($"ab{deg:00}",
+                                 new Vector3(-sh.x - off.x, sh.y + off.y, 0f),
+                                 new Vector3(+sh.x + off.x, sh.y + off.y, 0f),
+                                 holdSec: 0.4f, moveSec: 0.3f));
+            }
+            return keys.ToArray();
+        }
+
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Actor Motion", priority = 252)]
         private static void Run()
         {
@@ -150,6 +172,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 report.AppendLine();
                 AppendRigFacts(report, rig, k);
 
+                RunScenario("sweep", BuildAbductionSweep(), rig, actor.transform, cam, rt, tex, outDir, report);
                 RunScenario("arms", ArmScenario, rig, actor.transform, cam, rt, tex, outDir, report);
                 RunScenario("turn", TurnScenario, rig, actor.transform, cam, rt, tex, outDir, report);
                 RunWalk(rig, actor.transform, cam, rt, tex, outDir, report);
@@ -207,6 +230,7 @@ namespace FixedCamVr.Streaming.EditorTools
             float dt = 1f / Fps;
             var shots = new List<Texture2D>();
             var close = new List<Texture2D>();
+            var far = new List<Texture2D>();
             var rows = new List<string>();
             float sinceShot = ShotIntervalSec;   // 先頭で 1 枚撮る
             int index = 0;
@@ -255,6 +279,8 @@ namespace FixedCamVr.Streaming.EditorTools
                         shots.Add(Shoot(cam, rt, tex, outDir, $"{id}_{index:D3}"));
                         AimUpper(cam, lastL.Shoulder.y);
                         close.Add(Shoot(cam, rt, tex, outDir, $"{id}_{index:D3}_arm"));
+                        AimFar(cam);
+                        far.Add(Shoot(cam, rt, tex, outDir, $"{id}_{index:D3}_far"));
                         index++;
                     }
                 }
@@ -283,11 +309,15 @@ namespace FixedCamVr.Streaming.EditorTools
 
             SaveContactSheet(shots, Path.Combine(outDir, $"{id}_sheet.png"));
             SaveContactSheet(close, Path.Combine(outDir, $"{id}_arm_sheet.png"));
+            SaveContactSheet(far, Path.Combine(outDir, $"{id}_far_sheet.png"));
             foreach (Texture2D t in shots) UnityEngine.Object.DestroyImmediate(t);
             foreach (Texture2D t in close) UnityEngine.Object.DestroyImmediate(t);
-            sb.AppendLine($"絵: 全身 `{id}_000.png` / 腕の寄り `{id}_000_arm.png` … 各 {shots.Count} 枚。");
-            sb.AppendLine($"一覧 `{id}_sheet.png` `{id}_arm_sheet.png`。" +
-                          "**肘が曲がっているかの判定は寄りのフル解像度で**（全身では数 px にしかならない）。");
+            foreach (Texture2D t in far) UnityEngine.Object.DestroyImmediate(t);
+            sb.AppendLine($"絵: 全身 `{id}_000.png` / 腕の寄り `{id}_000_arm.png` / " +
+                          $"**本番で見える大きさ** `{id}_000_far.png` … 各 {shots.Count} 枚。");
+            sb.AppendLine($"一覧 `{id}_sheet.png` `{id}_arm_sheet.png` `{id}_far_sheet.png`。" +
+                          "**肘が曲がっているかは寄りで / 不自然かどうかは far で**判定する"
+                          + "（全身では数 px、寄りでは本番より大きく見えて判断を誤る）。");
             sb.AppendLine();
         }
 
@@ -402,6 +432,19 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             cam.fieldOfView = 45f;
             cam.transform.position = new Vector3(0f, _fullCenterY + _fullDist * 0.06f, -_fullDist);
+            cam.transform.LookAt(new Vector3(0f, _fullCenterY, 0f), Vector3.up);
+        }
+
+        /// <summary>
+        /// **本番で見える大きさ**。実カメラの映像（640×480）に人形は画面の 1/3 くらいで写る。
+        /// 寄りで気になる粗（袖から手が覗く 等）が、この大きさでも見えるかで判定する
+        /// — 判定はいつも「実際に見える大きさ」でする。
+        /// </summary>
+        private static void AimFar(Camera cam)
+        {
+            cam.fieldOfView = 45f;
+            float d = _fullDist * 3f;
+            cam.transform.position = new Vector3(0f, _fullCenterY + d * 0.05f, -d);
             cam.transform.LookAt(new Vector3(0f, _fullCenterY, 0f), Vector3.up);
         }
 

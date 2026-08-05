@@ -28,6 +28,12 @@ namespace FixedCamVr.Streaming.Cg
         [Tooltip("idle で腕を体から離す量（腕の長さに対する比）。0 だと体にめり込む。")]
         [SerializeField, Range(0f, 0.4f)] private float idleSpread = 0.10f;
 
+        // 可動域。⚠ **SerializeField にしない** — 既存プレハブに焼かれていない値は 0 で読まれ、
+        // 腕が一切動かなくなる（unity-prefab-fields の罠）。人形ごとに変えたくなったら
+        // show.json の actor 定義へ出す。
+        private const float MaxSwingDeg = ActorArmLogic.DefaultMaxSwingDeg;
+        private const float MaxReachRatio = ActorArmLogic.DefaultMaxReachRatio;
+
         private Transform? _lUpper, _lLower, _lHand, _rUpper, _rLower, _rHand, _head;
         private bool _prepared;
         private float _measuredHeightM = 1.7f;
@@ -222,6 +228,10 @@ namespace FixedCamVr.Streaming.Cg
                 float scale = ActorArmLogic.ArmScale(armLen, headHeightM);
                 Vector3 mapped = ActorArmLogic.MapHandToActor(handWorld, playerShoulder, playerBodyYawDeg,
                                                               shoulder, actorYawDeg, scale);
+                // 人形の可動域へ収める。**人形は人間ほど腕が動かない** — 着物の袖は腕が体から
+                // 離れるほど引き伸ばされ、実測では 45° で袖の先から手が突き出た（ActorArmLogic）。
+                mapped = ActorArmLogic.LimitToDollRange(shoulder, mapped, idle - shoulder, armLen,
+                                                        MaxSwingDeg, MaxReachRatio);
                 desired = Vector3.Lerp(idle, mapped, weight);
             }
 

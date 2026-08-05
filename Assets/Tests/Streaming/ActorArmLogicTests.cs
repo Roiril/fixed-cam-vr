@@ -220,6 +220,96 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(Vector3.Distance(relA, relC), Is.LessThan(1e-4f));
         }
 
+        // ---- 人形の可動域 ----------------------------------------------------
+
+        [Test]
+        public void 小さい動きはそのまま写る()
+        {
+            // knee（上限の 60%）までは 1:1。人形が「動いていない」ように見えてはいけない。
+            float knee = ActorArmLogic.DefaultMaxSwingDeg * ActorArmLogic.SwingKneeRatio;
+            Assert.That(ActorArmLogic.SoftLimitDeg(knee * 0.5f, ActorArmLogic.DefaultMaxSwingDeg),
+                        Is.EqualTo(knee * 0.5f).Within(1e-4f));
+            Assert.That(ActorArmLogic.SoftLimitDeg(knee, ActorArmLogic.DefaultMaxSwingDeg),
+                        Is.EqualTo(knee).Within(1e-4f));
+        }
+
+        [Test]
+        public void 大きい動きは上限へ飽和する()
+        {
+            float max = ActorArmLogic.DefaultMaxSwingDeg;
+            // 体験者が真横（90°）まで上げても、人形は上限を超えない。
+            Assert.That(ActorArmLogic.SoftLimitDeg(90f, max), Is.LessThan(max));
+            Assert.That(ActorArmLogic.SoftLimitDeg(180f, max), Is.LessThan(max));
+            // ただし knee は超える（動いたことは伝わる）。
+            Assert.That(ActorArmLogic.SoftLimitDeg(90f, max),
+                        Is.GreaterThan(max * ActorArmLogic.SwingKneeRatio));
+            // 単調（大きく動かすほど人形も大きく動く）。
+            Assert.That(ActorArmLogic.SoftLimitDeg(60f, max),
+                        Is.GreaterThan(ActorArmLogic.SoftLimitDeg(45f, max)));
+        }
+
+        [Test]
+        public void 飽和は負の角度でも対称()
+        {
+            float max = ActorArmLogic.DefaultMaxSwingDeg;
+            Assert.That(ActorArmLogic.SoftLimitDeg(-90f, max),
+                        Is.EqualTo(-ActorArmLogic.SoftLimitDeg(90f, max)).Within(1e-4f));
+        }
+
+        /// <summary>
+        /// 着物の袖は腕が体から離れるほど引き伸ばされる（実測で 45° から破綻）。
+        /// 体験者が真横まで上げても、人形の腕は可動域に収まる。
+        /// </summary>
+        [Test]
+        public void 真横に上げても人形の腕は可動域に収まる()
+        {
+            Vector3 sh = new Vector3(0.2f, 1.3f, 0f);
+            Vector3 rest = Vector3.down;                 // 腕を下ろした向き
+            float armLen = 0.4f;
+            Vector3 target = sh + Vector3.right * armLen;  // 真横（90°）へ伸ばし切り
+
+            Vector3 got = ActorArmLogic.LimitToDollRange(sh, target, rest, armLen);
+
+            float swing = Vector3.Angle(rest, got - sh);
+            Assert.That(swing, Is.LessThanOrEqualTo(ActorArmLogic.DefaultMaxSwingDeg + 0.5f));
+            Assert.That(Vector3.Distance(sh, got),
+                        Is.LessThanOrEqualTo(armLen * ActorArmLogic.DefaultMaxReachRatio + 1e-3f));
+        }
+
+        [Test]
+        public void 伸ばし切りでも肘が少し曲がる余地を残す()
+        {
+            Vector3 sh = Vector3.zero;
+            float armLen = 0.5f;
+            // 真下へ伸ばし切り（角度は 0 なので距離だけが効く）。
+            Vector3 got = ActorArmLogic.LimitToDollRange(sh, Vector3.down * armLen, Vector3.down, armLen);
+            Assert.That(got.y, Is.EqualTo(-armLen * ActorArmLogic.DefaultMaxReachRatio).Within(1e-4f));
+        }
+
+        [Test]
+        public void 可動域の内側なら何も変えない()
+        {
+            Vector3 sh = new Vector3(1f, 1.2f, -2f);
+            float armLen = 0.45f;
+            // 20°（knee=21° の内側）・距離も上限内。
+            Vector3 dir = Quaternion.AngleAxis(20f, Vector3.forward) * Vector3.down;
+            Vector3 target = sh + dir * (armLen * 0.7f);
+
+            Vector3 got = ActorArmLogic.LimitToDollRange(sh, target, Vector3.down, armLen);
+            Assert.That(Vector3.Distance(got, target), Is.LessThan(1e-4f));
+        }
+
+        [Test]
+        public void 真上を向いた目標でも壊れない()
+        {
+            // rest と正反対＝回転軸が定まらない。NaN を出さず、腕を下ろした向きへ倒す。
+            Vector3 sh = Vector3.zero;
+            Vector3 got = ActorArmLogic.LimitToDollRange(sh, Vector3.up * 0.4f, Vector3.down, 0.4f);
+            Assert.That(float.IsNaN(got.x) || float.IsNaN(got.y) || float.IsNaN(got.z), Is.False);
+            Assert.That(Vector3.Angle(Vector3.down, got - sh),
+                        Is.LessThanOrEqualTo(ActorArmLogic.DefaultMaxSwingDeg + 0.5f));
+        }
+
         // ---- 合流と平滑化 ----------------------------------------------------
 
         [Test]
