@@ -5,15 +5,24 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6d7a1a02-c926-4301-b3e5-40f96aeedf21
+  modified: 2026-08-05T02:15:41.648Z
 ---
 
-# 配信カメラ実機フリート（2026-07-17 更新）
+# 配信カメラ実機フリート（2026-08-05 更新）
 
 | スロット | 端末 | アプリ | IP（DHCP・揮発） | 検証 |
 |---|---|---|---|---|
-| Phone01 / cam A | Pixel 7a（3C251JEHN03582） | fixed-cam-streamer **v0.5.0**（:8080・cameraId 刻印済み） | 192.168.11.26（7/17） | Web 卓 /cam 200 OK・29.7fps |
-| Phone02 / cam B | Pixel 7a（37081JEHN03028） | fixed-cam-streamer **v0.5.0**（:8080・cameraId 刻印済み） | 192.168.11.12（7/17） | Web 卓 /cam 200 OK・29.7fps |
-| Phone03 / cam C | Pixel 7a（37201JEHN14152） | fixed-cam-streamer **v0.5.0**（:8080・cameraId 刻印済み） | 192.168.11.27（7/17） | Web 卓 /cam 200 OK・30fps |
+| Phone01 / cam A | Pixel 7a（3C251JEHN03582） | fixed-cam-streamer **実機 v0.7.0**（:8080・cameraId 刻印済み） | 192.168.11.17（8/5） | `/info` 応答・配信中 |
+| Phone02 / cam B | Pixel 7a（37081JEHN03028） | fixed-cam-streamer **実機 v0.7.0**（:8080・cameraId 刻印済み） | 192.168.11.20（8/5） | `/info` 応答・配信中 |
+| Phone03 / cam C | Pixel 7a（37201JEHN14152） | fixed-cam-streamer **実機 v0.7.0**（:8080・cameraId 刻印済み） | 192.168.11.23（8/5） | `/info` 応答・配信中 |
+
+**⚠ v0.9.0（端末の傾きを配る）はビルド済みだが 3 台とも未インストール**（2026-08-05）。
+実機は v0.7.0 なので `/info` に `tiltState` が無く、卓の 📱 端末の傾きパネルは
+「この端末は傾きを送っていません」と出る。**入れるには USB 接続が要る**
+（無線 adb は 3 台とも 5555 が閉じていて `adb connect` は拒否される。実測）。
+入れ方は skill `streamer-android-build`（`./gradlew installDebug`）。
+入れた後は**端末を水平に置いて上下が 0° 付近になるか**を必ず見る
+（センサの符号と `targetRotation` の対応は実機でしか確かめられない唯一の箇所）。
 
 **2026-07-17 から現行フリートは Pixel 7a ×3 に統一**（全台 streamer v0.2.0・認証なし・:8080）。iPhone 13 Pro + IP Camera Lite（:8081・Basic admin/admin）は予備構成へ降格 — 使う時は該当カメラの auth を戻す。
 

@@ -49,7 +49,7 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 | URI | レスポンス | Unity 側で読む箇所 |
 |---|---|---|
 | `GET /video` | `multipart/x-mixed-replace; boundary=frame` の MJPEG。**各パートに `X-Width` / `X-Height` / `X-Rotation` / `X-Capture-Ns` / `X-Frame-Seq` ヘッダ付き** | [`MjpegStreamReceiver`](../Assets/Scripts/Streaming/MjpegStreamReceiver.cs) |
-| `GET /info` | `{deviceName, lensId, lensFovDeg, widthPx, heightPx, rotationDeg, isPortrait, deviceRotationDeg}` | [`StreamMetadataFetcher`](../Assets/Scripts/Streaming/StreamMetadataFetcher.cs)、[`CameraStream.Start()`](../Assets/Scripts/Streaming/CameraStream.cs) で 1 回取得。`deviceRotationDeg`=端末の物理的な上方向(0/90/180/270、OrientationEventListener 検知)。配信フレームは常に正立済み（`rotationDeg=0`、横持ち=640x480 / 縦持ち=480x640。v0.6.0 から 4:3） |
+| `GET /info` | `{deviceName, lensId, lensFovDeg, widthPx, heightPx, rotationDeg, isPortrait, deviceRotationDeg}` + `{tiltPitchDeg, tiltRollDeg, tiltState}`（v0.9.0〜・下記「端末の傾き」） | [`StreamMetadataFetcher`](../Assets/Scripts/Streaming/StreamMetadataFetcher.cs)、[`CameraStream.Start()`](../Assets/Scripts/Streaming/CameraStream.cs) で 1 回取得。`deviceRotationDeg`=端末の物理的な上方向(0/90/180/270、OrientationEventListener 検知)。配信フレームは常に正立済み（`rotationDeg=0`、横持ち=640x480 / 縦持ち=480x640。v0.6.0 から 4:3）。**tilt は Unity 側の DTO に無く JsonUtility が無視する**（使うのは卓だけ） |
 | `GET /health` | `{uptimeMs, totalFrames, totalBytes, fps, sentFrames, latestFrameAgeMs, clientCount, eisMode, oisMode, afMode, cropRatio, zoomRatio, aeState, aeLock, awbLock, expUs, iso, flicker}`（v0.5.0〜 後半は CaptureResult 直読みの実効値 = 決定性の観測用）+ `{thermalStatus, thermalHeadroom, throttleStage, encodeIdle, batteryTempC, plugged}`（v0.7.0〜 発熱抑制の観測。**⚠ clientCount=0 のとき fps=0・totalFrames 静止は需要駆動 encode 停止の正常動作**。throttleStage 1/2 は熱スロットル中＝fps/画質が自動降下している） | 任意。`CameraStream.RefreshHealthAsync()` で都度取得（HudDump からのモニタ用）。`sentFrames` と `totalFrames` の差分が広がる時は HTTP ワーカ詰まり（**⚠ sentFrames はクライアント接続ごとに加算される** — Quest + web 卓 /cam プロキシ等の多クライアント時は sent ≈ 接続数×totalFrames が正常。単一クライアント前提でしか差分ヒューリスティックを使わない）。`latestFrameAgeMs` が大きい時はカメラ stall |
 | `GET /` | 簡易ステータス HTML | ブラウザ確認用 |
 
@@ -951,6 +951,44 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
 **合成の見た目の正は Unity**（`Preview Show Composite`）で、卓の画面に常時その旨を出す。
 ⚠ 人形の寸法は必ず渡すこと（`actor-proxy.js` の既定は**身長 1.6m の人間**用で、
 そのまま 0.40m の人形に使うと足元の円が人形の背丈と同じ幅になる。実際そうなっていた）。
+
+#### 端末の傾きを取り込む — 手で合わせるのは 4 自由度だけになった（2026-08-05）
+
+配信アプリ（**streamer v0.9.0〜**）が `/info` で**配信画像の重力に対する姿勢**を配る。
+卓の 🎯 カメラを合わせる の **📱 端末の傾き**パネルが取り込む。設計は
+[2026-08-05_device-tilt-align.md](../plans/2026-08-05_device-tilt-align.md)。
+
+| キー | 中身 |
+|---|---|
+| `tiltPitchDeg` | 上下（**+ が上向き**・`calib.pitchDeg` と同じ規約） |
+| `tiltRollDeg` | 傾き（`calib.rollDeg` と同じ規約） |
+| `tiltState` | `ok` / `moving`（動いている）/ `steep`（真下すぎて傾きが定義できない）/ `unknown`（センサ無し・未読）。**ok のときだけ取り込ませる** |
+
+- **来るのは上下と傾きだけ。左右の向き（方位）は入っていない。** 方位は磁気コンパスでしか
+  出せないが、室内・三脚・電子機器の近くで ±10〜30° ずれ、しかも course 空間の X/Z 軸と
+  磁北の対応が未知。**磁気は送っていないし、送るようにもしない**（「参考」で出すと必ず誰かが使う）
+- **上下と傾きが方位と独立に決まる理由**: 姿勢は Unity の Euler（ZXY 順・`R = Ry(yaw)·Rx(-pitch)·Rz(roll)`）で、
+  yaw はワールド Y 軸まわりの最外回転だから**どのベクトルの Y 成分も変えない**。よって
+  `pitch = asin(fwd·U)` / `roll = atan2(right·U, up·U)`（U = 上向き）が yaw を含まない。
+  ⚠ 前提は **course 空間の Y 軸が重力の上向き**であること（位置合わせリチュアルが動かすのは
+  XZ と yaw と床の高さだけなので成立している）。ここが崩れたらこの機能ごと嘘になる
+- **計算は配信側でやり切る**（[`TiltMath`](https://github.com/Roiril/fixed-cam-streamer) / `TiltFilter`）。
+  受信側に端末座標系を解釈させると、センサの取り付け向き・`targetRotation`・正立化が絡んだ
+  二重実装になって必ず食い違う。配るのは「**いま配信されている絵**の向き」だけ
+- **両側の式が繋がっていることは機械で固定してある**: streamer の `TiltMathTest`（置き方 → 期待角）と
+  卓の `align-model.test.mjs`（`cameraBasis` から同じ式で pitch/roll を復元・yaw を振っても不変）。
+  **片方だけ直すと沈黙して食い違う**
+- **取り込みは明示操作**。ライブ値へ自動追従はしない（カメラを触っていないのに保存値が変わると、
+  作業者が何をして絵が変わったのか追えなくなる）。ずれていれば「センサとのずれ 3.2°」と出す
+- **取り込むと「この傾きを保つ」が入る**。以後 **X / Z 軸まわりの回転だけ**を止める
+  （床を回す＝ Y 軸と平行移動は姿勢を変えないので触らない＝合わせ作業の本体は残る）。
+  Y 軸回転は数学的に上下・傾きを変えないが、Euler へ戻す往復で誤差が乗るので値を焼き直している
+- **`/info` は卓のサーバ経由で引く**（`GET /caminfo?host=&port=&auth=`・2s タイムアウト）。
+  ブラウザ直だと端末ごとに CORS も到達性も違い、「届かない」と「その端末は /info を持たない」を
+  区別できない。iPhone の IP Camera Lite は `/info` 自体が無いので、パネルは
+  「この端末は傾きを送っていません」と出して従来どおり手で合わせる
+- **Unity は 1 行も変えていない。** `StreamMetadata` に tilt のフィールドは無く、JsonUtility が
+  未知キーを無視する。姿勢は従来どおり `cameras[].calib` から読む
 
 #### 較正（cameras[].calib）の実装と、現場運用が「そうでなければならない」理由
 

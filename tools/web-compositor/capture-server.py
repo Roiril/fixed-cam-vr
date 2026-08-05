@@ -1122,6 +1122,8 @@ class Handler(SimpleHTTPRequestHandler):
                                'alive': age is not None and age < 6.0})
         if path == '/cam':
             return self._proxy_cam(parse_qs(urlparse(self.path).query))
+        if path == '/caminfo':
+            return self._get_cam_info(parse_qs(urlparse(self.path).query))
         if path == '/cam/liveness':
             # 卓が 2 秒ごとに読む「各配信元から実際にバイトが来ているか」。
             return self._json({'ok': True, 'cams': _live_snapshot()})
@@ -1232,6 +1234,27 @@ class Handler(SimpleHTTPRequestHandler):
                  'cameraCount': snap.get('cameraCount')}
         return self._json({'cameras': results, 'quest': quest,
                            'discoveryEnabled': DISCOVERY_ENABLED})
+
+    # 端末が配る /info を卓のブラウザへ中継する。位置合わせ面が「端末の傾き」を読むのに使う。
+    #
+    # ブラウザから端末を直接引かない理由: 端末ごとに CORS も到達性も違う（iPhone の
+    # IP Camera Lite は /info 自体が無く 404 を返す）。失敗したときブラウザ側では
+    # 「ネットワークが届かない」と「その端末は /info を持たない」を区別できない。
+    # PC → カメラの HTTP は /diag が既に同じ経路で引いていて実績がある。
+    #
+    # ⚠ タイムアウトは短く。位置合わせ面が数秒おきに叩くので、届かない端末で待たせない。
+    def _get_cam_info(self, q):
+        host = (q.get('host', [''])[0] or '').strip()
+        auth = (q.get('auth', [''])[0] or '').strip()
+        if not host:
+            return self._json({'ok': False, 'detail': 'host が空です'}, 400)
+        try:
+            port = int((q.get('port', ['8080'])[0] or '8080').strip())
+        except ValueError:
+            return self._json({'ok': False, 'detail': 'port が数値ではありません'}, 400)
+        ok, detail, meta = _probe_info(host, port, auth, timeout=2.0)
+        # ok は「JSON として読めた」まで。HTTP は通ったが /info を持たない端末は False。
+        return self._json({'ok': bool(ok and meta), 'detail': detail, 'info': meta})
 
     # MJPEG プロキシ。Basic 認証をサーバ側で肩代わりして同一オリジンで返す。
     # <img src="/cam?host=...&port=8081&auth=admin:admin"> で使う。

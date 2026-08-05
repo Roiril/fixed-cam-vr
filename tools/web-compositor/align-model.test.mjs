@@ -268,3 +268,115 @@ test('高さは「人が打つとき」だけ詰める / ドラッグでは詰�
   assert.ok(isBelowFloor(low), 'UI が警告できるように印は立てる');
   assert.ok(!isBelowFloor(c));
 });
+
+// ---- 端末の傾きを取り込む ---------------------------------------------------
+
+import {
+  readTilt, applyTilt, tiltMismatchDeg, tiltLockAllows, dragRoom as dragRoomLocked,
+} from './align-model.js';
+
+const D = 180 / Math.PI;
+
+test('配信アプリの傾きの式が、卓の姿勢表現と厳密につながっている', () => {
+  // fixed-cam-streamer の TiltMath はこの式で上下と傾きを出している（U = ワールド上向き）:
+  //     pitch = asin(fwd·U) / roll = atan2(right·U, up·U)
+  // course 空間の +Y が重力の上向きなので、U·v は v[1] そのもの。
+  // ⚠ 片方だけ直すと沈黙して食い違う。streamer 側は TiltMathTest が同じ置き方を固定している。
+  for (const [pitch, roll, yaw] of [[-20, 0, 0], [-12, 3.5, 133], [0, -7, -110], [8, 0, 45]]) {
+    const c = { ...base(), pitchDeg: pitch, rollDeg: roll, yawDeg: yaw };
+    const { right, up, fwd } = cameraBasis(c);
+    const p = Math.asin(Math.max(-1, Math.min(1, fwd[1]))) * D;
+    const r = Math.atan2(right[1], up[1]) * D;
+    assert.ok(Math.abs(p - pitch) < 1e-9, `pitch ${p} != ${pitch}`);
+    assert.ok(Math.abs(r - roll) < 1e-9, `roll ${r} != ${roll}`);
+  }
+});
+
+test('上下と傾きは左右の向きから独立している（この機能が成り立つ理由）', () => {
+  // 同じ傾きのまま左右だけ振っても、重力に対する量は 1 ミリ度も動かない。
+  // だから方位が分からなくても上下と傾きを先に焼ける。
+  const ref = cameraBasis({ ...base(), pitchDeg: -17, rollDeg: 2.5, yawDeg: 0 });
+  for (const yaw of [-175, -90, 0, 37, 133, 179]) {
+    const b = cameraBasis({ ...base(), pitchDeg: -17, rollDeg: 2.5, yawDeg: yaw });
+    assert.ok(Math.abs(b.fwd[1] - ref.fwd[1]) < 1e-12, `yaw=${yaw} で上下が動いた`);
+    assert.ok(Math.abs(b.up[1] - ref.up[1]) < 1e-12, `yaw=${yaw} で傾きが動いた`);
+    assert.ok(Math.abs(b.right[1] - ref.right[1]) < 1e-12, `yaw=${yaw} で傾きが動いた`);
+  }
+});
+
+test('傾きを配らない端末は null（黙って 0 度として扱わない）', () => {
+  assert.equal(readTilt(null), null);
+  assert.equal(readTilt({}), null, '旧ビルド・IP Camera Lite');
+  assert.equal(readTilt({ deviceName: 'iPhone', widthPx: 640 }), null);
+  assert.equal(readTilt({ tiltState: 'ok', tiltPitchDeg: 'x', tiltRollDeg: 0 }), null);
+});
+
+test('使ってよいのは ok のときだけ', () => {
+  const ok = readTilt({ tiltState: 'ok', tiltPitchDeg: -18.34, tiltRollDeg: 0.42 });
+  assert.deepEqual(ok, { pitchDeg: -18.34, rollDeg: 0.42, state: 'ok', usable: true });
+  for (const s of ['moving', 'steep', 'unknown']) {
+    const t = readTilt({ tiltState: s, tiltPitchDeg: -1, tiltRollDeg: 0 });
+    assert.equal(t.usable, false, `${s} を取り込ませない`);
+    assert.equal(t.state, s, '理由は伝える（画面に出すため）');
+  }
+});
+
+test('取り込むのは上下と傾きだけ — 位置と左右の向きは触らない', () => {
+  const c = base();
+  const t = { pitchDeg: -18.3, rollDeg: 0.4 };
+  const out = applyTilt(c, t);
+  assert.equal(out.pitchDeg, -18.3);
+  assert.equal(out.rollDeg, 0.4);
+  assert.deepEqual([out.x, out.y, out.z, out.yawDeg], [c.x, c.y, c.z, c.yawDeg]);
+  assert.deepEqual([out.fxPx, out.k1, out.srcW], [c.fxPx, c.k1, c.srcW], 'レンズも触らない');
+});
+
+test('センサとのずれは上下と傾きの大きい方', () => {
+  const c = { ...base(), pitchDeg: -12, rollDeg: 0 };
+  assert.ok(Math.abs(tiltMismatchDeg(c, { pitchDeg: -12, rollDeg: 0 })) < 1e-9);
+  assert.ok(Math.abs(tiltMismatchDeg(c, { pitchDeg: -15, rollDeg: 0 }) - 3) < 1e-9);
+  assert.ok(Math.abs(tiltMismatchDeg(c, { pitchDeg: -12, rollDeg: 5 }) - 5) < 1e-9);
+  assert.equal(tiltMismatchDeg(null, { pitchDeg: 0, rollDeg: 0 }), null);
+});
+
+test('傾きを保つ設定で止まるのは、傾きを変える操作だけ', () => {
+  // 平行移動は全部通す（合わせ作業の本体はそちら）。
+  for (const a of ['', 'x', 'y', 'z']) assert.ok(tiltLockAllows('move', a), `move/${a}`);
+  // 回転は Y 軸（床を回す＝左右の向き）だけ。
+  assert.ok(tiltLockAllows('rotate', ''), '自由回転は Y 軸まわりなので通す');
+  assert.ok(tiltLockAllows('rotate', 'y'));
+  assert.ok(!tiltLockAllows('rotate', 'x'));
+  assert.ok(!tiltLockAllows('rotate', 'z'));
+});
+
+test('傾きを保つ設定では、傾けるドラッグが姿勢を動かさない', () => {
+  const lockTilt = { pitchDeg: -18.3, rollDeg: 0.4 };
+  const c = applyTilt(base(), lockTilt);
+  const pivot = [0.4, 0, 1.2];
+
+  // X 軸で傾けようとしても、何も起きない（位置だけ動いて意味不明になるより無視が正しい）。
+  // ⚠ 横ドラッグで試す。X 軸は画面でほぼ水平なので、縦ドラッグは**ロックが無くても**効かない
+  //   （それで試すとロックの検証にならない）。
+  const tilted = dragRoomLocked(c, 'x', 'rotate', 60, 0, { pivot, dist: 3, lockTilt });
+  assert.deepEqual(tilted, c);
+
+  // 床を回す（左右の向き）は通り、上下と傾きは 1 ミリ度も動かない。
+  const spun = dragRoomLocked(c, '', 'rotate', 40, 0, { pivot, dist: 3, lockTilt });
+  assert.ok(Math.abs(spun.yawDeg - c.yawDeg) > 1, '左右は動く');
+  assert.equal(spun.pitchDeg, lockTilt.pitchDeg);
+  assert.equal(spun.rollDeg, lockTilt.rollDeg);
+
+  // 平行移動も通る。
+  const moved = dragRoomLocked(c, '', 'move', 30, 20, { pivot, dist: 3, lockTilt });
+  assert.ok(Math.hypot(moved.x - c.x, moved.y - c.y, moved.z - c.z) > 0.01, '位置は動く');
+  assert.equal(moved.pitchDeg, lockTilt.pitchDeg);
+  assert.equal(moved.rollDeg, lockTilt.rollDeg);
+});
+
+test('傾きを保たない設定なら今までどおり全部動く（既定を変えていない）', () => {
+  const c = base();
+  const pivot = [0.4, 0, 1.2];
+  const tilted = dragRoomLocked(c, 'x', 'rotate', 60, 0, { pivot, dist: 3 });
+  assert.notDeepEqual(tilted, c, 'ロックしていなければ従来どおり傾く');
+  assert.ok(Math.abs(tilted.pitchDeg - c.pitchDeg) > 0.5, '実際に傾いていること');
+});

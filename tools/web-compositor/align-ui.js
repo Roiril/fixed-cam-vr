@@ -14,6 +14,7 @@ import {
   initialCalib, dolly, setGroundPos, setField, setLens,
   toManualCalib, isManual, summaryLines, refDistance, hfovFromFocalPx,
   dragRoom, isBelowFloor, AXES, projectPoint, unprojectToFloor,
+  readTilt, applyTilt, tiltMismatchDeg, tiltLockAllows,
 } from './align-model.js';
 import { wireSegments, calibMatchesSource, applyCalibToCameras } from './calib-session.js';
 import { actorProxyGeometry, actorBodyGeometry, drawActorProxy, proxyIssueText } from './actor-proxy.js';
@@ -83,6 +84,19 @@ export function createAlignUi(container, deps) {
             <label>左右<input class="au-f" data-k="yawDeg" type="number" step="1"></label>
             <label>上下<input class="au-f" data-k="pitchDeg" type="number" step="1"></label>
             <label>傾き<input class="au-f" data-k="rollDeg" type="number" step="0.5"></label>
+          </div>
+
+          <div class="au-block au-tiltblock">
+            <div class="au-blockhead">📱 端末の傾き（配信アプリ）</div>
+            <div class="au-tiltval"></div>
+            <div class="au-dollrow">
+              <button class="au-tiltapply">⤵ 取り込む</button>
+              <label class="chk"><input class="au-tiltlock" type="checkbox"> この傾きを保つ</label>
+            </div>
+            <div class="au-blockhint">来るのは<b>上下と傾きだけ</b>です。左右の向きは磁気でしか出せず、
+              室内では数十度ずれるので送っていません。<br>
+              順番は <b>① 傾きを取り込む → ② 位置 → ③ 左右の向き</b>。
+              先に位置を詰めると、取り込んだ時に絵が動いてやり直しになります。</div>
           </div>
 
           <div class="au-block">
@@ -161,6 +175,8 @@ export function createAlignUi(container, deps) {
   let light = defaultLight();
   let drag = null, msgTimer = 0;
   const dollView = createDollView();
+  // 端末の傾き。tilt=null は「この端末からは取れない」（旧ビルド・iPhone・不通）。
+  let tilt = null, tiltWhy = '', tiltLock = false, tiltTimer = 0, tiltGen = 0;
 
   const cams = () => deps.getCameras() || [];
   const cam = () => cams().find((c) => c && c.id === camId) || null;
@@ -257,6 +273,111 @@ export function createAlignUi(container, deps) {
     return wl && wl.h > 0 ? wl.h : 1.0;
   };
 
+  // ---- 端末の傾き ----------------------------------------------------------
+  //
+  // 配信アプリが重力から出した「配信画像の上下と傾き」を取り込む。目で合わせるのが最も難しい
+  // 2 つ（上下と傾きは、位置や高さを変えたときの見え方と似てしまうので、絵を見ても
+  // どれがずれているのか判別できない）が消えて、残るのは位置 3 つと左右の向き 1 つになる。
+
+  /** 端末へは卓のサーバ経由で聞く（ブラウザ直だと到達性と CORS が端末ごとに違う）。 */
+  let tiltBusy = false;
+  async function pollTilt() {
+    if (tiltBusy) return;                      // 届かない端末では 1 回が数秒かかる。重ねない
+    const c = cam();
+    const my = tiltGen, id = camId;
+    if (!c || !c.host) {
+      tilt = null; tiltWhy = 'このカメラの接続先が未設定です'; syncTilt(); return;
+    }
+    tiltBusy = true;
+    let next = null, why = '';
+    try {
+      const q = new URLSearchParams({ host: c.host, port: String(c.port || 8080) });
+      if (c.auth) q.set('auth', c.auth);
+      const j = await (await fetch(`/caminfo?${q}`)).json();
+      next = j.ok ? readTilt(j.info) : null;
+      why = next ? ''
+        : j.ok ? 'この端末は傾きを送っていません（配信アプリが古いか、別のアプリです）'
+        : `端末に届きません（${j.detail || '応答なし'}）`;
+    } catch {
+      why = '卓のサーバに繋がりません';
+    } finally {
+      tiltBusy = false;
+    }
+    // ⚠ 待っている間に別のカメラへ移っていたら捨てる。混ぜると別の端末の傾きを焼く。
+    if (my !== tiltGen || camId !== id) return;
+    tilt = next; tiltWhy = why;
+    syncTilt();
+  }
+
+  function syncTilt() {
+    const deg = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}°`;
+    const valEl = $('.au-tiltval');
+    const applyBtn = $('.au-tiltapply');
+    const lockBox = $('.au-tiltlock');
+
+    if (!tilt) {
+      valEl.innerHTML = `<span class="au-tiltna">${tiltWhy || '読み取り中…'}</span>`;
+      applyBtn.disabled = true;
+      lockBox.disabled = true;
+      if (tiltLock) setTiltLock(false);      // 取れなくなったら保てない
+      return;
+    }
+    lockBox.disabled = false;
+    const head = `上下 ${deg(tilt.pitchDeg)}　傾き ${deg(tilt.rollDeg)}`;
+    if (tilt.usable) {
+      const d = calib ? tiltMismatchDeg(calib, tilt) : null;
+      const gap = d == null ? ''
+        : d < 0.15 ? '<span class="au-tiltok">いまの姿勢と一致しています</span>'
+        : `<span class="au-tiltgap">いまの姿勢とのずれ ${d.toFixed(1)}°</span>`;
+      valEl.innerHTML = `<b>${head}</b><div>${gap}</div>`;
+      applyBtn.disabled = false;
+    } else {
+      const why = tilt.state === 'moving' ? '動いています（置いて手を離すと出ます）'
+        : tilt.state === 'steep' ? '真下すぎて傾きが出せません（上下だけは合っています）'
+        : 'センサから読めていません';
+      valEl.innerHTML = `<span class="au-tiltna">${head}<br>${why}</span>`;
+      applyBtn.disabled = true;
+    }
+  }
+
+  /**
+   * 傾きを保つ設定の入切。**上下と傾きを変える操作だけ**を止める
+   * （X / Z 軸まわりの回転。床を回すのと平行移動は姿勢を変えないので触らない）。
+   */
+  function setTiltLock(on) {
+    tiltLock = !!on;
+    $('.au-tiltlock').checked = tiltLock;
+    // 止めた軸を選んだままにしない（押しても効かないボタンが押された状態で残る）。
+    if (tiltLock && (axis === 'x' || axis === 'z')) setAxis('');
+    for (const b of root.querySelectorAll('.au-axis')) {
+      const blocked = tiltLock && !tiltLockAllows('rotate', b.dataset.axis);
+      b.disabled = blocked;
+      b.title = blocked ? '端末の傾きを保っているあいだは傾けられません' : '';
+    }
+    for (const inp of root.querySelectorAll('.au-f')) {
+      if (inp.dataset.k === 'pitchDeg' || inp.dataset.k === 'rollDeg') {
+        inp.disabled = tiltLock;
+        inp.title = tiltLock ? '端末の傾きを保っています（チェックを外すと打てます）' : '';
+      }
+    }
+    refreshModeHint();
+  }
+
+  $('.au-tiltapply').addEventListener('click', () => {
+    if (!calib || !tilt || !tilt.usable) return;
+    calib = applyTilt(calib, tilt);
+    // 取り込んだ値を守りたいから取り込んだはず。そのまま保つ設定にする（見えるので暗黙ではない）。
+    setTiltLock(true);
+    syncFields(); syncTilt(); draw();
+    note('端末の傾きを取り込みました。次は位置、最後に左右の向きを合わせてください');
+  });
+
+  $('.au-tiltlock').addEventListener('change', (e) => {
+    if (e.target.checked && tilt && tilt.usable) calib = applyTilt(calib, tilt);
+    setTiltLock(e.target.checked);
+    syncFields(); syncTilt(); draw();
+  });
+
   // ---- 入力 ----------------------------------------------------------------
   const toCanvas = (ev) => {
     const r = canvas.getBoundingClientRect();
@@ -286,8 +407,8 @@ export function createAlignUi(container, deps) {
     drag.last = p;
     // ⚠ 掴むのは**床と壁**。保存されるのはカメラ（等価な逆変換）で、layout.room は書き換えない。
     calib = dragRoom(calib, axis, drag.pan ? 'move' : 'rotate', dx, dy,
-      { pivot: drag.pivot, dist: drag.dist });
-    syncFields(); draw();
+      { pivot: drag.pivot, dist: drag.dist, lockTilt: tiltLock ? tilt : null });
+    syncFields(); syncTilt(); draw();
   });
 
   const endDrag = () => { drag = null; };
@@ -319,17 +440,24 @@ export function createAlignUi(container, deps) {
   root.querySelectorAll('.au-axis').forEach((b) => b.addEventListener('click', () => setAxis(b.dataset.axis)));
 
   function setAxis(a) {
-    axis = AXES.includes(a) ? a : '';
+    const want = AXES.includes(a) ? a : '';
+    // 傾きを保っているあいだは、傾ける軸を選ばせない（選べても効かないので混乱するだけ）。
+    if (tiltLock && !tiltLockAllows('rotate', want)) {
+      note('端末の傾きを保っています。傾けるにはチェックを外してください', 'warn');
+      return;
+    }
+    axis = want;
     root.querySelectorAll('.au-axis').forEach((o) => o.classList.toggle('is-on', o.dataset.axis === axis));
     refreshModeHint();
   }
 
   function refreshModeHint() {
     const what = mode === 'rotate' ? '床と壁を回す' : mode === 'pan' ? '床と壁を動かす' : '';
-    $('.au-modehint').textContent = mode === 'doll'
+    const base = mode === 'doll'
       ? '映像の床をクリックして人形を置く'
       : axis ? `ドラッグ＝${axis.toUpperCase()} 軸だけで ${what}`
       : mode === 'rotate' ? 'ドラッグ＝床を回す（Y 軸・掴んだ点が中心）' : `ドラッグ＝${what}（自由）`;
+    $('.au-modehint').textContent = tiltLock ? `${base}　／　📱 傾きは端末の値で固定中` : base;
   }
 
   // Blender / CAD 流のキー。X / Y / Z で軸を切り替え、もう一度押すか Esc で解除。
@@ -479,14 +607,23 @@ export function createAlignUi(container, deps) {
     $('.au-floord').value = lay?.floor?.d ?? 1.8;
     setAxis('');
     canvas.style.cursor = 'grab';
-    syncFields(); updateFrameInfo(); syncDollStatus(); draw();
+    // 傾きは開くたびに聞き直す（前のカメラの値を残さない）。保つ設定も毎回 off から。
+    tiltGen++; tilt = null; tiltWhy = ''; setTiltLock(false);
+    syncFields(); updateFrameInfo(); syncDollStatus(); syncTilt(); draw();
     root.style.display = 'flex';
     root.focus();
+    pollTilt();
+    clearInterval(tiltTimer);
+    tiltTimer = setInterval(pollTilt, 2000);
     // 人形は重い（実メッシュ 1.9MB + アルベド）。読めた時点で描き直す。
     dollView.load().then(() => { syncDollStatus(); draw(); });
   }
 
-  function close() { root.style.display = 'none'; camId = null; drag = null; }
+  function close() {
+    root.style.display = 'none'; camId = null; drag = null;
+    // 閉じたら端末を叩き続けない（現場では 4 台ぶんの HTTP が無駄に飛ぶ）。
+    clearInterval(tiltTimer); tiltTimer = 0; tiltGen++;
+  }
 
   /**
    * show.json が更新されたときの呼び口（long-poll 由来）。

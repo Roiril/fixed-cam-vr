@@ -210,8 +210,19 @@ export function rotateRoom(calib, axis, deg, pivot = [0, 0, 0]) {
  * 自由回転は **Y 軸まわり（床を回す）だけ**にしてある。床の四角を写真の床へ合わせるとき、
  * 欲しいのはほぼこれだから。傾け（X / Z）は軸キーで明示的に選ぶ — 縦ドラッグに割り当てると
  * 「水平に合わせたつもりが傾いた」が起きる。
+ *
+ * `opts.lockTilt` に端末の傾き（{pitchDeg, rollDeg}）を渡すと、**上下と傾きを保つ**。
+ * 姿勢を変えてしまう操作は無視し、許した操作の後も値を焼き直す（Y 軸回転は数学的に
+ * 上下・傾きを変えないが、Euler へ戻す往復で 1e-15 級の誤差が乗るので固定しておく）。
  */
 export function dragRoom(calib, axis, kind, dxPx, dyPx, opts = {}) {
+  const lock = opts.lockTilt || null;
+  if (lock && !tiltLockAllows(kind, axis)) return calib;
+  const out = dragRoomFree(calib, axis, kind, dxPx, dyPx, opts);
+  return lock ? applyTilt(out, lock) : out;
+}
+
+function dragRoomFree(calib, axis, kind, dxPx, dyPx, opts = {}) {
   const pivot = opts.pivot || [0, 0, 0];
   if (kind === 'rotate') {
     if (!axis) return rotateRoom(calib, 'y', dxPx * 0.30, pivot);
@@ -235,6 +246,58 @@ export function dragRoom(calib, axis, kind, dxPx, dyPx, opts = {}) {
   return moveRoom(calib, [
     right[0] * sx + up[0] * sy, right[1] * sx + up[1] * sy, right[2] * sx + up[2] * sy,
   ]);
+}
+
+// ---- 端末の傾きを取り込む ---------------------------------------------------
+//
+// 配信アプリ（fixed-cam-streamer v0.9.0〜）が `/info` で配る、**配信画像**の重力に対する
+// 姿勢。上下(pitch) と 傾き(roll) だけで、左右の向き(yaw = 方位)は入っていない。
+// 方位を出すには磁気コンパスが要るが、室内・三脚・電子機器の近くで ±10〜30° ずれ、
+// course 空間の X/Z 軸と磁北の対応も未知なので原理的に使えない。
+//
+// 上下と傾きだけを先に確定できるのは、姿勢が Unity の Euler（ZXY 順）で表されていて、
+// yaw がワールド Y 軸まわりの最も外側の回転だから — yaw はどのベクトルの Y 成分も変えない。
+// だから **左右の向きを知らないまま上下と傾きを焼ける**。これが成り立つ前提は
+// 「course 空間の Y 軸が重力の上向き」であること（位置合わせリチュアルは XZ と yaw と
+// 床の高さしか動かさないので成立している）。
+
+/**
+ * `/info` の中身から傾きを取り出す。傾きを配らない端末（iPhone の IP Camera Lite・
+ * 旧ビルド）なら null。
+ */
+export function readTilt(info) {
+  if (!info || typeof info !== 'object') return null;
+  const state = typeof info.tiltState === 'string' ? info.tiltState : '';
+  if (!state) return null;
+  const p = Number(info.tiltPitchDeg), r = Number(info.tiltRollDeg);
+  if (!Number.isFinite(p) || !Number.isFinite(r)) return null;
+  return { pitchDeg: p, rollDeg: r, state, usable: state === 'ok' };
+}
+
+/** 端末の傾きを取り込む。**上下と傾きだけ** — 位置と左右の向きには触らない。 */
+export function applyTilt(calib, tilt) {
+  if (!calib || !tilt) return calib;
+  const p = Number(tilt.pitchDeg), r = Number(tilt.rollDeg);
+  if (!Number.isFinite(p) || !Number.isFinite(r)) return calib;
+  return clampCalib({ ...calib, pitchDeg: p, rollDeg: r });
+}
+
+/** いまの姿勢とセンサのずれ（度）。上下と傾きの大きい方。取り込む価値があるかの表示に使う。 */
+export function tiltMismatchDeg(calib, tilt) {
+  if (!calib || !tilt) return null;
+  const dp = Math.abs(wrapDeg(num(calib.pitchDeg, 0) - num(tilt.pitchDeg, 0)));
+  const dr = Math.abs(wrapDeg(num(calib.rollDeg, 0) - num(tilt.rollDeg, 0)));
+  return Math.max(dp, dr);
+}
+
+/**
+ * 傾きを保つ設定のとき、この操作を許してよいか。
+ * 上下・傾きを変えるのは **X / Z 軸まわりの回転だけ**（Y 軸＝床を回すは左右の向きしか変えない）。
+ * 平行移動は姿勢に触らないので全部許す — **合わせ作業の本体はそちらに残る**。
+ */
+export function tiltLockAllows(kind, axis) {
+  if (kind !== 'rotate') return true;
+  return axis === '' || axis === 'y';
 }
 
 /** 床の上でカメラを置き直す（上から見た図のドラッグ用）。高さと向きは変えない。 */

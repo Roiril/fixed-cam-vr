@@ -34,6 +34,12 @@
     .au-axis.is-on { border-color: var(--accent-color); color: var(--accent-color); }
     .au-dollstatus { font-size: 10.5px; opacity: var(--opacity-mute); line-height: 1.5; }
     .au-dollstatus.warn { color: var(--warn-color); opacity: 1; }
+    /* 端末の傾き。値は読みながら合わせるので等幅数字。取れない理由は必ず見えるところに出す。 */
+    .au-tiltval { font-size: 11.5px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+    .au-tiltna { opacity: var(--opacity-mute); font-size: 10.5px; }
+    .au-tiltgap { color: var(--warn-color); font-size: 10.5px; }
+    .au-tiltok { color: var(--accent-color); font-size: 10.5px; }
+    .au-tiltblock button:disabled, .au-axis:disabled { opacity: .4; cursor: not-allowed; }
     .au-msg { font-size: 11px; min-height: 15px; line-height: 1.5; }
     .au-msg.warn { color: var(--warn-color); }
     .au-actions { display: flex; gap: 6px; }
