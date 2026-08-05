@@ -153,8 +153,14 @@ namespace FixedCamVr.Streaming.Cg
 
         private ShowBodyInput _body;
         private float _bodyStamp = -999f;
+        // 体験者の「体」の向き。頭の向きを鈍らせたもの（人は首を振っても体はすぐ回らない）。
+        // 人形の向きと、腕の相対ベクトルを正規化する向きの**両方**にこれを使う。
+        private float _bodyYawDeg;
+        private bool _bodyYawSeeded;
         // 映像の遅延ぶん過去を読むための履歴（歩行中のズレを消す）。
         private readonly BodyInputHistory _bodyHistory = new BodyInputHistory();
+        // 立ち位置も腕・向きと同じ時刻（映像の遅延ぶん過去）を読むための足跡。
+        private readonly CourseTrack _courseTrack = new CourseTrack();
 
         /// <summary>いま CG を出しているか（HUD / 診断用）。</summary>
         public bool IsVisible => _visible && _rendering;
@@ -328,10 +334,31 @@ namespace FixedCamVr.Streaming.Cg
             // 部屋プロキシを先に置く（床の高さがこの後の影の落ち先になる）。
             _roomProxy?.Sync();
             Vector3 lightDir = ApplyLight();
+            // 足跡は毎フレーム積む（PlaceActor が過去の時点を読むため）。
+            if (showControl?.HeadCourseXZProvider != null)
+                _courseTrack.Push(Time.unscaledTime, showControl.HeadCourseXZProvider());
+            UpdateBodyYaw(Time.deltaTime);
             PlaceActor(_actorDef);
             ApplyGroundContact(_actorDef, lightDir);
             if (_actorRig != null && _actorRig.HasRig)
-                _actorRig.Drive(CurrentBody(), _actorInstance!.transform.eulerAngles.y, Time.deltaTime);
+                _actorRig.Drive(CurrentBody(), _actorInstance!.transform.eulerAngles.y, Time.deltaTime,
+                                _bodyYawDeg);
+        }
+
+        // 体の向きを頭の向きへ鈍らせて追わせる。**首を振っただけで体ごと回らない**ようにするのと、
+        // 腕の相対ベクトルを体基準で正規化するのに要る（頭基準だと手が動いていないのに腕が振り回される）。
+        private void UpdateBodyYaw(float dt)
+        {
+            ShowBodyInput body = CurrentBody();
+            if (!body.HasHead) return;
+            if (!_bodyYawSeeded)
+            {
+                // 初回はスナップ（人形が出た瞬間に体が回りながら現れると、それ自体が演出に見える）。
+                _bodyYawDeg = body.HeadYawDeg;
+                _bodyYawSeeded = true;
+                return;
+            }
+            _bodyYawDeg = ActorArmLogic.SmoothYawDeg(_bodyYawDeg, body.HeadYawDeg, dt);
         }
 
         private bool IsCourseRegistered()
@@ -867,7 +894,13 @@ namespace FixedCamVr.Streaming.Cg
                 ? new Vector2(_placement.x, _placement.z)
                 : new Vector2(def.fixedX, def.fixedZ);
             float authoredYaw = _placement != null ? _placement.yawDeg : def.fixedYawDeg;
-            if (follow && showControl?.HeadCourseXZProvider != null) xz = showControl.HeadCourseXZProvider();
+            if (follow && showControl?.HeadCourseXZProvider != null)
+            {
+                // ⚠ 「いま」ではなく**腕・向きと同じ時刻**（映像の遅延ぶん過去）を読む。
+                //    ここだけ現在時刻にすると、歩きながら振り向いたときに体の位置と向きが食い違う。
+                if (!_courseTrack.TrySample(Time.unscaledTime - VideoLatencySec, out xz))
+                    xz = showControl.HeadCourseXZProvider();
+            }
 
             Transform t = _actorInstance.transform;
             // 足元は床（course y=0）。リグの実寸に合わせて縮尺済みなので原点＝足元でよい。
@@ -880,8 +913,9 @@ namespace FixedCamVr.Streaming.Cg
             ShowBodyInput body = CurrentBody();
             if (follow && body.HasHead)
             {
-                // 人形は体験者の分身。体の向きを揃えると腕の写像と体の向きが常に整合する。
-                yaw = body.HeadYawDeg;
+                // 人形は体験者の分身。**体**の向きを揃えると腕の写像と体の向きが常に整合する。
+                // 頭の向きをそのまま使うと、首を振っただけで人形が体ごと回る。
+                yaw = _bodyYawDeg;
             }
             else if (follow && _virtualCam != null)
             {

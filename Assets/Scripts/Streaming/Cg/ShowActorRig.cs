@@ -35,6 +35,53 @@ namespace FixedCamVr.Streaming.Cg
         private Vector3 _lSmoothed, _rSmoothed;
         private bool _seeded;
 
+        /// <summary>
+        /// 片腕 1 フレーム分の実測値。**「腕が違和感なく動くか」は絵だけでは判定できない**ので
+        /// （伸び切っているのか、たまたまその角度なのかが見分けられない）、駆動の中で分かる値を出す。
+        /// 診断専用で、駆動そのものには使わない。
+        /// </summary>
+        public readonly struct ArmDiag
+        {
+            /// <summary>肩ボーンのワールド位置。</summary>
+            public readonly Vector3 Shoulder;
+            /// <summary>写像で求めた手首の目標（届くかどうかは別）。</summary>
+            public readonly Vector3 Target;
+            /// <summary>IK が実際に置いた手首。<see cref="Target"/> と離れていれば届いていない。</summary>
+            public readonly Vector3 Wrist;
+            /// <summary>上腕 + 前腕（この人形の腕の長さ）。</summary>
+            public readonly float ArmLength;
+            /// <summary>人形の体の前方向（<see cref="ForwardM"/> の基準）。</summary>
+            public readonly Vector3 Forward;
+
+            public ArmDiag(Vector3 shoulder, Vector3 target, Vector3 wrist, float armLength, Vector3 forward)
+            {
+                Shoulder = shoulder; Target = target; Wrist = wrist;
+                ArmLength = armLength; Forward = forward;
+            }
+
+            /// <summary>目標へ届かなかった距離 (m)。0 なら目標どおり。</summary>
+            public float DeficitM => Vector3.Distance(Target, Wrist);
+
+            /// <summary>腕の伸び率（肩→手首 / 腕長）。1.0 が伸び切り。</summary>
+            public float Extension => ArmLength > 1e-4f ? Vector3.Distance(Shoulder, Wrist) / ArmLength : 0f;
+
+            /// <summary>目標が腕の届く範囲を超えていた割合（1.0 = ちょうど届く）。</summary>
+            public float TargetReachRatio =>
+                ArmLength > 1e-4f ? Vector3.Distance(Shoulder, Target) / ArmLength : 0f;
+
+            /// <summary>
+            /// 手首の前後（m・+ が体の前）。**大きく負なら手が背中側へ回っている**。
+            /// 体の向きが体験者に追いつけていないと、ここに出る。
+            /// </summary>
+            public float ForwardM => Vector3.Dot(Wrist - Shoulder, Forward);
+        }
+
+        /// <summary>直近の <see cref="Drive"/> での左腕の実測値（診断用）。</summary>
+        public ArmDiag LeftDiag { get; private set; }
+
+        /// <summary>直近の <see cref="Drive"/> での右腕の実測値（診断用）。</summary>
+        public ArmDiag RightDiag { get; private set; }
+
         /// <summary>腕を駆動できるリグ（Humanoid の肩〜手が揃っている）か。</summary>
         public bool HasRig => _lUpper != null && _lLower != null && _lHand != null
                               && _rUpper != null && _rLower != null && _rHand != null;
@@ -126,26 +173,33 @@ namespace FixedCamVr.Streaming.Cg
         /// 1 フレーム分の駆動。<paramref name="actorYawDeg"/> は人形の体の向き（ワールド yaw）。
         /// リグが無い（Humanoid でない / 代用の箱）なら何もしない。
         /// </summary>
-        public void Drive(in ShowBodyInput body, float actorYawDeg, float dt)
+        /// <param name="playerBodyYawDeg">
+        /// 体験者の**体**の向き。省略すると頭の向きを使う（＝首を振ると手が振り回される）ので、
+        /// 呼び出し側は <see cref="ActorArmLogic.SmoothYawDeg"/> で鈍らせた値を渡すこと。
+        /// </param>
+        public void Drive(in ShowBodyInput body, float actorYawDeg, float dt,
+                          float? playerBodyYawDeg = null)
         {
             if (!HasRig) return;
 
-            // 体格比 = 人形の実効身長（実寸 × 現在の縮尺）/ 体験者の頭高（床 = 人形の足元 y）。
-            float actorHeightM = _measuredHeightM * Mathf.Abs(transform.lossyScale.y);
+            // 縮尺は腕の**長さ**の比で取る（背丈の比ではない）。人形と体験者で頭身が違っても、
+            // 「腕を伸ばし切った」が人形でも伸ばし切りになるのはこちら。
             float headHeightM = body.HasHead ? body.HeadPos.y - transform.position.y : 1.6f;
-            float scale = ActorArmLogic.BodyScale(actorHeightM, headHeightM);
+            float bodyYaw = playerBodyYawDeg ?? body.HeadYawDeg;
 
-            DriveArm(_lUpper!, _lLower!, _lHand!, -1f, body.HasHead && body.LeftValid, body.LeftHandPos,
-                     body, actorYawDeg, scale, dt, ref _lWeight, ref _lSmoothed);
-            DriveArm(_rUpper!, _rLower!, _rHand!, +1f, body.HasHead && body.RightValid, body.RightHandPos,
-                     body, actorYawDeg, scale, dt, ref _rWeight, ref _rSmoothed);
+            LeftDiag = DriveArm(_lUpper!, _lLower!, _lHand!, -1f, body.HasHead && body.LeftValid,
+                                body.LeftHandPos, body, actorYawDeg, bodyYaw, headHeightM, dt,
+                                ref _lWeight, ref _lSmoothed);
+            RightDiag = DriveArm(_rUpper!, _rLower!, _rHand!, +1f, body.HasHead && body.RightValid,
+                                 body.RightHandPos, body, actorYawDeg, bodyYaw, headHeightM, dt,
+                                 ref _rWeight, ref _rSmoothed);
             _seeded = true;
         }
 
-        private void DriveArm(Transform upper, Transform lower, Transform hand, float side,
-                              bool valid, Vector3 handWorld, in ShowBodyInput body,
-                              float actorYawDeg, float scale, float dt,
-                              ref float weight, ref Vector3 smoothed)
+        private ArmDiag DriveArm(Transform upper, Transform lower, Transform hand, float side,
+                                 bool valid, Vector3 handWorld, in ShowBodyInput body,
+                                 float actorYawDeg, float playerBodyYawDeg, float headHeightM, float dt,
+                                 ref float weight, ref Vector3 smoothed)
         {
             Vector3 shoulder = upper.position;
             float upperLen = Vector3.Distance(shoulder, lower.position);
@@ -161,8 +215,13 @@ namespace FixedCamVr.Streaming.Cg
             Vector3 desired = idle;
             if (weight > 0f && body.HasHead)
             {
-                Vector3 mapped = ActorArmLogic.MapHandToActor(handWorld, body.HeadPos, body.HeadYawDeg,
-                                                              HeadWorldPosition, actorYawDeg, scale);
+                // 体験者の肩から手へのベクトルを、腕の長さの比で人形の肩へ移す。
+                // 人形の肩は実ボーン（測れる）、体験者の肩は頭からの人体比率で推定する。
+                Vector3 playerShoulder = ActorArmLogic.EstimateShoulder(
+                    body.HeadPos, playerBodyYawDeg, side, headHeightM);
+                float scale = ActorArmLogic.ArmScale(armLen, headHeightM);
+                Vector3 mapped = ActorArmLogic.MapHandToActor(handWorld, playerShoulder, playerBodyYawDeg,
+                                                              shoulder, actorYawDeg, scale);
                 desired = Vector3.Lerp(idle, mapped, weight);
             }
 
@@ -177,6 +236,8 @@ namespace FixedCamVr.Streaming.Cg
 
             AlignBone(upper, lower.position - upper.position, joint - upper.position);
             AlignBone(lower, hand.position - lower.position, end - lower.position);
+
+            return new ArmDiag(shoulder, smoothed, end, armLen, transform.forward);
         }
 
         private static void AlignBone(Transform bone, Vector3 fromDir, Vector3 toDir)
@@ -186,25 +247,39 @@ namespace FixedCamVr.Streaming.Cg
         }
 
         /// <summary>
-        /// 実寸の身長 (m)。**ボーンの最高点**（Mixamo なら HeadTop_End）を使う。
-        /// SkinnedMeshRenderer の bounds は Unity が大きめに膨らませるため、そのまま使うと
-        /// 人間サイズのモデルが 4m 超と出る（実測）。ボーン位置なら膨らみの影響を受けない。
+        /// ボーンが頭頂に届いていないと判断する、メッシュ上端との差の割合。
+        ///
+        /// SkinnedMeshRenderer の bounds は Unity が膨らませるので、その分は許す。
+        /// 実測（2026-08-05）: **Remy は 11%**（HeadTop_End まであるのに髪と服で膨らむ）、
+        /// **市松人形は 42%**（Head が頭の中ほどまでしか無い）。あいだを取って 25%。
+        /// ⚠ 10% にすると Remy が境界に乗って縮尺が揺れる（実際に揺れた）。
+        /// </summary>
+        private const float BoneTopSlack = 0.25f;
+
+        /// <summary>
+        /// 実寸の身長 (m)。**ボーンの最高点**（Mixamo なら HeadTop_End）を基本とする。
+        /// bounds は Unity が大きめに膨らませるため、そのまま使うと人間サイズのモデルが
+        /// 4m 超と出る（実測）。ボーン位置なら膨らみの影響を受けない。
+        ///
+        /// ⚠ ただし**頭頂までボーンがある人形ばかりではない**。市松人形（自作リグ）は Head が
+        /// 頭の中ほどにあるだけで、ボーンで測ると実寸を 3 割近く小さく見積もる。その縮尺で
+        /// show.json の heightM 1.6m に合わせると **2.27m の巨人**になった（実測）。
+        /// メッシュの上端がボーンより大きく上にあるときは、メッシュ側を身長とみなす。
         /// </summary>
         private float MeasureHeight()
         {
             float rootY = transform.position.y;
-            float top = rootY;
-            bool any = false;
+            float scaleY = Mathf.Abs(transform.lossyScale.y) > 1e-4f ? Mathf.Abs(transform.lossyScale.y) : 1f;
+
+            float boneTop = rootY;
+            bool anyBone = false;
             foreach (Transform t in GetComponentsInChildren<Transform>(true))
             {
                 if (t == transform) continue;
-                if (t.position.y > top) top = t.position.y;
-                any = true;
+                if (t.position.y > boneTop) boneTop = t.position.y;
+                anyBone = true;
             }
-            float scaleY = Mathf.Abs(transform.lossyScale.y) > 1e-4f ? Mathf.Abs(transform.lossyScale.y) : 1f;
-            if (any && top - rootY > 0.05f) return (top - rootY) / scaleY;
 
-            // ボーンが無い（単一メッシュ）モデルは renderer bounds へフォールバックする。
             bool anyR = false;
             Bounds b = new Bounds(transform.position, Vector3.zero);
             foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
@@ -213,6 +288,17 @@ namespace FixedCamVr.Streaming.Cg
                 if (!anyR) { b = r.bounds; anyR = true; }
                 else b.Encapsulate(r.bounds);
             }
+            float meshTop = anyR ? b.max.y : rootY;
+
+            if (anyBone && boneTop - rootY > 0.05f)
+            {
+                float boneH = boneTop - rootY;
+                // 頭頂までボーンがあるか。無ければメッシュの高さを採る。
+                if (!anyR || meshTop <= boneTop + boneH * BoneTopSlack) return boneH / scaleY;
+                return Mathf.Max(boneH, meshTop - rootY) / scaleY;
+            }
+
+            // ボーンが無い（単一メッシュ）モデル。
             return anyR ? Mathf.Max(0.1f, b.size.y / scaleY) : 1.7f;
         }
     }

@@ -856,12 +856,38 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
   （ZoneLayoutApplier が注入）を使う。**親子付けでは駄目**（CourseFrame は transform を動かさない）
 - **決めたこと**: 手の**回転は使わない**（位置だけ。OVR の手 basis の罠を避ける）／ 全身アニメは持たない
   （T ポーズから腕だけ下ろす＝マネキン。AnimatorController 不要でどの humanoid FBX でも動く）／
-  follow の体の向きは**体験者の頭 yaw**（分身）。カメラ目線が欲しければ `fixed` + `fixedYawDeg`
+  カメラ目線が欲しければ `fixed` + `fixedYawDeg`
 - **フェイルソフト**: 姿勢未著作のカメラでは出さない / actor 未定義・プレハブ欠落は代用の箱 /
   手が取れない間は idle（体側）へ 0.35s で合流し**人形は消えない**
+
+#### 腕・体の向き・立ち位置の作り直し（2026-08-05）
+
+計画と実測値は [2026-08-05_actor-follow-and-arms.md](../plans/2026-08-05_actor-follow-and-arms.md)。
+検証は `Diagnostics/Preview Actor Motion`（体験者の動きを合成して**数値と絵**を出す。Play 不要）。
+
+- **腕は「肩から手」を腕の長さの比で写す**（[`ActorArmLogic`](../../Assets/Scripts/Streaming/Cg/ActorArmLogic.cs)）。
+  旧実装は「頭から手」を**全高比**で写しており、人形と体験者の体の比率が同じことを仮定していた。
+  実測でプレハブの頭−肩は身長比 **人体 9.0% / 市松人形 2.8%（3.2 倍差）**で、仮定が成り立たない。
+  人体比率の Remy でも**腕を下ろした姿勢で目標が腕の届く範囲を 26% 超え**、常時 IK がクランプして
+  腕が棒のように伸び切っていた（肩基準にして 5%＝人間も伸び切る範囲へ）。
+  体験者の肩は頭から推定する（**目から 0.15 × 身長 下・0.104 × 身長 横 / 腕長 0.29 × 身長**。
+  いずれも Remy のボーン実測）
+- **人形の向きは「体験者の体の向き」**。頭の向きを半減期 0.35s で追い、**首のねじれ 50°** で引かれる
+  （`ActorArmLogic.SmoothYawDeg`）。遅れだけだと「首を振った」と「体ごと回った」を区別できず、
+  90° 振り向いた場面で体が置いていかれて**手が背中側へ回る**（実測）。
+  ⚠ **腕の写像の正規化にも同じ体の向きを使う**（頭の向きで写すと、手が動いていないのに腕が振り回される）
+- **立ち位置も腕・向きと同じ時刻を読む**（[`CourseTrack`](../../Assets/Scripts/Streaming/Cg/CourseTrack.cs)）。
+  旧実装は位置だけ「いま」で、向きと腕は 0.15 秒前だった。実測で**歩行中 12cm・停止時 0cm**
+- ⚠ **身長は「ボーンの最高点」だけでは測れない**。市松人形は Head が頭の中ほどまでしか無く、
+  実寸を 3 割小さく見積もって **2.27m の巨人**になっていた（目標 1.6m）。メッシュ上端がボーンより
+  25% 以上高ければメッシュ側を採る。**Remy は 11%**（髪と服の膨らみ）なのでボーンのまま。
+  実寸は `ShowActorPrefabSizeTests` が固定する（**変わると人形の大きさが黙って変わる**）
 - **Editor メニュー**: `Setup/Build Show Actor Prefab`（humanoid FBX → `Resources/ShowActors/<名前>.prefab`。
   Humanoid でも Generic でも可 — Generic は手のボーン名から親を 2 つ遡って肘・肩を取る）/
-  `Diagnostics/Preview Show Actor`（Play せず 4 ポーズ × 2 角度を PNG 化）
+  `Diagnostics/Preview Show Actor`（Play せず 4 ポーズ × 2 角度を PNG 化）/
+  **`Diagnostics/Preview Actor Motion`**（体験者の動きを時系列で合成し、腕の到達率・伸び率・
+  手の前後・追従の遅れを `report.md` に、全身と腕の寄りを連番 PNG に出す。**見る人形は
+  show.json の `actors[0]` から決まる** — 現場と違う人形を測っても意味が無いため）
 - **人形は実物の色を持てる**（2026-08-03〜）: `ShowActor.shader` の `_BaseMap` に元モデルのアルベドが乗る。
   ビルダーが FBX のテクスチャを拾って**人形ごとのマテリアル**（`ShowActor_<名前>.mat`）を作る。
   テクスチャを持たないモデルは従来どおり共有 `ShowActor.mat` で灰色のマネキンになる（見た目不変）。
