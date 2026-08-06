@@ -134,11 +134,18 @@ Shader "FixedCamVr/ShowActor"
                 // 素材が違えば光り方が違う。全部を同じ鏡面で光らせると濡れたプラスチックに見える。
                 float gm = baseTex.a;
 
-                // 影側は「環境光がどれだけ持ち上げるか」、光側は「主光源の色 × 強さ」。
-                // 卓（💡 CG 照明パネル）で著作した tempK / intensity / ambient がここで初めて絵に効く。
-                // これを繋ぐまでは、著作者がスライダを動かしても何も変わらなかった。
-                half3 shade = lerp(_ShadeColor.rgb, albedo, saturate(_Ambient));
-                half3 lit = albedo * _LightColor.rgb;
+                // 影側も光側も **同じ光源に比例させる**。_Ambient は「主光源に対する影側の比率」、
+                // _ShadeColor は環境光の色みバイアス（影が帯びる色）。
+                // 卓（💡 CG 照明パネル）で著作した tempK / intensity / ambient がここで絵に効く。
+                //
+                // ⚠ 旧実装は `lerp(_ShadeColor, albedo, _Ambient)` で、影側が **albedo に比例し
+                //   _LightColor が掛からなかった**。すると暗い部位ほど影と光の差が消える
+                //   （実測: 白い顔で shade/lit = 0.70 に対し赤い着物では 0.92 ＝ ほぼ陰影なし）。
+                //   人形全体の輝度レンジが実写のレンジの数分の一しか無く、立体ではなく
+                //   「切り抜きを貼った」ように見える最大の原因だった。いまは比率が albedo に依らない。
+                half3 lightCol = _LightColor.rgb;
+                half3 shade = albedo * lightCol * (saturate(_Ambient) + _ShadeColor.rgb);
+                half3 lit = albedo * lightCol;
                 half3 col = lerp(shade, lit, t);
 
                 // 鏡面（Blinn-Phong 1 ローブ）。**光を動かすとハイライトが動く**のが要点で、
@@ -150,9 +157,12 @@ Shader "FixedCamVr/ShowActor"
                              * saturate(ndl + _Wrap);
                 col += _LightColor.rgb * spec;
 
-                // リム: 輪郭をわずかに立てる（映像に埋もれて「居るのに見えない」を防ぐ）
+                // リム: 輪郭をわずかに立てる（映像に埋もれて「居るのに見えない」を防ぐ）。
+                // ⚠ **これも光源に比例させる**。素の色で加算すると、暗い区間で光量が落ちたときに
+                //   縁だけが相対的に明るいまま残り、輪郭に一定幅の光る線が出る
+                //   ＝ 視線だけで決まるリムが「CG である合図」として一番目立つ形になる。
                 float rim = pow(saturate(1.0 - saturate(dot(n, v))), _RimPower) * _Rim;
-                col += _RimColor.rgb * rim;
+                col += lightCol * _RimColor.rgb * rim;
 
                 return half4(saturate(col), 1);
             }

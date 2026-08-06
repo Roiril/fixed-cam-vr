@@ -114,13 +114,20 @@ namespace FixedCamVr.Streaming
         /// <summary>疎サンプルの格子（16x16 = 256 点）。全画素の GetPixels32 は重すぎる。</summary>
         private const int LumaGrid = 16;
 
-        private float _luma = -1f;
+        private readonly SourceLumaMap _lumaMap = new SourceLumaMap();
         private float _lumaStamp = -999f;
 
         /// <summary>
         /// いま映しているソース映像の平均輝度 0..1（**post FX を掛ける前**）。まだ測れていなければ -1。
         /// </summary>
-        public float SourceLuma => _luma;
+        public float SourceLuma => _lumaMap.Mean;
+
+        /// <summary>
+        /// 映像の**その辺り**の明るさ 0..1（uv はソース映像の 0..1 座標）。まだ測れていなければ -1。
+        /// CG 人形はここへ光量を寄せる — 全画面平均だと、暗いカーテンが大半を占める画で
+        /// 明るい床に立つ人形が暗くなりすぎる（実測で場所別は全画面平均の 26〜68%）。
+        /// </summary>
+        public float SourceLumaAt(Vector2 uv) => _lumaMap.Sample(uv.x, uv.y);
 
         // Texture2D は markNonReadable:false で載せているので CPU から読める（ライブも録画も同じ経路）。
         private void SampleLuma()
@@ -134,16 +141,15 @@ namespace FixedCamVr.Streaming
             {
                 int stepX = Mathf.Max(1, t.width / LumaGrid);
                 int stepY = Mathf.Max(1, t.height / LumaGrid);
-                float sum = 0f;
-                int n = 0;
+                _lumaMap.BeginFrame();
                 for (int y = 0; y < t.height; y += stepY)
                     for (int x = 0; x < t.width; x += stepX)
                     {
                         Color c = t.GetPixel(x, y);
-                        sum += 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
-                        n++;
+                        _lumaMap.Add((float)x / t.width, (float)y / t.height,
+                                     0.299f * c.r + 0.587f * c.g + 0.114f * c.b);
                     }
-                if (n > 0) _luma = sum / n;
+                _lumaMap.EndFrame();
             }
             catch { /* 読めないテクスチャなら諦める（測れないことは体験を止めない） */ }
         }

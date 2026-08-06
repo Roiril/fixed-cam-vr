@@ -73,6 +73,14 @@ HMD を被らずに撮れるので、実機確認をユーザーの手作業に�
     ＝そのカメラの合成は実機と違う。原因はたいてい**プレートの解像度が配信と違う**こと
     （`calib.srcW/srcH` と一致しないと `MatchesSource` が落ちて概算姿勢へ黙って降格する）。
     プレートは `plate_<ID>_<時刻>.jpg`（卓の無人プレート）を最優先で拾う
+  - **帯の最終行「浮き具合」と絵を必ず並べて見る**（2026-08-07〜）。
+    `blend doll/around: luma 24.9/36.4 (x0.69)  sat 13.9/5.3 (x2.60)  grain 24.5/25.1 (x0.98)`。
+    **目視だけでは足りない** — 人形の彩度が周囲の 3〜4 倍あることを絵からは誰も指摘できず、
+    数値にした瞬間に一目で分かった。**数値だけでも足りない** — 全部そろえたら絵から人形が消えた
+    （3 周目に「自分がそこに立っている」と読めなければ演出が成立しない）。同じ 1 行が Unity の
+    ログにも出るので、カット間の比較はログを見るのが速い
+  - **`** FEET OUT OF FRAME` が出ていたら合成の精度をいくら上げても浮いて見える**（2026-08-07〜）。
+    足元が枠の外だと床との接点も影の落ち先も画に無い。直すのは立ち位置か画角（演出の管轄）
 - 位置合わせ検証ビュー（廻リ視）: `Tools/FixedCamVr/Diagnostics/Preview Registration Viz`（ZoneGridFootprint + 登録ワイヤーフレームを identity/登録後 × 真上/斜め/目線で PNG 化 → `Assets/Screenshots/regviz/`。Play 不要・南北反転/変換ズレの机上検証）。
 - Editor 単体の多角度スクショ: `Tools/FixedCamVr/Diagnostics/Preview Hand Variants`（3種並べ）/ `Preview Robot Only`（背景排して周回）
   ＝ [TableDuoHandVariantPreview.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoHandVariantPreview.cs)。実録画データを当てるので Play 不要。

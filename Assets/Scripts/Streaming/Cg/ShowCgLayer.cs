@@ -44,6 +44,8 @@ namespace FixedCamVr.Streaming.Cg
         private static readonly int CgLensId = Shader.PropertyToID("_CgLens");
         private static readonly int CgFocalId = Shader.PropertyToID("_CgFocalN");
         private static readonly int CgSoftenId = Shader.PropertyToID("_CgSoften");
+        private static readonly int CgChromaBlurId = Shader.PropertyToID("_CgChromaBlur");
+        private static readonly int CgChromaGainId = Shader.PropertyToID("_CgChromaGain");
         private static readonly int LightDirId = Shader.PropertyToID("_LightDir");
         private static readonly int ShadowPlaneYId = Shader.PropertyToID("_ShadowPlaneY");
         private static readonly int ShadowLightDirId = Shader.PropertyToID("_ShadowLightDir");
@@ -101,6 +103,17 @@ namespace FixedCamVr.Streaming.Cg
         /// </summary>
         private const float CgSoftenTexels = 0.7f;
 
+        /// <summary>
+        /// 実写だけが受けている「色の粗さ」を CG にも掛ける量。
+        /// 実写は JPEG 4:2:0 で色差が半解像度、そのうえ q40 の量子化と暗所のカラーノイズ抑制で
+        /// 色がにじみ彩度も落ちる。CG はどれも受けないので、同じ絵の中で人形だけ色が鮮鋭で濃くなる
+        /// （実測 2026-08-07: 人形の胴の彩度は周囲の 3〜4 倍）。**post の彩度は乗算なので比が保存され、
+        /// 原理的に埋まらない** — だから CG 層だけに掛ける。
+        /// ⚠ シェーダ側の既定値と揃えてあること（<c>_CgChromaBlur</c> / <c>_CgChromaGain</c>）。
+        /// </summary>
+        private const float CgChromaBlurTexels = 2.2f;
+        private const float CgChromaGain = 0.55f;
+
         /// <summary>ソース実寸が取れないときに仮定するアスペクト（streamer / IP Camera Lite とも 4:3）。</summary>
         private const float FallbackSourceAspect = 4f / 3f;
 
@@ -130,6 +143,12 @@ namespace FixedCamVr.Streaming.Cg
 
         private Material? _material;
         private MjpegScreen? _screen;
+        /// <summary>
+        /// 装置の自動露出（<see cref="CameraFeelFx"/>）。人形の明るさは**画に出た後**の明るさへ
+        /// 寄せる必要があるので、いま掛かっている露出バイアスを読む。スクリーンと同じ GameObject に
+        /// 載る前提（両方 <c>screenRenderer</c> から取る）。null なら補正なしで従来どおり。
+        /// </summary>
+        private CameraFeelFx? _feelFx;
         private Camera? _virtualCam;
         private RenderTexture? _rt;
         private GameObject? _actorInstance;
@@ -194,6 +213,7 @@ namespace FixedCamVr.Streaming.Cg
             if (screenRenderer == null) screenRenderer = GetComponent<Renderer>();
             _material = screenRenderer != null ? screenRenderer.material : null;
             _screen = screenRenderer != null ? screenRenderer.GetComponent<MjpegScreen>() : null;
+            _feelFx = screenRenderer != null ? screenRenderer.GetComponent<CameraFeelFx>() : null;
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
             if (registry == null) registry = FindObjectOfType<CameraStreamRegistry>();
             _layer = LayerMask.NameToLayer(cgLayerName);
@@ -202,6 +222,8 @@ namespace FixedCamVr.Streaming.Cg
                                  "（Project Settings > Tags and Layers に追加すると有効になる）。");
             // マテリアルアセットに焼かれた古い値に引きずられないよう、なじませ量はここで明示する。
             _material?.SetFloat(CgSoftenId, CgSoftenTexels);
+            _material?.SetFloat(CgChromaBlurId, CgChromaBlurTexels);
+            _material?.SetFloat(CgChromaGainId, CgChromaGain);
             SetStrength(0f);
         }
 
@@ -383,7 +405,6 @@ namespace FixedCamVr.Streaming.Cg
             => _material?.SetVector(ActorFocusId, new Vector4(0.5f, 0.5f, 0.2f, 0f));
 
         // 人形の投影中心と見かけの半径を**枠 UV 空間**で書く（シェーダはこの空間で距離を測る）。
-        // 仮想カメラのビューポート → contain-fit 枠 は ContainUv の逆変換。
         private void WriteActorFocus()
         {
             if (_material == null) return;
@@ -394,18 +415,39 @@ namespace FixedCamVr.Streaming.Cg
             }
 
             float h = Mathf.Max(0.05f, _actorDef != null ? _actorDef.heightM : 0.4f);
-            Vector3 foot = _actorInstance.transform.position;
-            Vector3 center = foot + Vector3.up * (h * 0.5f);
-            Vector3 vp = _virtualCam.WorldToViewportPoint(center);
-            if (vp.z <= 0.01f) { ClearActorFocus(); return; }   // カメラの後ろ = 映っていない
-
-            Vector3 vpTop = _virtualCam.WorldToViewportPoint(center + Vector3.up * (h * 0.5f));
             Vector2 s = _screen != null ? _screen.ContainScale : Vector2.one;
-            // ContainUv は p = (uv-0.5)/s + 0.5。その逆で枠 UV へ戻す。
-            float cx = (vp.x - 0.5f) * s.x + 0.5f;
-            float cy = (vp.y - 0.5f) * s.y + 0.5f;
-            float radius = Mathf.Clamp(Mathf.Abs(vpTop.y - vp.y) * s.y, 0.02f, 0.6f);
-            _material.SetVector(ActorFocusId, new Vector4(cx, cy, radius, _aura));
+            if (!TryActorFocus(_virtualCam, _actorInstance.transform.position, h, s, _aura,
+                               out Vector4 focus))
+            {
+                ClearActorFocus();
+                return;
+            }
+            _material.SetVector(ActorFocusId, focus);
+        }
+
+        /// <summary>
+        /// 人形の投影中心と見かけの半径を**枠 UV 空間**（＝シェーダが距離を測る空間）で解く。
+        /// 仮想カメラのビューポート → contain-fit 枠 は <c>ContainUv</c> の逆変換 p = (uv-0.5)/s + 0.5。
+        ///
+        /// <b>Editor の合成プレビューもこれを呼ぶ</b> — 式を写すと片方だけ直したときに黙って食い違う。
+        /// カメラの後ろに居る（＝映っていない）ときは false。
+        /// </summary>
+        public static bool TryActorFocus(Camera cam, Vector3 footWorld, float heightM,
+                                         Vector2 containScale, float aura, out Vector4 focus)
+        {
+            focus = new Vector4(0.5f, 0.5f, 0.2f, 0f);
+            if (cam == null) return false;
+            float h = Mathf.Max(0.05f, heightM);
+            Vector3 center = footWorld + Vector3.up * (h * 0.5f);
+            Vector3 vp = cam.WorldToViewportPoint(center);
+            if (vp.z <= 0.01f) return false;
+
+            Vector3 vpTop = cam.WorldToViewportPoint(center + Vector3.up * (h * 0.5f));
+            float cx = (vp.x - 0.5f) * containScale.x + 0.5f;
+            float cy = (vp.y - 0.5f) * containScale.y + 0.5f;
+            float radius = Mathf.Clamp(Mathf.Abs(vpTop.y - vp.y) * containScale.y, 0.02f, 0.6f);
+            focus = new Vector4(cx, cy, radius, Mathf.Clamp01(aura));
+            return true;
         }
 
         /// <summary>
@@ -732,10 +774,13 @@ namespace FixedCamVr.Streaming.Cg
 
             // 映像の明るさへ人形の光量を寄せる。カメラごとに露出も現場の照明も違うのに、
             // 人形はどのカメラでも同じ明るさで出ていた（暗い区間で浮き、明るい区間で沈む）。
-            // 主光源と環境光へ**同じ倍率**を掛ける — 片方だけだと陰影の比が変わって材質が変わって見える。
+            //
+            // ⚠ 倍率を掛けるのは **_LightColor だけ**。環境光は「主光源に対する影側の比率」で、
+            //   シェーダ側が `albedo * _LightColor * (_Ambient + _ShadeColor)` として使う
+            //   ＝ 倍率も色温度も _LightColor 経由で一元的に効く。ここで ambient にも掛けると
+            //   二重になり、暗い区間ほど陰影のレンジまで潰れて「切り抜きを貼った」絵になる。
             float gain = LumaGain();
             Color lc = KelvinToLinearColor(tempK) * (intensity * gain);
-            ambient = Mathf.Clamp01(ambient * gain);
 
             _mpb ??= new MaterialPropertyBlock();
             foreach (Renderer r in _actorRenderers)
@@ -751,29 +796,70 @@ namespace FixedCamVr.Streaming.Cg
         }
 
         /// <summary>
-        /// 「ふつうに写っている」映像の生の平均輝度。人形の光量をここへ正規化する。
+        /// 倍率が 1 になる明るさ（＝著作した光量がそのまま出る基準）。
+        ///
+        /// ⚠ **人が立つ床あたりの明るさ**であって、画面全体の平均ではない。
+        /// 旧値 0.35 は全画面平均に合わせたもので、局所輝度へ切り替えたあともそのままだと
+        /// 基準が高すぎて人形が沈む（実測 2026-08-07: 3 台とも周囲の 0.75〜0.86 倍まで暗くなり、
+        /// 絵の上では**人形がほぼ消えた**。3 周目に「自分がそこに立っている」と読めないと演出が成立しない）。
+        /// 実測の局所輝度は 0.06〜0.16 で、自動露出が持ち上げた後で 0.09〜0.21。
         /// post を掛ける前の値なので、show.json の露出設定（現行 -0.72）とは無関係。
         /// </summary>
-        private const float ReferenceLuma = 0.35f;
+        private const float ReferenceLuma = 0.20f;
 
         /// <summary>映像の明るさへ寄せる度合い（0 = 従来どおり著作値そのまま / 1 = 完全に映像基準）。</summary>
-        private const float LumaMatchAmount = 0.7f;
+        private const float LumaMatchAmount = 0.85f;
 
         /// <summary>
-        /// 映像の明るさに合わせた人形の光量の倍率。<paramref name="sourceLuma"/> が負なら 1
-        /// （＝測れていない。著作した値をそのまま使う）。
-        /// 上下の clamp は、真っ暗な映像で人形が消える・白飛びで人形が焼けるのを防ぐため。
+        /// 倍率の下限。**0.35 では暗所で足りなかった** — 実測（2026-08-07・カメラ B/C の無人プレート）で
+        /// 人形が立つ場所の明るさは 0.06 台まで落ち、必要な倍率 0.18 に対して下限が 0.545 で頭打ちになり、
+        /// 白い胡粉の顔が周囲の 3 倍の明るさで出ていた。
+        /// 0 まで許さないのは、人形が完全に消えると演出が成立しないため（暗部ノイズとリムで形は残る）。
+        /// </summary>
+        private const float LumaGainMin = 0.15f;
+
+        /// <summary>
+        /// 人形の光量の倍率。合わせる先は「**画に出た後**の、人形が立つ場所の明るさ」。
+        ///
+        /// 引数が 2 つあるのは、装置の自動露出（<see cref="CameraFeelFx"/>）が画全体を持ち上げた
+        /// **後**の明るさが体験者に見える明るさだから。生の輝度へ寄せてから露出を浴びると
+        /// 二重に補正され、暗い区間ほど人形が浮く。
+        /// <paramref name="localLuma"/> が負なら 1（＝測れていない。著作した値をそのまま使う）。
         ///
         /// **Editor の合成プレビューも必ずこれを呼ぶこと** — プレビューだけ素の光量で描くと、
         /// 「プレビューでは馴染んで見えるのに実機では浮く（またはその逆）」が黙って起きる。
         /// </summary>
-        public static float LumaGainFor(float sourceLuma)
+        public static float LumaGainFor(float localLuma, float appliedExposureBias)
         {
-            if (sourceLuma < 0f || LumaMatchAmount <= 0f) return 1f;
-            return Mathf.Lerp(1f, Mathf.Clamp(sourceLuma / ReferenceLuma, 0.35f, 2f), LumaMatchAmount);
+            if (localLuma < 0f || LumaMatchAmount <= 0f) return 1f;
+            float shown = localLuma * Mathf.Pow(2f, appliedExposureBias);
+            return Mathf.Lerp(1f, Mathf.Clamp(shown / ReferenceLuma, LumaGainMin, 2f), LumaMatchAmount);
         }
 
-        private float LumaGain() => LumaGainFor(_screen != null ? _screen.SourceLuma : -1f);
+        private float LumaGain()
+            => LumaGainFor(LocalLumaAtActor(), _feelFx != null ? _feelFx.AppliedExposureBias : 0f);
+
+        /// <summary>
+        /// 人形が立っている**その辺り**の映像の明るさ（測れなければ全画面平均 → それも無ければ -1）。
+        /// 全画面平均だけを見ると、黒いカーテンが画の大半を占める絵で「明るい床に立つ人形」が
+        /// 暗くなりすぎ、逆に明るい壁が大半なら暗がりの人形が浮く。
+        /// </summary>
+        private float LocalLumaAtActor()
+        {
+            if (_screen == null) return -1f;
+            if (_actorInstance != null && _virtualCam != null)
+            {
+                float h = Mathf.Max(0.05f, _actorDef != null ? _actorDef.heightM : 0.4f);
+                Vector3 vp = _virtualCam.WorldToViewportPoint(
+                    _actorInstance.transform.position + Vector3.up * (h * 0.5f));
+                if (vp.z > 0.01f)
+                {
+                    float local = _screen.SourceLumaAt(new Vector2(vp.x, vp.y));
+                    if (local >= 0f) return local;
+                }
+            }
+            return _screen.SourceLuma;
+        }
 
         /// <summary>
         /// 色温度 (K) → **linear** の RGB。卓（`room-model.js` の `kelvinToRgb`）と**同じ近似式**を使う

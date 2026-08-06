@@ -54,6 +54,12 @@ namespace FixedCamVr.Streaming
         /// <summary>いまの露出バイアス (EV)。診断用。</summary>
         public float ExposureBias => _logic.ExposureBias;
 
+        /// <summary>
+        /// いま**画に掛かっている**露出バイアス (EV)。agc 込み＝シェーダへ書いた値そのもの。
+        /// <see cref="Cg.ShowCgLayer"/> が人形の明るさを「画に出た後の明るさ」へ寄せるのに読む。
+        /// </summary>
+        public float AppliedExposureBias => _logic.ExposureBias * _agc;
+
         /// <summary>凍らせた 1 枚の混合率 0..1。診断用。</summary>
         public float Echo => _logic.Echo;
 
@@ -72,17 +78,64 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
+        /// show.json <c>feel</c> の解決結果。**「全部 0」の実体は未指定**として扱う
+        /// （JsonUtility が欠落キーをそう埋めるため）。
+        ///
+        /// 構造体に切り出したのは、<b>Editor の合成プレビューが同じ解決を通れる</b>ようにするため。
+        /// あちらが独自に既定値を持つと、「プレビューでは馴染むのに実機では浮く」が黙って起きる。
+        /// </summary>
+        public readonly struct Settings
+        {
+            public readonly float NoiseDark;
+            public readonly float NoiseFixed;
+            public readonly float Agc;
+            public readonly float TargetLuma;
+            public readonly float FollowSec;
+
+            private Settings(float noiseDark, float noiseFixed, float agc, float targetLuma, float followSec)
+            {
+                NoiseDark = noiseDark; NoiseFixed = noiseFixed; Agc = agc;
+                TargetLuma = targetLuma; FollowSec = followSec;
+            }
+
+            public static Settings Resolve(ShowFeelDef? def)
+            {
+                ShowFeelDef d = (def == null || def.LooksUnset()) ? new ShowFeelDef() : def;
+                return new Settings(
+                    Mathf.Clamp(d.noiseDark, 0f, 0.5f),
+                    Mathf.Clamp(d.noiseFixed, 0f, 0.3f),
+                    Mathf.Clamp01(d.agc),
+                    d.targetLuma > 0f ? d.targetLuma : ShowFeelDef.DefaultTargetLuma,
+                    d.followSec > 0f ? d.followSec : ShowFeelDef.DefaultFollowSec);
+            }
+        }
+
+        /// <summary>
+        /// uniform の書き方の**単一の正**。実行時（<see cref="Write"/>）と Editor の合成プレビューが
+        /// ここを通る。片方だけ直したときに黙って食い違うのを防ぐ。
+        /// </summary>
+        public static void WriteUniforms(Material? mat, float noiseDark, float noiseFixed,
+                                         float exposureBias, float vignetteBias, float echo)
+        {
+            if (mat == null) return;
+            mat.SetFloat(NoiseDarkId, noiseDark);
+            mat.SetFloat(NoiseFixedId, noiseFixed);
+            mat.SetFloat(ExposureBiasId, exposureBias);
+            mat.SetFloat(VignetteBiasId, vignetteBias);
+            mat.SetFloat(EchoId, echo);
+        }
+
+        /// <summary>
         /// show.json <c>feel</c> の適用。キーが無ければコード既定のまま。
-        /// **「全部 0」の実体は未指定**として扱う（JsonUtility が欠落キーをそう埋めるため）。
         /// </summary>
         public void Configure(ShowFeelDef? def)
         {
-            ShowFeelDef d = (def == null || def.LooksUnset()) ? new ShowFeelDef() : def;
-            _noiseDark = Mathf.Clamp(d.noiseDark, 0f, 0.5f);
-            _noiseFixed = Mathf.Clamp(d.noiseFixed, 0f, 0.3f);
-            _agc = Mathf.Clamp01(d.agc);
-            _logic.TargetLuma = d.targetLuma > 0f ? d.targetLuma : ShowFeelDef.DefaultTargetLuma;
-            _logic.FollowHalfLifeSec = d.followSec > 0f ? d.followSec : ShowFeelDef.DefaultFollowSec;
+            Settings s = Settings.Resolve(def);
+            _noiseDark = s.NoiseDark;
+            _noiseFixed = s.NoiseFixed;
+            _agc = s.Agc;
+            _logic.TargetLuma = s.TargetLuma;
+            _logic.FollowHalfLifeSec = s.FollowSec;
         }
 
         private void Awake()
@@ -159,15 +212,10 @@ namespace FixedCamVr.Streaming
         }
 
         private void Write()
-        {
-            if (_material == null) return;
-            _material.SetFloat(NoiseDarkId, _noiseDark);
-            _material.SetFloat(NoiseFixedId, _noiseFixed);
             // 自動露出の効き（agc）は「装置がどれだけ律儀に追うか」。0 で追従なし。
-            _material.SetFloat(ExposureBiasId, _logic.ExposureBias * _agc);
-            _material.SetFloat(VignetteBiasId, _logic.VignetteBias * _agc);
             // 凍らせた 1 枚がまだ無いうちに混ぜると黒が出る。
-            _material.SetFloat(EchoId, _echoTex != null ? _logic.Echo : 0f);
-        }
+            => WriteUniforms(_material, _noiseDark, _noiseFixed,
+                             _logic.ExposureBias * _agc, _logic.VignetteBias * _agc,
+                             _echoTex != null ? _logic.Echo : 0f);
     }
 }

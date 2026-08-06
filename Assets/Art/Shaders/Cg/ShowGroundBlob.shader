@@ -26,7 +26,10 @@ Shader "FixedCamVr/ShowGroundBlob"
             Name "ShowGroundBlob"
             Blend One OneMinusSrcAlpha
             ZWrite Off
-            ZTest Always
+            // ⚠ Always にすると、人形が ShowRoomProxy の壁・箱の裏へ回ったときに
+            //   本体と投影影は隠れるのに**足元の楕円だけが壁の上に浮く**（投影シャドウ側と同じ理由で
+            //   LEqual に揃える。床は色を書かないので z-fight しない）。
+            ZTest LEqual
             Cull Off        // 床に寝かせた Quad の裏表を気にしなくて済む（向きの取り違えで消えない）
 
             HLSLPROGRAM

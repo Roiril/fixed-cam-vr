@@ -21,6 +21,10 @@ Shader "FixedCamVr/ScreenComposite"
         _CgFocalN("CG Focal normalized (fx/W, fy/H)", Vector) = (1, 1, 0, 0)
         // CG を実映像の粗さへ寄せる弱いぼかし（テクセル単位のオフセット。0 = 無効）。
         _CgSoften("CG Soften (texels)", Range(0, 2)) = 0.7
+        // 実写だけが受けている「色の粗さ」を CG にも掛ける（JPEG 4:2:0 + 暗所のカラーノイズ抑制）。
+        // ShowCgLayer が const から書く（_CgSoften と同じ流儀。現場調整の対象ではない）。
+        _CgChromaBlur("CG Chroma Blur (texels)", Range(0, 8)) = 2.2
+        _CgChromaGain("CG Chroma Gain", Range(0, 2)) = 0.55
         _UvRotSteps("Live UV Rotation (90deg steps, 0-3)", Float) = 0
         _OverlayStrength("Overlay Strength", Range(0, 1)) = 0
         _CgStrength("CG Layer Strength", Range(0, 1)) = 0
@@ -108,6 +112,8 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _OverlayOffset;
                 float _FrameAspect;
                 float _CgSoften;
+                float _CgChromaBlur;
+                float _CgChromaGain;
                 float _UvRotSteps;
                 float _OverlayStrength;
                 float _CgStrength;
@@ -188,11 +194,11 @@ Shader "FixedCamVr/ScreenComposite"
             //
             // ⚠ premultiplied なので **rgb と a を同じ重みでぼかす**。別々にぼかすと rgb > a の画素ができて
             //    人形の縁に明るい滲みが出る（over 合成の前提が壊れる）。
-            half4 SampleCgSoft(float2 uv)
+            half4 SampleCgTent(float2 uv, float texels)
             {
                 half4 c = SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv);
-                if (_CgSoften <= 0.001) return c;
-                float2 t = _CgTex_TexelSize.xy * _CgSoften;
+                if (texels <= 0.001) return c;
+                float2 t = _CgTex_TexelSize.xy * texels;
                 half4 s = c * 4.0;
                 s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2( t.x, 0.0)) * 2.0;
                 s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2(-t.x, 0.0)) * 2.0;
@@ -203,6 +209,32 @@ Shader "FixedCamVr/ScreenComposite"
                 s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2( t.x, -t.y));
                 s += SAMPLE_TEXTURE2D(_CgTex, sampler_CgTex, uv + float2(-t.x,  t.y));
                 return s * (1.0 / 16.0);
+            }
+
+            half4 SampleCgSoft(float2 uv) { return SampleCgTent(uv, _CgSoften); }
+
+            // 実写だけが受けている「色の粗さ」を CG にも掛ける。
+            //
+            // 実写は JPEG 4:2:0 で**色差が半解像度**、そのうえ q40 の粗い量子化と暗所のカラーノイズ抑制で
+            // 色がにじみ、彩度そのものも落ちている。CG はどれも受けていないので、同じ絵の中で
+            // 人形だけ色が鮮鋭で濃い。実測（2026-08-07・無人プレート 3 台）で人形の胴の彩度は
+            // 周囲の **3〜4 倍**あった。post の彩度は乗算なので比が保存され、**原理的に埋まらない**。
+            //
+            // 輝度は鮮鋭なまま、色差だけ広く均して倍率を掛ける。premultiplied のまま平均して a で割ると
+            // 「a で重み付けした平均色」になるので、透明な周囲の色に引っ張られない。
+            half3 CgChromaMatched(half4 cg, float2 uv)
+            {
+                if (cg.a <= 0.002) return cg.rgb;
+                half3 sharp = cg.rgb / max(cg.a, 1e-4);
+                half yS = dot(sharp, half3(0.299, 0.587, 0.114));
+                half3 chroma = sharp - yS;
+                if (_CgChromaBlur > 0.001)
+                {
+                    half4 wide = SampleCgTent(uv, _CgChromaBlur);
+                    half3 blur = wide.rgb / max(wide.a, 1e-4);
+                    chroma = blur - dot(blur, half3(0.299, 0.587, 0.114));
+                }
+                return max(yS + chroma * _CgChromaGain, 0.0) * cg.a;
             }
 
             float Hash21(float2 p)
@@ -314,6 +346,7 @@ Shader "FixedCamVr/ScreenComposite"
                         uvC = _CgLens.yz + n / (1.0 + _CgLens.x * dot(n, n)) * _CgFocalN.xy;
                     }
                     half4 cg = SampleCgSoft(uvC);
+                    cg.rgb = CgChromaMatched(cg, uvC);
                     // premultiplied over（Porter-Duff 1984）。straight alpha の lerp から変えたのは、
                     // **影が「乗算」だから** — 影を rgb=0 / a=濃さ の断片として同じ RT に描けば、
                     // この式が自動的に背景を (1-a) 倍する。不透明な人形（a=1）に対しては lerp と同値。

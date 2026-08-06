@@ -145,5 +145,25 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(float.IsNaN(l.ExposureBias), Is.False);
             Assert.That(System.Math.Abs(l.ExposureBias), Is.LessThanOrEqualTo(l.MaxBiasEv * 1.5f + 1e-3f));
         }
+
+        [Test]
+        public void 収束値は時間で追った先と一致する()
+        {
+            // Editor の合成プレビューは静止画 1 枚なので SteadyBiasFor だけを使う。
+            // 時間で追った結果とずれると「プレビューと実機で画の明るさが違う」が黙って起きる。
+            var l = new CameraFeelLogic();
+            l.ObserveLuma(0.12f);
+            Advance(l, 30f);
+            Assert.That(l.ExposureBias, Is.EqualTo(l.SteadyBiasFor(0.12f)).Within(0.02f));
+            Assert.That(l.VignetteBias, Is.EqualTo(l.VignetteBiasFor(l.ExposureBias)).Within(1e-5f));
+        }
+
+        [Test]
+        public void 収束値_測れていなければ動かさない()
+        {
+            var l = new CameraFeelLogic();
+            Assert.That(l.SteadyBiasFor(-1f), Is.EqualTo(0f));
+            Assert.That(l.SteadyBiasFor(0f), Is.EqualTo(0f));
+        }
     }
 }

@@ -49,8 +49,11 @@ namespace FixedCamVr.Streaming.EditorTools
         /// <summary>出力 PNG の映像部分の縦解像度。キャプション帯はこの下に足される。</summary>
         private const int OutImageHeight = 720;
 
-        /// <summary>キャプション帯の高さ（映像高に対する比）。映像を隠さないよう**下に足す**。</summary>
-        private const float CaptionHeightRatio = 0.18f;
+        /// <summary>
+        /// キャプション帯の高さ（映像高に対する比）。映像を隠さないよう**下に足す**。
+        /// 0.18（4 行）→ 0.24 は浮き具合の 1 行を足したぶん（折り返しを含めて 6 行まで入る）。
+        /// </summary>
+        private const float CaptionHeightRatio = 0.24f;
 
         /// <summary>
         /// キャプションの <c>fontSize</c>。
@@ -134,6 +137,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 TimelineMigration.EnsureTakes(show.timeline);
 
                 stage.ApplyLayout(show.layout);
+                stage.SetFeel(show.feel);
 
                 List<ShowCompositePreviewPlan.Shot> shots =
                     ShowCompositePreviewPlan.CollectShots(show.timeline);
@@ -181,6 +185,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
             Plate plate = stage.LoadPlate(camId);
             Geometry geom = stage.AimVirtualCamera(cam, plate.width, plate.height);
+            stage.SetAura(step.aura);
 
             // 人形（actors[] に無ければ出せない）。
             ShowActorDef? actor = show.FindActor(step.cg);
@@ -247,6 +252,17 @@ namespace FixedCamVr.Streaming.EditorTools
 
             if (plate.missing) notes.Add("NO PLATE: flat gray substitute");
 
+            // 足元が枠から出ていないか。立ち位置は演出の管轄（cgMode=follow なら体験者次第）なので
+            // コードでは直さないが、黙って出すと「なぜか浮いて見える」の原因へ到達できない。
+            float footV = stage.FootViewportV();
+            if (dollShown && !float.IsNaN(footV) && (footV < 0f || footV > 1f))
+            {
+                notes.Add($"FEET OUT OF FRAME (v={footV:0.00}) no ground contact visible");
+                Debug.LogWarning($"[CgViz] {ShowCompositePreviewPlan.ShotFileName(shot)}: " +
+                                 "人形の足元が映像の外（接地の手掛かりが画に無い）" +
+                                 " — 立ち位置かカメラの画角を見直す");
+            }
+
             PostParams post = ShowCompositePreviewPlan.ResolvePost(step, show.CameraPost(shot.camera), show.post);
 
             // 3 行に割る。1 行へ詰め込むと折り返しで読み順が崩れ、警告（** で始まる行）を見落とす。
@@ -259,6 +275,17 @@ namespace FixedCamVr.Streaming.EditorTools
                 (notes.Count > 0 ? "   ** " + string.Join("  ** ", notes) : "");
 
             stage.Composite(plate, cgVisible: dollShown, post: post, caption: caption);
+
+            // 浮き具合は**合成した後の絵**からしか測れない。測って、その 1 行を足して描き直す。
+            // Editor の 1 枚あたり数十 ms なので、証拠が 1 行増えるほうが安い。
+            string blend = dollShown ? stage.MeasureBlend() : "";
+            if (blend.Length > 0)
+            {
+                stage.Composite(plate, cgVisible: true, post: post, caption: caption + "\n" + blend);
+                // 絵を 1 枚ずつ開かなくても並べて読めるよう、ログにも出す（比較はここが一番速い）。
+                Debug.Log($"[CgViz] {ShowCompositePreviewPlan.ShotFileName(shot)}  {blend}");
+            }
+
             saved.Add(stage.Save(ShowCompositePreviewPlan.ShotFileName(shot)));
         }
 
@@ -287,9 +314,12 @@ namespace FixedCamVr.Streaming.EditorTools
 
             // post は掛けない。較正の判定はプレートの素の絵に対して行うもので、グレーディングを乗せると
             // 「ずれ」と「色の効き」が混ざって読めなくなる（かつワイヤーの視認性も落ちる）。
+            // 撮像の質も掛けない。較正のずれを見る絵に粒と露出の揺れを足すと、
+            // 「ずれ」と「装置の癖」が混ざって読めなくなる（post を掛けないのと同じ理由）。
             stage.Composite(plate, cgVisible: geom.usable, post: new PostParams(),
                             caption: $"CALIB CHECK cam{index}({Ascii(camId)})\n" +
-                                     $"plate {plate.label} | geom {geom.label}\n{note}");
+                                     $"plate {plate.label} | geom {geom.label}\n{note}",
+                            applyFeel: false);
             saved.Add(stage.Save(ShowCompositePreviewPlan.CalibCheckFileName(index)));
             stage.ShowWire(false);
         }
@@ -388,12 +418,17 @@ namespace FixedCamVr.Streaming.EditorTools
             private Material? _blobMat;
 
             private RenderTexture? _cgRt;
+            /// MSAA の RT は直接 ReadPixels できないので、測定用に非 MSAA へ解決してから読む。
+            private RenderTexture? _cgResolve;
+            private Texture2D? _cgRead;
             private RenderTexture? _outRt;
             private Texture2D? _readback;
             private Texture2D? _grayPlate;
             private readonly Dictionary<string, Texture2D?> _plateCache = new();
 
             private int _outW, _outH;
+            /// 直近の Composite で使った contain-fit。測定が同じ枠で座標を戻すのに要る。
+            private Vector2 _contain = Vector2.one;
 
             private Stage(GameObject root, string outDir, int cgLayer, float frameAspect,
                           Camera cgCam, Camera outCam, Material compositeMat, Transform quad,
@@ -796,6 +831,12 @@ namespace FixedCamVr.Streaming.EditorTools
                     _cgRt.Create();
                     _cgCam.targetTexture = _cgRt;
                     _compositeMat.SetTexture("_CgTex", _cgRt);
+
+                    _cgResolve = new RenderTexture(w, h, 0, RenderTextureFormat.ARGB32)
+                    { name = "CgVizCgResolve" };
+                    _cgResolve.Create();
+                    _cgRead = new Texture2D(w, h, TextureFormat.RGBA32, mipChain: false)
+                    { hideFlags = HideFlags.HideAndDontSave };
                 }
 
                 if (_outRt != null) return;
@@ -842,6 +883,20 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (_blob != null) _blob.gameObject.SetActive(false);
             }
 
+            /// <summary>
+            /// 人形の足元が映像のどこに来るか（ビューポート v・0 = 下端 / 1 = 上端）。
+            /// 人形が居ない・カメラの後ろなら NaN。
+            ///
+            /// 0..1 の外なら**接地の手掛かりが画から丸ごと消えている**（床との接点も、影の落ち先も
+            /// 映らない）。人形が浮いて見える原因の中で、これだけは合成の精度をいくら上げても直らない。
+            /// </summary>
+            public float FootViewportV()
+            {
+                if (_actor == null || !_actor.activeSelf) return float.NaN;
+                Vector3 vp = _cgCam.WorldToViewportPoint(_actor.transform.position);
+                return vp.z <= 0.01f ? float.NaN : vp.y;
+            }
+
             private void EnsureActor(ShowActorDef def)
             {
                 if (_actor != null) return;
@@ -871,6 +926,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     }
                 }
 
+                _actorHeightM = Mathf.Max(0.05f, def.heightM);
                 _actor.name = $"[CgVizActor:{def.id}]";
                 _actor.transform.SetParent(_root.transform, worldPositionStays: true);
                 SetLayerRecursive(_actor.transform, _cgLayer);
@@ -911,30 +967,72 @@ namespace FixedCamVr.Streaming.EditorTools
             private float _plateLuma = -1f;
 
             /// <summary>
+            /// 撮像の質（show.json <c>feel</c>）。**実機は既定値だけでも効く**ので、ここで書かないと
+            /// プレビューだけ暗部ノイズも自動露出も無い絵になり、**人形が実機より浮いて見える**
+            /// （＝馴染ませの判断が過剰になる）。解決も uniform の書き方も
+            /// <see cref="CameraFeelFx"/> の口を通す — 写すと片方だけ直したときに黙って食い違う。
+            /// </summary>
+            private CameraFeelFx.Settings _feel = CameraFeelFx.Settings.Resolve(null);
+            private readonly CameraFeelLogic _feelLogic = new CameraFeelLogic();
+
+            public void SetFeel(ShowFeelDef? def)
+            {
+                _feel = CameraFeelFx.Settings.Resolve(def);
+                _feelLogic.TargetLuma = _feel.TargetLuma;
+                _feelLogic.FollowHalfLifeSec = _feel.FollowSec;
+                Debug.Log($"[CgViz] 撮像の質: 暗部ノイズ {_feel.NoiseDark:0.###} / 固定ノイズ " +
+                          $"{_feel.NoiseFixed:0.###} / 自動露出 {_feel.Agc:0.##}" +
+                          (def == null || def.LooksUnset() ? "（show.json に feel が無いのでコード既定）" : ""));
+            }
+
+            /// <summary>人形に付き従う劣化（カットの <c>aura</c>）。0 なら書かない。</summary>
+            private float _aura;
+            private float _actorHeightM = 0.4f;
+
+            public void SetAura(float aura) => _aura = Mathf.Clamp01(aura);
+
+            /// <summary>
             /// 実写側の明るさを測る（本番の <c>MjpegScreen.SourceLuma</c> と同じ役）。
             /// **人形を置く前に呼ぶこと** — <see cref="ApplyLightAndGround"/> がこの値を読む。
             /// </summary>
             public void SetPlateLuma(Plate plate) => _plateLuma = AverageLuma(plate.texture);
 
+            /// 場所別の明るさ。**実機と同じ器**（MjpegScreen も同じ <see cref="SourceLumaMap"/> を回す）。
+            private readonly SourceLumaMap _plateLumaMap = new SourceLumaMap();
+
             // 16x16 の疎サンプル（MjpegScreen.SampleLuma と同じ手）。読めないテクスチャなら -1。
-            private static float AverageLuma(Texture2D? tex)
+            private float AverageLuma(Texture2D? tex)
             {
                 if (tex == null || tex.width <= 4 || tex.height <= 4) return -1f;
                 try
                 {
                     int stepX = Mathf.Max(1, tex.width / 16), stepY = Mathf.Max(1, tex.height / 16);
-                    float sum = 0f;
-                    int n = 0;
+                    _plateLumaMap.BeginFrame();
                     for (int y = 0; y < tex.height; y += stepY)
                         for (int x = 0; x < tex.width; x += stepX)
                         {
                             Color c = tex.GetPixel(x, y);
-                            sum += 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
-                            n++;
+                            _plateLumaMap.Add((float)x / tex.width, (float)y / tex.height,
+                                              0.299f * c.r + 0.587f * c.g + 0.114f * c.b);
                         }
-                    return n > 0 ? sum / n : -1f;
+                    _plateLumaMap.EndFrame();
+                    return _plateLumaMap.Mean;
                 }
                 catch { return -1f; }
+            }
+
+            /// <summary>
+            /// 人形が立っている**その辺り**のプレートの明るさ（実機の
+            /// <c>ShowCgLayer.LocalLumaAtActor</c> と同じ役）。取れなければ全画面平均へ落ちる。
+            /// </summary>
+            private float LocalPlateLumaAtActor()
+            {
+                if (_actor == null) return _plateLuma;
+                Vector3 vp = _cgCam.WorldToViewportPoint(
+                    _actor.transform.position + Vector3.up * (_actorHeightM * 0.5f));
+                if (vp.z <= 0.01f) return _plateLuma;
+                float local = _plateLumaMap.Sample(vp.x, vp.y);
+                return local >= 0f ? local : _plateLuma;
             }
 
             /// <summary>光の向き（course 相対）と接地（投影シャドウ + 接地影 blob）を本番と同じ式で決める。</summary>
@@ -959,9 +1057,11 @@ namespace FixedCamVr.Streaming.EditorTools
                     float tempK = light != null ? light.tempK : 4000f;
                     float intensity = light != null ? Mathf.Max(0f, light.intensity) : 1f;
                     float ambient = light != null ? Mathf.Clamp01(light.ambient) : 0.35f;
-                    float gain = ShowCgLayer.LumaGainFor(_plateLuma);
+                    // 合わせる先は「画に出た後の、人形が立つ場所の明るさ」。実機と同じく
+                    // 局所輝度 + 自動露出のバイアスを食わせる（本番は ShowCgLayer.LumaGain）。
+                    float gain = ShowCgLayer.LumaGainFor(
+                        LocalPlateLumaAtActor(), _feelLogic.SteadyBiasFor(_plateLuma) * _feel.Agc);
                     Color lc = ShowCgLayer.KelvinToLinearColor(tempK) * (intensity * gain);
-                    ambient = Mathf.Clamp01(ambient * gain);
 
                     var mpb = new MaterialPropertyBlock();
                     foreach (Renderer r in _actor.GetComponentsInChildren<Renderer>(true))
@@ -1035,9 +1135,11 @@ namespace FixedCamVr.Streaming.EditorTools
 
             // ---- 合成 + 保存 ----
 
-            public void Composite(Plate plate, bool cgVisible, PostParams post, string caption)
+            public void Composite(Plate plate, bool cgVisible, PostParams post, string caption,
+                                  bool applyFeel = true)
             {
                 EnsureRenderTargets(plate.width, plate.height);
+                _plateLuma = AverageLuma(plate.texture);
 
                 // CG レイヤを描く（人形もワイヤーもここに乗る）。透明背景なので被覆率がアルファに出る。
                 if (_cgRt != null) _cgCam.Render();
@@ -1048,6 +1150,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     ? new Vector2(srcAspect / _frameAspect, 1f)
                     : new Vector2(1f, _frameAspect / srcAspect);
 
+                _contain = contain;
                 _compositeMat.SetTexture("_LiveTex", plate.texture);
                 _compositeMat.SetVector("_LiveScale", new Vector4(contain.x, contain.y, 0f, 0f));
                 // CG は**ライブと同じ contain 枠**。ここを生の screenUv にすると、4:3 の映像が 16:9 の枠へ
@@ -1068,6 +1171,24 @@ namespace FixedCamVr.Streaming.EditorTools
                 _compositeMat.SetFloat("_Tint", post.tint);
                 _compositeMat.SetFloat("_SwitchDim", 0f);
                 _compositeMat.SetFloat("_SignalLost", 0f);
+
+                // 4) 撮像の質。**実機は show.json に feel が無くても既定値で効く**ので、ここを書かないと
+                //    プレビューだけ暗部ノイズも自動露出も無い絵になり、人形が実機より浮いて見える。
+                //    静止画 1 枚なので自動露出は収束値を使う（時間で追う意味が無く、同じ値になる）。
+                float steadyBias = applyFeel ? _feelLogic.SteadyBiasFor(_plateLuma) : 0f;
+                CameraFeelFx.WriteUniforms(_compositeMat,
+                    applyFeel ? _feel.NoiseDark : 0f,
+                    applyFeel ? _feel.NoiseFixed : 0f,
+                    steadyBias * _feel.Agc,
+                    _feelLogic.VignetteBiasFor(steadyBias) * _feel.Agc,
+                    echo: 0f);   // ホールド / 焼き付きは時間の表現なので静止画には出さない
+
+                // 人形に付き従う劣化（カットの aura）。人形が出ないカットでは必ず 0 へ戻す。
+                Vector4 focus = new Vector4(0.5f, 0.5f, 0.2f, 0f);
+                if (applyFeel && cgVisible && _aura > 0f && _actor != null)
+                    ShowCgLayer.TryActorFocus(_cgCam, _actor.transform.position, _actorHeightM,
+                                              contain, _aura, out focus);
+                _compositeMat.SetVector("_ActorFocus", focus);
 
                 SetCaption(caption);
                 _outCam.Render();
@@ -1109,11 +1230,147 @@ namespace FixedCamVr.Streaming.EditorTools
 
             private void ReleaseCgRt()
             {
+                if (_cgResolve != null)
+                {
+                    _cgResolve.Release();
+                    DestroyImmediate(_cgResolve);
+                    _cgResolve = null;
+                }
+                if (_cgRead != null) { DestroyImmediate(_cgRead); _cgRead = null; }
                 if (_cgRt == null) return;
                 _cgCam.targetTexture = null;
                 _cgRt.Release();
                 DestroyImmediate(_cgRt);
                 _cgRt = null;
+            }
+
+            // ---- 浮き具合の測定 ----
+
+            /// <summary>
+            /// 人形が周囲に対してどれだけ浮いているかを 1 行で返す（人形が出ていなければ空）。
+            ///
+            /// <b>なぜ数値が要るか</b>: 目視は当てにならない。2026-08-07 の見直しでは、人形の彩度が
+            /// 周囲の 3〜4 倍あることを絵からは誰も指摘できず、数値にした瞬間に一目で分かった。
+            /// <b>なぜ数値だけでは足りないか</b>: 同じ日に、数値を全部そろえたら**絵から人形が消えた**
+            /// （3 周目に「自分がそこに立っている」と読めなければ演出が成立しない）。
+            /// この行と絵は必ず並べて見ること。
+            ///
+            /// 人形の範囲は CG レイヤの alpha が正（マスクを別に作らない）。周囲は人形を囲む
+            /// 1.8 倍の矩形から人形を除いた部分で、比較は**同じ 1 枚の中**で完結する
+            /// （プレートと合成を比べると post のぶんがまるごと差として出て読めない）。
+            /// </summary>
+            public string MeasureBlend()
+            {
+                Vector2 contain = _contain;
+                if (_cgRt == null || _cgResolve == null || _cgRead == null
+                    || _outRt == null || _readback == null)
+                {
+                    Debug.LogWarning($"[CgViz] 浮き具合を測れない（RT 未初期化）: cgRt={_cgRt != null} " +
+                                     $"resolve={_cgResolve != null} read={_cgRead != null} " +
+                                     $"out={_outRt != null} readback={_readback != null}");
+                    return "";
+                }
+
+                Graphics.Blit(_cgRt, _cgResolve);
+                RenderTexture.active = _cgResolve;
+                _cgRead.ReadPixels(new Rect(0f, 0f, _cgRt.width, _cgRt.height), 0, 0);
+                _cgRead.Apply();
+                RenderTexture.active = _outRt;
+                _readback.ReadPixels(new Rect(0f, 0f, _outW, _outH), 0, 0);
+                _readback.Apply();
+                RenderTexture.active = null;
+
+                Color32[] cg = _cgRead.GetPixels32();
+                Color32[] px = _readback.GetPixels32();
+                int cw = _cgRead.width, ch = _cgRead.height;
+
+                // 出力画素 → 枠 UV → CG UV（逆に辿ると 1 CG 画素が複数出力画素に散って穴が開く）。
+                bool[] isDoll = new bool[_outW * _outH];
+                int minX = _outW, maxX = -1, minY = _outH, maxY = -1;
+                for (int oy = 0; oy < _outH; oy++)
+                {
+                    // 映像部分は世界 y ∈ [r/2-0.5, r/2+0.5]、カメラは高さ (1+r)。
+                    float fv = (oy + 0.5f) / _outH * (1f + CaptionHeightRatio) - CaptionHeightRatio;
+                    if (fv < 0f || fv > 1f) continue;
+                    float v = (fv - 0.5f) / Mathf.Max(contain.y, 1e-4f) + 0.5f;
+                    if (v < 0f || v > 1f) continue;
+                    int cy = Mathf.Clamp((int)(v * ch), 0, ch - 1);
+                    for (int ox = 0; ox < _outW; ox++)
+                    {
+                        float u = ((ox + 0.5f) / _outW - 0.5f) / Mathf.Max(contain.x, 1e-4f) + 0.5f;
+                        if (u < 0f || u > 1f) continue;
+                        int cx = Mathf.Clamp((int)(u * cw), 0, cw - 1);
+                        if (cg[cy * cw + cx].a < 128) continue;
+                        isDoll[oy * _outW + ox] = true;
+                        if (ox < minX) minX = ox;
+                        if (ox > maxX) maxX = ox;
+                        if (oy < minY) minY = oy;
+                        if (oy > maxY) maxY = oy;
+                    }
+                }
+                if (maxX < minX) return "";   // 人形が 1 画素も映っていない（＝測る対象が無い）
+
+                var doll = new Sample();
+                var around = new Sample();
+                int padX = Mathf.RoundToInt((maxX - minX + 1) * 0.4f);
+                int padY = Mathf.RoundToInt((maxY - minY + 1) * 0.4f);
+                for (int oy = Mathf.Max(0, minY - padY); oy <= Mathf.Min(_outH - 1, maxY + padY); oy++)
+                {
+                    float fv = (oy + 0.5f) / _outH * (1f + CaptionHeightRatio) - CaptionHeightRatio;
+                    if (fv < 0f || fv > 1f) continue;   // キャプション帯は混ぜない
+                    for (int ox = Mathf.Max(0, minX - padX); ox <= Mathf.Min(_outW - 1, maxX + padX); ox++)
+                    {
+                        int i = oy * _outW + ox;
+                        // ⚠ `(cond ? doll : around).Add(...)` と書くと **struct のコピー**に足して
+                        //    元が変わらない（実際それで doll=0 / around=0 になった）。
+                        if (isDoll[i]) doll.Add(px, i, _outW);
+                        else around.Add(px, i, _outW);
+                    }
+                }
+                if (doll.N == 0 || around.N == 0)
+                {
+                    Debug.LogWarning($"[CgViz] 浮き具合を測れない（標本不足）: doll={doll.N} around={around.N}");
+                    return "";
+                }
+
+                return $"blend doll/around: luma {doll.Luma:0.0}/{around.Luma:0.0} " +
+                       $"(x{Ratio(doll.Luma, around.Luma):0.00})  " +
+                       $"sat {doll.Sat:0.0}/{around.Sat:0.0} (x{Ratio(doll.Sat, around.Sat):0.00})  " +
+                       $"grain {doll.Grain:0.0}/{around.Grain:0.0} " +
+                       $"(x{Ratio(doll.Grain, around.Grain):0.00})";
+            }
+
+            private static float Ratio(float a, float b) => b > 0.01f ? a / b : 0f;
+
+            /// 明るさ / 彩度 / 粒（近傍との差）を貯める。3 つとも「同じ画の中で人形が浮くか」を測る軸。
+            private struct Sample
+            {
+                private double _luma, _sat, _grain;
+                public int N;
+
+                public float Luma => N > 0 ? (float)(_luma / N) : 0f;
+                public float Sat => N > 0 ? (float)(_sat / N * 100.0) : 0f;
+                public float Grain => N > 0 ? (float)(_grain / N) : 0f;
+
+                public void Add(Color32[] px, int i, int w)
+                {
+                    Color32 c = px[i];
+                    float l = 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+                    int mx = Mathf.Max(c.r, Mathf.Max(c.g, c.b));
+                    int mn = Mathf.Min(c.r, Mathf.Min(c.g, c.b));
+                    _luma += l;
+                    _sat += mx > 12 ? (mx - mn) / (float)mx : 0f;
+                    // 粒 = 左右の画素との差。周囲 8 近傍まで取ると境界の扱いが増えるだけで結論は変わらない。
+                    int x = i % w;
+                    if (x > 0 && x < w - 1)
+                    {
+                        Color32 a = px[i - 1], b = px[i + 1];
+                        float la = 0.299f * a.r + 0.587f * a.g + 0.114f * a.b;
+                        float lb = 0.299f * b.r + 0.587f * b.g + 0.114f * b.b;
+                        _grain += Mathf.Abs(l - (la + lb) * 0.5f);
+                    }
+                    N++;
+                }
             }
 
             public void Dispose()
@@ -1229,6 +1486,9 @@ namespace FixedCamVr.Streaming.EditorTools
             public ShowLayoutDef? layout;
             public ShowTimelineDef? timeline;
             public ShowActorDef[] actors = Array.Empty<ShowActorDef>();
+
+            /// <summary>撮像の質（暗部ノイズ・固定パターンノイズ・自動露出の追従）。**欠落 = コード既定で効く**。</summary>
+            public ShowFeelDef? feel;
 
             public PreviewCameraDef? CameraAt(int i)
                 => cameras != null && i >= 0 && i < cameras.Length ? cameras[i] : null;

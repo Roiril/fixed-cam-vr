@@ -59,7 +59,22 @@ namespace FixedCamVr.Streaming
         public float ExposureBias => _bias;
 
         /// <summary>いまの周辺光量の増減。露出を持ち上げたぶんだけ周辺が落ちる。</summary>
-        public float VignetteBias => -_bias * VignettePerEv;
+        public float VignetteBias => VignetteBiasFor(_bias);
+
+        /// <summary>
+        /// 観測した明るさに対して自動露出が最終的に落ち着く値 (EV)。
+        ///
+        /// <b>Editor の合成プレビューもこれを呼ぶ</b> — あちらは静止画 1 枚なので時間で追う意味が無く、
+        /// 収束値だけが要る。式を写すと片方だけ直したときに黙って食い違い、
+        /// 「プレビューでは馴染むのに実機では浮く」が起きる。
+        /// </summary>
+        public float SteadyBiasFor(float observedLuma)
+            => observedLuma > 0.001f
+                ? Clamp((float)(Math.Log(TargetLuma / observedLuma) / Math.Log(2.0)), -MaxBiasEv, MaxBiasEv)
+                : 0f;
+
+        /// <summary>その露出バイアスに対応する周辺光量の増減（絞りが開くほど周辺が落ちる）。</summary>
+        public float VignetteBiasFor(float biasEv) => -biasEv * VignettePerEv;
 
         /// <summary>凍らせた 1 枚の混合率 0..1（1 = 完全に止まって見える）。</summary>
         public float Echo => _echo;

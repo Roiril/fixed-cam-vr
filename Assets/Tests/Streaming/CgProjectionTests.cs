@@ -392,26 +392,50 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void 明るさ倍率_測れていなければ著作値のまま()
         {
-            Assert.AreEqual(1f, ShowCgLayer.LumaGainFor(-1f), 1e-5f);
+            Assert.AreEqual(1f, ShowCgLayer.LumaGainFor(-1f, 0f), 1e-5f);
         }
 
         [Test]
         public void 明るさ倍率_基準の明るさでは変えない()
         {
-            // 基準 0.35 の映像 = 「ふつうに写っている」ので、著作した光量をそのまま使う。
-            Assert.AreEqual(1f, ShowCgLayer.LumaGainFor(0.35f), 1e-3f);
+            // 基準 0.20 = 「人が立つ床あたりの明るさ」。ここでは著作した光量をそのまま使う。
+            Assert.AreEqual(1f, ShowCgLayer.LumaGainFor(0.20f, 0f), 1e-3f);
         }
 
         [Test]
         public void 明るさ倍率_暗い映像では人形も暗くする()
         {
-            float dark = ShowCgLayer.LumaGainFor(0.15f);
-            float bright = ShowCgLayer.LumaGainFor(0.70f);
+            float dark = ShowCgLayer.LumaGainFor(0.08f, 0f);
+            float bright = ShowCgLayer.LumaGainFor(0.70f, 0f);
             Assert.Less(dark, 1f, "暗い区間で人形だけ明るいと必ず浮く");
             Assert.Greater(bright, 1f, "明るい区間で人形だけ暗いと沈む");
-            // 真っ暗で人形が消える / 白飛びで焼ける、を防ぐ clamp（0.35〜2.0 の内側）。
-            Assert.Greater(ShowCgLayer.LumaGainFor(0.001f), 0.5f);
-            Assert.Less(ShowCgLayer.LumaGainFor(1f), 1.8f);
+            // 真っ暗で人形が消える / 白飛びで焼ける、を防ぐ clamp。
+            Assert.Greater(ShowCgLayer.LumaGainFor(0.001f, 0f), 0.2f, "完全には消さない");
+            Assert.Less(ShowCgLayer.LumaGainFor(1f, 0f), 1.9f);
+        }
+
+        [Test]
+        public void 明るさ倍率_暗所でも下限に張り付かず消えもしない()
+        {
+            // 実測（2026-08-07・カメラ B/C の無人プレート）で人形が立つ場所は 0.06 台、
+            // 自動露出が持ち上げた後で 0.086。旧実装は下限 0.35（→ 倍率 0.545）で頭打ちになり、
+            // 白い顔が周囲の 3 倍の明るさで出ていた。一方で下げすぎると絵から人形が消える
+            // （実測: 基準 0.35 のまま局所輝度へ切り替えたら周囲の 0.75〜0.86 倍まで沈んだ）。
+            float veryDark = ShowCgLayer.LumaGainFor(0.086f, 0f);
+            Assert.Less(veryDark, 0.75f, "暗所で頭打ちになると顔だけが浮く");
+            Assert.Greater(veryDark, 0.35f, "3 周目に自分だと読めなくなる");
+        }
+
+        [Test]
+        public void 明るさ倍率_自動露出が持ち上げたぶんは差し引く()
+        {
+            // 装置の自動露出が画全体を +1EV したなら、体験者に見えている明るさは 2 倍。
+            // そこへ生の輝度で合わせてから露出を浴びると二重補正になり、暗い区間ほど人形が浮く。
+            float raw = ShowCgLayer.LumaGainFor(0.10f, 0f);
+            float withAgc = ShowCgLayer.LumaGainFor(0.10f, 1f);
+            Assert.Greater(withAgc, raw, "露出で持ち上がるぶん、人形はそこまで暗くしなくてよい");
+            Assert.AreEqual(ShowCgLayer.LumaGainFor(0.20f, 0f), withAgc, 1e-4f,
+                            "+1EV は輝度 2 倍と同じ扱いになる");
         }
     }
 }
