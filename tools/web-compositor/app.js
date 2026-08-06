@@ -1059,16 +1059,27 @@ function renderRunPanel() {
   }
   if (clockEl) {
     const target = Number(u.targetSec) || 0;
+    // ⚠ 終了条件を満たしてから走行中の演出を見せ切っている間、Unity の phase はまだ RUN。
+    //   卓が「本編」としか出していなかったので、体験がもう終わっていることが分からなかった
+    //   （ShowRunLogic は _endHolding の間 _phase を Finished にしない）。
+    const holding = unityAlive && u.endHolding === true;
     let txt = '—';
     if (unityAlive && phase === 'INTRO') txt = `導入 ${mmss(u.introSec)}`;
     else if (unityAlive && phase === 'END') txt = `${mmss(u.runSec)}（終了）`;
+    else if (unityAlive && holding) txt = `${mmss(u.runSec)}（演出を見せ切っています）`;
     else if (unityAlive) txt = target > 0 ? `${mmss(u.runSec)} / 目安 ${mmss(target)}` : mmss(u.runSec);
     clockEl.textContent = txt;
-    const over = unityAlive && phase === 'RUN' && target > 0 && Number(u.runSec) > target;
-    clockEl.className = 'run-zone' + (unityAlive ? (over ? ' reg' : ' on') : '');
+    const over = unityAlive && phase === 'RUN' && !holding && target > 0 && Number(u.runSec) > target;
+    clockEl.className = 'run-zone' + (unityAlive ? (over || holding ? ' reg' : ' on') : '');
   }
   const totalLaps = Number(u.totalLaps) || 0;
-  lapEl.textContent = hasLap ? (totalLaps > 0 ? `Lap ${u.lap}/${totalLaps}` : `Lap ${u.lap}`) : 'Lap —';
+  // この周の経過も出す（企画書は「各周およそ 30 秒」。速すぎ / 遅すぎは周単位でしか見えない）。
+  const lapSec = Number(u.lapSec);
+  const lapClock = unityAlive && phase === 'RUN' && Number.isFinite(lapSec) && lapSec > 0
+    ? ` ・ この周 ${mmss(lapSec)}` : '';
+  lapEl.textContent = hasLap
+    ? (totalLaps > 0 ? `Lap ${u.lap}/${totalLaps}${lapClock}` : `Lap ${u.lap}${lapClock}`)
+    : 'Lap —';
   lapEl.className = 'run-lap' + (unityAlive ? ' on' : '');
 
   // 映像の遅れ（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
@@ -1544,6 +1555,23 @@ function preflightRows() {
         ? '位置合わせモード中 — 体験開始前に退出（右トリガー 2 秒長押し）'
         : `NORMAL / ${synced ? '設定反映済み' : `同期中 ${u.appliedRev}/${state?.rev}`}`,
     });
+    // Unity が実際に初期化できたカメラ本数と show.json の宣言がズレていないか。
+    // 演出のカットは camera を **index** で指すので、ズレると狙った映像と違うカメラが出る
+    // （範囲外なら §6.4 でカットごと飛ぶ）。どちらも画面には「演出が出ない / 違う画」としか
+    // 現れず、原因に到達できない。Unity はこの照合のために cameraCount を送っているのに、
+    // 卓は一度も見ていなかった（2026-08-07 に追加）。
+    // ⚠ 実際に 2026-07-31、host 未設定の 1 台が registry の生成ループで例外を投げて
+    //   **全カメラが初期化されない**事故が起きている。そのとき卓は全部 ✅ のままだった。
+    // 旧 Unity は cameraCount を送らない → NaN になり、この行は出ない（後方互換）。
+    const actualCams = Number(u.cameraCount);
+    if (cams.length > 0 && Number.isFinite(actualCams) && actualCams !== cams.length) {
+      rows.push({
+        s: 'ng', label: 'カメラ本数',
+        detail: actualCams === 0
+          ? `Quest がカメラを 1 台も初期化できていません（show.json は ${cams.length} 台）— 実機ログの [CameraStream] / [MJPEG] を見る`
+          : `Quest ${actualCams} 台 / show.json ${cams.length} 台 — 演出のカメラ指定が別カメラを指します（実機ログで初期化に失敗した台を確認）`,
+      });
+    }
     // 位置合わせの状態。ここがズレたまま始めると「歩いても切り替わらない」になる。
     // HMD 内には出るが、体験者が被っている間スタッフには見えないので卓で言う。
     if (u.needsReReg) {
