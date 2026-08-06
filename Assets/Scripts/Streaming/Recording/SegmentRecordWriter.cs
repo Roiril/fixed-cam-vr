@@ -8,27 +8,41 @@ using System.Threading;
 namespace FixedCamVr.Streaming.Recording
 {
     /// <summary>
-    /// 区間 1 つぶんの <c>.mjr</c> を書き出す。**メインスレッドは JPEG のコピーとキュー投入だけ**を行い、
-    /// 実際のファイル書き込みはバックグラウンドスレッドが担う（15fps × 60KB ≒ 0.9MB/s。
-    /// メインスレッドで write すると 90Hz の描画が落ちる）。
+    /// 区間 1 つぶんの <c>.mjr</c> を書き出す。**残すのは区間の末尾 <c>tailSec</c> 秒だけ**。
     ///
-    /// **録画は体験を止めない**（不変条件 1）: 容量上限・書き込み失敗・キュー溢れはすべて
-    /// 「そのフレームを捨てて続行」で処理し、例外を呼び出し側へ投げない。
+    /// <b>なぜ末尾か</b>（2026-08-06 に頭から録る方式を置き換えた）:
+    /// 3 周目に流す録画は「その区間へ入った瞬間」に始まる。区間の頭から録ると、映像の中の過去の自分も
+    /// 入口に居るので、**体験者の現在位置に立つ CG 人形と重なる**。末尾＝区間を出る直前を残せば、
+    /// 過去の自分は出口側に居て、現在の自分（＝人形）と画面内で位置が分かれる。
+    /// 副次的に、容量が滞在時間に比例しなくなる（ゆっくり歩く体験者でも一定）ので、
+    /// ラン全体の上限に当たって**後半の区間が録れなくなる**事故も消える。
     ///
-    /// バッファはプールして使い回す（毎フレーム new すると 1MB/s の GC ゴミになる）。
+    /// 積むのはメインスレッド（<see cref="CameraStream.FrameTap"/>）でリングへのコピーだけ。
+    /// ファイル書き込みは <see cref="Dispose"/>（＝区間の切れ目）で背景スレッドが一度に行う。
+    ///
+    /// **録画は体験を止めない**（不変条件 1）: 容量上限・書き込み失敗はすべて「捨てて続行」で処理し、
+    /// 例外を呼び出し側へ投げない。バッファはリング内で使い回す（毎フレーム new すると 1MB/s の GC ゴミ）。
     /// </summary>
     public sealed class SegmentRecordWriter : IDisposable
     {
+        /// <summary>末尾の既定尺 (秒)。show.json <c>record.tailSec</c> が未指定 / 0 以下のとき。</summary>
+        public const float DefaultTailSec = 3f;
+
+        /// <summary>書き出しの待ち上限 (ms)。超えたら諦めて体験へ戻る（背景スレッドは書き続ける）。</summary>
+        private const int FlushTimeoutMs = 2000;
+
         /// <summary>録画の上限。0 以下は「無制限」ではなく既定値へ倒す（暴走させない）。</summary>
         public readonly struct Limits
         {
             public readonly long maxBytes;
             public readonly float minFrameIntervalSec;   // fpsCap の逆数。0 なら間引きなし
+            public readonly float tailSec;               // 残す末尾の長さ
 
-            public Limits(long maxBytes, float fpsCap)
+            public Limits(long maxBytes, float fpsCap, float tailSec)
             {
                 this.maxBytes = maxBytes > 0 ? maxBytes : 64L * 1024 * 1024;
                 minFrameIntervalSec = fpsCap > 0f ? 1f / fpsCap : 0f;
+                this.tailSec = tailSec > 0f ? tailSec : DefaultTailSec;
             }
         }
 
@@ -40,27 +54,27 @@ namespace FixedCamVr.Streaming.Recording
             public Item(byte[] buf, int length, int ptsMs) { this.buf = buf; this.length = length; this.ptsMs = ptsMs; }
         }
 
-        // キューの上限。溢れたら**新しいフレームを捨てる**（古いものを捨てると時系列が飛ぶ）。
-        private const int MaxQueued = 32;
-
-        private readonly BlockingCollection<Item> _queue = new(new ConcurrentQueue<Item>(), MaxQueued);
+        private readonly Queue<Item> _ring = new(64);
         private readonly ConcurrentBag<byte[]> _pool = new();
         private readonly Limits _limits;
-        private readonly Thread _thread;
         private readonly string _path;
+        private readonly int _tailMs;
 
+        private long _ringBytes = RecordedSegmentFormat.HeaderBytes;
         private long _written;
         private int _writtenFrames;
-        private volatile bool _stopped;
+        private bool _stopped;
         private volatile bool _capped;
         private int _lastPtsMs = -1;
 
-        /// <summary>書き込み中に容量上限へ達したか（HUD / ログ用）。</summary>
+        /// <summary>
+        /// 末尾を丸ごと残せなかったか（容量で古い側を落とした / 書き込みに失敗した）。HUD・ログ用。
+        /// </summary>
         public bool Capped => _capped;
 
         /// <summary>
         /// 実際にファイルへ書けたバイト数。**<see cref="Dispose"/> の後に読むこと**
-        /// （書き込みは背景スレッドなので、それ以前は途中経過）。ラン全体の容量配分に使う。
+        /// （書き込みは背景スレッドなので、それ以前は 0）。ラン全体の容量配分に使う。
         /// </summary>
         public long WrittenBytes => Interlocked.Read(ref _written);
 
@@ -71,6 +85,9 @@ namespace FixedCamVr.Streaming.Recording
         /// </summary>
         public int WrittenFrames => Interlocked.CompareExchange(ref _writtenFrames, 0, 0);
 
+        /// <summary>いまリングに載っている枚数（診断用）。</summary>
+        public int BufferedFrames => _ring.Count;
+
         /// <summary>このセグメントのファイルパス。</summary>
         public string Path => _path;
 
@@ -78,33 +95,71 @@ namespace FixedCamVr.Streaming.Recording
         {
             _path = path;
             _limits = limits;
-            _thread = new Thread(WriteLoop) { IsBackground = true, Name = "SegmentRecordWriter" };
-            _thread.Start();
+            _tailMs = (int)MathF.Round(limits.tailSec * 1000f);
         }
 
         /// <summary>
         /// フレームを 1 枚積む。<paramref name="ptsMs"/> は区間先頭からの経過 (ms)。
-        /// fpsCap による間引き・容量上限・キュー溢れで捨てたときは false。
+        /// fpsCap による間引きで捨てたときは false（リングに載れば true）。
+        /// 載せた結果あふれた古いフレームは黙って落ちる（それがこのクラスの仕事）。
         /// </summary>
         public bool TryAppend(byte[] jpeg, int length, int ptsMs)
         {
-            if (_stopped || _capped || length <= 0) return false;
+            if (_stopped || length <= 0 || length > RecordedSegmentFormat.MaxFrameBytes) return false;
             if (_limits.minFrameIntervalSec > 0f && _lastPtsMs >= 0
                 && (ptsMs - _lastPtsMs) < _limits.minFrameIntervalSec * 1000f - 1f)
                 return false;
 
             if (!_pool.TryTake(out byte[]? buf) || buf.Length < length) buf = new byte[Math.Max(length, 96 * 1024)];
             Buffer.BlockCopy(jpeg, 0, buf, 0, length);
-            if (!_queue.TryAdd(new Item(buf, length, ptsMs)))
-            {
-                _pool.Add(buf);   // 書き込みが追いつかない → このフレームは捨てる（体験は止めない）
-                return false;
-            }
+            _ring.Enqueue(new Item(buf, length, ptsMs));
+            _ringBytes += RecordedSegmentFormat.FrameHeaderBytes + length;
             _lastPtsMs = ptsMs;
+
+            Trim(ptsMs);
             return true;
         }
 
-        private void WriteLoop()
+        // 末尾 tailSec 秒ぶんへ切り詰める。時間と容量の 2 条件で古い側から落とす。
+        // **最新の 1 枚は必ず残す**（1 枚しか無い状態で容量が足りなくても空ファイルにはしない）。
+        private void Trim(int nowPtsMs)
+        {
+            while (_ring.Count > 1)
+            {
+                Item head = _ring.Peek();
+                bool tooOld = nowPtsMs - head.ptsMs > _tailMs;
+                bool tooBig = _ringBytes > _limits.maxBytes;
+                if (!tooOld && !tooBig) break;
+                if (tooBig) _capped = true;   // 末尾を丸ごと残せていない（尺が縮む）
+                _ring.Dequeue();
+                _ringBytes -= RecordedSegmentFormat.FrameHeaderBytes + head.length;
+                _pool.Add(head.buf);
+            }
+        }
+
+        /// <summary>
+        /// 区間の終わり。リングの中身を <c>.mjr</c> へ書き出す（背景スレッド + 有界待ち）。
+        /// 1 枚も無ければファイルを作らない（＝再生側は「録れていない」として飛ばす）。
+        /// </summary>
+        public void Dispose()
+        {
+            if (_stopped) return;
+            _stopped = true;
+
+            Item[] items = _ring.ToArray();
+            _ring.Clear();
+            _ringBytes = RecordedSegmentFormat.HeaderBytes;
+            if (items.Length == 0) return;
+
+            var thread = new Thread(() => Flush(items)) { IsBackground = true, Name = "SegmentRecordWriter" };
+            thread.Start();
+            // 2.7MB 程度なので実測は数十 ms。万一詰まっても体験を止めない（待ちは打ち切る）。
+            try { thread.Join(FlushTimeoutMs); } catch { }
+        }
+
+        // pts を **先頭 0 起点へ振り直して**書く。振り直さないと RecordedFramePlayer が
+        // 頭の数秒を空回りする（再生開始から実際に絵が出るまで無音の間ができる）。
+        private void Flush(Item[] items)
         {
             FileStream? fs = null;
             try
@@ -112,22 +167,19 @@ namespace FixedCamVr.Streaming.Recording
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(_path)!);
                 fs = new FileStream(_path, FileMode.Create, FileAccess.Write, FileShare.Read, 64 * 1024);
                 RecordedSegmentFormat.WriteHeader(fs, 0, 0);
-                Interlocked.Exchange(ref _written, RecordedSegmentFormat.HeaderBytes);
+                long written = RecordedSegmentFormat.HeaderBytes;
+                int frames = 0;
+                int basePts = items[0].ptsMs;
 
-                foreach (Item item in _queue.GetConsumingEnumerable())
+                foreach (Item item in items)
                 {
-                    if (Interlocked.Read(ref _written) + RecordedSegmentFormat.FrameHeaderBytes + item.length > _limits.maxBytes)
-                    {
-                        _capped = true;   // 以降の TryAppend は即 false（体験は止めない）
-                        _pool.Add(item.buf);
-                        continue;
-                    }
-                    RecordedSegmentFormat.WriteFrame(fs, item.buf, item.length, item.ptsMs);
-                    Interlocked.Add(ref _written, RecordedSegmentFormat.FrameHeaderBytes + item.length);
-                    Interlocked.Increment(ref _writtenFrames);
-                    _pool.Add(item.buf);
+                    RecordedSegmentFormat.WriteFrame(fs, item.buf, item.length, Math.Max(0, item.ptsMs - basePts));
+                    written += RecordedSegmentFormat.FrameHeaderBytes + item.length;
+                    frames++;
                 }
                 fs.Flush();
+                Interlocked.Exchange(ref _written, written);
+                Interlocked.Exchange(ref _writtenFrames, frames);
             }
             catch (Exception)
             {
@@ -138,16 +190,6 @@ namespace FixedCamVr.Streaming.Recording
             {
                 try { fs?.Dispose(); } catch { }
             }
-        }
-
-        public void Dispose()
-        {
-            if (_stopped) return;
-            _stopped = true;
-            try { _queue.CompleteAdding(); } catch { }
-            // 書き切るのを待つ。上限があるので有界（万一固まっても体験を止めないよう待ちは打ち切る）。
-            try { _thread.Join(2000); } catch { }
-            try { _queue.Dispose(); } catch { }
         }
     }
 }

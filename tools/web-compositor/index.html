@@ -325,7 +325,7 @@
         <span id="recState" class="ed-status"></span>
       </div>
       <div class="run-bar">
-        <label class="livecue-lbl" title="1 区間あたりの上限。長居されても打ち切る">1区間の上限 <input id="recMaxSeg" type="number" min="5" max="300" step="5"> s</label>
+        <label class="livecue-lbl" title="区間を出る直前の何秒を残すか。3 周目はこれを、その区間へ入った瞬間から流す（頭から録ると映像の中の過去の自分と CG 人形が重なる）">残す末尾 <input id="recTail" type="number" min="1" max="20" step="0.5"> s</label>
         <label class="livecue-lbl" title="ラン全体で使う端末ストレージの上限。使い切ると以降の区間は録らない">ラン全体の上限 <input id="recMaxMB" type="number" min="10" max="2000" step="10"> MB</label>
         <label class="livecue-lbl" title="録画側の間引き。受信 fps より低くてよい（15 で十分）">録画 fps <input id="recFps" type="number" min="1" max="30" step="1"></label>
       </div>
@@ -421,6 +421,17 @@
       </div>
       <div class="run-bar">
         <span class="hint">演出を待つ猶予＝終わる条件が揃ったあと、演出が始まるのをこの秒数だけ必ず待つ（もどりの区間に置いた演出はこの中で始まらないと出ない）。演出を見せ切る上限＝そのとき走っている演出を最後まで見せる上限。どちらも 0 なら Quest の既定（3s / 60s）。</span>
+      </div>
+      <div class="run-bar">
+        <label class="livecue-lbl" title="暗いところほど粒が乗る（実際のセンサと同じ）。暗がりが物を隠せるようになる">暗部の粒 <input id="feelNoiseDark" type="number" min="0" max="0.5" step="0.01"></label>
+        <label class="livecue-lbl" title="時間で動かない粒。画面に貼り付いた汚れとして静止するので、その中で動いているものだけが浮く">貼り付く粒 <input id="feelNoiseFixed" type="number" min="0" max="0.3" step="0.005"></label>
+        <label class="livecue-lbl" title="装置の明るさ調整がどれだけ律儀に追うか。0 = 追わない（従来どおり明るさが動かない）">明るさの追従 <input id="feelAgc" type="number" min="0" max="1" step="0.05"></label>
+        <label class="livecue-lbl" title="装置が目指す明るさ。現場の照明が暗いほど、これに近づけようと画を持ち上げる">目指す明るさ <input id="feelTargetLuma" type="number" min="0.05" max="0.9" step="0.01"></label>
+        <label class="livecue-lbl" title="明るさが半分まで追いつくのにかかる時間。長いほど遅れが目に付く">追従の鈍さ <input id="feelFollowSec" type="number" min="0.2" max="5" step="0.1"> s</label>
+        <span id="feelCfgState" class="ed-status"></span>
+      </div>
+      <div class="run-bar">
+        <span class="hint">撮像の質（show.json <code>feel</code>）。<b>実機でしか見えない</b>（この卓のプレビューには出ません）。画像加工（post）と違って時間で動くので別系統にしてあります。明るさの追従は、映っている範囲では何も変わっていないのに画が明るくなる／暗くなる、という読まれ方をします。</span>
       </div>
       <div class="run-bar">
         <label class="livecue-lbl"><input id="introOn" type="checkbox"> 導入演出を出す</label>

@@ -8,10 +8,14 @@ namespace FixedCamVr.Streaming.Tests
     /// <summary>
     /// 区間録画の書き出し（<see cref="SegmentRecordWriter"/>）。容器の読み書きそのものは
     /// <c>RecordedSegmentFormatTests</c> が持つので、ここは**書き手の約束**だけを固定する:
-    ///   - 積んだフレームが .mjr として読み戻せる
-    ///   - 容量上限を超えない（超えた分は捨てて体験を止めない）
+    ///   - 残るのは区間の**末尾 tailSec 秒**（頭ではない）
+    ///   - 残った先頭の pts が 0 へ振り直される（再生が空回りしない）
+    ///   - 容量上限を超えない（超える分は古い側を落として体験を止めない）
     ///   - <c>WrittenBytes</c> が実ファイルサイズと一致する（ラン全体の容量配分がこれに乗る）
     ///   - fpsCap で間引く
+    ///
+    /// **なぜ末尾か**は <see cref="SegmentRecordWriter"/> の docstring（3 周目の再生開始位置と
+    /// CG 人形の立ち位置が重なる問題）。ここを頭に戻すと、その不具合がそのまま戻る。
     /// </summary>
     public sealed class SegmentRecordWriterTests
     {
@@ -47,13 +51,13 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void 積んだフレームが読み戻せる()
+        public void 末尾に収まる分は全部読み戻せる()
         {
             string path = Path_("a.mjr");
-            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 20, 0f));
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 20, 0f, 3f));
             byte[] jpeg = Blob(512);
             for (int i = 0; i < 8; i++) Assert.That(w.TryAppend(jpeg, jpeg.Length, i * 100), Is.True);
-            w.Dispose();
+            w.Dispose();   // 0..700ms = 3 秒に収まるので 1 枚も落ちない
 
             RecordedSegmentFormat.FrameRef[] idx = IndexOf(path);
             Assert.That(idx.Length, Is.EqualTo(8));
@@ -66,10 +70,42 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void 区間が長引いても末尾だけが残る()
+        {
+            string path = Path_("tail.mjr");
+            // 末尾 3 秒。10fps 相当（100ms 刻み）で 30 秒ぶん積む。
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 22, 0f, 3f));
+            byte[] jpeg = Blob(256);
+            for (int pts = 0; pts <= 30_000; pts += 100) w.TryAppend(jpeg, jpeg.Length, pts);
+            w.Dispose();
+
+            RecordedSegmentFormat.FrameRef[] idx = IndexOf(path);
+            // 末尾 3 秒 = 27000..30000ms の 31 枚（両端を含む）。
+            Assert.That(idx.Length, Is.EqualTo(31), "末尾 3 秒ぶんだけが残る");
+            Assert.That(RecordedSegmentFormat.DurationSec(idx), Is.EqualTo(3f).Within(1e-3f));
+            Assert.That(w.Capped, Is.False, "時間で落とすのは正常動作であって打ち切りではない");
+        }
+
+        [Test]
+        public void 残った先頭の_pts_が_0_へ振り直される()
+        {
+            string path = Path_("rebase.mjr");
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 22, 0f, 1f));
+            byte[] jpeg = Blob(128);
+            for (int pts = 0; pts <= 10_000; pts += 500) w.TryAppend(jpeg, jpeg.Length, pts);
+            w.Dispose();
+
+            RecordedSegmentFormat.FrameRef[] idx = IndexOf(path);
+            // 振り直さないと RecordedFramePlayer が先頭 9 秒を空回りする（絵が出ない間ができる）。
+            Assert.That(idx[0].ptsMs, Is.EqualTo(0), "先頭は必ず 0");
+            Assert.That(idx[idx.Length - 1].ptsMs, Is.EqualTo(1000), "末尾 1 秒ぶんが 0..1000ms になる");
+        }
+
+        [Test]
         public void WrittenBytes_が実ファイルサイズと一致する()
         {
             string path = Path_("b.mjr");
-            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 20, 0f));
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 20, 0f, 3f));
             byte[] jpeg = Blob(300);
             for (int i = 0; i < 5; i++) w.TryAppend(jpeg, jpeg.Length, i * 66);
             w.Dispose();
@@ -81,31 +117,35 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void 容量上限を超えたら打ち切る()
+        public void 容量が足りなければ末尾がさらに縮む()
         {
             const int len = 1000;
             int per = RecordedSegmentFormat.FrameHeaderBytes + len;
-            // ちょうど 3 枚ぶんだけ入る上限（4 枚目は必ず溢れる）。
+            // ちょうど 3 枚ぶんだけ入る上限。
             long max = RecordedSegmentFormat.HeaderBytes + 3L * per;
 
             string path = Path_("c.mjr");
-            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(max, 0f));
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(max, 0f, 60f));
             byte[] jpeg = Blob(len);
             for (int i = 0; i < 12; i++) w.TryAppend(jpeg, jpeg.Length, i * 40);
             w.Dispose();
 
-            Assert.That(IndexOf(path).Length, Is.EqualTo(3), "上限を超える分は書かない");
+            RecordedSegmentFormat.FrameRef[] idx = IndexOf(path);
+            Assert.That(idx.Length, Is.EqualTo(3), "上限に収まる枚数だけ残る");
             Assert.That(w.WrittenBytes, Is.LessThanOrEqualTo(max));
-            Assert.That(w.Capped, Is.True, "打ち切ったことを呼び出し側へ伝える");
+            Assert.That(w.Capped, Is.True, "末尾を丸ごと残せなかったことを呼び出し側へ伝える");
+            // **残るのは新しい側**（頭から打ち切る旧方式との違い）。
+            Assert.That(idx[idx.Length - 1].ptsMs - idx[0].ptsMs, Is.EqualTo(80));
         }
 
         [Test]
         public void 上限ゼロ以下は既定値へ倒す()
         {
-            // 「無制限」にすると端末を食い潰す。0 以下は既定 64MB。
-            var limits = new SegmentRecordWriter.Limits(0, 0f);
+            // 「無制限」にすると端末を食い潰す。0 以下は既定 64MB / 末尾 3 秒。
+            var limits = new SegmentRecordWriter.Limits(0, 0f, 0f);
             Assert.That(limits.maxBytes, Is.EqualTo(64L * 1024 * 1024));
             Assert.That(limits.minFrameIntervalSec, Is.EqualTo(0f), "fpsCap 0 = 間引きなし");
+            Assert.That(limits.tailSec, Is.EqualTo(SegmentRecordWriter.DefaultTailSec));
         }
 
         [Test]
@@ -113,7 +153,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             string path = Path_("d.mjr");
             // 10fps = 100ms 間隔。50ms 刻みで積むと 1 枚おきに落ちる。
-            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 20, 10f));
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 20, 10f, 3f));
             byte[] jpeg = Blob(64);
             var accepted = new System.Collections.Generic.List<int>();
             for (int pts = 0; pts <= 200; pts += 50)
@@ -122,6 +162,17 @@ namespace FixedCamVr.Streaming.Tests
 
             Assert.That(accepted, Is.EqualTo(new[] { 0, 100, 200 }));
             Assert.That(IndexOf(path).Length, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void 一枚も積まなければファイルを作らない()
+        {
+            string path = Path_("empty.mjr");
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 20, 0f, 3f));
+            w.Dispose();
+
+            Assert.That(File.Exists(path), Is.False, "ヘッダだけの空ファイルを残さない");
+            Assert.That(w.WrittenFrames, Is.EqualTo(0));
         }
     }
 }

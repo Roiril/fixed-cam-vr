@@ -207,6 +207,9 @@ namespace FixedCamVr.Streaming
         [Tooltip("遷移 glitch と切替への乱れ重畳を掛ける GlitchFx。null なら同 GameObject から取得。")]
         [SerializeField] private GlitchFx? glitchFx;
 
+        [Tooltip("画のホールド / 焼き付きを出す CameraFeelFx。null なら同 GameObject から取得。")]
+        [SerializeField] private CameraFeelFx? feelFx;
+
         [Header("Timing")]
         // switchCooldownSec / minDwellSec は **非シリアライズ**（既定 0.5s）。旧 2/2 が 1.8m 四方の部屋スケールに
         // 過大で「歩くとカメラ切替が起きず、止まった瞬間に遅れて切替わる」不具合の原因だった。SerializeField だと
@@ -316,6 +319,8 @@ namespace FixedCamVr.Streaming
             if (overlay == null) overlay = GetComponent<ScreenOverlayController>();
             if (audioCue == null) audioCue = GetComponent<SwitchAudioCue>();
             if (glitchFx == null) glitchFx = GetComponent<GlitchFx>();
+            if (feelFx == null) feelFx = GetComponent<CameraFeelFx>();
+            if (feelFx == null) feelFx = FindObjectOfType<CameraFeelFx>();
             var r = GetComponent<Renderer>();
             _material = r != null ? r.material : null;
             _logic.Configure(switchCooldownSec, manualHoldSec);
@@ -702,6 +707,15 @@ namespace FixedCamVr.Streaming
 
         /// <summary>単発の乱れを外から走らせる（カット頭のアクセント・卓からの手動発火）。</summary>
         public void PulseGlitch(float level, float sec) => glitchFx?.Pulse(level, sec);
+
+        /// <summary>画を止める（カットの <c>hold</c>）。ライブも差し替え素材も一緒に凍る。</summary>
+        public void HoldFrame(float sec) => feelFx?.Hold(sec);
+
+        /// <summary>焼き付き（カットの <c>burn</c>）。いまの画が薄く残り、動いたものの跡だけが見える。</summary>
+        public void BurnFrame(float amount, float sec) => feelFx?.Burn(amount, sec > 0f ? sec : 2.5f);
+
+        /// <summary>凍結・焼き付きをすべて畳む（ラン開始・演出の中止・体験の終了）。</summary>
+        public void ClearFeelFx() => feelFx?.ResetAll();
 
         /// <summary>遷移の見た目（黒 or 乱れ）を 0 に戻す。</summary>
         private void ClearTransitionVisual()

@@ -64,6 +64,12 @@ namespace FixedCamVr.Streaming
         // **枠のアスペクトではなく映像のアスペクトが正**。ここを取り違えると CG だけ枠いっぱいに描かれ、
         // レターボックスされた映像に対して水平にずれる（2026-07-27 監査 CRITICAL 1）。
 
+        /// <summary>
+        /// いまシェーダの <c>_LiveTex</c> に入っているテクスチャ。
+        /// <see cref="CameraFeelFx"/> が「画を 1 枚凍らせる」ときの複製元に使う。
+        /// </summary>
+        public Texture? LiveTexture => _lastAssigned;
+
         /// <summary>いま映しているソース映像の幅 (px)。未デコード（2x2 placeholder）なら 0。</summary>
         public int SourceWidth
         {
@@ -96,6 +102,51 @@ namespace FixedCamVr.Streaming
         /// CG レイヤはこれをそのまま <c>_CgScale</c> に使う — 二重計算すると必ずいつか食い違う。
         /// </summary>
         public Vector2 ContainScale => _containScale;
+
+        // ---- ソース映像の明るさ ----
+        //   読み手が 2 つある: ① CG 人形の光量を映像へ寄せる（暗い区間で人形だけ明るいと必ず浮く）
+        //                      ② 装置の自動露出の追従遅れ（CameraFeelFx）。
+        //   どちらも「post を掛ける前の生の明るさ」が要る（post は両方に等しく掛かるので基準にならない）。
+
+        /// <summary>平均輝度を測り直す間隔 (秒)。人の目に付く速さではないので粗くてよい。</summary>
+        private const float LumaIntervalSec = 0.25f;
+
+        /// <summary>疎サンプルの格子（16x16 = 256 点）。全画素の GetPixels32 は重すぎる。</summary>
+        private const int LumaGrid = 16;
+
+        private float _luma = -1f;
+        private float _lumaStamp = -999f;
+
+        /// <summary>
+        /// いま映しているソース映像の平均輝度 0..1（**post FX を掛ける前**）。まだ測れていなければ -1。
+        /// </summary>
+        public float SourceLuma => _luma;
+
+        // Texture2D は markNonReadable:false で載せているので CPU から読める（ライブも録画も同じ経路）。
+        private void SampleLuma()
+        {
+            float now = Time.unscaledTime;
+            if (now - _lumaStamp < LumaIntervalSec) return;
+            _lumaStamp = now;
+            var t = _lastAssigned as Texture2D;
+            if (t == null || t.width <= 4 || t.height <= 4) return;
+            try
+            {
+                int stepX = Mathf.Max(1, t.width / LumaGrid);
+                int stepY = Mathf.Max(1, t.height / LumaGrid);
+                float sum = 0f;
+                int n = 0;
+                for (int y = 0; y < t.height; y += stepY)
+                    for (int x = 0; x < t.width; x += stepX)
+                    {
+                        Color c = t.GetPixel(x, y);
+                        sum += 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+                        n++;
+                    }
+                if (n > 0) _luma = sum / n;
+            }
+            catch { /* 読めないテクスチャなら諦める（測れないことは体験を止めない） */ }
+        }
 
         private void Awake()
         {
@@ -202,6 +253,7 @@ namespace FixedCamVr.Streaming
                 var tex = active.Texture;
                 if (!ReferenceEquals(tex, _lastAssigned)) AssignLive(tex);
                 UpdateContainScale();
+                SampleLuma();
                 return;
             }
 
@@ -214,6 +266,7 @@ namespace FixedCamVr.Streaming
                 _tex.LoadImage(_scratch, markNonReadable: false);
             }
             UpdateContainScale();
+            SampleLuma();
         }
     }
 }

@@ -30,6 +30,7 @@ namespace FixedCamVr.Streaming
 
         private BgmDirector? _bgm;
         private GlitchFx? _glitch;
+        private CameraFeelFx? _feel;
         private IntroDirector? _intro;
         private bool _subscribed;
         private ShowPhase _lastPhase = ShowPhase.Intro;
@@ -182,6 +183,7 @@ namespace FixedCamVr.Streaming
             if (switchDirector == null) switchDirector = FindObjectOfType<CameraSwitchDirector>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_glitch == null) _glitch = FindObjectOfType<GlitchFx>();
+            if (_feel == null) _feel = FindObjectOfType<CameraFeelFx>();
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
         }
 
@@ -248,6 +250,9 @@ namespace FixedCamVr.Streaming
             Debug.Log($"[ShowRun] 体験の終了（{_logic.Lap - 1} 周 / 経過 {_logic.RunElapsedSec:F0} 秒）");
             timelineDirector?.AbortActive();
             _glitch?.ResetAll();
+            // 凍結・焼き付きも畳む。終わったのに画が止まったままだと、暗転が始まっても
+            // 「まだ何か起きるのか」に見えて終わりが伝わらない。
+            _feel?.ResetAll();
             if (_bgm != null) _bgm.StopAll(_endFadeSec > 0f ? _endFadeSec : ShowRunDefaults.EndFadeSec);
         }
 

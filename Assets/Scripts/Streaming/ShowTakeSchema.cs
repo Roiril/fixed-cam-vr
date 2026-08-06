@@ -96,6 +96,30 @@ namespace FixedCamVr.Streaming
         public float glitch;
         public float glitchSec;
 
+        /// <summary>
+        /// 画が止まる秒数（0 = 止めない）。ライブも差し替え素材も一緒に凍る。
+        /// 止まったのが装置なのか自分なのか一瞬わからない、という間を作る。
+        /// 再開したときに自分が予測と違う位置に居ることになるのが効き目。
+        /// </summary>
+        public float hold;
+
+        /// <summary>
+        /// 焼き付きの濃さ 0..1（0 = 出さない）。カット頭の画を薄く残し、数秒かけて消す。
+        /// 動いていない画素は同じ値なので何も起きず、**動いたものの跡だけ**が残る。
+        /// </summary>
+        public float burn;
+
+        /// <summary>焼き付きが消えるまでの秒数（0 = 既定 2.5 秒）。</summary>
+        public float burnSec;
+
+        /// <summary>
+        /// 人形に付き従う劣化の強さ 0..1（0 = 出さない）。人形のまわりだけ画が荒れ、人形が動くと荒れも動く。
+        ///
+        /// 全域一様な乱れはすべて機材のせいにできるので安全に見える（＝慣れる）。**対象に紐づく
+        /// 非一様性**だけが、原因が世界の側にあることを示せる。<c>cg</c> を指すカットでのみ効く。
+        /// </summary>
+        public float aura;
+
         // CG レイヤ（映像の上に立つ人形）。空 = 出さない。actors[] の id を指す。
         public string cg = "";
         public string cgMode = TakeSchema.CgFollow;     // "follow"(体験者 XZ に追従) | "fixed"(下の placement)

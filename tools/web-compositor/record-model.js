@@ -9,8 +9,11 @@
 //   SegmentRecorder.OnCameraEntered … 録るのは体験者が入った区間だけ
 //   TakeRunner.OpenRecording        … recLap<=0 / camera<0 / ファイル無し → そのカットを飛ばす
 
+/** 末尾の既定尺 (秒)。**C# の SegmentRecordWriter.DefaultTailSec と対**（片方だけ変えると食い違う）。 */
+export const REC_DEFAULT_TAIL_SEC = 3;
+
 /** show.json `record` が欠けている時の既定（capture-server.py の _default_show と同じ値）。 */
-export const REC_DEFAULT = { enabled: false, laps: [1], maxSegmentSec: 60, maxTotalMB: 200, fpsCap: 15 };
+export const REC_DEFAULT = { enabled: false, laps: [1], tailSec: REC_DEFAULT_TAIL_SEC, maxTotalMB: 200, fpsCap: 15 };
 
 const int = (v) => {
   const n = parseInt(v, 10);
@@ -20,6 +23,17 @@ const int = (v) => {
 /** show.json → 正規化した録画設定（欠落は既定で埋める）。 */
 export function recordConfig(state) {
   return { ...REC_DEFAULT, ...((state && state.record) || {}) };
+}
+
+/**
+ * 残す末尾の長さ (秒)。0 以下・未指定は既定へ倒す（C# `ShowRecordDef.TailSec` と同じ判定）。
+ *
+ * **録画の尺はこれで確定する**（旧「頭から録る」方式では体験者の滞在時間しだいで、著作時には
+ * 分からなかった）。卓が録画カットの長さを ≈ 抜きで言えるのはこの値があるから。
+ */
+export function recordTailSec(cfg) {
+  const v = cfg && Number(cfg.tailSec);
+  return Number.isFinite(v) && v > 0 ? v : REC_DEFAULT_TAIL_SEC;
 }
 
 /** 録る周の集合（1 始まり・不正値は落とす）。 */

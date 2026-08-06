@@ -24,10 +24,15 @@ Shader "FixedCamVr/ShowShadowProjector"
         // （ワールド固定にするとトラッキング原点の向き次第で影の向きが変わる）。
         _ShadowLightDir("Light Direction (world, upward positive)", Vector) = (0.35, 0.85, -0.40, 0)
         _ShadowDensity("Shadow Density", Range(0, 1)) = 0.55
-        // ⚠ にじみ（`layout.room.light.shadowSoftM`）は**ここでは扱わない**。平面投影は人形の形を
-        //    そのまま床へ潰すので、縁をぼかす自然な場所が無い（ステンシルで 1 回しか描かない制約もある）。
-        //    にじみは接地影 blob の `_BlobFeather` が引き受ける（ShowCgLayer.PlaceGroundBlob）。
-        //    「受け口だけあって効かないプロパティ」は著作者に嘘をつくので置かない。
+        // にじみ（`layout.room.light.shadowSoftM`）を**濃さの高さ減衰**として受ける。
+        //
+        // 平面投影は人形の形をそのまま潰すので、縁を空間的にぼかす場所が無い（ステンシルで 1 回しか
+        // 描けない制約もある）。代わりに「遮蔽している部位が床から高いほど薄い」を効かせる —
+        // 実際の半影も遮蔽物と受光面の距離に比例して広がり、本影の割合はその分下がる。
+        // 足元は濃く、頭の影は薄くなるので、**硬い縁が目立つのは接地点の近くだけ**になり、
+        // そこは接地影 blob の `_BlobFeather` がぼかしている。
+        // 0 なら減衰なし（＝以前と同じ一様な濃さ）。
+        _ShadowSoftM("Shadow Softness (m)", Float) = 0.12
     }
 
     SubShader
@@ -41,7 +46,10 @@ Shader "FixedCamVr/ShowShadowProjector"
             Name "ShowShadowProjector"
             Blend One OneMinusSrcAlpha   // premultiplied over（rgb は既に 0 なので実質「背景を (1-a) 倍」）
             ZWrite Off
-            ZTest Always                 // 平面へ潰した後の深度に意味は無い
+            // 潰した後の位置は床の上なので、**壁の裏に回った分は隠れるのが正しい**
+            // （ShowRoomProxy が壁と箱の深度を先に書いている。床は描かないので z-fight しない）。
+            // Always だと壁の手前に影が出て、人形が壁の裏に居ることを画が否定する。
+            ZTest LEqual
             Cull Off                     // 潰れたメッシュは裏表が定まらない
             Stencil { Ref 1 Comp NotEqual Pass Replace }   // ★ 二重暗化の防止（上の警告参照）
 
@@ -55,6 +63,7 @@ Shader "FixedCamVr/ShowShadowProjector"
                 float4 _ShadowLightDir;
                 float _ShadowPlaneY;
                 float _ShadowDensity;
+                float _ShadowSoftM;
             CBUFFER_END
 
             struct Attributes
@@ -66,6 +75,7 @@ Shader "FixedCamVr/ShowShadowProjector"
             struct Varyings
             {
                 float4 positionHCS : SV_POSITION;
+                float heightM : TEXCOORD0;   // 潰す前に床から何 m 上に居たか（濃さの減衰に使う）
             };
 
             Varyings vert(Attributes input)
@@ -74,6 +84,7 @@ Shader "FixedCamVr/ShowShadowProjector"
                 UNITY_SETUP_INSTANCE_ID(input);
                 float3 posWS = TransformObjectToWorld(input.positionOS.xyz);
                 float3 l = normalize(_ShadowLightDir.xyz);
+                o.heightM = max(0.0, posWS.y - _ShadowPlaneY);
 
                 // 光が真横〜下から来ていると交点が無限遠へ飛ぶ。分母を守るだけだと
                 // **画面いっぱいの黒帯**になるので、三角形を 1 点へ潰してクリップさせる（＝影を出さない）。
@@ -93,8 +104,13 @@ Shader "FixedCamVr/ShowShadowProjector"
 
             half4 frag(Varyings input) : SV_Target
             {
+                // 床から高い部位ほど薄い（半影の広がり）。_ShadowSoftM を「本影が半分になる高さ」
+                // として使う。0 以下なら減衰なし＝一様な濃さ（以前の挙動）。
+                float atten = _ShadowSoftM > 1e-4
+                    ? 1.0 / (1.0 + input.heightM / _ShadowSoftM)
+                    : 1.0;
                 // rgb=0 / a=濃さ。**straight alpha で書くと合成側が乗算にならない**（黒を上塗りしてしまう）。
-                return half4(0, 0, 0, saturate(_ShadowDensity));
+                return half4(0, 0, 0, saturate(_ShadowDensity * atten));
             }
             ENDHLSL
         }

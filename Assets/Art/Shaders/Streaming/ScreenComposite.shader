@@ -45,6 +45,25 @@ Shader "FixedCamVr/ScreenComposite"
         // 合成の前段（テクスチャを引くとき）に効く。卓の FS_POST も同じ位置・同じ式で実装する。
         _Aberration("Chromatic Aberration", Range(0, 1)) = 0
         _Pixelate("Pixelate (low-res)", Range(0, 1)) = 0
+        [Header(Camera feel and echo (out of FS_POST parity))]
+        // 「装置らしさ」の系統。post 12 項目とは**別の writer**（CameraFeelFx）が持ち、時間で動く。
+        // post を時間の関数にすると shader / FS_POST / common.js / pipeline.js の 4 箇所 × 時間の同期に
+        // なり、沈黙した食い違いが必ず出る（機械テストが無い）。だから別系統にしてある。
+        //
+        // 現行の加工はすべて全域一様で、すべてに物理的な言い訳（機材のせい）が付く。だから安全で、
+        // だから怖くない。ここに足すのは「言い訳が破れる」ための道具立て。
+        _NoiseDark("Dark Noise (luma dependent)", Range(0, 0.5)) = 0
+        _NoiseFixed("Fixed Pattern Noise", Range(0, 0.3)) = 0
+        _ExposureBias("Exposure Bias (EV, AGC lag)", Range(-2, 2)) = 0
+        _VignetteBias("Vignette Bias", Range(-0.5, 0.5)) = 0
+        // 人形に付き従う劣化。(中心 u, 中心 v, 半径, 強さ)。ShowCgLayer が人形の投影から供給する。
+        // 対象に紐づく非一様な乱れ＝機材のせいにできない＝原因が世界の側にあることになる。
+        _ActorFocus("Actor Focus (cx, cy, radius, amount)", Vector) = (0.5, 0.5, 0.2, 0)
+        // 焼き付き / ホールド。指定した瞬間の画を 1 枚だけ保持して混ぜる（フレーム履歴は持たない
+        // ＝決定的で、同じ show.json は同じ絵になる）。1.0 で完全に止まって見える。
+        // ソースはライブ映像と同じなので contain-fit も _LiveScale を共用する。
+        _EchoTex("Echo (frozen frame)", 2D) = "black" {}
+        _Echo("Echo Mix", Range(0, 1)) = 0
         [Header(Switch and Signal FX (out of FS_POST parity))]
         // ↓ これらは web-compositor の FS_POST 一致規約の対象外（別系統 uniform）。
         //   dip-to-black（切替演出）と信号ロスト（配信断のフェイルソフト＝砂嵐）を post FX の後段にかける。
@@ -75,6 +94,8 @@ Shader "FixedCamVr/ScreenComposite"
             TEXTURE2D(_MaskTex);    SAMPLER(sampler_MaskTex);
             // CG レイヤ（実カメラの双子の仮想カメラが描く人形）。スクリーン空間・アルファ = 被覆率。
             TEXTURE2D(_CgTex);      SAMPLER(sampler_CgTex);
+            // 焼き付き / ホールド用に凍らせた 1 枚（CameraFeelFx が Graphics.CopyTexture で作る）。
+            TEXTURE2D(_EchoTex);    SAMPLER(sampler_EchoTex);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _LiveScale;
@@ -107,6 +128,13 @@ Shader "FixedCamVr/ScreenComposite"
                 float _SignalLost;
                 float _Glitch;
                 float _GlitchSeed;
+                // 同じく別系統。CameraFeelFx（撮像の質と残像）と ShowCgLayer（_ActorFocus）が駆動。
+                float4 _ActorFocus;
+                float _NoiseDark;
+                float _NoiseFixed;
+                float _ExposureBias;
+                float _VignetteBias;
+                float _Echo;
             CBUFFER_END
 
             struct Attributes
@@ -222,6 +250,15 @@ Shader "FixedCamVr/ScreenComposite"
                 float2 uvL = ContainUv(RotateUvSteps(uv, _UvRotSteps), _LiveScale.xy, liveIn);
                 half3 live = SAMPLE_TEXTURE2D(_LiveTex, sampler_LiveTex, uvL).rgb * liveIn;
 
+                // 凍らせた 1 枚を混ぜる。1.0 = 完全に止まって見える（ホールド）、
+                // 小さい値 = 少し前の姿がそこに薄く残る（焼き付き）。
+                // 動いていない画素は同じ値なので何も起きず、**動いたものの跡だけが残る**。
+                if (_Echo > 0.001)
+                {
+                    half3 echo = SAMPLE_TEXTURE2D(_EchoTex, sampler_EchoTex, uvL).rgb * liveIn;
+                    live = lerp(live, echo, saturate(_Echo));
+                }
+
                 float ovIn;
                 float2 uvO = ContainUv(uv, _OverlayScale.xy, ovIn);
                 half3 overlay = SAMPLE_TEXTURE2D(_OverlayTex, sampler_OverlayTex, uvO).rgb;
@@ -285,7 +322,9 @@ Shader "FixedCamVr/ScreenComposite"
                 }
 
                 // 3) ポスト FX（web-compositor の FS_POST と数式・順序を一致させる）
-                col *= exp2(_Exposure);
+                //    _ExposureBias だけは別系統（装置の自動露出が遅れて追いつくぶん）。
+                //    卓の FS_POST には無いが、加算なので著作した _Exposure の意味は変わらない。
+                col *= exp2(_Exposure + _ExposureBias);
                 col.r *= 1.0 + 0.25 * _Temperature;
                 col.b *= 1.0 - 0.25 * _Temperature;
                 // 色かぶり（緑↔マゼンタ）: 色温度と直交する軸。安物 CMOS + 蛍光灯の緑寄りを作る。
@@ -299,17 +338,53 @@ Shader "FixedCamVr/ScreenComposite"
                 col = lerp(luma.xxx, col, _Saturation);
 
                 float2 dir = screenUv - 0.5;
-                col *= saturate(1.0 - _Vignette * dot(dir, dir) * 2.2);
+                // 周辺光量は著作値 + 装置の追従ぶん（露出が動くと絞りも動く）。
+                col *= saturate(1.0 - max(0.0, _Vignette + _VignetteBias) * dot(dir, dir) * 2.2);
 
                 if (_Scanline > 0.001)
                 {
                     float s = 0.5 + 0.5 * sin(screenUv.y * _ScanlineCount * 3.14159265);
                     col *= 1.0 - _Scanline * (1.0 - s) * 0.6;
                 }
-                if (_Grain > 0.001)
+
+                // 人形に付き従う劣化。**この作品に唯一無かったのが「対象に紐づく非一様な乱れ」**で、
+                // 全域一様な加工はすべて機材のせいにできてしまう（＝安全に見える＝怖くない）。
+                // 人形が動くと荒れも動くので、原因が機材ではなく世界の側にあることになる。
+                float aura = 0.0;
+                if (_ActorFocus.w > 0.001)
                 {
-                    float n = Hash21(screenUv * 480.0 + frac(_Time.y));
-                    col += (n - 0.5) * _Grain;
+                    float2 ad = (screenUv - _ActorFocus.xy) * float2(_FrameAspect, 1.0);
+                    float ar = max(_ActorFocus.z, 0.01);
+                    aura = saturate(_ActorFocus.w) * (1.0 - smoothstep(ar * 0.6, ar * 2.6, length(ad)));
+                }
+                if (aura > 0.001)
+                {
+                    half al = dot(col, half3(0.299, 0.587, 0.114));
+                    col = lerp(col, al.xxx, aura * 0.6);   // そこだけ色が抜ける
+                    col *= 1.0 - aura * 0.18;              // そこだけ沈む
+                }
+
+                // 粒状。**暗部ほど強い**（実センサの SN は暗部で悪い）＝暗がりが物を隠せるようになる。
+                // 固定パターンは時間項を持たない＝画面に貼り付いた汚れとして静止し、その中で
+                // 動いているものだけが浮く（変化検出は差分で働く）。
+                {
+                    half gl = dot(col, half3(0.299, 0.587, 0.114));
+                    float w = _Grain
+                            + _NoiseDark * (1.0 - smoothstep(0.0, 0.5, gl))
+                            + aura * 0.10;
+                    if (w > 0.001)
+                    {
+                        float n = Hash21(screenUv * 480.0 + frac(_Time.y));
+                        col += (n - 0.5) * w;
+                    }
+                }
+                if (_NoiseFixed > 0.001)
+                {
+                    // 高周波（センサの画素ばらつき）+ 低周波（レンズの汚れ・ムラ）。
+                    // 白色ノイズだけだと砂目にしか見えず「貼り付いた汚れ」にならない。
+                    float f = (Hash21(screenUv * 260.0 + 17.0) - 0.5) * 0.6
+                            + (Hash21(floor(screenUv * 42.0) + 3.0) - 0.5) * 0.4;
+                    col += f * _NoiseFixed;
                 }
 
                 // --- 演出の乱れ（色の成分）。位置ずれは既に sampleUv へ掛かっている ---

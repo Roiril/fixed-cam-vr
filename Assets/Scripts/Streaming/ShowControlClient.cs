@@ -449,14 +449,73 @@ namespace FixedCamVr.Streaming
         public float y;   // 床なら 0
     }
 
-    /// <summary>端末内録画（1 周目を録って 3 周目に流す）の設定。show.json トップレベル <c>record</c>。</summary>
+    /// <summary>
+    /// 撮像の質（「装置らしさ」）。show.json トップレベル <c>feel</c>。<see cref="CameraFeelFx"/> が読む。
+    ///
+    /// post 12 項目と分けてあるのは、**こちらは時間で動く**ため。post は shader / 卓の FS_POST /
+    /// common.js / pipeline.js の 4 箇所を手作業で同期していて機械テストが無く、そこへ時間軸を
+    /// 持ち込むと沈黙した食い違いが必ず出る。
+    ///
+    /// **キーが無くても既定値で効く**（設定を書かないと何も起きない、では現場で使われない）。
+    /// </summary>
+    [Serializable] public sealed class ShowFeelDef
+    {
+        public const float DefaultNoiseDark = 0.10f;
+        public const float DefaultNoiseFixed = 0.035f;
+        public const float DefaultAgc = 0.7f;
+        public const float DefaultTargetLuma = 0.34f;
+        public const float DefaultFollowSec = 1.1f;
+
+        /// <summary>暗部ほど強い粒。暗がりが物を隠せる状態を作る。</summary>
+        public float noiseDark = DefaultNoiseDark;
+
+        /// <summary>時間で動かない粒（画面に貼り付いた汚れ）。この中で動くものだけが浮く。</summary>
+        public float noiseFixed = DefaultNoiseFixed;
+
+        /// <summary>自動露出の追従の効き 0..1（0 = 追わない＝従来どおり静的）。</summary>
+        public float agc = DefaultAgc;
+
+        /// <summary>装置が目指す明るさ（映像の平均輝度 0..1）。</summary>
+        public float targetLuma = DefaultTargetLuma;
+
+        /// <summary>目標へ半分まで近づくのにかかる時間 (秒)。大きいほど鈍く、遅れが目に付く。</summary>
+        public float followSec = DefaultFollowSec;
+
+        /// <summary>
+        /// JsonUtility は show.json に <c>feel</c> が無くても「全部 0」の実体を作る。
+        /// 0 は「無効」ではなく「未指定」なので、既定へ落とす判定が要る
+        /// （<see cref="ShowIntroDef"/> と同じ罠 — これが無いと**黙って効かなくなる**）。
+        /// </summary>
+        public bool LooksUnset()
+            => noiseDark <= 0f && noiseFixed <= 0f && agc <= 0f && targetLuma <= 0f && followSec <= 0f;
+    }
+
+    /// <summary>端末内録画（前の周を録って 3 周目に流す）の設定。show.json トップレベル <c>record</c>。</summary>
     [Serializable] public sealed class ShowRecordDef
     {
         public bool enabled;
         public int[] laps = { 1 };          // 録る周（既定は 1 周目だけ）
-        public float maxSegmentSec = 60f;   // 1 区間の上限（超えたら古いフレームから捨てる）
         public int maxTotalMB = 200;        // ラン全体の上限
         public float fpsCap = 15f;          // 録画側の間引き（受信 fps より低くしてよい）
+
+        /// <summary>
+        /// 区間の**末尾**何秒を残すか。0 以下 = コード既定
+        /// （<see cref="Recording.SegmentRecordWriter.DefaultTailSec"/> = 3 秒）。
+        ///
+        /// 頭からではなく末尾を残すのは、3 周目の再生が「区間へ入った瞬間」に始まるため。
+        /// 頭から録ると映像の中の過去の自分も入口に居て、**体験者の現在位置に立つ CG 人形と重なる**。
+        /// 末尾＝区間を出る直前なら、過去の自分は出口側に居て位置が分かれる。
+        /// </summary>
+        public float tailSec = Recording.SegmentRecordWriter.DefaultTailSec;
+
+        /// <summary>
+        /// 旧キー（区間の頭から何秒録るか）。**末尾方式では使わない**。
+        /// 端末キャッシュ・焼き込みの古い show.json が持っているので読めるようにだけしてある。
+        /// </summary>
+        public float maxSegmentSec = 60f;
+
+        /// <summary>末尾の実効尺 (秒)。0 以下・未指定は既定へ倒す。</summary>
+        public float TailSec => tailSec > 0f ? tailSec : Recording.SegmentRecordWriter.DefaultTailSec;
 
         public bool RecordsLap(int lap)
         {
@@ -902,6 +961,23 @@ namespace FixedCamVr.Streaming
         /// <summary>体験の骨格（show.json <c>run</c>）。未指定なら null（＝コード既定）。</summary>
         public ShowRunDef? RunConfig => _run;
 
+        private ShowFeelDef? _feel;
+
+        /// <summary>撮像の質（show.json <c>feel</c>）。未指定なら null（＝コード既定で効く）。</summary>
+        public ShowFeelDef? FeelConfig => _feel;
+
+        private CameraFeelFx? _feelFx;
+
+        // 撮像の質の writer。シーンに居なければ何もしない（配線前でも体験は成立する）。
+        private CameraFeelFx? ResolveFeelFx()
+        {
+            if (_feelFx != null) return _feelFx;
+            _feelFx = FindObjectOfType<CameraFeelFx>();
+            return _feelFx;
+        }
+
+        private void PushFeel() => ResolveFeelFx()?.Configure(_feel);
+
         /// <summary>いま効いている設定がどこから来たか（<c>none</c> / <c>baked</c> / <c>cache</c> / <c>live</c>）。
         ///
         /// **端末キャッシュは焼き込みより優先される**ので、古いキャッシュが残っていると APK を焼き直しても
@@ -1135,6 +1211,7 @@ namespace FixedCamVr.Streaming
             public ShowRecordDef? record;         // 端末内録画の設定（欠落 = 無効）
             public ShowActorDef[]? actors;        // CG レイヤの人形定義
             public ShowRunDef? run;               // 体験の骨格（周数・導入・終端）。欠落 = コード既定
+            public ShowFeelDef? feel;             // 撮像の質（装置らしさ）。欠落 = コード既定
         }
         [Serializable] private class CameraDef
         {
@@ -1177,6 +1254,7 @@ namespace FixedCamVr.Streaming
             public ShowBgmDef? bgm;             // ラン既定 BGM（PC 不在起動でも同じ曲で始まる）
             public ShowRecordDef? record;       // 端末内録画の設定（PC 不在でも録れるように往復させる）
             public ShowActorDef[] actors = Array.Empty<ShowActorDef>();
+            public ShowFeelDef? feel;           // 撮像の質（PC 不在でも同じ画で始まる）
             // 体験の骨格（PC 不在の現地でも 3 周で終わるように往復させる）。
             public ShowRunDef? run;
             // 直近に既知だった runEpoch。起動時にこれを「既知値」として復元し、
@@ -1286,6 +1364,7 @@ namespace FixedCamVr.Streaming
             // 2.6) 体験の骨格。録画係と同じ理由で**卓が居なくても成立させる**（3 周で終わることは
             //      現地 PC 不在でも体験の一部）。相は Intro から始まる（起動＝導入）。
             ResolveRunDirector()?.Configure(_run);
+            PushFeel();
             // 3) 統合後の接続先・post を一度反映（焼き込み/キャッシュのどちらが勝っても 1 回）。
             ApplyCameraEndpoints();
             ApplyPostForActive();
@@ -1661,6 +1740,9 @@ namespace FixedCamVr.Streaming
             // 1.37) 体験の骨格。設定の反映だけで、相は動かさない（相を動かすのは runEpoch と明示操作だけ）。
             _run = state.run;
             ResolveRunDirector()?.Configure(_run);
+            // 1.38) 撮像の質（装置らしさ）。キーが無くても既定で効くので、null をそのまま渡してよい。
+            _feel = state.feel;
+            PushFeel();
 
             // 1.5) ゾーン layout（cuts/floor/overlap/course）。JsonUtility は null 入れ子を既定値で書くため
             //      「cuts が空でない」を present 判定に使い、rev で変更検出する。course は layout に内包。
@@ -2026,6 +2108,7 @@ namespace FixedCamVr.Streaming
             if (state.record != null) _record = state.record;
             if (state.actors != null && state.actors.Length > 0) _actors = state.actors;
             if (state.run != null) _run = state.run;
+            if (state.feel != null && !state.feel.LooksUnset()) _feel = state.feel;
             if (state.layout != null && state.layout.HasData())
             {
                 _layout = state.layout;
@@ -2297,6 +2380,7 @@ namespace FixedCamVr.Streaming
                     record = _record,
                     actors = _actors,
                     run = _run,
+                    feel = _feel,
                     runEpoch = _knownRunEpoch,
                     switchDwellSec = _switchDwellSec,
                     switchCooldownSec = _switchCooldownSec,
@@ -2328,6 +2412,7 @@ namespace FixedCamVr.Streaming
                 if (cfg.record != null) _record = cfg.record;
                 if (cfg.actors != null && cfg.actors.Length > 0) _actors = cfg.actors;
                 if (cfg.run != null) _run = cfg.run;
+                if (cfg.feel != null && !cfg.feel.LooksUnset()) _feel = cfg.feel;
                 if (cfg.schedule != null && cfg.schedule.HasData())
                 {
                     _schedule = cfg.schedule;

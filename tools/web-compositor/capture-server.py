@@ -254,8 +254,14 @@ def _default_show():
                           # Unity の ShowIntroDef / 卓の INTRO_DEFAULT と 3 者で揃えること。
                           'edgeColor': '#ffffff', 'showCameraMarks': False, 'showRoomWire': False,
                           'glitchOnSwap': 0.8, 'raiseHandPrompt': True}},
-        # 端末内録画（1 周目を録って 3 周目の演出で流す）。既定は無効。
-        'record': {'enabled': False, 'laps': [1], 'maxSegmentSec': 60, 'maxTotalMB': 200, 'fpsCap': 15},
+        # 撮像の質（装置らしさ）。post 12 項目と違って**時間で動く**ので別系統。
+        # ここの既定は C# ShowFeelDef / 卓 FEEL_DEFAULT と 3 者で揃えること。
+        'feel': {'noiseDark': 0.10, 'noiseFixed': 0.035, 'agc': 0.7,
+                 'targetLuma': 0.34, 'followSec': 1.1},
+        # 端末内録画（前の周を録って 3 周目の演出で流す）。既定は無効。
+        # tailSec = 区間の**末尾**何秒を残すか（頭からではない）。既定 3 は
+        # C# SegmentRecordWriter.DefaultTailSec / 卓 REC_DEFAULT_TAIL_SEC と対。
+        'record': {'enabled': False, 'laps': [1], 'tailSec': 3, 'maxTotalMB': 200, 'fpsCap': 15},
         # CG レイヤに立てる人形の定義（cameras[i].pose が著作済みのカメラでのみ出る）。
         'actors': [],
         # レンズ（内部パラメータ）。cameras[i].lensRef が参照する。
@@ -1465,7 +1471,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
     _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule', 'timeline',
-                   'bgmTracks', 'bgm', 'actors', 'record', 'run', 'lenses')
+                   'bgmTracks', 'bgm', 'actors', 'record', 'run', 'lenses', 'feel')
 
     def _post_state(self):
         body = self._read_json_body()

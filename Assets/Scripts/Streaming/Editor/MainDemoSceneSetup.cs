@@ -171,6 +171,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 var glitchFx = screenGo.GetComponent<GlitchFx>();
                 if (glitchFx == null) glitchFx = screenGo.AddComponent<GlitchFx>();
 
+                // 撮像の質（暗部ノイズ・固定パターン・自動露出の追従遅れ）と、凍らせた 1 枚
+                // （ホールド / 焼き付き）。show.json の feel が無くてもコード既定で効く。
+                var feelFx = screenGo.GetComponent<CameraFeelFx>();
+                if (feelFx == null) feelFx = screenGo.AddComponent<CameraFeelFx>();
+
                 // カメラ切替 Director（時間ガード + dip-to-black / 乱れ遷移）。
                 director = screenGo.GetComponent<CameraSwitchDirector>();
                 if (director == null) director = screenGo.AddComponent<CameraSwitchDirector>();
@@ -179,6 +184,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 TrySetObjectRef(dirSo, "overlay", overlay);
                 TrySetObjectRef(dirSo, "audioCue", audioCue);
                 TrySetObjectRef(dirSo, "glitchFx", glitchFx);
+                TrySetObjectRef(dirSo, "feelFx", feelFx);
                 dirSo.ApplyModifiedPropertiesWithoutUndo();
 
                 // フェイルソフト（信号断 → 砂嵐 / トラッキングロスト → 追従凍結 + 弱ノイズ）。

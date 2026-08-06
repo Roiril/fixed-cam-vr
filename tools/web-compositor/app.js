@@ -11,7 +11,7 @@ import { createCompositeView } from './composite-view.js';
 import { createFloorMap } from './floormap.js';
 import { createRibbon } from './ribbon.js';
 import { normalizeTimelineV3 } from './timeline-model.js';
-import { recordConfig, recordLaps, recordCoverage, missingRecordLaps } from './record-model.js';
+import { recordConfig, recordLaps, recordCoverage, missingRecordLaps, recordTailSec, REC_DEFAULT_TAIL_SEC } from './record-model.js';
 import { createShowSim } from './show-sim.js';
 import { createAtelier } from './atelier.js';
 import { createActorsPanel } from './actors.js';
@@ -771,7 +771,7 @@ async function pollState() {
         floorMap && floorMap.onState(s); timeline && timeline.onState(s); showSim && showSim.onState(s);
         actorsPanel && actorsPanel.onState(s); calibUi && calibUi.onState(s);
         atelier && atelier.render();   // カメラ集合の変化を工房の列へ（署名一致なら no-op）
-        renderBgmSection(); renderRecordPanel(); renderRunPanel(); renderRunCfg(s); renderPreflight();
+        renderBgmSection(); renderRecordPanel(); renderRunPanel(); renderRunCfg(s); renderFeelCfg(s); renderPreflight();
       }
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
   }
@@ -1359,6 +1359,50 @@ async function applyRunCfg() {
   st.className = 'ed-status ' + (r && r.ok !== false ? 'ok' : 'err');
 }
 
+// ---- 撮像の質（show.json feel）------------------------------------------------
+//   post 12 項目と違って**時間で動く**ので別系統。既定は C# ShowFeelDef / capture-server.py の
+//   _default_show と 3 者で揃えること（片方だけ変えると沈黙して食い違う）。
+//   ⚠ この卓のプレビューには出ない（実機だけが持つ「装置の挙動」）。UI にその旨を書いてある。
+const FEEL_DEFAULT = { noiseDark: 0.10, noiseFixed: 0.035, agc: 0.7, targetLuma: 0.34, followSec: 1.1 };
+const FEEL_NUM = {
+  noiseDark: '#feelNoiseDark', noiseFixed: '#feelNoiseFixed', agc: '#feelAgc',
+  targetLuma: '#feelTargetLuma', followSec: '#feelFollowSec',
+};
+
+function feelConfig(s) {
+  return { ...FEEL_DEFAULT, ...((s && s.feel) || {}) };
+}
+
+function renderFeelCfg(s) {
+  const f = feelConfig(s);
+  for (const [key, sel] of Object.entries(FEEL_NUM)) {
+    const el = $(sel);
+    if (el && document.activeElement !== el) el.value = f[key];
+  }
+}
+
+async function applyFeelCfg() {
+  const st = $('#feelCfgState');
+  const s = await getState();
+  if (!s) { if (st) { st.textContent = '✕ 適用失敗（サーバ断）'; st.className = 'ed-status err'; } return; }
+  const feel = { ...feelConfig(s) };
+  for (const [key, sel] of Object.entries(FEEL_NUM)) {
+    const el = $(sel);
+    if (el) feel[key] = Math.max(0, parseFloat(el.value) || 0);
+  }
+  const r = await postState({ feel });
+  if (!st) return;
+  st.textContent = (r && r.ok !== false)
+    ? `✓ 適用（実機で反映。この卓の画は変わりません）`
+    : '✕ 適用失敗（サーバ断）';
+  st.className = 'ed-status ' + (r && r.ok !== false ? 'ok' : 'err');
+}
+
+for (const sel of Object.values(FEEL_NUM)) {
+  const el = $(sel);
+  if (el) el.onchange = applyFeelCfg;
+}
+
 for (const el of Object.values(runCfgEls())) if (el) el.onchange = applyRunCfg;
 // 導入も run の一部なので保存先は applyRunCfg（同じ 1 経路）。合計秒だけは打ちながら追従させる。
 for (const sel of [...Object.values(INTRO_NUM), ...Object.values(INTRO_BOOL), ...Object.values(INTRO_STR)]) {
@@ -1449,13 +1493,13 @@ function renderRecordPanel() {
   const setVal = (sel, v) => { const e = $(sel); if (e && document.activeElement !== e) e.value = v; };
   const en = $('#recEnabled');
   if (en && document.activeElement !== en) en.checked = !!cfg.enabled;
-  setVal('#recMaxSeg', cfg.maxSegmentSec);
+  setVal('#recTail', recordTailSec(cfg));
   setVal('#recMaxMB', cfg.maxTotalMB);
   setVal('#recFps', cfg.fpsCap);
   renderRecUse();
 }
 if ($('#recEnabled')) $('#recEnabled').onchange = () => saveRecord({ enabled: $('#recEnabled').checked });
-if ($('#recMaxSeg')) $('#recMaxSeg').onchange = () => saveRecord({ maxSegmentSec: Math.max(5, parseFloat($('#recMaxSeg').value) || 60) });
+if ($('#recTail')) $('#recTail').onchange = () => saveRecord({ tailSec: Math.max(1, parseFloat($('#recTail').value) || REC_DEFAULT_TAIL_SEC) });
 if ($('#recMaxMB')) $('#recMaxMB').onchange = () => saveRecord({ maxTotalMB: Math.max(10, parseInt($('#recMaxMB').value, 10) || 200) });
 if ($('#recFps')) $('#recFps').onchange = () => saveRecord({ fpsCap: Math.max(1, parseFloat($('#recFps').value) || 15) });
 

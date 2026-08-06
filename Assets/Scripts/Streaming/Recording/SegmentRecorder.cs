@@ -150,7 +150,7 @@ namespace FixedCamVr.Streaming.Recording
             }
 
             string path = SegmentPath(CurrentEpoch, lap, camera);
-            var limits = new SegmentRecordWriter.Limits(remaining, cfg.fpsCap);
+            var limits = new SegmentRecordWriter.Limits(remaining, cfg.fpsCap, cfg.TailSec);
 
             try { _writer = new SegmentRecordWriter(path, limits); }
             catch (Exception e)
@@ -164,30 +164,27 @@ namespace FixedCamVr.Streaming.Recording
             _curLap = lap;
             _curCamera = camera;
             _tapped = stream;
-            float maxSec = cfg.maxSegmentSec > 0f ? cfg.maxSegmentSec : 60f;
             SegmentRecordWriter writer = _writer;
             float start = _segmentStart;
+            // 区間の間ずっと積む。**残るのは末尾 tailSec 秒だけ**（古い側は writer が落とす）ので、
+            // 体験者がどれだけ長く留まってもファイルは一定サイズで、しかも「出る直前」が残る。
             stream.FrameTap = (buf, len) =>
-            {
-                float t = Time.realtimeSinceStartup - start;
-                if (t > maxSec) return;   // 区間が長引いても上限で止める（体験は止めない）
-                writer.TryAppend(buf, len, Mathf.RoundToInt(t * 1000f));
-            };
-            Debug.Log($"[SegmentRecorder] 録画開始 lap={lap} camera={camera} → {path}");
+                writer.TryAppend(buf, len, Mathf.RoundToInt((Time.realtimeSinceStartup - start) * 1000f));
+            Debug.Log($"[SegmentRecorder] 録画開始 lap={lap} camera={camera} 末尾{limits.tailSec:0.#}s → {path}");
         }
 
         private void StopSegment()
         {
             if (_tapped != null) { _tapped.FrameTap = null; _tapped = null; }
             if (_writer == null) return;
-            bool capped = _writer.Capped;
             string path = _writer.Path;
-            _writer.Dispose();          // 書き切るのを待つ（この後で WrittenBytes が確定する）
+            _writer.Dispose();          // 末尾を書き出す（この後で WrittenBytes / Capped が確定する）
             _lastBytes = _writer.WrittenBytes;
             _lastFrames = _writer.WrittenFrames;
             _runBytes += _writer.WrittenBytes;
+            bool capped = _writer.Capped;
             _writer = null;
-            Debug.Log($"[SegmentRecorder] 録画終了{(capped ? "（容量上限で打ち切り）" : "")} " +
+            Debug.Log($"[SegmentRecorder] 録画終了{(capped ? "（容量が足りず末尾が縮んだ）" : "")} " +
                       $"lap={_curLap} camera={_curCamera} frames={_lastFrames} bytes={_lastBytes} → {path}");
             if (_lastFrames == 0)
                 Debug.LogWarning($"[SegmentRecorder] 1 枚も録れていない lap={_curLap} camera={_curCamera} " +

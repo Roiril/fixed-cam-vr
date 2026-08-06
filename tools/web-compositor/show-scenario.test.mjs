@@ -274,15 +274,16 @@ test('resolveStepDuration: 素材の実尺が測れたら推定ではなく実�
     { durSec: 5, kind: 'estimated' }, '測れない時は今までどおり trim 推定');
 });
 
-test('resolveStepDuration: 「録画」カットの尺は重ねる素材ではなく実測滞在で決まる', () => {
+test('resolveStepDuration: 「録画」カットの尺は重ねる素材ではなく残す末尾で決まる', () => {
   const rec = newStep({ source: TAKE.SRC_REC, camera: 1, recLap: 1, durKind: TAKE.DUR_UNTIL_CLIP_END, cueId: 'c' });
   const cue = { sourceUrl: 'v.mp4' };
   const dur = () => 12;   // 重ねる素材の長さ。録画カットの尺とは無関係
   assert.deepStrictEqual(resolveStepDuration(rec, cue, dur),
     { durSec: FALLBACK_STEP_DUR_SEC, kind: 'estimated' },
-    '実測滞在が無ければ既定尺で仮置き（-1 にすると卓が watchdog まで走って嘘をつく）');
-  assert.deepStrictEqual(resolveStepDuration(rec, cue, dur, () => 8.5),
-    { durSec: 8.5, kind: 'estimated' }, '録った区間の実測滞在が尺');
+    '供給が無ければ既定尺で仮置き（-1 にすると卓が watchdog まで走って嘘をつく）');
+  // 末尾方式では録画の尺は record.tailSec で確定する（旧: 実測滞在からの推定 ≈ しか出せなかった）。
+  assert.deepStrictEqual(resolveStepDuration(rec, cue, dur, () => 3),
+    { durSec: 3, kind: 'exact' }, '残す末尾の長さがそのまま尺');
   // 秒指定なら録画でも実機どおり厳密（頭から durSec 秒で畳む）。
   assert.deepStrictEqual(
     resolveStepDuration(newStep({ source: TAKE.SRC_REC, durKind: TAKE.DUR_SEC, durSec: 3 }), null, dur, () => 8.5),

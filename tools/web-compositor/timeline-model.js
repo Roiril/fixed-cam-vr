@@ -118,6 +118,9 @@ export function newStep(over = {}) {
     transition: TAKE.TRANS_DIP, transitionMs: 0,
     // カット頭で 1 回だけ走らせる乱れ（遷移の glitch とは別物。注意・移動の誘導に使う）。
     glitch: 0, glitchSec: 0,
+    // 「装置らしさ」の演出。hold = 画が止まる秒数 / burn = 焼き付きの濃さ（動いたものの跡だけが残る）
+    // / aura = 人形のまわりだけ画が荒れる強さ（対象に紐づく乱れ＝機材のせいにできない）。
+    hold: 0, burn: 0, burnSec: 0, aura: 0,
     cg: '', cgMode: TAKE.CG_FOLLOW,
     // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
@@ -166,6 +169,10 @@ function serializeStep(s) {
     transitionMs: num(s.transitionMs, 0),
     glitch: num(s.glitch, 0),
     glitchSec: num(s.glitchSec, 0),
+    hold: num(s.hold, 0),
+    burn: num(s.burn, 0),
+    burnSec: num(s.burnSec, 0),
+    aura: num(s.aura, 0),
     cg: s.cg || '',
     cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED], TAKE.CG_FOLLOW),
   };

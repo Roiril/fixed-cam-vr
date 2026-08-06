@@ -470,9 +470,40 @@ namespace FixedCamVr.Streaming
         // （＝ untilClipEnd のカットがここで終わる）。
         private void TickFrames()
         {
+            if (_frozen) return;   // 画のホールド中は素材の時計も止める（下の SetFrozen 参照）
             if (_current == null || !_current.SourceIsFrames || _stopWhenFadedOut) return;
             var seq = _current.frames!;
             if (!seq.Tick(Time.time - _framesStart)) StopOverlay();
+        }
+
+        private bool _frozen;
+        private float _freezeStart;
+        private bool _pausedByFreeze;
+
+        /// <summary>
+        /// 差し替え素材（録画・動画・静止画）の時計を止める / 動かす。
+        /// <see cref="CameraFeelFx"/> の画のホールド演出から呼ぶ。
+        ///
+        /// **ライブだけ止めて録画が動くと「装置が固まった」に見えない**ので、凍らせる間は素材も止める。
+        /// 解除では止まっていた分だけ開始時刻をずらす（＝続きから。飛ばさない）。
+        /// </summary>
+        public void SetFrozen(bool on)
+        {
+            if (_frozen == on) return;
+            _frozen = on;
+            if (on)
+            {
+                _freezeStart = Time.time;
+                if (_player != null && _player.isPlaying) { _player.Pause(); _pausedByFreeze = true; }
+                return;
+            }
+            _framesStart += Time.time - _freezeStart;
+            if (_pausedByFreeze)
+            {
+                _pausedByFreeze = false;
+                // 凍結中に cue が畳まれていたら再開しない（止めたものを勝手に鳴らさない）。
+                if (_player != null && _current != null && !_stopWhenFadedOut) _player.Play();
+            }
         }
 
         // Update から毎フレーム呼ぶ。unscaled realtime で timeScale=0 でも進む。

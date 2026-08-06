@@ -240,11 +240,14 @@ export const RUN = {
 };
 
 /**
- * 端末内録画。3 周目が使うのは**1 周目だけ**。
- * 2 周目まで録るとラン全体の容量（maxTotalMB）を食い合い、1 周目の録画が先頭で打ち切られうる。
+ * 端末内録画。残すのは各区間の**末尾 tailSec 秒**（区間を出る直前）。
+ *
+ * 頭から録ると、3 周目にその区間へ入った瞬間から流すので、映像の中の過去の自分も入口に居て
+ * **体験者の現在位置に立つ CG 人形と重なる**。末尾なら過去の自分は出口側で、位置が分かれる。
+ * 尺が一定になるので容量も滞在時間に比例しなくなり、2 周目まで録っても上限を食い合わない。
  */
 export const RECORD = {
-  enabled: true, laps: [1], maxSegmentSec: 60, maxTotalMB: 200, fpsCap: 15,
+  enabled: true, laps: [1, 2], tailSec: 3, maxTotalMB: 200, fpsCap: 15,
 };
 
 export { A, B, C };

@@ -522,6 +522,9 @@ namespace FixedCamVr.Streaming
                                    step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
                                    step.hasPlacement ? step.placement : null);
                 else _cgLayer.Hide();
+                // 人形に付き従う劣化。人形を出さないカットでは必ず 0 へ戻す
+                // （残ると「何も居ない所の画だけが荒れている」という説明の付かない絵になる）。
+                _cgLayer.SetAura(step.HasCg && !cgBlocked ? step.aura : 0f);
             }
 
             // カット遷移（cut / dip / fade / glitch）。**source によって効かせ方が違う**:
@@ -555,6 +558,11 @@ namespace FixedCamVr.Streaming
             // カット頭の単発の乱れ（遷移とは別物。企画書 2.3 の「注意・移動の誘導」に使う）。
             if (step.glitch > 0.001f)
                 director.PulseGlitch(step.glitch, step.glitchSec > 0f ? step.glitchSec : 0.25f);
+
+            // 画のホールド / 焼き付き。どちらも「その瞬間の 1 枚」を凍らせる同じ機構で、
+            // 強さと保持時間が違うだけ（hold = 完全に止まる / burn = 薄く残る）。
+            if (step.hold > 0.001f) director.HoldFrame(step.hold);
+            else if (step.burn > 0.001f) director.BurnFrame(step.burn, step.burnSec);
 
             Debug.Log($"[TakeRunner] {(d.takeStarted ? "演出開始" : "カット")} take={TakeId(d.takeIndex)} " +
                       $"step={d.stepIndex} source={source}" +
@@ -698,6 +706,9 @@ namespace FixedCamVr.Streaming
                 if (releaseScreen) director.InsertReturn(ResolveLatestZoneCamera());
                 else director.TakeHoldEnd();
             }
+            // 中止では凍結を必ず畳む。ホールドは秒で必ず明けるので原理的に固着しないが、
+            // 「画が止まったまま戻らない」はこの codebase が 4 回踏んだ事故の型なので二重に閉じる。
+            director.ClearFeelFx();
             _logic.AbortActive();
         }
 
@@ -711,6 +722,7 @@ namespace FixedCamVr.Streaming
             _stepFrames?.Dispose();
             _stepFrames = null;
             _cgLayer?.Hide();
+            _cgLayer?.SetAura(0f);
         }
 
         private ShowStepDef? GetStep(int takeIndex, int stepIndex)

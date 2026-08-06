@@ -77,12 +77,14 @@ export function resolveStepDuration(step, cue, getDuration, getRecSeconds) {
   if (step.durKind !== TAKE.DUR_UNTIL_CLIP_END) {
     return { durSec: step.durSec > 0 ? step.durSec : FALLBACK_STEP_DUR_SEC, kind: 'exact' };
   }
-  // 「録画」カットは素材 URL を持たない。長さは録った区間の滞在時間そのもので、著作時には確定しない。
-  // 実測が無ければ既定尺で仮置きする（-1 にすると卓のシミュレータが watchdog まで走って嘘をつく）。
-  // どちらの場合も kind='estimated' ＝ 卓の表示は必ず ≈ が付く。
+  // 「録画」カットは素材 URL を持たない。**残すのは区間の末尾 record.tailSec 秒だけ**なので、
+  // 供給側（ribbon）が設定を知っていれば尺は確定する（kind='exact' ＝ ≈ を付けない）。
+  // 供給が無い呼び出し（node テスト等）だけ既定尺で仮置きする
+  // （-1 にすると卓のシミュレータが watchdog まで走って嘘をつく）。
   if (step.source === TAKE.SRC_REC) {
     const sec = typeof getRecSeconds === 'function' ? getRecSeconds(step) : null;
-    return { durSec: Number.isFinite(sec) && sec > 0 ? sec : FALLBACK_STEP_DUR_SEC, kind: 'estimated' };
+    if (Number.isFinite(sec) && sec > 0) return { durSec: sec, kind: 'exact' };
+    return { durSec: FALLBACK_STEP_DUR_SEC, kind: 'estimated' };
   }
   const url = stepAssetUrl(step, cue);
   if (!url) {

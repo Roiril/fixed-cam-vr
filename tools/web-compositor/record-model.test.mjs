@@ -7,8 +7,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  REC_DEFAULT, recordConfig, recordLaps, recStepProblem, recStepIssue, recCutRefs,
-  recordCoverage, missingRecordLaps,
+  REC_DEFAULT, REC_DEFAULT_TAIL_SEC, recordConfig, recordLaps, recordTailSec,
+  recStepProblem, recStepIssue, recCutRefs, recordCoverage, missingRecordLaps,
 } from './record-model.js';
 
 const recStep = (over = {}) => ({ source: 'rec', camera: 1, recLap: 1, ...over });
@@ -19,6 +19,16 @@ test('recordConfig: 欠落は既定で埋める（record が無い show.json は
   assert.equal(recordConfig(null).enabled, false, 'record が無い = 1 フレームも録らない');
   assert.deepStrictEqual(recordConfig({ record: { enabled: true, laps: [2] } }),
     { ...REC_DEFAULT, enabled: true, laps: [2] });
+});
+
+test('recordTailSec: 0 以下・未指定は既定へ倒す（C# ShowRecordDef.TailSec と同じ判定）', () => {
+  assert.equal(recordTailSec({}), REC_DEFAULT_TAIL_SEC);
+  assert.equal(recordTailSec({ tailSec: 0 }), REC_DEFAULT_TAIL_SEC, '0 は「無効」ではなく既定');
+  assert.equal(recordTailSec({ tailSec: -2 }), REC_DEFAULT_TAIL_SEC);
+  assert.equal(recordTailSec({ tailSec: 5.5 }), 5.5);
+  // 既定は 3 秒。**C# SegmentRecordWriter.DefaultTailSec と対**なので、片方だけ変えない。
+  assert.equal(REC_DEFAULT_TAIL_SEC, 3);
+  assert.equal(REC_DEFAULT.tailSec, 3, 'capture-server.py の _default_show とも同じ値');
 });
 
 test('recordLaps: 1 始まりの整数だけ拾う', () => {

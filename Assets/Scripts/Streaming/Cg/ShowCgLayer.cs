@@ -48,10 +48,12 @@ namespace FixedCamVr.Streaming.Cg
         private static readonly int ShadowPlaneYId = Shader.PropertyToID("_ShadowPlaneY");
         private static readonly int ShadowLightDirId = Shader.PropertyToID("_ShadowLightDir");
         private static readonly int ShadowDensityId = Shader.PropertyToID("_ShadowDensity");
+        private static readonly int ShadowSoftId = Shader.PropertyToID("_ShadowSoftM");
         private static readonly int BlobDensityId = Shader.PropertyToID("_BlobDensity");
         private static readonly int BlobFeatherId = Shader.PropertyToID("_BlobFeather");
         private static readonly int LightColorId = Shader.PropertyToID("_LightColor");
         private static readonly int AmbientId = Shader.PropertyToID("_Ambient");
+        private static readonly int ActorFocusId = Shader.PropertyToID("_ActorFocus");
 
         /// <summary>身体入力がこの秒数届かなければ「手は取れていない」とみなす。</summary>
         private const float BodyInputTimeoutSec = 0.5f;
@@ -78,9 +80,15 @@ namespace FixedCamVr.Streaming.Cg
         private const float DefaultAmbient = 0.35f;
         private const float DefaultShadowSoftM = 0.12f;
 
-        /// <summary>接地影の半径 = 身長 × これ（成人 1.6m で約 0.35m。人の影の広がりの実感値）。</summary>
+        /// <summary>
+        /// 接地影の半径 = 身長 × これ（成人 1.6m で約 0.35m。人の影の広がりの実感値）。
+        ///
+        /// ⚠ 下限は**人形にも通る値**にすること。旧 0.15m は人間前提で、全高 0.40m の市松人形では
+        /// 本来 0.088m のところ 0.15m へ持ち上がっていた（＝背丈の 3/4 の黒い円盤が足元に敷かれ、
+        /// 「切り抜きを板に貼った」ように見える）。人形の大きさに比例させるのが正しい。
+        /// </summary>
         private const float BlobRadiusPerHeight = 0.22f;
-        private const float BlobRadiusMinM = 0.15f;
+        private const float BlobRadiusMinM = 0.03f;
         private const float BlobRadiusMaxM = 0.6f;
 
         /// <summary>接地影を床から浮かせる量 (m)。投影シャドウ（+0.002）より上に置く。</summary>
@@ -297,6 +305,9 @@ namespace FixedCamVr.Streaming.Cg
             _pose = null;
             _placement = null;
             SetStrength(0f);
+            // 人形が消えたら荒れも消す。Hide の後は LateUpdate が早期 return するので、
+            // ここで明示的に落とさないと「何も居ない所の画だけが荒れている」が残る。
+            ClearActorFocus();
             if (_virtualCam != null) _virtualCam.enabled = false;
             if (_actorInstance != null) _actorInstance.SetActive(false);
             if (_roomProxy != null) _roomProxy.gameObject.SetActive(false);
@@ -345,6 +356,93 @@ namespace FixedCamVr.Streaming.Cg
             if (_actorRig != null && _actorRig.HasRig)
                 _actorRig.Drive(CurrentBody(), _actorInstance!.transform.eulerAngles.y, Time.deltaTime,
                                 _bodyYawDeg);
+            // 位置・腕は毎フレーム進めるが、**絵にするのは実写が進んだ時だけ**。
+            RenderIfDue();
+            // 人形に付き従う劣化の中心と大きさ。描画を間引いても位置は毎フレーム更新する
+            // （荒れだけが人形から遅れて付いてくると、それ自体が別の不自然さになる）。
+            WriteActorFocus();
+        }
+
+        // ---- 人形に付き従う劣化 ----
+
+        private float _aura;
+
+        /// <summary>
+        /// 人形のまわりだけ画を荒らす強さ 0..1（カットの <c>aura</c>）。
+        ///
+        /// 全域一様な乱れはすべて「機材のせい」で説明が付いてしまうので、強くしても慣れて終わる。
+        /// **対象に紐づいて動く乱れ**だけが、原因が機材ではなく世界の側にあることを示せる。
+        /// </summary>
+        public void SetAura(float amount)
+        {
+            _aura = Mathf.Clamp01(amount);
+            if (_aura <= 0f) ClearActorFocus();
+        }
+
+        private void ClearActorFocus()
+            => _material?.SetVector(ActorFocusId, new Vector4(0.5f, 0.5f, 0.2f, 0f));
+
+        // 人形の投影中心と見かけの半径を**枠 UV 空間**で書く（シェーダはこの空間で距離を測る）。
+        // 仮想カメラのビューポート → contain-fit 枠 は ContainUv の逆変換。
+        private void WriteActorFocus()
+        {
+            if (_material == null) return;
+            if (_aura <= 0f || _actorInstance == null || _virtualCam == null || !_rendering)
+            {
+                ClearActorFocus();
+                return;
+            }
+
+            float h = Mathf.Max(0.05f, _actorDef != null ? _actorDef.heightM : 0.4f);
+            Vector3 foot = _actorInstance.transform.position;
+            Vector3 center = foot + Vector3.up * (h * 0.5f);
+            Vector3 vp = _virtualCam.WorldToViewportPoint(center);
+            if (vp.z <= 0.01f) { ClearActorFocus(); return; }   // カメラの後ろ = 映っていない
+
+            Vector3 vpTop = _virtualCam.WorldToViewportPoint(center + Vector3.up * (h * 0.5f));
+            Vector2 s = _screen != null ? _screen.ContainScale : Vector2.one;
+            // ContainUv は p = (uv-0.5)/s + 0.5。その逆で枠 UV へ戻す。
+            float cx = (vp.x - 0.5f) * s.x + 0.5f;
+            float cy = (vp.y - 0.5f) * s.y + 0.5f;
+            float radius = Mathf.Clamp(Mathf.Abs(vpTop.y - vp.y) * s.y, 0.02f, 0.6f);
+            _material.SetVector(ActorFocusId, new Vector4(cx, cy, radius, _aura));
+        }
+
+        /// <summary>
+        /// CG を描き直す間隔の上限 (秒)。ライブのフレーム更新が観測できないとき
+        /// — 録画や無人プレートを流している間、受信が止まっている間 — の刻み。
+        /// 録画も 15fps で録っているので、同じ粗さになる。
+        /// </summary>
+        private const float CgFallbackIntervalSec = 1f / 15f;
+
+        private long _lastRenderedSeq = -1;
+        private float _lastRenderTime = -999f;
+
+        /// <summary>
+        /// 人形を描き直す。**実写のフレームが変わった時だけ**描くのが要点。
+        ///
+        /// 実写は 15〜30fps で届くのに CG を表示レート（72/90Hz）で回すと、人形と腕だけが滑らかに動き、
+        /// 背景の映像は刻んで動く。動いている最中に一番強く「別のレイヤだ」と分かるのがこの差で、
+        /// 陰影や解像度をどれだけ合わせても消えない。実写が止まっている間（録画・プレート・受信断）は
+        /// <see cref="CgFallbackIntervalSec"/> の刻みで描く（人形まで完全に固まらせない）。
+        /// </summary>
+        private void RenderIfDue()
+        {
+            if (_virtualCam == null || !_rendering || _rt == null) return;
+            float now = Time.unscaledTime;
+            long seq = CurrentSourceSeq();
+            bool advanced = seq > 0 && seq != _lastRenderedSeq;
+            if (!advanced && now - _lastRenderTime < CgFallbackIntervalSec) return;
+            _lastRenderedSeq = seq;
+            _lastRenderTime = now;
+            _virtualCam.Render();
+        }
+
+        /// <summary>いま表示中のカメラが受け取った最新フレームの通し番号（取れなければ -1）。</summary>
+        private long CurrentSourceSeq()
+        {
+            CameraStream? s = registry != null ? registry.GetActive() : null;
+            return s != null ? s.LastFrameSeq : -1;
         }
 
         // 体の向きを頭の向きへ鈍らせて追わせる。**首を振っただけで体ごと回らない**ようにするのと、
@@ -373,7 +471,9 @@ namespace FixedCamVr.Streaming.Cg
         {
             if (_rendering == on) return;
             _rendering = on;
-            if (_virtualCam != null) _virtualCam.enabled = on;
+            // カメラの enabled は常に false（描画は RenderIfDue の手動 Render）。
+            // 出し始めは待たずに 1 枚描く — ここで刻みを待つと、人形が出る瞬間だけ遅れて見える。
+            if (on) _lastRenderTime = -999f;
             if (_actorInstance != null) _actorInstance.SetActive(on);
             // プロキシと接地影は人形と生死を共にする（人形が居ないのに部屋の深度だけ書いても意味が無い）。
             if (_roomProxy != null) _roomProxy.gameObject.SetActive(on);
@@ -425,12 +525,15 @@ namespace FixedCamVr.Streaming.Cg
                 _virtualCam.nearClipPlane = 0.05f;
                 _virtualCam.farClipPlane = 30f;
                 _virtualCam.allowHDR = false;
-                _virtualCam.allowMSAA = false;
+                // MSAA は入れる。人形の輪郭だけが 1bit のギザギザだと、実写側の JPEG のなまった縁と
+                // 食い違って静止したコマでも分離して見える（RT が 640x480 程度なので 4x でも安い）。
+                _virtualCam.allowMSAA = true;
                 _virtualCam.depth = -100;                                  // HMD カメラより先に描く
                 _virtualCam.stereoTargetEye = StereoTargetEyeMask.None;    // VR の両眼描画に巻き込まれない
+                // **自動描画しない**。実写のフレームが変わった時だけ手動で Render する（RenderIfDue）。
+                _virtualCam.enabled = false;
             }
             EnsureRenderTexture();
-            _virtualCam.enabled = true;
         }
 
         /// <summary>
@@ -472,10 +575,14 @@ namespace FixedCamVr.Streaming.Cg
                     useMipMap = false,
                     // レンズ歪み補正で UV が枠外を指すことがある。繰り返すと反対側の人形が出る。
                     wrapMode = TextureWrapMode.Clamp,
+                    // 人形と影の輪郭のギザギザを消す（実写側は JPEG q40 で高周波が落ちている）。
+                    antiAliasing = 4,
                 };
                 _rt.Create();
                 if (_virtualCam != null) _virtualCam.targetTexture = _rt;
                 _material?.SetTexture(CgTexId, _rt);
+                _lastRenderedSeq = -1;   // 作り直した RT は空。次の Tick で必ず 1 回描く
+                _lastRenderTime = -999f;
             }
 
             // 合成 UV はライブ映像と同じ contain-fit 枠。MjpegScreen の計算をそのまま使う（二重計算しない）。
@@ -622,7 +729,13 @@ namespace FixedCamVr.Streaming.Cg
             float tempK = light != null ? light.tempK : DefaultLightTempK;
             float intensity = light != null ? Mathf.Max(0f, light.intensity) : 1f;
             float ambient = light != null ? Mathf.Clamp01(light.ambient) : DefaultAmbient;
-            Color lc = KelvinToLinearColor(tempK) * intensity;
+
+            // 映像の明るさへ人形の光量を寄せる。カメラごとに露出も現場の照明も違うのに、
+            // 人形はどのカメラでも同じ明るさで出ていた（暗い区間で浮き、明るい区間で沈む）。
+            // 主光源と環境光へ**同じ倍率**を掛ける — 片方だけだと陰影の比が変わって材質が変わって見える。
+            float gain = LumaGain();
+            Color lc = KelvinToLinearColor(tempK) * (intensity * gain);
+            ambient = Mathf.Clamp01(ambient * gain);
 
             _mpb ??= new MaterialPropertyBlock();
             foreach (Renderer r in _actorRenderers)
@@ -635,6 +748,27 @@ namespace FixedCamVr.Streaming.Cg
                 r.SetPropertyBlock(_mpb);
             }
             return dir;
+        }
+
+        /// <summary>
+        /// 「ふつうに写っている」映像の生の平均輝度。人形の光量をここへ正規化する。
+        /// post を掛ける前の値なので、show.json の露出設定（現行 -0.72）とは無関係。
+        /// </summary>
+        private const float ReferenceLuma = 0.35f;
+
+        /// <summary>映像の明るさへ寄せる度合い（0 = 従来どおり著作値そのまま / 1 = 完全に映像基準）。</summary>
+        private const float LumaMatchAmount = 0.7f;
+
+        /// <summary>
+        /// 映像の明るさに合わせた人形の光量の倍率。
+        /// 測れていなければ 1（＝著作した値をそのまま使う）。
+        /// 上下の clamp は、真っ暗な映像で人形が消える・白飛びで人形が焼けるのを防ぐため。
+        /// </summary>
+        private float LumaGain()
+        {
+            float luma = _screen != null ? _screen.SourceLuma : -1f;
+            if (luma < 0f || LumaMatchAmount <= 0f) return 1f;
+            return Mathf.Lerp(1f, Mathf.Clamp(luma / ReferenceLuma, 0.35f, 2f), LumaMatchAmount);
         }
 
         /// <summary>
@@ -706,9 +840,11 @@ namespace FixedCamVr.Streaming.Cg
                 _shadowMat.SetVector(ShadowLightDirId,
                     new Vector4(lightDirWorld.x, lightDirWorld.y, lightDirWorld.z, 0f));
                 _shadowMat.SetFloat(ShadowDensityId, density);
+                // にじみは平面投影では**濃さの高さ減衰**として効く（縁を空間的にぼかす場所が無いため）。
+                // 足元だけが濃く残るので、硬い縁が目立つ範囲が接地点の近くへ縮む。
+                _shadowMat.SetFloat(ShadowSoftId, softM);
             }
-            // にじみ（shadowSoftM）は平面投影では表現できない（形をそのまま潰すため）。
-            // 接地影の縁のぼけ幅として効かせる — 受け口だけ作って効かせないのは著作者への嘘。
+            // 接地影ではさらに縁のぼけ幅そのものとして効かせる。
             PlaceGroundBlob(def, floorWorldY, density, softM);
         }
 
@@ -718,7 +854,7 @@ namespace FixedCamVr.Streaming.Cg
         {
             if (!EnsureBlob() || _actorInstance == null) return;
             Vector3 p = _actorInstance.transform.position;
-            float radius = Mathf.Clamp(Mathf.Max(0.2f, def.heightM) * BlobRadiusPerHeight,
+            float radius = Mathf.Clamp(Mathf.Max(0.05f, def.heightM) * BlobRadiusPerHeight,
                                        BlobRadiusMinM, BlobRadiusMaxM);
             _blob!.position = new Vector3(p.x, floorWorldY + BlobLiftM, p.z);
             // Quad を床へ寝かせる。シェーダが Cull Off なので表裏の取り違えで消えることはない。

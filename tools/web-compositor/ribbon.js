@@ -28,7 +28,7 @@ import { projectPoint, unprojectToFloor } from './calib.js';
 // 較正で見た絵と人形を置く時の絵が食い違うと、どちらがずれているのか判断できなくなる。
 import { wireSegments } from './calib-session.js';
 import { FX, FX_DEFAULT, camColor, escapeHtml, isVideoUrl } from './common.js';
-import { recStepIssue } from './record-model.js';
+import { recStepIssue, recordTailSec } from './record-model.js';
 // 周の並び（3 周 ＋ もどり）と「その区間を踏むか」の判定は run-model.js が単一の正
 // （本番前チェック・シミュレータ・実機と同じ答えを出さないと、卓だけが嘘をつく）。
 import {
@@ -443,20 +443,25 @@ export function createRibbon(container, deps) {
     return e && e.n > 0 ? e : null;
   }
   /**
-   * 「録画」カットの尺。録画の長さ = 録った区間に体験者が居た時間なので、実測滞在の平均で見積もる
-   * （最短ではなく平均。最短で見ると尺を過小に見せて「最大長に収まる」と誤解させる）。
-   * 実測が無ければ null → 既定尺で仮置きされ、表示は ≈ のまま。
+   * 「録画」カットの尺。**残すのは区間の末尾 tailSec 秒だけ**なので、著作の段階で確定する
+   * （旧「頭から録る」方式では体験者の滞在しだいで、実測滞在から見積もるしかなかった）。
+   *
+   * 滞在が tailSec より短ければ録れているのはその分だけなので、実測があれば短い方を採る。
    */
   function recSecondsOf(s) {
     if (!s || s.source !== TAKE.SRC_REC) return null;
+    const tail = recordTailSec(record || {});
     const e = dwellFor(s.recLap, s.camera);
-    return e && e.meanSec > 0 ? e.meanSec : null;
+    return e && e.meanSec > 0 ? Math.min(tail, e.meanSec) : tail;
   }
-  /** 「録画」カットの尺の説明（著作時には確定しないので、根拠ごと言う）。 */
+  /** 「録画」カットの尺の説明。 */
   function recLenNote(s) {
-    const sec = recSecondsOf(s);
-    if (sec) return `長さ ≈${fmtSec(sec)}s（この区間の実測 平均滞在）`;
-    return '長さ = その人がこの区間に居た時間（実測が出ると出ます）';
+    const tail = recordTailSec(record || {});
+    const e = dwellFor(s.recLap, s.camera);
+    if (e && e.meanSec > 0 && e.meanSec < tail) {
+      return `長さ ${fmtSec(e.meanSec)}s（この区間の実測 平均滞在が末尾 ${fmtSec(tail)}s より短い）`;
+    }
+    return `長さ ${fmtSec(tail)}s（この区間を出る直前の末尾。⏺ 端末内録画パネルで変えられます）`;
   }
   function dwellLabel(lap, camera) {
     const e = dwellFor(lap, camera);
@@ -1471,6 +1476,9 @@ export function createRibbon(container, deps) {
         <label><input class="rb-s-transms" type="number" min="0" step="10" value="${s.transitionMs || 0}">ms<span class="rb-hint2">0=既定</span></label>
         <label title="カットが始まってから 1 回だけ走らせる映像の乱れ。遷移の「乱れ」とは別物で、こちらは体験者の注意を引くために使う">乱れ<input class="rb-s-glitch" type="number" min="0" max="1" step="0.05" value="${s.glitch || 0}"><span class="rb-hint2">0=出さない</span></label>
         <label class="rb-s-glitchsec-l" style="display:${(s.glitch || 0) > 0 ? '' : 'none'}"><input class="rb-s-glitchsec" type="number" min="0.05" step="0.05" value="${s.glitchSec > 0 ? s.glitchSec : TAKE.DEFAULT_STEP_GLITCH_SEC}">s</label>
+        <label title="カットの頭で画をこの秒数だけ止める。ライブも録画も一緒に凍る。再開したとき、体験者は自分が思っていたのと違う位置に居る">静止<input class="rb-s-hold" type="number" min="0" max="5" step="0.1" value="${s.hold || 0}">s<span class="rb-hint2">0=止めない</span></label>
+        <label title="カットの頭の画をこの濃さで残し、数秒かけて消す。動いていない所は変わらないので、動いたものの跡だけが残って見える">焼き付き<input class="rb-s-burn" type="number" min="0" max="1" step="0.05" value="${s.burn || 0}"><span class="rb-hint2">0=出さない</span></label>
+        <label class="rb-s-burnsec-l" style="display:${(s.burn || 0) > 0 ? '' : 'none'}"><input class="rb-s-burnsec" type="number" min="0.2" step="0.5" value="${s.burnSec > 0 ? s.burnSec : 2.5}">s</label>
         <label class="chk"><input class="rb-s-post-on" type="checkbox" ${s.hasPost ? 'checked' : ''}>🎨 画像加工を上書き</label>
         <label title="映像の上に CG の人形を立てる。人形は 🎭 CG 人形パネルで定義する。カメラ姿勢が著作済みのカメラでのみ出る">CG 人形<select class="rb-s-cg">${cgOpts}</select></label>
         <span class="rb-s-cgmode-l" style="display:${s.cg ? '' : 'none'}">立ち位置
@@ -1478,6 +1486,7 @@ export function createRibbon(container, deps) {
           <label class="chk"><input type="radio" name="${cgModeName}" class="rb-s-cgmode-fixed" ${fixedPlace ? 'checked' : ''}>決めた位置</label>
           <span class="rb-s-place-note">${escapeHtml(cgIssue(s) || '')}</span>
         </span>
+        <label class="rb-s-aura-l" style="display:${s.cg ? '' : 'none'}" title="人形のまわりだけ画が荒れる。人形が動くと荒れも動くので、機材の不調では説明が付かなくなる。全域に一様な乱れは「そういう画」として慣れられてしまう">人形の澱み<input class="rb-s-aura" type="number" min="0" max="1" step="0.05" value="${s.aura || 0}"><span class="rb-hint2">0=出さない</span></label>
       </div>
       <div class="rb-grid rb-s-place" style="display:${fixedPlace ? '' : 'none'}">
         <label title="course 空間の X（東西）。フロアマップと同じ座標系">X<input class="rb-s-px" type="number" step="0.05" value="${round2(pl.x)}">m</label>
@@ -1525,6 +1534,11 @@ export function createRibbon(container, deps) {
       s.glitchSec = s.glitch > 0
         ? Math.max(0.05, numOr(r('.rb-s-glitchsec').value, TAKE.DEFAULT_STEP_GLITCH_SEC))
         : 0;
+      s.hold = Math.max(0, Math.min(5, numOr(r('.rb-s-hold').value, 0)));
+      s.burn = Math.max(0, Math.min(1, numOr(r('.rb-s-burn').value, 0)));
+      s.burnSec = s.burn > 0 ? Math.max(0.2, numOr(r('.rb-s-burnsec').value, 2.5)) : 0;
+      // 人形を出さないカットでは荒れも出せない（実機も 0 へ落とす）。
+      s.aura = s.cg ? Math.max(0, Math.min(1, numOr(r('.rb-s-aura').value, 0))) : 0;
       s.strength = numOr(r('.rb-s-strength').value, -1);
       s.fadeInSec = numOr(r('.rb-s-fin').value, -1);
       s.fadeOutSec = numOr(r('.rb-s-fout').value, -1);
@@ -1533,10 +1547,11 @@ export function createRibbon(container, deps) {
       markDirty(); render();
       if (rebuild) renderStepRows(t);
     };
-    row.querySelectorAll('.rb-s-cue, .rb-s-transms, .rb-s-trans, .rb-s-strength, .rb-s-fin, .rb-s-fout, .rb-s-tstart, .rb-s-tend, .rb-s-glitchsec')
+    row.querySelectorAll('.rb-s-cue, .rb-s-transms, .rb-s-trans, .rb-s-strength, .rb-s-fin, .rb-s-fout, .rb-s-tstart, .rb-s-tend, .rb-s-glitchsec, .rb-s-hold, .rb-s-aura, .rb-s-burnsec')
       .forEach((el) => { el.onchange = () => commit(false); });
     // 乱れの強さを 0 にしたら秒欄を畳む（0 のとき秒だけ残っていると「効いているのか」が読めない）。
     r('.rb-s-glitch').onchange = () => commit(true);
+    r('.rb-s-burn').onchange = () => commit(true);
     r('.rb-s-src').onchange = () => commit(true);
     r('.rb-s-cam').onchange = () => commit(true);
     r('.rb-s-reclap').onchange = () => commit(true);

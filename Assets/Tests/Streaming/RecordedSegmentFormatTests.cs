@@ -111,8 +111,8 @@ namespace FixedCamVr.Streaming.Tests
             string path = Path.Combine(Path.GetTempPath(), "fixedcamvr_rec_test.mjr");
             try
             {
-                // fpsCap=10（=100ms 間隔）/ 容量 1MB。
-                using (var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1024 * 1024, 10f)))
+                // fpsCap=10（=100ms 間隔）/ 容量 1MB / 末尾 3 秒（この尺には収まるので落ちない）。
+                using (var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1024 * 1024, 10f, 3f)))
                 {
                     Assert.That(w.TryAppend(Jpeg(64, 1), 64, 0), Is.True);
                     Assert.That(w.TryAppend(Jpeg(64, 2), 64, 30), Is.False, "fpsCap 内の連写は間引く");
