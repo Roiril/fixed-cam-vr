@@ -871,7 +871,7 @@ export function createAtelier(deps) {
         <div class="atl-out clickable" data-pick="${esc(url)}">${thumb}</div>
         <div class="atl-meta">
           <div class="atl-cardhead">
-            <strong>${esc(fileOf(url))}</strong>
+            <strong title="${esc(fileOf(url))}">${esc(fileOf(url))}</strong>
             <span class="atl-status atl-used">✅ ${esc(ids)}</span>
           </div>
           <div class="atl-unlogged-note">本番で使われていますが、作り方の記録がありません。</div>
@@ -904,7 +904,7 @@ export function createAtelier(deps) {
         <div class="atl-out${g.outputUrl ? ' clickable' : ''}" ${g.outputUrl ? `data-pick="${esc(g.outputUrl)}"` : ''}>${thumb}</div>
         <div class="atl-meta">
           <div class="atl-cardhead">
-            <strong>${esc(g.recipeName || '(指示の記録なし)')}</strong>
+            <strong title="${esc(g.recipeName || '(指示の記録なし)')}">${esc(g.recipeName || '(指示の記録なし)')}</strong>
             ${useMark}
           </div>
           ${bind ? `<div class="atl-bind">${esc(bind)}</div>` : ''}
