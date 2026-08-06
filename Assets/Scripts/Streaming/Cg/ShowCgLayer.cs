@@ -129,6 +129,8 @@ namespace FixedCamVr.Streaming.Cg
         private Renderer[] _actorRenderers = System.Array.Empty<Renderer>();
         private MaterialPropertyBlock? _mpb;
         private string _actorId = "";
+        /// <summary>プレハブが見つからず代用のカプセルを出しているか（大きさの掛け方が違う）。</summary>
+        private bool _actorIsFallbackCapsule;
         private int _layer = -1;
         private bool _visible;
         private bool _rendering;
@@ -838,7 +840,15 @@ namespace FixedCamVr.Streaming.Cg
 
         private void EnsureActor(ShowActorDef def)
         {
-            if (_actorInstance != null && _actorId == def.id) { _actorInstance.SetActive(true); return; }
+            if (_actorInstance != null && _actorId == def.id)
+            {
+                _actorInstance.SetActive(true);
+                // **大きさは毎回入れ直す。** show.json はランの最中にも配られるので、ここで即 return すると
+                // 「卓で heightM を変えたのに、その体験のあいだ人形だけ古い大きさのまま」になる
+                // （一度出した後は id が同じなので、アプリを再起動するまで直らない）。
+                ApplyActorScale(def);
+                return;
+            }
 
             if (_actorInstance != null) Destroy(_actorInstance);
             _actorInstance = null;
@@ -851,21 +861,18 @@ namespace FixedCamVr.Streaming.Cg
                 // プレハブ未用意でも「そこに人形が立つ」ことは確認できるようにする（素材待ちで詰まらせない）。
                 Debug.LogWarning($"[ShowCgLayer] actor '{def.id}' のプレハブ '{def.prefab}' が Resources に無い → 代用の箱で出す");
                 _actorInstance = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                _actorInstance.transform.localScale = new Vector3(0.35f, Mathf.Max(0.2f, def.heightM) * 0.5f, 0.35f);
+                _actorIsFallbackCapsule = true;
                 Collider? col = _actorInstance.GetComponent<Collider>();
                 if (col != null) Destroy(col);
             }
             else
             {
                 _actorInstance = Instantiate(prefab);
+                _actorIsFallbackCapsule = false;
                 _actorRig = _actorInstance.GetComponent<ShowActorRig>();
                 if (_actorRig != null)
                 {
                     _actorRig.Prepare();
-                    // show.json の heightM を正として実寸を合わせる（cm 単位の FBX でも破綻しない）。
-                    float measured = Mathf.Max(0.1f, _actorRig.MeasuredHeightM);
-                    float k = Mathf.Clamp(Mathf.Max(0.2f, def.heightM) / measured, 0.05f, 20f);
-                    _actorInstance.transform.localScale = Vector3.one * k;
                 }
                 else
                 {
@@ -879,7 +886,27 @@ namespace FixedCamVr.Streaming.Cg
             _actorRenderers = _actorInstance.GetComponentsInChildren<Renderer>(true);
             _warnedMultiSubMesh = false;
             AttachShadowMaterial();
+            ApplyActorScale(def);
             _actorId = def.id;
+        }
+
+        /// <summary>
+        /// <c>show.json</c> の <c>heightM</c> を正として人形の実寸を合わせる（cm 単位の FBX でも破綻しない）。
+        /// **生成時だけでなく、定義が配られるたびに呼ぶ** — 卓は体験の最中にも show.json を配るので、
+        /// 生成時に 1 回だけ掛けると「変えたのに大きさだけ古いまま」が起きる。
+        /// </summary>
+        private void ApplyActorScale(ShowActorDef def)
+        {
+            if (_actorInstance == null) return;
+            float h = Mathf.Max(0.2f, def.heightM);
+            if (_actorIsFallbackCapsule)
+            {
+                _actorInstance.transform.localScale = new Vector3(0.35f, h * 0.5f, 0.35f);
+                return;
+            }
+            if (_actorRig == null) return;   // リグ無しのプレハブは実寸が測れないので触らない
+            float measured = Mathf.Max(0.1f, _actorRig.MeasuredHeightM);
+            _actorInstance.transform.localScale = Vector3.one * Mathf.Clamp(h / measured, 0.05f, 20f);
         }
 
         // follow = 体験者の HMD の course XZ に立つ / fixed = 著作した位置に立つ。
