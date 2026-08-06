@@ -71,6 +71,36 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void Intro_DoesNotAutoAdvance_WhileAborted()
+        {
+            // 中止（トラッキング原点がずれた）は IntroLogic.Disable() を通るので introPlaying が
+            // false へ落ちる。introAborted で止めないと**中止したその瞬間に本編が始まり**、
+            // ずれた座標のまま 3 周が走る（体験者は壁の位置が違う世界を手でたどる）。
+            var r = Make();
+            Assert.That(r.Tick(IntroMin + 1f, atStartZone: true, takeRunning: false,
+                               introPlaying: false, introAborted: true),
+                Is.EqualTo(ShowRunEvent.None));
+            Assert.That(r.Phase, Is.EqualTo(ShowPhase.Intro));
+
+            // 位置合わせを撃ち直して中止が解けたら、そこから通常どおり進む。
+            Assert.That(r.Tick(0.1f, atStartZone: true, takeRunning: false,
+                               introPlaying: false, introAborted: false),
+                Is.EqualTo(ShowRunEvent.RunBegan));
+        }
+
+        [Test]
+        public void Intro_ManualAdvance_StillWorks_WhileAborted()
+        {
+            // 「ずれていても進めたい」はスタッフ（運営）の判断で、コードが止める話ではない。
+            var r = Make();
+            r.Tick(1f, atStartZone: false, takeRunning: false, introPlaying: false, introAborted: true);
+            r.RequestAdvance();
+            Assert.That(r.Tick(0.02f, atStartZone: false, takeRunning: false,
+                               introPlaying: false, introAborted: true),
+                Is.EqualTo(ShowRunEvent.RunBegan));
+        }
+
+        [Test]
         public void Intro_ManualAdvance_WorksImmediatelyAndIgnoresPlace()
         {
             var r = Make(auto: false);

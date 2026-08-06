@@ -282,7 +282,8 @@ namespace FixedCamVr.Diagnostics
                 // 「4周目/3周」と出ると壊れて見えるので、そこだけ言い方を変える。
                 if (hasLap && run != null && lapCounter!.CurrentLap > run.TotalLaps)
                 {
-                    sb.Append("もどり ・ 経過 ");
+                    // 「もどり」だけでは何のことか分からない（開発語）。体験の位置を言う。
+                    sb.Append("最後の区間 ・ 経過 ");
                     AppendClock(sb, run.RunElapsedSec);
                 }
                 else
@@ -309,13 +310,12 @@ namespace FixedCamVr.Diagnostics
             if (cueScheduler != null && lapCounter != null && lapCounter.Order.Length > 0
                 && cueScheduler.TryGetNextCue(lapCounter.CurrentLap, lapCounter.Position, lapCounter.Order, out var next))
             {
+                // ⚠ cue の id は出さない。`cue_B_2` を読んでもスタッフには何もできない（開発語で、
+                // 直し方にも繋がらない）。知りたいのは「次に何かが起きるのはどこか」だけ。
                 sb.Append("\n次の演出: ");
                 sb.Append(next.lap);
                 sb.Append("周目 カメラ");
                 sb.Append(next.camera + 1);
-                sb.Append(" 「");
-                sb.Append(string.IsNullOrEmpty(next.cueId) ? "（cue 未指定）" : next.cueId);
-                sb.Append('」');
             }
 
             // 行3: カメラ1○ カメラ2○ カメラ3×（○=映像が届いている / ×=届いていない・半角スペース 2 個区切り）。
@@ -337,55 +337,90 @@ namespace FixedCamVr.Diagnostics
             // 行3.5: 映像の遅れ（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
             // **絶対の end-to-end ではない** — Unity が観測できる分（到着の揺らぎ + 展開 + 提示）だけ。
             // 配信端末が熱で品質を落としている時はそれも言う（原因が経路だと誤解させない）。
+            // ⚠ **常時は出さない。** 普段この数値を読んでもスタッフには何もできない
+            // （数値を残す基準は「その数字で判断が変わるか」）。企画書 2.3 の目標 100ms を超えたときだけ
+            // 出す — そのときは「Wi-Fi を替える」という行動がある。揺らぎの内訳は落とした（判断が
+            // 変わらない）。発熱は下の「異常 1 件」へ移した（手順とセットで出すため）。
+            const int LatencyWarnMs = 100;
             var activeStream = registry != null ? registry.GetActive() : null;
             if (activeStream != null)
             {
-                sb.Append("\n映像の遅れ ");
-                sb.Append(Mathf.RoundToInt(activeStream.Latency.ObservedMs));
-                sb.Append("ms");
-                int jitter = Mathf.RoundToInt(activeStream.Latency.ArrivalJitterMs);
-                if (jitter > 0)
+                int ms = Mathf.RoundToInt(activeStream.Latency.ObservedMs);
+                if (ms > LatencyWarnMs)
                 {
-                    sb.Append("（うち揺らぎ ");
-                    sb.Append(jitter);
-                    sb.Append("ms）");
+                    sb.Append("\n映像が ");
+                    sb.Append(ms);
+                    sb.Append("ms 遅れています（Wi-Fi が 2.4GHz なら 5GHz へ）");
                 }
-                if ((activeStream.Health?.throttleStage ?? 0) > 0) sb.Append(" ⚠配信端末が発熱で品質を下げています");
             }
 
-            // 行4（該当時のみ・複数該当なら優先度順に 1 つだけ）: 信号断 / 追従凍結 / 切替中 / 切替抑止。
-            if (signalFx != null && signalFx.SignalLost)
-                sb.Append("\n⚠映像が届いていません（砂嵐表示中）");
-            else if (signalFx != null && signalFx.TrackingFrozen)
-                sb.Append("\n⚠ヘッドセットの位置を見失っています");
-            else if (switchDirector != null && switchDirector.Dipping)
-                sb.Append("\nカメラ切替中…");
-            else if (switchDirector != null && switchDirector.SwitchSuppressed)
-                sb.Append("\nカメラ切替を一時停止中");
-
-            // 行5（該当時のみ）: 位置合わせの状態（要再登録 > 未登録 > 済み の優先順位）。
-            // 残差は cm 表記（Mathf.RoundToInt で整数 cm・sb.Append(int) で GC ゼロ）。
-            if (courseFrame != null)
+            // 行4-5: 異常は**最優先の 1 件だけ**を「何が起きたか」＋「何をすれば直るか」の 2 行で出す。
+            //
+            // 旧実装は異常を状態の報告だけで並べていて（`⚠映像が届いていません（砂嵐表示中）`
+            // `⚠ヘッドセットの位置を見失っています` 等）、**8 種のうち復帰動作を書いているものが 0 だった**。
+            // 読んだスタッフは何をすればいいか分からず現場で黙って立つ。手順は RecoveryGuidance が
+            // 1 箇所で持ち、異常を足すには手順を書く以外の道が無い（テストが機械で固定する）。
+            //
+            // 複数を並べないのは、5 行のステータスに 3 行の手順が積むと HMD では読み切れないため。
+            ShowAlert alert = PickAlert(out int alertCam);
+            if (alert != ShowAlert.None)
             {
-                if (courseFrame.NeedsReRegistration) sb.Append("\n⚠位置合わせのやり直しが必要です");
-                else if (!courseFrame.HasRegistration) sb.Append("\n⚠位置合わせが必要です");
-                else
+                sb.Append('\n');
+                sb.Append(RecoveryGuidance.What(alert, alertCam));
+                sb.Append('\n');
+                sb.Append(RecoveryGuidance.How(alert));
+                return;
+            }
+
+            // ここから下は「異常が無いとき」だけ。正常時の確認に使う情報。
+            // `カメラ切替中…` は削除した（dip は 0.17 秒で、読む前に消える）。
+            if (switchDirector != null && switchDirector.SwitchSuppressed)
+                sb.Append("\n演出中はカメラが切り替わりません");
+
+            if (courseFrame != null && courseFrame.HasRegistration)
+            {
+                sb.Append("\n位置合わせOK");
+                if (courseFrame.MaxResidualM > 0f)
                 {
-                    sb.Append("\n位置合わせOK");
-                    if (courseFrame.MaxResidualM > 0f)
+                    int cm = Mathf.RoundToInt(courseFrame.MaxResidualM * 100f);
+                    if (cm > 0) // 丸めて 0cm になる微小のずれは「位置合わせOK」のみに畳む
                     {
-                        int cm = Mathf.RoundToInt(courseFrame.MaxResidualM * 100f);
-                        if (cm > 0) // 丸めて 0cm になる微小残差は「位置合わせOK」のみに畳む
-                        {
-                            sb.Append("（ずれ ");
-                            sb.Append(cm);
-                            sb.Append("cm）");
-                        }
+                        sb.Append("（ずれ ");
+                        sb.Append(cm);
+                        sb.Append("cm）");
                     }
-                    // 床の高さを測っていない登録＝ワイヤーや人形が沈んで見える原因。名指しする。
-                    if (!courseFrame.HasFloorY) sb.Append(" ⚠床の高さは未測定");
                 }
             }
+        }
+
+        /// <summary>
+        /// いま出すべき異常を 1 つ選ぶ（<see cref="ShowAlert"/> の宣言順が優先度）。
+        /// 上にあるほど「体験が止まっている / 先に直さないと先へ進めない」。
+        ///
+        /// 導入の中止は <see cref="ShowRunDirector.BlackoutMessage"/> の非空で判定する
+        /// （公開プロパティだけで済み、IntroDirector への新しい参照を作らない。終了時は空）。
+        /// </summary>
+        private ShowAlert PickAlert(out int cameraNumber)
+        {
+            cameraNumber = registry != null && registry.Count > 0 ? registry.ActiveIndex + 1 : 0;
+
+            ShowRunDirector? run = ResolveRun();
+            if (run != null && run.Phase == ShowPhase.Intro && !string.IsNullOrEmpty(run.BlackoutMessage))
+                return ShowAlert.IntroAborted;
+
+            if (courseFrame != null && courseFrame.NeedsReRegistration) return ShowAlert.NeedsReRegistration;
+            if (courseFrame != null && !courseFrame.HasRegistration) return ShowAlert.NotRegistered;
+            if (signalFx != null && signalFx.SignalLost) return ShowAlert.NoVideo;
+            if (signalFx != null && signalFx.TrackingFrozen) return ShowAlert.TrackingLost;
+
+            var active = registry != null ? registry.GetActive() : null;
+            if ((active?.Health?.throttleStage ?? 0) > 0) return ShowAlert.Throttled;
+
+            // 床の高さを測っていない位置合わせ＝線や人形が沈んで見える原因。体験は成立するので最後。
+            if (courseFrame != null && courseFrame.HasRegistration && !courseFrame.HasFloorY)
+                return ShowAlert.FloorNotMeasured;
+
+            return ShowAlert.None;
         }
     }
 }

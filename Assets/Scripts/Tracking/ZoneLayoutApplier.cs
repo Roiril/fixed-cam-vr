@@ -93,6 +93,10 @@ namespace FixedCamVr.Tracking
                 // OS recenter でズレた状態のまま体験を始めさせない。HMD 内の警告は体験者が
                 // 被っている間スタッフに見えないので、卓の本番前チェックへ届ける（2026-07-28）。
                 showControl.CourseNeedsReRegProvider = () => frame.NeedsReRegistration;
+                // 「B で確定した」を事象として検出する口。IntroDirector が中止からの復帰を
+                // 1 段（位置合わせを撃ち直すだけ）にするのに使う。プレビューでは変わらない値なので、
+                // 確定前に導入が再開して登録ビューと演出が混ざることがない。
+                showControl.CourseRegistrationStampProvider = () => frame.SavedAtIso;
             }
             var trk = tracker;
             showControl.CurrentZoneLabelProvider = () => trk != null && trk.CurrentZone != null ? trk.CurrentZone.Label : "";

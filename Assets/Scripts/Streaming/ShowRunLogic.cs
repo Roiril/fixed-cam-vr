@@ -163,7 +163,20 @@ namespace FixedCamVr.Streaming
         /// 演出が終われば <see cref="RestartIntroClock"/> で計時が 0 に戻るので、そこから
         /// <see cref="_introMinSec"/> ぶんの慣らし歩行が始まる ＝ 設計どおりの順序になる。
         /// </param>
-        public ShowRunEvent Tick(float dt, bool atStartZone, bool takeRunning, bool introPlaying = false)
+        /// <param name="introAborted">
+        /// 導入を中止したか（トラッキング原点が変わって部屋の座標がずれた）。
+        /// <b>true のあいだ自動では本編へ進めない。</b>
+        ///
+        /// 中止は <c>_logic.Disable()</c> を通るので <paramref name="introPlaying"/> が false へ落ちる。
+        /// <see cref="_introElapsed"/> は起動から数えていて設営でとうに過ぎており、体験者はスタート区間に
+        /// 居るので、これが無いと<b>中止したその瞬間に本編へ飛ぶ</b>（ずれた座標で 3 周が始まり、
+        /// 体験者は壁の位置が違う世界を手でたどる）。
+        ///
+        /// スタッフの明示操作（<see cref="RequestAdvance"/>）は従来どおり通す — 「ずれていても進めたい」
+        /// と人が言っているなら、それは運営の判断で、コードが止める話ではない。
+        /// </param>
+        public ShowRunEvent Tick(float dt, bool atStartZone, bool takeRunning, bool introPlaying = false,
+                                 bool introAborted = false)
         {
             if (dt < 0f) dt = 0f;
 
@@ -181,7 +194,7 @@ namespace FixedCamVr.Streaming
                     // 演出の最中は自動では進めない（明示操作 _advanceRequested は従来どおり効く —
                     // スタッフが「いま進めたい」と言っているなら演出より人の判断を優先する）。
                     bool auto = _introAutoAdvance && _introElapsed >= _introMinSec
-                                && atStartZone && !introPlaying;
+                                && atStartZone && !introPlaying && !introAborted;
                     if (_advanceRequested || auto)
                     {
                         _advanceRequested = false;

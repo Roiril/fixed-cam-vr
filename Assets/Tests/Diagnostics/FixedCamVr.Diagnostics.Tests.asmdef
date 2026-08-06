@@ -1,0 +1,26 @@
+{
+    "name": "FixedCamVr.Diagnostics.Tests",
+    "rootNamespace": "FixedCamVr.Diagnostics.Tests",
+    "references": [
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner",
+        "FixedCamVr.Diagnostics",
+        "FixedCamVr.Streaming",
+        "FixedCamVr.Tracking"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -36,7 +36,11 @@ namespace FixedCamVr.Streaming
         private float _endFadeSec = ShowRunDefaults.EndFadeSec;
         private float _targetSec = ShowRunDefaults.TargetSec;
 
-        /// <summary>相が変わったときに発火する（<c>ShowEndingFader</c> / StatusHud / heartbeat が読む）。</summary>
+        /// <summary>
+        /// 相が変わったときに発火する（StatusHud / heartbeat / IntroDirector が読む）。
+        /// ⚠ <c>ShowEndingFader</c> はこれを購読しない — <b>導入の中止は相の変化ではない</b>ので届かず、
+        /// あちらは <see cref="ShouldBlackout"/> を毎フレーム読む 1 系統にしてある。
+        /// </summary>
         public event Action<ShowPhase>? PhaseChanged;
 
         public ShowPhase Phase => _logic.Phase;
@@ -54,6 +58,40 @@ namespace FixedCamVr.Streaming
 
         /// <summary>終了条件は満たしたが走行中の演出を見せ切るために待っているか（卓表示用）。</summary>
         public bool EndHolding => _logic.EndHolding;
+
+        /// <summary>
+        /// 視界を黒で閉じるべきか。<b>終了</b>と<b>導入の中止</b>の 2 つで立つ。
+        ///
+        /// 中止で閉じるのは、トラッキング原点がずれた状態の世界を体験者に見せないため。黙って本編の
+        /// 画へ切り替わると、体験者は「始まった」と思って歩き出し、<b>壁の位置が違う世界を手でたどる</b>
+        /// ことになる（実物に手をぶつける）。
+        ///
+        /// 新しいラッチは持たない（毎フレーム導出する）。中止の唯一のラッチは
+        /// <see cref="IntroDirector.Aborted"/> で、それが落ちるのは BeginIntro だけ。
+        /// </summary>
+        public bool ShouldBlackout =>
+            _logic.Phase == ShowPhase.Finished
+            || (_logic.Phase == ShowPhase.Intro && _intro != null && _intro.Aborted);
+
+        /// <summary>
+        /// 黒の上に出す 1 行（空なら文字なし）。<c>ShowEndingFader</c> が描く。
+        ///
+        /// 終了は文字なし — 黒だけで「終わった」が伝わる。中止は「待ってよい」と伝える必要がある。
+        /// 黒だけだと体験者は終わったと誤解して HMD を外し、スタッフが直す前に立ち去る。
+        /// <b>理由は書かない</b>（機器の言葉を体験の中に持ち込まない）。スタッフ向けの復帰手順は StatusHud。
+        /// </summary>
+        public string BlackoutMessage =>
+            _logic.Phase == ShowPhase.Intro && _intro != null && _intro.Aborted ? "少しお待ちください" : "";
+
+        /// <summary>
+        /// 黒へ落とす時間 (秒)。終了は <see cref="EndFadeSec"/>（既定 1.5s ＝ 余韻）、中止は素早く閉じる
+        /// （ずれた世界を見せている時間を短くしたい）。中止側を const にしてあるのは、SerializeField に
+        /// すると既存シーンに焼かれた 0 が読まれて「一瞬で真っ黒」になるため。
+        /// </summary>
+        public float BlackoutFadeSec => _logic.Phase == ShowPhase.Finished ? _endFadeSec : AbortFadeSec;
+
+        /// <summary>導入を中止したときに黒へ落とす時間 (秒)。</summary>
+        private const float AbortFadeSec = 0.4f;
 
         /// <summary>show.json <c>run</c> を反映する（欠落ならコード既定）。</summary>
         public void Configure(ShowRunDef? def)
@@ -164,7 +202,12 @@ namespace FixedCamVr.Streaming
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
             bool introPlaying = _intro != null && _intro.Active && _intro.Stage != IntroStage.Black;
 
-            ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning, introPlaying);
+            // 中止（トラッキング原点がずれた）は introPlaying では表せない — 中止は _logic.Disable() を
+            // 通るので introPlaying が false へ落ち、そのまま自動で本編へ飛ぶ。別引数で渡して止める。
+            bool introAborted = _intro != null && _intro.Aborted;
+
+            ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning, introPlaying,
+                                          introAborted);
 
             // ⚠ ゲートは**イベントを配る前に**合わせる。RunBegan の処理は
             // BeginMainRun → LapCounter.ResetRun → SeedCurrentZone → CueScheduler.NotifyCameraEntered

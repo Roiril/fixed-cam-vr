@@ -1103,6 +1103,21 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Func<bool>? CourseNeedsReRegProvider;
 
+        /// <summary>
+        /// 位置合わせが<b>確定保存された時刻</b>の供給元（CourseFrame.SavedAtIso を注入）。
+        /// これが変わった＝スタッフが B で確定した、という<b>事象</b>を検出するために使う。
+        ///
+        /// <see cref="IntroDirector"/> が導入の中止から自力で復帰するのに要る。中止の復帰は本来
+        /// 「① 位置合わせを撃ち直す ② ランリセット」の 2 段で、**順序を逆にすると直らない**
+        /// （先にランリセットしても要再登録フラグが立ったままで即また中止される）。人間に順序を
+        /// 暗記させる代わりに、確定を検出して導入をやり直すことで 1 段にする。
+        ///
+        /// ⚠ <c>CourseNeedsReRegProvider</c> の false 化では代用できない。プレビュー
+        /// （<c>SetRegistration(save:false)</c>）でもフラグは降りるので、B 確定の前に導入が再開して
+        /// 登録ビューと演出が混ざる。<c>SavedAtIso</c> は <c>SaveRegistration</c> でしか変わらない。
+        /// </summary>
+        public Func<string>? CourseRegistrationStampProvider;
+
         private string ConfigCachePath => Path.Combine(Application.persistentDataPath, configCacheFileName);
 
         [Serializable] private class ShowState

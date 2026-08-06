@@ -26,7 +26,8 @@ namespace FixedCamVr.Diagnostics
         private const string NormalBody =
             "A：カメラを次へ送る\n" +
             "B：ステータス表示 切/入\n" +
-            "グリップ2秒：新しい体験者（周回リセット）\n" +
+            // 「周回リセット」は開発語で、スタッフには何が起きるか分からない（廃語）。
+            "グリップ2秒：新しい体験者にする\n" +
             "トリガー2秒：位置合わせを開始";
 
         private const string RegBody =

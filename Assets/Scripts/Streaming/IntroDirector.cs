@@ -67,6 +67,22 @@ namespace FixedCamVr.Streaming
         /// <summary>演出中か。</summary>
         public bool Active => _logic.Active;
 
+        /// <summary>
+        /// 導入を中止したか（トラッキング原点が変わって部屋の座標がずれた）。
+        /// <b>本編へ自動で進ませないために公開する。</b>
+        ///
+        /// これが無いと中止が中止にならない。<see cref="AbortIntro"/> は <c>_logic.Disable()</c> するので
+        /// <see cref="IntroLogic.Active"/>（<c>_stage != Off &amp;&amp; != Done</c>）が false へ落ち、
+        /// <see cref="ShowRunDirector"/> が渡す introPlaying も false になる。
+        /// <c>introMinSec</c> は起動から数えていて設営・待機でとうに過ぎており、体験者はスタート区間に
+        /// 居る（そこで導入が始まったので）ため、<b>中止したその瞬間に「時間経過 ＋ スタート区間に居る」が
+        /// 揃って本編へ飛ぶ</b>。ずれた座標系で 3 周が始まり、体験者は壁の位置が違う世界を手でたどる。
+        /// しかも <see cref="PromptText"/> は相で門を閉じているので、飛んだ瞬間に警告まで消える。
+        ///
+        /// 落ちるのは <see cref="BeginIntro"/> だけ（＝ランリセット / 位置合わせのやり直し）。
+        /// </summary>
+        public bool Aborted => _aborted;
+
         /// <summary>条件待ちで足踏みしているか（スタッフが手で送れることを卓に出す）。</summary>
         public bool Holding => _logic.Holding;
 
@@ -88,23 +104,37 @@ namespace FixedCamVr.Streaming
                 // 重なって残る（IntroPrompt は queue 5100 で ShowEndingFader の黒より手前）。
                 // `_aborted` を落とすのは BeginIntro だけで、中止の原因（要再登録フラグ）は
                 // sticky なので、フラグ側では消えない。
-                if (_aborted && (runDirector == null || runDirector.Phase == ShowPhase.Intro))
-                    return "いちど止めます。スタッフをお呼びください";
+                // ⚠ 中止のメッセージはここに置かない。この面は視線前方 1.5m で、視界を閉じる
+                // ShowEndingFader の黒は 0.3m ＝ **黒が手前に来て文字を隠す**（Canvas は深度で解決する）。
+                // 「黒で閉じる」と「待ってよいと伝える」は同じ面が持つのが正しいので、中止時の 1 行は
+                // ShowRunDirector.BlackoutMessage → ShowEndingFader が黒の上に描く。
+                //
+                // 理由を体験者に説明しないのは、**取れる手が 1 つも無い相手に伝えても減るのは不安ではなく
+                // 没入**だから。旧文言「いちど止めます。スタッフをお呼びください」は、被っていて誰がどこに
+                // 居るかも見えない相手に、人を呼ぶ役まで振っていた。スタッフ向けの復帰手順は StatusHud。
 
+                // 「〜てみてください」の試行の含みを取る。上げた自分が画面に居ることが体験の内容
+                // そのものなので、依頼文でも操作説明にならない（3 周目に手が上がらない反転の伏線）。
                 if (_logic.Stage == IntroStage.Swap)
-                    return _def.raiseHandPrompt ? "右手を上げてみてください" : string.Empty;
+                    return _def.raiseHandPrompt ? "右手をあげてください" : string.Empty;
 
                 // 演出が終わった直後の数秒だけ、歩き出す合図を出す（慣らし歩行の入口）。
                 if (!_logic.Active && _walkPromptUntil > 0f && Time.unscaledTime < _walkPromptUntil)
-                    return "そのまま歩いてみてください";
+                    return "歩いてください";
 
-                // 段 0 は「何を待っているのか」を出す。開始位置を置いてあるのに位置合わせが
-                // 済んでいないと、体験者がそこに立っても始まらない — 黙っていると原因が分からない。
+                // 段 0 は「何を待っているのか」を出す。ただし**体験者に手立てが無いことは出さない** —
+                // 位置合わせが未了なのは機器側の不備で、読んでも体験者には何もできない（旧文言
+                // 「位置合わせがまだです（スタッフが始めます）」は体験者への業務連絡になっていた）。
+                // スタッフは StatusHud と卓の本番前チェックで気づく。
                 if (_logic.Stage == IntroStage.Black)
                 {
-                    if (showControl?.Layout?.ResolveStartSpot() == null) return string.Empty;   // スタッフ操作の運用
-                    if (!IsCourseRegistered()) return "位置合わせがまだです（スタッフが始めます）";
-                    return "スタート位置に立ってください";
+                    if (!IsCourseRegistered()) return string.Empty;
+                    // 始まり方に合わせて言う。線なら歩いて入ってくる動きのまま始まるので「進む」、
+                    // 円なら床の実物を指して「印に立つ」。旧文言「スタート位置に立ってください」は
+                    // 線方式で誤り（立つ場所が無い）で、かつ「スタート位置」が現場の何を指すか
+                    // 画面から分からなかった。
+                    if (!string.IsNullOrEmpty(_def.startLineId)) return "そのまま前へ進んでください";
+                    return showControl?.Layout?.ResolveStartSpot() != null ? "床の印に立ってください" : string.Empty;
                 }
                 return string.Empty;
             }
@@ -232,6 +262,9 @@ namespace FixedCamVr.Streaming
         {
             _sinceStart += Time.unscaledDeltaTime;
             ObserveHead();
+
+            // 中止中はここで折り返す。復帰は位置合わせの確定 1 つで済ませる（TryRecoverFromAbort）。
+            if (_aborted) { TryRecoverFromAbort(); return; }
 
             if (!_logic.Active)
             {
@@ -412,16 +445,43 @@ namespace FixedCamVr.Streaming
             Debug.Log("[Intro] 導入演出が終わり、慣らし歩行へ（固定視点に慣れる時間）");
         }
 
+        /// <summary>
+        /// 中止した時点の位置合わせの保存時刻。<b>これが変わったら（＝スタッフが B で確定したら）
+        /// 導入をやり直す。</b>
+        /// </summary>
+        private string _abortStamp = "";
+
         private void AbortIntro()
         {
             veil?.SetHidden();
             structureWire?.SetHidden();
             glitch?.ResetAll();
             _logic.Disable();
-            // 体験者にも伝える。黙って本編の画に切り替わると、体験者は「始まった」と思って歩き出し、
-            // 壁の位置が違う世界を手でたどることになる（計画 §9 の中止行が求めているのはこれ）。
+            // 視界は ShowRunDirector.ShouldBlackout → ShowEndingFader の黒が閉じる。黙って本編の画に
+            // 切り替わると、体験者は「始まった」と思って歩き出し、壁の位置が違う世界を手でたどる。
             _aborted = true;
+            _abortStamp = showControl?.CourseRegistrationStampProvider?.Invoke() ?? "";
             Debug.LogWarning("[Intro] トラッキング原点が変わったので導入演出を中止しました — 位置合わせをやり直してください");
+        }
+
+        /// <summary>
+        /// 位置合わせが確定し直されたら導入をやり直す（中止からの<b>1 段</b>復帰）。
+        ///
+        /// これが無いと復帰は「① 位置合わせを撃ち直す ② ランリセット」の 2 段で、**順序を逆にすると
+        /// 直らない**（先にランリセットしても要再登録フラグが立ったままで即また中止される）。
+        /// 現場のスタッフに順序を暗記させる代わりに、確定という事象を検出して構造で 1 段にする。
+        ///
+        /// ⚠ 要再登録フラグの false 化では代用できない。プレビュー（<c>SetRegistration(save:false)</c>）
+        /// でもフラグは降りるので、B 確定の前に再開して登録ビューと演出が混ざる。
+        /// </summary>
+        private void TryRecoverFromAbort()
+        {
+            // 明示操作で本編へ進めた後は、やり直さない（スタッフがそう決めたということ）。
+            if (runDirector != null && runDirector.Phase != ShowPhase.Intro) return;
+            string stamp = showControl?.CourseRegistrationStampProvider?.Invoke() ?? "";
+            if (stamp == _abortStamp) return;
+            Debug.Log("[Intro] 位置合わせが直ったので導入演出をやり直します");
+            BeginIntro();
         }
     }
 }

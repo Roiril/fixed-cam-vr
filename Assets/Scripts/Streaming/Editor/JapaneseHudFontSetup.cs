@@ -100,6 +100,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 // ここに無いと合図を出せるようにしても実機は 1 文字残らず豆腐になる。
                 // 実装時（同日）から漏れていたが、読む者が居なかったので露見していなかった。
                 "Assets/Scripts/Streaming/IntroDirector.cs",
+                // 2026-08-06 追加: 異常の「何が起きたか / 何をすれば直るか」の全文言（StatusHud が描く）と、
+                // 視界を閉じる黒の上に出す 1 行。**異常の文言はすべて RecoveryGuidance にある**ので、
+                // ここに無いと現場で復帰手順が読めない（実機は静的ベイクなので豆腐になる）。
+                "Assets/Scripts/Diagnostics/RecoveryGuidance.cs",
+                "Assets/Scripts/Streaming/ShowRunDirector.cs",
             };
             var set = new System.Collections.Generic.SortedSet<char>();
             for (char c = ' '; c <= '~'; c++) set.Add(c);                       // ASCII 印字可能

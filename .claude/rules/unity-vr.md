@@ -271,6 +271,48 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
 - StatusHud の 1 行目が相と経過を出す（`導入中 0:12` / `2周目/全3周 ・ 経過 1:05` / `体験おわり…`）。
   **HMD 内の文言を足したら `Tools/FixedCamVr/Setup/Generate Japanese HUD Font` を再実行**（忘れると実機で豆腐）。
 
+#### 導入の中止は本当に中止になる（2026-08-06 修正）
+
+トラッキング原点が変わると `IntroDirector.AbortIntro` が演出を畳むが、**それだけでは中止が中止に
+ならなかった**。中止は `IntroLogic.Disable()` を通るので `Active`（`_stage != Off && != Done`）が
+false へ落ち、`ShowRunDirector` が渡す `introPlaying` も false になる。`introMinSec` は起動から
+数えていて設営でとうに過ぎており、体験者はスタート区間に居るので、**中止したその瞬間に
+「時間経過 ＋ スタート区間に居る」が揃って本編へ飛んでいた**（ずれた座標で 3 周が始まり、
+体験者は壁の位置が違う世界を手でたどる）。しかも警告は相で門を閉じていたので同時に消えていた。
+
+- [`IntroDirector.Aborted`](../../Assets/Scripts/Streaming/IntroDirector.cs) を公開し、
+  `ShowRunLogic.Tick(…, introAborted)` の `auto` 条件へ入れる。**明示操作（⏭）は通す**
+  — 「ずれていても進めたい」は運営の判断で、コードが止める話ではない
+- 視界は [`ShowRunDirector.ShouldBlackout`](../../Assets/Scripts/Streaming/ShowRunDirector.cs) →
+  `ShowEndingFader` の黒が閉じる（終了 1.5s / 中止 0.4s）。新しい凍結ラッチは足していない
+  （唯一のラッチは `_aborted` で、落ちるのは `BeginIntro` だけ）
+- **復帰は 1 段**。`IntroDirector.TryRecoverFromAbort` が「位置合わせが確定し直された」を
+  `CourseRegistrationStampProvider`（= `CourseFrame.SavedAtIso`）の変化で検出して導入をやり直す。
+  ⚠ 要再登録フラグの false 化では代用できない（プレビュー `SetRegistration(save:false)` でも降りるので、
+  B 確定の前に再開して登録ビューと演出が混ざる）
+
+#### HMD に出す文言の規約（2026-08-06 制定）
+
+**読み手を面で分ける。** 混ぜると、体験者がシステムの不備を読み、スタッフが読めない場所に手順が出る。
+
+| 面 | 読み手 | 出すもの |
+|---|---|---|
+| `IntroPrompt`（視線前方 1.5m） | **体験者** | 体験の一部として機能する合図だけ（`右手をあげてください` / `歩いてください` / `そのまま前へ進んでください`） |
+| `ShowEndingFader` の黒（0.3m） | **体験者** | 中止時の `少しお待ちください` のみ。⚠ 黒が 1.5m より手前なので、**この 1 行は黒を持つ側が描く**（`IntroPrompt` に置くと隠れる） |
+| `StatusHud`（視線前方・B で出す） | **被った人＝スタッフ** | 相・周回・場所・異常 1 件 ＋ 直し方 |
+| `ControllerGuidePanel`（手元） | **スタッフ** | ボタンの早見表だけ。⚠ 2 秒で消える `ShowTransient` と手を下げると視界外なので、**復帰手順の置き場にしない** |
+
+- **異常は「何が起きたか」＋「何をすれば直るか」の 2 行で、最優先の 1 件だけ**を本文と差し替えで出す。
+  文言は [`RecoveryGuidance`](../../Assets/Scripts/Diagnostics/RecoveryGuidance.cs) が 1 箇所で持ち、
+  `RecoveryGuidanceTests` が**全異常に手順があること**を機械で固定する（異常を足すには手順を書く以外の
+  道が無い）。旧実装は 8 種のうち復帰動作を書いているものが **0** で、読んだスタッフは現場で黙って立った
+- **数値は「その数字で判断が変わるか」で残す。** 残す = ずれ cm / カメラ番号 / 経過 / 周回。
+  消した = 遅れの常時表示（100ms 超のみ）/ 揺らぎの内訳 / cue の id / `カメラ切替中…`（0.17 秒で読めない）
+- **語は 3 語に固定**（「位置合わせ」「×印」「点」）。廃語 = 登録 / 再登録 / 基準点 / マーク / 残差 /
+  誤差 / 周回リセット / 砂嵐 / course。テストが混入を落とす
+- **体験者に取れる手が無いことは体験者に出さない**（旧 `位置合わせがまだです（スタッフが始めます）`）。
+  減るのは不安ではなく没入で、機器の言葉がホラー体験の入口に出た瞬間に世界が壊れる
+
 ### 周回カウントと cue 自動発火（2026-07-17〜）
 
 「何周目のどのゾーンで cue を出すか」の事前オーサリング（詳細は [streaming.md](streaming.md) の該当節と
