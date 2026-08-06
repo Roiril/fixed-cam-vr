@@ -504,6 +504,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public ShowIntroDef? intro;
 
+        /// <summary>終幕演出（本編 → パススルーへ戻して終わる）。無ければコード既定で走る。</summary>
+        public ShowOutroDef? outro;
+
         /// <summary>
         /// 終了条件が成立してから、演出が走っていなくても必ず待つ秒数。
         /// **帰りの A（lap = totalLaps + 1 の order[0]）に置いた演出が始まる猶予**で、
@@ -527,6 +530,46 @@ namespace FixedCamVr.Streaming
         public float ResolveEndGraceSec() => endGraceSec > 0f ? endGraceSec : ShowRunDefaults.EndGraceSec;
 
         public float ResolveEndHoldMaxSec() => endHoldMaxSec > 0f ? endHoldMaxSec : ShowRunDefaults.EndHoldMaxSec;
+    }
+
+    /// <summary>
+    /// 終幕演出の設定。show.json <c>run.outro</c>。
+    ///
+    /// ⚠ <see cref="ShowIntroDef"/> と同じく **present-flag は持たない**。キーが無い show.json
+    /// （焼き込み・端末キャッシュに残った古いもの）で <c>enabled=false</c> に化けると、
+    /// 終幕が黙って出ずに黒で終わる。<see cref="LooksUnset"/> で検出して既定へ落とす。
+    /// </summary>
+    [Serializable] public sealed class ShowOutroDef
+    {
+        /// <summary>終幕を出すか。false なら従来どおり黒へフェードして終わる。</summary>
+        public bool enabled = true;
+
+        /// <summary>
+        /// 終幕を早めるラインの id（<c>layout.lines[]</c>）。
+        ///
+        /// ⚠ <b>これは終端そのものではない。</b> 踏めば「画面が空き次第すぐ」始まり、踏まなくても
+        /// <c>run.endGraceSec</c> の経過で始まる。線を終端にすると、**帰りの経路がその線分を跨ぐ保証が
+        /// 幾何上どこにも無い**ので、踏まなかった体験者が <c>hardLimitSec</c> まで終われなくなる。
+        ///
+        /// ⚠ <c>run.intro.startLineId</c> を継承しない（空の意味が 2 つになり、線を後で流用したときに
+        /// 黙って壊れる）。同じ線を使いたいなら**同じ id を明示的に書く**。空 = 位置トリガー無し。
+        /// </summary>
+        public string lineId = "";
+
+        // 尺の既定は 2 箇所（ここと <see cref="OutroTiming.Default"/>）に現れる。値は一致させること。
+        public float unswapSec = 1.5f;
+        public float openSec = 2.5f;
+        public float restoreSec = 2.0f;
+        public float holdSec = 1.5f;
+
+        /// <summary>キーごと無い（JsonUtility が 0 で埋めた）形か。</summary>
+        public bool LooksUnset() =>
+            !enabled && unswapSec <= 0f && openSec <= 0f && restoreSec <= 0f && holdSec <= 0f;
+
+        public OutroTiming ToTiming() => new OutroTiming
+        {
+            unswapSec = unswapSec, openSec = openSec, restoreSec = restoreSec, holdSec = holdSec,
+        }.Sanitized();
     }
 
     /// <summary>
