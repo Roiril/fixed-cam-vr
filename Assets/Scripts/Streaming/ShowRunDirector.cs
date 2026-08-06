@@ -70,8 +70,11 @@ namespace FixedCamVr.Streaming
         /// 新しいラッチは持たない（毎フレーム導出する）。中止の唯一のラッチは
         /// <see cref="IntroDirector.Aborted"/> で、それが落ちるのは BeginIntro だけ。
         /// </summary>
+        /// ⚠ <b>終幕（2D スクリーン → パススルー）が有効なら終了で黒は出さない。</b> 黒で閉じてから
+        /// 現実へ戻すと継ぎ目が 2 回になり、しかも「終わった」と思わせた後に画が戻るので締まらない。
+        /// 終幕は本編の画から直に始まる（<c>OutroStage.Warm</c> のあいだは映像のまま裏で点火を待つ）。
         public bool ShouldBlackout =>
-            _logic.Phase == ShowPhase.Finished
+            (_logic.Phase == ShowPhase.Finished && !OutroDef.enabled)
             || (_logic.Phase == ShowPhase.Intro && _intro != null && _intro.Aborted);
 
         /// <summary>
@@ -112,7 +115,17 @@ namespace FixedCamVr.Streaming
             var i = def?.intro;
             IntroDef = (i == null || i.LooksUnset) ? new ShowIntroDef() : i;
             IntroDefChanged?.Invoke(IntroDef);
+            // 終幕も同じ罠を踏む（キー欠落で enabled=false に化け、黙って黒で終わる）。
+            var o = def?.outro;
+            OutroDef = (o == null || o.LooksUnset()) ? new ShowOutroDef() : o;
+            OutroDefChanged?.Invoke(OutroDef);
         }
+
+        /// <summary>show.json の終幕設定（<c>OutroDirector</c> が読む）。未設定ならコード既定。</summary>
+        public ShowOutroDef OutroDef { get; private set; } = new ShowOutroDef();
+
+        /// <summary>終幕設定が更新された（<c>OutroDirector</c> が購読して尺を入れ替える）。</summary>
+        public event Action<ShowOutroDef>? OutroDefChanged;
 
         /// <summary>導入設定が更新された（<c>IntroDirector</c> が購読して尺を入れ替える）。</summary>
         public event Action<ShowIntroDef>? IntroDefChanged;

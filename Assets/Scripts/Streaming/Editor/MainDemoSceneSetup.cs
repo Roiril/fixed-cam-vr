@@ -445,6 +445,17 @@ namespace FixedCamVr.Streaming.EditorTools
             //   §2 の伏線（3 周目の反転）が張られないままだった。StatusHud はスタッフ用で既定 OFF
             //   なので相乗りできず、体験者専用の面を分けてある。
             CreateIntroPrompt(centerEye.transform, introDirector);
+            // 終幕（2D スクリーン → パススルー）。導入と**同じ覆い**を使う（開口の式を共有しないと
+            // 閉じた形と開く形が食い違う）。IntroDirector と同じオブジェクトに載せるので、
+            // 進行役が 2 つに散らず、PassthroughStyler の自己解決も 1 度で済む。
+            var outroDirector = introDirector.gameObject.GetComponent<OutroDirector>();
+            if (outroDirector == null) outroDirector = introDirector.gameObject.AddComponent<OutroDirector>();
+            GlitchFx? screenGlitch = screenGo != null ? screenGo.GetComponent<GlitchFx>() : null;
+            var outroSo = new SerializedObject(outroDirector);
+            TrySetObjectRef(outroSo, "runDirector", runDirector);
+            TrySetObjectRef(outroSo, "veil", introVeil);
+            TrySetObjectRef(outroSo, "glitch", screenGlitch);
+            outroSo.ApplyModifiedPropertiesWithoutUndo();
             // 段 3 の構造の線（部屋の輪郭とカメラの印）。LineRenderer は world 空間で描くので
             // 親の transform には依存しない（IntroDirector と同じオブジェクトに載せる）。
             // パススルー自体の見た目（彩度・輪郭線）は Assembly-CSharp 側の PassthroughStyler が当てる。

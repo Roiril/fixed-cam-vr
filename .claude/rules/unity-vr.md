@@ -291,6 +291,29 @@ false へ落ち、`ShowRunDirector` が渡す `introPlaying` も false になる
   ⚠ 要再登録フラグの false 化では代用できない（プレビュー `SetRegistration(save:false)` でも降りるので、
   B 確定の前に再開して登録ビューと演出が混ざる）
 
+#### 終幕（2D スクリーン → パススルー）— 2026-08-07 に実行体を入れた
+
+導入の逆を辿って現実へ戻して終わる。判断は [`OutroLogic`](../../Assets/Scripts/Streaming/OutroLogic.cs)、
+配線は [`OutroDirector`](../../Assets/Scripts/Streaming/OutroDirector.cs)（`IntroDirector` と同じ
+GameObject に載る）。段は **Warm**（裏でパススルーを点火して待つ・画は本編のまま）→ **Unswap**（枠の中身が
+映像から現実へ）→ **Open**（枠が開く）→ **Restore**（色と質感が戻る）→ **Hold**（素のパススルー）。
+既定の尺は 1.5 / 2.5 / 2.0 / 1.5 = **7.5 秒**（`run.outro` で調整）。
+
+- **覆いは導入と同じ [`IntroVeil`](../../Assets/Scripts/Streaming/IntroVeil.cs)**。開口の式を共有しないと
+  「閉じた形」と「開く形」が食い違う
+- **パススルーの見え方は `PassthroughStyler` が `Weights` を毎フレーム読む**（導入と同じ経路。
+  重みの語彙 `IntroWeights` を共有しているのでそのまま繋がる）。走っている方を読み、両方走ったら終幕優先
+- ⚠ **終幕が有効なら終了で黒を出さない**（`ShowRunDirector.ShouldBlackout` が `OutroDef.enabled` を見る）。
+  黒で閉じてから現実へ戻すと継ぎ目が 2 回になり、「終わった」と思わせた後に画が戻るので締まらない
+- ⚠ **`PassthroughStyler.disableWhenDone` は終幕の後は効かせない**（`Stage == Done` を見る）。
+  切ると最後に真っ黒になって「現実へ戻った」が台無しになる
+- ⚠ **点火待ちは `PassthroughReadyProvider`（OvrBridge から注入）**。Streaming asmdef は OVR を
+  参照しない規約なので、判定は向こうから差し込む。null なら true ＝待たずに進む
+  （`OutroLogic.WarmMaxSec` = 1.5s の上限もあるので「本編のまま固まる」ことはない）
+- `run.outro` のキーが無い show.json では JsonUtility が `enabled=false` に化けるので、
+  `ShowOutroDef.LooksUnset()` で検出して既定へ落とす（導入と同じ罠・同じ手当て）
+- **`run.outro.lineId` は未実装**（スキーマだけ）。いまは `run.endGraceSec` の経過で始まる
+
 #### 本編へ入る判定は「演出が終わったか」（2026-08-06 置き換え・慣らし歩行を外した）
 
 きょうの体験で**慣らし歩行は要らない**と判断し、`run.introMinSec` を 20 → **0** にした
