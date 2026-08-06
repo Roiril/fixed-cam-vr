@@ -307,13 +307,24 @@ select option { background: #111; color: var(--text-color); }
 .cam-col { border: 1px solid var(--line-soft); display: flex; flex-direction: column; }
 .cam-col.active { border-color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-color); }
 
+/* 見出し行の圧縮規約（2026-08-07）:
+   状態表示（カメラが生きているか）は本番でいちばん読まれるので、絶対に縮めない。
+   縮む余地は「どのカメラか」の識別子側にだけ持たせ、足りなければ折り返す。
+   旧実装は col-status に nowrap が無く flex-shrink も既定 1 だったため、
+   「配信元 未設定」が幅 12px の 1 文字ずつの縦列に潰れていた（実測）。 */
 .col-head {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 8px 10px; border-bottom: 1px solid var(--line-soft);
 }
 .col-name { font-weight: 600; letter-spacing: .08em; white-space: nowrap; }
-.col-src { opacity: var(--opacity-mute); font-size: 11px; }
-.col-status { margin-left: auto; font-size: 11px; letter-spacing: .08em; opacity: var(--opacity-mute); }
+.col-src {
+  opacity: var(--opacity-mute); font-size: 11px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.col-status {
+  margin-left: auto; font-size: 11px; letter-spacing: .08em; opacity: var(--opacity-mute);
+  flex: none; white-space: nowrap;
+}
 .col-status.ok { color: var(--accent-color); opacity: 1; }
 .col-status.ng { color: var(--danger-color); opacity: 1; }
 .col-switch { padding: 3px 9px; flex: none; font-size: 11px; letter-spacing: .04em; }
@@ -341,10 +352,14 @@ select option { background: #111; color: var(--text-color); }
 .cue-fire { min-width: 64px; }
 
 .ip-row { display: flex; gap: 6px; align-items: center; }
-.ip-row input { font-family: monospace; font-size: 11px; }
+/* ⚠ min-width:0 が要る。flex アイテムの既定 min-width:auto は「最小コンテンツ幅」で、
+   text 入力のそれは size 属性（既定 20 文字 ≒ 139px）から来る。これが下限として効くので、
+   flex-basis 46px を書いても 139px のまま並び、3 本で 427px（枠は 369px）へあふれて
+   認証欄が overflow:hidden に切り落とされていた（実測）。 */
+.ip-row input { font-family: monospace; font-size: 11px; min-width: 0; }
 .ip-host { flex: 1 1 90px; }
-.ip-port { flex: 0 0 46px; }
-.ip-auth { flex: 0 0 84px; }
+.ip-port { flex: 0 0 52px; }
+.ip-auth { flex: 0 1 92px; }
 
 .fx-rows { display: flex; flex-direction: column; gap: 2px; margin-top: 8px;
   padding-left: 6px; border-left: 2px solid var(--accent-color); }
@@ -476,10 +491,12 @@ header h1 { font-size: 14px; }
 .mc-title { margin-bottom: 6px; font-size: 10px; }
 .mc-title .hint { flex-basis: 100%; opacity: var(--opacity-mute); }
 
-/* 3 カメラを等幅 3 列固定（縦割り）。中央寄せで横に広がりすぎないよう上限。 */
-.cams { gap: 10px; max-width: 1180px; margin: 0 auto; grid-template-columns: repeat(3, 1fr); }
-@media (max-width: 1040px) { .cams { grid-template-columns: 1fr 1fr; max-width: none; } }
-@media (max-width: 680px)  { .cams { grid-template-columns: 1fr; } }
+/* カメラ列は台数で決まる（現在 A/B/C + 演出専用 D の 4 台）。
+   ⚠ 台数を固定値で書かない。旧実装は repeat(3, 1fr) で 3 台前提のまま D が増え、
+   D だけ 2 段目へ単独で落ちていた。auto-fit なら台数が変わっても崩れない。 */
+.cams { gap: 10px; max-width: 1180px; margin: 0 auto;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); }
+@media (max-width: 1040px) { .cams { max-width: none; } }
 
 .col-head { padding: 5px 8px; }
 .col-sec { padding: 5px 8px; }
@@ -885,6 +902,14 @@ input:-webkit-autofill:active {
 .app[data-mode="show"]  .cam-col [data-col-role="setup"],
 .app[data-mode="live"]  .cam-col [data-col-role="grade"],
 .app[data-mode="live"]  .cam-col [data-col-role="setup"] { display: none; }
+
+/* 見出し行にも同じ分割を効かせる（2026-08-07）。
+   役割セレクトと配信元スロット名（Phone01）は設営の話で、本番では読まない。
+   本番に残すのは「どのカメラか / 生きているか / 取れるか」の 3 つだけ。
+   ここを分けていなかったので、見出し行が 5 部品で 303px を要求して 284px の列からあふれ、
+   いちばん読みたい状態表示が潰れていた。演出専用の別は col-name::after のバッジが担う。 */
+.app[data-mode="live"] .cam-col .col-role,
+.app[data-mode="live"] .cam-col .col-src { display: none; }
 
 /* 監視列の位置は段で変わる。演出を組む面では編集が主役なので最後へ回し、
    場所合わせ・本番ではカメラそのものが主役なので先頭に置く
