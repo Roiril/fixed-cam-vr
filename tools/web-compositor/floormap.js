@@ -30,10 +30,11 @@ import {
 import {
   normalizeStartSpot, START_SPOT_DEFAULT, START_RADIUS_MIN, START_RADIUS_MAX,
 } from './intro-model.js';
+import { CAM_COLORS, camColor, GEO } from './palette.js';
 
-// カメラ index → 色（unity-vr.md の校正フットプリント配色に合わせる: 緑=0 / 青=1 / 橙=2）。
-const CAM_COLORS = ['#5ad19a', '#5aa8ff', '#ffae5e', '#d98cff', '#ff6b8e', '#8ad4ff'];
-const camColor = (i) => CAM_COLORS[((i % CAM_COLORS.length) + CAM_COLORS.length) % CAM_COLORS.length];
+// 配色は palette.js が正。palette は依存ゼロなので、
+// 「floormap は common.js に依存させない」決めを守ったまま 1 本にできる
+// （旧実装は CAM_COLORS を common.js と 2 本持っていて、片方だけ直せば黙って食い違った）。
 
 // グリッド既定寸法（契約）。
 const GRID_TILE = 0.15, GRID_COLS = 12, GRID_ROWS = 12;
@@ -54,7 +55,7 @@ const LINE_MAX = 12;         // 引ける本数の上限（増やしすぎると
 // 開始位置（導入演出の発火点）。course space の 1 点 + 半径。
 // カメラ色（CAM_COLORS）とも壁（#ffdead）ともライン（担当カメラ色）とも被らない色にする
 // — どのモードでも薄く描くので、他の要素と見間違えると「塗ったはずの色が違う」と誤読される。
-const START_COLOR = '#5ad1c8';
+const START_COLOR = GEO.start;
 const START_HIT = 13;        // 中心マーカーの掴み判定 (px)
 // regPoints 未設定 show.json の既定表示（L 字壁の外角側 2 点）。クリックで実データ化する。
 const DEFAULT_REG_POINTS = [
@@ -894,7 +895,7 @@ export function createFloorMap(container, deps) {
   // ドラッグで新規作成する最小サイズ (m)。room-model の退化しきい値（1cm）より**わざと大きい**
   // — クリックのつもりの数 px が「実機で見えない極小の壁」になると、消し方が分からず残り続ける。
   const ROOM_DRAW_MIN_M = 0.05;
-  const ROOM_WALL_COLOR = '#78dcff';   // 較正 UI のワイヤー配色（cu-wirekey .k-wall）と揃える
+  const ROOM_WALL_COLOR = GEO.wall;    // 較正 UI のワイヤー配色（cu-wirekey .k-wall）と揃える
   const ROOM_PROP_COLOR = '#9fd8a8';
 
   function roomWalls() { return roomModel ? roomModel.walls : []; }

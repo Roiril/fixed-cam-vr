@@ -72,8 +72,9 @@ export const containRect = (srcW, srcH, fw, fh) => {
 export const blendCfg = { feather: 0.3, colorMatch: true, colorStrength: 1, laplacian: false, levels: 7 };
 
 // カメラ index → 色（floormap.js / ribbon.js と同配色）。
-export const CAM_COLORS = ['#5ad19a', '#5aa8ff', '#ffae5e', '#d98cff', '#ff6b8e', '#8ad4ff'];
-export const camColor = (i) => CAM_COLORS[((i % CAM_COLORS.length) + CAM_COLORS.length) % CAM_COLORS.length];
+// 配色の正は palette.js（依存ゼロなので floormap.js も同じものを読める）。
+// ここは従来どおりの名前で使えるようにするための再輸出。
+export { CAM_COLORS, camColor, GEO, geoAlpha } from './palette.js';
 
 export const escapeHtml = (s) => String(s).replace(/[&<>"]/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

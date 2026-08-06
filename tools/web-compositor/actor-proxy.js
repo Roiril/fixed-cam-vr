@@ -19,6 +19,7 @@
 
 import { projectPoint } from './calib.js';
 import { calibMatchesSource } from './calib-session.js';
+import { GEO, geoAlpha } from './palette.js';
 
 // ---- プロキシの寸法（人体の概形。厳密さは要らないが、変えると「収まるか」の判断がずれる）----
 export const FOOT_RADIUS_M = 0.2;    // 足元マーカーの半径
@@ -289,9 +290,14 @@ export function proxyIssueText(geom, source) {
 //   純関数ではないが、ribbon（📍 画面で置く）と show-sim（▶ 検証）で**同じ絵**を出すために共有する。
 //   別々に描くと、片方だけ色や太さが変わって「どっちが正しいのか」が分からなくなる。
 
-const PROXY_COLOR = 'rgba(122, 214, 255, 0.9)';   // 実映像の暖色（#ffdead 系のワイヤー）と衝突しない寒色
-const PROXY_FILL = 'rgba(122, 214, 255, 0.16)';
-const PROXY_DIM = 'rgba(122, 214, 255, 0.4)';
+// 人形の色は palette.js の GEO.actor が正（白）。
+// 旧値 #7ad6ff は壁 #78dcff と RGB 差 (8,6,0) しか無く、index.html が
+// 「必ず見分けが付くようにする」と書いた要求を満たしていなかった。
+// 機材の色（カメラ 6 色・床・壁・開始位置）が彩度のある色を占め切っているので、
+// 確実に空いているのは無彩色だけ。「機材ではなく人」とも読める。
+const PROXY_COLOR = geoAlpha(GEO.actor, 0.9);
+const PROXY_FILL = geoAlpha(GEO.actor, 0.16);
+const PROXY_DIM = geoAlpha(GEO.actor, 0.4);
 
 /**
  * 輪郭プロキシを 2D コンテキストへ描く。

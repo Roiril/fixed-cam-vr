@@ -61,6 +61,15 @@ body {
 }
 :focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
 
+/* 「押せない」は 1 つの見え方に固定する（2026-08-07）。
+   色は変えず不透明度だけ落とし、必ず cursor:default と対にする。
+   旧実装は :disabled ごとに .3 / .4 とばらつき、cursor を書き忘れたものもあった。
+   ⚠ 押せない理由は必ず title に書く。この卓は「作れない組み合わせを選ばせない」作法で
+   できているので、灰色になっただけで理由が無いと現場で手が止まる。 */
+button:disabled, select:disabled, input:disabled, textarea:disabled {
+  opacity: var(--opacity-disabled); cursor: default;
+}
+
 .app { display: flex; flex-direction: column; height: 100vh; animation: fadeIn .5s ease-out; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -326,12 +335,31 @@ select option { background: #111; color: var(--text-color); }
 .st-sync.wait { color: var(--warn-color); }
 
 .multicam { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 20px 40px; }
+/* 節の見出し（2026-08-07 に div → h2）。
+   既定は「従属の面」の見え方にして、主面だけを格上げする。
+   旧実装は 14 節すべてが同じ muted の div で、序列を表す手段が残っていなかった
+   （全部を弱くすると、弱いことが情報にならない）。
+   ⚠ margin は h2 の UA 既定を消すために longhand ではなく shorthand で書く。 */
 .mc-title {
   display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
   font-size: var(--fs-body); text-transform: uppercase; letter-spacing: .15em;
-  opacity: var(--opacity-sub); margin-bottom: 12px;
+  font-weight: 600; opacity: var(--opacity-sub); margin: 0 0 12px;
 }
-.mc-title .hint { text-transform: none; letter-spacing: normal; margin: 0; flex: 1 1 320px; }
+.mc-title .hint { text-transform: none; letter-spacing: normal; margin: 0; flex: 1 1 320px;
+  font-weight: 400; }
+
+/* 主面 = 作業がそこで起きる面（著作するリボン / 見張る監視列 / 始めてよいかの判断 /
+   場所を決めるマップ / 実機なしで確かめるシミュレータ / 素材を作る工房）。
+   従属の面（録画設定・手動発火・発見・診断・BGM・人形・エクスポート）は既定のまま。 */
+.timeline-sec > .mc-title,
+.multicam > .mc-title,
+.preflight > .mc-title,
+.runpanel > .mc-title,
+.floormap > .mc-title,
+.showsim > .mc-title,
+.atelier-sec > .mc-title {
+  font-size: var(--fs-head); opacity: var(--opacity-full);
+}
 
 .cams {
   display: grid; gap: 14px; align-items: start;
@@ -435,7 +463,7 @@ select option { background: #111; color: var(--text-color); }
 .prompt-item .row-btns button { flex: 1; padding: 4px 6px; font-size: var(--fs-body); }
 
 /* マスク白黒境界（スライダ）/ 区間・フェード数値入力 */
-.mask-tools .seg-label { font-size: var(--fs-body); opacity: .55; letter-spacing: .04em; }
+.mask-tools .seg-label { font-size: var(--fs-body); opacity: var(--opacity-mute); letter-spacing: .04em; }
 .mask-tools [data-edge] { padding: 3px 8px; font-size: var(--fs-body); }
 .mask-tools .mask-pos { width: 76px; }
 .mask-pos-v { font-size: var(--fs-body); opacity: .6; min-width: 30px; font-variant-numeric: tabular-nums; }
@@ -451,7 +479,7 @@ select option { background: #111; color: var(--text-color); }
 .blend-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px;
   max-width: 1180px; margin: 0 auto 10px; padding: 7px 12px;
   border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); }
-.blend-bar .seg-label { font-size: var(--fs-micro); opacity: .55; letter-spacing: .1em; text-transform: uppercase; }
+.blend-bar .seg-label { font-size: var(--fs-micro); opacity: var(--opacity-mute); letter-spacing: .1em; text-transform: uppercase; }
 .blend-bar .sld { font-size: var(--fs-body); gap: 6px; margin: 0; }
 .blend-bar .sld input[type=range] { width: 92px; }
 .blend-bar .chk { font-size: var(--fs-body); }
@@ -581,7 +609,7 @@ header h1 { font-size: var(--fs-head); }
 .gfx-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); flex-wrap: wrap; }
 .gfx-sub { font-size: var(--fs-body); opacity: var(--opacity-mute); }
 /* 全体グレーディングは横幅があるので自然に 3 列前後になる（列数は固定しない） */
-.fx-msg { font-size: var(--fs-body); opacity: .75; margin-left: 4px; }
+.fx-msg { font-size: var(--fs-body); opacity: var(--opacity-sub); margin-left: 4px; }
 
 .col-sec .src-url { margin-top: 3px; }
 .ed-status { margin-top: 3px; min-height: 1em; }
@@ -734,10 +762,8 @@ input:-webkit-autofill:active {
   flex: 0 0 auto; padding: 2px 6px; font-size: var(--fs-body); line-height: 1;
   border: 1px solid var(--line-input); background: transparent; border-radius: 3px; cursor: pointer;
 }
-.fm-reg-btn:disabled { opacity: .3; cursor: default; }
 .fm-reg-del { border-color: transparent; }
 .fm-reg-add { align-self: flex-start; padding: 4px 10px; font-size: var(--fs-body); }
-.fm-reg-add:disabled { opacity: .4; cursor: default; }
 .fm-reg-coords { font-size: var(--fs-body); font-family: monospace; opacity: var(--opacity-sub); letter-spacing: .01em; min-height: 1.3em; }
 .fm-canvas.fm-reg-edit { cursor: cell; }
 
@@ -767,7 +793,6 @@ input:-webkit-autofill:active {
 .fm-start-lbl-cap { font-size: var(--fs-body); opacity: var(--opacity-sub); text-transform: uppercase; letter-spacing: .06em; }
 .fm-start-label { flex: 1 1 auto; min-width: 60px; font-size: var(--fs-body); padding: 2px 4px; }
 .fm-start-del { padding: 4px 10px; font-size: var(--fs-body); white-space: nowrap; }
-.fm-start-del:disabled { opacity: .4; cursor: default; }
 .fm-canvas.fm-start-edit { cursor: cell; }
 
 /* ===================================================================== */
@@ -1038,7 +1063,6 @@ input:-webkit-autofill:active {
 .atl-seg button { border: none; border-right: 1px solid var(--line-soft); letter-spacing: .04em; }
 .atl-seg button:last-child { border-right: none; }
 .atl-seg button.on { background: var(--accent-color); color: #000; font-weight: 600; opacity: 1; }
-.atl-seg button:disabled { opacity: .3; }
 .atl-motionbar .sld { margin: 0; font-size: var(--fs-body); }
 .atl-tocue { font-size: var(--fs-body) !important; }
 .atl-pick {
@@ -1199,7 +1223,7 @@ input:-webkit-autofill:active {
   .atl-sec { padding: 6px 9px; }
 }
 
-.prompts.legacy { opacity: .75; }
+.prompts.legacy { opacity: var(--opacity-sub); }
 
 /* ===================================================================== */
 /* ⑭ ライブ運用: ラン状態 + ▶ ラン開始 — app.js / index.html                */
@@ -1466,7 +1490,7 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 /* 実測の滞在時間に対して開始位置が遅すぎる演出（歩速で出ないかもしれない） */
 .rb-take.risk { border-style: dotted; border-color: var(--warn-color); }
 .rb-take.risk .rb-take-start { color: var(--warn-color); opacity: 1; }
-.rb-take.dragging { pointer-events: none; opacity: .55; }
+.rb-take.dragging { pointer-events: none; opacity: var(--opacity-mute); }
 /* 進入の演出は段の高さを固定する（ribbon.js の LANE_H と一致・区間フッタに被らせない） */
 .rb-seg-lane > .rb-take { height: 90px; }
 /* 離脱時の演出は区間の外・境界線をまたいで描く（区間内の時刻ではないことを形で示す） */

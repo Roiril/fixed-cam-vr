@@ -20,6 +20,7 @@ import { wireSegments, calibMatchesSource, applyCalibToCameras } from './calib-s
 import { actorProxyGeometry, actorBodyGeometry, drawActorProxy, proxyIssueText } from './actor-proxy.js';
 import { createDollView } from './doll-view.js';
 import { defaultLight } from './room-model.js';
+import { GEO } from './palette.js';
 
 // Ichimatsu の実寸。Unity のプレハブの renderer bounds を実測した値
 // （高さ 0.410 / 幅 0.321 は腕を広げた状態なので、腕を下ろした胴の幅として 0.18 を採る）。
@@ -34,7 +35,9 @@ function dollDims(heightM) {
   const s = (heightM > 0 ? heightM : DOLL.h) / DOLL.h;
   return { bodyW: DOLL.w * s, bodyD: DOLL.d * s, footRadiusM: DOLL.foot * s };
 }
-const WIRE_COLORS = { floor: '#ffdead', grid: 'rgba(255,222,173,.28)', wall: '#7ad6ff', box: '#7ad6ff' };
+// 壁は floormap の 🧱 部屋・較正 UI のワイヤーと同じ色でなければならない
+// （同じ物を別の面から見ているため）。旧実装はここだけ #7ad6ff で、他は #78dcff だった。
+const WIRE_COLORS = { floor: GEO.floor, grid: GEO.grid, wall: GEO.wall, box: GEO.wall };
 
 export function createAlignUi(container, deps) {
   const root = document.createElement('div');
