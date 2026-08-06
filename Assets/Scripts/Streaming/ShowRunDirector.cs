@@ -192,21 +192,22 @@ namespace FixedCamVr.Streaming
         {
             bool atStart = AtStartZone();
             bool takeRunning = timelineDirector != null && !string.IsNullOrEmpty(timelineDirector.ActiveTakeId);
-            // 演出が「進行中」か。**段 0（Black＝開始待ち）だけを除く。**
+            // 演出が「終わったか」。⚠ **「進行中でない」で判定してはいけない**（2026-08-06 置き換え）。
+            // 旧実装は `Active && Stage != Black` の否定＝「進行中でない」を渡していた。段 0（開始待ち）は
+            // そこに含まれないので、**演出が始まる前でも「進行中でない」が成立**していた。慣らし歩行
+            // （introMinSec = 20 秒）が猶予を兼ねていたため露見しなかったが、慣らしを 0 にした瞬間に
+            // 体験者がスタート区間に立った時点で本編へ飛び、演出が 1 度も出なくなる。
             //
-            // ⚠ ここで `Holding` を使ってはいけない（2026-07-30 実機で踏んだ）。`Holding` は
-            // 段 0 の開始待ちだけでなく **段 3・段 4 の条件待ち**（頭を振っている／枠を見ていない）でも
-            // 立つ。そこで introPlaying が false へ落ち、**枠が出た直後に本編へ飛んで
-            // 最後の段（Swap＝枠の中がカメラ映像へ変わる）が一度も出なかった**。
-            // 段 0 は開始条件を満たすまで進まないので、除外しても「永久に本編へ進めない」は起きない。
+            // 併せて 2026-07-30 の実害（`Holding` を使うと段 3・段 4 の条件待ちで false へ落ち、
+            // 枠が出た直後に本編へ飛んで Swap が一度も出なかった）も、「終わった」判定なら構造的に起きない。
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
-            bool introPlaying = _intro != null && _intro.Active && _intro.Stage != IntroStage.Black;
+            bool introCompleted = _intro == null || _intro.Completed;
 
-            // 中止（トラッキング原点がずれた）は introPlaying では表せない — 中止は _logic.Disable() を
-            // 通るので introPlaying が false へ落ち、そのまま自動で本編へ飛ぶ。別引数で渡して止める。
+            // 中止は「終わった」ではないので Completed は立たない。別引数にしてあるのは、
+            // 中止と「まだ終わっていない」を区別して現場へ出すため（StatusHud の異常 1 件・黒の 1 行）。
             bool introAborted = _intro != null && _intro.Aborted;
 
-            ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning, introPlaying,
+            ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning, introCompleted,
                                           introAborted);
 
             // ⚠ ゲートは**イベントを配る前に**合わせる。RunBegan の処理は

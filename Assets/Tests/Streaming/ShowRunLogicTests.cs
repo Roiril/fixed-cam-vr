@@ -71,6 +71,25 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void Intro_WaitsForThePerformance_EvenWithZeroWarmup()
+        {
+            // 慣らし歩行（introMinSec）を 0 にしても、**演出が終わるまで本編へ入ってはいけない**。
+            // 旧実装は「進行中でない」で判定していて、段 0（開始待ち）もそこに含まれなかったので、
+            // 慣らしを 0 にした瞬間に体験者がスタート区間に立った時点で本編へ飛び、
+            // 導入演出が 1 度も出なくなった（慣らしの 20 秒が猶予を兼ねていたため露見していなかった）。
+            var r = new ShowRunLogic();
+            r.Configure(true, 0f, true, 3, 300f);
+            r.BeginRun();
+
+            Assert.That(r.Tick(1f, atStartZone: true, takeRunning: false, introCompleted: false),
+                Is.EqualTo(ShowRunEvent.None), "演出が終わる前に本編へ入ってはいけない");
+            Assert.That(r.Phase, Is.EqualTo(ShowPhase.Intro));
+
+            Assert.That(r.Tick(0.02f, atStartZone: true, takeRunning: false, introCompleted: true),
+                Is.EqualTo(ShowRunEvent.RunBegan), "演出が終われば慣らし 0 秒でも即 1 周目");
+        }
+
+        [Test]
         public void Intro_DoesNotAutoAdvance_WhileAborted()
         {
             // 中止（トラッキング原点がずれた）は IntroLogic.Disable() を通るので introPlaying が
@@ -78,13 +97,13 @@ namespace FixedCamVr.Streaming.Tests
             // ずれた座標のまま 3 周が走る（体験者は壁の位置が違う世界を手でたどる）。
             var r = Make();
             Assert.That(r.Tick(IntroMin + 1f, atStartZone: true, takeRunning: false,
-                               introPlaying: false, introAborted: true),
+                               introCompleted: true, introAborted: true),
                 Is.EqualTo(ShowRunEvent.None));
             Assert.That(r.Phase, Is.EqualTo(ShowPhase.Intro));
 
             // 位置合わせを撃ち直して中止が解けたら、そこから通常どおり進む。
             Assert.That(r.Tick(0.1f, atStartZone: true, takeRunning: false,
-                               introPlaying: false, introAborted: false),
+                               introCompleted: true, introAborted: false),
                 Is.EqualTo(ShowRunEvent.RunBegan));
         }
 
@@ -93,10 +112,10 @@ namespace FixedCamVr.Streaming.Tests
         {
             // 「ずれていても進めたい」はスタッフ（運営）の判断で、コードが止める話ではない。
             var r = Make();
-            r.Tick(1f, atStartZone: false, takeRunning: false, introPlaying: false, introAborted: true);
+            r.Tick(1f, atStartZone: false, takeRunning: false, introCompleted: true, introAborted: true);
             r.RequestAdvance();
             Assert.That(r.Tick(0.02f, atStartZone: false, takeRunning: false,
-                               introPlaying: false, introAborted: true),
+                               introCompleted: true, introAborted: true),
                 Is.EqualTo(ShowRunEvent.RunBegan));
         }
 
@@ -291,9 +310,9 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(r.Tick(IntroMin + 5f, atStartZone: false, takeRunning: false),
                         Is.EqualTo(ShowRunEvent.None));
             // ここで体験者が開始位置に立ち、演出が動き出す。
-            Assert.That(r.Tick(0.1f, atStartZone: true, takeRunning: false, introPlaying: true),
+            Assert.That(r.Tick(0.1f, atStartZone: true, takeRunning: false, introCompleted: false),
                         Is.EqualTo(ShowRunEvent.None), "演出の最中に本編へ飛ばさない");
-            Assert.That(r.Tick(10f, atStartZone: true, takeRunning: false, introPlaying: true),
+            Assert.That(r.Tick(10f, atStartZone: true, takeRunning: false, introCompleted: false),
                         Is.EqualTo(ShowRunEvent.None));
             Assert.That(r.Phase, Is.EqualTo(ShowPhase.Intro));
         }
@@ -303,7 +322,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             var r = Make();
             r.Tick(IntroMin + 5f, atStartZone: false, takeRunning: false);
-            r.Tick(13f, atStartZone: true, takeRunning: false, introPlaying: true);
+            r.Tick(13f, atStartZone: true, takeRunning: false, introCompleted: false);
 
             // 演出が終わった合図。ここから慣らし歩行の計時が始まる。
             r.RestartIntroClock();
@@ -318,7 +337,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             var r = Make();
             r.RequestAdvance();
-            Assert.That(r.Tick(0.1f, atStartZone: false, takeRunning: false, introPlaying: true),
+            Assert.That(r.Tick(0.1f, atStartZone: false, takeRunning: false, introCompleted: false),
                         Is.EqualTo(ShowRunEvent.RunBegan), "人の明示操作は演出より優先する");
         }
 

@@ -83,6 +83,19 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool Aborted => _aborted;
 
+        /// <summary>
+        /// 導入演出が<b>終わったか</b>（＝本編へ進んでよいか）。演出を出さない設定では最初から true。
+        ///
+        /// ⚠ <see cref="Active"/> の否定では代用できない。<b>段 0（開始待ち）でも Active は false</b> なので、
+        /// 「進行中でない」を条件にすると<b>演出が始まる前に本編へ飛べてしまう</b>。慣らし歩行
+        /// （<c>introMinSec</c>）がその猶予を兼ねていたため露見していなかったが、慣らしを 0 にした
+        /// 瞬間に演出が 1 度も出なくなる（2026-08-06 に慣らしを外す判断が出て発覚）。
+        ///
+        /// 落ちるのは <see cref="BeginIntro"/>、立つのは <see cref="FinishIntro"/>。
+        /// 中止は別軸（<see cref="Aborted"/>）で、こちらは立たない ＝ 中止した演出は「終わった」ではない。
+        /// </summary>
+        public bool Completed => _completed;
+
         /// <summary>条件待ちで足踏みしているか（スタッフが手で送れることを卓に出す）。</summary>
         public bool Holding => _logic.Holding;
 
@@ -231,9 +244,12 @@ namespace FixedCamVr.Streaming
             _clockRestarted = false;
             _walkPromptUntil = -1f;
             _aborted = false;
+            _completed = false;
             if (!_def.enabled)
             {
                 // 演出なし。従来どおり最初からスクリーンだけが見える。
+                // **待つものが無いので「終わった」扱いにする** — でないと本編へ永久に進めない。
+                _completed = true;
                 _logic.Disable();
                 veil?.SetHidden();
                 structureWire?.SetHidden();
@@ -428,12 +444,17 @@ namespace FixedCamVr.Streaming
             return Time.realtimeSinceStartup - last <= freshFrameSec;
         }
 
+        /// <summary>演出が完走したか。<see cref="Completed"/> の実体。</summary>
+        private bool _completed;
+
         private void FinishIntro(bool restartClock)
         {
             veil?.SetHidden();
             structureWire?.SetHidden();
             glitch?.ResetAll();
             _logic.Disable();
+            // ここで初めて本編へ進んでよくなる（段 0 と区別できる唯一の点）。
+            _completed = true;
             if (!restartClock || _clockRestarted) return;
             _clockRestarted = true;
             // 演出は終わったが Intro 相（慣らし歩行）は続く。**ここで合図を切らない** —

@@ -150,32 +150,35 @@ namespace FixedCamVr.Streaming
         /// <param name="dt">経過秒。</param>
         /// <param name="atStartZone">体験者がスタート区間に居るか（導入の自動終了条件）。</param>
         /// <param name="takeRunning">演出が走行中か（終了を保留するかの判定）。</param>
-        /// <param name="introPlaying">
-        /// 導入演出（パススルー → スクリーン）が**進行中**か。足踏み（開始待ち）は含めない。
+        /// <param name="introCompleted">
+        /// 導入演出（パススルー → スクリーン）が<b>終わったか</b>。演出を出さない設定なら最初から true。
         ///
-        /// これが無いと、<b>実運用で導入演出はほぼ確実に途中で打ち切られる</b>。
-        /// <see cref="_introElapsed"/> は起動から数え始めるので、設営や待機で
-        /// <see cref="_introMinSec"/>（既定 20 秒）はとうに過ぎている。そこへ体験者が開始位置に立つと、
-        /// 演出が始まったその瞬間に「時間経過 ＋ スタート区間に居る」が揃って本編へ飛ぶ。
-        /// 2026-07-30 の実機テストでは、演出が Real → Degrade の 3.5 秒だけ流れて打ち切られ、
-        /// 核心（枠が閉じて中がカメラ映像へ変わる Structure / Frame / Swap）が一度も出なかった。
+        /// ⚠ **「進行中でない」ではなく「終わった」で判定する**（2026-08-06 に置き換え）。
+        /// 旧引数 <c>introPlaying</c> は段 0（開始待ち）を含めなかったので、そこでも
+        /// 「進行中でない」が成立していた。慣らし歩行（<see cref="_introMinSec"/> = 既定 20 秒）が
+        /// 「演出が始まるまでの猶予」を兼ねていたため露見しなかったが、**慣らしを 0 にした瞬間に
+        /// 体験者がスタート区間に立った時点で本編へ飛び、演出が 1 度も出なくなる**。
         ///
-        /// 演出が終われば <see cref="RestartIntroClock"/> で計時が 0 に戻るので、そこから
-        /// <see cref="_introMinSec"/> ぶんの慣らし歩行が始まる ＝ 設計どおりの順序になる。
+        /// 既定を true にしてあるのは、演出のことを知らない呼び出し側（テスト・オフライン）で
+        /// 体験を止めないため（フェイルソフト）。
+        ///
+        /// 旧実装が防いでいた事故もそのまま防げる: <see cref="_introElapsed"/> は起動から数えるので
+        /// 設営で <see cref="_introMinSec"/> はとうに過ぎている。そこへ体験者が立っても、演出が
+        /// 終わるまで false なので打ち切られない（2026-07-30 は Real → Degrade の 3.5 秒で打ち切られ、
+        /// 核心の Structure / Frame / Swap が一度も出なかった）。
         /// </param>
         /// <param name="introAborted">
         /// 導入を中止したか（トラッキング原点が変わって部屋の座標がずれた）。
         /// <b>true のあいだ自動では本編へ進めない。</b>
         ///
-        /// 中止は <c>_logic.Disable()</c> を通るので <paramref name="introPlaying"/> が false へ落ちる。
-        /// <see cref="_introElapsed"/> は起動から数えていて設営でとうに過ぎており、体験者はスタート区間に
-        /// 居るので、これが無いと<b>中止したその瞬間に本編へ飛ぶ</b>（ずれた座標で 3 周が始まり、
-        /// 体験者は壁の位置が違う世界を手でたどる）。
+        /// 中止は「終わった」ではないので <paramref name="introCompleted"/> は立たない。それでも別引数に
+        /// してあるのは、<b>中止と「まだ終わっていない」を区別して現場へ出す</b>ため
+        /// （StatusHud の異常 1 件・黒の上の 1 行）。
         ///
         /// スタッフの明示操作（<see cref="RequestAdvance"/>）は従来どおり通す — 「ずれていても進めたい」
         /// と人が言っているなら、それは運営の判断で、コードが止める話ではない。
         /// </param>
-        public ShowRunEvent Tick(float dt, bool atStartZone, bool takeRunning, bool introPlaying = false,
+        public ShowRunEvent Tick(float dt, bool atStartZone, bool takeRunning, bool introCompleted = true,
                                  bool introAborted = false)
         {
             if (dt < 0f) dt = 0f;
@@ -194,7 +197,7 @@ namespace FixedCamVr.Streaming
                     // 演出の最中は自動では進めない（明示操作 _advanceRequested は従来どおり効く —
                     // スタッフが「いま進めたい」と言っているなら演出より人の判断を優先する）。
                     bool auto = _introAutoAdvance && _introElapsed >= _introMinSec
-                                && atStartZone && !introPlaying && !introAborted;
+                                && atStartZone && introCompleted && !introAborted;
                     if (_advanceRequested || auto)
                     {
                         _advanceRequested = false;
