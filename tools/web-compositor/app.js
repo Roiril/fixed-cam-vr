@@ -2091,7 +2091,7 @@ function renderBgmSection() {
       <div class="bgm-item-grid">
         <span class="bgm-file" title="${escapeHtml(t.url)}">${escapeHtml((t.url || '').split('/').pop())}</span>
         <label>ループ in<input class="bgm-ls" type="number" min="0" step="0.1" value="${t.loopStartSec || 0}">s</label>
-        <label>ループ out<input class="bgm-le" type="number" min="0" step="0.1" value="${t.loopEndSec || 0}">s<span class="tl-hint2">0=末尾</span></label>
+        <label>ループ out<input class="bgm-le" type="number" min="0" step="0.1" value="${t.loopEndSec || 0}">s<span class="bgm-hint">0=末尾</span></label>
         <label>音量<input class="bgm-vol" type="number" min="0" max="1" step="0.05" value="${t.volume ?? 1}"></label>
         <button class="bgm-mark-in" title="試聴中の位置をループ in に">ここを in</button>
         <button class="bgm-mark-out" title="試聴中の位置をループ out に">ここを out</button>

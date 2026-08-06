@@ -786,57 +786,6 @@ input:-webkit-autofill:active {
 .cue-name { font-size: var(--fs-body); }
 
 /* ===================================================================== */
-/* ⑧ 周回タイムライン（横長・動画編集風）トラック基礎 — timeline.js          */
-/* ===================================================================== */
-.schedule { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
-.tl-wrap { display: flex; flex-direction: column; gap: 8px; }
-.tl-row { display: flex; align-items: center; gap: 10px; }
-.tl-row .spacer { flex: 1; }
-.tl-save { padding: 7px 16px; }
-.tl-dirty { font-size: var(--fs-body); opacity: var(--opacity-mute); letter-spacing: .04em; }
-.tl-dirty.on { color: var(--warn-color); opacity: 1; }
-.tl-lap-add, .tl-lap-del { padding: 4px 10px; font-size: var(--fs-body); }
-.tl-hint { font-size: var(--fs-body); opacity: var(--opacity-sub); line-height: 1.45; }
-.tl-note { font-size: var(--fs-body); color: var(--warn-color); line-height: 1.4; }
-.tl-note:empty { display: none; }
-
-/* 横長トラック（周回を横に連結・横スクロール） */
-.tl-track-wrap { overflow-x: auto; padding-bottom: 6px; }
-.tl-track { display: flex; align-items: stretch; gap: 8px; min-width: min-content; }
-.tl-arrow { align-self: center; opacity: var(--opacity-mute); font-size: var(--fs-head); flex: none; }
-.tl-lap { display: flex; flex-direction: column; gap: 5px; flex: none;
-  border: 1px solid var(--line-soft); padding: 6px; }
-.tl-lap-head { font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: .12em;
-  opacity: var(--opacity-mute); text-align: center; font-variant-numeric: tabular-nums; }
-.tl-segs { display: flex; gap: 4px; }
-
-/* 区間ブロック（周×カメラ）。cue をクリップ風に表示 */
-.tl-seg { display: flex; flex-direction: column; align-items: stretch; gap: 4px;
-  width: 96px; min-height: 60px; padding: 6px; text-align: left;
-  border: 1px solid var(--line-soft); cursor: pointer; }
-.tl-seg-cam { display: flex; align-items: center; gap: 5px; font-size: var(--fs-body);
-  letter-spacing: .06em; opacity: var(--opacity-sub); }
-.tl-seg-cam i { width: 9px; height: 9px; display: inline-block; border-radius: 2px;
-  background: var(--cam, #888); flex: none; }
-.tl-seg-clip { font-size: var(--fs-body); line-height: 1.3; word-break: break-word; opacity: var(--opacity-mute); }
-.tl-seg.filled { border-color: var(--line-input); }
-.tl-seg.filled .tl-seg-clip { color: var(--accent-color); opacity: 1; }
-.tl-seg:hover { border-color: var(--accent-color); }
-.tl-seg.sel { box-shadow: inset 0 0 0 2px var(--accent-color); }
-
-/* 区間エディタ（小編集） */
-.tl-editor { border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color); padding: 10px; display: none; }
-.tl-editor:not(:empty) { display: block; }
-.tl-edit-head { font-size: var(--fs-body); letter-spacing: .06em; margin-bottom: 8px; opacity: var(--opacity-sub); }
-.tl-edit-grid { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; }
-.tl-edit-grid label { display: flex; align-items: center; gap: 6px; font-size: var(--fs-body); }
-.tl-edit-grid select { min-width: 140px; }
-.tl-edit-grid .tl-delay { width: 60px; }
-.tl-chk input { accent-color: var(--accent-color); }
-.tl-edit-close { padding: 3px 10px; font-size: var(--fs-body); }
-.tl-warn { margin-top: 8px; font-size: var(--fs-body); color: var(--warn-color); }
-
-/* ===================================================================== */
 /* ⑨ ビルド用エクスポート — app.js / index.html                             */
 /* ===================================================================== */
 .export-sec { padding: 10px 14px 24px; border-top: 1px solid var(--line-soft); }
@@ -1272,7 +1221,7 @@ input:-webkit-autofill:active {
 #liveCueFire, #liveCueStop { padding: 8px 16px; font-size: var(--fs-head); }
 
 /* ===================================================================== */
-/* ⑮ タイムライン第一級化 — timeline.js（インスペクタ / 検証 / cue-editor）  */
+/* ⑮ タイムライン第一級化 — ribbon.js（リボン / 検証 / cue-editor）         */
 /* ===================================================================== */
 .timeline-sec { padding: 10px 14px 22px; border-bottom: 1px solid var(--line-soft); }
 
@@ -1290,71 +1239,6 @@ input:-webkit-autofill:active {
 .rec-row.ng { color: var(--danger-color); }
 .rec-row.muted { opacity: var(--opacity-mute); }
 .rec-why { margin-left: 10px; opacity: var(--opacity-sub); }
-
-/* 区間内 cue チップ（複数） */
-.tl-seg-clip { display: flex; flex-wrap: wrap; gap: 3px; }
-.tl-cue-chip {
-  display: inline-block; font-size: var(--fs-body); line-height: 1.3; padding: 1px 5px;
-  border: 1px solid var(--line-input); color: var(--accent-color);
-  white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-}
-.tl-seg-empty { opacity: var(--opacity-mute); }
-.tl-seg.cur { box-shadow: inset 0 0 0 2px var(--warn-color); border-color: var(--warn-color); }
-.tl-badge { font-size: var(--fs-body); margin-left: 4px; opacity: .85; }
-.tl-badge-insert { color: var(--warn-color); }
-
-/* exit insert 境界チップ */
-.tl-exit-insert {
-  align-self: center; flex: none; font-size: var(--fs-body); padding: 2px 6px;
-  border: 1px dashed var(--warn-color); color: var(--warn-color); white-space: nowrap;
-}
-
-/* セグメントインスペクタ */
-.tl-inspector { margin-top: 10px; }
-.tl-inspector:empty { display: none; }
-.tl-insp-head {
-  display: flex; align-items: center; gap: 10px; font-size: var(--fs-body); letter-spacing: .06em;
-  padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); margin-bottom: 8px;
-}
-.tl-insp-head .spacer { flex: 1; }
-.tl-insp-close { padding: 3px 10px; font-size: var(--fs-body); }
-.tl-insp-sec {
-  border: 1px solid var(--line-soft); border-left: 2px solid var(--accent-color);
-  padding: 8px 10px; margin-bottom: 8px;
-}
-.tl-insp-label { font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: .15em; opacity: .5; margin-bottom: 6px; }
-.tl-insp-toggle { font-size: var(--fs-body); }
-.tl-cue-none { font-size: var(--fs-body); opacity: var(--opacity-sub); margin-top: 4px; }
-.tl-cue-none.warn { color: var(--warn-color); opacity: 1; }
-.tl-cue-empty { font-size: var(--fs-body); opacity: var(--opacity-mute); }
-
-/* cue 割当行 */
-.tl-insp-cues { display: flex; flex-direction: column; gap: 6px; }
-.tl-cue-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
-  padding: 6px 8px; border: 1px solid var(--line-soft);
-}
-.tl-cue-row select { min-width: 120px; flex: 1 1 120px; }
-.tl-cr-l { display: flex; align-items: center; gap: 4px; font-size: var(--fs-body); }
-.tl-cr-l input[type=number] { width: 52px; }
-.tl-cue-row button { padding: 3px 8px; font-size: var(--fs-body); }
-.tl-cr-override {
-  flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px;
-  padding-top: 4px; border-top: 1px dashed var(--line-soft);
-}
-.tl-cr-override label { display: flex; align-items: center; gap: 3px; font-size: var(--fs-body); }
-.tl-cr-override input { width: 48px; }
-
-/* insert 編集 */
-.tl-insert-grid { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 6px 0; }
-.tl-insert-grid label { display: flex; align-items: center; gap: 4px; font-size: var(--fs-body); }
-.tl-insert-grid select { min-width: 90px; }
-.tl-insert-grid input[type=number] { width: 56px; }
-
-/* 埋め込み cue-editor のホスト */
-.tl-cue-editor-host:empty { display: none; }
-
-/* 検証パネル */
 
 /* cue-editor（cue-editor.js）*/
 .ce-wrap { border: 1px solid var(--accent-color); margin-top: 8px; }
@@ -1475,39 +1359,13 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .export-missing { font-size: var(--fs-body); color: var(--danger-color); margin-bottom: 6px; white-space: normal; }
 
 /* ===================================================================== */
-/* ⑱ BGM オーサリング（2026-07-25）— timeline.js / app.js                 */
+/* ⑱ BGM オーサリング（2026-07-25）— ribbon.js / app.js                   */
 /*    タイムライン下の BGM 帯 + 区間インスペクタの BGM ブロック + ライブラリ */
 /* ===================================================================== */
-/* BGM 帯（動画編集のオーディオトラック相当。区間セルと横幅を揃える） */
-.tl-bgm-lane { display: flex; gap: 0; margin-top: 3px; }
-.tl-bgm-cell {
-  flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 5px;
-  padding: 3px 6px; font-size: var(--fs-body); text-align: left;
-  border: none; border-left: 1px solid rgba(0, 0, 0, 0.35);
-  background: color-mix(in srgb, var(--trk, #888) 26%, transparent);
-  color: var(--trk, #ccc); letter-spacing: .04em; cursor: pointer;
-  opacity: var(--opacity-sub);
-}
-.tl-bgm-cell:hover { opacity: 1; }
-.tl-bgm-cell.silent { background: transparent; color: var(--text-color); opacity: .35;
-  border-top: 1px dashed var(--line-soft); }
-.tl-bgm-cell.chg-start, .tl-bgm-cell.chg-stop { opacity: 1; font-weight: 600; }
-.tl-bgm-cell.chg-start { box-shadow: inset 2px 0 0 var(--trk, #888); }
-.tl-bgm-cell.chg-stop { box-shadow: inset 2px 0 0 var(--danger-color); color: var(--danger-color); }
-.tl-bgm-cell.chg-retune { box-shadow: inset 2px 0 0 rgba(255, 250, 240, 0.4); }
-.tl-bgm-mark { flex: none; font-size: var(--fs-body); }
-.tl-bgm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tl-bgm-gap { flex: 0 0 auto; width: 58px; }   /* exit インサートチップ分の空き（列を縦に揃える）*/
+/* BGM 帯（動画編集のオーディオトラック相当。区間セルと横幅を揃える） */   /* exit インサートチップ分の空き（列を縦に揃える）*/
 
 /* 区間インスペクタの BGM ブロック */
-.tl-bgm-grid { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 6px 0; }
-.tl-bgm-grid label { display: flex; align-items: center; gap: 5px; font-size: var(--fs-body); }
-.tl-bgm-grid input[type=number] { width: 62px; text-align: right; }
-.tl-bgm-loop { border-left: 2px solid var(--line-soft); padding-left: 10px; margin-top: 6px; }
-.tl-bgm-audition { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-.tl-bgm-audition button { padding: 3px 9px; font-size: var(--fs-body); }
-.tl-bgm-time { font-variant-numeric: tabular-nums; font-size: var(--fs-body); opacity: var(--opacity-sub); min-width: 46px; }
-.tl-hint2 { font-size: var(--fs-body); opacity: var(--opacity-mute); }
+.bgm-hint { font-size: var(--fs-body); opacity: var(--opacity-mute); }
 
 /* BGM ライブラリ */
 .bgm-sec { padding: 10px 14px 20px; border-top: 1px solid var(--line-soft); }
@@ -1533,7 +1391,6 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
    区間 = 伸縮ブロック（斜線ハッチ・尺は体験者が決める）／演出 = 尺に比例した固定幅。
    離脱時の演出は区間ブロックの外に、境界線をまたいで描く。
    ========================================================================== */
-.tl-ribbon-host:empty { display: none; }
 .rb-wrap { display: flex; flex-direction: column; gap: 8px; }
 .rb-row { display: flex; align-items: center; gap: 10px; }
 .rb-row .spacer { flex: 1; }
