@@ -12,9 +12,14 @@ namespace FixedCamVr.Diagnostics
     ///
     /// - **終了**: 企画書 3 章の「体験全体は導入を含め 3 分以内」を成立させるには、終わったことが
     ///   体験者に分かる必要がある。文字は出さない（黒だけで伝わる）
-    /// - **導入の中止**（トラッキング原点がずれた）: ずれた世界を見せたまま歩かせない。こちらは
-    ///   <see cref="ShowRunDirector.BlackoutMessage"/> の 1 行を黒の上に出す — 黒だけだと体験者は
-    ///   終わったと誤解して HMD を外し、スタッフが直す前に立ち去る
+    /// - **導入の中止**（トラッキング原点がずれた）: ずれた世界を見せたまま歩かせない。
+    ///   <see cref="ShowRunDirector.BlackoutMessage"/> の 1 行は<b>スタッフが被っているときだけ</b>
+    ///   黒の上に出す（<see cref="StatusHud.StaffViewing"/>）
+    ///
+    /// ⚠ **2026-08-07 に「少しお待ちください」を体験者へ出すのをやめた**（ユーザー指摘・世界観）。
+    /// 体験者から見えるのは黒だけになる。黒だけだと終わったと誤解して HMD を外しうるので、
+    /// **中止したら横のスタッフが声を掛ける運用**にする（中止はスタッフ側では StatusHud の
+    /// 異常 1 件として「何が起きたか / どう直すか」が出るので、気づく経路は残っている）。
     ///
     /// <see cref="StartupFader"/> の逆再生に相当するが、あちらは解除後に自分を Destroy するので
     /// 再利用できない（別コンポーネントとして持つ）。
@@ -54,6 +59,7 @@ namespace FixedCamVr.Diagnostics
         private const float MessageFadeSec = 0.35f;
 
         private ShowRunDirector? _run;
+        private StatusHud? _hud;
         private Canvas? _canvas;
         private Image? _image;
         private TextMeshProUGUI? _label;
@@ -78,7 +84,11 @@ namespace FixedCamVr.Diagnostics
         private void Resolve()
         {
             if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
+            if (_hud == null) _hud = FindObjectOfType<StatusHud>();
         }
+
+        /// <summary>スタッフが被っているか。解決できないときは false ＝ 文字を出さない側へ倒す。</summary>
+        private bool StaffViewing() => _hud != null && _hud.StaffViewing;
 
         private void Update()
         {
@@ -98,7 +108,8 @@ namespace FixedCamVr.Diagnostics
             SetAlpha(Mathf.Min(1f, _alpha + step));
 
             // 文字は黒が乗り切ってから浮かべる（黒の途中で出すと本編の画に重なって読めない）。
-            string msg = _run != null ? _run.BlackoutMessage : "";
+            // ⚠ 体験者には出さない（黒だけ）。スタッフが見ているときだけ 1 行が浮かぶ。
+            string msg = _run != null && StaffViewing() ? _run.BlackoutMessage : "";
             float target = string.IsNullOrEmpty(msg) || _alpha < 0.95f ? 0f : 1f;
             float mStep = Time.unscaledDeltaTime / MessageFadeSec;
             SetMessage(msg, target > _messageAlpha

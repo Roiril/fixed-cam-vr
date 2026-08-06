@@ -8,9 +8,17 @@ namespace FixedCamVr.Diagnostics
     /// スタッフ専用のコントローラ操作ガイド。右コントローラの「少し上・少し奥」に、
     /// 現在モード（Normal / Registration）の操作方法を常時表示する小パネル。
     ///
-    /// 体験者はコントローラを持たないため、これは<b>スタッフだけが見る</b>手元の早見表。
+    /// 体験者はコントローラを持たないため、これは<b>スタッフだけが読む</b>手元の早見表。
     /// StatusHud（視線前方・トグル式・情報表示）とは役割が違い、こちらは操作説明を
-    /// コントローラに貼り付けて常時出す。
+    /// コントローラに貼り付けて出す。
+    ///
+    /// ⚠ **2026-08-07 に「接続していれば常時」をやめた**（ユーザー指摘・世界観）。読み手はスタッフでも、
+    /// パネルが浮くのはコントローラの位置＝<b>体験者の視界の中</b>で、スタッフが横で持っていれば
+    /// 体験者に文字が見えていた。いまは <see cref="StatusHud.StaffViewing"/>（右 B の表示 or
+    /// 位置合わせ作業中）が立っている間だけ出す。位置合わせ中は自動で立つので REG 本文は従来どおり読める。
+    ///
+    /// ⚠ 「押しても振動しないときはガイドパネルが出ているか見る」という切り分けは、
+    /// <b>先に右 B を押してから</b>になった（B を押せばパネルもステータスも出る）。
     ///
     /// 配置（<see cref="LateUpdate"/>）: コントローラ位置から上へ <see cref="heightOffset"/>、
     /// 頭→コントローラの水平方向へさらに <see cref="awayOffset"/> 奥へずらす。位置は
@@ -45,6 +53,9 @@ namespace FixedCamVr.Diagnostics
 
         [Tooltip("正対させる頭（CenterEyeAnchor）。null なら Camera.main。")]
         [SerializeField] private Transform? head;
+
+        [Tooltip("スタッフが被っているかの判定元。null ならシーンから探す。居なければ何も出さない。")]
+        [SerializeField] private StatusHud? statusHud;
 
         [Header("Placement (現場調整可)")]
         [Tooltip("コントローラ上方向へのオフセット (m)。")]
@@ -92,6 +103,13 @@ namespace FixedCamVr.Diagnostics
         /// <summary>右コントローラ接続状態を反映する（未接続時はパネル非表示）。</summary>
         public void SetControllerConnected(bool connected) => _controllerConnected = connected;
 
+        /// <summary>スタッフが被っているか。解決できないときは false ＝ 文字を出さない側へ倒す。</summary>
+        private bool StaffViewing()
+        {
+            if (statusHud == null) statusHud = FindObjectOfType<StatusHud>();
+            return statusHud != null && statusHud.StaffViewing;
+        }
+
         private void Awake()
         {
             if (head == null && Camera.main != null) head = Camera.main.transform;
@@ -119,8 +137,8 @@ namespace FixedCamVr.Diagnostics
                 ApplyBody();
             }
 
-            // 未接続 or アンカー欠落なら非表示（次に接続復帰したら再配置スナップする）。
-            if (!_controllerConnected || controller == null || head == null)
+            // 未接続 or アンカー欠落 or スタッフが見ていないなら非表示（復帰時は再配置スナップする）。
+            if (!_controllerConnected || controller == null || head == null || !StaffViewing())
             {
                 if (text.enabled) text.enabled = false;
                 _seeded = false;

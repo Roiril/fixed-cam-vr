@@ -79,6 +79,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 // ---- ControllerGuidePanel: NORMAL 本文 + アンカー差し替え + LateUpdate 1 回駆動 ----
                 SetPrivateField(panel, "controller", ctrlGo.transform);
                 SetPrivateField(panel, "head", headGo.transform);
+                // パネルは「スタッフが被っているか」を StatusHud に問う（2026-08-07〜）。Edit モードでは
+                // Awake が走らないので明示的に差す — 未配線のシーンだと自己解決に頼ることになり、
+                // 見た目確認の一次証拠が空の PNG になる。
+                SetPrivateField(panel, "statusHud", hud);
                 panel.SetControllerConnected(true);
                 panel.SetMode("NORMAL");
                 Invoke(panel, "LateUpdate");

@@ -440,11 +440,10 @@ namespace FixedCamVr.Streaming.EditorTools
             var introDirector = CreateIntroDirector(logic.transform, runDirector, introVeil,
                 screenGo != null ? screenGo.GetComponent<GlitchFx>() : null,
                 registry, showControl, centerEye.transform, screenTf);
-            // 体験者向けの合図（段 5 の「右手を上げて」・開始位置の案内・中止・歩き出し）。
-            //   IntroDirector.PromptText は 2026-07-30 の実装時から**読む者が居なかった**ので、
-            //   §2 の伏線（3 周目の反転）が張られないままだった。StatusHud はスタッフ用で既定 OFF
-            //   なので相乗りできず、体験者専用の面を分けてある。
-            CreateIntroPrompt(centerEye.transform, introDirector);
+            // 導入の合図（段 5 の「右手をあげて」・開始位置の案内・歩き出し）。
+            //   ⚠ **体験者には出さない**（2026-08-07〜）。読むのはスタッフだけで、門は
+            //   StatusHud.StaffViewing。配線は StatusHud を作った後（下の 4 節）で行う。
+            var introPrompt = CreateIntroPrompt(centerEye.transform, introDirector);
             // 終幕（2D スクリーン → パススルー）。導入と**同じ覆い**を使う（開口の式を共有しないと
             // 閉じた形と開く形が食い違う）。IntroDirector と同じオブジェクトに載せるので、
             // 進行役が 2 つに散らず、PassthroughStyler の自己解決も 1 度で済む。
@@ -487,12 +486,19 @@ namespace FixedCamVr.Streaming.EditorTools
             var statusHud = CreateStatusHud(logic.transform, centerEye.transform, registry, tracker,
                                             director, signalFx, lapCounter, cueScheduler, courseFrame, registration);
 
+            // 4.1. HMD 内の文字面は全部「スタッフが被っているか」を StatusHud に問う（体験者の視界には
+            //      1 文字も出さない・2026-08-07〜）。実行時も FindObjectOfType で自己解決するが、
+            //      明示配線しておく（シーンに 2 つ目の StatusHud が現れたときに取り違えない）。
+            var promptSo = new SerializedObject(introPrompt);
+            TrySetObjectRef(promptSo, "statusHud", statusHud);
+            promptSo.ApplyModifiedPropertiesWithoutUndo();
+
             // 4.2. ControllerGuidePanel（スタッフ専用・右コントローラに追従する操作早見表）。
             //      右コントローラアンカー（RightHandAnchor）+ CenterEyeAnchor へ配線。rightHand が
             //      無い（OVR リグ未配置等）なら生成をスキップ（追従先が無いと常時非表示になるため）。
             ControllerGuidePanel? guidePanel = null;
             if (rightHand != null)
-                guidePanel = CreateControllerGuidePanel(logic.transform, rightHand.transform, centerEye.transform);
+                guidePanel = CreateControllerGuidePanel(logic.transform, rightHand.transform, centerEye.transform, statusHud);
             else
                 Debug.LogWarning($"[MainDemoSceneSetup] '{RightHandPath}' が無いため ControllerGuidePanel の生成をスキップ。");
 
@@ -780,9 +786,11 @@ namespace FixedCamVr.Streaming.EditorTools
             if (rig.GetComponent(stylerType) == null) rig.gameObject.AddComponent(stylerType);
         }
 
-        // 導入の合図（体験者向け・head-lock の 1 行）。覆いより後に描かないと潰されるので、
+        // 導入の合図（head-lock の 1 行）。覆いより後に描かないと潰されるので、
         // renderQueue は IntroPrompt が自分で設定する（IntroVeil の 5000 と対）。
-        private static void CreateIntroPrompt(Transform parent, IntroDirector director)
+        // ⚠ 読み手はスタッフだけ（StatusHud.StaffViewing で門を閉じる）。配線は呼び出し側が後から行う
+        //    — StatusHud はこれより後に作られるので、ここでは渡せない。
+        private static FixedCamVr.Diagnostics.IntroPrompt CreateIntroPrompt(Transform parent, IntroDirector director)
         {
             var existing = parent.Find(IntroPromptName);
             if (existing != null) Object.DestroyImmediate(existing.gameObject);
@@ -796,6 +804,7 @@ namespace FixedCamVr.Streaming.EditorTools
             var so = new SerializedObject(prompt);
             TrySetObjectRef(so, "director", director);
             so.ApplyModifiedPropertiesWithoutUndo();
+            return prompt;
         }
 
         // 体験の終わりを閉じる黒。StartupFader は解除後に自分を Destroy するので再利用できない。
@@ -944,7 +953,8 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetFloat(hudSo, "updateInterval", 0.25f);
             TrySetBool(hudSo, "startVisible", false); // 本番の視界保護（右 B でトグル）
             TrySetFloat(hudSo, "autoHideSec", 0f);    // 既定無効（現場で必要なら設定）
-            TrySetFloat(hudSo, "recenterAutoShowSec", 5f);
+            // ⚠ 旧 `recenterAutoShowSec`（要再登録で 5 秒だけ自動表示）は 2026-08-07 に廃止。
+            //    体験者の視界へ業務連絡が湧く唯一の経路だった（StatusHud のコメント参照）。
             hudSo.ApplyModifiedPropertiesWithoutUndo();
 
             return hud;
@@ -955,7 +965,7 @@ namespace FixedCamVr.Streaming.EditorTools
         // 2〜3 倍程度に収める規模感（小さめ・左寄せの操作リスト）。配置追従は ControllerGuidePanel が
         // controller / head を見て自前で行う（world-space・parent 直下・controller 非親）。
         private static ControllerGuidePanel CreateControllerGuidePanel(Transform parent,
-            Transform controller, Transform head)
+            Transform controller, Transform head, StatusHud? statusHud)
         {
             var canvasGo = new GameObject(ControllerGuideName);
             canvasGo.transform.SetParent(parent, worldPositionStays: false);
@@ -992,6 +1002,8 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(so, "text", tmp);
             TrySetObjectRef(so, "controller", controller);
             TrySetObjectRef(so, "head", head);
+            // 体験者の視界に手元の早見表が浮かないようにする門（右 B or 位置合わせ中だけ出す）。
+            if (statusHud != null) TrySetObjectRef(so, "statusHud", statusHud);
             // 配置の既定（prefab-YAML 未反映罠を避けるため setup が明示的に書く）。
             TrySetFloat(so, "heightOffset", 0.12f);
             TrySetFloat(so, "awayOffset", 0.06f);

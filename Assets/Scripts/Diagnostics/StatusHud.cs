@@ -14,8 +14,11 @@ namespace FixedCamVr.Diagnostics
     ///
     /// 内容モード（優先度順・常に最大 1 枚）:
     ///   1. 登録中（<see cref="registration"/>.IsActive）→ **登録ガイダンスを強制表示**（最優先・オートハイド対象外）
-    ///   2. ステータス表示中（右 B トグル or 要再登録オートショウ）→ lap / ゾーン / 次の cue / 信号 / 要再登録
+    ///   2. ステータス表示中（右 B トグル）→ 相 / lap / ゾーン / 次の演出 / カメラ / 異常 1 件と直し方
     ///   3. それ以外 → 非表示
+    ///
+    /// <b>この 2 つは「スタッフが被っている」ことの印でもある</b>（<see cref="StaffViewing"/>）。
+    /// HMD 内の他の文字面（導入の合図・黒の上の 1 行・手元の操作早見表）はここを見て出入りする。
     ///
     /// 配置は剛体 head-lock を廃し、<see cref="YawFollowLogic"/> の deadzone + SmoothDamp 緩追従
     /// （ScreenAnchor と同型）。頭を回すと遅れてついてくるが、視線だけ動かせば静止して読める。
@@ -95,8 +98,11 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("ステータス表示をこの秒数で自動的に隠す（0 = 無効）。登録ガイダンスには適用しない。")]
         [SerializeField] private float autoHideSec = 0f;
 
-        [Tooltip("『要再登録』が発生した時、非表示中でもステータスを自動表示する秒数（0 = しない）。")]
-        [SerializeField] private float recenterAutoShowSec = 5f;
+        // ⚠ 旧 `recenterAutoShowSec`（要再登録が立った瞬間、非表示中でも 5 秒だけ自動表示）は
+        //    2026-08-07 に廃止した。**体験者が被っている最中に業務連絡が視界へ勝手に出る**唯一の
+        //    経路で、しかも読んでも体験者には何もできない（機器の言葉がホラー体験の中に出る）。
+        //    異常はスタッフが右 B で開けば最優先の 1 件として必ず出る（PickAlert + RecoveryGuidance）。
+        //    卓の heartbeat にも出ているので、気づく経路が消えたわけではない。
 
         private readonly StringBuilder _sb = new(256);
         private readonly YawFollowLogic _yawFollow = new();
@@ -104,8 +110,6 @@ namespace FixedCamVr.Diagnostics
 
         private bool _visible;          // 右 B トグルによる手動表示
         private float _hideAt;          // autoHideSec の失効時刻（_visible=true のとき有効）
-        private float _autoShowUntil;   // 要再登録オートショウの失効時刻
-        private bool _prevNeedsReReg;
 
         private float _accum;
         private string _lastGuidance = "";
@@ -122,6 +126,22 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>現在ステータスを手動表示中か（トグルの真実源）。</summary>
         public bool IsVisible => _visible;
+
+        /// <summary>
+        /// <b>HMD の中に文字を出してよいか ＝ 被っているのがスタッフか。</b>
+        /// 導入の合図（<c>IntroPrompt</c>）・黒の上の 1 行（<c>ShowEndingFader</c>）・
+        /// 手元の操作早見表（<c>ControllerGuidePanel</c>）が全部ここを見る。
+        ///
+        /// 印は 2 つだけ。どちらも<b>コントローラを持っている人にしか起こせない</b>ので、
+        /// 体験者が被っている間は構造的に立たない（体験者はコントローラを持たない運用）。
+        ///   - 右 B のステータス表示（スタッフが自分で開いた）
+        ///   - 位置合わせ作業中（登録は必ずスタッフの仕事）
+        ///
+        /// 2026-08-07 にこの門を作った。それまでは体験者にも文字が出ていて、機器の言葉が
+        /// ホラー体験の入口に混ざっていた（ユーザー指摘「世界観を壊すので消して」）。
+        /// スタッフが確認したいときは従来どおり全部読める ＝ 現地のリハ・切り分けの手段は減らない。
+        /// </summary>
+        public bool StaffViewing => _visible || (registration != null && registration.IsActive);
 
         /// <summary>コントローラ操作モードのラベル（NORMAL/REG）を保持する。ステータス行の行頭
         /// プレフィックス表示は廃止したが（REG 中は登録ガイダンス強制表示で自明）、API と保持値は残す。</summary>
@@ -151,12 +171,6 @@ namespace FixedCamVr.Diagnostics
 
         private void Update()
         {
-            // 要再登録の立ち上がりでオートショウ。
-            bool needsReReg = courseFrame != null && courseFrame.NeedsReRegistration;
-            if (needsReReg && !_prevNeedsReReg && recenterAutoShowSec > 0f)
-                _autoShowUntil = Time.unscaledTime + recenterAutoShowSec;
-            _prevNeedsReReg = needsReReg;
-
             // オートハイド（手動表示のみ・登録ガイダンスは対象外）。
             if (_visible && autoHideSec > 0f && Time.unscaledTime >= _hideAt) _visible = false;
 
@@ -217,9 +231,9 @@ namespace FixedCamVr.Diagnostics
             }
             _lastGuidance = "";
 
-            // 2. ステータス表示中（手動トグル or 要再登録オートショウ）。
-            bool show = _visible || Time.unscaledTime < _autoShowUntil;
-            if (!show)
+            // 2. ステータス表示中（右 B の手動トグルだけ）。自動で開く経路は持たない
+            //    ＝ 体験者が被っている最中に文字が湧く道を 1 本も残さない。
+            if (!_visible)
             {
                 text.enabled = false;
                 return;

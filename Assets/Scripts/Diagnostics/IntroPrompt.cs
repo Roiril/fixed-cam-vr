@@ -6,17 +6,20 @@ using UnityEngine;
 namespace FixedCamVr.Diagnostics
 {
     /// <summary>
-    /// **導入演出の合図を体験者に出す面。**
+    /// **導入演出の合図を出す面。スタッフが被っているときだけ出る。**
     ///
-    /// `IntroDirector.PromptText` は 2026-07-30 の実装時から「StatusHud が読む」とコメントされていたが、
-    /// 実際には**読む者が 1 人も居なかった**（設計批評とコード監査が独立に指摘）。しかも StatusHud は
-    /// スタッフ用で既定 OFF（右 B を押すまで出ない）なので、体験者向けの合図を相乗りさせられない。
-    /// そこで体験者だけに出す専用の面を分けた。
+    /// ⚠ **2026-08-07 に読み手が変わった。** それまでは体験者に出していたが、機器の言葉が
+    /// ホラー体験の入口に混ざって世界観を壊していた（ユーザー指摘「体験者が被っているときに
+    /// 表示する文字を消して。スタッフの時は表示していい」）。いまは
+    /// <see cref="StatusHud.StaffViewing"/>（右 B の表示 or 位置合わせ作業中 ＝ コントローラを
+    /// 持っている人にしか起こせない）が立っている間だけ出す。体験者の視界には 1 文字も出ない。
     ///
-    /// これが無いと、
-    /// - 段 5 の「右手を上げてみてください」が出ない ＝ 3 周目の反転の伏線（計画 §2 の最重要点）が張れない
-    /// - 位置合わせ未登録で「立っても始まらない」理由が誰にも見えない（計画 §11.5 がそれを禁じている）
-    /// - 中止したことが体験者にもスタッフにも伝わらない
+    /// **体験者への合図は口頭に移った。** 段 5 の「右手をあげてください」は 3 周目の反転の伏線
+    /// （画面の中の自分は上げるが、3 周目の背景は 1 周目の録画なので上がらない）で、体験の核心に
+    /// 効く唯一の指示だった。HMD を被せる前にスタッフが伝える運用にする。
+    ///
+    /// 面として残してあるのは、現地のリハ・切り分けでスタッフが「いま何を待っているのか」を
+    /// 読めるようにするため（段 0 の開始条件・段 5 の合図が出る瞬間が目で分かる）。
     ///
     /// ⚠ **覆い（<see cref="IntroVeil"/>）より後に描く。** 覆いは Passthrough Windows 方式で
     /// Queue 5000・`Blend Zero SrcAlpha`（結果 rgb = srcAlpha × 背景）を全画面に掛ける。段 2 / 段 3 は
@@ -31,6 +34,9 @@ namespace FixedCamVr.Diagnostics
     {
         [Tooltip("合図の供給元。null なら同 GameObject → シーンから探す。")]
         [SerializeField] private IntroDirector? director;
+
+        [Tooltip("スタッフが被っているかの判定元。null ならシーンから探す。居なければ何も出さない。")]
+        [SerializeField] private StatusHud? statusHud;
 
         [Tooltip("頭からの距離 (m)。本編のスクリーンより手前に置く。")]
         [SerializeField] private float distance = 1.5f;
@@ -92,10 +98,23 @@ namespace FixedCamVr.Diagnostics
             SetAlpha(0f);
         }
 
+        /// <summary>
+        /// スタッフが被っているか。<b>解決できない環境では false ＝ 出さない側へ倒す。</b>
+        /// 判定できないときに出す設計だと、StatusHud を持たないシーン・プレビューで
+        /// 体験者向けの文字が復活する（世界観を壊す側の失敗を既定にしない）。
+        /// </summary>
+        private bool StaffViewing()
+        {
+            if (statusHud == null) statusHud = FindObjectOfType<StatusHud>();
+            return statusHud != null && statusHud.StaffViewing;
+        }
+
         private void LateUpdate()
         {
             if (_text == null) return;
-            string want = director != null ? (director.PromptText ?? string.Empty) : string.Empty;
+            string want = StaffViewing() && director != null
+                ? (director.PromptText ?? string.Empty)
+                : string.Empty;
             if (want != _shown)
             {
                 // 文言が変わる瞬間は一度消してから出す（読んでいる途中で差し替わると読み直しになる）。
