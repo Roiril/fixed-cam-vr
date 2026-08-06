@@ -366,5 +366,52 @@ namespace FixedCamVr.Streaming.Tests
                 new Vector3(0f, 1f, 0f), 0f, l * 7.3f, out Vector3 b));
             Assert.AreEqual(a.z, b.z, 1e-4f);
         }
+
+        // ---- 接地影の大きさ（人間用の定数を人形へ流用しない）----
+
+        [Test]
+        public void Blob_人形の大きさに比例する()
+        {
+            // ⚠ 下限 0.15m（人間用）を人形にも掛けていたのが 2026-08-06 まで残っていた:
+            //    全高 0.40m の市松人形で本来 0.088m のところ 0.15m へ持ち上がり、
+            //    **背丈の 3/4 の黒い円盤**が足元に敷かれて「切り抜きを板に貼った」ように見えていた。
+            Assert.AreEqual(0.088f, ShowCgLayer.GroundBlobRadiusM(0.40f), 1e-3f, "人形 0.40m");
+            Assert.AreEqual(0.352f, ShowCgLayer.GroundBlobRadiusM(1.60f), 1e-3f, "成人 1.6m");
+        }
+
+        [Test]
+        public void Blob_極端な大きさでも上下限に収まる()
+        {
+            Assert.AreEqual(0.03f, ShowCgLayer.GroundBlobRadiusM(0.02f), 1e-4f, "下限");
+            Assert.AreEqual(0.6f, ShowCgLayer.GroundBlobRadiusM(9f), 1e-4f, "上限");
+            Assert.AreEqual(0.03f, ShowCgLayer.GroundBlobRadiusM(0f), 1e-4f, "0 でも破綻しない");
+        }
+
+        // ---- 人形の明るさを映像へ寄せる ----
+
+        [Test]
+        public void 明るさ倍率_測れていなければ著作値のまま()
+        {
+            Assert.AreEqual(1f, ShowCgLayer.LumaGainFor(-1f), 1e-5f);
+        }
+
+        [Test]
+        public void 明るさ倍率_基準の明るさでは変えない()
+        {
+            // 基準 0.35 の映像 = 「ふつうに写っている」ので、著作した光量をそのまま使う。
+            Assert.AreEqual(1f, ShowCgLayer.LumaGainFor(0.35f), 1e-3f);
+        }
+
+        [Test]
+        public void 明るさ倍率_暗い映像では人形も暗くする()
+        {
+            float dark = ShowCgLayer.LumaGainFor(0.15f);
+            float bright = ShowCgLayer.LumaGainFor(0.70f);
+            Assert.Less(dark, 1f, "暗い区間で人形だけ明るいと必ず浮く");
+            Assert.Greater(bright, 1f, "明るい区間で人形だけ暗いと沈む");
+            // 真っ暗で人形が消える / 白飛びで焼ける、を防ぐ clamp（0.35〜2.0 の内側）。
+            Assert.Greater(ShowCgLayer.LumaGainFor(0.001f), 0.5f);
+            Assert.Less(ShowCgLayer.LumaGainFor(1f), 1.8f);
+        }
     }
 }

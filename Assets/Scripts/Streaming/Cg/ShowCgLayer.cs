@@ -760,16 +760,20 @@ namespace FixedCamVr.Streaming.Cg
         private const float LumaMatchAmount = 0.7f;
 
         /// <summary>
-        /// 映像の明るさに合わせた人形の光量の倍率。
-        /// 測れていなければ 1（＝著作した値をそのまま使う）。
+        /// 映像の明るさに合わせた人形の光量の倍率。<paramref name="sourceLuma"/> が負なら 1
+        /// （＝測れていない。著作した値をそのまま使う）。
         /// 上下の clamp は、真っ暗な映像で人形が消える・白飛びで人形が焼けるのを防ぐため。
+        ///
+        /// **Editor の合成プレビューも必ずこれを呼ぶこと** — プレビューだけ素の光量で描くと、
+        /// 「プレビューでは馴染んで見えるのに実機では浮く（またはその逆）」が黙って起きる。
         /// </summary>
-        private float LumaGain()
+        public static float LumaGainFor(float sourceLuma)
         {
-            float luma = _screen != null ? _screen.SourceLuma : -1f;
-            if (luma < 0f || LumaMatchAmount <= 0f) return 1f;
-            return Mathf.Lerp(1f, Mathf.Clamp(luma / ReferenceLuma, 0.35f, 2f), LumaMatchAmount);
+            if (sourceLuma < 0f || LumaMatchAmount <= 0f) return 1f;
+            return Mathf.Lerp(1f, Mathf.Clamp(sourceLuma / ReferenceLuma, 0.35f, 2f), LumaMatchAmount);
         }
+
+        private float LumaGain() => LumaGainFor(_screen != null ? _screen.SourceLuma : -1f);
 
         /// <summary>
         /// 色温度 (K) → **linear** の RGB。卓（`room-model.js` の `kelvinToRgb`）と**同じ近似式**を使う
@@ -854,8 +858,7 @@ namespace FixedCamVr.Streaming.Cg
         {
             if (!EnsureBlob() || _actorInstance == null) return;
             Vector3 p = _actorInstance.transform.position;
-            float radius = Mathf.Clamp(Mathf.Max(0.05f, def.heightM) * BlobRadiusPerHeight,
-                                       BlobRadiusMinM, BlobRadiusMaxM);
+            float radius = GroundBlobRadiusM(def.heightM);
             _blob!.position = new Vector3(p.x, floorWorldY + BlobLiftM, p.z);
             // Quad を床へ寝かせる。シェーダが Cull Off なので表裏の取り違えで消えることはない。
             _blob.rotation = Quaternion.Euler(90f, 0f, 0f);
@@ -868,6 +871,15 @@ namespace FixedCamVr.Streaming.Cg
         /// <summary>にじみ (m) → 接地影の縁のぼけ幅（半径に対する比）。半径が変われば比も変わる。</summary>
         public static float BlobFeatherFromSoftM(float softM, float radiusM)
             => Mathf.Clamp(softM / Mathf.Max(0.01f, radiusM), 0.05f, 1f);
+
+        /// <summary>
+        /// 接地影の半径 (m)。**Editor の合成プレビューも必ずこれを呼ぶこと** —
+        /// 数値をあちらへ写すと、片方だけ直したときに「プレビューでは足元が自然なのに実機では円盤」
+        /// という食い違いが黙って起きる（実際 2026-08-06 まで下限 0.15m が二重定義で残っていた）。
+        /// </summary>
+        public static float GroundBlobRadiusM(float actorHeightM)
+            => Mathf.Clamp(Mathf.Max(0.05f, actorHeightM) * BlobRadiusPerHeight,
+                           BlobRadiusMinM, BlobRadiusMaxM);
 
         private bool EnsureBlob()
         {

@@ -235,6 +235,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     if (follow) notes.Add("cgMode=follow -> stands at authored pos (no zone grid)");
                 }
 
+                // 人形の光量を実写へ寄せる倍率は、**人形を置く前**に実写側の明るさから決まる
+                // （ShowCgLayer では MjpegScreen.SourceLuma が同じ役をする）。
+                stage.SetPlateLuma(plate);
                 stage.PlaceActor(actor, standXz, standYaw, geom);
             }
             else
@@ -430,7 +433,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 cgCam.nearClipPlane = 0.05f;
                 cgCam.farClipPlane = 30f;
                 cgCam.allowHDR = false;
-                cgCam.allowMSAA = false;
+                cgCam.allowMSAA = true;  // 本番と同じ（人形の輪郭だけギザギザだと実写のなまった縁と食い違う）
                 cgCam.enabled = false;   // 手動 Render のみ（Edit Mode で勝手に描かせない）
 
                 // --- 合成ステージ（枠 Quad + 直交カメラ + キャプション帯）---
@@ -786,7 +789,10 @@ namespace FixedCamVr.Streaming.EditorTools
                     // depth 24（+stencil8）。16 だとステンシルが無く、平面投影シャドウの「1 画素 1 回」が
                     // 効かずに腕と胴の重なりが二重に暗くなる（本番と同じ理由でここも 24）。
                     _cgRt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32)
-                    { name = "CgVizCgRT", useMipMap = false, wrapMode = TextureWrapMode.Clamp };
+                    {
+                        name = "CgVizCgRT", useMipMap = false, wrapMode = TextureWrapMode.Clamp,
+                        antiAliasing = 4,   // 本番（ShowCgLayer.EnsureRenderTexture）と同じ
+                    };
                     _cgRt.Create();
                     _cgCam.targetTexture = _cgRt;
                     _compositeMat.SetTexture("_CgTex", _cgRt);
@@ -901,6 +907,36 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
             }
 
+            /// 実写プレートの平均輝度（0..1・まだ測っていなければ -1）。人形の光量をここへ寄せる。
+            private float _plateLuma = -1f;
+
+            /// <summary>
+            /// 実写側の明るさを測る（本番の <c>MjpegScreen.SourceLuma</c> と同じ役）。
+            /// **人形を置く前に呼ぶこと** — <see cref="ApplyLightAndGround"/> がこの値を読む。
+            /// </summary>
+            public void SetPlateLuma(Plate plate) => _plateLuma = AverageLuma(plate.texture);
+
+            // 16x16 の疎サンプル（MjpegScreen.SampleLuma と同じ手）。読めないテクスチャなら -1。
+            private static float AverageLuma(Texture2D? tex)
+            {
+                if (tex == null || tex.width <= 4 || tex.height <= 4) return -1f;
+                try
+                {
+                    int stepX = Mathf.Max(1, tex.width / 16), stepY = Mathf.Max(1, tex.height / 16);
+                    float sum = 0f;
+                    int n = 0;
+                    for (int y = 0; y < tex.height; y += stepY)
+                        for (int x = 0; x < tex.width; x += stepX)
+                        {
+                            Color c = tex.GetPixel(x, y);
+                            sum += 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+                            n++;
+                        }
+                    return n > 0 ? sum / n : -1f;
+                }
+                catch { return -1f; }
+            }
+
             /// <summary>光の向き（course 相対）と接地（投影シャドウ + 接地影 blob）を本番と同じ式で決める。</summary>
             private void ApplyLightAndGround(ShowActorDef def, Geometry geom)
             {
@@ -917,11 +953,23 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 if (_actor != null)
                 {
+                    // 光の色・強さ・環境光も本番（ShowCgLayer.ApplyLight）と同じ式で入れる。
+                    // ここを省くとシェーダ既定の白色光で描かれ、**プレビューだけ人形が明るい**。
+                    // 映像の明るさへ寄せる倍率も同じ関数から取る（実写が暗い区間で人形だけ浮くのを消す）。
+                    float tempK = light != null ? light.tempK : 4000f;
+                    float intensity = light != null ? Mathf.Max(0f, light.intensity) : 1f;
+                    float ambient = light != null ? Mathf.Clamp01(light.ambient) : 0.35f;
+                    float gain = ShowCgLayer.LumaGainFor(_plateLuma);
+                    Color lc = ShowCgLayer.KelvinToLinearColor(tempK) * (intensity * gain);
+                    ambient = Mathf.Clamp01(ambient * gain);
+
                     var mpb = new MaterialPropertyBlock();
                     foreach (Renderer r in _actor.GetComponentsInChildren<Renderer>(true))
                     {
                         r.GetPropertyBlock(mpb);
                         mpb.SetVector("_LightDir", new Vector4(dir.x, dir.y, dir.z, 0f));
+                        mpb.SetVector("_LightColor", new Vector4(lc.r, lc.g, lc.b, 1f));
+                        mpb.SetFloat("_Ambient", ambient);
                         r.SetPropertyBlock(mpb);
                     }
                 }
@@ -934,10 +982,10 @@ namespace FixedCamVr.Streaming.EditorTools
                     _shadowMat.SetFloat("_ShadowDensity", density);
                     _shadowMat.SetFloat("_ShadowSoftM", softM);
                 }
-                PlaceBlob(def, floorWorldY, density);
+                PlaceBlob(def, floorWorldY, density, softM);
             }
 
-            private void PlaceBlob(ShowActorDef def, float floorWorldY, float density)
+            private void PlaceBlob(ShowActorDef def, float floorWorldY, float density, float softM)
             {
                 _blobMat ??= LoadRuntimeMaterial("ShowCg/ShowGroundBlob", "FixedCamVr/ShowGroundBlob", "接地影");
                 if (_blobMat == null || _actor == null) return;
@@ -959,11 +1007,14 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 _blob.gameObject.SetActive(true);
                 Vector3 p = _actor.transform.position;
-                float radius = Mathf.Clamp(Mathf.Max(0.2f, def.heightM) * 0.22f, 0.15f, 0.6f);
+                // **式は本番（ShowCgLayer）から取る。**ここへ数値を写すと、片方だけ直したときに
+                // 「プレビューでは自然なのに実機では足元に円盤」という食い違いが黙って起きる。
+                float radius = ShowCgLayer.GroundBlobRadiusM(def.heightM);
                 _blob.position = new Vector3(p.x, floorWorldY + 0.004f, p.z);
                 _blob.rotation = Quaternion.Euler(90f, 0f, 0f);
                 _blob.localScale = new Vector3(radius * 2f, radius * 2f, 1f);
                 _blobMat.SetFloat("_BlobDensity", density);
+                _blobMat.SetFloat("_BlobFeather", ShowCgLayer.BlobFeatherFromSoftM(softM, radius));
             }
 
             private static Material? LoadRuntimeMaterial(string resourcePath, string shaderName, string label)
