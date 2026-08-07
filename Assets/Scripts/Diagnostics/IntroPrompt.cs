@@ -106,7 +106,12 @@ namespace FixedCamVr.Diagnostics
         private bool StaffViewing()
         {
             if (statusHud == null) statusHud = FindObjectOfType<StatusHud>();
-            return statusHud != null && statusHud.StaffViewing;
+            if (statusHud == null) return false;
+            // ⚠ 位置合わせ中は譲る。StatusHud が登録ガイダンスを 1.6m に強制表示していて、
+            //   この面は 1.5m ＝ 10cm 手前で重なるので、出すと作業中の文字を覆い隠す。
+            //   導入の合図は「体験者に見せる」ためのもので、登録作業中に読む相手は居ない。
+            if (statusHud.RegistrationActive) return false;
+            return statusHud.StaffViewing;
         }
 
         private void LateUpdate()

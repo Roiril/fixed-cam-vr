@@ -47,8 +47,8 @@ namespace FixedCamVr.Diagnostics.Tests
             return (bool)m!.Invoke(c, null);
         }
 
-        /// <summary>門が見る StatusHud を差し込む（面によってフィールド名が違う）。</summary>
-        private static void Wire(Component c, string fieldName, StatusHud? hud)
+        /// <summary>依存を差し込む（面によってフィールド名が違う）。</summary>
+        private static void Wire(Component c, string fieldName, Object? hud)
         {
             FieldInfo? f = c.GetType().GetField(fieldName,
                 BindingFlags.Instance | BindingFlags.NonPublic);
@@ -96,6 +96,42 @@ namespace FixedCamVr.Diagnostics.Tests
 
             hud.SetVisible(true);
             Assert.That(Gate(prompt), Is.True, "スタッフが見ているときは従来どおり読める");
+        }
+
+        /// <summary>
+        /// **位置合わせ中は、視界に重なる面が登録ガイダンスへ譲る。**
+        ///
+        /// 門を <see cref="StatusHud.StaffViewing"/> へ統一した時（2026-08-07）、登録中も
+        /// <c>IsActive</c> 経由で門が開くようにした。ところが登録ガイダンスを出しているのは
+        /// StatusHud 自身（1.6m）で、IntroPrompt(1.5m) と ShowEndingFader(0.3m) はその手前に重なる。
+        /// 結果、**トリガー長押しで登録へ入っても導入の「そのまま前へ進んでください」しか見えず、
+        /// モードが変わっていないように見えた**（同日に現地で発覚）。
+        ///
+        /// 手元の <see cref="ControllerGuidePanel"/> は視界に重ならないので譲らない
+        /// （登録中こそ操作早見表が要る）。
+        /// </summary>
+        [Test]
+        public void Registration_SuppressesOverlappingSurfaces()
+        {
+            var hud = Spawn<StatusHud>();
+            var reg = Spawn<Tracking.CourseRegistrationController>();
+            Wire(hud, "registration", reg);
+
+            var prompt = Spawn<IntroPrompt>();
+            Wire(prompt, "statusHud", hud);
+            var panel = Spawn<ControllerGuidePanel>();
+            Wire(panel, "statusHud", hud);
+
+            Assert.That(hud.RegistrationActive, Is.False, "初期状態は登録していない");
+
+            reg.Toggle();   // トリガー長押しで位置合わせへ入る
+            Assert.That(hud.RegistrationActive, Is.True);
+            Assert.That(hud.StaffViewing, Is.True, "登録は必ずスタッフの仕事＝門は開く");
+
+            Assert.That(Gate(prompt), Is.False,
+                "導入の合図(1.5m)は登録ガイダンス(1.6m)を手前から隠してはいけない");
+            Assert.That(Gate(panel), Is.True,
+                "手元の早見表は視界に重ならない＝登録中こそ出す");
         }
 
         [Test]

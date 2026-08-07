@@ -141,7 +141,21 @@ namespace FixedCamVr.Diagnostics
         /// ホラー体験の入口に混ざっていた（ユーザー指摘「世界観を壊すので消して」）。
         /// スタッフが確認したいときは従来どおり全部読める ＝ 現地のリハ・切り分けの手段は減らない。
         /// </summary>
-        public bool StaffViewing => _visible || (registration != null && registration.IsActive);
+        public bool StaffViewing => _visible || RegistrationActive;
+
+        /// <summary>
+        /// 位置合わせ作業中か（この面が登録ガイダンスを最優先で強制表示している状態）。
+        ///
+        /// ⚠ **他の文字面はこれが true の間 自分を出してはいけない。** 登録ガイダンスはこの面が
+        /// <see cref="distance"/> = 1.6m に出しており、<c>IntroPrompt</c>(1.5m) と
+        /// <c>ShowEndingFader</c>(0.3m) はどちらもその手前に重なる。譲らないと
+        /// **作業中のスタッフに登録の文字が一切見えない**。
+        ///
+        /// 2026-08-07 実害: トリガー長押しで登録へ入っても導入の「そのまま前へ進んでください」
+        /// しか見えず、モードが変わっていないように見えた（同日に門を <see cref="StaffViewing"/> へ
+        /// 統一した際、登録中も他面が開くようになったのが原因）。
+        /// </summary>
+        public bool RegistrationActive => registration != null && registration.IsActive;
 
         /// <summary>コントローラ操作モードのラベル（NORMAL/REG）を保持する。ステータス行の行頭
         /// プレフィックス表示は廃止したが（REG 中は登録ガイダンス強制表示で自明）、API と保持値は残す。</summary>

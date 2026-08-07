@@ -88,7 +88,10 @@ namespace FixedCamVr.Diagnostics
         }
 
         /// <summary>スタッフが被っているか。解決できないときは false ＝ 文字を出さない側へ倒す。</summary>
-        private bool StaffViewing() => _hud != null && _hud.StaffViewing;
+        // ⚠ 位置合わせ中は譲る（この面は 0.3m ＝ 全部の文字面のうち最も手前）。
+        //   「原点がずれた → 中止 → その場で位置合わせ」は現地でいちばん自然な流れなので、
+        //   譲らないと登録ガイダンスが黒の上の 1 行に隠される。
+        private bool StaffViewing() => _hud != null && _hud.StaffViewing && !_hud.RegistrationActive;
 
         private void Update()
         {
