@@ -103,6 +103,52 @@ BuildTableDuoDesktop が手動 `SwitchActiveBuildTarget`（Android→Standalone�
 コンパイル競合かシーン欠落で、リトライではなく原因の除去が要る。修正後の active target は
 Standalone のまま残る（Library 管理・git 差分なし・次の APK ビルドが自分で Android へ切替する）。
 
+### 2.4 ビルドが「始まったのに 1 バイトも進まない」→ モーダルダイアログを疑う（2026-08-07 実害・35 分）
+
+Editor.log に `BuildVariants:BuildFixedCam` のスタックが出ていて、`Temp/__Backupscenes/0.backup` まで
+作られているのに、そこから何分待っても Temp も `Library/Bee/artifacts/Android` も動かないことがある。
+Unity は `Responding=True`・CPU ほぼ 0。**ビルド前検証のモーダルダイアログが出て待っている**
+（実害時は `Unsupported Input Handling`。この文字列は Unity ネイティブ側にあり、PackageCache にも
+Assets にも無いので rg では出所を突き止められない）。
+
+**見分け方は可視ウィンドウの列挙**（`MainWindowTitle` はメインウィンドウしか返さないので気づけない）:
+
+```powershell
+Add-Type @"
+using System;using System.Text;using System.Runtime.InteropServices;
+public class W {
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc f, IntPtr l);
+  public delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+}
+"@
+$up = (Get-Process Unity).Id
+$cb = [W+EnumWindowsProc]{ param($h,$x)
+  $q = 0; [void][W]::GetWindowThreadProcessId($h, [ref]$q)
+  if ($q -eq $up -and [W]::IsWindowVisible($h)) {
+    $sb = New-Object System.Text.StringBuilder 512
+    [void][W]::GetWindowText($h, $sb, 512); if ($sb.Length -gt 0) { "WIN: " + $sb.ToString() }
+  }
+  return $true
+}
+[void][W]::EnumWindows($cb, [IntPtr]::Zero)
+```
+
+ウィンドウが 2 つ出たら、2 つ目がダイアログ。**押さずに batchmode へ切り替えるのが最短**
+（`-batchmode` はダイアログを出さずに既定で進む）。理由:
+
+- **ダイアログの選択肢は ProjectSettings を変えることがある**（Input Handling・XR 設定）。ここは
+  同居 2 アプリの共有資源で、片方の都合で変えてはいけない（rules/parallel-projects.md §2）
+- **閉じてもビルドは再開しない**（キャンセル扱いで `[BuildVariants]` の OK/失敗ログも出ない）
+- 実害時はダイアログが閉じた後 **MCP ブリッジが wedge し、Editor は終了要求にも 100 秒応じなかった**
+  （`CloseMainWindow` でウィンドウは消えるがプロセスが残る）。結局 `Stop-Process -Force` → batchmode
+
+⚠ **`Get-Process Unity` が返す exe と、computer-use が許可する exe は別バージョンのことがある**
+（Hub に複数入っているため）。スクリーンショットで読もうとすると実行中の Editor がマスクされて
+背景しか見えない。**画面に頼らず EnumWindows でタイトルだけ取る**方が速くて確実。
+
 ### 2.5 MCP が wedge して menu が届かないとき → batchmode で焼く（2026-07-31 実害・15 分溶かした）
 
 上の「タイムアウト ≠ ビルド開始」は **menu が握り潰される**話だが、それとは別に
