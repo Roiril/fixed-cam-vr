@@ -167,14 +167,15 @@ for cid, wheres, source, take in used:
     for i, t in enumerate(tiles):
         sheet.paste(t, ((i % 2) * (FW + 16), (i // 2) * (FH + 26 + 16)))
 
-    info.update(id=cid, name=c.get('name', ''), wheres=wheres, source=source, cam=cam,
+    info.update(comp_img=comp,
+                id=cid, name=c.get('name', ''), wheres=wheres, source=source, cam=cam,
                 src_dims=f'{src.width}×{src.height}' if src else '—',
                 img=b64(sheet), has_mask=mask is not None,
                 src_url=c['sourceUrl'], mask_url=mask_rel,
                 has_match=any(k in c for k in ('matchGain', 'matchOffset', 'hasMatch')))
     rows.append(info)
 
-json.dump([{k: v for k, v in r.items() if k != 'img'} for r in rows],
+json.dump([{k: v for k, v in r.items() if k not in ('img', 'comp_img')} for r in rows],
           open(os.path.join(OUT, 'stats.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 
 # ---- HTML ------------------------------------------------------------------
@@ -246,7 +247,18 @@ html = f"""<title>いま演出で使っている素材のマスク</title>
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--out', default=os.path.join(REPO, 'reports', 'mask-audit.html'))
-path = ap.parse_args().out
+ap.add_argument('--dump-composite', default='',
+                help='合成結果（画像加工の前）を <dir>/<cue id>.png へ出す。'
+                     '画像加工まで掛けた絵が見たい時に、卓の FS_POST へ食わせるための素。'
+                     'ここで post を掛けないのは、post の式が卓と実機の 4 箇所で手作業同期されていて、'
+                     '5 つ目の実装を作ると沈黙して食い違うから（rules/streaming.md）')
+args = ap.parse_args()
+path = args.out
+if args.dump_composite:
+    os.makedirs(args.dump_composite, exist_ok=True)
+    for r in rows:
+        r['comp_img'].save(os.path.join(args.dump_composite, r['id'] + '.png'))
+    print('dumped', len(rows), 'composites ->', args.dump_composite)
 os.makedirs(os.path.dirname(path), exist_ok=True)
 open(path, 'w', encoding='utf-8', newline='\n').write(html)
 print('wrote', path, os.path.getsize(path) // 1024, 'KB')
