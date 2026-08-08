@@ -17,7 +17,7 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 | **配信側 (Android/Kotlin)** | カメラ権限なし・MJPEG が出ない・解像度違い | ブラウザで `http://<phone>:8080/` 直接確認 / `curl /info` | [streaming.md](streaming.md), [streamer-android-build SKILL](../../.claude/skills/streamer-android-build/SKILL.md) |
 | **ネットワーク** | 別 LAN・ポート閉鎖・Wi-Fi 帯域不足 | PC から `curl -m 3 /health` / `ping <phone>` | [streaming.md `/health`](streaming.md) |
 | **Unity スクリプト** | デコード失敗・GC スパイク・Texture 白ノイズ | Editor Console + Profiler / [streaming-offline-test SKILL](../../.claude/skills/streaming-offline-test/SKILL.md) | [unity_pitfalls.md](../../.claude/memory/unity_pitfalls.md) |
-| **Unity（コンパイル・Editor 機能）** | コンパイル失敗・prefab 再生時に値リセット | `.\tools\unity.ps1 test`（コンパイル込み）/ `.\tools\unity.ps1 menu` | [unity-vr.md](unity-vr.md), [unity-prefab-fields SKILL](../../.claude/skills/unity-prefab-fields/SKILL.md) |
+| **Unity（コンパイル・Editor 機能）** | コンパイル失敗・prefab 再生時に値リセット | `.\tools\unity.ps1 test`（コンパイル込み）/ `.\tools\unity.ps1 menu` | [unity-vr.md](unity-vr.md), `unity-prefab-fields` スキル |
 | **Meta XR / OpenXR** | パススルー出ない・トラッキング崩れ・90Hz 出ない | `adb-logcat` スキル (xr) / OVR Metrics Tool | [meta-xr.md](meta-xr.md) |
 | **ビルド / 実機** | APK 起動しない・即落ち・黒画面 | `adb-logcat` スキル (unity) / `adb-logcat` スキル (crash) | [unity-vr.md](unity-vr.md) |
 
@@ -30,7 +30,7 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 1. **配信側を疑う** — ブラウザで `http://<phone>:8080/` を開く。HTML が出るか？ → 出ないなら streamer アプリ未起動 or ポート違い
 2. **ネットワークを疑う** — PC から `curl -m 3 http://<phone>:8080/health`。タイムアウトなら同一 LAN にいない / FW ブロック
 3. **Unity スクリプトを疑う** — `streaming-offline-test` で fake server に向け Editor 単体検証。ここで出るなら実機構成側の問題
-4. **MCP / コンパイル** — `unity-status` スキル でエラー有無
+4. **コンパイル** — `.\tools\unity.ps1 test` でエラー有無（走る前に必ずコンパイルする）
 5. **Meta XR** — Editor で出るが Quest で出ない → ビルド層 (`adb-logcat` スキル (unity))
 
 ### 「カメラの IP が変わった / スロットの対応が崩れた」（2026-07-18 から自動化）
@@ -115,11 +115,11 @@ EditMode テストは走る前に必ずコンパイルするので、**これ 1 
 （`Logs/test-EditMode.xml` に結果、標準出力に `error CS`）。Editor を開く必要も MCP もいらない。
 
 ⚠ **Editor がこのプロジェクトを開いていると止まる**（`Temp/UnityLockfile`）。閉じてからやり直す。
-起動中の Editor をそのまま調べたいときだけ MCP（[mcp-unity.md](mcp-unity.md)）へ落ちる。
+起動中の Editor をそのまま調べたいときだけ MCP（[reference/mcp-unity.md](../reference/mcp-unity.md)）へ落ちる。
 
 ### 「prefab に保存した値が再生時に変わる / 0 になる」
 
-→ [unity-prefab-fields SKILL](../../.claude/skills/unity-prefab-fields/SKILL.md) を読む。SerializeField 追加直後の prefab YAML 未反映パターン。
+→ `unity-prefab-fields` スキルを読む。SerializeField 追加直後の prefab YAML 未反映パターン。
 
 ### 「Web で演出 ON にしても Quest にオーバーレイが出ない」（2026-06-17 実害）
 
@@ -174,4 +174,4 @@ EditMode テストは走る前に必ずコンパイルするので、**これ 1 
 | `streaming-offline-test` | スマホ無しで Unity の MJPEG パイプライン検証 |
 | `streamer-android-build` | 姉妹リポ APK ビルド & 実機インストール |
 | `unity-prefab-fields` | prefab YAML / SerializeField 不整合の修正 |
-| `unity-status` / `unity-mcp` | **退避路**。起動中の Editor をライブ操作する必要があるときだけ（要 MCP 登録） |
+| `unity-editor-status`（グローバル） | **退避路**。起動中の Editor をライブ操作する必要があるときだけ（要 MCP 登録） |

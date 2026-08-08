@@ -45,7 +45,7 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 ## 手動視点リセット（2026-06-16）
 - **人側/手側 両方**: コントローラ**両手グリップ同時 3 秒長押し**で頭を席（初期目線アンカー）へ戻す。
 - **コントローラ限定**: 入力は OVRInput の grip 軸（LTouch/RTouch）だけ。ハンドトラッキング/ピンチは一切見ないのでジェスチャーでは発火しない。両手必須で片手偶発も防止（誤検知防止の明示要件）。閾値/秒数は `ControllerRecenterWatcher` の SerializeField
-- 実装: [ControllerRecenterWatcher](../../Assets/TableDuo/Scripts/Hands/ControllerRecenterWatcher.cs)(OVR依存・Hands, event 発火) → [TableDuoPlayer](../../Assets/TableDuo/Scripts/Net/TableDuoPlayer.cs) が購読 → [RigRecenter.HeadToSeat](../../Assets/TableDuo/Scripts/Net/RigRecenter.cs)（純関数・yaw＋位置を頭→席へ、pitch/roll は保持＝水平維持。EditMode テスト済み）+ recenter ログ送信。OS recenter（[[ ]] RecenterWatcher）は従来通り AlignLocalRig
+- 実装: [ControllerRecenterWatcher](../../Assets/TableDuo/Scripts/Hands/ControllerRecenterWatcher.cs)(OVR依存・Hands, event 発火) → [TableDuoPlayer](../../Assets/TableDuo/Scripts/Net/TableDuoPlayer.cs) が購読 → [RigRecenter.HeadToSeat](../../Assets/TableDuo/Scripts/Hands/RigRecenter.cs)（純関数・yaw＋位置を頭→席へ、pitch/roll は保持＝水平維持。EditMode テスト済み）+ recenter ログ送信。OS recenter（[[ ]] RecenterWatcher）は従来通り AlignLocalRig
 - **Setup 再実行が必要**: `ControllerRecenterWatcher` は `Setup TableDuo Scene` が Systems に追加する。既存シーンに無ければ再実行
 
 ## 既知の罠

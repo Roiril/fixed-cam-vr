@@ -114,7 +114,7 @@ SetSurfaceClamp(piece, topY, cx, cz, hx, hz);   // ← 掴めるプロップは�
 - 配置チューニングは **Setup 実行 → `Diagnostics/Preview Table + Remy seated`（Play 不要スクショ、[TableDuoTablePreview.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoTablePreview.cs)）→ PNG 確認** のループ。手順詳細は [[table_duo_layout_tuning]]。
 - **stow ベイクされた非デフォルトゲームは通常プレビューに写らない** → `Diagnostics/Preview Table (Geister)` の型（`CaptureWithActiveGame`＝撮影中だけ対象ゲームの Renderer を表示・他を非表示に入れ替え、finally で復元）を流用する。新ゲームを足したら同型のメニューを 1 行足すだけ。
 - **GLB モデルの正面向きはプレビュー実測で校正する**（2026-07-20 実害）: Blender +Y 正面のモデルは glTFast 取込後 **transform -Z 向き**になる（ガイスター駒で実測・yaw+180 補正で解決）。調査エージェントの変換規則推測や生成スクリプトのコメントを信じず、初回配置 → プレビュー → 目視で正面 yaw 定数を確定する。
-- **OVR シーンは Link/HMD 無しの Play がハングする**ので、Preview スクショが実質唯一の高速検証（[.claude/rules/mcp-unity.md](../rules/mcp-unity.md)）。
+- **OVR シーンは Link/HMD 無しの Play がハングする**ので、Preview スクショが実質唯一の高速検証（[.claude/reference/mcp-unity.md](../reference/mcp-unity.md)）。
 - 編集 → 実行の前に `Library/ScriptAssemblies/TableDuoVr.Editor.dll` の mtime が編集後になっているか確認してから `execute_menu_item` する（非フォーカス Editor はコンパイルを遅延する。mcp-unity.md 参照）。
 
 ## 11. ルール裁定はコード化しない（研究アプリの設計思想）
@@ -127,7 +127,7 @@ TableDuo は「手だけアバターとの無言交渉の観察」が目的な�
 2. **`TableProps` レイヤー未確保**でピースが手・アバターと衝突する警告 → `EnsureTablePropsLayer()` が TagManager の 8 番以降の空きへ冪等追記。空きスロット枯渇時は Warning のみで進む（衝突分離が効かなくなるので要注意）。
 3. **薄板の物理トンネリング**（§4 の⚠）。
 4. **密集初期配置で物理オブジェクトが弾ける**: チップ数珠は「くっつくギリギリ」だが実接触にはせず +3mm マージン（ロード時に押し合って弾け飛ぶのを防ぐ）。サーペンタイン配置は弧長等間隔ではなく**直前チップからのユークリッド距離**でサンプリングする（ターンで直線距離が縮んで重なるのを防ぐ）。密集配置を足すとき共通の罠。
-5. **非フォーカス Editor のコンパイル遅延 / MCP ブリッジ wedge / prefab 未反映**は [.claude/rules/mcp-unity.md](../rules/mcp-unity.md) と [[table_duo_study_status]] に既出（DLL mtime 確認・batchmode 検証・冪等 prefab 補完）。
+5. **非フォーカス Editor のコンパイル遅延 / MCP ブリッジ wedge / prefab 未反映**は [.claude/reference/mcp-unity.md](../reference/mcp-unity.md) と [[table_duo_study_status]] に既出（DLL mtime 確認・batchmode 検証・冪等 prefab 補完）。
 6. **薄い剛体の縦積みが dynamic のまま沈み込む・すり抜ける**（山札・積みチップ）→ §4 の⚠⚠。`restKinematic`（静止時 kinematic 凍結）で物理から外すのが正解。PhysX パラメータ（contactOffset・ソルバ反復）調整では収束しない。§4 のチェック手順（`Diagnostics/アルゴ山札の静止配置チェック`）で貫入ゼロを数値確認できる。
 7. **contactOffset・solverIterations・maxDepenetrationVelocity・sleepThreshold はシーン YAML にシリアライズされない**（Editor でベイク set してもビルドに乗らない・2026-07-20 に TableDuoMain.unity 全文 grep で確認）。これらを実機で効かせたいなら実行時コンポーネントの `Awake` で set する必要がある（ただし §12-6 のとおり薄板スタックは restKinematic が正解で、そもそもこれらの調整自体が不要になる）。
 

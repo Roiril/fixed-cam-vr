@@ -1259,7 +1259,7 @@ Unity 側の適用は [`ShowCgLayer.ApplyCameraCalib`](../../Assets/Scripts/Stre
 - **点の質は解く前に出す**（`pointQuality`）: 点数と必要数（画角固定なら 4 / 推定なら 6）・一直線・
   床の広がり・**画面の広がり**（床で散っていても画面の隅に固まれば解は暴れる）
 
-**卓の較正 UI** = [`calib-ui.js`](../../tools/web-compositor/calib-ui.js)（描画とイベントだけ）+
+**卓の較正 UI** = [`calib.js`](../../tools/web-compositor/calib.js)（描画とイベントだけ）+
 [`calib-session.js`](../../tools/web-compositor/calib-session.js)（**判断**・DOM 非依存・
 `calib-session.test.mjs` が固定）。カメラ列の［🎯 姿勢を合わせる］から入る。
 ライブ映像を 1 枚静止させ、候補点（印 → 位置合わせ点 → 部屋の角 → タイルの角 → 手入力）を選んでクリックし、
@@ -1507,7 +1507,7 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
 
 | 何を | どこで | 実体 |
 |---|---|---|
-| カメラの較正 | カメラ列の［🎯 姿勢を合わせる］ | [`calib-ui.js`](../../tools/web-compositor/calib-ui.js) |
+| カメラの較正 | カメラ列の［🎯 姿勢を合わせる］ | [`calib.js`](../../tools/web-compositor/calib.js) |
 | 部屋のプロキシ（壁・箱・床） | フロアマップの **🧱 部屋**モード | [`room-model.js`](../../tools/web-compositor/room-model.js) + `floormap.js` |
 | CG 照明 | フロアマップ下の **💡 CG 照明**パネル（モードに紐づかない） | 同上。マップ上に光の向きを ☀ + 破線矢印で描く |
 | 人形の立ち位置 | 演出リボンのカット詳細 → ［📍 画面で置く］ | [`actor-proxy.js`](../../tools/web-compositor/actor-proxy.js) + `calib.unprojectToFloor` |

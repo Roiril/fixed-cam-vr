@@ -32,6 +32,9 @@ param(
     # Development Build を外す（提出・配布用）
     [switch]$Release,
 
+    # 焼き直し待ちのチェックを承知の上で飛ばす（git checkout 直後は mtime が揃うので誤検知しうる）
+    [switch]$Force,
+
     # menu に値を渡す（`-Set actor=Ichimatsu -Set show=path\to\show.json`）。
     # -executeMethod は引数を取れないので、Unity のコマンドラインへ `-fcv key=value` として積む。
     # 受け側は Assets/Scripts/Streaming/Editor/EditorCliArgs.cs。
@@ -75,12 +78,23 @@ $Menus = [ordered]@{
     # ---- Setup（作る・焼く）----
     'scene'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.MainDemoSceneSetup.Setup'
                             Desc = 'Main シーンへ演出・HUD・ゾーンを配置して保存（⚠ ビルド前に必須）'
-                            Out = 'Assets/Scenes/Main.unity' }
+                            Out = 'Assets/Scenes/Main.unity'
+                            Src = @('Assets/Scripts/Streaming/Editor/MainDemoSceneSetup.cs') }
     'hud-font'         = @{ Method = 'FixedCamVr.Streaming.EditorTools.JapaneseHudFontSetup.Generate'
                             Desc = 'HMD 内の日本語フォントを再ベイク（⚠ 文言を足したら必須。忘れると実機で豆腐）'
-                            Out = 'Assets/Resources/Fonts/JapaneseHud SDF.asset' }
+                            Out = 'Assets/Resources/Fonts/JapaneseHud SDF.asset'
+                            # JapaneseHudFontSetup.CollectHudCharset() の収集元と 1:1。向こうを足したらここも足す
+                            Src = @('Assets/Scripts/Tracking/RegistrationGuidance.cs',
+                                    'Assets/Scripts/Tracking/CourseRegistrationController.cs',
+                                    'Assets/Scripts/Diagnostics/StatusHud.cs',
+                                    'Assets/Scripts/Diagnostics/ControllerGuidePanel.cs',
+                                    'Assets/Scripts/Diagnostics/RecoveryGuidance.cs',
+                                    'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',
+                                    'Assets/Scripts/Streaming/IntroDirector.cs',
+                                    'Assets/Scripts/Streaming/ShowRunDirector.cs') }
     'actor-prefab'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorPrefabBuilder.Build'
-                            Desc = 'humanoid FBX から CG 人形プレハブを作る（-Set model=<fbx のパス>）'
+                            Desc = 'humanoid FBX から CG 人形プレハブを作る'
+                            Set = 'model=<fbx のパス>'
                             Out = $null }
     'crt-material'     = @{ Method = 'FixedCamVr.Fx.Editor.FxRendererSetup.CreateCrtMaterial'
                             Desc = 'CRT ポスト FX のマテリアルを作る'
@@ -94,13 +108,16 @@ $Menus = [ordered]@{
 
     # ---- Diagnostics 廻リ視（見る・測る）----
     'composite'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.Run'
-                            Desc = '実写プレート × CG 人形の合成を PNG 化（合成品質の一次証拠・-Set show=<パス>）'
+                            Desc = '実写プレート × CG 人形の合成を PNG 化（合成品質の一次証拠）'
+                            Set = 'show=<show.json のパス>'
                             Out = 'Assets/Screenshots/cgviz' }
     'actor'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorVizPreview.Run'
-                            Desc = 'CG 人形を 4 ポーズ × 2 角度で PNG 化（-Set actor=<人形名>）'
+                            Desc = 'CG 人形を 4 ポーズ × 2 角度で PNG 化'
+                            Set = 'actor=<人形名>'
                             Out = 'Assets/Screenshots/actorviz' }
     'actor-motion'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorMotionPreview.Run'
-                            Desc = '体験者の動きを合成して腕の到達率・追従の遅れを測る（-Set actor=<人形名>）'
+                            Desc = '体験者の動きを合成して腕の到達率・追従の遅れを測る'
+                            Set = 'actor=<人形名>'
                             Out = 'Assets/Screenshots/actormotion' }
     'regviz'           = @{ Method = 'FixedCamVr.Tracking.EditorTools.RegistrationVizPreview.Run'
                             Desc = '位置合わせのワイヤーとゾーンのタイルを多角度で PNG 化'
@@ -212,6 +229,60 @@ function Show-UnityLog {
     foreach ($h in $hit) { Write-Host "  $($h.Line)" -ForegroundColor DarkGray }
 }
 
+# ⚠ build の失敗理由は Editor.log ではなく `Logs\build-<Target>-<epoch>.log` に出る
+#    （`unity build` が -logFile をそこへ張る）。**場所を案内するだけだと誰も開かない**ので、
+#    落ちたその場で出す。menu 側の Show-UnityLog と対になる扱い。
+function Show-BuildLog([string]$target, [datetime]$since) {
+    $dir = Join-Path $Root 'Logs'
+    $log = Get-ChildItem $dir -Filter "build-$target-*.log" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $log) {
+        Write-Host "  build ログが無い: $dir\build-$target-*.log" -ForegroundColor DarkGray
+        return
+    }
+    # ⚠ **前回のログを今回の失敗として見せない。** CLI が Unity を起こす前に落ちると
+    #    新しいログが 1 つも増えず、末尾に前回の `[BuildVariants] OK:` が出て「成功したのに失敗」に見える。
+    if ($log.LastWriteTime -lt $since) {
+        Write-Host "  この実行のログが無い（Unity が起動する前に落ちている）。上の CLI の出力を読む" -ForegroundColor Yellow
+        return
+    }
+    Write-Host "--- $($log.Name) ---" -ForegroundColor DarkGray
+    # ⚠ ビルドログは Editor.log と違う形をしているので、パターンを共有しない（実測して 2 回外した）。
+    #   - `^\[` だけだと Bee の進捗 `[1012/1019  0s] CopyFiles …` が全部当たって末尾が埋まる
+    #     → **括弧の中が英字のものだけ**（`[BuildVariants]` `[IntroVeil]`）
+    #   - `Exception` を裸で拾うと、末尾の容量内訳 `… .../NotListeningException.cs` が大量に当たる
+    #     → **コロンと空白まで**（`NullReferenceException: Object reference …` は拾いたい）
+    $hit = Select-String -Path $log.FullName -Encoding utf8 `
+        -Pattern '^\[[A-Za-z]|error CS\d|Exception: |Unhandled [Ee]xception|BuildFailed|Error building Player|Build completed with a result' |
+        Where-Object { $_.Line -notmatch $EditorLogNoise } |
+        Select-Object -Last 30
+    if ($hit) { foreach ($h in $hit) { Write-Host "  $($h.Line)" -ForegroundColor DarkGray } }
+    else { Write-Host "  拾える行が無い。全文: $($log.FullName)" -ForegroundColor DarkGray }
+}
+
+# 焼き直していないものを、8 分かけて焼いてから気づかないようにする。
+#
+# 演出は**シーンに焼かれた GameObject**、HMD の日本語は**静的ベイクのアトラス**なので、
+# .cs を直しただけでは APK に入らない。どちらも実害があり（2026-07-30 の演出 0 段・
+# 2026-07-22 の全文字豆腐）、どちらも「ルールに書いてあるのに誰も見ていない」形で起きた。
+# → 見る側を人からここへ移す。判定は $Menus の Src（入力）と Out（焼いたもの）の mtime 比較。
+$BakeGuard = @('scene', 'hud-font')
+
+function Get-StaleBakes {
+    $stale = @()
+    foreach ($k in $BakeGuard) {
+        $m = $Menus[$k]
+        if (-not $m -or -not $m.Src -or -not $m.Out) { continue }
+        $baked = Get-OutputStamp (Join-Path $Root $m.Out)
+        foreach ($s in $m.Src) {
+            $p = Join-Path $Root $s
+            if (-not (Test-Path $p)) { continue }
+            if ((Get-Item $p).LastWriteTime -gt $baked) { $stale += $k; break }
+        }
+    }
+    return $stale
+}
+
 function Show-Apps {
     Write-Host "使える App:" -ForegroundColor Cyan
     foreach ($k in $Apps.Keys | Sort-Object) { "  {0,-18} {1}" -f $k, $Apps[$k].Desc | Write-Host }
@@ -219,7 +290,10 @@ function Show-Apps {
 
 function Show-Menus {
     Write-Host "使える menu:" -ForegroundColor Cyan
-    foreach ($k in $Menus.Keys) { "  {0,-18} {1}" -f $k, $Menus[$k].Desc | Write-Host }
+    foreach ($k in $Menus.Keys) {
+        "  {0,-18} {1}" -f $k, $Menus[$k].Desc | Write-Host
+        if ($Menus[$k].Set) { "  {0,-18}   -Set {1}" -f '', $Menus[$k].Set | Write-Host -ForegroundColor DarkGray }
+    }
     Write-Host ""
     Write-Host "  一覧に無いものは raw:<完全修飾名> で直接呼べる" -ForegroundColor DarkGray
     Write-Host "  例) .\tools\unity.ps1 menu raw:FixedCamVr.Foo.Bar.Baz" -ForegroundColor DarkGray
@@ -288,6 +362,19 @@ switch ($Action) {
             }
         }
 
+        # 「揃っているのに build が落ちる」の最頻値がこれ。前提と並べて必ず見せる（§Assert-NotLocked）
+        Write-Host "── いま誰か握っていないか ──" -ForegroundColor Cyan
+        if (Test-Path (Join-Path $Root 'Temp\UnityLockfile')) {
+            Write-Host "  ⚠ Temp\UnityLockfile あり = Editor か別の batchmode が開いている" -ForegroundColor Yellow
+            Write-Host "    この状態では build / test / menu は即エラーで落ちる。閉じるか終わるのを待つ" -ForegroundColor Yellow
+            Get-CimInstance Win32_Process -Filter "Name='Unity.exe'" -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    $cl = if ($_.CommandLine.Length -gt 140) { $_.CommandLine.Substring(0, 140) + '…' } else { $_.CommandLine }
+                    Write-Host "    PID $($_.ProcessId)  $cl" -ForegroundColor DarkGray
+                }
+        }
+        else { Write-Host "  ✓ 誰も握っていない" }
+
         Write-Host ""
         if ($ng -eq 0) { Write-Host "揃っている。" -ForegroundColor Green; exit 0 }
         Write-Host "$ng 件足りない。上の指示を先に済ませる。" -ForegroundColor Red
@@ -301,6 +388,19 @@ switch ($Action) {
             Show-Apps; exit 2
         }
         Assert-NotLocked
+
+        if ($App -eq 'fixedcam' -and -not $Force) {
+            $stale = Get-StaleBakes
+            if ($stale) {
+                Write-Host "✗ 焼き直していないものがある。このまま焼いても APK には入らない" -ForegroundColor Red
+                foreach ($k in $stale) {
+                    Write-Host "    .\tools\unity.ps1 menu $k" -ForegroundColor Yellow
+                    Write-Host "      $($Menus[$k].Desc)" -ForegroundColor DarkGray
+                }
+                Write-Host "  古いまま焼くと決めたなら -Force（git checkout 直後は mtime が揃うので誤検知しうる）" -ForegroundColor DarkGray
+                exit 3
+            }
+        }
 
         $spec = $Apps[$App]
         $method = if ($Release) { $spec.ReleaseMethod } else { $spec.Method }
@@ -316,6 +416,7 @@ switch ($Action) {
         $before = Get-OutputStamp $outDir
 
         Write-Host "$($spec.Desc) を焼く → $out" -ForegroundColor Cyan
+        $startedAt = Get-Date
         & $Cli build $Root --target $spec.Target --execute-method "$MethodPrefix$method" `
             --non-interactive @Rest
         $code = $LASTEXITCODE
@@ -325,15 +426,16 @@ switch ($Action) {
         $after = Get-OutputStamp $outDir
         if ($after -eq [datetime]::MinValue) {
             Write-Host "✗ 出力が無い: $out (exit=$code)" -ForegroundColor Red
-            Write-Host "  Logs\build-*.log の末尾を見る" -ForegroundColor Yellow
+            Show-BuildLog $spec.Target $startedAt
             exit 1
         }
         if ($after -le $before) {
             Write-Host "✗ 出力が更新されていない（前回のまま）: $out" -ForegroundColor Red
-            Write-Host "  Logs\build-*.log の [BuildVariants] の行を見る" -ForegroundColor Yellow
             Write-Host "  中断の典型: アクティブが Android でない / スクリプトコンパイル中" -ForegroundColor Yellow
+            Show-BuildLog $spec.Target $startedAt
             exit 1
         }
+        if ($code -ne 0) { Show-BuildLog $spec.Target $startedAt }
         if (Test-Path $outPath) {
             $f = Get-Item $outPath
             "✓ {0}  {1:N1} MB  {2:HH:mm:ss}" -f $out, ($f.Length / 1MB), $after | Write-Host -ForegroundColor Green

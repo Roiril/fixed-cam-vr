@@ -245,7 +245,7 @@ bash tools/run-quest-xp-test.sh walk 300
 「出るはずで出なかった演出」「録れなかった区間」「砂嵐の割合」「受信 fps」が数値で出る。
 手順・収集の罠・ベースライン実測 → [.claude/memory/onsite_experience_test.md](.claude/memory/onsite_experience_test.md)
 
-⚠ **Link/HMD 無しの Editor で OVR シーンを Play するとハングする**（TableDuo 検証は L0 経由が正。[.claude/rules/mcp-unity.md](.claude/rules/mcp-unity.md)）。
+⚠ **Link/HMD 無しの Editor で OVR シーンを Play するとハングする**（TableDuo 検証は L0 経由が正。[.claude/reference/mcp-unity.md](.claude/reference/mcp-unity.md)）。
 
 # ドキュメント一覧
 

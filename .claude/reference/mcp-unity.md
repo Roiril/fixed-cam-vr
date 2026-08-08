@@ -13,7 +13,7 @@ paths:
 # Unity MCP 使用規約
 
 > ⚠ **これは退避路の規約**（2026-08-09 に位置づけを訂正）。
-> **第一経路は CLI** — `.\tools\unity.ps1 build` / `test` / `menu`（[unity-vr.md](unity-vr.md)）。
+> **第一経路は CLI** — `.\tools\unity.ps1 build` / `test` / `menu`（[rules/unity-vr.md](../rules/unity-vr.md)）。
 > Editor のメニューは 1 つ残らず `menu` から呼べるようになったので、
 > **ビルド・テスト・シーン構築・プレビューの生成に MCP は要らない**。
 >

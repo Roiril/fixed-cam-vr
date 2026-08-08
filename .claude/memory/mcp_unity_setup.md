@@ -6,6 +6,10 @@ type: feedback
 
 # Unity MCP 接続のチェックリスト
 
+> ⚠ **接続手順の正本はグローバルの `~/.claude/reference/unity-editor-ops.md` §1。**
+> ここに残すのは、このプロジェクトで実際に踏んだ経緯と機体固有の値だけ。
+> そもそも MCP は退避路で、ビルド・テスト・メニューは `tools/unity.ps1`（CLI）が第一経路。
+
 ## 結論：最短で繋ぐ手順
 
 1. Unity Editor で `Tools > MCP for Unity > Open MCP Window` → Transport `Stdio` で Server "Session Active"
@@ -16,7 +20,7 @@ type: feedback
    バージョン番号 `9.6.8` は Unity Editor が `~/.local/bin/uvx.exe` 経由でインストール済みのものに合わせる
 3. `claude mcp list` で `UnityMCP: ✓ Connected` を確認
 4. **Claude Code を `/exit` → 再起動**（deferred tools はセッション起動時にロードされる）
-5. 再起動後の新セッションで `unity-status` スキルで動作確認
+5. 再起動後の新セッションでグローバルの `unity-editor-status` スキルで動作確認
 
 ## Why（実際に踏んだ罠）
 
@@ -75,9 +79,10 @@ type: feedback
 
 「Unity MCP が反応しない」と感じた瞬間：
 
-1. まず **`unity-mcp` スキル**を呼ぶ（`.claude/skills/unity-mcp/SKILL.md` で診断パス自動化済み）
+1. まずグローバルの **`unity-editor-status` スキル**を呼ぶ（§4 に切り分け表がある）
 2. 自動診断で対応表のどの行に当てはまるか即特定
-3. 副作用ある操作（remove / add / 再起動）はユーザに合意を得てから実行
+3. `claude mcp remove` / `add` / Editor 再起動は fable アドバイザー手続き（`~/.claude/rules/fable-advisor.md`）で
+   自分で決めて事後報告する（許可要求はしない）
 
 ## 関連リソース
 

@@ -69,7 +69,8 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 - Editor を GUI で開いて手で触る前提の手順を既定にしない
 - **MCP for Unity は退避路**。CLI が届かないのは「起動中の Editor をライブ操作する」場合だけ
   （Pipeline は Unity 6.0 以上で、2022.3 のこのプロジェクトには入らない）。
-  現状この PC に MCP は未登録で、登録しないと `skills/unity-status` `skills/unity-mcp` は動かない
+  現状この PC に MCP は未登録。要るときはグローバルの `unity-editor-status` スキルから入り、
+  このプロジェクト固有の罠は [.claude/reference/mcp-unity.md](.claude/reference/mcp-unity.md)
 - 一般則は `~/.claude/reference/unity-cli-ops.md`
 
 ## 検証
@@ -114,10 +115,12 @@ TableDuo の全体像は [docs/table-duo/remaining-tasks.md](docs/table-duo/rema
 
 | 何 | 置き場 |
 |---|---|
-| Unity / Windows 一般 | `~/.claude/reference/unity-*.md`（**ここに複製しない**） |
+| Unity / Windows 一般・スキル | `~/.claude/`（**ここに複製しない**。同名スキルを両方に置くとどちらが載るか判別できない） |
 | ユーザーが言った世界観の判定 | `.claude/canon/` |
 | 技術の罠・実装の経緯 | `.claude/memory/`（`MEMORY.md` が索引） |
 | 領域ごとの規約 | `.claude/rules/`（scope は **`paths:`**。`globs:` は Claude Code が認識しない） |
+| 滅多に使わない手順・退避路 | `.claude/reference/`（**明示的に読むまで載らない**。広い `paths:` の rule に混ぜない） |
+| 実装の段の記録 | `.claude/plans/`（索引は [plans/README.md](.claude/plans/README.md)。いま進めるものは `canon/`） |
 
 **機能を変えたらドキュメントも同じコミットで直す** → `rules/doc-sync.md`。
 

@@ -12,12 +12,25 @@ type: project
 |---|---|
 | `~/.claude/CLAUDE.md` + `~/.claude/rules/` | グローバル動作規約（承認不要・コミット規約・委譲・アドバイザー手続き） |
 | `<project>/CLAUDE.md` | プロジェクト規約。**常時ロードされるので薄く保つ**（詳細は下の各層へ委譲） |
-| `<project>/.claude/reference/why.md` | **作りこみの思想の正本。** 先に読むのはこれ 1 本 |
+| `<project>/.claude/reference/` | **明示的に読むまで載らない資料。**`why.md`（作りこみの思想・先に読むのはこれ 1 本）/ `mcp-unity.md`（退避路の作法） |
 | `<project>/.claude/canon/` | **世界観の正本。ユーザーが言ったことだけ**（`LEDGER` / `OPEN` / `ROUNDS`） |
 | `<project>/.claude/memory/` | 技術の罠・実装の経緯（`MEMORY.md` が索引） |
 | `<project>/.claude/rules/*.md` | 領域別ルール。scope は **`paths:`**（`globs:` は Cursor 規約で Claude Code は認識しない） |
 | `<project>/.claude/skills/<name>/SKILL.md` | シュビーが自律的に呼ぶスキル |
-| `<project>/.claude/plans/` | 実装計画 (`YYYY-MM-DD_<slug>.md`) |
+| `<project>/.claude/plans/` | 実装計画 (`YYYY-MM-DD_<slug>.md`)。**索引は `plans/README.md`** |
+
+## 置き場の規律（2026-08-09 に一度大掃除した）
+
+- **`rules/` は「その paths を触るときに毎回読む価値があるもの」だけ。**
+  退避路の作法・滅多に使わない手順は `reference/` へ置く。
+  `paths:` が広い rule ほど、無関係な作業のたびに全文が載る
+- **同じ名前のスキルをグローバルとプロジェクトの両方に置かない。**
+  どちらが載るか読む側から判別できず、片方だけ古くなる。
+  機体・ツール一般の知識（MCP の登録手順・prefab の SerializeField）は**グローバルが正**で、
+  プロジェクト側にはこのリポジトリでしか成り立たない差分だけを書く
+- **1 領域 1 入口。** 2026-08-09 に `skills/unity-status` `skills/unity-mcp` `skills/unity-prefab-fields` を
+  削除した（グローバルの `unity-editor-status` / `unity-prefab-fields` と重複していた上、
+  MCP 未登録のこの機体では動かない手順が「入口」を名乗っていた）
 
 **`canon/` と `memory/` を分けた理由**: 前者は**人の発話が根拠**、後者は**機械と実装の事実**。
 混ぜると、ユーザーの判定が 40 本の技術メモに埋もれて見えなくなる。

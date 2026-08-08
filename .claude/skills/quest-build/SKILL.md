@@ -16,13 +16,20 @@ description: 廻リ視 / TableDuo / MyCobotHand の APK を Unity CLI で焼い�
 .\tools\unity.ps1 build tableduo-desktop    # 実機ゼロの L0 検証用 Standalone
 ```
 
-⚠ **焼く前にシーンを焼き直したか確かめる。** 演出は**シーンに焼かれた GameObject** なので、
-コードを書いただけでは APK に入らない（`rules/unity-vr.md`）。HUD の文言を足したならフォントも。
+**焼き直し待ちは build が落とす**（2026-08-09〜。`fixedcam` のみ）。演出は**シーンに焼かれた
+GameObject**、HMD の日本語は**静的ベイクのアトラス**なので、コードを書いただけでは APK に入らない。
+どちらも実害があり、どちらも「ルールに書いてあるのに誰も見ていない」形で起きたので、見る側を機械へ移した。
 
-```powershell
-.\tools\unity.ps1 menu scene       # 演出・HUD・ゾーンを Main.unity へ配置し直す
-.\tools\unity.ps1 menu hud-font    # HMD 内の日本語を再ベイク（忘れると実機で豆腐）
 ```
+✗ 焼き直していないものがある。このまま焼いても APK には入らない
+    .\tools\unity.ps1 menu scene
+```
+
+言われたコマンドを打てばよい（どちらも冪等）。判定は `unity.ps1` の `$Menus` の `Src`（入力の .cs）と
+`Out`（焼いたもの）の mtime 比較。**`menu scene` は毎回 2000 行規模の差分を出す**が、
+fileID の振り直しで、このリポジトリでは以前からそうなっている。
+
+古いまま焼くと決めたときだけ `-Force`（`git checkout` 直後は mtime が揃うので誤検知しうる）。
 
 Unity の**手動 Build Settings は使わない**。手動だと 3 アプリが同名・同パッケージ ID になり、
 Quest 上で共存できなくなる。

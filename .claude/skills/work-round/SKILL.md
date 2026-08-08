@@ -36,19 +36,9 @@ description: 廻リ視の作りこみを 1 周回す型。演出・絵・物語�
 **HMD を被らないどころか Editor も開かない。** `menu` は batchmode で Unity を起こして
 メニューを 1 つ実行し、出力が更新されたかまで見て返る（`unity.ps1 menu` で一覧）。
 
-⚠ **HMD 内の文言を変えたらフォント再生成が要る**（静的ベイク。忘れると実機で豆腐 —
-`memory/hud_font_and_preview.md`）。
-
-```powershell
-.\tools\unity.ps1 menu hud-font
-```
-
-⚠ **演出のオブジェクトを足したらシーンへ焼き直す**（コードを書いただけでは APK に入らない —
-`rules/unity-vr.md`）。
-
-```powershell
-.\tools\unity.ps1 menu scene
-```
+**焼き直し（シーン / HMD のフォント）は覚えなくてよい。** 忘れたまま焼こうとすると
+`unity.ps1 build fixedcam` が打つべきコマンドを名指しして落ちる（2026-08-09〜）。
+言われたものを打つ。どちらも冪等。
 
 ## 2. 焼いて、走らせて、撮る
 
