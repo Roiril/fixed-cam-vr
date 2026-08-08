@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[XP] ログと録画を突き合わせて、「その瞬間に画に何が出ていたか」を切り出す。
 
-    python tools/xp-evidence.py <logfile> <eye.mp4> [--out logs/evidence/<日時>/] [--offset <秒>]
+    py -3.11 tools/xp-evidence.py <logfile> <eye.mp4> [--out logs/evidence/<日時>/] [--offset <秒>]
 
 出るもの:
   - 導入の各段・演出の始まりと終わり・相の変化・砂嵐の始まりの **フル解像度 PNG**
