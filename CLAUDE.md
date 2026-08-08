@@ -1,176 +1,119 @@
 # fixed-cam-vr
 
-Meta Quest 3 上で、固定視点カメラ（バイオハザード風）の無線映像を VR 内スクリーンに表示するアプリ。後々、映像加工 / CG 合成 / スクリーン外演出を追加していく。
+Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の無線映像を VR 内スクリーンへ出し、
+実写に CG を合成して見せるホラー体験。**実装は終わっている。ここから先は作りこみの段。**
 
-## 📄 企画書は 1 本だけ
+## ⚠ 企画書は読まない（2026-08-08 ユーザー宣言）
 
-**[docs/proposal/](docs/proposal/) が企画書の唯一の正**（第 31 回日本 VR 学会大会論文「廻リ視：固定視点を用いた実世界ホラー体験」）。
-体験の要求（3 区間を 3 周・導入を含め 3 分以内・1 周目の録画を 3 周目の背景に・映像の乱れ・100ms の管理）はすべてここが根拠。
+**`docs/proposal/` と `docs/archive/` はどちらも開かない。**
 
-**[docs/archive/](docs/archive/) は読まない。** 旧版の企画書が入っているが体験構成が別物で、
-旧版にしか無い要求（しゃがみ・振り向き・着座 / 空間音響 / 監視カメラ風 UI / 90Hz）を実装すると違うものを作ることになる。
-企画書の話が出たら、まず `docs/proposal/README.md` を見ること。
+> 「ベースの実装はできたので、この後は作りこみの段階なので企画書を読まないでほしい。企画書はあくまで
+> 企画段階で、今後は企画書を超えた、体験としての世界観、物語性、企画書に無い演出などを入れて
+> 作りこむ必要があるので、企画書を読むのはコンテキスト汚染になる」
 
-## ⚠ 同居 2 アプリ — 並列作業の干渉防止（全シュビー必読）
+**骨格の制約は機械が守っている**ので、文書を読み直す必要が無い — 導入 → 3 区間を 3 周 → 終幕、
+3 分以内、1 周目の録画を 3 周目の背景に、100ms の管理。これらは実装済みで、
+`tools/analyze-xp-log.py` が `show.json` を期待値として突き合わせる。
 
-この Unity プロジェクトには **2 つの独立アプリが 1 プロジェクトに同居**している：**廻リ視（FixedCam・本体 / `FixedCamVr.*` / `Assets/Scripts/` / `Main.unity`）** と **TableDuo（手アバター調査 / `TableDuoVr.*` / `Assets/TableDuo/` / `TableDuoMain.unity`）**。
+**骨格は機械が守る。人は絵と物語を作る。** 思想は `.claude/reference/why.md`（先に読むのはこれ 1 本）。
 
-### 🔤 呼称マッピング（ユーザーの言い方 → 正式名 → コード境界）
+## 作りこみの回し方
 
-ユーザーは日常的に下の「ユーザー呼称」で指す。**作業前に必ずこの表でどちらのアプリかを確定する**（正式名だけでは導けない — 特に「ハンド」⇄ TableDuo は名前から推論できない）。
+| やること | 入口 |
+|---|---|
+| 1 周回す（予測 → 安い門 → 焼く → 見る → 台帳） | `skills/work-round` |
+| ユーザーに見せて赤入れをもらう | `skills/direction-round` |
 
-| ユーザー呼称 | 正式名 | namespace / asmdef | コード root | シーン | パッケージ ID |
-|---|---|---|---|---|---|
-| **fixedcam** / 廻リ視 / 本体 / カメラ | 廻リ視（FixedCam） | `FixedCamVr.*` | `Assets/Scripts/` | `Main.unity` | `com.roiril.mawarimi` |
-| **ハンド** / 手 / テーブル / TableDuo | TableDuo | `TableDuoVr.*` | `Assets/TableDuo/` | `TableDuoMain.unity` | `com.roiril.tableduo` |
+**世界観の正本は `.claude/canon/`。**
 
-「fixedcam をレビューして」= `Assets/Scripts/` の `FixedCamVr.*` **だけ**。「ハンド」= `Assets/TableDuo/` の `TableDuoVr.*` **だけ**。
+- `LEDGER.md` — ユーザーが口にした判定。**逐語**。要約したら値が消える
+- `OPEN.md` — まだ聞いていないこと（既定つき）と、**シュビーの案（未判定）**
+- `ROUNDS.md` — 焼く前の賭けと予測、焼いた後の差。初見の配給
 
-別シュビー（並列エージェント / worktree / 別セッション）と本シュビーが**別々のアプリを同時に進めることがある**。根底原則：
+⚠ **発案は自由。昇格は禁止。** シュビーの世界観の案を `LEDGER.md` へ入れてよいのは、
+ユーザーが口にしたときだけ。沈黙は同意ではない。規律は `rules/canon-boundary.md`。
 
-1. **コードは完全分離** — `FixedCamVr.*` ↔ `TableDuoVr.*` の asmdef 相互参照禁止。相手のコード領域・シーン・prefab に手を出さない
-2. **共有資源は両方に効く** — Unity Editor（1 インスタンス）/ `ProjectSettings/` / 共有 `.asset`（URP・OVR・XR）/ `manifest.json` は 2 アプリ共有。片アプリ専用の都合で弄らない
-3. **Unity Editor とビルドは奪い合わない** — MCP 編集・Play・Build は単一 Editor を共有。**並列化せず逐次**。ビルドは productName/ID を一時 swap するので **2 ビルド同時起動厳禁**（片方が他方の ID で焼ける）
+## ⚠ 同居 3 アプリ — 作業前に必ずどれか確定する
 
-詳細・並列化可否表・チェックリスト → **[.claude/rules/parallel-projects.md](.claude/rules/parallel-projects.md)（Unity / 両アプリのコードを触る前に必読）**
+1 プロジェクトに**独立した 3 アプリ**が同居している。ユーザーは下の呼称で指す。
+**正式名だけでは導けない**（「ハンド」が 2 つある）。
+
+| ユーザー呼称 | 正式名 | namespace / asmdef | コード root | シーン |
+|---|---|---|---|---|
+| **fixedcam** / 廻リ視 / 本体 / カメラ | 廻リ視（FixedCam） | `FixedCamVr.*` | `Assets/Scripts/` | `Main.unity` |
+| **ハンド** / 手 / テーブル / TableDuo | TableDuo（手アバター調査） | `TableDuoVr.*` | `Assets/TableDuo/` | `TableDuoMain.unity` |
+| **ロボットハンド** / mycobot / テレオペ | MyCobotHand | `MyCobotHandVr` | `Assets/MyCobotHand/` | `HandTeleop.unity` |
+
+**作りこみの対象は廻リ視だけ。** 他 2 つは別の目的で動いている。
+
+分離規約（asmdef 相互参照禁止・共有資源・ビルド逐次・並列化可否）は
+**[rules/parallel-projects.md](.claude/rules/parallel-projects.md) が正本**（Unity を触る前に読む）。
+
+## Unity は CLI で操作する
+
+**[tools/unity.ps1](tools/unity.ps1) が `unity.exe` を叩く唯一の場所。** 他所で直接呼ばない。
+
+```powershell
+.\tools\unity.ps1 doctor          # 前提が揃っているか（最初にこれ）
+.\tools\unity.ps1 build fixedcam  # → Builds/mawarimi.apk
+.\tools\unity.ps1 test
+```
+
+- Editor を GUI で開いて手で触る前提の手順を既定にしない
+- **MCP for Unity は退避路**。CLI が届かないのは「起動中の Editor をライブ操作する」場合だけ
+  （Pipeline は Unity 6.0 以上で、2022.3 のこのプロジェクトには入らない）。
+  現状この PC に MCP は未登録で、登録しないと `skills/unity-status` `skills/unity-mcp` は動かない
+- 一般則は `~/.claude/reference/unity-cli-ops.md`
+
+## 検証
+
+**3 経路を突き合わせる。どれか 1 つでは切り分けられない。**
+
+| 経路 | 何を見る | 出どころ |
+|---|---|---|
+| A 自己申告 | 体験が著作どおり起きたか | `[XP]` テレメトリ → `analyze-xp-log.py` |
+| B 外部の実測 | 画に何が出ていたか | `quest-record.py --walk` → `xp-evidence.py` の PNG |
+| C 例外 | Unity の例外・警告 | 実機 logcat |
+
+- **`py -3.11 tools/quest-record.py --sec 45 --walk` の 1 回で A・B・C が揃う**（HMD 不要）。
+  依存は `tools/requirements.txt`
+- ⚠ **計器は「状態が進んだ」ではなく「効果が出た」を出す。** 2026-07-31、判定が「FAIL ゼロ・演出 7 本 OK」と
+  出した走行の画に、導入演出が 1 段も出ていなかった。以後 `veil` / `wire` / `cg` / `bgm` / `font` を判定に入れる
+- ⚠ **観測項目は C# の `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す**（片方だけだと沈黙して食い違う）
+- ⚠ **数値が PASS でも PNG は必ず 1 度開く。** 縮小したコンタクトシートは索引にすぎない（1cm の線が消える）
+- **被らないと分からないもの**（立体感・スケール・酔い・怖さの強度）は溜めて 1 回にまとめる →
+  `rules/visual-verification.md`
 
 ## スタック
 
-- **エンジン**: Unity 2022.3.62f2 LTS
-- **レンダーパイプライン**: URP
-- **ターゲット**: Meta Quest 3（Android ビルド、ネイティブ実行）
-- **XR SDK**: Meta XR All-in-One SDK（メイン）+ XR Interaction Toolkit（補助）+ OpenXR Plugin
-- **映像入力**: スマホ複数台（機種混在可・想定 iPhone 13 Pro ×2 + Pixel）→ MJPEG over Wi-Fi → Unity 内デコード。Android は **[fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) 標準**（`/info` メタで自動回転、`/health` で配信品質モニタ）、iPhone は IP Camera Lite 等の汎用 MJPEG アプリ（Basic 認証対応済み）。DroidCam / IP Webcam フォールバック。詳細 [.claude/rules/streaming.md](.claude/rules/streaming.md)
-- **言語**: C#（ランタイム）+ Shader Graph（映像加工・ポスト FX）
+Unity 2022.3.62f2 LTS / URP / Quest 3（Android・IL2CPP・ARM64）/ Meta XR All-in-One SDK + XRI + OpenXR。
+映像は**スマホ → MJPEG over Wi-Fi → Unity 内デコード**（配信側は姉妹リポ
+[Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)。仕様は `rules/streaming.md`）。
 
-## ディレクトリ
+オペレータ卓とブラウザ合成検証は `tools/web-compositor/`（`serve.ps1` → `http://localhost:8099/`）。
+詳細は [memory/web_compositor.md](.claude/memory/web_compositor.md)。
+TableDuo の全体像は [docs/table-duo/remaining-tasks.md](docs/table-duo/remaining-tasks.md)。
 
-- `Assets/` — Unity アセット（シーン・スクリプト・マテリアル）
-- `Packages/` — Package Manager 管理ファイル（manifest.json はコミット）
-- `ProjectSettings/` — エディタ設定（コミット）
-- `Library/`, `Temp/`, `Logs/`, `UserSettings/` — Unity 生成物（gitignore）
+## 禁止・注意
 
-`Assets/` 配下の推奨構成は [.claude/rules/unity-vr.md](.claude/rules/unity-vr.md) 参照。
+- `ProjectSettings/` を理由なく変更しない（特に Graphics / Quality。3 アプリの共有資源）
+- パスワード・API キーをスクリプトに書かない（`StreamingAssets/secrets.json` は gitignore）
+- `Library/` `Builds/` はコミットしない。`show.json` と `*.asset` の `host` はローカル値
+- 依存の追加・削除、履歴の破壊、外部公開は
+  **fable アドバイザー手続き**（`~/.claude/rules/fable-advisor.md`）で自分で決めて事後報告する。
+  ユーザーへの許可要求はしない
 
-## SDK セットアップ手順
+## 知見をどこに置くか
 
-[README.md](README.md) を参照。Meta XR SDK の導入はユーザーが Unity Editor で実行（Package Manager 経由のため）。
+| 何 | 置き場 |
+|---|---|
+| Unity / Windows 一般 | `~/.claude/reference/unity-*.md`（**ここに複製しない**） |
+| ユーザーが言った世界観の判定 | `.claude/canon/` |
+| 技術の罠・実装の経緯 | `.claude/memory/`（`MEMORY.md` が索引） |
+| 領域ごとの規約 | `.claude/rules/`（scope は **`paths:`**。`globs:` は Claude Code が認識しない） |
 
-## コーディング規約
-
-詳細は領域別ルールに集約（path-scope `globs:` で on-demand load）：
-
-- **C# / Unity / VR 共通**（namespace / asmdef / SerializeField / 90Hz / シーン構成 等）→ [.claude/rules/unity-vr.md](.claude/rules/unity-vr.md)
-- **Meta XR / OVR / パススルー / CameraRig** → [.claude/rules/meta-xr.md](.claude/rules/meta-xr.md)
-- **MJPEG / 配信エンドポイント / GC ゼロ受信** → [.claude/rules/streaming.md](.claude/rules/streaming.md)
-
-最低限の前提だけここに：
-
-- ビルドターゲットは **Android / IL2CPP / ARM64**（x86 系は無効）
-- パスワード・API キーをスクリプトにハードコードしない（`StreamingAssets/secrets.json` 等は `.gitignore` で除外）
-
-## 自動テスト運用
-
-Unity プロジェクトは Web と違い `localhost` でブラウザ検証ができないため、シュビーは以下で代替する：
-
-1. **コンパイル検証**: Unity を `-batchmode -quit` で起動してエラー有無確認（時間かかる）
-2. **Play Mode テスト**: Unity Test Framework（EditMode/PlayMode）で書ける範囲はテスト化
-3. **実機での体験検証は自動化してある**（旧「自動化不可」は 2026-07-30 に解消）:
-   `bash tools/run-quest-xp-test.sh walk 300` で **HMD を被らずに導入 → 3 周 → 終了を通して観測できる**。
-   `[XP]` テレメトリ + 自動走行 + show.json との突き合わせで、**出るはずで出なかった演出を名指しする**。
-   手順と罠 → [.claude/memory/onsite_experience_test.md](.claude/memory/onsite_experience_test.md)。
-   Quest が複数繋がっているときの機の選択・APK と設定の同期・使わない機のスリープは
-   `tools/quest-fleet.py`（[.claude/memory/quest_fleet_two_devices.md](.claude/memory/quest_fleet_two_devices.md)）
-4. **被らないと分からないものはユーザーに依頼する**: 立体視のスケール感・見た目の質・酔い・
-   枠やワイヤーが実物に重なるか。これは計測に置き換えられない
-5. 完了報告時は「コンパイル OK / 実機で何をどこまで見たか」を明示（「実機未検証」で止めない）
-
-## 禁止事項
-
-- `ProjectSettings/` を理由なく変更しない（特に GraphicsSettings / QualitySettings）
-- `Packages/manifest.json` の編集はユーザーに事前報告
-- `Library/` をコミットしない
+**機能を変えたらドキュメントも同じコミットで直す** → `rules/doc-sync.md`。
 
 ## 応答スタイル
 
-- 端的・論理的・必要最低限
-- 結論から書く。前置き・総括・差分の自己解説は不要
-- 表・箇条書きを優先
-
-## ドキュメント同期（必須の癖）
-
-機能を**追加・変更・修正・削除**したら、**同じ作業・同じコミットで関連ドキュメントも更新**する。
-「コードだけ直してドキュメントが古いまま」を作らない。更新先の対応表・発動条件は
-[.claude/rules/doc-sync.md](.claude/rules/doc-sync.md)。README は顔なので構成・ビルド・起動が変わったら必ず見直す。
-
-## Claude Code ハーネス (.claude/)
-
-- **[memory/](.claude/memory/)** — 自動メモリ（`MEMORY.md` がインデックス）
-- **[settings.json](.claude/settings.json)** — プロジェクト固有の権限・hook
-- **[skills/](.claude/skills/)** — シュビーが状況に応じて自律的に呼ぶスキル群（ユーザーは打たない）
-  - `unity-status` — Unity MCP / Editor 状態 / コンソールエラーを一括取得（Unity 作業の入り口）
-  - `unity-mcp` — Unity MCP 接続診断と再登録（`unity-status` でツール不在を確認した時の次手）
-  - `adb-logcat` — Quest 3 / Android 実機ログ取得（unity / xr / streamer / crash フィルタ）
-  - `quest-capture` — **実機の「見ている絵」を動画で取り出す**（HMD 不要・パススルーも映る）。
-    見た目に関わる変更をしたら必ず通す — ログが OK でも画が壊れていることがある
-  - `handoff` — 次セッション向けの引き継ぎプロンプト生成
-  - `quest-build` — 廻リ視 / TableDuo の APK を Quest にビルド & インストール（BuildVariants メニュー / 2 アプリ分離 / adb）
-  - `streamer-android-build` — 姉妹リポ APK ビルド & 実機インストール
-  - `streaming-offline-test` — 実機なしで MJPEG パイプラインを Editor 単体検証
-  - `unity-prefab-fields` — prefab YAML への SerializeField 反映作法
-
-汎用 hook・グローバルスキルはグローバル `~/.claude/` を継承。動作モード（書き込み前承認なし、git コミット規約 等）も同様。
-
-## ブラウザ検証ツール + オペレータ卓（tools/web-compositor/）
-
-**🎛 コンソールタブ＝本番オペレータ卓**：show.json を正に Unity（`ShowControlClient`）を遠隔制御（cue 発火・カメラ固定・ポスト FX。計画 [.claude/plans/2026-06-11_web-operator-console.md](.claude/plans/2026-06-11_web-operator-console.md)）。**✂ コンポジット検証タブ**＝Unity を開かずに**映像合成（事前撮影 × リアルタイム配信）をブラウザで検証**する自作 WebGL2 ツール。マスク切り貼り → 色統計マッチング → ラプラシアンブレンディング → 後段フィルタ。配信フレームの**キャプチャ/録画（PC 内 `captures/` に保存）**、**生成プロンプト管理（画像/動画で分類、`prompts.json`）**、保存物を**エクスプローラーで開く**機能を含む。AI 動画生成（貞子系・無血ホラー）の素材づくりとプロンプトの蓄積もここ。
-
-- 起動: `tools/web-compositor/serve.ps1`（capture-server.py 経由・python 必須）→ `http://localhost:8099/`
-- 詳細（場所/パイプライン/サーバ API/AI 動画生成の運用知見）→ [.claude/memory/web_compositor.md](.claude/memory/web_compositor.md)
-- 前提: streamer 側 `/video` の CORS 許可が必要（[fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) 側で対応済み・別途コミット要）
-
-## 同居サブプロジェクト: TableDuo（テーブル2人非対称VR）
-
-fixed-cam-vr 本体とは別に、**テーブルを囲む2人マルチプレイ VR**（フルアバター vs 手だけアバター、ハンドトラッキング、NGO LAN 直結）が同居している。
-
-- **残タスクの単一入口**: [docs/table-duo/remaining-tasks.md](docs/table-duo/remaining-tasks.md)（実装残・実機確認待ち・パラダイム決定待ちを集約。作業着手はここから）
-- **研究計画とのアライメント**: [docs/table-duo/research-plan-alignment.md](docs/table-duo/research-plan-alignment.md)（cogni-storage 側の研究計画 v3.1/実験計画 v2.1 と**別設計にフォーク中**。着手前に必読・D1 操作者モデルの決定がブロッカー）
-- 要件: [docs/table-duo/requirements.md](docs/table-duo/requirements.md) / 実行計画: [.claude/plans/2026-06-10_table-duo_phase0-3.md](.claude/plans/2026-06-10_table-duo_phase0-3.md)
-- **体験の目的＝調査**: 手だけアバターとの対人インタラクション観察（手は無言・ジェスチャーのみ）。設計 [docs/table-duo/study-design.md](docs/table-duo/study-design.md) / 実施手順 [docs/table-duo/study-protocol.md](docs/table-duo/study-protocol.md) / 計画 [.claude/plans/2026-06-11_table-duo_study.md](.claude/plans/2026-06-11_table-duo_study.md)
-- コード: `Assets/TableDuo/`（自己完結）。namespace `TableDuoVr.<Feature>`、asmdef `TableDuoVr.*`
-- **干渉防止**: 並列作業の絶対規約は [.claude/rules/parallel-projects.md](.claude/rules/parallel-projects.md) に集約（asmdef 相互参照禁止・共有資源・ビルド逐次・並列化可否）。冒頭「⚠ 同居 2 アプリ」も参照
-- シーン生成: `Tools/FixedCamVr/Setup/Setup TableDuo Scene`（冪等再実行可）
-- 検証 3 層: L0=FakeHandDriver（HMD 0台）/ L1=Editor+Link↔実機1台 / L2=実機2台（フェーズ締めのみ）
-- **実機運用の標準トポロジ（2026-07-06〜）**: PC=NGO host（観戦兼任・L0 デスクトップビルド）+ Quest 2台=client。起動は `tools/tableduo-pc-host.ps1` 一発。詳細・罠・診断タグ → [.claude/memory/table_duo_pc_host_and_wiretap.md](.claude/memory/table_duo_pc_host_and_wiretap.md)
-- 依存追加: `com.unity.netcode.gameobjects` 1.12.0（このサブプロジェクト用）
-
-## 姉妹リポジトリ
-
-- **[Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)** (private, Android/Kotlin) — 配信側スマホアプリ。本リポジトリの `MjpegStreamReceiver` / `MjpegScreen` / `CameraStream` が叩く `/video` `/info` `/health` エンドポイントを提供する。`/info` の `rotationDeg` で Unity 側スクリーンを自動回転させる連携は両側を同時にいじる時に注意（[.claude/rules/streaming.md](.claude/rules/streaming.md) 参照）
-
-### 領域別ルール（該当領域の作業前に読む）
-
-`.claude/rules/` 配下：
-
-- [unity-vr.md](.claude/rules/unity-vr.md) — Unity / VR 共通規約（シーン構成・パフォーマンス）
-- [meta-xr.md](.claude/rules/meta-xr.md) — Meta XR SDK 利用規約（パススルー・カメラリグ）
-- [streaming.md](.claude/rules/streaming.md) — MJPEG 取り込み + fixed-cam-streamer エンドポイント仕様
-- [mcp-unity.md](.claude/rules/mcp-unity.md) — Unity MCP 経由でシーン/コンポーネント/アセットを編集する手順と落とし穴
-- [git-workflow.md](.claude/rules/git-workflow.md) — Git 作業フロー（worktree 並列・cherry-pick・PR vs 直 push 判断）
-- [doc-sync.md](.claude/rules/doc-sync.md) — **機能変更時にドキュメントも同時更新する癖**（更新先対応表・発動条件）
-- [parallel-projects.md](.claude/rules/parallel-projects.md) — **同居 2 アプリ（廻リ視 / TableDuo）の干渉防止**（共有資源・ビルド逐次・並列化可否・コード分離）
-- [troubleshooting.md](.claude/rules/troubleshooting.md) — 「動かない」時に層を切り分ける診断フロー（配信/ネット/Unity/Meta XR/ビルド の責任マップ）
-- [visual-verification.md](.claude/rules/visual-verification.md) — **3D/レンダリング結果を「壊れてる」と判断する前・特に大改修の前に多角度/単体隔離で確認**（誤判定で working を退行させない・2026-07-01 実害の恒久化）
-
-### その他
-
-- **計画**: `.claude/plans/` — 実装計画（`YYYY-MM-DD_<slug>.md`）
-
-## Unity 編集の標準フロー
-
-Unity プロジェクト固有の作業は MCP for Unity 経由を第一選択にする：
-
-1. `unity-status` スキルで接続確認
-2. 問題なければ MCP ツールで編集（`manage_scene` / `manage_gameobject` / `manage_components` 等）
-3. C# 変更後は `refresh_unity` → `read_console` でコンパイルエラー確認
-4. MCP が落ちている場合のフォールバック手順は [.claude/rules/mcp-unity.md](.claude/rules/mcp-unity.md) と [.claude/memory/unity_pitfalls.md](.claude/memory/unity_pitfalls.md)
+端的・論理的・必要最低限。結論から書く。前置き・総括・差分の自己解説は書かない。
