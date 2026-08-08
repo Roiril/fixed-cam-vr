@@ -28,12 +28,27 @@ description: 廻リ視の作りこみを 1 周回す型。演出・絵・物語�
 | 見るもの | 手段 | 秒 |
 |---|---|---|
 | 尺・滞在・cue の並び | 卓のシミュレータ（node で `show.json` を直接食わせる） | 秒 |
-| 合成の絵と数値（luma / sat / grain の比） | `ShowCompositePreview` | 秒 |
-| HMD 内の文字 | `HudPreviewScreenshot`（batchmode 可） | 秒 |
+| 合成の絵と数値（luma / sat / grain の比） | `.\tools\unity.ps1 menu composite` → `Assets/Screenshots/cgviz/` | 分 |
+| HMD 内の文字 | `.\tools\unity.ps1 menu hud` → `Assets/Screenshots/hud-preview/` | 分 |
+| 人形の腕・追従 | `.\tools\unity.ps1 menu actor-motion` → `Assets/Screenshots/actormotion/` | 分 |
 | 純ロジック | `.\tools\unity.ps1 test` | 分 |
+
+**HMD を被らないどころか Editor も開かない。** `menu` は batchmode で Unity を起こして
+メニューを 1 つ実行し、出力が更新されたかまで見て返る（`unity.ps1 menu` で一覧）。
 
 ⚠ **HMD 内の文言を変えたらフォント再生成が要る**（静的ベイク。忘れると実機で豆腐 —
 `memory/hud_font_and_preview.md`）。
+
+```powershell
+.\tools\unity.ps1 menu hud-font
+```
+
+⚠ **演出のオブジェクトを足したらシーンへ焼き直す**（コードを書いただけでは APK に入らない —
+`rules/unity-vr.md`）。
+
+```powershell
+.\tools\unity.ps1 menu scene
+```
 
 ## 2. 焼いて、走らせて、撮る
 

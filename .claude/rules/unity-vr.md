@@ -61,13 +61,21 @@ Passthrough/・UI/・Common/・Art/ は後続フェーズで必要になった�
 
 ## ビルド
 
+**入口は [tools/unity.ps1](../../tools/unity.ps1) だけ**（`skills/quest-build`）。Editor の GUI は使わない。
+
+```powershell
+.\tools\unity.ps1 build fixedcam            # → Builds/mawarimi.apk
+.\tools\unity.ps1 build fixedcam -Release   # 提出用（Development なし）
+```
+
 - ターゲット: Android / IL2CPP / ARM64 単独
-- **2 アプリ並存**: `Tools/FixedCamVr/Build FixedCam APK（廻リ視）` / `Build TableDuo APK`
-  （[BuildVariants.cs](../../Assets/Editor/BuildVariants.cs)）。productName / パッケージ ID
-  （com.roiril.mawarimi / com.roiril.tableduo）をビルド時のみ切り替え → Quest 上で別アプリとして同居。
-  ProjectSettings は終了後に必ず復元される（手動の Build Settings ではどちらも同名・同 ID になるので使わない）
+- **3 アプリ並存**: 廻リ視 / TableDuo / MyCobotHand（[BuildVariants.cs](../../Assets/Editor/BuildVariants.cs)）。
+  productName / パッケージ ID をビルド時のみ切り替え → Quest 上で別アプリとして同居。
+  ProjectSettings は終了後に必ず復元される（手動の Build Settings ではどれも同名・同 ID になるので使わない）
 - `Development Build` 有効でデプロイし、初期は `adb logcat` でログ確認
-- リリースビルドは `Build ...（Release）` メニューを使う（Development なし、出力名 -release）
+- リリースは `-Release`（Development なし、出力名 -release）
+
+**ビルド以外の Editor メニューも CLI から呼ぶ** → `.\tools\unity.ps1 menu`（引数なしで一覧）。
 
 ## 座標駆動の体験設計（PlayerZone / カメラ自動切替）
 
@@ -110,8 +118,12 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 **⚠ 導入演出・終了の暗転を実機で試すなら Setup の再実行が必須**（2026-07-30 実害）。
 `IntroDirector` / `IntroVeil` / `IntroStructureWire` / `ShowEndingFader` / `OVRPassthroughLayer` は
 **シーンに焼かれた GameObject** なので、コードを実装しただけでは APK に入らない。
-シーンの保存日がコードの実装日より古いときは、**ビルド前に必ず `Setup Main Demo Scene` を再実行**する
+シーンの保存日がコードの実装日より古いときは、**ビルド前に必ず焼き直す**
 （`grep "m_Name: Intro" Assets/Scenes/Main.unity` で 1 行も出なければ未配線）。
+
+```powershell
+.\tools\unity.ps1 menu scene
+```
 
 **⚠ ただし「コンポーネントが付いているか」は GameObject 名では確認できない**（2026-07-31 に誤診した）。
 `IntroStructureWire` は `IntroDirector` と同じ GameObject に `AddComponent` されるので
@@ -271,7 +283,7 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
 - 終了の黒は [`ShowEndingFader`](../../Assets/Scripts/Diagnostics/ShowEndingFader.cs)（CenterEyeAnchor 直下）。
   `StartupFader` は解除後に自分を Destroy するので再利用できない。
 - StatusHud の 1 行目が相と経過を出す（`導入中 0:12` / `2周目/全3周 ・ 経過 1:05` / `体験おわり…`）。
-  **HMD 内の文言を足したら `Tools/FixedCamVr/Setup/Generate Japanese HUD Font` を再実行**（忘れると実機で豆腐）。
+  **HMD 内の文言を足したら `.\tools\unity.ps1 menu hud-font` を再実行**（忘れると実機で豆腐）。
 
 #### 導入の中止は本当に中止になる（2026-08-06 修正）
 
@@ -487,6 +499,19 @@ VR では **Play 開始から最初の安定フレームまで** の間、以下
 | `Setup/` | 50〜99 | シーン構築・アセット生成（Setup Main Demo Scene 等） |
 | `Layout/` | 100〜199 | Editor レイアウト管理（ユーザー初期設定） |
 | `Diagnostics/` | 200〜299 | シュビーが叩く検証ツール（Ping / Run Tests / Preview Registration Viz / Preview Show Actor / Preview Show Composite 等） |
+
+**新しいメニューは CLI から呼べる形で書く**（2026-08-09〜。入口は `.\tools\unity.ps1 menu`）。守ることは 4 つ：
+
+1. **`public static` の引数なし**にする（`-executeMethod` は private も引数ありも呼べない）
+2. **シーンが要るなら自分で開く** — `EditorCliArgs.EnsureScene(path)`（TableDuo 側は `TableDuoEditorCli.EnsureScene()`）。
+   batchmode は空シーンで始まるので、`GameObject.Find` 頼みのものは開かないと軒並み落ちる。
+   **GUI では何もしない**ので、人が開いているシーンを奪わない
+3. **モーダルを出さない** — batchmode の `DisplayDialog` は表示されず **false** を返す。
+   分岐が無いと CLI 実行が黙って何もせず終わる。`EditorCliArgs.IsBatch` で囲う
+4. 値が要るなら `-Set key=value` → `EditorCliArgs.Get("key")`
+
+書いたら [tools/unity.ps1](../../tools/unity.ps1) の `$Menus` に 1 行足す（`Out` に出力先を書けば、
+**exit 0 でも中で LogError して何もしなかった場合を捕まえられる**）。
 
 **CG 人形のレイヤ規約**（2026-07-27）: 人形は専用レイヤ **`ShowCg`(slot 9)** に置き、
 **HMD カメラの cullingMask からは外す**（`Setup Main Demo Scene` が自動で外す）。外すのを忘れると

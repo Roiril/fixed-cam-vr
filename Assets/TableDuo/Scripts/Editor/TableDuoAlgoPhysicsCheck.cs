@@ -30,6 +30,8 @@ namespace TableDuoVr.EditorTools
         [MenuItem("Tools/FixedCamVr/Diagnostics/アルゴ山札の静止配置チェック", priority = 217)]
         public static void Run()
         {
+            if (!TableDuoEditorCli.EnsureScene()) return;
+
             var cards = GatherCards();
             if (cards.Count == 0)
             {

@@ -12,7 +12,7 @@ namespace TableDuoVr.EditorTools
     /// アクティブシーンに一時オブジェクトを生成し、専用レイヤ + カメラ cullingMask で
     /// アバターだけを実 URP パイプラインで描画（＝実ゲームと同じ色味）。テーブル等の環境は写らない。
     /// 撮影後に一時オブジェクトは破棄する（シーンは保存しない）。
-    /// 出力先は &lt;project&gt;/Temp/AvatarPreview/（gitignore 配下・Read で確認可）。
+    /// 出力先は Assets/Screenshots/tableduo/avatar/（gitignore 配下・Read で確認可）。
     ///
     /// 注意: 手は RemoteHandMeshProvider が居ない隔離環境では Meta 白メッシュにならず
     /// 手首プロキシ（小さな立方体）で代替表示される。体・腕・頭の形状/配色確認が目的。
@@ -20,12 +20,20 @@ namespace TableDuoVr.EditorTools
     public static class TableDuoAvatarPreview
     {
         private const int Size = 720;
+
+        // ⚠ 出力を `Temp/` へ置かない。**Unity は終了時に Temp/ を空にする**ので、
+        //    CLI（`unity.ps1 menu td-avatar`）から撮ると PNG が 1 枚も残らない（2026-08-09 実測）。
+        //    Assets/Screenshots/ は gitignore 済み。
+        private const string OutDirRel = "Screenshots/tableduo/avatar";
+
         private const int Layer = 31; // 既定未使用レイヤ。カメラ cullingMask でこれだけ写す
 
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Full Avatar (screenshot)", priority = 210)]
         public static void Capture()
         {
-            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "../Temp/AvatarPreview"));
+            if (!TableDuoEditorCli.EnsureScene()) return;
+
+            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, OutDirRel));
             Directory.CreateDirectory(dir);
 
             GameObject? seat = null;
@@ -145,7 +153,9 @@ namespace TableDuoVr.EditorTools
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Hand Role Initial (screenshot)", priority = 214)]
         public static void CaptureHandRoleInitial()
         {
-            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "../Temp/AvatarPreview"));
+            if (!TableDuoEditorCli.EnsureScene()) return;
+
+            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, OutDirRel));
             Directory.CreateDirectory(dir);
 
             // 白手メッシュ供給元。Edit モードは Awake 未実行で Instance=null のため手動注入する。
@@ -219,7 +229,9 @@ namespace TableDuoVr.EditorTools
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Self Body (first-person)", priority = 211)]
         public static void CaptureSelfBody()
         {
-            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "../Temp/AvatarPreview"));
+            if (!TableDuoEditorCli.EnsureScene()) return;
+
+            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, OutDirRel));
             Directory.CreateDirectory(dir);
             var remyPrefab = Resources.Load<GameObject>("RemyFullAvatar");
             if (remyPrefab == null) { Debug.LogError("[TableDuo] RemyFullAvatar prefab が無い"); return; }

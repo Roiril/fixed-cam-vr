@@ -8,6 +8,10 @@ namespace TableDuoVr.EditorTools
     /// 席＝初期目線アンカーの「見え方」を Scene ビューでプレビューするメニュー。
     /// Scene カメラを席の位置・向きに合わせるので、その席のプレイヤーが起動時に何を見るかを
     /// エディタ上で確認しながら席（目線アンカー）を調整できる。
+    ///
+    /// ⚠ **GUI 専用。CLI（batchmode）からは呼べない** — Scene ビューが存在しないので
+    /// <c>SceneView.lastActiveSceneView</c> が null になり、やることが無い。
+    /// 席から見た絵を画像で欲しいなら <see cref="TableDuoAvatarPreview"/>（PNG を焼く）を使う。
     /// </summary>
     public static class TableDuoEyePreview
     {

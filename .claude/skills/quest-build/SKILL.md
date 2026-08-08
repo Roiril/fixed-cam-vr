@@ -16,6 +16,14 @@ description: 廻リ視 / TableDuo / MyCobotHand の APK を Unity CLI で焼い�
 .\tools\unity.ps1 build tableduo-desktop    # 実機ゼロの L0 検証用 Standalone
 ```
 
+⚠ **焼く前にシーンを焼き直したか確かめる。** 演出は**シーンに焼かれた GameObject** なので、
+コードを書いただけでは APK に入らない（`rules/unity-vr.md`）。HUD の文言を足したならフォントも。
+
+```powershell
+.\tools\unity.ps1 menu scene       # 演出・HUD・ゾーンを Main.unity へ配置し直す
+.\tools\unity.ps1 menu hud-font    # HMD 内の日本語を再ベイク（忘れると実機で豆腐）
+```
+
 Unity の**手動 Build Settings は使わない**。手動だと 3 アプリが同名・同パッケージ ID になり、
 Quest 上で共存できなくなる。
 
@@ -115,6 +123,7 @@ adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastU
 
 ## 関連
 
+- `.\tools\unity.ps1 menu` — **ビルド以外の Editor 機能はすべてここから**（引数なしで一覧）
 - [adb-logcat](../adb-logcat/SKILL.md) — 実機ログ
 - [quest-capture](../quest-capture/SKILL.md) — **入れた後、画を録って見た目を確かめる**（HMD 不要）
 - [work-round](../work-round/SKILL.md) — 廻リ視の作りこみ 1 周（この skill はその中の 1 手）

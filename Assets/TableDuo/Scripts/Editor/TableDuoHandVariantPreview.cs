@@ -16,19 +16,27 @@ namespace TableDuoVr.EditorTools
     /// を左→右に並べる。Default と同じ握り/伸ばしになっていれば指のリターゲットが効いている。
     /// 材質のマゼンタ化・スケール・配置・指の曲がり軸を Editor だけで確認できる。
     ///
-    /// 出力: &lt;project&gt;/Temp/HandVariantPreview/（gitignore・Read で確認）。シーンは保存しない。
+    /// 出力: Assets/Screenshots/tableduo/hands/（gitignore・Read で確認）。シーンは保存しない。
     /// </summary>
     public static class TableDuoHandVariantPreview
     {
         private const int Size = 900;
+
+        // ⚠ 出力を `Temp/` へ置かない。**Unity は終了時に Temp/ を空にする**ので、
+        //    CLI（`unity.ps1 menu td-hands`）から撮ると 1 枚も残らない（2026-08-09 実測）。
+        //    Assets/Screenshots/ は gitignore 済み。
+        private const string OutDirRel = "Screenshots/tableduo/hands";
+
         private const int Layer = 31;
         private static readonly HandVariant[] Variants = { HandVariant.Default, HandVariant.Realistic, HandVariant.Robot };
 
         // rest（bind）と fist（最曲がり録画フレーム）の 2 ポーズを回し、各バリアントを白手リファレンスと
-        // 指ごとに数値比較 + スクショ（Temp/HandVariantPreview/rest・fist/）。実機と同一の参照コピー式経路。
+        // 指ごとに数値比較 + スクショ（Screenshots/tableduo/hands/rest・fist/）。実機と同一の参照コピー式経路。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Hand Variants (screenshot)", priority = 211)]
         public static void Capture()
         {
+            if (!TableDuoEditorCli.EnsureScene()) return;
+
             var provider = Object.FindObjectOfType<RemoteHandMeshProvider>();
             if (provider == null)
             {
@@ -61,7 +69,7 @@ namespace TableDuoVr.EditorTools
             var sb = new System.Text.StringBuilder("[TableDuo] 手バリアント忠実度診断（pack vs 同コンテナ白手・指ごと世界方向差）:\n");
             foreach (var (poseName, bonesR, wristRot) in poses)
             {
-                string dir = Path.GetFullPath(Path.Combine(Application.dataPath, $"../Temp/HandVariantPreview/{poseName}"));
+                string dir = Path.GetFullPath(Path.Combine(Application.dataPath, $"{OutDirRel}/{poseName}"));
                 Directory.CreateDirectory(dir);
                 sb.AppendLine($"[{poseName}]");
 
@@ -129,8 +137,8 @@ namespace TableDuoVr.EditorTools
 
             Debug.Log(sb.ToString());
             File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,
-                "../Temp/HandVariantPreview/directions.txt")), sb.ToString());
-            Debug.Log("[TableDuo] 忠実度診断 → Temp/HandVariantPreview/directions.txt / rest・fist の各スクショ");
+                $"{OutDirRel}/directions.txt")), sb.ToString());
+            Debug.Log($"[TableDuo] 忠実度診断 → Assets/{OutDirRel}/directions.txt / rest・fist の各スクショ");
         }
 
         // 指ごとの (mcp→末節) BoneId。pack と白手リファレンスを同 BoneId で比較する。

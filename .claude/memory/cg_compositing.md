@@ -105,7 +105,7 @@ CG 人形を実写映像へなじませる基盤は 2026-07-27 に作り直し�
 ## 確認のしかた（実機を持ち出す前に）
 
 1. 卓の［🎯 姿勢を合わせる］→ **部屋のワイヤーが実映像に重なるか**（較正が合っているかの唯一の一次証拠）
-2. Unity の `Tools/FixedCamVr/Diagnostics/Preview Show Composite` → `Assets/Screenshots/cgviz/` に
+2. **`.\tools\unity.ps1 menu composite`**（Editor を開かない）→ `Assets/Screenshots/cgviz/` に
    実写プレート × 人形 × 影の合成 PNG。**最終的な見た目の一次証拠はこれ**（出力は gitignore）。
    ⚠ このプレビューは **2026-08-07 まで実機の撮像の質（暗部ノイズ・自動露出）を出しておらず、
    実機より綺麗な絵だった**。同種の欠落を 4 回踏んでいるので、実機と食い違う項目が増えていないか

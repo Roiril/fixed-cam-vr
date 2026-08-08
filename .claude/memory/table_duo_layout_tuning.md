@@ -19,7 +19,7 @@ metadata:
 1. `TableDuoSceneSetup.cs` の該当値を編集（机高・席・椅子距離・駒グリッド原点/間隔/scale 等）
 2. MCP `execute_menu_item "Tools/FixedCamVr/Setup/Setup TableDuo Scene"`（冪等再生成）
 3. MCP `execute_menu_item "Tools/FixedCamVr/Diagnostics/Preview Table + Remy seated"`
-   → `Temp/TablePreview/*.png`（7枚）。**両席に座位 Remy を一時生成**して寸法感を出す
+   → `Assets/Screenshots/tableduo/table/*.png`（7枚）。**両席に座位 Remy を一時生成**して寸法感を出す
    （[TableDuoTablePreview.SeatRemy](../../Assets/TableDuo/Scripts/Editor/TableDuoTablePreview.cs)、撮影後に破棄・ランタイム非汚染）
 4. `Read` で PNG を見る。特に `remy_side.png`（体高 vs 天板高）・`remy_front_full.png`。ユーザーと詰める
 5. `execute_menu_item` は必ず timeout を返すが**実行はされる**（fire-and-forget）。PNG mtime で完了確認

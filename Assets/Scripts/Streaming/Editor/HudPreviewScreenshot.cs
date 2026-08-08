@@ -20,24 +20,27 @@ namespace FixedCamVr.Streaming.EditorTools
     public static class HudPreviewScreenshot
     {
         private const string OutDirRel = "Screenshots/hud-preview";
+        private const string MainScenePath = "Assets/Scenes/Main.unity";
         private const int Width = 1600;
         private const int Height = 1200;
 
         /// <summary>
-        /// batchmode 用エントリ（MCP-free 検証経路）。Main.unity を開いてから Capture する。
-        /// 実行例: Unity.exe -projectPath &lt;proj&gt; -batchmode -quit
-        ///         -executeMethod FixedCamVr.Streaming.EditorTools.HudPreviewScreenshot.CaptureBatch -logFile &lt;log&gt;
-        /// ⚠ -nographics を付けると Camera.Render が動かないので付けない。
+        /// 旧 batchmode 用エントリ。<see cref="Capture"/> が CLI から呼ばれたときに自分でシーンを開く
+        /// ようになったので**もう要らない**（`unity.ps1 menu hud` は Capture を呼ぶ）。
+        /// 過去の手順書・memory がこの名前を指しているので残してある。
         /// </summary>
-        public static void CaptureBatch()
-        {
-            UnityEditor.SceneManagement.EditorSceneManager.OpenScene("Assets/Scenes/Main.unity");
-            Capture();
-        }
+        public static void CaptureBatch() => Capture();
 
+        /// <summary>
+        /// ⚠ <c>-nographics</c> を付けると <c>Camera.Render</c> が動かない。
+        /// <c>unity run</c> は付けないので CLI からはそのまま撮れる。
+        /// </summary>
         [MenuItem("Tools/FixedCamVr/Preview/HUD Preview (screenshot)", priority = 80)]
         public static void Capture()
         {
+            // CLI（batchmode）は空シーンで始まるので自分で Main を開く。GUI では何もしない。
+            if (!EditorCliArgs.EnsureScene(MainScenePath)) return;
+
             var hud = Object.FindObjectOfType<StatusHud>(includeInactive: true);
             var panel = Object.FindObjectOfType<ControllerGuidePanel>(includeInactive: true);
             if (hud == null || panel == null)

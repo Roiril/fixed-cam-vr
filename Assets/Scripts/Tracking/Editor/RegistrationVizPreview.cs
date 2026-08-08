@@ -74,8 +74,9 @@ namespace FixedCamVr.Tracking.EditorTools
             new() { name = "eye",     pos = new Vector3(0f, 1.6f, -2.4f),   lookAt = new Vector3(0f, 0.2f, 0.6f) },
         };
 
+        // public なのは CLI（`unity.ps1 menu regviz`）が -executeMethod で直接呼ぶため。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Registration Viz", priority = 250)]
-        private static void Run()
+        public static void Run()
         {
             GameObject? root = null;
             RenderTexture? rt = null;

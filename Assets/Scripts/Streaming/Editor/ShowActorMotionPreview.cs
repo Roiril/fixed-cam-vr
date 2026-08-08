@@ -108,8 +108,9 @@ namespace FixedCamVr.Streaming.EditorTools
             return keys.ToArray();
         }
 
+        // public なのは CLI（`unity.ps1 menu actor-motion`）が -executeMethod で直接呼ぶため。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Actor Motion", priority = 252)]
-        private static void Run()
+        public static void Run()
         {
             int layer = LayerMask.NameToLayer(CgLayerName);
             if (layer < 0) { Debug.LogError($"[ActorMotion] レイヤ '{CgLayerName}' が未定義です。"); return; }
@@ -524,6 +525,16 @@ namespace FixedCamVr.Streaming.EditorTools
         /// </summary>
         private static GameObject? ResolveActorPrefab(out string origin)
         {
+            // CLI からの明示指定が最優先。batchmode では Project ウィンドウの選択が空なので、
+            // これが無いと show.json か既定の人形しか測れない（`-Set actor=Ichimatsu`）。
+            string? cli = EditorCliArgs.Get("actor");
+            if (!string.IsNullOrEmpty(cli))
+            {
+                var byArg = Resources.Load<GameObject>(cli.Contains('/') ? cli : "ShowActors/" + cli);
+                if (byArg != null) { origin = $"CLI 指定 ({cli})"; return byArg; }
+                Debug.LogWarning($"[ActorMotion] actor={cli} を Resources から読めません。選択 / show.json / 既定へ落とします。");
+            }
+
             foreach (UnityEngine.Object obj in Selection.objects)
             {
                 string p = AssetDatabase.GetAssetPath(obj);

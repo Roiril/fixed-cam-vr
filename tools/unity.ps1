@@ -8,6 +8,9 @@
 #   .\tools\unity.ps1 build fixedcam -Release   # 提出用（Development なし）
 #   .\tools\unity.ps1 build tableduo-desktop    # 実機ゼロの L0 検証用 Standalone
 #   .\tools\unity.ps1 test
+#   .\tools\unity.ps1 menu                      # Editor の機能を CLI から呼ぶ（引数なしで一覧）
+#   .\tools\unity.ps1 menu scene                # Setup Main Demo Scene
+#   .\tools\unity.ps1 menu actor -Set actor=Ichimatsu
 #   .\tools\unity.ps1 raw editors -i
 #
 # なぜ CLI なのか（旧経路との違い）:
@@ -20,7 +23,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('build', 'test', 'open', 'doctor', 'raw')]
+    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw')]
     [string]$Action,
 
     [Parameter(Position = 1)]
@@ -28,6 +31,11 @@ param(
 
     # Development Build を外す（提出・配布用）
     [switch]$Release,
+
+    # menu に値を渡す（`-Set actor=Ichimatsu -Set show=path\to\show.json`）。
+    # -executeMethod は引数を取れないので、Unity のコマンドラインへ `-fcv key=value` として積む。
+    # 受け側は Assets/Scripts/Streaming/Editor/EditorCliArgs.cs。
+    [string[]]$Set,
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Rest
@@ -59,6 +67,100 @@ $Apps = @{
 
 $MethodPrefix = 'FixedCamVr.EditorTools.BuildVariants.'
 
+# menu -> Editor の static メソッド（完全修飾）。`unity run -- -executeMethod <名前>` で呼ぶ。
+#
+# Out は「実行後に更新されているはずのもの」。**exit 0 でも中で LogError して何もしないことがある**
+# ので、build と同じく出力で判定する（ログにしか出ないものは空にしてある）。
+$Menus = [ordered]@{
+    # ---- Setup（作る・焼く）----
+    'scene'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.MainDemoSceneSetup.Setup'
+                            Desc = 'Main シーンへ演出・HUD・ゾーンを配置して保存（⚠ ビルド前に必須）'
+                            Out = 'Assets/Scenes/Main.unity' }
+    'hud-font'         = @{ Method = 'FixedCamVr.Streaming.EditorTools.JapaneseHudFontSetup.Generate'
+                            Desc = 'HMD 内の日本語フォントを再ベイク（⚠ 文言を足したら必須。忘れると実機で豆腐）'
+                            Out = 'Assets/Resources/Fonts/JapaneseHud SDF.asset' }
+    'actor-prefab'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorPrefabBuilder.Build'
+                            Desc = 'humanoid FBX から CG 人形プレハブを作る（-Set model=<fbx のパス>）'
+                            Out = $null }
+    'crt-material'     = @{ Method = 'FixedCamVr.Fx.Editor.FxRendererSetup.CreateCrtMaterial'
+                            Desc = 'CRT ポスト FX のマテリアルを作る'
+                            Out = 'Assets/Art/Materials/Fx/FxCrtMaterial.mat' }
+    'fx-sandbox'       = @{ Method = 'FixedCamVr.Fx.Editor.FxSandboxBuilder.Setup'
+                            Desc = 'FxSandbox シーンを作り直す'
+                            Out = 'Assets/Scenes/FxSandbox.unity' }
+    'tableduo-scene'   = @{ Method = 'TableDuoVr.EditorTools.TableDuoSceneSetup.Setup'
+                            Desc = 'TableDuoMain シーンを作り直す'
+                            Out = 'Assets/TableDuo/Scenes/TableDuoMain.unity' }
+
+    # ---- Diagnostics 廻リ視（見る・測る）----
+    'composite'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.Run'
+                            Desc = '実写プレート × CG 人形の合成を PNG 化（合成品質の一次証拠・-Set show=<パス>）'
+                            Out = 'Assets/Screenshots/cgviz' }
+    'actor'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorVizPreview.Run'
+                            Desc = 'CG 人形を 4 ポーズ × 2 角度で PNG 化（-Set actor=<人形名>）'
+                            Out = 'Assets/Screenshots/actorviz' }
+    'actor-motion'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorMotionPreview.Run'
+                            Desc = '体験者の動きを合成して腕の到達率・追従の遅れを測る（-Set actor=<人形名>）'
+                            Out = 'Assets/Screenshots/actormotion' }
+    'regviz'           = @{ Method = 'FixedCamVr.Tracking.EditorTools.RegistrationVizPreview.Run'
+                            Desc = '位置合わせのワイヤーとゾーンのタイルを多角度で PNG 化'
+                            Out = 'Assets/Screenshots/regviz' }
+    'hud'              = @{ Method = 'FixedCamVr.Streaming.EditorTools.HudPreviewScreenshot.Capture'
+                            Desc = 'HMD 内のステータス・操作パネルを PNG 化'
+                            Out = 'Assets/Screenshots/hud-preview' }
+    'ping-cams'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.FixedCamVrMenu.PingCameras'
+                            Desc = 'CameraSource の .asset が指す先へ HTTP して疎通を見る'
+                            Out = $null }
+
+    # ---- Diagnostics TableDuo ----
+    'td-hands'         = @{ Method = 'TableDuoVr.EditorTools.TableDuoHandVariantPreview.Capture'
+                            Desc = '手バリアント 3 種を実録画データで比較'
+                            Out = 'Assets/Screenshots/tableduo/hands' }
+    'td-avatar'        = @{ Method = 'TableDuoVr.EditorTools.TableDuoAvatarPreview.Capture'
+                            Desc = 'フルボディアバターを PNG 化'
+                            Out = 'Assets/Screenshots/tableduo/avatar' }
+    'td-hand-role'     = @{ Method = 'TableDuoVr.EditorTools.TableDuoAvatarPreview.CaptureHandRoleInitial'
+                            Desc = '手役の初期姿勢を PNG 化'
+                            Out = 'Assets/Screenshots/tableduo/avatar' }
+    'td-self-body'     = @{ Method = 'TableDuoVr.EditorTools.TableDuoAvatarPreview.CaptureSelfBody'
+                            Desc = '一人称の自分の体を PNG 化'
+                            Out = 'Assets/Screenshots/tableduo/avatar' }
+    'td-table'         = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.Capture'
+                            Desc = 'テーブルを PNG 化'
+                            Out = 'Assets/Screenshots/tableduo/table' }
+    'td-table-remy'    = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureWithRemy'
+                            Desc = 'テーブル + 着席した Remy'
+                            Out = 'Assets/Screenshots/tableduo/table' }
+    'td-table-geister' = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureGeister'
+                            Desc = 'テーブル（ガイスター）'
+                            Out = 'Assets/Screenshots/tableduo/table' }
+    'td-table-algo'    = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureAlgo'
+                            Desc = 'テーブル（アルゴ）'
+                            Out = 'Assets/Screenshots/tableduo/table' }
+    'td-table-bandido' = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureBandido'
+                            Desc = 'テーブル（バンディド）'
+                            Out = 'Assets/Screenshots/tableduo/table' }
+    'td-table-bear'    = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureSixStrokesBear'
+                            Desc = 'テーブル（6 本の線でクマ）'
+                            Out = 'Assets/Screenshots/tableduo/table' }
+    'td-algo-physics'  = @{ Method = 'TableDuoVr.EditorTools.TableDuoAlgoPhysicsCheck.Run'
+                            Desc = 'アルゴ山札が静止しているかを判定（ログのみ）'
+                            Out = $null }
+    'td-replay'        = @{ Method = 'TableDuoVr.EditorTools.TableDuoReplayDump.Dump'
+                            Desc = '手の録画データをテキストへ書き出す（ログのみ）'
+                            Out = $null }
+}
+
+# batchmode に持ち込めないもの。**画面が無いので原理的に動かない**ものだけをここへ置く
+# （「まだ対応していない」ものは 1 つも無い）。
+$GuiOnly = [ordered]@{
+    'Open Main / Debug / PlayerZone Sandbox Scene' = 'シーンを開くだけ → `unity.ps1 open`'
+    'Diagnostics/Run All Tests・Open Test Runner'  = 'テスト実行 → `unity.ps1 test`'
+    'Diagnostics/Reveal Camera Sources Folder'     = 'エクスプローラを開くだけ'
+    'Diagnostics/Preview Eye - Seat0 / Seat1'      = 'Scene ビューを席へ動かす。絵が要るなら td-avatar'
+    'Layout/*（3 つ）'                              = 'Editor のウィンドウ配置'
+}
+
 function Assert-Cli {
     if (-not (Test-Path $Cli)) {
         throw "unity CLI が無い: $Cli （導入は ~/.claude/reference/unity-cli-ops.md §1）"
@@ -87,9 +189,46 @@ function Get-OutputStamp([string]$path) {
     return [datetime]::MinValue
 }
 
+# ⚠ `unity run` は Unity 本体のログを標準出力へ出さない（~/.claude/reference/unity-cli-ops.md §7）。
+#    `Debug.Log` も `error CS` も Editor.log にしか無い。**Unity は起動のたびにこれを上書きする**
+#    （前回分は Editor-prev.log）ので、実行直後の中身 = いま走らせた 1 回分。
+$EditorLog = Join-Path $env:LOCALAPPDATA 'Unity\Editor\Editor.log'
+
+# ⚠ Unity 本体のタグを外さないと、終了時の [Performance] 統計（実測 359 行）だけで
+#    末尾が埋まり、**肝心の [FixedCamVr] / [ActorViz] が 1 行も見えない**（2026-08-09 実測）。
+$EditorLogNoise = '^\[(Performance|Subsystems|Licensing|Package Manager|XR|PhysX|MODES|UnityMemory|Physics)\b'
+
+function Show-UnityLog {
+    if (-not (Test-Path $EditorLog)) {
+        Write-Host "  Editor.log が無い: $EditorLog" -ForegroundColor DarkGray
+        return
+    }
+    # 行頭 [ = プロジェクトのタグ付きログ（[IntroVeil] 等）。あとはコンパイルエラーと例外。
+    $hit = Select-String -Path $EditorLog -Pattern '^\[|error CS\d|Exception:|Unhandled' -Encoding utf8 |
+        Where-Object { $_.Line -notmatch $EditorLogNoise } |
+        Select-Object -Last 40
+    if (-not $hit) { return }
+    Write-Host "--- Editor.log ---" -ForegroundColor DarkGray
+    foreach ($h in $hit) { Write-Host "  $($h.Line)" -ForegroundColor DarkGray }
+}
+
 function Show-Apps {
     Write-Host "使える App:" -ForegroundColor Cyan
     foreach ($k in $Apps.Keys | Sort-Object) { "  {0,-18} {1}" -f $k, $Apps[$k].Desc | Write-Host }
+}
+
+function Show-Menus {
+    Write-Host "使える menu:" -ForegroundColor Cyan
+    foreach ($k in $Menus.Keys) { "  {0,-18} {1}" -f $k, $Menus[$k].Desc | Write-Host }
+    Write-Host ""
+    Write-Host "  一覧に無いものは raw:<完全修飾名> で直接呼べる" -ForegroundColor DarkGray
+    Write-Host "  例) .\tools\unity.ps1 menu raw:FixedCamVr.Foo.Bar.Baz" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "APK は build を使う:" -ForegroundColor Cyan
+    foreach ($k in $Apps.Keys | Sort-Object) { "  .\tools\unity.ps1 build {0,-18} {1}" -f $k, $Apps[$k].Desc | Write-Host }
+    Write-Host ""
+    Write-Host "GUI 専用（batchmode に画面が無いので原理的に動かない）:" -ForegroundColor DarkGray
+    foreach ($k in $GuiOnly.Keys) { "  {0,-45} {1}" -f $k, $GuiOnly[$k] | Write-Host -ForegroundColor DarkGray }
 }
 
 switch ($Action) {
@@ -224,6 +363,64 @@ switch ($Action) {
             Write-Host "$mode : 全 $($r.total) / 通過 $($r.passed) / 失敗 $($r.failed) / 除外 $($r.skipped)" -ForegroundColor $color
         }
         else { Write-Host "結果 XML が無い: $outXml" -ForegroundColor Yellow }
+        exit $code
+    }
+
+    'menu' {
+        Assert-Cli
+        if (-not $App -or $App -in @('--list', '-l', 'list')) { Show-Menus; exit 0 }
+
+        # ⚠ `unity run` は -batchmode / -quit / -logFile を自分で管理する。
+        #    `--` の後ろにこれらを書くと CLI が exit 6 で弾く（2026-08-08 実測）。渡すのは -executeMethod だけ。
+        if ($App.StartsWith('raw:')) {
+            $method = $App.Substring(4)
+            $desc = "(直接指定) $method"
+            $out = $null
+        }
+        elseif ($Menus.Contains($App)) {
+            $method = $Menus[$App].Method
+            $desc = $Menus[$App].Desc
+            $out = $Menus[$App].Out
+        }
+        else {
+            Write-Host "知らない menu: $App" -ForegroundColor Red
+            Show-Menus; exit 2
+        }
+
+        Assert-NotLocked
+
+        # -Set key=value -> Unity のコマンドラインへ `-fcv key=value`（受け側は EditorCliArgs）
+        $fcv = @()
+        foreach ($kv in $Set) {
+            if ($kv -notmatch '^[^=]+=.') {
+                Write-Host "-Set は key=value の形で書く（受け取ったもの: $kv）" -ForegroundColor Red
+                exit 2
+            }
+            $fcv += '-fcv'; $fcv += $kv
+        }
+
+        $outPath = if ($out) { Join-Path $Root $out } else { $null }
+        $before = if ($outPath) { Get-OutputStamp $outPath } else { [datetime]::MinValue }
+
+        Write-Host $desc -ForegroundColor Cyan
+        Write-Host "  $method" -ForegroundColor DarkGray
+        & $Cli run $Root --non-interactive -- -executeMethod $method @fcv @Rest
+        $code = $LASTEXITCODE
+
+        Show-UnityLog
+
+        # ⚠ 出力で判定する。**Unity は Debug.LogError では終了コードを変えない**ので、
+        #   中で「見つかりません」と言って何もせず返っても exit 0 になる。
+        if ($outPath) {
+            $after = Get-OutputStamp $outPath
+            if ($after -le $before) {
+                Write-Host "✗ 出力が更新されていない: $out (exit=$code)" -ForegroundColor Red
+                Write-Host "  全文は $EditorLog" -ForegroundColor Yellow
+                exit 1
+            }
+            "✓ {0}  {1:HH:mm:ss}" -f $out, $after | Write-Host -ForegroundColor Green
+        }
+        elseif ($code -eq 0) { Write-Host "✓ 実行した（出力は上の Editor.log を見る）" -ForegroundColor Green }
         exit $code
     }
 

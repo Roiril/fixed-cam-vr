@@ -15,8 +15,8 @@ metadata:
 `JapaneseHud SDF`（Resources/Fonts/）は**静的ベイク**のフォントアセット。ベイク時に存在しなかった文字は
 **実機でも □ になる**（dynamic 焼きは効かない。U+FF1A 欠落を実測）。
 
-- 再生成: `Tools/FixedCamVr/Setup/Generate Japanese HUD Font`、または batchmode
-  `-executeMethod FixedCamVr.Streaming.EditorTools.JapaneseHudFontSetup.Generate`
+- 再生成: **`.\tools\unity.ps1 menu hud-font`**（Editor を開かない。GUI なら
+  `Tools/FixedCamVr/Setup/Generate Japanese HUD Font`）
 - ベイク対象は **JapaneseHudFontSetup.cs の sources 配列の .cs から自動収集**。HMD に文字列を出す
   スクリプトを新設したら sources へ追加すること（2026-07-23 に ControllerGuidePanel / OvrControllerBridge、
   **2026-07-30 に IntroDirector** を追加）
@@ -30,9 +30,9 @@ metadata:
 **Link/HMD 無しで OVR シーンを Play すると EnterPlayMode がデッドロックし Unity ごと落ちる**
 （mcp-unity.md 記載の既知事故。2026-07-23 にも再発させた）。HUD の見た目確認は Play を使わず:
 
-- Editor GUI: `Tools/FixedCamVr/Preview/HUD Preview (screenshot)` → `Assets/Screenshots/hud-preview/` に PNG
-- MCP 不通/Unity 未起動: batchmode `-executeMethod FixedCamVr.Streaming.EditorTools.HudPreviewScreenshot.CaptureBatch`
-  （**-nographics は付けない** — Camera.Render が動かない）
+- **`.\tools\unity.ps1 menu hud`** → `Assets/Screenshots/hud-preview/` に PNG（Editor を開かない。
+  batchmode なら Main.unity を自分で開く）。GUI なら `Tools/FixedCamVr/Preview/HUD Preview (screenshot)`
+  （**-nographics は付けない** — Camera.Render が動かない。`unity run` は付けないので気にしなくてよい）
 - 仕組み: Edit モードのまま StatusHud / ControllerGuidePanel へ reflection で状態注入 → private 描画メソッド駆動 →
   RenderTexture 撮影。罠 3 つをツール内で処理済み（①Edit モードは Awake が走らずフォント未適用 → 明示適用 +
   ForceMeshUpdate×2 ②RenderContent の間引き分岐は text.enabled=false にしてから呼ぶ ③シーンのスクリーン Quad が

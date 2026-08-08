@@ -1,6 +1,16 @@
 # 実機検証ワークフロー（ユーザー確定方針）
 
-ユーザー明示の優先方針（2026-05-17）：**APK ビルド → install → Quest 上でアプリ探し のループは遅すぎる。Quest を Link 接続 → Unity Editor で Play → シュビーが MCP `read_console` でログ取得して検証、が最良。**
+> ⚠ **2026-08-09 に位置づけを訂正。** 下の方針が立った 2026-05-17 の前提「build/install ループは遅すぎる」は、
+> **その後に道具ができて崩れている**:
+>
+> - `.\tools\unity.ps1 build fixedcam` — ダイアログ無し・同期・exit code つき（GUI も MCP も要らない）
+> - `py -3.11 tools/quest-record.py --sec 45 --walk` — **HMD を被らずに**導入 → 3 周 → 終了を通し、
+>   画・ログ・判定・切り出しが 1 回で揃う
+> - `.\tools\unity.ps1 menu <名前>` — 合成・HUD・人形・位置合わせの絵を Editor を開かずに撮る
+>
+> **いまの正は CLAUDE.md「検証」節の 3 経路**（自己申告 `[XP]` / 外部の実測 `quest-record` / 実機ログ）。
+> 下の Link + Play + MCP が要るのは、**Editor で Play しないと出ない挙動**（ドメインリロードを挟んだ
+> 即時イテレーション、`OnApplicationPause` 系）を追うときだけ。
 
 ## なぜ build/install ループを避けるか（実体験）
 

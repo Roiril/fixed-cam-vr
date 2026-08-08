@@ -125,7 +125,7 @@ WireTap の切り分け実績: ワイヤ側 [TDV-WIRE] は滑らか＝データ�
 - ローカル描画専用＝**相手に見える自分（ネット越し Remy）は不変**・ネット送信は無追加。
 - 条件記録: `_studyFlags` bit4 同期・CSV `condition` 行に `selfBody=0/1`。既定 off は交絡回避
   （パイロットで on/off 比較して本番既定を決める）。
-- Editor 検証: `Diagnostics/Preview Self Body (first-person)` → `Temp/AvatarPreview/07_selfbody_lookdown.png`
+- Editor 検証: `Diagnostics/Preview Self Body (first-person)` → `Assets/Screenshots/tableduo/avatar/07_selfbody_lookdown.png`
   ・`08_selfbody_straight.png`（頭が消えて体が下方に見えるのを確認済み）。
 
 ## 実機起動 早見表

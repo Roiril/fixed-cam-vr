@@ -17,7 +17,7 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 | **配信側 (Android/Kotlin)** | カメラ権限なし・MJPEG が出ない・解像度違い | ブラウザで `http://<phone>:8080/` 直接確認 / `curl /info` | [streaming.md](streaming.md), [streamer-android-build SKILL](../../.claude/skills/streamer-android-build/SKILL.md) |
 | **ネットワーク** | 別 LAN・ポート閉鎖・Wi-Fi 帯域不足 | PC から `curl -m 3 /health` / `ping <phone>` | [streaming.md `/health`](streaming.md) |
 | **Unity スクリプト** | デコード失敗・GC スパイク・Texture 白ノイズ | Editor Console + Profiler / [streaming-offline-test SKILL](../../.claude/skills/streaming-offline-test/SKILL.md) | [unity_pitfalls.md](../../.claude/memory/unity_pitfalls.md) |
-| **Unity Editor / MCP** | コンパイル失敗・MCP 切断・prefab 再生時に値リセット | `unity-status` スキル / `read_console` | [mcp-unity.md](mcp-unity.md), [unity-prefab-fields SKILL](../../.claude/skills/unity-prefab-fields/SKILL.md) |
+| **Unity（コンパイル・Editor 機能）** | コンパイル失敗・prefab 再生時に値リセット | `.\tools\unity.ps1 test`（コンパイル込み）/ `.\tools\unity.ps1 menu` | [unity-vr.md](unity-vr.md), [unity-prefab-fields SKILL](../../.claude/skills/unity-prefab-fields/SKILL.md) |
 | **Meta XR / OpenXR** | パススルー出ない・トラッキング崩れ・90Hz 出ない | `adb-logcat` スキル (xr) / OVR Metrics Tool | [meta-xr.md](meta-xr.md) |
 | **ビルド / 実機** | APK 起動しない・即落ち・黒画面 | `adb-logcat` スキル (unity) / `adb-logcat` スキル (crash) | [unity-vr.md](unity-vr.md) |
 
@@ -105,11 +105,17 @@ py -3.11 tools/quest-record.py --sec 45 --walk
 出ていたのに、`[XP]` だけ見ていて気づけなかった）。→ **判定に入れた**。レポートの
 **「## 実機ログの警告」**節が数え、エラーがあれば FAIL・日本語の警告は別立てで名指しする。
 
-### 「コンパイルが通らない / Unity 重い」
+### 「コンパイルが通らない」
 
-1. `unity-status` スキル — 接続・コンパイル状態
-2. `read_console types=["error"]` — エラー全文
-3. `manage_editor action=ping` で応答性確認 — [mcp-unity.md](mcp-unity.md)
+```powershell
+.\tools\unity.ps1 test
+```
+
+EditMode テストは走る前に必ずコンパイルするので、**これ 1 本でコンパイルエラーの全文が出る**
+（`Logs/test-EditMode.xml` に結果、標準出力に `error CS`）。Editor を開く必要も MCP もいらない。
+
+⚠ **Editor がこのプロジェクトを開いていると止まる**（`Temp/UnityLockfile`）。閉じてからやり直す。
+起動中の Editor をそのまま調べたいときだけ MCP（[mcp-unity.md](mcp-unity.md)）へ落ちる。
 
 ### 「prefab に保存した値が再生時に変わる / 0 になる」
 
@@ -162,11 +168,10 @@ py -3.11 tools/quest-record.py --sec 45 --walk
 
 | スキル | 用途 |
 |---|---|
-| `unity-status` | Unity MCP / Editor / コンソールエラー一括 |
+| `quest-build` | APK を焼いて Quest に入れる（**Unity の入口はここ**）。ビルド以外のメニューは `.\tools\unity.ps1 menu` |
 | `adb-logcat` | 実機 Quest / Pixel のログ取得（`unity` / `xr` / `streamer` / `crash` フィルタ） |
 | `quest-capture` | **実機の「見ている絵」を動画で取り出す**（HMD 不要・パススルーも映る）。ログが OK でも画が壊れている時 |
-| `unity-mcp` | MCP 接続診断と再接続 |
 | `streaming-offline-test` | スマホ無しで Unity の MJPEG パイプライン検証 |
-| `quest-build` | 廻リ視 / TableDuo の APK を Quest にビルド & インストール |
 | `streamer-android-build` | 姉妹リポ APK ビルド & 実機インストール |
 | `unity-prefab-fields` | prefab YAML / SerializeField 不整合の修正 |
+| `unity-status` / `unity-mcp` | **退避路**。起動中の Editor をライブ操作する必要があるときだけ（要 MCP 登録） |

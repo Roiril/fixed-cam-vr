@@ -11,6 +11,10 @@ metadata:
 
 ## 1. ビルドメニューの戻り値で実行有無を判定する
 
+> ⚠ **2026-08-08 に経路ごと解消。** ビルドは **`.\tools\unity.ps1 build fixedcam`**（CLI・同期・exit code つき・
+> 出力の更新まで見て返る）。下は MCP 経由だった頃の記録で、**いま同じ判定を書く必要は無い**。
+> MCP でビルドするのは Editor を開いたまま焼きたいときだけ。
+
 `mcp__UnityMCP__execute_menu_item "Tools/FixedCamVr/Build FixedCam APK（廻リ視）"` の戻り：
 
 - **即 `success:true` が返ったら → ビルドは走っていない**（Editor がメニューを叩いただけ／前回ビルドの `[BuildVariants] OK` ログが残っているのを誤読しがち）。APK の mtime は変わらない。

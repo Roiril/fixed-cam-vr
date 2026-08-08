@@ -66,7 +66,7 @@
      選択肢はその区間のカメラが担当する線だけ。通らなかった時は「出さない（ラインの既定）」か「離脱時に出す」）
    - **BGM**（このゾーンで曲を切り替える / 止める。ループ範囲 in-out・音量・フェード。指示の無い区間は前の曲が続く）。
      音源は `tools/web-compositor/audio/` に置き「🎵 BGM ライブラリ」でトラック登録する。
-     **⚠ 初回は `Tools/FixedCamVr/Setup/Setup Main Demo Scene` を 1 回再実行**して [Bgm] を BgmDirector 化すること
+     **⚠ 初回は `.\tools\unity.ps1 menu scene` を 1 回実行**して [Bgm] を BgmDirector 化すること
 4. **▶ 検証**（矢印キー：→ 次ゾーン / ← 戻る / R 先頭 / Esc）で、実機なしに発火順と「体験者に見える画」をブラウザで確認（ローカルのみ・show.json は書かない）
 5. **📦 ビルド用エクスポート** → show.json + 参照アセットが `Assets/StreamingAssets/show/` に焼き込まれる（コミット禁止・gitignore 済み）
 6. 通常どおり APK ビルド → **Quest 単体（PC 不在）で周回に応じて自動発火**。Web 卓のライブ操作（演出 ON/OFF）は常にタイムラインより優先
@@ -155,7 +155,7 @@
 - **手の見た目 3 バリアント = 調査条件**（within-pair・ブロック固定・`tdv_hand default|realistic|robot`。**セッション中の変更はホストの FacilitatorPanel からの強制のみ**＝参加者側トグルは撤去、端末間の不一致は検出して CSV に記録）
 - **操作系の設計思想（2026-07-18〜）**: **Quest 側=体験・PC ホスト側=運用**。Quest コントローラは視点リセット（右 A 単押し / 両グリップ 3 秒）だけ。ゲーム切替・手バリアント・盤面操作・**映像記録**・記録マークはホストの運営パネル（FacilitatorPanel・F10 で表示トグル・2026-07-24 刷新: 選択グリッド化 / 配り直しはアクティブゲームのみ表示 / WireTap は左下デバッグパネルへ分離）に集約
 - **人役の一人称自己アバター**（`tdv_selfbody on`・既定 off）: 下を向くと自分の胴/腕/手が見える（頭は潰して視界を塞がない・白手は隠し Remy 手に一本化）。ローカル描画専用＝相手に見える自分は不変。条件は CSV に記録（自己身体の有無は交絡なのでパイロットで既定を決める）
-- **シーン生成**: `Tools/FixedCamVr/Setup/Setup TableDuo Scene`（冪等。**ビルド直前に再実行してクリーン状態にする**）
+- **シーン生成**: `.\tools\unity.ps1 menu tableduo-scene`（冪等。**ビルド直前に再実行してクリーン状態にする**）
 
 ## 調査の記録物（すべて自動）
 
@@ -177,7 +177,7 @@
 .\tools\tableduo-pc-host.ps1 -NoHost      # ホスト起動済みで Quest だけ繋ぎ直し
 ```
 
-前提: `Tools/FixedCamVr/Diagnostics/Build TableDuo Desktop (L0 test)` のデスクトップビルドが最新であること（PoseCodec を変えたら Quest APK と両方焼き直す）。Quest 同士 host 構成（PC 不要）も従来通り可: host を `-e tdv_mode host -e tdv_role full`、client の `-e tdv_ip` を host Quest の IP に。役割交代・条件ブロック切替は [tools/tableduo-role-swap.ps1](tools/tableduo-role-swap.ps1)（`-HandVariant robot` / `-KeepRoles` / `-DryRun`）。
+前提: `.\tools\unity.ps1 build tableduo-desktop` のデスクトップビルドが最新であること（PoseCodec を変えたら Quest APK と両方焼き直す）。Quest 同士 host 構成（PC 不要）も従来通り可: host を `-e tdv_mode host -e tdv_role full`、client の `-e tdv_ip` を host Quest の IP に。役割交代・条件ブロック切替は [tools/tableduo-role-swap.ps1](tools/tableduo-role-swap.ps1)（`-HandVariant robot` / `-KeepRoles` / `-DryRun`）。
 
 ## HMD 内の操作（コントローラ）
 
@@ -197,13 +197,23 @@ PC ホスト + Quest 2 台の運用が確立（接続テスト済み）。手ア
 
 # ビルド & デプロイ
 
-**手動 Build Settings は使わない**（2 アプリが同名・同 ID になり Quest 上で共存できなくなる）。専用メニュー [BuildVariants.cs](Assets/Editor/BuildVariants.cs) が唯一の正：
+**Unity は CLI で操作する。** 入口は [tools/unity.ps1](tools/unity.ps1) だけで、Editor を GUI で開かない。
 
-| メニュー | 出力 | パッケージ ID | シーン |
+```powershell
+.\tools\unity.ps1 doctor            # 前提（Editor / Android モジュール / py / adb）
+.\tools\unity.ps1 build fixedcam    # → Builds/mawarimi.apk
+.\tools\unity.ps1 build fixedcam -Release
+```
+
+**手動 Build Settings は使わない**（3 アプリが同名・同 ID になり Quest 上で共存できなくなる）。
+[BuildVariants.cs](Assets/Editor/BuildVariants.cs) が productName / ID をビルド時だけ swap する：
+
+| `build <app>` | 出力 | パッケージ ID | シーン |
 |---|---|---|---|
-| `Tools/FixedCamVr/Build FixedCam APK（廻リ視）` | `Builds/mawarimi.apk` | `com.roiril.mawarimi` | Main.unity |
-| `Tools/FixedCamVr/Build TableDuo APK` | `Builds/tableduo.apk` | `com.roiril.tableduo` | TableDuoMain.unity |
-| （各 `…（Release）` 版あり） | `*-release.apk` | 同上 | Development なし |
+| `fixedcam` | `Builds/mawarimi.apk` | `com.roiril.mawarimi` | Main.unity |
+| `tableduo` | `Builds/tableduo.apk` | `com.roiril.tableduo` | TableDuoMain.unity |
+| `mycobothand` | `Builds/mycobothand-dev.apk` | `com.mycobot.handteleop` | HandTeleop.unity |
+| `tableduo-desktop` | `Builds/tableduo-desktop/` | — | 実機ゼロの L0 検証用 Standalone |
 
 ```
 adb -s <serial> install -r --no-streaming Builds\tableduo.apk
@@ -213,9 +223,13 @@ adb -s <serial> install -r --no-streaming Builds\tableduo.apk
 
 # HMD なし・Editor での検証
 
+**Editor すら開かずに済むものは CLI で撮る。** `.\tools\unity.ps1 menu` が一覧を出す
+（合成 `composite` / HMD 内の文字 `hud` / 人形の動き `actor-motion` / 位置合わせ `regviz` …）。
+
 | 経路 | 対象 | 手順 |
 |---|---|---|
-| EditMode テスト | 両アプリのロジック回帰 | Test Runner → Run All（または `Tools > FixedCamVr > Diagnostics > Run All Tests`） |
+| EditMode テスト | 3 アプリのロジック回帰 | `.\tools\unity.ps1 test`（走る前に必ずコンパイルするので、コンパイル確認も兼ねる） |
+| Editor プレビュー | 合成の絵・HMD 内の文字・人形・位置合わせ | `.\tools\unity.ps1 menu <名前>` → `Assets/Screenshots/<種類>/` |
 | Flat デバッグシーン | 廻リ視のストリーミング系 | **Ctrl+Shift+D** → Play → Tab/数字で切替（OVR 無しの通常シーン） |
 | streaming-offline-test | スマホ実機なしで MJPEG E2E | fake server を立てて検証（[スキル](.claude/skills/streaming-offline-test/SKILL.md)） |
 | TableDuo L0 | 実機ゼロで host/client/観戦 | Standalone ビルドを CLI 起動（`tdv_l0=on`・[memory](.claude/memory/table_duo_l0_desktop_test.md)） |

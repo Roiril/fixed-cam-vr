@@ -25,15 +25,21 @@ namespace FixedCamVr.Fx.Editor
         [MenuItem("Tools/FixedCamVr/Setup/Setup FxSandbox Scene", priority = 51)]
         public static void Setup()
         {
+            // ⚠ batchmode ではダイアログが表示されず、この 2 つはどちらも false（＝キャンセル）を返す。
+            //    分岐が無いと CLI（`unity.ps1 menu fx-sandbox`）からの実行が**黙って何もせず終わる**。
+            //    CLI から呼ぶこと自体が「作り直したい」の意思表示なので、確認を飛ばして進む。
+            //    （asmdef FixedCamVr.Fx.Editor は Streaming.Editor を参照しないので EditorCliArgs は使わない）
+            bool batch = Application.isBatchMode;
+
             // 未保存変更があるシーンを破棄する前にユーザーに確認させる
-            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+            if (!batch && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
             {
                 Debug.Log("[FxSandboxBuilder] キャンセルされました。");
                 return;
             }
 
             // 既存ファイルがあれば overwrite を確認
-            if (File.Exists(ScenePath))
+            if (!batch && File.Exists(ScenePath))
             {
                 bool overwrite = EditorUtility.DisplayDialog(
                     "FxSandbox を上書き",

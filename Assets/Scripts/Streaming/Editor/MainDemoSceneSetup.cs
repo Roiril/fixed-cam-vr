@@ -53,7 +53,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 別シーン（TableDuoMain 等）を開いたまま実行されがち。**未保存でなければ自分で Main を開く**。
                 // 旧実装はモーダルで止めていたが、MCP 経由の自動実行だとダイアログが Editor ごと固まらせ、
                 // 人がクリックするまで全部の応答が止まる（2026-07-27 実害）。
-                if (scene.isDirty)
+                // CLI（batchmode）は人が居ないうえ守るべき手作業も無い（起動直後の空シーン）ので素通りする。
+                if (scene.isDirty && !EditorCliArgs.IsBatch)
                 {
                     EditorUtility.DisplayDialog(
                         "Main シーンを開いてから実行してください",
@@ -72,7 +73,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
             }
 
-            if (scene.isDirty)
+            // ⚠ batchmode で DisplayDialog は表示されず false（＝キャンセル）を返す。
+            //    分岐を入れないと CLI からの実行が**黙って何もせずに終わる**。
+            if (scene.isDirty && !EditorCliArgs.IsBatch)
             {
                 bool cont = EditorUtility.DisplayDialog(
                     "未保存変更あり",

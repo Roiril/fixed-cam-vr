@@ -62,6 +62,7 @@ description: 1 Unity プロジェクトに同居する 廻リ視(FixedCam) と T
 | 片アプリのドキュメント執筆 | ◎ | ファイル独立・Unity 不要 |
 | 片アプリのコード執筆（コンパイル確認を後回しにできる範囲） | ○ | ただし共有 .asset / ProjectSettings に触れないこと |
 | Unity MCP でのシーン・コンポーネント編集 | **×** | Editor 単一インスタンス。本シュビーが逐次で行う |
+| **`unity.ps1` の build / test / menu** | **×** | batchmode も `Temp/UnityLockfile` を取る。**2 本目は即エラーで落ちる**（`Assert-NotLocked`）。GUI の Editor が開いていても同じ |
 | ビルド / Play Mode 検証 | **×** | Editor・ProjectSettings 奪い合い。逐次のみ |
 | 共有 .asset / ProjectSettings の変更 | **×** | 両アプリに波及。逐次 + 影響説明必須 |
 

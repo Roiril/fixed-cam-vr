@@ -57,8 +57,15 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 .\tools\unity.ps1 doctor          # 前提が揃っているか（最初にこれ）
 .\tools\unity.ps1 build fixedcam  # → Builds/mawarimi.apk
 .\tools\unity.ps1 test
+.\tools\unity.ps1 menu            # Editor の機能を CLI から呼ぶ（引数なしで一覧）
+.\tools\unity.ps1 menu scene      # 例: Setup Main Demo Scene（ビルド前に必須）
 ```
 
+- **Editor のメニューは `menu` から全部呼べる**（2026-08-09〜）。Setup 6 種・プレビュー / 検証 18 種。
+  値を渡すものは `-Set key=value`（例 `menu actor -Set actor=Ichimatsu`）。
+  一覧に無いものは `menu raw:<完全修飾名>`
+- **GUI でしか動かないのは 5 つだけ**（シーンを開く / テストを開く / フォルダを開く / Scene ビューを動かす /
+  ウィンドウ配置）。どれも batchmode に画面が無いためで、代わりの経路は `menu` の一覧に出る
 - Editor を GUI で開いて手で触る前提の手順を既定にしない
 - **MCP for Unity は退避路**。CLI が届かないのは「起動中の Editor をライブ操作する」場合だけ
   （Pipeline は Unity 6.0 以上で、2022.3 のこのプロジェクトには入らない）。
