@@ -1,6 +1,6 @@
 """capture-server.py の焼き込み走査（cue 参照 / 演出素材）を stdlib unittest で固定する。
 
-実行: python -m unittest discover -s tools/web-compositor -p "test_*.py"
+実行: py -3.11 -m unittest discover -s tools/web-compositor -p "test_*.py"
 
 なぜテストするか: v3（takes[].steps[]）を走査し漏れると「現地 PC 不在の APK で演出の映像だけ出ない」
 という、卓では気づけない事故になる（Web プレビューは実 URL で動くため）。

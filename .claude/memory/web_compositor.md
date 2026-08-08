@@ -99,11 +99,11 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 ## 場所と起動
 
 - パス: `tools/web-compositor/`（Unity の Assets 外。Unity は読み込まない）
-- 起動: `tools/web-compositor/serve.ps1`（python 必須）→ `http://localhost:8099/index.html`
+- 起動: `tools/web-compositor/serve.ps1`（`py -3.11` 必須）→ `http://localhost:8099/index.html`
   - **必ず capture-server.py 経由で起動**（素の `http.server` だと保存系 API が無くダウンロードにフォールバックする）
   - LAN からも見える（`http://<PC-IP>:8099/`）。スマホ/Quest 内ブラウザ確認用
   - getUserMedia(Webcam) は localhost か https のみ
-- バックグラウンドの `python capture-server.py` はセッション跨ぎで落ちやすい → ユーザに `serve.ps1` 常駐を勧める
+- バックグラウンドの `py -3.11 capture-server.py` はセッション跨ぎで落ちやすい → ユーザに `serve.ps1` 常駐を勧める
 
 ## 構成ファイル（2026-06-16 統合後）
 
@@ -141,7 +141,7 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 | `testassets/` | 動作確認用ダミー（「演出 A」等の文字だけ・静止画 4 / 6 秒動画 3） | ○ 末尾の optgroup「動作確認用」 | **追跡**（軽量・どの PC でも検証可） |
 | `archive/<日付>_<理由>/` | 旧環境で撮って使えなくなった素材 | **×**（選ばせない） | ignore・静的配信はされる |
 
-ダミーの作り直し = `python tools/web-compositor/make-test-assets.py`（PIL + imageio-ffmpeg 同梱の
+ダミーの作り直し = `py -3.11 tools/web-compositor/make-test-assets.py`（PIL + imageio-ffmpeg 同梱の
 ffmpeg。H.264/yuv420p/音声なし = Quest の VideoPlayer が最も確実に再生できる形）。
 2026-07-26 に 6/18 の旧環境素材（3 台構成が違う）を archive へ退避し、それを指していた
 `cues[]`（cue_A/B/C 他）を testassets の clip / still へ張り替えた。

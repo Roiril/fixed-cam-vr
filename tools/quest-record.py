@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Quest の画面を録って、**HMD で見ている絵に近い片眼の動画**へ直す。
 
-    python tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る（導入演出の確認）
-    python tools/quest-record.py --sec 30           # 通常起動で録る
-    python tools/quest-record.py --raw <file.mp4>   # 既に撮ってある録画を変換するだけ
+    py -3.11 tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る（導入演出の確認）
+    py -3.11 tools/quest-record.py --sec 30           # 通常起動で録る
+    py -3.11 tools/quest-record.py --raw <file.mp4>   # 既に撮ってある録画を変換するだけ
 
 走行 1 回で次が揃う（`--no-log` / `--no-evidence` で個別に外せる）:
 
@@ -58,6 +58,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -105,10 +106,24 @@ def adb(serial, *args, **kw):
                           encoding="utf-8", errors="replace", env=env, **kw)
 
 
+def require_adb():
+    """adb が無いと以降の呼び出しが全部空振りし、「実機が反応しない」に見える。ここで落とす。"""
+    if shutil.which("adb") is None:
+        print("adb not found in PATH", file=sys.stderr)
+        sys.exit(2)
+
+
 def pick_serial():
-    out = subprocess.run(["python", "tools/quest-fleet.py", "pick"],
-                         capture_output=True, text=True,
-                         encoding="utf-8", errors="replace").stdout.strip()
+    # ⚠ PATH の `python` は Microsoft Store のスタブで、呼んでも版すら返さず空を出す。
+    # 空を返されると「使える Quest が無い」に化ける。今動いている実体（sys.executable）を
+    # そのまま使えば、どの呼び方（py -3.11 等）で入ってきても同じ Python に届く。
+    p = subprocess.run([sys.executable, "tools/quest-fleet.py", "pick"],
+                       capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    if p.returncode != 0:
+        sys.stderr.write(p.stderr or "quest-fleet.py pick failed\n")
+        return ""
+    out = (p.stdout or "").strip()
     return out.splitlines()[0] if out else ""
 
 
@@ -442,7 +457,7 @@ def check_battery(serial):
     if level < LOW_BATTERY_PCT:
         print("  ! 残量 %d%% で充電もされていない。走行を中止する。" % level,
               file=sys.stderr)
-        print("    充電ケーブルを挿すか、`python tools/quest-fleet.py sleep %s` で"
+        print("    充電ケーブルを挿すか、`py -3.11 tools/quest-fleet.py sleep %s` で"
               "寝かせて回復を待つ。" % serial, file=sys.stderr)
         return False
     print("  ! 残量が少ない。続けるが、充電ケーブルを挿しておくと途中で切れない。")
@@ -484,6 +499,7 @@ def main():
         out = os.path.join(OUTDIR, f"{stamp}_eye.mp4")
         return 0 if convert(args.raw, out, right_eye=not args.left, scale=args.scale) else 1
 
+    require_adb()   # --raw は実機を触らないので、ここから先だけで要る
     serial = args.serial or pick_serial()
     if not serial:
         print("no usable Quest found", file=sys.stderr)

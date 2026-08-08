@@ -5,7 +5,7 @@
 実素材（captures/ recordings/）と一目で区別できる。実機検証で
 「素材が古い / 何が出ているか分からない」を潰すために置く。
 
-    python tools/web-compositor/make-test-assets.py
+    py -3.11 tools/web-compositor/make-test-assets.py
 
 生成物（640x480 = 配信と同じ 4:3）:
     test_still_A/B/C.png   … 「演出 A」等の文字だけの静止画（カメラ別配色）

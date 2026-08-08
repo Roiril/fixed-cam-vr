@@ -1,245 +1,121 @@
 ---
 name: quest-build
-description: 廻リ視（FixedCam）/ TableDuo の APK を Quest にビルド & インストールする。BuildVariants メニューで productName・パッケージ ID・含めるシーンを切り替えて 2 アプリを別々に出す仕組み、MCP メニュー実行のタイムアウト挙動、APK 完成のポーリング、adb --no-streaming インストールまで。「Quest にビルドして」「実機に入れて」「APK 作って」で呼ぶ。
+description: 廻リ視 / TableDuo / MyCobotHand の APK を Unity CLI で焼いて Quest に入れる。「ビルドして」「実機に入れて」「APK 作って」で呼ぶ。3 アプリを別パッケージで焼き分ける仕組み、Android マニフェスト注入の罠、adb インストールと起動の罠。
 ---
 
-# Quest へのビルド & インストール（廻リ視 / TableDuo）
+# Quest へのビルド & インストール
 
-Unity の **手動 Build Settings は使わない**。専用メニュー [BuildVariants.cs](../../../Assets/Editor/BuildVariants.cs) 経由が唯一の正。手動だと 2 アプリが同名・同パッケージ ID になって Quest 上で共存できなくなる。
+**`tools\unity.ps1` が Unity CLI を叩く唯一の場所。** ここ以外から `unity.exe` を呼ばない。
 
-## 2 アプリ分離の仕組み（なぜメニューが必要か）
-
-`BuildVariants.BuildVariant()` がビルド時だけ以下を切り替える（終了後 `finally` で必ず復元 → ProjectSettings に差分を残さない）：
-
-| | 廻リ視 (FixedCam) | TableDuo (Hand) |
-|---|---|---|
-| productName（Quest の表示名） | 廻リ視 | TableDuo |
-| パッケージ ID | `com.roiril.mawarimi` | `com.roiril.tableduo` |
-| 含めるシーン | `Assets/Scenes/Main.unity` | `Assets/TableDuo/Scenes/TableDuoMain.unity` |
-| 出力 | `Builds/mawarimi.apk` | `Builds/tableduo.apk` |
-
-- `productName` = Android のアプリラベル（ランチャー表示名）
-- `BuildPlayerOptions.scenes` に **そのアプリのシーンだけ**渡すので、もう片方は APK に入らない（asmdef `FixedCamVr.*` / `TableDuoVr.*` は相互参照禁止なのでシーンを絞れば綺麗に分離）
-- パッケージ ID が別 = Quest 上で独立 2 アプリとして共存（同 ID だと上書きになる）
-
-## メニュー一覧
-
-| メニュー | 出力 | 用途 |
-|---|---|---|
-| `Tools/FixedCamVr/Build FixedCam APK（廻リ視）` | `mawarimi.apk` | 廻リ視・Development（logcat 可） |
-| `Tools/FixedCamVr/Build TableDuo APK` | `tableduo.apk` | TableDuo・Development |
-| `Tools/FixedCamVr/Build FixedCam APK（廻リ視・Release）` | `mawarimi-release.apk` | 提出・配布用（Development なし） |
-| `Tools/FixedCamVr/Build TableDuo APK（Release）` | `tableduo-release.apk` | 同上 |
-
-## 手順
-
-### 0. 事前確認（オペレータ卓に繋ぐ場合のみ）
-
-Quest 単体起動でウェブの卓（cue 発火・カメラ固定・ポスト FX）を効かせたいなら、ビルド前に
-[`Assets/Settings/ShowServer.asset`](../../../Assets/Settings/ShowServer.asset) の `host` を **PC の LAN IP** にする
-（Editor+Link なら `127.0.0.1` で可だが、Quest 単体は PC を見つけられないので LAN IP 必須）。
-
+```powershell
+.\tools\unity.ps1 doctor                    # 前提（Editor / Android モジュール / py / adb）
+.\tools\unity.ps1 build fixedcam            # 廻リ視 → Builds/mawarimi.apk
+.\tools\unity.ps1 build fixedcam -Release   # 提出用（Development なし）
+.\tools\unity.ps1 build tableduo
+.\tools\unity.ps1 build mycobothand
+.\tools\unity.ps1 build tableduo-desktop    # 実機ゼロの L0 検証用 Standalone
 ```
-# PC の LAN IP を調べる（PowerShell）
+
+Unity の**手動 Build Settings は使わない**。手動だと 3 アプリが同名・同パッケージ ID になり、
+Quest 上で共存できなくなる。
+
+## なぜ CLI なのか（2026-08-08 に切り替え）
+
+旧経路は MCP の `execute_menu_item` で、**構造的に不利だった**。
+
+| | 旧（MCP + GUI Editor） | 新（Unity CLI） |
+|---|---|---|
+| 実行 | ほぼ確実に Timeout。失敗と区別できない | 同期。exit code が返る |
+| 完了判定 | APK の mtime を 240 回ポーリング | 出力の更新を 1 回見る |
+| 1 回目 | **必ず中断**（下記ガード）→ メニューを 2 回撃つ | 1 回で通る |
+| ダイアログ | モーダルで無言停止（35 分溶かした実害） | `-batchmode` なので出ない |
+| 失敗の理由 | Editor.log を掘る | `Logs/build-<target>-*.log` |
+
+**1 回目で通る理由**: `BuildVariant` は「アクティブプラットフォームが Android でなければ、
+切替を開始して中断する」（[BuildVariants.cs:128](../../../Assets/Editor/BuildVariants.cs)）。
+GUI からだと切替待ちで 1 回落ちるので 2 回撃つ必要があった。
+CLI の `unity build --target Android` は **`-buildTarget Android` を張ってから `-executeMethod` を呼ぶ**ので、
+このガードを 1 回目で通過する。
+
+## 3 アプリ分離の仕組み
+
+`BuildVariants.BuildVariant()` がビルド時だけ差し替える（終了後 `finally` で必ず復元 →
+ProjectSettings に差分を残さない）。
+
+| | 廻リ視 (FixedCam) | TableDuo | MyCobotHand |
+|---|---|---|---|
+| productName | 廻リ視 | TableDuo | ロボットハンド操作VR |
+| パッケージ ID | `com.roiril.mawarimi` | `com.roiril.tableduo` | `com.mycobot.handteleop` |
+| シーン | `Assets/Scenes/Main.unity` | `Assets/TableDuo/Scenes/TableDuoMain.unity` | `Assets/MyCobotHand/Scenes/HandTeleop.unity` |
+| 出力 | `Builds/mawarimi.apk` | `Builds/tableduo.apk` | `Builds/mycobothand-dev.apk` |
+
+- `BuildPlayerOptions.scenes` に**そのアプリのシーンだけ**渡すので、もう片方は APK に入らない
+- パッケージ ID が別 = Quest 上で独立したアプリとして並存する（同 ID だと上書き）
+- ⚠ **MyCobotHand だけ C# 側の命名が非対称**（`BuildMyCobotHand` が Development なし、
+  `BuildMyCobotHandDev` があり）。`unity.ps1` が `-Release` の意味を揃えるため入れ替えている
+
+⚠ **2 ビルド同時起動は厳禁**（productName / ID を一時 swap するので、片方が他方の ID で焼ける）。
+`unity.ps1` は Editor がプロジェクトを開いていたら止まる（`Temp/UnityLockfile`）。
+
+## 事前確認（オペレータ卓に繋ぐ場合のみ）
+
+Quest 単体起動で卓（cue 発火・カメラ固定・ポスト FX）を効かせるなら、ビルド前に
+`Assets/Settings/ShowServer.asset` の `host` を **PC の LAN IP** にする
+（Editor+Link なら `127.0.0.1` で可だが、Quest 単体は PC を見つけられない）。
+
+```powershell
 (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like "192.168.*" }).IPAddress
 ```
 
-MCP で書き換え（host はローカル値なのでコミットしない — git-workflow.md）:
-`manage_scriptable_object modify target={path:"Assets/Settings/ShowServer.asset"} patches=[{path:"host", value:"192.168.x.x"}]`
+`host` はローカル値なので**コミットしない**（`rules/git-workflow.md`）。
 
-### 1. ビルド実行
+## インストール（adb）
 
-`mcp__UnityMCP__execute_menu_item menu_path="Tools/FixedCamVr/Build FixedCam APK（廻リ視）"`
-
-**⚠ 重要な挙動**: ビルドは数分かかるため `execute_menu_item` は**ほぼ確実に "Timeout receiving Unity response" を返す**。
-これは**失敗ではない** — Unity 側ではビルドが走り続けている。タイムアウトしたら APK ファイルの更新を
-ポーリングして完成を待つ（下記）。
-
-### 2. 完成をポーリング（Bash, run_in_background 推奨）
-
-`mawarimi.apk` の mtime が変わり、かつサイズが安定したら完成：
-
-```bash
-cd "C:/Users/kouga/Projects/Unity/fixed-cam-vr"
-before=$(stat -c %Y Builds/mawarimi.apk 2>/dev/null || echo 0)
-for i in $(seq 1 240); do
-  sleep 5
-  newest=$(stat -c %Y Builds/mawarimi.apk 2>/dev/null || echo 0)
-  if [ "$newest" != "$before" ] && [ "$newest" != "0" ]; then
-    s1=$(stat -c %s Builds/mawarimi.apk); sleep 6; s2=$(stat -c %s Builds/mawarimi.apk)
-    if [ "$s1" = "$s2" ]; then echo "BUILD DONE ($s2 bytes)"; exit 0; fi
-  fi
-done
-echo "TIMEOUT"; exit 1
-```
-
-代替: `read_console filter_text="[BuildVariants]"` に `OK:` ログが出れば成功（MCP が生きていれば）。
-
-**⚠ タイムアウト ≠ ビルド開始（2026-07-10 実害 ×2）**: `execute_menu_item` の timeout は
-「ビルドが走っている」と「コンパイル/ドメインリロード中で **menu が握り潰され何も始まっていない**」を
-区別できない。直前に .cs を編集した後は特に後者になりやすい。→ **menu 実行の直前に
-`refresh_unity(mode=if_dirty, wait_for_ready=true)` で idle を確認**し、それでもポーリングが
-TIMEOUT したら「ビルド失敗」ではなく「未開始」を疑って Editor.log / `Temp/` の更新を確認 →
-idle 確認後にもう一度 menu を撃つ（2回目で normally 通る）。
-また **desktop ビルド（Standalone）の完成判定は exe の mtime を見ない**こと —
-Unity のインクリメンタルビルドはランチャー stub（TableDuo.exe）を書き換えない。
-**センチネルは変更内容で使い分ける（2026-07-24 偽 TIMEOUT の実害）**:
-シーン変更あり → `Builds/tableduo-desktop/TableDuo_Data/level0` / **スクリプトのみの変更 →
-`TableDuo_Data/Managed/TableDuoVr.Net.dll`**（level0 は書き換わらないので level0 ポーリングは
-偽陰性になる）。確実なのは Editor.log の `[BuildVariants] DESKTOP OK` 行の増加を見ること。
-起動中の TableDuo.exe（PC ホスト）はビルド前に必ず kill（exe ロックで上書き失敗する）。
-失敗ログには「scripts are compiling」の他に **「A domain reload is pending」** 変種もある
-（refresh/テスト直後に menu を撃った時）— editor_state の `is_domain_reload_pending=false` を
-確認してから撃ち直せば通る。MCP がタイムアウトした menu コマンドは**キューに残って
-reload 完了後に再実行されることがある**（＝知らない間に 2 回ビルドが走る。OK 行の重複で判別）。
-
-**⚠ desktop ビルドが「DESKTOP 失敗: result=Unknown errors=0」で落ちる（2026-07-24 実害×2・コード修正済み）**:
-Editor.log に `Error building Player because scripts are compiling` が出ていたらこれ。旧
-BuildTableDuoDesktop が手動 `SwitchActiveBuildTarget`（Android→Standalone）で script 再コンパイルを
-予約した直後に BuildPlayer を呼ぶ競合で、**finally が Android へ戻すため再実行しても無限に同じ失敗を
-再現**していた（2ed040a で APK 経路と同じ「切替は BuildPlayer 内部に任せる」形へ修正済み）。
-教訓: **Editor メニューからのビルドで platform を手動切替してはいけない**（`BuildPlayerOptions.target`
-に任せる）。ビルド失敗の診断は必ず Editor.log の `BuildVariants` 前後を読む — errors=0 の失敗は
-コンパイル競合かシーン欠落で、リトライではなく原因の除去が要る。修正後の active target は
-Standalone のまま残る（Library 管理・git 差分なし・次の APK ビルドが自分で Android へ切替する）。
-
-### 2.4 ビルドが「始まったのに 1 バイトも進まない」→ モーダルダイアログを疑う（2026-08-07 実害・35 分）
-
-Editor.log に `BuildVariants:BuildFixedCam` のスタックが出ていて、`Temp/__Backupscenes/0.backup` まで
-作られているのに、そこから何分待っても Temp も `Library/Bee/artifacts/Android` も動かないことがある。
-Unity は `Responding=True`・CPU ほぼ 0。**ビルド前検証のモーダルダイアログが出て待っている**
-（実害時は `Unsupported Input Handling`。この文字列は Unity ネイティブ側にあり、PackageCache にも
-Assets にも無いので rg では出所を突き止められない）。
-
-**見分け方は可視ウィンドウの列挙**（`MainWindowTitle` はメインウィンドウしか返さないので気づけない）:
-
-```powershell
-Add-Type @"
-using System;using System.Text;using System.Runtime.InteropServices;
-public class W {
-  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc f, IntPtr l);
-  public delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
-  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
-  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
-}
-"@
-$up = (Get-Process Unity).Id
-$cb = [W+EnumWindowsProc]{ param($h,$x)
-  $q = 0; [void][W]::GetWindowThreadProcessId($h, [ref]$q)
-  if ($q -eq $up -and [W]::IsWindowVisible($h)) {
-    $sb = New-Object System.Text.StringBuilder 512
-    [void][W]::GetWindowText($h, $sb, 512); if ($sb.Length -gt 0) { "WIN: " + $sb.ToString() }
-  }
-  return $true
-}
-[void][W]::EnumWindows($cb, [IntPtr]::Zero)
-```
-
-ウィンドウが 2 つ出たら、2 つ目がダイアログ。**押さずに batchmode へ切り替えるのが最短**
-（`-batchmode` はダイアログを出さずに既定で進む）。理由:
-
-- **ダイアログの選択肢は ProjectSettings を変えることがある**（Input Handling・XR 設定）。ここは
-  同居 2 アプリの共有資源で、片方の都合で変えてはいけない（rules/parallel-projects.md §2）
-- **閉じてもビルドは再開しない**（キャンセル扱いで `[BuildVariants]` の OK/失敗ログも出ない）
-- 実害時はダイアログが閉じた後 **MCP ブリッジが wedge し、Editor は終了要求にも 100 秒応じなかった**
-  （`CloseMainWindow` でウィンドウは消えるがプロセスが残る）。結局 `Stop-Process -Force` → batchmode
-
-⚠ **`Get-Process Unity` が返す exe と、computer-use が許可する exe は別バージョンのことがある**
-（Hub に複数入っているため）。スクリーンショットで読もうとすると実行中の Editor がマスクされて
-背景しか見えない。**画面に頼らず EnumWindows でタイトルだけ取る**方が速くて確実。
-
-### 2.5 MCP が wedge して menu が届かないとき → batchmode で焼く（2026-07-31 実害・15 分溶かした）
-
-上の「タイムアウト ≠ ビルド開始」は **menu が握り潰される**話だが、それとは別に
-**MCP ブリッジ自体が死んで、どんなコマンドも Unity に届かない**状態がある。
-
-**見分け方**（この 3 つが揃ったら wedge）:
-
-1. `refresh_unity` / `read_console` / `run_tests` / `execute_menu_item` が**すべて** timeout（データ返却系が全滅）
-2. `Library/ScriptAssemblies/*.dll` の mtime が **.cs の編集より古いまま数分動かない**
-3. それでも **Unity 本体は健全**（`Get-Process Unity` の `Responding=True`）
-
-この状態では待っても永久に進まない。**Editor を閉じて batchmode で焼く**のがいちばん速い。
-
-```bash
-# ① 閉じる前に未保存を確認 — タイトルバーに `*` が付いていなければ未保存の変更は無い
-#    （Editor のメモリ側に未保存があると、閉じるときの保存で外部編集を上書きされる）
-```
-```powershell
-Get-Process Unity | Where-Object { $_.MainWindowTitle -ne "" } | Select-Object Id, MainWindowTitle
-```
-```bash
-# ② 閉じる（`*` が無いことを確認してから）。プロセスが消えるまで待つ
-```
-```bash
-until ! tasklist //FI "PID eq <PID>" 2>/dev/null | grep -q <PID>; do sleep 3; done
-```
-```bash
-# ③ batchmode で焼く。ログは必ずファイルへ（run_in_background 推奨・5〜10 分）
-"/c/Program Files/Unity/Hub/Editor/2022.3.62f2/Editor/Unity.exe" -batchmode -quit \
-  -projectPath "C:/Users/kouga/Projects/Unity/fixed-cam-vr" \
-  -executeMethod FixedCamVr.EditorTools.BuildVariants.BuildFixedCam \
-  -logFile "C:/Users/kouga/Projects/Unity/fixed-cam-vr/logs/build-batch-$(date +%H%M%S).log"
-```
-
-- **`-buildTarget` は付けない**。既に Android なら不要で、付けるとターゲット切替の再インポートで
-  何倍も時間がかかる（付けるべきなのは desktop ビルドを挟んだ直後だけ）
-- メソッド名は `FixedCamVr.EditorTools.BuildVariants.<BuildFixedCam|BuildTableDuo|BuildFixedCamRelease|…>`
-- **コンパイルの成否はビルドログで見る**: `Tundra build success` の直後に `error CS` が無いこと。
-  `warning CS` は既存分（`ShowRoomProxy.DestroyObject` 等）なので無視してよい
-- 完了判定は `Builds/mawarimi.apk` の mtime 更新 + サイズ安定（上のポーリングと同じ）
-- **終わったら Editor を開き直す**（ユーザーが使うもの）:
-  `nohup "/c/Program Files/Unity/Hub/Editor/2022.3.62f2/Editor/Unity.exe" -projectPath "<repo>" > /dev/null 2>&1 &`
-
-⚠ **Editor が起動したままでは batchmode は使えない**（同じプロジェクトを 2 つ開けない）。
-逆に言えば、Editor を閉じる判断がこの手順の唯一のリスクなので、①の未保存確認を飛ばさないこと。
-
-### 3. インストール（adb）
+adb が PATH に無くても **Android モジュール同梱のものが使える**（`doctor` が場所を出す）。
 
 ```
-adb devices                          # device 状態を確認（unauthorized は HMD 内で許可）
-adb -s <serial> install -r --no-streaming "C:\Users\kouga\Projects\Unity\fixed-cam-vr\Builds\mawarimi.apk"
-adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastUpdateTime"  # 今の時刻なら成功
+adb devices                          # unauthorized は HMD 内で許可
+adb -s <serial> install -r --no-streaming "Builds\mawarimi.apk"
+adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastUpdateTime"
 ```
 
-- **`--no-streaming` 必須級**: Quest/Pixel は streaming install が固まることがある（streamer-android-build スキルと同じ罠）
-- 複数台繋がっている時は `-s <serial>` で明示（`adb devices` の左列）
-- `lastUpdateTime` が今の時刻 = 確実に新ビルドが入った証拠
-- **⚠ 用が済んだら寝かせる**: `adb -s <serial> shell input keyevent KEYCODE_SLEEP`
-  （または `python tools/quest-fleet.py sleep <serial>`）。Quest は起きたまま置くと
-  何もしていなくても減り、検証を続けたいときに残量が無くなる（2026-08-01 ユーザー指摘）
+- **`--no-streaming` は必須級**: Quest / Pixel は streaming install が固まることがある
+- 複数台あるときは `-s <serial>` で明示。配るのは `py -3.11 tools/quest-fleet.py sync`
+  （mtime を比べて古い機だけへ配る）
+- `lastUpdateTime` が今の時刻 = 新ビルドが入った証拠
+- ⚠ **用が済んだら寝かせる**: `py -3.11 tools/quest-fleet.py sleep <serial>`。
+  Quest は起きたまま置くと何もしなくても減る（2026-08-01 ユーザー指摘）
 
-## 落とし穴
+## 落とし穴（CLI でも消えない）
 
-- **⚠ APK ビルドは「アクティブプラットフォーム = Android」が前提（2026-07-24 実害・HMD にシーンが出ない事故）**:
-  desktop ビルド（2ed040a 以降）は active target を **Standalone のまま残す**。その状態で APK メニューを
-  撃つと、クロスターゲット一発ビルド（BuildPlayer 内部切替）では **Oculus XR プラグインのマニフェスト注入が
-  実行されず、`com.oculus.intent.category.VR` / `focusaware` の無い APK** が焼ける → Quest がアプリを
-  **2D パネルとして起動**し、HMD にシーンが出ない（NGO 接続は正常に成立するのが紛らわしい）。
-  BuildVariant にガード実装済み（Android 以外なら切替を開始して中断 → 完了後にメニュー再実行）。
-  検品は `aapt dump xmltree <apk> AndroidManifest.xml | grep category` に
-  `com.oculus.intent.category.VR` があること。ビルド後は active が Android のまま残るので通常は連続ビルド可。
-  desktop ビルドを挟んだ直後だけこのガードに当たる（1 回目=切替開始・2 回目=本ビルド、の 2 段になる）
-- **手動 Build Settings を使わない** — Main も TableDuoMain も同名・同 ID になり共存不可
-- `execute_menu_item` のタイムアウトを失敗と誤認しない（バックグラウンドでビルド継続中）
-- Unity がドメインリロード/コンパイル中はメニューが動かない → `unity-status` で Ready 確認してから
-- ShowServer.asset / Phone*.asset の host はローカル値、**コミットしない**（git-workflow.md のユーザー所有ファイル）
+- **⚠ APK は「アクティブ = Android」でしか正しく焼けない（2026-07-24 実害・HMD にシーンが出ない）**:
+  Standalone アクティブのままのクロスターゲット一発ビルドは **Oculus XR プラグインのマニフェスト注入が
+  走らず、`com.oculus.intent.category.VR` / `focusaware` の無い APK** が焼ける →
+  Quest が **2D パネルとして起動**する（NGO 接続は正常に成立するので紛らわしい）。
+  検品:
+  ```
+  aapt dump xmltree Builds\mawarimi.apk AndroidManifest.xml | Select-String category
+  ```
+  `com.oculus.intent.category.VR` があること。**desktop ビルドを挟んだ直後は特に確かめる**
+- **単一ファイルの mtime で完成を判定しない**: Standalone の差分ビルドはランチャー stub
+  （`TableDuo.exe`）を書き換えない（2026-07-24 偽 TIMEOUT の実害）。
+  `unity.ps1` は**出力フォルダ全体の最新**で見ている
+- **ビルド失敗の診断は `Logs/build-<target>-*.log`**。`errors=0` の失敗はコンパイル競合かシーン欠落で、
+  リトライではなく原因の除去が要る。`Tundra build success` の直後に `error CS` が無いことを見る
+  （`warning CS` は既存分なので無視してよい）
 - `Builds/` は gitignore 対象
-- もう 1 台の Quest が `unauthorized` の時は、その HMD 内で「USB デバッグを許可」を承認するまで入らない
 
-## インストール後の起動の罠（TableDuo 実機運用で全部踏んだ・2026-07-06）
+## インストール後の起動の罠
 
-- **スリープ中（近接センサー OFF）だと `am start` が黙って失敗**（エラーなし・pid 立たず）→ `adb shell input keyevent KEYCODE_WAKEUP` か HMD を被る
+- **スリープ中だと `am start` が黙って失敗**（エラーなし・pid 立たず）→
+  `adb shell input keyevent KEYCODE_WAKEUP` か HMD を被る
 - **USB 接続中の Quest Link ダイアログが起動をブロック** → `adb shell am force-stop com.oculus.systemux`
 - install が「0 files pushed」で無言失敗することがある → リトライで通る
-- TableDuo の起動フロー一式は `tools/tableduo-pc-host.ps1`（wake・ダイアログ潰し内包） / [.claude/memory/table_duo_pc_host_and_wiretap.md](../../memory/table_duo_pc_host_and_wiretap.md)
+- TableDuo の起動フロー一式は `tools/tableduo-pc-host.ps1`（wake・ダイアログ潰し内包）
 
 ## 関連
 
-- [adb-logcat](../adb-logcat/SKILL.md) — インストール後の実機ログ確認
-- [quest-capture](../quest-capture/SKILL.md) — **入れた後、実機の画を録って見た目を確かめる**（HMD 不要）
-- `python tools/quest-fleet.py sync` — Quest が複数あるとき、mtime を比べて古い機だけへ配る
-  （[quest_fleet_two_devices](../../memory/quest_fleet_two_devices.md)）
-- [streamer-android-build](../streamer-android-build/SKILL.md) — 配信側スマホアプリのビルド（同じ adb の罠）
-- [unity-status](../unity-status/SKILL.md) — ビルド前の Editor 状態確認
+- [adb-logcat](../adb-logcat/SKILL.md) — 実機ログ
+- [quest-capture](../quest-capture/SKILL.md) — **入れた後、画を録って見た目を確かめる**（HMD 不要）
+- [work-round](../work-round/SKILL.md) — 廻リ視の作りこみ 1 周（この skill はその中の 1 手）
+- `rules/parallel-projects.md` — 3 アプリ同居の干渉防止

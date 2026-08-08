@@ -101,7 +101,7 @@ UTF-8 でファイルへ書いて Read で読む）。
 実装は `ShowControlClient.ConfigOrigin` / `DescribeConfig()` ↔ `config_from_show()`。
 **項目を足すときは C# と Python を対で直す**（片方だけだと沈黙して食い違う）。
 
-食い違ったときの直し方: `python tools/quest-fleet.py reset-config <serial>` でキャッシュを消し、
+食い違ったときの直し方: `py -3.11 tools/quest-fleet.py reset-config <serial>` でキャッシュを消し、
 卓の「📦 ビルド用エクスポート」(`POST /export-build`) で焼き込みを更新してからビルドし直す。
 
 ## ⚠ ログでは分からないことがある — 画を見る（2026-07-31）
@@ -133,8 +133,8 @@ FAIL ゼロで演出 7 本すべて OK と判定された走行の画を初め�
 ### 画を録る
 
 ```bash
-python tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る
-python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換するだけ
+py -3.11 tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る
+py -3.11 tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換するだけ
 ```
 
 **走行 1 回で次が全部そろう**（`--no-log` / `--no-evidence` で外せる）:
@@ -179,7 +179,7 @@ python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換す
 実測: 通常走行の録画は平均 0.03、同じ部屋で明るい背景を混ぜた録画は平均 3.1 で中身が残った。
 
 ```bash
-FF=$(python -c "import imageio_ffmpeg,sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())")
+FF=$(py -3.11 -c "import imageio_ffmpeg,sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())")
 "$FF" -i raw.mp4 -vf "colorlevels=rimax=0.085:gimax=0.085:bimax=0.085" boost.mp4   # 約 11 倍
 ```
 
@@ -216,7 +216,7 @@ Quest の内蔵録画（`/sdcard/Oculus/VideoShots/`）は 1920x1080・片眼・
 ### 画の証拠を切り出す
 
 ```bash
-python tools/xp-evidence.py <logfile> <eye.mp4> [--out <dir>] [--offset <秒>]
+py -3.11 tools/xp-evidence.py <logfile> <eye.mp4> [--out <dir>] [--offset <秒>]
 ```
 
 `[XP] t=` はアプリ起動からの経過、録画はその数秒後に始まる。**録画秒 = XP秒 + オフセット**で、

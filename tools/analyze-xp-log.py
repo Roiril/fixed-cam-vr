@@ -2,7 +2,7 @@
 """実機 logcat の [XP] 行を読んで「体験が著作どおりに起きたか」を判定する。
 
 使い方:
-    python tools/analyze-xp-log.py <logcat.txt> [--show tools/web-compositor/show.json]
+    py -3.11 tools/analyze-xp-log.py <logcat.txt> [--show tools/web-compositor/show.json]
                                    [--out reports/xp-YYYYMMDD.md]
 
 判定の考え方:
@@ -413,7 +413,7 @@ def analyze(events, others, exp, warns=None):
             verdict("FAIL", "実機の設定が PC の show.json と違う（"
                     + ", ".join(f"{k} {g}!={wv}" for k, g, wv in diffs)
                     + "） — 端末キャッシュを消して配り直す: "
-                      "python tools/quest-fleet.py reset-config <serial>")
+                      "py -3.11 tools/quest-fleet.py reset-config <serial>")
         else:
             verdict("OK", f"実機は show.json と同じ設定で走った（出所 {src}）")
     w()

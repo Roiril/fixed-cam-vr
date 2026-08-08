@@ -1,7 +1,7 @@
 ---
 name: doc-sync
 description: 機能を追加・変更・修正したら、同じ作業内で関連ドキュメントも更新する（コードとドキュメントの乖離を作らない）
-globs:
+paths:
   - "Assets/**/*.cs"
   - "Assets/**/*.unity"
   - "Assets/**/*.prefab"

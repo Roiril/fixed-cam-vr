@@ -1,7 +1,7 @@
 ---
 name: mcp-unity
 description: Unity MCP for Unity の使い方規約。シーン / コンポーネント / アセット操作前に読む
-globs:
+paths:
   - "Assets/**/*.unity"
   - "Assets/**/*.prefab"
   - "Assets/**/*.cs"

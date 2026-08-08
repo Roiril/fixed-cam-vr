@@ -20,7 +20,7 @@ description: スマホ実機が手元に無い状態で fixed-cam-vr の MJPEG �
 `fake_streamer.py` を bg 実行。`/video` `/info` `/health` を fixed-cam-streamer 互換で出す（1080×1080 / quality=40 / rotationDeg=90 / isPortrait=true）。
 
 ```bash
-python "<skill-dir>/fake_streamer.py"  # run_in_background=true
+py -3.11 "<skill-dir>/fake_streamer.py"  # run_in_background=true
 sleep 1
 curl -s -m 1 http://127.0.0.1:8080/health  # 動作確認
 ```

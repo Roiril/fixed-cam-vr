@@ -5,14 +5,19 @@ description: 姉妹リポ fixed-cam-streamer (Android Kotlin) を Android Studio
 
 # fixed-cam-streamer のビルド & インストール（Android Studio 不要）
 
-姉妹リポ `C:/Users/kouga/Projects/Mobile/fixed-cam-streamer` の APK をビルドして接続中の Android 端末にインストールする。Android Studio が入っていなくても、**Unity Hub に同梱されている OpenJDK** を JAVA_HOME に指定すれば `gradlew installDebug` が通る。
+姉妹リポ `fixed-cam-streamer` の APK をビルドして接続中の Android 端末にインストールする。Android Studio が入っていなくても、**Unity Hub に同梱されている OpenJDK** を JAVA_HOME に指定すれば `gradlew installDebug` が通る。
 
 ## 前提
 
 - スマホで **開発者オプション → USB デバッグ ON**
 - USB ケーブル接続（無線でも可）
 - `adb devices` で `device` 状態（`unauthorized` は端末側で許可ダイアログ承認）
-  - adb 自体は SideQuest 同梱（`C:/Users/kouga/AppData/Local/Programs/SideQuest/.../platform-tools/adb.exe`）が PATH に通っているケースが多い
+  - adb は PATH に無いことがある。SideQuest 同梱（`<SideQuest>/resources/app.asar.unpacked/build/platform-tools/adb.exe`）か Android SDK platform-tools を PATH に通してから始める
+- **姉妹リポの置き場所は機体ごとに違う**。このリポジトリからは相対で辿れないので、毎回 `$STREAMER` に入れる
+
+```bash
+export STREAMER="<fixed-cam-streamer の絶対パス>"   # 例: /c/Users/<user>/Projects/fixed-cam-streamer
+```
 
 ## 実行
 
@@ -22,7 +27,7 @@ adb devices  # 端末認識確認
 export JAVA_HOME="/c/Program Files/Unity/Hub/Editor/2022.3.62f2/Editor/Data/PlaybackEngines/AndroidPlayer/OpenJDK"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-cd "C:/Users/kouga/Projects/Mobile/fixed-cam-streamer"
+cd "$STREAMER"
 ./gradlew installDebug
 ```
 
@@ -75,7 +80,7 @@ Android 11+ の「ワイヤレスデバッグ」（開発者オプション → 
 ### 3 台まとめて更新する
 
 ```bash
-cd "C:/Users/kouga/Projects/Mobile/fixed-cam-streamer"
+cd "$STREAMER"
 export JAVA_HOME="/c/Program Files/Unity/Hub/Editor/2022.3.62f2/Editor/Data/PlaybackEngines/AndroidPlayer/OpenJDK"
 export PATH="$JAVA_HOME/bin:$PATH"
 ./gradlew assembleDebug
@@ -135,7 +140,7 @@ Pixel 7a / Pro で確認した実害パターン。`adb devices` で `device` �
 
    ```bash
    adb -s <serial> install -r --no-streaming \
-     "C:/Users/kouga/Projects/Mobile/fixed-cam-streamer/app/build/outputs/apk/debug/app-debug.apk"
+     "$STREAMER/app/build/outputs/apk/debug/app-debug.apk"
    ```
 
    - `--no-streaming` で push install フォールバックに切替（Pixel との相性問題回避）

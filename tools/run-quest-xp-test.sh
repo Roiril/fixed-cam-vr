@@ -34,9 +34,23 @@ STAMP=$(date +%Y%m%d_%H%M%S)
 
 mkdir -p "$OUTDIR"
 
+# ---- 道具の確認 ----------------------------------------------------------
+# adb が無いと以降の adb 呼び出しが全部 127 で落ち、「実機が反応しない」に見える。
+# PATH の `python` は Microsoft Store のスタブで、呼んでも版すら返さず空を返す
+# （＝ SERIAL が空のまま静かに誤動作する）。本物は `py -3.11`。両方ここで落とす。
+PY="${PY:-py -3.11}"
+if ! command -v adb >/dev/null 2>&1; then
+  echo "adb が PATH に無い。Android SDK platform-tools を入れて PATH に通す。" >&2
+  exit 1
+fi
+if ! $PY -c "import sys" >/dev/null 2>&1; then
+  echo "$PY が動かない。Python 3.11 を入れるか PY 環境変数で呼び方を指定する。" >&2
+  exit 1
+fi
+
 # ---- 走らせる機を決める --------------------------------------------------
 if [ -z "${SERIAL:-}" ]; then
-  SERIAL=$(python tools/quest-fleet.py pick -v 2>/dev/null | head -1)
+  SERIAL=$($PY tools/quest-fleet.py pick -v | head -1)
   if [ -z "$SERIAL" ]; then
     echo "使える Quest が見つからない。adb devices と quest-fleet.py list を見て。" >&2
     exit 1
@@ -53,12 +67,12 @@ ENV="$OUTDIR/xp_${MODE}_${STAMP}.env.txt"
 echo "== $MODE / ${SECS}s / $SERIAL =="
 # 走行時の機の状態を残す。後からレポートを見返したとき「どの機で・どの帯域で走ったか」が
 # 分からないと、受信 fps や演出の欠落を読み違える。
-python tools/quest-fleet.py list 2>/dev/null | tee "$ENV" | sed -n "1,4p"
+$PY tools/quest-fleet.py list | tee "$ENV" | sed -n "1,4p"
 
 # ⚠ 2.4GHz だと MJPEG の受信が配信の 2/3 まで落ちる。導入演出の最後の段（Swap）は
 # 「映像が届いていること」(liveFresh) を要求し、3 秒待って駄目なら **段を飛ばして終わる**。
 # つまり帯域が細いだけで演出が出ず、原因をコードだと取り違える。走る前に言う。
-BAND=$(python tools/quest-fleet.py list 2>/dev/null | grep "$SERIAL" | grep -o "2\.4G" | head -1)
+BAND=$($PY tools/quest-fleet.py list | grep "$SERIAL" | grep -o "2\.4G" | head -1)
 if [ -n "$BAND" ]; then
   echo "  ⚠ この機は 2.4GHz に繋がっている。受信 fps が落ち、導入の Swap が出ないことがある"
   echo "    （原因をコードと取り違えないこと。5GHz へ移すのは HMD の Wi-Fi 設定から）"
@@ -71,7 +85,7 @@ adb -s "$SERIAL" shell am force-stop "$PKG" >/dev/null 2>&1
 
 # 使わない機は寝かせる（熱と電池を使わせない）。走行中に adb を触らないよう、ここで済ませる。
 if [ "${NOSLEEP:-0}" != "1" ]; then
-  python tools/quest-fleet.py sleep --others "$SERIAL" 2>/dev/null | sed 's/^/  sleep: /'
+  $PY tools/quest-fleet.py sleep --others "$SERIAL" | sed 's/^/  sleep: /'
 fi
 
 adb -s "$SERIAL" logcat -G 16M >/dev/null 2>&1
@@ -121,11 +135,11 @@ fi
 echo "ログ: $BEST ($(wc -l < "$BEST") 行 / [XP] $(grep -ac '\[XP\]' "$BEST") 行)"
 
 # 走行の記録（次の pick が「前回使っていない方」を選べるように）。
-python tools/quest-fleet.py mark "$SERIAL" --sec "$SECS" --mode "$MODE" >/dev/null 2>&1
+$PY tools/quest-fleet.py mark "$SERIAL" --sec "$SECS" --mode "$MODE" >/dev/null
 
 # 3 分の走行なら [XP] は 200 行前後。極端に少ないなら収集が壊れている。
 if [ "$(grep -ac '\[XP\]' "$BEST")" -lt 20 ]; then
   echo "⚠ [XP] が少なすぎる。Development ビルドか、テレメトリの起動を確認する" >&2
 fi
 
-python tools/analyze-xp-log.py "$BEST" --show tools/web-compositor/show.json
+$PY tools/analyze-xp-log.py "$BEST" --show tools/web-compositor/show.json

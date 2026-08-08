@@ -3,8 +3,9 @@
   "configurations": [
     {
       "name": "web-compositor",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "py",
       "runtimeArgs": [
+        "-3.11",
         "tools/web-compositor/capture-server.py",
         "8099"
       ],
@@ -13,8 +14,9 @@
     },
     {
       "name": "web-compositor-verify",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "py",
       "runtimeArgs": [
+        "-3.11",
         "tools/web-compositor/capture-server.py",
         "8299"
       ],

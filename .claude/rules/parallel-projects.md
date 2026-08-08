@@ -1,5 +1,5 @@
 ---
-globs:
+paths:
   - "Assets/**"
   - "ProjectSettings/**"
   - "Packages/**"

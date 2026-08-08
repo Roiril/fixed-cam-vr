@@ -31,7 +31,7 @@
 
 ## 2. アセット取り込み（Phase 0）
 
-- `C:\Users\kouga\Downloads\Remy.fbx` → `Assets/ThirdParty/Mixamo/Remy.fbx`。
+- `~/Downloads/Remy.fbx`（Mixamo からの DL 先） → `Assets/ThirdParty/Mixamo/Remy.fbx`。
 - Import: **Rig=Humanoid**（Avatar 自動生成）。bone GameObject 名は `mixamorig:*` のまま残るので**名前で参照可**。
 - マテリアルを **URP/Lit へ変換**（Edit > Rendering > Materials > Convert、または手動）。実機マゼンタ回避（[[unity_pitfalls]] 既知）。テクスチャ展開。
 - スケール検証: Mixamo は cm 基準で来ることが多い。Import の Scale Factor で実身長 ~1.6–1.7m になるよう調整（Hierarchy で Hips→Head の実寸を測る）。

@@ -1,11 +1,20 @@
 ---
 name: unity-status
-description: Unity MCP 接続状況・Editor 状態（Play/Compiling/Ready）・直近のコンソールエラーを一括取得。Unity 関連作業の開始時、C# 編集後の確認、エラー調査の入り口で呼ぶ。`mcp__UnityMCP__*` ツールを使う前の健全性チェックに最適。
+description: 【MCP 経路の退避路。Unity 作業の入口ではない】起動中の Editor を MCP でライブ操作する必要があるときだけ使う。MCP 接続状況・Editor 状態（Play/Compiling/Ready）・直近のコンソールエラーを一括取得する。ビルド・テスト・状態確認は `tools/unity.ps1`（Unity CLI）が先。
 ---
 
 # Unity MCP / Editor 状態スナップショット
 
-Unity 関連の作業を始める時、もしくはエラー / コンパイル / 接続不安定が疑われる時の **最初の確認**。以下を順に取得し、要点だけまとめて報告する。
+> ⚠ **これは Unity 作業の入口ではない**（2026-08-08 に経路が変わった）。
+> ビルド・テスト・前提確認は **`.\tools\unity.ps1`（Unity CLI）** が先。
+> ここへ来るのは「**起動中の Editor をライブ操作する**」必要があるときだけ
+> （シーンの手編集・Play・コンポーネント操作）。CLI の Pipeline は Unity 6.0 以上で、
+> 2022.3 のこのプロジェクトには入らないので、その用途だけ MCP が唯一の経路として残っている。
+>
+> ⚠ **現状この PC に MCP は未登録**（`claude mcp list` が空）。下の手順はすべて失敗する。
+> 使うなら先に `skills/unity-mcp` で登録する。
+
+起動中の Editor を MCP で触る前の健全性チェック。以下を順に取得し、要点だけまとめて報告する。
 
 ## 取得手順
 

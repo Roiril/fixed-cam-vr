@@ -1,6 +1,6 @@
 ---
 description: 3D/レンダリング結果を「壊れてる」と判断する前・特に大改修の前に、多角度/単体隔離で確認する。誤判定で working コードを退行させない
-globs:
+paths:
   - "Assets/**/*.cs"
   - "Assets/**/*.unity"
   - "Assets/**/*.prefab"

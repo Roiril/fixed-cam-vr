@@ -1,7 +1,7 @@
 ---
 name: streaming
 description: MJPEG / WebRTC 取り込み規約。スマホからの映像受信パス
-globs:
+paths:
   - "Assets/**/Streaming/**"
   - "Assets/**/*Mjpeg*.cs"
   - "Assets/**/*Stream*.cs"
@@ -48,8 +48,8 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 
 | URI | レスポンス | Unity 側で読む箇所 |
 |---|---|---|
-| `GET /video` | `multipart/x-mixed-replace; boundary=frame` の MJPEG。**各パートに `X-Width` / `X-Height` / `X-Rotation` / `X-Capture-Ns` / `X-Frame-Seq` ヘッダ付き** | [`MjpegStreamReceiver`](../Assets/Scripts/Streaming/MjpegStreamReceiver.cs) |
-| `GET /info` | `{deviceName, lensId, lensFovDeg, widthPx, heightPx, rotationDeg, isPortrait, deviceRotationDeg}` + `{tiltPitchDeg, tiltRollDeg, tiltState}`（v0.9.0〜・下記「端末の傾き」） | [`StreamMetadataFetcher`](../Assets/Scripts/Streaming/StreamMetadataFetcher.cs)、[`CameraStream.Start()`](../Assets/Scripts/Streaming/CameraStream.cs) で 1 回取得。`deviceRotationDeg`=端末の物理的な上方向(0/90/180/270、OrientationEventListener 検知)。配信フレームは常に正立済み（`rotationDeg=0`、横持ち=640x480 / 縦持ち=480x640。v0.6.0 から 4:3）。**tilt は Unity 側の DTO に無く JsonUtility が無視する**（使うのは卓だけ） |
+| `GET /video` | `multipart/x-mixed-replace; boundary=frame` の MJPEG。**各パートに `X-Width` / `X-Height` / `X-Rotation` / `X-Capture-Ns` / `X-Frame-Seq` ヘッダ付き** | [`MjpegStreamReceiver`](../../Assets/Scripts/Streaming/MjpegStreamReceiver.cs) |
+| `GET /info` | `{deviceName, lensId, lensFovDeg, widthPx, heightPx, rotationDeg, isPortrait, deviceRotationDeg}` + `{tiltPitchDeg, tiltRollDeg, tiltState}`（v0.9.0〜・下記「端末の傾き」） | [`StreamMetadataFetcher`](../../Assets/Scripts/Streaming/StreamMetadataFetcher.cs)、[`CameraStream.Start()`](../../Assets/Scripts/Streaming/CameraStream.cs) で 1 回取得。`deviceRotationDeg`=端末の物理的な上方向(0/90/180/270、OrientationEventListener 検知)。配信フレームは常に正立済み（`rotationDeg=0`、横持ち=640x480 / 縦持ち=480x640。v0.6.0 から 4:3）。**tilt は Unity 側の DTO に無く JsonUtility が無視する**（使うのは卓だけ） |
 | `GET /health` | `{uptimeMs, totalFrames, totalBytes, fps, sentFrames, latestFrameAgeMs, clientCount, eisMode, oisMode, afMode, cropRatio, zoomRatio, aeState, aeLock, awbLock, expUs, iso, flicker}`（v0.5.0〜 後半は CaptureResult 直読みの実効値 = 決定性の観測用）+ `{thermalStatus, thermalHeadroom, throttleStage, encodeIdle, batteryTempC, plugged}`（v0.7.0〜 発熱抑制の観測。**⚠ clientCount=0 のとき fps=0・totalFrames 静止は需要駆動 encode 停止の正常動作**。throttleStage 1/2 は熱スロットル中＝fps/画質が自動降下している） | 任意。`CameraStream.RefreshHealthAsync()` で都度取得（HudDump からのモニタ用）。`sentFrames` と `totalFrames` の差分が広がる時は HTTP ワーカ詰まり（**⚠ sentFrames はクライアント接続ごとに加算される** — Quest + web 卓 /cam プロキシ等の多クライアント時は sent ≈ 接続数×totalFrames が正常。単一クライアント前提でしか差分ヒューリスティックを使わない）。`latestFrameAgeMs` が大きい時はカメラ stall |
 | `GET /` | 簡易ステータス HTML | ブラウザ確認用 |
 
@@ -68,7 +68,7 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 - **JPEG quality**: 既定 40。視認性は維持しつつ Wi-Fi 帯域を半減 → kernel バッファ滞留減
 - **バッファ**: 受信側は単一スロット最新フレーム + バッファ swap で再利用、毎フレ `new byte[]` 発生ゼロ
 - **TCP**: 両側とも `TCP_NODELAY=true`（Nagle 抑止）。streamer は `SO_SNDBUF=64KB`、Unity は `SO_RCVBUF=64KB` で kernel 滞留を抑制
-- **Texture**: `Texture2D` は事前確保し `LoadImage` で上書き。新規作成しない（**かつ初期化必須** — 未初期化は Quest GPU で白ノイズ化する [unity_pitfalls.md](../.claude/memory/unity_pitfalls.md)）
+- **Texture**: `Texture2D` は事前確保し `LoadImage` で上書き。新規作成しない（**かつ初期化必須** — 未初期化は Quest GPU で白ノイズ化する [unity_pitfalls.md](../memory/unity_pitfalls.md)）
 
 ### 遅延対策（実装済み一覧）
 
@@ -170,22 +170,22 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 
 ## スクリーン表示モデル（固定枠 + シェーダ letterbox）
 
-**web-compositor と同じモデル**（2026-06-11 移行）。Screen Quad の Transform は authored のまま**不変**で、フィット・回転・合成・ポスト FX は全部 [`ScreenComposite.shader`](../Assets/Art/Shaders/Streaming/ScreenComposite.shader) の UV 空間で完結する。
+**web-compositor と同じモデル**（2026-06-11 移行）。Screen Quad の Transform は authored のまま**不変**で、フィット・回転・合成・ポスト FX は全部 [`ScreenComposite.shader`](../../Assets/Art/Shaders/Streaming/ScreenComposite.shader) の UV 空間で完結する。
 
-- [`MjpegScreen`](../Assets/Scripts/Streaming/MjpegScreen.cs) はテクスチャ供給 + contain-fit スケール（`_LiveScale`）計算のみ。Texture2D 実寸からアスペクトを毎フレーム追従（`/info` は使わない — JPEG 実寸が真実）
+- [`MjpegScreen`](../../Assets/Scripts/Streaming/MjpegScreen.cs) はテクスチャ供給 + contain-fit スケール（`_LiveScale`）計算のみ。Texture2D 実寸からアスペクトを毎フレーム追従（`/info` は使わない — JPEG 実寸が真実）
 - ソースは contain-fit、はみ出しは黒 letterbox。**枠サイズはカメラ切替・縦横切替でも不動**
 - streamer は常に正立フレームを送る（`rotationDeg=0`）ので回転補正は不要。緊急時は `MjpegScreen.uvRotSteps`（90 度単位の UV 回転）で手動補正
 - 旧 `ApplyOrient`（/info メタで Transform を回転・変形）は**廃止**。`autoOrient` / `orientTarget` / `useIsPortraitForRotation` 等のフィールドはもう存在しない
 
 ### 映像差し替え（オーバーレイ合成）
 
-[`ScreenOverlayController`](../Assets/Scripts/Streaming/ScreenOverlayController.cs) + [`OverlayCue`](../Assets/Scripts/Streaming/OverlayCue.cs)（ScriptableObject、`Create > FixedCamVr > Overlay Cue`）:
+[`ScreenOverlayController`](../../Assets/Scripts/Streaming/ScreenOverlayController.cs) + [`OverlayCue`](../../Assets/Scripts/Streaming/OverlayCue.cs)（ScriptableObject、`Create > FixedCamVr > Overlay Cue`）:
 
 - cue = 事前撮影 VideoClip / 静止画 / URL ソース + マスク Texture（R チャンネル、スクリーン枠空間、白=差し替え）+ フェード時間 + 再生区間
 - 固定視点なのでマスクは事前撮影フレームから作ればそのまま位置が合う（web-compositor で検証済みの理屈）
 - **⚠ マスクだけは contain-fit を通らない。座標系は必ず「スクリーン枠空間」（16:9）**（2026-07-30 に是正）。
   シェーダは live / overlay / CG を `_LiveScale` / `_OverlayScale` / `_CgScale` で contain-fit するが、
-  **`_MaskScale` は存在せず生 uv で読む**（[`ScreenComposite.shader`](../Assets/Art/Shaders/Streaming/ScreenComposite.shader) の `SampleBase`）。
+  **`_MaskScale` は存在せず生 uv で読む**（[`ScreenComposite.shader`](../../Assets/Art/Shaders/Streaming/ScreenComposite.shader) の `SampleBase`）。
   したがって 4:3 のソース座標のままマスクを焼くと、実機でだけ水平 1.33 倍・枠幅の最大 12.5% 外側へずれる。
   - **卓では原理的に見えない**バグだった（工房が 640×480 の枠でプレビューしていたため）。
     実際に現地の実素材 2 件（`cue_hand_B` / `cue_ningyo_A`）がずれたまま合成されていた
@@ -203,9 +203,9 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 ### Web 連携の挙動（2026-06-17 / show.json cue 由来）
 
 - **フェード**: `cue.fadeIn/fadeOut`（Web の演出トグル横の秒入力）で ON=fade-in / OFF=fade-out
-- **ループ無し + 再生終了で自動復帰**: `cue.loop=false`。動画が自然終端（`loopPointReached`）か `trimEnd` に達したら自動 `StopOverlay` → live へフェード復帰（[`ScreenOverlayController.Update`](../Assets/Scripts/Streaming/ScreenOverlayController.cs) の trimEnd 監視）
+- **ループ無し + 再生終了で自動復帰**: `cue.loop=false`。動画が自然終端（`loopPointReached`）か `trimEnd` に達したら自動 `StopOverlay` → live へフェード復帰（[`ScreenOverlayController.Update`](../../Assets/Scripts/Streaming/ScreenOverlayController.cs) の trimEnd 監視）
 - **再生区間 trim**: `cue.trimStart` へシークして再生、`trimEnd>0` で停止（`trimEnd<=0`=最後まで）
-- **⚠ 動画 URL は UnityWebRequest でローカル DL してから `file://` 再生**（[`GetLocalVideoUrlAsync`](../Assets/Scripts/Streaming/ScreenOverlayController.cs)）。Android ネイティブ VideoPlayer は Python http.server(HTTP/1.0) からの HTTP ストリーミングを扱えず `NuCachedSource2 error -1` で落ちるため（画像/マスクは UnityWebRequest なので直 URL で OK）。URL 毎にキャッシュ。スペース入りファイル名は Web 側が percent-encode
+- **⚠ 動画 URL は UnityWebRequest でローカル DL してから `file://` 再生**（[`GetLocalVideoUrlAsync`](../../Assets/Scripts/Streaming/ScreenOverlayController.cs)）。Android ネイティブ VideoPlayer は Python http.server(HTTP/1.0) からの HTTP ストリーミングを扱えず `NuCachedSource2 error -1` で落ちるため（画像/マスクは UnityWebRequest なので直 URL で OK）。URL 毎にキャッシュ。スペース入りファイル名は Web 側が percent-encode
 - **マスクのフェザー**は Web が cue 保存時に PNG へ焼き込む（Quest はマスクをそのままサンプル）。**色統計マッチング・ラプラシアンは Web プレビュー専用**で Quest 実機の ScreenComposite はハード合成（`lerp(live,overlay,mask)`）
 - **post-FX 数式**は ScreenComposite と Web の `FS_POST` を一致させてある
   （露出 → 色温度 → **色かぶり** → コントラスト → **黒浮き** → 彩度 → ヴィネット → 走査線 → グレイン の順・式）。
@@ -226,13 +226,13 @@ Web オペレータ卓（`tools/web-compositor/`）の `show.json` が **Web と
 [.claude/plans/2026-06-16_web-config-to-quest.md](../plans/2026-06-16_web-config-to-quest.md)。
 
 - **`cameras[i].host/port/auth`**: 従来 Web プレビュー専用だったが、**Unity 実機も読む**ようになった。
-  [`ShowControlClient.ApplyCameraEndpoints`](../Assets/Scripts/Streaming/ShowControlClient.cs) →
-  [`CameraStreamRegistry.ApplyEndpoint`](../Assets/Scripts/Streaming/CameraStreamRegistry.cs) →
-  [`CameraSource.ApplyRuntimeEndpoint`](../Assets/Scripts/Streaming/CameraSource.cs)（`[NonSerialized]` 実行時上書き、
-  **焼き込み .asset を汚さない**＝git 巻き込み防止）→ 変化時のみ [`CameraStream.ReapplyConnection`](../Assets/Scripts/Streaming/CameraStream.cs) で MJPEG 張り直し。
+  [`ShowControlClient.ApplyCameraEndpoints`](../../Assets/Scripts/Streaming/ShowControlClient.cs) →
+  [`CameraStreamRegistry.ApplyEndpoint`](../../Assets/Scripts/Streaming/CameraStreamRegistry.cs) →
+  [`CameraSource.ApplyRuntimeEndpoint`](../../Assets/Scripts/Streaming/CameraSource.cs)（`[NonSerialized]` 実行時上書き、
+  **焼き込み .asset を汚さない**＝git 巻き込み防止）→ 変化時のみ [`CameraStream.ReapplyConnection`](../../Assets/Scripts/Streaming/CameraStream.cs) で MJPEG 張り直し。
   **空 host は override 解除＝焼き込み値へフォールバック**（Web 未設定カメラの保護）
 - **`cameras[i].post`**（任意）: カメラ別の明るさ・色補正。アクティブカメラ切替時に
-  [`ShowControlClient.ApplyPostForActive`](../Assets/Scripts/Streaming/ShowControlClient.cs) が適用。
+  [`ShowControlClient.ApplyPostForActive`](../../Assets/Scripts/Streaming/ShowControlClient.cs) が適用。
   未設定カメラはトップレベル `post`（global＝全体グレーディング）にフォールバック。
   JsonUtility が null 入れ子を既定値で書く罠を避けるため「個別 post を持つか」は明示 `hasPost` bool を正にする。
   **⚠ 粒度はカメラ単位のみ** — cue にも周（schedule）にも紐づかないため周ごとの画質変化はできない（下記「編集の粒度と自由度」参照）
@@ -249,7 +249,7 @@ Web オペレータ卓（`tools/web-compositor/`）の `show.json` が **Web と
     [`analyze-xp-log.py`](../../tools/analyze-xp-log.py) の `config_from_show()` が PC の show.json から
     同じ要約を作って突き合わせ、違えば **FAIL**（「出なかった演出」を設定ずれのせいで誤検出しないため）。
     **項目を足すときは C# と Python を対で直す** — 片方だけだと沈黙して食い違う。
-    キャッシュの掃除は `python tools/quest-fleet.py reset-config <serial>`
+    キャッシュの掃除は `py -3.11 tools/quest-fleet.py reset-config <serial>`
 - **server 不在でも ShowControlClient は動く**（旧コードは `enabled=false` で自滅していた）。
   long-poll / heartbeat だけスキップし、キャッシュ適用とカメラ別 post のゾーン切替連動は成立する
 

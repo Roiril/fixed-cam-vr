@@ -5,7 +5,7 @@ description: fixed-cam-vr 固有の Git 作業フロー補完。基本ルール�
 
 # Git 作業フロー（fixed-cam-vr 固有）
 
-ブランチ戦略 / merge / push / 禁止事項などの **基本ルールはグローバル** [`~/.claude/CLAUDE.md`](file:///C:/Users/kouga/.claude/CLAUDE.md) を参照。本ファイルはこのプロジェクトでしか成り立たない補完情報のみ。
+ブランチ戦略 / merge / push / 禁止事項などの **基本ルールはグローバル** `~/.claude/CLAUDE.md` を参照。本ファイルはこのプロジェクトでしか成り立たない補完情報のみ。
 
 ## 並列タスクと worktree
 

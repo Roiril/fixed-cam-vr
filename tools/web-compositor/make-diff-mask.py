@@ -5,7 +5,7 @@
 #   卓を開かずに素材を仕込めるようにするため（authoring/ から呼ぶ）。
 #
 #   使い方:
-#     python make-diff-mask.py --base captures/seed.jpg --gen captures/gen.png \
+#     py -3.11 make-diff-mask.py --base captures/seed.jpg --gen captures/gen.png \
 #         --out masks/cue_x.png [--threshold 30] [--feather 6] [--dilate 3] [--min-area 400]
 #
 #   ⚠ マスクは**そのカメラの構図**に対して焼かれる。別カメラの素材には使えない。

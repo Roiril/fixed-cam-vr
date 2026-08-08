@@ -1,7 +1,7 @@
 ---
 name: unity-vr
 description: Unity / VR 共通規約。Assets/ 編集前に読む
-globs:
+paths:
   - "Assets/**/*.cs"
   - "Assets/**/*.unity"
   - "Assets/**/*.prefab"
@@ -63,7 +63,7 @@ Passthrough/・UI/・Common/・Art/ は後続フェーズで必要になった�
 
 - ターゲット: Android / IL2CPP / ARM64 単独
 - **2 アプリ並存**: `Tools/FixedCamVr/Build FixedCam APK（廻リ視）` / `Build TableDuo APK`
-  （[BuildVariants.cs](../Assets/Editor/BuildVariants.cs)）。productName / パッケージ ID
+  （[BuildVariants.cs](../../Assets/Editor/BuildVariants.cs)）。productName / パッケージ ID
   （com.roiril.mawarimi / com.roiril.tableduo）をビルド時のみ切り替え → Quest 上で別アプリとして同居。
   ProjectSettings は終了後に必ず復元される（手動の Build Settings ではどちらも同名・同 ID になるので使わない）
 - `Development Build` 有効でデプロイし、初期は `adb logcat` でログ確認
@@ -76,10 +76,10 @@ Passthrough/・UI/・Common/・Art/ は後続フェーズで必要になった�
 ### 前提
 - **実プレイレンジは ±1.3m 程度**（4 畳半 / 2.5–3m 四方の典型値）。これを超える前提でゾーンを置かない。
 - HMD 高さは ≈1.6m。`PlayerZone.centerOffset` を 0 のまま運用するなら、ゾーン Transform.y を 1.0–1.2m に置いて `halfExtents.y=2` で全身を含める。
-- **ゾーン形状は推測で決めず、実機で `[HudDump]` / `[HmdTrace]` を取って `pos` の min/max からプレイレンジを逆算してから決める**（[`HmdTrajectoryRecorder`](../Assets/Scripts/Diagnostics/HmdTrajectoryRecorder.cs) 参照）。
+- **ゾーン形状は推測で決めず、実機で `[HudDump]` / `[HmdTrace]` を取って `pos` の min/max からプレイレンジを逆算してから決める**（[`HmdTrajectoryRecorder`](../../Assets/Scripts/Diagnostics/HmdTrajectoryRecorder.cs) 参照）。
 
 ### Pick() の挙動を踏まえた設計
-[`PlayerZoneTracker.Pick`](../Assets/Scripts/Tracking/PlayerZoneTracker.cs) は次の順で評価する：
+[`PlayerZoneTracker.Pick`](../../Assets/Scripts/Tracking/PlayerZoneTracker.cs) は次の順で評価する：
 1. 直近ゾーンが `shrink` 後 AABB に含まれるなら維持（再評価スキップ）
 2. それ以外は全ゾーンで full AABB 判定 → `priority` 大が勝ち、同値なら **配列先頭が勝つ**
 
@@ -88,7 +88,7 @@ Passthrough/・UI/・Common/・Art/ は後続フェーズで必要になった�
 - **隣接ゾーンを 0.05–0.10m オーバーラップさせる** — `keepLastWhenOutside` に頼って間を埋めるとデッドゾーンで前ゾーン張り付きが起き、ユーザーが「切り替わらない」と感じる
 - **Center を配列の先頭に置く** — オーバーラップ帯では Center が勝ち、中央寄りに自然に張り付く
 - **`hysteresisShrink` は halfExtents の 20–30% を目安**（hx=0.5m なら 0.10–0.15m）。これより小さいと境界 jitter、大きいと「shrink から出ても full では現ゾーンが勝つ」状態が続いて切替が鈍くなる
-- ヒステリシス幅 ≒ `hx_overlap` + `shrink` の効き方の組み合わせで決まる。**手で計算するか、Pick の事前条件をテストで固定する**（[`PlayerZoneSelectionTests`](../Assets/Tests/Tracking/PlayerZoneSelectionTests.cs) を増やす）
+- ヒステリシス幅 ≒ `hx_overlap` + `shrink` の効き方の組み合わせで決まる。**手で計算するか、Pick の事前条件をテストで固定する**（[`PlayerZoneSelectionTests`](../../Assets/Tests/Tracking/PlayerZoneSelectionTests.cs) を増やす）
 
 ### 既定ゾーン（廻リ視 周回経路・**推測配置**、`MainDemoSceneSetup` 自動配置）
 
@@ -124,10 +124,10 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 
 **旧 ZoneCalibrator（ゾーンを HMD 内でドラッグ・リサイズ・回転）は廃止**。校正を 2 つに分解した（設計 [.claude/plans/2026-07-16_zone-authoring-redesign.md](../plans/2026-07-16_zone-authoring-redesign.md)）：
 
-1. **形状・カメラ割当 = 純データ**（物理レイアウトは固定）。PC の Web オペレータ卓が show.json `layout` を配り、[`ZoneLayoutSolver`](../Assets/Scripts/Tracking/ZoneLayoutSolver.cs) が矩形 OBB へ決定的に展開 → [`ZoneLayoutApplier`](../Assets/Scripts/Tracking/ZoneLayoutApplier.cs) が [GeneratedZones] へ生成し tracker.zones を差し替える。**HMD では形状を一切いじらない**。
+1. **形状・カメラ割当 = 純データ**（物理レイアウトは固定）。PC の Web オペレータ卓が show.json `layout` を配り、[`ZoneLayoutSolver`](../../Assets/Scripts/Tracking/ZoneLayoutSolver.cs) が矩形 OBB へ決定的に展開 → [`ZoneLayoutApplier`](../../Assets/Scripts/Tracking/ZoneLayoutApplier.cs) が [GeneratedZones] へ生成し tracker.zones を差し替える。**HMD では形状を一切いじらない**。
    - **v2: タイルペイント（grid）モデル**（2026-07-16〜・既定の編集モデル）: フロアを正方タイル（`layout.grid`: tileM/cols/rows/cells）に分割し、各タイルをカメラ index で塗る。Solver は**カメラ毎のタイル集合を貪欲矩形分解**（行方向マージ→行間マージ・決定的）→ 各矩形を `overlapM/2` 全方向拡張して隣接カメラ境界で計 `overlapM` 重ねる。cells は rows 本の文字列（row0=北端 z=+d/2 / col0=西端 x=-w/2、`'0'..'8'`=カメラ / `'.'`=未割当）。不正 cells は警告 + 未割当扱いで例外にしない。
    - **v1: cuts（ループ切れ目）モデル**は後方互換で残す（`grid` があれば grid 優先。端末キャッシュに古い cuts しか無くても動く）。選択は `ZoneLayoutSolver.ChooseSource(hasGrid, hasCuts)`（grid 優先）。show.json layout present 判定は `ShowLayoutDef.HasData()`（grid か cuts）。
-2. **位置合わせ = 剛体 3 DOF**（XZ 平行移動 + yaw）だけを [`CourseFrame`](../Assets/Scripts/Tracking/CourseFrame.cs) が持ち、[`CourseRegistrationController`](../Assets/Scripts/Tracking/CourseRegistrationController.cs) の **HMD 2 点登録**で解く（[Tracker] 上、`Setup Main Demo Scene` が自動配線）。
+2. **位置合わせ = 剛体 3 DOF**（XZ 平行移動 + yaw）だけを [`CourseFrame`](../../Assets/Scripts/Tracking/CourseFrame.cs) が持ち、[`CourseRegistrationController`](../../Assets/Scripts/Tracking/CourseRegistrationController.cs) の **HMD 2 点登録**で解く（[Tracker] 上、`Setup Main Demo Scene` が自動配線）。
 
 **フロアマップ（卓）の 7 モード**: 🖌 塗る（ゾーン）/ 📍 位置合わせ点（`layout.regPoints`）/ 🚶 歩かせる（シミュレータ）/
 📐 カメラ姿勢（`cameras[].pose`・CG 人形の視点）/ **📏 通過ライン（`layout.lines` = 演出の発火点となる床の線分。
@@ -475,7 +475,7 @@ VR では **Play 開始から最初の安定フレームまで** の間、以下
 - フェードアウトは 0.5s 程度の線形 alpha 1→0
 - 完了したら GameObject ごと破棄（Update を残さない）
 
-実装は [`StartupFader`](../Assets/Scripts/Diagnostics/StartupFader.cs)。`MainDemoSceneSetup` で自動配置される。
+実装は [`StartupFader`](../../Assets/Scripts/Diagnostics/StartupFader.cs)。`MainDemoSceneSetup` で自動配置される。
 
 ## Editor 拡張メニュー設計
 

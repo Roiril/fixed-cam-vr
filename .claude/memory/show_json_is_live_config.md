@@ -54,7 +54,7 @@ Edit ツールで書き込み → EditMode テストを回している数分の�
 食い違っていたらサーバを止めて起動し直す（`capture-server.py` に終了時の保存は無いので kill して安全）。
 
 ```bash
-curl.exe -m 3 -s http://127.0.0.1:8099/state | python -c "import sys,json;d=json.load(sys.stdin);print('rev',d['rev'],d['record'])"
+curl.exe -m 3 -s http://127.0.0.1:8099/state | py -3.11 -c "import sys,json;d=json.load(sys.stdin);print('rev',d['rev'],d['record'])"
 ```
 
 **How to apply（正しい手順）:**
@@ -68,7 +68,7 @@ curl.exe -m 3 -s http://127.0.0.1:8099/state | python -c "import sys,json;d=json
 ## How to apply（従来分）
 - 卓の UI 検証で `POST /command` / `POST /state` を使う前に、**その値が現場設定かを見る**。
   `control.discoveryEnabled` / `autoFollow` / `cameras[].host` / `cameras[].pinned` は現場設定
-- 触るなら **触る前に現在値を控える**（`curl /state | python -c ...` で該当キーだけ出す）
+- 触るなら **触る前に現在値を控える**（`curl /state | py -3.11 -c ...` で該当キーだけ出す）
 - できれば **`show.json` を別ディレクトリへコピーしてそこでサーバを起動**して検証する
   （`capture-server.py` は起動時のカレントを基準にする）
 - `runEpoch` / `activeCue` / `cameraOverride` / `slots` は「ラン状態」なので、

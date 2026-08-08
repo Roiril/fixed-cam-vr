@@ -52,7 +52,7 @@
 
 ```bash
 cd tools/doll-model && cp photos/*.jpg .
-python cutout2.py && python profile.py && python shell.py && python texture.py
+py -3.11 cutout2.py && py -3.11 profile.py && py -3.11 shell.py && py -3.11 texture.py
 "/c/Program Files/Blender Foundation/Blender 4.1/blender.exe" --background \
   --python assemble.py -- "$(pwd -W)"
 cp Ichimatsu.fbx doll_albedo.png doll_normal.png ../../Assets/Art/Models/Doll/
@@ -87,7 +87,7 @@ Unity 側は MCP の `execute_code` で `AssetDatabase.ImportAsset`（プレハ�
 
 ```bash
 blender --background --python head_check.py -- <dir>   # 頭だけ 1000px × 5 角度
-python compare_head.py side                            # 実物写真と横並び
+py -3.11 compare_head.py side                            # 実物写真と横並び
 ```
 
 **並置画像は「どこを見るか」を決めるためだけに使う。判定は 1 枚ずつフル解像度で。**

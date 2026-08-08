@@ -76,7 +76,7 @@ Editor 内で `Window → MCP for Unity → Status` を開いて bridge を Star
 **フォールバック**（手動登録）:
 
 ```bash
-claude mcp add UnityMCP -s user -- "C:\Users\kouga\.local\bin\uvx.exe" --offline --from "mcpforunityserver==9.6.8" mcp-for-unity
+claude mcp add UnityMCP -s user -- "$HOME/.local/bin/uvx.exe" --offline --from "mcpforunityserver==9.6.8" mcp-for-unity
 ```
 
 - `-s user` でユーザースコープ
