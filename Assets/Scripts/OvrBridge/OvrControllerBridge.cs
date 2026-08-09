@@ -88,6 +88,14 @@ namespace FixedCamVr.OvrBridge
             // Assembly-CSharp 側のここから判定を差し込む（未設定なら被っている扱いで従来どおり動く）。
             if (showControl != null) showControl.UserPresentProvider = () => OVRPlugin.userPresent;
 
+            // 位置合わせ中は「現実を隠すもの」を全部どける（演出の覆い・中止の黒・パススルーの電源）。
+            // Streaming も Tracking も互いを参照しない規約なので、両方を知っているここが唯一の配線点。
+            if (showControl != null && courseRegistration != null)
+            {
+                var reg = courseRegistration;
+                showControl.CourseRegistrationActiveProvider = () => reg.IsActive;
+            }
+
             _modeLogic.Configure(LongPressSec);
             _modeLogic.Reset(ControllerModeLogic.Mode.Normal);
             _modeLogic.ModeChanged += OnModeChanged;
@@ -290,6 +298,9 @@ namespace FixedCamVr.OvrBridge
             }
             haptics?.Fire(); // モード遷移（登録入場 / キャンセル・確定退場）
             PushModeLabel(to);
+            // 実機ログに 1 行残す。**「長押しが効いていない」の切り分けはここが唯一の一次証拠**
+            // （画が変わらないと発火したかどうか体験者にも分からない）。
+            Debug.Log($"[Ctrl] モード {from} → {to}");
         }
 
         private void PushModeLabel(ControllerModeLogic.Mode mode)

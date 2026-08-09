@@ -276,5 +276,77 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(Mathf.Asin(_veil.FeatherAngle(Closed)) * Mathf.Rad2Deg,
                 Is.EqualTo(1.47f).Within(0.2f));
         }
+
+        // ---------------- 全開のとき、どの頭の向きでも視界を塞がない ----------------
+
+        /// <summary>Quest 3 の片眼の視野（左右 ±55° / 上下 ±48°・公称からの安全側）。</summary>
+        private const float FovHalfHDeg = 55f;
+        private const float FovHalfVDeg = 48f;
+
+        /// <summary>枠が無い状態（段 0〜3）。</summary>
+        private const float Open = 0f;
+
+        /// <summary>頭のローカル方向（右+ / 上+ の角度）にある点をワールドで返す。</summary>
+        private Vector3 EyeDirPoint(float yawDeg, float pitchDeg, float dist = 3f)
+        {
+            Vector3 dir = Quaternion.Euler(-pitchDeg, yawDeg, 0f) * Vector3.forward;
+            return _veil!.transform.TransformPoint(dir * dist);
+        }
+
+        private void AssertWholeFovIsOpen(string what, float frameClose)
+        {
+            foreach (float yaw in new[] { -FovHalfHDeg, 0f, FovHalfHDeg })
+            foreach (float pitch in new[] { -FovHalfVDeg, 0f, FovHalfVDeg })
+            {
+                float d = _veil!.SignedDistance(EyeDirPoint(yaw, pitch), frameClose);
+                Assert.That(d, Is.LessThan(0f),
+                    $"{what}: 視界の ({yaw}°, {pitch}°) が枠の外にある。" +
+                    "実機ではそこから黒帯が出て、現実が途中で途切れて見える。");
+            }
+        }
+
+        /// <summary>
+        /// <b>2026-08-09 の実害を固定する。</b> 全開でも開口は 77.9° の有限の矩形で、しかも中心が
+        /// スクリーン（頭から 8° 下・ピッチに追従しない）に固定されていた。頭を 30° 以上下げると
+        /// 下辺が視界へ入り、<b>視界の下端から黒帯が出て、下を向くほど広がった</b>
+        /// （ユーザー報告「下を向くとパススルーが途中で途切れており、そこには黒い空間が広がっている」）。
+        /// </summary>
+        [Test]
+        public void Open_CoversWholeFov_AtEveryHeadPitch()
+        {
+            foreach (float headPitch in new[] { 0f, -15f, -30f, -45f, -60f, -80f, 15f, 30f, 45f, 60f })
+            {
+                _eye!.transform.rotation = Quaternion.Euler(-headPitch, 0f, 0f);
+                PlaceScreen(screenYawDeg: 0f);   // スクリーンは水平のまま（ヨーだけ追従）
+                AssertWholeFovIsOpen($"頭のピッチ {headPitch}°", Open);
+                // 閉じ始めも見る。**全開だけを特別扱いして繋ぎ目で飛ぶ実装**（開口の中心が
+                // スクリーンに固定されたまま巨大化する形）だと、ここが落ちる。
+                AssertWholeFovIsOpen($"頭のピッチ {headPitch}°・閉じ始め", 0.02f);
+            }
+        }
+
+        /// <summary>ヨーの追従が遅れて開口が横へずれても、開いている間は視界を塞がないこと。</summary>
+        [Test]
+        public void Open_CoversWholeFov_WhenScreenYawLagsBehind()
+        {
+            foreach (float lag in new[] { 0f, 30f, 60f, 90f, 180f })
+            {
+                _eye!.transform.rotation = Quaternion.identity;
+                PlaceScreen(screenYawDeg: lag);
+                AssertWholeFovIsOpen($"スクリーンのヨー遅れ {lag}°", Open);
+            }
+        }
+
+        /// <summary>
+        /// 閉じ始めの側も、まだ視界より大きいあいだは塞がないこと。段 4 は静止前提だが、
+        /// <b>「全開だけ特別扱いして繋ぎ目で飛ぶ」実装になっていないこと</b>を固定する。
+        /// </summary>
+        [Test]
+        public void JustAfterOpen_StillCoversWholeFov()
+        {
+            _eye!.transform.rotation = Quaternion.identity;
+            PlaceScreen(screenYawDeg: 0f);
+            AssertWholeFovIsOpen("閉じ始め", 0.02f);
+        }
     }
 }

@@ -50,6 +50,11 @@ namespace FixedCamVr.OvrBridge
         private bool _wasActive;
         private bool _turnedOff;
 
+        // --- 位置合わせ中に現実を開ける（カメラ背景の alpha）---
+        private Camera[] _rigCameras = System.Array.Empty<Camera>();
+        private Color[] _rigClearColors = System.Array.Empty<Color>();
+        private bool _backgroundOpened;
+
         private void Awake() => Resolve();
 
         private void OnEnable()
@@ -63,8 +68,10 @@ namespace FixedCamVr.OvrBridge
 
         private void OnDisable()
         {
-            // 自分が当てた style を残して去らない。
+            // 自分が当てた style と背景 alpha を残して去らない
+            // （alpha 0 のまま去ると、次に覆いが走る段で枠の外を黒く閉じられなくなる）。
             RestoreStyle();
+            if (_backgroundOpened) SetBackgroundOpen(false);
         }
 
         private void Resolve()
@@ -99,6 +106,30 @@ namespace FixedCamVr.OvrBridge
 
         private void Update()
         {
+            // ⚠ **位置合わせ中は、演出より先に現実を開ける。**
+            // Underlay のパススルーは「アプリが alpha 0 を書いた画素」にしか出ないが、
+            // alpha 0 を書く面は覆い（IntroVeil）だけで、しかも覆いは演出専用。つまり
+            // **演出が走っていない全期間、現実は原理的に 1 画素も見えなかった**
+            // （2026-08-09 ユーザー報告「トリガーを長押ししてもパススルーは何も変わらない」）。
+            //
+            // ここで覆いを流用しない理由: 覆いは queue 4900 の `Blend Zero SrcAlpha` なので、
+            // 全開で走らせると**合わせる対象である登録ワイヤーと文字（queue 3000）を黒へ潰す**。
+            // 現実を出したいだけなら背景の alpha を 0 にすれば足り、VR 側の面は普通に重なる。
+            //
+            // ⚠ この alpha 0 は**位置合わせの間だけ**。焼き込んだり常時にしたりしてはいけない
+            // （乗算ブレンドの覆いは alpha を 0 から 1 へ戻せないので、枠の外を黒く閉じる演出が
+            //  原理的に起こらなくなる — rules/meta-xr.md の 2026-07-31 実害）。
+            bool registering = showControl != null && showControl.CourseRegistrationActive;
+            if (registering != _backgroundOpened) SetBackgroundOpen(registering);
+            if (registering)
+            {
+                _turnedOff = false;
+                SetPassthrough(true);
+                if (_styled) RestoreStyle();   // 作業中は素の現実（格下げの色を残さない）
+                _wasActive = false;            // 抜けたら演出側が改めて立ち上げ直す
+                return;
+            }
+
             if (director == null && outro == null) { Resolve(); return; }
 
             // 導入と終幕は同じ重みの語彙（IntroWeights）を出す。走っている方を読む。
@@ -160,6 +191,44 @@ namespace FixedCamVr.OvrBridge
             layer.DisableColorMap();
             layer.edgeRenderingEnabled = false;
             _styled = false;
+        }
+
+        /// <summary>
+        /// OVRCameraRig の全カメラの背景 alpha を開ける / 閉じる。
+        /// <b>元の色は必ず覚えてから書き換える</b>（戻すときに定数 (0,0,0,1) を当てると、
+        /// 現場で背景色を変えていた場合に黙って上書きしてしまう）。
+        /// </summary>
+        private void SetBackgroundOpen(bool open)
+        {
+            if (open)
+            {
+                var rig = FindObjectOfType<OVRCameraRig>();
+                Camera[] cams = rig != null
+                    ? rig.GetComponentsInChildren<Camera>(includeInactive: true)
+                    : System.Array.Empty<Camera>();
+                _rigCameras = cams;
+                _rigClearColors = new Color[cams.Length];
+                for (int i = 0; i < cams.Length; i++)
+                {
+                    _rigClearColors[i] = cams[i].backgroundColor;
+                    Color c = cams[i].backgroundColor;
+                    cams[i].backgroundColor = new Color(c.r, c.g, c.b, 0f);
+                }
+                if (cams.Length == 0)
+                    Debug.LogWarning("[Passthrough] OVRCameraRig のカメラが見つかりません — " +
+                                     "位置合わせ中も現実が出ません");
+                _backgroundOpened = true;
+                return;
+            }
+
+            for (int i = 0; i < _rigCameras.Length; i++)
+            {
+                if (_rigCameras[i] == null) continue;
+                _rigCameras[i].backgroundColor = _rigClearColors[i];
+            }
+            _rigCameras = System.Array.Empty<Camera>();
+            _rigClearColors = System.Array.Empty<Color>();
+            _backgroundOpened = false;
         }
 
         private static void SetPassthrough(bool on)

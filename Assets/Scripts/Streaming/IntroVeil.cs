@@ -154,6 +154,24 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private const float OpenTan = 4.667f;
 
+        /// <summary>
+        /// これ以下の <c>frameClose</c> は「枠が無い」として<b>厳密に全開</b>へ倒す。
+        ///
+        /// ⚠ <b>有限の矩形で「視界ぜんぶ」を近似しない</b>（2026-08-09 実害）。
+        /// 全開でも開口は 77.9° の矩形でしかなく、しかも中心がスクリーン（頭から 8° 下・
+        /// ピッチに追従しない）に固定されていたので、<b>頭を 30° 以上下げると下辺が視界へ入り、
+        /// 視界の下端に黒帯が出て、下を向くほど広がった</b>（ユーザー報告
+        /// 「下を向くとパススルーが途中で途切れており、そこには黒い空間が広がっている」）。
+        /// </summary>
+        private const float FullyOpenEpsilon = 0.001f;
+
+        /// <summary>
+        /// 開口の中心・姿勢を「頭の正面」から「スクリーンの実位置」へ寄せ切る閉じ具合。
+        /// ここでの開口は半画角 69°（視界の ±48° よりまだ大きい）＝**枠としてはまだ見えていない**。
+        /// これ以降はスクリーンに完全固定なので、「枠はスクリーンの形のまま縮む」は不変。
+        /// </summary>
+        private const float AnchorK = 0.15f;
+
         // 枠の 4 辺の平面の法線（この GameObject のローカル空間・**内側で dot(dir, n) < 0**）。
         private readonly Vector4[] _planes = new Vector4[4];
 
@@ -197,6 +215,31 @@ namespace FixedCamVr.Streaming
             float dist = Mathf.Max(c.magnitude, 0.01f);
             PlaneDistanceResolved = dist;   // 覆いの面はここへ置く（両眼視差を消すため）
             float k = Mathf.Clamp01(frameClose);
+
+            // 枠が無い段（黒・現実・格下げ・構造）は**厳密に全開**。有限の矩形で近似すると、
+            // その矩形の辺がどこかの頭の向きで必ず視界に入る（FullyOpenEpsilon のコメント）。
+            if (k <= FullyOpenEpsilon)
+            {
+                SetPlanesFullyOpen();
+                return Mathf.Max(Mathf.Sin(Mathf.Clamp01(feather) * Mathf.Atan2(hh, dist)), 1e-4f);
+            }
+
+            // 開口の**中心と姿勢**も閉じ具合で補間する。閉じ切り (k=1) はスクリーンの実位置・実姿勢
+            // ちょうど（2026-08-01 の整合をそのまま保つ）で、開いている間は頭へ寄せる。
+            //
+            // 中心をスクリーンに固定したまま大きさだけ広げると、開口はスクリーンと同じだけ
+            // 下がったまま巨大化するので、**視界の下側だけが枠の外に出る**。
+            // 姿勢も要る — スクリーンは水平（ヨーだけ追従）なので、頭を大きく下げるとスクリーンの
+            // 上方向が頭から見てほぼ前を向き、**巨大な開口が眼の後ろまで回り込んで退化する**。
+            //
+            // ⚠ 寄せ切るのは <see cref="AnchorK"/> まで。**そこから先はスクリーンに完全固定**で、
+            //    「枠はスクリーンの形のまま縮む」（2026-08-01）を 1 ビットも変えない。
+            //    AnchorK での開口は半画角 69° ＝ 視界（±48°）よりまだ十分大きいので、
+            //    寄せている区間は体験者に枠として見えていない。
+            float ka = Mathf.Clamp01(k / AnchorK);
+            c = Vector3.Lerp(new Vector3(0f, 0f, dist), c, ka);
+            right = Vector3.Slerp(Vector3.right, right, ka).normalized;
+            up = Vector3.Slerp(Vector3.up, up, ka).normalized;
 
             // 枠は**スクリーンの形のまま**縮む。縦横を別々に補間してはいけない
             // （2026-08-01 実害・ユーザー報告「灰色の迫りが枠とずれている」）。

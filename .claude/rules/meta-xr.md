@@ -41,6 +41,18 @@ paths:
   「パススルーが一切出ない」の真因は `_insightPassthroughSupport = 0` と、
   `IntroVeil` シェーダがビルドから剥がれていたこと（下記 `Shader.Find` の罠）の 2 つ。
   設定するのは `MainDemoSceneSetup.EnsurePassthroughStyler`
+- **⚠ ただし「覆いが走っていない時間」には現実を見せる手段が 1 つも無かった**（2026-08-09 実害）。
+  alpha 0 を書く面は `IntroVeil` だけで、しかもそれは導入・終幕の専用。つまり
+  **演出の外側（起動直後・位置合わせ中・本編前）は原理的に現実が 1 画素も出ない**。
+  実害はユーザー報告「トリガーを長押ししてもパススルーは何も変わらない」＝
+  **位置合わせ（線を実物に重ねる作業）が成立しない**。
+  → **位置合わせ中だけ、実行時にカメラ背景の alpha を 0 にする**
+  （[`PassthroughStyler.SetBackgroundOpen`](../../Assets/Scripts/OvrBridge/PassthroughStyler.cs)。
+  元の色を覚えてから書き換え、抜けたら必ず戻す）。
+  **覆いを全開にする方法は採らない** — 覆いは queue 4900 の `Blend Zero SrcAlpha` なので、
+  走っているだけで**合わせる対象である登録ワイヤーと文字（queue 3000）を黒へ潰す**。
+  上の「a=1 のままにする」は**覆いが走るフレームの制約**であって、常時の制約ではない。
+  ⚠ **焼き込みは従来どおり a=1**（`analyze-xp-log.py` の `boot bg=` は 0 台であることを要求する）
 - **レイヤー**: `OVRPassthroughLayer` コンポーネント
   - `Underlay`（背景として全画面パススルー）
   - `Overlay`（前景。`textureOpacity` が VR とのブレンドになる）

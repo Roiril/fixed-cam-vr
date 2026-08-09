@@ -73,9 +73,14 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>終幕（2D スクリーン → パススルー）が有効なら終了で黒は出さない。</b> 黒で閉じてから
         /// 現実へ戻すと継ぎ目が 2 回になり、しかも「終わった」と思わせた後に画が戻るので締まらない。
         /// 終幕は本編の画から直に始まる（<c>OutroStage.Warm</c> のあいだは映像のまま裏で点火を待つ）。
+        /// ⚠ <b>位置合わせ中は黒を出さない</b>（2026-08-09）。中止の唯一の直し方が再登録なので、
+        /// 黒が居座ると<b>直す作業そのものが黒に隠れて詰む</b>（線を実物に重ねる作業なのに何も見えない）。
+        /// 位置合わせを起こせるのはコントローラを持つスタッフだけなので、体験者の視界へ現実が
+        /// 勝手に漏れることはない。抜ければ黒は同じ導出でそのまま戻る（ラッチを足していない）。
         public bool ShouldBlackout =>
-            (_logic.Phase == ShowPhase.Finished && !OutroDef.enabled)
-            || (_logic.Phase == ShowPhase.Intro && _intro != null && _intro.Aborted);
+            !(showControl != null && showControl.CourseRegistrationActive)
+            && ((_logic.Phase == ShowPhase.Finished && !OutroDef.enabled)
+                || (_logic.Phase == ShowPhase.Intro && _intro != null && _intro.Aborted));
 
         /// <summary>
         /// 黒の上に出す 1 行（空なら文字なし）。<c>ShowEndingFader</c> が描く。

@@ -56,7 +56,6 @@ namespace FixedCamVr.Streaming
         private float _headTurn;
         private bool _subscribed;
         private bool _clockRestarted;
-        private float _inSpotSec;
 
         /// <summary>いまの重み。<c>PassthroughStyler</c> がここを読む。</summary>
         public IntroWeights Weights => _logic.Weights;
@@ -245,6 +244,12 @@ namespace FixedCamVr.Streaming
             _walkPromptUntil = -1f;
             _aborted = false;
             _completed = false;
+            // ⚠ **開始の合図を必ず武装し直す**（2026-08-09 実害）。旧実装はここで
+            // `_startLineCrossed` も円の滞在も落としていなかったので、**前の体験者が踏んだ線・
+            // 立った円がそのまま次のランへ持ち越され、リセットした瞬間に演出が走り出した**
+            // （ユーザー報告「今はすぐに起動してしまう。最初からなのか、リセットしたあとからなのかは
+            // 覚えてない」）。ラッチは 1 箇所で落とす。
+            RearmStartSignal();
             if (!_def.enabled)
             {
                 // 演出なし。従来どおり最初からスクリーンだけが見える。
@@ -278,6 +283,30 @@ namespace FixedCamVr.Streaming
         {
             _sinceStart += Time.unscaledDeltaTime;
             ObserveHead();
+
+            // ⚠ **位置合わせ中は演出を止め、覆いを完全にどける。**
+            // 覆いは queue 4900 の全画面 `Blend Zero SrcAlpha`（結果 = srcAlpha × 背景）なので、
+            // 走っているだけで**先に描かれた登録ワイヤーと文字（queue 3000）を黒へ潰す**。
+            // 位置合わせは現実に線を重ねて合わせる作業なので、これでは作業そのものが成立しない
+            // （2026-08-09 ユーザー報告「位置合わせをしたかったり、ステータスやコントローラーの説明が
+            //  パススルーに重なって何も見えない」）。現実は `PassthroughStyler` がカメラ背景の
+            // alpha を 0 にして出す（覆いは使わない — 使うとこの潰しが戻ってくる）。
+            bool registering = showControl?.CourseRegistrationActive ?? false;
+            if (registering)
+            {
+                veil?.SetHidden();
+                structureWire?.SetHidden();
+                glitch?.SetSustain(0f);
+                // 位置合わせが終われば course 変換そのものが変わる。**前の座標系で満たした合図は無効**
+                // なので、抜けた時点で必ず武装し直す（下の !_wasRegistering で 1 回だけ）。
+                _wasRegistering = true;
+                return;
+            }
+            if (_wasRegistering)
+            {
+                _wasRegistering = false;
+                RearmStartSignal();
+            }
 
             // 中止中はここで折り返す。復帰は位置合わせの確定 1 つで済ませる（TryRecoverFromAbort）。
             if (_aborted) { TryRecoverFromAbort(); return; }
@@ -342,10 +371,10 @@ namespace FixedCamVr.Streaming
         {
             // 置いてある HMD が位置条件をたまたま満たして勝手に始まるのを防ぐ。
             // 被り直すまでラッチも落とす（前の体験者が踏んだ線で次が始まらない）。
-            if (!IsUserPresent()) { _inSpotSec = 0f; _startLineCrossed = false; return false; }
-            if (!IsCourseRegistered()) { _inSpotSec = 0f; return false; }
+            if (!IsUserPresent()) { RearmStartSignal(); return false; }
+            if (!IsCourseRegistered()) { _startSpot.NotifyUnavailable(); return false; }
             var head2 = showControl?.HeadCourseXZProvider;
-            if (head2 == null) { _inSpotSec = 0f; return false; }
+            if (head2 == null) { _startSpot.NotifyUnavailable(); return false; }
             Vector2 p = head2();
 
             // ライン指定があればそちらが正（円は見ない）。
@@ -362,12 +391,21 @@ namespace FixedCamVr.Streaming
             }
 
             var spot = showControl?.Layout?.ResolveStartSpot();
-            if (spot == null) { _inSpotSec = 0f; return false; }
-            float r = spot.ResolveRadiusM();
-            bool inside = (p - new Vector2(spot.x, spot.z)).sqrMagnitude <= r * r;
-            // 通りすがりで始めない。少し留まってから。
-            _inSpotSec = inside ? _inSpotSec + Time.unscaledDeltaTime : 0f;
-            return _inSpotSec >= startSpotHoldSec;
+            if (spot == null) { _startSpot.NotifyUnavailable(); return false; }
+            // ⚠ **円は「入ってきた」で判定する**（状態ではなく事象）。判断は StartSpotLogic 側。
+            return _startSpot.Tick(p.x, p.y, spot.x, spot.z, spot.ResolveRadiusM(),
+                                   startSpotHoldSec, Time.unscaledDeltaTime);
+        }
+
+        /// <summary>
+        /// 開始の合図（線の横断ラッチ・円の滞在）を武装し直す。<b>落とし所はここ 1 箇所だけ</b> —
+        /// 散らすと必ずどれかを落とし忘れ、前の体験者の条件が次のランへ漏れる。
+        /// </summary>
+        private void RearmStartSignal()
+        {
+            _startLineCrossed = false;
+            _startLine.Reset();
+            _startSpot.Rearm();
         }
 
         private bool IsUserPresent()
@@ -378,14 +416,23 @@ namespace FixedCamVr.Streaming
 
         // --- 開始ライン（run.intro.startLineId → layout.lines[] の 1 本）---
         private readonly LineCrossLogic _startLine = new LineCrossLogic();
+        private readonly StartSpotLogic _startSpot = new StartSpotLogic();
+        private bool _wasRegistering;
+        private bool _startLineResolved;          // layout.lines から実際に引けたか
+        private bool _startLineWarned;            // 警告は 1 回だけ（未着なら毎フレーム引き直すので）
         private string _startLineApplied = " ";   // 未同期を表す番兵（"" は「指定なし」と区別する）
         private bool _startLineCrossed;
 
         private void SyncStartLine(string lineId)
         {
-            if (lineId == _startLineApplied) return;
+            // ⚠ **解けていないなら毎フレーム引き直す。** id が同じなら二度と解かない旧実装だと、
+            // 最初に評価した時点で `layout.lines` がまだ届いていない（起動直後・卓の long-poll 前）
+            // 場合に線が Undefined のまま固定され、**以後スタッフ操作でしか導入を始められなくなる**。
+            // 解けた後は id 一致で即 return するので、走査は「まだ解けていない間」だけ走る。
+            if (lineId == _startLineApplied && _startLineResolved) return;
+            bool sameId = lineId == _startLineApplied;
             _startLineApplied = lineId;
-            _startLineCrossed = false;
+            if (!sameId) _startLineCrossed = false;
 
             LineCrossLogic.Line line = LineCrossLogic.Line.Undefined;
             ShowLineDef[]? defs = showControl?.Layout?.lines;
@@ -399,9 +446,13 @@ namespace FixedCamVr.Streaming
                     break;
                 }
             }
-            if (!line.defined)
+            _startLineResolved = line.defined;
+            if (!line.defined && !_startLineWarned)
+            {
+                _startLineWarned = true;
                 Debug.LogWarning($"[Intro] 開始ライン '{lineId}' が layout.lines に無い — " +
-                                 $"スタッフ操作でしか導入を始められない");
+                                 $"届くまではスタッフ操作でしか導入を始められない");
+            }
             _startLine.SetLines(new[] { line });
         }
 

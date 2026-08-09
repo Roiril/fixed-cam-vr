@@ -244,6 +244,43 @@ false へ落ち、`ShowRunDirector` が渡す `introPlaying` も false になる
   ⚠ 要再登録フラグの false 化では代用できない（プレビュー `SetRegistration(save:false)` でも降りるので、
   B 確定の前に再開して登録ビューと演出が混ざる）
 
+#### 位置合わせ中は「現実を隠すもの」を全部どける（2026-08-09）
+
+位置合わせは**現実に線を重ねて合わせる作業**なのに、実機では現実が 1 画素も見えていなかった。
+門は [`ShowControlClient.CourseRegistrationActive`](../../Assets/Scripts/Streaming/ShowControlClient.cs)
+1 つで、配線は `OvrControllerBridge`（Streaming も Tracking も互いを参照しない規約なので、
+両方を知っているそこが唯一の配線点）。立つのはコントローラを持つ人だけなので、体験の最中に勝手に開かない。
+
+| どける対象 | どこで | なぜ |
+|---|---|---|
+| 導入演出の覆い | `IntroDirector.Update` が段送りごと凍結し `SetHidden` | 覆いは queue 4900 の `Blend Zero SrcAlpha`。走っているだけで**登録ワイヤーと文字（queue 3000）を黒へ潰す** |
+| 中止・終了の黒 | `ShowRunDirector.ShouldBlackout` が false を返す | 中止の唯一の直し方が再登録なので、**黒が居座ると直す作業ごと隠れて詰む** |
+| パススルーの電源と背景 alpha | `PassthroughStyler` | 演出の外では切られていた。現実は**カメラ背景 alpha=0** で出す（覆いは使わない → [meta-xr.md](meta-xr.md)） |
+
+⚠ **位置合わせから抜けたら導入の開始合図を必ず武装し直す**（`IntroDirector._wasRegistering`）。
+course 変換そのものが変わるので、**前の座標系で満たした合図は無効**。
+
+#### 導入の開始は「入ってきた」で判定する（2026-08-09 に置き換え）
+
+⚠ **円は状態、開始は事象。** 旧実装は「いま円の中に 0.5 秒居る」だけを見ていたので、
+**起動直後に条件がたまたま揃うと演出が即座に走り出した**（ユーザー報告「体験者の位置を基準に
+トリガーしてほしいが、今はすぐに起動してしまう」）。踏む経路は 2 つ:
+
+- 頭のポーズがまだ来ておらず、course 原点付近が円の中にある
+- 前の体験者が円の中に立ったまま、スタッフがランをやり直した（`BeginIntro` がラッチを落としていなかった）
+
+→ 判断を [`StartSpotLogic`](../../Assets/Scripts/Streaming/StartSpotLogic.cs) へ出した
+（純ロジック・テスト 9 本）。**外に居たことを観測してから、入ってきた滞在を数える**。
+加えて `LineCrossLogic` と同じ 2 つの不連続ガード（dt が飛んだ / 1 フレームで 1m 超動いた）を持ち、
+武装から 0.5 秒は軌跡を信用しない。
+
+- **武装し直しは `IntroDirector.RearmStartSignal` 1 箇所だけ**（線の横断ラッチも円もここで落とす）。
+  呼ぶのは `BeginIntro`（ラン開始）と 位置合わせから抜けたとき と HMD を外したとき
+- **円の中で武装されると自動では始まらない**。そのときはスタッフの ⏭ が従来どおり効く
+- `run.intro.startLineId` の線は **layout が届くまで毎フレーム引き直す**。旧実装は id 一致で
+  二度と解かず、起動直後に `layout.lines` が未着だと**線が Undefined のまま固定**され、
+  以後スタッフ操作でしか始められなくなっていた
+
 #### 終幕（2D スクリーン → パススルー）— 2026-08-07 に実行体を入れた
 
 導入の逆を辿って現実へ戻して終わる。判断は [`OutroLogic`](../../Assets/Scripts/Streaming/OutroLogic.cs)、
