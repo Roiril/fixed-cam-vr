@@ -335,6 +335,33 @@ Unity 側が面倒を見る**。全画面 1 パスで幾何を解きたくなっ
 ⚠ **ステンシルは URP が使っていない**（`URP-*-Renderer.asset` の `overrideStencilState: 0`）。
 ここを誰かが使い始めたら、印と黒の 2 パスが黙って壊れる。
 
+#### 封印の箱 — 外から見た隔離（2026-08-10）
+
+同じ境界を**外から**見たものが [`SealedBox`](../../Assets/Scripts/Streaming/SealedBox.cs)
+＋ [`SealedBox.shader`](../../Assets/Art/Shaders/Intro/SealedBox.shader)。出どころは
+`canon/LEDGER.md` 0003（「不気味な感じの黒い箱」「ところどころに模様」「何かが封印されてそう」）。
+
+- **段 0 で体験エリアの外に居るあいだだけ**出る。境界から `IntroLogic.SealBoxOpenM`（1.0m）離れていれば
+  不透明で、近づくほど薄れて境界で消える。**開かないと体験者は黒い壁へ向かって歩く**ことになる
+- **footprint は隔離殻と同じ**（`ContainmentShellLogic.TryFootprint`）。別々に持つと
+  「箱の外に立っているのに足元が黒い」が起きる
+- `Cull Back` なので**中へ入れば背面カリングで消える**。消し忘れても体験は汚れない
+- 模様は手続き（六角格子 × なめらかな斑）。**一様な格子にしない** — 全面に敷くと炭素繊維のパネルに見える
+- 見た目の門は `.\tools\unity.ps1 menu sealedbox`（Play も HMD も要らない・`Assets/Screenshots/sealedbox/`）。
+  箱は外から見る面なので、**端末を机に置いた自動走行では出ないことがある**
+
+⚠⚠ **シェーダの誤りは `unity.ps1 test` では 1 件も出ない。** C# のコンパイルとは別系統で、
+マテリアルを実際に描くまで分からず、失敗すると**マゼンタ**になる。同日に 3 つ踏んだ:
+
+| 踏んだもの | 症状 |
+|---|---|
+| 変数名に `line` を使った | HLSL の予約語。`syntax error: unexpected token 'line'` で全面マゼンタ |
+| `floor(id * 8)` でセルの識別子を作った | 六角の中心の x が 0.5 刻み ＝ 整数境界に乗り、floor が画素ごとに揺れて**そのセルだけ砂嵐** |
+| MSAA の RenderTexture から直接 `ReadPixels` | 解決前の面を読んで**まだらな斑点**。模様の粒だと誤読しかけた |
+
+→ **シェーダを書いたら必ず絵を出して開く。** エラーは `%LOCALAPPDATA%\Unity\Editor\Editor.log` の
+`Shader error in '<名前>'` にしか出ない。
+
 観測は **`shell`（黒を書いたか）/ `shellBuilt`（シェーダを掴めたか）/ `shellBox`（許した箱の数）** の 3 つで、
 `ShowTelemetryHost` と `analyze-xp-log.py` を**対で**直す。出ない経路が 3 つ（シェーダ剥がれ・
 幾何未著作・未登録）あり、どれも画を見るまで気づけない。

@@ -82,6 +82,7 @@ namespace FixedCamVr.Diagnostics
         private IntroVeil? _veil;
         private IntroStructureWire? _wire;
         private ContainmentShell? _shell;
+        private SealedBox? _box;
         private BgmDirector? _bgm;
         private ShowCgLayer? _cg;
         private TakeRunner? _takes;
@@ -184,6 +185,7 @@ namespace FixedCamVr.Diagnostics
             if (_veil == null) _veil = FindObjectOfType<IntroVeil>();
             if (_wire == null) _wire = FindObjectOfType<IntroStructureWire>();
             if (_shell == null) _shell = FindObjectOfType<ContainmentShell>();
+            if (_box == null) _box = FindObjectOfType<SealedBox>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_cg == null) _cg = FindObjectOfType<ShowCgLayer>();
             if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
@@ -318,6 +320,12 @@ namespace FixedCamVr.Diagnostics
         /// <summary>「見てよいもの」の箱の数。<c>0</c> なら幾何が未著作 ＝ 隔離を出しようがない。</summary>
         private string ShellBoxState => _shell == null ? "-" : _shell.BoxCount.ToString();
 
+        /// <summary>封印の箱が描かれているか。<c>-</c>=シーンに居ない / 0=非描画 / 1=描画中。</summary>
+        private string SealBoxState => _box == null ? "-" : (_box.IsActive ? "1" : "0");
+
+        /// <summary>封印の箱の実体を組めたか（<c>0</c> ＝ シェーダがビルドから剥がれた）。</summary>
+        private string SealBoxBuiltState => _box == null ? "-" : (_box.IsBuilt ? "1" : "0");
+
         /// <summary>パススルーをアプリから有効化できているか。<c>-</c>=読み口が無い / -1=判定不能 / 0=無効 / 1=有効。</summary>
         private string PassthroughState
         {
@@ -377,7 +385,8 @@ namespace FixedCamVr.Diagnostics
                      $"fresh={(_intro.LiveFresh ? 1 : 0)} centered={(_intro.FrameCentered ? 1 : 0)} " +
                      $"pass={w.passthrough:F2} live={w.live:F2} frame={w.frame:F2} edge={w.edge:F2} " +
                      $"veil={VeilState} veilBuilt={VeilBuiltState} wire={WireState} pt={PassthroughState} " +
-                     $"shell={ShellState} shellBuilt={ShellBuiltState} shellBox={ShellBoxState}");
+                     $"shell={ShellState} shellBuilt={ShellBuiltState} shellBox={ShellBoxState} " +
+                     $"box={SealBoxState} boxBuilt={SealBoxBuiltState}");
             }
 
             // コントローラの操作モード（NORMAL / REG）。**位置合わせが起きたかの唯一の観測点**。
@@ -584,6 +593,8 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" shell=").Append(ShellState);
             _sb.Append(" shellBuilt=").Append(ShellBuiltState);
             _sb.Append(" shellBox=").Append(ShellBoxState);
+            _sb.Append(" box=").Append(SealBoxState);
+            _sb.Append(" boxBuilt=").Append(SealBoxBuiltState);
             _sb.Append(" cg=").Append(CgState);
             if (_overlay != null)
                 _sb.Append(" ovl=").Append(OverlayStrength.ToString("F2"))

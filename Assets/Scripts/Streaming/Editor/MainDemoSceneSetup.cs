@@ -443,6 +443,9 @@ namespace FixedCamVr.Streaming.EditorTools
             // 隔離殻（会場を黒で落とし、実物の壁と足元の床だけを残す面）。覆いと同じ GameObject に
             // 載せる — どちらも CenterEyeAnchor 直下の全画面パスで、描画順だけが違う（覆い 4900 → 殻 4910）。
             var containment = CreateContainmentShell(introVeil.gameObject, showControl);
+            // 封印の箱（外から見た隔離）。world 空間の箱なので親の transform に依存しないが、
+            // 隔離殻と同じ GameObject に載せて「境界を持つのはここ」を 1 箇所に見せる。
+            var sealedBox = CreateSealedBox(introVeil.gameObject, showControl);
             var introDirector = CreateIntroDirector(logic.transform, runDirector, introVeil,
                 screenGo != null ? screenGo.GetComponent<GlitchFx>() : null,
                 registry, showControl, centerEye.transform, screenTf);
@@ -465,6 +468,7 @@ namespace FixedCamVr.Streaming.EditorTools
             // 導入側にも同じ殻を配る（自己解決に任せず明示する — 見つからないと隔離が黙って出ない）。
             var introShellSo = new SerializedObject(introDirector);
             TrySetObjectRef(introShellSo, "shell", containment);
+            TrySetObjectRef(introShellSo, "sealedBox", sealedBox);
             introShellSo.ApplyModifiedPropertiesWithoutUndo();
             // 段 3 の構造の線（部屋の輪郭とカメラの印）。LineRenderer は world 空間で描くので
             // 親の transform には依存しない（IntroDirector と同じオブジェクトに載せる）。
@@ -715,6 +719,21 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetVector2(so, "planeSize", new Vector2(2f, 2f));
             so.ApplyModifiedPropertiesWithoutUndo();
             return shell;
+        }
+
+        // 封印の箱。**外から見た隔離**（canon/LEDGER.md 0003）。段 0 で体験エリアの外に居るあいだだけ出る。
+        private static SealedBox CreateSealedBox(GameObject veilGo, ShowControlClient? showControl)
+        {
+            var box = veilGo.GetComponent<SealedBox>();
+            if (box == null) box = veilGo.AddComponent<SealedBox>();
+            var so = new SerializedObject(box);
+            if (showControl != null) TrySetObjectRef(so, "showControl", showControl);
+            TrySetBool(so, "boxEnabled", true);
+            TrySetFloat(so, "heightM", 2.4f);
+            TrySetFloat(so, "hexSizeM", 0.28f);
+            TrySetFloat(so, "markDensity", 0.16f);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return box;
         }
 
         // 導入演出の進行役。ShowPhase は増やさず Intro の内側のサブ状態を持つ。

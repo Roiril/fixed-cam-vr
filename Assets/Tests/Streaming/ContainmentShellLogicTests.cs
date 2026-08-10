@@ -162,7 +162,67 @@ namespace FixedCamVr.Streaming.Tests
             Assert.IsFalse(ContainmentShellLogic.IsAuthorized(eye, Vector3.forward, rotated));
         }
 
+        // ---------------------------------------------------------------- footprint（中と外で共有する境界）
+
+        [Test]
+        public void Footprint_MatchesTheAuthorizedFloor()
+        {
+            // 外から見た箱（SealedBox）と、中から見た許された床は**同じ境界**でなければならない。
+            // ずれると「箱の外に立っているのに足元が黒い」が起きる。
+            Assert.IsTrue(ContainmentShellLogic.TryFootprint(Layout(1.8f, 2.4f), null, out Vector2 half));
+            Assert.AreEqual(0.9f + ContainmentShellLogic.FloorMarginM, half.x, 1e-4f);
+            Assert.AreEqual(1.2f + ContainmentShellLogic.FloorMarginM, half.y, 1e-4f);
+
+            List<ContainmentShellLogic.Box> boxes = ContainmentShellLogic.Build(Layout(1.8f, 2.4f), null);
+            Assert.AreEqual(half.x, boxes[0].half.x, 1e-4f);
+            Assert.AreEqual(half.y, boxes[0].half.z, 1e-4f);
+        }
+
+        [Test]
+        public void Footprint_WithoutGeometry_IsUnresolved()
+        {
+            Assert.IsFalse(ContainmentShellLogic.TryFootprint(null, null, out _));
+        }
+
+        [Test]
+        public void DistanceOutside_IsZeroInside_AndGrowsOutside()
+        {
+            var half = new Vector2(1.5f, 1.5f);
+            Assert.AreEqual(0f, ContainmentShellLogic.DistanceOutsideM(Vector2.zero, half), 1e-4f);
+            Assert.AreEqual(0f, ContainmentShellLogic.DistanceOutsideM(new Vector2(1.4f, -1.4f), half), 1e-4f);
+            Assert.AreEqual(0.5f, ContainmentShellLogic.DistanceOutsideM(new Vector2(2.0f, 0f), half), 1e-4f);
+            // 角の外は 2 軸の合成。片方だけ見ると角で早く開いてしまう。
+            Assert.AreEqual(Mathf.Sqrt(0.5f * 0.5f + 0.5f * 0.5f),
+                            ContainmentShellLogic.DistanceOutsideM(new Vector2(-2.0f, 2.0f), half), 1e-4f);
+        }
+
         // ---------------------------------------------------------------- 重み（導入・終幕）
+
+        [Test]
+        public void SealBox_OnlyInStageZero_AndOnlyFromOutside()
+        {
+            var l = new IntroLogic();
+            l.Configure(IntroTiming.Default);
+            l.Begin();
+
+            // 中に居るあいだは出ない（外から見る面なので、中で出すと視界が箱の内側で埋まる）。
+            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = 0f });
+            Assert.AreEqual(IntroStage.Black, l.Stage);
+            Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
+
+            // 境界の手前で薄く、離れると濃くなる。
+            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = 0.25f });
+            float near = l.Weights.sealBox;
+            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = IntroLogic.SealBoxOpenM });
+            float far = l.Weights.sealBox;
+            Assert.Less(near, far);
+            Assert.AreEqual(1f, far, 1e-3f);
+
+            // 線を越えたら（段 1 以降）二度と出ない。
+            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true, outsideBoxM = 2f });
+            Assert.AreEqual(IntroStage.Real, l.Stage);
+            Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
+        }
 
         [Test]
         public void Intro_SealsAtTheLine_NotBefore()

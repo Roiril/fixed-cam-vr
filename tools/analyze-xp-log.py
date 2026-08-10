@@ -998,6 +998,24 @@ def analyze(events, others, exp, warns=None):
             elif "1" in shell:
                 verdict("OK", f"隔離が描画された（{shell.count('1')}/{len(shell)} 標本）")
 
+        # -- 封印の箱（外から見た隔離）。段 0 で体験エリアの外に居るあいだだけ出る。
+        box_built = effect_samples(events, "boxBuilt")
+        if box_built and "0" in box_built:
+            any_effect_key = True
+            verdict("FAIL", "封印の箱を組めていない（SealedBox の Shader.Find が null）— "
+                            "GraphicsSettings の m_AlwaysIncludedShaders に "
+                            "FixedCamVr/SealedBox を入れる")
+
+        # 窓は段 Real より**前**（段 0）。出ていなくても FAIL にはしない —
+        # 端末が体験エリアの中に置かれていれば出ないのが正しい（外から見る面なので）。
+        box = effect_samples(events, "box", t_to=real_t)
+        if box:
+            any_effect_key = True
+            w(f"  封印の箱が描画された標本: {box.count('1')}/{len(box)}（段 0 のみ・"
+              "エリアの中に居ると出ないのが正常）")
+            if "1" in box:
+                verdict("OK", "封印の箱が描画された（外から見た隔離）")
+
     if "Structure" in stages:
         wires = [v for v in effect_samples(events, "wire") if v not in ("", "-")]
         nums = []

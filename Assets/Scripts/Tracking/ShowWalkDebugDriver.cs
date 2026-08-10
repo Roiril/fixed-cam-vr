@@ -130,8 +130,17 @@ namespace FixedCamVr.Tracking
 
             // 開始ラインが著作されていれば、実機と同じ入り方をする ＝ その線を横切ってから中へ入る。
             string startLineId = _run != null ? (_run.IntroDef?.startLineId ?? "") : "";
-            if (!string.IsNullOrEmpty(startLineId) && TryLineCrossing(layout, startLineId,
-                    out Vector2 before, out Vector2 after))
+            Vector2 before = Vector2.zero;
+            Vector2 after = Vector2.zero;
+            bool hasLine = !string.IsNullOrEmpty(startLineId)
+                           && TryLineCrossing(layout, startLineId, out before, out after);
+
+            // ⚠ **体験エリアの外から始める。** 封印の箱（SealedBox）は外に立っている人にしか見えないので、
+            //    中から歩き出す走行では**この演出だけ一度も観測できない**（実測で box=0 のまま 29 標本）。
+            //    ここで外へ出て少し立つと、自動走行が導入の最初の絵まで通しで踏む。
+            yield return StartCoroutine(ApproachFromOutside(layout, hasLine ? before : Vector2.zero));
+
+            if (hasLine)
             {
                 Debug.Log($"[XPWalk] 開始ライン '{startLineId}' を横切る " +
                           $"({before.x:F2},{before.y:F2}) → ({after.x:F2},{after.y:F2})");
@@ -227,6 +236,56 @@ namespace FixedCamVr.Tracking
         }
 
         // ---------------------------------------------------------------- 歩行
+
+        /// <summary>体験エリアの外に出て少し立つ。封印の箱を見る時間（<see cref="SealBoxHoldSec"/>）。</summary>
+        private const float SealBoxHoldSec = 4f;
+
+        /// <summary>境界からどれだけ外へ出るか (m)。<c>IntroLogic.SealBoxOpenM</c> より外へ。</summary>
+        private const float OutsideMarginM = 1.4f;
+
+        /// <summary>
+        /// 体験エリアの外へ回り込んでから中へ入る。<b>封印の箱は外からしか見えない</b>ので、
+        /// ここを通らないと自動走行では一度も観測できない。
+        ///
+        /// 出る向きは<b>これから入る側</b>（開始ラインの手前の点）。反対側へ回ると、
+        /// 実際の体験者と違う面を見ることになる。
+        /// </summary>
+        private IEnumerator ApproachFromOutside(ShowLayoutDef? layout, Vector2 entryPoint)
+        {
+            if (!ContainmentShellLogic.TryFootprint(layout, _show != null ? _show.Room : null,
+                                                    out Vector2 half))
+            {
+                Debug.Log("[XPWalk] 体験エリアの footprint が解けない — 外からの接近は飛ばす");
+                yield break;
+            }
+
+            Vector2 dir = entryPoint.sqrMagnitude > 1e-4f ? entryPoint.normalized : new Vector2(0f, -1f);
+            float reach = Mathf.Max(half.x, half.y) + OutsideMarginM;
+            Vector2 outside = dir * reach;
+            Debug.Log($"[XPWalk] 外から接近 ({outside.x:F2},{outside.y:F2}) — 封印の箱を {SealBoxHoldSec:F0}s 見る");
+            yield return StartCoroutine(WalkTo(outside));
+            FaceCourseOrigin();
+            yield return new WaitForSeconds(SealBoxHoldSec);
+        }
+
+        /// <summary>
+        /// 体験エリアの中心へ向き直す。<b>位置だけ動かしても画には出ない</b> —
+        /// 頭の向きは机に置いた端末のままなので、封印の箱が視界の外にあって
+        /// 「描画された（box=1）のに画には無い」になる（2026-08-10 実測で踏んだ）。
+        ///
+        /// 回すのは<b>頭の位置を軸にした rig の yaw</b>。rig の原点で回すと頭ごと平行移動してしまう。
+        /// </summary>
+        private void FaceCourseOrigin()
+        {
+            if (_rig == null || _head == null || _frame == null) return;
+            Vector3 headW = _head.position;
+            Vector3 to = _frame.CourseToWorld(Vector2.zero, 1.2f) - headW;
+            to.y = 0f;
+            if (to.sqrMagnitude < 1e-4f) return;
+            float want = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
+            _rig.RotateAround(headW, Vector3.up, Mathf.DeltaAngle(_head.eulerAngles.y, want));
+            Debug.Log($"[XPWalk] 体験エリアの方を向く（yaw {want:F0}°）");
+        }
 
         private IEnumerator WalkTo(Vector2 courseTarget)
         {

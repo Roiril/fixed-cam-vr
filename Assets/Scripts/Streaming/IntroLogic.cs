@@ -131,11 +131,17 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float shell;
 
+        /// <summary>
+        /// 封印の箱の不透明度。<b>外から見た隔離</b>（<see cref="SealedBox"/>）。
+        /// 出るのは段 0 で体験エリアの外に居るあいだだけで、近づくほど薄れる。
+        /// </summary>
+        public float sealBox;
+
         /// <summary>導入演出を出していないときの値（本編と同じ見え）。</summary>
         public static IntroWeights Inactive => new IntroWeights
         {
             passthrough = 0f, degrade = 0f, edge = 0f, structure = 0f,
-            frame = 1f, live = 1f, grain = 0f, glitch = 0f, shell = 0f,
+            frame = 1f, live = 1f, grain = 0f, glitch = 0f, shell = 0f, sealBox = 0f,
         };
     }
 
@@ -159,6 +165,13 @@ namespace FixedCamVr.Streaming
         public bool liveFresh;
         /// <summary>トラッキング原点が変わった（OS の recenter）。中止する。</summary>
         public bool recentered;
+
+        /// <summary>
+        /// 体験エリア（隔離の footprint）の<b>外側までの距離 (m)</b>。中に居れば 0。
+        /// 段 0 の封印の箱はこれで濃さが決まる（近づくほど薄れて、境界で消える）。
+        /// 判定できない（未登録・layout 未着）ときは 0 ＝ 箱を出さない側へ倒す。
+        /// </summary>
+        public float outsideBoxM;
     }
 
     /// <summary>
@@ -195,6 +208,16 @@ namespace FixedCamVr.Streaming
         public const float StructureMinOwnSec = 0.5f;
 
         /// <summary>
+        /// 封印の箱が開き切る距離 (m)。体験エリアの境界からこれだけ外に居れば箱は不透明で、
+        /// 境界に着くまでに消える。**歩いて入る動きを止めない**ための猶予。
+        ///
+        /// ⚠ **短くする側へ倒す。** 1.0m にしていたら、境界から 0.8m の所（＝立って眺める距離）で
+        /// まだ 0.9 にしかならず、実機で**箱ごしに部屋が透けて見えた**（2026-08-10 実測。
+        /// 明るい部屋では 15% 残るだけで「中が見えない」が成立しない）。
+        /// </summary>
+        public const float SealBoxOpenM = 0.5f;
+
+        /// <summary>
         /// 段 4・段 5 の開始条件を待てる上限 (秒)。超えたら条件を無視して進む。
         /// 演出全体が 12 秒なので、ここで 6 秒待つと「止まった」ように見える。
         /// </summary>
@@ -208,6 +231,7 @@ namespace FixedCamVr.Streaming
         private float _holdSec;
         private bool _advanceRequested;
         private bool _skipRequested;
+        private float _outsideBoxM;
 
         public IntroStage Stage => _stage;
         public float StageElapsedSec => _stageElapsed;
@@ -266,6 +290,9 @@ namespace FixedCamVr.Streaming
         public IntroEvent Tick(float dt, IntroInput input)
         {
             if (dt < 0f) dt = 0f;
+            // 箱の濃さは Weights から読まれるので、観測値をここで覚えておく
+            // （Weights に引数を足すと、呼び出し側が「いつの値か」を持つことになる）。
+            _outsideBoxM = input.outsideBoxM > 0f ? input.outsideBoxM : 0f;
             if (_stage == IntroStage.Off || _stage == IntroStage.Done) return IntroEvent.None;
 
             // トラッキング原点が変わったら続行しない。壁の位置が違う世界を見せることになり、
@@ -400,7 +427,14 @@ namespace FixedCamVr.Streaming
                         //
                         // 隔離もまだ閉じない。ここは**まだ入っていない**区間で、体験者はスタッフに
                         // 誘導されて歩いてくる（`canon/OPEN.md` の案「線は扉である」）。
-                        return new IntroWeights { passthrough = 1f, frame = 0f, live = 0f, shell = 0f };
+                        //
+                        // 代わりに、外から見た隔離＝**封印の箱**がここで出る（canon/LEDGER.md 0003）。
+                        // 近づくほど薄れて境界で消えるので、体験者は黒い壁へ突っ込まずに中へ入れる。
+                        return new IntroWeights
+                        {
+                            passthrough = 1f, frame = 0f, live = 0f, shell = 0f,
+                            sealBox = SmoothStep(0f, SealBoxOpenM, _outsideBoxM),
+                        };
 
                     case IntroStage.Real:
                         // **線を越えた。ここで隔離が閉じる。** 旧実装のこの段は「何も演出しない

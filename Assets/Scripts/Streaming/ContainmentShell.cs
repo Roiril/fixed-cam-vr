@@ -459,6 +459,30 @@ namespace FixedCamVr.Streaming
             };
         }
 
+        /// <summary>
+        /// 隔離の footprint（course 空間・原点中心の矩形の半寸）。
+        /// <b>中から見た殻（許された床）と、外から見た箱（<see cref="SealedBox"/>）が同じ境界を使う</b>ための
+        /// 単一の出どころ。別々に持つと「箱の外に立っているのに足元が黒い」ような食い違いが出る。
+        /// </summary>
+        public static bool TryFootprint(ShowLayoutDef? layout, ShowRoomDef? room, out Vector2 half)
+        {
+            half = Vector2.zero;
+            if (!IntroStructureWireLogic.TryFloorExtents(layout, room, out float w, out float d)) return false;
+            half = new Vector2(w * 0.5f + FloorMarginM, d * 0.5f + FloorMarginM);
+            return true;
+        }
+
+        /// <summary>
+        /// footprint の外側までの距離 (m)。<b>中に居れば 0</b>（負は返さない — 呼び出し側は
+        /// 「外に居る量」だけを使うので、中の深さを渡すと閾値の意味が二重になる）。
+        /// </summary>
+        public static float DistanceOutsideM(Vector2 courseXZ, Vector2 half)
+        {
+            float dx = Mathf.Max(Mathf.Abs(courseXZ.x) - half.x, 0f);
+            float dz = Mathf.Max(Mathf.Abs(courseXZ.y) - half.y, 0f);
+            return Mathf.Sqrt(dx * dx + dz * dz);
+        }
+
         /// <summary>視線がどれか 1 つの箱に当たるか（＝現実を見せてよい方向か）。</summary>
         public static bool IsAuthorized(Vector3 eye, Vector3 dir, IReadOnlyList<WorldBox> boxes)
         {

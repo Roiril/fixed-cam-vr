@@ -119,6 +119,10 @@ $Menus = [ordered]@{
                             Desc = '体験者の動きを合成して腕の到達率・追従の遅れを測る'
                             Set = 'actor=<人形名>'
                             Out = 'Assets/Screenshots/actormotion' }
+    'sealedbox'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.SealedBoxPreview.Run'
+                            Desc = '封印の箱（外から見た隔離）の模様を 3 枚 PNG 化'
+                            Set = 'hex=<六角の大きさ m> / marks=<印の割合>'
+                            Out = 'Assets/Screenshots/sealedbox' }
     'regviz'           = @{ Method = 'FixedCamVr.Tracking.EditorTools.RegistrationVizPreview.Run'
                             Desc = '位置合わせのワイヤーとゾーンのタイルを多角度で PNG 化'
                             Out = 'Assets/Screenshots/regviz' }
