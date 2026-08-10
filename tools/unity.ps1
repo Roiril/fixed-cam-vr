@@ -318,10 +318,18 @@ switch ($Action) {
         Write-Host "  version: $(& $Cli --version 2>&1)"
 
         Write-Host "── Editor $EditorVersion ──" -ForegroundColor Cyan
-        # CLI の既定の導入先。ここに無ければ `unity raw editors -i` で在り処を探す
-        $edRoot = Join-Path $env:USERPROFILE "Unity\Editors\$EditorVersion\Editor"
-        if (-not (Test-Path (Join-Path $edRoot 'Unity.exe'))) {
-            Write-Host "  ✗ $edRoot に Unity.exe が無い" -ForegroundColor Red
+        # ⚠ 在り処は PC によって違う。CLI で入れた機体は %USERPROFILE%\Unity\Editors\、
+        #    Unity Hub で入れた機体は C:\Program Files\Unity\Hub\Editor\。**両方見る**
+        #    （片方だけ見ていたので、Hub で入れた PC では doctor が必ず ✗ を出していた）。
+        #    CLI 自身（`unity editors --installed`）はどちらも見つけるので、ビルドは通る。
+        $edCandidates = @(
+            (Join-Path $env:USERPROFILE "Unity\Editors\$EditorVersion\Editor"),
+            (Join-Path ${env:ProgramFiles} "Unity\Hub\Editor\$EditorVersion\Editor")
+        )
+        $edRoot = $edCandidates | Where-Object { Test-Path (Join-Path $_ 'Unity.exe') } | Select-Object -First 1
+        if (-not $edRoot) {
+            $edRoot = $edCandidates[0]
+            Write-Host "  ✗ Unity.exe がどこにも無い（見た場所: $($edCandidates -join ' / ')）" -ForegroundColor Red
             Write-Host "    unity install $EditorVersion / 在り処の確認は .\tools\unity.ps1 raw editors -i" -ForegroundColor Yellow
             $ng++
         }

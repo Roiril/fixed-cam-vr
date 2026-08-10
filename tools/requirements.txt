@@ -1,6 +1,10 @@
 # 検証まわりの Python 依存（py -3.11 に入れる）
 #
-#   py -3.11 -m pip install -r tools/requirements.txt
+#   py -3.11 -m pip install opencv-python numpy imageio-ffmpeg
+#
+# ⚠ `-r tools/requirements.txt` は日本語端末（cp932）で落ちる。pip はこのファイルを
+#    ロケールの符号化で読むので、下の日本語コメントが UnicodeDecodeError になる。
+#    パッケージ名を直に打つ方が確実（2026-08-10 実測）。
 #
 # ⚠ この 3 つが無いと tools/quest-record.py が動かない。
 #    quest-record.py は「HMD を被らずに実機の見た目を確かめる」唯一の経路で、
