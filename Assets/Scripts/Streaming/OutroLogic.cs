@@ -154,6 +154,8 @@ namespace FixedCamVr.Streaming
                             degrade = 1f,
                             edge = 0f,
                             grain = 0.6f * s,
+                            // 現実が戻る分だけ隔離も戻す。**まだ収容の中に居る**（開けるのは Restore）。
+                            shell = s,
                         };
                     }
 
@@ -170,6 +172,7 @@ namespace FixedCamVr.Streaming
                             frame = 1f - p,
                             grain = 0.6f,
                             live = 0f,
+                            shell = 1f,
                         };
                     }
 
@@ -186,11 +189,15 @@ namespace FixedCamVr.Streaming
                             grain = 0.6f * d,
                             frame = 0f,
                             live = 0f,
+                            // **ここで収容が解ける。** 色が戻るのと同じ速さで会場が返ってくる。
+                            // 導入で閉じたものを終幕で開けないと、体験者は黒い箱の中に置き去りで終わる
+                            // （スタッフが HMD を外しに来るのも見えない）。
+                            shell = d,
                         };
                     }
 
                     case OutroStage.Hold:
-                        return new IntroWeights { passthrough = 1f, frame = 0f, live = 0f };
+                        return new IntroWeights { passthrough = 1f, frame = 0f, live = 0f, shell = 0f };
 
                     default:
                         return IntroWeights.Inactive;

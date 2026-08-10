@@ -956,6 +956,48 @@ def analyze(events, others, exp, warns=None):
             elif "1" in pt:
                 verdict("OK", "パススルーがアプリから有効化できていた")
 
+        # -- 隔離殻（会場を黒で落とし、実物の壁と足元の床だけを残す面）
+        # 出ない経路が 3 つあり、どれもログ以外に気づく手段が無い:
+        #   ①シェーダがビルドから剥がれた（shellBuilt=0）
+        #   ②layout.room / floor が未著作（shellBox=0）
+        #   ③HMD 位置合わせが未完了（shell=0 のまま／殻は捏造しないので出さない側へ倒す）
+        shell_built = effect_samples(events, "shellBuilt")
+        if shell_built:
+            any_effect_key = True
+            if "0" in shell_built:
+                verdict("FAIL", "隔離殻を組めていない（ContainmentShell の Shader.Find が null）— "
+                                "シェーダがビルドから剥がれた疑い。GraphicsSettings の "
+                                "m_AlwaysIncludedShaders に FixedCamVr/ContainmentShell を入れる")
+            elif "1" in shell_built:
+                w("  隔離殻: 実体を組めている")
+
+        boxes = []
+        for v in effect_samples(events, "shellBox"):
+            try:
+                boxes.append(int(v))
+            except ValueError:
+                pass
+        if boxes:
+            any_effect_key = True
+            w(f"  隔離が許した箱: 最大 {max(boxes)} 個（床 1 + 部屋の壁・箱）")
+            if max(boxes) == 0:
+                verdict("WARN", "隔離の幾何が 1 つも無い（layout.room も layout.floor も未著作）— "
+                                "殻は捏造しないので出ない。卓の 🧱 部屋で実物の壁を引き、"
+                                "較正パネルで床の実寸を入れる")
+            elif max(boxes) < 2:
+                verdict("WARN", "隔離が床しか許していない（layout.room に壁が無い）— "
+                                "実物の壁まで黒く消える。卓の 🧱 部屋で壁を引く")
+
+        shell = effect_samples(events, "shell", t_from=real_t, t_to=run_t)
+        if shell:
+            any_effect_key = True
+            w(f"  隔離が描画された標本: {shell.count('1')}/{len(shell)}")
+            if "1" not in shell and "-" not in shell:
+                verdict("FAIL", "隔離が一度も描画されていない（段は進んでいるのに会場が消えていない）— "
+                                "位置合わせ未完了か、幾何が未著作か、シェーダが剥がれた")
+            elif "1" in shell:
+                verdict("OK", f"隔離が描画された（{shell.count('1')}/{len(shell)} 標本）")
+
     if "Structure" in stages:
         wires = [v for v in effect_samples(events, "wire") if v not in ("", "-")]
         nums = []

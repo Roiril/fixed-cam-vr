@@ -81,6 +81,7 @@ namespace FixedCamVr.Diagnostics
         private ShowControlClient? _show;
         private IntroVeil? _veil;
         private IntroStructureWire? _wire;
+        private ContainmentShell? _shell;
         private BgmDirector? _bgm;
         private ShowCgLayer? _cg;
         private TakeRunner? _takes;
@@ -182,6 +183,7 @@ namespace FixedCamVr.Diagnostics
             if (_show == null) _show = FindObjectOfType<ShowControlClient>();
             if (_veil == null) _veil = FindObjectOfType<IntroVeil>();
             if (_wire == null) _wire = FindObjectOfType<IntroStructureWire>();
+            if (_shell == null) _shell = FindObjectOfType<ContainmentShell>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_cg == null) _cg = FindObjectOfType<ShowCgLayer>();
             if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
@@ -307,6 +309,15 @@ namespace FixedCamVr.Diagnostics
         /// <summary>段 3 の構造の線の本数。<c>-</c>=シーンに居ない。</summary>
         private string WireState => _wire == null ? "-" : _wire.LineCount.ToString();
 
+        /// <summary>隔離殻が実際に黒を書いているか。<c>-</c>=シーンに居ない / 0=非描画 / 1=描画中。</summary>
+        private string ShellState => _shell == null ? "-" : (_shell.IsActive ? "1" : "0");
+
+        /// <summary>殻の実体を組めたか。<c>0</c> なら <c>Shader.Find</c> が null ＝ 隔離は一生出ない。</summary>
+        private string ShellBuiltState => _shell == null ? "-" : (_shell.IsBuilt ? "1" : "0");
+
+        /// <summary>「見てよいもの」の箱の数。<c>0</c> なら幾何が未著作 ＝ 隔離を出しようがない。</summary>
+        private string ShellBoxState => _shell == null ? "-" : _shell.BoxCount.ToString();
+
         /// <summary>パススルーをアプリから有効化できているか。<c>-</c>=読み口が無い / -1=判定不能 / 0=無効 / 1=有効。</summary>
         private string PassthroughState
         {
@@ -365,7 +376,8 @@ namespace FixedCamVr.Diagnostics
                 Emit($"ev=intro stage={_lastStage} hold={(_intro.Holding ? 1 : 0)} " +
                      $"fresh={(_intro.LiveFresh ? 1 : 0)} centered={(_intro.FrameCentered ? 1 : 0)} " +
                      $"pass={w.passthrough:F2} live={w.live:F2} frame={w.frame:F2} edge={w.edge:F2} " +
-                     $"veil={VeilState} veilBuilt={VeilBuiltState} wire={WireState} pt={PassthroughState}");
+                     $"veil={VeilState} veilBuilt={VeilBuiltState} wire={WireState} pt={PassthroughState} " +
+                     $"shell={ShellState} shellBuilt={ShellBuiltState} shellBox={ShellBoxState}");
             }
 
             // コントローラの操作モード（NORMAL / REG）。**位置合わせが起きたかの唯一の観測点**。
@@ -567,6 +579,11 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" veil=").Append(VeilState);
             _sb.Append(" veilBuilt=").Append(VeilBuiltState);
             _sb.Append(" pt=").Append(PassthroughState);
+            // 隔離は「重みが動いた」だけでは画に出ない（幾何が無い / 未登録 / シェーダが剥がれた の 3 経路で
+            // 黙って消える）。**実際に黒を書いたか**と**箱の数**を対で出す。
+            _sb.Append(" shell=").Append(ShellState);
+            _sb.Append(" shellBuilt=").Append(ShellBuiltState);
+            _sb.Append(" shellBox=").Append(ShellBoxState);
             _sb.Append(" cg=").Append(CgState);
             if (_overlay != null)
                 _sb.Append(" ovl=").Append(OverlayStrength.ToString("F2"))

@@ -26,6 +26,7 @@ namespace FixedCamVr.Streaming
         [Header("References (未配線でも実行時に自己解決する)")]
         [SerializeField] private ShowRunDirector? runDirector;
         [SerializeField] private IntroVeil? veil;
+        [SerializeField] private ContainmentShell? shell;
         [SerializeField] private GlitchFx? glitch;
 
         private readonly OutroLogic _logic = new OutroLogic();
@@ -84,6 +85,7 @@ namespace FixedCamVr.Streaming
         {
             if (runDirector == null) runDirector = FindObjectOfType<ShowRunDirector>();
             if (veil == null) veil = FindObjectOfType<IntroVeil>();
+            if (shell == null) shell = FindObjectOfType<ContainmentShell>();
             if (glitch == null) glitch = FindObjectOfType<GlitchFx>();
         }
 
@@ -113,6 +115,7 @@ namespace FixedCamVr.Streaming
         {
             _logic.Disable();
             veil?.SetHidden();
+            shell?.SetHidden();
             glitch?.ResetAll();
         }
 
@@ -128,6 +131,8 @@ namespace FixedCamVr.Streaming
 
             IntroWeights w = _logic.Weights;
             veil?.Apply(w);
+            // 隔離殻。導入で閉じたものをここで開ける（Restore で色と一緒に会場が返る）。
+            shell?.Apply(w);
             glitch?.SetSustain(w.glitch);
 
             if (ev == OutroEvent.Finished)

@@ -122,11 +122,20 @@ namespace FixedCamVr.Streaming
         /// <summary>乱れ（グリッチ）の強さ。すり替えの継ぎ目を隠す。</summary>
         public float glitch;
 
+        /// <summary>
+        /// 隔離殻の強さ。1 = 会場が黒に落ち、実物の壁と足元の床だけが残る（<see cref="ContainmentShell"/>）。
+        ///
+        /// ⚠ <b>パススルーが見えている分より大きくしない。</b> 殻は「見えている現実のうち
+        /// 見せてはいけない所」を潰す層なので、映像へ移り切った後（<c>passthrough = 0</c>）に
+        /// 残すと画面の映像まで黒く塗る。
+        /// </summary>
+        public float shell;
+
         /// <summary>導入演出を出していないときの値（本編と同じ見え）。</summary>
         public static IntroWeights Inactive => new IntroWeights
         {
             passthrough = 0f, degrade = 0f, edge = 0f, structure = 0f,
-            frame = 1f, live = 1f, grain = 0f, glitch = 0f,
+            frame = 1f, live = 1f, grain = 0f, glitch = 0f, shell = 0f,
         };
     }
 
@@ -388,10 +397,21 @@ namespace FixedCamVr.Streaming
                         // **それでよい**（2026-07-31 に確認して意図的に残した）。この段は開始の合図
                         // （通過ライン line_1 を横切る）を待つ区間で、実測 17 秒ある。真っ黒にすると
                         // 体験者は何も見えないまま歩いて線を越えることになり、運用が成立しない。
-                        return new IntroWeights { passthrough = 1f, frame = 0f, live = 0f };
+                        //
+                        // 隔離もまだ閉じない。ここは**まだ入っていない**区間で、体験者はスタッフに
+                        // 誘導されて歩いてくる（`canon/OPEN.md` の案「線は扉である」）。
+                        return new IntroWeights { passthrough = 1f, frame = 0f, live = 0f, shell = 0f };
 
                     case IntroStage.Real:
-                        return new IntroWeights { passthrough = 1f, frame = 0f, live = 0f };
+                        // **線を越えた。ここで隔離が閉じる。** 旧実装のこの段は「何も演出しない
+                        // 比較対象」だったが、比較の相手は段 2 の格下げ（色・輪郭・粒）であって、
+                        // 現実の広さではない。会場が黒へ落ちるのは画の質を 1 つも触らないので、
+                        // 段 1 → 段 2 の読みは保たれる。
+                        return new IntroWeights
+                        {
+                            passthrough = 1f, frame = 0f, live = 0f,
+                            shell = SmoothStep(0f, 1f, Progress(_t.realSec)),
+                        };
 
                     case IntroStage.Degrade:
                     {
@@ -399,6 +419,7 @@ namespace FixedCamVr.Streaming
                         return new IntroWeights
                         {
                             passthrough = 1f,
+                            shell = 1f,
                             // 色 → コントラスト → 輪郭 → 粒 の順に足す。一度に全部動かすと
                             // 「質感が落ちた」ではなく「ただ壊れた」に見える。
                             degrade = p,
@@ -413,7 +434,7 @@ namespace FixedCamVr.Streaming
                         return new IntroWeights
                         {
                             passthrough = 1f, degrade = 1f, edge = 1f, structure = 1f,
-                            grain = 0.6f, frame = 0f, live = 0f,
+                            grain = 0.6f, frame = 0f, live = 0f, shell = 1f,
                         };
 
                     case IntroStage.Frame:
@@ -429,6 +450,9 @@ namespace FixedCamVr.Streaming
                             frame = SmoothStep(0f, 1f, p),
                             grain = 0.6f,
                             live = 0f,
+                            // 枠の外は覆いが黒くするので殻は要らないが、**枠の中はまだ現実**なので
+                            // 隔離は保つ（切ると枠の中にだけ会場が戻ってくる）。
+                            shell = 1f,
                         };
                     }
 
@@ -450,6 +474,9 @@ namespace FixedCamVr.Streaming
                             grain = 0.6f * (1f - s),   // 以後は映像側の post FX が持つ
                             // 継ぎ目は乱れで隠す（企画書 2.3 の手法をここで一度見せておく）。
                             glitch = Bump(cross),
+                            // 隔離はパススルーと一緒に引く。**残すと画面の映像まで黒く塗る**
+                            // （殻は「見えている現実」を潰す層で、映像には関与しない）。
+                            shell = 1f - s,
                         };
                     }
 

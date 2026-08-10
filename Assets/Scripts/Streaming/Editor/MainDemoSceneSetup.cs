@@ -440,6 +440,9 @@ namespace FixedCamVr.Streaming.EditorTools
             //      show.json の run.intro が無い / enabled=false なら何も起きない（従来の見えになる）。
             var screenTf = screenGo != null ? screenGo.transform : null;
             var introVeil = CreateIntroVeil(centerEye.transform, screenTf);
+            // 隔離殻（会場を黒で落とし、実物の壁と足元の床だけを残す面）。覆いと同じ GameObject に
+            // 載せる — どちらも CenterEyeAnchor 直下の全画面パスで、描画順だけが違う（覆い 4900 → 殻 4910）。
+            var containment = CreateContainmentShell(introVeil.gameObject, showControl);
             var introDirector = CreateIntroDirector(logic.transform, runDirector, introVeil,
                 screenGo != null ? screenGo.GetComponent<GlitchFx>() : null,
                 registry, showControl, centerEye.transform, screenTf);
@@ -456,8 +459,13 @@ namespace FixedCamVr.Streaming.EditorTools
             var outroSo = new SerializedObject(outroDirector);
             TrySetObjectRef(outroSo, "runDirector", runDirector);
             TrySetObjectRef(outroSo, "veil", introVeil);
+            TrySetObjectRef(outroSo, "shell", containment);
             TrySetObjectRef(outroSo, "glitch", screenGlitch);
             outroSo.ApplyModifiedPropertiesWithoutUndo();
+            // 導入側にも同じ殻を配る（自己解決に任せず明示する — 見つからないと隔離が黙って出ない）。
+            var introShellSo = new SerializedObject(introDirector);
+            TrySetObjectRef(introShellSo, "shell", containment);
+            introShellSo.ApplyModifiedPropertiesWithoutUndo();
             // 段 3 の構造の線（部屋の輪郭とカメラの印）。LineRenderer は world 空間で描くので
             // 親の transform には依存しない（IntroDirector と同じオブジェクトに載せる）。
             // パススルー自体の見た目（彩度・輪郭線）は Assembly-CSharp 側の PassthroughStyler が当てる。
@@ -691,6 +699,22 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetFloat(so, "scanlineCount", 240f);
             so.ApplyModifiedPropertiesWithoutUndo();
             return veil;
+        }
+
+        // 隔離殻。**現実のうち「見てよいもの」以外を黒で落とす面**（canon/LEDGER.md 0002）。
+        // 覆い (IntroVeil) と同じ GameObject に載せる。判定は世界空間の視線 × 著作した箱なので、
+        // 面の距離・大きさは「視界を覆い切る」ためだけの値。
+        private static ContainmentShell CreateContainmentShell(GameObject veilGo, ShowControlClient? showControl)
+        {
+            var shell = veilGo.GetComponent<ContainmentShell>();
+            if (shell == null) shell = veilGo.AddComponent<ContainmentShell>();
+            var so = new SerializedObject(shell);
+            if (showControl != null) TrySetObjectRef(so, "showControl", showControl);
+            TrySetBool(so, "shellEnabled", true);
+            TrySetFloat(so, "distance", 0.3f);
+            TrySetVector2(so, "planeSize", new Vector2(2f, 2f));
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return shell;
         }
 
         // 導入演出の進行役。ShowPhase は増やさず Intro の内側のサブ状態を持つ。

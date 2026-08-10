@@ -27,6 +27,7 @@ namespace FixedCamVr.Streaming
         [SerializeField] private ShowRunDirector? runDirector;
         [SerializeField] private IntroVeil? veil;
         [SerializeField] private IntroStructureWire? structureWire;
+        [SerializeField] private ContainmentShell? shell;
         [SerializeField] private GlitchFx? glitch;
         [SerializeField] private CameraStreamRegistry? registry;
         [SerializeField] private ShowControlClient? showControl;
@@ -200,6 +201,7 @@ namespace FixedCamVr.Streaming
             _logic.Disable();
             veil?.SetHidden();
             structureWire?.SetHidden();
+            shell?.SetHidden();
             glitch?.ResetAll();
         }
 
@@ -208,6 +210,7 @@ namespace FixedCamVr.Streaming
             if (runDirector == null) runDirector = FindObjectOfType<ShowRunDirector>();
             if (veil == null) veil = FindObjectOfType<IntroVeil>();
             if (structureWire == null) structureWire = FindObjectOfType<IntroStructureWire>();
+            if (shell == null) shell = FindObjectOfType<ContainmentShell>();
             if (glitch == null) glitch = FindObjectOfType<GlitchFx>();
             if (registry == null) registry = FindObjectOfType<CameraStreamRegistry>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
@@ -234,6 +237,7 @@ namespace FixedCamVr.Streaming
                 _logic.Disable();
                 veil?.SetHidden();
                 structureWire?.SetHidden();
+                shell?.SetHidden();
                 glitch?.ResetAll();
             }
         }
@@ -258,6 +262,7 @@ namespace FixedCamVr.Streaming
                 _logic.Disable();
                 veil?.SetHidden();
                 structureWire?.SetHidden();
+                shell?.SetHidden();
                 return;
             }
             _logic.Begin();
@@ -296,6 +301,7 @@ namespace FixedCamVr.Streaming
             {
                 veil?.SetHidden();
                 structureWire?.SetHidden();
+                shell?.SetHidden();
                 glitch?.SetSustain(0f);
                 // 位置合わせが終われば course 変換そのものが変わる。**前の座標系で満たした合図は無効**
                 // なので、抜けた時点で必ず武装し直す（下の !_wasRegistering で 1 回だけ）。
@@ -320,6 +326,9 @@ namespace FixedCamVr.Streaming
             var ev = _logic.Tick(Time.unscaledDeltaTime, BuildInput());
             var w = _logic.Weights;
             veil?.Apply(w);
+            // 隔離殻（会場を黒で落とし、実物の壁と足元の床だけを残す）。覆いの**後**に描かれる面なので、
+            // 覆いが枠を閉じた後も枠の中の現実に効き続ける（重み側で passthrough に連動して引く）。
+            shell?.Apply(w);
             // 段 3 の構造の線。show.json で部屋・カメラを個別に切れる。
             // ⚠ **個別のフラグを実行体へ渡すこと**（2026-08-01 修正）。旧実装は OR で
             //    「Apply を呼ぶか」だけを決めていて、壁だけ切る / 印だけ切るができなかった。
@@ -502,6 +511,7 @@ namespace FixedCamVr.Streaming
         {
             veil?.SetHidden();
             structureWire?.SetHidden();
+            shell?.SetHidden();
             glitch?.ResetAll();
             _logic.Disable();
             // ここで初めて本編へ進んでよくなる（段 0 と区別できる唯一の点）。
@@ -527,6 +537,7 @@ namespace FixedCamVr.Streaming
         {
             veil?.SetHidden();
             structureWire?.SetHidden();
+            shell?.SetHidden();
             glitch?.ResetAll();
             _logic.Disable();
             // 視界は ShowRunDirector.ShouldBlackout → ShowEndingFader の黒が閉じる。黙って本編の画に
