@@ -149,5 +149,5 @@ CG 人形の `placement` と同じ座標系なので「人形を置く」と「�
 
 マスクの広さとぼかしの適量は、2m 先の枠として見えるサイズと、暗いグレーディングとグレインが乗った後の
 見えで決まります。卓の画面で判断すると必ず細かく作りすぎます。
-`python tools/quest-record.py --sec 45 --walk`（→ [quest-capture](../skills/quest-capture/SKILL.md)）で
+`py -3.11 tools/quest-record.py --sec 45 --walk`（→ [quest-capture](../skills/quest-capture/SKILL.md)）で
 画を録って決めてください。

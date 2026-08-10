@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """接続中の Quest を 2 台以上まとめて見て、検証の走行を熱の低い機へ振り分ける。
 
-    python tools/quest-fleet.py list           # 全機の状態を 1 画面で
-    python tools/quest-fleet.py pick           # 次に走らせる機の serial を 1 行だけ返す
-    python tools/quest-fleet.py sleep <serial> # 寝かせる（--others <serial> で「それ以外全部」）
-    python tools/quest-fleet.py wake  <serial>
-    python tools/quest-fleet.py sync           # Builds/mawarimi.apk を古い機へ配る
-    python tools/quest-fleet.py mark  <serial> --sec 300   # 走行を記録（run スクリプトが呼ぶ）
-    python tools/quest-fleet.py pull  <serial> [--out logs/device]
+    py -3.11 tools/quest-fleet.py list           # 全機の状態を 1 画面で
+    py -3.11 tools/quest-fleet.py pick           # 次に走らせる機の serial を 1 行だけ返す
+    py -3.11 tools/quest-fleet.py sleep <serial> # 寝かせる（--others <serial> で「それ以外全部」）
+    py -3.11 tools/quest-fleet.py wake  <serial>
+    py -3.11 tools/quest-fleet.py sync           # Builds/mawarimi.apk を古い機へ配る
+    py -3.11 tools/quest-fleet.py mark  <serial> --sec 300   # 走行を記録（run スクリプトが呼ぶ）
+    py -3.11 tools/quest-fleet.py pull  <serial> [--out logs/device]
 
 **なぜ熱で選ぶか。** 2 台とも AC 給電なので電池残量は制約にならない。実際の制約は SoC 温度で、
 Quest 3 はファンを持たないため走行のたびに温まり、下がるのに数分かかる。走った直後の機は熱く、

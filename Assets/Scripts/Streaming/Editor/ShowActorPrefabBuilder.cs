@@ -132,6 +132,15 @@ namespace FixedCamVr.Streaming.EditorTools
         // 選択中のモデル → 既定モデル、の順に解決する。
         private static string ResolveModelPath()
         {
+            // CLI からの明示指定が最優先。batchmode では Project ウィンドウの選択が空なので、
+            // これが無いと既定の FBX しか焼けない（`-Set model=Assets/Art/Models/x.fbx`）。
+            string? cli = EditorCliArgs.Get("model");
+            if (!string.IsNullOrEmpty(cli))
+            {
+                if (AssetImporter.GetAtPath(cli) is ModelImporter) return cli;
+                Debug.LogWarning($"[ShowActor] model={cli} はモデルアセットとして読めません。選択 / 既定へ落とします。");
+            }
+
             foreach (Object obj in Selection.objects)
             {
                 string path = AssetDatabase.GetAssetPath(obj);

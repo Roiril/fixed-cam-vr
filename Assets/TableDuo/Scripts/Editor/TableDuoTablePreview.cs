@@ -12,7 +12,7 @@ namespace TableDuoVr.EditorTools
     /// 開いている TableDuoMain の卓上（海底探検の盤面）を複数角度でスクショする診断ツール。
     /// Play 不要・現シーンをそのまま撮る。配置・スケール調整の視覚検証用
     /// （visual-verification ルール: 判断は 1 角度でしない → 斜め/両席/真上を一括出力）。
-    /// 出力: Temp/TablePreview/*.png
+    /// 出力: Assets/Screenshots/tableduo/table/*.png
     ///
     /// 着座つき（2026-07-08 / 2026-07-09 役割別化）: 実運用の接続直後配置に合わせ、
     /// 人役席（Full=Seat0）へ座位 Remy、手役席（Hand=Seat1）へ白手 rest ポーズ（ShowAtRest）を
@@ -22,6 +22,11 @@ namespace TableDuoVr.EditorTools
     public static class TableDuoTablePreview
     {
         private const int Size = 1100;
+
+        // ⚠ 出力を `Temp/` へ置かない。**Unity は終了時に Temp/ を空にする**ので、
+        //    CLI（`unity.ps1 menu td-table`）から撮ると PNG が 1 枚も残らない（2026-08-09 実測）。
+        //    Assets/Screenshots/ は gitignore 済み。
+        private const string OutDirRel = "Screenshots/tableduo/table";
 
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Table (screenshot)", priority = 214)]
         public static void Capture() => CaptureInternal(withRemy: false);
@@ -47,6 +52,8 @@ namespace TableDuoVr.EditorTools
         /// </summary>
         private static void CaptureWithActiveGame(string gameRootName)
         {
+            if (!TableDuoEditorCli.EnsureScene()) return;
+
             var props = GameObject.Find("[TableDuo]/Props");
             if (props == null)
             {
@@ -75,6 +82,8 @@ namespace TableDuoVr.EditorTools
 
         private static void CaptureInternal(bool withRemy)
         {
+            if (!TableDuoEditorCli.EnsureScene()) return;
+
             var table = GameObject.Find("[TableDuo]/Table") ?? GameObject.Find("Table");
             Vector3 center;
             float topY;
@@ -97,7 +106,7 @@ namespace TableDuoVr.EditorTools
             // baseline 0.45m（旧席デザインの半径感）を 1 として拡縮。1 未満には縮めない
             float frame = Mathf.Clamp(Mathf.Max(tableHx, tableHz) / 0.45f, 1f, 3f);
 
-            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "../Temp/TablePreview"));
+            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, OutDirRel));
             Directory.CreateDirectory(dir);
 
             var camGo = new GameObject("TablePreviewCam");

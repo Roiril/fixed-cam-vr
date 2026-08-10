@@ -13,9 +13,9 @@ FAIL ゼロ・演出 7 本 OK と判定された走行の画を録って見た�
 ## 使う
 
 ```bash
-python tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る（導入演出の確認）
-python tools/quest-record.py --sec 30           # 通常起動で録る
-python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換するだけ
+py -3.11 tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る（導入演出の確認）
+py -3.11 tools/quest-record.py --sec 30           # 通常起動で録る
+py -3.11 tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換するだけ
 ```
 
 機を指定しなければ `quest-fleet.py pick` が選ぶ。**HMD を被らずに導入から本編まで通して撮れる**。
@@ -24,7 +24,7 @@ python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換す
 `quest-record.py` は**走る前に残量を見て、充電していない & 25% 未満なら中止**し、
 **走り終わったら実機を寝かせる**（続けて何度も走らせるなら `--keep-awake`）。
 `quest-fleet.py pick` も電池の乏しい機を候補から外す。残量が回復するまで待つときは
-`python tools/quest-fleet.py sleep <serial>`。
+`py -3.11 tools/quest-fleet.py sleep <serial>`。
 **走行 1 回で次が全部そろう**（`--no-log` / `--no-evidence` で外せる）:
 
 | 出るもの | 何 |
@@ -80,7 +80,7 @@ Quest 再起動・URP の MSAA 変更まで 40 分追った。**同じ場面を 
 - 暗い録画は**持ち上げてから判定する**。`colorlevels` で 10 倍前後に伸ばせば部屋が見える
 
 ```bash
-FF=$(python -c "import imageio_ffmpeg,sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())")
+FF=$(py -3.11 -c "import imageio_ffmpeg,sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())")
 "$FF" -i raw.mp4 -vf "colorlevels=rimax=0.085:gimax=0.085:bimax=0.085" boost.mp4
 ```
 

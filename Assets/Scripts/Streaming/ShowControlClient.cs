@@ -917,6 +917,15 @@ namespace FixedCamVr.Streaming
         /// <summary>コントローラ操作モードのラベル（NORMAL/REG）を設定する。heartbeat で卓へ報告する。</summary>
         public void SetControllerMode(string mode) => _controllerMode = string.IsNullOrEmpty(mode) ? "NORMAL" : mode;
 
+        /// <summary>
+        /// いまのコントローラ操作モード（<c>NORMAL</c> / <c>REG</c>）。テレメトリが読む。
+        ///
+        /// ⚠ これが無かったせいで、<b>「トリガー長押しが発火していないのか、発火しても
+        /// 画に出ていないのか」を実機ログから切り分けられなかった</b>（2026-08-09）。
+        /// 卓の heartbeat にしか出ておらず、卓が居ない現場では観測手段がゼロだった。
+        /// </summary>
+        public string ControllerMode => _controllerMode;
+
         /// <summary>卓サーバの接続先設定（null なら卓連携なし）。DiscoveryClient が現エンドポイント比較に読む。</summary>
         public ShowServerSource? Server => server;
 
@@ -2320,6 +2329,27 @@ namespace FixedCamVr.Streaming
         /// （2026-07-31 実害）。ここが「効果の実在」を出す口。
         /// </summary>
         public Func<int>? PassthroughStateProvider;
+
+        /// <summary>
+        /// <b>位置合わせ（登録モード）がいま動いているか。</b> Tracking asmdef を参照しない規約なので、
+        /// 両方を知っている Assembly-CSharp 側の <c>OvrControllerBridge</c> が差し込む。
+        /// 未設定なら false（＝従来どおり）。
+        ///
+        /// 位置合わせは**現実に線を重ねる作業**なので、動いている間は「現実を隠すもの」を全部どける:
+        /// <list type="bullet">
+        ///   <item>導入演出（<c>IntroDirector</c>）— 覆いは queue 4900 の乗算なので、
+        ///         走っていると重ねる対象の線と文字（queue 3000）を黒へ潰す</item>
+        ///   <item>中止・終了の黒（<c>ShowRunDirector.ShouldBlackout</c>）— 中止の唯一の直し方が
+        ///         再登録なので、黒が居座ると**直す作業が黒に隠れて詰む**</item>
+        ///   <item>パススルーの電源（<c>PassthroughStyler</c>）— 演出の外では切られていた</item>
+        /// </list>
+        /// これを起こせるのはコントローラを持っている人だけ（体験者は持たない運用）なので、
+        /// 体験の最中に勝手に立つことはない。
+        /// </summary>
+        public Func<bool>? CourseRegistrationActiveProvider;
+
+        /// <summary>位置合わせが動作中か（未配線なら false）。</summary>
+        public bool CourseRegistrationActive => CourseRegistrationActiveProvider?.Invoke() ?? false;
 
         private void ApplyPostForActive()
         {

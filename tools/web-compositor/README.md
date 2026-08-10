@@ -338,7 +338,7 @@ node --test "tools/web-compositor/*.test.mjs"
 ## 起動
 
 ```powershell
-# このフォルダで（python 必須）
+# このフォルダで（`py -3.11` で Python 3.11 を呼べることが必須）
 ./serve.ps1
 ```
 
@@ -379,7 +379,7 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 `show.json` / `masks/` / `captures/`（合成素材）/ `recordings/`（📷 ⏺ 撮影物）/ `archive/`（旧環境の素材の退避先）/ `prompts.json` は PC ローカル運用状態のため `.gitignore` 済み。
 `testassets/`（`make-test-assets.py` が作る文字だけのダミー素材。静止画 4 + 動画 3・計 130KB 程度）は
 **追跡対象** — どの PC でも「演出が差し替わったか」だけを即確認できるようにするため。作り直しは
-`python tools/web-compositor/make-test-assets.py`。
+`py -3.11 tools/web-compositor/make-test-assets.py`。
 `scenarios/`（🕹 記録した歩き）と `atelier.json` / `atelier-index.md`（🧪 素材工房のレシピと生成記録）は
 **あえて追跡対象**（IP・素材を含まない小さな JSON / テキストで、資産として残す価値があるため）。
 

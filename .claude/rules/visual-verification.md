@@ -1,6 +1,6 @@
 ---
 description: 3D/レンダリング結果を「壊れてる」と判断する前・特に大改修の前に、多角度/単体隔離で確認する。誤判定で working コードを退行させない
-globs:
+paths:
   - "Assets/**/*.cs"
   - "Assets/**/*.unity"
   - "Assets/**/*.prefab"
@@ -62,7 +62,7 @@ HMD を被らずに撮れるので、実機確認をユーザーの手作業に�
 
 ## 具体（このプロジェクト）
 
-- **合成結果（廻リ視・CG 人形）**: `Tools/FixedCamVr/Diagnostics/Preview Show Composite`（実写プレート × CG 人形をカットごとに PNG 化 → `Assets/Screenshots/cgviz/`。Play 不要）。
+- **合成結果（廻リ視・CG 人形）**: `.\tools\unity.ps1 menu composite`（実写プレート × CG 人形をカットごとに PNG 化 → `Assets/Screenshots/cgviz/`。Play 不要）。
   実機確認はユーザーの手作業に依存して頻繁には回せず、卓（Web）は意図的に人形を描かないので、**合成品質の一次証拠はここだけ**。
   各カメラの `calibcheck_<n>.png`（プレート + 部屋ワイヤー + 床格子・post なし）で較正のズレを判定する。
   1 枚ごとに条件（カメラ / 較正の有無 / 人形 / 立ち位置 / プレートの有無）を画面下の帯へ焼くので、後から並べても何の絵か分かる。
@@ -81,8 +81,8 @@ HMD を被らずに撮れるので、実機確認をユーザーの手作業に�
     ログにも出るので、カット間の比較はログを見るのが速い
   - **`** FEET OUT OF FRAME` が出ていたら合成の精度をいくら上げても浮いて見える**（2026-08-07〜）。
     足元が枠の外だと床との接点も影の落ち先も画に無い。直すのは立ち位置か画角（演出の管轄）
-- 位置合わせ検証ビュー（廻リ視）: `Tools/FixedCamVr/Diagnostics/Preview Registration Viz`（ZoneGridFootprint + 登録ワイヤーフレームを identity/登録後 × 真上/斜め/目線で PNG 化 → `Assets/Screenshots/regviz/`。Play 不要・南北反転/変換ズレの机上検証）。
-- Editor 単体の多角度スクショ: `Tools/FixedCamVr/Diagnostics/Preview Hand Variants`（3種並べ）/ `Preview Robot Only`（背景排して周回）
+- 位置合わせ検証ビュー（廻リ視）: `.\tools\unity.ps1 menu regviz`（ZoneGridFootprint + 登録ワイヤーフレームを identity/登録後 × 真上/斜め/目線で PNG 化 → `Assets/Screenshots/regviz/`。Play 不要・南北反転/変換ズレの机上検証）。
+- Editor 単体の多角度スクショ: `.\tools\unity.ps1 menu td-hands`（3 種並べ）
   ＝ [TableDuoHandVariantPreview.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoHandVariantPreview.cs)。実録画データを当てるので Play 不要。
 - 新規に視覚検証ツールを書くときも「周回 / 単体隔離 / 正解と並置」を最初から入れる。
 - OVR シーンは Link/HMD 無し Play がハングするので、この種の**静的スクショ**が実機ゼロ検証の主力（[unity_pitfalls](../memory/unity_pitfalls.md)）。

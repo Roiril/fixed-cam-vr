@@ -1,6 +1,6 @@
 """実測滞在時間（heartbeat dwell[] → 集計）の畳み方を stdlib unittest で固定する。
 
-実行: python -m unittest discover -s tools/web-compositor -p "test_*.py"
+実行: py -3.11 -m unittest discover -s tools/web-compositor -p "test_*.py"
 
 なぜテストするか: リボン UI の「実測 平均 Ns」は、演出の開始位置（進入 +20s）が
 体験者の歩速に対して現実的かを作者に見せる唯一の材料。集計が壊れると

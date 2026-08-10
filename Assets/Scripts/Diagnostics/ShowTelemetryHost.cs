@@ -91,6 +91,7 @@ namespace FixedCamVr.Diagnostics
         // --- 遷移検出のための前回値 ---
         private IntroStage _lastStage = IntroStage.Off;
         private string _lastTakeId = "";
+        private string _lastCtrlMode = "";
         private string _lastCueId = "";
         private bool _lastStormOn;
         private bool _lastTrackingFrozen;
@@ -365,6 +366,16 @@ namespace FixedCamVr.Diagnostics
                      $"fresh={(_intro.LiveFresh ? 1 : 0)} centered={(_intro.FrameCentered ? 1 : 0)} " +
                      $"pass={w.passthrough:F2} live={w.live:F2} frame={w.frame:F2} edge={w.edge:F2} " +
                      $"veil={VeilState} veilBuilt={VeilBuiltState} wire={WireState} pt={PassthroughState}");
+            }
+
+            // コントローラの操作モード（NORMAL / REG）。**位置合わせが起きたかの唯一の観測点**。
+            // `pt` を併記するのは「モードが変わった」だけでなく「現実が実際に出たか」まで見るため
+            // （状態の遷移だけ出して画が死んでいた 2026-07-31 の事故と同型を作らない）。
+            string ctrlMode = _show != null ? _show.ControllerMode : "";
+            if (ctrlMode != _lastCtrlMode)
+            {
+                _lastCtrlMode = ctrlMode;
+                Emit($"ev=ctrlmode v={(string.IsNullOrEmpty(ctrlMode) ? "?" : ctrlMode)} pt={PassthroughState}");
             }
 
             // 演出（Take）の出入り。TakeRunner のログと突き合わせると理由まで分かる。

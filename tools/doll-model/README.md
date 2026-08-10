@@ -22,10 +22,10 @@ CG 人形にする一式。成果物は `Assets/Art/Models/Doll/Ichimatsu.fbx` �
 
 ```bash
 cd tools/doll-model && cp photos/*.jpg .
-python cutout2.py     # 4 枚から人形を切り抜く → mask_*.png
-python profile.py     # マスクを仕上げて高さごとの寸法を出す → profile.json
-python shell.py       # 殻の頂点・面・UV → shell.json
-python texture.py     # 4 枚を殻へ投影して焼く → doll_albedo.png / doll_normal.png
+py -3.11 cutout2.py     # 4 枚から人形を切り抜く → mask_*.png
+py -3.11 profile.py     # マスクを仕上げて高さごとの寸法を出す → profile.json
+py -3.11 shell.py       # 殻の頂点・面・UV → shell.json
+py -3.11 texture.py     # 4 枚を殻へ投影して焼く → doll_albedo.png / doll_normal.png
 "/c/Program Files/Blender Foundation/Blender 4.1/blender.exe" --background \
   --python assemble.py -- "$(pwd -W)"     # 腕・ボーン・FBX
 "/c/Program Files/Blender Foundation/Blender 4.1/blender.exe" --background \
@@ -52,7 +52,7 @@ python texture.py     # 4 枚を殻へ投影して焼く → doll_albedo.png / d
 blender --background --python head_check.py   -- <dir>   # 頭だけフル解像度で 5 角度（判定用）
 blender --background --python render_check.py -- <dir>   # 全身 8 角度
 blender --background --python pose_check.py   -- <dir>   # 腕を振って袖が動かないこと
-python compare_head.py side                              # 実物写真と横並び
+py -3.11 compare_head.py side                              # 実物写真と横並び
 ```
 
 ⚠ **`head_check.py` のライトは距離の 2 乗で効く。** `render_check.py` の値をそのまま頭へ

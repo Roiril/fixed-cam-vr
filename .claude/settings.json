@@ -16,7 +16,7 @@
       "mcp__UnityMCP__validate_script",
       "Bash(claude mcp *)",
       "Bash(powershell -NoProfile -Command \"Test-NetConnection 127.0.0.1 -Port 6400 -InformationLevel Quiet\")",
-      "Bash(python -c ' *)",
+      "Bash(py -3.11 -c ' *)",
       "mcp__UnityMCP__manage_scriptable_object",
       "mcp__UnityMCP__run_tests",
       "mcp__UnityMCP__get_test_job",
@@ -26,19 +26,16 @@
       "Bash(winget --version)",
       "Bash(wget --version)",
       "Bash(curl --version)",
-      "Bash(python -c \"import ftplib; print\\('ftplib OK'\\)\")",
+      "Bash(py -3.11 -c \"import ftplib; print\\('ftplib OK'\\)\")",
       "Bash(tasklist)",
-      "Bash(python -u scripts/survey.py)",
+      "Bash(py -3.11 -u scripts/survey.py)",
       "Bash(tee survey_result.txt)",
-      "Bash(python -u -c ' *)",
+      "Bash(py -3.11 -u -c ' *)",
       "mcp__unityMCP",
       "mcp__UnityMCP",
-      "PowerShell(& \"C:\\Program Files\\Unity\\Hub\\Editor\\2022.3.62f2\\Editor\\Unity.exe\" *)",
+      "PowerShell(.\\tools\\unity.ps1 *)",
       "PowerShell(Get-Process *)",
       "Bash(node .claude/hooks/*)"
-    ],
-    "additionalDirectories": [
-      "C:\\Users\\kouga\\Projects\\Web\\kougaku-lab"
     ]
   },
   "hooks": {
@@ -48,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"C:/Users/kouga/Projects/Unity/fixed-cam-vr/.claude/hooks/guard-unity-play.js\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-unity-play.js\""
           }
         ]
       }

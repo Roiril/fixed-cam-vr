@@ -7,7 +7,7 @@ fixed-cam-streamer をローカルで模擬する fake MJPEG server。
 - /health: JSON, fps / uptimeMs / totalFrames / totalBytes
 
 使い方:
-    python fake_streamer.py
+    py -3.11 fake_streamer.py
     # localhost:8080 で配信開始
 
 Unity 側 Phone01.asset / Phone02.asset の host を 127.0.0.1 に向けて Play する。

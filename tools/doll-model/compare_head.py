@@ -6,8 +6,8 @@
 # ⚠ 出力は横 2000px 以上になる。**縮小して見ない。**片側ずつ開いて判定すること。
 #   このファイルが作るのは「どこを見るか」を決めるための並置であって、判定用の 1 枚ではない。
 #
-#   python compare_head.py            # head_side.png と実物 sideB を並べる
-#   python compare_head.py front      # head_front.png と実物 front
+#   py -3.11 compare_head.py            # head_side.png と実物 sideB を並べる
+#   py -3.11 compare_head.py front      # head_front.png と実物 front
 import cv2, numpy as np, os, sys, geom
 
 HERE = os.path.dirname(os.path.abspath(__file__))

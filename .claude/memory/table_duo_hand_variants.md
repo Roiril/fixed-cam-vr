@@ -58,7 +58,7 @@ EditMode テスト `HandVariantCycleTests`）を `ServerForceHandVariant` で強
   `RefHandLenMeters=0.15m` に自動スケール、URP/Lit 肌/金属材質で全 Renderer 上書き＝パック Standard 材質のマゼンタ回避）。
 
 **状態（2026-07-12 Editor 数値+目視検証済み・実機再確認待ち）**: `Preview Hand Variants (screenshot)` が
-`Temp/HandVariantPreview/directions.txt` に指方向/甲法線/親指方向/実測長の Default との差分を出す（一次証拠）。
+`Assets/Screenshots/tableduo/hands/directions.txt` に指方向/甲法線/親指方向/実測長の Default との差分を出す（一次証拠）。
 刷新後 Δfwd=0°・Δup≈10°・Δlat≈20°（式A 時代は 102°/74°）・多角度スクショで 3 種同ポーズ確認。
 **2026-07-12 実機指摘の追修正（第1弾・不十分だった）**: ②親指を thumb2→thumb3 マップ変更、①サイズを白手
 リファレンス実測長へ、③PatternPanel を tdv_pattern gating。だが**実機で再指摘**（サイズまだズレ・rest で指曲がる・

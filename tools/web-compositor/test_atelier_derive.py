@@ -1,6 +1,6 @@
 """素材台帳の「採用」を show.json から導出する部分を固定する。
 
-実行: python -m unittest discover -s tools/web-compositor -p "test_*.py"
+実行: py -3.11 -m unittest discover -s tools/web-compositor -p "test_*.py"
 
 なぜテストするか: 2026-07-30 まで採用は手で押す 3 択の札（verdict）で、**押し忘れると台帳が
 現実の逆を言った**。実際、本番に載っていた 2 枚は「未評価」のまま、台帳が持つ唯一の完成品は

@@ -66,6 +66,16 @@ namespace FixedCamVr.Streaming.EditorTools
         /// </summary>
         private static GameObject? ResolveActorPrefab()
         {
+            // CLI からの明示指定が最優先。batchmode では Project ウィンドウの選択が空なので、
+            // これが無いと既定の人形しか見られない（`-Set actor=Ichimatsu`）。
+            string? cli = EditorCliArgs.Get("actor");
+            if (!string.IsNullOrEmpty(cli))
+            {
+                var byArg = Resources.Load<GameObject>(cli.Contains('/') ? cli : "ShowActors/" + cli);
+                if (byArg != null) return byArg;
+                Debug.LogWarning($"[ActorViz] actor={cli} を Resources から読めません。選択 / 既定へ落とします。");
+            }
+
             foreach (UnityEngine.Object obj in Selection.objects)
             {
                 string path = AssetDatabase.GetAssetPath(obj);
@@ -76,8 +86,9 @@ namespace FixedCamVr.Streaming.EditorTools
             return Resources.Load<GameObject>(DefaultActorResource);
         }
 
+        // public なのは CLI（`unity.ps1 menu actor`）が -executeMethod で直接呼ぶため。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Show Actor", priority = 251)]
-        private static void Run()
+        public static void Run()
         {
             int layer = LayerMask.NameToLayer(CgLayerName);
             if (layer < 0)

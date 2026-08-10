@@ -194,7 +194,7 @@ MJPEG で取り込んだスマホ映像（既存 `MjpegScreen` の出力 Texture
 
 ### 2026-05-03: Unity MCP 不採用 / Phase 1 を HLSL シェーダに変更
 
-- Unity Editor が見ているのは親ディレクトリ `C:/Users/kouga/Projects/Unity/fixed-cam-vr/Assets`。worktree（`.claude/worktrees/nice-banach-968b48/`）は別物
+- Unity Editor が見ているのは親ディレクトリ（リポジトリ本体）の `Assets/`。worktree（`.claude/worktrees/nice-banach-968b48/`）は別物
 - Unity MCP 経由で作成したアセットは親に書かれ、worktree ブランチのコミットに含められない
 - → 本作業はファイルシステムで worktree 内に直接書き込む。Unity MCP は使わない（読み取りも使わず、ユーザーが merge 後に Editor で開いて確認する想定）
 - 副作用として `.shadergraph`（バイナリ的 YAML）の手書きが非現実的 → Phase 1 を **HLSL `.shader` + URP `FullScreenPassRendererFeature`** に変更

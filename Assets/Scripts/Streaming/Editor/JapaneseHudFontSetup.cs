@@ -27,8 +27,9 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string OutDir = "Assets/Resources/Fonts";
         private const string OutPath = OutDir + "/JapaneseHud SDF.asset";
 
+        // public なのは CLI（`unity.ps1 menu hud-font`）が -executeMethod で直接呼ぶため。
         [MenuItem("Tools/FixedCamVr/Setup/Generate Japanese HUD Font", priority = 90)]
-        private static void Generate()
+        public static void Generate()
         {
             var font = AssetDatabase.LoadAssetAtPath<Font>(SourceFontPath);
             if (font == null)

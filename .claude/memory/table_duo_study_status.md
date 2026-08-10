@@ -35,7 +35,7 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
   - スクショ検証: `Tools/FixedCamVr/Diagnostics/Preview Full Avatar` が Remy を実 URP で隔離描画（エディタ同期実行では SMR が再スキンしないので `forceMatrixRecalculationPerRender=true` を付与）。`RemyAvatarRig`/`TwoBoneIK` は EditMode テスト済み（IK 到達/伸び切り）
   - ⚠ 取り込み作業で `TableDuoMain.unity` に紛れ Camera が入りうる（要 `git checkout` で破棄）。Remy はシーン配置不要・ランタイム生成
 - 旧 procedural 簡易人型はフォールバックとして残存（2026-06-16）。頭（マネキン頭＋目2＝視線キュー）/首/肩/テーパー胴 + **肩→手首を直結した cosmetic な袖（肘 IK なし＝破綻しない・手の位置を体に反映）** + 既存の動く白手。全部 [RemoteAvatarView](../../Assets/TableDuo/Scripts/Net/RemoteAvatarView.cs) のプリミティブ procedural（外部アセット/依存なし）。配色は研究中立な無個性トーン（肌=TableDuoSkin / 袖&胴=TableDuoShirt / 目=TableDuoEye、Resources 優先・無ければランタイム URP/Lit 生成で Setup 未実行でも肌色で出る）。追跡が頭＋手首＋指のみなので realタイプ（Ready Player Me+IK）はアンカニー&肘破綻リスクで不採用、procedural を選択。**実機で見た目・腕の自然さ要確認**
-  - **見た目の自己テスト**: メニュー `Tools/FixedCamVr/Diagnostics/Preview Full Avatar (screenshot)`（[TableDuoAvatarPreview](../../Assets/TableDuo/Scripts/Editor/TableDuoAvatarPreview.cs)）で Play/実機なしにアバターを**実 URP カメラ**で隔離描画し `Temp/AvatarPreview/*.png` に正面/3-4/側面/ジェスチャーを保存（Read で確認可）。`PreviewRenderUtility` はビルトイン経路で URP マテリアルが暗く出るため不可 → 専用レイヤ(31)+cullingMask の実カメラ描画にした。手は provider 不在で placeholder 立方体になる（体/腕/頭の形状・配色確認用）。`RemoteAvatarView.PoseImmediate` で平滑なし即時ポーズ（リプレイ seek にも流用可）
+  - **見た目の自己テスト**: メニュー `Tools/FixedCamVr/Diagnostics/Preview Full Avatar (screenshot)`（[TableDuoAvatarPreview](../../Assets/TableDuo/Scripts/Editor/TableDuoAvatarPreview.cs)）で Play/実機なしにアバターを**実 URP カメラ**で隔離描画し `Assets/Screenshots/tableduo/avatar/*.png` に正面/3-4/側面/ジェスチャーを保存（Read で確認可）。`PreviewRenderUtility` はビルトイン経路で URP マテリアルが暗く出るため不可 → 専用レイヤ(31)+cullingMask の実カメラ描画にした。手は provider 不在で placeholder 立方体になる（体/腕/頭の形状・配色確認用）。`RemoteAvatarView.PoseImmediate` で平滑なし即時ポーズ（リプレイ seek にも流用可）
 - **指ポーズが動かない（ずっとパー）バグ → 2026-06-15 修正済み**。原因: `OVRCustomHandPrefab_L/R` の `OVRCustomSkeleton._customBones_V2` が SDK 同梱状態で**全 null（未マッピング）**。`CustomBones` を読んで bone を回す実装だと全 null で指が一切動かず bind＝開いた手で固定（手首位置だけ別経路で追従）。修正＝`RemoteHandMeshProvider.MapHandBonesByName` で Meta の FBX 命名（`b_r_thumb0` 等、BoneId 順）を実体検索して回す（[[unity_pitfalls]] 参照）。**実機で指の曲げ同期は要再確認**（手首向きの二重適用が無いかも併せて見る）
 - テーブル上の小物・カードは **Setup が天板の実バウンディング（高さ・XZ 範囲）を測って接地配置**（maxWidth で天板が 0.7→0.5 に縮むので固定 Y だと浮く。固定値ハードコード禁止）
 - **2026-06-30 卓上を「海底探検（Deep Sea Adventure）」一式に差し替え**（旧: Kenney 食べ物プロップ＋アイコンカードデッキを撤去）。ボードゲーム 3D モデルは [Assets/TableDuo/ThirdParty/DeepSeaAdventure/glb/*.glb](../../Assets/TableDuo/ThirdParty/DeepSeaAdventure)（**glTFast `com.unity.cloud.gltfast` 6.14.1 を追加**してエディタ取込・テクスチャ埋込・実スケール=メートル）。配置は [TableDuoSceneSetup.PlaceDeepSeaAdventure](../../Assets/TableDuo/Scripts/Editor/TableDuoSceneSetup.cs)：潜水艦ボード中央奥に静置／宝物チップ16・裏トークン5・空気マーカーを手前にグリッド静置／駒2+サイコロは掴める（NetworkObject+Grabbable）。`PlaceModelRealScale` が glb プレハブを実寸のまま接地。`CreateCardDeck`/`CreateProp`/`CardIcons` は未使用化（コードは残置）。PatternPanel（空中・既定非アクティブ）は据置
@@ -45,7 +45,7 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 ## 手動視点リセット（2026-06-16）
 - **人側/手側 両方**: コントローラ**両手グリップ同時 3 秒長押し**で頭を席（初期目線アンカー）へ戻す。
 - **コントローラ限定**: 入力は OVRInput の grip 軸（LTouch/RTouch）だけ。ハンドトラッキング/ピンチは一切見ないのでジェスチャーでは発火しない。両手必須で片手偶発も防止（誤検知防止の明示要件）。閾値/秒数は `ControllerRecenterWatcher` の SerializeField
-- 実装: [ControllerRecenterWatcher](../../Assets/TableDuo/Scripts/Hands/ControllerRecenterWatcher.cs)(OVR依存・Hands, event 発火) → [TableDuoPlayer](../../Assets/TableDuo/Scripts/Net/TableDuoPlayer.cs) が購読 → [RigRecenter.HeadToSeat](../../Assets/TableDuo/Scripts/Net/RigRecenter.cs)（純関数・yaw＋位置を頭→席へ、pitch/roll は保持＝水平維持。EditMode テスト済み）+ recenter ログ送信。OS recenter（[[ ]] RecenterWatcher）は従来通り AlignLocalRig
+- 実装: [ControllerRecenterWatcher](../../Assets/TableDuo/Scripts/Hands/ControllerRecenterWatcher.cs)(OVR依存・Hands, event 発火) → [TableDuoPlayer](../../Assets/TableDuo/Scripts/Net/TableDuoPlayer.cs) が購読 → [RigRecenter.HeadToSeat](../../Assets/TableDuo/Scripts/Hands/RigRecenter.cs)（純関数・yaw＋位置を頭→席へ、pitch/roll は保持＝水平維持。EditMode テスト済み）+ recenter ログ送信。OS recenter（[[ ]] RecenterWatcher）は従来通り AlignLocalRig
 - **Setup 再実行が必要**: `ControllerRecenterWatcher` は `Setup TableDuo Scene` が Systems に追加する。既存シーンに無ければ再実行
 
 ## 既知の罠
@@ -162,7 +162,7 @@ TableDuo＝同居サブプロジェクト「手だけアバターとの対人イ
 ## 2026-07-02 (5) 卓上拘束＋盤面レイアウト修正（俯瞰スクショ検証・EditMode 37/37・実機未検証）
 
 - **Grabbable 卓上拘束**: 掴み追従を「最下点≥天板 Y・XZ=卓内」にクランプ（テーブル貫通・卓外落下防止）。Setup が surfaceY/center/half を全ピースへ焼き込み。pivot→最下点は renderer bounds から Awake で自動算出
-- **[TableDuoTablePreview](../../Assets/TableDuo/Scripts/Editor/TableDuoTablePreview.cs)**（`Diagnostics/Preview Table (screenshot)`）: 卓上を 4 角度（斜め上×2/低め/真上）で Play 不要撮影 → `Temp/TablePreview/`。**盤面配置を変えたら必ずこれで見る**
+- **[TableDuoTablePreview](../../Assets/TableDuo/Scripts/Editor/TableDuoTablePreview.cs)**（`Diagnostics/Preview Table (screenshot)`）: 卓上を 4 角度（斜め上×2/低め/真上）で Play 不要撮影 → `Assets/Screenshots/tableduo/table/`。**盤面配置を変えたら必ずこれで見る**
 - スクショで見つけて直した配置バグ: 駒/サイコロの固定座標 cz+0.02 がチップ最終行に乗る（→グリッド由来 pieceZ に）/ チップ数字が人役側から逆さま（→yaw180）/ 空気マーカーがチップ列混在（→ボード脇）/ 駒が小さすぎ（→1.6 倍、サイコロ 1.5 倍）
 
 ## 2026-07-02 (6) アバター挙動レビュー（接続時＋運動時・2 視点並列監査→9 件修正・EditMode 37/37・実機未検証）

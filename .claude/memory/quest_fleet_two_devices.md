@@ -13,11 +13,11 @@ metadata:
 2026-07-31 に整えた。道具は [`tools/quest-fleet.py`](../../tools/quest-fleet.py)。
 
 ```bash
-python tools/quest-fleet.py list          # 全機の状態を 1 画面（熱・帯域・APK・登録・容量）
-python tools/quest-fleet.py pick          # 次に走らせる機の serial を 1 行
-python tools/quest-fleet.py sync          # Builds/mawarimi.apk を古い機へ配る
-python tools/quest-fleet.py reset-config  # 端末キャッシュ show_config.json を消す
-python tools/quest-fleet.py sleep --others <serial>   # 使わない機を寝かせる
+py -3.11 tools/quest-fleet.py list          # 全機の状態を 1 画面（熱・帯域・APK・登録・容量）
+py -3.11 tools/quest-fleet.py pick          # 次に走らせる機の serial を 1 行
+py -3.11 tools/quest-fleet.py sync          # Builds/mawarimi.apk を古い機へ配る
+py -3.11 tools/quest-fleet.py reset-config  # 端末キャッシュ show_config.json を消す
+py -3.11 tools/quest-fleet.py sleep --others <serial>   # 使わない機を寝かせる
 ```
 
 [`run-quest-xp-test.sh`](../../tools/run-quest-xp-test.sh) は `SERIAL` を指定しなければ `pick` を呼び、
@@ -104,5 +104,5 @@ stall watchdog の誤発火（`_everReceived` ガード不在）だった。**�
   （40% 未満は警告して続行）。走り終わったら**実機を寝かせる**。続けて何度も走らせるなら `--keep-awake`
 - `quest-fleet.py pick` は電池の乏しい機（充電していない & 25% 未満）を候補から外す。
   全機がそうなら「充電するか寝かせて待て」と言う
-- 手で寝かせる: `python tools/quest-fleet.py sleep <serial>` / 起こす: `wake`
+- 手で寝かせる: `py -3.11 tools/quest-fleet.py sleep <serial>` / 起こす: `wake`
 - **1 回使ったらこまめに寝かせる。** 待ち時間（ビルド 10 分など）のあいだ起こしておく理由は無い

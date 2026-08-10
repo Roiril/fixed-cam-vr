@@ -2,7 +2,7 @@
 """実機 logcat の [XP] 行を読んで「体験が著作どおりに起きたか」を判定する。
 
 使い方:
-    python tools/analyze-xp-log.py <logcat.txt> [--show tools/web-compositor/show.json]
+    py -3.11 tools/analyze-xp-log.py <logcat.txt> [--show tools/web-compositor/show.json]
                                    [--out reports/xp-YYYYMMDD.md]
 
 判定の考え方:
@@ -413,7 +413,7 @@ def analyze(events, others, exp, warns=None):
             verdict("FAIL", "実機の設定が PC の show.json と違う（"
                     + ", ".join(f"{k} {g}!={wv}" for k, g, wv in diffs)
                     + "） — 端末キャッシュを消して配り直す: "
-                      "python tools/quest-fleet.py reset-config <serial>")
+                      "py -3.11 tools/quest-fleet.py reset-config <serial>")
         else:
             verdict("OK", f"実機は show.json と同じ設定で走った（出所 {src}）")
     w()
@@ -861,6 +861,27 @@ def analyze(events, others, exp, warns=None):
             if "Swap" in stages:
                 verdict("OK", "導入演出が最後の段（Swap）まで進んだ")
     w()
+
+    # ---------------- 位置合わせ（コントローラの操作モード） ----------------
+    # ⚠ ここが無かったせいで「トリガー長押しが発火していないのか、発火しても画が変わらないのか」を
+    #    実機ログから切り分けられなかった（2026-08-09）。卓の heartbeat にしか出ていなかった。
+    #    `pt`（パススルーが実際に有効か）を併記するのは、モードが変わっただけで現実が出ていない
+    #    ケース＝作業が成立しないケースを名指しするため。
+    modes = [e for e in events if e.get("ev") == "ctrlmode"]
+    if modes:
+        w("## 位置合わせ（コントローラの操作モード）")
+        for e in modes:
+            w(f"  t={fnum(e,'t',0):7.1f}  モード={e.get('v')} pt={e.get('pt')}")
+        reg = [e for e in modes if e.get("v") == "REG"]
+        if reg:
+            blind = [e for e in reg if str(e.get("pt")) != "1"]
+            if blind:
+                verdict("FAIL", f"位置合わせに入ったのにパススルーが有効でない回が {len(blind)} 件 — "
+                                "現実が見えないので線を実物に重ねられない（PassthroughStyler の配線と "
+                                "OculusProjectConfig の _insightPassthroughSupport を見る）")
+            else:
+                verdict("OK", f"位置合わせに {len(reg)} 回入り、いずれもパススルーが有効だった")
+        w()
 
     # ---------------- 効果の実在 ----------------
     # 「段が進んだ」「演出が走った」は、画・音に何かが出たことを意味しない。

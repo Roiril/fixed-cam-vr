@@ -1,7 +1,7 @@
 ---
 name: troubleshooting
 description: 「うまく動かない」時に層を切り分けるための診断フロー。Unity / 配信側 / ネットワーク / Meta XR / ビルド の責任境界マップ
-globs:
+paths:
   - "Assets/**"
   - ".claude/**"
 ---
@@ -17,7 +17,7 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 | **配信側 (Android/Kotlin)** | カメラ権限なし・MJPEG が出ない・解像度違い | ブラウザで `http://<phone>:8080/` 直接確認 / `curl /info` | [streaming.md](streaming.md), [streamer-android-build SKILL](../../.claude/skills/streamer-android-build/SKILL.md) |
 | **ネットワーク** | 別 LAN・ポート閉鎖・Wi-Fi 帯域不足 | PC から `curl -m 3 /health` / `ping <phone>` | [streaming.md `/health`](streaming.md) |
 | **Unity スクリプト** | デコード失敗・GC スパイク・Texture 白ノイズ | Editor Console + Profiler / [streaming-offline-test SKILL](../../.claude/skills/streaming-offline-test/SKILL.md) | [unity_pitfalls.md](../../.claude/memory/unity_pitfalls.md) |
-| **Unity Editor / MCP** | コンパイル失敗・MCP 切断・prefab 再生時に値リセット | `unity-status` スキル / `read_console` | [mcp-unity.md](mcp-unity.md), [unity-prefab-fields SKILL](../../.claude/skills/unity-prefab-fields/SKILL.md) |
+| **Unity（コンパイル・Editor 機能）** | コンパイル失敗・prefab 再生時に値リセット | `.\tools\unity.ps1 test`（コンパイル込み）/ `.\tools\unity.ps1 menu` | [unity-vr.md](unity-vr.md), `unity-prefab-fields` スキル |
 | **Meta XR / OpenXR** | パススルー出ない・トラッキング崩れ・90Hz 出ない | `adb-logcat` スキル (xr) / OVR Metrics Tool | [meta-xr.md](meta-xr.md) |
 | **ビルド / 実機** | APK 起動しない・即落ち・黒画面 | `adb-logcat` スキル (unity) / `adb-logcat` スキル (crash) | [unity-vr.md](unity-vr.md) |
 
@@ -30,7 +30,7 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 1. **配信側を疑う** — ブラウザで `http://<phone>:8080/` を開く。HTML が出るか？ → 出ないなら streamer アプリ未起動 or ポート違い
 2. **ネットワークを疑う** — PC から `curl -m 3 http://<phone>:8080/health`。タイムアウトなら同一 LAN にいない / FW ブロック
 3. **Unity スクリプトを疑う** — `streaming-offline-test` で fake server に向け Editor 単体検証。ここで出るなら実機構成側の問題
-4. **MCP / コンパイル** — `unity-status` スキル でエラー有無
+4. **コンパイル** — `.\tools\unity.ps1 test` でエラー有無（走る前に必ずコンパイルする）
 5. **Meta XR** — Editor で出るが Quest で出ない → ビルド層 (`adb-logcat` スキル (unity))
 
 ### 「カメラの IP が変わった / スロットの対応が崩れた」（2026-07-18 から自動化）
@@ -72,10 +72,10 @@ bash tools/run-quest-xp-test.sh walk 300
 
 1. **実機が使った設定**。レポート冒頭の「実機が使った設定」が FAIL なら、原因はコードではなく
    設定のずれ。端末キャッシュは焼き込みより優先されるので、APK を焼き直しても変わらない
-   → `python tools/quest-fleet.py reset-config <serial>`
+   → `py -3.11 tools/quest-fleet.py reset-config <serial>`
 2. **Wi-Fi の帯域**。2.4GHz だと受信 fps が配信の 2/3 まで落ち、導入の最後の段（Swap）は
    映像が届いていることを要求するので**帯域が細いだけで演出が出ない**
-   → `python tools/quest-fleet.py list` の wifi 列（run スクリプトが走行前に警告も出す）
+   → `py -3.11 tools/quest-fleet.py list` の wifi 列（run スクリプトが走行前に警告も出す）
 
 Quest が複数繋がっているときの機の選択・APK と設定の同期・使わない機のスリープは
 [`tools/quest-fleet.py`](../../tools/quest-fleet.py)（[.claude/memory/quest_fleet_two_devices.md](../memory/quest_fleet_two_devices.md)）。
@@ -92,7 +92,7 @@ Quest が複数繋がっているときの機の選択・APK と設定の同期�
 見た目に関わる変更をしたら画を録って確かめる:
 
 ```bash
-python tools/quest-record.py --sec 45 --walk
+py -3.11 tools/quest-record.py --sec 45 --walk
 ```
 
 `adb screenrecord` の出力（両眼・レンズ逆歪みの台形）から片眼を切り出して矩形へ戻す。
@@ -105,27 +105,33 @@ python tools/quest-record.py --sec 45 --walk
 出ていたのに、`[XP]` だけ見ていて気づけなかった）。→ **判定に入れた**。レポートの
 **「## 実機ログの警告」**節が数え、エラーがあれば FAIL・日本語の警告は別立てで名指しする。
 
-### 「コンパイルが通らない / Unity 重い」
+### 「コンパイルが通らない」
 
-1. `unity-status` スキル — 接続・コンパイル状態
-2. `read_console types=["error"]` — エラー全文
-3. `manage_editor action=ping` で応答性確認 — [mcp-unity.md](mcp-unity.md)
+```powershell
+.\tools\unity.ps1 test
+```
+
+EditMode テストは走る前に必ずコンパイルするので、**これ 1 本でコンパイルエラーの全文が出る**
+（`Logs/test-EditMode.xml` に結果、標準出力に `error CS`）。Editor を開く必要も MCP もいらない。
+
+⚠ **Editor がこのプロジェクトを開いていると止まる**（`Temp/UnityLockfile`）。閉じてからやり直す。
+起動中の Editor をそのまま調べたいときだけ MCP（[reference/mcp-unity.md](../reference/mcp-unity.md)）へ落ちる。
 
 ### 「prefab に保存した値が再生時に変わる / 0 になる」
 
-→ [unity-prefab-fields SKILL](../../.claude/skills/unity-prefab-fields/SKILL.md) を読む。SerializeField 追加直後の prefab YAML 未反映パターン。
+→ `unity-prefab-fields` スキルを読む。SerializeField 追加直後の prefab YAML 未反映パターン。
 
 ### 「Web で演出 ON にしても Quest にオーバーレイが出ない」（2026-06-17 実害）
 
 1. **cue 未保存が最多**: 演出 ON は `cue_<camId>` を発火するだけ。合成素材+マスクを選び 💾 cue 保存していないと show.json に cue が無く、Quest は「unknown cue id」で何も出せない（Web 側は未保存なら警告を出すようにした）
-2. **動画だけ出ない（画像は出る）**: ログに `E/NuCachedSource2: source returned error -1`。Android ネイティブ VideoPlayer が Python http.server(HTTP/1.0) からの HTTP ストリーミングを扱えない。→ Quest は UnityWebRequest でローカル DL してから `file://` 再生する（[`ScreenOverlayController.GetLocalVideoUrlAsync`](../Assets/Scripts/Streaming/ScreenOverlayController.cs)）。`[ScreenOverlay] video cached` ログが出れば DL 成功。画像/マスクは UnityWebRequest なので直 URL で出る（=切り分けに使える）。
+2. **動画だけ出ない（画像は出る）**: ログに `E/NuCachedSource2: source returned error -1`。Android ネイティブ VideoPlayer が Python http.server(HTTP/1.0) からの HTTP ストリーミングを扱えない。→ Quest は UnityWebRequest でローカル DL してから `file://` 再生する（[`ScreenOverlayController.GetLocalVideoUrlAsync`](../../Assets/Scripts/Streaming/ScreenOverlayController.cs)）。`[ScreenOverlay] video cached` ログが出れば DL 成功。画像/マスクは UnityWebRequest なので直 URL で出る（=切り分けに使える）。
    動画 Prepare 失敗/タイムアウト時は自動で cue 中止＋live 復帰し、自動切替の恒久凍結は起きない（2026-07-23 監査修正・`OverlayPlaybackLogic`）。`[ScreenOverlay] cue aborted` ログで検知
 3. ファイル名のスペース/括弧は URL を percent-encode（Web の cue 保存で対応済み）
 
 ### 「コントローラのボタンが意図と違う / 左右どちらも同じ操作になる」（2026-06-17 実害）
 
 - **`OVRInput.GetDown(Button.One/Two)` はコントローラ未指定だと両手から拾う**。`Button.One`=A(右)**または**X(左)、`Button.Two`=B(右)**または**Y(左)。左手を明示しないと左の X/Y までカメラ操作に化ける
-- → 用途ごとに `OVRInput.Controller.RTouch` / `LTouch` を明示する。**2026-07-20〜 廻リ視は右手 4 入力のみ**（[`OvrControllerBridge`](../Assets/Scripts/OvrBridge/OvrControllerBridge.cs)：A=Next / B=ステータストグル / 右グリップ長押し=ランリセット / 右トリガー長押し=登録。左手・スティックは読まない）
+- → 用途ごとに `OVRInput.Controller.RTouch` / `LTouch` を明示する。**2026-07-20〜 廻リ視は右手 4 入力のみ**（[`OvrControllerBridge`](../../Assets/Scripts/OvrBridge/OvrControllerBridge.cs)：A=Next / B=ステータストグル / 右グリップ長押し=ランリセット / 右トリガー長押し=登録。左手・スティックは読まない）
 - **トグル系ボタンの「初回押下が空振り」（2026-06-18 実害）**: ローカルに `bool _visible=true` 等で持つ状態が**対象側の初期状態とズレる**と、初回押下が「既にその状態」へのトグルになり何も起きない。→ **トグルは真実源（対象の `IsVisible`）を毎回読んで反転する**（`OvrControllerBridge.ToggleStatus()` が `StatusHud.IsVisible` を反転。`HudToggleInput`（Editor H）も同様）
 
 ## ⚠ まとめて直して「直った」は、どれが効いたかを教えてくれない（2026-07-31 実害）
@@ -162,11 +168,10 @@ python tools/quest-record.py --sec 45 --walk
 
 | スキル | 用途 |
 |---|---|
-| `unity-status` | Unity MCP / Editor / コンソールエラー一括 |
+| `quest-build` | APK を焼いて Quest に入れる（**Unity の入口はここ**）。ビルド以外のメニューは `.\tools\unity.ps1 menu` |
 | `adb-logcat` | 実機 Quest / Pixel のログ取得（`unity` / `xr` / `streamer` / `crash` フィルタ） |
 | `quest-capture` | **実機の「見ている絵」を動画で取り出す**（HMD 不要・パススルーも映る）。ログが OK でも画が壊れている時 |
-| `unity-mcp` | MCP 接続診断と再接続 |
 | `streaming-offline-test` | スマホ無しで Unity の MJPEG パイプライン検証 |
-| `quest-build` | 廻リ視 / TableDuo の APK を Quest にビルド & インストール |
 | `streamer-android-build` | 姉妹リポ APK ビルド & 実機インストール |
 | `unity-prefab-fields` | prefab YAML / SerializeField 不整合の修正 |
+| `unity-editor-status`（グローバル） | **退避路**。起動中の Editor をライブ操作する必要があるときだけ（要 MCP 登録） |

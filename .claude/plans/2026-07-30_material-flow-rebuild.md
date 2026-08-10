@@ -211,7 +211,7 @@ slug: material-flow-rebuild
 - **TableDuo（`Assets/TableDuo/`）は対象外**（parallel-projects.md §6）
 - **卓サーバは稼働中**。show.json を直接書かない（memory `show_json_is_live_config`）
 - show.json スキーマは不変（cue に既存フィールドを埋めるだけ）
-- 各段の完了時に `node --test tools/web-compositor/*.test.mjs` + `python -m pytest`（該当分）+
+- 各段の完了時に `node --test tools/web-compositor/*.test.mjs` + `py -3.11 -m pytest`（該当分）+
   ブラウザ実操作で検証。Unity 側テスト追加時は EditMode 実行
 
 ## 進捗

@@ -50,7 +50,21 @@ namespace FixedCamVr.Streaming.EditorTools
         private static bool _pingInFlight;
 
         [MenuItem(Root + "Diagnostics/Ping DroidCams", priority = 230)]
-        public static async void PingDroidCams()
+        public static async void PingDroidCams() => await PingCamerasAsync();
+
+        /// <summary>
+        /// CLI（<c>unity.ps1 menu ping-cams</c>）用の同期版。
+        ///
+        /// ⚠ <c>-executeMethod</c> はメソッドが返った時点で Unity が終了する（<c>unity run</c> が
+        /// <c>-quit</c> を張る）。<c>async void</c> のままだと**プローブが 1 本も終わらないうちに
+        /// プロセスが落ちる**ので、ここで待ち切る。
+        /// 中の await は全て <c>ConfigureAwait(false)</c> — Unity のメインスレッドへ戻ろうとすると、
+        /// そのスレッドを自分でブロックしているのでデッドロックする。
+        /// </summary>
+        public static void PingCameras() =>
+            PingCamerasAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+
+        private static async System.Threading.Tasks.Task PingCamerasAsync()
         {
             // 連打防止（async void なので前回完了前に再入する可能性がある）
             if (_pingInFlight)
@@ -79,13 +93,13 @@ namespace FixedCamVr.Streaming.EditorTools
                 {
                     if (src == null) continue;
                     var url = src.BuildUrl();
-                    var (ok, info) = await TryProbe(http, url);
+                    var (ok, info) = await TryProbe(http, url).ConfigureAwait(false);
                     if (!ok)
                     {
                         // 1 度目失敗時は 500ms 待って 1 回だけリトライ。1 回目で TCP セッション / ARP がキャッシュされ
                         // 2 回目で成功するパターン（DroidCam で観測された "1 回目失敗、2 回目成功" 現象）への対処。
-                        await System.Threading.Tasks.Task.Delay(500);
-                        var (ok2, info2) = await TryProbe(http, url);
+                        await System.Threading.Tasks.Task.Delay(500).ConfigureAwait(false);
+                        var (ok2, info2) = await TryProbe(http, url).ConfigureAwait(false);
                         if (ok2)
                         {
                             Debug.Log($"[FixedCamVr] OK (retry) {src.DisplayName} {url} -> {info2}");
@@ -116,7 +130,8 @@ namespace FixedCamVr.Streaming.EditorTools
             try
             {
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead)
+                    .ConfigureAwait(false);
                 var ct = resp.Content.Headers.ContentType?.MediaType ?? "(no content-type)";
                 return (true, $"HTTP {(int)resp.StatusCode} ({ct})");
             }

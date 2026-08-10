@@ -98,8 +98,10 @@ namespace FixedCamVr.Streaming.EditorTools
             "Assets/StreamingAssets/show/show.json",
         };
 
+        // public なのは CLI（`unity.ps1 menu composite`）が -executeMethod で直接呼ぶため。
+        // show.json を差し替えたいときは `-Set show=<パス>`（既定は下の候補を順に探す）。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Show Composite", priority = 252)]
-        private static void Run() => Execute(null);
+        public static void Run() => Execute(EditorCliArgs.Get("show"));
 
         /// <summary>
         /// show.json を明示して同じ処理を回す（batchmode / 検証用エントリ）。
@@ -110,6 +112,10 @@ namespace FixedCamVr.Streaming.EditorTools
 
         private static void Execute(string? explicitShowJsonPath)
         {
+            // CLI（batchmode）は空シーンで始まる。枠のアスペクトはシーンの MjpegScreen が正なので
+            // （無ければ 16:9 の既定へ落ちる）、**本番と同じ絵にするため** Main を開いてから撮る。
+            if (!EditorCliArgs.EnsureScene("Assets/Scenes/Main.unity")) return;
+
             var saved = new List<string>();
             string outDir = Path.Combine(Application.dataPath, OutDirRel);
             Directory.CreateDirectory(outDir);

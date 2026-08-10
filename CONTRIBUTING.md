@@ -52,8 +52,15 @@ refactor：Tracking 名前空間を Streaming から分離
 ## Pull Request の流れ
 
 1. `feature/<slug>` ブランチで作業
-2. **コンパイル OK を確認**（Unity Editor で `read_console` / `refresh_unity` または `-batchmode -quit`）
-3. EditMode テスト（[Assets/Tests/Streaming/](Assets/Tests/Streaming/)）が pass することを確認
+2. **コンパイルと EditMode テストを 1 本で確認**（Editor も MCP も要らない）
+
+   ```powershell
+   .\tools\unity.ps1 test
+   ```
+
+   テストは走る前に必ずコンパイルするので、`error CS` はここで全文が出る。
+   結果は `Logs/test-EditMode.xml`（テスト本体は [Assets/Tests/](Assets/Tests/)）
+3. 見た目が変わる修正なら、実機に持っていく前に安い門を通す（`.\tools\unity.ps1 menu` で一覧）
 4. 実機 Quest 3 動作確認は **PR 上でユーザーに依頼**（Claude Code 側からは自動化不可）
 5. PR テンプレ：
    - 目的 / 変更点 / コンパイル結果 / 実機検証ステータス（未検証なら明示）
@@ -106,6 +113,6 @@ refactor：Tracking 名前空間を Streaming から分離
 - [.claude/rules/unity-vr.md](.claude/rules/unity-vr.md) — Unity / VR 共通
 - [.claude/rules/meta-xr.md](.claude/rules/meta-xr.md) — Meta XR SDK
 - [.claude/rules/streaming.md](.claude/rules/streaming.md) — MJPEG / WebRTC
-- [.claude/rules/mcp-unity.md](.claude/rules/mcp-unity.md) — Unity MCP 経由の編集手順
+- [.claude/reference/mcp-unity.md](.claude/reference/mcp-unity.md) — Unity MCP 経由の編集手順
 - [README.md](README.md) — モジュール構成・ディレクトリ・実装済みコード
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Quest 3 90Hz 維持の計測手順（OVR Metrics / Profiler）と現場対処

@@ -112,7 +112,7 @@ pinky0 で 173° 乖離／layout FK とメッシュ実階層が 100° 乖離）�
 - **サイズ**: 固定 `RefHandLenMeters` → **白手リファレンスの実測長**（手首→中指遠位）に合わせる方式へ（Δ0.0cm）。
 - **Realistic の親指**: 3 節リグの末節に thumb2 を当てていたのを **thumb3（先端）** に変更（`HandVariantTable`）。
   先端の曲げが白手/Robot と揃う。
-検証は `Preview Hand Variants (screenshot)` → `Temp/HandVariantPreview/directions.txt`（指方向/甲法線/親指方向/
+検証は `Preview Hand Variants (screenshot)` → `Assets/Screenshots/tableduo/hands/directions.txt`（指方向/甲法線/親指方向/
 実測長の Default との差分）。
 
 **指先の曲がり残留の根治（2026-07-16・指先 tip bone を aim チェーンに追加）**: 実機で

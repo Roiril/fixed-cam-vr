@@ -1,0 +1,15 @@
+# 検証まわりの Python 依存（py -3.11 に入れる）
+#
+#   py -3.11 -m pip install -r tools/requirements.txt
+#
+# ⚠ この 3 つが無いと tools/quest-record.py が動かない。
+#    quest-record.py は「HMD を被らずに実機の見た目を確かめる」唯一の経路で、
+#    作りこみ 1 周（.claude/skills/work-round）がこれに乗っている。
+#    PC を替えたとき・Python を入れ直したときに黙って死ぬので、ここに控えておく。
+#
+# ⚠ `python` は Microsoft Store のスタブで、呼んでもエラーにならず版すら返さない。
+#    必ず `py -3.11` で呼ぶ（~/.claude/rules/windows-env.md §7）。
+
+opencv-python      # 録画の片眼化・フレーム取り出し（PIL は mp4 を読めない）
+numpy              # 同上
+imageio-ffmpeg     # H.264 への再エンコード

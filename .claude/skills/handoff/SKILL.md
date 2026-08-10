@@ -14,12 +14,13 @@ description: 次セッションへの引き継ぎプロンプトを生成。ユ�
 3. todo list の状態（completed / in_progress / pending）
 4. Unity MCP の接続状態（`mcpforunity://instances` を読む。失敗ならその旨記載）
 5. 直近のコンソール状態（`read_console` が叩けるなら最近のエラー）
+6. リポジトリの絶対パス（`git rev-parse --show-toplevel`）。**機体ごとに違うので毎回取る**
 
 ## 出力テンプレート
 
 ```
 # 引き継ぎプロンプト（YYYY-MM-DD）
-C:\Users\kouga\Projects\Unity\fixed-cam-vr で作業継続。Unity 2022.3.62f2 / URP / Meta Quest 3 ターゲット。
+<リポジトリの絶対パス> で作業継続。Unity 2022.3.62f2 / URP / Meta Quest 3 ターゲット。
 
 ## 直近のコミット
 <commits>

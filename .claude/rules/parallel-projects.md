@@ -1,5 +1,5 @@
 ---
-globs:
+paths:
   - "Assets/**"
   - "ProjectSettings/**"
   - "Packages/**"
@@ -62,6 +62,7 @@ description: 1 Unity プロジェクトに同居する 廻リ視(FixedCam) と T
 | 片アプリのドキュメント執筆 | ◎ | ファイル独立・Unity 不要 |
 | 片アプリのコード執筆（コンパイル確認を後回しにできる範囲） | ○ | ただし共有 .asset / ProjectSettings に触れないこと |
 | Unity MCP でのシーン・コンポーネント編集 | **×** | Editor 単一インスタンス。本シュビーが逐次で行う |
+| **`unity.ps1` の build / test / menu** | **×** | batchmode も `Temp/UnityLockfile` を取る。**2 本目は即エラーで落ちる**（`Assert-NotLocked`）。GUI の Editor が開いていても同じ |
 | ビルド / Play Mode 検証 | **×** | Editor・ProjectSettings 奪い合い。逐次のみ |
 | 共有 .asset / ProjectSettings の変更 | **×** | 両アプリに波及。逐次 + 影響説明必須 |
 
@@ -88,16 +89,22 @@ worktree の罠（base が古い等）は [git-workflow.md](git-workflow.md) も
 
 **着手前チェック（Unity が拾うファイルを触る作業すべて）**:
 1. ユーザー/併走シュビーが**ビルド中・Play 中でないか**を確認（申告が最優先・最も確実。「いまビルド中」と言われたら Assets 編集は止める）
-2. Unity MCP `mcpforunity://editor/state` を読む → `isCompiling=true` / `isPlaying=true` / 応答が `Connection closed`・timeout なら **Editor ビジー＝着手しない**（`unity-status` スキルが一括取得）
-3. ビルド成果物（`Builds/*.apk`）の mtime が今まさに更新されている／BuildVariants のログが流れているならビルド中
+2. **`Temp/UnityLockfile` があるか見る** — あれば GUI の Editor か別の batchmode がプロジェクトを握っている。
+   `unity.ps1` は自分で気づいて落ちるが（`Assert-NotLocked`）、**ファイルを直接書く作業は誰も止めてくれない**ので自分で見る
+
+   ```bash
+   test -f Temp/UnityLockfile && echo "握られている"
+   ```
+3. 誰が握っているかは `Get-CimInstance Win32_Process` の CommandLine で分かる（`Unity.exe -projectPath ...`）。
+   ビルド成果物（`Builds/*.apk`）の mtime が今まさに更新されている／`Logs/build-*.log` が伸びているならビルド中
 
 **ビルド/コンパイル中にやってよいのは Assets 外だけ**: `.claude/` / `docs/` / `README` 等は Unity がインポートしないのでビルドに無関係 → 編集可。設計確定・調査・ドキュメント・ハーネス更新はこの待ち時間に進める。コードは「内容を確定して待機」までに留め、書き込みはビルド完了後。
 
-**ビルド完了の確認**: PlayerSettings 復元（[BuildVariants](../../Assets/Editor/BuildVariants.cs) の finally）+ `editor_state` の `isCompiling=false` 復帰 + apk mtime 停止。これを確認してから Unity 系編集を再開する。自分がビルドするときも §3（同時ビルド禁止）と合わせ、**他の編集・ビルドが走っていないこと**を確認してから。
+**ビルド完了の確認**: PlayerSettings 復元（[BuildVariants](../../Assets/Editor/BuildVariants.cs) の finally）+ `Temp/UnityLockfile` の消滅 + apk mtime 停止。これを確認してから Unity 系編集を再開する。自分がビルドするときも §3（同時ビルド禁止）と合わせ、**他の編集・ビルドが走っていないこと**を確認してから。
 
 ## チェックリスト（並列で着手する前に）
 
-0. **いまビルド/コンパイル中じゃない？**（§7）→ Unity が拾うファイル（`Assets/` ・ `ProjectSettings/`）を触る前に申告 / `editor_state` で確認。ビジーなら Assets 外（`.claude/` ・ `docs/`）の作業へ切り替える
+0. **いまビルド/コンパイル中じゃない？**（§7）→ Unity が拾うファイル（`Assets/` ・ `ProjectSettings/`）を触る前に `Temp/UnityLockfile` を見る。握られていたら Assets 外（`.claude/` ・ `docs/`）の作業へ切り替える
 1. **どっちのアプリ？** → 呼称マッピング表（冒頭）で確定。「fixedcam／ハンド」を正式名・コード root に変換してから着手
 2. 自分が触るのはどっちのアプリ？ → 相手のコード領域・シーン・prefab に手を出さない
 3. 単一アプリ対象の作業（レビュー/監査等）？ → §6。相手アプリをスコープ・プロンプトに持ち込まない

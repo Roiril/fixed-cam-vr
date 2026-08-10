@@ -101,7 +101,7 @@ UTF-8 でファイルへ書いて Read で読む）。
 実装は `ShowControlClient.ConfigOrigin` / `DescribeConfig()` ↔ `config_from_show()`。
 **項目を足すときは C# と Python を対で直す**（片方だけだと沈黙して食い違う）。
 
-食い違ったときの直し方: `python tools/quest-fleet.py reset-config <serial>` でキャッシュを消し、
+食い違ったときの直し方: `py -3.11 tools/quest-fleet.py reset-config <serial>` でキャッシュを消し、
 卓の「📦 ビルド用エクスポート」(`POST /export-build`) で焼き込みを更新してからビルドし直す。
 
 ## ⚠ ログでは分からないことがある — 画を見る（2026-07-31）
@@ -133,8 +133,8 @@ FAIL ゼロで演出 7 本すべて OK と判定された走行の画を初め�
 ### 画を録る
 
 ```bash
-python tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る
-python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換するだけ
+py -3.11 tools/quest-record.py --sec 45 --walk    # 自動走行させながら録る
+py -3.11 tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換するだけ
 ```
 
 **走行 1 回で次が全部そろう**（`--no-log` / `--no-evidence` で外せる）:
@@ -179,7 +179,7 @@ python tools/quest-record.py --raw <file.mp4>   # 既にある録画を変換す
 実測: 通常走行の録画は平均 0.03、同じ部屋で明るい背景を混ぜた録画は平均 3.1 で中身が残った。
 
 ```bash
-FF=$(python -c "import imageio_ffmpeg,sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())")
+FF=$(py -3.11 -c "import imageio_ffmpeg,sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())")
 "$FF" -i raw.mp4 -vf "colorlevels=rimax=0.085:gimax=0.085:bimax=0.085" boost.mp4   # 約 11 倍
 ```
 
@@ -216,7 +216,7 @@ Quest の内蔵録画（`/sdcard/Oculus/VideoShots/`）は 1920x1080・片眼・
 ### 画の証拠を切り出す
 
 ```bash
-python tools/xp-evidence.py <logfile> <eye.mp4> [--out <dir>] [--offset <秒>]
+py -3.11 tools/xp-evidence.py <logfile> <eye.mp4> [--out <dir>] [--offset <秒>]
 ```
 
 `[XP] t=` はアプリ起動からの経過、録画はその数秒後に始まる。**録画秒 = XP秒 + オフセット**で、
@@ -407,6 +407,20 @@ stream」では発火しないようにした）で、これが**前回のビル
 | `ev=recplay v=close … presented= failed= luma=` | **実際にテクスチャへ載せた枚数**と輝度（暗所で「開けたが真っ黒しか出ていない」を見分ける） | `RecordedFramePlayer.PresentedCount` |
 | `sum` の `recPlay=n/N` | 再生中に何枚目まで出したか（尺だけ進んで絵が出ていないのを見る） | 同上 |
 | `sum` の `floorY=` `headY=` `regv=` | 床の高さが解けたか・頭が床から何 m か（`regv<2` は床を測っていない登録） | `CourseFrame` |
+
+### 位置合わせが起きたかを観測する（2026-08-09 追加）
+
+**「トリガー長押しが発火していないのか、発火しても画に出ていないのか」を実機ログから切り分けられなかった。**
+コントローラの操作モードは卓の heartbeat にしか出ておらず、**卓が居ない現場では観測手段がゼロ**だった。
+
+| キー | 何を証明するか | 取得元 |
+|---|---|---|
+| `ev=ctrlmode v=NORMAL/REG pt=` | 長押しがモード遷移まで届いたか **＋ そのとき現実が実際に出たか** | `ShowControlClient.ControllerMode` / `PassthroughStateProvider` |
+| `[Ctrl] モード X → Y`（実機ログ） | 同上（`[XP]` を取っていない走行でも `logcat` で追える） | `OvrControllerBridge.OnModeChanged` |
+
+`pt` を併記するのが要点。**モードが変わっただけでは作業は成立しない**（現実が見えなければ線を
+重ねられない）ので、解析の「## 位置合わせ（コントローラの操作モード）」節は
+**`v=REG` なのに `pt≠1` の回を FAIL で名指しする**。
 
 解析は「## 端末内録画 — 録れたか / 再生されたか」の 2 節で判定する。
 **`presented=0` は FAIL**（開けたのに画に出ていない）。`luma<0.02` は WARN（撮影時に映像が来ていたか）。

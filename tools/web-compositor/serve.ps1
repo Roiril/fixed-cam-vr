@@ -7,11 +7,22 @@ $dir = $PSScriptRoot
 $url = "http://localhost:$Port/index.html"
 Write-Host "serving $dir at $url (captures -> $dir\captures)"
 
-$py = (Get-Command python -ErrorAction SilentlyContinue)
-if ($py) {
+# ⚠ Get-Command python では判定にならない。PATH の python は Microsoft Store のアプリ実行
+# エイリアスで、存在はするのに呼んでも版すら返さない（＝ここを通り抜けて起動だけ黙って失敗する）。
+# 実際に import が通るかどうかで見る。
+$pyArgs = @("-3.11")
+$ok = $false
+try {
+  & py @pyArgs -c "import sys" *> $null
+  $ok = ($LASTEXITCODE -eq 0)
+} catch {
+  $ok = $false   # py ランチャ自体が無い
+}
+
+if ($ok) {
   Start-Process $url
-  python "$dir\capture-server.py" $Port
+  & py @pyArgs "$dir\capture-server.py" $Port
   return
 }
 
-Write-Host "python が見つかりません。python をインストールしてください（保存機能に必須）。" -ForegroundColor Yellow
+Write-Host "py -3.11 で Python 3.11 を呼べません。Python 3.11 をインストールしてください（保存機能に必須）。" -ForegroundColor Yellow

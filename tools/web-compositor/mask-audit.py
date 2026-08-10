@@ -1,6 +1,6 @@
 # いま演出で使っている素材のマスクを、実機と同じ枠空間で描き出して 1 枚の HTML にまとめる。
 #
-#   使い方: python mask-audit.py [--out reports/YYYY-MM-DD_mask-audit.html]
+#   使い方: py -3.11 mask-audit.py [--out reports/YYYY-MM-DD_mask-audit.html]
 #
 #   実機（ScreenComposite.shader）の規約:
 #     枠は 16:9。live / overlay は contain-fit（_LiveScale / _OverlayScale）で枠へ収める。

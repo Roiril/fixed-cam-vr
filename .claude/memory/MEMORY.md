@@ -1,9 +1,14 @@
 # Project Memory Index
 
+> ここは**技術の罠・実装の経緯**の索引。
+> **世界観・演出の判定は `.claude/canon/` が正本**（`LEDGER` = ユーザーが言ったこと /
+> `OPEN` = 未確定とシュビーの案 / `ROUNDS` = 周回の賭けと差）。混ぜない — 規律は `rules/canon-boundary.md`。
+> 作りこみの思想は `.claude/reference/why.md`。
+
 - [onsite_experience_test.md](onsite_experience_test.md) - 体験を実機で丸ごと検証する 4 点セット（[XP] テレメトリ / HMD 不要の自動走行 / 判定スクリプト / 機の選択）＋ logcat 収集の真因（他プロセスが 76%）と「解析が嘘をつく経路」
 - [quest_fleet_two_devices.md](quest_fleet_two_devices.md) - Quest 2 台を交互に使う道具と、機ごとに違って必ず食い違う 4 つ（キャッシュ / APK / 帯域 / 位置合わせ）。熱で選ぶ理由・adb pull が使えない話
 
-- [proposal_single_source.md](proposal_single_source.md) - 企画書の正は docs/proposal/ の 1 本だけ。docs/archive/ の旧版は体験構成が別物なので読まない（新旧の要求対応表つき）
+- [proposal_single_source.md](proposal_single_source.md) - **企画書は docs/proposal/ も docs/archive/ も読まない**（2026-08-08 作りこみの段へ移行）。骨格は実装と機械が守る／旧版にしか無い要求 4 つは実装しない
 
 - [take_continuity.md](take_continuity.md) - 演出の待ち・連続・継ぎ目：持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が所有する／相乗り分岐にテストが無い
 - [show_run_skeleton.md](show_run_skeleton.md) - 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／凍結を増やさない
@@ -37,7 +42,7 @@
 - [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) - 【C120は2026-07-13却下】go2rtc中継(RTSP→MJPEG)ならUnity改修ゼロの技術検証（RTSPカメラ全般に適用可）
 - [iphone_camera_streamer_plan.md](iphone_camera_streamer_plan.md) - iPhone配信カメラ方針：デモはIP Cam Lite継続（ウォーターマーク許容）、自作するならPWA+WSリレー設計（Quest無改造）。Unity iOSはMac必須で却下
 - [droidcam_endpoint.md](droidcam_endpoint.md) - 【フォールバック専用】DroidCam IP/ポート（標準は fixed-cam-streamer）
-- [verification_workflow.md](verification_workflow.md) - 検証は build/install せず Link+Play+MCP read_console（ユーザー確定方針）。build ループの罠と例外ケース
+- [verification_workflow.md](verification_workflow.md) - **⚠ 位置づけ訂正済み（2026-08-09）**。いまの正は CLI + `quest-record.py --walk`。Link+Play+MCP は Editor Play でしか出ない挙動を追うときだけ
 - [fixed_cam_review_backlog.md](fixed_cam_review_backlog.md) - 2026-06-10 fixed-cam 本体レビュー：修正済み/誤検知/残バックログ/「ルール追加時は既存コードもスイープ」
 - [web_compositor.md](web_compositor.md) - tools/web-compositor（ブラウザ合成検証ツール）の場所/起動/パイプライン/キャプチャ録画/プロンプト管理/サーバAPI/AI動画生成知見
 - [table_duo_test_coverage.md](table_duo_test_coverage.md) - TableDuo 純ロジック 12 クラス抽出 + EditMode テスト 28 ファイル（2026-07-23）。該当ロジック変更はテストを先に・NUnit/float 境界/static リセットの罠
