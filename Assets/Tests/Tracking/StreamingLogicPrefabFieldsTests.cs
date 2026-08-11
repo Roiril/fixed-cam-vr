@@ -42,12 +42,12 @@ namespace FixedCamVr.Tracking.Tests
         }
 
         [Test]
-        public void NextButton_IntValue_IsOne()
+        public void PrimaryButton_IntValue_IsOne()
         {
             var so = new SerializedObject(LoadBridge());
-            SerializedProperty? p = so.FindProperty("nextButton");
-            Assert.That(p, Is.Not.Null);
-            Assert.That(p!.intValue, Is.EqualTo(1), "nextButton は Button.One=1（A・右）であるべき");
+            SerializedProperty? p = so.FindProperty("primaryButton");
+            Assert.That(p, Is.Not.Null, "primaryButton プロパティが無い（欠落キーで型 default 化）");
+            Assert.That(p!.intValue, Is.EqualTo(1), "primaryButton は Button.One=1（A・右）であるべき");
         }
 
         [Test]
@@ -58,6 +58,29 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(text, Does.Not.Contain("prevButton:"), "旧フィールド prevButton が残存している");
             Assert.That(text, Does.Not.Contain("anchorToggleButton:"), "旧フィールド anchorToggleButton が残存している");
             Assert.That(text, Does.Contain("statusButton:"), "statusButton キーが書かれていない");
+
+            // 2026-08-12: A のカメラ手動送りを撤去した。**ブロックを切り出して見る** —
+            // `registry:` は同じ prefab の CameraSwitchInput にもあるので、全文検索だと誤検出する。
+            string block = BridgeBlock(text);
+            Assert.That(block, Does.Not.Contain("nextButton:"),
+                "旧フィールド nextButton が残存している（primaryButton へ改名済み）");
+            Assert.That(block, Does.Not.Contain("registry:"),
+                "旧フィールド registry が残存している（カメラ手動送り撤去で不要）");
+            Assert.That(block, Does.Not.Contain("switchDirector:"),
+                "旧フィールド switchDirector が残存している（カメラ手動送り撤去で不要）");
+            Assert.That(block, Does.Contain("titleScreen:"), "titleScreen キーが書かれていない（A の行き先）");
+        }
+
+        /// <summary>OvrControllerBridge の serialized ブロックだけを切り出す（`statusButton` は同 prefab で一意）。</summary>
+        private static string BridgeBlock(string text)
+        {
+            int at = text.IndexOf("statusButton:", System.StringComparison.Ordinal);
+            Assert.That(at, Is.GreaterThanOrEqualTo(0), "statusButton キーが見つからない");
+            int start = text.LastIndexOf("--- !u!", at, System.StringComparison.Ordinal);
+            int end = text.IndexOf("--- !u!", at, System.StringComparison.Ordinal);
+            if (start < 0) start = 0;
+            if (end < 0) end = text.Length;
+            return text.Substring(start, end - start);
         }
 
         [Test]

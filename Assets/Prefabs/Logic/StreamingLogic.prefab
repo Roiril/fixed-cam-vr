@@ -78,11 +78,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: eee38fcf2fdb93f428b625b9170aa5d1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  registry: {fileID: 6927847108225882352}
-  switchDirector: {fileID: 0}
   signalFx: {fileID: 0}
   showControl: {fileID: 0}
-  nextButton: 1
+  titleScreen: {fileID: 0}
+  primaryButton: 1
   statusButton: 2
   statusHud: {fileID: 0}
   guidePanel: {fileID: 0}

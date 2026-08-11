@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: af5a556b-6b30-4a77-84ea-1e6cea94b69a
-  modified: 2026-08-11T18:02:14.767Z
+  modified: 2026-08-11T21:32:01.986Z
 ---
 
 # タイトル画面「廻リ視」を触る前に
@@ -50,16 +50,21 @@ Unity は **RGB にだけ** sRGB 変換を掛ける。距離場を RGB に入れ
 ⚠ **帯（テクスチャ内の置き場所）は 2 箇所が同じ値を持つ**: `make-title-sdf.py` の
 `TITLE_BAND` / `SUB_BAND` と `TitleScreen.cs` の `TitleX0..SubY1`。片方だけ直すと字が伸びる・切れる。
 
-## 3. A ボタンは文脈で分岐する（奪っていない）
+## 3. Normal の A は「タイトルを閉じる」だけ
 
-- タイトルが立っている（Normal）→ **タイトルを閉じて体験を始める**
-- それ以外（Normal）→ 従来どおりカメラ手動送り Next
-- Registration → 従来どおり点サンプル
+2026-08-12 ユーザー宣言「カメラの手送り機能は要らないです」で**カメラ手動送りごと撤去した**。
+Registration の A（点サンプル）は不変。入力面は右手 4 入力のまま → [[controller-input-final]]。
 
-入力面は右手 4 入力のまま（2026-07-23 の凍結は破っていない）→ [[controller-input-final]]。
+撤去で連鎖したもの（**次に触る人が驚かないように**）:
 
-`TitleScreen.RequestDismiss()` は**タイトルが立っていないと false を返す**ので、
-呼び出し側（`OvrControllerBridge`）はそのまま従来の割り当てへ落ちる。
+- `OvrControllerBridge` の `registry` / `switchDirector` を削除。`nextButton` → **`primaryButton`** へ改名
+- `StreamingLogic.prefab` の YAML と `StreamingLogicPrefabFieldsTests` を同じコミットで合わせた
+  （テストは**ブロックを切り出して**stale キーを見る — `registry:` は同じ prefab の
+  `CameraSwitchInput` にもあるので全文検索だと誤検出する）
+- `ControllerGuidePanel.ShowTransient` は呼び出し元が消えて**未参照**。API は残してある
+- `CameraSwitchDirector.Next()` は死んでいない（キーボードの `CameraSwitchInput` が使う）
+
+現場でカメラを見たいときは Web 卓の 📺 カメラ固定。**実機のコントローラからは送れない**。
 
 ## 4. 失敗したら必ず素通しへ倒す
 

@@ -14,34 +14,31 @@ namespace FixedCamVr.OvrBridge
     ///
     /// 操作は<b>右コントローラ 4 入力だけ</b>で完結する（計画 2026-07-20_staff-input-hud-redesign.md）。
     /// モードは <see cref="ControllerModeLogic"/> の 2 状態（Normal / Registration）でゲートする:
-    ///   - Normal: A=カメラ手動送り Next / B=ステータス表示トグル /
+    ///   - Normal: A=タイトルを閉じて体験を始める / B=ステータス表示トグル /
     ///             グリップ 2 秒長押し=ランリセット / トリガー 2 秒長押し=位置合わせ入場
     ///   - Registration: A=点サンプル(やり直し) / B=確定 / トリガー 2 秒長押し=キャンセル退場
+    ///
+    /// ⚠ <b>A のカメラ手動送りは 2026-08-12 に撤去した</b>（ユーザー宣言「カメラの手送り機能は
+    /// 要らないです」）。A は<b>タイトルを閉じる 1 つだけ</b>で、閉じた後の A は何もしない。
+    /// キーボード経由の切替（<c>CameraSwitchInput</c> の Tab / 1-9・Editor 用）は残っている。
     /// 体験者はコントローラを持たないため封印モード（旧 Run/Staff）・左手・スティック・cue 試射は撤去した。
     /// HMD 非装着→SignalLostFx / OS recenter→CourseFrame.MarkNeedsReRegistration のパッシブ系は現状維持。
     /// </summary>
     public sealed class OvrControllerBridge : MonoBehaviour
     {
-        [SerializeField] private CameraStreamRegistry? registry;
-
-        [Tooltip("カメラ切替を一本化する CameraSwitchDirector（Screen 上）。割当時はここ経由" +
-                 "（時間ガード + dip 演出）。null なら registry を直接叩く（後方互換）。")]
-        [SerializeField] private CameraSwitchDirector? switchDirector;
-
         [Tooltip("トラッキングロスト（HMD 非装着）を通知する SignalLostFx（Screen 上）。null なら通知しない。")]
         [SerializeField] private SignalLostFx? signalFx;
 
         [Tooltip("演出モードのラベルを heartbeat へ載せる ShowControlClient（Screen 上）。未割当なら Start で自動取得。")]
         [SerializeField] private ShowControlClient? showControl;
 
-        [Tooltip("タイトル画面（[Title] 上）。**A の意味はここで分岐する** — タイトルが立っていれば " +
-                 "A は「タイトルを閉じて体験を始める」、立っていなければ従来どおりカメラ手動送り。" +
-                 "null でも全機能が従来どおり動く（タイトルが出ないだけ）。")]
+        [Tooltip("タイトル画面（[Title] 上）。**A の行き先**。null だと A は Normal で何もしない" +
+                 "（タイトルが出ないだけで、ほかの操作は従来どおり動く）。")]
         [SerializeField] private TitleScreen? titleScreen;
 
         [Header("Mappings（右コントローラのみ）")]
-        [Tooltip("カメラ手動送り Next（Normal）/ 点サンプル・やり直し（Registration）に使う右手ボタン。既定 A。")]
-        [SerializeField] private OVRInput.Button nextButton = OVRInput.Button.One;   // A (右)
+        [Tooltip("タイトルを閉じて体験を始める（Normal）/ 点サンプル・やり直し（Registration）に使う右手ボタン。既定 A。")]
+        [SerializeField] private OVRInput.Button primaryButton = OVRInput.Button.One;   // A (右)
 
         [Tooltip("ステータス表示トグル（Normal）/ 登録確定（Registration）に使う右手ボタン。既定 B。")]
         [SerializeField] private OVRInput.Button statusButton = OVRInput.Button.Two;  // B (右)
@@ -184,8 +181,8 @@ namespace FixedCamVr.OvrBridge
 
             // ---- 入力を 1 回だけ読む（右手のみ。同じボタンを複数箇所で拾わないため）----
             // Button.One/Two はコントローラ未指定だと両手から拾う（One=A|X 等）ため、必ず RTouch を明示する。
-            bool aDown = OVRInput.GetDown(nextButton, OVRInput.Controller.RTouch);   // A: Next / マーク・やり直し
-            bool aHeld = OVRInput.Get(nextButton, OVRInput.Controller.RTouch);       // A: 押しっぱなし（登録のホールド平均用）
+            bool aDown = OVRInput.GetDown(primaryButton, OVRInput.Controller.RTouch); // A: タイトルを閉じる / マーク・やり直し
+            bool aHeld = OVRInput.Get(primaryButton, OVRInput.Controller.RTouch);     // A: 押しっぱなし（登録のホールド平均用）
             bool bDown = OVRInput.GetDown(statusButton, OVRInput.Controller.RTouch); // B: ステータストグル / 確定
             bool rGrip = OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
             bool rTrigger = OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
@@ -236,35 +233,16 @@ namespace FixedCamVr.OvrBridge
 
                 case ControllerModeLogic.Mode.Normal:
                 default:
-                    // A: **タイトルが立っていればタイトルを閉じて体験を始める**（2026-08-12）。
-                    //    立っていなければ従来どおりカメラ手動送り Next。
+                    // A: **タイトルを閉じて体験を始める**。Normal での A はこれ 1 つだけで、
+                    //    タイトルが立っていなければ何も起きない（押下の Ack 振動だけ鳴る）。
                     //
-                    //    入力面は右手 4 入力のまま（2026-07-23 の凍結を破っていない）。奪わずに
-                    //    文脈で分けたのは、カメラ手動送りが設営・リハで実際に使われているのと、
-                    //    タイトルが出ている間はカメラを送る場面がそもそも無いから。
-                    //    `RequestDismiss` はタイトルが立っていないと false を返すので、
-                    //    タイトルが組めていない現場でも A は従来の意味のまま働く。
-                    bool titleTook = aDown && titleScreen != null && titleScreen.RequestDismiss();
-                    if (titleTook)
+                    //    カメラ手動送りは 2026-08-12 に撤去した（ユーザー宣言「カメラの手送り機能は
+                    //    要らないです」）。設営でカメラを見たいときは Web 卓の 📺 カメラ固定か、
+                    //    Editor のキーボード（CameraSwitchInput の Tab / 1-9）を使う。
+                    if (aDown && titleScreen != null && titleScreen.RequestDismiss())
                     {
                         haptics?.Fire();   // 体験の開始。短押しより強い手応えを返す
                         Debug.Log("[Title] A でタイトルを閉じました — 体験を始めます");
-                    }
-                    // A: カメラ手動送り Next（設営・リハ確認用。誤爆しても Zone 自動が復帰する）。
-                    if (aDown && !titleTook && registry != null && registry.Count > 0)
-                    {
-                        if (switchDirector != null)
-                        {
-                            if (switchDirector.Next()) haptics?.Action(); // 受理＝アクション実行（Ack を昇格）
-                            else if (switchDirector.InsertActive)
-                            {
-                                // インサート差し込み中は手動切替を破棄し、赤メッセージ + 失敗振動で伝える。
-                                guidePanel?.ShowTransient("演出中は切り替えできません");
-                                haptics?.Error();
-                            }
-                            // それ以外の false（クールダウン中等）は Ack 済みのため追加フィードバックなし。
-                        }
-                        else { registry.Next(); haptics?.Action(); }
                     }
                     // B: ステータス表示トグル（真実源 IsVisible の反転）。
                     if (bDown) { ToggleStatus(); haptics?.Action(); }

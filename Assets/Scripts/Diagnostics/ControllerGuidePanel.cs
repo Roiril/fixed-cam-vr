@@ -32,7 +32,7 @@ namespace FixedCamVr.Diagnostics
     {
         // 本文（このまま使う。装飾記号や英語見出しを足さない）。
         private const string NormalBody =
-            "A：カメラを次へ送る\n" +
+            "A：タイトルを閉じて始める\n" +
             "B：ステータス表示 切/入\n" +
             // 「周回リセット」は開発語で、スタッフには何が起きるか分からない（廃語）。
             "グリップ2秒：新しい体験者にする\n" +

@@ -227,7 +227,8 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// A（右コントローラ）。<b>閉じる演出へ入れたら true</b> を返す。
-        /// false なら押下は消費していないので、呼び出し側は従来の割り当て（カメラ手動送り）を行う。
+        /// false は「タイトルが立っていない・実体を組めていない」で、押下は何にも繋がらない
+        /// （Normal での A はこれ 1 つだけ。カメラ手動送りは 2026-08-12 に撤去した）。
         /// </summary>
         public bool RequestDismiss()
         {

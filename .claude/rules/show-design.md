@@ -106,7 +106,7 @@ Normal / Registration）。左手・スティック・cue 試射・操作チー�
 
 | 状態 | 入力 | 機能 |
 |---|---|---|
-| Normal | A（右）短押し | カメラ手動送り Next（設営・リハ確認用）。手動で覗いても**次のゾーン境界を跨げば即ゾーンのカメラへ戻る**（manualHold 撤廃・立ち止まってプレビュー）。インサート演出中は破棄＋赤メッセージ |
+| Normal | A（右）短押し | **タイトル画面を閉じて体験を始める**（2026-08-12〜）。タイトルが出ていなければ何も起きない |
 | Normal | B（右）短押し | ステータス表示トグル（StatusHud） |
 | Normal | 右グリップ 2 秒長押し | ランリセット（周回リセット + cue 発火済みクリア・体験者交代） |
 | Normal | 右トリガー 2 秒長押し | 位置合わせ（Registration）入場 |
@@ -115,6 +115,13 @@ Normal / Registration）。左手・スティック・cue 試射・操作チー�
 | Registration | 右トリガー 2 秒長押し | キャンセル退場（入場と対称） |
 
 長押し閾値は 2 秒固定（const `LongPressSec`。SerializeField にすると既存シーン YAML で 0 に読まれる罠を避ける）。
+
+⚠ **A のカメラ手動送りは 2026-08-12 に撤去した**（ユーザー宣言「カメラの手送り機能は要らないです」）。
+連鎖して `OvrControllerBridge` の `registry` / `switchDirector` を削除し、`nextButton` を
+**`primaryButton`** へ改名した（prefab YAML と `StreamingLogicPrefabFieldsTests` も同時に）。
+**現場でカメラを覗く手は Web 卓の 📺 カメラ固定だけ**になった（Editor のキーボード
+`CameraSwitchInput` の Tab / 1-9 は残っている）。タイトル画面そのものは
+[plans/2026-08-12_title-screen.md](../plans/2026-08-12_title-screen.md) と [memory/title_screen.md](../memory/title_screen.md)。
 
 #### HMD N 点登録リチュアル（約 10 秒）
 
