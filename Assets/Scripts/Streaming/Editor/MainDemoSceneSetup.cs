@@ -769,9 +769,8 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(so, "head", parent);
             TrySetBool(so, "titleEnabled", true);
             TrySetFloat(so, "distanceM", 2.0f);
-            TrySetFloat(so, "titleHeightM", 0.58f);
-            TrySetFloat(so, "pitchOffsetDeg", 3.0f);
-            TrySetBool(so, "showSubtitle", true);
+            TrySetFloat(so, "titleHeightM", 1.30f);
+            TrySetFloat(so, "pitchOffsetDeg", 2.0f);
             so.ApplyModifiedPropertiesWithoutUndo();
             return title;
         }

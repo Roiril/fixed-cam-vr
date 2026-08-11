@@ -38,13 +38,13 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void SdfTexture_IsLoadable()
+        public void ArtTexture_IsLoadable()
         {
-            // 距離場が Resources に無ければ、シェーダが揃っていてもタイトルは組めない。
-            var tex = Resources.Load<Texture2D>(TitleScreen.SdfResourcePath);
+            // 版が Resources に無ければ、シェーダが揃っていてもタイトルは組めない。
+            var tex = Resources.Load<Texture2D>(TitleScreen.ArtResourcePath);
             Assert.IsNotNull(tex,
-                $"Resources/{TitleScreen.SdfResourcePath} が読めません。" +
-                "焼き直しは py -3.11 tools/make-title-sdf.py");
+                $"Resources/{TitleScreen.ArtResourcePath} が読めません。" +
+                "焼き直しは py -3.11 tools/make-title-art.py");
         }
 
         private static HashSet<string>? LoadAlwaysIncluded()

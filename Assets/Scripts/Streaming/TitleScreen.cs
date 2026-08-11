@@ -5,7 +5,10 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// タイトル画面「廻リ視」。<b>体験が始まる前に、黒の中へ立体文字だけを置く。</b>
+    /// タイトル画面「廻リ視」。<b>体験が始まる前に、暗い地の中へ組んだ題字だけを置く。</b>
+    ///
+    /// 字形と質感は焼いた版（<c>Resources/Title/MawarimiTitle</c>・焼くのは
+    /// <c>tools/make-title-art.py</c>）が持ち、ここは<b>版を 3 つの奥行きへ置いて重みを配る</b>だけ。
     ///
     /// 判定はすべて純ロジック <see cref="TitleLogic"/> にあり、ここは<b>観測と配布</b>だけを持つ
     /// （<see cref="IntroDirector"/> と同じ流儀）。
@@ -46,22 +49,28 @@ namespace FixedCamVr.Streaming
         [Tooltip("文字までの距離 (m)。")]
         [SerializeField, Min(0.5f)] private float distanceM = 2.0f;
 
-        [Tooltip("「廻リ視」の高さ (m)。距離 2m で 0.58m ＝ 横幅 1.51m ＝ 見かけ 41°。")]
-        [SerializeField, Min(0.05f)] private float titleHeightM = 0.58f;
+        [Tooltip("版（1024px の縦）の高さ (m)。距離 2m で 1.30m ＝ 横幅 2.60m ＝ 見かけ 66°。" +
+                 "「廻」の実寸はこの 51%（＝ 0.66m ・見かけ 19°）。")]
+        [SerializeField, Min(0.05f)] private float titleHeightM = 1.30f;
 
-        [Tooltip("視線中心からどれだけ下に置くか (度)。少し見下ろすと厚みの天面が見える。")]
-        [SerializeField, Range(-20f, 20f)] private float pitchOffsetDeg = 3.0f;
-
-        [Tooltip("副題 MAWARIMI を出すか。")]
-        [SerializeField] private bool showSubtitle = true;
+        [Tooltip("視線中心からどれだけ下に置くか (度)。少し見下ろす位置に置くと据わりがよい。")]
+        [SerializeField, Range(-20f, 20f)] private float pitchOffsetDeg = 2.0f;
 
         // ---- 構造の値。**const にする**。SerializeField にすると既存シーン YAML に未記載で
-        //      0 と読まれ、層が 0 枚 / 厚み 0 になって「立体文字」が黙って平面になる
+        //      0 と読まれ、層が重なって奥行きが黙って消える
         //      （unity-prefab-fields の罠。LongPressSec と同じ手当て）。
-        /// <summary>厚みを作る層の枚数。</summary>
-        private const int LayerCount = 16;
-        /// <summary>厚み (m)。距離 2m・高さ 0.46m に対しての 0.10m は「削り出した塊」に見える比。</summary>
-        private const float DepthM = 0.10f;
+        /// <summary>
+        /// 3 つの層の奥行き (m)。添え（払い・ルビ）を奥、主（廻・リ）を中、朱（視）を手前。
+        ///
+        /// ⚠ <b>版を押し出さない。</b> 明朝の横画は髪の毛ほど細く、層を重ねると潰れて
+        /// 「太いゴシック」になる。VR の立体感は両眼視差が主役なので、**平らな版のまま
+        /// 層を離す**方が字を殺さずに奥行きが出る。10cm 離せば 2m 先でも視差 0.1° ＝
+        /// 立体視の閾値（0.01° 前後）の 10 倍あり、はっきり分かれて見える。
+        /// </summary>
+        private const float LayerZDeco = 0.10f;
+        private const float LayerZMain = 0f;
+        private const float LayerZAccent = -0.06f;
+
         /// <summary>黒の面までの距離 (m)。文字より手前に置くと文字を隠すので必ず奥。</summary>
         private const float VeilDistanceM = 0.30f;
         /// <summary>黒の面の大きさ (m)。距離 0.3m でこの大きさなら視界を覆い切る（IntroVeil と同値）。</summary>
@@ -77,21 +86,18 @@ namespace FixedCamVr.Streaming
         private const float DriftYawSec = 13f;
         private const float DriftPitchSec = 17f;
 
-        // ---- 距離場アトラスの帯。**tools/make-title-sdf.py の TITLE_BAND / SUB_BAND と同じ値**。
-        //      片方だけ直すと字が伸びる・切れる（沈黙して食い違う）。px は 1024x512・左上原点。
-        private const float TexW = 1024f, TexH = 512f;
-        private const float TitleX0 = 32f, TitleY0 = 24f, TitleX1 = 992f, TitleY1 = 392f;
-        private const float SubX0 = 192f, SubY0 = 424f, SubX1 = 832f, SubY1 = 472f;
+        /// <summary>版の縦横比。<b>tools/make-title-art.py の W / H と同じ</b>（2048 / 1024）。</summary>
+        private const float ArtAspect = 2f;
 
         /// <summary>隠すものが「立っている」とみなす不透明度。</summary>
         private const float ConcealMin = 0.9f;
 
         public const string VeilShaderName = "FixedCamVr/TitleVeil";
         public const string GlyphShaderName = "FixedCamVr/TitleGlyph";
-        public const string SdfResourcePath = "Title/MawarimiTitle";
+        public const string ArtResourcePath = "Title/MawarimiTitle";
 
         private static readonly int OpacityId = Shader.PropertyToID("_Opacity");
-        private static readonly int SdfId = Shader.PropertyToID("_Sdf");
+        private static readonly int ArtId = Shader.PropertyToID("_Art");
         private static readonly int RevealId = Shader.PropertyToID("_Reveal");
         private static readonly int DissolveId = Shader.PropertyToID("_Dissolve");
         private static readonly int FlashPosId = Shader.PropertyToID("_FlashPos");
@@ -119,7 +125,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 実体（面・文字・マテリアル）を組めたか。<b>false ならタイトルは一生出ない</b> —
-        /// シェーダがビルドから剥がれた / 距離場テクスチャが見つからない、のどちらか。
+        /// シェーダがビルドから剥がれた / 版のテクスチャが見つからない、のどちらか。
         /// テレメトリが <c>titleBuilt=</c> で出す（「重みが動いた」ではなく「画に出た」の側）。
         /// </summary>
         public bool IsBuilt => _veilRenderer != null && _glyphRenderer != null;
@@ -305,13 +311,13 @@ namespace FixedCamVr.Streaming
 
             Shader? veilShader = Shader.Find(VeilShaderName);
             Shader? glyphShader = Shader.Find(GlyphShaderName);
-            var sdf = Resources.Load<Texture2D>(SdfResourcePath);
-            if (veilShader == null || glyphShader == null || sdf == null)
+            var art = Resources.Load<Texture2D>(ArtResourcePath);
+            if (veilShader == null || glyphShader == null || art == null)
             {
                 Debug.LogWarning(
                     $"[Title] 実体を組めません（veil={(veilShader != null ? 1 : 0)} " +
-                    $"glyph={(glyphShader != null ? 1 : 0)} sdf={(sdf != null ? 1 : 0)}）。" +
-                    "シェーダは Always Included、距離場は Resources/Title に要る。タイトルは出ません");
+                    $"glyph={(glyphShader != null ? 1 : 0)} art={(art != null ? 1 : 0)}）。" +
+                    "シェーダは Always Included、版は Resources/Title に要る。タイトルは出ません");
                 return;
             }
 
@@ -336,7 +342,7 @@ namespace FixedCamVr.Streaming
             lagGo.transform.localRotation = Quaternion.identity;
             _lagRoot = lagGo.transform;
 
-            // 立体文字。層を 1 メッシュに畳むので描画は 1 回で済む。
+            // ロゴタイプ。3 層を 1 メッシュに畳むので描画は 1 回で済む。
             var glyphGo = new GameObject("TitleGlyphMesh");
             glyphGo.transform.SetParent(lagGo.transform, worldPositionStays: false);
             glyphGo.transform.localPosition = new Vector3(0f, GlyphYOffset(), Mathf.Max(distanceM, 0.5f));
@@ -345,7 +351,7 @@ namespace FixedCamVr.Streaming
             glyphGo.AddComponent<MeshFilter>().sharedMesh = _glyphMesh;
             _glyphRenderer = glyphGo.AddComponent<MeshRenderer>();
             _glyphMat = new Material(glyphShader) { name = "TitleGlyph (runtime)" };
-            _glyphMat.SetTexture(SdfId, sdf);
+            _glyphMat.SetTexture(ArtId, art);
             ConfigureRenderer(_glyphRenderer, _glyphMat);
             _glyphRoot = glyphGo.transform;
         }
@@ -363,21 +369,13 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 文字の高さ方向の置き場所 (m)。<b>「廻リ視」の中心が視線から
-        /// <see cref="pitchOffsetDeg"/> 度だけ下に来る</b>ように置く。
-        ///
-        /// 少し見下ろす位置にするのは、<b>真正面からでは押し出しの天面が見えない</b>から
-        /// （立体を正面から見ると前面しか見えない）。傾けるのではなく下げるのが正しい —
-        /// 傾けると面がこちらを向いて、かえって厚みが隠れる。
-        ///
-        /// アトラス内で主題は中心より上に焼いてあるので、その分を引く。
+        /// 版の高さ方向の置き場所 (m)。版の中心が視線から <see cref="pitchOffsetDeg"/> 度だけ
+        /// 下に来るように置く。<b>傾けない</b> — 傾けると版が台形に見えて、組んだ balance が崩れる。
         /// </summary>
         private float GlyphYOffset()
         {
-            float pxPerM = (TitleY1 - TitleY0) / Mathf.Max(titleHeightM, 0.05f);
-            float titleCyInMesh = (TexH * 0.5f - (TitleY0 + TitleY1) * 0.5f) / pxPerM;
             float d = Mathf.Max(distanceM, 0.5f);
-            _glyphYOffset = -d * Mathf.Tan(pitchOffsetDeg * Mathf.Deg2Rad) - titleCyInMesh;
+            _glyphYOffset = -d * Mathf.Tan(pitchOffsetDeg * Mathf.Deg2Rad);
             return _glyphYOffset;
         }
 
@@ -399,44 +397,28 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 立体文字のメッシュ。同じ字を Z 方向へ <see cref="LayerCount"/> 枚重ねる。
+        /// ロゴタイプのメッシュ。**同じ版を 3 枚、別の Z に置く**（添え → 主 → 朱）。
+        /// どの層かは頂点色で選び、シェーダがチャンネルを引く。
         ///
         /// ⚠ <b>奥の層から先に並べる</b>。半透明は深度で並べ替えられない（ZWrite Off / ZTest Always）ので、
-        /// メッシュ内の三角形の順序がそのまま描画順になる。手前から並べると奥の層が上書きして
-        /// 「厚み」が裏返る。
-        ///
-        /// 副題は 1 枚だけ（厚みを付けない）。主題と同じ厚みを持たせると、
-        /// 目が主題と副題のどちらを見ればよいか決まらなくなる。
+        /// メッシュ内の三角形の順序がそのまま描画順になる。手前から並べると奥が上書きして層が裏返る。
         /// </summary>
         private Mesh BuildGlyphMesh()
         {
-            // 距離場アトラスの実寸から world 寸法を導く。**PNG のレイアウトがそのまま出る**ので、
-            // 主題と副題の位置関係を C# 側で作り直さない（作り直すと必ず食い違う）。
-            float titleHpx = TitleY1 - TitleY0;
-            float pxPerM = titleHpx / Mathf.Max(titleHeightM, 0.05f);
+            float h = Mathf.Max(titleHeightM, 0.05f);
+            float w = h * ArtAspect;
 
-            int quads = LayerCount + (showSubtitle ? 1 : 0);
-            var verts = new Vector3[quads * 4];
-            var uv0 = new Vector2[quads * 4];
-            var uv1 = new Vector2[quads * 4];
-            var cols = new Color[quads * 4];
-            var tris = new int[quads * 6];
+            var verts = new Vector3[3 * 4];
+            var uv0 = new Vector2[3 * 4];
+            var uv1 = new Vector2[3 * 4];
+            var cols = new Color[3 * 4];
+            var tris = new int[3 * 6];
             int v = 0, t = 0;
 
-            // 主題。奥（i = LayerCount-1）から手前（0）へ積む。
-            for (int i = LayerCount - 1; i >= 0; i--)
-            {
-                float lt = LayerCount > 1 ? i / (float)(LayerCount - 1) : 0f;
-                AddQuad(verts, uv0, uv1, cols, tris, ref v, ref t,
-                        TitleX0, TitleY0, TitleX1, TitleY1, pxPerM, lt * DepthM,
-                        new Color(lt, 0f, 0f, 1f));
-            }
-            if (showSubtitle)
-            {
-                AddQuad(verts, uv0, uv1, cols, tris, ref v, ref t,
-                        SubX0, SubY0, SubX1, SubY1, pxPerM, 0f,
-                        new Color(0f, 1f, 0f, 1f));
-            }
+            // 添え（払い・ルビ・罫）→ 主（廻・リ）→ 朱（視）の順に、奥から手前へ。
+            AddQuad(verts, uv0, uv1, cols, tris, ref v, ref t, w, h, LayerZDeco,  new Color(0f, 0f, 1f, 1f));
+            AddQuad(verts, uv0, uv1, cols, tris, ref v, ref t, w, h, LayerZMain,  new Color(1f, 0f, 0f, 1f));
+            AddQuad(verts, uv0, uv1, cols, tris, ref v, ref t, w, h, LayerZAccent, new Color(0f, 1f, 0f, 1f));
 
             var m = new Mesh { name = "TitleGlyphMesh" };
             m.SetVertices(verts);
@@ -448,33 +430,21 @@ namespace FixedCamVr.Streaming
             return m;
         }
 
-        /// <summary>
-        /// アトラスの帯 1 つを、テクセル比を保った矩形として置く。
-        /// 帯の中心はテクスチャの中心を原点として決まる（＝ PNG に焼いた通りの配置）。
-        /// </summary>
+        /// <summary>版 1 枚を、指定の奥行きに、縦横比を保って置く。</summary>
         private void AddQuad(Vector3[] verts, Vector2[] uv0, Vector2[] uv1, Color[] cols, int[] tris,
-                             ref int v, ref int t,
-                             float x0, float y0, float x1, float y1, float pxPerM, float z, Color col)
+                             ref int v, ref int t, float w, float h, float z, Color col)
         {
-            float w = (x1 - x0) / pxPerM;
-            float h = (y1 - y0) / pxPerM;
-            // px は左上原点、world は下が -Y。テクスチャ中心からの差で置く。
-            float cx = ((x0 + x1) * 0.5f - TexW * 0.5f) / pxPerM;
-            float cy = (TexH * 0.5f - (y0 + y1) * 0.5f) / pxPerM;
-
             int b = v;
-            verts[v + 0] = new Vector3(cx - w * 0.5f, cy - h * 0.5f, z);
-            verts[v + 1] = new Vector3(cx + w * 0.5f, cy - h * 0.5f, z);
-            verts[v + 2] = new Vector3(cx - w * 0.5f, cy + h * 0.5f, z);
-            verts[v + 3] = new Vector3(cx + w * 0.5f, cy + h * 0.5f, z);
+            verts[v + 0] = new Vector3(-w * 0.5f, -h * 0.5f, z);
+            verts[v + 1] = new Vector3(w * 0.5f, -h * 0.5f, z);
+            verts[v + 2] = new Vector3(-w * 0.5f, h * 0.5f, z);
+            verts[v + 3] = new Vector3(w * 0.5f, h * 0.5f, z);
 
-            // UV は左下原点。焼くとき 1 度だけ上下を反しているので、ここでは v = 1 - y/TexH。
-            float u0 = x0 / TexW, u1 = x1 / TexW;
-            float vv0 = 1f - y1 / TexH, vv1 = 1f - y0 / TexH;
-            uv0[v + 0] = new Vector2(u0, vv0);
-            uv0[v + 1] = new Vector2(u1, vv0);
-            uv0[v + 2] = new Vector2(u0, vv1);
-            uv0[v + 3] = new Vector2(u1, vv1);
+            // 版は 1 枚まるごと使う。PNG の 1 行目が v=1（上）に入るので上下は合っている。
+            uv0[v + 0] = new Vector2(0f, 0f);
+            uv0[v + 1] = new Vector2(1f, 0f);
+            uv0[v + 2] = new Vector2(0f, 1f);
+            uv0[v + 3] = new Vector2(1f, 1f);
 
             uv1[v + 0] = new Vector2(0f, 0f);
             uv1[v + 1] = new Vector2(1f, 0f);

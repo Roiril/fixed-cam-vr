@@ -18,8 +18,11 @@ Shader "FixedCamVr/TitleVeil"
         _Opacity("Opacity (0..1)", Range(0, 1)) = 0
         // 完全な黒にしない。ごく薄い中心の持ち上げがあると「消灯した画面」ではなく
         // 「奥行きのある闇」に見える。値は肉眼でぎりぎり分かる程度。
-        _CoreColor("Core color", Color) = (0.013, 0.016, 0.015, 1)
-        _EdgeDarken("Vignette", Range(0, 1)) = 0.85
+        //
+        // ⚠ **わずかに赤へ寄せる**（2026-08-12）。純黒の地に生成りの墨を置くと印刷物ではなく
+        // 発光する看板に見える。暗い漆のような暖かい地だと、墨が紙に載っているように見える。
+        _CoreColor("Core color", Color) = (0.0400, 0.0215, 0.0185, 1)
+        _EdgeDarken("Vignette", Range(0, 1)) = 0.80
         // ⚠ 大きくしない。地がほぼ黒なので、0.01 でも sRGB では砂嵐に見える（2026-08-12 実測）。
         _Grain("Grain", Range(0, 0.05)) = 0.004
         _PhaseSec("Preview phase (s)", Float) = 0
@@ -89,7 +92,7 @@ Shader "FixedCamVr/TitleVeil"
                 if (a <= 0.002) return half4(0, 0, 0, 0);
 
                 float2 c = i.uv * 2.0 - 1.0;
-                float vig = 1.0 - saturate(length(c) * 0.72) * _EdgeDarken;
+                float vig = 1.0 - saturate(length(c) * 0.55) * _EdgeDarken;
                 float t = _Time.y + _PhaseSec;
                 float g = (Hash21(i.uv * 733.0 + frac(t) * 91.0) - 0.5) * _Grain;
 

@@ -6,20 +6,21 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
-    /// タイトルの距離場テクスチャ（<c>Assets/Resources/Title/</c>）の取り込み設定を<b>機械で固定する</b>。
+    /// タイトルの版（<c>Assets/Resources/Title/</c>）の取り込み設定を<b>機械で固定する</b>。
     ///
     /// なぜ .meta を手で書かずにここで押さえるか:
     ///   - <b>既定のまま取り込まれると実機で潰れる</b>。Android の既定は ASTC 圧縮で、
-    ///     距離場を圧縮すると縁が段になる（字の輪郭がブロック状にギザつく）。
+    ///     ここは 4 チャンネルが別々の意味を持つマスクなので、圧縮すると混ざる
+    ///     （かすれの縁がブロック状にギザつき、朱と白がにじむ）。
     ///   - <b>ミップも要らない</b>。タイトルは常に画面いっぱいなので、ミップは滲ませるだけ。
-    ///   - 焼き直し（<c>tools/make-title-sdf.py</c>）のたびに人が設定を直すことになるし、
+    ///   - 焼き直し（<c>tools/make-title-art.py</c>）のたびに人が設定を直すことになるし、
     ///     直し忘れは**実機の画を見るまで気づけない**（Editor では綺麗に出る）。
     ///
-    /// ⚠ 距離場は **alpha に入っている**。Unity は RGB にだけ sRGB 変換を掛けるので、
-    /// RGB に入れると <c>sRGBTexture</c> の設定 1 つで縁の太さが変わる。alpha なら起きない。
-    /// 焼く側（make-title-sdf.py）と読む側（TitleGlyph.shader の <c>.a</c>）が対。
+    /// ⚠ **これはマスクであって絵ではない。** R=主の白墨 / G=朱の墨 / B=溶ける順 / A=添えの白墨。
+    /// sRGB 変換が掛かると墨の量が変わるので <c>sRGBTexture = false</c> を必ず立てる。
+    /// 焼く側（tools/make-title-art.py）と読む側（TitleGlyph.shader）が対で、片方だけ直すと食い違う。
     /// </summary>
-    public sealed class TitleSdfImporter : AssetPostprocessor
+    public sealed class TitleArtImporter : AssetPostprocessor
     {
         private const string Folder = "Assets/Resources/Title/";
 
