@@ -44,6 +44,7 @@ namespace FixedCamVr.Streaming
         private static readonly int OpacityId = Shader.PropertyToID("_Opacity");
         private static readonly int HexSizeId = Shader.PropertyToID("_HexSizeM");
         private static readonly int GlowGainId = Shader.PropertyToID("_GlowGain");
+        private static readonly int BoxSizeId = Shader.PropertyToID("_BoxSize");
 
         private MeshRenderer? _renderer;
         private Transform? _box;
@@ -177,6 +178,8 @@ namespace FixedCamVr.Streaming
             _mat.SetFloat(OpacityId, a);
             _mat.SetFloat(HexSizeId, hexSizeM);
             _mat.SetFloat(GlowGainId, glowGain);
+            // 模様を「1 枚のシートで巻く」ために実寸が要る（周長で六角の周期を丸める）。
+            _mat.SetVector(BoxSizeId, new Vector4(_half.x * 2f, heightM, _half.y * 2f, 0f));
             _renderer.enabled = true;
             AppliedOpacity = a;
         }

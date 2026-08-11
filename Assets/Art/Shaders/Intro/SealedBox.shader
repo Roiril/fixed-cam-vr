@@ -28,6 +28,10 @@ Shader "FixedCamVr/SealedBox"
         // 光。線の上にだけ加算する。
         _GlowColor("Glow color", Color) = (0.140, 0.260, 0.240, 1)
         _HexSizeM("Hex size (m)", Float) = 0.45
+        // 箱の実寸 (m)。模様を「1 枚のシートで巻く」ために要る（C# が毎フレーム書く）。
+        _BoxSize("Box size (m)", Vector) = (3, 2.4, 3, 0)
+        // 噛み合わせられない継ぎ目（側面と天面）で模様を消す幅 (m)。
+        _SeamFadeM("Seam fade (m)", Float) = 0.18
         _LineWidth("Hex line width (0..0.5)", Range(0.003, 0.08)) = 0.012
         _GlowGain("Glow gain", Range(0, 3)) = 1.0
         // 光の波。上へ昇る波と、横へ流れる波を重ねる（同じ明滅が面全体で揃わない）。
@@ -66,6 +70,8 @@ Shader "FixedCamVr/SealedBox"
             float4 _LineColor;
             float4 _GlowColor;
             float _HexSizeM;
+            float4 _BoxSize;
+            float _SeamFadeM;
             float _LineWidth;
             float _GlowGain;
             float _WaveLenM;
@@ -95,6 +101,10 @@ Shader "FixedCamVr/SealedBox"
                 float4 positionCS : SV_POSITION;
                 float3 positionWS : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
+                // 模様は**箱のローカル座標**で引く。world だと箱の向きで模様が回り、
+                // 面をまたいだ継ぎ目も合わない。
+                float3 positionOS : TEXCOORD2;
+                float3 normalOS : TEXCOORD3;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -105,6 +115,8 @@ Shader "FixedCamVr/SealedBox"
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 o.positionWS = TransformObjectToWorld(v.positionOS.xyz);
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
+                o.positionOS = v.positionOS.xyz;
+                o.normalOS = v.normalOS;
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 return o;
             }
@@ -146,21 +158,59 @@ Shader "FixedCamVr/SealedBox"
                 // 覆いの開口で切る。平面は覆いのローカル空間なので、世界の点を移してから見る。
                 // ⚠ 内側へ **_ApertureBias** ぶん寄せる。平面は中央眼で解かれているので、
                 //    眼ごとに 1〜2cm ずれる。寄せておけば覆いの黒が必ず箱の縁を覆う。
-                float3 dl = normalize(mul(_IntroFrameW2L, float4(i.positionWS, 1.0)).xyz);
-                float m = max(max(dot(dl, _IntroFramePlane0.xyz), dot(dl, _IntroFramePlane1.xyz)),
-                              max(dot(dl, _IntroFramePlane2.xyz), dot(dl, _IntroFramePlane3.xyz)));
-                const float _ApertureBias = 0.03;
-                a *= 1.0 - smoothstep(-_IntroFrameFeather - _ApertureBias, -_ApertureBias, m);
+                // ⚠ **誰も配っていないなら切らない。** 平面は単位ベクトルで配られるので、
+                //    長さ 0 は「未設定」を意味する。Editor のプレビューのように覆いが居ない場所で
+                //    切ってしまうと、箱が丸ごと透明になる（2026-08-11 にプレビューが全部空になった）。
+                if (dot(_IntroFramePlane0.xyz, _IntroFramePlane0.xyz) > 0.5)
+                {
+                    float3 dl = normalize(mul(_IntroFrameW2L, float4(i.positionWS, 1.0)).xyz);
+                    float m = max(max(dot(dl, _IntroFramePlane0.xyz), dot(dl, _IntroFramePlane1.xyz)),
+                                  max(dot(dl, _IntroFramePlane2.xyz), dot(dl, _IntroFramePlane3.xyz)));
+                    const float _ApertureBias = 0.03;
+                    a *= 1.0 - smoothstep(-_IntroFrameFeather - _ApertureBias, -_ApertureBias, m);
+                }
                 if (a <= 0.002) return half4(0, 0, 0, 0);
 
-                // 面ごとに world 座標の 2 軸を選ぶ（箱の 3 方向で模様が連続する）。
-                float3 n = abs(i.normalWS);
+                // ---- 模様の座標。**箱に 1 枚のシートを巻いた形**にする ----
+                // 側面 4 枚を周長方向へ展開すると、縦の 4 辺は座標が連続する ＝ 継ぎ目で噛み合う。
+                // 巻き終わり（u = 0 と u = 周長）が合うよう、六角の周期を**周長の約数へ丸める**。
+                // ⚠ 天面と側面は 1 枚のシートにできない（直交する 2 方向の格子は原理的に繋がらない）。
+                //    そこだけは模様を消して、人の補完に任せる（LEDGER 0006）。
+                float bw = max(_BoxSize.x, 0.05);
+                float bh = max(_BoxSize.y, 0.05);
+                float bd = max(_BoxSize.z, 0.05);
+                float3 lp = i.positionOS * _BoxSize.xyz;      // ローカル座標 (m)・中心が原点
+
+                float3 n = abs(i.normalOS);
                 bool topFace = n.y > max(n.x, n.z);
-                float2 pm = topFace ? i.positionWS.xz
-                          : ((n.x > n.z) ? i.positionWS.zy : i.positionWS.xy);
+
+                float perim = 2.0 * (bw + bd);
+                float hexU = perim / max(1.0, round(perim / max(_HexSizeM, 0.02)));
+
+                float2 pm;
+                float seam;   // 1 = 継ぎ目から離れている / 0 = 継ぎ目の上
+                if (topFace)
+                {
+                    pm = lp.xz;
+                    float toRim = min(bw * 0.5 - abs(lp.x), bd * 0.5 - abs(lp.z));
+                    seam = smoothstep(0.0, max(_SeamFadeM, 1e-3), toRim);
+                }
+                else
+                {
+                    // 反時計回り（真上から見て）に周長を辿る。角で必ず値が一致する。
+                    float u;
+                    if (n.x > n.z)
+                        u = (i.normalOS.x > 0.0) ? (bw + (lp.z + bd * 0.5))
+                                                 : (2.0 * bw + bd + (bd * 0.5 - lp.z));
+                    else
+                        u = (i.normalOS.z > 0.0) ? (bw + bd + (bw * 0.5 - lp.x))
+                                                 : (lp.x + bw * 0.5);
+                    pm = float2(u, lp.y);
+                    seam = smoothstep(0.0, max(_SeamFadeM, 1e-3), bh * 0.5 - lp.y);
+                }
 
                 float2 gv, id;
-                HexCell(pm / max(_HexSizeM, 0.02), gv, id);
+                HexCell(pm / hexU, gv, id);
                 float d = HexDist(gv);
 
                 // 辺の線。画素あたりの変化量でぼかすので、遠くでも近くでも同じ太さに見える。
@@ -172,16 +222,17 @@ Shader "FixedCamVr/SealedBox"
                 float aa = clamp(fwidth(d), 1e-4, 0.2);
                 // 細い線は遠くで消える。**1 画素は残す** —「幾何学的にきれい」は線が繋がっていること。
                 float wdt = clamp(max(_LineWidth, aa * 0.9), _LineWidth, 0.06);
-                float edge = smoothstep(0.5 - wdt - aa, 0.5 - wdt + aa, d);
+                float edge = smoothstep(0.5 - wdt - aa, 0.5 - wdt + aa, d) * seam;
 
                 // ---- 光の走り。**動くのは光だけ**で、幾何は 1 ミリも動かない ----
                 float t = _Time.y + _PhaseSec;
                 float up = topFace ? pm.y : i.positionWS.y;   // 天面は world Y が一定なので横で代用
                 float len = max(_WaveLenM, 0.05);
 
-                // 主役は**面の中心から広がる輪**。中に何かが居て、そこから伝わってくる形にする
-                // （平面波だと「横一列が順に点く看板」に見えた）。
-                float rad = length(pm - float2(0.0, topFace ? 0.0 : 1.2));
+                // 主役は**箱の中心から広がる球面の輪**。中に何かが居て、そこから伝わってくる形。
+                // ⚠ 面ごとの 2D 座標で輪を作ると、**角で輪が途切れる**。ローカルの 3D 距離なら
+                //    面をまたいで連続する（平面波だと「横一列が順に点く看板」に見えた）。
+                float rad = length(lp);
                 float w1 = 0.5 + 0.5 * sin(TAU * (rad / len - t / max(_WaveUpSec, 0.2)));
                 // 副役はゆっくり昇る帯。輪だけだと同心円が整いすぎる。
                 float w2 = 0.5 + 0.5 * sin(TAU * (up / (len * 2.2) - t / max(_WaveSideSec, 0.2)));

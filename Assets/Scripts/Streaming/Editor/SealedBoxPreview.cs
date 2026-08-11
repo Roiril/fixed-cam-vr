@@ -54,6 +54,8 @@ namespace FixedCamVr.Streaming.EditorTools
             mat.SetFloat("_HexSizeM", ParseFloat("hex", 0.45f));
             mat.SetFloat("_GlowGain", ParseFloat("glow", 1.0f));
             mat.SetFloat("_LineWidth", ParseFloat("line", 0.012f));
+            mat.SetVector("_BoxSize", new Vector4(BoxW, BoxH, BoxD, 0f));
+            mat.SetFloat("_SeamFadeM", ParseFloat("seam", 0.18f));
 
             var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
             box.name = "[SealedBoxPreview]";
@@ -76,6 +78,10 @@ namespace FixedCamVr.Streaming.EditorTools
             Shot(cam, "far", new Vector3(0f, 1.6f, -3.6f), new Vector3(0f, 1.1f, 0f));
             Shot(cam, "near", new Vector3(1.4f, 1.6f, -2.6f), new Vector3(0f, 1.2f, 0f));
             Shot(cam, "surface", new Vector3(0.4f, 1.5f, -2.0f), new Vector3(0.3f, 1.5f, -1.5f));
+            // 継ぎ目を見るための 2 枚。**角と天面の縁は模様が繋がるかどうかの本題**なので、
+            // 正面から撮った絵だけでは判定できない。
+            Shot(cam, "corner", new Vector3(3.4f, 1.6f, -3.4f), new Vector3(1.5f, 1.1f, -1.5f));
+            Shot(cam, "topedge", new Vector3(0.6f, 1.6f, -2.4f), new Vector3(0.2f, 2.4f, -1.4f));
 
             // ⚠ **静止画では光の走りを判定できない。** 連番を出して動画にする
             //    （`_PhaseSec` を進める — Edit Mode では `_Time` が走らない）。
