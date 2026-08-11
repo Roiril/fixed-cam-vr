@@ -424,8 +424,27 @@ namespace FixedCamVr.Streaming
                               $"（run.intro.startLineId '{_def.startLineId}' は使いません）");
                 }
                 float outsideM = ContainmentShellLogic.DistanceOutsideM(p, halfXZ);
-                return _approach.Tick(outsideM, IntroLogic.ApproachNearM, IntroLogic.ApproachHoldSec,
-                                      Time.unscaledDeltaTime, valid: true);
+                bool fired = _approach.Tick(outsideM, IntroLogic.ApproachNearM, IntroLogic.ApproachHoldSec,
+                                            Time.unscaledDeltaTime, valid: true);
+                // ⚠ **黙って始まらない状態を作らない。** 一度離れないと武装しないので、
+                //    最初から近くに立っていると永久に待つ。理由を 1 回だけ名指しする。
+                if (!fired && !_approach.Armed)
+                {
+                    _approachWaitSec += Time.unscaledDeltaTime;
+                    if (_approachWaitSec > 8f && !_warnedApproachNotArmed)
+                    {
+                        _warnedApproachNotArmed = true;
+                        Debug.LogWarning(
+                            $"[Intro] 体験エリアに近すぎて開始待ちのままです（いま外へ {outsideM:F2}m）。" +
+                            $"一度 {IntroLogic.ApproachNearM + ApproachLogic.ArmMarginM:F2}m 以上" +
+                            "離れてから近づくと始まります。スタッフの ⏭ でも進められます");
+                    }
+                }
+                else
+                {
+                    _approachWaitSec = 0f;
+                }
+                return fired;
             }
 
             // ライン指定があればそちらが正（円は見ない）。
@@ -458,6 +477,8 @@ namespace FixedCamVr.Streaming
             _startLine.Reset();
             _startSpot.Rearm();
             _approach.Rearm();
+            _warnedApproachNotArmed = false;
+            _approachWaitSec = 0f;
         }
 
         private bool IsUserPresent()
@@ -471,6 +492,8 @@ namespace FixedCamVr.Streaming
         private readonly StartSpotLogic _startSpot = new StartSpotLogic();
         private readonly ApproachLogic _approach = new ApproachLogic();
         private bool _warnedApproachOverridesLine;
+        private bool _warnedApproachNotArmed;
+        private float _approachWaitSec;
         private bool _wasRegistering;
         private bool _startLineResolved;          // layout.lines から実際に引けたか
         private bool _startLineWarned;            // 警告は 1 回だけ（未着なら毎フレーム引き直すので）

@@ -971,32 +971,40 @@ def analyze(events, others, exp, warns=None):
             elif "1" in shell_built:
                 w("  隔離殻: 実体を組めている")
 
+        # ⚠ **導入は体験エリアの外で流れる**（canon/LEDGER.md 0005）。外に居るあいだ中を隠すのは
+        # 封印の箱の仕事なので、**隔離殻が 0 なのが正常**。殻が出るのは「中に入ってしまった」時だけ。
+        shell = effect_samples(events, "shell", t_from=real_t, t_to=run_t)
+        if shell:
+            any_effect_key = True
+            w(f"  隔離（真っ黒）が出た標本: {shell.count('1')}/{len(shell)}"
+              "（外に居れば 0 が正常・中に入ると 1）")
+
+        # **これが今いちばん大事な 1 行。** 導入のあいだに実物の壁と床を見せたら約束違反。
+        rev = effect_samples(events, "shellRev", t_from=real_t, t_to=run_t)
+        if rev:
+            any_effect_key = True
+            if "1" in rev:
+                verdict("FAIL", "導入のあいだに中の様子（実物の壁と床）が見えている — "
+                                "固定視点になるまで見せない約束（canon/LEDGER.md 0005）が破れている")
+            else:
+                verdict("OK", "導入のあいだ中の様子は 1 度も出ていない")
+
         boxes = []
         for v in effect_samples(events, "shellBox"):
             try:
                 boxes.append(int(v))
             except ValueError:
                 pass
-        if boxes:
+        # 箱の数は「見せる」設定のときだけ意味がある（終幕）。導入では組まないので 0 が正常。
+        if boxes and rev and "1" in rev:
             any_effect_key = True
             w(f"  隔離が許した箱: 最大 {max(boxes)} 個（床 1 + 部屋の壁・箱）")
             if max(boxes) == 0:
                 verdict("WARN", "隔離の幾何が 1 つも無い（layout.room も layout.floor も未著作）— "
-                                "殻は捏造しないので出ない。卓の 🧱 部屋で実物の壁を引き、"
-                                "較正パネルで床の実寸を入れる")
+                                "卓の 🧱 部屋で実物の壁を引き、較正パネルで床の実寸を入れる")
             elif max(boxes) < 2:
                 verdict("WARN", "隔離が床しか許していない（layout.room に壁が無い）— "
                                 "実物の壁まで黒く消える。卓の 🧱 部屋で壁を引く")
-
-        shell = effect_samples(events, "shell", t_from=real_t, t_to=run_t)
-        if shell:
-            any_effect_key = True
-            w(f"  隔離が描画された標本: {shell.count('1')}/{len(shell)}")
-            if "1" not in shell and "-" not in shell:
-                verdict("FAIL", "隔離が一度も描画されていない（段は進んでいるのに会場が消えていない）— "
-                                "位置合わせ未完了か、幾何が未著作か、シェーダが剥がれた")
-            elif "1" in shell:
-                verdict("OK", f"隔離が描画された（{shell.count('1')}/{len(shell)} 標本）")
 
         # -- 封印の箱（外から見た隔離）。段 0 で体験エリアの外に居るあいだだけ出る。
         box_built = effect_samples(events, "boxBuilt")

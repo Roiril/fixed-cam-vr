@@ -242,11 +242,26 @@ namespace FixedCamVr.Tracking
         /// <summary>体験エリアの外に出て少し立つ。封印の箱を見る時間（<see cref="SealBoxHoldSec"/>）。</summary>
         private const float SealBoxHoldSec = 4f;
 
-        /// <summary>境界からどれだけ外へ出るか (m)。<c>IntroLogic.ApproachNearM</c> より外へ。</summary>
-        private const float OutsideMarginM = 1.8f;
+        /// <summary>武装に必要な距離へさらに足す余裕 (m)。</summary>
+        private const float OutsideMarginM = 0.5f;
 
-        /// <summary>導入を起こすために近づく距離 (m)。<c>IntroLogic.ApproachNearM</c> より内へ。</summary>
-        private const float TriggerMarginM = 0.6f;
+        /// <summary>導入を起こす立ち位置の「矩形の外までの距離」(m)。中へは入らない。</summary>
+        private const float TriggerMarginM = 0.35f;
+
+        /// <summary>
+        /// <paramref name="dir"/> の向きへ、<b>矩形の外までの距離</b>が <paramref name="wantM"/> に
+        /// なるまで出た点を返す。原点からの半径で決めると、斜め方向で必ず足りなくなる。
+        /// </summary>
+        private static Vector2 StepOutUntil(Vector2 dir, Vector2 half, float wantM)
+        {
+            float reach = Mathf.Max(half.x, half.y);
+            for (int i = 0; i < 60; i++)
+            {
+                if (ContainmentShellLogic.DistanceOutsideM(dir * reach, half) >= wantM) break;
+                reach += 0.1f;
+            }
+            return dir * reach;
+        }
 
         /// <summary>
         /// 体験エリアの外へ回り込んでから中へ入る。<b>封印の箱は外からしか見えない</b>ので、
@@ -265,16 +280,19 @@ namespace FixedCamVr.Tracking
             }
 
             Vector2 dir = entryPoint.sqrMagnitude > 1e-4f ? entryPoint.normalized : new Vector2(0f, -1f);
-            float reach = Mathf.Max(half.x, half.y) + OutsideMarginM;
-            Vector2 outside = dir * reach;
+            // ⚠ **原点からの半径で立ち位置を決めない**（2026-08-11 実測）。斜めに出ると
+            //    「矩形の外までの距離」は半径よりずっと短く、実測で 1.8m 出したつもりが 1.20m しか
+            //    離れておらず、接近の武装（1.0 + 0.35）に届かないまま導入が始まらなかった。
+            Vector2 outside = StepOutUntil(dir, half,
+                IntroLogic.ApproachNearM + ApproachLogic.ArmMarginM + OutsideMarginM);
             Debug.Log($"[XPWalk] 外から接近 ({outside.x:F2},{outside.y:F2}) — 封印の箱を {SealBoxHoldSec:F0}s 見る");
             yield return StartCoroutine(WalkTo(outside));
             FaceCourseOrigin();
             yield return new WaitForSeconds(SealBoxHoldSec);
 
             // **導入の合図はここ** — 境界へ近づく（IntroLogic.ApproachNearM 以内へ）。
-            // 立ち止まる場所は境界の外。導入が終わるまで中へは入らない。
-            Vector2 trigger = dir * (Mathf.Max(half.x, half.y) + TriggerMarginM);
+            // 立ち止まる場所は**境界の外**。導入が終わるまで中へは入らない。
+            Vector2 trigger = StepOutUntil(dir, half, TriggerMarginM);
             Debug.Log($"[XPWalk] 近づく ({trigger.x:F2},{trigger.y:F2}) — 導入が始まるはず");
             yield return StartCoroutine(WalkTo(trigger));
         }
