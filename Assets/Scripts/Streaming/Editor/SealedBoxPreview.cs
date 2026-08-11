@@ -20,8 +20,18 @@ namespace FixedCamVr.Streaming.EditorTools
     public static class SealedBoxPreview
     {
         private const string OutDir = "Assets/Screenshots/sealedbox";
+
+        /// <summary>光の走りを見るための連番。<b>Assets の外</b>（毎回 100 枚をインポートさせない）。</summary>
+        private const string WaveDir = "logs/sealedbox";
+
         private const int Width = 1280;
         private const int Height = 960;
+        private const int WaveWidth = 960;
+        private const int WaveHeight = 720;
+
+        /// <summary>連番の枚数と間隔。上下の波 5s と横の波 7.5s が重なるので 10 秒ぶん見る。</summary>
+        private const int WaveFrames = 120;
+        private const float WaveDt = 1f / 12f;
 
         /// <summary>箱の寸法 (m)。show.json の床（1.8 四方）＋ 隔離の余白 0.6 と同じ既定。</summary>
         private const float BoxW = 3.0f;
@@ -42,7 +52,8 @@ namespace FixedCamVr.Streaming.EditorTools
             var mat = new Material(shader) { name = "SealedBox (preview)" };
             mat.SetFloat("_Opacity", 1f);
             mat.SetFloat("_HexSizeM", ParseFloat("hex", 0.45f));
-            mat.SetFloat("_MarkDensity", ParseFloat("marks", 0.14f));
+            mat.SetFloat("_GlowGain", ParseFloat("glow", 1.0f));
+            mat.SetFloat("_LineWidth", ParseFloat("line", 0.012f));
 
             var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
             box.name = "[SealedBoxPreview]";
@@ -66,6 +77,10 @@ namespace FixedCamVr.Streaming.EditorTools
             Shot(cam, "near", new Vector3(1.4f, 1.6f, -2.6f), new Vector3(0f, 1.2f, 0f));
             Shot(cam, "surface", new Vector3(0.4f, 1.5f, -2.0f), new Vector3(0.3f, 1.5f, -1.5f));
 
+            // ⚠ **静止画では光の走りを判定できない。** 連番を出して動画にする
+            //    （`_PhaseSec` を進める — Edit Mode では `_Time` が走らない）。
+            WaveSequence(cam, mat, new Vector3(0f, 1.6f, -3.6f), new Vector3(0f, 1.1f, 0f));
+
             Object.DestroyImmediate(camGo);
             Object.DestroyImmediate(box);
             Object.DestroyImmediate(mat);
@@ -73,14 +88,36 @@ namespace FixedCamVr.Streaming.EditorTools
             Debug.Log($"[SealedBoxPreview] 3 枚を {OutDir} へ出しました（模様を見るための絵。現場の見えではない）");
         }
 
+        /// <summary>光の走りを連番で出す。<see cref="WaveDir"/> は Assets の外。</summary>
+        private static void WaveSequence(Camera cam, Material mat, Vector3 eye, Vector3 lookAt)
+        {
+            Directory.CreateDirectory(WaveDir);
+            foreach (string old in Directory.GetFiles(WaveDir, "wave_*.png")) File.Delete(old);
+
+            cam.transform.position = eye;
+            cam.transform.rotation = Quaternion.LookRotation(lookAt - eye, Vector3.up);
+            for (int f = 0; f < WaveFrames; f++)
+            {
+                mat.SetFloat("_PhaseSec", f * WaveDt);
+                Capture(cam, WaveWidth, WaveHeight, Path.Combine(WaveDir, $"wave_{f:D3}.png"));
+            }
+            mat.SetFloat("_PhaseSec", 0f);
+            Debug.Log($"[SealedBoxPreview] 光の走り {WaveFrames} 枚 → {WaveDir}"
+                      + $"（{WaveDt:F3}s 刻み・{WaveFrames * WaveDt:F1} 秒ぶん）");
+        }
+
         private static void Shot(Camera cam, string name, Vector3 eye, Vector3 lookAt)
         {
             cam.transform.position = eye;
             cam.transform.rotation = Quaternion.LookRotation(lookAt - eye, Vector3.up);
+            Capture(cam, Width, Height, Path.Combine(OutDir, $"sealedbox_{name}.png"));
+        }
 
+        private static void Capture(Camera cam, int w, int h, string path)
+        {
             // ⚠ sRGB を明示する。プロジェクトは Linear なので、linear のまま PNG へ書くと
             //    **実際より 2 段暗い絵**になり、明るさの判断を丸ごと誤る。
-            var rt = new RenderTexture(Width, Height, 24, RenderTextureFormat.ARGB32,
+            var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32,
                                        RenderTextureReadWrite.sRGB)
             {
                 antiAliasing = 4,
@@ -90,19 +127,19 @@ namespace FixedCamVr.Streaming.EditorTools
 
             // ⚠ **MSAA の RT から直接 ReadPixels しない。** 解決前の面を読むので、まだらな
             //    斑点が絵に混じる（2026-08-10 実測。模様の粒だと誤読しかけた）。1 度 Blit して落とす。
-            var resolved = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGB32,
+            var resolved = new RenderTexture(w, h, 0, RenderTextureFormat.ARGB32,
                                              RenderTextureReadWrite.sRGB);
             Graphics.Blit(rt, resolved);
 
             RenderTexture prev = RenderTexture.active;
             RenderTexture.active = resolved;
-            var tex = new Texture2D(Width, Height, TextureFormat.RGB24, false);
-            tex.ReadPixels(new Rect(0, 0, Width, Height), 0, 0);
+            var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+            tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
             tex.Apply();
             RenderTexture.active = prev;
             cam.targetTexture = null;
 
-            File.WriteAllBytes(Path.Combine(OutDir, $"sealedbox_{name}.png"), tex.EncodeToPNG());
+            File.WriteAllBytes(path, tex.EncodeToPNG());
             Object.DestroyImmediate(tex);
             resolved.Release();
             Object.DestroyImmediate(resolved);

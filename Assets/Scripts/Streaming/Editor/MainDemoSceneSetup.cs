@@ -730,8 +730,8 @@ namespace FixedCamVr.Streaming.EditorTools
             if (showControl != null) TrySetObjectRef(so, "showControl", showControl);
             TrySetBool(so, "boxEnabled", true);
             TrySetFloat(so, "heightM", 2.4f);
-            TrySetFloat(so, "hexSizeM", 0.28f);
-            TrySetFloat(so, "markDensity", 0.16f);
+            TrySetFloat(so, "hexSizeM", 0.45f);
+            TrySetFloat(so, "glowGain", 1.0f);
             so.ApplyModifiedPropertiesWithoutUndo();
             return box;
         }

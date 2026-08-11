@@ -1,13 +1,15 @@
 // 封印の箱。**体験エリアの外に立っている人から見た、隔離の外側**。
 //
-// 出どころは .claude/canon/LEDGER.md 0003（「不気味な感じの黒い箱」「ところどころに模様」
-// 「何かが封印されてそう」）。中から見た同じ境界が ContainmentShell で、
+// 出どころは .claude/canon/LEDGER.md 0003 / 0004。中から見た同じ境界が ContainmentShell で、
 // **箱の外面と内面は同じ 1 つの体積**（footprint は ContainmentShellLogic が持つ）。
 //
 // 模様は手続きで描く（テクスチャを持たない）。理由は 3 つ:
 //   - どの距離でも縁がなまらない（体験者は 3m から 0.5m まで近づく）
-//   - 六角の大きさ・線の太さ・印の密度を数値で振れる（絵を焼き直さなくてよい）
+//   - 六角の大きさ・線の太さ・光の速さを数値で振れる（絵を焼き直さなくてよい）
 //   - 面をまたいで模様が連続する（world 座標で引くので、箱が「削り出した塊」に見える）
+//
+// **線は細く、幾何は正確に、動くのは光だけ**（LEDGER 0004）。塗りつぶしも斑も置かない —
+// 面を汚すと「不気味」ではなく「傷んだ板」になる。非一様さは光の走りが作る。
 //
 // ⚠ 描画順は覆い（IntroVeil・4900）の**後**。覆いは `Blend Zero SrcAlpha` を全画面へ掛けるので、
 // 先に描くと箱ごと 0 に潰れる。**5000 を超えてもいけない**（URP の透明パスは [2501, 5000] だけ）。
@@ -20,18 +22,21 @@ Shader "FixedCamVr/SealedBox"
     {
         _Opacity("Opacity (0..1)", Range(0, 1)) = 0
         // 地。ほぼ黒。わずかに緑を残すと「黒い板」ではなく「暗い面」に見える。
-        _BaseColor("Base color", Color) = (0.022, 0.026, 0.020, 1)
-        // 六角の線。地との差は小さく保つ（強いと炭素繊維のパネルに見える）。
-        _LineColor("Hex line color", Color) = (0.055, 0.065, 0.045, 1)
-        // 塗りつぶされたセル。線よりわずかに明るいだけ。
-        _MarkColor("Mark color", Color) = (0.075, 0.092, 0.058, 1)
+        _BaseColor("Base color", Color) = (0.018, 0.021, 0.017, 1)
+        // 光が来ていないときの線。**ほとんど見えない**くらいでよい（形は光が見せる）。
+        _LineColor("Hex line color (unlit)", Color) = (0.045, 0.054, 0.042, 1)
+        // 光。線の上にだけ加算する。
+        _GlowColor("Glow color", Color) = (0.140, 0.260, 0.240, 1)
         _HexSizeM("Hex size (m)", Float) = 0.45
-        _LineWidth("Hex line width (0..0.5)", Range(0.005, 0.2)) = 0.030
-        _MarkDensity("Marked cell ratio (0..1)", Range(0, 0.6)) = 0.14
-        _PulseSec("Mark pulse period (s)", Float) = 9.0
-        // 模様が出る「ところどころ」。0 で一様、上げるほど地の黒が広がる。
-        _PatchCoverage("Pattern coverage (0..1)", Range(0.05, 1)) = 0.45
-        _PatchScaleM("Pattern blob size (m)", Float) = 1.6
+        _LineWidth("Hex line width (0..0.5)", Range(0.003, 0.08)) = 0.012
+        _GlowGain("Glow gain", Range(0, 3)) = 1.0
+        // 光の波。上へ昇る波と、横へ流れる波を重ねる（同じ明滅が面全体で揃わない）。
+        _WaveLenM("Wave length (m)", Float) = 1.2
+        _WaveUpSec("Rising wave period (s)", Float) = 5.0
+        _WaveSideSec("Side wave period (s)", Float) = 7.5
+        _WaveSharp("Wave crest sharpness", Range(1, 8)) = 4.0
+        // Editor プレビューで時間を進めるための位相 (s)。実行時は 0。
+        _PhaseSec("Preview phase (s)", Float) = 0
     }
 
     SubShader
@@ -54,16 +59,20 @@ Shader "FixedCamVr/SealedBox"
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
+            #define TAU 6.2831853
+
             float _Opacity;
             float4 _BaseColor;
             float4 _LineColor;
-            float4 _MarkColor;
+            float4 _GlowColor;
             float _HexSizeM;
             float _LineWidth;
-            float _MarkDensity;
-            float _PulseSec;
-            float _PatchCoverage;
-            float _PatchScaleM;
+            float _GlowGain;
+            float _WaveLenM;
+            float _WaveUpSec;
+            float _WaveSideSec;
+            float _WaveSharp;
+            float _PhaseSec;
 
             struct Attributes
             {
@@ -98,25 +107,6 @@ Shader "FixedCamVr/SealedBox"
                 return frac((p3.x + p3.y) * p3.z);
             }
 
-            // なめらかな斑（模様が出る場所を決める）。2 段重ねるだけで十分ムラになる。
-            float ValueNoise(float2 p)
-            {
-                float2 i = floor(p);
-                float2 f = frac(p);
-                f = f * f * (3.0 - 2.0 * f);
-                float a = Hash21(i);
-                float b = Hash21(i + float2(1, 0));
-                float c = Hash21(i + float2(0, 1));
-                float d = Hash21(i + float2(1, 1));
-                return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
-            }
-
-            float PatchField(float2 pMeters)
-            {
-                float k = 1.0 / max(_PatchScaleM, 0.2);
-                return 0.65 * ValueNoise(pMeters * k) + 0.35 * ValueNoise(pMeters * k * 2.7);
-            }
-
             // 六角の中心からの「距離」。0 が中心、0.5 が辺。
             float HexDist(float2 p)
             {
@@ -146,18 +136,12 @@ Shader "FixedCamVr/SealedBox"
 
                 // 面ごとに world 座標の 2 軸を選ぶ（箱の 3 方向で模様が連続する）。
                 float3 n = abs(i.normalWS);
-                float2 pm = (n.y > max(n.x, n.z)) ? i.positionWS.xz
+                bool topFace = n.y > max(n.x, n.z);
+                float2 pm = topFace ? i.positionWS.xz
                           : ((n.x > n.z) ? i.positionWS.zy : i.positionWS.xy);
 
-                // **ところどころ**（canon/LEDGER.md 0003）。一様な格子だと炭素繊維のパネルに見える。
-                // 斑の中だけ模様が浮き、外はただの黒い面。
-                float patch = smoothstep(1.0 - saturate(_PatchCoverage) - 0.14,
-                                         1.0 - saturate(_PatchCoverage) + 0.14,
-                                         PatchField(pm));
-
-                float2 uv = pm / max(_HexSizeM, 0.02);
                 float2 gv, id;
-                HexCell(uv, gv, id);
+                HexCell(pm / max(_HexSizeM, 0.02), gv, id);
                 float d = HexDist(gv);
 
                 // 辺の線。画素あたりの変化量でぼかすので、遠くでも近くでも同じ太さに見える。
@@ -167,27 +151,34 @@ Shader "FixedCamVr/SealedBox"
                 // ⚠ fwidth は面が視線と平行に近いところで発散する。上限を切らないと箱の下端に
                 //    横縞が出る（同日実測）。
                 float aa = clamp(fwidth(d), 1e-4, 0.2);
-                float edge = smoothstep(0.5 - _LineWidth - aa, 0.5 - _LineWidth + aa, d) * patch;
+                // 細い線は遠くで消える。**1 画素は残す** —「幾何学的にきれい」は線が繋がっていること。
+                float wdt = clamp(max(_LineWidth, aa * 0.9), _LineWidth, 0.06);
+                float edge = smoothstep(0.5 - wdt - aa, 0.5 - wdt + aa, d);
 
-                // 塗りつぶされたセル。斑の濃いところにだけ置き、位相をずらしてごくゆっくり息をする。
-                // ⚠ セルの識別子を `floor(id * 8)` で作らない。六角の中心の x はちょうど 0.5 刻みなので、
-                //    8 倍すると**整数の境界に乗り**、floor が浮動小数の誤差で画素ごとに揺れる
-                //    ＝ そのセルだけ砂を撒いたような斑点になる（2026-08-10 実測で踏んだ）。
-                //    id はセルごとに一定なので、そのまま撹拌すればよい。
+                // ---- 光の走り。**動くのは光だけ**で、幾何は 1 ミリも動かない ----
+                float t = _Time.y + _PhaseSec;
+                float up = topFace ? pm.y : i.positionWS.y;   // 天面は world Y が一定なので横で代用
+                float len = max(_WaveLenM, 0.05);
+
+                // 主役は**面の中心から広がる輪**。中に何かが居て、そこから伝わってくる形にする
+                // （平面波だと「横一列が順に点く看板」に見えた）。
+                float rad = length(pm - float2(0.0, topFace ? 0.0 : 1.2));
+                float w1 = 0.5 + 0.5 * sin(TAU * (rad / len - t / max(_WaveUpSec, 0.2)));
+                // 副役はゆっくり昇る帯。輪だけだと同心円が整いすぎる。
+                float w2 = 0.5 + 0.5 * sin(TAU * (up / (len * 2.2) - t / max(_WaveSideSec, 0.2)));
+                float glow = pow(w1, _WaveSharp) * 0.9 + pow(w2, _WaveSharp) * 0.45;
+
+                // セルごとに位相をずらす。揃うと「面全体が点滅する看板」に見える。
                 float r = Hash21(id + float2(31.7, 17.3));
-                float marked = step(1.0 - saturate(_MarkDensity), r) * smoothstep(0.45, 0.8, patch);
-                float inner = 1.0 - smoothstep(0.30, 0.34 + aa, d);
-                float phase = frac(r * 7.13);
-                float pulse = 0.78 + 0.22 * sin(6.2831853 * (_Time.y / max(_PulseSec, 0.5) + phase));
-                float mark = marked * inner * pulse;
+                glow *= 0.72 + 0.28 * (0.5 + 0.5 * sin(TAU * (t / 6.3 + r)));
+                glow = saturate(glow) * _GlowGain;
 
-                float3 rgb = _BaseColor.rgb;
-                rgb = lerp(rgb, _LineColor.rgb, edge);
-                rgb = lerp(rgb, _MarkColor.rgb, mark);
+                float3 rgb = lerp(_BaseColor.rgb, _LineColor.rgb, edge);
+                rgb += _GlowColor.rgb * (edge * glow);
 
                 // 少しだけ縦に沈める。上端まで一様だと「板」に見える。
                 float h = saturate(i.positionWS.y * 0.35 + 0.15);
-                rgb *= lerp(0.75, 1.0, h);
+                rgb *= lerp(0.78, 1.0, h);
 
                 // ⚠ rgb は straight（ブレンドの SrcAlpha が掛ける）。ここで a を掛けると二重になる。
                 return half4(rgb, a);

@@ -33,17 +33,17 @@ namespace FixedCamVr.Streaming
         [SerializeField, Min(0.5f)] private float heightM = 2.4f;
 
         [Tooltip("六角形の大きさ (m)。模様の粗さ。")]
-        [SerializeField, Min(0.05f)] private float hexSizeM = 0.28f;
+        [SerializeField, Min(0.05f)] private float hexSizeM = 0.45f;
 
-        [Tooltip("印の付いたセルの割合。0 で模様だけ、上げるほど「何かが居る」感じが増える。")]
-        [SerializeField, Range(0f, 0.6f)] private float markDensity = 0.16f;
+        [Tooltip("線を走る光の強さ。0 で模様だけ、上げるほど光が強く流れる。")]
+        [SerializeField, Range(0f, 3f)] private float glowGain = 1.0f;
 
         /// <summary>シェーダ名。ビルドから剥がれないよう Always Included にも入っている。</summary>
         public const string ShaderName = "FixedCamVr/SealedBox";
 
         private static readonly int OpacityId = Shader.PropertyToID("_Opacity");
         private static readonly int HexSizeId = Shader.PropertyToID("_HexSizeM");
-        private static readonly int MarkDensityId = Shader.PropertyToID("_MarkDensity");
+        private static readonly int GlowGainId = Shader.PropertyToID("_GlowGain");
 
         private MeshRenderer? _renderer;
         private Transform? _box;
@@ -176,7 +176,7 @@ namespace FixedCamVr.Streaming
             Place();
             _mat.SetFloat(OpacityId, a);
             _mat.SetFloat(HexSizeId, hexSizeM);
-            _mat.SetFloat(MarkDensityId, markDensity);
+            _mat.SetFloat(GlowGainId, glowGain);
             _renderer.enabled = true;
             AppliedOpacity = a;
         }
