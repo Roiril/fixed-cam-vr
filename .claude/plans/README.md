@@ -53,6 +53,7 @@
 | 08-04 | `manual-camera-align` | — | カメラ位置合わせを「解く」から「合わせる」へ |
 | 08-05 | `actor-follow-and-arms` | — | 人形の追従と腕（まず測る） |
 | 08-05 | `device-tilt-align` | — | 端末の傾きで位置合わせを 4 自由度に |
+| 08-12 | `title-screen` | implemented | タイトル画面「廻リ視」（導入の段 0 に被さる層・右 A で閉じる） |
 
 ## TableDuo（手アバター調査）
 

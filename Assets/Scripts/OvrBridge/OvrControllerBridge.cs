@@ -34,6 +34,11 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("演出モードのラベルを heartbeat へ載せる ShowControlClient（Screen 上）。未割当なら Start で自動取得。")]
         [SerializeField] private ShowControlClient? showControl;
 
+        [Tooltip("タイトル画面（[Title] 上）。**A の意味はここで分岐する** — タイトルが立っていれば " +
+                 "A は「タイトルを閉じて体験を始める」、立っていなければ従来どおりカメラ手動送り。" +
+                 "null でも全機能が従来どおり動く（タイトルが出ないだけ）。")]
+        [SerializeField] private TitleScreen? titleScreen;
+
         [Header("Mappings（右コントローラのみ）")]
         [Tooltip("カメラ手動送り Next（Normal）/ 点サンプル・やり直し（Registration）に使う右手ボタン。既定 A。")]
         [SerializeField] private OVRInput.Button nextButton = OVRInput.Button.One;   // A (右)
@@ -84,9 +89,24 @@ namespace FixedCamVr.OvrBridge
         {
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
 
+            if (titleScreen == null) titleScreen = FindObjectOfType<TitleScreen>();
+
             // 導入演出は「HMD を被った状態で」始める。Streaming asmdef は OVR を参照しない規約なので、
             // Assembly-CSharp 側のここから判定を差し込む（未設定なら被っている扱いで従来どおり動く）。
-            if (showControl != null) showControl.UserPresentProvider = () => OVRPlugin.userPresent;
+            //
+            // ⚠ **タイトルが立っている間も始めない。** 立てておかないと、体験者がタイトルを読んでいる
+            //    最中に導入が黒の裏で流れ切ってしまう（読み終えた頃には固定視点になっている）。
+            //    門はここ 1 つで、`IntroDirector.IsAtStartSpot` が false のとき合図を武装し直すので、
+            //    タイトルを閉じた時点から改めて数え始まる。
+            // ⚠ **必ず素通しへ倒す。** `IsBlocking` はタイトルの実体を組めたときしか true にならない
+            //    （シェーダ剥がれ・テクスチャ欠落なら false）。ここをラッチにすると、タイトルが
+            //    出せない現場で**体験が二度と始まらない**（2026-07-31 のシェーダ剥がれと同型）。
+            if (showControl != null)
+            {
+                var title = titleScreen;
+                showControl.UserPresentProvider =
+                    () => OVRPlugin.userPresent && !(title != null && title.IsBlocking);
+            }
 
             // 位置合わせ中は「現実を隠すもの」を全部どける（演出の覆い・中止の黒・パススルーの電源）。
             // Streaming も Tracking も互いを参照しない規約なので、両方を知っているここが唯一の配線点。
@@ -216,8 +236,22 @@ namespace FixedCamVr.OvrBridge
 
                 case ControllerModeLogic.Mode.Normal:
                 default:
+                    // A: **タイトルが立っていればタイトルを閉じて体験を始める**（2026-08-12）。
+                    //    立っていなければ従来どおりカメラ手動送り Next。
+                    //
+                    //    入力面は右手 4 入力のまま（2026-07-23 の凍結を破っていない）。奪わずに
+                    //    文脈で分けたのは、カメラ手動送りが設営・リハで実際に使われているのと、
+                    //    タイトルが出ている間はカメラを送る場面がそもそも無いから。
+                    //    `RequestDismiss` はタイトルが立っていないと false を返すので、
+                    //    タイトルが組めていない現場でも A は従来の意味のまま働く。
+                    bool titleTook = aDown && titleScreen != null && titleScreen.RequestDismiss();
+                    if (titleTook)
+                    {
+                        haptics?.Fire();   // 体験の開始。短押しより強い手応えを返す
+                        Debug.Log("[Title] A でタイトルを閉じました — 体験を始めます");
+                    }
                     // A: カメラ手動送り Next（設営・リハ確認用。誤爆しても Zone 自動が復帰する）。
-                    if (aDown && registry != null && registry.Count > 0)
+                    if (aDown && !titleTook && registry != null && registry.Count > 0)
                     {
                         if (switchDirector != null)
                         {

@@ -123,6 +123,9 @@ $Menus = [ordered]@{
                             Desc = '封印の箱（外から見た隔離）の模様を 3 枚 PNG 化'
                             Set = 'hex=<六角の大きさ m> / marks=<印の割合>'
                             Out = 'Assets/Screenshots/sealedbox' }
+    'title'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.TitlePreview.Run'
+                            Desc = 'タイトル画面「廻リ視」を 9 枚 + 閉じる演出 56 枚 PNG 化（両眼の厚み確認つき）'
+                            Out = 'Assets/Screenshots/title' }
     'regviz'           = @{ Method = 'FixedCamVr.Tracking.EditorTools.RegistrationVizPreview.Run'
                             Desc = '位置合わせのワイヤーとゾーンのタイルを多角度で PNG 化'
                             Out = 'Assets/Screenshots/regviz' }
