@@ -132,8 +132,18 @@ namespace FixedCamVr.Streaming
         public float shell;
 
         /// <summary>
+        /// 隔離殻が<b>実物の壁と床を見せるか</b>（1 = 見せる / 0 = 何も見せない ＝ 真っ黒）。
+        ///
+        /// 導入のあいだは 0。<b>中の様子は固定視点になるまで見せない</b>という約束
+        /// （<c>canon/LEDGER.md</c> 0005）を、ここ 1 つで保証する。
+        /// 終幕は 1 — 体験が終わって現実へ帰す段なので、壁と床が見えるのが正しい。
+        /// </summary>
+        public float shellReveal;
+
+        /// <summary>
         /// 封印の箱の不透明度。<b>外から見た隔離</b>（<see cref="SealedBox"/>）。
-        /// 出るのは段 0 で体験エリアの外に居るあいだだけで、近づくほど薄れる。
+        /// 段 0 から段 4 まで出しっぱなしで、<b>近づいても開かない</b>
+        /// （開くと中が見えるので、開ける代わりに固定視点になってから入ってもらう）。
         /// </summary>
         public float sealBox;
 
@@ -141,7 +151,8 @@ namespace FixedCamVr.Streaming
         public static IntroWeights Inactive => new IntroWeights
         {
             passthrough = 0f, degrade = 0f, edge = 0f, structure = 0f,
-            frame = 1f, live = 1f, grain = 0f, glitch = 0f, shell = 0f, sealBox = 0f,
+            frame = 1f, live = 1f, grain = 0f, glitch = 0f,
+            shell = 0f, shellReveal = 0f, sealBox = 0f,
         };
     }
 
@@ -208,14 +219,12 @@ namespace FixedCamVr.Streaming
         public const float StructureMinOwnSec = 0.5f;
 
         /// <summary>
-        /// 封印の箱が開き切る距離 (m)。体験エリアの境界からこれだけ外に居れば箱は不透明で、
-        /// 境界に着くまでに消える。**歩いて入る動きを止めない**ための猶予。
-        ///
-        /// ⚠ **短くする側へ倒す。** 1.0m にしていたら、境界から 0.8m の所（＝立って眺める距離）で
-        /// まだ 0.9 にしかならず、実機で**箱ごしに部屋が透けて見えた**（2026-08-10 実測。
-        /// 明るい部屋では 15% 残るだけで「中が見えない」が成立しない）。
+        /// 「近づいた」とみなす距離 (m)。体験エリアの境界からこれ以下まで来たら導入が始まる。
         /// </summary>
-        public const float SealBoxOpenM = 0.5f;
+        public const float ApproachNearM = 1.0f;
+
+        /// <summary>近づいたまま留まる秒数。通りすがりで始めない。</summary>
+        public const float ApproachHoldSec = 0.4f;
 
         /// <summary>
         /// 段 4・段 5 の開始条件を待てる上限 (秒)。超えたら条件を無視して進む。
@@ -231,7 +240,7 @@ namespace FixedCamVr.Streaming
         private float _holdSec;
         private bool _advanceRequested;
         private bool _skipRequested;
-        private float _outsideBoxM;
+        private bool _insideBox;
 
         public IntroStage Stage => _stage;
         public float StageElapsedSec => _stageElapsed;
@@ -290,9 +299,9 @@ namespace FixedCamVr.Streaming
         public IntroEvent Tick(float dt, IntroInput input)
         {
             if (dt < 0f) dt = 0f;
-            // 箱の濃さは Weights から読まれるので、観測値をここで覚えておく
+            // 中に居るかは Weights から読まれるので、観測値をここで覚えておく
             // （Weights に引数を足すと、呼び出し側が「いつの値か」を持つことになる）。
-            _outsideBoxM = input.outsideBoxM > 0f ? input.outsideBoxM : 0f;
+            _insideBox = input.outsideBoxM <= 0f;
             if (_stage == IntroStage.Off || _stage == IntroStage.Done) return IntroEvent.None;
 
             // トラッキング原点が変わったら続行しない。壁の位置が違う世界を見せることになり、
@@ -429,31 +438,26 @@ namespace FixedCamVr.Streaming
                         // 誘導されて歩いてくる（`canon/OPEN.md` の案「線は扉である」）。
                         //
                         // 代わりに、外から見た隔離＝**封印の箱**がここで出る（canon/LEDGER.md 0003）。
-                        // 近づくほど薄れて境界で消えるので、体験者は黒い壁へ突っ込まずに中へ入れる。
-                        return new IntroWeights
-                        {
-                            passthrough = 1f, frame = 0f, live = 0f, shell = 0f,
-                            sealBox = SmoothStep(0f, SealBoxOpenM, _outsideBoxM),
-                        };
-
-                    case IntroStage.Real:
-                        // **線を越えた。ここで隔離が閉じる。** 旧実装のこの段は「何も演出しない
-                        // 比較対象」だったが、比較の相手は段 2 の格下げ（色・輪郭・粒）であって、
-                        // 現実の広さではない。会場が黒へ落ちるのは画の質を 1 つも触らないので、
-                        // 段 1 → 段 2 の読みは保たれる。
-                        return new IntroWeights
+                        // **開かない。** 開くと中が見えるので、開ける代わりに固定視点になってから入ってもらう。
+                        return OutsideWeights(new IntroWeights
                         {
                             passthrough = 1f, frame = 0f, live = 0f,
-                            shell = SmoothStep(0f, 1f, Progress(_t.realSec)),
-                        };
+                        });
+
+                    case IntroStage.Real:
+                        // 近づいた。**ここから先は箱の外で流れる**（canon/LEDGER.md 0005）。
+                        // 素のパススルー ＝ 会場と封印の箱。段 2 の格下げの比較対象になる。
+                        return OutsideWeights(new IntroWeights
+                        {
+                            passthrough = 1f, frame = 0f, live = 0f,
+                        });
 
                     case IntroStage.Degrade:
                     {
                         float p = Progress(_t.degradeSec);
-                        return new IntroWeights
+                        return OutsideWeights(new IntroWeights
                         {
                             passthrough = 1f,
-                            shell = 1f,
                             // 色 → コントラスト → 輪郭 → 粒 の順に足す。一度に全部動かすと
                             // 「質感が落ちた」ではなく「ただ壊れた」に見える。
                             degrade = p,
@@ -461,20 +465,22 @@ namespace FixedCamVr.Streaming
                             structure = SmoothStep(StructureOverlapAt, 1f, p),
                             grain = SmoothStep(0.6f, 1f, p) * 0.6f,
                             frame = 0f, live = 0f,
-                        };
+                        });
                     }
 
                     case IntroStage.Structure:
-                        return new IntroWeights
+                        return OutsideWeights(new IntroWeights
                         {
                             passthrough = 1f, degrade = 1f, edge = 1f, structure = 1f,
-                            grain = 0.6f, frame = 0f, live = 0f, shell = 1f,
-                        };
+                            grain = 0.6f, frame = 0f, live = 0f,
+                        });
 
                     case IntroStage.Frame:
                     {
                         float p = Progress(_t.frameSec);
-                        return new IntroWeights
+                        // 枠が閉じても**枠の中はまだ現実（会場と封印の箱）**。箱は枠の外へはみ出さない
+                        // よう、シェーダ側で開口に切られる（`SealedBox.shader` の `_IntroFrame*`）。
+                        return OutsideWeights(new IntroWeights
                         {
                             passthrough = 1f,
                             degrade = 1f,
@@ -484,10 +490,7 @@ namespace FixedCamVr.Streaming
                             frame = SmoothStep(0f, 1f, p),
                             grain = 0.6f,
                             live = 0f,
-                            // 枠の外は覆いが黒くするので殻は要らないが、**枠の中はまだ現実**なので
-                            // 隔離は保つ（切ると枠の中にだけ会場が戻ってくる）。
-                            shell = 1f,
-                        };
+                        });
                     }
 
                     case IntroStage.Swap:
@@ -497,9 +500,10 @@ namespace FixedCamVr.Streaming
                         float s = SmoothStep(0f, 1f, cross);
                         return new IntroWeights
                         {
-                            // 枠の中身が現実から映像へ入れ替わる。パススルーは最後まで切らない
-                            // （切ると数百 ms の黒が出るため。切るのは本編に入ってから）。
-                            passthrough = 1f - s,
+                            // ⚠ **ここでパススルーを 1 画素も出さない。** 枠の中身が「現実 → 映像」だと、
+                            // 交差の途中で**箱の向こうの中の様子**が透ける（canon/LEDGER.md 0005 で
+                            // 禁じられたもの）。代わりに黒 → 映像で渡す。継ぎ目は乱れが隠す。
+                            passthrough = 0f,
                             degrade = 1f,
                             edge = 0f,
                             structure = 0f,
@@ -508,9 +512,11 @@ namespace FixedCamVr.Streaming
                             grain = 0.6f * (1f - s),   // 以後は映像側の post FX が持つ
                             // 継ぎ目は乱れで隠す（企画書 2.3 の手法をここで一度見せておく）。
                             glitch = Bump(cross),
-                            // 隔離はパススルーと一緒に引く。**残すと画面の映像まで黒く塗る**
-                            // （殻は「見えている現実」を潰す層で、映像には関与しない）。
+                            // 黒 → 映像の渡しは殻が持つ（パススルーが無いので alpha は覆いが 1 に保つ）。
                             shell = 1f - s,
+                            shellReveal = 0f,
+                            // 箱は用済み。パススルーが無いので隠すものが無い。
+                            sealBox = 0f,
                         };
                     }
 
@@ -518,6 +524,29 @@ namespace FixedCamVr.Streaming
                         return IntroWeights.Inactive;
                 }
             }
+        }
+
+        /// <summary>
+        /// 導入は<b>箱の外</b>で流れる（<c>canon/LEDGER.md</c> 0005）。その約束を 1 箇所で守る。
+        ///
+        /// - 外に居る: 中を隠すのは封印の箱の仕事。隔離殻は要らない
+        /// - <b>中に入ってしまった: 黒しか見せない</b>。壁も床も出さない（<c>shellReveal = 0</c>）
+        ///
+        /// 段ごとに書くと必ずどれかを書き忘れるので、各段はここを通す。
+        /// </summary>
+        private IntroWeights OutsideWeights(IntroWeights w)
+        {
+            if (_insideBox)
+            {
+                w.shell = 1f;
+                w.shellReveal = 0f;
+                w.sealBox = 0f;      // 中からは背面カリングで見えない。値でも落としておく
+                return w;
+            }
+            w.shell = 0f;
+            w.shellReveal = 0f;
+            w.sealBox = 1f;
+            return w;
         }
 
         private float Progress(float span) => span > 0f ? Clamp01(_stageElapsed / span) : 1f;

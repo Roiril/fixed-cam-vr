@@ -199,70 +199,124 @@ namespace FixedCamVr.Streaming.Tests
         // ---------------------------------------------------------------- 重み（導入・終幕）
 
         [Test]
-        public void SealBox_OnlyInStageZero_AndOnlyFromOutside()
+        public void Intro_NeverRevealsTheInside_UntilItIsDone()
         {
+            // canon/LEDGER.md 0005 の約束。**導入のあいだ壁も床も出さない**（真っ黒）。
             var l = new IntroLogic();
             l.Configure(IntroTiming.Default);
             l.Begin();
+            var inside = new IntroInput { blackCleared = true, outsideBoxM = 0f };
+            l.Tick(0.016f, inside);
+            Assert.AreEqual(0f, l.Weights.shellReveal, 1e-4f, "段 0 で中を見せている");
+            Assert.AreEqual(1f, l.Weights.shell, 1e-4f, "中に居るのに黒が出ていない");
 
-            // 中に居るあいだは出ない（外から見る面なので、中で出すと視界が箱の内側で埋まる）。
-            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = 0f });
-            Assert.AreEqual(IntroStage.Black, l.Stage);
-            Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
-
-            // 境界の手前で薄く、離れると濃くなる。
-            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = 0.25f });
-            float near = l.Weights.sealBox;
-            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = IntroLogic.SealBoxOpenM });
-            float far = l.Weights.sealBox;
-            Assert.Less(near, far);
-            Assert.AreEqual(1f, far, 1e-3f);
-
-            // 線を越えたら（段 1 以降）二度と出ない。
-            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true, outsideBoxM = 2f });
-            Assert.AreEqual(IntroStage.Real, l.Stage);
-            Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
-        }
-
-        [Test]
-        public void Intro_SealsAtTheLine_NotBefore()
-        {
-            var l = new IntroLogic();
-            l.Configure(IntroTiming.Default);
-            l.Begin();
-            // 段 0（開始待ち）＝ まだ入っていない。会場が見えていないと誘導が成立しない。
-            Assert.AreEqual(IntroStage.Black, l.Stage);
-            Assert.AreEqual(0f, l.Weights.shell, 1e-4f);
-
-            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true });
-            Assert.AreEqual(IntroStage.Real, l.Stage);
-            // 段 1 の頭ではまだ開いていて、段の終わりまでに閉じ切る。
-            Assert.Less(l.Weights.shell, 0.2f);
-            l.Tick(IntroTiming.Default.realSec * 0.95f, new IntroInput { blackCleared = true });
-            Assert.Greater(l.Weights.shell, 0.9f);
-        }
-
-        [Test]
-        public void Intro_ShellNeverOutlivesPassthrough()
-        {
-            // 殻は「見えている現実」を潰す層。映像へ移り切った後も残ると画面の映像まで黒く塗る。
-            var l = new IntroLogic();
-            l.Configure(IntroTiming.Default);
-            l.Begin();
-            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true });
-            for (int i = 0; i < 2000; i++)
+            // 段を進めても shellReveal は 0 のまま。
+            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true, outsideBoxM = 0f });
+            for (int i = 0; i < 2000 && l.Stage != IntroStage.Done; i++)
             {
                 l.Tick(0.016f, new IntroInput
                 {
-                    blackCleared = true, frameCentered = true, liveFresh = true,
+                    blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 0f,
                 });
-                IntroWeights w = l.Weights;
-                Assert.LessOrEqual(w.shell, w.passthrough + 1e-3f,
-                    $"段 {l.Stage} で殻がパススルーより濃い");
+                Assert.AreEqual(0f, l.Weights.shellReveal, 1e-4f, $"段 {l.Stage} で中を見せている");
+            }
+            Assert.AreEqual(IntroStage.Done, l.Stage);
+        }
+
+        [Test]
+        public void Intro_InsideTheArea_IsBlackAndOutsideKeepsTheBox()
+        {
+            var l = new IntroLogic();
+            l.Configure(IntroTiming.Default);
+            l.Begin();
+
+            // 外に居る: 中を隠すのは箱の仕事。殻は要らない。
+            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = 2f });
+            Assert.AreEqual(1f, l.Weights.sealBox, 1e-4f);
+            Assert.AreEqual(0f, l.Weights.shell, 1e-4f);
+
+            // 中に入ってしまった: 黒しか見せない。
+            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = 0f });
+            Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
+            Assert.AreEqual(1f, l.Weights.shell, 1e-4f);
+        }
+
+        [Test]
+        public void Swap_ShowsNoPassthroughAtAll()
+        {
+            // 段 5 で現実を 1 画素も出さない（交差の途中に中の様子が透けるのを防ぐ）。
+            var l = new IntroLogic();
+            l.Configure(IntroTiming.Default);
+            l.Begin();
+            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true, outsideBoxM = 2f });
+            for (int i = 0; i < 3000 && l.Stage != IntroStage.Swap; i++)
+                l.Tick(0.016f, new IntroInput
+                {
+                    blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
+                });
+            Assert.AreEqual(IntroStage.Swap, l.Stage);
+            for (int i = 0; i < 300 && l.Stage == IntroStage.Swap; i++)
+            {
+                l.Tick(0.016f, new IntroInput
+                {
+                    blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
+                });
+                Assert.AreEqual(0f, l.Weights.passthrough, 1e-4f, "段 5 でパススルーが出ている");
+                Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f, "段 5 で箱が画面を覆っている");
+            }
+        }
+
+        // ---------------------------------------------------------------- 接近（導入の合図）
+
+        [Test]
+        public void Approach_NeedsToHaveBeenAway()
+        {
+            var a = new ApproachLogic();
+            // いきなり近くに居るだけでは始めない（起動時にたまたま近い / 前の体験者が立ったまま）。
+            for (int i = 0; i < 60; i++)
+                Assert.IsFalse(a.Tick(0.2f, 1.0f, 0.4f, 0.016f, valid: true));
+
+            // 一度離れてから近づけば成立する。
+            a.Tick(3.0f, 1.0f, 0.4f, 0.016f, valid: true);
+            Assert.IsTrue(a.Armed);
+            bool fired = false;
+            for (int i = 0; i < 40 && !fired; i++) fired = a.Tick(0.5f, 1.0f, 0.4f, 0.016f, valid: true);
+            Assert.IsTrue(fired, "近づいて 0.4 秒留まったのに始まらない");
+        }
+
+        [Test]
+        public void Approach_DropsArmingWhenThePositionIsNotTrusted()
+        {
+            var a = new ApproachLogic();
+            a.Tick(3.0f, 1.0f, 0.4f, 0.016f, valid: true);
+            Assert.IsTrue(a.Armed);
+            a.Tick(0.5f, 1.0f, 0.4f, 0.016f, valid: false);   // 位置合わせが外れた等
+            Assert.IsFalse(a.Armed, "信用できない間に武装が残ると、復帰した瞬間に発火する");
+        }
+
+        [Test]
+        public void Intro_ShellNeverSurvivesIntoTheShow()
+        {
+            // 殻は段 5 で「黒 → 映像」の渡しに使う（canon/LEDGER.md 0005）。
+            // **渡し終わったら必ず 0** — 残すと本編の映像まで黒く塗る。
+            var l = new IntroLogic();
+            l.Configure(IntroTiming.Default);
+            l.Begin();
+            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true, outsideBoxM = 2f });
+            float lastSwapShell = 1f;
+            for (int i = 0; i < 3000; i++)
+            {
+                l.Tick(0.016f, new IntroInput
+                {
+                    blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
+                });
+                if (l.Stage == IntroStage.Swap) lastSwapShell = l.Weights.shell;
                 if (l.Stage == IntroStage.Done) break;
             }
             Assert.AreEqual(IntroStage.Done, l.Stage);
+            Assert.Less(lastSwapShell, 0.05f, "段 5 の終わりで黒が残っている");
             Assert.AreEqual(0f, l.Weights.shell, 1e-4f);
+            Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
         }
 
         [Test]

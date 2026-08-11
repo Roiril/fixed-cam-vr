@@ -320,6 +320,9 @@ namespace FixedCamVr.Diagnostics
         /// <summary>「見てよいもの」の箱の数。<c>0</c> なら幾何が未著作 ＝ 隔離を出しようがない。</summary>
         private string ShellBoxState => _shell == null ? "-" : _shell.BoxCount.ToString();
 
+        /// <summary>隔離が実物の壁と床を見せているか（0 = 真っ黒）。導入は 0 が正常。</summary>
+        private string ShellRevealState => _shell == null ? "-" : (_shell.Revealing ? "1" : "0");
+
         /// <summary>封印の箱が描かれているか。<c>-</c>=シーンに居ない / 0=非描画 / 1=描画中。</summary>
         private string SealBoxState => _box == null ? "-" : (_box.IsActive ? "1" : "0");
 
@@ -386,7 +389,7 @@ namespace FixedCamVr.Diagnostics
                      $"pass={w.passthrough:F2} live={w.live:F2} frame={w.frame:F2} edge={w.edge:F2} " +
                      $"veil={VeilState} veilBuilt={VeilBuiltState} wire={WireState} pt={PassthroughState} " +
                      $"shell={ShellState} shellBuilt={ShellBuiltState} shellBox={ShellBoxState} " +
-                     $"box={SealBoxState} boxBuilt={SealBoxBuiltState}");
+                     $"shellRev={ShellRevealState} box={SealBoxState} boxBuilt={SealBoxBuiltState}");
             }
 
             // コントローラの操作モード（NORMAL / REG）。**位置合わせが起きたかの唯一の観測点**。
@@ -593,6 +596,7 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" shell=").Append(ShellState);
             _sb.Append(" shellBuilt=").Append(ShellBuiltState);
             _sb.Append(" shellBox=").Append(ShellBoxState);
+            _sb.Append(" shellRev=").Append(ShellRevealState);
             _sb.Append(" box=").Append(SealBoxState);
             _sb.Append(" boxBuilt=").Append(SealBoxBuiltState);
             _sb.Append(" cg=").Append(CgState);

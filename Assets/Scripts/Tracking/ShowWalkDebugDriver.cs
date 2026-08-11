@@ -140,6 +140,19 @@ namespace FixedCamVr.Tracking
             //    ここで外へ出て少し立つと、自動走行が導入の最初の絵まで通しで踏む。
             yield return StartCoroutine(ApproachFromOutside(layout, hasLine ? before : Vector2.zero));
 
+            // ⚠ **導入は箱の外で流れる**（canon/LEDGER.md 0005）。終わるまで中へ入らない —
+            //    入ると黒しか見えないので、演出の画が 1 枚も撮れない。
+            float introWait = 0f;
+            while (_run != null && _run.Phase == ShowPhase.Intro && introWait < IntroWaitLimitSec)
+            {
+                introWait += Time.deltaTime;
+                yield return null;
+            }
+            if (_run != null && _run.Phase == ShowPhase.Intro)
+                Debug.LogWarning($"[XPWalk] 導入が {IntroWaitLimitSec:F0}s で終わらなかった — そのまま歩き出す");
+            else
+                Debug.Log($"[XPWalk] 導入が終わった（{introWait:F1}s）— ここから中へ入る");
+
             if (hasLine)
             {
                 Debug.Log($"[XPWalk] 開始ライン '{startLineId}' を横切る " +
@@ -151,17 +164,6 @@ namespace FixedCamVr.Tracking
             Vector2 startCourse = ResolveStartCourse(layout, map, rows, cols, grid.tileM, order[0]);
             Debug.Log($"[XPWalk] 開始位置へ ({startCourse.x:F2},{startCourse.y:F2})");
             yield return StartCoroutine(WalkTo(startCourse));
-
-            float introWait = 0f;
-            while (_run != null && _run.Phase == ShowPhase.Intro && introWait < IntroWaitLimitSec)
-            {
-                introWait += Time.deltaTime;
-                yield return null;
-            }
-            if (_run != null && _run.Phase == ShowPhase.Intro)
-                Debug.LogWarning($"[XPWalk] 導入が {IntroWaitLimitSec:F0}s で終わらなかった — そのまま歩き出す");
-            else
-                Debug.Log($"[XPWalk] 本編開始（導入 {introWait:F1}s）— 周回に入る");
 
             // --- 本編: 経路を辿る ---
             float t0 = Time.realtimeSinceStartup;
@@ -240,8 +242,11 @@ namespace FixedCamVr.Tracking
         /// <summary>体験エリアの外に出て少し立つ。封印の箱を見る時間（<see cref="SealBoxHoldSec"/>）。</summary>
         private const float SealBoxHoldSec = 4f;
 
-        /// <summary>境界からどれだけ外へ出るか (m)。<c>IntroLogic.SealBoxOpenM</c> より外へ。</summary>
-        private const float OutsideMarginM = 1.4f;
+        /// <summary>境界からどれだけ外へ出るか (m)。<c>IntroLogic.ApproachNearM</c> より外へ。</summary>
+        private const float OutsideMarginM = 1.8f;
+
+        /// <summary>導入を起こすために近づく距離 (m)。<c>IntroLogic.ApproachNearM</c> より内へ。</summary>
+        private const float TriggerMarginM = 0.6f;
 
         /// <summary>
         /// 体験エリアの外へ回り込んでから中へ入る。<b>封印の箱は外からしか見えない</b>ので、
@@ -266,6 +271,12 @@ namespace FixedCamVr.Tracking
             yield return StartCoroutine(WalkTo(outside));
             FaceCourseOrigin();
             yield return new WaitForSeconds(SealBoxHoldSec);
+
+            // **導入の合図はここ** — 境界へ近づく（IntroLogic.ApproachNearM 以内へ）。
+            // 立ち止まる場所は境界の外。導入が終わるまで中へは入らない。
+            Vector2 trigger = dir * (Mathf.Max(half.x, half.y) + TriggerMarginM);
+            Debug.Log($"[XPWalk] 近づく ({trigger.x:F2},{trigger.y:F2}) — 導入が始まるはず");
+            yield return StartCoroutine(WalkTo(trigger));
         }
 
         /// <summary>

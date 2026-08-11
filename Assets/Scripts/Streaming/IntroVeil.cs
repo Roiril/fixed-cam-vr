@@ -53,6 +53,16 @@ namespace FixedCamVr.Streaming
             Shader.PropertyToID("_FramePlane0"), Shader.PropertyToID("_FramePlane1"),
             Shader.PropertyToID("_FramePlane2"), Shader.PropertyToID("_FramePlane3"),
         };
+        // 開口を**他の面へも配る**ための global（`SealedBox.shader` が読む）。封印の箱は覆いより
+        // 後に描かれるので、開口で切らないと枠の外へはみ出して「枠が閉じる」が見えなくなる。
+        private static readonly int GlobalW2LId = Shader.PropertyToID("_IntroFrameW2L");
+        private static readonly int[] GlobalPlaneIds =
+        {
+            Shader.PropertyToID("_IntroFramePlane0"), Shader.PropertyToID("_IntroFramePlane1"),
+            Shader.PropertyToID("_IntroFramePlane2"), Shader.PropertyToID("_IntroFramePlane3"),
+        };
+        private static readonly int GlobalFeatherId = Shader.PropertyToID("_IntroFrameFeather");
+
         private static readonly int GrainId = Shader.PropertyToID("_Grain");
         private static readonly int ScanCountId = Shader.PropertyToID("_ScanlineCount");
         private static readonly int GlitchId = Shader.PropertyToID("_Glitch");
@@ -334,6 +344,28 @@ namespace FixedCamVr.Streaming
             _mat.SetFloat(ScanCountId, scanlineCount);
             _mat.SetFloat(GlitchId, Mathf.Clamp01(w.glitch));
             _mat.SetFloat(GlitchSeedId, _seed);
+            PublishAperture(featherAng);
+        }
+
+        /// <summary>
+        /// 開口を global へ配る。<b>覆いより後に描く面（封印の箱）が同じ形で切られる</b>ため。
+        /// 平面は覆いのローカル空間なので、世界の点は <c>_IntroFrameW2L</c> で移してから見る。
+        /// </summary>
+        private void PublishAperture(float featherAng)
+        {
+            Shader.SetGlobalMatrix(GlobalW2LId, transform.worldToLocalMatrix);
+            for (int i = 0; i < GlobalPlaneIds.Length; i++)
+                Shader.SetGlobalVector(GlobalPlaneIds[i], _planes[i]);
+            Shader.SetGlobalFloat(GlobalFeatherId, featherAng);
+        }
+
+        /// <summary>開口を「全開」で配り直す。覆いを畳むときに呼ぶ（古い閉じた開口を残さない）。</summary>
+        private void PublishApertureOpen()
+        {
+            Shader.SetGlobalMatrix(GlobalW2LId, transform.worldToLocalMatrix);
+            for (int i = 0; i < GlobalPlaneIds.Length; i++)
+                Shader.SetGlobalVector(GlobalPlaneIds[i], new Vector4(0f, 0f, -1f, 0f));
+            Shader.SetGlobalFloat(GlobalFeatherId, 0.02f);
         }
 
         /// <summary>覆いの平面までの距離 (m)。テスト・診断用。</summary>
@@ -366,6 +398,8 @@ namespace FixedCamVr.Streaming
         public void SetHidden()
         {
             if (_renderer != null) _renderer.enabled = false;
+            // 閉じ切った開口を配ったまま去ると、次に箱を出す誰かが**枠の形に切られる**。
+            PublishApertureOpen();
         }
 
         private void OnDisable() => SetHidden();

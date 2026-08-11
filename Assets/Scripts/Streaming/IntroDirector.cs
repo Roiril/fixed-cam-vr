@@ -411,6 +411,23 @@ namespace FixedCamVr.Streaming
             if (head2 == null) { _startSpot.NotifyUnavailable(); return false; }
             Vector2 p = head2();
 
+            // ⚠ **体験エリアへ近づいたら始まる**（canon/LEDGER.md 0005）。導入は箱の外で流れるので、
+            //    中に引いた通過ラインでは「踏んだ時にはもう中に居る」ことになって成立しない。
+            //    footprint が解ける限りこちらが正で、線・円は解けないときの縮退。
+            if (ContainmentShellLogic.TryFootprint(showControl?.Layout, showControl?.Room,
+                                                   out Vector2 halfXZ))
+            {
+                if (!_warnedApproachOverridesLine && !string.IsNullOrEmpty(_def.startLineId))
+                {
+                    _warnedApproachOverridesLine = true;
+                    Debug.Log($"[Intro] 開始は体験エリアへの接近で判定します" +
+                              $"（run.intro.startLineId '{_def.startLineId}' は使いません）");
+                }
+                float outsideM = ContainmentShellLogic.DistanceOutsideM(p, halfXZ);
+                return _approach.Tick(outsideM, IntroLogic.ApproachNearM, IntroLogic.ApproachHoldSec,
+                                      Time.unscaledDeltaTime, valid: true);
+            }
+
             // ライン指定があればそちらが正（円は見ない）。
             string lineId = _def.startLineId ?? "";
             if (!string.IsNullOrEmpty(lineId))
@@ -440,6 +457,7 @@ namespace FixedCamVr.Streaming
             _startLineCrossed = false;
             _startLine.Reset();
             _startSpot.Rearm();
+            _approach.Rearm();
         }
 
         private bool IsUserPresent()
@@ -451,6 +469,8 @@ namespace FixedCamVr.Streaming
         // --- 開始ライン（run.intro.startLineId → layout.lines[] の 1 本）---
         private readonly LineCrossLogic _startLine = new LineCrossLogic();
         private readonly StartSpotLogic _startSpot = new StartSpotLogic();
+        private readonly ApproachLogic _approach = new ApproachLogic();
+        private bool _warnedApproachOverridesLine;
         private bool _wasRegistering;
         private bool _startLineResolved;          // layout.lines から実際に引けたか
         private bool _startLineWarned;            // 警告は 1 回だけ（未着なら毎フレーム引き直すので）

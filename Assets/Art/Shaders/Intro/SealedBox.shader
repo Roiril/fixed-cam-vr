@@ -74,6 +74,15 @@ Shader "FixedCamVr/SealedBox"
             float _WaveSharp;
             float _PhaseSec;
 
+            // 覆い（IntroVeil）が配る開口。**箱は覆いより後に描かれる**ので、ここで切らないと
+            // 枠の外へはみ出して「枠が閉じる」が画に出ない（2026-08-11）。
+            float4x4 _IntroFrameW2L;
+            float4 _IntroFramePlane0;
+            float4 _IntroFramePlane1;
+            float4 _IntroFramePlane2;
+            float4 _IntroFramePlane3;
+            float _IntroFrameFeather;
+
             struct Attributes
             {
                 float4 positionOS : POSITION;
@@ -132,6 +141,16 @@ Shader "FixedCamVr/SealedBox"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
                 float a = saturate(_Opacity);
+                if (a <= 0.002) return half4(0, 0, 0, 0);
+
+                // 覆いの開口で切る。平面は覆いのローカル空間なので、世界の点を移してから見る。
+                // ⚠ 内側へ **_ApertureBias** ぶん寄せる。平面は中央眼で解かれているので、
+                //    眼ごとに 1〜2cm ずれる。寄せておけば覆いの黒が必ず箱の縁を覆う。
+                float3 dl = normalize(mul(_IntroFrameW2L, float4(i.positionWS, 1.0)).xyz);
+                float m = max(max(dot(dl, _IntroFramePlane0.xyz), dot(dl, _IntroFramePlane1.xyz)),
+                              max(dot(dl, _IntroFramePlane2.xyz), dot(dl, _IntroFramePlane3.xyz)));
+                const float _ApertureBias = 0.03;
+                a *= 1.0 - smoothstep(-_IntroFrameFeather - _ApertureBias, -_ApertureBias, m);
                 if (a <= 0.002) return half4(0, 0, 0, 0);
 
                 // 面ごとに world 座標の 2 軸を選ぶ（箱の 3 方向で模様が連続する）。

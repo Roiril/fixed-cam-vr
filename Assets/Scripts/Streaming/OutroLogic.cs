@@ -155,7 +155,9 @@ namespace FixedCamVr.Streaming
                             edge = 0f,
                             grain = 0.6f * s,
                             // 現実が戻る分だけ隔離も戻す。**まだ収容の中に居る**（開けるのは Restore）。
+                            // 終幕は体験の後なので、実物の壁と床は**見せてよい**（導入と逆）。
                             shell = s,
+                            shellReveal = 1f,
                         };
                     }
 
@@ -173,6 +175,7 @@ namespace FixedCamVr.Streaming
                             grain = 0.6f,
                             live = 0f,
                             shell = 1f,
+                            shellReveal = 1f,
                         };
                     }
 
@@ -193,6 +196,7 @@ namespace FixedCamVr.Streaming
                             // 導入で閉じたものを終幕で開けないと、体験者は黒い箱の中に置き去りで終わる
                             // （スタッフが HMD を外しに来るのも見えない）。
                             shell = d,
+                            shellReveal = 1f,
                         };
                     }
 

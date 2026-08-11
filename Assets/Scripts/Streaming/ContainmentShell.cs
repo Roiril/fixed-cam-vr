@@ -84,6 +84,9 @@ namespace FixedCamVr.Streaming
         /// <summary>許された箱の数。<b>0 なら幾何が無い</b>＝ 隔離は出せない。</summary>
         public int BoxCount => _course.Count;
 
+        /// <summary>直近に実物の壁と床を見せていたか（<c>false</c> なら真っ黒）。診断・テレメトリ用。</summary>
+        public bool Revealing { get; private set; }
+
         private void Awake()
         {
             ResolveRefs();
@@ -263,6 +266,18 @@ namespace FixedCamVr.Streaming
             }
             _warnedUnregistered = false;
 
+            // ⚠ **見せない指示なら、幾何があっても印を立てない。** 導入のあいだは中の様子を
+            //    1 画素も出さない約束（canon/LEDGER.md 0005）で、その保証がここ 1 行。
+            if (w.shellReveal < 0.5f)
+            {
+                HideMaskBoxes();
+                _mat.SetFloat(StrengthId, s);
+                _renderer.enabled = true;
+                AppliedStrength = s;
+                Revealing = false;
+                return;
+            }
+
             if (_dirty) Rebuild();
             if (_course.Count == 0)
             {
@@ -280,14 +295,21 @@ namespace FixedCamVr.Streaming
             _mat.SetFloat(StrengthId, s);
             _renderer.enabled = true;
             AppliedStrength = s;
+            Revealing = true;
         }
 
         /// <summary>殻を完全に外す（本編・終了時・幾何が無いとき）。</summary>
         public void SetHidden()
         {
             AppliedStrength = 0f;
+            Revealing = false;
             if (_renderer != null) _renderer.enabled = false;
-            // 印も一緒に畳む。残すとステンシルだけ立って、次に黒を塗る誰かの穴になる。
+            HideMaskBoxes();
+        }
+
+        /// <summary>印だけ畳む。残すとステンシルが立ったままで、次に黒を塗る誰かの穴になる。</summary>
+        private void HideMaskBoxes()
+        {
             for (int i = 0; i < _maskBoxes.Count; i++)
             {
                 Transform t = _maskBoxes[i];
