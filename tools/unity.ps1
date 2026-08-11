@@ -126,6 +126,9 @@ $Menus = [ordered]@{
     'title'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.TitlePreview.Run'
                             Desc = 'タイトル画面「廻リ視」を 9 枚 + 閉じる演出 56 枚 PNG 化（両眼の厚み確認つき）'
                             Out = 'Assets/Screenshots/title' }
+    'shatter'          = @{ Method = 'FixedCamVr.Streaming.EditorTools.IntroShatterPreview.Run'
+                            Desc = '段 4「割れてスクリーンへ入る」を 9 枚 + 連番 60 枚 PNG 化'
+                            Out = 'Assets/Screenshots/shatter' }
     'regviz'           = @{ Method = 'FixedCamVr.Tracking.EditorTools.RegistrationVizPreview.Run'
                             Desc = '位置合わせのワイヤーとゾーンのタイルを多角度で PNG 化'
                             Out = 'Assets/Screenshots/regviz' }

@@ -46,7 +46,16 @@ namespace FixedCamVr.Streaming
         private static readonly int GlowGainId = Shader.PropertyToID("_GlowGain");
         private static readonly int BoxSizeId = Shader.PropertyToID("_BoxSize");
 
+        // ---- 破砕（段 4）。封印そのものが割れてスクリーンへ入る --------------------
+        // 曲線の数値は `IntroShatterCurve.PushBox` が配る（マテリアルへ書く場所は 1 箇所だけ）。
+        private static readonly int ShatterId = Shader.PropertyToID("_Shatter");
+
         private MeshRenderer? _renderer;
+        private MeshFilter? _filter;
+        private Mesh? _plainMesh;
+        private Mesh? _cellMesh;
+        private int _cellCount;
+        private Vector3 _cellMeshSize;
         private Transform? _box;
         private Material? _mat;
         private bool _subscribed;
@@ -64,6 +73,21 @@ namespace FixedCamVr.Streaming
 
         /// <summary>直近に書いた不透明度 (0..1)。診断・テレメトリ用。</summary>
         public float AppliedOpacity { get; private set; }
+
+        /// <summary>
+        /// この段で実際に配った破砕の進みの最大値。<c>0</c> なら<b>箱は 1 度も割れていない</b>。
+        /// ⚠ 「重みが動いた」ではなく「画に出た」の側の観測（2026-07-31 の事故と同じ型を作らない）。
+        /// </summary>
+        public float ShatterPeak { get; private set; }
+
+        /// <summary>割った破片の数。<c>0</c> なら格子を組めていない ＝ 一生割れない。</summary>
+        public int ShatterCells => _cellMesh != null ? _cellCount : 0;
+
+        /// <summary>
+        /// いま張っているのが<b>破片の格子か</b>（0 = 1 枚板の Cube のまま）。
+        /// ⚠ 進みを配っただけでは画は割れない。板のままなら頂点シェーダは 1 枚を動かすだけになる。
+        /// </summary>
+        public bool MeshIsCells => _filter != null && _cellMesh != null && _filter.sharedMesh == _cellMesh;
 
         /// <summary>footprint を解けているか（<c>false</c> なら箱は出しようがない）。</summary>
         public bool HasFootprint
@@ -101,6 +125,8 @@ namespace FixedCamVr.Streaming
             Unsubscribe();
             if (_mat != null) DestroySafe(_mat);
             _mat = null;
+            if (_cellMesh != null) DestroySafe(_cellMesh);
+            _cellMesh = null;
         }
 
         private void ResolveRefs()
@@ -144,6 +170,8 @@ namespace FixedCamVr.Streaming
             if (col != null) DestroySafe(col);
 
             _box = go.transform;
+            _filter = go.GetComponent<MeshFilter>();
+            _plainMesh = _filter != null ? _filter.sharedMesh : null;
             _renderer = go.GetComponent<MeshRenderer>();
             _mat = new Material(shader) { name = "SealedBox (runtime)" };
             _renderer.sharedMaterial = _mat;
@@ -179,15 +207,59 @@ namespace FixedCamVr.Streaming
             _mat.SetFloat(HexSizeId, hexSizeM);
             _mat.SetFloat(GlowGainId, glowGain);
             // 模様を「1 枚のシートで巻く」ために実寸が要る（周長で六角の周期を丸める）。
-            _mat.SetVector(BoxSizeId, new Vector4(_half.x * 2f, heightM, _half.y * 2f, 0f));
+            var sizeM = new Vector3(_half.x * 2f, heightM, _half.y * 2f);
+            _mat.SetVector(BoxSizeId, new Vector4(sizeM.x, sizeM.y, sizeM.z, 0f));
+            ApplyShatter(Mathf.Clamp01(w.shatter), sizeM);
             _renderer.enabled = true;
             AppliedOpacity = a;
+        }
+
+        /// <summary>
+        /// 破砕（段 4 の後半）を配る。<b>覆いがパススルーを閉じ切ってから</b>ここが動く
+        /// （<see cref="IntroShatterCurve.BoxShatter"/>）。順番の理由は同クラスの注記。
+        /// </summary>
+        private void ApplyShatter(float shatter, Vector3 sizeM)
+        {
+            if (_mat == null) return;
+            float part = IntroShatterCurve.BoxShatter(shatter);
+            IntroShatterCurve.PushBox(_mat, part);
+            // ⚠ **格子は箱が出た時点で組む。割れ始めてからでは遅い**（2026-08-12 実測）。
+            //    6,720 枚ぶんのメッシュを段 4 の 1 フレーム目で作ると、その 2 秒窓の平均が
+            //    90fps → 72fps へ落ちた。継ぎ目のすぐ手前でいちばん落としたくない場所。
+            EnsureCellMesh(sizeM);
+
+            if (part > 0f)
+            {
+                if (_filter != null && _cellMesh != null && _filter.sharedMesh != _cellMesh)
+                    _filter.sharedMesh = _cellMesh;
+                if (part > ShatterPeak) ShatterPeak = part;
+                return;
+            }
+            // ⚠ 割れていない間は 1 枚板の Cube に戻す。段 0 は 15 秒以上あり、そのあいだ
+            //    27,000 頂点を毎フレーム流す理由が無い（破片は段 4 の 1.6 秒しか要らない）。
+            if (_filter != null && _plainMesh != null && _filter.sharedMesh != _plainMesh)
+                _filter.sharedMesh = _plainMesh;
+        }
+
+        /// <summary>
+        /// 破片の格子を実寸から組む。<b>寸法が変わったときだけ組み直す</b>
+        /// （layout が届くまで既定値で走るので、届いた時点で 1 回だけ作り直る）。
+        /// </summary>
+        private void EnsureCellMesh(Vector3 sizeM)
+        {
+            if (_cellMesh != null && (_cellMeshSize - sizeM).sqrMagnitude < 1e-6f) return;
+            if (_cellMesh != null) DestroySafe(_cellMesh);
+            _cellMesh = SealedBoxShatterMesh.Build(sizeM, out _cellCount);
+            _cellMeshSize = sizeM;
         }
 
         /// <summary>箱を消す（中に入った・段 1 以降・本編）。</summary>
         public void SetHidden()
         {
             AppliedOpacity = 0f;
+            ShatterPeak = 0f;
+            if (_mat != null) _mat.SetFloat(ShatterId, 0f);
+            if (_filter != null && _plainMesh != null) _filter.sharedMesh = _plainMesh;
             if (_renderer != null) _renderer.enabled = false;
         }
 

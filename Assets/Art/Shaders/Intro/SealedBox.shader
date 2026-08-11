@@ -41,6 +41,22 @@ Shader "FixedCamVr/SealedBox"
         _WaveSharp("Wave crest sharpness", Range(1, 8)) = 4.0
         // Editor プレビューで時間を進めるための位相 (s)。実行時は 0。
         _PhaseSec("Preview phase (s)", Float) = 0
+
+        // ---- 破砕（段 4）。封印そのものが割れてスクリーンへ入る --------------------
+        // 数値は C# の `IntroShatterCurve` が正。ここの既定値は Editor で見るためだけのもの。
+        _Shatter("Shatter progress (0..1)", Range(0, 1)) = 0
+        _Stagger("Peripheral-first spread (0..1)", Float) = 0.38
+        _Jitter("Per-cell start jitter (0..1)", Float) = 0.14
+        _Gap("Crack width (fraction of cell)", Float) = 0.14
+        _Spin("Max spin (rad)", Float) = 0.61
+        _Drift("Break-loose drift (m)", Float) = 0.03
+        _PullAt("Travel starts at (0..1)", Float) = 0.18
+        _TravelMax("Travel amount (0..1)", Float) = 0.85
+        _ShrinkAt("Shrink starts at (0..1)", Float) = 0.72
+        _CloseAt("Close starts at (0..1)", Float) = 0.60
+        // スクリーン矩形の周りこれだけは割らずに残す（覆いのセルとの刻みの差を塞ぐ）。
+        _KeepFar("Keep intact around the screen (0..1)", Float) = 0.06
+        _CellSeed("Cell noise seed", Float) = 17.13
     }
 
     SubShader
@@ -62,6 +78,8 @@ Shader "FixedCamVr/SealedBox"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            // 破砕の時計と形は覆い（IntroVeil）と共有する（1 本しか無い）。
+            #include "IntroShatter.hlsl"
 
             #define TAU 6.2831853
 
@@ -83,16 +101,41 @@ Shader "FixedCamVr/SealedBox"
             // 覆い（IntroVeil）が配る開口。**箱は覆いより後に描かれる**ので、ここで切らないと
             // 枠の外へはみ出して「枠が閉じる」が画に出ない（2026-08-11）。
             float4x4 _IntroFrameW2L;
+            float4x4 _IntroFrameL2W;
             float4 _IntroFramePlane0;
             float4 _IntroFramePlane1;
             float4 _IntroFramePlane2;
             float4 _IntroFramePlane3;
             float _IntroFrameFeather;
 
+            // 破片の行き先（スクリーン矩形）。**覆いが global で配る**ので、覆いのセルと
+            // 同じ格子・同じ順番・同じ行き先になる。
+            // _IntroScreenHalf = (halfW, halfH, 覆いの面までの距離, 「遠い周縁」とみなす m)
+            float4 _IntroScreenC;
+            float4 _IntroScreenR;
+            float4 _IntroScreenU;
+            float4 _IntroScreenHalf;
+
+            float _Shatter;
+            float _Stagger;
+            float _Jitter;
+            float _Gap;
+            float _Spin;
+            float _Drift;
+            float _PullAt;
+            float _TravelMax;
+            float _ShrinkAt;
+            float _CloseAt;
+            float _KeepFar;
+            float _CellSeed;
+
             struct Attributes
             {
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
+                // 破砕用。この頂点が属する破片の中心（OS）。1 枚板の Cube には無いので 0 が読まれ、
+                // その場合は破砕の枝へ入っても中心が原点になるだけ（_Shatter が 0 なので入らない）。
+                float3 cell : TEXCOORD1;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -103,8 +146,12 @@ Shader "FixedCamVr/SealedBox"
                 float3 normalWS : TEXCOORD1;
                 // 模様は**箱のローカル座標**で引く。world だと箱の向きで模様が回り、
                 // 面をまたいだ継ぎ目も合わない。
+                // ⚠ 破砕中もここは**ホームの座標**のまま渡す。だから破片は
+                //    **自分の模様を持ったまま飛ぶ**（覆いのセルとの決定的な違い）。
                 float3 positionOS : TEXCOORD2;
                 float3 normalOS : TEXCOORD3;
+                // 破片が生きている量（1 = まだ現実を返していない）。
+                float alive : TEXCOORD4;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -113,11 +160,69 @@ Shader "FixedCamVr/SealedBox"
                 Varyings o;
                 UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
-                o.positionWS = TransformObjectToWorld(v.positionOS.xyz);
+
+                float3 posOS = v.positionOS.xyz;
+                float3 pw;
+                float alive = 1.0;
+
+                // ⚠ 覆いが行き先を配っていなければ割らない（`_IntroScreenHalf.w` が 0）。
+                //    Editor プレビューのように覆いが居ない場所で割ると、行き先が原点になって
+                //    破片が全部 1 点へ吸い込まれる。
+                UNITY_BRANCH
+                if (_Shatter > 0.0001 && _IntroScreenHalf.w > 1e-3)
+                {
+                    float3 c = v.cell;
+                    float3 cw = TransformObjectToWorld(c);
+                    float3 cl = mul(_IntroFrameW2L, float4(cw, 1.0)).xyz;   // 覆いのローカル（頭固定）
+
+                    // 「遠さ」は 3D の距離ではなく**見かけの隔たり**で測る。スクリーンは箱の奥行きの
+                    // 途中に浮いているので、3D 距離だと手前の面と奥の面がほぼ同じ値になり、
+                    // 「周縁から中心へ」という前線が立たない。覆いのセルと同じ関数を通すので、
+                    // 視界の中では**箱もパススルーも同じ順番で割れる**。
+                    float2 qPlane;
+                    float3 ql;
+                    float d = IntroShardTarget(cl, _IntroScreenC.xyz, _IntroScreenR.xyz, _IntroScreenU.xyz,
+                                               _IntroScreenHalf.xy, max(_IntroScreenHalf.z, 0.01),
+                                               qPlane, ql);
+                    float far = saturate(d / _IntroScreenHalf.w);
+
+                    // ⚠ **スクリーン矩形の中を向いている破片は割らない**（覆いのセルと同じ規約）。
+                    //    ここを割ると、箱が退いた向こうのパススルー ＝ **体験エリアの中**が
+                    //    枠の中に出る（canon/LEDGER.md 0005 が禁じたもの）。段 4 の終わりの画は
+                    //    従来どおり「黒 ＋ 枠の中に封印の面」。
+                    if (far > max(_KeepFar, 1e-4))
+                    {
+                        float2 rnd = IntroShardHash2(c.xz * 71.3 + c.y * 13.7, _CellSeed);
+                        IntroShard s = IntroShardEval(far, rnd.x, rnd.y, _Shatter,
+                                                      _Stagger, _Jitter, _Gap, _Spin, _Drift,
+                                                      _PullAt, _TravelMax, _ShrinkAt, _CloseAt);
+
+                        // 回り・縮みは箱のローカルで（面の法線を軸にすれば破片は平らなまま回る）。
+                        float3 off = (posOS - c) * (1.0 - s.gap) * s.shrink;
+                        off = IntroShardSpin3(off, normalize(v.normalOS), s.spin);
+                        posOS = c + off;
+
+                        float3 qw = mul(_IntroFrameL2W, float4(ql, 1.0)).xyz;
+                        pw = TransformObjectToWorld(posOS) + (qw - cw) * s.travel
+                             + float3(s.drift.x, 0.0, s.drift.y);
+                        alive = 1.0 - s.closed;
+                    }
+                    else
+                    {
+                        pw = TransformObjectToWorld(posOS);
+                    }
+                }
+                else
+                {
+                    pw = TransformObjectToWorld(posOS);
+                }
+
+                o.positionWS = pw;
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 o.positionOS = v.positionOS.xyz;
                 o.normalOS = v.normalOS;
-                o.positionCS = TransformWorldToHClip(o.positionWS);
+                o.alive = alive;
+                o.positionCS = TransformWorldToHClip(pw);
                 return o;
             }
 
@@ -152,7 +257,8 @@ Shader "FixedCamVr/SealedBox"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
-                float a = saturate(_Opacity);
+                // 破片が閉じ切ったら消える（現実を返し終えた）。
+                float a = saturate(_Opacity) * saturate(i.alive);
                 if (a <= 0.002) return half4(0, 0, 0, 0);
 
                 // 覆いの開口で切る。平面は覆いのローカル空間なので、世界の点を移してから見る。

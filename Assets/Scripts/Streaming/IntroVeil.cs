@@ -68,7 +68,20 @@ namespace FixedCamVr.Streaming
         private static readonly int GlitchId = Shader.PropertyToID("_Glitch");
         private static readonly int GlitchSeedId = Shader.PropertyToID("_GlitchSeed");
 
+        // ---- 破砕（段 4）。現実がセルに割れてスクリーンへ入る -----------------------
+        // 曲線の数値は `IntroShatterCurve.PushVeil` が配る（マテリアルへ書く場所は 1 箇所だけ）。
+        private static readonly int ShatterId = Shader.PropertyToID("_Shatter");
+
+        // 破片の行き先（スクリーン矩形）は **global で配る**。封印の箱も同じ値を読んで、
+        // 同じ格子・同じ順番で割れる（片方だけ別の行き先へ飛ぶと 2 つの出来事に見える）。
+        private static readonly int GlobalScreenCId = Shader.PropertyToID("_IntroScreenC");
+        private static readonly int GlobalScreenRId = Shader.PropertyToID("_IntroScreenR");
+        private static readonly int GlobalScreenUId = Shader.PropertyToID("_IntroScreenU");
+        private static readonly int GlobalScreenHalfId = Shader.PropertyToID("_IntroScreenHalf");
+        private static readonly int GlobalL2WId = Shader.PropertyToID("_IntroFrameL2W");
+
         private MeshRenderer? _renderer;
+        private MeshFilter? _filter;
         private Material? _mat;
         private float _seed;
 
@@ -84,6 +97,31 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool IsBuilt => _renderer != null;
 
+        /// <summary>
+        /// 段 4 の破砕で<b>実際にセル格子を張ったか</b>（覆いが畳まれるまで立ちっぱなし）。
+        ///
+        /// ⚠ 「重みが動いた」ではなく「画に出た」の側の観測。段の遷移は完璧に進んでいるのに
+        /// 画には何も出ていなかった、という壊れ方を 2026-07-31 に踏んでいる。
+        /// テレメトリが <c>shat=</c> で出し、解析が「破砕が 1 度も張られていない」を名指しする。
+        /// </summary>
+        public bool ShatterDrawn { get; private set; }
+
+        /// <summary>この段で実際に配った破砕の進みの最大値（0 なら 1 度も割れていない）。</summary>
+        public float ShatterPeak { get; private set; }
+
+        /// <summary>張ったセル格子のセル数。<c>0</c> ならメッシュを組めていない ＝ 一生割れない。</summary>
+        public int ShatterCells => _cellMesh != null ? IntroVeilShatterMesh.CellCount : 0;
+
+        /// <summary>
+        /// 破片の行き先として<b>実際に配った</b>スクリーン矩形（<c>hw,hh,面までの距離,遠さの基準</c>）。
+        ///
+        /// ⚠ これが無いと「割れなかった」の原因を切り分けられない。破片が動くかどうかは
+        /// <c>far = 見かけの隔たり / 遠さの基準</c> 1 本で決まり、基準が大きすぎれば
+        /// **全部の破片が「スクリーンのすぐ脇」扱いになって 1 枚も動かない**（2026-08-12 実機で発生）。
+        /// C# 側は「重みを配った」までしか知らないので、そこだけ見ると成功に見える。
+        /// </summary>
+        public string ShatterRectDesc { get; private set; } = "-";
+
         private void Awake()
         {
             Build();
@@ -92,6 +130,7 @@ namespace FixedCamVr.Streaming
 
         private void Build()
         {
+            if (_renderer != null) return;   // 二度組まない（Editor プレビューは Awake を手で叩く）
             var shader = Shader.Find("FixedCamVr/IntroVeil");
             if (shader == null)
             {
@@ -107,8 +146,12 @@ namespace FixedCamVr.Streaming
             go.transform.localScale = new Vector3(veilSize.x, veilSize.y, 1f);
 
             _mesh = BuildQuad();
+            // ⚠ **起動時に組む。** 段 4 で初めて 16,400 頂点を作ると、その 1 フレームだけ
+            //    落ちる（継ぎ目の直前なので一番見せたくない場所）。0.4MB 程度なので常時持つ。
+            _cellMesh = IntroVeilShatterMesh.Build();
             var mf = go.AddComponent<MeshFilter>();
             mf.sharedMesh = _mesh;
+            _filter = mf;
 
             _quad = go.transform;
             _renderer = go.AddComponent<MeshRenderer>();
@@ -122,6 +165,7 @@ namespace FixedCamVr.Streaming
 
         // インスタンスごとに持つ（static で共有すると、片方の Destroy でもう片方のメッシュが消える）。
         private Mesh? _mesh;
+        private Mesh? _cellMesh;
         private Transform? _quad;
 
         /// <summary>
@@ -344,7 +388,53 @@ namespace FixedCamVr.Streaming
             _mat.SetFloat(ScanCountId, scanlineCount);
             _mat.SetFloat(GlitchId, Mathf.Clamp01(w.glitch));
             _mat.SetFloat(GlitchSeedId, _seed);
+            ApplyShatter(Mathf.Clamp01(w.shatter), size);
             PublishAperture(featherAng);
+        }
+
+        /// <summary>
+        /// 破砕（段 4）を配る。<b>覆いのメッシュを差し替えるのはここ 1 箇所だけ</b>。
+        ///
+        /// ⚠ <c>shatter = 0</c> のときは<b>必ず 1 枚 quad へ戻す</b>。セル格子は 1 セル = 独立した
+        /// quad なので、隣り合う辺が浮動小数で 1 ulp ずれると<b>髪の毛ほどの黒い格子</b>が
+        /// 現実の上に出る。段 1〜3 でそれが出ると「割れる」という段 4 の合図が先食いされる。
+        /// </summary>
+        private void ApplyShatter(float shatter, Vector2 veilSizeM)
+        {
+            if (_mat == null) return;
+            // 段 4 の進みは**覆いと箱で分け合う**（パススルーを閉じ切ってから箱を割る）。
+            float veilPart = IntroShatterCurve.VeilShatter(shatter);
+            IntroShatterCurve.PushVeil(_mat, veilPart);
+
+            if (_filter != null)
+            {
+                Mesh? want = veilPart > 0f ? _cellMesh : _mesh;
+                if (want != null && _filter.sharedMesh != want) _filter.sharedMesh = want;
+            }
+
+            // 行き先は**破砕が始まる前から**配る。箱は覆いより後に描かれるが、同じ 1 フレームの
+            // 値を読むので、ここで毎フレーム更新しておけば両者がずれない。
+            if (!TryResolveScreenRect(out Vector3 c, out Vector3 right, out Vector3 up,
+                                      out float hw, out float hh))
+            {
+                c = new Vector3(0f, 0f, Mathf.Max(PlaneDistanceResolved, 0.01f));
+                right = Vector3.right;
+                up = Vector3.up;
+                hw = c.z * Mathf.Tan(Mathf.Clamp(fallbackApertureHalfAngleDeg.x, 1f, 80f) * Mathf.Deg2Rad);
+                hh = c.z * Mathf.Tan(Mathf.Clamp(fallbackApertureHalfAngleDeg.y, 1f, 80f) * Mathf.Deg2Rad);
+            }
+            float planeZ = Mathf.Max(PlaneDistanceResolved, 0.01f);
+            float absorbM = IntroShatterCurve.AbsorbRangeM(hw, hh);
+            Shader.SetGlobalVector(GlobalScreenCId, c);
+            Shader.SetGlobalVector(GlobalScreenRId, right);
+            Shader.SetGlobalVector(GlobalScreenUId, up);
+            Shader.SetGlobalVector(GlobalScreenHalfId, new Vector4(hw, hh, planeZ, absorbM));
+            ShatterRectDesc = $"{hw:F2},{hh:F2},{planeZ:F2},{absorbM:F2}";
+            Shader.SetGlobalMatrix(GlobalL2WId, transform.localToWorldMatrix);
+
+            if (veilPart <= 0f) return;
+            ShatterDrawn = _cellMesh != null;
+            if (veilPart > ShatterPeak) ShatterPeak = veilPart;
         }
 
         /// <summary>
@@ -398,6 +488,11 @@ namespace FixedCamVr.Streaming
         public void SetHidden()
         {
             if (_renderer != null) _renderer.enabled = false;
+            // 割れたままのメッシュと進みを残して去らない（次の体験者は割れていない現実から始まる）。
+            if (_filter != null && _mesh != null) _filter.sharedMesh = _mesh;
+            if (_mat != null) _mat.SetFloat(ShatterId, 0f);
+            ShatterDrawn = false;
+            ShatterPeak = 0f;
             // 閉じ切った開口を配ったまま去ると、次に箱を出す誰かが**枠の形に切られる**。
             PublishApertureOpen();
         }
@@ -408,6 +503,7 @@ namespace FixedCamVr.Streaming
         {
             if (_mat != null) Destroy(_mat);
             if (_mesh != null) Destroy(_mesh);
+            if (_cellMesh != null) Destroy(_cellMesh);
         }
     }
 }

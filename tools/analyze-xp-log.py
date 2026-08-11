@@ -1024,6 +1024,62 @@ def analyze(events, others, exp, warns=None):
             if "1" in box:
                 verdict("OK", "封印の箱が描画された（外から見た隔離）")
 
+    # -- 段 4 の破砕（見えているものが割れてスクリーンへ入る）
+    # ⚠ 「重みが動いた」ではなく「画に出た」を見る。段 Frame を通っているのに進みが 0 なら、
+    #    シェーダかメッシュのどちらかが死んでいる（どちらも実機の画を見るまで気づけない）。
+    if "Frame" in stages:
+        def _peak(key):
+            vals = []
+            for v in effect_samples(events, key):
+                if v in ("", "-"):
+                    continue
+                try:
+                    vals.append(float(v))
+                except ValueError:
+                    pass
+            return max(vals) if vals else None
+
+        def _cells(key):
+            vals = []
+            for v in effect_samples(events, key):
+                if v in ("", "-"):
+                    continue
+                try:
+                    vals.append(int(v))
+                except ValueError:
+                    pass
+            return max(vals) if vals else None
+
+        veil_pk, box_pk = _peak("shatV"), _peak("shatB")
+        veil_cells, box_cells = _cells("shatVC"), _cells("shatBC")
+        if veil_pk is not None or box_pk is not None:
+            any_effect_key = True
+            w(f"  破砕の到達点: 覆い {veil_pk if veil_pk is not None else '-'} / "
+              f"封印の箱 {box_pk if box_pk is not None else '-'}"
+              f"（破片 {veil_cells if veil_cells is not None else '-'} / "
+              f"{box_cells if box_cells is not None else '-'} 枚）")
+            # 「進みは配ったのに画が割れない」はここでしか切り分けられない。
+            # shatRect = hw,hh,面までの距離,遠さの基準 / shatBMesh = 1 なら破片の格子を張っている。
+            rects = [v for v in effect_samples(events, "shatRect") if v not in ("", "-")]
+            meshes = [v for v in effect_samples(events, "shatBMesh") if v not in ("", "-")]
+            if rects:
+                w(f"  破片の行き先（hw,hh,距離,遠さの基準）: {rects[-1]}")
+            if meshes and "1" not in meshes:
+                verdict("FAIL", "封印の箱が 1 枚板のまま（破片の格子を張っていない）— "
+                                "進みは配っているので、画だけが割れない")
+            # 封印の箱が段 4 の主役（実機の画では視界のほぼ全部が箱）。ここが 0 なら演出は無い。
+            if box_pk is not None and box_pk <= 0.0:
+                verdict("FAIL", "段 4 に達したのに封印の箱が 1 度も割れていない — "
+                                "SealedBox の破片メッシュか _Shatter が届いていない"
+                                "（覆いが _IntroScreen* を配れていない疑い）")
+            elif box_pk is not None:
+                verdict("OK", f"封印の箱が割れてスクリーンへ入った（到達 {box_pk:.2f}）")
+            if veil_pk is not None and veil_pk <= 0.0:
+                verdict("WARN", "段 4 でパススルー側のセルが 1 度も割れていない — "
+                                "IntroVeil のセル格子が張られていない疑い")
+            if box_cells == 0:
+                verdict("FAIL", "封印の箱の破片が 0 枚（格子を組めていない）")
+
     if "Structure" in stages:
         wires = [v for v in effect_samples(events, "wire") if v not in ("", "-")]
         nums = []

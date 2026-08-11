@@ -21,7 +21,11 @@ namespace FixedCamVr.Streaming
         Degrade,
         /// <summary>段 3。輪郭だけの世界に、カメラの位置の印と壁・床の線が加わる。</summary>
         Structure,
-        /// <summary>段 4。周縁から黒が寄せ、正面に長方形が残る（中はまだパススルー）。</summary>
+        /// <summary>
+        /// 段 4。<b>見えているものが細かなセルに割れて、スクリーンの矩形へ吸い込まれる。</b>
+        /// 先に外側の現実（パススルー）が持っていかれ、最後に封印の箱そのものが割れる。
+        /// 残るのは枠だけ（中はまだ現実 ＝ 箱の面）。
+        /// </summary>
         Frame,
         /// <summary>段 5。枠の中がカメラ映像へ。枠の中に自分が居る。</summary>
         Swap,
@@ -115,6 +119,20 @@ namespace FixedCamVr.Streaming
         public float structure;
         /// <summary>枠の閉じ具合。0 = 全画面 / 1 = スクリーンの開口だけ。</summary>
         public float frame;
+
+        /// <summary>
+        /// 破砕の進み。<b>見えているものが細かなセルに割れて、スクリーンへ吸い込まれる量</b>
+        /// （0 = 割れていない / 1 = 入り切った）。段 4 だけで動く。
+        ///
+        /// 受け手は 2 つで、<b>1 本の進みを前半・後半に分け合う</b>
+        /// （<see cref="IntroShatterCurve.VeilShatter"/> / <see cref="IntroShatterCurve.BoxShatter"/>）:
+        ///   - 前半 <see cref="IntroVeil"/> — パススルーが覗く窓を割って閉じ切る
+        ///   - 後半 <see cref="SealedBox"/> — 封印の箱の面を割って飛ばす
+        ///
+        /// ⚠ <b>順番が意味を持つ。</b> 箱は不透明なので、その裏のパススルーが開いたまま箱に
+        /// 割れ目が入ると、<b>体験エリアの中が覗ける</b>（<c>canon/LEDGER.md</c> 0005 が禁じたもの）。
+        /// </summary>
+        public float shatter;
         /// <summary>カメラ映像の不透明度（枠の中身）。</summary>
         public float live;
         /// <summary>粒状感・走査線の強さ（アプリ側の面で出す）。</summary>
@@ -217,6 +235,13 @@ namespace FixedCamVr.Streaming
 
         /// <summary>段 3 が段 2 に飲み込まれても、これだけは単独で流れる。</summary>
         public const float StructureMinOwnSec = 0.5f;
+
+        /// <summary>
+        /// 段 4 のどこから枠が閉じ始めるか。<b>破砕の後ろへ寄せてある</b> —
+        /// 開口は覆いのセルも封印の箱の破片も切るので、破片が飛んでいる最中に閉じると
+        /// 通り道で消える。ここまでは開口を全開のままにしておく。
+        /// </summary>
+        public const float FrameCloseAt = 0.70f;
 
         /// <summary>
         /// 「近づいた」とみなす距離 (m)。体験エリアの境界からこれ以下まで来たら導入が始まる。
@@ -487,7 +512,12 @@ namespace FixedCamVr.Streaming
                             // 枠になるとき構造の線は引く。枠の中の現実に集中させる。
                             edge = 1f - 0.7f * p,
                             structure = 1f - p,
-                            frame = SmoothStep(0f, 1f, p),
+                            // ⚠ **枠は破砕より遅れて閉じる。** 同時に閉じると、飛んでいる途中の破片が
+                            //    枠の縁でぷつりと切れる（覆いも箱も開口で切っているため）。
+                            //    後ろへ寄せておけば、閉じるころには通り道の破片はもう消えている。
+                            frame = SmoothStep(FrameCloseAt, 1f, p),
+                            // 見えているものが割れて、スクリーンへ入っていく。
+                            shatter = p,
                             grain = 0.6f,
                             live = 0f,
                         });

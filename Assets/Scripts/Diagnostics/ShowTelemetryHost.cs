@@ -308,6 +308,32 @@ namespace FixedCamVr.Diagnostics
         /// <summary>覆いの実体を組めたか。<c>0</c> なら <c>Shader.Find</c> が null ＝ 枠は一生出ない。</summary>
         private string VeilBuiltState => _veil == null ? "-" : (_veil.IsBuilt ? "1" : "0");
 
+        /// <summary>
+        /// 段 4 の破砕が<b>実際に画へ配られた最大の進み</b>。覆い（パススルーの窓）と
+        /// 封印の箱を別に出す — 順番に流れる 2 つの出来事で、片方だけ死ぬ経路があるため。
+        /// <c>0.00</c> なら 1 度も割れていない。段が Frame を通っているのにここが 0 なら FAIL。
+        /// </summary>
+        private string ShatterVeilState => _veil == null ? "-" : _veil.ShatterPeak.ToString("F2");
+
+        /// <inheritdoc cref="ShatterVeilState"/>
+        private string ShatterBoxState => _box == null ? "-" : _box.ShatterPeak.ToString("F2");
+
+        /// <summary>割った破片の数（覆い / 箱）。<c>0</c> なら格子を組めていない ＝ 一生割れない。</summary>
+        private string ShatterVeilCells => _veil == null ? "-" : _veil.ShatterCells.ToString();
+
+        /// <inheritdoc cref="ShatterVeilCells"/>
+        private string ShatterBoxCells => _box == null ? "-" : _box.ShatterCells.ToString();
+
+        /// <summary>
+        /// 破片の行き先として配ったスクリーン矩形（<c>hw,hh,距離,遠さの基準</c>）と、
+        /// 箱がいま張っているメッシュ（1 = 破片の格子 / 0 = 1 枚板）。
+        /// <b>「進みは配ったのに画が割れない」を切り分けられる唯一の観測点。</b>
+        /// </summary>
+        private string ShatterRect => _veil == null ? "-" : _veil.ShatterRectDesc;
+
+        /// <inheritdoc cref="ShatterRect"/>
+        private string ShatterBoxMesh => _box == null ? "-" : (_box.MeshIsCells ? "1" : "0");
+
         /// <summary>段 3 の構造の線の本数。<c>-</c>=シーンに居ない。</summary>
         private string WireState => _wire == null ? "-" : _wire.LineCount.ToString();
 
@@ -389,7 +415,12 @@ namespace FixedCamVr.Diagnostics
                      $"pass={w.passthrough:F2} live={w.live:F2} frame={w.frame:F2} edge={w.edge:F2} " +
                      $"veil={VeilState} veilBuilt={VeilBuiltState} wire={WireState} pt={PassthroughState} " +
                      $"shell={ShellState} shellBuilt={ShellBuiltState} shellBox={ShellBoxState} " +
-                     $"shellRev={ShellRevealState} box={SealBoxState} boxBuilt={SealBoxBuiltState}");
+                     $"shellRev={ShellRevealState} box={SealBoxState} boxBuilt={SealBoxBuiltState} " +
+                     // 破砕は段 4 のあいだしか動かない。**遷移の瞬間は 0 なのが正常**で、
+                     // 意味を持つのは Frame → Swap の行（そこに段 4 の到達点が載る）。
+                     $"shatV={ShatterVeilState} shatB={ShatterBoxState} " +
+                     $"shatVC={ShatterVeilCells} shatBC={ShatterBoxCells} " +
+                     $"shatRect={ShatterRect} shatBMesh={ShatterBoxMesh}");
             }
 
             // コントローラの操作モード（NORMAL / REG）。**位置合わせが起きたかの唯一の観測点**。
@@ -599,6 +630,17 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" shellRev=").Append(ShellRevealState);
             _sb.Append(" box=").Append(SealBoxState);
             _sb.Append(" boxBuilt=").Append(SealBoxBuiltState);
+            if (_intro != null && _intro.Stage == IntroStage.Frame)
+            {
+                // 段 4 は 2.5 秒しかなく、この行は 2 秒に 1 本。**段の中を確実に 1 回は捉える**ため、
+                // 段が Frame のときだけ破砕を載せる（段の外では 0 が並んで読みにくい）。
+                _sb.Append(" shatV=").Append(ShatterVeilState);
+                _sb.Append(" shatB=").Append(ShatterBoxState);
+                _sb.Append(" shatVC=").Append(ShatterVeilCells);
+                _sb.Append(" shatBC=").Append(ShatterBoxCells);
+                _sb.Append(" shatRect=").Append(ShatterRect);
+                _sb.Append(" shatBMesh=").Append(ShatterBoxMesh);
+            }
             _sb.Append(" cg=").Append(CgState);
             if (_overlay != null)
                 _sb.Append(" ovl=").Append(OverlayStrength.ToString("F2"))
