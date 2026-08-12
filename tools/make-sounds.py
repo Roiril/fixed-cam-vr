@@ -104,12 +104,16 @@ def bed_seal(sec: float = 16.0) -> np.ndarray:
     base = sk.loop_freqs(sec, [58.0, 59.3, 87.0])          # 唸り 1.3Hz と 27.7Hz
     plate = sk.loop_freqs(sec, [58.0 * 2.76, 58.0 * 5.40])  # 円板モード（非調和）
 
+    # ⚠ 基音も**帯**で置く（純音は発振器に聞こえる — 2026-08-12）。
+    #    近接した 2 音の唸りという 0011 の意図は、帯どうしの重なりでむしろ強くなる。
+    # ⚠ 基音も**帯ノイズ**で置く。0011 の「不安定」は、揺れている帯どうしの重なりの方が
+    #   純音の唸りより強く出る（純音は「発振器 2 本」に聞こえる）。
     body = sk.mix(
-        (sk.sine(sec, base[0]), 1.00),
-        (sk.sine(sec, base[1]), 0.85),
-        (sk.sine(sec, base[2]), 0.55),
-        (sk.sine(sec, plate[0]), 0.22),
-        (sk.sine(sec, plate[1]), 0.09),
+        (sk.tone_band(sec, base[0], q=34.0, seed=121), 1.00),
+        (sk.tone_band(sec, base[1], q=34.0, seed=122), 0.85),
+        (sk.tone_band(sec, base[2], q=26.0, seed=123), 0.55),
+        (sk.tone_band(sec, plate[0], q=20.0, seed=124), 0.22),
+        (sk.tone_band(sec, plate[1], q=16.0, seed=125), 0.09),
     )
     # 2 つのうねりをすれ違わせる（3 回転と 7 回転 ＝ 最小公倍数がループ長）
     body *= 0.55 + 0.30 * sk.loop_lfo(sec, 3) + 0.15 * sk.loop_lfo(sec, 7, phase=1.1)
@@ -167,22 +171,24 @@ def bed_room(sec: float = 20.0) -> np.ndarray:
     - **明るいものは 1 本だけ**（3.15kHz の細い線 ＝ 蛍光灯の安定器）。
       これが「無人の施設」を 1 本で運ぶ。増やすと「機械室」になって和ホラーから離れる
     """
-    hum = sk.loop_freqs(sec, [100.0, 150.0, 200.0])
-    ballast = sk.loop_freqs(sec, [3150.0])[0]
-
-    mains = sk.mix(
-        (sk.sine(sec, hum[0]), 1.00),
-        (sk.sine(sec, hum[1]), 0.42),
-        (sk.sine(sec, hum[2]), 0.16),
-    )
+    # ⚠⚠ **純音を 1 本置かない。** 2026-08-12 まで 100/150/200Hz の正弦波を重ねていて、
+    #    突出が **38.8dB** ＝ 発振器そのものだった（ユーザー指摘「チープな電子音はチープすぎる」）。
+    #    実物のハムは鉄心の磁歪と整流の脈流が多数の高調波を**不揃いな高さ**で出したもので、
+    #    1 本ずつがわずかに揺れている。`buzz` が近接部分音の帯として作る。
+    mains = sk.buzz(sec, 50.0, [(2, 1.00), (3, 0.30), (4, 0.55), (6, 0.22), (8, 0.10)], seed=211)
     mains *= 0.9 + 0.1 * sk.loop_lfo(sec, 5)
+    # 唸りの周りに空気を置く（線が単独で立たないよう、山に乗せる）
+    mains += sk.loop_noise(sec, 80, 420, slope_db_oct=-2.0, seed=212) * 0.35
 
     room = sk.loop_noise(sec, 160, 3600, slope_db_oct=-3.2, seed=202)
     room = sk.spec_shape(room, lambda f: sk.resonance(f, 320.0, 4.0, q=2.5)
                          * sk.resonance(f, 640.0, 3.0, q=3.5)
                          * sk.shelf(f, 4000, -14, 1.2))
 
-    line = sk.sine(sec, ballast) * (0.7 + 0.3 * sk.loop_lfo(sec, 11, phase=0.4))
+    # 蛍光灯の安定器。**1 本の線ではなく細い帯**にして、しかも揺らす。
+    line = sk.cluster(sec, 3150.0, count=5, spread=0.010, seed=213)
+    line *= 0.55 + 0.45 * sk.loop_lfo(sec, 11, phase=0.4)
+    line += sk.loop_noise(sec, 2600, 3900, slope_db_oct=0.0, seed=214) * 0.9
 
     # ⚠ 唸りを大きくすると内蔵スピーカーで消える帯域に体が寄る。**残るのは中域**。
     y = sk.mix((mains, 0.16), (room, 0.72), (line, 0.010))
@@ -203,18 +209,23 @@ def _device(sec: float, worn: float, seed: int) -> np.ndarray:
     ⚠ **一段ずつ落とす音は作らない。** LEDGER 0012 は「急に落ちるではなくばれないように」で、
     段の音を鳴らすと劣化そのものを名指ししてしまう。連続量で混ぜるだけにする。
     """
-    carrier = sk.loop_freqs(sec, [1900.0 * (1.0 - 0.06 * worn)])[0]
-    supply = sk.loop_freqs(sec, [120.0, 240.0])
-
+    # ⚠⚠ **搬送を純音で置かない。** 2026-08-12 まで 1900Hz の正弦波＋整数倍の高調波で、
+    #    突出が **41.2dB**。整数倍はさらに「発振器」を強める（実物の共振は非調和）。
+    #    痩せた側（`worn`）は既に粒へ埋めてあって 12.9dB しかなく、**そちらが正解だった**。
+    fc = 1900.0 * (1.0 - 0.06 * worn)
+    # ⚠⚠ **トーンそのものをノイズにする**（`tone_band`）。純音でも近接部分音の束でも
+    #    突出は 100dB を超える（実測）。狭帯域ノイズなら音程は聞こえたまま 20dB 台に収まる。
     tone = sk.mix(
-        (sk.sine(sec, carrier), 1.00),
-        (sk.sine(sec, sk.loop_freqs(sec, [carrier * 2])[0]), 0.18),
-        (sk.sine(sec, sk.loop_freqs(sec, [carrier * 3])[0]), 0.07),
+        (sk.tone_band(sec, fc, q=24.0, seed=331), 1.00),
+        (sk.tone_band(sec, fc * 1.97, q=18.0, seed=332), 0.16),   # ← 2.00 にしない（非調和）
+        (sk.tone_band(sec, fc * 3.06, q=14.0, seed=333), 0.06),
     )
-    # 痩せるほど搬送が揺れる（水晶ではなく電源の揺らぎ）
+    tone += sk.loop_noise(sec, fc * 0.72, fc * 1.34, slope_db_oct=0.0, seed=334) * 0.60
+    # 痩せるほど揺れる（水晶ではなく電源の揺らぎ）
     tone *= 1.0 - (0.06 + 0.22 * worn) * sk.loop_lfo(sec, 13, phase=0.3)
 
-    psu = sk.mix((sk.sine(sec, supply[0]), 1.0), (sk.sine(sec, supply[1]), 0.35))
+    psu = sk.buzz(sec, 60.0, [(2, 1.00), (4, 0.45), (6, 0.20), (8, 0.09)], seed=335)
+    psu += sk.loop_noise(sec, 95, 330, slope_db_oct=-2.0, seed=336) * 0.45
 
     hiss_hi = 7000 + 1500 * worn        # ⚠ 上へ伸ばしすぎると刺さる（3 分間かけ続ける音）
     hiss = sk.loop_noise(sec, 900, hiss_hi, slope_db_oct=-1.5 + 1.0 * worn, seed=seed)
@@ -226,8 +237,10 @@ def _device(sec: float, worn: float, seed: int) -> np.ndarray:
 
     # ⚠ 「電源の唸りが前へ出る」は低域を増やすことなので**やめた**（内蔵スピーカーで消える方向）。
     #   痩せた手触りは中域の濁りとざらつきだけで作る。
-    y = sk.mix((tone, 0.26 - 0.10 * worn), (psu, 0.16 - 0.08 * worn),
-               (hiss, 0.30 + 0.40 * worn))
+    # ⚠ **ノイズを主役にする。** 装置の音は「ヒスの中から唸りが覗く」であって
+    #    「唸りにヒスが添えてある」ではない。トーンを 0.26 → 0.15 へ引き、ヒスを上げた。
+    y = sk.mix((tone, 0.15 - 0.05 * worn), (psu, 0.13 - 0.05 * worn),
+               (hiss, 0.52 + 0.30 * worn))
     # ⚠ **痩せた側を「暗くする」で作らない。** 傾きだけで暗くしたら内蔵スピーカーでの損失が
     #   -7.9dB になり、**3 周目の装置の声が実機で消えた**（2026-08-12 実測）。
     #   低解像度の手触りは「上を落とす ＋ **中域を濁らせる**」で作る。中域は必ず残る帯域。
@@ -290,11 +303,15 @@ def sfx_switch(variant: int = 0) -> np.ndarray:
     tick(gap, 0.62, 1600, 9000, 14.0, seed + 1)      # 接点
 
     # 金属の短いリング（非調和・すぐ消える）
+    # 金属の短いリング。**純音の重ねではなく帯**（実物の接点は 1 つの音程を持たない）。
     ring_len = 0.075
     rt = sk.t_axis(ring_len)
-    ring = (np.sin(2 * np.pi * ring_f * rt) * 1.0
-            + np.sin(2 * np.pi * ring_f * 2.41 * rt) * 0.35
-            + np.sin(2 * np.pi * ring_f * 4.13 * rt) * 0.12)
+    ring = sk.mix(
+        (sk.tone_band(ring_len, ring_f, q=16.0, seed=seed + 7), 1.00),
+        (sk.tone_band(ring_len, ring_f * 2.41, q=12.0, seed=seed + 8), 0.35),
+        (sk.tone_band(ring_len, ring_f * 4.13, q=9.0, seed=seed + 9), 0.12),
+    )
+    ring += sk.loop_noise(ring_len, ring_f * 0.6, ring_f * 1.6, seed=seed + 10) * 0.70
     ring *= np.exp(-rt * 46.0)
     ri = int(gap * sk.SR)
     y[ri:ri + len(ring)] += ring[:min(len(ring), n - ri)] * 0.30
@@ -443,17 +460,20 @@ def sfx_swap() -> np.ndarray:
     )
     thump *= sk.env_ar(0.45, 0.002, 0.13, curve=2.4)
 
-    # 搬送が立ち上がる（無 → 定常）。末尾で bed_device と一致させる
+    # 搬送が立ち上がる（無 → 定常）。**末尾は `bed_device` と同じ作り**にしないと、
+    # 一撃から敷く音へ渡った瞬間に音色が変わって継ぎ目が出る。
     rise = np.clip((t - 0.10) / 0.85, 0, 1) ** 1.6
-    carrier = (np.sin(2 * np.pi * 1900.0 * t) * 1.00
-               + np.sin(2 * np.pi * 3800.0 * t) * 0.18
-               + np.sin(2 * np.pi * 5700.0 * t) * 0.07) * rise
-    psu = (np.sin(2 * np.pi * 120.0 * t) + 0.35 * np.sin(2 * np.pi * 240.0 * t)) * rise
+    carrier = sk.mix(
+        (sk.tone_band(sec, 1900.0, q=24.0, seed=331), 1.00),
+        (sk.tone_band(sec, 1900.0 * 1.97, q=18.0, seed=332), 0.16),
+    ) * rise
+    carrier += sk.loop_noise(sec, 1368, 2546, seed=334) * 0.60 * rise
+    psu = sk.buzz(sec, 60.0, [(2, 1.0), (4, 0.45), (6, 0.20)], seed=335) * rise
     hiss = sk.loop_noise(sec, 900, 7000, slope_db_oct=-1.5, seed=902) * rise
 
     y = np.zeros(n)
     y[:len(thump)] += thump * 0.9
-    y += carrier * 0.10 + psu * 0.07 + hiss * 0.13
+    y += carrier * 0.08 + psu * 0.05 + hiss * 0.20
     y = sk.env_fade(y, 0.001, 0.008)
     return norm_peak(sk.widen(y, 0.25, seed=9090), PEAK_DB - 2.0)
 
@@ -470,6 +490,8 @@ def sfx_shell_open() -> np.ndarray:
 
     release = sk.sweep(1.5, 90, 620, log=True)
     release *= np.sin(np.linspace(0, np.pi, len(release))) ** 1.3
+    # 掃引は終点で止まるので、そこだけ線として立つ。空気を足して山に乗せる
+    release += sk.loop_noise(1.5, 380, 1100, slope_db_oct=-2.0, seed=1002) * 0.55
 
     breath = sk.loop_noise(sec, 260, 4200, slope_db_oct=-3.5, seed=1001)
     breath *= np.exp(-((t - 0.55) / 0.42) ** 2)
@@ -529,10 +551,11 @@ def sfx_title_out() -> np.ndarray:
     inhale *= np.linspace(0, 1, len(inhale)) ** 2.6
     inhale = sk.biquad(inhale, "bp", 1500, 0.6)
 
-    damp = np.zeros(n)
-    f0 = 523.0
-    for r, a in ((1.0, 1.0), (1.006, 0.8), (2.756, 0.3)):
-        damp += a * np.sin(2 * np.pi * f0 * r * t)
+    # ⚠ **合成のりんはやめた**（2026-08-12）。突出 37dB で発振器に寄っていたうえ、
+    #   タイトルの音はユーザー提供のシネマチックに変わったので、ここは「息を呑む」だけでよい。
+    #   実物の鈴は `amb_bell` として段 0 に置いてある。
+    damp = sk.tone_band(sec, 523.0, q=9.0, seed=1221)
+    damp += sk.loop_noise(sec, 300, 900, slope_db_oct=-1.0, seed=1224) * 0.55
     damp *= np.exp(-t * 1.4)
     damp[int(0.42 * sk.SR):] *= np.exp(-np.linspace(0, 26, n - int(0.42 * sk.SR)))  # 手で止める
 
@@ -561,7 +584,9 @@ REGISTRY = {
     "sfx_glitch_1": (lambda: sfx_glitch(0), False, False),
     "sfx_glitch_2": (lambda: sfx_glitch(1), False, False),
     "sfx_glitch_3": (lambda: sfx_glitch(2), False, False),
-    "sfx_seal_close": (sfx_seal_close, False, False),
+    # ⚠ `sfx_seal_close` は 2026-08-12 にユーザー提供の「黒い中に入るときの金属音」へ
+    #    置き換えた（`tools/ingest-sounds.py` が焼く）。**ここに戻すと上書きしてしまう。**
+    #    合成版の関数は設計の記録として残してある。
     "sfx_shatter": (sfx_shatter, False, False),
     "sfx_swap": (sfx_swap, False, False),
     "sfx_shell_open": (sfx_shell_open, False, False),

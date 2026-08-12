@@ -46,6 +46,12 @@ RULES = {
 
 }
 SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何倍まで許すか）
+
+# ⚠ **実物を録った音は突出していて当たり前**（鈴 44dB / 金属 32dB）。
+#    「発振器に聞こえる」を禁じるのは**合成した音**だけなので、実録は突出の判定から外す。
+#    ここに足すのは `tools/ingest-sounds.py` が焼くものだけ（合成へ戻したら消すこと）。
+RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_close"}
+TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 CLASS_TRANSIENT_DB = 14.0   # これより波高が大きい ＝ 一撃 ＝ 尖頭で揃える側
 
 
@@ -126,6 +132,11 @@ def check(name: str, y: np.ndarray, is_loop: bool) -> tuple[dict, list[str]]:
         bad.append(f"Quest の内蔵スピーカーで消える（情報が 200Hz より下にある・"
                    f"speaker_db={d['speaker_db']} / 下限 {lim}）")
     # 不快さ（2026-08-12 ユーザー指示「不気味で怖くていいけど、不快にはならないように」）
+    # 突出（＝「安っぽい電子音」）。2026-08-12 ユーザー指摘
+    # 「チープな電子音はチープすぎるからやめてほしい」。
+    if name not in RECORDED and d["tonal_db"] > TONAL_MAX:
+        bad.append(f"発振器に聞こえる（突出 {d['tonal_db']}dB / 上限 {TONAL_MAX}）— "
+                   "純音をやめて狭帯域ノイズ（soundkit.tone_band）にする")
     sharp_lim, rough_lim = (2.5, 0.4) if is_loop else (3.5, 1.0)
     if d["sharp"] > sharp_lim:
         bad.append(f"耳に刺さる（鋭さ {d['sharp']} / 上限 {sharp_lim}）")

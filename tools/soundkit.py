@@ -60,6 +60,67 @@ def sine(sec: float, freq: float, amp: float = 1.0, phase: float = 0.0,
     return amp * np.sin(2 * np.pi * freq * t_axis(sec, sr) + phase)
 
 
+def cluster(sec: float, freq: float, count: int = 7, spread: float = 0.012,
+            seed: int = 1, sr: int = SR) -> np.ndarray:
+    """**線ではなく帯**を作る。近接した複数の部分音を位相をばらして重ねる。
+
+    ⚠⚠ **純音を 1 本置くと「安っぽい電子音」になる**（2026-08-12 ユーザー指摘
+    「チープな電子音はチープすぎるからやめてほしい」）。正弦波 1 本は自然界に存在せず、
+    聞き手はそれを**発振器**として聞く。実物の機械の唸りは、近接した多数の共振が
+    うなりながら重なった**帯**で、`tonality_db` で測ると 10〜20dB の突出しかない。
+    純音 1 本は 40dB を超える。
+
+    音高の印象は保ったまま突出だけを下げられるので、「装置の音」をやめずに
+    「発振器の音」だけをやめられる。`spread` は ±の広がり（0.012 = ±1.2%）。
+
+    ⚠ 周波数はループ長の整数倍へ丸めるので、`spread` が小さすぎると全部同じ値へ潰れる
+    （その場合はただの純音に戻る）。`sec` が短いときは `spread` を大きく取る。
+    """
+    fs = loop_freqs(sec, [freq * (1.0 + spread * (2.0 * i / max(count - 1, 1) - 1.0))
+                          for i in range(count)], sr)
+    rng = np.random.default_rng(seed)
+    out = np.zeros(int(round(sec * sr)))
+    for f in fs:
+        out += sine(sec, f, phase=float(rng.uniform(0, 2 * np.pi)), sr=sr)
+    return out / max(count, 1)
+
+
+def tone_band(sec: float, freq: float, q: float = 22.0, seed: int = 1,
+              sr: int = SR) -> np.ndarray:
+    """**音程は聞こえるが線スペクトルを持たない**唸り。狭帯域ノイズ。
+
+    ⚠⚠ **「安っぽい電子音」を消す唯一の確実な手。** 2026-08-12 に、純音を
+    近接部分音の束（<see cref="cluster"/>）へ置き換えれば直ると考えたが、
+    測ったら **126dB**（純音 105dB より悪い）だった。束にしても線が増えるだけで、
+    効くのは<b>トーンの周りにノイズの地面があること</b>だと分かった
+    （束 + 同帯域のノイズ半々 = 18.5dB）。
+
+    ここでは地面を足すのではなく**トーンそのものをノイズにする**。実物の電源や
+    スイッチング電源の唸りは周波数が絶えず揺れていて、平均すると狭い帯になる。
+    `q` は鋭さ（22 なら 1900Hz で 86Hz 幅）。**大きくするほど音程がはっきりし、
+    同時に発振器へ近づく**ので、40 を超えたら測り直すこと。
+    """
+    w = max(freq / max(q, 0.5), 4.0)
+    return loop_noise(sec, max(freq - w * 0.5, 15.0), freq + w * 0.5, seed=seed, sr=sr)
+
+
+def buzz(sec: float, base: float, harmonics, seed: int = 1, sr: int = SR) -> np.ndarray:
+    """商用電源の唸りのような**ざらついた**低音。
+
+    ⚠ 実物のハムは純音ではない。鉄心の磁歪や整流の脈流が多数の高調波を不揃いな高さで出し、
+    しかも 1 本ずつがわずかに揺れている。100Hz の正弦波 1 本を置くと「テスト信号」に聞こえる。
+
+    `harmonics` は (倍数, 相対レベル) の並び。各成分は <see cref="cluster"/> で帯にする。
+    """
+    rng = np.random.default_rng(seed)
+    out = np.zeros(int(round(sec * sr)))
+    for k, lvl in harmonics:
+        jitter = float(rng.uniform(0.85, 1.15))          # 高さを不揃いに
+        out += tone_band(sec, base * k, q=30.0,
+                         seed=int(rng.integers(1, 1 << 30)), sr=sr) * lvl * jitter
+    return out
+
+
 def loop_noise(sec: float, lo: float, hi: float, slope_db_oct: float = 0.0,
                seed: int | None = None, sr: int = SR) -> np.ndarray:
     """**継ぎ目の無い**帯域ノイズ。
@@ -711,22 +772,52 @@ def roughness(y: np.ndarray, sr: int = SR) -> float:
 
 
 def tonality_db(y: np.ndarray, sr: int = SR) -> float:
-    """**突出したトーン**が周囲より何 dB 高いか。数分浴びると疲れる成分。
+    """**突出した純音**が周囲より何 dB 高いか。「安っぽい電子音」の 1 数字。
 
-    12dB を超える突出が持続すると「機械が鳴いている」に寄る。
-    ⚠ **蛍光灯の線・搬送トーンは意図して置いている**ので、大きいこと自体は欠陥ではない。
-    大きいときは「その音が何分続くか」で判断する。
+    ⚠⚠ **1/3 オクターブ帯域を隣と比べる形では測れない**（2026-08-12 にこれで誤診した）。
+    その粗さだと**スペクトルの傾きや帯域の縁**も「突出」と読む —
+    トーンが 1 本も無い `bed_static`（帯域ノイズ）が **28.9dB** と出た。
+
+    正しくは<b>細かい分解能で、対数周波数上の滑らかな地面からの隆起</b>を測る。
+    純音は数ビンだけ跳ね上がるので大きく出る。傾きも縁も地面ごと動くので出ない。
+
+    目安（この作品の中での比較用）:
+      **40dB 超** = 発振器そのもの（正弦波 1 本）
+      **25〜35dB** = はっきりした唸り。数分続けると機械に聞こえる
+      **15dB 前後** = 実物の機械や楽器。共振の帯として聞こえる
+      **10dB 未満** = 音程の印象が無い
+
+    ⚠ **大きいこと自体は欠陥ではない。** 鈴も金属も実物は 20〜30dB ある。
+    見るのは「**合成した音が**発振器に聞こえていないか」。
     """
-    fc, p = _third_octave(y, sr)
-    if len(p) < 3 or float(np.sum(p)) <= 0:
-        return 0.0
-    db = 10 * np.log10(np.maximum(p, 1e-12))
-    best = 0.0
-    for i in range(1, len(db) - 1):
-        neigh = np.concatenate([db[max(0, i - 3):i], db[i + 1:i + 4]])
-        if len(neigh):
-            best = max(best, float(db[i] - np.median(neigh)))
-    return best
+    m = to_stereo(y).mean(axis=1)
+    n = 1 << 15
+    if len(m) < n:
+        m = np.pad(m, (0, n - len(m)))
+    # 複数の窓の平均スペクトル（1 窓だと過渡が偶然の山を作る）
+    win = np.hanning(n)
+    acc = np.zeros(n // 2 + 1)
+    hops = max(1, (len(m) - n) // max(1, (len(m) - n) // 8 + 1))
+    cnt = 0
+    for i in range(0, max(1, len(m) - n + 1), max(hops, 1)):
+        acc += np.abs(np.fft.rfft(m[i:i + n] * win)) ** 2
+        cnt += 1
+        if cnt >= 12:
+            break
+    spec = acc / max(cnt, 1)
+    f = np.fft.rfftfreq(n, 1 / sr)
+
+    lo, hi = 80.0, 12000.0
+    grid = np.logspace(math.log10(lo), math.log10(hi), 900)
+    vals = np.interp(grid, f, spec)
+    db = 10 * np.log10(np.maximum(vals, 1e-20))
+
+    # 地面 = 対数周波数上の 1/2 オクターブ幅の中央値（傾きも縁も一緒に動く）
+    half_oct = int(round(900 / math.log2(hi / lo) * 0.5))
+    w = max(5, half_oct | 1)
+    pad = np.pad(db, (w // 2, w // 2), mode="edge")
+    floor = np.array([np.median(pad[i:i + w]) for i in range(len(db))])
+    return float(np.max(db - floor))
 
 
 def describe(y: np.ndarray, sr: int = SR) -> dict:
