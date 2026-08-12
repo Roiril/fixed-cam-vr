@@ -24,8 +24,14 @@ Shader "FixedCamVr/ShowActor"
         _Spec("Specular", Range(0, 1)) = 0.10
         _Gloss("Glossiness", Range(4, 128)) = 26
         _BaseColor("Base Color", Color) = (0.72, 0.70, 0.67, 1)
-        _ShadeColor("Shade Color", Color) = (0.10, 0.10, 0.12, 1)
-        _RimColor("Rim Color", Color) = (0.85, 0.85, 0.90, 1)
+        // ⚠ 影側と縁は**寒色に振らない**（LEDGER 0010）。旧値は影 (0.10,0.10,0.12)・
+        //    縁 (0.85,0.85,0.90) と青寄りで、これは屋外の空を受けた陰の慣習色。室内の灯りの
+        //    下に立つ人形では実写と食い違う。人形ごとの .mat（ShowActor_Ichimatsu）は既に
+        //    この値なので、既定側を揃えた。
+        // ⚠ **暖色へ振り過ぎない**。画面全体の暖色は post が担当する（合成の後に掛かるので
+        //    人形も背景も同じ倍率を浴びる）。ここで足すと人形だけ二重に暖かくなって浮く。
+        _ShadeColor("Shade Color", Color) = (0.115, 0.105, 0.098, 1)
+        _RimColor("Rim Color", Color) = (0.92, 0.90, 0.86, 1)
         // 光が来る向き（ワールド・正規化）。**ShowCgLayer が毎フレーム course 空間基準で上書きする**
         // （MaterialPropertyBlock 経由。show.json の layout.room.light が正）。
         // ここの既定は Editor プレビュー / 単体確認用のフォールバックにすぎない。

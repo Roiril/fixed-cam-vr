@@ -22,11 +22,13 @@ Shader "FixedCamVr/TitleGlyph"
         _Opacity("Opacity (0..1)", Range(0, 1)) = 0
 
         // 白は**わずかに暖かい生成り**。純白だと紙ではなく発光板に見える。
-        _InkColor("Ink color", Color) = (0.86, 0.83, 0.77, 1)
+        _InkColor("Ink color", Color) = (0.88, 0.82, 0.71, 1)
         // 朱。暗い地の上で 1 文字だけが持つ色なので、彩度は高く明度は抑える。
         _AccentColor("Accent ink color", Color) = (0.62, 0.030, 0.035, 1)
-        // 走る光・閃光の色。墨の上に加算する。
-        _GlowColor("Glow color", Color) = (0.55, 0.72, 0.70, 1)
+        // 走る光・閃光の色。墨の上に加算する。**灯りの色**（LEDGER 0010）。
+        // ⚠ ここを朱にしない。赤は「視」の 1 字だけが持つアクセントで、光まで赤くすると
+        //    字の朱が地に埋もれる。灯り側は橙に置いて、赤との差で朱を立てる。
+        _GlowColor("Glow color", Color) = (0.82, 0.52, 0.24, 1)
 
         _Reveal("Reveal (0..1)", Range(0, 1)) = 1
         _Dissolve("Dissolve (0..1)", Range(0, 1)) = 0

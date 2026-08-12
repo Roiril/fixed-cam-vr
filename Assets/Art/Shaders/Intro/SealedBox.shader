@@ -3,13 +3,20 @@
 // 出どころは .claude/canon/LEDGER.md 0003 / 0004。中から見た同じ境界が ContainmentShell で、
 // **箱の外面と内面は同じ 1 つの体積**（footprint は ContainmentShellLogic が持つ）。
 //
-// 模様は手続きで描く（テクスチャを持たない）。理由は 3 つ:
+// **幾何（六角格子）は手続き、地の質感は焼いた版**（`Assets/Resources/Intro/SealBoxWear.png`）。
+// 幾何を手続きにしてある理由は 3 つ:
 //   - どの距離でも縁がなまらない（体験者は 3m から 0.5m まで近づく）
 //   - 六角の大きさ・線の太さ・光の速さを数値で振れる（絵を焼き直さなくてよい）
-//   - 面をまたいで模様が連続する（world 座標で引くので、箱が「削り出した塊」に見える）
+//   - 面をまたいで模様が連続する（巻いたシートの座標で引くので、箱が「削り出した塊」に見える）
 //
-// **線は細く、幾何は正確に、動くのは光だけ**（LEDGER 0004）。塗りつぶしも斑も置かない —
-// 面を汚すと「不気味」ではなく「傷んだ板」になる。非一様さは光の走りが作る。
+// **線は細く、幾何は正確に、動くのは光だけ**（LEDGER 0004）。
+// ⚠⚠ **ただし 0011 が「線だけ、赤だけの安っぽいデジタルな見た目はやめたい」で上書きしている。**
+// いま持たせているのは 3 つ:
+//   - **地**: 使い込まれた金属質（酸化のむら・研磨目・磨耗・掻き傷）。テカらせない
+//     — 鏡面ハイライトを 1 点でも作ると「長年使い込まれた物」ではなくなる
+//   - **溝**: 磨耗で欠ける。等間隔・等幅の線が全面に並ぶことが「デジタル」の主因だった
+//   - **熾**: まばらに宿り、溝の外へにじみ、揺れる。くっきり光る所は少なく、大半は暗い
+// **捨てていないのは幾何と継ぎ目**（0006 の巻き方）。0011 は幾何を否定していない。
 //
 // ⚠ 描画順は覆い（IntroVeil・4900）の**後**。覆いは `Blend Zero SrcAlpha` を全画面へ掛けるので、
 // 先に描くと箱ごと 0 に潰れる。**5000 を超えてもいけない**（URP の透明パスは [2501, 5000] だけ）。
@@ -21,12 +28,47 @@ Shader "FixedCamVr/SealedBox"
     Properties
     {
         _Opacity("Opacity (0..1)", Range(0, 1)) = 0
-        // 地。ほぼ黒。わずかに緑を残すと「黒い板」ではなく「暗い面」に見える。
-        _BaseColor("Base color", Color) = (0.018, 0.021, 0.017, 1)
-        // 光が来ていないときの線。**ほとんど見えない**くらいでよい（形は光が見せる）。
-        _LineColor("Hex line color (unlit)", Color) = (0.045, 0.054, 0.042, 1)
-        // 光。線の上にだけ加算する。
-        _GlowColor("Glow color", Color) = (0.140, 0.260, 0.240, 1)
+
+        // ---- 地。使い込まれた金属質（LEDGER 0011） -----------------------------------
+        // 焼いた版が持つ 4 チャンネル（`tools/make-sealbox-tex.py` と対）:
+        //   R = 地のむら（酸化・古び）/ G = 研磨目・ざらつき / B = 磨耗（凹み・掻き傷）
+        //   A = 熾が宿る場所（**大半は 0 に近い**）
+        // ⚠ 既定を "gray" にしてあるので、版が剥がれても真っ黒にはならず、
+        //    のっぺりした面に縮退するだけ（C# 側が警告を出す）。
+        _WearTex("Wear map (R=patina G=grain B=wear A=hearth)", 2D) = "gray" {}
+        // 版が 1 巡する長さ (m)。周長の約数へ丸めるので、巻き終わりで継ぎ目が出ない。
+        // ⚠ 小さくすると反復が見える（1.35m だと 3m 四方の箱で 9 回回って、同じ汚れが並ぶ）。
+        _WearScaleM("Wear tile size (m)", Float) = 2.4
+        // 酸化して沈んだ地。**面のほとんどがこの色**。
+        _BaseColor("Patina color (darkest)", Color) = (0.021, 0.0165, 0.0145, 1)
+        // 磨り出て地金が残っている所。金属の色みだけを持ち、光らない。
+        // ⚠ 白へ寄せない。灰白は暗い面の上で**カビ・霜**に見える（2026-08-12 実測）。
+        _MetalColor("Worn metal color", Color) = (0.086, 0.074, 0.061, 1)
+        // 研磨目・ざらつきの効き（明暗のみ。色は変えない）。
+        _GrainAmt("Surface grain", Range(0, 1)) = 0.42
+        // **テカらない金属**。斜めから見たときだけ広く弱く持ち上がる（ハイライトは作らない）。
+        _Sheen("Grazing sheen", Range(0, 1)) = 0.40
+        _SheenColor("Sheen color", Color) = (0.26, 0.235, 0.20, 1)
+        _SheenPow("Sheen falloff", Range(1, 8)) = 3.5
+
+        // ---- 線。彫られた溝であって、印刷された線ではない ----------------------------
+        _LineColor("Hex groove color", Color) = (0.012, 0.0095, 0.0085, 1)
+        // 溝が磨耗で欠ける量。0 で均一な線（＝「安っぽいデジタル」）、1 でほとんど消える。
+        _GrooveWear("Groove wear", Range(0, 1)) = 0.55
+
+        // ---- 光。**熾（おき）**。赤 1 色にしない（LEDGER 0011） ----------------------
+        // 芯。宿った所だけが琥珀寄りの赤で立つ。面積は小さい。
+        _GlowColor("Ember core color", Color) = (0.74, 0.30, 0.085, 1)
+        // 溝にふだん宿っている赤。ほとんどの場所はこれだけ。
+        _EmberColor("Ember rest color", Color) = (0.38, 0.055, 0.028, 1)
+        // 溝の外へにじむ色。**深い赤**。芯より暗く、彩度は高い。
+        _BleedColor("Bleed color", Color) = (0.30, 0.038, 0.022, 1)
+        // にじみの幅（六角セルに対する比）。
+        _BleedM("Bleed width", Range(0, 0.45)) = 0.20
+        // これを超えた熾だけが「くっきり」光る。上げるほど光る面積が減る。
+        _HotFrac("Hot threshold", Range(0, 1)) = 0.58
+        // 不安定さ（ゆらぎの深さ）。0 で一定、1 で消えかける。
+        _Unrest("Instability", Range(0, 1)) = 0.45
         _HexSizeM("Hex size (m)", Float) = 0.45
         // 箱の実寸 (m)。模様を「1 枚のシートで巻く」ために要る（C# が毎フレーム書く）。
         _BoxSize("Box size (m)", Vector) = (3, 2.4, 3, 0)
@@ -83,10 +125,25 @@ Shader "FixedCamVr/SealedBox"
 
             #define TAU 6.2831853
 
+            TEXTURE2D(_WearTex);
+            SAMPLER(sampler_WearTex);
+
             float _Opacity;
+            float _WearScaleM;
             float4 _BaseColor;
+            float4 _MetalColor;
+            float _GrainAmt;
+            float _Sheen;
+            float4 _SheenColor;
+            float _SheenPow;
             float4 _LineColor;
+            float _GrooveWear;
             float4 _GlowColor;
+            float4 _EmberColor;
+            float4 _BleedColor;
+            float _BleedM;
+            float _HotFrac;
+            float _Unrest;
             float _HexSizeM;
             float4 _BoxSize;
             float _SeamFadeM;
@@ -315,6 +372,21 @@ Shader "FixedCamVr/SealedBox"
                     seam = smoothstep(0.0, max(_SeamFadeM, 1e-3), bh * 0.5 - lp.y);
                 }
 
+                // ---- 使い込まれた地。焼いた版を**同じシートの上で**タイルする（LEDGER 0011）----
+                // ⚠ 六角と同じく**周長の約数へ丸める**。丸めないと巻き終わりに地の継ぎ目が出て、
+                //    0006 で噛み合わせた縦 4 辺に別の縫い目を作ることになる。
+                float wearU = perim / max(1.0, round(perim / max(_WearScaleM, 0.05)));
+                // 2 つの倍率で重ねる。1 枚だと 12m の周長に 9 回同じ模様が回って**反復が見える**。
+                float4 wf = SAMPLE_TEXTURE2D(_WearTex, sampler_WearTex, pm / wearU);
+                float4 wc = SAMPLE_TEXTURE2D(_WearTex, sampler_WearTex,
+                                             pm / (wearU * 2.63) + float2(0.37, 0.11));
+                float patina = saturate(lerp(wf.r, wc.r, 0.45));
+                float grain  = lerp(wf.g, wc.g, 0.25);
+                float worn   = saturate(max(wf.b, wc.b * 0.7));
+                // 熾は**粗い方の形**を主にする（細かい方で混ぜると宿りがまだらに散って
+                // 「暗い所が多い」が崩れる）。
+                float hearth = saturate(wc.a * (0.55 + 0.45 * wf.a));
+
                 float2 gv, id;
                 HexCell(pm / hexU, gv, id);
                 float d = HexDist(gv);
@@ -329,6 +401,10 @@ Shader "FixedCamVr/SealedBox"
                 // 細い線は遠くで消える。**1 画素は残す** —「幾何学的にきれい」は線が繋がっていること。
                 float wdt = clamp(max(_LineWidth, aa * 0.9), _LineWidth, 0.06);
                 float edge = smoothstep(0.5 - wdt - aa, 0.5 - wdt + aa, d) * seam;
+                // ⚠ **溝は磨耗で欠ける。** 均一な太さの線が全面に等間隔で並ぶことが、
+                //    「安っぽいデジタル」の主因（LEDGER 0011）。地の磨耗（worn）と酸化（patina）で
+                //    深さを変える。幾何は動かさない — 消えるのは深さだけ。
+                float groove = edge * saturate(1.0 - _GrooveWear * (0.75 * worn + 0.45 * (1.0 - patina)));
 
                 // ---- 光の走り。**動くのは光だけ**で、幾何は 1 ミリも動かない ----
                 float t = _Time.y + _PhaseSec;
@@ -342,15 +418,56 @@ Shader "FixedCamVr/SealedBox"
                 float w1 = 0.5 + 0.5 * sin(TAU * (rad / len - t / max(_WaveUpSec, 0.2)));
                 // 副役はゆっくり昇る帯。輪だけだと同心円が整いすぎる。
                 float w2 = 0.5 + 0.5 * sin(TAU * (up / (len * 2.2) - t / max(_WaveSideSec, 0.2)));
-                float glow = pow(w1, _WaveSharp) * 0.9 + pow(w2, _WaveSharp) * 0.45;
+                float pulse = saturate(pow(w1, _WaveSharp) * 0.9 + pow(w2, _WaveSharp) * 0.45);
 
                 // セルごとに位相をずらす。揃うと「面全体が点滅する看板」に見える。
                 float r = Hash21(id + float2(31.7, 17.3));
-                glow *= 0.72 + 0.28 * (0.5 + 0.5 * sin(TAU * (t / 6.3 + r)));
-                glow = saturate(glow) * _GlowGain;
+                pulse *= 0.72 + 0.28 * (0.5 + 0.5 * sin(TAU * (t / 6.3 + r)));
 
-                float3 rgb = lerp(_BaseColor.rgb, _LineColor.rgb, edge);
-                rgb += _GlowColor.rgb * (edge * glow);
+                // ⚠ **不安定さ**（LEDGER 0011「外側に少しだけにじみ出て不安定な様子」）。
+                //    ゆっくりの息（6.3s）に速い揺らぎ（1.7s）を重ねる。熾が濃い所ほど強く揺れる
+                //    ＝ 消えかけている所は静かに、燃えている所が落ち着かない。
+                float unrest = 1.0 - _Unrest * (0.5 - 0.5 * sin(TAU * (t / 1.73 + r * 3.1)))
+                                             * (0.35 + 0.65 * hearth);
+
+                // 熾の量。**ふだんはこれだけ**（面のほとんどで小さい）。
+                float breath = pulse * (0.22 + 0.78 * hearth) * unrest * _GlowGain;
+                // くっきり光る芯。**熾が濃く、かつ波が来ている所だけ**なので面積が小さい。
+                float hot = smoothstep(_HotFrac, 1.0, hearth * (0.5 + 0.5 * pulse)) * unrest * _GlowGain;
+
+                // ---- 地を組む。**面のほとんどはここで決まる** ----
+                // 酸化して沈んだ地 ↔ 磨り出た地金。2 乗しているのは「暗い所が多く」のため。
+                float3 surf = lerp(_BaseColor.rgb, _MetalColor.rgb, patina * patina);
+                // 磨耗した所は地金が擦れて少し出る。
+                // ⚠⚠ **明るい色で置き換えない。** 最初 `lerp(surf, _MetalColor*1.5, worn*0.6)` と
+                //    書いたら、暗い面の上で淡い塊になって**白いカビか霜**に見えた（2026-08-12 実測）。
+                //    擦れて出るのは「地金の色が少し強く出る」だけで、白くはならない。
+                //    しかも **研磨目に沿って出る**（擦れる方向が決まっているので、丸い斑にならない）。
+                surf += _MetalColor.rgb * worn * 0.42 * (0.35 + 0.65 * grain);
+                // 研磨目・ざらつきは**明暗だけ**。色を動かすと金属ではなく塗装に見える。
+                surf *= 1.0 + (grain - 0.5) * 2.0 * _GrainAmt;
+
+                // ⚠ **テカらせない**（LEDGER 0011「けどテカリはしない」）。ハイライトを作らず、
+                //    斜めから見たときだけ面全体が広く弱く持ち上がる。これだけで金属に見える。
+                //    鏡面反射を足すと一点が白く光り、その瞬間「使い込まれた物」ではなくなる。
+                float3 V = normalize(_WorldSpaceCameraPos - i.positionWS);
+                float fres = pow(saturate(1.0 - abs(dot(normalize(i.normalWS), V))), _SheenPow);
+                surf += _SheenColor.rgb * (_Sheen * fres * (0.3 + 0.7 * patina));
+
+                // 溝。**印刷した線ではなく彫った溝**なので、地のむらを保ったまま沈める。
+                float3 rgb = lerp(surf, surf * 0.28 + _LineColor.rgb, groove);
+
+                // ---- 熾。溝に宿り、外へにじむ ----
+                // 溝の上: ふだんは深い赤、宿った所だけ琥珀の芯が立つ。
+                rgb += (_EmberColor.rgb * breath + _GlowColor.rgb * hot) * groove;
+
+                // にじみ。溝の**外側**へ広がる帯。幅も熾の濃さで揺れる（＝縁が定まらない）。
+                float bleed = max(_BleedM * (0.45 + 0.9 * hearth) * unrest, 1e-4);
+                float halo = smoothstep(0.5 - wdt - bleed, 0.5 - wdt, d) * (1.0 - edge) * seam;
+                rgb += _BleedColor.rgb * (halo * halo) * (breath * 1.1 + hot * 0.55);
+
+                // 面そのものがわずかに熾を持つ。**線だけを光らせない**（LEDGER 0011）。
+                rgb += _BleedColor.rgb * (hearth * hearth) * breath * 0.35 * seam;
 
                 // 少しだけ縦に沈める。上端まで一様だと「板」に見える。
                 float h = saturate(i.positionWS.y * 0.35 + 0.15);

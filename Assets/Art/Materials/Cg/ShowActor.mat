@@ -37,6 +37,6 @@ Material:
     - _BaseColor: {r: 0.72, g: 0.7, b: 0.67, a: 1}
     - _LightColor: {r: 1, g: 1, b: 1, a: 1}
     - _LightDir: {r: 0.35, g: 0.85, b: -0.4, a: 0}
-    - _RimColor: {r: 0.85, g: 0.85, b: 0.9, a: 1}
-    - _ShadeColor: {r: 0.09999997, g: 0.09999997, b: 0.11999995, a: 1}
+    - _RimColor: {r: 0.92, g: 0.9, b: 0.86, a: 1}
+    - _ShadeColor: {r: 0.115, g: 0.105, b: 0.098, a: 1}
   m_BuildTextureStacks: []

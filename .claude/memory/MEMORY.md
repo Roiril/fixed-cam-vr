@@ -10,10 +10,13 @@
 
 - [proposal_single_source.md](proposal_single_source.md) - **企画書は docs/proposal/ も docs/archive/ も読まない**（2026-08-08 作りこみの段へ移行）。骨格は実装と機械が守る／旧版にしか無い要求 4 つは実装しない
 
+- [sealbox_surface.md](sealbox_surface.md) - 封印の箱の地（焼いた版 4ch）と熾：磨耗を明るい色で置き換えると白いカビに見える／オクターブノイズは分位で切る／版のタイルは周長の約数へ（小さすぎると反復が見える）／hearth² は面積では埋まらない／テカらせない＝鏡面項を書かない／依頼を数値で確かめる 1 行
+- [warm_palette.md](warm_palette.md) - 色は 7 箇所に散っている（post / 箱 / 題字 / 輪郭 / 構造線 / 人形 / 焼き込み）。暖色へ寄せたとき直した所と、直さなかった所の理由／彩度を上げないと色温度は 65% 捨てられる／赤は R を大きく取れば逆に明るくなる
 - [title_screen.md](title_screen.md) - タイトル画面「廻リ視」：壁を隠しているのは重みではなく描画順／題字は焼いた版 1 枚（4ch が別の意味を持つマスク・押し出さず 3 層を離す・かすれは割合から閾値を逆算）／Normal の A は閉じるだけ／組めなければ素通しへ倒す
 - [take_continuity.md](take_continuity.md) - 演出の待ち・連続・継ぎ目：持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が所有する／相乗り分岐にテストが無い
 - [show_run_skeleton.md](show_run_skeleton.md) - 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／凍結を増やさない
 - [glitch_and_latency.md](glitch_and_latency.md) - 乱れ演出と遅延計測：_Glitch と _SignalLost は別系統／post は 4 箇所同時に直す／絶対 E2E は測っていない（配信側に /clock が要る）
+- [screen_decay.md](screen_decay.md) - 周回で進む解像度の劣化：post ではなく別系統 uniform（対応表は C# にしかない）／段差を作らない 3 つの仕掛け／進むのは Run 相だけで終了では保持／3 周目の録画も同じだけ粗くなる（2026-08-06 の設計判断をユーザーが覆した）
 
 - [material_flow.md](material_flow.md) - 素材フローを触る前に：マスクは枠空間 16:9（実機は contain-fit を通さない）／**マスクの決め方は未着手＝工房の差分は見た秒数で変わる**／採用は show.json から導出／ラプラシアンは卓だけ／プロンプトの棚は 1 つでスロット無し
 - [codex_image_pipeline.md](codex_image_pipeline.md) - 卓の 🪄 から Codex で素材生成。背景保存は実測で成立（差分＝マスク）／入力画像はプロンプトに絶対パス／生成は 127.0.0.1 のみ

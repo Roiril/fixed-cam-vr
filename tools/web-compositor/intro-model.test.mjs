@@ -278,7 +278,7 @@ test('卓の既定値と capture-server.py の _default_show が一致してい�
   }
   assert.match(body, new RegExp(`'maxSec':\\s*${INTRO_DEFAULT.maxSec}\\b`));
   assert.match(body, new RegExp(`'glitchOnSwap':\\s*${INTRO_DEFAULT.glitchOnSwap}`));
-  assert.match(body, /'edgeColor':\s*'#ffffff'/);
+  assert.match(body, /'edgeColor':\s*'#ffcf9e'/);
   for (const k of ['enabled', 'raiseHandPrompt']) {
     assert.match(body, new RegExp(`'${k}':\\s*True`), `${k} が食い違っている`);
   }

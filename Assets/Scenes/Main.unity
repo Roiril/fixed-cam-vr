@@ -1079,7 +1079,7 @@ MonoBehaviour:
   showRoomWire: 0
   showCameraMarks: 0
   lineWidth: 0.01
-  lineColor: {r: 0.45, g: 0.78, b: 1, a: 0.8}
+  lineColor: {r: 1, g: 0.66, b: 0.36, a: 0.8}
   markPollSec: 0.25
 --- !u!114 &589421078
 MonoBehaviour:

@@ -658,8 +658,12 @@ namespace FixedCamVr.Streaming
         public float frameSec = 2.5f;
         public float swapSec = 4.5f;
 
-        /// <summary>実物の輪郭線の色（<c>#rrggbb</c>）。</summary>
-        public string edgeColor = "#ffffff";
+        /// <summary>
+        /// 実物の輪郭線の色（<c>#rrggbb</c>）。既定は<b>生成り</b>（LEDGER 0010「全体的に暖色に」）。
+        /// 純白は蛍光灯の下の点検作業に見える。段 2 の「色が抜けて輪郭だけが残る」は
+        /// 灯りの下で見ているという前提の上に置く。
+        /// </summary>
+        public string edgeColor = "#ffcf9e";
 
         // ⚠ 既定は**どちらも false**（2026-08-01 ユーザー判断「雰囲気ぶち壊しだから要らない」）。
         //    細い寒色の線は現実の上に重なると計測器に見え、「現実がそのまま格下げされていく」という
@@ -701,10 +705,10 @@ namespace FixedCamVr.Streaming
             frameSec = frameSec, swapSec = swapSec, maxSec = maxSec,
         }.Sanitized();
 
-        /// <summary>輪郭線の色を解く（解けなければ白）。</summary>
+        /// <summary>輪郭線の色を解く（解けなければ生成り）。</summary>
         public Color ResolveEdgeColor()
-            => ColorUtility.TryParseHtmlString(string.IsNullOrEmpty(edgeColor) ? "#ffffff" : edgeColor,
-                out var c) ? c : Color.white;
+            => ColorUtility.TryParseHtmlString(string.IsNullOrEmpty(edgeColor) ? "#ffcf9e" : edgeColor,
+                out var c) ? c : new Color(1f, 0.812f, 0.62f, 1f);
     }
 
     /// <summary>CG レイヤに立てる人形の定義。show.json トップレベル <c>actors</c>。</summary>

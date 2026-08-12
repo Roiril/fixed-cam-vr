@@ -50,6 +50,9 @@ namespace FixedCamVr.Streaming.EditorTools
 
             Directory.CreateDirectory(OutDir);
             var mat = new Material(shader) { name = "SealedBox (preview)" };
+            // ⚠ 地の版は**実行時と同じ経路**で当てる。ここを忘れると「Editor ではのっぺり、
+            //    実機では質感あり」になり、絵を見ても質感の良し悪しを判定できない。
+            SealedBox.ApplyWearTexture(mat);
             mat.SetFloat("_Opacity", 1f);
             mat.SetFloat("_HexSizeM", ParseFloat("hex", 0.45f));
             mat.SetFloat("_GlowGain", ParseFloat("glow", 1.0f));

@@ -252,7 +252,7 @@ def _default_show():
                           'frameSec': 2.5, 'swapSec': 4.5,
                           # 構造の線は既定で出さない（2026-08-01。細い線が現実に重なると計測器に見える）。
                           # Unity の ShowIntroDef / 卓の INTRO_DEFAULT と 3 者で揃えること。
-                          'edgeColor': '#ffffff', 'showCameraMarks': False, 'showRoomWire': False,
+                          'edgeColor': '#ffcf9e', 'showCameraMarks': False, 'showRoomWire': False,
                           'glitchOnSwap': 0.8, 'raiseHandPrompt': True}},
         # 撮像の質（装置らしさ）。post 12 項目と違って**時間で動く**ので別系統。
         # ここの既定は C# ShowFeelDef / 卓 FEEL_DEFAULT と 3 者で揃えること。

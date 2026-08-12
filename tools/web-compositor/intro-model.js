@@ -27,7 +27,9 @@ export const INTRO_DEFAULT = {
   structureSec: 2.5,
   frameSec: 2.5,
   swapSec: 4.5,
-  edgeColor: '#ffffff',
+  // 生成り。純白は蛍光灯の下の点検作業に見える（LEDGER 0010「全体的に暖色に」）。
+  // Unity 側 ShowIntroDef.edgeColor / capture-server.py の _default_show と対。
+  edgeColor: '#ffcf9e',
   // ⚠ 既定は**どちらも false**（2026-08-01）。細い寒色の線が現実に重なると計測器に見え、
   //    「現実がそのまま格下げされていく」という筋を切る。Unity 側 ShowIntroDef の既定と対。
   //    片方だけ直すと沈黙して食い違う（卓は「出さない」なのに実機は出す）。

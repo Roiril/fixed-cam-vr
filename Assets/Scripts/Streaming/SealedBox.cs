@@ -41,10 +41,17 @@ namespace FixedCamVr.Streaming
         /// <summary>シェーダ名。ビルドから剥がれないよう Always Included にも入っている。</summary>
         public const string ShaderName = "FixedCamVr/SealedBox";
 
+        /// <summary>
+        /// 使い込まれた地の版（<c>Resources.Load</c> のパス）。焼くのは
+        /// <c>tools/make-sealbox-tex.py</c>、チャンネルの意味は <c>SealedBox.shader</c> と対。
+        /// </summary>
+        public const string WearTexPath = "Intro/SealBoxWear";
+
         private static readonly int OpacityId = Shader.PropertyToID("_Opacity");
         private static readonly int HexSizeId = Shader.PropertyToID("_HexSizeM");
         private static readonly int GlowGainId = Shader.PropertyToID("_GlowGain");
         private static readonly int BoxSizeId = Shader.PropertyToID("_BoxSize");
+        private static readonly int WearTexId = Shader.PropertyToID("_WearTex");
 
         // ---- 破砕（段 4）。封印そのものが割れてスクリーンへ入る --------------------
         // 曲線の数値は `IntroShatterCurve.PushBox` が配る（マテリアルへ書く場所は 1 箇所だけ）。
@@ -174,6 +181,7 @@ namespace FixedCamVr.Streaming
             _plainMesh = _filter != null ? _filter.sharedMesh : null;
             _renderer = go.GetComponent<MeshRenderer>();
             _mat = new Material(shader) { name = "SealedBox (runtime)" };
+            ApplyWearTexture(_mat);
             _renderer.sharedMaterial = _mat;
             _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _renderer.receiveShadows = false;
@@ -181,6 +189,27 @@ namespace FixedCamVr.Streaming
             _renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
             _renderer.allowOcclusionWhenDynamic = false;
             _renderer.enabled = false;
+        }
+
+        /// <summary>
+        /// 使い込まれた地の版をマテリアルへ当てる。<b>実行時とプレビューの両方がここを通る</b>
+        /// （プレビューは自前でマテリアルを作るので、片方だけに書くと「Editor では地があるのに
+        /// 実機はのっぺり」あるいはその逆になり、絵を見ても気づけない）。
+        ///
+        /// ⚠ 版が見つからなくても落とさない。シェーダの既定が <c>"gray"</c> なので、
+        /// のっぺりした面に縮退するだけ。ただし<b>黙らない</b> — 質感が丸ごと消えた状態は
+        /// 実機の暗い画では「そういうもの」に見えてしまう（2026-07-31 と同じ型の事故）。
+        /// </summary>
+        public static void ApplyWearTexture(Material mat)
+        {
+            var tex = Resources.Load<Texture2D>(WearTexPath);
+            if (tex == null)
+            {
+                Debug.LogWarning($"[SealedBox] 地の版 Resources/{WearTexPath} が見つかりません。" +
+                                 "封印の箱はのっぺりした面になります（tools/make-sealbox-tex.py で焼く）");
+                return;
+            }
+            mat.SetTexture(WearTexId, tex);
         }
 
         /// <summary>導入の重みを箱へ流す。<b>判断はしない</b>（値を書くだけ）。</summary>

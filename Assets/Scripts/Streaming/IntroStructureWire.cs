@@ -46,8 +46,11 @@ namespace FixedCamVr.Streaming
         [Tooltip("線の太さ (m)。登録リチュアルの検証ワイヤーと同じ 0.01 に揃える。")]
         [SerializeField, Range(0.002f, 0.05f)] private float lineWidth = 0.01f;
 
-        [Tooltip("線の色。薄い寒色 1 色（alpha は structure の重みで最大この値まで）。")]
-        [SerializeField] private Color lineColor = new(0.45f, 0.78f, 1f, 0.8f);
+        [Tooltip("線の色。薄い暖色 1 色（alpha は structure の重みで最大この値まで）。")]
+        // ⚠ 寒色（旧: 0.45/0.78/1.0）から暖色へ（LEDGER 0010）。寒色の細線は計測器に見えるという
+        //    理由で既定 OFF になった経緯があり、色を暖色へ寄せるのはその指摘とも同じ向き。
+        //    **シーンに焼かれた値が優先される** — Main.unity 側も対で直すこと（unity-prefab-fields）。
+        [SerializeField] private Color lineColor = new(1f, 0.66f, 0.36f, 0.8f);
 
         [Tooltip("カメラ姿勢の変化を見に行く間隔 (秒)。0 なら毎フレーム。")]
         [SerializeField, Min(0f)] private float markPollSec = 0.25f;
