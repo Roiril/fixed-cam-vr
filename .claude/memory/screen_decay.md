@@ -13,7 +13,7 @@ post 12 項目（`_Pixelate` を含む）は **shader / 卓の FS_POST / common.
 
 | | |
 |---|---|
-| uniform | `_CoarseBlocks`（枠を横切るブロック数。**0 = 無効**）/ `_CoarseSoft`（境目の渡し方） |
+| uniform | `_CoarseBlocks`（枠を横切るブロック数。**0 = 無効**）※ `_CoarseSoft` は 2026-08-12 に廃止 |
 | 唯一の writer | [`CameraFeelFx`](../../Assets/Scripts/Streaming/CameraFeelFx.cs) |
 | 進みを決める | [`ScreenDecayLogic`](../../Assets/Scripts/Streaming/ScreenDecayLogic.cs)（純ロジック・dt 注入） |
 | 回すのは | [`ShowRunDirector`](../../Assets/Scripts/Streaming/ShowRunDirector.cs)（相と周回を持っている唯一の場所） |
@@ -62,11 +62,26 @@ ScreenDecayLogic.BlocksFor(progress)   // 900 → 110 を等比で
 終了で 0 へ戻すと**終わった瞬間に画が急に鮮明になる**（暗転前に演出を見せ切る猶予がある）。
 落とすのは `ShowRunDirector.BeginRun()`（体験者の交代）1 箇所だけ。
 
-### 4. モザイクではなく「低い解像度で引き伸ばした画」
+### 4. ⚠⚠ 作り方は 2026-08-12 に置き換わった — **mip を引く**
 
-境目を硬く切ると**モザイクを掛けたように見える**（＝加工した、が伝わる）。
-`_CoarseSoft` はブロックの境目を smoothstep で渡す幅で、1 サンプルのまま bilinear 相当の
-にじみを作る（4 タップ引くと `SampleBase` が 4 倍になり Quest の予算に乗らない）。
+> 以下は旧実装の説明。**`_CoarseSoft` はもう無い。**
+> ~~境目を smoothstep で渡す。4 タップ引くと Quest の予算に乗らない~~
+
+ユーザーの指摘（`canon/LEDGER.md` 0018「現実でこんな感じで粗くなることはないだろう感がある」）で
+測り直したら、**旧実装だけが格子を作っていた**（境目の段差が元の **2.91 倍**。実際の JPEG 劣化も
+解像度低下も 1.0 前後）。あれは低域通過ではなく**周期的な停止と局所拡大を持つ座標変形**で、
+ブロックの内側は 1 テクセルを引き伸ばし、境目だけが元画像を最大 2.5 倍速で走査していた。
+
+いまは **mip**（面積平均のピラミッド ＝「先に帯域を落としてから間引く」という実物の順序）。
+`CoarseLod()` が `log2(ソース幅 / (ブロック数 × _LiveScale.x))` を返し、**色差はさらに +1.0**
+（実物の符号化は色差を先に捨てる）。1 タップのまま。
+
+⚠⚠ **ソースが `mipChain` を持たないと LOD は黙って無視され、画は 1 画素も変わらない。**
+`CameraStream` / `MjpegScreen` / `RecordedFramePlayer` / `ScreenOverlayController` /
+`ShowCompositePreview` のプレート、**全部 mipChain:true + Trilinear**。1 つでも漏れると
+そこだけ鮮明になり、切り替わった瞬間に画の素性が変わって差し替えがばれる。
+
+詳細と実測値は `rules/streaming.md` の「周回で痩せる伝送は mip で作る」節。
 
 ⚠ **量子化を 2 回重ねない。** 著作した `_Pixelate` と `_CoarseBlocks` は
 **粗い方だけ**を掛ける（`min`）。両方掛けると 2 つの格子が干渉して、

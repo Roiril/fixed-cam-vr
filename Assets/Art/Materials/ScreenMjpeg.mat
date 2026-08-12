@@ -40,15 +40,15 @@ Material:
     m_Floats:
     - _UvRotSteps: 0
     - _OverlayStrength: 0
-    - _Exposure: -0.72
-    - _Contrast: 1.28
-    - _Saturation: 0.35
-    - _Temperature: -0.18
-    - _Tint: 0.16
-    - _Lift: 0.065
-    - _Vignette: 0.45
-    - _Grain: 0.065
-    - _Scanline: 0.2
+    - _Exposure: -1.05
+    - _Contrast: 1.12
+    - _Saturation: 0.52
+    - _Temperature: 0.48
+    - _Tint: 0
+    - _Lift: 0.02
+    - _Vignette: 0.38
+    - _Grain: 0
+    - _Scanline: 0
     - _ScanlineCount: 240
     m_Colors:
     - _LiveScale: {r: 1, g: 1, b: 0, a: 0}

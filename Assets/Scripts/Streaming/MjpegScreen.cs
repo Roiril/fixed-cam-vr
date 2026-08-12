@@ -129,6 +129,17 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float SourceLumaAt(Vector2 uv) => _lumaMap.Sample(uv.x, uv.y);
 
+        /// <summary>
+        /// いま映しているソース映像の連番（増えたら新しい画が来た）。
+        ///
+        /// <b>センサの粒はこの時計で動かす。</b> VR は 90Hz で描くが映像は 15〜30fps しか来ないので、
+        /// <c>_Time</c> で粒を動かすと**画が止まっているのに粒だけざわつく**。それは撮像では起こりえず、
+        /// 「映像の上に別の層が乗っている」と読まれる（`canon/LEDGER.md` 0018）。
+        /// </summary>
+        public long SourceFrameId => _sourceFrame;
+
+        private long _sourceFrame;
+
         // Texture2D は markNonReadable:false で載せているので CPU から読める（ライブも録画も同じ経路）。
         private void SampleLuma()
         {
@@ -161,7 +172,12 @@ namespace FixedCamVr.Streaming
 
             if (!UseRegistry)
             {
-                _tex = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                // mipChain は必須（周回で痩せる伝送を mip で作る。CameraStream と同じ理由）。
+                _tex = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: true)
+                {
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Trilinear,
+                };
                 // 未初期化 Texture2D は Quest GPU で白ノイズ化する（unity_pitfalls.md）
                 _tex.SetPixels(new[] { Color.black, Color.black, Color.black, Color.black });
                 _tex.Apply(updateMipmaps: false, makeNoLongerReadable: false);
@@ -258,6 +274,7 @@ namespace FixedCamVr.Streaming
                 if (active == null || _material == null) return;
                 var tex = active.Texture;
                 if (!ReferenceEquals(tex, _lastAssigned)) AssignLive(tex);
+                _sourceFrame = active.LastFrameSeq;
                 UpdateContainScale();
                 SampleLuma();
                 return;
@@ -270,6 +287,7 @@ namespace FixedCamVr.Streaming
                 // markNonReadable=false 維持: 連続 LoadImage で texture を再上書きするため、
                 // CPU 側 readable を残しておく必要がある。
                 _tex.LoadImage(_scratch, markNonReadable: false);
+                _sourceFrame++;
             }
             UpdateContainScale();
             SampleLuma();

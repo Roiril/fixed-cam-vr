@@ -395,7 +395,10 @@ namespace FixedCamVr.Streaming
             if (_urlTextureCache.TryGetValue(url, out var cached) && cached != null) return cached;
             try
             {
-                using var req = UnityWebRequestTexture.GetTexture(url, nonReadable: true);
+                // ⚠ nonReadable:false にしてあるのは、この後 **mip 付きへ作り直す**ため。
+                //   周回で痩せる伝送とレンズのグレアは mip を引いて作るので、mip の無い素材は
+                //   ライブだけ痩せて**プレートだけ鮮明**になり、切り替わった瞬間に画の素性が変わる。
+                using var req = UnityWebRequestTexture.GetTexture(url, nonReadable: false);
                 req.timeout = 5;
                 var op = req.SendWebRequest();
                 while (!op.isDone)
@@ -404,7 +407,7 @@ namespace FixedCamVr.Streaming
                     await Task.Yield();
                 }
                 if (req.result != UnityWebRequest.Result.Success) return null;
-                var tex = DownloadHandlerTexture.GetContent(req);
+                var tex = WithMipmaps(DownloadHandlerTexture.GetContent(req));
                 _urlTextureCache[url] = tex;
                 return tex;
             }
@@ -413,6 +416,34 @@ namespace FixedCamVr.Streaming
             {
                 Debug.LogWarning($"[ScreenOverlay] texture load error: {url} ({e.Message})");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// mip の無いテクスチャを mip 付きへ作り直す（<c>UnityWebRequestTexture</c> は mip 無しで返す）。
+        /// 素材ごとに 1 回だけ走り、以後はキャッシュに乗る。作り直せなければ元のまま返す
+        /// （mip が無くても絵は出る — 痩せ方が live と揃わないだけ）。
+        /// </summary>
+        private static Texture2D? WithMipmaps(Texture2D? src)
+        {
+            if (src == null || src.mipmapCount > 1) return src;
+            try
+            {
+                var dst = new Texture2D(src.width, src.height, TextureFormat.RGB24, mipChain: true)
+                {
+                    name = src.name + "+mip",
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Trilinear,
+                };
+                dst.SetPixels32(src.GetPixels32());
+                dst.Apply(updateMipmaps: true, makeNoLongerReadable: true);
+                Destroy(src);
+                return dst;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ScreenOverlay] mip 生成に失敗（元のまま使う）: {e.Message}");
+                return src;
             }
         }
 

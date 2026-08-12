@@ -182,6 +182,15 @@ void main(){
     col = texture(uTex, uv).rgb;
   }
 
+  // ⚠ 順序は**撮像の順**（レンズ → センサ → ISP）。2026-08-12 に Unity と揃えて組み替えた
+  //    （canon/LEDGER.md 0018）。旧実装は現像の後にヴィネットを掛けており、角が
+  //    「後から乗せた黒い楕円」に見えていた。届かなかった光は後段でも戻らないので、レンズが先。
+  //    ⚠ 卓に無いもの: センサの粒・レンズのグレア・周回で痩せる伝送（実機だけが持つ装置の挙動）。
+  // レンズ（周辺光量。cos^4 に近い r^4。放射 2 次だと中心付近から効いて楕円に見える）
+  {
+    float r2 = clamp(dot(dir, dir) * 4.0, 0.0, 1.0);
+    col *= 1.0 - clamp(uVignette, 0.0, 1.0) * 0.58 * r2 * r2;
+  }
   // 露出
   col *= pow(2.0, uExposure);
   // 色温度
@@ -198,10 +207,6 @@ void main(){
   // 彩度
   float l = dot(col, vec3(0.299, 0.587, 0.114));
   col = mix(vec3(l), col, uSaturation);
-
-  // ヴィネット
-  float vig = 1.0 - uVignette * dot(dir, dir) * 2.2;
-  col *= clamp(vig, 0.0, 1.0);
 
   // 走査線。**本数は uScanlineCount（0 = 既定 240）**。
   // canvas の縦画素を使っていた頃は、面ごとに 360〜480 とばらつき、同じ値でも実機（240 固定）と

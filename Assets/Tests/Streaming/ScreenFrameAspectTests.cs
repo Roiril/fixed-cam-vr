@@ -105,7 +105,10 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(shader.Contains("_MaskScale"), Is.False,
                 "シェーダに _MaskScale が入った。マスクが contain-fit を通るようになったなら、" +
                 "卓（common.js / make-diff-mask.py）が枠空間へ寄せている前提が変わる。");
-            Assert.That(Regex.IsMatch(shader, @"SAMPLE_TEXTURE2D\(\s*_MaskTex\s*,\s*sampler_MaskTex\s*,\s*uv\s*\)"),
+            // _LOD 版も認める（2026-08-12〜 マスクは live と同じ LOD で鈍らせる。**uv は生のまま**で、
+            // 見ているのは contain-fit を通していないことなので、この前提は変わっていない）。
+            Assert.That(Regex.IsMatch(shader,
+                    @"SAMPLE_TEXTURE2D(_LOD)?\(\s*_MaskTex\s*,\s*sampler_MaskTex\s*,\s*uv\s*[,)]"),
                 Is.True, "マスクが生 uv でサンプルされていない（合成モデルが変わった）。");
         }
     }

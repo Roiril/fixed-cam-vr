@@ -123,16 +123,20 @@ namespace FixedCamVr.Streaming
         public CameraStream(CameraSource source)
         {
             _source = source;
-            _texture = new Texture2D(2, 2, TextureFormat.RGB24, false)
+            // ⚠ **mipChain は必須**（2026-08-12）。周回で痩せる伝送は `ScreenComposite` が mip を引いて
+            //   作る（＝面積平均のピラミッド ＝「先に帯域を落としてから間引く」という実物の順序）。
+            //   mip が無いと LOD 指定は黙って無視され、**画は 1 画素も変わらない**。
+            //   trilinear は中間の LOD を補間するので、粗さの進みが連続量のまま画に出る。
+            _texture = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: true)
             {
                 name = $"CameraStream_{source.DisplayName}",
                 wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Bilinear,
+                filterMode = FilterMode.Trilinear,
             };
             // 未接続中に未初期化メモリが Quest GPU 上で白ノイズ化しチカチカする問題を回避するため、
             // 初回 LoadImage が走る前に黒で埋めておく（4 px 分のみ; LoadImage で正しいサイズへ再確保される）。
             _texture.SetPixels(new[] { Color.black, Color.black, Color.black, Color.black });
-            _texture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+            _texture.Apply(updateMipmaps: true, makeNoLongerReadable: false);
             _receiver = new MjpegStreamReceiver(source.BuildUrl(), basicAuthToken: source.BasicAuthToken);
         }
 

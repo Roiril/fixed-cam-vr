@@ -60,16 +60,10 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.ExposureBias, Is.EqualTo(0f).Within(1e-4f));
         }
 
-        [Test]
-        public void 周辺光量は露出と逆に動く()
-        {
-            var l = new CameraFeelLogic { TargetLuma = 0.34f };
-            l.ObserveLuma(0.17f);
-            Advance(l, 3f);
-            // 露出を持ち上げる = 絞りが開く = 周辺が落ちる。符号が逆だと画が「明るく広がる」方向になり、
-            // 装置の挙動として読めなくなる。
-            Assert.That(l.VignetteBias, Is.LessThan(0f));
-        }
+        // ⚠ 旧「周辺光量は露出と逆に動く」は 2026-08-12 に削除した（`canon/LEDGER.md` 0018）。
+        //   配信はスマホ ＝ **固定絞り**なので、露出が動いても周辺の落ち方は物理的に変わらない。
+        //   しかも実装は明るくするほど周辺が明るくなる向きで、テストが期待していた符号と
+        //   コメントの説明の両方が食い違っていた（テストは通っていた ＝ 誤りごと固定していた）。
 
         [Test]
         public void ホールドは必ず秒で明ける()
@@ -155,7 +149,6 @@ namespace FixedCamVr.Streaming.Tests
             l.ObserveLuma(0.12f);
             Advance(l, 30f);
             Assert.That(l.ExposureBias, Is.EqualTo(l.SteadyBiasFor(0.12f)).Within(0.02f));
-            Assert.That(l.VignetteBias, Is.EqualTo(l.VignetteBiasFor(l.ExposureBias)).Within(1e-5f));
         }
 
         [Test]

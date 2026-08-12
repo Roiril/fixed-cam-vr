@@ -713,9 +713,15 @@ namespace FixedCamVr.Streaming.EditorTools
                         string? pick = ShowCompositePreviewPlan.PickPlate(names, cameraId);
                         if (pick == null) continue;
 
-                        // sRGB / bilinear は実行時の MJPEG テクスチャと同じ扱い（Linear 空間プロジェクト）。
-                        var tex = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: false)
-                        { name = pick, hideFlags = HideFlags.HideAndDontSave };
+                        // sRGB / trilinear + mipChain は実行時の MJPEG テクスチャと同じ扱い
+                        // （Linear 空間プロジェクト）。**mip が無いと周回の劣化が絵に出ない** —
+                        // 実機は mip を引いて粗さを作るので、ここだけ mip 無しだと
+                        // 「プレビューでは劣化していないのに実機では劣化する」が黙って起きる。
+                        var tex = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: true)
+                        {
+                            name = pick, hideFlags = HideFlags.HideAndDontSave,
+                            wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear,
+                        };
                         if (tex.LoadImage(File.ReadAllBytes(Path.Combine(dir, pick))))
                         {
                             loaded = tex;
@@ -1208,9 +1214,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     applyFeel ? _feel.NoiseDark : 0f,
                     applyFeel ? _feel.NoiseFixed : 0f,
                     steadyBias * _feel.Agc,
-                    _feelLogic.VignetteBiasFor(steadyBias) * _feel.Agc,
                     echo: 0f,    // ホールド / 焼き付きは時間の表現なので静止画には出さない
-                    coarseBlocks: coarseBlocks);
+                    coarseBlocks: coarseBlocks,
+                    srcFrame: 0f);   // 静止画なので粒も動かない（実機は受信フレーム番号で動く）
                 if (coarseBlocks > 0f)
                     caption += $"\ndecay {DecayProgress:0.00} -> {coarseBlocks:0} blocks across frame "
                              + $"({coarseBlocks * 0.75f:0} across the 4:3 image)";

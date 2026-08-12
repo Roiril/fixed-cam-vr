@@ -30,7 +30,9 @@ namespace FixedCamVr.Streaming
         private static readonly int NoiseDarkId = Shader.PropertyToID("_NoiseDark");
         private static readonly int NoiseFixedId = Shader.PropertyToID("_NoiseFixed");
         private static readonly int ExposureBiasId = Shader.PropertyToID("_ExposureBias");
-        private static readonly int VignetteBiasId = Shader.PropertyToID("_VignetteBias");
+        private static readonly int SrcFrameId = Shader.PropertyToID("_SrcFrame");
+        private static readonly int ChromaKillId = Shader.PropertyToID("_ChromaKill");
+        private static readonly int GlareId = Shader.PropertyToID("_Glare");
         private static readonly int EchoId = Shader.PropertyToID("_Echo");
         private static readonly int EchoTexId = Shader.PropertyToID("_EchoTex");
         private static readonly int CoarseBlocksId = Shader.PropertyToID("_CoarseBlocks");
@@ -141,18 +143,40 @@ namespace FixedCamVr.Streaming
         /// 実機だけが持つ加工をプレビューが書き落として「プレビューの方が綺麗」になる事故を
         /// 2026-08-07 に踏んでいる（feel の 5 項目）。
         /// </param>
+        /// <param name="srcFrame">
+        /// ソース映像の連番。**粒はこの時計で動く**（VR の 90Hz ではない）。
+        /// 静止画のプレビューでは 0 のままでよい（時刻を持たないので粒も動かない）。
+        /// </param>
         public static void WriteUniforms(Material? mat, float noiseDark, float noiseFixed,
-                                         float exposureBias, float vignetteBias, float echo,
-                                         float coarseBlocks)
+                                         float exposureBias, float echo,
+                                         float coarseBlocks, float srcFrame)
         {
             if (mat == null) return;
             mat.SetFloat(NoiseDarkId, noiseDark);
             mat.SetFloat(NoiseFixedId, noiseFixed);
             mat.SetFloat(ExposureBiasId, exposureBias);
-            mat.SetFloat(VignetteBiasId, vignetteBias);
             mat.SetFloat(EchoId, echo);
             mat.SetFloat(CoarseBlocksId, coarseBlocks);
+            mat.SetFloat(SrcFrameId, srcFrame);
+            mat.SetFloat(ChromaKillId, ChromaKill);
+            mat.SetFloat(GlareId, Glare);
         }
+
+        /// <summary>
+        /// レンズの内面反射（ベイリンググレア）。明るい所の光が暗い所へ薄く回り込む量。
+        /// 安いレンズほど強く、監視カメラの画では必ず出る（光源のまわりが滲む）。
+        /// <see cref="ChromaKill"/> と同じく**その装置の素性**なので show.json へは出していない。
+        /// </summary>
+        public const float Glare = 0.55f;
+
+        /// <summary>
+        /// 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
+        /// 明るい所に色が残り、暗がりだけが無彩へ落ちる。
+        ///
+        /// show.json へ出していないのは、これが現場で調整するものではなく
+        /// **その装置の素性**だから（`_CgSoften` と同じ扱い）。
+        /// </summary>
+        public const float ChromaKill = 0.85f;
 
         /// <summary>
         /// show.json <c>feel</c> の適用。キーが無ければコード既定のまま。
@@ -251,8 +275,9 @@ namespace FixedCamVr.Streaming
             //    （終了条件が立ってから走行中の演出を見せ切る猶予がある）。落とすのは体験者の交代だけで、
             //    その号令は ShowRunDirector.BeginRun が ScreenDecayLogic.Reset へ出す。
             => WriteUniforms(_material, _noiseDark, _noiseFixed,
-                             _logic.ExposureBias * _agc, _logic.VignetteBias * _agc,
+                             _logic.ExposureBias * _agc,
                              _echoTex != null ? _logic.Echo : 0f,
-                             CoarseBlocks);
+                             CoarseBlocks,
+                             screen != null ? screen.SourceFrameId : 0f);
     }
 }

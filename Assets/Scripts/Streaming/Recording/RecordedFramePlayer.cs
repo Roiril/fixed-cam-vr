@@ -65,11 +65,13 @@ namespace FixedCamVr.Streaming.Recording
             _index = index;
             DurationSec = RecordedSegmentFormat.DurationSec(index);
             _buf = new byte[128 * 1024];
-            _tex = new Texture2D(2, 2, TextureFormat.RGB24, false)
+            // ⚠ mipChain は**ライブと同じだけ必要**。3 周目に流れるのはこの録画で、ライブだけ痩せて
+            //   録画が鮮明だと、切り替わった瞬間に画の素性が変わって差し替えがばれる。
+            _tex = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: true)
             {
                 name = "RecordedFrame",
                 wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Bilinear,
+                filterMode = FilterMode.Trilinear,
             };
         }
 

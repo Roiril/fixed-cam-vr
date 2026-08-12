@@ -35,8 +35,10 @@ namespace FixedCamVr.Streaming
         /// <summary>露出バイアスの上下限 (EV)。ここを広げると画が破綻する。</summary>
         public float MaxBiasEv = 0.8f;
 
-        /// <summary>露出 1EV あたりの周辺光量の変化。絞りが開くほど周辺が落ちる。</summary>
-        public float VignettePerEv = 0.10f;
+        // ⚠ 旧 `VignettePerEv`（露出に連動して周辺光量を動かす）は 2026-08-12 に削除した。
+        //   配信しているのはスマホで**固定絞り**なので、露出が動いても周辺の落ち方は変わらない。
+        //   しかも実装の符号が逆で、明るくするほど周辺が明るくなっていた（コメントは逆を言っていた）。
+        //   周辺光量はレンズの性質なので、いまは post の `_Vignette` だけが持つ（`canon/LEDGER.md` 0018）。
 
         /// <summary>ホールドが明けてから完全に戻るまでの時間 (秒)。</summary>
         private const float HoldReleaseSec = 0.25f;
@@ -58,9 +60,6 @@ namespace FixedCamVr.Streaming
         /// <summary>いまの露出バイアス (EV)。</summary>
         public float ExposureBias => _bias;
 
-        /// <summary>いまの周辺光量の増減。露出を持ち上げたぶんだけ周辺が落ちる。</summary>
-        public float VignetteBias => VignetteBiasFor(_bias);
-
         /// <summary>
         /// 観測した明るさに対して自動露出が最終的に落ち着く値 (EV)。
         ///
@@ -72,9 +71,6 @@ namespace FixedCamVr.Streaming
             => observedLuma > 0.001f
                 ? Clamp((float)(Math.Log(TargetLuma / observedLuma) / Math.Log(2.0)), -MaxBiasEv, MaxBiasEv)
                 : 0f;
-
-        /// <summary>その露出バイアスに対応する周辺光量の増減（絞りが開くほど周辺が落ちる）。</summary>
-        public float VignetteBiasFor(float biasEv) => -biasEv * VignettePerEv;
 
         /// <summary>凍らせた 1 枚の混合率 0..1（1 = 完全に止まって見える）。</summary>
         public float Echo => _echo;

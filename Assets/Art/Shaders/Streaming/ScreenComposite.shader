@@ -56,18 +56,25 @@ Shader "FixedCamVr/ScreenComposite"
         //
         // 現行の加工はすべて全域一様で、すべてに物理的な言い訳（機材のせい）が付く。だから安全で、
         // だから怖くない。ここに足すのは「言い訳が破れる」ための道具立て。
-        _NoiseDark("Dark Noise (luma dependent)", Range(0, 0.5)) = 0
+        _NoiseDark("Read Noise (sensor floor)", Range(0, 0.5)) = 0
         _NoiseFixed("Fixed Pattern Noise", Range(0, 0.3)) = 0
+        // 粒が動く時刻。**VR の 90Hz ではなく映像が更新されたときだけ変わる**（CameraFeelFx が
+        // 受信フレーム番号を書く）。_Time で動かすと、カメラが 15fps のときでも粒だけ 90Hz でざわつき、
+        // 「映像の上に別の層が乗っている」と読まれる（＝加工者の指紋）。
+        _SrcFrame("Source Frame Id (noise clock)", Float) = 0
+        // レンズの内面反射（ベイリンググレア）。明るい所の光が画全体へ薄く回り、
+        // 暗い所のコントラストを奪う。**安いレンズほど強い**ので、監視カメラの画では
+        // 光源のまわりが必ず滲む。mip があるので広いぼかしが 1 タップで得られる。
+        _Glare("Veiling Glare (lens flare bloom)", Range(0, 1)) = 0
+        // 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
+        // 一様な脱色ではなく「明るい所に色が残り、暗がりが無彩へ落ちる」形になる。
+        _ChromaKill("Dark Chroma Kill (ISP noise reduction)", Range(0, 1)) = 0
         // 周を重ねるごとに落ちていく解像度（canon/LEDGER.md 0012）。**枠を横切るブロック数**をそのまま受ける。
         //   0 = 量子化しない（今までと 1 ビットも変わらない画）
         // 0..1 → ブロック数の対応表は **C# の ScreenDecayLogic にしかない**。ここにも式を置くと、
         // テレメトリが読む値と画が黙って食い違う（この codebase が何度も踏んだ型）。
         _CoarseBlocks("Coarse (blocks across frame, 0=off)", Float) = 0
-        // ブロックの境目の渡し方。0 = 最近傍（モザイク）/ 1 ≒ 素通し。
-        // 硬く切ると「モザイクを掛けた」に見える。作りたいのは「低い解像度で引き伸ばした画」。
-        _CoarseSoft("Coarse Edge Softness", Range(0, 1)) = 0.6
         _ExposureBias("Exposure Bias (EV, AGC lag)", Range(-2, 2)) = 0
-        _VignetteBias("Vignette Bias", Range(-0.5, 0.5)) = 0
         // 人形に付き従う劣化。(中心 u, 中心 v, 半径, 強さ)。ShowCgLayer が人形の投影から供給する。
         // 対象に紐づく非一様な乱れ＝機材のせいにできない＝原因が世界の側にあることになる。
         _ActorFocus("Actor Focus (cx, cy, radius, amount)", Vector) = (0.5, 0.5, 0.2, 0)
@@ -116,6 +123,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _CgLens;
                 float4 _CgFocalN;
                 float4 _CgTex_TexelSize;   // Unity が自動で埋める (1/w, 1/h, w, h)
+                float4 _LiveTex_TexelSize; // 同上。**ソースの実寸**が要る（粒をソース画素で刻むため）
                 float4 _OverlayGain;
                 float4 _OverlayOffset;
                 float _FrameAspect;
@@ -146,11 +154,12 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _ActorFocus;
                 float _NoiseDark;
                 float _NoiseFixed;
+                float _SrcFrame;
+                float _ChromaKill;
+                float _Glare;
                 float _ExposureBias;
-                float _VignetteBias;
                 float _Echo;
                 float _CoarseBlocks;
-                float _CoarseSoft;
             CBUFFER_END
 
             struct Attributes
@@ -254,44 +263,58 @@ Shader "FixedCamVr/ScreenComposite"
                 return frac(p.x * p.y);
             }
 
-            // 低解像度化。**撮像側が粗い**という表現なので、色ではなくサンプル位置を量子化する。
-            // ブロックが正方に見えるよう縦は枠アスペクトで割る（枠は 16:9、映像は 4:3）。
-            //
-            // 粗さの出どころは 2 つ:
-            //   _Pixelate     著作した値（post 12 項目。卓の FS_POST と同式・同じ場所）
-            //   _CoarseBlocks 周を重ねるごとに進む劣化（別系統。C# の ScreenDecayLogic が解いたブロック数）
-            //
-            // ⚠ **量子化を 2 回重ねない。粗い方（ブロック数の小さい方）だけを掛ける。**
-            //    別々に掛けると 2 つの格子が干渉して、どちらでもない縞（モアレ）が出る。
-            float2 CoarsenUv(float2 uv)
+            /// 粗さの出どころは 2 つあり、**粗い方だけ**を掛ける（2 つの格子が干渉すると縞が出る）。
+            ///   _Pixelate     著作した値（post 12 項目。卓の FS_POST と同式・硬い格子のまま）
+            ///   _CoarseBlocks 周を重ねるごとに痩せる伝送（別系統。C# の ScreenDecayLogic が解いたブロック数）
+            /// 返すのは「_CoarseBlocks 側を使うか」。使うならブロック数を <paramref name="blocks"/> へ。
+            bool PickCoarse(out float blocks)
             {
-                float bx = 0.0;
-                // 著作した低解像度化は**硬い格子のまま**（卓の FS_POST と同じ絵でなければならない）。
-                float soft = 0.0;
-                if (_Pixelate > 0.001) bx = max(6.0, floor(lerp(400.0, 18.0, saturate(_Pixelate))));
-                if (_CoarseBlocks > 0.5)
-                {
-                    float cb = max(6.0, floor(_CoarseBlocks));
-                    if (bx <= 0.0 || cb < bx) { bx = cb; soft = _CoarseSoft; }
-                }
-                if (bx <= 0.0) return uv;
+                blocks = 0.0;
+                float pix = _Pixelate > 0.001 ? max(6.0, floor(lerp(400.0, 18.0, saturate(_Pixelate)))) : 0.0;
+                float cb  = _CoarseBlocks > 0.5 ? max(6.0, floor(_CoarseBlocks)) : 0.0;
+                if (cb <= 0.0) return false;
+                if (pix > 0.0 && pix <= cb) return false;   // 著作した方が粗いならそちらに譲る
+                blocks = cb;
+                return true;
+            }
 
+            // 著作した低解像度化。**サンプル位置の量子化**（硬い格子）。卓の FS_POST と同じ絵にする側。
+            float2 PixelateUv(float2 uv)
+            {
+                if (_Pixelate <= 0.001) return uv;
+                float bx = max(6.0, floor(lerp(400.0, 18.0, saturate(_Pixelate))));
                 float2 b = float2(bx, max(4.0, floor(bx / max(_FrameAspect, 1e-3))));
+                return (floor(uv * b) + 0.5) / b;
+            }
 
-                // ブロックの中心で引くが、境目は硬く切らずに渡す。硬い格子は「モザイクを掛けた」に見え、
-                // ここで作りたいのは**低い解像度で引き伸ばした画**（＝伝送が痩せていく画）。
-                // 4 タップ引けば正しい bilinear だが SampleBase が 4 倍になって Quest の予算に乗らない。
-                // 1 サンプルのまま、ブロックの境目だけを smoothstep で渡してにじみを作る。
-                //
-                // soft=0（著作した _Pixelate 側）では smoothstep が step(0.5, f) に潰れ、
-                // 式は (round(uv*b - 0.5) + 0.5)/b = (floor(uv*b) + 0.5)/b ＝ **旧実装と同一**になる。
-                float2 p = uv * b - 0.5;          // 整数がブロックの中心
-                float2 i = floor(p);
-                float2 f = p - i;
-                float s = max(soft, 1e-3);        // 0 のままだと smoothstep の端が縮退する
-                float2 w = smoothstep(float2(0.5 - s * 0.5, 0.5 - s * 0.5),
-                                      float2(0.5 + s * 0.5, 0.5 + s * 0.5), f);
-                return (i + 0.5 + w) / b;
+            /// 周回で痩せる伝送を **mip で作る**。
+            ///
+            /// ⚠⚠ 旧実装はサンプル位置を量子化していた（点サンプル）。それは低域通過でも符号化でもなく
+            ///    **周期的な停止と局所拡大を持つ座標変形**で、ブロック内は 1 テクセルを引き伸ばし、
+            ///    境目だけが元画像を数倍速で走査する。実測（2026-08-12）で格子の境目に元の **2.9 倍**の
+            ///    段差が乗っていた（実際の JPEG 劣化も解像度低下もすべて 1.0 前後）。
+            ///    これが「現実でこんな粗くなり方はしない」の正体（`canon/LEDGER.md` 0018）。
+            ///
+            /// 実物の順序は **帯域を落としてから間引く**。mip はまさにそれ（面積平均のピラミッド）で、
+            /// trilinear が中間の LOD を補間するので「低い解像度で送られてきた画」そのものになる。
+            /// **1 タップのまま**なので Quest の予算も動かない。
+            /// ⚠ ソーステクスチャが mipChain を持っていないと**何も起きない**（LOD が無視される）。
+            ///   CameraStream / MjpegScreen / RecordedFramePlayer の Texture2D は mipChain:true で作る。
+            float CoarseLod()
+            {
+                float blocks;
+                if (!PickCoarse(blocks)) return 0.0;
+                // 枠を横切るブロック数 → 映像を横切るブロック数 → 1 ブロックのソース画素数
+                float acrossImage = max(blocks * max(_LiveScale.x, 1e-3), 1.0);
+                float srcW = max(_LiveTex_TexelSize.z, 2.0);
+                return max(log2(srcW / acrossImage), 0.0);
+            }
+
+            /// 色差は輝度より先に捨てられる（4:2:0 とクロマの粗い量子化）。輝度の LOD へ足す分。
+            float ChromaLodBias()
+            {
+                float blocks;
+                return PickCoarse(blocks) ? 1.0 : 0.0;
             }
 
             // 演出としての「映像の乱れ」の位置ずれ成分。帯（走査線ブロック）の一部だけを水平に飛ばし、
@@ -315,28 +338,64 @@ Shader "FixedCamVr/ScreenComposite"
             // ライブ × 差し替え素材の合成だけを 1 点で評価する。色収差はこれを RGB 別の uv で 3 回引く。
             // CG（人形）を含めないのは、3 回引くと 9-tap のぼかしが 27 サンプルに膨らむため。
             // 人形は色収差の後に中心 uv で 1 回だけ重ねる。
-            half3 SampleBase(float2 uv)
+            /// 輝度は <paramref name="lod"/>、色差は <c>lod + chromaBias</c> で引く。
+            /// 実物の符号化は**色差を先に捨てる**（4:2:0 とクロマの粗い量子化）ので、輝度と色差が
+            /// 同じ大きさの格子で落ちるのは起こりえない。bias=0 のときは 1 タップのまま。
+            half3 SplitChroma(half3 sharp, half3 wide)
+            {
+                half y = dot(sharp, half3(0.299, 0.587, 0.114));
+                return max(y + (wide - dot(wide, half3(0.299, 0.587, 0.114))), 0.0);
+            }
+
+            /// レンズの内面反射（ベイリンググレア）。明るい所の光が画全体へ薄く回り、
+            /// **暗い所のコントラストを奪う**。安いレンズほど強く、監視カメラの絵では必ず出る。
+            /// 閾値を高く取るので、光源が無い場面では何も起きない（無い所に滲みを作ると即座に嘘になる）。
+            /// ⚠ **ぼけた値が元より明るい所にだけ足す**。物理的にもそれが正しい（暗い画素の隣に
+            ///   光源があるときだけ光が回り込む）が、実装上の安全網でもある —
+            ///   ソースが mipChain を持たないと LOD 指定は無視されて <c>wide == sharp</c> が返り、
+            ///   その場合この式は**恒等に 0** になる。閾値方式だと明るい画素が二重加算されて飛ぶ。
+            half3 Glare(half3 sharp, half3 wide)
+            {
+                return max(wide - max(sharp, 0.45), 0.0) * (_Glare * 2.2);
+            }
+
+            half3 SampleBase(float2 uv, float lod, float chromaBias)
             {
                 float liveIn;
                 float2 uvL = ContainUv(RotateUvSteps(uv, _UvRotSteps), _LiveScale.xy, liveIn);
-                half3 live = SAMPLE_TEXTURE2D(_LiveTex, sampler_LiveTex, uvL).rgb * liveIn;
+                half3 live = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL, lod).rgb;
+                if (chromaBias > 0.001)
+                    live = SplitChroma(live, SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex,
+                                                                  uvL, lod + chromaBias).rgb);
+                if (_Glare > 0.001)
+                    live += Glare(live, SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL, lod + 4.5).rgb);
+                live *= liveIn;
 
                 // 凍らせた 1 枚を混ぜる。1.0 = 完全に止まって見える（ホールド）、
                 // 小さい値 = 少し前の姿がそこに薄く残る（焼き付き）。
                 // 動いていない画素は同じ値なので何も起きず、**動いたものの跡だけが残る**。
                 if (_Echo > 0.001)
                 {
-                    half3 echo = SAMPLE_TEXTURE2D(_EchoTex, sampler_EchoTex, uvL).rgb * liveIn;
+                    half3 echo = SAMPLE_TEXTURE2D_LOD(_EchoTex, sampler_EchoTex, uvL, lod).rgb * liveIn;
                     live = lerp(live, echo, saturate(_Echo));
                 }
 
                 float ovIn;
                 float2 uvO = ContainUv(uv, _OverlayScale.xy, ovIn);
-                half3 overlay = SAMPLE_TEXTURE2D(_OverlayTex, sampler_OverlayTex, uvO).rgb;
+                // 差し替え素材（録画・プレート）にも**同じだけ**掛ける。片方だけ鮮明だと、
+                // 3 周目に録画へ切り替わった瞬間に画の素性が変わって切替がばれる。
+                half3 overlay = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod).rgb;
+                if (chromaBias > 0.001)
+                    overlay = SplitChroma(overlay, SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex,
+                                                                        uvO, lod + chromaBias).rgb);
+                if (_Glare > 0.001)
+                    overlay += Glare(overlay, SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex,
+                                                                   uvO, lod + 4.5).rgb);
                 // 色統計マッチング（卓が焼いた per-channel の gain/offset）。恒等なら何も起きない。
                 overlay = saturate(overlay * _OverlayGain.rgb + _OverlayOffset.rgb) * ovIn;
 
-                half mask = SAMPLE_TEXTURE2D(_MaskTex, sampler_MaskTex, uv).r;
+                // マスクも同じだけ鈍らせる。継ぎ目だけが鮮明に残ると、粗い画の中でそこだけ浮く。
+                half mask = SAMPLE_TEXTURE2D_LOD(_MaskTex, sampler_MaskTex, uv, lod).r;
                 return lerp(live, overlay, saturate(mask * _OverlayStrength));
             }
 
@@ -345,7 +404,15 @@ Shader "FixedCamVr/ScreenComposite"
                 // 枠の座標（post FX の空間。卓の FS_POST と一致させる側）と、
                 // テクスチャを引く座標（低解像度化 → 乱れ の順に劣化させた側）を分ける。
                 float2 screenUv = input.uv;
-                float2 sampleUv = GlitchUv(CoarsenUv(screenUv));
+                float2 sampleUv = GlitchUv(PixelateUv(screenUv));
+
+                // 伝送が痩せたぶん（mip）＋ **周辺の解像度低下**（像面湾曲。実レンズは角ほど像がゆるい）。
+                // 角だけぼけるのは静的なので怖さには効かないが、これが無いと「中心も端も等しく鮮明」
+                // というレンズの存在しない絵になる。
+                float2 dir = screenUv - 0.5;
+                float r2 = saturate(dot(dir, dir) * 4.0);
+                float lod = CoarseLod() + saturate(r2 - 0.45) * 0.7;
+                float chromaBias = ChromaLodBias();
 
                 // 1-2) ライブ × 差し替え素材。色収差は放射方向に RGB をずらす（端ほど強い）。
                 half3 col;
@@ -354,11 +421,11 @@ Shader "FixedCamVr/ScreenComposite"
                     float2 c = sampleUv - 0.5;
                     float r = saturate(length(c) * 2.0);
                     float2 off = c * (r * r) * _Aberration * 0.02;
-                    col.r = SampleBase(sampleUv + off).r;
-                    col.g = SampleBase(sampleUv).g;
-                    col.b = SampleBase(sampleUv - off).b;
+                    col.r = SampleBase(sampleUv + off, lod, chromaBias).r;
+                    col.g = SampleBase(sampleUv, lod, chromaBias).g;
+                    col.b = SampleBase(sampleUv - off, lod, chromaBias).b;
                 }
-                else col = SampleBase(sampleUv);
+                else col = SampleBase(sampleUv, lod, chromaBias);
 
                 // 2.5) CG レイヤ（人形）。**ポスト FX の前**に重ねるのが要点 —
                 //      映像と同じ露出・彩度・ヴィネット・走査線・グレインを浴びて初めて
@@ -393,10 +460,54 @@ Shader "FixedCamVr/ScreenComposite"
                     col = col * (1.0 - saturate(cg.a) * s) + cg.rgb * s;
                 }
 
-                // 3) ポスト FX（web-compositor の FS_POST と数式・順序を一致させる）
+                // ================= ここから撮像の順（レンズ → センサ → ISP）=================
+                // ⚠⚠ 旧実装は **現像 → レンズ → センサ** の逆順だった。だから
+                //    「潰れた黒の上に砂が浮く」「角に後から黒い楕円を乗せた」絵になっていた
+                //    （`canon/LEDGER.md` 0018 の「わざと加工してる感」）。順序は見た目の飾りではない。
+                //    卓の FS_POST（shaders.js / common.js / pipeline.js）も同じ順序に揃えてある。
+
+                // 3) レンズ — 周辺光量の落ち。**現像より前**（届いていない光は後段でも戻らない）。
+                //    cos^4 に近い形（r^4）。放射 2 次だと中心付近から効いて「楕円を乗せた」に見える。
+                col *= 1.0 - saturate(_Vignette) * 0.58 * r2 * r2;
+
+                // 4) センサ — 粒。**トーンカーブの前**。後に置くと、暗部を締めた黒の上に
+                //    最大量の砂が浮く（旧実装がそうだった）。
+                {
+                    // 刻むのは**ソース画素**。枠空間で刻むと、粗くなった画より粒の方が細かくなる
+                    // ＝ 符号化は粒を真っ先に捨てるので物理的に起こりえない絵になる。
+                    float2 srcUv = (sampleUv - 0.5) / max(_LiveScale.xy, 1e-3) + 0.5;
+                    float2 srcPx = srcUv * max(_LiveTex_TexelSize.zw, float2(2.0, 2.0));
+                    float grainPx = max(exp2(lod), 1.0);
+                    float2 np = floor(srcPx / grainPx);
+                    // 時刻は**映像が更新されたときだけ**進む（_Time だと 15fps の映像の上で粒だけ 90Hz）。
+                    float t = frac(_SrcFrame * 0.0173) * 97.0;
+
+                    half y = max(dot(col, half3(0.299, 0.587, 0.114)), 0.0);
+                    // 光ショットノイズ（√信号）＋ 読み出しノイズ（信号に依らない床 = _NoiseDark）。
+                    // 粗い画ほど符号化が粒を捨てるので、ブロックが大きいほど弱める。
+                    float amp = (sqrt(y) * 0.030 + _NoiseDark * 0.30) / max(grainPx * 0.55, 1.0);
+                    if (amp > 0.0005)
+                    {
+                        col += (Hash21(np + t) - 0.5) * amp;
+                        // 色ノイズは低周波の塊（デモザイクと NR で広がる）。輝度成分を抜いて色差だけ動かす。
+                        float3 cn = float3(Hash21(floor(np * 0.5) + t * 1.7),
+                                           Hash21(floor(np * 0.5) + t * 2.9 + 17.0),
+                                           Hash21(floor(np * 0.5) + t * 4.1 + 41.0)) - 0.5;
+                        cn -= (cn.r + cn.g + cn.b) * (1.0 / 3.0);
+                        col += cn * amp * 1.6;
+                    }
+                    // 固定パターン（画素ごとの感度ばらつき）は**乗算**。明るい所ほど出て、黒には浮かない。
+                    if (_NoiseFixed > 0.001)
+                    {
+                        float f = (Hash21(floor(srcPx)) - 0.5)
+                                + (Hash21(floor(srcPx * 0.04)) - 0.5) * 1.8;
+                        col *= 1.0 + f * _NoiseFixed;
+                    }
+                }
+
+                // 5) ISP — 露出 → ホワイトバランス → トーン → 彩度。
                 //    _ExposureBias だけは別系統（装置の自動露出が遅れて追いつくぶん）。
-                //    卓の FS_POST には無いが、加算なので著作した _Exposure の意味は変わらない。
-                col *= exp2(_Exposure + _ExposureBias);
+                col = max(col, 0.0) * exp2(_Exposure + _ExposureBias);
                 col.r *= 1.0 + 0.25 * _Temperature;
                 col.b *= 1.0 - 0.25 * _Temperature;
                 // 色かぶり（緑↔マゼンタ）: 色温度と直交する軸。安物 CMOS + 蛍光灯の緑寄りを作る。
@@ -407,11 +518,11 @@ Shader "FixedCamVr/ScreenComposite"
                 // 黒浮き: **コントラストの後**に黒の床を上げる（前だと潰されて意味が無い）。
                 col = col * (1.0 - _Lift) + _Lift;
                 half luma = dot(col, half3(0.299, 0.587, 0.114));
-                col = lerp(luma.xxx, col, _Saturation);
-
-                float2 dir = screenUv - 0.5;
-                // 周辺光量は著作値 + 装置の追従ぶん（露出が動くと絞りも動く）。
-                col *= saturate(1.0 - max(0.0, _Vignette + _VignetteBias) * dot(dir, dir) * 2.2);
+                // 彩度。_ChromaKill が立っていると**暗い所ほど色が死ぬ** — 安い ISP のノイズリダクションは
+                // 暗部の色差から捨てるので、一様な脱色（＝フィルタ）ではなくこの形になる。
+                half sat = _Saturation + max(1.0 - _Saturation, 0.0)
+                                       * saturate(luma * 3.33) * saturate(_ChromaKill);
+                col = lerp(luma.xxx, col, sat);
 
                 if (_Scanline > 0.001)
                 {
@@ -436,27 +547,13 @@ Shader "FixedCamVr/ScreenComposite"
                     col *= 1.0 - aura * 0.18;              // そこだけ沈む
                 }
 
-                // 粒状。**暗部ほど強い**（実センサの SN は暗部で悪い）＝暗がりが物を隠せるようになる。
-                // 固定パターンは時間項を持たない＝画面に貼り付いた汚れとして静止し、その中で
-                // 動いているものだけが浮く（変化検出は差分で働く）。
+                // 著作した粒（post 12 項目。卓の FS_POST と同じ位置・同じ式）と、人形に付き従う荒れ。
+                // **センサの粒はここではない**（上のレンズ→センサ→ISP の段に移した）。
+                // _Grain は「装置の素性」ではなく作者が足す粒なので、既定 0 で使わない。
                 {
-                    half gl = dot(col, half3(0.299, 0.587, 0.114));
-                    float w = _Grain
-                            + _NoiseDark * (1.0 - smoothstep(0.0, 0.5, gl))
-                            + aura * 0.10;
+                    float w = _Grain + aura * 0.10;
                     if (w > 0.001)
-                    {
-                        float n = Hash21(screenUv * 480.0 + frac(_Time.y));
-                        col += (n - 0.5) * w;
-                    }
-                }
-                if (_NoiseFixed > 0.001)
-                {
-                    // 高周波（センサの画素ばらつき）+ 低周波（レンズの汚れ・ムラ）。
-                    // 白色ノイズだけだと砂目にしか見えず「貼り付いた汚れ」にならない。
-                    float f = (Hash21(screenUv * 260.0 + 17.0) - 0.5) * 0.6
-                            + (Hash21(floor(screenUv * 42.0) + 3.0) - 0.5) * 0.4;
-                    col += f * _NoiseFixed;
+                        col += (Hash21(screenUv * 480.0 + frac(_SrcFrame * 0.0173)) - 0.5) * w;
                 }
 
                 // --- 演出の乱れ（色の成分）。位置ずれは既に sampleUv へ掛かっている ---
