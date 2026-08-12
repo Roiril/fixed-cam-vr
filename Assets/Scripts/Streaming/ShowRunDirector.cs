@@ -277,6 +277,9 @@ namespace FixedCamVr.Streaming
             _decay.Tick(Time.unscaledDeltaTime, _logic.Phase == ShowPhase.Run,
                         _logic.Lap, _logic.TotalLaps, _logic.LapElapsedSec);
             _feel?.SetCoarseBlocks(_decay.Blocks);
+            // 色が抜けるのも**同じ進み**。1 周目は暖色、3 周目の A で完全な無彩
+            // （`canon/LEDGER.md` 0019）。別の時計で動かすと、装置として説明の付かない絵になる。
+            _feel?.SetMono(_decay.Progress);
         }
 
         private bool AtStartZone()

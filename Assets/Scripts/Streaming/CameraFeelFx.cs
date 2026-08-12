@@ -33,6 +33,7 @@ namespace FixedCamVr.Streaming
         private static readonly int SrcFrameId = Shader.PropertyToID("_SrcFrame");
         private static readonly int ChromaKillId = Shader.PropertyToID("_ChromaKill");
         private static readonly int GlareId = Shader.PropertyToID("_Glare");
+        private static readonly int MonoId = Shader.PropertyToID("_Mono");
         private static readonly int EchoId = Shader.PropertyToID("_Echo");
         private static readonly int EchoTexId = Shader.PropertyToID("_EchoTex");
         private static readonly int CoarseBlocksId = Shader.PropertyToID("_CoarseBlocks");
@@ -85,6 +86,16 @@ namespace FixedCamVr.Streaming
         /// <see cref="ScreenDecayLogic"/> が持つ。
         /// </summary>
         public void SetCoarseBlocks(float blocks) => CoarseBlocks = blocks > 0f ? blocks : 0f;
+
+        /// <summary>
+        /// 夜間モードへの進み 0..1（<see cref="ShowRunDirector"/> が毎フレーム押す）。
+        /// **解像度の劣化と同じ <see cref="ScreenDecayLogic.Progress"/> を渡す**
+        /// — 1 周目は暖色、3 周目の A で完全な無彩（`canon/LEDGER.md` 0019）。
+        /// </summary>
+        public void SetMono(float progress) => Mono = Mathf.Clamp01(progress);
+
+        /// <summary>いま書いている夜間モードの進み 0..1。診断用。</summary>
+        public float Mono { get; private set; }
 
         /// <summary>画を止める（カットの <c>hold</c>）。</summary>
         public void Hold(float sec) => _logic.Hold(sec);
@@ -147,11 +158,16 @@ namespace FixedCamVr.Streaming
         /// ソース映像の連番。**粒はこの時計で動く**（VR の 90Hz ではない）。
         /// 静止画のプレビューでは 0 のままでよい（時刻を持たないので粒も動かない）。
         /// </param>
+        /// <param name="mono">
+        /// 夜間モードへの進み 0..1（1 = 完全な無彩）。**解像度の劣化と同じ進み**を渡すこと
+        /// — 別々に動かすと「色は残っているのに粒だけ多い」ような、装置として説明の付かない絵になる。
+        /// </param>
         public static void WriteUniforms(Material? mat, float noiseDark, float noiseFixed,
                                          float exposureBias, float echo,
-                                         float coarseBlocks, float srcFrame)
+                                         float coarseBlocks, float srcFrame, float mono)
         {
             if (mat == null) return;
+            mat.SetFloat(MonoId, mono);
             mat.SetFloat(NoiseDarkId, noiseDark);
             mat.SetFloat(NoiseFixedId, noiseFixed);
             mat.SetFloat(ExposureBiasId, exposureBias);
@@ -213,6 +229,7 @@ namespace FixedCamVr.Streaming
             // 自分を外したら画は素へ戻す（このコンポーネントが無い状態と同じ画にして去る）。
             // ⚠ これは「終了で畳む」とは別の話 — 終了しても Update は回り続けるので値は保たれる。
             CoarseBlocks = 0f;
+            Mono = 0f;
             ApplyFrozen(false);
             Write();
         }
@@ -278,6 +295,7 @@ namespace FixedCamVr.Streaming
                              _logic.ExposureBias * _agc,
                              _echoTex != null ? _logic.Echo : 0f,
                              CoarseBlocks,
-                             screen != null ? screen.SourceFrameId : 0f);
+                             screen != null ? screen.SourceFrameId : 0f,
+                             Mono);
     }
 }

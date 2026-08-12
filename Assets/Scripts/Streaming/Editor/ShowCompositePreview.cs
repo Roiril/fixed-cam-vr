@@ -1216,10 +1216,13 @@ namespace FixedCamVr.Streaming.EditorTools
                     steadyBias * _feel.Agc,
                     echo: 0f,    // ホールド / 焼き付きは時間の表現なので静止画には出さない
                     coarseBlocks: coarseBlocks,
-                    srcFrame: 0f);   // 静止画なので粒も動かない（実機は受信フレーム番号で動く）
+                    srcFrame: 0f,    // 静止画なので粒も動かない（実機は受信フレーム番号で動く）
+                    // 夜間モードへの進みは解像度の劣化と**同じ値**。較正確認の絵には掛けない。
+                    mono: applyFeel ? DecayProgress : 0f);
                 if (coarseBlocks > 0f)
                     caption += $"\ndecay {DecayProgress:0.00} -> {coarseBlocks:0} blocks across frame "
-                             + $"({coarseBlocks * 0.75f:0} across the 4:3 image)";
+                             + $"({coarseBlocks * 0.75f:0} across the 4:3 image), "
+                             + $"night mode {DecayProgress:0.00}";
 
                 // 人形に付き従う劣化（カットの aura）。人形が出ないカットでは必ず 0 へ戻す。
                 Vector4 focus = new Vector4(0.5f, 0.5f, 0.2f, 0f);

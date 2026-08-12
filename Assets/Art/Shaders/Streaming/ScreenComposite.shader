@@ -66,6 +66,12 @@ Shader "FixedCamVr/ScreenComposite"
         // 暗い所のコントラストを奪う。**安いレンズほど強い**ので、監視カメラの画では
         // 光源のまわりが必ず滲む。mip があるので広いぼかしが 1 タップで得られる。
         _Glare("Veiling Glare (lens flare bloom)", Range(0, 1)) = 0
+        // 周を重ねるごとに色が抜けて夜間モードへ落ちる。**解像度の劣化と同じ進み**（0 → 1）で、
+        // 3 周目の A で 1 ＝ 完全な無彩（`canon/LEDGER.md` 0019）。
+        // 色を抜くだけでなく、赤外の夜間モードらしさ（照らされた範囲だけが残る・増感で粒が増える・
+        // 中間調が減って白と黒になる）を同じ 1 本から派生させる。別 uniform に分けると、
+        // 片方だけ動いた絵（色は残っているのに粒だけ多い等）が作れてしまう。
+        _Mono("Night Mode (0=color, 1=IR monochrome)", Range(0, 1)) = 0
         // 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
         // 一様な脱色ではなく「明るい所に色が残り、暗がりが無彩へ落ちる」形になる。
         _ChromaKill("Dark Chroma Kill (ISP noise reduction)", Range(0, 1)) = 0
@@ -157,6 +163,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _SrcFrame;
                 float _ChromaKill;
                 float _Glare;
+                float _Mono;
                 float _ExposureBias;
                 float _Echo;
                 float _CoarseBlocks;
@@ -468,7 +475,9 @@ Shader "FixedCamVr/ScreenComposite"
 
                 // 3) レンズ — 周辺光量の落ち。**現像より前**（届いていない光は後段でも戻らない）。
                 //    cos^4 に近い形（r^4）。放射 2 次だと中心付近から効いて「楕円を乗せた」に見える。
-                col *= 1.0 - saturate(_Vignette) * 0.58 * r2 * r2;
+                //    夜間モードでは赤外の照射範囲だけが残るので、進みに応じて周辺がさらに落ちる。
+                float vig = saturate(_Vignette + saturate(_Mono) * 0.16);
+                col *= 1.0 - vig * 0.58 * r2 * r2;
 
                 // 4) センサ — 粒。**トーンカーブの前**。後に置くと、暗部を締めた黒の上に
                 //    最大量の砂が浮く（旧実装がそうだった）。
@@ -485,7 +494,11 @@ Shader "FixedCamVr/ScreenComposite"
                     half y = max(dot(col, half3(0.299, 0.587, 0.114)), 0.0);
                     // 光ショットノイズ（√信号）＋ 読み出しノイズ（信号に依らない床 = _NoiseDark）。
                     // 粗い画ほど符号化が粒を捨てるので、ブロックが大きいほど弱める。
-                    float amp = (sqrt(y) * 0.030 + _NoiseDark * 0.30) / max(grainPx * 0.55, 1.0);
+                    // 夜間モードは増感で成り立つので、進むほど粒が増える。
+                    // ⚠ 粗い画では符号化が粒を捨てるが、**捨て切らない**（pow 0.6）。
+                    //   完全に消すと「のっぺりした低解像度」になり、暗視カメラの手触りが無くなる。
+                    float amp = (sqrt(y) * 0.030 + _NoiseDark * 0.30)
+                              * (1.0 + saturate(_Mono) * 2.6) / max(pow(grainPx, 0.6), 1.0);
                     if (amp > 0.0005)
                     {
                         col += (Hash21(np + t) - 0.5) * amp;
@@ -507,21 +520,29 @@ Shader "FixedCamVr/ScreenComposite"
 
                 // 5) ISP — 露出 → ホワイトバランス → トーン → 彩度。
                 //    _ExposureBias だけは別系統（装置の自動露出が遅れて追いつくぶん）。
-                col = max(col, 0.0) * exp2(_Exposure + _ExposureBias);
+                // ⚠ 夜間モードは**増感**で成り立つ（だから粒が増える）。色を抜いて周辺を落とすだけだと
+                //    真っ暗になって「装置が壊れた」ではなく「何も映っていない」になる。
+                col = max(col, 0.0) * exp2(_Exposure + _ExposureBias + saturate(_Mono) * 0.95);
                 col.r *= 1.0 + 0.25 * _Temperature;
                 col.b *= 1.0 - 0.25 * _Temperature;
                 // 色かぶり（緑↔マゼンタ）: 色温度と直交する軸。安物 CMOS + 蛍光灯の緑寄りを作る。
                 col.g *= 1.0 + 0.25 * _Tint;
                 col.r *= 1.0 - 0.12 * _Tint;
                 col.b *= 1.0 - 0.12 * _Tint;
-                col = (col - 0.5) * _Contrast + 0.5;
+                // 夜間モードは中間調が減って白と黒に寄る（照らされた所と、届かない闇）。
+                col = (col - 0.5) * (_Contrast + saturate(_Mono) * 0.10) + 0.5;
                 // 黒浮き: **コントラストの後**に黒の床を上げる（前だと潰されて意味が無い）。
                 col = col * (1.0 - _Lift) + _Lift;
-                half luma = dot(col, half3(0.299, 0.587, 0.114));
+                // 夜間モードでは赤外カットフィルタが外れるので**赤いものが明るく写る**。
+                // ただの脱色（Rec.601）だと赤い着物が灰色に沈むが、実物の暗視映像では白く浮く。
+                half luma = lerp(dot(col, half3(0.299, 0.587, 0.114)),
+                                 dot(col, half3(0.52, 0.34, 0.14)), saturate(_Mono));
                 // 彩度。_ChromaKill が立っていると**暗い所ほど色が死ぬ** — 安い ISP のノイズリダクションは
                 // 暗部の色差から捨てるので、一様な脱色（＝フィルタ）ではなくこの形になる。
                 half sat = _Saturation + max(1.0 - _Saturation, 0.0)
                                        * saturate(luma * 3.33) * saturate(_ChromaKill);
+                // 周回で夜間モードへ落ちる。**最後は色がまったく無い**（`canon/LEDGER.md` 0019）。
+                sat *= 1.0 - saturate(_Mono);
                 col = lerp(luma.xxx, col, sat);
 
                 if (_Scanline > 0.001)
