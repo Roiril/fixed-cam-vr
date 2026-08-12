@@ -80,17 +80,26 @@ Shader "FixedCamVr/TitleGlyph"
             #define TAU 6.2831853
 
             // ---- 渦（閉じるときだけ効く）--------------------------------------------
-            // 中心の最大ねじれ (rad)。外周は TWIST_RIM 倍しか回らないので、
-            // **板が回る**のではなく**字が中心へ巻き込まれる**に見える。
+            // ⚠⚠ **巻き取りには「前線」がある。全体を一度に回さない**（2026-08-13）。
+            //    半径で強さを変えるだけだと、どの輪も最初から回っているので
+            //    **字が回転している**としか読めない。ユーザーの見立ては
+            //    「文字は回転に逆らいその場にとどまろうとしているが、逆らえずに巻き取られる」。
             //
-            // ⚠ **差を大きく取らないと渦に見えない。** 2026-08-13 に 2.10 / 0.28（中心 120°・
-            //    外周 34°）で出したら「回して縮めた」としか読めなかった。版が 2:1 で横に広いので、
-            //    中心と外周の差が小さいと剛体の回転として補完される。いまは 300° 対 30°。
-            #define TWIST_RAD 5.20
-            #define TWIST_RIM 0.10
-            // 中心へ寄る量。1 - PULL が最終の大きさ（0.48 ＝ 半分になる）。
+            //    だから渦は**中心から外へ広がる前線**として持つ:
+            //      前線に届いていない所は **1 ミリも動かない**（＝ 逆らってその場に居る）
+            //      届いた瞬間から巻かれ始め、**巻かれていた時間ぶん**ねじれる
+            //    ⇒ 同じ画の中に「まだ止まっている部分」と「もう何周も巻かれた部分」が同居し、
+            //      その境目で墨が引き延ばされる。**引き延ばしは差から生まれる**。
+            //
+            // 前線が sw=1 で届く半径（墨の外縁は 0.79）。大きいほど早く全部が捕まる。
+            #define SPOOL_REACH 1.15
+            // 前線の柔らかさ。硬いと「ここから内側だけ回っている」円が見える。
+            #define SPOOL_SOFT 0.10
+            // 巻かれた量あたりのねじれ (rad)。中心は最後に 7.5rad ＝ 430° 回る。
+            #define TWIST_RATE 7.50
+            // 巻かれた量あたり中心へ寄る割合。1 - これが最終の大きさ。
             // ⚠ 0 へ潰さない。点まで縮めると結局「吸い込まれた」になる。
-            #define PULL_AMT 0.52
+            #define PULL_RATE 0.55
 
             // ---- 引き延ばし ---------------------------------------------------------
             // **渦の道筋を遡って重ねる** ＝ 墨が通ってきた跡がそのまま尾になる。
@@ -98,25 +107,21 @@ Shader "FixedCamVr/TitleGlyph"
             // ⚠ 渦が止まっている間（`_Swirl` が 0）は 1 タップへ落ちる。段 0〜Hold で
             //    6 タップ払う理由が無いし、分岐は画面全体で揃うので実質ただ。
             #define SMEAR_TAPS 14
-            // ⚠⚠ **尾の長さは「角度」で決める。渦の進みの割合で決めない。**
-            //    割合にすると渦が進むほど 1 タップあたりの角度が開き、尾が
-            //    **櫛（コマ落ちしたモーションブラー）に見える**（2026-08-13 実測。6 タップ・
-            //    割合 0.62 で、0.6 秒の絵に字の複製が梯子状に並んだ）。
-            //    角度で決めれば刻みは常に SMEAR_ARC / (SMEAR_TAPS-1) で一定。
+            // ⚠⚠ **尾は「巻かれた履歴」を遡る。** 長さを巻き取り量で測るので、
+            //    捕まったばかりの墨は尾が短く（まだ動いていない）、長く巻かれた墨は尾が長い。
+            //    **どこまで遡っても止まっていた時刻より前へは行かない**（`SpoolWound` が 0 で止まる）
+            //    ＝ 尾の端はその墨の「元居た場所」で必ず終わる。
             //
-            // ⚠⚠ **それでもタップの刻みは見える。** 明朝の横画は数画素しか無いので、
-            //    刻み（実測 12px）が線の太さを超えると**複製が梯子状に並ぶ**。
-            //    タップを増やすのは払えない（3 層 × 全画面で texel 帯域が 2 倍になる）ので、
+            // ⚠⚠ **タップの刻みは見える。** 明朝の横画は数画素しか無いので、刻みが線の太さを
+            //    超えると**複製が梯子状に並ぶ**（2026-08-13 実測。刻み 12px で梯子になった）。
+            //    タップを増やすのは払えない（3 層 × 全画面で texel 帯域が線形に効く）ので、
             //    **画素ごとにタップ位置をずらして刻みを雑音へ散らす**。
             //    燃えているものの尾なので、雑音は主題に合う（灰と熾の粒が既に居る）。
             //
-            // ⚠ **刻みは尾の中で一定にしない**（`SMEAR_BIAS`）。長い尾を等間隔で刻むと、
-            //    払える範囲のタップ数では先頭まで粗くなる。先頭は明るいので刻みが見え、
-            //    尾の端は薄いので見えない。だから**先頭を細かく、端を粗く**する
-            //    （u^1.5。端の刻みは先頭の 3.2 倍）。
-            #define SMEAR_ARC 1.00
-            // 割合の上限。渦が浅いうち（外周・頭）に尾が伸びすぎないための蓋。
-            #define SMEAR_SPAN 0.78
+            // ⚠ **刻みは尾の中で一定にしない。** 長い尾を等間隔で刻むと、払える範囲の
+            //    タップ数では先頭まで粗くなる。先頭は明るいので刻みが見え、端は薄いので見えない。
+            //    だから**先頭を細かく、端を粗く**する（u^1.5。端の刻みは先頭の 3.2 倍）。
+            #define SMEAR_WOUND 0.20
             // 尾の端の濃さ。
             #define SMEAR_TAIL 0.30
             // 尾が焼けてから消えるまでの猶予（order 単位）。
@@ -222,16 +227,28 @@ Shader "FixedCamVr/TitleGlyph"
             }
 
             /// <summary>
+            /// この半径の墨が、渦の進み <paramref name="amt"/> の時点で<b>どれだけ巻かれたか</b>。
+            /// 前線（中心から外へ広がる）に届くまでは <b>0 ＝ その場を動かない</b>。
+            /// </summary>
+            float SpoolWound(float radius, float amt)
+            {
+                float x = amt - radius / SPOOL_REACH;
+                // 前線を柔らかく。硬いと「ここから内側だけ回っている」円が絵に出る。
+                return max(0.5 * (x + sqrt(x * x + SPOOL_SOFT * SPOOL_SOFT)) - 0.5 * SPOOL_SOFT, 0.0);
+            }
+
+            /// <summary>
             /// 渦の進みが <paramref name="amt"/> のとき、この画素へ来る版の座標。
             /// <b>回してから中心へ寄せる</b>（順序を入れ替えると尾が渦に沿わない）。
             /// </summary>
-            float2 WarpAt(float2 pOut, float2 aspect, float twist, float amt)
+            float2 WarpAt(float2 pOut, float2 aspect, float radius, float amt)
             {
+                float wound = SpoolWound(radius, amt);
                 float sa, ca;
-                sincos(twist * amt, sa, ca);
+                sincos(TWIST_RATE * wound, sa, ca);
                 float2 p = float2(ca * pOut.x - sa * pOut.y, sa * pOut.x + ca * pOut.y);
                 // 外から引いてくる ＝ 描かれる版が中心へ縮む。
-                p /= max(1.0 - PULL_AMT * amt, 0.2);
+                p /= max(1.0 - PULL_RATE * min(wound, 1.0), 0.2);
                 return p / aspect + 0.5;
             }
 
@@ -261,12 +278,7 @@ Shader "FixedCamVr/TitleGlyph"
                 float2 aspect = float2(max(_ArtAspect, 0.01), 1.0);
                 float2 pOut = (i.uv - 0.5) * aspect;
                 float radius = length(pOut);
-                // 中心ほど強くねじる。外周にも TWIST_RIM だけ残すのは、
-                // 縁が 1 枚も動かないと「版の内側だけがぐるぐるしている」に見えるため。
-                float fall = exp(-radius * radius * 1.7);
-                float twist = TWIST_RAD * (TWIST_RIM + (1.0 - TWIST_RIM) * fall);
-
-                float2 wuv = WarpAt(pOut, aspect, twist, sw);
+                float2 wuv = WarpAt(pOut, aspect, radius, sw);
                 // 版の外を引きに行った所は空。Clamp の縁を引き伸ばさないよう明示的に切る。
                 float inArt = InArt(wuv);
 
@@ -287,9 +299,6 @@ Shader "FixedCamVr/TitleGlyph"
                 float shape = ink * left;
                 if (sw > 0.001)
                 {
-                    // 尾の長さ（渦の進み amt での距離）。角度が一定になる側を採り、
-                    // 渦が浅いところでは割合の蓋で抑える。
-                    float span = min(SMEAR_ARC / max(twist, 0.35), sw * SMEAR_SPAN);
                     // 画素ごとの位相。これが無いと刻みが梯子として見える。
                     float jit = Hash21(floor(i.uv * float2(2048.0, 1024.0)));
                     [unroll]
@@ -298,7 +307,7 @@ Shader "FixedCamVr/TitleGlyph"
                         // 0 = 先頭 / 1 = 尾の端。位相ぶんずらし、先頭を細かく刻む。
                         float u = ((float)j - jit) / (float)(SMEAR_TAPS - 1);
                         float k = u * sqrt(u);
-                        float2 uvj = WarpAt(pOut, aspect, twist, sw - span * k);
+                        float2 uvj = WarpAt(pOut, aspect, radius, sw - SMEAR_WOUND * k);
                         float4 tj = SAMPLE_TEXTURE2D(_Art, sampler_Art, uvj);
                         float inkj = LayerInk(tj, i.color.rgb) * InArt(uvj);
                         // 尾は墨より**遅れて**焼け落ちる（燃えた跡が少し残る）。
