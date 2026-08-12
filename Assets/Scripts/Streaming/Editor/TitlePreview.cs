@@ -34,7 +34,8 @@ namespace FixedCamVr.Streaming.EditorTools
         /// <summary>両眼の確認に使う眼のずれ (m)。厚みが視差で出るかを見る。</summary>
         private const float HalfIpdM = 0.032f;
 
-        private const int SeqFrames = 56;
+        /// <summary>連番の枚数。<b>閉じる演出（2.85 秒）を必ず超えること</b>。</summary>
+        private const int SeqFrames = 68;
         private const float SeqDt = 1f / 20f;
 
         /// <summary>
@@ -93,13 +94,15 @@ namespace FixedCamVr.Streaming.EditorTools
             TitleLogic outLogic = Summoned();
             Advance(outLogic, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f);
             outLogic.RequestDismiss();
-            // ⚠ <b>StepTo は「そこから何秒進めるか」</b>。閉じる演出は 1.60 秒しか無いので、
+            // ⚠ <b>StepTo は「そこから何秒進めるか」</b>。閉じる演出は 2.85 秒しか無いので、
             //    累計が超えると段が Done へ抜けて**真っ白な絵を撮ることになる**（前はそうなっていた）。
             //    括弧内は A からの通算。
             Shot(cam, title, StepTo(outLogic, 0.18f), 0f, "out_flash");       // 0.18 閃光
             Shot(cam, title, StepTo(outLogic, 0.42f), 0f, "out_burn_early");  // 0.60 外周に火が回る
             Shot(cam, title, StepTo(outLogic, 0.45f), 0f, "out_burn_mid");    // 1.05 引き延ばしと渦
-            Shot(cam, title, StepTo(outLogic, 0.40f), 0f, "out_ash");         // 1.45 灰だけ
+            Shot(cam, title, StepTo(outLogic, 0.45f), 0f, "out_ash");         // 1.50 灰だけ
+            // ⚠ **ここに字が 1 画素も残っていてはいけない。**「消えきってから現実が出る」の一次証拠。
+            Shot(cam, title, StepTo(outLogic, 0.70f), 0f, "out_fade");        // 2.20 黒が半分開く
             Shot(cam, title, TitleWeights.Hidden, 0f, "done");
 
             Sequence(cam, title, box);
@@ -118,7 +121,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     "段が Wait のままか、TitleGlyph が 1 画素も描いていない。**絵を信用しないこと**");
             }
 
-            Debug.Log($"[TitlePreview] 静止画 10 枚 → {OutDir} / 閉じる演出 {SeqFrames} 枚 → {SeqDir}" +
+            Debug.Log($"[TitlePreview] 静止画 11 枚 → {OutDir} / 閉じる演出 {SeqFrames} 枚 → {SeqDir}" +
                       $"（hold の最大 {holdPeak}）。" +
                       "**done.png に壁（背景の灰）が箱の外にしか無いことを必ず見る**");
         }

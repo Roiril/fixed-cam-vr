@@ -127,10 +127,10 @@ namespace FixedCamVr.Streaming.Tests
             Assert.Greater(l.Weights.flashAmt, 0f, "A の光は押した直後から出る");
 
             // 字は黒より先に消え切る（最後に残るのが黒 ＝ 継ぎ目が 1 回で済む）。
-            Run(l, TitleLogic.DissolveDelaySec + TitleLogic.DissolveSec, Ready);
+            Run(l, TitleLogic.GlyphGoneSec, Ready);
             Assert.AreEqual(0f, l.Weights.glyph, 1e-2f);
 
-            Run(l, TitleLogic.OpenSec, Ready);
+            Run(l, TitleLogic.OpenSec + 0.1f, Ready);
             Assert.AreEqual(TitleStage.Done, l.Stage);
             Assert.AreEqual(0f, l.Weights.veil, 1e-5f, "閉じ切ったら黒は 1 画素も残さない");
             Assert.IsFalse(l.Active);
@@ -161,14 +161,36 @@ namespace FixedCamVr.Streaming.Tests
             Run(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f, Ready);
             l.RequestDismiss();
 
-            // 上限より手前では、まだ黒を開き始めていない。
-            Run(l, TitleLogic.ConcealWaitMaxSec * 0.5f, NotReady);
+            // 字が消え切って、さらに上限の手前では、まだ黒を開き始めていない。
+            Run(l, TitleLogic.GlyphGoneSec + TitleLogic.ConcealWaitMaxSec * 0.5f, NotReady);
             Assert.AreEqual(1f, l.Weights.veil, 1e-3f, "隠すものが立つまでは開かない");
 
-            Run(l, TitleLogic.ConcealWaitMaxSec + TitleLogic.OpenSec
-                   + TitleLogic.DissolveDelaySec + TitleLogic.DissolveSec, NotReady);
+            Run(l, TitleLogic.ConcealWaitMaxSec + TitleLogic.OpenSec + 0.1f, NotReady);
             Assert.AreEqual(TitleStage.Done, l.Stage, "諦めて開き切る（ラッチにしない）");
             Assert.AreEqual(0f, l.Weights.veil, 1e-5f);
+        }
+
+        [Test]
+        public void Veil_StaysShut_UntilTheGlyphHasBurnedAway()
+        {
+            // 2026-08-13 ユーザー指示「タイトルが消えきってから、パススルーへのフェードが
+            // 始まるようにしてほしい」。それまでは黒が開きながら焼けていたので、
+            // **題字は現実の上で燃えていた**。
+            var l = new TitleLogic();
+            l.Begin();
+            l.RequestAdvance();
+            Run(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f, Ready);
+            l.RequestDismiss();
+
+            for (float t = 0f; t < TitleLogic.GlyphGoneSec - 0.05f; t += Dt)
+            {
+                l.Tick(Dt, Ready);
+                Assert.AreEqual(1f, l.Weights.veil, 1e-5f, "字が残っているのに黒が開き始めている");
+            }
+
+            Run(l, 0.3f, Ready);
+            Assert.Less(l.Weights.veil, 1f, "字が消えても黒が開き始めない");
+            Assert.AreEqual(0f, l.Weights.glyph, 1e-3f, "黒が開き始めた時点で字が残っている");
         }
 
         [Test]

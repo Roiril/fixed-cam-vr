@@ -131,6 +131,15 @@ namespace FixedCamVr.Streaming
         public const float OpenSec = 1.25f;
 
         /// <summary>
+        /// <b>字が消え切る時刻</b>（A からの通算）。黒が開き始めてよいのはここから。
+        ///
+        /// ⚠ 2026-08-13 ユーザー指示「タイトルが消えきってから、パススルーへのフェードが
+        /// 始まるようにしてほしい」。それまでは黒が開きながら焼けていたので、
+        /// **題字は現実の上で燃えていた**。いまは闇だけになってから現実が現れる。
+        /// </summary>
+        public const float GlyphGoneSec = DissolveDelaySec + DissolveSec;
+
+        /// <summary>
         /// 隠すものが立つのを待つ上限。**超えたら諦めて開く**。
         /// 段 0 では封印の箱も隔離の黒も毎フレーム描かれているので、通常この待ちは 0 フレームで抜ける。
         /// </summary>
@@ -264,19 +273,27 @@ namespace FixedCamVr.Streaming
                     break;
 
                 case TitleStage.Out:
-                    // 黒を開き始めてよいか。**隠すものが立っていることを確かめてから**開く。
-                    // 立っていなくても ConcealWaitMaxSec で諦める（ラッチにしない）。
+                    // 黒を開き始めてよいか。門は 2 つで、**順番に**通る。
+                    //   ① 字が消え切っている（GlyphGoneSec）
+                    //   ② 隠すものが立っている ＝ 開いた先に壁が覗かない
+                    // ② は立たなくても ConcealWaitMaxSec で諦める（ラッチにしない）。
+                    // ⚠ **② の計時は ① を通ってから始める。** 頭から数えると、字が消える頃には
+                    //    上限をとうに超えていて「隠すものを待つ」が何もしないのと同じになる。
                     if (!_opening)
                     {
-                        _concealWait += dt;
-                        if (input.concealReady || _concealWait >= ConcealWaitMaxSec) _opening = true;
+                        // ⚠ 入れ子を潰さないこと。`!_opening && 字が消えた` を 1 つの条件にすると、
+                        //    字が残っている間は else 側へ落ちて **開いてもいないのに開き終わる**。
+                        if (_elapsed >= GlyphGoneSec)
+                        {
+                            _concealWait += dt;
+                            if (input.concealReady || _concealWait >= ConcealWaitMaxSec) _opening = true;
+                        }
                     }
                     else
                     {
                         _openElapsed += dt;
                     }
-                    if (_opening && _openElapsed >= OpenSec &&
-                        _elapsed >= DissolveDelaySec + DissolveSec)
+                    if (_opening && _openElapsed >= OpenSec && _elapsed >= GlyphGoneSec)
                     {
                         _stage = TitleStage.Done;
                     }
