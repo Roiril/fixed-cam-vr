@@ -614,6 +614,11 @@ namespace FixedCamVr.Streaming.Cg
                 _rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32)
                 {
                     name = "ShowCgLayer",
+                    // ⚠ **mip は持てない**（2026-08-12 に試して駄目だった・`canon/LEDGER.md` 0020）。
+                    //   MSAA 4x で描いており、`Camera.Render()` を手で呼ぶ経路では自動生成が走らず、
+                    //   `GenerateMips()` も「自動生成に任せろ」と拒否される。
+                    //   周回で痩せる伝送は映像側が mip で作るので、**人形は `ScreenComposite` の
+                    //   9-tap tent の幅**で同じだけ鈍らせている（`CgSoftenTexels`）。
                     useMipMap = false,
                     // レンズ歪み補正で UV が枠外を指すことがある。繰り返すと反対側の人形が出る。
                     wrapMode = TextureWrapMode.Clamp,

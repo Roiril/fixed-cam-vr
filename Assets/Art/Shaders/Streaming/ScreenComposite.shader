@@ -237,7 +237,20 @@ Shader "FixedCamVr/ScreenComposite"
                 return s * (1.0 / 16.0);
             }
 
-            half4 SampleCgSoft(float2 uv) { return SampleCgTent(uv, _CgSoften); }
+            /// 人形にも**映像と同じ伝送の痩せ**を掛ける。装置を通して見えている以上、同じだけ落ちる。
+            ///
+            /// ⚠⚠ **人形の RT は mip を使えない**（MSAA 4x で描いており、手動 Render の経路では
+            ///   自動生成が走らず、`GenerateMips()` も「自動生成に任せろ」と拒否される）。
+            ///   だから映像側の LOD をぼかし幅へ翻訳する — LOD n は 2^n テクセルの箱平均に相当し、
+            ///   その実効半径は 2^n / 2。9-tap tent の幅をそこへ合わせれば同じだけ鈍る。
+            ///   **タップ数は増えない**（オフセットが広がるだけ）。
+            /// ⚠ 渡し忘れると**人形だけ鮮明**になり、そこだけ別の層に見える（2026-08-12 の実害）。
+            float CgSoftenTexels(float lod)
+            {
+                return _CgSoften + max(exp2(lod) - 1.0, 0.0) * 0.5;
+            }
+
+            half4 SampleCgSoft(float2 uv, float lod) { return SampleCgTent(uv, CgSoftenTexels(lod)); }
 
             // 実写だけが受けている「色の粗さ」を CG にも掛ける。
             //
@@ -248,7 +261,7 @@ Shader "FixedCamVr/ScreenComposite"
             //
             // 輝度は鮮鋭なまま、色差だけ広く均して倍率を掛ける。premultiplied のまま平均して a で割ると
             // 「a で重み付けした平均色」になるので、透明な周囲の色に引っ張られない。
-            half3 CgChromaMatched(half4 cg, float2 uv)
+            half3 CgChromaMatched(half4 cg, float2 uv, float lod)
             {
                 if (cg.a <= 0.002) return cg.rgb;
                 half3 sharp = cg.rgb / max(cg.a, 1e-4);
@@ -256,7 +269,7 @@ Shader "FixedCamVr/ScreenComposite"
                 half3 chroma = sharp - yS;
                 if (_CgChromaBlur > 0.001)
                 {
-                    half4 wide = SampleCgTent(uv, _CgChromaBlur);
+                    half4 wide = SampleCgTent(uv, _CgChromaBlur + CgSoftenTexels(lod));
                     half3 blur = wide.rgb / max(wide.a, 1e-4);
                     chroma = blur - dot(blur, half3(0.299, 0.587, 0.114));
                 }
@@ -458,8 +471,9 @@ Shader "FixedCamVr/ScreenComposite"
                         float2 n = (uvC - _CgLens.yz) / max(_CgFocalN.xy, 1e-4);
                         uvC = _CgLens.yz + n / (1.0 + _CgLens.x * dot(n, n)) * _CgFocalN.xy;
                     }
-                    half4 cg = SampleCgSoft(uvC);
-                    cg.rgb = CgChromaMatched(cg, uvC);
+                    // 人形にも**映像と同じ伝送の痩せ**を掛ける（装置を通して見えている以上、同じだけ落ちる）。
+                    half4 cg = SampleCgSoft(uvC, lod);
+                    cg.rgb = CgChromaMatched(cg, uvC, lod);
                     // premultiplied over（Porter-Duff 1984）。straight alpha の lerp から変えたのは、
                     // **影が「乗算」だから** — 影を rgb=0 / a=濃さ の断片として同じ RT に描けば、
                     // この式が自動的に背景を (1-a) 倍する。不透明な人形（a=1）に対しては lerp と同値。

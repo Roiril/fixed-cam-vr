@@ -855,8 +855,11 @@ namespace FixedCamVr.Streaming.EditorTools
                     // 効かずに腕と胴の重なりが二重に暗くなる（本番と同じ理由でここも 24）。
                     _cgRt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32)
                     {
-                        name = "CgVizCgRT", useMipMap = false, wrapMode = TextureWrapMode.Clamp,
+                        name = "CgVizCgRT", wrapMode = TextureWrapMode.Clamp,
                         antiAliasing = 4,   // 本番（ShowCgLayer.EnsureRenderTexture）と同じ
+                        // mip は持てない（MSAA + 手動 Render。本番の ShowCgLayer と同じ理由）。
+                        // 周回で痩せる伝送は ScreenComposite が tent の幅で人形へ掛ける。
+                        useMipMap = false,
                     };
                     _cgRt.Create();
                     _cgCam.targetTexture = _cgRt;
