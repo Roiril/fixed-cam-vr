@@ -10,6 +10,8 @@ namespace FixedCamVr.Streaming.Tests
     /// ここが固定するのは**演出の効き目そのもの**なので、値を変えるときは意図を持って変えること:
     ///   - 1 周目の入口では**何も起きない**（今と同じ画）
     ///   - 周の変わり目に**段差が出ない**（LEDGER 0012「急に落ちるではなくばれないように」）
+    ///   - **最後の周へ入った瞬間に落ち切り、そこから先は動かない**
+    ///     （LEDGER 0013「3周目のAで粗さがマックスになるようにして、そこからは変わらない」）
     ///   - **後戻りしない**（下がると「直った」に見える）
     ///   - 導入・終了では**進まないが保持する**（終了で戻すと画が急に鮮明になる）
     /// </summary>
@@ -64,11 +66,77 @@ namespace FixedCamVr.Streaming.Tests
             float head = ScreenDecayLogic.TargetFor(lap: 2, totalLaps: 3, lapElapsedSec: 0f);
             float mid = ScreenDecayLogic.TargetFor(lap: 2, totalLaps: 3, lapElapsedSec: 15f);
             float tail = ScreenDecayLogic.TargetFor(lap: 2, totalLaps: 3, lapElapsedSec: 30f);
-            Assert.AreEqual(1f / 3f, head, 0.001f);
-            Assert.AreEqual(0.5f, mid, 0.001f);
-            Assert.AreEqual(2f / 3f, tail, 0.001f);
+            Assert.AreEqual(0.5f, head, 0.001f);
+            Assert.AreEqual(0.75f, mid, 0.001f);
+            Assert.AreEqual(1f, tail, 0.001f);
             // 周の終わりの目標と、次の周の頭の目標が一致する＝境目に段差が無い。
             Assert.AreEqual(tail, ScreenDecayLogic.TargetFor(3, 3, 0f), 0.001f);
+        }
+
+        [Test]
+        public void 落ち切るのは最後の周へ入った瞬間()
+        {
+            // canon/LEDGER.md 0013「3周目のAで粗さがマックスになるようにして、そこからは変わらない」。
+            // 3 周目は録画が流れる周なので、その最中に画が動き続けてはいけない。
+            Assert.Less(ScreenDecayLogic.TargetFor(lap: 2, totalLaps: 3, lapElapsedSec: 29f), 1f);
+            Assert.AreEqual(1f, ScreenDecayLogic.TargetFor(lap: 3, totalLaps: 3, lapElapsedSec: 0f), 0.001f);
+            Assert.AreEqual(1f, ScreenDecayLogic.TargetFor(lap: 3, totalLaps: 3, lapElapsedSec: 40f), 0.001f);
+        }
+
+        [Test]
+        public void 最後の周へ入ったら画は動かない()
+        {
+            var l = new ScreenDecayLogic();
+            Run(l, 30f, lap: 1, totalLaps: 3, lapElapsedAtStart: 0f);
+            Run(l, 30f, lap: 2, totalLaps: 3, lapElapsedAtStart: 0f);
+            Assert.AreEqual(1f, l.Progress, 0.001f, "3 周目の A へ入る時点で落ち切っている");
+
+            float blocks = l.Blocks;
+            Run(l, 40f, lap: 3, totalLaps: 3, lapElapsedAtStart: 0f);
+            Run(l, 20f, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+            Assert.AreEqual(blocks, l.Blocks, 1e-4f, "3 周目と帰りの A では 1 ブロックも動かない");
+            Assert.AreEqual(ScreenDecayLogic.EndBlocks, l.Blocks, 0.01f);
+        }
+
+        [Test]
+        public void 周が目安より短くても最後の周に入る時点で落ち切っている()
+        {
+            // 2026-08-12 の実機: 目安 30 秒に対し実際の 1 周は 24 秒で、周の中の進みが 1 に届かず、
+            // **不足が最後の境目へ持ち越されて 3 周目に入ってから 2 秒ぶん落ち続けた**。
+            // 前の周の実測を目安に採ると周の中で届き切るので、境目の不足が 0 になる。
+            const float lapSec = 24f;
+            var l = new ScreenDecayLogic();
+            Run(l, lapSec, lap: 1, totalLaps: 3, lapElapsedAtStart: 0f);
+            Run(l, lapSec, lap: 2, totalLaps: 3, lapElapsedAtStart: 0f);
+
+            l.Tick(Dt, running: true, 3, 3, 0f);   // 3 周目の A へ入った最初のフレーム
+            Assert.AreEqual(1f, l.Progress, 0.001f, "3 周目に入った時点で落ち切っていること");
+            Assert.AreEqual(ScreenDecayLogic.EndBlocks, l.Blocks, 0.01f);
+        }
+
+        [Test]
+        public void 目安は前の周の実測へ差し替わる()
+        {
+            var l = new ScreenDecayLogic();
+            Assert.AreEqual(ScreenDecayLogic.LapRefSec, l.LapRef, 0.01f, "1 周目は企画書の目安から始める");
+
+            Run(l, 24f, lap: 1, totalLaps: 3, lapElapsedAtStart: 0f);
+            l.Tick(Dt, running: true, 2, 3, 0f);
+            Assert.AreEqual(24f, l.LapRef, 0.2f);
+
+            // 走り抜け・立ち止まりで暴れさせない（下限・上限で切る）。
+            var fast = new ScreenDecayLogic();
+            Run(fast, 3f, lap: 1, totalLaps: 3, lapElapsedAtStart: 0f);
+            fast.Tick(Dt, running: true, 2, 3, 0f);
+            Assert.AreEqual(ScreenDecayLogic.MinLapRefSec, fast.LapRef, 0.2f);
+        }
+
+        [Test]
+        public void 周が1つしか無い設定でも落ち切る()
+        {
+            // totalLaps-1 が 0 になる割り算を踏まない（その 1 周の中で落とす）。
+            Assert.AreEqual(0f, ScreenDecayLogic.TargetFor(lap: 1, totalLaps: 1, lapElapsedSec: 0f), 0.001f);
+            Assert.AreEqual(1f, ScreenDecayLogic.TargetFor(lap: 1, totalLaps: 1, lapElapsedSec: 30f), 0.001f);
         }
 
         [Test]
