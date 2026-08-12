@@ -97,7 +97,7 @@ Shader "FixedCamVr/TitleGlyph"
             // 方向を決め打ちしたブラーではないので、尾は必ず渦に沿って曲がる。
             // ⚠ 渦が止まっている間（`_Swirl` が 0）は 1 タップへ落ちる。段 0〜Hold で
             //    6 タップ払う理由が無いし、分岐は画面全体で揃うので実質ただ。
-            #define SMEAR_TAPS 10
+            #define SMEAR_TAPS 14
             // ⚠⚠ **尾の長さは「角度」で決める。渦の進みの割合で決めない。**
             //    割合にすると渦が進むほど 1 タップあたりの角度が開き、尾が
             //    **櫛（コマ落ちしたモーションブラー）に見える**（2026-08-13 実測。6 タップ・
@@ -109,11 +109,20 @@ Shader "FixedCamVr/TitleGlyph"
             //    タップを増やすのは払えない（3 層 × 全画面で texel 帯域が 2 倍になる）ので、
             //    **画素ごとにタップ位置をずらして刻みを雑音へ散らす**。
             //    燃えているものの尾なので、雑音は主題に合う（灰と熾の粒が既に居る）。
-            #define SMEAR_ARC 0.34
+            //
+            // ⚠ **刻みは尾の中で一定にしない**（`SMEAR_BIAS`）。長い尾を等間隔で刻むと、
+            //    払える範囲のタップ数では先頭まで粗くなる。先頭は明るいので刻みが見え、
+            //    尾の端は薄いので見えない。だから**先頭を細かく、端を粗く**する
+            //    （u^1.5。端の刻みは先頭の 3.2 倍）。
+            #define SMEAR_ARC 1.00
             // 割合の上限。渦が浅いうち（外周・頭）に尾が伸びすぎないための蓋。
-            #define SMEAR_SPAN 0.62
+            #define SMEAR_SPAN 0.78
             // 尾の端の濃さ。
-            #define SMEAR_TAIL 0.18
+            #define SMEAR_TAIL 0.30
+            // 尾が焼けてから消えるまでの猶予（order 単位）。
+            // ⚠ **0 にすると尾が墨と同時に切れて、燃えた跡が 1 フレームも残らない。**
+            //    大きくすると焼け落ちた所に残像が居座って「消し忘れ」に見える。
+            #define SMEAR_LAG 0.10
 
             // ---- 焼け ---------------------------------------------------------------
             // 焼ける順に混ぜる半径の比。**外周から焼けて中心が最後に残る**。
@@ -286,12 +295,14 @@ Shader "FixedCamVr/TitleGlyph"
                     [unroll]
                     for (int j = 1; j < SMEAR_TAPS; j++)
                     {
-                        // 0 = 先頭 / 1 = 尾の端。位相ぶんずらす。
-                        float k = ((float)j - jit) / (float)(SMEAR_TAPS - 1);
+                        // 0 = 先頭 / 1 = 尾の端。位相ぶんずらし、先頭を細かく刻む。
+                        float u = ((float)j - jit) / (float)(SMEAR_TAPS - 1);
+                        float k = u * sqrt(u);
                         float2 uvj = WarpAt(pOut, aspect, twist, sw - span * k);
                         float4 tj = SAMPLE_TEXTURE2D(_Art, sampler_Art, uvj);
                         float inkj = LayerInk(tj, i.color.rgb) * InArt(uvj);
-                        float leftj = lerp(1.0, smoothstep(FRONT_IN, FRONT_OUT,
+                        // 尾は墨より**遅れて**焼け落ちる（燃えた跡が少し残る）。
+                        float leftj = lerp(1.0, smoothstep(FRONT_IN - SMEAR_LAG, FRONT_OUT,
                                                            BurnOrder(radius, tj.b) - d), burning);
                         // ⚠ 足さずに **max**。重なった所だけ濃くなると、尾ではなく塊に見える。
                         shape = max(shape, inkj * leftj * (1.0 - k * (1.0 - SMEAR_TAIL)));
