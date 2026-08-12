@@ -94,12 +94,14 @@ Shader "FixedCamVr/TitleGlyph"
             // 前線が sw=1 で届く半径（墨の外縁は 0.79）。大きいほど早く全部が捕まる。
             #define SPOOL_REACH 1.15
             // 前線の柔らかさ。硬いと「ここから内側だけ回っている」円が見える。
-            #define SPOOL_SOFT 0.10
-            // 巻かれた量あたりのねじれ (rad)。中心は最後に 7.5rad ＝ 430° 回る。
-            #define TWIST_RATE 7.50
+            #define SPOOL_SOFT 0.14
+            // 巻かれた量あたりのねじれ (rad)。中心は最後に 11rad ＝ 630° 回る。
+            #define TWIST_RATE 11.0
             // 巻かれた量あたり中心へ寄る割合。1 - これが最終の大きさ。
             // ⚠ 0 へ潰さない。点まで縮めると結局「吸い込まれた」になる。
-            #define PULL_RATE 0.55
+            // ⚠ **強くすると中心に墨が溜まって明るくなる**（2026-08-13 の指摘）。
+            //    寄せは控えめにして、溜まる前に消す（下の EAT_*）方で抑える。
+            #define PULL_RATE 0.30
 
             // ---- 引き延ばし ---------------------------------------------------------
             // **渦の道筋を遡って重ねる** ＝ 墨が通ってきた跡がそのまま尾になる。
@@ -121,38 +123,39 @@ Shader "FixedCamVr/TitleGlyph"
             // ⚠ **刻みは尾の中で一定にしない。** 長い尾を等間隔で刻むと、払える範囲の
             //    タップ数では先頭まで粗くなる。先頭は明るいので刻みが見え、端は薄いので見えない。
             //    だから**先頭を細かく、端を粗く**する（u^1.5。端の刻みは先頭の 3.2 倍）。
-            #define SMEAR_WOUND 0.20
+            #define SMEAR_WOUND 0.17
             // 尾の端の濃さ。
-            #define SMEAR_TAIL 0.30
-            // 尾が焼けてから消えるまでの猶予（order 単位）。
+            #define SMEAR_TAIL 0.24
+            // 尾が墨より遅れて消える猶予（eat 単位）。
             // ⚠ **0 にすると尾が墨と同時に切れて、燃えた跡が 1 フレームも残らない。**
             //    大きくすると焼け落ちた所に残像が居座って「消し忘れ」に見える。
             #define SMEAR_LAG 0.10
 
             // ---- 焼け ---------------------------------------------------------------
-            // 焼ける順に混ぜる半径の比。**外周から焼けて中心が最後に残る**。
-            // 版の B（左下→右上のゆらぎ）を残すのは、際が定規で引いた円にならないため。
-            #define ORDER_RADIAL 0.60
-            #define ORDER_REACH 0.80
-            // ⚠⚠ **窓は版から実測して置く。** 墨がある画素だけで混ぜた値を測ると
-            //    2〜98 パーセンタイルが 0.201〜0.748 に固まっていて（`MawarimiTitle.png` 実測・
-            //    2026-08-13）、素のまま使うと**焼けが 0.4 秒で走り抜ける**。
-            //    ここを [0,1] へ引き伸ばして初めて、尺のあいだ火がゆっくり回る。
-            //    **版を焼き直したら測り直すこと**（tools/make-title-art.py を変えたときが対象）。
-            #define ORDER_LO 0.17
-            #define ORDER_HI 0.79
-            // 焼け際の硬さ（order 単位）。広いと「ぼけている」に見える。
-            #define FRONT_IN (-0.02)
-            #define FRONT_OUT 0.03
-            // 焦げが残る幅と、熾が光る幅。
+            // ⚠⚠ **焼ける順は「巻かれた量」で持つ。半径で持たない**（2026-08-13・LEDGER 0027）。
+            //    半径で持つと**外から欠けていく**ので、渦に入る前に墨が失われる。
+            //    ユーザー指示は「外側から消えていくのはやめて、全部巻き込まれて消えるように」。
+            //    巻き取りに結びつければ、消えるのは**渦に入ったものだけ**になり、
+            //    しかも**中心に溜まる前に消える**ので明るくならない（同日のもう 1 つの指摘）。
+            //
+            // 焼けの座標 `eat` は「その墨自身の巻き取りの進み」（0 = 捕まったばかり / 1 = 巻き切り）。
+            // 半径で正規化してあるので、**外周の墨も自分の番が来れば必ず消える**。
+            //
+            // ⚠⚠ **食い始めを遅らせない。** 0.50 から欠け始めるようにしたら、中心の墨が
+            //    巻き終わるまで無傷で残って**画のいちばん明るい塊**になった（2026-08-13 実測。
+            //    画面平均が題字の 1.6 倍）。ユーザー指示は「適度に消しながらまくことで
+            //    明るくなるのを抑えて」。**捕まった瞬間から焦げ始め、巻きの半ばで消え切る**。
+            #define EAT_B0 0.20      // ここから欠け始める
+            #define EAT_B1 0.70      // ここで消え切る
+            #define EAT_JITTER 0.30  // 版の B で際を散らす（定規で引いた円にしない）
+            #define EAT_CHAR 0.34    // 焦げが乗り始める手前の幅
+            #define EMBER_AT 0.44    // 熾がいちばん光る所（欠け始めと消え切りの中ほど）
             // ⚠ **熾は焦げよりずっと狭くする。** 同じ幅にすると熾の加算が焦げを塗り潰し、
             //    墨が「焦げてから失われる」ではなく「光って消える」に見える（2026-08-13 実測）。
-            //    いまの比は 1 : 4。際 → 暗い焦げ → 素の墨、の 3 段が読める。
-            #define CHAR_W 0.13
-            #define EMBER_W 0.032
-            #define EMBER_GAIN 2.0
-            // 焼けてから灰が消えるまで（order 単位）と、灰が舞い上がる高さ（uv）。
-            #define ASH_LIFE 0.32
+            #define EMBER_W 0.055
+            #define EMBER_GAIN 1.7
+            // 焼けてから灰が消えるまで（eat 単位）と、灰が舞い上がる高さ（uv）。
+            #define ASH_LIFE 0.35
             #define ASH_RISE 0.055
 
             TEXTURE2D(_Art);
@@ -218,12 +221,10 @@ Shader "FixedCamVr/TitleGlyph"
                 return t.r * sel.r + t.g * sel.g + t.a * sel.b;
             }
 
-            /// 焼ける順。**外周が 0（先に焼ける）**、中心が 1（最後に残る）。
-            float BurnOrder(float radius, float baked)
+            /// <summary>この半径の墨が前線に捕まる時刻（渦の進み単位）。</summary>
+            float SpoolCaught(float radius)
             {
-                float radial = saturate(1.0 - radius / ORDER_REACH);
-                float mix = radial * ORDER_RADIAL + baked * (1.0 - ORDER_RADIAL);
-                return saturate((mix - ORDER_LO) / (ORDER_HI - ORDER_LO));
+                return radius / SPOOL_REACH;
             }
 
             /// <summary>
@@ -232,9 +233,21 @@ Shader "FixedCamVr/TitleGlyph"
             /// </summary>
             float SpoolWound(float radius, float amt)
             {
-                float x = amt - radius / SPOOL_REACH;
+                float x = amt - SpoolCaught(radius);
                 // 前線を柔らかく。硬いと「ここから内側だけ回っている」円が絵に出る。
                 return max(0.5 * (x + sqrt(x * x + SPOOL_SOFT * SPOOL_SOFT)) - 0.5 * SPOOL_SOFT, 0.0);
+            }
+
+            /// <summary>
+            /// 焼けの座標。<b>その墨自身の巻き取りの進み</b>（0 = 捕まったばかり / 1 = 巻き切り）。
+            ///
+            /// ⚠ 半径で正規化する。生の巻き量のままだと中心（巻き量 1）と外周（同 0.31）で
+            /// 桁が違い、**外周の墨は自分の番が来ても消えない**。
+            /// </summary>
+            float EatCoord(float radius, float amt)
+            {
+                float span = max(1.0 - SpoolCaught(radius), 0.08);
+                return saturate(SpoolWound(radius, amt) / span);
             }
 
             /// <summary>
@@ -267,12 +280,6 @@ Shader "FixedCamVr/TitleGlyph"
                 float sw = saturate(_Swirl);
                 float burning = step(0.003, _Dissolve);
 
-                // ---- 焼ける量。渦より先に要る（尾のタップも同じ火で切るため）----
-                // ⚠ **d は 0 のとき負でなければならない。** 焼ける順は外周で 0 まで落ちるので、
-                //    d=0 を素で使うと際の幅ぶん**火が点く前から払いの先が欠ける**。
-                //    1.10 倍は、際に幅があるぶん d=1 で中心まで焼き切るため。
-                float d = saturate(_Dissolve) * 1.10 - 0.05;
-
                 // ---- 渦。**版の中で**中心へ寄せてねじる（奥行きは動かさない）----
                 // 縦横比を戻してから回す。戻さないと渦が楕円になり、字が横へ流れて見える。
                 float2 aspect = float2(max(_ArtAspect, 0.01), 1.0);
@@ -285,16 +292,19 @@ Shader "FixedCamVr/TitleGlyph"
                 float4 t = SAMPLE_TEXTURE2D(_Art, sampler_Art, wuv);
                 float ink = LayerInk(t, i.color.rgb) * inArt;
 
-                // ---- 焼ける。外周から中心へ食う。際に熾が乗り、内側に焦げが残る ----
-                float order = BurnOrder(radius, t.b);
-                float e = order - d;                                   // >0 = まだ焼けていない
-                // 1 = 墨が残っている。**火が無いときは必ず 1**（上と同じ理由の二重の堰）。
-                float left = lerp(1.0, smoothstep(FRONT_IN, FRONT_OUT, e), burning);
-                float charAmt = (1.0 - smoothstep(0.0, CHAR_W, e)) * burning;
-                float ember = exp(-(e / EMBER_W) * (e / EMBER_W)) * burning;
+                // ---- 焼ける。**巻き取られたぶんだけ食われる**（半径では食わない）----
+                //    際は版の B で散らす。散らさないと定規で引いた円が広がるだけになる。
+                float eat = EatCoord(radius, sw) + (t.b - 0.5) * EAT_JITTER;
+                // 1 = 墨が残っている。**火が無いときは必ず 1**（0.2 秒の溜めを守る堰）。
+                float left = lerp(1.0, 1.0 - smoothstep(EAT_B0, EAT_B1, eat), burning);
+                float charAmt = smoothstep(EAT_B0 - EAT_CHAR, EAT_B0 + 0.06, eat) * burning;
+                float ember = exp(-((eat - EMBER_AT) / EMBER_W) * ((eat - EMBER_AT) / EMBER_W)) * burning;
+                // 尾は墨より**遅れて**消える（燃えた跡が少し残る）。
+                float leftTail = lerp(1.0, 1.0 - smoothstep(EAT_B0 + SMEAR_LAG,
+                                                            EAT_B1 + SMEAR_LAG, eat), burning);
 
                 // ---- 引き延ばし。渦の道筋を遡って重ねる ----
-                // ⚠ **尾も同じ火で切る**（`leftj`）。切らないと、焼け落ちた所に
+                // ⚠ **尾も火で切る**（`leftTail`）。切らないと、焼け落ちた所に
                 //    墨の残像だけが取り残されて「消し忘れ」に見える。
                 float shape = ink * left;
                 if (sw > 0.001)
@@ -310,11 +320,9 @@ Shader "FixedCamVr/TitleGlyph"
                         float2 uvj = WarpAt(pOut, aspect, radius, sw - SMEAR_WOUND * k);
                         float4 tj = SAMPLE_TEXTURE2D(_Art, sampler_Art, uvj);
                         float inkj = LayerInk(tj, i.color.rgb) * InArt(uvj);
-                        // 尾は墨より**遅れて**焼け落ちる（燃えた跡が少し残る）。
-                        float leftj = lerp(1.0, smoothstep(FRONT_IN - SMEAR_LAG, FRONT_OUT,
-                                                           BurnOrder(radius, tj.b) - d), burning);
                         // ⚠ 足さずに **max**。重なった所だけ濃くなると、尾ではなく塊に見える。
-                        shape = max(shape, inkj * leftj * (1.0 - k * (1.0 - SMEAR_TAIL)));
+                        //    ここが加算だと、渦の中心で尾が何重にも重なって**明るい塊**になる。
+                        shape = max(shape, inkj * leftTail * (1.0 - k * (1.0 - SMEAR_TAIL)));
                     }
                 }
                 if (shape <= 0.003 && burning <= 0.0) return half4(0, 0, 0, 0);
@@ -328,9 +336,8 @@ Shader "FixedCamVr/TitleGlyph"
                 float4 ta = SAMPLE_TEXTURE2D(_Art, sampler_Art, auv);
                 float aInk = LayerInk(ta, i.color.rgb)
                            * step(0.0, auv.y) * step(auv.y, 1.0) * inArt;
-                // ⚠ 半径は**出力位置のもの**を使う（引きに行った先の半径ではない）。
-                //    舞い上がりは 0.055uv しかないので差は無視できる。1 タップ節約する方を採る。
-                float aAge = saturate((d - BurnOrder(radius, ta.b)) / ASH_LIFE);
+                // 灰の齢は「消え切ってからどれだけ巻かれたか」。
+                float aAge = saturate((eat - EAT_B1) / ASH_LIFE);
                 // 粒。セルごとに 2 割だけ点を立て、age で上へ流す。
                 float2 q = wuv * float2(210.0, 105.0);
                 q.y -= aAge * 5.0;
@@ -360,7 +367,7 @@ Shader "FixedCamVr/TitleGlyph"
                 // 尾は**焦がして**引く。素の墨のまま伸ばすと、燃えているものの跡ではなく
                 // 「motion blur が掛かった文字」に見える。
                 float tail = saturate((shape - ink * left) * 1.8);
-                rgb = lerp(rgb, lerp(_CharColor.rgb, _GlowColor.rgb, 0.30), tail * 0.65);
+                rgb = lerp(rgb, lerp(_CharColor.rgb, _GlowColor.rgb, 0.22), tail * 0.60);
 
                 // 焼けたばかりの灰はまだ熾を含む。冷めるほど灰の色へ寄る。
                 float3 ashRgb = lerp(_GlowColor.rgb * 1.1, _AshColor.rgb, saturate(aAge * 1.6));
