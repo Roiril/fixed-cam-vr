@@ -55,6 +55,14 @@ Shader "FixedCamVr/SealedBox"
         _LineColor("Hex groove color", Color) = (0.012, 0.0095, 0.0085, 1)
         // 溝が磨耗で欠ける量。0 で均一な線（＝「安っぽいデジタル」）、1 でほとんど消える。
         _GrooveWear("Groove wear", Range(0, 1)) = 0.55
+        // 溝から染み出す汚れ。溝の中だけが暗いと「印刷した線」に見える。
+        _GrimeAmt("Grime around grooves", Range(0, 1)) = 0.45
+        _GrimeM("Grime spread", Range(0, 0.5)) = 0.30
+        // 彫った壁の陰影（片側が明るく反対が暗い）。**幾何は動かさない**。
+        _BevelAmt("Groove bevel", Range(0, 1)) = 0.55
+        // 箱の稜が擦れて地金が出る量と幅 (m)。新品は角が均一、使った物は角から地が出る。
+        _RimWear("Edge wear", Range(0, 1)) = 0.5
+        _RimWearM("Edge wear width (m)", Float) = 0.09
 
         // ---- 光。**熾（おき）**。赤 1 色にしない（LEDGER 0011） ----------------------
         // 芯。宿った所だけが琥珀寄りの赤で立つ。面積は小さい。
@@ -66,7 +74,9 @@ Shader "FixedCamVr/SealedBox"
         // にじみの幅（六角セルに対する比）。
         _BleedM("Bleed width", Range(0, 0.45)) = 0.20
         // これを超えた熾だけが「くっきり」光る。上げるほど光る面積が減る。
-        _HotFrac("Hot threshold", Range(0, 1)) = 0.58
+        // ⚠ 0.66 まで上げたら**芯が事実上出なくなった**（10 秒の連番で最大 0.35%）。
+        //    「少なめ」であって「無い」ではないので、芯だけ少し戻す（LEDGER 0016）。
+        _HotFrac("Hot threshold", Range(0, 1)) = 0.60
         // 不安定さ（ゆらぎの深さ）。0 で一定、1 で消えかける。
         _Unrest("Instability", Range(0, 1)) = 0.45
         _HexSizeM("Hex size (m)", Float) = 0.45
@@ -138,6 +148,11 @@ Shader "FixedCamVr/SealedBox"
             float _SheenPow;
             float4 _LineColor;
             float _GrooveWear;
+            float _GrimeAmt;
+            float _GrimeM;
+            float _BevelAmt;
+            float _RimWear;
+            float _RimWearM;
             float4 _GlowColor;
             float4 _EmberColor;
             float4 _BleedColor;
@@ -351,12 +366,15 @@ Shader "FixedCamVr/SealedBox"
                 float hexU = perim / max(1.0, round(perim / max(_HexSizeM, 0.02)));
 
                 float2 pm;
-                float seam;   // 1 = 継ぎ目から離れている / 0 = 継ぎ目の上
+                float seam;      // 1 = 継ぎ目から離れている / 0 = 継ぎ目の上
+                // 箱**自身の稜**までの距離 (m)。角は人と物が当たる所なので、そこだけ擦れて地金が出る。
+                // 「使い込まれた物」に見えるかは、面の汚れよりここで決まる（新品は角が均一）。
+                float rimDist;
                 if (topFace)
                 {
                     pm = lp.xz;
-                    float toRim = min(bw * 0.5 - abs(lp.x), bd * 0.5 - abs(lp.z));
-                    seam = smoothstep(0.0, max(_SeamFadeM, 1e-3), toRim);
+                    rimDist = min(bw * 0.5 - abs(lp.x), bd * 0.5 - abs(lp.z));
+                    seam = smoothstep(0.0, max(_SeamFadeM, 1e-3), rimDist);
                 }
                 else
                 {
@@ -370,6 +388,9 @@ Shader "FixedCamVr/SealedBox"
                                                  : (lp.x + bw * 0.5);
                     pm = float2(u, lp.y);
                     seam = smoothstep(0.0, max(_SeamFadeM, 1e-3), bh * 0.5 - lp.y);
+                    // 縦の稜（面の左右端）と、天面・床との稜。3 つのうち一番近いもの。
+                    float toCorner = (n.x > n.z) ? (bd * 0.5 - abs(lp.z)) : (bw * 0.5 - abs(lp.x));
+                    rimDist = min(toCorner, min(bh * 0.5 - lp.y, lp.y + bh * 0.5));
                 }
 
                 // ---- 使い込まれた地。焼いた版を**同じシートの上で**タイルする（LEDGER 0011）----
@@ -431,7 +452,10 @@ Shader "FixedCamVr/SealedBox"
                                              * (0.35 + 0.65 * hearth);
 
                 // 熾の量。**ふだんはこれだけ**（面のほとんどで小さい）。
-                float breath = pulse * (0.22 + 0.78 * hearth) * unrest * _GlowGain;
+                // ⚠ 第 1 項（熾が宿っていない溝にも乗る下駄）を小さくすると、**赤い溝の本数**が減る。
+                //    第 2 項の係数を触ると宿った所の明るさが変わる。**別の効き方をする**ので混ぜない。
+                //    2026-08-12 に 0.22 → 0.10 へ（ユーザー「減らしてみて」）。
+                float breath = pulse * (0.10 + 0.90 * hearth) * unrest * _GlowGain;
                 // くっきり光る芯。**熾が濃く、かつ波が来ている所だけ**なので面積が小さい。
                 float hot = smoothstep(_HotFrac, 1.0, hearth * (0.5 + 0.5 * pulse)) * unrest * _GlowGain;
 
@@ -450,9 +474,36 @@ Shader "FixedCamVr/SealedBox"
                 // ⚠ **テカらせない**（LEDGER 0011「けどテカリはしない」）。ハイライトを作らず、
                 //    斜めから見たときだけ面全体が広く弱く持ち上がる。これだけで金属に見える。
                 //    鏡面反射を足すと一点が白く光り、その瞬間「使い込まれた物」ではなくなる。
+                // ⚠ **照りは研磨目に沿わせる**（0.55 + 0.9 * grain）。一様な照りは塗装した板に見え、
+                //    目に沿って強弱が付くと圧延・研磨した金属に見える。異方性反射の安い代用。
                 float3 V = normalize(_WorldSpaceCameraPos - i.positionWS);
                 float fres = pow(saturate(1.0 - abs(dot(normalize(i.normalWS), V))), _SheenPow);
-                surf += _SheenColor.rgb * (_Sheen * fres * (0.3 + 0.7 * patina));
+                surf += _SheenColor.rgb * (_Sheen * fres * (0.3 + 0.7 * patina)
+                                           * (0.55 + 0.9 * grain));
+
+                // ---- 溝を「彫られたもの」に見せる 2 つ（LEDGER 0016「安っぽくないように」）----
+                // ① 汚れは溝から染み出す。凹んだ所に溜まって周りへ広がるのが古い物の顔で、
+                //    溝の中だけが暗い状態は**印刷された線**に見える。
+                float grime = smoothstep(0.5 - wdt - _GrimeM, 0.5 - wdt, d)
+                              * (0.45 + 0.55 * (1.0 - patina));
+                surf *= 1.0 - _GrimeAmt * grime * grime * seam;
+
+                // ② 彫った壁は片側が明るく反対側が暗い。**幾何は動かさず陰影だけ**で深さを出す。
+                //    セル中心から見た向き（gv）が壁の向きなので、決めた光の向きとの内積で符号が付く。
+                //    これが無いと、どれだけ地を作り込んでも線は「描いた線」のまま。
+                float2 gdir = gv / max(length(gv), 1e-5);
+                float lipW = wdt * 1.8;
+                float lipBand = smoothstep(0.5 - wdt - lipW, 0.5 - wdt, d) * (1.0 - edge) * seam;
+                float facing = dot(gdir, normalize(float2(0.42, 0.91)));   // シート空間の光の向き
+                surf *= 1.0 + _BevelAmt * lipBand * facing;
+
+                // ③ 箱の稜は擦れて地金が出る。**面の汚れより「使い込まれた物」に効く**
+                //    （新品は角が均一で、使った物は角から地が出る）。
+                // ⚠ **稜に沿った一様な明るい帯にしない。** 均等な縁取りは「面取りしたモデル」に見え、
+                //    かえって新品らしくなる。地のむらと研磨目を掛けて、擦れ方を不揃いにする。
+                float rim = 1.0 - smoothstep(0.0, max(_RimWearM, 1e-3), rimDist);
+                surf += _MetalColor.rgb * (rim * rim * _RimWear
+                                           * (0.25 + 0.75 * grain) * (0.30 + 0.95 * patina));
 
                 // 溝。**印刷した線ではなく彫った溝**なので、地のむらを保ったまま沈める。
                 float3 rgb = lerp(surf, surf * 0.28 + _LineColor.rgb, groove);
