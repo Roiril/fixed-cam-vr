@@ -233,16 +233,18 @@ namespace FixedCamVr.OvrBridge
 
                 case ControllerModeLogic.Mode.Normal:
                 default:
-                    // A: **タイトルを閉じて体験を始める**。Normal での A はこれ 1 つだけで、
-                    //    タイトルが立っていなければ何も起きない（押下の Ack 振動だけ鳴る）。
+                    // A: **真っ暗から題字を呼び出す**（2026-08-12 のユーザー指示で意味が変わった。
+                    //    それまでは「立っている題字を閉じる」だった）。呼び出したあとは
+                    //    2 秒で自動的に閉じてパススルーへ渡るので、押すのは 1 回だけ。
+                    //    Normal での A はこれ 1 つだけで、タイトルが立っていなければ何も起きない。
                     //
                     //    カメラ手動送りは 2026-08-12 に撤去した（ユーザー宣言「カメラの手送り機能は
                     //    要らないです」）。設営でカメラを見たいときは Web 卓の 📺 カメラ固定か、
                     //    Editor のキーボード（CameraSwitchInput の Tab / 1-9）を使う。
-                    if (aDown && titleScreen != null && titleScreen.RequestDismiss())
+                    if (aDown && titleScreen != null && titleScreen.RequestAdvance())
                     {
                         haptics?.Fire();   // 体験の開始。短押しより強い手応えを返す
-                        Debug.Log("[Title] A でタイトルを閉じました — 体験を始めます");
+                        Debug.Log("[Title] A を受け取りました（真っ暗なら題字を呼び出す / 立っていれば閉じる）");
                     }
                     // B: ステータス表示トグル（真実源 IsVisible の反転）。
                     if (bDown) { ToggleStatus(); haptics?.Action(); }

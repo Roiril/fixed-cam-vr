@@ -7,6 +7,12 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>出していない（本編中・終了後・そもそも切ってある）。</summary>
         Off,
+        /// <summary>
+        /// <b>何も見えない真っ暗。A を待っている。</b>
+        /// 2026-08-12 のユーザー指示で足した段 — 周回リセット直後はここに居る。
+        /// 字も光も出さない（黒だけ）ので、A が「閉じる」ではなく<b>「呼び出す」</b>に変わった。
+        /// </summary>
+        Wait,
         /// <summary>字が現れている途中。</summary>
         In,
         /// <summary>出し切って、A を待っている。</summary>
@@ -72,11 +78,33 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public sealed class TitleLogic
     {
-        /// <summary>出すまでの間。起動時の黒（StartupFader）が明けるのを待って字を出す。</summary>
-        public const float InDelaySec = 0.5f;
+        /// <summary>
+        /// 出すまでの間。
+        /// ⚠ **0.5 → 0 にした**（2026-08-12）。A と同時に音の一撃が鳴るので、
+        /// 字が半秒遅れて出ると「押した音」と「出た字」が別の出来事になる。
+        /// </summary>
+        public const float InDelaySec = 0f;
 
-        /// <summary>字が現れ切るまで。急ぐと「UI が出た」に見える。</summary>
-        public const float InSec = 1.7f;
+        /// <summary>
+        /// 字が現れ切るまで。
+        /// ⚠ **1.7 → 0.6 にした**（2026-08-12）。ユーザー指示は
+        /// 「シネマチックタイトルの音<b>とともに</b>タイトルを表示」で、音の一撃は頭 0.09 秒にある。
+        /// ゆっくり出すと一撃から取り残される。0 にしないのは、ぱっと出ると「UI が出た」に見えるから。
+        /// </summary>
+        public const float InSec = 0.6f;
+
+        /// <summary>
+        /// <b>A を押してから字が消え始めるまで</b>（出現の時間を含む）。
+        /// 2026-08-12 ユーザー指示「2s でタイトルが消え今まで通りのパススルーとしよう」。
+        /// ⚠ <b>A からの通算</b>で測る（Hold に入ってから 2 秒ではない）。
+        /// </summary>
+        public const float AutoDismissSec = 2.0f;
+
+        /// <summary>
+        /// 呼び出した直後に A の二度押しで即閉じないための不感時間。
+        /// これが無いと、A を軽く 2 回叩いた現場でタイトルが一瞬で消える。
+        /// </summary>
+        public const float DismissLockoutSec = 0.4f;
 
         /// <summary>A の手応え。光が字を走り抜ける。<b>押した瞬間に始める</b>（遅れると効かない）。</summary>
         public const float FlashSec = 0.42f;
@@ -111,15 +139,22 @@ namespace FixedCamVr.Streaming
         public TitleStage Stage => _stage;
 
         /// <summary>いまタイトルが画面を持っているか（＝導入の開始合図を止めてよいか）。</summary>
-        public bool Active => _stage == TitleStage.In || _stage == TitleStage.Hold || _stage == TitleStage.Out;
+        public bool Active => _stage == TitleStage.Wait || _stage == TitleStage.In
+                              || _stage == TitleStage.Hold || _stage == TitleStage.Out;
 
-        /// <summary>A を待っているか。実行体はここで触覚・ガイドを出す。</summary>
-        public bool AwaitingInput => _stage == TitleStage.In || _stage == TitleStage.Hold;
+        /// <summary>A を待っているか（＝ 真っ暗のまま呼び出しを待っている）。</summary>
+        public bool AwaitingInput => _stage == TitleStage.Wait;
 
-        /// <summary>頭から出す（ランリセット・起動）。</summary>
+        /// <summary>字が立っているか。<b>音の一撃を鳴らす縁はここ。</b></summary>
+        public bool GlyphShowing => _stage == TitleStage.In || _stage == TitleStage.Hold;
+
+        /// <summary>
+        /// 頭から出す（ランリセット・起動）。
+        /// ⚠ **入るのは <see cref="TitleStage.Wait"/>（真っ暗）。** 字はまだ出さない。
+        /// </summary>
         public void Begin()
         {
-            _stage = TitleStage.In;
+            _stage = TitleStage.Wait;
             _elapsed = 0f;
             _openElapsed = 0f;
             _opening = false;
@@ -135,7 +170,24 @@ namespace FixedCamVr.Streaming
             _opening = false;
         }
 
-        /// <summary>A。閉じる演出へ入る。<b>出現の途中でも受ける</b>（待たされる方が不快）。</summary>
+        /// <summary>
+        /// A。<b>段で意味が変わる。</b>
+        ///   Wait → 題字を呼び出す（音の一撃と同時）
+        ///   In / Hold → 閉じる（自動で閉じるので通常は使わない。現場の逃げ道）
+        /// </summary>
+        public void RequestAdvance()
+        {
+            if (_stage == TitleStage.Wait)
+            {
+                _stage = TitleStage.In;
+                _elapsed = 0f;
+                return;
+            }
+            if (_elapsed < DismissLockoutSec) return;   // 二度押しで一瞬で消えないように
+            RequestDismiss();
+        }
+
+        /// <summary>閉じる演出へ入る。<b>出現の途中でも受ける</b>（待たされる方が不快）。</summary>
         public void RequestDismiss()
         {
             if (_stage != TitleStage.In && _stage != TitleStage.Hold) return;
@@ -172,18 +224,25 @@ namespace FixedCamVr.Streaming
             // 譲っている間は時計を止める。再開したら続きから（やり直すと字が 2 度出る）。
             if (input.suspended) return;
 
-            if (input.dismissRequested) RequestDismiss();
+            if (input.dismissRequested) RequestAdvance();
 
             _elapsed += dt;
 
             switch (_stage)
             {
+                case TitleStage.Wait:
+                    // 真っ暗のまま待つ。**時間では進まない**（A か ForceClose だけが出口）。
+                    break;
+
                 case TitleStage.In:
-                    if (_elapsed >= InDelaySec + InSec) { _stage = TitleStage.Hold; _elapsed = 0f; }
+                    // ⚠ Hold へ移っても `_elapsed` を 0 に戻さない。
+                    //    AutoDismissSec は **A からの通算**で測るため。
+                    if (_elapsed >= InDelaySec + InSec) _stage = TitleStage.Hold;
                     break;
 
                 case TitleStage.Hold:
-                    // ここは時間で進まない。A か ForceClose だけが出口。
+                    // 2026-08-12 から**時間で閉じる**（A を押しっぱなしにする必要が無い）。
+                    if (_elapsed >= AutoDismissSec) RequestDismiss();
                     break;
 
                 case TitleStage.Out:
@@ -224,6 +283,10 @@ namespace FixedCamVr.Streaming
                     case TitleStage.Off:
                     case TitleStage.Done:
                         return TitleWeights.Hidden;
+
+                    case TitleStage.Wait:
+                        // **黒だけ。** 字も光も出さない。
+                        return new TitleWeights { veil = 1f };
 
                     case TitleStage.In:
                     {

@@ -232,16 +232,25 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// A（右コントローラ）。<b>閉じる演出へ入れたら true</b> を返す。
+        /// A（右コントローラ）。<b>受け取れたら true</b> を返す。
+        ///
+        /// ⚠ <b>2026-08-12 から段で意味が変わる</b>（ユーザー指示）:
+        ///   真っ暗で待っている（<see cref="TitleStage.Wait"/>）→ <b>題字を呼び出す</b>
+        ///   題字が立っている → 閉じる（通常は 2 秒で自動的に閉じるので現場の逃げ道）
+        ///
         /// false は「タイトルが立っていない・実体を組めていない」で、押下は何にも繋がらない
         /// （Normal での A はこれ 1 つだけ。カメラ手動送りは 2026-08-12 に撤去した）。
         /// </summary>
-        public bool RequestDismiss()
+        public bool RequestAdvance()
         {
-            if (!IsBlocking || !_logic.AwaitingInput) return false;
+            if (!IsBlocking) return false;
+            if (_logic.Stage != TitleStage.Wait && !_logic.GlyphShowing) return false;
             _dismissRequested = true;
             return true;
         }
+
+        /// <summary>題字が立っているか（音の一撃を鳴らす縁）。</summary>
+        public bool GlyphShowing => IsBuilt && titleEnabled && _logic.GlyphShowing;
 
         /// <summary>演出なしで畳む（卓の ⏭ 等で導入が段 0 を出たとき）。</summary>
         public void ForceClose()

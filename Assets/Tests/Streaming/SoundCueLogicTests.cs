@@ -57,16 +57,108 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Title_FiresIn_ThenOut()
+        public void Title_IsSilentWhileWaitingInTheDark_ThenFiresWhenTheGlyphStands()
         {
+            // ⚠ 2026-08-12 にタイトルの流れが変わった。周回リセット直後は**真っ暗で A を待つ**
+            //    だけなので、そこで音を鳴らすと「まだ何も始まっていない」と食い違う。
+            //    鳴らす縁は「画面を持った」ではなく「**字が立った**」。
             var l = new SoundCueLogic();
             var s = SoundShowState.Idle;
-            s.titleVisible = true;
+            s.titleVisible = true;                       // 真っ暗で A 待ち
+            for (int i = 0; i < 60; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.TitleIn, Dt, s), "真っ暗の間に鳴っている");
+
+            s.titleGlyphShowing = true;                  // A を押した
             Assert.AreEqual(1, CountOf(l, SoundCue.TitleIn, Dt, s));
             Assert.AreEqual(0, CountOf(l, SoundCue.TitleIn, Dt, s));
-            s.titleVisible = false;
+
+            s.titleGlyphShowing = false;                 // 2 秒後に消え始める
             Assert.AreEqual(1, CountOf(l, SoundCue.TitleOut, Dt, s));
             Assert.AreEqual(0, CountOf(l, SoundCue.TitleOut, Dt, s));
+        }
+
+        [Test]
+        public void Creak_FiresSparsely_AndNeverAtAFixedInterval()
+        {
+            // 家鳴りは**等間隔にしない**。規則正しいと建物ではなく機械に聞こえる。
+            var l = new SoundCueLogic();
+            var s = SoundShowState.Idle;
+            s.phase = ShowPhase.Run;
+            var gaps = new System.Collections.Generic.List<float>();
+            float since = 0f;
+            for (int i = 0; i < 60 * 300; i++)           // 5 分
+            {
+                since += Dt;
+                if (CountOf(l, SoundCue.Creak, Dt, s) > 0) { gaps.Add(since); since = 0f; }
+            }
+            Assert.Greater(gaps.Count, 8, "5 分で家鳴りが少なすぎる");
+            Assert.Less(gaps.Count, 40, "5 分で家鳴りが多すぎる（にぎやかになる）");
+            foreach (float g in gaps)
+            {
+                Assert.GreaterOrEqual(g, SoundCueLogic.CreakMinSec - 0.5f);
+                Assert.LessOrEqual(g, SoundCueLogic.CreakMaxSec + 0.5f);
+            }
+            var uniq = new System.Collections.Generic.HashSet<int>();
+            foreach (float g in gaps) uniq.Add((int)(g * 4));
+            Assert.Greater(uniq.Count, 3, "間隔がほぼ一定（機械に聞こえる）");
+        }
+
+        [Test]
+        public void Creak_IsSilentDuringTheIntroStages_AndDuringRegistration()
+        {
+            // 導入の演出中に家鳴りが割り込むと、段の出来事が薄まる。
+            var l = new SoundCueLogic();
+            var s = Intro(IntroStage.Degrade);
+            for (int i = 0; i < 60 * 120; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.Creak, Dt, s), "導入の途中で鳴っている");
+
+            var r = SoundShowState.Idle;
+            r.phase = ShowPhase.Run;
+            r.registrationActive = true;
+            for (int i = 0; i < 60 * 120; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.Creak, Dt, r), "位置合わせ中に鳴っている");
+        }
+
+        [Test]
+        public void Bell_RingsOnce_InStageZero()
+        {
+            var l = new SoundCueLogic();
+            var s = Intro(IntroStage.Black);
+            int total = 0;
+            for (int i = 0; i < 60 * 120; i++) total += CountOf(l, SoundCue.Bell, Dt, s);
+            Assert.AreEqual(1, total, "鈴は 1 回だけ");
+
+            l.ResetRun();
+            total = 0;
+            for (int i = 0; i < 60 * 120; i++) total += CountOf(l, SoundCue.Bell, Dt, s);
+            Assert.AreEqual(1, total, "次の体験者にはもう一度鳴る");
+        }
+
+        [Test]
+        public void Bell_DoesNotRingImmediately()
+        {
+            // 段 0 に入った瞬間に鳴ると「押したから鳴った」に読まれる。
+            var l = new SoundCueLogic();
+            var s = Intro(IntroStage.Black);
+            for (int i = 0; i < (int)(SoundCueLogic.BellAtSec * 60) - 30; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.Bell, 1f / 60f, s));
+        }
+
+        [Test]
+        public void Cues_AreDeterministic_AcrossRuns()
+        {
+            // **走行のたびに違う音が出ると、何が効いたのか分からなくなる。**
+            var s = SoundShowState.Idle;
+            s.phase = ShowPhase.Run;
+            var first = new System.Collections.Generic.List<int>();
+            var second = new System.Collections.Generic.List<int>();
+            foreach (var list in new[] { first, second })
+            {
+                var l = new SoundCueLogic();
+                for (int i = 0; i < 60 * 200; i++)
+                    if (CountOf(l, SoundCue.Creak, Dt, s) > 0) list.Add(i);
+            }
+            CollectionAssert.AreEqual(first, second);
         }
 
         [Test]

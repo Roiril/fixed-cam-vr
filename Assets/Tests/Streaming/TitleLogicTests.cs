@@ -40,6 +40,7 @@ namespace FixedCamVr.Streaming.Tests
             // ⚠ 立ち上げると起動直後の 1 フレームだけ現実が覗く。依頼の核心なのでここで止める。
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             Assert.AreEqual(1f, l.Weights.veil, 1e-5f, "黒は最初から 1 でなければならない");
             l.Tick(Dt, Ready);
             Assert.AreEqual(1f, l.Weights.veil, 1e-5f);
@@ -50,6 +51,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             Run(l, TitleLogic.InDelaySec * 0.5f, Ready);
             Assert.AreEqual(0f, l.Weights.reveal, 1e-3f, "間は字を出さない（起動の黒が明けるのを待つ）");
 
@@ -65,14 +67,49 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Hold_NeverEndsOnItsOwn()
+        public void Hold_ClosesItselfAfterTwoSeconds()
         {
-            // 体験者を待つ区間。時間で勝手に始まると、被せる前に体験が進む。
+            // 2026-08-12 ユーザー指示「2s でタイトルが消え今まで通りのパススルーとしよう」。
+            // ⚠ 尺は **A からの通算**（Hold に入ってから 2 秒ではない）。
             var l = new TitleLogic();
             l.Begin();
-            Run(l, 120f, Ready);
-            Assert.AreEqual(TitleStage.Hold, l.Stage);
-            Assert.AreEqual(1f, l.Weights.veil, 1e-5f);
+            l.RequestAdvance();
+            for (int i = 0; i < 30; i++) l.Tick(1f / 60f, Ready);     // 0.5 秒
+            Assert.AreNotEqual(TitleStage.Out, l.Stage, "まだ消え始めてはいけない");
+            for (int i = 0; i < 120; i++) l.Tick(1f / 60f, Ready);    // 通算 2.5 秒
+            Assert.AreEqual(TitleStage.Out, l.Stage, "2 秒で消え始めていない");
+        }
+
+        [Test]
+        public void Begin_StartsBlack_WithNoLetters_UntilA()
+        {
+            // ⚠ **周回リセット直後は真っ暗で、字は出ていない。**
+            //    A を押すまで時間では何も起きない（前は Begin で字が出始めていた）。
+            var l = new TitleLogic();
+            l.Begin();
+            for (int i = 0; i < 600; i++) l.Tick(1f / 60f, Ready);    // 10 秒放置
+            Assert.AreEqual(TitleStage.Wait, l.Stage);
+            Assert.AreEqual(1f, l.Weights.veil, 1e-6f, "黒が張っていない");
+            Assert.AreEqual(0f, l.Weights.glyph, 1e-6f, "A を押す前に字が出ている");
+            Assert.IsTrue(l.AwaitingInput);
+            Assert.IsFalse(l.GlyphShowing);
+
+            l.RequestAdvance();
+            l.Tick(1f / 60f, Ready);
+            Assert.AreEqual(TitleStage.In, l.Stage);
+            Assert.IsTrue(l.GlyphShowing, "A を押しても字が立っていない");
+        }
+
+        [Test]
+        public void A_TwiceInQuickSuccession_DoesNotSkipTheTitle()
+        {
+            // 現場で A を軽く 2 回叩いても、題字が一瞬で消えない。
+            var l = new TitleLogic();
+            l.Begin();
+            l.RequestAdvance();
+            l.Tick(1f / 120f, Ready);
+            l.RequestAdvance();                     // 不感時間の内
+            Assert.AreNotEqual(TitleStage.Out, l.Stage);
         }
 
         [Test]
@@ -80,6 +117,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             Run(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f, Ready);
             l.RequestDismiss();
             Assert.AreEqual(TitleStage.Out, l.Stage);
@@ -104,6 +142,7 @@ namespace FixedCamVr.Streaming.Tests
             // 出現の途中で押されても受ける。待たされる方が不快で、しかも 2 度押しを誘う。
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             Run(l, TitleLogic.InDelaySec + TitleLogic.InSec * 0.4f, Ready);
             l.RequestDismiss();
             Assert.AreEqual(TitleStage.Out, l.Stage);
@@ -118,6 +157,7 @@ namespace FixedCamVr.Streaming.Tests
             // ⚠ ここをラッチにすると体験が二度と始まらない。
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             Run(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f, Ready);
             l.RequestDismiss();
 
@@ -137,6 +177,7 @@ namespace FixedCamVr.Streaming.Tests
             // 位置合わせ中に時計が進むと、譲っている間にタイトルが終わってしまう。
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             Run(l, TitleLogic.InDelaySec + TitleLogic.InSec * 0.5f, Ready);
             float before = l.Weights.reveal;
 
@@ -154,6 +195,7 @@ namespace FixedCamVr.Streaming.Tests
             // 卓の ⏭ で導入が段 0 を出たときの逃げ道。コントローラが死んでいても出られる。
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             Run(l, 1f, Ready);
             l.ForceClose();
             Assert.AreEqual(TitleStage.Done, l.Stage);
@@ -167,6 +209,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             l.ForceClose();
             l.RequestDismiss();
             Assert.AreEqual(TitleStage.Done, l.Stage, "閉じ切った後の A はタイトルを掘り起こさない");
@@ -178,6 +221,7 @@ namespace FixedCamVr.Streaming.Tests
             // 押した瞬間に迫り、そのあと奥へ抜ける。逆だと「押したのに引っ込んだ」に見える。
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             Run(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f, Ready);
             l.RequestDismiss();
             Run(l, TitleLogic.FlashSec * 0.5f, Ready);

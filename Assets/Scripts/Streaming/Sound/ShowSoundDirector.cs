@@ -231,7 +231,11 @@ namespace FixedCamVr.Streaming
         private SoundShowState ReadState()
         {
             var s = SoundShowState.Idle;
-            if (_title != null) s.titleVisible = _title.IsBlocking;
+            if (_title != null)
+            {
+                s.titleVisible = _title.IsBlocking;
+                s.titleGlyphShowing = _title.GlyphShowing;
+            }
             if (_intro != null)
             {
                 s.introActive = _intro.Active;

@@ -21,6 +21,10 @@ namespace FixedCamVr.Streaming
         ShellOpen,
         /// <summary>映像の乱れ（<see cref="GlitchFx"/> と同時）。</summary>
         Glitch,
+        /// <summary>家鳴り。段 0 と本編にまばらに。<b>古い建物の中に居る</b>を音だけで立てる。</summary>
+        Creak,
+        /// <summary>鈴。段 0 に <b>1 回だけ</b>。誰も鳴らしていないのに鳴る。</summary>
+        Bell,
     }
 
     /// <summary>
@@ -46,6 +50,13 @@ namespace FixedCamVr.Streaming
         /// <summary>乱れの最短間隔（秒）。連射すると「壊れた」ではなく「効果音」になる。</summary>
         public const float GlitchMinIntervalSec = 0.30f;
 
+        /// <summary>家鳴りの間隔（秒）。**等間隔にしない** — 規則正しいと建物ではなく機械に聞こえる。</summary>
+        public const float CreakMinSec = 9f;
+        public const float CreakMaxSec = 24f;
+
+        /// <summary>段 0 に入ってから鈴が鳴るまで（秒）。**1 回だけ。**</summary>
+        public const float BellAtSec = 6f;
+
         /// <summary>
         /// 1 フレームに拾える上限。**種類の総数と同じにしてある ＝ 構造的に溢れない。**
         ///
@@ -61,6 +72,11 @@ namespace FixedCamVr.Streaming
         private bool _sealFired, _shatterFired, _swapFired, _openFired;
         private bool _glitchArmed = true;
         private float _glitchCooldown;
+        private bool _glyphWasShowing;
+        private float _creakCountdown = -1f;
+        private float _blackElapsed = -1f;
+        private bool _bellFired;
+        private uint _rng = 0x9E3779B9;
 
         /// <summary>拾えなかった数（累積）。0 でないなら設計か閾値が間違っている。</summary>
         public int Dropped { get; private set; }
@@ -72,7 +88,25 @@ namespace FixedCamVr.Streaming
             _sealFired = _shatterFired = _swapFired = _openFired = false;
             _glitchArmed = true;
             _glitchCooldown = 0f;
+            _glyphWasShowing = false;
+            _creakCountdown = -1f;
+            _blackElapsed = -1f;
+            _bellFired = false;
+            _rng = 0x9E3779B9;
         }
+
+        /// <summary>
+        /// 決定論的な擬似乱数（0..1）。<b>種を固定してあるので走行のたびに同じ間隔になる</b> —
+        /// 同じ show.json で違う音が出ると、何が効いたのか分からなくなる。
+        /// </summary>
+        private float NextRandom()
+        {
+            _rng = _rng * 1664525u + 1013904223u;
+            return (_rng >> 8) / 16777216f;
+        }
+
+        private float NextCreakInterval()
+            => CreakMinSec + (CreakMaxSec - CreakMinSec) * NextRandom();
 
         /// <summary>今フレームに鳴らすものを返す（<paramref name="count"/> 本）。</summary>
         public ReadOnlySpan<SoundCue> Tick(float dt, in SoundShowState s, float glitchLevel,
@@ -82,8 +116,13 @@ namespace FixedCamVr.Streaming
             if (_glitchCooldown > 0f) _glitchCooldown -= dt;
 
             // --- タイトル -------------------------------------------------------
-            if (s.titleVisible && !_titleWasVisible) Push(SoundCue.TitleIn, ref count);
-            else if (!s.titleVisible && _titleWasVisible) Push(SoundCue.TitleOut, ref count);
+            // ⚠ **鳴らす縁は「画面を持った」ではなく「字が立った」**（2026-08-12 に流れが変わった）。
+            //    周回リセット直後は真っ暗で A を待っているだけなので、そこで音を出すと
+            //    「まだ何も始まっていない」と食い違う。
+            if (s.titleGlyphShowing && !_glyphWasShowing) Push(SoundCue.TitleIn, ref count);
+            else if (!s.titleGlyphShowing && _glyphWasShowing && s.titleVisible)
+                Push(SoundCue.TitleOut, ref count);
+            _glyphWasShowing = s.titleGlyphShowing;
             _titleWasVisible = s.titleVisible;
 
             // --- 導入の 3 つの山 ------------------------------------------------
@@ -122,6 +161,36 @@ namespace FixedCamVr.Streaming
                 Push(SoundCue.Glitch, ref count);
             }
 
+            // --- 家鳴り（段 0 と本編にまばらに）---------------------------------
+            bool creakZone = (s.introActive && s.introStage == IntroStage.Black)
+                             || (!s.introActive && !s.outroActive && s.phase == ShowPhase.Run);
+            if (creakZone && !s.registrationActive)
+            {
+                if (_creakCountdown < 0f) _creakCountdown = NextCreakInterval();
+                _creakCountdown -= dt;
+                if (_creakCountdown <= 0f)
+                {
+                    _creakCountdown = NextCreakInterval();
+                    Push(SoundCue.Creak, ref count);
+                }
+            }
+            else
+            {
+                _creakCountdown = -1f;   // 区間を出たら数え直す（間延びした 1 発が飛び込まない）
+            }
+
+            // --- 鈴（段 0 に 1 回だけ）------------------------------------------
+            if (s.introActive && s.introStage == IntroStage.Black)
+            {
+                if (_blackElapsed < 0f) _blackElapsed = 0f;
+                _blackElapsed += dt;
+                if (!_bellFired && _blackElapsed >= BellAtSec && !s.registrationActive)
+                {
+                    _bellFired = true;
+                    Push(SoundCue.Bell, ref count);
+                }
+            }
+
             return new ReadOnlySpan<SoundCue>(_buf, 0, count);
         }
 
@@ -142,6 +211,8 @@ namespace FixedCamVr.Streaming
                 case SoundCue.TitleOut: return 0.70f;
                 case SoundCue.ShellOpen: return 0.40f;
                 case SoundCue.Glitch: return 0.35f;
+                case SoundCue.Bell: return 0.45f;
+                case SoundCue.Creak: return 0.15f;   // 退かせすぎると芝居がかる
                 default: return 0f;
             }
         }
@@ -158,11 +229,21 @@ namespace FixedCamVr.Streaming
                 case SoundCue.Swap: return "sfx_swap";
                 case SoundCue.ShellOpen: return "sfx_shell_open";
                 case SoundCue.Glitch: return "sfx_glitch";      // 3 種から順に選ぶ
+                case SoundCue.Creak: return "amb_creak";        // 2 種
+                case SoundCue.Bell: return "amb_bell";
                 default: return "";
             }
         }
 
         /// <summary>同じ音が並ばないよう変種を持つもの（末尾に <c>_1..N</c> が付く）。</summary>
-        public static int VariantCount(SoundCue c) => c == SoundCue.Glitch ? 3 : 1;
+        public static int VariantCount(SoundCue c)
+        {
+            switch (c)
+            {
+                case SoundCue.Glitch: return 3;
+                case SoundCue.Creak: return 2;
+                default: return 1;
+            }
+        }
     }
 }

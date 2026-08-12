@@ -565,7 +565,8 @@ REGISTRY = {
     "sfx_shatter": (sfx_shatter, False, False),
     "sfx_swap": (sfx_swap, False, False),
     "sfx_shell_open": (sfx_shell_open, False, False),
-    "sfx_title_in": (sfx_title_in, False, False),
+    # sfx_title_in は 2026-08-12 にユーザー提供の「シネマチックなタイトル」へ置き換えた
+    # (tools/ingest-sounds.py が焼く)。合成版の関数は設計の記録として残してある。
     "sfx_title_out": (sfx_title_out, False, False),
 }
 

@@ -148,15 +148,16 @@ def env_ar(sec: float, attack: float, release: float, curve: float = 2.0,
 
 def env_fade(y: np.ndarray, fade_in: float, fade_out: float,
              sr: int = SR) -> np.ndarray:
-    """端だけを等パワーで落とす（一撃の音の頭と尻のクリック止め）。"""
-    out = y.copy()
+    """端だけを等パワーで落とす（一撃の音の頭と尻のクリック止め）。モノもステレオも受ける。"""
+    out = np.asarray(y, dtype=np.float64).copy()
     n = len(out)
     fi = min(int(round(fade_in * sr)), n)
-    fo = min(int(round(fade_out * sr)), n - fi)
+    fo = min(int(round(fade_out * sr)), max(0, n - fi))
+    shape = (-1, 1) if out.ndim == 2 else (-1,)
     if fi > 0:
-        out[:fi] *= np.sin(np.linspace(0, np.pi / 2, fi))
+        out[:fi] *= np.sin(np.linspace(0, np.pi / 2, fi)).reshape(shape)
     if fo > 0:
-        out[n - fo:] *= np.cos(np.linspace(0, np.pi / 2, fo))
+        out[n - fo:] *= np.cos(np.linspace(0, np.pi / 2, fo)).reshape(shape)
     return out
 
 
@@ -613,6 +614,121 @@ def loop_seam(y: np.ndarray) -> dict:
             "rms_d_db": round(20 * math.log10(b / a), 2)}
 
 
+# ---------------------------------------------------------------------------
+# 不快さ（2026-08-12 ユーザー指示「不気味で怖くていいけど、不快にはならないように」）
+#
+# 「不気味」と「不快」は別の軸で、**後者は測れる**。心理音響では次の 3 つに分かれる:
+#
+#   鋭さ (sharpness)   高い臨界帯域へエネルギーが偏っているか ＝ 耳に刺さる
+#   粗さ (roughness)   20〜300Hz（特に 70Hz 付近）の振幅変調 ＝ ざらついて苛立つ
+#   突出音 (tonality)  周囲より突き出た純音 ＝ 数分浴びると疲れる
+#
+# ⚠ これは DIN 45692 / Zwicker の**近似**であって規格実装ではない。
+#    ピンクノイズを基準に較正してあるので、**この作品の中での比較にだけ使う**。
+# ---------------------------------------------------------------------------
+
+
+def _third_octave(y: np.ndarray, sr: int = SR):
+    """1/3 オクターブ帯域のエネルギー（中心周波数, パワー）を返す。"""
+    m = to_stereo(y).mean(axis=1)
+    n = 1
+    while n < len(m):
+        n *= 2
+    spec = np.abs(np.fft.rfft(m, n)) ** 2
+    f = np.fft.rfftfreq(n, 1 / sr)
+    centers = 50.0 * 2 ** (np.arange(0, 27) / 3.0)          # 50Hz 〜 約 16kHz
+    out = []
+    for fc in centers:
+        lo, hi = fc / 2 ** (1 / 6), fc * 2 ** (1 / 6)
+        out.append(float(np.sum(spec[(f >= lo) & (f < hi)])))
+    return centers, np.array(out)
+
+
+SharpnessCalib = 0.0959
+"""1kHz・160Hz 幅のノイズが 1.0 acum になるよう合わせた係数（DIN 45692 の基準音）。"""
+
+
+def _bark(f):
+    """周波数 (Hz) → Bark。Traunmüller の式。"""
+    return 26.81 * f / (1960.0 + f) - 0.53
+
+
+def sharpness(y: np.ndarray, sr: int = SR) -> float:
+    """**鋭さ**（acum 近似）。**耳に刺さるかどうかの 1 数字。**
+
+    高い臨界帯域へエネルギーが偏るほど大きい。ピンクノイズが約 2.0 になるよう較正してある。
+    3 分間かけ続ける敷く音は **2.5 を超えない**こと（一撃は短いので多少高くてよい）。
+    """
+    fc, p = _third_octave(y, sr)
+    if float(np.sum(p)) <= 0:
+        return 0.0
+    n_prime = p ** 0.23                                     # 特定ラウドネスの近似
+    z = _bark(fc)
+    g = np.where(z <= 16.0, 1.0, 0.066 * np.exp(0.171 * z))  # DIN 45692 の重み
+    raw = float(np.sum(n_prime * g * z) / max(np.sum(n_prime), 1e-12))
+    return raw * SharpnessCalib
+
+
+def roughness(y: np.ndarray, sr: int = SR) -> float:
+    """**粗さ**（asper 近似）。**ざらついて苛立つかどうか。**
+
+    ⚠ **「揺らいでいる量」ではなく「特定の速さで揺れている度合い」を測る。**
+    最初これを帯域ごとの変調スペクトルの**総和**で書いたら、ピンクノイズが 8.09 asper に
+    なった（正しくは 0.1〜0.3 程度）。ノイズの包絡は元々でたらめに揺れているので、
+    総和で測るとノイズがいちばん粗いことになってしまう。
+    **周囲より突き出た変調**（＝ 唸り・ビリつき・量子化の階段）だけを拾う形に直した。
+
+    ざらついた広帯域ノイズの不快さは、粗さではなく<see cref="sharpness"/>が拾う。
+
+    較正: 1kHz を 70Hz で 100% 振幅変調した音 ＝ 1.0。敷く音は **0.4 を超えない**こと。
+    """
+    m = to_stereo(y).mean(axis=1)
+    if len(m) < sr // 4:
+        return 0.0
+    total = 0.0
+    weight = 0.0
+    for lo, hi in ((200, 500), (500, 1200), (1200, 2800), (2800, 6000)):
+        band = biquad_fft(biquad_fft(m, "hp", lo, 0.707, 0.0, sr), "lp", hi, 0.707, 0.0, sr)
+        e = float(np.mean(band ** 2))
+        if e <= 1e-14:
+            continue
+        env = biquad_fft(np.abs(band), "lp", 400.0, 0.707, 0.0, sr)
+        mean = float(np.mean(env)) + 1e-12
+        spec = np.abs(np.fft.rfft(env - mean))
+        f = np.fft.rfftfreq(len(env), 1 / sr)
+        sel = (f >= 10) & (f <= 300)
+        if not np.any(sel):
+            continue
+        # 70Hz を山とする変調感度（Zwicker の重み関数の近似）
+        w = np.exp(-((np.log2(np.maximum(f[sel], 1e-9) / 70.0)) ** 2) / 1.2)
+        # **変調指数**（0..1）。100% 振幅変調でちょうど 1 になる。
+        # ⚠ 中央値で割る形にしたら、変調スペクトルが 1 本しか立たない合成音で
+        #    分母が 0 になり 1e13 が出た（2026-08-12）。**上限のある量で書く。**
+        idx = float(np.max(spec[sel] * w)) / (len(env) / 2.0) / mean
+        total += min(idx, 2.0) * e
+        weight += e
+    return float(total / max(weight, 1e-12))
+
+
+def tonality_db(y: np.ndarray, sr: int = SR) -> float:
+    """**突出したトーン**が周囲より何 dB 高いか。数分浴びると疲れる成分。
+
+    12dB を超える突出が持続すると「機械が鳴いている」に寄る。
+    ⚠ **蛍光灯の線・搬送トーンは意図して置いている**ので、大きいこと自体は欠陥ではない。
+    大きいときは「その音が何分続くか」で判断する。
+    """
+    fc, p = _third_octave(y, sr)
+    if len(p) < 3 or float(np.sum(p)) <= 0:
+        return 0.0
+    db = 10 * np.log10(np.maximum(p, 1e-12))
+    best = 0.0
+    for i in range(1, len(db) - 1):
+        neigh = np.concatenate([db[max(0, i - 3):i], db[i + 1:i + 4]])
+        if len(neigh):
+            best = max(best, float(db[i] - np.median(neigh)))
+    return best
+
+
 def describe(y: np.ndarray, sr: int = SR) -> dict:
     """1 本の音を数字で言い切る。**これが聴くことの代わり。**"""
     return {
@@ -625,4 +741,7 @@ def describe(y: np.ndarray, sr: int = SR) -> dict:
         "dc": round(dc_offset(y), 5),
         "mono_db": round(mono_compat_db(y), 2),
         "speaker_db": round(speaker_loss_db(y, sr), 1),
+        "sharp": round(sharpness(y, sr), 2),
+        "rough": round(roughness(y, sr), 2),
+        "tonal_db": round(tonality_db(y, sr), 1),
     }

@@ -43,7 +43,7 @@ RULES = {
     "true_peak_db": (-60.0, -2.9, "尖頭が -3dBTP を超えている（実機の変換で歪む）"),
     "mono_db": (-3.5, 0.5, "モノにすると消える（左右が打ち消している。遅延で広げていないか）"),
     "dc": (0.0, 0.002, "直流が乗っている（スピーカーの可動域を無駄に使う）"),
-    "speaker_db": (-6.0, 0.5, "Quest の内蔵スピーカーで消える（情報が 200Hz より下にある）"),
+
 }
 SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何倍まで許すか）
 CLASS_TRANSIENT_DB = 14.0   # これより波高が大きい ＝ 一撃 ＝ 尖頭で揃える側
@@ -118,6 +118,20 @@ def check(name: str, y: np.ndarray, is_loop: bool) -> tuple[dict, list[str]]:
             continue
         if v < lo or v > hi:
             bad.append(f"{msg}（{key}={v}）")
+    # ⚠ **内蔵スピーカーの線は種類で分ける。** 敷く音は 3 分間ずっと聞こえていなければ
+    #    ならないので厳しく、一撃は一瞬なので緩く。同じ線で測ると
+    #    低い衝撃を持つ素材（シネマチックな一撃など）が理由なく落ちる。
+    lim = -6.0 if is_loop else -10.0
+    if d["speaker_db"] < lim:
+        bad.append(f"Quest の内蔵スピーカーで消える（情報が 200Hz より下にある・"
+                   f"speaker_db={d['speaker_db']} / 下限 {lim}）")
+    # 不快さ（2026-08-12 ユーザー指示「不気味で怖くていいけど、不快にはならないように」）
+    sharp_lim, rough_lim = (2.5, 0.4) if is_loop else (3.5, 1.0)
+    if d["sharp"] > sharp_lim:
+        bad.append(f"耳に刺さる（鋭さ {d['sharp']} / 上限 {sharp_lim}）")
+    if d["rough"] > rough_lim:
+        bad.append(f"ざらついて苛立つ（粗さ {d['rough']} / 上限 {rough_lim}）")
+
     if is_loop:
         seam = sk.loop_seam(y)
         d["seam"] = seam
@@ -171,7 +185,7 @@ def main() -> int:
         mark = "NG" if bad else "ok"
         print(f"  [{mark}] {name:20s} {d['class']}  {d['lufs']:6.1f}LUFS "
               f"tp{d['true_peak_db']:6.1f} 波高{d['crest_db']:5.1f} mono{d['mono_db']:6.2f} "
-              f"内蔵SP{d['speaker_db']:6.1f}")
+              f"内蔵SP{d['speaker_db']:6.1f} 鋭{d['sharp']:5.2f} 粗{d['rough']:5.2f}")
         for b in bad:
             print(f"        - {b}")
 
@@ -202,7 +216,8 @@ def main() -> int:
 <tr><td>重心</td><td>{d['centroid_hz']} Hz</td></tr>
 <tr><td>帯域配分 (dB)</td><td>{bands}</td></tr>
 <tr><td>モノ互換</td><td>{d['mono_db']} dB</td></tr>
-<tr><td>内蔵スピーカーでの損失</td><td>{d['speaker_db']} dB</td></tr>{seam}
+<tr><td>内蔵スピーカーでの損失</td><td>{d['speaker_db']} dB</td></tr>
+<tr><td>鋭さ / 粗さ / 突出</td><td>{d['sharp']} acum / {d['rough']} asper / {d['tonal_db']} dB</td></tr>{seam}
 </table>{('<ul><li>' + '</li><li>'.join(bad) + '</li></ul>') if bad else ''}</div>""")
     h.append("</div>")
     with open(out, "w", encoding="utf-8") as f:

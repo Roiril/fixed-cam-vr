@@ -6,8 +6,15 @@ namespace FixedCamVr.Streaming
     /// <summary>体験のうち、音が読む値だけを集めたもの（毎フレーム作る struct）。</summary>
     public struct SoundShowState
     {
-        /// <summary>タイトルが立っているか（黒の中に題字）。</summary>
+        /// <summary>タイトルの層が画面を持っているか（**真っ暗で A を待っている間も true**）。</summary>
         public bool titleVisible;
+
+        /// <summary>
+        /// <b>題字が実際に立っているか。</b> 2026-08-12 にタイトルの流れが変わり、
+        /// 「画面を持っている」と「字が出ている」が別になった（A を押すまでは真っ暗）。
+        /// 音の一撃を鳴らす縁はこちら。
+        /// </summary>
+        public bool titleGlyphShowing;
         /// <summary>導入演出が進行中か。</summary>
         public bool introActive;
         public IntroStage introStage;

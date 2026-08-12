@@ -7,7 +7,7 @@ py -3.11 tools/sound-preview.py
 
 出るもの（`logs/sound/`）:
   - `preview_materials.wav` … 素材を 1 本ずつ並べたもの（何がどんな音かを確かめる）
-  - `preview_intro.wav` … 導入 13.1 秒＋本編の入り口を通しで並べたもの（**流れ**を確かめる）
+  - `preview_intro.wav` … 真っ暗 → A → 題字 → 導入 → 本編の入り口を通しで並べたもの（**流れ**）
   - どちらも波形＋スペクトログラムの PNG 付き
 
 ⚠⚠ **これは実機ではない。合否に使わない。**
@@ -47,9 +47,9 @@ MATERIALS = [
     ("bed_device", "装置の声・新しい（1 周目）", 6.0),
     ("bed_device_worn", "装置の声・痩せた（3 周目）", 6.0),
     ("bed_static", "信号断の砂嵐", 4.0),
-    ("sfx_title_in", "タイトルが立つ（りん）", 0),
-    ("sfx_title_out", "A を押してタイトルが閉じる（息を呑む）", 0),
-    ("sfx_seal_close", "段 1 — 隔離が閉じる", 0),
+    ("sfx_title_in", "A で題字が立つ（もらった「シネマチックなタイトル」）", 0),
+    ("sfx_title_out", "2 秒後に題字が消える（息を呑む）", 0),
+    ("sfx_seal_close", "段 1 — 隔離が閉じる（もらった「黒い中に入るときの金属音」）", 0),
     ("sfx_shatter", "段 4 — 割れて吸い込まれる", 0),
     ("sfx_swap", "段 5 — 装置が点く", 0),
     ("sfx_switch_1", "カメラ切替（リレー）1", 0),
@@ -59,6 +59,9 @@ MATERIALS = [
     ("sfx_glitch_2", "映像の乱れ 2", 0),
     ("sfx_glitch_3", "映像の乱れ 3", 0),
     ("sfx_shell_open", "終幕 — 隔離が開いて現実が戻る", 0),
+    ("amb_creak_1", "家鳴り 1（もらった「軋み」）", 0),
+    ("amb_creak_2", "家鳴り 2（もらった「少し重い軋み」）", 0),
+    ("amb_bell", "鈴（もらった「鈴２」）— 段 0 に 1 回だけ", 0),
 ]
 
 
@@ -106,10 +109,15 @@ def build_materials() -> np.ndarray:
 
 
 def build_intro() -> np.ndarray:
-    """タイトル → 導入 5 段 → 本編の入り口までを、実機の順序どおりに並べる（近似）。"""
-    title_sec = 5.0
-    t_black = title_sec + 1.2               # 段 0（箱の外に立っている）
-    t_real = t_black + 2.5
+    """周回リセット → A → 題字 → 導入 5 段 → 本編の入り口までを、実機の順序どおりに並べる（近似）。
+
+    ⚠ 2026-08-12 に流れが変わった（`canon/LEDGER.md` 0014）。
+    **周回リセット直後は真っ暗で、A を押すまで何も起きない。**
+    """
+    t_a = 3.0                                # A を押す（それまで真っ暗）
+    t_glyph_out = t_a + 2.0                  # 2 秒で題字が消え始める
+    t_black = t_glyph_out + 1.3              # 黒が開いてパススルー（段 0・箱の外）
+    t_real = t_black + 7.0                   # 線を越えて隔離が閉じる
     t_deg = t_real + REAL
     t_str = t_deg + DEGRADE
     t_frame = t_str + STRUCTURE_OWN
@@ -124,11 +132,13 @@ def build_intro() -> np.ndarray:
     dev = load("bed_device")
     worn = load("bed_device_worn")
 
-    # 封印の箱 — タイトルの黒の下で先に鳴り始め（J カット）、段 4 で食われる
-    seal_len = t_frame + FRAME - 0.0
+    # 封印の箱 — **真っ暗の下で先に鳴り始める**（J カット）。段 4 で食われる
+    seal_len = t_frame + FRAME
     g = np.concatenate([
-        np.linspace(0, 0.55, int(title_sec * sk.SR)),
-        np.full(int((t_frame - title_sec) * sk.SR), 1.0),
+        np.linspace(0, 0.55, int(t_a * sk.SR)),
+        np.full(int((t_black - t_a) * sk.SR), 0.55),
+        np.linspace(0.55, 1.0, int(0.8 * sk.SR)),
+        np.full(max(0, int((t_frame - t_black - 0.8) * sk.SR)), 1.0),
         1 - np.sin(np.linspace(0, np.pi / 2, int(FRAME * sk.SR))),
     ])
     lay(mix, tile(seal, seal_len), 0.0, g)
@@ -137,7 +147,7 @@ def build_intro() -> np.ndarray:
     room_len = total - t_black
     r = tile(room, room_len)
     close_at = int((t_real - t_black) * sk.SR)
-    closed = sk.spec_shape(r[:, 0], lambda f: sk.shelf(f, 420, -20, 1.0))
+    closed = sk.spec_shape(r[:, 0], lambda f: sk.shelf(f, 420, -22, 1.0))
     closed = np.stack([closed, closed], axis=1)
     blend = np.clip((np.arange(len(r)) - close_at) / (1.5 * sk.SR), 0, 1)[:, None]
     r = r * (1 - blend) + closed * blend
@@ -147,23 +157,26 @@ def build_intro() -> np.ndarray:
     dev_len = total - t_deg
     d = tile(dev, dev_len)
     w = tile(worn, dev_len)
-    rise = np.clip((np.arange(dev_len * 0 + len(d)) / sk.SR) / (t_swap - t_deg), 0, 1) ** 1.4
+    rise = np.clip((np.arange(len(d)) / sk.SR) / (t_swap - t_deg), 0, 1) ** 1.4
     decay = np.clip(((np.arange(len(d)) / sk.SR) - (t_run - t_deg)) / 8.0, 0, 1)
     co, ci = np.cos(decay * np.pi / 2), np.sin(decay * np.pi / 2)
     lay(mix, d * (rise * co)[:, None] + w * (rise * ci)[:, None], t_deg, 1.0)
 
     # 節目の一撃
-    lay(mix, load("sfx_title_in"), 0.4)
-    lay(mix, load("sfx_title_out"), title_sec)
-    lay(mix, load("sfx_seal_close"), t_real - 0.35)
+    lay(mix, load("sfx_title_in"), t_a)          # ⚠ 尾は 12 秒。題字が消えた後も鳴り続ける
+    lay(mix, load("sfx_title_out"), t_glyph_out)
+    lay(mix, load("amb_bell"), t_black + 6.0)    # 段 0 に 1 回だけ
+    lay(mix, load("amb_creak_1"), t_black + 2.4)
+    lay(mix, load("amb_creak_2"), t_run + 6.8)
+    lay(mix, load("sfx_seal_close"), t_real - 0.9)
     lay(mix, load("sfx_shatter"), t_frame + FRAME * 0.30)
     lay(mix, load("sfx_swap"), t_swap)
     for k, at in enumerate((t_run + 2.2, t_run + 5.6, t_run + 8.4)):
         lay(mix, load(f"sfx_switch_{k + 1}"), at, 0.9)
 
-    print(f"  段の頭（秒）: タイトル 0.0 / 箱の外 {t_black:.1f} / 現実 {t_real:.1f} / "
-          f"格下げ {t_deg:.1f} / 構造 {t_str:.1f} / 枠 {t_frame:.1f} / すり替え {t_swap:.1f} / "
-          f"本編 {t_run:.1f}")
+    print(f"  真っ暗 0.0 / A {t_a:.1f} / 題字が消え始める {t_glyph_out:.1f} / "
+          f"箱の外 {t_black:.1f} / 隔離が閉じる {t_real:.1f} / 格下げ {t_deg:.1f} / "
+          f"枠 {t_frame:.1f} / すり替え {t_swap:.1f} / 本編 {t_run:.1f}")
     return mix
 
 
