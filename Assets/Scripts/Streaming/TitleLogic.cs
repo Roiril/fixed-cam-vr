@@ -120,8 +120,12 @@ namespace FixedCamVr.Streaming
         /// <summary>光が走ってから字が焼け始めるまで。</summary>
         public const float DissolveDelaySec = 0.20f;
 
-        /// <summary>字が焼け切るまで。</summary>
-        public const float DissolveSec = 1.15f;
+        /// <summary>
+        /// 字が焼け切るまで。
+        /// ⚠ **1.15 → 1.40 にした**（2026-08-13）。渦を強くした（中心 300°）ので、
+        /// 短いと巻き込みが読めるより先に焼け終わる。**尺は渦が要求している**。
+        /// </summary>
+        public const float DissolveSec = 1.40f;
 
         /// <summary>黒が開き切るまで（クロスフェード）。</summary>
         public const float OpenSec = 1.25f;
@@ -324,7 +328,8 @@ namespace FixedCamVr.Streaming
                         float open = _opening ? Clamp01(_openElapsed / OpenSec) : 0f;
                         float f = Clamp01(_elapsed / FlashSec);
                         // 渦は**押した瞬間から**進む（焼けより先に歪み始めてから火が回る）。
-                        // 二乗なのは、頭で急にねじれると「UI がアニメーションした」に見えるため。
+                        // 頭で急にねじれると「UI がアニメーションした」に見えるので溜めるが、
+                        // 溜めすぎると**墨が残っているうちに渦が読めない**（二乗だと遅すぎた）。
                         float s = Clamp01(_elapsed / (DissolveDelaySec + DissolveSec));
                         return new TitleWeights
                         {
@@ -338,7 +343,8 @@ namespace FixedCamVr.Streaming
                             //    4 割に集まり、火が一瞬で走り抜けて「焼けた」ではなく「消えた」になる
                             //    （2026-08-13 実測）。焼け際は一定の速さで進むのが正しい。
                             dissolve = d,
-                            swirl = s * s,
+                            // ≒ s^1.6（s*s だと巻き込みの 8 割が最後の 3 割に寄る）。
+                            swirl = s * s * (1.5f - 0.5f * s),
                             flashPos = f,
                             flashAmt = Bump(f),
                             // 押した手応えだけ。**奥へは退かない**（退くと「箱に吸い込まれた」に見える）。

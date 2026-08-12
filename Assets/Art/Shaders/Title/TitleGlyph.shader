@@ -82,11 +82,38 @@ Shader "FixedCamVr/TitleGlyph"
             // ---- 渦（閉じるときだけ効く）--------------------------------------------
             // 中心の最大ねじれ (rad)。外周は TWIST_RIM 倍しか回らないので、
             // **板が回る**のではなく**字が中心へ巻き込まれる**に見える。
-            #define TWIST_RAD 2.10
-            #define TWIST_RIM 0.28
-            // 中心へ寄る量。1 - PULL が最終の大きさ（0.62 ＝ 4 割縮む）。
+            //
+            // ⚠ **差を大きく取らないと渦に見えない。** 2026-08-13 に 2.10 / 0.28（中心 120°・
+            //    外周 34°）で出したら「回して縮めた」としか読めなかった。版が 2:1 で横に広いので、
+            //    中心と外周の差が小さいと剛体の回転として補完される。いまは 300° 対 30°。
+            #define TWIST_RAD 5.20
+            #define TWIST_RIM 0.10
+            // 中心へ寄る量。1 - PULL が最終の大きさ（0.48 ＝ 半分になる）。
             // ⚠ 0 へ潰さない。点まで縮めると結局「吸い込まれた」になる。
-            #define PULL_AMT 0.38
+            #define PULL_AMT 0.52
+
+            // ---- 引き延ばし ---------------------------------------------------------
+            // **渦の道筋を遡って重ねる** ＝ 墨が通ってきた跡がそのまま尾になる。
+            // 方向を決め打ちしたブラーではないので、尾は必ず渦に沿って曲がる。
+            // ⚠ 渦が止まっている間（`_Swirl` が 0）は 1 タップへ落ちる。段 0〜Hold で
+            //    6 タップ払う理由が無いし、分岐は画面全体で揃うので実質ただ。
+            #define SMEAR_TAPS 10
+            // ⚠⚠ **尾の長さは「角度」で決める。渦の進みの割合で決めない。**
+            //    割合にすると渦が進むほど 1 タップあたりの角度が開き、尾が
+            //    **櫛（コマ落ちしたモーションブラー）に見える**（2026-08-13 実測。6 タップ・
+            //    割合 0.62 で、0.6 秒の絵に字の複製が梯子状に並んだ）。
+            //    角度で決めれば刻みは常に SMEAR_ARC / (SMEAR_TAPS-1) で一定。
+            //
+            // ⚠⚠ **それでもタップの刻みは見える。** 明朝の横画は数画素しか無いので、
+            //    刻み（実測 12px）が線の太さを超えると**複製が梯子状に並ぶ**。
+            //    タップを増やすのは払えない（3 層 × 全画面で texel 帯域が 2 倍になる）ので、
+            //    **画素ごとにタップ位置をずらして刻みを雑音へ散らす**。
+            //    燃えているものの尾なので、雑音は主題に合う（灰と熾の粒が既に居る）。
+            #define SMEAR_ARC 0.34
+            // 割合の上限。渦が浅いうち（外周・頭）に尾が伸びすぎないための蓋。
+            #define SMEAR_SPAN 0.62
+            // 尾の端の濃さ。
+            #define SMEAR_TAIL 0.18
 
             // ---- 焼け ---------------------------------------------------------------
             // 焼ける順に混ぜる半径の比。**外周から焼けて中心が最後に残る**。
@@ -185,6 +212,25 @@ Shader "FixedCamVr/TitleGlyph"
                 return saturate((mix - ORDER_LO) / (ORDER_HI - ORDER_LO));
             }
 
+            /// <summary>
+            /// 渦の進みが <paramref name="amt"/> のとき、この画素へ来る版の座標。
+            /// <b>回してから中心へ寄せる</b>（順序を入れ替えると尾が渦に沿わない）。
+            /// </summary>
+            float2 WarpAt(float2 pOut, float2 aspect, float twist, float amt)
+            {
+                float sa, ca;
+                sincos(twist * amt, sa, ca);
+                float2 p = float2(ca * pOut.x - sa * pOut.y, sa * pOut.x + ca * pOut.y);
+                // 外から引いてくる ＝ 描かれる版が中心へ縮む。
+                p /= max(1.0 - PULL_AMT * amt, 0.2);
+                return p / aspect + 0.5;
+            }
+
+            float InArt(float2 uv)
+            {
+                return step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+            }
+
             half4 frag(Varyings i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
@@ -195,43 +241,66 @@ Shader "FixedCamVr/TitleGlyph"
                 float sw = saturate(_Swirl);
                 float burning = step(0.003, _Dissolve);
 
-                // ---- 渦。**版の中で**中心へ寄せてねじる（奥行きは動かさない）----
-                // 縦横比を戻してから回す。戻さないと渦が楕円になり、字が横へ流れて見える。
-                float2 aspect = float2(max(_ArtAspect, 0.01), 1.0);
-                float2 p = (i.uv - 0.5) * aspect;
-                float radius = length(p);
-                // 中心ほど強くねじる。外周にも TWIST_RIM だけ残すのは、
-                // 縁が 1 枚も動かないと「版の内側だけがぐるぐるしている」に見えるため。
-                float fall = exp(-radius * radius * 1.7);
-                float ang = TWIST_RAD * sw * (TWIST_RIM + (1.0 - TWIST_RIM) * fall);
-                float sa, ca;
-                sincos(ang, sa, ca);
-                p = float2(ca * p.x - sa * p.y, sa * p.x + ca * p.y);
-                // 外から引いてくる ＝ 描かれる版が中心へ縮む。
-                p /= max(1.0 - PULL_AMT * sw, 0.2);
-                float2 wuv = p / aspect + 0.5;
-                // 版の外を引きに行った所は空。Clamp の縁を引き伸ばさないよう明示的に切る。
-                float inArt = step(0.0, wuv.x) * step(wuv.x, 1.0)
-                            * step(0.0, wuv.y) * step(wuv.y, 1.0);
-
-                float4 t = SAMPLE_TEXTURE2D(_Art, sampler_Art, wuv);
-                float ink = LayerInk(t, i.color.rgb) * inArt;
-                if (ink <= 0.003 && burning <= 0.0) return half4(0, 0, 0, 0);
-
-                // ---- 出現。下から墨が満ちていく ----
-                float wipe = smoothstep(wuv.y - 0.32, wuv.y + 0.12, _Reveal * 1.42);
-
-                // ---- 焼ける。外周から中心へ食う。際に熾が乗り、内側に焦げが残る ----
+                // ---- 焼ける量。渦より先に要る（尾のタップも同じ火で切るため）----
                 // ⚠ **d は 0 のとき負でなければならない。** 焼ける順は外周で 0 まで落ちるので、
                 //    d=0 を素で使うと際の幅ぶん**火が点く前から払いの先が欠ける**。
                 //    1.10 倍は、際に幅があるぶん d=1 で中心まで焼き切るため。
                 float d = saturate(_Dissolve) * 1.10 - 0.05;
+
+                // ---- 渦。**版の中で**中心へ寄せてねじる（奥行きは動かさない）----
+                // 縦横比を戻してから回す。戻さないと渦が楕円になり、字が横へ流れて見える。
+                float2 aspect = float2(max(_ArtAspect, 0.01), 1.0);
+                float2 pOut = (i.uv - 0.5) * aspect;
+                float radius = length(pOut);
+                // 中心ほど強くねじる。外周にも TWIST_RIM だけ残すのは、
+                // 縁が 1 枚も動かないと「版の内側だけがぐるぐるしている」に見えるため。
+                float fall = exp(-radius * radius * 1.7);
+                float twist = TWIST_RAD * (TWIST_RIM + (1.0 - TWIST_RIM) * fall);
+
+                float2 wuv = WarpAt(pOut, aspect, twist, sw);
+                // 版の外を引きに行った所は空。Clamp の縁を引き伸ばさないよう明示的に切る。
+                float inArt = InArt(wuv);
+
+                float4 t = SAMPLE_TEXTURE2D(_Art, sampler_Art, wuv);
+                float ink = LayerInk(t, i.color.rgb) * inArt;
+
+                // ---- 焼ける。外周から中心へ食う。際に熾が乗り、内側に焦げが残る ----
                 float order = BurnOrder(radius, t.b);
                 float e = order - d;                                   // >0 = まだ焼けていない
                 // 1 = 墨が残っている。**火が無いときは必ず 1**（上と同じ理由の二重の堰）。
                 float left = lerp(1.0, smoothstep(FRONT_IN, FRONT_OUT, e), burning);
                 float charAmt = (1.0 - smoothstep(0.0, CHAR_W, e)) * burning;
                 float ember = exp(-(e / EMBER_W) * (e / EMBER_W)) * burning;
+
+                // ---- 引き延ばし。渦の道筋を遡って重ねる ----
+                // ⚠ **尾も同じ火で切る**（`leftj`）。切らないと、焼け落ちた所に
+                //    墨の残像だけが取り残されて「消し忘れ」に見える。
+                float shape = ink * left;
+                if (sw > 0.001)
+                {
+                    // 尾の長さ（渦の進み amt での距離）。角度が一定になる側を採り、
+                    // 渦が浅いところでは割合の蓋で抑える。
+                    float span = min(SMEAR_ARC / max(twist, 0.35), sw * SMEAR_SPAN);
+                    // 画素ごとの位相。これが無いと刻みが梯子として見える。
+                    float jit = Hash21(floor(i.uv * float2(2048.0, 1024.0)));
+                    [unroll]
+                    for (int j = 1; j < SMEAR_TAPS; j++)
+                    {
+                        // 0 = 先頭 / 1 = 尾の端。位相ぶんずらす。
+                        float k = ((float)j - jit) / (float)(SMEAR_TAPS - 1);
+                        float2 uvj = WarpAt(pOut, aspect, twist, sw - span * k);
+                        float4 tj = SAMPLE_TEXTURE2D(_Art, sampler_Art, uvj);
+                        float inkj = LayerInk(tj, i.color.rgb) * InArt(uvj);
+                        float leftj = lerp(1.0, smoothstep(FRONT_IN, FRONT_OUT,
+                                                           BurnOrder(radius, tj.b) - d), burning);
+                        // ⚠ 足さずに **max**。重なった所だけ濃くなると、尾ではなく塊に見える。
+                        shape = max(shape, inkj * leftj * (1.0 - k * (1.0 - SMEAR_TAIL)));
+                    }
+                }
+                if (shape <= 0.003 && burning <= 0.0) return half4(0, 0, 0, 0);
+
+                // ---- 出現。下から墨が満ちていく ----
+                float wipe = smoothstep(wuv.y - 0.32, wuv.y + 0.12, _Reveal * 1.42);
 
                 // ---- 灰。焼けた所から少し上へ流れて消える ----
                 // 元の墨は下にあるので、**下から引いて**上に出す（1 タップ余分に払う）。
@@ -268,10 +337,15 @@ Shader "FixedCamVr/TitleGlyph"
                 rgb = lerp(rgb, _CharColor.rgb, charAmt * 0.92);
                 rgb += _GlowColor.rgb * (flash * 1.6 + ember * EMBER_GAIN);
 
+                // 尾は**焦がして**引く。素の墨のまま伸ばすと、燃えているものの跡ではなく
+                // 「motion blur が掛かった文字」に見える。
+                float tail = saturate((shape - ink * left) * 1.8);
+                rgb = lerp(rgb, lerp(_CharColor.rgb, _GlowColor.rgb, 0.30), tail * 0.65);
+
                 // 焼けたばかりの灰はまだ熾を含む。冷めるほど灰の色へ寄る。
                 float3 ashRgb = lerp(_GlowColor.rgb * 1.1, _AshColor.rgb, saturate(aAge * 1.6));
 
-                float aInkA = ink * wipe * left * op;
+                float aInkA = shape * wipe * op;
                 float aAshA = ash * wipe * op * 0.9;
                 float alpha = saturate(aInkA + aAshA);
                 if (alpha <= 0.002) return half4(0, 0, 0, 0);

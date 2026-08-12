@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: af5a556b-6b30-4a77-84ea-1e6cea94b69a
-  modified: 2026-08-12T15:20:53.699Z
+  modified: 2026-08-12T15:31:30.457Z
 ---
 
 # タイトル画面「廻リ視」を触る前に
@@ -106,9 +106,18 @@ Registration の A（点サンプル）は不変。入力面は右手 4 入力�
 
 | 何 | どこ |
 |---|---|
-| 渦の進み `swirl`（押した瞬間から二乗で 0→1） | `TitleLogic.Weights` の Out |
-| ねじりと中心寄せ | `TitleGlyph.shader` の `TWIST_RAD` / `TWIST_RIM` / `PULL_AMT` |
+| 渦の進み `swirl`（押した瞬間から ≒ s^1.6 で 0→1） | `TitleLogic.Weights` の Out |
+| ねじりと中心寄せ | `TitleGlyph.shader` の `TWIST_RAD`(300°) / `TWIST_RIM`(30°) / `PULL_AMT` |
+| 引き延ばし（渦の道筋を遡って重ねる） | 同 `SMEAR_*` |
 | 焼ける順・焦げ・熾・灰 | 同 `BurnOrder` / `CHAR_W` / `EMBER_W` / `ASH_*` |
+
+⚠ **中心と外周の差を大きく取らないと渦に見えない。** 版が 2:1 で横に広いので、
+差が小さいと剛体の回転として補完される（120° 対 34° は「回して縮めた」としか読めなかった）。
+
+⚠⚠ **尾の長さは「角度」で決める。渦の進みの割合で決めない**（`SMEAR_ARC`）。
+割合だと渦が進むほど 1 タップの角度が開き、**字の複製が梯子状に並ぶ**。
+⚠ 角度で揃えても刻みは残る（明朝の横画は数画素）。**画素ごとにタップ位置をずらして雑音へ散らす**。
+タップを増やす方は払えない — 3 層 × 全画面なので texel 帯域が線形に効く（いまで 30 タップ/画素）。
 
 ⚠ **奥行きに負の値を積まない。** `pushM` は押した瞬間の 0.06m の山だけ。
 `TitleLogicTests.Push_MovesTowardTheViewer_AndNeverRecedes` が全フレームで固定している。

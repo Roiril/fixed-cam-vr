@@ -93,13 +93,13 @@ namespace FixedCamVr.Streaming.EditorTools
             TitleLogic outLogic = Summoned();
             Advance(outLogic, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f);
             outLogic.RequestDismiss();
-            // ⚠ <b>StepTo は「そこから何秒進めるか」</b>。閉じる演出は 1.35 秒しか無いので、
+            // ⚠ <b>StepTo は「そこから何秒進めるか」</b>。閉じる演出は 1.60 秒しか無いので、
             //    累計が超えると段が Done へ抜けて**真っ白な絵を撮ることになる**（前はそうなっていた）。
             //    括弧内は A からの通算。
             Shot(cam, title, StepTo(outLogic, 0.18f), 0f, "out_flash");       // 0.18 閃光
-            Shot(cam, title, StepTo(outLogic, 0.32f), 0f, "out_burn_early");  // 0.50 外周に火が回る
-            Shot(cam, title, StepTo(outLogic, 0.40f), 0f, "out_burn_mid");    // 0.90 巻き込みと焦げ
-            Shot(cam, title, StepTo(outLogic, 0.30f), 0f, "out_ash");         // 1.20 灰だけ
+            Shot(cam, title, StepTo(outLogic, 0.42f), 0f, "out_burn_early");  // 0.60 外周に火が回る
+            Shot(cam, title, StepTo(outLogic, 0.45f), 0f, "out_burn_mid");    // 1.05 引き延ばしと渦
+            Shot(cam, title, StepTo(outLogic, 0.40f), 0f, "out_ash");         // 1.45 灰だけ
             Shot(cam, title, TitleWeights.Hidden, 0f, "done");
 
             Sequence(cam, title, box);

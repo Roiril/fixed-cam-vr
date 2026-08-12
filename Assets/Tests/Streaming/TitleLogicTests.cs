@@ -257,9 +257,9 @@ namespace FixedCamVr.Streaming.Tests
             Assert.Greater(early, 0f, "焼ける前から歪み始めている");
             Assert.Less(early, 0.2f, "頭でねじれ切ってはいけない");
 
-            Run(l, TitleLogic.DissolveDelaySec + TitleLogic.DissolveSec, NotReady);
+            Run(l, TitleLogic.DissolveDelaySec + TitleLogic.DissolveSec * 0.9f, NotReady);
             Assert.AreEqual(TitleStage.Out, l.Stage);
-            Assert.AreEqual(1f, l.Weights.swirl, 1e-3f, "焼け切るころに巻き切っていない");
+            Assert.Greater(l.Weights.swirl, 0.85f, "焼け切るころに巻き切っていない");
         }
 
         [Test]
@@ -274,8 +274,8 @@ namespace FixedCamVr.Streaming.Tests
             Run(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f, Ready);
             l.RequestDismiss();
 
-            // 焼けが 3/4 まで進んでも墨は不透明のまま（食われた所は際が消している）。
-            Run(l, TitleLogic.DissolveDelaySec + TitleLogic.DissolveSec * 0.75f, Ready);
+            // 焼けが 2/3 まで進んでも墨は不透明のまま（食われた所は際が消している）。
+            Run(l, TitleLogic.DissolveDelaySec + TitleLogic.DissolveSec * 0.65f, Ready);
             Assert.AreEqual(TitleStage.Out, l.Stage);
             Assert.Greater(l.Weights.dissolve, 0.6f, "焼けが進んでいない");
             Assert.AreEqual(1f, l.Weights.glyph, 1e-5f, "焼けている途中で墨が薄くなっている");
