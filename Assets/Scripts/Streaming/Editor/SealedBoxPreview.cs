@@ -33,9 +33,14 @@ namespace FixedCamVr.Streaming.EditorTools
         private const int WaveFrames = 120;
         private const float WaveDt = 1f / 12f;
 
-        /// <summary>箱の寸法 (m)。show.json の床（1.8 四方）＋ 隔離の余白 0.6 と同じ既定。</summary>
-        private const float BoxW = 3.0f;
-        private const float BoxD = 3.0f;
+        /// <summary>
+        /// 箱の寸法 (m)。<b>show.json の床そのもの</b>（歩ける範囲 1.8 四方・
+        /// <c>ContainmentShellLogic.FloorMarginM</c> は 0）。
+        /// ⚠ **実行時の寸法と揃える**。ここだけ古い値（3.0）のままだと、
+        /// 絵の中の六角の粗さ・線の太さ・光の走る速さが実機と全部ずれる。
+        /// </summary>
+        private const float BoxW = 1.8f;
+        private const float BoxD = 1.8f;
         private const float BoxH = 2.4f;
 
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Sealed Box", priority = 236)]
@@ -78,13 +83,27 @@ namespace FixedCamVr.Streaming.EditorTools
             cam.farClipPlane = 50f;
 
             // 立って見た 3 通り。近い順に「気づく → 近づく → 触れそう」。
-            Shot(cam, "far", new Vector3(0f, 1.6f, -3.6f), new Vector3(0f, 1.1f, 0f));
-            Shot(cam, "near", new Vector3(1.4f, 1.6f, -2.6f), new Vector3(0f, 1.2f, 0f));
-            Shot(cam, "surface", new Vector3(0.4f, 1.5f, -2.0f), new Vector3(0.3f, 1.5f, -1.5f));
+            // ⚠⚠ **`far` は「箱が画面に収まる距離」から決める。武装距離から決めない**（2026-08-12 実測）。
+            //    武装に要るのは矩形の外 1.35m だが、そこは**面までが 1.35m しかない**。
+            //    箱は高さ 2.4m・目線 1.6m なので上下の見かけは 80° になり、画角 60° に入らない
+            //    ＝ 面が画面を埋めて「箱が大きすぎて分からない」を絵の側で再現してしまう。
+            //    収めるには面まで 1.6/tan(30°) = 2.8m 要る。
+            // ⚠ **これは絵の都合であって、現場の立ち位置ではない。** 実際の体験者は武装距離に居るので、
+            //    箱は視界を埋める。「1 個の物として読めるか」は `far`、「近づいたときの圧」は `near`。
+            float half = BoxW * 0.5f;
+            float eye = 1.6f;
+            float fit = eye / Mathf.Tan(30f * Mathf.Deg2Rad);   // 上下が画角に収まる、面までの距離
+            Shot(cam, "far", new Vector3(0f, eye, -(half + fit)), new Vector3(0f, BoxH * 0.45f, 0f));
+            Shot(cam, "near", new Vector3(half * 0.8f, eye, -(half + 1.35f)), new Vector3(0f, 1.2f, 0f));
+            Shot(cam, "surface", new Vector3(0.25f, 1.5f, -(half + 0.35f)), new Vector3(0.2f, 1.5f, -half));
             // 継ぎ目を見るための 2 枚。**角と天面の縁は模様が繋がるかどうかの本題**なので、
             // 正面から撮った絵だけでは判定できない。
-            Shot(cam, "corner", new Vector3(3.4f, 1.6f, -3.4f), new Vector3(1.5f, 1.1f, -1.5f));
-            Shot(cam, "topedge", new Vector3(0.6f, 1.6f, -2.4f), new Vector3(0.2f, 2.4f, -1.4f));
+            Shot(cam, "corner", new Vector3(half + fit * 0.8f, eye, -(half + fit * 0.8f)),
+                 new Vector3(half * 0.5f, BoxH * 0.45f, -half * 0.5f));
+            // ⚠ 天面と側面の継ぎ目は、**目線 1.6m では高さ 2.4m の箱の上が見えない**。
+            //    見上げるのではなく、少し離れて上を向く（現場でも人はこう見る）。
+            Shot(cam, "topedge", new Vector3(0.35f, eye, -(half + 1.2f)),
+                 new Vector3(0.15f, BoxH + 0.15f, -half * 0.6f));
 
             // ⚠ **静止画では光の走りを判定できない。** 連番を出して動画にする
             //    （`_PhaseSec` を進める — Edit Mode では `_Time` が走らない）。

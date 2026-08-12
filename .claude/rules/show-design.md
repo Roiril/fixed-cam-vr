@@ -308,7 +308,7 @@ course 変換そのものが変わるので、**前の座標系で満たした�
 
 | 箱 | 出どころ |
 |---|---|
-| 床の板 | `layout.floor` ＋ 余白 `FloorMarginM` = 0.6m（既定値のままの床が実際の歩行範囲より狭いため） |
+| 床の板 | `layout.floor`（＝ 歩ける範囲そのもの。**余白 `FloorMarginM` は 0**） |
 | 実物の壁・箱 | `layout.room` を `ShowRoomProxyLogic.Build` で起こし `BoxInflateM` = 0.08m 膨らませたもの |
 
 ⚠⚠ **全画面で「視線 × 箱」の交差を解いてはいけない。** 最初そう書いて、除算が画素あたり数十回入り
