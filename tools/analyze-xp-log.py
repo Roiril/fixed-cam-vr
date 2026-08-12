@@ -146,6 +146,14 @@ STEP_SKIP_REASONS = {
 }
 
 
+def fstr(v):
+    """観測値を float にする。`-`（シーンに居ない）等は None で返す。"""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def effect_samples(events, key: str, t_from: float = None, t_to: float = None):
     """ev=intro / ev=sum が持つ「効果の実在」キーの値列を、時間窓で切って返す。
 
@@ -882,6 +890,102 @@ def analyze(events, others, exp, warns=None):
             else:
                 verdict("OK", f"位置合わせに {len(reg)} 回入り、いずれもパススルーが有効だった")
         w()
+
+    # ---------------- 音（鳴ったか）----------------
+    # ⚠⚠ **音は録画に映らない。** 画は `quest-record.py` が撮って人が開けば分かるが、
+    #    音は実機で被って聴く以外に確かめる手段が無い（しかもこの作業をしているシュビーは
+    #    耳が聞こえない）。だから**ログが唯一の証拠**で、ここが緑でなければ音は無い。
+    #    観測の出どころは C# の `ShowSoundDirector` / `ShowTelemetryHost`。
+    #    **片方だけ直すと沈黙して食い違う**ので、キーを足すときは対で直すこと。
+    w("## 音（鳴ったか）")
+    sfx_events = [e for e in events if e.get("ev") == "sfx"]
+    built = effect_samples(events, "sndBuilt")
+    aud = effect_samples(events, "sndAud")
+    lpf = effect_samples(events, "sndLpf")
+    sw_n = effect_samples(events, "swN")
+
+    if not built and not sfx_events:
+        w("  音の観測キーが 1 つも無い（この計装より前のビルドのログ）")
+        verdict("WARN", "音を観測していないビルドのログ — 鳴っていたかどうかが分からない。"
+                        "`tools/unity.ps1 menu scene` で [Sound] を焼き直したか確認する")
+    else:
+        # -- 音源を掴めたか（掴めていなければ以降は全部無意味）
+        miss = 0
+        for b in built:
+            try:
+                miss = max(miss, int(str(b).split("/", 1)[1]))
+            except (IndexError, ValueError):
+                pass
+        if built:
+            w(f"  音源: {built[-1]}（掴めた/掴めなかった）")
+            if miss > 0:
+                verdict("FAIL", f"音源を {miss} 本掴めていない — 該当の節目は完全に無音。"
+                                "`py -3.11 tools/make-sounds.py` を走らせ "
+                                "`tools/unity.ps1 menu sound-import` で取り込み直す")
+            else:
+                verdict("OK", "音源はすべて掴めている")
+
+        # -- **実際に音量を書いたか。** 指示がいくら正しくてもここが 0 なら無音
+        if aud:
+            vals = [fstr(a) for a in aud]
+            vals = [v for v in vals if v is not None]
+            peak = max(vals) if vals else 0.0
+            w(f"  鳴っていた音量の最大: {peak:.2f}（敷く音の合計）")
+            if peak < 0.01:
+                verdict("FAIL", "走行中ずっと音量が 0 だった — 音は 1 度も出ていない。"
+                                "[Sound] がシーンに焼かれているか見る "
+                                "(grep で m_Name: '[Sound]' を Assets/Scenes/Main.unity から探す)")
+            else:
+                verdict("OK", f"敷く音が鳴っていた（最大 {peak:.2f}）")
+
+        # -- 隔離が**音にも**出たか（部屋の帯域が閉じたか）
+        if lpf:
+            vals = [fstr(x) for x in lpf]
+            vals = [v for v in vals if v is not None]
+            if vals:
+                w(f"  部屋の帯域: {min(vals):.1f}kHz 〜 {max(vals):.1f}kHz")
+                if max(vals) - min(vals) < 1.0:
+                    verdict("WARN", "部屋の帯域が動いていない — 隔離が閉じても音が変わっていない"
+                                    "（導入まで走らなかった走行なら正常）")
+                else:
+                    verdict("OK", "隔離が閉じたときに部屋の帯域が狭まっている")
+
+        # -- 節目の一撃
+        by_id = {}
+        for e in sfx_events:
+            by_id[str(e.get("id", "?"))] = by_id.get(str(e.get("id", "?")), 0) + 1
+        if by_id:
+            w("  節目の音: " + " / ".join(f"{k}×{v}" for k, v in sorted(by_id.items())))
+        if "MISSING" in by_id:
+            verdict("FAIL", "音源が見つからない節目がある（ev=sfx id=MISSING）")
+
+        # 導入まで走ったなら、3 つの山は必ず鳴っているはず
+        intro_ran = any(e.get("stage") == "Swap" for e in intro)
+        if intro_ran:
+            for want, label in (("SealClose", "隔離が閉じる"), ("Shatter", "割れる"),
+                                ("Swap", "装置が点く")):
+                if by_id.get(want, 0) == 0:
+                    verdict("FAIL", f"導入は段 Swap まで進んだのに「{label}」の音が鳴っていない"
+                                    f"（ev=sfx id={want} が 0 本）")
+            if all(by_id.get(k, 0) > 0 for k in ("SealClose", "Shatter", "Swap")):
+                verdict("OK", "導入の 3 つの山が全部鳴った")
+
+        # -- カメラ切替の音（1 回の体験でいちばん多く鳴る音）
+        if sw_n:
+            last = str(sw_n[-1])
+            if last == "nc":
+                verdict("FAIL", "切替音の音源が無い — カメラ切替がすべて無音。"
+                                "Resources/Sound/sfx_switch_1..3 を焼く")
+            elif last != "-":
+                zone_switches = len([e for e in events if e.get("ev") == "screen"])
+                w(f"  カメラ切替の音: {last} 回（画面の切替 {zone_switches} 回）")
+                try:
+                    if int(last) == 0 and zone_switches > 0:
+                        verdict("FAIL", f"画面は {zone_switches} 回切り替わったのに切替音が 0 回")
+                    elif int(last) > 0:
+                        verdict("OK", f"切替音が {last} 回鳴った")
+                except ValueError:
+                    pass
 
     # ---------------- 効果の実在 ----------------
     # 「段が進んだ」「演出が走った」は、画・音に何かが出たことを意味しない。

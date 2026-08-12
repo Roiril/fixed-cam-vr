@@ -92,6 +92,10 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',
                                     'Assets/Scripts/Streaming/IntroDirector.cs',
                                     'Assets/Scripts/Streaming/ShowRunDirector.cs') }
+    'sound-import'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.SoundImportSetup.ApplySoundImportSettings'
+                            Desc = '音の取り込み設定を揃える（⚠ 音を焼き直したら必須。正規化・Streaming が混ざると設計した音量が消える）'
+                            Out = $null
+                            Src = @('Assets/Scripts/Streaming/Editor/SoundImportSetup.cs') }
     'actor-prefab'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorPrefabBuilder.Build'
                             Desc = 'humanoid FBX から CG 人形プレハブを作る'
                             Set = 'model=<fbx のパス>'

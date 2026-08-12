@@ -65,17 +65,43 @@ namespace FixedCamVr.Streaming
         private bool _takeOverrideActive;              // 演出が音を占有中か
         private float _laneResumeSec;                  // 占有開始時のレーン再生位置（戻る時に続きから）
 
+        /// <summary>
+        /// フェードの役。**クロスフェードの 2 本は必ず対で In / Out を持つ。**
+        /// 片方でも Solo にすると合成パワーが保たれず、中央で音が凹む。
+        /// </summary>
+        private enum FadeRole
+        {
+            /// <summary>相手が居ない出し入れ。聴感が直線になる形（<see cref="SoundFade.Curve.Perceptual"/>）。</summary>
+            Solo,
+            /// <summary>入ってくる側（<c>sin</c>）。</summary>
+            In,
+            /// <summary>出ていく側（<c>cos</c>）。</summary>
+            Out,
+        }
+
         private struct Voice
         {
             public AudioSource? src;
             public string trackId;
             public float targetVolume;
-            public float fadeRate;      // volume/sec（0 なら即時）
+            public float fadeT;         // 0..1 の進み（**速度ではなく進み**を持つ）
+            public float fadeDur;       // 秒（<=0 なら即時）
+            public float fadeFrom;      // 開始時の音量
+            public FadeRole fadeRole;
             public bool loop;
             public float loopStart;
             public float loopEnd;       // <=0 = 監視しない（クリップ全長）
             public bool stopping;
         }
+
+        /// <summary>
+        /// 演出が引く量（0 = そのまま / 1 = 無音）。<see cref="ShowSoundDirector"/> が毎フレーム書く。
+        /// **一撃の音が鳴った瞬間だけ曲を退かせる**ので、装置の音が必ず前に出る。
+        /// </summary>
+        private float _duck;
+
+        /// <summary>劇伴を引く量を外から与える（0..1）。</summary>
+        public void SetDuck(float duck) => _duck = Mathf.Clamp01(duck);
 
         /// <summary>いま鳴っているトラック id（無音なら空）。</summary>
         public string CurrentTrackId => _cur.src != null && _cur.src.isPlaying ? _cur.trackId : "";
@@ -289,9 +315,8 @@ namespace FixedCamVr.Streaming
             _cur.loopStart = ls;
             _cur.loopEnd = le;
             _cur.loop = def.loop;
-            _cur.targetVolume = Mathf.Clamp01(Pick(def.volume, trackVolume));
-            _cur.fadeRate = FadeRate(_cur.src.volume, _cur.targetVolume,
-                                     def.fadeInSec >= 0f ? def.fadeInSec : defaultFadeSec);
+            BeginFade(ref _cur, Mathf.Clamp01(Pick(def.volume, trackVolume)),
+                      def.fadeInSec >= 0f ? def.fadeInSec : defaultFadeSec, FadeRole.Solo);
             _cur.src.loop = false;   // 範囲監視は Update が行う
         }
 
@@ -328,9 +353,14 @@ namespace FixedCamVr.Streaming
                        volume: Mathf.Clamp01(Pick(def.volume, track.volume)),
                        fadeIn: def.fadeInSec >= 0f ? def.fadeInSec : defaultFadeSec);
             // 直前の系統はフェードアウトさせる（クロスフェード）。
+            // ⚠ **入る側と同じ尺で、対の形（cos / sin）で動かす。** 尺が違うと二乗の和が 1 を割り、
+            //    やはり真ん中で凹む。ここは必ず対にすること。
             if (_prev.src != null && _prev.src.isPlaying)
-                _prev.fadeRate = FadeRate(_prev.src.volume, 0f,
-                                          def.fadeOutSec >= 0f ? def.fadeOutSec : defaultFadeSec);
+            {
+                BeginFade(ref _prev, 0f,
+                          def.fadeOutSec >= 0f ? def.fadeOutSec : defaultFadeSec, FadeRole.Out);
+                _prev.stopping = true;
+            }
         }
 
         private void StartVoice(string trackId, AudioClip clip, float startSec, float loopStart, float loopEnd,
@@ -342,8 +372,7 @@ namespace FixedCamVr.Streaming
             if (old.src != null && old.src.isPlaying)
             {
                 old.stopping = true;
-                old.targetVolume = 0f;
-                old.fadeRate = FadeRate(old.src.volume, 0f, defaultFadeSec);
+                BeginFade(ref old, 0f, defaultFadeSec, FadeRole.Out);
             }
             else if (old.src != null)
             {
@@ -358,12 +387,13 @@ namespace FixedCamVr.Streaming
             src.Stop();
             src.clip = clip;
             src.loop = false;              // ループ範囲は Update が見る（全長ループも同じ経路で扱う）
-            src.volume = fadeIn > 0f ? 0f : Mathf.Clamp01(volume);
+            src.volume = fadeIn > 0f ? 0f : Mathf.Clamp01(volume);   // BeginFade が fadeFrom に読む
             src.time = st;
             src.Play();
             next.trackId = trackId;
-            next.targetVolume = Mathf.Clamp01(volume);
-            next.fadeRate = FadeRate(src.volume, next.targetVolume, fadeIn);
+            // 入る側。前の曲が鳴っていたならクロス（対の形）、鳴っていなかったなら単独の出し入れ。
+            BeginFade(ref next, Mathf.Clamp01(volume), fadeIn,
+                      old.stopping ? FadeRole.In : FadeRole.Solo);
             next.loop = loop;
             next.loopStart = ls;
             next.loopEnd = le;
@@ -381,22 +411,34 @@ namespace FixedCamVr.Streaming
             if (_cur.src != null && _cur.src.isPlaying)
             {
                 _cur.stopping = true;
-                _cur.targetVolume = 0f;
-                _cur.fadeRate = FadeRate(_cur.src.volume, 0f, fadeOutSec);
+                BeginFade(ref _cur, 0f, fadeOutSec, FadeRole.Solo);
                 if (fadeOutSec <= 0f) { _cur.src.Stop(); _cur.src.volume = 0f; }
             }
             if (_prev.src != null && _prev.src.isPlaying)
             {
                 _prev.stopping = true;
-                _prev.targetVolume = 0f;
-                _prev.fadeRate = FadeRate(_prev.src.volume, 0f, fadeOutSec);
+                BeginFade(ref _prev, 0f, fadeOutSec, FadeRole.Solo);
                 if (fadeOutSec <= 0f) { _prev.src.Stop(); _prev.src.volume = 0f; }
             }
             _cur.trackId = "";
         }
 
-        private static float FadeRate(float from, float to, float sec)
-            => sec <= 0f ? 0f : Mathf.Abs(to - from) / Mathf.Max(0.01f, sec);
+        /// <summary>
+        /// フェードを始める。**速度ではなく「何秒で」を持つ**ので、書いたとおりの時間で届く。
+        ///
+        /// ⚠⚠ <b>2026-08-12 まで、ここは振幅を一定速度で動かしていた（`MoveTowards`）。</b>
+        /// 別々の曲を入れ替えるときそれをやると、真ん中の合成パワーが 0.5²+0.5² = 0.5
+        /// ＝ <b>-3.01 dB の谷</b>になる。区間をまたぐたびに音が一瞬引っ込んでいた。
+        /// 形の理屈は <see cref="SoundFade"/>。
+        /// </summary>
+        private static void BeginFade(ref Voice v, float to, float sec, FadeRole role)
+        {
+            v.fadeFrom = v.src != null ? v.src.volume : 0f;
+            v.targetVolume = Mathf.Clamp01(to);
+            v.fadeDur = Mathf.Max(0f, sec);
+            v.fadeT = v.fadeDur <= 0f ? 1f : 0f;
+            v.fadeRole = role;
+        }
 
         private void Update()
         {
@@ -410,14 +452,32 @@ namespace FixedCamVr.Streaming
             var src = v.src;
             if (src == null) return;
 
-            // 音量フェード
-            if (!Mathf.Approximately(src.volume, v.targetVolume))
+            // 音量フェード（進みを進めて、形に通してから書く）
+            if (v.fadeT < 1f)
             {
-                src.volume = v.fadeRate <= 0f
-                    ? v.targetVolume
-                    : Mathf.MoveTowards(src.volume, v.targetVolume, v.fadeRate * dt);
+                v.fadeT = v.fadeDur <= 0f ? 1f : Mathf.Min(1f, v.fadeT + dt / v.fadeDur);
             }
-            if (v.stopping && src.volume <= 0.0001f && src.isPlaying)
+            float lane;
+            switch (v.fadeRole)
+            {
+                case FadeRole.In:
+                    SoundFade.Cross(v.fadeT, out _, out float gin);
+                    lane = v.targetVolume * gin;
+                    break;
+                case FadeRole.Out:
+                    SoundFade.Cross(v.fadeT, out float gout, out _);
+                    lane = v.fadeFrom * gout;
+                    break;
+                default:
+                    lane = Mathf.Lerp(v.fadeFrom, v.targetVolume,
+                                      SoundFade.Gain(v.fadeT, SoundFade.Curve.Perceptual));
+                    break;
+            }
+            // 演出が引いている分をここで掛ける。**レーンの音量そのものは変えない**ので、
+            // 引き終われば必ず元の高さへ戻る（引いた状態が居座る事故を作らない）。
+            src.volume = Mathf.Clamp01(lane * (1f - _duck));
+
+            if (v.stopping && v.fadeT >= 1f && v.targetVolume <= 0.0001f && src.isPlaying)
             {
                 src.Stop();
                 v.stopping = false;
@@ -432,8 +492,7 @@ namespace FixedCamVr.Streaming
                 else
                 {
                     v.stopping = true;
-                    v.targetVolume = 0f;
-                    v.fadeRate = FadeRate(src.volume, 0f, defaultFadeSec);
+                    BeginFade(ref v, 0f, defaultFadeSec, FadeRole.Solo);
                 }
             }
         }

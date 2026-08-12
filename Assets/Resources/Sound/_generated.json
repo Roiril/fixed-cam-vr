@@ -1,0 +1,350 @@
+{
+  "bed_seal": {
+    "sec": 16.0,
+    "true_peak_db": -19.39,
+    "lufs": -32.0,
+    "crest_db": 14.8,
+    "centroid_hz": 653,
+    "bands_db": {
+      "sub": -12.5,
+      "low": -4.2,
+      "mid": -2.5,
+      "high": -48.5,
+      "air": -60.4
+    },
+    "dc": 0.0,
+    "mono_db": 0.0,
+    "speaker_db": -0.8,
+    "loop": true,
+    "mono": true,
+    "seam": {
+      "jump": 1.88,
+      "kink": 0.01,
+      "rms_d_db": 0.72
+    }
+  },
+  "bed_room": {
+    "sec": 20.0,
+    "true_peak_db": -22.57,
+    "lufs": -32.0,
+    "crest_db": 11.8,
+    "centroid_hz": 1325,
+    "bands_db": {
+      "sub": -3.3,
+      "low": -5.0,
+      "mid": -9.1,
+      "high": -10.5,
+      "air": -67.9
+    },
+    "dc": 0.0,
+    "mono_db": -0.28,
+    "speaker_db": -2.7,
+    "loop": true,
+    "mono": false,
+    "seam": {
+      "jump": 0.62,
+      "kink": 0.56,
+      "rms_d_db": -1.18
+    }
+  },
+  "bed_device": {
+    "sec": 12.0,
+    "true_peak_db": -25.36,
+    "lufs": -32.0,
+    "crest_db": 9.4,
+    "centroid_hz": 3155,
+    "bands_db": {
+      "sub": -2.0,
+      "low": -12.1,
+      "mid": -21.2,
+      "high": -5.2,
+      "air": -31.2
+    },
+    "dc": 0.0,
+    "mono_db": -0.03,
+    "speaker_db": -2.6,
+    "loop": true,
+    "mono": false,
+    "seam": {
+      "jump": 1.91,
+      "kink": 0.37,
+      "rms_d_db": 0.0
+    }
+  },
+  "bed_device_worn": {
+    "sec": 12.0,
+    "true_peak_db": -22.01,
+    "lufs": -32.0,
+    "crest_db": 11.8,
+    "centroid_hz": 1629,
+    "bands_db": {
+      "sub": -1.9,
+      "low": -7.7,
+      "mid": -9.2,
+      "high": -11.5,
+      "air": -36.3
+    },
+    "dc": 0.0,
+    "mono_db": -0.05,
+    "speaker_db": -4.0,
+    "loop": true,
+    "mono": false,
+    "seam": {
+      "jump": 0.24,
+      "kink": 0.51,
+      "rms_d_db": -1.41
+    }
+  },
+  "bed_static": {
+    "sec": 6.0,
+    "true_peak_db": -19.0,
+    "lufs": -28.0,
+    "crest_db": 14.1,
+    "centroid_hz": 4583,
+    "bands_db": {
+      "sub": -8.9,
+      "low": -5.9,
+      "mid": -9.3,
+      "high": -6.4,
+      "air": -5.7
+    },
+    "dc": 0.0,
+    "mono_db": -1.54,
+    "speaker_db": -0.7,
+    "loop": true,
+    "mono": false,
+    "seam": {
+      "jump": 0.88,
+      "kink": 1.43,
+      "rms_d_db": -0.25
+    }
+  },
+  "sfx_switch_1": {
+    "sec": 0.14,
+    "true_peak_db": -10.92,
+    "lufs": -23.0,
+    "crest_db": 18.0,
+    "centroid_hz": 3982,
+    "bands_db": {
+      "sub": -32.2,
+      "low": -28.2,
+      "mid": -19.6,
+      "high": -0.1,
+      "air": -17.5
+    },
+    "dc": 0.00011,
+    "mono_db": -0.11,
+    "speaker_db": -0.0,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_switch_2": {
+    "sec": 0.14,
+    "true_peak_db": -8.87,
+    "lufs": -23.0,
+    "crest_db": 19.4,
+    "centroid_hz": 4826,
+    "bands_db": {
+      "sub": -45.0,
+      "low": -30.9,
+      "mid": -15.6,
+      "high": -0.3,
+      "air": -15.5
+    },
+    "dc": 1e-05,
+    "mono_db": -0.14,
+    "speaker_db": -0.0,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_switch_3": {
+    "sec": 0.14,
+    "true_peak_db": -9.26,
+    "lufs": -23.0,
+    "crest_db": 19.6,
+    "centroid_hz": 4720,
+    "bands_db": {
+      "sub": -38.6,
+      "low": -28.2,
+      "mid": -17.4,
+      "high": -0.7,
+      "air": -8.7
+    },
+    "dc": 3e-05,
+    "mono_db": -0.06,
+    "speaker_db": -0.1,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_glitch_1": {
+    "sec": 0.26,
+    "true_peak_db": -7.59,
+    "lufs": -23.0,
+    "crest_db": 19.9,
+    "centroid_hz": 2070,
+    "bands_db": {
+      "sub": -36.8,
+      "low": -12.4,
+      "mid": -0.9,
+      "high": -8.7,
+      "air": -28.7
+    },
+    "dc": 4e-05,
+    "mono_db": -1.59,
+    "speaker_db": -0.1,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_glitch_2": {
+    "sec": 0.26,
+    "true_peak_db": -10.53,
+    "lufs": -23.0,
+    "crest_db": 16.9,
+    "centroid_hz": 2690,
+    "bands_db": {
+      "sub": -28.2,
+      "low": -11.4,
+      "mid": -0.8,
+      "high": -11.1,
+      "air": -19.2
+    },
+    "dc": 0.00016,
+    "mono_db": -1.43,
+    "speaker_db": -0.1,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_glitch_3": {
+    "sec": 0.26,
+    "true_peak_db": -15.18,
+    "lufs": -23.0,
+    "crest_db": 13.8,
+    "centroid_hz": 5933,
+    "bands_db": {
+      "sub": -43.6,
+      "low": -40.8,
+      "mid": -20.5,
+      "high": -2.0,
+      "air": -4.4
+    },
+    "dc": 2e-05,
+    "mono_db": -2.14,
+    "speaker_db": -0.2,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_seal_close": {
+    "sec": 2.4,
+    "true_peak_db": -3.0,
+    "lufs": -17.8,
+    "crest_db": 19.9,
+    "centroid_hz": 1201,
+    "bands_db": {
+      "sub": -5.7,
+      "low": -2.7,
+      "mid": -7.2,
+      "high": -19.5,
+      "air": -41.7
+    },
+    "dc": 0.0003,
+    "mono_db": -0.11,
+    "speaker_db": -6.0,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_shatter": {
+    "sec": 1.9,
+    "true_peak_db": -3.0,
+    "lufs": -14.0,
+    "crest_db": 16.2,
+    "centroid_hz": 3942,
+    "bands_db": {
+      "sub": -37.5,
+      "low": -22.6,
+      "mid": -1.0,
+      "high": -8.6,
+      "air": -12.7
+    },
+    "dc": 2e-05,
+    "mono_db": -0.03,
+    "speaker_db": -0.1,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_swap": {
+    "sec": 1.3,
+    "true_peak_db": -5.0,
+    "lufs": -20.7,
+    "crest_db": 15.8,
+    "centroid_hz": 1994,
+    "bands_db": {
+      "sub": -1.3,
+      "low": -9.0,
+      "mid": -18.5,
+      "high": -9.0,
+      "air": -31.5
+    },
+    "dc": 0.00045,
+    "mono_db": -0.03,
+    "speaker_db": -4.2,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_shell_open": {
+    "sec": 2.0,
+    "true_peak_db": -19.23,
+    "lufs": -26.0,
+    "crest_db": 10.6,
+    "centroid_hz": 951,
+    "bands_db": {
+      "sub": -10.9,
+      "low": -0.8,
+      "mid": -12.8,
+      "high": -15.6,
+      "air": -74.9
+    },
+    "dc": 0.0,
+    "mono_db": -0.04,
+    "speaker_db": -3.0,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_title_in": {
+    "sec": 3.4,
+    "true_peak_db": -4.73,
+    "lufs": -24.0,
+    "crest_db": 19.5,
+    "centroid_hz": 1305,
+    "bands_db": {
+      "sub": -6.7,
+      "low": -22.4,
+      "mid": -1.1,
+      "high": -24.6,
+      "air": -46.6
+    },
+    "dc": 4e-05,
+    "mono_db": -0.15,
+    "speaker_db": -1.4,
+    "loop": false,
+    "mono": false
+  },
+  "sfx_title_out": {
+    "sec": 1.6,
+    "true_peak_db": -14.45,
+    "lufs": -25.0,
+    "crest_db": 13.8,
+    "centroid_hz": 2181,
+    "bands_db": {
+      "sub": -55.3,
+      "low": -35.7,
+      "mid": -0.2,
+      "high": -13.8,
+      "air": -61.0
+    },
+    "dc": 0.0,
+    "mono_db": -0.11,
+    "speaker_db": -0.1,
+    "loop": false,
+    "mono": false
+  }
+}

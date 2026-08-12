@@ -85,6 +85,8 @@ namespace FixedCamVr.Diagnostics
         private ContainmentShell? _shell;
         private SealedBox? _box;
         private BgmDirector? _bgm;
+        private ShowSoundDirector? _sound;
+        private SwitchAudioCue? _switchSfx;
         private ShowCgLayer? _cg;
         private TakeRunner? _takes;
 
@@ -103,6 +105,9 @@ namespace FixedCamVr.Diagnostics
         private string _lastConfig = "";
         private string _lastBgmTrack = "";
         private bool _lastBgmPlaying;
+        private SoundCue _lastSoundCue = SoundCue.None;
+        private int _lastSpotCount;
+        private bool _soundWarned;
 
         // 開いている録画区間。**画面に映っているカメラではなく録画対象の (周, カメラ)** を持つ
         // （演出中は両者が食い違う。旧実装は registry.ActiveIndex を出していて誤りだった）。
@@ -191,6 +196,8 @@ namespace FixedCamVr.Diagnostics
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_cg == null) _cg = FindObjectOfType<ShowCgLayer>();
             if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
+            if (_sound == null) _sound = FindObjectOfType<ShowSoundDirector>();
+            if (_switchSfx == null) _switchSfx = FindObjectOfType<SwitchAudioCue>();
 
             if (!_subTakes && _takes != null)
             {
@@ -349,6 +356,18 @@ namespace FixedCamVr.Diagnostics
         private string ShellBoxState => _shell == null ? "-" : _shell.BoxCount.ToString();
 
         /// <summary>隔離が実物の壁と床を見せているか（0 = 真っ黒）。導入は 0 が正常。</summary>
+        /// <summary>掴めた音源 / 掴めなかった音源。**右が 0 でなければ音は設計どおりに出ていない。**</summary>
+        private string SoundBuiltState =>
+            _sound == null ? "-" : $"{_sound.ClipsResolved}/{_sound.ClipsMissing}";
+
+        /// <summary>いま実際に書いている音量の合計。**0 なら無音**（指示がいくら正しくても）。</summary>
+        private string SoundAudibleState =>
+            _sound == null ? "-" : _sound.AudibleSum.ToString("F2");
+
+        /// <summary>部屋の帯域（kHz）。隔離が閉じると下がる ＝ 隔離の「効果の実在」。</summary>
+        private string SoundCutoffState =>
+            _sound == null ? "-" : (_sound.RoomCutoffHz / 1000f).ToString("F1");
+
         private string ShellRevealState => _shell == null ? "-" : (_shell.Revealing ? "1" : "0");
 
         /// <summary>封印の箱が描かれているか。<c>-</c>=シーンに居ない / 0=非描画 / 1=描画中。</summary>
@@ -474,6 +493,30 @@ namespace FixedCamVr.Diagnostics
                     _lastBgmTrack = trk;
                     _lastBgmPlaying = playing;
                     Emit($"ev=bgm trk={(string.IsNullOrEmpty(trk) ? "-" : trk)} play={(playing ? 1 : 0)}");
+                }
+            }
+
+            // 節目の音。**画と違って録画には映らない**ので、鳴らしたことをログにしか残せない。
+            // ⚠ ここは「鳴らした」であって「聞こえた」ではない。音量 0 でも通る点に注意
+            //    （音量そのものは ev=sum の sndAud が持つ）。
+            if (_sound != null)
+            {
+                int spots = _sound.SpotCount;
+                if (spots != _lastSpotCount || _sound.LastCue != _lastSoundCue)
+                {
+                    if (spots > _lastSpotCount)
+                        Emit($"ev=sfx id={_sound.LastCue} n={spots} " +
+                             $"bed={_sound.Bed.device + _sound.Bed.deviceWorn:F2} " +
+                             $"duck={_sound.Bed.duck:F2}");
+                    _lastSpotCount = spots;
+                    _lastSoundCue = _sound.LastCue;
+                }
+                // 音源を 1 本でも掴めていなければ **1 回だけ** 名指しで言う。
+                // 黙って無音になるのがこの層でいちばん起きやすく、いちばん気づけない壊れ方。
+                if (!_soundWarned && _sound.ClipsMissing > 0)
+                {
+                    _soundWarned = true;
+                    Emit($"ev=sfx id=MISSING n={_sound.ClipsMissing} bed=0.00 duck=0.00");
                 }
             }
 
@@ -650,6 +693,18 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" shatBMesh=").Append(ShatterBoxMesh);
             }
             _sb.Append(" cg=").Append(CgState);
+            // 音は**録画にも映らない**ので、実在の観測はここにしか無い。
+            //   sndBuilt = 掴めた音源 / 掴めなかった音源（0 でなければ設計どおりに鳴っていない）
+            //   sndAud   = いま AudioSource へ書いている音量の合計（**0 なら無音**）
+            //   sndLpf   = 部屋の帯域（隔離が閉じると下がる。隔離の実在の観測）
+            //   sfxN/swN = 一撃と切替の累計
+            _sb.Append(" sndBuilt=").Append(SoundBuiltState);
+            _sb.Append(" sndAud=").Append(SoundAudibleState);
+            _sb.Append(" sndLpf=").Append(SoundCutoffState);
+            _sb.Append(" sfxN=").Append(_sound == null ? "-" : _sound.SpotCount.ToString());
+            _sb.Append(" swN=").Append(_switchSfx == null
+                                       ? "-"
+                                       : (_switchSfx.HasClips ? _switchSfx.PlayedCount.ToString() : "nc"));
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。

@@ -1,0 +1,85 @@
+# 音の作り方と、耳を使わずに判定する道具
+
+**設計の正本は [rules/sound-design.md](../rules/sound-design.md)。** ここは**罠と経緯**だけ。
+
+制定 2026-08-12。それまで音は `HorrBGM.mp3` 1 本で、節目は全部無音だった。
+
+## 置き場と回し方
+
+| 何 | どこ |
+|---|---|
+| 合成の原器（DSP・測定） | `tools/soundkit.py` |
+| 素材を焼く | `tools/make-sounds.py` → `Assets/Resources/Sound/` |
+| 検査（合否＋絵） | `tools/sound-lint.py` → `reports/<日付>_sound.html` / `Assets/Screenshots/sound/` |
+| 人に聴かせる | `tools/sound-preview.py` → `logs/sound/preview_*.wav` |
+| 取り込み設定 | `.\tools\unity.ps1 menu sound-import` |
+| シーンへ焼く | `.\tools\unity.ps1 menu scene`（`[Sound]` が入る） |
+| 判断（純ロジック） | `SoundFade` / `SoundBedLogic` / `SoundCueLogic` ＋ テスト 31 本 |
+| 配線（既存演出に触らない） | `ShowSoundDirector` / `SfxPlayer` / `SwitchAudioCue` |
+| 実機の観測 | `ev=sfx` / `ev=sum` の `sndBuilt` `sndAud` `sndLpf` `sfxN` `swN` |
+
+⚠ **numpy はこの機に入っている**（2.4.6）。`~/.claude/rules/windows-env.md` の
+「numpy は入っていない」は少なくともこの機では古い。scipy と ffmpeg は無い。
+
+## 計器の方が嘘をつく（1 日で 4 回踏んだ）
+
+**音は耳で確かめられないので、数値が唯一の証拠になる。だから計器の誤りは実害に直結する。**
+
+| 何が起きたか | 真因 |
+|---|---|
+| 尖頭 -3dB の素材に **true peak +4.6dB** と出た | 0 を挟んで 4 倍にした信号を**元の 48kHz の係数**で濾していた。20kHz 4 次では 24kHz から始まる像を落とせない → **周波数領域で 0 詰めして戻す**（厳密な帯域制限補間）に変更 |
+| `bed_device_worn` に **直流 0.31** | `tilt()` の `log2(f/hinge)` が f=0 で発散し、直流の桶が **1585 倍**になっていた → 周波数に 20Hz の床を敷き、`spec_shape` が最後に直流を落とす |
+| 敷く音が設計より **+14.7dB** で書かれていた | `write_wav` が**無条件に尖頭を -3dB へ正規化**していて、LUFS で揃えた意味が書き出しで全部消えていた。**合成側の指標だけ見ていると気づけない** → 上限としてだけ効かせる。**書いたファイルを読み直して測る**（`sound-lint.py`）ことでしか捕まらない |
+| `bed_seal` の継ぎ目が「不合格」に見えた | 段差を**信号全体**の隣接標本差と比べていた。低い音が主で時々粒が入る素材は、粒 1 つが欠陥に化ける → **継ぎ目の周りの**隣接標本差で割る |
+
+⚠ **あり得ない値（+4.6dB）だから気づけた。** `+0.5dB` のような「もっともらしい嘘」なら通っていた。
+**計器を足したら、既知の答えが出る入力で 1 度は確かめる。**
+
+## 実機の物理で 4 素材が落ちた
+
+- **内蔵スピーカーは 200Hz より下をほとんど返さない。** 封印の箱は正体を 58/87Hz に置いていて
+  損失 **-18.3dB** ＝ 実機では存在しないのと同じだった。低い基音は「ヘッドホンなら効くボーナス」に
+  降ろし、物としての正体は円板モード（160/313Hz）と熾のはぜ（420-2400Hz）へ移した
+- **遅延で広げるとモノで消える。** `sfx_title_out` は **-11.2dB**。至近距離の 2 スピーカーは
+  空中でほぼ合成されるので、櫛形の谷に当たった帯域は実機で消える →
+  左右に**独立に位相を散らした複製**を混ぜる（`widen`）。無相関の和は -3dB で止まり、谷を作らない
+- **spatializer はモノのクリップしか処理しない。** 3D の音は `mono=True` で焼く
+
+## 実機ログが捕まえた実装の欠陥
+
+**隔離が閉じても部屋の帯域が 22kHz → 9.9kHz までしか下がっていなかった。**
+`Lerp(380, 22000, open^0.45)` は閉じ切った状態（open=0.16）でも 9.9kHz を返す。
+部屋のトーンは中身の大半が 4kHz より下なので、**10kHz の低域通過は何もしないのと同じ**。
+絵は閉じているのに音は開いたまま、という食い違いが実機で起きていた。
+→ **周波数は対数で写す**（`ClosedCutoffHz * (Open/Closed)^open`）。人の音高の知覚は対数なので、
+線形補間は必ず上へ偏る。
+
+## テストが捕まえた実装の欠陥
+
+**平滑化の状態へ分配結果を書き戻していて、周回が進むほど装置の合計が痩せていた**
+（decay 0.2 で合成パワー 0.976）。絵の劣化は正しく進むのに音だけ小さくなるので、
+**実機で聴いても「そういう演出」に見えて気づけない**。合計は別のフィールドで持つ。
+
+## 触るときに引っかかるもの
+
+- **`AudioImporter.normalize` に公開 API が無い**（`.meta` には書いてあるのに）。
+  `SerializedObject` の `m_Normalize` 経由。しかも**効くのは `forceToMono` が立っているときだけ**
+  — `HorrBGM.mp3` は `normalize: 1` だったが `forceToMono: 0` なので**実際には効いていなかった**。
+  **設定ファイルの値だけを見て効いていると決めない**
+- **`AudioImporter.preloadAudioData` は obsolete。** `defaultSampleSettings.preloadAudioData` へ移った
+- **シーン YAML の `[Sound]` は `m_Name: '[Sound]'`**（YAML が `[` で始まる文字列を引用符で括る）。
+  `grep "m_Name: \[Sound\]"` は 0 件になる
+- **`quest-record.py` は APK を入れない。** 焼いたら `adb install -r --no-streaming` を自分で打つ
+  （入れ忘れると `[XP] 0 lines` になり、Development ビルドかどうかを疑って時間を溶かす）
+- **カメラが 1 台も繋がっていない走行では導入が段 Swap まで進まない**
+  （`liveFresh` が false のあいだ段 5 へ行かない＝砂嵐を見せない設計）。
+  `Swap` の音が鳴らないのは正常。**カメラ無しの走行で段 5 の音は検証できない**
+- **`Temp/UnityLockfile` が死骸で残る。** batchmode が途中で落ちると消えない。
+  `Unity.exe` が動いていないことを確かめてから消す（`mcp-for-unity.exe` は無関係）
+
+## 判定の限界
+
+数値と絵は**落とすため**の道具で、「怖いか」「間が持つか」は何も言わない
+（[reference/why.md](../reference/why.md)「品質を採点しない」）。
+音は録画にも映らないので、**最後は人に聴いてもらうしかない** →
+`tools/sound-preview.py` の 2 本を `skills/direction-round` で出す。

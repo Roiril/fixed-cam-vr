@@ -38,6 +38,13 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string IntroDirectorName = "IntroDirector";
         private const string TitleName = "Title";
         private const string BgmName = "[Bgm]";
+        private const string SoundName = "[Sound]";
+
+        /// <summary>音源が焼かれているかの抜き取り検査（全部並べても意味が無いので代表を数本）。</summary>
+        private static readonly string[] SoundProbeResources =
+        {
+            "bed_room", "bed_device", "bed_seal", "sfx_switch_1", "sfx_seal_close", "sfx_shatter",
+        };
         private const string BgmClipPath = "Assets/Art/Audio/HorrBGM.mp3";
         /// <summary>CG 人形だけを置くレイヤ。仮想カメラだけが描き、HMD カメラからは外す。</summary>
         private const string CgLayerName = "ShowCg";
@@ -502,6 +509,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
             }
 
+            // 3.6. 体験の音（ShowSoundDirector）。**既存の演出コードには何も足していない** —
+            //      導入・終幕・タイトル・乱れ・信号断・周回の劣化を外から読んで鳴らすだけ。
+            //      音源は `Resources/Sound/`（`py -3.11 tools/make-sounds.py` が焼く）。
+            //      設計の正本は `.claude/rules/sound-design.md`。
+            CreateOrUpdateSound(logic.transform);
+
             // 4. StatusHud（単一サーフェス・緩追従・TMP）。本番は startVisible=false・視界保護。右 B でトグル。
             //    lap / ゾーン / 次の cue / 信号 / 要再登録 を 1 枚に統合し、登録中は登録ガイダンスを強制表示。
             //    world-space（Logic 直下・head 非親）で StatusHud が自前に緩追従する。
@@ -918,6 +931,42 @@ namespace FixedCamVr.Streaming.EditorTools
         //   旧 AudioSource は playOnAwake を落として黙らせる（残しておくと二重再生になる）。
         //   show.json に bgm 指定が無ければ BgmDirector が defaultClip（= 従来の HorrBGM）を
         //   ループ再生するので、未オーサリングのショーの聴こえ方は変わらない。
+        /// <summary>
+        /// 体験の音（<see cref="ShowSoundDirector"/> ＋ <see cref="SfxPlayer"/>）を [Sound] へ冪等に置く。
+        ///
+        /// ⚠ **これはシーンに焼かれた GameObject** なので、コードを実装しただけでは APK に入らない
+        /// （導入演出・隔離殻・タイトルと同じ罠 — `rules/show-design.md`）。
+        /// 音を足したら <c>.\tools\unity.ps1 menu scene</c> を再実行してからビルドすること。
+        /// 確認は <c>grep "m_Name: \[Sound\]" Assets/Scenes/Main.unity</c>。
+        /// </summary>
+        private static void CreateOrUpdateSound(Transform parent)
+        {
+            var existing = parent.Find(SoundName);
+            GameObject go;
+            if (existing != null) go = existing.gameObject;
+            else
+            {
+                go = new GameObject(SoundName);
+                go.transform.SetParent(parent, worldPositionStays: false);
+            }
+            if (go.GetComponent<SfxPlayer>() == null) go.AddComponent<SfxPlayer>();
+            if (go.GetComponent<ShowSoundDirector>() == null) go.AddComponent<ShowSoundDirector>();
+
+            // 音源が焼かれているかをここで 1 度だけ見る。無いまま実機へ持っていくと
+            // **完全な無音でも何のエラーも出ない**（音は録画にも映らないので気づけない）。
+            int found = 0;
+            foreach (var res in SoundProbeResources)
+            {
+                if (Resources.Load<AudioClip>("Sound/" + res) != null) found++;
+            }
+            if (found < SoundProbeResources.Length)
+            {
+                Debug.LogWarning($"[MainDemoSceneSetup] 音源が足りません（Resources/Sound/ に "
+                                 + $"{found}/{SoundProbeResources.Length} 本）。"
+                                 + "`py -3.11 tools/make-sounds.py` を走らせてから焼き直すこと。");
+            }
+        }
+
         private static BgmDirector? CreateOrUpdateBgm(Transform parent)
         {
             var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(BgmClipPath);

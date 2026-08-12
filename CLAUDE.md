@@ -24,6 +24,8 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | 1 周回す（予測 → 安い門 → 焼く → 見る → 台帳） | `skills/work-round` |
 | ユーザーに見せて赤入れをもらう | `skills/direction-round` |
 
+| 音を触る（BGM・効果音・環境音・遷移） | `rules/sound-design.md`（**先に読む**） |
+
 **世界観の正本は `.claude/canon/`。**
 
 - `LEDGER.md` — ユーザーが口にした判定。**逐語**。要約したら値が消える
@@ -89,6 +91,9 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
   出した走行の画に、導入演出が 1 段も出ていなかった。以後 `veil` / `wire` / `cg` / `bgm` / `font` を判定に入れる
 - ⚠ **観測項目は C# の `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す**（片方だけだと沈黙して食い違う）
 - ⚠ **数値が PASS でも PNG は必ず 1 度開く。** 縮小したコンタクトシートは索引にすぎない（1cm の線が消える）
+- ⚠ **音は録画に映らない。** 画は `quest-record.py` が撮れるが、音は実機で聴く以外に確かめる手段が無い。
+  だから `ev=sfx` / `sndBuilt` / `sndAud` / `sndLpf` が唯一の証拠になる → `rules/sound-design.md` §7。
+  人に聴かせるのは `py -3.11 tools/sound-preview.py` の 2 本
 - **被らないと分からないもの**（立体感・スケール・酔い・怖さの強度）は溜めて 1 回にまとめる →
   `rules/visual-verification.md`
 

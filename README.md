@@ -47,9 +47,11 @@
 | 3.997 | **体験の骨格**（企画書の「3 区間を 3 周・導入を含め 3 分以内」を状態機械に。導入 → 本編 → 終了の 3 相・周回の上限・終了の暗転・ラン経過の時計。`ShowRunLogic` / `ShowRunDirector` / `ShowEndingFader` + 卓のラン状態パネルと ⚙ 欄） | 🚧 実装済み・実機未検証 |
 | 3.998 | **映像の乱れ（グリッチ）**（企画書「ノイズやグリッチ等の乱れを一時的に重畳でき、継ぎ目の隠蔽や注意・移動の誘導に用いる」。カットの遷移 / カット頭 / ゾーン切替 / 卓の手動の 4 経路。`GlitchFx` / `GlitchEnvelopeLogic`）。あわせて **post を 12 項目へ**（色収差・低解像度化・走査線の本数）と**色統計マッチングの実機適用**（卓が 6 float へ落として cue へ焼く） | 🚧 実装済み・実機未検証 |
 | 3.999 | **遅延の観測**（到着の揺らぎ / 展開 / 提示 / 配信側の鮮度を分けて出す。**絶対の end-to-end は測っていない** — 配信端末と Unity で時計の基準が違うため）。配信側の熱による降格中は lag 再接続を抑止。表示レート 90Hz を実行時要求 | 🚧 実装済み・実機未検証 |
+| 3.9995 | **体験の音**（それまで BGM ループ 1 本だけで、タイトル・導入 13.1 秒・隔離・破砕・すり替え・切替・乱れ・信号断・終幕・周回の劣化が**全部無音**だった。「現実の音」と「装置の音」の 2 層を置き、装置の声を**絵より先に**入れる。素材 17 本は自前合成。BGM の遷移を等パワーへ直し（それまで振幅線形で中央に -3dB の谷）、隔離は音量ではなく**帯域**で表す。`SoundBedLogic` / `SoundCueLogic` / `SoundFade` / `ShowSoundDirector`。設計は [.claude/rules/sound-design.md](.claude/rules/sound-design.md)） | 🚧 実装済み・EditMode 1168/1168・実機で `ev=sfx` まで確認・**聴いた人の判定は未取得** |
 | 4 | スクリーン外 3D 演出 | 未着手 |
 
 主要コンポーネントの仕様（エンドポイント・遅延対策・show.json 設定契約・スクリーン合成モデル）は [.claude/rules/streaming.md](.claude/rules/streaming.md) に集約。
+音の設計・実機の物理・素材の作り方は [.claude/rules/sound-design.md](.claude/rules/sound-design.md) が正本（`tools/make-sounds.py` で焼き、`tools/sound-lint.py` で検査し、`tools/sound-preview.py` で人に聴かせる）。
 
 ### 演出の事前オーサリング → ビルド焼き込み（Phase 3.7 の使い方）
 
