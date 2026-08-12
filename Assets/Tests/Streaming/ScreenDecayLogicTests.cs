@@ -39,24 +39,23 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void 進み0の対応表は映像の実寸とほぼ1対1()
+        public void 各周のAで映像は600_400_200ブロックになる()
         {
-            // 枠 900 ブロック × 映像の領域 0.75 = 675 ＝ ソース 640px に対して 0.95 画素／ブロック。
-            // ここが崩れると「1 周目の最初は今くらいの解像度」が守れない。
-            Assert.AreEqual(900f, ScreenDecayLogic.BlocksFor(0f), 0.01f);
-            Assert.AreEqual(110f, ScreenDecayLogic.BlocksFor(1f), 0.01f);
+            // ユーザーが 3 点で指定した値（canon/LEDGER.md 0021）。**映像の領域**で数える
+            // （枠 × 0.75。4:3 が 16:9 の枠へ letterbox される分だけ狭い）。
+            // ソース 640px に対して 1.07 → 1.6 → 3.2 画素／ブロック。
+            Assert.AreEqual(600f, ScreenDecayLogic.BlocksFor(0f) * 0.75f, 0.5f);
+            Assert.AreEqual(400f, ScreenDecayLogic.BlocksFor(0.5f) * 0.75f, 0.5f);
+            Assert.AreEqual(200f, ScreenDecayLogic.BlocksFor(1f) * 0.75f, 0.5f);
         }
 
         [Test]
-        public void 対応表は等比なので周ごとの落ち幅の比が揃う()
+        public void 対応表は線形なので落ち幅が周ごとに揃う()
         {
             float b0 = ScreenDecayLogic.BlocksFor(0f);
-            float b1 = ScreenDecayLogic.BlocksFor(1f / 3f);
-            float b2 = ScreenDecayLogic.BlocksFor(2f / 3f);
-            float b3 = ScreenDecayLogic.BlocksFor(1f);
-            // 等差だと最初の 1 周で見た目が全部落ちて、後の 2 周が動かない。
-            Assert.AreEqual(b0 / b1, b1 / b2, 0.01f);
-            Assert.AreEqual(b1 / b2, b2 / b3, 0.01f);
+            float b1 = ScreenDecayLogic.BlocksFor(0.5f);
+            float b2 = ScreenDecayLogic.BlocksFor(1f);
+            Assert.AreEqual(b0 - b1, b1 - b2, 0.5f);
         }
 
         [Test]

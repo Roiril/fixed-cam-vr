@@ -33,14 +33,15 @@ namespace FixedCamVr.Streaming
     public sealed class ScreenDecayLogic
     {
         /// <summary>進み 0 のときの、枠を横切るブロック数。映像の領域は 4:3 が 16:9 の枠へ
-        /// letterbox される分だけ狭いので ×0.75 ＝ 675 で、ソースの 640 とほぼ 1:1 ＝ 何も起きない。</summary>
-        public const float FineBlocks = 900f;
+        /// letterbox される分だけ狭いので **×0.75 ＝ 600**（ソース 640px に対し 1.07 画素／ブロック
+        /// ＝ ほとんど何も起きない）。`canon/LEDGER.md` 0021。</summary>
+        public const float FineBlocks = 800f;
 
-        /// <summary>進み 1 のときの、枠を横切るブロック数（映像の領域で横 83 ブロック）。
-        /// **最後の周へ入った瞬間にここへ着き、以後は動かない。**
+        /// <summary>進み 1 のときの、枠を横切るブロック数（**映像の領域で横 200 ブロック**
+        /// ＝ 3.2 画素／ブロック）。**最後の周へ入った瞬間にここへ着き、以後は動かない。**
         /// 下げすぎると、最後の周に流れる 1 周目の録画で**人型と「手を上げていない」が読めなくなる**
-        /// （`rules/streaming.md` が 2026-08-06 に警告していたもの）。読めなければ上げる。</summary>
-        public const float EndBlocks = 110f;
+        /// （2026-08-12 に 110 = 7.8 画素／ブロックまで落として実際に読めなくなった）。</summary>
+        public const float EndBlocks = 267f;
 
         /// <summary>
         /// 1 周の目安 (秒)。企画書の「各周およそ 30 秒」。<b>1 周目だけこれを使う</b>
@@ -143,11 +144,17 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 進み → 枠を横切るブロック数。<b>等比</b>で下げる。
-        /// 等差だと最初の 1 周で見た目が全部落ちて（900→637）、3 周目がほとんど動かない（373→110）。
+        /// 進み → 枠を横切るブロック数。<b>線形</b>に下げる（映像の領域で <b>600 → 400 → 200</b>）。
+        ///
+        /// ⚠ 2026-08-12 まで<b>等比</b>だった。理由は「等差だと最初の 1 周で見た目が全部落ちて、
+        /// 後の 2 周が動かない」で、それは 900 → 110（比 8.2 倍）のときは正しい。
+        /// いまは 800 → 267（<b>比 3 倍</b>）なので、線形でも 1 ブロックあたりの画素は
+        /// 1.07 → 1.6 → 3.2 と素直に伸びる。ユーザーが各周の A の値を 3 点で指定したので
+        /// （`canon/LEDGER.md` 0021）、その 3 点をそのまま通す線形にしてある。
+        /// <b>比を大きく戻すなら等比へ戻すこと</b>（後半だけが動く画になる）。
         /// </summary>
         public static float BlocksFor(float progress)
-            => (float)(FineBlocks * Math.Pow(EndBlocks / (double)FineBlocks, Clamp01(progress)));
+            => FineBlocks + (EndBlocks - FineBlocks) * Clamp01(progress);
 
         private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);
 
