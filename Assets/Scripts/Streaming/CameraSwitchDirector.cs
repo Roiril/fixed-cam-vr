@@ -665,6 +665,19 @@ namespace FixedCamVr.Streaming
             _curDipUp = upSec >= 0f ? upSec : dipUpSec;
             _curDipGlitch = glitch;
 
+            // ⚠⚠ **リレーは「装置が入力を切り替えた」音。切り替わっていないなら鳴らさない。**
+            //
+            // dip を打つ経路は 3 つあり、そのうち `TakeHoldBegin` は **同じカメラのまま**
+            // （録画・無人プレート・素材を画面へ載せるだけ）で黒を通す。`InsertReturn` も
+            // 戻り先が今のカメラなら同じ。ここで鳴らすと「切り替わっていないのにリレーが鳴る」ので、
+            // **リレーが切替の合図であること自体が壊れる**。
+            //
+            // 2026-08-12 の実機実測: 画面の切替 9 回に対しリレーが **18 回**鳴っていた。
+            // 切替音のクリップはこの日まで空だったので、この重複は表に出ていなかった
+            // （**音を入れて初めて見えた欠陥**）。判定は `analyze-xp-log.py` の
+            // 「カメラ切替の音 N 回（画面の切替 M 回）」で、N が M を大きく超えたら疑う。
+            bool cameraChanges = registry == null || registry.ActiveIndex != target;
+
             // 「瞬時（cut）」は dip 状態機械に入れずその場で差し替える。
             // 旧実装は Down→黒→Up を必ず 1 フレームずつ通したため、尺 0 でも 1 フレーム真っ黒が出た。
             if (_curDipDown <= 0f && _curDipUp <= 0f)
@@ -678,7 +691,7 @@ namespace FixedCamVr.Streaming
                 _curDipGlitch = false;
                 ClearTransitionVisual();
                 _dip = DipState.Idle;
-                audioCue?.Play();
+                if (cameraChanges) audioCue?.Play();
                 if (source == SwitchSource.Zone) PulseSwitchGlitch(0f);
                 return;
             }
@@ -687,7 +700,8 @@ namespace FixedCamVr.Streaming
             _dipSource = source;
             _dip = DipState.Down;
             _dipTimer = 0f;
-            audioCue?.Play(); // dip の黒が視覚差替に先行 → J カット相当
+            // dip の黒が視覚差替に先行 → J カット相当
+            if (cameraChanges) audioCue?.Play();
             // ゾーン切替そのものへ乱れを重ねる（企画書 2.3「提示映像の切替と同様に…乱れを一時的に重畳」）。
             // 遷移 glitch とは独立で、黒の dip に乗せる形で使う。
             if (source == SwitchSource.Zone) PulseSwitchGlitch(_curDipDown + _curDipUp);
