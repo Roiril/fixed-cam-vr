@@ -58,6 +58,14 @@ Shader "FixedCamVr/ScreenComposite"
         // だから怖くない。ここに足すのは「言い訳が破れる」ための道具立て。
         _NoiseDark("Dark Noise (luma dependent)", Range(0, 0.5)) = 0
         _NoiseFixed("Fixed Pattern Noise", Range(0, 0.3)) = 0
+        // 周を重ねるごとに落ちていく解像度（canon/LEDGER.md 0012）。**枠を横切るブロック数**をそのまま受ける。
+        //   0 = 量子化しない（今までと 1 ビットも変わらない画）
+        // 0..1 → ブロック数の対応表は **C# の ScreenDecayLogic にしかない**。ここにも式を置くと、
+        // テレメトリが読む値と画が黙って食い違う（この codebase が何度も踏んだ型）。
+        _CoarseBlocks("Coarse (blocks across frame, 0=off)", Float) = 0
+        // ブロックの境目の渡し方。0 = 最近傍（モザイク）/ 1 ≒ 素通し。
+        // 硬く切ると「モザイクを掛けた」に見える。作りたいのは「低い解像度で引き伸ばした画」。
+        _CoarseSoft("Coarse Edge Softness", Range(0, 1)) = 0.6
         _ExposureBias("Exposure Bias (EV, AGC lag)", Range(-2, 2)) = 0
         _VignetteBias("Vignette Bias", Range(-0.5, 0.5)) = 0
         // 人形に付き従う劣化。(中心 u, 中心 v, 半径, 強さ)。ShowCgLayer が人形の投影から供給する。
@@ -141,6 +149,8 @@ Shader "FixedCamVr/ScreenComposite"
                 float _ExposureBias;
                 float _VignetteBias;
                 float _Echo;
+                float _CoarseBlocks;
+                float _CoarseSoft;
             CBUFFER_END
 
             struct Attributes
@@ -246,13 +256,42 @@ Shader "FixedCamVr/ScreenComposite"
 
             // 低解像度化。**撮像側が粗い**という表現なので、色ではなくサンプル位置を量子化する。
             // ブロックが正方に見えるよう縦は枠アスペクトで割る（枠は 16:9、映像は 4:3）。
-            float2 PixelateUv(float2 uv)
+            //
+            // 粗さの出どころは 2 つ:
+            //   _Pixelate     著作した値（post 12 項目。卓の FS_POST と同式・同じ場所）
+            //   _CoarseBlocks 周を重ねるごとに進む劣化（別系統。C# の ScreenDecayLogic が解いたブロック数）
+            //
+            // ⚠ **量子化を 2 回重ねない。粗い方（ブロック数の小さい方）だけを掛ける。**
+            //    別々に掛けると 2 つの格子が干渉して、どちらでもない縞（モアレ）が出る。
+            float2 CoarsenUv(float2 uv)
             {
-                if (_Pixelate <= 0.001) return uv;
-                float bx = max(6.0, floor(lerp(400.0, 18.0, saturate(_Pixelate))));
-                float by = max(4.0, floor(bx / max(_FrameAspect, 1e-3)));
-                float2 b = float2(bx, by);
-                return (floor(uv * b) + 0.5) / b;
+                float bx = 0.0;
+                // 著作した低解像度化は**硬い格子のまま**（卓の FS_POST と同じ絵でなければならない）。
+                float soft = 0.0;
+                if (_Pixelate > 0.001) bx = max(6.0, floor(lerp(400.0, 18.0, saturate(_Pixelate))));
+                if (_CoarseBlocks > 0.5)
+                {
+                    float cb = max(6.0, floor(_CoarseBlocks));
+                    if (bx <= 0.0 || cb < bx) { bx = cb; soft = _CoarseSoft; }
+                }
+                if (bx <= 0.0) return uv;
+
+                float2 b = float2(bx, max(4.0, floor(bx / max(_FrameAspect, 1e-3))));
+
+                // ブロックの中心で引くが、境目は硬く切らずに渡す。硬い格子は「モザイクを掛けた」に見え、
+                // ここで作りたいのは**低い解像度で引き伸ばした画**（＝伝送が痩せていく画）。
+                // 4 タップ引けば正しい bilinear だが SampleBase が 4 倍になって Quest の予算に乗らない。
+                // 1 サンプルのまま、ブロックの境目だけを smoothstep で渡してにじみを作る。
+                //
+                // soft=0（著作した _Pixelate 側）では smoothstep が step(0.5, f) に潰れ、
+                // 式は (round(uv*b - 0.5) + 0.5)/b = (floor(uv*b) + 0.5)/b ＝ **旧実装と同一**になる。
+                float2 p = uv * b - 0.5;          // 整数がブロックの中心
+                float2 i = floor(p);
+                float2 f = p - i;
+                float s = max(soft, 1e-3);        // 0 のままだと smoothstep の端が縮退する
+                float2 w = smoothstep(float2(0.5 - s * 0.5, 0.5 - s * 0.5),
+                                      float2(0.5 + s * 0.5, 0.5 + s * 0.5), f);
+                return (i + 0.5 + w) / b;
             }
 
             // 演出としての「映像の乱れ」の位置ずれ成分。帯（走査線ブロック）の一部だけを水平に飛ばし、
@@ -306,7 +345,7 @@ Shader "FixedCamVr/ScreenComposite"
                 // 枠の座標（post FX の空間。卓の FS_POST と一致させる側）と、
                 // テクスチャを引く座標（低解像度化 → 乱れ の順に劣化させた側）を分ける。
                 float2 screenUv = input.uv;
-                float2 sampleUv = GlitchUv(PixelateUv(screenUv));
+                float2 sampleUv = GlitchUv(CoarsenUv(screenUv));
 
                 // 1-2) ライブ × 差し替え素材。色収差は放射方向に RGB をずらす（端ほど強い）。
                 half3 col;

@@ -28,6 +28,12 @@ namespace FixedCamVr.Streaming
 
         private readonly ShowRunLogic _logic = new ShowRunLogic();
 
+        /// <summary>
+        /// 周を重ねるごとに落ちていく解像度（<c>canon/LEDGER.md</c> 0012）。
+        /// 相と周回を両方持っているのはここだけなので、回すのもここ。
+        /// </summary>
+        private readonly ScreenDecayLogic _decay = new ScreenDecayLogic();
+
         private BgmDirector? _bgm;
         private GlitchFx? _glitch;
         private CameraFeelFx? _feel;
@@ -59,6 +65,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>終了条件は満たしたが走行中の演出を見せ切るために待っているか（卓表示用）。</summary>
         public bool EndHolding => _logic.EndHolding;
+
+        /// <summary>周回で進む解像度の劣化の進み 0..1（テレメトリ用）。</summary>
+        public float ScreenDecay => _decay.Progress;
+
+        /// <summary>いま画へ書いている「枠を横切るブロック数」（0 = 量子化していない・テレメトリ用）。</summary>
+        public float ScreenDecayBlocks => _decay.Blocks;
 
         /// <summary>
         /// 視界を黒で閉じるべきか。<b>終了</b>と<b>導入の中止</b>の 2 つで立つ。
@@ -147,6 +159,9 @@ namespace FixedCamVr.Streaming
         public void BeginRun()
         {
             ShowRunEvent ev = _logic.BeginRun();
+            // 解像度の劣化を落とす**唯一の場所**。次の体験者は今の解像度から始める。
+            // 終了では落とさない（落とすと演出を見せ切っている最中に画が急に鮮明になる）。
+            _decay.Reset();
             ApplyGate();
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             NotifyPhaseIfChanged();
@@ -241,7 +256,27 @@ namespace FixedCamVr.Streaming
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             else if (ev == ShowRunEvent.RunFinished) OnRunFinished();
 
+            TickScreenDecay();
             NotifyPhaseIfChanged();
+        }
+
+        /// <summary>
+        /// 周を重ねるごとに映像の解像度を落とす（<c>canon/LEDGER.md</c> 0012）。
+        ///
+        /// ⚠ <b>進めるのは本編だけ。導入と終了では値を保持する</b>（0 へ戻さない）。
+        /// 導入で進めると「1 周目の最初は今くらいの解像度」が破れ、終了で戻すと
+        /// 走行中の演出を見せ切っている猶予のあいだに画が急に鮮明になって「直った」ように見える。
+        ///
+        /// ⚠ 押す先（<see cref="CameraFeelFx"/>）は <see cref="ResolveRefs"/> で 1 回だけ引く。
+        /// ここで毎フレーム <c>FindObjectOfType</c> を撃つと 90Hz でシーン全走査になる。
+        /// シーンの焼き直し前の APK では居ないことがあるが、そのときは何も起きないだけ
+        /// （＝従来どおりの画）で、居ないことは実機ログの <c>coarseMat=-</c> に出る。
+        /// </summary>
+        private void TickScreenDecay()
+        {
+            _decay.Tick(Time.unscaledDeltaTime, _logic.Phase == ShowPhase.Run,
+                        _logic.Lap, _logic.TotalLaps, _logic.LapElapsedSec);
+            _feel?.SetCoarseBlocks(_decay.Blocks);
         }
 
         private bool AtStartZone()

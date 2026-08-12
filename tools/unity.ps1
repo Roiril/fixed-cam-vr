@@ -109,7 +109,7 @@ $Menus = [ordered]@{
     # ---- Diagnostics 廻リ視（見る・測る）----
     'composite'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.Run'
                             Desc = '実写プレート × CG 人形の合成を PNG 化（合成品質の一次証拠）'
-                            Set = 'show=<show.json のパス>'
+                            Set = 'show=<show.json のパス> / decay=<0..1 周回で進む解像度の劣化>'
                             Out = 'Assets/Screenshots/cgviz' }
     'actor'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorVizPreview.Run'
                             Desc = 'CG 人形を 4 ポーズ × 2 角度で PNG 化'

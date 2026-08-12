@@ -1105,6 +1105,58 @@ def analyze(events, others, exp, warns=None):
             elif max(nums) == 0:
                 w("  （show.json が構造の線を出さない設定なので 0 本が正常）")
 
+    # -- 周回で進む解像度の劣化（装置が痩せていく・canon/LEDGER.md 0012）
+    # ⚠ 「進みの数値が動いた」は画に出たことを意味しない。**書く先を掴めたか**（coarseMat）と
+    #    **実際に書いたブロック数**（cbx）を対で見る。掴めていなければ 1 画素も変わらない。
+    def _decay_nums(key, t_from=None, t_to=None):
+        out = []
+        for v in effect_samples(events, key, t_from=t_from, t_to=t_to):
+            if v in ("", "-"):
+                continue
+            try:
+                out.append(float(v))
+            except ValueError:
+                pass
+        return out
+
+    decay_mat = effect_samples(events, "coarseMat")
+    if decay_mat:
+        any_effect_key = True
+        if "0" in decay_mat:
+            verdict("FAIL", "解像度の劣化を書く先が無い（CameraFeelFx がスクリーンの Renderer を"
+                            "掴めていない）— 進みが動いても画は 1 画素も変わらない")
+
+    decay_run = _decay_nums("coarse", t_from=run_t)
+    if decay_run:
+        any_effect_key = True
+        blocks = [b for b in _decay_nums("cbx", t_from=run_t) if b > 0]
+        line = f"  解像度の劣化: 進み 最大 {max(decay_run):.2f}"
+        if blocks:
+            line += f" / 枠を横切るブロック 最小 {min(blocks):.0f}"
+        w(line)
+
+        # 本編に入ってから十分な時間が経ったのに進んでいないなら、ラン相の判定か配線が死んでいる。
+        run_span = (max(fnum(e, "t", 0.0) for e in events) - run_t) if run_t is not None else 0.0
+        if max(decay_run) <= 0.001 and run_span > 10.0:
+            verdict("FAIL", f"本編に {run_span:.0f} 秒居るのに解像度の劣化が 1 度も進んでいない — "
+                            "ShowRunDirector が CameraFeelFx を掴めていない疑い")
+        elif max(decay_run) > 0.001:
+            verdict("OK", f"解像度の劣化が進んだ（最大 {max(decay_run):.2f}）")
+
+        # **段差を作らないことが仕様**（LEDGER 0012「急に落ちるではなくばれないように」）。
+        # サマリは 2 秒ごとなので、頭打ち 0.035/秒 なら 1 標本あたり 0.07 が上限。
+        jumps = [b - a for a, b in zip(decay_run, decay_run[1:]) if b > a]
+        if jumps and max(jumps) > 0.09:
+            verdict("WARN", f"進みが 1 標本（約 2 秒）で {max(jumps):.2f} 上がった — 段差に見える疑い。"
+                            "ScreenDecayLogic.MaxRisePerSec を下げる")
+
+    # 導入のあいだは 0 でなければならない（「1 周目の最初は今くらいの解像度」）。
+    decay_intro = _decay_nums("coarse", t_to=run_t)
+    if decay_intro and max(decay_intro) > 0.001:
+        any_effect_key = True
+        verdict("FAIL", f"導入の時点で解像度が既に落ちている（進み {max(decay_intro):.2f}）— "
+                        "劣化は本編（Run 相）でしか進めない約束が破れている")
+
     # -- 演出のカット（画面を取ったか / 飛ばされたか）
     steps_ev = [e for e in events if e.get("ev") == "step"]
     if steps_ev:

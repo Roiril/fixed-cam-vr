@@ -73,6 +73,7 @@ namespace FixedCamVr.Diagnostics
         private TimelineDirector? _timeline;
         private SignalLostFx? _signal;
         private GlitchFx? _glitch;
+        private CameraFeelFx? _feel;
         private CueScheduler? _cues;
         private SegmentRecorder? _recorder;
         private ScreenOverlayController? _overlay;
@@ -176,6 +177,7 @@ namespace FixedCamVr.Diagnostics
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
             if (_signal == null) _signal = FindObjectOfType<SignalLostFx>();
             if (_glitch == null) _glitch = FindObjectOfType<GlitchFx>();
+            if (_feel == null) _feel = FindObjectOfType<CameraFeelFx>();
             if (_cues == null) _cues = FindObjectOfType<CueScheduler>();
             if (_recorder == null) _recorder = FindObjectOfType<SegmentRecorder>();
             if (_overlay == null) _overlay = FindObjectOfType<ScreenOverlayController>();
@@ -376,6 +378,12 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>CG 人形が実際に描画されているか。<c>-</c>=シーンに居ない。</summary>
         private string CgState => _cg == null ? "-" : (_cg.IsVisible ? "1" : "0");
+
+        /// <summary>
+        /// 解像度の劣化を書く先（スクリーンの Renderer のマテリアル）を掴めているか。
+        /// <c>-</c>=CameraFeelFx がシーンに居ない / 0=掴めていない ＝ **進みが動いても画は変わらない** / 1=書ける。
+        /// </summary>
+        private string CoarseMaterialState => _feel == null ? "-" : (_feel.HasMaterial ? "1" : "0");
 
         // ---------------------------------------------------------------- 設定の出所
 
@@ -642,6 +650,15 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" shatBMesh=").Append(ShatterBoxMesh);
             }
             _sb.Append(" cg=").Append(CgState);
+            // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
+            // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
+            // 「実際に書いたブロック数」と「書く先があるか」を対で出す。
+            if (_run != null)
+            {
+                _sb.Append(" coarse=").Append(_run.ScreenDecay.ToString("F2"));
+                _sb.Append(" cbx=").Append(_run.ScreenDecayBlocks.ToString("F0"));
+                _sb.Append(" coarseMat=").Append(CoarseMaterialState);
+            }
             if (_overlay != null)
                 _sb.Append(" ovl=").Append(OverlayStrength.ToString("F2"))
                    .Append(" ovlMat=").Append(OverlayMaterial);

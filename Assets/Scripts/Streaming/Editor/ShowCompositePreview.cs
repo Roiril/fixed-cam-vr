@@ -110,6 +110,23 @@ namespace FixedCamVr.Streaming.EditorTools
         /// </summary>
         public static void RunFor(string showJsonPath) => Execute(showJsonPath);
 
+        /// <summary>
+        /// <c>-Set decay=0..1</c>（周回で進む解像度の劣化）。既定 0 ＝ 1 周目の頭の画。
+        /// 周の境目は 0 / 0.33 / 0.67 / 1.0（<see cref="ScreenDecayLogic"/>）。
+        /// </summary>
+        private static float ParseDecayArg()
+        {
+            string? raw = EditorCliArgs.Get("decay");
+            if (string.IsNullOrEmpty(raw)) return 0f;
+            if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out float v))
+            {
+                Debug.LogWarning($"[CgViz] decay の値を読めない: '{raw}'（0 として扱う）");
+                return 0f;
+            }
+            return Mathf.Clamp01(v);
+        }
+
         private static void Execute(string? explicitShowJsonPath)
         {
             // CLI（batchmode）は空シーンで始まる。枠のアスペクトはシーンの MjpegScreen が正なので
@@ -124,6 +141,7 @@ namespace FixedCamVr.Streaming.EditorTools
             try
             {
                 stage = Stage.Create(outDir);
+                stage.DecayProgress = ParseDecayArg();
 
                 ShowJson? show = LoadShow(explicitShowJsonPath, out string showPath);
                 if (show == null)
@@ -1182,12 +1200,20 @@ namespace FixedCamVr.Streaming.EditorTools
                 //    プレビューだけ暗部ノイズも自動露出も無い絵になり、人形が実機より浮いて見える。
                 //    静止画 1 枚なので自動露出は収束値を使う（時間で追う意味が無く、同じ値になる）。
                 float steadyBias = applyFeel ? _feelLogic.SteadyBiasFor(_plateLuma) : 0f;
+                // 周回で進む解像度の劣化。**較正確認の絵（applyFeel=false）には掛けない** —
+                // ずれを画素で見る絵をわざと粗くしたら判定できない。
+                float coarseBlocks = applyFeel && DecayProgress > 0.0005f
+                    ? ScreenDecayLogic.BlocksFor(DecayProgress) : 0f;
                 CameraFeelFx.WriteUniforms(_compositeMat,
                     applyFeel ? _feel.NoiseDark : 0f,
                     applyFeel ? _feel.NoiseFixed : 0f,
                     steadyBias * _feel.Agc,
                     _feelLogic.VignetteBiasFor(steadyBias) * _feel.Agc,
-                    echo: 0f);   // ホールド / 焼き付きは時間の表現なので静止画には出さない
+                    echo: 0f,    // ホールド / 焼き付きは時間の表現なので静止画には出さない
+                    coarseBlocks: coarseBlocks);
+                if (coarseBlocks > 0f)
+                    caption += $"\ndecay {DecayProgress:0.00} -> {coarseBlocks:0} blocks across frame "
+                             + $"({coarseBlocks * 0.75f:0} across the 4:3 image)";
 
                 // 人形に付き従う劣化（カットの aura）。人形が出ないカットでは必ず 0 へ戻す。
                 Vector4 focus = new Vector4(0.5f, 0.5f, 0.2f, 0f);
@@ -1209,6 +1235,18 @@ namespace FixedCamVr.Streaming.EditorTools
                 _caption.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
             }
 
+            /// <summary>
+            /// 周回で進む解像度の劣化の進み 0..1（`-Set decay=0.66`）。
+            /// **実機だけが持つ加工なので、既定 0 のままだとプレビューは 1 周目の頭の画しか出せない。**
+            /// 3 周目の粗さで「人型と手を上げていないことが読めるか」を判定するのはここ
+            /// （プレートだけでは判定できないので、人形が入るこの絵で見る）。
+            /// </summary>
+            public float DecayProgress { get; set; }
+
+            /// <summary>出力名に付く印（`_d066`）。並べて見るために要る。</summary>
+            public string NameSuffix =>
+                DecayProgress > 0.0005f ? $"_d{Mathf.RoundToInt(DecayProgress * 100f):000}" : "";
+
             public string Save(string fileName)
             {
                 if (_outRt == null || _readback == null)
@@ -1217,6 +1255,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 _readback.ReadPixels(new Rect(0f, 0f, _outW, _outH), 0, 0);
                 _readback.Apply();
                 RenderTexture.active = null;
+
+                string suffix = NameSuffix;
+                if (suffix.Length > 0 && fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                    fileName = fileName.Substring(0, fileName.Length - 4) + suffix + ".png";
 
                 string path = Path.Combine(_outDir, fileName);
                 File.WriteAllBytes(path, _readback.EncodeToPNG());

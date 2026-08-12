@@ -33,6 +33,7 @@ namespace FixedCamVr.Streaming
         private static readonly int VignetteBiasId = Shader.PropertyToID("_VignetteBias");
         private static readonly int EchoId = Shader.PropertyToID("_Echo");
         private static readonly int EchoTexId = Shader.PropertyToID("_EchoTex");
+        private static readonly int CoarseBlocksId = Shader.PropertyToID("_CoarseBlocks");
 
         [Tooltip("ライブ映像の供給元（平均輝度と、凍らせる 1 枚の複製元）。null なら同 GameObject → シーンから探す。")]
         [SerializeField] private MjpegScreen? screen;
@@ -62,6 +63,26 @@ namespace FixedCamVr.Streaming
 
         /// <summary>凍らせた 1 枚の混合率 0..1。診断用。</summary>
         public float Echo => _logic.Echo;
+
+        /// <summary>
+        /// いま書いている「枠を横切るブロック数」（0 = 量子化していない）。診断用。
+        /// 決めるのは <see cref="ScreenDecayLogic"/>、回すのは <see cref="ShowRunDirector"/>。
+        /// </summary>
+        public float CoarseBlocks { get; private set; }
+
+        /// <summary>
+        /// 書く先（スクリーンの Renderer のマテリアル）を掴めているか。
+        /// <b>ここが false だと、進みがいくら動いても画は 1 画素も変わらない。</b>
+        /// テレメトリが出す（「状態が進んだ」ではなく「効果が出た」を観測するため）。
+        /// </summary>
+        public bool HasMaterial => _material != null;
+
+        /// <summary>
+        /// 周回で進む解像度の劣化を書く（<see cref="ShowRunDirector"/> が毎フレーム押す）。
+        /// 0 = 量子化しない。**ここが唯一の入口**で、値の意味も対応表も
+        /// <see cref="ScreenDecayLogic"/> が持つ。
+        /// </summary>
+        public void SetCoarseBlocks(float blocks) => CoarseBlocks = blocks > 0f ? blocks : 0f;
 
         /// <summary>画を止める（カットの <c>hold</c>）。</summary>
         public void Hold(float sec) => _logic.Hold(sec);
@@ -114,8 +135,15 @@ namespace FixedCamVr.Streaming
         /// uniform の書き方の**単一の正**。実行時（<see cref="Write"/>）と Editor の合成プレビューが
         /// ここを通る。片方だけ直したときに黙って食い違うのを防ぐ。
         /// </summary>
+        /// <param name="coarseBlocks">
+        /// 周回で進む解像度の劣化（枠を横切るブロック数・0 = 量子化しない）。
+        /// **引数にしてあるのは、静止画のプレビューに「進みを知らないから 0」を黙って選ばせないため** —
+        /// 実機だけが持つ加工をプレビューが書き落として「プレビューの方が綺麗」になる事故を
+        /// 2026-08-07 に踏んでいる（feel の 5 項目）。
+        /// </param>
         public static void WriteUniforms(Material? mat, float noiseDark, float noiseFixed,
-                                         float exposureBias, float vignetteBias, float echo)
+                                         float exposureBias, float vignetteBias, float echo,
+                                         float coarseBlocks)
         {
             if (mat == null) return;
             mat.SetFloat(NoiseDarkId, noiseDark);
@@ -123,6 +151,7 @@ namespace FixedCamVr.Streaming
             mat.SetFloat(ExposureBiasId, exposureBias);
             mat.SetFloat(VignetteBiasId, vignetteBias);
             mat.SetFloat(EchoId, echo);
+            mat.SetFloat(CoarseBlocksId, coarseBlocks);
         }
 
         /// <summary>
@@ -157,6 +186,9 @@ namespace FixedCamVr.Streaming
         private void OnDisable()
         {
             _logic.Reset();
+            // 自分を外したら画は素へ戻す（このコンポーネントが無い状態と同じ画にして去る）。
+            // ⚠ これは「終了で畳む」とは別の話 — 終了しても Update は回り続けるので値は保たれる。
+            CoarseBlocks = 0f;
             ApplyFrozen(false);
             Write();
         }
@@ -214,8 +246,13 @@ namespace FixedCamVr.Streaming
         private void Write()
             // 自動露出の効き（agc）は「装置がどれだけ律儀に追うか」。0 で追従なし。
             // 凍らせた 1 枚がまだ無いうちに混ぜると黒が出る。
+            //
+            // ⚠ 解像度の劣化は <see cref="ResetAll"/> で畳まない。畳むと**終了の瞬間に画が急に鮮明になる**
+            //    （終了条件が立ってから走行中の演出を見せ切る猶予がある）。落とすのは体験者の交代だけで、
+            //    その号令は ShowRunDirector.BeginRun が ScreenDecayLogic.Reset へ出す。
             => WriteUniforms(_material, _noiseDark, _noiseFixed,
                              _logic.ExposureBias * _agc, _logic.VignetteBias * _agc,
-                             _echoTex != null ? _logic.Echo : 0f);
+                             _echoTex != null ? _logic.Echo : 0f,
+                             CoarseBlocks);
     }
 }
