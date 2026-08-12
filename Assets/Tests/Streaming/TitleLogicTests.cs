@@ -216,20 +216,70 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Push_MovesTowardTheViewerThenAway()
+        public void Push_MovesTowardTheViewer_AndNeverRecedes()
         {
-            // 押した瞬間に迫り、そのあと奥へ抜ける。逆だと「押したのに引っ込んだ」に見える。
+            // ⚠ **2026-08-13 に意味が反転したテスト。** 前は「そのあと奥へ退く」を固定していたが、
+            //    ユーザーが「奥へ飛んでいくと箱に吸収されたみたいで変」と言ったので、
+            //    いまは**奥へ退かないこと**を固定する。z を引くと題字は視界の中で一様に
+            //    小さくなり、消滅ではなく「遠ざかった」と読まれる。
             var l = new TitleLogic();
             l.Begin();
-            l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
+            l.RequestAdvance();
             Run(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f, Ready);
             l.RequestDismiss();
             Run(l, TitleLogic.FlashSec * 0.5f, Ready);
             Assert.Greater(l.Weights.pushM, 0f, "押した直後は手前へ");
-            // ⚠ 閉じ切る前に測る。Done へ入ると重みが全部 0 になり、退いたかどうかが見えない。
-            Run(l, TitleLogic.DissolveSec * 0.5f, Ready);
+
+            // ⚠ 閉じ切る前に測る。Done へ入ると重みが全部 0 になり、動きが見えない。
+            for (float t = 0f; t < TitleLogic.DissolveDelaySec + TitleLogic.DissolveSec; t += Dt)
+            {
+                l.Tick(Dt, Ready);
+                Assert.GreaterOrEqual(l.Weights.pushM, -1e-5f, "奥へ退いてはいけない");
+            }
+        }
+
+        [Test]
+        public void Swirl_WindsInFromThePress_AndFinishesWithTheBurn()
+        {
+            // 渦は**押した瞬間から**進み、焼けが終わるころに巻き切る。
+            // 焼けと同時に始めると、火が点いてから急にねじれ出して「UI が動いた」に見える。
+            var l = new TitleLogic();
+            l.Begin();
+            l.RequestAdvance();
+            Run(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f, Ready);
+            Assert.AreEqual(0f, l.Weights.swirl, 1e-6f, "閉じる前にねじれていてはいけない");
+
+            l.RequestDismiss();
+            // ⚠ 隠すものが立たない側で測る。黒が開き切ると段が Done へ抜けて重みが全部 0 になり、
+            //    巻き切ったのか畳まれたのかが区別できない（Ready だと Out は 1.35 秒しか無い）。
+            Run(l, TitleLogic.DissolveDelaySec * 0.5f, NotReady);
+            float early = l.Weights.swirl;
+            Assert.Greater(early, 0f, "焼ける前から歪み始めている");
+            Assert.Less(early, 0.2f, "頭でねじれ切ってはいけない");
+
+            Run(l, TitleLogic.DissolveDelaySec + TitleLogic.DissolveSec, NotReady);
             Assert.AreEqual(TitleStage.Out, l.Stage);
-            Assert.Less(l.Weights.pushM, 0f, "溶けながら奥へ退く");
+            Assert.AreEqual(1f, l.Weights.swirl, 1e-3f, "焼け切るころに巻き切っていない");
+        }
+
+        [Test]
+        public void Burn_KeepsTheInkOpaque_UntilOnlyAshIsLeft()
+        {
+            // ⚠ 墨は焼け際が食っていくので、**同時に全体を薄くしない**。
+            //    頭から不透明度を落とすと、まだ焼けていない所まで半透明になり、
+            //    「燃えている」ではなく「フェードアウトしている」に見える。
+            var l = new TitleLogic();
+            l.Begin();
+            l.RequestAdvance();
+            Run(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f, Ready);
+            l.RequestDismiss();
+
+            // 焼けが 3/4 まで進んでも墨は不透明のまま（食われた所は際が消している）。
+            Run(l, TitleLogic.DissolveDelaySec + TitleLogic.DissolveSec * 0.75f, Ready);
+            Assert.AreEqual(TitleStage.Out, l.Stage);
+            Assert.Greater(l.Weights.dissolve, 0.6f, "焼けが進んでいない");
+            Assert.AreEqual(1f, l.Weights.glyph, 1e-5f, "焼けている途中で墨が薄くなっている");
+            // 最後に 0 へ落ちることは Dismiss_FlashesImmediately_ThenOpensToPassthrough が固定する。
         }
     }
 }

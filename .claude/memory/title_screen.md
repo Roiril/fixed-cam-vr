@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: af5a556b-6b30-4a77-84ea-1e6cea94b69a
-  modified: 2026-08-12T00:03:07.293Z
+  modified: 2026-08-12T15:20:53.699Z
 ---
 
 # タイトル画面「廻リ視」を触る前に
@@ -99,15 +99,51 @@ Registration の A（点サンプル）は不変。入力面は右手 4 入力�
 `TitleShaderInclusionTests` が「2 本のシェーダが `m_AlwaysIncludedShaders` に入っていること」と
 「版が Resources から読めること」を機械で固定している。
 
+## 4.5 閉じ方は「中心へ巻き込みながら焼く」（2026-08-13・LEDGER 0022）
+
+奥へ 0.55m 退く（`RecedeM`）のをやめた。**z を引くと題字は視界の中で一様に小さくなる**ので、
+消滅ではなく「遠ざかって箱に入った」と読まれる（ユーザー「箱に吸収されたみたいで変な感じ」）。
+
+| 何 | どこ |
+|---|---|
+| 渦の進み `swirl`（押した瞬間から二乗で 0→1） | `TitleLogic.Weights` の Out |
+| ねじりと中心寄せ | `TitleGlyph.shader` の `TWIST_RAD` / `TWIST_RIM` / `PULL_AMT` |
+| 焼ける順・焦げ・熾・灰 | 同 `BurnOrder` / `CHAR_W` / `EMBER_W` / `ASH_*` |
+
+⚠ **奥行きに負の値を積まない。** `pushM` は押した瞬間の 0.06m の山だけ。
+`TitleLogicTests.Push_MovesTowardTheViewer_AndNeverRecedes` が全フレームで固定している。
+
+⚠⚠ **焼ける順の窓は版から実測して置く**（`ORDER_LO` / `ORDER_HI`）。半径と版の B を混ぜた値は
+[0,1] を張らず、実測で**墨のある画素の 2〜98% が 0.201〜0.748 に固まっていた**。
+素のまま使うと**火が 0.4 秒で走り抜ける**（1.15 秒の尺のうち動くのは真ん中だけ）。
+**版を焼き直したら測り直す**:
+
+```bash
+py -3.11 -c "from PIL import Image; import math; ..."   # ROUNDS R014 に測り方
+```
+
+⚠ **`dissolve` に緩急を付けない。** SmoothStep だと変化の 6 割が真ん中の 4 割に集まり、
+上と同じことが二重に起きる。焼け際は一定の速さで進むのが正しい。
+
+⚠ **熾は焦げよりずっと狭く**（1 : 4）。同じ幅だと熾の加算が焦げを塗り潰して
+「焼けた」ではなく「光って消えた」に戻る。**この 2 つは対で決める**。
+
 ## 5. 見た目を変えたら必ず絵を出す
 
 ```powershell
 .\tools\unity.ps1 menu title
 ```
 
-静止画 9 枚 → `Assets/Screenshots/title/` / 閉じる演出 56 枚 → `logs/title/`。Play も HMD も不要。
+静止画 10 枚 → `Assets/Screenshots/title/` / 閉じる演出 56 枚 → `logs/title/`。Play も HMD も不要。
 **背景には本物の封印の箱を置いてある** — 単色の背景で撮ると「黒が開いたとき何が見えるか」を
 判定できない。
+
+⚠⚠ **プレビューは `Begin()` だけでは題字を出さない。** 段 `Wait`（真っ暗・A 待ち）が
+2026-08-12 に入ってから `RequestAdvance()` が要る。直し忘れていて、
+**10 枚とも真っ黒な絵を出しながら `menu` は「✓」と報告していた**（2026-08-13 に発覚。
+`menu` の門は出力ディレクトリの更新しか見ない）。いまは `TitlePreview.Summoned()` が
+唯一の入口で、**`hold` の最大の明るさが 120 未満なら LogError** で落ちる
+（墨は 242 / 黒だけ 13 / 封印の箱と地だけ 55）。新しい段を足したらここを通す。
 
 判定の作法は [[../rules/visual-verification]] のとおり: **フル解像度で、対象だけを画面いっぱいに、
 実物と並べて、「これは何に見えるか」を言語化する**。2026-08-12 に、縁の色を封印の箱と同じ暗さで

@@ -37,6 +37,12 @@ namespace FixedCamVr.Streaming.EditorTools
         private const int SeqFrames = 56;
         private const float SeqDt = 1f / 20f;
 
+        /// <summary>
+        /// 題字が写っているとみなす最小の明るさ（0..255）。
+        /// 墨は生成りで sRGB およそ 242。黒だけなら 13・封印の箱と地だけなら 55。
+        /// </summary>
+        private const int GlyphPeakMin = 120;
+
         private static readonly Vector3 EyePos = new Vector3(0f, 1.6f, -3.4f);
         private static readonly Vector3 LookAt = new Vector3(0f, 1.15f, 0f);
 
@@ -74,7 +80,7 @@ namespace FixedCamVr.Streaming.EditorTools
             Shot(cam, title, WeightsAt(0.30f), 0f, "in_030");
             Shot(cam, title, WeightsAt(0.70f), 0f, "in_070");
             TitleWeights hold = WeightsAt(1f);
-            Shot(cam, title, hold, 0f, "hold");
+            int holdPeak = Shot(cam, title, hold, 0f, "hold");
             // 光が走っている別の時刻（走りが止まって見えないかの確認）。
             Shot(cam, title, hold, 2.6f, "hold_t26");
 
@@ -84,20 +90,36 @@ namespace FixedCamVr.Streaming.EditorTools
             EyeShot(cam, title, hold, +HalfIpdM, "hold_R");
 
             // ---- A を押してから ----
-            var outLogic = new TitleLogic();
-            outLogic.Begin();
+            TitleLogic outLogic = Summoned();
             Advance(outLogic, TitleLogic.InDelaySec + TitleLogic.InSec + 0.1f);
             outLogic.RequestDismiss();
-            Shot(cam, title, StepTo(outLogic, 0.18f), 0f, "out_flash");
-            Shot(cam, title, StepTo(outLogic, 0.60f), 0f, "out_mid");
-            Shot(cam, title, StepTo(outLogic, 1.10f), 0f, "out_late");
+            // ⚠ <b>StepTo は「そこから何秒進めるか」</b>。閉じる演出は 1.35 秒しか無いので、
+            //    累計が超えると段が Done へ抜けて**真っ白な絵を撮ることになる**（前はそうなっていた）。
+            //    括弧内は A からの通算。
+            Shot(cam, title, StepTo(outLogic, 0.18f), 0f, "out_flash");       // 0.18 閃光
+            Shot(cam, title, StepTo(outLogic, 0.32f), 0f, "out_burn_early");  // 0.50 外周に火が回る
+            Shot(cam, title, StepTo(outLogic, 0.40f), 0f, "out_burn_mid");    // 0.90 巻き込みと焦げ
+            Shot(cam, title, StepTo(outLogic, 0.30f), 0f, "out_ash");         // 1.20 灰だけ
             Shot(cam, title, TitleWeights.Hidden, 0f, "done");
 
             Sequence(cam, title, box);
 
             Cleanup(titleGo, camGo, box);
             AssetDatabase.Refresh();
-            Debug.Log($"[TitlePreview] 静止画 9 枚 → {OutDir} / 閉じる演出 {SeqFrames} 枚 → {SeqDir}。" +
+
+            // ⚠⚠ **「撮れた」ではなく「画に出た」を数える。** 2026-08-13 に、段の追加へ
+            //    プレビューが追随できておらず、**10 枚とも真っ黒なのに成功と報告した**。
+            //    墨は生成り（sRGB でおよそ 242）なので、題字が立っていれば必ずここを超える。
+            //    黒だけなら 13・封印の箱と地だけなら 55 にしかならない。
+            if (holdPeak < GlyphPeakMin)
+            {
+                Debug.LogError(
+                    $"[TitlePreview] hold に題字が写っていない（最大 {holdPeak} < {GlyphPeakMin}）。" +
+                    "段が Wait のままか、TitleGlyph が 1 画素も描いていない。**絵を信用しないこと**");
+            }
+
+            Debug.Log($"[TitlePreview] 静止画 10 枚 → {OutDir} / 閉じる演出 {SeqFrames} 枚 → {SeqDir}" +
+                      $"（hold の最大 {holdPeak}）。" +
                       "**done.png に壁（背景の灰）が箱の外にしか無いことを必ず見る**");
         }
 
@@ -128,10 +150,26 @@ namespace FixedCamVr.Streaming.EditorTools
             return go;
         }
 
-        private static TitleWeights WeightsAt(float reveal)
+        /// <summary>
+        /// 題字が立っている状態を作る。
+        ///
+        /// ⚠⚠ <b>`Begin()` だけでは題字は出ない。</b> 2026-08-12 に段
+        /// <see cref="TitleStage.Wait"/>（真っ暗・A 待ち）が入ってから、
+        /// <see cref="TitleLogic.RequestAdvance"/> を呼ばないと**黒しか出ない**。
+        /// このプレビューはそれを直し忘れていて、**10 枚とも真っ黒な絵を出しながら成功と報告していた**
+        /// （2026-08-13 に発覚）。ここを通さない経路を新しく作らないこと。
+        /// </summary>
+        private static TitleLogic Summoned()
         {
             var l = new TitleLogic();
             l.Begin();
+            l.RequestAdvance();          // ← A。これが無いと段は Wait のまま
+            return l;
+        }
+
+        private static TitleWeights WeightsAt(float reveal)
+        {
+            TitleLogic l = Summoned();
             Advance(l, TitleLogic.InDelaySec + TitleLogic.InSec * Mathf.Clamp01(reveal) + 0.001f);
             return l.Weights;
         }
@@ -149,10 +187,11 @@ namespace FixedCamVr.Streaming.EditorTools
             return l.Weights;
         }
 
-        private static void Shot(Camera cam, TitleScreen title, in TitleWeights w, float phase, string name)
+        /// <summary>1 枚撮って、<b>その絵の最大の明るさ</b>（0..255）を返す。</summary>
+        private static int Shot(Camera cam, TitleScreen title, in TitleWeights w, float phase, string name)
         {
             title.Apply(w, phase);
-            Capture(cam, Path.Combine(OutDir, $"title_{name}.png"));
+            return Capture(cam, Path.Combine(OutDir, $"title_{name}.png"));
         }
 
         private static void EyeShot(Camera cam, TitleScreen title, in TitleWeights w, float dx, string name)
@@ -170,8 +209,7 @@ namespace FixedCamVr.Streaming.EditorTools
             Directory.CreateDirectory(SeqDir);
             foreach (string old in Directory.GetFiles(SeqDir, "seq_*.png")) File.Delete(old);
 
-            var l = new TitleLogic();
-            l.Begin();
+            TitleLogic l = Summoned();
             Advance(l, TitleLogic.InDelaySec + TitleLogic.InSec + 0.2f);
             l.RequestDismiss();
             var input = new TitleInput { concealReady = true };
@@ -183,7 +221,8 @@ namespace FixedCamVr.Streaming.EditorTools
             }
         }
 
-        private static void Capture(Camera cam, string path)
+        /// <summary>撮って書き出し、<b>最大の明るさ</b>（0..255）を返す。</summary>
+        private static int Capture(Camera cam, string path)
         {
             // ⚠ sRGB を明示する。プロジェクトは Linear なので、linear のまま PNG へ書くと
             //    **実際より 2 段暗い絵**になり、明るさの判断を丸ごと誤る。
@@ -209,11 +248,24 @@ namespace FixedCamVr.Streaming.EditorTools
             cam.targetTexture = null;
 
             File.WriteAllBytes(path, tex.EncodeToPNG());
+
+            // 最大の明るさ。**縮小した目視では 13 と 242 の区別が付かない**ので数で持つ。
+            int peak = 0;
+            Color32[] px = tex.GetPixels32();
+            for (int k = 0; k < px.Length; k += 7)      // 7 画素おきで足りる（最大値だけ見る）
+            {
+                Color32 c = px[k];
+                int m = c.r > c.g ? c.r : c.g;
+                if (c.b > m) m = c.b;
+                if (m > peak) peak = m;
+            }
+
             Object.DestroyImmediate(tex);
             resolved.Release();
             Object.DestroyImmediate(resolved);
             rt.Release();
             Object.DestroyImmediate(rt);
+            return peak;
         }
 
         private static void Cleanup(GameObject titleGo, GameObject camGo, GameObject? box)

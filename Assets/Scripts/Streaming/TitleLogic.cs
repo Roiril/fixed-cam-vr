@@ -17,7 +17,7 @@ namespace FixedCamVr.Streaming
         In,
         /// <summary>出し切って、A を待っている。</summary>
         Hold,
-        /// <summary>A が押された。光が走り、字が退き、黒が開く。</summary>
+        /// <summary>A が押された。光が走り、字が中心へ巻き込まれて焼け落ち、黒が開く。</summary>
         Out,
         /// <summary>閉じ切った。以後この体験では二度と出ない（ランリセットで戻る）。</summary>
         Done,
@@ -35,8 +35,16 @@ namespace FixedCamVr.Streaming
         public float glyph;
         /// <summary>出現の進み（0 = 何も無い / 1 = 出し切り）。下から線が点いて面が満ちる。</summary>
         public float reveal;
-        /// <summary>溶ける量（0 = そのまま / 1 = 消え切り）。</summary>
+        /// <summary>焼ける量（0 = そのまま / 1 = 焼け切り）。</summary>
         public float dissolve;
+        /// <summary>
+        /// 渦の進み（0 = そのまま / 1 = 巻き切り）。<b>版の中で中心へ寄せて、ねじる</b>。
+        ///
+        /// ⚠ <b>奥行きではない。</b> 2026-08-12 に「奥へ飛んでいくと箱に吸収されたみたいで変」と
+        /// 言われて <c>RecedeM</c>（0.55m 退く）を捨てた代わりに置いたもの。
+        /// z を引くと題字は視界の中で一様に小さくなるので、消滅ではなく<b>遠ざかった</b>と読まれる。
+        /// </summary>
+        public float swirl;
         /// <summary>走り抜ける光の位置（0..1 で左から右へ）。</summary>
         public float flashPos;
         /// <summary>走り抜ける光の強さ。</summary>
@@ -109,10 +117,10 @@ namespace FixedCamVr.Streaming
         /// <summary>A の手応え。光が字を走り抜ける。<b>押した瞬間に始める</b>（遅れると効かない）。</summary>
         public const float FlashSec = 0.42f;
 
-        /// <summary>光が走ってから字が溶け始めるまで。</summary>
+        /// <summary>光が走ってから字が焼け始めるまで。</summary>
         public const float DissolveDelaySec = 0.20f;
 
-        /// <summary>字が溶け切るまで。</summary>
+        /// <summary>字が焼け切るまで。</summary>
         public const float DissolveSec = 1.15f;
 
         /// <summary>黒が開き切るまで（クロスフェード）。</summary>
@@ -124,11 +132,17 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float ConcealWaitMaxSec = 0.5f;
 
-        /// <summary>A を押した瞬間に字が迫る量 (m)。</summary>
+        /// <summary>A を押した瞬間に字が迫る量 (m)。<b>山なので必ず 0 へ戻る</b>。</summary>
         public const float PushM = 0.06f;
 
-        /// <summary>溶けながら奥へ退く量 (m)。</summary>
-        public const float RecedeM = 0.55f;
+        /// <summary>
+        /// 灰だけになった残りを引き取る点（焼けの進み）。ここから <c>glyph</c> が落ち始める。
+        ///
+        /// ⚠ <b>頭から不透明度を落とさない。</b> 墨は焼け際（<c>dissolve</c>）が食っていくので、
+        /// 同時に全体を薄くすると<b>まだ焼けていない所まで半透明になる</b>
+        /// （＝「燃えている」ではなく「フェードアウトしている」に見える）。
+        /// </summary>
+        public const float AshFadeFrom = 0.88f;
 
         private TitleStage _stage = TitleStage.Off;
         private float _elapsed;      // 段に入ってからの秒
@@ -309,19 +323,26 @@ namespace FixedCamVr.Streaming
                         float d = Clamp01((_elapsed - DissolveDelaySec) / DissolveSec);
                         float open = _opening ? Clamp01(_openElapsed / OpenSec) : 0f;
                         float f = Clamp01(_elapsed / FlashSec);
-                        // 迫ってから退く。押した手応えを先に返し、そのあと奥へ抜けていく。
-                        float push = PushM * Bump(f) - RecedeM * (d * d);
+                        // 渦は**押した瞬間から**進む（焼けより先に歪み始めてから火が回る）。
+                        // 二乗なのは、頭で急にねじれると「UI がアニメーションした」に見えるため。
+                        float s = Clamp01(_elapsed / (DissolveDelaySec + DissolveSec));
                         return new TitleWeights
                         {
                             veil = 1f - SmoothStep01(open),
                             // 字は黒より先に消え切る。最後に残るのが黒だと、開いた瞬間に
                             // 現実だけが立ち上がって継ぎ目が 1 回で済む。
-                            glyph = 1f - SmoothStep01(d),
+                            // ⚠ 落とすのは**灰だけになってから**（AshFadeFrom）。
+                            glyph = 1f - SmoothStep01(Clamp01((d - AshFadeFrom) / (1f - AshFadeFrom))),
                             reveal = _dismissReveal,
-                            dissolve = SmoothStep01(d),
+                            // ⚠ **ここに緩急を付けない。** SmoothStep だと変化の 6 割が真ん中の
+                            //    4 割に集まり、火が一瞬で走り抜けて「焼けた」ではなく「消えた」になる
+                            //    （2026-08-13 実測）。焼け際は一定の速さで進むのが正しい。
+                            dissolve = d,
+                            swirl = s * s,
                             flashPos = f,
                             flashAmt = Bump(f),
-                            pushM = push,
+                            // 押した手応えだけ。**奥へは退かない**（退くと「箱に吸い込まれた」に見える）。
+                            pushM = PushM * Bump(f),
                         };
                     }
 

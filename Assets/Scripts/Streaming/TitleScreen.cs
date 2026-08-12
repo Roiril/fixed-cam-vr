@@ -100,6 +100,8 @@ namespace FixedCamVr.Streaming
         private static readonly int ArtId = Shader.PropertyToID("_Art");
         private static readonly int RevealId = Shader.PropertyToID("_Reveal");
         private static readonly int DissolveId = Shader.PropertyToID("_Dissolve");
+        private static readonly int SwirlId = Shader.PropertyToID("_Swirl");
+        private static readonly int ArtAspectId = Shader.PropertyToID("_ArtAspect");
         private static readonly int FlashPosId = Shader.PropertyToID("_FlashPos");
         private static readonly int FlashAmtId = Shader.PropertyToID("_FlashAmt");
         private static readonly int PhaseSecId = Shader.PropertyToID("_PhaseSec");
@@ -361,6 +363,9 @@ namespace FixedCamVr.Streaming
             _glyphRenderer = glyphGo.AddComponent<MeshRenderer>();
             _glyphMat = new Material(glyphShader) { name = "TitleGlyph (runtime)" };
             _glyphMat.SetTexture(ArtId, art);
+            // ⚠ 縦横比は**ここが唯一の供給元**。閉じるときの渦は版の中で解くので、
+            //    シェーダ側に別の既定を持たせると渦が楕円になって字が横へ流れる。
+            _glyphMat.SetFloat(ArtAspectId, ArtAspect);
             ConfigureRenderer(_glyphRenderer, _glyphMat);
             _glyphRoot = glyphGo.transform;
         }
@@ -490,11 +495,15 @@ namespace FixedCamVr.Streaming
                 _glyphMat.SetFloat(OpacityId, AppliedGlyph);
                 _glyphMat.SetFloat(RevealId, Mathf.Clamp01(w.reveal));
                 _glyphMat.SetFloat(DissolveId, Mathf.Clamp01(w.dissolve));
+                _glyphMat.SetFloat(SwirlId, Mathf.Clamp01(w.swirl));
                 _glyphMat.SetFloat(FlashPosId, w.flashPos);
                 _glyphMat.SetFloat(FlashAmtId, Mathf.Clamp01(w.flashAmt));
                 _glyphMat.SetFloat(PhaseSecId, phaseSec);
                 _glyphRenderer.enabled = AppliedGlyph > 0.002f;
                 // 手前が正の push。local z は奥が正なので符号を反す。
+                // ⚠ **奥へは退かない**（2026-08-13）。ここに負の値を積むと題字が一様に小さくなり、
+                //    「焼けて消えた」ではなく「遠ざかって箱に吸い込まれた」に見える。
+                //    退く代わりに版の中で中心へ巻き込む（`TitleWeights.swirl`）。
                 _glyphRoot.localPosition =
                     new Vector3(0f, _glyphYOffset, Mathf.Max(distanceM, 0.5f) - w.pushM);
             }
