@@ -52,6 +52,10 @@ SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何�
 #    ここに足すのは `tools/ingest-sounds.py` が焼くものだけ（合成へ戻したら消すこと）。
 RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_close"}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
+
+# 発振器が居るか（掃引する純音も捕まる）。実測: 純音 0.93〜1.00 / 帯ノイズの掃引 0.31〜0.43 /
+# ノイズ 0.08〜0.21。⚠ `tonal_db` は**滑る純音を原理的に検出できない**ので、この 2 本立てが要る。
+PURITY_MAX = 0.60
 CLASS_TRANSIENT_DB = 14.0   # これより波高が大きい ＝ 一撃 ＝ 尖頭で揃える側
 
 
@@ -134,6 +138,9 @@ def check(name: str, y: np.ndarray, is_loop: bool) -> tuple[dict, list[str]]:
     # 不快さ（2026-08-12 ユーザー指示「不気味で怖くていいけど、不快にはならないように」）
     # 突出（＝「安っぽい電子音」）。2026-08-12 ユーザー指摘
     # 「チープな電子音はチープすぎるからやめてほしい」。
+    if name not in RECORDED and d["purity"] > PURITY_MAX:
+        bad.append(f"発振器が居る（純度 {d['purity']} / 上限 {PURITY_MAX}）— "
+                   "正弦波と `sk.sweep` をやめて `tone_band` / `sweep_band` にする")
     if name not in RECORDED and d["tonal_db"] > TONAL_MAX:
         bad.append(f"発振器に聞こえる（突出 {d['tonal_db']}dB / 上限 {TONAL_MAX}）— "
                    "純音をやめて狭帯域ノイズ（soundkit.tone_band）にする")
@@ -196,7 +203,7 @@ def main() -> int:
         mark = "NG" if bad else "ok"
         print(f"  [{mark}] {name:20s} {d['class']}  {d['lufs']:6.1f}LUFS "
               f"tp{d['true_peak_db']:6.1f} 波高{d['crest_db']:5.1f} mono{d['mono_db']:6.2f} "
-              f"内蔵SP{d['speaker_db']:6.1f} 鋭{d['sharp']:5.2f} 粗{d['rough']:5.2f}")
+              f"内蔵SP{d['speaker_db']:6.1f} 鋭{d['sharp']:5.2f} 純度{d['purity']:5.2f}")
         for b in bad:
             print(f"        - {b}")
 
@@ -228,7 +235,8 @@ def main() -> int:
 <tr><td>帯域配分 (dB)</td><td>{bands}</td></tr>
 <tr><td>モノ互換</td><td>{d['mono_db']} dB</td></tr>
 <tr><td>内蔵スピーカーでの損失</td><td>{d['speaker_db']} dB</td></tr>
-<tr><td>鋭さ / 粗さ / 突出</td><td>{d['sharp']} acum / {d['rough']} asper / {d['tonal_db']} dB</td></tr>{seam}
+<tr><td>鋭さ / 粗さ / 突出</td><td>{d['sharp']} acum / {d['rough']} asper / {d['tonal_db']} dB</td></tr>
+<tr><td>発振器の純度</td><td>{d['purity']}（0 = ノイズ / 1 = 純音）</td></tr>{seam}
 </table>{('<ul><li>' + '</li><li>'.join(bad) + '</li></ul>') if bad else ''}</div>""")
     h.append("</div>")
     with open(out, "w", encoding="utf-8") as f:

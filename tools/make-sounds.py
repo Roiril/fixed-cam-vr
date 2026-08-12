@@ -358,7 +358,7 @@ def sfx_seal_close() -> np.ndarray:
     sec = 2.4
     n = int(sec * sk.SR)
 
-    pull = sk.sweep(1.15, 220, 1450, log=True)
+    pull = sk.sweep_band(1.15, 220, 1450, q=4.0, seed=705)
     pull *= np.linspace(0, 1, len(pull)) ** 2.2
     pull = sk.biquad(pull, "bp", 700, 0.8)
 
@@ -367,8 +367,8 @@ def sfx_seal_close() -> np.ndarray:
 
     hit_len = 0.9
     hit = sk.mix(
-        (sk.sweep(hit_len, 210, 46, log=True), 1.0),
-        (sk.sweep(hit_len, 96, 38, log=True), 0.7),
+        (sk.sweep_band(hit_len, 210, 46, q=3.0, seed=706), 1.0),
+        (sk.sweep_band(hit_len, 96, 38, q=3.0, seed=707), 0.7),
         (sk.loop_noise(hit_len, 120, 900, slope_db_oct=-6.0, seed=702), 0.5),
     )
     hit *= sk.env_ar(hit_len, 0.004, 0.20, curve=2.2)
@@ -430,9 +430,12 @@ def sfx_shatter() -> np.ndarray:
         left[i:i + ln] += g * (0.5 - 0.5 * pan)
         right[i:i + ln] += g * (0.5 + 0.5 * pan)
 
+    # ⚠⚠ **正弦波の掃引を使わない**（2026-08-12 ユーザー指摘「ポウンという電子音」）。
+    #    滑る純音は SF の効果音の語彙で、実物の「飲み込まれる」は必ず幅を持つ。
+    #    `sweep_band` は帯域ノイズの粒を重ねて中心周波数を動かす（動きは残り、線が消える）。
     swallow_len = 0.75
     sw = sk.mix(
-        (sk.sweep(swallow_len, 1300, 120, log=True), 1.0),
+        (sk.sweep_band(swallow_len, 1300, 120, q=5.0, seed=803), 1.0),
         (sk.loop_noise(swallow_len, 200, 2600, slope_db_oct=-4.0, seed=802), 0.55),
     )
     sw *= sk.env_ar(swallow_len, 0.010, 0.22, curve=2.0)
@@ -454,8 +457,9 @@ def sfx_swap() -> np.ndarray:
     n = int(sec * sk.SR)
     t = sk.t_axis(sec)
 
+    # ⚠ 下降する正弦波は「合成のバスドラム」の語彙。帯で置く。
     thump = sk.mix(
-        (sk.sweep(0.45, 150, 58, log=True), 1.0),
+        (sk.sweep_band(0.45, 150, 58, q=3.0, seed=903), 1.0),
         (sk.loop_noise(0.45, 80, 700, slope_db_oct=-6.0, seed=901), 0.45),
     )
     thump *= sk.env_ar(0.45, 0.002, 0.13, curve=2.4)
@@ -488,10 +492,12 @@ def sfx_shell_open() -> np.ndarray:
     n = int(sec * sk.SR)
     t = sk.t_axis(sec)
 
-    release = sk.sweep(1.5, 90, 620, log=True)
+    # ⚠⚠ **正弦波の掃引を使わない**（2026-08-12 ユーザー指摘「ジューン⤴という電子音」）。
+    #    ここは「隔離が開いて空気が抜ける」なので、そもそも幅のある音の方が正しい。
+    # ⚠ q=3 でもまだ純度 0.50（境目）だった。**帯を広げるほどノイズに寄る。**
+    release = sk.sweep_band(1.5, 90, 620, q=1.8, seed=1003)
     release *= np.sin(np.linspace(0, np.pi, len(release))) ** 1.3
-    # 掃引は終点で止まるので、そこだけ線として立つ。空気を足して山に乗せる
-    release += sk.loop_noise(1.5, 380, 1100, slope_db_oct=-2.0, seed=1002) * 0.55
+    release += sk.loop_noise(1.5, 380, 1400, slope_db_oct=-2.0, seed=1002) * 0.85
 
     breath = sk.loop_noise(sec, 260, 4200, slope_db_oct=-3.5, seed=1001)
     breath *= np.exp(-((t - 0.55) / 0.42) ** 2)

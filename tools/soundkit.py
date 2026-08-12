@@ -239,6 +239,37 @@ def sweep(sec: float, f0: float, f1: float, amp: float = 1.0,
 # ---------------------------------------------------------------------------
 
 
+def sweep_band(sec: float, f0: float, f1: float, q: float = 6.0, seed: int = 1,
+               grains: int = 160, sr: int = SR) -> np.ndarray:
+    """**音程は動くが純音ではない**掃引。粒を重ねて帯域を移動させる。
+
+    ⚠⚠ **`sweep`（正弦波の掃引）は「安っぽい電子音」そのもの**（2026-08-12 ユーザー指摘
+    「ポウンという電子音」「ジューン⤴という電子音」）。滑る純音は SF の効果音の語彙で、
+    実物の「落ちる」「抜ける」は必ず幅を持つ（空気・破片・金属の共振がまとめて動く）。
+
+    ここでは短い帯域ノイズの粒を重ねながら中心周波数を動かす。動きの印象は残り、
+    線スペクトルが消える。`q` は帯の狭さ（6 くらいで「音程が分かる幅」、
+    2 で「風の音」、15 を超えると純音へ近づく）。
+    """
+    n = int(round(sec * sr))
+    out = np.zeros(n)
+    rng = np.random.default_rng(seed)
+    glen = max(int(round(sec / grains * 3.0 * sr)), 128)   # 3 倍重ねる
+    gwin = np.hanning(glen)
+    for i in range(grains):
+        u = i / max(grains - 1, 1)
+        fc = f0 * (f1 / f0) ** u if (f0 > 0 and f1 > 0) else f0 + (f1 - f0) * u
+        w = max(fc / max(q, 0.5), 8.0)
+        g = loop_noise(glen / sr, max(fc - w * 0.5, 15.0), fc + w * 0.5,
+                       seed=int(rng.integers(1, 1 << 30)), sr=sr) * gwin
+        at = int(u * max(n - glen, 1))
+        out[at:at + glen] += g[:max(0, min(glen, n - at))][:n - at]
+    # ⚠ 窓を掛けた粒を重ねると、低い帯では直流が残る（実測 0.0028）。
+    #    直流は音にならずスピーカーの可動域だけを食うので、ここで落とす。
+    out -= float(np.mean(out))
+    return _norm(out)
+
+
 def biquad(y: np.ndarray, kind: str, freq: float, q: float = 0.707,
            gain_db: float = 0.0, sr: int = SR) -> np.ndarray:
     b, a = _biquad_coef(kind, freq, q, gain_db, sr)
@@ -484,6 +515,10 @@ def write_wav(path: str, y: np.ndarray, sr: int = SR, peak_db: float = -3.0,
     """
     y = np.asarray(y, dtype=np.float64)
     y = y.mean(axis=1) if (mono and y.ndim == 2) else (y if mono else to_stereo(y))
+    # ⚠ **直流はどんな音でも要らない。** 音にならずスピーカーの可動域だけを食い、
+    #    ヘッドルームも削る。窓を掛けた粒を重ねる合成（`sweep_band`）で残りやすいので、
+    #    **書き出す直前に必ず落とす**（合成側で気づけなくてもここで止まる）。
+    y = y - np.mean(y, axis=0, keepdims=y.ndim == 2)
     m = float(np.max(np.abs(y)))
     ceil = 10 ** (peak_db / 20)
     if m > ceil:
@@ -777,47 +812,113 @@ def tonality_db(y: np.ndarray, sr: int = SR) -> float:
     ⚠⚠ **1/3 オクターブ帯域を隣と比べる形では測れない**（2026-08-12 にこれで誤診した）。
     その粗さだと**スペクトルの傾きや帯域の縁**も「突出」と読む —
     トーンが 1 本も無い `bed_static`（帯域ノイズ）が **28.9dB** と出た。
-
     正しくは<b>細かい分解能で、対数周波数上の滑らかな地面からの隆起</b>を測る。
-    純音は数ビンだけ跳ね上がるので大きく出る。傾きも縁も地面ごと動くので出ない。
+
+    ⚠⚠ **さらに、時間平均で測ると「滑るトーン」を見逃す**（同日、ユーザーに
+    「ポウン」「ジューン⤴」と指摘されて気づいた）。純音の掃引は平均すると周波数方向へ散って
+    山にならないので、定常の純音しか捕まらない。**フレームごとに測って中央値**を取る。
+    掃引はどのフレームでも山を持つので必ず出る。
 
     目安（この作品の中での比較用）:
-      **40dB 超** = 発振器そのもの（正弦波 1 本）
+      **40dB 超** = 発振器そのもの（正弦波 1 本・掃引を含む）
       **25〜35dB** = はっきりした唸り。数分続けると機械に聞こえる
       **15dB 前後** = 実物の機械や楽器。共振の帯として聞こえる
       **10dB 未満** = 音程の印象が無い
 
-    ⚠ **大きいこと自体は欠陥ではない。** 鈴も金属も実物は 20〜30dB ある。
+    ⚠ **大きいこと自体は欠陥ではない。** 鈴も金属も実物は 20〜40dB ある。
     見るのは「**合成した音が**発振器に聞こえていないか」。
     """
     m = to_stereo(y).mean(axis=1)
-    n = 1 << 15
+    n = 4096                       # 85ms。掃引でも 1 フレーム内の移動は 1/4 オクターブ程度
     if len(m) < n:
         m = np.pad(m, (0, n - len(m)))
-    # 複数の窓の平均スペクトル（1 窓だと過渡が偶然の山を作る）
+    hop = n // 2
     win = np.hanning(n)
-    acc = np.zeros(n // 2 + 1)
-    hops = max(1, (len(m) - n) // max(1, (len(m) - n) // 8 + 1))
-    cnt = 0
-    for i in range(0, max(1, len(m) - n + 1), max(hops, 1)):
-        acc += np.abs(np.fft.rfft(m[i:i + n] * win)) ** 2
-        cnt += 1
-        if cnt >= 12:
-            break
-    spec = acc / max(cnt, 1)
     f = np.fft.rfftfreq(n, 1 / sr)
 
     lo, hi = 80.0, 12000.0
-    grid = np.logspace(math.log10(lo), math.log10(hi), 900)
-    vals = np.interp(grid, f, spec)
-    db = 10 * np.log10(np.maximum(vals, 1e-20))
-
-    # 地面 = 対数周波数上の 1/2 オクターブ幅の中央値（傾きも縁も一緒に動く）
-    half_oct = int(round(900 / math.log2(hi / lo) * 0.5))
+    grid = np.logspace(math.log10(lo), math.log10(hi), 480)
+    half_oct = int(round(480 / math.log2(hi / lo) * 0.5))
     w = max(5, half_oct | 1)
-    pad = np.pad(db, (w // 2, w // 2), mode="edge")
-    floor = np.array([np.median(pad[i:i + w]) for i in range(len(db))])
-    return float(np.max(db - floor))
+
+    scores = []
+    energies = []
+    for i in range(0, len(m) - n + 1, hop):
+        seg = m[i:i + n]
+        e = float(np.mean(seg ** 2))
+        spec = np.abs(np.fft.rfft(seg * win)) ** 2
+        vals = np.interp(grid, f, spec)
+        db = 10 * np.log10(np.maximum(vals, 1e-20))
+        pad = np.pad(db, (w // 2, w // 2), mode="edge")
+        floor = np.array([np.median(pad[k:k + w]) for k in range(len(db))])
+        scores.append(float(np.max(db - floor)))
+        energies.append(e)
+
+    if not scores:
+        return 0.0
+    # ⚠ **無音のフレームを混ぜない。** 一撃の音は尻尾が長く、そこは地面ごと沈むので
+    #    山が出ず、中央値を不当に下げる。上位のエネルギーを持つフレームだけで測る。
+    energies = np.asarray(energies)
+    keep = energies >= max(float(np.max(energies)) * 0.02, 1e-14)
+    picked = np.asarray(scores)[keep] if np.any(keep) else np.asarray(scores)
+    return float(np.median(picked))
+
+
+def tone_purity(y: np.ndarray, sr: int = SR) -> float:
+    """**発振器が居るか**（0 = 全部ノイズ / 1 = 純音）。**掃引しても効く。**
+
+    ⚠⚠ <see cref="tonality_db"/> は**スペクトルの形**を見るので、
+    <b>滑る純音（チャープ）を原理的に検出できない</b>。どのフレームで見ても山が広がるため、
+    ピンクノイズより低く出る（実測: 掃引の純音 1.7dB / ピンクノイズ 9.2dB）。
+    2026-08-12、ユーザーが「ポウン」「ジューン⤴」と時刻で指摘して初めて分かった。
+
+    こちらは**包絡の滑らかさ**を見る。純音は振幅が一定なので包絡のばらつきがゼロ、
+    ノイズはレイリー分布で変動係数 0.5227 になる。**掃引しても純音は純音**なので、
+    帯域を狭く切って短い窓で見ればどちらも捕まる。
+
+    - **0.6 以上** = 発振器が居る（正弦波・その掃引）
+    - 0.3〜0.6 = 強い共振。実物の鈴や金属もここに入る
+    - **0.3 未満** = ノイズが主。狭帯域ノイズ（`tone_band` / `sweep_band`）はここ
+    """
+    m = to_stereo(y).mean(axis=1)
+    rayleigh_cv = 0.5227
+    win = int(0.030 * sr)                     # 30ms。掃引でもこの中では準定常
+    if len(m) < win * 3:
+        return 0.0
+    best_cv = 1.0
+    fc = 100.0
+    while fc <= 8000.0:
+        w = fc / 8.0                          # Q=8 の帯
+        band = biquad_fft(biquad_fft(m, "hp", max(fc - w * 0.5, 20.0), 1.2, 0.0, sr),
+                          "lp", fc + w * 0.5, 1.2, 0.0, sr)
+        sp = np.fft.fft(band)
+        h = np.zeros(len(band))
+        h[0] = 1.0
+        h[1:(len(band) + 1) // 2] = 2.0
+        if len(band) % 2 == 0:
+            h[len(band) // 2] = 1.0
+        env = np.abs(np.fft.ifft(sp * h))
+
+        mus, cvs = [], []
+        for i in range(0, len(env) - win + 1, win):
+            seg = env[i:i + win]
+            mu = float(np.mean(seg))
+            if mu <= 1e-9:
+                continue
+            mus.append(mu)
+            cvs.append(float(np.std(seg)) / mu)
+        if len(cvs) >= 3:
+            # ⚠ **その帯に中身がある窓だけを見る。** 掃引はどの帯にも一瞬しか居ないので、
+            #    留守の窓まで混ぜると中央値が漏れ込みの値になる。
+            mus = np.asarray(mus)
+            cvs = np.asarray(cvs)
+            live = mus >= float(np.max(mus)) * 0.35
+            if np.count_nonzero(live) >= 2:
+                # ⚠ **最大ではなく中央値。** 全部の窓の最大を取ると、ノイズでも偶然
+                #    滑らかな窓が 1 つあれば「純音」になる（実測: ピンクノイズが 0.70）。
+                best_cv = min(best_cv, float(np.median(cvs[live])))
+        fc *= 2 ** (1 / 3)
+    return round(1.0 - min(best_cv / rayleigh_cv, 1.0), 2)
 
 
 def describe(y: np.ndarray, sr: int = SR) -> dict:
@@ -835,4 +936,5 @@ def describe(y: np.ndarray, sr: int = SR) -> dict:
         "sharp": round(sharpness(y, sr), 2),
         "rough": round(roughness(y, sr), 2),
         "tonal_db": round(tonality_db(y, sr), 1),
+        "purity": tone_purity(y, sr),
     }
