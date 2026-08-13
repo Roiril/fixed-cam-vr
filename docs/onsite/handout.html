@@ -6,20 +6,20 @@
 <title>調査依頼書 / 展示の注意 — 待機者に渡す資料（廻リ視）</title>
 <style>
 /* ============================================================
- * 待機者に渡す資料。A4 を 2 面（両面刷り、または 2 枚）。
+ * 待機者に渡す資料。A4 が 2 枚。**両面刷りにしない。別々の紙に刷る。**
  *
- *   面 1 = 作中資料（調査依頼書）。世界の中の言葉だけ。明朝・朱印
- *   面 2 = 展示の注意。現実の言葉だけ。ゴシック
+ *   1 枚目 = 作中資料「調査依頼書」。世界の中の言葉だけ。明朝・朱印。**人数分刷って渡す**
+ *   2 枚目 = 展示の注意。現実の言葉だけ。ゴシック。**受付に 1 枚貼る**
  *
- * ⚠⚠ 2 つを同じ紙面に置かない。混ざると、どちらも嘘に見える。
- *     以前は 1 面に二重罫線で分けていたが、罫線 1 本では分かれていなかった。
+ * ⚠⚠ 2 つを同じ紙に置かない。1 枚の中に話者が 4 人（調査機関・装置・展示制作者・スタッフ）
+ *     並ぶと、そこで世界が終わる。運用は 受付で注意を読ませる → 同意 → 依頼書を渡す。
  *
- * ⚠ 面 1 は体験の設定を教えない。教えてよいのは体験者が取る行動だけ
- *   （歩く / 映像を見る / 違和感でボタンを押す / 判断しない）。
- *   周回数・視点が固定であること・映像が乱れること・怪異が実在することは書かない。
+ * ⚠ 1 枚目は体験の設定を教えない。教えてよいのは体験者が取る行動だけ
+ *   （歩く / 映像を見る / 違和感でボタンを押す / 判断しない / 照合しない）。
+ *   周回数・視点が固定であること・映像が乱れること・怪異が見えないことは書かない。
  *
- * 印刷: A4 縦・等倍・両面。背景の色は出なくてよい（線と文字だけで成立させてある）。
- *       刷り込み範囲 273mm。面 1 の本文は実測 190mm 前後。文言を足したら測り直すこと。
+ * 印刷: A4 縦・等倍。背景の色は出なくてよい（線と文字だけで成立させてある）。
+ *       刷り込み範囲 273mm。文言を足したら必ず高さを測り直すこと。
  * ============================================================ */
 
 :root {
@@ -51,10 +51,10 @@ body { font-family: var(--mincho); color: var(--ink); }
 }
 .sheet > * { position: relative; }
 
-/* --- 面 1 の頭（左 = 記入欄／右 = 朱印） -------------------- */
+/* --- 1 枚目の頭（左 = 刷り込み済みの管理欄／右 = 朱印） ------ */
 .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8mm; }
 .slots { font-size: 9pt; color: var(--sub); line-height: 2.1; white-space: nowrap; }
-.slot-line { display: inline-block; min-width: 26mm; border-bottom: .4pt solid var(--rule); }
+.slots .val { color: var(--ink); letter-spacing: .16em; margin-left: .4em; }
 .seal { width: 22mm; height: 22mm; flex: 0 0 auto; opacity: .85; }
 .seal svg { width: 100%; height: 100%; display: block; }
 
@@ -75,18 +75,18 @@ dl.items { margin: 0; }
 dl.items dt { font-weight: 500; margin: 0 0 .1em; letter-spacing: .12em; }
 dl.items dd { margin: 0 0 4mm 1.4em; }
 dl.items dd p:last-child { margin-bottom: 0; }
+.mgmt { font-size: 9.5pt; color: var(--sub); letter-spacing: .1em; }
 
 .band { border-top: .5pt solid var(--rule); margin: 6mm 0 3mm; padding-top: 3.5mm; }
 h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 2mm; }
 
-/* --- 面 2（展示の注意・現実の言葉） ------------------------- */
+/* --- 2 枚目（展示の注意・現実の言葉） ----------------------- */
 .sheet.exhibit { font-family: var(--gothic); line-height: 1.95; letter-spacing: 0; }
 .sheet.exhibit .work { font-family: var(--mincho); font-size: 20pt; letter-spacing: .3em; margin: 0 0 1mm; }
 .sheet.exhibit .spec { font-size: 10pt; color: var(--sub); margin: 0 0 12mm; }
-.sheet.exhibit h2 { font-family: var(--gothic); font-size: 12pt; font-weight: 700; letter-spacing: .06em; margin: 0 0 2mm; }
+.sheet.exhibit h2 { font-family: var(--gothic); font-size: 12pt; font-weight: 700; letter-spacing: .06em; margin: 0 0 2.5mm; }
 .sheet.exhibit .warn { font-size: 12pt; font-weight: 700; line-height: 1.9; }
-.sheet.exhibit .facts { list-style: none; padding: 0; margin: 0; }
-.sheet.exhibit .facts li { margin: 0 0 1.5mm; padding-left: 1.2em; text-indent: -1.2em; }
+.sheet.exhibit .lines p { margin: 0 0 2mm; }
 .sheet.exhibit .tech { font-size: 9.5pt; color: var(--sub); }
 
 /* --- 画面表示（印刷とは別。狭い幅で読めるようにする） -------- */
@@ -118,14 +118,14 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 2mm; 
 <body>
 
 <!-- ==========================================================
-     面 1 — 作中資料。世界の中の言葉だけ。
+     1 枚目 — 作中資料。世界の中の言葉だけ。人数分刷って渡す。
      ========================================================== -->
 <div class="sheet">
 
   <div class="head">
     <div class="slots">
-      観測者番号 <span class="slot-line"></span><br>
-      記録日 <span class="slot-line"></span>
+      観測者番号 <span class="val">０３７</span><br>
+      発行日 <span class="val">２０２６年八月十四日</span>
     </div>
     <div class="seal" aria-hidden="true">
       <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -148,19 +148,22 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 2mm; 
 
   <dl class="items">
     <dt>一、調査対象</dt>
-    <dd><p>旧塩根寮　北棟　Ｌ字壁面およびその周辺</p></dd>
+    <dd>
+      <p>旧塩根寮　北棟　回収壁面<br>
+      <span class="mgmt">管理番号 ： ＳＨ-ＫＢ-０２</span></p>
+    </dd>
 
     <dt>一、方法</dt>
     <dd>
       <p>観測装置を装着し、表示される映像を確認してください。<br>
-      装置の指示に従い、指定された経路を移動してください。<br>
-      映像の切替は自動で行われます。装置の操作は不要です。</p>
+      装置の指示に従い、所定の経路を移動してください。<br>
+      映像の切替は自動で行われます。切替操作は不要です。</p>
     </dd>
 
     <dt>一、記録</dt>
     <dd>
-      <p>映像内に違和感を認めた場合、手元のボタンを一度押してください。<br>
-      ボタンを押すと、怪異が記録されます。<br>
+      <p>違和感を認めるたび、手元のボタンを一度押してください。<br>
+      ボタンを押した時刻は、自動的に記録されます。<br>
       観測されたものについて、判断は行わないでください。</p>
     </dd>
   </dl>
@@ -170,42 +173,42 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 2mm; 
   <div class="band">
     <h2>観測装置について</h2>
     <p>
-      本装置は、目に見えない怪異の観測を目的として開発されたものです。<br>
-      装置の仕様上、観測位置を変更することはできません。<br>
-      映像と実際の状況を照合する必要はありません。<br>
-      観測中の指示は、すべて装置上に表示されます。
+      本装置は、怪異の観測に使用します。<br>
+      観測中、映像と実際の状況を照合しないでください。<br>
+      指示は、すべて映像内に表示されます。
     </p>
   </div>
 
 </div>
 
 <!-- ==========================================================
-     面 2 — 展示の注意。現実の言葉だけ。作中資料と混ぜない。
+     2 枚目 — 展示の注意。現実の言葉だけ。受付に貼る。
      ========================================================== -->
 <div class="sheet exhibit">
 
   <p class="work">廻リ視</p>
-  <p class="spec">Meta Quest 3 ／ 固定視点の映像を用いた体験</p>
+  <p class="spec">Meta Quest 3 を使用した VR 体験</p>
 
   <h2>ご体験の前に</h2>
   <p class="warn">
-    本作品にはホラー表現および恐怖を感じる演出が含まれます。<br>
-    体験中に気分が悪くなった場合は、すぐにヘッドセットを外し、スタッフにお声がけください。
+    本作品にはホラー表現や不安・恐怖を感じる演出が含まれます。<br>
+    体験中に気分が悪くなった場合は、その場で立ち止まり、ヘッドセットを外してスタッフにお声がけください。
   </p>
 
   <div class="band">
     <h2>体験について</h2>
-    <ul class="facts">
-      <li>・所要時間はおよそ 3 分です。</li>
-      <li>・立って歩いていただきます。足元にご注意ください。</li>
-      <li>・ヘッドセットはスタッフが装着します。</li>
-      <li>・体験中、スタッフからお声がけはしません。中断したいときはヘッドセットを外してください。</li>
-    </ul>
+    <div class="lines">
+      <p>所要時間はおよそ 3 分です。</p>
+      <p>体験中は立った状態で移動します。足元にご注意ください。</p>
+      <p>ヘッドセットはスタッフが体験者に装着します。</p>
+      <p>安全上必要な場合を除き、体験中にスタッフからお声がけすることはありません。</p>
+      <p>中断したい場合は、その場で立ち止まってヘッドセットを外してください。</p>
+    </div>
   </div>
 
   <div class="band">
     <h2>技術的な注意</h2>
-    <p class="tech">無線で映像を送っているため、通信の状態によって映像が乱れることがあります。</p>
+    <p class="tech">通信状況により、一時的に映像が乱れる場合があります。</p>
   </div>
 
 </div>
