@@ -66,8 +66,21 @@ def adb(serial, *args, timeout=20):
         sys.exit(2)
 
 
-def list_devices():
-    """`adb devices -l` の結果を [{serial,state,model}] で返す。"""
+_SKIP_REPORTED = set()
+
+
+def list_devices(all_devices=False):
+    """
+    `adb devices -l` の結果を [{serial,state,model}] で返す。
+
+    ⚠ **Quest 以外は既定で外す。** この機体には配信用の Pixel も刺さっていて、
+    `sync` が **VR の APK を配信スマホへも入れていた**（2026-08-13 実害。103MB が黙って居座る）。
+    `stop` / `sleep` も同じ list を使うので、配信中のスマホを止めに行く形が原理的にありえた。
+
+    ⚠ **model が読めない機は落とさない。** `unauthorized` の Quest は model を出さないので、
+    そこで消すと「繋がらない機を調べる」用途（`memory/quest_adb_auth.md`）が成り立たなくなる。
+    落とすのは「model が読めて、しかも Quest ではない」ときだけ。
+    """
     _, out, _ = adb(None, "devices", "-l")
     res = []
     for line in out.splitlines()[1:]:
@@ -81,6 +94,12 @@ def list_devices():
         for tok in parts[2:]:
             if tok.startswith("model:"):
                 model = tok[6:]
+        if not all_devices and model and not model.lower().startswith("quest"):
+            # 黙って外さない（「なぜあの機に入らないのか」を現場で追わせない）。
+            if parts[0] not in _SKIP_REPORTED:
+                _SKIP_REPORTED.add(parts[0])
+                print(f"  {parts[0]}  {model} は Quest ではないので対象外", file=sys.stderr)
+            continue
         res.append({"serial": parts[0], "state": parts[1], "model": model})
     return res
 
