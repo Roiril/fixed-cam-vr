@@ -46,11 +46,12 @@ namespace FixedCamVr.Streaming
         [Tooltip("タイトルを出すか。現場で切り分けるための逃げ道（本番は ON）。")]
         [SerializeField] private bool titleEnabled = true;
 
-        [Tooltip("文字までの距離 (m)。")]
-        [SerializeField, Min(0.5f)] private float distanceM = 2.0f;
+        [Tooltip("文字までの距離 (m)。2026-08-13 に 2.0 → 2.6（近すぎて見づらいという判定）。" +
+                 "本編のスクリーンは 2.0m なので、題字はその奥に立つ。")]
+        [SerializeField, Min(0.5f)] private float distanceM = 2.6f;
 
-        [Tooltip("版（1024px の縦）の高さ (m)。距離 2m で 1.30m ＝ 横幅 2.60m ＝ 見かけ 66°。" +
-                 "「廻」の実寸はこの 51%（＝ 0.66m ・見かけ 19°）。")]
+        [Tooltip("版（1024px の縦）の高さ (m)。距離 2.6m で 1.30m ＝ 横幅 2.60m ＝ 見かけ 53°。" +
+                 "「廻」の実寸はこの 51%（＝ 0.66m ・見かけ 14°）。")]
         [SerializeField, Min(0.05f)] private float titleHeightM = 1.30f;
 
         [Tooltip("視線中心からどれだけ下に置くか (度)。少し見下ろす位置に置くと据わりがよい。")]

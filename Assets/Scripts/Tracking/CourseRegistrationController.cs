@@ -83,8 +83,10 @@ namespace FixedCamVr.Tracking
         [SerializeField, Min(0.1f)] private float wallHeight = 1.0f;
 
         [Header("Behavior")]
-        [Tooltip("起動と同時に登録モードへ入る（通常は Staff モードで右スティック押込により入る）。")]
-        [SerializeField] private bool startInRegistration = false;
+        [Tooltip("起動と同時に位置合わせへ入る。**既定 ON**（2026-08-13・canon/LEDGER.md 0023）— " +
+                 "アプリを起動するのはスタッフなので、最初に必ず通る作業から始まる方が親切。" +
+                 "既に登録済みなら Review（確認）へ着地するので、B ですぐ抜けられる。")]
+        [SerializeField] private bool startInRegistration = true;
 
         /// <summary>Bridge から毎フレーム渡される登録入力（モード中のみ）。</summary>
         public struct RegInput

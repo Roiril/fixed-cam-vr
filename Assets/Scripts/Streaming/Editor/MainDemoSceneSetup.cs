@@ -381,6 +381,11 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(regSo, "headTransform", centerEye.transform);
             if (rightHand != null) TrySetObjectRef(regSo, "rightHandTransform", rightHand.transform);
             if (showControl != null) TrySetObjectRef(regSo, "showControl", showControl);
+            // ⚠ **起動と同時に位置合わせへ入る**（2026-08-13・canon/LEDGER.md 0023）。
+            //   アプリを起動するのはスタッフなので、最初に必ず通る作業から始める。
+            //   シーンに焼かれた値が SerializeField の初期値より優先されるので、ここで明示的に書く
+            //   （書かないと既存シーンの 0 が残って「既定を true にしたのに入らない」になる）。
+            TrySetBool(regSo, "startInRegistration", true);
             regSo.ApplyModifiedPropertiesWithoutUndo();
 
             // 2.95. 事前オーサリング済み cue スケジュール（周回×ゾーン発火）。
@@ -474,6 +479,16 @@ namespace FixedCamVr.Streaming.EditorTools
             //      ので、黒を開けば既に立っている箱がそのまま現れる（壁が覗くフレームが構造的に無い）。
             var titleScreen = CreateTitleScreen(centerEye.transform, runDirector, introDirector,
                                                 sealedBox, containment, showControl);
+            // 3.35. 体験前の注意書き（周回リセット直後の真っ暗＝ TitleStage.Wait のあいだだけ）。
+            //       題字と同じ 2.6m に立てる。⚠ 体験者に見せる唯一の文字なので、
+            //       文言を変えたら `unity.ps1 menu hud-font` を再実行する（忘れると実機で豆腐）。
+            var noticeGo = new GameObject("TitleNotice");
+            noticeGo.transform.SetParent(centerEye.transform, worldPositionStays: false);
+            var notice = noticeGo.AddComponent<FixedCamVr.Diagnostics.TitleNotice>();
+            var noticeSo = new SerializedObject(notice);
+            TrySetObjectRef(noticeSo, "titleScreen", titleScreen);
+            TrySetFloat(noticeSo, "distanceM", 2.6f);
+            noticeSo.ApplyModifiedPropertiesWithoutUndo();
             // 終幕（2D スクリーン → パススルー）。導入と**同じ覆い**を使う（開口の式を共有しないと
             // 閉じた形と開く形が食い違う）。IntroDirector と同じオブジェクトに載せるので、
             // 進行役が 2 つに散らず、PassthroughStyler の自己解決も 1 度で済む。
@@ -788,7 +803,8 @@ namespace FixedCamVr.Streaming.EditorTools
             if (showControl != null) TrySetObjectRef(so, "showControl", showControl);
             TrySetObjectRef(so, "head", parent);
             TrySetBool(so, "titleEnabled", true);
-            TrySetFloat(so, "distanceM", 2.0f);
+            // 2026-08-13 に 2.0 → 2.6（近すぎて見づらいという判定・canon/LEDGER.md 0023）。
+            TrySetFloat(so, "distanceM", 2.6f);
             TrySetFloat(so, "titleHeightM", 1.30f);
             TrySetFloat(so, "pitchOffsetDeg", 2.0f);
             so.ApplyModifiedPropertiesWithoutUndo();
