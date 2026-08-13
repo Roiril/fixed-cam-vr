@@ -89,6 +89,14 @@ namespace FixedCamVr.Streaming
         /// <summary>版の縦横比。<b>tools/make-title-art.py の W / H と同じ</b>（2048 / 1024）。</summary>
         private const float ArtAspect = 2f;
 
+        /// <summary>
+        /// 面を版よりどれだけ大きく張るか。<b>渦で回った墨が枠で切れないための余白</b>。
+        /// 縦は版の高さの半分に対して墨の外縁が 1.58 倍なので、1.8 倍あれば掃く円が収まる。
+        /// 横は版が元から 2 倍あるので足りている。
+        /// </summary>
+        private const float CanvasX = 1.0f;
+        private const float CanvasY = 1.8f;
+
         /// <summary>隠すものが「立っている」とみなす不透明度。</summary>
         private const float ConcealMin = 0.9f;
 
@@ -444,26 +452,40 @@ namespace FixedCamVr.Streaming
             return m;
         }
 
-        /// <summary>版 1 枚を、指定の奥行きに、縦横比を保って置く。</summary>
+        /// <summary>
+        /// 版 1 枚を、指定の奥行きに、縦横比を保って置く。
+        ///
+        /// ⚠⚠ <b>面は版より大きく張る</b>（<see cref="CanvasY"/>）。版は 2:1 で横に長く、
+        /// 閉じるときに渦が字を回すので、<b>横の端にあった墨が縦へ回り込む</b>。
+        /// 面が版どおり（縦が版の高さ）だと、その瞬間に<b>枠で切れて見切れる</b>
+        /// （2026-08-13 の指摘）。墨の外縁は版の高さの半分の 1.58 倍の円を掃くので、
+        /// 縦にその円が入るだけ張る。<b>uv は 0..1 の外へはみ出させる</b>ので版は伸びない
+        /// （外側は空。シェーダの <c>InArt</c> が切る）。
+        /// </summary>
         private void AddQuad(Vector3[] verts, Vector2[] uv0, Vector2[] uv1, Color[] cols, int[] tris,
                              ref int v, ref int t, float w, float h, float z, Color col)
         {
             int b = v;
-            verts[v + 0] = new Vector3(-w * 0.5f, -h * 0.5f, z);
-            verts[v + 1] = new Vector3(w * 0.5f, -h * 0.5f, z);
-            verts[v + 2] = new Vector3(-w * 0.5f, h * 0.5f, z);
-            verts[v + 3] = new Vector3(w * 0.5f, h * 0.5f, z);
+            float hw = w * 0.5f * CanvasX;
+            float hh = h * 0.5f * CanvasY;
+            verts[v + 0] = new Vector3(-hw, -hh, z);
+            verts[v + 1] = new Vector3(hw, -hh, z);
+            verts[v + 2] = new Vector3(-hw, hh, z);
+            verts[v + 3] = new Vector3(hw, hh, z);
 
             // 版は 1 枚まるごと使う。PNG の 1 行目が v=1（上）に入るので上下は合っている。
-            uv0[v + 0] = new Vector2(0f, 0f);
-            uv0[v + 1] = new Vector2(1f, 0f);
-            uv0[v + 2] = new Vector2(0f, 1f);
-            uv0[v + 3] = new Vector2(1f, 1f);
+            // 面を広げたぶん uv は 0..1 の外まで伸びる（そこは空）。
+            float u0 = 0.5f - 0.5f * CanvasX, u1 = 0.5f + 0.5f * CanvasX;
+            float v0 = 0.5f - 0.5f * CanvasY, v1 = 0.5f + 0.5f * CanvasY;
+            uv0[v + 0] = new Vector2(u0, v0);
+            uv0[v + 1] = new Vector2(u1, v0);
+            uv0[v + 2] = new Vector2(u0, v1);
+            uv0[v + 3] = new Vector2(u1, v1);
 
-            uv1[v + 0] = new Vector2(0f, 0f);
-            uv1[v + 1] = new Vector2(1f, 0f);
-            uv1[v + 2] = new Vector2(0f, 1f);
-            uv1[v + 3] = new Vector2(1f, 1f);
+            uv1[v + 0] = new Vector2(u0, v0);
+            uv1[v + 1] = new Vector2(u1, v0);
+            uv1[v + 2] = new Vector2(u0, v1);
+            uv1[v + 3] = new Vector2(u1, v1);
 
             cols[v + 0] = col; cols[v + 1] = col; cols[v + 2] = col; cols[v + 3] = col;
 
