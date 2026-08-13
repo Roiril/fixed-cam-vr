@@ -207,6 +207,13 @@ namespace FixedCamVr.Streaming.EditorTools
                 var screenAnchor = screenGo.GetComponent<ScreenAnchor>();
                 if (screenAnchor != null) TrySetObjectRef(sigSo, "screenAnchor", screenAnchor);
                 sigSo.ApplyModifiedPropertiesWithoutUndo();
+
+                // ブラウン管の曲面（中央が体験者側へ膨らむ）。**シーンに焼く**必要がある
+                // — Awake でメッシュを組むので、付いていなければ平らな Quad のまま出る。
+                // ⚠ Build は呼ばない。生成した Mesh はアセットではないので、Editor で差し替えると
+                //   シーンに壊れた参照が焼かれる。形は実行時（Awake）に組み直す。
+                if (screenGo.GetComponent<CrtScreenMesh>() == null)
+                    screenGo.AddComponent<CrtScreenMesh>();
             }
 
             // 0.6. CameraSwitchInput（[Streaming] 上・キーボード切替）を Director 経由へ配線。

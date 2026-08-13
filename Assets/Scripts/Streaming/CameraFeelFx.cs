@@ -34,6 +34,9 @@ namespace FixedCamVr.Streaming
         private static readonly int ChromaKillId = Shader.PropertyToID("_ChromaKill");
         private static readonly int GlareId = Shader.PropertyToID("_Glare");
         private static readonly int MonoId = Shader.PropertyToID("_Mono");
+        private static readonly int CrtRoundId = Shader.PropertyToID("_CrtRound");
+        private static readonly int CrtEdgeId = Shader.PropertyToID("_CrtEdge");
+        private static readonly int CrtEdgeWidthId = Shader.PropertyToID("_CrtEdgeWidth");
         private static readonly int EchoId = Shader.PropertyToID("_Echo");
         private static readonly int EchoTexId = Shader.PropertyToID("_EchoTex");
         private static readonly int CoarseBlocksId = Shader.PropertyToID("_CoarseBlocks");
@@ -176,7 +179,22 @@ namespace FixedCamVr.Streaming
             mat.SetFloat(SrcFrameId, srcFrame);
             mat.SetFloat(ChromaKillId, ChromaKill);
             mat.SetFloat(GlareId, Glare);
+            mat.SetFloat(CrtRoundId, CrtRound);
+            mat.SetFloat(CrtEdgeId, CrtEdge);
+            mat.SetFloat(CrtEdgeWidthId, CrtEdgeWidth);
         }
+
+        /// <summary>
+        /// ブラウン管の面。角の丸みと、管の縁が落ちる暗さ。
+        /// **形（曲面）はメッシュが持つ**（<see cref="CrtScreenMesh"/>）。
+        ///
+        /// ⚠ ヴィネット（<c>_Vignette</c>）とは別のもの。あちらは**レンズに光が届かない**話で
+        /// 現像より前に効く。こちらは**管の形**なので post の最後、枠の座標で掛かる。
+        /// 混ぜると「暗い所をもう一度暗くする」だけになって、どちらの理由も画から読めなくなる。
+        /// </summary>
+        public const float CrtRound = 0.07f;
+        public const float CrtEdge = 0.34f;
+        public const float CrtEdgeWidth = 0.17f;
 
         /// <summary>
         /// レンズの内面反射（ベイリンググレア）。明るい所の光が暗い所へ薄く回り込む量。

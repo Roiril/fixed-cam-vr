@@ -72,6 +72,12 @@ Shader "FixedCamVr/ScreenComposite"
         // 中間調が減って白と黒になる）を同じ 1 本から派生させる。別 uniform に分けると、
         // 片方だけ動いた絵（色は残っているのに粒だけ多い等）が作れてしまう。
         _Mono("Night Mode (0=color, 1=IR monochrome)", Range(0, 1)) = 0
+        [Header(CRT tube shape)]
+        // ブラウン管の見た目。**形（曲面）はメッシュが持つ**（CrtScreenMesh）ので、ここは
+        // 面の中で完結するものだけ — 角の丸みと、管の縁が落ちる暗さ。
+        _CrtRound("CRT Corner Round", Range(0, 0.5)) = 0
+        _CrtEdge("CRT Edge Darkness", Range(0, 1)) = 0
+        _CrtEdgeWidth("CRT Edge Width", Range(0.01, 0.5)) = 0.16
         // 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
         // 一様な脱色ではなく「明るい所に色が残り、暗がりが無彩へ落ちる」形になる。
         _ChromaKill("Dark Chroma Kill (ISP noise reduction)", Range(0, 1)) = 0
@@ -164,6 +170,9 @@ Shader "FixedCamVr/ScreenComposite"
                 float _ChromaKill;
                 float _Glare;
                 float _Mono;
+                float _CrtRound;
+                float _CrtEdge;
+                float _CrtEdgeWidth;
                 float _ExposureBias;
                 float _Echo;
                 float _CoarseBlocks;
@@ -274,6 +283,19 @@ Shader "FixedCamVr/ScreenComposite"
                     chroma = blur - dot(blur, half3(0.299, 0.587, 0.114));
                 }
                 return max(yS + chroma * _CgChromaGain, 0.0) * cg.a;
+            }
+
+            /// ブラウン管の面。**角丸矩形の符号付き距離**（負 = 内側 / 0 = 縁）。
+            /// 枠のアスペクトを掛けて、角の丸みが縦横で同じ半径になるようにする
+            /// （掛けないと 16:9 では横に伸びた楕円の角になる）。
+            float CrtSdf(float2 uv)
+            {
+                float2 p = (uv - 0.5) * 2.0;                 // 中心 0 / 縁 ±1
+                p.x *= max(_FrameAspect, 1e-3);
+                float2 half = float2(max(_FrameAspect, 1e-3), 1.0);
+                float r = _CrtRound * min(half.x, half.y);
+                float2 q = abs(p) - (half - r);
+                return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
             }
 
             float Hash21(float2 p)
@@ -603,6 +625,20 @@ Shader "FixedCamVr/ScreenComposite"
                     float amt = g * 0.5 * step(1.0 - 0.75 * g, bandPick);
                     col = lerp(col, half3(st, st, st), saturate(amt));
                     col *= 1.0 - 0.22 * g * Hash21(float2(t, 9.3)); // 同期崩れの明滅
+                }
+
+                // ブラウン管の面。**縁へ向かって落ち、角の外は黒**。
+                // ヴィネット（レンズ）とは別のもの — あちらは光が届かない話で、こちらは管の形。
+                // だから post の最後（切替の暗転より前）に、枠の座標で掛ける。
+                if (_CrtEdge > 0.001 || _CrtRound > 0.001)
+                {
+                    float d = CrtSdf(screenUv);
+                    // 縁の内側 _CrtEdgeWidth のあいだで暗くなる（管のガラスが厚くなる所）
+                    float inner = saturate(-d / max(_CrtEdgeWidth, 1e-3));
+                    col *= 1.0 - saturate(_CrtEdge) * (1.0 - inner) * (1.0 - inner);
+                    // 角の外は黒。1 画素で切ると階段が出るので、画素幅で渡す
+                    float aa = fwidth(d) * 1.2 + 1e-4;
+                    col *= saturate(-d / aa);
                 }
 
                 // --- 切替 dip-to-black + 信号ロスト砂嵐（FS_POST 一致規約の対象外・別系統）---
