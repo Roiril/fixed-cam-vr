@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廻リ視を桜井理論で読む — 音・画面・体験の批評</title>
+<style>
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;
+  --radius: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+blockquote {
+  margin: var(--sp-3) 0; padding: 0 0 0 var(--sp-4);
+  border-left: 2px solid var(--line); color: var(--mute);
+}
+blockquote p { margin: var(--sp-1) 0; }
+
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li {
+  border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4);
+  position: relative; margin: 0;
+}
+.tl > li::before {
+  content: ""; position: absolute; left: -5px; top: .55em;
+  width: 8px; height: 8px; background: var(--accent);
+}
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="eyebrow">批評 · 2026-08-14</p>
+<h1>廻リ視を桜井理論で読む</h1>
+<p class="sub">桜井政博「ゲーム作るには」全 11 カテゴリのノートを物差しにして、音・画面・体験を見た結果 ／ シュビー</p>
+
+<div class="lead">
+<p>いちばん大きい差は 1 つです。<em>体験者にいちばん関係がある出来事が、いちばん静かで、いちばん目立ちません。</em>
+3 周目にスクリーンへ流れるのは 1 周目の録画で、そこに映る自分は、いま歩いている自分と違う動きをします。
+その瞬間には音が付いておらず、乱れも入らず、画は無彩で 200 ブロックまで粗くなっています。</p>
+<p>いっぽう導入で管が点く音は -13 LUFS で、体験のどの音より大きく鳴ります。桜井は
+「アクションの大きさのみを見ていると妥当なものにならない」と書いています。順位はいま、
+出来事の大きさで付いていて、体験者への関係度では付いていません。</p>
+</div>
+
+<h2>1. この文書の身分</h2>
+
+<p>桜井の主張は <code>unity-game-studio/.claude/library/</code> にあるノートから引いています。
+あちらの規約どおり、これは<strong>他人が言っていること</strong>であって、確かめたことでもユーザーの判定でもありません。</p>
+
+<p>そしてここに並ぶ指摘は<strong>シュビーの案</strong>です。<code>canon/LEDGER.md</code> には入りません。
+採るか棄てるかを言葉にしてもらって、はじめて判定になります。</p>
+
+<p>読んだのは <code>canon/</code> 全 3 本、<code>rules/</code> 全 11 本、実装、それと
+<code>tools/web-compositor/show.json</code>（8/13 15:25 の写し）です。
+<span class="muted">show.json は git の外なので、この写しは台帳 0030〜0035 より前の状態です。
+台本そのものが後で変わっていれば、3 章と 5 章の一部は当たりません。</span></p>
+
+<h2>2. 当たる理論と、当たらない理論</h2>
+
+<p>桜井は「ゲーム性」を<strong>リスクを冒してリターンを得ること</strong>と定義したうえで、
+「これが全てだとは思わないでください」と自分で範囲を切っています。
+廻リ視に駆け引きはありません。体験者は歩いて、見るだけです。だからゲーム性のカテゴリはほぼ当たりません。</p>
+
+<p>当たるのは、桜井がその外側として挙げた<strong>実在モチーフの再現</strong>です。挙げている例が電車の扉で、
+効果音を 1 つ 2 つ鳴らすだけで「扉が開いた」「客が入ってきた」という画面の外の世界が立つ、という話です。</p>
+
+<blockquote><p>ごく簡単なグラフィックで粗いテクスチャしかない面体が、ちゃんと木や石の質を持っているように感じられます</p></blockquote>
+
+<p>廻リ視はこれを最大限まで使っています。カメラは本物、伝送は本物、部屋は本物です。
+このプロジェクトが自分で書いている「装置は正直に映している」は、桜井の言っていることを別の側から言ったものです。
+<strong>この一致は強い土台です。</strong>以下の指摘は全部その土台の上の話で、方向を変えろとは言っていません。</p>
+
+<h3>先に、効いている所</h3>
+
+<div class="grid">
+  <div class="card"><b>体験者に文字を出さない</b><span>桜井の理想は「最悪、文字が読めなくてもゲームができる」。ここは先に達成しています</span></div>
+  <div class="card"><b>安いスピーカーで測る</b><span>桜井は安いテレビで聞き比べます。こちらは Quest 内蔵の 200Hz 以下が返らない性質を計器に入れてあります</span></div>
+  <div class="card"><b>起動から開始までが一直線</b><span>起動 → 位置合わせ → リセット → A。桜井が「押し続けたら本編に入る道」と呼ぶ形です</span></div>
+  <div class="card"><b>判定を追記だけで残す</b><span>桜井は「細かく何度も軌道修正した方が結果的に正しく進める」と言います。台帳はそれを記録の側で実装しています</span></div>
+</div>
+
+<h2>3. 音</h2>
+
+<h3>S1 順位が、音の種類で付いている<span class="chip hot">最優先</span></h3>
+
+<blockquote><p>アクションの大きさのみを見ていると妥当なものにならない</p></blockquote>
+
+<p>桜井の順位は「プレイヤーにどれだけ関係するか」で、1 位が勝敗の決まる瞬間、2 位が自分の振る舞いの結果が返る瞬間です。</p>
+
+<p><code>rules/sound-design.md</code> §3 の揃え方は、敷く音 -32 / 繰り返す一撃 -23 / 一度きりの山 -3dBTP / 持続する節目 -24 です。
+これは<strong>音の波形の種類</strong>で分けたもので、体験者への関係度では分けていません。結果を台本と実装で確かめると、こうなっています。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>出来事</th><th>体験者への関係</th><th>いま鳴っているもの</th></tr>
+<tr><td>3 周目・録画へのすり替え</td><td>体験の結論</td><td><strong>無音。乱れも無し</strong></td></tr>
+<tr><td>2 周目・化け物が出る</td><td>驚き</td><td>乱れ 0.7 ＋ 乱れの音</td></tr>
+<tr><td>導入・管が点く</td><td>装置が起動する</td><td>-13 LUFS。体験でいちばん大きい</td></tr>
+<tr><td>カメラが切り替わる</td><td><strong>歩いたことの唯一の返り</strong></td><td>-23 LUFS・2 種を 9 回以上</td></tr>
+</table>
+</div>
+
+<p>すり替えが無音なのは台本で確かめられます。3 周目の <code>steps[]</code> は <code>glitch: 0</code> で、
+<code>TakeRunner</code> は <code>step.glitch &gt; 0.001</code> でしか乱れを撃ちません。2 周目だけが 0.7 を持っています。
+<code>SoundCue</code> の一覧にも周回の出来事は 1 つもありません。</p>
+
+<p>桜井の言い方だと、こうなります。</p>
+
+<blockquote><p>せっかくの見せ場でプレイヤーの感想が『あれ、今の上当たったの？』みたいな感じでは損</p></blockquote>
+
+<p>ここで難しいのは、<strong>素直な直し方がこの作品の禁止事項に当たる</strong>ことです。
+すり替えに音を付けるのは、装置が手品の種を自分で明かすのに近い。<code>rules/sound-design.md</code> は劇伴を禁じ、
+<code>rules/streaming.md</code> は「過去と現在で加工を変えない」を禁じています。0034 で伏線そのものも廃止されました。</p>
+
+<p>だから提案は「音を足す」ではありません。<em>いちばん関係のある出来事に何も置かないという判断を、誰も言葉にしていない</em>、
+という指摘です。いま無音なのは、選んだ結果ではなく、書き忘れた結果に見えます。既定は無音のままでよく、
+決めるべきは「体験者は何を手がかりに気づくのか」の 1 行です。</p>
+
+<h3>S2 会場の暗騒音を勘定に入れていない<span class="chip hot">最優先</span></h3>
+
+<blockquote><p>そこで繊細に聞こえる音作りに凝ってしまうと、民生品のスピーカーではちっとも良く聞こえないということになりかねません</p></blockquote>
+
+<p>桜井は 3 つの環境で聞き比べます。ヘッドフォン、PC のスピーカー、安いテレビ。3 つ目を「ここが大事」と言っています。</p>
+
+<p>こちらは Quest 内蔵スピーカーを計器に入れてあり、そこは桜井より進んでいます。
+入っていないのは<strong>会場そのもの</strong>です。展示会場の暗騒音は 60〜70dB あり、Quest の開放型スピーカーは
+それを 1dB も遮りません。敷く音は -32 LUFS で、これは「会話の下に居る高さ」として決めた値です。
+会場では会話が何十人ぶんもあります。</p>
+
+<p>効き方は音量だけではありません。隔離を音で表す仕掛けは「部屋のトーンを 22kHz → 420Hz へ閉じる」ですが、
+閉じているのは<strong>アプリが鳴らしている部屋の音</strong>だけです。本物の会場の音は素通しで届き続けます。
+隔離殻が会場の見た目を消しても、会場の音は消えません。</p>
+
+<p>測るのは簡単です。展示と同じ環境で、実機を被って、鳴っている音のうち何が聞こえるかを挙げる。
+それだけで敷く音 5 本・一撃 15 本の順位が現実的な形に組み変わります。
+出せる手は 3 つで、ヘッドフォンを重ねる（設営が変わる）／会場用に敷く音を上げる（show.json の側で持てる）／
+届かない音を諦めて順位を決め直す、です。</p>
+
+<h3>S3 繰り返す音が 2 種類</h3>
+
+<blockquote><p>足音のようなものは音にばらつきを演出すること。同じ音が連続で並ぶと機械的になりすぎます</p></blockquote>
+
+<p>切替音は <code>sfx_switch_1</code> と <code>sfx_switch_2</code> の 2 本で、1 回の体験で 9 回以上並びます。
+1 本ずつが 4〜5 回ずつ出ます。乱れは 3 本あるので、そちらは足りています。</p>
+
+<p><code>rules/sound-design.md</code> は「揃っていないと機械に聞こえる」と書いて、揃える方へ倒しています。
+桜井は逆で、揃っていると機械に聞こえる、と言っています。<strong>どちらも正しく、指しているものが違います</strong> —
+高さは揃え、中身はばらつかせる。素材を増やさなくても、再生ごとに音程と音量をわずかに振れば済みます。</p>
+
+<h3>S4 指摘は 2 回とも合成の音に来ている</h3>
+
+<p>台帳が自分で記録しています。「指摘は 2 回とも合成した音に来ている。もらった実録の 5 本には一度も来ていない」。
+チープだと言われたのは 0016 と 0017 で、どちらも合成です。</p>
+
+<p>桜井が写実を勧める理由は情報量です。Minecraft の叩く音で、何をどう作ったかが分かる。
+廻リ視の画は本物のカメラなので、絵はいちばん写実的な側に居ます。そこへ合成の音を当てるのは、
+桜井が「絵が写実に寄るほど、音の誇張は違和感になる」と言っている向きに逆らいます。</p>
+
+<p>いちばん長く鳴っているのは <code>bed_device</code>（装置の唸り）と <code>bed_seal</code>（封印の箱の唸り）で、
+どちらも 3 分間ずっと鳴り、どちらも合成です。<code>docs/sound-wishlist.md</code> に足すなら、
+まずこの 2 本です。変圧器の唸り、蛍光灯の安定器、機械室の低い音。実物なら 1 本録るだけで済みます。</p>
+
+<h3>S5 劇伴を残すかは、桜井の側からも同じ結論になる</h3>
+
+<blockquote><p>グラフィックが進化し、目から入る情報量が多くなることで、音楽を立てすぎるのはなんか合わなくなってきました</p></blockquote>
+
+<p><code>HorrBGM.mp3</code> がラン全体に流れています。<code>canon/OPEN.md</code> に「残すか」が未判定で置いてあり、
+そこに書かれている理由は「劇伴は作者の声だから」です。</p>
+
+<p>桜井の理由はまったく別で、<strong>画が精密なほど音楽は前に出せない</strong>、写実的な画面には環境音が要るので
+音の要素が増えて配分が必要になる、というものです。廻リ視の画は実写そのもので、環境音も装置音も既にあります。
+<em>独立した 2 つの理由が同じ側を向いています。</em></p>
+
+<h2>4. 画面と文字</h2>
+
+<h3>U1 文字の面の大きさが、同じ画の中で決まっていない</h3>
+
+<p>0035 で注意書きが 8.5 倍になり、そこでこう書かれています。「単位を理屈で決めない。同じ画の中で比べて決める」。
+これは桜井が言っていることと同じです — 携帯機の作品の文字が大きいのは、必ず携帯機で確認しているから。
+<strong>確認する画面の大きさが、文字の大きさを決めている。</strong></p>
+
+<p>直ったのは <code>TitleNotice</code> だけです。残りの 3 面は自分の値のままです。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>面</th><th>距離</th><th>状態</th></tr>
+<tr><td><code>StatusHud</code></td><td>1.6m</td><td>ユーザーが「これくらいの大きさ」と言った基準そのもの</td></tr>
+<tr><td><code>ControllerGuidePanel</code></td><td>手元</td><td>台帳が「奥に小さい白い文字」の候補として ⚠ を付けたまま</td></tr>
+<tr><td><code>TitleNotice</code></td><td>2.6m</td><td>0035 で 8.5 倍。基準に合わせた唯一の面</td></tr>
+<tr><td><code>ShowEndingFader</code> の 1 行</td><td>0.3m</td><td>未確認</td></tr>
+</table>
+</div>
+
+<p>4 面を 1 枚の画に並べて撮れば終わります。<code>HudPreviewScreenshot</code> が batchmode で撮れるので、実機は要りません。</p>
+
+<h3>U2 どこを見ながら体験するのかを決めていない</h3>
+
+<blockquote><p>画面がこれだけ広大で景色も素晴らしく描かれているのに、実際には画面の隅でゲームをしているというと、なんか勿体ない</p></blockquote>
+
+<p>桜井は「画面のどこを見ながらプレイするのか」を設計の項目として立てています。</p>
+
+<p>廻リ視の答えは強い側にあります。隔離殻が会場を消すので、見る所は <strong>2.0m 先のスクリーン 1 つ</strong>しかありません。
+迷いようがない。ここは意図して作ってあり、直す所ではありません。</p>
+
+<p>問題はその先で、<strong>3 周目に画面のどこを見ていれば気づくのか</strong>が決まっていません。
+すり替わりは画面の中の人型の動きに出ますが、その人型は画面のどこに、どのくらいの大きさで出るのか。
+1 周目の録画に自分の体が写っている保証すら、まだ誰も確かめていません。</p>
+
+<h3>U3 読ませたいものが、床の縞と同じ強さで描かれている<span class="chip hot">最優先</span></h3>
+
+<p>桜井が「歴代スマブラのステージ作りで毎回のように話をしている」「それでも達成できない」と言う項目が、
+<strong>触れるものを強調し、触れないものを強調しない</strong>です。廻リ視に置き換えると、読ませたいものを強調し、
+そうでないものを強調しない、になります。</p>
+
+<p>3 周目の画は、進みが 1.00 に達したところで <strong>200 ブロック・完全な無彩・夜間モード</strong>です。
+台帳 0021 が自分で書いています。</p>
+
+<blockquote><p>3 周目でも人形は写る（縦 17 ブロック）。ただしモノクロだと床の縞に紛れて、等倍では見つけにくい</p></blockquote>
+
+<p>人形についての観察ですが、体験者の姿も同じ大きさで写ります。加工は画面全体に一様にかかるので、
+<strong>読ませたい人型と、読ませなくていい床が、同じだけ潰れます</strong>。</p>
+
+<p>桜井の道具はこの場所を 3 方向から指しています。明度差で見分けさせる（色分けに頼らない）、
+明るいだけの効果は明るい背景で消えるので暗い側を混ぜる、真っ黒にしたシルエットで判るか見る、絵を白黒にして確かめる。
+最後の 2 つはどちらも<strong>機械でできて、今日できます</strong> — 3 周目の合成 PNG は既に焼けているので、
+それを 2 値に落として人型が床から分離するかを見るだけです。PIL だけで書けます。</p>
+
+<p>分離しないと分かった場合の直し方は、この作品の禁止事項に当たらない範囲に限られます。
+加工の強さを弱める（0021 でユーザーが 200 と決めた値に触る）、人形と体験者が立つ帯だけ照明を変える（現場の話で、装置の嘘にならない）、
+そもそも 3 周目に出す録画の区間を選ぶ。どれを採るかは判定が要ります。</p>
+
+<h3>U4 体験者の入力が 1 つしかなく、その返りが弱い</h3>
+
+<blockquote><p>ゲームは手からの情報をコンピューターに送り、その反応を目や耳から入れる遊び</p></blockquote>
+
+<p>桜井は「押しても何も起きないボタンを作らない」を、手から出ていく情報に無反応にするな、という言い方で書いています。</p>
+
+<p>廻リ視で体験者が出せる情報は<strong>歩くこと</strong>だけです。返ってくるのはカメラの切り替わりで、
+これが唯一の手ごたえです。桜井の順位ではここは 2 位（自分の振る舞いの結果が直接返る瞬間）に当たります。
+いまは -23 LUFS の 2 種類、暗転の下り 70ms の中で鳴ります。</p>
+
+<p>暗転に隠すのは正しい作りです。企画の側に「差し替えの知覚的検出を抑える」という要求があるからで、
+これは変えられません。ただし<strong>切替が自分の歩行の結果だと分かること</strong>と<strong>差し替えを気づかせないこと</strong>は
+別の話です。前者だけを強くする余地は残っています。</p>
+
+<h2>5. 体験</h2>
+
+<h3>E1 台帳 46 件のうち、反転を強くしたものが 0 件<span class="chip hot">最優先</span></h3>
+
+<p><code>canon/LEDGER.md</code> の判定を対象別に数えると、こうなります。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>対象</th><th>件数</th><th>体験の中での位置</th></tr>
+<tr><td>タイトルの題字と閉じる演出</td><td>13</td><td>体験が始まる前</td></tr>
+<tr><td>封印の箱（質感・光・影）</td><td>7</td><td>体験が始まる前</td></tr>
+<tr><td>画像加工・周回の劣化</td><td>6</td><td>本編ぜんぶ</td></tr>
+<tr><td>導入の構造</td><td>5</td><td>最初の 6.2 秒</td></tr>
+<tr><td>音</td><td>5</td><td>体験ぜんぶ</td></tr>
+<tr><td><strong>3 周目の反転そのもの</strong></td><td><strong>1</strong></td><td>体験の結論</td></tr>
+</table>
+</div>
+
+<p>その 1 件が 0034 で、<strong>支えを外した方の判定</strong>です（「右手をあげてください」の廃止）。
+判断としては筋が通っています。指示された動作をやり直させて「ほら違う」と見せるのは、装置の正直さの上に作者の声を足す形なので、
+劇伴を禁じているのと同じ理屈で外れます。</p>
+
+<p>外したこと自体は正しい。空いた穴が埋まっていないのが問題です。<code>canon/OPEN.md</code> の Q2
+「何に怖がってほしいか」は 8/10 から未判定のまま 4 日経っています。この問には
+「ここが決まらないと演出の優先順位が付かない」と自分で書いてあります。</p>
+
+<blockquote><p>判断を待つ間というのは案件が宙に浮きます</p><p>先送りにする先なんてない</p></blockquote>
+
+<p>既定は「すり替わりに気づく瞬間を主軸に置く」です。<em>その既定が効いているなら、いま最優先なのは箱の錆でも題字の渦でもなく、
+3 周目です。</em></p>
+
+<h3>E2 気づけるかどうかを、読んだ人間はもう判定できない</h3>
+
+<blockquote><p>開発に慣れている場合、自分たちが標準だと思わず、思ったよりも下げるぐらいでちょうど良いと考えた方が良い</p></blockquote>
+
+<p>この作品の難易度は腕前ではなく「気づけるか」です。そして台帳を読んだ人間には、その難易度が存在しません。答えを知っているからです。</p>
+
+<p>桜井が挙げる代わりの手は 2 つあります。開発者にハンデを付ける（ここでは使えません）。もう 1 つがこれです。</p>
+
+<blockquote><p>意見を聞くよりも実地で空気感を見るような感じで観察させていただきました</p></blockquote>
+
+<p><strong>これは廻リ視では計器で取れます。</strong> <code>HmdTrajectoryRecorder</code> が頭の位置と向きを持っているので、
+3 周目にどこを見ていたか、どこで足が止まったか、どこで頭が動いたかが、感想を訊かなくても残ります。
+桜井が現場でやっている観察を、そのまま数値で取れる構えが既にあります。</p>
+
+<p>その手前に、<code>canon/OPEN.md</code> の Q3（初見を何人確保できるか）と Q4（間隔）が未判定で残っています。
+既定は 3 人・週 1 回で、<code>ROUNDS.md</code> の配給はこの仮定の上に立っています。<strong>まだ 1 人も使っていません。</strong></p>
+
+<h3>E3 1 周目に著作されている出来事が 1 つだけ</h3>
+
+<p>台本を読むと、こうなっています。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>周</th><th>A（開始区間）</th><th>B</th><th>C</th></tr>
+<tr><td>1</td><td class="muted">なし</td><td><code>cue_hands_B</code>（区間の終わりまで）</td><td class="muted">なし</td></tr>
+<tr><td>2</td><td>化け物 2.4s ＋ 乱れ 0.7</td><td>化け物 2.2s ＋ 乱れ 0.7</td><td>化け物 1.0s</td></tr>
+<tr><td>3</td><td>1 周目の録画 ＋ 人形</td><td>1 周目の録画 ＋ 人形</td><td>1 周目の録画 ＋ 人形</td></tr>
+<tr><td>もどり A</td><td>2 周目の録画 ＋ 人形</td><td>—</td><td>—</td></tr>
+</table>
+</div>
+
+<p>1 周目は素材を録る周なので、何も起きないのは筋が通ります。桜井も「相反するものがあって初めて実感が湧く」と書いていて、
+反転にはきれいな土台が要ります。</p>
+
+<p>ただし桜井は導入について、こうも言っています。</p>
+
+<blockquote><p>最初の 3 分で楽しさが分かる形にする。それ以上待たせるようだと諦めてしまいます</p></blockquote>
+
+<p>廻リ視は全体が 3 分です。<strong>最初の 3 分＝全部</strong>なので、この基準はいちばん厳しい形で当たります。
+管が点いてから最初の出来事（B の手）まで、区間 1 つぶん歩くことになります。1 区間はおよそ 10〜16 秒です。</p>
+
+<p>指摘は「1 周目に出来事を足せ」ではありません。<em>1 周目の役目を誰も書いていない</em>ことです。
+土台を作る周だと決めてあるなら、そう書けば、次に何かを足したくなったとき足さない判断ができます。</p>
+
+<h3>E4 固定の尺を足し合わせた人がいない</h3>
+
+<p>桜井は逆向きのことを 2 つ言っていて、どちらもここに当たります。</p>
+
+<blockquote><p>短気なぐらいがちょうど良し</p><p>ここが 1 番目に入るところなんです（動作の終わりについて）</p></blockquote>
+
+<div class="tblwrap">
+<table>
+<tr><th>区間</th><th>尺</th><th>出所</th></tr>
+<tr><td>A を押してから題字が消えるまで</td><td>4.85s</td><td>台帳 0014 / 0024</td></tr>
+<tr><td>黒が開いて現実が出る</td><td>1.25s</td><td>クロスフェード</td></tr>
+<tr><td>導入（5 段）</td><td>6.2s ＋ 待ち最大 2.2s</td><td><code>run.intro</code></td></tr>
+<tr><td>終了の猶予</td><td>3.0s</td><td><code>endGraceSec</code></td></tr>
+<tr><td>終幕（4 段）</td><td>7.5s</td><td><code>run.outro</code></td></tr>
+<tr><th>合計</th><th>22.8〜25.0s</th><th>目安 180s の 13〜14%</th></tr>
+</table>
+</div>
+
+<p>長すぎるとは言えません。導入の 6.2 秒は体験の山ですし、終幕は現実へ帰す工程です。
+題字の閉じる演出は 0022〜0028 で 7 往復かけて作り込んだもので、そこが 1.60 から 2.85 秒へ伸びたのは
+ユーザーの赤入れに応じた結果です。0024 に「長いと感じたら縮めるのはフェードの側」と書いてあり、
+<strong>戸は開けたままになっています</strong>。足し合わせた数字を一度も見ていない、という指摘です。</p>
+
+<h3>E5 体験の中身が版管理の外にある</h3>
+
+<blockquote><p>前提条件が間違えていると全て間違えてしまいます</p></blockquote>
+
+<p>桜井は「プログラムが骨、パラメーターが筋肉」と言い、調整する値は原則すべて外へ出せ、と書いています。
+廻リ視はそれを実行しました。<code>show.json</code> に台本・レイアウト・加工・BGM が全部外出しされています。</p>
+
+<p>そのうえで、<strong>そのファイルが git に入っていません</strong>（<code>.gitignore:198</code>）。
+体験の中身そのもの — 何周目のどの区間で何が起きるか — が、レビューも差分も履歴も持ちません。
+<code>canon/OPEN.md</code> の Q1 は「この作業ツリーには無い」と書いていますが、実際には 8/13 15:25 の写しがあります。
+<span class="muted">この批評の 3 章と 5 章はその写しを読んで書いています。</span></p>
+
+<p>host と IP は現場ごとに変わるのでコミットできません。<strong>台本は変わりません。</strong>
+分ければ済む話で、Q1 の既定（<code>tools/show-script.py</code> で写しを git に入れる）が既にそう書いてあります。未着手です。</p>
+
+<h2>6. 会場</h2>
+
+<h3>V1 待機列に何も見えない。見せると次の初見が死ぬ</h3>
+
+<p>展示では、1 人が被っているあいだ、外に何人も待っています。外から見えるのは、黒い箱の中を四角く歩く人だけです。
+体験の中身は 1 画素も見えません。</p>
+
+<p>オペレータ卓（<code>tools/web-compositor/</code>）は合成後の画をライブで持っているので、
+2 枚目の画面に出すだけで待機列が観客になります。<strong>ただし出した瞬間に、次の体験者は反転を知ってしまいます。</strong>
+反転がこの作品の結論である以上、これは軽い判断ではありません。</p>
+
+<p>採れる形は 3 つで、何も出さない／1 周目のカメラ映像だけ出す（合成前）／遅らせて出す。既定は「何も出さない」です。
+<span class="muted">決まっていないという事実自体が、現場で 1 分で決まってしまうことを意味します。</span></p>
+
+<h3>V2 交代にかかる時間を測っていない</h3>
+
+<p>1 日に何人が体験できるかを決める数字です。被せる、位置合わせ（必要なら）、リセット、A、箱の外まで誘導、体験 3 分、外す、拭く。
+テレメトリはランの開始と終了を持っているので、<strong>その間の空白がそのまま交代時間</strong>です。既に取れています。</p>
+
+<p>桜井が「再開は迅速に」と言っているのはプレイヤーの話ですが、展示ではこれが回転率になります。</p>
+
+<h3>V3 1000 人に 1 人の不具合が必ず出る</h3>
+
+<blockquote><p>仮に 1000 人に 1 人がぶつかるバグなら、デバッグ中に見つかる可能性はかなり低いです</p></blockquote>
+
+<p>展示の来場者数は開発中の試行回数を桁で超えます。廻リ視には、詰むと出口がスタッフの ⏭ しかない経路があります
+（導入の中止、段 0 で黒の中に立つ）。0026 でその 2 つは塞がれました。</p>
+
+<p>いま残っているのは <code>canon/OPEN.md</code> の未解決 1 件です。実機ログの
+<code>Screen position out of view frustum</code> が走行あたり 1,200 行。絵は正しく、7 回焼いて 7 つの仮説が外れています。
+<strong>実害は「本物のエラーが埋まる」ことです。</strong>会場でこれが起きると、判定が使えません。</p>
+
+<p>桜井が挙げている壊れやすい場所の型のうち 1 つが「場面が切り替わるものはシーンにゴミが残る」で、
+廻リ視は場面の多い作品です。合わせて、直したバグの記録がありません
+（桜井は「再発した時のために完了ステータスでストック」と書いています）。</p>
+
+<h2>7. 当たらないもの</h2>
+
+<p>読んで、当たらないと判断したものも書いておきます。使わなかった理由が残らないと、次に誰かが同じ道を通ります。</p>
+
+<ul>
+<li><strong>難易度・救済・報酬・順位</strong>（ゲーム性カテゴリのほぼ全部）。勝敗も上達も無いので、そのままでは持ち込めません</li>
+<li><strong>キーコンフィグ・設定画面</strong>。体験者はコントローラを持ちません</li>
+<li><strong>台詞の飛ばし・早送り</strong>。台詞がありません。ただし「遊んでいない時間を飛ばせる形にする」は E4 として残ります</li>
+<li><strong>色分けと色覚</strong>。手がかりを色に載せていません。<span class="muted">載せる日が来たら戻ってくる項目です</span></li>
+<li><strong>ヒットストップ</strong>。当てるものがありません。ただし「出来事に気づかせる」という理由の側は S1 と U3 に残ります</li>
+<li><strong>参戦ムービーの工程・広報部門・チーム運営の大半</strong>。規模が違います</li>
+</ul>
+
+<h2>8. 手を付けるならこの順</h2>
+
+<p>並べ方は桜井の物差しをそのまま使いました。<strong>体験者への関係度が高い順</strong>です。作業の重さでは並べていません。</p>
+
+<ol>
+<li><strong>3 周目の画で人型が読めるか、機械で見る</strong>（U3）。焼いてある PNG を白黒とシルエットに落とすだけ。今日できます</li>
+<li><strong>Q2 に答えをもらう</strong>（E1）。何に怖がってほしいか。ここが決まらないと以下の順位も決まりません</li>
+<li><strong>会場と同じ騒音の中で音を聴く</strong>（S2）。何が聞こえて何が消えるかを挙げるだけ</li>
+<li><strong>すり替えの瞬間に何も置かないという判断を、書く</strong>（S1）。既定は無音のままでよく、決めるのは気づかせ方の 1 行</li>
+<li><strong>初見を 1 人使う</strong>（E2）。頭の向きと足の止まりを取る。感想は訊かなくてよい</li>
+<li><strong>台本を git に入れる</strong>（E5）。host と分けるだけ</li>
+<li><strong>文字の 4 面を 1 枚に並べて撮る</strong>（U1）。batchmode で終わります</li>
+<li><strong>地の音 2 本を実録に替える依頼を出す</strong>（S4）。<code>docs/sound-wishlist.md</code> に足すだけ</li>
+</ol>
+
+<p>細かいものが 2 つあります。切替音を再生ごとに揺らす（S3）。台帳の番号が 11 個重複していて
+（0007 / 0016 / 0017 / 0022〜0029）、<code>rules/</code> から「0023 の ④」のように参照しているので、
+参照が壊れます。追記のときに枝番を振れば済みます。</p>
+
+<h2>9. 確かめていないこと</h2>
+
+<ul>
+<li>桜井の主張はどれもこの作品で実測していません。ノート自体が「他人が言っていること」の層です</li>
+<li>読んだ <code>show.json</code> は 8/13 15:25 の写しです。<code>run.intro.raiseHandPrompt</code> がまだ <code>true</code> のままなので、
+0034 より前の状態です。台本が後で変わっていれば S1 と E3 は当たりません</li>
+<li>3 周目の人型が読めるかは、まだ誰も見ていません。台帳 0021 に「実機で被って確かめる必要がある」と書いてあり、そのままです</li>
+<li>会場の騒音レベルを測っていません。60〜70dB は一般的な展示会場の値で、IVRC の実測ではありません</li>
+<li>1 周目の録画に体験者の体が写っているかを確認していません。写っていなければ反転は成立しません</li>
+</ul>
+
+<p class="note">
+桜井の引用はすべて <code>unity-game-studio/.claude/library/notes/sakurai-*.md</code> から。
+出所は YouTube「桜井政博のゲーム作るには」の文字起こし 25 本（2026-08-13 取り込み）。
+廻リ視側の事実は <code>canon/LEDGER.md</code>（46 件）・<code>canon/OPEN.md</code>・<code>canon/ROUNDS.md</code>・
+<code>rules/</code> 11 本・<code>Assets/Scripts/Streaming/</code>・<code>tools/web-compositor/show.json</code>（8/13 15:25）から。
+この文書に書かれた指摘は判定ではありません。採否は <code>canon/LEDGER.md</code> に、未判定の案は <code>canon/OPEN.md</code> に残ります。
+</p>
+
+</div>
+</body>
+</html>
