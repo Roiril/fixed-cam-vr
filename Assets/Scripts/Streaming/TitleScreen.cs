@@ -76,11 +76,28 @@ namespace FixedCamVr.Streaming
         /// <summary>黒の面の大きさ (m)。距離 0.3m でこの大きさなら視界を覆い切る（IntroVeil と同値）。</summary>
         private const float VeilSizeM = 2.0f;
 
-        // ---- 追従。頭にわずかに遅れて付いてくると、頭を振るたびに厚みの側面が覗く。
-        //      剛体として遅れるので「板が滑る」のではなく「物が浮いている」に見える。
-        private const float FollowRateHz = 5.0f;
-        private const float MaxLagDeg = 8.0f;
-        // 頭が完全に静止していても厚みが分かるよう、ごく遅い揺らぎを足す（0.3°/s 未満）。
+        // ---- 追従 ----------------------------------------------------------------
+        // ⚠⚠ **本編のスクリーンと同じ法則で追う**（2026-08-13・LEDGER 0029）。
+        //    それまでは頭に 5Hz で遅れて付いてくるだけだったので、**上下に振っても題字が
+        //    眼から離れず、目の前にぴったり貼り付いて見づらかった**。
+        //    このプロジェクトは酔いにくい追従を既に持っている（`YawFollowLogic`）ので、
+        //    値ごとそれに合わせる。**ヨーだけ追い、上下と傾きは追わない** —
+        //    見上げれば題字は下に残る ＝ 眼に貼り付かない。
+        //
+        // 値は `ScreenAnchor` と対。**片方だけ変えない**（体験の中で追従の癖が 2 種類になる）。
+        private const float YawDeadzoneDeg = 0.5f;
+        private const float YawTrailDeg = 0f;          // 頭の正面ちょうどを目指して、そこで止まる
+        private const float SmoothTimeSec = 0.30f;
+        private const float MaxYawSpeedDegPerSec = 110f;
+        private const float CatchUpThresholdDeg = 45f;
+        private const float CatchUpBoost = 2f;
+        /// <summary>これを超える dt は着脱・pause 明けとみなし、種を置き直して 1 フレーム進めない。</summary>
+        private const float ResumeGapSec = 0.5f;
+
+        // ⚠ **スクリーンに見せないための仕掛けはこの 2 つ**（ユーザー指示「スクリーンっぽさは
+        //    感じさせないように」）: ①版を 3 つの奥行きへ離してある（両眼視差で層が分かれる）
+        //    ②ごく遅い揺らぎ（0.3°/s 未満）。**枠も縁も付けない**。
+        //    揺らぎを消すと、水平で正対する板 ＝ 掲示物になる。
         private const float DriftYawDeg = 2.2f;
         private const float DriftPitchDeg = 1.1f;
         private const float DriftYawSec = 13f;
@@ -128,8 +145,8 @@ namespace FixedCamVr.Streaming
         private Mesh? _glyphMesh;
         private bool _subscribed;
         private bool _dismissRequested;
-        private Quaternion _lagRot = Quaternion.identity;
-        private bool _lagPrimed;
+        private readonly YawFollowLogic _yawFollow = new YawFollowLogic();
+        private bool _yawSeeded;
         private float _driftSec;
         private bool _warnedNotBuilt;
 
@@ -225,7 +242,7 @@ namespace FixedCamVr.Streaming
         private void BeginTitle()
         {
             _dismissRequested = false;
-            _lagPrimed = false;
+            _yawSeeded = false;
             _driftSec = 0f;
             if (!titleEnabled || !IsBuilt)
             {
@@ -353,8 +370,9 @@ namespace FixedCamVr.Streaming
             ConfigureRenderer(_veilRenderer, _veilMat);
             _veilQuad = veilGo.transform;
 
-            // ⚠ 遅れて付いてくるのは**文字だけ**。黒の面まで遅らせると、振り向いた瞬間に
-            //    覆いの縁が視界へ入って現実が細く覗く（依頼の「一瞬でも壁が見えてはいけない」に反する）。
+            // ⚠ **スクリーンと同じ追従に乗せるのは文字だけ**（`FollowHead`）。黒の面まで乗せると、
+            //    振り向いた瞬間に覆いの縁が視界へ入って現実が細く覗く
+            //    （依頼の「一瞬でも壁が見えてはいけない」に反する）。覆いは頭に貼り付いたまま。
             var lagGo = new GameObject("TitleLagRoot");
             lagGo.transform.SetParent(transform, worldPositionStays: false);
             lagGo.transform.localPosition = Vector3.zero;
@@ -541,32 +559,43 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 頭に<b>わずかに遅れて</b>付いてくる。剛体として遅れるので、頭を振るたびに
-        /// 厚みの側面が覗く ＝ 立体であることが動きで分かる。
-        /// 遅れは <see cref="MaxLagDeg"/> で必ず頭打ちになるので、視界から出ることは無い。
+        /// <b>本編のスクリーンと同じ追従</b>（<see cref="YawFollowLogic"/>）。
+        /// ヨーだけを緩急つきで追い、<b>上下と傾きは追わない</b>ので、見上げれば題字は下に残る。
+        ///
+        /// ⚠ <b>黒の面はこれに乗せない。</b> 覆いは頭に貼り付いたままでなければ、
+        /// 振り向いた瞬間に縁が視界へ入って現実が細く覗く（依頼の絶対条件）。
+        /// 動かすのは題字だけ。
         /// </summary>
         private void FollowHead()
         {
             if (head == null || _lagRoot == null) return;
             float dt = Time.unscaledDeltaTime;
-            Quaternion hr = head.rotation;
-            if (!_lagPrimed) { _lagRot = hr; _lagPrimed = true; }
-            _lagRot = Quaternion.Slerp(_lagRot, hr, 1f - Mathf.Exp(-FollowRateHz * dt));
-            // 遅れは必ず頭打ちにする。上限が無いと、速く振り向いたときに文字が視界から出る。
-            if (Quaternion.Angle(_lagRot, hr) > MaxLagDeg)
-                _lagRot = Quaternion.RotateTowards(hr, _lagRot, MaxLagDeg);
+            float headYaw = head.eulerAngles.y;
 
-            // 頭が完全に静止していても厚みが分かるよう、ごく遅い揺らぎを足す。
+            // 着脱・pause 明けの巨大 dt は SmoothDamp をスナップさせる。種を置き直して進めない。
+            if (!_yawSeeded || dt > ResumeGapSec)
+            {
+                _yawFollow.Reseat(_yawSeeded ? _yawFollow.CurrentYaw : headYaw);
+                _yawSeeded = true;
+                ApplyPose(_yawFollow.CurrentYaw);
+                return;
+            }
+
             _driftSec += dt;
+            ApplyPose(_yawFollow.Step(headYaw, dt, YawDeadzoneDeg, YawTrailDeg, SmoothTimeSec,
+                                      MaxYawSpeedDegPerSec, CatchUpThresholdDeg, CatchUpBoost));
+        }
+
+        /// <summary>題字を頭の前 <c>distanceM</c>・高さ head.y + オフセット に、指定ヨーで置く。</summary>
+        private void ApplyPose(float yaw)
+        {
+            if (head == null || _lagRoot == null) return;
+            // 静止していても層が分かるよう、ごく遅い揺らぎを足す（0.3°/s 未満）。
+            // **これがスクリーンっぽさを消す唯一の動き**なので消さないこと。
             float dy = DriftYawDeg * Mathf.Sin(_driftSec * Mathf.PI * 2f / DriftYawSec);
             float dp = DriftPitchDeg * Mathf.Sin(_driftSec * Mathf.PI * 2f / DriftPitchSec);
-
-            // 親の中での相対姿勢に直して書く。位置も一緒に回るので
-            // 「板が滑る」のではなく「物が浮いている」に見える。
-            Quaternion parentRot = _lagRoot.parent != null ? _lagRoot.parent.rotation : Quaternion.identity;
-            Quaternion want = _lagRot * Quaternion.Euler(dp, dy, 0f);
-            _lagRoot.localRotation = Quaternion.Inverse(parentRot) * want;
-            _lagRoot.localPosition = Vector3.zero;
+            // ⚠ 位置は頭に付いてくるが、**姿勢はヨーだけ**（＋揺らぎ）。頭のピッチは入れない。
+            _lagRoot.SetPositionAndRotation(head.position, Quaternion.Euler(dp, yaw + dy, 0f));
         }
 
         private static void DestroySafe(Object o)
