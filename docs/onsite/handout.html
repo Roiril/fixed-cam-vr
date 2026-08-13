@@ -3,15 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>調査依頼書 — 待機者に渡す資料（廻リ視）</title>
+<title>調査依頼書 / 展示の注意 — 待機者に渡す資料（廻リ視）</title>
 <style>
 /* ============================================================
- * 待機者に渡す 1 枚（A4 縦・片面）。
- * 上 = 世界の中の書類（明朝・朱印）／ 二重罫線の下 = 展示としての言葉（ゴシック）。
- * 混ぜない。世界の言葉と現実の言葉が同じ書式で並ぶと、どちらも嘘に見える。
+ * 待機者に渡す資料。A4 を 2 面（両面刷り、または 2 枚）。
  *
- * 印刷: A4 縦・等倍。背景の色は出なくてよい（線と文字だけで成立させてある）。
- * 本文は A4 の刷り込み範囲 257mm に収めてある。文言を足したら必ず高さを測り直すこと。
+ *   面 1 = 作中資料（調査依頼書）。世界の中の言葉だけ。明朝・朱印
+ *   面 2 = 展示の注意。現実の言葉だけ。ゴシック
+ *
+ * ⚠⚠ 2 つを同じ紙面に置かない。混ざると、どちらも嘘に見える。
+ *     以前は 1 面に二重罫線で分けていたが、罫線 1 本では分かれていなかった。
+ *
+ * ⚠ 面 1 は体験の設定を教えない。教えてよいのは体験者が取る行動だけ
+ *   （歩く / 映像を見る / 違和感でボタンを押す / 判断しない）。
+ *   周回数・視点が固定であること・映像が乱れること・怪異が実在することは書かない。
+ *
+ * 印刷: A4 縦・等倍・両面。背景の色は出なくてよい（線と文字だけで成立させてある）。
+ *       刷り込み範囲 273mm。面 1 の本文は実測 190mm 前後。文言を足したら測り直すこと。
  * ============================================================ */
 
 :root {
@@ -31,7 +39,7 @@ body { font-family: var(--mincho); color: var(--ink); }
 .sheet {
   width: 210mm; min-height: 297mm; margin: 8mm auto; padding: 20mm 22mm 14mm;
   background: var(--paper); position: relative; overflow: hidden;
-  font-size: 10pt; line-height: 1.62; letter-spacing: .04em;
+  font-size: 10.5pt; line-height: 1.85; letter-spacing: .04em;
 }
 /* 紙のむら。印刷には出ない */
 .sheet::before {
@@ -43,7 +51,7 @@ body { font-family: var(--mincho); color: var(--ink); }
 }
 .sheet > * { position: relative; }
 
-/* --- 頭（左 = 受け取る側が書く欄／右 = 朱印） ---------------- */
+/* --- 面 1 の頭（左 = 記入欄／右 = 朱印） -------------------- */
 .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8mm; }
 .slots { font-size: 9pt; color: var(--sub); line-height: 2.1; white-space: nowrap; }
 .slot-line { display: inline-block; min-width: 26mm; border-bottom: .4pt solid var(--rule); }
@@ -51,54 +59,47 @@ body { font-family: var(--mincho); color: var(--ink); }
 .seal svg { width: 100%; height: 100%; display: block; }
 
 h1 {
-  font-size: 16pt; font-weight: 500; letter-spacing: .48em; text-indent: .48em;
-  margin: 4mm 0 1.5mm; text-align: center;
+  font-size: 17pt; font-weight: 500; letter-spacing: .48em; text-indent: .48em;
+  margin: 6mm 0 2mm; text-align: center;
 }
-.subject { text-align: center; font-size: 10pt; color: var(--sub); margin: 0 0 6mm; letter-spacing: .1em; }
+.subject { text-align: center; font-size: 10pt; color: var(--sub); margin: 0 0 8mm; letter-spacing: .1em; }
 
 p { margin: 0 0 1em; }
-.lead-line { margin-bottom: 1mm; }
+.lead-line { margin-bottom: 1.5mm; }
 
 /* --- 記書き ------------------------------------------------ */
-.ki    { text-align: center; letter-spacing: .3em; margin: 2.5mm 0 2mm; }
-.owari { text-align: right;  letter-spacing: .3em; margin: 1mm 0 0; }
+.ki    { text-align: center; letter-spacing: .3em; margin: 3mm 0 2.5mm; }
+.owari { text-align: right;  letter-spacing: .3em; margin: 1.5mm 0 0; }
 
 dl.items { margin: 0; }
 dl.items dt { font-weight: 500; margin: 0 0 .1em; letter-spacing: .12em; }
-dl.items dd { margin: 0 0 2.5mm 1.4em; }
+dl.items dd { margin: 0 0 4mm 1.4em; }
 dl.items dd p:last-child { margin-bottom: 0; }
 
-/* --- 区切りと小見出し -------------------------------------- */
-.band { border-top: .5pt solid var(--rule); margin: 3mm 0 2.5mm; padding-top: 2mm; }
-h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm; }
-.caveat { font-size: 9.5pt; color: var(--sub); margin-bottom: 0; }
+.band { border-top: .5pt solid var(--rule); margin: 6mm 0 3mm; padding-top: 3.5mm; }
+h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 2mm; }
 
-/* --- 報告欄 ------------------------------------------------ */
-.report .field { margin: 0 0 2.5mm; }
-.report .field:last-child { margin-bottom: 0; }
-.report .label { font-size: 9.5pt; letter-spacing: .12em; }
-.ruled { border-bottom: .4pt solid var(--rule); height: 7mm; }
-.inline-slot { display: inline-block; min-width: 62mm; border-bottom: .4pt solid var(--rule); }
-
-/* --- 二重罫線の下 = 展示としての言葉 ------------------------ */
-.exhibit {
-  font-family: var(--gothic); font-size: 8.5pt; line-height: 1.8; color: var(--sub);
-  border-top: 2.5pt double var(--rule); margin-top: 5mm; padding-top: 2.5mm;
-  letter-spacing: 0;
-}
-.exhibit p { margin: 0 0 1.5mm; }
-.exhibit p:last-child { margin-bottom: 0; }
-.exhibit .title { color: var(--ink); font-weight: 700; }
+/* --- 面 2（展示の注意・現実の言葉） ------------------------- */
+.sheet.exhibit { font-family: var(--gothic); line-height: 1.95; letter-spacing: 0; }
+.sheet.exhibit .work { font-family: var(--mincho); font-size: 20pt; letter-spacing: .3em; margin: 0 0 1mm; }
+.sheet.exhibit .spec { font-size: 10pt; color: var(--sub); margin: 0 0 12mm; }
+.sheet.exhibit h2 { font-family: var(--gothic); font-size: 12pt; font-weight: 700; letter-spacing: .06em; margin: 0 0 2mm; }
+.sheet.exhibit .warn { font-size: 12pt; font-weight: 700; line-height: 1.9; }
+.sheet.exhibit .facts { list-style: none; padding: 0; margin: 0; }
+.sheet.exhibit .facts li { margin: 0 0 1.5mm; padding-left: 1.2em; text-indent: -1.2em; }
+.sheet.exhibit .tech { font-size: 9.5pt; color: var(--sub); }
 
 /* --- 画面表示（印刷とは別。狭い幅で読めるようにする） -------- */
 @media screen and (max-width: 230mm) {
   .sheet {
     width: auto; max-width: 46rem; min-height: 0;
-    margin: 0 auto; padding: 7vw 6vw 6vw;
-    font-size: 1rem; line-height: 1.9;
+    margin: 0 auto 6vw; padding: 7vw 6vw 6vw;
+    font-size: 1rem; line-height: 1.95;
   }
-  h1 { font-size: 1.6rem; margin-top: 1.5rem; }
+  h1 { font-size: 1.7rem; margin-top: 1.5rem; }
   .seal { width: 20mm; height: 20mm; }
+  .sheet.exhibit .work { font-size: 1.8rem; }
+  .sheet.exhibit .warn { font-size: 1.05rem; }
 }
 
 @media print {
@@ -108,20 +109,23 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm
     background: none;
   }
   .sheet::before { display: none; }
-  /* 上下 12mm ＝ 刷り込み範囲 273mm。本文の実測は下の ⚠ に書いてある。
-     書体が入れ替わると行の高さが変わるので、文言を足したら必ず測り直すこと */
+  .sheet + .sheet { break-before: page; page-break-before: always; }
+  /* 上下 12mm ＝ 刷り込み範囲 273mm。文言を足したら必ず測り直すこと */
   @page { size: A4 portrait; margin: 12mm 22mm; }
 }
 </style>
 </head>
 <body>
 
+<!-- ==========================================================
+     面 1 — 作中資料。世界の中の言葉だけ。
+     ========================================================== -->
 <div class="sheet">
 
   <div class="head">
     <div class="slots">
-      整理番号 <span class="slot-line"></span><br>
-      受領日 <span class="slot-line"></span>
+      観測者番号 <span class="slot-line"></span><br>
+      記録日 <span class="slot-line"></span>
     </div>
     <div class="seal" aria-hidden="true">
       <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -136,30 +140,29 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm
   </div>
 
   <h1>調査依頼書</h1>
-  <p class="subject">件名 ： 壁で見られたものの調査について</p>
+  <p class="subject">件名 ： 壁面周辺の観測調査について</p>
 
   <p class="lead-line">下記のとおり調査を依頼します。</p>
 
   <p class="ki">記</p>
 
   <dl class="items">
-    <dt>一、対象</dt>
-    <dd><p>対象は壁です。場所は現地で指示します。</p></dd>
+    <dt>一、調査対象</dt>
+    <dd><p>旧塩根寮　北棟　Ｌ字壁面およびその周辺</p></dd>
 
     <dt>一、方法</dt>
     <dd>
-      <p>壁の周りを三周し、観測装置に映るものを見てください。<br>
-      装置は歩いた位置に合わせて切り替わります。操作は要りません。</p>
+      <p>観測装置を装着し、表示される映像を確認してください。<br>
+      装置の指示に従い、指定された経路を移動してください。<br>
+      映像の切替は自動で行われます。装置の操作は不要です。</p>
     </dd>
 
     <dt>一、記録</dt>
     <dd>
-      <p>気になるものが見えたら、手元のボタンを押してください。押した時刻が装置に残ります。<br>
-      それが何かは、こちらで判断します。</p>
+      <p>映像内に違和感を認めた場合、手元のボタンを一度押してください。<br>
+      ボタンを押すと、怪異が記録されます。<br>
+      観測されたものについて、判断は行わないでください。</p>
     </dd>
-
-    <dt>一、報告</dt>
-    <dd><p>終わったあとに、見えたものをこの用紙へ書いてください。解釈は要りません。</p></dd>
   </dl>
 
   <p class="owari">以上</p>
@@ -167,31 +170,42 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm
   <div class="band">
     <h2>観測装置について</h2>
     <p>
-      目では見えないものを見るために作った装置です。<br>
-      視点は固定してあります。動かせません。<br>
-      <strong>装置に映るものは、その場に実在するものです。</strong><br>
-      こちらから声はかけません。指示は装置の画面に送ります。
+      本装置は、目に見えない怪異の観測を目的として開発されたものです。<br>
+      装置の仕様上、観測位置を変更することはできません。<br>
+      映像と実際の状況を照合する必要はありません。<br>
+      観測中の指示は、すべて装置上に表示されます。
     </p>
-    <p class="caveat">※ 調整中のため、映像が乱れることがあります。故障ではありません。</p>
   </div>
 
-  <div class="band report">
-    <h2>報告欄</h2>
-    <div class="field"><span class="label">観測者</span> <span class="inline-slot"></span></div>
-    <div class="field">
-      <span class="label">見えたもの</span>
-      <div class="ruled"></div>
-      <div class="ruled"></div>
-    </div>
+</div>
+
+<!-- ==========================================================
+     面 2 — 展示の注意。現実の言葉だけ。作中資料と混ぜない。
+     ========================================================== -->
+<div class="sheet exhibit">
+
+  <p class="work">廻リ視</p>
+  <p class="spec">Meta Quest 3 ／ 固定視点の映像を用いた体験</p>
+
+  <h2>ご体験の前に</h2>
+  <p class="warn">
+    本作品にはホラー表現および恐怖を感じる演出が含まれます。<br>
+    体験中に気分が悪くなった場合は、すぐにヘッドセットを外し、スタッフにお声がけください。
+  </p>
+
+  <div class="band">
+    <h2>体験について</h2>
+    <ul class="facts">
+      <li>・所要時間はおよそ 3 分です。</li>
+      <li>・立って歩いていただきます。足元にご注意ください。</li>
+      <li>・ヘッドセットはスタッフが装着します。</li>
+      <li>・体験中、スタッフからお声がけはしません。中断したいときはヘッドセットを外してください。</li>
+    </ul>
   </div>
 
-  <div class="exhibit">
-    <p><span class="title">廻リ視</span> ／ Meta Quest 3 ・ 固定視点の映像を用いた体験</p>
-    <p>
-      この体験にはホラー表現が含まれます<br>
-      気分が悪くなった場合は、すぐにヘッドセットを外し<br>
-      スタッフへお声がけください
-    </p>
+  <div class="band">
+    <h2>技術的な注意</h2>
+    <p class="tech">無線で映像を送っているため、通信の状態によって映像が乱れることがあります。</p>
   </div>
 
 </div>
