@@ -151,6 +151,8 @@ namespace FixedCamVr.Streaming
                             passthrough = s,
                             live = 1f - s,
                             frame = 1f,
+                            // 管は点いたまま（終幕は「映像が現実へ戻る」であって、管が消える話ではない）。
+                            ignite = 1f,
                             degrade = 1f,
                             edge = 0f,
                             grain = 0.6f * s,
@@ -172,6 +174,7 @@ namespace FixedCamVr.Streaming
                             degrade = 1f,
                             edge = 0.3f + 0.7f * p,
                             frame = 1f - p,
+                            ignite = 1f,
                             grain = 0.6f,
                             live = 0f,
                             shell = 1f,
@@ -191,6 +194,7 @@ namespace FixedCamVr.Streaming
                             edge = d,
                             grain = 0.6f * d,
                             frame = 0f,
+                            ignite = 1f,
                             live = 0f,
                             // **ここで収容が解ける。** 色が戻るのと同じ速さで会場が返ってくる。
                             // 導入で閉じたものを終幕で開けないと、体験者は黒い箱の中に置き去りで終わる
@@ -201,7 +205,10 @@ namespace FixedCamVr.Streaming
                     }
 
                     case OutroStage.Hold:
-                        return new IntroWeights { passthrough = 1f, frame = 0f, live = 0f, shell = 0f };
+                        return new IntroWeights
+                        {
+                            passthrough = 1f, frame = 0f, live = 0f, shell = 0f, ignite = 1f,
+                        };
 
                     default:
                         return IntroWeights.Inactive;

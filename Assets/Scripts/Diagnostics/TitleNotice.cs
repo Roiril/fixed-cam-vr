@@ -36,7 +36,9 @@ namespace FixedCamVr.Diagnostics
         [SerializeField, Range(-20f, 20f)] private float pitchOffsetDeg = 2.0f;
 
         [Tooltip("文字の大きさ（ワールド m）。2.6m 先で見かけ約 2°。")]
-        [SerializeField, Min(0.01f)] private float fontSize = 0.09f;
+        // 2026-08-13 に 0.09 → 0.07。文言が 3 行になり、2 行目が 24 文字へ伸びたため
+        // （24 × 0.09 = 2.16m ＝ 2.6m 先で 45° は、読むには広すぎて視線が往復する）。
+        [SerializeField, Min(0.01f)] private float fontSize = 0.07f;
 
         [Tooltip("出るまでの秒。黒の中にすっと現れる。")]
         [SerializeField, Min(0.01f)] private float fadeInSec = 0.3f;
@@ -50,10 +52,8 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private const string NoticeText =
             "この体験にはホラー表現が含まれます\n" +
-            "暗い場所と大きな音があります\n" +
-            "\n" +
-            "気分が悪くなったら\n" +
-            "すぐにスタッフへ声をかけてください";
+            "気分が悪くなった場合は、すぐにヘッドセットを外し\n" +
+            "スタッフへお声がけください";
 
         /// <summary>
         /// タイトルの黒（<c>FixedCamVr/TitleVeil</c> = 4950）と題字（<c>TitleGlyph</c> = 4960）より
@@ -120,9 +120,10 @@ namespace FixedCamVr.Diagnostics
                 tmp.color = new Color(0.80f, 0.77f, 0.73f, 1f);
 
                 var rt = (RectTransform)go.transform;
-                // 最長行（17 文字）が 1.53m なので、折り返しは起きない。折り返しを有効に
-                // しているのは、文言を足した誰かが枠の外へ流れ出さないための安全網。
-                rt.sizeDelta = new Vector2(1.8f, 1.0f);
+                // 最長行は 2 行目の 24 文字 ＝ 24 × fontSize ≒ 1.68m（2.6m 先で約 36°）。
+                // 枠を 2.0m にしてあるので**ユーザーが決めた 3 行の改行位置がそのまま出る**。
+                // 折り返しを有効に残しているのは、文言を足した誰かが枠の外へ流れ出さないための安全網。
+                rt.sizeDelta = new Vector2(2.0f, 1.0f);
 
                 // 頭の正面やや下。head-lock（CenterEyeAnchor 直下に置かれる前提）なので、
                 // ここでは局所の置き場所だけを決める。題字は yaw だけ追うが、この面は

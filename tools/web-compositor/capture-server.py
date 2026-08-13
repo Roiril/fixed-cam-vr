@@ -250,8 +250,8 @@ def _default_show():
                 # ⚠ この値は tools/web-compositor/intro-model.js の INTRO_DEFAULT と一致していること
                 #   （intro-model.test.mjs が両者を突き合わせる。片方だけ直すと沈黙して食い違う）。
                 'intro': {'enabled': True, 'maxSec': 20,
-                          'realSec': 1.5, 'degradeSec': 3.5, 'structureSec': 2.5,
-                          'frameSec': 2.5, 'swapSec': 4.5,
+                          'sealSec': 1.4, 'darkSec': 0.8, 'igniteSec': 1.6,
+                          'liveSec': 2.4,
                           # 構造の線は既定で出さない（2026-08-01。細い線が現実に重なると計測器に見える）。
                           # Unity の ShowIntroDef / 卓の INTRO_DEFAULT と 3 者で揃えること。
                           'edgeColor': '#ffcf9e', 'showCameraMarks': False, 'showRoomWire': False,

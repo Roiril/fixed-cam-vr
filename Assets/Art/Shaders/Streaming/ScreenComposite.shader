@@ -78,6 +78,11 @@ Shader "FixedCamVr/ScreenComposite"
         _CrtRound("CRT Corner Round", Range(0, 0.5)) = 0
         _CrtEdge("CRT Edge Darkness", Range(0, 1)) = 0
         _CrtEdgeWidth("CRT Edge Width", Range(0.01, 0.5)) = 0.16
+        // 管が点く（導入）。**0 = 消えている / 1 = 点いている**。
+        // 途中は「縁が光る → 中央から水平に開く → 面が満ちる → 行き過ぎて落ち着く」。
+        // ⚠ 既定 **1**（点いている）。0 を既定にすると、この uniform を書かない場面
+        //   （本編・終幕・卓のプレビュー・Editor の合成プレビュー）で画がまるごと消える。
+        _CrtIgnite("CRT Ignition (0=off, 1=on)", Range(0, 1)) = 1
         // 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
         // 一様な脱色ではなく「明るい所に色が残り、暗がりが無彩へ落ちる」形になる。
         _ChromaKill("Dark Chroma Kill (ISP noise reduction)", Range(0, 1)) = 0
@@ -173,6 +178,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _CrtRound;
                 float _CrtEdge;
                 float _CrtEdgeWidth;
+                float _CrtIgnite;
                 float _ExposureBias;
                 float _Echo;
                 float _CoarseBlocks;
@@ -625,6 +631,41 @@ Shader "FixedCamVr/ScreenComposite"
                     float amt = g * 0.5 * step(1.0 - 0.75 * g, bandPick);
                     col = lerp(col, half3(st, st, st), saturate(amt));
                     col *= 1.0 - 0.22 * g * Hash21(float2(t, 9.3)); // 同期崩れの明滅
+                }
+
+                // ブラウン管に電源が入る（導入の段 3）。**映像はまだ無い**ので、ここで作るのは光そのもの。
+                //
+                // ⚠ 「ホログラムのように」を字義どおり作らない。青い線・走査の束・粒は
+                //   `canon/LEDGER.md` 0011 / 0016 / 0018 で**3 回続けて「安っぽい」と判定された語彙**。
+                //   代わりに**管が点く**（このスクリーンは既にブラウン管なので、装置の側に理由がある）。
+                //
+                // 段取りは実物の CRT と同じ順: 高電圧が乗って縁が光る → 走査が中央から上下へ開く →
+                // 面が満ちる → 少し行き過ぎて落ち着く。
+                if (_CrtIgnite < 0.999)
+                {
+                    float t = saturate(_CrtIgnite);
+                    float2 p = (screenUv - 0.5) * 2.0;
+                    float d = CrtSdf(screenUv);
+
+                    // 1) 縁が光る（0.00〜0.30 で立ち、0.65 までに引く）
+                    float rim = saturate(t / 0.30) * (1.0 - saturate((t - 0.30) / 0.35));
+                    float edgeGlow = exp(-abs(d) * 22.0) * rim;
+
+                    // 2) 中央から水平に開く（0.25〜0.78）。**ゆっくり開く** —
+                    //    速いと「光った」になり、管が立ち上がる過程が読めない
+                    float open = saturate((t - 0.25) / 0.53);
+                    float band = 1.0 - smoothstep(0.0, max(open * open, 1e-3), abs(p.y));
+
+                    // 3) 面が満ちる（0.55〜0.90）＋ 行き過ぎて戻る（管の輝度が安定するまで）
+                    float fill = saturate((t - 0.55) / 0.35);
+                    float over = 1.0 + 0.30 * sin(saturate((t - 0.78) / 0.22) * 3.14159265);
+
+                    // 映像は満ちた分だけ出る（点き切るまで見えない）
+                    col *= saturate(fill * over);
+                    // 光そのもの。**暖色**（`canon/LEDGER.md` 0010）。青白い光にすると装置が別物になる。
+                    // ⚠ 弱く。全面が明るく光ると「点いた」ではなく「光った」になる
+                    col += half3(1.0, 0.72, 0.42)
+                         * (edgeGlow * 0.55 + band * open * (1.0 - fill) * 0.22);
                 }
 
                 // ブラウン管の面。**縁へ向かって落ち、角の外は黒**。

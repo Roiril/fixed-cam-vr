@@ -160,27 +160,38 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         /// <summary>
-        /// 段 4 を進み <paramref name="p"/> まで走らせた重み。**プレビュー用に式を写さない** —
-        /// 写した瞬間に「卓では正しいのに実機が違う」を作る。
+        /// 破砕のどこから開口が閉じ始めるか。<b>破砕の後ろへ寄せてある</b> — 開口は覆いのセルも
+        /// 封印の箱の破片も切るので、破片が飛んでいる最中に閉じると通り道で消える。
+        ///
+        /// ⚠ <b>2026-08-13 まで <c>IntroLogic.FrameCloseAt</c> だった。</b> 段 4「破砕」を廃止して
+        /// 導入から破砕が消えたので、いまこの値を使うのは<b>このプレビューだけ</b>。
+        /// </summary>
+        private const float FrameCloseAt = 0.70f;
+
+        /// <summary>
+        /// 破砕の進み <paramref name="p"/> における重み。
+        ///
+        /// ⚠ <b>2026-08-13 に <see cref="IntroLogic"/> から取るのをやめた。</b> 導入の段から破砕が
+        /// 外れ（<see cref="IntroWeights.shatter"/> は全段 0）、走らせても 1 枚も割れなくなったため。
+        /// <see cref="IntroShatterCurve"/> と破片メッシュは眠らせてあるだけなので、
+        /// <b>この門だけは進みを直接与えて生かしておく</b>（赤入れが返るまで検証手段を失わない）。
         /// </summary>
         private static IntroWeights FrameWeightsAt(float p)
         {
-            IntroTiming t = IntroTiming.Default;
-            var logic = new IntroLogic();
-            logic.Configure(t);
-            logic.Begin();
-            var input = new IntroInput
+            float s = Mathf.Clamp01(p);
+            return new IntroWeights
             {
-                blackCleared = true, headTurnDegPerSec = 0f, frameCentered = true,
-                liveFresh = true, recentered = false, outsideBoxM = 1.5f,
+                passthrough = 1f,
+                degrade = 1f,
+                edge = 1f - 0.7f * s,
+                structure = 1f - s,
+                frame = IntroLogic.SmoothStep(FrameCloseAt, 1f, s),
+                shatter = s,
+                grain = 0.6f,
+                live = 0f,
+                ignite = 1f,
+                sealBox = 1f,
             };
-            for (int i = 0; i < 4; i++)   // 段 0 → 1 → 2 → 3 → 4
-            {
-                logic.RequestAdvance();
-                logic.Tick(0.001f, input);
-            }
-            logic.Tick(Mathf.Clamp01(p) * t.frameSec, input);
-            return logic.Weights;
         }
 
         private static void Capture(Camera cam, Texture2D reality, string path)

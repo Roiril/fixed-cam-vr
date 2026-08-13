@@ -242,27 +242,27 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Swap_ShowsNoPassthroughAtAll()
+        public void Live_ShowsNoPassthroughAtAll()
         {
-            // 段 5 で現実を 1 画素も出さない（交差の途中に中の様子が透けるのを防ぐ）。
+            // 段 4 で現実を 1 画素も出さない（交差の途中に中の様子が透けるのを防ぐ）。
             var l = new IntroLogic();
             l.Configure(IntroTiming.Default);
             l.Begin();
             l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true, outsideBoxM = 2f });
-            for (int i = 0; i < 3000 && l.Stage != IntroStage.Swap; i++)
+            for (int i = 0; i < 3000 && l.Stage != IntroStage.Live; i++)
                 l.Tick(0.016f, new IntroInput
                 {
                     blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
                 });
-            Assert.AreEqual(IntroStage.Swap, l.Stage);
-            for (int i = 0; i < 300 && l.Stage == IntroStage.Swap; i++)
+            Assert.AreEqual(IntroStage.Live, l.Stage);
+            for (int i = 0; i < 300 && l.Stage == IntroStage.Live; i++)
             {
                 l.Tick(0.016f, new IntroInput
                 {
                     blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
                 });
-                Assert.AreEqual(0f, l.Weights.passthrough, 1e-4f, "段 5 でパススルーが出ている");
-                Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f, "段 5 で箱が画面を覆っている");
+                Assert.AreEqual(0f, l.Weights.passthrough, 1e-4f, "段 4 でパススルーが出ている");
+                Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f, "段 4 で箱が画面を覆っている");
             }
         }
 
@@ -297,7 +297,7 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Intro_ShellNeverSurvivesIntoTheShow()
         {
-            // 殻は段 5 で「黒 → 映像」の渡しに使う（canon/LEDGER.md 0005）。
+            // 殻は段 2〜3 の闇に使う（canon/LEDGER.md 0005）。
             // **渡し終わったら必ず 0** — 残すと本編の映像まで黒く塗る。
             var l = new IntroLogic();
             l.Configure(IntroTiming.Default);
@@ -310,11 +310,11 @@ namespace FixedCamVr.Streaming.Tests
                 {
                     blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
                 });
-                if (l.Stage == IntroStage.Swap) lastSwapShell = l.Weights.shell;
+                if (l.Stage == IntroStage.Live) lastSwapShell = l.Weights.shell;
                 if (l.Stage == IntroStage.Done) break;
             }
             Assert.AreEqual(IntroStage.Done, l.Stage);
-            Assert.Less(lastSwapShell, 0.05f, "段 5 の終わりで黒が残っている");
+            Assert.Less(lastSwapShell, 0.05f, "段 4 の終わりで黒が残っている");
             Assert.AreEqual(0f, l.Weights.shell, 1e-4f);
             Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
         }

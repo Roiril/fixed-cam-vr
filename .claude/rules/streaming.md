@@ -593,12 +593,43 @@ lap <= totalLaps || (lap == totalLaps + 1 && camera == order[0])
 - ▶ 検証（シミュレータ）も `run.totalLaps` で止まる。止めないと「3 周で終わる設定なのに 4 周目が卓では動く」嘘になり、
   逆に 3 周目最後の離脱時演出が出るかを卓で確かめられない。
 
-#### 導入演出 — 現実が映像になる（2026-07-30）
+#### 導入演出 — 闇の中にスクリーンが出現する（2026-07-30 / **2026-08-13 に作り直し**）
 
-**企画書には無い新規追加。** 設計の正本は
-[2026-07-30_intro-passthrough-to-screen.md](../plans/2026-07-30_intro-passthrough-to-screen.md)。
-`Intro` 相の最初の **13.1 秒**で、**パススルー（現実）を 2D スクリーン（映像）へ格下げする**
-（当初 33 秒で設計したが、体験の入口としてテンポが遅く飽きるので同日に詰めた）。
+**企画書には無い新規追加。**
+`Intro` 相の最初の **6.2 秒**で、**開口が閉じて闇になり、その闇の中でスクリーンの管が点いて、
+映った先に自分が居る**。
+
+⚠⚠ **旧構成（13.1 秒・現実を格下げしていく 5 段）は 2026-08-13 に廃止した。**
+運用が変わり、体験者は**封印の箱の中に入ってから**固定視点になる。旧段 1〜4
+（Real / Degrade / Structure / Frame）は「箱の外で現実を見ながら格下げされる」前提なので、
+中に入ると `OutsideWeights` が `shell=1 / shellReveal=0` に倒れて**8.6 秒の真っ黒**にしか
+ならなかった。ユーザー宣言（2026-08-13）:
+
+> 現状の演出は廃止して、ホログラムのようにスクリーンが出現するという演出に変更するのでもいいと思った。
+
+| 段 | 尺 | 動くもの |
+|---|---|---|
+| 0 `Black` | — | 箱の外・素通し・封印の箱。**エリアへ近づいたら**次へ（`ApproachLogic`） |
+| 1 `Seal` | 1.4s | 開口が閉じ切る。`frame 0→1` / `passthrough 1→0` / `sealBox→0` |
+| 2 `Dark` | 0.8s ＋ 待ち | 全黒。**中に居ることを待つ**（上限 3s ＝ `IntroLogic.DarkHoldMaxSec` で必ず抜ける） |
+| 3 `Ignite` | 1.6s | 闇の中でスクリーンの管が点く。**映像はまだ無い**（`ignite 0→1`） |
+| 4 `Live` | 2.4s | `live 0→1` / `glitch` の一撃 / `shell 1→0`。自分が映る |
+
+- **`IntroWeights` から項目は消していない。** `frame` / `degrade` / `edge` / `shatter` / `structure` は
+  終幕（`OutroLogic`）が使う。**導入の段が使わなくなっただけ**で、全段 0 を書く
+- **`ignite` を 1 つ足した**（0..1）。`ScreenComposite` の `_CrtIgnite` へ `IntroDirector` が書く。
+  書く先は **`MjpegScreen` の Renderer のマテリアル**（`CameraFeelFx` が掴んでいるのと同じ材質）
+  - ⚠⚠ **既定は 1（点いている）。** 0 を書いたままにすると画がまるごと消えるので、演出を畳む
+    すべての経路（終わった / 中止した / 無効の設定 / 位置合わせ中 / 相が変わった / `OnDisable`）で
+    **1 を書き戻す**。「書くのをやめる」だけでは最後に書いた 0 が残る
+  - ⚠ 材質を掴めなかったときは**何も書かない**（0 を書いて画を消す方向へ倒さない）。
+    掴めていないことは `[XP]` の `ignite=nc` で分かる
+- ⚠ **殻（`shell`）は段 3 で管と入れ替わりに引く**（`shell = 1 - ignite`）。殻は全画面の面
+  （queue 4910・`ZTest Always`）で**スクリーンごと黒く塗る**ので、1 のまま残すと点いた管が
+  1 画素も見えない。闇そのものは覆い（開口の外は不透明）と背景 alpha が保つ
+- ⚠ **`shat=`（破砕）は観測からも判定からも外した。** 常に 0 が並ぶだけで、
+  「出るはずのものが出ない」と誤検出させる材料にしかならない。`IntroShatterCurve` と
+  2 つの破片メッシュは**眠らせてあるだけ**（`menu shatter` のプレビューだけが生かしている）
 
 - **始まり方は 3 つ**（いずれも **HMD を被っていることが前提**・時間では進めない）:
   1. **通過ライン**（`run.intro.startLineId` → `layout.lines[].id`）を横切る ← **2026-07-30 に追加・現行の既定運用**
@@ -620,17 +651,17 @@ lap <= totalLaps || (lap == totalLaps + 1 && camera == order[0])
   ⚠ 自動走行（`ShowWalkDebugDriver`）は被らずに走らせるので、この provider を true で上書きする。
 - `startSpot` を `regPoints` と**別の集合**にしたのは、位置合わせ点が「HMD で手が届く」
   「タッチ順に意味がある」という別の制約を持つため（兼用すると片方を動かしてもう片方が壊れる）。
-- ⚠ **演出の合計秒は単純和ではない**（段 3 は段 2 の後半から始まるので重なった分は二度流れない）。
-  `IntroTiming.TotalSec` と卓の `introStageSec` が**同じ式**を持ち、両方のテストに 13.1 を
-  ハードコードして突き合わせてある。**片方だけ直すと沈黙して食い違う**
+- ⚠ **演出の合計秒は 4 段の単純和（6.2s）。段 2 の「中に入るのを待つ」時間は含めない**
+  （待ちは演出ではない）。`IntroTiming.TotalSec` と卓の `introStageSec` が**同じ式**を持ち、
+  両方のテストに 6.2 をハードコードして突き合わせてある。**片方だけ直すと沈黙して食い違う**
 
 - **視点は 1 度も動かさない。** 動かすのは現実の側の身分。段は
-  黒 → 現実 → 格下げ（色が抜け輪郭が浮く）→ 構造（部屋の線とカメラの印）→ 枠 → すり替え → 慣らし歩行
+  箱の外 → 閉じる → 闇 → 管が点く → 映像 → 慣らし歩行
 - **`ShowPhase` は増やさない。** `Intro` の内側のサブ状態（`IntroStage`）で、
   ゲート・終了判定・heartbeat・卓・シミュレータへの分岐を増やさない
-- **判断は [`IntroLogic`](../../Assets/Scripts/Streaming/IntroLogic.cs)**（dt 注入・テスト 22 本）。
-  各層への配布は `IntroWeights`（passthrough / degrade / edge / structure / frame / live / grain / glitch）1 本で、
-  **見え方の判断を Director に散らさない**。段 2 と段 3 は時間的に重なるので、段の直列ではなく重みで表す
+- **判断は [`IntroLogic`](../../Assets/Scripts/Streaming/IntroLogic.cs)**（dt 注入）。
+  各層への配布は `IntroWeights`（passthrough / degrade / edge / structure / frame / live / grain /
+  glitch / **ignite** / shell / shellReveal / sealBox）1 本で、**見え方の判断を Director に散らさない**
 - **枠は本編のスクリーンそのもの**。開口の形と不透明度だけを動かす（`IntroVeil` が
   `ScreenAnchor` の Quad の見かけの形を逆算）。だから「枠を運ぶ」処理が無く、
   「入ったのに前方にスクリーンが浮いている」矛盾も発生しない
@@ -687,7 +718,8 @@ lap <= totalLaps || (lap == totalLaps + 1 && camera == order[0])
   本番前チェック（`intro-model.js` の `introWireGeometry`）もこの 2 キーを見る — 以前は `layout.wall` の
   既定値判定だったので、**壁を著作しても ❌ が消えず、指示された直し方（床の寸法入力）でも消えなかった**
 - **⚠ 尺の既定は 3 箇所に現れる**（`ShowIntroDef` のフィールド初期値 / `IntroTiming.Default` / 卓の
-  `INTRO_DEFAULT`）。13 秒へ詰めた時に `ShowIntroDef` だけ旧値（33 秒）が残っていた。
+  `INTRO_DEFAULT`・`capture-server.py` の `_default_show` の **4 箇所**）。
+  13 秒へ詰めた時に `ShowIntroDef` だけ旧値（33 秒）が残っていた。
   `Sanitized()` が 0 を既定で埋めるので実害は出ていなかったが、**フィールドを直接読む経路が増えた瞬間に食い違う**
 - **「右手を上げる」は導入と 3 周目だけの専用合図**。導入では画面の中の自分も上げるが、3 周目の背景は
   1 周目の録画なので上がらない → 言葉なしに反転が成立する。**手を上げたことは検出しない**
@@ -702,8 +734,18 @@ lap <= totalLaps || (lap == totalLaps + 1 && camera == order[0])
   内側で、端末内録画はゲートで止まっている。ゲートを触るときはこの保証を壊していないか確認する
 - パススルーの API の制約（切ると数百 ms 黒 / 走査線は掛けられない / ガーディアンは消せない）は
   [meta-xr.md](meta-xr.md) の「パススルー」節が正本
-- **⚠ Quest 実機未検証**（2026-07-30。EditMode 883/883・node 299/299。パススルーの見た目・枠の閉じ方・
-  段 5 で「自分だと分かるか」は実機でしか判定できない）
+- **⚠ 黒は封印の箱の面より「手前」で立てる**（2026-08-13・ユーザー報告
+  「黒い箱に入ったときに、一瞬だけパススルーで中が見えてしまう」）。
+  原因は「箱の面が消える平面」と「黒に落とす平面」が同一で余裕がゼロなこと:
+  `ContainmentShell.FloorMarginM=0` / `SealedBox.Place()` が `localScale = half*2` /
+  旧 `IntroLogic` の `_insideBox = outsideBoxM <= 0`（ヒステリシス無し）。
+  **判定は Update 時の CenterEyeAnchor だが、描画は眼ごとの late-latch 姿勢**で、箱は `Cull Back`。
+  だから**描画側が先に中へ入った眼だけ壁が消えて、黒はまだ来ない**。
+  → `IntroLogic` に閾値を持たせ、**`outsideBoxM <= 0.3` で「中」とみなして黒を先に立て、
+  戻りは `>= 0.6`**（`InsideEnterM` / `InsideExitM`。ヒステリシスで境界の震えによる点滅も止める）。
+  `IntroLogicTests.InsideBox_LeadsTheBoxFace_AndHasHysteresis` が固定する
+- **⚠ Quest 実機未検証**（2026-08-13。EditMode 1184/1184・node 388/388。管の出現の見え方・
+  闇の長さ・段 4 で「自分だと分かるか」は実機でしか判定できない）
 
 #### 映像の乱れ（グリッチ）
 

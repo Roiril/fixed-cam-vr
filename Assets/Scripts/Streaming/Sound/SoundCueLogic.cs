@@ -13,9 +13,18 @@ namespace FixedCamVr.Streaming
         TitleOut,
         /// <summary>段 1 — 隔離が閉じて会場が消える。**導入で最初の山。**</summary>
         SealClose,
-        /// <summary>段 4 — 現実が割れてスクリーンへ吸い込まれる。</summary>
+        /// <summary>
+        /// 現実が割れてスクリーンへ吸い込まれる。
+        /// ⚠ <b>2026-08-13 以降は鳴らない</b>（段 4「破砕」を廃止し重み <c>shatter</c> を眠らせた）。
+        /// 音源と経路は残してある — 赤入れが返ってから消す。
+        /// </summary>
         Shatter,
-        /// <summary>段 5 — 枠の中がカメラ映像になる（装置が点く）。</summary>
+        /// <summary>
+        /// 段 3 — 闇の中でブラウン管に電源が入る。**導入の山**（`canon/LEDGER.md` 0023 の ④）。
+        /// 破砕を廃止して空いた山をここが引き受ける。音源はユーザー指定（2026-08-13）。
+        /// </summary>
+        ScreenOn,
+        /// <summary>段 4 — 管の中がカメラ映像になる（装置が点く）。</summary>
         Swap,
         /// <summary>終幕 — 隔離が開いて現実が戻る。**山にしない。**</summary>
         ShellOpen,
@@ -69,7 +78,7 @@ namespace FixedCamVr.Streaming
 
         private readonly SoundCue[] _buf = new SoundCue[MaxPerTick];
         private bool _titleWasVisible;
-        private bool _sealFired, _shatterFired, _swapFired, _openFired;
+        private bool _sealFired, _shatterFired, _screenOnFired, _swapFired, _openFired;
         private bool _glitchArmed = true;
         private float _glitchCooldown;
         private bool _glyphWasShowing;
@@ -85,7 +94,7 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             _titleWasVisible = false;
-            _sealFired = _shatterFired = _swapFired = _openFired = false;
+            _sealFired = _shatterFired = _screenOnFired = _swapFired = _openFired = false;
             _glitchArmed = true;
             _glitchCooldown = 0f;
             _glyphWasShowing = false;
@@ -125,7 +134,9 @@ namespace FixedCamVr.Streaming
             _glyphWasShowing = s.titleGlyphShowing;
             _titleWasVisible = s.titleVisible;
 
-            // --- 導入の 3 つの山 ------------------------------------------------
+            // --- 導入の山（隔離が閉じる / 装置が点く）-----------------------------
+            // ⚠ 破砕（Shatter）は段の廃止で鳴らなくなった。判定はここではなく
+            //   analyze-xp-log.py の「音（鳴ったか）」節から外してある。
             if (s.introActive)
             {
                 if (!_sealFired && s.introWeights.shell >= ShellFireAt)
@@ -138,7 +149,14 @@ namespace FixedCamVr.Streaming
                     _shatterFired = true;
                     Push(SoundCue.Shatter, ref count);
                 }
-                if (!_swapFired && s.introStage == IntroStage.Swap)
+                // 闇の中で管に電源が入る。**破砕を廃した導入の山はここ**。
+                // 段の頭で鳴らす（絵より音が先に来る — rules/sound-design.md §4 の決めごと 1）。
+                if (!_screenOnFired && s.introStage == IntroStage.Ignite)
+                {
+                    _screenOnFired = true;
+                    Push(SoundCue.ScreenOn, ref count);
+                }
+                if (!_swapFired && s.introStage == IntroStage.Live)
                 {
                     _swapFired = true;
                     Push(SoundCue.Swap, ref count);
@@ -207,6 +225,7 @@ namespace FixedCamVr.Streaming
             {
                 case SoundCue.SealClose: return 0.85f;
                 case SoundCue.Shatter: return 0.90f;
+                case SoundCue.ScreenOn: return 0.90f;   // 導入の山。劇伴を深く退かせる
                 case SoundCue.Swap: return 0.55f;
                 case SoundCue.TitleOut: return 0.70f;
                 case SoundCue.ShellOpen: return 0.40f;
@@ -226,6 +245,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.TitleOut: return "sfx_title_out";
                 case SoundCue.SealClose: return "sfx_seal_close";
                 case SoundCue.Shatter: return "sfx_shatter";
+                case SoundCue.ScreenOn: return "sfx_screen_on";
                 case SoundCue.Swap: return "sfx_swap";
                 case SoundCue.ShellOpen: return "sfx_shell_open";
                 case SoundCue.Glitch: return "sfx_glitch";      // 3 種から順に選ぶ

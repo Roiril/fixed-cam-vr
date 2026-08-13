@@ -34,6 +34,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string StartupFaderName = "StartupFader";
         private const string EndingFaderName = "ShowEndingFader";
         private const string IntroPromptName = "IntroPrompt";
+        private const string TitleNoticeName = "TitleNotice";
         private const string IntroVeilName = "IntroVeil";
         private const string IntroDirectorName = "IntroDirector";
         private const string TitleName = "Title";
@@ -103,6 +104,7 @@ namespace FixedCamVr.Streaming.EditorTools
             DeleteIfExists($"{CenterEyePath}/{StartupFaderName}");
             DeleteIfExists($"{CenterEyePath}/{EndingFaderName}");
             DeleteIfExists($"{CenterEyePath}/{IntroPromptName}");
+            DeleteIfExists($"{CenterEyePath}/{TitleNoticeName}");
             DeleteIfExists($"{CenterEyePath}/{IntroVeilName}");
             DeleteIfExists($"{CenterEyePath}/{TitleName}");
             DeleteIfExists($"{LogicGroupName}/{IntroDirectorName}");
@@ -482,12 +484,15 @@ namespace FixedCamVr.Streaming.EditorTools
             // 3.35. 体験前の注意書き（周回リセット直後の真っ暗＝ TitleStage.Wait のあいだだけ）。
             //       題字と同じ 2.6m に立てる。⚠ 体験者に見せる唯一の文字なので、
             //       文言を変えたら `unity.ps1 menu hud-font` を再実行する（忘れると実機で豆腐）。
-            var noticeGo = new GameObject("TitleNotice");
+            var noticeGo = new GameObject(TitleNoticeName);
             noticeGo.transform.SetParent(centerEye.transform, worldPositionStays: false);
             var notice = noticeGo.AddComponent<FixedCamVr.Diagnostics.TitleNotice>();
             var noticeSo = new SerializedObject(notice);
             TrySetObjectRef(noticeSo, "titleScreen", titleScreen);
             TrySetFloat(noticeSo, "distanceM", 2.6f);
+            // ⚠ 字の大きさもここで書く。**シーンに焼かれた値が SerializeField の初期値より優先される**
+            //   ので、コード側だけ直しても既存シーンには届かない（startInRegistration と同じ罠）。
+            TrySetFloat(noticeSo, "fontSize", 0.07f);
             noticeSo.ApplyModifiedPropertiesWithoutUndo();
             // 終幕（2D スクリーン → パススルー）。導入と**同じ覆い**を使う（開口の式を共有しないと
             // 閉じた形と開く形が食い違う）。IntroDirector と同じオブジェクトに載せるので、

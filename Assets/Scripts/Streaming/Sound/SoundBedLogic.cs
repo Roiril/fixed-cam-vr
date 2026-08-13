@@ -70,8 +70,8 @@ namespace FixedCamVr.Streaming
     ///
     /// 1. <b>層は「装置の音」と「現実の音」の 2 つだけ。</b> 劇伴（作者の声）を足すと
     ///    「装置は正直に映している」という前提が壊れ、3 周目のすり替えに気づく瞬間の価値が下がる
-    /// 2. <b>音は絵より先に来る。</b> 段 2（色が抜ける）で装置の声が入り始め、段 5 で画が変わる。
-    ///    これが 13 秒の導入を「1 つの出来事」として繋ぐ（切替の J カットと同じ考え）
+    /// 2. <b>音は絵より先に来る。</b> 段 1（開口が閉じる）で装置の声が入り始め、画が変わるのは段 3〜4。
+    ///    これが 6.2 秒の導入を「1 つの出来事」として繋ぐ（切替の J カットと同じ考え）
     /// 3. <b>隔離は帯域で表す。</b> 段 1 で会場が黒へ落ちるとき、部屋の音は<b>小さくならず狭くなる</b>
     /// </summary>
     public sealed class SoundBedLogic
@@ -234,38 +234,35 @@ namespace FixedCamVr.Streaming
             return g;
         }
 
-        // 段ごとの封印の箱。段 4 で箱が割れて食われるぶんだけ引く。
+        // 段ごとの封印の箱。段 1 で開口が閉じるのと**同じ進み**で引く
+        // （箱の声だけ残ると「閉じたのにまだ外に箱がある」と食い違う）。
         private static float SealForStage(in SoundShowState s)
         {
             switch (s.introStage)
             {
                 case IntroStage.Black:
-                case IntroStage.Real:
-                case IntroStage.Degrade:
-                case IntroStage.Structure:
                     return 1f;
-                case IntroStage.Frame:
-                    return 1f - Clamp01(s.introWeights.shatter);
+                case IntroStage.Seal:
+                    return 1f - Clamp01(s.introWeights.frame);
                 default:
-                    return 0f;    // Swap 以降 ＝ 箱はもう画面の中に飲まれている
+                    return 0f;    // 段 2 以降 ＝ 箱はもう閉じ切っている
             }
         }
 
-        // 段ごとの装置。**段 2 から入り始める**（絵の格下げと同じ進行度で）。
+        // 段ごとの装置。**段 1 から入り始める**（画が変わるのは段 3〜4 なので、音の方が先に来る）。
         private static float DeviceForStage(in SoundShowState s)
         {
             switch (s.introStage)
             {
                 case IntroStage.Black:
-                case IntroStage.Real:
                     return 0f;
-                case IntroStage.Degrade:
-                    return 0.55f * Clamp01(s.introWeights.degrade);
-                case IntroStage.Structure:
+                case IntroStage.Seal:
+                    return 0.25f * Clamp01(s.introWeights.frame);
+                case IntroStage.Dark:
                     return 0.55f;
-                case IntroStage.Frame:
-                    return 0.55f + 0.30f * Clamp01(s.introWeights.shatter);
-                case IntroStage.Swap:
+                case IntroStage.Ignite:
+                    return 0.55f + 0.30f * Clamp01(s.introWeights.ignite);
+                case IntroStage.Live:
                     return 0.85f + 0.15f * Clamp01(s.introWeights.live);
                 default:
                     return 1f;

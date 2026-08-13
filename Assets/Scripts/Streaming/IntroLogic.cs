@@ -7,29 +7,31 @@ namespace FixedCamVr.Streaming
     /// <summary>
     /// 導入演出の段。<b><see cref="ShowPhase"/> は増やさない</b> — これは
     /// <see cref="ShowPhase.Intro"/> の**内側**のサブ状態で、ゲート・終了判定・heartbeat・卓・
-    /// シミュレータへの分岐を増やさないための設計（計画 2026-07-30_intro-passthrough-to-screen.md §6）。
+    /// シミュレータへの分岐を増やさないための設計。
+    ///
+    /// ⚠ <b>2026-08-13 に段を作り直した。</b> 体験者は<b>封印の箱の中に入ってから</b>固定視点になる
+    /// 運用へ変わったので、「箱の外で現実を格下げしていく」旧 5 段（Real / Degrade / Structure /
+    /// Frame / Swap）は成立しない（中に入ると <c>shell=1</c> に倒れて 8.6 秒の真っ黒にしかならない）。
+    /// いまは<b>閉じる → 闇 → 管が点く → 自分が映る</b>の 4 段 6.2 秒。
     /// </summary>
     public enum IntroStage
     {
         /// <summary>まだ始まっていない（導入演出を出さない設定・本編中・終了後）。</summary>
         Off,
-        /// <summary>段 0。起動時の黒が明けるのと、スタッフが「始める」と言うのを待つ。</summary>
+        /// <summary>段 0。箱の外・素通し・封印の箱。エリアへ近づいたら次へ。</summary>
         Black,
-        /// <summary>段 1。素のパススルー。何も演出しない（段 2 の変化を読ませるための比較対象）。</summary>
-        Real,
-        /// <summary>段 2。色が抜け、コントラストが上がり、実物の輪郭が浮く。</summary>
-        Degrade,
-        /// <summary>段 3。輪郭だけの世界に、カメラの位置の印と壁・床の線が加わる。</summary>
-        Structure,
+        /// <summary>段 1。開口が閉じ切る（現実が閉じ、封印の箱も引く）。</summary>
+        Seal,
         /// <summary>
-        /// 段 4。<b>見えているものが細かなセルに割れて、スクリーンの矩形へ吸い込まれる。</b>
-        /// 先に外側の現実（パススルー）が持っていかれ、最後に封印の箱そのものが割れる。
-        /// 残るのは枠だけ（中はまだ現実 ＝ 箱の面）。
+        /// 段 2。全黒。<b>体験者が箱の中に入るのを待つ</b>（上限
+        /// <see cref="IntroLogic.DarkHoldMaxSec"/> 秒で必ず抜ける）。
         /// </summary>
-        Frame,
-        /// <summary>段 5。枠の中がカメラ映像へ。枠の中に自分が居る。</summary>
-        Swap,
-        /// <summary>演出は終わり。ここから慣らし歩行（尺は <see cref="ShowRunLogic"/> が数える）。</summary>
+        Dark,
+        /// <summary>段 3。闇の中でスクリーンの管が点く。<b>映像はまだ無い。</b></summary>
+        Ignite,
+        /// <summary>段 4。管の中がカメラ映像へ。<b>枠の中に自分が居る。</b></summary>
+        Live,
+        /// <summary>演出は終わり。ここから本編（尺は <see cref="ShowRunLogic"/> が数える）。</summary>
         Done,
     }
 
@@ -47,26 +49,23 @@ namespace FixedCamVr.Streaming
     [Serializable]
     public struct IntroTiming
     {
-        public float realSec;
-        public float degradeSec;
-        public float structureSec;
-        public float frameSec;
-        public float swapSec;
-        /// <summary>これを超えたら段を飛ばして枠を出す（保険）。</summary>
+        public float sealSec;
+        public float darkSec;
+        public float igniteSec;
+        public float liveSec;
+        /// <summary>これを超えたら段を飛ばして映像を出す（保険）。</summary>
         public float maxSec;
 
         /// <summary>
-        /// コード既定。**合計 12 秒**（段 3 は段 2 と重なるので合計に入らない）。
+        /// コード既定。**合計 6.2 秒**（段 2 の待ちは尺に含めない — 中に入るまでの時間は演出ではない）。
         ///
-        /// 当初は 33 秒で設計したが、体験の入口としてテンポが遅く飽びるため 2026-07-30 に詰めた。
-        /// ここは「現実が映像になった」と分かればよく、**驚きの本体は本編 3 周にある**。
-        /// 段 5 の「枠の中に自分が居る」は気づかせるだけで足りる — 慣らし歩行に入っても
-        /// 枠の中に自分が映っている状態は続くので、歩きながら確かめられる。
+        /// ⚠ この値は 4 箇所に現れる。**全部一致していること**:
+        ///   ここ / <c>ShowIntroDef</c> / 卓の <c>intro-model.js</c> の <c>INTRO_DEFAULT</c> /
+        ///   <c>capture-server.py</c> の <c>_default_show</c>。片方だけ直すと沈黙して食い違う。
         /// </summary>
         public static IntroTiming Default => new IntroTiming
         {
-            realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
-            frameSec = 2.5f, swapSec = 4.5f, maxSec = 20f,
+            sealSec = 1.4f, darkSec = 0.8f, igniteSec = 1.6f, liveSec = 2.4f, maxSec = 20f,
         };
 
         /// <summary>不正値を潰した複製。0 や負値はコード既定へ戻す（黙って 0 秒の段を作らない）。</summary>
@@ -75,30 +74,26 @@ namespace FixedCamVr.Streaming
             var d = Default;
             return new IntroTiming
             {
-                realSec = realSec > 0f ? realSec : d.realSec,
-                degradeSec = degradeSec > 0f ? degradeSec : d.degradeSec,
-                structureSec = structureSec > 0f ? structureSec : d.structureSec,
-                frameSec = frameSec > 0f ? frameSec : d.frameSec,
-                swapSec = swapSec > 0f ? swapSec : d.swapSec,
+                sealSec = sealSec > 0f ? sealSec : d.sealSec,
+                darkSec = darkSec > 0f ? darkSec : d.darkSec,
+                igniteSec = igniteSec > 0f ? igniteSec : d.igniteSec,
+                liveSec = liveSec > 0f ? liveSec : d.liveSec,
                 maxSec = maxSec > 0f ? maxSec : d.maxSec,
             };
         }
 
         /// <summary>
-        /// 演出が実際に流れる秒数（慣らし歩行は含まない）。
+        /// 演出が実際に流れる秒数（段 0 の待ちと段 2 の「中に入るのを待つ」時間は含まない）。
         ///
-        /// ⚠ **単純和ではない。** 段 3 は段 2 の後半から始まるので、重なった分は二度流れない。
-        /// 卓の `intro-model.js` の `introStageSec` と**同じ式**にしてある — 片方だけ直すと
-        /// 卓の表示と実機の尺が沈黙して食い違い、作者は尺を信じられなくなる。
+        /// 卓の <c>intro-model.js</c> の <c>introStageSec</c> と<b>同じ式</b>にしてある —
+        /// 片方だけ直すと卓の表示と実機の尺が沈黙して食い違い、作者は尺を信じられなくなる。
         /// </summary>
         public float TotalSec
         {
             get
             {
                 var s = Sanitized();
-                float own = s.structureSec - s.degradeSec * (1f - IntroLogic.StructureOverlapAt);
-                if (own < IntroLogic.StructureMinOwnSec) own = IntroLogic.StructureMinOwnSec;
-                return s.realSec + s.degradeSec + own + s.frameSec + s.swapSec;
+                return s.sealSec + s.darkSec + s.igniteSec + s.liveSec;
             }
         }
     }
@@ -111,26 +106,24 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>パススルーの不透明度。1 = 現実が見える / 0 = 見えない。</summary>
         public float passthrough;
-        /// <summary>色を抜く量（1 で完全なグレースケール）とコントラストの上げ量。</summary>
+        /// <summary>
+        /// 色を抜く量（1 で完全なグレースケール）とコントラストの上げ量。
+        /// ⚠ <b>いまの導入は 1 度も動かさない</b>（段としては廃止）。終幕（<see cref="OutroLogic"/>）が使う。
+        /// </summary>
         public float degrade;
-        /// <summary>実物の輪郭線の強さ。</summary>
+        /// <summary>実物の輪郭線の強さ。⚠ 導入では 0 のまま（終幕が使う）。</summary>
         public float edge;
-        /// <summary>壁・床の線とカメラの印の強さ。</summary>
+        /// <summary>壁・床の線とカメラの印の強さ。⚠ 導入では 0 のまま。</summary>
         public float structure;
         /// <summary>枠の閉じ具合。0 = 全画面 / 1 = スクリーンの開口だけ。</summary>
         public float frame;
 
         /// <summary>
-        /// 破砕の進み。<b>見えているものが細かなセルに割れて、スクリーンへ吸い込まれる量</b>
-        /// （0 = 割れていない / 1 = 入り切った）。段 4 だけで動く。
+        /// 破砕の進み（0 = 割れていない / 1 = 入り切った）。
         ///
-        /// 受け手は 2 つで、<b>1 本の進みを前半・後半に分け合う</b>
-        /// （<see cref="IntroShatterCurve.VeilShatter"/> / <see cref="IntroShatterCurve.BoxShatter"/>）:
-        ///   - 前半 <see cref="IntroVeil"/> — パススルーが覗く窓を割って閉じ切る
-        ///   - 後半 <see cref="SealedBox"/> — 封印の箱の面を割って飛ばす
-        ///
-        /// ⚠ <b>順番が意味を持つ。</b> 箱は不透明なので、その裏のパススルーが開いたまま箱に
-        /// 割れ目が入ると、<b>体験エリアの中が覗ける</b>（<c>canon/LEDGER.md</c> 0005 が禁じたもの）。
+        /// ⚠ <b>いまの導入は 1 度も動かさない。</b> 段 4「現実が割れてスクリーンへ入る」は
+        /// 「箱の外で見る」前提の演出で、中に入ってから固定視点になる運用では成立しない。
+        /// <see cref="IntroShatterCurve"/> と 2 つの破片メッシュは<b>眠らせてあるだけ</b>で消していない。
         /// </summary>
         public float shatter;
         /// <summary>カメラ映像の不透明度（枠の中身）。</summary>
@@ -141,11 +134,20 @@ namespace FixedCamVr.Streaming
         public float glitch;
 
         /// <summary>
+        /// <b>スクリーンの管が点いている量</b>（0 = 消えている / 1 = 点いている）。
+        /// <c>ScreenComposite</c> の <c>_CrtIgnite</c> へそのまま渡る。
+        ///
+        /// ⚠⚠ <b>既定は 1。</b> 0 を書いたままにすると画がまるごと消えるので、
+        /// 演出を出していない全期間（<see cref="Inactive"/>・終幕・中止・無効化）は必ず 1。
+        /// 0 になるのは段 0〜2 の「まだ点いていない」区間だけ。
+        /// </summary>
+        public float ignite;
+
+        /// <summary>
         /// 隔離殻の強さ。1 = 会場が黒に落ち、実物の壁と足元の床だけが残る（<see cref="ContainmentShell"/>）。
         ///
-        /// ⚠ <b>パススルーが見えている分より大きくしない。</b> 殻は「見えている現実のうち
-        /// 見せてはいけない所」を潰す層なので、映像へ移り切った後（<c>passthrough = 0</c>）に
-        /// 残すと画面の映像まで黒く塗る。
+        /// ⚠ 殻は全画面の面（queue 4910）で<b>スクリーンごと黒く塗る</b>。だから段 3 で管が点くのと
+        /// 入れ替わりに引く（残すと点いた管が見えない）。
         /// </summary>
         public float shell;
 
@@ -160,8 +162,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 封印の箱の不透明度。<b>外から見た隔離</b>（<see cref="SealedBox"/>）。
-        /// 段 0 から段 4 まで出しっぱなしで、<b>近づいても開かない</b>
-        /// （開くと中が見えるので、開ける代わりに固定視点になってから入ってもらう）。
+        /// 段 0 で出しっぱなしにし、段 1 で閉じるのと一緒に引く。
         /// </summary>
         public float sealBox;
 
@@ -170,35 +171,36 @@ namespace FixedCamVr.Streaming
         {
             passthrough = 0f, degrade = 0f, edge = 0f, structure = 0f,
             frame = 1f, live = 1f, grain = 0f, glitch = 0f,
+            ignite = 1f,
             shell = 0f, shellReveal = 0f, sealBox = 0f,
         };
     }
 
-    /// <summary>段 4・段 5 へ進むかを決めるための観測値。</summary>
+    /// <summary>段を進めるかを決めるための観測値。</summary>
     public struct IntroInput
     {
         /// <summary>起動時の黒が明けたか（<c>StartupFader</c> が消えた）。</summary>
         public bool blackCleared;
 
         /// <summary>
-        /// 体験者が<b>開始位置</b>（<c>layout.startSpot</c> の円）に留まっているか。
-        /// これが立てばスタッフの合図を待たずに演出が始まる。未設定 / 位置合わせ未登録のときは
-        /// 常に false になり、従来どおりスタッフ操作だけで進む（縮退）。
+        /// 体験者が<b>開始の合図</b>（体験エリアへの接近 / 通過ライン / 開始位置の円）を満たしたか。
+        /// これが立てばスタッフの合図を待たずに演出が始まる。判定できないときは常に false になり、
+        /// 従来どおりスタッフ操作だけで進む（縮退）。
         /// </summary>
         public bool atStartSpot;
-        /// <summary>頭の角速度 (度/秒)。大きいうちは枠を出さない（見ていない方向に枠が出る事故を防ぐ）。</summary>
+        /// <summary>頭の角速度 (度/秒)。大きいうちは管を点けない（見ていない方向で点く事故を防ぐ）。</summary>
         public float headTurnDegPerSec;
-        /// <summary>枠の方向が視野中心の近くにあるか。</summary>
+        /// <summary>スクリーンの方向が視野中心の近くにあるか。</summary>
         public bool frameCentered;
-        /// <summary>カメラのフレームが新鮮に届いているか。届いていなければ段 5 へ進まない（砂嵐を見せない）。</summary>
+        /// <summary>カメラのフレームが新鮮に届いているか。届いていなければ段 4 へ進まない（砂嵐を見せない）。</summary>
         public bool liveFresh;
         /// <summary>トラッキング原点が変わった（OS の recenter）。中止する。</summary>
         public bool recentered;
 
         /// <summary>
         /// 体験エリア（隔離の footprint）の<b>外側までの距離 (m)</b>。中に居れば 0。
-        /// 段 0 の封印の箱はこれで濃さが決まる（近づくほど薄れて、境界で消える）。
-        /// 判定できない（未登録・layout 未着）ときは 0 ＝ 箱を出さない側へ倒す。
+        /// 段 0 の封印の箱と、段 2 の「中に入ったか」がこれで決まる。
+        /// 判定できない（未登録・layout 未着）ときは 0 ＝ 中に居る側へ倒す。
         /// </summary>
         public float outsideBoxM;
     }
@@ -206,42 +208,24 @@ namespace FixedCamVr.Streaming
     /// <summary>
     /// 導入演出の状態機械（UnityEngine 非依存・dt 注入）。
     ///
-    /// 設計の正本は <c>.claude/plans/2026-07-30_intro-passthrough-to-screen.md</c>。要点:
-    ///   - <b>視点は 1 度も動かさない</b>。動かすのは現実の側の身分（現実 → 映像）
+    /// 要点:
+    ///   - <b>視点は 1 度も動かさない</b>。動かすのは現実の側の身分（現実 → 闇 → 映像）
     ///   - 枠は本編のスクリーンそのもの。開口と不透明度だけを動かすので「枠を運ぶ」処理が無い
-    ///   - 段 2 と段 3 は<b>重なる</b>（段 2 の後半から構造の線が出始める）。重なりは段の直列ではなく
-    ///     <see cref="IntroWeights"/> の重みで表す
     ///   - <b>手を上げたことは検出しない</b>。上げなければ伏線が張られないだけで、体験は壊れない
     /// </summary>
     public sealed class IntroLogic
     {
-        /// <summary>段 4 を始めてよい頭の角速度の上限 (度/秒)。これより速く振っていたら待つ。</summary>
-        public const float MaxHeadTurnForFrame = 45f;
+        /// <summary>段 3（管が点く）を始めてよい頭の角速度の上限 (度/秒)。これより速く振っていたら待つ。</summary>
+        public const float MaxHeadTurnForIgnite = 45f;
 
-        /// <summary>段 5 を始める前に、枠が視野中心の近くにあり続ける必要のある秒数。</summary>
+        /// <summary>段 4 を始める前に、スクリーンが視野中心の近くにあり続ける必要のある秒数。</summary>
         public const float FrameCenteredHoldSec = 0.5f;
 
         /// <summary>
-        /// 段 5 のクロスフェードの秒数。ここは急がない（遅延と視差が同時に来る唯一の点）。
-        /// 段 5 が 4.5 秒なので、フェード後に「自分だ」と気づく時間が 3 秒以上残る。
+        /// 段 4 のクロスフェードの秒数。ここは急がない（遅延と視差が同時に来る唯一の点）。
+        /// 段 4 が 2.4 秒なので、フェード後に「自分だ」と気づく時間が 1 秒以上残る。
         /// </summary>
-        public const float SwapCrossfadeSec = 1.2f;
-
-        /// <summary>
-        /// 段 2 の進行度がこれを超えたら、段 3 の構造の線が出始める（段の重なり）。
-        /// **卓の `intro-model.js` の `STRUCTURE_OVERLAP_AT` と同じ値**（尺の表示が食い違うため）。
-        /// </summary>
-        public const float StructureOverlapAt = 0.6f;
-
-        /// <summary>段 3 が段 2 に飲み込まれても、これだけは単独で流れる。</summary>
-        public const float StructureMinOwnSec = 0.5f;
-
-        /// <summary>
-        /// 段 4 のどこから枠が閉じ始めるか。<b>破砕の後ろへ寄せてある</b> —
-        /// 開口は覆いのセルも封印の箱の破片も切るので、破片が飛んでいる最中に閉じると
-        /// 通り道で消える。ここまでは開口を全開のままにしておく。
-        /// </summary>
-        public const float FrameCloseAt = 0.70f;
+        public const float LiveCrossfadeSec = 1.2f;
 
         /// <summary>
         /// 「近づいた」とみなす距離 (m)。体験エリアの境界からこれ以下まで来たら導入が始まる。
@@ -252,10 +236,32 @@ namespace FixedCamVr.Streaming
         public const float ApproachHoldSec = 0.4f;
 
         /// <summary>
-        /// 段 4・段 5 の開始条件を待てる上限 (秒)。超えたら条件を無視して進む。
-        /// 演出全体が 12 秒なので、ここで 6 秒待つと「止まった」ように見える。
+        /// 段 4 の開始条件（映像が届いている・スクリーンを見ている）を待てる上限 (秒)。
+        /// 超えたら条件を無視して進む。
         /// </summary>
         public const float MaxHoldSec = 3f;
+
+        /// <summary>
+        /// 段 2 が「中に入った」を待てる上限 (秒)。<b>超えたら必ず抜ける</b> —
+        /// 位置が解けない現場・端末を机に置いた自動走行でも体験は先へ進まなければならない。
+        /// </summary>
+        public const float DarkHoldMaxSec = 3f;
+
+        /// <summary>
+        /// 「中に居る」と<b>みなし始める</b>外側距離 (m)。境界そのもの（0）ではなく手前に取る。
+        ///
+        /// ⚠⚠ <b>黒は箱の面より先に立てる。</b> 判定は Update 時の CenterEyeAnchor だが、描画は
+        /// 眼ごとの late-latch 姿勢で行われ、箱は <c>Cull Back</c> なので
+        /// <b>描画側が先に中へ入った眼だけ壁が消えて、黒はまだ来ない</b> ＝ 一瞬パススルーで
+        /// 中が覗ける（2026-08-13 ユーザー報告 ③）。余裕をここで作る。
+        /// </summary>
+        public const float InsideEnterM = 0.3f;
+
+        /// <summary>
+        /// 「外へ出た」と<b>みなし直す</b>外側距離 (m)。<see cref="InsideEnterM"/> より広く取って
+        /// ヒステリシスにする（境界で震えると黒と箱が交互に点滅する）。
+        /// </summary>
+        public const float InsideExitM = 0.6f;
 
         private IntroTiming _t = IntroTiming.Default;
         private IntroStage _stage = IntroStage.Off;
@@ -270,6 +276,9 @@ namespace FixedCamVr.Streaming
         public IntroStage Stage => _stage;
         public float StageElapsedSec => _stageElapsed;
         public float TotalElapsedSec => _totalElapsed;
+
+        /// <summary>いま体験エリアの中に居るとみなしているか（ヒステリシス付き・診断とテスト用）。</summary>
+        public bool InsideBox => _insideBox;
 
         /// <summary>演出中か（＝ Director が各層へ重みを配るべきか）。</summary>
         public bool Active => _stage != IntroStage.Off && _stage != IntroStage.Done;
@@ -289,6 +298,7 @@ namespace FixedCamVr.Streaming
             _holdSec = 0f;
             _advanceRequested = false;
             _skipRequested = false;
+            _insideBox = false;
         }
 
         /// <summary>演出を出さない設定 / 本編中 / 終了後。重みは <see cref="IntroWeights.Inactive"/> になる。</summary>
@@ -305,7 +315,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Restart()
         {
-            _stage = IntroStage.Real;
+            _stage = IntroStage.Seal;
             _stageElapsed = 0f;
             _totalElapsed = 0f;
             _centeredSec = 0f;
@@ -324,9 +334,12 @@ namespace FixedCamVr.Streaming
         public IntroEvent Tick(float dt, IntroInput input)
         {
             if (dt < 0f) dt = 0f;
-            // 中に居るかは Weights から読まれるので、観測値をここで覚えておく
+            // 中に居るかは Weights と段 2 の待ちから読まれるので、観測値をここで覚えておく
             // （Weights に引数を足すと、呼び出し側が「いつの値か」を持つことになる）。
-            _insideBox = input.outsideBoxM <= 0f;
+            //
+            // ⚠ **ヒステリシス。** 単なる `outsideBoxM <= 0` だと、境界に立った体験者の
+            //    震えで黒と箱が交互に点滅し、しかも黒が箱の面より遅れて立つ（③ の事故）。
+            UpdateInsideBox(input.outsideBoxM);
             if (_stage == IntroStage.Off || _stage == IntroStage.Done) return IntroEvent.None;
 
             // トラッキング原点が変わったら続行しない。壁の位置が違う世界を見せることになり、
@@ -348,7 +361,7 @@ namespace FixedCamVr.Streaming
             _totalElapsed += dt;
 
             // 保険。条件待ちで固まっても、体験は必ず本編へ入る。
-            if (_totalElapsed >= _t.maxSec && _stage != IntroStage.Swap)
+            if (_totalElapsed >= _t.maxSec && _stage != IntroStage.Live)
             {
                 _stage = IntroStage.Done;
                 return IntroEvent.Finished;
@@ -361,43 +374,38 @@ namespace FixedCamVr.Streaming
             {
                 case IntroStage.Black:
                     // ここは**時間で進めない**。始めてよいかは体験者の居場所か人間の判断で決まる。
-                    //   - 体験者が開始位置（layout.startSpot）へ移動した、または
+                    //   - 体験者が体験エリアへ近づいた、または
                     //   - スタッフが合図した
                     // どちらも「黒が明けている」ことが前提（明ける前に始めても何も見えない）。
-                    if (input.blackCleared && (advance || input.atStartSpot)) Enter(IntroStage.Real);
+                    if (input.blackCleared && (advance || input.atStartSpot)) Enter(IntroStage.Seal);
                     // 段 0 は maxSec の計時に含めない（待っている時間は演出の尺ではない）。
                     _totalElapsed = 0f;
                     return IntroEvent.None;
 
-                case IntroStage.Real:
-                    if (advance || _stageElapsed >= _t.realSec) Enter(IntroStage.Degrade);
+                case IntroStage.Seal:
+                    if (advance || _stageElapsed >= _t.sealSec) Enter(IntroStage.Dark);
                     return IntroEvent.None;
 
-                case IntroStage.Degrade:
-                    if (advance || _stageElapsed >= _t.degradeSec) Enter(IntroStage.Structure);
-                    return IntroEvent.None;
-
-                case IntroStage.Structure:
+                case IntroStage.Dark:
                 {
-                    // 段 3 の尺は「段 2 の後半から始まって段 3 が終わるまで」。重なる分を引く。
-                    // ⚠ この式は IntroTiming.TotalSec と卓の introStageSec が共有している。
-                    float own = _t.structureSec - _t.degradeSec * (1f - StructureOverlapAt);
-                    if (own < StructureMinOwnSec) own = StructureMinOwnSec;
-                    if (!advance && _stageElapsed < own) return IntroEvent.None;
-                    // 頭を振っている間は枠を出さない（見ていない方向に枠が出ると台無し）。
-                    if (!advance && input.headTurnDegPerSec > MaxHeadTurnForFrame && _holdSec < MaxHoldSec)
+                    if (!advance && _stageElapsed < _t.darkSec) return IntroEvent.None;
+                    // **中に入るのを待つ。** ここが新しい運用の要で、体験者は封印の箱の中へ
+                    // 歩いて入ってから固定視点になる。あわせて、頭を振っている間は管を点けない
+                    // （見ていない方向でスクリーンが点くと出現そのものを見逃す）。
+                    bool ready = _insideBox && input.headTurnDegPerSec <= MaxHeadTurnForIgnite;
+                    if (!advance && !ready && _holdSec < DarkHoldMaxSec)
                     {
                         _holdSec += dt;
                         return IntroEvent.None;
                     }
-                    Enter(IntroStage.Frame);
+                    Enter(IntroStage.Ignite);
                     return IntroEvent.None;
                 }
 
-                case IntroStage.Frame:
+                case IntroStage.Ignite:
                 {
-                    if (!advance && _stageElapsed < _t.frameSec) return IntroEvent.None;
-                    // 枠を見ていて、かつ映像が届いていること。届いていなければ待つ（砂嵐を見せない）。
+                    if (!advance && _stageElapsed < _t.igniteSec) return IntroEvent.None;
+                    // スクリーンを見ていて、かつ映像が届いていること。届いていなければ待つ（砂嵐を見せない）。
                     _centeredSec = input.frameCentered ? _centeredSec + dt : 0f;
                     bool ready = _centeredSec >= FrameCenteredHoldSec && input.liveFresh;
                     if (!advance && !ready && _holdSec < MaxHoldSec)
@@ -405,18 +413,18 @@ namespace FixedCamVr.Streaming
                         _holdSec += dt;
                         return IntroEvent.None;
                     }
-                    // 待ちきれなかった。映像が無いなら段 5 は無意味なので、枠だけ出して本編へ。
+                    // 待ちきれなかった。映像が無いなら段 4 は無意味なので、そのまま本編へ。
                     if (!advance && !input.liveFresh)
                     {
                         _stage = IntroStage.Done;
                         return IntroEvent.Finished;
                     }
-                    Enter(IntroStage.Swap);
+                    Enter(IntroStage.Live);
                     return IntroEvent.None;
                 }
 
-                case IntroStage.Swap:
-                    if (advance || _stageElapsed >= _t.swapSec)
+                case IntroStage.Live:
+                    if (advance || _stageElapsed >= _t.liveSec)
                     {
                         _stage = IntroStage.Done;
                         return IntroEvent.Finished;
@@ -425,6 +433,22 @@ namespace FixedCamVr.Streaming
 
                 default:
                     return IntroEvent.None;
+            }
+        }
+
+        /// <summary>
+        /// 「中に居る」のヒステリシス。<b>入るのは早く（<see cref="InsideEnterM"/>）、出るのは遅く
+        /// （<see cref="InsideExitM"/>）</b>。黒を箱の手前で先行させるのがここ 1 箇所の役目。
+        /// </summary>
+        private void UpdateInsideBox(float outsideM)
+        {
+            if (_insideBox)
+            {
+                if (outsideM >= InsideExitM) _insideBox = false;
+            }
+            else if (outsideM <= InsideEnterM)
+            {
+                _insideBox = true;
             }
         }
 
@@ -438,6 +462,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// いまの段から各層への重みを出す。<b>見え方の判断はすべてここ</b>（Director は配るだけ）。
+        ///
+        /// ⚠ <c>degrade</c> / <c>edge</c> / <c>structure</c> / <c>shatter</c> / <c>grain</c> は
+        /// 全段で 0。<b>語彙からは消していない</b>（終幕 <see cref="OutroLogic"/> が使う）。
         /// </summary>
         public IntroWeights Weights
         {
@@ -451,101 +478,85 @@ namespace FixedCamVr.Streaming
 
                     case IntroStage.Black:
                         // ⚠ **段の名前に反して、ここは黒くない。現実が見えている。**
-                        // 旧コメントは「StartupFader の黒面が覆っているので見えない」と書いていたが、
-                        // StartupFader は UI Canvas（queue 3000）で覆い（5000）より先に描かれるため
-                        // rgb ごと潰される。つまりこの段は最初から素通しのパススルーだった。
+                        // 開始の合図（体験エリアへの接近）を待つ区間で、体験者はスタッフに
+                        // 誘導されて歩いてくる。真っ暗にすると運用が成立しない。
                         //
-                        // **それでよい**（2026-07-31 に確認して意図的に残した）。この段は開始の合図
-                        // （通過ライン line_1 を横切る）を待つ区間で、実測 17 秒ある。真っ黒にすると
-                        // 体験者は何も見えないまま歩いて線を越えることになり、運用が成立しない。
-                        //
-                        // 隔離もまだ閉じない。ここは**まだ入っていない**区間で、体験者はスタッフに
-                        // 誘導されて歩いてくる（`canon/OPEN.md` の案「線は扉である」）。
-                        //
-                        // 代わりに、外から見た隔離＝**封印の箱**がここで出る（canon/LEDGER.md 0003）。
-                        // **開かない。** 開くと中が見えるので、開ける代わりに固定視点になってから入ってもらう。
+                        // 外から見た隔離＝**封印の箱**がここで出る（canon/LEDGER.md 0003）。
+                        // **開かない。** 開ける代わりに、閉じてから中に入ってもらう。
                         return OutsideWeights(new IntroWeights
                         {
-                            passthrough = 1f, frame = 0f, live = 0f,
+                            passthrough = 1f, frame = 0f, live = 0f, ignite = 0f,
                         });
 
-                    case IntroStage.Real:
-                        // 近づいた。**ここから先は箱の外で流れる**（canon/LEDGER.md 0005）。
-                        // 素のパススルー ＝ 会場と封印の箱。段 2 の格下げの比較対象になる。
-                        return OutsideWeights(new IntroWeights
-                        {
-                            passthrough = 1f, frame = 0f, live = 0f,
-                        });
-
-                    case IntroStage.Degrade:
+                    case IntroStage.Seal:
                     {
-                        float p = Progress(_t.degradeSec);
-                        return OutsideWeights(new IntroWeights
+                        // 開口が閉じ切る。現実が閉じるのと同じ進みで封印の箱も引く
+                        //（箱だけ残ると「閉じたのに黒い箱が浮いている」になる）。
+                        float p = SmoothStep(0f, 1f, Progress(_t.sealSec));
+                        var w = new IntroWeights
                         {
-                            passthrough = 1f,
-                            // 色 → コントラスト → 輪郭 → 粒 の順に足す。一度に全部動かすと
-                            // 「質感が落ちた」ではなく「ただ壊れた」に見える。
-                            degrade = p,
-                            edge = SmoothStep(0.35f, 1f, p),
-                            structure = SmoothStep(StructureOverlapAt, 1f, p),
-                            grain = SmoothStep(0.6f, 1f, p) * 0.6f,
-                            frame = 0f, live = 0f,
-                        });
-                    }
-
-                    case IntroStage.Structure:
-                        return OutsideWeights(new IntroWeights
-                        {
-                            passthrough = 1f, degrade = 1f, edge = 1f, structure = 1f,
-                            grain = 0.6f, frame = 0f, live = 0f,
-                        });
-
-                    case IntroStage.Frame:
-                    {
-                        float p = Progress(_t.frameSec);
-                        // 枠が閉じても**枠の中はまだ現実（会場と封印の箱）**。箱は枠の外へはみ出さない
-                        // よう、シェーダ側で開口に切られる（`SealedBox.shader` の `_IntroFrame*`）。
-                        return OutsideWeights(new IntroWeights
-                        {
-                            passthrough = 1f,
-                            degrade = 1f,
-                            // 枠になるとき構造の線は引く。枠の中の現実に集中させる。
-                            edge = 1f - 0.7f * p,
-                            structure = 1f - p,
-                            // ⚠ **枠は破砕より遅れて閉じる。** 同時に閉じると、飛んでいる途中の破片が
-                            //    枠の縁でぷつりと切れる（覆いも箱も開口で切っているため）。
-                            //    後ろへ寄せておけば、閉じるころには通り道の破片はもう消えている。
-                            frame = SmoothStep(FrameCloseAt, 1f, p),
-                            // 見えているものが割れて、スクリーンへ入っていく。
-                            shatter = p,
-                            grain = 0.6f,
+                            passthrough = 1f - p,
+                            frame = p,
                             live = 0f,
-                        });
+                            ignite = 0f,
+                        };
+                        // 中に入っていれば黒（殻）が正。外なら箱を引きながら閉じる。
+                        if (_insideBox)
+                        {
+                            w.shell = 1f;
+                            w.shellReveal = 0f;
+                            w.sealBox = 0f;
+                        }
+                        else
+                        {
+                            w.shell = 0f;
+                            w.shellReveal = 0f;
+                            w.sealBox = 1f - p;
+                        }
+                        return w;
                     }
 
-                    case IntroStage.Swap:
+                    case IntroStage.Dark:
+                        // 全黒。ここで体験者は箱の中へ歩いて入る。
+                        return new IntroWeights
+                        {
+                            passthrough = 0f, frame = 1f, live = 0f, ignite = 0f,
+                            shell = 1f, shellReveal = 0f, sealBox = 0f,
+                        };
+
+                    case IntroStage.Ignite:
                     {
-                        float cross = _t.swapSec > 0f
-                            ? Clamp01(_stageElapsed / Math.Max(SwapCrossfadeSec, 0.01f)) : 1f;
+                        // 闇の中で管が点く。**映像はまだ無い。**
+                        float p = SmoothStep(0f, 1f, Progress(_t.igniteSec));
+                        return new IntroWeights
+                        {
+                            passthrough = 0f, frame = 1f, live = 0f,
+                            ignite = p,
+                            // ⚠ **殻は管と入れ替わりに引く。** 殻は全画面の面（queue 4910・ZTest Always）で
+                            //    スクリーンごと黒く塗るので、1 のまま残すと点いた管が 1 画素も見えない。
+                            //    闇そのものは覆い（開口の外は不透明）と背景 alpha が保つ。
+                            shell = 1f - p,
+                            shellReveal = 0f,
+                            sealBox = 0f,
+                        };
+                    }
+
+                    case IntroStage.Live:
+                    {
+                        float cross = _t.liveSec > 0f
+                            ? Clamp01(_stageElapsed / Math.Max(LiveCrossfadeSec, 0.01f)) : 1f;
                         float s = SmoothStep(0f, 1f, cross);
                         return new IntroWeights
                         {
-                            // ⚠ **ここでパススルーを 1 画素も出さない。** 枠の中身が「現実 → 映像」だと、
-                            // 交差の途中で**箱の向こうの中の様子**が透ける（canon/LEDGER.md 0005 で
-                            // 禁じられたもの）。代わりに黒 → 映像で渡す。継ぎ目は乱れが隠す。
+                            // ⚠ **ここでパススルーを 1 画素も出さない**（canon/LEDGER.md 0005）。
                             passthrough = 0f,
-                            degrade = 1f,
-                            edge = 0f,
-                            structure = 0f,
                             frame = 1f,
                             live = s,
-                            grain = 0.6f * (1f - s),   // 以後は映像側の post FX が持つ
-                            // 継ぎ目は乱れで隠す（企画書 2.3 の手法をここで一度見せておく）。
+                            ignite = 1f,
+                            // 継ぎ目は乱れで隠す。
                             glitch = Bump(cross),
-                            // 黒 → 映像の渡しは殻が持つ（パススルーが無いので alpha は覆いが 1 に保つ）。
-                            shell = 1f - s,
+                            shell = 0f,
                             shellReveal = 0f,
-                            // 箱は用済み。パススルーが無いので隠すものが無い。
                             sealBox = 0f,
                         };
                     }
@@ -557,12 +568,10 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 導入は<b>箱の外</b>で流れる（<c>canon/LEDGER.md</c> 0005）。その約束を 1 箇所で守る。
+        /// 段 0 の隔離の出し分け。<b>中の様子は 1 画素も見せない</b>（<c>canon/LEDGER.md</c> 0005）。
         ///
         /// - 外に居る: 中を隠すのは封印の箱の仕事。隔離殻は要らない
-        /// - <b>中に入ってしまった: 黒しか見せない</b>。壁も床も出さない（<c>shellReveal = 0</c>）
-        ///
-        /// 段ごとに書くと必ずどれかを書き忘れるので、各段はここを通す。
+        /// - <b>中に入ってしまった: 黒しか見せない</b>（<c>shellReveal = 0</c>）
         /// </summary>
         private IntroWeights OutsideWeights(IntroWeights w)
         {

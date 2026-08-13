@@ -39,13 +39,16 @@ namespace FixedCamVr.Streaming
         [Tooltip("本編のスクリーン（枠の中に来ているかの観測）。")]
         [SerializeField] private Transform? screenQuad;
 
+        [Tooltip("スクリーンの実体。管の点灯（_CrtIgnite）を書く先の材質をここから取る。null なら実行時に探す。")]
+        [SerializeField] private MjpegScreen? screen;
+
         [Tooltip("起動時の黒が明けたとみなす秒数。StartupFader の最大待ち (4s) + フェード (0.5s) より長く。")]
         [SerializeField, Min(0f)] private float blackClearSec = 5f;
 
         [Tooltip("スクリーンが「視野中心にある」とみなす角度 (度)。")]
         [SerializeField, Range(5f, 60f)] private float centeredHalfAngleDeg = 25f;
 
-        [Tooltip("フレームが「新鮮」とみなす経過 (秒)。これより古ければ段 5 へ進まない。")]
+        [Tooltip("フレームが「新鮮」とみなす経過 (秒)。これより古ければ段 4 へ進まない。")]
         [SerializeField, Min(0.1f)] private float freshFrameSec = 1.5f;
 
         [Tooltip("開始位置に留まったとみなす秒数。短いと通りすがりで始まる。")]
@@ -100,11 +103,20 @@ namespace FixedCamVr.Streaming
         /// <summary>条件待ちで足踏みしているか（スタッフが手で送れることを卓に出す）。</summary>
         public bool Holding => _logic.Holding;
 
+        /// <summary>
+        /// <b>実際にスクリーンの材質へ書いた管の点灯量</b>（<c>_CrtIgnite</c>）。
+        /// 書く先を掴めていなければ <b>-1</b>。
+        ///
+        /// 「重みが動いた」ではなく「画に出た」の側の観測（<c>rules/streaming.md</c> の
+        /// 「状態が進んだではなく効果が出た」）。<c>ShowTelemetryHost</c> が読む。
+        /// </summary>
+        public float IgniteWritten => _screenMat != null ? _igniteWritten : -1f;
+
         /// <summary>輪郭線の色（<c>PassthroughStyler</c> が読む）。</summary>
         public Color EdgeColor => _def.ResolveEdgeColor();
 
         /// <summary>
-        /// HMD 内に出す合図。<b>段 5 の「右手を上げて」だけ</b>で、これが 3 周目の反転の伏線になる
+        /// HMD 内に出す合図。<b>段 4 の「右手を上げて」だけ</b>で、これが 3 周目の反転の伏線になる
         /// （画面の中の自分は上げるが、3 周目の背景は 1 周目の録画なので上がらない）。
         /// StatusHud が読む（Diagnostics への参照を作らないプロバイダ方式）。
         /// </summary>
@@ -129,7 +141,7 @@ namespace FixedCamVr.Streaming
 
                 // 「〜てみてください」の試行の含みを取る。上げた自分が画面に居ることが体験の内容
                 // そのものなので、依頼文でも操作説明にならない（3 周目に手が上がらない反転の伏線）。
-                if (_logic.Stage == IntroStage.Swap)
+                if (_logic.Stage == IntroStage.Live)
                     return _def.raiseHandPrompt ? "右手をあげてください" : string.Empty;
 
                 // 演出が終わった直後の数秒だけ、歩き出す合図を出す（慣らし歩行の入口）。
@@ -159,6 +171,15 @@ namespace FixedCamVr.Streaming
 
         private float _walkPromptUntil = -1f;
         private bool _aborted;
+
+        // --- スクリーンの管の点灯（_CrtIgnite）------------------------------------
+        // ⚠⚠ **既定は 1（点いている）。** 0 を書いたままにすると画がまるごと消えるので、
+        //    演出を出していない全期間（終わった / 中止した / 無効の設定 / 位置合わせ中 / 相が変わった）で
+        //    必ず 1 を書き戻す。「書くのをやめる」だけでは最後に書いた 0 が残る。
+        private static readonly int CrtIgniteId = Shader.PropertyToID("_CrtIgnite");
+        private Material? _screenMat;
+        private bool _warnedNoScreenMat;
+        private float _igniteWritten = -1f;
 
         private void Awake()
         {
@@ -205,6 +226,7 @@ namespace FixedCamVr.Streaming
             shell?.SetHidden();
             sealedBox?.SetHidden();
             glitch?.ResetAll();
+            ResetIgnite();
         }
 
         private void ResolveRefs()
@@ -217,6 +239,7 @@ namespace FixedCamVr.Streaming
             if (glitch == null) glitch = FindObjectOfType<GlitchFx>();
             if (registry == null) registry = FindObjectOfType<CameraStreamRegistry>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            if (screen == null) screen = FindObjectOfType<MjpegScreen>();
             if (head == null)
             {
                 var anchor = GameObject.Find("CenterEyeAnchor");
@@ -243,6 +266,7 @@ namespace FixedCamVr.Streaming
                 shell?.SetHidden();
                 sealedBox?.SetHidden();
                 glitch?.ResetAll();
+                ResetIgnite();
             }
         }
 
@@ -268,6 +292,8 @@ namespace FixedCamVr.Streaming
                 structureWire?.SetHidden();
                 shell?.SetHidden();
                 sealedBox?.SetHidden();
+                // 演出を出さない設定でも管は点いていなければならない（既定は 1）。
+                ResetIgnite();
                 return;
             }
             _logic.Begin();
@@ -309,6 +335,8 @@ namespace FixedCamVr.Streaming
                 shell?.SetHidden();
                 sealedBox?.SetHidden();
                 glitch?.SetSustain(0f);
+                // 位置合わせ中は素の画に戻す（管を消したままだとスクリーンが真っ黒になる）。
+                ResetIgnite();
                 // 位置合わせが終われば course 変換そのものが変わる。**前の座標系で満たした合図は無効**
                 // なので、抜けた時点で必ず武装し直す（下の !_wasRegistering で 1 回だけ）。
                 _wasRegistering = true;
@@ -346,8 +374,10 @@ namespace FixedCamVr.Streaming
                 if (_def.showRoomWire || _def.showCameraMarks) structureWire.Apply(w);
                 else structureWire.SetHidden();
             }
-            // 段 5 の乱れはスクリーン内にも掛ける（継ぎ目は両側で隠す）。
+            // 段 4 の乱れはスクリーン内にも掛ける（継ぎ目は両側で隠す）。
             glitch?.SetSustain(w.glitch * Mathf.Clamp01(_def.glitchOnSwap));
+            // スクリーンの管の点灯（段 3 で 0 → 1）。書く先は MjpegScreen の材質。
+            WriteIgnite(w.ignite);
 
             if (ev == IntroEvent.Finished) FinishIntro(restartClock: true);
             else if (ev == IntroEvent.Aborted) AbortIntro();
@@ -540,6 +570,45 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
+        /// 管の点灯を書く先（<c>MjpegScreen</c> の Renderer のマテリアル）。
+        /// <b><see cref="CameraFeelFx"/> が掴んでいるのと同じ材質</b>で、あちらと同じ流儀で取る
+        /// （<c>Renderer.material</c> は 1 度実体化したらその後は同じ実体が返る）。
+        ///
+        /// ⚠ <b>掴めなかったときは何も書かない。</b> 0 を書いて画を消す方向へ倒さない。
+        /// </summary>
+        private Material? ResolveScreenMaterial()
+        {
+            if (_screenMat != null) return _screenMat;
+            if (screen == null) screen = FindObjectOfType<MjpegScreen>();
+            var r = screen != null ? screen.GetComponent<Renderer>() : null;
+            _screenMat = r != null ? r.material : null;
+            if (_screenMat == null && !_warnedNoScreenMat)
+            {
+                _warnedNoScreenMat = true;
+                Debug.LogWarning("[Intro] スクリーンの材質を掴めない — 管の点灯（_CrtIgnite）を書けない"
+                                 + "（MjpegScreen が未配線か Renderer が無い）");
+            }
+            return _screenMat;
+        }
+
+        /// <summary>管の点灯量を書く（0 = 消えている / 1 = 点いている）。</summary>
+        private void WriteIgnite(float v)
+        {
+            var m = ResolveScreenMaterial();
+            if (m == null) return;
+            float c = Mathf.Clamp01(v);
+            if (Mathf.Approximately(c, _igniteWritten)) return;
+            _igniteWritten = c;
+            m.SetFloat(CrtIgniteId, c);
+        }
+
+        /// <summary>
+        /// 管を点いた状態へ戻す。<b>演出を畳むすべての経路がここを通る</b> —
+        /// 通し忘れると最後に書いた 0 が残って画がまるごと消える。
+        /// </summary>
+        private void ResetIgnite() => WriteIgnite(1f);
+
+        /// <summary>
         /// 枠の中に本編のスクリーンが来ているか。<b>枠は head-lock なので常に正面</b>で、
         /// 見るべきは「スクリーンの側が正面に来ているか」（スクリーンは yaw を緩く追従する）。
         /// </summary>
@@ -552,9 +621,9 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 段 4（枠）が段 5（すり替え）へ進むための 2 条件。テレメトリ・診断用。
+        /// 段 3（管が点く）が段 4（映像）へ進むための 2 条件。テレメトリ・診断用。
         /// **どちらが false で足踏みしているのかはログでしか分からない** —
-        /// 実機で「枠までは出るのに映像へ変わらない」を追うときの唯一の手掛かりになる。
+        /// 実機で「管までは点くのに映像へ変わらない」を追うときの唯一の手掛かりになる。
         /// </summary>
         public bool LiveFresh => IsLiveFresh();
 
@@ -582,6 +651,7 @@ namespace FixedCamVr.Streaming
             shell?.SetHidden();
             sealedBox?.SetHidden();
             glitch?.ResetAll();
+            ResetIgnite();
             _logic.Disable();
             // ここで初めて本編へ進んでよくなる（段 0 と区別できる唯一の点）。
             _completed = true;
@@ -609,6 +679,7 @@ namespace FixedCamVr.Streaming
             shell?.SetHidden();
             sealedBox?.SetHidden();
             glitch?.ResetAll();
+            ResetIgnite();
             _logic.Disable();
             // 視界は ShowRunDirector.ShouldBlackout → ShowEndingFader の黒が閉じる。黙って本編の画に
             // 切り替わると、体験者は「始まった」と思って歩き出し、壁の位置が違う世界を手でたどる。

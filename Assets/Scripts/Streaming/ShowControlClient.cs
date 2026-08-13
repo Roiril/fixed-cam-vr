@@ -643,20 +643,25 @@ namespace FixedCamVr.Streaming
         /// <summary>導入演出を出すか。false なら従来どおり最初からスクリーンだけが見える。</summary>
         public bool enabled = true;
 
-        // ⚠ 尺の既定は 3 箇所（ここ / <see cref="IntroTiming.Default"/> / 卓の intro-model.js
-        //    INTRO_DEFAULT）に現れる。**値は一致していること** — 2026-07-30 に 33s → 13.1s へ詰めた際
-        //    ここだけ旧値（4/8/6/5/8, maxSec 40）が残り、「卓は 13.1s と言うのにコードは 33s を持つ」
-        //    状態になっていた。実害は出ていない（JsonUtility が埋めた 0 は Sanitized() が
-        //    IntroTiming.Default で上書きするため）が、直接フィールドを読む経路が増えた瞬間に食い違う。
+        // ⚠ 尺の既定は 4 箇所（ここ / <see cref="IntroTiming.Default"/> / 卓の intro-model.js の
+        //    INTRO_DEFAULT / capture-server.py の _default_show）に現れる。**値は一致していること**。
+        //    実害は出にくい（JsonUtility が埋めた 0 は Sanitized() が IntroTiming.Default で
+        //    上書きするため）が、直接フィールドを読む経路が増えた瞬間に食い違う。
+        //
+        // ⚠ 2026-08-13 に段を作り直した（Real/Degrade/Structure/Frame/Swap → Seal/Dark/Ignite/Live）。
+        //    旧キーを持つ show.json は JsonUtility が無視するので、尺だけコード既定へ落ちる。
 
-        /// <summary>演出の上限 (秒)。超えたら段を飛ばして枠を出す（条件待ちで固まらないための保険）。</summary>
+        /// <summary>演出の上限 (秒)。超えたら段を飛ばして映像を出す（条件待ちで固まらないための保険）。</summary>
         public float maxSec = 20f;
 
-        public float realSec = 1.5f;
-        public float degradeSec = 3.5f;
-        public float structureSec = 2.5f;
-        public float frameSec = 2.5f;
-        public float swapSec = 4.5f;
+        /// <summary>段 1。開口が閉じ切る。</summary>
+        public float sealSec = 1.4f;
+        /// <summary>段 2。全黒（＋「中に入った」を待つ時間。尺には含まれない）。</summary>
+        public float darkSec = 0.8f;
+        /// <summary>段 3。闇の中でスクリーンの管が点く。</summary>
+        public float igniteSec = 1.6f;
+        /// <summary>段 4。管の中がカメラ映像へ。</summary>
+        public float liveSec = 2.4f;
 
         /// <summary>
         /// 実物の輪郭線の色（<c>#rrggbb</c>）。既定は<b>生成り</b>（LEDGER 0010「全体的に暖色に」）。
@@ -678,7 +683,7 @@ namespace FixedCamVr.Streaming
         /// <summary>段 3 で壁・床の線を出すか。</summary>
         public bool showRoomWire;
 
-        /// <summary>段 5 のすり替えに重ねる乱れの強さ。</summary>
+        /// <summary>段 4 のすり替えに重ねる乱れの強さ。</summary>
         public float glitchOnSwap = 0.8f;
 
         /// <summary>
@@ -692,17 +697,17 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public string startLineId = "";
 
-        /// <summary>段 5 で「右手を上げて」の合図を出すか（3 周目の反転の伏線）。</summary>
+        /// <summary>段 4 で「右手を上げて」の合図を出すか（3 周目の反転の伏線）。</summary>
         public bool raiseHandPrompt = true;
 
         /// <summary>JsonUtility が既定値で埋めただけの実体か（＝ show.json に <c>intro</c> が無い）。</summary>
         public bool LooksUnset =>
-            !enabled && maxSec <= 0f && realSec <= 0f && degradeSec <= 0f && swapSec <= 0f;
+            !enabled && maxSec <= 0f && sealSec <= 0f && igniteSec <= 0f && liveSec <= 0f;
 
         public IntroTiming ToTiming() => new IntroTiming
         {
-            realSec = realSec, degradeSec = degradeSec, structureSec = structureSec,
-            frameSec = frameSec, swapSec = swapSec, maxSec = maxSec,
+            sealSec = sealSec, darkSec = darkSec, igniteSec = igniteSec,
+            liveSec = liveSec, maxSec = maxSec,
         }.Sanitized();
 
         /// <summary>輪郭線の色を解く（解けなければ生成り）。</summary>

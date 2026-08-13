@@ -6,88 +6,43 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.Tests
 {
     /// <summary>
-    /// 段 4「見えているものが割れてスクリーンへ入る」の契約。
+    /// 「見えているものが割れてスクリーンへ入る」破砕の契約。
     ///
-    /// 守るのは 4 つ。どれも<b>破れると実機の画でしか気づけない</b>:
-    ///   (A) 破砕は段 4 だけで動く（他の段に漏れると現実が勝手に割れる）
+    /// ⚠⚠ <b>2026-08-13 に導入からは外れた。</b> 体験者が封印の箱の中に入ってから固定視点になる
+    /// 運用へ変わり、「箱の外で現実が割れる」段が成立しなくなったため。
+    /// <see cref="IntroShatterCurve"/> と 2 つの破片メッシュは<b>眠らせてあるだけ</b>で消していない
+    /// （赤入れが返ってから消す）ので、曲線とメッシュの契約はここで守り続ける。
+    ///
+    /// 守るのは 5 つ。うち (A) だけが新しい:
+    ///   (A) <b>導入のどの段でも破砕は 0</b>（眠っている ＝ 現実が勝手に割れない）
     ///   (B) <b>覆い（パススルー）を閉じ切ってから箱を割る</b> — 重なると箱の割れ目から
     ///       体験エリアの中が覗ける（canon/LEDGER.md 0005 違反）
-    ///   (C) 進み 1 で<b>全部の破片が閉じる</b>（開いたままだと段 5 の映像に現実が混ざる）
-    ///   (D) スクリーンの上のセルは割らない（枠がどこにあるか分からないまま映像が点く）
+    ///   (C) 進み 1 で<b>全部の破片が閉じる</b>
+    ///   (D) スクリーンの上のセルは割らない
+    ///   (E) 格子そのものが組める（組めていなければ一生割れない）
     /// </summary>
     public sealed class IntroShatterTests
     {
-        private static readonly IntroTiming T = IntroTiming.Default;
-
-        private static IntroInput Ready() => new IntroInput
-        {
-            blackCleared = true, headTurnDegPerSec = 0f, frameCentered = true,
-            liveFresh = true, recentered = false, outsideBoxM = 1.5f,
-        };
-
-        private static IntroLogic AtFrame()
-        {
-            var l = new IntroLogic();
-            l.Configure(T);
-            l.Begin();
-            for (int i = 0; i < 4; i++) { l.RequestAdvance(); l.Tick(0.001f, Ready()); }
-            Assert.AreEqual(IntroStage.Frame, l.Stage, "段 4 まで進めていない");
-            return l;
-        }
-
         // (A) ------------------------------------------------------------------
 
         [Test]
-        public void Shatter_IsZero_OutsideFrameStage()
+        public void Shatter_IsAsleep_InEveryIntroStage()
         {
             var l = new IntroLogic();
-            l.Configure(T);
+            l.Configure(IntroTiming.Default);
             l.Begin();
-            Assert.AreEqual(0f, l.Weights.shatter, 1e-5f, "段 0 で割れている");
-            for (int i = 0; i < 3; i++)
+            var input = new IntroInput
             {
-                l.RequestAdvance();
-                l.Tick(0.001f, Ready());
+                blackCleared = true, atStartSpot = true, frameCentered = true,
+                liveFresh = true, outsideBoxM = 0f,
+            };
+            Assert.AreEqual(0f, l.Weights.shatter, 1e-5f, "段 0 で割れている");
+            for (int i = 0; i < 400 && l.Stage != IntroStage.Done; i++)
+            {
+                l.Tick(0.05f, input);
                 Assert.AreEqual(0f, l.Weights.shatter, 1e-5f, $"段 {l.Stage} で割れている");
             }
-            // 段 4 を通り過ぎたら 0 に戻る（段 5 は黒 → 映像で、割るものが無い）。
-            l.RequestAdvance();
-            l.Tick(0.001f, Ready());
-            l.RequestAdvance();
-            l.Tick(0.001f, Ready());
-            Assert.AreEqual(IntroStage.Swap, l.Stage);
-            Assert.AreEqual(0f, l.Weights.shatter, 1e-5f, "段 5 で割れている");
-        }
-
-        [Test]
-        public void Shatter_RisesMonotonically_InFrameStage()
-        {
-            var l = AtFrame();
-            float last = -1f;
-            for (int i = 0; i < 10; i++)
-            {
-                l.Tick(T.frameSec / 12f, Ready());
-                if (l.Stage != IntroStage.Frame) break;
-                float s = l.Weights.shatter;
-                Assert.GreaterOrEqual(s, last, "破砕が戻った");
-                Assert.Greater(s, 0f, "段 4 に居るのに割れていない");
-                last = s;
-            }
-            Assert.Greater(last, 0.5f, "段 4 の後半まで進んでいない");
-        }
-
-        [Test]
-        public void Shatter_NeverOutlivesPassthrough()
-        {
-            // 割るものは現実。パススルーが 0 の段で割ると、黒を割って黒を出すだけになる。
-            var l = AtFrame();
-            for (int i = 0; i < 12; i++)
-            {
-                l.Tick(T.frameSec / 10f, Ready());
-                IntroWeights w = l.Weights;
-                if (w.shatter > 0f)
-                    Assert.Greater(w.passthrough, 0f, "パススルーが無いのに割れている");
-            }
+            Assert.AreEqual(IntroStage.Done, l.Stage);
         }
 
         // (B) ------------------------------------------------------------------
@@ -145,24 +100,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.IsTrue(IntroShatterCurve.Shatters(0.01f));
         }
 
-        [Test]
-        public void Frame_StaysFullyOpen_WhileMostOfTheShatterRuns()
-        {
-            // 開口は覆いのセルも箱の破片も切る。飛んでいる最中に閉じると通り道で消える。
-            var l = AtFrame();
-            float step = T.frameSec / 20f;
-            for (int i = 0; i < 20; i++)
-            {
-                l.Tick(step, Ready());
-                if (l.Stage != IntroStage.Frame) break;
-                IntroWeights w = l.Weights;
-                if (w.shatter <= IntroLogic.FrameCloseAt)
-                    Assert.AreEqual(0f, w.frame, 1e-5f,
-                        $"破砕が {w.shatter:F2} の時点で枠が閉じ始めている");
-            }
-        }
-
-        // ---- 格子そのもの（組めていなければ一生割れない）-----------------------
+        // (E) 格子そのもの（組めていなければ一生割れない）-------------------------
 
         [Test]
         public void VeilMesh_HasOneQuadPerCell_PlusStillBorder()

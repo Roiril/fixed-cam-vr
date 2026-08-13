@@ -1253,12 +1253,12 @@ function renderRunCfg(s) {
 }
 
 // ---- 導入の遷移演出（show.json run.intro）------------------------------------
-//   現実 → 固定カメラの映像へ格下げする約 33 秒（設計 2026-07-30_intro-passthrough-to-screen.md）。
+//   開口が閉じて闇になり、その闇の中で管が点いて映像になる 6.2 秒（2026-08-13 に作り直し）。
 //   run の一部なので**保存は applyRunCfg の 1 経路に乗せる**（新しい保存口を作らない）。
 //   判定と既定は intro-model.js が単一の正（本番前チェックも同じ関数を読む）。
 const INTRO_NUM = {
-  realSec: '#introReal', degradeSec: '#introDegrade', structureSec: '#introStructure',
-  frameSec: '#introFrame', swapSec: '#introSwap', maxSec: '#introMaxSec', glitchOnSwap: '#introGlitch',
+  sealSec: '#introSeal', darkSec: '#introDark', igniteSec: '#introIgnite',
+  liveSec: '#introLive', maxSec: '#introMaxSec', glitchOnSwap: '#introGlitch',
 };
 const INTRO_BOOL = {
   enabled: '#introOn', showCameraMarks: '#introCamMarks',
