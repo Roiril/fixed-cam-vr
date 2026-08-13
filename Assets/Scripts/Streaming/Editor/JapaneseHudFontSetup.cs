@@ -96,11 +96,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 // （静的ベイクのため。U+FF1A 欠落を batchmode プレビューで実測）。
                 "Assets/Scripts/Diagnostics/ControllerGuidePanel.cs",
                 "Assets/Scripts/OvrBridge/OvrControllerBridge.cs",
-                // 2026-07-30 追加: 導入演出の合図（段 5「右手を上げてみてください」・開始位置の案内・
-                // 中止・歩き出し）。**導入の文言はすべて IntroDirector.PromptText にある**ので、
-                // ここに無いと合図を出せるようにしても実機は 1 文字残らず豆腐になる。
-                // 実装時（同日）から漏れていたが、読む者が居なかったので露見していなかった。
-                "Assets/Scripts/Streaming/IntroDirector.cs",
+                // ⚠ `IntroDirector.cs` は 2026-08-13 に外した。導入の合図（IntroPrompt）を
+                //    廃止して、あの面の文言が 1 つも残っていないため（canon/LEDGER.md 0033）。
                 // 2026-08-06 追加: 異常の「何が起きたか / 何をすれば直るか」の全文言（StatusHud が描く）と、
                 // 視界を閉じる黒の上に出す 1 行。**異常の文言はすべて RecoveryGuidance にある**ので、
                 // ここに無いと現場で復帰手順が読めない（実機は静的ベイクなので豆腐になる）。

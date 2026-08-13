@@ -472,10 +472,9 @@ namespace FixedCamVr.Streaming.EditorTools
             var introDirector = CreateIntroDirector(logic.transform, runDirector, introVeil,
                 screenGo != null ? screenGo.GetComponent<GlitchFx>() : null,
                 registry, showControl, centerEye.transform, screenTf);
-            // 導入の合図（段 5 の「右手をあげて」・開始位置の案内・歩き出し）。
-            //   ⚠ **体験者には出さない**（2026-08-07〜）。読むのはスタッフだけで、門は
-            //   StatusHud.StaffViewing。配線は StatusHud を作った後（下の 4 節）で行う。
-            var introPrompt = CreateIntroPrompt(centerEye.transform, introDirector);
+            // ⚠ 導入の合図（IntroPrompt）は 2026-08-13 に**廃止**した（canon/LEDGER.md 0033）。
+            //   「前進してください」型の小さい文字を出さない、というユーザー判定。
+            //   上の DeleteIfExists が既存シーンからも外す。
             // 3.3. タイトル画面「廻リ視」。導入の段 0（開始待ち）に被さる薄い層で、右 A で閉じる。
             //      head-lock なので CenterEyeAnchor 直下。**封印の箱（4920）より後（4950/4960）に描く**
             //      ので、黒を開けば既に立っている箱がそのまま現れる（壁が覗くフレームが構造的に無い）。
@@ -551,9 +550,8 @@ namespace FixedCamVr.Streaming.EditorTools
             // 4.1. HMD 内の文字面は全部「スタッフが被っているか」を StatusHud に問う（体験者の視界には
             //      1 文字も出さない・2026-08-07〜）。実行時も FindObjectOfType で自己解決するが、
             //      明示配線しておく（シーンに 2 つ目の StatusHud が現れたときに取り違えない）。
-            var promptSo = new SerializedObject(introPrompt);
-            TrySetObjectRef(promptSo, "statusHud", statusHud);
-            promptSo.ApplyModifiedPropertiesWithoutUndo();
+            //      ⚠ 導入の合図（IntroPrompt）は 2026-08-13 に廃止したので、ここで配る相手は
+            //        操作早見表（下）だけになった。
 
             // 4.2. ControllerGuidePanel（スタッフ専用・右コントローラに追従する操作早見表）。
             //      右コントローラアンカー（RightHandAnchor）+ CenterEyeAnchor へ配線。rightHand が
@@ -911,27 +909,6 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
             if (rig.GetComponent(stylerType) == null) rig.gameObject.AddComponent(stylerType);
-        }
-
-        // 導入の合図（head-lock の 1 行）。覆いより後に描かないと潰されるので、
-        // renderQueue は IntroPrompt が自分で設定する（IntroVeil の 5000 と対）。
-        // ⚠ 読み手はスタッフだけ（StatusHud.StaffViewing で門を閉じる）。配線は呼び出し側が後から行う
-        //    — StatusHud はこれより後に作られるので、ここでは渡せない。
-        private static FixedCamVr.Diagnostics.IntroPrompt CreateIntroPrompt(Transform parent, IntroDirector director)
-        {
-            var existing = parent.Find(IntroPromptName);
-            if (existing != null) Object.DestroyImmediate(existing.gameObject);
-
-            var go = new GameObject(IntroPromptName);
-            go.transform.SetParent(parent, worldPositionStays: false);
-            go.transform.localPosition = Vector3.zero;
-            go.transform.localRotation = Quaternion.identity;
-
-            var prompt = go.AddComponent<FixedCamVr.Diagnostics.IntroPrompt>();
-            var so = new SerializedObject(prompt);
-            TrySetObjectRef(so, "director", director);
-            so.ApplyModifiedPropertiesWithoutUndo();
-            return prompt;
         }
 
         // 体験の終わりを閉じる黒。StartupFader は解除後に自分を Destroy するので再利用できない。

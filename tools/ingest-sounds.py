@@ -66,9 +66,32 @@ PLAN = [
     # ⚠⚠ **-19.0 → -17.0**（2026-08-13・`canon/LEDGER.md` 0030「何の音もなしに出るのは違和感がある」）。
     #    旧値は「導入の山（破砕）を超えないように」抑えたものだが、**破砕は同日に廃止**したので
     #    その制約はもう無い。いまの山はここなので、`make-sounds.py` の `EVENT`（-17.0）へ揃える。
-    ("Cyber03-mp3/Cyber03/Cyber03-2.mp3", "sfx_screen_on", "lufs", -17.0,
+    # ⚠⚠ **-17.0 では「鳴っていない」と判定された**（2026-08-13・LEDGER 0032）。本体が 0.2 秒しか
+    #    無く波高 17.6dB なので、素の音量合わせでは -3dBTP の天井に当たって高さが出ない。
+    #    `lufs!` は必要なぶんだけ尖頭を丸めて狙いまで持ち上げる。
+    ("Cyber03-mp3/Cyber03/Cyber03-2.mp3", "sfx_screen_on", "lufs!", -13.0,
      "段 3 — 闇の中で管に電源が入る。**導入の山**。2026-08-13 ユーザー指定の音源"),
 ]
+
+def norm_lufs_drive(y, target: float, max_drive_db: float = 12.0):
+    """ラウドネスを target へ合わせる。**届かなければ尖頭を丸めて届かせる。**
+
+    `make-sounds.py` の `norm_lufs` と同じ探索（丸めは必要なぶんだけ・上限つき）。
+    届かなければ「届かなかった」まま返す（黙って歪ませるより数字で足りないと言う方がよい）。
+    """
+    drive = 0.0
+    best = y * (10 ** ((target - sk.lufs(y)) / 20.0))
+    while True:
+        z = sk.soft_clip(y, drive) if drive > 0 else y
+        z = z * (10 ** ((target - sk.lufs(z)) / 20.0))
+        tp = sk.true_peak_db(z)
+        if tp <= -3.0:
+            return z
+        best = z * (10 ** ((-3.0 - tp) / 20.0))
+        if drive >= max_drive_db:
+            return best
+        drive = min(max_drive_db, drive + 2.0)
+
 
 SILENCE_DB = -60.0     # これより静かな端は落とす
 EDGE_FADE = 0.008      # 端のクリック止め（秒）
@@ -131,6 +154,15 @@ def main() -> int:
         if how == "peak":
             tp = sk.true_peak_db(y)
             y = y * 10 ** ((target - tp) / 20.0)
+        elif how == "lufs!":
+            # ⚠⚠ **尖頭を丸めてでも狙いの高さまで持ち上げる**（2026-08-13・`canon/LEDGER.md` 0032）。
+            #    素の音量合わせだけでは、**波高の大きい一撃は -3dBTP の天井に当たって上がらない**
+            #    （`sfx_screen_on` は本体が 0.2 秒・波高 17.6dB で、-17.0 LUFS のまま
+            #     「鳴っていないように聞こえる」とユーザー判定）。
+            #    ⚠ これは §4.5「もらった音を良くしようとしない」の例外ではなく**音量合わせの側**。
+            #       イコライザも圧縮も掛けず、必要なぶんだけ尖頭を丸めて高さを出す
+            #       （合成の音が `make-sounds.norm_lufs` で受けているのと同じ扱い）。
+            y = norm_lufs_drive(y, target)
         else:
             y = y * 10 ** ((target - sk.lufs(y)) / 20.0)
             tp = sk.true_peak_db(y)

@@ -81,7 +81,6 @@ namespace FixedCamVr.Streaming
         /// <c>introMinSec</c> は起動から数えていて設営・待機でとうに過ぎており、体験者はスタート区間に
         /// 居る（そこで導入が始まったので）ため、<b>中止したその瞬間に「時間経過 ＋ スタート区間に居る」が
         /// 揃って本編へ飛ぶ</b>。ずれた座標系で 3 周が始まり、体験者は壁の位置が違う世界を手でたどる。
-        /// しかも <see cref="PromptText"/> は相で門を閉じているので、飛んだ瞬間に警告まで消える。
         ///
         /// 落ちるのは <see cref="BeginIntro"/> だけ（＝ランリセット / 位置合わせのやり直し）。
         /// </summary>
@@ -115,68 +114,13 @@ namespace FixedCamVr.Streaming
         /// <summary>輪郭線の色（<c>PassthroughStyler</c> が読む）。</summary>
         public Color EdgeColor => _def.ResolveEdgeColor();
 
-        /// <summary>
-        /// HMD 内に出す合図。<b>段 4 の「右手を上げて」だけ</b>で、これが 3 周目の反転の伏線になる
-        /// （画面の中の自分は上げるが、3 周目の背景は 1 周目の録画なので上がらない）。
-        /// StatusHud が読む（Diagnostics への参照を作らないプロバイダ方式）。
-        /// </summary>
-        public string PromptText
-        {
-            get
-            {
-                // 中止は最優先。体験者が歩き出す前に止める。
-                // ⚠ ただし**導入相の間だけ**。ShowRunLogic は中止と無関係に Intro → Run へ進むので、
-                // 相を見ないと本編 3 周のあいだ顔の前に警告が浮きっぱなしになり、終了の暗転にも
-                // 重なって残る（IntroPrompt は queue 5100 で ShowEndingFader の黒より手前）。
-                // `_aborted` を落とすのは BeginIntro だけで、中止の原因（要再登録フラグ）は
-                // sticky なので、フラグ側では消えない。
-                // ⚠ 中止のメッセージはここに置かない。この面は視線前方 1.5m で、視界を閉じる
-                // ShowEndingFader の黒は 0.3m ＝ **黒が手前に来て文字を隠す**（Canvas は深度で解決する）。
-                // 「黒で閉じる」と「待ってよいと伝える」は同じ面が持つのが正しいので、中止時の 1 行は
-                // ShowRunDirector.BlackoutMessage → ShowEndingFader が黒の上に描く。
-                //
-                // 理由を体験者に説明しないのは、**取れる手が 1 つも無い相手に伝えても減るのは不安ではなく
-                // 没入**だから。旧文言「いちど止めます。スタッフをお呼びください」は、被っていて誰がどこに
-                // 居るかも見えない相手に、人を呼ぶ役まで振っていた。スタッフ向けの復帰手順は StatusHud。
+        // ⚠⚠ **導入の合図（`IntroPrompt` の 1 行）は 2026-08-13 に廃止した**
+        //    （`canon/LEDGER.md` 0033「前進してください見たいな文字は無しで」）。
+        //    段 4 の「右手をあげてください」は 3 周目の反転の伏線なので、**被せる前にスタッフが
+        //    口で伝える**（`docs/onsite-checklist.md`）。伝え忘れると反転が丸ごと不成立になる。
+        //    ⚠ 文言を復活させるなら `unity.ps1 menu hud-font` の収集元へ
+        //    `IntroDirector.cs` を戻すこと（外してある）。
 
-                // 「〜てみてください」の試行の含みを取る。上げた自分が画面に居ることが体験の内容
-                // そのものなので、依頼文でも操作説明にならない（3 周目に手が上がらない反転の伏線）。
-                if (_logic.Stage == IntroStage.Live)
-                    return _def.raiseHandPrompt ? "右手をあげてください" : string.Empty;
-
-                // 演出が終わった直後の数秒だけ、歩き出す合図を出す（慣らし歩行の入口）。
-                if (!_logic.Active && _walkPromptUntil > 0f && Time.unscaledTime < _walkPromptUntil)
-                    return "歩いてください";
-
-                // 段 0 は「何を待っているのか」を出す。ただし**体験者に手立てが無いことは出さない** —
-                // 位置合わせが未了なのは機器側の不備で、読んでも体験者には何もできない（旧文言
-                // 「位置合わせがまだです（スタッフが始めます）」は体験者への業務連絡になっていた）。
-                // スタッフは StatusHud と卓の本番前チェックで気づく。
-                if (_logic.Stage == IntroStage.Black)
-                {
-                    if (!IsCourseRegistered()) return string.Empty;
-                    // 始まり方に合わせて言う。**実際に判定している方法**を言うこと — 接近判定は
-                    // 線も円も上書きするので、ここで線・円の文言を出すと現場で嘘になる
-                    // （2026-08-13 まで、接近で始まる現場に「床の印に立ってください」と出していた）。
-                    if (_startsByApproach)
-                    {
-                        // 近くに立ったまま止まっていると武装しない。**動く方向を名指しする**
-                        //（黙って待つと「立っても始まらない」としか見えない）。
-                        if (!_approach.Armed && _approachWaitSec > 3f)
-                            return "いちど下がってから、箱へ近づいてください";
-                        return "黒い箱に近づいてください";
-                    }
-                    if (!string.IsNullOrEmpty(_def.startLineId)) return "そのまま前へ進んでください";
-                    return showControl?.Layout?.ResolveStartSpot() != null ? "床の印に立ってください" : string.Empty;
-                }
-                return string.Empty;
-            }
-        }
-
-        /// <summary>継ぎ目で「歩いてみてください」を出す秒数（慣らし歩行の 20 秒から借りる）。</summary>
-        private const float WalkPromptSec = 4f;
-
-        private float _walkPromptUntil = -1f;
         private bool _aborted;
 
         // --- スクリーンの管の点灯（_CrtIgnite）------------------------------------
@@ -282,7 +226,6 @@ namespace FixedCamVr.Streaming
         private void BeginIntro()
         {
             _clockRestarted = false;
-            _walkPromptUntil = -1f;
             _aborted = false;
             _completed = false;
             // ⚠ **開始の合図を必ず武装し直す**（2026-08-09 実害）。旧実装はここで
@@ -685,10 +628,8 @@ namespace FixedCamVr.Streaming
             _completed = true;
             if (!restartClock || _clockRestarted) return;
             _clockRestarted = true;
-            // 演出は終わったが Intro 相（慣らし歩行）は続く。**ここで合図を切らない** —
-            // 「現実が映像になった」直後に何をすればいいか分からないまま立ち尽くす時間が生まれる
-            // （2026-07-30 の設計批評: 継ぎ目に歩き出す合図が 1 つも無い）。
-            _walkPromptUntil = Time.unscaledTime + WalkPromptSec;
+            // ⚠ ここで「歩いてください」を出していたが、面ごと廃止した（0033）。
+            //    継ぎ目の合図はスタッフの声掛けが担う（`docs/onsite-checklist.md`）。
             // ここから慣らし歩行。企画書 3 章「固定視点による移動に慣れた後、追跡体験を開始する」。
             runDirector?.RestartIntroClock();
             Debug.Log("[Intro] 導入演出が終わり、慣らし歩行へ（固定視点に慣れる時間）");
