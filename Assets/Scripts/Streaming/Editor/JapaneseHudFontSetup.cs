@@ -41,8 +41,13 @@ namespace FixedCamVr.Streaming.EditorTools
             // いったん Dynamic で作成 → HUD が使う文字を**この場で全部ベイク** → Static 化して保存する。
             // （保存→ロード跨ぎで sourceFontFile が解決できず TryAddCharacters が全滅する事象を実測。
             //   事前ベイク + Static ならランタイムのフォントフェイス解決に一切依存しない）
+            // ⚠ **1 枚に収める**（2026-08-14）。1024² だと 883 文字が **5 枚**へ分かれ、
+            //    TMP が atlas ごとにサブメッシュを作る ＝ HMD の文字面の描画が増える。
+            //    4096² なら 1 枚（実測 5 → 1）。
+            //    ⚠ **`Screen position out of view frustum` の対策ではない。** そのつもりで
+            //       広げたが警告は 1 行も減らなかった（`canon/OPEN.md` の未解決項目）。
             TMP_FontAsset asset = TMP_FontAsset.CreateFontAsset(
-                font, 64, 6, GlyphRenderMode.SDFAA, 1024, 1024, AtlasPopulationMode.Dynamic);
+                font, 64, 6, GlyphRenderMode.SDFAA, 4096, 4096, AtlasPopulationMode.Dynamic);
             if (asset == null)
             {
                 Debug.LogError("[JapaneseHudFontSetup] CreateFontAsset 失敗（フォントファイル・FontEngine を確認）");
@@ -101,6 +106,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 2026-08-06 追加: 異常の「何が起きたか / 何をすれば直るか」の全文言（StatusHud が描く）と、
                 // 視界を閉じる黒の上に出す 1 行。**異常の文言はすべて RecoveryGuidance にある**ので、
                 // ここに無いと現場で復帰手順が読めない（実機は静的ベイクなので豆腐になる）。
+                // ⚠⚠ 2026-08-14 追加: **体験前の注意書き**（TitleNotice）。ここに無かったせいで
+                //    「スタッフへお声がけください」の**「声」だけが豆腐**になっていた
+                //    （実機ログに 26 回 `声 was not found`。`canon/LEDGER.md` 0035）。
+                //    ⚠ 面が深度で隠れていた間は誰も気づけなかった — **出るようにして初めて出た欠陥**。
+                "Assets/Scripts/Diagnostics/TitleNotice.cs",
                 "Assets/Scripts/Diagnostics/RecoveryGuidance.cs",
                 "Assets/Scripts/Streaming/ShowRunDirector.cs",
             };

@@ -168,6 +168,17 @@ namespace FixedCamVr.Diagnostics
         {
             if (head == null && Camera.main != null) head = Camera.main.transform;
 
+            // 世界空間 Canvas には描く相手を渡しておく（UGUI の作法）。
+            // ⚠ **これは `Screen position out of view frustum` の対策ではない。**
+            //    2026-08-14 にそのつもりで入れたが、実機の警告は 1 行も減らなかった
+            //    （`canon/OPEN.md` の未解決項目）。**効かなかった対策を「効いた」と書かない。**
+            var canvas = GetComponent<Canvas>();
+            if (canvas != null && canvas.renderMode == RenderMode.WorldSpace && canvas.worldCamera == null)
+            {
+                canvas.worldCamera = head != null ? head.GetComponent<Camera>() : null;
+                if (canvas.worldCamera == null) canvas.worldCamera = Camera.main;
+            }
+
             // 既定 LiberationSans SDF は日本語グリフを持たない（ガイダンス・ステータス行が豆腐化する）。
             // OS フォントから日本語対応の動的 TMP フォントを生成して差し替える（失敗時は既定のまま）。
             if (text != null)

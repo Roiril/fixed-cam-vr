@@ -491,7 +491,10 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetFloat(noticeSo, "distanceM", 2.6f);
             // ⚠ 字の大きさもここで書く。**シーンに焼かれた値が SerializeField の初期値より優先される**
             //   ので、コード側だけ直しても既存シーンには届かない（startInRegistration と同じ罠）。
-            TrySetFloat(noticeSo, "fontSize", 0.07f);
+            // ⚠ **8.5 倍**（2026-08-14・LEDGER 0035）。旧 fontSize 0.07 は「1 文字 7cm」のつもりの
+            //    値だったが実機では StatusHud の 1/8.5 ＝ 読めない大きさで、これが
+            //    「すごく奥に小さい白い文字」の正体だった。実機の画で 1 文字の px を測って決めた。
+            TrySetFloat(noticeSo, "sizeScale", 8.5f);
             noticeSo.ApplyModifiedPropertiesWithoutUndo();
             // 終幕（2D スクリーン → パススルー）。導入と**同じ覆い**を使う（開口の式を共有しないと
             // 閉じた形と開く形が食い違う）。IntroDirector と同じオブジェクトに載せるので、

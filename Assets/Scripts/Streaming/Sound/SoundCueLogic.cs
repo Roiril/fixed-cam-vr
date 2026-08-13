@@ -152,7 +152,14 @@ namespace FixedCamVr.Streaming
             //   analyze-xp-log.py の「音（鳴ったか）」節から外してある。
             if (s.introActive)
             {
-                if (!_sealFired && s.introWeights.shell >= ShellFireAt)
+                // ⚠⚠ **段 0（Black）では鳴らさない**（2026-08-14・`canon/LEDGER.md` 0035）。
+                //    重みだけを見ていたら、**起動直後に鳴っていた** — 段 0 で位置が解けていないと
+                //    `outsideBoxM` が 0（＝中に居る扱い）へ倒れ、`OutsideWeights` が `shell = 1` を
+                //    返すため。体験者がまだ何もしていない真っ暗の中で「隔離が閉じる」音が鳴り、
+                //    本当に閉じる段 1〜2 では**もう鳴らない**（ラッチ済み）。
+                //    実機ログで「段 Live まで進んだのに SealClose が 0 本」として出た。
+                if (!_sealFired && s.introStage != IntroStage.Black
+                    && s.introWeights.shell >= ShellFireAt)
                 {
                     _sealFired = true;
                     Push(SoundCue.SealClose, ref count);

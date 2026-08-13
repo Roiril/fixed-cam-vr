@@ -36,6 +36,22 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void SealClose_DoesNotFireWhileWaitingInStageZero()
+        {
+            // ⚠⚠ **起動直後に鳴っていた**（2026-08-14 実機・canon/LEDGER.md 0035）。
+            //    段 0 で位置が解けていないと `outsideBoxM` が 0（中に居る扱い）へ倒れ、
+            //    `OutsideWeights` が `shell = 1` を返す。重みだけを見ると「閉じた」に見えるが、
+            //    体験者はまだ何もしていない。しかもラッチなので**本当に閉じる段で鳴らなくなる**。
+            var l = new SoundCueLogic();
+            for (int i = 0; i < 120; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.SealClose, Dt, Intro(IntroStage.Black, shell: 1f)),
+                                "段 0（開始待ち）で隔離の音が鳴った");
+
+            // 本当に閉じる段へ来たら鳴る。
+            Assert.AreEqual(1, CountOf(l, SoundCue.SealClose, Dt, Intro(IntroStage.Seal, shell: 1f)));
+        }
+
+        [Test]
         public void SealClose_FiresOnce_WhenTheShellStartsClosing()
         {
             var l = new SoundCueLogic();
