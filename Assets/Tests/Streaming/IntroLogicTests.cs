@@ -124,6 +124,46 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(IntroStage.Black, l.Stage);
         }
 
+        [Test]
+        public void Black_StartsWhenTheVisitorWalksAllTheWayIn()
+        {
+            // ⚠⚠ **安全網**（2026-08-13）。段 0 でエリアの中に入ると重みは真っ黒に倒れる。
+            //    近づく合図が成立していないと、体験者は**何も起きない黒の中に立ったまま**になる。
+            //    開始位置が箱に近い現場ほど踏むので、歩いて入ってきたら必ず始める。
+            var l = Make();
+            Advance(l, 1f, Ready(outsideM: 3f));       // 外に居たことを観測させる
+            Assert.AreEqual(IntroStage.Black, l.Stage);
+            Assert.IsTrue(l.SawOutsideBox);
+
+            l.Tick(0.1f, Ready(outsideM: 0f));
+            Assert.AreEqual(IntroStage.Seal, l.Stage, "歩いて入ったのに黒のまま止まっている");
+        }
+
+        [Test]
+        public void Black_DoesNotStartForSomeoneWhoWasAlreadyInside()
+        {
+            // ⚠ **状態ではなく事象**。前の体験者が中に立ったままのリセット・エリア内に置いた HMD で
+            //    勝手に走り出してはいけない（canon/LEDGER.md 0005 が禁じた形）。
+            var l = Make();
+            Advance(l, 30f, Ready(outsideM: 0f));
+            Assert.AreEqual(IntroStage.Black, l.Stage, "中に居ただけで演出が始まった");
+            Assert.IsFalse(l.SawOutsideBox);
+        }
+
+        [Test]
+        public void Black_TheOutsideObservationIsForgottenOnRestart()
+        {
+            // 体験者交代。前の人の観測が残っていると、中に立ったままのリセットで走り出す。
+            var l = Make();
+            Advance(l, 1f, Ready(outsideM: 3f));
+            Assert.IsTrue(l.SawOutsideBox);
+
+            l.Begin();
+            Assert.IsFalse(l.SawOutsideBox);
+            Advance(l, 5f, Ready(outsideM: 0f));
+            Assert.AreEqual(IntroStage.Black, l.Stage, "リセット後に前の観測で始まった");
+        }
+
         // ---- (B) 段の直列と尺 --------------------------------------------------
 
         [Test]
@@ -289,15 +329,22 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Black_ShowsTheBoxOutside_AndBlackInside()
         {
-            var l = Make();
-            l.Tick(0.016f, Ready(outsideM: 2f));
-            Assert.AreEqual(1f, l.Weights.sealBox, 1e-4f);
-            Assert.AreEqual(0f, l.Weights.shell, 1e-4f);
+            // ⚠ 別々の個体で見る。**同じ個体で外 → 中と動かすと安全網（歩いて入った）が働いて
+            //    段 1 へ進んでしまい、段 0 の見えを測れない**。
+            var outside = Make();
+            outside.Tick(0.016f, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Black, outside.Stage);
+            Assert.AreEqual(1f, outside.Weights.sealBox, 1e-4f);
+            Assert.AreEqual(0f, outside.Weights.shell, 1e-4f);
 
-            l.Tick(0.016f, Ready(outsideM: 0f));
-            Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
-            Assert.AreEqual(1f, l.Weights.shell, 1e-4f);
-            Assert.AreEqual(0f, l.Weights.shellReveal, 1e-4f);
+            // 最初から中に居た（前の体験者が残っている・エリア内に置いた HMD）。演出は始まらないが、
+            // **中の様子は 1 画素も見せない**（canon/LEDGER.md 0005）。
+            var inside = Make();
+            inside.Tick(0.016f, Ready(outsideM: 0f));
+            Assert.AreEqual(IntroStage.Black, inside.Stage);
+            Assert.AreEqual(0f, inside.Weights.sealBox, 1e-4f);
+            Assert.AreEqual(1f, inside.Weights.shell, 1e-4f);
+            Assert.AreEqual(0f, inside.Weights.shellReveal, 1e-4f);
         }
 
         // ---- 段ごとの見え ------------------------------------------------------
@@ -390,21 +437,32 @@ namespace FixedCamVr.Streaming.Tests
         // ---- (C) 必ず本編へ入る -------------------------------------------------
 
         [Test]
-        public void Live_IsSkippedWhenNoCameraFrameArrives()
+        public void Live_StillRunsWithStaticWhenNoCameraFrameArrives()
         {
-            // 映像が来ていないなら段 4 は無意味（枠の中に自分が映らない）。砂嵐を見せずに畳む。
+            // ⚠⚠ **カメラが繋がっていなくても段 4 は流れる**（canon/LEDGER.md 0025）。
+            //    旧実装はここで演出ごと畳んで本編へ落としていた ＝ 管が点いた次の瞬間に導入が終わり、
+            //    体験者から見て「装置が点いたのに何も起きずに始まった」になっていた。
             var l = AtSeal();
             RunStage(l, IntroStage.Seal, Ready());
             RunStage(l, IntroStage.Dark, Ready());
             Assert.AreEqual(IntroStage.Ignite, l.Stage);
 
-            var ev = RunStage(l, IntroStage.Ignite, Ready(live: false));
-            Assert.AreEqual(IntroEvent.Finished, ev);
-            Assert.AreEqual(IntroStage.Done, l.Stage);
+            RunStage(l, IntroStage.Ignite, Ready(live: false));
+            Assert.AreEqual(IntroStage.Live, l.Stage, "映像が無いと段 4 が飛ぶ（砂嵐を見せる段が消える）");
+
+            // 段 4 の見えは映像があるときと同じ。**画の中身は SignalLostFx が砂嵐で埋める**ので、
+            // ここは「管が点いたまま、映像の枠が開く」ことだけを担保する。
+            var w = l.Weights;
+            Assert.AreEqual(1f, w.ignite, 1e-4f, "砂嵐を出す段で管が消えている");
+            Assert.AreEqual(1f, w.frame, 1e-4f);
+            Assert.AreEqual(0f, w.passthrough, 1e-4f);
+
+            var ev = RunStage(l, IntroStage.Live, Ready(live: false));
+            Assert.AreEqual(IntroEvent.Finished, ev, "砂嵐でも段 4 は最後まで流れて終わる");
         }
 
         [Test]
-        public void Live_WaitsBrieflyForTheCameraBeforeGivingUp()
+        public void Live_WaitsBrieflyForTheCameraBeforeShowingStatic()
         {
             var l = AtSeal();
             RunStage(l, IntroStage.Seal, Ready());
@@ -415,6 +473,20 @@ namespace FixedCamVr.Streaming.Tests
 
             Advance(l, 1f, Ready());
             Assert.AreEqual(IntroStage.Live, l.Stage, "来たら進む");
+        }
+
+        [Test]
+        public void Live_TheWaitForTheCameraIsBounded()
+        {
+            // 待ちは上限で必ず切れる。切れないと「カメラが死んだ日は導入が段 3 で固まる」。
+            var l = AtSeal();
+            RunStage(l, IntroStage.Seal, Ready());
+            RunStage(l, IntroStage.Dark, Ready());
+            Assert.AreEqual(IntroStage.Ignite, l.Stage);
+
+            Advance(l, T.igniteSec + IntroLogic.MaxHoldSec + 0.5f, Ready(live: false));
+            Assert.AreEqual(IntroStage.Live, l.Stage,
+                $"段 3 が上限 {IntroLogic.MaxHoldSec}s を過ぎても抜けていない");
         }
 
         [Test]

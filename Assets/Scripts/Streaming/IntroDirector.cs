@@ -155,10 +155,17 @@ namespace FixedCamVr.Streaming
                 if (_logic.Stage == IntroStage.Black)
                 {
                     if (!IsCourseRegistered()) return string.Empty;
-                    // 始まり方に合わせて言う。線なら歩いて入ってくる動きのまま始まるので「進む」、
-                    // 円なら床の実物を指して「印に立つ」。旧文言「スタート位置に立ってください」は
-                    // 線方式で誤り（立つ場所が無い）で、かつ「スタート位置」が現場の何を指すか
-                    // 画面から分からなかった。
+                    // 始まり方に合わせて言う。**実際に判定している方法**を言うこと — 接近判定は
+                    // 線も円も上書きするので、ここで線・円の文言を出すと現場で嘘になる
+                    // （2026-08-13 まで、接近で始まる現場に「床の印に立ってください」と出していた）。
+                    if (_startsByApproach)
+                    {
+                        // 近くに立ったまま止まっていると武装しない。**動く方向を名指しする**
+                        //（黙って待つと「立っても始まらない」としか見えない）。
+                        if (!_approach.Armed && _approachWaitSec > 3f)
+                            return "いちど下がってから、箱へ近づいてください";
+                        return "黒い箱に近づいてください";
+                    }
                     if (!string.IsNullOrEmpty(_def.startLineId)) return "そのまま前へ進んでください";
                     return showControl?.Layout?.ResolveStartSpot() != null ? "床の印に立ってください" : string.Empty;
                 }
@@ -455,11 +462,12 @@ namespace FixedCamVr.Streaming
                     Debug.Log($"[Intro] 開始は体験エリアへの接近で判定します" +
                               $"（run.intro.startLineId '{_def.startLineId}' は使いません）");
                 }
+                _startsByApproach = true;
                 float outsideM = ContainmentShellLogic.DistanceOutsideM(p, halfXZ);
                 bool fired = _approach.Tick(outsideM, IntroLogic.ApproachNearM, IntroLogic.ApproachHoldSec,
                                             Time.unscaledDeltaTime, valid: true);
-                // ⚠ **黙って始まらない状態を作らない。** 一度離れないと武装しないので、
-                //    最初から近くに立っていると永久に待つ。理由を 1 回だけ名指しする。
+                // ⚠ **黙って始まらない状態を作らない。** 武装は「離れている」か「近づいてきた」で立つので、
+                //    近くに立ったまま動かないと待ち続ける。理由を 1 回だけ、状況で書き分けて名指しする。
                 if (!fired && !_approach.Armed)
                 {
                     _approachWaitSec += Time.unscaledDeltaTime;
@@ -467,9 +475,14 @@ namespace FixedCamVr.Streaming
                     {
                         _warnedApproachNotArmed = true;
                         Debug.LogWarning(
-                            $"[Intro] 体験エリアに近すぎて開始待ちのままです（いま外へ {outsideM:F2}m）。" +
-                            $"一度 {IntroLogic.ApproachNearM + ApproachLogic.ArmMarginM:F2}m 以上" +
-                            "離れてから近づくと始まります。スタッフの ⏭ でも進められます");
+                            outsideM <= 0.01f
+                                ? "[Intro] 体験エリアの中に立ったままなので開始待ちです。" +
+                                  "いちど外へ出て、歩いて入り直すと始まります。スタッフの ⏭ でも進められます"
+                                : $"[Intro] 近づいてくる動きが観測できていません（いま外へ {outsideM:F2}m / " +
+                                  $"いちばん遠かったのが {_approach.MaxSeenM:F2}m）。" +
+                                  $"{ApproachLogic.ApproachDeltaM:F2}m 以上離れた所から歩いてくるか、" +
+                                  $"外へ {IntroLogic.ApproachNearM + ApproachLogic.ArmMarginM:F2}m 以上" +
+                                  "離れると始まります。スタッフの ⏭ でも進められます");
                     }
                 }
                 else
@@ -478,6 +491,7 @@ namespace FixedCamVr.Streaming
                 }
                 return fired;
             }
+            _startsByApproach = false;
 
             // ライン指定があればそちらが正（円は見ない）。
             string lineId = _def.startLineId ?? "";
@@ -526,6 +540,8 @@ namespace FixedCamVr.Streaming
         private bool _warnedApproachOverridesLine;
         private bool _warnedApproachNotArmed;
         private float _approachWaitSec;
+        /// <summary>いま開始を判定しているのが「体験エリアへの接近」か（<see cref="PromptText"/> が読む）。</summary>
+        private bool _startsByApproach;
         private bool _wasRegistering;
         private bool _startLineResolved;          // layout.lines から実際に引けたか
         private bool _startLineWarned;            // 警告は 1 回だけ（未着なら毎フレーム引き直すので）

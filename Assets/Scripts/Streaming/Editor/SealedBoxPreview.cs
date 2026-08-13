@@ -73,6 +73,12 @@ namespace FixedCamVr.Streaming.EditorTools
             box.transform.localScale = new Vector3(BoxW, BoxH, BoxD);
             box.GetComponent<MeshRenderer>().sharedMaterial = mat;
 
+            // 床の影（canon/LEDGER.md 0024）。**数値は SealedBoxShadowLogic が唯一の正**で、
+            // ここは置き方だけを実行時（SealedBox.PlaceShadow）と同じ形に真似る。
+            // ⚠ 背景は一様な灰（パススルーの代わり）なので、影は**そこが暗くなる**形で出る。
+            //   実機は同じ式で現実を (1 - a) 倍にする。
+            GameObject? shadow = BuildShadow(out Material? shadowMat);
+
             var camGo = new GameObject("[SealedBoxPreviewCam]") { hideFlags = HideFlags.HideAndDontSave };
             var cam = camGo.AddComponent<Camera>();
             cam.clearFlags = CameraClearFlags.SolidColor;
@@ -104,6 +110,10 @@ namespace FixedCamVr.Streaming.EditorTools
             //    見上げるのではなく、少し離れて上を向く（現場でも人はこう見る）。
             Shot(cam, "topedge", new Vector3(0.35f, eye, -(half + 1.2f)),
                  new Vector3(0.15f, BoxH + 0.15f, -half * 0.6f));
+            // ⚠ **床の影は目線の高さからは画に入らない。** 目 1.6m で水平に見ると、いちばん手前に
+            //   見える床は 2.8m 先 ＝ 影が落ちる範囲（面から 1m ほど）は視界の下に外れる。
+            //   形そのものを判定するための 1 枚を上から撮る（現場の見えではない）。
+            Shot(cam, "shadow", new Vector3(2.4f, 2.8f, -3.2f), new Vector3(0.5f, 0.1f, -0.7f));
 
             // ⚠ **静止画では光の走りを判定できない。** 連番を出して動画にする
             //    （`_PhaseSec` を進める — Edit Mode では `_Time` が走らない）。
@@ -111,9 +121,59 @@ namespace FixedCamVr.Streaming.EditorTools
 
             Object.DestroyImmediate(camGo);
             Object.DestroyImmediate(box);
+            if (shadow != null) Object.DestroyImmediate(shadow);
             Object.DestroyImmediate(mat);
+            if (shadowMat != null) Object.DestroyImmediate(shadowMat);
             AssetDatabase.Refresh();
-            Debug.Log($"[SealedBoxPreview] 3 枚を {OutDir} へ出しました（模様を見るための絵。現場の見えではない）");
+            Debug.Log($"[SealedBoxPreview] 5 枚 + 連番を {OutDir} へ出しました"
+                      + "（模様を見るための絵。現場の見えではない）");
+        }
+
+        /// <summary>
+        /// 床の影の板。<b>置き方は <see cref="SealedBox"/> の実行時と同じ</b>
+        /// （<c>Euler(90, 0, 0)</c> で寝かせ、板のローカル XY を箱ローカルの XZ に一致させる）。
+        /// ここが食い違うと、絵で見た向きと実機の向きが別になる。
+        /// </summary>
+        private static GameObject? BuildShadow(out Material? mat)
+        {
+            mat = null;
+            Shader? shader = Shader.Find(SealedBox.ShadowShaderName);
+            if (shader == null)
+            {
+                Debug.LogWarning($"[SealedBoxPreview] シェーダ {SealedBox.ShadowShaderName} が見つかりません。"
+                                 + "床の影は絵に出ません");
+                return null;
+            }
+
+            var half = new Vector2(BoxW * 0.5f, BoxD * 0.5f);
+            Vector2 sweep = SealedBoxShadowLogic.Sweep(
+                SealedBoxShadowLogic.DefaultYawDeg, SealedBoxShadowLogic.DefaultElevationDeg, BoxH);
+            Vector2 quad = SealedBoxShadowLogic.QuadSizeM(half, sweep);
+            Vector2 center = SealedBoxShadowLogic.QuadCenterM(sweep);
+
+            mat = new Material(shader) { name = "SealedBoxShadow (preview)" };
+            mat.SetFloat("_Opacity", 1f);
+            mat.SetFloat("_Density", SealedBoxShadowLogic.DefaultDensity);
+            mat.SetVector("_HalfXZ", new Vector4(half.x, half.y, 0f, 0f));
+            mat.SetVector("_Sweep", new Vector4(sweep.x, sweep.y, 0f, 0f));
+            mat.SetVector("_QuadSizeM", new Vector4(quad.x, quad.y, 0f, 0f));
+            mat.SetVector("_QuadCenterM", new Vector4(center.x, center.y, 0f, 0f));
+            mat.SetFloat("_FeatherM", SealedBoxShadowLogic.FeatherM);
+            mat.SetFloat("_FeatherNear", SealedBoxShadowLogic.FeatherNear);
+            mat.SetFloat("_FeatherFar", SealedBoxShadowLogic.FeatherFar);
+            mat.SetFloat("_FarDensity", SealedBoxShadowLogic.FarDensity);
+            mat.SetFloat("_ContactM", SealedBoxShadowLogic.ContactM);
+            mat.SetFloat("_ContactGain", SealedBoxShadowLogic.ContactGain);
+
+            var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            go.name = "[SealedBoxShadowPreview]";
+            go.hideFlags = HideFlags.HideAndDontSave;
+            Object.DestroyImmediate(go.GetComponent<Collider>());
+            go.transform.position = new Vector3(center.x, SealedBoxShadowLogic.LiftM, center.y);
+            go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            go.transform.localScale = new Vector3(quad.x, quad.y, 1f);
+            go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            return go;
         }
 
         /// <summary>光の走りを連番で出す。<see cref="WaveDir"/> は Assets の外。</summary>

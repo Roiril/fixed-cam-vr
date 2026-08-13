@@ -111,6 +111,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private static readonly int IntroLiveId = Shader.PropertyToID("_IntroLive");
         private static readonly int GlitchId = Shader.PropertyToID("_Glitch");
         private static readonly int GlitchSeedId = Shader.PropertyToID("_GlitchSeed");
+        private static readonly int SignalLostId = Shader.PropertyToID("_SignalLost");
 
         // public なのは CLI（`unity.ps1 menu intro`）が -executeMethod で直接呼ぶため。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Intro", priority = 238)]
@@ -166,13 +167,18 @@ namespace FixedCamVr.Streaming.EditorTools
             public readonly string name;    // 段の名前（ASCII）
             public readonly float p;        // 段の中の進み 0..1
             public readonly int label;      // ファイル名に入れる進み（000 / 050 / 100 …）
+            /// <summary>カメラが 1 台も繋がっていない現場（<c>_SignalLost = 1</c>）。</summary>
+            public readonly bool noSignal;
 
-            public Shot(IntroStage stage, int index, string name, float p, int label)
+            public Shot(IntroStage stage, int index, string name, float p, int label,
+                        bool noSignal = false)
             {
                 this.stage = stage; this.index = index; this.name = name; this.p = p; this.label = label;
+                this.noSignal = noSignal;
             }
 
-            public string File => $"intro_{index}_{name}_{label:000}.png";
+            public string File =>
+                $"intro_{index}_{name}_{label:000}{(noSignal ? "_nosignal" : "")}.png";
         }
 
         /// <summary>
@@ -203,6 +209,15 @@ namespace FixedCamVr.Streaming.EditorTools
             //    そこが山になる。0.50 で撮ると終わりと同じ絵が 2 枚並ぶだけで、**継ぎ目が 1 枚も写らない**。
             foreach ((float p, int label) in new[] { (0f, 0), (0.25f, 25), (0.999f, 100) })
                 yield return new Shot(IntroStage.Live, 4, "live", p, label);
+
+            // ⚠⚠ **カメラが 1 台も繋がっていない現場**（canon/LEDGER.md 0025）。
+            //    段 4 は飛ばさず、映像の代わりに砂嵐が出る。ここで見るのは 2 つ:
+            //      - 段 3（管が点く途中）に砂嵐が**乗っていない**こと
+            //        （砂嵐は post の最後なので、切らないと点灯の過程をまるごと上書きする）
+            //      - 段 4 で映像と同じ進みで砂嵐が**入ってくる**こと
+            yield return new Shot(IntroStage.Ignite, 3, "ignite", 0.5f, 50, noSignal: true);
+            yield return new Shot(IntroStage.Live, 4, "live", 0.25f, 25, noSignal: true);
+            yield return new Shot(IntroStage.Live, 4, "live", 0.999f, 100, noSignal: true);
         }
 
         // ---- 段の駆動（重みは本物の状態機械から取る）--------------------------
@@ -542,6 +557,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 //    プレビューだけ乱れが強くなる（現行 show.json では 1.00 対 0.80）。
                 _screenMat.SetFloat(GlitchId, Mathf.Clamp01(w.glitch) * _glitchOnSwap);
                 _screenMat.SetFloat(GlitchSeedId, shot.index * 3.1f + shot.p * 7.3f);
+                // 配信断（＝ カメラが繋がっていない）。実機では SignalLostFx が書く。
+                _screenMat.SetFloat(SignalLostId, shot.noSignal ? 1f : 0f);
 
                 // 覆い・殻・箱は自分で子 GameObject を作る（レイヤは継がない）。撮る直前に揃える。
                 SetLayerRecursive(_root.transform, IntroLayer);
@@ -620,7 +637,13 @@ namespace FixedCamVr.Streaming.EditorTools
                     $"shell built={B(_shell.IsBuilt)} s={_shell.AppliedStrength:0.00} " +
                     $"reveal={B(_shell.Revealing)} | " +
                     $"box built={B(_box.IsBuilt)} a={_box.AppliedOpacity:0.00} " +
-                    $"footprint={B(_box.HasFootprint)} | crtIgnite={_igniteWritten:0.00}\n" +
+                    $"footprint={B(_box.HasFootprint)} | " +
+                    // ⚠ **床の影も「画に出た」の側で出す**（canon/LEDGER.md 0024）。
+                    //    最初この 2 つを出していなかったので、影が 1 画素も無い絵を見て
+                    //    「向きが裏側なのか、そもそも組めていないのか」が判別できなかった。
+                    $"shadow built={B(_box.ShadowIsBuilt)} a={_box.ShadowAppliedOpacity:0.00} | " +
+                    $"crtIgnite={_igniteWritten:0.00}" +
+                    (shot.noSignal ? "  signalLost=1.00 (no camera connected)" : "") + "\n" +
                     $"reality {_plateLabel} | screen mat {_screenMatLabel} | {_showLabel}";
             }
 

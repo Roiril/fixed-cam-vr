@@ -267,32 +267,13 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         // ---------------------------------------------------------------- 接近（導入の合図）
-
-        [Test]
-        public void Approach_NeedsToHaveBeenAway()
-        {
-            var a = new ApproachLogic();
-            // いきなり近くに居るだけでは始めない（起動時にたまたま近い / 前の体験者が立ったまま）。
-            for (int i = 0; i < 60; i++)
-                Assert.IsFalse(a.Tick(0.2f, 1.0f, 0.4f, 0.016f, valid: true));
-
-            // 一度離れてから近づけば成立する。
-            a.Tick(3.0f, 1.0f, 0.4f, 0.016f, valid: true);
-            Assert.IsTrue(a.Armed);
-            bool fired = false;
-            for (int i = 0; i < 40 && !fired; i++) fired = a.Tick(0.5f, 1.0f, 0.4f, 0.016f, valid: true);
-            Assert.IsTrue(fired, "近づいて 0.4 秒留まったのに始まらない");
-        }
-
-        [Test]
-        public void Approach_DropsArmingWhenThePositionIsNotTrusted()
-        {
-            var a = new ApproachLogic();
-            a.Tick(3.0f, 1.0f, 0.4f, 0.016f, valid: true);
-            Assert.IsTrue(a.Armed);
-            a.Tick(0.5f, 1.0f, 0.4f, 0.016f, valid: false);   // 位置合わせが外れた等
-            Assert.IsFalse(a.Armed, "信用できない間に武装が残ると、復帰した瞬間に発火する");
-        }
+        //
+        // ⚠ 接近の判定そのものは **ApproachLogicTests** へ移した（2026-08-13）。
+        //   ここにあった 2 本（「一度離れていること」「信用できない間は武装を解く」）は、
+        //   1 フレームで 2.8m 飛ばす形で書かれていた ＝ 軌跡の不連続ガードを足した時点で
+        //   「テレポートを正常な観測として扱う」テストになる。移した先では
+        //   `WalkingInFromFarRange_StillFires` / `StandingStillNearTheBox_NeverFires` /
+        //   `InvalidDistanceDisarmsIt` が同じことを連続な軌跡で固定している。
 
         [Test]
         public void Intro_ShellNeverSurvivesIntoTheShow()

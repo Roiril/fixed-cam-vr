@@ -29,7 +29,10 @@ namespace FixedCamVr.Streaming
         Dark,
         /// <summary>段 3。闇の中でスクリーンの管が点く。<b>映像はまだ無い。</b></summary>
         Ignite,
-        /// <summary>段 4。管の中がカメラ映像へ。<b>枠の中に自分が居る。</b></summary>
+        /// <summary>
+        /// 段 4。管の中がカメラ映像へ。<b>枠の中に自分が居る。</b>
+        /// 映像が来ていなければ<b>砂嵐</b>が出る（段を飛ばさない・<c>canon/LEDGER.md</c> 0025）。
+        /// </summary>
         Live,
         /// <summary>演出は終わり。ここから本編（尺は <see cref="ShowRunLogic"/> が数える）。</summary>
         Done,
@@ -192,7 +195,13 @@ namespace FixedCamVr.Streaming
         public float headTurnDegPerSec;
         /// <summary>スクリーンの方向が視野中心の近くにあるか。</summary>
         public bool frameCentered;
-        /// <summary>カメラのフレームが新鮮に届いているか。届いていなければ段 4 へ進まない（砂嵐を見せない）。</summary>
+        /// <summary>
+        /// カメラのフレームが新鮮に届いているか。
+        ///
+        /// ⚠ <b>これが false でも段 4 は飛ばさない</b>（2026-08-13 に変えた）。少し待つだけで、
+        /// 待ちきれなければ砂嵐のまま段 4 へ進む。<b>装置が点いたのに何も映らないのは
+        /// 「壊れている装置」として正しい画</b>で、演出ごと畳んで本編へ落とすより筋が通る。
+        /// </summary>
         public bool liveFresh;
         /// <summary>トラッキング原点が変わった（OS の recenter）。中止する。</summary>
         public bool recentered;
@@ -237,7 +246,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 段 4 の開始条件（映像が届いている・スクリーンを見ている）を待てる上限 (秒)。
-        /// 超えたら条件を無視して進む。
+        /// 超えたら<b>条件を無視して進む</b> — 映像が来ていなければ砂嵐のまま段 4 が流れる。
         /// </summary>
         public const float MaxHoldSec = 3f;
 
@@ -272,6 +281,7 @@ namespace FixedCamVr.Streaming
         private bool _advanceRequested;
         private bool _skipRequested;
         private bool _insideBox;
+        private bool _sawOutsideBox;
 
         public IntroStage Stage => _stage;
         public float StageElapsedSec => _stageElapsed;
@@ -279,6 +289,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>いま体験エリアの中に居るとみなしているか（ヒステリシス付き・診断とテスト用）。</summary>
         public bool InsideBox => _insideBox;
+
+        /// <summary>
+        /// <see cref="Begin"/> 以降に一度でも体験エリアの外に居たか。
+        /// <b>「歩いて入ってきた」を状態でなく事象として見るためのラッチ</b>（診断とテスト用）。
+        /// </summary>
+        public bool SawOutsideBox => _sawOutsideBox;
 
         /// <summary>演出中か（＝ Director が各層へ重みを配るべきか）。</summary>
         public bool Active => _stage != IntroStage.Off && _stage != IntroStage.Done;
@@ -299,6 +315,7 @@ namespace FixedCamVr.Streaming
             _advanceRequested = false;
             _skipRequested = false;
             _insideBox = false;
+            _sawOutsideBox = false;
         }
 
         /// <summary>演出を出さない設定 / 本編中 / 終了後。重みは <see cref="IntroWeights.Inactive"/> になる。</summary>
@@ -375,9 +392,20 @@ namespace FixedCamVr.Streaming
                 case IntroStage.Black:
                     // ここは**時間で進めない**。始めてよいかは体験者の居場所か人間の判断で決まる。
                     //   - 体験者が体験エリアへ近づいた、または
-                    //   - スタッフが合図した
-                    // どちらも「黒が明けている」ことが前提（明ける前に始めても何も見えない）。
-                    if (input.blackCleared && (advance || input.atStartSpot)) Enter(IntroStage.Seal);
+                    //   - スタッフが合図した、または
+                    //   - **外から歩いて入ってしまった**（下の安全網）
+                    // どれも「黒が明けている」ことが前提（明ける前に始めても何も見えない）。
+                    //
+                    // ⚠⚠ **安全網**（2026-08-13）。段 0 で体験エリアの中に入ると、重みは
+                    //    `shell = 1 / sealBox = 0` ＝ **真っ黒**に倒れる（中の様子を見せない約束）。
+                    //    そこで近づく合図が成立していないと、体験者は**何も起きない黒の中に立ったまま**
+                    //    になり、スタッフの ⏭ 以外に出口が無い。開始位置が箱に近い現場ほど踏む。
+                    //    ⚠ **状態ではなく事象で判定する**。「いま中に居る」で始めると、前の体験者が
+                    //    中に立ったままのリセット・エリア内に置いた HMD で勝手に走り出す（0005 が禁じた形）。
+                    //    外に居たことを見てから入ってきた場合だけ通す。
+                    if (input.blackCleared
+                        && (advance || input.atStartSpot || (_sawOutsideBox && _insideBox)))
+                        Enter(IntroStage.Seal);
                     // 段 0 は maxSec の計時に含めない（待っている時間は演出の尺ではない）。
                     _totalElapsed = 0f;
                     return IntroEvent.None;
@@ -405,7 +433,7 @@ namespace FixedCamVr.Streaming
                 case IntroStage.Ignite:
                 {
                     if (!advance && _stageElapsed < _t.igniteSec) return IntroEvent.None;
-                    // スクリーンを見ていて、かつ映像が届いていること。届いていなければ待つ（砂嵐を見せない）。
+                    // スクリーンを見ていて、かつ映像が届いていること。少しは待つ（遅れて来ることがある）。
                     _centeredSec = input.frameCentered ? _centeredSec + dt : 0f;
                     bool ready = _centeredSec >= FrameCenteredHoldSec && input.liveFresh;
                     if (!advance && !ready && _holdSec < MaxHoldSec)
@@ -413,12 +441,12 @@ namespace FixedCamVr.Streaming
                         _holdSec += dt;
                         return IntroEvent.None;
                     }
-                    // 待ちきれなかった。映像が無いなら段 4 は無意味なので、そのまま本編へ。
-                    if (!advance && !input.liveFresh)
-                    {
-                        _stage = IntroStage.Done;
-                        return IntroEvent.Finished;
-                    }
+                    // ⚠⚠ **映像が来なくても段 4 へ進む**（2026-08-13・canon/LEDGER.md 0025）。
+                    //    旧実装はここで演出ごと畳んで本編へ落としていた ＝ カメラが 1 台も繋がって
+                    //    いない現場では**管が点いた次の瞬間に導入が終わる**。体験者から見れば
+                    //    「装置が点いたのに何も起きずに始まった」で、装置の側の理由が画に無い。
+                    //    いまは進んで**砂嵐が出る**（`SignalLostFx` が既に未受信カメラを覆っている）。
+                    //    装置は点いた、映すものが無い、という筋がそのまま画になる。
                     Enter(IntroStage.Live);
                     return IntroEvent.None;
                 }
@@ -442,6 +470,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void UpdateInsideBox(float outsideM)
         {
+            // 「外に居た」の観測は**出るときと同じ閾値**で取る（入る側で取ると境界の震えで立つ）。
+            if (outsideM >= InsideExitM) _sawOutsideBox = true;
+
             if (_insideBox)
             {
                 if (outsideM >= InsideExitM) _insideBox = false;
