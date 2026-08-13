@@ -317,6 +317,51 @@ Shader "FixedCamVr/ScreenComposite"
                 return frac(p.x * p.y);
             }
 
+            /// なだらかな雑音（格子の間を補間する）。**燐光の焼けムラ**に使う。
+            /// ⚠ `Hash21` を直接使うと格子のブロックが見える（それは「わざと加工した感」の側）。
+            float ValueNoise21(float2 p)
+            {
+                float2 i = floor(p), f = frac(p);
+                f = f * f * (3.0 - 2.0 * f);
+                float a = Hash21(i);
+                float b = Hash21(i + float2(1.0, 0.0));
+                float c = Hash21(i + float2(0.0, 1.0));
+                float d = Hash21(i + float2(1.0, 1.0));
+                return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+            }
+
+            /// 管が点いていく途中の「電子が当たっている量」。
+            ///
+            /// ⚠ **チャンネルごとに少しずらして呼ぶ**と、実物の CRT と同じ収束のずれ
+            /// （縁で色が割れる）になる。単色の板に見えないための仕掛けのひとつ
+            /// （`canon/LEDGER.md` 0030「単色なのもなんか怖くないというかリアルじゃない」）。
+            float CrtIgniteEnergy(float2 uv, float t)
+            {
+                float d = CrtSdf(uv);
+                float2 p = (uv - 0.5) * 2.0;
+
+                // 1) 縁に高電圧が乗る（0.00〜0.30 で立ち、0.65 までに引く）
+                float rim = saturate(t / 0.30) * (1.0 - saturate((t - 0.30) / 0.35));
+                float e = exp(-abs(d) * 22.0) * rim;
+
+                // 2) 走査が中央から水平に開く（0.25〜0.78）。**ゆっくり開く** —
+                //    速いと「光った」になり、管が立ち上がる過程が読めない
+                float open = saturate((t - 0.25) / 0.53);
+                float band = 1.0 - smoothstep(0.0, max(open * open, 1e-3), abs(p.y));
+
+                // 3) 面が満ちるにつれて走査の帯は消える（映像が来る前の間を持たせる）
+                float fill = saturate((t - 0.55) / 0.35);
+                return e + band * open * (1.0 - fill) * 0.42;
+            }
+
+            /// 燐光の色。**強さで色が変わる。** 電子が届き切っていない所は深い赤、
+            /// 強く当たっている所だけ白へ寄る（実物の燐光と同じ）。
+            /// ⚠ ここを 1 色で書くと「明るい単色の板」になる。
+            half3 PhosphorColor(float e)
+            {
+                return lerp(half3(0.52, 0.115, 0.038), half3(1.0, 0.84, 0.62), saturate(e));
+            }
+
             /// 粗さの出どころは 2 つあり、**粗い方だけ**を掛ける（2 つの格子が干渉すると縞が出る）。
             ///   _Pixelate     著作した値（post 12 項目。卓の FS_POST と同式・硬い格子のまま）
             ///   _CoarseBlocks 周を重ねるごとに痩せる伝送（別系統。C# の ScreenDecayLogic が解いたブロック数）
@@ -651,40 +696,46 @@ Shader "FixedCamVr/ScreenComposite"
                 // 実物のブラウン管も、電源を入れてから絵が出るまで暖機の時間がある。
                 col *= saturate(_IntroLive);
 
+                // ⚠⚠ **2026-08-13 に作り直した**（`canon/LEDGER.md` 0030
+                //   「枠のホログラムの色が明るく、単色なのもなんか怖くないというかリアルじゃない」）。
+                //   直したのは 3 つで、どれも「1 色の明るい板」を崩すためのもの:
+                //     ① **色が強さで変わる**（弱い所は深い赤、強い所だけ白へ寄る＝ 実物の燐光）
+                //     ② **収束のずれ**（チャンネルごとに横へずらす＝ 縁で色が割れる。点き始めが最大）
+                //     ③ **焼けムラと明滅**（一様に光る面は板に見える／高電圧が安定するまで揺れる）
+                //   加えて全体を **0.34 倍**へ落とした（旧 0.55 / 0.22）。
                 if (_CrtIgnite < 0.999)
                 {
                     float t = saturate(_CrtIgnite);
-                    float2 p = (screenUv - 0.5) * 2.0;
-                    float d = CrtSdf(screenUv);
 
-                    // 1) 縁が光る（0.00〜0.30 で立ち、0.65 までに引く）
-                    float rim = saturate(t / 0.30) * (1.0 - saturate((t - 0.30) / 0.35));
-                    float edgeGlow = exp(-abs(d) * 22.0) * rim;
+                    // ② 収束のずれ。**点き始めがいちばん大きく、安定すると揃う**（実物と同じ）。
+                    float conv = 0.0065 * (1.0 - t);
+                    float3 e = float3(CrtIgniteEnergy(screenUv + float2(conv, 0.0), t),
+                                      CrtIgniteEnergy(screenUv, t),
+                                      CrtIgniteEnergy(screenUv - float2(conv, 0.0), t));
 
-                    // 2) 中央から水平に開く（0.25〜0.78）。**ゆっくり開く** —
-                    //    速いと「光った」になり、管が立ち上がる過程が読めない
-                    float open = saturate((t - 0.25) / 0.53);
-                    float band = 1.0 - smoothstep(0.0, max(open * open, 1e-3), abs(p.y));
-
-                    // 3) 面が満ちる（0.55〜0.90）＋ 行き過ぎて戻る（管の輝度が安定するまで）
-                    float fill = saturate((t - 0.55) / 0.35);
-                    float over = 1.0 + 0.30 * sin(saturate((t - 0.78) / 0.22) * 3.14159265);
+                    // ③ 燐光の焼けムラ（低い周波数のなだらかな雑音）と、高電圧が落ち着くまでの明滅。
+                    float uneven = 0.58 + 0.80 * ValueNoise21(screenUv * float2(4.3, 3.1));
+                    float flick = 1.0 - 0.30 * (1.0 - t)
+                                * Hash21(float2(floor(_Time.y * 31.0), 7.3));
+                    e *= uneven * flick * 0.34;
 
                     // ⚠ **映像はここで制御しない**（`_IntroLive` の担当）。ここが作るのは光だけ。
-                    // 光そのもの。**暖色**（`canon/LEDGER.md` 0010）。青白い光にすると装置が別物になる。
-                    // ⚠ 弱く。全面が明るく光ると「点いた」ではなく「光った」になる。
-                    // 最後の項は「面が満ちた管がぼんやり光っている」状態 — 映像が来るまでの間を持たせる。
-                    col += half3(1.0, 0.72, 0.42)
-                         * (edgeGlow * 0.55 + band * open * (1.0 - fill) * 0.22);
+                    // ① 色は強さで決まる。**暖色**（`canon/LEDGER.md` 0010）は保つ。
+                    col += PhosphorColor(e.g * 3.0) * e;
                 }
 
                 // 点いた管の面がぼんやり光っている（映像が来るまでの間）。
                 // ⚠ **上のブロックの外に置く**。あちらは「点いていく過程」なので `_CrtIgnite = 1` で
                 //   走らなくなり、点き切った瞬間に光が消えて画が真っ黒になる（2026-08-13 に絵で見つけた）。
                 //   映像が出るぶんだけ引く — 映像そのものが光になるので、足したままだと白く濁る。
+                // ⚠ ここも一様にしない（同じ焼けムラを掛ける）。0.07 → 0.052 へ落とした。
                 {
                     float tubeLit = saturate(_CrtIgnite) * (1.0 - saturate(_IntroLive));
-                    if (tubeLit > 0.001) col += half3(1.0, 0.72, 0.42) * tubeLit * 0.07;
+                    if (tubeLit > 0.001)
+                    {
+                        float uneven = 0.58 + 0.80 * ValueNoise21(screenUv * float2(4.3, 3.1));
+                        col += PhosphorColor(0.30) * (tubeLit * 0.052 * uneven);
+                    }
                 }
 
                 // --- 信号ロスト砂嵐（FS_POST 一致規約の対象外・別系統）---

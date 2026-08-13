@@ -278,6 +278,43 @@ def bed_static(sec: float = 6.0) -> np.ndarray:
 # ===========================================================================
 
 
+def sfx_screen_noise() -> np.ndarray:
+    """段 3 の後半 — 管の面が満ちて、走査が鳴き出す。
+
+    ユーザー指示（2026-08-13・`canon/LEDGER.md` 0030）
+    「（指定の音源）これを最初に出して、その後ノイズを出すとかかな？」の**後半**。
+    前半は `sfx_screen_on`（ユーザー提供の mp3）で、これはその尾に重なる。
+
+    ⚠ **砂嵐（`bed_static`）と同じ音にしない。** あちらは「受信できていない」で、
+    こちらは「管が点いた」。だから掴めていない速い明滅を持たず、**上がって落ち着く**。
+    落ち着いた先は `bed_device`（装置の敷く音）なので、そこへ渡るように尾を残す。
+
+    ⚠ 一撃ではなく**膨らむ音**なので、揃え方は尖頭ではなくラウドネス
+    （`rules/sound-design.md` §3 の「持続する節目」）。
+    """
+    sec = 1.15
+    t = sk.t_axis(sec)
+    # 立ち上がって、すぐ落ち着く。**山を作らない** — 山は前半の一撃が持っている。
+    # ⚠ 最初 `t/0.26` の緩い立ち上がり ＋ 減衰 2.2/s で書いたら、絵が**ほぼ平坦な帯**になった
+    #   （2026-08-13。`rules/sound-design.md`「数値が緑でも絵を開く」の型）。
+    #   聴感は「ずっと同じ砂の音」で、装置が息を吹き返す形になっていない。
+    #   立ち上がりを 0.05s へ詰め、減衰を 3.4/s にして**頭だけが濃い**形にした。
+    swell = np.clip(t / 0.05, 0, 1) * np.exp(-np.clip(t - 0.06, 0, None) * 3.4)
+
+    body = sk.loop_noise(sec, 320, 7200, slope_db_oct=-1.4, seed=771)
+    # 高い側は遅れて立ち上がる（管が温まると上が伸びる）。
+    fine = sk.loop_noise(sec, 2600, 12000, slope_db_oct=-0.8, seed=772)
+    # 低い側は電源の唸りの下地。**200Hz より下に正体を置かない**（実機のスピーカーが返さない）。
+    low = sk.loop_noise(sec, 210, 480, slope_db_oct=-5.0, seed=773)
+
+    y = sk.mix((body * swell, 1.00),
+               (fine * swell ** 2.4, 0.42),
+               (low * swell, 0.34))
+    y = sk.env_fade(y, 0.004, 0.14)
+    # SPOT より 1dB 上。前半の一撃（EVENT）の下に居つつ、その尾に埋もれない高さ。
+    return norm_lufs(sk.widen(y, 0.55, seed=7710), SPOT + 1.0)
+
+
 def sfx_switch(variant: int = 0) -> np.ndarray:
     """カメラ切替のリレー。**暗転（下り 70ms）の中に収める**ので全体 140ms。
 
@@ -594,6 +631,9 @@ REGISTRY = {
     #    置き換えた（`tools/ingest-sounds.py` が焼く）。**ここに戻すと上書きしてしまう。**
     #    合成版の関数は設計の記録として残してある。
     "sfx_shatter": (sfx_shatter, False, False),
+    # ⚠ `sfx_screen_on`（前半の一撃）はユーザー提供の mp3。`tools/ingest-sounds.py` が焼くので
+    #    ここには置かない。**置くと上書きしてしまう。** こちらはその後に重なるノイズ。
+    "sfx_screen_noise": (sfx_screen_noise, False, False),
     "sfx_swap": (sfx_swap, False, False),
     "sfx_shell_open": (sfx_shell_open, False, False),
     # sfx_title_in は 2026-08-12 にユーザー提供の「シネマチックなタイトル」へ置き換えた

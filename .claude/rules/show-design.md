@@ -569,6 +569,14 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
 | `StatusHud`（視線前方 1.6m） | **右 B で開いたとき**、または **位置合わせ中**（登録ガイダンスを強制表示） | 相・周回・場所・異常 1 件 ＋ 直し方 |
 | `ControllerGuidePanel`（手元） | スタッフが見ているときだけ（位置合わせ中も出す） | ボタンの早見表だけ。⚠ 2 秒で消える `ShowTransient` と手を下げると視界外なので、**復帰手順の置き場にしない** |
 
+⚠⚠ **スクリーンより奥に立つ面は、深度でも弾かれる**（2026-08-13・`canon/LEDGER.md` 0027）。
+TMP の既定シェーダは `ZTest [unity_GUIZTestMode]` ＝ 既定 **LEqual** なので、描画順（queue）を
+いくら後ろにしても**本編のスクリーン（2.0m・不透明・ZWrite On）の深度に隠れる**。
+体験前の注意書き（`TitleNotice`・**2.6m**）がこれで 1 文字も出ていなかった。しかも警告は出ない。
+- 無事だったのは**たまたま手前に立っている面だけ**（`IntroPrompt` 1.5m / `StatusHud` 1.6m）
+- 自前シェーダの面（題字・覆い・殻・箱）は全部 `ZTest Always` なので関係ない
+- **新しい TMP の面をスクリーンより奥へ置くなら、TMP の Overlay 版（`ZTest Always`）を使う**
+
 ⚠⚠ **視界に重なる面は、位置合わせ中は登録ガイダンスへ譲る**（`StatusHud.RegistrationActive`）。
 門を `StaffViewing` へ統一した時、登録中も `IsActive` 経由で開くようにしたが、**登録ガイダンスを
 出しているのは StatusHud 自身（1.6m）で、`IntroPrompt`(1.5m) と `ShowEndingFader`(0.3m) は

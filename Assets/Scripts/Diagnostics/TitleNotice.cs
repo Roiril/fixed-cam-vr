@@ -65,6 +65,9 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private const int RenderQueue = 5000;
 
+        /// <summary>TMP の Overlay 版（<c>ZTest Always</c>）。<b>Always Included に入っている。</b></summary>
+        private const string OverlayShaderName = "TextMeshPro/Distance Field Overlay";
+
         /// <summary>黒が実際に立っているとみなす不透明度（<see cref="TitleScreen.AppliedVeil"/>）。</summary>
         private const float VeilUpMin = 0.9f;
 
@@ -136,6 +139,15 @@ namespace FixedCamVr.Diagnostics
 
                 // タイトルの黒に潰されないように、黒と題字より後に描く。fontMaterial の getter が
                 // インスタンスを作るので、共有マテリアルを汚さない。
+                // ⚠⚠ **描画順だけでは足りない。深度でも弾かれていた**（2026-08-13・LEDGER 0027）。
+                //    TMP の既定シェーダ（`TextMeshPro/Distance Field`）は `ZTest [unity_GUIZTestMode]`
+                //    ＝ 既定で LEqual。この面は **2.6m** に立つのに、本編のスクリーン（不透明・
+                //    ZWrite On）が **2.0m** に居るので、**注意書きはスクリーンの深度に隠れて
+                //    1 文字も出ていなかった**。しかも警告は 1 件も出ない。
+                //    ⚠ 他の HMD の面（IntroPrompt 1.5m / StatusHud 1.6m）はスクリーンより手前に
+                //    立っているので、この罠を踏むのはここだけ。**2.6m はユーザーが決めた距離**
+                //    （題字と同じ所に立てる）なので、動かすのではなく深度の方を外す。
+                UseOverlayShader(tmp);
                 tmp.fontMaterial.renderQueue = RenderQueue;
                 _text = tmp;
             }
@@ -146,6 +158,30 @@ namespace FixedCamVr.Diagnostics
                 if (go != null) Destroy(go);
                 _text = null;
             }
+        }
+
+        /// <summary>
+        /// TMP の <b>Overlay 版</b>（<c>ZTest Always</c>）へ差し替える。
+        ///
+        /// 既定の <c>TextMeshPro/Distance Field</c> は ZTest を
+        /// <c>unity_GUIZTestMode</c>（グローバル・既定 LEqual）で引くので、<b>マテリアルからは
+        /// 上書きできない</b>。グローバルを書き換える手もあるが、それは他の全 TMP へ効く。
+        ///
+        /// ⚠ <b>剥がれ対策で Always Included に入れてある</b>（実行時 <c>Shader.Find</c> だけの
+        /// シェーダはビルドから外される・2026-07-31 実害）。それでも見つからないときは
+        /// <b>差し替えずに続ける</b> — 深度に負けて見えないかもしれないが、
+        /// マテリアルを壊して字が化けるよりはよい。
+        /// </summary>
+        private static void UseOverlayShader(TMP_Text tmp)
+        {
+            var overlay = Shader.Find(OverlayShaderName);
+            if (overlay == null)
+            {
+                Debug.LogWarning($"[TitleNotice] {OverlayShaderName} が見つかりません。" +
+                                 "注意書きが本編スクリーンの深度に隠れる可能性があります");
+                return;
+            }
+            tmp.fontMaterial.shader = overlay;
         }
 
         /// <summary>

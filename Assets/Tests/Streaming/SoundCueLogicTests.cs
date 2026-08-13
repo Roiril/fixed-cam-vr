@@ -10,7 +10,7 @@ namespace FixedCamVr.Streaming.Tests
         private const float Dt = 1f / 72f;
 
         private static SoundShowState Intro(IntroStage stage, float shell = 0f,
-                                            float shatter = 0f)
+                                            float shatter = 0f, float ignite = 1f)
         {
             var s = SoundShowState.Idle;
             s.introActive = true;
@@ -18,6 +18,8 @@ namespace FixedCamVr.Streaming.Tests
             s.introWeights = IntroWeights.Inactive;
             s.introWeights.shell = shell;
             s.introWeights.shatter = shatter;
+            // ⚠ 既定は Inactive の 1（＝ 管が点いている）。**段 3 の途中を作るときだけ下げる。**
+            s.introWeights.ignite = ignite;
             return s;
         }
 
@@ -80,6 +82,43 @@ namespace FixedCamVr.Streaming.Tests
             // 導入の山なので、劇伴は隔離が閉じる音と同じくらい深く退く。
             Assert.That(SoundCueLogic.DuckFor(SoundCue.ScreenOn),
                         Is.GreaterThanOrEqualTo(SoundCueLogic.DuckFor(SoundCue.SealClose)));
+        }
+
+        [Test]
+        public void ScreenNoise_FollowsScreenOn_WhenTheTubeFaceFills()
+        {
+            // ユーザー指示（canon/LEDGER.md 0030）「これを最初に出して、その後ノイズを出す」。
+            // **同じフレームで 2 本鳴らさない** — 重ねると 1 つの音に潰れて「その後」にならない。
+            var l = new SoundCueLogic();
+            var early = Intro(IntroStage.Ignite, ignite: 0.1f);
+            var fired = l.Tick(Dt, early, 0f, out int n);
+            int on = 0, noise = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (fired[i] == SoundCue.ScreenOn) on++;
+                if (fired[i] == SoundCue.ScreenNoise) noise++;
+            }
+            Assert.AreEqual(1, on, "段 3 の頭で一撃が鳴っていない");
+            Assert.AreEqual(0, noise, "一撃と同じフレームでノイズも鳴っている");
+
+            // 面が満ち始める所で 2 本目。**1 回だけ。**
+            Assert.AreEqual(0, CountOf(l, SoundCue.ScreenNoise, Dt,
+                                       Intro(IntroStage.Ignite, ignite: SoundCueLogic.ScreenNoiseAt - 0.05f)));
+            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenNoise, Dt,
+                                       Intro(IntroStage.Ignite, ignite: SoundCueLogic.ScreenNoiseAt)));
+            Assert.AreEqual(0, CountOf(l, SoundCue.ScreenNoise, Dt, Intro(IntroStage.Ignite, ignite: 1f)));
+            Assert.AreEqual(0, CountOf(l, SoundCue.ScreenNoise, Dt, Intro(IntroStage.Live)));
+        }
+
+        [Test]
+        public void ScreenNoise_HasASourceAndStaysUnderTheHit()
+        {
+            // ⚠ **音源の無い節目を作らない**（rules/sound-design.md §8）。
+            Assert.AreEqual("sfx_screen_noise", SoundCueLogic.ResourceName(SoundCue.ScreenNoise));
+            // 山の尾なので、劇伴は退かせたまま。ただし一撃より深くはしない。
+            Assert.That(SoundCueLogic.DuckFor(SoundCue.ScreenNoise),
+                        Is.LessThan(SoundCueLogic.DuckFor(SoundCue.ScreenOn)));
+            Assert.That(SoundCueLogic.DuckFor(SoundCue.ScreenNoise), Is.GreaterThan(0f));
         }
 
         [Test]

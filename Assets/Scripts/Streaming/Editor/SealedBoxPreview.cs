@@ -60,7 +60,8 @@ namespace FixedCamVr.Streaming.EditorTools
             SealedBox.ApplyWearTexture(mat);
             mat.SetFloat("_Opacity", 1f);
             mat.SetFloat("_HexSizeM", ParseFloat("hex", 0.45f));
-            mat.SetFloat("_GlowGain", ParseFloat("glow", 1.0f));
+            // ⚠ フォールバックは実行時の既定と揃える（ずれると絵と実機で光の強さが違う）。
+            mat.SetFloat("_GlowGain", ParseFloat("glow", 1.35f));
             mat.SetFloat("_LineWidth", ParseFloat("line", 0.012f));
             mat.SetVector("_BoxSize", new Vector4(BoxW, BoxH, BoxD, 0f));
             mat.SetFloat("_SeamFadeM", ParseFloat("seam", 0.18f));

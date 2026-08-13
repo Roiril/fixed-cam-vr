@@ -350,17 +350,35 @@ namespace FixedCamVr.Streaming.Tests
         // ---- 段ごとの見え ------------------------------------------------------
 
         [Test]
-        public void Seal_ClosesTheApertureAndPullsTheBoxDownTogether()
+        public void Seal_ClosesTheAperture_ButNeverThinsTheBox()
         {
+            // ⚠⚠ **箱は薄くしない**（canon/LEDGER.md 0028）。旧実装は開口と同じ進みで
+            //    `1 - p` へ引いていたので、段の半ばで箱が半透明になり、**その向こう＝
+            //    体験エリアの中が透けた**（0005 が禁じたもの）。
             var l = AtSeal();
             Advance(l, T.sealSec * 0.5f, Ready(outsideM: 2f));
             var mid = l.Weights;
             Assert.Greater(mid.frame, 0f, "開口が閉じ始めていない");
             Assert.Less(mid.frame, 1f);
             Assert.Less(mid.passthrough, 1f, "現実が閉じ始めていない");
-            Assert.Less(mid.sealBox, 1f, "箱が引き始めていない");
+            Assert.AreEqual(1f, mid.sealBox, 1e-4f, "箱が薄くなっている（中が透ける）");
             Assert.AreEqual(0f, mid.live, 1e-4f, "映像はまだ出さない");
             Assert.AreEqual(0f, mid.ignite, 1e-4f, "管はまだ点けない");
+        }
+
+        [Test]
+        public void Seal_TheBoxIsNeverTranslucentWhileOutside()
+        {
+            // 段 1 のあいだ、外に居る全フレームで「箱が不透明」か「黒が立っている」のどちらか。
+            // **その中間（半透明の箱）を 1 フレームも作らない**のが LEDGER 0005 の担保。
+            var l = AtSeal();
+            for (int i = 0; i < 100 && l.Stage == IntroStage.Seal; i++)
+            {
+                l.Tick(0.02f, Ready(outsideM: 2f));
+                var w = l.Weights;
+                Assert.IsTrue(w.sealBox >= 0.999f || w.shell >= 0.999f,
+                    $"箱 {w.sealBox:F2} / 黒 {w.shell:F2} — どちらも中途半端で中が透ける");
+            }
         }
 
         [Test]

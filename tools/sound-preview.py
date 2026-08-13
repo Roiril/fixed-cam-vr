@@ -38,8 +38,14 @@ SRC = os.path.join(ROOT, "Assets", "Resources", "Sound")
 OUT = os.path.join(ROOT, "logs", "sound")
 
 # --- 段の尺（`IntroLogic.IntroTiming.Default` の写し）------------------------
-REAL, DEGRADE, STRUCTURE, FRAME, SWAP = 1.5, 3.5, 2.5, 2.5, 4.5
-STRUCTURE_OWN = max(STRUCTURE - DEGRADE * (1 - 0.6), 0.5)     # 段 3 は段 2 と重なる
+# ⚠ 2026-08-13 に導入を作り直した（`canon/LEDGER.md` 0023 ④）。旧 5 段
+#   （Real / Degrade / Structure / Frame / Swap）はもう無い。いまは 4 段 6.2 秒:
+#   段 1 閉じる / 段 2 闇（＋中に入るのを待つ）/ 段 3 管が点く / 段 4 自分が映る。
+#   ⚠ `IntroTiming.Default` と同じ値にしておく（ずれると、聴いて決めた間が実機と違う）。
+SEAL, DARK, IGNITE, LIVE = 1.4, 0.8, 1.6, 2.4
+DARK_WAIT = 1.6          # 中に入るのを待つ時間（実機は上限 3 秒。近似として真ん中を置く）
+# ⚠ `SoundCueLogic.ScreenNoiseAt` と同じ値（管の面が満ち始める所）。対で直す。
+SCREEN_NOISE_AT = 0.55
 
 MATERIALS = [
     ("bed_seal", "封印の箱の唸り（3D・箱に定位）", 6.0),
@@ -109,20 +115,20 @@ def build_materials() -> np.ndarray:
 
 
 def build_intro() -> np.ndarray:
-    """周回リセット → A → 題字 → 導入 5 段 → 本編の入り口までを、実機の順序どおりに並べる（近似）。
+    """周回リセット → A → 題字 → 導入 4 段 → 本編の入り口までを、実機の順序どおりに並べる（近似）。
 
     ⚠ 2026-08-12 に流れが変わった（`canon/LEDGER.md` 0014）。
     **周回リセット直後は真っ暗で、A を押すまで何も起きない。**
+    ⚠ 2026-08-13 に段そのものが変わった（0023 ④）。閉じる → 闇 → **管が点く** → 自分が映る。
     """
     t_a = 3.0                                # A を押す（それまで真っ暗）
     t_glyph_out = t_a + 2.0                  # 2 秒で題字が消え始める
     t_black = t_glyph_out + 1.3              # 黒が開いてパススルー（段 0・箱の外）
-    t_real = t_black + 7.0                   # 線を越えて隔離が閉じる
-    t_deg = t_real + REAL
-    t_str = t_deg + DEGRADE
-    t_frame = t_str + STRUCTURE_OWN
-    t_swap = t_frame + FRAME
-    t_run = t_swap + SWAP
+    t_seal = t_black + 7.0                   # 近づいて隔離が閉じる（段 1）
+    t_dark = t_seal + SEAL                   # 段 2 — 全黒。ここで箱の中へ入る
+    t_ignite = t_dark + DARK + DARK_WAIT     # 段 3 — 闇の中で管が点く
+    t_live = t_ignite + IGNITE               # 段 4 — 自分が映る
+    t_run = t_live + LIVE                    # 本編
     total = t_run + 10.0
     n = int(total * sk.SR)
     mix = np.zeros((n, 2))
@@ -132,35 +138,35 @@ def build_intro() -> np.ndarray:
     dev = load("bed_device")
     worn = load("bed_device_worn")
 
-    # 封印の箱 — **真っ暗の下で先に鳴り始める**（J カット）。段 4 で食われる
-    seal_len = t_frame + FRAME
+    # 封印の箱 — **真っ暗の下で先に鳴り始める**（J カット）。段 1 で引く
+    seal_len = t_dark
     g = np.concatenate([
         np.linspace(0, 0.55, int(t_a * sk.SR)),
         np.full(int((t_black - t_a) * sk.SR), 0.55),
         np.linspace(0.55, 1.0, int(0.8 * sk.SR)),
-        np.full(max(0, int((t_frame - t_black - 0.8) * sk.SR)), 1.0),
-        1 - np.sin(np.linspace(0, np.pi / 2, int(FRAME * sk.SR))),
+        np.full(max(0, int((t_seal - t_black - 0.8) * sk.SR)), 1.0),
+        1 - np.sin(np.linspace(0, np.pi / 2, int(SEAL * sk.SR))),
     ])
     lay(mix, tile(seal, seal_len), 0.0, g)
 
     # 部屋 — 段 0 から。隔離が閉じたら**帯域が閉じる**（音量ではない）
     room_len = total - t_black
     r = tile(room, room_len)
-    close_at = int((t_real - t_black) * sk.SR)
+    close_at = int((t_seal - t_black) * sk.SR)
     closed = sk.spec_shape(r[:, 0], lambda f: sk.shelf(f, 420, -22, 1.0))
     closed = np.stack([closed, closed], axis=1)
     blend = np.clip((np.arange(len(r)) - close_at) / (1.5 * sk.SR), 0, 1)[:, None]
     r = r * (1 - blend) + closed * blend
     lay(mix, r, t_black, 0.85)
 
-    # 装置 — **段 2 から入り始める**（絵より先に来る）。3 周目へ向けて痩せる
-    dev_len = total - t_deg
+    # 装置 — **段 2（闇）から入り始める**（絵より先に来る）。3 周目へ向けて痩せる
+    dev_len = total - t_dark
     d = tile(dev, dev_len)
     w = tile(worn, dev_len)
-    rise = np.clip((np.arange(len(d)) / sk.SR) / (t_swap - t_deg), 0, 1) ** 1.4
-    decay = np.clip(((np.arange(len(d)) / sk.SR) - (t_run - t_deg)) / 8.0, 0, 1)
+    rise = np.clip((np.arange(len(d)) / sk.SR) / max(t_live - t_dark, 0.1), 0, 1) ** 1.4
+    decay = np.clip(((np.arange(len(d)) / sk.SR) - (t_run - t_dark)) / 8.0, 0, 1)
     co, ci = np.cos(decay * np.pi / 2), np.sin(decay * np.pi / 2)
-    lay(mix, d * (rise * co)[:, None] + w * (rise * ci)[:, None], t_deg, 1.0)
+    lay(mix, d * (rise * co)[:, None] + w * (rise * ci)[:, None], t_dark, 1.0)
 
     # 節目の一撃
     lay(mix, load("sfx_title_in"), t_a)          # ⚠ 尾は 12 秒。題字が消えた後も鳴り続ける
@@ -168,15 +174,18 @@ def build_intro() -> np.ndarray:
     lay(mix, load("amb_bell"), t_black + 6.0)    # 段 0 に 1 回だけ
     lay(mix, load("amb_creak_1"), t_black + 2.4)
     lay(mix, load("amb_creak_2"), t_run + 6.8)
-    lay(mix, load("sfx_seal_close"), t_real - 0.9)
-    lay(mix, load("sfx_shatter"), t_frame + FRAME * 0.30)
-    lay(mix, load("sfx_swap"), t_swap)
+    lay(mix, load("sfx_seal_close"), t_seal - 0.9)
+    # ⚠⚠ **管が点く所は 2 発**（LEDGER 0030）。①もらった音源 → ②面が満ちる所でノイズ。
+    #    2 発目の位置は実機と同じ `ignite >= 0.55`（＝ 段の 55%）。
+    lay(mix, load("sfx_screen_on"), t_ignite)
+    lay(mix, load("sfx_screen_noise"), t_ignite + IGNITE * SCREEN_NOISE_AT)
+    lay(mix, load("sfx_swap"), t_live)
     for k, at in enumerate((t_run + 2.2, t_run + 5.6, t_run + 8.4)):
         lay(mix, load(f"sfx_switch_{k + 1}"), at, 0.9)
 
     print(f"  真っ暗 0.0 / A {t_a:.1f} / 題字が消え始める {t_glyph_out:.1f} / "
-          f"箱の外 {t_black:.1f} / 隔離が閉じる {t_real:.1f} / 格下げ {t_deg:.1f} / "
-          f"枠 {t_frame:.1f} / すり替え {t_swap:.1f} / 本編 {t_run:.1f}")
+          f"箱の外 {t_black:.1f} / 閉じる {t_seal:.1f} / 闇 {t_dark:.1f} / "
+          f"管が点く {t_ignite:.1f} / 自分が映る {t_live:.1f} / 本編 {t_run:.1f}")
     return mix
 
 

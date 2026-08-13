@@ -781,7 +781,8 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetBool(so, "boxEnabled", true);
             TrySetFloat(so, "heightM", 2.4f);
             TrySetFloat(so, "hexSizeM", 0.45f);
-            TrySetFloat(so, "glowGain", 1.0f);
+            // ⚠ 2026-08-13 に 1.0 → 1.35（LEDGER 0029）。SealedBox.glowGain と対で直す。
+            TrySetFloat(so, "glowGain", 1.35f);
             so.ApplyModifiedPropertiesWithoutUndo();
             return box;
         }

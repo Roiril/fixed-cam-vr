@@ -263,14 +263,17 @@ namespace FixedCamVr.Streaming
         /// 眼ごとの late-latch 姿勢で行われ、箱は <c>Cull Back</c> なので
         /// <b>描画側が先に中へ入った眼だけ壁が消えて、黒はまだ来ない</b> ＝ 一瞬パススルーで
         /// 中が覗ける（2026-08-13 ユーザー報告 ③）。余裕をここで作る。
-        /// </summary>
-        public const float InsideEnterM = 0.3f;
+        ///
+        /// ⚠ <b>0.3m では足りなかった</b>（同日・2 度目の報告 <c>canon/LEDGER.md</c> 0028）。
+        /// 0.55m へ広げてある。箱の面から 0.55m の所では箱は既に視界をほぼ埋めているので、
+        /// 「箱の面」と「黒」の見分けはつかない ＝ 早めに倒しても画は変わらない。</summary>
+        public const float InsideEnterM = 0.55f;
 
         /// <summary>
         /// 「外へ出た」と<b>みなし直す</b>外側距離 (m)。<see cref="InsideEnterM"/> より広く取って
         /// ヒステリシスにする（境界で震えると黒と箱が交互に点滅する）。
         /// </summary>
-        public const float InsideExitM = 0.6f;
+        public const float InsideExitM = 0.85f;
 
         private IntroTiming _t = IntroTiming.Default;
         private IntroStage _stage = IntroStage.Off;
@@ -521,8 +524,7 @@ namespace FixedCamVr.Streaming
 
                     case IntroStage.Seal:
                     {
-                        // 開口が閉じ切る。現実が閉じるのと同じ進みで封印の箱も引く
-                        //（箱だけ残ると「閉じたのに黒い箱が浮いている」になる）。
+                        // 開口が閉じ切る。閉じるのは**開口と現実の側**だけ。
                         float p = SmoothStep(0f, 1f, Progress(_t.sealSec));
                         var w = new IntroWeights
                         {
@@ -531,7 +533,7 @@ namespace FixedCamVr.Streaming
                             live = 0f,
                             ignite = 0f,
                         };
-                        // 中に入っていれば黒（殻）が正。外なら箱を引きながら閉じる。
+                        // 中に入っていれば黒（殻）が正。
                         if (_insideBox)
                         {
                             w.shell = 1f;
@@ -542,7 +544,13 @@ namespace FixedCamVr.Streaming
                         {
                             w.shell = 0f;
                             w.shellReveal = 0f;
-                            w.sealBox = 1f - p;
+                            // ⚠⚠ **箱は薄くしない**（2026-08-13・canon/LEDGER.md 0028）。
+                            //    旧実装は開口と同じ進みで `1 - p` へ引いていたので、段の半ばで
+                            //    **箱が半透明になり、その向こう＝体験エリアの中が透けた**
+                            //    （LEDGER 0005「中の様子は固定視点になるまで見せない」に反する）。
+                            //    箱が消えるのは黒（殻）が代わりに立ってから ＝ 段 2 か、中に入った瞬間。
+                            //    LEDGER 0023 ④ の「段 1 の最後に残る矩形が箱の面」とも、こちらが合う。
+                            w.sealBox = 1f;
                         }
                         return w;
                     }

@@ -757,6 +757,12 @@ lap <= totalLaps || (lap == totalLaps + 1 && camera == order[0])
   内側で、端末内録画はゲートで止まっている。ゲートを触るときはこの保証を壊していないか確認する
 - パススルーの API の制約（切ると数百 ms 黒 / 走査線は掛けられない / ガーディアンは消せない）は
   [meta-xr.md](meta-xr.md) の「パススルー」節が正本
+- ⚠⚠ **段 1 で箱を薄くしない**（2026-08-13・`canon/LEDGER.md` 0028）。旧実装は開口が閉じるのと
+  同じ進みで `sealBox = 1 - p` へ引いていたので、段の半ばで**箱が半透明になり、その向こう＝
+  体験エリアの中が透けた**（0005 が禁じたもの）。閉じるのは開口と現実の側だけで、箱が消えるのは
+  黒（殻）が代わりに立ってから ＝ 段 2 か、中に入った瞬間。
+  `IntroLogicTests.Seal_TheBoxIsNeverTranslucentWhileOutside` が「段 1 の全フレームで、
+  箱が不透明か黒が立っているかのどちらか」を固定する
 - **⚠ 黒は封印の箱の面より「手前」で立てる**（2026-08-13・ユーザー報告
   「黒い箱に入ったときに、一瞬だけパススルーで中が見えてしまう」）。
   原因は「箱の面が消える平面」と「黒に落とす平面」が同一で余裕がゼロなこと:
@@ -764,8 +770,8 @@ lap <= totalLaps || (lap == totalLaps + 1 && camera == order[0])
   旧 `IntroLogic` の `_insideBox = outsideBoxM <= 0`（ヒステリシス無し）。
   **判定は Update 時の CenterEyeAnchor だが、描画は眼ごとの late-latch 姿勢**で、箱は `Cull Back`。
   だから**描画側が先に中へ入った眼だけ壁が消えて、黒はまだ来ない**。
-  → `IntroLogic` に閾値を持たせ、**`outsideBoxM <= 0.3` で「中」とみなして黒を先に立て、
-  戻りは `>= 0.6`**（`InsideEnterM` / `InsideExitM`。ヒステリシスで境界の震えによる点滅も止める）。
+  → `IntroLogic` に閾値を持たせ、**`outsideBoxM <= 0.55` で「中」とみなして黒を先に立て、
+  戻りは `>= 0.85`**（0.3/0.6 では足りないという 2 度目の報告で広げた・0028）（`InsideEnterM` / `InsideExitM`。ヒステリシスで境界の震えによる点滅も止める）。
   `IntroLogicTests.InsideBox_LeadsTheBoxFace_AndHasHysteresis` が固定する
 - **⚠ Quest 実機未検証**（2026-08-13。EditMode 1184/1184・node 388/388。管の出現の見え方・
   闇の長さ・段 4 で「自分だと分かるか」は実機でしか判定できない）

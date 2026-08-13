@@ -24,6 +24,12 @@ namespace FixedCamVr.Streaming
         /// 破砕を廃止して空いた山をここが引き受ける。音源はユーザー指定（2026-08-13）。
         /// </summary>
         ScreenOn,
+        /// <summary>
+        /// 段 3 の後半 — <b>管の面が満ちて走査が鳴き出す</b>。<see cref="ScreenOn"/> の尾に重なる。
+        /// ユーザー指示（2026-08-13・<c>canon/LEDGER.md</c> 0030）
+        /// 「これを最初に出して、その後ノイズを出すとかかな？」の後半。
+        /// </summary>
+        ScreenNoise,
         /// <summary>段 4 — 管の中がカメラ映像になる（装置が点く）。</summary>
         Swap,
         /// <summary>終幕 — 隔離が開いて現実が戻る。**山にしない。**</summary>
@@ -67,6 +73,13 @@ namespace FixedCamVr.Streaming
         public const float BellAtSec = 6f;
 
         /// <summary>
+        /// 管の点灯がここまで来たら 2 発目（ノイズ）を鳴らす。
+        /// シェーダで面が満ち始めるのが <c>0.55</c> なので、そこに合わせてある
+        /// （<c>ScreenComposite.shader</c> の <c>fill</c>）。**絵と対で直す。**
+        /// </summary>
+        public const float ScreenNoiseAt = 0.55f;
+
+        /// <summary>
         /// 1 フレームに拾える上限。**種類の総数と同じにしてある ＝ 構造的に溢れない。**
         ///
         /// ⚠ 最初 3 にしていたら、テストが 4 本同時のフレームを作って 1 本落とした。
@@ -78,7 +91,7 @@ namespace FixedCamVr.Streaming
 
         private readonly SoundCue[] _buf = new SoundCue[MaxPerTick];
         private bool _titleWasVisible;
-        private bool _sealFired, _shatterFired, _screenOnFired, _swapFired, _openFired;
+        private bool _sealFired, _shatterFired, _screenOnFired, _screenNoiseFired, _swapFired, _openFired;
         private bool _glitchArmed = true;
         private float _glitchCooldown;
         private bool _glyphWasShowing;
@@ -94,7 +107,7 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             _titleWasVisible = false;
-            _sealFired = _shatterFired = _screenOnFired = _swapFired = _openFired = false;
+            _sealFired = _shatterFired = _screenOnFired = _screenNoiseFired = _swapFired = _openFired = false;
             _glitchArmed = true;
             _glitchCooldown = 0f;
             _glyphWasShowing = false;
@@ -155,6 +168,14 @@ namespace FixedCamVr.Streaming
                 {
                     _screenOnFired = true;
                     Push(SoundCue.ScreenOn, ref count);
+                }
+                // ⚠ **管の面が満ちる所で 2 発目（ノイズ）。** 段の頭で 2 本重ねると 1 つの音に
+                //    潰れるので、点灯の進み（`ignite`）を見て遅らせる。同じフレームでは鳴らない。
+                if (!_screenNoiseFired && s.introStage == IntroStage.Ignite
+                    && s.introWeights.ignite >= ScreenNoiseAt)
+                {
+                    _screenNoiseFired = true;
+                    Push(SoundCue.ScreenNoise, ref count);
                 }
                 if (!_swapFired && s.introStage == IntroStage.Live)
                 {
@@ -226,6 +247,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.SealClose: return 0.85f;
                 case SoundCue.Shatter: return 0.90f;
                 case SoundCue.ScreenOn: return 0.90f;   // 導入の山。劇伴を深く退かせる
+                case SoundCue.ScreenNoise: return 0.75f; // 山の尾。退かせたまま保つ
                 case SoundCue.Swap: return 0.55f;
                 case SoundCue.TitleOut: return 0.70f;
                 case SoundCue.ShellOpen: return 0.40f;
@@ -246,6 +268,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.SealClose: return "sfx_seal_close";
                 case SoundCue.Shatter: return "sfx_shatter";
                 case SoundCue.ScreenOn: return "sfx_screen_on";
+                case SoundCue.ScreenNoise: return "sfx_screen_noise";
                 case SoundCue.Swap: return "sfx_swap";
                 case SoundCue.ShellOpen: return "sfx_shell_open";
                 case SoundCue.Glitch: return "sfx_glitch";      // 3 種から順に選ぶ

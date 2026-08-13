@@ -35,10 +35,18 @@ Shader "FixedCamVr/TitleGlyph"
         //    字の朱が地に埋もれる。灯り側は橙に置いて、赤との差で朱を立てる。
         //    焼け際の熾もこの色を強めて作る（新しい赤を増やさない）。
         _GlowColor("Glow color", Color) = (0.82, 0.52, 0.24, 1)
+        // ⚠⚠ **焼け際の熾は閃光と別の色にした**（2026-08-13・`canon/LEDGER.md` 0031
+        //    「回転した後に消えるところが、少しホラーにしては明るい黄色すぎる」）。
+        //    それまでは `_GlowColor`（走る光と同じ橙）を 1.7 倍して熾にしていたので、
+        //    **消えていく所が画のいちばん明るい黄色**になっていた。
+        //    閃光は「A を押した合図」なので明るくてよく、熾は「燃え尽きる所」なので暗い。
+        //    **混ぜない**（片方を暗くするともう片方も暗くなる、という結び方をしない）。
+        _EmberColor("Ember color (burn edge)", Color) = (0.46, 0.135, 0.030, 1)
         // 焦げ。焼け際の内側に残る暗褐色。**黒にしない** — 黒は「消えた」であって「焦げた」ではない。
         _CharColor("Char color", Color) = (0.115, 0.062, 0.042, 1)
         // 灰。冷めた粉の色。彩度をわずかに残さないと「白い点々」に見える。
-        _AshColor("Ash color", Color) = (0.44, 0.40, 0.36, 1)
+        // ⚠ 2026-08-13 に暗くした（0.44,0.40,0.36 → 下）。黒の中で灰が白く浮いていた。
+        _AshColor("Ash color", Color) = (0.235, 0.212, 0.190, 1)
 
         _Reveal("Reveal (0..1)", Range(0, 1)) = 1
         _Dissolve("Burn (0..1)", Range(0, 1)) = 0
@@ -160,7 +168,8 @@ Shader "FixedCamVr/TitleGlyph"
             // ⚠ **熾は焦げよりずっと狭くする。** 同じ幅にすると熾の加算が焦げを塗り潰し、
             //    墨が「焦げてから失われる」ではなく「光って消える」に見える（2026-08-13 実測）。
             #define EMBER_W 0.055
-            #define EMBER_GAIN 1.7
+            // ⚠ 2026-08-13 に 1.7 → 1.05（LEDGER 0031「明るい黄色すぎる」）。色も `_EmberColor` へ分けた。
+            #define EMBER_GAIN 1.05
             // 焼けてから灰が消えるまで（eat 単位）と、灰が舞い上がる高さ（uv）。
             #define ASH_LIFE 0.35
             #define ASH_RISE 0.055
@@ -172,6 +181,7 @@ Shader "FixedCamVr/TitleGlyph"
             float4 _InkColor;
             float4 _AccentColor;
             float4 _GlowColor;
+            float4 _EmberColor;
             float4 _CharColor;
             float4 _AshColor;
             float _Reveal;
@@ -372,15 +382,18 @@ Shader "FixedCamVr/TitleGlyph"
                 rgb *= 1.0 + sheen;
                 // 焦げは色を**置き換える**（暗くするだけだと「影が差した」に見える）。
                 rgb = lerp(rgb, _CharColor.rgb, charAmt * 0.92);
-                rgb += _GlowColor.rgb * (flash * 1.6 + ember * EMBER_GAIN);
+                // 閃光は `_GlowColor`（明るい橙）／熾は `_EmberColor`（暗い赤）。**別の色**。
+                rgb += _GlowColor.rgb * (flash * 1.6) + _EmberColor.rgb * (ember * EMBER_GAIN);
 
                 // 尾は**焦がして**引く。素の墨のまま伸ばすと、燃えているものの跡ではなく
                 // 「motion blur が掛かった文字」に見える。
                 float tail = saturate((shape - ink * left) * 1.8);
-                rgb = lerp(rgb, lerp(_CharColor.rgb, _GlowColor.rgb, 0.22), tail * 0.60);
+                rgb = lerp(rgb, lerp(_CharColor.rgb, _EmberColor.rgb, 0.22), tail * 0.60);
 
                 // 焼けたばかりの灰はまだ熾を含む。冷めるほど灰の色へ寄る。
-                float3 ashRgb = lerp(_GlowColor.rgb * 1.1, _AshColor.rgb, saturate(aAge * 1.6));
+                // ⚠ 焼けたばかりの灰も熾の色から始める（旧: 明るい橙の 1.1 倍 ＝ ここが
+                //    いちばん黄色く光っていた）。
+                float3 ashRgb = lerp(_EmberColor.rgb * 0.85, _AshColor.rgb, saturate(aAge * 1.6));
 
                 float aInkA = shape * wipe * op;
                 float aAshA = ash * wipe * op * 0.9;
