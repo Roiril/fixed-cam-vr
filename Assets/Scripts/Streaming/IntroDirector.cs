@@ -177,9 +177,11 @@ namespace FixedCamVr.Streaming
         //    演出を出していない全期間（終わった / 中止した / 無効の設定 / 位置合わせ中 / 相が変わった）で
         //    必ず 1 を書き戻す。「書くのをやめる」だけでは最後に書いた 0 が残る。
         private static readonly int CrtIgniteId = Shader.PropertyToID("_CrtIgnite");
+        private static readonly int IntroLiveId = Shader.PropertyToID("_IntroLive");
         private Material? _screenMat;
         private bool _warnedNoScreenMat;
         private float _igniteWritten = -1f;
+        private float _liveWritten = -1f;
 
         private void Awake()
         {
@@ -377,7 +379,7 @@ namespace FixedCamVr.Streaming
             // 段 4 の乱れはスクリーン内にも掛ける（継ぎ目は両側で隠す）。
             glitch?.SetSustain(w.glitch * Mathf.Clamp01(_def.glitchOnSwap));
             // スクリーンの管の点灯（段 3 で 0 → 1）。書く先は MjpegScreen の材質。
-            WriteIgnite(w.ignite);
+            WriteIgnite(w.ignite, w.live);
 
             if (ev == IntroEvent.Finished) FinishIntro(restartClock: true);
             else if (ev == IntroEvent.Aborted) AbortIntro();
@@ -591,22 +593,32 @@ namespace FixedCamVr.Streaming
             return _screenMat;
         }
 
-        /// <summary>管の点灯量を書く（0 = 消えている / 1 = 点いている）。</summary>
-        private void WriteIgnite(float v)
+        /// <summary>
+        /// 管の点灯量（0 = 消えている / 1 = 点いている）と、**映像そのものの出方**を書く。
+        ///
+        /// ⚠ **2 つは別物**。管が点くのは段 3、映像が出るのは段 4。分けていないと
+        /// 「管が点き切った瞬間に映像も出る」ことになり、重み <c>live</c> が 0 のままなのに
+        /// 画には映像が出る（2026-08-13 に Editor プレビューの絵で見つけた食い違い）。
+        /// 実物のブラウン管も、電源を入れてから絵が出るまで暖機の時間がある。
+        /// </summary>
+        private void WriteIgnite(float v, float live)
         {
             var m = ResolveScreenMaterial();
             if (m == null) return;
             float c = Mathf.Clamp01(v);
-            if (Mathf.Approximately(c, _igniteWritten)) return;
+            float l = Mathf.Clamp01(live);
+            if (Mathf.Approximately(c, _igniteWritten) && Mathf.Approximately(l, _liveWritten)) return;
             _igniteWritten = c;
+            _liveWritten = l;
             m.SetFloat(CrtIgniteId, c);
+            m.SetFloat(IntroLiveId, l);
         }
 
         /// <summary>
         /// 管を点いた状態へ戻す。<b>演出を畳むすべての経路がここを通る</b> —
         /// 通し忘れると最後に書いた 0 が残って画がまるごと消える。
         /// </summary>
-        private void ResetIgnite() => WriteIgnite(1f);
+        private void ResetIgnite() => WriteIgnite(1f, 1f);
 
         /// <summary>
         /// 枠の中に本編のスクリーンが来ているか。<b>枠は head-lock なので常に正面</b>で、

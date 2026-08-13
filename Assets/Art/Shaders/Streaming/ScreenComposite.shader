@@ -83,6 +83,11 @@ Shader "FixedCamVr/ScreenComposite"
         // ⚠ 既定 **1**（点いている）。0 を既定にすると、この uniform を書かない場面
         //   （本編・終幕・卓のプレビュー・Editor の合成プレビュー）で画がまるごと消える。
         _CrtIgnite("CRT Ignition (0=off, 1=on)", Range(0, 1)) = 1
+        // 映像そのものの出方（導入の段 4）。**管が点くこととは別**。
+        // ⚠ 分けていないと「管が点き切った瞬間に映像も出る」ことになり、重み `live` が
+        //   0 のままなのに画には映像が出る ＝ 重みと画が食い違う（2026-08-13 に絵で見つけた）。
+        // ⚠ 既定 **1**。0 を既定にすると、この uniform を書かない場面で画がまるごと消える。
+        _IntroLive("Intro Live (0=dark tube, 1=image)", Range(0, 1)) = 1
         // 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
         // 一様な脱色ではなく「明るい所に色が残り、暗がりが無彩へ落ちる」形になる。
         _ChromaKill("Dark Chroma Kill (ISP noise reduction)", Range(0, 1)) = 0
@@ -179,6 +184,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _CrtEdge;
                 float _CrtEdgeWidth;
                 float _CrtIgnite;
+                float _IntroLive;
                 float _ExposureBias;
                 float _Echo;
                 float _CoarseBlocks;
@@ -641,6 +647,10 @@ Shader "FixedCamVr/ScreenComposite"
                 //
                 // 段取りは実物の CRT と同じ順: 高電圧が乗って縁が光る → 走査が中央から上下へ開く →
                 // 面が満ちる → 少し行き過ぎて落ち着く。
+                // 映像そのものの出方。**管が点くこととは別の段**（段 3 で管が点き、段 4 で映像が出る）。
+                // 実物のブラウン管も、電源を入れてから絵が出るまで暖機の時間がある。
+                col *= saturate(_IntroLive);
+
                 if (_CrtIgnite < 0.999)
                 {
                     float t = saturate(_CrtIgnite);
@@ -660,12 +670,21 @@ Shader "FixedCamVr/ScreenComposite"
                     float fill = saturate((t - 0.55) / 0.35);
                     float over = 1.0 + 0.30 * sin(saturate((t - 0.78) / 0.22) * 3.14159265);
 
-                    // 映像は満ちた分だけ出る（点き切るまで見えない）
-                    col *= saturate(fill * over);
+                    // ⚠ **映像はここで制御しない**（`_IntroLive` の担当）。ここが作るのは光だけ。
                     // 光そのもの。**暖色**（`canon/LEDGER.md` 0010）。青白い光にすると装置が別物になる。
-                    // ⚠ 弱く。全面が明るく光ると「点いた」ではなく「光った」になる
+                    // ⚠ 弱く。全面が明るく光ると「点いた」ではなく「光った」になる。
+                    // 最後の項は「面が満ちた管がぼんやり光っている」状態 — 映像が来るまでの間を持たせる。
                     col += half3(1.0, 0.72, 0.42)
                          * (edgeGlow * 0.55 + band * open * (1.0 - fill) * 0.22);
+                }
+
+                // 点いた管の面がぼんやり光っている（映像が来るまでの間）。
+                // ⚠ **上のブロックの外に置く**。あちらは「点いていく過程」なので `_CrtIgnite = 1` で
+                //   走らなくなり、点き切った瞬間に光が消えて画が真っ黒になる（2026-08-13 に絵で見つけた）。
+                //   映像が出るぶんだけ引く — 映像そのものが光になるので、足したままだと白く濁る。
+                {
+                    float tubeLit = saturate(_CrtIgnite) * (1.0 - saturate(_IntroLive));
+                    if (tubeLit > 0.001) col += half3(1.0, 0.72, 0.42) * tubeLit * 0.07;
                 }
 
                 // ブラウン管の面。**縁へ向かって落ち、角の外は黒**。
