@@ -98,6 +98,19 @@ namespace FixedCamVr.Tracking
 
             if (!Resolve()) yield break;
 
+            // ⚠ **位置合わせから抜ける。** 2026-08-13 から起動と同時に位置合わせへ入るようになった
+            //   （`canon/LEDGER.md` 0023 の ②。アプリを起動するのはスタッフなので）。
+            //   そのままだと導入が凍結され、**走行しても段 0 から 1 歩も進まない**（実測で踏んだ）。
+            //   ⚠ **確定はしない。** B 確定は registration.json を書き換えるので、現場で合わせた
+            //   値を検証用の走行が壊すことになる。既存の登録をそのまま使って退場するだけ。
+            var reg = FindObjectOfType<CourseRegistrationController>();
+            if (reg != null && reg.IsActive)
+            {
+                reg.Toggle();
+                Debug.Log("[XPWalk] 位置合わせから退場した（確定はしない）");
+                yield return null;
+            }
+
             ShowLayoutDef? layout = _show!.Layout;
             ShowGridDef? grid = layout?.grid;
             if (grid == null || !grid.HasData())
