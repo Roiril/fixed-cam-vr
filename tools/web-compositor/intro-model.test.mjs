@@ -66,17 +66,17 @@ test('乱れの強さは 0〜1 に丸め、数値でない値は既定へ落と�
 });
 
 test('チェック類の既定（構造の線だけ欠落＝OFF・他は欠落＝ON）', () => {
-  const off = introConfig({ intro: { enabled: false, showCameraMarks: false, showRoomWire: false, raiseHandPrompt: false } });
+  const off = introConfig({ intro: { enabled: false, showCameraMarks: false, showRoomWire: false } });
   assert.deepEqual(
-    [off.enabled, off.showCameraMarks, off.showRoomWire, off.raiseHandPrompt],
-    [false, false, false, false],
+    [off.enabled, off.showCameraMarks, off.showRoomWire],
+    [false, false, false],
   );
   // ⚠ 構造の線（壁・カメラの印）だけ既定が OFF。Unity 側は JsonUtility が欠落キーを false で
   //    埋めるので、`!== false` で読むと**卓だけ ON**になって沈黙して食い違う。
   const missing = introConfig({ intro: {} });
   assert.deepEqual(
-    [missing.enabled, missing.showCameraMarks, missing.showRoomWire, missing.raiseHandPrompt],
-    [true, false, false, true],
+    [missing.enabled, missing.showCameraMarks, missing.showRoomWire],
+    [true, false, false],
   );
   const wired = introConfig({ intro: { showCameraMarks: true, showRoomWire: true } });
   assert.deepEqual([wired.showCameraMarks, wired.showRoomWire], [true, true]);
@@ -252,7 +252,7 @@ test('卓の既定値と capture-server.py の _default_show が一致してい�
   assert.match(body, new RegExp(`'maxSec':\\s*${INTRO_DEFAULT.maxSec}\\b`));
   assert.match(body, new RegExp(`'glitchOnSwap':\\s*${INTRO_DEFAULT.glitchOnSwap}`));
   assert.match(body, /'edgeColor':\s*'#ffcf9e'/);
-  for (const k of ['enabled', 'raiseHandPrompt']) {
+  for (const k of ['enabled']) {
     assert.match(body, new RegExp(`'${k}':\\s*True`), `${k} が食い違っている`);
   }
   // 構造の線は 3 者（Unity の ShowIntroDef / 卓の INTRO_DEFAULT / サーバの既定）で OFF。

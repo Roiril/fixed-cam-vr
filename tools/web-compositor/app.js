@@ -1262,7 +1262,7 @@ const INTRO_NUM = {
 };
 const INTRO_BOOL = {
   enabled: '#introOn', showCameraMarks: '#introCamMarks',
-  showRoomWire: '#introRoomWire', raiseHandPrompt: '#introRaiseHand',
+  showRoomWire: '#introRoomWire',
 };
 // 文字列の設定。開始ラインは選択肢を layout.lines から作るので render 側で別に埋める。
 const INTRO_STR = { startLineId: '#introStartLine' };

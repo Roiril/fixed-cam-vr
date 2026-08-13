@@ -697,8 +697,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public string startLineId = "";
 
-        /// <summary>段 4 で「右手を上げて」の合図を出すか（3 周目の反転の伏線）。</summary>
-        public bool raiseHandPrompt = true;
+        // ⚠ `raiseHandPrompt`（段 4 の「右手を上げて」）は 2026-08-13 に**廃止**した
+        //    （`canon/LEDGER.md` 0034「伏線にするのはスマートではない」）。
+        //    show.json に残っていても JsonUtility が黙って無視する。
 
         /// <summary>JsonUtility が既定値で埋めただけの実体か（＝ show.json に <c>intro</c> が無い）。</summary>
         public bool LooksUnset =>

@@ -37,7 +37,6 @@ export const INTRO_DEFAULT = {
   showCameraMarks: false,
   showRoomWire: false,
   glitchOnSwap: 0.8,
-  raiseHandPrompt: true,
   // 空 = 開始位置の円（layout.startSpot）で始める。Unity 側 ShowIntroDef.startLineId と対。
   startLineId: '',
 };
@@ -80,7 +79,6 @@ export function introConfig(run) {
     showCameraMarks: src.showCameraMarks === true,
     showRoomWire: src.showRoomWire === true,
     glitchOnSwap: clamp(src.glitchOnSwap, 0, 1, INTRO_DEFAULT.glitchOnSwap),
-    raiseHandPrompt: src.raiseHandPrompt !== false,
     // 導入を始める通過ライン（layout.lines[].id）。空 = 開始位置の円（layout.startSpot）を使う。
     // 円は「その場所に立つ」＝状態、線は「横切る」＝事象。歩いて入ってくる動きのまま始めたいので
     // 線を選べるようにしてある。実機は Unity の IntroDirector が同じ id を引く。
