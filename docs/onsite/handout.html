@@ -31,7 +31,7 @@ body { font-family: var(--mincho); color: var(--ink); }
 .sheet {
   width: 210mm; min-height: 297mm; margin: 8mm auto; padding: 20mm 22mm 14mm;
   background: var(--paper); position: relative; overflow: hidden;
-  font-size: 10.5pt; line-height: 1.75; letter-spacing: .04em;
+  font-size: 10pt; line-height: 1.62; letter-spacing: .04em;
 }
 /* 紙のむら。印刷には出ない */
 .sheet::before {
@@ -51,8 +51,8 @@ body { font-family: var(--mincho); color: var(--ink); }
 .seal svg { width: 100%; height: 100%; display: block; }
 
 h1 {
-  font-size: 17pt; font-weight: 500; letter-spacing: .48em; text-indent: .48em;
-  margin: 5mm 0 1.5mm; text-align: center;
+  font-size: 16pt; font-weight: 500; letter-spacing: .48em; text-indent: .48em;
+  margin: 4mm 0 1.5mm; text-align: center;
 }
 .subject { text-align: center; font-size: 10pt; color: var(--sub); margin: 0 0 6mm; letter-spacing: .1em; }
 
@@ -65,11 +65,11 @@ p { margin: 0 0 1em; }
 
 dl.items { margin: 0; }
 dl.items dt { font-weight: 500; margin: 0 0 .1em; letter-spacing: .12em; }
-dl.items dd { margin: 0 0 3mm 1.4em; }
+dl.items dd { margin: 0 0 2.5mm 1.4em; }
 dl.items dd p:last-child { margin-bottom: 0; }
 
 /* --- 区切りと小見出し -------------------------------------- */
-.band { border-top: .5pt solid var(--rule); margin: 4mm 0 3mm; padding-top: 2.5mm; }
+.band { border-top: .5pt solid var(--rule); margin: 3mm 0 2.5mm; padding-top: 2mm; }
 h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm; }
 .caveat { font-size: 9.5pt; color: var(--sub); margin-bottom: 0; }
 
@@ -83,7 +83,7 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm
 /* --- 二重罫線の下 = 展示としての言葉 ------------------------ */
 .exhibit {
   font-family: var(--gothic); font-size: 8.5pt; line-height: 1.8; color: var(--sub);
-  border-top: 2.5pt double var(--rule); margin-top: 6mm; padding-top: 3mm;
+  border-top: 2.5pt double var(--rule); margin-top: 5mm; padding-top: 2.5mm;
   letter-spacing: 0;
 }
 .exhibit p { margin: 0 0 1.5mm; }
@@ -108,9 +108,9 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm
     background: none;
   }
   .sheet::before { display: none; }
-  /* 上下 15mm ＝ 刷り込み範囲 267mm。本文は実測 252mm で 15mm の余裕がある。
-     書体が入れ替わると行の高さが変わるので、文言を足したら測り直すこと */
-  @page { size: A4 portrait; margin: 15mm 22mm; }
+  /* 上下 12mm ＝ 刷り込み範囲 273mm。本文の実測は下の ⚠ に書いてある。
+     書体が入れ替わると行の高さが変わるので、文言を足したら必ず測り直すこと */
+  @page { size: A4 portrait; margin: 12mm 22mm; }
 }
 </style>
 </head>
@@ -136,7 +136,7 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm
   </div>
 
   <h1>調査依頼書</h1>
-  <p class="subject">件名 ： 壁面において観測された事象の調査について</p>
+  <p class="subject">件名 ： 壁で見られたものの調査について</p>
 
   <p class="lead-line">下記のとおり調査を依頼します。</p>
 
@@ -144,16 +144,22 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm
 
   <dl class="items">
     <dt>一、対象</dt>
-    <dd><p>当該壁面。位置は現地で指示します。</p></dd>
+    <dd><p>対象は壁です。場所は現地で指示します。</p></dd>
 
     <dt>一、方法</dt>
     <dd>
-      <p>対象の周囲を三周し、観測装置を通して見えるものを確認してください。<br>
-      装置は歩いた位置に応じて切り替わります。操作は要りません。</p>
+      <p>壁の周りを三周し、観測装置に映るものを見てください。<br>
+      装置は歩いた位置に合わせて切り替わります。操作は要りません。</p>
+    </dd>
+
+    <dt>一、記録</dt>
+    <dd>
+      <p>気になるものが見えたら、手元のボタンを押してください。押した時刻が装置に残ります。<br>
+      それが何かは、こちらで判断します。</p>
     </dd>
 
     <dt>一、報告</dt>
-    <dd><p>見えたものを、見えたとおりに報告してください。解釈は要りません。</p></dd>
+    <dd><p>終わったあとに、見えたものをこの用紙へ書いてください。解釈は要りません。</p></dd>
   </dl>
 
   <p class="owari">以上</p>
@@ -161,11 +167,12 @@ h2 { font-size: 11pt; font-weight: 500; letter-spacing: .22em; margin: 0 0 1.5mm
   <div class="band">
     <h2>観測装置について</h2>
     <p>
-      本装置は、肉眼では捉えられない事象を鮮明に観測するために開発したものです。<br>
-      視点は固定されており、観測者が動かすことはできません。<br>
-      <strong>装置に映るものは、その場に実在するものです。</strong>
+      目では見えないものを見るために作った装置です。<br>
+      視点は固定してあります。動かせません。<br>
+      <strong>装置に映るものは、その場に実在するものです。</strong><br>
+      こちらから声はかけません。指示は装置の画面に送ります。
     </p>
-    <p class="caveat">※ 本装置は開発の途上にあります。映像が乱れることがありますが、異常ではありません。</p>
+    <p class="caveat">※ 調整中のため、映像が乱れることがあります。故障ではありません。</p>
   </div>
 
   <div class="band report">
