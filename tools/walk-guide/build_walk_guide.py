@@ -67,7 +67,10 @@ CURTAIN_T = 0.006         # 幕の厚み [m]
 LAPS = 3
 FPS = 30
 RES = (1920, 1080)
-ACCENT = (0.80, 0.47, 0.65, 1.0)   # #CC79A7（fig-room.svg と同じ）
+# 暗めのオレンジ（2026-08-14 ユーザー指示）。図の正本 fig-room.svg の桃色から離れる
+ACCENT = (0.40, 0.105, 0.012, 1.0)   # 線形。sRGB でおよそ #B05C18
+ROUTE_W = 0.016           # 順路の線の太さ（半径 [m]）
+ARROW_L = 0.125           # 矢印の長さ [m]
 
 FONTS = [r"C:\Windows\Fonts\BIZ-UDGothicB.ttc",
          r"C:\Windows\Fonts\NotoSansJP-VF.ttf",
@@ -303,7 +306,8 @@ M_EDGE = mat("edge", (0.12, 0.12, 0.13, 1), rough=0.5)
 M_PIPE = mat("pipe", (0.030, 0.030, 0.034, 1), rough=0.34, metal=0.35)
 M_FIT = mat("fitting", (0.035, 0.035, 0.038, 1), rough=0.62)   # 継手も黒（粗さで形を残す）
 M_CURTAIN = mat("curtain", (0.035, 0.035, 0.038, 1), rough=0.94)  # 黒に近いグレーの幕
-M_ROUTE = mat("route", ACCENT, emit=(ACCENT[0] * .35, ACCENT[1] * .35, ACCENT[2] * .35, 1))
+M_ROUTE = mat("route", ACCENT, rough=0.85,
+              emit=(ACCENT[0] * .25, ACCENT[1] * .25, ACCENT[2] * .25, 1))
 M_GEAR = mat("gear", (0.30, 0.30, 0.32, 1), rough=0.5)
 M_TEXT = mat("text", (1, 1, 1, 1), emit=(1, 1, 1, 1))
 M_PLATE = mat("plate", (0.04, 0.04, 0.05, 1), alpha=0.66)
@@ -394,16 +398,18 @@ N = 240
 
 # ------------------------------------------------------ 順路の矢印 ---------
 put(poly_curve("route", [(walk_at(LAP_LEN * i / N)[0].x,
-                          walk_at(LAP_LEN * i / N)[0].y, FLOOR_TOP + 0.003)
-                         for i in range(N)], 0.012), M_ROUTE)
+                          walk_at(LAP_LEN * i / N)[0].y, FLOOR_TOP + 0.004)
+                         for i in range(N)], ROUTE_W), M_ROUTE)
 
 for i in range(16):
     p, t = walk_at(LAP_LEN * i / 16)
     r = right_of(t)
     a = new_mesh("arrow_%d" % i)
     bm = bmesh.new()
-    tip, le, ri = p + t * 0.10, p - t * 0.045 + r * 0.062, p - t * 0.045 - r * 0.062
-    _az = FLOOR_TOP + 0.005
+    tip = p + t * ARROW_L
+    le = p - t * ARROW_L * 0.45 + r * ARROW_L * 0.62
+    ri = p - t * ARROW_L * 0.45 - r * ARROW_L * 0.62
+    _az = FLOOR_TOP + ROUTE_W + 0.006      # 線の上に乗せる（線に埋めると消える）
     bm.faces.new([bm.verts.new((tip.x, tip.y, _az)),
                   bm.verts.new((le.x, le.y, _az)),
                   bm.verts.new((ri.x, ri.y, _az))])
