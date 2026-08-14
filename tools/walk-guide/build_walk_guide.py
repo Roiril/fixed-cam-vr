@@ -5,9 +5,12 @@
         --python tools\\walk-guide\\build_walk_guide.py
     …… 形だけ静止画で見るときは末尾に  -- --preview
 
-会場は show.json の実データから起こす（床 1.8m 角・L 字の壁・カメラ 3 台）。
-手すりは L 字の壁を 0.08m でなぞって両端を U ベンドで閉じた輪。順路はその
-外側 0.16m。Joint.blend と同じ 28mm パイプ + 白い継手の見た目で組む。
+骨組み（L 字の枠 + 手すり）は Joint.blend をそのまま取り込む。作り直さない。
+床とカメラ 3 台は show.json から起こす。順路は手すりの外側 0.16m。
+
+⚠ show.json の壁は腕が 0.59m と 1.22m だが、実物（Joint.blend）は左右とも
+  0.955m の等長だった。動画は実物に合わせてある。show.json 側は直していないので、
+  CG のオクルーダと登録時のワイヤーは実物と食い違ったまま。
 
 伝えるのは 3 つ:
   1 どちら回りか        — 道に矢印を敷き、人が同じ向きに 3 周する
@@ -38,10 +41,20 @@ OUT_DIR = os.path.join(REPO, "docs", "onsite")
 CHECK_DIR = os.path.join(REPO, "logs", "walk-guide")   # 確認用の静止画（git 管理外）
 OUT_NAME = "walk-guide"
 
-D_WALK = 0.24             # 壁の芯から歩く道まで [m]（＝ 壁面から約 0.22m）
-D_RAIL = 0.08             # 壁の芯から手すりまで [m]（Joint.blend の枠の奥行 0.16m と同じ）
-RAIL_H = 0.95             # 手すりの高さ [m]
-PIPE_D = 0.028            # パイプ径 [m]（Joint.blend と同じ）
+JOINT = r"C:\Users\kouga\Projects\Blender\Joint.blend"   # 骨組みの正本
+
+# ⚠ 骨組みの寸法は Joint.blend を実測した値。show.json の壁（腕 0.59m と 1.22m）は
+#   実物と食い違っていた。実物は左右とも 0.955m の等長。
+WALL_ARM = 0.955          # L の腕 1 本の長さ [m]（門型の支柱の芯どうし）
+WALL_H = 1.853            # 骨組みの上桟の高さ [m]
+RAIL_H = 0.948            # 手すりの高さ [m]
+D_RAIL = 0.08             # 壁の芯から手すりまで [m]（枠の奥行 0.16m の半分）
+RAIL_EXT = 0.045          # 手すりが支柱より先へ出ている長さ [m]（U ベンドの芯まで）
+D_WALK = 0.24             # 壁の芯から歩く道まで [m]（＝ 手すりから 0.16m）
+PIPE_D = 0.028            # パイプ径 [m]
+FLOOR_TOP = 0.012         # 床板の天端 [m]
+JOINT_CORNER = (0.480, 0.0)    # Joint.blend の中の L の角
+JOINT_FLOOR_Z = -0.886         # Joint.blend の中の足の裏
 SPEED = 0.5               # 目標の速さ [m/s]（ShowWalkDebugDriver.WalkSpeed と同じ）
 STEP_SEC = 1.05           # 1 歩にかける時間 [秒]（＝ ゆっくりだが自然な足の運び）
 LAPS = 3
@@ -84,9 +97,9 @@ def fcurves_of(obj):
 #   順路は「L 字の壁を距離 d でなぞり、2 つの自由端を半円で閉じた輪」にする。
 #   手すりは同じ形の d 違いなので、手と手すりの間は角でも自動でそろう。
 #   壁はつねに右手側にある。だから持つのは右手。
-WALL_A = (-0.5, -0.72)    # 西の腕の南端（自由端）
-WALL_B = (-0.5, 0.5)      # L の角
-WALL_C = (0.09, 0.5)      # 北の腕の東端（自由端）
+WALL_B = (-0.5, 0.5)                          # L の角（show.json の壁と同じ位置）
+WALL_A = (WALL_B[0], WALL_B[1] - WALL_ARM)    # 西の腕の南端（自由端）
+WALL_C = (WALL_B[0] + WALL_ARM, WALL_B[1])    # 北の腕の東端（自由端）
 
 
 def make_path(d):
@@ -95,9 +108,10 @@ def make_path(d):
     区間は 7 本で、d が違っても並びは同じ。だから「何区間目の何割か」で
     歩く道と手すりを対応づけられる（角でも間隔がずれない）。
     """
-    ax, ay = WALL_A
+    # 手すりは支柱より RAIL_EXT だけ先で折り返す。輪はその位置で閉じる
+    ax, ay = WALL_A[0], WALL_A[1] - RAIL_EXT
     bx, by = WALL_B
-    cx, cy = WALL_C
+    cx, cy = WALL_C[0] + RAIL_EXT, WALL_C[1]
     raw = [
         ("line", (ax - d, ay), (0.0, 1.0), by - ay),            # 壁の西面・北へ
         ("arc", (bx, by), math.pi, -0.5 * math.pi),             # L の外角を回る
@@ -253,7 +267,8 @@ FW, FD = LAY["floor"]["w"], LAY["floor"]["d"]
 WALLS = LAY["room"]["walls"]
 CAMS = [c["pose"] for c in show["cameras"] if c.get("pose")]
 
-log("床 %.2f x %.2f m ／ 壁 %d 枚 ／ カメラ %d 台" % (FW, FD, len(WALLS), len(CAMS)))
+log("床 %.2f x %.2f m ／ L の腕 %.3f m ×2 ／ カメラ %d 台"
+    % (FW, FD, WALL_ARM, len(CAMS)))
 log("1 周 %.3f m ／ 手すり %.3f m" % (LAP_LEN, RAIL_LEN))
 
 
@@ -291,34 +306,74 @@ put(poly_curve("floor_edge",
                [(-FW / 2, -FD / 2, 0.013), (FW / 2, -FD / 2, 0.013),
                 (FW / 2, FD / 2, 0.013), (-FW / 2, FD / 2, 0.013)], 0.006), M_EDGE)
 
-for w in WALLS:
-    x1, y1, x2, y2, h = w["x1"], w["z1"], w["x2"], w["z2"], w["h"]
-    ln = math.hypot(x2 - x1, y2 - y1)
-    wo = put(box("wall_" + w["id"], (ln, w["thick"], h),
-                 ((x1 + x2) / 2, (y1 + y2) / 2, h / 2),
-                 rot_z=math.atan2(y2 - y1, x2 - x1)), M_WALL)
-    wo.visible_shadow = False   # 透けた板の影は大きな染みになって画を汚す
-    # 透けた板は輪郭が無いと画で消える。板の縁だけ線で残す
-    put(poly_curve("wall_%s_edge" % w["id"],
-                   [(x1, y1, 0.0), (x2, y2, 0.0), (x2, y2, h), (x1, y1, h)],
-                   0.013), M_EDGE)
+# ⚠ 骨組みと手すりは自分で作り直さない。組む本人が引いた Joint.blend をそのまま持ってくる。
+#   作り直すと、今回のように寸法が食い違ったまま気づかない
+with bpy.data.libraries.load(JOINT, link=False) as (_src, _dst):
+    _dst.objects = [nm for nm in _src.objects
+                    if not nm.startswith(("Cube", "Cylinder", "Plane"))]   # 下絵は除く
+FRAME = [o for o in _dst.objects if o is not None]
 
-# ------------------------------------------------------ 手すり（輪）-------
+# Joint.blend の L は「西と南へ伸びる」向き。会場は「東と南」なので Z 回りに 90 度回す
+_rot = mathutils.Matrix.Rotation(math.pi / 2, 4, 'Z')
+_rc = _rot @ Vector((JOINT_CORNER[0], JOINT_CORNER[1], 0.0))
+XF = mathutils.Matrix.Translation(
+    (WALL_B[0] - _rc.x, WALL_B[1] - _rc.y, FLOOR_TOP - JOINT_FLOOR_Z)) @ _rot
+_lo = Vector((1e9, 1e9, 1e9))
+_hi = Vector((-1e9, -1e9, -1e9))
+for o in FRAME:
+    scene.collection.objects.link(o)
+    # ⚠ 取り込んだ直後の matrix_world はまだ計算されていない（単位行列が返る）。
+    #   これに掛けると全部が 1 点へ重なる。親が無いので matrix_basis を使う
+    o.matrix_basis = XF @ o.matrix_basis
+    o.hide_render = False          # 元ファイルで隠してあることがある
+    o.hide_viewport = False
+    if o.type != 'MESH':
+        continue
+    for c in o.bound_box:
+        w = o.matrix_basis @ Vector(c)
+        for i in range(3):
+            _lo[i] = min(_lo[i], w[i])
+            _hi[i] = max(_hi[i], w[i])
+log("骨組みを取り込んだ: %d 個 ／ x[%.2f,%.2f] y[%.2f,%.2f] z[%.2f,%.2f]"
+    % (len(FRAME), _lo.x, _hi.x, _lo.y, _hi.y, _lo.z, _hi.z))
+
+# ⚠ 元ファイルの青と白は「ビューポート表示色」で、シェーダは既定の白のまま。
+#   そのまま焼くとパイプも継手も真っ白になる。表示色を Base Color へ写す
+_done = set()
+for o in FRAME:
+    for sl in getattr(o, "material_slots", []):
+        m = sl.material
+        if m is None or m.name in _done:
+            continue
+        _done.add(m.name)
+        col = tuple(m.diffuse_color)
+        if not m.use_nodes:
+            m.use_nodes = True
+        for nd in m.node_tree.nodes:
+            if nd.type != 'BSDF_PRINCIPLED':
+                continue
+            if not nd.inputs["Base Color"].is_linked:
+                nd.inputs["Base Color"].default_value = col
+            nd.inputs["Roughness"].default_value = 0.38
+            if "Metallic" in nd.inputs:
+                nd.inputs["Metallic"].default_value = 0.15
+log("骨組みの色: %s" % ", ".join(
+    "%s(%.2f,%.2f,%.2f)" % ((nm,) + tuple(bpy.data.materials[nm].diffuse_color)[:3])
+    for nm in sorted(_done)))
+
+# 板は Joint.blend にまだ無い。入る面だけ薄く示す
+for _nm, _p, _q in (("panel_n", WALL_B, WALL_C), ("panel_w", WALL_B, WALL_A)):
+    _ln = math.hypot(_q[0] - _p[0], _q[1] - _p[1])
+    _wo = put(box(_nm, (_ln, 0.008, WALL_H),
+                  ((_p[0] + _q[0]) / 2, (_p[1] + _q[1]) / 2, WALL_H / 2 + FLOOR_TOP),
+                  rot_z=math.atan2(_q[1] - _p[1], _q[0] - _p[0])), M_WALL)
+    _wo.visible_shadow = False    # 透けた面の影は大きな染みになって画を汚す
+
 N = 240
-put(poly_curve("rail", [(rail_at(LAP_LEN * i / N)[0].x,
-                         rail_at(LAP_LEN * i / N)[0].y, RAIL_H)
-                        for i in range(N)], PIPE_D / 2), M_PIPE)
-
-n_post = 8
-for i in range(n_post):
-    p, _ = rail_at(LAP_LEN * (i + 0.5) / n_post)
-    put(cyl("post_%d" % i, PIPE_D / 2, RAIL_H, (p.x, p.y, RAIL_H / 2)), M_PIPE)
-    put(cyl("collar_%d" % i, PIPE_D / 2 + 0.008, 0.07, (p.x, p.y, RAIL_H - 0.045)), M_FIT)
-    put(cyl("foot_%d" % i, 0.052, 0.018, (p.x, p.y, 0.021)), M_FIT)
 
 # ------------------------------------------------------ 順路の矢印 ---------
 put(poly_curve("route", [(walk_at(LAP_LEN * i / N)[0].x,
-                          walk_at(LAP_LEN * i / N)[0].y, 0.014)
+                          walk_at(LAP_LEN * i / N)[0].y, FLOOR_TOP + 0.003)
                          for i in range(N)], 0.012), M_ROUTE)
 
 for i in range(16):
@@ -327,9 +382,10 @@ for i in range(16):
     a = new_mesh("arrow_%d" % i)
     bm = bmesh.new()
     tip, le, ri = p + t * 0.10, p - t * 0.045 + r * 0.062, p - t * 0.045 - r * 0.062
-    bm.faces.new([bm.verts.new((tip.x, tip.y, 0.016)),
-                  bm.verts.new((le.x, le.y, 0.016)),
-                  bm.verts.new((ri.x, ri.y, 0.016))])
+    _az = FLOOR_TOP + 0.005
+    bm.faces.new([bm.verts.new((tip.x, tip.y, _az)),
+                  bm.verts.new((le.x, le.y, _az)),
+                  bm.verts.new((ri.x, ri.y, _az))])
     bm.to_mesh(a.data)
     bm.free()
     put(a, M_ROUTE)
@@ -515,7 +571,7 @@ for fr in range(1, TOTAL + 2):
         heading = a
     else:
         heading += (a - heading + math.pi) % (2 * math.pi) - math.pi
-    arm.location = (p.x, p.y, Z_FIX[(fr - 1) % CYC_FRAMES])
+    arm.location = (p.x, p.y, Z_FIX[(fr - 1) % CYC_FRAMES] + FLOOR_TOP)
     arm.rotation_quaternion = Quaternion((0, 0, 1), heading - YAW0) @ BASE_Q
     arm.keyframe_insert("location", frame=fr)
     arm.keyframe_insert("rotation_quaternion", frame=fr)
@@ -662,9 +718,8 @@ for _i in range(48):
 for _sx in (-1, 1):
     for _sy in (-1, 1):
         _pts.append(Vector((_sx * FW / 2, _sy * FD / 2, 0.0)))
-for _w in WALLS:
-    _pts += [Vector((_w["x1"], _w["z1"], _w["h"])),
-             Vector((_w["x2"], _w["z2"], _w["h"]))]
+for _c3 in (WALL_A, WALL_B, WALL_C):           # 骨組みの上端
+    _pts.append(Vector((_c3[0], _c3[1], WALL_H + FLOOR_TOP)))
 for _c in CAMS[:3]:                      # 三脚も画に入る。切れると目立つ
     _pts.append(Vector((_c["x"], _c["z"], _c["y"] + 0.15)))
     _pts.append(Vector((_c["x"], _c["z"], 0.0)))
