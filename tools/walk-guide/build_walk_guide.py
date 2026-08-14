@@ -1,0 +1,859 @@
+# -*- coding: utf-8 -*-
+"""周回の歩き方を伝える動画を焼く（Blender ヘッドレス）。
+
+    "C:\\Program Files\\Blender Foundation\\Blender 5.1\\blender.exe" --background ^
+        --python tools\\walk-guide\\build_walk_guide.py
+    …… 形だけ静止画で見るときは末尾に  -- --preview
+
+会場は show.json の実データから起こす（床 1.8m 角・L 字の壁・カメラ 3 台）。
+手すりは L 字の壁を 0.08m でなぞって両端を U ベンドで閉じた輪。順路はその
+外側 0.16m。Joint.blend と同じ 28mm パイプ + 白い継手の見た目で組む。
+
+伝えるのは 3 つ:
+  1 どちら回りか        — 道に矢印を敷き、人が同じ向きに 3 周する
+  2 どれくらいゆっくりか — 0.51 m/s（1 周 およそ 10 秒・1 歩 1.05 秒）
+  3 手すりを持つこと     — 右手を手すりの上に固定（IK）。3 周のあいだ離れない
+
+⚠ 素材の歩きは 1.59 m/s の速い歩き。これをそのまま遅回しにすると
+  「大股のスローモーション」になって、真似できる速さに見えない。
+  歩幅を縮めてから（振りを平均へ寄せる）足が滑らない速さで歩かせる。
+  縮めると足が浮くので、毎コマ低い方の足を床へ着け直す。
+"""
+import bpy
+import bmesh
+import io
+import json
+import math
+import os
+import sys
+
+import mathutils
+from mathutils import Vector, Euler, Quaternion
+
+# ---------------------------------------------------------------- 設定 -----
+REPO = r"C:\Users\kouga\Projects\Unity\fixed-cam-vr"
+SHOW_JSON = os.path.join(REPO, "tools", "web-compositor", "show.json")
+FBX = r"C:\Users\kouga\Downloads\Ch33_nonPBR@Walking.fbx"
+OUT_DIR = os.path.join(REPO, "docs", "onsite")
+CHECK_DIR = os.path.join(REPO, "logs", "walk-guide")   # 確認用の静止画（git 管理外）
+OUT_NAME = "walk-guide"
+
+D_WALK = 0.24             # 壁の芯から歩く道まで [m]（＝ 壁面から約 0.22m）
+D_RAIL = 0.08             # 壁の芯から手すりまで [m]（Joint.blend の枠の奥行 0.16m と同じ）
+RAIL_H = 0.95             # 手すりの高さ [m]
+PIPE_D = 0.028            # パイプ径 [m]（Joint.blend と同じ）
+SPEED = 0.5               # 目標の速さ [m/s]（ShowWalkDebugDriver.WalkSpeed と同じ）
+STEP_SEC = 1.05           # 1 歩にかける時間 [秒]（＝ ゆっくりだが自然な足の運び）
+LAPS = 3
+FPS = 30
+RES = (1920, 1080)
+ACCENT = (0.80, 0.47, 0.65, 1.0)   # #CC79A7（fig-room.svg と同じ）
+
+FONTS = [r"C:\Windows\Fonts\BIZ-UDGothicB.ttc",
+         r"C:\Windows\Fonts\NotoSansJP-VF.ttf",
+         r"C:\Windows\Fonts\msgothic.ttc"]
+
+argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+PREVIEW = "--preview" in argv          # 静止画だけ（速い。形の確認用）
+
+
+def log(*a):
+    print("[walk-guide]", *a)
+    sys.stdout.flush()
+
+
+def fcurves_of(obj):
+    """Blender 5 のスロット付き action にも旧 action にも効く fcurve 一覧。"""
+    ad = obj.animation_data
+    if ad is None or ad.action is None:
+        return []
+    act = ad.action
+    if hasattr(act, "fcurves"):
+        return list(act.fcurves)
+    out = []
+    for layer in getattr(act, "layers", []):
+        for strip in getattr(layer, "strips", []):
+            for cb in getattr(strip, "channelbags", []):
+                out.extend(cb.fcurves)
+    return out
+
+
+# ------------------------------------------------------------ 道の形 -------
+# ⚠ 中心にそろえた正方形の輪では会場に合わない。壁の西の腕は南へ y=-0.72 まで
+#   伸びていて、正方形だとその端に体がぶつかる（最初に組んだ形は 0.02m まで寄っていた）。
+#   順路は「L 字の壁を距離 d でなぞり、2 つの自由端を半円で閉じた輪」にする。
+#   手すりは同じ形の d 違いなので、手と手すりの間は角でも自動でそろう。
+#   壁はつねに右手側にある。だから持つのは右手。
+WALL_A = (-0.5, -0.72)    # 西の腕の南端（自由端）
+WALL_B = (-0.5, 0.5)      # L の角
+WALL_C = (0.09, 0.5)      # 北の腕の東端（自由端）
+
+
+def make_path(d):
+    """壁の芯から距離 d の閉じた輪。(区間の並び, 全長) を返す。
+
+    区間は 7 本で、d が違っても並びは同じ。だから「何区間目の何割か」で
+    歩く道と手すりを対応づけられる（角でも間隔がずれない）。
+    """
+    ax, ay = WALL_A
+    bx, by = WALL_B
+    cx, cy = WALL_C
+    raw = [
+        ("line", (ax - d, ay), (0.0, 1.0), by - ay),            # 壁の西面・北へ
+        ("arc", (bx, by), math.pi, -0.5 * math.pi),             # L の外角を回る
+        ("line", (bx, by + d), (1.0, 0.0), cx - bx),            # 壁の北面・東へ
+        ("arc", (cx, cy), 0.5 * math.pi, -math.pi),             # 北の腕の端を回る
+        ("line", (cx, cy - d), (-1.0, 0.0), cx - bx - d),       # 壁の南面・西へ
+        ("line", (bx + d, by - d), (0.0, -1.0), by - d - ay),   # 壁の東面・南へ
+        ("arc", (ax, ay), 0.0, -math.pi),                       # 西の腕の端を回る
+    ]
+    segs, total = [], 0.0
+    for r in raw:
+        if r[0] == "line":
+            segs.append(("line", r[1], r[2], r[3], d))
+            total += r[3]
+        else:
+            ln = d * abs(r[3])
+            segs.append(("arc", r[1], r[2], r[3], d, ln))
+            total += ln
+    return segs, total
+
+
+WALK_SEGS, LAP_LEN = make_path(D_WALK)
+RAIL_SEGS, RAIL_LEN = make_path(D_RAIL)
+
+
+def _eval(segs, i, u):
+    """i 番目の区間の割合 u（0〜1）における (点, 進行方向)。"""
+    s = segs[i]
+    if s[0] == "line":
+        (x0, y0), (dx, dy), ln = s[1], s[2], s[3]
+        return Vector((x0 + dx * ln * u, y0 + dy * ln * u)), Vector((dx, dy))
+    (cx, cy), a0, da, d = s[1], s[2], s[3], s[4]
+    a = a0 + da * u
+    return (Vector((cx + d * math.cos(a), cy + d * math.sin(a))),
+            Vector((-math.sin(a), math.cos(a))) * (1.0 if da > 0 else -1.0))
+
+
+def _locate(segs, total, s):
+    s = s % total
+    for i, seg in enumerate(segs):
+        ln = seg[3] if seg[0] == "line" else seg[5]
+        if s <= ln or i == len(segs) - 1:
+            return i, (s / ln if ln > 1e-9 else 0.0)
+        s -= ln
+    return 0, 0.0
+
+
+def walk_at(s):
+    """歩く道の弧長 s [m] における (点, 進行方向)。どちらも xy 平面。"""
+    i, u = _locate(WALK_SEGS, LAP_LEN, s)
+    return _eval(WALK_SEGS, i, u)
+
+
+def rail_at(s):
+    """s に対応する手すりの点。区間と割合で対応づけるので角でもずれない。"""
+    i, u = _locate(WALK_SEGS, LAP_LEN, s)
+    return _eval(RAIL_SEGS, i, u)
+
+
+def right_of(t):
+    """進行方向 t の右手側（＝壁と手すりのある側）。"""
+    return Vector((t.y, -t.x))
+
+
+
+# -------------------------------------------------------------- 素材 -------
+def mat(name, rgba, rough=0.55, metal=0.0, emit=None, alpha=None):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    b = m.node_tree.nodes["Principled BSDF"]
+    b.inputs["Base Color"].default_value = rgba
+    b.inputs["Roughness"].default_value = rough
+    b.inputs["Metallic"].default_value = metal
+    if emit is not None:
+        b.inputs["Emission Color"].default_value = emit
+        b.inputs["Emission Strength"].default_value = 1.0
+    if alpha is not None:
+        b.inputs["Alpha"].default_value = alpha
+        # 透けた面の影は大きな染みになる。素材の側でも切っておく
+        if hasattr(m, "shadow_method"):
+            m.shadow_method = 'NONE'
+        if hasattr(m, "use_transparent_shadow"):
+            m.use_transparent_shadow = True
+        for attr, val in (("blend_method", 'BLEND'),
+                          ("surface_render_method", 'BLENDED'),
+                          ("show_transparent_back", False)):
+            if hasattr(m, attr):
+                setattr(m, attr, val)
+    return m
+
+
+def put(obj, material):
+    obj.data.materials.append(material)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+def new_mesh(name):
+    return bpy.data.objects.new(name, bpy.data.meshes.new(name))
+
+
+def box(name, size, loc, rot_z=0.0):
+    o = new_mesh(name)
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    bmesh.ops.scale(bm, vec=Vector(size), verts=bm.verts)
+    bm.to_mesh(o.data)
+    bm.free()
+    o.location = loc
+    o.rotation_euler = Euler((0, 0, rot_z))
+    return o
+
+
+def cyl(name, r, h, loc):
+    o = new_mesh(name)
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=20,
+                          radius1=r, radius2=r, depth=h)
+    bm.to_mesh(o.data)
+    bm.free()
+    o.location = loc
+    return o
+
+
+def poly_curve(name, pts, depth, closed=True):
+    cu = bpy.data.curves.new(name, 'CURVE')
+    cu.dimensions = '3D'
+    cu.bevel_depth = depth
+    cu.bevel_resolution = 6
+    cu.use_fill_caps = True
+    sp = cu.splines.new('POLY')
+    sp.points.add(len(pts) - 1)
+    for i, p in enumerate(pts):
+        sp.points[i].co = (p[0], p[1], p[2], 1.0)
+    sp.use_cyclic_u = closed
+    return bpy.data.objects.new(name, cu)
+
+
+# ------------------------------------------------------------ 掃除 ---------
+for o in list(bpy.data.objects):
+    bpy.data.objects.remove(o, do_unlink=True)
+for c in list(bpy.data.collections):
+    bpy.data.collections.remove(c)
+
+scene = bpy.context.scene
+scene.render.fps = FPS
+scene.unit_settings.system = 'METRIC'
+scene.unit_settings.scale_length = 1.0
+
+show = json.load(io.open(SHOW_JSON, encoding="utf-8"))
+LAY = show["layout"]
+FW, FD = LAY["floor"]["w"], LAY["floor"]["d"]
+WALLS = LAY["room"]["walls"]
+CAMS = [c["pose"] for c in show["cameras"] if c.get("pose")]
+
+log("床 %.2f x %.2f m ／ 壁 %d 枚 ／ カメラ %d 台" % (FW, FD, len(WALLS), len(CAMS)))
+log("1 周 %.3f m ／ 手すり %.3f m" % (LAP_LEN, RAIL_LEN))
+
+
+def _seg_dist(p, a, b):
+    ab = Vector((b[0] - a[0], b[1] - a[1]))
+    t = max(0.0, min(1.0, (p - Vector(a)).dot(ab) / max(ab.length_squared, 1e-9)))
+    return (p - (Vector(a) + ab * t)).length
+
+
+# 順路が壁と床にどれだけ余裕を持っているかを数で出す（目で見ても分からない）
+_near, _out = 9.9, 0.0
+for _i in range(600):
+    _p, _ = walk_at(LAP_LEN * _i / 600)
+    _near = min(_near, _seg_dist(_p, WALL_A, WALL_B), _seg_dist(_p, WALL_B, WALL_C))
+    _out = max(_out, abs(_p.x) - FW / 2, abs(_p.y) - FD / 2)
+log("順路と壁のいちばん近いところ %.3f m ／ 床からのはみ出し %.3f m" % (_near, _out))
+if _near < 0.18:
+    log("⚠ 壁に寄りすぎ。D_WALK を大きくする")
+
+M_GROUND = mat("ground", (0.63, 0.63, 0.62, 1), rough=0.95)
+M_FLOOR = mat("floor", (0.95, 0.94, 0.91, 1), rough=0.9)
+M_WALL = mat("wall", (0.60, 0.63, 0.70, 1), rough=0.6, alpha=0.45)
+M_EDGE = mat("edge", (0.35, 0.35, 0.38, 1), rough=0.5)
+M_PIPE = mat("pipe", (0.16, 0.38, 0.60, 1), rough=0.35, metal=0.2)
+M_FIT = mat("fitting", (0.88, 0.88, 0.88, 1), rough=0.45)
+M_ROUTE = mat("route", ACCENT, emit=(ACCENT[0] * .6, ACCENT[1] * .6, ACCENT[2] * .6, 1))
+M_GEAR = mat("gear", (0.30, 0.30, 0.32, 1), rough=0.5)
+M_TEXT = mat("text", (1, 1, 1, 1), emit=(1, 1, 1, 1))
+M_PLATE = mat("plate", (0.04, 0.04, 0.05, 1), alpha=0.66)
+
+# ------------------------------------------------------------ 会場 ---------
+put(box("ground", (24, 24, 0.02), (0, 0, -0.011)), M_GROUND)
+put(box("floor", (FW, FD, 0.012), (0, 0, 0.006)), M_FLOOR)
+put(poly_curve("floor_edge",
+               [(-FW / 2, -FD / 2, 0.013), (FW / 2, -FD / 2, 0.013),
+                (FW / 2, FD / 2, 0.013), (-FW / 2, FD / 2, 0.013)], 0.006), M_EDGE)
+
+for w in WALLS:
+    x1, y1, x2, y2, h = w["x1"], w["z1"], w["x2"], w["z2"], w["h"]
+    ln = math.hypot(x2 - x1, y2 - y1)
+    wo = put(box("wall_" + w["id"], (ln, w["thick"], h),
+                 ((x1 + x2) / 2, (y1 + y2) / 2, h / 2),
+                 rot_z=math.atan2(y2 - y1, x2 - x1)), M_WALL)
+    wo.visible_shadow = False   # 透けた板の影は大きな染みになって画を汚す
+    # 透けた板は輪郭が無いと画で消える。板の縁だけ線で残す
+    put(poly_curve("wall_%s_edge" % w["id"],
+                   [(x1, y1, 0.0), (x2, y2, 0.0), (x2, y2, h), (x1, y1, h)],
+                   0.013), M_EDGE)
+
+# ------------------------------------------------------ 手すり（輪）-------
+N = 240
+put(poly_curve("rail", [(rail_at(LAP_LEN * i / N)[0].x,
+                         rail_at(LAP_LEN * i / N)[0].y, RAIL_H)
+                        for i in range(N)], PIPE_D / 2), M_PIPE)
+
+n_post = 8
+for i in range(n_post):
+    p, _ = rail_at(LAP_LEN * (i + 0.5) / n_post)
+    put(cyl("post_%d" % i, PIPE_D / 2, RAIL_H, (p.x, p.y, RAIL_H / 2)), M_PIPE)
+    put(cyl("collar_%d" % i, PIPE_D / 2 + 0.008, 0.07, (p.x, p.y, RAIL_H - 0.045)), M_FIT)
+    put(cyl("foot_%d" % i, 0.052, 0.018, (p.x, p.y, 0.021)), M_FIT)
+
+# ------------------------------------------------------ 順路の矢印 ---------
+put(poly_curve("route", [(walk_at(LAP_LEN * i / N)[0].x,
+                          walk_at(LAP_LEN * i / N)[0].y, 0.014)
+                         for i in range(N)], 0.012), M_ROUTE)
+
+for i in range(16):
+    p, t = walk_at(LAP_LEN * i / 16)
+    r = right_of(t)
+    a = new_mesh("arrow_%d" % i)
+    bm = bmesh.new()
+    tip, le, ri = p + t * 0.10, p - t * 0.045 + r * 0.062, p - t * 0.045 - r * 0.062
+    bm.faces.new([bm.verts.new((tip.x, tip.y, 0.016)),
+                  bm.verts.new((le.x, le.y, 0.016)),
+                  bm.verts.new((ri.x, ri.y, 0.016))])
+    bm.to_mesh(a.data)
+    bm.free()
+    put(a, M_ROUTE)
+
+# ------------------------------------------------------ カメラ 3 台 -------
+for i, c in enumerate(CAMS[:3]):
+    x, y, h, yaw = c["x"], c["z"], c["y"], math.radians(c.get("yawDeg", 0))
+    if h > 0.4:
+        put(cyl("tripod_%d" % i, 0.011, h * 0.45, (x, y, h - h * 0.225)), M_GEAR)
+        for k in range(3):
+            a = k * 2 * math.pi / 3
+            put(poly_curve("leg_%d_%d" % (i, k),
+                           [(x, y, h * 0.55),
+                            (x + 0.22 * math.cos(a), y + 0.22 * math.sin(a), 0.01)],
+                           0.008, closed=False), M_GEAR)
+    put(box("phone_%d" % i, (0.068, 0.010, 0.140), (x, y, h + 0.07), rot_z=yaw), M_GEAR)
+
+# ------------------------------------------------------ 人 ----------------
+before = set(bpy.data.objects)
+bpy.ops.import_scene.fbx(filepath=FBX, automatic_bone_orientation=True)
+arm = next(o for o in bpy.data.objects if o not in before and o.type == 'ARMATURE')
+PFX = arm.data.bones[0].name.split(":")[0] + ":"
+pb = arm.pose.bones
+log("骨 %d 本（接頭辞 %s）" % (len(arm.data.bones), PFX))
+
+act = arm.animation_data.action
+F0, F1 = int(act.frame_range[0]), int(act.frame_range[1])
+NSRC = F1 - F0                       # 1 循環ぶんの元コマ数（末尾は先頭と同じ）
+
+# 前を向いている向きを実測する。
+# ⚠ 肩の並びから外積で出すと符号を取り違える（実際に 180 度ずれ、体の反対側へ
+#   腕が伸びたまま後ろ歩きしていた）。足首から爪先へのベクトルなら向きが一意に決まる。
+FWD = Vector((0, 0, 0))
+for i in range(NSRC):
+    scene.frame_set(F0 + i)
+    for side in ("Left", "Right"):
+        v = (arm.matrix_world @ pb[PFX + side + "Toe_End"].head) - \
+            (arm.matrix_world @ pb[PFX + side + "Foot"].head)
+        v.z = 0
+        FWD += v
+FWD.normalize()
+YAW0 = math.atan2(FWD.y, FWD.x)
+# 肩から出した「右」と突き合わせて、右手側が本当に右手側か確かめる
+scene.frame_set(F0)
+_r = (arm.matrix_world @ pb[PFX + "RightArm"].head) - \
+     (arm.matrix_world @ pb[PFX + "LeftArm"].head)
+_r.z = 0
+_chk = _r.normalized().dot(FWD.cross(Vector((0, 0, 1))))
+log("素の向き yaw = %.1f 度 ／ 右手側の一致 %.2f（1 に近ければ正）" % (
+    math.degrees(YAW0), _chk))
+if _chk < 0.8:
+    log("⚠ 前と右が合っていない。腕が体の反対側へ伸びる")
+
+BONES = [b.name for b in arm.data.bones]
+HIPS = PFX + "Hips"
+FEET = [PFX + n for n in ("LeftToe_End", "RightToe_End", "LeftFoot", "RightFoot")]
+
+for b in pb:
+    b.rotation_mode = 'QUATERNION'
+
+# --- 元の 1 循環を採る -----------------------------------------------------
+samp = {n: [] for n in BONES}
+hips_loc = []
+for i in range(NSRC):
+    scene.frame_set(F0 + i)
+    for n in BONES:
+        samp[n].append(pb[n].rotation_quaternion.copy())
+    hips_loc.append(pb[HIPS].location.copy())
+
+
+def mean_quat(qs):
+    acc = Quaternion((0, 0, 0, 0))
+    ref = qs[0]
+    for q in qs:
+        s = -1.0 if q.dot(ref) < 0 else 1.0
+        for i in range(4):
+            acc[i] += q[i] * s
+    acc.normalize()
+    return acc
+
+
+MEAN = {n: mean_quat(samp[n]) for n in BONES}
+MEAN_LOC = Vector((sum(v.x for v in hips_loc) / NSRC,
+                   sum(v.y for v in hips_loc) / NSRC,
+                   sum(v.z for v in hips_loc) / NSRC))
+
+
+def apply_pose(i, k):
+    """i 番目の元コマを「振り k 倍」にして当てる。"""
+    for n in BONES:
+        pb[n].rotation_quaternion = MEAN[n].slerp(samp[n][i], k)
+    pb[HIPS].location = MEAN_LOC.lerp(hips_loc[i], k)
+    bpy.context.view_layer.update()
+
+
+def stride_of(k):
+    """振り k 倍のときの歩幅 [m]（腰から見た足の前後の振れ幅）。"""
+    best = 0.0
+    for bone in (PFX + "LeftFoot", PFX + "RightFoot"):
+        vals = []
+        for i in range(NSRC):
+            apply_pose(i, k)
+            d = (arm.matrix_world @ pb[bone].head) - (arm.matrix_world @ pb[HIPS].head)
+            vals.append(d.x * FWD.x + d.y * FWD.y)
+        best = max(best, max(vals) - min(vals))
+    return best
+
+
+S_RAW = stride_of(1.0)
+log("素の歩幅 %.3f m ⇒ 素の速さ %.2f m/s" % (S_RAW, S_RAW / (NSRC / FPS / 2)))
+
+# 焼く長さを決める。3 周がちょうど整数循環になるように歩数を丸める
+CYC_FRAMES = int(round(STEP_SEC * 2 * FPS))                 # 1 循環 = 2 歩
+n_cyc = max(1, int(round(LAPS * LAP_LEN / SPEED * FPS / CYC_FRAMES)))
+TOTAL = n_cyc * CYC_FRAMES
+SPEED_EFF = LAPS * LAP_LEN / (TOTAL / FPS)
+STEP_EFF = CYC_FRAMES / 2 / FPS
+STRIDE_WANT = SPEED_EFF * STEP_EFF
+
+# 歩幅がその値になる k を詰める（歩幅は k に比例しないので反復で合わせる）
+k = 1.0
+for _ in range(6):
+    s = stride_of(k)
+    if abs(s - STRIDE_WANT) < 0.002:
+        break
+    k = max(0.05, min(1.0, k * (STRIDE_WANT / s) ** 0.85))
+S_NEW = stride_of(k)
+log("振り %.3f 倍 ⇒ 歩幅 %.3f m（狙い %.3f）" % (k, S_NEW, STRIDE_WANT))
+log("%d コマ = %.1f 秒 ／ %.4f m/s ／ 1 歩 %.2f 秒 ／ 1 周 %.1f 秒"
+    % (TOTAL, TOTAL / FPS, SPEED_EFF, STEP_EFF, TOTAL / FPS / LAPS))
+
+# --- 1 循環ぶんを焼き直す（足が床に着くように高さも測る）------------------
+arm.animation_data.action = None
+Z_FIX = []
+for j in range(CYC_FRAMES):
+    apply_pose(int(round(j / CYC_FRAMES * NSRC)) % NSRC, k)
+    low = min((arm.matrix_world @ pb[n].head).z for n in FEET)
+    Z_FIX.append(-low)
+    for n in BONES:
+        pb[n].keyframe_insert("rotation_quaternion", frame=j + 1)
+    pb[HIPS].keyframe_insert("location", frame=j + 1)
+
+for fc in fcurves_of(arm):
+    for kp in fc.keyframe_points:
+        kp.interpolation = 'LINEAR'
+    m = fc.modifiers.new('CYCLES')
+    m.mode_before = 'REPEAT'
+    m.mode_after = 'REPEAT'
+log("足の着き直し %.3f 〜 %.3f m" % (min(Z_FIX), max(Z_FIX)))
+
+# ------------------------------------------------------ 右手を手すりへ ----
+tgt = bpy.data.objects.new("rail_grip", None)
+tgt.empty_display_type = 'SPHERE'
+tgt.empty_display_size = 0.03
+scene.collection.objects.link(tgt)
+
+ik = pb[PFX + "RightForeArm"].constraints.new('IK')
+ik.target = tgt
+ik.chain_count = 2
+ik.use_tail = True
+
+# ------------------------------------------------------ 歩かせる ----------
+scene.frame_start = 1
+scene.frame_end = TOTAL
+GRIP_Z = RAIL_H + PIPE_D / 2 + 0.038      # 手すりの上に手のひらが乗る高さ（手首の芯）
+
+# ⚠ 取り込んだ armature は X 90 度で立っている。その姿勢を捨てて yaw を書くと人が寝る。
+#   世界の Z 回りの回転を「左から」掛けて、元の姿勢を保ったまま向きだけ変える。
+BASE_Q = (arm.rotation_quaternion.copy() if arm.rotation_mode == 'QUATERNION'
+          else arm.rotation_euler.to_quaternion())
+arm.rotation_mode = 'QUATERNION'
+
+# 出だしは「カメラの方へ歩いてくる」区間から始める（壁の東面＝ 6 区間目の頭）。
+# 背中から始めると、いちばん見せたい「手すりに手を置いている」が見えない。
+START_S = sum((s[3] if s[0] == "line" else s[5]) for s in WALK_SEGS[:5])
+
+heading = None
+for fr in range(1, TOTAL + 2):
+    s = START_S + (fr - 1) / FPS * SPEED_EFF
+    p, t = walk_at(s)
+    a = math.atan2(t.y, t.x)
+    if heading is None:                      # atan2 は ±π で折り返す。繋いで数える
+        heading = a
+    else:
+        heading += (a - heading + math.pi) % (2 * math.pi) - math.pi
+    arm.location = (p.x, p.y, Z_FIX[(fr - 1) % CYC_FRAMES])
+    arm.rotation_quaternion = Quaternion((0, 0, 1), heading - YAW0) @ BASE_Q
+    arm.keyframe_insert("location", frame=fr)
+    arm.keyframe_insert("rotation_quaternion", frame=fr)
+    q, _ = rail_at(s)
+    tgt.location = (q.x, q.y, GRIP_Z)
+    tgt.keyframe_insert("location", frame=fr)
+
+for o in (arm, tgt):
+    for fc in fcurves_of(o):
+        for kp in fc.keyframe_points:
+            kp.interpolation = 'LINEAR'
+
+# --- 手のひらを手すりの上へ寝かせる ---------------------------------------
+# IK は手首の位置しか決めない。向きは歩きの振りのままなので、放っておくと
+# 手すりの横で手が回り続ける。指を進行方向へ、手のひらを下へ固定する。
+# 「どの軸が手のひらか」は骨のロールで変わるので、指の付け根から実測する。
+scene.frame_set(1)
+bpy.context.view_layer.update()
+dg = bpy.context.evaluated_depsgraph_get()
+ae = arm.evaluated_get(dg)
+hm = ae.matrix_world @ ae.pose.bones[PFX + "RightHand"].matrix
+wrist = hm.translation
+
+
+def bone_head(name):
+    return ae.matrix_world @ ae.pose.bones[PFX + name].head
+
+
+# 右手では (人差し指 - 手首) × (小指 - 手首) が手のひらの側を向く（右手系の性質）。
+# ⚠ 親指との内積で符号を決めるのは駄目。親指は横に張り出していて内積がほぼ 0 になり、
+#   コマによって符号が反転する。
+nrm = (bone_head("RightHandIndex1") - wrist).cross(bone_head("RightHandPinky1") - wrist)
+nrm.normalize()
+log("手のひらの向き（世界）= (%.2f, %.2f, %.2f)" % (nrm.x, nrm.y, nrm.z))
+
+basis = hm.to_3x3().normalized()
+y_loc = mathutils.Vector((0, 1, 0))              # 骨の長さ方向 ＝ 指の向き
+n_loc = basis.transposed() @ nrm
+n_loc -= y_loc * n_loc.dot(y_loc)
+n_loc.normalize()
+
+
+def frame_of(y, n):
+    m = mathutils.Matrix.Identity(3)
+    m.col[0], m.col[1], m.col[2] = y, n, y.cross(n)
+    return m
+
+
+# ⚠ 基準は「1 コマ目に体が向いている向き」。s=0 で取ると出だしの位置ずらし
+#   （START_S）のぶんだけ食い違い、指が進む向きの真後ろを向く。
+_, t1 = walk_at(START_S)
+A = frame_of(y_loc, n_loc)
+B = frame_of(mathutils.Vector((t1.x, t1.y, 0)).normalized(),
+             mathutils.Vector((0, 0, -1)))       # 指は進む方へ・手のひらは下へ
+R = B @ A.transposed()
+
+hand_aim = bpy.data.objects.new("hand_aim", None)
+hand_aim.empty_display_type = 'ARROWS'
+hand_aim.empty_display_size = 0.12
+scene.collection.objects.link(hand_aim)
+hand_aim.parent = arm                            # 体と一緒に回るので 1 度決めれば足りる
+hand_aim.rotation_mode = 'QUATERNION'
+hand_aim.rotation_quaternion = (
+    arm.matrix_world.to_3x3().normalized().inverted() @ R).to_quaternion()
+
+cr = pb[PFX + "RightHand"].constraints.new('COPY_ROTATION')
+cr.target = hand_aim
+cr.target_space = 'WORLD'
+cr.owner_space = 'WORLD'
+
+# できあがりを測って確かめる（向きは目で見ても分かりにくい）
+scene.frame_set(int(TOTAL * 0.4))
+bpy.context.view_layer.update()
+_ae = arm.evaluated_get(bpy.context.evaluated_depsgraph_get())
+_hm = _ae.matrix_world @ _ae.pose.bones[PFX + "RightHand"].matrix
+_fing = (_hm.to_3x3().normalized() @ mathutils.Vector((0, 1, 0)))
+_palm = (_hm.to_3x3().normalized() @ n_loc)
+_w = _ae.matrix_world @ _ae.pose.bones[PFX + "RightHand"].head
+_s = START_S + (int(TOTAL * 0.4) - 1) / FPS * SPEED_EFF
+_q, _t = rail_at(_s)
+log("手 手のひらの下向き %.2f（1 が真下）／ 指と進む向きの一致 %.2f"
+    % (-_palm.z, _fing.x * _t.x + _fing.y * _t.y))
+log("手首 (%.3f,%.3f,%.3f) ／ 狙い (%.3f,%.3f,%.3f) ／ 離れ %.3f m" % (
+    _w.x, _w.y, _w.z, _q.x, _q.y, GRIP_Z,
+    (_w - mathutils.Vector((_q.x, _q.y, GRIP_Z))).length))
+log("IK 影響 %.2f ／ 鎖 %d ／ 的 %s" % (ik.influence, ik.chain_count,
+                                      ik.target.name if ik.target else "なし"))
+log("的の実位置 (%.3f,%.3f,%.3f)" % tuple(tgt.matrix_world.translation))
+
+# ------------------------------------------------------ ライト ------------
+# 取り込んだ服のマテリアルは艶が強く、白い部屋だとビニールに見える。落ち着かせる
+for m in bpy.data.materials:
+    if not m.name.startswith("Ch"):
+        continue
+    if not m.use_nodes:
+        continue
+    for n in m.node_tree.nodes:
+        if n.type != 'BSDF_PRINCIPLED':
+            continue
+        if not n.inputs["Roughness"].is_linked:
+            n.inputs["Roughness"].default_value = 0.72
+        for key in ("Specular IOR Level", "Specular"):
+            if key in n.inputs and not n.inputs[key].is_linked:
+                n.inputs[key].default_value = 0.25
+
+sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", 'SUN'))
+sun.data.energy = 2.4
+sun.data.angle = math.radians(6)
+# 高めから当てる。低いと人の影が床の外まで伸びて画の隅に大きな染みを作る
+sun.rotation_euler = Euler((math.radians(24), 0, math.radians(35)))
+scene.collection.objects.link(sun)
+
+fill = bpy.data.objects.new("fill", bpy.data.lights.new("fill", 'AREA'))
+fill.data.energy = 150
+fill.data.size = 4
+fill.location = (-2.5, -2.5, 3.0)
+fill.rotation_euler = Euler((math.radians(40), 0, math.radians(-135)))
+scene.collection.objects.link(fill)
+
+world = bpy.data.worlds.new("world")
+world.use_nodes = True
+world.node_tree.nodes["Background"].inputs[0].default_value = (0.72, 0.74, 0.78, 1)
+world.node_tree.nodes["Background"].inputs[1].default_value = 0.7
+scene.world = world
+
+# ------------------------------------------------------ カメラ ------------
+cam = bpy.data.objects.new("view", bpy.data.cameras.new("view"))
+cam.data.lens = 35
+scene.collection.objects.link(cam)
+scene.camera = cam
+
+pivot = bpy.data.objects.new("pivot", None)
+scene.collection.objects.link(pivot)
+# 水平から 55 度見下ろす。この角だと 1.75m の人が画の高さの 4 割ほどに収まり、
+# 床 1.8m 角と順路が同時に読める（真横だと順路が潰れ、真上だと人が読めない）
+SWING = math.radians(9)           # 3 周のあいだにこれだけ左右へ振る
+
+# ⚠ 距離を手で決めると、人が奥の辺に来たコマだけ頭が切れる（実際に切れた）。
+#   遠い所・高い所を全部並べて、どのコマでも収まる最短の距離を探す。
+_pts = []
+for _i in range(48):
+    _p, _ = walk_at(LAP_LEN * _i / 48)
+    _pts += [Vector((_p.x, _p.y, 0.0)), Vector((_p.x, _p.y, 1.80))]
+for _sx in (-1, 1):
+    for _sy in (-1, 1):
+        _pts.append(Vector((_sx * FW / 2, _sy * FD / 2, 0.0)))
+for _w in WALLS:
+    _pts += [Vector((_w["x1"], _w["z1"], _w["h"])),
+             Vector((_w["x2"], _w["z2"], _w["h"]))]
+for _c in CAMS[:3]:                      # 三脚も画に入る。切れると目立つ
+    _pts.append(Vector((_c["x"], _c["z"], _c["y"] + 0.15)))
+    _pts.append(Vector((_c["x"], _c["z"], 0.0)))
+
+TGT = Vector((sum(p.x for p in _pts) / len(_pts),
+              sum(p.y for p in _pts) / len(_pts), 0.50))
+_tan_w = 0.5 * cam.data.sensor_width / cam.data.lens
+_tan_h = _tan_w * RES[1] / RES[0]
+
+
+def _fits(dist, elev, swing, margin=1.02):
+    pos = TGT + (mathutils.Matrix.Rotation(swing, 3, 'Z')
+                 @ Vector((0, -math.cos(elev), math.sin(elev))) * dist)
+    fwd = (TGT - pos).normalized()
+    rgt = fwd.cross(Vector((0, 0, 1))).normalized()
+    up = rgt.cross(fwd)
+    for p in _pts:
+        v = p - pos
+        z = v.dot(fwd)
+        if z <= 0.1:
+            return False
+        if abs(v.dot(rgt)) / z > _tan_w / margin:
+            return False
+        if abs(v.dot(up)) / z > _tan_h / margin:
+            return False
+    return True
+
+
+# 見下ろす角も探す。角によって画に必要な広さが変わり、いちばん寄れる角がある
+DIST, ELEV = 9.0, math.radians(52)
+for _e_deg in range(50, 62, 2):
+    _e = math.radians(_e_deg)
+    _d = 2.0
+    while _d < 9.0:
+        if all(_fits(_d, _e, sw) for sw in (-SWING, 0.0, SWING)):
+            break
+        _d += 0.05
+    if _d < DIST:
+        DIST, ELEV = _d, _e
+log("カメラ 距離 %.2f m ／ 見下ろし %.0f 度 ／ 見る先 (%.2f, %.2f)"
+    % (DIST, math.degrees(ELEV), TGT.x, TGT.y))
+
+cam.parent = pivot
+cam.rotation_euler = Euler((math.pi / 2 - ELEV, 0, 0))
+
+# 出だしの 4 秒は手元へ寄ってから引く。広い画のままだと手が 30 画素しかなく、
+# 「手すりを持つ」がいちばん伝わらない。角は変えない（回転を足すと酔う）
+PULL_F = int(4.5 * FPS)
+CLOSE_D = 2.55
+for fr in range(1, PULL_F + 1):
+    u = (fr - 1) / (PULL_F - 1)
+    w = u * u * (3 - 2 * u)                       # 出だしと終わりをなめらかに
+    q, _ = rail_at(START_S + (fr - 1) / FPS * SPEED_EFF)   # 寄っている間は手を追う
+    near = Vector((q.x, q.y, RAIL_H))
+    pivot.location = near.lerp(TGT, w)
+    pivot.keyframe_insert("location", frame=fr)
+    d = CLOSE_D + (DIST - CLOSE_D) * w
+    cam.location = (0, -math.cos(ELEV) * d, math.sin(ELEV) * d)
+    cam.keyframe_insert("location", frame=fr)
+for o in (pivot, cam):
+    for fc in fcurves_of(o):
+        for kp in fc.keyframe_points:
+            kp.interpolation = 'LINEAR'
+for fr, deg in ((1, -math.degrees(SWING)), (TOTAL, math.degrees(SWING))):
+    pivot.rotation_euler = Euler((0, 0, math.radians(deg)))
+    pivot.keyframe_insert("rotation_euler", frame=fr)
+for fc in fcurves_of(pivot):
+    for kp in fc.keyframe_points:
+        kp.interpolation = 'SINE'
+        kp.easing = 'EASE_IN_OUT'
+
+# ------------------------------------------------------ 文字 --------------
+font = None
+for path in FONTS:
+    if os.path.exists(path):
+        try:
+            font = bpy.data.fonts.load(path)
+            log("書体:", os.path.basename(path))
+            break
+        except Exception as e:                                  # noqa: BLE001
+            log("書体を開けない:", path, e)
+if font is None:
+    log("⚠ 日本語の書体が無い — 文字は出さない")
+
+
+def caption(text, f_in, f_out, y=-0.175, size=0.030, plate_w=None):
+    if font is None:
+        return
+    cu = bpy.data.curves.new("cap", 'FONT')
+    cu.font = font
+    cu.body = text
+    cu.size = size
+    cu.align_x = 'CENTER'
+    cu.align_y = 'CENTER'
+    o = bpy.data.objects.new("cap", cu)
+    put(o, M_TEXT)
+    o.parent = cam
+    o.location = (0, y, -1.0)
+
+    # ⚠ 帯の幅は文字数から見積もらない（全角と半角で 2 倍ずれ、端が白地に溶ける）。
+    #   組んだ文字の実寸を測って囲む
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    text_w = o.evaluated_get(dg).dimensions.x
+
+    # ⚠ 帯はカメラの面と平行に置く。立ててしまうと横倒しの線にしか映らない
+    pw = plate_w if plate_w is not None else (text_w + size * 1.5)
+    pl = box("plate", (pw, size * 2.2, 0.0002), (0, 0, 0))
+    put(pl, M_PLATE)
+    pl.parent = cam
+    pl.location = (0, y, -1.004)
+    pl.rotation_euler = Euler((0, 0, 0))
+
+    for ob in (o, pl):
+        for fr, hide in ((1, True), (f_in, False), (f_out, False), (f_out + 1, True)):
+            ob.hide_render = hide
+            ob.hide_viewport = hide
+            ob.keyframe_insert("hide_render", frame=fr)
+            ob.keyframe_insert("hide_viewport", frame=fr)
+        for fc in fcurves_of(ob):
+            for kp in fc.keyframe_points:
+                kp.interpolation = 'CONSTANT'
+
+
+lap = TOTAL / LAPS
+caption("手すりに手をそえたまま歩きます", 10, int(lap * 0.78))
+caption("同じ向きに 3 周まわります", int(lap * 0.98), int(lap * 1.70))
+caption("1 周 およそ %d 秒。ふだんの半分くらいの速さ" % round(TOTAL / FPS / LAPS),
+        int(lap * 1.90), int(lap * 2.60))
+for i in range(LAPS):
+    caption("%d 周目" % (i + 1), int(lap * i) + 1, int(lap * (i + 1)),
+            y=0.235, size=0.026)
+
+# ------------------------------------------------------ 焼く --------------
+engines = [e.identifier for e in
+           bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
+for want in ('BLENDER_EEVEE_NEXT', 'BLENDER_EEVEE', 'BLENDER_WORKBENCH'):
+    if want in engines:
+        scene.render.engine = want
+        break
+log("エンジン:", scene.render.engine)
+
+ee = getattr(scene, "eevee", None)
+if ee is not None:
+    for attr, val in (("taa_render_samples", 24), ("use_shadows", True),
+                      ("use_raytracing", False), ("use_gtao", True)):
+        if hasattr(ee, attr):
+            setattr(ee, attr, val)
+
+scene.render.resolution_x, scene.render.resolution_y = RES
+scene.render.resolution_percentage = 100
+scene.render.film_transparent = False
+scene.view_settings.view_transform = 'Standard'
+scene.view_settings.exposure = -0.35      # 白い部屋 + 白い床は素だと飛ぶ
+os.makedirs(OUT_DIR, exist_ok=True)
+os.makedirs(CHECK_DIR, exist_ok=True)
+
+imset = scene.render.image_settings
+if PREVIEW:
+    # ⚠ Blender 5 は media_type を先に決める。旧来の file_format = 'FFMPEG' は
+    #   静止画の一覧に無く TypeError で落ちる
+    if hasattr(imset, "media_type"):
+        imset.media_type = 'IMAGE'
+    imset.file_format = 'PNG'
+    for fr in (1, int(TOTAL * 0.13), int(TOTAL * 0.31), int(TOTAL * 0.56), int(TOTAL * 0.81)):
+        scene.frame_set(max(1, fr))
+        scene.render.filepath = os.path.join(CHECK_DIR, "check-%04d.png" % fr)
+        bpy.ops.render.render(write_still=True)
+        log("静止画:", scene.render.filepath)
+else:
+    if hasattr(imset, "media_type"):
+        imset.media_type = 'VIDEO'          # これで file_format が FFMPEG になる
+    else:
+        imset.file_format = 'FFMPEG'
+    scene.render.ffmpeg.format = 'MPEG4'
+    scene.render.ffmpeg.codec = 'H264'
+    scene.render.ffmpeg.constant_rate_factor = 'HIGH'
+    scene.render.ffmpeg.ffmpeg_preset = 'GOOD'
+    scene.render.ffmpeg.gopsize = 15
+    scene.render.filepath = os.path.join(OUT_DIR, OUT_NAME)
+    bpy.ops.render.render(animation=True)
+    # ⚠ 動画のときは Blender がコマ番号を足した名前で書く（walk-guide0001-0882.mp4）。
+    #   毎回名前が変わると貼り先のリンクが切れるので、決まった名前へ置き直す
+    made = os.path.join(OUT_DIR, "%s%04d-%04d.mp4" % (OUT_NAME, 1, TOTAL))
+    dst = os.path.join(OUT_DIR, OUT_NAME + ".mp4")
+    if os.path.exists(made):
+        if os.path.exists(dst):
+            os.remove(dst)
+        os.rename(made, dst)
+    log("動画:", dst, "%.1f MB" % (os.path.getsize(dst) / 1e6))
+
+log("おわり")
