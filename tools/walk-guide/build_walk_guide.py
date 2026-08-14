@@ -14,10 +14,10 @@
 
 伝えるのは 3 つ:
   1 どちら回りか        — 道に矢印を敷き、人が同じ向きに 3 周する
-  2 どれくらいゆっくりか — 0.51 m/s（1 周 およそ 10 秒・1 歩 1.05 秒）
+  2 どれくらいゆっくりか — 0.25 m/s（1 周 およそ 22 秒・1 歩 1.35 秒）
   3 手すりを持つこと     — 右手を手すりの上に固定（IK）。3 周のあいだ離れない
 
-⚠ 素材の歩きは 1.59 m/s の速い歩き。これをそのまま遅回しにすると
+⚠ 素材の歩きは 1.60 m/s の速い歩き。これをそのまま遅回しにすると
   「大股のスローモーション」になって、真似できる速さに見えない。
   歩幅を縮めてから（振りを平均へ寄せる）足が滑らない速さで歩かせる。
   縮めると足が浮くので、毎コマ低い方の足を床へ着け直す。
@@ -55,8 +55,10 @@ PIPE_D = 0.028            # パイプ径 [m]
 FLOOR_TOP = 0.012         # 床板の天端 [m]
 JOINT_CORNER = (0.480, 0.0)    # Joint.blend の中の L の角
 JOINT_FLOOR_Z = -0.886         # Joint.blend の中の足の裏
-SPEED = 0.5               # 目標の速さ [m/s]（ShowWalkDebugDriver.WalkSpeed と同じ）
-STEP_SEC = 1.05           # 1 歩にかける時間 [秒]（＝ ゆっくりだが自然な足の運び）
+SPEED = 0.25              # 目標の速さ [m/s]（2026-08-14 に 0.5 の半分へ）
+STEP_SEC = 1.35           # 1 歩にかける時間 [秒]
+# ⚠ 速さを半分にするとき、歩数だけ半分にすると大股のスローモーションになる。
+#   1 歩の時間を 1.05 → 1.35 秒に伸ばし、残りは歩幅を縮めて吸収する
 CAPTIONS = False          # テロップ（2026-08-14 ユーザー指示で無し）
 SHOW_GEAR = False         # 配信スマホと三脚（同上）
 CAM_YAW = 28.0            # カメラを回す角 [度]（南東の斜め上から固定）
@@ -403,7 +405,8 @@ for i, c in enumerate(CAMS[:3] if SHOW_GEAR else []):
 # ------------------------------------------------------ 人 ----------------
 before = set(bpy.data.objects)
 bpy.ops.import_scene.fbx(filepath=FBX, automatic_bone_orientation=True)
-arm = next(o for o in bpy.data.objects if o not in before and o.type == 'ARMATURE')
+PERSON = [o for o in bpy.data.objects if o not in before]
+arm = next(o for o in PERSON if o.type == 'ARMATURE')
 PFX = arm.data.bones[0].name.split(":")[0] + ":"
 pb = arm.pose.bones
 log("骨 %d 本（接頭辞 %s）" % (len(arm.data.bones), PFX))
@@ -659,20 +662,37 @@ log("IK 影響 %.2f ／ 鎖 %d ／ 的 %s" % (ik.influence, ik.chain_count,
 log("的の実位置 (%.3f,%.3f,%.3f)" % tuple(tgt.matrix_world.translation))
 
 # ------------------------------------------------------ ライト ------------
-# 取り込んだ服のマテリアルは艶が強く、白い部屋だとビニールに見える。落ち着かせる
-for m in bpy.data.materials:
-    if not m.name.startswith("Ch"):
-        continue
+# 取り込んだ服は艶が強く、暗い部屋で光を 1 灯当てるとビニールに見える。艶を消す。
+# ⚠ マテリアル名で絞らない。この人形の服は "Material" という名前で、
+#   "Ch" で始まる名前だけ直していたときは上着だけ光ったままだった。
+#   使っているオブジェクトから引く。
+_skin = set()
+for _o in PERSON:
+    for _sl in getattr(_o, "material_slots", []):
+        if _sl.material is not None:
+            _skin.add(_sl.material.name)
+MATTE = {"Roughness": 0.92, "Specular IOR Level": 0.0, "Specular": 0.0,
+         "Coat Weight": 0.0, "Sheen Weight": 0.0, "Metallic": 0.0,
+         "Transmission Weight": 0.0}
+_kinds = set()
+for _nm in sorted(_skin):
+    m = bpy.data.materials[_nm]
     if not m.use_nodes:
         continue
-    for n in m.node_tree.nodes:
+    for n in list(m.node_tree.nodes):
+        _kinds.add(n.type)
         if n.type != 'BSDF_PRINCIPLED':
             continue
-        if not n.inputs["Roughness"].is_linked:
-            n.inputs["Roughness"].default_value = 0.72
-        for key in ("Specular IOR Level", "Specular"):
-            if key in n.inputs and not n.inputs[key].is_linked:
-                n.inputs[key].default_value = 0.25
+        for key, val in MATTE.items():
+            if key not in n.inputs:
+                continue
+            # ⚠ 値を入れるだけでは足りない。テクスチャが繋がっていると素通しされる。
+            #   艶を確実に消すには繋がっている線を外す
+            for lk in list(n.inputs[key].links):
+                m.node_tree.links.remove(lk)
+            n.inputs[key].default_value = val
+log("人のマテリアルをマットに: %s ／ ノード %s"
+    % (", ".join(sorted(_skin)), ",".join(sorted(_kinds))))
 
 # 天井にぶら下がった裸電球 1 個ぶん。太陽も補助光も置かない
 lamp = bpy.data.objects.new("lamp", bpy.data.lights.new("lamp", 'POINT'))
