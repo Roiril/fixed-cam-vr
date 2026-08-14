@@ -50,6 +50,15 @@ namespace FixedCamVr.Tracking
         /// <summary>導入が終わるのを待つ上限 (秒)。超えたら諦めて歩き出す（導入の不具合も観測対象）。</summary>
         private const float IntroWaitLimitSec = 90f;
 
+        /// <summary>タイトルが閉じ切るのを待つ上限 (秒)。A から Done まで実測 4.85 秒。</summary>
+        private const float TitleWaitLimitSec = 15f;
+
+        /// <summary>
+        /// A を押す前に、真っ暗な待ち（注意書きが出ている段）を保つ秒数。
+        /// <b>走行の画に注意書きを写すためだけの間</b>で、実機の運用ではここは数十秒ある。
+        /// </summary>
+        private const float NoticeReadSec = 4f;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
@@ -140,6 +149,38 @@ namespace FixedCamVr.Tracking
             // HMD を被っていない前提で走らせるので、被り検知を無効化する（Development ビルド限定）。
             // これが無いと run.intro.startLineId を使う設定では導入が永久に始まらない。
             if (_show != null) _show.UserPresentProvider = () => true;
+
+            // ⚠⚠ **タイトルは実機と同じく A で閉じる**（2026-08-14）。それまで被り検知の provider が
+            //    「被っている」と「タイトルが立っていない」を兼ねていたので、ここで全体を true に
+            //    上書きした瞬間にタイトルを飛び越して導入が始まり、**題字は走行の画に 1 枚も
+            //    写っていなかった**（＝ タイトル画面が一度も自動検証されていなかった）。
+            //    いまは開始承認が別 provider なので、A を送らないと段 0 から進まない。
+            var title = FindObjectOfType<TitleScreen>();
+            if (title != null && title.IsBlocking)
+            {
+                // ⚠ **注意書きを読む間を置く**（2026-08-14）。実機ではスタッフが位置合わせを終えて
+                //    周回リセットし、体験者に被せてから A を押すので、真っ暗な待ち（`TitleStage.Wait`）は
+                //    数十秒ある。ここで即座に A を送ると**待ちが 1 フレームも無く、注意書きが
+                //    走行の画に 1 枚も写らない**（安全の掲示なのに、実機で読めるか確かめる手段が無い）。
+                Debug.Log("[XPWalk] 注意書きを読む間（真っ暗な待ち）");
+                yield return new WaitForSeconds(NoticeReadSec);
+
+                if (title.RequestAdvance()) Debug.Log("[XPWalk] タイトルを A で閉じた（実機と同じ入り方）");
+                else Debug.LogWarning($"[XPWalk] タイトルの A が効かない（{title.DescribeAdvanceBlock()}）");
+                float titleWait = 0f;
+                while (title.IsBlocking && titleWait < TitleWaitLimitSec)
+                {
+                    titleWait += Time.deltaTime;
+                    yield return null;
+                }
+                Debug.Log(title.IsBlocking
+                    ? $"[XPWalk] タイトルが {TitleWaitLimitSec:F0}s で閉じ切らなかった — そのまま進む"
+                    : $"[XPWalk] タイトルが閉じ切った（{titleWait:F1}s）");
+            }
+            else if (title == null)
+            {
+                Debug.Log("[XPWalk] タイトルがシーンに居ない（そのまま導入へ）");
+            }
 
             // 開始ラインが著作されていれば、実機と同じ入り方をする ＝ その線を横切ってから中へ入る。
             string startLineId = _run != null ? (_run.IntroDef?.startLineId ?? "") : "";

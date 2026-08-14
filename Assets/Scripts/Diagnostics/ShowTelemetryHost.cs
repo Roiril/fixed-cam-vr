@@ -70,6 +70,7 @@ namespace FixedCamVr.Diagnostics
         private CameraSwitchDirector? _switch;
         private ShowRunDirector? _run;
         private IntroDirector? _intro;
+        private TitleScreen? _title;
         private TimelineDirector? _timeline;
         private SignalLostFx? _signal;
         private GlitchFx? _glitch;
@@ -95,6 +96,13 @@ namespace FixedCamVr.Diagnostics
 
         // --- 遷移検出のための前回値 ---
         private IntroStage _lastStage = IntroStage.Off;
+
+        /// <summary>
+        /// タイトルの段（Off/Wait/In/Hold/Out/Done）。<b>2026-08-14 まで 1 つも観測していなかった</b> —
+        /// 体験の入口そのものなのに、出たかどうかがログから分からなかった。
+        /// </summary>
+        private TitleStage _lastTitleStage = TitleStage.Off;
+        private bool _titleSeen;
         private string _lastTakeId = "";
         private string _lastCtrlMode = "";
         private string _lastCueId = "";
@@ -172,6 +180,7 @@ namespace FixedCamVr.Diagnostics
             if (_switch == null) _switch = FindObjectOfType<CameraSwitchDirector>();
             if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
+            if (_title == null) _title = FindObjectOfType<TitleScreen>();
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
             if (_signal == null) _signal = FindObjectOfType<SignalLostFx>();
             if (_glitch == null) _glitch = FindObjectOfType<GlitchFx>();
@@ -446,7 +455,24 @@ namespace FixedCamVr.Diagnostics
                      $"shellRev={ShellRevealState} box={SealBoxState} boxBuilt={SealBoxBuiltState} " +
                      // 管の点灯は段 3 のあいだしか動かない。**遷移の瞬間の値**なので、
                      // 意味を持つのは Ignite → Live の行（そこに段 3 の到達点が載る）。
-                     $"ignite={IgniteState}");
+                     $"ignite={IgniteState} " +
+                     // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
+                     // 段 1 以降の行に auth=0 が出たら、卓の ⏭ で始まったということ。
+                     $"auth={(_show != null && _show.StartAuthorized ? 1 : 0)}");
+            }
+
+            // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**
+            // built は「実体を組めたか」、veil / glyph は**実際に書いた不透明度** ＝ 画に出た側。
+            // built=0 だと A を押しても何も起きず、導入だけが素通しで始まる（気づける口がここしかない）。
+            if (_title != null && (!_titleSeen || _title.Stage != _lastTitleStage))
+            {
+                _titleSeen = true;
+                _lastTitleStage = _title.Stage;
+                Emit($"ev=title stage={_lastTitleStage} built={(_title.IsBuilt ? 1 : 0)} " +
+                     $"veil={_title.AppliedVeil:F2} glyph={_title.AppliedGlyph:F2} " +
+                     // 譲っている間（位置合わせ・ステータス表示）は段が Wait のままでも黒は 0。
+                     // これが無いと判定が「Wait なのに黒が立っていない」と誤検出する。
+                     $"yield={(_title.Yielding ? 1 : 0)}");
             }
 
             // コントローラの操作モード（NORMAL / REG）。**位置合わせが起きたかの唯一の観測点**。

@@ -285,6 +285,10 @@ namespace FixedCamVr.Streaming.EditorTools
             liveFresh = true,
             recentered = false,
             outsideBoxM = outsideM,
+            // 絵を焼くのが目的なので、開始の門と位置の信用は満たしている扱いにする
+            // （実機では A の押下と位置合わせがこれを立てる）。
+            startAuthorized = true,
+            outsideValid = true,
         };
 
         // ---- 合成ステージ（生成物一式。finally で必ず畳む）--------------------

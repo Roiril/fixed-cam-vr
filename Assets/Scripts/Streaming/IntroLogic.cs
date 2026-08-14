@@ -186,6 +186,29 @@ namespace FixedCamVr.Streaming
         public bool blackCleared;
 
         /// <summary>
+        /// <b>人が「始めてよい」と言ったか。</b> 実体はタイトルが画面を手放したこと
+        /// （＝ スタッフが A を押して題字が焼け切った）で、<b>タイトルを出さない・組めない現場では常に true</b>。
+        ///
+        /// ⚠⚠ <b>段 0 の自動出口はすべてこれでゲートする</b>（2026-08-14）。これが無いと、
+        /// タイトルが立って A を待っているあいだも接近と安全網が生きているので、
+        /// <b>スタッフが HMD を持って体験エリアを横切るだけで導入が始まり、題字が飛ぶ</b>
+        /// （<see cref="TitleScreen"/> は段 0 を出た導入を見て自分を強制終了する）。
+        ///
+        /// ⚠ <b>スタッフの明示操作（⏭）はゲートしない。</b> あれは人の判断そのもので、
+        /// 「まだ始めるな」を上書きする権利がある。
+        /// </summary>
+        public bool startAuthorized;
+
+        /// <summary>
+        /// <see cref="outsideBoxM"/> が信用できるか（位置合わせ済みで、体験エリアの形が解けている）。
+        ///
+        /// ⚠⚠ <b>0 は「本当に中に居る」と「解けない」の両方を意味していた。</b> 分けないと、
+        /// 未登録の現場を「中に居る」と読んで自動で始めてしまう（2026-08-14・Codex 指摘）。
+        /// 解けないあいだは中／外の判断そのものを更新しない。
+        /// </summary>
+        public bool outsideValid;
+
+        /// <summary>
         /// 体験者が<b>開始の合図</b>（体験エリアへの接近 / 通過ライン / 開始位置の円）を満たしたか。
         /// これが立てばスタッフの合図を待たずに演出が始まる。判定できないときは常に false になり、
         /// 従来どおりスタッフ操作だけで進む（縮退）。
@@ -275,6 +298,34 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float InsideExitM = 0.85f;
 
+        /// <summary>
+        /// <b>実際に箱の面を越えた</b>とみなす外側距離 (m)。<see cref="InsideEnterM"/> とは別物。
+        ///
+        /// ⚠ <see cref="InsideEnterM"/>（0.55m）は<b>黒を箱の面より先に立てる</b>ための前倒しで、
+        /// late-latch の 1cm を 50 倍の余裕で潰すために広く取ってある。それを
+        /// 「体験者が中へ入ったか」（段 2 の進行条件）に流用すると、<b>まだ箱の外に立っている人を
+        /// 中に入ったと判定して管を点け始める</b>。意味が違うものは別に持つ（2026-08-14・Codex 指摘）。
+        /// </summary>
+        public const float DeepInsideEnterM = 0.0f;
+
+        /// <summary>実際に中から出たとみなす外側距離 (m)。<see cref="DeepInsideEnterM"/> のヒステリシス。</summary>
+        public const float DeepInsideExitM = 0.25f;
+
+        /// <summary>
+        /// <b>黒が立ったまま何も始まらない</b>のを救うまでの秒数。
+        ///
+        /// 段 0 で体験者が箱の至近（<see cref="InsideEnterM"/> の内側）に居ると、重みは
+        /// <c>shell=1 / sealBox=0</c> ＝ <b>真っ黒</b>に倒れる。そこから
+        /// 接近（<see cref="ApproachLogic"/>）は「0.35m 縮む」余地が無く、安全網は
+        /// 「0.85m 外に居たことがある」を要求するので、<b>どちらも成立せずスタッフの ⏭ 以外に出口が無い</b>
+        /// （1.8m 四方の現場では体験者を箱の縁 0.5m に立たせるのが普通に起きる）。
+        ///
+        /// ⚠ <b>無条件の時間切れにはしない。</b> 人が始めた（<see cref="IntroInput.startAuthorized"/>）
+        /// かつ位置が信用できるときだけ効かせる — でないと、置いた HMD や前の体験者が
+        /// 立ったままのリセットで勝手に走り出す（<c>canon/LEDGER.md</c> 0005 が禁じた形）。
+        /// </summary>
+        public const float ConcealStartSec = 1.0f;
+
         private IntroTiming _t = IntroTiming.Default;
         private IntroStage _stage = IntroStage.Off;
         private float _stageElapsed;
@@ -284,14 +335,28 @@ namespace FixedCamVr.Streaming
         private bool _advanceRequested;
         private bool _skipRequested;
         private bool _insideBox;
+        private bool _physInside;
         private bool _sawOutsideBox;
+        private float _concealHeldSec;
 
         public IntroStage Stage => _stage;
         public float StageElapsedSec => _stageElapsed;
         public float TotalElapsedSec => _totalElapsed;
 
-        /// <summary>いま体験エリアの中に居るとみなしているか（ヒステリシス付き・診断とテスト用）。</summary>
+        /// <summary>
+        /// <b>黒を立てるべきか</b>（ヒステリシス付き・診断とテスト用）。
+        /// 箱の面より <see cref="InsideEnterM"/> 手前で立つ ＝ 「見え方」の判断。
+        /// </summary>
         public bool InsideBox => _insideBox;
+
+        /// <summary>
+        /// <b>実際に箱の中へ入ったか</b>（<see cref="DeepInsideEnterM"/>）。段 2 の進行条件。
+        /// <see cref="InsideBox"/> とは意味が違う（あちらは黒の先行）。
+        /// </summary>
+        public bool PhysicallyInside => _physInside;
+
+        /// <summary>黒が立ったまま何も始まらずに経った秒数（診断とテスト用）。</summary>
+        public float ConcealHeldSec => _concealHeldSec;
 
         /// <summary>
         /// <see cref="Begin"/> 以降に一度でも体験エリアの外に居たか。
@@ -318,7 +383,9 @@ namespace FixedCamVr.Streaming
             _advanceRequested = false;
             _skipRequested = false;
             _insideBox = false;
+            _physInside = false;
             _sawOutsideBox = false;
+            _concealHeldSec = 0f;
         }
 
         /// <summary>演出を出さない設定 / 本編中 / 終了後。重みは <see cref="IntroWeights.Inactive"/> になる。</summary>
@@ -359,7 +426,7 @@ namespace FixedCamVr.Streaming
             //
             // ⚠ **ヒステリシス。** 単なる `outsideBoxM <= 0` だと、境界に立った体験者の
             //    震えで黒と箱が交互に点滅し、しかも黒が箱の面より遅れて立つ（③ の事故）。
-            UpdateInsideBox(input.outsideBoxM);
+            UpdateInsideBox(input.outsideBoxM, input.outsideValid);
             if (_stage == IntroStage.Off || _stage == IntroStage.Done) return IntroEvent.None;
 
             // トラッキング原点が変わったら続行しない。壁の位置が違う世界を見せることになり、
@@ -393,11 +460,15 @@ namespace FixedCamVr.Streaming
             switch (_stage)
             {
                 case IntroStage.Black:
+                {
                     // ここは**時間で進めない**。始めてよいかは体験者の居場所か人間の判断で決まる。
-                    //   - 体験者が体験エリアへ近づいた、または
-                    //   - スタッフが合図した、または
-                    //   - **外から歩いて入ってしまった**（下の安全網）
-                    // どれも「黒が明けている」ことが前提（明ける前に始めても何も見えない）。
+                    //
+                    // ⚠⚠ **自動の出口はすべて「人が始めた」でゲートする**（2026-08-14）。
+                    //    タイトルが立って A を待っているあいだも段 0 は生きているので、
+                    //    **スタッフが HMD を持って体験エリアを横切るだけ**で下の安全網が成立し、
+                    //    導入が始まって題字が飛んでいた（`TitleScreen` は段 0 を出た導入を見て
+                    //    自分を強制終了する）。**スタッフの ⏭（advance）はゲートしない** —
+                    //    あれは人の判断そのもので、「まだ始めるな」を上書きする権利がある。
                     //
                     // ⚠⚠ **安全網**（2026-08-13）。段 0 で体験エリアの中に入ると、重みは
                     //    `shell = 1 / sealBox = 0` ＝ **真っ黒**に倒れる（中の様子を見せない約束）。
@@ -406,12 +477,24 @@ namespace FixedCamVr.Streaming
                     //    ⚠ **状態ではなく事象で判定する**。「いま中に居る」で始めると、前の体験者が
                     //    中に立ったままのリセット・エリア内に置いた HMD で勝手に走り出す（0005 が禁じた形）。
                     //    外に居たことを見てから入ってきた場合だけ通す。
-                    if (input.blackCleared
-                        && (advance || input.atStartSpot || (_sawOutsideBox && _insideBox)))
-                        Enter(IntroStage.Seal);
+                    //
+                    // ⚠⚠ **その安全網でも救えない所がある**（2026-08-14・Codex 指摘）。箱の至近
+                    //    （`InsideEnterM` の内側）に立たされた体験者は「0.85m 外に居た」を満たせず、
+                    //    接近も「0.35m 縮む」余地が無い。**人が始めたと言っていて、位置が信用でき、
+                    //    それでも黒が立ったまま `ConcealStartSec` 続いたら始める**。
+                    //    ⚠ 無条件の時間切れにはしない（置いた HMD で走り出す）。
+                    bool concealStuck = input.startAuthorized && input.outsideValid && _insideBox;
+                    _concealHeldSec = concealStuck ? _concealHeldSec + dt : 0f;
+
+                    bool auto = input.startAuthorized
+                                && (input.atStartSpot
+                                    || (input.outsideValid && _sawOutsideBox && _insideBox)
+                                    || _concealHeldSec >= ConcealStartSec);
+                    if (input.blackCleared && (advance || auto)) Enter(IntroStage.Seal);
                     // 段 0 は maxSec の計時に含めない（待っている時間は演出の尺ではない）。
                     _totalElapsed = 0f;
                     return IntroEvent.None;
+                }
 
                 case IntroStage.Seal:
                     if (advance || _stageElapsed >= _t.sealSec) Enter(IntroStage.Dark);
@@ -423,7 +506,11 @@ namespace FixedCamVr.Streaming
                     // **中に入るのを待つ。** ここが新しい運用の要で、体験者は封印の箱の中へ
                     // 歩いて入ってから固定視点になる。あわせて、頭を振っている間は管を点けない
                     // （見ていない方向でスクリーンが点くと出現そのものを見逃す）。
-                    bool ready = _insideBox && input.headTurnDegPerSec <= MaxHeadTurnForIgnite;
+                    //
+                    // ⚠ **見るのは `_physInside`（実際に面を越えた）で、黒の先行（`_insideBox`）ではない**
+                    //    （2026-08-14）。あちらは箱の面の 0.55m 手前で立つので、流用すると
+                    //    **まだ外に立っている人を中に入ったと判定して管を点け始める**。
+                    bool ready = _physInside && input.headTurnDegPerSec <= MaxHeadTurnForIgnite;
                     if (!advance && !ready && _holdSec < DarkHoldMaxSec)
                     {
                         _holdSec += dt;
@@ -471,11 +558,18 @@ namespace FixedCamVr.Streaming
         /// 「中に居る」のヒステリシス。<b>入るのは早く（<see cref="InsideEnterM"/>）、出るのは遅く
         /// （<see cref="InsideExitM"/>）</b>。黒を箱の手前で先行させるのがここ 1 箇所の役目。
         /// </summary>
-        private void UpdateInsideBox(float outsideM)
+        private void UpdateInsideBox(float outsideM, bool valid)
         {
+            // ⚠⚠ **解けないあいだは中／外の判断そのものを更新しない**（2026-08-14）。
+            //    観測値の 0 は「本当に中に居る」と「位置合わせが済んでいない・形が解けない」の
+            //    両方を意味していた。区別せずに読むと、未登録の現場を「中に居る」と判定して
+            //    真っ黒に倒し、しかも救済まで走らせてしまう。
+            if (!valid) return;
+
             // 「外に居た」の観測は**出るときと同じ閾値**で取る（入る側で取ると境界の震えで立つ）。
             if (outsideM >= InsideExitM) _sawOutsideBox = true;
 
+            // ① 黒を立てるか（箱の面より手前で先行させる）。
             if (_insideBox)
             {
                 if (outsideM >= InsideExitM) _insideBox = false;
@@ -483,6 +577,16 @@ namespace FixedCamVr.Streaming
             else if (outsideM <= InsideEnterM)
             {
                 _insideBox = true;
+            }
+
+            // ② 実際に面を越えたか（段 2 の進行条件）。①とは別の閾値で持つ。
+            if (_physInside)
+            {
+                if (outsideM >= DeepInsideExitM) _physInside = false;
+            }
+            else if (outsideM <= DeepInsideEnterM)
+            {
+                _physInside = true;
             }
         }
 

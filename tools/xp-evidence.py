@@ -249,6 +249,33 @@ def collect_moments(rows):
             ms.append(Moment(0, "intro", stage, start + dur / 2.0,
                              f"導入の段 {stage} の中央"))
 
+    # -- タイトル画面（2026-08-14 に追加）
+    # ⚠ **体験の入口なのに切り出していなかった。** 題字も、その前に出る注意書き（安全の掲示）も、
+    #    走行の画から探す手段が無く、時刻を手で計算して切り出していた。
+    #    Wait は「A を待っている真っ暗」なので、頭ではなく**終わりぎわ**を撮る
+    #    （頭は位置合わせから抜けた直後で、まだ黒が立っていないことがある）。
+    title = [r for r in rows if r["ev"].get("ev") == "title"]
+    for i, r in enumerate(title):
+        stage = r["ev"].get("stage", "?")
+        if stage in ("Off", "Done"):
+            continue
+        start = r["t"]
+        end = title[i + 1]["t"] if i + 1 < len(title) else min(start + SHORT_STAGE_SEC, last_t)
+        dur = max(end - start, 0.0)
+        if stage == "Wait":
+            # 注意書きが読める大きさかを見る 1 枚。A の直前（＝ 出切っている所）を撮る。
+            ms.append(Moment(0, "title", stage, max(start + 0.5, end - 0.5),
+                             "タイトルの待ち（注意書きが出ているはず）"))
+        elif dur < SHORT_STAGE_SEC:
+            t = start + 0.05
+            while t < end:
+                ms.append(Moment(0, "title", stage, t,
+                                 f"タイトルの段 {stage}（{dur:.1f} 秒を {SHORT_STAGE_STEP} 秒刻みで）"))
+                t += SHORT_STAGE_STEP
+        else:
+            ms.append(Moment(0, "title", stage, start + STAGE_LEAD_SEC, f"タイトルの段 {stage} の頭"))
+            ms.append(Moment(0, "title", stage, start + dur / 2.0, f"タイトルの段 {stage} の中央"))
+
     # -- 演出
     for r in rows:
         e = r["ev"]

@@ -880,6 +880,44 @@ def analyze(events, others, exp, warns=None):
                     verdict("WARN", f"導入演出の段 {want} が出ていない")
             if "Live" in stages:
                 verdict("OK", "導入演出が最後の段（Live）まで進んだ")
+        # 段 1 以降に auth=0 の行があれば、人の A ではなくスタッフの ⏭ で始まったということ。
+        forced = [e for e in intro if e.get("stage") not in ("Off", "Black") and str(e.get("auth")) == "0"]
+        if forced:
+            verdict("WARN", "導入が A の押下ではなく明示操作（⏭）で始まっている — "
+                            "現場の運用（周回リセット → 引き渡し → A）を通っていない")
+    w()
+
+    # ---------------- タイトル画面 ----------------
+    # ⚠ 2026-08-14 まで**タイトルの観測が 1 つも無かった**。体験の入口そのもので、
+    #    しかも「実体を組めないと A が何もしない」経路があるのに、出たかどうかがログから
+    #    分からなかった（`built=0` なら題字は一生出ない）。
+    title = [e for e in events if e.get("ev") == "title"]
+    if title:
+        w("## タイトル画面")
+        for e in title:
+            w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} built={e.get('built')} "
+              f"veil={e.get('veil')} glyph={e.get('glyph')}")
+        tstages = [e.get("stage") for e in title]
+        if any(str(e.get("built")) == "0" for e in title):
+            verdict("FAIL", "タイトルの実体を組めていない（built=0）— A を押しても何も起きず、"
+                            "注意書きも出ない。シェーダの Always Included と Resources/Title の版を見る")
+        else:
+            # 黒（veil）が実際に立ったか。段が Wait でも veil=0 なら画は素通しのまま。
+            # ⚠ **譲っている間（位置合わせ・ステータス表示）は veil=0 が正常**。除外しないと
+            #    「起動 → 位置合わせ」の運用そのものを FAIL と言う（2026-08-14 の走行で出した）。
+            waits = [e for e in title if e.get("stage") == "Wait" and str(e.get("yield")) != "1"]
+            if waits and all(fnum(e, "veil", 0.0) < 0.9 for e in waits):
+                verdict("FAIL", "タイトルの段は Wait なのに黒が立っていない（veil<0.9）— "
+                                "引き渡し前に体験エリアが見えている")
+            if "In" not in tstages and "Hold" not in tstages:
+                verdict("WARN", "題字が 1 度も立っていない（A が押されていないか、押しても効いていない）")
+            elif "Done" in tstages:
+                verdict("OK", "タイトルが A で呼ばれて閉じ切った")
+            if any(e.get("stage") in ("In", "Hold") and fnum(e, "glyph", 0.0) < 0.5 for e in title):
+                verdict("WARN", "題字の段なのに文字の不透明度が低い（glyph<0.5）")
+    elif exp["introEnabled"] and not truncated:
+        verdict("WARN", "タイトルの段が 1 行も記録されていない（TitleScreen 未配線か、"
+                        "シーンを焼き直していない）")
     w()
 
     # ---------------- 位置合わせ（コントローラの操作モード） ----------------

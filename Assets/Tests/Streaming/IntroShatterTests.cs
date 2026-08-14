@@ -33,7 +33,7 @@ namespace FixedCamVr.Streaming.Tests
             l.Begin();
             var input = new IntroInput
             {
-                blackCleared = true, atStartSpot = true, frameCentered = true,
+                blackCleared = true, startAuthorized = true, outsideValid = true, atStartSpot = true, frameCentered = true,
                 liveFresh = true, outsideBoxM = 0f,
             };
             Assert.AreEqual(0f, l.Weights.shatter, 1e-5f, "段 0 で割れている");

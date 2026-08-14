@@ -34,12 +34,24 @@ namespace FixedCamVr.Streaming.Tests
             return l;
         }
 
-        /// <summary>黒が明けていて、体験者が箱の中に居て、映像も届いている観測値。</summary>
+        /// <summary>
+        /// 黒が明けていて、体験者が箱の中に居て、映像も届いている観測値。
+        /// <b>人が A を押した後（<c>startAuthorized</c>）で、位置も解けている</b>のが既定。
+        /// </summary>
         private static IntroInput Ready(bool live = true, float outsideM = 0f) => new IntroInput
         {
             blackCleared = true, headTurnDegPerSec = 0f, frameCentered = true,
             liveFresh = live, recentered = false, outsideBoxM = outsideM,
+            startAuthorized = true, outsideValid = true,
         };
+
+        /// <summary>まだ A が押されていない（タイトルが画面を持っている）観測値。</summary>
+        private static IntroInput NotAuthorized(float outsideM = 0f)
+        {
+            var i = Ready(outsideM: outsideM);
+            i.startAuthorized = false;
+            return i;
+        }
 
         /// <summary>秒数ぶん進める（段の途中の見えを確かめたいときだけ使う）。</summary>
         private static void Advance(IntroLogic l, float sec, IntroInput input, float dt = 0.1f)
@@ -144,8 +156,10 @@ namespace FixedCamVr.Streaming.Tests
         {
             // ⚠ **状態ではなく事象**。前の体験者が中に立ったままのリセット・エリア内に置いた HMD で
             //    勝手に走り出してはいけない（canon/LEDGER.md 0005 が禁じた形）。
+            //    2026-08-14 から、これを担保するのは**人が A を押したか**（startAuthorized）。
+            //    A を押すのは体験者に被せた後なので、置いた HMD では押されない。
             var l = Make();
-            Advance(l, 30f, Ready(outsideM: 0f));
+            Advance(l, 30f, NotAuthorized(outsideM: 0f));
             Assert.AreEqual(IntroStage.Black, l.Stage, "中に居ただけで演出が始まった");
             Assert.IsFalse(l.SawOutsideBox);
         }
@@ -155,13 +169,103 @@ namespace FixedCamVr.Streaming.Tests
         {
             // 体験者交代。前の人の観測が残っていると、中に立ったままのリセットで走り出す。
             var l = Make();
-            Advance(l, 1f, Ready(outsideM: 3f));
+            Advance(l, 1f, NotAuthorized(outsideM: 3f));
             Assert.IsTrue(l.SawOutsideBox);
 
             l.Begin();
             Assert.IsFalse(l.SawOutsideBox);
-            Advance(l, 5f, Ready(outsideM: 0f));
+            Advance(l, 5f, NotAuthorized(outsideM: 0f));
             Assert.AreEqual(IntroStage.Black, l.Stage, "リセット後に前の観測で始まった");
+        }
+
+        [Test]
+        public void Black_DoesNotStartUntilAPress_EvenWhenTheVisitorApproaches()
+        {
+            // ⚠⚠ **2026-08-14 に塞いだ穴。** タイトルが立って A を待っているあいだも段 0 は生きていて、
+            //    接近も安全網も判定されていた。**スタッフが HMD を持って体験エリアを横切るだけ**で
+            //    導入が始まり、`TitleScreen` が「段 0 を出た」を見て自分を強制終了する ＝ 題字が飛ぶ。
+            var l = Make();
+            var approached = NotAuthorized(outsideM: 3f);
+            approached.atStartSpot = true;
+            Advance(l, 5f, approached);
+            Assert.AreEqual(IntroStage.Black, l.Stage, "A を押す前に接近だけで始まった（題字が飛ぶ）");
+
+            // 外 → 中 と歩いても、A の前なら安全網も動かない。
+            Advance(l, 1f, NotAuthorized(outsideM: 3f));
+            Advance(l, 2f, NotAuthorized(outsideM: 0f));
+            Assert.AreEqual(IntroStage.Black, l.Stage, "A を押す前に安全網で始まった");
+
+            // A が押されたら、同じ観測でその場から始まる。
+            l.Tick(0.1f, Ready(outsideM: 0f));
+            Assert.AreEqual(IntroStage.Seal, l.Stage);
+        }
+
+        [Test]
+        public void Black_StaffOverrideStillWorksBeforeTheAPress()
+        {
+            // スタッフの ⏭ は人の判断そのもの。「まだ始めるな」を上書きする権利がある
+            // （コントローラが死んでいる現場で唯一の出口でもある）。
+            var l = Make();
+            l.RequestAdvance();
+            l.Tick(0.1f, NotAuthorized(outsideM: 3f));
+            Assert.AreEqual(IntroStage.Seal, l.Stage);
+        }
+
+        [Test]
+        public void Black_RescuesTheVisitorStandingRightAtTheBox()
+        {
+            // ⚠⚠ **2026-08-14 に塞いだ穴（本体）。** 箱の至近に立たされた体験者は
+            //    「0.85m 外に居た」を満たせず、接近も「0.35m 縮む」余地が無い。段 0 は maxSec の
+            //    対象外なので時間でも抜けない ＝ **真っ黒のままスタッフの ⏭ 以外に出口が無い**。
+            //    1.8m 四方の現場では、体験者を箱の縁 0.5m に立たせるのが普通に起きる。
+            var l = Make();
+            var atTheBox = Ready(outsideM: 0.3f);   // InsideEnterM(0.55) の内側 ＝ 黒が立っている
+            Advance(l, IntroLogic.ConcealStartSec * 0.5f, atTheBox);
+            Assert.AreEqual(IntroStage.Black, l.Stage, "救済が早すぎる（近づく合図を待つ余地を潰している）");
+
+            Advance(l, IntroLogic.ConcealStartSec, atTheBox);
+            Assert.AreEqual(IntroStage.Seal, l.Stage, "黒が立ったまま詰んでいる");
+        }
+
+        [Test]
+        public void Black_DoesNotRescueBeforeTheAPress()
+        {
+            // 救済も「人が始めた」でゲートする。無条件の時間切れにすると、置いた HMD で走り出す。
+            var l = Make();
+            Advance(l, IntroLogic.ConcealStartSec * 4f, NotAuthorized(outsideM: 0.3f));
+            Assert.AreEqual(IntroStage.Black, l.Stage);
+        }
+
+        [Test]
+        public void Black_DoesNotRescueWhenThePositionIsUnknown()
+        {
+            // ⚠⚠ **未登録を「中に居る」と読まない**（2026-08-14・Codex 指摘）。旧実装は
+            //    位置が解けないときも 0（＝中）を返していたので、区別する材料がロジック側に無かった。
+            var l = Make();
+            var unknown = Ready(outsideM: 0f);
+            unknown.outsideValid = false;
+            Advance(l, IntroLogic.ConcealStartSec * 4f, unknown);
+            Assert.AreEqual(IntroStage.Black, l.Stage, "位置が解けないのに自動で始まった");
+            Assert.IsFalse(l.InsideBox, "解けない観測で中／外の判断を更新した");
+        }
+
+        [Test]
+        public void Dark_WaitsUntilTheVisitorActuallyEntersTheBox()
+        {
+            // ⚠ 段 2 の進行条件は**実際に面を越えたか**（DeepInsideEnterM）。黒の先行（InsideEnterM =
+            //    箱の 0.55m 手前）を流用すると、**まだ外に立っている人を中に入ったと判定して管を点ける**。
+            var l = AtSeal();
+            var nearFace = Ready(outsideM: 0.4f);   // 黒は立っているが、まだ面の外
+            RunStage(l, IntroStage.Seal, nearFace);
+            Assert.AreEqual(IntroStage.Dark, l.Stage);
+            Assert.IsTrue(l.InsideBox, "黒はもう立っているはず");
+            Assert.IsFalse(l.PhysicallyInside, "まだ箱の外に立っている");
+
+            Advance(l, T.darkSec + 0.5f, nearFace);
+            Assert.AreEqual(IntroStage.Dark, l.Stage, "外に立ったまま管が点き始めた");
+
+            Advance(l, 0.3f, Ready(outsideM: 0f));
+            Assert.AreEqual(IntroStage.Ignite, l.Stage, "中に入ったのに管が点かない");
         }
 
         // ---- (B) 段の直列と尺 --------------------------------------------------

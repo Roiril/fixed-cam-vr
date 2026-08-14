@@ -234,6 +234,8 @@ namespace FixedCamVr.Streaming
             // （ユーザー報告「今はすぐに起動してしまう。最初からなのか、リセットしたあとからなのかは
             // 覚えてない」）。ラッチは 1 箇所で落とす。
             RearmStartSignal();
+            _unknownPosSec = 0f;
+            _warnedUnknownPos = false;
             if (!_def.enabled)
             {
                 // 演出なし。従来どおり最初からスクリーンだけが見える。
@@ -309,7 +311,9 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            var ev = _logic.Tick(Time.unscaledDeltaTime, BuildInput());
+            IntroInput input = BuildInput();
+            WarnIfStuckAtBlack(input);
+            var ev = _logic.Tick(Time.unscaledDeltaTime, input);
             var w = _logic.Weights;
             veil?.Apply(w);
             // 隔離殻（会場を黒で落とし、実物の壁と足元の床だけを残す）。覆いの**後**に描かれる面なので、
@@ -347,32 +351,75 @@ namespace FixedCamVr.Streaming
             _headTurn = Mathf.Lerp(_headTurn, inst, 1f - Mathf.Exp(-8f * dt));
         }
 
-        private IntroInput BuildInput() => new IntroInput
+        private IntroInput BuildInput()
         {
-            blackCleared = _sinceStart >= blackClearSec,
-            atStartSpot = IsAtStartSpot(),
-            headTurnDegPerSec = _headTurn,
-            frameCentered = IsScreenCentered(),
-            liveFresh = IsLiveFresh(),
-            recentered = showControl?.CourseNeedsReRegProvider?.Invoke() ?? false,
-            outsideBoxM = OutsideBoxM(),
-        };
+            bool valid = TryOutsideBoxM(out float outsideM);
+            return new IntroInput
+            {
+                blackCleared = _sinceStart >= blackClearSec,
+                startAuthorized = IsStartAuthorized(),
+                atStartSpot = IsAtStartSpot(),
+                headTurnDegPerSec = _headTurn,
+                frameCentered = IsScreenCentered(),
+                liveFresh = IsLiveFresh(),
+                recentered = showControl?.CourseNeedsReRegProvider?.Invoke() ?? false,
+                outsideBoxM = outsideM,
+                outsideValid = valid,
+            };
+        }
 
         /// <summary>
         /// 体験エリア（隔離の footprint）の外側までの距離 (m)。封印の箱の濃さがこれで決まる。
         ///
-        /// ⚠ <b>解けないときは 0（＝中に居る扱い）</b>。未登録・layout 未着で「外に居る」と答えると、
-        /// 現実の見当違いの所に黒い箱が立つ。出さない側へ倒す。
+        /// ⚠⚠ <b>「解けない」を 0（中に居る）で表さない</b>（2026-08-14）。旧実装は未登録・layout 未着でも
+        /// 0 を返していたので、<see cref="IntroLogic"/> からは「体験者が箱の中に立っている」と
+        /// 区別できなかった。<b>解けたかどうかを戻り値で分ける</b> — 中／外の判断はそのときだけ更新される。
         /// </summary>
-        private float OutsideBoxM()
+        private bool TryOutsideBoxM(out float outsideM)
         {
-            if (!IsCourseRegistered()) return 0f;
+            outsideM = 0f;
+            if (!IsCourseRegistered()) return false;
             var head2 = showControl?.HeadCourseXZProvider;
-            if (head2 == null) return 0f;
+            if (head2 == null) return false;
             if (!ContainmentShellLogic.TryFootprint(showControl?.Layout, showControl?.Room,
-                                                    out Vector2 half)) return 0f;
-            return ContainmentShellLogic.DistanceOutsideM(head2(), half);
+                                                    out Vector2 half)) return false;
+            outsideM = ContainmentShellLogic.DistanceOutsideM(head2(), half);
+            return true;
         }
+
+        private float _unknownPosSec;
+        private bool _warnedUnknownPos;
+
+        /// <summary>
+        /// <b>人は始めたのに、位置が解けないので段 0 から動けない</b>を名指しする。
+        ///
+        /// この状態では接近も安全網も救済も成立せず、出口はスタッフの ⏭ だけになる。
+        /// 黙って待つと現場では「A を押したのに何も起きない」としか見えないので、
+        /// <b>理由と直し方</b>を 1 回だけログへ出す（<c>IsAtStartSpot</c> の 8 秒警告と同じ流儀）。
+        /// </summary>
+        private void WarnIfStuckAtBlack(in IntroInput input)
+        {
+            if (_logic.Stage != IntroStage.Black || !input.startAuthorized || input.outsideValid)
+            {
+                _unknownPosSec = 0f;
+                return;
+            }
+            _unknownPosSec += Time.unscaledDeltaTime;
+            if (_unknownPosSec < 8f || _warnedUnknownPos) return;
+            _warnedUnknownPos = true;
+            Debug.LogWarning(
+                "[Intro] 体験者の居場所が解けないので導入は自動では始まりません"
+                + "（位置合わせが済んでいないか、体験エリアの寸法が未著作）。"
+                + "右トリガー 2 秒長押しで位置合わせをやり直すか、スタッフの ⏭ で進めてください");
+        }
+
+        /// <summary>
+        /// <b>人が「始めてよい」と言ったか</b>（<see cref="IntroInput.startAuthorized"/> の供給元）。
+        /// 実体は「タイトルが画面を手放したか」で、配線は <c>OvrControllerBridge</c>（Assembly-CSharp）。
+        ///
+        /// ⚠ <b>provider が無ければ true</b>（Editor・テスト・タイトルを持たない構成で体験が止まらない）。
+        /// </summary>
+        private bool IsStartAuthorized() => showControl?.StartAuthorized ?? true;
 
         /// <summary>
         /// 導入を始める合図が来たか。<b>HMD を被っていることが前提</b>で、その上で
@@ -387,7 +434,13 @@ namespace FixedCamVr.Streaming
         {
             // 置いてある HMD が位置条件をたまたま満たして勝手に始まるのを防ぐ。
             // 被り直すまでラッチも落とす（前の体験者が踏んだ線で次が始まらない）。
-            if (!IsUserPresent()) { RearmStartSignal(); return false; }
+            //
+            // ⚠ **タイトルが画面を持っているあいだも武装し直す**（2026-08-14 に門を分けた）。
+            //    落とさないと、題字を読んでいるあいだに接近の条件が揃ってしまい、
+            //    **タイトルが閉じた瞬間に演出が始まる**（封印の箱を見る間が 1 フレームも無い）。
+            //    それまでは `UserPresentProvider` が「被っている」と「タイトルが立っていない」を
+            //    兼ねていたが、自動走行が被り検知だけを無効化するため意味が混ざっていた。
+            if (!IsUserPresent() || !IsStartAuthorized()) { RearmStartSignal(); return false; }
             if (!IsCourseRegistered()) { _startSpot.NotifyUnavailable(); return false; }
             var head2 = showControl?.HeadCourseXZProvider;
             if (head2 == null) { _startSpot.NotifyUnavailable(); return false; }

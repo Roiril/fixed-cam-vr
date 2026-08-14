@@ -205,18 +205,18 @@ namespace FixedCamVr.Streaming.Tests
             var l = new IntroLogic();
             l.Configure(IntroTiming.Default);
             l.Begin();
-            var inside = new IntroInput { blackCleared = true, outsideBoxM = 0f };
+            var inside = new IntroInput { blackCleared = true, startAuthorized = true, outsideValid = true, outsideBoxM = 0f };
             l.Tick(0.016f, inside);
             Assert.AreEqual(0f, l.Weights.shellReveal, 1e-4f, "段 0 で中を見せている");
             Assert.AreEqual(1f, l.Weights.shell, 1e-4f, "中に居るのに黒が出ていない");
 
             // 段を進めても shellReveal は 0 のまま。
-            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true, outsideBoxM = 0f });
+            l.Tick(0.016f, new IntroInput { blackCleared = true, startAuthorized = true, outsideValid = true, atStartSpot = true, outsideBoxM = 0f });
             for (int i = 0; i < 2000 && l.Stage != IntroStage.Done; i++)
             {
                 l.Tick(0.016f, new IntroInput
                 {
-                    blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 0f,
+                    blackCleared = true, startAuthorized = true, outsideValid = true, frameCentered = true, liveFresh = true, outsideBoxM = 0f,
                 });
                 Assert.AreEqual(0f, l.Weights.shellReveal, 1e-4f, $"段 {l.Stage} で中を見せている");
             }
@@ -231,12 +231,12 @@ namespace FixedCamVr.Streaming.Tests
             l.Begin();
 
             // 外に居る: 中を隠すのは箱の仕事。殻は要らない。
-            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = 2f });
+            l.Tick(0.016f, new IntroInput { blackCleared = true, startAuthorized = true, outsideValid = true, outsideBoxM = 2f });
             Assert.AreEqual(1f, l.Weights.sealBox, 1e-4f);
             Assert.AreEqual(0f, l.Weights.shell, 1e-4f);
 
             // 中に入ってしまった: 黒しか見せない。
-            l.Tick(0.016f, new IntroInput { blackCleared = true, outsideBoxM = 0f });
+            l.Tick(0.016f, new IntroInput { blackCleared = true, startAuthorized = true, outsideValid = true, outsideBoxM = 0f });
             Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
             Assert.AreEqual(1f, l.Weights.shell, 1e-4f);
         }
@@ -248,18 +248,18 @@ namespace FixedCamVr.Streaming.Tests
             var l = new IntroLogic();
             l.Configure(IntroTiming.Default);
             l.Begin();
-            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true, outsideBoxM = 2f });
+            l.Tick(0.016f, new IntroInput { blackCleared = true, startAuthorized = true, outsideValid = true, atStartSpot = true, outsideBoxM = 2f });
             for (int i = 0; i < 3000 && l.Stage != IntroStage.Live; i++)
                 l.Tick(0.016f, new IntroInput
                 {
-                    blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
+                    blackCleared = true, startAuthorized = true, outsideValid = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
                 });
             Assert.AreEqual(IntroStage.Live, l.Stage);
             for (int i = 0; i < 300 && l.Stage == IntroStage.Live; i++)
             {
                 l.Tick(0.016f, new IntroInput
                 {
-                    blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
+                    blackCleared = true, startAuthorized = true, outsideValid = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
                 });
                 Assert.AreEqual(0f, l.Weights.passthrough, 1e-4f, "段 4 でパススルーが出ている");
                 Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f, "段 4 で箱が画面を覆っている");
@@ -283,13 +283,13 @@ namespace FixedCamVr.Streaming.Tests
             var l = new IntroLogic();
             l.Configure(IntroTiming.Default);
             l.Begin();
-            l.Tick(0.016f, new IntroInput { blackCleared = true, atStartSpot = true, outsideBoxM = 2f });
+            l.Tick(0.016f, new IntroInput { blackCleared = true, startAuthorized = true, outsideValid = true, atStartSpot = true, outsideBoxM = 2f });
             float lastSwapShell = 1f;
             for (int i = 0; i < 3000; i++)
             {
                 l.Tick(0.016f, new IntroInput
                 {
-                    blackCleared = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
+                    blackCleared = true, startAuthorized = true, outsideValid = true, frameCentered = true, liveFresh = true, outsideBoxM = 2f,
                 });
                 if (l.Stage == IntroStage.Live) lastSwapShell = l.Weights.shell;
                 if (l.Stage == IntroStage.Done) break;

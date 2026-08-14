@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: af5a556b-6b30-4a77-84ea-1e6cea94b69a
-  modified: 2026-08-13T00:44:15.206Z
+  modified: 2026-08-14T08:45:43.702Z
 ---
 
 # タイトル画面「廻リ視」を触る前に
@@ -88,13 +88,42 @@ Registration の A（点サンプル）は不変。入力面は右手 4 入力�
 ## 4. 失敗したら必ず素通しへ倒す
 
 `TitleScreen.IsBlocking` は **実体を組めたときしか true にならない**（シェーダ剥がれ・
-版の欠落なら false）。この値が `UserPresentProvider` を通じて**導入の開始門**に効くので、
+版の欠落なら false）。この値が **`ShowControlClient.StartAuthorizedProvider`**（2026-08-14〜。
+それまでは `UserPresentProvider`）を通じて**導入の開始門**に効くので、
 ここをラッチにすると**タイトルが出せない現場で体験が二度と始まらない**
 （2026-07-31 のシェーダ剥がれと同型）。
 
 出口は 2 つある。**両方消さないこと**:
 - 右 A（`RequestDismiss`）
 - 導入が段 0 を出た（卓の ⏭ 等）→ `ForceClose`。**コントローラが死んでいる現場での唯一の出口**
+
+### ⚠⚠ 開始門は「被っているか」と別の provider（2026-08-14）
+
+旧実装は `UserPresentProvider` 1 本で `userPresent && !title.IsBlocking` を返していた。
+2 つの実害がある:
+
+- **自動走行が被り検知だけを外す目的で全体を true に上書きする**（`ShowWalkDebugDriver`）。
+  走行ではタイトルを飛び越して導入が始まり、`TitleScreen` が「段 0 を出た」を見て
+  `ForceClose` していた ＝ **タイトルは自動走行で 1 度も検証されていなかった**
+- 段 0 の**安全網（外 → 中）はこの門を通っていなかった**ので、
+  **スタッフが HMD を持って体験エリアを横切るだけで導入が始まり、題字が飛んだ**
+
+いまは `StartAuthorizedProvider`（＝ `!IsBlocking`）が独立し、`IntroLogic` の段 0 の
+**自動の出口すべて**がそれを通る（⏭ だけは通さない）。走行側は
+`TitleScreen.RequestAdvance()` を送って閉じ切るまで待つ ＝ 実機と同じ入り方。
+
+⚠ **`IsYielding`（位置合わせ中・ステータス表示中）を `IsBlocking` に混ぜない。**
+混ぜると**スタッフが右 B を押しただけで体験が始まる**。譲りは `RequestAdvance` の側で弾く。
+
+## 4.6 タイトルの黒はスタッフのステータス表示も塗り潰す（2026-08-14）
+
+黒は頭から 0.3m・queue 4950・`ZTest Always`。`StatusHud`（1.6m・TMP・queue 3000）は
+**先に描かれるので丸ごと消える**。引き渡し直前の真っ暗な待ちで、スタッフが
+カメラの○×や位置合わせの残差を確かめられず「B が効いていない」としか見えなかった。
+
+→ **位置合わせ中と同じ扱いで譲る**（`ShowControlClient.StatusVisibleProvider` ←
+`OvrControllerBridge` が `StatusHud.IsVisible` を配線）。譲っている間の A は受け付けない
+（`RequestAdvance` が false を返し、呼び出し側が理由をログと触覚で出す）。
 
 `TitleShaderInclusionTests` が「2 本のシェーダが `m_AlwaysIncludedShaders` に入っていること」と
 「版が Resources から読めること」を機械で固定している。

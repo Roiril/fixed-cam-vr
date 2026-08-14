@@ -91,18 +91,29 @@ namespace FixedCamVr.OvrBridge
             // 導入演出は「HMD を被った状態で」始める。Streaming asmdef は OVR を参照しない規約なので、
             // Assembly-CSharp 側のここから判定を差し込む（未設定なら被っている扱いで従来どおり動く）。
             //
-            // ⚠ **タイトルが立っている間も始めない。** 立てておかないと、体験者がタイトルを読んでいる
-            //    最中に導入が黒の裏で流れ切ってしまう（読み終えた頃には固定視点になっている）。
-            //    門はここ 1 つで、`IntroDirector.IsAtStartSpot` が false のとき合図を武装し直すので、
-            //    タイトルを閉じた時点から改めて数え始まる。
+            // ⚠⚠ **「被っている」と「人が始めてよいと言った」は別の provider に分ける**（2026-08-14）。
+            //    旧実装は 1 つに畳んで `userPresent && !title.IsBlocking` を返していたが、
+            //    自動走行（`ShowWalkDebugDriver`）は**被り検知だけを外す目的で全体を true に
+            //    上書きする**ので、走行ではタイトルが立ったまま導入が始まって題字が飛んでいた
+            //    ＝ タイトル画面は自動走行で 1 度も検証されていなかった。
+            //
             // ⚠ **必ず素通しへ倒す。** `IsBlocking` はタイトルの実体を組めたときしか true にならない
             //    （シェーダ剥がれ・テクスチャ欠落なら false）。ここをラッチにすると、タイトルが
             //    出せない現場で**体験が二度と始まらない**（2026-07-31 のシェーダ剥がれと同型）。
             if (showControl != null)
             {
                 var title = titleScreen;
-                showControl.UserPresentProvider =
-                    () => OVRPlugin.userPresent && !(title != null && title.IsBlocking);
+                showControl.UserPresentProvider = () => OVRPlugin.userPresent;
+                showControl.StartAuthorizedProvider = () => !(title != null && title.IsBlocking);
+            }
+
+            // スタッフがステータスを開いているあいだ、タイトルの黒（0.3m・queue 4950）が
+            // StatusHud（1.6m・TMP）を丸ごと塗り潰す。**引き渡し直前にカメラの○×も位置合わせの
+            // 残差も確認できない**ので、タイトル側に譲らせる（位置合わせ中と同じ扱い）。
+            if (showControl != null && statusHud != null)
+            {
+                var hud = statusHud;
+                showControl.StatusVisibleProvider = () => hud.IsVisible;
             }
 
             // 位置合わせ中は「現実を隠すもの」を全部どける（演出の覆い・中止の黒・パススルーの電源）。
@@ -241,10 +252,29 @@ namespace FixedCamVr.OvrBridge
                     //    カメラ手動送りは 2026-08-12 に撤去した（ユーザー宣言「カメラの手送り機能は
                     //    要らないです」）。設営でカメラを見たいときは Web 卓の 📺 カメラ固定か、
                     //    Editor のキーボード（CameraSwitchInput の Tab / 1-9）を使う。
-                    if (aDown && titleScreen != null && titleScreen.RequestAdvance())
+                    if (aDown)
                     {
-                        haptics?.Fire();   // 体験の開始。短押しより強い手応えを返す
-                        Debug.Log("[Title] A を受け取りました（真っ暗なら題字を呼び出す / 立っていれば閉じる）");
+                        if (titleScreen != null && titleScreen.RequestAdvance())
+                        {
+                            haptics?.Fire();   // 体験の開始。短押しより強い手応えを返す
+                            Debug.Log("[Title] A を受け取りました（真っ暗なら題字を呼び出す / 立っていれば閉じる）");
+                        }
+                        else
+                        {
+                            // ⚠ **空振りを黙らせない**（2026-08-14）。旧実装は成功したときだけログを出して
+                            //    いたので、押しても何も起きない現場では「A が壊れた」としか見えなかった。
+                            //    もう閉じている（＝スタッフの二度押し）は正常なので振動は返さない。
+                            string why = titleScreen == null
+                                ? "タイトルがシーンに居ない（menu scene で焼き直す）"
+                                : titleScreen.DescribeAdvanceBlock();
+                            bool benign = titleScreen != null && titleScreen.ClosedAlready;
+                            if (benign) Debug.Log($"[Title] A は何もしませんでした（{why}）");
+                            else
+                            {
+                                haptics?.Error();
+                                Debug.LogWarning($"[Title] A が効きませんでした（{why}）");
+                            }
+                        }
                     }
                     // B: ステータス表示トグル（真実源 IsVisible の反転）。
                     if (bDown) { ToggleStatus(); haptics?.Action(); }

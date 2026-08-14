@@ -2373,6 +2373,38 @@ namespace FixedCamVr.Streaming
         /// <summary>位置合わせが動作中か（未配線なら false）。</summary>
         public bool CourseRegistrationActive => CourseRegistrationActiveProvider?.Invoke() ?? false;
 
+        /// <summary>
+        /// <b>人が「体験を始めてよい」と言ったか。</b> 実体は「タイトルが画面を手放したか」
+        /// （＝ スタッフが A を押して題字が焼け切った）で、差し込むのは <c>OvrControllerBridge</c>。
+        ///
+        /// ⚠⚠ <b>これを <see cref="UserPresentProvider"/> に混ぜてはいけない</b>（2026-08-14 に分けた）。
+        /// 旧実装は「被っている ＆ タイトルが立っていない」を 1 つの provider で表していたが、
+        /// 自動走行（<c>ShowWalkDebugDriver</c>）が<b>被り検知だけを無効化する目的で全体を true に
+        /// 上書きする</b>ので、走行ではタイトルが立ったまま導入が始まって題字が飛んでいた
+        /// （＝ タイトルは自動走行で 1 度も検証されていなかった）。
+        ///
+        /// ⚠ <b>未配線なら true</b>（Editor・テスト・タイトルを持たない構成で体験が止まらない）。
+        /// タイトルの実体を組めない現場でも <c>TitleScreen.IsBlocking</c> が false になるので、
+        /// ここが false のまま居座ることは無い（「タイトルが壊れると二度と始まらない」を作らない）。
+        /// </summary>
+        public Func<bool>? StartAuthorizedProvider;
+
+        /// <summary>人が始めてよいと言ったか（未配線なら true ＝ 止めない）。</summary>
+        public bool StartAuthorized => StartAuthorizedProvider?.Invoke() ?? true;
+
+        /// <summary>
+        /// <b>スタッフがステータス表示（右 B）を開いているか。</b> Diagnostics asmdef を参照しない規約なので、
+        /// 両方を知っている <c>OvrControllerBridge</c> が差し込む。未配線なら false。
+        ///
+        /// タイトルの黒は頭から 0.3m・queue 4950・ZTest Always で、<c>StatusHud</c>（1.6m・TMP）を
+        /// <b>後から丸ごと塗り潰す</b>。引き渡し直前にカメラの○×や位置合わせの残差を確かめられないと、
+        /// スタッフは「B が効いていない」としか読めない。開いているあいだはタイトルが譲る。
+        /// </summary>
+        public Func<bool>? StatusVisibleProvider;
+
+        /// <summary>スタッフがステータスを開いているか（未配線なら false）。</summary>
+        public bool StatusVisible => StatusVisibleProvider?.Invoke() ?? false;
+
         private void ApplyPostForActive()
         {
             if (_material == null) return;

@@ -272,13 +272,56 @@ namespace FixedCamVr.Streaming
         public bool RequestAdvance()
         {
             if (!IsBlocking) return false;
+            // 譲っている間（位置合わせ・ステータス表示）は時計が止まっているので、受けても何も起きない。
+            // **受けたふりをしない** — 呼び出し側はこの戻り値で触覚とログを出す。
+            if (IsYielding) return false;
             if (_logic.Stage != TitleStage.Wait && !_logic.GlyphShowing) return false;
             _dismissRequested = true;
             return true;
         }
 
+        /// <summary>
+        /// いま画面を譲っているか（位置合わせ中 / スタッフがステータスを開いている）。
+        ///
+        /// ⚠ <b><see cref="IsBlocking"/> には含めない。</b> あれは「人が始めてよいと言ったか」
+        /// （<c>ShowControlClient.StartAuthorized</c>）の供給元なので、譲るたびに false になると
+        /// <b>スタッフが右 B を押しただけで体験が始まる</b>。
+        /// </summary>
+        private bool IsYielding =>
+            (showControl?.CourseRegistrationActive ?? false) || (showControl?.StatusVisible ?? false);
+
+        /// <summary>
+        /// いま譲っているか（テレメトリ用）。<b>譲っている間は段が Wait のままでも黒は 0</b> なので、
+        /// これを出さないと判定が「Wait なのに黒が立っていない」と誤って FAIL を出す
+        /// （2026-08-14 の走行で実際に出した）。
+        /// </summary>
+        public bool Yielding => IsYielding;
+
         /// <summary>題字が立っているか（音の一撃を鳴らす縁）。</summary>
         public bool GlyphShowing => IsBuilt && titleEnabled && _logic.GlyphShowing;
+
+        /// <summary>
+        /// もう閉じ切っているか（＝ A が空振りしても<b>異常ではない</b>）。
+        /// スタッフが二度押ししただけの空振りと、出せていない空振りを分けるために公開する。
+        /// </summary>
+        public bool ClosedAlready => _logic.Stage == TitleStage.Done;
+
+        /// <summary>
+        /// A が効かなかった理由（<b>現場で読める 1 行</b>）。効くはずの状態なら空を返す。
+        ///
+        /// ⚠ これが無いと、押しても何も起きない現場で切り分ける手掛かりが 1 つも無い
+        /// （成功したときだけログが出ていた）。
+        /// </summary>
+        public string DescribeAdvanceBlock()
+        {
+            if (!titleEnabled) return "タイトルを出さない設定になっている";
+            if (!IsBuilt) return "タイトルの実体を組めていない（シェーダが剥がれたか版が無い）";
+            if (IsYielding) return "ステータス表示か位置合わせ中は受け付けない（右 B で閉じてから押す）";
+            if (_logic.Stage == TitleStage.Done) return "タイトルはもう閉じている（体験はすでに始まっている）";
+            if (_logic.Stage == TitleStage.Off) return "タイトルの段が Off（周回リセットで出し直す）";
+            if (_logic.Stage == TitleStage.Out) return "いま閉じる演出の最中";
+            return "";
+        }
 
         /// <summary>演出なしで畳む（卓の ⏭ 等で導入が段 0 を出たとき）。</summary>
         public void ForceClose()
@@ -298,11 +341,16 @@ namespace FixedCamVr.Streaming
             // ⚠ 位置合わせ中は譲る。タイトルの黒は 0.3m・queue 4950 で、
             //    登録ガイダンス（StatusHud・1.6m）より手前かつ後に描かれるので、
             //    譲らないと作業中のスタッフに文字が 1 つも見えない（2026-08-07 の実害と同型）。
-            bool registering = showControl?.CourseRegistrationActive ?? false;
+            //
+            // ⚠⚠ **右 B のステータス表示にも同じことが起きる**（2026-08-14）。引き渡し直前の
+            //    真っ暗な待ちで、スタッフがカメラの○×や位置合わせの残差を確かめようとしても
+            //    **黒が StatusHud を丸ごと塗り潰す**ので「B が効いていない」としか見えなかった。
+            //    どちらもコントローラを持つ人にしか起こせないので、体験者の視界に現実は漏れない。
+            bool yielding = IsYielding;
 
             // 導入が段 0 を出てしまったら（卓の ⏭ 等）、タイトルは即座に畳む。
             // **コントローラが死んでいる現場での唯一の出口**なので消さないこと。
-            if (!registering && introDirector != null && introDirector.Active
+            if (!yielding && introDirector != null && introDirector.Active
                 && introDirector.Stage != IntroStage.Black && _logic.Stage != TitleStage.Out)
             {
                 ForceClose();
@@ -313,11 +361,11 @@ namespace FixedCamVr.Streaming
             {
                 dismissRequested = _dismissRequested,
                 concealReady = ConcealReady(),
-                suspended = registering,
+                suspended = yielding,
             });
             _dismissRequested = false;
 
-            if (registering) { Hide(); return; }
+            if (yielding) { Hide(); return; }
             Apply(_logic.Weights);
         }
 
