@@ -98,6 +98,9 @@ namespace FixedCamVr.Streaming
         private float _creakCountdown = -1f;
         private float _blackElapsed = -1f;
         private bool _bellFired;
+
+        /// <summary>前フレームの導入の段。段 0 へ入った縁で「1 度だけ」を落とすために持つ。</summary>
+        private IntroStage _lastIntroStage = IntroStage.Off;
         private uint _rng = 0x9E3779B9;
 
         /// <summary>拾えなかった数（累積）。0 でないなら設計か閾値が間違っている。</summary>
@@ -107,13 +110,32 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             _titleWasVisible = false;
-            _sealFired = _shatterFired = _screenOnFired = _screenNoiseFired = _swapFired = _openFired = false;
             _glitchArmed = true;
             _glitchCooldown = 0f;
             _glyphWasShowing = false;
+            ResetIntroLatches();
+        }
+
+        /// <summary>
+        /// 体験 1 回ぶんの「1 度だけ鳴る」を全部落とす。
+        ///
+        /// ⚠⚠ <b>2026-08-14 まで、これを落とす経路は <see cref="ResetRun"/> だけで、
+        /// その呼び出し元がどこにも無かった。</b> ＝ アプリを起動してから<b>1 人目だけ導入の音が鳴り、
+        /// 2 人目以降は隔離が閉じる音も管が点く音も鈴も終幕も無音</b>だった。
+        /// 展示は 1 日に数十人が続けて体験するので、**ほぼ全員が無音の側に当たる**。
+        /// しかも画は正常で、<b>音は録画に映らない</b>ので走行の証拠からは気づけない。
+        ///
+        /// ⇒ <b>呼び忘れが起きない形にした</b>: <see cref="Tick"/> が導入の段 0（<c>Black</c>）へ
+        /// 入った縁で自分で落とす。段 0 はランリセットでも中止からの復帰でも必ず通るので、
+        /// 号令を配る側の実装に依存しない。
+        /// </summary>
+        private void ResetIntroLatches()
+        {
+            _sealFired = _shatterFired = _screenOnFired = _screenNoiseFired = _swapFired = _openFired = false;
             _creakCountdown = -1f;
             _blackElapsed = -1f;
             _bellFired = false;
+            // 家鳴りの間隔は決定論。次の体験者にも同じ並びを配る。
             _rng = 0x9E3779B9;
         }
 
@@ -136,6 +158,13 @@ namespace FixedCamVr.Streaming
         {
             count = 0;
             if (_glitchCooldown > 0f) _glitchCooldown -= dt;
+
+            // ⚠⚠ **導入が頭から始まったら「1 度だけ」を落とす**（2026-08-14）。
+            //    これが無いと 2 人目以降の体験で導入の音が 1 つも鳴らない（`ResetIntroLatches` の説明）。
+            //    段 0 はランリセットでも中止からの復帰でも必ず通るので、ここが唯一の確実な縁。
+            if (s.introActive && s.introStage == IntroStage.Black && _lastIntroStage != IntroStage.Black)
+                ResetIntroLatches();
+            _lastIntroStage = s.introStage;
 
             // --- タイトル -------------------------------------------------------
             // ⚠ **鳴らす縁は「画面を持った」ではなく「字が立った」**（2026-08-12 に流れが変わった）。

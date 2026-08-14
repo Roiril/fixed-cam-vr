@@ -244,6 +244,12 @@ Web オペレータ卓（`tools/web-compositor/`）の `show.json` が **Web と
     PC の show.json・焼き込み・Quest 2 台のキャッシュの **4 者がずれていて正しいのは 1 つだけ**だった
     （片方の Quest にだけ `run.intro.startLineId` があり、導入の始まり方が機ごとに違った）。
     しかも `timeline.rev` は全部 21 で一致していて **rev では気づけない**
+  - **⭐ 2026-08-14 から、APK が変わったキャッシュは起動時に捨てる**（`CachedConfig.buildGuid` ＝
+    `Application.buildGUID` を照合）。焼き直した APK は**焼き込み値で始まる** ＝ スタッフの直感どおり。
+    卓が生きていれば long-poll が即座に配り直すので、現場の運用は変わらない。
+    ⚠ 消えるのは show の設定だけで、**位置合わせ（`registration.json`）は別ファイルなので残る**。
+    手で消す `quest-fleet.py reset-config` も従来どおり使える。
+    契約は `ShowConfigPrecedenceTests.LoadAndApplyCache_DropsCacheWrittenByAnotherApk` が固定する
   - → 実機は [`ShowControlClient.ConfigOrigin`](../../Assets/Scripts/Streaming/ShowControlClient.cs) /
     `DescribeConfig()` で**使った設定の出所と骨格**を持ち、`[XP] ev=config` として吐く。
     [`analyze-xp-log.py`](../../tools/analyze-xp-log.py) の `config_from_show()` が PC の show.json から

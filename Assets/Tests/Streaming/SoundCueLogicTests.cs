@@ -281,6 +281,30 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void SecondVisitor_HearsEverything_WithoutAnyoneCallingResetRun()
+        {
+            // ⚠⚠ **2026-08-14 に見つけた穴。** ラッチを落とす経路は `ResetRun()` だけで、
+            //    **その呼び出し元がどこにも無かった** ＝ アプリを起動してから 1 人目だけ導入の音が鳴り、
+            //    2 人目以降は隔離も管の点灯も鈴も終幕も無音だった。展示は 1 日に数十人が続けて
+            //    体験するので、**ほぼ全員が無音の側に当たる**。しかも音は録画に映らないので
+            //    走行の証拠からは気づけない。
+            //
+            //    ⚠ 上の `ResetRun_ClearsEveryLatch_...` は**呼ぶ前提を自分で作っていた**ので
+            //    この穴を捕まえられなかった。ここでは**誰も呼ばない**まま段 0 へ戻す。
+            var l = new SoundCueLogic();
+            Assert.AreEqual(1, CountOf(l, SoundCue.SealClose, Dt, Intro(IntroStage.Seal, shell: 1f)));
+            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Ignite)));
+
+            // 次の体験者。段 0（開始待ち）へ戻るだけで、リセットの号令は 1 つも来ない。
+            Assert.AreEqual(0, CountOf(l, SoundCue.SealClose, Dt, Intro(IntroStage.Black)));
+
+            Assert.AreEqual(1, CountOf(l, SoundCue.SealClose, Dt, Intro(IntroStage.Seal, shell: 1f)),
+                            "2 人目に隔離が閉じる音が鳴らない");
+            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Ignite)),
+                            "2 人目に管が点く音が鳴らない（導入の山）");
+        }
+
+        [Test]
         public void Outro_Open_FiresOnce()
         {
             var l = new SoundCueLogic();

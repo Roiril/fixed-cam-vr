@@ -1294,6 +1294,17 @@ namespace FixedCamVr.Streaming
             // カメラ切替の現場調整（control 由来）。0=未指定でコード既定。PC 不在起動でも値が生きるよう往復させる。
             public float switchDwellSec;
             public float switchCooldownSec;
+
+            /// <summary>
+            /// このキャッシュを書いた APK の識別子（<c>Application.buildGUID</c>）。
+            ///
+            /// ⚠⚠ <b>キャッシュは焼き込みより優先されるので、これが無いと「APK を焼き直しても
+            /// 設定が変わらない」</b>。2026-07-31 に PC の show.json・焼き込み・Quest 2 台の
+            /// キャッシュの<b>4 者がずれていて正しいのは 1 つだけ</b>という実測がある
+            /// （片方の機にだけ古い <c>startLineId</c> が残り、導入の始まり方が機ごとに違った）。
+            /// しかも <c>timeline.rev</c> は全部一致していたので<b>版番号では気づけない</b>。
+            /// </summary>
+            public string buildGuid = "";
         }
         [Serializable] private class CueDef
         {
@@ -1587,6 +1598,7 @@ namespace FixedCamVr.Streaming
         public void BeginNewVisitorRunLocal()
         {
             Debug.Log("[ShowControl] ラン開始（現地・右グリップ長押し）");
+            ReleaseLiveHolds();
             _dwell.Reset();
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
@@ -1595,6 +1607,40 @@ namespace FixedCamVr.Streaming
             ResolveRecorder()?.ResetRunLocal();
             RunReset?.Invoke();
             ResolveRunDirector()?.BeginRun();
+        }
+
+        /// <summary>
+        /// <b>卓が前の体験者のために掛けた「画面の占有」を現地で外す。</b>
+        ///
+        /// ⚠⚠ 卓の ▶ ラン開始は `cameraOverride` / `activeCue` / `slots` を空にしてから
+        /// `runEpoch` を進めるが、<b>現地の右グリップ長押しはそれらに触れなかった</b>
+        /// （サーバへ書けないので当然だが、<b>ローカルの適用状態まで残していた</b>）。
+        /// 壊れる手順は現場で普通に起きる:
+        /// <b>① 体験者 A の最中に卓でカメラ固定か手動 cue を使う ② PC が落ちる・卓を閉じる・
+        /// Wi-Fi が切れる ③ スタッフが右グリップでリセットして体験者 B を始める</b>。
+        /// B には前の手動映像が残り、ゾーンの自動切替は凍結されたままになる。
+        ///
+        /// ⚠ 卓が生きているなら次の long-poll で卓の状態が正として戻ってくる（それでよい —
+        /// 卓が居るなら卓の ▶ を使う）。ここが効くのは<b>卓が落ちている現場</b>。
+        /// </summary>
+        private void ReleaseLiveHolds()
+        {
+            bool hadCue = !string.IsNullOrEmpty(_appliedCue);
+            bool hadOverride = !string.IsNullOrEmpty(_appliedOverride);
+            if (!hadCue && !hadOverride) return;
+
+            string prevOverride = _appliedOverride;
+            _appliedCue = "";
+            _appliedOverride = "";
+            _overlay?.StopOverlay();
+            // override 中は tracker を止めてある。戻すと OnEnable が記憶ゾーンを捨てて
+            // 現在位置から引き直す（＝通常経路でゾーンのカメラへ復帰する）。
+            if (zoneTrackerToDisable != null) zoneTrackerToDisable.enabled = true;
+            ResolveSwitchDirector()?.SetOverrideActive(false);
+            cueScheduler?.SetLiveCueActive(false);
+            timelineDirector?.SetSuppressed(false);
+            Debug.LogWarning("[ShowControl] 卓が掛けたままだった占有を現地で外しました"
+                             + $"（固定={(hadOverride ? prevOverride : "-")} 演出={(hadCue ? "あり" : "-")}）");
         }
 
         /// <summary>
@@ -2468,11 +2514,17 @@ namespace FixedCamVr.Streaming
                     runEpoch = _knownRunEpoch,
                     switchDwellSec = _switchDwellSec,
                     switchCooldownSec = _switchCooldownSec,
+                    // どの APK が書いたキャッシュか。次の起動で照合して、別 APK のものなら捨てる。
+                    buildGuid = Application.buildGUID ?? "",
                 };
                 File.WriteAllText(ConfigCachePath, JsonUtility.ToJson(cfg));
             }
             catch (Exception e) { Debug.LogWarning($"[ShowControl] 設定キャッシュ保存失敗: {e.Message}"); }
         }
+
+        /// <summary>ログ用に識別子を頭 8 文字へ詰める（全部出しても現場では読めない）。</summary>
+        private static string Short(string? s)
+            => string.IsNullOrEmpty(s) ? "-" : (s!.Length <= 8 ? s : s.Substring(0, 8));
 
         // 端末キャッシュを読み、焼き込み値の上へ「データを持つ項目だけ」上書きする（空で潰さない）。
         // 接続反映・イベント発火・post 適用は呼び出し側（InitializeAsync）が一括で行う。
@@ -2483,6 +2535,25 @@ namespace FixedCamVr.Streaming
                 if (!File.Exists(ConfigCachePath)) return;
                 var cfg = JsonUtility.FromJson<CachedConfig>(File.ReadAllText(ConfigCachePath));
                 if (cfg == null) return;
+
+                // ⚠⚠ **APK が変わったらキャッシュを捨てる**（2026-08-14）。
+                //    キャッシュは焼き込みより優先されるので、これが無いと
+                //    **APK を焼き直しても古い設定のまま走る**（スタッフは直したつもりでいる）。
+                //    2026-07-31 の実測では PC・焼き込み・Quest 2 台の 4 者がずれていて、
+                //    しかも `timeline.rev` は全部一致していたので**版番号では気づけなかった**。
+                //    ⚠ 消えるのは show の設定だけで、**位置合わせ（registration.json）は別ファイル**
+                //    なので残る（現場で測り直しにならない）。
+                //    ⚠ 卓が生きていれば long-poll が即座に配り直す。卓が無い現場では
+                //    新しい APK の焼き込み値が使われる ＝ スタッフの直感どおりになる。
+                string apk = Application.buildGUID ?? "";
+                if (!string.IsNullOrEmpty(apk) && cfg.buildGuid != apk)
+                {
+                    Debug.LogWarning("[ShowControl] 別の APK が書いた設定キャッシュなので捨てました"
+                                     + $"（焼き込み値で始めます / cache={Short(cfg.buildGuid)} apk={Short(apk)}）");
+                    try { File.Delete(ConfigCachePath); } catch { /* 消せなくても焼き込みで走る */ }
+                    return;
+                }
+
                 ConfigOrigin = "cache";  // 焼き込みより優先。古いまま残ると APK を焼き直しても設定が変わらない
                 if (cfg.cameras != null && cfg.cameras.Length > 0) _cameras = cfg.cameras;
                 if (cfg.post != null) _globalPost = cfg.post;

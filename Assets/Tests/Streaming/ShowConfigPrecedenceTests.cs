@@ -222,6 +222,9 @@ namespace FixedCamVr.Streaming.Tests
             // 空 cameras / null layout（＝空データ）だが runEpoch=7 を持つキャッシュを書く。
             object cfg = Activator.CreateInstance(CachedT)!;
             CachedT.GetField("runEpoch")!.SetValue(cfg, 7);
+            // ⚠ キャッシュは「同じ APK が書いたもの」しか読まれない（2026-08-14）。
+            //    実運用と同じ状態にしてから読ませる。
+            CachedT.GetField("buildGuid")!.SetValue(cfg, Application.buildGUID ?? "");
             File.WriteAllText(CachePath(show), JsonUtility.ToJson(cfg));
 
             InvokeM(show, "LoadAndApplyCache");
@@ -336,6 +339,33 @@ namespace FixedCamVr.Streaming.Tests
         // ---- 8) runEpoch 既知値初期化：ApplyBaked / LoadAndApplyCache は RunReset を発火しない ----
 
         [Test]
+        public void LoadAndApplyCache_DropsCacheWrittenByAnotherApk()
+        {
+            // ⚠⚠ 端末キャッシュは焼き込みより優先されるので、照合が無いと
+            //    **APK を焼き直しても古い設定のまま走る**（スタッフは直したつもりでいる）。
+            //    2026-07-31 の実測では PC の show.json・焼き込み・Quest 2 台のキャッシュの
+            //    4 者がずれていて、しかも `timeline.rev` は全部一致していた ＝ **版番号では気づけない**。
+            var show = MakeShow();
+            SetF(show, "_cameras", MakeCams(MakeCam("A")));
+            SetF(show, "_knownRunEpoch", 0);
+
+            object cfg = Activator.CreateInstance(CachedT)!;
+            CachedT.GetField("runEpoch")!.SetValue(cfg, 9);
+            CachedT.GetField("cameras")!.SetValue(cfg, MakeCams(MakeCam("B"), MakeCam("C")));
+            CachedT.GetField("buildGuid")!.SetValue(cfg, "another-apk-0000");
+            File.WriteAllText(CachePath(show), JsonUtility.ToJson(cfg));
+
+            InvokeM(show, "LoadAndApplyCache");
+
+            Assert.That(((Array)GetF(show, "_cameras")).Length, Is.EqualTo(1),
+                        "別の APK が書いたキャッシュでカメラが上書きされた");
+            Assert.That((int)GetF(show, "_knownRunEpoch"), Is.EqualTo(0),
+                        "別の APK が書いたキャッシュから runEpoch を復元した");
+            Assert.That(File.Exists(CachePath(show)), Is.False,
+                        "捨てたはずのキャッシュがファイルに残っている（次の起動でまた読む）");
+        }
+
+        [Test]
         public void RunEpoch_KnownValueInit_DoesNotFireReset()
         {
             var show = MakeShow();
@@ -348,6 +378,9 @@ namespace FixedCamVr.Streaming.Tests
 
             object cfg = Activator.CreateInstance(CachedT)!;
             CachedT.GetField("runEpoch")!.SetValue(cfg, 4);
+            // ⚠ キャッシュは「同じ APK が書いたもの」しか読まれない（2026-08-14）。
+            //    実運用と同じ状態にしてから読ませる。
+            CachedT.GetField("buildGuid")!.SetValue(cfg, Application.buildGUID ?? "");
             File.WriteAllText(CachePath(show), JsonUtility.ToJson(cfg));
             InvokeM(show, "LoadAndApplyCache");
             Assert.That((int)GetF(show, "_knownRunEpoch"), Is.EqualTo(4));

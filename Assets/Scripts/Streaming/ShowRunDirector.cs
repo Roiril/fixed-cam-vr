@@ -162,6 +162,12 @@ namespace FixedCamVr.Streaming
             // 解像度の劣化を落とす**唯一の場所**。次の体験者は今の解像度から始める。
             // 終了では落とさない（落とすと演出を見せ切っている最中に画が急に鮮明になる）。
             _decay.Reset();
+            // ⚠⚠ **画の状態も落とす**（2026-08-14）。凍結（hold）・焼き付き（burn）・
+            //    人形に付き従う劣化（aura）・乱れは、それまで**体験の終了でしか戻していなかった**。
+            //    現場は途中で打ち切って交代することがある（気分が悪くなった / 時間が押している /
+            //    演出が固まった）ので、その経路では**前の体験者の画の状態が次のランへ持ち越される**。
+            _feel?.ResetAll();
+            _glitch?.ResetAll();
             ApplyGate();
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             NotifyPhaseIfChanged();
