@@ -509,6 +509,15 @@ namespace FixedCamVr.Streaming
         public float tailSec = Recording.SegmentRecordWriter.DefaultTailSec;
 
         /// <summary>
+        /// カメラが**切り替わった後**も、出ていった区間のカメラを何秒録り続けるか。0 以下 = コード既定
+        /// （<see cref="Recording.SegmentRecordWriter.DefaultPostSec"/> = 2 秒）。
+        ///
+        /// 切り替えの瞬間で切ると、**過去の自分が曲がり切る前に映像が終わる**（角を曲がる動きは
+        /// カメラが切り替わってからも 1〜2 秒続く）。録画 1 本の尺は <c>tailSec + postSec</c> になる。
+        /// </summary>
+        public float postSec = Recording.SegmentRecordWriter.DefaultPostSec;
+
+        /// <summary>
         /// 旧キー（区間の頭から何秒録るか）。**末尾方式では使わない**。
         /// 端末キャッシュ・焼き込みの古い show.json が持っているので読めるようにだけしてある。
         /// </summary>
@@ -516,6 +525,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>末尾の実効尺 (秒)。0 以下・未指定は既定へ倒す。</summary>
         public float TailSec => tailSec > 0f ? tailSec : Recording.SegmentRecordWriter.DefaultTailSec;
+
+        /// <summary>切り替え後に録り続ける実効尺 (秒)。0 以下・未指定は既定へ倒す。</summary>
+        public float PostSec => postSec > 0f ? postSec : Recording.SegmentRecordWriter.DefaultPostSec;
 
         public bool RecordsLap(int lap)
         {

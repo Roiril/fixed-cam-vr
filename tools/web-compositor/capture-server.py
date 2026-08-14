@@ -261,9 +261,10 @@ def _default_show():
         'feel': {'noiseDark': 0.10, 'noiseFixed': 0.035, 'agc': 0.7,
                  'targetLuma': 0.34, 'followSec': 1.1},
         # 端末内録画（前の周を録って 3 周目の演出で流す）。既定は無効。
-        # tailSec = 区間の**末尾**何秒を残すか（頭からではない）。既定 3 は
-        # C# SegmentRecordWriter.DefaultTailSec / 卓 REC_DEFAULT_TAIL_SEC と対。
-        'record': {'enabled': False, 'laps': [1], 'tailSec': 3, 'maxTotalMB': 200, 'fpsCap': 15},
+        # 残るのは切り替えの tailSec 秒前 〜 postSec 秒後（頭からではない）。既定 3 / 2 は
+        # C# SegmentRecordWriter.DefaultTailSec / DefaultPostSec / 卓 REC_DEFAULT_* と対。
+        'record': {'enabled': False, 'laps': [1], 'tailSec': 3, 'postSec': 2,
+                   'maxTotalMB': 200, 'fpsCap': 15},
         # CG レイヤに立てる人形の定義（cameras[i].pose が著作済みのカメラでのみ出る）。
         'actors': [],
         # レンズ（内部パラメータ）。cameras[i].lensRef が参照する。

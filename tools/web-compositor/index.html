@@ -327,7 +327,8 @@
         <span id="recState" class="ed-status"></span>
       </div>
       <div class="run-bar">
-        <label class="livecue-lbl" title="区間を出る直前の何秒を残すか。3 周目はこれを、その区間へ入った瞬間から流す（頭から録ると映像の中の過去の自分と CG 人形が重なる）">残す末尾 <input id="recTail" type="number" min="1" max="20" step="0.5"> s</label>
+        <label class="livecue-lbl" title="カメラが切り替わる何秒前から残すか。3 周目はこれを、その区間へ入った瞬間から流す（頭から録ると映像の中の過去の自分と CG 人形が重なる）">切り替え前 <input id="recTail" type="number" min="1" max="20" step="0.5"> s</label>
+        <label class="livecue-lbl" title="カメラが切り替わった後も、出ていった区間のカメラを何秒録り続けるか。切り替えの瞬間で切ると、映像の中の自分が角を曲がり切る前に終わる">切り替え後 <input id="recPost" type="number" min="0.5" max="20" step="0.5"> s</label>
         <label class="livecue-lbl" title="ラン全体で使う端末ストレージの上限。使い切ると以降の区間は録らない">ラン全体の上限 <input id="recMaxMB" type="number" min="10" max="2000" step="10"> MB</label>
         <label class="livecue-lbl" title="録画側の間引き。受信 fps より低くてよい（15 で十分）">録画 fps <input id="recFps" type="number" min="1" max="30" step="1"></label>
       </div>

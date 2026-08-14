@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -12,6 +13,13 @@ namespace FixedCamVr.Streaming.Recording
     /// （<see cref="CueScheduler.CameraEntered"/> = 体験者のゾーン進行）。
     /// 画面が何を映しているかとは無関係に録る — 演出が画面を横取りしている間も、
     /// その区間のカメラのライブを録り続ける。
+    ///
+    /// **区間の切れ目で録画は止まらない**（2026-08-14）。カメラが切り替わった後も、
+    /// 出ていった区間のカメラを <c>record.postSec</c> 秒だけ録り続ける（追い録り）。
+    /// 切り替えの瞬間で切ると**過去の自分が曲がり切る前に映像が終わる**ためで、
+    /// 残るのは <c>[切替 - tailSec, 切替 + postSec]</c>。
+    /// したがって切り替えの前後は**書き手が 2 本同時に走る**（現区間 + 1 つ前の追い録り）。
+    /// 3 本目は作らない — 追い録りの最中にもう一度切り替わったら、古い方をその場で閉じる。
     ///
     /// 保存先は <c>Application.temporaryCachePath/rec/&lt;runEpoch&gt;/L&lt;lap&gt;C&lt;cam&gt;.mjr</c>。
     /// **ラン開始で前ランの録画を消す**（次の体験者に前の人の映像を出さない・端末に残さない）。
@@ -30,9 +38,23 @@ namespace FixedCamVr.Streaming.Recording
         [Tooltip("record 設定（show.json）の供給元。null なら同 GameObject → シーンから探す。")]
         [SerializeField] private ShowControlClient? showControl;
 
-        private SegmentRecordWriter? _writer;
-        private CameraStream? _tapped;
-        private float _segmentStart;
+        /// <summary>いま開いている書き手 1 本ぶん。追い録り中のものも同じ形で持つ。</summary>
+        private sealed class Segment
+        {
+            public SegmentRecordWriter writer = null!;
+            public CameraStream stream = null!;
+            public int lap;
+            public int camera;
+            public float startTime;      // Time.realtimeSinceStartup（pts の 0 点）
+            public bool postRoll;        // true = 切り替え済み。postEndTime で閉じる
+            public float postEndTime;
+        }
+
+        // 現区間（postRoll=false）は高々 1 本、追い録り（postRoll=true）も高々 1 本。
+        private readonly List<Segment> _segments = new(2);
+        // いま FrameTap を張っているストリーム（張り替えのたびに全部外してから張り直す）。
+        private readonly List<CameraStream> _tapped = new(2);
+
         private int _runEpoch = -1;
         private bool _subscribed;
 
@@ -42,12 +64,29 @@ namespace FixedCamVr.Streaming.Recording
         private bool _budgetWarned;
 
         // 最後に開いた区間の (周, カメラ)。**閉じても消さない** — 録画は区間の切れ目で
-        // stop→start が同一フレームに起きるので、消すと閉じた区間が何だったのか観測側から辿れない。
+        // 次が同一フレームに始まるので、消すと閉じた区間が何だったのか観測側から辿れない。
         private int _curLap = -1;
         private int _curCamera = -1;
 
-        /// <summary>いま録画中か（HUD / 診断用）。</summary>
-        public bool IsRecording => _writer != null;
+        /// <summary>いま現区間を録画中か（HUD・診断用）。追い録りだけが走っている状態は含まない。</summary>
+        public bool IsRecording
+        {
+            get
+            {
+                foreach (Segment s in _segments) if (!s.postRoll) return true;
+                return false;
+            }
+        }
+
+        /// <summary>切り替え後の追い録りが走っているか（診断用）。</summary>
+        public bool IsPostRolling
+        {
+            get
+            {
+                foreach (Segment s in _segments) if (s.postRoll) return true;
+                return false;
+            }
+        }
 
         /// <summary>このランで録画に使った総バイト数（診断用）。</summary>
         public long RunBytes => _runBytes;
@@ -65,12 +104,30 @@ namespace FixedCamVr.Streaming.Recording
         // （ヘッダだけの空ファイルでもバイト数は 0 にならない）ので、フレーム数を対で持つ。
         private int _lastFrames;
         private long _lastBytes;
+        private int _lastLap = -1;
+        private int _lastCamera = -1;
 
         /// <summary>最後に閉じた区間に書けたフレーム数（0 = 1 枚も録れていない）。</summary>
         public int LastSegmentFrames => _lastFrames;
 
         /// <summary>最後に閉じた区間に書けたバイト数。</summary>
         public long LastSegmentBytes => _lastBytes;
+
+        /// <summary>最後に閉じた区間の周（まだ 1 本も閉じていなければ -1）。</summary>
+        public int LastSegmentLap => _lastLap;
+
+        /// <summary>最後に閉じた区間のカメラ index（まだ 1 本も閉じていなければ -1）。</summary>
+        public int LastSegmentCamera => _lastCamera;
+
+        /// <summary>区間の録画を開いた <c>(lap, camera)</c>。</summary>
+        public event Action<int, int>? SegmentOpened;
+
+        /// <summary>
+        /// 区間の録画を閉じた <c>(lap, camera, frames, bytes)</c>。
+        /// **追い録りのぶんだけ切り替えより遅れて出る**ので、観測側は「開いた順」に閉じると思わないこと。
+        /// ポーリングでは取り逃す（閉じた瞬間にしか実績が確定しない）ため、イベントで配る。
+        /// </summary>
+        public event Action<int, int, int, long>? SegmentClosed;
 
         private void Awake()
         {
@@ -95,10 +152,28 @@ namespace FixedCamVr.Streaming.Recording
         {
             if (cueScheduler != null && _subscribed) cueScheduler.CameraEntered -= OnCameraEntered;
             _subscribed = false;
-            StopSegment();
+            StopAll();
         }
 
-        private void OnDestroy() => StopSegment();
+        private void OnDestroy() => StopAll();
+
+        // 追い録りの期限は時計で見る（フレームが来なくなっても必ず閉じる）。
+        // ⚠ ここに毎フレームのアロケーション（ラムダ・LINQ）を書かない（90Hz 維持）。
+        private void Update()
+        {
+            if (_segments.Count == 0) return;
+            float now = Time.realtimeSinceStartup;
+            bool changed = false;
+            for (int i = _segments.Count - 1; i >= 0; i--)
+            {
+                Segment s = _segments[i];
+                if (!s.postRoll || now < s.postEndTime) continue;
+                _segments.RemoveAt(i);
+                changed = true;
+                Close(s);
+            }
+            if (changed) RebindTaps();
+        }
 
         /// <summary>
         /// ラン開始（体験者交代・卓の runEpoch 由来）。走行中の録画を閉じ、**端末に残っている録画を全部消す**。
@@ -109,7 +184,7 @@ namespace FixedCamVr.Streaming.Recording
         /// </summary>
         public void ResetRun(int runEpoch)
         {
-            StopSegment();
+            StopAll();
             _runEpoch = runEpoch;
             _runBytes = 0;
             _budgetWarned = false;
@@ -128,17 +203,37 @@ namespace FixedCamVr.Streaming.Recording
 
         private void OnCameraEntered(int camera, int lap)
         {
-            StopSegment();
-
+            float now = Time.realtimeSinceStartup;
             ShowRecordDef? cfg = showControl != null ? showControl.RecordConfig : null;
-            if (cfg == null || !cfg.RecordsLap(lap)) return;
+            float postSec = cfg != null ? cfg.PostSec : SegmentRecordWriter.DefaultPostSec;
+
+            // ① 走っていた追い録りをここで閉じる。同時に開くのは最大 2 本（現区間 + 1 つ前）で、
+            //    追い録りの最中にもう一度切り替わったら古い方は諦める（録れたぶんはそのまま残る）。
+            ClosePostRolls();
+
+            // ② 出ていった区間を追い録りへ回す。**閉じない** — 過去の自分が曲がり切るまで録る。
+            //    録らない設定（record OFF / 対象外の周）でも先にここを通す。そうしないと
+            //    「3 周目に入った瞬間に 2 周目の録画が切れる」になる。
+            foreach (Segment s in _segments)
+            {
+                if (s.postRoll) continue;
+                s.postRoll = true;
+                s.postEndTime = now + postSec;
+                s.writer.BeginPostRoll(PtsOf(s, now), postSec);
+            }
+
+            // ③ 入った区間を開く。
+            if (cfg == null || !cfg.RecordsLap(lap)) { RebindTaps(); return; }
 
             CameraStream? stream = registry != null ? registry.Get(camera) : null;
-            if (stream == null) return;
+            if (stream == null) { RebindTaps(); return; }
 
-            // ラン全体の残量を配る。使い切ったら以降の区間は録らない（体験は止めない）。
+            // ラン全体の残量を配る。まだ閉じていない追い録りのぶんは先に差し引く
+            // （閉じるまで _runBytes に乗らないので、二重に配ると上限を越える）。
             long budget = (long)Mathf.Max(1, cfg.maxTotalMB) * 1024 * 1024;
-            long remaining = budget - _runBytes;
+            long reserved = 0;
+            foreach (Segment s in _segments) reserved += s.writer.BufferedBytes;
+            long remaining = budget - _runBytes - reserved;
             if (remaining <= RecordedSegmentFormat.HeaderBytes)
             {
                 if (!_budgetWarned)
@@ -146,49 +241,108 @@ namespace FixedCamVr.Streaming.Recording
                     _budgetWarned = true;
                     Debug.LogWarning($"[SegmentRecorder] ラン全体の録画容量 {cfg.maxTotalMB}MB を使い切った。以降の区間は録らない");
                 }
+                RebindTaps();
                 return;
             }
 
             string path = SegmentPath(CurrentEpoch, lap, camera);
             var limits = new SegmentRecordWriter.Limits(remaining, cfg.fpsCap, cfg.TailSec);
 
-            try { _writer = new SegmentRecordWriter(path, limits); }
+            SegmentRecordWriter writer;
+            try { writer = new SegmentRecordWriter(path, limits); }
             catch (Exception e)
             {
                 Debug.LogWarning($"[SegmentRecorder] 録画を開始できない: {e.Message}");
-                _writer = null;
+                RebindTaps();
                 return;
             }
 
-            _segmentStart = Time.realtimeSinceStartup;
+            _segments.Add(new Segment
+            {
+                writer = writer,
+                stream = stream,
+                lap = lap,
+                camera = camera,
+                startTime = now,
+            });
             _curLap = lap;
             _curCamera = camera;
-            _tapped = stream;
-            SegmentRecordWriter writer = _writer;
-            float start = _segmentStart;
-            // 区間の間ずっと積む。**残るのは末尾 tailSec 秒だけ**（古い側は writer が落とす）ので、
-            // 体験者がどれだけ長く留まってもファイルは一定サイズで、しかも「出る直前」が残る。
-            stream.FrameTap = (buf, len) =>
-                writer.TryAppend(buf, len, Mathf.RoundToInt((Time.realtimeSinceStartup - start) * 1000f));
-            Debug.Log($"[SegmentRecorder] 録画開始 lap={lap} camera={camera} 末尾{limits.tailSec:0.#}s → {path}");
+            RebindTaps();
+            Debug.Log($"[SegmentRecorder] 録画開始 lap={lap} camera={camera} " +
+                      $"末尾{limits.tailSec:0.#}s + 切替後{postSec:0.#}s → {path}");
+            SegmentOpened?.Invoke(lap, camera);
         }
 
-        private void StopSegment()
+        /// <summary>この区間の pts（区間先頭からの経過 ms）。</summary>
+        private static int PtsOf(Segment s, float now) => Mathf.RoundToInt((now - s.startTime) * 1000f);
+
+        /// <summary>走っている追い録りを全部閉じて実績を確定させる。閉じたら tap を張り直す。</summary>
+        private void ClosePostRolls()
         {
-            if (_tapped != null) { _tapped.FrameTap = null; _tapped = null; }
-            if (_writer == null) return;
-            string path = _writer.Path;
-            _writer.Dispose();          // 末尾を書き出す（この後で WrittenBytes / Capped が確定する）
-            _lastBytes = _writer.WrittenBytes;
-            _lastFrames = _writer.WrittenFrames;
-            _runBytes += _writer.WrittenBytes;
-            bool capped = _writer.Capped;
-            _writer = null;
-            Debug.Log($"[SegmentRecorder] 録画終了{(capped ? "（容量が足りず末尾が縮んだ）" : "")} " +
-                      $"lap={_curLap} camera={_curCamera} frames={_lastFrames} bytes={_lastBytes} → {path}");
+            bool changed = false;
+            for (int i = _segments.Count - 1; i >= 0; i--)
+            {
+                Segment s = _segments[i];
+                if (!s.postRoll) continue;
+                _segments.RemoveAt(i);
+                changed = true;
+                Close(s);
+            }
+            if (changed) RebindTaps();
+        }
+
+        private void StopAll()
+        {
+            foreach (CameraStream stream in _tapped) if (stream != null) stream.FrameTap = null;
+            _tapped.Clear();
+            for (int i = 0; i < _segments.Count; i++) Close(_segments[i]);
+            _segments.Clear();
+        }
+
+        // 1 本を閉じてファイルを書き出し、実績（枚数・バイト数）を確定させる。
+        private void Close(Segment s)
+        {
+            string path = s.writer.Path;
+            s.writer.Dispose();          // 末尾を書き出す（この後で WrittenBytes / Capped が確定する）
+            _lastBytes = s.writer.WrittenBytes;
+            _lastFrames = s.writer.WrittenFrames;
+            _lastLap = s.lap;
+            _lastCamera = s.camera;
+            _runBytes += s.writer.WrittenBytes;
+            bool capped = s.writer.Capped;
+            Debug.Log($"[SegmentRecorder] 録画終了{(capped ? "（容量が足りず尺が縮んだ）" : "")} " +
+                      $"lap={s.lap} camera={s.camera} frames={_lastFrames} bytes={_lastBytes} → {path}");
             if (_lastFrames == 0)
-                Debug.LogWarning($"[SegmentRecorder] 1 枚も録れていない lap={_curLap} camera={_curCamera} " +
+                Debug.LogWarning($"[SegmentRecorder] 1 枚も録れていない lap={s.lap} camera={s.camera} " +
                                  $"— この区間を指す録画カットは無言で飛びます");
+            SegmentClosed?.Invoke(s.lap, s.camera, _lastFrames, _lastBytes);
+        }
+
+        // 開いている区間ぶんの FrameTap を張り直す。**同じカメラに 2 本ぶら下がりうる**
+        // （周をまたぐ同一カメラの区間）ので、ストリーム 1 つにつき 1 個の tap から全部へ配る。
+        private void RebindTaps()
+        {
+            foreach (CameraStream stream in _tapped) if (stream != null) stream.FrameTap = null;
+            _tapped.Clear();
+            foreach (Segment s in _segments)
+            {
+                if (s.stream == null || _tapped.Contains(s.stream)) continue;
+                CameraStream stream = s.stream;
+                _tapped.Add(stream);
+                stream.FrameTap = (buf, len) => Append(stream, buf, len);
+            }
+        }
+
+        // 受信スレッドではなくメインスレッドから同期的に呼ばれる（CameraStream.FrameTap の契約）。
+        private void Append(CameraStream stream, byte[] jpeg, int length)
+        {
+            float now = Time.realtimeSinceStartup;
+            for (int i = 0; i < _segments.Count; i++)
+            {
+                Segment s = _segments[i];
+                if (!ReferenceEquals(s.stream, stream)) continue;
+                s.writer.TryAppend(jpeg, length, PtsOf(s, now));
+            }
         }
 
         // ---- 参照（再生側）----

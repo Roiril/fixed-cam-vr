@@ -11,7 +11,7 @@ import { createCompositeView } from './composite-view.js';
 import { createFloorMap } from './floormap.js';
 import { createRibbon } from './ribbon.js';
 import { normalizeTimelineV3 } from './timeline-model.js';
-import { recordConfig, recordLaps, recordCoverage, missingRecordLaps, recordTailSec, REC_DEFAULT_TAIL_SEC } from './record-model.js';
+import { recordConfig, recordLaps, recordCoverage, missingRecordLaps, recordTailSec, recordPostSec, REC_DEFAULT_TAIL_SEC, REC_DEFAULT_POST_SEC } from './record-model.js';
 import { createShowSim } from './show-sim.js';
 import { createAtelier } from './atelier.js';
 import { createActorsPanel } from './actors.js';
@@ -1505,12 +1505,14 @@ function renderRecordPanel() {
   const en = $('#recEnabled');
   if (en && document.activeElement !== en) en.checked = !!cfg.enabled;
   setVal('#recTail', recordTailSec(cfg));
+  setVal('#recPost', recordPostSec(cfg));
   setVal('#recMaxMB', cfg.maxTotalMB);
   setVal('#recFps', cfg.fpsCap);
   renderRecUse();
 }
 if ($('#recEnabled')) $('#recEnabled').onchange = () => saveRecord({ enabled: $('#recEnabled').checked });
 if ($('#recTail')) $('#recTail').onchange = () => saveRecord({ tailSec: Math.max(1, parseFloat($('#recTail').value) || REC_DEFAULT_TAIL_SEC) });
+if ($('#recPost')) $('#recPost').onchange = () => saveRecord({ postSec: Math.max(0.5, parseFloat($('#recPost').value) || REC_DEFAULT_POST_SEC) });
 if ($('#recMaxMB')) $('#recMaxMB').onchange = () => saveRecord({ maxTotalMB: Math.max(10, parseInt($('#recMaxMB').value, 10) || 200) });
 if ($('#recFps')) $('#recFps').onchange = () => saveRecord({ fpsCap: Math.max(1, parseFloat($('#recFps').value) || 15) });
 

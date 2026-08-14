@@ -458,6 +458,38 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.IsActive, Is.True, "hold は歩かれても見せ切る");
         }
 
+        /// <summary>
+        /// 3 周目の録画再生の契約（2026-08-14）。録画は切り替えの前後（tailSec + postSec）を持つので、
+        /// **体験者が前の周より速く歩くと、まだ流し終わっていない**。そのときは切り替えの時点で
+        /// 打ち止めて、次の区間の録画を**冒頭から**出す（居ない場所の続きを見せない）。
+        /// </summary>
+        [Test]
+        public void Yield_CutsStillPlayingRecording_AndNextSegmentStartsFromItsHead()
+        {
+            // 尺 = WaitClipEnd（録画の終端待ち = まだ終わっていない）。
+            var a = Enter(3, 0, 0f, TakeRunnerLogic.WaitClipEnd);
+            a.yieldOnZoneChange = true;
+            var b = Enter(3, 1, 0f, TakeRunnerLogic.WaitClipEnd);
+            b.yieldOnZoneChange = true;
+            var l = Make(a, b);
+
+            Enter(l, 3, 0, 0f);
+            Assert.That(l.Tick(0f, 0).stepIndex, Is.EqualTo(0), "A の録画が流れ始める");
+            Assert.That(l.Tick(1f, 0).action, Is.EqualTo(TakeRunnerLogic.Action.None), "まだ流し終わっていない");
+
+            TakeRunnerLogic.Decision cut = Enter(l, 3, 1, 2f, hadPrev: true, prevLap: 3, prevCam: 0);
+            Assert.That(cut.action, Is.EqualTo(TakeRunnerLogic.Action.EndTake), "切り替えの時点で打ち止める");
+            Assert.That(cut.forced, Is.False);
+            Assert.That(cut.chainNext, Is.False,
+                "画面を返してから次を出す（返さないと A の録画を持ったまま B の区間へ入る）");
+
+            TakeRunnerLogic.Decision next = l.Tick(2f, 1);
+            Assert.That(next.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+            Assert.That(next.takeIndex, Is.EqualTo(1), "次の区間の演出");
+            Assert.That(next.stepIndex, Is.EqualTo(0), "その録画は冒頭のカットから");
+            Assert.That(next.takeStarted, Is.True);
+        }
+
         [Test]
         public void Yield_ArmsEnteringSegmentTakeAfterAborting()
         {

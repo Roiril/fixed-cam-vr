@@ -154,6 +154,12 @@ def fstr(v):
         return None
 
 
+def _pos(v, default):
+    """0 以下・未指定はコード既定へ倒す（show.json の秒指定で C# と同じ判定をする）。"""
+    f = fstr(v)
+    return f if f is not None and f > 0 else default
+
+
 def effect_samples(events, key: str, t_from: float = None, t_to: float = None):
     """ev=intro / ev=sum が持つ「効果の実在」キーの値列を、時間窓で切って返す。
 
@@ -197,6 +203,10 @@ def expected_from_show(show: dict):
     rec = show.get("record") or {}
     exp["recEnabled"] = bool(rec.get("enabled"))
     exp["recLaps"] = rec.get("laps") or []
+    # 録画 1 本の尺 = 切り替えの tailSec 秒前 〜 postSec 秒後。0 以下・未指定はコード既定へ倒す
+    # （C# ShowRecordDef.TailSec / PostSec・卓 record-model.js と同じ判定）。
+    exp["recTailSec"] = _pos(rec.get("tailSec"), 3.0)
+    exp["recPostSec"] = _pos(rec.get("postSec"), 2.0)
 
     takes = []
     for seg in ((show.get("timeline") or {}).get("segments") or []):
@@ -643,12 +653,15 @@ def analyze(events, others, exp, warns=None):
     if not exp["recEnabled"]:
         w("  （show.json で録画は無効）")
     else:
-        # 区間の切れ目は同一フレームで stop→start になることがあり、テレメトリのポーリングでは
-        # 1 回に見える。区間数はレコーダ自身のログ（区間ごとに 1 行）を正とする。
+        # ev=rec は 2026-08-14 からイベント駆動（追い録りで開始と終了が入れ子になり、
+        # ポーリングでは閉じた区間が frames=0 に見えていた）。取り逃しの保険としてレコーダ自身の
+        # ログ（区間ごとに 1 行）とも突き合わせる。
         started = [ln for ln in rec_lines if "録画開始" in ln]
         polled = [e for e in rec_ev if e.get("v") == "start"]
         w(f"  録画した区間 {len(started)} / 録る設定の区間 {sorted(exp['recShould'])}"
           f" / 演出が要求する区間 {sorted(exp['recNeeded'])}")
+        w(f"  1 本の尺 = 切り替えの {exp['recTailSec']:.1f}s 前 〜 {exp['recPostSec']:.1f}s 後"
+          f"（計 {exp['recTailSec'] + exp['recPostSec']:.1f}s。滞在が短ければ前側だけ縮む）")
         if not started and not polled:
             verdict("FAIL", "録画が 1 度も始まっていない — 録画カットは実機で黙って飛ぶ")
         else:

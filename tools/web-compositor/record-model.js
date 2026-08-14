@@ -12,8 +12,20 @@
 /** 末尾の既定尺 (秒)。**C# の SegmentRecordWriter.DefaultTailSec と対**（片方だけ変えると食い違う）。 */
 export const REC_DEFAULT_TAIL_SEC = 3;
 
+/**
+ * 切り替え後に録り続ける既定尺 (秒)。**C# の SegmentRecordWriter.DefaultPostSec と対**。
+ *
+ * 切り替えの瞬間で切ると、過去の自分が曲がり切る前に映像が終わる（角を曲がる動きはカメラが
+ * 切り替わってからも 1〜2 秒続く）。録画 1 本の尺は tailSec + postSec になる。
+ */
+export const REC_DEFAULT_POST_SEC = 2;
+
 /** show.json `record` が欠けている時の既定（capture-server.py の _default_show と同じ値）。 */
-export const REC_DEFAULT = { enabled: false, laps: [1], tailSec: REC_DEFAULT_TAIL_SEC, maxTotalMB: 200, fpsCap: 15 };
+export const REC_DEFAULT = {
+  enabled: false, laps: [1],
+  tailSec: REC_DEFAULT_TAIL_SEC, postSec: REC_DEFAULT_POST_SEC,
+  maxTotalMB: 200, fpsCap: 15,
+};
 
 const int = (v) => {
   const n = parseInt(v, 10);
@@ -34,6 +46,28 @@ export function recordConfig(state) {
 export function recordTailSec(cfg) {
   const v = cfg && Number(cfg.tailSec);
   return Number.isFinite(v) && v > 0 ? v : REC_DEFAULT_TAIL_SEC;
+}
+
+/**
+ * 切り替え後に録り続ける長さ (秒)。0 以下・未指定は既定へ倒す（C# `ShowRecordDef.PostSec` と同じ判定）。
+ *
+ * ⚠ 0 を「追い録りなし」にしない。JsonUtility はキーの無い show.json でも 0 を書くので、
+ * 既存の焼き込み・端末キャッシュでは必ず 0 が入る。
+ */
+export function recordPostSec(cfg) {
+  const v = cfg && Number(cfg.postSec);
+  return Number.isFinite(v) && v > 0 ? v : REC_DEFAULT_POST_SEC;
+}
+
+/**
+ * 「録画」カット 1 本の尺 (秒)。切り替えの tailSec 秒前 〜 postSec 秒後。
+ * `dwellSec` を渡すと、その区間の実測滞在で**前側だけ**を縮める
+ * （滞在が短ければ切り替え前はその分しか録れていないが、切り替え後は必ず録れる）。
+ */
+export function recordLengthSec(cfg, dwellSec) {
+  const tail = recordTailSec(cfg);
+  const pre = Number.isFinite(dwellSec) && dwellSec > 0 ? Math.min(tail, dwellSec) : tail;
+  return pre + recordPostSec(cfg);
 }
 
 /** 録る周の集合（1 始まり・不正値は落とす）。 */

@@ -7,7 +7,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  REC_DEFAULT, REC_DEFAULT_TAIL_SEC, recordConfig, recordLaps, recordTailSec,
+  REC_DEFAULT, REC_DEFAULT_TAIL_SEC, REC_DEFAULT_POST_SEC,
+  recordConfig, recordLaps, recordTailSec, recordPostSec, recordLengthSec,
   recStepProblem, recStepIssue, recCutRefs, recordCoverage, missingRecordLaps,
 } from './record-model.js';
 
@@ -29,6 +30,29 @@ test('recordTailSec: 0 以下・未指定は既定へ倒す（C# ShowRecordDef.T
   // 既定は 3 秒。**C# SegmentRecordWriter.DefaultTailSec と対**なので、片方だけ変えない。
   assert.equal(REC_DEFAULT_TAIL_SEC, 3);
   assert.equal(REC_DEFAULT.tailSec, 3, 'capture-server.py の _default_show とも同じ値');
+});
+
+test('recordPostSec: 0 以下・未指定は既定へ倒す（C# ShowRecordDef.PostSec と同じ判定）', () => {
+  // ⚠ 0 を「追い録りなし」にしない。JsonUtility はキーの無い show.json でも 0 を書くので、
+  //   既存の焼き込み・端末キャッシュでは必ず 0 が入る（0 を無効と読むと機能ごと消える）。
+  assert.equal(recordPostSec({}), REC_DEFAULT_POST_SEC);
+  assert.equal(recordPostSec({ postSec: 0 }), REC_DEFAULT_POST_SEC, '0 は「無効」ではなく既定');
+  assert.equal(recordPostSec({ postSec: -1 }), REC_DEFAULT_POST_SEC);
+  assert.equal(recordPostSec({ postSec: 4 }), 4);
+  // 既定は 2 秒。**C# SegmentRecordWriter.DefaultPostSec と対**なので、片方だけ変えない。
+  assert.equal(REC_DEFAULT_POST_SEC, 2);
+  assert.equal(REC_DEFAULT.postSec, 2, 'capture-server.py の _default_show とも同じ値');
+});
+
+test('recordLengthSec: 尺は 切り替え前 + 切り替え後。縮むのは前側だけ', () => {
+  assert.equal(recordLengthSec({ tailSec: 3, postSec: 2 }), 5);
+  // 実測滞在が切り替え前より短ければ、その分しか録れていない。
+  assert.equal(recordLengthSec({ tailSec: 3, postSec: 2 }, 1.2), 3.2);
+  // 切り替え**後**は次の区間に居るあいだ録るので、前の区間の滞在では縮まない。
+  assert.equal(recordLengthSec({ tailSec: 3, postSec: 2 }, 0.1), 2.1);
+  // 滞在が長ければ切り替え前は tailSec で頭打ち。
+  assert.equal(recordLengthSec({ tailSec: 3, postSec: 2 }, 30), 5);
+  assert.equal(recordLengthSec({}), REC_DEFAULT_TAIL_SEC + REC_DEFAULT_POST_SEC);
 });
 
 test('recordLaps: 1 始まりの整数だけ拾う', () => {

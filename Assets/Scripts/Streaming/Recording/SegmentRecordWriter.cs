@@ -8,7 +8,8 @@ using System.Threading;
 namespace FixedCamVr.Streaming.Recording
 {
     /// <summary>
-    /// 区間 1 つぶんの <c>.mjr</c> を書き出す。**残すのは区間の末尾 <c>tailSec</c> 秒だけ**。
+    /// 区間 1 つぶんの <c>.mjr</c> を書き出す。**残すのは切り替えの前後だけ**
+    /// （切り替えの <c>tailSec</c> 秒前 〜 切り替えの <c>postSec</c> 秒後）。
     ///
     /// <b>なぜ末尾か</b>（2026-08-06 に頭から録る方式を置き換えた）:
     /// 3 周目に流す録画は「その区間へ入った瞬間」に始まる。区間の頭から録ると、映像の中の過去の自分も
@@ -16,6 +17,11 @@ namespace FixedCamVr.Streaming.Recording
     /// 過去の自分は出口側に居て、現在の自分（＝人形）と画面内で位置が分かれる。
     /// 副次的に、容量が滞在時間に比例しなくなる（ゆっくり歩く体験者でも一定）ので、
     /// ラン全体の上限に当たって**後半の区間が録れなくなる**事故も消える。
+    ///
+    /// <b>なぜ切り替えの後まで録るか</b>（2026-08-14 追加・<see cref="BeginPostRoll"/>）:
+    /// 切り替えの瞬間で切ると、**過去の自分が曲がり切る前に映像が終わる**（角を曲がる動きは
+    /// カメラが切り替わってからも 1〜2 秒続く）。切り替え後も同じカメラを録り続ければ、
+    /// 過去の自分は画面の外まで歩いて出ていく。
     ///
     /// 積むのはメインスレッド（<see cref="CameraStream.FrameTap"/>）でリングへのコピーだけ。
     /// ファイル書き込みは <see cref="Dispose"/>（＝区間の切れ目）で背景スレッドが一度に行う。
@@ -27,6 +33,15 @@ namespace FixedCamVr.Streaming.Recording
     {
         /// <summary>末尾の既定尺 (秒)。show.json <c>record.tailSec</c> が未指定 / 0 以下のとき。</summary>
         public const float DefaultTailSec = 3f;
+
+        /// <summary>
+        /// 切り替え後に録り続ける既定尺 (秒)。show.json <c>record.postSec</c> が未指定 / 0 以下のとき。
+        ///
+        /// ⚠ 0 を「追い録りなし」にしない。JsonUtility はキーの無い show.json でも 0 を書くので、
+        /// 既存の焼き込み・端末キャッシュでは**必ず 0 が入る**。0 を無効と読むと、
+        /// この機能は設定を書き直した現場でしか効かない。
+        /// </summary>
+        public const float DefaultPostSec = 2f;
 
         /// <summary>書き出しの待ち上限 (ms)。超えたら諦めて体験へ戻る（背景スレッドは書き続ける）。</summary>
         private const int FlushTimeoutMs = 2000;
@@ -67,6 +82,11 @@ namespace FixedCamVr.Streaming.Recording
         private volatile bool _capped;
         private int _lastPtsMs = -1;
 
+        // 切り替えの瞬間の pts（-1 = まだ切り替わっていない）。ここから先は**古い側を落とさない**
+        // ＝ 残る窓が [切替 - tailSec, 切替 + postSec] に固定される。
+        private int _anchorPtsMs = -1;
+        private int _postEndPtsMs = int.MaxValue;
+
         /// <summary>
         /// 末尾を丸ごと残せなかったか（容量で古い側を落とした / 書き込みに失敗した）。HUD・ログ用。
         /// </summary>
@@ -88,6 +108,32 @@ namespace FixedCamVr.Streaming.Recording
         /// <summary>いまリングに載っている枚数（診断用）。</summary>
         public int BufferedFrames => _ring.Count;
 
+        /// <summary>
+        /// いまリングに載っているバイト数（＝閉じたときに書くであろう量）。
+        /// ラン全体の容量配分で「まだ閉じていない区間のぶん」を差し引くのに使う。
+        /// </summary>
+        public long BufferedBytes => _ringBytes;
+
+        /// <summary>切り替えが済んで追い録り中か。</summary>
+        public bool PostRolling => _anchorPtsMs >= 0;
+
+        /// <summary>
+        /// 切り替えの瞬間を記録し、**追い録り**へ入る。以後 <see cref="Trim"/> の基準は
+        /// 現在時刻ではなく <paramref name="atPtsMs"/> になるので、
+        /// 残る窓は <c>[atPtsMs - tailSec, atPtsMs + postSec]</c> に固定される
+        /// （基準を凍らせないと、追い録りしたぶんだけ切り替え前が押し出されて短くなる）。
+        ///
+        /// <paramref name="postSec"/> は保険の上限で、実際に閉じるのは呼び出し側
+        /// （<see cref="SegmentRecorder"/>）。2 度目の呼び出しは無視する。
+        /// </summary>
+        public void BeginPostRoll(int atPtsMs, float postSec)
+        {
+            if (_stopped || _anchorPtsMs >= 0) return;
+            _anchorPtsMs = Math.Max(0, atPtsMs);
+            int postMs = (int)MathF.Round(Math.Max(0f, postSec) * 1000f);
+            _postEndPtsMs = _anchorPtsMs > int.MaxValue - postMs ? int.MaxValue : _anchorPtsMs + postMs;
+        }
+
         /// <summary>このセグメントのファイルパス。</summary>
         public string Path => _path;
 
@@ -106,6 +152,8 @@ namespace FixedCamVr.Streaming.Recording
         public bool TryAppend(byte[] jpeg, int length, int ptsMs)
         {
             if (_stopped || length <= 0 || length > RecordedSegmentFormat.MaxFrameBytes) return false;
+            // 追い録りの上限を過ぎたら受けない（呼び出し側が閉じ忘れても窓は伸びない）。
+            if (_anchorPtsMs >= 0 && ptsMs > _postEndPtsMs) return false;
             if (_limits.minFrameIntervalSec > 0f && _lastPtsMs >= 0
                 && (ptsMs - _lastPtsMs) < _limits.minFrameIntervalSec * 1000f - 1f)
                 return false;
@@ -122,12 +170,16 @@ namespace FixedCamVr.Streaming.Recording
 
         // 末尾 tailSec 秒ぶんへ切り詰める。時間と容量の 2 条件で古い側から落とす。
         // **最新の 1 枚は必ず残す**（1 枚しか無い状態で容量が足りなくても空ファイルにはしない）。
+        //
+        // 基準は「いま」だが、切り替えが済んだら**切り替えの瞬間**に凍る（BeginPostRoll）。
+        // 凍らせないと、追い録りした秒数だけ切り替え前が押し出されて消える。
         private void Trim(int nowPtsMs)
         {
+            int anchor = _anchorPtsMs >= 0 ? _anchorPtsMs : nowPtsMs;
             while (_ring.Count > 1)
             {
                 Item head = _ring.Peek();
-                bool tooOld = nowPtsMs - head.ptsMs > _tailMs;
+                bool tooOld = anchor - head.ptsMs > _tailMs;
                 bool tooBig = _ringBytes > _limits.maxBytes;
                 if (!tooOld && !tooBig) break;
                 if (tooBig) _capped = true;   // 末尾を丸ごと残せていない（尺が縮む）

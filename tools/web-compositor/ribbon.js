@@ -28,7 +28,7 @@ import { projectPoint, unprojectToFloor } from './calib.js';
 // 較正で見た絵と人形を置く時の絵が食い違うと、どちらがずれているのか判断できなくなる。
 import { wireSegments } from './calib-session.js';
 import { FX, FX_DEFAULT, camColor, escapeHtml, isVideoUrl } from './common.js';
-import { recStepIssue, recordTailSec } from './record-model.js';
+import { recStepIssue, recordTailSec, recordPostSec, recordLengthSec } from './record-model.js';
 // 周の並び（3 周 ＋ もどり）と「その区間を踏むか」の判定は run-model.js が単一の正
 // （本番前チェック・シミュレータ・実機と同じ答えを出さないと、卓だけが嘘をつく）。
 import {
@@ -443,25 +443,32 @@ export function createRibbon(container, deps) {
     return e && e.n > 0 ? e : null;
   }
   /**
-   * 「録画」カットの尺。**残すのは区間の末尾 tailSec 秒だけ**なので、著作の段階で確定する
-   * （旧「頭から録る」方式では体験者の滞在しだいで、実測滞在から見積もるしかなかった）。
+   * 「録画」カットの尺。**残すのは切り替えの前後だけ**（tailSec 秒前 〜 postSec 秒後）なので、
+   * 著作の段階で確定する（旧「頭から録る」方式では体験者の滞在しだいで見積もるしかなかった）。
    *
-   * 滞在が tailSec より短ければ録れているのはその分だけなので、実測があれば短い方を採る。
+   * 滞在が tailSec より短ければ切り替え前はその分しか録れていないので、実測があれば短い方を採る。
+   * 切り替え**後**は次の区間に居るあいだ録るので、滞在では縮まない。
    */
   function recSecondsOf(s) {
     if (!s || s.source !== TAKE.SRC_REC) return null;
-    const tail = recordTailSec(record || {});
     const e = dwellFor(s.recLap, s.camera);
-    return e && e.meanSec > 0 ? Math.min(tail, e.meanSec) : tail;
+    return recordLengthSec(record || {}, e ? e.meanSec : null);
   }
   /** 「録画」カットの尺の説明。 */
   function recLenNote(s) {
-    const tail = recordTailSec(record || {});
+    const cfg = record || {};
+    const tail = recordTailSec(cfg);
+    const post = recordPostSec(cfg);
     const e = dwellFor(s.recLap, s.camera);
+    // ⚠ recSecondsOf は rec 以外で null を返す。この欄は非 rec のカットでも（隠して）組まれるので、
+    //    尺は source を見ずに設定から出す（null を fmtSec に流すと 0s と書かれる）。
+    const len = fmtSec(recordLengthSec(cfg, e ? e.meanSec : null));
     if (e && e.meanSec > 0 && e.meanSec < tail) {
-      return `長さ ${fmtSec(e.meanSec)}s（この区間の実測 平均滞在が末尾 ${fmtSec(tail)}s より短い）`;
+      return `長さ ${len}s（この区間の実測 平均滞在が切り替え前の ${fmtSec(tail)}s より短い`
+        + ` ＋ 切り替え後 ${fmtSec(post)}s）`;
     }
-    return `長さ ${fmtSec(tail)}s（この区間を出る直前の末尾。⏺ 端末内録画パネルで変えられます）`;
+    return `長さ ${len}s（切り替えの ${fmtSec(tail)}s 前 〜 ${fmtSec(post)}s 後。`
+      + '⏺ 端末内録画パネルで変えられます）';
   }
   function dwellLabel(lap, camera) {
     const e = dwellFor(lap, camera);

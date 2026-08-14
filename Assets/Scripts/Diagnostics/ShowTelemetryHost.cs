@@ -91,7 +91,7 @@ namespace FixedCamVr.Diagnostics
         private TakeRunner? _takes;
 
         // --- 購読状態（多重購読を防ぐ）---
-        private bool _subSwitch, _subRun, _subCues, _subRegistry, _subTakes;
+        private bool _subSwitch, _subRun, _subCues, _subRegistry, _subTakes, _subRec;
 
         // --- 遷移検出のための前回値 ---
         private IntroStage _lastStage = IntroStage.Off;
@@ -100,7 +100,6 @@ namespace FixedCamVr.Diagnostics
         private string _lastCueId = "";
         private bool _lastStormOn;
         private bool _lastTrackingFrozen;
-        private bool _lastRecording;
         private bool _lastGateOpen = true;
         private string _lastConfig = "";
         private string _lastBgmTrack = "";
@@ -108,12 +107,6 @@ namespace FixedCamVr.Diagnostics
         private SoundCue _lastSoundCue = SoundCue.None;
         private int _lastSpotCount;
         private bool _soundWarned;
-
-        // 開いている録画区間。**画面に映っているカメラではなく録画対象の (周, カメラ)** を持つ
-        // （演出中は両者が食い違う。旧実装は registry.ActiveIndex を出していて誤りだった）。
-        private int _recLap = -1;
-        private int _recCam = -1;
-        private long _recBytesAtStart;
 
         // 再生中の録画（記録側とは別系統）。閉じるときに「画に出た枚数」を出すために参照を持つ。
         private RecordedFramePlayer? _lastRecPlayer;
@@ -226,6 +219,14 @@ namespace FixedCamVr.Diagnostics
                 _registry.ActiveChanged += OnActiveChanged;
                 _subRegistry = true;
             }
+            if (!_subRec && _recorder != null)
+            {
+                _recorder.SegmentOpened += OnRecSegmentOpened;
+                _recorder.SegmentClosed += OnRecSegmentClosed;
+                _subRec = true;
+                // 録画係は show.json 適用時に生まれるので、解決が遅れて最初の開始を取り逃すことがある。
+                if (_recorder.IsRecording) OnRecSegmentOpened(_recorder.CurrentLap, _recorder.CurrentCamera);
+            }
         }
 
         private void Unsubscribe()
@@ -239,7 +240,12 @@ namespace FixedCamVr.Diagnostics
             if (_subCues && _cues != null) _cues.CameraEntered -= OnCameraEntered;
             if (_subRegistry && _registry != null) _registry.ActiveChanged -= OnActiveChanged;
             if (_subTakes && _takes != null) _takes.StepResolved -= OnStepResolved;
-            _subSwitch = _subRun = _subCues = _subRegistry = _subTakes = false;
+            if (_subRec && _recorder != null)
+            {
+                _recorder.SegmentOpened -= OnRecSegmentOpened;
+                _recorder.SegmentClosed -= OnRecSegmentClosed;
+            }
+            _subSwitch = _subRun = _subCues = _subRegistry = _subTakes = _subRec = false;
         }
 
         // ---------------------------------------------------------------- イベント
@@ -536,38 +542,6 @@ namespace FixedCamVr.Diagnostics
                 }
             }
 
-            // 端末内録画（3 周目の素材はここが録れていないと黙って飛ぶ）。
-            //
-            // ⚠ 出すのは**録画対象の (周, カメラ)** で、画面に映っているカメラではない
-            //    （演出中は食い違う。旧実装は registry.ActiveIndex を出しており誤りだった）。
-            // ⚠ 区間の切れ目では stop→start が同一フレームに起きて IsRecording が変わらないので、
-            //    (周, カメラ) の変化も遷移として扱う。見ないと閉じた区間が 1 本まるごと消える。
-            if (_recorder != null)
-            {
-                bool rec = _recorder.IsRecording;
-                int lap = _recorder.CurrentLap;
-                int cam = _recorder.CurrentCamera;
-                if (rec != _lastRecording || (rec && (lap != _recLap || cam != _recCam)))
-                {
-                    // 閉じた区間を先に出す。RunBytes は StopSegment の中で加算済みなので、
-                    // 開始時との差分がその区間で実際に書いたバイト数になる（0 なら 1 フレームも録れていない）。
-                    if (_lastRecording)
-                        Emit($"ev=rec v=stop lap={_recLap} cam={_recCam} " +
-                             $"bytes={_recorder.RunBytes - _recBytesAtStart} " +
-                             $"frames={_recorder.LastSegmentFrames} " +
-                             $"mb={_recorder.RunBytes / 1048576.0:F1}");
-                    if (rec)
-                    {
-                        _recLap = lap;
-                        _recCam = cam;
-                        _recBytesAtStart = _recorder.RunBytes;
-                        Emit($"ev=rec v=start lap={lap} cam={cam} bytes=0 " +
-                             $"mb={_recorder.RunBytes / 1048576.0:F1}");
-                    }
-                    _lastRecording = rec;
-                }
-            }
-
             // 区間進行のゲート（導入・終了で閉じる single choke point）。
             if (_cues != null && _cues.ShowGateOpen != _lastGateOpen)
             {
@@ -577,6 +551,21 @@ namespace FixedCamVr.Diagnostics
 
             TickRecordingPlayback();
         }
+
+        // 端末内録画（3 周目の素材はここが録れていないと黙って飛ぶ）。
+        //
+        // ⚠ 出すのは**録画対象の (周, カメラ)** で、画面に映っているカメラではない
+        //    （演出中は食い違う。旧実装は registry.ActiveIndex を出しており誤りだった）。
+        // ⚠ ポーリングでは取れない（2026-08-14）。切り替え後も postSec 秒は前の区間を録り続けるので
+        //    **開始と終了が入れ子になり**、しかも枚数・バイト数は閉じた瞬間にしか確定しない。
+        //    ポーリングのままだと閉じた区間が frames=0 に見えて、解析器が偽の FAIL を出す。
+        private void OnRecSegmentOpened(int lap, int cam)
+            => Emit($"ev=rec v=start lap={lap} cam={cam} bytes=0 mb={RecMB():F1}");
+
+        private void OnRecSegmentClosed(int lap, int cam, int frames, long bytes)
+            => Emit($"ev=rec v=stop lap={lap} cam={cam} bytes={bytes} frames={frames} mb={RecMB():F1}");
+
+        private double RecMB() => _recorder != null ? _recorder.RunBytes / 1048576.0 : 0.0;
 
         // 録画の**再生**（記録側の ev=rec とは別系統）。
         //
@@ -714,7 +703,10 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" weakPct=").Append((_liveSec > 0f ? _weakSec / _liveSec * 100f : 0f).ToString("F1"));
             }
             if (_recorder != null)
+                // recPost=1 は「カメラが切り替わった後も前の区間を録り続けている」＝ 追い録りが実際に走った証拠。
+                // 見ないと、Update が回っていない / postSec が 0 に化けている等で黙って無くなる。
                 _sb.Append(" rec=").Append(_recorder.IsRecording ? 1 : 0)
+                   .Append(" recPost=").Append(_recorder.IsPostRolling ? 1 : 0)
                    .Append(" recMB=").Append((_recorder.RunBytes / 1048576.0).ToString("F1"));
             // 録画を再生中なら、いま何枚目まで画に出したか（尺だけ進んで絵が出ていないのを見分ける）。
             if (_lastRecPlayer != null)
