@@ -62,6 +62,8 @@ STEP_SEC = 1.35           # 1 歩にかける時間 [秒]
 CAPTIONS = False          # テロップ（2026-08-14 ユーザー指示で無し）
 SHOW_GEAR = False         # 配信スマホと三脚（同上）
 CAM_YAW = 28.0            # カメラを回す角 [度]（南東の斜め上から固定）
+CURTAIN_HEM = 0.04        # 幕の裾を床から浮かせる高さ [m]
+CURTAIN_T = 0.006         # 幕の厚み [m]
 LAPS = 3
 FPS = 30
 RES = (1920, 1080)
@@ -299,7 +301,8 @@ M_FLOOR = mat("floor", (0.72, 0.71, 0.69, 1), rough=0.85)
 M_WALL = mat("wall", (0.20, 0.21, 0.23, 1), rough=0.6, alpha=0.32)
 M_EDGE = mat("edge", (0.12, 0.12, 0.13, 1), rough=0.5)
 M_PIPE = mat("pipe", (0.030, 0.030, 0.034, 1), rough=0.34, metal=0.35)
-M_FIT = mat("fitting", (0.22, 0.22, 0.23, 1), rough=0.55)
+M_FIT = mat("fitting", (0.035, 0.035, 0.038, 1), rough=0.62)   # 継手も黒（粗さで形を残す）
+M_CURTAIN = mat("curtain", (0.035, 0.035, 0.038, 1), rough=0.94)  # 黒に近いグレーの幕
 M_ROUTE = mat("route", ACCENT, emit=(ACCENT[0] * .35, ACCENT[1] * .35, ACCENT[2] * .35, 1))
 M_GEAR = mat("gear", (0.30, 0.30, 0.32, 1), rough=0.5)
 M_TEXT = mat("text", (1, 1, 1, 1), emit=(1, 1, 1, 1))
@@ -318,6 +321,16 @@ with bpy.data.libraries.load(JOINT, link=False) as (_src, _dst):
     _dst.objects = [nm for nm in _src.objects
                     if not nm.startswith(("Cube", "Cylinder", "Plane"))]   # 下絵は除く
 FRAME = [o for o in _dst.objects if o is not None]
+# スマホのマウントは出さない（2026-08-14 ユーザー指示）。材質名で拾う
+_drop = [o for o in FRAME
+         if any(sl.material is not None
+                and any(k in sl.material.name.lower() for k in ("phone", "mount"))
+                for sl in getattr(o, "material_slots", []))]
+for o in _drop:
+    FRAME.remove(o)
+    bpy.data.objects.remove(o, do_unlink=True)
+if _drop:
+    log("スマホのマウントを外した: %d 個" % len(_drop))
 
 # Joint.blend の L は「西と南へ伸びる」向き。会場は「東と南」なので Z 回りに 90 度回す
 _rot = mathutils.Matrix.Rotation(math.pi / 2, 4, 'Z')
@@ -353,20 +366,29 @@ for o in FRAME:
             continue
         _done.add(m.name)
         pipe = "pipe" in m.name.lower()
-        col = (0.030, 0.030, 0.034, 1) if pipe else (0.22, 0.22, 0.23, 1)
+        col = (0.030, 0.030, 0.034, 1) if pipe else (0.035, 0.035, 0.038, 1)
         if not m.use_nodes:
             m.use_nodes = True
         for nd in m.node_tree.nodes:
             if nd.type != 'BSDF_PRINCIPLED':
                 continue
             nd.inputs["Base Color"].default_value = col
-            nd.inputs["Roughness"].default_value = 0.34 if pipe else 0.55
+            nd.inputs["Roughness"].default_value = 0.34 if pipe else 0.62
             if "Metallic" in nd.inputs:
                 nd.inputs["Metallic"].default_value = 0.35 if pipe else 0.0
-log("骨組みの色を塗り直した（パイプ=黒 / 継手=グレー）: %s" % ", ".join(sorted(_done)))
+log("骨組みの色を塗り直した（パイプも継手も黒）: %s" % ", ".join(sorted(_done)))
 
-# ⚠ 板は置かない。Joint.blend にも無いし、置くと歩いている人が半分隠れる
-#   （試したら 5 コマ中 4 コマで体が板の裏だった）
+# 幕。手すりの内側（＝ 壁の芯）を通る高い方のパイプから下ろす。
+# 芯を通る中桟のパイプは幕を貫通してよい（2026-08-14 ユーザー指示）。
+for _nm, _p, _q in (("curtain_n", WALL_B, WALL_C), ("curtain_w", WALL_B, WALL_A)):
+    _ln = math.hypot(_q[0] - _p[0], _q[1] - _p[1])
+    _h = WALL_H - CURTAIN_HEM
+    _c = put(box(_nm, (_ln, CURTAIN_T, _h),
+                 ((_p[0] + _q[0]) / 2, (_p[1] + _q[1]) / 2,
+                  FLOOR_TOP + CURTAIN_HEM + _h / 2),
+                 rot_z=math.atan2(_q[1] - _p[1], _q[0] - _p[0])), M_CURTAIN)
+log("幕: 上端 %.2fm → 裾 %.2fm ／ 長さ %.2fm ×2"
+    % (WALL_H, CURTAIN_HEM, WALL_ARM))
 
 N = 240
 
@@ -696,10 +718,12 @@ log("人のマテリアルをマットに: %s ／ ノード %s"
 
 # 天井にぶら下がった裸電球 1 個ぶん。太陽も補助光も置かない
 lamp = bpy.data.objects.new("lamp", bpy.data.lights.new("lamp", 'POINT'))
-lamp.data.energy = 160          # W
-lamp.data.shadow_soft_size = 0.10
+# ⚠ 骨組みの真上に置かない。幕の上端まで 0.45m しかなく、そこだけ白く飛ぶ。
+#   斜め上から流し込むと幕は上から下へ落ちる自然な階調になる
+lamp.data.energy = 260          # W
+lamp.data.shadow_soft_size = 0.12
 lamp.data.color = (1.0, 0.96, 0.90)
-lamp.location = (0.55, -0.35, 2.30)
+lamp.location = (1.15, -1.05, 2.70)
 scene.collection.objects.link(lamp)
 
 world = bpy.data.worlds.new("world")
