@@ -57,6 +57,9 @@ JOINT_CORNER = (0.480, 0.0)    # Joint.blend の中の L の角
 JOINT_FLOOR_Z = -0.886         # Joint.blend の中の足の裏
 SPEED = 0.5               # 目標の速さ [m/s]（ShowWalkDebugDriver.WalkSpeed と同じ）
 STEP_SEC = 1.05           # 1 歩にかける時間 [秒]（＝ ゆっくりだが自然な足の運び）
+CAPTIONS = False          # テロップ（2026-08-14 ユーザー指示で無し）
+SHOW_GEAR = False         # 配信スマホと三脚（同上）
+CAM_YAW = 28.0            # カメラを回す角 [度]（南東の斜め上から固定）
 LAPS = 3
 FPS = 30
 RES = (1920, 1080)
@@ -288,13 +291,14 @@ log("順路と壁のいちばん近いところ %.3f m ／ 床からのはみ出
 if _near < 0.18:
     log("⚠ 壁に寄りすぎ。D_WALK を大きくする")
 
-M_GROUND = mat("ground", (0.63, 0.63, 0.62, 1), rough=0.95)
-M_FLOOR = mat("floor", (0.95, 0.94, 0.91, 1), rough=0.9)
-M_WALL = mat("wall", (0.60, 0.63, 0.70, 1), rough=0.6, alpha=0.45)
-M_EDGE = mat("edge", (0.35, 0.35, 0.38, 1), rough=0.5)
-M_PIPE = mat("pipe", (0.16, 0.38, 0.60, 1), rough=0.35, metal=0.2)
-M_FIT = mat("fitting", (0.88, 0.88, 0.88, 1), rough=0.45)
-M_ROUTE = mat("route", ACCENT, emit=(ACCENT[0] * .6, ACCENT[1] * .6, ACCENT[2] * .6, 1))
+# 暗い部屋にポイントライト 1 灯。床だけライトグレーで、他は落とす
+M_GROUND = mat("ground", (0.09, 0.09, 0.10, 1), rough=0.95)
+M_FLOOR = mat("floor", (0.72, 0.71, 0.69, 1), rough=0.85)
+M_WALL = mat("wall", (0.20, 0.21, 0.23, 1), rough=0.6, alpha=0.32)
+M_EDGE = mat("edge", (0.12, 0.12, 0.13, 1), rough=0.5)
+M_PIPE = mat("pipe", (0.030, 0.030, 0.034, 1), rough=0.34, metal=0.35)
+M_FIT = mat("fitting", (0.22, 0.22, 0.23, 1), rough=0.55)
+M_ROUTE = mat("route", ACCENT, emit=(ACCENT[0] * .35, ACCENT[1] * .35, ACCENT[2] * .35, 1))
 M_GEAR = mat("gear", (0.30, 0.30, 0.32, 1), rough=0.5)
 M_TEXT = mat("text", (1, 1, 1, 1), emit=(1, 1, 1, 1))
 M_PLATE = mat("plate", (0.04, 0.04, 0.05, 1), alpha=0.66)
@@ -346,28 +350,21 @@ for o in FRAME:
         if m is None or m.name in _done:
             continue
         _done.add(m.name)
-        col = tuple(m.diffuse_color)
+        pipe = "pipe" in m.name.lower()
+        col = (0.030, 0.030, 0.034, 1) if pipe else (0.22, 0.22, 0.23, 1)
         if not m.use_nodes:
             m.use_nodes = True
         for nd in m.node_tree.nodes:
             if nd.type != 'BSDF_PRINCIPLED':
                 continue
-            if not nd.inputs["Base Color"].is_linked:
-                nd.inputs["Base Color"].default_value = col
-            nd.inputs["Roughness"].default_value = 0.38
+            nd.inputs["Base Color"].default_value = col
+            nd.inputs["Roughness"].default_value = 0.34 if pipe else 0.55
             if "Metallic" in nd.inputs:
-                nd.inputs["Metallic"].default_value = 0.15
-log("骨組みの色: %s" % ", ".join(
-    "%s(%.2f,%.2f,%.2f)" % ((nm,) + tuple(bpy.data.materials[nm].diffuse_color)[:3])
-    for nm in sorted(_done)))
+                nd.inputs["Metallic"].default_value = 0.35 if pipe else 0.0
+log("骨組みの色を塗り直した（パイプ=黒 / 継手=グレー）: %s" % ", ".join(sorted(_done)))
 
-# 板は Joint.blend にまだ無い。入る面だけ薄く示す
-for _nm, _p, _q in (("panel_n", WALL_B, WALL_C), ("panel_w", WALL_B, WALL_A)):
-    _ln = math.hypot(_q[0] - _p[0], _q[1] - _p[1])
-    _wo = put(box(_nm, (_ln, 0.008, WALL_H),
-                  ((_p[0] + _q[0]) / 2, (_p[1] + _q[1]) / 2, WALL_H / 2 + FLOOR_TOP),
-                  rot_z=math.atan2(_q[1] - _p[1], _q[0] - _p[0])), M_WALL)
-    _wo.visible_shadow = False    # 透けた面の影は大きな染みになって画を汚す
+# ⚠ 板は置かない。Joint.blend にも無いし、置くと歩いている人が半分隠れる
+#   （試したら 5 コマ中 4 コマで体が板の裏だった）
 
 N = 240
 
@@ -391,7 +388,7 @@ for i in range(16):
     put(a, M_ROUTE)
 
 # ------------------------------------------------------ カメラ 3 台 -------
-for i, c in enumerate(CAMS[:3]):
+for i, c in enumerate(CAMS[:3] if SHOW_GEAR else []):
     x, y, h, yaw = c["x"], c["z"], c["y"], math.radians(c.get("yawDeg", 0))
     if h > 0.4:
         put(cyl("tripod_%d" % i, 0.011, h * 0.45, (x, y, h - h * 0.225)), M_GEAR)
@@ -677,24 +674,18 @@ for m in bpy.data.materials:
             if key in n.inputs and not n.inputs[key].is_linked:
                 n.inputs[key].default_value = 0.25
 
-sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", 'SUN'))
-sun.data.energy = 2.4
-sun.data.angle = math.radians(6)
-# 高めから当てる。低いと人の影が床の外まで伸びて画の隅に大きな染みを作る
-sun.rotation_euler = Euler((math.radians(24), 0, math.radians(35)))
-scene.collection.objects.link(sun)
-
-fill = bpy.data.objects.new("fill", bpy.data.lights.new("fill", 'AREA'))
-fill.data.energy = 150
-fill.data.size = 4
-fill.location = (-2.5, -2.5, 3.0)
-fill.rotation_euler = Euler((math.radians(40), 0, math.radians(-135)))
-scene.collection.objects.link(fill)
+# 天井にぶら下がった裸電球 1 個ぶん。太陽も補助光も置かない
+lamp = bpy.data.objects.new("lamp", bpy.data.lights.new("lamp", 'POINT'))
+lamp.data.energy = 160          # W
+lamp.data.shadow_soft_size = 0.10
+lamp.data.color = (1.0, 0.96, 0.90)
+lamp.location = (0.55, -0.35, 2.30)
+scene.collection.objects.link(lamp)
 
 world = bpy.data.worlds.new("world")
 world.use_nodes = True
-world.node_tree.nodes["Background"].inputs[0].default_value = (0.72, 0.74, 0.78, 1)
-world.node_tree.nodes["Background"].inputs[1].default_value = 0.7
+world.node_tree.nodes["Background"].inputs[0].default_value = (0.16, 0.17, 0.20, 1)
+world.node_tree.nodes["Background"].inputs[1].default_value = 0.025
 scene.world = world
 
 # ------------------------------------------------------ カメラ ------------
@@ -707,7 +698,7 @@ pivot = bpy.data.objects.new("pivot", None)
 scene.collection.objects.link(pivot)
 # 水平から 55 度見下ろす。この角だと 1.75m の人が画の高さの 4 割ほどに収まり、
 # 床 1.8m 角と順路が同時に読める（真横だと順路が潰れ、真上だと人が読めない）
-SWING = math.radians(9)           # 3 周のあいだにこれだけ左右へ振る
+SWING = math.radians(CAM_YAW)     # 固定。この角で収まるかを当たり判定に使う
 
 # ⚠ 距離を手で決めると、人が奥の辺に来たコマだけ頭が切れる（実際に切れた）。
 #   遠い所・高い所を全部並べて、どのコマでも収まる最短の距離を探す。
@@ -720,7 +711,7 @@ for _sx in (-1, 1):
         _pts.append(Vector((_sx * FW / 2, _sy * FD / 2, 0.0)))
 for _c3 in (WALL_A, WALL_B, WALL_C):           # 骨組みの上端
     _pts.append(Vector((_c3[0], _c3[1], WALL_H + FLOOR_TOP)))
-for _c in CAMS[:3]:                      # 三脚も画に入る。切れると目立つ
+for _c in (CAMS[:3] if SHOW_GEAR else []):    # 三脚も画に入る。切れると目立つ
     _pts.append(Vector((_c["x"], _c["z"], _c["y"] + 0.15)))
     _pts.append(Vector((_c["x"], _c["z"], 0.0)))
 
@@ -754,7 +745,7 @@ for _e_deg in range(50, 62, 2):
     _e = math.radians(_e_deg)
     _d = 2.0
     while _d < 9.0:
-        if all(_fits(_d, _e, sw) for sw in (-SWING, 0.0, SWING)):
+        if _fits(_d, _e, SWING):
             break
         _d += 0.05
     if _d < DIST:
@@ -765,35 +756,13 @@ log("カメラ 距離 %.2f m ／ 見下ろし %.0f 度 ／ 見る先 (%.2f, %.2f
 cam.parent = pivot
 cam.rotation_euler = Euler((math.pi / 2 - ELEV, 0, 0))
 
-# 出だしの 4 秒は手元へ寄ってから引く。広い画のままだと手が 30 画素しかなく、
-# 「手すりを持つ」がいちばん伝わらない。角は変えない（回転を足すと酔う）
-PULL_F = int(4.5 * FPS)
-CLOSE_D = 2.55
-for fr in range(1, PULL_F + 1):
-    u = (fr - 1) / (PULL_F - 1)
-    w = u * u * (3 - 2 * u)                       # 出だしと終わりをなめらかに
-    q, _ = rail_at(START_S + (fr - 1) / FPS * SPEED_EFF)   # 寄っている間は手を追う
-    near = Vector((q.x, q.y, RAIL_H))
-    pivot.location = near.lerp(TGT, w)
-    pivot.keyframe_insert("location", frame=fr)
-    d = CLOSE_D + (DIST - CLOSE_D) * w
-    cam.location = (0, -math.cos(ELEV) * d, math.sin(ELEV) * d)
-    cam.keyframe_insert("location", frame=fr)
-for o in (pivot, cam):
-    for fc in fcurves_of(o):
-        for kp in fc.keyframe_points:
-            kp.interpolation = 'LINEAR'
-for fr, deg in ((1, -math.degrees(SWING)), (TOTAL, math.degrees(SWING))):
-    pivot.rotation_euler = Euler((0, 0, math.radians(deg)))
-    pivot.keyframe_insert("rotation_euler", frame=fr)
-for fc in fcurves_of(pivot):
-    for kp in fc.keyframe_points:
-        kp.interpolation = 'SINE'
-        kp.easing = 'EASE_IN_OUT'
-
+# 固定。動かさない（2026-08-14 ユーザー指示）
+pivot.location = TGT
+pivot.rotation_euler = Euler((0, 0, SWING))
+cam.location = (0, -math.cos(ELEV) * DIST, math.sin(ELEV) * DIST)
 # ------------------------------------------------------ 文字 --------------
 font = None
-for path in FONTS:
+for path in (FONTS if CAPTIONS else []):
     if os.path.exists(path):
         try:
             font = bpy.data.fonts.load(path)
@@ -802,11 +771,11 @@ for path in FONTS:
         except Exception as e:                                  # noqa: BLE001
             log("書体を開けない:", path, e)
 if font is None:
-    log("⚠ 日本語の書体が無い — 文字は出さない")
+    log("テロップ: 出さない" if not CAPTIONS else "⚠ 日本語の書体が無い — 文字は出さない")
 
 
 def caption(text, f_in, f_out, y=-0.175, size=0.030, plate_w=None):
-    if font is None:
+    if font is None or not CAPTIONS:
         return
     cu = bpy.data.curves.new("cap", 'FONT')
     cu.font = font
@@ -864,7 +833,7 @@ log("エンジン:", scene.render.engine)
 
 ee = getattr(scene, "eevee", None)
 if ee is not None:
-    for attr, val in (("taa_render_samples", 24), ("use_shadows", True),
+    for attr, val in (("taa_render_samples", 64), ("use_shadows", True),
                       ("use_raytracing", False), ("use_gtao", True)):
         if hasattr(ee, attr):
             setattr(ee, attr, val)
@@ -873,7 +842,7 @@ scene.render.resolution_x, scene.render.resolution_y = RES
 scene.render.resolution_percentage = 100
 scene.render.film_transparent = False
 scene.view_settings.view_transform = 'Standard'
-scene.view_settings.exposure = -0.35      # 白い部屋 + 白い床は素だと飛ぶ
+scene.view_settings.exposure = 0.0        # 明るさはライト 1 灯だけで作る
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(CHECK_DIR, exist_ok=True)
 
