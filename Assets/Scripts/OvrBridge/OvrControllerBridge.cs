@@ -82,6 +82,10 @@ namespace FixedCamVr.OvrBridge
         // OS recenter 購読済みフラグ（OVRManager.display は初期化順で null のことがあるためリトライする）。
         private bool _recenterSubscribed;
 
+        [Tooltip("上司からの連絡の面。届いた瞬間に左コントローラを震わせるためだけに読む。")]
+        [SerializeField] private CommsPanel? comms;
+        private int _lastCommsPulse;
+
         private void Start()
         {
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
@@ -210,6 +214,16 @@ namespace FixedCamVr.OvrBridge
             guidePanel?.SetControllerConnected(rConnected);
 
             bool regActive = courseRegistration != null && courseRegistration.IsActive;
+
+            // 上司からの連絡が届いたら、体験者の手（左）を震わせる。
+            // ⚠ 連絡の面（Diagnostics）も体験の骨格（Streaming）も OVR を参照しない規約なので、
+            //    **向こうから読みに来る**（ShowBodyInput / UserPresentProvider と同じ流儀）。
+            if (comms == null) comms = FindObjectOfType<CommsPanel>();
+            if (comms != null && comms.PulseCount != _lastCommsPulse)
+            {
+                _lastCommsPulse = comms.PulseCount;
+                haptics?.LeftNotify();
+            }
 
             // ---- モード遷移（副作用は OnModeChanged / ResetRun が担う）----
             _modeLogic.Tick(new ControllerModeLogic.Frame

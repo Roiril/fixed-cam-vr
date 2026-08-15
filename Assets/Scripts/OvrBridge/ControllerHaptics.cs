@@ -48,6 +48,13 @@ namespace FixedCamVr.OvrBridge
         /// <summary>体験者の記録ボタン（左 X）を受け取った。<b>これだけが体験者への返り。</b></summary>
         public void LeftMark() => _left.Trigger(HapticSequenceLogic.Pattern.Action);
 
+        /// <summary>
+        /// <b>上司から連絡が届いた</b>（左）。<see cref="LeftMark"/> と<b>別のパターンにする</b> —
+        /// 同じだと「自分が押した」と「向こうから来た」が混ざる。
+        /// 2 連の <c>Fire</c> は長押しの発火と同じ形だが、右手にしか出ないので体験者には新しい合図になる。
+        /// </summary>
+        public void LeftNotify() => _left.Trigger(HapticSequenceLogic.Pattern.Fire);
+
         private void Update()
         {
             float dt = Time.deltaTime;

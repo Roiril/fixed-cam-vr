@@ -550,6 +550,20 @@ namespace FixedCamVr.Streaming.EditorTools
             var statusHud = CreateStatusHud(logic.transform, centerEye.transform, registry, tracker,
                                             director, signalFx, lapCounter, cueScheduler, courseFrame, registration);
 
+            // 3.9. 上司からの連絡（第 2 の面）。本編のスクリーンとは別に、少し手前・少し外側へ立てる
+            //      （canon/LEDGER.md 0043）。world-space（Logic 直下・head 非親）で自前に緩追従する
+            //      ＝ StatusHud と同じ流儀。⚠ 仮実装で、出るのは本編に入って一定秒後に 1 回だけ。
+            {
+                var commsGo = GameObject.Find("[Comms]");
+                if (commsGo == null)
+                {
+                    commsGo = new GameObject("[Comms]");
+                    commsGo.transform.SetParent(logic.transform, worldPositionStays: false);
+                }
+                if (commsGo.GetComponent<FixedCamVr.Diagnostics.CommsPanel>() == null)
+                    commsGo.AddComponent<FixedCamVr.Diagnostics.CommsPanel>();
+            }
+
             // 4.1. HMD 内の文字面は全部「スタッフが被っているか」を StatusHud に問う（体験者の視界には
             //      1 文字も出さない・2026-08-07〜）。実行時も FindObjectOfType で自己解決するが、
             //      明示配線しておく（シーンに 2 つ目の StatusHud が現れたときに取り違えない）。
