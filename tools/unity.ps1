@@ -88,9 +88,10 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/Tracking/CourseRegistrationController.cs',
                                     'Assets/Scripts/Diagnostics/StatusHud.cs',
                                     'Assets/Scripts/Diagnostics/ControllerGuidePanel.cs',
+                                    'Assets/Scripts/Diagnostics/TitleNotice.cs',
                                     'Assets/Scripts/Diagnostics/RecoveryGuidance.cs',
+                                    'Assets/Scripts/Diagnostics/CommsPanel.cs',
                                     'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',
-                                    'Assets/Scripts/Streaming/IntroDirector.cs',
                                     'Assets/Scripts/Streaming/ShowRunDirector.cs') }
     'sound-import'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.SoundImportSetup.ApplySoundImportSettings'
                             Desc = '音の取り込み設定を揃える（⚠ 音を焼き直したら必須。正規化・Streaming が混ざると設計した音量が消える）'
