@@ -103,6 +103,42 @@ _gen_lock = threading.Lock()
 _gen_jobs = {}          # id -> {status, url, error, startedAt, finishedAt, cam, prompt, genId}
 
 
+# ---- 生成の入出力でトーンを往復させる（canon/LEDGER.md 0050）--------------
+#
+#   種フレームは明るい部屋のままモデルへ渡していたので、**生成モデルは暗い画を一度も描いて
+#   いなかった**。暗所の人形は暗いだけでなく陰影の付き方が違う（光源の向きが読める・輪郭が
+#   闇へ沈む・顔の一部だけが光を拾う）ので、後段の post では作れない。
+#   ⇒ 種へ post を掛けてから渡し、生成物から post を抜いてから captures/ へ置く。
+#
+#   ⚠ **暗いまま保存しない。** cue の素材は「そのカメラが撮ったならこう写る生映像」の位置に
+#   入るので、暗いまま置くと ①実機で post が二重に掛かる ②半分マスクで境目に段差が出る
+#   ③`LEDGER` 0020 と `rules/streaming.md`「合成はポスト FX の前」に反する。
+#
+#   ⚠ **失敗したら素通しで続ける**（生成は 1 枚 60〜150 秒で、トーンで落とすのは高い）。
+#   ただし黙って素通しにすると効いていないことに気づけないので、job['tone'] に必ず残す。
+GEN_TONE = os.path.join(os.path.dirname(os.path.dirname(ROOT)), 'tools', 'gen-tone.py')
+GEN_TONE_SCALE = 1.0    # 1.0 = 実機と同じ暗さ。往復の実測は平均誤差 1.2 / 最大 24 / 潰れ 0.65%
+GEN_TONE_TIMEOUT_SEC = 120
+
+
+def _gen_tone(mode, src, dst, cam_label, scale=None):
+    """`tools/gen-tone.py` を呼ぶ。(成否, 一行メモ) を返す。"""
+    if not os.path.exists(GEN_TONE):
+        return False, 'tools/gen-tone.py が見つからない'
+    cmd = [sys.executable, GEN_TONE, mode, src, dst,
+           '--scale', str(GEN_TONE_SCALE if scale is None else scale)]
+    if cam_label:
+        cmd += ['--cam', str(cam_label)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=GEN_TONE_TIMEOUT_SEC, check=False)
+    except Exception as e:                                    # noqa: BLE001 - 何で落ちても素通しへ
+        return False, str(e)
+    if r.returncode != 0 or not os.path.exists(dst):
+        err = (r.stderr or r.stdout or b'').decode('utf-8', 'replace').strip()
+        return False, err[-300:] or f'exit {r.returncode}'
+    return True, (r.stdout or b'').decode('utf-8', 'replace').strip()[-300:]
+
+
 def _gen_running():
     return any(j['status'] == 'running' for j in _gen_jobs.values())
 
@@ -114,8 +150,16 @@ def _gen_run(job_id, cam_label, seed_path, prompt, slug):
     os.makedirs(work, exist_ok=True)
     proc = None
     try:
-        seed_copy = os.path.join(work, 'seed' + os.path.splitext(seed_path)[1])
-        shutil.copyfile(seed_path, seed_copy)
+        # 種へ post を掛けてから渡す（モデルに実機の暗さを見せる）。落ちたら素の種で続ける。
+        job['tone'] = {}
+        seed_dim = os.path.join(work, 'seed_dim.png')
+        ok, note = _gen_tone('dim', seed_path, seed_dim, cam_label)
+        job['tone']['dim'] = ('掛けた: ' + note) if ok else ('素通し: ' + note)
+        if ok:
+            seed_copy = seed_dim
+        else:
+            seed_copy = os.path.join(work, 'seed' + os.path.splitext(seed_path)[1])
+            shutil.copyfile(seed_path, seed_copy)
         out_png = os.path.join(work, 'out.png')
         prompt_file = os.path.join(work, 'prompt.txt')
         # 種フレームは**作業フォルダへコピーした方**を指す（リポジトリを触らせない）。
@@ -148,10 +192,16 @@ def _gen_run(job_id, cam_label, seed_path, prompt, slug):
 
         stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         name = f'gen_cam{_atelier_slug(cam_label, "X")}_{_atelier_slug(slug, "free")}_{stamp}.png'
-        shutil.copyfile(out_png, os.path.join(CAPTURES, name))
+        dest = os.path.join(CAPTURES, name)
+        # 生成物から post を抜いて素材にする（実機でもう一度 post を浴びるため）。
+        ok, note = _gen_tone('undim', out_png, dest, cam_label)
+        job.setdefault('tone', {})['undim'] = ('抜いた: ' + note) if ok else ('素通し: ' + note)
+        if not ok:
+            shutil.copyfile(out_png, dest)
         url = '/captures/' + name
         job.update(status='done', url=url, finishedAt=time.time())
-        _gen_record(job.get('genId'), {'status': 'done', 'outputUrl': url})
+        _gen_record(job.get('genId'), {'status': 'done', 'outputUrl': url,
+                                       'tone': job.get('tone')})
     except Exception as e:                                    # noqa: BLE001 - 何で落ちても UI へ返す
         job.update(status='failed', error=str(e), finishedAt=time.time())
         _gen_record(job.get('genId'), {'status': 'failed', 'note': str(e)})
@@ -1835,6 +1885,8 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json({
             'ok': True, 'status': job['status'], 'url': job['url'], 'error': job['error'],
             'log': job.get('log', '')[-400:],
+            # トーンの往復が効いたか（素通しに黙って落ちるのを卓から見えるようにする）
+            'tone': job.get('tone') or {},
             'elapsedSec': round((job['finishedAt'] or time.time()) - job['startedAt'], 1),
         })
 

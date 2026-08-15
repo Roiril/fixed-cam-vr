@@ -21,7 +21,7 @@
 - [sound_pipeline.md](sound_pipeline.md) - 音を作る道具と、耳を使わずに判定する方法。**計器の方が 4 回嘘をついた**（true peak / 直流の発散 / 書き出しでの再正規化 / 継ぎ目の物差し）／内蔵スピーカーは 200Hz 以下を返さない・遅延で広げるとモノで消える／実機ログとテストがそれぞれ実装の欠陥を 1 件ずつ捕まえた
 
 - [material_flow.md](material_flow.md) - 素材フローを触る前に：マスクは枠空間 16:9（実機は contain-fit を通さない）／**マスクの決め方は未着手＝工房の差分は見た秒数で変わる**／採用は show.json から導出／ラプラシアンは卓だけ／プロンプトの棚は 1 つでスロット無し
-- [codex_image_pipeline.md](codex_image_pipeline.md) - 卓の 🪄 から Codex で素材生成。背景保存は実測で成立（差分＝マスク）／入力画像はプロンプトに絶対パス／生成は 127.0.0.1 のみ
+- [codex_image_pipeline.md](codex_image_pipeline.md) - 卓の 🪄 から Codex で素材生成。背景保存は実測で成立（差分＝マスク）／入力画像はプロンプトに絶対パス／生成は 127.0.0.1 のみ／**生成の入出力でトーンを往復**（暗い種で描かせて post を抜く。明るい種のままだとモデルが暗い画を一度も描かない）
 
 - [show_json_is_live_config.md](show_json_is_live_config.md) - show.json は git 管理外の現場設定。卓の検証で書き換えると復元できない（検証サーバもポートを分けただけでは隔離にならない）
 

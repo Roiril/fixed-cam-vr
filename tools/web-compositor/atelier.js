@@ -512,7 +512,11 @@ export function createAtelier(deps) {
           clearInterval(genTimer);
           btn.disabled = false;
           if (s.status === 'done') {
-            genMsg('できました（棚に追加）', 'ok');
+            // 明るさの往復（種を暗くして生成 → 生成物から post を抜く）が効いたかを必ず出す。
+            // 黙って素通しになると「生成が下手になった」ようにしか見えない（canon/LEDGER.md 0050）。
+            const slipped = Object.values(s.tone || {}).filter(v => String(v).startsWith('素通し'));
+            if (slipped.length) genMsg(`できました ⚠ 明るさの往復が ${slipped.join(' / ')}`, 'err');
+            else genMsg('できました（棚に追加）', 'ok');
             // captures/ の一覧を取り直す → onCaptures 経由で「未記録の素材」の棚が更新される。
             await refreshCaptures();
             loadPick(s.url, '');
