@@ -97,10 +97,14 @@ namespace FixedCamVr.Streaming.EditorTools
                 float holdSec = ConstF(typeof(CommsPanelLogic), "HoldSec", 7f);
                 float outSec = ConstF(typeof(CommsPanelLogic), "OutSec", 0.9f);
 
+                tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
+                int chars = tmp.textInfo != null ? tmp.textInfo.characterCount : 0;
+
                 // ---- 1 枚目: 視界の中の座り（正面を向いた頭から見て、面がどこに立つか）----
                 PlaceAuthored(root, dist, yawOff, pitchOff);
-                Begin(logic);
-                Step(logic, apply, panel, inSec);          // 出し切った状態にする
+                Begin(logic, chars);
+                Step(logic, apply, panel, inSec);          // 枠を開き切る
+                Step(logic, apply, panel, (float)logic.GetType().GetProperty("TypeSec")!.GetValue(logic));
                 cam.transform.SetPositionAndRotation(Stage, Quaternion.identity);
                 cam.fieldOfView = WideFovDeg;
                 Shoot(cam, Path.Combine(dir, "place.png"));
@@ -114,8 +118,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 float dt = 1f / Fps;
                 for (int i = 0; i < Fps * 0.3f; i++) Shoot(cam, Frame(dir, n++));   // 出る前の間
 
-                Begin(logic);
-                float total = inSec + holdSec + outSec + 0.2f;
+                Begin(logic, chars);
+                float typeSec = (float)logic.GetType().GetProperty("TypeSec")!.GetValue(logic);
+                float total = inSec + typeSec + holdSec + outSec + 0.2f;
                 for (float t = 0f; t < total; t += dt)
                 {
                     Step(logic, apply, panel, dt);
@@ -123,8 +128,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
 
                 Debug.Log($"[CommsPreview] {n} コマ + place.png → Assets/{OutDirRel}/\n"
-                        + $"  出るまで {inSec:0.00}s / 読ませる {holdSec:0.0}s / 引くまで {outSec:0.00}s"
-                        + $"（文字は面より {ConstF(typeof(CommsPanelLogic), "GlyphDelaySec", 0.25f):0.00}s 遅れて出て、引くときは先に消える）\n"
+                        + $"  枠が開く {inSec:0.00}s → 打つ {typeSec:0.00}s（{chars} 文字）"
+                        + $" → 読ませる {holdSec:0.0}s → 引く {outSec:0.00}s\n"
                         + $"  置き場所: 頭から {dist:0.0}m・左へ {-yawOff:0}°・下へ {pitchOff:0}°");
             }
             finally { Object.DestroyImmediate(camGo); }
@@ -149,8 +154,8 @@ namespace FixedCamVr.Streaming.EditorTools
             root.position = Stage + new Vector3(0f, 0f, dist) - offset;
         }
 
-        private static void Begin(object logic) =>
-            logic.GetType().GetMethod("Begin")!.Invoke(logic, null);
+        private static void Begin(object logic, int charCount) =>
+            logic.GetType().GetMethod("Begin")!.Invoke(logic, new object[] { charCount });
 
         private static void Disable(object logic) =>
             logic.GetType().GetMethod("Disable")!.Invoke(logic, null);

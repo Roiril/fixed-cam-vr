@@ -7,8 +7,10 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>出していない。</summary>
         Off,
-        /// <summary>現れている途中。</summary>
+        /// <summary>枠が左から右へ開いている途中。</summary>
         In,
+        /// <summary>文字が 1 字ずつ打たれている途中。</summary>
+        Type,
         /// <summary>出し切って読ませている。</summary>
         Hold,
         /// <summary>引いている途中。</summary>
@@ -20,8 +22,12 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>地（受信票の面）の不透明度。</summary>
         public float panel;
-        /// <summary>文字の不透明度。</summary>
+        /// <summary>文字の不透明度。<b>何文字出ているかは <see cref="reveal"/> が持つ。</b></summary>
         public float glyph;
+        /// <summary>枠の開き。0 = 左端に畳まれている / 1 = 開き切り。</summary>
+        public float open;
+        /// <summary>文字の出た割合（0 = 1 字も出ていない / 1 = 全部出た）。</summary>
+        public float reveal;
 
         public static CommsWeights Hidden => new CommsWeights();
     }
@@ -32,37 +38,71 @@ namespace FixedCamVr.Streaming
     /// 立ち位置は `canon/LEDGER.md` 0043 — <b>本編のスクリーンとは別の面</b>を、
     /// 少し手前・少し外側に立てる。「せっかく VR で立体的なので、スクリーンにつけなくていい」。
     ///
+    /// 出方は `canon/LEDGER.md` 0053（2026-08-16）:
+    /// <b>枠が左端から右へ開き、開き切ってから文字が 1 字ずつ打たれる。</b>
+    /// 引くときは逆で、文字が消えてから枠が左へ畳まれる。
+    /// 装置が受信して、印字して、片づける — という順序がそのまま画になる。
+    ///
     /// ⚠ <b>本編の進行を既読待ちにしない。</b> 読まなくても体験は進む（時間で引く）。
     /// 既読の操作を作らないのは、体験者が持つ唯一の入力（左 X ＝ 記録）と兼用させないため —
     /// 兼用すると「記録した」と「読んだ」が混ざって、押した時刻の意味が濁る。
     /// </summary>
     public sealed class CommsPanelLogic
     {
-        /// <summary>面が現れるまで (秒)。</summary>
+        /// <summary>枠が開き切るまで (秒)。</summary>
         public const float InSec = 0.45f;
 
-        /// <summary>読ませる時間 (秒)。<b>歩きながら読む</b>ので、短い 1 文でも余裕を取る。</summary>
+        /// <summary>1 秒あたり何文字打つか。速すぎると「一気に出た」に見え、遅いと読み終わる前に焦れる。</summary>
+        public const float CharsPerSec = 22f;
+
+        /// <summary>打ち終わるまでの下限・上限 (秒)。文面が伸びても間延びさせない。</summary>
+        public const float MinTypeSec = 0.15f;
+        public const float MaxTypeSec = 2.5f;
+
+        /// <summary>読ませる時間 (秒)。<b>打ち終わってから</b>数える。歩きながら読むので余裕を取る。</summary>
         public const float HoldSec = 7f;
 
         /// <summary>引くまで (秒)。ぱっと消すと「消えた」ではなく「壊れた」に見える。</summary>
         public const float OutSec = 0.9f;
 
-        /// <summary>文字が出るまでの遅れ (秒)。<b>面が先、文字が後</b>（受信してから表示される）。</summary>
-        public const float GlyphDelaySec = 0.25f;
+        /// <summary>
+        /// 引くとき、文字が消え切るまで（<see cref="OutSec"/> に対する割合）。
+        /// <b>枠が畳まれ始めるより先に消え切る</b> — 畳む枠から文字がはみ出さない。
+        /// </summary>
+        public const float GlyphOutAt = 0.35f;
+
+        /// <summary>引くとき、枠が畳まれ始める時点（<see cref="OutSec"/> に対する割合）。</summary>
+        public const float FoldStartAt = 0.35f;
+
+        /// <summary>地の濃さが乗り切る時点（<see cref="InSec"/> に対する割合）。開き切る前に濃さは決まる。</summary>
+        public const float PanelInkAt = 0.35f;
 
         private CommsStage _stage = CommsStage.Off;
         private float _elapsed;
+        private float _typeSec = MinTypeSec;
 
         public CommsStage Stage => _stage;
 
         /// <summary>出ているか（実行体が面を描くべきか）。</summary>
         public bool Active => _stage != CommsStage.Off;
 
-        /// <summary>連絡が届いた。<b>すでに出ていれば頭から出し直す</b>（重ねない）。</summary>
-        public void Begin()
+        /// <summary>打ち終わるまでの秒（この文面での実測値。プレビューと卓が読む）。</summary>
+        public float TypeSec => _typeSec;
+
+        /// <summary>
+        /// 連絡が届いた。<b>すでに出ていれば頭から出し直す</b>（重ねない）。
+        /// </summary>
+        /// <param name="charCount">
+        /// 打つ文字数。<b>尺はここから決まる</b>（文面が伸びれば打つ時間も伸びる）。
+        /// 0 以下なら文字の段を飛ばす。
+        /// </param>
+        public void Begin(int charCount)
         {
             _stage = CommsStage.In;
             _elapsed = 0f;
+            _typeSec = charCount <= 0
+                ? 0f
+                : Clamp(charCount / CharsPerSec, MinTypeSec, MaxTypeSec);
         }
 
         /// <summary>畳む（ラン開始・本編を出た・中止）。</summary>
@@ -81,7 +121,10 @@ namespace FixedCamVr.Streaming
             switch (_stage)
             {
                 case CommsStage.In:
-                    if (_elapsed >= InSec) { _stage = CommsStage.Hold; _elapsed = 0f; }
+                    if (_elapsed >= InSec) { _stage = CommsStage.Type; _elapsed = 0f; }
+                    break;
+                case CommsStage.Type:
+                    if (_elapsed >= _typeSec) { _stage = CommsStage.Hold; _elapsed = 0f; }
                     break;
                 case CommsStage.Hold:
                     if (_elapsed >= HoldSec) { _stage = CommsStage.Out; _elapsed = 0f; }
@@ -101,19 +144,40 @@ namespace FixedCamVr.Streaming
                 {
                     case CommsStage.In:
                     {
-                        float p = Smooth(Clamp01(_elapsed / InSec));
-                        float g = Clamp01((_elapsed - GlyphDelaySec) / System.Math.Max(InSec - GlyphDelaySec, 0.01f));
-                        return new CommsWeights { panel = p, glyph = Smooth(g) };
+                        // 枠は左端から右へ開く。⚠ **地の濃さは先に決まる**（開きながら明るくなると
+                        //    「2 つのことが起きている」に見える。動いているのは幅だけにする）。
+                        float k = Clamp01(_elapsed / InSec);
+                        return new CommsWeights
+                        {
+                            panel = Smooth(Clamp01(k / PanelInkAt)),
+                            glyph = 1f,
+                            open = Smooth(k),
+                            reveal = 0f,
+                        };
+                    }
+                    case CommsStage.Type:
+                    {
+                        // ⚠ **打つところは滑らかにしない。** ここを smoothstep で均すと
+                        //    打鍵の間隔が伸び縮みして「機械が打っている」に見えない。
+                        float p = _typeSec <= 0f ? 1f : Clamp01(_elapsed / _typeSec);
+                        return new CommsWeights { panel = 1f, glyph = 1f, open = 1f, reveal = p };
                     }
                     case CommsStage.Hold:
-                        return new CommsWeights { panel = 1f, glyph = 1f };
+                        return new CommsWeights { panel = 1f, glyph = 1f, open = 1f, reveal = 1f };
                     case CommsStage.Out:
                     {
-                        float t = Smooth(Clamp01(_elapsed / OutSec));
-                        // ⚠ **文字が先に消える。** 地より先に消えると「読み終わって畳まれた」に見える。
-                        //    同時に消すと「電源が落ちた」に見えて、装置の不調と読まれる。
-                        float g = Smooth(Clamp01(_elapsed / (OutSec * 0.6f)));
-                        return new CommsWeights { panel = 1f - t, glyph = 1f - g };
+                        float t = Clamp01(_elapsed / OutSec);
+                        // ⚠ **文字が先に消えてから枠が畳まれる。** 逆にすると、畳む枠から
+                        //    文字がはみ出して「潰された」に見える。
+                        float g = Smooth(Clamp01(t / GlyphOutAt));
+                        float fold = Smooth(Clamp01((t - FoldStartAt) / (1f - FoldStartAt)));
+                        return new CommsWeights
+                        {
+                            panel = 1f,
+                            glyph = 1f - g,
+                            open = 1f - fold,
+                            reveal = 1f,
+                        };
                     }
                     default:
                         return CommsWeights.Hidden;
@@ -122,6 +186,8 @@ namespace FixedCamVr.Streaming
         }
 
         private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);
+
+        private static float Clamp(float v, float lo, float hi) => v < lo ? lo : (v > hi ? hi : v);
 
         private static float Smooth(float t)
         {

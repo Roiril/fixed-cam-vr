@@ -16,6 +16,12 @@ namespace FixedCamVr.Diagnostics
     /// ⚠⚠ <b>これは仮実装</b>（2026-08-15）。出るのは<b>本編に入って一定秒後に 1 回だけ</b>で、
     /// 文面もコードが持っている。show.json への著作（take の並列チャンネル）は次の段。
     ///
+    /// <b>出方</b>（<c>canon/LEDGER.md</c> 0053・2026-08-16）: 枠が<b>左端から右へ開き</b>、
+    /// 開き切ってから文字が<b>1 字ずつ打たれる</b>。引くときは逆で、文字が消えてから枠が左へ畳まれる。
+    /// 装置が受信して、印字して、片づける — という順序がそのまま画になる。
+    /// 判断は <see cref="CommsPanelLogic"/>、配るのは <c>Apply</c> 1 か所。
+    /// ⚠ 打つのは <c>TMP_Text.maxVisibleCharacters</c>（文字列を作り直さないので毎フレーム触ってよい）。
+    ///
     /// ⚠ <b>追従は本編のスクリーンと同じ法則</b>（<see cref="YawFollowLogic"/>・ヨーだけ）。
     /// 新しい追従を書かない — 体験の中で追従の癖が 2 種類になると、どちらも「板」に見える。
     ///
@@ -99,6 +105,9 @@ namespace FixedCamVr.Diagnostics
         private Transform? _root;
         private MeshRenderer? _panelRenderer;
         private MeshRenderer? _bezelRenderer;
+        // 枠を左端から右へ開くために、幅と「開いていないときの左端」を覚えておく。
+        private float _panelW, _bezelW;
+        private int _charCount;
         private Material? _panelMat;
         private Material? _bezelMat;
         private Mesh? _panelMesh;
@@ -115,6 +124,9 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>直近に書いた文字の不透明度（「画に出た」側の観測）。</summary>
         public float AppliedGlyph { get; private set; }
+
+        /// <summary>直近に書いた枠の開き（0 = 畳まれている / 1 = 開き切り）。「画に出た」側の観測。</summary>
+        public float AppliedOpen { get; private set; }
 
         /// <summary>
         /// 連絡が届いた回数。<b>増えた瞬間に左コントローラを震わせる</b>のは
@@ -156,9 +168,10 @@ namespace FixedCamVr.Diagnostics
         public void Deliver()
         {
             if (!IsBuilt) return;
-            _logic.Begin();
+            // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。
+            _logic.Begin(_charCount);
             PulseCount++;
-            Debug.Log("[Comms] 上司からの連絡を出した（仮の発火）");
+            Debug.Log($"[Comms] 上司からの連絡を出した（仮の発火・{_charCount} 文字 / 打つ {_logic.TypeSec:0.00}s）");
         }
 
         private void Update()
@@ -226,12 +239,14 @@ namespace FixedCamVr.Diagnostics
                 _panelMesh = BuildQuad();
                 // 縁（裏の一回り大きい面）。⚠ **地だけだと真っ黒の中で面が消える**
                 //    （2026-08-15 の実機の画で、文字だけが宙に浮いていた）。
+                _bezelW = PanelW + BezelM * 2f;
                 _bezelRenderer = MakeQuad(rootGo.transform, "CommsBezelQuad",
-                                          PanelW + BezelM * 2f, PanelH + BezelM * 2f, 0.014f,
+                                          _bezelW, PanelH + BezelM * 2f, 0.014f,
                                           flat, RenderQueue - 1, out _bezelMat);
                 // 地。暗い漆のような面。純黒だと「穴」に見え、明るいと掲示物に見える。
+                _panelW = PanelW;
                 _panelRenderer = MakeQuad(rootGo.transform, "CommsPanelQuad",
-                                          PanelW, PanelH, 0.012f,
+                                          _panelW, PanelH, 0.012f,
                                           flat, RenderQueue, out _panelMat);
             }
 
@@ -242,7 +257,11 @@ namespace FixedCamVr.Diagnostics
             tmp.text = NoticeText;
             // 揃えは左（`HmdTextStyle` の規約）。中央にしてよいのは黒の中に単独で出る面だけで、
             // ここは映像の上に立つ受信票なので、行頭が揃っている方が「印字されたもの」に見える。
-            tmp.alignment = TextAlignmentOptions.Left;
+            // ⚠⚠ **縦は上寄せ**（`Left` ＝ 縦中央 は使えない）。1 字ずつ出すと、2 行目の
+            //    1 文字目が出た瞬間に TMP が「見えている行数」で縦中央を取り直し、
+            //    **打ち終わった 1 行目がひょいと上へ跳ねる**（実測 38px）。
+            //    枠の縦中央には、下の `sizeDelta` を本文の実高さに合わせることで座らせる。
+            tmp.alignment = TextAlignmentOptions.TopLeft;
             tmp.fontSize = FontSize;
             tmp.enableWordWrapping = true;
             tmp.richText = false;
@@ -258,6 +277,18 @@ namespace FixedCamVr.Diagnostics
             if (overlay != null) tmp.fontMaterial.shader = overlay;
             tmp.fontMaterial.renderQueue = GlyphQueue;
             _text = tmp;
+
+            // 1 字ずつ出すための下ごしらえ。⚠ **文字数はここで 1 度だけ数える** —
+            //    `maxVisibleCharacters` はレイアウトを組み直さないので、毎フレーム触っても
+            //    文字列の作り直しも GC も起きない（TMP が頂点の可視数を変えるだけ）。
+            tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
+            // ⚠ 上寄せにしたぶん、**全文が出ている状態の重心**を面の中心へ 1 度だけ運ぶ。
+            //    `preferredHeight` で枠を詰める手もあるが、あれは字の上下に余白を含むので
+            //    ぶんだけ本文が上へ寄る（実測 33px）。組み上がったメッシュの実寸から測る。
+            Bounds ink = tmp.textBounds;
+            textGo.transform.localPosition = new Vector3(0f, -ink.center.y * scale, 0f);
+            _charCount = tmp.textInfo != null ? tmp.textInfo.characterCount : 0;
+            tmp.maxVisibleCharacters = 0;
         }
 
         /// <summary>面を 1 枚作る（地と縁で共有）。色は <see cref="Apply"/> が毎フレーム書く。</summary>
@@ -298,10 +329,15 @@ namespace FixedCamVr.Diagnostics
         private void Apply(in CommsWeights w)
         {
             AppliedGlyph = Mathf.Clamp01(w.glyph);
+            AppliedOpen = Mathf.Clamp01(w.open);
             if (_text != null)
             {
                 _text.alpha = AppliedGlyph;
-                bool on = AppliedGlyph > 0.002f;
+                // 1 字ずつ出す。⚠ **切り上げ**（0 より大きければ 1 字目は出ている）。
+                int shown = _charCount <= 0 ? 0
+                          : Mathf.Clamp(Mathf.CeilToInt(Mathf.Clamp01(w.reveal) * _charCount), 0, _charCount);
+                if (_text.maxVisibleCharacters != shown) _text.maxVisibleCharacters = shown;
+                bool on = AppliedGlyph > 0.002f && shown > 0;
                 if (_text.gameObject.activeSelf != on) _text.gameObject.SetActive(on);
             }
             float pa = Mathf.Clamp01(w.panel);
@@ -309,14 +345,31 @@ namespace FixedCamVr.Diagnostics
             if (_panelRenderer != null && _panelMat != null)
             {
                 _panelMat.color = new Color(0.050f * pa, 0.042f * pa, 0.038f * pa, 1f);
-                _panelRenderer.enabled = pa > 0.01f;
+                _panelRenderer.enabled = pa > 0.01f && AppliedOpen > 0.001f;
+                SetOpen(_panelRenderer.transform, _panelW, AppliedOpen);
             }
             if (_bezelRenderer != null && _bezelMat != null)
             {
                 // 縁は地より明るい。ここだけが「面がある」ことを伝える。
                 _bezelMat.color = new Color(0.150f * pa, 0.110f * pa, 0.085f * pa, 1f);
-                _bezelRenderer.enabled = pa > 0.01f;
+                _bezelRenderer.enabled = pa > 0.01f && AppliedOpen > 0.001f;
+                SetOpen(_bezelRenderer.transform, _bezelW, AppliedOpen);
             }
+        }
+
+        /// <summary>
+        /// 枠を<b>左端を固定したまま</b>右へ開く（0 = 左端に畳まれている / 1 = 開き切り）。
+        ///
+        /// 面のメッシュは中心が原点（頂点 ±0.5）なので、幅を縮めると<b>両側から</b>縮む。
+        /// 左端を残すには、縮めたぶんの半分だけ左へ寄せる ＝
+        /// <c>x = -(w/2)(1-k)</c>、<c>scale.x = w·k</c>。これで左端は常に <c>-w/2</c> に居る。
+        /// </summary>
+        private static void SetOpen(Transform quad, float fullW, float k)
+        {
+            Vector3 s = quad.localScale;
+            quad.localScale = new Vector3(fullW * k, s.y, s.z);
+            Vector3 p = quad.localPosition;
+            quad.localPosition = new Vector3(-(fullW * 0.5f) * (1f - k), p.y, p.z);
         }
     }
 }

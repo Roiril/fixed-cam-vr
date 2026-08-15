@@ -33,6 +33,23 @@
 3D の面は「小さい fontSize ＋ 大きい localScale」で組む規約なので、`RectTransform.sizeDelta` も
 **世界の幅 ÷ scale** で書く。固定値にすると、字を直したとき枠だけ取り残されて面からはみ出す。
 
+## ⚠⚠ 1 字ずつ出すと、TMP は縦中央を取り直す
+
+`maxVisibleCharacters` は**レイアウトを組み直さない**ので毎フレーム触ってよい（文字列の作り直しも
+GC も起きない）。ところが**縦中央揃え（`TextAlignmentOptions.Left` 等）だけは見えている行数で
+中央を取り直す** — 2 行目の 1 文字目が出た瞬間に、**打ち終わった 1 行目がひょいと上へ跳ねる**
+（2026-08-16 に上司からの連絡で実測 38px）。
+
+⇒ **縦は上寄せ（`TopLeft`）にして、全文が出ている状態の重心を 1 度だけ中心へ運ぶ**
+（`CommsPanel.Build` の `tmp.textBounds.center.y`）。
+⚠ `preferredHeight` で枠を詰める手は駄目 — あれは字の上下に余白を含むので、そのぶん本文が
+上へ寄る（実測 33px）。**組み上がったメッシュの実寸から測る。**
+
+出方そのものの正は [`CommsPanelLogic`](../../Assets/Scripts/Streaming/CommsPanelLogic.cs)
+（枠が左から開く → 1 字ずつ打つ → 読ませる → 文字が消えてから枠が畳まれる）。
+⚠ **打つところに smoothstep を掛けない**（打鍵の間隔が伸び縮みして機械に見えなくなる）。
+見るのは `.\tools\unity.ps1 menu comms-preview` → `tools/make-preview-video.py`。
+
 ## 見る道具
 
 ```powershell
