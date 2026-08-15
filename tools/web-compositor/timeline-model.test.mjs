@@ -225,3 +225,12 @@ test('未知の durKind は sec へ倒す（実機で警告だけ出る無効値
   });
   assert.equal(serializeTimelineV3(tl).segments[0].takes[0].steps[0].durKind, TAKE.DUR_SEC);
 });
+
+test('untilMark（体験者が報告するまで）も往復する', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{ lap: 4, camera: 0,
+      takes: [{ id: 'L4C0#0', steps: [{ source: 'plate', camera: 0, durKind: 'untilMark' }] }] }],
+  });
+  assert.equal(serializeTimelineV3(tl).segments[0].takes[0].steps[0].durKind, TAKE.DUR_UNTIL_MARK);
+});

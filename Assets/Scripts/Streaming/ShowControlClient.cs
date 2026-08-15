@@ -2490,6 +2490,8 @@ namespace FixedCamVr.Streaming
         {
             VisitorMarkCount++;
             Debug.Log($"[ShowControl] 記録ボタン（体験者・左 X） {VisitorMarkCount} 回目");
+            // 「報告するまで」のカット（4 周目 A の締め）だけが反応する。ほかの進行には一切効かない。
+            timelineDirector?.NotifyVisitorMark();
         }
 
         private void ApplyPostForActive()

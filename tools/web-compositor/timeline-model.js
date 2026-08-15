@@ -105,6 +105,8 @@ export const TAKE = {
   DUR_SEC: 'sec', DUR_UNTIL_CLIP_END: 'untilClipEnd', DUR_UNTIL_ZONE_CHANGE: 'untilZoneChange',
   // 「この床の線を横切るまで」。区間の中で位置を待てる唯一の尺（canon/LEDGER.md 0050）。
   DUR_UNTIL_LINE: 'untilLine',
+  // 「体験者が異変を報告するまで」。4 周目 A の締めだけが使う（canon/LEDGER.md 0050）。
+  DUR_UNTIL_MARK: 'untilMark',
   // TRANS_GLITCH = 黒ではなく「映像の乱れ」で覆って、その最中に差し替える（企画書 2.3）。
   TRANS_CUT: 'cut', TRANS_DIP: 'dip', TRANS_FADE: 'fade', TRANS_GLITCH: 'glitch',
   DEFAULT_MAX_DURATION_SEC: 45,
@@ -172,7 +174,8 @@ function serializeStep(s) {
     strength: num(s.strength, -1), fadeInSec: num(s.fadeInSec, -1), fadeOutSec: num(s.fadeOutSec, -1),
     trimStartSec: num(s.trimStartSec, -1), trimEndSec: num(s.trimEndSec, -1),
     durKind: oneOf(s.durKind,
-      [TAKE.DUR_SEC, TAKE.DUR_UNTIL_CLIP_END, TAKE.DUR_UNTIL_ZONE_CHANGE, TAKE.DUR_UNTIL_LINE], TAKE.DUR_SEC),
+      [TAKE.DUR_SEC, TAKE.DUR_UNTIL_CLIP_END, TAKE.DUR_UNTIL_ZONE_CHANGE, TAKE.DUR_UNTIL_LINE,
+       TAKE.DUR_UNTIL_MARK], TAKE.DUR_SEC),
     lineId: s.lineId || '',
     durSec: num(s.durSec, 0),
     transition: oneOf(s.transition,

@@ -1446,6 +1446,27 @@ export function createRibbon(container, deps) {
     const isAsset = isAssetSource(s.source);
     const hasCam = usesStepCamera(s.source);
     const bySec = s.durKind === TAKE.DUR_SEC;
+    // カットが線を待つとき（untilLine）に選ぶ線。**この区間のカメラが担当するものだけ**
+    // — 別担当の線は実機で数えられないので、選ばせると沈黙する演出ができる。
+    const byLine = s.durKind === TAKE.DUR_UNTIL_LINE;
+    // 第 2 の差し替え層に載せる素材。**静止画だけ**（無人プレート・生成画像）なので動画は出さない。
+    let ovl2Opts = '<option value="">（なし）</option>';
+    for (const c of cues.filter((c) => !isVideoUrl(c.sourceUrl))) {
+      ovl2Opts += `<option value="${escapeHtml(c.id)}"${s.overlay2CueId === c.id ? ' selected' : ''}>`
+        + `${escapeHtml(c.name || c.id)}</option>`;
+    }
+    if (s.overlay2CueId && !cues.some((c) => c.id === s.overlay2CueId)) {
+      ovl2Opts += `<option value="${escapeHtml(s.overlay2CueId)}" selected>`
+        + `${escapeHtml(s.overlay2CueId)}（未定義）</option>`;
+    }
+    const stepLineOpts = ['<option value="">（ラインを選ぶ）</option>']
+      .concat(ownLinesOf(sel.camera).map((l) => `<option value="${escapeHtml(l.id)}"${s.lineId === l.id ? ' selected' : ''}>`
+        + `${escapeHtml(l.label || l.id)}${escapeHtml(dirMark(l.dir))}</option>`))
+      .concat(s.lineId && !ownLinesOf(sel.camera).some((l) => l.id === s.lineId)
+        ? [`<option value="${escapeHtml(s.lineId)}" selected>${escapeHtml(lineName(s.lineId))}`
+           + `${lineById(s.lineId) ? `（${escapeHtml(camLabel(lineOwner(s.lineId)))} 担当）` : '（見つかりません）'}</option>`]
+        : [])
+      .join('');
     row.innerHTML = `
       <div class="rb-step-row-head">
         <span class="rb-step-no" style="--sc:${stepColor(s)}"><i></i>カット ${idx + 1}</span>
@@ -1472,7 +1493,10 @@ export function createRibbon(container, deps) {
           <option value="${TAKE.DUR_SEC}"${bySec ? ' selected' : ''}>秒で指定</option>
           <option value="${TAKE.DUR_UNTIL_CLIP_END}"${s.durKind === TAKE.DUR_UNTIL_CLIP_END ? ' selected' : ''}>素材の終わりまで</option>
           <option value="${TAKE.DUR_UNTIL_ZONE_CHANGE}"${s.durKind === TAKE.DUR_UNTIL_ZONE_CHANGE ? ' selected' : ''}>次にカメラが切り替わるまで</option>
+          <option value="${TAKE.DUR_UNTIL_LINE}"${byLine ? ' selected' : ''}>この床の線を横切るまで</option>
+          <option value="${TAKE.DUR_UNTIL_MARK}"${s.durKind === TAKE.DUR_UNTIL_MARK ? ' selected' : ''}>体験者が報告するまで</option>
         </select></label>
+        <label class="rb-s-stepline-l" style="display:${byLine ? '' : 'none'}" title="このカットは、体験者がこの線を横切った瞬間に次のカットへ移ります。線は 📏 通過ラインで引きます">ライン<select class="rb-s-stepline">${stepLineOpts}</select></label>
         <label class="rb-s-dur-l" style="display:${bySec ? '' : 'none'}"><input class="rb-s-dur" type="number" min="0.2" step="0.1" value="${s.durSec > 0 ? s.durSec : TAKE.FALLBACK_STEP_DUR_SEC}">s</label>
         <label>遷移<select class="rb-s-trans">
           <option value="${TAKE.TRANS_CUT}"${s.transition === TAKE.TRANS_CUT ? ' selected' : ''}>カット（瞬時）</option>
@@ -1494,6 +1518,12 @@ export function createRibbon(container, deps) {
           <span class="rb-s-place-note">${escapeHtml(cgIssue(s) || '')}</span>
         </span>
         <label class="rb-s-aura-l" style="display:${s.cg ? '' : 'none'}" title="人形のまわりだけ画が荒れる。人形が動くと荒れも動くので、機材の不調では説明が付かなくなる。全域に一様な乱れは「そういう画」として慣れられてしまう">人形の澱み<input class="rb-s-aura" type="number" min="0" max="1" step="0.05" value="${s.aura || 0}"><span class="rb-hint2">0=出さない</span></label>
+      </div>
+      <div class="rb-grid" title="画面を縦に割って、左と右へ別のものを同時に出す。カメラ A は環境が左右対称なのでここだけで使える">
+        <label>左右分割<input class="rb-s-splitx" type="number" min="0" max="1" step="0.05" value="${s.splitX || 0}"><span class="rb-hint2">0=割らない / 0.5=中央</span></label>
+        <label class="chk"><input class="rb-s-splitflip" type="checkbox" ${s.splitFlip ? 'checked' : ''}>左半分を左右反転（ライブだけ）</label>
+        <label class="chk"><input class="rb-s-splitfreeze" type="checkbox" ${s.splitFreeze ? 'checked' : ''}>左半分を凍らせる</label>
+        <label title="1 枚目とは別に、もう 1 つ素材を重ねる。左と右へ別のものを同時に置くときだけ要る（静止画のみ）">第 2 の素材<select class="rb-s-ovl2">${ovl2Opts}</select></label>
       </div>
       <div class="rb-grid rb-s-place" style="display:${fixedPlace ? '' : 'none'}">
         <label title="course 空間の X（東西）。フロアマップと同じ座標系">X<input class="rb-s-px" type="number" step="0.05" value="${round2(pl.x)}">m</label>
@@ -1533,7 +1563,15 @@ export function createRibbon(container, deps) {
       if (!isAssetSource(s.source)) s.assetUrl = '';
       s.cueId = r('.rb-s-cue').value;
       const dk = r('.rb-s-durkind').value;
-      s.durKind = (dk === TAKE.DUR_UNTIL_CLIP_END || dk === TAKE.DUR_UNTIL_ZONE_CHANGE) ? dk : TAKE.DUR_SEC;
+      const dkKnown = [TAKE.DUR_UNTIL_CLIP_END, TAKE.DUR_UNTIL_ZONE_CHANGE,
+                       TAKE.DUR_UNTIL_LINE, TAKE.DUR_UNTIL_MARK].includes(dk);
+      s.durKind = dkKnown ? dk : TAKE.DUR_SEC;
+      // 線は「この線を横切るまで」のときだけ実体を持つ（他の尺で書き残すと幽霊の線待ちになる）。
+      s.lineId = s.durKind === TAKE.DUR_UNTIL_LINE ? r('.rb-s-stepline').value : '';
+      s.splitX = Math.max(0, Math.min(1, numOr(r('.rb-s-splitx').value, 0)));
+      s.splitFlip = r('.rb-s-splitflip').checked;
+      s.splitFreeze = r('.rb-s-splitfreeze').checked;
+      s.overlay2CueId = r('.rb-s-ovl2').value;
       s.durSec = s.durKind === TAKE.DUR_SEC ? Math.max(0.2, numOr(r('.rb-s-dur').value, TAKE.FALLBACK_STEP_DUR_SEC)) : 0;
       s.transition = r('.rb-s-trans').value;
       s.transitionMs = Math.max(0, numOr(r('.rb-s-transms').value, 0));

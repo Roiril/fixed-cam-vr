@@ -171,6 +171,7 @@ namespace FixedCamVr.Streaming
         public bool IsUntilClipEnd => TakeSchema.IsUntilClipEnd(durKind);
         public bool IsUntilZoneChange => TakeSchema.IsUntilZoneChange(durKind);
         public bool IsUntilLine => TakeSchema.IsUntilLine(durKind);
+        public bool IsUntilMark => TakeSchema.IsUntilMark(durKind);
         public bool HasCg => !string.IsNullOrEmpty(cg);
     }
 
@@ -264,6 +265,21 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const string DurUntilLine = "untilLine";
 
+        /// <summary>
+        /// 「体験者が異変を報告するまで」（左 X / Y の 2 秒長押し）。4 周目 A の締めがこれを使う
+        /// （canon/LEDGER.md 0050「そこで体験者が報告することで、画像生成人形が消えて実体の人形になり」）。
+        ///
+        /// ⚠⚠ **報告を体験の進行に使ってよいのはここだけ。** 規約は「報告は進行に 1 ビットも使わない・
+        ///   押さなくても同じように進む」（rules/show-design.md）で、それは**驚かせる仕掛けの引き金に
+        ///   しない**という意味。締めの 1 か所だけはユーザーが明示的に許可している（0050 4 回目
+        ///   「報告ボタンは演出の引き金にはしない。驚かせるのは2周目Cの全画面にしよう」＋
+        ///   「4周目のAで…そこで体験者が報告することで」）。
+        /// ⚠ **押さなくても必ず終わる。** 押されなければ watchdog（<see cref="DefaultMaxDurationSec"/>）が
+        ///   畳むので、押せなかった体験者が置き去りになることはない。尺を持たせるなら
+        ///   <c>maxDurationSec</c> をその区間の想定滞在より短く切る。
+        /// </summary>
+        public const string DurUntilMark = "untilMark";
+
         public const string TransCut = "cut";
         public const string TransDip = "dip";
         public const string TransFade = "fade";
@@ -316,6 +332,8 @@ namespace FixedCamVr.Streaming
         public static bool IsUntilZoneChange(string? durKind) => durKind == DurUntilZoneChange;
 
         public static bool IsUntilLine(string? durKind) => durKind == DurUntilLine;
+
+        public static bool IsUntilMark(string? durKind) => durKind == DurUntilMark;
 
         /// <summary>source 判別子を正規化する。未知は <see cref="SourceLive"/> へ倒し known=false。</summary>
         public static string NormalizeSource(string? source, out bool known)

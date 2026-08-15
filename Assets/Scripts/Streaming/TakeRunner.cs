@@ -358,6 +358,13 @@ namespace FixedCamVr.Streaming
                 Debug.LogWarning($"[TakeRunner] layout.lines に無いラインを参照している演出がある → 発火しない: {key}");
         }
 
+        /// <summary>
+        /// 体験者が異変を報告した（左 X / Y の 2 秒長押し）。<c>untilMark</c> のカットだけが反応する。
+        /// <b>それ以外は 1 ビットも変わらない</b> — 報告は体験の進行に使わない、が規約
+        /// （唯一の例外が 4 周目 A の締め・canon/LEDGER.md 0050）。
+        /// </summary>
+        public void NotifyVisitorMark() => _logic.NotifyMarkPressed(Now);
+
         /// <summary>ラン開始（体験者交代）。走行中の演出を畳み、once をクリアする。</summary>
         public void ResetRun()
         {
@@ -905,6 +912,7 @@ namespace FixedCamVr.Streaming
                 { durs[i] = TakeRunnerLogic.WaitLine; continue; }
                 if (s.IsUntilLine)
                     Debug.LogWarning("[TakeRunner] untilLine のカットにラインが未指定 → 既定尺で畳む");
+                if (s.IsUntilMark) { durs[i] = TakeRunnerLogic.WaitMark; continue; }
                 durs[i] = s.durSec > 0f ? s.durSec : TakeSchema.FallbackStepDurSec;
             }
             return durs;

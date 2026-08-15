@@ -77,7 +77,7 @@ export function resolveStepDuration(step, cue, getDuration, getRecSeconds) {
   // 「この線を横切るまで」は卓に体験者の実位置が無い（歩かせるシミュレータの座標はあるが、
   // 横断判定を二重実装すると必ず実機とずれる）。**秒へ落とさず未確定として出す**
   // — 推定に化けさせると、卓だけが違う所でカットを畳んで嘘のリボンになる。
-  if (step.durKind === TAKE.DUR_UNTIL_LINE) {
+  if (step.durKind === TAKE.DUR_UNTIL_LINE || step.durKind === TAKE.DUR_UNTIL_MARK) {
     return { durSec: FALLBACK_STEP_DUR_SEC, kind: 'unknown' };
   }
   if (step.durKind !== TAKE.DUR_UNTIL_CLIP_END) {

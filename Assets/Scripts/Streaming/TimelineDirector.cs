@@ -76,6 +76,9 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中の演出だけを畳んで画面をライブへ返す（卓の ■ 画面を取り返す）。</summary>
         public void AbortActive() => takeRunner?.AbortActive();
 
+        /// <summary>体験者の報告を演出へ中継する（untilMark のカットだけが反応する）。</summary>
+        public void NotifyVisitorMark() => takeRunner?.NotifyVisitorMark();
+
         /// <summary>走行中の演出の id（卓のモニタ用。走っていなければ空）。</summary>
         public string ActiveTakeId => takeRunner != null ? takeRunner.ActiveTakeId : "";
 

@@ -139,5 +139,77 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.EndTake));
             Assert.That(d.forced, Is.True);
         }
+        // ---- 「体験者が報告するまで」（untilMark・4 周目 A の締め）----
+
+        private static TakeRunnerLogic.Def MarkStep(int lap, int cam, float maxSec = 0f) => new()
+        {
+            lap = lap, camera = cam, onExit = false, offsetSec = 0f,
+            skipWhenMissed = false, once = true, maxDurationSec = maxSec,
+            stepDurSec = new[] { TakeRunnerLogic.WaitMark, 3f },
+        };
+
+        private static TakeRunnerLogic StartedMark(float maxSec = 0f, float now = 0f)
+        {
+            TakeRunnerLogic l = Make(MarkStep(4, 0, maxSec));
+            l.OnZoneCommitted(4, 0, false, 0, 0, now);
+            Assert.That(l.Tick(now, 0).stepIndex, Is.EqualTo(0));
+            return l;
+        }
+
+        [Test]
+        public void UntilMark_WaitsUntilTheVisitorReports()
+        {
+            TakeRunnerLogic l = StartedMark();
+            for (float t = 1f; t <= 20f; t += 5f)
+                Assert.That(l.Tick(t, 0).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                    $"押していないので進まない (t={t})");
+
+            l.NotifyMarkPressed(21f);
+            TakeRunnerLogic.Decision d = l.Tick(21f, 0);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+            Assert.That(d.stepIndex, Is.EqualTo(1), "報告で次のカット（全部ライブへ戻る）へ");
+        }
+
+        /// <summary>
+        /// カットが始まる前の報告では進まない。前の区間で押した 1 回が持ち越されて
+        /// 締めのカットを素通りするのを防ぐ（線待ちと同じ理由）。
+        /// </summary>
+        [Test]
+        public void UntilMark_IgnoresReportsFromBeforeTheStepBegan()
+        {
+            TakeRunnerLogic l = Make(MarkStep(4, 0));
+            l.OnZoneCommitted(4, 0, false, 0, 0, 10f);
+            l.NotifyMarkPressed(9f);            // 区間へ入る前に押していた
+            Assert.That(l.Tick(10f, 0).stepIndex, Is.EqualTo(0));
+            Assert.That(l.Tick(11f, 0).action, Is.EqualTo(TakeRunnerLogic.Action.None));
+
+            l.NotifyMarkPressed(12f);
+            Assert.That(l.Tick(12f, 0).stepIndex, Is.EqualTo(1));
+        }
+
+        /// <summary>報告しない体験者でも必ず終わる（押さなかった人を置き去りにしない）。</summary>
+        [Test]
+        public void UntilMark_StillEndsByWatchdog()
+        {
+            TakeRunnerLogic l = StartedMark(maxSec: 45f);
+            TakeRunnerLogic.Decision d = l.Tick(45.1f, 0);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.EndTake));
+            Assert.That(d.forced, Is.True);
+        }
+
+        /// <summary>報告は他の尺のカットには 1 ビットも効かない（進行に使わない、が規約）。</summary>
+        [Test]
+        public void MarkPress_DoesNotAffectOtherStepKinds()
+        {
+            TakeRunnerLogic.Def def = MarkStep(4, 0);
+            def.stepDurSec = new[] { 10f, 3f };          // ふつうの秒指定
+            TakeRunnerLogic l = Make(def);
+            l.OnZoneCommitted(4, 0, false, 0, 0, 0f);
+            l.Tick(0f, 0);
+
+            l.NotifyMarkPressed(1f);
+            Assert.That(l.Tick(1f, 0).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                "秒で指定したカットは報告では進まない");
+        }
     }
 }

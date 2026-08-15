@@ -1330,9 +1330,42 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
 - 判定は [`TakeRunnerLogic.EndStepIfLineCrossed`](../../Assets/Scripts/Streaming/TakeRunnerLogic.cs)、
   テストは `TakeStepUntilLineTests`（7 本）
 
-⚠ **卓にはまだ編集 UI が無い。** 3 周目 A / 4 周目 A の分割は `show.json` を**手で書く**。
-ただし `timeline-model.js` の `newStep` / `serializeStep` には 4 キーとも入れてあるので、
-**卓で 💾 保存しても消えない**（`serializeStep` はキーの白名簿で、漏れると保存の一押しで台本が消える）。
+#### カットの尺「体験者が報告するまで」（`durKind:"untilMark"`）— 2026-08-15
+
+4 周目 A の締めだけが使う（`canon/LEDGER.md` 0050「そこで体験者が報告することで、
+画像生成人形が消えて実体の人形になり」）。左 X / Y の 2 秒長押しで進む。
+
+⚠⚠ **報告を進行に使ってよいのはここだけ。** 規約は「報告は体験の進行に 1 ビットも使わない・
+押さなくても同じように進む」（`rules/show-design.md`）で、それは**驚かせる仕掛けの引き金にしない**
+という意味。締めの 1 か所はユーザーが明示的に許可している（0050 4 回目
+「報告ボタンは演出の引き金にはしない。驚かせるのは2周目Cの全画面にしよう」＋「4周目のAで…
+そこで体験者が報告することで」）。**他の尺のカットは報告では 1 ミリも動かない**
+（`MarkPress_DoesNotAffectOtherStepKinds` が固定する）。
+
+- 経路は `OvrControllerBridge` → `ShowControlClient.RecordVisitorMark` →
+  `TimelineDirector.NotifyVisitorMark` → `TakeRunner.NotifyVisitorMark`
+- ⚠ **カットが始まってからの報告だけを数える。** 前の区間で押した 1 回が持ち越されて
+  締めのカットを素通りするのを防ぐ（線待ちと同じ理由）
+- ⚠ **押さなくても必ず終わる。** watchdog（`maxDurationSec`・現行の台本は 45 秒）が畳むので、
+  押せなかった体験者が置き去りになることはない
+- **卓のシミュレータは秒へ落とさない**（卓に体験者の報告は無い）。`kind:'unknown'`
+
+#### 卓の編集面（2026-08-15 に追加）
+
+カット詳細に次を出す。**演出の開始規則の `at:"line"` とは別の欄**なので混ぜないこと。
+
+| 欄 | 何 |
+|---|---|
+| 尺 → この床の線を横切るまで | `durKind:"untilLine"` ＋ 線のセレクト（`steps[].lineId`） |
+| 尺 → 体験者が報告するまで | `durKind:"untilMark"` |
+| 左右分割 | `splitX`（0 = 割らない / 0.5 = 中央） |
+| 左半分を左右反転 | `splitFlip` |
+| 左半分を凍らせる | `splitFreeze` |
+| 第 2 の素材 | `overlay2CueId`（**静止画の cue だけ**を出す。動画は載らない） |
+
+- 線のセレクトは**この区間のカメラが担当するものだけ**（別担当の線は実機で数えられない）
+- 線は「この線を横切るまで」を選んでいる間だけ実体を持つ（他の尺へ切り替えると空へ倒す。
+  幽霊の線待ちを作らないため — `hasPlacement` と同じ流儀）
 
 **観測**は `ev=sum` の **`spl`（画に出た分割位置）/ `ovl2`（第 2 層の合成の重み）**。
 どちらも「カットが指した」ではなく**画に出た**の側 — 分割は書く先（`CameraFeelFx` の material）を

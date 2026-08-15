@@ -46,6 +46,7 @@ namespace FixedCamVr.Streaming
             // カットごとの尺。負値は「外部通知待ち」で、値が待つ相手を表す:
             //   WaitClipEnd (-1) = 素材の終端  /  WaitZoneChange (-2) = 次の区間確定
             //   WaitLine (-3)      = この床の線を横切るまで（待つ線は stepLineIndex が持つ）
+            //   WaitMark (-4)      = 体験者が異変を報告するまで（4 周目 A の締め）
             public float[] stepDurSec;
 
             /// <summary>
@@ -334,6 +335,21 @@ namespace FixedCamVr.Streaming
         public const float WaitClipEnd = -1f;
         public const float WaitZoneChange = -2f;
         public const float WaitLine = -3f;
+        public const float WaitMark = -4f;
+
+        /// <summary>
+        /// 尺が <c>untilMark</c> のカットを、体験者が異変を報告した時点で畳む
+        /// （<see cref="TakeRunner"/> が <c>ShowControlClient.RecordVisitorMark</c> から受ける）。
+        ///
+        /// ⚠ **カットが始まってからの報告だけを数える。** 直前の区間で押した 1 回が持ち越されて
+        ///   締めのカットを素通りさせるのを防ぐ（線待ちと同じ理由）。
+        /// </summary>
+        public void NotifyMarkPressed(float now)
+        {
+            if (!_running || CurrentStepWait() != WaitMark) return;
+            if (now < _stepBeganAt) return;
+            SetCurrentStepEnd(now);
+        }
 
         /// <summary>
         /// 尺が <c>untilLine</c> のカットを、体験者がその線を横切った時点で畳む
