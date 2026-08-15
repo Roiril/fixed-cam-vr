@@ -76,9 +76,20 @@ def load_post(cam_id: str | None = None, path: str = SHOW_JSON) -> dict:
     return post
 
 
-def scaled(post: dict, scale: float) -> dict:
-    """post の効き目を按分する。1.0 = 実機と同じ、0.0 = 素通し。"""
+def scaled(post: dict, scale: float, exposure_only: bool = False) -> dict:
+    """post の効き目を按分する。1.0 = 実機と同じ、0.0 = 素通し。
+
+    ⚠⚠ <b>exposure_only=True が既定の使い方</b>（2026-08-16）。生成モデルへ渡す種に
+    掛けてよいのは<b>暗さだけ</b>で、監視カメラらしさ（彩度・ヴィネット・コントラスト・
+    色温度）は実機の post の役目。種へ焼き込むと**モデルがそれを「直そう」として
+    画を作り替える** — 実測で、彩度 0.52・ヴィネット 0.38 を焼いた種を渡したら
+    片側だけ塗り直され、コントラストが 1.3〜1.4 倍に化けた。
+    生成 AI に細かなポスト処理はできない。渡すのは「少し暗くしただけの環境」。
+    """
     s = max(0.0, min(1.0, scale))
+    if exposure_only:
+        return dict(exposure=post["exposure"] * s, temperature=0.0, tint=0.0,
+                    contrast=1.0, lift=0.0, saturation=1.0, vignette=0.0)
     return dict(
         exposure=post["exposure"] * s,
         temperature=post["temperature"] * s,
@@ -184,9 +195,9 @@ def _saturate(img: Image.Image, s: float) -> Image.Image:
 
 # --------------------------------------------------------------------------- 往復
 
-def dim(img: Image.Image, post: dict, scale: float) -> Image.Image:
-    """種フレームへ post を掛ける（生成モデルに暗所を見せるため）。"""
-    p = scaled(post, scale)
+def dim(img: Image.Image, post: dict, scale: float, exposure_only: bool = False) -> Image.Image:
+    """種フレームを暗くする（生成モデルに暗所を見せるため）。既定は**露出だけ**。"""
+    p = scaled(post, scale, exposure_only)
     out = img.convert("RGB")
     if p["vignette"] > 1e-4:
         out = _apply_map(out, _vignette_map(*out.size, p["vignette"]), invert=False)
@@ -194,9 +205,12 @@ def dim(img: Image.Image, post: dict, scale: float) -> Image.Image:
     return _saturate(out, p["saturation"])
 
 
-def undim(img: Image.Image, post: dict, scale: float) -> Image.Image:
-    """生成物から post を抜く（cue の素材 ＝ 生映像の位置へ戻す）。dim の逆順・逆演算。"""
-    p = scaled(post, scale)
+def undim(img: Image.Image, post: dict, scale: float, exposure_only: bool = False) -> Image.Image:
+    """生成物を明るさへ戻す（cue の素材 ＝ 生映像の位置へ）。dim の逆順・逆演算。
+
+    ⚠ **dim と同じ指定で呼ぶこと。** 片方だけ exposure_only を付けると往復しない。
+    """
+    p = scaled(post, scale, exposure_only)
     out = img.convert("RGB")
     out = _saturate(out, 1.0 / max(1e-6, p["saturation"]))
     out = out.point(_tone_lut(p, invert=True))
@@ -230,10 +244,10 @@ def _diff(a: Image.Image, b: Image.Image) -> dict:
     return dict(mean=mean, worst=worst, over8=over8)
 
 
-def check(path: str, post: dict, scale: float) -> None:
+def check(path: str, post: dict, scale: float, exposure_only: bool = False) -> None:
     src = Image.open(path).convert("RGB")
-    d = dim(src, post, scale)
-    back = undim(d, post, scale)
+    d = dim(src, post, scale, exposure_only)
+    back = undim(d, post, scale, exposure_only)
     s0, s1 = _stats(src), _stats(d)
     e = _diff(src, back)
     print(f"scale={scale:.2f}")
@@ -290,6 +304,9 @@ def main() -> int:
     ap.add_argument("dst", nargs="?")
     ap.add_argument("--scale", type=float, default=0.5,
                     help="post の効き目（1.0 = 実機と同じ・既定 0.5）")
+    ap.add_argument("--full-post", action="store_true",
+                    help="監視カメラらしさ（彩度・ヴィネット・コントラスト・色温度）ごと掛ける。"
+                         "**既定は露出だけ** — 生成モデルへ渡す種にポストを焼くと画を作り替えられる")
     ap.add_argument("--cam", default=None, help="カメラ id（cameras[].post を使う）")
     ap.add_argument("--show", default=SHOW_JSON)
     args = ap.parse_args()
@@ -298,7 +315,7 @@ def main() -> int:
     post = load_post(args.cam, args.show)
 
     if args.mode == "check":
-        check(args.src, post, args.scale)
+        check(args.src, post, args.scale, not args.full_post)
         return 0
     if args.mode == "sweep":
         dst = args.dst or os.path.splitext(args.src)[0] + "_sweep.png"
@@ -309,7 +326,7 @@ def main() -> int:
         print("dst が要る", file=sys.stderr)
         return 2
     img = Image.open(args.src)
-    out = (dim if args.mode == "dim" else undim)(img, post, args.scale)
+    out = (dim if args.mode == "dim" else undim)(img, post, args.scale, not args.full_post)
     out.save(args.dst)
     st = _stats(out)
     print(f"{args.mode}: {args.src} → {args.dst}  平均輝度 {st['mean']:.1f}  "
