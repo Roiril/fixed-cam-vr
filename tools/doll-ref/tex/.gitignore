@@ -1,0 +1,3 @@
+# make_texture_source.py が作る中間物（元は out/tex_4view.png と実写のマスク）
+*.jpg
+backup/
