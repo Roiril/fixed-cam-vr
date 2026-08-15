@@ -289,10 +289,11 @@ namespace FixedCamVr.Streaming.Tests
         //   `InvalidDistanceDisarmsIt` が同じことを連続な軌跡で固定している。
 
         [Test]
-        public void Intro_ShellNeverSurvivesIntoTheShow()
+        public void Intro_NeverPaintsTheShellAtAll()
         {
-            // 殻は段 5 の「黒 → 映像」の渡しに使う。
-            // **渡し終わったら必ず 0** — 残すと本編の映像まで黒く塗る。
+            // ⚠⚠ **2026-08-15 から導入は殻を 1 度も使わない**（`canon/LEDGER.md` 0045）。
+            //    枠の外の黒は覆いが持ち、枠の中は段 4 から映像。ここで黒を被せると、
+            //    段 4 で出ていた映像が一度消えて戻る。終幕は従来どおり使う。
             var l = new IntroLogic();
             l.Configure(IntroTiming.Default);
             l.Begin();
@@ -303,16 +304,13 @@ namespace FixedCamVr.Streaming.Tests
             };
             var go = outside; go.atStartSpot = true;
             l.Tick(0.016f, go);
-            float lastSwapShell = 1f;
             for (int i = 0; i < 3000; i++)
             {
                 l.Tick(0.016f, outside);
-                if (l.Stage == IntroStage.Swap) lastSwapShell = l.Weights.shell;
+                Assert.AreEqual(0f, l.Weights.shell, 1e-5f, $"段 {l.Stage} で殻が立っている");
                 if (l.Stage == IntroStage.Done) break;
             }
             Assert.AreEqual(IntroStage.Done, l.Stage);
-            Assert.Less(lastSwapShell, 0.05f, "段 5 の終わりで黒が残っている");
-            Assert.AreEqual(0f, l.Weights.shell, 1e-4f);
             Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
         }
 

@@ -474,39 +474,55 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Swap_CrossfadesTheVideoIn_AndHidesTheSeamWithGlitch()
+        public void Frame_FillsTheApertureWithVideo_NotAPassthroughCutout()
+        {
+            // ⚠⚠ ユーザー指摘（2026-08-15・`canon/LEDGER.md` 0045）
+            //    「割れた先はパススルーのくりぬきではなくカメラ映像にしてください」。
+            //    割れ始めた瞬間から枠の中に映像が満ちる。覆いの側は
+            //    `IntroVeil.shader` が「スクリーンの上のセルは alpha 1」で通す。
+            var l = AtStage(IntroStage.Frame);
+            Assert.AreEqual(0f, l.Weights.live, 1e-4f, "段の頭から映像が満ちている（立ち上がりが無い）");
+
+            Advance(l, T.frameSec * 0.3f, Ready(outsideM: 2f));
+            Assert.Greater(l.Weights.live, 0.5f, "割れている最中に枠の中が映像になっていない");
+            Assert.Greater(l.Weights.shatter, 0f, "割れていない");
+            Assert.AreEqual(1f, l.Weights.passthrough, 1e-4f, "破片が現実を持って飛ばなくなっている");
+        }
+
+        [Test]
+        public void Swap_KeepsTheVideoOn_AndHidesTheSeamWithGlitch()
         {
             var l = AtStage(IntroStage.Swap);
 
             Advance(l, IntroLogic.SwapCrossfadeSec * 0.5f, Ready(outsideM: 2f));
             var mid = l.Weights;
-            Assert.Greater(mid.live, 0f);
-            Assert.Less(mid.live, 1f);
+            // ⚠ 段 4 で既に映像が出ているので、ここで上げ直さない（出ていた映像が一度消える）。
+            Assert.AreEqual(1f, mid.live, 1e-4f, "段 5 で映像を出し直している");
             Assert.Greater(mid.glitch, 0f, "継ぎ目は乱れで隠す");
             Assert.AreEqual(1f, mid.frame, 1e-4f, "枠は既に閉じている");
             Assert.AreEqual(1f, mid.ignite, 1e-4f, "映像が来る段で管が消えている");
             Assert.AreEqual(0f, mid.passthrough, 1e-4f, "段 5 で現実が 1 画素でも出ている");
-            Assert.Greater(mid.shell, 0f, "黒 → 映像の渡しを殻が持っていない");
+            // ⚠ 殻を立てると、段 4 で出ていた映像が黒く塗り潰される。
+            Assert.AreEqual(0f, mid.shell, 1e-4f, "段 5 で黒を被せている（映像が一度消える）");
 
             Advance(l, IntroLogic.SwapCrossfadeSec, Ready(outsideM: 2f));
             var after = l.Weights;
             Assert.AreEqual(1f, after.live, 0.01f);
             Assert.Less(after.glitch, 0.2f);
-            Assert.AreEqual(0f, after.shell, 0.01f, "渡し終わったのに黒が残っている");
         }
 
         [Test]
-        public void Shell_OnlyRunsDuringTheSwap()
+        public void Shell_NeverRunsDuringTheIntro()
         {
             // 殻は全画面の面（queue 4910・ZTest Always）でスクリーンごと黒く塗る。
-            // **使うのは段 5 の「黒 → 映像」の渡しだけ** — 段 1〜4 で立てると、現実が見えている
-            // はずの区間が黙って黒くなる。
+            // ⚠ **導入では 1 度も立てない**（2026-08-15）。枠の外の黒は覆いが持ち、
+            //    枠の中は段 4 から映像。ここで黒を被せると、出ていた映像が一度消える。
+            //    終幕（`OutroLogic`）は従来どおり使う。
             var l = AtReal();
             var outside = Ready(outsideM: 2f);
             for (int i = 0; i < 600 && l.Stage != IntroStage.Done; i++)
             {
                 l.Tick(0.05f, outside);
-                if (l.Stage == IntroStage.Swap || l.Stage == IntroStage.Done) continue;
                 Assert.AreEqual(0f, l.Weights.shell, 1e-5f, $"段 {l.Stage} で殻が立っている");
             }
             Assert.AreEqual(IntroStage.Done, l.Stage);
@@ -549,6 +565,7 @@ namespace FixedCamVr.Streaming.Tests
 
             // 段 5 の見えは映像があるときと同じ。**画の中身は SignalLostFx が砂嵐で埋める**。
             var w = l.Weights;
+            Assert.AreEqual(1f, w.live, 1e-4f, "砂嵐を出す段で映像の口が閉じている");
             Assert.AreEqual(1f, w.ignite, 1e-4f, "砂嵐を出す段で管が消えている");
             Assert.AreEqual(1f, w.frame, 1e-4f);
             Assert.AreEqual(0f, w.passthrough, 1e-4f);

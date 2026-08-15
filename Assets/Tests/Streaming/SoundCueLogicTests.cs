@@ -67,16 +67,38 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void ScreenOn_FiresOnceWhenTheScreenArrives()
+        public void ScreenOn_FiresOnceWhenTheVideoFillsTheFrame()
         {
-            // 段 5 の頭 — 枠の中が映像へ変わり始める ＝ スクリーンが出る瞬間。
-            // 段の頭で 1 回だけ鳴る — 鳴り続けると効果音になる。
+            // ⚠ 2026-08-15 に段 4 へ移した。**割れた先がカメラ映像**になったので、
+            //    「スクリーンを出すときの音」もその瞬間へ来る（`canon/LEDGER.md` 0045）。
             var l = new SoundCueLogic();
-            Assert.AreEqual(0, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Frame, shatter: 0.9f)),
-                            "割れている段で先に鳴っている");
-            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Swap)));
-            Assert.AreEqual(0, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Swap)));
+            Assert.AreEqual(0, CountOf(l, SoundCue.ScreenOn, Dt,
+                                       Intro(IntroStage.Frame, shatter: 0.1f, live: 0.1f)),
+                            "割れ始めた瞬間に鳴っている（破砕の音と潰れる）");
+            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt,
+                                       Intro(IntroStage.Frame, shatter: 0.3f,
+                                             live: SoundCueLogic.ScreenOnAt)));
+            Assert.AreEqual(0, CountOf(l, SoundCue.ScreenOn, Dt,
+                                       Intro(IntroStage.Frame, shatter: 0.9f, live: 1f)));
             Assert.AreEqual(0, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Swap, live: 1f)));
+        }
+
+        [Test]
+        public void Shatter_AndScreenOn_NeverFireInTheSameFrame()
+        {
+            // 段 4 の頭は `shatter` も `live` も動き出す。**重ねると 1 つの音に潰れる**ので、
+            // 映像の満ち具合（ScreenOnAt）で 1 発目から遅らせてある。
+            var l = new SoundCueLogic();
+            var head = Intro(IntroStage.Frame, shatter: SoundCueLogic.ShatterFireAt, live: 0f);
+            var fired = l.Tick(Dt, head, 0f, out int n);
+            int sh = 0, on = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (fired[i] == SoundCue.Shatter) sh++;
+                if (fired[i] == SoundCue.ScreenOn) on++;
+            }
+            Assert.AreEqual(1, sh, "段 4 の頭で割れる音が鳴っていない");
+            Assert.AreEqual(0, on, "割れる音と同じフレームでスクリーンの音も鳴っている");
         }
 
         [Test]
@@ -90,27 +112,14 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void ScreenNoise_FollowsScreenOn_WhenTheVideoFadesIn()
+        public void ScreenNoise_FollowsScreenOn_AtTheHeadOfTheSwap()
         {
             // ユーザー指示（canon/LEDGER.md 0030）「これを最初に出して、その後ノイズを出す」。
-            // **同じフレームで 2 本鳴らさない** — 重ねると 1 つの音に潰れて「その後」にならない。
             var l = new SoundCueLogic();
-            var early = Intro(IntroStage.Swap, live: 0.1f);
-            var fired = l.Tick(Dt, early, 0f, out int n);
-            int on = 0, noise = 0;
-            for (int i = 0; i < n; i++)
-            {
-                if (fired[i] == SoundCue.ScreenOn) on++;
-                if (fired[i] == SoundCue.ScreenNoise) noise++;
-            }
-            Assert.AreEqual(1, on, "段 5 の頭で一撃が鳴っていない");
-            Assert.AreEqual(0, noise, "一撃と同じフレームでノイズも鳴っている");
-
-            // クロスフェードが進んだ所で 2 本目。**1 回だけ。**
             Assert.AreEqual(0, CountOf(l, SoundCue.ScreenNoise, Dt,
-                                       Intro(IntroStage.Swap, live: SoundCueLogic.ScreenNoiseAt - 0.05f)));
-            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenNoise, Dt,
-                                       Intro(IntroStage.Swap, live: SoundCueLogic.ScreenNoiseAt)));
+                                       Intro(IntroStage.Frame, shatter: 1f, live: 1f)),
+                            "段 4 で先に鳴っている");
+            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenNoise, Dt, Intro(IntroStage.Swap, live: 1f)));
             Assert.AreEqual(0, CountOf(l, SoundCue.ScreenNoise, Dt, Intro(IntroStage.Swap, live: 1f)));
         }
 
@@ -262,10 +271,10 @@ namespace FixedCamVr.Streaming.Tests
         {
             var l = new SoundCueLogic();
             CountOf(l, SoundCue.Shatter, Dt, Intro(IntroStage.Frame, shatter: 1f));
-            CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Swap));
+            CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Frame, live: 1f));
             l.ResetRun();
             Assert.AreEqual(1, CountOf(l, SoundCue.Shatter, Dt, Intro(IntroStage.Frame, shatter: 1f)));
-            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Swap)));
+            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Frame, live: 1f)));
         }
 
         [Test]
@@ -281,14 +290,14 @@ namespace FixedCamVr.Streaming.Tests
             //    この穴を捕まえられなかった。ここでは**誰も呼ばない**まま段 0 へ戻す。
             var l = new SoundCueLogic();
             Assert.AreEqual(1, CountOf(l, SoundCue.Shatter, Dt, Intro(IntroStage.Frame, shatter: 1f)));
-            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Swap)));
+            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Frame, live: 1f)));
 
             // 次の体験者。段 0（開始待ち）へ戻るだけで、リセットの号令は 1 つも来ない。
             Assert.AreEqual(0, CountOf(l, SoundCue.Shatter, Dt, Intro(IntroStage.Black)));
 
             Assert.AreEqual(1, CountOf(l, SoundCue.Shatter, Dt, Intro(IntroStage.Frame, shatter: 1f)),
                             "2 人目に破砕の音が鳴らない（導入の山）");
-            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Swap)),
+            Assert.AreEqual(1, CountOf(l, SoundCue.ScreenOn, Dt, Intro(IntroStage.Frame, live: 1f)),
                             "2 人目にスクリーンが出る音が鳴らない");
         }
 

@@ -19,18 +19,18 @@ namespace FixedCamVr.Streaming
         /// <summary>段 4 — 現実が割れてスクリーンへ吸い込まれる。**導入の山。**</summary>
         Shatter,
         /// <summary>
-        /// 段 5 の頭 — <b>枠の中が映像へ変わり始める ＝ スクリーンが出る瞬間</b>。
+        /// 段 4 — <b>割れた先に映像が満ちる ＝ スクリーンが出る瞬間</b>。
         /// 音源はユーザー指定（2026-08-13・<c>canon/LEDGER.md</c> 0030 / 0032 で 2 度調整）。
         /// </summary>
         ScreenOn,
         /// <summary>
-        /// 段 5 の後半 — <see cref="ScreenOn"/> の尾に重なるノイズ。
+        /// 段 5 の頭 — 最後の破片が消えて映像だけになる所。<see cref="ScreenOn"/> の尾に重なる。
         /// ユーザー指示（<c>canon/LEDGER.md</c> 0030）
         /// 「これを最初に出して、その後ノイズを出すとかかな？」の後半。
         /// </summary>
         ScreenNoise,
         /// <summary>
-        /// 管の中がカメラ映像になる（装置が点く）。
+        /// 枠の中がカメラ映像になる（装置が点く）。
         /// ⚠ <b>2026-08-15 以降は鳴らない</b> — 同じ縁をユーザー指定の <see cref="ScreenOn"/> が持つ。
         /// 音源は残してある。
         /// </summary>
@@ -76,10 +76,10 @@ namespace FixedCamVr.Streaming
         public const float BellAtSec = 6f;
 
         /// <summary>
-        /// 段 5 のクロスフェードがここまで来たら 2 発目（ノイズ）を鳴らす。
-        /// <see cref="IntroLogic.SwapCrossfadeSec"/> が 1.2 秒なので、1 発目からおよそ 0.8 秒後。
+        /// 段 4 で枠の中の映像がここまで満ちたら「スクリーンが出る音」を鳴らす。
+        /// **割れる音と同じフレームにしない**ための遅らせ（段 4 の頭から約 0.35 秒）。
         /// </summary>
-        public const float ScreenNoiseAt = 0.55f;
+        public const float ScreenOnAt = 0.45f;
 
         /// <summary>
         /// 1 フレームに拾える上限。**種類の総数と同じにしてある ＝ 構造的に溢れない。**
@@ -185,30 +185,30 @@ namespace FixedCamVr.Streaming
             //    Seal/Dark/Ignite/Live から Real/Degrade/Structure/Frame/Swap へ戻り、
             //    「隔離が閉じる」段も「闇の中で管が点く」段も無くなった。
             //
-            //    - `SealClose`（`sfx_seal_close`）は**鳴らさない**。隔離が閉じるのは段 5 の
-            //      黒 → 映像の渡しだけになり、そこは `ScreenOn` が持つ。音源は残してある
+            //    - `SealClose`（`sfx_seal_close`）は**鳴らさない**。隔離が閉じる段が無くなった。
+            //      音源は残してある
             //    - `Swap`（`sfx_swap`）も**鳴らさない**。同じ縁に、ユーザーが指定した音源
             //      （`sfx_screen_on` ＝ Cyber03-2・0030 / 0032 で 2 度調整）がある。
             //      **もらった音を、シュビーが作った音で押しのけない**（rules/sound-design.md §4.5）
             if (s.introActive)
             {
-                // 段 4 — 現実が割れてスクリーンへ吸い込まれ始める。**導入の山。**
+                // 段 4 の頭 — 現実が割れ始める。
                 if (!_shatterFired && s.introWeights.shatter >= ShatterFireAt)
                 {
                     _shatterFired = true;
                     Push(SoundCue.Shatter, ref count);
                 }
-                // 段 5 の頭 — 枠の中が映像へ変わり始める ＝ **スクリーンが出る瞬間**。
-                // 0030「スクリーンを出すときに出る…演出が、何の音もなしに出るのは違和感がある」。
-                if (!_screenOnFired && s.introStage == IntroStage.Swap)
+                // ⚠ **割れた先に映像が満ちる所**（2026-08-15 にここへ移した）。段 4 で枠の中が
+                //    カメラ映像になるので、「スクリーンを出すときの音」もその瞬間へ来る。
+                //    割れる音と同じフレームにならないよう `live` の進みで遅らせる。
+                if (!_screenOnFired && s.introWeights.live >= ScreenOnAt)
                 {
                     _screenOnFired = true;
                     Push(SoundCue.ScreenOn, ref count);
                 }
-                // ⚠ **その後にノイズ**（0030 の後半）。段の頭で 2 本重ねると 1 つの音に潰れるので、
-                //    クロスフェードの進み（`live`）を見て遅らせる。同じフレームでは鳴らない。
-                if (!_screenNoiseFired && s.introStage == IntroStage.Swap
-                    && s.introWeights.live >= ScreenNoiseAt)
+                // ⚠ **その後にノイズ**（`canon/LEDGER.md` 0030 の後半）。段 5 の頭 ＝
+                //    最後の破片が消えて映像だけになる所。**同じフレームで 2 本鳴らさない。**
+                if (!_screenNoiseFired && s.introStage == IntroStage.Swap)
                 {
                     _screenNoiseFired = true;
                     Push(SoundCue.ScreenNoise, ref count);

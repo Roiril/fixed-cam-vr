@@ -639,12 +639,11 @@ namespace FixedCamVr.Streaming
                     case IntroStage.Frame:
                     {
                         float p = Progress(_t.frameSec);
-                        // 枠が閉じても**枠の中はまだ現実**。
                         return new IntroWeights
                         {
                             passthrough = 1f,
                             degrade = 1f,
-                            // 枠になるとき構造の線は引く。枠の中の現実に集中させる。
+                            // 枠になるとき構造の線は引く。枠の中に集中させる。
                             edge = 1f - 0.7f * p,
                             structure = 1f - p,
                             // ⚠ **枠は破砕より遅れて閉じる。** 同時に閉じると、飛んでいる途中の破片が
@@ -653,7 +652,13 @@ namespace FixedCamVr.Streaming
                             // 見えているものが割れて、スクリーンへ入っていく。
                             shatter = p,
                             grain = 0.6f,
-                            live = 0f,
+                            // ⚠⚠ **吸い込み先はカメラ映像**（2026-08-15・ユーザー指摘
+                            //    「割れた先はパススルーのくりぬきではなくカメラ映像にしてください」）。
+                            //    割れ始めた瞬間から枠の中に映像が満ちる。覆いの側は
+                            //    `IntroVeil.shader` が「スクリーンの上のセルは alpha 1」で通す。
+                            //    ⚠ 段 1〜3 は開口いっぱいがパススルーの窓なのでスクリーンは見えない。
+                            //    **割れ始めた瞬間に装置が現れる**、という順序がここで決まる。
+                            live = SmoothStep(0f, 0.25f, p),
                             ignite = 1f,
                         };
                     }
@@ -662,23 +667,25 @@ namespace FixedCamVr.Streaming
                     {
                         float cross = _t.swapSec > 0f
                             ? Clamp01(_stageElapsed / Math.Max(SwapCrossfadeSec, 0.01f)) : 1f;
-                        float s = SmoothStep(0f, 1f, cross);
                         return new IntroWeights
                         {
-                            // ⚠ **ここでパススルーを 1 画素も出さない。** 枠の中身が「現実 → 映像」だと、
-                            // 交差の途中で会場が透ける。代わりに黒 → 映像で渡す。継ぎ目は乱れが隠す。
+                            // ⚠ **ここでパススルーを 1 画素も出さない。** 現実は段 4 で全部
+                            //    吸い込まれているので、残りの窓もここで閉じる。
                             passthrough = 0f,
                             degrade = 1f,
                             edge = 0f,
                             structure = 0f,
                             frame = 1f,
-                            live = s,
+                            // ⚠ **段 4 で既に映像が出ている。** ここで 0 から上げ直すと、
+                            //    出ていた映像が一度消えて戻る。段 5 は「自分だと気づく」ための間。
+                            live = 1f,
                             ignite = 1f,
-                            grain = 0.6f * (1f - s),   // 以後は映像側の post FX が持つ
-                            // 継ぎ目は乱れで隠す。
+                            grain = 0f,                // 以後は映像側の post FX が持つ
+                            // 最後の破片が消える継ぎ目は乱れで隠す。
                             glitch = Bump(cross),
-                            // 黒 → 映像の渡しは殻が持つ（パススルーが無いので alpha は覆いが 1 に保つ）。
-                            shell = 1f - s,
+                            // ⚠ **殻は立てない。** 段 4 の終わりで既に「黒 ＋ 枠の中に映像」なので、
+                            //    ここで黒を被せると出ていた映像が一度消える。枠の外の黒は覆いが持つ。
+                            shell = 0f,
                             shellReveal = 0f,
                         };
                     }

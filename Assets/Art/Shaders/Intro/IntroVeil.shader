@@ -103,7 +103,11 @@ Shader "FixedCamVr/IntroVeil"
             {
                 float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
-                // x = このセルが閉じた量（1 = 現実を返し終えた）/ y = 生きている量（1 - x）。
+                // x = このセルが閉じた量（1 = 現実を返し終えた）
+                // y = **このセルがスクリーンの上に居るか**（1 = 割らないセル ＝ 吸い込み先）。
+                //     ⚠ ここは alpha 1 で返す ＝ アプリの絵（スクリーンの映像）をそのまま通す。
+                //     0 にしてパススルーの窓にすると、割れた先が**現実のくりぬき**になる
+                //     （2026-08-15 ユーザー指摘「割れた先はパススルーのくりぬきではなくカメラ映像に」）。
                 // セル内で一定なので補間の誤差は出ない。
                 float2 life : TEXCOORD1;
             };
@@ -154,6 +158,7 @@ Shader "FixedCamVr/IntroVeil"
                 float2 pos = v.positionOS.xy;
                 float2 uv = v.uv;
                 float closed = 0.0;
+                float onScreen = 0.0;
 
                 UNITY_BRANCH
                 if (_Shatter > 0.0001 && v.cell.z > 0.5)
@@ -172,6 +177,9 @@ Shader "FixedCamVr/IntroVeil"
                     // ⚠ スクリーンの上（far = 0）のセルは**割らない** — 段 4 の終わりに枠の中まで
                     //    消えると、枠がどこにあるか分からないまま段 5 の映像が点く。
                     float far = saturate(d / max(_IntroScreenHalf.w, 1e-3));
+                    // スクリーンの上のセルは**割らない**。割らないうえに、
+                    // **パススルーの窓にもしない** — ここが吸い込み先で、見えるべきは映像。
+                    onScreen = 1.0 - step(1e-4, far);
                     if (far > 1e-4)
                     {
                         float2 rnd = IntroShardHash2(c * 91.7, _CellSeed);
@@ -196,7 +204,7 @@ Shader "FixedCamVr/IntroVeil"
 
                 o.positionCS = TransformObjectToHClip(float3(pos, 0.0));
                 o.uv = uv;
-                o.life = float2(closed, 1.0 - closed);
+                o.life = float2(closed, onScreen);
                 return o;
             }
 
@@ -240,6 +248,12 @@ Shader "FixedCamVr/IntroVeil"
 
                 // 破片が閉じ切ったら現実を返す（alpha 1 = VR の絵 = 黒）。
                 alpha = lerp(alpha, 1.0, saturate(i.life.x));
+
+                // ⚠⚠ **吸い込み先はカメラ映像**（2026-08-15）。スクリーンの上のセルは alpha 1 で返し、
+                //    その画素に既に描かれているもの（＝ ScreenComposite が描いた映像）を通す。
+                //    ここを 0（パススルーの窓）にすると、割れた現実が**現実のくりぬき**へ吸い込まれる
+                //    ことになり、「装置の中へ入った」が読めない。
+                alpha = lerp(alpha, 1.0, saturate(i.life.y));
 
                 // RGB は使われない（dst * srcAlpha なので）。0 を返すのが Passthrough Windows の作法。
                 return float4(0.0, 0.0, 0.0, alpha);
