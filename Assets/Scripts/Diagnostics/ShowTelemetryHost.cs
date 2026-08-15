@@ -103,6 +103,9 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private TitleStage _lastTitleStage = TitleStage.Off;
         private bool _titleSeen;
+
+        /// <summary>直近に出した記録ボタンの回数（体験者の左 X）。</summary>
+        private int _lastMarkCount;
         private string _lastTakeId = "";
         private string _lastCtrlMode = "";
         private string _lastCueId = "";
@@ -459,6 +462,16 @@ namespace FixedCamVr.Diagnostics
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
                      // 段 1 以降の行に auth=0 が出たら、卓の ⏭ で始まったということ。
                      $"auth={(_show != null && _show.StartAuthorized ? 1 : 0)}");
+            }
+
+            // 体験者の記録ボタン（左 X）。**押した時刻が残ると、3 周目の反転に気づいたかが
+            // 訊かずに分かる**（初見は消耗品なので、誘導せずに取れる観測の価値が高い）。
+            // 区間を併記するのは「どこで押したか」が無いと後から読めないため。
+            if (_show != null && _show.VisitorMarkCount != _lastMarkCount)
+            {
+                _lastMarkCount = _show.VisitorMarkCount;
+                Emit($"ev=mark n={_lastMarkCount} lap={(_run != null ? _run.Lap : -1)} " +
+                     $"cam={(_switch != null && _switch.TryGetCurrentZoneCamera(out int mc) ? mc : -1)}");
             }
 
             // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**

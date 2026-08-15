@@ -21,6 +21,15 @@ namespace FixedCamVr.OvrBridge
     {
         private readonly HapticSequenceLogic _logic = new();
 
+        /// <summary>
+        /// <b>体験者の手（左）へ返す振動。</b> スタッフの手（右）とは別の時間軸で鳴る。
+        ///
+        /// 体験者が持つのは記録ボタン（左 X）だけで、返すのは「受け取った」の 1 種類。
+        /// <b>正誤は返さない</b> — 返すと答え合わせになり、装置が「何が異変か」を判定してしまう
+        /// （この作品の恐怖は「装置は正直に映すだけ」の上に乗っている）。
+        /// </summary>
+        private readonly HapticSequenceLogic _left = new();
+
         /// <summary>監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る＝「入力は届いている」）。</summary>
         public void Ack() => _logic.Trigger(HapticSequenceLogic.Pattern.Ack);
 
@@ -36,17 +45,28 @@ namespace FixedCamVr.OvrBridge
         /// <summary>長押しカウント進行の進捗 [0,1]。0（or 1）で HoldTick 停止。</summary>
         public void SetHoldProgress(float progress01) => _logic.SetHoldProgress(progress01);
 
+        /// <summary>体験者の記録ボタン（左 X）を受け取った。<b>これだけが体験者への返り。</b></summary>
+        public void LeftMark() => _left.Trigger(HapticSequenceLogic.Pattern.Action);
+
         private void Update()
         {
-            float amp = _logic.Tick(Time.deltaTime);
+            float dt = Time.deltaTime;
+            float amp = _logic.Tick(dt);
             float freq = amp > 0f ? HapticSequenceLogic.Frequency : 0f;
             OVRInput.SetControllerVibration(freq, amp, OVRInput.Controller.RTouch);
+
+            // 左は体験者の手。右と混ぜない（スタッフの操作が体験者の手に伝わると世界の外の合図になる）。
+            float ampL = _left.Tick(dt);
+            float freqL = ampL > 0f ? HapticSequenceLogic.Frequency : 0f;
+            OVRInput.SetControllerVibration(freqL, ampL, OVRInput.Controller.LTouch);
         }
 
         private void OnDisable()
         {
             _logic.Reset();
+            _left.Reset();
             OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
+            OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
         }
     }
 }

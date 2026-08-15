@@ -278,6 +278,21 @@ namespace FixedCamVr.OvrBridge
                     }
                     // B: ステータス表示トグル（真実源 IsVisible の反転）。
                     if (bDown) { ToggleStatus(); haptics?.Action(); }
+
+                    // ---- 体験者の記録ボタン（左 X）-------------------------------------
+                    // 紙（調査依頼書）の「違和感を認めるたび、手元のボタンを一度押してください。
+                    // ボタンを押した時刻は、自動的に記録されます」が指しているのがこれ。
+                    // **体験者が持つ唯一の入力**で、左コントローラは他に何も読まない。
+                    //
+                    // ⚠ 体験の進行には 1 ビットも使わない（押さなくても同じように進む）。
+                    //    正誤も返さない — 返すと答え合わせになり、装置が「何が異変か」を判定してしまう。
+                    // ⚠ `Button.Three` は X（左）。**LTouch を明示する** — 未指定だと両手から拾い、
+                    //    右の A と混ざる（troubleshooting.md の実害と同じ型）。
+                    if (OVRInput.GetDown(OVRInput.Button.Three, OVRInput.Controller.LTouch))
+                    {
+                        showControl?.RecordVisitorMark();
+                        haptics?.LeftMark();   // 返すのは「受け取った」の 1 種類だけ
+                    }
                     // グリップ長押し=ランリセット / トリガー長押し=Registration 入場は _modeLogic が担う。
                     break;
             }

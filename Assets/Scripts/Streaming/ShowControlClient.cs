@@ -1577,6 +1577,7 @@ namespace FixedCamVr.Streaming
         private void TriggerRunReset()
         {
             Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue / タイムライン / BGM をリセット");
+            VisitorMarkCount = 0;   // 体験 1 回ぶんの状態（memory/show_run_skeleton.md）
             _dwell.Reset();   // 計時中の部分区間は「体験者 1 人分の滞在」として成立しないので捨てる
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
@@ -1599,6 +1600,7 @@ namespace FixedCamVr.Streaming
         {
             Debug.Log("[ShowControl] ラン開始（現地・右グリップ長押し）");
             ReleaseLiveHolds();
+            VisitorMarkCount = 0;   // 体験 1 回ぶんの状態（memory/show_run_skeleton.md）
             _dwell.Reset();
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
@@ -2450,6 +2452,27 @@ namespace FixedCamVr.Streaming
 
         /// <summary>スタッフがステータスを開いているか（未配線なら false）。</summary>
         public bool StatusVisible => StatusVisibleProvider?.Invoke() ?? false;
+
+        /// <summary>
+        /// <b>体験者が記録ボタン（左 X）を押した回数。</b> ラン開始で 0 に戻る。
+        ///
+        /// 紙（調査依頼書）の「違和感を認めるたび、手元のボタンを一度押してください。
+        /// ボタンを押した時刻は、自動的に記録されます」が指しているのがこれ。
+        ///
+        /// ⚠ <b>体験の進行には 1 ビットも使わない。</b> 押さなくても体験は同じように進む
+        /// （判定に使うと、押さなかった人が失敗した気になる）。正誤も返さない
+        /// （返すと答え合わせになり、装置が「何が異変か」を判定してしまう）。
+        /// ⭐ 押した時刻が残ると、<b>3 周目の反転に気づいたかが訊かずに分かる</b>
+        /// （初見は消耗品なので、誘導せずに取れる観測の価値が高い）。
+        /// </summary>
+        public int VisitorMarkCount { get; private set; }
+
+        /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
+        public void RecordVisitorMark()
+        {
+            VisitorMarkCount++;
+            Debug.Log($"[ShowControl] 記録ボタン（体験者・左 X） {VisitorMarkCount} 回目");
+        }
 
         private void ApplyPostForActive()
         {
