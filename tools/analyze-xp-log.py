@@ -1393,6 +1393,59 @@ def analyze(events, others, exp, warns=None):
         if not skipped_why:
             verdict("OK", f"演出のカットは全て画面を取った（{len(steps_ev)} カット）")
 
+    # -- 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）
+    # ⚠ 「カットが指した」は画に出たことを意味しない。分割は書く先（CameraFeelFx の material）を
+    #    掴めていなければ 1 画素も割れず、第 2 層は素材を非同期で読むので、マスクの読込に失敗すると
+    #    黙って 1 層目のままになる。どちらもログ以外に確かめる手段が無い。
+    # ⚠ もう 1 つ見るのは**固着**。分割はカットの中でしか書かれないので、演出が終わった後に
+    #    残っていると画が割れたまま次の体験者へ持ち越される（この codebase が 4 回踏んだ型）。
+    want_split = [f"{t['id']}#{i}" for t in exp["takes"]
+                  for i, s in enumerate(t["steps"]) if (fstr(s.get("splitX")) or 0.0) > 0.0]
+    want_ovl2 = [f"{t['id']}#{i}" for t in exp["takes"]
+                 for i, s in enumerate(t["steps"]) if s.get("overlay2CueId")]
+    spl_vals = _decay_nums("spl")
+    ovl2_vals = _decay_nums("ovl2")
+    if want_split or want_ovl2 or spl_vals or ovl2_vals:
+        any_effect_key = True
+        w()
+        w("### 左右分割と第 2 の差し替え層")
+        w(f"  著作: 分割 {len(want_split)} カット / 第 2 層 {len(want_ovl2)} カット")
+        if spl_vals:
+            w(f"  画に出た分割の最大 {max(spl_vals):.2f}（標本 {len(spl_vals)}）")
+        if ovl2_vals:
+            w(f"  画に出た第 2 層の最大 {max(ovl2_vals):.2f}（標本 {len(ovl2_vals)}）")
+
+        if want_split and not spl_vals:
+            verdict("WARN", "分割を観測していないビルドのログ（spl キーが無い）")
+        elif want_split and max(spl_vals) <= 0.0:
+            verdict("FAIL", f"分割を指すカットが {len(want_split)} 本あるのに画は一度も割れていない"
+                            f"（{', '.join(want_split)}）— CameraFeelFx が material を掴めているか"
+                            "（coarseMat）と、そのカットが飛ばされていないかを見る")
+        elif want_split:
+            verdict("OK", f"画が割れた（最大 {max(spl_vals):.2f}）")
+
+        if want_ovl2 and not ovl2_vals:
+            verdict("WARN", "第 2 層を観測していないビルドのログ（ovl2 キーが無い）")
+        elif want_ovl2 and max(ovl2_vals) <= 0.0:
+            verdict("FAIL", f"第 2 層を指すカットが {len(want_ovl2)} 本あるのに素材が一度も載っていない"
+                            f"（{', '.join(want_ovl2)}）— マスクか素材の読込に失敗している。"
+                            "実機ログの [ScreenOverlay] を見る")
+        elif want_ovl2:
+            verdict("OK", f"第 2 層が載った（最大 {max(ovl2_vals):.2f}）")
+
+        # 固着は「演出が全部終わった後」の標本だけで判定する。走行の途中でログが切れた場合に、
+        # 割れている最中を固着と読まないため（最後の演出イベントが end なら誰も画面を持っていない）。
+        take_evs = [e for e in events if e.get("ev") == "take"]
+        if take_evs and take_evs[-1].get("st") == "end":
+            t_end = fnum(take_evs[-1], "t", 0.0)
+            after_spl = _decay_nums("spl", t_from=t_end)
+            after_ovl2 = _decay_nums("ovl2", t_from=t_end)
+            if after_spl and max(after_spl) > 0.0:
+                verdict("FAIL", f"演出が終わった後も画が割れたまま（spl={max(after_spl):.2f}）— "
+                                "次の体験者へ持ち越される。畳む経路のどこかで 0 を書き戻していない")
+            if after_ovl2 and max(after_ovl2) > 0.0:
+                verdict("FAIL", f"演出が終わった後も第 2 層が残っている（ovl2={max(after_ovl2):.2f}）")
+
     # -- 端末内録画が 0 バイトで閉じていないか
     zero_rec = [e for e in rec_ev if e.get("v") == "stop" and fnum(e, "bytes") == 0]
     if any("bytes" in e for e in rec_ev):

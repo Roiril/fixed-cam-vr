@@ -564,13 +564,40 @@ namespace FixedCamVr.Streaming
             if (step.hold > 0.001f) director.HoldFrame(step.hold);
             else if (step.burn > 0.001f) director.BurnFrame(step.burn, step.burnSec);
 
-            // 左右分割（canon/LEDGER.md 0050）。**カットごとに毎回書く** — 前のカットの分割を
-            // 引き継がせない（引き継ぐと「分割を指定していないカット」で画が割れたままになる）。
+            // 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）。**カットごとに毎回書く** —
+            // 前のカットの分割・素材を引き継がせない（引き継ぐと「指定していないカット」で
+            // 画が割れたまま・左半分が凍ったままになる）。
             director.ApplySplit(step.splitX, step.splitFlip, step.splitFreeze);
+            ApplyStepOverlay2(step, takeIndex: d.takeIndex, stepIndex: d.stepIndex);
 
             Debug.Log($"[TakeRunner] {(d.takeStarted ? "演出開始" : "カット")} take={TakeId(d.takeIndex)} " +
                       $"step={d.stepIndex} source={source}" +
                       $"{(source == TakeSchema.SourceLive ? $" camera={step.camera}" : "")}");
+        }
+
+        /// <summary>
+        /// カットの第 2 差し替え層（<c>overlay2CueId</c>）を出す。空なら畳む。
+        ///
+        /// **1 層目と違って遷移の黒を待たない** — 第 2 層は左右分割とセットで使い、切り替えは
+        /// 乱れが覆う（canon/LEDGER.md 0050「向きが逆になるのは一瞬なので、映像の乱れでごまかそう」）。
+        /// 素材のロードは非同期なので、載ったかどうかは <c>ovl2</c>（テレメトリ）でしか分からない。
+        /// </summary>
+        private void ApplyStepOverlay2(ShowStepDef step, int takeIndex, int stepIndex)
+        {
+            if (overlay == null) return;
+            if (string.IsNullOrEmpty(step.overlay2CueId)) { overlay.ClearSecondLayer(); return; }
+
+            OverlayCueData? cue = _cueResolver?.Invoke(step.overlay2CueId);
+            if (cue == null)
+            {
+                // カットごと飛ばさないのは、第 2 層が**添え物**だから（1 層目と分割は成立している）。
+                // 飛ばすと画面の所有者が変わって演出の筋が丸ごと消える。
+                Debug.LogWarning($"[TakeRunner] 第 2 層の cue 未解決: {step.overlay2CueId}" +
+                                 $"（take={TakeId(takeIndex)} step={stepIndex}）→ 第 2 層は出さない");
+                overlay.ClearSecondLayer();
+                return;
+            }
+            overlay.ShowSecondLayer(cue);
         }
 
         /// <summary>
@@ -727,6 +754,14 @@ namespace FixedCamVr.Streaming
             _stepFrames = null;
             _cgLayer?.Hide();
             _cgLayer?.SetAura(0f);
+            // ⚠⚠ 左右分割と第 2 層も**カット単位の状態**なので、ここで必ず畳む。
+            //    書いているのはカットの中だけなので、演出が終わった後は誰も上書きしない ＝
+            //    残すと**画が割れたまま・左半分が凍ったまま次の体験者へ持ち越される**。
+            //    畳む経路を CleanupActive（中止）だけに置いていた版は、**正常終了で必ず残った**。
+            //    連続の渡し（chainNext）では次の演出の 1 カット目まで 1 フレームだけ素へ戻るが、
+            //    割れたまま固着するより桁違いに軽い。
+            director?.ApplySplit(0f, false, false);
+            overlay?.ClearSecondLayer();
         }
 
         private ShowStepDef? GetStep(int takeIndex, int stepIndex)

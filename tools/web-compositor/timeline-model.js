@@ -121,6 +121,11 @@ export function newStep(over = {}) {
     // 「装置らしさ」の演出。hold = 画が止まる秒数 / burn = 焼き付きの濃さ（動いたものの跡だけが残る）
     // / aura = 人形のまわりだけ画が荒れる強さ（対象に紐づく乱れ＝機材のせいにできない）。
     hold: 0, burn: 0, burnSec: 0, aura: 0,
+    // 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）。3 周目 A と 4 周目 A だけが使う。
+    // ⚠ **卓にまだ編集 UI が無い**（show.json を手で書く）。ここに置いてあるのは
+    //    「卓が保存したときに消えない」ようにするため — serializeStep はキーの白名簿なので、
+    //    足さないと手で書いた値が 💾 保存のたびに黙って消える。
+    splitX: 0, splitFlip: false, splitFreeze: false, overlay2CueId: '',
     cg: '', cgMode: TAKE.CG_FOLLOW,
     // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
@@ -173,6 +178,12 @@ function serializeStep(s) {
     burn: num(s.burn, 0),
     burnSec: num(s.burnSec, 0),
     aura: num(s.aura, 0),
+    // 左右分割と第 2 層（canon/LEDGER.md 0050）。**卓に編集 UI は無いが必ず書き戻す** —
+    // 白名簿から漏れると、show.json へ手で書いた台本が 💾 保存の一押しで消える。
+    splitX: Math.max(0, Math.min(1, num(s.splitX, 0))),
+    splitFlip: !!s.splitFlip,
+    splitFreeze: !!s.splitFreeze,
+    overlay2CueId: s.overlay2CueId || '',
     cg: s.cg || '',
     cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED], TAKE.CG_FOLLOW),
   };

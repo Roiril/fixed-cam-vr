@@ -56,6 +56,17 @@ namespace FixedCamVr.Streaming
         private RenderTexture? _videoRt;
         private OverlayCueData? _current;
 
+        // 第 2 の差し替え層の書き先。**uniform を書くのは CameraFeelFx だけ**（書き手が 2 つになると
+        // どちらが最後に書いたかで画が変わる）。ここは素材を読んで渡すだけ。
+        private CameraFeelFx? _feelFx;
+        private bool _warnedNoFeelFx;
+
+        // 第 2 層の世代（stale ロード破棄）と、いま出している / 出そうとしている cue id。
+        // id が同じなら読み直さない — カットごとに毎回書かれるので、同じ素材を跨ぐカットで
+        // 毎回ロードを起こさないため。失敗した時は "" へ戻して次のカットで再挑戦できるようにする。
+        private int _layer2Gen;
+        private string _layer2CueId = "";
+
         // URL ロード物のキャッシュ（マスク / 静止画）。現場で同じ cue を繰り返し叩く前提。
         private readonly Dictionary<string, Texture2D> _urlTextureCache = new();
         // 動画 URL → DL 済みローカル mp4 パスのキャッシュ。
@@ -78,6 +89,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>スクリーンの material を掴めているか。false なら合成は 1 画素も効かない。</summary>
         public bool HasMaterial => _material != null;
+
 
         // フレーム列ソースの再生開始時刻（Time.time）。
         private float _framesStart;
@@ -336,6 +348,126 @@ namespace FixedCamVr.Streaming
             _stopWhenFadedOut = true;
         }
 
+        // ---- 第 2 の差し替え層（canon/LEDGER.md 0050）------------------------------------
+        //
+        //   1 層目（_OverlayTex）と**同時に**別の素材を出すための層。要るのは左右分割のカットだけで、
+        //   3 周目 A（左＝1 周目の録画 / 右＝環境＋人形）と 4 周目 A（左＝大量の人形 / 右＝体験者人形）が使う。
+        //   どちらへ出るかを決めるのは**マスク**で、シェーダに左右の区別は無い。
+        //
+        //   ⚠ **静止画専用**。ここに載るのは無人プレートと生成画像だけなので、動画の Prepare も
+        //     フレーム列の Tick も持たない。動画を指したカットは出さずに警告する
+        //     （黙って 1 層目と同じ絵を出すより、出ない方が原因に届く）。
+        //   ⚠ **フェードしない**。切り替えは乱れが覆う（LEDGER 0050「向きが逆になるのは一瞬なので、
+        //     映像の乱れでごまかそう」「右半分も、映像の乱れで自分を消して人形を出そう」）。
+        //     ここでフェードを掛けると、乱れの下でゆっくり混ざって「すり替わった」に見えない。
+
+        /// <summary>
+        /// 第 2 の差し替え層へ素材を出す（カットの <c>overlay2CueId</c>）。null で畳む。
+        /// 同じ cue を続けて指すカットでは読み直さない。
+        /// </summary>
+        public void ShowSecondLayer(OverlayCueData? cue)
+        {
+            if (cue == null) { ClearSecondLayer(); return; }
+            if (_layer2CueId == cue.id && !string.IsNullOrEmpty(cue.id)) return;
+            int gen = ++_layer2Gen;
+            _layer2CueId = cue.id;
+            _ = RunShowSecondLayerAsync(cue, gen, destroyCancellationToken);
+        }
+
+        /// <summary>
+        /// 第 2 の差し替え層を畳む。<b>カットごとに必ず通る</b>ので、
+        /// 指していないカットへ移った瞬間に消える（前のカットの素材を引き継がせない）。
+        /// </summary>
+        public void ClearSecondLayer()
+        {
+            _layer2Gen++;          // in-flight のロードを無効化（読み終わってから書かれるのを防ぐ）
+            _layer2CueId = "";
+            ResolveFeelFx();
+            _feelFx?.SetOverlay2(null, null, Vector2.one, 0f);
+        }
+
+        // fire-and-forget の例外を無音で失わない（PlayCue と同じ流儀）。
+        private async Task RunShowSecondLayerAsync(OverlayCueData cue, int gen, CancellationToken ct)
+        {
+            try { await ShowSecondLayerAsync(cue, gen, ct); }
+            catch (OperationCanceledException) { }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ScreenOverlay] 第 2 層 '{cue.displayName}' の読み込みに失敗: {e}");
+                if (gen == _layer2Gen) _layer2CueId = "";
+            }
+        }
+
+        private async Task ShowSecondLayerAsync(OverlayCueData cue, int gen, CancellationToken ct)
+        {
+            if (cue.SourceIsFrames || cue.SourceIsVideo)
+            {
+                Debug.LogWarning($"[ScreenOverlay] 第 2 層は静止画専用 — cue '{cue.displayName}' は動画/録画なので出さない");
+                if (gen == _layer2Gen) { _layer2CueId = ""; ClearSecondLayerNow(); }
+                return;
+            }
+
+            // 1) マスク。**指定があってロードに失敗したら出さない**（1 層目と同じ規約）。
+            //    白フォールバックに落ちると全面が第 2 層になり、1 層目ごと画を潰す。
+            Texture? mask = cue.maskTexture;
+            if (mask == null && !string.IsNullOrEmpty(cue.maskUrl))
+            {
+                mask = await LoadTextureAsync(cue.maskUrl, ct);
+                if (gen != _layer2Gen || ct.IsCancellationRequested) return;
+                if (mask == null)
+                {
+                    Debug.LogError($"[ScreenOverlay] 第 2 層のマスク読込に失敗: {cue.maskUrl} — " +
+                                   $"cue '{cue.displayName}' を中止（1 層目を守る）");
+                    _layer2CueId = "";
+                    ClearSecondLayerNow();
+                    return;
+                }
+            }
+
+            // 2) 素材（静止画）。
+            Texture? still = cue.stillImage;
+            if (still == null && !string.IsNullOrEmpty(cue.sourceUrl))
+            {
+                still = await LoadTextureAsync(cue.sourceUrl, ct);
+                if (gen != _layer2Gen || ct.IsCancellationRequested) return;
+            }
+            if (still == null)
+            {
+                Debug.LogWarning($"[ScreenOverlay] 第 2 層の素材が無い: cue '{cue.displayName}'");
+                _layer2CueId = "";
+                ClearSecondLayerNow();
+                return;
+            }
+
+            ResolveFeelFx();
+            if (_feelFx == null)
+            {
+                if (!_warnedNoFeelFx)
+                {
+                    _warnedNoFeelFx = true;
+                    Debug.LogWarning("[ScreenOverlay] CameraFeelFx が見つからない → 第 2 層は 1 画素も出ない");
+                }
+                _layer2CueId = "";
+                return;
+            }
+            float strength = cue.strength > 0f ? Mathf.Clamp01(cue.strength) : 1f;
+            _feelFx.SetOverlay2(still, mask, ContainScale((float)still.width / still.height), strength);
+        }
+
+        // 世代を進めずに畳む（既に自分の世代であることを確認済みの失敗経路から呼ぶ）。
+        private void ClearSecondLayerNow()
+        {
+            ResolveFeelFx();
+            _feelFx?.SetOverlay2(null, null, Vector2.one, 0f);
+        }
+
+        private void ResolveFeelFx()
+        {
+            if (_feelFx != null) return;
+            _feelFx = GetComponent<CameraFeelFx>();
+            if (_feelFx == null) _feelFx = FindObjectOfType<CameraFeelFx>();
+        }
+
         // 動画 URL をローカルへ DL して file:// パスを返す（Android ネイティブ HTTP ストリーミング回避）。
         // 同一 URL はキャッシュして再 DL しない。失敗時は元 URL を返してストリーミングへ fallback。
         private async Task<string> GetLocalVideoUrlAsync(string url, CancellationToken ct)
@@ -567,12 +699,22 @@ namespace FixedCamVr.Streaming
         private void SetOverlayTexture(Texture tex, float srcAspect)
         {
             if (_material == null) return;
-            float screenAspect = _screen != null ? _screen.ScreenAspect : 16f / 9f;
-            Vector2 scale = srcAspect < screenAspect
-                ? new Vector2(srcAspect / screenAspect, 1f)
-                : new Vector2(1f, screenAspect / srcAspect);
+            Vector2 scale = ContainScale(srcAspect);
             _material.SetTexture(OverlayTexId, tex);
             _material.SetVector(OverlayScaleId, new Vector4(scale.x, scale.y, 0f, 0f));
+        }
+
+        /// <summary>
+        /// 素材を枠へ contain-fit する倍率（ライブと同じ規約）。
+        /// **第 2 層も必ずこれを通す** — 片方だけ生 uv で読むと、4:3 の素材が 16:9 の枠で
+        /// 水平 1.33 倍ずれて 1 層目と位置が合わなくなる（マスクだけは枠空間なので通さない）。
+        /// </summary>
+        private Vector2 ContainScale(float srcAspect)
+        {
+            float screenAspect = _screen != null ? _screen.ScreenAspect : 16f / 9f;
+            return srcAspect < screenAspect
+                ? new Vector2(srcAspect / screenAspect, 1f)
+                : new Vector2(1f, screenAspect / srcAspect);
         }
 
         private void ApplyStrength(float v)

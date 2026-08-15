@@ -809,6 +809,13 @@ namespace FixedCamVr.Diagnostics
             if (_overlay != null)
                 _sb.Append(" ovl=").Append(OverlayStrength.ToString("F2"))
                    .Append(" ovlMat=").Append(OverlayMaterial);
+            // 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）。**カットの中でしか書かれない**ので、
+            // 「出たか」と「残っていないか」の両方をここで見る。演出が終わった後に spl が 0 でなければ
+            // 画が割れたまま次の体験者へ持ち越されている（この codebase が 4 回踏んだ固着の型）。
+            // 第 2 層は素材を非同期で読むので、カットが指しただけでは載った証拠にならない。
+            if (_feel != null)
+                _sb.Append(" spl=").Append(_feel.SplitX.ToString("F2"))
+                   .Append(" ovl2=").Append(_feel.Overlay2Strength.ToString("F2"));
             if (_bgm != null)
                 _sb.Append(" bgm=").Append(_bgm.IsPlaying ? 1 : 0)
                    .Append(" bgmTrk=").Append(string.IsNullOrEmpty(_bgm.CurrentTrackId) ? "-" : _bgm.CurrentTrackId);

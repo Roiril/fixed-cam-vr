@@ -314,14 +314,24 @@ namespace FixedCamVr.Streaming
         private static readonly int Overlay2ScaleId = Shader.PropertyToID("_Overlay2Scale");
         private static readonly int Overlay2StrengthId = Shader.PropertyToID("_Overlay2Strength");
 
+        /// <summary>
+        /// いま書いている分割位置 0..1（0 = 割っていない）。診断用。
+        /// <b>書く先を掴めていなければ画は 1 画素も割れない</b>ので、<see cref="HasMaterial"/> と対で読む。
+        /// </summary>
+        public float SplitX { get; private set; }
+
+        /// <summary>いま書いている第 2 層の合成の重み 0..1（0 = 出ていない）。診断用。</summary>
+        public float Overlay2Strength { get; private set; }
+
         /// <summary>左右分割を設定する。<paramref name="splitX"/> が 0 なら分割なし。</summary>
         /// <param name="splitX">分割位置（0..1・枠の座標）。境目は環境の縦線へ置く</param>
         /// <param name="flipLeft">左半分だけ左右反転してライブを読む（環境が左右対称なカメラだけ）</param>
         /// <param name="freezeLeft">左半分だけ凍らせる量（0..1）。1 で完全に止まる</param>
         public void SetSplit(float splitX, bool flipLeft, float freezeLeft)
         {
+            SplitX = Mathf.Clamp01(splitX);
             if (_material == null) return;
-            _material.SetFloat(SplitXId, Mathf.Clamp01(splitX));
+            _material.SetFloat(SplitXId, SplitX);
             _material.SetFloat(SplitFlipLeftId, flipLeft ? 1f : 0f);
             _material.SetFloat(SplitFreezeLeftId, Mathf.Clamp01(freezeLeft));
         }
@@ -329,11 +339,12 @@ namespace FixedCamVr.Streaming
         /// <summary>第 2 の差し替え層（左右へ別の素材を同時に置く）。<paramref name="tex"/> が null なら消える。</summary>
         public void SetOverlay2(Texture? tex, Texture? mask, Vector2 containScale, float strength)
         {
+            Overlay2Strength = tex == null ? 0f : Mathf.Clamp01(strength);
             if (_material == null) return;
             _material.SetTexture(Overlay2TexId, tex);
             _material.SetTexture(Mask2TexId, mask);
             _material.SetVector(Overlay2ScaleId, new Vector4(containScale.x, containScale.y, 0f, 0f));
-            _material.SetFloat(Overlay2StrengthId, tex == null ? 0f : Mathf.Clamp01(strength));
+            _material.SetFloat(Overlay2StrengthId, Overlay2Strength);
         }
 
         /// <summary>分割と第 2 層を演出の外の状態へ戻す。**畳むすべての経路から呼ぶ**。</summary>

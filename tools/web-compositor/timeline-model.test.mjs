@@ -152,3 +152,52 @@ test('立ち位置の欠けた軸は 0 で埋まる（NaN を書き出さない�
   const s = serializeTimelineV3(tl).segments[0].takes[0].steps[0];
   assert.deepEqual(s.placement, { x: 0.2, z: 0, yawDeg: 0 });
 });
+
+// ---- 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）------------------------------
+
+// ⚠⚠ 卓にはまだ編集 UI が無く、3 周目 A / 4 周目 A の分割は show.json を**手で書く**。
+//    serializeStep はキーの白名簿なので、そこから漏れると 💾 保存の一押しで台本が消える。
+//    この 2 本はその往復だけを固定する（UI が付いても意味は変わらない）。
+test('左右分割と第 2 層は読み込み → 書き出しで往復する', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 3, camera: 0,
+      takes: [{
+        id: 'L3C0#0',
+        steps: [{
+          source: 'live', camera: 0,
+          splitX: 0.5, splitFlip: true, splitFreeze: true, overlay2CueId: 'plate_A',
+        }],
+      }],
+    }],
+  });
+  const s = serializeTimelineV3(tl).segments[0].takes[0].steps[0];
+  assert.equal(s.splitX, 0.5);
+  assert.equal(s.splitFlip, true);
+  assert.equal(s.splitFreeze, true);
+  assert.equal(s.overlay2CueId, 'plate_A');
+});
+
+test('分割を指定していないカットは 0 / false / 空で書き出す（幽霊の分割を作らない）', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{ lap: 1, camera: 0, takes: [{ id: 'L1C0#0', steps: [{ source: 'live', camera: 0 }] }] }],
+  });
+  const s = serializeTimelineV3(tl).segments[0].takes[0].steps[0];
+  assert.equal(s.splitX, 0);
+  assert.equal(s.splitFlip, false);
+  assert.equal(s.splitFreeze, false);
+  assert.equal(s.overlay2CueId, '');
+});
+
+test('splitX は 0..1 へ丸める（枠の外を指す台本を実機へ配らない）', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 3, camera: 0,
+      takes: [{ id: 'L3C0#0', steps: [{ source: 'live', camera: 0, splitX: 1.8 }] }],
+    }],
+  });
+  assert.equal(serializeTimelineV3(tl).segments[0].takes[0].steps[0].splitX, 1);
+});
