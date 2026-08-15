@@ -10,7 +10,9 @@ namespace FixedCamVr.Diagnostics.Tests
     /// **体験者の視界に文字を出さない**（2026-08-07 制定・ユーザー指摘「体験者が被っているときに
     /// 表示する文字、世界観を壊すので消してください。スタッフの時は表示していい」）。
     ///
-    /// HMD 内の文字面は 3 つあり、どれも <see cref="StatusHud.StaffViewing"/> という同じ門を通す。
+    /// スタッフ向けの面は <see cref="StatusHud.StaffViewing"/> という同じ門を通す。
+    /// ⚠ <b>例外が 1 つある</b> — 報告ボタンの面（<see cref="VisitorMarkPanel"/>）は体験者に見せる
+    /// （2026-08-15・<c>canon/LEDGER.md</c> 0046）。門を足させないための test も下にある。
     /// この不変条件は<b>破れても沈黙する</b> — 実機を被って初めて分かり、ログにも `[XP]` にも出ない。
     /// だから門の判断だけは機械で固定しておく。
     ///
@@ -122,6 +124,27 @@ namespace FixedCamVr.Diagnostics.Tests
             // 「居ない → false」を EditMode で確かめると環境依存のテストになる（書かない）。
             Wire(fader, "_hud", null);
             Assert.That(Gate(fader), Is.False, "判定できないときは出さない側へ倒す");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>報告ボタンの面だけは門を通さない。</b> 2026-08-15 にユーザーがこの 1 面を名指しで
+        /// 求めた（<c>canon/LEDGER.md</c> 0046「コントローラーの少し上、少し奥に、小さいスクリーンを
+        /// 置いておいて、そこに、(X,Yで異変を報告) みたいに書いておいてほしい」）。
+        ///
+        /// このテストは<b>門を足させないため</b>にある。上の 3 面と並べて読むと
+        /// 「体験者の視界に文字を出さない」に反しているように見えるので、
+        /// 規約に忠実な次のシュビーが善意で <c>StaffViewing()</c> を足しうる。
+        /// 足した瞬間、体験者には一生見えない面になる（しかも誰も気づかない）。
+        /// </summary>
+        [Test]
+        public void VisitorMarkPanel_IsNotGatedByStaffViewing()
+        {
+            var panel = Spawn<VisitorMarkPanel>();
+
+            MethodInfo? gate = panel.GetType().GetMethod("StaffViewing",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(gate, Is.Null,
+                "報告ボタンの面は体験者に見せる（canon/LEDGER.md 0046）。StaffViewing の門を足さないこと");
         }
     }
 }

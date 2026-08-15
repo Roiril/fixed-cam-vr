@@ -15,10 +15,14 @@ namespace FixedCamVr.Tracking
         public const int DefaultSlots = 5;
 
         // 進捗バーの塗り / 空セル。全角ブロックで HMD でも視認しやすい。
-        private const char Filled = '▓';
+        // ⚠ 塗りは 2026-08-15 に ▓（75% 網掛け）から █（全塗り）へ変えた。同じ字を使う
+        //    報告のゲージ（10 目盛・1 文字 1.9°）を CPU で描いて見たら、**▓ が斜めの網目に
+        //    なって空セル ░ との差が潰れていた**（同じフォントを TMP も焼く）。
+        //    ⚠ 変えたら `menu hud-font` を再実行する（新しい字はベイクされていない）。
+        private const char Filled = '█';
         private const char Empty = '░';
 
-        /// <summary>進捗 t/hold を <paramref name="slots"/> 目盛のバー "▓▓▓░░" へ。境界は [0,1] にクランプ。</summary>
+        /// <summary>進捗 t/hold を <paramref name="slots"/> 目盛のバー "███░░" へ。境界は [0,1] にクランプ。</summary>
         public static string ProgressBar(float t, float hold, int slots = DefaultSlots)
         {
             if (slots < 1) slots = 1;
@@ -30,7 +34,7 @@ namespace FixedCamVr.Tracking
         }
 
         /// <summary>
-        /// ホールド平均サンプリング中の 1 行目。例: "計測中 ▓▓▓░░  0.3/0.5s"。毎フレーム呼ぶ想定。
+        /// ホールド平均サンプリング中の 1 行目。例: "計測中 ███░░  0.3/0.5s"。毎フレーム呼ぶ想定。
         /// </summary>
         public static string SamplingLine(float t, float hold)
         {

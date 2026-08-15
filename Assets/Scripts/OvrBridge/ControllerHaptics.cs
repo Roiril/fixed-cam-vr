@@ -45,8 +45,15 @@ namespace FixedCamVr.OvrBridge
         /// <summary>長押しカウント進行の進捗 [0,1]。0（or 1）で HoldTick 停止。</summary>
         public void SetHoldProgress(float progress01) => _logic.SetHoldProgress(progress01);
 
-        /// <summary>体験者の記録ボタン（左 X）を受け取った。<b>これだけが体験者への返り。</b></summary>
+        /// <summary>体験者の報告ボタン（左 X / 左 Y）の 2 秒長押しが通った。<b>返すのはこれだけ。</b></summary>
         public void LeftMark() => _left.Trigger(HapticSequenceLogic.Pattern.Action);
+
+        /// <summary>
+        /// 体験者の長押しカウント進行の進捗 [0,1]（左）。0（or 1）で HoldTick 停止。
+        /// <b>右の <see cref="SetHoldProgress"/> と混ぜない</b> — スタッフの長押しが体験者の手に
+        /// 伝わると、世界の外の合図になる。
+        /// </summary>
+        public void SetLeftHoldProgress(float progress01) => _left.SetHoldProgress(progress01);
 
         /// <summary>
         /// <b>上司から連絡が届いた</b>（左）。<see cref="LeftMark"/> と<b>別のパターンにする</b> —

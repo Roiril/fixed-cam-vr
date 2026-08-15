@@ -22,6 +22,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string MainScenePath = "Assets/Scenes/Main.unity";
         private const string CenterEyePath = "OVRCameraRig/TrackingSpace/CenterEyeAnchor";
         private const string RightHandPath = "OVRCameraRig/TrackingSpace/RightHandAnchor";
+        private const string LeftHandPath = "OVRCameraRig/TrackingSpace/LeftHandAnchor";
         private const string LogicGroupName = "=== Logic ===";
         private const string StreamingName = "[Streaming]";
         private const string ZonesName = "[Zones]";
@@ -29,6 +30,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string TrackerName = "[Tracker]";
         private const string StatusHudName = "StatusHud";
         private const string ControllerGuideName = "ControllerGuide";
+        private const string VisitorMarkName = "VisitorMark";
         private const string DiagnosticsName = "Diagnostics";
         private const string DebugHudName = "DebugHud"; // 旧構成の掃除用（削除対象）
         private const string StartupFaderName = "StartupFader";
@@ -99,6 +101,7 @@ namespace FixedCamVr.Streaming.EditorTools
             DeleteIfExists($"{LogicGroupName}/{TrackerName}");
             DeleteIfExists($"{LogicGroupName}/{StatusHudName}");
             DeleteIfExists($"{LogicGroupName}/{ControllerGuideName}");
+            DeleteIfExists($"{LogicGroupName}/{VisitorMarkName}");
             DeleteIfExists($"{LogicGroupName}/{DiagnosticsName}");
             DeleteIfExists($"{CenterEyePath}/{DebugHudName}");   // 旧 HUD Canvas（統合前）
             DeleteIfExists($"{CenterEyePath}/{StartupFaderName}");
@@ -579,6 +582,16 @@ namespace FixedCamVr.Streaming.EditorTools
             else
                 Debug.LogWarning($"[MainDemoSceneSetup] '{RightHandPath}' が無いため ControllerGuidePanel の生成をスキップ。");
 
+            // 4.3. VisitorMarkPanel（体験者専用・左コントローラに追従する報告ボタンの面）。
+            //      「(X,Yで異変を報告)」と長押しゲージだけを出す。⚠ **StaffViewing の門は通さない**
+            //      （canon/LEDGER.md 0046 でユーザーがこの 1 面だけを名指しで求めた）。
+            VisitorMarkPanel? markPanel = null;
+            var leftHand = GameObject.Find(LeftHandPath);
+            if (leftHand != null)
+                markPanel = CreateVisitorMarkPanel(logic.transform, leftHand.transform, centerEye.transform);
+            else
+                Debug.LogWarning($"[MainDemoSceneSetup] '{LeftHandPath}' が無いため VisitorMarkPanel の生成をスキップ。");
+
             // 4.5. Diagnostics（HUD には出さない診断: [HudDump] ログ + HMD 軌跡 CSV + Editor H トグル）
             CreateDiagnostics(logic.transform, registry, tracker, centerEye.transform, statusHud);
 
@@ -600,6 +613,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (haptics != null) TrySetObjectRef(bridgeSo, "haptics", haptics);
                 // スタッフ用コントローラ操作ガイド（モード遷移で本文を切替・接続状態を push）。
                 if (guidePanel != null) TrySetObjectRef(bridgeSo, "guidePanel", guidePanel);
+                // 体験者の報告ボタンの面（長押しの進捗と接続状態を push）。
+                if (markPanel != null) TrySetObjectRef(bridgeSo, "markPanel", markPanel);
                 // タイトル画面。**A の意味がここで分岐する**（立っていれば閉じる / 無ければカメラ送り）。
                 if (titleScreen != null) TrySetObjectRef(bridgeSo, "titleScreen", titleScreen);
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
@@ -610,7 +625,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（タイトル画面「廻リ視」・導入の段 0 に被さる・右 A で閉じる） / OvrBridge（右手 4 入力: A=タイトルを閉じて体験を始める / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録。カメラ手動送りは 2026-08-12 に撤去）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / VisitorMarkPanel（体験者専用・左コントローラ追従・X/Y 2 秒長押しで異変を報告） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（タイトル画面「廻リ視」・導入の段 0 に被さる・右 A で閉じる） / OvrBridge（右手 4 入力: A=タイトルを閉じて体験を始める / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録。カメラ手動送りは 2026-08-12 に撤去）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
@@ -1165,6 +1180,57 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetFloat(so, "heightOffset", 0.12f);
             TrySetFloat(so, "awayOffset", 0.06f);
             TrySetFloat(so, "smoothTime", 0.15f);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            return panel;
+        }
+
+        // 体験者の報告ボタンの面（左コントローラに追従する小さな文字）を作る。
+        // ⚠ **枠も背景も持たない**（ユーザー指定「文字だけで枠線も背景もいらない」）ので Image は足さない。
+        // ⚠ 大きさは「1 文字の見かけ角」で決める（rules/show-design.md）。手元まで約 0.45m なので、
+        //    fontSize 30 × canvas scale 0.0005 = 1 文字 0.015m ＝ **見かけ 1.9°**（下限 1.5°）。
+        private static VisitorMarkPanel CreateVisitorMarkPanel(Transform parent,
+            Transform controller, Transform head)
+        {
+            var canvasGo = new GameObject(VisitorMarkName);
+            canvasGo.transform.SetParent(parent, worldPositionStays: false);
+
+            var canvas = canvasGo.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvasGo.AddComponent<UnityEngine.UI.CanvasScaler>();
+
+            var rt = (RectTransform)canvasGo.transform;
+            // sizeDelta 620 × 0.0005 = 0.31m 幅（「(X,Yで異変を報告)」は約 0.19m なので折り返さない）。
+            rt.sizeDelta = new Vector2(620f, 220f);
+            rt.localScale = Vector3.one * 0.0005f;
+
+            var textGo = new GameObject("VisitorMarkText");
+            textGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
+            var textRt = textGo.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.anchoredPosition = Vector2.zero;
+            textRt.sizeDelta = Vector2.zero;
+            textRt.localScale = Vector3.one;
+            textRt.localPosition = Vector3.zero;
+
+            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = "";
+            tmp.fontSize = 30f;
+            tmp.color = new Color(0.82f, 0.78f, 0.72f, 1f);   // 連絡の面（CommsPanel）と同じ声
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.enableWordWrapping = false;
+            tmp.richText = false;
+
+            var panel = canvasGo.AddComponent<VisitorMarkPanel>();
+            var so = new SerializedObject(panel);
+            TrySetObjectRef(so, "text", tmp);
+            TrySetObjectRef(so, "controller", controller);
+            TrySetObjectRef(so, "head", head);
+            // 配置の既定（prefab-YAML 未反映罠を避けるため setup が明示的に書く）。
+            TrySetFloat(so, "heightOffset", 0.10f);
+            TrySetFloat(so, "awayOffset", 0.07f);
+            TrySetFloat(so, "smoothTime", 0.12f);
             so.ApplyModifiedPropertiesWithoutUndo();
 
             return panel;

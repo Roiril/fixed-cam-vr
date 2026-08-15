@@ -21,7 +21,12 @@ namespace FixedCamVr.OvrBridge
     /// ⚠ <b>A のカメラ手動送りは 2026-08-12 に撤去した</b>（ユーザー宣言「カメラの手送り機能は
     /// 要らないです」）。A は<b>タイトルを閉じる 1 つだけ</b>で、閉じた後の A は何もしない。
     /// キーボード経由の切替（<c>CameraSwitchInput</c> の Tab / 1-9・Editor 用）は残っている。
-    /// 体験者はコントローラを持たないため封印モード（旧 Run/Staff）・左手・スティック・cue 試射は撤去した。
+    /// 封印モード（旧 Run/Staff）・スティック・cue 試射は撤去した。
+    ///
+    /// <b>左は体験者の手。読むのは X / Y だけ</b>（2026-08-15・<c>canon/LEDGER.md</c> 0042 / 0046）:
+    /// どちらを押しても同じで、<b>2 秒長押し</b>で異変の報告になる（<see cref="VisitorMarkHoldLogic"/>）。
+    /// 押し方と進捗は左コントローラに追従する <see cref="VisitorMarkPanel"/> が出す。
+    /// スティック・トリガー・グリップ・A/B は左からは 1 ビットも読まない。
     /// HMD 非装着→SignalLostFx / OS recenter→CourseFrame.MarkNeedsReRegistration のパッシブ系は現状維持。
     /// </summary>
     public sealed class OvrControllerBridge : MonoBehaviour
@@ -51,6 +56,10 @@ namespace FixedCamVr.OvrBridge
                  "null でも全機能は従来通り動く（ガイドが出ないだけ）。")]
         [SerializeField] private ControllerGuidePanel? guidePanel;
 
+        [Tooltip("体験者の報告ボタンの面（左コントローラに追従）。押し方と長押しゲージを出す。" +
+                 "null でも報告そのものは動く（面が出ないだけ）。")]
+        [SerializeField] private VisitorMarkPanel? markPanel;
+
         [Header("Haptics")]
         [Tooltip("右コントローラの触覚フィードバック（[Streaming] 上・ControllerHaptics）。null でも全機能は従来通り動く" +
                  "（振動が鳴らないだけ）。押下の受理 / 長押し進行 / 発火 / 失敗を振動で伝える。")]
@@ -79,6 +88,9 @@ namespace FixedCamVr.OvrBridge
         // モード状態機械（純ロジック。入力を bool/float で Tick する）。
         private readonly ControllerModeLogic _modeLogic = new();
 
+        // 体験者の報告ボタン（左 X / 左 Y）の 2 秒長押し（純ロジック）。
+        private readonly VisitorMarkHoldLogic _markHold = new();
+
         // OS recenter 購読済みフラグ（OVRManager.display は初期化順で null のことがあるためリトライする）。
         private bool _recenterSubscribed;
 
@@ -91,6 +103,10 @@ namespace FixedCamVr.OvrBridge
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
 
             if (titleScreen == null) titleScreen = FindObjectOfType<TitleScreen>();
+
+            // 体験者の報告ボタンの面。⚠ **ここで 1 度だけ探す**（毎フレーム FindObjectOfType を
+            // 走らせない）。シーンを焼いていなければ見つからず、報告そのものは面が無くても動く。
+            if (markPanel == null) markPanel = FindObjectOfType<VisitorMarkPanel>();
 
             // 導入演出は「HMD を被った状態で」始める。Streaming asmdef は OVR を参照しない規約なので、
             // Assembly-CSharp 側のここから判定を差し込む（未設定なら被っている扱いで従来どおり動く）。
@@ -194,7 +210,7 @@ namespace FixedCamVr.OvrBridge
             // ここに置くのは、既存シーン / prefab へコンポーネントを 1 個増やさずに済ませるため。
             DisplayRateRequester.Tick(Time.unscaledDeltaTime);
 
-            // ---- 入力を 1 回だけ読む（右手のみ。同じボタンを複数箇所で拾わないため）----
+            // ---- 入力を 1 回だけ読む（同じボタンを複数箇所で拾わないため）----
             // Button.One/Two はコントローラ未指定だと両手から拾う（One=A|X 等）ため、必ず RTouch を明示する。
             bool aDown = OVRInput.GetDown(primaryButton, OVRInput.Controller.RTouch); // A: タイトルを閉じる / マーク・やり直し
             bool aHeld = OVRInput.Get(primaryButton, OVRInput.Controller.RTouch);     // A: 押しっぱなし（登録のホールド平均用）
@@ -203,6 +219,18 @@ namespace FixedCamVr.OvrBridge
             bool rTrigger = OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
             bool gripDown = OVRInput.GetDown(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
             bool triggerDown = OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
+
+            // ---- 体験者の手（左）。**X でも Y でもよい**（2026-08-15・canon/LEDGER.md 0046）----
+            // ⚠⚠ **`Button.Three` / `Button.Four` を `Controller.LTouch` と組み合わせてはいけない。**
+            //    LTouch の仮想マップは `Three = RawButton.None` / `Four = RawButton.None` で
+            //    （`OVRInput.cs` の `OVRControllerLTouch`）、**押しても永遠に false になる**。
+            //    Three=X / Four=Y が生きているのは左右をまとめた `Controller.Touch` のマップだけで、
+            //    `ShouldResolveController` は LTouch 指定のとき Touch を弾く。
+            //    2026-08-15 まで記録ボタンはこの形で書かれていて、**実機で一度も発火していなかった**
+            //    （実機で押した記録が無く、ログにも `[XP] ev=mark` が 1 行も出ていない）。
+            // ⇒ **物理ボタンを名指しする `RawButton` を使う**（X / Y は左にしか無いので取り違えない）。
+            bool leftMarkHeld = OVRInput.Get(OVRInput.RawButton.X | OVRInput.RawButton.Y,
+                                             OVRInput.Controller.LTouch);
 
             // 監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る＝「入力は届いている」）。
             // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。
@@ -234,6 +262,31 @@ namespace FixedCamVr.OvrBridge
                 registrationActive = regActive,
             });
             ControllerModeLogic.Mode mode = _modeLogic.Current;
+
+            // ---- 体験者の報告（左 X / 左 Y の 2 秒長押し）-------------------------------
+            // 紙（調査依頼書）の「気になるものが見えたら、手元のボタンを押してください」が指しているのがこれ。
+            // **体験者が持つ唯一の入力**で、左コントローラは他に何も読まない。
+            //
+            // ⚠ 体験の進行には 1 ビットも使わない（押さなくても同じように進む）。
+            //    正誤も返さない — 返すと答え合わせになり、装置が「何が異変か」を判定してしまう。
+            // ⚠ **短押しでは通さない**（2026-08-15）。歩きながら握り込むので、押した瞬間に決まると
+            //    「触れただけ」が報告になる。位置合わせの点サンプルと同じ「意思のある長押し」にする。
+            // ⚠ 位置合わせ中（スタッフ作業）は数えない。作業のあいだ手元でゲージが伸びない。
+            bool markFired = _markHold.Tick(Time.deltaTime,
+                                            leftMarkHeld && mode == ControllerModeLogic.Mode.Normal);
+            if (markFired)
+            {
+                showControl?.RecordVisitorMark();
+                haptics?.LeftMark();   // 返すのは「受け取った」の 1 種類だけ
+            }
+            if (markPanel != null)
+            {
+                markPanel.SetControllerConnected(OVRInput.IsControllerConnected(OVRInput.Controller.LTouch));
+                markPanel.SetMarkState(_markHold.Progress01, _markHold.Confirming);
+            }
+            // 長押しの手応えも左へ返す（右の HoldTick とは別の時間軸）。
+            // 進捗 1 で HoldTick は止まり、代わりに上の LeftMark が鳴る。
+            haptics?.SetLeftHoldProgress(_markHold.Progress01);
 
             // 長押しカウント進行を HoldTick 振動へ（トリガー入場 / グリップ ランリセット / 登録の 0.5s ホールド
             // 平均サンプリングの最大を流す。登録中は SampleHoldProgress01 が 0.5 秒ホールドの進行ランプを鳴らす）。
@@ -293,20 +346,8 @@ namespace FixedCamVr.OvrBridge
                     // B: ステータス表示トグル（真実源 IsVisible の反転）。
                     if (bDown) { ToggleStatus(); haptics?.Action(); }
 
-                    // ---- 体験者の記録ボタン（左 X）-------------------------------------
-                    // 紙（調査依頼書）の「違和感を認めるたび、手元のボタンを一度押してください。
-                    // ボタンを押した時刻は、自動的に記録されます」が指しているのがこれ。
-                    // **体験者が持つ唯一の入力**で、左コントローラは他に何も読まない。
-                    //
-                    // ⚠ 体験の進行には 1 ビットも使わない（押さなくても同じように進む）。
-                    //    正誤も返さない — 返すと答え合わせになり、装置が「何が異変か」を判定してしまう。
-                    // ⚠ `Button.Three` は X（左）。**LTouch を明示する** — 未指定だと両手から拾い、
-                    //    右の A と混ざる（troubleshooting.md の実害と同じ型）。
-                    if (OVRInput.GetDown(OVRInput.Button.Three, OVRInput.Controller.LTouch))
-                    {
-                        showControl?.RecordVisitorMark();
-                        haptics?.LeftMark();   // 返すのは「受け取った」の 1 種類だけ
-                    }
+                    // ⚠ 体験者の報告（左 X / 左 Y の 2 秒長押し）は**モードの外**で数える（上を見る）。
+                    //    ここに置くと位置合わせから戻った 1 フレームで進捗の押し戻しが起きる。
                     // グリップ長押し=ランリセット / トリガー長押し=Registration 入場は _modeLogic が担う。
                     break;
             }
@@ -336,6 +377,8 @@ namespace FixedCamVr.OvrBridge
                 FindObjectOfType<BgmDirector>()?.ResetRun();
                 FindObjectOfType<ShowRunDirector>()?.BeginRun();
             }
+            // 体験者が代わるので、進行中の報告の長押しと余韻も落とす。
+            _markHold.Reset();
             haptics?.Fire(); // 長押し発火（ランリセット）
             Debug.Log("[OvrBridge] Normal: ランリセット（右グリップ 2 秒長押し）");
         }

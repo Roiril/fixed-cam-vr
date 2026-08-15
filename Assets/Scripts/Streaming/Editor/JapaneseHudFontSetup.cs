@@ -117,10 +117,13 @@ namespace FixedCamVr.Streaming.EditorTools
                 //    `JapaneseHudFont.TryGet()` で同じアトラスを使うのに、ここに無かった ＝
                 //    文面の字がベイクされず実機で豆腐になる（`canon/LEDGER.md` 0035 の「声」と同じ型）。
                 "Assets/Scripts/Diagnostics/CommsPanel.cs",
+                // ⚠ 2026-08-15 追加: **体験者の報告ボタンの面**（VisitorMarkGuidance が文言を持つ）。
+                //    「(X,Yで異変を報告)」「報告中」「報告しました」。ゲージの █░ は下の記号保険にある。
+                "Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs",
             };
             var set = new System.Collections.Generic.SortedSet<char>();
             for (char c = ' '; c <= '~'; c++) set.Add(c);                       // ASCII 印字可能
-            foreach (char c in "▓░●○→⚠×📍。、・…％℃①②③④⑤") set.Add(c);      // 記号の取りこぼし保険
+            foreach (char c in "█▓░●○→⚠×📍。、・…％℃①②③④⑤") set.Add(c);     // 記号の取りこぼし保険
             foreach (string path in sources)
             {
                 if (!File.Exists(path)) { Debug.LogWarning($"[JapaneseHudFontSetup] 収集元が無い: {path}"); continue; }

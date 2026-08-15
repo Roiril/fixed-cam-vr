@@ -21,21 +21,21 @@ namespace FixedCamVr.Tracking.Tests
         [Test]
         public void ProgressBar_Full_AtHold()
         {
-            Assert.That(RegistrationGuidance.ProgressBar(0.5f, 0.5f, 5), Is.EqualTo("▓▓▓▓▓"));
+            Assert.That(RegistrationGuidance.ProgressBar(0.5f, 0.5f, 5), Is.EqualTo("█████"));
         }
 
         [Test]
         public void ProgressBar_Halfway_FillsHalf()
         {
             // 0.25/0.5 = 0.5 → 5 目盛の半分 = 3 塗り（AwayFromZero 丸め）+ 2 空。
-            Assert.That(RegistrationGuidance.ProgressBar(0.25f, 0.5f, 5), Is.EqualTo("▓▓▓░░"));
+            Assert.That(RegistrationGuidance.ProgressBar(0.25f, 0.5f, 5), Is.EqualTo("███░░"));
         }
 
         [Test]
         public void ProgressBar_ClampsOverAndUnder()
         {
             Assert.That(RegistrationGuidance.ProgressBar(-1f, 0.5f, 4), Is.EqualTo("░░░░"));
-            Assert.That(RegistrationGuidance.ProgressBar(9f, 0.5f, 4), Is.EqualTo("▓▓▓▓"));
+            Assert.That(RegistrationGuidance.ProgressBar(9f, 0.5f, 4), Is.EqualTo("████"));
         }
 
         // ---- SamplingLine ----
