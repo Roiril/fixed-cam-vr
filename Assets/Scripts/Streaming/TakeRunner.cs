@@ -564,6 +564,10 @@ namespace FixedCamVr.Streaming
             if (step.hold > 0.001f) director.HoldFrame(step.hold);
             else if (step.burn > 0.001f) director.BurnFrame(step.burn, step.burnSec);
 
+            // 左右分割（canon/LEDGER.md 0050）。**カットごとに毎回書く** — 前のカットの分割を
+            // 引き継がせない（引き継ぐと「分割を指定していないカット」で画が割れたままになる）。
+            director.ApplySplit(step.splitX, step.splitFlip, step.splitFreeze);
+
             Debug.Log($"[TakeRunner] {(d.takeStarted ? "演出開始" : "カット")} take={TakeId(d.takeIndex)} " +
                       $"step={d.stepIndex} source={source}" +
                       $"{(source == TakeSchema.SourceLive ? $" camera={step.camera}" : "")}");

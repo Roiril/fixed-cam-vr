@@ -728,8 +728,24 @@ namespace FixedCamVr.Streaming
         /// <summary>焼き付き（カットの <c>burn</c>）。いまの画が薄く残り、動いたものの跡だけが見える。</summary>
         public void BurnFrame(float amount, float sec) => feelFx?.Burn(amount, sec > 0f ? sec : 2.5f);
 
+        /// <summary>
+        /// 左右分割（カットの <c>splitX</c> / <c>splitFlip</c> / <c>splitFreeze</c>）。
+        /// 凍らせるときは**その瞬間の 1 枚**を捕まえてから量を上げる（順序が逆だと 1 フレーム前の画で止まる）。
+        /// </summary>
+        public void ApplySplit(float splitX, bool flip, bool freeze)
+        {
+            if (feelFx == null) return;
+            if (freeze) feelFx.CaptureFreezeFrame();
+            feelFx.SetSplit(splitX, flip, freeze ? 1f : 0f);
+        }
+
         /// <summary>凍結・焼き付きをすべて畳む（ラン開始・演出の中止・体験の終了）。</summary>
-        public void ClearFeelFx() => feelFx?.ResetAll();
+        public void ClearFeelFx()
+        {
+            feelFx?.ResetAll();
+            // ⚠ 分割も必ず畳む。残すと**画が割れたまま・左半分が凍ったまま**次の体験者へ持ち越される。
+            feelFx?.ClearSplit();
+        }
 
         /// <summary>遷移の見た目（黒 or 乱れ）を 0 に戻す。</summary>
         private void ClearTransitionVisual()
