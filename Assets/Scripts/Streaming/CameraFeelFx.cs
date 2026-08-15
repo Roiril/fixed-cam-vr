@@ -249,6 +249,7 @@ namespace FixedCamVr.Streaming
             CoarseBlocks = 0f;
             Mono = 0f;
             ApplyFrozen(false);
+            ClearSplit();
             Write();
         }
 
@@ -294,6 +295,56 @@ namespace FixedCamVr.Streaming
             Graphics.Blit(live, _echoTex);
             _material?.SetTexture(EchoTexId, _echoTex);
         }
+
+        // ---- 左右分割（canon/LEDGER.md 0050）--------------------------------------
+        //
+        //   3 周目 A（左＝反転したライブ → 凍結 → 1 周目の録画 / 右＝ライブ → 環境＋人形）と
+        //   4 周目 A（左＝大量の人形 / 右＝体験者人形＋環境）が使う。
+        //   **writer をここへ寄せる**のは、同じマテリアルを掴んでいる唯一のコンポーネントだから
+        //   （書き手が 2 つになると、どちらが最後に書いたかで画が変わる）。
+        //
+        //   ⚠ **演出の外では必ず 0 へ戻す。** 残すと画が割れたまま・凍ったままになる。
+        //   凍結が解けない事故をこの codebase は 4 回踏んでいる。
+
+        private static readonly int SplitXId = Shader.PropertyToID("_SplitX");
+        private static readonly int SplitFlipLeftId = Shader.PropertyToID("_SplitFlipLeft");
+        private static readonly int SplitFreezeLeftId = Shader.PropertyToID("_SplitFreezeLeft");
+        private static readonly int Overlay2TexId = Shader.PropertyToID("_Overlay2Tex");
+        private static readonly int Mask2TexId = Shader.PropertyToID("_Mask2Tex");
+        private static readonly int Overlay2ScaleId = Shader.PropertyToID("_Overlay2Scale");
+        private static readonly int Overlay2StrengthId = Shader.PropertyToID("_Overlay2Strength");
+
+        /// <summary>左右分割を設定する。<paramref name="splitX"/> が 0 なら分割なし。</summary>
+        /// <param name="splitX">分割位置（0..1・枠の座標）。境目は環境の縦線へ置く</param>
+        /// <param name="flipLeft">左半分だけ左右反転してライブを読む（環境が左右対称なカメラだけ）</param>
+        /// <param name="freezeLeft">左半分だけ凍らせる量（0..1）。1 で完全に止まる</param>
+        public void SetSplit(float splitX, bool flipLeft, float freezeLeft)
+        {
+            if (_material == null) return;
+            _material.SetFloat(SplitXId, Mathf.Clamp01(splitX));
+            _material.SetFloat(SplitFlipLeftId, flipLeft ? 1f : 0f);
+            _material.SetFloat(SplitFreezeLeftId, Mathf.Clamp01(freezeLeft));
+        }
+
+        /// <summary>第 2 の差し替え層（左右へ別の素材を同時に置く）。<paramref name="tex"/> が null なら消える。</summary>
+        public void SetOverlay2(Texture? tex, Texture? mask, Vector2 containScale, float strength)
+        {
+            if (_material == null) return;
+            _material.SetTexture(Overlay2TexId, tex);
+            _material.SetTexture(Mask2TexId, mask);
+            _material.SetVector(Overlay2ScaleId, new Vector4(containScale.x, containScale.y, 0f, 0f));
+            _material.SetFloat(Overlay2StrengthId, tex == null ? 0f : Mathf.Clamp01(strength));
+        }
+
+        /// <summary>分割と第 2 層を演出の外の状態へ戻す。**畳むすべての経路から呼ぶ**。</summary>
+        public void ClearSplit()
+        {
+            SetSplit(0f, false, 0f);
+            SetOverlay2(null, null, Vector2.one, 0f);
+        }
+
+        /// <summary>「いまの画」を凍結の 1 枚として捕まえる（全画面は凍らせない）。</summary>
+        public void CaptureFreezeFrame() => CaptureEcho();
 
         private void ApplyFrozen(bool on)
         {
