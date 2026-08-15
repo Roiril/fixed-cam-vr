@@ -14,7 +14,7 @@
 - [warm_palette.md](warm_palette.md) - 色は 7 箇所に散っている（post / 箱 / 題字 / 輪郭 / 構造線 / 人形 / 焼き込み）。暖色へ寄せたとき直した所と、直さなかった所の理由／彩度を上げないと色温度は 65% 捨てられる／赤は R を大きく取れば逆に明るくなる
 - [title_screen.md](title_screen.md) - タイトル画面「廻リ視」：壁を隠しているのは重みではなく描画順／題字は焼いた版 1 枚（4ch が別の意味を持つマスク・押し出さず 3 層を離す・かすれは割合から閾値を逆算）／Normal の A は閉じるだけ／組めなければ素通しへ倒す
 - [take_continuity.md](take_continuity.md) - 演出の待ち・連続・継ぎ目：持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が所有する／相乗り分岐にテストが無い
-- [show_run_skeleton.md](show_run_skeleton.md) - 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／凍結を増やさない
+- [show_run_skeleton.md](show_run_skeleton.md) - 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／凍結を増やさない／**終わり方の出口は 4 つ（合図・周回・時間切れ・卓）**
 - [glitch_and_latency.md](glitch_and_latency.md) - 乱れ演出と遅延計測：_Glitch と _SignalLost は別系統／post は 4 箇所同時に直す／絶対 E2E は測っていない（配信側に /clock が要る）
 - [screen_decay.md](screen_decay.md) - 周回で進む解像度の劣化：post ではなく別系統 uniform（対応表は C# にしかない）／段差を作らない 3 つの仕掛け／進むのは Run 相だけで終了では保持／3 周目の録画も同じだけ粗くなる（2026-08-06 の設計判断をユーザーが覆した）
 
@@ -30,6 +30,7 @@
 - [cg_compositing.md](cg_compositing.md) - CG合成を触る前に：像空間の3点／卓とUnityで数値を突き合わせる箇所2つ／画角は一度だけ測って固定（27cm→2cm）／ステンシルとRT depth24／較正UIは判断がcalib-session.js（テストを先に直す）・測っていない幾何を実測扱いしない・画角はlenses[]が正／**なじませは数値と絵を並べて見る（彩度はpostでは埋まらない・陰影をalbedoに比例させない・合成プレビューが実機より綺麗だった）**
 
 - [cg_actor_and_layer_traps.md](cg_actor_and_layer_traps.md) - CG人形を触る前に：レイヤ外部編集は消える(add_layerで足す)／EditModeスキニング固着／Remyは Generic・3.72m／Setupメニューのモーダルで Editor が止まる
+- [doll_reference_kit.md](doll_reference_kit.md) - 実物の市松人形を画像生成 AI に描かせる資料（tools/doll-ref/）。3D 用マスクは資料に使えない／写真は暗く緑に転ぶ／正面の T 字は撮影の都合／探針は目で置く
 
 - [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) - 2026-07-23 監査 11 件は全修正済み（EditMode 364/364・JVM 31/31）。実機確認チェックリストと P2 テスト候補はここ
 - [controller_input_final.md](controller_input_final.md) - コントローラは右手4入力が最終形（機能追加禁止・2026-07-23 ユーザー宣言）。ToggleActiveCameraCue は未配線デッドコード
