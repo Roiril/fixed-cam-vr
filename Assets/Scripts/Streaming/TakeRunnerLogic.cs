@@ -381,6 +381,13 @@ namespace FixedCamVr.Streaming
             SetCurrentStepEnd(now);
         }
 
+        /// <summary>
+        /// 走行中のカットが「体験者の報告」を待っているか。
+        /// <b>自動走行が押す真似をするために公開する</b> — 押されないと締めのカットは実機で
+        /// 一度も検証されない（走行はコントローラを持たない）。
+        /// </summary>
+        public bool IsWaitingForMark => _running && CurrentStepWait() == WaitMark;
+
         /// <summary>走行中のカットが待っている線の slot index（待っていなければ -1）。</summary>
         private int CurrentStepLine()
         {

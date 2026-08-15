@@ -79,6 +79,9 @@ namespace FixedCamVr.Streaming
         /// <summary>体験者の報告を演出へ中継する（untilMark のカットだけが反応する）。</summary>
         public void NotifyVisitorMark() => takeRunner?.NotifyVisitorMark();
 
+        /// <summary>走行中のカットが体験者の報告を待っているか（自動走行の検証用）。</summary>
+        public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;
+
         /// <summary>走行中の演出の id（卓のモニタ用。走っていなければ空）。</summary>
         public string ActiveTakeId => takeRunner != null ? takeRunner.ActiveTakeId : "";
 

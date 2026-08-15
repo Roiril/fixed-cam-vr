@@ -365,6 +365,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void NotifyVisitorMark() => _logic.NotifyMarkPressed(Now);
 
+        /// <summary>走行中のカットが体験者の報告を待っているか（自動走行が押す真似をするのに読む）。</summary>
+        public bool IsWaitingForVisitorMark => _logic.IsWaitingForMark;
+
         /// <summary>ラン開始（体験者交代）。走行中の演出を畳み、once をクリアする。</summary>
         public void ResetRun()
         {
@@ -460,7 +463,16 @@ namespace FixedCamVr.Streaming
 
             Vector2 xz = head();
             _lineCross.Tick(now, xz.x, xz.y, dt);
-            return _lineCross.StateView;
+            // 横断は事象なので、起きた瞬間に 1 行出す。**これが無いと「線が踏まれたのか、
+            // 踏まれたのに効かなかったのか」を実機で切り分けられない**（2026-08-15 に実際に詰まった）。
+            LineCrossLogic.State[] st = _lineCross.StateView;
+            for (int i = 0; i < st.Length; i++)
+            {
+                if (!st[i].crossed) continue;
+                Debug.Log($"[TakeRunner] 線を横切った id={(i < _lineSlots.Count ? _lineSlots[i] : "?")} " +
+                          $"cam={st[i].camera} pos=({xz.x:F2},{xz.y:F2})");
+            }
+            return st;
         }
 
         // 復帰先 = 時計が確定している「いま体験者が居るゾーン」> 演出開始時のゾーン（未確定時のみ）。

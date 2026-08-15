@@ -98,6 +98,7 @@ namespace FixedCamVr.Tracking
         private CourseFrame? _frame;
         private ShowControlClient? _show;
         private ShowRunDirector? _run;
+        private TimelineDirector? _timeline;
 
         private void Start() => StartCoroutine(DriveRoutine());
 
@@ -238,9 +239,12 @@ namespace FixedCamVr.Tracking
                 if (wp.HoldSec > 0f)
                 {
                     Debug.Log($"[XPWalk] 到着 cam={wp.Camera} ({wp.Course.x:F2},{wp.Course.y:F2}) — {wp.HoldSec:F0}s 滞在");
-                    yield return new WaitForSeconds(wp.HoldSec);
+                    yield return StartCoroutine(HoldAndMaybeReport(wp.HoldSec));
                 }
             }
+
+            // 帰りの A で締めを待っているなら、そこでも押す（最後の区間は上のループを抜けた後）。
+            yield return StartCoroutine(HoldAndMaybeReport(ReportWaitSec + 2f));
 
             // 終了の判定は ShowRunDirector が握っている。歩き終わっても終わらないなら、
             // それ自体が観測結果（周回したのに終わらない = 周回検知の不具合）。
@@ -263,6 +267,7 @@ namespace FixedCamVr.Tracking
             _frame = FindObjectOfType<CourseFrame>();
             _show = FindObjectOfType<ShowControlClient>();
             _run = FindObjectOfType<ShowRunDirector>();
+            _timeline = FindObjectOfType<TimelineDirector>();
 
             var cam = Camera.main;
             _head = cam != null ? cam.transform : null;
@@ -292,6 +297,39 @@ namespace FixedCamVr.Tracking
         }
 
         // ---------------------------------------------------------------- 歩行
+
+        /// <summary>
+        /// 滞在しつつ、<b>「報告するまで」で止まっているカットがあれば 1 回だけ報告を押す</b>。
+        ///
+        /// <b>なぜ走行側に要るか</b>: 4 周目 A の締め（<c>durKind:"untilMark"</c>）は体験者の
+        /// 左 X / Y でしか進まない。走行はコントローラを持たないので、押す真似をしないと
+        /// <b>締めのカットは実機で一度も検証されない</b>（タイトルの A を押す真似と同じ理由）。
+        ///
+        /// ⚠ **押すのは 1 回だけ**。実機の体験者と同じ回数にしないと、終幕の報告数が嘘になる。
+        /// ⚠ 走っている演出が待っている時だけ押す（誰も待っていない所で押すと、
+        ///   「報告は進行に使わない」を検証している他の判定を汚す）。
+        /// </summary>
+        private IEnumerator HoldAndMaybeReport(float holdSec)
+        {
+            float t = 0f;
+            while (t < holdSec)
+            {
+                t += Time.deltaTime;
+                if (!_reported && _show != null && _timeline != null && _timeline.IsWaitingForVisitorMark)
+                {
+                    _reported = true;
+                    Debug.Log("[XPWalk] 異変を報告する（左 X の代わり）");
+                    _show.RecordVisitorMark();
+                }
+                yield return null;
+            }
+        }
+
+        // このランで報告を押したか（1 回だけ）。
+        private bool _reported;
+
+        /// <summary>締めのカットが報告を待ちうる時間（走行の最後にこれだけ粘る）。</summary>
+        private const float ReportWaitSec = 6f;
 
         /// <summary>体験エリアの外に出て少し立つ。封印の箱を見る時間（<see cref="SealBoxHoldSec"/>）。</summary>
         private const float SealBoxHoldSec = 4f;
