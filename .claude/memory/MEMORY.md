@@ -18,7 +18,7 @@
 - [glitch_and_latency.md](glitch_and_latency.md) - 乱れ演出と遅延計測：_Glitch と _SignalLost は別系統／post は 4 箇所同時に直す／絶対 E2E は測っていない（配信側に /clock が要る）
 - [screen_decay.md](screen_decay.md) - 周回で進む解像度の劣化：post ではなく別系統 uniform（対応表は C# にしかない）／段差を作らない 3 つの仕掛け／進むのは Run 相だけで終了では保持／3 周目の録画も同じだけ粗くなる（2026-08-06 の設計判断をユーザーが覆した）
 
-- [hmd_text_style.md](hmd_text_style.md) - HMD 内テキストの正（`HmdTextStyle` 1 か所）と、**2 回続けて実機で読めなくした 0.1 倍の罠**（3D の TMP は透視カメラで fontSize に 0.1 を掛ける）／見かけ角を測る道具 `menu text-audit`（textBounds も lineInfo.width も枠の幅を返すので使えない）／語の規約が 2 つの asmdef にまたがる話
+- [hmd_text_style.md](hmd_text_style.md) - HMD 内テキストの正（`HmdTextStyle` 1 か所）と、**2 回続けて実機で読めなくした 0.1 倍の罠**（3D の TMP は透視カメラで fontSize に 0.1 を掛ける）／見かけ角を測る道具 `menu text-audit`（textBounds も lineInfo.width も枠の幅を返すので使えない）／語の規約が 2 つの asmdef にまたがる話／**フォントの収集はコメントの日本語も焼く**（収集元 .cs のコメントを 1 行直すだけでビルドのガードが落ちる・文字数が減っても慌てない）
 
 - [sound_pipeline.md](sound_pipeline.md) - 音を作る道具と、耳を使わずに判定する方法。**計器の方が 4 回嘘をついた**（true peak / 直流の発散 / 書き出しでの再正規化 / 継ぎ目の物差し）／内蔵スピーカーは 200Hz 以下を返さない・遅延で広げるとモノで消える／実機ログとテストがそれぞれ実装の欠陥を 1 件ずつ捕まえた
 
