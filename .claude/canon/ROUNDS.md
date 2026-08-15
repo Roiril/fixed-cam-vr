@@ -942,3 +942,19 @@
 3. **③ は自動走行では出ない（いまのまま焼くと）。** `ShowWalkDebugDriver` は
    `IsWaitingForVisitorMark` が立った**その場で**押すので、3 秒の間が生まれない
    ⇒ 走行側にためらいを入れないと、③ は実機で一度も検証されない
+
+差: **まだ出ていない（実機に届いていない）。**
+
+APK は焼けた（`Builds/mawarimi.apk` 140.8 MB・07:04）が、**Quest が 1 台も繋がっていない**。
+繋がっていたのは配信スマホの Pixel 7a 1 台だけで、`adb devices` に 1 行出たのを Quest と読んで
+そこへ入れてしまった（`quest-fleet.py list` なら 1 行目で「Quest ではないので対象外」と言っていた）。
+誤って入れた `com.roiril.mawarimi` は剥がしてある。
+
+⇒ **予測 1〜3 は開いたまま。** Quest（`2G0YC1ZF890864` か `2G0YC1ZF7S06BW`）を繋いで:
+
+```
+adb install -r --no-streaming Builds/mawarimi.apk
+py -3.11 tools/quest-record.py --sec 240 --walk
+```
+
+レポートの **「## 上司からの連絡」**節が 3 つとも判定する（②の食い違いは FAIL で出る）。
