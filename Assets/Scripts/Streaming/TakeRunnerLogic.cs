@@ -45,7 +45,14 @@ namespace FixedCamVr.Streaming
             public bool yieldOnZoneChange; // true=yield（体験者が区間を移ったら打ち切る）/ false=hold
             // カットごとの尺。負値は「外部通知待ち」で、値が待つ相手を表す:
             //   WaitClipEnd (-1) = 素材の終端  /  WaitZoneChange (-2) = 次の区間確定
+            //   WaitLine (-3)      = この床の線を横切るまで（待つ線は stepLineIndex が持つ）
             public float[] stepDurSec;
+
+            /// <summary>
+            /// カットごとに待つ線の slot index（<c>-1</c> = 線を待たない）。<see cref="stepDurSec"/> が
+            /// <see cref="WaitLine"/> のカットだけが読む。**null なら全カットが線を待たない**（後方互換）。
+            /// </summary>
+            public int[]? stepLineIndex;
 
             // 開始規則「このラインを通過したら」（at=line）。onExit=false と併用する。
             public bool onLine;         // true = 時刻ではなく床のラインの横断で発火する
@@ -138,6 +145,10 @@ namespace FixedCamVr.Streaming
         private int _activeTake = -1;
         private int _activeStep = -1;
         private float _stepEnd;
+        // 現カットが始まった時刻。線待ち（WaitLine）で「始まる前に横切った」を数えないために要る
+        // — 横断には CrossLatchSec(0.6s) の猶予があるので、これが無いと区間へ入る途中で踏んだ線が
+        //   カットの開始直後に効いて、1 カット目が一瞬で飛ぶ。
+        private float _stepBeganAt = float.NegativeInfinity;
         private float _deadline;
         private int _baseZoneCam;
 
@@ -253,6 +264,10 @@ namespace FixedCamVr.Streaming
             //    ここで拾わないと「別の演出が走っていた」だけで永久に失われる。
             LatchReady(now, lines);
 
+            // ①' 線待ちのカット（durKind:"untilLine"）は、待っている線を横切った時点で畳む。
+            //     武装と同じ猶予・同じ担当カメラ照合を使う（別の区間の線では進まない）。
+            EndStepIfLineCrossed(now, lines);
+
             // ② 持ち越しの寿命。塞いでいた演出がいつまでも終わらない / 体験者が遠くまで行ってしまった
             //    場合に、著作した演出が延々と待ち続けるのを止める（捨てるときは必ず報告する）。
             ExpireCarry(now);
@@ -274,6 +289,7 @@ namespace FixedCamVr.Streaming
                     if (next < durs.Length)
                     {
                         _activeStep = next;
+                        _stepBeganAt = now;
                         _stepEnd = StepEndTime(now, durs[next]);
                         return BeginStepDecision(takeStarted: false);
                     }
@@ -317,6 +333,45 @@ namespace FixedCamVr.Streaming
         /// <summary>外部通知待ちの印。<see cref="Def.stepDurSec"/> にこの値が入っていると尺は無限大になる。</summary>
         public const float WaitClipEnd = -1f;
         public const float WaitZoneChange = -2f;
+        public const float WaitLine = -3f;
+
+        /// <summary>
+        /// 尺が <c>untilLine</c> のカットを、体験者がその線を横切った時点で畳む
+        /// （<see cref="TakeRunner"/> が横断検出から呼ぶ）。
+        ///
+        /// ⚠ **待っている線だけで終わる。** 別の線を横切っても進まない — 1 つの区間に線を 2 本引く
+        ///   のが 3 周目 A の設計なので（左＝録画の開始地点 / 右＝凍結点）、どの線でも終わる作りにすると
+        ///   入ってくる途中で踏んだ線で凍ってしまう。
+        /// </summary>
+        public void NotifyLineCrossed(float now, int lineIndex)
+        {
+            if (lineIndex < 0) return;
+            if (CurrentStepWait() != WaitLine) return;
+            if (CurrentStepLine() != lineIndex) return;
+            SetCurrentStepEnd(now);
+        }
+
+        // 線待ちのカットを、待っている線の横断で畳む。**カットが始まる前の横断は数えない** —
+        // 横断には猶予（CrossLatchSec）があるので、区間へ入る途中で踏んだ線がそのまま効いてしまう。
+        private void EndStepIfLineCrossed(float now, LineCrossLogic.State[]? lines)
+        {
+            if (lines == null || CurrentStepWait() != WaitLine) return;
+            int slot = CurrentStepLine();
+            if (slot < 0 || slot >= lines.Length) return;
+            LineCrossLogic.State s = lines[slot];
+            if (s.crossedAtSec < _stepBeganAt) return;
+            if (now - s.crossedAtSec > LineCrossLogic.CrossLatchSec) return;
+            if (!(s.camera < 0 || s.camera == _defs[_activeTake].camera)) return;
+            SetCurrentStepEnd(now);
+        }
+
+        /// <summary>走行中のカットが待っている線の slot index（待っていなければ -1）。</summary>
+        private int CurrentStepLine()
+        {
+            if (!_running || _activeTake < 0 || _activeTake >= _defs.Length) return -1;
+            int[]? s = _defs[_activeTake].stepLineIndex;
+            return (s != null && _activeStep >= 0 && _activeStep < s.Length) ? s[_activeStep] : -1;
+        }
 
         /// <summary>
         /// 尺が <c>untilClipEnd</c> のカットで、素材の再生が終わったことを通知する
@@ -376,6 +431,7 @@ namespace FixedCamVr.Streaming
             _fired[index] = true;
             _baseZoneCam = baseZoneCam;
             float[] durs = _defs[index].stepDurSec;
+            _stepBeganAt = now;
             _stepEnd = StepEndTime(now, durs.Length > 0 ? durs[0] : 0f);
             _deadline = now + TakeSchema.ResolveMaxDuration(_defs[index].maxDurationSec);
         }

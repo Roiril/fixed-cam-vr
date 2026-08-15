@@ -74,6 +74,12 @@ export function resolveStepDuration(step, cue, getDuration, getRecSeconds) {
   if (step.durKind === TAKE.DUR_UNTIL_ZONE_CHANGE) {
     return { durSec: WAIT_ZONE_CHANGE, kind: 'untilZone' };
   }
+  // 「この線を横切るまで」は卓に体験者の実位置が無い（歩かせるシミュレータの座標はあるが、
+  // 横断判定を二重実装すると必ず実機とずれる）。**秒へ落とさず未確定として出す**
+  // — 推定に化けさせると、卓だけが違う所でカットを畳んで嘘のリボンになる。
+  if (step.durKind === TAKE.DUR_UNTIL_LINE) {
+    return { durSec: FALLBACK_STEP_DUR_SEC, kind: 'unknown' };
+  }
   if (step.durKind !== TAKE.DUR_UNTIL_CLIP_END) {
     return { durSec: step.durSec > 0 ? step.durSec : FALLBACK_STEP_DUR_SEC, kind: 'exact' };
   }

@@ -103,6 +103,8 @@ export const TAKE = {
   CG_FOLLOW: 'follow', CG_FIXED: 'fixed',
   SLOT_SCHEME: 'slot://',
   DUR_SEC: 'sec', DUR_UNTIL_CLIP_END: 'untilClipEnd', DUR_UNTIL_ZONE_CHANGE: 'untilZoneChange',
+  // 「この床の線を横切るまで」。区間の中で位置を待てる唯一の尺（canon/LEDGER.md 0050）。
+  DUR_UNTIL_LINE: 'untilLine',
   // TRANS_GLITCH = 黒ではなく「映像の乱れ」で覆って、その最中に差し替える（企画書 2.3）。
   TRANS_CUT: 'cut', TRANS_DIP: 'dip', TRANS_FADE: 'fade', TRANS_GLITCH: 'glitch',
   DEFAULT_MAX_DURATION_SEC: 45,
@@ -115,6 +117,8 @@ export function newStep(over = {}) {
     source: TAKE.SRC_LIVE, camera: -1, assetUrl: '', recLap: 0,
     cueId: '', strength: -1, fadeInSec: -1, fadeOutSec: -1, trimStartSec: -1, trimEndSec: -1,
     durKind: TAKE.DUR_SEC, durSec: TAKE.FALLBACK_STEP_DUR_SEC,
+    // durKind:'untilLine' のときに待つ床の線（layout.lines[].id）。演出の lineId とは別物。
+    lineId: '',
     transition: TAKE.TRANS_DIP, transitionMs: 0,
     // カット頭で 1 回だけ走らせる乱れ（遷移の glitch とは別物。注意・移動の誘導に使う）。
     glitch: 0, glitchSec: 0,
@@ -167,7 +171,9 @@ function serializeStep(s) {
     cueId: s.cueId || '',
     strength: num(s.strength, -1), fadeInSec: num(s.fadeInSec, -1), fadeOutSec: num(s.fadeOutSec, -1),
     trimStartSec: num(s.trimStartSec, -1), trimEndSec: num(s.trimEndSec, -1),
-    durKind: oneOf(s.durKind, [TAKE.DUR_SEC, TAKE.DUR_UNTIL_CLIP_END, TAKE.DUR_UNTIL_ZONE_CHANGE], TAKE.DUR_SEC),
+    durKind: oneOf(s.durKind,
+      [TAKE.DUR_SEC, TAKE.DUR_UNTIL_CLIP_END, TAKE.DUR_UNTIL_ZONE_CHANGE, TAKE.DUR_UNTIL_LINE], TAKE.DUR_SEC),
+    lineId: s.lineId || '',
     durSec: num(s.durSec, 0),
     transition: oneOf(s.transition,
       [TAKE.TRANS_CUT, TAKE.TRANS_DIP, TAKE.TRANS_FADE, TAKE.TRANS_GLITCH], TAKE.TRANS_DIP),

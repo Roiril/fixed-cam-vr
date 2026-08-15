@@ -260,8 +260,13 @@ namespace FixedCamVr.Streaming
                     bool onLine = t.IsLine;
                     bool hasLine = onLine && !string.IsNullOrEmpty(t.lineId);
                     anyLine |= hasLine;
+                    // カット側の線待ち（durKind:"untilLine"）も横断検出を要求する。**ここを落とすと
+                    // TickLines が回らず、線待ちのカットは watchdog まで永久に終わらない。**
+                    int[] stepLines = BuildStepLineIndices(t);
+                    foreach (int sl in stepLines) if (sl >= 0) { anyLine = true; break; }
                     defs.Add(new TakeRunnerLogic.Def
                     {
+                        stepLineIndex = stepLines,
                         lap = seg.lap,
                         camera = seg.camera,
                         onExit = t.IsExit,
@@ -331,12 +336,20 @@ namespace FixedCamVr.Streaming
         private void WarnMissingLines(LineCrossLogic.Line[] lines)
         {
             var missing = new List<string>();
+            void Check(string id)
+            {
+                if (string.IsNullOrEmpty(id)) return;
+                int slot = _lineSlots.IndexOf(id);
+                if (slot < 0 || slot >= lines.Length || !lines[slot].defined)
+                    if (!missing.Contains(id)) missing.Add(id);
+            }
             foreach (ShowTakeDef t in _takes)
             {
-                if (!t.IsLine || string.IsNullOrEmpty(t.lineId)) continue;
-                int slot = _lineSlots.IndexOf(t.lineId);
-                if (slot < 0 || slot >= lines.Length || !lines[slot].defined)
-                    if (!missing.Contains(t.lineId)) missing.Add(t.lineId);
+                if (t.IsLine) Check(t.lineId);
+                // カット側の線待ち（durKind:"untilLine"）も同じ警告に乗せる。実体の無い線を待つと
+                // **watchdog まで画が固まる**ので、演出側より沈黙が痛い。
+                foreach (ShowStepDef? st in t.steps ?? Array.Empty<ShowStepDef>())
+                    if (st != null && st.IsUntilLine) Check(st.lineId);
             }
             string key = string.Join(",", missing);
             if (key == _warnedMissingLines) return;
@@ -886,9 +899,31 @@ namespace FixedCamVr.Streaming
                 if (s == null) { durs[i] = TakeSchema.FallbackStepDurSec; continue; }
                 if (s.IsUntilClipEnd) { durs[i] = TakeRunnerLogic.WaitClipEnd; continue; }
                 if (s.IsUntilZoneChange) { durs[i] = TakeRunnerLogic.WaitZoneChange; continue; }
+                // 線待ちは**線が指定されているときだけ**。空 id を線待ちにすると watchdog まで固まる
+                //（演出側の「空 lineId は発火しない」と同じ流儀で、無効な指定は無害な側へ倒す）。
+                if (s.IsUntilLine && !string.IsNullOrEmpty(s.lineId))
+                { durs[i] = TakeRunnerLogic.WaitLine; continue; }
+                if (s.IsUntilLine)
+                    Debug.LogWarning("[TakeRunner] untilLine のカットにラインが未指定 → 既定尺で畳む");
                 durs[i] = s.durSec > 0f ? s.durSec : TakeSchema.FallbackStepDurSec;
             }
             return durs;
+        }
+
+        // カットごとに待つ線の slot index（-1 = 待たない）。**枠は必ず取る** — 線が layout より後から
+        // 来ても index が動かないようにするため（演出側の LineSlot と同じ理由）。
+        private int[] BuildStepLineIndices(ShowTakeDef take)
+        {
+            ShowStepDef[] steps = take.steps ?? Array.Empty<ShowStepDef>();
+            var idx = new int[steps.Length];
+            for (int i = 0; i < steps.Length; i++)
+            {
+                ShowStepDef s = steps[i];
+                idx[i] = (s != null && s.IsUntilLine && !string.IsNullOrEmpty(s.lineId))
+                    ? LineSlot(s.lineId)
+                    : -1;
+            }
+            return idx;
         }
     }
 }

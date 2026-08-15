@@ -158,8 +158,19 @@ namespace FixedCamVr.Streaming
         public PostParams? post;
         public bool hasPost;
 
+        /// <summary>
+        /// <c>durKind:"untilLine"</c> のときに待つ床の線（<c>layout.lines[].id</c>）。
+        /// **カットの中で位置に反応する唯一の口**で、3 周目 A の凍結点がこれを使う。
+        ///
+        /// ⚠ 演出の <c>lineId</c>（開始規則）とは別物。演出は「いつ始めるか」、カットは「いつ終えるか」。
+        ///   走行中の演出に別の演出は割り込めない（<see cref="TakeRunnerLogic"/> は Ready で待たせる）ので、
+        ///   「入った時から画を割っておいて、線を越えた瞬間に凍らせる」は**カットの側でしか書けない**。
+        /// </summary>
+        public string lineId = "";
+
         public bool IsUntilClipEnd => TakeSchema.IsUntilClipEnd(durKind);
         public bool IsUntilZoneChange => TakeSchema.IsUntilZoneChange(durKind);
+        public bool IsUntilLine => TakeSchema.IsUntilLine(durKind);
         public bool HasCg => !string.IsNullOrEmpty(cg);
     }
 
@@ -242,6 +253,17 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const string DurUntilZoneChange = "untilZoneChange";
 
+        /// <summary>
+        /// 「この床の線を横切るまで」（<c>steps[].lineId</c> と対）。体験者が線を越えた瞬間に畳む。
+        ///
+        /// ⚠ **区間の中で位置を待てる唯一の尺**。演出（Take）の開始規則にも <c>at:"line"</c> があるが、
+        ///   走行中の演出へ別の演出は割り込めないので、「区間へ入った時から画を割っておき、
+        ///   線を越えた瞬間に次のカットへ移る」はこちらでしか書けない（canon/LEDGER.md 0050）。
+        /// ⚠ 体験者が線を越えなければ終わらないので、watchdog（<see cref="DefaultMaxDurationSec"/>）が上限を保証する。
+        /// ⚠ 線は担当カメラを持つ。カットのカメラと食い違う線では横断を数えない（演出の <c>at:"line"</c> と同じ規約）。
+        /// </summary>
+        public const string DurUntilLine = "untilLine";
+
         public const string TransCut = "cut";
         public const string TransDip = "dip";
         public const string TransFade = "fade";
@@ -292,6 +314,8 @@ namespace FixedCamVr.Streaming
         public static bool IsUntilClipEnd(string? durKind) => durKind == DurUntilClipEnd;
 
         public static bool IsUntilZoneChange(string? durKind) => durKind == DurUntilZoneChange;
+
+        public static bool IsUntilLine(string? durKind) => durKind == DurUntilLine;
 
         /// <summary>source 判別子を正規化する。未知は <see cref="SourceLive"/> へ倒し known=false。</summary>
         public static string NormalizeSource(string? source, out bool known)

@@ -201,3 +201,27 @@ test('splitX は 0..1 へ丸める（枠の外を指す台本を実機へ配ら�
   });
   assert.equal(serializeTimelineV3(tl).segments[0].takes[0].steps[0].splitX, 1);
 });
+
+test('untilLine（この線を横切るまで）と step.lineId は往復する', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 3, camera: 0,
+      takes: [{
+        id: 'L3C0#0',
+        steps: [{ source: 'live', camera: 0, durKind: 'untilLine', lineId: 'line_freeze' }],
+      }],
+    }],
+  });
+  const s = serializeTimelineV3(tl).segments[0].takes[0].steps[0];
+  assert.equal(s.durKind, TAKE.DUR_UNTIL_LINE);
+  assert.equal(s.lineId, 'line_freeze');
+});
+
+test('未知の durKind は sec へ倒す（実機で警告だけ出る無効値を残さない）', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{ lap: 1, camera: 0, takes: [{ id: 'L1C0#0', steps: [{ source: 'live', durKind: 'untilTuesday' }] }] }],
+  });
+  assert.equal(serializeTimelineV3(tl).segments[0].takes[0].steps[0].durKind, TAKE.DUR_SEC);
+});
