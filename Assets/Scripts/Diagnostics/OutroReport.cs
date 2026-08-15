@@ -43,16 +43,24 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("視線中心からどれだけ下に置くか (度)。注意書きと同じ据わりにする。")]
         [SerializeField, Range(-20f, 20f)] private float pitchOffsetDeg = 2.0f;
 
-        [Tooltip("大きさの倍率。**注意書きと同じ値**（実機の画で StatusHud と比べて決めたもの）。")]
-        // ⚠ 倍率は transform の scale で掛ける（fontSize を上げるとメッシュの座標が広がるだけ）。
-        //    経緯は TitleNotice の同名フィールド（canon/LEDGER.md 0035）。
-        [SerializeField, Min(0.1f)] private float sizeScale = 8.5f;
-
         /// <summary>タイトルの黒・題字より後に描く Queue。<b>5000 を超えない</b>（URP の透明パスは [2501, 5000]）。</summary>
         private const int RenderQueue = 5000;
 
-        /// <summary>版の中の字の大きさ。<b>倍率は <see cref="sizeScale"/> が transform で掛ける。</b></summary>
+        /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
         private const float FontSize = 0.07f;
+
+        /// <summary>文字の並ぶ幅 (m)。注意書き（<see cref="TitleNotice"/>）と同じ枠。</summary>
+        private const float TextWidthM = 1.70f;
+
+        /// <summary>文字の並ぶ高さ (m)。</summary>
+        private const float TextHeightM = 1.00f;
+
+        /// <summary>
+        /// 文字の拡大率。<b>距離から逆算する</b>（<see cref="HmdTextStyle"/> が唯一の正）。
+        /// 手で持っていた 8.5 倍は 2026-08-15 に捨てた — 経緯は <see cref="TitleNotice"/> の同名。
+        /// </summary>
+        private float TextScale =>
+            HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, Mathf.Max(distanceM, 0.5f), FontSize);
 
         /// <summary>TMP の Overlay 版（<c>ZTest Always</c>）。<b>Always Included に入っている。</b></summary>
         private const string OverlayShaderName = "TextMeshPro/Distance Field Overlay";
@@ -116,12 +124,13 @@ namespace FixedCamVr.Diagnostics
                 tmp.enableWordWrapping = true;
                 tmp.richText = false;
                 // 注意書きと同じ抑えた白。純白だと黒の中で浮いて掲示物に見える。
-                tmp.color = new Color(0.80f, 0.77f, 0.73f, 1f);
+                tmp.color = HmdTextStyle.Ink;
 
                 var rt = (RectTransform)go.transform;
-                // 最長行は 12 文字（装置を外してください。）＝ 0.84。注意書きと同じ枠で足りる。
-                rt.sizeDelta = new Vector2(2.0f, 1.0f);
-                go.transform.localScale = Vector3.one * Mathf.Max(sizeScale, 0.1f);
+                // ⚠ 折り返し幅も scale で割る（固定値にすると字を直したとき枠だけ取り残される）。
+                float scale = TextScale;
+                rt.sizeDelta = new Vector2(TextWidthM / scale, TextHeightM / scale);
+                go.transform.localScale = Vector3.one * scale;
 
                 float rad = pitchOffsetDeg * Mathf.Deg2Rad;
                 float d = Mathf.Max(distanceM, 0.5f);

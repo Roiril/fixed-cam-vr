@@ -95,6 +95,9 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/Diagnostics/OutroReportText.cs',
                                     'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',
                                     'Assets/Scripts/Streaming/ShowRunDirector.cs') }
+    'text-audit'       = @{ Method = 'FixedCamVr.Streaming.EditorTools.HmdTextAudit.Run'
+                            Desc = 'HMD 内の文字を全面まとめて測る（1 文字の見かけ角 / 枠からのはみ出し。⚠ 大きさ・文言を触ったら通す）'
+                            Out = $null }
     'sound-import'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.SoundImportSetup.ApplySoundImportSettings'
                             Desc = '音の取り込み設定を揃える（⚠ 音を焼き直したら必須。正規化・Streaming が混ざると設計した音量が消える）'
                             Out = $null

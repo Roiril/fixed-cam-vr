@@ -80,7 +80,8 @@ Registration の A（点サンプル）は不変。入力面は右手 4 入力�
 - `StreamingLogic.prefab` の YAML と `StreamingLogicPrefabFieldsTests` を同じコミットで合わせた
   （テストは**ブロックを切り出して**stale キーを見る — `registry:` は同じ prefab の
   `CameraSwitchInput` にもあるので全文検索だと誤検出する）
-- `ControllerGuidePanel.ShowTransient` は呼び出し元が消えて**未参照**。API は残してある
+- `ControllerGuidePanel.ShowTransient` は呼び出し元が消えて未参照だった → **2026-08-16 に API ごと削除**
+  （`canon/LEDGER.md` 0052。`richText=false` の面へ色タグを流し込む形だったので、鳴っていたら生の `<color=…>` が出ていた）
 - `CameraSwitchDirector.Next()` は死んでいない（キーボードの `CameraSwitchInput` が使う）
 
 現場でカメラを見たいときは Web 卓の 📺 カメラ固定。**実機のコントローラからは送れない**。

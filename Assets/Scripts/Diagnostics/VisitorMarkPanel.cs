@@ -99,8 +99,10 @@ namespace FixedCamVr.Diagnostics
             {
                 var jp = JapaneseHudFont.TryGet();
                 if (jp != null) text.font = jp;
-                // 連絡の面（CommsPanel）と同じ色にする ＝ 同じ装置が喋っていると読める。
-                text.color = new Color(0.82f, 0.78f, 0.72f, 1f);
+                // 面ごとに色を決めない（HmdTextStyle が唯一の正）＝ 同じ装置が喋っていると読める。
+                text.color = HmdTextStyle.Ink;
+                // ゲージと見出しの大きさをリッチテキストで組む（VisitorMarkGuidance）。
+                text.richText = true;
             }
 
             ApplyBody();

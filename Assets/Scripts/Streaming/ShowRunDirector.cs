@@ -119,7 +119,11 @@ namespace FixedCamVr.Streaming
         /// <b>理由は書かない</b>（機器の言葉を体験の中に持ち込まない）。スタッフ向けの復帰手順は StatusHud。
         /// </summary>
         public string BlackoutMessage =>
-            _logic.Phase == ShowPhase.Intro && _intro != null && _intro.Aborted ? "少しお待ちください" : "";
+            // ⚠ 出す相手はスタッフだけ（体験者には黒しか見えない）。だから「少しお待ちください」では
+            //   なく**何が起きたか**を言う。語は RecoveryGuidance と揃える（同じ事象を 2 つの
+            //   名前で呼ぶと現場で照合できない）。
+            _logic.Phase == ShowPhase.Intro && _intro != null && _intro.Aborted
+                ? "部屋の位置がずれたので止めました" : "";
 
         /// <summary>
         /// 黒へ落とす時間 (秒)。終了は <see cref="EndFadeSec"/>（既定 1.5s ＝ 余韻）、中止は素早く閉じる

@@ -31,15 +31,21 @@ namespace FixedCamVr.Diagnostics
     public sealed class ControllerGuidePanel : MonoBehaviour
     {
         // 本文（このまま使う。装飾記号や英語見出しを足さない）。
+        // ⚠ 書式は `入力：動作` で固定（<see cref="HmdTextStyle"/> の規約）。
+        //   同じ操作を RecoveryGuidance も同じ名前で呼ぶ（「トリガー2秒」「グリップ2秒」「A」「B」）。
         private const string NormalBody =
             "A：タイトルを閉じて始める\n" +
-            "B：ステータス表示 切/入\n" +
+            // 旧「切/入」は日本語として逆で、しかもこの行だけ動詞で終わっていなかった。
+            "B：ステータス表示を切り替える\n" +
             // 「周回リセット」は開発語で、スタッフには何が起きるか分からない（廃語）。
             "グリップ2秒：新しい体験者にする\n" +
             "トリガー2秒：位置合わせを開始";
 
         private const string RegBody =
-            "A：この点を記録（押しながら静止）\n" +
+            // 押下か長押しかが読めない旧文（「A：この点を記録（押しながら静止）」）を、
+            // 動作の側へ条件を寄せて書き直した。
+            // ⚠ 位置合わせのガイダンス（CourseRegistrationController）と **1 字まで同じ**にする。
+            "A：押したまま 0.5 秒静止で記録\n" +
             "B：この位置合わせで確定\n" +
             "トリガー2秒：中止して戻る";
 
@@ -73,10 +79,11 @@ namespace FixedCamVr.Diagnostics
         // 右コントローラ接続状態。既定 true（push 前に「未接続で非表示」を誤発しない）。
         private bool _controllerConnected = true;
 
-        // 一時メッセージ（本文の上に赤 1 行で数秒だけ出す。期限で本文へ戻る）。
-        private const string TransientColor = "FF6655"; // TMP リッチテキストの赤
-        private string _transient = "";
-        private float _transientUntil;
+        // ⚠ 2026-08-15 に一時メッセージ（`ShowTransient` / 赤 1 行）を消した。
+        //    唯一の呼び出し元だった「演出中に A を押してカメラ手送りを拒否する」経路が
+        //    2026-08-12 に無くなっていた（`canon/LEDGER.md`「カメラの手送り機能は要らないです」）。
+        //    しかも**この面の TMP は richText=false で組まれていた**ので、仮に呼ばれていたら
+        //    `<color=#FF6655>` という文字列がそのまま実機に出ていた。
 
         private Vector3 _posVel;      // SmoothDamp の速度状態
         private bool _seeded;         // 初回配置済みか（初回はスナップして寄せる）
@@ -86,17 +93,6 @@ namespace FixedCamVr.Diagnostics
         public void SetMode(string label)
         {
             _modeLabel = label ?? "";
-            ApplyBody();
-        }
-
-        /// <summary>
-        /// 本文の上に赤 1 行で一時メッセージを出す（既定 2 秒）。期限で本文へ自動的に戻る。
-        /// transient 中に <see cref="SetMode"/> が来ても本文だけ差し替わり、赤行は維持される。
-        /// </summary>
-        public void ShowTransient(string message, float seconds = 2f)
-        {
-            _transient = message ?? "";
-            _transientUntil = Time.unscaledTime + Mathf.Max(0f, seconds);
             ApplyBody();
         }
 
@@ -120,7 +116,7 @@ namespace FixedCamVr.Diagnostics
             {
                 var jp = JapaneseHudFont.TryGet();
                 if (jp != null) text.font = jp;
-                text.color = new Color(0.9f, 1f, 0.95f, 1f); // StatusHud と同系の明色
+                text.color = HmdTextStyle.Ink;   // 面ごとに色を決めない（HmdTextStyle が唯一の正）
             }
 
             ApplyBody();
@@ -129,13 +125,6 @@ namespace FixedCamVr.Diagnostics
         private void LateUpdate()
         {
             if (text == null) return;
-
-            // 一時メッセージの期限切れで本文へ戻す（接続状態に関わらず状態を畳んでおく）。
-            if (_transient.Length > 0 && Time.unscaledTime >= _transientUntil)
-            {
-                _transient = "";
-                ApplyBody();
-            }
 
             // 未接続 or アンカー欠落 or スタッフが見ていないなら非表示（復帰時は再配置スナップする）。
             if (!_controllerConnected || controller == null || head == null || !StaffViewing())
@@ -173,18 +162,14 @@ namespace FixedCamVr.Diagnostics
                 transform.rotation = Quaternion.LookRotation(faceDir, Vector3.up);
         }
 
-        // 現在ラベル（+ 一時メッセージ）に対応する本文を text へ反映（変化時のみ・毎フレームは走らない）。
-        // 文字列連結は mode 切替 / transient の出入りという稀なイベント時だけ起きる（毎フレームの GC ではない）。
+        // 現在ラベルに対応する本文を text へ反映（変化時のみ・毎フレームは走らない）。
         private void ApplyBody()
         {
             if (text == null) return;
             string body = _modeLabel == "REG" ? RegBody : NormalBody;
-            string composed = (_transient.Length > 0 && Time.unscaledTime < _transientUntil)
-                ? "<color=#" + TransientColor + ">" + _transient + "</color>\n" + body
-                : body;
-            if (composed == _lastBody) return;
-            text.SetText(composed);
-            _lastBody = composed;
+            if (body == _lastBody) return;
+            text.SetText(body);
+            _lastBody = body;
         }
 
         private static Vector3 Flatten(Vector3 v)

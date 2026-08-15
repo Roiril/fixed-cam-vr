@@ -128,7 +128,10 @@ namespace FixedCamVr.Streaming.EditorTools
             };
             var set = new System.Collections.Generic.SortedSet<char>();
             for (char c = ' '; c <= '~'; c++) set.Add(c);                       // ASCII 印字可能
-            foreach (char c in "█▓░●○→⚠×📍。、・…％℃①②③④⑤") set.Add(c);     // 記号の取りこぼし保険
+            // 記号の取りこぼし保険。⚠ 2026-08-15 追加: 全角スラッシュ `／`（`X／Y：異変を報告`）と
+            //    全角空白 `　`（ステータスの 1 行に情報を 2 つ並べる区切り）。**空白にも字送りの
+            //    グリフが要る**ので、焼けていないと行の並びが崩れる。
+            foreach (char c in "█▓░●○→⚠×📍。、・…％℃①②③④⑤／　") set.Add(c);
             foreach (string path in sources)
             {
                 if (!File.Exists(path)) { Debug.LogWarning($"[JapaneseHudFontSetup] 収集元が無い: {path}"); continue; }

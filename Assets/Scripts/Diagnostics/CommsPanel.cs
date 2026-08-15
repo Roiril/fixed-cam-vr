@@ -52,14 +52,20 @@ namespace FixedCamVr.Diagnostics
         /// <summary>縁の張り出し (m)。地より一回り大きい面を裏に置いて枠に見せる。</summary>
         private const float BezelM = 0.012f;
 
+        /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
+        private const float FontSize = 0.07f;
+
         /// <summary>
         /// 文字の拡大率。<b>fontSize ではなく scale で掛ける</b>（fontSize を上げると
         /// メッシュの座標だけ広がる — <c>canon/LEDGER.md</c> 0035）。
         ///
-        /// ⚠⚠ <b>初版は 0.34 で、実機の画で 1 文字 0.9° にしかならず読めなかった</b>（2026-08-15 実測）。
-        /// VR の日本語は <b>1 文字 1.5° 以上</b>が目安。0.67 なら 1.5m 先で 1 文字 1.8°。
+        /// ⚠⚠ <b>ここを手で決めない。</b> 初版 0.34 も 2 版目 0.67 も
+        /// 「1 文字 0.9°／1.8°」のつもりで書かれていたが、どちらも <b>10 倍間違っていた</b>
+        /// （3D の TextMeshPro は透視カメラのとき内部で 0.1 を掛ける）。
+        /// 実際は 0.09°／0.18° ＝ <b>実機では点にしか見えていない</b>。
+        /// いまは <see cref="HmdTextStyle"/> が距離から逆算する。
         /// </summary>
-        private const float TextScale = 0.67f;
+        private static float TextScale => HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, DistanceM, FontSize);
 
         // ---- 追従（`ScreenAnchor` / `TitleScreen` と同じ値。片方だけ変えない）----
         private const float YawDeadzoneDeg = 0.5f;
@@ -82,8 +88,10 @@ namespace FixedCamVr.Diagnostics
         /// 「右手をあげてください」を伏線にするのはスマートではない）。即時の業務指示に留める。
         /// ⚠ 文言を変えたら <c>menu hud-font</c> を再実行する（静的ベイクなので忘れると豆腐）。
         /// </summary>
-        /// ⚠ <b>1 行は 13 文字まで</b>（面の幅 28° に 1 文字 1.8° で入る数）。超えると折り返して面から出る。
-        private const string NoticeText = "観測を継続してください\n異常を認めた場合のみ記録を";
+        /// ⚠ <b>1 行は 14 文字まで</b>（面の幅から 1 文字 1.8° で入る数。折り返しは効くが 3 行目は面から出る）。
+        /// ⚠ 語は手元の面（<see cref="VisitorMarkGuidance"/>）と揃える —
+        ///   あちらが「異変を報告」なのにこちらが「異常を記録」だと、同じ装置の言葉に聞こえない。
+        private const string NoticeText = "観測を継続してください\n異変があれば報告してください";
 
         private readonly CommsPanelLogic _logic = new CommsPanelLogic();
         private readonly YawFollowLogic _yawFollow = new YawFollowLogic();
@@ -232,15 +240,20 @@ namespace FixedCamVr.Diagnostics
             var tmp = textGo.AddComponent<TextMeshPro>();
             tmp.font = jp;
             tmp.text = NoticeText;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.fontSize = 0.07f;
+            // 揃えは左（`HmdTextStyle` の規約）。中央にしてよいのは黒の中に単独で出る面だけで、
+            // ここは映像の上に立つ受信票なので、行頭が揃っている方が「印字されたもの」に見える。
+            tmp.alignment = TextAlignmentOptions.Left;
+            tmp.fontSize = FontSize;
             tmp.enableWordWrapping = true;
             tmp.richText = false;
-            tmp.color = new Color(0.82f, 0.78f, 0.72f, 1f);
+            tmp.color = HmdTextStyle.Ink;
             var rt = (RectTransform)textGo.transform;
-            rt.sizeDelta = new Vector2(1.0f, 0.34f);
             // ⚠ 大きさは scale で掛ける（fontSize を上げるとメッシュの座標だけ広がる — LEDGER 0035）。
-            textGo.transform.localScale = Vector3.one * TextScale;
+            //   ⇒ **折り返し幅も scale で割る**。ここを固定値にすると、字の大きさを直したときに
+            //     折り返しだけ取り残されて面からはみ出す。
+            float scale = TextScale;
+            rt.sizeDelta = new Vector2(PanelW * 0.92f / scale, PanelH * 0.85f / scale);
+            textGo.transform.localScale = Vector3.one * scale;
             var overlay = Shader.Find("TextMeshPro/Distance Field Overlay");
             if (overlay != null) tmp.fontMaterial.shader = overlay;
             tmp.fontMaterial.renderQueue = GlyphQueue;

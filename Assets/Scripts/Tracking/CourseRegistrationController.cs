@@ -34,7 +34,7 @@ namespace FixedCamVr.Tracking
     /// （先端オフセット補正はしない。誤差 2〜3cm はベースライン + 回廊 + オーバーラップに対して許容）。
     ///
     /// 視界内ガイダンスは自前 TextMesh を持たず、各ステップの指示を <see cref="GuidanceText"/> /
-    /// <see cref="GuidanceColor"/> として公開する（単一サーフェス StatusHud が登録中に読み取って表示する。
+    /// <see cref="GuidanceIsAlert"/> として公開する（単一サーフェス StatusHud が登録中に読み取って表示する。
     /// Tracking → Diagnostics の asmdef 依存を作らないためのプロバイダ方式）。要再登録警告は StatusHud が
     /// <see cref="CourseFrame.NeedsReRegistration"/> を直接読む。ワイヤーフレームとゾーン床フットプリントは
     /// 登録モード中のみ生成・破棄する。床フットプリントは show.json layout.grid があれば Web 卓で塗った
@@ -114,8 +114,13 @@ namespace FixedCamVr.Tracking
         /// </summary>
         public string GuidanceText => _guidanceText;
 
-        /// <summary>ガイダンス表示色（エラー時は橙・通常は緑）。StatusHud が反映する。</summary>
-        public Color GuidanceColor => _guidanceColor;
+        /// <summary>
+        /// いまのガイダンスが「対応が要る 1 行」か。<b>色そのものは持たない</b> —
+        /// HMD の文字色の正は <c>FixedCamVr.Diagnostics.HmdTextStyle</c> 1 か所で、
+        /// Tracking はそこを参照できない（依存の向きが逆）。ここが色を持つと、
+        /// **同じ画面の中に 2 つの色体系が生まれる**（2026-08-15 まで実際にそうだった）。
+        /// </summary>
+        public bool GuidanceIsAlert => _guidanceIsAlert;
 
         /// <summary>
         /// 点サンプルが 1 点確定した時に発火（0.5s ホールド平均が採れた瞬間）。触覚フィードバックの
@@ -193,7 +198,7 @@ namespace FixedCamVr.Tracking
 
         // ガイダンス（StatusHud へ供給する文字列。自前 TextMesh は持たない）。
         private string _guidanceText = "";
-        private Color _guidanceColor = new(0.9f, 1f, 0.9f, 1f);
+        private bool _guidanceIsAlert;
 
         // ---- 可視化 ----
         private GameObject? _vizRoot;
@@ -373,7 +378,9 @@ namespace FixedCamVr.Tracking
             if (r == HoldAverageSampler.Result.Aborted)
             {
                 // MarkHoldSec 未満で離した → マーク不成立（点は採らない）。
-                ShowTransient("マーク不成立\n×印の真上にかざしたまま A を 0.5 秒静止してください", 2.5f);
+                // ⚠ 寿命は「読み切れるか」で決める。2 行の失敗通知を 2.5 秒で消すと、
+                //    手元を見ていないスタッフには原因が残らない（Codex 2 巡目の指摘）。
+                ShowTransient("×印を読み取れませんでした\n×印の上で A を押したまま 0.5 秒静止", 4f);
                 SampleAborted?.Invoke(); // 触覚 Error（ホールド中断）
                 return;
             }
@@ -420,7 +427,7 @@ namespace FixedCamVr.Tracking
             if (!fit.ok)
             {
                 Debug.LogWarning("[CourseReg] 剛体フィット不能（基準点が重なっています）— やり直します");
-                ShowTransient("基準点の設定が不正です（点が重なっています）", 4f);
+                ShowTransient("点の置き方が正しくありません\n2 つの点が重なっています", 6f);
                 FitRejected?.Invoke(); // 触覚 Error（拒否・やり直し）
                 RestartCapture();
                 return;
@@ -431,7 +438,7 @@ namespace FixedCamVr.Tracking
                 int w = fit.worstIndex;
                 Debug.LogWarning($"[CourseReg] フィット残差過大: 点 {w + 1} の残差 {fit.maxResidualM:F3}m " +
                                  $"> 許容 {maxResidualM:F3}m（RMS {fit.rmsResidualM:F3}m）— やり直します");
-                ShowTransient($"点 {w + 1} の残差 {fit.maxResidualM:F2}m — タッチをやり直してください", 4f);
+                ShowTransient($"点 {w + 1} のずれが {Mathf.RoundToInt(fit.maxResidualM * 100f)} cm あります\n打ち直してください", 6f);
                 FitRejected?.Invoke(); // 触覚 Error（残差過大・やり直し）
                 RestartCapture();
                 return;
@@ -513,12 +520,12 @@ namespace FixedCamVr.Tracking
         private void UpdateGuidanceText()
         {
             string text;
-            Color color = new(0.9f, 1f, 0.9f, 1f);
+            bool isAlert = false;
 
             if (!string.IsNullOrEmpty(_transientMsg) && Time.unscaledTime < _transientUntil)
             {
                 text = _transientMsg;
-                color = new Color(1f, 0.55f, 0.4f, 1f);
+                isAlert = true;
             }
             else
             {
@@ -535,7 +542,11 @@ namespace FixedCamVr.Tracking
                         text = RegistrationGuidance.ResidualLine(_verifyMaxResidualM, maxResidualM)
                              + "\n" + RegistrationGuidance.FloorLine(
                                    _verifyFloorY, _verifyFloorSpreadM, FloorHeightSolver.SpreadWarnM)
-                             + "\nワイヤーが実物の壁・床の×印に重なるか確認\nB = 確定    A = やり直し";
+                             // ⚠ 画面に出ている線の呼び方は「ガイド線」1 語に固定する（旧「ワイヤー」は
+                             //   初見のスタッフに何を指すか伝わらない。「確認線」も造語なので採らない）。
+                             + "\nガイド線が実物の壁と床の×印に重なるか見る"
+                             + "\nB：この位置合わせで確定"
+                             + "\nA：点 1 からやり直し";
                         break;
                     case Phase.Review:
                         text = ReviewGuidance();
@@ -547,7 +558,7 @@ namespace FixedCamVr.Tracking
             }
 
             _guidanceText = text;
-            _guidanceColor = color;
+            _guidanceIsAlert = isAlert;
         }
 
         // Capture 中のガイダンス。点 k/N と label を示し、2 点目以降は直前点との実測距離 vs
@@ -567,7 +578,9 @@ namespace FixedCamVr.Tracking
             // 床の高さもここで測るので、「かざす」ではなく高さを決めた指示を出す
             // （既定は着ける＝高さ 0。空中でホバーすると XZ もぶれる）。
             string head = RegistrationGuidance.TouchInstruction(label, TouchHeightM);
-            string text = $"点 {k}/{n}\n{head}\nA を押しながら 0.5 秒静止";
+            // ⚠ 操作の言い方は早見表（ControllerGuidePanel）と **1 字まで同じ**にする。
+            //    同じ操作を 2 つの面が違う言い方で呼ぶと、現場で照合できない。
+            string text = $"点 {k}／{n}\n{head}\nA：押したまま 0.5 秒静止で記録";
 
             if (_pointIndex >= 1)
             {
@@ -580,7 +593,8 @@ namespace FixedCamVr.Tracking
                     float measured = Mathf.Sqrt(dx * dx + dz * dz);
                     float errPct = (measured - authored) / authored * 100f;
                     int tolPct = Mathf.RoundToInt(distanceTolerance * 100f);
-                    text += $"\n直前の点との誤差 {(errPct >= 0f ? "+" : "")}{errPct:F1}%（±{tolPct}% 目安）";
+                    // ⚠ 「ずれ」は符号を持たない量なので、±の付く割合には使わない（別の語にする）。
+                    text += $"\n直前の点との差：{(errPct >= 0f ? "+" : "")}{errPct:F1}%（±{tolPct}% 目安）";
                 }
             }
 
@@ -601,12 +615,13 @@ namespace FixedCamVr.Tracking
                 : courseFrame.HasFloorY
                     ? "\n" + RegistrationGuidance.FloorLine(courseFrame.FloorY, courseFrame.FloorSpreadM,
                                                             FloorHeightSolver.SpreadWarnM)
-                    : "\n<color=#FF8C40>床の高さは未測定です — A で登録し直すと合います</color>";
+                    : $"\n<color=#{RegistrationGuidance.AlertHex}>床の高さを測っていません</color>";
             string text = header + floor
-                        + "\nワイヤーが実物に重ならなければ A で再登録"
-                        + "\nA = 点1から再登録    B = OK（終了）";
+                        + "\nガイド線が実物に重ならなければ A"
+                        + "\nA：点 1 からやり直し"
+                        + "\nB：このまま終了";
             if (courseFrame != null && courseFrame.NeedsReRegistration)
-                text += "\n<color=#FF8C40>⚠トラッキング原点が変わっています — 再登録を推奨</color>";
+                text += $"\n<color=#{RegistrationGuidance.AlertHex}>頭の向きの基準が変わりました。やり直しを</color>";
             return text;
         }
 

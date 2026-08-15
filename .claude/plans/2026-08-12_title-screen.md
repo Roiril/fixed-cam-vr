@@ -61,7 +61,7 @@ false のとき `RearmStartSignal` を呼んで合図を武装し直す）。配
   `StreamingLogicPrefabFieldsTests` を同じコミットで合わせてある
 - 設営でカメラを見たいときは Web 卓の 📺 カメラ固定か、Editor のキーボード
   （`CameraSwitchInput` の Tab / 1-9）。**実機のコントローラからは送れない**
-- `ControllerGuidePanel.ShowTransient`（「演出中は切り替えできません」の赤 1 行）は
+- 【2026-08-16 に削除済み】`ControllerGuidePanel.ShowTransient`（「演出中は切り替えできません」の赤 1 行）は
   唯一の呼び出し元が消えて**未参照になった**。API 自体は残してある
 
 ## 見た目 — 組んだ題字を「版」として焼く

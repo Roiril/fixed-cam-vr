@@ -48,12 +48,27 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("終了の黒（既定は真っ黒）。")]
         [SerializeField] private Color fadeColor = Color.black;
 
+        /// <summary>Canvas の 1 unit あたりの世界サイズ (m)。<see cref="BuildCanvas"/> の localScale と対。</summary>
+        private const float CanvasScale = 0.001f;
+
         /// <summary>
-        /// 黒の上のメッセージの文字高（Canvas units）。Canvas は <see cref="worldSize"/> m を
-        /// 1000 倍の units で持ち scale 0.001 なので、1 unit = 1mm。距離 0.3m で 14 units ≒ 見かけ 2.7 度。
-        /// const にしてあるのは、既存シーンに焼かれた SerializeField が 0 で読まれて文字が消える罠を避けるため。
+        /// 文字を置く距離 (m)。<b>黒（<see cref="distance"/> = 0.3m）とは別の面に置く。</b>
+        ///
+        /// ⚠ 黒が 0.3m なのは「視界を必ず覆い切る」ためで、<b>文字までそこに置く理由は無い</b>。
+        /// 0.3m は輻輳の負担が大きく、両眼で読む文字を置く距離ではない。
+        /// 隠れないのは深度ではなく<b>描画順</b>のおかげ（UI は深度を書かない）なので、
+        /// 黒より後ろの sortingOrder に置けば、奥にあっても黒の上に出る。
         /// </summary>
-        private const float MessageFontSize = 14f;
+        private const float MessageDistanceM = 1.5f;
+
+        /// <summary>
+        /// 黒の上のメッセージの文字高（Canvas units）。<b>距離から逆算する</b>
+        /// （<see cref="HmdTextStyle"/> が唯一の正）。段は<b>注目</b> — 黒の中に 1 行だけ出て、
+        /// 見落とすと「なぜ止まったか」に到達できないため。
+        /// 旧値 14（＝ 0.3m で 2.67°）は面ごとに手で決めていた時代の名残。
+        /// </summary>
+        private float MessageFontSize =>
+            HmdTextStyle.CanvasFontSize(HmdTextStyle.AlertDeg, MessageDistanceM, CanvasScale);
 
         /// <summary>メッセージが完全に見えるまでの時間 (秒)。黒より少し遅らせて浮かび上がらせる。</summary>
         private const float MessageFadeSec = 0.35f;
@@ -61,6 +76,7 @@ namespace FixedCamVr.Diagnostics
         private ShowRunDirector? _run;
         private StatusHud? _hud;
         private Canvas? _canvas;
+        private Canvas? _labelCanvas;
         private Image? _image;
         private TextMeshProUGUI? _label;
         private float _alpha;
@@ -132,8 +148,12 @@ namespace FixedCamVr.Diagnostics
             _messageAlpha = a;
             if (_label == null) return;
             if (_label.text != text) _label.text = text;
-            _label.color = new Color(1f, 1f, 1f, a);
-            _label.enabled = a > 0.001f && !string.IsNullOrEmpty(text);
+            // 出るのは「止まった理由」だけなので警告色（面の色は 2 色しか無い — HmdTextStyle）。
+            Color c = HmdTextStyle.Alert;
+            _label.color = new Color(c.r, c.g, c.b, a);
+            bool on = a > 0.001f && !string.IsNullOrEmpty(text);
+            _label.enabled = on;
+            if (_labelCanvas != null) _labelCanvas.enabled = on;
         }
 
         private void BuildCanvas()
@@ -149,8 +169,8 @@ namespace FixedCamVr.Diagnostics
             _canvas.enabled = false;
 
             var rt = (RectTransform)canvasGo.transform;
-            rt.sizeDelta = new Vector2(worldSize.x * 1000f, worldSize.y * 1000f);
-            rt.localScale = Vector3.one * 0.001f;
+            rt.sizeDelta = new Vector2(worldSize.x / CanvasScale, worldSize.y / CanvasScale);
+            rt.localScale = Vector3.one * CanvasScale;
 
             var imgGo = new GameObject("FadeImage");
             imgGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
@@ -166,14 +186,31 @@ namespace FixedCamVr.Diagnostics
             _image.color = new Color(fadeColor.r, fadeColor.g, fadeColor.b, 0f);
             _image.raycastTarget = false;
 
-            // メッセージは Image より後の子＝同じ Canvas の中で必ず前に描かれる（深度に依存しない）。
+            // メッセージは**別の Canvas**（黒より奥・sortingOrder は 1 つ上）。
+            // ⚠ 黒と同じ面に置くと 0.3m で読ませることになる（輻輳の負担）。UI は深度を書かないので、
+            //    奥に置いても sortingOrder が上なら黒の上に出る。
+            var labelCanvasGo = new GameObject("BlackoutMessageCanvas");
+            labelCanvasGo.transform.SetParent(transform, worldPositionStays: false);
+            labelCanvasGo.transform.localPosition = new Vector3(0f, 0f, MessageDistanceM);
+            labelCanvasGo.transform.localRotation = Quaternion.identity;
+            _labelCanvas = labelCanvasGo.AddComponent<Canvas>();
+            _labelCanvas.renderMode = RenderMode.WorldSpace;
+            _labelCanvas.sortingOrder = sortingOrder + 1;
+            _labelCanvas.enabled = false;
+            var labelCanvasRt = (RectTransform)labelCanvasGo.transform;
+            // 黒と同じ見かけの幅（距離に比例させる）＝ 文字が枠から出ない。
+            float wUnits = worldSize.x * (MessageDistanceM / Mathf.Max(distance, 0.05f)) / CanvasScale;
+            labelCanvasRt.sizeDelta = new Vector2(wUnits, wUnits * 0.25f);
+            labelCanvasRt.localScale = Vector3.one * CanvasScale;
+
             var labelGo = new GameObject("BlackoutMessage");
-            labelGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
+            labelGo.transform.SetParent(labelCanvasGo.transform, worldPositionStays: false);
             var labelRt = labelGo.AddComponent<RectTransform>();
             labelRt.anchorMin = new Vector2(0.5f, 0.5f);
             labelRt.anchorMax = new Vector2(0.5f, 0.5f);
             labelRt.anchoredPosition = Vector2.zero;
-            labelRt.sizeDelta = new Vector2(worldSize.x * 900f, MessageFontSize * 3f);
+            float fs = MessageFontSize;
+            labelRt.sizeDelta = new Vector2(wUnits * 0.9f, fs * 3f);
             labelRt.localScale = Vector3.one;
 
             _label = labelGo.AddComponent<TextMeshProUGUI>();
@@ -181,9 +218,10 @@ namespace FixedCamVr.Diagnostics
             // 文言を足したら `Tools/FixedCamVr/Setup/Generate Japanese HUD Font` を再実行すること。
             var jp = JapaneseHudFont.TryGet();
             if (jp != null) _label.font = jp;
-            _label.fontSize = MessageFontSize;
+            _label.fontSize = fs;
+            // 1 行だけを黒の中に掲げる面なので中央（HmdTextStyle の規約の例外側）。
             _label.alignment = TextAlignmentOptions.Center;
-            _label.color = new Color(1f, 1f, 1f, 0f);
+            _label.color = new Color(HmdTextStyle.Alert.r, HmdTextStyle.Alert.g, HmdTextStyle.Alert.b, 0f);
             _label.raycastTarget = false;
             _label.enabled = false;
         }

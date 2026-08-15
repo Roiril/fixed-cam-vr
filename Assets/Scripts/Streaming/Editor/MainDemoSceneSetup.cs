@@ -31,6 +31,31 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string StatusHudName = "StatusHud";
         private const string ControllerGuideName = "ControllerGuide";
         private const string VisitorMarkName = "VisitorMark";
+
+        // ---- HMD 内の文字面の寸法 -------------------------------------------------------
+        //
+        // ⚠⚠ **fontSize をここに書かない。** 大きさは `HmdTextStyle` が距離から逆算する
+        //    （2026-08-15。それまで 7 面が別々の数字を持っていて、1 文字の見かけ角が
+        //     0.18°〜2.67° と 15 倍ばらついていた）。ここに置くのは
+        //    「どこに・どれだけの広さで出すか」だけ。
+
+        /// <summary>視線前方の面の Canvas 1 unit あたりの世界サイズ (m)。</summary>
+        private const float HudCanvasScaleM = 0.001f;
+
+        /// <summary>手元の面の Canvas 1 unit あたりの世界サイズ (m)。</summary>
+        private const float HandCanvasScaleM = 0.0005f;
+
+        /// <summary>ステータスの面までの距離 (m)。<c>StatusHud.distance</c> と対で書く。</summary>
+        private const float StatusDistanceM = 1.6f;
+
+        /// <summary>ステータスの面の幅 (Canvas units)。1.0m ＝ 1.6m 先で 35°（本文 19 文字 ＋ 余白）。</summary>
+        private const float StatusPanelW = 1000f;
+
+        /// <summary>ステータスの面の高さ (Canvas units)。0.48m ＝ 7 行 ＋ 行間。</summary>
+        private const float StatusPanelH = 480f;
+
+        /// <summary>手元の面までのおよその距離 (m)。腕を自然に下ろした位置から頭まで。</summary>
+        private const float HandDistanceM = 0.45f;
         private const string DiagnosticsName = "Diagnostics";
         private const string DebugHudName = "DebugHud"; // 旧構成の掃除用（削除対象）
         private const string StartupFaderName = "StartupFader";
@@ -494,12 +519,10 @@ namespace FixedCamVr.Streaming.EditorTools
             var noticeSo = new SerializedObject(notice);
             TrySetObjectRef(noticeSo, "titleScreen", titleScreen);
             TrySetFloat(noticeSo, "distanceM", 2.6f);
-            // ⚠ 字の大きさもここで書く。**シーンに焼かれた値が SerializeField の初期値より優先される**
-            //   ので、コード側だけ直しても既存シーンには届かない（startInRegistration と同じ罠）。
-            // ⚠ **8.5 倍**（2026-08-14・LEDGER 0035）。旧 fontSize 0.07 は「1 文字 7cm」のつもりの
-            //    値だったが実機では StatusHud の 1/8.5 ＝ 読めない大きさで、これが
-            //    「すごく奥に小さい白い文字」の正体だった。実機の画で 1 文字の px を測って決めた。
-            TrySetFloat(noticeSo, "sizeScale", 8.5f);
+            // ⚠ 字の大きさはもうここに書かない（2026-08-15）。距離から `HmdTextStyle` が逆算する。
+            //   手で持っていた `sizeScale` は 2 回続けて 10 倍間違え、そのたびに実機で読めなくなった
+            //   （LEDGER 0035 / CommsPanel）。**シーンに焼かれた値が優先される**ので、
+            //   フィールドを消したこと自体が再発防止になっている。
             noticeSo.ApplyModifiedPropertiesWithoutUndo();
             // 3.36. 終幕（黒のまま装置が力尽きて、報告を出して終わる。canon/LEDGER.md 0048）。
             //       IntroDirector と同じオブジェクトに載せるので、進行役が 2 つに散らない。
@@ -517,7 +540,7 @@ namespace FixedCamVr.Streaming.EditorTools
             outroSo.ApplyModifiedPropertiesWithoutUndo();
 
             // 3.37. 終幕の報告（最後の 4 行）。**体験前の注意書きと対になる面**なので、
-            //       置き場・大きさ・深度の逃がし方をそちらと揃える（2.6m・8.5 倍・ZTest Always）。
+            //       置き場・大きさ・深度の逃がし方をそちらと揃える（2.6m・本文 1.8°・ZTest Always）。
             //       ⚠ 文言を変えたら `unity.ps1 menu hud-font` を再実行する（忘れると実機で豆腐）。
             var reportGo = new GameObject(OutroReportName);
             reportGo.transform.SetParent(centerEye.transform, worldPositionStays: false);
@@ -526,8 +549,7 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(reportSo, "outro", outroDirector);
             TrySetObjectRef(reportSo, "showControl", showControl);
             TrySetFloat(reportSo, "distanceM", 2.6f);
-            // ⚠ シーンに焼かれた値が SerializeField の初期値より優先されるので、ここでも明示する。
-            TrySetFloat(reportSo, "sizeScale", 8.5f);
+            // ⚠ 字の大きさは書かない（注意書きと同じ理由）。距離から HmdTextStyle が逆算する。
             reportSo.ApplyModifiedPropertiesWithoutUndo();
             // 導入側にも同じ殻を配る（自己解決に任せず明示する — 見つからないと隔離が黙って出ない）。
             var introShellSo = new SerializedObject(introDirector);
@@ -1107,8 +1129,11 @@ namespace FixedCamVr.Streaming.EditorTools
             canvasGo.AddComponent<UnityEngine.UI.CanvasScaler>();
 
             var rt = (RectTransform)canvasGo.transform;
-            rt.sizeDelta = new Vector2(720f, 320f);
-            rt.localScale = Vector3.one * 0.001f;
+            // ⚠ 幅は**いちばん長い行が収まる**大きさ。旧 720（0.72m）は異常の 1 行（18 文字）に
+            //   対して 3 割足りず、折り返しも無効なので**面の外へ流れ出していた**。
+            //   960 units = 0.96m ＝ 1.6m 先で 33°（1 文字 1.8° × 19 文字）。
+            rt.sizeDelta = new Vector2(StatusPanelW, StatusPanelH);
+            rt.localScale = Vector3.one * HudCanvasScaleM;
 
             var textGo = new GameObject("StatusText");
             textGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
@@ -1122,9 +1147,12 @@ namespace FixedCamVr.Streaming.EditorTools
 
             var tmp = textGo.AddComponent<TextMeshProUGUI>();
             tmp.text = "";
-            tmp.fontSize = 34f;
-            tmp.color = new Color(0.9f, 1f, 0.95f, 1f);
-            tmp.alignment = TextAlignmentOptions.Center;
+            // 大きさ・色は HmdTextStyle が唯一の正（面ごとに数字を決めない）。
+            tmp.fontSize = HmdTextStyle.CanvasFontSize(HmdTextStyle.BodyDeg, StatusDistanceM, HudCanvasScaleM);
+            tmp.color = HmdTextStyle.Ink;
+            // ⚠ **左上寄せ**。中央揃えだと数値が変わるたびに行頭が動き、行数が増減すると
+            //   面ごと上下する（現場で視線を取り直す原因になる）。
+            tmp.alignment = TextAlignmentOptions.TopLeft;
             tmp.enableWordWrapping = false;
             tmp.richText = true;
 
@@ -1135,7 +1163,7 @@ namespace FixedCamVr.Streaming.EditorTools
             if (registration != null) TrySetObjectRef(hudSo, "registration", registration);
             TrySetObjectRef(hudSo, "head", head);
             // 緩追従・配置の既定（prefab-YAML 未反映罠を避けるため setup が明示的に書く）。
-            TrySetFloat(hudSo, "distance", 1.6f);
+            TrySetFloat(hudSo, "distance", StatusDistanceM);
             TrySetFloat(hudSo, "heightOffset", -0.43f);
             TrySetFloat(hudSo, "pitchDeg", -15f);
             TrySetFloat(hudSo, "yawDeadzoneDeg", 10f);
@@ -1166,8 +1194,9 @@ namespace FixedCamVr.Streaming.EditorTools
 
             var rt = (RectTransform)canvasGo.transform;
             // sizeDelta 560 × 0.0005 = 0.28m 幅（コントローラ幅 ≈0.1m の 2〜3 倍）。
+            // 本文 1.8° ＝ 1 文字 28 units なので 1 行 19 文字まで（最長は 15 文字）。
             rt.sizeDelta = new Vector2(560f, 300f);
-            rt.localScale = Vector3.one * 0.0005f;
+            rt.localScale = Vector3.one * HandCanvasScaleM;
 
             var textGo = new GameObject("GuideText");
             textGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
@@ -1181,9 +1210,11 @@ namespace FixedCamVr.Streaming.EditorTools
 
             var tmp = textGo.AddComponent<TextMeshProUGUI>();
             tmp.text = "";
-            tmp.fontSize = 26f;                 // StatusHud(34) より小さめ
-            tmp.color = new Color(0.9f, 1f, 0.95f, 1f);
-            tmp.alignment = TextAlignmentOptions.Left;
+            // ⚠ 旧 26（StatusHud 34 より小さめ、という面どうしの比較）は**距離が違うので比較になっていない**。
+            //   手元 0.45m と視線前方 1.6m では同じ fontSize でも見かけ角が 3.5 倍違う。
+            tmp.fontSize = HmdTextStyle.CanvasFontSize(HmdTextStyle.BodyDeg, HandDistanceM, HandCanvasScaleM);
+            tmp.color = HmdTextStyle.Ink;
+            tmp.alignment = TextAlignmentOptions.TopLeft;
             tmp.enableWordWrapping = false;
             tmp.richText = false;
 
@@ -1205,8 +1236,9 @@ namespace FixedCamVr.Streaming.EditorTools
 
         // 体験者の報告ボタンの面（左コントローラに追従する小さな文字）を作る。
         // ⚠ **枠も背景も持たない**（ユーザー指定「文字だけで枠線も背景もいらない」）ので Image は足さない。
-        // ⚠ 大きさは「1 文字の見かけ角」で決める（rules/show-design.md）。手元まで約 0.45m なので、
-        //    fontSize 30 × canvas scale 0.0005 = 1 文字 0.015m ＝ **見かけ 1.9°**（下限 1.5°）。
+        //    ＝ ゲージも図形ではなく文字で組む（VisitorMarkGuidance）。
+        // ⚠ 大きさは HmdTextStyle が距離から逆算する（本文 1.8°）。
+        // ⚠ **枠はゲージ 1 本ぶんの幅**にしてある。左揃えにしても、文字の塊は手の真上に座る。
         private static VisitorMarkPanel CreateVisitorMarkPanel(Transform parent,
             Transform controller, Transform head)
         {
@@ -1218,9 +1250,10 @@ namespace FixedCamVr.Streaming.EditorTools
             canvasGo.AddComponent<UnityEngine.UI.CanvasScaler>();
 
             var rt = (RectTransform)canvasGo.transform;
-            // sizeDelta 620 × 0.0005 = 0.31m 幅（「(X,Yで異変を報告)」は約 0.19m なので折り返さない）。
-            rt.sizeDelta = new Vector2(620f, 220f);
-            rt.localScale = Vector3.one * 0.0005f;
+            // ゲージ 10 目盛 ＝ 10 文字 ＝ 283 units（0.14m）。枠をそこへ合わせると、
+            // 待ちの 1 行（8 文字）も長押しの 2 行も同じ左端に並んで塊が手の真上に座る。
+            rt.sizeDelta = new Vector2(320f, 180f);
+            rt.localScale = Vector3.one * HandCanvasScaleM;
 
             var textGo = new GameObject("VisitorMarkText");
             textGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
@@ -1234,11 +1267,14 @@ namespace FixedCamVr.Streaming.EditorTools
 
             var tmp = textGo.AddComponent<TextMeshProUGUI>();
             tmp.text = "";
-            tmp.fontSize = 30f;
-            tmp.color = new Color(0.82f, 0.78f, 0.72f, 1f);   // 連絡の面（CommsPanel）と同じ声
-            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.fontSize = HmdTextStyle.CanvasFontSize(HmdTextStyle.BodyDeg, HandDistanceM, HandCanvasScaleM);
+            tmp.color = HmdTextStyle.Ink;
+            // 見出しはゲージの左上に小さく（LEDGER 0050 の赤入れ）＝ 左揃え。
+            tmp.alignment = TextAlignmentOptions.TopLeft;
             tmp.enableWordWrapping = false;
-            tmp.richText = false;
+            // ⚠ ゲージの明暗と見出しの大きさをリッチテキストで組む（VisitorMarkGuidance）。
+            //    false のままだと `<color=#…>` が**そのまま文字として実機に出る**。
+            tmp.richText = true;
 
             var panel = canvasGo.AddComponent<VisitorMarkPanel>();
             var so = new SerializedObject(panel);

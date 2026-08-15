@@ -250,7 +250,8 @@ namespace FixedCamVr.Diagnostics
                     text.SetText(g);
                     _lastGuidance = g;
                 }
-                text.color = registration.GuidanceColor;
+                // 色の正は HmdTextStyle 1 か所。Tracking は「対応が要る行か」だけを返す。
+                text.color = registration.GuidanceIsAlert ? HmdTextStyle.Alert : HmdTextStyle.Ink;
                 text.enabled = !string.IsNullOrEmpty(g);
                 return;
             }
@@ -270,9 +271,13 @@ namespace FixedCamVr.Diagnostics
 
             BuildStatus(_sb);
             text.SetText(_sb);
-            text.color = new Color(0.9f, 1f, 0.95f, 1f);
+            // 対応が要る 1 件が出ているときだけ警告色（面の色は 2 色しか無い — HmdTextStyle）。
+            text.color = _alertShown ? HmdTextStyle.Alert : HmdTextStyle.Ink;
             text.enabled = true;
         }
+
+        // 直近の BuildStatus が異常の 2 行を出したか（面の色を選ぶためだけに持つ）。
+        private bool _alertShown;
 
         // 全編を日本語・直感表記へ（記号を廃し、意味を平文で）。既存参照の append のみで新規 GC を出さない。
         // 体験の骨格。ShowControlClient が実行時に自動生成することがあるので遅延解決する。
@@ -302,17 +307,20 @@ namespace FixedCamVr.Diagnostics
         {
             sb.Clear();
 
-            // 行1: 体験の相と周回。導入中・終了は周回より先にそれを言う（スタッフが最初に知りたいのはここ）。
+            // ⚠⚠ **1 行に情報を 2 つまで**（<see cref="HmdTextStyle"/> の規約）。
+            //    2026-08-15 まで 1 行目は「相 ・ 経過 ・ いまの場所 ・ 表示中」の 4 情報を
+            //    `・` で数珠つなぎにしていて、**面の幅を 3 割超えてはみ出していた**（折り返しは無効）。
+            //    ラベルは体言 ＋ 全角コロンで揃える（操作の `入力：動作` と同じ形）。
+
+            // 行1: 体験の相と経過。導入中・終了は周回より先にそれを言う（最初に知りたいのはここ）。
             ShowRunDirector? run = ResolveRun();
             if (run != null && run.Phase == ShowPhase.Intro)
             {
-                sb.Append("導入中 ");
-                AppendClock(sb, run.IntroElapsedSec);
+                sb.Append("導入中");
             }
             else if (run != null && run.Phase == ShowPhase.Finished)
             {
-                sb.Append("体験おわり（次の体験者へ） ");
-                AppendClock(sb, run.RunElapsedSec);
+                sb.Append("体験おわり");
             }
             else
             {
@@ -322,51 +330,56 @@ namespace FixedCamVr.Diagnostics
                 if (hasLap && run != null && lapCounter!.CurrentLap > run.TotalLaps)
                 {
                     // 「もどり」だけでは何のことか分からない（開発語）。体験の位置を言う。
-                    sb.Append("最後の区間 ・ 経過 ");
-                    AppendClock(sb, run.RunElapsedSec);
+                    sb.Append("最後の区間");
                 }
-                else
+                else if (hasLap)
                 {
-                    if (hasLap) { sb.Append(lapCounter!.CurrentLap); sb.Append("周目"); }
-                    else sb.Append("周回 -");
-                    if (run != null)
-                    {
-                        sb.Append('/');
-                        sb.Append(run.TotalLaps);
-                        sb.Append("周 ・ 経過 ");
-                        AppendClock(sb, run.RunElapsedSec);
-                    }
+                    sb.Append(lapCounter!.CurrentLap);
+                    sb.Append("周目");
+                    // UI の区切りは全角（`X／Y` と揃える）。半角のままにしてよいのは
+                    // 時刻 `1:05` やゾーン名 `C:North` のような**データそのもの**の中だけ。
+                    if (run != null) { sb.Append("／全"); sb.Append(run.TotalLaps); sb.Append('周'); }
                 }
+                else sb.Append("周回 未確定");
             }
-            sb.Append(" ・ いまの場所: ");
+            if (run != null)
+            {
+                sb.Append("　経過 ");
+                AppendClock(sb, run.Phase == ShowPhase.Intro ? run.IntroElapsedSec : run.RunElapsedSec);
+            }
+
+            // 行2: 場所と表示中のカメラ。
+            sb.Append("\n場所：");
             var zone = tracker != null ? tracker.CurrentZone : null;
-            sb.Append(zone != null ? zone.Label : "-");
-            sb.Append(" ・ 表示中: カメラ");
+            sb.Append(zone != null ? zone.Label : "未確定");
+            sb.Append("　表示：カメラ");
             if (registry != null && registry.Count > 0) sb.Append(registry.ActiveIndex + 1);
             else sb.Append('-');
 
-            // 行2（次の cue がある時のみ）: 次の演出: {lap}周目 カメラ{c+1} 「{cueId}」
+            // 行3（次の cue がある時のみ）: 次の演出：{lap}周目 カメラ{c+1}
             if (cueScheduler != null && lapCounter != null && lapCounter.Order.Length > 0
                 && cueScheduler.TryGetNextCue(lapCounter.CurrentLap, lapCounter.Position, lapCounter.Order, out var next))
             {
                 // ⚠ cue の id は出さない。`cue_B_2` を読んでもスタッフには何もできない（開発語で、
                 // 直し方にも繋がらない）。知りたいのは「次に何かが起きるのはどこか」だけ。
-                sb.Append("\n次の演出: ");
+                sb.Append("\n次の演出：");
                 sb.Append(next.lap);
                 sb.Append("周目 カメラ");
                 sb.Append(next.camera + 1);
             }
 
-            // 行3: カメラ1○ カメラ2○ カメラ3×（○=映像が届いている / ×=届いていない・半角スペース 2 個区切り）。
-            sb.Append('\n');
+            // 行4: 受信：1○ 2× 3○（○=映像が届いている / ×=届いていない）。
+            // ⚠ ラベルを付ける。○× を並べただけでは「接続」「受信」「選択中」のどれか読めない。
+            sb.Append("\n受信：");
             if (registry != null && registry.Count > 0)
             {
                 int n = registry.Count;
                 for (int i = 0; i < n; i++)
                 {
-                    if (i > 0) sb.Append("  ");
-                    sb.Append("カメラ");
+                    // 番号と記号を密着させない（`1○` は一瞬では読めない）。台どうしは全角空白で離す。
+                    if (i > 0) sb.Append('　');
                     sb.Append(i + 1);
+                    sb.Append(' ');
                     var s = registry.Get(i);
                     sb.Append(s != null && s.IsConnected ? '○' : '×');
                 }
@@ -387,9 +400,10 @@ namespace FixedCamVr.Diagnostics
                 int ms = Mathf.RoundToInt(activeStream.Latency.ObservedMs);
                 if (ms > LatencyWarnMs)
                 {
-                    sb.Append("\n映像が ");
+                    // 数値と単位のあいだは半角空白（HmdTextStyle の規約）。手は次の行へ分ける。
+                    sb.Append("\n映像の遅れ ");
                     sb.Append(ms);
-                    sb.Append("ms 遅れています（Wi-Fi が 2.4GHz なら 5GHz へ）");
+                    sb.Append(" ms\nWi-Fi が 2.4GHz なら 5GHz へ");
                 }
             }
 
@@ -402,7 +416,8 @@ namespace FixedCamVr.Diagnostics
             //
             // 複数を並べないのは、5 行のステータスに 3 行の手順が積むと HMD では読み切れないため。
             ShowAlert alert = PickAlert(out int alertCam);
-            if (alert != ShowAlert.None)
+            _alertShown = alert != ShowAlert.None;
+            if (_alertShown)
             {
                 sb.Append('\n');
                 sb.Append(RecoveryGuidance.What(alert, alertCam));
@@ -418,15 +433,15 @@ namespace FixedCamVr.Diagnostics
 
             if (courseFrame != null && courseFrame.HasRegistration)
             {
-                sb.Append("\n位置合わせOK");
+                sb.Append("\n位置合わせ済み");
                 if (courseFrame.MaxResidualM > 0f)
                 {
                     int cm = Mathf.RoundToInt(courseFrame.MaxResidualM * 100f);
-                    if (cm > 0) // 丸めて 0cm になる微小のずれは「位置合わせOK」のみに畳む
+                    if (cm > 0) // 丸めて 0 cm になる微小のずれは「位置合わせ済み」のみに畳む
                     {
                         sb.Append("（ずれ ");
                         sb.Append(cm);
-                        sb.Append("cm）");
+                        sb.Append(" cm）");
                     }
                 }
             }

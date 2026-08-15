@@ -35,18 +35,6 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("視線中心からどれだけ下に置くか (度)。題字と同じ据わりにする。")]
         [SerializeField, Range(-20f, 20f)] private float pitchOffsetDeg = 2.0f;
 
-        [Tooltip("大きさの倍率。**実機の画で StatusHud と 1 文字の px を比べて決める。**")]
-        // ⚠⚠ **0.07 は「1 文字 7cm」ではなかった**（2026-08-14 に実機の画で判明）。
-        //    3D の TextMeshPro の fontSize は世界 m ではないので、
-        //    「24 文字 × 0.07 = 1.68m ＝ 2.6m 先で 36°」という見積もりが丸ごと外れていて、
-        //    実機では **StatusHud の 1/8.5** ＝ 読めない大きさの白い点線に見えていた
-        //    （ユーザー報告「すごく奥に小さい白い文字」・`canon/LEDGER.md` 0035）。
-        //    ⇒ 実機の画で **StatusHud の 1 文字 28px に対して 3.3px** と測り、**8.5 倍**した。
-        //      **単位を理屈で決めず、同じ画の中で比べて決める。**
-        //    ⚠ 倍率は **transform の scale** で掛ける（fontSize を上げない）。字を大きくすると
-        //      メッシュの座標そのものが 10 倍以上に広がり、視錐台の外へ大きくはみ出す。
-        [SerializeField, Min(0.1f)] private float sizeScale = 8.5f;
-
         [Tooltip("出るまでの秒。黒の中にすっと現れる。")]
         [SerializeField, Min(0.01f)] private float fadeInSec = 0.3f;
 
@@ -59,14 +47,18 @@ namespace FixedCamVr.Diagnostics
         /// ⚠⚠ <b>紙（<c>docs/onsite/handout.html</c> の 2 枚目）と同じことを言う</b>（2026-08-14）。
         /// 紙は 0039 / 0040 で 2 度差し替えたのに、この面だけ 0023 ⑤ の旧文言が残っていて、
         /// **同じ安全の掲示が受付とヘッドセットの中で食い違っていた**（`canon/OPEN.md` の宿題）。
-        /// 改行だけは画面の枠（横 2.0m・1 行 27 文字まで）に合わせてある。
+        /// ⚠ <b>改行は 1 行 20 文字まで</b>（<see cref="TextWidthM"/> に 1 文字 1.8° で入る数）。
+        /// 2026-08-15 に字を 1.8° へ上げたので、旧の 1 行 24〜26 文字では横 46° を超えて
+        /// 読むのに首を振ることになる。
         /// ⚠ 文言を変えたら <c>menu hud-font</c> を再実行する（静的ベイクなので忘れると豆腐）。
         /// </summary>
         private const string NoticeText =
-            "本作品には、ホラー表現および不安や恐怖を感じる\n" +
-            "演出が含まれます\n" +
-            "体験中に気分が悪くなった場合は、その場で立ち止まり、\n" +
-            "ヘッドセットを外してスタッフにお声がけください";
+            "本作品にはホラー表現および、\n" +
+            "不安や恐怖を感じる演出が含まれます\n" +
+            "\n" +
+            "体験中に気分が悪くなった場合は、\n" +
+            "その場で立ち止まり、ヘッドセットを外して\n" +
+            "スタッフにお声がけください";
 
         /// <summary>
         /// タイトルの黒（<c>FixedCamVr/TitleVeil</c> = 4950）と題字（<c>TitleGlyph</c> = 4960）より
@@ -78,8 +70,30 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private const int RenderQueue = 5000;
 
-        /// <summary>版の中の字の大きさ。<b>倍率は <see cref="sizeScale"/> が transform で掛ける。</b></summary>
+        /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
         private const float FontSize = 0.07f;
+
+        /// <summary>
+        /// 文字の並ぶ幅 (m)。<b>いちばん長い行がちょうど収まる幅</b>にしてある ＝
+        /// 左揃えでも文の塊が視界の中央に座る。2.6m 先で 37°。
+        /// </summary>
+        private const float TextWidthM = 1.70f;
+
+        /// <summary>文字の並ぶ高さ (m)。6 行 ＋ 行間。</summary>
+        private const float TextHeightM = 1.00f;
+
+        /// <summary>
+        /// 文字の拡大率。<b>距離から逆算する</b>（<see cref="HmdTextStyle"/> が唯一の正）。
+        ///
+        /// ⚠⚠ 2026-08-14 まで <c>fontSize = 0.07</c> を「1 文字 7cm」のつもりで書いていて、
+        /// 実機では <b>StatusHud の 1/8.5</b> ＝ 読めない大きさの白い点線に見えていた
+        /// （ユーザー報告「すごく奥に小さい白い文字」・<c>canon/LEDGER.md</c> 0035）。
+        /// そのとき実機の画で測って 8.5 倍したが、<b>倍率を手で持っている限り同じ事故が再発する</b>
+        /// （実際 <see cref="CommsPanel"/> が 1 か月後に同じ間違いを 10 倍の規模でやった）。
+        /// ⚠ 倍率は <b>transform の scale</b> で掛ける（fontSize を上げるとメッシュの座標が広がる）。
+        /// </summary>
+        private float TextScale =>
+            HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, Mathf.Max(distanceM, 0.5f), FontSize);
 
         /// <summary>TMP の Overlay 版（<c>ZTest Always</c>）。<b>Always Included に入っている。</b></summary>
         private const string OverlayShaderName = "TextMeshPro/Distance Field Overlay";
@@ -135,20 +149,25 @@ namespace FixedCamVr.Diagnostics
                 var tmp = go.AddComponent<TextMeshPro>();
                 tmp.font = jp;
                 tmp.text = NoticeText;
-                tmp.alignment = TextAlignmentOptions.Center;
+                // ⚠ 揃えは**左**（`HmdTextStyle` の規約）。中央にしてよいのは「掲げる言葉」だけで、
+                //   これは**読ませる文章**（安全の掲示）。5 行の散文を中央揃えにすると行頭が毎行ずれる。
+                //   枠幅を最長行に合わせてあるので、左揃えでも塊としては視界の中央に座る。
+                tmp.alignment = TextAlignmentOptions.Left;
                 tmp.fontSize = FontSize;
                 // 折り返しは残す（文言を足した誰かが枠の外へ流れ出さないための安全網）。
                 tmp.enableWordWrapping = true;
                 tmp.richText = false;
                 // 題字の朱と競合させない、抑えた白。純白だと黒の中で浮いて掲示物に見える。
-                tmp.color = new Color(0.80f, 0.77f, 0.73f, 1f);
+                tmp.color = HmdTextStyle.Ink;
 
                 var rt = (RectTransform)go.transform;
-                // 最長行は 2 行目の 24 文字 ＝ 24 × 0.07 = 1.68（この枠に収まる）。
-                rt.sizeDelta = new Vector2(2.0f, 1.0f);
                 // ⚠ **大きさは scale で掛ける。** fontSize を上げるとメッシュの座標が広がるだけで、
                 //    見かけの大きさは同じ。小さい字を拡大する方が、頂点の座標が素直に収まる。
-                go.transform.localScale = Vector3.one * Mathf.Max(sizeScale, 0.1f);
+                //    ⇒ **折り返し幅も同じ scale で割る**。ここを固定値にすると、字の大きさを
+                //      直したときに折り返しだけ取り残されて枠からはみ出す。
+                float scale = TextScale;
+                rt.sizeDelta = new Vector2(TextWidthM / scale, TextHeightM / scale);
+                go.transform.localScale = Vector3.one * scale;
 
                 // 頭の正面やや下。head-lock（CenterEyeAnchor 直下に置かれる前提）なので、
                 // ここでは局所の置き場所だけを決める。題字は yaw だけ追うが、この面は
