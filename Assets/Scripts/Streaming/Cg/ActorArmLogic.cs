@@ -158,6 +158,59 @@ namespace FixedCamVr.Streaming.Cg
         }
 
         /// <summary>
+        /// 手首の目標を「肩を通る前額面」へ倒す ＝ **腕を上下にしか振らせない**。
+        ///
+        /// 人形の肩は球体関節がわずかに動くだけで、腕を前へ差し出す動きはしない
+        /// （2026-08-15 ユーザー指示「腕は上下するだけでいい」）。前後の成分を残すと、
+        /// 体験者が手を前に出すたびに袖がねじれて布の形が壊れる。
+        ///
+        /// **長さは保つ**。投影した長さを使うと、前へ伸ばすほど肩から手首が近くなり
+        /// ＝ 肘が曲がる。市松人形の腕は白磁の一本なので、伸びたまま上下するのが正しい。
+        ///
+        /// 真正面 / 真後ろへ伸ばすと投影が消える（＝上下の情報が無い）。そこは
+        /// <paramref name="restDir"/> を同じ平面へ倒した向きへ落とす ＝ 腕は動かない。
+        /// </summary>
+        public static Vector3 LimitToVerticalSwing(Vector3 shoulder, Vector3 target,
+                                                   Vector3 actorForward, Vector3 restDir)
+        {
+            Vector3 v = target - shoulder;
+            float len = v.magnitude;
+            if (len < 1e-5f) return target;
+
+            Vector3 fwd = actorForward.sqrMagnitude > 1e-8f ? actorForward.normalized : Vector3.forward;
+            Vector3 rest = restDir.sqrMagnitude > 1e-8f ? restDir.normalized : Vector3.down;
+            Vector3 restFlat = rest - fwd * Vector3.Dot(rest, fwd);
+            Vector3 restDirFlat = restFlat.sqrMagnitude > 1e-8f ? restFlat.normalized : Vector3.down;
+
+            Vector3 flat = v - fwd * Vector3.Dot(v, fwd);
+            float flatLen = flat.magnitude;
+
+            // ⚠⚠ **倒すだけでは駄目**。前へ真っ直ぐ差し出した手は投影がほぼ消えるので、
+            // 残ったわずかな左右成分が正規化で**腕の長さまで拡大され、腕が横へ跳ね上がる**
+            // （実測: reach のポーズで人形が横に腕を広げた）。投影が短いあいだは
+            // rest（腕を下ろした向き）へ滑らかに寄せる ＝ 前へ出した手では腕が動かない。
+            float knee = len * VerticalSwingKneeRatio;
+            Vector3 dir;
+            if (flatLen >= knee && flatLen > 1e-6f)
+            {
+                dir = flat / flatLen;
+            }
+            else
+            {
+                float t = knee > 1e-6f ? Mathf.Clamp01(flatLen / knee) : 0f;
+                t = t * t * (3f - 2f * t);
+                Vector3 b = flatLen > 1e-6f ? flat / flatLen : restDirFlat;
+                dir = Vector3.Slerp(restDirFlat, b, t);
+            }
+            return shoulder + dir.normalized * len;
+        }
+
+        /// <summary>
+        /// 前額面への投影がこの割合（腕の長さ比）を下回ったら、腕を下ろした向きへ寄せ始める。
+        /// </summary>
+        public const float VerticalSwingKneeRatio = 0.35f;
+
+        /// <summary>
         /// 手首の目標を人形の可動域へ収める。
         /// <paramref name="restDir"/> は腕を下ろした向き（そこからの振れ角を測る基準）。
         /// 角度は <see cref="SoftLimitDeg"/> で飽和させ、距離は腕長の

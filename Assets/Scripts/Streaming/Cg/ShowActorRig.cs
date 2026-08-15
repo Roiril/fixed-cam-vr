@@ -31,8 +31,15 @@ namespace FixedCamVr.Streaming.Cg
         // 可動域。⚠ **SerializeField にしない** — 既存プレハブに焼かれていない値は 0 で読まれ、
         // 腕が一切動かなくなる（unity-prefab-fields の罠）。人形ごとに変えたくなったら
         // show.json の actor 定義へ出す。
-        private const float MaxSwingDeg = ActorArmLogic.DefaultMaxSwingDeg;
-        private const float MaxReachRatio = ActorArmLogic.DefaultMaxReachRatio;
+        //
+        // ⚠ 45°（`ActorArmLogic.DefaultMaxSwingDeg`）は**写真から押し出した旧 Ichimatsu** の値。
+        // あちらは袖が腕とほぼ一体で、離すと布が引き伸ばされて手が突き出た。いまの人形は
+        // 袖の重みを腕の軸からの距離で付けてあり、**腕を上下にしか振らない**ので、
+        // Blender で水平から ±45°（＝ここでの角度で 45〜135°）まで破綻しないことを絵で確認した。
+        // 90° = 腕が水平。ユーザー指示（2026-08-15）「完全にとは言わないものの、けっこう追従」。
+        private const float MaxSwingDeg = 90f;
+        // 肘はほぼ伸ばしたままにする。人形の腕は白磁の一本で、曲げると袖の中で布を突き破る。
+        private const float MaxReachRatio = 0.95f;
 
         private Transform? _lUpper, _lLower, _lHand, _rUpper, _rLower, _rHand, _head;
         private bool _prepared;
@@ -228,8 +235,11 @@ namespace FixedCamVr.Streaming.Cg
                 float scale = ActorArmLogic.ArmScale(armLen, headHeightM);
                 Vector3 mapped = ActorArmLogic.MapHandToActor(handWorld, playerShoulder, playerBodyYawDeg,
                                                               shoulder, actorYawDeg, scale);
-                // 人形の可動域へ収める。**人形は人間ほど腕が動かない** — 着物の袖は腕が体から
-                // 離れるほど引き伸ばされ、実測では 45° で袖の先から手が突き出た（ActorArmLogic）。
+                // **腕は上下にしか振らない**（2026-08-15 ユーザー指示「腕は上下するだけでいい」）。
+                // 先に前後を落としてから角度を測る（逆順だと倒したぶん角度が変わって上限を超える）。
+                mapped = ActorArmLogic.LimitToVerticalSwing(shoulder, mapped, transform.forward,
+                                                            idle - shoulder);
+                // 人形の可動域へ収める。**人形は人間ほど腕が動かない**。
                 mapped = ActorArmLogic.LimitToDollRange(shoulder, mapped, idle - shoulder, armLen,
                                                         MaxSwingDeg, MaxReachRatio);
                 desired = Vector3.Lerp(idle, mapped, weight);

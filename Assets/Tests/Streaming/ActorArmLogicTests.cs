@@ -355,5 +355,89 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(cur.x, Is.LessThanOrEqualTo(1f + 1e-4f));
             Assert.That(cur.x, Is.GreaterThan(0.99f));
         }
+
+        // ---- 腕は上下にしか振らない（2026-08-15 ユーザー指示）--------------------
+
+        private static readonly Vector3 Shoulder = new Vector3(0f, 1.2f, 0f);
+        private static readonly Vector3 Forward = Vector3.forward;
+        private static readonly Vector3 Rest = Vector3.down * 0.3f;      // 腕を下ろした向き
+
+        [Test]
+        public void 前後の成分は落ちて上下と左右だけが残る()
+        {
+            // 斜め前・斜め上へ差し出した手。
+            Vector3 target = Shoulder + new Vector3(0.2f, 0.2f, 0.3f);
+
+            Vector3 got = ActorArmLogic.LimitToVerticalSwing(Shoulder, target, Forward, Rest);
+
+            Assert.That(got.z, Is.EqualTo(Shoulder.z).Within(1e-4f), "前後には出さない");
+            Vector3 v = got - Shoulder;
+            Assert.That(v.x, Is.GreaterThan(0f), "左右の向きは保つ");
+            Assert.That(v.y, Is.GreaterThan(0f), "上下の向きは保つ");
+        }
+
+        [Test]
+        public void 倒しても腕の長さは変わらない()
+        {
+            // ⚠ 投影した長さを使うと、前へ伸ばすほど肩と手首が近づく＝肘が曲がる。
+            //    人形の腕は白磁の一本なので、伸びたまま倒れるのが正しい。
+            Vector3 target = Shoulder + new Vector3(0.1f, 0.15f, 0.4f);
+            float len = (target - Shoulder).magnitude;
+
+            Vector3 got = ActorArmLogic.LimitToVerticalSwing(Shoulder, target, Forward, Rest);
+
+            Assert.That((got - Shoulder).magnitude, Is.EqualTo(len).Within(1e-4f));
+        }
+
+        [Test]
+        public void 真正面へ差し出した手では腕が動かない()
+        {
+            // 倒す先が消える特異点。ここで暴れると、手を前へ出すたびに腕が跳ねる。
+            Vector3 target = Shoulder + Forward * 0.3f;
+
+            Vector3 got = ActorArmLogic.LimitToVerticalSwing(Shoulder, target, Forward, Rest);
+
+            Vector3 v = (got - Shoulder).normalized;
+            Assert.That(Vector3.Angle(v, Rest.normalized), Is.LessThan(1f), "rest（腕を下ろした向き）へ倒れる");
+            Assert.That((got - Shoulder).magnitude, Is.EqualTo(0.3f).Within(1e-4f));
+        }
+
+        [Test]
+        public void 人形が横を向いていても体の前後で倒す()
+        {
+            // cgMode=fixed で人形が体験者と違う向きに立っている場合。
+            Vector3 fwd = Vector3.right;                                  // 人形は +X を向いている
+            Vector3 target = Shoulder + new Vector3(0.3f, 0.2f, 0.1f);    // 人形の「前」へ 0.3
+
+            Vector3 got = ActorArmLogic.LimitToVerticalSwing(Shoulder, target, fwd, Vector3.down * 0.3f);
+
+            Assert.That(got.x, Is.EqualTo(Shoulder.x).Within(1e-4f), "人形の前後を落とす");
+            Assert.That(got.z - Shoulder.z, Is.GreaterThan(0f), "人形の左右は残す");
+        }
+
+        [Test]
+        public void 前へ差し出した手で腕が横へ跳ねない()
+        {
+            // ⚠ 実測で踏んだ形。前へ真っ直ぐ出した手は投影がほぼ消えるので、残った
+            //    わずかな左右成分が腕の長さまで拡大され、人形が腕を横に広げていた。
+            Vector3 target = Shoulder + new Vector3(0.05f, 0f, 0.40f);
+
+            Vector3 got = ActorArmLogic.LimitToVerticalSwing(Shoulder, target, Forward, Rest);
+
+            Vector3 v = (got - Shoulder).normalized;
+            Assert.That(Vector3.Angle(v, Vector3.down), Is.LessThan(45f),
+                        "腕を下ろした向きの側へ倒れる（横へ広がらない）");
+            Assert.That(v.y, Is.LessThan(0.2f), "上へ跳ねない");
+        }
+
+        [Test]
+        public void 上下だけの目標はそのまま通る()
+        {
+            Vector3 target = Shoulder + new Vector3(0.25f, 0.15f, 0f);
+
+            Vector3 got = ActorArmLogic.LimitToVerticalSwing(Shoulder, target, Forward, Rest);
+
+            Assert.That((got - target).magnitude, Is.LessThan(1e-4f));
+        }
     }
 }

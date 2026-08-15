@@ -33,9 +33,17 @@ namespace FixedCamVr.OvrBridge
                  "（無効な間は腕が idle へ滑らかに戻るので演出は止まらない）。")]
         [SerializeField] private bool acceptLowConfidence;
 
+        /// <summary>
+        /// コントローラの原点から手首までのオフセット（コントローラのローカル座標）。
+        /// 握ると手首はグリップの**後ろ下**に来る。人形の腕は上下にしか振らないので
+        /// （<see cref="ActorArmLogic.LimitToVerticalSwing"/>）、ここの精度は数 cm あれば足りる。
+        /// </summary>
+        private static readonly Vector3 ControllerToWrist = new Vector3(0f, -0.02f, -0.05f);
+
         private OVRPlugin.HandState _left = new OVRPlugin.HandState();
         private OVRPlugin.HandState _right = new OVRPlugin.HandState();
         private bool _warnedMultimodal;
+        private bool _loggedLeftController;
 
         private void Start()
         {
@@ -64,7 +72,37 @@ namespace FixedCamVr.OvrBridge
             bool lv = TryReadHand(OVRPlugin.Hand.HandLeft, ref _left, out Vector3 lp);
             bool rv = TryReadHand(OVRPlugin.Hand.HandRight, ref _right, out Vector3 rp);
 
+            // **左だけ、素手が取れなければコントローラの姿勢で代える**（2026-08-15 ユーザー指示）。
+            // 体験者は左コントローラを持って歩く（X / Y 長押しで異変を報告する・show-design.md）ので、
+            // 握った手はハンドトラッキングされず、**映像の中の人形の左腕が体側で止まっていた**。
+            //
+            // ⚠ **右は代えない。** 右を持つのはスタッフで、体験者ではない。代えると
+            // スタッフが手を動かすたびに映像の中の人形の右腕が動く（人形は体験者の分身なので破綻する）。
+            if (!lv) lv = TryReadController(OVRInput.Controller.LTouch, out lp);
+
             layer.SetBodyInput(new ShowBodyInput(hasHead, headPos, headYaw, lv, lp, rv, rp));
+        }
+
+        /// <summary>
+        /// コントローラの姿勢から手首のワールド位置を出す。掴めなければ false
+        /// （呼び出し側は idle へ滑らかに合流するので、人形は止まらない）。
+        /// </summary>
+        private bool TryReadController(OVRInput.Controller controller, out Vector3 world)
+        {
+            world = Vector3.zero;
+            if (!OVRInput.IsControllerConnected(controller)) return false;
+            if (!OVRInput.GetControllerPositionValid(controller)) return false;
+
+            Vector3 local = OVRInput.GetLocalControllerPosition(controller)
+                            + OVRInput.GetLocalControllerRotation(controller) * ControllerToWrist;
+            world = trackingSpace != null ? trackingSpace.TransformPoint(local) : local;
+
+            if (!_loggedLeftController && controller == OVRInput.Controller.LTouch)
+            {
+                _loggedLeftController = true;
+                Debug.Log("[OvrHandTracking] 左は素手が取れないのでコントローラの姿勢で代える。");
+            }
+            return true;
         }
 
         private bool TryReadHand(OVRPlugin.Hand hand, ref OVRPlugin.HandState state, out Vector3 world)

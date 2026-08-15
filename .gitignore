@@ -227,3 +227,6 @@ Assets/Screenshots.meta
 # Python のキャッシュ（tools/ 配下のスクリプトが作る）
 __pycache__/
 *.pyc
+
+# 人形のリグ付けの中間成果物（rig_doll.py で再生成できる・4096 のテクスチャが重い）
+tools/doll-rig/out/
