@@ -1,0 +1,956 @@
+{
+  "rev": 718,
+  "cameras": [
+    {
+      "id": "A",
+      "sourceId": "Phone01",
+      "host": "192.168.11.17",
+      "port": 8080,
+      "auth": "",
+      "pose": {
+        "x": -1.05,
+        "z": 1.05,
+        "y": 1.35,
+        "yawDeg": 133,
+        "pitchDeg": -14,
+        "hfovDeg": 77.4
+      }
+    },
+    {
+      "id": "B",
+      "sourceId": "Phone02",
+      "host": "192.168.11.20",
+      "port": 8080,
+      "auth": "",
+      "pose": {
+        "x": -0.68,
+        "z": -1.05,
+        "y": 1.35,
+        "yawDeg": 0,
+        "pitchDeg": -20,
+        "hfovDeg": 77.4
+      }
+    },
+    {
+      "id": "C",
+      "sourceId": "Phone03",
+      "host": "192.168.11.23",
+      "port": 8080,
+      "auth": "",
+      "pose": {
+        "x": 1.05,
+        "z": 1.05,
+        "y": 1.35,
+        "yawDeg": -110,
+        "pitchDeg": -20,
+        "hfovDeg": 77.4
+      }
+    },
+    {
+      "id": "D",
+      "sourceId": "Phone04",
+      "host": "",
+      "port": 8080,
+      "auth": "",
+      "pinned": false,
+      "role": "fx",
+      "pose": {
+        "x": -0.501,
+        "z": 0.69,
+        "y": 1.35,
+        "yawDeg": 91,
+        "pitchDeg": -8,
+        "hfovDeg": 77.4
+      }
+    }
+  ],
+  "cues": [
+    {
+      "id": "test-still",
+      "name": "test",
+      "camera": "A",
+      "maskUrl": "",
+      "sourceUrl": "/testassets/test_still_full.png",
+      "strength": 1,
+      "loop": true,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3
+    },
+    {
+      "id": "cue_20260611_150900",
+      "name": "テスト手形",
+      "camera": "A",
+      "maskUrl": "/masks/cue_20260611_150900.png",
+      "sourceUrl": "/testassets/test_still_A.png",
+      "strength": 1,
+      "loop": true,
+      "fadeIn": 0.5,
+      "fadeOut": 0.5
+    },
+    {
+      "id": "cue_C",
+      "name": "カメラ C",
+      "camera": "C",
+      "maskUrl": "/masks/cue_C.png",
+      "sourceUrl": "/testassets/test_clip_C.mp4",
+      "strength": 1,
+      "loop": false,
+      "fadeIn": 0.2,
+      "fadeOut": 0.2,
+      "trimStart": 0,
+      "trimEnd": 6
+    },
+    {
+      "id": "cue_B",
+      "name": "カメラ B",
+      "camera": "B",
+      "maskUrl": "/masks/cue_B.png",
+      "sourceUrl": "/testassets/test_clip_B.mp4",
+      "strength": 1,
+      "loop": false,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
+      "trimStart": 0,
+      "trimEnd": 6
+    },
+    {
+      "id": "cue_A",
+      "name": "カメラ A",
+      "camera": "A",
+      "maskUrl": "/masks/cue_A.png",
+      "sourceUrl": "/testassets/test_clip_A.mp4",
+      "strength": 1,
+      "loop": false,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
+      "trimStart": 0,
+      "trimEnd": 6
+    },
+    {
+      "id": "cue_A_1",
+      "name": "Aで襲われる",
+      "camera": "A",
+      "maskUrl": "/masks/cue_A_1.png",
+      "sourceUrl": "/testassets/test_clip_A.mp4",
+      "strength": 1,
+      "loop": false,
+      "fadeIn": 0.5,
+      "fadeOut": 0.5,
+      "trimStart": 0,
+      "trimEnd": 6
+    },
+    {
+      "id": "cue_C_1",
+      "name": "Cでなにかいる",
+      "camera": "C",
+      "maskUrl": "/masks/cue_C_1.png",
+      "sourceUrl": "/testassets/test_clip_B.mp4",
+      "strength": 1,
+      "loop": false,
+      "fadeIn": 0.5,
+      "fadeOut": 0.5,
+      "trimStart": 0,
+      "trimEnd": 6
+    },
+    {
+      "id": "cue_hand_B",
+      "name": "血の手形（壁・1周目）",
+      "camera": "B",
+      "maskUrl": "/masks/cue_hand_B.png",
+      "sourceUrl": "/captures/gen_handB_01.png",
+      "strength": 1,
+      "loop": true,
+      "fadeIn": 0,
+      "fadeOut": 0.35
+    },
+    {
+      "id": "cue_ningyo_A",
+      "name": "人形が覗いている（2周目）",
+      "camera": "A",
+      "maskUrl": "/masks/cue_ningyo_A.png",
+      "sourceUrl": "/captures/gen_monsterA_01.png",
+      "strength": 1,
+      "loop": true,
+      "fadeIn": 0.35,
+      "fadeOut": 0.4
+    }
+  ],
+  "post": {
+    "exposure": -0.72,
+    "contrast": 1.28,
+    "saturation": 0.35,
+    "temperature": -0.18,
+    "tint": 0.16,
+    "lift": 0.065,
+    "vignette": 0.45,
+    "grain": 0.065,
+    "scanline": 0.2
+  },
+  "control": {
+    "activeCue": null,
+    "cameraOverride": null,
+    "autoFollow": true,
+    "switchGlitch": 0.25
+  },
+  "layout": {
+    "rev": 14,
+    "floor": {
+      "w": 1.8,
+      "d": 1.8
+    },
+    "wall": {
+      "corner": [
+        -0.5,
+        0.5
+      ],
+      "endX": [
+        0.5,
+        0.5
+      ],
+      "endZ": [
+        -0.5,
+        -0.5
+      ]
+    },
+    "cuts": [
+      {
+        "s": 0.125,
+        "camAfter": 1
+      },
+      {
+        "s": 0.375,
+        "camAfter": 2
+      },
+      {
+        "s": 0.875,
+        "camAfter": 0
+      }
+    ],
+    "overlapM": 0.08,
+    "hysteresisM": 0.12,
+    "grid": {
+      "tileM": 0.15,
+      "cols": 12,
+      "rows": 12,
+      "cells": [
+        "111222222222",
+        "111222222222",
+        "111222222222",
+        "111000000000",
+        "111000000000",
+        "111000000000",
+        "111000000000",
+        "111000000000",
+        "111000000000",
+        "111000000000",
+        "000000000000",
+        "000000000000"
+      ]
+    },
+    "course": {
+      "order": [
+        0,
+        1,
+        2
+      ]
+    },
+    "lines": [
+      {
+        "id": "line_1",
+        "camera": 0,
+        "x1": -0.351,
+        "z1": -0.748,
+        "x2": 0.692,
+        "z2": 0.274,
+        "dir": "both",
+        "label": "導入演出"
+      },
+      {
+        "id": "line_2",
+        "camera": 0,
+        "x1": -0.092,
+        "z1": -1.192,
+        "x2": -0.474,
+        "z2": -0.521,
+        "dir": "back",
+        "label": "2週目初化け物"
+      }
+    ],
+    "startSpot": {
+      "x": 0.15,
+      "z": -0.35,
+      "radiusM": 0.35,
+      "label": "スタート（カメラ A に全身が入る）"
+    },
+    "room": {
+      "floorY": 0,
+      "floorW": 1.8,
+      "floorD": 1.8,
+      "walls": [
+        {
+          "id": "w1",
+          "x1": -0.5,
+          "z1": 0.5,
+          "x2": 0.5,
+          "z2": 0.5,
+          "h": 1.8,
+          "thick": 0.04
+        },
+        {
+          "id": "w2",
+          "x1": -0.5,
+          "z1": 0.5,
+          "x2": -0.5,
+          "z2": -0.5,
+          "h": 1.8,
+          "thick": 0.04
+        }
+      ],
+      "props": [],
+      "light": {
+        "yawDeg": 30,
+        "pitchDeg": 70,
+        "tempK": 5000,
+        "intensity": 0.9,
+        "ambient": 0.45,
+        "shadowDensity": 0.4,
+        "shadowSoftM": 0.18
+      },
+      "hasLight": true
+    },
+    "hasRoom": true
+  },
+  "schedule": {
+    "rev": 15,
+    "entries": []
+  },
+  "bgmTracks": [
+    {
+      "id": "bgm_HorrBGM",
+      "name": "HorrBGM",
+      "url": "/audio/HorrBGM.mp3",
+      "loopStartSec": 0,
+      "loopEndSec": 0,
+      "volume": 0.5
+    }
+  ],
+  "timeline": {
+    "rev": 21,
+    "schema": 3,
+    "segments": [
+      {
+        "lap": 1,
+        "camera": 1,
+        "takes": [
+          {
+            "id": "L1C1#0",
+            "name": "壁の血の手形",
+            "at": "enter",
+            "offsetSec": 0,
+            "ifMissed": "fireOnExit",
+            "lineId": "",
+            "policy": "hold",
+            "wait": "segment",
+            "once": true,
+            "maxDurationSec": 0,
+            "steps": [
+              {
+                "source": "inherit",
+                "camera": -1,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "cue_hand_B",
+                "strength": -1,
+                "fadeInSec": 0,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 5,
+                "transition": "cut",
+                "transitionMs": 0,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              },
+              {
+                "source": "live",
+                "camera": 1,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 0.4,
+                "transition": "cut",
+                "transitionMs": 0,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              }
+            ],
+            "hasBgm": false
+          }
+        ],
+        "hasPost": false,
+        "hasBgm": false
+      },
+      {
+        "lap": 2,
+        "camera": 0,
+        "takes": [
+          {
+            "id": "L2C0#0",
+            "name": "人形が怪物に変わる",
+            "at": "line",
+            "offsetSec": 0,
+            "ifMissed": "fireOnExit",
+            "lineId": "line_2",
+            "policy": "hold",
+            "wait": "segment",
+            "once": true,
+            "maxDurationSec": 0,
+            "steps": [
+              {
+                "source": "inherit",
+                "camera": -1,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "cue_ningyo_A",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 2.6,
+                "transition": "glitch",
+                "transitionMs": 260,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              },
+              {
+                "source": "live",
+                "camera": 0,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 0.5,
+                "transition": "glitch",
+                "transitionMs": 300,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              }
+            ],
+            "bgm": {
+              "action": "stop",
+              "trackId": "",
+              "loop": true,
+              "startSec": 0,
+              "loopStartSec": -1,
+              "loopEndSec": -1,
+              "volume": -1,
+              "fadeInSec": 1,
+              "fadeOutSec": 0.3,
+              "restart": false
+            },
+            "hasBgm": true
+          }
+        ],
+        "hasPost": false,
+        "hasBgm": false
+      },
+      {
+        "lap": 2,
+        "camera": 1,
+        "takes": [
+          {
+            "id": "L2C1#0",
+            "name": "近づいてくる（乱れ）",
+            "at": "enter",
+            "offsetSec": 1.2,
+            "ifMissed": "fireOnExit",
+            "lineId": "",
+            "policy": "hold",
+            "wait": "segment",
+            "once": true,
+            "maxDurationSec": 0,
+            "steps": [
+              {
+                "source": "inherit",
+                "camera": -1,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 1.4,
+                "transition": "cut",
+                "transitionMs": 0,
+                "glitch": 0.85,
+                "glitchSec": 1.2,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              },
+              {
+                "source": "live",
+                "camera": 1,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 0.4,
+                "transition": "cut",
+                "transitionMs": 0,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              }
+            ],
+            "hasBgm": false
+          }
+        ],
+        "hasPost": false,
+        "hasBgm": false
+      },
+      {
+        "lap": 2,
+        "camera": 2,
+        "takes": [
+          {
+            "id": "L2C2#0",
+            "name": "襲いかかる",
+            "at": "enter",
+            "offsetSec": 2.5,
+            "ifMissed": "fireOnExit",
+            "lineId": "",
+            "policy": "hold",
+            "wait": "segment",
+            "once": true,
+            "maxDurationSec": 0,
+            "steps": [
+              {
+                "source": "still",
+                "camera": -1,
+                "assetUrl": "/captures/gen_closeC_01.png",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 1.6,
+                "transition": "glitch",
+                "transitionMs": 200,
+                "glitch": 0.95,
+                "glitchSec": 0.4,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              },
+              {
+                "source": "live",
+                "camera": 2,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 0.5,
+                "transition": "glitch",
+                "transitionMs": 300,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              }
+            ],
+            "hasBgm": false
+          }
+        ],
+        "hasPost": false,
+        "hasBgm": false
+      },
+      {
+        "lap": 3,
+        "camera": 0,
+        "takes": [
+          {
+            "id": "L3C0#0",
+            "name": "過去の自分",
+            "at": "enter",
+            "offsetSec": 0.5,
+            "ifMissed": "fireOnExit",
+            "lineId": "",
+            "policy": "hold",
+            "wait": "segment",
+            "once": true,
+            "maxDurationSec": 0,
+            "steps": [
+              {
+                "source": "rec",
+                "camera": 0,
+                "assetUrl": "",
+                "recLap": 1,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 6,
+                "transition": "glitch",
+                "transitionMs": 320,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "doll",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              },
+              {
+                "source": "live",
+                "camera": 0,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 0.5,
+                "transition": "glitch",
+                "transitionMs": 260,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              }
+            ],
+            "hasBgm": false
+          }
+        ],
+        "post": {
+          "exposure": -0.85,
+          "contrast": 1.32,
+          "saturation": 0.22,
+          "temperature": -0.24,
+          "tint": 0.18,
+          "lift": 0.09,
+          "vignette": 0.52,
+          "grain": 0.1,
+          "scanline": 0.28,
+          "scanlineCount": 240,
+          "aberration": 0.12,
+          "pixelate": 0
+        },
+        "hasPost": true,
+        "bgm": {
+          "action": "stop",
+          "trackId": "",
+          "loop": true,
+          "startSec": 0,
+          "loopStartSec": -1,
+          "loopEndSec": -1,
+          "volume": -1,
+          "fadeInSec": 1,
+          "fadeOutSec": 2,
+          "restart": false
+        },
+        "hasBgm": true
+      },
+      {
+        "lap": 3,
+        "camera": 1,
+        "takes": [
+          {
+            "id": "L3C1#0",
+            "name": "過去の自分",
+            "at": "enter",
+            "offsetSec": 0.5,
+            "ifMissed": "fireOnExit",
+            "lineId": "",
+            "policy": "hold",
+            "wait": "chain",
+            "once": true,
+            "maxDurationSec": 0,
+            "steps": [
+              {
+                "source": "rec",
+                "camera": 1,
+                "assetUrl": "",
+                "recLap": 1,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 6,
+                "transition": "glitch",
+                "transitionMs": 320,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "doll",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              },
+              {
+                "source": "live",
+                "camera": 1,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 0.5,
+                "transition": "glitch",
+                "transitionMs": 260,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              }
+            ],
+            "hasBgm": false
+          }
+        ],
+        "post": {
+          "exposure": -0.85,
+          "contrast": 1.32,
+          "saturation": 0.22,
+          "temperature": -0.24,
+          "tint": 0.18,
+          "lift": 0.09,
+          "vignette": 0.52,
+          "grain": 0.1,
+          "scanline": 0.28,
+          "scanlineCount": 240,
+          "aberration": 0.12,
+          "pixelate": 0
+        },
+        "hasPost": true,
+        "hasBgm": false
+      },
+      {
+        "lap": 3,
+        "camera": 2,
+        "takes": [
+          {
+            "id": "L3C2#0",
+            "name": "過去の自分",
+            "at": "enter",
+            "offsetSec": 0.5,
+            "ifMissed": "fireOnExit",
+            "lineId": "",
+            "policy": "hold",
+            "wait": "chain",
+            "once": true,
+            "maxDurationSec": 0,
+            "steps": [
+              {
+                "source": "rec",
+                "camera": 2,
+                "assetUrl": "",
+                "recLap": 1,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 6,
+                "transition": "glitch",
+                "transitionMs": 320,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "doll",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              },
+              {
+                "source": "still",
+                "camera": -1,
+                "assetUrl": "/captures/gen_camC_doll_20260729_191238.png",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 2.4,
+                "transition": "glitch",
+                "transitionMs": 300,
+                "glitch": 0.7,
+                "glitchSec": 0.5,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              },
+              {
+                "source": "live",
+                "camera": 2,
+                "assetUrl": "",
+                "recLap": 0,
+                "cueId": "",
+                "strength": -1,
+                "fadeInSec": -1,
+                "fadeOutSec": -1,
+                "trimStartSec": -1,
+                "trimEndSec": -1,
+                "durKind": "sec",
+                "durSec": 0.5,
+                "transition": "glitch",
+                "transitionMs": 260,
+                "glitch": 0,
+                "glitchSec": 0,
+                "cg": "",
+                "cgMode": "follow",
+                "hasPost": false,
+                "hasPlacement": false
+              }
+            ],
+            "hasBgm": false
+          }
+        ],
+        "post": {
+          "exposure": -0.85,
+          "contrast": 1.32,
+          "saturation": 0.22,
+          "temperature": -0.24,
+          "tint": 0.18,
+          "lift": 0.09,
+          "vignette": 0.52,
+          "grain": 0.1,
+          "scanline": 0.28,
+          "scanlineCount": 240,
+          "aberration": 0.12,
+          "pixelate": 0
+        },
+        "hasPost": true,
+        "hasBgm": false
+      }
+    ]
+  },
+  "bgm": {
+    "action": "play",
+    "trackId": "bgm_HorrBGM",
+    "loop": true,
+    "startSec": 0,
+    "loopStartSec": -1,
+    "loopEndSec": -1,
+    "volume": -1,
+    "fadeInSec": 1,
+    "fadeOutSec": 1,
+    "restart": false
+  },
+  "actors": [
+    {
+      "id": "doll",
+      "name": "人形",
+      "prefab": "ShowActors/Remy",
+      "heightM": 1.6,
+      "fixedX": 0,
+      "fixedZ": 0,
+      "fixedYawDeg": 0
+    }
+  ],
+  "record": {
+    "enabled": true,
+    "laps": [
+      1
+    ],
+    "maxSegmentSec": 60,
+    "maxTotalMB": 200,
+    "fpsCap": 15
+  },
+  "run": {
+    "totalLaps": 3,
+    "introEnabled": true,
+    "introMinSec": 20,
+    "introAutoAdvance": true,
+    "targetSec": 180,
+    "hardLimitSec": 300,
+    "endFadeSec": 1.5,
+    "intro": {
+      "enabled": true,
+      "maxSec": 20,
+      "edgeColor": "#ffffff",
+      "showCameraMarks": false,
+      "showRoomWire": false,
+      "glitchOnSwap": 0.8,
+      "raiseHandPrompt": true,
+      "startLineId": "line_1",
+      "realSec": 1.5,
+      "degradeSec": 3.5,
+      "structureSec": 2.5,
+      "frameSec": 2.5,
+      "swapSec": 4.5
+    }
+  }
+}

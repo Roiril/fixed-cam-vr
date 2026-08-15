@@ -22,9 +22,21 @@ namespace FixedCamVr.Streaming
         /// <summary>終幕が進行中か。</summary>
         public bool outroActive;
         public OutroStage outroStage;
+
+        /// <summary>
+        /// 終幕のいまの段の進み 0..1。<b>装置の声が「絵と同じ速さで」細るために要る</b>
+        /// （段だけだと 6 秒の Flicker のあいだ音が一定になり、消えていく画と食い違う）。
+        /// </summary>
+        public float outroProgress01;
         public ShowPhase phase;
         /// <summary>映像の解像度の劣化（0 = 新しい / 1 = 落ち切った）。<see cref="ScreenDecayLogic"/>。</summary>
         public float decay;
+
+        /// <summary>
+        /// いまの周（1 始まり）。<b>環境音を周ごとに入れ替えるために読む</b>
+        /// （2026-08-15・<c>canon/LEDGER.md</c> 0049）。0 以下は 1 周目として扱う。
+        /// </summary>
+        public int lap;
         /// <summary>信号断の強さ（<see cref="SignalLostFx"/>）。</summary>
         public float signalLost;
         /// <summary>位置合わせ作業中（スタッフが実物に線を重ねている）。</summary>
@@ -47,8 +59,17 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>2026-08-15 から常に 0</b> — 箱を退避したので定位する先が無い（音源は残してある）。
         /// </summary>
         public float seal;
-        /// <summary>部屋のトーン。</summary>
+        /// <summary>部屋のトーン（**3 本の合計**。どれをどれだけ鳴らすかは下の取り分）。</summary>
         public float room;
+
+        /// <summary>
+        /// 周ごとの環境音の取り分。<b>二乗の和が常に 1</b>（等パワー）なので、
+        /// <see cref="room"/> に掛けても入れ替えの最中に音の密度が凹まない。
+        ///
+        /// 1 周目 = 合成の <c>bed_room</c> / 2 周目・3 周目 = ユーザー指定の音源
+        /// （2026-08-15・<c>canon/LEDGER.md</c> 0049）。
+        /// </summary>
+        public float roomLap1, roomLap2, roomLap3;
         /// <summary>装置（カメラ・伝送・スクリーン）の声。新しい方。</summary>
         public float device;
         /// <summary>同・痩せた方。<see cref="SoundShowState.decay"/> で等パワーに混ざる。</summary>
@@ -116,8 +137,18 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float SpotBedDuck = 0.55f;
 
+        /// <summary>
+        /// 周ごとの環境音を入れ替える速さ（半減期・秒）。
+        /// **気づかれない長さにする** — 半減期 2.5 秒なら、入れ替わりに約 8 秒かかる。
+        /// 1 周 30 秒に対して 1/4 なので、区間を歩いているあいだに静かに入れ替わる。
+        /// </summary>
+        public const float AmbientCrossHalfLifeSec = 2.5f;
+
         private SoundBedGains _cur;
         private float _spotDuck;
+
+        /// <summary>環境音の位置（0 = 1 周目 / 1 = 2 周目 / 2 = 3 周目）。整数の間を連続で動く。</summary>
+        private float _ambPos;
 
         /// <summary>
         /// 装置の声の**合計**（新しい方 ＋ 痩せた方）。平滑化はこの 1 本で行う。
@@ -138,6 +169,8 @@ namespace FixedCamVr.Streaming
             _cur.roomOpen = 1f;
             _spotDuck = 0f;
             _deviceTotal = 0f;
+            // 体験者が代わったら環境音も 1 周目へ戻す（**前の人の 3 周目から始めない**）。
+            _ambPos = 0f;
         }
 
         /// <summary>一撃の音が鳴ったときに劇伴を短く引く（値は 0..1・そのまま最大値で上書き）。</summary>
@@ -152,6 +185,7 @@ namespace FixedCamVr.Streaming
 
             _cur.seal = SoundFade.Approach(_cur.seal, t.seal, SealRiseSec, SealFallSec, dt);
             _cur.room = SoundFade.Approach(_cur.room, t.room, RoomSec, dt);
+            ApplyAmbientMix(dt, s.lap);
             _deviceTotal = SoundFade.Approach(_deviceTotal, t.device, DeviceRiseSec, DeviceFallSec, dt);
             _cur.noise = SoundFade.Approach(_cur.noise, t.noise, NoiseRiseSec, NoiseFallSec, dt);
             _cur.roomOpen = SoundFade.Approach(_cur.roomOpen, t.roomOpen, OpenSec, dt);
@@ -179,6 +213,35 @@ namespace FixedCamVr.Streaming
             return outG;
         }
 
+        /// <summary>
+        /// 周ごとの環境音の取り分を進める。<b>入れ替わりに気づかれないための形。</b>
+        ///
+        /// 判定は <c>canon/LEDGER.md</c> 0049（ユーザー逐語「2周目と3周目の環境音を、以下にそれぞれ
+        /// クロスフェードで入れ替えるようにして」「差し替えを気づかれないようにクロスフェードをお願い」）。
+        ///
+        /// ⚠ <b>周の番号で直接切り替えない。</b> 位置（0..2）を半減期で寄せ、その小数部を
+        /// <see cref="SoundFade.Cross"/> に渡す。こうすると
+        /// <b>どの瞬間も二乗の和が厳密に 1</b> ＝ 混ざっている最中に密度が凹まない
+        /// （線形に混ぜると真ん中で -3dB の谷ができ、それが「切り替わった」の合図になる）。
+        ///
+        /// ⚠ <b>音量では入れ替えを表さない。</b> 3 本とも同じ高さ（-32 LUFS）へ揃えてあるので、
+        /// 取り分だけが動く。片方が大きいと、どれだけ滑らかに混ぜても気づかれる。
+        /// </summary>
+        private void ApplyAmbientMix(float dt, int lap)
+        {
+            // 1 周目 = 0 / 2 周目 = 1 / 3 周目**以降** = 2（帰りの A も 3 周目の続きとして扱う）。
+            float target = lap <= 1 ? 0f : (lap == 2 ? 1f : 2f);
+            _ambPos = SoundFade.Approach(_ambPos, target, AmbientCrossHalfLifeSec, dt);
+
+            int lo = (int)_ambPos;
+            if (lo < 0) lo = 0; else if (lo > 1) lo = 1;
+            SoundFade.Cross(_ambPos - lo, out float outGain, out float inGain);
+
+            _cur.roomLap1 = lo == 0 ? outGain : 0f;
+            _cur.roomLap2 = lo == 0 ? inGain : outGain;
+            _cur.roomLap3 = lo == 0 ? 0f : inGain;
+        }
+
         /// <summary>いまの状態が求める「あるべき高さ」（寄せる前の目標）。**設計はここに書いてある。**</summary>
         public static SoundBedGains Target(in SoundShowState s)
         {
@@ -193,7 +256,7 @@ namespace FixedCamVr.Streaming
 
             // --- 部屋 -----------------------------------------------------------
             if (s.titleVisible) g.room = 0f;                       // タイトルは世界の手前
-            else if (s.outroActive) g.room = OutroRoom(s.outroStage);
+            else if (s.outroActive) g.room = OutroRoom(s.outroStage, s.outroProgress01);
             else if (s.introActive) g.room = 0.85f;
             else g.room = RoomInRun;
 
@@ -204,7 +267,7 @@ namespace FixedCamVr.Streaming
             // --- 装置 -----------------------------------------------------------
             // ⚠ **絵より先に来る。** 段 2（色が抜ける）で入り始め、段 5 で画が変わる。
             if (s.titleVisible) g.device = 0f;
-            else if (s.outroActive) g.device = OutroDevice(s.outroStage);
+            else if (s.outroActive) g.device = OutroDevice(s.outroStage, s.outroProgress01);
             else if (s.introActive) g.device = DeviceForStage(s);
             else g.device = 1f;
 
@@ -259,29 +322,37 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        // 終幕は導入の逆をたどる。**山を作らない**（決め台詞を置かない）。
-        private static float OutroDevice(OutroStage st)
+        /// <summary>
+        /// 終幕の装置。<b>ちかちかしながら消えていくのと同じ進みで細っていく。</b>
+        /// **山を作らない**（決め台詞を置かない）。
+        ///
+        /// ⚠ <b>ちらつきそのものを音へ写さない。</b> 電力は 6〜24Hz で跳ねるので、
+        /// そのまま音量に掛けると低い唸りには「切れかけ」ではなく歪みとして乗る
+        /// （しかも 90Hz のフレームで階段状に切り替わるのでクリックが出る）。
+        /// 写すのは<b>痩せていく方だけ</b>で、ちかちかは画が担う。
+        /// </summary>
+        private static float OutroDevice(OutroStage st, float p)
         {
-            switch (st)
-            {
-                case OutroStage.Warm: return 1f;
-                case OutroStage.Unswap: return 0.45f;
-                case OutroStage.Open: return 0.15f;
-                default: return 0f;
-            }
+            if (st != OutroStage.Flicker) return 0f;   // Dark 以降は消えている
+            return 1f - Smooth(Clamp01(p));
         }
 
-        private static float OutroRoom(OutroStage st)
+        /// <summary>
+        /// 終幕の部屋。<b>装置が黙るぶんだけ、体験者が実際に立っている部屋が前へ出る。</b>
+        ///
+        /// ⚠ <b>終幕で足す音は 1 つも無い。</b> 装置が引いた後に残るのは元からあった部屋の音だけで、
+        /// それも <see cref="ShowPhase.Finished"/> の分岐が Done で無音へ落とす
+        /// （`rules/sound-design.md`「終わりに音を残さない」）。
+        /// </summary>
+        private static float OutroRoom(OutroStage st, float p)
         {
-            switch (st)
-            {
-                case OutroStage.Warm: return RoomInRun;
-                case OutroStage.Unswap: return 0.55f;
-                case OutroStage.Open: return 0.85f;
-                case OutroStage.Restore: return 0.85f;
-                default: return 0.45f;          // Hold — 現実だけが残る。ここから静かに引く
-            }
+            const float RoomAlone = 0.85f;
+            if (st == OutroStage.Flicker)
+                return RoomInRun + (RoomAlone - RoomInRun) * Smooth(Clamp01(p));
+            return RoomAlone;                 // Dark / Report — 部屋だけが残る
         }
+
+        private static float Smooth(float t) => t * t * (3f - 2f * t);
 
         private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);
     }

@@ -37,6 +37,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string EndingFaderName = "ShowEndingFader";
         private const string IntroPromptName = "IntroPrompt";
         private const string TitleNoticeName = "TitleNotice";
+        private const string OutroReportName = "OutroReport";
         private const string IntroVeilName = "IntroVeil";
         private const string IntroDirectorName = "IntroDirector";
         private const string TitleName = "Title";
@@ -108,6 +109,7 @@ namespace FixedCamVr.Streaming.EditorTools
             DeleteIfExists($"{CenterEyePath}/{EndingFaderName}");
             DeleteIfExists($"{CenterEyePath}/{IntroPromptName}");
             DeleteIfExists($"{CenterEyePath}/{TitleNoticeName}");
+            DeleteIfExists($"{CenterEyePath}/{OutroReportName}");
             DeleteIfExists($"{CenterEyePath}/{IntroVeilName}");
             DeleteIfExists($"{CenterEyePath}/{TitleName}");
             DeleteIfExists($"{LogicGroupName}/{IntroDirectorName}");
@@ -499,9 +501,10 @@ namespace FixedCamVr.Streaming.EditorTools
             //    「すごく奥に小さい白い文字」の正体だった。実機の画で 1 文字の px を測って決めた。
             TrySetFloat(noticeSo, "sizeScale", 8.5f);
             noticeSo.ApplyModifiedPropertiesWithoutUndo();
-            // 終幕（2D スクリーン → パススルー）。導入と**同じ覆い**を使う（開口の式を共有しないと
-            // 閉じた形と開く形が食い違う）。IntroDirector と同じオブジェクトに載せるので、
-            // 進行役が 2 つに散らず、PassthroughStyler の自己解決も 1 度で済む。
+            // 3.36. 終幕（黒のまま装置が力尽きて、報告を出して終わる。canon/LEDGER.md 0048）。
+            //       IntroDirector と同じオブジェクトに載せるので、進行役が 2 つに散らない。
+            //       ⚠ **パススルーには戻さない**ので覆い・殻は「始めるときに畳む」ためだけに渡す。
+            //       動かすのはスクリーンの電力（_ScreenPower）1 つで、書く先は MjpegScreen の材質。
             var outroDirector = introDirector.gameObject.GetComponent<OutroDirector>();
             if (outroDirector == null) outroDirector = introDirector.gameObject.AddComponent<OutroDirector>();
             GlitchFx? screenGlitch = screenGo != null ? screenGo.GetComponent<GlitchFx>() : null;
@@ -510,7 +513,22 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetObjectRef(outroSo, "veil", introVeil);
             TrySetObjectRef(outroSo, "shell", containment);
             TrySetObjectRef(outroSo, "glitch", screenGlitch);
+            TrySetObjectRef(outroSo, "screen", screenGo != null ? screenGo.GetComponent<MjpegScreen>() : null);
             outroSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // 3.37. 終幕の報告（最後の 4 行）。**体験前の注意書きと対になる面**なので、
+            //       置き場・大きさ・深度の逃がし方をそちらと揃える（2.6m・8.5 倍・ZTest Always）。
+            //       ⚠ 文言を変えたら `unity.ps1 menu hud-font` を再実行する（忘れると実機で豆腐）。
+            var reportGo = new GameObject(OutroReportName);
+            reportGo.transform.SetParent(centerEye.transform, worldPositionStays: false);
+            var report = reportGo.AddComponent<FixedCamVr.Diagnostics.OutroReport>();
+            var reportSo = new SerializedObject(report);
+            TrySetObjectRef(reportSo, "outro", outroDirector);
+            TrySetObjectRef(reportSo, "showControl", showControl);
+            TrySetFloat(reportSo, "distanceM", 2.6f);
+            // ⚠ シーンに焼かれた値が SerializeField の初期値より優先されるので、ここでも明示する。
+            TrySetFloat(reportSo, "sizeScale", 8.5f);
+            reportSo.ApplyModifiedPropertiesWithoutUndo();
             // 導入側にも同じ殻を配る（自己解決に任せず明示する — 見つからないと隔離が黙って出ない）。
             var introShellSo = new SerializedObject(introDirector);
             TrySetObjectRef(introShellSo, "shell", containment);
@@ -584,7 +602,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
             // 4.3. VisitorMarkPanel（体験者専用・左コントローラに追従する報告ボタンの面）。
             //      「(X,Yで異変を報告)」と長押しゲージだけを出す。⚠ **StaffViewing の門は通さない**
-            //      （canon/LEDGER.md 0046 でユーザーがこの 1 面だけを名指しで求めた）。
+            //      （canon/LEDGER.md 0050 でユーザーがこの 1 面だけを名指しで求めた）。
             VisitorMarkPanel? markPanel = null;
             var leftHand = GameObject.Find(LeftHandPath);
             if (leftHand != null)
@@ -625,7 +643,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / VisitorMarkPanel（体験者専用・左コントローラ追従・X/Y 2 秒長押しで異変を報告） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（タイトル画面「廻リ視」・導入の段 0 に被さる・右 A で閉じる） / OvrBridge（右手 4 入力: A=タイトルを閉じて体験を始める / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録。カメラ手動送りは 2026-08-12 に撤去）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / VisitorMarkPanel（体験者専用・左コントローラ追従・X/Y 2 秒長押しで異変を報告） / OutroReport（終幕の報告 4 行・体験前の注意書きと対の面） /Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（タイトル画面「廻リ視」・導入の段 0 に被さる・右 A で閉じる） / OvrBridge（右手 4 入力: A=タイトルを閉じて体験を始める / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録。カメラ手動送りは 2026-08-12 に撤去）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }

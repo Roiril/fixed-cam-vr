@@ -92,6 +92,7 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/Diagnostics/RecoveryGuidance.cs',
                                     'Assets/Scripts/Diagnostics/CommsPanel.cs',
                                     'Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs',
+                                    'Assets/Scripts/Diagnostics/OutroReportText.cs',
                                     'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',
                                     'Assets/Scripts/Streaming/ShowRunDirector.cs') }
     'sound-import'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.SoundImportSetup.ApplySoundImportSettings'

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""**人が聴くための** 2 本を書き出す。
+"""**人が聴くための** 3 本を書き出す。
 
 ```
 py -3.11 tools/sound-preview.py
@@ -8,6 +8,7 @@ py -3.11 tools/sound-preview.py
 出るもの（`logs/sound/`）:
   - `preview_materials.wav` … 素材を 1 本ずつ並べたもの（何がどんな音かを確かめる）
   - `preview_intro.wav` … 真っ暗 → A → 題字 → 導入 → 本編の入り口を通しで並べたもの（**流れ**）
+  - `preview_ambient.wav` … 周ごとの環境音の入れ替え（**実機と同じ式**・ループの継ぎ目も入る）
   - どちらも波形＋スペクトログラムの PNG 付き
 
 ⚠⚠ **これは実機ではない。合否に使わない。**
@@ -51,7 +52,9 @@ SCREEN_ON_AT = 0.70
 
 MATERIALS = [
     ("bed_seal", "【退避中】封印の箱の唸り — 箱を外したので鳴らない", 6.0),
-    ("bed_room", "隔離された部屋のトーン", 6.0),
+    ("bed_room", "環境音・1 周目（合成の部屋のトーン）", 6.0),
+    ("bed_room_lap2", "環境音・2 周目（もらった dark horror ambient）", 8.0),
+    ("bed_room_lap3", "環境音・3 周目（もらった dark horror soundscape）", 8.0),
     ("bed_device", "装置の声・新しい（1 周目）", 6.0),
     ("bed_device_worn", "装置の声・痩せた（3 周目）", 6.0),
     ("bed_static", "信号断の砂嵐", 4.0),
@@ -67,9 +70,9 @@ MATERIALS = [
     ("sfx_glitch_2", "映像の乱れ 2", 0),
     ("sfx_glitch_3", "映像の乱れ 3", 0),
     ("sfx_shell_open", "終幕 — 隔離が開いて現実が戻る", 0),
-    ("amb_creak_1", "家鳴り 1（もらった「軋み」）", 0),
-    ("amb_creak_2", "家鳴り 2（もらった「少し重い軋み」）", 0),
-    ("amb_bell", "鈴（もらった「鈴２」）— 段 0 に 1 回だけ", 0),
+    ("amb_creak_1", "【鳴らない】家鳴り 1 — 2026-08-15 に全廃（音源は残してある）", 0),
+    ("amb_creak_2", "【鳴らない】家鳴り 2 — 同上", 0),
+    ("amb_bell", "鈴（もらった「鈴２」）— **段 3（輪郭だけの世界）の頭**に 1 回だけ", 0),
 ]
 
 
@@ -165,11 +168,12 @@ def build_intro() -> np.ndarray:
     # 節目の一撃
     lay(mix, load("sfx_title_in"), t_a)          # ⚠ 尾は題字が消えた後も鳴り続ける
     lay(mix, load("sfx_title_out"), t_glyph_out)
-    lay(mix, load("amb_bell"), t_black + 6.0)    # 段 0 に 1 回だけ
-    lay(mix, load("amb_creak_1"), t_black + 2.4)
-    lay(mix, load("amb_creak_2"), t_run + 6.8)
-    # ⚠⚠ **導入の節目は 3 つ**（`canon/LEDGER.md` 0044 / 0046）。
-    #    ①段 4 の頭で割れる ②割れた先の映像が満ちる所でもらった音源 ③段 5 の頭でノイズ。
+    # ⚠ **鈴は段 3（輪郭だけの世界）の頭**（2026-08-15・`canon/LEDGER.md` 0049）。
+    #    段 0 の 6 秒後から移した。**家鳴りは全廃**（同）— ここへ戻さないこと。
+    lay(mix, load("amb_bell"), t_structure)
+    # ⚠⚠ **導入の節目は 4 つ**（`canon/LEDGER.md` 0044 / 0046 / 0049）。
+    #    ①段 3 の頭で鈴 ②段 4 の頭で割れる ③割れた先の映像が満ちる所でもらった音源
+    #    ④段 5 の頭でノイズ。
     lay(mix, load("sfx_shatter"), t_frame)
     lay(mix, load("sfx_screen_on"), t_frame + FRAME * SCREEN_ON_AT)
     lay(mix, load("sfx_screen_noise"), t_swap)
@@ -179,6 +183,56 @@ def build_intro() -> np.ndarray:
     print(f"  真っ暗 0.0 / A {t_a:.1f} / 題字が消え始める {t_glyph_out:.1f} / "
           f"素通し {t_black:.1f} / 段 1 {t_real:.1f} / 格下げ {t_degrade:.1f} / "
           f"輪郭 {t_structure:.1f} / 割れる {t_frame:.1f} / 映像 {t_swap:.1f} / 本編 {t_run:.1f}")
+    return mix
+
+
+def build_ambient() -> np.ndarray:
+    """周ごとの環境音の入れ替え（`canon/LEDGER.md` 0049）を、**実機と同じ混ぜ方**で並べる。
+
+    ユーザー指示は「差し替えを気づかれないようにクロスフェード」で、
+    **気づくかどうかは耳でしか判定できない**（数値はどれも上限の内側に収まってしまう）。
+    だからここは近似ではなく、`SoundBedLogic.ApplyAmbientMix` と同じ式を写している:
+
+      - 位置（0..2）を**半減期 2.5 秒**で寄せる
+      - その小数部を等パワー（cos/sin）で 2 本へ配る ＝ 二乗の和が常に 1
+
+    ⚠ **2 周目の尺は 18.7 秒**なので、この 25 秒の区間で 1 度ループする。
+    **入れ替えと巻き戻りの両方が 1 本で聴ける。**
+    """
+    half_life = 2.5
+    laps = [("bed_room", 14.0), ("bed_room_lap2", 25.0), ("bed_room_lap3", 16.0)]
+    total = sum(sec for _n, sec in laps)
+    n = int(total * sk.SR)
+
+    beds = [tile(load(name), total) for name, _sec in laps]
+
+    # 各標本での位置（実機は毎フレーム寄せる。ここは 1 標本ごとに同じ式で進める）
+    pos = np.zeros(n)
+    cur = 0.0
+    dt = 1.0 / sk.SR
+    k = 0.5 ** (dt / half_life)
+    edges, acc = [], 0.0
+    for _name, sec in laps:
+        acc += sec
+        edges.append(acc)
+    for i in range(n):
+        t = i * dt
+        target = 0.0 if t < edges[0] else (1.0 if t < edges[1] else 2.0)
+        cur = target + (cur - target) * k
+        pos[i] = cur
+
+    lo = np.clip(np.floor(pos), 0, 1).astype(int)
+    f = pos - lo
+    out_g = np.cos(f * np.pi / 2)[:, None]
+    in_g = np.sin(f * np.pi / 2)[:, None]
+
+    mix = np.zeros((n, 2))
+    for i in range(3):
+        w = np.where(lo == i, out_g[:, 0], 0.0) + np.where(lo + 1 == i, in_g[:, 0], 0.0)
+        mix += beds[i][:n] * w[:, None]
+
+    print(f"  1 周目 0.0〜{edges[0]:.0f}s / 2 周目 〜{edges[1]:.0f}s（18.7s で 1 度ループ）"
+          f" / 3 周目 〜{edges[2]:.0f}s ・ 入れ替えは半減期 {half_life} 秒")
     return mix
 
 
@@ -200,6 +254,8 @@ def main() -> int:
     emit("preview_materials", build_materials(), "何がどんな音か")
     print("導入の流れ:")
     emit("preview_intro", build_intro(), "⚠ 近似。実機の混ざり方は SoundBedLogic が決める")
+    print("周ごとの環境音の入れ替え:")
+    emit("preview_ambient", build_ambient(), "実機と同じ式（等パワー・半減期 2.5 秒）")
     print(f"\n→ {OUT}")
     return 0
 

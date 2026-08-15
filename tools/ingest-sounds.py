@@ -76,7 +76,35 @@ PLAN = [
     #    `lufs!` は必要なぶんだけ尖頭を丸めて狙いまで持ち上げる。
     ("Cyber03-mp3/Cyber03/Cyber03-2.mp3", "sfx_screen_on", "lufs!", -13.0,
      "段 3 — 闇の中で管に電源が入る。**導入の山**。2026-08-13 ユーザー指定の音源"),
+    # ⚠ **周ごとの環境音**（2026-08-15・`canon/LEDGER.md` 0049 ユーザー指定）。
+    #    1 周目は合成の `bed_room` のまま、2 周目・3 周目でこれらへクロスフェードする。
+    #    高さは他の敷く音と同じ **-32 LUFS**（§3）。ここを外すと差し替えの瞬間に音量が動いて
+    #    「切り替わった」と気づかれる ＝ ユーザー指示（気づかれないように）に反する。
+    ("dragon-studio-dark-horror-ambient-05-425468.mp3", "bed_room_lap2", "lufs", -32.0,
+     "2 周目の環境音。**ループする**（21.7 秒・周の途中で尺が切れる）"),
+    ("universfield-dark-horror-soundscape-345814.mp3", "bed_room_lap3", "lufs", -32.0,
+     "3 周目の環境音。**ループする**（69.3 秒・1 周では届かないが保険）"),
 ]
+
+# ---- ループにする音の折り返し（秒）-----------------------------------------
+#
+# ⚠⚠ **`bed_` で始まる音はループとして焼く**（`sound-lint.py` の `is_loop` と同じ規約）。
+#
+# もらった環境音は頭と尻が無音へ落ちている（実測: lap2 は尻 1 秒が -50.8dB）。そのまま
+# `AudioSource.loop` に任せると、**尺のたびに音が消えて戻る**（21.7 秒ごとに 1 秒の空白）。
+# ユーザー指示は「周の途中で尺が切れたらループする」なので、切れ目が聞こえてはいけない。
+#
+# ⇒ **尻を頭へ等パワーで折り返す**（尺は `LOOP_XF` ぶん縮む）。巻き戻りの瞬間には
+#    「尻 → 頭」の混ざった区間が既に鳴っているので、密度も音量も途切れない。
+#
+# ⚠ これは §4.5「もらった音を良くしようとしない」の例外ではなく**端の処理**の側。
+#    イコライザも圧縮も掛けていない（掛けるのは音量と、この折り返しだけ）。
+#
+# ⚠ **長くすれば良くなるわけではない。** `bed_room_lap2` で 6 秒を試したら、継ぎ目の密度差が
+#    -2.5dB → **-8.83dB へ悪化**した（実測）。折り返しは尻の分を頭へ**足す**ので、長く取るほど
+#    頭が厚くなり、一方で「新しい終わり」は素材の減衰の途中へ移る。両方が同時に効いて差が開く。
+#    3 秒は測って選んだ値（`jump` x1.28 / 密度差 -2.5dB・どちらも上限の内側）。
+LOOP_XF = 3.0
 
 def norm_lufs_drive(y, target: float, max_drive_db: float = 12.0):
     """ラウドネスを target へ合わせる。**届かなければ尖頭を丸めて届かせる。**
@@ -126,10 +154,32 @@ def trim(y: np.ndarray) -> np.ndarray:
     return y[a:b]
 
 
+def fold_loop(y: np.ndarray, xf: float = LOOP_XF) -> np.ndarray:
+    """尻 <paramref name="xf"/> 秒を頭へ等パワーで折り返し、継ぎ目の無いループにする。
+
+    出来上がりは `xf` 秒だけ短い。巻き戻る瞬間に鳴っているのは「尻と頭が混ざった区間」なので、
+    密度も音量も途切れない（`sound-lint.py` の `jump` が数値で確かめる）。
+    """
+    st = sk.to_stereo(y)
+    n = int(xf * sk.SR)
+    if n <= 0 or len(st) < n * 3:
+        return st
+    head, tail, body = st[:n], st[-n:], st[:-n]
+    t = np.linspace(0.0, 1.0, n, endpoint=False)[:, None]
+    # 等パワー（線形だと混ざっている最中に音の密度が凹む）。
+    body = body.copy()
+    body[:n] = head * np.sqrt(t) + tail * np.sqrt(1.0 - t)
+    return body
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--src", default=DOWNLOADS)
+    # ⚠ 1 本だけ焼き直すための口。全部を焼き直すと、**別のシュビーが直したばかりの音**まで
+    #    書き戻すことになる（並列で作業しているのが普通のリポジトリなので既定にしない）。
+    ap.add_argument("--only", nargs="*", default=None, metavar="名前",
+                    help="この出力名だけを焼く（例: --only bed_room_lap2 bed_room_lap3）")
     a = ap.parse_args()
 
     if a.list:
@@ -137,9 +187,15 @@ def main() -> int:
             print(f"  {name:16s} ← {jp}\n      {how} {target:+.1f} / {why}")
         return 0
 
+    plan = [p for p in PLAN if a.only is None or p[1] in a.only]
+    if a.only is not None and len(plan) != len(a.only):
+        missing = sorted(set(a.only) - {p[1] for p in plan})
+        print(f"  PLAN に無い名前: {', '.join(missing)}")
+        return 1
+
     os.makedirs(RAW, exist_ok=True)
     os.makedirs(OUT, exist_ok=True)
-    for jp, name, how, target, _why in PLAN:
+    for jp, name, how, target, _why in plan:
         src = os.path.join(a.src, jp)
         raw = os.path.join(RAW, f"src_{name}.wav")
         if os.path.exists(src):
@@ -153,8 +209,13 @@ def main() -> int:
 
         y, sr = sk.read_wav(raw)
         before = sk.describe(y)
-        y = sk.to_stereo(trim(y))
-        y = sk.env_fade(y, EDGE_FADE, EDGE_FADE)
+        # ⚠ ループにする音は **端を落とさない**（頭と尻の無音がそのまま折り返しの材料になる）。
+        #    切ってから折り返すと、素材の「入り」と「終わり」の空気が消えて別の音になる。
+        if name.startswith("bed_"):
+            y = fold_loop(y)
+        else:
+            y = sk.to_stereo(trim(y))
+            y = sk.env_fade(y, EDGE_FADE, EDGE_FADE)
 
         if how == "peak":
             tp = sk.true_peak_db(y)

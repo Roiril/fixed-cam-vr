@@ -314,25 +314,10 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(0f, l.Weights.sealBox, 1e-4f);
         }
 
-        [Test]
-        public void Outro_ReleasesTheShellBeforeItEnds()
-        {
-            var l = new OutroLogic();
-            l.Configure(OutroTiming.Default);
-            l.Begin();
-            var input = new OutroInput { passthroughReady = true };
-            l.Tick(0.016f, input);                                  // Warm → Unswap
-            l.Tick(OutroTiming.Default.unswapSec, input);           // → Open
-            Assert.AreEqual(OutroStage.Open, l.Stage);
-            Assert.AreEqual(1f, l.Weights.shell, 1e-3f, "枠が開く間はまだ収容の中");
-
-            l.Tick(OutroTiming.Default.openSec, input);             // → Restore
-            l.Tick(OutroTiming.Default.restoreSec * 0.99f, input);
-            Assert.Less(l.Weights.shell, 0.05f, "色と一緒に会場が返ってこないと黒い箱で終わる");
-
-            l.Tick(OutroTiming.Default.restoreSec, input);          // → Hold
-            Assert.AreEqual(OutroStage.Hold, l.Stage);
-            Assert.AreEqual(0f, l.Weights.shell, 1e-4f);
-        }
+        // ⚠ **旧 `Outro_ReleasesTheShellBeforeItEnds` は 2026-08-15 に消した**
+        //   （`canon/LEDGER.md` 0048）。終幕はパススルーへ戻さなくなり、覆いにも隔離にも触らない
+        //   （`OutroLogic` は `IntroWeights` を出さなくなった）。終幕が始まるときに
+        //   `OutroDirector.Begin` が `shell.SetHidden()` を打つのが唯一の関わりで、
+        //   これは MonoBehaviour の配線なのでここでは固定できない（実機の `ev=outro` で見る）。
     }
 }

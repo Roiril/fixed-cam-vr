@@ -23,7 +23,7 @@ namespace FixedCamVr.OvrBridge
     /// キーボード経由の切替（<c>CameraSwitchInput</c> の Tab / 1-9・Editor 用）は残っている。
     /// 封印モード（旧 Run/Staff）・スティック・cue 試射は撤去した。
     ///
-    /// <b>左は体験者の手。読むのは X / Y だけ</b>（2026-08-15・<c>canon/LEDGER.md</c> 0042 / 0046）:
+    /// <b>左は体験者の手。読むのは X / Y だけ</b>（2026-08-15・<c>canon/LEDGER.md</c> 0042 / 0050）:
     /// どちらを押しても同じで、<b>2 秒長押し</b>で異変の報告になる（<see cref="VisitorMarkHoldLogic"/>）。
     /// 押し方と進捗は左コントローラに追従する <see cref="VisitorMarkPanel"/> が出す。
     /// スティック・トリガー・グリップ・A/B は左からは 1 ビットも読まない。
@@ -220,7 +220,7 @@ namespace FixedCamVr.OvrBridge
             bool gripDown = OVRInput.GetDown(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
             bool triggerDown = OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
 
-            // ---- 体験者の手（左）。**X でも Y でもよい**（2026-08-15・canon/LEDGER.md 0046）----
+            // ---- 体験者の手（左）。**X でも Y でもよい**（2026-08-15・canon/LEDGER.md 0050）----
             // ⚠⚠ **`Button.Three` / `Button.Four` を `Controller.LTouch` と組み合わせてはいけない。**
             //    LTouch の仮想マップは `Three = RawButton.None` / `Four = RawButton.None` で
             //    （`OVRInput.cs` の `OVRControllerLTouch`）、**押しても永遠に false になる**。

@@ -120,6 +120,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 // ⚠ 2026-08-15 追加: **体験者の報告ボタンの面**（VisitorMarkGuidance が文言を持つ）。
                 //    「(X,Yで異変を報告)」「報告中」「報告しました」。ゲージの █░ は下の記号保険にある。
                 "Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs",
+                // ⚠ 2026-08-15 追加: **終幕の報告**（OutroReportText が文言を持つ）。
+                //    「報告した怪異の数：」「十分なデータが取れました。」「調査完了です。」
+                //    「装置を外してください。」＋ **全角数字 ０〜９**（あのファイルに literal で
+                //    置いてあるのはこの収集に拾わせるため。書式で組み立てるだけだと 1 文字も焼かれない）。
+                "Assets/Scripts/Diagnostics/OutroReportText.cs",
             };
             var set = new System.Collections.Generic.SortedSet<char>();
             for (char c = ' '; c <= '~'; c++) set.Add(c);                       // ASCII 印字可能

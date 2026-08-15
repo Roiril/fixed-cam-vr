@@ -70,6 +70,8 @@ namespace FixedCamVr.Diagnostics
         private CameraSwitchDirector? _switch;
         private ShowRunDirector? _run;
         private IntroDirector? _intro;
+        private OutroDirector? _outro;
+        private OutroReport? _report;
         private TitleScreen? _title;
         private TimelineDirector? _timeline;
         private SignalLostFx? _signal;
@@ -95,6 +97,14 @@ namespace FixedCamVr.Diagnostics
 
         // --- 遷移検出のための前回値 ---
         private IntroStage _lastStage = IntroStage.Off;
+
+        /// <summary>
+        /// 終幕の段（Off/Flicker/Dark/Report/Done）。<b>2026-08-15 まで 1 行も出していなかった。</b>
+        /// 終幕は「装置が力尽きて報告を出す」だけの演出なので、<b>画に出たかどうかを見る手が
+        /// テレメトリしか無い</b>（消えていく過程は録画では「暗い」としか読めない）。
+        /// </summary>
+        private OutroStage _lastOutroStage = OutroStage.Off;
+        private bool _outroSeen;
 
         /// <summary>
         /// タイトルの段（Off/Wait/In/Hold/Out/Done）。<b>2026-08-14 まで 1 つも観測していなかった</b> —
@@ -182,6 +192,8 @@ namespace FixedCamVr.Diagnostics
             if (_switch == null) _switch = FindObjectOfType<CameraSwitchDirector>();
             if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
+            if (_outro == null) _outro = FindObjectOfType<OutroDirector>();
+            if (_report == null) _report = FindObjectOfType<OutroReport>();
             if (_title == null) _title = FindObjectOfType<TitleScreen>();
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
             if (_signal == null) _signal = FindObjectOfType<SignalLostFx>();
@@ -347,6 +359,29 @@ namespace FixedCamVr.Diagnostics
             : (_intro.IgniteWritten < 0f ? "nc" : _intro.IgniteWritten.ToString("F2"));
 
         /// <summary>
+        /// スクリーンの電力（<c>_ScreenPower</c>）に<b>実際に書いた値</b>。
+        ///
+        /// <c>-</c> = 終幕の実行体がシーンに居ない / <c>nc</c> = <b>書く先の材質を掴めていない</b>
+        /// （＝ ちかちかしながら消える過程は一生画に出ない）。段が Flicker を通っているのに
+        /// ずっと 1.00 なら、重みは動いているのに画は明るいまま。
+        /// </summary>
+        private string PowerState => _outro == null
+            ? "-"
+            : (_outro.PowerWritten < 0f ? "nc" : _outro.PowerWritten.ToString("F2"));
+
+        /// <summary>
+        /// 報告の面が<b>組めたか</b>（<c>-</c> = 面がシーンに居ない）。false なら日本語フォントか
+        /// TMP の実体を組めていて<b>いない</b> ＝ 終幕の最後に 1 文字も出ない。
+        /// <b>気づける口がここしかない</b>（黒の中で何も出ないだけなので画では区別できない）。
+        /// </summary>
+        private string ReportBuiltState => _report == null ? "-" : (_report.IsBuilt ? "1" : "0");
+
+        /// <summary>報告の面に<b>実際に書いた不透明度</b>（<c>nc</c> = 組めていない）。</summary>
+        private string ReportAlphaState => _report == null
+            ? "-"
+            : (_report.AppliedAlpha < 0f ? "nc" : _report.AppliedAlpha.ToString("F2"));
+
+        /// <summary>
         /// 破砕（段 4）が<b>画に出たか</b>。2026-08-13 に段ごと廃止して観測から外していたが、
         /// 2026-08-15 に段が戻ったので戻した（<c>canon/LEDGER.md</c> 0044）。
         ///
@@ -387,6 +422,20 @@ namespace FixedCamVr.Diagnostics
         /// <summary>部屋の帯域（kHz）。隔離が閉じると下がる ＝ 隔離の「効果の実在」。</summary>
         private string SoundCutoffState =>
             _sound == null ? "-" : (_sound.RoomCutoffHz / 1000f).ToString("F1");
+
+        /// <summary>
+        /// 周ごとの環境音の取り分（`0.00/1.00/0.00`）。**入れ替わりはここにしか出ない** —
+        /// 二乗の和が常に 1 なので、合計を見ている <c>sndAud</c> は 1 ビットも動かない。
+        /// </summary>
+        private string SoundAmbientState
+        {
+            get
+            {
+                if (_sound == null) return "-";
+                SoundBedGains g = _sound.Bed;
+                return $"{g.roomLap1:F2}/{g.roomLap2:F2}/{g.roomLap3:F2}";
+            }
+        }
 
         private string ShellRevealState => _shell == null ? "-" : (_shell.Revealing ? "1" : "0");
 
@@ -470,6 +519,23 @@ namespace FixedCamVr.Diagnostics
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
                      // 段 1 以降の行に auth=0 が出たら、卓の ⏭ で始まったということ。
                      $"auth={(_show != null && _show.StartAuthorized ? 1 : 0)}");
+            }
+
+            // 終幕の段（Off/Flicker/Dark/Report/Done）。**画に出た側**を必ず一緒に出す —
+            // pw は実際に材質へ書いた電力（nc なら掴めていない ＝ 一生ちかちかしない）、
+            // rep / repBuilt は報告の面（built=0 なら最後の 4 行が 1 文字も出ない）。
+            // marks は報告の数そのもの（○○ に入る値が正しいかは、これでしか確かめられない）。
+            if (_outro != null && (!_outroSeen || _outro.Stage != _lastOutroStage))
+            {
+                _outroSeen = true;
+                _lastOutroStage = _outro.Stage;
+                Emit($"ev=outro stage={_lastOutroStage} pw={PowerState} " +
+                     $"rep={ReportAlphaState} repBuilt={ReportBuiltState} " +
+                     $"marks={(_show != null ? _show.VisitorMarkCount : -1)} " +
+                     // 合図（run.outro.afterTakeId）が武装したか / 撃ったか。
+                     // 著作していなければ両方 0 のままで、終わり方は従来どおり。
+                     $"armed={(_run != null && _run.EndingArmed ? 1 : 0)} " +
+                     $"cue={(_run != null && _run.EndingFired ? 1 : 0)}");
             }
 
             // 体験者の記録ボタン（左 X）。**押した時刻が残ると、3 周目の反転に気づいたかが
@@ -713,6 +779,8 @@ namespace FixedCamVr.Diagnostics
             // 管の点灯は**導入の外でも必ず出す**。既定は 1（点いている）で、演出が終わった後に
             // 0 が残っていたら画がまるごと消えている ＝ ここでしか気づけない。
             _sb.Append(" ignite=").Append(IgniteState);
+            // 終幕の電力。**演出の外では 1.00** なので、本編中にこれが下がっていたら画が暗い理由がここ。
+            _sb.Append(" pw=").Append(PowerState);
             _sb.Append(" cg=").Append(CgState);
             // 音は**録画にも映らない**ので、実在の観測はここにしか無い。
             //   sndBuilt = 掴めた音源 / 掴めなかった音源（0 でなければ設計どおりに鳴っていない）
@@ -722,6 +790,9 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" sndBuilt=").Append(SoundBuiltState);
             _sb.Append(" sndAud=").Append(SoundAudibleState);
             _sb.Append(" sndLpf=").Append(SoundCutoffState);
+            //   sndAmb = 周ごとの環境音の取り分（1 周目/2 周目/3 周目）。**入れ替わったかの唯一の証拠**
+            //            — 合計は常に一定なので `sndAud` には出ない（canon/LEDGER.md 0049）
+            _sb.Append(" sndAmb=").Append(SoundAmbientState);
             _sb.Append(" sfxN=").Append(_sound == null ? "-" : _sound.SpotCount.ToString());
             _sb.Append(" swN=").Append(_switchSfx == null
                                        ? "-"

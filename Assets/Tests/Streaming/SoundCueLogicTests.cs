@@ -156,85 +156,99 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Creak_FiresSparsely_AndNeverAtAFixedInterval()
+        public void Creak_NeverFires_Anywhere()
         {
-            // 家鳴りは**等間隔にしない**。規則正しいと建物ではなく機械に聞こえる。
+            // ⚠⚠ 2026-08-15 に全廃した（`canon/LEDGER.md` 0049・ユーザー逐語
+            //    「導入の家鳴りは無くす」「それ以降も、家鳴りは無くしてほしい」）。
+            //    音源も enum も残してあるので、経路が復活すると**黙って鳴り出す**。ここで止める。
             var l = new SoundCueLogic();
-            var s = SoundShowState.Idle;
-            s.phase = ShowPhase.Run;
-            var gaps = new System.Collections.Generic.List<float>();
-            float since = 0f;
-            for (int i = 0; i < 60 * 300; i++)           // 5 分
+
+            var run = SoundShowState.Idle;
+            run.phase = ShowPhase.Run;
+            for (int i = 0; i < 60 * 300; i++)          // 本編を 5 分
+                Assert.AreEqual(0, CountOf(l, SoundCue.Creak, Dt, run), "本編で家鳴りが鳴った");
+
+            foreach (IntroStage st in System.Enum.GetValues(typeof(IntroStage)))
             {
-                since += Dt;
-                if (CountOf(l, SoundCue.Creak, Dt, s) > 0) { gaps.Add(since); since = 0f; }
+                var s = Intro(st);
+                for (int i = 0; i < 60 * 60; i++)       // 各段を 1 分
+                    Assert.AreEqual(0, CountOf(l, SoundCue.Creak, Dt, s), $"段 {st} で家鳴りが鳴った");
             }
-            Assert.Greater(gaps.Count, 8, "5 分で家鳴りが少なすぎる");
-            Assert.Less(gaps.Count, 40, "5 分で家鳴りが多すぎる（にぎやかになる）");
-            foreach (float g in gaps)
+        }
+
+        [Test]
+        public void Bell_RingsOnce_AtTheStartOfStructure()
+        {
+            // 段 3（輪郭だけの世界）の頭で 1 回だけ（`canon/LEDGER.md` 0049）。
+            var l = new SoundCueLogic();
+
+            // 段 0〜2 では鳴らない。
+            foreach (IntroStage st in new[] { IntroStage.Black, IntroStage.Real, IntroStage.Degrade })
             {
-                Assert.GreaterOrEqual(g, SoundCueLogic.CreakMinSec - 0.5f);
-                Assert.LessOrEqual(g, SoundCueLogic.CreakMaxSec + 0.5f);
+                var q = Intro(st);
+                for (int i = 0; i < 60 * 30; i++)
+                    Assert.AreEqual(0, CountOf(l, SoundCue.Bell, Dt, q), $"段 {st} で鈴が鳴った");
             }
-            var uniq = new System.Collections.Generic.HashSet<int>();
-            foreach (float g in gaps) uniq.Add((int)(g * 4));
-            Assert.Greater(uniq.Count, 3, "間隔がほぼ一定（機械に聞こえる）");
+
+            var s = Intro(IntroStage.Structure);
+            Assert.AreEqual(1, CountOf(l, SoundCue.Bell, Dt, s), "段 3 の頭で鳴らない");
+            int extra = 0;
+            for (int i = 0; i < 60 * 30; i++) extra += CountOf(l, SoundCue.Bell, Dt, s);
+            Assert.AreEqual(0, extra, "鈴は 1 回だけ");
+
+            // ⚠ 段 3 は実尺 1.1 秒しかない。**待つ形にすると 1 度も鳴らない。**
+            var l2 = new SoundCueLogic();
+            var short3 = Intro(IntroStage.Structure);
+            int inShortStage = 0;
+            for (int i = 0; i < (int)(1.1f / Dt); i++) inShortStage += CountOf(l2, SoundCue.Bell, Dt, short3);
+            Assert.AreEqual(1, inShortStage, "段 3 の実尺 1.1 秒の中で鳴っていない");
         }
 
         [Test]
-        public void Creak_IsSilentDuringTheIntroStages_AndDuringRegistration()
+        public void Bell_RingsAgain_ForTheNextVisitor()
         {
-            // 導入の演出中に家鳴りが割り込むと、段の出来事が薄まる。
             var l = new SoundCueLogic();
-            var s = Intro(IntroStage.Degrade);
-            for (int i = 0; i < 60 * 120; i++)
-                Assert.AreEqual(0, CountOf(l, SoundCue.Creak, Dt, s), "導入の途中で鳴っている");
+            Assert.AreEqual(1, CountOf(l, SoundCue.Bell, Dt, Intro(IntroStage.Structure)));
 
-            var r = SoundShowState.Idle;
-            r.phase = ShowPhase.Run;
-            r.registrationActive = true;
-            for (int i = 0; i < 60 * 120; i++)
-                Assert.AreEqual(0, CountOf(l, SoundCue.Creak, Dt, r), "位置合わせ中に鳴っている");
+            // 段 0 へ入った縁でラッチが落ちる（号令を配る側の実装に依存しない）。
+            var black = Intro(IntroStage.Black);
+            for (int i = 0; i < 4; i++) CountOf(l, SoundCue.Bell, Dt, black);
+            Assert.AreEqual(1, CountOf(l, SoundCue.Bell, Dt, Intro(IntroStage.Structure)),
+                            "次の体験者に鈴が鳴らない");
         }
 
         [Test]
-        public void Bell_RingsOnce_InStageZero()
+        public void Bell_IsSilentDuringRegistration()
         {
+            // 位置合わせはスタッフの作業。世界の音を割り込ませない。
             var l = new SoundCueLogic();
-            var s = Intro(IntroStage.Black);
-            int total = 0;
-            for (int i = 0; i < 60 * 120; i++) total += CountOf(l, SoundCue.Bell, Dt, s);
-            Assert.AreEqual(1, total, "鈴は 1 回だけ");
-
-            l.ResetRun();
-            total = 0;
-            for (int i = 0; i < 60 * 120; i++) total += CountOf(l, SoundCue.Bell, Dt, s);
-            Assert.AreEqual(1, total, "次の体験者にはもう一度鳴る");
-        }
-
-        [Test]
-        public void Bell_DoesNotRingImmediately()
-        {
-            // 段 0 に入った瞬間に鳴ると「押したから鳴った」に読まれる。
-            var l = new SoundCueLogic();
-            var s = Intro(IntroStage.Black);
-            for (int i = 0; i < (int)(SoundCueLogic.BellAtSec * 60) - 30; i++)
-                Assert.AreEqual(0, CountOf(l, SoundCue.Bell, 1f / 60f, s));
+            var s = Intro(IntroStage.Structure);
+            s.registrationActive = true;
+            for (int i = 0; i < 60 * 30; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.Bell, Dt, s));
         }
 
         [Test]
         public void Cues_AreDeterministic_AcrossRuns()
         {
             // **走行のたびに違う音が出ると、何が効いたのか分からなくなる。**
-            var s = SoundShowState.Idle;
-            s.phase = ShowPhase.Run;
-            var first = new System.Collections.Generic.List<int>();
-            var second = new System.Collections.Generic.List<int>();
+            // ⚠ 乱数を持っていた家鳴りは廃止したので、いまは導入の並びで確かめる。
+            var first = new System.Collections.Generic.List<string>();
+            var second = new System.Collections.Generic.List<string>();
             foreach (var list in new[] { first, second })
             {
                 var l = new SoundCueLogic();
-                for (int i = 0; i < 60 * 200; i++)
-                    if (CountOf(l, SoundCue.Creak, Dt, s) > 0) list.Add(i);
+                foreach (IntroStage st in new[] { IntroStage.Black, IntroStage.Real, IntroStage.Degrade,
+                                                  IntroStage.Structure, IntroStage.Frame, IntroStage.Swap })
+                {
+                    var s = Intro(st, shatter: st == IntroStage.Frame ? 1f : 0f,
+                                  live: st == IntroStage.Frame ? 1f : 0f);
+                    for (int i = 0; i < 30; i++)
+                    {
+                        var fired = l.Tick(Dt, s, 0f, out int n);
+                        for (int k = 0; k < n; k++) list.Add($"{st}:{fired[k]}");
+                    }
+                }
             }
             CollectionAssert.AreEqual(first, second);
         }
@@ -302,16 +316,24 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Outro_Open_FiresOnce()
+        public void Outro_AddsNoSoundAtAll()
         {
+            // ⚠ **終幕に足す音は 1 本も無い**（canon/LEDGER.md 0048）。装置が引いた後に残るのは
+            //    部屋の音だけで、それも Done で無音へ落ちる（`rules/sound-design.md`
+            //    「終わりに音を残さない」）。ここに一撃を戻すなら、それは世界観の判定が要る。
             var l = new SoundCueLogic();
             var s = SoundShowState.Idle;
             s.outroActive = true;
-            s.outroStage = OutroStage.Unswap;
-            Assert.AreEqual(0, CountOf(l, SoundCue.ShellOpen, Dt, s));
-            s.outroStage = OutroStage.Open;
-            Assert.AreEqual(1, CountOf(l, SoundCue.ShellOpen, Dt, s));
-            Assert.AreEqual(0, CountOf(l, SoundCue.ShellOpen, Dt, s));
+            foreach (OutroStage st in System.Enum.GetValues(typeof(OutroStage)))
+            {
+                s.outroStage = st;
+                s.outroProgress01 = 0.5f;
+                for (int i = 0; i < 8; i++)
+                {
+                    l.Tick(Dt, s, 0f, out int n);
+                    Assert.AreEqual(0, n, $"終幕 {st} で音が鳴った");
+                }
+            }
         }
 
         [Test]

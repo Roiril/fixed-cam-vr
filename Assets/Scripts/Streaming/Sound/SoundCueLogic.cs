@@ -35,13 +35,25 @@ namespace FixedCamVr.Streaming
         /// 音源は残してある。
         /// </summary>
         Swap,
-        /// <summary>終幕 — 隔離が開いて現実が戻る。**山にしない。**</summary>
+        /// <summary>
+        /// 終幕 — 隔離が開いて現実が戻る。
+        /// ⚠ <b>2026-08-15 以降は鳴らない</b>（<c>canon/LEDGER.md</c> 0048）。終幕はパススルーへ
+        /// 戻さなくなり、隔離が開く段そのものが無くなった。<b>終幕に足す音は 1 本も無い。</b>
+        /// 音源は残してある。
+        /// </summary>
         ShellOpen,
         /// <summary>映像の乱れ（<see cref="GlitchFx"/> と同時）。</summary>
         Glitch,
-        /// <summary>家鳴り。段 0 と本編にまばらに。<b>古い建物の中に居る</b>を音だけで立てる。</summary>
+        /// <summary>
+        /// 家鳴り。
+        /// ⚠ <b>2026-08-15 以降は鳴らない</b>（<c>canon/LEDGER.md</c> 0049 —「導入の家鳴りは無くす」
+        /// 「それ以降も、家鳴りは無くしてほしい」）。音源 <c>amb_creak_1/2</c> は残してある。
+        /// </summary>
         Creak,
-        /// <summary>鈴。段 0 に <b>1 回だけ</b>。誰も鳴らしていないのに鳴る。</summary>
+        /// <summary>
+        /// 鈴。<b>段 3（輪郭だけの世界）の頭に 1 回だけ</b>。誰も鳴らしていないのに鳴る。
+        /// ⚠ 2026-08-15 に段 0 の 6 秒後からここへ移した（<c>canon/LEDGER.md</c> 0049）。
+        /// </summary>
         Bell,
     }
 
@@ -68,12 +80,9 @@ namespace FixedCamVr.Streaming
         /// <summary>乱れの最短間隔（秒）。連射すると「壊れた」ではなく「効果音」になる。</summary>
         public const float GlitchMinIntervalSec = 0.30f;
 
-        /// <summary>家鳴りの間隔（秒）。**等間隔にしない** — 規則正しいと建物ではなく機械に聞こえる。</summary>
-        public const float CreakMinSec = 9f;
-        public const float CreakMaxSec = 24f;
-
-        /// <summary>段 0 に入ってから鈴が鳴るまで（秒）。**1 回だけ。**</summary>
-        public const float BellAtSec = 6f;
+        // ⚠ 家鳴りの間隔（`CreakMinSec` / `CreakMaxSec`）と、段 0 から鈴までの秒数（`BellAtSec`）は
+        //    2026-08-15 に消した（`canon/LEDGER.md` 0049）。家鳴りは鳴らさない。
+        //    鈴は時間ではなく**段 3 へ入った縁**で鳴るので、待つ秒数そのものが要らない。
 
         /// <summary>
         /// 段 4 で枠の中の映像がここまで満ちたら「スクリーンが出る音」を鳴らす。
@@ -94,17 +103,14 @@ namespace FixedCamVr.Streaming
         private readonly SoundCue[] _buf = new SoundCue[MaxPerTick];
         private bool _titleWasVisible;
         // ⚠ `SealClose` / `Swap` のラッチは持たない（2026-08-15 に鳴らさなくなった）。
-        private bool _shatterFired, _screenOnFired, _screenNoiseFired, _openFired;
+        private bool _shatterFired, _screenOnFired, _screenNoiseFired;
         private bool _glitchArmed = true;
         private float _glitchCooldown;
         private bool _glyphWasShowing;
-        private float _creakCountdown = -1f;
-        private float _blackElapsed = -1f;
         private bool _bellFired;
 
         /// <summary>前フレームの導入の段。段 0 へ入った縁で「1 度だけ」を落とすために持つ。</summary>
         private IntroStage _lastIntroStage = IntroStage.Off;
-        private uint _rng = 0x9E3779B9;
 
         /// <summary>拾えなかった数（累積）。0 でないなら設計か閾値が間違っている。</summary>
         public int Dropped { get; private set; }
@@ -134,26 +140,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void ResetIntroLatches()
         {
-            _shatterFired = _screenOnFired = _screenNoiseFired = _openFired = false;
-            _creakCountdown = -1f;
-            _blackElapsed = -1f;
+            _shatterFired = _screenOnFired = _screenNoiseFired = false;
             _bellFired = false;
-            // 家鳴りの間隔は決定論。次の体験者にも同じ並びを配る。
-            _rng = 0x9E3779B9;
         }
-
-        /// <summary>
-        /// 決定論的な擬似乱数（0..1）。<b>種を固定してあるので走行のたびに同じ間隔になる</b> —
-        /// 同じ show.json で違う音が出ると、何が効いたのか分からなくなる。
-        /// </summary>
-        private float NextRandom()
-        {
-            _rng = _rng * 1664525u + 1013904223u;
-            return (_rng >> 8) / 16777216f;
-        }
-
-        private float NextCreakInterval()
-            => CreakMinSec + (CreakMaxSec - CreakMinSec) * NextRandom();
 
         /// <summary>今フレームに鳴らすものを返す（<paramref name="count"/> 本）。</summary>
         public ReadOnlySpan<SoundCue> Tick(float dt, in SoundShowState s, float glitchLevel,
@@ -216,11 +205,11 @@ namespace FixedCamVr.Streaming
             }
 
             // --- 終幕 -----------------------------------------------------------
-            if (s.outroActive && !_openFired && s.outroStage == OutroStage.Open)
-            {
-                _openFired = true;
-                Push(SoundCue.ShellOpen, ref count);
-            }
+            // ⚠⚠ **2026-08-15 から 1 本も鳴らさない**（`canon/LEDGER.md` 0048）。
+            //    隔離が開く段が無くなり、終幕は「装置が力尽きて報告を出す」だけになった。
+            //    足す音が無いのは欠落ではなく設計 — 装置が引いた後に残るのは部屋の音だけで、
+            //    それも Done で無音へ落ちる（`rules/sound-design.md`「終わりに音を残さない」）。
+            //    <see cref="SoundCue.ShellOpen"/> の enum と音源は残してある。
 
             // --- 乱れ（何度でも鳴る）-------------------------------------------
             if (glitchLevel < GlitchRearmAt) _glitchArmed = true;
@@ -231,34 +220,22 @@ namespace FixedCamVr.Streaming
                 Push(SoundCue.Glitch, ref count);
             }
 
-            // --- 家鳴り（段 0 と本編にまばらに）---------------------------------
-            bool creakZone = (s.introActive && s.introStage == IntroStage.Black)
-                             || (!s.introActive && !s.outroActive && s.phase == ShowPhase.Run);
-            if (creakZone && !s.registrationActive)
-            {
-                if (_creakCountdown < 0f) _creakCountdown = NextCreakInterval();
-                _creakCountdown -= dt;
-                if (_creakCountdown <= 0f)
-                {
-                    _creakCountdown = NextCreakInterval();
-                    Push(SoundCue.Creak, ref count);
-                }
-            }
-            else
-            {
-                _creakCountdown = -1f;   // 区間を出たら数え直す（間延びした 1 発が飛び込まない）
-            }
+            // --- 家鳴り -----------------------------------------------------------
+            // ⚠⚠ **2026-08-15 に全廃した**（`canon/LEDGER.md` 0049・ユーザー逐語
+            //    「導入の家鳴りは無くす」「それ以降も、家鳴りは無くしてほしい」）。
+            //    段 0 にも本編にも 1 発も置かない。<see cref="SoundCue.Creak"/> の enum と
+            //    音源（`amb_creak_1/2`）は残してある。
 
-            // --- 鈴（段 0 に 1 回だけ）------------------------------------------
-            if (s.introActive && s.introStage == IntroStage.Black)
+            // --- 鈴（段 3 の頭に 1 回だけ）--------------------------------------
+            // ⚠ **2026-08-15 に段 0 の 6 秒後からここへ移した**（`canon/LEDGER.md` 0049・
+            //    ユーザー逐語「パススルー→2Dになるときの、輪郭だけの世界になる演出の始まりに、
+            //    鈴を一回鳴らそう」）。段 3 は実尺 1.1 秒しかないので、**時間で待たずに縁で鳴らす** —
+            //    待つ形にすると段が終わっていて 1 度も鳴らない。
+            if (s.introActive && s.introStage == IntroStage.Structure
+                && !_bellFired && !s.registrationActive)
             {
-                if (_blackElapsed < 0f) _blackElapsed = 0f;
-                _blackElapsed += dt;
-                if (!_bellFired && _blackElapsed >= BellAtSec && !s.registrationActive)
-                {
-                    _bellFired = true;
-                    Push(SoundCue.Bell, ref count);
-                }
+                _bellFired = true;
+                Push(SoundCue.Bell, ref count);
             }
 
             return new ReadOnlySpan<SoundCue>(_buf, 0, count);

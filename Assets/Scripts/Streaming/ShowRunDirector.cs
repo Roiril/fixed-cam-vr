@@ -34,6 +34,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private readonly ScreenDecayLogic _decay = new ScreenDecayLogic();
 
+        /// <summary>
+        /// 終幕の合図（<c>canon/LEDGER.md</c> 0048）。「この演出が終わったら終わる」の 1 ビットで、
+        /// <b>落ちるのは <see cref="BeginRun"/>（周回リセット）だけ</b>。
+        /// 相と走行中の演出 id を両方持っているのはここだけなので、判定もここで回す。
+        /// </summary>
+        private readonly EndingCueLogic _ending = new EndingCueLogic();
+
         private BgmDirector? _bgm;
         private GlitchFx? _glitch;
         private CameraFeelFx? _feel;
@@ -66,6 +73,15 @@ namespace FixedCamVr.Streaming
         /// <summary>終了条件は満たしたが走行中の演出を見せ切るために待っているか（卓表示用）。</summary>
         public bool EndHolding => _logic.EndHolding;
 
+        /// <summary>
+        /// 終幕の合図の演出が走っているのを見たか（＝ 周回リセットで落ちるフラグ・テレメトリ用）。
+        /// <b>著作していなければ一生 false</b>（<see cref="ShowOutroDef.afterTakeId"/> が空）。
+        /// </summary>
+        public bool EndingArmed => _ending.Armed;
+
+        /// <summary>終幕の合図が既に撃たれたか（テレメトリ用）。</summary>
+        public bool EndingFired => _ending.Fired;
+
         /// <summary>周回で進む解像度の劣化の進み 0..1（テレメトリ用）。</summary>
         public float ScreenDecay => _decay.Progress;
 
@@ -82,9 +98,10 @@ namespace FixedCamVr.Streaming
         /// 新しいラッチは持たない（毎フレーム導出する）。中止の唯一のラッチは
         /// <see cref="IntroDirector.Aborted"/> で、それが落ちるのは BeginIntro だけ。
         /// </summary>
-        /// ⚠ <b>終幕（2D スクリーン → パススルー）が有効なら終了で黒は出さない。</b> 黒で閉じてから
-        /// 現実へ戻すと継ぎ目が 2 回になり、しかも「終わった」と思わせた後に画が戻るので締まらない。
-        /// 終幕は本編の画から直に始まる（<c>OutroStage.Warm</c> のあいだは映像のまま裏で点火を待つ）。
+        /// ⚠ <b>終幕が有効なら終了で黒は出さない。</b> 終幕は本編の画から直に始まり、
+        /// <b>装置の電力を落とすことで自分で黒くなる</b>（2026-08-15・<c>canon/LEDGER.md</c> 0048）。
+        /// ここで黒を重ねると、ちかちかしながら消えていく過程も、最後に出す報告の 4 行も
+        /// まとめて隠れる（この面は 0.3m ＝ 全部の面のうち最も手前）。
         /// ⚠ <b>位置合わせ中は黒を出さない</b>（2026-08-09）。中止の唯一の直し方が再登録なので、
         /// 黒が居座ると<b>直す作業そのものが黒に隠れて詰む</b>（線を実物に重ねる作業なのに何も見えない）。
         /// 位置合わせを起こせるのはコントローラを持つスタッフだけなので、体験者の視界へ現実が
@@ -135,6 +152,7 @@ namespace FixedCamVr.Streaming
             // 終幕も同じ罠を踏む（キー欠落で enabled=false に化け、黙って黒で終わる）。
             var o = def?.outro;
             OutroDef = (o == null || o.LooksUnset()) ? new ShowOutroDef() : o;
+            _ending.Configure(OutroDef.afterTakeId);
             OutroDefChanged?.Invoke(OutroDef);
         }
 
@@ -168,6 +186,9 @@ namespace FixedCamVr.Streaming
             //    演出が固まった）ので、その経路では**前の体験者の画の状態が次のランへ持ち越される**。
             _feel?.ResetAll();
             _glitch?.ResetAll();
+            // 終幕の合図も落とす。**ユーザーが「周回リセットのときにリセットされるフラグ」と
+            // 名指ししたもの**（canon/LEDGER.md 0048）。落とす場所はここ 1 つ。
+            _ending.ResetRun();
             ApplyGate();
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             NotifyPhaseIfChanged();
@@ -232,7 +253,18 @@ namespace FixedCamVr.Streaming
         private void Update()
         {
             bool atStart = AtStartZone();
-            bool takeRunning = timelineDirector != null && !string.IsNullOrEmpty(timelineDirector.ActiveTakeId);
+            string activeTakeId = timelineDirector != null ? timelineDirector.ActiveTakeId : "";
+            bool takeRunning = !string.IsNullOrEmpty(activeTakeId);
+
+            // 終幕の合図。著作した演出（run.outro.afterTakeId）が走って、そして終わったら終わる。
+            // ⚠ **これは出口を増やすだけ**で、周を走り切ったときの従来の終わり方（endGraceSec /
+            //    endHoldMaxSec / hardLimitSec）は 1 つも外していない。指した演出が最後まで走らない
+            //    現場でも体験は必ず終わる。
+            if (_ending.Tick(_logic.Phase == ShowPhase.Run, activeTakeId))
+            {
+                Debug.Log($"[ShowRun] 終幕の合図（演出 {OutroDef.afterTakeId} が終わった）");
+                _logic.RequestFinish();
+            }
             // 演出が「終わったか」。⚠ **「進行中でない」で判定してはいけない**（2026-08-06 置き換え）。
             // 旧実装は `Active && Stage != Black` の否定＝「進行中でない」を渡していた。段 0（開始待ち）は
             // そこに含まれないので、**演出が始まる前でも「進行中でない」が成立**していた。慣らし歩行

@@ -4,7 +4,7 @@ using NUnit.Framework;
 namespace FixedCamVr.Diagnostics.Tests
 {
     /// <summary>
-    /// 体験者の報告ボタンの面に出す文字。判定は <c>canon/LEDGER.md</c> 0046
+    /// 体験者の報告ボタンの面に出す文字。判定は <c>canon/LEDGER.md</c> 0050
     /// （「(X,Yで異変を報告) みたいに書いておいてほしい」「報告中 / ゲージ みたいな構成で」）。
     ///
     /// ⚠ <b>文言そのものを固定する</b>のは、ここを変えたら

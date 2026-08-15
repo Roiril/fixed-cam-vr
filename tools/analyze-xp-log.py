@@ -920,6 +920,53 @@ def analyze(events, others, exp, warns=None):
                         "シーンを焼き直していない）")
     w()
 
+    # ---------------- 終幕 ----------------
+    # ⚠⚠ 終幕は「装置が力尽きて報告を出す」だけの演出なので、**録画からは「暗い」としか読めない**
+    #    （ちかちかしながら消えるのも、黒の中に文字が出るのも、暗い部屋の録画では判別が難しい）。
+    #    画に出たかを見る手はここしかない:
+    #      pw       = 実際に材質へ書いた電力（nc なら書く先を掴めていない ＝ 一生ちかちかしない）
+    #      repBuilt = 報告の面を組めたか（0 なら最後の 4 行が 1 文字も出ない）
+    #      armed/cue = 著作した合図（run.outro.afterTakeId）が武装したか / そこから始まったか
+    #    観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
+    outro = [e for e in events if e.get("ev") == "outro"]
+    if outro:
+        w("## 終幕（消えて、報告が出たか）")
+        for e in outro:
+            w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} pw={e.get('pw')} "
+              f"rep={e.get('rep')} repBuilt={e.get('repBuilt')} marks={e.get('marks')} "
+              f"armed={e.get('armed')} cue={e.get('cue')}")
+        ostages = [e.get("stage") for e in outro if e.get("stage") != "Off"]
+        if not ostages:
+            w("  終幕は 1 度も始まっていない（体験が終わる前に走行が切れたなら正常）")
+        else:
+            if any(str(e.get("pw")) == "nc" for e in outro):
+                verdict("FAIL", "終幕がスクリーンの材質を掴めていない（pw=nc）— 電力を書けないので、"
+                                "ちかちかしながら消える過程が 1 度も画に出ない")
+            if any(str(e.get("repBuilt")) == "0" for e in outro):
+                verdict("FAIL", "終幕の報告の面を組めていない（repBuilt=0）— 最後の 4 行が 1 文字も"
+                                "出ない。日本語フォントの静的ベイクを確かめる（menu hud-font）")
+            for want in ("Flicker", "Dark", "Report"):
+                if want not in ostages:
+                    verdict("WARN", f"終幕の段 {want} が出ていない")
+            # 「段が進んだ」ではなく「画に出た」。Report 以降は電力 0 でなければ消えていない。
+            # ⚠ Dark は入れない。段の遷移と電力の書き込みは同じフレームで、実行順は未定義なので、
+            #   Dark へ入った 1 行だけ Flicker の値が載りうる（偽の FAIL になる）。
+            after = [e for e in outro if e.get("stage") in ("Report", "Done")]
+            if after and any(fnum(e, "pw", 1.0) > 0.05 for e in after):
+                verdict("FAIL", "スクリーンが消え切っていない（Dark 以降で pw>0.05）")
+            done = [e for e in outro if e.get("stage") == "Done"]
+            if done and all(fnum(e, "rep", 0.0) > 0.95 for e in done):
+                verdict("OK", "終幕が最後まで進み、報告が画に出た")
+            elif done:
+                verdict("FAIL", "終幕は終わったのに報告の不透明度が上がっていない（rep<0.95）— "
+                                "黒の中で何も出ないまま体験が終わっている")
+            if any(str(e.get("cue")) == "1" for e in outro):
+                verdict("OK", "終幕は著作した合図（run.outro.afterTakeId）から始まった")
+            elif any(str(e.get("armed")) == "1" for e in outro):
+                verdict("WARN", "合図の演出は走ったが、そこから終幕へは入っていない"
+                                "（endHoldMaxSec の安全網で終わった — 演出が自分から終わっていない）")
+        w()
+
     # ---------------- 位置合わせ（コントローラの操作モード） ----------------
     # ⚠ ここが無かったせいで「トリガー長押しが発火していないのか、発火しても画が変わらないのか」を
     #    実機ログから切り分けられなかった（2026-08-09）。卓の heartbeat にしか出ていなかった。
@@ -1000,6 +1047,34 @@ def analyze(events, others, exp, warns=None):
                 else:
                     verdict("OK", "隔離が閉じたときに部屋の帯域が狭まっている")
 
+        # -- 周ごとの環境音が入れ替わったか（`canon/LEDGER.md` 0049）
+        # ⚠ **合計は常に一定**（取り分の二乗和が 1）なので、`sndAud` には 1 ビットも出ない。
+        #    入れ替わりの証拠はこのキーだけ。
+        amb = effect_samples(events, "sndAmb")
+        if amb:
+            picked = set()
+            for a in amb:
+                parts = str(a).split("/")
+                if len(parts) != 3:
+                    continue
+                try:
+                    vals = [float(p) for p in parts]
+                except ValueError:
+                    continue
+                top = max(range(3), key=lambda i: vals[i])
+                if vals[top] > 0.9:
+                    picked.add(top + 1)
+            w(f"  環境音: {amb[-1]}（1 周目/2 周目/3 周目の取り分）"
+              f" — 鳴っていたのは {'・'.join(f'{p} 周目' for p in sorted(picked)) or '判定できず'}")
+            laps_seen = {int(e["lap"]) for e in events if str(e.get("lap", "")).isdigit()}
+            expect = {1} | ({2} if 2 in laps_seen else set()) | ({3} if 3 in laps_seen else set())
+            missing = sorted(expect - picked)
+            if missing:
+                verdict("FAIL", f"{'・'.join(f'{m} 周目' for m in missing)}の環境音へ入れ替わっていない"
+                                "（`bed_room_lap2` / `bed_room_lap3` を掴めているか sndBuilt を見る）")
+            else:
+                verdict("OK", f"環境音が周ごとに入れ替わっている（{len(picked)} 本）")
+
         # -- 節目の一撃
         by_id = {}
         for e in sfx_events:
@@ -1016,14 +1091,23 @@ def analyze(events, others, exp, warns=None):
         #    ここに残すと「出るはずのものが出ない」と毎回誤検出する。
         intro_ran = any(e.get("stage") == "Swap" for e in intro)
         if intro_ran:
-            for want, label in (("Shatter", "現実が割れる"),
+            # ⚠ 鈴（Bell）は 2026-08-15 に段 0 の 6 秒後から**段 3 の頭**へ移した
+            #    （`canon/LEDGER.md` 0049）。段 3 は実尺 1.1 秒しかないので、
+            #    「鳴らなかった」が起きるならここがいちばん起きやすい。
+            for want, label in (("Bell", "輪郭だけの世界に入る鈴"),
+                                ("Shatter", "現実が割れる"),
                                 ("ScreenOn", "スクリーンが出る"),
                                 ("ScreenNoise", "その後のノイズ")):
                 if by_id.get(want, 0) == 0:
                     verdict("FAIL", f"導入は段 Swap まで進んだのに「{label}」の音が鳴っていない"
                                     f"（ev=sfx id={want} が 0 本）")
-            if all(by_id.get(k, 0) > 0 for k in ("Shatter", "ScreenOn", "ScreenNoise")):
-                verdict("OK", "導入の 3 つの節目が全部鳴った")
+            if all(by_id.get(k, 0) > 0 for k in ("Bell", "Shatter", "ScreenOn", "ScreenNoise")):
+                verdict("OK", "導入の 4 つの節目が全部鳴った")
+        # ⚠ 家鳴り（Creak）は 2026-08-15 に全廃した（`canon/LEDGER.md` 0049）。
+        #    鳴っていたら**戻ってしまっている**ので落とす。
+        if by_id.get("Creak", 0) > 0:
+            verdict("FAIL", f"家鳴りが {by_id['Creak']} 回鳴っている — 2026-08-15 に全廃したもの"
+                            "（SoundCueLogic の Creak の経路が復活していないか見る）")
 
         # -- カメラ切替の音（1 回の体験でいちばん多く鳴る音）
         if sw_n:

@@ -616,10 +616,9 @@ namespace FixedCamVr.Streaming
         public bool enabled = true;
 
         /// <summary>
-        /// 終幕を早めるラインの id（<c>layout.lines[]</c>）。
+        /// 終幕を早めるラインの id（<c>layout.lines[]</c>）。<b>未実装（スキーマだけ）。</b>
         ///
-        /// ⚠ <b>これは終端そのものではない。</b> 踏めば「画面が空き次第すぐ」始まり、踏まなくても
-        /// <c>run.endGraceSec</c> の経過で始まる。線を終端にすると、**帰りの経路がその線分を跨ぐ保証が
+        /// ⚠ <b>これは終端そのものではない。</b> 線を終端にすると、**帰りの経路がその線分を跨ぐ保証が
         /// 幾何上どこにも無い**ので、踏まなかった体験者が <c>hardLimitSec</c> まで終われなくなる。
         ///
         /// ⚠ <c>run.intro.startLineId</c> を継承しない（空の意味が 2 つになり、線を後で流用したときに
@@ -627,19 +626,34 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public string lineId = "";
 
+        /// <summary>
+        /// <b>終幕の合図となる演出の id</b>（<c>timeline.segments[].takes[].id</c>）。
+        /// この演出が走って、そして終わったら終幕へ入る（<c>canon/LEDGER.md</c> 0048・
+        /// ユーザー逐語「周回中の例えば4週目Aの指定された演出終了後に終幕演出を流すみたいな」）。
+        /// 判断は <see cref="EndingCueLogic"/>、配線は <see cref="ShowRunDirector"/>。
+        ///
+        /// ⚠ <b>空なら従来どおり</b>「周を走り切って <c>endGraceSec</c> が過ぎたら」で終わる。
+        /// ⚠ <b>合図であって終端ではない。</b> 指した演出が最後まで走らない現場
+        /// （体験者が別の区間へ抜けた / 最後のカットが「次にカメラが切り替わるまで」で終わらない）でも、
+        /// <c>endHoldMaxSec</c> / <c>hardLimitSec</c> の安全網はそのまま効く。
+        /// </summary>
+        public string afterTakeId = "";
+
         // 尺の既定は 2 箇所（ここと <see cref="OutroTiming.Default"/>）に現れる。値は一致させること。
-        public float unswapSec = 1.5f;
-        public float openSec = 2.5f;
-        public float restoreSec = 2.0f;
-        public float holdSec = 1.5f;
+        // ⚠ 2026-08-15 にキーが入れ替わった（旧 unswapSec / openSec / restoreSec / holdSec）。
+        //    旧キーしか持たない show.json（焼き込み・端末キャッシュ）では新キーが 0 になり、
+        //    Sanitized() が既定へ倒すので**そのまま走る**。
+        public float flickerSec = 6.0f;
+        public float darkSec = 1.2f;
+        public float reportFadeSec = 1.5f;
 
         /// <summary>キーごと無い（JsonUtility が 0 で埋めた）形か。</summary>
         public bool LooksUnset() =>
-            !enabled && unswapSec <= 0f && openSec <= 0f && restoreSec <= 0f && holdSec <= 0f;
+            !enabled && flickerSec <= 0f && darkSec <= 0f && reportFadeSec <= 0f;
 
         public OutroTiming ToTiming() => new OutroTiming
         {
-            unswapSec = unswapSec, openSec = openSec, restoreSec = restoreSec, holdSec = holdSec,
+            flickerSec = flickerSec, darkSec = darkSec, reportFadeSec = reportFadeSec,
         }.Sanitized();
     }
 

@@ -1,11 +1,11 @@
 ---
 name: show-run-skeleton
-description: 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム判定／導入で録画を消さない／凍結ラッチを増やさない
+description: 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム判定／導入で録画を消さない／凍結ラッチを増やさない／終わり方の出口は 4 つ（終幕の合図・周回・時間切れ・卓）
 metadata: 
   node_type: memory
   type: project
   originSessionId: 9c9e9742-4d99-47bc-8b46-e7eb4d64ed2b
-  modified: 2026-08-14T21:29:17.710Z
+  modified: 2026-08-15T06:44:53.423Z
 ---
 
 2026-07-29 に企画書が学会論文版（`PR0490_1.pdf`）へ差し替わり、「3 区間を 3 周・導入を含め 3 分以内」が
@@ -47,5 +47,23 @@ metadata:
 **新しく「体験 1 回ぶんの状態」を持つ実行体を足したら、`BeginRun` か段 0 の縁のどちらかへ必ず繋ぐ。**
 ⚠ **繋がっていないことはテストでは捕まらない** — 既存のテストは `ResetRun` を自分で呼んでおり、
 **呼ぶ前提を自分で作っていた**ので、呼び出し元が無い穴を素通しした。
+
+## 終わり方の出口が 4 つになった（2026-08-15）
+
+`canon/LEDGER.md` 0048 で **終幕の合図**（`run.outro.afterTakeId` が指す演出の終了）が入った。
+判断は [`EndingCueLogic`](../../Assets/Scripts/Streaming/EndingCueLogic.cs)、
+落とすのは `ShowRunDirector.BeginRun()` 1 か所（＝ ユーザーが名指しした「周回リセットで
+リセットされるフラグ」）。
+
+| 出口 | いつ |
+|---|---|
+| **合図**（新） | `afterTakeId` の演出が走って、そして終わった |
+| `endGraceSec` / `endHoldMaxSec` | 周を走り切って、走行中の演出を見せ切った |
+| `hardLimitSec` | 時間切れ（既定 300 秒） |
+| `RequestFinish` | 卓の ⏹ / 導入中の終了 |
+
+⚠ **出口を足しただけで、1 つも外していない。** 合図が指す演出が最後まで走らない現場でも体験は必ず終わる。
+⚠ **合図は「走っていない」だけを見ない** — 演出が始まる前も `ActiveTakeId` は空なので、
+空だけで撃つと本編に入った瞬間に終わる。
 
 関連: [[glitch_and_latency]]

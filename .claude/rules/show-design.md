@@ -117,7 +117,7 @@ Normal / Registration）。左手・スティック・cue 試射・操作チー�
 
 ⚠⚠ **左は X と Y しか読まない**（2026-08-15〜）。スティック・トリガー・グリップ・A/B は 1 ビットも読まない。
 **右（スタッフ）と左（体験者）は完全に分かれている。**
-**どちらを押しても同じ**なのは、被った体験者に手元が見えないから（`canon/LEDGER.md` 0046）。
+**どちらを押しても同じ**なのは、被った体験者に手元が見えないから（`canon/LEDGER.md` 0050）。
 
 ⚠⚠ **`Button.Three` / `Button.Four` を `Controller.LTouch` と組み合わせない。**
 LTouch の仮想マップは `Three = None` / `Four = None` なので（`OVRInput.cs` の `OVRControllerLTouch`）、
@@ -516,28 +516,70 @@ Unity 側が面倒を見る**。全画面 1 パスで幾何を解きたくなっ
 `ShowTelemetryHost` と `analyze-xp-log.py` を**対で**直す。段 Frame に達したのに `shat` が
 0 のままなら、進みは配っているのに 1 画素も割れていない（FAIL）。
 
-#### 終幕（2D スクリーン → パススルー）— 2026-08-07 に実行体を入れた
+#### 終幕（黒のまま装置が力尽きて、報告を出して終わる）— 2026-08-15 に作り替えた
 
-導入の逆を辿って現実へ戻して終わる。判断は [`OutroLogic`](../../Assets/Scripts/Streaming/OutroLogic.cs)、
-配線は [`OutroDirector`](../../Assets/Scripts/Streaming/OutroDirector.cs)（`IntroDirector` と同じ
-GameObject に載る）。段は **Warm**（裏でパススルーを点火して待つ・画は本編のまま）→ **Unswap**（枠の中身が
-映像から現実へ）→ **Open**（枠が開く）→ **Restore**（色と質感が戻る）→ **Hold**（素のパススルー）。
-既定の尺は 1.5 / 2.5 / 2.0 / 1.5 = **7.5 秒**（`run.outro` で調整）。
+⚠⚠ **「導入の逆再生でパススルーへ戻す」5 段（Warm / Unswap / Open / Restore / Hold）は廃止した**
+（`canon/LEDGER.md` 0048・ユーザー逐語「パススルーには戻さず、背景が黒いまま、スクリーンが、
+電池が切れかけみたいな感じでだんだんとちかちかしながら消えていき、最後に…書いて終了にしてほしい」）。
 
-- **覆いは導入と同じ [`IntroVeil`](../../Assets/Scripts/Streaming/IntroVeil.cs)**。開口の式を共有しないと
-  「閉じた形」と「開く形」が食い違う
-- **パススルーの見え方は `PassthroughStyler` が `Weights` を毎フレーム読む**（導入と同じ経路。
-  重みの語彙 `IntroWeights` を共有しているのでそのまま繋がる）。走っている方を読み、両方走ったら終幕優先
-- ⚠ **終幕が有効なら終了で黒を出さない**（`ShowRunDirector.ShouldBlackout` が `OutroDef.enabled` を見る）。
-  黒で閉じてから現実へ戻すと継ぎ目が 2 回になり、「終わった」と思わせた後に画が戻るので締まらない
-- ⚠ **`PassthroughStyler.disableWhenDone` は終幕の後は効かせない**（`Stage == Done` を見る）。
-  切ると最後に真っ黒になって「現実へ戻った」が台無しになる
-- ⚠ **点火待ちは `PassthroughReadyProvider`（OvrBridge から注入）**。Streaming asmdef は OVR を
-  参照しない規約なので、判定は向こうから差し込む。null なら true ＝待たずに進む
-  （`OutroLogic.WarmMaxSec` = 1.5s の上限もあるので「本編のまま固まる」ことはない）
+判断は [`OutroLogic`](../../Assets/Scripts/Streaming/OutroLogic.cs)、配線は
+[`OutroDirector`](../../Assets/Scripts/Streaming/OutroDirector.cs)（`IntroDirector` と同じ GameObject）。
+
+| 段 | 既定 | 何が起きるか |
+|---|---|---|
+| `Flicker` | 6.0s | スクリーンが電池切れのようにちかちかしながら暗くなり、消える |
+| `Dark` | 1.2s | 何も無い黒。間 |
+| `Report` | 1.5s | 報告の 4 行が浮かぶ |
+| `Done` | — | **文字を出したまま次のランを待つ**（`Active` は落ちるが `Presenting` は立つ） |
+
+合計 **8.7 秒**（`run.outro` の `flickerSec` / `darkSec` / `reportFadeSec` で調整）。
+
+- ⚠⚠ **パススルー・覆い・隔離には触らない。** 本編の時点で背景は既に黒なので、
+  **何もしないことが「黒のまま」**。始めるときに覆い・隔離・乱れを畳むだけ
+- **動かすのは `_ScreenPower`（0..1）1 つ**。`ScreenComposite` の**いちばん最後**に掛かるので、
+  映像も砂嵐も管の縁も一緒に落ちる（電池が切れるのは画の一部ではなく装置そのもの）。
+  書く先は `MjpegScreen` の Renderer の材質で、`IntroDirector` の `_CrtIgnite` と**同じ流儀**
+- ⚠⚠ **既定は 1（点いている）。** 0 を書いたままにすると画がまるごと消えるので、終幕を畳む
+  すべての経路（終わった / ラン開始 / 相が変わった / `OnDisable`）で**必ず 1 を書き戻す**
+- **ちらつきの形はシェーダに持たせない** → [`OutroLogic.FlickerPower`](../../Assets/Scripts/Streaming/OutroLogic.cs)。
+  ①供給がじわじわ痩せる ②終盤ほど頻繁に・深く落ちる ③最後は 0 まで落とし切る。
+  **乱数を使わない**（刻み番号のハッシュ）ので同じ版は同じ絵になる
+- **報告の 4 行**は [`OutroReport`](../../Assets/Scripts/Diagnostics/OutroReport.cs)（文言は
+  [`OutroReportText`](../../Assets/Scripts/Diagnostics/OutroReportText.cs)）。**体験前の注意書き
+  （`TitleNotice`）と対の面**で、置き場・大きさ・深度の逃がし方を揃えてある（2.6m / 8.5 倍 /
+  TMP Overlay の `ZTest Always` / queue 5000）。数は `ShowControlClient.VisitorMarkCount`、
+  **全角数字**（紙の「観測者番号 ０３７」と揃える）
+- ⚠ **`OutroReport` は `StaffViewing` の門を通さない**（体験は既に終わっていて、この 4 行が
+  「HMD を外してよい」を伝える唯一の手段）。`HmdTextGateTests.OutroReport_IsNotGatedByStaffViewing` が固定する
+- ⚠ **終幕が有効なら終了で黒を出さない**（`ShowRunDirector.ShouldBlackout`）。
+  `ShowEndingFader` は 0.3m ＝ 全部の面のうち最も手前なので、重ねると消えていく過程も報告も隠れる
+- ⚠ **`PassthroughStyler` は終幕を読まなくなった**（読むと真逆になる — 終幕の頭で現実が立ち上がる）。
+  `OutroDirector.PassthroughReadyProvider` / `OutroLogic.WarmMaxSec` / `OutroInput` も消えている
+- ⚠ **音は 1 本も足さない。** 装置の声が `Flicker` の進みで細り、そのぶん部屋の音が前へ出て、
+  `Done` で無音へ落ちる（`rules/sound-design.md`「終わりに音を残さない」）。
+  `SoundCue.ShellOpen` は enum と音源を残したまま**鳴らさない**
 - `run.outro` のキーが無い show.json では JsonUtility が `enabled=false` に化けるので、
-  `ShowOutroDef.LooksUnset()` で検出して既定へ落とす（導入と同じ罠・同じ手当て）
-- **`run.outro.lineId` は未実装**（スキーマだけ）。いまは `run.endGraceSec` の経過で始まる
+  `ShowOutroDef.LooksUnset()` で検出して既定へ落とす（導入と同じ罠・同じ手当て）。
+  **旧キー（`unswapSec` 等）しか持たない show.json も、新キーが 0 → `Sanitized()` が既定へ倒すので走る**
+- **`run.outro.lineId` は未実装**（スキーマだけ）
+
+##### 終幕の合図は「著作した演出が終わったこと」（`run.outro.afterTakeId`）
+
+判断は [`EndingCueLogic`](../../Assets/Scripts/Streaming/EndingCueLogic.cs)（純ロジック・テスト 10 本）、
+配線は `ShowRunDirector.Update`。**ユーザーが「周回リセットのときにリセットされるフラグ」と
+名指ししたもの**（`canon/LEDGER.md` 0048）。
+
+- `run.outro.afterTakeId` が指す演出が**走っているのを見て**、そして**走らなくなったら**撃つ。
+  撃つと `ShowRunLogic.RequestFinish()` ＝ 相が `Finished` へ落ち、`OutroDirector` が始まる
+- ⚠ **「走っていない」だけを見ない。** 演出が始まる前も `ActiveTakeId` は空なので、
+  空だけを見ると本編に入った瞬間に撃つ
+- ⚠ **落ちるのは `ShowRunDirector.BeginRun`（周回リセット）だけ。** 1 回撃ったら再武装しない
+- ⚠ **これは出口を増やしただけで、従来の終わり方は 1 つも外していない**
+  （`endGraceSec` / `endHoldMaxSec` / `hardLimitSec`）。指した演出が最後まで走らない現場でも必ず終わる
+- ⚠⚠ **いまの `show.json` の `L4C0#0` は最後のカットが「次にカメラが切り替わるまで」**なので、
+  帰りの A に立ち止まっている体験者では**自分から終わらない** ＝ 合図は 60 秒の安全網の側から来る。
+  正確に効かせたいなら、そのカットに尺を持たせる（**著作の判断**なので触っていない）
+- 観測は `[XP] ev=outro` の `armed=` / `cue=`（`analyze-xp-log.py` の「## 終幕」節が判定する）
 
 #### 本編へ入る判定は「演出が終わったか」（2026-08-06 置き換え・慣らし歩行を外した）
 
@@ -577,7 +619,7 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
 | `ControllerGuidePanel`（右手の手元） | スタッフが見ているときだけ（位置合わせ中も出す） | ボタンの早見表だけ。⚠ 2 秒で消える `ShowTransient` と手を下げると視界外なので、**復帰手順の置き場にしない** |
 | **`VisitorMarkPanel`（左手の手元）** | **体験者に常時**（左コントローラが繋がっているあいだ） | 押し方 `(X,Yで異変を報告)` と、長押し中の `報告中` ＋ ゲージだけ |
 
-⚠⚠ **`VisitorMarkPanel` は門を通さない唯一の面**（2026-08-15・`canon/LEDGER.md` 0046）。
+⚠⚠ **`VisitorMarkPanel` は門を通さない唯一の面**（2026-08-15・`canon/LEDGER.md` 0050）。
 上の 3 つと並べると規約違反に見えるので、**善意で `StaffViewing()` を足されると
 体験者に一生見えない面になる**（しかも誰も気づかない）。
 `HmdTextGateTests.VisitorMarkPanel_IsNotGatedByStaffViewing` が足させない。
@@ -592,7 +634,7 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
 |---|---|---|---|
 | 体験前の注意書き | 2.6m | 約 4° | 初版は StatusHud と同じ大きさで**小さすぎ**、8.5 倍に拡大（0035） |
 | 上司からの連絡 | 1.5m | 0.9° → **1.8°** | 初版が**実機の画で読めなかった**。scale 0.34 → 0.67 |
-| 報告ボタンの面（左手元） | 約 0.45m | 1.9°（机上） | fontSize 30 × canvas 0.0005 = 1 文字 0.015m。⚠ **実機の画で未確認**（0046） |
+| 報告ボタンの面（左手元） | 約 0.45m | 1.9°（机上） | fontSize 30 × canvas 0.0005 = 1 文字 0.015m。⚠ **実機の画で未確認**（0050） |
 
 - **`fontSize` ではなく `transform.scale` で掛ける**（fontSize を上げるとメッシュの座標だけ広がる）
 - **1 行の文字数 × 1 文字の角度 ＝ 面の見かけ幅**。先に面の大きさを決めると文字数の上限が決まる

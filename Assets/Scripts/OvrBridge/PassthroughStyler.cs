@@ -43,8 +43,10 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("演出が終わったらパススルーを切るか。切ると数百 ms の黒が出るが、その時点で覆いが黒いので見えない。")]
         [SerializeField] private bool disableWhenDone = true;
 
-        [Tooltip("終幕（2D スクリーン → パススルー）。導入と同じ重みの語彙を出すので、走っている方を読む。")]
-        [SerializeField] private OutroDirector? outro;
+        // ⚠⚠ **終幕はここから外した**（2026-08-15・canon/LEDGER.md 0048）。
+        //    終幕はパススルーへ戻さなくなった（「背景が黒いまま」）ので、読むと真逆のことをする —
+        //    終幕の頭で現実が立ち上がり、Done で切らない分岐が残って最後まで現実が見えたままになる。
+        //    連鎖して OutroDirector.PassthroughReadyProvider / OutroLogic.WarmMaxSec も消えている。
 
         private bool _styled;          // 一度でも style を当てたか（戻す必要があるか）
         private bool _wasActive;
@@ -78,12 +80,7 @@ namespace FixedCamVr.OvrBridge
         {
             if (layer == null) layer = FindObjectOfType<OVRPassthroughLayer>();
             if (director == null) director = FindObjectOfType<IntroDirector>();
-            if (outro == null) outro = FindObjectOfType<OutroDirector>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
-
-            // 終幕は「パススルーが実際に出た」のを待ってから枠を開ける（黒いまま開いても現実が見えない）。
-            // Streaming asmdef は OVR を参照しない規約なので、判定はこちら側から差し込む。
-            if (outro != null) outro.PassthroughReadyProvider = () => ReadPassthroughState() == 1;
 
             // テレメトリは Streaming asmdef 越しにしかパススルーを見られない（OVR を参照しない規約）。
             // UserPresentProvider と同じ形で、OVR を知っているこちら側から読み口を差し込む。
@@ -130,14 +127,10 @@ namespace FixedCamVr.OvrBridge
                 return;
             }
 
-            if (director == null && outro == null) { Resolve(); return; }
+            if (director == null) { Resolve(); return; }
 
-            // 導入と終幕は同じ重みの語彙（IntroWeights）を出す。走っている方を読む。
-            // 両方が同時に走ることは無い（導入は Intro 相・終幕は Finished 相）が、
-            // 万一重なったら終幕を優先する（後から始まった方が現在の見えを持っている）。
-            bool outroActive = outro != null && outro.Active;
-            bool introActive = director != null && director.Active;
-            bool active = introActive || outroActive;
+            // 読むのは導入だけ（終幕はパススルーを使わない — 上の注記）。
+            bool active = director.Active;
 
             if (active && !_wasActive)
             {
@@ -149,10 +142,10 @@ namespace FixedCamVr.OvrBridge
             if (!active)
             {
                 if (_styled) RestoreStyle();
-                // ⚠ **終幕が終わった後は切らない。** 終幕は素のパススルーで体験を閉じるので、
-                // ここで切ると最後に真っ黒になって「現実へ戻った」が台無しになる。
-                bool outroDone = outro != null && outro.Stage == OutroStage.Done;
-                if (disableWhenDone && !_turnedOff && !outroDone)
+                // ⚠ **終幕でも切ったままにする**（2026-08-15）。終幕は黒のまま装置が力尽きる演出なので、
+                // ここで現実が戻ると「背景が黒いまま」が壊れる。旧実装は `OutroStage.Done` を
+                // 見て切らない分岐を持っていた（パススルーで体験を閉じていたころの名残）。
+                if (disableWhenDone && !_turnedOff)
                 {
                     // ここで黒が出るが、覆いが既に黒いので体験者には見えない。
                     // 本編は黒背景なので、パススルーを回しっぱなしにする理由が無い（90Hz を守る）。
@@ -164,7 +157,7 @@ namespace FixedCamVr.OvrBridge
 
             if (layer == null) return;
 
-            var w = outroActive ? outro!.Weights : director!.Weights;
+            var w = director.Weights;
             float d = Mathf.Clamp01(w.degrade);
 
             // 色 → コントラスト → 輪郭 の順に効く。d=0 なら全部 0（＝素のパススルー）。
@@ -177,10 +170,8 @@ namespace FixedCamVr.OvrBridge
             layer.edgeRenderingEnabled = e > 0.01f;
             if (e > 0.01f)
             {
-                // 輪郭の色は導入の設定を流用する（同じ部屋の輪郭なので、終幕で別の色にする理由が無い）。
-                // 終幕だけが配線された構成でも落ちないよう既定を持つ。
-                Color c = director != null ? director.EdgeColor : Color.white;
-                layer.edgeColor = new Color(c.r, c.g, c.b, e);
+                layer.edgeColor = new Color(director.EdgeColor.r, director.EdgeColor.g,
+                                            director.EdgeColor.b, e);
             }
             _styled = true;
         }

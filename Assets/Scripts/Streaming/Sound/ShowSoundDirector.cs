@@ -59,6 +59,10 @@ namespace FixedCamVr.Streaming
         private SfxPlayer? _sfx;
 
         private BedVoice _seal = new BedVoice(), _room = new BedVoice(), _device = new BedVoice();
+        // 周ごとの環境音（2026-08-15・`canon/LEDGER.md` 0049）。1 周目は `_room`。
+        private BedVoice _room2 = new BedVoice(), _room3 = new BedVoice();
+        // 直前のフレームで鳴っていたか（黙り → 鳴り始めの縁で頭出しするために持つ）。
+        private bool _room2Audible, _room3Audible;
         private BedVoice _worn = new BedVoice(), _noise = new BedVoice();
         private readonly System.Collections.Generic.Dictionary<string, AudioClip?> _spot =
             new System.Collections.Generic.Dictionary<string, AudioClip?>();
@@ -103,6 +107,10 @@ namespace FixedCamVr.Streaming
 
             _seal = MakeBed("Seal", "bed_seal", spatial: true);
             _room = MakeBed("Room", "bed_room", spatial: false, lowPass: true);
+            // ⚠ **3 本とも同じ低域通過を通す。** 片方だけ素通しにすると、隔離が閉じる場面で
+            //    「狭くなったのに 1 本だけ広いまま」になり、帯域で表しているものが壊れる。
+            _room2 = MakeBed("RoomLap2", "bed_room_lap2", spatial: false, lowPass: true);
+            _room3 = MakeBed("RoomLap3", "bed_room_lap3", spatial: false, lowPass: true);
             _device = MakeBed("Device", "bed_device", spatial: false);
             _worn = MakeBed("DeviceWorn", "bed_device_worn", spatial: false);
             _noise = MakeBed("Noise", "bed_static", spatial: false);
@@ -246,12 +254,15 @@ namespace FixedCamVr.Streaming
             {
                 s.outroActive = true;
                 s.outroStage = _outro.Stage;
-                s.introWeights = _outro.Weights;   // 重みの語彙は導入と共有（`IntroWeights`）
+                // ⚠ 2026-08-15 から**重みは受け取らない**（終幕は覆いにも隔離にも触らないので
+                //    `IntroWeights` を出さなくなった）。音が読むのは段と、その段の進みだけ。
+                s.outroProgress01 = _outro.StageProgress01;
             }
             if (_run != null)
             {
                 s.phase = _run.Phase;
                 s.decay = _run.ScreenDecay;
+                s.lap = _run.Lap;      // 周ごとの環境音の入れ替えに使う
             }
             if (_signal != null) s.signalLost = _signal.Level;
             if (_show != null) s.registrationActive = _show.CourseRegistrationActive;
@@ -280,7 +291,15 @@ namespace FixedCamVr.Streaming
             float m = bedsEnabled ? masterGain : 0f;
             float sum = 0f;
             sum += Set(_seal, g.seal * m);
-            sum += Set(_room, g.room * m);
+            // 環境音は周で入れ替わる。取り分は二乗の和が 1 なので、合計の高さは動かない。
+            // ⚠ 黙っていた側は、鳴り始める前に素材の決まった所へ頭出しする（下の説明）。
+            float lap2Gain = g.room * g.roomLap2 * m;
+            float lap3Gain = g.room * g.roomLap3 * m;
+            CueAmbientStart(_room2, lap2Gain, ref _room2Audible);
+            CueAmbientStart(_room3, lap3Gain, ref _room3Audible);
+            sum += Set(_room, g.room * g.roomLap1 * m);
+            sum += Set(_room2, lap2Gain);
+            sum += Set(_room3, lap3Gain);
             sum += Set(_device, g.device * m);
             sum += Set(_worn, g.deviceWorn * m);
             sum += Set(_noise, g.noise * m);
@@ -293,12 +312,11 @@ namespace FixedCamVr.Streaming
             //    部屋のトーンは中身の大半が 4kHz より下なので、**10kHz の低域通過は何もしないのと同じ**。
             //    絵は閉じているのに音は開いたまま、という食い違いが実機で起きていた。
             //    人の音高の知覚は対数なので、線形補間は必ず上へ偏る。
-            if (_room.lpf != null)
-            {
-                RoomCutoffHz = ClosedCutoffHz
-                               * Mathf.Pow(OpenCutoffHz / ClosedCutoffHz, Mathf.Clamp01(g.roomOpen));
-                _room.lpf.cutoffFrequency = RoomCutoffHz;
-            }
+            RoomCutoffHz = ClosedCutoffHz
+                           * Mathf.Pow(OpenCutoffHz / ClosedCutoffHz, Mathf.Clamp01(g.roomOpen));
+            if (_room.lpf != null) _room.lpf.cutoffFrequency = RoomCutoffHz;
+            if (_room2.lpf != null) _room2.lpf.cutoffFrequency = RoomCutoffHz;
+            if (_room3.lpf != null) _room3.lpf.cutoffFrequency = RoomCutoffHz;
 
             // 封印の箱の唸りは**箱そのものから**鳴る。箱が無ければ 2D へ落とす
             // （黙って別の場所から鳴らすより、定位を捨てる方が事故が小さい）。
@@ -325,6 +343,29 @@ namespace FixedCamVr.Streaming
             return v;
         }
 
+        /// <summary>
+        /// 黙っていた環境音が鳴り始めるとき、**素材の決まった所へ頭出しする**。
+        ///
+        /// ⚠⚠ 敷く音は起動時から音量 0 で回りっぱなしなので、そのままだと
+        /// <b>入れ替わる瞬間に素材のどこに居るかが走行ごとに違う</b>。
+        /// `bed_room_lap2` は 1 秒ごとの RMS が **33dB 振れる**（実測: 頭 -56 → 山 -23 → 尻 -50）ので、
+        /// 静かな所で入れ替わると「音が消えた」に聞こえ、山で入れ替わると自然に繋がる
+        /// ＝ **同じ設定で毎回違う体験になる**。
+        ///
+        /// 0.25 は測って選んだ値: lap2 は 4.7 秒 ＝ **山（-23dB）**、lap3 は 16.6 秒 ＝
+        /// **平坦な本体（-37dB）**。どちらも素材の「厚い所」から入る。
+        /// ⚠ 折り返してループにしてあるので、**途中から始めても継ぎ目は無い**。
+        /// </summary>
+        private const float AmbientStartFraction = 0.25f;
+
+        private static void CueAmbientStart(BedVoice b, float gain, ref bool wasAudible)
+        {
+            bool audible = gain > 0.0005f;
+            if (audible && !wasAudible && b.src != null && b.ok && b.src.clip != null)
+                b.src.time = b.src.clip.length * AmbientStartFraction;
+            wasAudible = audible;
+        }
+
         // ---------------------------------------------------------------- 外からの号令
 
         /// <summary>ラン開始（体験者交代）。**前の体験者の音を持ち越さない。**</summary>
@@ -334,6 +375,8 @@ namespace FixedCamVr.Streaming
             _beds.Reset();
             _sfx?.StopAll();
             LastCue = SoundCue.None;
+            // 次の体験者でも同じ所から環境音が入る（頭出しの縁を作り直す）。
+            _room2Audible = _room3Audible = false;
         }
     }
 }

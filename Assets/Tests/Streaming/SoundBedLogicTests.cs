@@ -200,6 +200,100 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(flat.device + flat.deviceWorn, back.device + back.deviceWorn, 1e-2f);
         }
 
+        // ---- 周ごとの環境音（2026-08-15・canon/LEDGER.md 0049）--------------------
+
+        private static SoundShowState Run(int lap)
+        {
+            var s = SoundShowState.Idle;
+            s.phase = ShowPhase.Run;
+            s.lap = lap;
+            return s;
+        }
+
+        private static SoundBedGains Settle(SoundBedLogic l, in SoundShowState s, float sec = 30f)
+        {
+            SoundBedGains g = default;
+            for (int i = 0; i < (int)(sec * 90f); i++) g = l.Tick(1f / 90f, s);
+            return g;
+        }
+
+        [Test]
+        public void Ambient_SwapsPerLap()
+        {
+            var l = new SoundBedLogic();
+
+            var g1 = Settle(l, Run(1));
+            Assert.Greater(g1.roomLap1, 0.97f, "1 周目は合成の環境音");
+            Assert.Less(g1.roomLap2 + g1.roomLap3, 0.05f);
+
+            var g2 = Settle(l, Run(2));
+            Assert.Greater(g2.roomLap2, 0.97f, "2 周目で入れ替わっていない");
+
+            var g3 = Settle(l, Run(3));
+            Assert.Greater(g3.roomLap3, 0.97f, "3 周目で入れ替わっていない");
+
+            // 帰りの A（lap 4）は 3 周目の続き。**ここで 1 周目へ戻ると終わりで空気が変わる。**
+            var g4 = Settle(l, Run(4));
+            Assert.Greater(g4.roomLap3, 0.97f, "帰りの区間で環境音が戻ってしまった");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>入れ替えの最中に音の密度が凹まない。</b> ユーザー指示は
+        /// 「差し替えを気づかれないようにクロスフェード」（`canon/LEDGER.md` 0049）で、
+        /// 線形に混ぜると真ん中で -3dB の谷ができ、その谷こそが「切り替わった」の合図になる。
+        /// </summary>
+        [Test]
+        public void Ambient_CrossfadeKeepsPowerConstant()
+        {
+            var l = new SoundBedLogic();
+            Settle(l, Run(1));
+
+            var s = Run(2);
+            float minPower = 1f, maxPower = 1f;
+            for (int i = 0; i < 90 * 20; i++)
+            {
+                var g = l.Tick(1f / 90f, s);
+                float p = g.roomLap1 * g.roomLap1 + g.roomLap2 * g.roomLap2 + g.roomLap3 * g.roomLap3;
+                if (p < minPower) minPower = p;
+                if (p > maxPower) maxPower = p;
+            }
+            Assert.AreEqual(1f, minPower, 1e-3f, "入れ替えの最中に密度が凹んでいる");
+            Assert.AreEqual(1f, maxPower, 1e-3f, "入れ替えの最中に密度が膨らんでいる");
+        }
+
+        [Test]
+        public void Ambient_TakesSeveralSeconds_NotOneFrame()
+        {
+            // **1 フレームで切り替わると「差し替えた」と分かる。**
+            var l = new SoundBedLogic();
+            Settle(l, Run(1));
+
+            var s = Run(2);
+            var oneFrame = l.Tick(1f / 90f, s);
+            Assert.Greater(oneFrame.roomLap1, 0.9f, "1 フレームで入れ替わっている");
+
+            float t = 1f / 90f;
+            while (t < 30f)
+            {
+                var g = l.Tick(1f / 90f, s);
+                t += 1f / 90f;
+                if (g.roomLap2 > 0.99f) break;
+            }
+            Assert.Greater(t, 4f, "入れ替えが速すぎる（気づかれる）");
+            Assert.Less(t, 20f, "入れ替えが遅すぎる（区間を跨いでしまう）");
+        }
+
+        [Test]
+        public void Ambient_ResetsToFirstLap_ForTheNextVisitor()
+        {
+            var l = new SoundBedLogic();
+            Settle(l, Run(3));
+
+            l.Reset();
+            var g = l.Tick(1f / 90f, Run(1));
+            Assert.Greater(g.roomLap1, 0.99f, "前の体験者の 3 周目の環境音から始まっている");
+        }
+
         [Test]
         public void Tick_ApproachesTarget_WithoutOvershoot()
         {

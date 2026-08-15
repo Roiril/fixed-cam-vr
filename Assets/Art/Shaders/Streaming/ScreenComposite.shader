@@ -88,6 +88,14 @@ Shader "FixedCamVr/ScreenComposite"
         //   0 のままなのに画には映像が出る ＝ 重みと画が食い違う（2026-08-13 に絵で見つけた）。
         // ⚠ 既定 **1**。0 を既定にすると、この uniform を書かない場面で画がまるごと消える。
         _IntroLive("Intro Live (0=dark tube, 1=image)", Range(0, 1)) = 1
+        // 終幕。**装置に届いている電力**（canon/LEDGER.md 0048「電池が切れかけみたいな感じで
+        //   だんだんとちかちかしながら消えていき」）。画の**いちばん最後**に掛ける ＝
+        //   映像も砂嵐も管の縁も一緒に落ちる（電池が切れるのは画の一部ではなく装置そのもの）。
+        // ⚠ ちらつきの形はここに持たせない。`OutroLogic.FlickerPower` が数値で出すので、
+        //   実際に書いた値をテレメトリに出せて、EditMode テストで固定でき、毎回同じ絵になる。
+        // ⚠ 既定 **1**（点いている）。0 を既定にすると、この uniform を書かない場面
+        //   （本編・導入・卓のプレビュー・Editor の合成プレビュー）で画がまるごと消える。
+        _ScreenPower("Screen Power (1=on, 0=dead)", Range(0, 1)) = 1
         // 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
         // 一様な脱色ではなく「明るい所に色が残り、暗がりが無彩へ落ちる」形になる。
         _ChromaKill("Dark Chroma Kill (ISP noise reduction)", Range(0, 1)) = 0
@@ -115,6 +123,21 @@ Shader "FixedCamVr/ScreenComposite"
         //   _GlitchSeed = 時間シード (秒)。_Time に依らないので Editor プレビューで再現できる。
         _Glitch("Glitch (staged tearing)", Range(0, 1)) = 0
         _GlitchSeed("Glitch Seed (seconds)", Float) = 0
+        [Header(Split screen (mirror and dual overlay))]
+        // 画面を縦に割って、左右で別のものを出す（canon/LEDGER.md 0050）。
+        // 3 周目 A の「左＝左右反転したライブ / 右＝ライブ」と、
+        // 4 周目 A の「左＝大量の人形 / 右＝体験者人形＋環境」の両方がこれに乗る。
+        //   _SplitX          分割位置（0 = 分割なし）。境目は環境の縦線（カーテンの合わせ目）へ置く
+        //   _SplitFlipLeft   左側だけ左右反転して読む。**環境が左右対称なカメラでしか成立しない**
+        //   _SplitFreezeLeft 左側だけ _EchoTex へ寄せる（そこだけ画が止まる）
+        _SplitX("Split X (0=off)", Range(0, 1)) = 0
+        _SplitFlipLeft("Split: mirror left half", Range(0, 1)) = 0
+        _SplitFreezeLeft("Split: freeze left half", Range(0, 1)) = 0
+        // 第 2 の差し替え層。**左と右へ別の素材を同時に置くために要る**（1 枚では片方しか置けない）。
+        _Overlay2Tex("Overlay 2", 2D) = "black" {}
+        _Mask2Tex("Overlay 2 Mask (R, screen space)", 2D) = "black" {}
+        _Overlay2Scale("Overlay 2 Contain Scale (xy)", Vector) = (1, 1, 0, 0)
+        _Overlay2Strength("Overlay 2 Strength", Range(0, 1)) = 0
     }
 
     SubShader
@@ -137,6 +160,9 @@ Shader "FixedCamVr/ScreenComposite"
             TEXTURE2D(_CgTex);      SAMPLER(sampler_CgTex);
             // 焼き付き / ホールド用に凍らせた 1 枚（CameraFeelFx が Graphics.CopyTexture で作る）。
             TEXTURE2D(_EchoTex);    SAMPLER(sampler_EchoTex);
+            // 第 2 の差し替え層（左右分割で片側だけ別の素材を出す）。
+            TEXTURE2D(_Overlay2Tex); SAMPLER(sampler_Overlay2Tex);
+            TEXTURE2D(_Mask2Tex);    SAMPLER(sampler_Mask2Tex);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _LiveScale;
@@ -148,6 +174,11 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _LiveTex_TexelSize; // 同上。**ソースの実寸**が要る（粒をソース画素で刻むため）
                 float4 _OverlayGain;
                 float4 _OverlayOffset;
+                float4 _Overlay2Scale;
+                float _Overlay2Strength;
+                float _SplitX;
+                float _SplitFlipLeft;
+                float _SplitFreezeLeft;
                 float _FrameAspect;
                 float _CgSoften;
                 float _CgChromaBlur;
@@ -185,6 +216,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _CrtEdgeWidth;
                 float _CrtIgnite;
                 float _IntroLive;
+                float _ScreenPower;
                 float _ExposureBias;
                 float _Echo;
                 float _CoarseBlocks;
@@ -460,8 +492,16 @@ Shader "FixedCamVr/ScreenComposite"
 
             half3 SampleBase(float2 uv, float lod, float chromaBias)
             {
+                // 左右分割（canon/LEDGER.md 0050）。分割位置より左は**左右反転して**ライブを読む。
+                // ⚠ 反転が効くのは live と凍結だけ。差し替え素材（録画・生成画像）は反転しない —
+                //   反転したまま録画を流すと映像の中の自分が逆走し、画面中央の境目へ入って消える。
+                // ⚠ 環境が左右対称なカメラでしか成立しない（このプロジェクトではカメラ A だけ）。
+                float onLeft = (_SplitX > 0.0001 && uv.x < _SplitX) ? 1.0 : 0.0;
+                float2 uvSrc = uv;
+                if (onLeft > 0.5 && _SplitFlipLeft > 0.5) uvSrc.x = 1.0 - uvSrc.x;
+
                 float liveIn;
-                float2 uvL = ContainUv(RotateUvSteps(uv, _UvRotSteps), _LiveScale.xy, liveIn);
+                float2 uvL = ContainUv(RotateUvSteps(uvSrc, _UvRotSteps), _LiveScale.xy, liveIn);
                 half3 live = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL, lod).rgb;
                 if (chromaBias > 0.001)
                     live = SplitChroma(live, SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex,
@@ -473,10 +513,14 @@ Shader "FixedCamVr/ScreenComposite"
                 // 凍らせた 1 枚を混ぜる。1.0 = 完全に止まって見える（ホールド）、
                 // 小さい値 = 少し前の姿がそこに薄く残る（焼き付き）。
                 // 動いていない画素は同じ値なので何も起きず、**動いたものの跡だけが残る**。
-                if (_Echo > 0.001)
+                // 全画面の焼き付き（_Echo）と、左半分だけの凍結（_SplitFreezeLeft）の**大きい方**。
+                // 左半分の凍結は 3 周目 A で「凍った自分」を残すためのもので、
+                // 凍らせた 1 枚は反転した uv で読むので**反転したまま止まる**（そこが狙い）。
+                float echoMix = max(_Echo, onLeft * _SplitFreezeLeft);
+                if (echoMix > 0.001)
                 {
                     half3 echo = SAMPLE_TEXTURE2D_LOD(_EchoTex, sampler_EchoTex, uvL, lod).rgb * liveIn;
-                    live = lerp(live, echo, saturate(_Echo));
+                    live = lerp(live, echo, saturate(echoMix));
                 }
 
                 float ovIn;
@@ -495,7 +539,25 @@ Shader "FixedCamVr/ScreenComposite"
 
                 // マスクも同じだけ鈍らせる。継ぎ目だけが鮮明に残ると、粗い画の中でそこだけ浮く。
                 half mask = SAMPLE_TEXTURE2D_LOD(_MaskTex, sampler_MaskTex, uv, lod).r;
-                return lerp(live, overlay, saturate(mask * _OverlayStrength));
+                half3 col = lerp(live, overlay, saturate(mask * _OverlayStrength));
+
+                // 第 2 の差し替え層。**左と右へ別の素材を同時に置く**ときだけ効く
+                // （3 周目 A: 左＝録画 / 右＝環境＋人形、4 周目 A: 左＝大量の人形 / 右＝体験者人形）。
+                // ⚠ 色統計マッチング（_OverlayGain/_Offset）は 1 層目にしか掛からない。
+                //   第 2 層の素材は生成のパイプラインが post を抜いた素の色で入る（tools/gen-tone.py）。
+                if (_Overlay2Strength > 0.001)
+                {
+                    float ov2In;
+                    float2 uvO2 = ContainUv(uv, _Overlay2Scale.xy, ov2In);
+                    half3 ov2 = SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex, uvO2, lod).rgb;
+                    if (chromaBias > 0.001)
+                        ov2 = SplitChroma(ov2, SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex,
+                                                                    uvO2, lod + chromaBias).rgb);
+                    ov2 *= ov2In;
+                    half mask2 = SAMPLE_TEXTURE2D_LOD(_Mask2Tex, sampler_Mask2Tex, uv, lod).r;
+                    col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength));
+                }
+                return col;
             }
 
             half4 frag(Varyings input) : SV_Target
@@ -775,6 +837,11 @@ Shader "FixedCamVr/ScreenComposite"
 
                 // dip-to-black: 切替の一瞬だけ黒へ（CCTV の瞬断）。
                 col *= 1.0 - saturate(_SwitchDim);
+
+                // 終幕: 装置に届いている電力。**いちばん最後に掛ける** — 電池が切れるのは
+                // 画の一部ではなく装置そのものなので、映像も砂嵐も管の縁も一緒に落ちる。
+                // ⚠ 演出の外では 1 なので、本編・導入は 1 ビットも変わらない。
+                col *= saturate(_ScreenPower);
 
                 // ⚠⚠ **alpha は必ず 1**。パススルーの合成は `アプリの rgb + 現実 × (1 - alpha)` なので、
                 //   ここを下げると**枠の中に現実が透ける**（canon/LEDGER.md 0005 が禁じたもの）。

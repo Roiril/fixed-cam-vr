@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>静止画 2枚合成 — web compositor</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #14161a; color: #e6e8ec; font: 13px/1.5 system-ui, sans-serif; }
+    header { padding: 10px 16px; border-bottom: 1px solid #2a2e35; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+    header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+    header .hint { color: #8b93a1; font-size: 12px; }
+    .wrap { display: flex; gap: 16px; padding: 16px; align-items: flex-start; flex-wrap: wrap; }
+    .viewbox { flex: 1 1 640px; min-width: 360px; }
+    .canvas-holder { position: relative; background: #000; border: 1px solid #2a2e35; border-radius: 6px; overflow: hidden; }
+    canvas#view { display: block; width: 100%; height: auto; cursor: crosshair; touch-action: none; }
+    #guide { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed #7fd7ff; box-shadow: 0 0 6px #000; pointer-events: none; display: none; }
+    .canvas-holder.boundary #guide { display: block; }
+    .canvas-holder.boundary canvas#view { cursor: ew-resize; }
+    .panel { flex: 0 0 320px; display: flex; flex-direction: column; gap: 14px; }
+    fieldset { border: 1px solid #2a2e35; border-radius: 6px; margin: 0; padding: 10px 12px; }
+    legend { padding: 0 6px; color: #a7b0be; font-weight: 600; }
+    .row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+    .row label { flex: 0 0 96px; color: #b8c0cc; }
+    .row input[type=range] { flex: 1; }
+    .row .val { flex: 0 0 46px; text-align: right; color: #8b93a1; font-variant-numeric: tabular-nums; }
+    .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+    button { background: #232830; color: #e6e8ec; border: 1px solid #3a414c; border-radius: 5px; padding: 6px 10px; cursor: pointer; font: inherit; }
+    button:hover { background: #2c333d; }
+    button.primary { background: #2f6b4f; border-color: #3c8a66; }
+    button.primary:hover { background: #37805e; }
+    button.tiny { padding: 3px 7px; font-size: 12px; }
+    .chk { display: flex; align-items: center; gap: 6px; }
+    input[type=file] { font-size: 12px; max-width: 100%; }
+    .msg { color: #7fd7a3; min-height: 18px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>静止画 2枚合成</h1>
+    <span class="hint">白マスク = 上に載せる画像（overlay）／黒 = ベース画像。色統計マッチング → ラプラシアン → ポストFX（廻リ視の合成方式）</span>
+  </header>
+
+  <div class="wrap">
+    <div class="viewbox">
+      <div class="canvas-holder">
+        <canvas id="view"></canvas>
+        <div id="guide"></div>
+      </div>
+      <p class="hint" id="modeHint" style="margin:8px 2px"></p>
+    </div>
+
+    <div class="panel">
+      <fieldset>
+        <legend>画像</legend>
+        <div class="row"><label>ベース(黒側)</label><input type="file" id="fBase" accept="image/*"></div>
+        <div class="row"><label>overlay(白側)</label><input type="file" id="fOver" accept="image/*"></div>
+        <div class="chk"><input type="checkbox" id="stretch"><label for="stretch">引き伸ばして全面フィット（OFF=アスペクト維持・余白黒）</label></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>マスク</legend>
+        <div class="chk"><input type="checkbox" id="boundaryMode" checked><label for="boundaryMode">境界ドラッグモード（白黒の境目を左右にドラッグ）</label></div>
+        <div class="row"><label>白い側</label>
+          <select id="whiteSide">
+            <option value="right" selected>右が白（overlay）</option>
+            <option value="left">左が白（overlay）</option>
+          </select>
+        </div>
+        <div class="row"><label>境界X</label><input type="range" id="splitX" min="0" max="1" step="0.01" value="0.5"><span class="val" id="splitXv">0.50</span></div>
+        <div class="btns">
+          <button class="tiny" data-mask="all">全面=白</button>
+          <button class="tiny" data-mask="none">全面=黒</button>
+          <button class="tiny" data-mask="invert">反転</button>
+        </div>
+        <div class="row"><label>ブラシ径</label><input type="range" id="brush" min="4" max="240" step="1" value="60"><span class="val" id="brushv">60</span></div>
+        <div class="row"><label>フェザー</label><input type="range" id="feather" min="0" max="1" step="0.01" value="0.15"><span class="val" id="featherv">0.15</span></div>
+        <div class="chk"><input type="checkbox" id="showMask"><label for="showMask">マスク境界を表示</label></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>境界ブレンド</legend>
+        <div class="chk"><input type="checkbox" id="colorMatch" checked><label for="colorMatch">色統計マッチング（overlay をベースの色味へ）</label></div>
+        <div class="row"><label>強度</label><input type="range" id="colorStrength" min="0" max="1" step="0.01" value="0.8"><span class="val" id="colorStrengthv">0.80</span></div>
+        <div class="chk"><input type="checkbox" id="laplacian" checked><label for="laplacian">ラプラシアンブレンド（境界を継ぎ目なく）</label></div>
+        <div class="row"><label>レベル</label><input type="range" id="levels" min="2" max="9" step="1" value="6"><span class="val" id="levelsv">6</span></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>画像処理（ポストFX・全体に掛かる）</legend>
+        <div class="row"><label>露出</label><input type="range" id="exposure" min="-2" max="2" step="0.01" value="0"><span class="val" id="exposurev">0.00</span></div>
+        <div class="row"><label>コントラスト</label><input type="range" id="contrast" min="0.5" max="1.8" step="0.01" value="1"><span class="val" id="contrastv">1.00</span></div>
+        <div class="row"><label>彩度</label><input type="range" id="saturation" min="0" max="2" step="0.01" value="1"><span class="val" id="saturationv">1.00</span></div>
+        <div class="row"><label>色温度</label><input type="range" id="temperature" min="-1" max="1" step="0.01" value="0"><span class="val" id="temperaturev">0.00</span></div>
+        <div class="row"><label>ヴィネット</label><input type="range" id="vignette" min="0" max="1" step="0.01" value="0.25"><span class="val" id="vignettev">0.25</span></div>
+        <div class="row"><label>グレイン</label><input type="range" id="grain" min="0" max="0.4" step="0.005" value="0.06"><span class="val" id="grainv">0.06</span></div>
+        <div class="row"><label>走査線</label><input type="range" id="scanline" min="0" max="1" step="0.01" value="0"><span class="val" id="scanlinev">0.00</span></div>
+        <div class="row"><label>色収差</label><input type="range" id="aberration" min="0" max="20" step="0.1" value="0"><span class="val" id="aberrationv">0.0</span></div>
+        <button class="tiny" id="resetFx">FX リセット</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>保存</legend>
+        <div class="btns">
+          <button class="primary" id="savePng">PNG ダウンロード</button>
+          <button id="saveServer">recordings に保存(JPG)</button>
+          <button id="openDir">📂 フォルダを開く</button>
+        </div>
+        <div class="msg" id="msg"></div>
+      </fieldset>
+    </div>
+  </div>
+
+  <script type="module" src="./static-compose.js"></script>
+</body>
+</html>

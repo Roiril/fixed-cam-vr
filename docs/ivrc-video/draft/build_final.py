@@ -68,7 +68,8 @@ def bpen(s,k):
     a=s[k-1]; ca,cb=cls(a),cls(s[k])
     if a in "、。！？…": return -0.35          # 句読点直後＝最良
     if a in PARTICLES:  return -0.12          # 助詞の後
-    if ca!=cb:          return -0.05          # 文字種の境目
+    if ca=='kanji' and cb=='kata': return 0.12 # 漢字→カタカナ＝複合語の途中が多い(固定カメラ等)→避ける
+    if ca!=cb:          return -0.05          # その他の文字種の境目
     return 0.12                               # 同種(ひらがな/漢字)内部は避ける
 def balance2(d,text,f,maxw):
     best=None
@@ -127,8 +128,8 @@ def make_background(cut):
         d.line([(700,556),(1220,556)],fill=LINE,width=1)
         kw="固定カメラの視点で、現実世界を歩く VR ホラー"; w=tl(d,kw,f_kw); d.text((W/2-w/2,596),kw,font=f_kw,fill=(210,204,190))
         ex="VR 学会での展示へ"; w=tl(d,ex,f_exhibit); d.text((W/2-w/2,690),ex,font=f_exhibit,fill=INK)
-        cr="Music: ____(DOVA-SYNDROME) / SE: 効果音ラボ / Fonts: Shippori Mincho・Zen Kaku Gothic New"
-        w=tl(d,cr,f_micro); d.text((W/2-w/2,848),cr,font=f_micro,fill=DIM)
+        cr="IVRC2026　／　企画・開発　白石大晴"; w=tl(d,cr,f_micro); d.text((W/2-w/2,824),cr,font=f_micro,fill=DIM)
+        cr2="サポート　堀越・Kim・ほか 明治大学 橋本研究室メンバー"; w=tl(d,cr2,f_micro); d.text((W/2-w/2,864),cr2,font=f_micro,fill=DIM)
         return np.array(img)[:,:,::-1].copy()
     # 仮（プレースホルダ）
     bx0,by0,bx1,by1=256,266,W-256,662
@@ -169,15 +170,15 @@ A="PART A ｜ 作品の概要"; B="PART B ｜ 作品の特徴・原理・プロ�
 BR=("実機プロトタイプ",REAL); BI=("イメージ映像",IMAGE)
 cuts=[
  dict(id="COLD",dur=6, section="COLD OPEN", cam="01", badge=None, scene="無人の薄暗い部屋 / 固定俯瞰\nテープノイズ", sub="あなたは——空間に据えられた固定カメラ越しにしか、自分を見られない。"),
- dict(id="A1",dur=10, section=A, cam="01", badge=None, special="title", sub="九〇年代のホラーゲームは、動かない固定カメラで、人を怖がらせた。", footage_from="COLD"),
- dict(id="A2",dur=11, section=A, cam="01", badge=BR, scene="固定画角に、HMD装着の体験者本人が歩いて入る（画面内に自分が映る）", sub="もし、その固定カメラの中に、あなた自身が立っていたら。"),
- dict(id="A3",dur=11, section=A, cam="01", badge=BR, scene="体験者が振り返る → スクリーン（固定カメラ映像）の中の自分も振り返る\n視点＝カメラは動かないまま / 死角に何かがよぎる", sub="振り返っても、視点は動かない。振り返るのは、画面の中の自分だけ。"),
- dict(id="A4",dur=8, section=A, cam=["01","02"], badge=("実機",REAL), scene="ゾーン移動でカメラが別画角へ自動切替（暗転＋ノイズ）", sub="角を曲がるだけで、あなたを映すカメラが、ひとりでに切り替わる。"),
- dict(id="A5",dur=8, section=A, cam="02", badge=BI, scene="見ている映像の一部が別撮り映像にすり替わり、居ないはずの人影が現れる\n（A4 と同じCCTV質感のまま）", sub="そして、そこに——居るはずのないものが、映り込む。"),
- dict(id="B0",dur=10, section=B, cam="01", badge=("実機プロトタイプ｜リアルタイム",REAL), scene="現実：三脚スマホ 3 台 ＋ Quest3 装着者 / 引きの全景", sub="この体験は、実際に動くプロトタイプです。"),
- dict(id="B1",dur=16, section=B, cam=["01","02","03"], badge=("実機・同時記録",REAL), scene="ワンショット：歩く体験者 ＋ HMD映像を映したモニタを同一画角に\nゾーン跨ぎでモニタのカメラが自動切替（テイク内 2 回）", sub="スマホが固定カメラになり、歩いて移動すると、見ているカメラが、ひとりでに切り替わる。"),
+ dict(id="A1",dur=10, section=A, cam="01", badge=None, special="title", sub="九〇年代のホラーゲームは、固定カメラの視点で、プレイヤーを怖がらせた。", footage_from="COLD"),
+ dict(id="A2",dur=11, section=A, cam="01", badge=None, scene="固定画角に、HMD装着の体験者本人が歩いて入る（画面内に自分が映る）", sub="もし、その固定カメラの中に、あなた自身が立っていたら。"),
+ dict(id="A3",dur=11, section=A, cam="01", badge=None, scene="体験者が振り返る → スクリーン（固定カメラ映像）の中の自分も振り返る\n視点＝カメラは動かないまま / 死角に何かがよぎる", sub="振り返っても、視点は動かない。振り返るのは、画面の中の自分だけ。"),
+ dict(id="A4",dur=8, section=A, cam=["01","02"], badge=None, scene="ゾーン移動でカメラが別画角へ自動切替（暗転＋ノイズ）", sub="角を曲がるだけで、あなたを映すカメラが、ひとりでに切り替わる。"),
+ dict(id="A5",dur=8, section=A, cam="02", badge=None, scene="見ている映像の一部が別撮り映像にすり替わり、居ないはずの人影が現れる\n（A4 と同じCCTV質感のまま）", sub="そして、そこに——居るはずのないものが、映り込む。"),
+ dict(id="B0",dur=10, section=B, cam="01", badge=None, scene="現実：三脚スマホ 3 台 ＋ Quest3 装着者 / 引きの全景", sub="この体験は、実際に動くプロトタイプです。"),
+ dict(id="B1",dur=16, section=B, cam=["01","02","03"], badge=None, scene="ワンショット：歩く体験者 ＋ HMD映像を映したモニタを同一画角に\nゾーン跨ぎでモニタのカメラが自動切替（テイク内 2 回）", sub="スマホが固定カメラになり、歩いて移動すると、見ているカメラが、ひとりでに切り替わる。"),
  dict(id="B2",dur=13, section=B, special="diagram", sub="スマホの映像を Wi-Fi で Quest 3 へ送り、頭の位置で、今いる場所のカメラを選ぶ。"),
- dict(id="B3",dur=8, section=B, cam="01", badge=("実機",REAL), scene="FX モンタージュ：CRT走査線・色収差・埃・エッジ", sub="映像にはリアルタイムで、監視カメラ特有の質感を重ねる。"),
+ dict(id="B3",dur=8, section=B, cam="01", badge=None, scene="FX モンタージュ：CRT走査線・色収差・埃・エッジ", sub="映像にはリアルタイムで、監視カメラ特有の質感を重ねる。"),
  dict(id="B4",dur=7, section=B, cam="01", badge=("映像の一部を差し替え（主要演出）｜イメージ映像",IMAGE), scene="主要な恐怖演出：固定カメラ映像の一部が、事前に用意した別撮り映像にすり替わる\n（例：居なかった人影が現れる。マスクで一部だけ差し替え）", sub="見ている映像の一部が、別撮りの映像に、すり替わる。"),
  dict(id="B5",dur=10, section=B, special="endcard"),
 ]

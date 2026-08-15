@@ -3,57 +3,45 @@ using System;
 
 namespace FixedCamVr.Streaming
 {
-    /// <summary>終幕の段。<see cref="IntroStage"/> と対だが、**逆再生ではなく別の状態機械**。</summary>
+    /// <summary>
+    /// 終幕の段。<b>導入の逆再生ではない</b>（2026-08-15 に作り替えた・<c>canon/LEDGER.md</c> 0048）。
+    /// パススルーへは戻さず、黒のまま装置だけが力尽きる。
+    /// </summary>
     public enum OutroStage
     {
         /// <summary>出していない。</summary>
         Off,
-        /// <summary>不可視。裏でパススルーを点火して、合成が始まるのを待つ。</summary>
-        Warm,
-        /// <summary>枠の中身が映像から現実へ戻る（導入の Swap の逆）。</summary>
-        Unswap,
-        /// <summary>枠が開いて、現実が視界いっぱいへ広がる（導入の Frame の逆）。</summary>
-        Open,
-        /// <summary>色と質感が戻る（導入の Degrade の逆）。</summary>
-        Restore,
-        /// <summary>素のパススルーで保持する。ここを過ぎたら終わり。</summary>
-        Hold,
-        /// <summary>終わった。</summary>
+        /// <summary>スクリーンが電池切れのようにちかちかしながら暗くなり、消える。</summary>
+        Flicker,
+        /// <summary>何も無い黒。間。</summary>
+        Dark,
+        /// <summary>報告の文字が浮かぶ。</summary>
+        Report,
+        /// <summary>出し切った。<b>文字はここでも出したまま</b>（次のランで <see cref="OutroLogic.Disable"/>）。</summary>
         Done,
-    }
-
-    /// <summary>終幕の観測値。</summary>
-    public struct OutroInput
-    {
-        /// <summary>
-        /// パススルーが**実際に合成されている**か。<b>「有効化を要求した」ではない。</b>
-        /// 有効化は非同期で数百 ms かかるので、要求フラグで進めると終幕の 1 段目が黒で始まる。
-        /// </summary>
-        public bool passthroughReady;
     }
 
     /// <summary>段が終わった合図。</summary>
     public enum OutroEvent { None, Finished }
 
     /// <summary>
-    /// 終幕（本編 → パススルーへ戻して終わる）の判断・計時。UnityEngine 非依存・dt 注入。
+    /// 終幕（本編 → 装置が力尽きて、報告を出して終わる）の判断・計時。UnityEngine 非依存・dt 注入。
     ///
-    /// <b>導入の逆再生だが、<see cref="IntroLogic"/> に向きを持たせるのではなく別ロジックにしてある。</b>
-    /// 導入の各段は方向固有の条件（開始位置に居るか / 枠が中心に来たか / 映像が届いているか）を持っていて、
-    /// 向きフラグを通すと分岐が倍になる。共有するのは <see cref="IntroWeights"/> の語彙と、
-    /// 覆いの開口の式（<c>IntroVeil.BuildFramePlanes</c>）だけ — <b>開口の式が違うと閉じた形と開く形が食い違う</b>。
+    /// <b>2026-08-15 に骨格ごと作り替えた</b>（<c>canon/LEDGER.md</c> 0048・ユーザー逐語
+    /// 「パススルーには戻さず、背景が黒いまま、スクリーンが、電池が切れかけみたいな感じで
+    /// だんだんとちかちかしながら消えていき、最後に…書いて終了にしてほしい」）。
     ///
-    /// <b>尺は導入から流用しない。</b> 導入の Swap 4.5s は「画面の中の人物が自分だと気づく」ための尺で、
-    /// 終幕には要らない。逆に枠が開くところは導入より長い方が「戻ってきた」になる。
+    /// 旧実装は導入を逆に辿ってパススルーへ戻す 5 段（Warm / Unswap / Open / Restore / Hold）だった。
+    /// 戻す先が無くなったので、覆い・隔離・パススルーには<b>一切触らない</b> —
+    /// 本編の時点で背景は既に黒（パススルーは切れている）なので、<b>何もしないことが「黒のまま」</b>。
+    /// 動かすのはスクリーンの電力（<see cref="ScreenPower"/>）と報告の面（<see cref="ReportAlpha"/>）だけ。
     ///
-    /// 段の順序は導入の逆:
-    ///   本編（映像・枠は閉じ切り）→ Unswap（中身が現実へ）→ Open（枠が開く）→ Restore（色が戻る）→ Hold
+    /// <b>ちらつきの形をシェーダへ持たせない。</b> ここで数値として出せば
+    /// (1) 実際に材質へ書いた値をテレメトリに出せる（「段が進んだ」ではなく「画に出た」の観測）、
+    /// (2) EditMode テストで固定できる、(3) 実行のたびに同じ絵になる（乱数を使わない）。
     /// </summary>
     public sealed class OutroLogic
     {
-        /// <summary>パススルーの点火を待つ上限。ここを過ぎたら諦めて進む（黒いまま止まる方が悪い）。</summary>
-        public const float WarmMaxSec = 1.5f;
-
         private OutroTiming _t = OutroTiming.Default;
         private OutroStage _stage = OutroStage.Off;
         private float _stageElapsed;
@@ -63,18 +51,41 @@ namespace FixedCamVr.Streaming
         public float StageElapsedSec => _stageElapsed;
         public float TotalElapsedSec => _totalElapsed;
 
-        /// <summary>走っているか（＝ Director が覆いへ重みを配るべきか）。</summary>
+        /// <summary>計時が進んでいるか（＝ まだ段が残っている）。</summary>
         public bool Active => _stage != OutroStage.Off && _stage != OutroStage.Done;
 
-        /// <summary>まだ画に何も出していない段か（＝ここで中止しても体験者には見えていない）。</summary>
-        public bool Silent => _stage == OutroStage.Warm;
+        /// <summary>
+        /// 画に何かを出している / 出したままか。<b><see cref="OutroStage.Done"/> でも true</b> —
+        /// 報告の文字は次のランまで消えないので、Director は <see cref="Active"/> ではなく
+        /// こちらで配り続ける。
+        /// </summary>
+        public bool Presenting => _stage != OutroStage.Off;
+
+        /// <summary>
+        /// いまの段の進み 0..1。<b>音が「絵と同じ速さで」細るために要る</b>
+        /// （<c>SoundBedLogic</c> が装置の声をこの進みで引く）。
+        /// </summary>
+        public float StageProgress01
+        {
+            get
+            {
+                switch (_stage)
+                {
+                    case OutroStage.Flicker: return Progress(_t.flickerSec);
+                    case OutroStage.Dark: return Progress(_t.darkSec);
+                    case OutroStage.Report: return Progress(_t.reportFadeSec);
+                    case OutroStage.Done: return 1f;
+                    default: return 0f;
+                }
+            }
+        }
 
         public void Configure(OutroTiming timing) => _t = timing.Sanitized();
 
         /// <summary>頭から始める。</summary>
         public void Begin()
         {
-            _stage = OutroStage.Warm;
+            _stage = OutroStage.Flicker;
             _stageElapsed = 0f;
             _totalElapsed = 0f;
         }
@@ -87,7 +98,7 @@ namespace FixedCamVr.Streaming
             _totalElapsed = 0f;
         }
 
-        public OutroEvent Tick(float dt, OutroInput input)
+        public OutroEvent Tick(float dt)
         {
             if (dt < 0f) dt = 0f;
             if (!Active) return OutroEvent.None;
@@ -97,26 +108,16 @@ namespace FixedCamVr.Streaming
 
             switch (_stage)
             {
-                case OutroStage.Warm:
-                    // パススルーが実際に出るまで待つ。上限で諦めるのは、待ち続けて
-                    // 「本編のまま固まる」方が体験者にとって悪いから。
-                    if (input.passthroughReady || _stageElapsed >= WarmMaxSec) Advance(OutroStage.Unswap);
+                case OutroStage.Flicker:
+                    if (_stageElapsed >= _t.flickerSec) Advance(OutroStage.Dark);
                     return OutroEvent.None;
 
-                case OutroStage.Unswap:
-                    if (_stageElapsed >= _t.unswapSec) Advance(OutroStage.Open);
+                case OutroStage.Dark:
+                    if (_stageElapsed >= _t.darkSec) Advance(OutroStage.Report);
                     return OutroEvent.None;
 
-                case OutroStage.Open:
-                    if (_stageElapsed >= _t.openSec) Advance(OutroStage.Restore);
-                    return OutroEvent.None;
-
-                case OutroStage.Restore:
-                    if (_stageElapsed >= _t.restoreSec) Advance(OutroStage.Hold);
-                    return OutroEvent.None;
-
-                case OutroStage.Hold:
-                    if (_stageElapsed < _t.holdSec) return OutroEvent.None;
+                case OutroStage.Report:
+                    if (_stageElapsed < _t.reportFadeSec) return OutroEvent.None;
                     _stage = OutroStage.Done;
                     return OutroEvent.Finished;
 
@@ -125,98 +126,115 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        private void Advance(OutroStage next)
-        {
-            _stage = next;
-            _stageElapsed = 0f;
-        }
-
-        /// <summary>いまの段の重み。<see cref="IntroWeights"/> と同じ語彙で、導入の各段を逆に辿る。</summary>
-        public IntroWeights Weights
+        /// <summary>
+        /// スクリーンへ掛ける電力 0..1（<c>_ScreenPower</c>）。
+        /// <b>出していない間は 1</b>（＝ 本編と同じ見え。0 を返す側へ倒すと画がまるごと消える）。
+        /// </summary>
+        public float ScreenPower
         {
             get
             {
                 switch (_stage)
                 {
-                    case OutroStage.Warm:
-                        // 本編と同じ見え。**ここで画を変えない**（パススルーの点火待ちを見せない）。
-                        return IntroWeights.Inactive;
-
-                    case OutroStage.Unswap:
-                    {
-                        // 枠の中身が映像 → 現実（まだ色は無い）。導入の Swap の逆。
-                        float s = SmoothStep(Progress(_t.unswapSec));
-                        return new IntroWeights
-                        {
-                            passthrough = s,
-                            live = 1f - s,
-                            frame = 1f,
-                            // 管は点いたまま（終幕は「映像が現実へ戻る」であって、管が消える話ではない）。
-                            ignite = 1f,
-                            degrade = 1f,
-                            edge = 0f,
-                            grain = 0.6f * s,
-                            // 現実が戻る分だけ隔離も戻す。**まだ収容の中に居る**（開けるのは Restore）。
-                            // 終幕は体験の後なので、実物の壁と床は**見せてよい**（導入と逆）。
-                            shell = s,
-                            shellReveal = 1f,
-                        };
-                    }
-
-                    case OutroStage.Open:
-                    {
-                        // 枠が開く。導入の Frame の逆で、輪郭は開くにつれて戻す
-                        //（枠の中へ集中させる必要がもう無い）。
-                        float p = SmoothStep(Progress(_t.openSec));
-                        return new IntroWeights
-                        {
-                            passthrough = 1f,
-                            degrade = 1f,
-                            edge = 0.3f + 0.7f * p,
-                            frame = 1f - p,
-                            ignite = 1f,
-                            grain = 0.6f,
-                            live = 0f,
-                            shell = 1f,
-                            shellReveal = 1f,
-                        };
-                    }
-
-                    case OutroStage.Restore:
-                    {
-                        // 色・輪郭・粒が抜けて素の現実へ。**世界が最後に色を取り戻す。**
-                        float p = SmoothStep(Progress(_t.restoreSec));
-                        float d = 1f - p;
-                        return new IntroWeights
-                        {
-                            passthrough = 1f,
-                            degrade = d,
-                            edge = d,
-                            grain = 0.6f * d,
-                            frame = 0f,
-                            ignite = 1f,
-                            live = 0f,
-                            // **ここで収容が解ける。** 色が戻るのと同じ速さで会場が返ってくる。
-                            // 導入で閉じたものを終幕で開けないと、体験者は黒い箱の中に置き去りで終わる
-                            // （スタッフが HMD を外しに来るのも見えない）。
-                            shell = d,
-                            shellReveal = 1f,
-                        };
-                    }
-
-                    case OutroStage.Hold:
-                        return new IntroWeights
-                        {
-                            passthrough = 1f, frame = 0f, live = 0f, shell = 0f, ignite = 1f,
-                        };
-
-                    default:
-                        return IntroWeights.Inactive;
+                    case OutroStage.Off: return 1f;
+                    case OutroStage.Flicker: return FlickerPower(Progress(_t.flickerSec), _stageElapsed);
+                    default: return 0f;   // Dark / Report / Done ＝ 消えたまま
                 }
             }
         }
 
+        /// <summary>報告の面の不透明度 0..1。</summary>
+        public float ReportAlpha
+        {
+            get
+            {
+                switch (_stage)
+                {
+                    case OutroStage.Report: return Progress(_t.reportFadeSec);
+                    case OutroStage.Done: return 1f;
+                    default: return 0f;
+                }
+            }
+        }
+
+        // --- 電池が切れかけの管 -------------------------------------------------
+
+        /// <summary>ちらつきの刻み (Hz)。序盤は大きく揺れ、終盤ほど細かくなる。</summary>
+        private const float FlickerRateLo = 6f;
+        private const float FlickerRateHi = 24f;
+
+        /// <summary>1 刻みが「落ちる」確率。終盤ほど高い。</summary>
+        private const float DropChanceLo = 0.06f;
+        private const float DropChanceHi = 0.82f;
+
+        /// <summary>最後にここから 0 へ落とし切る（切れかけが切れる）。</summary>
+        private const float BlackoutFrom = 0.88f;
+
+        /// <summary>
+        /// 電池が切れかけの管の明るさ。
+        ///
+        /// 電池は「暗くなる」だけでも「点滅する」だけでもない。3 つを重ねる:
+        ///   ① 供給がじわじわ痩せる（前半はほとんど落ちず、後半で一気に）
+        ///   ② ときどき落ちる。落ちる頻度も落ちる深さも終盤ほど大きい
+        ///   ③ 最後は 0 まで落とし切る
+        ///
+        /// ⚠ <b>乱数を使わない。</b> 刻み番号のハッシュなので、同じ版は同じ絵になる
+        /// （音の合成と同じ流儀 — 変えていないのに差が出ると、何が効いたのか分からなくなる）。
+        /// </summary>
+        /// <param name="p">段の進み 0..1。</param>
+        /// <param name="t">段に入ってからの秒（刻みの位相）。</param>
+        public static float FlickerPower(float p, float t)
+        {
+            p = Clamp01(p);
+            if (t < 0f) t = 0f;
+
+            // ① 供給。p^3 なので前半はほとんど落ちない（p=0.5 で 0.88 / p=0.9 で 0.27）。
+            float supply = 1f - p * p * p;
+
+            // ② 落ちる刻み。rate が p で増えるので終盤ほど細かい。
+            // ⚠ **頭の 1 刻みは必ず点いている**（`tick > 0`）。始まった瞬間に暗いと
+            //   「切れかけ」ではなく「切れた」になり、体験の終わりが事故に見える。
+            float rate = FlickerRateLo + (FlickerRateHi - FlickerRateLo) * p;
+            int tick = (int)(t * rate);
+            float level = supply;
+            if (tick > 0 && Hash01(tick) < DropChanceLo + (DropChanceHi - DropChanceLo) * p * p)
+            {
+                // 落ちた瞬間に残る明るさ。終盤ほど深く落ちる（最後は真っ暗まで）。
+                float floorLevel = 0.30f * (1f - p);
+                level = supply * floorLevel * (0.4f + 0.6f * Hash01(tick * 7 + 13));
+            }
+
+            // ③ 落とし切り。ここが無いと段が変わる瞬間に明るさが飛ぶ。
+            float tail = 1f - SmoothStep(Clamp01((p - BlackoutFrom) / (1f - BlackoutFrom)));
+            return Clamp01(level * tail);
+        }
+
+        /// <summary>
+        /// 刻み番号 → 0..1。決定的（同じ番号は必ず同じ値）。
+        ///
+        /// ⚠ <b>種の足し込み（<c>0x9E3779B9</c>）を外さない。</b> 乗算だけだと
+        /// <c>n = 0</c> がそのまま 0 を通って **必ず 0 を返す**（＝ 0 番の刻みが必ず「落ちた」に
+        /// なる）。実装した日にテストが捕まえた。
+        /// </summary>
+        private static float Hash01(int n)
+        {
+            unchecked
+            {
+                uint x = (uint)n * 2654435761u + 0x9E3779B9u;
+                x ^= x >> 15; x *= 2246822519u;
+                x ^= x >> 13; x *= 3266489917u;
+                x ^= x >> 16;
+                return (x & 0xFFFFFFu) / 16777215f;
+            }
+        }
+
         private float Progress(float sec) => sec <= 0f ? 1f : Clamp01(_stageElapsed / sec);
+
+        private void Advance(OutroStage next)
+        {
+            _stage = next;
+            _stageElapsed = 0f;
+        }
 
         private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);
 
@@ -231,21 +249,26 @@ namespace FixedCamVr.Streaming
     [Serializable]
     public struct OutroTiming
     {
-        public float unswapSec;
-        public float openSec;
-        public float restoreSec;
-        public float holdSec;
+        /// <summary>スクリーンがちかちかしながら消えるまで。</summary>
+        public float flickerSec;
+
+        /// <summary>消えてから報告が出るまでの、何も無い黒。</summary>
+        public float darkSec;
+
+        /// <summary>報告の文字が浮かび上がるまで。<b>出た後は消えない</b>（次のランまで）。</summary>
+        public float reportFadeSec;
 
         /// <summary>
-        /// コード既定。導入（1.5 / 3.5 / 2.5 / 2.5 / 4.5 = 13.1s）より短く、開くところだけ長い。
-        /// 合計 7.5s — 3 分の体験に足しても <c>targetSec</c> を大きくは超えない。
+        /// コード既定。合計 8.7s。
+        ///
+        /// ⚠ <b>ちらつきは短くしない。</b> 「だんだん」と言われているので、
+        /// 3 秒程度だと「切れかけ」ではなく「切れた」になる。
         /// </summary>
         public static OutroTiming Default => new OutroTiming
         {
-            unswapSec = 1.5f,
-            openSec = 2.5f,
-            restoreSec = 2.0f,
-            holdSec = 1.5f,
+            flickerSec = 6.0f,
+            darkSec = 1.2f,
+            reportFadeSec = 1.5f,
         };
 
         /// <summary>0 / 負 / 異常値を既定へ倒す（<c>run.outro</c> が欠けた show.json でも走る）。</summary>
@@ -254,15 +277,14 @@ namespace FixedCamVr.Streaming
             OutroTiming d = Default;
             return new OutroTiming
             {
-                unswapSec = Pick(unswapSec, d.unswapSec),
-                openSec = Pick(openSec, d.openSec),
-                restoreSec = Pick(restoreSec, d.restoreSec),
-                holdSec = Pick(holdSec, d.holdSec),
+                flickerSec = Pick(flickerSec, d.flickerSec),
+                darkSec = Pick(darkSec, d.darkSec),
+                reportFadeSec = Pick(reportFadeSec, d.reportFadeSec),
             };
         }
 
-        /// <summary>合計（Warm は待ち時間なので含めない）。</summary>
-        public float TotalSec => unswapSec + openSec + restoreSec + holdSec;
+        /// <summary>合計（報告を出し切るまで）。</summary>
+        public float TotalSec => flickerSec + darkSec + reportFadeSec;
 
         private static float Pick(float v, float def) => v > 0.01f && v < 60f ? v : def;
     }

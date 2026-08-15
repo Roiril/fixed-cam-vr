@@ -6,7 +6,7 @@ namespace FixedCamVr.Input.Tests
 {
     /// <summary>
     /// 体験者の報告ボタン（左 X / 左 Y）の 2 秒長押し。
-    /// 判定は <c>canon/LEDGER.md</c> 0046（「長押し 2s で報告できるように」）。
+    /// 判定は <c>canon/LEDGER.md</c> 0050（「長押し 2s で報告できるように」）。
     /// </summary>
     public sealed class VisitorMarkHoldLogicTests
     {
