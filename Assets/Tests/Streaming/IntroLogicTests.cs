@@ -474,18 +474,31 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Frame_FillsTheApertureWithVideo_NotAPassthroughCutout()
+        public void Frame_CrossfadesToVideo_JustBeforeTheApertureCloses()
         {
-            // ⚠⚠ ユーザー指摘（2026-08-15・`canon/LEDGER.md` 0045）
-            //    「割れた先はパススルーのくりぬきではなくカメラ映像にしてください」。
-            //    割れ始めた瞬間から枠の中に映像が満ちる。覆いの側は
-            //    `IntroVeil.shader` が「スクリーンの上のセルは alpha 1」で通す。
+            // ⚠⚠ ユーザー指摘（2026-08-15・`canon/LEDGER.md` 0045 / 0046）
+            //    「割れた先はパススルーのくりぬきではなくカメラ映像に」
+            //    「細かくなって集まって、くりぬきが完全になる少し前にフェードで入れ替える感じ」。
+            //    前半は現実のまま割れて集まり、閉じ切る少し前に入れ替わる。
             var l = AtStage(IntroStage.Frame);
-            Assert.AreEqual(0f, l.Weights.live, 1e-4f, "段の頭から映像が満ちている（立ち上がりが無い）");
+            Assert.AreEqual(0f, l.Weights.live, 1e-4f, "段の頭から入れ替わっている");
 
-            Advance(l, T.frameSec * 0.3f, Ready(outsideM: 2f));
-            Assert.Greater(l.Weights.live, 0.5f, "割れている最中に枠の中が映像になっていない");
+            // 前半（割れて集まるところ）は**まだ現実**。
+            Advance(l, T.frameSec * 0.4f, Ready(outsideM: 2f));
             Assert.Greater(l.Weights.shatter, 0f, "割れていない");
+            Assert.AreEqual(0f, l.Weights.live, 1e-4f, "集まる前に入れ替わっている");
+            Assert.AreEqual(0f, l.Weights.frame, 1e-4f, "破砕より先に枠が閉じている");
+
+            // 枠が閉じ始めるあたりで入れ替えが進んでいる（＝ クロスフェードの最中）。
+            Advance(l, T.frameSec * 0.3f, Ready(outsideM: 2f));
+            float mid = l.Weights.live;
+            Assert.Greater(mid, 0f, "閉じ始めても入れ替わっていない");
+            Assert.Less(mid, 1f, "一瞬で入れ替わっている（フェードになっていない）");
+
+            // 閉じ切る前に入れ替え終わっている。
+            Advance(l, T.frameSec * 0.2f, Ready(outsideM: 2f));
+            Assert.AreEqual(1f, l.Weights.live, 0.02f, "閉じ切るまでに入れ替わっていない");
+            Assert.Less(l.Weights.frame, 1f, "もう閉じ切っている（「少し前」になっていない）");
             Assert.AreEqual(1f, l.Weights.passthrough, 1e-4f, "破片が現実を持って飛ばなくなっている");
         }
 

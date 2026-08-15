@@ -336,8 +336,13 @@ namespace FixedCamVr.Streaming
             }
             // 段 4 の乱れはスクリーン内にも掛ける（継ぎ目は両側で隠す）。
             glitch?.SetSustain(w.glitch * Mathf.Clamp01(_def.glitchOnSwap));
-            // スクリーンの管の点灯（段 3 で 0 → 1）。書く先は MjpegScreen の材質。
-            WriteIgnite(w.ignite, w.live);
+            // スクリーンの管の点灯と、映像を出してよいか。書く先は MjpegScreen の材質。
+            //
+            // ⚠⚠ **`_IntroLive` は「出してよいか」の 0/1 で、混ぜ具合ではない**（2026-08-15）。
+            //    現実 → カメラ映像のクロスフェードは**覆いの alpha**（`_ScreenFade`）が持つ。
+            //    ここにも同じ重みを渡すと**二重に掛かって**、混ざっている最中の映像が暗く沈む
+            //    （合成は `アプリの rgb + 現実 × (1 - alpha)` なので、rgb を絞ると足す側が減る）。
+            WriteIgnite(w.ignite, w.live > 0f ? 1f : 0f);
 
             if (ev == IntroEvent.Finished) FinishIntro(restartClock: true);
             else if (ev == IntroEvent.Aborted) AbortIntro();

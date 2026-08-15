@@ -26,6 +26,10 @@ Shader "FixedCamVr/IntroVeil"
     {
         // 枠の中のパススルーの見え。1 = 現実が見える / 0 = 枠の中も VR の絵（＝映像）になる
         _Passthrough("Passthrough inside frame (0..1)", Range(0, 1)) = 1
+        // **吸い込み先（スクリーンの上のセル）だけの入れ替え量。** 0 = そこも現実の窓 /
+        // 1 = カメラ映像。中間は**現実とカメラ映像のクロスフェード**になる
+        // （合成が `アプリの rgb + 現実 × (1 - alpha)` なので、alpha がそのまま混ぜ具合）。
+        _ScreenFade("Screen crossfade inside the aperture (0..1)", Range(0, 1)) = 0
         // 枠の 4 辺の平面の法線（眼と辺を通る平面・**内側で dot(dir, n) < 0**）。
         // 本編のスクリーンの見かけの形から IntroVeil が毎フレーム組む。閉じ具合もここに畳んである。
         // ⚠ **覆いの面へ矩形として投影する方式ではない** — スクリーンは水平（ヨーだけ追従）なので、
@@ -113,6 +117,7 @@ Shader "FixedCamVr/IntroVeil"
             };
 
             float _Passthrough;
+            float _ScreenFade;
             float4 _FramePlane0;
             float4 _FramePlane1;
             float4 _FramePlane2;
@@ -249,11 +254,13 @@ Shader "FixedCamVr/IntroVeil"
                 // 破片が閉じ切ったら現実を返す（alpha 1 = VR の絵 = 黒）。
                 alpha = lerp(alpha, 1.0, saturate(i.life.x));
 
-                // ⚠⚠ **吸い込み先はカメラ映像**（2026-08-15）。スクリーンの上のセルは alpha 1 で返し、
-                //    その画素に既に描かれているもの（＝ ScreenComposite が描いた映像）を通す。
-                //    ここを 0（パススルーの窓）にすると、割れた現実が**現実のくりぬき**へ吸い込まれる
-                //    ことになり、「装置の中へ入った」が読めない。
-                alpha = lerp(alpha, 1.0, saturate(i.life.y));
+                // ⚠⚠ **吸い込み先はカメラ映像**（2026-08-15）。スクリーンの上のセルの alpha を
+                //    `_ScreenFade` にする。0 なら現実の窓のまま、1 ならその画素に既に描かれているもの
+                //    （＝ ScreenComposite が描いた映像）が出る。**中間はクロスフェード**
+                //    （合成が `アプリの rgb + 現実 × (1 - alpha)` なので、alpha がそのまま混ぜ具合）。
+                //    ⚠ 割れ始めと同時に 1 へ飛ばさない — 細かくなって集まるあいだは現実のままで、
+                //    くりぬきが閉じ切る少し前に入れ替わる（`canon/LEDGER.md` 0046）。
+                alpha = lerp(alpha, saturate(_ScreenFade), saturate(i.life.y));
 
                 // RGB は使われない（dst * srcAlpha なので）。0 を返すのが Passthrough Windows の作法。
                 return float4(0.0, 0.0, 0.0, alpha);

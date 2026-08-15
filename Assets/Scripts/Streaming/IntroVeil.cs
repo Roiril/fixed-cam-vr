@@ -46,6 +46,8 @@ namespace FixedCamVr.Streaming
         [SerializeField] private float scanlineCount = 240f;
 
         private static readonly int PassthroughId = Shader.PropertyToID("_Passthrough");
+        /// <summary>吸い込み先（スクリーンの上のセル）を現実の窓からカメラ映像へ入れ替える量。</summary>
+        private static readonly int ScreenFadeId = Shader.PropertyToID("_ScreenFade");
         private static readonly int VeilSizeId = Shader.PropertyToID("_VeilSize");
         private static readonly int FeatherAngId = Shader.PropertyToID("_FeatherAng");
         private static readonly int[] FramePlaneIds =
@@ -382,6 +384,7 @@ namespace FixedCamVr.Streaming
             Vector2 size = PlaceQuad();
             for (int i = 0; i < FramePlaneIds.Length; i++) _mat.SetVector(FramePlaneIds[i], _planes[i]);
             _mat.SetFloat(PassthroughId, Mathf.Clamp01(w.passthrough));
+            _mat.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
             _mat.SetVector(VeilSizeId, new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
             _mat.SetFloat(FeatherAngId, featherAng);
             _mat.SetFloat(GrainId, Mathf.Clamp01(w.grain));
