@@ -34,6 +34,12 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("体験の骨格。本編に入ったことを見るために読む。null なら実行時に探す。")]
         [SerializeField] private ShowRunDirector? runDirector;
 
+        [Tooltip("体験者の報告を見るために読む（回数と、押した瞬間に演出が走っていたか）。null なら実行時に探す。")]
+        [SerializeField] private ShowControlClient? showControl;
+
+        [Tooltip("締めのカットが報告を待っているかを見るために読む。null なら実行時に探す。")]
+        [SerializeField] private TimelineDirector? timeline;
+
         [Tooltip("頭の Transform。null なら CenterEyeAnchor を名前で探す。")]
         [SerializeField] private Transform? head;
 
@@ -86,20 +92,38 @@ namespace FixedCamVr.Diagnostics
         private const int RenderQueue = 4980;
         private const int GlyphQueue = 4990;
 
-        /// <summary>仮の発火。本編に入ってからこれだけ経つと 1 回だけ出る。</summary>
-        private const float FireAfterRunSec = 12f;
-
         /// <summary>
-        /// 仮の文面。<b>身体を操作する指示にしない</b>（<c>canon/LEDGER.md</c> 0034 —
-        /// 「右手をあげてください」を伏線にするのはスマートではない）。即時の業務指示に留める。
+        /// <b>文面（ユーザーが書いたまま・`canon/LEDGER.md` 0054）。</b>
+        ///
+        /// ⚠ <b>1 行は 14 文字まで</b>（面の幅から 1 文字 1.8° で入る数。折り返しは効くが
+        /// 3 行目は面から出る）。触ったら <c>.\tools\unity.ps1 menu text-audit</c> を通す。
         /// ⚠ 文言を変えたら <c>menu hud-font</c> を再実行する（静的ベイクなので忘れると豆腐）。
-        /// </summary>
-        /// ⚠ <b>1 行は 14 文字まで</b>（面の幅から 1 文字 1.8° で入る数。折り返しは効くが 3 行目は面から出る）。
+        /// ⚠ <b>句点の有無を勝手に揃えない</b> — ①②に無く③にあるのはユーザーが書いた形。
         /// ⚠ 語は手元の面（<see cref="VisitorMarkGuidance"/>）と揃える —
         ///   あちらが「異変を報告」なのにこちらが「異常を記録」だと、同じ装置の言葉に聞こえない。
-        private const string NoticeText = "観測を継続してください\n異変があれば報告してください";
+        /// ⚠ <b>身体を操作する指示にしない</b>（0034 — 「右手をあげてください」を伏線にしない）。
+        /// </summary>
+        private static string TextFor(CommsNotice n) => n switch
+        {
+            CommsNotice.Begin => "調査を開始してください",
+            CommsNotice.MarkLogged => "異常が記録されました",
+            CommsNotice.MarkNothing => "異常は検出されませんでした",
+            CommsNotice.Prompt => "異常が検出されました。\n記録してください。",
+            _ => "",
+        };
+
+        /// <summary>
+        /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（13 文字）。
+        ///
+        /// ⚠ ここを短い文面にすると <c>menu text-audit</c> が<b>最悪の行を測らない</b>ので
+        /// 「枠に収まっている」と嘘をつく。実行時はどの文面でも <see cref="SetNotice"/> が組み直す。
+        /// ⚠ <b>行数の最悪（2 行 ＝ ③）はここでは測れない。</b> 縦の座りは
+        /// <c>menu comms-preview</c> の絵で見る（4 文面ぶん焼く）。
+        /// </summary>
+        internal static string LongestNoticeText => TextFor(CommsNotice.MarkNothing);
 
         private readonly CommsPanelLogic _logic = new CommsPanelLogic();
+        private readonly CommsCueLogic _cue = new CommsCueLogic();
         private readonly YawFollowLogic _yawFollow = new YawFollowLogic();
 
         private Transform? _root;
@@ -113,8 +137,9 @@ namespace FixedCamVr.Diagnostics
         private Mesh? _panelMesh;
         private TMP_Text? _text;
         private bool _yawSeeded;
-        private bool _fired;
-        private float _runSec;
+        // 報告の縁を取るために、直前に見た回数を覚えておく（ShowControlClient が真実源）。
+        private int _lastMarkCount;
+        private bool _runRestartHooked;
 
         /// <summary>実体を組めたか。<b>false なら一生出ない</b>（テレメトリが読む）。</summary>
         public bool IsBuilt => _text != null;
@@ -134,6 +159,9 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         public int PulseCount { get; private set; }
 
+        /// <summary>直近に届いた連絡の種類（テレメトリ用。まだ 1 通も来ていなければ None）。</summary>
+        public CommsNotice LastNotice { get; private set; } = CommsNotice.None;
+
         private void Awake()
         {
             ResolveRefs();
@@ -149,6 +177,7 @@ namespace FixedCamVr.Diagnostics
 
         private void OnDestroy()
         {
+            OnDestroyHooks();
             if (_panelMat != null) Destroy(_panelMat);
             if (_bezelMat != null) Destroy(_bezelMat);
             if (_panelMesh != null) Destroy(_panelMesh);
@@ -157,36 +186,78 @@ namespace FixedCamVr.Diagnostics
         private void ResolveRefs()
         {
             if (runDirector == null) runDirector = FindObjectOfType<ShowRunDirector>();
+            if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            if (timeline == null) timeline = FindObjectOfType<TimelineDirector>();
             if (head == null)
             {
                 var anchor = GameObject.Find("CenterEyeAnchor");
                 if (anchor != null) head = anchor.transform;
             }
+            // ⚠ **ラン開始の号令にも繋ぐ。** 本編を出た縁（下の `inRun`）だけに頼ると、
+            //   導入を持たない設定で相が Run のまま次のランが始まったとき、2 人目に①③が出ない。
+            //   繋ぎ忘れはテストで捕まらない（2026-08-15 に音で踏んだ型）ので**二重に**閉じる。
+            if (!_runRestartHooked && runDirector != null)
+            {
+                runDirector.RunRestarted += OnRunRestarted;
+                _runRestartHooked = true;
+            }
         }
 
-        /// <summary>連絡を出す（仮実装では自分で叩く。将来は show.json の著作から）。</summary>
-        public void Deliver()
+        private void OnDestroyHooks()
         {
-            if (!IsBuilt) return;
+            if (_runRestartHooked && runDirector != null) runDirector.RunRestarted -= OnRunRestarted;
+            _runRestartHooked = false;
+        }
+
+        private void OnRunRestarted()
+        {
+            _cue.ResetRun();
+            _lastMarkCount = showControl != null ? showControl.VisitorMarkCount : 0;
+            _logic.Disable();
+            Apply(CommsWeights.Hidden);
+        }
+
+        /// <summary>連絡を 1 通出す。<b>すでに出ていれば頭から出し直す</b>（重ねない）。</summary>
+        public void Deliver(CommsNotice notice)
+        {
+            if (!IsBuilt || notice == CommsNotice.None) return;
+            SetNotice(notice);
             // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。
             _logic.Begin(_charCount);
+            LastNotice = notice;
             PulseCount++;
-            Debug.Log($"[Comms] 上司からの連絡を出した（仮の発火・{_charCount} 文字 / 打つ {_logic.TypeSec:0.00}s）");
+            Debug.Log($"[Comms] 上司からの連絡 {notice}「{TextFor(notice).Replace("\n", "／")}」"
+                    + $"（{_charCount} 文字 / 打つ {_logic.TypeSec:0.00}s）");
         }
 
         private void Update()
         {
             if (!IsBuilt) return;
 
-            // 本編に入ってからの経過で 1 回だけ出す（仮）。ラン開始で相が Intro へ戻るので、
-            // 次の体験者にも出る（＝ 体験 1 回ぶんの状態をここで落としている）。
-            bool inRun = runDirector != null && runDirector.Phase == ShowPhase.Run;
-            if (!inRun) { _runSec = 0f; _fired = false; }
-            else
+            // ---- 報告の縁を取る。⚠ **演出の有無は `ShowControlClient` が押した瞬間に凍らせた値**を使う。
+            //      ここで `timeline.ActiveTakeId` を見ると、締めのカットは報告で畳まれた後なので
+            //      「演出は無かった」に化けて、4 周目 A の連絡が真逆になる。
+            bool markPressed = false, markHadTake = false;
+            if (showControl != null)
             {
-                _runSec += Time.unscaledDeltaTime;
-                if (!_fired && _runSec >= FireAfterRunSec) { _fired = true; Deliver(); }
+                if (showControl.VisitorMarkCount != _lastMarkCount)
+                {
+                    // 押し戻し（ラン開始で 0 に戻る）は報告ではない。
+                    markPressed = showControl.VisitorMarkCount > _lastMarkCount;
+                    markHadTake = showControl.LastMarkHadTake;
+                    _lastMarkCount = showControl.VisitorMarkCount;
+                }
             }
+
+            CommsNotice next = _cue.Tick(new CommsCueInput
+            {
+                inRun = runDirector != null && runDirector.Phase == ShowPhase.Run,
+                waitingForMark = timeline != null && timeline.IsWaitingForVisitorMark,
+                markPressed = markPressed,
+                markHadTake = markHadTake,
+                dt = Time.unscaledDeltaTime,
+            });
+            if (next != CommsNotice.None) Deliver(next);
 
             _logic.Tick(Time.unscaledDeltaTime);
             Apply(_logic.Weights);
@@ -254,7 +325,8 @@ namespace FixedCamVr.Diagnostics
             textGo.transform.SetParent(rootGo.transform, worldPositionStays: false);
             var tmp = textGo.AddComponent<TextMeshPro>();
             tmp.font = jp;
-            tmp.text = NoticeText;
+            // ⚠ 組むのは**いちばん長い行を持つ文面**（`menu text-audit` に最悪を測らせる）。
+            tmp.text = LongestNoticeText;
             // 揃えは左（`HmdTextStyle` の規約）。中央にしてよいのは黒の中に単独で出る面だけで、
             // ここは映像の上に立つ受信票なので、行頭が揃っている方が「印字されたもの」に見える。
             // ⚠⚠ **縦は上寄せ**（`Left` ＝ 縦中央 は使えない）。1 字ずつ出すと、2 行目の
@@ -277,16 +349,35 @@ namespace FixedCamVr.Diagnostics
             if (overlay != null) tmp.fontMaterial.shader = overlay;
             tmp.fontMaterial.renderQueue = GlyphQueue;
             _text = tmp;
+            SetNotice(CommsNotice.None);   // 組み上げたら、まず畳んだ状態にする
+        }
 
-            // 1 字ずつ出すための下ごしらえ。⚠ **文字数はここで 1 度だけ数える** —
-            //    `maxVisibleCharacters` はレイアウトを組み直さないので、毎フレーム触っても
-            //    文字列の作り直しも GC も起きない（TMP が頂点の可視数を変えるだけ）。
+        /// <summary>
+        /// 文面を差し替えて、1 字ずつ出すための下ごしらえをする。
+        /// <b>連絡が届いた瞬間に 1 回だけ</b>走る（毎フレームではない）。
+        ///
+        /// ⚠ <c>maxVisibleCharacters</c> はレイアウトを組み直さないので毎フレーム触ってよいが、
+        /// <b>文字列そのものを変えたら組み直しが要る</b>（文字数も重心も変わる）。
+        /// ⚠ 測る前に<b>全文を見えるところまで戻す</b> — 直前の文面の可視数が残っていると、
+        /// <see cref="TMP_Text.textBounds"/> が<b>その一部だけ</b>の重心を返して面から外れる。
+        /// </summary>
+        private void SetNotice(CommsNotice notice)
+        {
+            TMP_Text? tmp = _text;
+            if (tmp == null) return;
+            string body = notice == CommsNotice.None ? LongestNoticeText : TextFor(notice);
+
+            tmp.maxVisibleCharacters = int.MaxValue;
+            if (tmp.text != body) tmp.text = body;
             tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
-            // ⚠ 上寄せにしたぶん、**全文が出ている状態の重心**を面の中心へ 1 度だけ運ぶ。
+
+            // ⚠ 上寄せにしたぶん、**全文が出ている状態の重心**を面の中心へ運ぶ（文面ごとに変わる —
+            //    1 行と 2 行では重心が違うので、ここを 1 度きりにすると 2 行の文面が下へずれる）。
             //    `preferredHeight` で枠を詰める手もあるが、あれは字の上下に余白を含むので
             //    ぶんだけ本文が上へ寄る（実測 33px）。組み上がったメッシュの実寸から測る。
+            float scale = TextScale;
             Bounds ink = tmp.textBounds;
-            textGo.transform.localPosition = new Vector3(0f, -ink.center.y * scale, 0f);
+            tmp.transform.localPosition = new Vector3(0f, -ink.center.y * scale, 0f);
             _charCount = tmp.textInfo != null ? tmp.textInfo.characterCount : 0;
             tmp.maxVisibleCharacters = 0;
         }

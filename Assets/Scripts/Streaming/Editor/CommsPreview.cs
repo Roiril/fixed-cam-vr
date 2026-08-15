@@ -97,29 +97,49 @@ namespace FixedCamVr.Streaming.EditorTools
                 float holdSec = ConstF(typeof(CommsPanelLogic), "HoldSec", 7f);
                 float outSec = ConstF(typeof(CommsPanelLogic), "OutSec", 0.9f);
 
-                tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
-                int chars = tmp.textInfo != null ? tmp.textInfo.characterCount : 0;
-
                 // ---- 1 枚目: 視界の中の座り（正面を向いた頭から見て、面がどこに立つか）----
                 PlaceAuthored(root, dist, yawOff, pitchOff);
-                Begin(logic, chars);
+                panel.Deliver(CommsNotice.Begin);
                 Step(logic, apply, panel, inSec);          // 枠を開き切る
-                Step(logic, apply, panel, (float)logic.GetType().GetProperty("TypeSec")!.GetValue(logic));
+                Step(logic, apply, panel, TypeSec(logic));
                 cam.transform.SetPositionAndRotation(Stage, Quaternion.identity);
                 cam.fieldOfView = WideFovDeg;
                 Shoot(cam, Path.Combine(dir, "place.png"));
 
-                // ---- 2 枚目以降: 出て、読ませて、引くまでを 1 コマずつ ----
-                PlaceStraightAhead(root, tmp, dist);
                 cam.fieldOfView = CloseFovDeg;
 
+                // ---- 文面ごとに 1 枚（打ち終わった状態）----
+                // ⚠ **4 通とも撮る。** 枠に収まるかは机上の文字数勘定では決まらず、しかも
+                //    ③ だけが 2 行なので、縦の座り（`CommsPanel.SetNotice` の重心運び）は
+                //    ここでしか見られない（`menu text-audit` は幅しか測らない）。
+                foreach (CommsNotice notice in new[]
+                {
+                    CommsNotice.Begin, CommsNotice.MarkLogged,
+                    CommsNotice.MarkNothing, CommsNotice.Prompt,
+                })
+                {
+                    Disable(logic);
+                    ApplyNow(apply, panel, logic);
+                    panel.Deliver(notice);
+                    PlaceStraightAhead(root, tmp, dist);
+                    Step(logic, apply, panel, inSec);
+                    Step(logic, apply, panel, TypeSec(logic));
+                    Shoot(cam, Path.Combine(dir, $"notice_{notice}.png"));
+                }
+
+                // ---- 出て、読ませて、引くまでを 1 コマずつ（いちばん重い ③ で撮る）----
                 Disable(logic);
                 ApplyNow(apply, panel, logic);
+                panel.Deliver(CommsNotice.Prompt);
+                PlaceStraightAhead(root, tmp, dist);
+                Disable(logic);
+                ApplyNow(apply, panel, logic);
+
                 float dt = 1f / Fps;
                 for (int i = 0; i < Fps * 0.3f; i++) Shoot(cam, Frame(dir, n++));   // 出る前の間
 
-                Begin(logic, chars);
-                float typeSec = (float)logic.GetType().GetProperty("TypeSec")!.GetValue(logic);
+                panel.Deliver(CommsNotice.Prompt);
+                float typeSec = TypeSec(logic);
                 float total = inSec + typeSec + holdSec + outSec + 0.2f;
                 for (float t = 0f; t < total; t += dt)
                 {
@@ -127,8 +147,8 @@ namespace FixedCamVr.Streaming.EditorTools
                     Shoot(cam, Frame(dir, n++));
                 }
 
-                Debug.Log($"[CommsPreview] {n} コマ + place.png → Assets/{OutDirRel}/\n"
-                        + $"  枠が開く {inSec:0.00}s → 打つ {typeSec:0.00}s（{chars} 文字）"
+                Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 4 枚 → Assets/{OutDirRel}/\n"
+                        + $"  枠が開く {inSec:0.00}s → 打つ {typeSec:0.00}s"
                         + $" → 読ませる {holdSec:0.0}s → 引く {outSec:0.00}s\n"
                         + $"  置き場所: 頭から {dist:0.0}m・左へ {-yawOff:0}°・下へ {pitchOff:0}°");
             }
@@ -154,8 +174,9 @@ namespace FixedCamVr.Streaming.EditorTools
             root.position = Stage + new Vector3(0f, 0f, dist) - offset;
         }
 
-        private static void Begin(object logic, int charCount) =>
-            logic.GetType().GetMethod("Begin")!.Invoke(logic, new object[] { charCount });
+        /// <summary>この文面を打ち終わるまでの秒（`CommsPanel.Deliver` が決めた実測値）。</summary>
+        private static float TypeSec(object logic) =>
+            (float)logic.GetType().GetProperty("TypeSec")!.GetValue(logic);
 
         private static void Disable(object logic) =>
             logic.GetType().GetMethod("Disable")!.Invoke(logic, null);

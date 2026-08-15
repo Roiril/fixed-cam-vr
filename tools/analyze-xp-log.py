@@ -967,6 +967,65 @@ def analyze(events, others, exp, warns=None):
                                 "（endHoldMaxSec の安全網で終わった — 演出が自分から終わっていない）")
         w()
 
+    # ---------------- 上司からの連絡 ----------------
+    # 発火は 3 点（`canon/LEDGER.md` 0054）: ①導入が明けた直後 ②報告した瞬間（演出の有無で文面が
+    # 変わる）③4 周目 A の締めで押さないまま 3 秒。
+    # ⚠⚠ **②の分岐がこの実装で唯一の危ない所。** 報告は `NotifyVisitorMark` で締めのカットを
+    #    その場で畳むので、演出の有無を後から見ると「締めで押したのに『検出されませんでした』」＝
+    #    意味が真逆の連絡になる。ここは `ev=mark` の `take=` と `ev=comms` の id を突き合わせて
+    #    **食い違っていたら FAIL** にする（画を見ても絶対に気づけない壊れ方なので）。
+    # 観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
+    comms = [e for e in events if e.get("ev") == "comms"]
+    comms_built = effect_samples(events, "commsBuilt")
+    if comms or comms_built:
+        w("## 上司からの連絡")
+        for e in comms:
+            w(f"  t={fnum(e,'t',0):7.1f}  {e.get('id')} n={e.get('n')} "
+              f"built={e.get('built')} lap={e.get('lap')} wait={e.get('wait')}")
+
+        if comms_built and all(str(v) == "0" for v in comms_built):
+            verdict("FAIL", "連絡の面を組めていない（commsBuilt=0）— 1 通も出ない。"
+                            "日本語フォント（menu hud-font）と menu scene を見る")
+        elif not comms:
+            verdict("WARN", "連絡が 1 通も届いていない（本編に入っていないか、CommsPanel が未配線）")
+        else:
+            ids = [e.get("id") for e in comms]
+            if "Begin" in ids:
+                verdict("OK", "導入が明けた直後に①「調査を開始してください」が届いた")
+            else:
+                verdict("FAIL", "①の連絡が届いていない — 本編に入った縁を見ていない"
+                                "（CommsCueLogic.BeginDelaySec / runDirector の配線）")
+
+            # ②の分岐が押した瞬間の値で決まっているか。ev=mark と ev=comms を時刻で対にする。
+            marks = [e for e in events if e.get("ev") == "mark"]
+            answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing")]
+            mark_ok = True
+            if len(answers) < len(marks):
+                mark_ok = False
+                verdict("FAIL", f"報告 {len(marks)} 回に対して②の返事が {len(answers)} 通しかない — "
+                                "押しても返らない報告がある（装置が壊れて見える）")
+            for m in marks:
+                near = [a for a in answers if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
+                if not near:
+                    continue
+                want = "MarkLogged" if str(m.get("take")) == "1" else "MarkNothing"
+                if near[0].get("id") != want:
+                    mark_ok = False
+                    verdict("FAIL",
+                            f"t={fnum(m,'t',0):.1f} の報告（そのとき演出 take={m.get('take')}）に対して "
+                            f"{near[0].get('id')} が返っている — 期待は {want}。"
+                            "ShowControlClient.RecordVisitorMark が LastMarkHadTake を "
+                            "NotifyVisitorMark より**後**で確定させている疑い（意味が真逆になる）")
+            if answers and mark_ok:
+                verdict("OK", f"②の返事が報告 {len(answers)} 回すべてに返り、演出の有無と一致した")
+
+            waited = [e for e in comms if e.get("id") == "Prompt"]
+            if waited:
+                verdict("OK", "③4 周目 A の締めで押さないまま 3 秒が経ち、催促が届いた")
+            elif any(str(e.get("wait")) == "1" for e in comms):
+                verdict("WARN", "締めのカットが待っていたのに③の催促が届いていない")
+        w()
+
     # ---------------- 位置合わせ（コントローラの操作モード） ----------------
     # ⚠ ここが無かったせいで「トリガー長押しが発火していないのか、発火しても画が変わらないのか」を
     #    実機ログから切り分けられなかった（2026-08-09）。卓の heartbeat にしか出ていなかった。

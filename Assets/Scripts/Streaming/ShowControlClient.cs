@@ -2478,18 +2478,39 @@ namespace FixedCamVr.Streaming
         /// ボタンを押した時刻は、自動的に記録されます」が指しているのがこれ。
         ///
         /// ⚠ <b>体験の進行には 1 ビットも使わない。</b> 押さなくても体験は同じように進む
-        /// （判定に使うと、押さなかった人が失敗した気になる）。正誤も返さない
-        /// （返すと答え合わせになり、装置が「何が異変か」を判定してしまう）。
+        /// （判定に使うと、押さなかった人が失敗した気になる）。唯一の例外が 4 周目 A の締め
+        /// （<c>durKind:"untilMark"</c>・`canon/LEDGER.md` 0050）。
+        /// ⚠ <b>正誤は返す</b>（2026-08-16 に反転・`canon/LEDGER.md` 0054）。上司からの連絡が
+        /// 「異常が記録されました」/「異常は検出されませんでした」を返す
+        /// （分岐の材料が下の <see cref="LastMarkHadTake"/>）。
         /// ⭐ 押した時刻が残ると、<b>3 周目の反転に気づいたかが訊かずに分かる</b>
         /// （初見は消耗品なので、誘導せずに取れる観測の価値が高い）。
         /// </summary>
         public int VisitorMarkCount { get; private set; }
 
+        /// <summary>
+        /// <b>直近の報告が届いた瞬間に、演出が画面を握っていたか。</b>
+        /// 上司からの連絡の文面がこれで分かれる（`canon/LEDGER.md` 0054 ②）—
+        /// 走っていれば「異常が記録されました」、走っていなければ「異常は検出されませんでした」。
+        ///
+        /// ⚠⚠ <b>読み手は「いま走っているか」を後から見てはいけない。</b>
+        /// <see cref="RecordVisitorMark"/> は <c>NotifyVisitorMark</c> で
+        /// <b>「報告するまで」のカットをその場で畳む</b>ので、次のフレームには
+        /// <c>ActiveTakeId</c> が空になっている ＝ <b>4 周目 A の締めで押したときだけ</b>
+        /// 「演出が無かった」に化けて、意味が真逆の連絡が返る。
+        /// だからここで<b>中継の前に</b>凍らせてある。<b>順序を入れ替えない。</b>
+        /// </summary>
+        public bool LastMarkHadTake { get; private set; }
+
         /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
         public void RecordVisitorMark()
         {
             VisitorMarkCount++;
-            Debug.Log($"[ShowControl] 記録ボタン（体験者・左 X） {VisitorMarkCount} 回目");
+            // ⚠⚠ **畳む前に凍らせる。** 下の NotifyVisitorMark が締めのカットを終わらせるので、
+            //     この 1 行を下へ動かすと 4 周目 A の連絡が必ず逆になる（上の注記）。
+            LastMarkHadTake = !string.IsNullOrEmpty(timelineDirector?.ActiveTakeId);
+            Debug.Log($"[ShowControl] 記録ボタン（体験者・左 X） {VisitorMarkCount} 回目"
+                    + $"（そのとき演出は{(LastMarkHadTake ? "走っていた" : "走っていなかった")}）");
             // 「報告するまで」のカット（4 周目 A の締め）だけが反応する。ほかの進行には一切効かない。
             timelineDirector?.NotifyVisitorMark();
         }

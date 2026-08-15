@@ -72,6 +72,7 @@ namespace FixedCamVr.Diagnostics
         private IntroDirector? _intro;
         private OutroDirector? _outro;
         private OutroReport? _report;
+        private CommsPanel? _comms;
         private TitleScreen? _title;
         private TimelineDirector? _timeline;
         private SignalLostFx? _signal;
@@ -115,6 +116,7 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>直近に出した記録ボタンの回数（体験者の左 X）。</summary>
         private int _lastMarkCount;
+        private int _lastCommsPulse;
         private string _lastTakeId = "";
         private string _lastCtrlMode = "";
         private string _lastCueId = "";
@@ -194,6 +196,7 @@ namespace FixedCamVr.Diagnostics
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
             if (_outro == null) _outro = FindObjectOfType<OutroDirector>();
             if (_report == null) _report = FindObjectOfType<OutroReport>();
+            if (_comms == null) _comms = FindObjectOfType<CommsPanel>();
             if (_title == null) _title = FindObjectOfType<TitleScreen>();
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
             if (_signal == null) _signal = FindObjectOfType<SignalLostFx>();
@@ -376,6 +379,15 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private string ReportBuiltState => _report == null ? "-" : (_report.IsBuilt ? "1" : "0");
 
+        /// <summary>
+        /// 上司からの連絡が<b>いまどう画に出ているか</b>。<c>off</c> ＝ 出していない、
+        /// それ以外は <c>&lt;段&gt;/&lt;文字の濃さ&gt;/&lt;枠の開き&gt;</c>。
+        /// ⚠ 段だけを出すと「進んでいるのに 1 画素も出ていない」を見逃す。
+        /// </summary>
+        private string CommsState => _comms == null ? "-"
+            : _comms.Stage == CommsStage.Off ? "off"
+            : $"{_comms.Stage}/{_comms.AppliedGlyph:F2}/{_comms.AppliedOpen:F2}";
+
         /// <summary>報告の面に<b>実際に書いた不透明度</b>（<c>nc</c> = 組めていない）。</summary>
         private string ReportAlphaState => _report == null
             ? "-"
@@ -531,6 +543,9 @@ namespace FixedCamVr.Diagnostics
                 _lastOutroStage = _outro.Stage;
                 Emit($"ev=outro stage={_lastOutroStage} pw={PowerState} " +
                      $"rep={ReportAlphaState} repBuilt={ReportBuiltState} " +
+                     // comms は上司からの連絡。built=0 なら一生出ない。段が Off 以外のあいだの
+                     // glyph / open は**実際に書いた値** ＝ 画に出た側（`ev=comms` は縁しか持たない）。
+                     $"comms={CommsState} commsBuilt={(_comms == null ? "-" : _comms.IsBuilt ? "1" : "0")} " +
                      $"marks={(_show != null ? _show.VisitorMarkCount : -1)} " +
                      // 合図（run.outro.afterTakeId）が武装したか / 撃ったか。
                      // 著作していなければ両方 0 のままで、終わり方は従来どおり。
@@ -545,7 +560,20 @@ namespace FixedCamVr.Diagnostics
             {
                 _lastMarkCount = _show.VisitorMarkCount;
                 Emit($"ev=mark n={_lastMarkCount} lap={(_run != null ? _run.Lap : -1)} " +
-                     $"cam={(_switch != null && _switch.TryGetCurrentZoneCamera(out int mc) ? mc : -1)}");
+                     $"cam={(_switch != null && _switch.TryGetCurrentZoneCamera(out int mc) ? mc : -1)}"
+                     // その報告の瞬間に演出が走っていたか（上司からの連絡の文面がこれで分かれる）。
+                   + $" take={(_show.LastMarkHadTake ? 1 : 0)}");
+            }
+
+            // 上司からの連絡（`canon/LEDGER.md` 0054）。**1 通ごとに 1 行**。
+            // ⚠ id だけでは足りない — 「配った」と「画に出た」は別物なので glyph / open を必ず添える
+            //   （2026-07-31 の「段は進んだのに画は空だった」と同じ型）。built=0 なら一生出ない。
+            if (_comms != null && _comms.PulseCount != _lastCommsPulse)
+            {
+                _lastCommsPulse = _comms.PulseCount;
+                Emit($"ev=comms id={_comms.LastNotice} n={_lastCommsPulse} " +
+                     $"built={(_comms.IsBuilt ? 1 : 0)} lap={(_run != null ? _run.Lap : -1)} " +
+                     $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
             }
 
             // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**

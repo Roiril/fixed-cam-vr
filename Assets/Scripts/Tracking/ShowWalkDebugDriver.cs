@@ -308,6 +308,9 @@ namespace FixedCamVr.Tracking
         /// ⚠ **押すのは 1 回だけ**。実機の体験者と同じ回数にしないと、終幕の報告数が嘘になる。
         /// ⚠ 走っている演出が待っている時だけ押す（誰も待っていない所で押すと、
         ///   「報告は進行に使わない」を検証している他の判定を汚す）。
+        /// ⚠⚠ **すぐには押さない**（<see cref="ReportHesitateSec"/>）。待ちが立った瞬間に押すと、
+        ///   上司からの連絡の③（押さないまま 3 秒で催促・`canon/LEDGER.md` 0054）が
+        ///   <b>実機で一度も走らない</b>。人はどのみち一拍おいて押すので、そちらの方が実機に近い。
         /// </summary>
         private IEnumerator HoldAndMaybeReport(float holdSec)
         {
@@ -317,9 +320,13 @@ namespace FixedCamVr.Tracking
                 t += Time.deltaTime;
                 if (!_reported && _show != null && _timeline != null && _timeline.IsWaitingForVisitorMark)
                 {
-                    _reported = true;
-                    Debug.Log("[XPWalk] 異変を報告する（左 X の代わり）");
-                    _show.RecordVisitorMark();
+                    _waitedSec += Time.deltaTime;
+                    if (_waitedSec >= ReportHesitateSec)
+                    {
+                        _reported = true;
+                        Debug.Log($"[XPWalk] 異変を報告する（左 X の代わり・{_waitedSec:0.0}s ためらった）");
+                        _show.RecordVisitorMark();
+                    }
                 }
                 yield return null;
             }
@@ -328,8 +335,21 @@ namespace FixedCamVr.Tracking
         // このランで報告を押したか（1 回だけ）。
         private bool _reported;
 
-        /// <summary>締めのカットが報告を待ちうる時間（走行の最後にこれだけ粘る）。</summary>
-        private const float ReportWaitSec = 6f;
+        // 締めのカットが待ち始めてからの経過（ためらい）。
+        private float _waitedSec;
+
+        /// <summary>
+        /// 締めのカットが待ち始めてから押すまで (秒)。
+        /// ⚠ 連絡③の閾値（<c>CommsCueLogic.PromptAfterWaitSec</c> = 3s）より<b>長く</b>取る。
+        /// 縮めると③が走らず、催促は実機で検証されないまま出荷される。
+        /// </summary>
+        private const float ReportHesitateSec = 4.5f;
+
+        /// <summary>
+        /// 締めのカットが報告を待ちうる時間（走行の最後にこれだけ粘る）。
+        /// ⚠ <see cref="ReportHesitateSec"/> ぶんためらってから押すので、その余裕を含める。
+        /// </summary>
+        private const float ReportWaitSec = 12f;
 
         /// <summary>体験エリアの外に出て少し立つ。封印の箱を見る時間（<see cref="SealBoxHoldSec"/>）。</summary>
         private const float SealBoxHoldSec = 4f;

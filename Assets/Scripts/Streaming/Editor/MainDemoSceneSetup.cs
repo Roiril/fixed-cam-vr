@@ -595,7 +595,8 @@ namespace FixedCamVr.Streaming.EditorTools
 
             // 3.9. 上司からの連絡（第 2 の面）。本編のスクリーンとは別に、少し手前・少し外側へ立てる
             //      （canon/LEDGER.md 0043）。world-space（Logic 直下・head 非親）で自前に緩追従する
-            //      ＝ StatusHud と同じ流儀。⚠ 仮実装で、出るのは本編に入って一定秒後に 1 回だけ。
+            //      ＝ StatusHud と同じ流儀。発火は 3 点（canon/LEDGER.md 0054）—
+            //      ①導入が明けた直後 ②報告した瞬間（演出の有無で文面が変わる）③締めで押さないまま 3 秒。
             {
                 var commsGo = GameObject.Find("[Comms]");
                 if (commsGo == null)
@@ -603,8 +604,15 @@ namespace FixedCamVr.Streaming.EditorTools
                     commsGo = new GameObject("[Comms]");
                     commsGo.transform.SetParent(logic.transform, worldPositionStays: false);
                 }
-                if (commsGo.GetComponent<FixedCamVr.Diagnostics.CommsPanel>() == null)
-                    commsGo.AddComponent<FixedCamVr.Diagnostics.CommsPanel>();
+                var comms = commsGo.GetComponent<FixedCamVr.Diagnostics.CommsPanel>();
+                if (comms == null) comms = commsGo.AddComponent<FixedCamVr.Diagnostics.CommsPanel>();
+                // 実行時も FindObjectOfType で自己解決するが、明示配線しておく（Tracker は毎回
+                // 作り直すので、焼いた参照が切れたまま残るより「必ず今の実体を指す」方が安全）。
+                var commsSo = new SerializedObject(comms);
+                TrySetObjectRef(commsSo, "runDirector", runDirector);
+                if (showControl != null) TrySetObjectRef(commsSo, "showControl", showControl);
+                TrySetObjectRef(commsSo, "timeline", timelineDirector);
+                commsSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
             // 4.1. HMD 内の文字面は全部「スタッフが被っているか」を StatusHud に問う（体験者の視界には

@@ -12,13 +12,19 @@
 - **X（記録）と兼用しない。** 既読・閉じるを X に割り当てない（記録の意味が濁る）
 - **本編の進行を既読待ちにしない。** 読まなくても体験は進む
 
-## いまの状態（2026-08-15）
+## いまの状態（2026-08-16）
 
-**段 1・2 は入った。段 3 は仮（固定の発火）。段 4 は未着手。**
+**段 1・2・3・4 が入った。残りは段 5（show.json への著作）だけ。**
 
-- `CommsPanelLogic`（純ロジック・テスト 3 本）＋ `CommsPanel`（Diagnostics）＋
-  `MainDemoSceneSetup` が `[Comms]` を焼く ＋ 左の通知振動（`ControllerHaptics.LeftNotify`）
-- 発火は**本編に入って 12 秒後に 1 回**（`FireAfterRunSec`）。文面もコードが持っている
+- `CommsPanelLogic`（段の進み）＋ **`CommsCueLogic`（発火の判断・テスト 13 本）** ＋
+  `CommsPanel`（Diagnostics）＋ `MainDemoSceneSetup` が `[Comms]` を焼いて 3 つの参照を配線 ＋
+  左の通知振動（`ControllerHaptics.LeftNotify`）
+- **発火は 3 点**（`canon/LEDGER.md` 0054・規約の表は `rules/show-design.md`）。
+  ①本編へ入って 1.5 秒後 ②報告した瞬間（演出の有無で文面が変わる）③締めが 3 秒待った。
+  文面はまだコードが持っている（`CommsPanel.TextFor`）
+- **観測は入った**: `ev=comms` ＋ `ev=sum` の `comms=` / `commsBuilt=` ＋ `ev=mark take=`。
+  `analyze-xp-log.py` の「## 上司からの連絡」が②の分岐の食い違いを FAIL にする
+- **⚠ 実機未確認**（2026-08-16）。見たのは 4 文面の絵と `menu text-audit` まで
 - **実測（1 回目の走行）**: 画には出たが**文字が小さすぎて読めなかった**（1 文字 0.9°）。
   面（地）も真っ黒の中で見えず、文字だけが宙に浮いていた
   → 文字 scale 0.34 → **0.67**（1 文字 1.8°）、面を 0.62×0.20 → **0.76×0.26**、**縁を足した**、
@@ -39,15 +45,18 @@
 - `ControllerHaptics` に**左の二連（弱め）**を足す。⚠ 記録の受理（`LeftMark` ＝ Action）と別パターンにする
   — 同じだと「自分が押した」と混ざる
 
-### 3. 発火の著作
-- **初版は固定**（本編に入って N 秒後に 1 回）。show.json のスキーマは次の段
+### 3. 発火の著作 ✅（2026-08-16・コード側は完了）
+- ~~初版は固定（本編に入って N 秒後に 1 回）~~ → **3 点へ置き換えた**（`CommsCueLogic`）。
+  show.json のスキーマは次の段
 - 次の段: 同じ timeline の同じ take に**並列のチャンネル `comms`** を足す。
   ⚠ `steps[]` にはしない（あれは「スクリーンへ何を映すか」の型で、画面の占有・`wait`・`chain` に参加する）
 - 区間を出たら閉じる。ラン開始で落とす（`memory/show_run_skeleton.md` の「体験 1 回ぶんの状態」）
 
-### 4. 観測
-- `ev=comms id= shown= glyph=` を `ShowTelemetryHost` と `analyze-xp-log.py` へ**対で**足す
-- 「段が進んだ」ではなく**「画に出た」**を出す（実際に書いた不透明度）
+### 4. 観測 ✅（2026-08-16）
+- `ev=comms id= n= built= lap= wait=`（縁）＋ `ev=sum` の `comms=<段>/<文字>/<枠>` と
+  `commsBuilt=`（画に出た側）＋ `ev=mark take=`（②の分岐の材料）
+- `analyze-xp-log.py` の「## 上司からの連絡」が、`ev=mark take=` と `ev=comms id=` の
+  **食い違いを FAIL** にする（②が真逆に返る壊れ方は画を見ても絶対に気づけない）
 
 ### 5. 焼き直し
 - 文面を確定してから `menu hud-font`（忘れると豆腐）→ `menu scene`（面をシーンへ）→ ビルド

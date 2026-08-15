@@ -127,8 +127,19 @@ LTouch の仮想マップは `Three = None` / `Four = None` なので（`OVRInpu
 ⇒ **物理ボタンを名指しする `RawButton.X | RawButton.Y` を使う**（X / Y は左にしか無い）。
 
 - **報告は体験の進行に 1 ビットも使わない。** 押さなくても同じように進む（判定に使うと、
-  押さなかった人が失敗した気になる）。**正誤も返さない** — 返すと答え合わせになり、
-  装置が「何が異変か」を判定してしまう。返りは左コントローラの短い振動と手元の面だけ
+  押さなかった人が失敗した気になる）。**唯一の例外が 4 周目 A の締め**（`durKind:"untilMark"`・
+  `canon/LEDGER.md` 0050 で明示的に許可された 1 か所）
+- ⚠⚠ **正誤は返す**（2026-08-16 に反転・`canon/LEDGER.md` 0054）。それまで
+  「返すと答え合わせになり、装置が『何が異変か』を判定してしまう」として禁じていたが、
+  ユーザーが**上司からの連絡でそれを返すこと**を指定した:
+  演出が走っていれば「異常が記録されました」、走っていなければ「異常は検出されませんでした」。
+  返りは**左コントローラの短い振動 ＋ 手元の面 ＋ 連絡の面**（[`CommsPanel`](../../Assets/Scripts/Diagnostics/CommsPanel.cs)）
+- ⚠⚠ **その判定は「押した瞬間」の値でなければならない。** 報告は
+  `ShowControlClient.RecordVisitorMark` → `TimelineDirector.NotifyVisitorMark` と流れて
+  **締めのカットをその場で畳む**ので、「いま演出が走っているか」を後から見ると
+  **4 周目 A の締めで押したときだけ真逆の連絡が返る**。凍らせるのは
+  `ShowControlClient.LastMarkHadTake`（**中継の前**）で、順序を入れ替えると黙って壊れる。
+  `analyze-xp-log.py` が `ev=mark take=` と `ev=comms id=` の食い違いを FAIL にする
 - **短押しでは通さない。** 歩きながら握り込むので、押した瞬間に決まると「触れただけ」が報告になる。
   判定は [`VisitorMarkHoldLogic`](../../Assets/Scripts/Input/VisitorMarkHoldLogic.cs)（純ロジック・
   テスト 6 本）。1 回の押しで 1 回だけ・離すとゲージは 0 へ戻る・**dt は 0.25 秒で切る**
@@ -621,7 +632,26 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
 | **`VisitorMarkPanel`（左手の手元）** | **体験者に常時**（左コントローラが繋がっているあいだ） | 押し方 `X／Y：異変を報告` と、長押し中の `報告中` ＋ ゲージだけ |
 | `TitleNotice`（2.6m・黒の中） | 周回リセット直後の待ち（A を押す前）だけ | 体験前の注意書き |
 | `OutroReport`（2.6m・黒の中） | 終幕の最後 | 報告の 4 行 |
-| `CommsPanel`（1.5m・左下） | 本編に入って一定秒後に 1 回 | 上司からの連絡 |
+| `CommsPanel`（1.5m・左下） | **3 点**（下）。体験者に見せる面なので門は通さない | 上司からの連絡 |
+
+⚠ **`CommsPanel` の発火は 3 点**（`canon/LEDGER.md` 0054）。判断は
+[`CommsCueLogic`](../../Assets/Scripts/Streaming/CommsCueLogic.cs)（純ロジック・テスト 13 本）、
+文面は `CommsPanel.TextFor` が持つ。**①③はラン 1 回に 1 度・②は押すたび**。
+
+| 何 | 条件 | 文面 |
+|---|---|---|
+| ① | 本編（`Run`）へ入って 1.5 秒後 | 調査を開始してください |
+| ②a | 報告した瞬間、演出が走っていた | 異常が記録されました |
+| ②b | 報告した瞬間、演出が走っていなかった | 異常は検出されませんでした |
+| ③ | 締めのカット（`untilMark`）が 3 秒待った | 異常が検出されました。記録してください。 |
+
+⚠ **③は「4 周目 A」を外から組み直さない** — 締めのカットが待っていること自体を見る
+（`TimelineDirector.IsWaitingForVisitorMark`）ので、著作が変わっても追随する。
+⚠ **自動走行はためらってから押す**（`ShowWalkDebugDriver.ReportHesitateSec` = 4.5 秒 >
+`CommsCueLogic.PromptAfterWaitSec` = 3 秒）。縮めると③が実機で一度も走らない。
+⚠ **観測は `ev=comms id= n= built= wait=` と `ev=sum` の `comms=` / `commsBuilt=`**。
+`comms=` は段だけでなく**実際に書いた文字の濃さと枠の開き**を持つ（画に出た側）。
+`ShowTelemetryHost` と `analyze-xp-log.py` を**対で**直す。
 
 ⚠⚠ **`VisitorMarkPanel` は門を通さない唯一の面**（2026-08-15・`canon/LEDGER.md` 0050）。
 上の 3 つと並べると規約違反に見えるので、**善意で `StaffViewing()` を足されると
