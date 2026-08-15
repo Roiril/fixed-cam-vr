@@ -40,6 +40,21 @@ sys.stdout.reconfigure(encoding="utf-8")
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL = os.path.join(os.path.dirname(HERE), "doll-model")
 SHEET = os.path.join(HERE, "out", "tex_4view.png")
+
+# 向きごとに別で生成した高解像度の絵（あればこちらを使う）。
+# ⚠ **別々に生成しても構わない。** 押し込みが輪郭を実写へ合わせるので、生成どうしの
+#    背丈のばらつき（実測で最大 1/4 → 1/5）はそこで消える。4 面図 1 枚だと 1 面が
+#    635px しか無く、atlas（本体 1024px）へ引き伸ばすことになるのが理由。
+PER_VIEW = {"front": "tex_front2.png", "back": "tex_back.png",
+            "sideA": "tex_sideA.png", "sideB": "tex_sideB.png"}
+
+# ⚠⚠ **手は上段（本体の atlas）に無い。** `texture.py` の `arm_strip()` が
+#    front.jpg の固定の枠（ARM_BOX）から切り出す。押し込みは実写のマスクへ合わせるが、
+#    **実写のマスクには手が入っていない**（`cutout2.py` が撮影者の指と一緒に切った）ので、
+#    そのままだと手が潰れる（実際に潰れた）。⇒ 生成の手を、この枠へ貼り直す。
+#    値は tools/doll-model/texture.py の ARM_BOX と同じ。**片方だけ直すと沈黙して食い違う。**
+ARM_BOX = {"L": (0.010, 0.317, 0.118, 0.360),
+           "R": (0.883, 0.322, 0.994, 0.365)}
 TEX = os.path.join(HERE, "tex")
 VIEWS = ("front", "back", "sideA", "sideB")
 
@@ -102,6 +117,11 @@ def rows_profile(mask: np.ndarray, n: int = 128):
 def warp_to(src: np.ndarray, src_mask: np.ndarray, dst_mask: np.ndarray) -> np.ndarray:
     """`src` を `dst_mask` の輪郭へ押し込む（縦は外接矩形、横は 1 行ずつ）。"""
     H, W = dst_mask.shape[:2]
+    # ⚠⚠ **元のマスクは内側へ削ってから使う。** 塊を取るときの膨らみ（CLOSE と余白）で
+    #    マスクが人形より数画素外まで出ており、そのぶん**背景の灰色を拾って**行の端へ塗っていた
+    #    （焼いた人形の胸と肩に灰色の帯が出た）。削れば端は必ず人形の中から取る。
+    k = max(3, int(min(src_mask.shape) * 0.012) | 1)
+    src_mask = cv2.erode(src_mask, np.ones((k, k), np.uint8))
     sp = rows_profile(src_mask)
     dp = rows_profile(dst_mask)
     n = len(sp["L"])
@@ -124,6 +144,46 @@ def warp_to(src: np.ndarray, src_mask: np.ndarray, dst_mask: np.ndarray) -> np.n
         u = (xs_dst - dl) / (dr - dl)                    # 行の中での位置 0..1
         xs_src = np.clip(sl + u * (sr - sl), 0, src.shape[1] - 1).astype(np.int32)
         out[y, int(dl):int(dr)] = src[sy0, xs_src]
+    return out
+
+
+def find_hand(src, mask, side: str):
+    """生成した正面の絵から、袖口から出た手を切り出す（左右どちらか）。
+
+    手は**輪郭のいちばん外側で、白磁（明るくて彩度が低い）**の塊。
+    その 2 つで探すので、袖の赤や背景の灰色とは分かれる。
+    """
+    p = rows_profile(mask)
+    y0 = p["y0"] + int((p["y1"] - p["y0"]) * 0.22)     # 腕のあたり（頭より下）
+    y1 = p["y0"] + int((p["y1"] - p["y0"]) * 0.55)
+    band = np.zeros_like(mask)
+    band[y0:y1] = mask[y0:y1]
+    hsv = cv2.cvtColor(src, cv2.COLOR_BGR2HSV)
+    g = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+    skin = (band > 127) & (hsv[:, :, 1] < 90) & (g > int(np.median(g[mask > 127])) + 10)
+    n, lab, st, _ = cv2.connectedComponentsWithStats(skin.astype(np.uint8), 8)
+    cand = [i for i in range(1, n) if st[i, cv2.CC_STAT_AREA] > 200]
+    if not cand:
+        return None
+    # 左手 = いちばん左 / 右手 = いちばん右
+    key = (lambda i: st[i, cv2.CC_STAT_LEFT]) if side == "L" else           (lambda i: -(st[i, cv2.CC_STAT_LEFT] + st[i, cv2.CC_STAT_WIDTH]))
+    i = min(cand, key=key)
+    x, y, w, h = st[i, cv2.CC_STAT_LEFT], st[i, cv2.CC_STAT_TOP], st[i, cv2.CC_STAT_WIDTH], st[i, cv2.CC_STAT_HEIGHT]
+    pad = max(2, int(h * 0.12))
+    return src[max(0, y - pad):y + h + pad, max(0, x - pad):x + w + pad]
+
+
+def paste_hands(out, src, src_mask):
+    """`texture.py` の `ARM_BOX` の位置へ、生成した手を貼る。"""
+    H, W = out.shape[:2]
+    for side, (ax0, ay0, ax1, ay1) in ARM_BOX.items():
+        piece = find_hand(src, src_mask, side)
+        if piece is None or piece.size == 0:
+            print(f"  ⚠ 手が見つからない（{side}）— 旧テクスチャの手が残る")
+            continue
+        x0, y0 = int(ax0 * W), int(ay0 * H)
+        x1, y1 = int(ax1 * W), int(ay1 * H)
+        out[y0:y1, x0:x1] = cv2.resize(piece, (x1 - x0, y1 - y0), interpolation=cv2.INTER_AREA)
     return out
 
 
@@ -160,6 +220,18 @@ def main() -> int:
 
     os.makedirs(TEX, exist_ok=True)
     panels = sheet_panels(SHEET)
+    per_view = {}
+    for v, fn in PER_VIEW.items():
+        fp = os.path.join(HERE, "out", fn)
+        if not os.path.exists(fp):
+            continue
+        im = cv2.imread(fp)
+        pans = sheet_panels(fp)
+        if len(pans) == 1:
+            per_view[v] = pans[0]
+            print(f"  {v:6s} ← {fn}（{pans[0][0].shape[1]}x{pans[0][0].shape[0]}・個別生成）")
+        else:
+            print(f"  ⚠ {fn} は塊が {len(pans)} 個（1 個でないので使わない）")
     print(f"4 面図を {len(panels)} 枚に切った: " +
           " / ".join(f"{p.shape[1]}x{p.shape[0]}" for p, _ in panels))
     if len(panels) != 4:
@@ -204,8 +276,11 @@ def main() -> int:
         print(f"  {v:6s} ← 板 {bi}（{detail}）")
 
     for v in VIEWS:
-        i, _c = assign[v]
-        src, src_mask = panels[i]
+        if v in per_view:
+            src, src_mask = per_view[v]
+        else:
+            i, _c = assign[v]
+            src, src_mask = panels[i]
         dst_mask = cv2.imread(os.path.join(MODEL, f"mask_{v}.png"), cv2.IMREAD_GRAYSCALE)
         # 台と机のぶんを落とした版へ合わせる（下の CUT_BOTTOM の説明）。
         y0, y1 = doll_only(dst_mask)
@@ -213,6 +288,8 @@ def main() -> int:
         target = dst_mask.copy()
         target[y1 - cut:] = 0
         out = warp_to(src, src_mask, target)
+        if v == "front":
+            out = paste_hands(out, src, src_mask)
         cv2.imwrite(os.path.join(TEX, f"{v}.jpg"), out, [cv2.IMWRITE_JPEG_QUALITY, 95])
         # 重ね合わせ（実写のマスクの縁を緑で描く）— **ずれはここでしか見えない**
         chk = out.copy()
