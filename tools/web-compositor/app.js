@@ -1253,12 +1253,14 @@ function renderRunCfg(s) {
 }
 
 // ---- 導入の遷移演出（show.json run.intro）------------------------------------
-//   開口が閉じて闇になり、その闇の中で管が点いて映像になる 6.2 秒（2026-08-13 に作り直し）。
+//   現実が格下げされ、割れて、スクリーンの枠へ吸い込まれる 13.1 秒
+//   （2026-08-15 に旧構成へ戻した。封印の箱を退避したため — canon/LEDGER.md 0044）。
 //   run の一部なので**保存は applyRunCfg の 1 経路に乗せる**（新しい保存口を作らない）。
 //   判定と既定は intro-model.js が単一の正（本番前チェックも同じ関数を読む）。
 const INTRO_NUM = {
-  sealSec: '#introSeal', darkSec: '#introDark', igniteSec: '#introIgnite',
-  liveSec: '#introLive', maxSec: '#introMaxSec', glitchOnSwap: '#introGlitch',
+  realSec: '#introReal', degradeSec: '#introDegrade', structureSec: '#introStructure',
+  frameSec: '#introFrame', swapSec: '#introSwap',
+  maxSec: '#introMaxSec', glitchOnSwap: '#introGlitch',
 };
 const INTRO_BOOL = {
   enabled: '#introOn', showCameraMarks: '#introCamMarks',

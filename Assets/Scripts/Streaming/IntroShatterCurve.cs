@@ -19,22 +19,32 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public static class IntroShatterCurve
     {
-        // ---- 段 4 を 2 つに割る（順番が意味を持つ）----------------------------------
+        // ---- 割れるのは覆いだけ ------------------------------------------------------
         //
-        // ⚠⚠ **パススルーを先に閉じ切ってから、箱を割る。** 逆でも同時でもいけない。
-        // 箱は不透明で、その裏のパススルーが開いていると、**箱に割れ目が入った瞬間に
-        // 体験エリアの中が覗ける**（`canon/LEDGER.md` 0005 が禁じているもの）。
-        // 重ならないよう区間を分けてあるので、覗きは起こりようがない。
+        // ⚠⚠ **2026-08-15 に段 4 の 2 分割をやめた。** 旧実装は前半で覆い（パススルーが覗く窓）、
+        // 後半で封印の箱の面を割っていた。設定が「回収された壁の調査」へ変わって
+        // 体験エリアを隠す必要がなくなり（`canon/LEDGER.md` 0044）、**箱そのものが無くなった**。
         //
-        // 見え方としても筋が通る — **外側の世界が先に持っていかれ、最後に封印そのものが割れる**。
+        // 箱が主役だったころは覆いだけ割っても画にほとんど出なかった（視界の大半が箱だった）が、
+        // いまは覆いが視界の全部なので、**進みをまるごと覆いへ渡す**のが正しい。
 
-        /// <summary>覆い（パススルー）が割れ終わる進み。ここから先は箱の番。</summary>
+        /// <summary>
+        /// 覆いが割れ終わる進み。<b>箱が居たころの区間の切れ目</b>で、いまは
+        /// <see cref="BoxShatter"/> だけが読む（＝ 実行時には誰も通らない）。
+        /// </summary>
         public const float VeilPhaseEnd = 0.35f;
 
-        /// <summary>覆いの側の進み（段 4 全体の進み <paramref name="shatter"/> から取り出す）。</summary>
-        public static float VeilShatter(float shatter) => Clamp01(shatter / VeilPhaseEnd);
+        /// <summary>
+        /// 覆いの側の進み。<b>段 4 の進みをそのまま使う</b>（2026-08-15〜）。
+        /// </summary>
+        public static float VeilShatter(float shatter) => Clamp01(shatter);
 
-        /// <summary>封印の箱の側の進み。覆いが閉じ切ってから始まる。</summary>
+        /// <summary>
+        /// 封印の箱の側の進み。<b>⚠ 眠っている</b> — 箱は
+        /// <c>Assets/Scripts/Streaming/Attic/</c> へ退避しており、重み <c>sealBox</c> は全段 0 なので
+        /// <see cref="SealedBox.Apply"/> が先に畳んでここへ来ない。
+        /// 戻し方は <c>.claude/reference/attic-sealed-box.md</c>。
+        /// </summary>
         public static float BoxShatter(float shatter) =>
             Clamp01((shatter - VeilPhaseEnd) / (1f - VeilPhaseEnd));
 

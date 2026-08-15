@@ -84,7 +84,6 @@ namespace FixedCamVr.Diagnostics
         private IntroVeil? _veil;
         private IntroStructureWire? _wire;
         private ContainmentShell? _shell;
-        private SealedBox? _box;
         private BgmDirector? _bgm;
         private ShowSoundDirector? _sound;
         private SwitchAudioCue? _switchSfx;
@@ -197,7 +196,6 @@ namespace FixedCamVr.Diagnostics
             if (_veil == null) _veil = FindObjectOfType<IntroVeil>();
             if (_wire == null) _wire = FindObjectOfType<IntroStructureWire>();
             if (_shell == null) _shell = FindObjectOfType<ContainmentShell>();
-            if (_box == null) _box = FindObjectOfType<SealedBox>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_cg == null) _cg = FindObjectOfType<ShowCgLayer>();
             if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
@@ -349,12 +347,21 @@ namespace FixedCamVr.Diagnostics
             : (_intro.IgniteWritten < 0f ? "nc" : _intro.IgniteWritten.ToString("F2"));
 
         /// <summary>
-        /// ⚠ 破砕（<c>shatV</c> / <c>shatB</c> / <c>shatVC</c> / <c>shatBC</c> / <c>shatRect</c> /
-        /// <c>shatBMesh</c>）は 2026-08-13 に観測から外した。段 4「現実が割れてスクリーンへ入る」を
-        /// 廃止して重み <c>shatter</c> を眠らせたので、<b>常に 0 が並ぶだけ</b>になり、
-        /// 「出るはずのものが出ない」と誤検出させる材料にしかならない。
-        /// <c>IntroShatterCurve</c> と破片メッシュ自体は残っている（赤入れが返ってから消す）。
+        /// 破砕（段 4）が<b>画に出たか</b>。2026-08-13 に段ごと廃止して観測から外していたが、
+        /// 2026-08-15 に段が戻ったので戻した（<c>canon/LEDGER.md</c> 0044）。
+        ///
+        /// ⚠ 箱の側（旧 <c>shatB</c> / <c>shatBC</c> / <c>shatBMesh</c>）は戻していない —
+        /// 封印の箱を退避したので、割れるのは覆いだけ。
+        ///
+        /// <c>-</c>=覆いがシーンに居ない / 0.00 のまま = 進みは配っているのに画が割れていない。
         /// </summary>
+        private string ShatterState => _veil == null ? "-" : _veil.ShatterPeak.ToString("F2");
+
+        /// <summary>破砕のセル数。<c>0</c> ならセル格子を組めていない ＝ 割れようがない。</summary>
+        private string ShatterCellState => _veil == null ? "-" : _veil.ShatterCells.ToString();
+
+        /// <summary>吸い込み先の矩形（半幅,半高,奥行,吸い込み半径）。全部 0 なら行き先が解けていない。</summary>
+        private string ShatterRectState => _veil == null ? "-" : _veil.ShatterRectDesc;
 
         /// <summary>段 3 の構造の線の本数。<c>-</c>=シーンに居ない。</summary>
         private string WireState => _wire == null ? "-" : _wire.LineCount.ToString();
@@ -383,11 +390,10 @@ namespace FixedCamVr.Diagnostics
 
         private string ShellRevealState => _shell == null ? "-" : (_shell.Revealing ? "1" : "0");
 
-        /// <summary>封印の箱が描かれているか。<c>-</c>=シーンに居ない / 0=非描画 / 1=描画中。</summary>
-        private string SealBoxState => _box == null ? "-" : (_box.IsActive ? "1" : "0");
-
-        /// <summary>封印の箱の実体を組めたか（<c>0</c> ＝ シェーダがビルドから剥がれた）。</summary>
-        private string SealBoxBuiltState => _box == null ? "-" : (_box.IsBuilt ? "1" : "0");
+        // ⚠ 封印の箱（旧 <c>box</c> / <c>boxBuilt</c>）は 2026-08-15 に観測から外した。
+        //   箱を退避して重み `sealBox` を全段 0 にしたので**常に 0 が並ぶだけ**になり、
+        //   「出るはずのものが出ない」と誤検出させる材料にしかならない
+        //   （2026-08-13 に破砕を外したときと同じ判断）。実装は Attic に残っている。
 
         /// <summary>パススルーをアプリから有効化できているか。<c>-</c>=読み口が無い / -1=判定不能 / 0=無効 / 1=有効。</summary>
         private string PassthroughState
@@ -441,23 +447,25 @@ namespace FixedCamVr.Diagnostics
 
         private void PollTransitions(float udt)
         {
-            // 導入演出の段（Off/Black/Seal/Dark/Ignite/Live/Done）
+            // 導入演出の段（Off/Black/Real/Degrade/Structure/Frame/Swap/Done）
             if (_intro != null && _intro.Stage != _lastStage)
             {
                 _lastStage = _intro.Stage;
                 IntroWeights w = _intro.Weights;
                 // fresh / centered は段 4 → 段 5 の進行条件。false のまま足踏みすると
                 // 最後の段（枠の中がカメラ映像へ変わる）が出ないので、必ず一緒に出す。
-                // veil / veilBuilt / wire / pt は「重みが動いた」ではなく「画に出た」の側。
+                // veil / veilBuilt / wire / pt / shat は「重みが動いた」ではなく「画に出た」の側。
                 // 段だけ見て OK と判定した 2026-07-31 の事故を繰り返さないため必ず一緒に出す。
                 Emit($"ev=intro stage={_lastStage} hold={(_intro.Holding ? 1 : 0)} " +
                      $"fresh={(_intro.LiveFresh ? 1 : 0)} centered={(_intro.FrameCentered ? 1 : 0)} " +
                      $"pass={w.passthrough:F2} live={w.live:F2} frame={w.frame:F2} edge={w.edge:F2} " +
                      $"veil={VeilState} veilBuilt={VeilBuiltState} wire={WireState} pt={PassthroughState} " +
                      $"shell={ShellState} shellBuilt={ShellBuiltState} shellBox={ShellBoxState} " +
-                     $"shellRev={ShellRevealState} box={SealBoxState} boxBuilt={SealBoxBuiltState} " +
-                     // 管の点灯は段 3 のあいだしか動かない。**遷移の瞬間の値**なので、
-                     // 意味を持つのは Ignite → Live の行（そこに段 3 の到達点が載る）。
+                     $"shellRev={ShellRevealState} " +
+                     // 破砕は段 4 のあいだしか動かない。**遷移の瞬間の値**なので、
+                     // 意味を持つのは Frame → Swap の行（そこに段 4 の到達点が載る）。
+                     $"shat={ShatterState} shatC={ShatterCellState} shatRect={ShatterRectState} " +
+                     // 管は導入の全段で 1（点いていて、まだ何も映していない）。0 が出たら画が消えている。
                      $"ignite={IgniteState} " +
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
                      // 段 1 以降の行に auth=0 が出たら、卓の ⏭ で始まったということ。
@@ -671,6 +679,8 @@ namespace FixedCamVr.Diagnostics
                 // 段の遷移（ev=intro）は 1 瞬の値しか持たない。線は Apply の中で組まれるので、
                 // 遷移の瞬間はまだ 0 本のことがある。段に居るあいだの実数はここでしか取れない。
                 _sb.Append(" wire=").Append(WireState);
+                // 破砕も同じ理由。段 4 の途中の到達点はここでしか取れない。
+                _sb.Append(" shat=").Append(ShatterState);
             }
 
             int active = _registry != null ? _registry.ActiveIndex : -1;
@@ -700,8 +710,6 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" shellBuilt=").Append(ShellBuiltState);
             _sb.Append(" shellBox=").Append(ShellBoxState);
             _sb.Append(" shellRev=").Append(ShellRevealState);
-            _sb.Append(" box=").Append(SealBoxState);
-            _sb.Append(" boxBuilt=").Append(SealBoxBuiltState);
             // 管の点灯は**導入の外でも必ず出す**。既定は 1（点いている）で、演出が終わった後に
             // 0 が残っていたら画がまるごと消えている ＝ ここでしか気づけない。
             _sb.Append(" ignite=").Append(IgniteState);

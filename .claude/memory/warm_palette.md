@@ -16,7 +16,7 @@ metadata:
 | 層 | ファイル | 何を |
 |---|---|---|
 | 画面全体のグレーディング | `tools/web-compositor/show.json` の `post` | `temperature` −0.18 → **+0.48** / `tint` +0.16（緑）→ **0** / `saturation` 0.35 → **0.52** |
-| 封印の箱 | `Assets/Art/Shaders/Intro/SealedBox.shader` | `_GlowColor` 青緑 → **朱** (0.62, 0.135, 0.060)。地と無点灯の線も暖色の暗色へ |
+| 封印の箱 | `Assets/Art/Shaders/Intro/Attic/SealedBox.shader` | `_GlowColor` 青緑 → **朱** (0.62, 0.135, 0.060)。地と無点灯の線も暖色の暗色へ |
 | タイトルの題字 | `Assets/Art/Shaders/Title/TitleGlyph.shader` | `_GlowColor` 青緑 → **灯り** (0.82, 0.52, 0.24)。`_InkColor` も少し暖色へ。**朱の `_AccentColor` は不変** |
 | パススルーの輪郭 | `ShowControlClient.ShowIntroDef.edgeColor` ＋ 卓 `intro-model.js` ＋ `capture-server.py` | `#ffffff` → **`#ffcf9e`**（3 者一致を `intro-model.test.mjs` が固定） |
 | 導入の構造線 | `IntroStructureWire.cs` の `lineColor` ＋ **`Main.unity` の焼き込み値** | 寒色 → (1.0, 0.66, 0.36, 0.8)。**既定 OFF は変えていない** |

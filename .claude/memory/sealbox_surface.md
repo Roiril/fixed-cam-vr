@@ -8,6 +8,10 @@ metadata:
   modified: 2026-08-12T01:54:23.485Z
 ---
 
+⚠⚠ **2026-08-15 に封印の箱ごと退避した**（`canon/LEDGER.md` 0044）。**体験には出ない。**
+実装は `Attic/` にあり、戻し方は `.claude/reference/attic-sealed-box.md`。
+以下は**戻すときに読む記録**。
+
 封印の箱の**質感と光り方**（`canon/LEDGER.md` 0011）。幾何と巻き方は
 [[../rules/show-design]] の「封印の箱」節が正本で、ここは**地と熾**だけを書く。
 
@@ -16,7 +20,7 @@ metadata:
 | 何 | どこ |
 |---|---|
 | 版を焼く | `tools/make-sealbox-tex.py` → `Assets/Resources/Intro/SealBoxWear.png`（512²・タイル可能） |
-| 版を読む | `Assets/Art/Shaders/Intro/SealedBox.shader` |
+| 版を読む | `Assets/Art/Shaders/Intro/Attic/SealedBox.shader` |
 | 取り込み設定 | `SealBoxWearImporter`（Repeat・ミップ有り・sRGB off・ASTC 6x6） |
 | 版を当てる | `SealedBox.ApplyWearTexture(Material)` — **実行時とプレビューが同じ経路を通る** |
 

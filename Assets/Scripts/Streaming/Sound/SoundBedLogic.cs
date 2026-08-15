@@ -42,7 +42,10 @@ namespace FixedCamVr.Streaming
     /// <summary>敷く音それぞれの倍率（0..1）と、部屋の狭さ・劇伴を引く量。</summary>
     public struct SoundBedGains
     {
-        /// <summary>封印の箱の唸り。**3D**（箱に定位する）。</summary>
+        /// <summary>
+        /// 封印の箱の唸り。**3D**（箱に定位する）。
+        /// ⚠ <b>2026-08-15 から常に 0</b> — 箱を退避したので定位する先が無い（音源は残してある）。
+        /// </summary>
         public float seal;
         /// <summary>部屋のトーン。</summary>
         public float room;
@@ -70,9 +73,9 @@ namespace FixedCamVr.Streaming
     ///
     /// 1. <b>層は「装置の音」と「現実の音」の 2 つだけ。</b> 劇伴（作者の声）を足すと
     ///    「装置は正直に映している」という前提が壊れ、3 周目のすり替えに気づく瞬間の価値が下がる
-    /// 2. <b>音は絵より先に来る。</b> 段 1（開口が閉じる）で装置の声が入り始め、画が変わるのは段 3〜4。
-    ///    これが 6.2 秒の導入を「1 つの出来事」として繋ぐ（切替の J カットと同じ考え）
-    /// 3. <b>隔離は帯域で表す。</b> 段 1 で会場が黒へ落ちるとき、部屋の音は<b>小さくならず狭くなる</b>
+    /// 2. <b>音は絵より先に来る。</b> 段 2（色が抜ける）で装置の声が入り始め、画が変わり切るのは段 5。
+    ///    これが 13 秒の導入を「1 つの出来事」として繋ぐ（切替の J カットと同じ考え）
+    /// 3. <b>隔離は帯域で表す。</b> 段 5 で会場が黒へ落ちるとき、部屋の音は<b>小さくならず狭くなる</b>
     /// </summary>
     public sealed class SoundBedLogic
     {
@@ -182,11 +185,11 @@ namespace FixedCamVr.Streaming
             var g = new SoundBedGains { roomOpen = 1f };
 
             // --- 封印の箱 -------------------------------------------------------
-            // タイトルの黒の下で先に鳴らし始める（J カット）。A を押して黒が開いたとき、
-            // 箱の声は**もう鳴っている**ので「場面が切り替わった」ではなく「幕が上がった」になる。
-            if (s.titleVisible) g.seal = 0.55f;
-            else if (s.introActive) g.seal = SealForStage(s);
-            else g.seal = 0f;
+            // ⚠⚠ **2026-08-15 に黙らせた**（`canon/LEDGER.md` 0044）。封印の箱を退避したので、
+            //    この唸りは**定位する先が無い**（`bed_seal` は 3D で箱の面に置いていた）。
+            //    タイトルの黒の下で先に鳴らす J カットもここが担っていたので、いまは
+            //    黒の下は無音 — 代わりの案は `canon/OPEN.md`。音源は消していない。
+            g.seal = 0f;
 
             // --- 部屋 -----------------------------------------------------------
             if (s.titleVisible) g.room = 0f;                       // タイトルは世界の手前
@@ -234,35 +237,22 @@ namespace FixedCamVr.Streaming
             return g;
         }
 
-        // 段ごとの封印の箱。段 1 で開口が閉じるのと**同じ進み**で引く
-        // （箱の声だけ残ると「閉じたのにまだ外に箱がある」と食い違う）。
-        private static float SealForStage(in SoundShowState s)
-        {
-            switch (s.introStage)
-            {
-                case IntroStage.Black:
-                    return 1f;
-                case IntroStage.Seal:
-                    return 1f - Clamp01(s.introWeights.frame);
-                default:
-                    return 0f;    // 段 2 以降 ＝ 箱はもう閉じ切っている
-            }
-        }
-
-        // 段ごとの装置。**段 1 から入り始める**（画が変わるのは段 3〜4 なので、音の方が先に来る）。
+        // 段ごとの装置。**段 2 から入り始める**（絵の格下げと同じ進行度で）。
+        // 画が変わり切るのは段 5 なので、音の方が先に来る。
         private static float DeviceForStage(in SoundShowState s)
         {
             switch (s.introStage)
             {
                 case IntroStage.Black:
+                case IntroStage.Real:
                     return 0f;
-                case IntroStage.Seal:
-                    return 0.25f * Clamp01(s.introWeights.frame);
-                case IntroStage.Dark:
+                case IntroStage.Degrade:
+                    return 0.55f * Clamp01(s.introWeights.degrade);
+                case IntroStage.Structure:
                     return 0.55f;
-                case IntroStage.Ignite:
-                    return 0.55f + 0.30f * Clamp01(s.introWeights.ignite);
-                case IntroStage.Live:
+                case IntroStage.Frame:
+                    return 0.55f + 0.30f * Clamp01(s.introWeights.shatter);
+                case IntroStage.Swap:
                     return 0.85f + 0.15f * Clamp01(s.introWeights.live);
                 default:
                     return 1f;

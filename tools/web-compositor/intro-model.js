@@ -1,7 +1,8 @@
 // 導入演出（show.json `run.intro`）の判定。DOM 非依存の純関数だけを置く。
 //
-// 導入は「開口が閉じて闇になり、その闇の中でスクリーンの管が点いて、映った先に自分が居る」
-// 6.2 秒の遷移（2026-08-13 に作り直し。体験者は封印の箱の**中に入ってから**固定視点になる）。
+// 導入は「素通しの現実が格下げされ、割れて、スクリーンの枠へ吸い込まれ、その中に自分が居る」
+// 13.1 秒の遷移（2026-08-15 に旧構成へ戻した。封印の箱を退避したので「箱の中に入ってから
+// 固定視点」が成立しない — canon/LEDGER.md 0044）。
 // **導入は 1 種類でよく、演出（takes）として著作可能にしない** — 自由度を持たせると
 // 「導入が壊れている show.json」を作れてしまう。だから編集面は段ごとの秒と
 // on/off だけで、ここに置く判定もそれだけを見る。
@@ -22,18 +23,18 @@ import { roomFromLayout, roomHasData, isWallUsable, isBoxUsable, FLOOR_MIN_M } f
 export const INTRO_DEFAULT = {
   enabled: true,
   maxSec: 20,
-  // 段 1 開口が閉じ切る / 段 2 全黒（＋中に入るのを待つ）/ 段 3 管が点く / 段 4 映像
-  sealSec: 1.4,
-  darkSec: 0.8,
-  igniteSec: 1.6,
-  liveSec: 2.4,
+  // 段 1 素通し / 段 2 格下げ / 段 3 輪郭（段 2 と重なる）/ 段 4 割れる / 段 5 映像
+  realSec: 1.5,
+  degradeSec: 3.5,
+  structureSec: 2.5,
+  frameSec: 2.5,
+  swapSec: 4.5,
   // 生成り。純白は蛍光灯の下の点検作業に見える（LEDGER 0010「全体的に暖色に」）。
   // Unity 側 ShowIntroDef.edgeColor / capture-server.py の _default_show と対。
   edgeColor: '#ffcf9e',
   // ⚠ 既定は**どちらも false**（2026-08-01）。細い寒色の線が現実に重なると計測器に見え、
   //    「現実がそのまま格下げされていく」という筋を切る。Unity 側 ShowIntroDef の既定と対。
-  //    ⚠⚠ **2026-08-13 以降はどちらを on にしても画に出ない**（線を出していた段 3「構造」を
-  //    廃止したため）。キーは残してあるが、`introPreflightRow` が「出ません」と言う。
+  //    ⚠ 2026-08-15 に段 3「構造」が戻ったので、on にすれば**また画に出る**（既定は off のまま）。
   showCameraMarks: false,
   showRoomWire: false,
   glitchOnSwap: 0.8,
@@ -51,8 +52,16 @@ export const START_SPOT_DEFAULT = { radiusM: 0.35, label: 'スタート' };
 export const START_RADIUS_MIN = 0.15;
 export const START_RADIUS_MAX = 1.0;
 
-/** 段の秒（この 4 つの和が「演出」の尺）。UI の並び順もこの順（体験者が見る順）。 */
-export const INTRO_STAGE_KEYS = ['sealSec', 'darkSec', 'igniteSec', 'liveSec'];
+/** 段の秒。UI の並び順もこの順（体験者が見る順）。⚠ 単純和は尺ではない（下の `introStageSec`）。 */
+export const INTRO_STAGE_KEYS = ['realSec', 'degradeSec', 'structureSec', 'frameSec', 'swapSec'];
+
+/**
+ * 段 3（構造）が段 2（格下げ）と重なり始める進み。
+ * ⚠ Unity の `IntroLogic.StructureOverlapAt` と**同じ値**。片方だけ直すと尺が食い違う。
+ */
+export const STRUCTURE_OVERLAP_AT = 0.6;
+/** 段 3 が段 2 に飲み込まれても、これだけは単独で流れる（`IntroLogic.StructureMinOwnSec`）。 */
+export const STRUCTURE_MIN_OWN_SEC = 0.5;
 
 /** 段ごとの秒の入力範囲。1 段 20 秒を超える導入は薄さの原則（設計 §3）から外れる。 */
 export const STAGE_SEC_MIN = 0;
@@ -91,19 +100,21 @@ export function introConfig(run) {
 }
 
 /**
- * 演出が実際に流れる秒数（4 段の和）。
+ * 演出が実際に流れる秒数。
  *
- * ⚠ **段 2 の「体験者が中に入るのを待つ」時間は含まない**（最大 3 秒・`IntroLogic.DarkHoldMaxSec`）。
- * 待ちは演出ではないので尺に足さない。実機（`IntroTiming.TotalSec`）と**同じ式**にしてある —
- * 片方だけ直すと、卓の表示と実機の尺が沈黙して食い違う。
+ * ⚠ **単純和ではない。** 段 3 は段 2 の後半から始まるので、重なった分は二度流れない。
+ * 実機（`IntroTiming.TotalSec`）と**同じ式**にしてある — 片方だけ直すと、
+ * 卓の表示と実機の尺が沈黙して食い違う。
  */
 export function introStageSec(intro) {
-  const cfg = intro && intro.sealSec !== undefined ? intro : introConfig({ intro });
-  const sum = INTRO_STAGE_KEYS.reduce((x, k) => x + cfg[k], 0);
+  const cfg = intro && intro.realSec !== undefined ? intro : introConfig({ intro });
+  let own = cfg.structureSec - cfg.degradeSec * (1 - STRUCTURE_OVERLAP_AT);
+  if (own < STRUCTURE_MIN_OWN_SEC) own = STRUCTURE_MIN_OWN_SEC;
+  const sum = cfg.realSec + cfg.degradeSec + own + cfg.frameSec + cfg.swapSec;
   return Math.round(sum * 10) / 10;
 }
 
-/** 「演出 6.2s / 慣らし 20s」— ⚙ 欄と本番前チェックで同じ文を出す。 */
+/** 「演出 13.1s / 慣らし 20s」— ⚙ 欄と本番前チェックで同じ文を出す。 */
 export function introDurationLabel(intro, introMinSec) {
   const warm = Math.max(0, parseFloat(introMinSec) || 0);
   return `演出 ${introStageSec(intro)}s / 慣らし ${warm}s`;
@@ -181,11 +192,10 @@ function wallsLookLikeDefaultL(walls) {
 }
 
 /**
- * 旧・段 3 が現実の上に重ねていた線の内訳。
+ * 段 3 が現実の上に重ねる線の内訳。
  *
- * ⚠ **2026-08-13 に段 3「構造」を廃止したので、いまこの線は 1 本も出ない。**
- * 判定そのものは残してある（`layout.room` / `layout.floor` の著作状況を見る手段として
- * 他所からも使われる）が、本番前チェックは幾何を要求しない。
+ * ⚠ **線は既定 off**（2026-08-01 ユーザー判断）。on にしたときだけ画に出るので、
+ * 本番前チェックは幾何を要求しない（起きようのない不備を直させない）。
  *
  * ⚠ 見る鍵は `layout.room` と `layout.floor`。`layout.wall` ではない
  * （あれは HMD 位置合わせリチュアルのワイヤー専用の旧データ）。
@@ -215,13 +225,12 @@ function cameraName(cameras, i) {
  * 本番前チェックの `🎬 導入` 行。導入が無効なら **null**（行を出さない = 黙る）。
  *
  * 見るのは 3 つ:
- *   構造の線の設定 — 段 3「構造」を廃止したので、on にしても画に出ない（⚠）
- *   上限           — 和が maxSec を超えると段を飛ばして映像を出す（⚠）
+ *   構造の線の設定 — on なら重ねる相手（実物の寸法）が要る（⚠）
+ *   上限           — 尺が maxSec を超えると段を飛ばして映像を出す（⚠）
  *   開始位置       — 未設定なら手動開始・スタート区間の外なら入り直しになる（⚠）
  *
- * ⚠ **幾何（床の寸法・部屋の壁）はもう要求しない。** 要求していたのは段 3 が現実に線を
- * 直接重ねていたからで、その段が無くなった以上、直しようのある不備ではなくなった
- * （起きようのない不備を直させない）。幾何そのものは隔離殻と CG が別に要求する。
+ * ⚠ **線が off なら幾何は要求しない**（起きようのない不備を直させない）。
+ * 幾何そのものは隔離殻と CG が別に要求する。
  */
 export function introPreflightRow({ run, layout, cameras } = {}) {
   const intro = introConfig(run);
@@ -231,11 +240,19 @@ export function introPreflightRow({ run, layout, cameras } = {}) {
   const dur = introDurationLabel(intro, run && run.introMinSec);
 
   const warn = [];
-  // ⚠ 段 3「構造」の廃止で、この 2 つは画に出なくなった。**設定が残っているのに効かない**のが
-  //    いちばん分かりにくいので、on のときだけ名指しで言う。
+  // ⚠ 線を on にしたなら、重ねる相手（実物の寸法）が要る。著作していないと
+  //    既定値の壁が現実の全然違う所へ重なる。
   if (intro.showRoomWire || intro.showCameraMarks) {
-    warn.push('壁の線 / カメラの印は導入から外れたので画に出ません'
-      + '（段 3「構造」を廃止した。設定は off にしてよい）');
+    const g = introWireGeometry(layout);
+    if (!g.hasFloor) {
+      warn.push('壁の線 / カメラの印を on にしていますが、床の実寸が未著作です'
+        + '（較正パネルで床の幅×奥行を入れる）');
+    } else if (intro.showRoomWire && g.wallCount === 0) {
+      warn.push('壁の線を on にしていますが、layout.room に壁が 1 本もありません'
+        + '（フロアマップの 🧱 部屋で引く）');
+    } else if (g.looksDefaultL) {
+      warn.push('壁が卓の既定（1m × 1m の L）のままです — 実測した値か判定できません');
+    }
   }
   if (!startSpotOf(layout)) {
     warn.push('開始位置が未設定です — スタッフが手で始める運用になります'
@@ -249,7 +266,7 @@ export function introPreflightRow({ run, layout, cameras } = {}) {
     }
   }
   // 慣らし歩行（introMinSec）は**導入相全体の下限**なので、演出がそれを食う。
-  //   演出 6.2s に対し introMinSec が 4s だと、演出の途中で本編へ移って**演出が切り落とされる**。
+  //   演出 13.1s に対し introMinSec が 4s だと、演出の途中で本編へ移って**演出が切り落とされる**。
   //   RestartIntroClock は演出が終わった時にしか打たれないので、実機は黙って途中で切り替わる。
   const warmSec = Math.max(0, parseFloat(run && run.introMinSec) || 0);
   const stageSec = introStageSec(intro);

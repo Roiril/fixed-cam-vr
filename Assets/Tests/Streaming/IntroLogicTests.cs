@@ -7,24 +7,33 @@ namespace FixedCamVr.Streaming.Tests
     /// <summary>
     /// IntroLogic（導入演出の段の状態機械）の検証。
     ///
-    /// 2026-08-13 に段を作り直した（Real / Degrade / Structure / Frame / Swap →
-    /// <b>Seal / Dark / Ignite / Live</b>）。体験者は封印の箱の<b>中に入ってから</b>固定視点になるので、
-    /// 「箱の外で現実を格下げしていく」旧構成は成立しない。
+    /// 2026-08-15 に段を旧構成へ戻した（Seal / Dark / Ignite / Live →
+    /// <b>Real / Degrade / Structure / Frame / Swap</b>）。設定が「回収された壁の調査」へ変わって
+    /// 体験エリアを隠す必要がなくなり、封印の箱を退避したので、
+    /// 「箱の中に入ってから固定視点になる」構成は成立しない（<c>canon/LEDGER.md</c> 0044）。
     ///
     /// ここで守るのは 5 つ:
     ///   (A) 段 0 は合図でしか進まない（落ち着いたかは人間か体験者の居場所しか判定できない）
-    ///   (B) 段は Seal → Dark → Ignite → Live の順に流れ、尺の合計は卓と一致する
-    ///   (C) <b>段 2 は「中に入った」を待つが、上限 3 秒で必ず抜ける</b>
-    ///   (D) <b>「中に居る」はヒステリシスで決める</b>（黒を箱の面より先に立てる）
-    ///   (E) <b>管の点灯（ignite）は演出の外で必ず 1</b>（0 のままだと画がまるごと消える）
+    ///   (B) 段は Real → Degrade → Structure → Frame → Swap の順に流れ、尺の合計は卓と一致する
+    ///   (C) <b>カメラが繋がっていなくても段 5 は流れる</b>（砂嵐が出る・LEDGER 0025）
+    ///   (D) <b>封印の箱は全段で出ない</b>（退避したものが黙って復活しない）
+    ///   (E) <b>管の点灯（ignite）は全期間 1</b>（0 のままだと画がまるごと消える）
     /// </summary>
     public sealed class IntroLogicTests
     {
         // コード既定と同じ尺で試す。独自の長い尺で試すと、条件待ちの上限との関係が実運用とずれる。
         private static readonly IntroTiming T = new IntroTiming
         {
-            sealSec = 1.4f, darkSec = 0.8f, igniteSec = 1.6f, liveSec = 2.4f, maxSec = 20f,
+            realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
+            frameSec = 2.5f, swapSec = 4.5f, maxSec = 20f,
         };
+
+        /// <summary>段 3 が単独で流れる秒数（段 2 と重なるぶんを引いたもの）。</summary>
+        private static float StructureOwnSec(IntroTiming t)
+        {
+            float own = t.structureSec - t.degradeSec * (1f - IntroLogic.StructureOverlapAt);
+            return own < IntroLogic.StructureMinOwnSec ? IntroLogic.StructureMinOwnSec : own;
+        }
 
         private static IntroLogic Make()
         {
@@ -35,7 +44,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// 黒が明けていて、体験者が箱の中に居て、映像も届いている観測値。
+        /// 黒が明けていて、映像も届いている観測値。
         /// <b>人が A を押した後（<c>startAuthorized</c>）で、位置も解けている</b>のが既定。
         /// </summary>
         private static IntroInput Ready(bool live = true, float outsideM = 0f) => new IntroInput
@@ -77,11 +86,22 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>段 0 を抜けて段 1 に居る状態を作る。</summary>
-        private static IntroLogic AtSeal()
+        private static IntroLogic AtReal()
         {
             var l = Make();
             l.RequestAdvance();
-            l.Tick(0.1f, Ready());
+            l.Tick(0.1f, Ready(outsideM: 2f));
+            return l;
+        }
+
+        /// <summary>目的の段まで、外に立ったまま進める。</summary>
+        private static IntroLogic AtStage(IntroStage target)
+        {
+            var l = AtReal();
+            var outside = Ready(outsideM: 2f);
+            for (int i = 0; i < 2000 && l.Stage != target && l.Stage != IntroStage.Done; i++)
+                l.Tick(0.05f, outside);
+            Assert.AreEqual(target, l.Stage, "目的の段まで進めなかった");
             return l;
         }
 
@@ -96,7 +116,7 @@ namespace FixedCamVr.Streaming.Tests
 
             l.RequestAdvance();
             l.Tick(0.1f, Ready(outsideM: 3f));
-            Assert.AreEqual(IntroStage.Seal, l.Stage);
+            Assert.AreEqual(IntroStage.Real, l.Stage);
         }
 
         [Test]
@@ -125,7 +145,7 @@ namespace FixedCamVr.Streaming.Tests
             var near = Ready(outsideM: 3f);
             near.atStartSpot = true;
             l.Tick(0.1f, near);
-            Assert.AreEqual(IntroStage.Seal, l.Stage, "スタッフの合図を待たずに始まる");
+            Assert.AreEqual(IntroStage.Real, l.Stage, "スタッフの合図を待たずに始まる");
         }
 
         [Test]
@@ -139,16 +159,15 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Black_StartsWhenTheVisitorWalksAllTheWayIn()
         {
-            // ⚠⚠ **安全網**（2026-08-13）。段 0 でエリアの中に入ると重みは真っ黒に倒れる。
-            //    近づく合図が成立していないと、体験者は**何も起きない黒の中に立ったまま**になる。
-            //    開始位置が箱に近い現場ほど踏むので、歩いて入ってきたら必ず始める。
+            // ⚠⚠ **安全網**（2026-08-13）。近づく合図が成立しないまま体験者がエリアへ入ってしまうと、
+            //    スタッフの ⏭ 以外に出口が無い。歩いて入ってきたら必ず始める。
             var l = Make();
             Advance(l, 1f, Ready(outsideM: 3f));       // 外に居たことを観測させる
             Assert.AreEqual(IntroStage.Black, l.Stage);
             Assert.IsTrue(l.SawOutsideBox);
 
             l.Tick(0.1f, Ready(outsideM: 0f));
-            Assert.AreEqual(IntroStage.Seal, l.Stage, "歩いて入ったのに黒のまま止まっている");
+            Assert.AreEqual(IntroStage.Real, l.Stage, "歩いて入ったのに段 0 のまま止まっている");
         }
 
         [Test]
@@ -197,7 +216,7 @@ namespace FixedCamVr.Streaming.Tests
 
             // A が押されたら、同じ観測でその場から始まる。
             l.Tick(0.1f, Ready(outsideM: 0f));
-            Assert.AreEqual(IntroStage.Seal, l.Stage);
+            Assert.AreEqual(IntroStage.Real, l.Stage);
         }
 
         [Test]
@@ -208,23 +227,23 @@ namespace FixedCamVr.Streaming.Tests
             var l = Make();
             l.RequestAdvance();
             l.Tick(0.1f, NotAuthorized(outsideM: 3f));
-            Assert.AreEqual(IntroStage.Seal, l.Stage);
+            Assert.AreEqual(IntroStage.Real, l.Stage);
         }
 
         [Test]
-        public void Black_RescuesTheVisitorStandingRightAtTheBox()
+        public void Black_RescuesTheVisitorStandingInsideFromTheStart()
         {
-            // ⚠⚠ **2026-08-14 に塞いだ穴（本体）。** 箱の至近に立たされた体験者は
-            //    「0.85m 外に居た」を満たせず、接近も「0.35m 縮む」余地が無い。段 0 は maxSec の
-            //    対象外なので時間でも抜けない ＝ **真っ黒のままスタッフの ⏭ 以外に出口が無い**。
-            //    1.8m 四方の現場では、体験者を箱の縁 0.5m に立たせるのが普通に起きる。
+            // ⚠⚠ **2026-08-14 に塞いだ穴。** 最初からエリアの中に立たされた体験者は
+            //    「外に居たことがある」を満たせず、接近も「0.35m 縮む」余地が無い。段 0 は maxSec の
+            //    対象外なので時間でも抜けない ＝ **スタッフの ⏭ 以外に出口が無い**。
+            //    1.8m 四方の現場では、体験者をエリアの縁に立たせるのが普通に起きる。
             var l = Make();
-            var atTheBox = Ready(outsideM: 0.3f);   // InsideEnterM(0.55) の内側 ＝ 黒が立っている
-            Advance(l, IntroLogic.ConcealStartSec * 0.5f, atTheBox);
+            var inside = Ready(outsideM: 0f);
+            Advance(l, IntroLogic.ConcealStartSec * 0.5f, inside);
             Assert.AreEqual(IntroStage.Black, l.Stage, "救済が早すぎる（近づく合図を待つ余地を潰している）");
 
-            Advance(l, IntroLogic.ConcealStartSec, atTheBox);
-            Assert.AreEqual(IntroStage.Seal, l.Stage, "黒が立ったまま詰んでいる");
+            Advance(l, IntroLogic.ConcealStartSec, inside);
+            Assert.AreEqual(IntroStage.Real, l.Stage, "中に立ったまま詰んでいる");
         }
 
         [Test]
@@ -232,7 +251,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             // 救済も「人が始めた」でゲートする。無条件の時間切れにすると、置いた HMD で走り出す。
             var l = Make();
-            Advance(l, IntroLogic.ConcealStartSec * 4f, NotAuthorized(outsideM: 0.3f));
+            Advance(l, IntroLogic.ConcealStartSec * 4f, NotAuthorized(outsideM: 0f));
             Assert.AreEqual(IntroStage.Black, l.Stage);
         }
 
@@ -250,22 +269,27 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Dark_WaitsUntilTheVisitorActuallyEntersTheBox()
+        public void InsideBox_HasHysteresis()
         {
-            // ⚠ 段 2 の進行条件は**実際に面を越えたか**（DeepInsideEnterM）。黒の先行（InsideEnterM =
-            //    箱の 0.55m 手前）を流用すると、**まだ外に立っている人を中に入ったと判定して管を点ける**。
-            var l = AtSeal();
-            var nearFace = Ready(outsideM: 0.4f);   // 黒は立っているが、まだ面の外
-            RunStage(l, IntroStage.Seal, nearFace);
-            Assert.AreEqual(IntroStage.Dark, l.Stage);
-            Assert.IsTrue(l.InsideBox, "黒はもう立っているはず");
-            Assert.IsFalse(l.PhysicallyInside, "まだ箱の外に立っている");
+            var l = Make();
+            l.Tick(0.016f, Ready(outsideM: 1.0f));
+            Assert.IsFalse(l.InsideBox);
 
-            Advance(l, T.darkSec + 0.5f, nearFace);
-            Assert.AreEqual(IntroStage.Dark, l.Stage, "外に立ったまま管が点き始めた");
+            l.Tick(0.016f, Ready(outsideM: IntroLogic.InsideEnterM));
+            Assert.IsTrue(l.InsideBox);
 
-            Advance(l, 0.3f, Ready(outsideM: 0f));
-            Assert.AreEqual(IntroStage.Ignite, l.Stage, "中に入ったのに管が点かない");
+            // 境界をわずかに超えたくらいでは外へ戻らない（震えで安全網が点滅しない）。
+            l.Tick(0.016f, Ready(outsideM: IntroLogic.InsideExitM * 0.5f));
+            Assert.IsTrue(l.InsideBox, "ヒステリシスが効いていない");
+
+            l.Tick(0.016f, Ready(outsideM: IntroLogic.InsideExitM));
+            Assert.IsFalse(l.InsideBox);
+        }
+
+        [Test]
+        public void InsideBox_ThresholdsAreOrdered()
+        {
+            Assert.Greater(IntroLogic.InsideExitM, IntroLogic.InsideEnterM, "ヒステリシスが逆向き");
         }
 
         // ---- (B) 段の直列と尺 --------------------------------------------------
@@ -273,19 +297,22 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Stages_RunInOrderAndFinish()
         {
-            var l = AtSeal();
-            Assert.AreEqual(IntroStage.Seal, l.Stage);
+            var l = AtReal();
+            Assert.AreEqual(IntroStage.Real, l.Stage);
 
-            RunStage(l, IntroStage.Seal, Ready());
-            Assert.AreEqual(IntroStage.Dark, l.Stage);
+            RunStage(l, IntroStage.Real, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Degrade, l.Stage);
 
-            RunStage(l, IntroStage.Dark, Ready());
-            Assert.AreEqual(IntroStage.Ignite, l.Stage);
+            RunStage(l, IntroStage.Degrade, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Structure, l.Stage);
 
-            RunStage(l, IntroStage.Ignite, Ready());
-            Assert.AreEqual(IntroStage.Live, l.Stage);
+            RunStage(l, IntroStage.Structure, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Frame, l.Stage);
 
-            var ev = RunStage(l, IntroStage.Live, Ready());
+            RunStage(l, IntroStage.Frame, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Swap, l.Stage);
+
+            var ev = RunStage(l, IntroStage.Swap, Ready(outsideM: 2f));
             Assert.AreEqual(IntroEvent.Finished, ev);
             Assert.AreEqual(IntroStage.Done, l.Stage);
             Assert.IsFalse(l.Active);
@@ -294,21 +321,23 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Advance_SkipsTheCurrentStageOnly()
         {
-            var l = AtSeal();
-            l.RequestAdvance(); l.Tick(0.1f, Ready());       // → Dark
-            Assert.AreEqual(IntroStage.Dark, l.Stage);
-            l.RequestAdvance(); l.Tick(0.1f, Ready());       // → Ignite
-            Assert.AreEqual(IntroStage.Ignite, l.Stage);
+            var l = AtReal();
+            l.RequestAdvance(); l.Tick(0.1f, Ready(outsideM: 2f));   // → Degrade
+            Assert.AreEqual(IntroStage.Degrade, l.Stage);
+            l.RequestAdvance(); l.Tick(0.1f, Ready(outsideM: 2f));   // → Structure
+            Assert.AreEqual(IntroStage.Structure, l.Stage);
         }
 
         [Test]
-        public void TotalSec_IsTheSumOfTheFourStages()
+        public void TotalSec_AccountsForTheStructureOverlap()
         {
             // ⚠ この数字は卓の `intro-model.test.mjs` と**同じ値**にしてある。
-            //    1.4 + 0.8 + 1.6 + 2.4 = 6.2（段 2 の「中に入るのを待つ」時間は尺に含めない）。
+            //    1.5 + 3.5 + (2.5 - 3.5×0.4) + 2.5 + 4.5 = 13.1（段 3 は段 2 の後半から重なる）。
             //    片方だけ直すと、卓の表示と実機の尺が沈黙して食い違う。
-            Assert.AreEqual(6.2f, T.TotalSec, 0.001f);
-            Assert.AreEqual(6.2f, IntroTiming.Default.TotalSec, 0.001f);
+            Assert.AreEqual(13.1f, T.TotalSec, 0.001f);
+            Assert.AreEqual(13.1f, IntroTiming.Default.TotalSec, 0.001f);
+            Assert.Less(T.TotalSec, T.realSec + T.degradeSec + T.structureSec + T.frameSec + T.swapSec,
+                "重なりが効いていない（単純和になっている）");
         }
 
         [Test]
@@ -316,7 +345,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             var broken = new IntroTiming();     // 全部 0
             var s = broken.Sanitized();
-            Assert.AreEqual(IntroTiming.Default.sealSec, s.sealSec, 0.001f);
+            Assert.AreEqual(IntroTiming.Default.realSec, s.realSec, 0.001f);
             Assert.AreEqual(IntroTiming.Default.maxSec, s.maxSec, 0.001f);
             Assert.Greater(s.TotalSec, 0f, "0 秒の段を黙って作らない");
         }
@@ -325,12 +354,12 @@ namespace FixedCamVr.Streaming.Tests
         public void Default_FitsInTheOpeningBudget()
         {
             var d = IntroTiming.Default;
-            Assert.GreaterOrEqual(d.TotalSec, 5f, $"短すぎる: {d.TotalSec}s");
-            Assert.LessOrEqual(d.TotalSec, 9f, $"長すぎる: {d.TotalSec}s");
+            Assert.GreaterOrEqual(d.TotalSec, 10f, $"短すぎる: {d.TotalSec}s");
+            Assert.LessOrEqual(d.TotalSec, 16f, $"長すぎる: {d.TotalSec}s");
             // クロスフェードの後に「自分だ」と気づく時間が残っていること
-            Assert.Greater(d.liveSec - IntroLogic.LiveCrossfadeSec, 1f);
+            Assert.Greater(d.swapSec - IntroLogic.SwapCrossfadeSec, 1f);
             // 待ちを全部踏んでも打ち切り（maxSec）に掛からないこと。掛かると段が飛ぶ。
-            float worst = d.TotalSec + IntroLogic.DarkHoldMaxSec + IntroLogic.MaxHoldSec;
+            float worst = d.TotalSec + IntroLogic.MaxHoldSec + IntroLogic.MaxHoldSec;
             Assert.Less(worst, d.maxSec, $"最悪ケース {worst}s が上限 {d.maxSec}s を超える");
         }
 
@@ -341,274 +370,213 @@ namespace FixedCamVr.Streaming.Tests
             l.Configure(IntroTiming.Default);
             l.Begin();
             l.RequestAdvance();
-            l.Tick(0.1f, Ready());
+            l.Tick(0.1f, Ready(outsideM: 2f));
 
             var ev = IntroEvent.None;
             int ticks = 0;
-            while (ev == IntroEvent.None && ticks < 600) { ev = l.Tick(0.05f, Ready()); ticks++; }
+            var outside = Ready(outsideM: 2f);
+            while (ev == IntroEvent.None && ticks < 1000) { ev = l.Tick(0.05f, outside); ticks++; }
             Assert.AreEqual(IntroEvent.Finished, ev);
             Assert.LessOrEqual(l.TotalElapsedSec, IntroTiming.Default.maxSec,
                 $"打ち切りに頼らず自力で終わること（{l.TotalElapsedSec}s）");
         }
 
-        // ---- (C) 段 2 は待つが、必ず抜ける -------------------------------------
-
         [Test]
-        public void Dark_WaitsUntilTheVisitorIsInsideTheBox()
+        public void Structure_OverlapsTheBackHalfOfDegrade()
         {
-            var l = AtSeal();
-            RunStage(l, IntroStage.Seal, Ready(outsideM: 3f));
-            Assert.AreEqual(IntroStage.Dark, l.Stage);
+            // 段 3 は段 2 の後半から始まる。段の直列ではなく重みで表すので、段 2 の中で
+            // structure が立ち上がっていること（立たないと段 3 が唐突に見える）。
+            var l = AtStage(IntroStage.Degrade);
+            Advance(l, T.degradeSec * (IntroLogic.StructureOverlapAt - 0.1f), Ready(outsideM: 2f));
+            Assert.AreEqual(0f, l.Weights.structure, 1e-4f, "重なる前から線が出ている");
 
-            // まだ外に居る。尺を過ぎても管は点けない。
-            Advance(l, T.darkSec + 1f, Ready(outsideM: 3f));
-            Assert.AreEqual(IntroStage.Dark, l.Stage, "外に居るのに管が点いた");
-            Assert.IsTrue(l.Holding);
-
-            // 中に入ったら進む。
-            Advance(l, 0.3f, Ready(outsideM: 0f));
-            Assert.AreEqual(IntroStage.Ignite, l.Stage, "中に入っても管が点かない");
+            Advance(l, T.degradeSec * 0.35f, Ready(outsideM: 2f));
+            Assert.Greater(l.Weights.structure, 0f, "段 2 の後半で線が出始めていない");
         }
 
         [Test]
-        public void Dark_GivesUpWaitingAfterTheCap()
+        public void Structure_RunsForTheRemainderOnly()
         {
-            // ⚠ **必ず抜ける。** 位置が解けない現場・端末を机に置いた自動走行でも体験は先へ進む。
-            var l = AtSeal();
-            RunStage(l, IntroStage.Seal, Ready(outsideM: 3f));
-            Assert.AreEqual(IntroStage.Dark, l.Stage);
+            var l = AtStage(IntroStage.Structure);
+            float own = StructureOwnSec(T);
+            Advance(l, own * 0.5f, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Structure, l.Stage);
 
-            Advance(l, T.darkSec + IntroLogic.DarkHoldMaxSec + 0.5f, Ready(outsideM: 3f));
-            Assert.AreEqual(IntroStage.Ignite, l.Stage,
-                $"段 2 が上限 {IntroLogic.DarkHoldMaxSec}s を過ぎても抜けていない");
+            Advance(l, own, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Frame, l.Stage, $"段 3 が単独ぶん（{own}s）で抜けていない");
         }
 
         [Test]
-        public void Dark_AlsoWaitsWhileTheHeadIsTurning()
+        public void Structure_WaitsWhileTheHeadIsTurning()
         {
-            // 見ていない方向で管が点くと、出現そのものを見逃す。
-            var l = AtSeal();
-            RunStage(l, IntroStage.Seal, Ready());
-            Assert.AreEqual(IntroStage.Dark, l.Stage);
+            // 見ていない方向で枠が閉じ始めると、出来事そのものを見逃す。
+            var l = AtStage(IntroStage.Structure);
+            var turning = Ready(outsideM: 2f);
+            turning.headTurnDegPerSec = IntroLogic.MaxHeadTurnForFrame + 30f;
+            Advance(l, StructureOwnSec(T) + 1f, turning);
+            Assert.AreEqual(IntroStage.Structure, l.Stage, "頭を振っている間は枠を閉じ始めない");
 
-            var turning = Ready();
-            turning.headTurnDegPerSec = IntroLogic.MaxHeadTurnForIgnite + 30f;
-            Advance(l, T.darkSec + 1f, turning);
-            Assert.AreEqual(IntroStage.Dark, l.Stage, "頭を振っている間は管を点けない");
-
-            Advance(l, 0.3f, Ready());
-            Assert.AreEqual(IntroStage.Ignite, l.Stage, "止まったら進む");
-        }
-
-        // ---- (D) 「中に居る」のヒステリシス -------------------------------------
-
-        [Test]
-        public void InsideBox_LeadsTheBoxFace_AndHasHysteresis()
-        {
-            var l = Make();
-            // 外に居る
-            l.Tick(0.016f, Ready(outsideM: 1.0f));
-            Assert.IsFalse(l.InsideBox);
-
-            // ⚠ **境界の手前で「中」に倒す**（黒を箱の面より先に立てる）。
-            l.Tick(0.016f, Ready(outsideM: IntroLogic.InsideEnterM));
-            Assert.IsTrue(l.InsideBox, "境界の手前で黒へ倒れていない（③ の一瞬の覗きが再発する）");
-
-            // 入る閾値をわずかに超えたくらいでは外へ戻らない（震えで黒と箱が点滅しない）。
-            l.Tick(0.016f, Ready(outsideM: IntroLogic.InsideEnterM + 0.1f));
-            Assert.IsTrue(l.InsideBox, "ヒステリシスが効いていない");
-
-            // 抜ける閾値まで離れて初めて外に戻る。
-            l.Tick(0.016f, Ready(outsideM: IntroLogic.InsideExitM));
-            Assert.IsFalse(l.InsideBox);
-        }
-
-        [Test]
-        public void InsideBox_ThresholdsKeepTheBlackAhead()
-        {
-            Assert.Greater(IntroLogic.InsideEnterM, 0f, "境界そのもので判定すると黒が箱より遅れる");
-            Assert.Greater(IntroLogic.InsideExitM, IntroLogic.InsideEnterM, "ヒステリシスが逆向き");
-        }
-
-        [Test]
-        public void Black_ShowsTheBoxOutside_AndBlackInside()
-        {
-            // ⚠ 別々の個体で見る。**同じ個体で外 → 中と動かすと安全網（歩いて入った）が働いて
-            //    段 1 へ進んでしまい、段 0 の見えを測れない**。
-            var outside = Make();
-            outside.Tick(0.016f, Ready(outsideM: 2f));
-            Assert.AreEqual(IntroStage.Black, outside.Stage);
-            Assert.AreEqual(1f, outside.Weights.sealBox, 1e-4f);
-            Assert.AreEqual(0f, outside.Weights.shell, 1e-4f);
-
-            // 最初から中に居た（前の体験者が残っている・エリア内に置いた HMD）。演出は始まらないが、
-            // **中の様子は 1 画素も見せない**（canon/LEDGER.md 0005）。
-            var inside = Make();
-            inside.Tick(0.016f, Ready(outsideM: 0f));
-            Assert.AreEqual(IntroStage.Black, inside.Stage);
-            Assert.AreEqual(0f, inside.Weights.sealBox, 1e-4f);
-            Assert.AreEqual(1f, inside.Weights.shell, 1e-4f);
-            Assert.AreEqual(0f, inside.Weights.shellReveal, 1e-4f);
+            Advance(l, 0.3f, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Frame, l.Stage, "止まったら進む");
         }
 
         // ---- 段ごとの見え ------------------------------------------------------
 
         [Test]
-        public void Seal_ClosesTheAperture_ButNeverThinsTheBox()
+        public void Black_ShowsThePassthrough_WhereverTheVisitorStands()
         {
-            // ⚠⚠ **箱は薄くしない**（canon/LEDGER.md 0028）。旧実装は開口と同じ進みで
-            //    `1 - p` へ引いていたので、段の半ばで箱が半透明になり、**その向こう＝
-            //    体験エリアの中が透けた**（0005 が禁じたもの）。
-            var l = AtSeal();
-            Advance(l, T.sealSec * 0.5f, Ready(outsideM: 2f));
-            var mid = l.Weights;
-            Assert.Greater(mid.frame, 0f, "開口が閉じ始めていない");
-            Assert.Less(mid.frame, 1f);
-            Assert.Less(mid.passthrough, 1f, "現実が閉じ始めていない");
-            Assert.AreEqual(1f, mid.sealBox, 1e-4f, "箱が薄くなっている（中が透ける）");
-            Assert.AreEqual(0f, mid.live, 1e-4f, "映像はまだ出さない");
-            Assert.AreEqual(0f, mid.ignite, 1e-4f, "管はまだ点けない");
+            // ⚠ **段 0 は黒くない。** 名前に反して現実が見えている（スタッフが誘導して歩かせる区間）。
+            //    箱が無くなったので、中に立っていても外に立っていても見えは同じ。
+            var outside = Make();
+            outside.Tick(0.016f, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Black, outside.Stage);
+            Assert.AreEqual(1f, outside.Weights.passthrough, 1e-4f);
+            Assert.AreEqual(0f, outside.Weights.shell, 1e-4f);
+            Assert.AreEqual(0f, outside.Weights.sealBox, 1e-4f);
+
+            var inside = Make();
+            inside.Tick(0.016f, NotAuthorized(outsideM: 0f));
+            Assert.AreEqual(IntroStage.Black, inside.Stage);
+            Assert.AreEqual(1f, inside.Weights.passthrough, 1e-4f, "中に立つと黒に落ちている");
+            Assert.AreEqual(0f, inside.Weights.shell, 1e-4f);
         }
 
         [Test]
-        public void Seal_TheBoxIsNeverTranslucentWhileOutside()
+        public void Degrade_DrainsTheColourBeforeTheEdges()
         {
-            // 段 1 のあいだ、外に居る全フレームで「箱が不透明」か「黒が立っている」のどちらか。
-            // **その中間（半透明の箱）を 1 フレームも作らない**のが LEDGER 0005 の担保。
-            var l = AtSeal();
-            for (int i = 0; i < 100 && l.Stage == IntroStage.Seal; i++)
-            {
-                l.Tick(0.02f, Ready(outsideM: 2f));
-                var w = l.Weights;
-                Assert.IsTrue(w.sealBox >= 0.999f || w.shell >= 0.999f,
-                    $"箱 {w.sealBox:F2} / 黒 {w.shell:F2} — どちらも中途半端で中が透ける");
-            }
+            // 色 → コントラスト → 輪郭 → 粒 の順に足す。一度に全部動かすと
+            // 「質感が落ちた」ではなく「ただ壊れた」に見える。
+            var l = AtStage(IntroStage.Degrade);
+            Advance(l, T.degradeSec * 0.2f, Ready(outsideM: 2f));
+            var early = l.Weights;
+            Assert.Greater(early.degrade, 0f, "色が抜け始めていない");
+            Assert.AreEqual(0f, early.edge, 1e-4f, "輪郭が色より先に出ている");
+            Assert.AreEqual(1f, early.passthrough, 1e-4f, "格下げの段で現実が消えている");
+            Assert.AreEqual(0f, early.frame, 1e-4f, "枠はまだ閉じない");
+
+            Advance(l, T.degradeSec * 0.6f, Ready(outsideM: 2f));
+            Assert.Greater(l.Weights.edge, 0f, "後半で輪郭が出ていない");
         }
 
         [Test]
-        public void Dark_IsCompletelyBlack()
+        public void Frame_ShattersFirst_AndClosesTheApertureLater()
         {
-            var l = AtSeal();
-            RunStage(l, IntroStage.Seal, Ready());
-            Assert.AreEqual(IntroStage.Dark, l.Stage);
-            var w = l.Weights;
-            Assert.AreEqual(0f, w.passthrough, 1e-4f, "全黒のはずが現実が見えている");
-            Assert.AreEqual(1f, w.frame, 1e-4f);
-            Assert.AreEqual(0f, w.live, 1e-4f);
-            Assert.AreEqual(0f, w.ignite, 1e-4f);
-            Assert.AreEqual(0f, w.sealBox, 1e-4f);
+            // ⚠ **枠は破砕より遅れて閉じる。** 同時に閉じると、飛んでいる途中の破片が枠の縁で
+            //    ぷつりと切れる（覆いを開口で切っているため）。
+            var l = AtStage(IntroStage.Frame);
+            Advance(l, T.frameSec * (IntroLogic.FrameCloseAt - 0.1f), Ready(outsideM: 2f));
+            var early = l.Weights;
+            Assert.Greater(early.shatter, 0f, "割れ始めていない");
+            Assert.AreEqual(0f, early.frame, 1e-4f, "破砕より先に枠が閉じている");
+
+            Advance(l, T.frameSec * 0.25f, Ready(outsideM: 2f));
+            Assert.Greater(l.Weights.frame, 0f, "終わりに向けて枠が閉じていない");
         }
 
         [Test]
-        public void Ignite_RaisesTheTube_AndLetsTheBlackGo()
+        public void Swap_CrossfadesTheVideoIn_AndHidesTheSeamWithGlitch()
         {
-            var l = AtSeal();
-            RunStage(l, IntroStage.Seal, Ready());
-            RunStage(l, IntroStage.Dark, Ready());
-            Assert.AreEqual(IntroStage.Ignite, l.Stage);
+            var l = AtStage(IntroStage.Swap);
 
-            Advance(l, T.igniteSec * 0.5f, Ready());
-            var mid = l.Weights;
-            Assert.Greater(mid.ignite, 0f, "管が点き始めていない");
-            Assert.Less(mid.ignite, 1f);
-            Assert.AreEqual(0f, mid.live, 1e-4f, "段 3 で映像を出している（管だけのはず）");
-            // ⚠ 殻は全画面の面でスクリーンごと黒く塗る。管と入れ替わりに引かないと管が見えない。
-            Assert.Less(mid.shell, 1f, "殻が 1 のままだと点いた管が 1 画素も見えない");
-        }
-
-        [Test]
-        public void Live_CrossfadesTheVideoIn_AndHidesTheSeamWithGlitch()
-        {
-            var l = AtSeal();
-            for (int i = 0; i < 3; i++) { l.RequestAdvance(); l.Tick(0.1f, Ready()); }
-            Assert.AreEqual(IntroStage.Live, l.Stage);
-
-            Advance(l, IntroLogic.LiveCrossfadeSec * 0.5f, Ready());
+            Advance(l, IntroLogic.SwapCrossfadeSec * 0.5f, Ready(outsideM: 2f));
             var mid = l.Weights;
             Assert.Greater(mid.live, 0f);
             Assert.Less(mid.live, 1f);
             Assert.Greater(mid.glitch, 0f, "継ぎ目は乱れで隠す");
             Assert.AreEqual(1f, mid.frame, 1e-4f, "枠は既に閉じている");
             Assert.AreEqual(1f, mid.ignite, 1e-4f, "映像が来る段で管が消えている");
-            Assert.AreEqual(0f, mid.passthrough, 1e-4f, "段 4 で現実が 1 画素でも出ている");
-            Assert.AreEqual(0f, mid.shell, 1e-4f);
+            Assert.AreEqual(0f, mid.passthrough, 1e-4f, "段 5 で現実が 1 画素でも出ている");
+            Assert.Greater(mid.shell, 0f, "黒 → 映像の渡しを殻が持っていない");
 
-            Advance(l, IntroLogic.LiveCrossfadeSec, Ready());
+            Advance(l, IntroLogic.SwapCrossfadeSec, Ready(outsideM: 2f));
             var after = l.Weights;
             Assert.AreEqual(1f, after.live, 0.01f);
             Assert.Less(after.glitch, 0.2f);
+            Assert.AreEqual(0f, after.shell, 0.01f, "渡し終わったのに黒が残っている");
         }
 
         [Test]
-        public void RetiredWeights_StayAtZero_ButAreStillInTheVocabulary()
+        public void Shell_OnlyRunsDuringTheSwap()
         {
-            // 段としては廃止したが、語彙からは消していない（終幕 OutroLogic が使う）。
-            var l = AtSeal();
-            for (int i = 0; i < 200 && l.Stage != IntroStage.Done; i++)
+            // 殻は全画面の面（queue 4910・ZTest Always）でスクリーンごと黒く塗る。
+            // **使うのは段 5 の「黒 → 映像」の渡しだけ** — 段 1〜4 で立てると、現実が見えている
+            // はずの区間が黙って黒くなる。
+            var l = AtReal();
+            var outside = Ready(outsideM: 2f);
+            for (int i = 0; i < 600 && l.Stage != IntroStage.Done; i++)
             {
-                l.Tick(0.05f, Ready());
-                var w = l.Weights;
-                Assert.AreEqual(0f, w.shatter, 1e-5f, $"段 {l.Stage} で破砕が動いている");
-                Assert.AreEqual(0f, w.degrade, 1e-5f, $"段 {l.Stage} で格下げが動いている");
-                Assert.AreEqual(0f, w.edge, 1e-5f, $"段 {l.Stage} で輪郭が動いている");
-                Assert.AreEqual(0f, w.structure, 1e-5f, $"段 {l.Stage} で構造の線が動いている");
+                l.Tick(0.05f, outside);
+                if (l.Stage == IntroStage.Swap || l.Stage == IntroStage.Done) continue;
+                Assert.AreEqual(0f, l.Weights.shell, 1e-5f, $"段 {l.Stage} で殻が立っている");
             }
             Assert.AreEqual(IntroStage.Done, l.Stage);
         }
 
-        // ---- (C) 必ず本編へ入る -------------------------------------------------
+        // ---- (D) 封印の箱は全段で出ない -----------------------------------------
 
         [Test]
-        public void Live_StillRunsWithStaticWhenNoCameraFrameArrives()
+        public void SealedBox_NeverAppears_InAnyStage()
         {
-            // ⚠⚠ **カメラが繋がっていなくても段 4 は流れる**（canon/LEDGER.md 0025）。
-            //    旧実装はここで演出ごと畳んで本編へ落としていた ＝ 管が点いた次の瞬間に導入が終わり、
-            //    体験者から見て「装置が点いたのに何も起きずに始まった」になっていた。
-            var l = AtSeal();
-            RunStage(l, IntroStage.Seal, Ready());
-            RunStage(l, IntroStage.Dark, Ready());
-            Assert.AreEqual(IntroStage.Ignite, l.Stage);
+            // ⚠⚠ 2026-08-15 に退避した（`canon/LEDGER.md` 0044）。実装は Attic に残してあるので、
+            //    重みが 1 フレームでも立つと**黙って箱が戻る**。ここで止める。
+            var l = Make();
+            var outside = Ready(outsideM: 2f);
+            l.Tick(0.05f, outside);
+            Assert.AreEqual(0f, l.Weights.sealBox, 1e-5f, "段 0 で箱が出ている");
 
-            RunStage(l, IntroStage.Ignite, Ready(live: false));
-            Assert.AreEqual(IntroStage.Live, l.Stage, "映像が無いと段 4 が飛ぶ（砂嵐を見せる段が消える）");
+            l.RequestAdvance();
+            l.Tick(0.05f, outside);
+            for (int i = 0; i < 600 && l.Stage != IntroStage.Done; i++)
+            {
+                l.Tick(0.05f, outside);
+                Assert.AreEqual(0f, l.Weights.sealBox, 1e-5f, $"段 {l.Stage} で箱が出ている");
+            }
+            Assert.AreEqual(IntroStage.Done, l.Stage);
+            Assert.AreEqual(0f, IntroWeights.Inactive.sealBox, 1e-5f);
+        }
 
-            // 段 4 の見えは映像があるときと同じ。**画の中身は SignalLostFx が砂嵐で埋める**ので、
-            // ここは「管が点いたまま、映像の枠が開く」ことだけを担保する。
+        // ---- (C) カメラが無くても本編へ入る -------------------------------------
+
+        [Test]
+        public void Swap_StillRunsWithStaticWhenNoCameraFrameArrives()
+        {
+            // ⚠⚠ **カメラが繋がっていなくても段 5 は流れる**（canon/LEDGER.md 0025）。
+            //    旧実装はここで演出ごと畳んで本編へ落としていた ＝ 枠が閉じた次の瞬間に導入が終わり、
+            //    体験者から見て「装置が枠になったのに何も起きずに始まった」になっていた。
+            var l = AtStage(IntroStage.Frame);
+            RunStage(l, IntroStage.Frame, Ready(live: false, outsideM: 2f));
+            Assert.AreEqual(IntroStage.Swap, l.Stage, "映像が無いと段 5 が飛ぶ（砂嵐を見せる段が消える）");
+
+            // 段 5 の見えは映像があるときと同じ。**画の中身は SignalLostFx が砂嵐で埋める**。
             var w = l.Weights;
             Assert.AreEqual(1f, w.ignite, 1e-4f, "砂嵐を出す段で管が消えている");
             Assert.AreEqual(1f, w.frame, 1e-4f);
             Assert.AreEqual(0f, w.passthrough, 1e-4f);
 
-            var ev = RunStage(l, IntroStage.Live, Ready(live: false));
-            Assert.AreEqual(IntroEvent.Finished, ev, "砂嵐でも段 4 は最後まで流れて終わる");
+            var ev = RunStage(l, IntroStage.Swap, Ready(live: false, outsideM: 2f));
+            Assert.AreEqual(IntroEvent.Finished, ev, "砂嵐でも段 5 は最後まで流れて終わる");
         }
 
         [Test]
-        public void Live_WaitsBrieflyForTheCameraBeforeShowingStatic()
+        public void Swap_WaitsBrieflyForTheCameraBeforeShowingStatic()
         {
-            var l = AtSeal();
-            RunStage(l, IntroStage.Seal, Ready());
-            RunStage(l, IntroStage.Dark, Ready());
-            var dead = Ready(live: false);
-            Advance(l, T.igniteSec + 1f, dead);
-            Assert.AreEqual(IntroStage.Ignite, l.Stage, "少しは待つ（映像が遅れて来ることがある）");
+            var l = AtStage(IntroStage.Frame);
+            var dead = Ready(live: false, outsideM: 2f);
+            Advance(l, T.frameSec + 1f, dead);
+            Assert.AreEqual(IntroStage.Frame, l.Stage, "少しは待つ（映像が遅れて来ることがある）");
 
-            Advance(l, 1f, Ready());
-            Assert.AreEqual(IntroStage.Live, l.Stage, "来たら進む");
+            Advance(l, 1f, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroStage.Swap, l.Stage, "来たら進む");
         }
 
         [Test]
-        public void Live_TheWaitForTheCameraIsBounded()
+        public void Swap_TheWaitForTheCameraIsBounded()
         {
-            // 待ちは上限で必ず切れる。切れないと「カメラが死んだ日は導入が段 3 で固まる」。
-            var l = AtSeal();
-            RunStage(l, IntroStage.Seal, Ready());
-            RunStage(l, IntroStage.Dark, Ready());
-            Assert.AreEqual(IntroStage.Ignite, l.Stage);
-
-            Advance(l, T.igniteSec + IntroLogic.MaxHoldSec + 0.5f, Ready(live: false));
-            Assert.AreEqual(IntroStage.Live, l.Stage,
-                $"段 3 が上限 {IntroLogic.MaxHoldSec}s を過ぎても抜けていない");
+            // 待ちは上限で必ず切れる。切れないと「カメラが死んだ日は導入が段 4 で固まる」。
+            var l = AtStage(IntroStage.Frame);
+            Advance(l, T.frameSec + IntroLogic.MaxHoldSec + 0.5f, Ready(live: false, outsideM: 2f));
+            Assert.AreEqual(IntroStage.Swap, l.Stage,
+                $"段 4 が上限 {IntroLogic.MaxHoldSec}s を過ぎても抜けていない");
         }
 
         [Test]
@@ -622,7 +590,7 @@ namespace FixedCamVr.Streaming.Tests
             l.RequestAdvance(); l.Tick(0.1f, Ready(outsideM: 5f));
 
             var stuck = Ready(outsideM: 5f);
-            stuck.headTurnDegPerSec = 300f;      // ずっと頭を振っていて、しかも箱の外に居る
+            stuck.headTurnDegPerSec = 300f;      // ずっと頭を振っている
             var ev = IntroEvent.None;
             for (float x = 0f; x < 30f && ev == IntroEvent.None; x += 0.1f) ev = l.Tick(0.1f, stuck);
             Assert.AreEqual(IntroEvent.Finished, ev);
@@ -630,21 +598,21 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void MaxSec_DoesNotCutTheLiveStageInHalf()
+        public void MaxSec_DoesNotCutTheSwapStageInHalf()
         {
             // 映像が点く最中に打ち切ると、いちばん見せたい一撃が途中で消える。
             var t = T; t.maxSec = 2f;
             var l = new IntroLogic();
             l.Configure(t);
             l.Begin();
-            l.RequestAdvance(); l.Tick(0.1f, Ready());
-            for (int i = 0; i < 3; i++) { l.RequestAdvance(); l.Tick(0.1f, Ready()); }
-            Assert.AreEqual(IntroStage.Live, l.Stage);
+            l.RequestAdvance(); l.Tick(0.1f, Ready(outsideM: 2f));
+            for (int i = 0; i < 4; i++) { l.RequestAdvance(); l.Tick(0.1f, Ready(outsideM: 2f)); }
+            Assert.AreEqual(IntroStage.Swap, l.Stage);
 
-            Advance(l, 2.0f, Ready());
+            Advance(l, 2.0f, Ready(outsideM: 2f));
             Assert.Greater(l.TotalElapsedSec, t.maxSec, "maxSec は既に超えている");
-            Assert.Less(l.StageElapsedSec, t.liveSec, "Live はまだ自然終了していない");
-            Assert.AreEqual(IntroStage.Live, l.Stage, "それでも Live は畳まない");
+            Assert.Less(l.StageElapsedSec, t.swapSec, "Swap はまだ自然終了していない");
+            Assert.AreEqual(IntroStage.Swap, l.Stage, "それでも Swap は畳まない");
         }
 
         // ---- 中止とやり直し ----------------------------------------------------
@@ -652,10 +620,10 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Recenter_AbortsInsteadOfShowingAMisalignedRoom()
         {
-            var l = AtSeal();
-            Advance(l, T.sealSec * 0.5f, Ready());
+            var l = AtReal();
+            Advance(l, T.realSec * 0.5f, Ready(outsideM: 2f));
 
-            var moved = Ready();
+            var moved = Ready(outsideM: 2f);
             moved.recentered = true;
             Assert.AreEqual(IntroEvent.Aborted, l.Tick(0.1f, moved));
             Assert.AreEqual(IntroStage.Done, l.Stage);
@@ -665,12 +633,10 @@ namespace FixedCamVr.Streaming.Tests
         public void Restart_GoesBackToStageOne_NotToBlack()
         {
             // HMD を被り直された。黒はもう明けているので段 0 へは戻らない。
-            var l = AtSeal();
-            RunStage(l, IntroStage.Seal, Ready());
-            Assert.AreEqual(IntroStage.Dark, l.Stage);
+            var l = AtStage(IntroStage.Degrade);
 
             l.Restart();
-            Assert.AreEqual(IntroStage.Seal, l.Stage);
+            Assert.AreEqual(IntroStage.Real, l.Stage);
             Assert.AreEqual(0f, l.TotalElapsedSec, 0.001f);
         }
 
@@ -699,36 +665,38 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(1f, w.frame, 0.001f);
         }
 
-        // ---- (E) 管の点灯は演出の外で必ず 1 -------------------------------------
+        // ---- (E) 管の点灯は全期間 1 ---------------------------------------------
 
         [Test]
-        public void Ignite_IsOneWheneverTheIntroIsNotRunning()
+        public void Ignite_IsAlwaysOne()
         {
-            // ⚠⚠ **0 を書いたままにすると画がまるごと消える。** 演出を出していない全期間で 1。
+            // ⚠⚠ **0 を書いたままにすると画がまるごと消える。** 旧構成では段 3 で 0 → 1 と動いたが、
+            //    2026-08-15 からは導入のあいだも点いたまま（まだ何も映していないだけ）。
             Assert.AreEqual(1f, IntroWeights.Inactive.ignite, 1e-4f, "既定が 1 でない");
 
-            // 無効化（演出を出さない設定・本編中・終了後）
+            var l = AtReal();
+            var outside = Ready(outsideM: 2f);
+            for (int i = 0; i < 600 && l.Stage != IntroStage.Done; i++)
+            {
+                l.Tick(0.05f, outside);
+                Assert.AreEqual(1f, l.Weights.ignite, 1e-4f, $"段 {l.Stage} で管が消えている");
+            }
+            Assert.AreEqual(IntroStage.Done, l.Stage);
+
+            // 無効化・中止・飛ばしでも 1。
             var off = Make();
             off.Disable();
             Assert.AreEqual(1f, off.Weights.ignite, 1e-4f, "無効化したのに管が消えている");
 
-            // 中止（トラッキング原点が変わった）
-            var aborted = AtSeal();
-            var moved = Ready();
+            var aborted = AtReal();
+            var moved = Ready(outsideM: 2f);
             moved.recentered = true;
             Assert.AreEqual(IntroEvent.Aborted, aborted.Tick(0.1f, moved));
             Assert.AreEqual(1f, aborted.Weights.ignite, 1e-4f, "中止したのに管が消えている");
 
-            // 完走（Done）
-            var done = AtSeal();
-            for (int i = 0; i < 400 && done.Stage != IntroStage.Done; i++) done.Tick(0.05f, Ready());
-            Assert.AreEqual(IntroStage.Done, done.Stage);
-            Assert.AreEqual(1f, done.Weights.ignite, 1e-4f, "終わったのに管が消えている");
-
-            // 飛ばした（スタッフ操作）
-            var skipped = AtSeal();
+            var skipped = AtReal();
             skipped.RequestSkip();
-            skipped.Tick(0.1f, Ready());
+            skipped.Tick(0.1f, Ready(outsideM: 2f));
             Assert.AreEqual(1f, skipped.Weights.ignite, 1e-4f, "飛ばしたのに管が消えている");
         }
 

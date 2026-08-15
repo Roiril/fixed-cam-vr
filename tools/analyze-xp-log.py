@@ -875,11 +875,11 @@ def analyze(events, others, exp, warns=None):
         elif not intro:
             verdict("FAIL", "導入演出の段が 1 つも記録されていない（IntroDirector 未配線か enabled=false）")
         else:
-            for want in ("Seal", "Dark", "Ignite", "Live"):
+            for want in ("Real", "Degrade", "Structure", "Frame", "Swap"):
                 if want not in stages:
                     verdict("WARN", f"導入演出の段 {want} が出ていない")
-            if "Live" in stages:
-                verdict("OK", "導入演出が最後の段（Live）まで進んだ")
+            if "Swap" in stages:
+                verdict("OK", "導入演出が最後の段（Swap）まで進んだ")
         # 段 1 以降に auth=0 の行があれば、人の A ではなくスタッフの ⏭ で始まったということ。
         forced = [e for e in intro if e.get("stage") not in ("Off", "Black") and str(e.get("auth")) == "0"]
         if forced:
@@ -1009,18 +1009,21 @@ def analyze(events, others, exp, warns=None):
         if "MISSING" in by_id:
             verdict("FAIL", "音源が見つからない節目がある（ev=sfx id=MISSING）")
 
-        # 導入まで走ったなら、2 つの山は必ず鳴っているはず
-        # ⚠ 「割れる」（Shatter）は 2026-08-13 に判定から外した。段 4「破砕」を廃止して
-        #    重み shatter を眠らせたので、**鳴らないのが正常**。ここに残すと
-        #    「出るはずのものが出ない」と毎回誤検出する。
-        intro_ran = any(e.get("stage") == "Live" for e in intro)
+        # 導入まで走ったなら、3 つの節目は必ず鳴っているはず
+        # ⚠ 「隔離が閉じる」（SealClose）と「装置が点く」（Swap）は 2026-08-15 に判定から外した。
+        #    段が旧構成へ戻って隔離が閉じる段が無くなり、スクリーンが出る瞬間は
+        #    ユーザー指定の音源を持つ ScreenOn が取る（canon/LEDGER.md 0044）。
+        #    ここに残すと「出るはずのものが出ない」と毎回誤検出する。
+        intro_ran = any(e.get("stage") == "Swap" for e in intro)
         if intro_ran:
-            for want, label in (("SealClose", "隔離が閉じる"), ("Swap", "装置が点く")):
+            for want, label in (("Shatter", "現実が割れる"),
+                                ("ScreenOn", "スクリーンが出る"),
+                                ("ScreenNoise", "その後のノイズ")):
                 if by_id.get(want, 0) == 0:
-                    verdict("FAIL", f"導入は段 Live まで進んだのに「{label}」の音が鳴っていない"
+                    verdict("FAIL", f"導入は段 Swap まで進んだのに「{label}」の音が鳴っていない"
                                     f"（ev=sfx id={want} が 0 本）")
-            if all(by_id.get(k, 0) > 0 for k in ("SealClose", "Swap")):
-                verdict("OK", "導入の 2 つの山が両方鳴った")
+            if all(by_id.get(k, 0) > 0 for k in ("Shatter", "ScreenOn", "ScreenNoise")):
+                verdict("OK", "導入の 3 つの節目が全部鳴った")
 
         # -- カメラ切替の音（1 回の体験でいちばん多く鳴る音）
         if sw_n:
@@ -1076,8 +1079,8 @@ def analyze(events, others, exp, warns=None):
                             "Tools/FixedCamVr/Setup/Generate Japanese HUD Font を再実行する")
 
     # -- 導入演出（覆い・パススルー・隔離・封印の箱・管の点灯）
-    # 段 Seal 以降 → 本編へ入るまでを窓にする。それ以前は「まだ出さないのが正しい」。
-    real_t = next((fnum(e, "t", 0.0) for e in intro if e.get("stage") == "Seal"), None)
+    # 段 Real 以降 → 本編へ入るまでを窓にする。それ以前は「まだ出さないのが正しい」。
+    real_t = next((fnum(e, "t", 0.0) for e in intro if e.get("stage") == "Real"), None)
     run_t = next((fnum(p, "t", 0.0) for p in phases if p.get("v") == "Run"), None)
 
     built = effect_samples(events, "veilBuilt")
@@ -1162,37 +1165,44 @@ def analyze(events, others, exp, warns=None):
                 verdict("WARN", "隔離が床しか許していない（layout.room に壁が無い）— "
                                 "実物の壁まで黒く消える。卓の 🧱 部屋で壁を引く")
 
-        # -- 封印の箱（外から見た隔離）。段 0 で体験エリアの外に居るあいだだけ出る。
-        box_built = effect_samples(events, "boxBuilt")
-        if box_built and "0" in box_built:
-            any_effect_key = True
-            verdict("FAIL", "封印の箱を組めていない（SealedBox の Shader.Find が null）— "
-                            "GraphicsSettings の m_AlwaysIncludedShaders に "
-                            "FixedCamVr/SealedBox を入れる")
+        # ⚠ 封印の箱（box / boxBuilt）は 2026-08-15 に観測ごと外した。箱を退避して
+        #   重み sealBox を全段 0 にしたので、常に 0 が並ぶだけになり誤検出の材料にしかならない。
 
-        # 窓は段 Seal より**前**（段 0）。出ていなくても FAIL にはしない —
-        # 端末が体験エリアの中に置かれていれば出ないのが正しい（外から見る面なので）。
-        box = effect_samples(events, "box", t_to=real_t)
-        if box:
-            any_effect_key = True
-            w(f"  封印の箱が描画された標本: {box.count('1')}/{len(box)}（段 0 のみ・"
-              "エリアの中に居ると出ないのが正常）")
-            if "1" in box:
-                verdict("OK", "封印の箱が描画された（外から見た隔離）")
+    # -- 段 4 の破砕（現実が割れてスクリーンへ吸い込まれる）
+    # ⚠ 「重みが動いた」ではなく「画に出た」を見る。`shat` は IntroVeil が
+    #    **実際にセル格子を描いた到達点**なので、進みだけ動いて 1 枚 quad のままの状態を捕まえる。
+    shat_all = [v for v in effect_samples(events, "shat") if v not in ("", "-")]
+    if shat_all:
+        any_effect_key = True
+        snums = []
+        for v in shat_all:
+            try:
+                snums.append(float(v))
+            except ValueError:
+                pass
+        if snums:
+            w(f"  破砕の到達: 最大 {max(snums):.2f}")
+            if "Frame" in stages:
+                if max(snums) <= 0.01:
+                    verdict("FAIL", "段 Frame に達したのに現実が 1 画素も割れていない（shat が 0 のまま）— "
+                                    "セル格子を組めていない疑い。menu intro の絵で確かめる")
+                else:
+                    verdict("OK", f"現実が割れた（到達 {max(snums):.2f}）")
+    cells = [v for v in effect_samples(events, "shatC") if v not in ("", "-")]
+    if cells and all(v == "0" for v in cells):
+        any_effect_key = True
+        verdict("FAIL", "破砕のセル格子が 0 枚（IntroVeilShatterMesh を組めていない）— "
+                        "重みが動いても 1 枚 quad のままで 1 画素も割れない")
 
-    # -- 段 3 の管の点灯（闇の中でスクリーンの管が点く）
-    # ⚠ 「重みが動いた」ではなく「画に出た」を見る。`ignite` は IntroDirector が
-    #    **実際に材質へ書いた値**なので、nc（書く先を掴めていない）と 0.00（書いたが動いていない）を
-    #    区別できる。どちらも実機の画を見るまで気づけない。
-    #
-    # ⚠ 破砕（shatV / shatB / …）は 2026-08-13 に観測ごと外した。段 4「破砕」を廃止して
-    #    重み shatter を眠らせたので、常に 0 が並ぶだけになり誤検出の材料にしかならない。
+    # -- スクリーンの管の点灯
+    # ⚠ 2026-08-15 から導入の全段で 1（点いていて、まだ何も映していない）。
+    #    0 が出たら画がまるごと消えている。
     ig_all = [v for v in effect_samples(events, "ignite") if v not in ("", "-")]
     if ig_all:
         any_effect_key = True
         if "nc" in ig_all:
             verdict("FAIL", "スクリーンの管の点灯を書く先を掴めていない（ignite=nc）— "
-                            "段 3「闇の中で管が点く」が一生出ない。"
+                            "映像の出方（_IntroLive）も書けないので段 5 が画に出ない。"
                             "IntroDirector の screen 参照（MjpegScreen の Renderer）を見る")
         else:
             nums = []
@@ -1208,14 +1218,11 @@ def analyze(events, others, exp, warns=None):
                     verdict("FAIL", f"走行の終わりで管が消えたまま（ignite={nums[-1]:.2f}）— "
                                     "画がまるごと消えている。IntroDirector が畳む経路のどこかで "
                                     "1 を書き戻していない")
-                if "Ignite" in stages or "Live" in stages:
-                    if max(nums) <= 0.0:
-                        verdict("FAIL", "段 Ignite に達したのに管が 1 度も点いていない "
-                                        "（ignite が 0 のまま）— 進みは配っているので画だけが変わらない")
-                    else:
-                        verdict("OK", f"管が点いた（到達 {max(nums):.2f}）")
-                if "Dark" in stages and min(nums) > 0.001:
-                    verdict("WARN", "段 Dark でも管が消えていない — 闇が「真っ黒」になっていない疑い")
+                if min(nums) < 0.999:
+                    verdict("FAIL", f"導入の途中で管が消えている（最小 {min(nums):.2f}）— "
+                                    "2026-08-15 以降、管は全期間 1 が正しい")
+                else:
+                    verdict("OK", "管は全期間 1（点いたまま、映すものだけが変わる）")
 
     # -- 周回で進む解像度の劣化（装置が痩せていく・canon/LEDGER.md 0012）
     # ⚠ 「進みの数値が動いた」は画に出たことを意味しない。**書く先を掴めたか**（coarseMat）と

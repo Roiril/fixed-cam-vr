@@ -51,9 +51,9 @@ test('intro が無い show.json はコード既定で成立する（既存デー
 });
 
 test('段の秒は 0〜20 に丸め、上限秒は 10〜60 に丸める', () => {
-  const cfg = introConfig({ intro: { sealSec: -3, darkSec: 99, maxSec: 500 } });
-  assert.equal(cfg.sealSec, 0);
-  assert.equal(cfg.darkSec, 20);
+  const cfg = introConfig({ intro: { realSec: -3, degradeSec: 99, maxSec: 500 } });
+  assert.equal(cfg.realSec, 0);
+  assert.equal(cfg.degradeSec, 20);
   assert.equal(cfg.maxSec, 60);
   assert.equal(introConfig({ intro: { maxSec: 1 } }).maxSec, 10);
 });
@@ -62,7 +62,7 @@ test('乱れの強さは 0〜1 に丸め、数値でない値は既定へ落と�
   assert.equal(introConfig({ intro: { glitchOnSwap: 5 } }).glitchOnSwap, 1);
   assert.equal(introConfig({ intro: { glitchOnSwap: -1 } }).glitchOnSwap, 0);
   assert.equal(introConfig({ intro: { glitchOnSwap: '' } }).glitchOnSwap, INTRO_DEFAULT.glitchOnSwap);
-  assert.equal(introConfig({ intro: { sealSec: 'abc' } }).sealSec, INTRO_DEFAULT.sealSec);
+  assert.equal(introConfig({ intro: { realSec: 'abc' } }).realSec, INTRO_DEFAULT.realSec);
 });
 
 test('チェック類の既定（構造の線だけ欠落＝OFF・他は欠落＝ON）', () => {
@@ -82,22 +82,29 @@ test('チェック類の既定（構造の線だけ欠落＝OFF・他は欠落�
   assert.deepEqual([wired.showCameraMarks, wired.showRoomWire], [true, true]);
 });
 
-test('合計秒は 4 段の和（既定は 6.2s）', () => {
-  // ⚠ この数字は Unity の IntroLogicTests.TotalSec_IsTheSumOfTheFourStages と**同じ値**。
-  //   1.4 + 0.8 + 1.6 + 2.4 = 6.2（段 2 の「中に入るのを待つ」時間は尺に含めない）。
+test('合計秒は段 3 の重なりを引いた和（既定は 13.1s）', () => {
+  // ⚠ この数字は Unity の IntroLogicTests.TotalSec_AccountsForTheStructureOverlap と**同じ値**。
+  //   1.5 + 3.5 + (2.5 - 3.5×0.4) + 2.5 + 4.5 = 13.1（段 3 は段 2 の後半から重なる）。
   //   片方だけ直すと、卓の表示と実機の尺が沈黙して食い違う。
-  assert.equal(introStageSec(introConfig({})), 6.2);
+  assert.equal(introStageSec(introConfig({})), 13.1);
   const naive = INTRO_STAGE_KEYS.reduce((x, k) => x + INTRO_DEFAULT[k], 0);
-  assert.equal(introStageSec(introConfig({})), Math.round(naive * 10) / 10);
+  assert.ok(introStageSec(introConfig({})) < naive, '重なりが効いていない（単純和になっている）');
 });
 
 test('合計秒は正規化前の生データからも出せる（欠落は既定で埋まる）', () => {
-  assert.equal(introStageSec(introConfig({ intro: { sealSec: 2, liveSec: 10 } })), 2 + 0.8 + 1.6 + 10);
+  // realSec 2 / swapSec 10、あとは既定（degrade 3.5 / structure 2.5 → own 1.1 / frame 2.5）。
+  assert.equal(introStageSec(introConfig({ intro: { realSec: 2, swapSec: 10 } })), 2 + 3.5 + 1.1 + 2.5 + 10);
+});
+
+test('段 3 が段 2 に飲み込まれても下限ぶんは流れる', () => {
+  // degrade を長くすると重なりが段 3 を食い尽くす。0 秒の段を黙って作らない。
+  const sec = introStageSec(introConfig({ intro: { degradeSec: 20, structureSec: 1 } }));
+  assert.equal(sec, 1.5 + 20 + 0.5 + 2.5 + 4.5);
 });
 
 test('尺の表示は「演出 Ns / 慣らし Ms」', () => {
-  assert.equal(introDurationLabel(introConfig({}), 20), '演出 6.2s / 慣らし 20s');
-  assert.equal(introDurationLabel(introConfig({}), undefined), '演出 6.2s / 慣らし 0s');
+  assert.equal(introDurationLabel(introConfig({}), 20), '演出 13.1s / 慣らし 20s');
+  assert.equal(introDurationLabel(introConfig({}), undefined), '演出 13.1s / 慣らし 0s');
 });
 
 test('較正済みの数え方は fxPx > 1 のカメラ（本番前チェックの 🎯 較正 行と同じ）', () => {
@@ -111,9 +118,9 @@ test('導入を出さない設定なら本番前チェックの行を出さな�
   assert.equal(row, null);
 });
 
-// ⚠ 2026-08-13 に段 3「構造」を廃止したので、導入は幾何（床の寸法・部屋の壁）を要求しない。
-//    起きようのない不備を直させないため（線は on にしても 1 本も出ない）。
-test('幾何が何も無くても ❌ にしない（段 3 を廃止したので線を要求しない）', () => {
+// ⚠ 構造の線は既定 off。off なら幾何（床の寸法・部屋の壁）を要求しない
+//    — 起きようのない不備を直させないため。
+test('線が off なら幾何が何も無くても ❌ にしない', () => {
   const row = introPreflightRow({
     run: {}, layout: { startSpot: { x: 0, z: -0.6 } }, cameras: calibratedCams(),
   });
@@ -121,10 +128,17 @@ test('幾何が何も無くても ❌ にしない（段 3 を廃止したので
   assert.equal(row.label, '🎬 導入');
 });
 
-test('構造の線を on にしたら「画に出ません」と言う（設定が残っているのに効かない、を黙らない）', () => {
-  const row = introPreflightRow({ run: wireOn(), layout: measuredLayout(), cameras: calibratedCams() });
+test('線を on にして幾何が無ければ ⚠（重ねる相手が無い）', () => {
+  const row = introPreflightRow({
+    run: wireOn(), layout: { startSpot: { x: 0, z: -0.6 } }, cameras: calibratedCams(),
+  });
   assert.equal(row.s, 'warn');
-  assert.match(row.detail, /画に出ません/);
+  assert.match(row.detail, /床の実寸が未著作/);
+});
+
+test('線を on にして幾何が揃っていれば ✅', () => {
+  const row = introPreflightRow({ run: wireOn(), layout: measuredLayout(), cameras: calibratedCams() });
+  assert.equal(row.s, 'ok');
 });
 
 test('壁の幾何の判定は layout.wall ではなく layout.room を見る', () => {
@@ -157,7 +171,7 @@ test('壁が既定の L と同じ形かは引き続き判定できる（幾何�
 
 test('合計秒が上限を超えたら ⚠（超えた段は実機が飛ばす）', () => {
   const row = introPreflightRow({
-    run: { introMinSec: 20, intro: { maxSec: 10, liveSec: 12 } },
+    run: { introMinSec: 20, intro: { maxSec: 10, swapSec: 12 } },
     layout: measuredLayout(),
     cameras: calibratedCams(),
   });
@@ -167,7 +181,7 @@ test('合計秒が上限を超えたら ⚠（超えた段は実機が飛ばす�
 
 test('成立していれば ✅ に尺を出す', () => {
   const row = introPreflightRow({ run: { introMinSec: 20 }, layout: measuredLayout(), cameras: calibratedCams() });
-  assert.deepEqual(row, { s: 'ok', label: '🎬 導入', detail: '演出 6.2s / 慣らし 20s' });
+  assert.deepEqual(row, { s: 'ok', label: '🎬 導入', detail: '演出 13.1s / 慣らし 20s' });
 });
 
 // ---- 開始位置（layout.startSpot）------------------------------------------------
@@ -263,14 +277,14 @@ test('卓の既定値と capture-server.py の _default_show が一致してい�
 });
 
 test('慣らし歩行が演出より短いと切り落とされることを警告する', () => {
-  // introMinSec は導入相全体の下限。演出 6.2s に対し 4s だと演出の途中で本編へ移る。
+  // introMinSec は導入相全体の下限。演出 13.1s に対し 4s だと演出の途中で本編へ移る。
   // RestartIntroClock は演出の終わりにしか打たれないので、実機は黙って切り替わる。
   const row = introPreflightRow({
     run: { introEnabled: true, introMinSec: 4, intro: { enabled: true } },
     layout: measuredLayout(), cameras: calibratedCams(),
   });
   assert.equal(row.s, 'warn');
-  assert.match(row.detail, /慣らし歩行 4s が演出 6\.2s より短い/);
+  assert.match(row.detail, /慣らし歩行 4s が演出 13\.1s より短い/);
 });
 
 test('慣らし歩行が演出より長ければその警告は出ない', () => {

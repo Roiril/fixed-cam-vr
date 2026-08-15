@@ -12,49 +12,51 @@ namespace FixedCamVr.Streaming.Tests
     public class SoundBedLogicTests
     {
         private static SoundShowState Intro(IntroStage stage, float shell = 0f,
-                                            float frame = 0f, float ignite = 0f, float live = 0f)
+                                            float degrade = 0f, float shatter = 0f, float live = 0f)
         {
             var s = SoundShowState.Idle;
             s.introActive = true;
             s.introStage = stage;
             s.introWeights = IntroWeights.Inactive;
             s.introWeights.shell = shell;
-            s.introWeights.frame = frame;
-            s.introWeights.ignite = ignite;
+            s.introWeights.degrade = degrade;
+            s.introWeights.shatter = shatter;
             s.introWeights.live = live;
             return s;
         }
 
         [Test]
-        public void Title_IsAlmostSilent_ButTheBoxIsAlreadyHumming()
+        public void Title_IsSilent()
         {
-            // タイトルは黒。世界の手前なので部屋も装置も鳴らない。
-            // ただし封印の箱の唸りだけは**先に**鳴らす（J カット）。A を押して黒が開いたとき、
-            // 箱の声がもう鳴っているので「場面が切り替わった」ではなく「幕が上がった」になる。
+            // タイトルは黒。世界の手前なので何も鳴らない。
+            // ⚠ 2026-08-15 まで、ここで封印の箱の唸りを先に鳴らして J カットにしていた
+            //   （`canon/LEDGER.md` 0044 で箱を退避したので定位する先が無くなった）。
             var s = SoundShowState.Idle;
             s.titleVisible = true;
             var g = SoundBedLogic.Target(s);
-            Assert.Greater(g.seal, 0f, "タイトルの下で箱が鳴っていない（J カットが成立しない）");
+            Assert.AreEqual(0f, g.seal, 1e-6f, "退避した箱が鳴っている");
             Assert.AreEqual(0f, g.room, 1e-6f);
             Assert.AreEqual(0f, g.device, 1e-6f);
         }
 
         [Test]
-        public void Device_ArrivesBeforeThePicture_AtStageSeal()
+        public void Device_ArrivesBeforeThePicture_AtStageDegrade()
         {
             // ⚠ **この 1 本が導入の音設計の核心。** 装置の声は「画が映像になる」より前、
-            // 段 1（開口が閉じる）で入り始める。これが 6.2 秒を 1 つの出来事として繋ぐ。
+            // 段 2（色が抜ける）で入り始める。これが 13 秒を 1 つの出来事として繋ぐ。
             Assert.AreEqual(0f, SoundBedLogic.Target(Intro(IntroStage.Black)).device, 1e-6f,
                             "段 0 で装置が鳴っている（まだ現実のはず）");
-            float mid = SoundBedLogic.Target(Intro(IntroStage.Seal, frame: 0.5f)).device;
-            Assert.Greater(mid, 0f, "段 1 で装置が入り始めていない");
-            Assert.Less(mid, SoundBedLogic.Target(Intro(IntroStage.Live, live: 1f)).device);
+            Assert.AreEqual(0f, SoundBedLogic.Target(Intro(IntroStage.Real)).device, 1e-6f,
+                            "段 1 は素のパススルー（比較対象なので何も足さない）");
+            float mid = SoundBedLogic.Target(Intro(IntroStage.Degrade, degrade: 0.5f)).device;
+            Assert.Greater(mid, 0f, "段 2 で装置が入り始めていない");
+            Assert.Less(mid, SoundBedLogic.Target(Intro(IntroStage.Swap, live: 1f)).device);
         }
 
         [Test]
         public void Device_ReachesFull_OnlyAfterTheVideoArrives()
         {
-            var swap = SoundBedLogic.Target(Intro(IntroStage.Live, live: 1f));
+            var swap = SoundBedLogic.Target(Intro(IntroStage.Swap, live: 1f));
             Assert.AreEqual(1f, swap.device, 1e-3f);
             var run = SoundShowState.Idle;
             run.phase = ShowPhase.Run;
@@ -66,8 +68,8 @@ namespace FixedCamVr.Streaming.Tests
         {
             // ⚠ 隔離は「音量を下げる」ではなく「帯域を閉じる」で表す。
             //    音量を下げると **遠ざかった** に聞こえ、閉じ込められた感じにならない。
-            var open = SoundBedLogic.Target(Intro(IntroStage.Seal, shell: 0f));
-            var shut = SoundBedLogic.Target(Intro(IntroStage.Seal, shell: 1f));
+            var open = SoundBedLogic.Target(Intro(IntroStage.Swap, shell: 0f));
+            var shut = SoundBedLogic.Target(Intro(IntroStage.Swap, shell: 1f));
             Assert.AreEqual(open.room, shut.room, 1e-6f, "隔離で部屋の音量が変わっている");
             Assert.Less(shut.roomOpen, open.roomOpen, "隔離で帯域が閉じていない");
             Assert.AreEqual(SoundBedLogic.RoomOpenSealed, shut.roomOpen, 1e-4f);
@@ -75,14 +77,14 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void SealedBox_FadesWithTheClosingAperture_AndIsGoneInTheDark()
+        public void SealedBox_NeverHums_InAnyStage()
         {
-            // 箱の声は段 1 で開口が閉じるのと**同じ進み**で引く。
-            // 箱だけ鳴り続けると「閉じたのにまだ外に箱がある」と食い違う。
-            Assert.AreEqual(1f, SoundBedLogic.Target(Intro(IntroStage.Black)).seal, 1e-6f);
-            Assert.AreEqual(0.25f, SoundBedLogic.Target(Intro(IntroStage.Seal, frame: 0.75f)).seal, 1e-4f);
-            Assert.AreEqual(0f, SoundBedLogic.Target(Intro(IntroStage.Dark)).seal, 1e-6f);
-            Assert.AreEqual(0f, SoundBedLogic.Target(Intro(IntroStage.Live, live: 1f)).seal, 1e-6f);
+            // ⚠⚠ 封印の箱は 2026-08-15 に退避した（`canon/LEDGER.md` 0044）。
+            //    `bed_seal` は 3D で箱の面に置いていたので、定位する先が無い。
+            //    音源は残してあるので、重みが 1 フレームでも立つと**黙って唸りが戻る**。
+            foreach (IntroStage st in System.Enum.GetValues(typeof(IntroStage)))
+                Assert.AreEqual(0f, SoundBedLogic.Target(Intro(st, shell: 1f, live: 1f)).seal, 1e-6f,
+                                $"段 {st} で退避した箱が鳴っている");
         }
 
         [Test]
@@ -126,7 +128,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Outro_NeverRisesAboveTheIntro()
         {
             // 終幕は導入の逆をたどるが、**山を作らない**。
-            float introPeak = SoundBedLogic.Target(Intro(IntroStage.Live, live: 1f)).device;
+            float introPeak = SoundBedLogic.Target(Intro(IntroStage.Swap, live: 1f)).device;
             foreach (OutroStage st in System.Enum.GetValues(typeof(OutroStage)))
             {
                 var s = SoundShowState.Idle;

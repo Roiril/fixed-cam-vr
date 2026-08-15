@@ -124,17 +124,17 @@ $Menus = [ordered]@{
                             Set = 'actor=<人形名>'
                             Out = 'Assets/Screenshots/actormotion' }
     'sealedbox'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.SealedBoxPreview.Run'
-                            Desc = '封印の箱（外から見た隔離）の模様を 3 枚 PNG 化'
+                            Desc = '【退避中】封印の箱の模様を 3 枚 PNG 化（体験には出ない）'
                             Set = 'hex=<六角の大きさ m> / marks=<印の割合>'
                             Out = 'Assets/Screenshots/sealedbox' }
     'title'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.TitlePreview.Run'
                             Desc = 'タイトル画面「廻リ視」を 9 枚 + 閉じる演出 56 枚 PNG 化（両眼の厚み確認つき）'
                             Out = 'Assets/Screenshots/title' }
     'intro'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.IntroPreview.Run'
-                            Desc = '導入演出の段 0〜4（閉じる→闇→管が点く→自分が映る）を 15 枚 PNG 化'
+                            Desc = '導入演出の段 0〜5（素通し→格下げ→輪郭→割れる→映像）を 16 枚 PNG 化'
                             Out = 'Assets/Screenshots/intro' }
     'shatter'          = @{ Method = 'FixedCamVr.Streaming.EditorTools.IntroShatterPreview.Run'
-                            Desc = '段 4「割れてスクリーンへ入る」を 9 枚 + 連番 60 枚 PNG 化'
+                            Desc = '【退避中】封印の箱の破片を 9 枚 + 連番 60 枚 PNG 化（覆いの割れは menu intro）'
                             Out = 'Assets/Screenshots/shatter' }
     'regviz'           = @{ Method = 'FixedCamVr.Tracking.EditorTools.RegistrationVizPreview.Run'
                             Desc = '位置合わせのワイヤーとゾーンのタイルを多角度で PNG 化'

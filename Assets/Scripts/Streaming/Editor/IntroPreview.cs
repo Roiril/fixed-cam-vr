@@ -11,17 +11,17 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
-    /// 導入演出（2026-08-13 の作り直し版・段 0〜4）を PNG で出す。<b>Play も HMD もビルドも要らない。</b>
+    /// 導入演出（2026-08-15 に戻した旧構成・段 0〜5）を PNG で出す。<b>Play も HMD もビルドも要らない。</b>
     ///
-    /// ⚠⚠ <b>これが導入の唯一の安い門。</b> 覆い・隔離殻・封印の箱・管の点灯はすべてシェーダで、
+    /// ⚠⚠ <b>これが導入の唯一の安い門。</b> 覆い・隔離殻・破砕・管の面はすべてシェーダで、
     /// <c>unity.ps1 test</c> には 1 件も出ない（コンパイルが通っても全面マゼンタ・真っ黒になりうる）。
     /// 段を触ったら必ずここを通して<b>焼いた PNG を開くこと</b>
     /// （<c>rules/show-design.md</c>「シェーダを書いたら絵を出す」）。
     ///
     /// <b>本番と同じものを使う</b>のが絶対条件（写経した式は必ずいつか食い違い、証拠として無価値になる）:
     ///   - 段と重みは<b>本物の <see cref="IntroLogic"/> を実際に回して</b>取る（重みを手で作らない）
-    ///   - 描くのは実コンポーネント <see cref="IntroVeil"/> / <see cref="ContainmentShell"/> /
-    ///     <see cref="SealedBox"/> と、実シェーダ <c>FixedCamVr/ScreenComposite</c>
+    ///   - 描くのは実コンポーネント <see cref="IntroVeil"/> / <see cref="ContainmentShell"/> と、
+    ///     実シェーダ <c>FixedCamVr/ScreenComposite</c>
     ///   - スクリーンの材質は<b>シーンのものを複製する</b>（authored な post がそのまま乗る）。
     ///     撮像の質（粒・自動露出・管の面）は <see cref="CameraFeelFx.WriteUniforms"/> が書く
     ///     — ここを省くと<b>プレビューだけ実機より綺麗な絵</b>になる（2026-08-07 の実害と同じ型）
@@ -31,6 +31,12 @@ namespace FixedCamVr.Streaming.EditorTools
     /// <b>現実が出るはずの所が真っ黒</b>になって判断が丸ごと逆になる。ここでは実機の合成と同じ
     ///   最終 = アプリの rgb + 現実 × (1 - アプリの alpha)
     /// を CPU で解き、「現実」の代わりに <c>tools/web-compositor/captures/</c> の実写プレートを敷いてある。
+    ///
+    /// ⚠⚠ <b>段 2「格下げ」と段 3「輪郭」はここに出ない。</b> あの 2 段は
+    /// <c>PassthroughStyler</c>（Assembly-CSharp 側）が<b>実機のパススルー層</b>へ当てるもので、
+    /// ここが敷いているのは静止した実写プレートだから。<b>絵が同じでも「効いていない」の証拠にはならない</b> —
+    /// 重み（帯の <c>degrade</c> / <c>edge</c>）が動いていることだけを見て、見え方は実機で確かめる。
+    /// ここで判定できるのは<b>段 0 / 1（素通し）・段 4（割れる）・段 5（すり替え）</b>。
     ///
     /// ⚠ <b>これは段の進み方と形を見るための絵で、現場の見えではない。</b> 「現実」は明るい実写プレートで、
     /// 実際の会場（暗い）とは違う。ブラウン管の<b>曲面</b>（<see cref="CrtScreenMesh"/>）も出ない
@@ -74,12 +80,11 @@ namespace FixedCamVr.Streaming.EditorTools
         private const float EyeH = 1.6f;
 
         /// <summary>
-        /// 段 0 / 段 1 で箱の面からどれだけ離れて立つか (m)。
+        /// 体験エリアの境界からどれだけ離れて立つか (m)。
         ///
         /// ⚠ <b>これは絵の都合であって、現場の立ち位置ではない。</b> 実際の武装距離は
-        /// <see cref="IntroLogic.ApproachNearM"/> (1.0m) で、そこでは高さ 2.4m の箱が視界を埋める。
-        /// 「箱が 1 個の物として読めるか」を見るために、上下が画角 90° に収まる 1.8m まで下げてある
-        /// （<see cref="SealedBoxPreview"/> の <c>far</c> と同じ判断）。
+        /// <see cref="IntroLogic.ApproachNearM"/> (1.0m)。導入は最後まで境界の外で流れるので、
+        /// 全段この位置から撮る。
         /// </summary>
         private const float OutsideStandM = 1.8f;
 
@@ -182,10 +187,10 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         /// <summary>
-        /// 段の頭・中・終わりを撮る。<b>段 3（管が点く）は点き方が本題なので 5 枚</b>。
+        /// 段の頭・中・終わりを撮る。<b>段 4（現実が割れる）は割れ方が本題なので 5 枚</b>。
         ///
-        /// ⚠ 段 0 は 1 枚だけ。<b>時間で進まない段</b>（体験者が近づくのを待つだけ）で、
-        /// <see cref="IntroLogic.Weights"/> が定数を返すので 3 枚撮っても同じ絵が 3 つ並ぶ。
+        /// ⚠ 段 0 と段 1 は 1 枚だけ。どちらも <see cref="IntroLogic.Weights"/> が定数を返す
+        /// （素通しのパススルー）ので、3 枚撮っても同じ絵が 3 つ並ぶ。
         ///
         /// ⚠ 終わりは <c>0.999</c>。ちょうど 1.0 を渡すと <see cref="IntroLogic.Tick"/> が次の段へ
         /// 送ってしまい、「段の終わり」ではなく「次の段の頭」が撮れる。
@@ -193,31 +198,31 @@ namespace FixedCamVr.Streaming.EditorTools
         private static IEnumerable<Shot> BuildShots()
         {
             yield return new Shot(IntroStage.Black, 0, "black", 0f, 0);
+            yield return new Shot(IntroStage.Real, 1, "real", 0.5f, 50);
 
             foreach ((float p, int label) in new[] { (0f, 0), (0.5f, 50), (0.999f, 100) })
-                yield return new Shot(IntroStage.Seal, 1, "seal", p, label);
+                yield return new Shot(IntroStage.Degrade, 2, "degrade", p, label);
 
-            foreach ((float p, int label) in new[] { (0f, 0), (0.5f, 50), (0.999f, 100) })
-                yield return new Shot(IntroStage.Dark, 2, "dark", p, label);
+            yield return new Shot(IntroStage.Structure, 3, "structure", 0.5f, 50);
 
             foreach ((float p, int label) in
                      new[] { (0f, 0), (0.25f, 25), (0.5f, 50), (0.75f, 75), (0.999f, 100) })
-                yield return new Shot(IntroStage.Ignite, 3, "ignite", p, label);
+                yield return new Shot(IntroStage.Frame, 4, "frame", p, label);
 
-            // ⚠ 段 4 の「中」は 0.50 ではなく **0.25**。段の尺は 2.4 秒だが、映像へのクロスフェードは
-            //    <see cref="IntroLogic.LiveCrossfadeSec"/>（1.2 秒）で終わり、継ぎ目を隠す乱れも
+            // ⚠ 段 5 の「中」は 0.50 ではなく **0.25**。段の尺は 4.5 秒だが、映像へのクロスフェードは
+            //    <see cref="IntroLogic.SwapCrossfadeSec"/>（1.2 秒）で終わり、継ぎ目を隠す乱れも
             //    そこが山になる。0.50 で撮ると終わりと同じ絵が 2 枚並ぶだけで、**継ぎ目が 1 枚も写らない**。
             foreach ((float p, int label) in new[] { (0f, 0), (0.25f, 25), (0.999f, 100) })
-                yield return new Shot(IntroStage.Live, 4, "live", p, label);
+                yield return new Shot(IntroStage.Swap, 5, "swap", p, label);
 
             // ⚠⚠ **カメラが 1 台も繋がっていない現場**（canon/LEDGER.md 0025）。
-            //    段 4 は飛ばさず、映像の代わりに砂嵐が出る。ここで見るのは 2 つ:
-            //      - 段 3（管が点く途中）に砂嵐が**乗っていない**こと
-            //        （砂嵐は post の最後なので、切らないと点灯の過程をまるごと上書きする）
-            //      - 段 4 で映像と同じ進みで砂嵐が**入ってくる**こと
-            yield return new Shot(IntroStage.Ignite, 3, "ignite", 0.5f, 50, noSignal: true);
-            yield return new Shot(IntroStage.Live, 4, "live", 0.25f, 25, noSignal: true);
-            yield return new Shot(IntroStage.Live, 4, "live", 0.999f, 100, noSignal: true);
+            //    段 5 は飛ばさず、映像の代わりに砂嵐が出る。ここで見るのは 2 つ:
+            //      - 段 4（現実が割れている途中）に砂嵐が**乗っていない**こと
+            //        （砂嵐は post の最後なので、切らないと割れの過程をまるごと上書きする）
+            //      - 段 5 で映像と同じ進みで砂嵐が**入ってくる**こと
+            yield return new Shot(IntroStage.Frame, 4, "frame", 0.5f, 50, noSignal: true);
+            yield return new Shot(IntroStage.Swap, 5, "swap", 0.25f, 25, noSignal: true);
+            yield return new Shot(IntroStage.Swap, 5, "swap", 0.999f, 100, noSignal: true);
         }
 
         // ---- 段の駆動（重みは本物の状態機械から取る）--------------------------
@@ -229,8 +234,8 @@ namespace FixedCamVr.Streaming.EditorTools
         /// （このリポジトリが「状態は進んでいるのに画には何も出ていない」を 2026-07-31 に踏んでいる）。
         ///
         /// 尺は show.json の <c>run.intro</c>（無ければ <see cref="IntroTiming.Default"/>）。
-        /// 段の中の進みは正規化してあるので尺を変えても絵は変わらないが、<b>段 4 だけは違う</b> —
-        /// <see cref="IntroLogic.LiveCrossfadeSec"/> は絶対秒なので、<c>liveSec</c> を変えると
+        /// 段の中の進みは正規化してあるので尺を変えても絵は変わらないが、<b>段 5 だけは違う</b> —
+        /// <see cref="IntroLogic.SwapCrossfadeSec"/> は絶対秒なので、<c>swapSec</c> を変えると
         /// 「クロスフェードが段のどこで終わるか」が動く。
         /// </summary>
         private static IntroLogic DriveTo(IntroStage target, float p, IntroTiming t)
@@ -239,35 +244,47 @@ namespace FixedCamVr.Streaming.EditorTools
             logic.Configure(t);
             logic.Begin();
 
-            // 段 0。現実が見えていて、体験者はまだ箱の外に立っている。
+            // 段 0。現実が見えていて、体験者はまだ体験エリアの外に立っている。
             logic.Tick(0f, Observed(outsideM: OutsideStandM, atStartSpot: false));
             if (target == IntroStage.Black) return logic;
 
-            // 段 1。開始の合図（体験エリアへの接近）で入る。閉じ切るまで箱の外のまま。
+            // 段 1。開始の合図（体験エリアへの接近）で入る。以後は素通しのまま格下げされていく。
             logic.Tick(1e-3f, Observed(OutsideStandM, atStartSpot: true));
-            if (target == IntroStage.Seal)
+            if (target == IntroStage.Real)
             {
-                logic.Tick(p * t.sealSec, Observed(OutsideStandM, true));
+                logic.Tick(p * t.realSec, Observed(OutsideStandM, true));
                 return logic;
             }
 
-            logic.Tick(t.sealSec, Observed(OutsideStandM, true));      // → 段 2
-            if (target == IntroStage.Dark)
+            logic.Tick(t.realSec, Observed(OutsideStandM, true));       // → 段 2
+            if (target == IntroStage.Degrade)
             {
-                // 段 2 の全黒のあいだに、体験者は封印の箱の中へ歩いて入る。
-                logic.Tick(p * t.darkSec, Observed(0f, true));
+                logic.Tick(p * t.degradeSec, Observed(OutsideStandM, true));
                 return logic;
             }
 
-            logic.Tick(t.darkSec, Observed(0f, true));                 // 中に入った → 段 3
-            if (target == IntroStage.Ignite)
+            logic.Tick(t.degradeSec, Observed(OutsideStandM, true));    // → 段 3
+            // 段 3 の尺は段 2 と重なるぶんを引いたもの（IntroTiming.TotalSec と同じ式）。
+            float ownSec = Mathf.Max(
+                t.structureSec - t.degradeSec * (1f - IntroLogic.StructureOverlapAt),
+                IntroLogic.StructureMinOwnSec);
+            if (target == IntroStage.Structure)
             {
-                logic.Tick(p * t.igniteSec, Observed(0f, true));
+                logic.Tick(p * ownSec, Observed(OutsideStandM, true));
                 return logic;
             }
 
-            logic.Tick(t.igniteSec, Observed(0f, true));               // → 段 4
-            logic.Tick(p * t.liveSec, Observed(0f, true));
+            logic.Tick(ownSec, Observed(OutsideStandM, true));          // → 段 4
+            if (target == IntroStage.Frame)
+            {
+                logic.Tick(p * t.frameSec, Observed(OutsideStandM, true));
+                return logic;
+            }
+
+            // → 段 5。この 1 tick で「枠を見ている」条件（FrameCenteredHoldSec）も満ちる
+            // （`Observed` は足踏みの条件を全部満たしてある）。
+            logic.Tick(t.frameSec, Observed(OutsideStandM, true));
+            logic.Tick(p * t.swapSec, Observed(OutsideStandM, true));
             return logic;
         }
 
@@ -304,7 +321,6 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly Material _screenMat;
             private readonly IntroVeil _veil;
             private readonly ContainmentShell _shell;
-            private readonly SealedBox _box;
             private readonly float _halfM;
 
             // キャプション帯を足す合成ステージ（遠くの別レイヤ）
@@ -329,7 +345,7 @@ namespace FixedCamVr.Streaming.EditorTools
             private float _igniteWritten = -1f;
 
             private Stage(string outDir, GameObject root, Transform head, Camera cam, Material screenMat,
-                          IntroVeil veil, ContainmentShell shell, SealedBox box, float halfM,
+                          IntroVeil veil, ContainmentShell shell, float halfM,
                           GameObject capRoot, Camera outCam, Material stageMat, TextMeshPro caption,
                           Texture2D reality, Texture2D? plate, Texture2D sceneTex,
                           RenderTexture outRt, Texture2D readback, int outW, int outH,
@@ -337,7 +353,7 @@ namespace FixedCamVr.Streaming.EditorTools
                           IntroTiming timing, float glitchOnSwap)
             {
                 _outDir = outDir; _root = root; _head = head; _cam = cam; _screenMat = screenMat;
-                _veil = veil; _shell = shell; _box = box; _halfM = halfM;
+                _veil = veil; _shell = shell; _halfM = halfM;
                 _capRoot = capRoot; _outCam = outCam; _stageMat = stageMat; _caption = caption;
                 _reality = reality; _plate = plate; _sceneTex = sceneTex;
                 _outRt = outRt; _readback = readback; _outW = outW; _outH = outH;
@@ -362,8 +378,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 IntroTiming timing = introDef != null ? introDef.ToTiming() : IntroTiming.Default;
                 float glitchOnSwap = introDef != null ? Mathf.Clamp01(introDef.glitchOnSwap) : 0.8f;
                 showLabel += introDef != null
-                    ? $" | intro {timing.sealSec:0.0}/{timing.darkSec:0.0}/{timing.igniteSec:0.0}/" +
-                      $"{timing.liveSec:0.0}s glitch x{glitchOnSwap:0.00}"
+                    ? $" | intro {timing.realSec:0.0}/{timing.degradeSec:0.0}/{timing.structureSec:0.0}/" +
+                      $"{timing.frameSec:0.0}/{timing.swapSec:0.0}s = {timing.TotalSec:0.0}s " +
+                      $"glitch x{glitchOnSwap:0.00}"
                     : " | intro NOT authored -> code defaults";
 
                 float halfM = FallbackHalfM;
@@ -453,9 +470,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 var showControl = showGo.AddComponent<ShowControlClient>();
                 showControl.SetLayoutForPreview(layout);
 
-                // --- 隔離殻（head-lock の全画面）と封印の箱（world 配置）---
+                // --- 隔離殻（head-lock の全画面）---
+                // ⚠ 封印の箱は 2026-08-15 に退避したのでここでも組まない
+                //   （箱だけを見る絵は `menu sealedbox` が持っている）。
                 var shell = AddIntroComponent<ContainmentShell>(head, "ContainmentShell", showControl);
-                var box = AddIntroComponent<SealedBox>(root.transform, "SealedBox", showControl);
 
                 // --- キャプション帯を足す合成ステージ（遠くの別レイヤ）---
                 float quadAspect = (float)Width / Height;
@@ -526,7 +544,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 Debug.Log($"[IntroViz] 現実 = {plateLabel} / スクリーンの材質 = {screenMatLabel} / {showLabel}");
 
-                return new Stage(outDir, root, head, cam, screenMat, veil, shell, box, halfM,
+                return new Stage(outDir, root, head, cam, screenMat, veil, shell, halfM,
                                  capRoot, outCam, stageMat, caption,
                                  reality, plate, sceneTex, outRt, readback, outW, outH,
                                  plateLabel, screenMatLabel, showLabel, timing, glitchOnSwap);
@@ -542,15 +560,14 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 PlaceHead(inside);
 
-                // 実機（IntroDirector.Update）と同じ順で配る。覆い → 殻 → 箱 の順序には意味がある
-                // （覆いが開口の平面を global へ配り、後から描かれる箱がそれで切られる）。
+                // 実機（IntroDirector.Update）と同じ順で配る。
                 _veil.Apply(w);
                 _shell.Apply(w);
-                _box.Apply(w);
 
                 // 管の点灯と、**映像そのものの出方**。実機は IntroDirector が MjpegScreen の材質へ
-                // 両方書く（既定はどちらも 1）。⚠ **2 つは別物** — 管が点くのは段 3、映像が出るのは段 4。
-                // 分けていないと、重み live が 0 のままなのに画に映像が出る（2026-08-13 にこの絵で見つけた）。
+                // 両方書く（既定はどちらも 1）。⚠ **2 つは別物** — 導入のあいだ管は点いたまま
+                // （ignite = 1）で、映像が来るのは段 5 だけ。分けていないと、重み live が 0 のままなのに
+                // 画に映像が出る（2026-08-13 にこの絵で見つけた食い違い）。
                 _igniteWritten = Mathf.Clamp01(w.ignite);
                 _screenMat.SetFloat(CrtIgniteId, _igniteWritten);
                 _screenMat.SetFloat(IntroLiveId, Mathf.Clamp01(w.live));
@@ -564,7 +581,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 配信断（＝ カメラが繋がっていない）。実機では SignalLostFx が書く。
                 _screenMat.SetFloat(SignalLostId, shot.noSignal ? 1f : 0f);
 
-                // 覆い・殻・箱は自分で子 GameObject を作る（レイヤは継がない）。撮る直前に揃える。
+                // 覆い・殻は自分で子 GameObject を作る（レイヤは継がない）。撮る直前に揃える。
                 SetLayerRecursive(_root.transform, IntroLayer);
 
                 CaptureScene();
@@ -574,11 +591,11 @@ namespace FixedCamVr.Streaming.EditorTools
 
             private void PlaceHead(bool inside)
             {
-                // 中に居るときは箱の中央。外に居るときは手前の面から OutsideStandM 離れて箱を向く。
+                // 中に居るときは体験エリアの中央。外に居るときは境界から OutsideStandM 離れて中を向く。
                 _head.position = inside
                     ? new Vector3(0f, EyeH, 0f)
                     : new Vector3(0f, EyeH, -(_halfM + OutsideStandM));
-                _head.rotation = Quaternion.identity;   // +Z（箱の中心）を向く
+                _head.rotation = Quaternion.identity;   // +Z（エリアの中心）を向く
             }
 
             /// <summary>
@@ -628,24 +645,22 @@ namespace FixedCamVr.Streaming.EditorTools
             private string BuildCaption(Shot shot, in IntroWeights w, bool inside)
             {
                 string eye = inside
-                    ? "inside (box centre)"
-                    : $"outside ({OutsideStandM:0.0}m from the face; the real trigger range is " +
+                    ? "inside (area centre)"
+                    : $"outside ({OutsideStandM:0.0}m from the boundary; the real trigger range is " +
                       $"{IntroLogic.ApproachNearM:0.0}m)";
 
                 return
                     $"INTRO stage {shot.index} {shot.name}  p={shot.p:0.00}  eye {eye}\n" +
-                    $"w: passthrough {w.passthrough:0.00}  frame {w.frame:0.00}  shell {w.shell:0.00}  " +
-                    $"ignite {w.ignite:0.00}  live {w.live:0.00}  sealBox {w.sealBox:0.00}   " +
-                    $"(glitch {w.glitch:0.00} shellReveal {w.shellReveal:0.00})\n" +
-                    $"drawn: veil built={B(_veil.IsBuilt)} on={B(_veil.IsActive)} | " +
+                    $"w: passthrough {w.passthrough:0.00}  degrade {w.degrade:0.00}  edge {w.edge:0.00}  " +
+                    $"shatter {w.shatter:0.00}  frame {w.frame:0.00}  shell {w.shell:0.00}  " +
+                    $"live {w.live:0.00}   (glitch {w.glitch:0.00} grain {w.grain:0.00})\n" +
+                    $"drawn: veil built={B(_veil.IsBuilt)} on={B(_veil.IsActive)} " +
+                    // ⚠ **破砕は「画に出た」の側で出す**。重み shatter が動いていても、セル格子を
+                    //    組めていなければ 1 枚 quad のままで 1 画素も割れない。
+                    $"shatter drawn={B(_veil.ShatterDrawn)} peak={_veil.ShatterPeak:0.00} " +
+                    $"cells={_veil.ShatterCells} rect={_veil.ShatterRectDesc} | " +
                     $"shell built={B(_shell.IsBuilt)} s={_shell.AppliedStrength:0.00} " +
                     $"reveal={B(_shell.Revealing)} | " +
-                    $"box built={B(_box.IsBuilt)} a={_box.AppliedOpacity:0.00} " +
-                    $"footprint={B(_box.HasFootprint)} | " +
-                    // ⚠ **床の影も「画に出た」の側で出す**（canon/LEDGER.md 0024）。
-                    //    最初この 2 つを出していなかったので、影が 1 画素も無い絵を見て
-                    //    「向きが裏側なのか、そもそも組めていないのか」が判別できなかった。
-                    $"shadow built={B(_box.ShadowIsBuilt)} a={_box.ShadowAppliedOpacity:0.00} | " +
                     $"crtIgnite={_igniteWritten:0.00}" +
                     (shot.noSignal ? "  signalLost=1.00 (no camera connected)" : "") + "\n" +
                     $"reality {_plateLabel} | screen mat {_screenMatLabel} | {_showLabel}";
