@@ -1,0 +1,469 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廻リ視 — 体験者から見た流れ</title>
+<style>
+/* ============================================================
+ * report.css（~/.claude/skills/visual-deliverable/assets/report.css）を全文インライン展開。
+ * 正本: ~/.claude/reference/design-tokens.md
+ * 末尾に、この文書だけが使う「CCTV の面」の追加規則を足してある。
+ * ============================================================ */
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;
+  --radius: 0;
+
+  /* --- CCTV の面（docs/ivrc-video/draft/build_final.py の実値をそのまま持ってきた）---
+     体験者が見ている画そのものの色なので、地の明暗が反転しても変えない。 */
+  --cctv-bg:     #080808;
+  --cctv-ink:    #fffaf0;
+  --cctv-accent: #ffdead;
+  --cctv-dim:    #807a6e;
+  --cctv-real:   #96d696;
+  --cctv-image:  #9c9890;
+  --cctv-line:   #2e2c24;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; color: var(--ink); background: var(--paper);
+  font-family: var(--gothic); font-size: var(--fs-base); line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 { font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4); padding-top: var(--sp-3); border-top: 2px solid var(--ink); }
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+.eyebrow { font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong); text-transform: uppercase; margin: 0 0 var(--sp-2); }
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+.lead { background: var(--card); border-left: 4px solid var(--accent); padding: var(--sp-4); margin: var(--sp-6) 0; }
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin: var(--sp-6) 0; }
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li { border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4); position: relative; margin: 0; }
+.tl > li::before { content: ""; position: absolute; left: -5px; top: .55em; width: 8px; height: 8px; background: var(--accent); }
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+.chip { display: inline-block; font-size: var(--fs-xs); line-height: 1.5; padding: .05em .55em; margin-left: .4em; vertical-align: middle; background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre { font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6; background: var(--card); border: 1px solid var(--line); padding: var(--sp-3) var(--sp-4); overflow-x: auto; }
+pre code { background: none; padding: 0; }
+
+.muted { color: var(--mute); }
+.note { font-size: var(--fs-sm); color: var(--mute); border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4); }
+
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+@media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+@media print {
+  :root { --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555; --line: #bbb; --accent: #000; --accent-strong: #000; }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure, .cctv { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+
+/* ============================================================
+ * CCTV の面 — 「そのとき体験者に見えている画」の再現。
+ * 図（diagram）ではなく中身なので、地の色は本文と別に持つ。
+ * 四隅の括弧・REC・カメラ番号と時刻・「構想」バッジ・周のステッパーは
+ * docs/ivrc-video/draft/make_pages.py が動画用に組んでいたものと同じ形。
+ * ============================================================ */
+.cctv {
+  position: relative; background: var(--cctv-bg); color: var(--cctv-ink);
+  padding: var(--sp-6) var(--sp-4); margin: var(--sp-4) 0;
+}
+.cctv::before, .cctv::after {
+  content: ""; position: absolute; width: 22px; height: 22px; pointer-events: none;
+}
+.cctv::before { top: 8px;  left: 8px;  border-top: 2px solid var(--cctv-accent); border-left: 2px solid var(--cctv-accent); }
+.cctv::after  { bottom: 8px; right: 8px; border-bottom: 2px solid var(--cctv-accent); border-right: 2px solid var(--cctv-accent); }
+.cctv-hud {
+  display: flex; align-items: center; gap: .5em;
+  font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: .06em;
+  color: var(--cctv-dim); margin-bottom: var(--sp-4);
+}
+.cctv-hud .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
+.cctv-hud .ts { margin-left: auto; }
+.cctv h4 {
+  font-family: var(--serif); font-size: var(--fs-md); font-weight: 600;
+  margin: 0 0 var(--sp-2); color: var(--cctv-ink); line-height: 1.4;
+}
+.cctv p { color: var(--cctv-image); font-size: var(--fs-sm); margin: var(--sp-2) 0 0; }
+.cctv p:first-of-type { color: var(--cctv-ink); font-size: var(--fs-base); }
+.cctv .hear { color: var(--cctv-dim); font-size: var(--fs-xs); margin-top: var(--sp-3); }
+.cctv .hear::before { content: "音 "; color: var(--cctv-accent); }
+.badge {
+  position: absolute; top: 14px; right: 40px;
+  font-size: var(--fs-xs); padding: .1em .6em;
+  border: 1px solid var(--cctv-image); color: var(--cctv-image);
+}
+/* 周のステッパー（動画ページと同じ並び。いまの周だけ緑の枠で囲む） */
+.stepper {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5em;
+  font-size: var(--fs-xs); color: var(--cctv-dim); margin: 0 0 var(--sp-4);
+}
+.stepper span { padding: .1em .5em; border: 1px solid transparent; }
+.stepper span.on { color: var(--cctv-real); border-color: var(--cctv-real); }
+.stepper i { font-style: normal; color: var(--cctv-line); }
+
+/* 左右分割の模式（3 周目 A・4 周目 A） */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: var(--sp-3) 0 0; }
+.split div { border: 1px solid var(--cctv-line); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); color: var(--cctv-image); }
+.split b { display: block; color: var(--cctv-accent); font-weight: 700; margin-bottom: .2em; }
+</style>
+
+<div class="wrap">
+
+<p class="eyebrow">廻リ視 ／ 体験設計</p>
+<h1>体験者から見た流れ</h1>
+<p class="sub">被ってから外すまでに、順に何が起きるか ／ 2026-08-15 時点の確定内容</p>
+
+<div class="lead">
+<p>体験者は固定カメラの映像だけを見ながら、同じ道を 3 周して元の位置へ戻ってきます。周を重ねるごとに、映っているものが現実から離れていきます。全体で 3 分以内、上限 5 分です。</p>
+<p>決まっていないのは 2 周目の A 区間と B 区間の中身だけです。それ以外は逐語で確定しています。</p>
+</div>
+
+<h2>1. 全体の時間</h2>
+
+<figure>
+<svg viewBox="0 0 700 96" role="img" aria-label="導入 13 秒、本編およそ 2 分、終幕 8.7 秒という時間の帯">
+  <style>
+    .bar   { fill: var(--card); stroke: var(--line); stroke-width: 1; }
+    .bar-a { fill: var(--accent); }
+    .lbl   { font: 600 13px var(--gothic); fill: var(--ink); }
+    .sml   { font: 11px var(--gothic); fill: var(--mute); }
+    .tick  { stroke: var(--line); stroke-width: 1; }
+  </style>
+  <rect class="bar" x="0"   y="30" width="96"  height="30"/>
+  <rect class="bar" x="96"  y="30" width="480" height="30"/>
+  <rect class="bar" x="576" y="30" width="124" height="30"/>
+  <rect class="bar-a" x="0" y="30" width="96" height="3"/>
+  <rect class="bar-a" x="576" y="30" width="124" height="3"/>
+
+  <text class="lbl" x="48"  y="50" text-anchor="middle">導入</text>
+  <text class="lbl" x="336" y="50" text-anchor="middle">本編 — 3 周 ＋ 帰りの A</text>
+  <text class="lbl" x="638" y="50" text-anchor="middle">終幕</text>
+
+  <text class="sml" x="48"  y="76" text-anchor="middle">13.1 秒</text>
+  <text class="sml" x="336" y="76" text-anchor="middle">およそ 2 分（歩く速さで変わる）</text>
+  <text class="sml" x="638" y="76" text-anchor="middle">8.7 秒</text>
+
+  <text class="sml" x="0"   y="20">被る</text>
+  <text class="sml" x="700" y="20" text-anchor="end">外す</text>
+  <line class="tick" x1="96"  y1="24" x2="96"  y2="66"/>
+  <line class="tick" x1="576" y1="24" x2="576" y2="66"/>
+</svg>
+<figcaption>導入と終幕は秒で決まっています。本編の長さは体験者の歩く速さで変わり、上限に達したら終わります。</figcaption>
+</figure>
+
+<h2>2. 被る前</h2>
+
+<p>紙が渡されます。<strong>観測者番号 ０３７</strong> と、「気になるものが見えたら、手元のボタンを押してください」の 1 行です。</p>
+
+<p>左手にコントローラを渡されます。使うのは <strong>X か Y の 2 秒長押しだけ</strong>で、どちらを押しても同じです。被ると手元は見えないので、左手の少し先に <code>(X,Yで異変を報告)</code> という文字だけが浮かびます。枠も背景もありません。</p>
+
+<p>スタッフが HMD を被せます。右手のコントローラはスタッフが持ちます。</p>
+
+<h2>3. タイトル</h2>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:14:07</span></div>
+  <h4>廻 リ 視</h4>
+  <p>黒の中に題字が立ち、2 秒で消えます。スタッフが右手の A を押した時に始まります。</p>
+  <p class="hear">題字が立つ音。消えた後も鳴り続けて、次の場面へ跨ぎます。</p>
+</div>
+
+<h2>4. 導入 — 現実が割れて、画面の中へ入る</h2>
+
+<p>13.1 秒です。視点は 1 度も動きません。動くのは現実の側です。体験エリアへ近づくと自分で始まります。</p>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:14:14</span></div>
+  <div class="stepper"><span class="on">導入</span><i>→</i><span>1周目</span><i>→</i><span>2周目</span><i>→</i><span>3周目</span></div>
+  <h4>段 1　そのままの現実 <span class="chip">1.5 秒</span></h4>
+  <p>被っているのに、部屋がそのまま見えています。何も起きません。</p>
+  <p>この 1.5 秒は、次に何が変わったかを読ませるための比較対象です。</p>
+</div>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:14:16</span></div>
+  <h4>段 2　現実が格下げされる <span class="chip">3.5 秒</span></h4>
+  <p>色が抜け、コントラストが立ち、輪郭が浮き、粒が乗ります。順に足されるので、どこで変わったかがはっきりしません。</p>
+  <p class="hear">装置の声がここから入り始めます。画より先に音が来ます。</p>
+</div>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:14:20</span></div>
+  <h4>段 3　輪郭だけの世界 <span class="chip">1.1 秒</span></h4>
+  <p>段 2 の後半から重なるので、単独で流れるのはこの長さです。</p>
+  <p class="hear">鈴が 1 回。</p>
+</div>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:14:21</span></div>
+  <h4>段 4　割れて、吸い込まれる <span class="chip">2.5 秒</span></h4>
+  <p>見えているものが細かいセルに割れ、正面の矩形へ集まっていきます。枠の中は現実のままで始まり、閉じ切る少し前にカメラ映像へ入れ替わります。</p>
+  <p class="hear">割れ始めに破砕音。入れ替わる最中に、スクリーンが点く音。</p>
+</div>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:14:24</span></div>
+  <h4>段 5　映像だけになる <span class="chip">4.5 秒</span></h4>
+  <p>最後の破片が消えて、枠の中の映像だけが残ります。<em>そこに自分が立っています。</em></p>
+  <p class="hear">ノイズが 1 回。</p>
+</div>
+
+<p class="muted">カメラが繋がっていなくても段 5 へ進みます。その場合は枠の中が砂嵐になります。装置は枠になった、映すものが無い、という筋がそのまま画に出ます。</p>
+
+<h2>5. 舞台</h2>
+
+<figure>
+<svg viewBox="0 0 700 330" role="img" aria-label="L 字の壁を囲む周回経路と、A・B・C の 3 台の固定カメラの配置">
+  <style>
+    .floor { fill: none; stroke: var(--line); stroke-width: 1.5; }
+    .wall  { fill: none; stroke: var(--ink); stroke-width: 9; stroke-linecap: square; }
+    .path  { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 7 6; }
+    .cam   { fill: var(--card); stroke: var(--ink); stroke-width: 1.5; }
+    .camt  { font: 700 13px var(--gothic); fill: var(--ink); }
+    .zt    { font: 12px var(--gothic); fill: var(--mute); }
+    .arrow { fill: var(--accent); }
+  </style>
+
+  <rect class="floor" x="150" y="30" width="400" height="270"/>
+
+  <!-- L 字の壁（西の腕 + 北の腕） -->
+  <path class="wall" d="M 250 250 L 250 110 L 450 110"/>
+
+  <!-- 周回経路 A → B → C → A -->
+  <path class="path" d="M 350 268 L 500 268 L 500 70 L 200 70 L 200 268 L 350 268"/>
+  <polygon class="arrow" points="500,180 495,166 505,166"/>
+  <polygon class="arrow" points="350,70 336,65 336,75"/>
+  <polygon class="arrow" points="200,190 195,204 205,204"/>
+
+  <!-- カメラ -->
+  <rect class="cam" x="336" y="296" width="28" height="20"/>
+  <text class="camt" x="350" y="311" text-anchor="middle">A</text>
+  <rect class="cam" x="556" y="160" width="28" height="20"/>
+  <text class="camt" x="570" y="175" text-anchor="middle">B</text>
+  <rect class="cam" x="116" y="160" width="28" height="20"/>
+  <text class="camt" x="130" y="175" text-anchor="middle">C</text>
+
+  <text class="zt" x="350" y="288" text-anchor="middle">手前 ─ 左右対称</text>
+  <text class="zt" x="618" y="196" text-anchor="middle">奥</text>
+  <text class="zt" x="86"  y="196" text-anchor="middle">奥</text>
+  <text class="zt" x="350" y="22"  text-anchor="middle">L 字の壁</text>
+</svg>
+<figcaption>L 字の壁の周りを歩きます。区間は 3 つで、歩くと見えるカメラが勝手に切り替わります。切り替えるボタンはありません。カメラ A の手前だけが左右対称で、そこだけが 3 周目・4 周目の分割演出に使えます。</figcaption>
+</figure>
+
+<h2>6. 周ごとに起きること</h2>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>周</th><th>A（手前）</th><th>B</th><th>C</th></tr></thead>
+<tbody>
+<tr><td><strong>1 周目</strong></td><td>何も起きない。ここを歩く姿が録画される</td><td>手形が出る</td><td>何もない</td></tr>
+<tr><td><strong>2 周目</strong></td><td class="muted">保留</td><td class="muted">保留</td><td>全画面の顔 ─ 驚かせるのはここ 1 回だけ</td></tr>
+<tr><td><strong>3 周目</strong></td><td>画面が左右に割れる（下に詳細）</td><td>1 周目の録画に CG 人形が重なる</td><td>同じ</td></tr>
+<tr><td><strong>帰りの A</strong></td><td colspan="3">左＝大量の人形／右＝人形になった自分 → 報告 → 全部が現実の映像へ戻る → 3 秒 → 終幕</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>1 周目の A で演出を出さないのは、ここを 3 周目と帰りの A の素材にするからです。<em>体験者が最初に歩いた姿が、後で本人の背景として流れます。</em></p>
+
+<h2>7. 3 周目の A — 自分が 2 人に見える</h2>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:16:02</span></div>
+  <span class="badge">構想</span>
+  <div class="stepper"><span>導入</span><i>→</i><span>1周目</span><i>→</i><span>2周目</span><i>→</i><span class="on">3周目</span></div>
+  <h4>① 入ってきたところ</h4>
+  <p>画面の中心で左右に割れています。境目は部屋の縦線に乗せてあるので、割れていることは分かりません。</p>
+  <div class="split">
+    <div><b>左半分</b>いまの映像を左右反転したもの</div>
+    <div><b>右半分</b>いまの映像</div>
+  </div>
+  <p>自分が 2 人います。歩くと、2 人が中心へ寄ってきます。</p>
+</div>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:16:09</span></div>
+  <span class="badge">構想</span>
+  <h4>② 右の線を越える</h4>
+  <p>床に引いた線を通過した瞬間、左半分が止まります。反転したまま止まるので、鏡の中の自分だけが立ち尽くします。</p>
+</div>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:16:11</span></div>
+  <span class="badge">構想</span>
+  <h4>③ 止まっていた自分が歩き出す</h4>
+  <p>乱れが 1 度走り、その裏で左半分が 1 周目の録画に入れ替わります。<em>反転はここで解けます。</em>止まっていた自分が歩き出して、ひとりでに順路を進んでいきます。</p>
+  <div class="split">
+    <div><b>左半分</b>1 周目の録画（反転なし）</div>
+    <div><b>右半分</b>いまの映像</div>
+  </div>
+  <p>床の線は左右対称に 2 本引いてあります。反転した左半分では、右の線に立つ自分が左の線の位置に見えます。だから止まった位置と、録画が歩き出す位置が揃います。</p>
+</div>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:16:16</span></div>
+  <span class="badge">構想</span>
+  <h4>④ 気を取られている間に、右が入れ替わる</h4>
+  <p>もう 1 度乱れが走り、右半分が「誰も居ない部屋＋人形」に変わります。自分が消えて、人形になっています。</p>
+  <div class="split">
+    <div><b>左半分</b>1 周目の録画</div>
+    <div><b>右半分</b>環境＋人形の合成</div>
+  </div>
+</div>
+
+<p class="muted">反転を掛けるのは、いまの映像と止めた 1 枚だけです。録画を反転したまま流すと、映像の中の自分が逆走して境目へ入り、消えてしまいます。</p>
+
+<h2>8. 帰りの A — 締め</h2>
+
+<div class="cctv">
+  <div class="cctv-hud"><span class="dot"></span>REC<span class="ts">CAM 01   23:16:44</span></div>
+  <span class="badge">構想</span>
+  <h4>元の位置へ戻ってくる</h4>
+  <div class="split">
+    <div><b>左半分</b>大量の人形が並んでいる（生成した画）</div>
+    <div><b>右半分</b>人形になった自分と、部屋</div>
+  </div>
+  <p>異変だと思って報告ボタンを押します。乱れが走り、生成された人形が消えて、左半分がいまの映像に戻ります。右半分も戻ります。<em>全部が現実の映像になります。</em></p>
+  <p>3 秒置いて、終幕へ移ります。</p>
+</div>
+
+<p>報告ボタンが演出の引き金になるのはここだけです。驚かせる仕掛けには一度も使いません。</p>
+
+<h2>9. 終幕</h2>
+
+<p>8.7 秒です。パススルーには戻りません。背景は黒のままで、スクリーンだけが力尽きます。</p>
+
+<ul class="tl">
+<li><span class="date">ちらつく</span><span class="headline">6.0 秒</span>
+<p>スクリーンが電池切れのようにちかちかしながら暗くなり、消えます。終盤ほど落ちる回数が増え、深くなります。</p></li>
+<li><span class="date">黒</span><span class="headline">1.2 秒</span>
+<p>何も無い黒。間だけです。</p></li>
+<li><span class="date">報告</span><span class="headline">1.5 秒</span>
+<p>4 行が浮かびます。押した回数が全角数字で入ります。紙の「観測者番号 ０３７」と対になっています。</p></li>
+</ul>
+
+<p>文字は出したまま次の体験者を待ちます。ここまで来たら HMD を外して構いません。装置の声は消えていく過程で細り、部屋の音だけが残り、最後は無音になります。<em>終幕に新しい音は 1 つも足しません。</em></p>
+
+<h2>10. 周を重ねると変わるもの</h2>
+
+<p>周ごとの演出とは別に、装置そのものが痩せていきます。段では落ちません。連続して進むので、どこで変わったかは分かりません。</p>
+
+<div class="grid">
+<div class="card"><b>解像度</b><span>周の進みに比例して粗くなります。落とすのは解像度だけです。</span></div>
+<div class="card"><b>色</b><span>色が抜けて夜間カメラの見え方へ寄ります。3 周目の A で完全な無彩になります。</span></div>
+<div class="card"><b>環境音</b><span>1 周目・2 周目・3 周目で別の音に入れ替わります。クロスフェードなので切れ目はありません。</span></div>
+</div>
+
+<h2>11. 報告ボタンの扱い</h2>
+
+<dl class="qa">
+<dt>押さないとどうなりますか</dt>
+<dd>何も変わりません。押しても押さなくても同じように進みます。帰りの A の締めだけは押すと先へ進みますが、押さなくても時間で終わります。</dd>
+<dt>合っているかどうかは分かりますか</dt>
+<dd>返しません。正誤を返すと答え合わせになり、何が異変かを装置が決めてしまいます。</dd>
+<dt>押したときの手応えは</dt>
+<dd>左コントローラが短く振動し、手元の文字がゲージになります。2 秒握り続けると 1 回として数えられます。歩きながら握り込むので、触れただけでは通りません。</dd>
+</dl>
+
+<h2>12. まだ決まっていないもの</h2>
+
+<p>2 周目の A と B の中身です。以前あった「乱れ → 人形の静止画 → 乱れ」は、驚かせるのを 1 回に絞った時点で外れました。枠は空いたままです。</p>
+
+<p>2 周目の C（全画面の顔）が、この体験で唯一の驚かせる仕掛けです。他は不思議と不気味だけで作ります。</p>
+
+<p class="note">
+出どころ: <code>.claude/canon/LEDGER.md</code> 0050（体験の割り付け・逐語）／ <code>.claude/rules/show-design.md</code>（導入・終幕・入力）／ <code>.claude/rules/streaming.md</code>（左右分割・周回の劣化）／ <code>.claude/rules/sound-design.md</code>（音）／ <code>tools/web-compositor/show.json</code>（秒数）。<br>
+視覚の様式は <code>docs/ivrc-video/draft/make_pages.py</code>（周回アニメーション動画のページ生成）から持ってきました。四隅の括弧・REC・カメラ番号と時刻・「構想」バッジ・周のステッパーが同じものです。<strong>本文は当時のページから作り直しています</strong> — 動画のページには「血の手形」「怪物へ変わる」など、いまの台本に無いものが書かれているためです。<br>
+「構想」バッジが付いた面は、まだ実機で 1 度も見ていないものです。
+</p>
+
+</div>
