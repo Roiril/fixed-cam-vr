@@ -305,24 +305,34 @@ def build_comms() -> np.ndarray:
 def build_dolls() -> np.ndarray:
     """最後の演出（人形がたくさん出てくる所）を、**本編の敷く音の上で**聴く。
 
-    ⚠ 単体で聴くと必ず大きく感じる。実機はここへ劇伴（`HorrBGM`）も乗るが、
-    それは卓の設定なので入れていない。
+    ⚠ **報告を押すまでループする**（`canon/LEDGER.md` 0066）。ここでは輪を 2 周まわして、
+    **継ぎ目が聞こえないか**を確かめられるようにしてある（12 秒 × 2）。
 
-    並びは実機と同じ順序（`canon/LEDGER.md` 0062）:
-      締めのカットが待ち始める → **人形の笑い** → その 3 秒後に③の連絡（打鍵）。
+    並びは実機と同じ順序:
+      締めのカットが待ち始める → **人形が笑い出す** → 3 秒後に③の連絡（打鍵）→
+      報告を押す → 笑いが止まる。
     """
     rng = np.random.default_rng(20260816)
     t_laugh = 1.5
     t_comms = t_laugh + 3.0            # `CommsCueLogic.PromptAfterWaitSec`
-    total = t_laugh + 11.0
+    t_mark = t_laugh + 25.0            # ここで報告を押した（笑いが止まる）
+    total = t_mark + 3.0
 
     # 4 周目 ＝ 装置は痩せ切っていて、環境音は 3 周目のもの（§4 の表）。
     out = (tile(load("bed_room_lap3"), total) * 0.34
            + tile(load("bed_device_worn"), total) * 1.0)
-    lay(out, load("amb_dolls_laugh"), t_laugh)
+
+    # 笑いは輪。押されるまで鳴り続ける（実機は `SoundBedLogic.dolls` が音量を出し入れする）。
+    laugh = load("bed_dolls_laugh")
+    span = int((t_mark - t_laugh) * sk.SR)
+    loops = tile(laugh, span / sk.SR)
+    # 止まりは実機と同じ速さ（半減期 0.35 秒）で落とす。
+    tail = np.arange(len(loops)) / sk.SR - (t_mark - t_laugh - 1.0)
+    env = np.clip(0.5 ** (np.maximum(tail, 0.0) / 0.35), 0.0, 1.0)[:, None]
+    lay(out, loops * env, t_laugh)
     lay(out, type_burst(20, TYPE_CPS, rng), t_comms)
-    print(f"  {t_laugh:.1f}s 人形が笑い出す（16 体・10.3 秒）/ "
-          f"{t_comms:.1f}s ③の連絡「異常が検出されました。記録してください。」")
+    print(f"  {t_laugh:.1f}s 人形が笑い出す（8 体 / 12 秒の輪を 2 周）/ "
+          f"{t_comms:.1f}s ③の連絡 / {t_mark:.1f}s 報告を押す → 止まる")
     return out
 
 

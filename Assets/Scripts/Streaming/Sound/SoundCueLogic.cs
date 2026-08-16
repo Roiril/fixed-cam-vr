@@ -56,16 +56,6 @@ namespace FixedCamVr.Streaming
         /// </summary>
         Creak,
         /// <summary>
-        /// <b>人形がたくさん出てくる所で、いろんな人形が笑う</b>（2026-08-16・
-        /// <c>canon/LEDGER.md</c> 0062）。もらった 1 本の笑い声を 7 体ぶんに組んである
-        /// （音程・音量・音程のカーブ・始まりをずらして一部重ねる）。
-        ///
-        /// ⚠ <b>鳴る場所は「締めのカットが報告を待ち始めた瞬間」</b>。
-        /// 4 周目 A と名指ししない — 著作が変わっても追随するように、
-        /// <c>CommsCueLogic</c> の③と同じ signal（<c>TimelineDirector.IsWaitingForVisitorMark</c>）を読む。
-        /// </summary>
-        DollsLaugh,
-        /// <summary>
         /// 鈴。<b>完全にスクリーンになった所に 1 回だけ</b>（段 5 の頭から
         /// <see cref="SoundCueLogic.BellAfterSwapSec"/> 後）。誰も鳴らしていないのに鳴る。
         /// ⚠ 2026-08-16 に段 3 の頭からここへ移した（<c>canon/LEDGER.md</c> 0057）。
@@ -146,11 +136,6 @@ namespace FixedCamVr.Streaming
         private bool _glyphWasShowing;
         private bool _bellFired;
 
-        /// <summary>締めのカットが報告を待ち始めた縁を取るための前フレームの値。</summary>
-        private bool _markWasWaiting;
-        /// <summary>人形の笑いはラン 1 回に 1 度だけ（<see cref="ResetRun"/> で落ちる）。</summary>
-        private bool _dollsFired;
-
         /// <summary>段 5 に入ってからの秒数。<b>鈴はここで数える</b>（外から段の経過が来ないため）。</summary>
         private float _swapSec;
 
@@ -188,12 +173,6 @@ namespace FixedCamVr.Streaming
             _shatterFired = _screenOnFired = _screenNoiseFired = false;
             _bellFired = false;
             _swapSec = 0f;
-            // ⚠⚠ **人形の笑いもここで落とす。** 鳴るのは本編の終わりだが、落とす場所を
-            //    <see cref="ResetRun"/> に置くと**2 人目以降で鳴らない**
-            //    （このクラスの `ResetRun` は呼び出し元がどこにも無い ＝ 上の注記と同じ穴）。
-            //    段 0 は 1 人につき必ず 1 度通るので、ここが唯一の確実な縁。
-            _markWasWaiting = false;
-            _dollsFired = false;
         }
 
         /// <summary>今フレームに鳴らすものを返す（<paramref name="count"/> 本）。</summary>
@@ -260,16 +239,9 @@ namespace FixedCamVr.Streaming
             //    それも Done で無音へ落ちる（`rules/sound-design.md`「終わりに音を残さない」）。
             //    <see cref="SoundCue.ShellOpen"/> の enum と音源は残してある。
 
-            // --- 人形がたくさん出てくる（締めのカットが報告を待ち始めた縁）--------
-            // ⚠ **「4 周目 A」と名指ししない。** 締めのカットが待っていること自体を見るので、
-            //    著作が変わっても追随する（`CommsCueLogic` の③と同じ signal）。
-            // ⚠ 位置合わせ中は鳴らさない（スタッフの作業に世界の音を割り込ませない）。
-            if (s.markWaiting && !_markWasWaiting && !_dollsFired && !s.registrationActive)
-            {
-                _dollsFired = true;
-                Push(SoundCue.DollsLaugh, ref count);
-            }
-            _markWasWaiting = s.markWaiting;
+            // ⚠⚠ **人形の笑いはここには無い**（2026-08-16・`canon/LEDGER.md` 0066）。
+            //    報告を押すまで**ループ**するので、一撃ではなく敷く音の器に載せてある
+            //    （`SoundBedLogic.dolls` / `bed_dolls_laugh`）。ここへ戻すと 1 回で終わる。
 
             // --- 乱れ（何度でも鳴る）-------------------------------------------
             if (glitchLevel < GlitchRearmAt) _glitchArmed = true;
@@ -328,10 +300,6 @@ namespace FixedCamVr.Streaming
                 case SoundCue.ShellOpen: return 0.40f;
                 case SoundCue.Glitch: return 0.35f;
                 case SoundCue.Bell: return 0.45f;
-                // 人形が笑い出した所は劇伴を深く退かせる（画面が人形で埋まる場面）。
-                // ⚠ 退きは 0.55 秒の半減期で戻るので、効くのは笑い始めだけ。
-                //    7 秒のあいだずっと引かせたいなら、押し続ける経路が要る（いまは作っていない）。
-                case SoundCue.DollsLaugh: return 0.85f;
                 case SoundCue.Creak: return 0.15f;   // 退かせすぎると芝居がかる
                 default: return 0f;
             }
@@ -353,7 +321,6 @@ namespace FixedCamVr.Streaming
                 case SoundCue.Glitch: return "sfx_glitch";      // 3 種から順に選ぶ
                 case SoundCue.Creak: return "amb_creak";        // 2 種
                 case SoundCue.Bell: return "amb_bell";
-                case SoundCue.DollsLaugh: return "amb_dolls_laugh";
                 default: return "";
             }
         }

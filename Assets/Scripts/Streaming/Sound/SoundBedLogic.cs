@@ -86,6 +86,15 @@ namespace FixedCamVr.Streaming
         public float deviceWorn;
         /// <summary>信号断の砂嵐。</summary>
         public float noise;
+
+        /// <summary>
+        /// <b>人形の笑い</b>（`bed_dolls_laugh`）。締めのカットが報告を待っているあいだだけ 1。
+        /// **報告を押すまでループする**（2026-08-16・<c>canon/LEDGER.md</c> 0066）。
+        ///
+        /// ⚠ これは敷く音の器に載せているが、**地の音ではない**（-20 LUFS ＝ 地より 12dB 上）。
+        /// 器を借りている理由は 1 つだけで、<b>ループして出し入れできるのがここしか無い</b>から。
+        /// </summary>
+        public float dolls;
         /// <summary>
         /// 部屋の開き具合（1 = 広い / 0 = 隔離されて狭い）。低域通過フィルタの開度に写す。
         /// **隔離は音量ではなくここで表す** — 音量を下げると「遠ざかった」、
@@ -129,6 +138,13 @@ namespace FixedCamVr.Streaming
 
         /// <summary>砂嵐が満ちたときに装置と部屋をどこまで引くか。</summary>
         public const float NoiseDuckScale = 0.35f;
+
+        /// <summary>人形が笑っているあいだ、劇伴をどこまで引くか。**鳴っているあいだずっと。**</summary>
+        public const float DollsDuck = 0.85f;
+
+        // 人形の笑いの出入り（半減期・秒）。⚠ 入りは速く、切れは**押した手応え**なので更に速い。
+        private const float DollsRiseSec = 0.25f;
+        private const float DollsFallSec = 0.35f;
 
         /// <summary>本編で部屋のトーンをどこまで下げるか（装置の声の下に敷く）。</summary>
         public const float RoomInRun = 0.34f;
@@ -198,6 +214,7 @@ namespace FixedCamVr.Streaming
             ApplyAmbientMix(dt, s.lap);
             _deviceTotal = SoundFade.Approach(_deviceTotal, t.device, DeviceRiseSec, DeviceFallSec, dt);
             _cur.noise = SoundFade.Approach(_cur.noise, t.noise, NoiseRiseSec, NoiseFallSec, dt);
+            _cur.dolls = SoundFade.Approach(_cur.dolls, t.dolls, DollsRiseSec, DollsFallSec, dt);
             _cur.roomOpen = SoundFade.Approach(_cur.roomOpen, t.roomOpen, OpenSec, dt);
 
             // 痩せ具合は等パワーで混ぜる。線形にすると**進行の途中で装置の声が凹む**
@@ -220,6 +237,8 @@ namespace FixedCamVr.Streaming
             outG.room *= keep;
             outG.device *= keep;
             outG.deviceWorn *= keep;
+            // ⚠ **人形の笑いは退かせない。** 退きは「節目の一撃を地に埋もれさせない」ための
+            //    仕組みで、笑い自体がその事件。自分で自分を引いたら意味が無い。
             return outG;
         }
 
@@ -281,6 +300,13 @@ namespace FixedCamVr.Streaming
             else if (s.introActive) g.device = DeviceForStage(s);
             else g.device = 1f;
 
+            // --- 人形の笑い -------------------------------------------------------
+            // 締めのカットが報告を待っているあいだだけ鳴る（**押すまでループ**）。
+            // ⚠ 鳴っているあいだは劇伴を深く退かせる。**一撃の退き（`PushSpotDuck`）と違って
+            //    押し続ける**ので、7 秒でも 40 秒でも退いたまま保つ。
+            g.dolls = s.markWaiting ? 1f : 0f;
+            if (g.dolls > 0f) g.duck = Math.Max(g.duck, DollsDuck * g.dolls);
+
             // --- 砂嵐 -----------------------------------------------------------
             g.noise = Clamp01(s.signalLost);
             if (g.noise > 0f)
@@ -297,6 +323,7 @@ namespace FixedCamVr.Streaming
                 g.room *= RegistrationDuckScale;
                 g.device *= RegistrationDuckScale;
                 g.noise *= RegistrationDuckScale;
+                g.dolls = 0f;                    // 作業中に人形を笑わせない（引くのではなく黙らせる）
                 g.roomOpen = 1f;
                 g.duck = 1f;
             }
@@ -304,7 +331,7 @@ namespace FixedCamVr.Streaming
             // 体験が終わった後は何も残さない（最後に鳴っているのは無音、が正しい）。
             if (s.phase == ShowPhase.Finished && !s.outroActive)
             {
-                g.seal = g.room = g.device = g.noise = 0f;
+                g.seal = g.room = g.device = g.noise = g.dolls = 0f;
                 g.duck = 1f;
             }
             return g;

@@ -64,6 +64,13 @@ namespace FixedCamVr.Streaming
         // 直前のフレームで鳴っていたか（黙り → 鳴り始めの縁で頭出しするために持つ）。
         private bool _room2Audible, _room3Audible;
         private BedVoice _worn = new BedVoice(), _noise = new BedVoice();
+
+        /// <summary>
+        /// 人形の笑い。**報告を押すまでループ**（<c>canon/LEDGER.md</c> 0066）。
+        /// 敷く音の器に載せているが地の音ではない — ループして出し入れできるのがここだけだから。
+        /// </summary>
+        private BedVoice _dolls = new BedVoice();
+        private bool _dollsAudible;
         private readonly System.Collections.Generic.Dictionary<string, AudioClip?> _spot =
             new System.Collections.Generic.Dictionary<string, AudioClip?>();
         private readonly System.Collections.Generic.Dictionary<SoundCue, int> _variant =
@@ -103,6 +110,12 @@ namespace FixedCamVr.Streaming
         /// <summary>部屋の低域通過の実効遮断周波数（Hz）。隔離が閉じると下がる。</summary>
         public float RoomCutoffHz { get; private set; } = 22000f;
 
+        /// <summary>
+        /// 人形の笑いの音量（0..1）。**画にも一撃のログにも出ない**ので、
+        /// 鳴っているかを外から知る唯一の手（<c>canon/LEDGER.md</c> 0066）。
+        /// </summary>
+        public float DollsGain { get; private set; }
+
         // ---------------------------------------------------------------- 生成
 
         private void Awake()
@@ -120,6 +133,7 @@ namespace FixedCamVr.Streaming
             _device = MakeBed("Device", "bed_device", spatial: false);
             _worn = MakeBed("DeviceWorn", "bed_device_worn", spatial: false);
             _noise = MakeBed("Noise", "bed_static", spatial: false);
+            _dolls = MakeBed("Dolls", "bed_dolls_laugh", spatial: false);
 
             foreach (SoundCue c in System.Enum.GetValues(typeof(SoundCue)))
             {
@@ -321,6 +335,12 @@ namespace FixedCamVr.Streaming
             sum += Set(_device, g.device * m);
             sum += Set(_worn, g.deviceWorn * m);
             sum += Set(_noise, g.noise * m);
+            // ⚠ **鳴り始めは必ず輪の同じ所から。** 12 秒の輪を常時回しているので、
+            //    頭出ししないと**体験者ごとに違う所から笑い出す**（走行の再現性が消える）。
+            float dollsGain = g.dolls * m;
+            CueAmbientStart(_dolls, dollsGain, ref _dollsAudible, fraction: 0f);
+            sum += Set(_dolls, dollsGain);
+            DollsGain = dollsGain;
             AudibleSum = sum;
 
             // 隔離は音量ではなく**帯域**で表す（音量を下げると「遠ざかった」に聞こえる）。
@@ -376,11 +396,12 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private const float AmbientStartFraction = 0.25f;
 
-        private static void CueAmbientStart(BedVoice b, float gain, ref bool wasAudible)
+        private static void CueAmbientStart(BedVoice b, float gain, ref bool wasAudible,
+                                            float fraction = AmbientStartFraction)
         {
             bool audible = gain > 0.0005f;
             if (audible && !wasAudible && b.src != null && b.ok && b.src.clip != null)
-                b.src.time = b.src.clip.length * AmbientStartFraction;
+                b.src.time = b.src.clip.length * fraction;
             wasAudible = audible;
         }
 
@@ -394,7 +415,7 @@ namespace FixedCamVr.Streaming
             _sfx?.StopAll();
             LastCue = SoundCue.None;
             // 次の体験者でも同じ所から環境音が入る（頭出しの縁を作り直す）。
-            _room2Audible = _room3Audible = false;
+            _room2Audible = _room3Audible = _dollsAudible = false;
         }
     }
 }

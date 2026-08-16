@@ -1288,16 +1288,26 @@ def analyze(events, others, exp, warns=None):
         #    鳴る縁は「締めのカットが報告を待ち始めたこと」なので、**その場面まで走ったときだけ**
         #    見る（走り切らなかった走行で毎回 FAIL を出さない）。待ったことの証拠は
         #    `ev=comms` の `wait=1`（③の連絡と同じ signal を音も読んでいる）。
+        #    ⚠⚠ **一撃ではなくループ**（2026-08-16・0066 で作り替えた）ので、`ev=sfx` には出ない。
+        #       見るのは `ev=sum` の `sndDolls`（いま書いている音量）。
         closing_ran = any(str(e.get("wait")) == "1" for e in comms)
-        if closing_ran or by_id.get("DollsLaugh", 0) > 0:
-            if by_id.get("DollsLaugh", 0) == 0:
-                verdict("FAIL", "締めのカットが報告を待ったのに人形の笑いが鳴っていない"
-                                "（ev=sfx id=DollsLaugh が 0 本 — SoundCueLogic の markWaiting、"
-                                "または ShowSoundDirector が TimelineDirector を掴めているか）")
-            elif by_id.get("DollsLaugh", 0) > 1:
-                verdict("FAIL", f"人形の笑いが {by_id['DollsLaugh']} 回鳴っている — ラン 1 回に 1 度だけ")
+        dolls = [float(v) for v in effect_samples(events, "sndDolls")
+                 if str(v) not in ("-", "nc")]
+        if closing_ran or (dolls and max(dolls) > 0.01):
+            if not dolls:
+                verdict("WARN", "人形の笑いの観測が無い（sndDolls が 1 度も出ていない）— "
+                                "古い APK か、ShowSoundDirector が居ない")
+            elif max(dolls) <= 0.01:
+                verdict("FAIL", "締めのカットが報告を待ったのに人形が笑っていない"
+                                "（sndDolls が 0 のまま — bed_dolls_laugh を掴めているか、"
+                                "ShowSoundDirector が TimelineDirector を掴めているか）")
             else:
-                verdict("OK", "人形がたくさん出てくる所で笑いが 1 回鳴った")
+                verdict("OK", f"人形がたくさん出てくる所で笑った（sndDolls 最大 {max(dolls):.2f}）")
+            # 押したあとも鳴っていたら、止める経路が壊れている（次の体験者へ持ち越す）。
+            if dolls and dolls[-1] > 0.01 and any(e.get("id") in ("MarkLogged", "MarkNothing")
+                                                  for e in comms):
+                verdict("WARN", "報告のあとも人形が笑ったまま走行が終わっている"
+                                f"（最後の sndDolls={dolls[-1]:.2f}）")
 
         if intro_ran:
             # ⚠ 鳴らさなくなったものが鳴っていたら**戻ってしまっている**（0057）。

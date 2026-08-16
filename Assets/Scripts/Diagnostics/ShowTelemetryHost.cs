@@ -856,6 +856,9 @@ namespace FixedCamVr.Diagnostics
             //   sndAmb = 周ごとの環境音の取り分（1 周目/2 周目/3 周目）。**入れ替わったかの唯一の証拠**
             //            — 合計は常に一定なので `sndAud` には出ない（canon/LEDGER.md 0049）
             _sb.Append(" sndAmb=").Append(SoundAmbientState);
+            //   sndDolls = 人形の笑いの音量（`canon/LEDGER.md` 0066）。**報告を押すまでループ**
+            //              するので、一撃のログ（ev=sfx）には出ない。鳴ったかはここにしか出ない。
+            _sb.Append(" sndDolls=").Append(_sound == null ? "-" : _sound.DollsGain.ToString("F2"));
             _sb.Append(" sfxN=").Append(_sound == null ? "-" : _sound.SpotCount.ToString());
             _sb.Append(" swN=").Append(_switchSfx == null
                                        ? "-"

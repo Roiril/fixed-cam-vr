@@ -294,6 +294,59 @@ namespace FixedCamVr.Streaming.Tests
             Assert.Greater(g.roomLap1, 0.99f, "前の体験者の 3 周目の環境音から始まっている");
         }
 
+        // ---------------------------------------------------------------- 人形の笑い
+
+        /// <summary>締めのカットが報告を待っている状態（人形がたくさん出てくる所）。</summary>
+        private static SoundShowState Closing(bool waiting, bool registering = false)
+        {
+            var s = Run(4);
+            s.markWaiting = waiting;
+            s.registrationActive = registering;
+            return s;
+        }
+
+        [Test]
+        public void Dolls_LaughWhileTheClosingCutWaits_AndStopWhenTheVisitorReports()
+        {
+            // ⚠ **一撃ではなくループ**（2026-08-16・`canon/LEDGER.md` 0066）。
+            //    報告を押すまで鳴り続け、押したら止まる。
+            var l = new SoundBedLogic();
+            Assert.AreEqual(0f, Settle(l, Run(4)).dolls, 1e-3f, "待っていないのに笑っている");
+
+            var g = Settle(l, Closing(true), sec: 3f);
+            Assert.Greater(g.dolls, 0.99f, "締めのカットが待っているのに笑わない");
+
+            // 40 秒待たされても鳴り続ける（一撃なら消えている）。
+            Assert.Greater(Settle(l, Closing(true), sec: 40f).dolls, 0.99f, "途中で止まった");
+
+            // 報告した → 止まる。
+            Assert.Less(Settle(l, Closing(false), sec: 3f).dolls, 0.01f, "押しても止まらない");
+        }
+
+        [Test]
+        public void Dolls_DuckTheScoreWhileTheyLaugh()
+        {
+            // ⚠ 一撃の退き（`PushSpotDuck`）と違い、**鳴っているあいだずっと**引く。
+            var l = new SoundBedLogic();
+            var g = Settle(l, Closing(true), sec: 5f);
+            Assert.GreaterOrEqual(g.duck, SoundBedLogic.DollsDuck - 1e-2f, "劇伴が退いていない");
+            // 笑いそのものは退かせない（自分で自分を引いたら意味が無い）。
+            Assert.Greater(g.dolls, 0.99f);
+        }
+
+        [Test]
+        public void Dolls_AreSilentDuringRegistration_AndAfterTheShowEnds()
+        {
+            var l = new SoundBedLogic();
+            Assert.Less(Settle(l, Closing(true, registering: true), sec: 5f).dolls, 0.01f,
+                        "位置合わせ中に人形が笑っている");
+
+            var done = Closing(true);
+            done.phase = ShowPhase.Finished;
+            Assert.Less(Settle(new SoundBedLogic(), done, sec: 5f).dolls, 0.01f,
+                        "体験が終わったのに笑っている");
+        }
+
         [Test]
         public void Tick_ApproachesTarget_WithoutOvershoot()
         {
