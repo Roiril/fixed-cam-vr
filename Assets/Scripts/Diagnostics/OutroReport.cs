@@ -13,6 +13,19 @@ namespace FixedCamVr.Diagnostics
     /// <b>体験前の注意書き（<see cref="TitleNotice"/>）と対になる面。</b> 置き方・大きさ・
     /// 深度の逃がし方はあちらと同じで、違うのは出る段だけ（あちらは真っ暗な待ち、こちらは終幕）。
     ///
+    /// <b>出方</b>（<c>canon/LEDGER.md</c> 0063・2026-08-16）: <b>1 字ずつ打たれ、1 字ごとに
+    /// 打鍵音が 1 発鳴る</b>（上司からの連絡＝<see cref="CommsPanel"/> と同じ装置の印字）。
+    /// 速さは <see cref="CommsPanelLogic.CharsPerSec"/> をそのまま使う — 同じ装置が違う速さで
+    /// 打つと、別の装置が 2 台あるように聞こえる。
+    ///
+    /// ⚠ <b>不透明度のフェードは持たない。</b> 打鍵そのものが出現の演出で、重ねると
+    /// 頭の数文字だけ薄いという半端な絵になる。<c>run.outro.reportFadeSec</c> は
+    /// <b>段 Report の長さ</b>（＝ <see cref="OutroStage.Done"/> へ移るまで）としてだけ効く。
+    /// 打ち切るまでの時間はそれより長いことがあり、<b>Done でも打ち続ける</b>（面は消えない）。
+    ///
+    /// ⚠ <b>揃えは左</b>（同 0063）。ただし<b>字の塊は視界の中央へ運ぶ</b> —
+    /// 左寄せの意図は「行頭が揃って読める」ことで、「塊が視界の左に寄る」ことではない。
+    ///
     /// ⚠ <b>「体験者の視界に文字を出さない」（rules/show-design.md）の対象外。</b>
     /// 体験そのものは既に終わっていて、この 4 行が終わったことを伝える唯一の手段
     /// （黒だけだと「まだ何か起きるのか」に見え、HMD を外してよいことが伝わらない）。
@@ -36,6 +49,9 @@ namespace FixedCamVr.Diagnostics
 
         [Tooltip("報告した数の供給元。null ならシーンから探す。居なければ 0 として出す。")]
         [SerializeField] private ShowControlClient? showControl;
+
+        [Tooltip("打鍵音。null なら同 GameObject から取得（無ければ足す）。")]
+        [SerializeField] private TypeAudioCue? typeSfx;
 
         [Tooltip("頭からの距離 (m)。体験前の注意書き（TitleNotice.distanceM）と同じ所に立てる。")]
         [SerializeField, Min(0.5f)] private float distanceM = 2.6f;
@@ -72,6 +88,12 @@ namespace FixedCamVr.Diagnostics
         private float _alpha;
         private float _resolveWait;
         private int _shownCount = -1;
+        // 打鍵の刻み。**画に何文字出したか**をここから決め、同じ数えから音を鳴らす。
+        private float _typeElapsed;
+        private int _charCount;
+        private int _lastShown;
+        // その字が絵を持つか（改行だけ false）。⚠ **全文が出ている一瞬にしか測れない** → SetBody。
+        private bool[]? _charVisible;
 
         /// <summary>実体（TMP）を組めたか。<b>false なら一生出ない</b>（テレメトリが読む）。</summary>
         public bool IsBuilt => _text != null;
@@ -81,6 +103,21 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>いま面に出している文字（テスト・診断用）。</summary>
         public string CurrentBody => _text != null ? _text.text : "";
+
+        /// <summary>いま画に出ている文字数。<b>打鍵音はここから鳴る</b>ので、音の証拠でもある。</summary>
+        public int VisibleChars { get; private set; }
+
+        /// <summary>
+        /// 打ち切るまでに鳴る打鍵の数（<b>改行を除いた字数</b>）。
+        /// 解析器が <see cref="TypedCount"/> と突き合わせる。
+        /// </summary>
+        public int ReportChars { get; private set; }
+
+        /// <summary>鳴らした打鍵の累計。<b>出た文字数と一致するはず</b>（改行は除く）。</summary>
+        public int TypedCount => typeSfx != null ? typeSfx.PlayedCount : 0;
+
+        /// <summary>打鍵の音源を掴めているか。<b>false なら字は出るのに無音。</b></summary>
+        public bool TypeSfxBuilt => typeSfx != null && typeSfx.HasClips;
 
         private void Awake()
         {
@@ -92,13 +129,23 @@ namespace FixedCamVr.Diagnostics
         private void OnDisable()
         {
             _alpha = 0f;
+            // 打鍵も頭へ戻す（次に出るときは 1 字目から打ち直す）。
+            _typeElapsed = 0f;
+            _lastShown = 0;
+            VisibleChars = 0;
+            if (_text != null) _text.maxVisibleCharacters = 0;
             SetAlpha(0f);
+            typeSfx?.StopAll();
         }
 
         private void ResolveRefs()
         {
             if (outro == null) outro = FindObjectOfType<OutroDirector>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            // ⚠ 打鍵音は**この面が持つ**（`ShowSoundDirector` は毎フレーム外から状態を見る層で、
+            //    字の刻みちょうどには鳴らせない）。連絡の面・切替音と同じ構え。
+            if (typeSfx == null) typeSfx = GetComponent<TypeAudioCue>();
+            if (typeSfx == null) typeSfx = gameObject.AddComponent<TypeAudioCue>();
         }
 
         private void Build()
@@ -118,8 +165,11 @@ namespace FixedCamVr.Diagnostics
                 go.transform.SetParent(transform, worldPositionStays: false);
                 var tmp = go.AddComponent<TextMeshPro>();
                 tmp.font = jp;
-                tmp.text = OutroReportText.Compose(0);
-                tmp.alignment = TextAlignmentOptions.Center;
+                // ⚠⚠ **揃えは左**（`canon/LEDGER.md` 0063）。塊を中央へ運ぶのは SetBody。
+                //    縦も**上寄せ**にする（`Left` ＝ 縦中央 は使えない）— 1 字ずつ出すと、
+                //    行が増えた瞬間に TMP が「見えている行数」で縦中央を取り直し、
+                //    打ち終わった行がひょいと上へ跳ねる（連絡の面で実測 38px）。
+                tmp.alignment = TextAlignmentOptions.TopLeft;
                 tmp.fontSize = FontSize;
                 tmp.enableWordWrapping = true;
                 tmp.richText = false;
@@ -131,16 +181,13 @@ namespace FixedCamVr.Diagnostics
                 float scale = TextScale;
                 rt.sizeDelta = new Vector2(TextWidthM / scale, TextHeightM / scale);
                 go.transform.localScale = Vector3.one * scale;
-
-                float rad = pitchOffsetDeg * Mathf.Deg2Rad;
-                float d = Mathf.Max(distanceM, 0.5f);
-                go.transform.localPosition = new Vector3(0f, -Mathf.Sin(rad) * d, Mathf.Cos(rad) * d);
                 go.transform.localRotation = Quaternion.identity;
 
                 UseOverlayShader(tmp);
                 tmp.fontMaterial.renderQueue = RenderQueue;
                 _text = tmp;
                 _shownCount = 0;
+                SetBody(0);
             }
             catch (System.Exception e)
             {
@@ -148,6 +195,93 @@ namespace FixedCamVr.Diagnostics
                 if (go != null) Destroy(go);
                 _text = null;
             }
+        }
+
+        /// <summary>
+        /// 面を置く先（頭の正面から <see cref="pitchOffsetDeg"/> だけ下げた
+        /// <see cref="distanceM"/> の点）。<b>字の塊の重心をここへ運ぶ</b>ので、
+        /// 実際の <c>localPosition</c> は <see cref="SetBody"/> がここから差し引いて決める。
+        /// </summary>
+        private Vector3 BasePosition
+        {
+            get
+            {
+                float rad = pitchOffsetDeg * Mathf.Deg2Rad;
+                float d = Mathf.Max(distanceM, 0.5f);
+                return new Vector3(0f, -Mathf.Sin(rad) * d, Mathf.Cos(rad) * d);
+            }
+        }
+
+        /// <summary>
+        /// 文面を差し替えて、1 字ずつ出すための下ごしらえをする。
+        /// <b>数が変わったときだけ</b>走る（毎フレームではない）。
+        ///
+        /// ⚠ 測る前に<b>全文を見えるところまで戻す</b> — 直前の可視数が残っていると
+        /// <see cref="TMP_Text.textBounds"/> が<b>その一部だけ</b>の重心を返して面から外れる。
+        /// ⚠ <b>x も y も中央へ運ぶ。</b> 揃えが左でも、字の塊そのものは視界の中央に居るべき
+        /// （左寄せの意図は行頭が揃うことで、塊が左へ寄ることではない）。
+        /// </summary>
+        private void SetBody(int markCount)
+        {
+            TMP_Text? tmp = _text;
+            if (tmp == null) return;
+            string body = OutroReportText.Compose(markCount);
+
+            // ⚠ 測るあいだだけ実体を起こす。**消えている面の <c>textBounds</c> は信用できない**
+            //   （この面は出ていない間ずっと非アクティブ ＝ 数が変わるのは必ずその最中）。
+            bool wasActive = tmp.gameObject.activeSelf;
+            if (!wasActive) tmp.gameObject.SetActive(true);
+
+            tmp.maxVisibleCharacters = int.MaxValue;
+            if (tmp.text != body) tmp.SetText(body);
+            // ⚠ **2 回呼ぶ。** 1 回目でまだ焼かれていないグリフの焼き付けを要求し、2 回目で
+            //   焼けたものを含めて組み直す。1 回だと <c>textBounds</c> が足りない字を欠いたまま
+            //   返り、**塊を運ぶ先が静かにずれる**（`HmdTextAudit.Layout` と同じ理由）。
+            tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
+            tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
+
+            float scale = TextScale;
+            Bounds ink = tmp.textBounds;
+            tmp.transform.localPosition = BasePosition
+                                        + new Vector3(-ink.center.x * scale, -ink.center.y * scale, 0f);
+
+            // ⚠ ここは**全文が出ている状態**なので、`isVisible` が「その字が絵を持つか」を表す。
+            //    ここでしか測れない（下で 0 に戻すと、以後は全部 false になる）。
+            var info = tmp.textInfo;
+            _charCount = info != null ? info.characterCount : 0;
+            _charVisible = new bool[_charCount];
+            int visible = 0;
+            for (int i = 0; i < _charCount; i++)
+            {
+                _charVisible[i] = info!.characterInfo[i].isVisible;
+                if (_charVisible[i]) visible++;
+            }
+            ReportChars = visible;
+
+            tmp.maxVisibleCharacters = 0;
+            // 文面を差し替えたら**打鍵の数えも 0 に戻す**（戻さないと、短い文面では 1 発も鳴らず、
+            // 長い文面では途中から鳴り始める）。
+            _lastShown = 0;
+            VisibleChars = 0;
+            _shownCount = markCount;
+
+            if (!wasActive) tmp.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// その字は絵を持つ字か（<see cref="SetBody"/> が 1 度だけ測る）。
+        /// <b>改行では打鍵を鳴らさない</b> — <c>maxVisibleCharacters</c> は改行も 1 文字として
+        /// 数えるので、鳴らすと「字が出ていないのに 1 発鳴る」が起きる（報告は改行を 4 つ持つ）。
+        ///
+        /// ⚠⚠ <b>毎フレーム <c>textInfo.characterInfo[i].isVisible</c> を見てはいけない。</b>
+        /// あれは<b>いまの <c>maxVisibleCharacters</c> の下で描かれたか</b>を表すので、
+        /// たったいま出た字は<b>必ず false</b>（連絡の面で踏んで、打鍵が 1 発しか鳴らなかった）。
+        /// ⚠ 分からないときは<b>鳴らす側へ倒す</b>（黙る方が気づけない）。
+        /// </summary>
+        private bool IsVisibleChar(int i)
+        {
+            if (_charVisible == null || i < 0 || i >= _charVisible.Length) return true;
+            return _charVisible[i];
         }
 
         /// <summary>
@@ -182,22 +316,49 @@ namespace FixedCamVr.Diagnostics
                 }
             }
 
-            // 出す / 消すの判断は持たない（終幕の段がそのまま不透明度になる）。
-            float target = outro != null ? Mathf.Clamp01(outro.ReportAlpha) : 0f;
+            // 出す / 消すの判断は持たない（終幕の段が「出す」の門になる）。
+            bool wanted = outro != null && outro.ReportAlpha > 0f;
 
             // ⚠ 文言の更新は**出る直前まで**。出ている最中に数が変わると、体験者の目の前で
             //    数字が書き換わる（報告は体験の終わりに確定した値であってライブの表示ではない）。
-            if (target <= 0f)
+            if (!wanted)
             {
                 int n = showControl != null ? showControl.VisitorMarkCount : 0;
-                if (n != _shownCount)
+                if (n != _shownCount) SetBody(n);
+                // 次のランのために打鍵を頭へ戻す（前の体験者の続きから打ち始めない）。
+                if (_typeElapsed > 0f)
                 {
-                    _shownCount = n;
-                    _text.SetText(OutroReportText.Compose(n));
+                    _typeElapsed = 0f;
+                    _lastShown = 0;
+                    VisibleChars = 0;
+                    _text.maxVisibleCharacters = 0;
+                    typeSfx?.StopAll();
                 }
+                _alpha = 0f;
+                SetAlpha(0f);
+                return;
             }
 
-            _alpha = target;
+            // ⚠ **不透明度はフェードしない。** 打鍵そのものが出現の演出なので、重ねると
+            //    頭の数文字だけ薄いという半端な絵になる（1 字目が打たれるまで画には何も無い）。
+            _alpha = 1f;
+            _typeElapsed += Time.unscaledDeltaTime;
+
+            // 1 字ずつ出す。⚠ **切り上げ**（0 より大きければ 1 字目は出ている）。
+            int shown = _charCount <= 0
+                      ? 0
+                      : Mathf.Clamp(Mathf.CeilToInt(_typeElapsed * CommsPanelLogic.CharsPerSec),
+                                    0, _charCount);
+            if (_text.maxVisibleCharacters != shown) _text.maxVisibleCharacters = shown;
+
+            // ⚠⚠ **打鍵音は、字を画へ書いているこの行から鳴らす**（`canon/LEDGER.md` 0063）。
+            //    絵と音が同じ数えから出るので、ずれようがない。
+            //    ⚠ **増えた字数ぶん鳴らさない。** 1 フレームで 2 字進んだら（コマ落ち）
+            //      同じ DSP 時刻に 2 発重なって 1 つの大きな音に潰れる。1 発だけ鳴らす。
+            if (shown > _lastShown && IsVisibleChar(shown - 1)) typeSfx?.Play();
+            _lastShown = shown;
+            VisibleChars = shown;
+
             SetAlpha(_alpha);
         }
 
@@ -206,7 +367,8 @@ namespace FixedCamVr.Diagnostics
             if (_text == null) return;
             _text.alpha = a;
             // 完全に消えている間は描画そのものを止める（体験中ずっと 0 の文字を描く理由が無い）。
-            if (_text.gameObject.activeSelf != (a > 0.002f)) _text.gameObject.SetActive(a > 0.002f);
+            bool on = a > 0.002f && VisibleChars > 0;
+            if (_text.gameObject.activeSelf != on) _text.gameObject.SetActive(on);
         }
     }
 }

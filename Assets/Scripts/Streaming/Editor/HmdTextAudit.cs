@@ -300,6 +300,9 @@ namespace FixedCamVr.Streaming.EditorTools
         private static void Layout(TMP_Text tmp, string s)
         {
             tmp.text = s;
+            // ⚠ **1 字ずつ打つ面は待機中 0 で寝ている**（連絡の面・終幕の報告）。戻さないと
+            //   組みはするのに 1 文字も描かれず、絵が丸ごと空のまま「測れた」ことになる。
+            tmp.maxVisibleCharacters = int.MaxValue;
             // 2 回呼ぶ（1 回目でグリフの焼き付けを要求し、2 回目で焼けたものを含めて組み直す）。
             tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
             tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);

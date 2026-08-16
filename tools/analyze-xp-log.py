@@ -955,7 +955,8 @@ def analyze(events, others, exp, warns=None):
         w("## 終幕（消えて、報告が出たか）")
         for e in outro:
             w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} pw={e.get('pw')} "
-              f"rep={e.get('rep')} repBuilt={e.get('repBuilt')} marks={e.get('marks')} "
+              f"rep={e.get('rep')} repBuilt={e.get('repBuilt')} "
+              f"repChars={e.get('repChars')} repSfx={e.get('repSfx')} marks={e.get('marks')} "
               f"armed={e.get('armed')} cue={e.get('cue')}")
         ostages = [e.get("stage") for e in outro if e.get("stage") != "Off"]
         if not ostages:
@@ -987,6 +988,41 @@ def analyze(events, others, exp, warns=None):
             elif any(str(e.get("armed")) == "1" for e in outro):
                 verdict("WARN", "合図の演出は走ったが、そこから終幕へは入っていない"
                                 "（endHoldMaxSec の安全網で終わった — 演出が自分から終わっていない）")
+
+            # -- 報告は 1 字ずつ打たれ、1 字ごとに打鍵音が鳴る（`canon/LEDGER.md` 0063）。
+            #    ⚠ **打ち切るのは段 Done より後**（打つ尺 > reportFadeSec）なので、
+            #      到達の判定は段の行ではなく `ev=sum` の側でしか取れない。
+            #    ⚠ 走行が報告の途中で切れれば届かないのが正常なので、そこは WARN に留める。
+            want_chars = int(max((fnum(e, "repChars", 0) or 0) for e in outro)) if outro else 0
+            shown_all = [v for v in effect_samples(events, "repShown") if str(v) != "-"]
+            typed_all = [v for v in effect_samples(events, "repTypeN") if str(v) != "-"]
+            if any(str(e.get("repSfx")) == "0" for e in outro):
+                verdict("FAIL", "報告の打鍵の音源を掴めていない（repSfx=0）— 字は出るのに無音。"
+                                "`py -3.11 tools/ingest-sounds.py --only sfx_type` を走らせたか")
+            elif not typed_all or not shown_all:
+                verdict("WARN", "報告の打鍵の観測（repTypeN / repShown）が出ていない — "
+                                "古い APK か ShowTelemetryHost 未更新")
+            elif want_chars <= 0:
+                verdict("WARN", "報告の字数（repChars）が 0 — 文面を組めていない可能性")
+            else:
+                shown = max(int(v) for v in shown_all)
+                typed = max(int(v) for v in typed_all if str(v) != "nc") if any(
+                    str(v) != "nc" for v in typed_all) else -1
+                w(f"  打鍵: 出た文字 {shown} / 鳴った {typed} / 全部で {want_chars}（改行を除く）")
+                if shown == 0:
+                    verdict("FAIL", "報告が 1 文字も打たれていない（repShown=0）— "
+                                    "黒の中で何も出ないまま体験が終わっている")
+                elif typed == 0:
+                    verdict("FAIL", f"報告の字は出たのに打鍵が 1 発も鳴っていない"
+                                    f"（repShown={shown} / repTypeN=0）")
+                elif typed > want_chars:
+                    verdict("FAIL", f"報告の打鍵が字数より多い（repTypeN={typed} / 字数 {want_chars}）— "
+                                    "改行で鳴らしているか、1 フレームで複数発鳴らしている")
+                elif shown < want_chars:
+                    verdict("WARN", f"報告を打ち切る前に走行が切れた（{shown}/{want_chars} 文字）— "
+                                    "走行を伸ばすか、体験の最後まで回す")
+                else:
+                    verdict("OK", f"報告が {want_chars} 文字ぶん打たれ、打鍵が {typed} 発鳴った")
         w()
 
     # ---------------- 上司からの連絡 ----------------
@@ -1248,6 +1284,22 @@ def analyze(events, others, exp, warns=None):
                                     f"（ev=sfx id={want} が 0 本）")
             if all(by_id.get(k, 0) > 0 for k in want_ids):
                 verdict("OK", "導入の 3 つの節目が全部鳴った")
+        # -- 人形がたくさん出てくる所の笑い（`canon/LEDGER.md` 0062）
+        #    鳴る縁は「締めのカットが報告を待ち始めたこと」なので、**その場面まで走ったときだけ**
+        #    見る（走り切らなかった走行で毎回 FAIL を出さない）。待ったことの証拠は
+        #    `ev=comms` の `wait=1`（③の連絡と同じ signal を音も読んでいる）。
+        closing_ran = any(str(e.get("wait")) == "1" for e in comms)
+        if closing_ran or by_id.get("DollsLaugh", 0) > 0:
+            if by_id.get("DollsLaugh", 0) == 0:
+                verdict("FAIL", "締めのカットが報告を待ったのに人形の笑いが鳴っていない"
+                                "（ev=sfx id=DollsLaugh が 0 本 — SoundCueLogic の markWaiting、"
+                                "または ShowSoundDirector が TimelineDirector を掴めているか）")
+            elif by_id.get("DollsLaugh", 0) > 1:
+                verdict("FAIL", f"人形の笑いが {by_id['DollsLaugh']} 回鳴っている — ラン 1 回に 1 度だけ")
+            else:
+                verdict("OK", "人形がたくさん出てくる所で笑いが 1 回鳴った")
+
+        if intro_ran:
             # ⚠ 鳴らさなくなったものが鳴っていたら**戻ってしまっている**（0057）。
             if by_id.get("ScreenNoise", 0) > 0:
                 verdict("FAIL", f"ノイズが {by_id['ScreenNoise']} 回鳴っている — "

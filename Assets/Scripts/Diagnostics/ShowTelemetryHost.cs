@@ -556,6 +556,12 @@ namespace FixedCamVr.Diagnostics
                 _lastOutroStage = _outro.Stage;
                 Emit($"ev=outro stage={_lastOutroStage} pw={PowerState} " +
                      $"rep={ReportAlphaState} repBuilt={ReportBuiltState} " +
+                     // repChars = 報告を打ち切るまでに鳴る打鍵の数（改行を除く字数）。
+                     // 解析器が `ev=sum` の `repTypeN` と突き合わせる（`canon/LEDGER.md` 0063）。
+                     // ⚠ **打鍵は段 Done より後まで続く**（打つ尺 > reportFadeSec）ので、
+                     //   到達したかを見るのは段の行ではなく `ev=sum` の側。
+                     $"repChars={(_report == null ? -1 : _report.ReportChars)} " +
+                     $"repSfx={(_report == null ? "-" : _report.TypeSfxBuilt ? "1" : "0")} " +
                      // comms は上司からの連絡。built=0 なら一生出ない。段が Off 以外のあいだの
                      // glyph / open は**実際に書いた値** ＝ 画に出た側（`ev=comms` は縁しか持たない）。
                      $"comms={CommsState} commsBuilt={(_comms == null ? "-" : _comms.IsBuilt ? "1" : "0")} " +
@@ -860,6 +866,14 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" typeN=").Append(_comms == null
                                          ? "-"
                                          : (_comms.TypeSfxBuilt ? _comms.TypedCount.ToString() : "nc"));
+            //   repTypeN / repShown = 終幕の報告の打鍵の累計と、いま画に出ている文字数
+            //           （`canon/LEDGER.md` 0063）。**対で出す** — 片方だけだと
+            //           「字は出たのに無音」と「音は鳴ったのに字が出ていない」を区別できない。
+            //           打ち切るまでの尺は段 Report より長いので、到達の判定はここでしか取れない。
+            _sb.Append(" repTypeN=").Append(_report == null
+                                            ? "-"
+                                            : (_report.TypeSfxBuilt ? _report.TypedCount.ToString() : "nc"));
+            _sb.Append(" repShown=").Append(_report == null ? "-" : _report.VisibleChars.ToString());
             //   ctrlL / ctrlR = コントローラの <繋がっている>/<位置が取れている>。
             //   ⚠⚠ **2 つ目が 0 のとき、手元の面（報告の押し方・操作早見表）は出ない。**
             //   2026-08-16 まで接続しか見ておらず、位置が無効なコントローラのアンカーが

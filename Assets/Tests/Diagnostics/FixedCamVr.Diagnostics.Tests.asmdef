@@ -4,6 +4,7 @@
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
+        "Unity.TextMeshPro",
         "FixedCamVr.Diagnostics",
         "FixedCamVr.Streaming",
         "FixedCamVr.Tracking"

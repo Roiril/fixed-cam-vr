@@ -1,4 +1,5 @@
 using FixedCamVr.Diagnostics;
+using FixedCamVr.Streaming;
 using NUnit.Framework;
 
 namespace FixedCamVr.Tests.Diagnostics
@@ -40,6 +41,46 @@ namespace FixedCamVr.Tests.Diagnostics
             // 押していない体験者に「−１」を出さない（回数の供給が壊れても文面は成立する）。
             Assert.AreEqual("０", OutroReportText.FullWidth(-1));
             Assert.AreEqual("０", OutroReportText.FullWidth(int.MinValue));
+        }
+
+        /// <summary>
+        /// 打鍵は<b>改行では鳴らさない</b>（<c>canon/LEDGER.md</c> 0063）。
+        /// <c>maxVisibleCharacters</c> は改行も 1 文字として数えるので、鳴らすと
+        /// 「字が出ていないのに 1 発鳴る」が起きる。実行体（<c>OutroReport</c>）は TMP に
+        /// 測らせるが、<b>期待値はここが持つ</b> — テレメトリの <c>repChars</c> と対で読む値。
+        /// </summary>
+        [Test]
+        public void Compose_KeystrokesExcludeTheFourNewlines()
+        {
+            string s = OutroReportText.Compose(0);
+            int newlines = 0;
+            foreach (char c in s)
+                if (c == '\n') newlines++;
+            Assert.AreEqual(4, newlines, "数の行 + 空行 + 結び 3 行 ＝ 改行 4 つ");
+            Assert.AreEqual(s.Length - 4, KeystrokesOf(s));
+            Assert.AreEqual(41, KeystrokesOf(s), "打鍵の数（数が 1 桁のとき）");
+        }
+
+        /// <summary>
+        /// 打ち切るまでの尺。<b>速さは連絡の面と同じ</b>（同じ装置の印字なので、
+        /// 違う速さで打つと別の装置が 2 台あるように聞こえる）。
+        ///
+        /// ⚠ ここが伸びると、報告が出たまま体験者が待たされる。文言を足すときは実尺を見る。
+        /// </summary>
+        [Test]
+        public void Compose_TypesWithinAReadableSpan()
+        {
+            float sec = KeystrokesOf(OutroReportText.Compose(0)) / CommsPanelLogic.CharsPerSec;
+            Assert.That(sec, Is.GreaterThan(2f), "速すぎると「一気に出た」に見える");
+            Assert.That(sec, Is.LessThan(6f), $"打ち切るまで {sec:F1}s は長い — 文言を詰める");
+        }
+
+        private static int KeystrokesOf(string s)
+        {
+            int n = 0;
+            foreach (char c in s)
+                if (c != '\n') n++;
+            return n;
         }
 
         [Test]
