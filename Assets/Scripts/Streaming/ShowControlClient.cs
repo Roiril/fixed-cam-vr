@@ -691,7 +691,7 @@ namespace FixedCamVr.Streaming
         /// <summary>段 4。現実が割れてスクリーンへ吸い込まれ、枠が閉じる。</summary>
         public float frameSec = 2.5f;
         /// <summary>段 5。枠の中がカメラ映像へ。</summary>
-        public float swapSec = 4.5f;
+        public float swapSec = 1.6f;
 
         /// <summary>
         /// 実物の輪郭線の色（<c>#rrggbb</c>）。既定は<b>生成り</b>（LEDGER 0010「全体的に暖色に」）。
@@ -714,7 +714,7 @@ namespace FixedCamVr.Streaming
         public bool showRoomWire;
 
         /// <summary>段 5 のすり替えに重ねる乱れの強さ。</summary>
-        public float glitchOnSwap = 0.8f;
+        public float glitchOnSwap = 0f;
 
         /// <summary>
         /// 導入演出を始める**通過ライン**の id（<c>layout.lines[].id</c>）。空なら

@@ -376,7 +376,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 ShowIntroDef? introDef = show?.run?.intro;
                 if (introDef != null && introDef.LooksUnset) introDef = null;
                 IntroTiming timing = introDef != null ? introDef.ToTiming() : IntroTiming.Default;
-                float glitchOnSwap = introDef != null ? Mathf.Clamp01(introDef.glitchOnSwap) : 0.8f;
+                float glitchOnSwap = introDef != null ? Mathf.Clamp01(introDef.glitchOnSwap) : 0f;
                 showLabel += introDef != null
                     ? $" | intro {timing.realSec:0.0}/{timing.degradeSec:0.0}/{timing.structureSec:0.0}/" +
                       $"{timing.frameSec:0.0}/{timing.swapSec:0.0}s = {timing.TotalSec:0.0}s " +

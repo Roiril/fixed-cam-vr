@@ -81,11 +81,11 @@ test('チェック類の既定（構造の線だけ欠落＝OFF・他は欠落�
   assert.deepEqual([wired.showCameraMarks, wired.showRoomWire], [true, true]);
 });
 
-test('合計秒は段 3 の重なりを引いた和（既定は 13.1s）', () => {
+test('合計秒は段 3 の重なりを引いた和（既定は 10.2s）', () => {
   // ⚠ この数字は Unity の IntroLogicTests.TotalSec_AccountsForTheStructureOverlap と**同じ値**。
-  //   1.5 + 3.5 + (2.5 - 3.5×0.4) + 2.5 + 4.5 = 13.1（段 3 は段 2 の後半から重なる）。
+  //   1.5 + 3.5 + (2.5 - 3.5×0.4) + 2.5 + 1.6 = 10.2（段 3 は段 2 の後半から重なる）。
   //   片方だけ直すと、卓の表示と実機の尺が沈黙して食い違う。
-  assert.equal(introStageSec(introConfig({})), 13.1);
+  assert.equal(introStageSec(introConfig({})), 10.2);
   const naive = INTRO_STAGE_KEYS.reduce((x, k) => x + INTRO_DEFAULT[k], 0);
   assert.ok(introStageSec(introConfig({})) < naive, '重なりが効いていない（単純和になっている）');
 });
@@ -98,12 +98,12 @@ test('合計秒は正規化前の生データからも出せる（欠落は既�
 test('段 3 が段 2 に飲み込まれても下限ぶんは流れる', () => {
   // degrade を長くすると重なりが段 3 を食い尽くす。0 秒の段を黙って作らない。
   const sec = introStageSec(introConfig({ intro: { degradeSec: 20, structureSec: 1 } }));
-  assert.equal(sec, 1.5 + 20 + 0.5 + 2.5 + 4.5);
+  assert.equal(sec, 1.5 + 20 + 0.5 + 2.5 + 1.6);
 });
 
 test('尺の表示は「演出 Ns / 慣らし Ms」', () => {
-  assert.equal(introDurationLabel(introConfig({}), 20), '演出 13.1s / 慣らし 20s');
-  assert.equal(introDurationLabel(introConfig({}), undefined), '演出 13.1s / 慣らし 0s');
+  assert.equal(introDurationLabel(introConfig({}), 20), '演出 10.2s / 慣らし 20s');
+  assert.equal(introDurationLabel(introConfig({}), undefined), '演出 10.2s / 慣らし 0s');
 });
 
 test('較正済みの数え方は fxPx > 1 のカメラ（本番前チェックの 🎯 較正 行と同じ）', () => {
@@ -180,7 +180,7 @@ test('合計秒が上限を超えたら ⚠（超えた段は実機が飛ばす�
 
 test('成立していれば ✅ に尺を出す', () => {
   const row = introPreflightRow({ run: { introMinSec: 20 }, layout: measuredLayout(), cameras: calibratedCams() });
-  assert.deepEqual(row, { s: 'ok', label: '🎬 導入', detail: '演出 13.1s / 慣らし 20s' });
+  assert.deepEqual(row, { s: 'ok', label: '🎬 導入', detail: '演出 10.2s / 慣らし 20s' });
 });
 
 // ---- 開始の合図の優先順位（接近 > 通過ライン > 円）--------------------------------
@@ -316,14 +316,14 @@ test('卓の既定値と capture-server.py の _default_show が一致してい�
 });
 
 test('慣らし歩行が演出より短いと切り落とされることを警告する', () => {
-  // introMinSec は導入相全体の下限。演出 13.1s に対し 4s だと演出の途中で本編へ移る。
+  // introMinSec は導入相全体の下限。演出 10.2s に対し 4s だと演出の途中で本編へ移る。
   // RestartIntroClock は演出の終わりにしか打たれないので、実機は黙って切り替わる。
   const row = introPreflightRow({
     run: { introEnabled: true, introMinSec: 4, intro: { enabled: true } },
     layout: measuredLayout(), cameras: calibratedCams(),
   });
   assert.equal(row.s, 'warn');
-  assert.match(row.detail, /慣らし歩行 4s が演出 13\.1s より短い/);
+  assert.match(row.detail, /慣らし歩行 4s が演出 10\.2s より短い/);
 });
 
 test('慣らし歩行が演出より長ければその警告は出ない', () => {

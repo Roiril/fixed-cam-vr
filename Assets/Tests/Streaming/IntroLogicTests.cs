@@ -25,7 +25,7 @@ namespace FixedCamVr.Streaming.Tests
         private static readonly IntroTiming T = new IntroTiming
         {
             realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
-            frameSec = 2.5f, swapSec = 4.5f, maxSec = 20f,
+            frameSec = 2.5f, swapSec = 1.6f, maxSec = 20f,
         };
 
         /// <summary>段 3 が単独で流れる秒数（段 2 と重なるぶんを引いたもの）。</summary>
@@ -332,10 +332,12 @@ namespace FixedCamVr.Streaming.Tests
         public void TotalSec_AccountsForTheStructureOverlap()
         {
             // ⚠ この数字は卓の `intro-model.test.mjs` と**同じ値**にしてある。
-            //    1.5 + 3.5 + (2.5 - 3.5×0.4) + 2.5 + 4.5 = 13.1（段 3 は段 2 の後半から重なる）。
+            //    1.5 + 3.5 + (2.5 - 3.5×0.4) + 2.5 + 1.6 = 10.2（段 3 は段 2 の後半から重なる）。
             //    片方だけ直すと、卓の表示と実機の尺が沈黙して食い違う。
-            Assert.AreEqual(13.1f, T.TotalSec, 0.001f);
-            Assert.AreEqual(13.1f, IntroTiming.Default.TotalSec, 0.001f);
+            // ⚠ 2026-08-16 に段 5 を 4.5 → 1.6 秒へ詰めた（`canon/LEDGER.md` 0058）。
+            //    鈴（段 5 ＋ 1.2 秒）の後に 3.3 秒の無音の間が残っていた。
+            Assert.AreEqual(10.2f, T.TotalSec, 0.001f);
+            Assert.AreEqual(10.2f, IntroTiming.Default.TotalSec, 0.001f);
             Assert.Less(T.TotalSec, T.realSec + T.degradeSec + T.structureSec + T.frameSec + T.swapSec,
                 "重なりが効いていない（単純和になっている）");
         }
@@ -356,8 +358,13 @@ namespace FixedCamVr.Streaming.Tests
             var d = IntroTiming.Default;
             Assert.GreaterOrEqual(d.TotalSec, 10f, $"短すぎる: {d.TotalSec}s");
             Assert.LessOrEqual(d.TotalSec, 16f, $"長すぎる: {d.TotalSec}s");
-            // クロスフェードの後に「自分だ」と気づく時間が残っていること
-            Assert.Greater(d.swapSec - IntroLogic.SwapCrossfadeSec, 1f);
+            // ⚠⚠ **クロスフェードが終わってから段が終わるまでの余地**。
+            //    ここに鈴が鳴る（`SoundCueLogic.BellAfterSwapSec` ＝ `SwapCrossfadeSec`）ので、
+            //    0 以下にすると**鈴が 1 度も鳴らないまま導入が終わる**。
+            //    ⚠ 2026-08-16 に下限を 1.0 → 0.2 秒へ下げた（`canon/LEDGER.md` 0058）。
+            //    旧コメントは「『自分だ』と気づく時間」だったが、**その間そのものを外した**
+            //    （ユーザー指示「3s またなくていい」）。残すのは鈴が鳴る余地だけ。
+            Assert.Greater(d.swapSec - IntroLogic.SwapCrossfadeSec, 0.2f);
             // 待ちを全部踏んでも打ち切り（maxSec）に掛からないこと。掛かると段が飛ぶ。
             float worst = d.TotalSec + IntroLogic.MaxHoldSec + IntroLogic.MaxHoldSec;
             Assert.Less(worst, d.maxSec, $"最悪ケース {worst}s が上限 {d.maxSec}s を超える");
@@ -631,7 +638,10 @@ namespace FixedCamVr.Streaming.Tests
         public void MaxSec_DoesNotCutTheSwapStageInHalf()
         {
             // 映像が点く最中に打ち切ると、いちばん見せたい一撃が途中で消える。
-            var t = T; t.maxSec = 2f;
+            // ⚠ **打ち切りの上限は段 5 の尺より短く取る。** 下の Advance が段 5 を
+            //    自然終了させてしまうと、この試験は「打ち切られなかった」を確かめられない
+            //    （2026-08-16 に段 5 を 4.5 → 1.6 秒へ詰めて実際に踏んだ）。
+            var t = T; t.maxSec = 1f;
             var l = new IntroLogic();
             l.Configure(t);
             l.Begin();
@@ -639,7 +649,7 @@ namespace FixedCamVr.Streaming.Tests
             for (int i = 0; i < 4; i++) { l.RequestAdvance(); l.Tick(0.1f, Ready(outsideM: 2f)); }
             Assert.AreEqual(IntroStage.Swap, l.Stage);
 
-            Advance(l, 2.0f, Ready(outsideM: 2f));
+            Advance(l, 1.2f, Ready(outsideM: 2f));
             Assert.Greater(l.TotalElapsedSec, t.maxSec, "maxSec は既に超えている");
             Assert.Less(l.StageElapsedSec, t.swapSec, "Swap はまだ自然終了していない");
             Assert.AreEqual(IntroStage.Swap, l.Stage, "それでも Swap は畳まない");

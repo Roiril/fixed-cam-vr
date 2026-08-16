@@ -79,7 +79,7 @@ namespace FixedCamVr.Streaming
         public static IntroTiming Default => new IntroTiming
         {
             realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
-            frameSec = 2.5f, swapSec = 4.5f, maxSec = 20f,
+            frameSec = 2.5f, swapSec = 1.6f, maxSec = 20f,
         };
 
         /// <summary>不正値を潰した複製。0 や負値はコード既定へ戻す（黙って 0 秒の段を作らない）。</summary>

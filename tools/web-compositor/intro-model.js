@@ -28,7 +28,7 @@ export const INTRO_DEFAULT = {
   degradeSec: 3.5,
   structureSec: 2.5,
   frameSec: 2.5,
-  swapSec: 4.5,
+  swapSec: 1.6,
   // 生成り。純白は蛍光灯の下の点検作業に見える（LEDGER 0010「全体的に暖色に」）。
   // Unity 側 ShowIntroDef.edgeColor / capture-server.py の _default_show と対。
   edgeColor: '#ffcf9e',
@@ -37,7 +37,7 @@ export const INTRO_DEFAULT = {
   //    ⚠ 2026-08-15 に段 3「構造」が戻ったので、on にすれば**また画に出る**（既定は off のまま）。
   showCameraMarks: false,
   showRoomWire: false,
-  glitchOnSwap: 0.8,
+  glitchOnSwap: 0,
   // 空 = 開始位置の円（layout.startSpot）で始める。Unity 側 ShowIntroDef.startLineId と対。
   startLineId: '',
 };

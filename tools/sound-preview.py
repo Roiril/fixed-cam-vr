@@ -43,7 +43,7 @@ OUT = os.path.join(ROOT, "logs", "sound")
 #   「箱の中に入ってから固定視点」が成立しない。いまは 5 段 13.1 秒:
 #   段 1 素通し / 段 2 格下げ / 段 3 輪郭（段 2 と重なる）/ 段 4 割れる / 段 5 映像だけになる。
 #   ⚠ `IntroTiming.Default` と同じ値にしておく（ずれると、聴いて決めた間が実機と違う）。
-REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 3.5, 2.5, 2.5, 4.5
+REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 3.5, 2.5, 2.5, 1.6
 # 段 3 は段 2 の後半から重なるので、単独で流れるのはこれだけ（`IntroTiming.TotalSec` と同じ式）。
 STRUCTURE = max(STRUCTURE_SRC - DEGRADE * (1 - 0.6), 0.5)
 # ⚠⚠ **2026-08-16 に「入れ替えが終わった所」へ移した**（`canon/LEDGER.md` 0057）。
