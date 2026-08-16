@@ -102,6 +102,15 @@ ScreenDecayLogic.BlocksFor(progress)   // 800 → 267 を線形で
   `ScreenDecayLogic.EndBlocks` を上げる（2026-08-12 に 110 → **267**（映像 200）へ上げた。
   110 ＝ 7.8 px/ブロックでは人形が塊にしか見えなかった）
 
+## ⚠⚠ この進みを読んでいるのは映像だけではない（2026-08-17）
+
+`ScreenDecayLogic.Progress` は **`ShowRunDirector.ScreenDecay`** として公開されていて、
+**連絡の面の壊れ**（`CommsGlitchLogic` / `canon/LEDGER.md` 0068）も同じ値を読む。
+
+- **進みの式（`TargetFor`）を変えると、映像と連絡の面が両方動く。** 片方だけのつもりで触らない
+- ⭐ 逆に言うと「3 周目 A で最大」は**この 1 本で保証されている**。
+  読む側が独自の周回カウンタを持たない限り、足並みは構造的に揃う
+
 ## 見る手段
 
 **シェーダの誤りは `unity.ps1 test` に 1 件も出ない**（この codebase は同じ型で 3 回踏んでいる）。

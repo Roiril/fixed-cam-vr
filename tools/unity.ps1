@@ -96,7 +96,7 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',
                                     'Assets/Scripts/Streaming/ShowRunDirector.cs') }
     'comms-preview'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsPreview.Run'
-                            Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（→ tools/make-preview-video.py で mp4）'
+                            Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set decay=0..1 で周回の壊れ／→ make-preview-video.py で mp4）'
                             Out = 'Assets/Screenshots/comms-preview/place.png' }
     'glitch'           = @{ Method = 'FixedCamVr.Streaming.EditorTools.GlitchPreview.Run'
                             Desc = '乱れが起きるたびにどれだけ大きくなるかを 1 コマずつ焼く（→ make-preview-video.py で mp4）'

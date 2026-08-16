@@ -1040,7 +1040,7 @@ def analyze(events, others, exp, warns=None):
         for e in comms:
             w(f"  t={fnum(e,'t',0):7.1f}  {e.get('id')} n={e.get('n')} "
               f"built={e.get('built')} lap={e.get('lap')} chars={e.get('chars')} "
-              f"sfx={e.get('sfx')} wait={e.get('wait')}")
+              f"sfx={e.get('sfx')} decay={e.get('decay')} wait={e.get('wait')}")
 
         if comms_built and all(str(v) == "0" for v in comms_built):
             verdict("FAIL", "連絡の面を組めていない（commsBuilt=0）— 1 通も出ない。"
@@ -1113,6 +1113,56 @@ def analyze(events, others, exp, warns=None):
                                     "打ち終わる前に次の連絡が届いて打ち切れていない")
                 else:
                     verdict("OK", f"打鍵が {n} 発鳴った（字数の合計 {want_hits}・1 文字 1 発）")
+
+            # ---- 周回の壊れ（`canon/LEDGER.md` 0068）----
+            # ⚠⚠ 見るのは「進みが動いた」ではなく **書く先を掴めたか（commsGlMat）** と
+            #    **実際に書いた強さ（commsGl）**。2026-07-31 の「段は進んだのに画は空だった」と同じ型で、
+            #    シェーダが剥がれると Editor では出て実機だけ 1 画素も出ない（IntroVeil で実際に踏んだ）。
+            # ⚠ 強さは**発作の刻みで跳ねる**ので、標本ごとに 0 に近い値が出るのは正常。
+            #    だから「全標本が 0」でだけ落とす。
+            gl_mat = [str(v) for v in effect_samples(events, "commsGlMat") if str(v) not in ("", "-")]
+            gl = []
+            for v in effect_samples(events, "commsGl"):
+                try:
+                    gl.append(float(v))
+                except (TypeError, ValueError):
+                    pass
+            # ⚠⚠ 地と縁（commsBg）。**0 なら文字と壊れだけが宙に浮く。**
+            #    2026-08-17 まで実機がそうだった（`Unlit/Color` がビルドから剥がれていた）。
+            #    Editor のプレビューでは必ず出るので、**この 1 ビットだけが唯一の手掛かり**。
+            bg = [str(v) for v in effect_samples(events, "commsBg") if str(v) not in ("", "-")]
+            if bg and all(v == "0" for v in bg):
+                verdict("FAIL", "連絡の面の地と縁が出ていない（commsBg=0）— 文字と壊れだけが宙に浮く。"
+                                "地のシェーダがビルドから剥がれている疑い"
+                                "（CommsPanel.Build の Shader.Find）")
+            elif bg:
+                verdict("OK", "連絡の面の地と縁が出ている（commsBg=1）")
+
+            if gl_mat and all(v == "0" for v in gl_mat):
+                verdict("FAIL", "周回の壊れを書く先が無い（commsGlMat=0）— "
+                                "FixedCamVr/CommsGlitch が剥がれている疑い。"
+                                "ProjectSettings/GraphicsSettings.asset の Always Included を見る")
+            elif gl:
+                hi = max(gl)
+                if hi <= 0.0:
+                    verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "
+                                    "周が進んでいないか、ShowRunDirector.ScreenDecay を読めていない")
+                else:
+                    verdict("OK", f"連絡の面が周回とともに壊れた（強さ 最大 {hi:.2f}）")
+
+            # ③（4 周目 A の締め）は進み 1.0 ＝ 壊れが最大の状態で届くはず。
+            # ⚠ 進みは 3 周目 A で 1.0 に着いて以後動かない（`ScreenDecayLogic`）ので、
+            #    ここが 1 に届いていないなら周が進み切っていない（＝ 演出最大に到達していない）。
+            for e in comms:
+                if e.get("id") != "Prompt":
+                    continue
+                try:
+                    d = float(e.get("decay"))
+                except (TypeError, ValueError):
+                    continue
+                if d < 0.9:
+                    verdict("WARN", f"③の催促が進み {d:.2f} で届いた — "
+                                    "3 周目 A で最大に着いていない（周が足りないか走行が短い）")
         w()
 
     # ---------------- 位置合わせ（コントローラの操作モード） ----------------

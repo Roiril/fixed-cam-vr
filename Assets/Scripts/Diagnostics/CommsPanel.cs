@@ -162,6 +162,16 @@ namespace FixedCamVr.Diagnostics
         private const int RenderQueue = 4980;
         private const int GlyphQueue = 4990;
 
+        /// <summary>壊れの層。<b>文字より後に描く</b>（文字の上に矩形が乗る）。⚠ 5000 以下。</summary>
+        private const int GlitchQueue = 4995;
+
+        /// <summary>
+        /// 壊れの層のシェーダ。⚠ <b>実行時に探すので Always Included に登録してある</b>
+        /// （<c>ProjectSettings/GraphicsSettings.asset</c>。忘れると Editor では出て実機で剥がれる —
+        /// 2026-07-31 に <c>IntroVeil</c> で実際に踏んだ）。
+        /// </summary>
+        private const string GlitchShaderName = "FixedCamVr/CommsGlitch";
+
         /// <summary>
         /// <b>文面（ユーザーが書いたまま・`canon/LEDGER.md` 0054）。</b>
         ///
@@ -217,6 +227,20 @@ namespace FixedCamVr.Diagnostics
         private Transform? _root;
         private MeshRenderer? _panelRenderer;
         private MeshRenderer? _bezelRenderer;
+        // 壊れの層（`canon/LEDGER.md` 0068）。進みは映像とまったく同じものを読む。
+        private MeshRenderer? _glitchRenderer;
+        private Material? _glitchMat;
+        private float _glitchLevel, _glitchBurst, _glitchSeed, _glitchOffsetX;
+        // プレビュー（`menu comms-preview -Set decay=`）が注入する進み。**負なら実機の値を読む**。
+        private float _decayOverride = -1f;
+        private float _previewTimeSec;
+        // ⚠ 地の色は**シェーダによってプロパティ名が違う**（URP は `_BaseColor` / 組み込みは `_Color`）。
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorId = Shader.PropertyToID("_Color");
+        private static readonly int GlitchLevelId = Shader.PropertyToID("_Level");
+        private static readonly int GlitchBurstId = Shader.PropertyToID("_Burst");
+        private static readonly int GlitchSeedId = Shader.PropertyToID("_Seed");
+        private static readonly int GlitchAspectId = Shader.PropertyToID("_Aspect");
         // 枠を左端から右へ開くために、幅と「開いていないときの左端」を覚えておく。
         private float _panelW, _bezelW;
         private int _charCount;
@@ -243,6 +267,38 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>実体を組めたか。<b>false なら一生出ない</b>（テレメトリが読む）。</summary>
         public bool IsBuilt => _text != null;
+
+        /// <summary>
+        /// 直近にシェーダへ書いた壊れの強さ（<b>画に出た側</b>の観測）。
+        /// 発作の刻みで跳ねるので、**サンプルによっては 0 に近い値が出る**のが正常。
+        /// </summary>
+        public float GlitchLevel => _glitchLevel;
+
+        /// <summary>壊れの層のマテリアルを掴めたか。<b>false なら進んでも 1 画素も変わらない。</b></summary>
+        public bool GlitchBuilt => _glitchMat != null;
+
+        /// <summary>
+        /// 地と縁を組めたか。<b>false なら文字と壊れだけが宙に浮く。</b>
+        /// ⚠⚠ 2026-08-17 まで実機がまさにこれだった（<c>Unlit/Color</c> がビルドから剥がれていた）。
+        /// <b>Editor では出るので、この観測が無いと永久に気づけない。</b>
+        /// </summary>
+        public bool PanelBuilt => _panelMat != null && _bezelMat != null;
+
+        /// <summary>いま読んでいる周回の進み 0..1（<b>映像の劣化とまったく同じ値</b>）。</summary>
+        public float DecayProgress =>
+            _decayOverride >= 0f ? _decayOverride
+                                 : (runDirector != null ? runDirector.ScreenDecay : 0f);
+
+        /// <summary>
+        /// 壊れの進みと時刻を外から差し込む（<c>menu comms-preview -Set decay=</c> 専用）。
+        /// ⚠ <b>実機では呼ばない。</b> 負を渡すと実機の値（<c>ShowRunDirector.ScreenDecay</c>）へ戻る。
+        /// </summary>
+        public void SetDecayForPreview(float progress01, float timeSec)
+        {
+            _decayOverride = progress01;
+            _previewTimeSec = timeSec;
+            TickGlitch(timeSec);
+        }
 
         /// <summary>いまの段（テレメトリ用）。</summary>
         public CommsStage Stage => _logic.Stage;
@@ -333,6 +389,7 @@ namespace FixedCamVr.Diagnostics
             OnDestroyHooks();
             if (_panelMat != null) Destroy(_panelMat);
             if (_bezelMat != null) Destroy(_bezelMat);
+            if (_glitchMat != null) Destroy(_glitchMat);
             if (_panelMesh != null) Destroy(_panelMesh);
         }
 
@@ -425,6 +482,9 @@ namespace FixedCamVr.Diagnostics
             _logic.SetGuideWanted(inRun && _leftConnected
                                   && (_markProgress > 0f || _markConfirming));
 
+            // ⚠ **壊れは面が出ていなくても進める。** 出た瞬間から正しい強さで出るようにするため
+            //    （届いた所で 0 から立ち上がると「連絡が来ると壊れる」に見える）。
+            TickGlitch(Time.unscaledTime);
             _logic.Tick(Time.unscaledDeltaTime);
             Apply(_logic.Weights);
         }
@@ -450,8 +510,12 @@ namespace FixedCamVr.Diagnostics
             // ⚠ 面は体験者の方を向ける（板が斜めを向いていると読めない）。
             Quaternion yaw = Quaternion.Euler(0f, _yawFollow.CurrentYaw + YawOffsetDeg, 0f);
             Vector3 dir = yaw * Quaternion.Euler(PitchOffsetDeg, 0f, 0f) * Vector3.forward;
-            _root.position = head.position + dir * DistanceM;
-            _root.rotation = Quaternion.LookRotation(_root.position - head.position, Vector3.up);
+            Vector3 basePos = head.position + dir * DistanceM;
+            // ⚠ **向きを先に決めてから横へ飛ばす**（`right` は rotation が決まらないと引けない）。
+            _root.rotation = Quaternion.LookRotation(basePos - head.position, Vector3.up);
+            // 周回の壊れ（`canon/LEDGER.md` 0068）。発作の刻みだけ、面ごと横へ飛ぶ。
+            // ⚠ 追従の値そのものは汚さない（`_yawFollow` に足すと、飛んだ先から追従が始まって尾を引く）。
+            _root.position = basePos + _root.right * _glitchOffsetX;
         }
 
         private void Build()
@@ -470,10 +534,17 @@ namespace FixedCamVr.Diagnostics
 
             // 地（受信票の面）。⚠ 標準シェーダが見つからなければ**文字だけ**にする
             //    （面が無くても読めるので、体験は止めない）。
-            Shader? flat = Shader.Find("Unlit/Color");
+            // ⚠ メッシュと幅は**地の外**で決める（壊れの層は地のシェーダが無くても出す）。
+            _panelMesh = BuildQuad();
+            _panelW = PanelW;
+            // ⚠⚠ **`Unlit/Color` は実機のビルドに入っていない**（2026-08-17 に走行の画で判明）。
+            //    組み込みシェーダでも、どのマテリアルからも参照されず Always Included にも無ければ
+            //    剥がれる（2026-07-31 の `IntroVeil` と同じ型）。**Editor では出るので気づけない。**
+            //    ⇒ 実機で **1 度も地も縁も描かれておらず、文字と壊れだけが宙に浮いていた。**
+            //    URP の Unlit は URP のマテリアルが参照しているので必ず入っている。そちらを先に引く。
+            Shader? flat = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
             if (flat != null)
             {
-                _panelMesh = BuildQuad();
                 // 縁（裏の一回り大きい面）。⚠ **地だけだと真っ黒の中で面が消える**
                 //    （2026-08-15 の実機の画で、文字だけが宙に浮いていた）。
                 // ⚠ ここで渡す高さは**組んだ瞬間の見かけだけ**（`Apply` の `SetFrame` が
@@ -483,10 +554,33 @@ namespace FixedCamVr.Diagnostics
                                           _bezelW, BodyMaxH + HintBandH + BezelM * 2f, 0.014f,
                                           flat, RenderQueue - 1, out _bezelMat);
                 // 地。暗い漆のような面。純黒だと「穴」に見え、明るいと掲示物に見える。
-                _panelW = PanelW;
                 _panelRenderer = MakeQuad(rootGo.transform, "CommsPanelQuad",
                                           _panelW, BodyMaxH + HintBandH, 0.012f,
                                           flat, RenderQueue, out _panelMat);
+            }
+            else
+            {
+                // ⚠ 黙って飛ばさない。2026-08-17 まで警告が 1 行も無かったので、
+                //   実機で地が消えていることに走行の画を拡大するまで気づけなかった。
+                Debug.LogWarning("[Comms] 地のシェーダを引けないので文字と壊れだけになります"
+                                 + "（Universal Render Pipeline/Unlit も Unlit/Color も見つからない）");
+            }
+
+            // ---- 壊れの層（`canon/LEDGER.md` 0068）。**文字より後に描く** ＝ 矩形が字の上に乗る。
+            //      ⚠ z はわずかに手前。深度は見ない（`ZTest Always`）が、両眼で見たとき
+            //        字と同一平面だと縞が字に食い込んで読みにくい。
+            Shader? glitch = Shader.Find(GlitchShaderName);
+            if (glitch != null)
+            {
+                _glitchRenderer = MakeQuad(rootGo.transform, "CommsGlitchQuad",
+                                           _panelW, BodyMaxH + HintBandH, -0.002f,
+                                           glitch, GlitchQueue, out _glitchMat);
+            }
+            else
+            {
+                // ⚠ 出ないだけで体験は止めない（連絡そのものは読める）。
+                Debug.LogWarning($"[Comms] {GlitchShaderName} が見つからないので周回の壊れは出ません"
+                                 + "（Always Included に登録されているか確認）");
             }
 
             // ---- 下段（報告の押し方・ゲージ）。**2026-08-16 にコントローラの先からここへ移した**
@@ -613,6 +707,17 @@ namespace FixedCamVr.Diagnostics
             return _charVisible[i];
         }
 
+        /// <summary>
+        /// 地・縁の色を書く。<b>両方のプロパティへ書く</b> — 引けたシェーダで分岐すると、
+        /// 片方を消したときに<b>黙って色が付かなくなる</b>（実機だけ真っ黒／真っ白になる型）。
+        /// ⚠ <c>Material.color</c> は URP の <c>_BaseColor</c> を触らないので使わない。
+        /// </summary>
+        private static void SetFlatColor(Material m, Color c)
+        {
+            if (m.HasProperty(BaseColorId)) m.SetColor(BaseColorId, c);
+            if (m.HasProperty(ColorId)) m.SetColor(ColorId, c);
+        }
+
         /// <summary>面を 1 枚作る（地と縁で共有）。色は <see cref="Apply"/> が毎フレーム書く。</summary>
         private MeshRenderer MakeQuad(Transform parent, string name, float w, float h, float z,
                                       Shader shader, int queue, out Material mat)
@@ -687,20 +792,51 @@ namespace FixedCamVr.Diagnostics
             float cy = (top + bottom) * 0.5f;
             bool lit = pa > 0.01f && AppliedOpen > 0.001f && h > 0.0005f;
 
-            // Unlit/Color は alpha を持たないので、明るさで濃さを出す（暗い場所なので十分）。
+            // 地のシェーダは alpha を持たない（不透明）ので、明るさで濃さを出す（暗い場所なので十分）。
             if (_panelRenderer != null && _panelMat != null)
             {
-                _panelMat.color = new Color(0.050f * pa, 0.042f * pa, 0.038f * pa, 1f);
+                SetFlatColor(_panelMat, new Color(0.050f * pa, 0.042f * pa, 0.038f * pa, 1f));
                 _panelRenderer.enabled = lit;
                 SetFrame(_panelRenderer.transform, _panelW, AppliedOpen, cy, h);
             }
             if (_bezelRenderer != null && _bezelMat != null)
             {
                 // 縁は地より明るい。ここだけが「面がある」ことを伝える。
-                _bezelMat.color = new Color(0.150f * pa, 0.110f * pa, 0.085f * pa, 1f);
+                SetFlatColor(_bezelMat, new Color(0.150f * pa, 0.110f * pa, 0.085f * pa, 1f));
                 _bezelRenderer.enabled = lit;
                 SetFrame(_bezelRenderer.transform, _bezelW, AppliedOpen, cy, h + BezelM * 2f);
             }
+
+            // ---- 壊れの層（`canon/LEDGER.md` 0068）----------------------------------
+            // ⚠ **地・縁とまったく同じ枠に乗せる**（開き・丈・中心）。別に解くと、
+            //    枠が開いている途中に壊れだけが枠の外へはみ出す。
+            if (_glitchRenderer != null && _glitchMat != null)
+            {
+                _glitchMat.SetFloat(GlitchLevelId, _glitchLevel);
+                _glitchMat.SetFloat(GlitchBurstId, _glitchBurst);
+                _glitchMat.SetFloat(GlitchSeedId, _glitchSeed);
+                // 縦横比はブロックを正方形に近づけるためだけ。丈は毎フレーム変わる。
+                _glitchMat.SetFloat(GlitchAspectId, h > 0.0005f ? _panelW / h : 2.4f);
+                _glitchRenderer.enabled = lit && _glitchLevel > CommsGlitchLogic.OffThreshold;
+                SetFrame(_glitchRenderer.transform, _panelW, AppliedOpen, cy, h);
+            }
+        }
+
+        /// <summary>
+        /// 周回の壊れを 1 フレーム進める（<c>canon/LEDGER.md</c> 0068）。
+        /// <b>進みは映像の劣化とまったく同じ値</b>（<see cref="DecayProgress"/>）。
+        ///
+        /// ⚠ <b>面が出ていないあいだも進める。</b> 届いた所で 0 から立ち上げると
+        /// 「連絡が来ると壊れる」に見えて、因果が逆になる。
+        /// </summary>
+        private void TickGlitch(float timeSec)
+        {
+            _glitchLevel = CommsGlitchLogic.LevelFor(DecayProgress);
+            // ⚠⚠ **発作は強さと別に渡す。** 1 本へ畳むと、シェーダはその値で被覆率を解くので
+            //    **常時でもブロックが出る**（2026-08-17 に絵で見つけた）。
+            _glitchBurst = CommsGlitchLogic.BurstAt(timeSec, _glitchLevel) ? 1f : 0f;
+            _glitchSeed = CommsGlitchLogic.SeedAt(timeSec);
+            _glitchOffsetX = CommsGlitchLogic.OffsetXAt(timeSec, _glitchLevel);
         }
 
         /// <summary>

@@ -565,6 +565,8 @@ namespace FixedCamVr.Diagnostics
                      // comms はAIエージェントからの連絡。built=0 なら一生出ない。段が Off 以外のあいだの
                      // glyph / open は**実際に書いた値** ＝ 画に出た側（`ev=comms` は縁しか持たない）。
                      $"comms={CommsState} commsBuilt={(_comms == null ? "-" : _comms.IsBuilt ? "1" : "0")} " +
+                     // ⚠ 周回の壊れ（commsGl / commsGlMat）は **`ev=sum` の側**に出す。
+                     //   ここ（`ev=outro`）は終幕の縁でしか出ないので、判定の材料にならない。
                      $"marks={(_show != null ? _show.VisitorMarkCount : -1)} " +
                      // 合図（run.outro.afterTakeId）が武装したか / 撃ったか。
                      // 著作していなければ両方 0 のままで、終わり方は従来どおり。
@@ -596,6 +598,10 @@ namespace FixedCamVr.Diagnostics
                      // 解析器が合計と `typeN` を突き合わせる（`canon/LEDGER.md` 0056）。
                      $"chars={_comms.NoticeChars} " +
                      $"sfx={(_comms.TypeSfxBuilt ? 1 : 0)} " +
+                     // この 1 通が届いたときの周回の進み（`canon/LEDGER.md` 0068）。
+                     // ⚠ 強さではなく**進み**を出す — 強さは発作で跳ねるので、
+                     //   1 通ごとの比較には使えない（3 周目の連絡が軽く見えることがある）。
+                     $"decay={_comms.DecayProgress:F2} " +
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
             }
 
@@ -869,6 +875,17 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" typeN=").Append(_comms == null
                                          ? "-"
                                          : (_comms.TypeSfxBuilt ? _comms.TypedCount.ToString() : "nc"));
+            //   commsGl / commsGlMat = 連絡の面の周回の壊れ（`canon/LEDGER.md` 0068）。
+            //   **書いた強さ**と**書く先を掴めたか**を対で出す。commsGlMat=0 なら周が進んでも
+            //   1 画素も変わらない（シェーダが剥がれている ＝ 2026-07-31 の IntroVeil と同じ型）。
+            //   ⚠⚠ **ここは `ev=sum` でなければならない。** 2026-08-17 に `ev=outro` へ足してしまい、
+            //   終幕の 5 標本にしか出ず、解析器の判定に 1 度も入らなかった（走行で気づいた）。
+            _sb.Append(" commsGl=").Append(_comms == null ? "-" : _comms.GlitchLevel.ToString("F2"));
+            _sb.Append(" commsGlMat=").Append(_comms == null ? "-" : (_comms.GlitchBuilt ? "1" : "0"));
+            //   commsBg = 地と縁を組めたか。**0 なら文字と壊れだけが宙に浮く。**
+            //   ⚠⚠ 2026-08-17 まで実機がまさにこれだった（`Unlit/Color` がビルドから剥がれていた）。
+            //   Editor では出るので、この 1 ビットが無いと永久に気づけない。
+            _sb.Append(" commsBg=").Append(_comms == null ? "-" : (_comms.PanelBuilt ? "1" : "0"));
             //   repTypeN / repShown = 終幕の報告の打鍵の累計と、いま画に出ている文字数
             //           （`canon/LEDGER.md` 0063）。**対で出す** — 片方だけだと
             //           「字は出たのに無音」と「音は鳴ったのに字が出ていない」を区別できない。

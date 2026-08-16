@@ -74,6 +74,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
 
+            // ---- 周回の壊れ（`canon/LEDGER.md` 0068）------------------------------------
+            // ⚠⚠ **指定が無ければ 4 段階まとめて焼く。** Unity の起動は 1 回 8 分かかるので、
+            //    周ごとの見え方を比べるのに 4 回起こしていられない。
+            float[] decays = ParseDecayList();
+
             string dir = Path.Combine(Application.dataPath, OutDirRel);
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             Directory.CreateDirectory(dir);
@@ -115,20 +120,46 @@ namespace FixedCamVr.Streaming.EditorTools
                 // ⚠ **4 通とも撮る。** 枠に収まるかは机上の文字数勘定では決まらず、しかも
                 //    ③ だけが 2 行なので、縦の座り（`CommsPanel.SetNotice` の重心運び）は
                 //    ここでしか見られない（`menu text-audit` は幅しか測らない）。
-                foreach (CommsNotice notice in new[]
+                // ⚠⚠ **壊れは発作の刻みで跳ねる**ので、適当な時刻で撮ると「何も起きていない」絵になり、
+                //    実装が死んでいても気づけない。**発作が立っている刻みを探してそこで撮る。**
+                foreach (float decay in decays)
                 {
-                    CommsNotice.Begin, CommsNotice.MarkLogged,
-                    CommsNotice.MarkNothing, CommsNotice.Prompt,
-                })
-                {
-                    Disable(logic);
-                    ApplyNow(apply, panel, logic);
-                    panel.Deliver(notice);
-                    PlaceStraightAhead(root, tmp, dist);
-                    Step(logic, apply, panel, inSec);
-                    Step(logic, apply, panel, TypeSec(logic));
-                    Shoot(cam, Path.Combine(dir, $"notice_{notice}.png"));
+                    float level = CommsGlitchLogic.LevelFor(decay);
+                    string suffix = $"_d{Mathf.RoundToInt(decay * 100f):000}";
+                    panel.SetDecayForPreview(decay, FindTick(level, wantBurst: true));
+
+                    foreach (CommsNotice notice in new[]
+                    {
+                        CommsNotice.Begin, CommsNotice.MarkLogged,
+                        CommsNotice.MarkNothing, CommsNotice.Prompt,
+                    })
+                    {
+                        Disable(logic);
+                        ApplyNow(apply, panel, logic);
+                        panel.Deliver(notice);
+                        PlaceStraightAhead(root, tmp, dist);
+                        Step(logic, apply, panel, inSec);
+                        Step(logic, apply, panel, TypeSec(logic));
+                        Shoot(cam, Path.Combine(dir, $"notice_{notice}{suffix}.png"));
+                    }
+
+                    // ---- 壊れが「発作でない刻み」でどう見えるか（③でだけ撮る）--------------
+                    // ⚠ 面は**ほとんどの時間こちらの姿**で立っている。発作の絵だけ見て強さを決めると、
+                    //    体験のほとんどの時間に何も起きていない、という判断ミスをする。
+                    if (decay > 0f)
+                    {
+                        panel.SetDecayForPreview(decay, FindTick(level, wantBurst: false));
+                        Disable(logic);
+                        ApplyNow(apply, panel, logic);
+                        panel.Deliver(CommsNotice.Prompt);
+                        PlaceStraightAhead(root, tmp, dist);
+                        Step(logic, apply, panel, inSec);
+                        Step(logic, apply, panel, TypeSec(logic));
+                        Shoot(cam, Path.Combine(dir, $"notice_Prompt{suffix}_steady.png"));
+                    }
                 }
+                // コマ送りの動画は 1 周目の姿で撮る（壊れは静止画で見る）。
+                panel.SetDecayForPreview(0f, 0f);
 
                 // ---- 報告の長押し中（下段が 2 行になる）----
                 // ⚠ **これは絵でしか確かめられない。** 見出しがゲージの左上に小さく座っているか
@@ -158,6 +189,14 @@ namespace FixedCamVr.Streaming.EditorTools
                 logic.GetType().GetMethod("SetGuideWanted")!.Invoke(logic, new object[] { false });
 
                 // ---- 出て、読ませて、引くまでを 1 コマずつ（いちばん重い ③ で撮る）----
+                // ⚠ **229 コマ ＝ 撮影だけで 20 分。** 壊れの見え方を詰めるときは要らないので
+                //    `-Set frames=0` で飛ばせる（動画を作るときだけ撮る）。
+                bool wantFrames = EditorCliArgs.Get("frames") != "0";
+                if (!wantFrames)
+                {
+                    Debug.Log("[CommsPreview] コマ送りは飛ばした（-Set frames=0）。静止画だけ焼いた");
+                    return;
+                }
                 Disable(logic);
                 ApplyNow(apply, panel, logic);
                 panel.Deliver(CommsNotice.Prompt);
@@ -198,7 +237,9 @@ namespace FixedCamVr.Streaming.EditorTools
                                      + "（`py -3.11 tools/ingest-sounds.py --only sfx_type`）");
                 }
 
-                Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 4 枚 → Assets/{OutDirRel}/\n"
+                Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 {decays.Length * 4} 枚"
+                        + $"（周回の壊れ {string.Join(" / ", System.Array.ConvertAll(decays, d => d.ToString("0.00")))}）"
+                        + $" → Assets/{OutDirRel}/\n"
                         + $"  枠が開く {inSec:0.00}s → 打つ {typeSec:0.00}s"
                         + $" → 読ませる {holdSec:0.0}s → 引く {outSec:0.00}s\n"
                         + $"  置き場所: 頭から {dist:0.0}m・左へ {-yawOff:0}°・下へ {pitchOff:0}°");
@@ -207,6 +248,47 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         private static string Frame(string dir, int i) => Path.Combine(dir, $"f{i:0000}.png");
+
+        /// <summary>
+        /// <c>-Set decay=0..1</c>（周回の進み）。既定 0 ＝ 1 周目の頭 ＝ <b>壊れが 1 画素も出ない</b>。
+        /// 周の境目は 0 / 0.33 / 0.67 / 1.0（<see cref="ScreenDecayLogic"/>）。
+        /// ⚠ 形は <c>ShowCompositePreview.ParseDecayArg</c> と同じ（あちらは映像、こちらは連絡の面）。
+        /// </summary>
+        /// <summary>
+        /// 焼く進みの並び。<b>指定が無ければ 4 段階</b>（1 周目の頭 / 2 周目の頭 / 2 周目の終わり /
+        /// 3 周目 A 以降）。周の境目は <see cref="ScreenDecayLogic"/> の
+        /// <c>(lap-1 + 経過/目安) / (totalLaps-1)</c> から。
+        /// </summary>
+        private static float[] ParseDecayList()
+        {
+            string? raw = EditorCliArgs.Get("decay");
+            if (string.IsNullOrEmpty(raw)) return new[] { 0f, 0.33f, 0.66f, 1f };
+            return new[] { ParseDecayArg() };
+        }
+
+        private static float ParseDecayArg()
+        {
+            string? raw = EditorCliArgs.Get("decay");
+            if (string.IsNullOrEmpty(raw)) return 0f;
+            if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out float v))
+            {
+                Debug.LogWarning($"[CommsPreview] decay の値を読めない: '{raw}'（0 として扱う）");
+                return 0f;
+            }
+            return Mathf.Clamp01(v);
+        }
+
+        /// <summary>
+        /// 発作が立っている（／立っていない）刻みの時刻を探す。
+        /// ⚠ <b>強さ 0 では発作が永久に立たない</b>ので、見つからなければ 0 を返す（絵は素のまま）。
+        /// </summary>
+        private static float FindTick(float level, bool wantBurst)
+        {
+            for (float t = 0f; t < 90f; t += CommsGlitchLogic.BurstTickSec)
+                if (CommsGlitchLogic.BurstAt(t, level) == wantBurst) return t;
+            return 0f;
+        }
 
         /// <summary>著作どおりの位置（左へ振って下げて、面は頭へ正対）へ置く。</summary>
         private static void PlaceAuthored(Transform root, float dist, float yawOffDeg, float pitchOffDeg)
