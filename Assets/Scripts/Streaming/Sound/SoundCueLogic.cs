@@ -16,17 +16,22 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>2026-08-15 以降は鳴らない</b>（隔離が閉じる段が無くなった）。音源は残してある。
         /// </summary>
         SealClose,
-        /// <summary>段 4 — 現実が割れてスクリーンへ吸い込まれる。**導入の山。**</summary>
+        /// <summary>
+        /// 段 4 の頭 — 現実が細かく割れてスクリーンへ吸い込まれる。
+        /// 音源はユーザー指定の一撃を**小刻みに並べて 1.70 秒でだんだん小さくしたもの**
+        /// （2026-08-16・<c>canon/LEDGER.md</c> 0057）。<see cref="ScreenOn"/> の手前で
+        /// <b>鳴り終わって静かになる</b>のが要件。
+        /// </summary>
         Shatter,
         /// <summary>
-        /// 段 4 — <b>割れた先に映像が満ちる ＝ スクリーンが出る瞬間</b>。
-        /// 音源はユーザー指定（2026-08-13・<c>canon/LEDGER.md</c> 0030 / 0032 で 2 度調整）。
+        /// 段 4 — <b>現実からカメラ映像への入れ替えが終わった所 ＝ スクリーンが出る瞬間</b>。**導入の山。**
+        /// 音源はユーザー指定（2026-08-16 に Cyber14-1 へ差し替え・<c>canon/LEDGER.md</c> 0057）。
         /// </summary>
         ScreenOn,
         /// <summary>
-        /// 段 5 の頭 — 最後の破片が消えて映像だけになる所。<see cref="ScreenOn"/> の尾に重なる。
-        /// ユーザー指示（<c>canon/LEDGER.md</c> 0030）
-        /// 「これを最初に出して、その後ノイズを出すとかかな？」の後半。
+        /// 段 5 の頭に鳴らしていた砂嵐。
+        /// ⚠ <b>2026-08-16 以降は鳴らない</b>（<c>canon/LEDGER.md</c> 0057・「ノイズは鳴らさない」）。
+        /// 音源は残してある。
         /// </summary>
         ScreenNoise,
         /// <summary>
@@ -51,8 +56,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         Creak,
         /// <summary>
-        /// 鈴。<b>段 3（輪郭だけの世界）の頭に 1 回だけ</b>。誰も鳴らしていないのに鳴る。
-        /// ⚠ 2026-08-15 に段 0 の 6 秒後からここへ移した（<c>canon/LEDGER.md</c> 0049）。
+        /// 鈴。<b>完全にスクリーンになった所に 1 回だけ</b>（段 5 の頭から
+        /// <see cref="SoundCueLogic.BellAfterSwapSec"/> 後）。誰も鳴らしていないのに鳴る。
+        /// ⚠ 2026-08-16 に段 3 の頭からここへ移した（<c>canon/LEDGER.md</c> 0057）。
         /// </summary>
         Bell,
     }
@@ -86,9 +92,30 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 段 4 で枠の中の映像がここまで満ちたら「スクリーンが出る音」を鳴らす。
-        /// **割れる音と同じフレームにしない**ための遅らせ（段 4 の頭から約 0.35 秒）。
+        ///
+        /// ⚠⚠ <b>2026-08-16 に 0.45 → 1.0（入れ替えが終わった所）へ移した</b>
+        /// （<c>canon/LEDGER.md</c> 0057・ユーザー指示「スクリーンのクロスフェードが
+        /// 終わったときに ... これを一度だけ。前の割れる音とはかぶせない」）。
+        ///
+        /// <c>live = SmoothStep(0.55, 0.85, p)</c> なので、ちょうど段 4 の進み 0.85
+        /// （＝ 頭から 2.125 秒）で鳴る。割れる音は 1.70 秒で鳴り終わるので、
+        /// <b>0.37 秒の静けさを挟んでから</b>この音が来る。
+        /// ⚠ 割れる音の尺（<c>tools/ingest-sounds.py</c> の <c>SWARM_SEC</c>）と対で決めた値。
+        /// 片方だけ動かすと重なる。
         /// </summary>
-        public const float ScreenOnAt = 0.45f;
+        public const float ScreenOnAt = 0.999f;
+
+        /// <summary>
+        /// 段 5 へ入ってから鈴を鳴らすまでの秒数。<b>＝ すり替えのクロスフェードの尺</b>
+        /// （<see cref="IntroLogic.SwapCrossfadeSec"/>）なので、鳴るのは
+        /// <b>完全にスクリーンになった所</b>（<c>canon/LEDGER.md</c> 0057・ユーザー指示
+        /// 「鈴は、完全にスクリーンになったときになるようにしてほしい」）。
+        ///
+        /// ⚠ <b>スクリーンが出る音（<see cref="SoundCue.ScreenOn"/>）と同じ瞬間にしない。</b>
+        /// あれは段 4 の入れ替えが終わる所で、こちらはその 1.6 秒後。
+        /// 重ねると 1 つの音に潰れて「その後」にならない（0030 と同じ理屈）。
+        /// </summary>
+        public const float BellAfterSwapSec = IntroLogic.SwapCrossfadeSec;
 
         /// <summary>
         /// 1 フレームに拾える上限。**種類の総数と同じにしてある ＝ 構造的に溢れない。**
@@ -108,6 +135,9 @@ namespace FixedCamVr.Streaming
         private float _glitchCooldown;
         private bool _glyphWasShowing;
         private bool _bellFired;
+
+        /// <summary>段 5 に入ってからの秒数。<b>鈴はここで数える</b>（外から段の経過が来ないため）。</summary>
+        private float _swapSec;
 
         /// <summary>前フレームの導入の段。段 0 へ入った縁で「1 度だけ」を落とすために持つ。</summary>
         private IntroStage _lastIntroStage = IntroStage.Off;
@@ -142,6 +172,7 @@ namespace FixedCamVr.Streaming
         {
             _shatterFired = _screenOnFired = _screenNoiseFired = false;
             _bellFired = false;
+            _swapSec = 0f;
         }
 
         /// <summary>今フレームに鳴らすものを返す（<paramref name="count"/> 本）。</summary>
@@ -195,13 +226,10 @@ namespace FixedCamVr.Streaming
                     _screenOnFired = true;
                     Push(SoundCue.ScreenOn, ref count);
                 }
-                // ⚠ **その後にノイズ**（`canon/LEDGER.md` 0030 の後半）。段 5 の頭 ＝
-                //    最後の破片が消えて映像だけになる所。**同じフレームで 2 本鳴らさない。**
-                if (!_screenNoiseFired && s.introStage == IntroStage.Swap)
-                {
-                    _screenNoiseFired = true;
-                    Push(SoundCue.ScreenNoise, ref count);
-                }
+                // ⚠⚠ **その後のノイズ（`ScreenNoise`）は 2026-08-16 に鳴らさなくなった**
+                //    （`canon/LEDGER.md` 0057・ユーザー指示「ノイズは鳴らさない」）。
+                //    スクリーンが出る音を差し替えたので、後ろに足す音が要らなくなった。
+                //    enum と音源（`sfx_screen_noise`）は残してある。
             }
 
             // --- 終幕 -----------------------------------------------------------
@@ -226,16 +254,23 @@ namespace FixedCamVr.Streaming
             //    段 0 にも本編にも 1 発も置かない。<see cref="SoundCue.Creak"/> の enum と
             //    音源（`amb_creak_1/2`）は残してある。
 
-            // --- 鈴（段 3 の頭に 1 回だけ）--------------------------------------
-            // ⚠ **2026-08-15 に段 0 の 6 秒後からここへ移した**（`canon/LEDGER.md` 0049・
-            //    ユーザー逐語「パススルー→2Dになるときの、輪郭だけの世界になる演出の始まりに、
-            //    鈴を一回鳴らそう」）。段 3 は実尺 1.1 秒しかないので、**時間で待たずに縁で鳴らす** —
-            //    待つ形にすると段が終わっていて 1 度も鳴らない。
-            if (s.introActive && s.introStage == IntroStage.Structure
-                && !_bellFired && !s.registrationActive)
+            // --- 鈴（完全にスクリーンになった所で 1 回だけ）----------------------
+            // ⚠⚠ **2026-08-16 に段 3 の頭からここへ移した**（`canon/LEDGER.md` 0057・
+            //    ユーザー逐語「鈴は、完全にスクリーンになったときになるようにしてほしい」）。
+            //    2026-08-15 は段 3（輪郭だけの世界の始まり）、それ以前は段 0 の 6 秒後だった。
+            //
+            // ⚠ **ここだけは時間で待つ。** 段 5 の頭はまだ最後の破片が消えていく最中で、
+            //    「完全にスクリーンになった」のは<b>すり替えのクロスフェードが終わった所</b>
+            //    （`IntroLogic.SwapCrossfadeSec`）。段 5 は 4.5 秒あるので、待っても必ず鳴る
+            //    （段 3 が実尺 1.1 秒で待てなかったのとは事情が違う）。
+            if (s.introActive && s.introStage == IntroStage.Swap)
             {
-                _bellFired = true;
-                Push(SoundCue.Bell, ref count);
+                _swapSec += dt;
+                if (!_bellFired && _swapSec >= BellAfterSwapSec && !s.registrationActive)
+                {
+                    _bellFired = true;
+                    Push(SoundCue.Bell, ref count);
+                }
             }
 
             return new ReadOnlySpan<SoundCue>(_buf, 0, count);

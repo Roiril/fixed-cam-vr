@@ -1213,18 +1213,23 @@ def analyze(events, others, exp, warns=None):
         #    ここに残すと「出るはずのものが出ない」と毎回誤検出する。
         intro_ran = any(e.get("stage") == "Swap" for e in intro)
         if intro_ran:
-            # ⚠ 鈴（Bell）は 2026-08-15 に段 0 の 6 秒後から**段 3 の頭**へ移した
-            #    （`canon/LEDGER.md` 0049）。段 3 は実尺 1.1 秒しかないので、
-            #    「鳴らなかった」が起きるならここがいちばん起きやすい。
-            for want, label in (("Bell", "輪郭だけの世界に入る鈴"),
+            # ⚠⚠ 2026-08-16 に 2 つ動いた（`canon/LEDGER.md` 0057）。
+            #    - 鈴（Bell）は**段 5 のクロスフェードが終わった所**（＝完全にスクリーンに
+            #      なったとき）へ。段 5 は 4.5 秒あるので、待ちで取り逃す心配は無い
+            #    - ノイズ（ScreenNoise）は**鳴らさない**。ここに残すと毎回誤検出する
+            want_ids = ("Bell", "Shatter", "ScreenOn")
+            for want, label in (("Bell", "完全にスクリーンになった所の鈴"),
                                 ("Shatter", "現実が割れる"),
-                                ("ScreenOn", "スクリーンが出る"),
-                                ("ScreenNoise", "その後のノイズ")):
+                                ("ScreenOn", "スクリーンが出る")):
                 if by_id.get(want, 0) == 0:
                     verdict("FAIL", f"導入は段 Swap まで進んだのに「{label}」の音が鳴っていない"
                                     f"（ev=sfx id={want} が 0 本）")
-            if all(by_id.get(k, 0) > 0 for k in ("Bell", "Shatter", "ScreenOn", "ScreenNoise")):
-                verdict("OK", "導入の 4 つの節目が全部鳴った")
+            if all(by_id.get(k, 0) > 0 for k in want_ids):
+                verdict("OK", "導入の 3 つの節目が全部鳴った")
+            # ⚠ 鳴らさなくなったものが鳴っていたら**戻ってしまっている**（0057）。
+            if by_id.get("ScreenNoise", 0) > 0:
+                verdict("FAIL", f"ノイズが {by_id['ScreenNoise']} 回鳴っている — "
+                                "2026-08-16 に鳴らさないと決めたもの（SoundCueLogic を見る）")
         # ⚠ 家鳴り（Creak）は 2026-08-15 に全廃した（`canon/LEDGER.md` 0049）。
         #    鳴っていたら**戻ってしまっている**ので落とす。
         if by_id.get("Creak", 0) > 0:

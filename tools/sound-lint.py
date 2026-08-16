@@ -57,8 +57,11 @@ SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何�
 #    ⚠ 2026-08-15 追加: 周ごとの環境音 2 本（`canon/LEDGER.md` 0049 でユーザーが指定した音源）。
 #       **内蔵スピーカーの判定からは外していない** — あれは「実機で聞こえるか」の話で、
 #       もらった音でも聞こえないものは聞こえない（`sfx_title_in` と同じ扱い）。
+#    ⚠ 2026-08-16 追加: 割れる音（もらった一撃を小刻みに並べたもの）と カメラ切替
+#       （`canon/LEDGER.md` 0057 でユーザーが指定した音源）。**並べただけで素材は実録**。
 RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_close",
-            "sfx_screen_on", "bed_room_lap2", "bed_room_lap3"}
+            "sfx_screen_on", "bed_room_lap2", "bed_room_lap3",
+            "sfx_shatter", "sfx_switch_1"}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 
 # 発振器が居るか（掃引する純音も捕まる）。実測: 純音 0.93〜1.00 / 帯ノイズの掃引 0.31〜0.43 /

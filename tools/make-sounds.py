@@ -621,18 +621,22 @@ REGISTRY = {
     "bed_device_worn": (bed_device_worn, True, False),
     "bed_static": (bed_static, True, False),
     # 一撃
-    "sfx_switch_1": (lambda: sfx_switch(0), False, False),
-    "sfx_switch_2": (lambda: sfx_switch(1), False, False),
-    "sfx_switch_3": (lambda: sfx_switch(2), False, False),
+    # ⚠⚠ `sfx_switch_*` は 2026-08-16 にユーザー提供の「カメラ切り替え.mp3」1 本へ置き換えた
+    #    （`canon/LEDGER.md` 0057・`tools/ingest-sounds.py` が焼く）。**ここに戻すと上書きしてしまう。**
+    #    合成版の関数（`sfx_switch`）は設計の記録として残してあるが、**変種は 1 本だけ**になり
+    #    `sfx_switch_2/3` は消した（`SwitchAudioCue.DefaultVariantCount` = 1）。
     "sfx_glitch_1": (lambda: sfx_glitch(0), False, False),
     "sfx_glitch_2": (lambda: sfx_glitch(1), False, False),
     "sfx_glitch_3": (lambda: sfx_glitch(2), False, False),
     # ⚠ `sfx_seal_close` は 2026-08-12 にユーザー提供の「黒い中に入るときの金属音」へ
     #    置き換えた（`tools/ingest-sounds.py` が焼く）。**ここに戻すと上書きしてしまう。**
     #    合成版の関数は設計の記録として残してある。
-    "sfx_shatter": (sfx_shatter, False, False),
-    # ⚠ `sfx_screen_on`（前半の一撃）はユーザー提供の mp3。`tools/ingest-sounds.py` が焼くので
-    #    ここには置かない。**置くと上書きしてしまう。** こちらはその後に重なるノイズ。
+    # ⚠⚠ `sfx_shatter` も 2026-08-16 にユーザー提供の一撃（PC-Mouse06-1）を**小刻みに並べた**
+    #    ものへ置き換えた（`canon/LEDGER.md` 0057・`tools/ingest-sounds.py` の `SWARMS`）。
+    #    **ここに戻すと上書きしてしまう。** 合成版の関数は設計の記録として残してある。
+    # ⚠ `sfx_screen_on` もユーザー提供の mp3（同上）。
+    # ⚠ `sfx_screen_noise` は 2026-08-16 から**鳴らさない**（0057「ノイズは鳴らさない」）。
+    #    音源は退避路として焼き続ける（`sfx_swap` / `sfx_seal_close` と同じ扱い）。
     "sfx_screen_noise": (sfx_screen_noise, False, False),
     "sfx_swap": (sfx_swap, False, False),
     "sfx_shell_open": (sfx_shell_open, False, False),

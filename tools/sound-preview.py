@@ -46,9 +46,12 @@ OUT = os.path.join(ROOT, "logs", "sound")
 REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 3.5, 2.5, 2.5, 4.5
 # 段 3 は段 2 の後半から重なるので、単独で流れるのはこれだけ（`IntroTiming.TotalSec` と同じ式）。
 STRUCTURE = max(STRUCTURE_SRC - DEGRADE * (1 - 0.6), 0.5)
-# ⚠ `SoundCueLogic.ScreenOnAt` と同じ値（割れた先の映像が満ちる所）。対で直す。
-#   段 4 の `live = SmoothStep(0.55, 0.85, p)` が 0.45 を越える進み。
-SCREEN_ON_AT = 0.70
+# ⚠⚠ **2026-08-16 に「入れ替えが終わった所」へ移した**（`canon/LEDGER.md` 0057）。
+#    段 4 の `live = SmoothStep(0.55, 0.85, p)` が 1 に届く進み ＝ 0.85。
+#    `SoundCueLogic.ScreenOnAt`（live の閾値）と対。片方だけ直すと聴いて決めた間が実機と違う。
+SCREEN_ON_AT = 0.85
+# 鈴が鳴るまで（段 5 の頭から）。`IntroLogic.SwapCrossfadeSec` ＝ `SoundCueLogic.BellAfterSwapSec`。
+BELL_AFTER_SWAP = 1.2
 
 MATERIALS = [
     ("bed_seal", "【退避中】封印の箱の唸り — 箱を外したので鳴らない", 6.0),
@@ -61,11 +64,11 @@ MATERIALS = [
     ("sfx_title_in", "A で題字が立つ（もらった「Tone Downer (Reverb)」・2026-08-15 差し替え）", 0),
     ("sfx_title_out", "2 秒後に題字が消える（息を呑む）", 0),
     ("sfx_seal_close", "【鳴らない】隔離が閉じる（もらった「黒い中に入るときの金属音」）", 0),
-    ("sfx_shatter", "段 4 — 現実が割れて吸い込まれる（導入の山）", 0),
+    ("sfx_shatter", "段 4 — 現実が割れて吸い込まれる（もらった一撃を小刻みに並べたもの）", 0),
+    ("sfx_screen_on", "段 4 の終わり — スクリーンが出る（もらった Cyber14-1）。**導入の山**", 0),
+    ("sfx_screen_noise", "【鳴らない】その後のノイズ — 2026-08-16 に外した（音源は残してある）", 0),
     ("sfx_swap", "【鳴らない】装置が点く — 同じ縁をもらった音（sfx_screen_on）が取った", 0),
-    ("sfx_switch_1", "カメラ切替（リレー）1", 0),
-    ("sfx_switch_2", "カメラ切替（リレー）2", 0),
-    ("sfx_switch_3", "カメラ切替（リレー）3", 0),
+    ("sfx_switch_1", "カメラ切替（もらった「カメラ切り替え」・**変種は 1 本だけ**）", 0),
     ("sfx_glitch_1", "映像の乱れ 1", 0),
     ("sfx_glitch_2", "映像の乱れ 2", 0),
     ("sfx_glitch_3", "映像の乱れ 3", 0),
@@ -168,21 +171,22 @@ def build_intro() -> np.ndarray:
     # 節目の一撃
     lay(mix, load("sfx_title_in"), t_a)          # ⚠ 尾は題字が消えた後も鳴り続ける
     lay(mix, load("sfx_title_out"), t_glyph_out)
-    # ⚠ **鈴は段 3（輪郭だけの世界）の頭**（2026-08-15・`canon/LEDGER.md` 0049）。
-    #    段 0 の 6 秒後から移した。**家鳴りは全廃**（同）— ここへ戻さないこと。
-    lay(mix, load("amb_bell"), t_structure)
-    # ⚠⚠ **導入の節目は 4 つ**（`canon/LEDGER.md` 0044 / 0046 / 0049）。
-    #    ①段 3 の頭で鈴 ②段 4 の頭で割れる ③割れた先の映像が満ちる所でもらった音源
-    #    ④段 5 の頭でノイズ。
+    # ⚠⚠ **導入の節目は 3 つ**（2026-08-16・`canon/LEDGER.md` 0057）。
+    #    ①段 4 の頭で割れる（1.70 秒でだんだん小さく）②静けさ 0.37 秒 ③入れ替えが終わって
+    #    スクリーンが出る ④段 5 ＋ 1.2 秒で**完全にスクリーンになった**鈴。
+    #    **ノイズ（`sfx_screen_noise`）は鳴らさない。** ここへ戻さないこと。
     lay(mix, load("sfx_shatter"), t_frame)
     lay(mix, load("sfx_screen_on"), t_frame + FRAME * SCREEN_ON_AT)
-    lay(mix, load("sfx_screen_noise"), t_swap)
-    for k, at in enumerate((t_run + 2.2, t_run + 5.6, t_run + 8.4)):
-        lay(mix, load(f"sfx_switch_{k + 1}"), at, 0.9)
+    lay(mix, load("amb_bell"), t_swap + BELL_AFTER_SWAP)
+    # ⚠ 切替は 1 本だけ（もらった音源）。実機は音程と音量を散らすが、ここでは並べるだけ。
+    for at in (t_run + 2.2, t_run + 5.6, t_run + 8.4):
+        lay(mix, load("sfx_switch_1"), at, 0.9)
 
     print(f"  真っ暗 0.0 / A {t_a:.1f} / 題字が消え始める {t_glyph_out:.1f} / "
           f"素通し {t_black:.1f} / 段 1 {t_real:.1f} / 格下げ {t_degrade:.1f} / "
-          f"輪郭 {t_structure:.1f} / 割れる {t_frame:.1f} / 映像 {t_swap:.1f} / 本編 {t_run:.1f}")
+          f"輪郭 {t_structure:.1f} / 割れる {t_frame:.1f} / "
+          f"スクリーンが出る {t_frame + FRAME * SCREEN_ON_AT:.1f} / 映像だけ {t_swap:.1f} / "
+          f"鈴 {t_swap + BELL_AFTER_SWAP:.1f} / 本編 {t_run:.1f}")
     return mix
 
 

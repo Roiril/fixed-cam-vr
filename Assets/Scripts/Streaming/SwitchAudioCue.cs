@@ -16,20 +16,31 @@ namespace FixedCamVr.Streaming
     ///    この機の粒は <b>21.3ms</b>（1024 標本 / 48kHz）。暗転の下りが 70ms なので、
     ///    粒のままだと音が黒の中に入る回と外れる回ができる ＝ <b>J カットが毎回別物になる</b>
     ///
+    /// ⚠⚠ <b>2026-08-16 から音源は 1 本だけ</b>（<c>canon/LEDGER.md</c> 0057・ユーザー指定の
+    /// <c>カメラ切り替え.mp3</c>）。合成の 3 変種は消したので、上の 1 は<b>効いていない</b> —
+    /// 散らしているのは音程と音量だけ。同じ波形が並ぶのが気になったら、
+    /// 変種を増やすのではなく**もらう音を増やす**（もらった音をこちらで作り変えない・§4.5）。
+    ///
     /// ⚠ クリップ未設定なら無音スキップ（仕組みだけ残す）。既定の音は
-    /// <c>Resources/Sound/sfx_switch_1..3</c> から拾う（`tools/make-sounds.py` が焼く）。
+    /// <c>Resources/Sound/sfx_switch_1</c> から拾う（`tools/ingest-sounds.py` が焼く）。
     /// </summary>
     [RequireComponent(typeof(AudioSource))]
     public sealed class SwitchAudioCue : MonoBehaviour
     {
         /// <summary><c>Resources</c> の既定音（Inspector が空のときに拾う）。</summary>
         public const string DefaultResourcePrefix = "Sound/sfx_switch_";
-        public const int DefaultVariantCount = 3;
+
+        /// <summary>
+        /// 既定音の本数。<b>2026-08-16 に 3 → 1</b>（ユーザー指定の音源 1 本へ差し替え。
+        /// 合成の <c>sfx_switch_2/3</c> は消した）。
+        /// ⚠ ここを戻しても音は増えない — 先に <c>tools/ingest-sounds.py</c> へ音源を足すこと。
+        /// </summary>
+        public const int DefaultVariantCount = 1;
 
         [Tooltip("再生に使う AudioSource。null なら同 GameObject から取得。")]
         [SerializeField] private AudioSource? source;
 
-        [Tooltip("切替時に鳴らすクリップ。**空なら Resources/Sound/sfx_switch_1..3 を使う。**")]
+        [Tooltip("切替時に鳴らすクリップ。**空なら Resources/Sound/sfx_switch_1 を使う。**")]
         [SerializeField] private AudioClip[] switchClips = new AudioClip[0];
 
         [Tooltip("切替音の音量。")]

@@ -65,8 +65,20 @@ PLAN = [
      "家鳴り。段 0 と本編にまばらに置く"),
     ("少し重い軋み.mp3", "amb_creak_2", "lufs", -26.0,
      "同上。2 種を回して同じ音が並ばないようにする"),
-    ("鈴２.mp3", "amb_bell", "lufs", -24.0,
-     "段 0 に **1 回だけ**。誰も鳴らしていないのに鳴る"),
+    # ⚠⚠ **2026-08-16 に -24.0 → -28.0 へ下げ、高い所を落とした**（`canon/LEDGER.md` 0057・
+    #    ユーザー指示「もう少し音量を下げて、高すぎるところをカットして聞きやすいように」）。
+    #    高域を削るのは §4.5「もらった音を良くしようとしない」の例外 — **ユーザーが指定した**。
+    #    量は `TAME` に書いてある（1 か所）。
+    ("鈴２.mp3", "amb_bell", "lufs", -28.0,
+     "**完全にスクリーンになった所**（段 5 の入れ替えが終わった後）に 1 回だけ。"
+     "誰も鳴らしていないのに鳴る"),
+    # ⚠ **カメラ切替はユーザー指定の音源**（2026-08-16・`canon/LEDGER.md` 0057）。
+    #    合成の 3 変種（`make-sounds.py` の `sfx_switch`）を置き換えた。
+    #    1 回の体験で 9 回以上鳴るので「繰り返す一撃」の高さ（-23 LUFS・§3）へ揃える。
+    # ⚠ `lufs!` — 波高 28dB の一撃なので素の音量合わせでは -3dBTP の天井に当たって
+    #    -25.4 LUFS 止まりだった（他の一撃より 2.4dB 低い ＝ 暗転の中で聞こえにくい）。
+    ("カメラ切り替え.mp3", "sfx_switch_1", "lufs!", -23.0,
+     "カメラ切替（dip の黒の中で鳴る）。**変種は 1 本だけ** — 散らすのは音程と音量で行う"),
     # ⚠ 尖頭で揃えない。エネルギーの立ち上がりは尾が長く、尖頭で合わせると聴感が突出する。
     # ⚠⚠ **-19.0 → -17.0**（2026-08-13・`canon/LEDGER.md` 0030「何の音もなしに出るのは違和感がある」）。
     #    旧値は「導入の山（破砕）を超えないように」抑えたものだが、**破砕は同日に廃止**したので
@@ -74,8 +86,12 @@ PLAN = [
     # ⚠⚠ **-17.0 では「鳴っていない」と判定された**（2026-08-13・LEDGER 0032）。本体が 0.2 秒しか
     #    無く波高 17.6dB なので、素の音量合わせでは -3dBTP の天井に当たって高さが出ない。
     #    `lufs!` は必要なぶんだけ尖頭を丸めて狙いまで持ち上げる。
-    ("Cyber03-mp3/Cyber03/Cyber03-2.mp3", "sfx_screen_on", "lufs!", -13.0,
-     "段 3 — 闇の中で管に電源が入る。**導入の山**。2026-08-13 ユーザー指定の音源"),
+    # ⚠⚠ **2026-08-16 に音源を差し替えた**（`canon/LEDGER.md` 0057・ユーザー指定）。
+    #    旧: `Cyber03-mp3/Cyber03/Cyber03-2.mp3`（2026-08-13 指定）。復号済みは
+    #    `logs/sound/ingest/src_screen_on_cyber03.wav` に残してある（戻すならここを差し替える）。
+    ("Cyber14-mp3/Cyber14/Cyber14-1.mp3", "sfx_screen_on", "lufs!", -13.0,
+     "段 4 — **現実からカメラ映像への入れ替えが終わった所**で 1 度だけ。**導入の山**。"
+     "⚠ 割れる音（`sfx_shatter`）とは重ねない — 向こうが鳴り終わって静かになってから鳴る"),
     # ⚠ **周ごとの環境音**（2026-08-15・`canon/LEDGER.md` 0049 ユーザー指定）。
     #    1 周目は合成の `bed_room` のまま、2 周目・3 周目でこれらへクロスフェードする。
     #    高さは他の敷く音と同じ **-32 LUFS**（§3）。ここを外すと差し替えの瞬間に音量が動いて
@@ -138,6 +154,125 @@ CUT_FADE = 0.008         # 尻のクリック止め。⚠ **頭は落とさな�
 #    60ms なら押し込みの減衰は丸ごと残り、いちばん早い戻りの 17ms 手前で終わる。
 CUT_BODY = 0.060
 CUT_RELEASE_MARGIN = 0.012   # 戻りの山までこれだけ空いていること（切れていたら言う）
+
+# ---- もらった音を「掛ける」もの（⚠ ユーザーが指定したときだけ）--------------
+#
+# §4.5 は「もらった音は音量と端の処理しか掛けない」。ここはその**明示的な例外**で、
+# 入れてよいのは**ユーザーが耳で聴いて指示したとき**だけ。勝手に足さない。
+#
+# (出力名: (この周波数より上を, これだけ下げる, 遷移の幅オクターブ))
+TAME = {
+    # 2026-08-16・`canon/LEDGER.md` 0057「高すぎるところをカットして聞きやすいように」。
+    # 鈴は 5kHz より上に細い倍音が立っていて、内蔵スピーカーで耳へ刺さる側に出る。
+    "amb_bell": (4200.0, -10.0, 1.2),
+}
+
+# ---- 1 発の録音を小刻みに並べて 1 本にするもの ------------------------------
+#
+# ⚠ **これも「もらった音」の側**（合成ではない）。掛けるのは並べ方・音量・音程と端の処理だけで、
+#    イコライザも圧縮も掛けない。**種は固定**なので、同じ版なら同じ波形が出る。
+#
+# ⚠⚠ **尺は「次の音が鳴る時刻」から逆算する。** 割れる音は段 4 の頭（進み 0.02 ＝ 0.05 秒）から
+#    始まり、スクリーンが出る音は入れ替えが終わる進み 0.85（＝ 2.125 秒）に鳴る。
+#    ユーザー指示は「割れる音はちゃんとこれを鳴らす前に終わらせて静かにしてから」なので、
+#    **1.70 秒 ＝ 鳴り終わってから 0.37 秒の静けさが残る**（`canon/LEDGER.md` 0057）。
+#
+# (元ファイル名, 出力名, 目標 LUFS, 使い先)
+SWARMS = [
+    ("PC-Mouse06-mp3/PC-Mouse06/PC-Mouse06-1.mp3", "sfx_shatter", -19.0,
+     "段 4 — 現実が細かく割れてスクリーンへ吸い込まれる。2026-08-16 ユーザー指定の音源を"
+     "小刻みに並べ、音程と音量を散らしながら**だんだん小さく**する"),
+]
+
+SWARM_SEC = 1.70          # 全長（上の逆算）
+SWARM_GRAIN = 0.130       # 1 粒の長さ（元の一撃は本体 155ms）
+SWARM_STEP_HEAD = 0.021   # 頭の刻み（≈ 48 粒/秒 ＝「ほんとに小刻み」）
+SWARM_STEP_TAIL = 0.052   # 尻の刻み（散っていく ＝ まばらになる）
+SWARM_STEP_JITTER = 0.18  # 刻みの揺らぎ（±・比）。等間隔だと機械の連射になる
+SWARM_PITCH_HEAD = 0.92   # 音程の中心（頭）
+SWARM_PITCH_TAIL = 1.38   # 同（尻）。破片が小さくなるほど高い
+SWARM_PITCH_SPREAD = 0.20 # 1 粒ごとの散らし（±・比）
+SWARM_TAIL_DB = -30.0     # 最後の粒の高さ（「最後らへんは本当に小さく」）
+SWARM_DECAY_POW = 1.9     # 減り方の曲線（1 = 直線 / 大きいほど早く小さくなる）
+SWARM_GAIN_JITTER_DB = 2.5
+SWARM_PAN = 0.55          # 左右の散らし（0 = 真ん中 / 1 = 片側だけ）
+SWARM_SEED = 20260816
+
+
+def resample(c: np.ndarray, ratio: float) -> np.ndarray:
+    """音程を変える（速さごと変える ＝ テープと同じ）。`ratio` > 1 で高く短くなる。"""
+    n = max(8, int(len(c) / ratio))
+    x = np.linspace(0, len(c) - 1, n)
+    return np.stack([np.interp(x, np.arange(len(c)), c[:, ch]) for ch in (0, 1)], axis=1)
+
+
+def swarm_build(y, sr: int, target_lufs: float):
+    """1 発の録音を小刻みに並べて、だんだん小さくなる群れにする。
+
+    ⚠ **等間隔・等音量にしない。** そうすると「割れた」ではなく「連射した」に聞こえる。
+    刻み・音程・音量・左右をすべて種固定の乱数で散らす。
+    """
+    st = sk.to_stereo(trim(y))
+    env = np.max(np.abs(st), axis=1)
+    head = int(np.argmax(env > 10 ** (CUT_ONSET_DB / 20))) if np.any(env > 10 ** (CUT_ONSET_DB / 20)) else 0
+    a = max(0, head - int(0.003 * sr))
+    grain = sk.env_fade(st[a:a + int(SWARM_GRAIN * sr)], 0.0, 0.012)
+
+    rng = np.random.default_rng(SWARM_SEED)
+    n = int(SWARM_SEC * sr) + len(grain) + int(0.05 * sr)
+    out = np.zeros((n, 2))
+    tail_lin = 10 ** (SWARM_TAIL_DB / 20.0)
+
+    t, count = 0.0, 0
+    while t < SWARM_SEC:
+        u = t / SWARM_SEC
+        g = sk.env_fade(resample(grain, SWARM_PITCH_HEAD + (SWARM_PITCH_TAIL - SWARM_PITCH_HEAD) * u
+                                 + float(rng.uniform(-SWARM_PITCH_SPREAD, SWARM_PITCH_SPREAD))),
+                        0.0, 0.010)
+        amp = (1.0 - u) ** SWARM_DECAY_POW
+        amp = tail_lin + (1.0 - tail_lin) * amp
+        amp *= 10 ** (float(rng.uniform(-SWARM_GAIN_JITTER_DB, SWARM_GAIN_JITTER_DB)) / 20.0)
+        # 左右は等パワーで振る（片側へ寄せるだけなのでモノにしても消えない）。
+        pan = float(rng.uniform(-SWARM_PAN, SWARM_PAN))
+        lr = np.array([np.cos((pan + 1) * np.pi / 4), np.sin((pan + 1) * np.pi / 4)]) * np.sqrt(2)
+        i = int(t * sr)
+        out[i:i + len(g)] += g * amp * lr
+        step = (SWARM_STEP_HEAD + (SWARM_STEP_TAIL - SWARM_STEP_HEAD) * u)
+        t += step * (1.0 + float(rng.uniform(-SWARM_STEP_JITTER, SWARM_STEP_JITTER)))
+        count += 1
+
+    out = sk.env_fade(out, 0.0, 0.05)
+    out = out * 10 ** ((target_lufs - sk.lufs(out)) / 20.0)
+    tp = sk.true_peak_db(out)
+    if tp > -3.0:
+        out = out * 10 ** ((-3.0 - tp) / 20.0)
+    return out, count
+
+
+def ingest_swarms(swarms, src_dir: str) -> None:
+    """1 発の録音を小刻みに並べて焼く（<see cref="SWARMS"/>）。"""
+    for jp, name, target, _why in swarms:
+        src = os.path.join(src_dir, jp)
+        raw = os.path.join(RAW, f"src_{name}.wav")
+        if os.path.exists(src):
+            if not decode(src, raw):
+                continue
+        elif not os.path.exists(raw):
+            print(f"  無い: {jp}（{src_dir} にも {RAW} にも）")
+            continue
+        else:
+            print(f"  元 mp3 が無いので復号済みを使う: {name}")
+
+        y, sr = sk.read_wav(raw)
+        out, count = swarm_build(y, sr, target)
+        sk.write_wav(os.path.join(OUT, f"{name}.wav"), out, peak_db=-3.0)
+        d = sk.describe(out)
+        # 尻がちゃんと静かになっているか（**ユーザー指示の要**なので数字で出す）。
+        last = out[-int(0.25 * sk.SR):]
+        rest = 20 * np.log10(max(float(np.sqrt(np.mean(last ** 2))), 1e-9))
+        print(f"  {name:16s} {count} 粒 / {d['sec']:.2f}s   {d['lufs']:6.1f} LUFS   "
+              f"tp {d['true_peak_db']:5.1f}dB   最後の 0.25s {rest:5.1f}dB   "
+              f"鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f} 内蔵SP {d['speaker_db']:5.1f}dB")
 
 
 def cut_strokes(y, sr: int, step_sec: float, target_lufs: float):
@@ -321,19 +456,24 @@ def main() -> int:
         for jp, name, n, target, step, why in CUTS:
             print(f"  {name+'_1..'+str(n):16s} ← {jp}\n      切り出し / 連なり {target:+.1f} LUFS"
                   f"（{1/step:.0f} 発/秒）/ {why}")
+        for jp, name, target, why in SWARMS:
+            print(f"  {name:16s} ← {jp}\n      小刻みに並べる / {target:+.1f} LUFS"
+                  f"（{SWARM_SEC:.2f}s）/ {why}")
         return 0
 
-    names = {p[1] for p in PLAN} | {c[1] for c in CUTS}
+    names = {p[1] for p in PLAN} | {c[1] for c in CUTS} | {s[1] for s in SWARMS}
     if a.only is not None and not set(a.only) <= names:
         missing = sorted(set(a.only) - names)
         print(f"  PLAN にも CUTS にも無い名前: {', '.join(missing)}")
         return 1
     plan = [p for p in PLAN if a.only is None or p[1] in a.only]
     cuts = [c for c in CUTS if a.only is None or c[1] in a.only]
+    swarms = [s for s in SWARMS if a.only is None or s[1] in a.only]
 
     os.makedirs(RAW, exist_ok=True)
     os.makedirs(OUT, exist_ok=True)
     ingest_cuts(cuts, a.src)
+    ingest_swarms(swarms, a.src)
     for jp, name, how, target, _why in plan:
         src = os.path.join(a.src, jp)
         raw = os.path.join(RAW, f"src_{name}.wav")
@@ -355,6 +495,12 @@ def main() -> int:
         else:
             y = sk.to_stereo(trim(y))
             y = sk.env_fade(y, EDGE_FADE, EDGE_FADE)
+
+        # ⚠ **音量を揃える前に掛ける**（削った分だけラウドネスが下がるので、後に掛けると狙いが外れる）。
+        if name in TAME:
+            fc, db, oct_w = TAME[name]
+            y = np.stack([sk.spec_shape(y[:, ch], lambda f: sk.shelf(f, fc, db, oct_w))
+                          for ch in (0, 1)], axis=1)
 
         if how == "peak":
             tp = sk.true_peak_db(y)

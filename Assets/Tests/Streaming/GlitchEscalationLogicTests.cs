@@ -160,7 +160,8 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void OneGlitchNeverGetsStrongerThanTheCap()
         {
-            // ⚠ ユーザー指定「強さの上限も、0.83 にして」。台本の強さはカットごとに違う
+            // ⚠ ユーザー指定「上限を 1 から 0.6 にしてほしい」（2026-08-16・`canon/LEDGER.md` 0057。
+            //    同日午前は 0.83 だった ＝ 0055）。台本の強さはカットごとに違う
             //    （0.25 / 0.70 / 0.80）ので、**倍率だけでは守れない**。
             foreach (float authored in new[] { 0.25f, 0.50f, 0.70f, 0.80f, 0.83f })
             {
@@ -192,6 +193,10 @@ namespace FixedCamVr.Streaming.Tests
         {
             // ⚠ 全面が砂で埋まると「乱れ」ではなく「信号断」に見える。上限はそれを避けるためにある。
             Assert.Less(GlitchEscalationLogic.MaxLevel, 1f);
+            // ⚠ **弱く置いた乱れは最後まで天井に触れない**（強弱の設計が壊れていないこと）。
+            //    切替の乱れ（`control.switchGlitch` = 0.25）が張り付いたら、上限が低すぎる。
+            Assert.Less(After(Sat + 5).ApplyLevel(0.25f), GlitchEscalationLogic.MaxLevel - 1e-3f,
+                        "いちばん弱い乱れまで上限に張り付いている");
         }
 
         [Test]
