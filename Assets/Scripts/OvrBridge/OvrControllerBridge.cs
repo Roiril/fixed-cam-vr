@@ -236,10 +236,19 @@ namespace FixedCamVr.OvrBridge
             // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。
             if (aDown || bDown || gripDown || triggerDown) haptics?.Ack();
 
-            // 右コントローラ接続状態をガイドパネルへ push（未接続時のパネル非表示に使う。
-            // Diagnostics は OVRInput 非依存のため直読み不可）。StatusHud の接続行は廃止したため push しない。
+            // 右コントローラの状態をガイドパネルへ push（Diagnostics は OVRInput 非依存のため直読み不可）。
+            //
+            // ⚠⚠ **接続と位置は別々に見る**（2026-08-16 実機で踏んだ）。
+            //    電源が入っていれば `IsControllerConnected` は true だが、カメラから見えていないと
+            //    姿勢は無効で、`OVRCameraRig` は**アンカーをトラッキング原点（床の中心）へ置く**
+            //    （`OVRCameraRig.UpdateAnchors` は有効なコントローラが 1 つも無いと
+            //     `GetLocalControllerPosition(Controller.None)` ＝ ゼロを書く）。
+            //    接続だけを見ていたので、**手元の面が床の原点に出て「遠くに小さく」見えていた**。
+            //    人形の左腕（`OvrHandTrackingBridge.TryReadController`）は最初から
+            //    `GetControllerPositionValid` を見ていて、そこだけ正しかった。
             bool rConnected = OVRInput.IsControllerConnected(OVRInput.Controller.RTouch);
-            guidePanel?.SetControllerConnected(rConnected);
+            bool rTracked = rConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.RTouch);
+            guidePanel?.SetControllerState(rConnected, rTracked);
 
             bool regActive = courseRegistration != null && courseRegistration.IsActive;
 
@@ -282,7 +291,11 @@ namespace FixedCamVr.OvrBridge
             }
             if (markPanel != null)
             {
-                markPanel.SetControllerConnected(OVRInput.IsControllerConnected(OVRInput.Controller.LTouch));
+                // ⚠ 上の右と同じ理由で**接続と位置を別々に**見る（位置が無効なら面は出さない）。
+                bool lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
+                bool lTracked = lConnected
+                                && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
+                markPanel.SetControllerState(lConnected, lTracked);
                 markPanel.SetMarkState(_markHold.Progress01, _markHold.Confirming);
             }
             // 長押しの手応えも左へ返す（右の HoldTick とは別の時間軸）。

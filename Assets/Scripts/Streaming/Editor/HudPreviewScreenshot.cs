@@ -86,7 +86,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 // Awake が走らないので明示的に差す — 未配線のシーンだと自己解決に頼ることになり、
                 // 見た目確認の一次証拠が空の PNG になる。
                 SetPrivateField(panel, "statusHud", hud);
-                panel.SetControllerConnected(true);
+                panel.SetControllerState(true, true);
                 panel.SetMode("NORMAL");
                 Invoke(panel, "LateUpdate");
                 Invoke(panel, "LateUpdate"); // SmoothDamp 初回シード後にもう 1 回（スナップ確定）

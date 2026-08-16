@@ -1078,6 +1078,38 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", f"位置合わせに {len(reg)} 回入り、いずれもパススルーが有効だった")
         w()
 
+    # ---------------- コントローラの位置（手元の面が出るか）----------------
+    # ⚠⚠ **繋がっていることと、位置が取れていることは別**（2026-08-16 実機で踏んだ）。
+    #    カメラから見えていないコントローラは接続 true のまま姿勢が無効になり、`OVRCameraRig` は
+    #    アンカーをトラッキング原点（床の中心）へ置く。**手元の面がそこへ出て「遠くに小さく」見える。**
+    #    いまは位置が無効なら面を出さないので、**出ていない理由**がここにしか残らない。
+    #    観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
+    ctrl_any = [k for k in ("ctrlL", "ctrlR")
+                if any(str(v) != "-" for v in effect_samples(events, k))]
+    if ctrl_any:
+        w("## コントローラの位置（手元の面が出るか）")
+    for side, key, what in (("左", "ctrlL", "報告の押し方"), ("右", "ctrlR", "操作早見表")):
+        vals = [str(v) for v in effect_samples(events, key) if str(v) != "-"]
+        if not vals:
+            continue
+        if not any(v.startswith("1") for v in vals):
+            verdict("WARN", f"{side}コントローラが一度も繋がっていない（{key}）— "
+                            f"{what}の面は出ない")
+            continue
+        conn = [v for v in vals if v.startswith("1")]
+        lost = [v for v in conn if v.endswith("/0")]
+        if len(lost) > len(conn) * 0.2:
+            verdict("FAIL", f"{side}コントローラは繋がっているのに位置が取れていない回が "
+                            f"{len(lost)}/{len(conn)}（{key}）— そのあいだ{what}の面は出ない。"
+                            "伏せて置いていないか / 体の陰に入っていないかを見る")
+        elif lost:
+            verdict("WARN", f"{side}コントローラの位置が一時的に取れなかった回が "
+                            f"{len(lost)}/{len(conn)}（{key}）— 短い遮蔽なら正常")
+        else:
+            verdict("OK", f"{side}コントローラは繋がっていて位置も取れていた（{key}）")
+    if ctrl_any:
+        w()
+
     # ---------------- 音（鳴ったか）----------------
     # ⚠⚠ **音は録画に映らない。** 画は `quest-record.py` が撮って人が開けば分かるが、
     #    音は実機で被って聴く以外に確かめる手段が無い（しかもこの作業をしているシュビーは

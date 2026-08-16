@@ -76,8 +76,15 @@ namespace FixedCamVr.Diagnostics
         // 現在モードのラベル（"NORMAL"/"REG"）。OvrControllerBridge が push。
         private string _modeLabel = "";
 
-        // 右コントローラ接続状態。既定 true（push 前に「未接続で非表示」を誤発しない）。
-        private bool _controllerConnected = true;
+        // 右コントローラの状態。既定 true（push 前に「未接続で非表示」を誤発しない）。
+        //
+        // ⚠⚠ **繋がっていることと、位置が取れていることは別**（2026-08-16 実機で踏んだ）。
+        //    カメラから見えていないコントローラは接続 true のまま姿勢が無効になり、
+        //    `OVRCameraRig` は **アンカーをトラッキング原点（床の中心）へ置く**。
+        //    接続だけで判定していると、**早見表が床に落ちて「遠くに小さく」見える**
+        //    （位置合わせ中はこれが唯一の操作説明なので、作業がそのまま止まる）。
+        private bool _connected = true;
+        private bool _posValid = true;
 
         // ⚠ 2026-08-15 に一時メッセージ（`ShowTransient` / 赤 1 行）を消した。
         //    唯一の呼び出し元だった「演出中に A を押してカメラ手送りを拒否する」経路が
@@ -96,8 +103,22 @@ namespace FixedCamVr.Diagnostics
             ApplyBody();
         }
 
-        /// <summary>右コントローラ接続状態を反映する（未接続時はパネル非表示）。</summary>
-        public void SetControllerConnected(bool connected) => _controllerConnected = connected;
+        /// <summary>
+        /// 右コントローラの状態を反映する。<b>繋がっている ＋ 位置が取れている</b>のときだけ出す。
+        /// ⚠ <paramref name="positionValid"/> を落とすと**アンカーは原点へ飛ぶ**ので、
+        /// 出したままにすると「早見表が床に落ちている」ように見える。
+        /// </summary>
+        public void SetControllerState(bool connected, bool positionValid)
+        {
+            _connected = connected;
+            _posValid = positionValid;
+        }
+
+        /// <summary>右コントローラが繋がっているか（テレメトリ用）。</summary>
+        public bool ControllerConnected => _connected;
+
+        /// <summary>右コントローラの位置が取れているか（テレメトリ用）。<b>false なら面は出ない。</b></summary>
+        public bool ControllerTracked => _posValid;
 
         /// <summary>スタッフが被っているか。解決できないときは false ＝ 文字を出さない側へ倒す。</summary>
         private bool StaffViewing()
@@ -127,7 +148,7 @@ namespace FixedCamVr.Diagnostics
             if (text == null) return;
 
             // 未接続 or アンカー欠落 or スタッフが見ていないなら非表示（復帰時は再配置スナップする）。
-            if (!_controllerConnected || controller == null || head == null || !StaffViewing())
+            if (!_connected || !_posValid || controller == null || head == null || !StaffViewing())
             {
                 if (text.enabled) text.enabled = false;
                 _seeded = false;

@@ -57,8 +57,15 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("位置追従の SmoothDamp 時定数 (秒)。大きいほどゆっくり追う。")]
         [SerializeField] private float smoothTime = 0.12f;
 
-        // 左コントローラ接続状態。既定 true（push 前に「未接続で非表示」を誤発しない）。
-        private bool _controllerConnected = true;
+        // 左コントローラの状態。既定 true（push 前に「未接続で非表示」を誤発しない）。
+        //
+        // ⚠⚠ **繋がっていることと、位置が取れていることは別**（2026-08-16 実機で踏んだ）。
+        //    `OVRInput.IsControllerConnected` は電源が入っていれば true を返すが、
+        //    カメラから見えていない（伏せてある・体の陰・起動直後）と姿勢は無効で、
+        //    `OVRCameraRig` は **LeftHandAnchor をトラッキング原点（床の中心）へ置く**。
+        //    接続だけで判定していたので、面が**床の原点に出て「遠くに小さく」見えていた**。
+        private bool _connected = true;
+        private bool _posValid = true;
 
         private float _progress01;
         private bool _confirming;
@@ -73,8 +80,22 @@ namespace FixedCamVr.Diagnostics
         /// <summary>いま面に出している文字（テスト・診断用）。</summary>
         public string CurrentBody => _lastBody;
 
-        /// <summary>左コントローラ接続状態を反映する（未接続時は非表示）。</summary>
-        public void SetControllerConnected(bool connected) => _controllerConnected = connected;
+        /// <summary>
+        /// 左コントローラの状態を反映する。<b>繋がっている ＋ 位置が取れている</b>のときだけ出す。
+        /// ⚠ <paramref name="positionValid"/> を落とすと**アンカーは原点へ飛ぶ**ので、
+        /// 出したままにすると「手元の面が床に落ちている」ように見える。
+        /// </summary>
+        public void SetControllerState(bool connected, bool positionValid)
+        {
+            _connected = connected;
+            _posValid = positionValid;
+        }
+
+        /// <summary>左コントローラが繋がっているか（テレメトリ用）。</summary>
+        public bool ControllerConnected => _connected;
+
+        /// <summary>左コントローラの位置が取れているか（テレメトリ用）。<b>false なら面は出ない。</b></summary>
+        public bool ControllerTracked => _posValid;
 
         /// <summary>
         /// 長押しの状態を反映する。<c>OvrControllerBridge</c> が
@@ -112,8 +133,8 @@ namespace FixedCamVr.Diagnostics
         {
             if (text == null) return;
 
-            // 未接続 or アンカー欠落なら非表示（復帰時は再配置スナップする）。
-            if (!_controllerConnected || controller == null || head == null)
+            // 未接続 / 位置が取れていない / アンカー欠落なら非表示（復帰時は再配置スナップする）。
+            if (!_connected || !_posValid || controller == null || head == null)
             {
                 if (text.enabled) text.enabled = false;
                 _seeded = false;

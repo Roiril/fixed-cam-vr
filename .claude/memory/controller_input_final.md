@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: ab11f568-4be9-4535-a23b-c7419f45dc20
-  modified: 2026-08-11T21:32:17.813Z
+  modified: 2026-08-16T07:13:48.374Z
 ---
 
 # コントローラ割り当ての最終形（2026-07-23 ユーザー宣言）
@@ -36,3 +36,32 @@ REG の A は不変（点サンプル）。**入力は 4 つのまま**で、増
   （`CameraSwitchInput` の Tab / 1-9）は残っている
 - 2026-07-23 の凍結は生きている。新しいボタン・新しい長押しは今も足さない
 - 詳細と罠は [[title-screen]]
+
+## ⚠ 2026-08-15: 左は体験者のもの（X / Y だけ）
+
+右（スタッフ）と左（体験者）は完全に分かれている。**左で読むのは X と Y の 2 秒長押しだけ**で、
+スティック・トリガー・グリップ・A/B は 1 ビットも読まない。どちらを押しても同じ
+（被った体験者に手元が見えないため・`canon/LEDGER.md` 0050）。
+
+- ⚠ **`Button.Three` / `Button.Four` を `Controller.LTouch` と組み合わせない。** LTouch の仮想マップは
+  どちらも `None` なので**永遠に false**。2026-08-15 まで記録ボタンがこの形で、**実機で一度も
+  発火していなかった**。物理ボタンを名指しする `RawButton.X | RawButton.Y` を使う
+- 左が受け取る振動は 3 つ: 報告の受理（`LeftMark`）/ 長押し中のランプ（`SetLeftHoldProgress`）/
+  **上司からの連絡**（`LeftNotify`・2 連）。右の長押しランプとは混ぜない
+- 左コントローラは人形の左腕も動かす（素手が取れないとき `OvrHandTrackingBridge` が姿勢で代える）
+
+## ⚠⚠ 2026-08-16: 「繋がっている」と「位置が取れている」は別（実機で踏んだ）
+
+`OVRInput.IsControllerConnected` は**電源が入っていれば true**。カメラから見えていないと姿勢は
+無効になり、`OVRCameraRig.UpdateAnchors` が**アンカーをトラッキング原点（床の中心）へ置く**
+（有効なコントローラが 1 つも無いと `GetLocalControllerPosition(Controller.None)` ＝ ゼロ）。
+
+⇒ **手元の面が足元の遠くに小さく出る**（ユーザー報告）。位置合わせ中は早見表が唯一の操作説明なので、
+そのまま作業が止まる。**接続だけで判定しない** — `GetControllerPositionValid` も見て、
+位置が取れないあいだは面を出さない（`SetControllerState(connected, positionValid)`）。
+
+- 人形の左腕（`OvrHandTrackingBridge.TryReadController`）は最初から両方見ていた。**そこだけ正しかった**
+- 接続・再接続そのものは毎フレーム push しているので、**途中で電源を入れても繋がる**
+  （アンカーの GameObject はリグに常設なので参照も切れない）
+- 観測は `ev=sum` の `ctrlL=` / `ctrlR=`（`<繋がっている>/<位置が取れている>`）。
+  **画にも音にも出ない**ので、実機ログのここが唯一の手掛かり

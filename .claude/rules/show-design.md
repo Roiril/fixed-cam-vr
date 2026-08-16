@@ -658,6 +658,26 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
 **`CommsPanelLogic.CharsPerSec`（12）はそのまま打鍵の間隔になる**ので、
 打つ速さを変えると音の密度も変わる（22 に戻すと連続音になる）。
 
+##### ⚠⚠ 手元の面は「繋がっている」ではなく「位置が取れている」で出す（2026-08-16 実機で踏んだ）
+
+`VisitorMarkPanel`（左）と `ControllerGuidePanel`（右）は**コントローラのアンカーの位置**へ置く。
+ところが `OVRInput.IsControllerConnected` は**電源が入っていれば true** で、
+カメラから見えていない（伏せてある・体の陰・起動直後）と姿勢は無効になる。
+そのとき [`OVRCameraRig.UpdateAnchors`](../../Library/PackageCache/com.meta.xr.sdk.core@201.0.0/Scripts/OVRCameraRig.cs)
+は有効なコントローラが 1 つも無いと `GetLocalControllerPosition(Controller.None)` ＝ **ゼロ**を書くので、
+**アンカーはトラッキング原点（床の中心）へ飛ぶ**。
+
+⇒ 実害（ユーザー報告）: 手元にあるはずの面が**足元の遠くに小さく**出ていた。
+位置合わせ中はその早見表が唯一の操作説明なので、**作業がそのまま止まる**。
+
+- いまは `OVRInput.GetControllerPositionValid` も見て、**位置が取れていないあいだは出さない**
+  （`SetControllerState(connected, positionValid)`）。復帰したらスナップして戻る（`_seeded=false`）
+- ⚠ **接続だけを見る判定を書き足さない。** 人形の左腕（`OvrHandTrackingBridge.TryReadController`）は
+  最初から両方見ていて、そこだけ正しかった
+- 観測は `ev=sum` の **`ctrlL=` / `ctrlR=`**（`<繋がっている>/<位置が取れている>`）。
+  **画にも音にも出ない不具合なので、ここが唯一の手掛かり**。
+  `analyze-xp-log.py` の「## コントローラの位置」が判定する（**対で直す**）
+
 ⚠⚠ **`VisitorMarkPanel` は門を通さない唯一の面**（2026-08-15・`canon/LEDGER.md` 0050）。
 上の 3 つと並べると規約違反に見えるので、**善意で `StaffViewing()` を足されると
 体験者に一生見えない面になる**（しかも誰も気づかない）。

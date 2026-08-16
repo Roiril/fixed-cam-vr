@@ -73,6 +73,9 @@ namespace FixedCamVr.Diagnostics
         private OutroDirector? _outro;
         private OutroReport? _report;
         private CommsPanel? _comms;
+        // 手元の 2 面。**コントローラの位置が取れているか**の唯一の観測点（下の ctrlL / ctrlR）。
+        private VisitorMarkPanel? _markPanel;
+        private ControllerGuidePanel? _guidePanel;
         private TitleScreen? _title;
         private TimelineDirector? _timeline;
         private SignalLostFx? _signal;
@@ -197,6 +200,8 @@ namespace FixedCamVr.Diagnostics
             if (_outro == null) _outro = FindObjectOfType<OutroDirector>();
             if (_report == null) _report = FindObjectOfType<OutroReport>();
             if (_comms == null) _comms = FindObjectOfType<CommsPanel>();
+            if (_markPanel == null) _markPanel = FindObjectOfType<VisitorMarkPanel>();
+            if (_guidePanel == null) _guidePanel = FindObjectOfType<ControllerGuidePanel>();
             if (_title == null) _title = FindObjectOfType<TitleScreen>();
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
             if (_signal == null) _signal = FindObjectOfType<SignalLostFx>();
@@ -384,6 +389,15 @@ namespace FixedCamVr.Diagnostics
         /// それ以外は <c>&lt;段&gt;/&lt;文字の濃さ&gt;/&lt;枠の開き&gt;</c>。
         /// ⚠ 段だけを出すと「進んでいるのに 1 画素も出ていない」を見逃す。
         /// </summary>
+        /// <summary>
+        /// コントローラの <c>&lt;繋がっている&gt;/&lt;位置が取れている&gt;</c>。面が居なければ <c>-</c>。
+        /// <b>2 つ目が 0 なら手元の面は出ていない</b>（アンカーが原点へ飛ぶので出す方が害）。
+        /// </summary>
+        private static string ControllerState(bool? connected, bool? tracked) =>
+            connected == null || tracked == null
+                ? "-"
+                : (connected.Value ? "1" : "0") + "/" + (tracked.Value ? "1" : "0");
+
         private string CommsState => _comms == null ? "-"
             : _comms.Stage == CommsStage.Off ? "off"
             : $"{_comms.Stage}/{_comms.AppliedGlyph:F2}/{_comms.AppliedOpen:F2}";
@@ -842,6 +856,19 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" typeN=").Append(_comms == null
                                          ? "-"
                                          : (_comms.TypeSfxBuilt ? _comms.TypedCount.ToString() : "nc"));
+            //   ctrlL / ctrlR = コントローラの <繋がっている>/<位置が取れている>。
+            //   ⚠⚠ **2 つ目が 0 のとき、手元の面（報告の押し方・操作早見表）は出ない。**
+            //   2026-08-16 まで接続しか見ておらず、位置が無効なコントローラのアンカーが
+            //   トラッキング原点（床の中心）へ飛ぶせいで、面が「遠くに小さく」出ていた。
+            //   実機でしか起きず、画にも音にも出ないので、**ここが唯一の手掛かり**。
+            _sb.Append(" ctrlL=").Append(ControllerState(_markPanel == null ? null
+                                                         : (bool?)_markPanel.ControllerConnected,
+                                                         _markPanel == null ? null
+                                                         : (bool?)_markPanel.ControllerTracked));
+            _sb.Append(" ctrlR=").Append(ControllerState(_guidePanel == null ? null
+                                                         : (bool?)_guidePanel.ControllerConnected,
+                                                         _guidePanel == null ? null
+                                                         : (bool?)_guidePanel.ControllerTracked));
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。
