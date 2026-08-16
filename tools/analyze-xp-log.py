@@ -1190,6 +1190,38 @@ def analyze(events, others, exp, warns=None):
     # 2026-07-31 に FAIL ゼロ・演出 7 本 OK と判定した走行の画を録ったら、導入演出が 1 段も
     # 出ていなかった（パススルー未初期化 / シェーダのビルド剥がれ / カメラ背景が不透明）。
     # ここは「その結果、画・音に何かが出たか」だけを見る節。
+    # ---------------- 乱れ（回数で大きくなったか）----------------
+    # `canon/LEDGER.md` 0055。起きるたびに強さ・尺・音が少しずつ上がり、終盤で頭打ちになる。
+    # ⚠ level（glitch=）だけ見ても**台本が強いのか回数で育ったのか区別できない**ので、
+    #   回数（glN）と進み（glE）を対で見る。観測の出どころは C# の `ShowTelemetryHost`。
+    #   **片方だけ直すと沈黙して食い違う。**
+    gl_n = [int(v) for v in effect_samples(events, "glN") if str(v).lstrip("-").isdigit()]
+    gl_e = [float(v) for v in effect_samples(events, "glE")
+            if str(v).replace(".", "", 1).lstrip("-").isdigit()]
+    if gl_n:
+        w("## 乱れ（回数で大きくなったか）")
+        w(f"  起きた回数 {max(gl_n)} 回 / 大きくなり具合 最大 {max(gl_e) if gl_e else 0:.2f}")
+        levels = [float(v) for v in effect_samples(events, "glitch")
+                  if str(v).replace(".", "", 1).lstrip("-").isdigit()]
+        if levels:
+            w(f"  画に出た強さ 最大 {max(levels):.2f}")
+
+        # 回数は単調に増える（減ったらランを跨いだか、数え直している）。
+        if any(b < a for a, b in zip(gl_n, gl_n[1:])):
+            verdict("WARN", "乱れの回数が途中で減っている — ラン開始を跨いだ走行か、"
+                            "GlitchFx.ResetAll が本編中に呼ばれている")
+        if max(gl_n) <= 1:
+            verdict("WARN", f"乱れが {max(gl_n)} 回しか起きていない — 育ち方は判定できない")
+        elif not gl_e or max(gl_e) <= 0.001:
+            verdict("FAIL", "乱れは複数回起きたのに大きくなっていない（glE=0）— "
+                            "GlitchFx が GlitchEscalationLogic を通していない疑い")
+        elif max(gl_e) < 0.5:
+            verdict("WARN", f"終盤でも大きくなり具合が {max(gl_e):.2f} 止まり — "
+                            "乱れの回数が想定より少ない（体験が短いか、著作が減った）")
+        else:
+            verdict("OK", f"乱れが {max(gl_n)} 回起きて、{max(gl_e):.2f} まで育った")
+        w()
+
     w("## 効果の実在（画・音に出たか）")
     any_effect_key = False
 

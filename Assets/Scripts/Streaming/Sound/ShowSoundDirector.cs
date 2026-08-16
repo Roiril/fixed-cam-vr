@@ -281,7 +281,15 @@ namespace FixedCamVr.Streaming
                 _variant[c] = (v + 1) % n;
             }
             if (!_spot.TryGetValue(res, out var clip) || clip == null) return;
-            _sfx?.Play(clip, masterGain);
+            // ⚠ **乱れだけ、起きた回数で少しずつ大きくなる**（`canon/LEDGER.md` 0055）。
+            //   数えているのは GlitchFx 1 か所で、画と同じ進みを読む — 音が別に数えると
+            //   「画は激しいのに音は同じ」が沈黙して起きる。
+            //   ⚠ 上げ幅は 1.94 dB しかない。SfxPlayer が Clamp01 するので上へは伸ばせず、
+            //     天井の内側で下から上げている（GlitchEscalationLogic.SfxGainAtFirst）。
+            float gain = c == SoundCue.Glitch && _glitch != null ? _glitch.SfxGain : 1f;
+            // ⚠ masterGain は SfxPlayer.Play の中で掛かる。ここで渡すと**二乗になる**
+            //   （既定 1.0 なので今まで見えていなかっただけ。下げた瞬間に効果音だけ沈む）。
+            _sfx?.Play(clip, gain);
             _beds.PushSpotDuck(SoundCueLogic.DuckFor(c));
             LastCue = c;
         }

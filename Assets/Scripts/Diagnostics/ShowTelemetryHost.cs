@@ -792,6 +792,13 @@ namespace FixedCamVr.Diagnostics
             if (!string.IsNullOrEmpty(_lastCueId)) _sb.Append(" cue=").Append(_lastCueId);
             if (_glitch != null && _glitch.Level > 0.005f)
                 _sb.Append(" glitch=").Append(_glitch.Level.ToString("F2"));
+            // 乱れが起きるたびに大きくなる（`canon/LEDGER.md` 0055）。
+            // ⚠ glN は「起きた回数」、glE は「いまの大きくなり具合 0..1」。
+            //   level だけ見ても**台本が強いのか回数で育ったのかを区別できない**ので対で出す。
+            //   0 回のあいだは出さない（本編前は常に 0 で、行が伸びるだけ）。
+            if (_glitch != null && _glitch.Count > 0)
+                _sb.Append(" glN=").Append(_glitch.Count)
+                   .Append(" glE=").Append(_glitch.Escalation01.ToString("F2"));
 
             // --- 効果の実在（「段が進んだ」ではなく「画・音に出たか」）---
             // ここが全部揃っていても遷移は正常に見える、という壊れ方を 2026-07-31 に踏んだ。
