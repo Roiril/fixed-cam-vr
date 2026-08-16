@@ -113,7 +113,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 "Assets/Scripts/Diagnostics/TitleNotice.cs",
                 "Assets/Scripts/Diagnostics/RecoveryGuidance.cs",
                 "Assets/Scripts/Streaming/ShowRunDirector.cs",
-                // ⚠ 2026-08-15 追加: **上司からの連絡**（CommsPanel）。あの面も
+                // ⚠ 2026-08-15 追加: **AIエージェントからの連絡**（CommsPanel）。あの面も
                 //    `JapaneseHudFont.TryGet()` で同じアトラスを使うのに、ここに無かった ＝
                 //    文面の字がベイクされず実機で豆腐になる（`canon/LEDGER.md` 0035 の「声」と同じ型）。
                 "Assets/Scripts/Diagnostics/CommsPanel.cs",

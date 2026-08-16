@@ -5,7 +5,7 @@ using NUnit.Framework;
 namespace FixedCamVr.Streaming.Tests
 {
     /// <summary>
-    /// 上司からの連絡が<b>いつ・どれで</b>出るか（`canon/LEDGER.md` 0054 のユーザー指定 3 点）。
+    /// AIエージェントからの連絡が<b>いつ・どれで</b>出るか（`canon/LEDGER.md` 0054 のユーザー指定 3 点）。
     ///
     /// ⚠ ここで押さえたい壊れ方は 2 つ。どちらも**画を見ても気づけない**:
     /// ① 締めで報告したのに「異常は検出されませんでした」が返る（意味が真逆）

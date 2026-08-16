@@ -16,7 +16,7 @@ namespace FixedCamVr.Streaming.EditorTools
     ///
     /// ⚠⚠ <b>照合する相手を先に作る</b>（<c>~/.claude/rules/work-style.md</c> §2）。
     /// この codebase は文字の大きさを<b>机上で 2 回続けて外している</b>
-    /// （体験前の注意書き 8.5 倍・上司からの連絡 10 倍。どちらも実機の画で初めて分かった）。
+    /// （体験前の注意書き 8.5 倍・AIエージェントからの連絡 10 倍。どちらも実機の画で初めて分かった）。
     /// 目で見ても「小さい気がする」までしか言えないので、**数字にして並べる**。
     ///
     /// ⚠ 測るのは <b>TMP が実際に組んだメッシュ</b>（<c>textBounds</c> と <c>characterInfo</c>）で、
@@ -56,9 +56,9 @@ namespace FixedCamVr.Streaming.EditorTools
                           Probe = OutroReportText.Compose(3) },
             // ⚠ この面は TMP を **2 つ**持つ（上段 = 文面 / 下段 = 報告の押し方）。
             //    フィールドを名指ししないと、先に組んだ方が測られて「狙いと違う」と誤って落ちる。
-            new Surface { Name = "上司からの連絡", Type = typeof(CommsPanel),
+            new Surface { Name = "AIエージェントからの連絡", Type = typeof(CommsPanel),
                           FixedDistanceM = 1.5f, BuildsItsOwnText = true, Field = "_text" },
-            new Surface { Name = "上司からの連絡（下段）", Type = typeof(CommsPanel),
+            new Surface { Name = "AIエージェントからの連絡（下段）", Type = typeof(CommsPanel),
                           FixedDistanceM = 1.5f, BuildsItsOwnText = true, Field = "_hint",
                           TierDeg = HmdTextStyle.MinorDeg,
                           // 長押し中の 2 行（ゲージが 10 目盛でいちばん長い）。
@@ -79,7 +79,7 @@ namespace FixedCamVr.Streaming.EditorTools
                           Probe = "A：タイトルを閉じて始める\nB：ステータス表示を切り替える\n"
                                 + "グリップ2秒：新しい体験者にする\nトリガー2秒：位置合わせを開始" },
             // ⚠ 報告の押し方とゲージは **[Comms] の下段**（2026-08-16・canon/LEDGER.md 0058）。
-            //    面としては上の「上司からの連絡」と同じ実体なので、ここでは別行を持たない。
+            //    面としては上の「AIエージェントからの連絡」と同じ実体なので、ここでは別行を持たない。
             //    下段が枠に収まっているかは `menu comms-preview` の絵で見る（4 文面 × 長押し中）。
             // ⚠ 黒は 0.3m だが**文字は 1.5m の別の面**（`ShowEndingFader.MessageDistanceM`）。
             //    0.3m は輻輳の負担が大きく、両眼で読む文字を置く距離ではない。
@@ -252,7 +252,7 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             "体験前の注意書き" => "notice",
             "終幕の報告" => "outro-report",
-            "上司からの連絡" => "comms",
+            "AIエージェントからの連絡" => "comms",
             "ステータス" => "status",
             "操作早見表" => "guide",
             "報告ボタンの面" => "visitor-mark",

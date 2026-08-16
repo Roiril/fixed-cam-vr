@@ -17,7 +17,7 @@ namespace FixedCamVr.Streaming
         Out,
         /// <summary>
         /// <b>連絡は無いが、報告の手元表示のために開いている</b>（<c>canon/LEDGER.md</c> 0058）。
-        /// 枠は開き切っていて、上司からの文面は 1 字も出ていない。
+        /// 枠は開き切っていて、AIエージェントからの文面は 1 字も出ていない。
         /// </summary>
         Guide,
     }
@@ -41,7 +41,7 @@ namespace FixedCamVr.Streaming
         public float hint;
 
         /// <summary>
-        /// 枠の<b>丈</b>。0 = 下段だけの細い受信票 / 1 = 上司の文面が入る高さまで伸びている。
+        /// 枠の<b>丈</b>。0 = 下段だけの細い受信票 / 1 = AIエージェントの文面が入る高さまで伸びている。
         /// ⚠ 下端を固定して伸び縮みする（実行体の <c>SetFrame</c>）。
         /// 連絡が無いのに文面のぶんの丈があると、<b>大きな空の箱</b>になる。
         /// </summary>
@@ -51,7 +51,7 @@ namespace FixedCamVr.Streaming
     }
 
     /// <summary>
-    /// 上司からの連絡（第 2 の面）の状態機械。<b>UnityEngine 非依存・dt 注入</b>。
+    /// AIエージェントからの連絡（第 2 の面）の状態機械。<b>UnityEngine 非依存・dt 注入</b>。
     ///
     /// 立ち位置は `canon/LEDGER.md` 0043 — <b>本編のスクリーンとは別の面</b>を、
     /// 少し手前・少し外側に立てる。「せっかく VR で立体的なので、スクリーンにつけなくていい」。

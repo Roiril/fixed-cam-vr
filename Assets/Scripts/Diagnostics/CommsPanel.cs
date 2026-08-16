@@ -6,15 +6,22 @@ using UnityEngine;
 namespace FixedCamVr.Diagnostics
 {
     /// <summary>
-    /// <b>上司からの連絡（第 2 の面）。</b> 本編のスクリーンとは別に、少し手前・少し外側に立てる。
+    /// <b>AIエージェントからの連絡（第 2 の面）。</b> 本編のスクリーンとは別に、少し手前・少し外側に立てる。
     ///
     /// 判定は <c>canon/LEDGER.md</c> 0043（ユーザー逐語）:
     /// 「せっかく VR で立体的なので、スクリーンにつけなくていい。スクリーンよりも少し体験者に近く
     /// かつすこし外側に、新しいスクリーンとして設置するでもいいと思う」。
     /// 実装の順序と未確定は <c>.claude/plans/2026-08-15_comms-panel.md</c>。
     ///
-    /// ⚠⚠ <b>これは仮実装</b>（2026-08-15）。出るのは<b>本編に入って一定秒後に 1 回だけ</b>で、
-    /// 文面もコードが持っている。show.json への著作（take の並列チャンネル）は次の段。
+    /// ⚠⚠ <b>送り主は AIエージェント</b>（2026-08-17・<c>canon/LEDGER.md</c> 0067・ユーザー指定
+    /// 「上司じゃなくAIエージェントという事にしてほしい」）。2026-08-15〜16 は「上司」だった。
+    /// <b>画に出る文字は 1 字も変わっていない</b> — 下の <see cref="TextFor"/> に送り主は書かれておらず、
+    /// 紙の依頼書も「装置を通じて指示が伝達される」としか言わない。だから
+    /// <b>いまの体験からは AI だと読み取れない</b>（出す手は <c>canon/OPEN.md</c> に案として置いてある）。
+    /// ⚠ 依頼した側（0036「スタッフは上司である」）は覆されていない。変わったのは連絡の主体だけ。
+    ///
+    /// ⚠ <b>文面はコードが持っている</b>（show.json への著作 ＝ take の並列チャンネルは次の段）。
+    /// 出る所は 3 点 — <see cref="CommsCueLogic"/>（<c>canon/LEDGER.md</c> 0054）。
     ///
     /// <b>出方</b>（<c>canon/LEDGER.md</c> 0053・2026-08-16）: 枠が<b>左端から右へ開き</b>、
     /// 開き切ってから文字が<b>1 字ずつ打たれる</b>。引くときは逆で、文字が消えてから枠が左へ畳まれる。
@@ -83,7 +90,7 @@ namespace FixedCamVr.Diagnostics
         // ⚠⚠ **面の高さは固定ではない**（2026-08-16・`canon/LEDGER.md` 0065）。
         //    2 つの帯が独立に出入りし、**枠は出ている帯だけを覆う**:
         //
-        //        上段（上司の文面）   y ∈ [0, _bodyBandH]     ← 高さは**文面の実寸**
+        //        上段（AIエージェントの文面）   y ∈ [0, _bodyBandH]     ← 高さは**文面の実寸**
         //        ────────────────  y = 0（面の原点 ＝ 境目）
         //        下段（報告の状態）   y ∈ [-HintBandH, 0]     ← 中身が固定なので定数
         //
@@ -137,7 +144,7 @@ namespace FixedCamVr.Diagnostics
         private static float TextScale => HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, DistanceM, FontSize);
 
         /// <summary>
-        /// 下段の拡大率。<b>補助の段</b>（1.5°）— 主役は上司の文面で、こちらは操作の銘板。
+        /// 下段の拡大率。<b>補助の段</b>（1.5°）— 主役はAIエージェントの文面で、こちらは操作の銘板。
         /// <see cref="HmdTextStyle"/> の「補助は報告の面の見出しだけ」という但し書きが指すのがここ。
         /// </summary>
         private static float HintScale => HmdTextStyle.MeshScale(HmdTextStyle.MinorDeg, DistanceM, FontSize);
@@ -170,7 +177,7 @@ namespace FixedCamVr.Diagnostics
         {
             // ⚠⚠ **押し方はここにしか出ない**（2026-08-16・`canon/LEDGER.md` 0065）。
             //    それまで下段に `X／Y：異変を報告` を常に出していたが、面が開くたび
-            //    ＝ 押している最中にも「押せ」と言い続けていた。**上司の言葉として 1 度だけ**言う。
+            //    ＝ 押している最中にも「押せ」と言い続けていた。**AIエージェントの言葉として 1 度だけ**言う。
             //    ⚠ キー名（X／Y）を出さない — 装置の面に入力機器の名前が出ると、
             //      調査の記録ではなくゲームの操作説明に見える。左で触れるのは X と Y だけで、
             //      **どちらでもよい**ので「手元のボタン」で足りる。
@@ -378,7 +385,7 @@ namespace FixedCamVr.Diagnostics
             _logic.Begin(_charCount, HoldSecFor(notice));
             LastNotice = notice;
             PulseCount++;
-            Debug.Log($"[Comms] 上司からの連絡 {notice}「{TextFor(notice).Replace("\n", "／")}」"
+            Debug.Log($"[Comms] AIエージェントからの連絡 {notice}「{TextFor(notice).Replace("\n", "／")}」"
                     + $"（{_charCount} 文字 / 打つ {_logic.TypeSec:0.00}s）");
         }
 

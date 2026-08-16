@@ -2,7 +2,7 @@
 
 namespace FixedCamVr.Streaming
 {
-    /// <summary>上司から届く連絡の種類。<b>文面は <c>CommsPanel</c> が持つ</b>（ここは判断だけ）。</summary>
+    /// <summary>AIエージェントから届く連絡の種類。<b>文面は <c>CommsPanel</c> が持つ</b>（ここは判断だけ）。</summary>
     public enum CommsNotice
     {
         /// <summary>何も出さない。</summary>
@@ -46,7 +46,7 @@ namespace FixedCamVr.Streaming
     }
 
     /// <summary>
-    /// <b>上司からの連絡を、いつ・どれで出すかを決める。</b>
+    /// <b>AIエージェントからの連絡を、いつ・どれで出すかを決める。</b>
     /// UnityEngine 非依存・dt 注入。配るのは <c>CommsPanel</c>。
     ///
     /// 判定は <c>canon/LEDGER.md</c> 0054（ユーザー指定の 3 点）:

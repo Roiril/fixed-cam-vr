@@ -26,7 +26,7 @@ namespace FixedCamVr.OvrBridge
     /// <b>左は体験者の手。読むのは X / Y だけ</b>（2026-08-15・<c>canon/LEDGER.md</c> 0042 / 0050）:
     /// どちらを押しても同じで、<b>1 秒長押し</b>で異変の報告になる（<see cref="VisitorMarkHoldLogic"/>。
     /// 2026-08-16 に 2 秒から半分へ・<c>canon/LEDGER.md</c> 0059）。
-    /// 押し方と進捗は<b>上司からの連絡の面（<see cref="CommsPanel"/>）の下段</b>が出す
+    /// 押し方と進捗は<b>AIエージェントからの連絡の面（<see cref="CommsPanel"/>）の下段</b>が出す
     /// （2026-08-16・<c>canon/LEDGER.md</c> 0058。コントローラに追従する面は廃止した）。
     /// スティック・トリガー・グリップ・A/B は左からは 1 ビットも読まない。
     /// HMD 非装着→SignalLostFx / OS recenter→CourseFrame.MarkNeedsReRegistration のパッシブ系は現状維持。
@@ -92,7 +92,7 @@ namespace FixedCamVr.OvrBridge
         // OS recenter 購読済みフラグ（OVRManager.display は初期化順で null のことがあるためリトライする）。
         private bool _recenterSubscribed;
 
-        [Tooltip("上司からの連絡の面。届いた瞬間の振動と、報告の押し方・ゲージの出し先。" +
+        [Tooltip("AIエージェントからの連絡の面。届いた瞬間の振動と、報告の押し方・ゲージの出し先。" +
                  "null でも報告そのものは動く（画に出ないだけ）。")]
         [SerializeField] private CommsPanel? comms;
         private int _lastCommsPulse;
@@ -247,7 +247,7 @@ namespace FixedCamVr.OvrBridge
 
             bool regActive = courseRegistration != null && courseRegistration.IsActive;
 
-            // 上司からの連絡が届いたら、体験者の手（左）を震わせる。
+            // AIエージェントからの連絡が届いたら、体験者の手（左）を震わせる。
             // ⚠ 連絡の面（Diagnostics）も体験の骨格（Streaming）も OVR を参照しない規約なので、
             //    **向こうから読みに来る**（ShowBodyInput / UserPresentProvider と同じ流儀）。
             if (comms == null) comms = FindObjectOfType<CommsPanel>();
@@ -272,7 +272,7 @@ namespace FixedCamVr.OvrBridge
             // **体験者が持つ唯一の入力**で、左コントローラは他に何も読まない。
             //
             // ⚠ 体験の進行には 1 ビットも使わない（押さなくても同じように進む）。
-            //    ⚠ ただし**正誤は返す**（2026-08-16 反転・canon/LEDGER.md 0054）。上司からの連絡が
+            //    ⚠ ただし**正誤は返す**（2026-08-16 反転・canon/LEDGER.md 0054）。AIエージェントからの連絡が
             //    「異常が記録されました」/「異常は検出されませんでした」を返す（進行は変わらない）。
             // ⚠ **短押しでは通さない**（2026-08-15）。歩きながら握り込むので、押した瞬間に決まると
             //    「触れただけ」が報告になる。位置合わせの点サンプルと同じ「意思のある長押し」にする。

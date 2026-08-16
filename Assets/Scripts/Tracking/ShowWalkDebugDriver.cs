@@ -309,7 +309,7 @@ namespace FixedCamVr.Tracking
         /// ⚠ 走っている演出が待っている時だけ押す（誰も待っていない所で押すと、
         ///   「報告は進行に使わない」を検証している他の判定を汚す）。
         /// ⚠⚠ **すぐには押さない**（<see cref="ReportHesitateSec"/>）。待ちが立った瞬間に押すと、
-        ///   上司からの連絡の③（押さないまま 3 秒で催促・`canon/LEDGER.md` 0054）が
+        ///   AIエージェントからの連絡の③（押さないまま 3 秒で催促・`canon/LEDGER.md` 0054）が
         ///   <b>実機で一度も走らない</b>。人はどのみち一拍おいて押すので、そちらの方が実機に近い。
         /// </summary>
         private IEnumerator HoldAndMaybeReport(float holdSec)

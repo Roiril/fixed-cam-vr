@@ -1025,7 +1025,7 @@ def analyze(events, others, exp, warns=None):
                     verdict("OK", f"報告が {want_chars} 文字ぶん打たれ、打鍵が {typed} 発鳴った")
         w()
 
-    # ---------------- 上司からの連絡 ----------------
+    # ---------------- AIエージェントからの連絡 ----------------
     # 発火は 3 点（`canon/LEDGER.md` 0054）: ①導入が明けた直後 ②報告した瞬間（演出の有無で文面が
     # 変わる）③4 周目 A の締めで押さないまま 3 秒。
     # ⚠⚠ **②の分岐がこの実装で唯一の危ない所。** 報告は `NotifyVisitorMark` で締めのカットを
@@ -1036,7 +1036,7 @@ def analyze(events, others, exp, warns=None):
     comms = [e for e in events if e.get("ev") == "comms"]
     comms_built = effect_samples(events, "commsBuilt")
     if comms or comms_built:
-        w("## 上司からの連絡")
+        w("## AIエージェントからの連絡")
         for e in comms:
             w(f"  t={fnum(e,'t',0):7.1f}  {e.get('id')} n={e.get('n')} "
               f"built={e.get('built')} lap={e.get('lap')} chars={e.get('chars')} "

@@ -14,7 +14,7 @@ namespace FixedCamVr.Diagnostics
     /// 深度の逃がし方はあちらと同じで、違うのは出る段だけ（あちらは真っ暗な待ち、こちらは終幕）。
     ///
     /// <b>出方</b>（<c>canon/LEDGER.md</c> 0063・2026-08-16）: <b>1 字ずつ打たれ、1 字ごとに
-    /// 打鍵音が 1 発鳴る</b>（上司からの連絡＝<see cref="CommsPanel"/> と同じ装置の印字）。
+    /// 打鍵音が 1 発鳴る</b>（AIエージェントからの連絡＝<see cref="CommsPanel"/> と同じ装置の印字）。
     /// 速さは <see cref="CommsPanelLogic.CharsPerSec"/> をそのまま使う — 同じ装置が違う速さで
     /// 打つと、別の装置が 2 台あるように聞こえる。
     ///

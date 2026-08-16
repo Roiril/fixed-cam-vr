@@ -56,7 +56,7 @@ namespace FixedCamVr.OvrBridge
         public void SetLeftHoldProgress(float progress01) => _left.SetHoldProgress(progress01);
 
         /// <summary>
-        /// <b>上司から連絡が届いた</b>（左）。<see cref="LeftMark"/> と<b>別のパターンにする</b> —
+        /// <b>AIエージェントから連絡が届いた</b>（左）。<see cref="LeftMark"/> と<b>別のパターンにする</b> —
         /// 同じだと「自分が押した」と「向こうから来た」が混ざる。
         /// 2 連の <c>Fire</c> は長押しの発火と同じ形だが、右手にしか出ないので体験者には新しい合図になる。
         /// </summary>

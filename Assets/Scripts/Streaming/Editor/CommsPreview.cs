@@ -9,7 +9,7 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
-    /// <b>上司からの連絡（<see cref="CommsPanel"/>）の出方を 1 コマずつ焼く。</b>
+    /// <b>AIエージェントからの連絡（<see cref="CommsPanel"/>）の出方を 1 コマずつ焼く。</b>
     /// 出るまで 0.45 秒・読ませる 7 秒・引くまで 0.9 秒の全部を、実装と同じ重みで撮る。
     ///
     /// ⚠ <b>Unity が実際に描いた絵</b>（CPU の模写ではない）。地・縁・文字の色も、

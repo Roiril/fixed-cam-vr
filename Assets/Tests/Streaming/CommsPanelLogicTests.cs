@@ -5,7 +5,7 @@ using NUnit.Framework;
 namespace FixedCamVr.Streaming.Tests
 {
     /// <summary>
-    /// 上司からの連絡（第 2 の面）の段。**読まなくても必ず引く**ことと、
+    /// AIエージェントからの連絡（第 2 の面）の段。**読まなくても必ず引く**ことと、
     /// **枠が開いてから打ち、消してから畳む**という順序を固定する（`canon/LEDGER.md` 0053）。
     ///
     /// ⚠ 順序が崩れると、畳む枠から文字がはみ出す / 開き切る前に文字が枠の外へ出る、
@@ -141,7 +141,7 @@ namespace FixedCamVr.Streaming.Tests
 
         /// <summary>
         /// 報告の押し方は<b>この面の下段</b>に出る（`canon/LEDGER.md` 0058）。
-        /// 押している最中は面が開き、離せば引く。<b>上司の文面は 1 字も出ない。</b>
+        /// 押している最中は面が開き、離せば引く。<b>AIエージェントの文面は 1 字も出ない。</b>
         /// </summary>
         [Test]
         public void HoldingTheReportButton_OpensThePanel_WithoutAnyMessage()
@@ -155,7 +155,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(CommsStage.Guide, l.Stage, "時間では終わらないこと");
             Assert.AreEqual(1f, l.Weights.open, 0.001f);
             Assert.AreEqual(1f, l.Weights.hint, 0.001f, "下段が出ていること");
-            Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "上司の文面は 1 字も出ないこと");
+            Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "AIエージェントの文面は 1 字も出ないこと");
             Assert.AreEqual(0f, l.Weights.body, 0.001f,
                 "連絡が無いのに文面のぶんの丈があると、大きな空の箱になる");
 
