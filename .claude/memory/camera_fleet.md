@@ -109,3 +109,40 @@ adb 用に立てた `MSYS_NO_PATHCONV=1` が `/dev/null` の変換まで止め�
 - 全端末超広角可: Pixel は streamer のレンズ選択（実測 FOV ≈128°）、iPhone は IP Camera Lite の「Back Ultra Wide Camera」選択（13 Pro 実機確認済み）
 - iPhone の配信が重い（≈30Mbps）/ ウォーターマーク等の運用注意は [.claude/rules/streaming.md](../rules/streaming.md) の「iPhone（iOS）ソース」参照
 - 3 セッション前の旧 IP（Pixel=192.168.11.8 / 11.12 等）がログや asset に残っていても気にしない（DHCP 変動）
+
+
+## ⚠⚠ 端末の傾きは「カメラが動いたか」を 10 秒で暴く（2026-08-16）
+
+v0.9.0 は `/info` で**配信画像の重力に対する姿勢**（`tiltPitchDeg` / `tiltRollDeg`）を配る。
+これを `show.json` の `cameras[].calib.pitchDeg / rollDeg` と突き合わせると、
+**保存した較正がいまのカメラの向きと合っているか**が分かる（卓の 📱 端末の傾きパネルと同じ材料）。
+
+2026-08-16 の実測:
+
+| カメラ | 保存した較正 | 端末のセンサ | ずれ |
+|---|---|---|---|
+| A | pitch -4.0° / roll -1.0° | pitch -5.2° / roll -0.9° | -1.3° / +0.1° |
+| B | pitch +16.9° / roll -0.4° | pitch +15.0° / roll -1.0° | -1.9° / -0.6° |
+| **C** | pitch **-24.4°** / roll +9.2° | pitch **+15.4°** / roll -1.5° | **+39.8° / -10.7°** |
+
+**C だけ較正が別のカメラのもの**（下を向いている設定なのに実物は上を向いている）＝
+**その後カメラを動かしたのに較正を取り直していない**。CG 人形は C の映像で盛大にずれる。
+
+- ⚠ **傾きが合っていても位置と左右の向きは分からない**（方位は磁気でしか出ず、送っていない）。
+  「A と B は合っている」は pitch / roll についてだけ
+- ⚠ **pitch / roll だけ取り込んで済ませない。** 40° ずれているカメラは位置も yaw も動いているので、
+  傾きだけ合わせると**違う形で間違った較正**になり、しかも「合っている」と表示されるので**悪化する**
+- 10 秒で回せるので、**現地に着いたらまず全カメラで見る**（較正のやり直しが要るかが即分かる）
+
+```bash
+py -3.11 -c "
+import json,urllib.request
+st=json.load(urllib.request.urlopen('http://127.0.0.1:8099/state'))
+for c in st['cameras']:
+    h=c.get('host');  cal=c.get('calib') or {}
+    if not h: continue
+    i=json.load(urllib.request.urlopen(f'http://{h}:8080/info'))
+    if i.get('tiltState')!='ok': continue
+    print(c['id'], round(i['tiltPitchDeg']-cal.get('pitchDeg',0),1), round(i['tiltRollDeg']-cal.get('rollDeg',0),1))
+"
+```

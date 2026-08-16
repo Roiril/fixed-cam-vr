@@ -46,7 +46,7 @@
 - [sdk_decision.md](sdk_decision.md) - Meta XR All-in-One + XRI 採用の経緯と却下候補
 - [mcp_unity_setup.md](mcp_unity_setup.md) - Unity MCP 接続手順（user-scope登録 / `claude mcp add UnityMCP --offline --from mcpforunityserver` / 命名は大文字 UnityMCP / 再起動必須）
 - [unity_pitfalls.md](unity_pitfalls.md) - Quad向き / OVRCameraRig Gameビュー / Scene YAML直編集 / Texture初期化 / UnityMCP execute_codeのWindows長さ制限 / manage_componentsのComponentID要件 / Texture2D.width=aspect真値 / DroidCam単一クライアント / OVRCustomHandPrefabのCustomBones全null（手ポーズ駆動は名前マッピング）/ SkinnedMeshのper-cameraボーン切替は原理的に無効（nearclip/レイヤーで解く）
-- [camera_fleet.md](camera_fleet.md) - 配信スマホ実機 3 台構成（Pixel 7a ×3 = streamer。iPhone+IP Camera Lite は予備）。IP は揮発／**傾きを配る v0.9.0 は未インストール・入れるには USB が要る**
+- [camera_fleet.md](camera_fleet.md) - 配信スマホ実機 3 台構成（Pixel 7a ×3 = streamer。iPhone+IP Camera Lite は予備）。IP は揮発／**3 台とも v0.9.0（2026-08-05 導入）で、これが上流の最新**／**端末の傾きと保存した較正を突き合わせると「カメラが動いたか」が 10 秒で分かる**
 - [camera_source_alternatives.md](camera_source_alternatives.md) - 配信カメラをスマホ以外に替える検討の全体像（判定=MJPEG直pull／RTSPはQuestネイティブ受信可=Vizario/vlc-unity／技適／ATOM Cam2・ESP32-CAM・C120却下）
 - [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) - 【C120は2026-07-13却下】go2rtc中継(RTSP→MJPEG)ならUnity改修ゼロの技術検証（RTSPカメラ全般に適用可）
 - [iphone_camera_streamer_plan.md](iphone_camera_streamer_plan.md) - iPhone配信カメラ方針：デモはIP Cam Lite継続（ウォーターマーク許容）、自作するならPWA+WSリレー設計（Quest無改造）。Unity iOSはMac必須で却下
