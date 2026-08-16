@@ -207,6 +207,8 @@ def expected_from_show(show: dict):
     # （C# ShowRecordDef.TailSec / PostSec・卓 record-model.js と同じ判定）。
     exp["recTailSec"] = _pos(rec.get("tailSec"), 3.0)
     exp["recPostSec"] = _pos(rec.get("postSec"), 2.0)
+    # 録り始めの線（空 = 末尾方式）。C# の ShowRecordDef.startLineId と対。
+    exp["recStartLineId"] = (rec.get("startLineId") or "").strip()
 
     takes = []
     for seg in ((show.get("timeline") or {}).get("segments") or []):
@@ -666,6 +668,26 @@ def analyze(events, others, exp, warns=None):
             verdict("FAIL", "録画が 1 度も始まっていない — 録画カットは実機で黙って飛ぶ")
         else:
             verdict("OK", f"録画が {max(len(started), len(polled))} 区間で走った")
+
+        # ---- 録り始めの線（`record.startLineId`・`canon/LEDGER.md` 0061）----
+        # ⚠⚠ **枚数では区別できない。** 末尾方式でも枚数は出るので、「線を指したのに効いていない」は
+        #    `start=` でしか分からない。効いていないと録画は「切り替えの直前 3 秒」＝
+        #    **そのカメラに体験者が写っていない区間では無人の部屋だけ**になる（2026-08-16 実測）。
+        want_line = exp.get("recStartLineId") or ""
+        if want_line:
+            stops = [e for e in rec_ev if e.get("v") == "stop" and "start" in e]
+            if not stops:
+                verdict("WARN", f"録り始めの線 '{want_line}' を指しているが観測（start=）が無い — "
+                                "古い APK か ShowTelemetryHost 未更新")
+            else:
+                hit = [e for e in stops if str(e.get("start")) == "1"]
+                if not hit:
+                    verdict("FAIL", f"録り始めの線 '{want_line}' が 1 度も効いていない"
+                                    f"（{len(stops)} 区間すべて末尾方式）— "
+                                    "線の担当カメラと区間のカメラが違う / 線を踏んでいない / "
+                                    "位置合わせが済んでいない のどれか")
+                else:
+                    verdict("OK", f"録り始めの線 '{want_line}' が {len(hit)}/{len(stops)} 区間で効いた")
 
         # 「録れた」の判定は**フレーム数**で行う。バイト数はヘッダだけの空ファイルでも 0 にならない。
         stops = [e for e in rec_ev if e.get("v") == "stop"]

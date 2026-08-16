@@ -87,6 +87,9 @@ namespace FixedCamVr.Streaming.Recording
         private int _anchorPtsMs = -1;
         private int _postEndPtsMs = int.MaxValue;
 
+        // 録り始めの pts（-1 = 指定なし ＝ 末尾方式）。立つと **tailSec を見ずにここから全部残す**。
+        private int _startPtsMs = -1;
+
         /// <summary>
         /// 末尾を丸ごと残せなかったか（容量で古い側を落とした / 書き込みに失敗した）。HUD・ログ用。
         /// </summary>
@@ -134,6 +137,29 @@ namespace FixedCamVr.Streaming.Recording
             _postEndPtsMs = _anchorPtsMs > int.MaxValue - postMs ? int.MaxValue : _anchorPtsMs + postMs;
         }
 
+        /// <summary>録り始めの合図（線の横断）が来たか。診断・観測用。</summary>
+        public bool HasStartMark => _startPtsMs >= 0;
+
+        /// <summary>
+        /// <b>ここから録る</b>（<c>record.startLineId</c> の線を横切った瞬間）。
+        /// 以後 <see cref="Trim"/> は <see cref="Limits.tailSec"/> を見ず、
+        /// <paramref name="atPtsMs"/> より前だけを落とす ＝ <b>横断から区間の終わりまで全部残る</b>。
+        ///
+        /// ⚠⚠ <b>横切ったその瞬間に打つこと。</b> 残せるのは<b>いまリングに載っているぶんだけ</b>で、
+        /// それより前は末尾方式の <see cref="Trim"/> が既に捨てている。後から遡って打っても戻らない
+        /// （テストで実際に踏んだ — 20 秒積んでから 5 秒の所を指しても、残るのは末尾 3 秒 ＋ その後）。
+        /// ⚠ <b>2 度目の呼び出しは無視する。</b> 1 区間で何度も横切ることはある（行ったり来たり）が、
+        /// 起点が動くと「どこから録れているか」が走行ごとに変わって著作できない。
+        /// ⚠ <b>容量の上限（<see cref="Limits.maxBytes"/>）は依然として効く。</b>
+        /// 長すぎる区間では古い側から落ちて <see cref="Capped"/> が立つ（＝起点が後ろへずれる）。
+        /// </summary>
+        public void MarkStart(int atPtsMs)
+        {
+            if (_stopped || _startPtsMs >= 0) return;
+            _startPtsMs = Math.Max(0, atPtsMs);
+            Trim(_lastPtsMs >= 0 ? _lastPtsMs : _startPtsMs);
+        }
+
         /// <summary>このセグメントのファイルパス。</summary>
         public string Path => _path;
 
@@ -179,7 +205,11 @@ namespace FixedCamVr.Streaming.Recording
             while (_ring.Count > 1)
             {
                 Item head = _ring.Peek();
-                bool tooOld = anchor - head.ptsMs > _tailMs;
+                // 録り始めの合図が来ていれば、**そこより前だけ**を落とす（末尾の窓は見ない）。
+                // 来ていなければ従来どおり「末尾 tailSec 秒」。
+                bool tooOld = _startPtsMs >= 0
+                    ? head.ptsMs < _startPtsMs
+                    : anchor - head.ptsMs > _tailMs;
                 bool tooBig = _ringBytes > _limits.maxBytes;
                 if (!tooOld && !tooBig) break;
                 if (tooBig) _capped = true;   // 末尾を丸ごと残せていない（尺が縮む）

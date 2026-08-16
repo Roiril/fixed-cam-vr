@@ -314,6 +314,8 @@ def _default_show():
         # 残るのは切り替えの tailSec 秒前 〜 postSec 秒後（頭からではない）。既定 3 / 2 は
         # C# SegmentRecordWriter.DefaultTailSec / DefaultPostSec / 卓 REC_DEFAULT_* と対。
         'record': {'enabled': False, 'laps': [1], 'tailSec': 3, 'postSec': 2,
+                   # 録り始めの線（空 = 末尾方式）。Unity 側 ShowRecordDef.startLineId と対。
+                   'startLineId': '',
                    'maxTotalMB': 200, 'fpsCap': 15},
         # CG レイヤに立てる人形の定義（cameras[i].pose が著作済みのカメラでのみ出る）。
         'actors': [],

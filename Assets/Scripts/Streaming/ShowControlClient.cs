@@ -518,6 +518,22 @@ namespace FixedCamVr.Streaming
         public float postSec = Recording.SegmentRecordWriter.DefaultPostSec;
 
         /// <summary>
+        /// **この床の線を横切った所から録り始める**（<c>layout.lines[].id</c>・空 = 末尾方式）。
+        /// 2026-08-16 追加（<c>canon/LEDGER.md</c> 0061）。
+        ///
+        /// 末尾方式（<see cref="tailSec"/>）は「区間を出る直前」を残すので、**そのカメラに
+        /// 体験者が写っていない区間では無人の部屋しか残らない**。実測（1 周目 A・4.89 秒）は
+        /// 43 枚中 最後の 1 枚にしか人が写っていなかった。
+        ///
+        /// 線を指すと、その線を横切った瞬間から区間の終わりまで（＋ <see cref="postSec"/>）を残す。
+        /// 3 周目の再生も同じ場所を起点にできるので、**過去の自分と現在の位置が空間で揃う**。
+        ///
+        /// ⚠ 効くのは**線の担当カメラ**（<c>lines[].camera</c>）と同じカメラの区間だけ。
+        /// ⚠ **横切らなかった区間は末尾方式のまま**（何も残らない、を作らない）。
+        /// </summary>
+        public string startLineId = "";
+
+        /// <summary>
         /// 旧キー（区間の頭から何秒録るか）。**末尾方式では使わない**。
         /// 端末キャッシュ・焼き込みの古い show.json が持っているので読めるようにだけしてある。
         /// </summary>

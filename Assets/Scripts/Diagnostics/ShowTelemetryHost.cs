@@ -720,8 +720,13 @@ namespace FixedCamVr.Diagnostics
         private void OnRecSegmentOpened(int lap, int cam)
             => Emit($"ev=rec v=start lap={lap} cam={cam} bytes=0 mb={RecMB():F1}");
 
+        // start= は**録り始めの線が効いたか**（1 = 線の横断から / 0 = 末尾方式）。
+        // ⚠ 枚数では区別できない — 末尾方式でも枚数は出るので、
+        //   「線を指したのに効いていない」はここでしか分からない（`canon/LEDGER.md` 0061）。
         private void OnRecSegmentClosed(int lap, int cam, int frames, long bytes)
-            => Emit($"ev=rec v=stop lap={lap} cam={cam} bytes={bytes} frames={frames} mb={RecMB():F1}");
+            => Emit($"ev=rec v=stop lap={lap} cam={cam} bytes={bytes} frames={frames} "
+                  + $"start={(_recorder != null && _recorder.LastSegmentStarted ? 1 : 0)} "
+                  + $"mb={RecMB():F1}");
 
         private double RecMB() => _recorder != null ? _recorder.RunBytes / 1048576.0 : 0.0;
 

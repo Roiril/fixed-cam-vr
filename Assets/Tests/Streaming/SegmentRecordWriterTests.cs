@@ -71,6 +71,66 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void 録り始めの線を横切ったらそこから全部残る()
+        {
+            // ⚠ 末尾方式（tailSec 3 秒）だと**そのカメラに体験者が写っていない区間で
+            //    無人の部屋しか残らない**（2026-08-16 実測: 1 周目 A は 43 枚中 最後の 1 枚にしか
+            //    人が写っていなかった）。線を指したら tailSec は見ず、横断から終わりまで残す。
+            string path = Path_("start.mjr");
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 22, 0f, 3f));
+            byte[] jpeg = Blob(256);
+            // ⚠ **横切ったその瞬間に打つ**（実機の `SegmentRecorder.TickStartLine` と同じ順序）。
+            //    後から遡って打っても、リングは既に末尾ぶんしか持っていないので戻らない。
+            for (int pts = 0; pts <= 5_000; pts += 100) w.TryAppend(jpeg, jpeg.Length, pts);
+            Assert.That(w.HasStartMark, Is.False, "まだ横切っていない");
+
+            w.MarkStart(5_000);                       // 5 秒の所で線を横切った
+            Assert.That(w.HasStartMark, Is.True);
+            for (int pts = 5_100; pts <= 30_000; pts += 100) w.TryAppend(jpeg, jpeg.Length, pts);
+            w.Dispose();
+
+            RecordedSegmentFormat.FrameRef[] idx = IndexOf(path);
+            // 5.0s 〜 30.0s の 251 枚。**末尾 3 秒ではない**（そこが直したかった所）。
+            Assert.That(idx.Length, Is.EqualTo(251), "横断から終わりまでが残っていない");
+            Assert.That(RecordedSegmentFormat.DurationSec(idx), Is.EqualTo(25.0f).Within(0.05f));
+            // 先頭の pts は 0 へ振り直される（再生が頭で空回りしない）。
+            Assert.That(idx[0].ptsMs, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void 線を横切らなければ末尾方式のまま()
+        {
+            // **何も残らない、を作らない。** 線を指しても踏まなかった区間は従来どおり末尾を残す。
+            string path = Path_("nostart.mjr");
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 22, 0f, 3f));
+            byte[] jpeg = Blob(256);
+            for (int pts = 0; pts <= 20_000; pts += 100) w.TryAppend(jpeg, jpeg.Length, pts);
+            w.Dispose();
+
+            RecordedSegmentFormat.FrameRef[] idx = IndexOf(path);
+            Assert.That(RecordedSegmentFormat.DurationSec(idx), Is.EqualTo(3.0f).Within(0.15f),
+                        "末尾 3 秒になっていない");
+        }
+
+        [Test]
+        public void 何度横切っても起点は動かない()
+        {
+            // 行ったり来たりで起点が動くと、どこから録れているかが走行ごとに変わって著作できない。
+            string path = Path_("twice.mjr");
+            var w = new SegmentRecordWriter(path, new SegmentRecordWriter.Limits(1 << 22, 0f, 3f));
+            byte[] jpeg = Blob(256);
+            for (int pts = 0; pts <= 5_000; pts += 100) w.TryAppend(jpeg, jpeg.Length, pts);
+            w.MarkStart(5_000);
+            for (int pts = 5_100; pts <= 20_000; pts += 100) w.TryAppend(jpeg, jpeg.Length, pts);
+            w.MarkStart(15_000);          // 2 度目は無視される
+            w.Dispose();
+
+            RecordedSegmentFormat.FrameRef[] idx = IndexOf(path);
+            Assert.That(RecordedSegmentFormat.DurationSec(idx), Is.EqualTo(15.0f).Within(0.05f),
+                        "2 度目の横断で起点が動いた");
+        }
+
+        [Test]
         public void 区間が長引いても末尾だけが残る()
         {
             string path = Path_("tail.mjr");

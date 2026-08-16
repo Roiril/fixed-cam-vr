@@ -106,6 +106,7 @@ namespace FixedCamVr.Streaming.Recording
         private long _lastBytes;
         private int _lastLap = -1;
         private int _lastCamera = -1;
+        private bool _lastStarted;
 
         /// <summary>最後に閉じた区間に書けたフレーム数（0 = 1 枚も録れていない）。</summary>
         public int LastSegmentFrames => _lastFrames;
@@ -118,6 +119,12 @@ namespace FixedCamVr.Streaming.Recording
 
         /// <summary>最後に閉じた区間のカメラ index（まだ 1 本も閉じていなければ -1）。</summary>
         public int LastSegmentCamera => _lastCamera;
+
+        /// <summary>
+        /// 最後に閉じた区間が<b>録り始めの線</b>から録れたか（false = 末尾方式）。
+        /// <b>枚数では区別できない</b>ので、線が効いたかの証拠はこれだけ。
+        /// </summary>
+        public bool LastSegmentStarted => _lastStarted;
 
         /// <summary>区間の録画を開いた <c>(lap, camera)</c>。</summary>
         public event Action<int, int>? SegmentOpened;
@@ -163,6 +170,7 @@ namespace FixedCamVr.Streaming.Recording
         {
             if (_segments.Count == 0) return;
             float now = Time.realtimeSinceStartup;
+            TickStartLine(now);
             bool changed = false;
             for (int i = _segments.Count - 1; i >= 0; i--)
             {
@@ -199,6 +207,107 @@ namespace FixedCamVr.Streaming.Recording
         /// </summary>
         public void ResetRunLocal() => ResetRun(CurrentEpoch + 1);
 
+        // ---- 録り始めの線（record.startLineId・`canon/LEDGER.md` 0061）----
+        //
+        // ⚠⚠ **自前の検出器を持つ。`TakeRunner` の線と共有しない。**
+        //    向こうは「演出に線を使う台本があるときだけ」`LineCrossLogic` を回す
+        //    （`_hasLineTakes`）ので、演出が線を使わない台本にした瞬間に**録画の起点が黙って
+        //    消える**。録画の起点は著作の都合で消えてよいものではないので、ここで独立に回す。
+        //    ⚠ 二重に数えているのは**別の線**（録画用に指した 1 本）で、同じ量ではない。
+        private readonly LineCrossLogic _startLine = new();
+        private string _startLineId = "";
+        private int _startLineCamera = -1;
+        private bool _startLineArmed;
+        private float _lastLineNow;
+        private bool _hasLastLineNow;
+        private bool _warnedNoStartLine;
+
+        /// <summary>
+        /// 録り始めの線を毎フレーム見る。横切ったら、そのカメラで開いている区間の書き手へ
+        /// <see cref="SegmentRecordWriter.MarkStart"/> を打つ。
+        ///
+        /// ⚠ 追い録り中の区間には打たない（もう切り替わっているので起点にならない）。
+        /// </summary>
+        private void TickStartLine(float now)
+        {
+            if (!_startLineArmed) return;
+            Func<Vector2>? head = showControl != null ? showControl.HeadCourseXZProvider : null;
+            if (head == null)
+            {
+                if (!_warnedNoStartLine)
+                {
+                    _warnedNoStartLine = true;
+                    Debug.LogWarning("[SegmentRecorder] 体験者の位置が取れないので録り始めの線は効かない"
+                                     + "（位置合わせが済んでいるか）。末尾方式のまま録る");
+                }
+                _hasLastLineNow = false;
+                return;
+            }
+
+            float dt = _hasLastLineNow ? now - _lastLineNow : 0f;
+            _lastLineNow = now;
+            _hasLastLineNow = true;
+            Vector2 xz = head();
+            _startLine.Tick(now, xz.x, xz.y, dt);
+            LineCrossLogic.State[] st = _startLine.StateView;
+            if (st.Length == 0 || !st[0].crossed) return;
+
+            for (int i = 0; i < _segments.Count; i++)
+            {
+                Segment s = _segments[i];
+                if (s.postRoll || s.camera != _startLineCamera) continue;
+                if (s.writer.HasStartMark) continue;
+                s.writer.MarkStart(PtsOf(s, now));
+                Debug.Log($"[SegmentRecorder] 録り始めの線を横切った line={_startLineId} "
+                          + $"L{s.lap}C{s.camera} pos=({xz.x:F2},{xz.y:F2})");
+            }
+        }
+
+        /// <summary>
+        /// show.json の <c>record.startLineId</c> と <c>layout.lines</c> から検出器を組み直す。
+        /// 区間を開くたびに呼ぶ（走行中に卓が線を動かしても追随する）。
+        /// </summary>
+        private void ApplyStartLine(ShowRecordDef? cfg)
+        {
+            string want = cfg != null && cfg.startLineId != null ? cfg.startLineId : "";
+            ShowLineDef? found = null;
+            if (!string.IsNullOrEmpty(want) && showControl != null && showControl.Layout != null
+                && showControl.Layout.lines != null)
+            {
+                foreach (ShowLineDef? l in showControl.Layout.lines)
+                {
+                    if (l != null && l.id == want) { found = l; break; }
+                }
+            }
+
+            if (found == null)
+            {
+                if (!string.IsNullOrEmpty(want) && _startLineId != want)
+                {
+                    // ⚠ **黙って末尾方式へ落ちない。** 「線を指したのに効いていない」は
+                    //    録れた映像を見るまで分からない（しかも暗い現場では目で区別できない）。
+                    Debug.LogWarning($"[SegmentRecorder] record.startLineId='{want}' が layout.lines に無い。"
+                                     + "末尾方式で録る");
+                }
+                _startLineId = want;
+                _startLineArmed = false;
+                _startLineCamera = -1;
+                _startLine.SetLines(Array.Empty<LineCrossLogic.Line>());
+                return;
+            }
+
+            _startLineId = want;
+            _startLineCamera = found.camera;
+            int dir = LineCrossLogic.ParseDir(found.dir, out bool known);
+            if (!known)
+                Debug.LogWarning($"[SegmentRecorder] 未知の通過方向 '{found.dir}' → 両方向（line={want}）");
+            _startLine.SetLines(new[]
+            {
+                LineCrossLogic.Line.Between(found.x1, found.z1, found.x2, found.z2, dir, found.camera),
+            });
+            _startLineArmed = true;
+        }
+
         // ---- 録画 ----
 
         private void OnCameraEntered(int camera, int lap)
@@ -223,6 +332,11 @@ namespace FixedCamVr.Streaming.Recording
             }
 
             // ③ 入った区間を開く。
+            //    ⚠ 録り始めの線は**区間を開くたびに組み直す**（走行中に卓が線を動かしても追随する）。
+            //      横断のラッチも落とす — 前の区間で踏んだ 1 回がこの区間の起点になってはいけない。
+            ApplyStartLine(cfg);
+            _startLine.Reset();
+            _hasLastLineNow = false;
             if (cfg == null || !cfg.RecordsLap(lap)) { RebindTaps(); return; }
 
             CameraStream? stream = registry != null ? registry.Get(camera) : null;
@@ -310,8 +424,11 @@ namespace FixedCamVr.Streaming.Recording
             _lastCamera = s.camera;
             _runBytes += s.writer.WrittenBytes;
             bool capped = s.writer.Capped;
+            // 録り始めの線が効いたか。**録れた枚数だけでは区別できない**（末尾方式でも枚数は出る）。
+            _lastStarted = s.writer.HasStartMark;
             Debug.Log($"[SegmentRecorder] 録画終了{(capped ? "（容量が足りず尺が縮んだ）" : "")} " +
-                      $"lap={s.lap} camera={s.camera} frames={_lastFrames} bytes={_lastBytes} → {path}");
+                      $"lap={s.lap} camera={s.camera} frames={_lastFrames} bytes={_lastBytes} " +
+                      $"起点={(_lastStarted ? "線" : "末尾")} → {path}");
             if (_lastFrames == 0)
                 Debug.LogWarning($"[SegmentRecorder] 1 枚も録れていない lap={s.lap} camera={s.camera} " +
                                  $"— この区間を指す録画カットは無言で飛びます");

@@ -25,6 +25,8 @@ export const REC_DEFAULT = {
   enabled: false, laps: [1],
   tailSec: REC_DEFAULT_TAIL_SEC, postSec: REC_DEFAULT_POST_SEC,
   maxTotalMB: 200, fpsCap: 15,
+  // 録り始めの線（空 = 末尾方式）。Unity 側 ShowRecordDef.startLineId と対。
+  startLineId: '',
 };
 
 const int = (v) => {
