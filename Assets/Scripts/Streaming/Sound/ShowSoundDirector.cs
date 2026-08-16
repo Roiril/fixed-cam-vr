@@ -78,6 +78,12 @@ namespace FixedCamVr.Streaming
         private ShowControlClient? _show;
         private SealedBox? _box;
         private BgmDirector? _bgm;
+
+        /// <summary>
+        /// 締めのカットが報告を待っているかを見るために読む
+        /// （人形がたくさん出てくる所で笑いを鳴らす・<c>canon/LEDGER.md</c> 0062）。
+        /// </summary>
+        private TimelineDirector? _timeline;
         private float _resolveAccum;
 
         // ---- 観測（テレメトリが読む）--------------------------------------------
@@ -234,6 +240,7 @@ namespace FixedCamVr.Streaming
             if (_show == null) _show = FindObjectOfType<ShowControlClient>();
             if (_box == null) _box = FindObjectOfType<SealedBox>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
+            if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
         }
 
         private SoundShowState ReadState()
@@ -266,6 +273,9 @@ namespace FixedCamVr.Streaming
             }
             if (_signal != null) s.signalLost = _signal.Level;
             if (_show != null) s.registrationActive = _show.CourseRegistrationActive;
+            // ⚠ ここが立った縁で人形が笑う。**「4 周目 A」とは書かない** — 締めのカットが
+            //    待っていること自体を見るので、著作が変わっても追随する。
+            if (_timeline != null) s.markWaiting = _timeline.IsWaitingForVisitorMark;
             return s;
         }
 

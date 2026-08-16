@@ -42,6 +42,16 @@ namespace FixedCamVr.Streaming
         /// <summary>位置合わせ作業中（スタッフが実物に線を重ねている）。</summary>
         public bool registrationActive;
 
+        /// <summary>
+        /// <b>締めのカットが体験者の報告を待っているか</b>
+        /// （<c>TimelineDirector.IsWaitingForVisitorMark</c>）。
+        /// ここが立った縁 ＝ <b>人形がたくさん出てくる所</b>で、人形の笑いが鳴る
+        /// （2026-08-16・<c>canon/LEDGER.md</c> 0062）。
+        ///
+        /// ⚠ <b>敷く音は読まない。</b> 読むのは <see cref="SoundCueLogic"/> だけ。
+        /// </summary>
+        public bool markWaiting;
+
         public static SoundShowState Idle => new SoundShowState
         {
             introStage = IntroStage.Off,

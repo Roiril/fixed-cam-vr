@@ -302,6 +302,30 @@ def build_comms() -> np.ndarray:
     return out
 
 
+def build_dolls() -> np.ndarray:
+    """最後の演出（人形がたくさん出てくる所）を、**本編の敷く音の上で**聴く。
+
+    ⚠ 単体で聴くと必ず大きく感じる。実機はここへ劇伴（`HorrBGM`）も乗るが、
+    それは卓の設定なので入れていない。
+
+    並びは実機と同じ順序（`canon/LEDGER.md` 0062）:
+      締めのカットが待ち始める → **人形の笑い** → その 3 秒後に③の連絡（打鍵）。
+    """
+    rng = np.random.default_rng(20260816)
+    t_laugh = 1.5
+    t_comms = t_laugh + 3.0            # `CommsCueLogic.PromptAfterWaitSec`
+    total = t_laugh + 11.0
+
+    # 4 周目 ＝ 装置は痩せ切っていて、環境音は 3 周目のもの（§4 の表）。
+    out = (tile(load("bed_room_lap3"), total) * 0.34
+           + tile(load("bed_device_worn"), total) * 1.0)
+    lay(out, load("amb_dolls_laugh"), t_laugh)
+    lay(out, type_burst(20, TYPE_CPS, rng), t_comms)
+    print(f"  {t_laugh:.1f}s 人形が笑い出す（7 体・7.0 秒）/ "
+          f"{t_comms:.1f}s ③の連絡「異常が検出されました。記録してください。」")
+    return out
+
+
 def emit(name: str, y: np.ndarray, note: str):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, f"{name}.wav")
@@ -324,6 +348,8 @@ def main() -> int:
     emit("preview_ambient", build_ambient(), "実機と同じ式（等パワー・半減期 2.5 秒）")
     print("連絡の面の打鍵:")
     emit("preview_comms", build_comms(), "本編の敷く音の上で。頭の 2 本は速さの比べ")
+    print("最後の演出（人形がたくさん出てくる所）:")
+    emit("preview_dolls", build_dolls(), "笑い → 3 秒後に③の連絡。4 周目の敷く音の上で")
     print(f"\n→ {OUT}")
     return 0
 

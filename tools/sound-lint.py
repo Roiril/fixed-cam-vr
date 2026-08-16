@@ -61,7 +61,7 @@ SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何�
 #       （`canon/LEDGER.md` 0057 でユーザーが指定した音源）。**並べただけで素材は実録**。
 RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_close",
             "sfx_screen_on", "bed_room_lap2", "bed_room_lap3",
-            "sfx_shatter", "sfx_switch_1"}
+            "sfx_shatter", "sfx_switch_1", "amb_dolls_laugh"}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 
 # 発振器が居るか（掃引する純音も捕まる）。実測: 純音 0.93〜1.00 / 帯ノイズの掃引 0.31〜0.43 /

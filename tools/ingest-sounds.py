@@ -199,6 +199,116 @@ SWARM_PAN = 0.55          # 左右の散らし（0 = 真ん中 / 1 = 片側だ�
 SWARM_SEED = 20260816
 
 
+# ---- 1 本の声を「たくさんの人形が笑っている」に組むもの ---------------------
+#
+# ⚠ **これも「もらった音」の側**。掛けるのは並べ方・音程・音量・左右だけで、
+#    イコライザも圧縮も掛けない（`rules/sound-design.md` §4.5）。**種は固定**。
+#
+# ユーザー指定（2026-08-16・`canon/LEDGER.md` 0062）:
+#   「いろんな人形がささやいてる感じで、音の高さや音量を変えたり、音程のカーブを、
+#     だんだんと高くしたり低くしたりしたバージョンを何個か、スタート時間をちょっとずつずらして、
+#     一部重なる感じとかにして、いろんな人形が笑ってるみたいな演出にしたい」
+#
+# ⚠ **1 声ずつ別の人形として作る。** 乱数で散らすのではなく**表に書く** — 何体が
+#    どんな声で笑うかは演出そのものなので、走行ごとに変わってはいけないし、
+#    「3 体目をもう少し低く」と言われたときに直す場所が要る。
+#
+# (始まり, 音程の始め, 音程の終わり, 音量 dB, 左右)   ※音程は 1.0 = 元のまま
+CHORUS_VOICES = [
+    (0.00, 1.00, 1.06, -1.0, -0.15),   # 最初の 1 体。ほぼ素のまま、わずかに上がる
+    (0.45, 1.22, 1.14, -4.0, +0.55),   # 小さい人形。高い所から下りてくる
+    (1.05, 0.86, 0.92, -3.0, -0.62),   # 大きい人形。低くゆっくり上がる
+    (1.70, 1.34, 1.52, -7.5, +0.30),   # 遠くの 1 体。上がりきる
+    (2.35, 0.78, 0.72, -4.5, -0.40),   # いちばん低い。さらに下がる
+    (3.05, 1.12, 1.02, -4.0, +0.72),   # 右奥
+    (3.80, 0.95, 1.10, -5.0, -0.08),   # 最後にもう 1 体、真ん中で
+]
+
+# ⚠ **後ろの声を前より小さくしすぎない。** 素直に減らすと「笑いが遠ざかっていく」に聞こえて、
+#    人形が**出てくる**場面と逆になる（実測: -7.5 / -6.5 / -8.5 にしたら尻すぼみだった）。
+#    数が減るぶんは自然に薄くなるので、1 体ずつの高さは最後まで残す。
+
+# (元ファイル名, 出力名, 目標 LUFS, 使い先)
+CHORUS = [
+    ("ufufufu.mp3", "amb_dolls_laugh", -20.0,
+     "最後の演出（4 周目 A の締め）で人形がたくさん出るところ。7 体ぶんを重ねて笑わせる"),
+]
+
+CHORUS_TAIL = 0.35        # 最後の声が鳴り終わってから足す余白（秒）
+CHORUS_GLIDE_POW = 1.4    # 音程の動き方（1 = 直線 / 大きいほど後半で動く）
+
+
+def glide(c: np.ndarray, r0: float, r1: float, sr: int) -> np.ndarray:
+    """音程を <paramref name="r0"/> から <paramref name="r1"/> へ滑らせながら読む。
+
+    ⚠ **速さごと変える**（テープと同じ）。読み取り位置を「そのときの速さ」の累積で作るので、
+    区間で切って繋ぐ方式と違って**継ぎ目が原理的に出ない**。
+    """
+    n_in = len(c)
+    # 出力長は分からないので、いちばん遅い読み方で上限を取ってから切り詰める。
+    n_max = int(n_in / max(min(r0, r1), 1e-3)) + 8
+    t = np.linspace(0.0, 1.0, n_max, endpoint=False)
+    rate = r0 + (r1 - r0) * (t ** CHORUS_GLIDE_POW)
+    pos = np.cumsum(rate) - rate[0]
+    keep = pos < (n_in - 1)
+    pos = pos[keep]
+    return np.stack([np.interp(pos, np.arange(n_in), c[:, ch]) for ch in (0, 1)], axis=1)
+
+
+def chorus_build(y, sr: int, target_lufs: float):
+    """1 本の笑い声から「たくさんの人形が笑っている」を組む。"""
+    src = sk.env_fade(sk.to_stereo(trim(y)), 0.004, 0.02)
+
+    voices = []
+    for at, r0, r1, db, pan in CHORUS_VOICES:
+        v = glide(src, r0, r1, sr)
+        lr = np.array([np.cos((pan + 1) * np.pi / 4), np.sin((pan + 1) * np.pi / 4)]) * np.sqrt(2)
+        voices.append((at, v * (10 ** (db / 20.0)) * lr))
+
+    total = max(at + len(v) / sr for at, v in voices) + CHORUS_TAIL
+    out = np.zeros((int(total * sr), 2))
+    for at, v in voices:
+        i = int(at * sr)
+        out[i:i + len(v)] += v
+
+    out = sk.env_fade(out, 0.0, 0.12)
+    out = out * 10 ** ((target_lufs - sk.lufs(out)) / 20.0)
+    tp = sk.true_peak_db(out)
+    if tp > -3.0:
+        out = out * 10 ** ((-3.0 - tp) / 20.0)
+    spans = [(at, len(v) / sr) for at, v in voices]
+    return out, spans, total
+
+
+def ingest_chorus(chorus, src_dir: str) -> None:
+    """1 本の声を重ねて焼く（<see cref="CHORUS"/>）。"""
+    for jp, name, target, _why in chorus:
+        src = os.path.join(src_dir, jp)
+        raw = os.path.join(RAW, f"src_{name}.wav")
+        if os.path.exists(src):
+            if not decode(src, raw):
+                continue
+        elif not os.path.exists(raw):
+            print(f"  無い: {jp}（{src_dir} にも {RAW} にも）")
+            continue
+        else:
+            print(f"  元 mp3 が無いので復号済みを使う: {name}")
+
+        y, sr = sk.read_wav(raw)
+        out, spans, total = chorus_build(y, sr, target)
+        sk.write_wav(os.path.join(OUT, f"{name}.wav"), out, peak_db=-3.0)
+        d = sk.describe(out)
+        print(f"  {name:16s} {len(spans)} 体 / {d['sec']:.2f}s   {d['lufs']:6.1f} LUFS   "
+              f"tp {d['true_peak_db']:5.1f}dB   鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f}   "
+              f"モノ {d['mono_db']:5.2f}dB   内蔵SP {d['speaker_db']:5.1f}dB")
+        # 重なりの様子（0.5 秒ごとに何体が鳴っているか）。
+        # **「一部重なる」が指定なので数で出す** — 全部 1 なら重なっていないし、
+        # 常に 4 以上なら 1 つの塊に潰れている。
+        marks = [str(sum(1 for at, dur in spans if at <= k * 0.5 < at + dur))
+                 for k in range(int(total / 0.5) + 1)]
+        print(f"    0.5 秒ごとの声の数: {' '.join(marks)}")
+
+
 def resample(c: np.ndarray, ratio: float) -> np.ndarray:
     """音程を変える（速さごと変える ＝ テープと同じ）。`ratio` > 1 で高く短くなる。"""
     n = max(8, int(len(c) / ratio))
@@ -461,7 +571,8 @@ def main() -> int:
                   f"（{SWARM_SEC:.2f}s）/ {why}")
         return 0
 
-    names = {p[1] for p in PLAN} | {c[1] for c in CUTS} | {s[1] for s in SWARMS}
+    names = ({p[1] for p in PLAN} | {c[1] for c in CUTS}
+             | {s[1] for s in SWARMS} | {c[1] for c in CHORUS})
     if a.only is not None and not set(a.only) <= names:
         missing = sorted(set(a.only) - names)
         print(f"  PLAN にも CUTS にも無い名前: {', '.join(missing)}")
@@ -469,11 +580,13 @@ def main() -> int:
     plan = [p for p in PLAN if a.only is None or p[1] in a.only]
     cuts = [c for c in CUTS if a.only is None or c[1] in a.only]
     swarms = [s for s in SWARMS if a.only is None or s[1] in a.only]
+    chorus = [c for c in CHORUS if a.only is None or c[1] in a.only]
 
     os.makedirs(RAW, exist_ok=True)
     os.makedirs(OUT, exist_ok=True)
     ingest_cuts(cuts, a.src)
     ingest_swarms(swarms, a.src)
+    ingest_chorus(chorus, a.src)
     for jp, name, how, target, _why in plan:
         src = os.path.join(a.src, jp)
         raw = os.path.join(RAW, f"src_{name}.wav")

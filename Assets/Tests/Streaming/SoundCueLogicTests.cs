@@ -239,6 +239,70 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(0, RingsWithin(l, 30f, registering: true));
         }
 
+        /// <summary>締めのカット（報告待ち）の状態。**導入は終わっている。**</summary>
+        private static SoundShowState Closing(bool waiting, bool registering = false)
+        {
+            var s = SoundShowState.Idle;
+            s.introStage = IntroStage.Done;
+            s.phase = ShowPhase.Run;
+            s.markWaiting = waiting;
+            s.registrationActive = registering;
+            return s;
+        }
+
+        [Test]
+        public void DollsLaugh_FiresOnce_WhenTheClosingCutStartsWaiting()
+        {
+            // 人形がたくさん出てくる所（`canon/LEDGER.md` 0062）。
+            var l = new SoundCueLogic();
+
+            // 待っていないあいだは鳴らない。
+            for (int i = 0; i < 200; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.DollsLaugh, Dt, Closing(false)));
+
+            Assert.AreEqual(1, CountOf(l, SoundCue.DollsLaugh, Dt, Closing(true)),
+                            "締めのカットが待ち始めた縁で鳴らない");
+
+            int extra = 0;
+            for (int i = 0; i < 60 * 60; i++) extra += CountOf(l, SoundCue.DollsLaugh, Dt, Closing(true));
+            Assert.AreEqual(0, extra, "笑いは 1 回だけ（待っているあいだ鳴り続けない）");
+        }
+
+        [Test]
+        public void DollsLaugh_RingsAgain_ForTheNextVisitor()
+        {
+            // ⚠⚠ **この 1 本がいちばん大事。** ラッチを `ResetRun` に置くと、あれは
+            //    呼び出し元がどこにも無いので**2 人目以降で鳴らない**（2026-08-14 の穴と同じ形）。
+            var l = new SoundCueLogic();
+            Assert.AreEqual(1, CountOf(l, SoundCue.DollsLaugh, Dt, Closing(true)));
+
+            // 次の体験者 — 段 0 を通る（号令を配る側の実装に依存しない縁）。
+            var black = Intro(IntroStage.Black);
+            for (int i = 0; i < 4; i++) CountOf(l, SoundCue.DollsLaugh, Dt, black);
+
+            CountOf(l, SoundCue.DollsLaugh, Dt, Closing(false));
+            Assert.AreEqual(1, CountOf(l, SoundCue.DollsLaugh, Dt, Closing(true)),
+                            "次の体験者に人形の笑いが鳴らない");
+        }
+
+        [Test]
+        public void DollsLaugh_IsSilentDuringRegistration()
+        {
+            var l = new SoundCueLogic();
+            for (int i = 0; i < 60 * 10; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.DollsLaugh, Dt, Closing(true, registering: true)));
+        }
+
+        [Test]
+        public void DollsLaugh_HasASourceAndDucksDeeply()
+        {
+            // ⚠ **音源の無い節目を作らない**（rules/sound-design.md §8）。
+            Assert.AreEqual("amb_dolls_laugh", SoundCueLogic.ResourceName(SoundCue.DollsLaugh));
+            Assert.That(SoundCueLogic.DuckFor(SoundCue.DollsLaugh),
+                        Is.GreaterThan(SoundCueLogic.DuckFor(SoundCue.Bell)),
+                        "画面が人形で埋まる場面なので、鈴より深く劇伴を退かせる");
+        }
+
         [Test]
         public void Cues_AreDeterministic_AcrossRuns()
         {
