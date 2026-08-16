@@ -1114,13 +1114,18 @@ def analyze(events, others, exp, warns=None):
                 else:
                     verdict("OK", f"打鍵が {n} 発鳴った（字数の合計 {want_hits}・1 文字 1 発）")
 
-            # ---- 周回の壊れ（`canon/LEDGER.md` 0068）----
-            # ⚠⚠ 見るのは「進みが動いた」ではなく **書く先を掴めたか（commsGlMat）** と
-            #    **実際に書いた強さ（commsGl）**。2026-07-31 の「段は進んだのに画は空だった」と同じ型で、
-            #    シェーダが剥がれると Editor では出て実機だけ 1 画素も出ない（IntroVeil で実際に踏んだ）。
-            # ⚠ 強さは**発作の刻みで跳ねる**ので、標本ごとに 0 に近い値が出るのは正常。
+            # ---- 周回の壊れ（`canon/LEDGER.md` 0068 / 0069）----
+            # ⚠⚠ 見るのは「強さが動いた」ではなく **実際に化けた字の数（commsCx）**。
+            #    2026-07-31 の「段は進んだのに画は空だった」と同じ型を避けるための観測。
+            # ⚠ 0069 で壊れ方を作り直した（レイヤを貼る → 印字そのものが壊れる）。
+            #    化けの組み合わせは刻みごとに変わるので、標本によって 0 が出るのは正常。
             #    だから「全標本が 0」でだけ落とす。
-            gl_mat = [str(v) for v in effect_samples(events, "commsGlMat") if str(v) not in ("", "-")]
+            cx = []
+            for v in effect_samples(events, "commsCx"):
+                try:
+                    cx.append(int(v))
+                except (TypeError, ValueError):
+                    pass
             gl = []
             for v in effect_samples(events, "commsGl"):
                 try:
@@ -1138,17 +1143,17 @@ def analyze(events, others, exp, warns=None):
             elif bg:
                 verdict("OK", "連絡の面の地と縁が出ている（commsBg=1）")
 
-            if gl_mat and all(v == "0" for v in gl_mat):
-                verdict("FAIL", "周回の壊れを書く先が無い（commsGlMat=0）— "
-                                "FixedCamVr/CommsGlitch が剥がれている疑い。"
-                                "ProjectSettings/GraphicsSettings.asset の Always Included を見る")
+            if gl and max(gl) <= 0.0:
+                verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "
+                                "周が進んでいないか、ShowRunDirector.ScreenDecay を読めていない")
+            elif gl and cx and max(cx) <= 0:
+                # 強さは上がったのに 1 字も化けていない ＝ 印字へ届いていない。
+                verdict("FAIL", f"強さは上がった（最大 {max(gl):.2f}）のに字が 1 つも化けていない"
+                                "（commsCx が全標本 0）— CommsPanel.ApplyCorruption が"
+                                "文面へ届いていない疑い")
             elif gl:
-                hi = max(gl)
-                if hi <= 0.0:
-                    verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "
-                                    "周が進んでいないか、ShowRunDirector.ScreenDecay を読めていない")
-                else:
-                    verdict("OK", f"連絡の面が周回とともに壊れた（強さ 最大 {hi:.2f}）")
+                verdict("OK", f"連絡の面が周回とともに壊れた"
+                              f"（強さ 最大 {max(gl):.2f} / 化けた字 最大 {max(cx) if cx else 0}）")
 
             # ③（4 周目 A の締め）は進み 1.0 ＝ 壊れが最大の状態で届くはず。
             # ⚠ 進みは 3 周目 A で 1.0 に着いて以後動かない（`ScreenDecayLogic`）ので、

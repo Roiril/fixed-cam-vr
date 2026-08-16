@@ -875,13 +875,14 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" typeN=").Append(_comms == null
                                          ? "-"
                                          : (_comms.TypeSfxBuilt ? _comms.TypedCount.ToString() : "nc"));
-            //   commsGl / commsGlMat = 連絡の面の周回の壊れ（`canon/LEDGER.md` 0068）。
-            //   **書いた強さ**と**書く先を掴めたか**を対で出す。commsGlMat=0 なら周が進んでも
-            //   1 画素も変わらない（シェーダが剥がれている ＝ 2026-07-31 の IntroVeil と同じ型）。
+            //   commsGl / commsCx = 連絡の面の周回の壊れ（`canon/LEDGER.md` 0068 / 0069）。
+            //   **強さ**と、**いま実際に化けている字の数**を対で出す。
+            //   ⚠ 0069 で壊れ方を作り直した（レイヤを貼る → 印字そのものが壊れる）ので、
+            //     「書く先を掴めたか（commsGlMat）」は無くなった。**画に出た側の観測は commsCx**。
             //   ⚠⚠ **ここは `ev=sum` でなければならない。** 2026-08-17 に `ev=outro` へ足してしまい、
             //   終幕の 5 標本にしか出ず、解析器の判定に 1 度も入らなかった（走行で気づいた）。
             _sb.Append(" commsGl=").Append(_comms == null ? "-" : _comms.GlitchLevel.ToString("F2"));
-            _sb.Append(" commsGlMat=").Append(_comms == null ? "-" : (_comms.GlitchBuilt ? "1" : "0"));
+            _sb.Append(" commsCx=").Append(_comms == null ? "-" : _comms.CorruptedChars.ToString());
             //   commsBg = 地と縁を組めたか。**0 なら文字と壊れだけが宙に浮く。**
             //   ⚠⚠ 2026-08-17 まで実機がまさにこれだった（`Unlit/Color` がビルドから剥がれていた）。
             //   Editor では出るので、この 1 ビットが無いと永久に気づけない。

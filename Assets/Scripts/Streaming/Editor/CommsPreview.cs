@@ -124,9 +124,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 //    実装が死んでいても気づけない。**発作が立っている刻みを探してそこで撮る。**
                 foreach (float decay in decays)
                 {
-                    float level = CommsGlitchLogic.LevelFor(decay);
                     string suffix = $"_d{Mathf.RoundToInt(decay * 100f):000}";
-                    panel.SetDecayForPreview(decay, FindTick(level, wantBurst: true));
+                    // 3 周目は 3 字以上化けた刻み、手前の周は 1 字でも化けた刻みを撮る。
+                    int wantMin = decay >= 0.9f ? 3 : 1;
 
                     foreach (CommsNotice notice in new[]
                     {
@@ -137,25 +137,27 @@ namespace FixedCamVr.Streaming.EditorTools
                         Disable(logic);
                         ApplyNow(apply, panel, logic);
                         panel.Deliver(notice);
+                        // ⚠ **Deliver の後**（素の文面が入ってから壊しにいく）。
+                        SeekCorruption(panel, decay, wantMin);
                         PlaceStraightAhead(root, tmp, dist);
                         Step(logic, apply, panel, inSec);
                         Step(logic, apply, panel, TypeSec(logic));
                         Shoot(cam, Path.Combine(dir, $"notice_{notice}{suffix}.png"));
                     }
 
-                    // ---- 壊れが「発作でない刻み」でどう見えるか（③でだけ撮る）--------------
-                    // ⚠ 面は**ほとんどの時間こちらの姿**で立っている。発作の絵だけ見て強さを決めると、
+                    // ---- 1 字も化けていない刻み（③でだけ撮る）------------------------------
+                    // ⚠ 面は**ほとんどの時間こちらの姿**で立っている。化けた絵だけ見て強さを決めると、
                     //    体験のほとんどの時間に何も起きていない、という判断ミスをする。
                     if (decay > 0f)
                     {
-                        panel.SetDecayForPreview(decay, FindTick(level, wantBurst: false));
                         Disable(logic);
                         ApplyNow(apply, panel, logic);
                         panel.Deliver(CommsNotice.Prompt);
+                        SeekQuiet(panel, decay);
                         PlaceStraightAhead(root, tmp, dist);
                         Step(logic, apply, panel, inSec);
                         Step(logic, apply, panel, TypeSec(logic));
-                        Shoot(cam, Path.Combine(dir, $"notice_Prompt{suffix}_steady.png"));
+                        Shoot(cam, Path.Combine(dir, $"notice_Prompt{suffix}_quiet.png"));
                     }
                 }
                 // コマ送りの動画は 1 周目の姿で撮る（壊れは静止画で見る）。
@@ -280,14 +282,29 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         /// <summary>
-        /// 発作が立っている（／立っていない）刻みの時刻を探す。
-        /// ⚠ <b>強さ 0 では発作が永久に立たない</b>ので、見つからなければ 0 を返す（絵は素のまま）。
+        /// <b>字が <paramref name="wantMin"/> 個以上化けている刻みへ合わせる。</b>
+        /// ⚠⚠ 適当な時刻で撮ると「何も起きていない」絵になり、**実装が死んでいても気づけない**。
+        /// ⚠ 文面ごとに化ける刻みが違うので、**面へ実際に掛けてから数える**
+        /// （プレビュー側が文面を知らなくて済む）。
+        /// ⚠ <b>必ず <c>Deliver</c> の後に呼ぶ</b> — 素の文面が入っていないと 1 字も化けない。
         /// </summary>
-        private static float FindTick(float level, bool wantBurst)
+        private static void SeekCorruption(CommsPanel panel, float decay, int wantMin)
         {
-            for (float t = 0f; t < 90f; t += CommsGlitchLogic.BurstTickSec)
-                if (CommsGlitchLogic.BurstAt(t, level) == wantBurst) return t;
-            return 0f;
+            for (int t = 0; t < 240; t++)
+            {
+                panel.SetDecayForPreview(decay, t * CommsGlitchLogic.TickSec + 0.01f);
+                if (panel.CorruptedChars >= wantMin) return;
+            }
+        }
+
+        /// <summary>1 字も化けていない刻みへ合わせる（面が立っている時間の大半はこちらの姿）。</summary>
+        private static void SeekQuiet(CommsPanel panel, float decay)
+        {
+            for (int t = 0; t < 240; t++)
+            {
+                panel.SetDecayForPreview(decay, t * CommsGlitchLogic.TickSec + 0.01f);
+                if (panel.CorruptedChars == 0) return;
+            }
         }
 
         /// <summary>著作どおりの位置（左へ振って下げて、面は頭へ正対）へ置く。</summary>

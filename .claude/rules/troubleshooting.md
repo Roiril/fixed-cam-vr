@@ -111,8 +111,18 @@ py -3.11 tools/quest-record.py --sec 45 --walk
 .\tools\unity.ps1 test
 ```
 
-EditMode テストは走る前に必ずコンパイルするので、**これ 1 本でコンパイルエラーの全文が出る**
-（`Logs/test-EditMode.xml` に結果、標準出力に `error CS`）。Editor を開く必要も MCP もいらない。
+EditMode テストは走る前に必ずコンパイルするので、**これ 1 本でコンパイルエラーが分かる**
+（`Logs/test-EditMode.xml` に結果）。Editor を開く必要も MCP もいらない。
+
+⚠⚠ **コンパイルエラーがあると Unity は古いアセンブリでテストを走らせる**（2026-08-17 実害）。
+XML は普通に「1369 中 1 件失敗」のような結果を返すので、**直したはずの行がいつまでも失敗し続ける**
+（スタックトレースが現在のソースに無い行を指しているのが唯一の手掛かりだった。30 分溶かした）。
+
+- **CLI の標準出力に出るのは `Scripts have compiler errors.` の 1 行だけ。**
+  `error CS...` の本文は `%LOCALAPPDATA%\Unity\Editor\Editor.log` にしか無い
+- ⇒ `unity.ps1 test` が**走行前後の Editor.log の差分**から `error CS` を拾って
+  赤字で出し、**exit 5 で落とす**ようにした（2026-08-17）。
+  「結果が出た＝コンパイルは通った」ではないので、この判定を外さないこと
 
 ⚠ **Editor がこのプロジェクトを開いていると止まる**（`Temp/UnityLockfile`）。閉じてからやり直す。
 起動中の Editor をそのまま調べたいときだけ MCP（[reference/mcp-unity.md](../reference/mcp-unity.md)）へ落ちる。

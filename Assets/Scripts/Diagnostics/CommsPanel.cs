@@ -162,15 +162,10 @@ namespace FixedCamVr.Diagnostics
         private const int RenderQueue = 4980;
         private const int GlyphQueue = 4990;
 
-        /// <summary>壊れの層。<b>文字より後に描く</b>（文字の上に矩形が乗る）。⚠ 5000 以下。</summary>
-        private const int GlitchQueue = 4995;
-
-        /// <summary>
-        /// 壊れの層のシェーダ。⚠ <b>実行時に探すので Always Included に登録してある</b>
-        /// （<c>ProjectSettings/GraphicsSettings.asset</c>。忘れると Editor では出て実機で剥がれる —
-        /// 2026-07-31 に <c>IntroVeil</c> で実際に踏んだ）。
-        /// </summary>
-        private const string GlitchShaderName = "FixedCamVr/CommsGlitch";
+        // ⚠⚠ **壊れの層（矩形を描くシェーダ）は 2026-08-17 に削除した**（`canon/LEDGER.md` 0069）。
+        //    ユーザーの赤入れ「明るすぎる／色が鮮やかすぎる／四角すぎる」は、
+        //    **壊れを別の層として貼っていた**ことから全部出ていた。
+        //    この装置は画像を表示していない — **1 文字ずつ印字している**。だから壊れるのは印字。
 
         /// <summary>
         /// <b>文面（ユーザーが書いたまま・`canon/LEDGER.md` 0054）。</b>
@@ -227,20 +222,20 @@ namespace FixedCamVr.Diagnostics
         private Transform? _root;
         private MeshRenderer? _panelRenderer;
         private MeshRenderer? _bezelRenderer;
-        // 壊れの層（`canon/LEDGER.md` 0068）。進みは映像とまったく同じものを読む。
-        private MeshRenderer? _glitchRenderer;
-        private Material? _glitchMat;
-        private float _glitchLevel, _glitchBurst, _glitchSeed, _glitchOffsetX;
+        // 周回の壊れ（`canon/LEDGER.md` 0068 / 0069）。進みは映像とまったく同じものを読む。
+        private float _glitchLevel, _glitchOffsetX;
+        // 地と文字に掛ける明るさ（1 = 平常。沈むだけで明るくはならない）。
+        private float _glitchFlicker = 1f;
+        // 化けの組み合わせが変わる刻み。**-1 = まだ一度も掛けていない**。
+        private int _corruptTick = -1;
+        // 壊す前の素の文面。**打鍵の数えも枠の高さもこちらが正**（化けても幅は変わらない）。
+        private string _noticeSource = "";
         // プレビュー（`menu comms-preview -Set decay=`）が注入する進み。**負なら実機の値を読む**。
         private float _decayOverride = -1f;
         private float _previewTimeSec;
         // ⚠ 地の色は**シェーダによってプロパティ名が違う**（URP は `_BaseColor` / 組み込みは `_Color`）。
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
-        private static readonly int GlitchLevelId = Shader.PropertyToID("_Level");
-        private static readonly int GlitchBurstId = Shader.PropertyToID("_Burst");
-        private static readonly int GlitchSeedId = Shader.PropertyToID("_Seed");
-        private static readonly int GlitchAspectId = Shader.PropertyToID("_Aspect");
         // 枠を左端から右へ開くために、幅と「開いていないときの左端」を覚えておく。
         private float _panelW, _bezelW;
         private int _charCount;
@@ -274,8 +269,12 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         public float GlitchLevel => _glitchLevel;
 
-        /// <summary>壊れの層のマテリアルを掴めたか。<b>false なら進んでも 1 画素も変わらない。</b></summary>
-        public bool GlitchBuilt => _glitchMat != null;
+        /// <summary>
+        /// いま化けている字の数（<b>画に出た側</b>の観測）。
+        /// ⚠ 刻みごとに組み合わせが変わるので、標本によって 0 が出るのは正常。
+        /// <b>本編を通して 1 度も 0 を超えないなら壊れていない。</b>
+        /// </summary>
+        public int CorruptedChars { get; private set; }
 
         /// <summary>
         /// 地と縁を組めたか。<b>false なら文字と壊れだけが宙に浮く。</b>
@@ -389,7 +388,6 @@ namespace FixedCamVr.Diagnostics
             OnDestroyHooks();
             if (_panelMat != null) Destroy(_panelMat);
             if (_bezelMat != null) Destroy(_bezelMat);
-            if (_glitchMat != null) Destroy(_glitchMat);
             if (_panelMesh != null) Destroy(_panelMesh);
         }
 
@@ -566,23 +564,6 @@ namespace FixedCamVr.Diagnostics
                                  + "（Universal Render Pipeline/Unlit も Unlit/Color も見つからない）");
             }
 
-            // ---- 壊れの層（`canon/LEDGER.md` 0068）。**文字より後に描く** ＝ 矩形が字の上に乗る。
-            //      ⚠ z はわずかに手前。深度は見ない（`ZTest Always`）が、両眼で見たとき
-            //        字と同一平面だと縞が字に食い込んで読みにくい。
-            Shader? glitch = Shader.Find(GlitchShaderName);
-            if (glitch != null)
-            {
-                _glitchRenderer = MakeQuad(rootGo.transform, "CommsGlitchQuad",
-                                           _panelW, BodyMaxH + HintBandH, -0.002f,
-                                           glitch, GlitchQueue, out _glitchMat);
-            }
-            else
-            {
-                // ⚠ 出ないだけで体験は止めない（連絡そのものは読める）。
-                Debug.LogWarning($"[Comms] {GlitchShaderName} が見つからないので周回の壊れは出ません"
-                                 + "（Always Included に登録されているか確認）");
-            }
-
             // ---- 下段（報告の押し方・ゲージ）。**2026-08-16 にコントローラの先からここへ移した**
             //      （`canon/LEDGER.md` 0058）。上段より下・小さく・左揃え。
             //      ⚠ ゲージと見出しの大きさはリッチテキストで組む（`VisitorMarkGuidance`）。
@@ -651,6 +632,11 @@ namespace FixedCamVr.Diagnostics
             TMP_Text? tmp = _text;
             if (tmp == null) return;
             string body = notice == CommsNotice.None ? LongestNoticeText : TextFor(notice);
+            // ⚠ 壊す前の姿を覚える。**重心も枠の高さも打鍵の数えも、こちらで測る**
+            //   （`canon/LEDGER.md` 0069）。化けた文面で測ると、全角の空白が混ざった分だけ
+            //   `textBounds` が縮んで、刻みのたびに文面が上下に跳ねる。
+            _noticeSource = body;
+            _corruptTick = -1;
 
             tmp.maxVisibleCharacters = int.MaxValue;
             if (tmp.text != body) tmp.text = body;
@@ -755,7 +741,10 @@ namespace FixedCamVr.Diagnostics
 
         private void Apply(in CommsWeights w)
         {
-            AppliedGlyph = Mathf.Clamp01(w.glyph);
+            // ⚠ 明滅は**地と文字の両方**に掛ける（`canon/LEDGER.md` 0069）。
+            //   片方だけだと「文字が消えかけている」ではなく「面の色が変わった」に見える。
+            //   沈むだけで明るくはならない（電源が落ちかけている装置）。
+            AppliedGlyph = Mathf.Clamp01(w.glyph) * _glitchFlicker;
             AppliedOpen = Mathf.Clamp01(w.open);
             if (_text != null)
             {
@@ -776,7 +765,7 @@ namespace FixedCamVr.Diagnostics
                 VisibleChars = shown;
             }
             ApplyHint(Mathf.Clamp01(w.hint));
-            float pa = Mathf.Clamp01(w.panel);
+            float pa = Mathf.Clamp01(w.panel) * _glitchFlicker;
             AppliedBody = Mathf.Clamp01(w.body);
 
             // ⚠⚠ **枠は「出ている帯」だけを覆う**（2026-08-16・`canon/LEDGER.md` 0065）。
@@ -807,19 +796,6 @@ namespace FixedCamVr.Diagnostics
                 SetFrame(_bezelRenderer.transform, _bezelW, AppliedOpen, cy, h + BezelM * 2f);
             }
 
-            // ---- 壊れの層（`canon/LEDGER.md` 0068）----------------------------------
-            // ⚠ **地・縁とまったく同じ枠に乗せる**（開き・丈・中心）。別に解くと、
-            //    枠が開いている途中に壊れだけが枠の外へはみ出す。
-            if (_glitchRenderer != null && _glitchMat != null)
-            {
-                _glitchMat.SetFloat(GlitchLevelId, _glitchLevel);
-                _glitchMat.SetFloat(GlitchBurstId, _glitchBurst);
-                _glitchMat.SetFloat(GlitchSeedId, _glitchSeed);
-                // 縦横比はブロックを正方形に近づけるためだけ。丈は毎フレーム変わる。
-                _glitchMat.SetFloat(GlitchAspectId, h > 0.0005f ? _panelW / h : 2.4f);
-                _glitchRenderer.enabled = lit && _glitchLevel > CommsGlitchLogic.OffThreshold;
-                SetFrame(_glitchRenderer.transform, _panelW, AppliedOpen, cy, h);
-            }
         }
 
         /// <summary>
@@ -832,11 +808,39 @@ namespace FixedCamVr.Diagnostics
         private void TickGlitch(float timeSec)
         {
             _glitchLevel = CommsGlitchLogic.LevelFor(DecayProgress);
-            // ⚠⚠ **発作は強さと別に渡す。** 1 本へ畳むと、シェーダはその値で被覆率を解くので
-            //    **常時でもブロックが出る**（2026-08-17 に絵で見つけた）。
-            _glitchBurst = CommsGlitchLogic.BurstAt(timeSec, _glitchLevel) ? 1f : 0f;
-            _glitchSeed = CommsGlitchLogic.SeedAt(timeSec);
             _glitchOffsetX = CommsGlitchLogic.OffsetXAt(timeSec, _glitchLevel);
+            _glitchFlicker = CommsGlitchLogic.PanelFlickerAt(timeSec, _glitchLevel);
+
+            // ⚠ 文面の差し替えは**刻みごとに 1 回だけ**。毎フレームやると TMP が
+            //   組み直す（文字列の割り当ても毎フレーム出る）。
+            int tick = CommsGlitchLogic.TickAt(timeSec);
+            if (tick != _corruptTick)
+            {
+                _corruptTick = tick;
+                ApplyCorruption();
+            }
+        }
+
+        /// <summary>
+        /// 素の文面を壊して面へ書く（<c>canon/LEDGER.md</c> 0069）。
+        ///
+        /// ⚠⚠ <b>打鍵の数え（<see cref="IsVisibleChar"/>）は素の文面のまま</b>にしてある。
+        /// 化けて字が出なくなっても<b>打鍵は鳴る</b> — 装置は打っていて、字が出なかっただけ。
+        /// 音と絵が食い違うのではなく、**印字の失敗が音でも分かる**という側。
+        ///
+        /// ⚠ 幅は変わらない（化け先も空白も全角）ので、重心の運び直しも枠の測り直しも要らない。
+        /// </summary>
+        private void ApplyCorruption()
+        {
+            TMP_Text? tmp = _text;
+            if (tmp == null || _noticeSource.Length == 0) return;
+            string s = CommsGlitchLogic.Corrupt(_noticeSource, _glitchLevel, _corruptTick);
+            if (!string.Equals(tmp.text, s, System.StringComparison.Ordinal)) tmp.text = s;
+
+            int n = 0;
+            for (int i = 0; i < s.Length && i < _noticeSource.Length; i++)
+                if (s[i] != _noticeSource[i]) n++;
+            CorruptedChars = n;
         }
 
         /// <summary>

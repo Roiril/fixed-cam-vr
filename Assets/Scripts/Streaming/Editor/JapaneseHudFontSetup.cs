@@ -117,6 +117,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 //    `JapaneseHudFont.TryGet()` で同じアトラスを使うのに、ここに無かった ＝
                 //    文面の字がベイクされず実機で豆腐になる（`canon/LEDGER.md` 0035 の「声」と同じ型）。
                 "Assets/Scripts/Diagnostics/CommsPanel.cs",
+                // ⚠⚠ **化け字の置き場**（`canon/LEDGER.md` 0069 の `CommsGlitchLogic.Marks`）。
+                //    周回が進むと連絡の字がここの記号へ化けるので、**焼かれていないと豆腐が出る**。
+                //    ⚠ ここに居るのは「文面」ではなく定数だが、収集はソースの非 ASCII を全部拾うので
+                //      これで入る（`OutroReportText.cs` と同じ扱い）。
+                "Assets/Scripts/Streaming/CommsGlitchLogic.cs",
                 // ⚠ 2026-08-15 追加: **体験者の報告ボタンの面**（VisitorMarkGuidance が文言を持つ）。
                 //    「(X,Yで異変を報告)」「報告中」「報告しました」。ゲージの █░ は下の記号保険にある。
                 "Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs",

@@ -94,6 +94,7 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs',
                                     'Assets/Scripts/Diagnostics/OutroReportText.cs',
                                     'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',
+                                    'Assets/Scripts/Streaming/CommsGlitchLogic.cs',
                                     'Assets/Scripts/Streaming/ShowRunDirector.cs') }
     'comms-preview'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsPreview.Run'
                             Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set decay=0..1 で周回の壊れ／→ make-preview-video.py で mp4）'
@@ -491,8 +492,35 @@ switch ($Action) {
         $outXml = Join-Path $Root "Logs\test-$mode.xml"
         New-Item -ItemType Directory -Force (Split-Path $outXml) | Out-Null
 
+        # ⚠⚠ コンパイルエラーがあると Unity は **古いアセンブリでテストを走らせる**（2026-08-17 実害）。
+        #    XML は普通に結果を返すので、**直したはずの行がいつまでも失敗し続ける**（30 分溶かした）。
+        #    CLI の標準出力に出るのは `Scripts have compiler errors.` の 1 行だけで、
+        #    `error CS...` の本文は Editor.log にしか無い。
+        #    ⚠ 過去の実行のエラーを拾わないよう、**走る前の長さ**を覚えて差分だけ読む。
+        $editorLog = Join-Path $env:LOCALAPPDATA 'Unity\Editor\Editor.log'
+        $logStart = 0
+        if (Test-Path $editorLog) { $logStart = (Get-Item $editorLog).Length }
+
         & $Cli test $Root --mode $mode --output $outXml --non-interactive @Rest
         $code = $LASTEXITCODE
+
+        $csErrors = @()
+        if (Test-Path $editorLog) {
+            try {
+                $fs = [System.IO.File]::Open($editorLog, 'Open', 'Read', 'ReadWrite')
+                try {
+                    if ($fs.Length -gt $logStart) {
+                        $fs.Position = $logStart
+                        $sr = New-Object System.IO.StreamReader($fs)
+                        $csErrors = @([regex]::Matches($sr.ReadToEnd(), '(?m)^.*: error CS\d+:.*$') |
+                                      ForEach-Object { $_.Value.Trim() } |
+                                      Select-Object -Unique -First 8)
+                    }
+                }
+                finally { $fs.Dispose() }
+            }
+            catch { }
+        }
 
         # exit code だけで判断しない。NUnit XML を読む
         if (Test-Path $outXml) {
@@ -502,6 +530,12 @@ switch ($Action) {
             Write-Host "$mode : 全 $($r.total) / 通過 $($r.passed) / 失敗 $($r.failed) / 除外 $($r.skipped)" -ForegroundColor $color
         }
         else { Write-Host "結果 XML が無い: $outXml" -ForegroundColor Yellow }
+
+        if ($csErrors.Count -gt 0) {
+            Write-Host "✗ コンパイルエラー — **上の結果は古いアセンブリで走ったもの**" -ForegroundColor Red
+            foreach ($e in $csErrors) { Write-Host "    $e" -ForegroundColor Red }
+            exit 5
+        }
         exit $code
     }
 
