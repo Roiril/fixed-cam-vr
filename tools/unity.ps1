@@ -98,6 +98,9 @@ $Menus = [ordered]@{
     'comms-preview'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsPreview.Run'
                             Desc = '上司からの連絡の出方を 1 コマずつ焼く（→ tools/make-preview-video.py で mp4）'
                             Out = 'Assets/Screenshots/comms-preview/place.png' }
+    'glitch'           = @{ Method = 'FixedCamVr.Streaming.EditorTools.GlitchPreview.Run'
+                            Desc = '乱れが起きるたびにどれだけ大きくなるかを 1 コマずつ焼く（→ make-preview-video.py で mp4）'
+                            Out = 'Assets/Screenshots/glitch-preview/f0000.png' }
     'text-audit'       = @{ Method = 'FixedCamVr.Streaming.EditorTools.HmdTextAudit.Run'
                             Desc = 'HMD 内の文字を全面まとめて測る（1 文字の見かけ角 / 枠からのはみ出し。⚠ 大きさ・文言を触ったら通す）'
                             Out = $null }

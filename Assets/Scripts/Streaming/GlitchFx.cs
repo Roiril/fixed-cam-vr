@@ -40,8 +40,12 @@ namespace FixedCamVr.Streaming
         /// <summary>このランで乱れが起きた回数（テレメトリ用）。</summary>
         public int Count => _esc.Count;
 
-        /// <summary>大きくなり具合 0..1（テレメトリ用。1 回目は 0）。</summary>
-        public float Escalation01 => _esc.Progress01;
+        /// <summary>
+        /// いまどれだけ粗いか 0..1（テレメトリ用。1 回目は 0）。
+        /// ⚠ <b>回数の進みではなく、実際に掛かっている曲線の値</b>
+        /// （序盤〜中盤はほとんど 0 のまま — それが設計）。
+        /// </summary>
+        public float Escalation01 => _esc.Curve01;
 
         /// <summary>
         /// 乱れの音に掛ける倍率。<b>読むのは <c>ShowSoundDirector</c> だけ</b> —
