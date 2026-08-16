@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using FixedCamVr.Streaming;
 using TMPro;
 using UnityEngine;
@@ -67,8 +67,22 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>面の幅 (m)。1.5m 先で 0.76m ＝ <b>見かけ 28°</b>。</summary>
         private const float PanelW = 0.76f;
-        /// <summary>面の高さ (m)。1.5m 先で 0.26m ＝ 見かけ 10°。</summary>
-        private const float PanelH = 0.26f;
+        /// <summary>
+        /// 面の高さ (m)。1.5m 先で 0.32m ＝ 見かけ 12°。
+        /// ⚠ <b>0.26 → 0.32 に伸ばした</b>（2026-08-16・<c>canon/LEDGER.md</c> 0058）。
+        /// 下段（報告の押し方・ゲージ）が入ったため。最悪は**上段 2 行 ＋ 下段 2 行**で、
+        /// 収まるかは絵でしか分からない（<c>menu comms-preview</c> の <c>mark_holding.png</c>）。
+        /// </summary>
+        private const float PanelH = 0.32f;
+
+        /// <summary>上段（上司の文面）が使う高さの割合。残りが下段。</summary>
+        private const float BodyShare = 0.60f;
+
+        /// <summary>上段と下段の境目（面のローカル y）。</summary>
+        private const float HintBandTopY = PanelH * (0.5f - BodyShare);
+
+        /// <summary>上段の中心（面のローカル y）。<see cref="SetNotice"/> が文面の重心をここへ運ぶ。</summary>
+        private const float BodyCenterY = (HintBandTopY + PanelH * 0.5f) * 0.5f;
         /// <summary>縁の張り出し (m)。地より一回り大きい面を裏に置いて枠に見せる。</summary>
         private const float BezelM = 0.012f;
 
@@ -86,6 +100,12 @@ namespace FixedCamVr.Diagnostics
         /// いまは <see cref="HmdTextStyle"/> が距離から逆算する。
         /// </summary>
         private static float TextScale => HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, DistanceM, FontSize);
+
+        /// <summary>
+        /// 下段の拡大率。<b>補助の段</b>（1.5°）— 主役は上司の文面で、こちらは操作の銘板。
+        /// <see cref="HmdTextStyle"/> の「補助は報告の面の見出しだけ」という但し書きが指すのがここ。
+        /// </summary>
+        private static float HintScale => HmdTextStyle.MeshScale(HmdTextStyle.MinorDeg, DistanceM, FontSize);
 
         // ---- 追従（`ScreenAnchor` / `TitleScreen` と同じ値。片方だけ変えない）----
         private const float YawDeadzoneDeg = 0.5f;
@@ -144,6 +164,14 @@ namespace FixedCamVr.Diagnostics
         private Material? _bezelMat;
         private Mesh? _panelMesh;
         private TMP_Text? _text;
+        private TMP_Text? _hint;
+        // 報告の長押しの状態（`OvrControllerBridge` が毎フレーム push）。
+        private float _markProgress;
+        private bool _markConfirming;
+        // 左コントローラの状態。⚠ **繋がっていなければ押し方を出さない**（嘘になる）。
+        private bool _leftConnected = true;
+        private bool _leftTracked = true;
+        private string _hintBody = "";
         private bool _yawSeeded;
         // 報告の縁を取るために、直前に見た回数を覚えておく（ShowControlClient が真実源）。
         private int _lastMarkCount;
@@ -165,6 +193,9 @@ namespace FixedCamVr.Diagnostics
         /// <summary>直近に書いた枠の開き（0 = 畳まれている / 1 = 開き切り）。「画に出た」側の観測。</summary>
         public float AppliedOpen { get; private set; }
 
+        /// <summary>直近に書いた枠の丈（0 = 下段だけ / 1 = 文面が入る高さ）。「画に出た」側の観測。</summary>
+        public float AppliedBody { get; private set; }
+
         /// <summary>いま画に出ている文字数。<b>打鍵音はここから鳴る</b>ので、音の証拠でもある。</summary>
         public int VisibleChars { get; private set; }
 
@@ -185,6 +216,40 @@ namespace FixedCamVr.Diagnostics
         /// <c>OvrControllerBridge</c>（Streaming / Diagnostics から OVR を触らない規約）。
         /// </summary>
         public int PulseCount { get; private set; }
+
+        /// <summary>いま下段に出している文字（テスト・診断用）。</summary>
+        public string HintBody => _hintBody;
+
+        /// <summary>左コントローラが繋がっているか（テレメトリ用）。</summary>
+        public bool LeftConnected => _leftConnected;
+
+        /// <summary>左コントローラの位置が取れているか（テレメトリ用。人形の左腕が動く条件）。</summary>
+        public bool LeftTracked => _leftTracked;
+
+        /// <summary>
+        /// 報告の長押しの状態を反映する。<c>OvrControllerBridge</c> が
+        /// <c>VisitorMarkHoldLogic</c> の値を毎フレーム push する。
+        ///
+        /// ⚠ <b>押している最中は面が開く</b>（<see cref="CommsPanelLogic.SetGuideWanted"/>）。
+        /// 手元に面が無くなったので、押した手応えを画で返せるのはここだけ。
+        /// </summary>
+        public void SetMarkState(float progress01, bool confirming)
+        {
+            _markProgress = Mathf.Clamp01(progress01);
+            _markConfirming = confirming;
+        }
+
+        /// <summary>
+        /// 左コントローラの状態を反映する。<b>繋がっていなければ押し方を出さない</b> —
+        /// 押せないボタンの案内は嘘になる。
+        /// ⚠ <paramref name="positionValid"/> はこの面の見え方には効かない（面は頭に追従する）。
+        /// 観測（<c>ctrlL</c>）と、人形の左腕が動いているかの手掛かりのために受け取る。
+        /// </summary>
+        public void SetControllerState(bool connected, bool positionValid)
+        {
+            _leftConnected = connected;
+            _leftTracked = positionValid;
+        }
 
         /// <summary>直近に届いた連絡の種類（テレメトリ用。まだ 1 通も来ていなければ None）。</summary>
         public CommsNotice LastNotice { get; private set; } = CommsNotice.None;
@@ -293,6 +358,13 @@ namespace FixedCamVr.Diagnostics
             });
             if (next != CommsNotice.None) Deliver(next);
 
+            // ⚠ **押している最中は面を開いたままにする**（`canon/LEDGER.md` 0058）。
+            //   本編の外では開かない — 導入・終幕に手元の案内が浮くと世界が壊れる
+            //   （元の面が queue 3000 で覆いに潰されていたのと同じ意図）。
+            bool inRun = runDirector != null && runDirector.Phase == ShowPhase.Run;
+            _logic.SetGuideWanted(inRun && _leftConnected
+                                  && (_markProgress > 0f || _markConfirming));
+
             _logic.Tick(Time.unscaledDeltaTime);
             Apply(_logic.Weights);
         }
@@ -355,6 +427,30 @@ namespace FixedCamVr.Diagnostics
                                           flat, RenderQueue, out _panelMat);
             }
 
+            // ---- 下段（報告の押し方・ゲージ）。**2026-08-16 にコントローラの先からここへ移した**
+            //      （`canon/LEDGER.md` 0058）。上段より下・小さく・左揃え。
+            //      ⚠ ゲージと見出しの大きさはリッチテキストで組む（`VisitorMarkGuidance`）。
+            var hintGo = new GameObject("CommsHint");
+            hintGo.transform.SetParent(rootGo.transform, worldPositionStays: false);
+            var hintTmp = hintGo.AddComponent<TextMeshPro>();
+            hintTmp.font = jp;
+            hintTmp.alignment = TextAlignmentOptions.TopLeft;
+            hintTmp.fontSize = FontSize;
+            hintTmp.enableWordWrapping = false;
+            hintTmp.richText = true;
+            hintTmp.color = HmdTextStyle.Ink;
+            var hintRt = (RectTransform)hintGo.transform;
+            float hintScale = HintScale;
+            float hintBandH = PanelH * (1f - BodyShare) * 0.9f;
+            hintRt.sizeDelta = new Vector2(PanelW * 0.92f / hintScale, hintBandH / hintScale);
+            hintGo.transform.localScale = Vector3.one * hintScale;
+            // 下段の帯の**上端**へ寄せる（枠は中心が原点なので、帯の高さの半分だけ下げる）。
+            hintGo.transform.localPosition = new Vector3(0f, HintBandTopY - hintBandH * 0.5f, 0f);
+            var hintOverlay = Shader.Find("TextMeshPro/Distance Field Overlay");
+            if (hintOverlay != null) hintTmp.fontMaterial.shader = hintOverlay;
+            hintTmp.fontMaterial.renderQueue = GlyphQueue;
+            _hint = hintTmp;
+
             var textGo = new GameObject("CommsText");
             textGo.transform.SetParent(rootGo.transform, worldPositionStays: false);
             var tmp = textGo.AddComponent<TextMeshPro>();
@@ -377,7 +473,7 @@ namespace FixedCamVr.Diagnostics
             //   ⇒ **折り返し幅も scale で割る**。ここを固定値にすると、字の大きさを直したときに
             //     折り返しだけ取り残されて面からはみ出す。
             float scale = TextScale;
-            rt.sizeDelta = new Vector2(PanelW * 0.92f / scale, PanelH * 0.85f / scale);
+            rt.sizeDelta = new Vector2(PanelW * 0.92f / scale, PanelH * BodyShare * 0.9f / scale);
             textGo.transform.localScale = Vector3.one * scale;
             var overlay = Shader.Find("TextMeshPro/Distance Field Overlay");
             if (overlay != null) tmp.fontMaterial.shader = overlay;
@@ -411,7 +507,8 @@ namespace FixedCamVr.Diagnostics
             //    ぶんだけ本文が上へ寄る（実測 33px）。組み上がったメッシュの実寸から測る。
             float scale = TextScale;
             Bounds ink = tmp.textBounds;
-            tmp.transform.localPosition = new Vector3(0f, -ink.center.y * scale, 0f);
+            // ⚠ 運ぶ先は面の中心ではなく**上段の中心**（下段に報告の押し方が居るため）。
+            tmp.transform.localPosition = new Vector3(0f, BodyCenterY - ink.center.y * scale, 0f);
             // ⚠ ここは**全文が出ている状態**（上で maxVisibleCharacters = int.MaxValue して
             //   組み直した直後）なので、`isVisible` が「その字が絵を持つか」を表す。
             //   ここでしか測れない（下で 0 に戻すと、以後は全部 false になる）。
@@ -507,36 +604,68 @@ namespace FixedCamVr.Diagnostics
                 _lastShown = shown;
                 VisibleChars = shown;
             }
+            ApplyHint(Mathf.Clamp01(w.hint));
             float pa = Mathf.Clamp01(w.panel);
+            // 丈: 0 = 下段だけの細い受信票 / 1 = 文面が入る高さ。**下端を固定して伸び縮みする。**
+            float hk = Mathf.Lerp(1f - BodyShare, 1f, Mathf.Clamp01(w.body));
+            AppliedBody = Mathf.Clamp01(w.body);
             // Unlit/Color は alpha を持たないので、明るさで濃さを出す（暗い場所なので十分）。
             if (_panelRenderer != null && _panelMat != null)
             {
                 _panelMat.color = new Color(0.050f * pa, 0.042f * pa, 0.038f * pa, 1f);
                 _panelRenderer.enabled = pa > 0.01f && AppliedOpen > 0.001f;
-                SetOpen(_panelRenderer.transform, _panelW, AppliedOpen);
+                SetFrame(_panelRenderer.transform, _panelW, PanelH, AppliedOpen, hk);
             }
             if (_bezelRenderer != null && _bezelMat != null)
             {
                 // 縁は地より明るい。ここだけが「面がある」ことを伝える。
                 _bezelMat.color = new Color(0.150f * pa, 0.110f * pa, 0.085f * pa, 1f);
                 _bezelRenderer.enabled = pa > 0.01f && AppliedOpen > 0.001f;
-                SetOpen(_bezelRenderer.transform, _bezelW, AppliedOpen);
+                SetFrame(_bezelRenderer.transform, _bezelW, PanelH + BezelM * 2f,
+                         AppliedOpen, hk);
             }
         }
 
         /// <summary>
-        /// 枠を<b>左端を固定したまま</b>右へ開く（0 = 左端に畳まれている / 1 = 開き切り）。
+        /// 下段（報告の押し方・ゲージ）を書く。<b>文言は
+        /// <see cref="VisitorMarkGuidance"/> のまま</b>（コントローラの先に出していたときと同じ）。
         ///
-        /// 面のメッシュは中心が原点（頂点 ±0.5）なので、幅を縮めると<b>両側から</b>縮む。
-        /// 左端を残すには、縮めたぶんの半分だけ左へ寄せる ＝
-        /// <c>x = -(w/2)(1-k)</c>、<c>scale.x = w·k</c>。これで左端は常に <c>-w/2</c> に居る。
+        /// ⚠ 左コントローラが繋がっていなければ<b>何も出さない</b> — 押せないボタンの案内は嘘になる。
+        /// ⚠ 変わったときだけ <c>SetText</c> する（毎フレームの GC を作らない）。
         /// </summary>
-        private static void SetOpen(Transform quad, float fullW, float k)
+        private void ApplyHint(float alpha)
         {
-            Vector3 s = quad.localScale;
-            quad.localScale = new Vector3(fullW * k, s.y, s.z);
+            if (_hint == null) return;
+            string body = _leftConnected
+                ? VisitorMarkGuidance.Line(_markProgress, _markConfirming)
+                : "";
+            if (body != _hintBody)
+            {
+                _hint.SetText(body);
+                _hintBody = body;
+            }
+            _hint.alpha = alpha;
+            bool on = alpha > 0.002f && body.Length > 0;
+            if (_hint.gameObject.activeSelf != on) _hint.gameObject.SetActive(on);
+        }
+
+        /// <summary>
+        /// 枠を<b>左端と下端を固定したまま</b>開く。
+        /// <paramref name="kx"/> = 横の開き（0 = 左端に畳まれている / 1 = 開き切り）、
+        /// <paramref name="ky"/> = 丈（下段だけの高さ 〜 文面が入る高さ）。
+        ///
+        /// 面のメッシュは中心が原点（頂点 ±0.5）なので、縮めると<b>両側から</b>縮む。
+        /// 端を残すには、縮めたぶんの半分だけそちらへ寄せる。
+        /// ⚠ 丈が下端固定なのは、<b>下段（報告の押し方）が動かないため</b>。
+        /// 上へ伸びる先が、連絡の文面が入る場所になる。
+        /// </summary>
+        private static void SetFrame(Transform quad, float fullW, float fullH, float kx, float ky)
+        {
+            quad.localScale = new Vector3(fullW * kx, fullH * ky, 1f);
+            // 左端は常に -w/2、下端は常に -h/2 に居る（縮めたぶんの半分だけ寄せる）。
             Vector3 p = quad.localPosition;
-            quad.localPosition = new Vector3(-(fullW * 0.5f) * (1f - k), p.y, p.z);
+            quad.localPosition = new Vector3(-(fullW * 0.5f) * (1f - kx),
+                                             -(fullH * 0.5f) * (1f - ky), p.z);
         }
     }
 }

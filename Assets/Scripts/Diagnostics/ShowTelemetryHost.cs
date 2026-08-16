@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Text;
 using FixedCamVr.Streaming;
@@ -73,8 +73,8 @@ namespace FixedCamVr.Diagnostics
         private OutroDirector? _outro;
         private OutroReport? _report;
         private CommsPanel? _comms;
-        // 手元の 2 面。**コントローラの位置が取れているか**の唯一の観測点（下の ctrlL / ctrlR）。
-        private VisitorMarkPanel? _markPanel;
+        // **コントローラの位置が取れているか**の唯一の観測点（下の ctrlL / ctrlR）。
+        // 左は連絡の面が受け取っている（報告の押し方をそこへ出すため）。
         private ControllerGuidePanel? _guidePanel;
         private TitleScreen? _title;
         private TimelineDirector? _timeline;
@@ -200,7 +200,6 @@ namespace FixedCamVr.Diagnostics
             if (_outro == null) _outro = FindObjectOfType<OutroDirector>();
             if (_report == null) _report = FindObjectOfType<OutroReport>();
             if (_comms == null) _comms = FindObjectOfType<CommsPanel>();
-            if (_markPanel == null) _markPanel = FindObjectOfType<VisitorMarkPanel>();
             if (_guidePanel == null) _guidePanel = FindObjectOfType<ControllerGuidePanel>();
             if (_title == null) _title = FindObjectOfType<TitleScreen>();
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
@@ -861,10 +860,10 @@ namespace FixedCamVr.Diagnostics
             //   2026-08-16 まで接続しか見ておらず、位置が無効なコントローラのアンカーが
             //   トラッキング原点（床の中心）へ飛ぶせいで、面が「遠くに小さく」出ていた。
             //   実機でしか起きず、画にも音にも出ないので、**ここが唯一の手掛かり**。
-            _sb.Append(" ctrlL=").Append(ControllerState(_markPanel == null ? null
-                                                         : (bool?)_markPanel.ControllerConnected,
-                                                         _markPanel == null ? null
-                                                         : (bool?)_markPanel.ControllerTracked));
+            _sb.Append(" ctrlL=").Append(ControllerState(_comms == null ? null
+                                                         : (bool?)_comms.LeftConnected,
+                                                         _comms == null ? null
+                                                         : (bool?)_comms.LeftTracked));
             _sb.Append(" ctrlR=").Append(ControllerState(_guidePanel == null ? null
                                                          : (bool?)_guidePanel.ControllerConnected,
                                                          _guidePanel == null ? null

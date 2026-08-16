@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using FixedCamVr.Diagnostics;
 using FixedCamVr.Input;
 using FixedCamVr.Streaming;
@@ -25,7 +25,8 @@ namespace FixedCamVr.OvrBridge
     ///
     /// <b>左は体験者の手。読むのは X / Y だけ</b>（2026-08-15・<c>canon/LEDGER.md</c> 0042 / 0050）:
     /// どちらを押しても同じで、<b>2 秒長押し</b>で異変の報告になる（<see cref="VisitorMarkHoldLogic"/>）。
-    /// 押し方と進捗は左コントローラに追従する <see cref="VisitorMarkPanel"/> が出す。
+    /// 押し方と進捗は<b>上司からの連絡の面（<see cref="CommsPanel"/>）の下段</b>が出す
+    /// （2026-08-16・<c>canon/LEDGER.md</c> 0058。コントローラに追従する面は廃止した）。
     /// スティック・トリガー・グリップ・A/B は左からは 1 ビットも読まない。
     /// HMD 非装着→SignalLostFx / OS recenter→CourseFrame.MarkNeedsReRegistration のパッシブ系は現状維持。
     /// </summary>
@@ -55,10 +56,6 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("スタッフ用コントローラ操作ガイドパネル（右コントローラに追従）。現在モードの操作説明を常時表示。" +
                  "null でも全機能は従来通り動く（ガイドが出ないだけ）。")]
         [SerializeField] private ControllerGuidePanel? guidePanel;
-
-        [Tooltip("体験者の報告ボタンの面（左コントローラに追従）。押し方と長押しゲージを出す。" +
-                 "null でも報告そのものは動く（面が出ないだけ）。")]
-        [SerializeField] private VisitorMarkPanel? markPanel;
 
         [Header("Haptics")]
         [Tooltip("右コントローラの触覚フィードバック（[Streaming] 上・ControllerHaptics）。null でも全機能は従来通り動く" +
@@ -94,7 +91,8 @@ namespace FixedCamVr.OvrBridge
         // OS recenter 購読済みフラグ（OVRManager.display は初期化順で null のことがあるためリトライする）。
         private bool _recenterSubscribed;
 
-        [Tooltip("上司からの連絡の面。届いた瞬間に左コントローラを震わせるためだけに読む。")]
+        [Tooltip("上司からの連絡の面。届いた瞬間の振動と、報告の押し方・ゲージの出し先。" +
+                 "null でも報告そのものは動く（画に出ないだけ）。")]
         [SerializeField] private CommsPanel? comms;
         private int _lastCommsPulse;
 
@@ -103,10 +101,6 @@ namespace FixedCamVr.OvrBridge
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
 
             if (titleScreen == null) titleScreen = FindObjectOfType<TitleScreen>();
-
-            // 体験者の報告ボタンの面。⚠ **ここで 1 度だけ探す**（毎フレーム FindObjectOfType を
-            // 走らせない）。シーンを焼いていなければ見つからず、報告そのものは面が無くても動く。
-            if (markPanel == null) markPanel = FindObjectOfType<VisitorMarkPanel>();
 
             // 導入演出は「HMD を被った状態で」始める。Streaming asmdef は OVR を参照しない規約なので、
             // Assembly-CSharp 側のここから判定を差し込む（未設定なら被っている扱いで従来どおり動く）。
@@ -289,14 +283,17 @@ namespace FixedCamVr.OvrBridge
                 showControl?.RecordVisitorMark();
                 haptics?.LeftMark();   // 返すのは「受け取った」の 1 種類だけ
             }
-            if (markPanel != null)
+            // 押し方とゲージは **[Comms] の下段**へ出す（2026-08-16・canon/LEDGER.md 0058）。
+            // 左コントローラに追従する面は廃止した。
+            // ⚠ 位置の有効性はこの面の見え方には効かない（頭に追従する）が、観測（ctrlL）と
+            //    人形の左腕が動いているかの手掛かりのために一緒に渡す。
+            if (comms != null)
             {
-                // ⚠ 上の右と同じ理由で**接続と位置を別々に**見る（位置が無効なら面は出さない）。
                 bool lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
                 bool lTracked = lConnected
                                 && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
-                markPanel.SetControllerState(lConnected, lTracked);
-                markPanel.SetMarkState(_markHold.Progress01, _markHold.Confirming);
+                comms.SetControllerState(lConnected, lTracked);
+                comms.SetMarkState(_markHold.Progress01, _markHold.Confirming);
             }
             // 長押しの手応えも左へ返す（右の HoldTick とは別の時間軸）。
             // 進捗 1 で HoldTick は止まり、代わりに上の LeftMark が鳴る。

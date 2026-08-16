@@ -130,6 +130,22 @@ namespace FixedCamVr.Streaming.EditorTools
                     Shoot(cam, Path.Combine(dir, $"notice_{notice}.png"));
                 }
 
+                // ---- 報告の長押し中（下段が 2 行になる）----
+                // ⚠ **これは絵でしか確かめられない。** 見出しがゲージの左上に小さく座っているか
+                //    （2026-08-15 の赤入れ）と、2 行が下段の帯に収まっているか。
+                //    連絡が無いときの姿（`Guide`）もここで一緒に見える。
+                Disable(logic);
+                panel.SetControllerState(true, true);
+                panel.SetMarkState(0.6f, confirming: false);
+                logic.GetType().GetMethod("SetGuideWanted")!.Invoke(logic, new object[] { true });
+                PlaceStraightAhead(root, tmp, dist);
+                // ⚠ **開き切るまで進める。** 0.1 秒では枠がまだ開いている途中で、下段も
+                //    出ていない（`HintInAt` は開きの 75% から）＝ 空の細い枠が写るだけになる。
+                Step(logic, apply, panel, inSec + 0.1f);
+                Shoot(cam, Path.Combine(dir, "mark_holding.png"));
+                panel.SetMarkState(0f, confirming: false);
+                logic.GetType().GetMethod("SetGuideWanted")!.Invoke(logic, new object[] { false });
+
                 // ---- 出て、読ませて、引くまでを 1 コマずつ（いちばん重い ③ で撮る）----
                 Disable(logic);
                 ApplyNow(apply, panel, logic);

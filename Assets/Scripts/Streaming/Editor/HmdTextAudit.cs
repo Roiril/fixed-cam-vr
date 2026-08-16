@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -43,6 +43,7 @@ namespace FixedCamVr.Streaming.EditorTools
             public float FixedDistanceM;
             public float TierDeg = HmdTextStyle.BodyDeg;
             public string? Probe;              // 実行時にしか入らない面へ流し込む最長の想定文
+            public string? Field;              // TMP を持つ private フィールド名（面が 2 つ持つとき）
             public bool BuildsItsOwnText;      // Awake で TMP を組む面（Edit モードでは走っていない）
         }
 
@@ -53,8 +54,15 @@ namespace FixedCamVr.Streaming.EditorTools
             new Surface { Name = "終幕の報告", Type = typeof(OutroReport),
                           DistanceField = "distanceM", BuildsItsOwnText = true,
                           Probe = OutroReportText.Compose(3) },
+            // ⚠ この面は TMP を **2 つ**持つ（上段 = 文面 / 下段 = 報告の押し方）。
+            //    フィールドを名指ししないと、先に組んだ方が測られて「狙いと違う」と誤って落ちる。
             new Surface { Name = "上司からの連絡", Type = typeof(CommsPanel),
-                          FixedDistanceM = 1.5f, BuildsItsOwnText = true },
+                          FixedDistanceM = 1.5f, BuildsItsOwnText = true, Field = "_text" },
+            new Surface { Name = "上司からの連絡（下段）", Type = typeof(CommsPanel),
+                          FixedDistanceM = 1.5f, BuildsItsOwnText = true, Field = "_hint",
+                          TierDeg = HmdTextStyle.MinorDeg,
+                          // 長押し中の 2 行（ゲージが 10 目盛でいちばん長い）。
+                          Probe = VisitorMarkGuidance.Line(0.6f, confirming: false) },
             new Surface { Name = "ステータス", Type = typeof(StatusHud),
                           DistanceField = "distance",
                           // 実行時のいちばん長い行（異常の 1 行目）。ここが枠に収まらないと現場で切れる。
@@ -70,13 +78,9 @@ namespace FixedCamVr.Streaming.EditorTools
                           // ⚠ `ControllerGuidePanel.NormalBody` の写し（private const なので参照できない）。
                           Probe = "A：タイトルを閉じて始める\nB：ステータス表示を切り替える\n"
                                 + "グリップ2秒：新しい体験者にする\nトリガー2秒：位置合わせを開始" },
-            new Surface { Name = "報告ボタンの面", Type = typeof(VisitorMarkPanel),
-                          FixedDistanceM = HandDistanceM,
-                          Probe = VisitorMarkGuidance.IdleLine },
-            // 長押し中も撮る（見出しがゲージの左上に小さく座っているか ＝ 2026-08-15 の赤入れ）。
-            new Surface { Name = "報告ボタンの面（長押し中）", Type = typeof(VisitorMarkPanel),
-                          FixedDistanceM = HandDistanceM,
-                          Probe = VisitorMarkGuidance.Line(0.6f, confirming: false) },
+            // ⚠ 報告の押し方とゲージは **[Comms] の下段**（2026-08-16・canon/LEDGER.md 0058）。
+            //    面としては上の「上司からの連絡」と同じ実体なので、ここでは別行を持たない。
+            //    下段が枠に収まっているかは `menu comms-preview` の絵で見る（4 文面 × 長押し中）。
             // ⚠ 黒は 0.3m だが**文字は 1.5m の別の面**（`ShowEndingFader.MessageDistanceM`）。
             //    0.3m は輻輳の負担が大きく、両眼で読む文字を置く距離ではない。
             new Surface { Name = "黒の上の 1 行", Type = typeof(ShowEndingFader),
@@ -112,7 +116,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     // Edit モードでは Awake が走っていないので、自分で TMP を組む面は明示的に起こす。
                     if (s.BuildsItsOwnText) Invoke(comp, "Awake", spawned, comp.gameObject);
 
-                    TMP_Text? tmp = FindText(comp);
+                    TMP_Text? tmp = FindText(comp, s.Field);
                     if (tmp == null)
                     {
                         sb.Append($"  {s.Name,-16} — TMP を組めていません（実機でも 1 文字も出ません）\n");
@@ -310,9 +314,11 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         // 面が持つ TMP。SerializeField の `text` があればそれ、無ければ子から拾う。
-        private static TMP_Text? FindText(MonoBehaviour comp)
+        private static TMP_Text? FindText(MonoBehaviour comp, string? fieldName = null)
         {
-            FieldInfo? f = comp.GetType().GetField("text", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? f = comp.GetType().GetField(fieldName ?? "text",
+                                                   BindingFlags.Instance | BindingFlags.NonPublic);
+            if (fieldName != null) return f?.GetValue(comp) as TMP_Text;
             if (f?.GetValue(comp) is TMP_Text t && t != null) return t;
             return comp.GetComponentInChildren<TMP_Text>(includeInactive: true);
         }

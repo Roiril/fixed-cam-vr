@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 
 namespace FixedCamVr.Streaming
 {
@@ -15,6 +15,11 @@ namespace FixedCamVr.Streaming
         Hold,
         /// <summary>引いている途中。</summary>
         Out,
+        /// <summary>
+        /// <b>連絡は無いが、報告の手元表示のために開いている</b>（<c>canon/LEDGER.md</c> 0058）。
+        /// 枠は開き切っていて、上司からの文面は 1 字も出ていない。
+        /// </summary>
+        Guide,
     }
 
     /// <summary>連絡の面へ配る値（すべて 0..1）。</summary>
@@ -28,6 +33,19 @@ namespace FixedCamVr.Streaming
         public float open;
         /// <summary>文字の出た割合（0 = 1 字も出ていない / 1 = 全部出た）。</summary>
         public float reveal;
+
+        /// <summary>
+        /// 下段（報告の押し方・ゲージ）の不透明度。<b>上段の文面とは別に動く</b> —
+        /// 枠が開き切ってから出て、引くときは文面と一緒に消える。
+        /// </summary>
+        public float hint;
+
+        /// <summary>
+        /// 枠の<b>丈</b>。0 = 下段だけの細い受信票 / 1 = 上司の文面が入る高さまで伸びている。
+        /// ⚠ 下端を固定して伸び縮みする（実行体の <c>SetFrame</c>）。
+        /// 連絡が無いのに文面のぶんの丈があると、<b>大きな空の箱</b>になる。
+        /// </summary>
+        public float body;
 
         public static CommsWeights Hidden => new CommsWeights();
     }
@@ -88,9 +106,18 @@ namespace FixedCamVr.Streaming
         /// <summary>地の濃さが乗り切る時点（<see cref="InSec"/> に対する割合）。開き切る前に濃さは決まる。</summary>
         public const float PanelInkAt = 0.35f;
 
+        /// <summary>
+        /// 下段が出始める時点（<see cref="InSec"/> に対する割合）。<b>枠が開き切ってから</b>。
+        /// 開いている途中に出すと、まだ枠の無い所へ字がはみ出す。
+        /// </summary>
+        public const float HintInAt = 0.75f;
+
         private CommsStage _stage = CommsStage.Off;
         private float _elapsed;
         private float _typeSec = MinTypeSec;
+        private bool _guideWanted;
+        // 段へ入った瞬間の開き / 丈。**そこから動かす**ので、どの段へ移っても飛ばない。
+        private float _openFrom, _bodyFrom;
 
         public CommsStage Stage => _stage;
 
@@ -109,11 +136,37 @@ namespace FixedCamVr.Streaming
         /// </param>
         public void Begin(int charCount)
         {
-            _stage = CommsStage.In;
-            _elapsed = 0f;
+            // ⚠⚠ **いまの姿から動かす**（`canon/LEDGER.md` 0058）。②の連絡は「押した瞬間」に届くので、
+            //    開きを 0 から張り直すと**押し終わるたびに枠が畳まれて開き直る**（毎回かならず起きる吃り）。
+            //    報告の手元表示で既に開いていれば、横は動かず**丈だけが伸びて文面の場所ができる**。
+            EnterStage(CommsStage.In);
             _typeSec = charCount <= 0
                 ? 0f
                 : Clamp(charCount / CharsPerSec, MinTypeSec, MaxTypeSec);
+        }
+
+        /// <summary>段を移る。<b>いまの開きと丈を覚えてから</b>移る（そこから動かすので飛ばない）。</summary>
+        private void EnterStage(CommsStage next)
+        {
+            CommsWeights w = Weights;
+            _openFrom = w.open;
+            _bodyFrom = w.body;
+            _stage = next;
+            _elapsed = 0f;
+        }
+
+        /// <summary>
+        /// 報告の手元表示を出したいか（押している最中・余韻の最中）。
+        /// <b>連絡が走っている最中は割り込まない</b> — 出したいままにしておけば、
+        /// 読ませ終わったあとに <see cref="CommsStage.Guide"/> で開いたまま残る。
+        /// </summary>
+        public void SetGuideWanted(bool wanted)
+        {
+            _guideWanted = wanted;
+            if (wanted && (_stage == CommsStage.Off || _stage == CommsStage.Out))
+                EnterStage(CommsStage.Guide);
+            else if (!wanted && _stage == CommsStage.Guide)
+                EnterStage(CommsStage.Out);
         }
 
         /// <summary>畳む（ラン開始・本編を出た・中止）。</summary>
@@ -121,6 +174,8 @@ namespace FixedCamVr.Streaming
         {
             _stage = CommsStage.Off;
             _elapsed = 0f;
+            _guideWanted = false;
+            _openFrom = _bodyFrom = 0f;
         }
 
         /// <summary>時間を進める。</summary>
@@ -132,16 +187,22 @@ namespace FixedCamVr.Streaming
             switch (_stage)
             {
                 case CommsStage.In:
-                    if (_elapsed >= InSec) { _stage = CommsStage.Type; _elapsed = 0f; }
+                    if (_elapsed >= InSec) EnterStage(CommsStage.Type);
                     break;
                 case CommsStage.Type:
-                    if (_elapsed >= _typeSec) { _stage = CommsStage.Hold; _elapsed = 0f; }
+                    if (_elapsed >= _typeSec) EnterStage(CommsStage.Hold);
                     break;
                 case CommsStage.Hold:
-                    if (_elapsed >= HoldSec) { _stage = CommsStage.Out; _elapsed = 0f; }
+                    // 読ませ終わったら引く。⚠ ただし**まだ押している最中なら開いたまま残す** —
+                    //    引いてすぐ開き直すのは、体験者から見れば 1 度の操作の途中のちらつき。
+                    if (_elapsed >= HoldSec)
+                        EnterStage(_guideWanted ? CommsStage.Guide : CommsStage.Out);
                     break;
                 case CommsStage.Out:
                     if (_elapsed >= OutSec) Disable();
+                    break;
+                case CommsStage.Guide:
+                    // 時間では終わらない。抜けるのは SetGuideWanted(false) か Begin か Disable。
                     break;
             }
         }
@@ -155,15 +216,21 @@ namespace FixedCamVr.Streaming
                 {
                     case CommsStage.In:
                     {
-                        // 枠は左端から右へ開く。⚠ **地の濃さは先に決まる**（開きながら明るくなると
-                        //    「2 つのことが起きている」に見える。動いているのは幅だけにする）。
-                        float k = Clamp01(_elapsed / InSec);
+                        // 枠は左端から右へ開き、**同時に文面のぶんだけ丈が伸びる**。
+                        // ⚠ 動かすのは「いまの姿から」（`_openFrom` / `_bodyFrom`）。報告の手元表示で
+                        //    既に開いていれば横は 1 のままで、丈だけが伸びる ＝ 横の吃りが出ない。
+                        // ⚠ **地の濃さは先に決まる**（開きながら明るくなると「2 つのことが
+                        //    起きている」に見える。動いているのは形だけにする）。
+                        float k = Smooth(Clamp01(_elapsed / InSec));
                         return new CommsWeights
                         {
-                            panel = Smooth(Clamp01(k / PanelInkAt)),
+                            panel = Smooth(Clamp01(_elapsed / InSec / PanelInkAt)),
                             glyph = 1f,
-                            open = Smooth(k),
+                            open = Lerp(_openFrom, 1f, k),
+                            body = Lerp(_bodyFrom, 1f, k),
                             reveal = 0f,
+                            // 下段は**枠が開き切ってから**出る（開いている途中に出すと枠の外へはみ出す）。
+                            hint = Smooth(Clamp01((_elapsed / InSec - HintInAt) / (1f - HintInAt))),
                         };
                     }
                     case CommsStage.Type:
@@ -171,10 +238,27 @@ namespace FixedCamVr.Streaming
                         // ⚠ **打つところは滑らかにしない。** ここを smoothstep で均すと
                         //    打鍵の間隔が伸び縮みして「機械が打っている」に見えない。
                         float p = _typeSec <= 0f ? 1f : Clamp01(_elapsed / _typeSec);
-                        return new CommsWeights { panel = 1f, glyph = 1f, open = 1f, reveal = p };
+                        return new CommsWeights
+                        { panel = 1f, glyph = 1f, open = 1f, body = 1f, reveal = p, hint = 1f };
                     }
                     case CommsStage.Hold:
-                        return new CommsWeights { panel = 1f, glyph = 1f, open = 1f, reveal = 1f };
+                        return new CommsWeights
+                        { panel = 1f, glyph = 1f, open = 1f, body = 1f, reveal = 1f, hint = 1f };
+                    case CommsStage.Guide:
+                    {
+                        // 枠は開いているが、**文面のぶんの丈は無い**（下段だけの細い受信票）。
+                        // 連絡を読ませ終わって戻ってきたときは、丈がここで縮む。
+                        float k = Smooth(Clamp01(_elapsed / InSec));
+                        return new CommsWeights
+                        {
+                            panel = 1f,
+                            glyph = 1f,
+                            open = Lerp(_openFrom, 1f, k),
+                            body = Lerp(_bodyFrom, 0f, k),
+                            reveal = 0f,
+                            hint = Smooth(Clamp01((_elapsed / InSec - HintInAt) / (1f - HintInAt))),
+                        };
+                    }
                     case CommsStage.Out:
                     {
                         float t = Clamp01(_elapsed / OutSec);
@@ -186,8 +270,10 @@ namespace FixedCamVr.Streaming
                         {
                             panel = 1f,
                             glyph = 1f - g,
-                            open = 1f - fold,
+                            open = (1f - fold) * _openFrom,
+                            body = _bodyFrom,     // 丈は畳むあいだ動かさない（横だけが閉じる）
                             reveal = 1f,
+                            hint = 1f - g,   // 下段も文面と一緒に消える（枠より先に）
                         };
                     }
                     default:
@@ -199,6 +285,8 @@ namespace FixedCamVr.Streaming
         private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);
 
         private static float Clamp(float v, float lo, float hi) => v < lo ? lo : (v > hi ? hi : v);
+
+        private static float Lerp(float a, float b, float t) => a + (b - a) * Clamp01(t);
 
         private static float Smooth(float t)
         {

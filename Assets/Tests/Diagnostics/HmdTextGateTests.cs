@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System.Collections.Generic;
 using System.Reflection;
 using NUnit.Framework;
@@ -127,9 +127,9 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         /// <summary>
-        /// ⚠⚠ <b>報告ボタンの面だけは門を通さない。</b> 2026-08-15 にユーザーがこの 1 面を名指しで
-        /// 求めた（<c>canon/LEDGER.md</c> 0050「コントローラーの少し上、少し奥に、小さいスクリーンを
-        /// 置いておいて、そこに、(X,Yで異変を報告) みたいに書いておいてほしい」）。
+        /// ⚠⚠ <b>上司からの連絡の面だけは門を通さない。</b> 体験者へ見せる面で、
+        /// <b>報告の押し方とゲージもここに出る</b>（2026-08-16・<c>canon/LEDGER.md</c> 0058 で
+        /// コントローラの先から移した。押し方の文言は 0050 でユーザーが名指しで求めたもの）。
         ///
         /// このテストは<b>門を足させないため</b>にある。上の 3 面と並べて読むと
         /// 「体験者の視界に文字を出さない」に反しているように見えるので、
@@ -137,14 +137,14 @@ namespace FixedCamVr.Diagnostics.Tests
         /// 足した瞬間、体験者には一生見えない面になる（しかも誰も気づかない）。
         /// </summary>
         [Test]
-        public void VisitorMarkPanel_IsNotGatedByStaffViewing()
+        public void CommsPanel_IsNotGatedByStaffViewing()
         {
-            var panel = Spawn<VisitorMarkPanel>();
+            var panel = Spawn<CommsPanel>();
 
             MethodInfo? gate = panel.GetType().GetMethod("StaffViewing",
                 BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(gate, Is.Null,
-                "報告ボタンの面は体験者に見せる（canon/LEDGER.md 0050）。StaffViewing の門を足さないこと");
+                "連絡の面は体験者に見せる（canon/LEDGER.md 0050 / 0058）。StaffViewing の門を足さないこと");
         }
 
         /// <summary>

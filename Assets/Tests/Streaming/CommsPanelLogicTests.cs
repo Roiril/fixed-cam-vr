@@ -139,6 +139,71 @@ namespace FixedCamVr.Streaming.Tests
                 "TypeAudioCue.VariantCount と tools/ingest-sounds.py の CUTS が食い違っている");
         }
 
+        /// <summary>
+        /// 報告の押し方は<b>この面の下段</b>に出る（`canon/LEDGER.md` 0058）。
+        /// 押している最中は面が開き、離せば引く。<b>上司の文面は 1 字も出ない。</b>
+        /// </summary>
+        [Test]
+        public void HoldingTheReportButton_OpensThePanel_WithoutAnyMessage()
+        {
+            var l = new CommsPanelLogic();
+            Assert.AreEqual(CommsStage.Off, l.Stage);
+
+            l.SetGuideWanted(true);
+            Assert.AreEqual(CommsStage.Guide, l.Stage);
+            Advance(l, 5f);
+            Assert.AreEqual(CommsStage.Guide, l.Stage, "時間では終わらないこと");
+            Assert.AreEqual(1f, l.Weights.open, 0.001f);
+            Assert.AreEqual(1f, l.Weights.hint, 0.001f, "下段が出ていること");
+            Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "上司の文面は 1 字も出ないこと");
+            Assert.AreEqual(0f, l.Weights.body, 0.001f,
+                "連絡が無いのに文面のぶんの丈があると、大きな空の箱になる");
+
+            l.SetGuideWanted(false);
+            Assert.AreEqual(CommsStage.Out, l.Stage);
+            Advance(l, CommsPanelLogic.OutSec + 0.2f);
+            Assert.AreEqual(CommsStage.Off, l.Stage);
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>押し終わった瞬間に届く②の連絡で、枠が開き直さない。</b>
+        /// 素直に In から始めると<b>押すたびに必ず</b>枠が畳まれて開き直る（毎回起きる吃り）。
+        /// 受信票はもう出ているので、装置は印字だけすればよい。
+        /// </summary>
+        [Test]
+        public void AMessageThatArrivesWhileHolding_DoesNotReopenTheFrame()
+        {
+            var l = new CommsPanelLogic();
+            l.SetGuideWanted(true);
+            Advance(l, 1f);
+
+            l.Begin(Chars);
+            // 横は開いたまま。動くのは**丈だけ**（文面の場所が上へ伸びる）。
+            Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠が畳まれて開き直していないこと");
+            Assert.AreEqual(0f, l.Weights.body, 0.02f, "丈はまだ伸び始めたところ");
+
+            Advance(l, CommsPanelLogic.InSec * 0.5f);
+            Assert.AreEqual(1f, l.Weights.open, 0.001f, "横は最後まで動かないこと");
+            Assert.Greater(l.Weights.body, 0.2f, "丈が伸びていること");
+
+            AdvanceUntil(l, CommsStage.Type);
+            Assert.AreEqual(1f, l.Weights.body, 0.001f, "印字を始めるときには丈が出ていること");
+        }
+
+        /// <summary>まだ押しているあいだは、読ませ終わっても引かずに開いたまま残る。</summary>
+        [Test]
+        public void AfterReading_ItStaysOpen_WhileStillHolding()
+        {
+            var l = Started();
+            l.SetGuideWanted(true);
+            AdvanceUntil(l, CommsStage.Hold);
+            Advance(l, CommsPanelLogic.HoldSec + 0.2f);
+            Assert.AreEqual(CommsStage.Guide, l.Stage, "押している間は引かないこと");
+
+            l.SetGuideWanted(false);
+            Assert.AreEqual(CommsStage.Out, l.Stage);
+        }
+
         [Test]
         public void TheTextIsGoneBeforeTheFrameFolds()
         {
@@ -156,14 +221,18 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void BeginAgain_RestartsFromTheHead()
         {
-            // 2 通目が来たら頭から出し直す（重ねない）。
+            // 2 通目が来たら**文面は頭から**出し直す（重ねない）。
+            // ⚠ ただし**枠は畳まない**（2026-08-16・`canon/LEDGER.md` 0058）。受信票はもう出ているので、
+            //   装置は次の行を印字するだけ。畳んで開き直すと、続けて届いた 2 通のあいだで吃る
+            //   （②は押すたび届くので、実際に起きる）。
             var l = Started();
             AdvanceUntil(l, CommsStage.Hold);
 
             l.Begin(Chars);
             Assert.AreEqual(CommsStage.In, l.Stage);
-            Assert.AreEqual(0f, l.Weights.open, 0.001f);
-            Assert.AreEqual(0f, l.Weights.reveal, 0.001f);
+            Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "文面は 1 字目から出し直すこと");
+            Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠は畳まないこと");
+            Assert.AreEqual(1f, l.Weights.body, 0.001f, "丈も保つこと");
         }
 
         [Test]
