@@ -24,7 +24,8 @@ namespace FixedCamVr.OvrBridge
     /// 封印モード（旧 Run/Staff）・スティック・cue 試射は撤去した。
     ///
     /// <b>左は体験者の手。読むのは X / Y だけ</b>（2026-08-15・<c>canon/LEDGER.md</c> 0042 / 0050）:
-    /// どちらを押しても同じで、<b>2 秒長押し</b>で異変の報告になる（<see cref="VisitorMarkHoldLogic"/>）。
+    /// どちらを押しても同じで、<b>1 秒長押し</b>で異変の報告になる（<see cref="VisitorMarkHoldLogic"/>。
+    /// 2026-08-16 に 2 秒から半分へ・<c>canon/LEDGER.md</c> 0059）。
     /// 押し方と進捗は<b>上司からの連絡の面（<see cref="CommsPanel"/>）の下段</b>が出す
     /// （2026-08-16・<c>canon/LEDGER.md</c> 0058。コントローラに追従する面は廃止した）。
     /// スティック・トリガー・グリップ・A/B は左からは 1 ビットも読まない。

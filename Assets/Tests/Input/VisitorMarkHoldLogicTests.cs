@@ -5,13 +5,24 @@ using NUnit.Framework;
 namespace FixedCamVr.Input.Tests
 {
     /// <summary>
-    /// 体験者の報告ボタン（左 X / 左 Y）の 2 秒長押し。
-    /// 判定は <c>canon/LEDGER.md</c> 0050（「長押し 2s で報告できるように」）。
+    /// 体験者の報告ボタン（左 X / 左 Y）の長押し。
+    /// 判定は <c>canon/LEDGER.md</c> 0050（「長押し 2s で報告できるように」）と
+    /// 0059（2026-08-16 に半分の 1.0 秒へ）。
+    ///
+    /// ⚠ <b>秒数を直に書かない。</b> 閾値から逆算する（<see cref="Full"/> / <see cref="Short"/>）
+    /// — 直書きすると、閾値を変えるたびに**テストの方を直すことになり、
+    /// 「変えたのに落ちない」テストになる**。
     /// </summary>
     public sealed class VisitorMarkHoldLogicTests
     {
         // 90Hz の 1 フレーム。実機と同じ刻みで積む。
         private const float Dt = 1f / 90f;
+
+        /// <summary>確実に発火する長さ（閾値 ＋ 1 フレーム余分）。</summary>
+        private const float Full = VisitorMarkHoldLogic.DefaultHoldSec + 0.05f;
+
+        /// <summary>発火しない長さ（閾値の 3/4）。ゲージは動くが届かない。</summary>
+        private const float Short = VisitorMarkHoldLogic.DefaultHoldSec * 0.75f;
 
         private static bool Hold(VisitorMarkHoldLogic logic, float seconds, bool held = true)
         {
@@ -27,7 +38,7 @@ namespace FixedCamVr.Input.Tests
         {
             var logic = new VisitorMarkHoldLogic();
 
-            Assert.That(Hold(logic, 1.5f), Is.False, "2 秒に届かない押しで報告が通ってはいけない");
+            Assert.That(Hold(logic, Short), Is.False, "閾値に届かない押しで報告が通ってはいけない");
             Assert.That(logic.Progress01, Is.GreaterThan(0.6f).And.LessThan(1f));
 
             // 離す
@@ -37,11 +48,11 @@ namespace FixedCamVr.Input.Tests
         }
 
         [Test]
-        public void TwoSecondHold_ReportsExactlyOnce_EvenIfKeptHeld()
+        public void HoldToThreshold_ReportsExactlyOnce_EvenIfKeptHeld()
         {
             var logic = new VisitorMarkHoldLogic();
 
-            Assert.That(Hold(logic, 2.05f), Is.True, "2 秒で 1 回発火する");
+            Assert.That(Hold(logic, Full), Is.True, "閾値ちょうどで 1 回発火する");
             Assert.That(logic.Progress01, Is.EqualTo(1f));
             Assert.That(logic.Confirming, Is.True, "発火直後は「報告しました」の余韻が立つ");
 
@@ -53,19 +64,19 @@ namespace FixedCamVr.Input.Tests
         public void ReleaseThenPressAgain_CanReportAgain()
         {
             var logic = new VisitorMarkHoldLogic();
-            Assert.That(Hold(logic, 2.05f), Is.True);
+            Assert.That(Hold(logic, Full), Is.True);
 
             // 離す → 押し直す
             Hold(logic, 0.3f, held: false);
             Assert.That(logic.Progress01, Is.EqualTo(0f));
-            Assert.That(Hold(logic, 2.05f), Is.True, "離して押し直せば何度でも報告できる");
+            Assert.That(Hold(logic, Full), Is.True, "離して押し直せば何度でも報告できる");
         }
 
         [Test]
         public void ConfirmWindow_ExpiresOnItsOwn()
         {
             var logic = new VisitorMarkHoldLogic();
-            Hold(logic, 2.05f);
+            Hold(logic, Full);
             Assert.That(logic.Confirming, Is.True);
 
             Hold(logic, VisitorMarkHoldLogic.DefaultConfirmSec + 0.1f, held: false);
@@ -74,7 +85,7 @@ namespace FixedCamVr.Input.Tests
 
         /// <summary>
         /// ⚠ 起動直後・復帰直後は dt が数秒飛ぶ。そのフレームに握っていても発火してはいけない
-        /// （握った瞬間に「2 秒ぶん」が積まれる）。
+        /// （握った瞬間に「閾値ぶん」が積まれる）。
         /// </summary>
         [Test]
         public void HugeDeltaTime_CannotFireInOneFrame()
@@ -90,7 +101,7 @@ namespace FixedCamVr.Input.Tests
         public void Reset_ClearsHoldAndConfirm()
         {
             var logic = new VisitorMarkHoldLogic();
-            Hold(logic, 2.05f);
+            Hold(logic, Full);
 
             logic.Reset();
 
