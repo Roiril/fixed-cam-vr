@@ -233,6 +233,73 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "文面は 1 字目から出し直すこと");
             Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠は畳まないこと");
             Assert.AreEqual(1f, l.Weights.body, 0.001f, "丈も保つこと");
+            // ⚠⚠ 2026-08-16 まで**濃さと下段だけ 0 から張り直していた** — 走行中の面へ 2 通目が
+            //    来ると受信票が 0.16 秒だけ黒へ落ちて戻り、下段も 0.34 秒消えて戻っていた。
+            //    上の 3 行しか見ていなかったので素通りしていた（画にしか出ない不具合）。
+            Assert.AreEqual(1f, l.Weights.panel, 0.001f, "地の濃さも保つこと（黒へ落として戻さない）");
+            Assert.AreEqual(1f, l.Weights.hint, 0.001f, "下段も保つこと（消して戻さない）");
+        }
+
+        /// <summary>
+        /// 連絡が届いてから畳み切るまでの尺は<b>文面の役割で違う</b>
+        /// （2026-08-16・<c>canon/LEDGER.md</c> 0065）。単一の値を全文面へ使わない。
+        /// </summary>
+        [Test]
+        public void HoldSec_IsShortestForAReceipt()
+        {
+            Assert.That(CommsPanelLogic.HoldReceiptSec,
+                        Is.LessThan(CommsPanelLogic.HoldBriefSec), "受領は指示より短い");
+            Assert.That(CommsPanelLogic.HoldBriefSec,
+                        Is.LessThan(CommsPanelLogic.HoldUrgentSec), "催促はいちばん長い");
+            // 報告 1 回で面が灯る総尺（押し始めから）。**10 秒級に戻さない**。
+            float total = VisitorMarkHoldSec
+                        + CommsPanelLogic.InSec + CommsPanelLogic.MinTypeSec
+                        + CommsPanelLogic.HoldReceiptSec + CommsPanelLogic.OutSec;
+            Assert.That(total, Is.LessThan(6f), $"報告 1 回に {total:0.0}s は長い");
+        }
+
+        /// <summary>報告の長押し（`VisitorMarkHoldLogic.DefaultHoldSec`）。asmdef を跨がないので値を持つ。</summary>
+        private const float VisitorMarkHoldSec = 1.0f;
+
+        /// <summary>
+        /// ⚠⚠ <b>押し始めたら、走っている連絡は片づく</b>（2026-08-16・<c>canon/LEDGER.md</c> 0065）。
+        /// ユーザーの「X／Y を押して閉じる」に対する答え — <b>X／Y に 2 つ目の意味を与えずに</b>
+        /// 「自分の行為がこの面に効く」を返す（記録の時刻は 1 ビットも濁らない）。
+        ///
+        /// ⚠ 移る先は <see cref="CommsStage.Out"/> ではなく <see cref="CommsStage.Guide"/> —
+        /// 枠は開いたまま、丈だけ縮んで文面が消える。畳んでから開き直すと、
+        /// 1 秒後に届く②の連絡で必ず吃る。
+        /// </summary>
+        [Test]
+        public void PressingAgain_ClearsTheRunningNotice_WithoutFoldingTheFrame()
+        {
+            var l = Started();
+            AdvanceUntil(l, CommsStage.Hold);
+
+            l.SetGuideWanted(true);          // 体験者が次の報告を押し始めた
+
+            Assert.AreEqual(CommsStage.Guide, l.Stage, "走っている連絡が片づいていない");
+            Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "文面が残っている");
+            Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠を畳まないこと（1 秒後に②が来る）");
+        }
+
+        /// <summary>
+        /// ⚠ 押しっぱなしのあいだ<b>毎フレーム</b>「開きたい」が立つ。縁でしか片づけないので、
+        /// 押している最中に届いた②の連絡が<b>その場で消える</b>ことは無い
+        /// （消えると、押した手応えが 1 つも返らない）。
+        /// </summary>
+        [Test]
+        public void HoldingDown_DoesNotEatTheNoticeItJustTriggered()
+        {
+            var l = new CommsPanelLogic();
+            l.SetGuideWanted(true);                       // 押し始め
+            AdvanceUntil(l, CommsStage.Guide);
+            l.SetGuideWanted(true);                       // 押しっぱなし（縁ではない）
+            l.Begin(Chars, CommsPanelLogic.HoldReceiptSec);   // 長押し成立 → ②が届く
+            AdvanceUntil(l, CommsStage.Type);
+
+            l.SetGuideWanted(true);                       // まだ離していない
+            Assert.AreEqual(CommsStage.Type, l.Stage, "自分で起こした連絡を自分で消している");
         }
 
         [Test]

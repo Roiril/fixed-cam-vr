@@ -78,22 +78,46 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>面の幅 (m)。1.5m 先で 0.76m ＝ <b>見かけ 28°</b>。</summary>
         private const float PanelW = 0.76f;
+        // ---- 縦の組み立て -------------------------------------------------------------
+        //
+        // ⚠⚠ **面の高さは固定ではない**（2026-08-16・`canon/LEDGER.md` 0065）。
+        //    2 つの帯が独立に出入りし、**枠は出ている帯だけを覆う**:
+        //
+        //        上段（上司の文面）   y ∈ [0, _bodyBandH]     ← 高さは**文面の実寸**
+        //        ────────────────  y = 0（面の原点 ＝ 境目）
+        //        下段（報告の状態）   y ∈ [-HintBandH, 0]     ← 中身が固定なので定数
+        //
+        //    それまでは「全体 0.32m を 6:4 で割り、下端固定で丈だけ伸ばす」だったが、
+        //    下段から指示を剥がして**空になりうる**ようにしたので前提が崩れた。
+        //    固定のままだと、1 行の受領が**上下に余白の空いた大きな箱**として出る（絵で見つけた）。
+
+        /// <summary>上段と下段の境目（面のローカル y）。<b>ここが面の原点</b>。</summary>
+        private const float HintBandTopY = 0f;
+
         /// <summary>
-        /// 面の高さ (m)。1.5m 先で 0.32m ＝ 見かけ 12°。
-        /// ⚠ <b>0.26 → 0.32 に伸ばした</b>（2026-08-16・<c>canon/LEDGER.md</c> 0058）。
-        /// 下段（報告の押し方・ゲージ）が入ったため。最悪は**上段 2 行 ＋ 下段 2 行**で、
-        /// 収まるかは絵でしか分からない（<c>menu comms-preview</c> の <c>mark_holding.png</c>）。
+        /// 下段（`報告中` ＋ ゲージ）の帯の高さ (m)。<b>中身が変わらないので定数</b>
+        /// （補助段 1.5° の 2 行 ＋ 余白）。⚠ 上段と違って実寸を測らないのは、
+        /// 文面が 1 つしか無く、ゲージの進捗で行数が変わらないため。
         /// </summary>
-        private const float PanelH = 0.32f;
+        private const float HintBandH = 0.095f;
 
-        /// <summary>上段（上司の文面）が使う高さの割合。残りが下段。</summary>
-        private const float BodyShare = 0.60f;
+        /// <summary>
+        /// 上段の上限 (m)。<b>折り返しの枠の高さ</b>で、実際に覆う高さは <see cref="_bodyBandH"/>。
+        /// 最悪は 2 行（①③）なので、そこに余裕を足した値。
+        /// </summary>
+        private const float BodyMaxH = 0.20f;
 
-        /// <summary>上段と下段の境目（面のローカル y）。</summary>
-        private const float HintBandTopY = PanelH * (0.5f - BodyShare);
+        /// <summary>上段の字の上下に取る余白 (m)。</summary>
+        private const float BodyPadM = 0.035f;
+
+        /// <summary>
+        /// 上段の帯の高さ (m)。<see cref="SetNotice"/> が文面を組むたびに実測から入れ直す。
+        /// ⚠ 既定は組む前の保険（実測が入るまでの 1 フレームで箱が飛ばない）。
+        /// </summary>
+        private float _bodyBandH = BodyMaxH;
 
         /// <summary>上段の中心（面のローカル y）。<see cref="SetNotice"/> が文面の重心をここへ運ぶ。</summary>
-        private const float BodyCenterY = (HintBandTopY + PanelH * 0.5f) * 0.5f;
+        private float BodyCenterY => HintBandTopY + _bodyBandH * 0.5f;
         /// <summary>縁の張り出し (m)。地より一回り大きい面を裏に置いて枠に見せる。</summary>
         private const float BezelM = 0.012f;
 
@@ -144,11 +168,29 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private static string TextFor(CommsNotice n) => n switch
         {
-            CommsNotice.Begin => "調査を開始してください",
+            // ⚠⚠ **押し方はここにしか出ない**（2026-08-16・`canon/LEDGER.md` 0065）。
+            //    それまで下段に `X／Y：異変を報告` を常に出していたが、面が開くたび
+            //    ＝ 押している最中にも「押せ」と言い続けていた。**上司の言葉として 1 度だけ**言う。
+            //    ⚠ キー名（X／Y）を出さない — 装置の面に入力機器の名前が出ると、
+            //      調査の記録ではなくゲームの操作説明に見える。左で触れるのは X と Y だけで、
+            //      **どちらでもよい**ので「手元のボタン」で足りる。
+            CommsNotice.Begin => "調査を開始してください\n異変を認めたらボタンを長押し",
             CommsNotice.MarkLogged => "異常が記録されました",
             CommsNotice.MarkNothing => "異常は検出されませんでした",
             CommsNotice.Prompt => "異常が検出されました。\n記録してください。",
             _ => "",
+        };
+
+        /// <summary>
+        /// その文面を読ませる時間 (秒)。<b>役割で違う</b>（`canon/LEDGER.md` 0065）。
+        /// ①は押し方を含むので長め、②は自分の行為への返事なので最短、③は読まれないと
+        /// 締めが進まないので最長。
+        /// </summary>
+        private static float HoldSecFor(CommsNotice n) => n switch
+        {
+            CommsNotice.Begin => CommsPanelLogic.HoldBriefSec,
+            CommsNotice.Prompt => CommsPanelLogic.HoldUrgentSec,
+            _ => CommsPanelLogic.HoldReceiptSec,
         };
 
         /// <summary>
@@ -159,7 +201,7 @@ namespace FixedCamVr.Diagnostics
         /// ⚠ <b>行数の最悪（2 行 ＝ ③）はここでは測れない。</b> 縦の座りは
         /// <c>menu comms-preview</c> の絵で見る（4 文面ぶん焼く）。
         /// </summary>
-        internal static string LongestNoticeText => TextFor(CommsNotice.MarkNothing);
+        internal static string LongestNoticeText => TextFor(CommsNotice.Begin);
 
         private readonly CommsPanelLogic _logic = new CommsPanelLogic();
         private readonly CommsCueLogic _cue = new CommsCueLogic();
@@ -332,8 +374,8 @@ namespace FixedCamVr.Diagnostics
         {
             if (!IsBuilt || notice == CommsNotice.None) return;
             SetNotice(notice);
-            // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。
-            _logic.Begin(_charCount);
+            // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。読ませる尺は役割で決まる。
+            _logic.Begin(_charCount, HoldSecFor(notice));
             LastNotice = notice;
             PulseCount++;
             Debug.Log($"[Comms] 上司からの連絡 {notice}「{TextFor(notice).Replace("\n", "／")}」"
@@ -427,14 +469,16 @@ namespace FixedCamVr.Diagnostics
                 _panelMesh = BuildQuad();
                 // 縁（裏の一回り大きい面）。⚠ **地だけだと真っ黒の中で面が消える**
                 //    （2026-08-15 の実機の画で、文字だけが宙に浮いていた）。
+                // ⚠ ここで渡す高さは**組んだ瞬間の見かけだけ**（`Apply` の `SetFrame` が
+                //   毎フレーム中心と高さを置き直す）。
                 _bezelW = PanelW + BezelM * 2f;
                 _bezelRenderer = MakeQuad(rootGo.transform, "CommsBezelQuad",
-                                          _bezelW, PanelH + BezelM * 2f, 0.014f,
+                                          _bezelW, BodyMaxH + HintBandH + BezelM * 2f, 0.014f,
                                           flat, RenderQueue - 1, out _bezelMat);
                 // 地。暗い漆のような面。純黒だと「穴」に見え、明るいと掲示物に見える。
                 _panelW = PanelW;
                 _panelRenderer = MakeQuad(rootGo.transform, "CommsPanelQuad",
-                                          _panelW, PanelH, 0.012f,
+                                          _panelW, BodyMaxH + HintBandH, 0.012f,
                                           flat, RenderQueue, out _panelMat);
             }
 
@@ -452,11 +496,10 @@ namespace FixedCamVr.Diagnostics
             hintTmp.color = HmdTextStyle.Ink;
             var hintRt = (RectTransform)hintGo.transform;
             float hintScale = HintScale;
-            float hintBandH = PanelH * (1f - BodyShare) * 0.9f;
-            hintRt.sizeDelta = new Vector2(PanelW * 0.92f / hintScale, hintBandH / hintScale);
+            hintRt.sizeDelta = new Vector2(PanelW * 0.92f / hintScale, HintBandH / hintScale);
             hintGo.transform.localScale = Vector3.one * hintScale;
-            // 下段の帯の**上端**へ寄せる（枠は中心が原点なので、帯の高さの半分だけ下げる）。
-            hintGo.transform.localPosition = new Vector3(0f, HintBandTopY - hintBandH * 0.5f, 0f);
+            // 下段の帯の**上端**を境目へ合わせる（枠は中心が原点なので、帯の高さの半分だけ下げる）。
+            hintGo.transform.localPosition = new Vector3(0f, HintBandTopY - HintBandH * 0.5f, 0f);
             var hintOverlay = Shader.Find("TextMeshPro/Distance Field Overlay");
             if (hintOverlay != null) hintTmp.fontMaterial.shader = hintOverlay;
             hintTmp.fontMaterial.renderQueue = GlyphQueue;
@@ -484,7 +527,7 @@ namespace FixedCamVr.Diagnostics
             //   ⇒ **折り返し幅も scale で割る**。ここを固定値にすると、字の大きさを直したときに
             //     折り返しだけ取り残されて面からはみ出す。
             float scale = TextScale;
-            rt.sizeDelta = new Vector2(PanelW * 0.92f / scale, PanelH * BodyShare * 0.9f / scale);
+            rt.sizeDelta = new Vector2(PanelW * 0.92f / scale, BodyMaxH / scale);
             textGo.transform.localScale = Vector3.one * scale;
             var overlay = Shader.Find("TextMeshPro/Distance Field Overlay");
             if (overlay != null) tmp.fontMaterial.shader = overlay;
@@ -518,6 +561,11 @@ namespace FixedCamVr.Diagnostics
             //    ぶんだけ本文が上へ寄る（実測 33px）。組み上がったメッシュの実寸から測る。
             float scale = TextScale;
             Bounds ink = tmp.textBounds;
+            // ⚠⚠ **上段の高さは文面の実寸で決まる**（2026-08-16・`canon/LEDGER.md` 0065）。
+            //    1 行の受領（②）と 2 行の指示（①）で同じ高さの箱を出していたので、
+            //    ②が**上下に余白の空いた大きな箱**として出ていた（プレビューの絵で見つけた）。
+            //    枠はこの高さを読んで縮む（`Apply` の `top`）。
+            _bodyBandH = Mathf.Max(0.01f, ink.size.y * scale + BodyPadM);
             // ⚠ 運ぶ先は面の中心ではなく**上段の中心**（下段に報告の押し方が居るため）。
             tmp.transform.localPosition = new Vector3(0f, BodyCenterY - ink.center.y * scale, 0f);
             // ⚠ ここは**全文が出ている状態**（上で maxVisibleCharacters = int.MaxValue して
@@ -617,23 +665,34 @@ namespace FixedCamVr.Diagnostics
             }
             ApplyHint(Mathf.Clamp01(w.hint));
             float pa = Mathf.Clamp01(w.panel);
-            // 丈: 0 = 下段だけの細い受信票 / 1 = 文面が入る高さ。**下端を固定して伸び縮みする。**
-            float hk = Mathf.Lerp(1f - BodyShare, 1f, Mathf.Clamp01(w.body));
             AppliedBody = Mathf.Clamp01(w.body);
+
+            // ⚠⚠ **枠は「出ている帯」だけを覆う**（2026-08-16・`canon/LEDGER.md` 0065）。
+            //    下段から指示を剥がしたので、**押していないときは下段に 1 文字も無い**。
+            //    それまでの「下端を固定して丈だけ伸びる」ままだと、①の連絡が
+            //    **下半分が空の大きな箱**として出る（プレビューの絵で見つけた）。
+            //    ⚠ 下段の有無は不透明度だけでは決まらない — 文字が空でも hint は 1 になる。
+            float hintK = Mathf.Clamp01(w.hint) * (_hintBody.Length > 0 ? 1f : 0f);
+            // 上段の帯 = [0, _bodyBandH]（**文面の実寸**）/ 下段の帯 = [-HintBandH, 0]。
+            float top = HintBandTopY + _bodyBandH * AppliedBody;
+            float bottom = HintBandTopY - HintBandH * hintK;
+            float h = Mathf.Max(0f, top - bottom);
+            float cy = (top + bottom) * 0.5f;
+            bool lit = pa > 0.01f && AppliedOpen > 0.001f && h > 0.0005f;
+
             // Unlit/Color は alpha を持たないので、明るさで濃さを出す（暗い場所なので十分）。
             if (_panelRenderer != null && _panelMat != null)
             {
                 _panelMat.color = new Color(0.050f * pa, 0.042f * pa, 0.038f * pa, 1f);
-                _panelRenderer.enabled = pa > 0.01f && AppliedOpen > 0.001f;
-                SetFrame(_panelRenderer.transform, _panelW, PanelH, AppliedOpen, hk);
+                _panelRenderer.enabled = lit;
+                SetFrame(_panelRenderer.transform, _panelW, AppliedOpen, cy, h);
             }
             if (_bezelRenderer != null && _bezelMat != null)
             {
                 // 縁は地より明るい。ここだけが「面がある」ことを伝える。
                 _bezelMat.color = new Color(0.150f * pa, 0.110f * pa, 0.085f * pa, 1f);
-                _bezelRenderer.enabled = pa > 0.01f && AppliedOpen > 0.001f;
-                SetFrame(_bezelRenderer.transform, _bezelW, PanelH + BezelM * 2f,
-                         AppliedOpen, hk);
+                _bezelRenderer.enabled = lit;
+                SetFrame(_bezelRenderer.transform, _bezelW, AppliedOpen, cy, h + BezelM * 2f);
             }
         }
 
@@ -661,22 +720,23 @@ namespace FixedCamVr.Diagnostics
         }
 
         /// <summary>
-        /// 枠を<b>左端と下端を固定したまま</b>開く。
-        /// <paramref name="kx"/> = 横の開き（0 = 左端に畳まれている / 1 = 開き切り）、
-        /// <paramref name="ky"/> = 丈（下段だけの高さ 〜 文面が入る高さ）。
+        /// 枠を<b>左端を固定したまま</b>開き、<b>縦は中心と高さを直に置く</b>。
+        /// <paramref name="kx"/> = 横の開き（0 = 左端に畳まれている / 1 = 開き切り）。
         ///
-        /// 面のメッシュは中心が原点（頂点 ±0.5）なので、縮めると<b>両側から</b>縮む。
-        /// 端を残すには、縮めたぶんの半分だけそちらへ寄せる。
-        /// ⚠ 丈が下端固定なのは、<b>下段（報告の押し方）が動かないため</b>。
-        /// 上へ伸びる先が、連絡の文面が入る場所になる。
+        /// 面のメッシュは中心が原点（頂点 ±0.5）なので、横は縮めると<b>両側から</b>縮む。
+        /// 左端を残すには、縮めたぶんの半分だけそちらへ寄せる。
+        ///
+        /// ⚠⚠ <b>縦は「下端固定で伸びる」をやめた</b>（2026-08-16・<c>canon/LEDGER.md</c> 0065）。
+        /// 下段が空になりうるので、<b>出ている帯だけを覆う</b>必要がある
+        /// （呼び出し側が上端と下端から中心・高さを解く）。下端固定のままだと、
+        /// 下段が無い連絡が<b>下半分の空いた箱</b>として出る。
         /// </summary>
-        private static void SetFrame(Transform quad, float fullW, float fullH, float kx, float ky)
+        private static void SetFrame(Transform quad, float fullW, float kx, float centerY, float height)
         {
-            quad.localScale = new Vector3(fullW * kx, fullH * ky, 1f);
-            // 左端は常に -w/2、下端は常に -h/2 に居る（縮めたぶんの半分だけ寄せる）。
+            quad.localScale = new Vector3(fullW * kx, height, 1f);
+            // 左端は常に -w/2 に居る（縮めたぶんの半分だけ寄せる）。縦は解いた中心をそのまま置く。
             Vector3 p = quad.localPosition;
-            quad.localPosition = new Vector3(-(fullW * 0.5f) * (1f - kx),
-                                             -(fullH * 0.5f) * (1f - ky), p.z);
+            quad.localPosition = new Vector3(-(fullW * 0.5f) * (1f - kx), centerY, p.z);
         }
     }
 }

@@ -143,6 +143,17 @@ namespace FixedCamVr.Streaming.EditorTools
                 //    出ていない（`HintInAt` は開きの 75% から）＝ 空の細い枠が写るだけになる。
                 Step(logic, apply, panel, inSec + 0.1f);
                 Shoot(cam, Path.Combine(dir, "mark_holding.png"));
+
+                // ---- 上下段が同時に出る**最悪の姿**（上段 2 行 ＋ 下段 2 行）----
+                // ⚠⚠ **2026-08-16 まで 1 枚も撮っていなかった。** `canon/LEDGER.md` 0058 が
+                //    「最悪は上段 2 行 ＋ 下段 2 行で、収まるかは絵でしか分からない」と書いた当の姿。
+                //    枠の高さを中身から解くようにした（0065）ので、ここが崩れると誰も気づけない。
+                //    ⚠ 押しっぱなしのまま③を届ける（`SetGuideWanted` は下げない）。
+                panel.Deliver(CommsNotice.Prompt);
+                Step(logic, apply, panel, inSec);
+                Step(logic, apply, panel, TypeSec(logic));
+                Shoot(cam, Path.Combine(dir, "both_bands.png"));
+
                 panel.SetMarkState(0f, confirming: false);
                 logic.GetType().GetMethod("SetGuideWanted")!.Invoke(logic, new object[] { false });
 

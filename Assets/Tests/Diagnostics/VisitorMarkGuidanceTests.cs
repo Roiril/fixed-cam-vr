@@ -14,21 +14,31 @@ namespace FixedCamVr.Diagnostics.Tests
     /// </summary>
     public sealed class VisitorMarkGuidanceTests
     {
+        /// <summary>
+        /// ⚠⚠ <b>押していないときは何も出さない</b>（2026-08-16・<c>canon/LEDGER.md</c> 0065）。
+        /// 下段は<b>状態</b>だけを持ち、指示は持たない。押し方は①の連絡が 1 度だけ言う。
+        ///
+        /// これが破れると、面が開くたび（＝ 押している最中にも）「押せ」と出続ける状態へ戻る。
+        /// </summary>
         [Test]
-        public void Idle_ShowsHowToPress()
+        public void Idle_ShowsNothing()
         {
-            // 括弧は外し、他の面と同じ `入力：動作` へ揃えた（HmdTextStyle の規約）。
-            Assert.That(VisitorMarkGuidance.Line(0f, confirming: false),
-                        Is.EqualTo("X／Y：異変を報告"));
+            Assert.That(VisitorMarkGuidance.Line(0f, confirming: false), Is.Empty);
         }
 
+        /// <summary>
+        /// ⚠ <b>下段に入力機器の名前を出さない。</b> 装置の面にキー名が出ると、
+        /// 調査の記録ではなくゲームの操作説明に見える（同 0065）。
+        /// </summary>
         [Test]
-        public void Idle_HasNoParentheses()
+        public void NoKeyNames_InAnyLine()
         {
-            // 常設の主操作を括弧で包むと補足に見える（2026-08-15 の赤入れ）。
-            string s = VisitorMarkGuidance.Line(0f, false);
-            Assert.That(s, Does.Not.Contain("(").And.Not.Contain(")"));
-            Assert.That(s, Does.Not.Contain("（").And.Not.Contain("）"));
+            foreach (float p in new[] { 0f, 0.01f, 0.5f, 1f })
+            {
+                string s = VisitorMarkGuidance.Line(p, false);
+                Assert.That(s, Does.Not.Contain("X").And.Not.Contain("Y"), $"進捗 {p}");
+                Assert.That(s, Does.Not.Contain("ボタン"), $"進捗 {p}");
+            }
         }
 
         [Test]
@@ -62,11 +72,19 @@ namespace FixedCamVr.Diagnostics.Tests
             }
         }
 
-        /// <summary>余韻は長押し中の表示より強い（発火した瞬間はゲージも 1 なので、順序が要る）。</summary>
+        /// <summary>
+        /// ⚠⚠ <b>「報告しました」は捨てた</b>（2026-08-16・<c>canon/LEDGER.md</c> 0065）。
+        /// 上段の「異常が記録されました」と<b>同じ瞬間に同じことを言っていた</b> —
+        /// 二重に言う面は、装置が動揺しているように見える。
+        ///
+        /// 余韻のあいだ下段が持つのは、押し切ったゲージだけ（＝ 状態）。
+        /// </summary>
         [Test]
-        public void Confirmed_WinsOverGauge()
+        public void Confirmed_DoesNotRepeatWhatTheNoticeAlreadySays()
         {
-            Assert.That(VisitorMarkGuidance.Line(1f, confirming: true), Is.EqualTo("報告しました"));
+            Assert.That(VisitorMarkGuidance.Line(1f, confirming: true), Does.Not.Contain("報告しました"));
+            // 離していれば余韻でも空（下段は状態しか持たない）。
+            Assert.That(VisitorMarkGuidance.Line(0f, confirming: true), Is.Empty);
         }
 
         /// <summary>
@@ -80,6 +98,7 @@ namespace FixedCamVr.Diagnostics.Tests
             {
                 VisitorMarkGuidance.Line(0f, false),
                 VisitorMarkGuidance.Line(0.5f, false),
+                VisitorMarkGuidance.Line(1f, false),
                 VisitorMarkGuidance.Line(1f, true),
             })
             {
