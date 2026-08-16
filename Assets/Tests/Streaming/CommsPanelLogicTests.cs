@@ -104,6 +104,41 @@ namespace FixedCamVr.Streaming.Tests
             Assert.LessOrEqual(longMsg.TypeSec, CommsPanelLogic.MaxTypeSec);
         }
 
+        /// <summary>
+        /// 打つ速さは<b>そのまま打鍵音の間隔になる</b>（`canon/LEDGER.md` 0056）。
+        /// 詰めすぎると 1 発ずつが分かれて聞こえず、カタカタではなく連続音になる。
+        ///
+        /// ⚠ 60ms は素材の実測から来ている — もらった録音は押し込みの 76.9ms 後に戻りが来て、
+        /// 切り出しは 60ms（<c>tools/ingest-sounds.py</c> の <c>CUT_BODY</c>）。
+        /// ここを下回ると<b>前の打鍵が鳴り終わる前に次が重なる</b>。
+        /// </summary>
+        [Test]
+        public void TypingSpeed_KeepsKeystrokesApart()
+        {
+            float stepSec = 1f / CommsPanelLogic.CharsPerSec;
+            Assert.GreaterOrEqual(stepSec, 0.060f,
+                "打鍵が重なる速さ（1 発 60ms + 間隔）。速くするなら素材を切り直すこと");
+            Assert.LessOrEqual(stepSec, 0.120f, "遅すぎると読み終わる前に焦れる");
+        }
+
+        /// <summary>
+        /// <b>打鍵音の変種の数と、焼いてある音源の本数を突き合わせる。</b>
+        ///
+        /// ⚠ 片方だけ増減すると**沈黙して食い違う** — 多いと無い音を掴もうとして
+        /// その回だけ鳴らず、少ないと焼いた音の一部が一生鳴らない。どちらも実機で
+        /// 気づけない（音は録画に映らない）。
+        /// </summary>
+        [Test]
+        public void TypeSfx_VariantCount_MatchesTheBakedClips()
+        {
+            string dir = System.IO.Path.Combine(UnityEngine.Application.dataPath,
+                                                "Resources", "Sound");
+            Assert.IsTrue(System.IO.Directory.Exists(dir), $"音の置き場が無い: {dir}");
+            int baked = System.IO.Directory.GetFiles(dir, "sfx_type_*.wav").Length;
+            Assert.AreEqual(TypeAudioCue.VariantCount, baked,
+                "TypeAudioCue.VariantCount と tools/ingest-sounds.py の CUTS が食い違っている");
+        }
+
         [Test]
         public void TheTextIsGoneBeforeTheFrameFolds()
         {

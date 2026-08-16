@@ -236,6 +236,68 @@ def build_ambient() -> np.ndarray:
     return mix
 
 
+# --- 連絡の面の打鍵（`canon/LEDGER.md` 0056）--------------------------------
+#
+# ⚠ 打つ速さ・散らし幅は **C# 側と対**（`CommsPanelLogic.CharsPerSec` /
+#   `TypeAudioCue`）。片方だけ変えると、聴いて決めた密度が実機と違う。
+TYPE_CPS = 12.0
+TYPE_PITCH = 0.04       # ±（`TypeAudioCue.PitchSpread`）
+TYPE_GAIN_DB = 2.0      # ±（`TypeAudioCue.GainSpreadDb`）
+TYPE_VARIANTS = 8
+
+# (文面, 打つ字数 ＝ **見える字だけ**。改行では鳴らさない)
+COMMS = [
+    ("調査を開始してください", 11),
+    ("異常が記録されました", 10),
+    ("異常は検出されませんでした", 13),
+    ("異常が検出されました。／記録してください。", 20),
+]
+
+
+def type_burst(hits: int, cps: float, rng: np.random.Generator) -> np.ndarray:
+    """1 通ぶんの打鍵。**実機と同じ選び方**（直前と同じ変種を引かない・音程と音量を散らす）。"""
+    clips = [load(f"sfx_type_{i + 1}") for i in range(TYPE_VARIANTS)]
+    step = int(sk.SR / cps)
+    out = np.zeros((step * hits + max(len(c) for c in clips), 2))
+    last = -1
+    for i in range(hits):
+        v = int(rng.integers(0, TYPE_VARIANTS - 1))
+        if v >= last:
+            v += 1                      # 直前と同じものを引かない
+        last = v
+        c = clips[v]
+        p = 1.0 + float(rng.uniform(-TYPE_PITCH, TYPE_PITCH))
+        n = int(len(c) / p)
+        c = np.stack([np.interp(np.linspace(0, len(c) - 1, n), np.arange(len(c)), c[:, ch])
+                      for ch in (0, 1)], axis=1)
+        g = 10 ** (float(rng.uniform(-TYPE_GAIN_DB, TYPE_GAIN_DB)) / 20.0)
+        out[i * step:i * step + n] += c * g
+    return out
+
+
+def build_comms() -> np.ndarray:
+    """打鍵を**本編の敷く音の上**で聴く（単体で聴くと必ず大きく感じる）。
+
+    頭に「いまの速さ（22 文字/秒）」と「変更後（12 文字/秒）」を並べてある。
+    **1 文字 1 発は 22 文字/秒だと連続音になる** — そこが判定してほしい所。
+    """
+    rng = np.random.default_rng(20260816)
+    marks = [(1.5, 11, 22.0, "① 22 文字/秒（いまの絵の速さ）"),
+             (4.0, 11, TYPE_CPS, "① 12 文字/秒（変更後）")]
+    t = 7.0
+    for text, hits in COMMS:
+        marks.append((t, hits, TYPE_CPS, f"「{text}」{hits} 字"))
+        t += hits / TYPE_CPS + 2.5
+    total = t + 1.5
+
+    # 本編の高さ（`rules/sound-design.md` §4 の表）。
+    out = tile(load("bed_room"), total) * 0.34 + tile(load("bed_device"), total) * 1.0
+    for at, hits, cps, label in marks:
+        lay(out, type_burst(hits, cps, rng), at)
+        print(f"  {at:5.1f}s  {label}")
+    return out
+
+
 def emit(name: str, y: np.ndarray, note: str):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, f"{name}.wav")
@@ -256,6 +318,8 @@ def main() -> int:
     emit("preview_intro", build_intro(), "⚠ 近似。実機の混ざり方は SoundBedLogic が決める")
     print("周ごとの環境音の入れ替え:")
     emit("preview_ambient", build_ambient(), "実機と同じ式（等パワー・半減期 2.5 秒）")
+    print("連絡の面の打鍵:")
+    emit("preview_comms", build_comms(), "本編の敷く音の上で。頭の 2 本は速さの比べ")
     print(f"\n→ {OUT}")
     return 0
 

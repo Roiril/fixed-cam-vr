@@ -106,6 +106,100 @@ PLAN = [
 #    3 秒は測って選んだ値（`jump` x1.28 / 密度差 -2.5dB・どちらも上限の内側）。
 LOOP_XF = 3.0
 
+# ---- 1 本の録音から 1 発ずつ切り出すもの ------------------------------------
+#
+# ⚠ **これも「もらった音」の側**（合成ではない）。掛けるのは切り出しと音量と端の処理だけで、
+#    イコライザも圧縮も掛けない（`rules/sound-design.md` §4.5）。
+#
+# ⚠⚠ **打鍵の録音は「押し込み」と「戻り」の二山でできている**（実測: 8 打とも押し込みの
+#    80〜110ms 後に戻りが来て、あいだは digital silence）。切り出すのは**押し込みだけ**。
+#    連絡の面は 83ms ごとに 1 文字打つので、**戻りが居るべき所には次の字の押し込みが来る** —
+#    両方入れると密度が倍（24 発/秒）になり、カタカタではなく連続音になる。
+#
+# (元ファイル名, 出力名の頭, 期待する打数, 連なりの目標 LUFS, 刻み秒, 使い先)
+CUTS = [
+    ("PC-Keyboard04-mp3/PC-Keyboard04/PC-Keyboard04-04(Single-Mid).mp3",
+     "sfx_type", 8, -28.0, 1.0 / 12.0,
+     "連絡の面の打鍵音（`canon/LEDGER.md` 0056）。1 文字 = 1 発・12 文字/秒。"
+     "8 種を回して同じ波形が並ばないようにする"),
+]
+
+CUT_ONSET_DB = -34.0     # これを超えたら 1 発の頭
+CUT_GUARD = 0.30         # 頭を拾ったら次はこの秒数を見ない（戻りを別の打と数えない）
+CUT_PRE = 0.004          # 頭の手前に残す
+CUT_FADE = 0.008         # 尻のクリック止め。⚠ **頭は落とさない**（本体 15〜20ms の一撃なので）
+
+# ⚠⚠ **切り出す長さは決め打ちにする。** 減衰の終わりを自動で探そうとして 2 回外した:
+#    ①「無音が 5ms 続いた所」→ 押し込みと戻りのあいだは**無音まで落ちない**
+#      （床が -35〜-42dB ある）ので戻りを飛び越して 200ms まで伸びた
+#    ②「戻りの頭までのいちばん静かな所」→ 減衰の途中にある**孤立した 0 標本**を掴んで
+#      24ms で切れた（-28dB の途中でぶつ切り ＝ ゲートを掛けた音になる）
+#    実測は「押し込みの山 → 減衰は 45ms で -35dB → 床（-35〜-42dB）→ 戻りの山は最短 76.9ms」。
+#    60ms なら押し込みの減衰は丸ごと残り、いちばん早い戻りの 17ms 手前で終わる。
+CUT_BODY = 0.060
+CUT_RELEASE_MARGIN = 0.012   # 戻りの山までこれだけ空いていること（切れていたら言う）
+
+
+def cut_strokes(y, sr: int, step_sec: float, target_lufs: float):
+    """打鍵の録音から**押し込みだけ**を切り出し、連なりで音量を揃える。
+
+    ⚠⚠ **1 発ずつ正規化しない。切り出した全部に同じ倍率を掛ける。**
+    1 発ずつ揃えると、材料が持っている打鍵の強弱（強い打・弱い打）が消えて、
+    等間隔・等音量で鳴る機械の音になる。素材の生きている所を殺さない。
+
+    ⚠ 音量は **`step_sec` 間隔で連ねた状態**で測る。1 発の LUFS で揃えると、
+    実際に耳へ届く「打っているあいだの高さ」から外れる（連なると密度のぶん上がる）。
+    """
+    st = sk.to_stereo(y)
+    env = np.max(np.abs(st), axis=1)
+    on_thr, guard = 10 ** (CUT_ONSET_DB / 20), int(CUT_GUARD * sr)
+
+    heads, i = [], 0
+    while i < len(env):
+        if env[i] > on_thr:
+            heads.append(i)
+            i += guard
+        else:
+            i += 1
+
+    cuts, rel_min = [], 1e9
+    for s in heads:
+        a = max(0, s - int(CUT_PRE * sr))
+        cuts.append(sk.env_fade(st[a:a + int((CUT_PRE + CUT_BODY) * sr)], 0.0, CUT_FADE))
+        # 戻りの山（押し込みの 40〜200ms 後でいちばん大きい所）。**床の小さな瘤に釣られない**
+        # ように、閾値ではなく最大値で見る。
+        lo, hi = s + int(0.04 * sr), min(len(env), s + int(0.20 * sr))
+        if hi > lo:
+            rel_min = min(rel_min, (lo + int(np.argmax(env[lo:hi])) - s) / sr)
+
+    if not cuts:
+        return [], 0.0, -70.0, 0.0
+    stream = stroke_stream(cuts, sr, step_sec)
+    gain = 10 ** ((target_lufs - sk.lufs(stream)) / 20.0)
+    # 天井（-3dBTP）は連なりでも 1 発でも越えさせない。
+    tp = max(sk.true_peak_db(c * gain) for c in cuts)
+    if tp > -3.0:
+        gain *= 10 ** ((-3.0 - tp) / 20.0)
+    cuts = [c * gain for c in cuts]
+    return cuts, gain, sk.lufs(stroke_stream(cuts, sr, step_sec)), rel_min
+
+
+def stroke_stream(cuts, sr: int, step_sec: float, repeat: int = 3):
+    """切り出しを刻み秒で並べた連なり（**測るためのもの**。焼かない）。
+
+    順番を回すのは、同じ波形が並んだときだけ起きる干渉で音量を誤らないため。
+    ⚠ 尺は 400ms の窓が何個か入る長さが要る（LUFS はゲート付きの平均なので）。
+    """
+    step = int(step_sec * sr)
+    n = len(cuts) * repeat
+    tail = max(len(c) for c in cuts)
+    out = np.zeros((step * n + tail, 2))
+    for k in range(n):
+        c = cuts[k % len(cuts)]
+        out[k * step:k * step + len(c)] += c
+    return out
+
+
 def norm_lufs_drive(y, target: float, max_drive_db: float = 12.0):
     """ラウドネスを target へ合わせる。**届かなければ尖頭を丸めて届かせる。**
 
@@ -172,6 +266,45 @@ def fold_loop(y: np.ndarray, xf: float = LOOP_XF) -> np.ndarray:
     return body
 
 
+def ingest_cuts(cuts, src_dir: str) -> None:
+    """1 本の録音を 1 発ずつに切って焼く（<see cref="CUTS"/>）。"""
+    for jp, name, expect, target, step, _why in cuts:
+        src = os.path.join(src_dir, jp)
+        raw = os.path.join(RAW, f"src_{name}.wav")
+        if os.path.exists(src):
+            if not decode(src, raw):
+                continue
+        elif not os.path.exists(raw):
+            print(f"  無い: {jp}（{src_dir} にも {RAW} にも）")
+            continue
+        else:
+            print(f"  元 mp3 が無いので復号済みを使う: {name}")
+
+        y, sr = sk.read_wav(raw)
+        segs, gain, stream_lufs, rel_min = cut_strokes(y, sr, step, target)
+        if segs and rel_min < CUT_BODY + CUT_RELEASE_MARGIN:
+            # ⚠ 切り出しに**戻り**が入っている ＝ 密度が倍になる。CUT_BODY を詰めること。
+            print(f"  ⚠ {name}: 戻りの山まで最短 {rel_min * 1000:.1f}ms しかない"
+                  f"（切り出し {CUT_BODY * 1000:.0f}ms ＋ 余白 {CUT_RELEASE_MARGIN * 1000:.0f}ms）")
+        if len(segs) != expect:
+            # ⚠ **黙って本数を変えない。** 出力名は `_1..N` なので、本数が変わると
+            #    実行時の変種の数（`TypeAudioCue`）と食い違い、無い音を掴もうとする。
+            print(f"  ⚠ {name}: {expect} 発のはずが {len(segs)} 発だった。"
+                  f"元ファイルか CUT_* の閾値を確かめること")
+        for i, seg in enumerate(segs):
+            sk.write_wav(os.path.join(OUT, f"{name}_{i + 1}.wav"), seg, peak_db=-3.0)
+        if not segs:
+            continue
+        print(f"  {name}_1..{len(segs)}  倍率 {20 * np.log10(max(gain, 1e-9)):+.1f}dB  "
+              f"連なり {stream_lufs:.1f} LUFS（{1 / step:.0f} 発/秒）  "
+              f"戻りの山まで最短 {rel_min * 1000:.1f}ms")
+        for i, seg in enumerate(segs):
+            d = sk.describe(seg)
+            print(f"    {name}_{i + 1}  {d['sec'] * 1000:5.1f}ms  {d['lufs']:6.1f} LUFS  "
+                  f"tp {d['true_peak_db']:5.1f}dB  鋭さ {d['sharp']:4.2f}  "
+                  f"粗さ {d['rough']:4.2f}  内蔵SP {d['speaker_db']:5.1f}dB")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--list", action="store_true")
@@ -185,16 +318,22 @@ def main() -> int:
     if a.list:
         for jp, name, how, target, why in PLAN:
             print(f"  {name:16s} ← {jp}\n      {how} {target:+.1f} / {why}")
+        for jp, name, n, target, step, why in CUTS:
+            print(f"  {name+'_1..'+str(n):16s} ← {jp}\n      切り出し / 連なり {target:+.1f} LUFS"
+                  f"（{1/step:.0f} 発/秒）/ {why}")
         return 0
 
-    plan = [p for p in PLAN if a.only is None or p[1] in a.only]
-    if a.only is not None and len(plan) != len(a.only):
-        missing = sorted(set(a.only) - {p[1] for p in plan})
-        print(f"  PLAN に無い名前: {', '.join(missing)}")
+    names = {p[1] for p in PLAN} | {c[1] for c in CUTS}
+    if a.only is not None and not set(a.only) <= names:
+        missing = sorted(set(a.only) - names)
+        print(f"  PLAN にも CUTS にも無い名前: {', '.join(missing)}")
         return 1
+    plan = [p for p in PLAN if a.only is None or p[1] in a.only]
+    cuts = [c for c in CUTS if a.only is None or c[1] in a.only]
 
     os.makedirs(RAW, exist_ok=True)
     os.makedirs(OUT, exist_ok=True)
+    ingest_cuts(cuts, a.src)
     for jp, name, how, target, _why in plan:
         src = os.path.join(a.src, jp)
         raw = os.path.join(RAW, f"src_{name}.wav")

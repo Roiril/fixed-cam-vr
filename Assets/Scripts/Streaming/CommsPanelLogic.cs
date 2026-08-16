@@ -52,8 +52,19 @@ namespace FixedCamVr.Streaming
         /// <summary>枠が開き切るまで (秒)。</summary>
         public const float InSec = 0.45f;
 
-        /// <summary>1 秒あたり何文字打つか。速すぎると「一気に出た」に見え、遅いと読み終わる前に焦れる。</summary>
-        public const float CharsPerSec = 22f;
+        /// <summary>
+        /// 1 秒あたり何文字打つか。速すぎると「一気に出た」に見え、遅いと読み終わる前に焦れる。
+        ///
+        /// ⚠⚠ <b>22 → 12 に落とした</b>（2026-08-16・<c>canon/LEDGER.md</c> 0056）。
+        /// 1 文字 = 1 発の打鍵音を足したので、<b>この値がそのまま打鍵の間隔になる</b>。
+        /// 22 文字/秒 ＝ 45ms 間隔では 1 発ずつが分かれて聞こえず、カタカタではなく
+        /// 連続音になる（人が個々の打鍵を分けて聞けるのは 15〜20 発/秒あたりまで）。
+        /// 12 ＝ 83ms は、実物のテレタイプ（10 文字/秒）と、
+        /// もらった素材の押し込み→戻りの間隔（実測 80ms）の両方に近い。
+        /// ⚠ 音の側は <see cref="CommsPanelLogic"/> の刻みを**そのまま数える**ので、
+        /// ここを変えると打鍵の密度も一緒に変わる（対で直す必要は無い ＝ ずれようがない）。
+        /// </summary>
+        public const float CharsPerSec = 12f;
 
         /// <summary>打ち終わるまでの下限・上限 (秒)。文面が伸びても間延びさせない。</summary>
         public const float MinTypeSec = 0.15f;

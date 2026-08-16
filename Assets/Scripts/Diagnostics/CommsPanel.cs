@@ -22,6 +22,11 @@ namespace FixedCamVr.Diagnostics
     /// 判断は <see cref="CommsPanelLogic"/>、配るのは <c>Apply</c> 1 か所。
     /// ⚠ 打つのは <c>TMP_Text.maxVisibleCharacters</c>（文字列を作り直さないので毎フレーム触ってよい）。
     ///
+    /// <b>打鍵音</b>（<c>canon/LEDGER.md</c> 0056・2026-08-16）: 1 文字が出るたびに 1 発鳴る。
+    /// 鳴らすのは <see cref="TypeAudioCue"/> で、<b>字を画へ書いているのと同じ行</b>から呼ぶ —
+    /// 絵と音が同じ数えから出るのでずれようがない。速さ（12 文字/秒）は
+    /// <see cref="CommsPanelLogic.CharsPerSec"/> がそのまま打鍵の間隔になる。
+    ///
     /// ⚠ <b>追従は本編のスクリーンと同じ法則</b>（<see cref="YawFollowLogic"/>・ヨーだけ）。
     /// 新しい追従を書かない — 体験の中で追従の癖が 2 種類になると、どちらも「板」に見える。
     ///
@@ -42,6 +47,9 @@ namespace FixedCamVr.Diagnostics
 
         [Tooltip("頭の Transform。null なら CenterEyeAnchor を名前で探す。")]
         [SerializeField] private Transform? head;
+
+        [Tooltip("打鍵音。null なら同 GameObject から取得（無ければ足す）。")]
+        [SerializeField] private TypeAudioCue? typeSfx;
 
         // ---- 置き場所。**const**（SerializeField にすると既存シーンの YAML で 0 に読まれる）----
         /// <summary>頭からの距離 (m)。本編のスクリーンは 2.0m なので<b>0.5m 手前</b>。</summary>
@@ -140,6 +148,10 @@ namespace FixedCamVr.Diagnostics
         // 報告の縁を取るために、直前に見た回数を覚えておく（ShowControlClient が真実源）。
         private int _lastMarkCount;
         private bool _runRestartHooked;
+        // 直前のフレームで何文字出ていたか。**打鍵音はこの増分から鳴らす**（下の Apply）。
+        private int _lastShown;
+        // その字が絵を持つか（改行だけ false）。⚠ **全文が出ている一瞬にしか測れない** → SetNotice。
+        private bool[]? _charVisible;
 
         /// <summary>実体を組めたか。<b>false なら一生出ない</b>（テレメトリが読む）。</summary>
         public bool IsBuilt => _text != null;
@@ -152,6 +164,21 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>直近に書いた枠の開き（0 = 畳まれている / 1 = 開き切り）。「画に出た」側の観測。</summary>
         public float AppliedOpen { get; private set; }
+
+        /// <summary>いま画に出ている文字数。<b>打鍵音はここから鳴る</b>ので、音の証拠でもある。</summary>
+        public int VisibleChars { get; private set; }
+
+        /// <summary>
+        /// いまの文面が打ち切るまでに鳴る打鍵の数（<b>改行を除いた字数</b>）。
+        /// 解析器が「連絡 n 通ぶんの合計」と <c>typeN</c> を突き合わせるために使う。
+        /// </summary>
+        public int NoticeChars { get; private set; }
+
+        /// <summary>鳴らした打鍵の累計。<b>出た文字数の合計と一致するはず</b>（改行は除く）。</summary>
+        public int TypedCount => typeSfx != null ? typeSfx.PlayedCount : 0;
+
+        /// <summary>打鍵の音源を掴めているか。<b>false なら字は出るのに無音。</b></summary>
+        public bool TypeSfxBuilt => typeSfx != null && typeSfx.HasClips;
 
         /// <summary>
         /// 連絡が届いた回数。<b>増えた瞬間に左コントローラを震わせる</b>のは
@@ -173,6 +200,7 @@ namespace FixedCamVr.Diagnostics
         {
             _logic.Disable();
             Apply(CommsWeights.Hidden);
+            typeSfx?.StopAll();
         }
 
         private void OnDestroy()
@@ -188,6 +216,10 @@ namespace FixedCamVr.Diagnostics
             if (runDirector == null) runDirector = FindObjectOfType<ShowRunDirector>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
             if (timeline == null) timeline = FindObjectOfType<TimelineDirector>();
+            // ⚠ 打鍵音は**この面が持つ**（`ShowSoundDirector` は毎フレーム外から状態を見る層で、
+            //    1 秒に 12 回・字の刻みちょうどには鳴らせない）。切替音と同じ構え。
+            if (typeSfx == null) typeSfx = GetComponent<TypeAudioCue>();
+            if (typeSfx == null) typeSfx = gameObject.AddComponent<TypeAudioCue>();
             if (head == null)
             {
                 var anchor = GameObject.Find("CenterEyeAnchor");
@@ -215,6 +247,8 @@ namespace FixedCamVr.Diagnostics
             _lastMarkCount = showControl != null ? showControl.VisitorMarkCount : 0;
             _logic.Disable();
             Apply(CommsWeights.Hidden);
+            // 前の体験者の打鍵を次のランへ持ち越さない（`ShowSoundDirector.ResetRun` と同じ流儀）。
+            typeSfx?.StopAll();
         }
 
         /// <summary>連絡を 1 通出す。<b>すでに出ていれば頭から出し直す</b>（重ねない）。</summary>
@@ -378,8 +412,42 @@ namespace FixedCamVr.Diagnostics
             float scale = TextScale;
             Bounds ink = tmp.textBounds;
             tmp.transform.localPosition = new Vector3(0f, -ink.center.y * scale, 0f);
-            _charCount = tmp.textInfo != null ? tmp.textInfo.characterCount : 0;
+            // ⚠ ここは**全文が出ている状態**（上で maxVisibleCharacters = int.MaxValue して
+            //   組み直した直後）なので、`isVisible` が「その字が絵を持つか」を表す。
+            //   ここでしか測れない（下で 0 に戻すと、以後は全部 false になる）。
+            var info = tmp.textInfo;
+            _charCount = info != null ? info.characterCount : 0;
+            _charVisible = new bool[_charCount];
+            int visible = 0;
+            for (int i = 0; i < _charCount; i++)
+            {
+                _charVisible[i] = info!.characterInfo[i].isVisible;
+                if (_charVisible[i]) visible++;
+            }
+            NoticeChars = visible;
             tmp.maxVisibleCharacters = 0;
+            // ⚠ 文面を差し替えたら**打鍵の数えも 0 に戻す**。戻さないと、
+            //    前の文面より短い文面では 1 発も鳴らず、長い文面では途中から鳴り始める。
+            _lastShown = 0;
+            VisibleChars = 0;
+        }
+
+        /// <summary>
+        /// その字は絵を持つ字か（<see cref="SetNotice"/> が 1 度だけ測る）。
+        /// <b>改行では打鍵を鳴らさない</b> — <c>maxVisibleCharacters</c> は改行も 1 文字として
+        /// 数えるので、鳴らすと「字が出ていないのに 1 発鳴る」が起きる（③の文面は 2 行）。
+        ///
+        /// ⚠⚠ <b>毎フレーム <c>textInfo.characterInfo[i].isVisible</c> を見てはいけない。</b>
+        /// あれは<b>いまの <c>maxVisibleCharacters</c> の下で描かれたか</b>を表すので、
+        /// たったいま出た字は<b>必ず false</b>（前フレームの再生成にはまだ入っていない）。
+        /// 2026-08-16 にこれで**打鍵が 1 発しか鳴らなかった**（プレビューの `type.tsv` が捕まえた）。
+        /// ⇒ 全文が出ている状態で 1 度だけ測って覚えておく。
+        /// ⚠ 分からないときは<b>鳴らす側へ倒す</b>（黙る方が気づけない）。
+        /// </summary>
+        private bool IsVisibleChar(int i)
+        {
+            if (_charVisible == null || i < 0 || i >= _charVisible.Length) return true;
+            return _charVisible[i];
         }
 
         /// <summary>面を 1 枚作る（地と縁で共有）。色は <see cref="Apply"/> が毎フレーム書く。</summary>
@@ -430,6 +498,14 @@ namespace FixedCamVr.Diagnostics
                 if (_text.maxVisibleCharacters != shown) _text.maxVisibleCharacters = shown;
                 bool on = AppliedGlyph > 0.002f && shown > 0;
                 if (_text.gameObject.activeSelf != on) _text.gameObject.SetActive(on);
+                // ⚠⚠ **打鍵音は、字を画へ書いているこの行から鳴らす**（`canon/LEDGER.md` 0056）。
+                //    絵と音が同じ数えから出るので、ずれようがない（乱れの育ちを 1 か所で
+                //    数えているのと同じ理由 — 別々に数えると黙って食い違う）。
+                //    ⚠ **増えた字数ぶん鳴らさない。** 1 フレームで 2 字進んだら（コマ落ち）
+                //      同じ DSP 時刻に 2 発重なって 1 つの大きな音に潰れる。1 発だけ鳴らす。
+                if (shown > _lastShown && IsVisibleChar(shown - 1)) typeSfx?.Play();
+                _lastShown = shown;
+                VisibleChars = shown;
             }
             float pa = Mathf.Clamp01(w.panel);
             // Unlit/Color は alpha を持たないので、明るさで濃さを出す（暗い場所なので十分）。

@@ -649,9 +649,14 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
 （`TimelineDirector.IsWaitingForVisitorMark`）ので、著作が変わっても追随する。
 ⚠ **自動走行はためらってから押す**（`ShowWalkDebugDriver.ReportHesitateSec` = 4.5 秒 >
 `CommsCueLogic.PromptAfterWaitSec` = 3 秒）。縮めると③が実機で一度も走らない。
-⚠ **観測は `ev=comms id= n= built= wait=` と `ev=sum` の `comms=` / `commsBuilt=`**。
-`comms=` は段だけでなく**実際に書いた文字の濃さと枠の開き**を持つ（画に出た側）。
-`ShowTelemetryHost` と `analyze-xp-log.py` を**対で**直す。
+⚠ **観測は `ev=comms id= n= built= chars= sfx= wait=` と `ev=sum` の
+`comms=` / `commsBuilt=` / `typeN=`**。`comms=` は段だけでなく**実際に書いた文字の濃さと枠の開き**を
+持つ（画に出た側）。`ShowTelemetryHost` と `analyze-xp-log.py` を**対で**直す。
+
+⚠⚠ **字が 1 字出るたびに打鍵音が 1 発鳴る**（2026-08-16・`canon/LEDGER.md` 0056）。
+正本は `rules/sound-design.md` §4「連絡の面の打鍵」。ここで押さえるべきは 1 つだけ —
+**`CommsPanelLogic.CharsPerSec`（12）はそのまま打鍵の間隔になる**ので、
+打つ速さを変えると音の密度も変わる（22 に戻すと連続音になる）。
 
 ⚠⚠ **`VisitorMarkPanel` は門を通さない唯一の面**（2026-08-15・`canon/LEDGER.md` 0050）。
 上の 3 つと並べると規約違反に見えるので、**善意で `StaffViewing()` を足されると

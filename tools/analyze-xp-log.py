@@ -981,7 +981,8 @@ def analyze(events, others, exp, warns=None):
         w("## 上司からの連絡")
         for e in comms:
             w(f"  t={fnum(e,'t',0):7.1f}  {e.get('id')} n={e.get('n')} "
-              f"built={e.get('built')} lap={e.get('lap')} wait={e.get('wait')}")
+              f"built={e.get('built')} lap={e.get('lap')} chars={e.get('chars')} "
+              f"sfx={e.get('sfx')} wait={e.get('wait')}")
 
         if comms_built and all(str(v) == "0" for v in comms_built):
             verdict("FAIL", "連絡の面を組めていない（commsBuilt=0）— 1 通も出ない。"
@@ -1024,6 +1025,36 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", "③4 周目 A の締めで押さないまま 3 秒が経ち、催促が届いた")
             elif any(str(e.get("wait")) == "1" for e in comms):
                 verdict("WARN", "締めのカットが待っていたのに③の催促が届いていない")
+
+            # ---- 打鍵音（`canon/LEDGER.md` 0056）----
+            # ⚠⚠ **音は録画に映らない。** 字が 1 文字ずつ出る絵は PNG で確かめられるが、
+            #    それに合わせて鳴っているかはこの数でしか分からない。
+            # ⚠ 完全一致は求めない — 打ち終わる前に次の連絡が届くと（②は押すたび返る）
+            #    残りの字は打たれないので、`typeN` は合計より少なくなるのが**正常**。
+            #    見るのは「0 でないこと」と「合計を超えないこと」の 2 つ。
+            want_hits = sum(int(e.get("chars") or 0) for e in comms)
+            typed_all = [v for v in effect_samples(events, "typeN") if str(v) != "-"]
+            typed = typed_all[-1] if typed_all else None
+            if typed is None:
+                verdict("WARN", "打鍵の観測（typeN）が出ていない — 古い APK か ShowTelemetryHost 未更新")
+            elif str(typed) == "nc":
+                verdict("FAIL", "打鍵の音源を掴めていない（typeN=nc）— 字は出るのに無音。"
+                                "`py -3.11 tools/ingest-sounds.py --only sfx_type` と "
+                                "`menu sound-import` を見る")
+            else:
+                n = int(typed)
+                if n <= 0:
+                    verdict("FAIL", f"連絡が {len(comms)} 通届いたのに打鍵が 1 発も鳴っていない"
+                                    f"（typeN=0 / 字数の合計 {want_hits}）— "
+                                    "CommsPanel が TypeAudioCue を掴めていない疑い")
+                elif n > want_hits:
+                    verdict("FAIL", f"打鍵が字数より多い（typeN={n} / 字数の合計 {want_hits}）— "
+                                    "1 文字で 2 発以上鳴っている（Apply の増分の見方）")
+                elif n < want_hits * 0.5:
+                    verdict("WARN", f"打鍵が字数の半分以下（typeN={n} / 合計 {want_hits}）— "
+                                    "打ち終わる前に次の連絡が届いて打ち切れていない")
+                else:
+                    verdict("OK", f"打鍵が {n} 発鳴った（字数の合計 {want_hits}・1 文字 1 発）")
         w()
 
     # ---------------- 位置合わせ（コントローラの操作モード） ----------------

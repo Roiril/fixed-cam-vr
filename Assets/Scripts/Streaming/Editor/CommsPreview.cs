@@ -54,6 +54,9 @@ namespace FixedCamVr.Streaming.EditorTools
 
             // Edit モードでは Awake が走っていないので、自分で起こして面を組ませる。
             Invoke(panel, "Awake");
+            // 打鍵も起こす（音は鳴らないが、**鳴らしたはずの数**が数えられる ＝ type.tsv の材料）。
+            var typeSfx = panel.GetComponent<TypeAudioCue>();
+            if (typeSfx != null) Invoke(typeSfx, "Awake");
             TMP_Text? tmp = panel.GetComponentInChildren<TMP_Text>(includeInactive: true);
             if (tmp == null)
             {
@@ -136,7 +139,16 @@ namespace FixedCamVr.Streaming.EditorTools
                 ApplyNow(apply, panel, logic);
 
                 float dt = 1f / Fps;
-                for (int i = 0; i < Fps * 0.3f; i++) Shoot(cam, Frame(dir, n++));   // 出る前の間
+                // ⚠ **打鍵が鳴るコマを書き出す**（`canon/LEDGER.md` 0056）。音を後から Python 側で
+                //    数え直すと、実機と違う所で鳴る動画ができて判断が狂う（`menu glitch` の
+                //    `frames.tsv` と同じ流儀 — 数えるのは Unity、並べるのが Python）。
+                var taps = new System.Text.StringBuilder("frame\tchars\thit\n");
+                int lastTyped = panel.TypedCount;
+                for (int i = 0; i < Fps * 0.3f; i++)
+                {
+                    taps.Append(n).Append("\t").Append(panel.VisibleChars).Append("\t0\n");
+                    Shoot(cam, Frame(dir, n++));   // 出る前の間
+                }
 
                 panel.Deliver(CommsNotice.Prompt);
                 float typeSec = TypeSec(logic);
@@ -144,7 +156,19 @@ namespace FixedCamVr.Streaming.EditorTools
                 for (float t = 0f; t < total; t += dt)
                 {
                     Step(logic, apply, panel, dt);
+                    // ⚠ 実際に鳴らした数（`TypedCount`）の増分で見る ＝ **改行で鳴らない規則も
+                    //    そのまま入る**（コマ数から数え直すと、そこだけ実機と違う動画になる）。
+                    int hit = panel.TypedCount > lastTyped ? 1 : 0;
+                    lastTyped = panel.TypedCount;
+                    taps.Append(n).Append("\t").Append(panel.VisibleChars).Append("\t")
+                        .Append(hit).Append("\n");
                     Shoot(cam, Frame(dir, n++));
+                }
+                File.WriteAllText(Path.Combine(dir, "type.tsv"), taps.ToString());
+                if (!panel.TypeSfxBuilt)
+                {
+                    Debug.LogWarning("[CommsPreview] 打鍵の音源を掴めていないので type.tsv は空になります"
+                                     + "（`py -3.11 tools/ingest-sounds.py --only sfx_type`）");
                 }
 
                 Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 4 枚 → Assets/{OutDirRel}/\n"

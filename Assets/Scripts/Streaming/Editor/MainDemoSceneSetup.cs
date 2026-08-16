@@ -606,12 +606,18 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 var comms = commsGo.GetComponent<FixedCamVr.Diagnostics.CommsPanel>();
                 if (comms == null) comms = commsGo.AddComponent<FixedCamVr.Diagnostics.CommsPanel>();
+                // 打鍵音（canon/LEDGER.md 0056）。1 文字 = 1 発。**この面が直接叩く**ので同じ
+                // GameObject に載せる（ShowSoundDirector は毎フレーム外から見る層で、字の刻みに
+                // 間に合わない）。SfxPlayer は TypeAudioCue が自分で足す。
+                var typeSfx = commsGo.GetComponent<TypeAudioCue>();
+                if (typeSfx == null) typeSfx = commsGo.AddComponent<TypeAudioCue>();
                 // 実行時も FindObjectOfType で自己解決するが、明示配線しておく（Tracker は毎回
                 // 作り直すので、焼いた参照が切れたまま残るより「必ず今の実体を指す」方が安全）。
                 var commsSo = new SerializedObject(comms);
                 TrySetObjectRef(commsSo, "runDirector", runDirector);
                 if (showControl != null) TrySetObjectRef(commsSo, "showControl", showControl);
                 TrySetObjectRef(commsSo, "timeline", timelineDirector);
+                TrySetObjectRef(commsSo, "typeSfx", typeSfx);
                 commsSo.ApplyModifiedPropertiesWithoutUndo();
             }
 

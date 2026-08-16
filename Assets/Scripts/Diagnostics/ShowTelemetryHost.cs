@@ -573,6 +573,10 @@ namespace FixedCamVr.Diagnostics
                 _lastCommsPulse = _comms.PulseCount;
                 Emit($"ev=comms id={_comms.LastNotice} n={_lastCommsPulse} " +
                      $"built={(_comms.IsBuilt ? 1 : 0)} lap={(_run != null ? _run.Lap : -1)} " +
+                     // chars = この文面で鳴るはずの打鍵の数（改行を除く）。
+                     // 解析器が合計と `typeN` を突き合わせる（`canon/LEDGER.md` 0056）。
+                     $"chars={_comms.NoticeChars} " +
+                     $"sfx={(_comms.TypeSfxBuilt ? 1 : 0)} " +
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
             }
 
@@ -832,6 +836,12 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" swN=").Append(_switchSfx == null
                                        ? "-"
                                        : (_switchSfx.HasClips ? _switchSfx.PlayedCount.ToString() : "nc"));
+            //   typeN = 連絡の面の打鍵の累計（`canon/LEDGER.md` 0056）。**出た文字数と対で見る** —
+            //           `nc` は音源を掴めていない ＝ 字は出るのに無音。
+            //           解析器が「連絡 n 通ぶんの字数の合計」と突き合わせて FAIL にする。
+            _sb.Append(" typeN=").Append(_comms == null
+                                         ? "-"
+                                         : (_comms.TypeSfxBuilt ? _comms.TypedCount.ToString() : "nc"));
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。
