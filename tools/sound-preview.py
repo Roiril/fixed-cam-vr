@@ -321,7 +321,7 @@ def build_dolls() -> np.ndarray:
            + tile(load("bed_device_worn"), total) * 1.0)
     lay(out, load("amb_dolls_laugh"), t_laugh)
     lay(out, type_burst(20, TYPE_CPS, rng), t_comms)
-    print(f"  {t_laugh:.1f}s 人形が笑い出す（7 体・7.0 秒）/ "
+    print(f"  {t_laugh:.1f}s 人形が笑い出す（16 体・10.3 秒）/ "
           f"{t_comms:.1f}s ③の連絡「異常が検出されました。記録してください。」")
     return out
 
