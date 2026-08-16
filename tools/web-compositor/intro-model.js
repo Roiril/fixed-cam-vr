@@ -227,7 +227,8 @@ function cameraName(cameras, i) {
  * 見るのは 3 つ:
  *   構造の線の設定 — on なら重ねる相手（実物の寸法）が要る（⚠）
  *   上限           — 尺が maxSec を超えると段を飛ばして映像を出す（⚠）
- *   開始位置       — 未設定なら手動開始・スタート区間の外なら入り直しになる（⚠）
+ *   開始の合図     — **実機と同じ優先順位**（接近 > 通過ライン > 円）で、
+ *                    使われないものが著作されたままなら名指しする（⚠）
  *
  * ⚠ **線が off なら幾何は要求しない**（起きようのない不備を直させない）。
  * 幾何そのものは隔離殻と CG が別に要求する。
@@ -254,7 +255,29 @@ export function introPreflightRow({ run, layout, cameras } = {}) {
       warn.push('壁が卓の既定（1m × 1m の L）のままです — 実測した値か判定できません');
     }
   }
-  if (!startSpotOf(layout)) {
+  // ---- 開始の合図。**実機と同じ優先順位で見る**（IntroDirector.IsAtStartSpot）------------
+  //   1. 接近（体験エリアへ近づいてくる動き）… 床の実寸が解ける限りこれが正
+  //   2. 通過ライン run.intro.startLineId … 1 が解けないときだけ
+  //   3. 開始位置の円 layout.startSpot   … 2 も空のときだけ
+  // ⚠ ここは 2026-08-13 に接近が入るまで「円が無ければ手動運用」と言い切っていた。
+  //   接近が効く現場でそれを言うと**嘘の警告**になり、しかも直し方（円を置け）まで間違っている。
+  const startsByApproach = introWireGeometry(layout).hasFloor;
+  const lineId = (intro.startLineId || '').trim();
+  if (startsByApproach) {
+    // 円も線も見られない。**著作してあるのに使われないものだけ**を名指しする
+    //   （消してあるものについては黙る — 消したのに警告が残るのが一番たちが悪い）。
+    if (lineId) {
+      warn.push(`開始の通過ライン「${lineId}」は使われません`
+        + ' — 床の実寸が著作されているので、体験エリアへの接近で始まります');
+    }
+    if (startSpotOf(layout)) {
+      warn.push('開始位置の円は使われません — 同上（消しても体験は変わりません）');
+    }
+  } else if (lineId) {
+    if (startSpotOf(layout)) {
+      warn.push('開始位置の円は使われません — 開始の通過ラインが指定されています');
+    }
+  } else if (!startSpotOf(layout)) {
     warn.push('開始位置が未設定です — スタッフが手で始める運用になります'
       + '（フロアマップの 🎬 開始位置 で床に 1 点置く）');
   } else {

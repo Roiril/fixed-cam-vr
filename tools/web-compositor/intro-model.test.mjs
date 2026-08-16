@@ -18,12 +18,11 @@ const MEASURED_ROOM = () => ({
   ],
   props: [],
 });
-// 「導入が成立している layout」= 床 + 測った壁 + 開始位置あり。開始位置が無いだけで ⚠ が出るので、
-// 他の条件を試すテストにはこれを渡す（ノイズで判定が読めなくなるのを防ぐ）。
+// 「導入が成立している layout」= 床 + 測った壁。⚠ **開始位置の円は入れない** —
+// 床の実寸が解ける現場では接近が正で、円は使われないので、置いてあると ⚠ が出る（2026-08-16）。
 const measuredLayout = () => ({
   floor: { w: 1.8, d: 1.8 },
   room: MEASURED_ROOM(), hasRoom: true,
-  startSpot: { x: 0, z: -0.6 },
 });
 const calibratedCams = () => ([{ id: 'A', calib: { fxPx: 431.2 } }]);
 
@@ -184,6 +183,47 @@ test('成立していれば ✅ に尺を出す', () => {
   assert.deepEqual(row, { s: 'ok', label: '🎬 導入', detail: '演出 13.1s / 慣らし 20s' });
 });
 
+// ---- 開始の合図の優先順位（接近 > 通過ライン > 円）--------------------------------
+// ⚠ 実機は IntroDirector.IsAtStartSpot がこの順に見る。卓が別の順で言うと、
+//    現場で「置け」と指示されたものが実際には 1 ビットも効かない。
+
+test('床の実寸が解けるなら接近で始まるので、円が無くても ⚠ にしない', () => {
+  // 2026-08-13 に接近が入るまで、ここは「開始位置が未設定です」と嘘をついていた。
+  const row = introPreflightRow({ run: {}, layout: measuredLayout(), cameras: calibratedCams() });
+  assert.equal(row.s, 'ok');
+});
+
+test('接近で始まる現場に円が置いてあれば「使われません」と名指しする', () => {
+  const row = introPreflightRow({
+    run: {}, layout: { ...measuredLayout(), startSpot: { x: 0, z: -0.6 } }, cameras: calibratedCams(),
+  });
+  assert.equal(row.s, 'warn');
+  assert.match(row.detail, /開始位置の円は使われません/);
+});
+
+test('接近で始まる現場では通過ラインも使われないと言う', () => {
+  const row = introPreflightRow({
+    run: { intro: { startLineId: 'line_1' } }, layout: measuredLayout(), cameras: calibratedCams(),
+  });
+  assert.equal(row.s, 'warn');
+  assert.match(row.detail, /通過ライン「line_1」は使われません/);
+});
+
+test('床が無く通過ラインを指定しているなら、円は使われない', () => {
+  const row = introPreflightRow({
+    run: { intro: { startLineId: 'line_1' } },
+    layout: { startSpot: { x: 0, z: -0.6 } }, cameras: calibratedCams(),
+  });
+  assert.equal(row.s, 'warn');
+  assert.match(row.detail, /開始位置の円は使われません/);
+});
+
+test('床も線も無ければ、円が唯一の自動の合図なので未設定を ⚠ にする', () => {
+  const row = introPreflightRow({ run: {}, layout: {}, cameras: calibratedCams() });
+  assert.equal(row.s, 'warn');
+  assert.match(row.detail, /開始位置が未設定です/);
+});
+
 // ---- 開始位置（layout.startSpot）------------------------------------------------
 
 test('開始位置は座標が無ければ未設定（null）', () => {
@@ -231,17 +271,17 @@ test('ゾーンが解決できない layout では黙る（直しようのない
   assert.equal(startSpotZoneIssue(blank), null);
 });
 
-test('開始位置が未設定なら ⚠（スタッフが手で始める運用になる）', () => {
-  const lay = measuredLayout(); delete lay.startSpot;
-  const row = introPreflightRow({ run: {}, layout: lay, cameras: calibratedCams() });
-  assert.equal(row.s, 'warn');
-  assert.match(row.detail, /開始位置が未設定/);
-});
+// ⚠ 「開始位置が未設定なら ⚠」の旧テストは 2026-08-16 に削除した。床の実寸がある現場で
+//    その警告を出すのが**まさに直したバグ**（接近が正なので円は要らない）。
+//    円が本当に要る条件は「床も線も無い」で、上の優先順位の節が固定している。
 
 test('開始位置がスタート区間の外なら ⚠ にカメラ名を出す', () => {
+  // ⚠ 円が実際に使われる形（床も部屋も無い）でないと、この判定には到達しない。
+  const lay = zonedLayout({ x: 0, z: 0.6 });
+  delete lay.floor; delete lay.room; delete lay.hasRoom;
   const row = introPreflightRow({
     run: { introMinSec: 20 },
-    layout: zonedLayout({ x: 0, z: 0.6 }),
+    layout: lay,
     cameras: [{ id: 'A', calib: { fxPx: 431.2 } }, { id: 'B' }],
   });
   assert.equal(row.s, 'warn');
@@ -249,9 +289,8 @@ test('開始位置がスタート区間の外なら ⚠ にカメラ名を出す
   assert.match(row.detail, /カメラ B/);
 });
 
-test('導入が無効なら開始位置が未設定でも黙る', () => {
-  const lay = measuredLayout(); delete lay.startSpot;
-  assert.equal(introPreflightRow({ run: { intro: { enabled: false } }, layout: lay, cameras: calibratedCams() }), null);
+test('導入が無効なら開始の合図が何も無くても黙る', () => {
+  assert.equal(introPreflightRow({ run: { intro: { enabled: false } }, layout: {}, cameras: calibratedCams() }), null);
 });
 
 test('卓の既定値と capture-server.py の _default_show が一致している', async () => {
