@@ -19,6 +19,7 @@ cue の素材にする。4 周目 A の「左半分に大量の人形」がこ�
 | **なじませ** | `prompt/10-blend.md` ＋ `prompt/surfaces.md` | 品質を上げたいときはここ | 影・粒・縁・暗部・遠近・遮蔽。面ごとの追加 |
 | **異変** | `anomaly/*.md` | 新しい異変を思いついたとき | 何を足すか。**どこにも依存しない** |
 | **場所** | `sites/*.json` | **当日ここだけ** | どのプレートの、どの面が、画面のどこか |
+| **伝送** | `--lap N`（機械が計算） | 出す周が決まったら | 何画素が潰れるか・色が残るか・明暗差の下限 |
 
 **プロンプトの中で場所に触れているのは「この場所について」の節だけ**で、それは `compose.py` が
 種を測って書く。人が場所について書くのは `sites/*.json` の**面の箱と一言**だけ。
@@ -35,7 +36,8 @@ py -3.11 tools/gen-plate/site.py draft --plate <その日のプレート.jpg> --
 #    → 直したら  site.py show --id A_20260901  で描き直して確かめる
 
 # 2) プロンプトを組む（種を暗くする所まで込み）
-py -3.11 tools/gen-plate/compose.py --anomaly dolls-many --site A_20260901 --place left-half
+#    出す周が決まっているなら --lap を付ける（伝送で何が失われるかを機械が節にする）
+py -3.11 tools/gen-plate/compose.py --anomaly dolls-many --site A_20260901 --place left-half --lap 4
 
 # 3) 生成 → 判定（印字されたコマンドをそのまま実行する）
 #    codex-run.ps1 -Mode image ...

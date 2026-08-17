@@ -54,6 +54,42 @@ def measure(img: Image.Image) -> dict:
     )
 
 
+FINE_BLOCKS, END_BLOCKS = 800.0, 267.0     # ScreenDecayLogic と対（値を変えたら両方直す）
+
+
+def transmission(lap: float | None, size, total_laps: float) -> tuple[dict, str]:
+    """**その周で伝送がどれだけ痩せるか**を計算して、プロンプトの 1 節にする。
+
+    出る周が分かって初めて言えることが 3 つある（`tools/gen-plate/runs.md` の実測）:
+      細かさ  素材の何画素が 1 つに潰れるか（`ScreenComposite` の mip）
+      色      3 周目以降は**完全な無彩**（`_Mono` は劣化と同じ進み）
+      明暗差  周りとの差をどこまで落とすと粒に埋もれるか
+
+    ⚠ 明暗差の下限は **2 点の実測を直線で結んだ目安**（1 周目 10% / 帰りの A 60%）。
+      素材ができたら `limit.py` で実際に確かめる。
+    """
+    if lap is None:
+        return {}, ""
+    prog = min(max((lap - 1.0) / max(1.0, total_laps - 1.0), 0.0), 1.0)
+    blocks = FINE_BLOCKS + (END_BLOCKS - FINE_BLOCKS) * prog
+    contain = min(1.0, (size[0] / size[1]) / (16 / 9))      # 4:3 を 16:9 の枠へ
+    src_px = size[0] / max(1.0, blocks * contain)
+    floor = 0.10 + 0.50 * prog
+
+    lines = ["## この素材が通る伝送（機械が計算した節）", ""]
+    lines.append(f"- この画像は装置の伝送を通ってから体験者に届きます（{int(lap)} 周目の映像）")
+    if src_px >= 1.6:
+        lines.append(f"- **細かさ**: 届くときには**この画像の {src_px:.1f} 画素が 1 つに潰れます**。"
+                     "それより細かい模様は 1 本も残りません")
+    if prog >= 0.6:
+        lines.append("- **色**: 届くときには**色が全部抜けて白黒になります**。"
+                     "⚠ **色で見分けさせないでください** — 形と明暗だけで何なのか分かるようにする")
+    lines.append(f"- **明暗差**: 周りとの明暗の差を **{floor * 100:.0f}%** より小さくしないでください。"
+                 "それ以下は粒に埋もれて消えます")
+    return dict(lap=lap, progress=prog, blocks=blocks, src_px=src_px, contrast_floor=floor), \
+        "\n".join(lines)
+
+
 def bright_say(m: dict) -> str:
     x, y = m["bright_x"], m["bright_y"]
     ud = "上" if y < 0.40 else ("下" if y > 0.60 else "上下の中ほど")
@@ -96,7 +132,8 @@ def env_block(seed_path: str, size, m: dict, place: dict, surf_box, surf_say: st
 
 
 def build(anomaly: dict, site: dict, place_str: str, scale: float, out_dir: str,
-          full_post: bool = False, blur: float = 0.0, no_refs: bool = False) -> dict:
+          full_post: bool = False, blur: float = 0.0, no_refs: bool = False,
+          lap: float | None = None) -> dict:
     gen_tone = _load_gen_tone()
     plate = Image.open(site["plate_abs"]).convert("RGB")
     size = plate.size
@@ -148,14 +185,24 @@ def build(anomaly: dict, site: dict, place_str: str, scale: float, out_dir: str,
                                                                      anomaly["surface"]))
                       .replace("<<SURFACE_RULES>>", spec.surface_rules(anomaly["surface"])))
 
-    prompt = "\n\n".join([
+    total_laps = 3.0
+    try:
+        with open(os.path.join(spec.REPO, "tools", "web-compositor", "show.json"),
+                  encoding="utf-8") as f:
+            total_laps = float((json.load(f).get("run") or {}).get("totalLaps", 3))
+    except (OSError, ValueError, TypeError):
+        pass
+    trans, trans_text = transmission(lap, size, total_laps)
+
+    prompt = "\n\n".join(x for x in [
         fill(read("00-contract.md")),
         env_block(seed_path, size, m, place, target, spec.surface_say(site, anomaly["surface"]),
                   refs, extends_up),
         f"## 足すもの — {anomaly['title']}\n\n{anomaly['body']}",
+        trans_text,
         fill(read("10-blend.md")),
         fill(read("99-output.md")),
-    ]) + "\n"
+    ] if x) + "\n"
 
     prompt_path = os.path.join(out_dir, "prompt.txt")
     with open(prompt_path, "w", encoding="utf-8", newline="\n") as f:
@@ -170,7 +217,7 @@ def build(anomaly: dict, site: dict, place_str: str, scale: float, out_dir: str,
         keep_out=place["keep_out"], surface=anomaly["surface"],
         opaque=anomaly["opaque"], min_area_pct=anomaly["min_area_pct"],
         max_area_pct=anomaly["max_area_pct"], min_parts=anomaly["min_parts"],
-        persp=anomaly["persp"], seed_stats=m,
+        persp=anomaly["persp"], seed_stats=m, transmission=trans,
     )
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
@@ -190,6 +237,8 @@ def main() -> int:
     ap.add_argument("--no-refs", action="store_true",
                     help="参照画像を渡さない（描き直しとの関係を見る試験）")
     ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--lap", type=float, default=None,
+                    help="何周目の映像として出すか（伝送でどれだけ痩せるかを節にする）")
     ap.add_argument("--tag", default="", help="走行フォルダ名の後ろに付ける印")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
@@ -202,7 +251,7 @@ def main() -> int:
         f"{stamp}_{anomaly['id']}_{site['id']}" + (f"_{args.tag}" if args.tag else ""))
 
     man = build(anomaly, site, args.place, args.scale, out_dir, args.full_post,
-                args.blur, args.no_refs)
+                args.blur, args.no_refs, args.lap)
     print(f"走行 {out_dir}")
     print(f"  種 平均輝度 {man['seed_stats']['mean']:.1f}  "
           f"足す所 {man['target']}  置かない所 {man['keep_out']}")
