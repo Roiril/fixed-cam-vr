@@ -88,6 +88,14 @@ RIM_KEEP = 2         # 外形の縁は必ず墨で残す幅。⚠ 無いと輪�
 INK_MIN_AREA = 60    # 彫ったあとに残る墨の島の下限
 LINE_MIN_AREA = 25   # これ未満の暗い点は線ではない（粒・にじみ）
 
+#: ⭐ **彫った線が頭の面積に占める割合の下限**（`canon/LEDGER.md` 0075）。
+#: ユーザー赤入れ「なんか急にチープになった」の版はここが **12.0%** で、
+#: スイ（**24.3%**）のちょうど半分だった。**「作り込みが弱い」は感想ではなく画素で出る**
+#: （`~/.claude/reference/image-prompt-standards.md` §2.5 と同じ発見）。
+#: ⚠ 素材を差し替えたら必ずこの数を見る。下回るなら**線を太らせるのではなく、
+#:   線の本数が足りない**（太らせると黒い帯になるだけ）。
+DENSITY_FLOOR = 0.20
+
 # ---- スイ（`sui-neutral.png` の画素。素材の実測。外したら `--parts` の絵を見て直す）----
 SUI_CROP = (8, 4, 392, 306)   # 髪の天辺 〜 顎の少し下。⚠ 外套から下は入れない（黒い台形になる）
 SUI_BG_TOL = 10.0     # 背景（生成りの無地）からこれだけ離れたら「物がある」
@@ -113,12 +121,13 @@ SUI_EYE_ZONE_PAD = 9      # 芯から瞳へ広げる幅
 #    ⇒ 実物の写真を参照として Codex に**閉じた線画**を描かせ、それを彫る（`tools/doll-ref/PROMPT.md`）。
 #    ⚠ これは**資料であって正本ではない**（`memory/doll_reference_kit.md`）。
 #      正本はいまも `tools/doll-ref/out/plate_front.jpg` の写真で、線画はそこから起こした 1 枚。
-DOLL_CROP = (130, 50, 895, 880)   # 髪の天辺 〜 襟の V（肩が広がる前で切る）
-#: 線とみなす明るさの上限。線画なので**紙は 254・線は 0** ときれいに分かれる。
-DOLL_LINE_MAX_L = 128.0
+DOLL_CROP = (210, 60, 1050, 1010)   # 髪の天辺 〜 襟の V（肩が広がる前で切る）
+#: 線とみなす明るさの上限。線画なので紙（254）と線は離れているが、**細い線ほど淡く出る**ので
+#: 高めに取る。⚠ 128 まで下げると髪の房が半分落ちて、のっぺりした塗り絵に戻る。
+DOLL_LINE_MAX_L = 200.0
 #: 塗りつぶす前に線を閉じる量。⚠ 線が 1 画素でも途切れていると**塗りが外へ漏れて絵が壊れる**。
 DOLL_CLOSE = 1
-#: 線を太らせる量。⚠ **2**。1 では 110 画素で消えかけ、3 では前髪の線と眉が繋がる（絵で比べた）。
+#: 線を太らせる量。⚠ **2**。1 では 110 画素で消えかけ、3 では髪が黒い帯になる（絵で比べた）。
 DOLL_LINE_W = 2
 
 
@@ -319,10 +328,17 @@ def main() -> int:
         face = compose(st["ink"])
         face.save(OUT_DIR / out_name)
         cover = float(np.asarray(face)[..., 3].mean()) / 255.0
+        # ⭐ **彫った線の密度**。ユーザーが「チープ」と言った版はここが 12.0% で、
+        #    スイ（24.3%）の半分だった（2026-08-17・`canon/LEDGER.md` 0075）。
+        #    **感想ではなく数で出る**ので、素材を差し替えたら必ず見る。
+        density = float(st["line"].sum()) / max(float(st["sil"].sum()), 1.0)
+        mark = "" if density >= DENSITY_FLOOR else "  ⚠ 線が薄い（のっぺりして見える）"
         print(f"焼いた: {(OUT_DIR / out_name).relative_to(ROOT)}  {SIZE}x{SIZE}"
               f"  墨の面積 {cover * 100:.1f}%  — {label}")
         print(f"  外形 {st['sil'].mean() * 100:.1f}% / 線 {st['line'].mean() * 100:.1f}%"
               f" / 墨 {st['ink'].mean() * 100:.1f}%（切り抜きに対する割合）")
+        print(f"  線の密度（線 ÷ 外形）{density * 100:.1f}%"
+              f"（狙い {DENSITY_FLOOR * 100:.0f}% 以上）{mark}")
         if args.parts:
             rows.append(parts_row(st, face, max(st["sil"].shape)))
 
