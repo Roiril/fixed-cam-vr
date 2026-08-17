@@ -1098,7 +1098,8 @@ def analyze(events, others, exp, warns=None):
             #    名乗る前に指示が出ると、誰が喋っているのか分からないまま歩かされる。
             def _first(kind):
                 return next((fnum(e, "t", 0.0) for e in comms if e.get("id") == kind), None)
-            t_greet, t_walk, t_begin = _first("Greeting"), _first("Walk"), _first("Begin")
+            t_greet, t_walk = _first("Greeting"), _first("Walk")
+            t_arrived, t_begin = _first("Arrived"), _first("Begin")
             if t_greet is None and t_walk is None:
                 verdict("WARN", "タイトル直後の⓪が 1 通も届いていない — 導入で連絡を出していない"
                                 "（CommsPanel の intro 未配線 / 古い APK）")
@@ -1115,6 +1116,20 @@ def analyze(events, others, exp, warns=None):
                         verdict("FAIL", "⓪b の指示が⓪a の名乗りより先に出ている")
                 if t_walk is not None and t_begin is not None and t_begin <= t_walk:
                     verdict("FAIL", "①が⓪b より先に出ている — 導入と本編の連絡が入れ替わっている")
+
+            # ⓪c 演出の始まりの告知。**導入演出が始まったのと同じ縁**で出る（0079 の赤入れ 3）。
+            # ⚠ 導入まで走らなかった走行では出ないのが正常なので、段 1 を踏んだときだけ判定する。
+            t_real2 = next((fnum(e, "t", 0.0) for e in events
+                            if e.get("ev") == "intro" and e.get("stage") == "Real"), None)
+            if t_real2 is not None:
+                if t_arrived is None:
+                    verdict("FAIL", "⓪c『ポイントに到着しました』が届いていない — "
+                                    "導入が段 0 を抜けた縁を CommsCueLogic が見ていない")
+                elif abs(t_arrived - t_real2) > 1.0:
+                    verdict("WARN", f"⓪c と演出の始まりが {abs(t_arrived - t_real2):.1f}s ずれている"
+                                    "（同時に出る約束）")
+                else:
+                    verdict("OK", f"⓪c が演出の始まりと同時に届いた（t={t_arrived:.1f}s）")
 
             # ②の分岐が押した瞬間の値で決まっているか。ev=mark と ev=comms を時刻で対にする。
             marks = [e for e in events if e.get("ev") == "mark"]

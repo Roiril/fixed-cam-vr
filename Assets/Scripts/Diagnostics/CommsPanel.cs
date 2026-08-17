@@ -236,6 +236,11 @@ namespace FixedCamVr.Diagnostics
             //    移動してください。」）。読点・句点を勝手に落とさない。改行だけこちらで入れてある
             //    （1 行 14 文字までなので、入れないと折り返し位置が文の途中になる）。
             CommsNotice.Walk => "矢印の方向から、\n指定されたポイントへ\n移動してください。",
+            // ⚠⚠ **ユーザーが書いた形のまま**（2026-08-17 の赤入れ 3・逐語
+            //    「ポイントに到着しました。観測装置を起動します」）。改行だけこちらで入れてある。
+            //    ⚠ 出る瞬間は**導入演出が始まるのと同時**（ユーザー指定「演出は長いから、
+            //      エージェントスクリーンが出るのと演出開始は同時でいい」）。
+            CommsNotice.Arrived => "ポイントに到着しました。\n観測装置を起動します",
             // ⚠⚠ **「認めたら」→「見つけたら」**（2026-08-17・ユーザー指定）。
             //    ⚠ 1 字増えて 1 行 15 文字になり、面の幅（14 文字）を越えるので**3 行へ割った**。
             //      折り返しに任せると「ボタンを長押／し」のような所で切れる。
@@ -267,6 +272,9 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Greeting => CommsPanelLogic.HoldBriefSec,
             // ⓪b 歩行の指示。**読まないと体験が始まらない**ので③と同じ扱い。
             CommsNotice.Walk => CommsPanelLogic.HoldUrgentSec,
+            // ⓪c 演出の始まりの告知。**受領と同じ最短**にする — 体験者はこの直後から
+            // 現実が格下げされていく画を見るので、面が長く居座ると演出を隠す。
+            CommsNotice.Arrived => CommsPanelLogic.HoldReceiptSec,
             CommsNotice.Prompt => CommsPanelLogic.HoldUrgentSec,
             _ => CommsPanelLogic.HoldReceiptSec,
         };
@@ -608,9 +616,11 @@ namespace FixedCamVr.Diagnostics
             });
             if (next != CommsNotice.None) Deliver(next);
 
-            // ⚠⚠ **段 0 を抜けたら、出ている連絡を引く。** 誘導の指示が残ったまま現実が割れ始めると、
-            //    演出の上に文字が浮く。畳む（Disable）のではなく**引く**ので、装置が片づけたように見える。
-            if (inIntroPhase && !introWaiting) _logic.Retract();
+            // ⚠⚠ **段 0 を抜けた瞬間は「引く」のではなく「上書きする」**（2026-08-17 の赤入れ 3）。
+            //    それまではここで `_logic.Retract()` を打っていたが、いまは同じ縁で⓪c
+            //    「ポイントに到着しました。観測装置を起動します」が届く。⓪b の指示が出ている最中でも
+            //    `Deliver` が頭から出し直すので、枠は開いたまま文面だけが替わる。
+            //    ⓪c は読ませ終われば自分で引く（`HoldReceiptSec`）ので、畳む処理は要らない。
 
             // ⚠ **押している最中は面を開いたままにする**（`canon/LEDGER.md` 0058）。
             //   本編の外では開かない — 導入・終幕に手元の案内が浮くと世界が壊れる

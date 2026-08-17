@@ -273,13 +273,31 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void TheIntroNotices_StopWhenTheShowStarts()
+        public void LeavingTheWaitingStage_AnnouncesTheArrival_Once()
         {
+            // ⓪c「ポイントに到着しました。観測装置を起動します」は**段 0 を抜けた縁**で 1 度だけ。
+            // ⚠ 演出が始まってからも延々と何か出す、ではない（そこから先は画が主役）。
             var l = new CommsCueLogic();
             AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f);
-            // 段 0 を抜けた（演出が走り出した）。
-            CollectionAssert.IsEmpty(AdvanceIntro(l, 30f, waiting: false),
-                                     "現実が割れていく最中に文字が浮いていると世界が壊れる");
+            CollectionAssert.AreEqual(new[] { CommsNotice.Arrived },
+                                      AdvanceIntro(l, 30f, waiting: false));
+            Assert.IsTrue(l.ArrivedFired);
+        }
+
+        [Test]
+        public void TheArrival_IsAnnouncedEvenIfTheGuideNeverSpoke()
+        {
+            // スタッフの ⏭ で題字から一気に演出へ入った場合も、装置は起動を告げる。
+            var l = new CommsCueLogic();
+            CollectionAssert.AreEqual(new[] { CommsNotice.Arrived },
+                                      AdvanceIntro(l, 1f, waiting: false));
+        }
+
+        [Test]
+        public void TheArrival_IsNotAnnouncedWhileTheTitleHoldsTheScreen()
+        {
+            var l = new CommsCueLogic();
+            CollectionAssert.IsEmpty(AdvanceIntro(l, 5f, authorized: false, waiting: false));
         }
 
         [Test]
@@ -300,6 +318,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             var l = new CommsCueLogic();
             AdvanceIntro(l, CommsCueLogic.GreetDelaySec + CommsCueLogic.WalkGapSec + 0.2f);
+            AdvanceIntro(l, 1f, waiting: false);      // ⓪c まで出し切る
             l.ResetRun();
             CollectionAssert.AreEqual(new[] { CommsNotice.Greeting },
                                       AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f));

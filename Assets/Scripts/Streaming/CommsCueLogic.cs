@@ -18,6 +18,13 @@ namespace FixedCamVr.Streaming
         /// 床の矢印と円（<see cref="WalkGuide"/>）はこの連絡と対で出る。
         /// </summary>
         Walk,
+        /// <summary>
+        /// ⓪c <b>円へ着いて導入演出が始まった瞬間</b>（2026-08-17・ユーザー指定
+        /// 「演出が始まったら『ポイントに到着しました。観測装置を起動します』とエージェントに言わせよう。
+        /// 演出は長いから、エージェントスクリーンが出るのと演出開始は同時でいい」）。
+        /// ⚠ <b>段 0 を抜けた縁で出す</b>ので、⓪b（歩行の指示）が出ていればそれを押しのけて上書きする。
+        /// </summary>
+        Arrived,
         /// <summary>① 導入が明けて、映像だけになった直後。「調査を開始してください」。</summary>
         Begin,
         /// <summary>② 報告した瞬間、<b>演出が走っていた</b>。「異常が記録されました」。</summary>
@@ -135,6 +142,7 @@ namespace FixedCamVr.Streaming
         private float _waitSec;
         private bool _greetFired;
         private bool _walkFired;
+        private bool _arrivedFired;
         private int _walkRepeats;
         private float _introSec;
         private float _idleSec;
@@ -159,6 +167,7 @@ namespace FixedCamVr.Streaming
             _waitSec = 0f;
             _greetFired = false;
             _walkFired = false;
+            _arrivedFired = false;
             _walkRepeats = 0;
             _introSec = 0f;
             _idleSec = 0f;
@@ -169,6 +178,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>導入で歩行の指示を出したか（診断・テスト用）。</summary>
         public bool WalkFired => _walkFired;
+
+        /// <summary>演出の始まりを告げたか（診断・テスト用）。</summary>
+        public bool ArrivedFired => _arrivedFired;
 
         /// <summary>時間を進め、このフレームに出す連絡を返す（無ければ <see cref="CommsNotice.None"/>）。</summary>
         public CommsNotice Tick(in CommsCueInput inp)
@@ -220,10 +232,18 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private CommsNotice TickIntro(in CommsCueInput inp, float dt)
         {
-            if (!inp.startAuthorized || !inp.introWaiting)
+            if (!inp.startAuthorized) { _idleSec = 0f; return CommsNotice.None; }
+
+            // ⓪c 段 0 を抜けた ＝ 演出が始まった（`canon/LEDGER.md` 0079 の赤入れ 3）。
+            // ⚠ **面を引くのではなく、上書きする。** ⓪b の指示が出ている最中でも、
+            //    `CommsPanel.Deliver` は「すでに出ていれば頭から出し直す」ので枠は開いたまま
+            //    文面だけが替わる（畳んでから開き直すと必ず吃る — 0058）。
+            if (!inp.introWaiting)
             {
                 _idleSec = 0f;
-                return CommsNotice.None;
+                if (_arrivedFired) return CommsNotice.None;
+                _arrivedFired = true;
+                return CommsNotice.Arrived;
             }
             _introSec += dt;
 
