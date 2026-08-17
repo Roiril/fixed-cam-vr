@@ -88,13 +88,21 @@ RIM_KEEP = 2         # 外形の縁は必ず墨で残す幅。⚠ 無いと輪�
 INK_MIN_AREA = 60    # 彫ったあとに残る墨の島の下限
 LINE_MIN_AREA = 25   # これ未満の暗い点は線ではない（粒・にじみ）
 
-#: ⭐ **彫った線が頭の面積に占める割合の下限**（`canon/LEDGER.md` 0075）。
-#: ユーザー赤入れ「なんか急にチープになった」の版はここが **12.0%** で、
-#: スイ（**24.3%**）のちょうど半分だった。**「作り込みが弱い」は感想ではなく画素で出る**
-#: （`~/.claude/reference/image-prompt-standards.md` §2.5 と同じ発見）。
-#: ⚠ 素材を差し替えたら必ずこの数を見る。下回るなら**線を太らせるのではなく、
-#:   線の本数が足りない**（太らせると黒い帯になるだけ）。
-DENSITY_FLOOR = 0.20
+# ---- 画風を測る 3 つ（2 枚を揃えるための物差し）------------------------------------
+#
+# ⭐ **「チープ」も「なんか変」も、感想ではなく数で出た**（`canon/LEDGER.md` 0075 / 0076）。
+#   ⚠⚠ ただし **1 つでは足りない**。密度だけを見ていた版は 23.8%（スイ 24.3%）で
+#   数値上そっくりなのに、並べると別物だった — **同じ量の墨を、細い線で全面へ散らすか、
+#   太い線で数か所へ集めるか**が違ったから。⇒ 3 つ揃えて初めて画風が揃う。
+
+#: 彫った線が頭の面積に占める割合。**量**。
+DENSITY_FLOOR = 0.18
+#: 線 1 本の太さ（頭の幅に対する割合）。**重さ**。スイは 2.04%。
+#: ⚠ ここが低いと、110 画素まで縮んだとき線どうしが潰れ合って**灰色のもや**になる。
+THICKNESS_FLOOR = 0.010
+#: 線のかたまりの数。**散らばり**。スイは 13 個。
+#: ⚠ 多いほど「細い線を全面に散らした」状態に近い。倍あったら描き直し。
+MARK_CEILING = 20
 
 # ---- スイ（`sui-neutral.png` の画素。素材の実測。外したら `--parts` の絵を見て直す）----
 SUI_CROP = (8, 4, 392, 306)   # 髪の天辺 〜 顎の少し下。⚠ 外套から下は入れない（黒い台形になる）
@@ -121,14 +129,17 @@ SUI_EYE_ZONE_PAD = 9      # 芯から瞳へ広げる幅
 #    ⇒ 実物の写真を参照として Codex に**閉じた線画**を描かせ、それを彫る（`tools/doll-ref/PROMPT.md`）。
 #    ⚠ これは**資料であって正本ではない**（`memory/doll_reference_kit.md`）。
 #      正本はいまも `tools/doll-ref/out/plate_front.jpg` の写真で、線画はそこから起こした 1 枚。
-DOLL_CROP = (210, 60, 1050, 1010)   # 髪の天辺 〜 襟の V（肩が広がる前で切る）
+DOLL_CROP = (175, 45, 1105, 1120)   # 髪の天辺 〜 襟の V（肩が広がる前で切る）
 #: 線とみなす明るさの上限。線画なので紙（254）と線は離れているが、**細い線ほど淡く出る**ので
 #: 高めに取る。⚠ 128 まで下げると髪の房が半分落ちて、のっぺりした塗り絵に戻る。
 DOLL_LINE_MAX_L = 200.0
-#: 塗りつぶす前に線を閉じる量。⚠ 線が 1 画素でも途切れていると**塗りが外へ漏れて絵が壊れる**。
-DOLL_CLOSE = 1
-#: 線を太らせる量。⚠ **2**。1 では 110 画素で消えかけ、3 では髪が黒い帯になる（絵で比べた）。
-DOLL_LINE_W = 2
+#: 塗りつぶす前に線を閉じる量の**上限**。⚠ 実際の値は <see cref="_seal"/> が自動で探す。
+#: 生成された線画は**頭頂の輪郭に十数画素の隙間が空いていることがある**（2026-08-17 に踏んだ）。
+#: 隙間があると塗りが外へ漏れて、**頭が真っ暗な絵**になる。
+DOLL_CLOSE_MAX = 12
+#: 線を太らせる量。⚠ **4**。スイの線の重さ（頭の幅の 2.0%）へ寄せる値で、
+#: 2 では実機の 110 画素で細く、6 では前髪の束が繋がって黒い帯になる（絵で比べた）。
+DOLL_LINE_W = 4
 
 
 def _disk(r: int) -> np.ndarray:
@@ -216,19 +227,36 @@ def build_sui() -> dict[str, np.ndarray]:
     return {"src": c.astype(np.uint8), "sil": sil, "zone": eyes, "line": line, "ink": ink}
 
 
+def _seal(raw: np.ndarray) -> tuple[np.ndarray, int]:
+    """
+    線を閉じてから紙の側を塗り、その否定を外形として返す。
+
+    ⚠⚠ **輪郭に隙間があると塗りが外へ漏れて、頭が真っ暗な絵になる。**
+    しかも**スクリプトは何も言わずに通る** — 2026-08-17 に生成した線画の頭頂に十数画素の
+    隙間があり、密度の数値（47%・狙いは 24%）を見て初めて気づいた。
+    ⇒ **閉じる量を自動で上げながら、漏れていないかを毎回確かめる。**
+    漏れの判定は「外形が外接矩形をどれだけ埋めているか」— 頭と肩なら 5 割は超える。
+    """
+    h, w = raw.shape
+    for close in range(1, DOLL_CLOSE_MAX + 1):
+        closed = cv2.dilate(raw, _disk(close))
+        flood = closed.copy()
+        cv2.floodFill(flood, np.zeros((h + 2, w + 2), np.uint8), (0, 0), 1)
+        sil = (~((flood > 0) & (closed == 0))).astype(np.uint8)
+        ys, xs = np.nonzero(sil)
+        box = (xs.max() - xs.min() + 1) * (ys.max() - ys.min() + 1)
+        if sil.sum() / max(box, 1) > 0.5:
+            return sil, close
+    raise SystemExit("線画の輪郭が閉じていない（塗りが外へ漏れる）。"
+                     f"{DOLL_CLOSE_MAX} 画素まで広げても塞がらなかった — 線を引き直す")
+
+
 def build_doll() -> dict[str, np.ndarray]:
     """線画から焼く。**外形は「線で囲まれた内側」＝ 塗りつぶしで取る**（明るさでは取れない）。"""
     rgb = np.asarray(Image.open(SRC_DIR / "doll-lineart.png").convert("RGB")).astype(np.float32)
     lum = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
-    h, w = lum.shape
     raw = (lum < DOLL_LINE_MAX_L).astype(np.uint8)
-
-    # ⚠⚠ **線を閉じてから塗る。** 1 画素でも途切れていると塗りが外へ漏れて絵が丸ごと壊れる。
-    #    紙の側（縁から届く白）を塗って、その否定を外形にする。
-    closed = cv2.dilate(raw, _disk(DOLL_CLOSE))
-    flood = closed.copy()
-    cv2.floodFill(flood, np.zeros((h + 2, w + 2), np.uint8), (0, 0), 1)
-    sil = (~((flood > 0) & (closed == 0))).astype(np.uint8)
+    sil, _ = _seal(raw)
 
     x0, y0, x1, y1 = DOLL_CROP
     sil, raw = sil[y0:y1, x0:x1], raw[y0:y1, x0:x1]
@@ -266,6 +294,26 @@ def compose(ink: np.ndarray) -> Image.Image:
     small = cv2.resize(canvas, (SIZE, SIZE), interpolation=cv2.INTER_AREA)
     alpha = np.clip(small * 255.0 + 0.5, 0, 255).astype(np.uint8)
     return Image.fromarray(np.dstack([np.full((SIZE, SIZE, 3), 255, np.uint8), alpha]), "RGBA")
+
+
+def style_metrics(line: np.ndarray, sil: np.ndarray) -> tuple[float, float, int]:
+    """
+    画風を 3 つの数で出す（**量 / 重さ / 散らばり**）。
+
+    ⚠⚠ <b>1 つでは足りない。</b> 量だけを合わせた版は数値上スイとそっくり（23.8% 対 24.3%）
+    なのに、並べると別物だった — 同じ量の墨を**細い線で全面へ散らす**か
+    **太い線で数か所へ集める**かが違ったから（`canon/LEDGER.md` 0076）。
+
+    ⚠ 頭の外接矩形で正規化する。切り抜きの取り方で値が動くと 2 枚を比べられない。
+    """
+    ys, xs = np.nonzero(sil)
+    head_w = max(int(xs.max() - xs.min()), 1)
+    density = float(line.sum()) / max(float(sil.sum()), 1.0)
+    dt = cv2.distanceTransform(line.astype(np.uint8), cv2.DIST_L2, 5)
+    thickness = (2.0 * float(dt[line > 0].mean()) / head_w) if line.any() else 0.0
+    n, _, st, _ = cv2.connectedComponentsWithStats(line.astype(np.uint8), 8)
+    marks = sum(1 for i in range(1, n) if st[i, cv2.CC_STAT_AREA] >= 40)
+    return density, thickness, marks
 
 
 # 検分の地と墨（`CommsPanel` が実際に書いている色）。
@@ -328,17 +376,22 @@ def main() -> int:
         face = compose(st["ink"])
         face.save(OUT_DIR / out_name)
         cover = float(np.asarray(face)[..., 3].mean()) / 255.0
-        # ⭐ **彫った線の密度**。ユーザーが「チープ」と言った版はここが 12.0% で、
-        #    スイ（24.3%）の半分だった（2026-08-17・`canon/LEDGER.md` 0075）。
-        #    **感想ではなく数で出る**ので、素材を差し替えたら必ず見る。
-        density = float(st["line"].sum()) / max(float(st["sil"].sum()), 1.0)
-        mark = "" if density >= DENSITY_FLOOR else "  ⚠ 線が薄い（のっぺりして見える）"
+        density, thickness, marks = style_metrics(st["line"], st["sil"])
+        warn = []
+        if density < DENSITY_FLOOR:
+            warn.append("線が少ない（のっぺりする）")
+        if thickness < THICKNESS_FLOOR:
+            warn.append("線が細い（縮むと灰色のもやになる）")
+        if marks > MARK_CEILING:
+            warn.append("線が散らばりすぎ（太い線に束ねる）")
         print(f"焼いた: {(OUT_DIR / out_name).relative_to(ROOT)}  {SIZE}x{SIZE}"
               f"  墨の面積 {cover * 100:.1f}%  — {label}")
         print(f"  外形 {st['sil'].mean() * 100:.1f}% / 線 {st['line'].mean() * 100:.1f}%"
               f" / 墨 {st['ink'].mean() * 100:.1f}%（切り抜きに対する割合）")
-        print(f"  線の密度（線 ÷ 外形）{density * 100:.1f}%"
-              f"（狙い {DENSITY_FLOOR * 100:.0f}% 以上）{mark}")
+        print(f"  画風: 量 {density * 100:.1f}%（≥{DENSITY_FLOOR * 100:.0f}）"
+              f" / 重さ {thickness * 100:.2f}%（≥{THICKNESS_FLOOR * 100:.1f}）"
+              f" / 散らばり {marks} 個（≤{MARK_CEILING}）"
+              + ("  ⚠ " + " / ".join(warn) if warn else ""))
         if args.parts:
             rows.append(parts_row(st, face, max(st["sil"].shape)))
 
