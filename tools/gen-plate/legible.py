@@ -63,15 +63,29 @@ def _ring(mask: np.ndarray, box, pad: int) -> np.ndarray:
     return r & ~metrics._shift_or(metrics._shift_or(mask))
 
 
-def readability(g: np.ndarray, sub: np.ndarray, ring: np.ndarray, sigma: float) -> float:
-    """読みやすさ ＝ **周りとの明暗差**と**中の構造**の大きい方 ÷ 粒。
+def readability(got: np.ndarray, plain: np.ndarray, sub: np.ndarray, sigma: float) -> float:
+    """読みやすさ ＝ **そこに足された信号の大きさ** ÷ 粒。
 
-    ⚠ 平均の差だけで測ってはいけない。人形は「白い顔 ＋ 黒い髪」なので**平均が背景と同じ**に
-    なりうるが、画では明らかに見える。逆に構造だけで測ると、粒の多い場所が全部見えることになる。
+    ⚠ 平均の差だけでは測れない。人形は「白い顔 ＋ 黒い髪」なので**平均が背景と同じ**に
+    なりうるが、画では明らかに見える。
+    ⚠⚠ かといって「その領域の ばらつき」で測ってもいけない（2026-08-17 に踏んだ）。
+    塊は融合して大きな箱になるので、**中に入っている背景の構造**（明るい壁と暗い幕の境目）を
+    測ってしまう。実際、素材を 10% まで薄めても読みやすさが 32 → 24 にしか落ちず、
+    **消えかけている素材を「読める」と言い続けた**。
+    ⇒ 素材が無いときの画（`plain`）が分かっているのだから、**その差**を直接測る。
     """
-    mean_diff = abs(float(g[sub].mean()) - float(g[ring].mean()))
-    structure = float(g[sub].std())
-    return max(mean_diff, structure) / sigma
+    d = got[sub] - plain[sub]
+    return float(np.sqrt(np.mean(d * d))) / sigma
+
+
+def structure_of(g: np.ndarray, sub: np.ndarray, ring: np.ndarray, sigma: float) -> float:
+    """実物側の比較用。**そこに無ければ見えるはずの背景**をリングの平均で代用して同じ式で測る。
+
+    ⚠ 代用が粗いぶん実物の側が大きめに出る（勾配があるだけで値が付く）ので、
+    **人形に厳しい側**へ倒れている。比較としてはそれでよい。
+    """
+    d = g[sub] - float(g[ring].mean())
+    return float(np.sqrt(np.mean(d * d))) / sigma
 
 
 def reference_band(g: np.ndarray, region: np.ndarray, sigma: float,
@@ -98,7 +112,7 @@ def reference_band(g: np.ndarray, region: np.ndarray, sigma: float,
         ring = _ring(sub, (x0, y0, x0 + bw, y0 + bh), pad=max(6, bh // 4)) & region
         if ring.sum() < 60:
             continue
-        out.append(readability(g, sub, ring, sigma))
+        out.append(structure_of(g, sub, ring, sigma))
     out.sort()
     return out
 
@@ -136,7 +150,7 @@ def main() -> int:
         if ring.sum() < 60:
             continue
         rows.append(dict(h=c["y1"] - c["y0"], w=c["x1"] - c["x0"], area=c["area"],
-                         cnr=readability(got, sub, ring, sigma), box=box))
+                         cnr=readability(got, plain, sub, sigma), box=box))
 
     sizes = [(r["w"], r["h"]) for r in rows] or [(40, 60)]
     ref = reference_band(plain, (m <= 0.5), sigma, sizes)

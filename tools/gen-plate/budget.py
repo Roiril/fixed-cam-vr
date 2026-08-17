@@ -54,7 +54,7 @@ def measure_at(material, plate, mask, lap, show) -> dict:
                              pad=max(6, (c["y1"] - c["y0"]) // 4)) & (m > 0.5)
         if ring.sum() < 60:
             continue
-        reads.append(legible.readability(got, sub, ring, sigma))
+        reads.append(legible.readability(got, plain, sub, sigma))
         sizes.append((c["x1"] - c["x0"], c["y1"] - c["y0"]))
     ref = legible.reference_band(plain, live, sigma, sizes or [(40, 60)])
 
