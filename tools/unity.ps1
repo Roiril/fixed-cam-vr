@@ -298,16 +298,40 @@ function Show-BuildLog([string]$target, [datetime]$since) {
 # → 見る側を人からここへ移す。判定は $Menus の Src（入力）と Out（焼いたもの）の mtime 比較。
 $BakeGuard = @('scene', 'hud-font')
 
+# ⚠ Editor のメニューではない焼き直し（Python で焼くもの）。同じ理屈で見る。
+#   AIエージェントの顔は `Assets/Resources/` に置いた版なので、**焼き直さなければ
+#   古い顔がそのまま APK に入る**（Editor でも実機でも同じ絵が出るので気づけない）。
+$PyBakes = @{
+    'py -3.11 tools/make-comms-face.py' = @{
+        Desc = 'AIエージェントの顔の版を焼き直す（`canon/LEDGER.md` 0071）'
+        Out  = 'Assets/Resources/Comms/SuiFace.png'
+        Src  = @('tools/make-comms-face.py', 'tools/comms-face/sui-neutral.png')
+    }
+}
+
+function Test-Stale($outRel, $srcRels) {
+    $baked = Get-OutputStamp (Join-Path $Root $outRel)
+    foreach ($s in $srcRels) {
+        $p = Join-Path $Root $s
+        if (-not (Test-Path $p)) { continue }
+        if ((Get-Item $p).LastWriteTime -gt $baked) { return $true }
+    }
+    return $false
+}
+
 function Get-StaleBakes {
     $stale = @()
     foreach ($k in $BakeGuard) {
         $m = $Menus[$k]
         if (-not $m -or -not $m.Src -or -not $m.Out) { continue }
-        $baked = Get-OutputStamp (Join-Path $Root $m.Out)
-        foreach ($s in $m.Src) {
-            $p = Join-Path $Root $s
-            if (-not (Test-Path $p)) { continue }
-            if ((Get-Item $p).LastWriteTime -gt $baked) { $stale += $k; break }
+        if (Test-Stale $m.Out $m.Src) {
+            $stale += [pscustomobject]@{ Fix = ".\tools\unity.ps1 menu $k"; Desc = $m.Desc }
+        }
+    }
+    foreach ($k in $PyBakes.Keys) {
+        $m = $PyBakes[$k]
+        if (Test-Stale $m.Out $m.Src) {
+            $stale += [pscustomobject]@{ Fix = $k; Desc = $m.Desc }
         }
     }
     return $stale
@@ -432,8 +456,8 @@ switch ($Action) {
             if ($stale) {
                 Write-Host "✗ 焼き直していないものがある。このまま焼いても APK には入らない" -ForegroundColor Red
                 foreach ($k in $stale) {
-                    Write-Host "    .\tools\unity.ps1 menu $k" -ForegroundColor Yellow
-                    Write-Host "      $($Menus[$k].Desc)" -ForegroundColor DarkGray
+                    Write-Host "    $($k.Fix)" -ForegroundColor Yellow
+                    Write-Host "      $($k.Desc)" -ForegroundColor DarkGray
                 }
                 Write-Host "  古いまま焼くと決めたなら -Force（git checkout 直後は mtime が揃うので誤検知しうる）" -ForegroundColor DarkGray
                 exit 3

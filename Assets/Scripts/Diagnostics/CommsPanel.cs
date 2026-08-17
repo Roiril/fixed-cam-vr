@@ -39,6 +39,12 @@ namespace FixedCamVr.Diagnostics
     ///
     /// ⚠ <b>読まなくても体験は進む。</b> 既読の操作は作らない（体験者が持つ唯一の入力 ＝ 左 X は
     /// 記録専用で、兼用すると押した時刻の意味が濁る）。
+    ///
+    /// <b>顔</b>（<c>canon/LEDGER.md</c> 0071・2026-08-17）: 面の<b>左に角丸の枠</b>が立ち、
+    /// その中に AIエージェントの顔（paperdoll の「スイ」）が出る。寸法は
+    /// <see cref="CommsFaceLayout"/>、描くのは <c>CommsAvatar.shader</c>、版を焼くのは
+    /// <c>tools/make-comms-face.py</c>。⚠ <b>顔のぶんは面を左へ伸ばして作る</b> —
+    /// 文面の帯は 1mm も動いていない（詰めると最長の行が 3 行へ折り返して前提が崩れる）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CommsPanel : MonoBehaviour
@@ -70,9 +76,13 @@ namespace FixedCamVr.Diagnostics
         /// <b>視界の端で読む</b>ことになっていた（快適に読めるのは ±15° 前後まで）。
         ///
         /// <b>本編のスクリーンの実測</b>（2.0m・2.3704 × 1.3333m・中心は視線から 8° 下）:
-        /// 横 <b>±30.7°</b> / 縦 <b>+10.4°〜-26.4°</b>。この面（1.5m・0.76 × 0.32m ＝ 28.7° × 12.2°）は
-        /// どう振ってもスクリーンの内側に入るので、<b>重ねない選択肢は無い</b> —
-        /// 選べるのは「映像のどこへ重ねるか」だけ。だから中央を避けて<b>下の帯</b>へ置く。
+        /// 横 <b>±30.7°</b> / 縦 <b>+10.4°〜-26.4°</b>。この面はどう振ってもスクリーンの内側に
+        /// 入るので、<b>重ねない選択肢は無い</b> — 選べるのは「映像のどこへ重ねるか」だけ。
+        /// だから中央を避けて<b>下の帯</b>へ置く。
+        ///
+        /// ⚠⚠ <b>顔の枠のぶん、面は左へ 0.194m 伸びた</b>（2026-08-17・0071）。
+        /// 全幅 0.954m ＝ 見かけ 35.0° で、左端は視線から <b>-29.4°</b>（スクリーンの左端 -30.7° の内側）。
+        /// <b>読む物はそこに無い</b> — 伸びた先に居るのは顔だけで、文面はこの角度のまま据え置き。
         /// </summary>
         private const float YawOffsetDeg = -8f;
 
@@ -83,8 +93,21 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private const float PitchOffsetDeg = 17f;
 
-        /// <summary>面の幅 (m)。1.5m 先で 0.76m ＝ <b>見かけ 28°</b>。</summary>
+        /// <summary>
+        /// <b>文面の帯</b>の幅 (m)。1.5m 先で 0.76m ＝ <b>見かけ 28°</b>。
+        ///
+        /// ⚠⚠ <b>これは面の全幅ではない</b>（2026-08-17・<c>canon/LEDGER.md</c> 0071）。
+        /// 面は左へ <see cref="CommsFaceLayout.BandW"/> だけ伸びて、そこに顔の枠が立つ。
+        /// 全幅は <see cref="CommsFaceLayout.FullW"/>。<b>文面はこの帯の中に据え置き</b>で、
+        /// 字の大きさ・折り返し・重心の運びは 1 行も変わっていない。
+        /// </summary>
         private const float PanelW = 0.76f;
+
+        /// <summary>顔の版（<c>Resources.Load</c> のパス）。焼くのは <c>tools/make-comms-face.py</c>。</summary>
+        private const string FaceResourcePath = "Comms/SuiFace";
+
+        /// <summary>顔の枠と切り抜きのシェーダ。⚠ <b>Always Included に入れてある</b>。</summary>
+        private const string AvatarShaderName = "FixedCamVr/CommsAvatar";
         // ---- 縦の組み立て -------------------------------------------------------------
         //
         // ⚠⚠ **面の高さは固定ではない**（2026-08-16・`canon/LEDGER.md` 0065）。
@@ -226,6 +249,12 @@ namespace FixedCamVr.Diagnostics
         private const int GhostQueueR = 4988;
         private const int GhostQueueC = 4989;
 
+        // 顔の枠と切り抜き。地（4980）の後・文字の分離（4988）の前。
+        // ⚠ 分離の複製は本体より先（下に敷く）。文字の層と同じ流儀。
+        private const int AvatarGhostQueueR = 4983;
+        private const int AvatarGhostQueueC = 4984;
+        private const int AvatarQueue = 4985;
+
         // ⚠ 赤とシアン。**装置の意匠（暖色）ではなく、表示が壊れたときの色**（`canon/LEDGER.md` 0070）。
         private static readonly Color GhostRed = new Color(1.00f, 0.12f, 0.18f);
         private static readonly Color GhostCyan = new Color(0.10f, 0.88f, 0.95f);
@@ -249,8 +278,17 @@ namespace FixedCamVr.Diagnostics
         // ⚠ 地の色は**シェーダによってプロパティ名が違う**（URP は `_BaseColor` / 組み込みは `_Color`）。
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
-        // 枠を左端から右へ開くために、幅と「開いていないときの左端」を覚えておく。
-        private float _panelW, _bezelW;
+        // 顔の枠（`CommsAvatar.shader`）。
+        private static readonly int FaceTexId = Shader.PropertyToID("_Face");
+        private static readonly int OpacityId = Shader.PropertyToID("_Opacity");
+        private static readonly int RadiusId = Shader.PropertyToID("_Radius");
+        private static readonly int StrokeId = Shader.PropertyToID("_Stroke");
+        private static readonly int FaceOnId = Shader.PropertyToID("_FaceOn");
+        // 枠を左端から右へ開くために、左端と全幅を覚えておく（地と縁で別々）。
+        private float _panelW, _panelLeftX, _bezelW, _bezelLeftX;
+        // 顔の枠（本体）と、表示側のバグの複製 2 枚。⚠ 版が無くても枠だけは出す。
+        private MeshRenderer? _avatarRenderer, _avatarGhostR, _avatarGhostC;
+        private Material? _avatarMat, _avatarGhostMatR, _avatarGhostMatC;
         private int _charCount;
         private Material? _panelMat;
         private Material? _bezelMat;
@@ -295,6 +333,20 @@ namespace FixedCamVr.Diagnostics
         /// <b>Editor では出るので、この観測が無いと永久に気づけない。</b>
         /// </summary>
         public bool PanelBuilt => _panelMat != null && _bezelMat != null;
+
+        /// <summary>
+        /// 顔の枠を組めたか（<c>canon/LEDGER.md</c> 0071）。
+        /// <b>false なら枠も顔も 1 画素も出ない</b> — シェーダがビルドから剥がれた側の症状で、
+        /// <c>Unlit/Color</c> と同じ穴（<c>rules/unity-vr.md</c>）。Editor では出るので、
+        /// <b>この 1 ビットが無いと実機で消えていることに永久に気づけない</b>。
+        /// </summary>
+        public bool AvatarBuilt => _avatarMat != null;
+
+        /// <summary>顔の版を掴めたか。<b>false なら枠だけが出て中身が空</b>。</summary>
+        public bool FaceArtBuilt { get; private set; }
+
+        /// <summary>直近に書いた顔の不透明度（「画に出た」側の観測）。</summary>
+        public float AppliedFace { get; private set; }
 
         /// <summary>いま読んでいる周回の進み 0..1（<b>映像の劣化とまったく同じ値</b>）。</summary>
         public float DecayProgress =>
@@ -401,6 +453,9 @@ namespace FixedCamVr.Diagnostics
             OnDestroyHooks();
             if (_panelMat != null) Destroy(_panelMat);
             if (_bezelMat != null) Destroy(_bezelMat);
+            if (_avatarMat != null) Destroy(_avatarMat);
+            if (_avatarGhostMatR != null) Destroy(_avatarGhostMatR);
+            if (_avatarGhostMatC != null) Destroy(_avatarGhostMatC);
             if (_panelMesh != null) Destroy(_panelMesh);
         }
 
@@ -548,7 +603,10 @@ namespace FixedCamVr.Diagnostics
             //    （面が無くても読めるので、体験は止めない）。
             // ⚠ メッシュと幅は**地の外**で決める（壊れの層は地のシェーダが無くても出す）。
             _panelMesh = BuildQuad();
-            _panelW = PanelW;
+            // ⚠ **面は左へ伸びる**（顔の枠のぶん）。文面の帯は 1mm も動かないので、
+            //   原点は従来どおり文面の帯の中心のまま（`CommsFaceLayout` の但し書き）。
+            _panelW = CommsFaceLayout.FullW(PanelW);
+            _panelLeftX = CommsFaceLayout.LeftX(PanelW);
             // ⚠⚠ **`Unlit/Color` は実機のビルドに入っていない**（2026-08-17 に走行の画で判明）。
             //    組み込みシェーダでも、どのマテリアルからも参照されず Always Included にも無ければ
             //    剥がれる（2026-07-31 の `IntroVeil` と同じ型）。**Editor では出るので気づけない。**
@@ -561,7 +619,8 @@ namespace FixedCamVr.Diagnostics
                 //    （2026-08-15 の実機の画で、文字だけが宙に浮いていた）。
                 // ⚠ ここで渡す高さは**組んだ瞬間の見かけだけ**（`Apply` の `SetFrame` が
                 //   毎フレーム中心と高さを置き直す）。
-                _bezelW = PanelW + BezelM * 2f;
+                _bezelW = _panelW + BezelM * 2f;
+                _bezelLeftX = _panelLeftX - BezelM;
                 _bezelRenderer = MakeQuad(rootGo.transform, "CommsBezelQuad",
                                           _bezelW, BodyMaxH + HintBandH + BezelM * 2f, 0.014f,
                                           flat, RenderQueue - 1, out _bezelMat);
@@ -577,6 +636,8 @@ namespace FixedCamVr.Diagnostics
                 Debug.LogWarning("[Comms] 地のシェーダを引けないので文字と壊れだけになります"
                                  + "（Universal Render Pipeline/Unlit も Unlit/Color も見つからない）");
             }
+
+            BuildAvatar(rootGo.transform);
 
             // ---- 下段（報告の押し方・ゲージ）。**2026-08-16 にコントローラの先からここへ移した**
             //      （`canon/LEDGER.md` 0058）。上段より下・小さく・左揃え。
@@ -610,6 +671,69 @@ namespace FixedCamVr.Diagnostics
             _textC = MakeGlyphSurface(rootGo.transform, jp, "CommsTextC", GhostQueueC, GhostCyan);
             _text = MakeGlyphSurface(rootGo.transform, jp, "CommsText", GlyphQueue, HmdTextStyle.Ink);
             SetNotice(CommsNotice.None);   // 組み上げたら、まず畳んだ状態にする
+        }
+
+        /// <summary>
+        /// 顔の枠（角丸）と、その中の顔を組む（<c>canon/LEDGER.md</c> 0071）。
+        ///
+        /// ⚠ <b>版が無くても枠は出す。</b> 枠は装置の意匠で、顔はその中身。
+        /// 中身が来ないときに枠ごと消すと、面の左が黙って空白になって原因に届かない。
+        /// ⚠ <b>シェーダを引けなければ警告を出す。</b> 無言で飛ばすと、Editor では出るので
+        /// 実機の画を拡大するまで誰も気づけない（<c>Unlit/Color</c> と同じ穴）。
+        /// </summary>
+        private void BuildAvatar(Transform parent)
+        {
+            Shader? avatar = Shader.Find(AvatarShaderName);
+            if (avatar == null)
+            {
+                Debug.LogWarning($"[Comms] {AvatarShaderName} を引けないので顔の枠は出しません"
+                                 + "（Always Included から外れていないか）");
+                return;
+            }
+            var art = Resources.Load<Texture2D>(FaceResourcePath);
+            FaceArtBuilt = art != null;
+            if (art == null)
+            {
+                Debug.LogWarning($"[Comms] 顔の版 Resources/{FaceResourcePath} が無いので枠だけになります"
+                                 + "（py -3.11 tools/make-comms-face.py）");
+            }
+
+            // ⚠⚠ 表示側のバグ（赤とシアンの分離）は**顔だけ**が浴びる（`_Stroke = 0`）。
+            //    枠は装置の意匠なので分離させない — 分離させると「枠が二重にずれた」に見えて、
+            //    壊れているのが AI ではなく面そのものだ、という別の話になる。
+            _avatarGhostR = MakeAvatar(parent, "CommsAvatarGhostR", AvatarGhostQueueR,
+                                       GhostRed, art, avatar, stroke: 0f, out _avatarGhostMatR);
+            _avatarGhostC = MakeAvatar(parent, "CommsAvatarGhostC", AvatarGhostQueueC,
+                                       GhostCyan, art, avatar, stroke: 0f, out _avatarGhostMatC);
+            _avatarRenderer = MakeAvatar(parent, "CommsAvatar", AvatarQueue,
+                                         HmdTextStyle.Ink, art, avatar,
+                                         stroke: CommsFaceLayout.StrokeK, out _avatarMat);
+        }
+
+        /// <summary>顔の面を 1 枚作る（本体と複製 2 枚で共有）。色と濃さは <see cref="Apply"/> が書く。</summary>
+        private MeshRenderer MakeAvatar(Transform parent, string name, int queue, Color color,
+                                        Texture2D? art, Shader shader, float stroke,
+                                        out Material mat)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, worldPositionStays: false);
+            // ⚠ **正方形**（`CommsAvatar.shader` は uv 空間で角丸を解く）。
+            go.transform.localScale = new Vector3(CommsFaceLayout.CellM, CommsFaceLayout.CellM, 1f);
+            go.transform.localPosition = new Vector3(CommsFaceLayout.CellCenterX(PanelW), 0f,
+                                                     CommsFaceLayout.DepthM);
+            go.AddComponent<MeshFilter>().sharedMesh = _panelMesh;
+            var r = go.AddComponent<MeshRenderer>();
+            mat = new Material(shader) { name = name + " (runtime)", renderQueue = queue };
+            if (art != null) mat.SetTexture(FaceTexId, art);
+            mat.SetColor(ColorId, color);
+            mat.SetFloat(RadiusId, CommsFaceLayout.RadiusK);
+            mat.SetFloat(StrokeId, stroke);
+            mat.SetFloat(FaceOnId, art != null ? 1f : 0f);
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            r.enabled = false;
+            return r;
         }
 
         /// <summary>
@@ -809,8 +933,13 @@ namespace FixedCamVr.Diagnostics
             // 上段の帯 = [0, _bodyBandH]（**文面の実寸**）/ 下段の帯 = [-HintBandH, 0]。
             float top = HintBandTopY + _bodyBandH * AppliedBody;
             float bottom = HintBandTopY - HintBandH * hintK;
-            float h = Mathf.Max(0f, top - bottom);
             float cy = (top + bottom) * 0.5f;
+            // ⚠⚠ **顔の枠が縦にはみ出さない丈を必ず確保する**（2026-08-17・`canon/LEDGER.md` 0071）。
+            //    伸ばすのは中心の周りへ対称に ＝ **文面も下段も 1mm も動かない**。
+            //    0065 の「出ている帯だけを覆う」に反しない — あれが禁じたのは中身の無い空の箱で、
+            //    いまは左に顔が居るので空ではない。いちばん高い姿（2 行 ＋ 下段）は下限を超える。
+            float h = Mathf.Max(0f, top - bottom);
+            if (h > 0.0005f) h = Mathf.Max(h, CommsFaceLayout.MinBoxH);
             bool lit = pa > 0.01f && AppliedOpen > 0.001f && h > 0.0005f;
 
             // 地のシェーダは alpha を持たない（不透明）ので、明るさで濃さを出す（暗い場所なので十分）。
@@ -818,16 +947,56 @@ namespace FixedCamVr.Diagnostics
             {
                 SetFlatColor(_panelMat, new Color(0.050f * pa, 0.042f * pa, 0.038f * pa, 1f));
                 _panelRenderer.enabled = lit;
-                SetFrame(_panelRenderer.transform, _panelW, AppliedOpen, cy, h);
+                SetFrame(_panelRenderer.transform, _panelLeftX, _panelW, AppliedOpen, cy, h);
             }
             if (_bezelRenderer != null && _bezelMat != null)
             {
                 // 縁は地より明るい。ここだけが「面がある」ことを伝える。
                 SetFlatColor(_bezelMat, new Color(0.150f * pa, 0.110f * pa, 0.085f * pa, 1f));
                 _bezelRenderer.enabled = lit;
-                SetFrame(_bezelRenderer.transform, _bezelW, AppliedOpen, cy, h + BezelM * 2f);
+                SetFrame(_bezelRenderer.transform, _bezelLeftX, _bezelW, AppliedOpen, cy,
+                         h + BezelM * 2f);
             }
+            ApplyAvatar(pa, cy, lit);
+        }
 
+        /// <summary>
+        /// 顔の枠と顔を書く（<c>canon/LEDGER.md</c> 0071）。
+        ///
+        /// ⚠ <b>明滅は地・文字とまとめて浴びる</b>（<paramref name="alpha"/> に既に掛かっている）。
+        /// 顔だけ平常のまま残ると、装置が沈むのに AI だけ無事に見える。
+        /// ⚠ <b>横飛びは面ごと</b>（<c>LateUpdate</c> が root を動かす）ので、ここでは書かない。
+        /// </summary>
+        private void ApplyAvatar(float alpha, float centerY, bool lit)
+        {
+            if (_avatarRenderer == null || _avatarMat == null) return;
+            // ⚠ **出していないときは 0 と言う。** 重みだけ立てて描いていない状態を
+            //   「出た」と観測すると、実機で消えていても計器が緑になる。
+            AppliedFace = lit
+                ? Mathf.Clamp01(alpha) * CommsFaceLayout.Reveal(AppliedOpen, PanelW)
+                : 0f;
+            bool on = AppliedFace > 0.004f;
+
+            float x = CommsFaceLayout.CellCenterX(PanelW);
+            _avatarMat.SetFloat(OpacityId, AppliedFace);
+            _avatarRenderer.enabled = on;
+            _avatarRenderer.transform.localPosition = new Vector3(x, centerY, CommsFaceLayout.DepthM);
+
+            // 表示側のバグ（赤とシアンの分離）。⚠ **文字と同じ振れ幅・同じ刻み**を読む
+            //   （別々に持つと、面の中で分離の向きが場所によって違うことになる）。
+            float dx = CommsGlitchLogic.SplitOffsetM(_glitchLevel, _corruptTick);
+            bool ghost = on && dx > 0.0001f;
+            ApplyAvatarGhost(_avatarGhostR, _avatarGhostMatR, x - dx, centerY, ghost);
+            ApplyAvatarGhost(_avatarGhostC, _avatarGhostMatC, x + dx, centerY, ghost);
+        }
+
+        private void ApplyAvatarGhost(MeshRenderer? r, Material? m, float x, float y, bool on)
+        {
+            if (r == null || m == null) return;
+            r.enabled = on;
+            if (!on) return;
+            m.SetFloat(OpacityId, AppliedFace);
+            r.transform.localPosition = new Vector3(x, y, CommsFaceLayout.DepthM);
         }
 
         /// <summary>
@@ -962,17 +1131,23 @@ namespace FixedCamVr.Diagnostics
         /// 面のメッシュは中心が原点（頂点 ±0.5）なので、横は縮めると<b>両側から</b>縮む。
         /// 左端を残すには、縮めたぶんの半分だけそちらへ寄せる。
         ///
+        /// ⚠⚠ <b>左端は引数で受け取る</b>（2026-08-17・<c>canon/LEDGER.md</c> 0071）。
+        /// 顔の枠のぶん面が左へ伸びて、<b>面の原点（＝ 文面の帯の中心）が左右の中央でなくなった</b>。
+        /// <c>-fullW/2</c> を左端と決め打ちしていた頃の式のままだと、顔のぶんだけ面が右へずれる。
+        ///
         /// ⚠⚠ <b>縦は「下端固定で伸びる」をやめた</b>（2026-08-16・<c>canon/LEDGER.md</c> 0065）。
         /// 下段が空になりうるので、<b>出ている帯だけを覆う</b>必要がある
         /// （呼び出し側が上端と下端から中心・高さを解く）。下端固定のままだと、
         /// 下段が無い連絡が<b>下半分の空いた箱</b>として出る。
         /// </summary>
-        private static void SetFrame(Transform quad, float fullW, float kx, float centerY, float height)
+        private static void SetFrame(Transform quad, float leftX, float fullW, float kx,
+                                     float centerY, float height)
         {
-            quad.localScale = new Vector3(fullW * kx, height, 1f);
-            // 左端は常に -w/2 に居る（縮めたぶんの半分だけ寄せる）。縦は解いた中心をそのまま置く。
+            float w = fullW * kx;
+            quad.localScale = new Vector3(w, height, 1f);
+            // 左端は常に leftX に居る（開いたぶんの半分だけ右へ出る）。縦は解いた中心をそのまま置く。
             Vector3 p = quad.localPosition;
-            quad.localPosition = new Vector3(-(fullW * 0.5f) * (1f - kx), centerY, p.z);
+            quad.localPosition = new Vector3(leftX + w * 0.5f, centerY, p.z);
         }
     }
 }

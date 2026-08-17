@@ -34,8 +34,14 @@ namespace FixedCamVr.Streaming.EditorTools
         private const int W = 1280, H = 720;
         private const int Fps = 30;
 
-        /// <summary>寄りの画角（垂直・度）。1.5m の面（見かけ 28.7°）が画面いっぱいに入る。</summary>
-        private const float CloseFovDeg = 26f;
+        /// <summary>
+        /// 寄りの画角（垂直・度）。
+        /// ⚠ <b>26 → 30 へ広げた</b>（2026-08-17・<c>canon/LEDGER.md</c> 0071）。顔の枠のぶん
+        /// 面が左へ 0.194m 伸びて全幅 0.954m ＝ 見かけ <b>35°</b> になり、26 では左端が枠外へ出る。
+        /// 文面を画面中心へ運んで撮る（<see cref="PlaceStraightAhead"/>）ので、要るのは
+        /// 左へ 0.574m ＝ 21° ぶん。16:9 の横画角は垂直 30° で片側 25.5° なので余裕を持って入る。
+        /// </summary>
+        private const float CloseFovDeg = 30f;
 
         /// <summary>視界の中の座りを見る画角（垂直・度）。左下へ振ってある位置関係が読める。</summary>
         private const float WideFovDeg = 52f;

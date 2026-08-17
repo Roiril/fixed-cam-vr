@@ -909,6 +909,15 @@ namespace FixedCamVr.Diagnostics
             //   ⚠⚠ 2026-08-17 まで実機がまさにこれだった（`Unlit/Color` がビルドから剥がれていた）。
             //   Editor では出るので、この 1 ビットが無いと永久に気づけない。
             _sb.Append(" commsBg=").Append(_comms == null ? "-" : (_comms.PanelBuilt ? "1" : "0"));
+            //   commsFace = AIエージェントの顔（`canon/LEDGER.md` 0071）。
+            //   **`<枠を組めたか>/<版を掴めたか>/<画に出た濃さ>`** の 3 つ組。
+            //   ⚠ 3 つとも要る — 枠のシェーダが剥がれた（0/…）／版が Resources に無い（1/0/…）／
+            //     どちらも在るのに 1 度も濃さが乗らない（1/1/0.00）は**別の壊れ方**で、
+            //     直し方も違う。1 つに畳むとどれなのか分からない。
+            _sb.Append(" commsFace=").Append(_comms == null
+                ? "-"
+                : $"{(_comms.AvatarBuilt ? 1 : 0)}/{(_comms.FaceArtBuilt ? 1 : 0)}/" +
+                  _comms.AppliedFace.ToString("F2"));
             //   repTypeN / repShown = 終幕の報告の打鍵の累計と、いま画に出ている文字数
             //           （`canon/LEDGER.md` 0063）。**対で出す** — 片方だけだと
             //           「字は出たのに無音」と「音は鳴ったのに字が出ていない」を区別できない。

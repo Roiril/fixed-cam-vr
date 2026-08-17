@@ -1148,6 +1148,35 @@ def analyze(events, others, exp, warns=None):
             elif bg:
                 verdict("OK", "連絡の面の地と縁が出ている（commsBg=1）")
 
+            # ⚠⚠ AIエージェントの顔（`canon/LEDGER.md` 0071）。`<枠>/<版>/<濃さ>`。
+            #    3 つとも別の壊れ方なので、**畳まずに 1 つずつ判定する**。
+            #    どれも Editor のプレビューでは必ず出るので、実機の手掛かりはここだけ。
+            faces = [str(v) for v in effect_samples(events, "commsFace")
+                     if str(v) not in ("", "-")]
+            if faces:
+                parts = [f.split("/") for f in faces if f.count("/") == 2]
+                frame = [p[0] for p in parts]
+                art = [p[1] for p in parts]
+                lit = []
+                for p in parts:
+                    try:
+                        lit.append(float(p[2]))
+                    except ValueError:
+                        pass
+                if frame and all(v == "0" for v in frame):
+                    verdict("FAIL", "AIエージェントの顔の枠を組めていない（commsFace の 1 つ目が 0）— "
+                                    "FixedCamVr/CommsAvatar がビルドから剥がれている疑い"
+                                    "（ProjectSettings の Always Included を見る）")
+                elif art and all(v == "0" for v in art):
+                    verdict("FAIL", "顔の版を掴めていない（commsFace の 2 つ目が 0）— 枠だけが出て中身が空。"
+                                    "py -3.11 tools/make-comms-face.py で焼いてから "
+                                    "Assets/Resources/Comms/ に在るか見る")
+                elif lit and max(lit) <= 0.004:
+                    verdict("FAIL", "顔が 1 度も画に出ていない（commsFace の 3 つ目が全標本 0）— "
+                                    "枠も版も在るのに濃さが乗っていない（CommsPanel.ApplyAvatar）")
+                elif lit:
+                    verdict("OK", f"AIエージェントの顔が出ている（最大の濃さ {max(lit):.2f}）")
+
             if gl and max(gl) <= 0.0:
                 verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "
                                 "周が進んでいないか、ShowRunDirector.ScreenDecay を読めていない")
