@@ -59,6 +59,12 @@ namespace FixedCamVr.Streaming
 
         public ShowPhase Phase => _logic.Phase;
         public int Lap => _logic.Lap;
+
+        /// <summary>
+        /// 走り切る周数（<c>run.totalLaps</c>）。
+        /// ⚠ <b>これを超えた周は「帰りの区間」</b>（`lap = totalLaps + 1` の `order[0]` は構造的に必ず踏む）。
+        /// 連絡の面の侵食が回復するのはそこ（<c>canon/LEDGER.md</c> 0070）。
+        /// </summary>
         public int TotalLaps => _logic.TotalLaps;
         public float RunElapsedSec => _logic.RunElapsedSec;
         public float LapElapsedSec => _logic.LapElapsedSec;

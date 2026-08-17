@@ -222,8 +222,21 @@ namespace FixedCamVr.Diagnostics
         private Transform? _root;
         private MeshRenderer? _panelRenderer;
         private MeshRenderer? _bezelRenderer;
-        // 周回の壊れ（`canon/LEDGER.md` 0068 / 0069）。進みは映像とまったく同じものを読む。
+        /// <summary>表示側のバグ（分離）の層。<b>本体より先に描く</b>（下に敷く）。⚠ 5000 以下。</summary>
+        private const int GhostQueueR = 4988;
+        private const int GhostQueueC = 4989;
+
+        // ⚠ 赤とシアン。**装置の意匠（暖色）ではなく、表示が壊れたときの色**（`canon/LEDGER.md` 0070）。
+        private static readonly Color GhostRed = new Color(1.00f, 0.12f, 0.18f);
+        private static readonly Color GhostCyan = new Color(0.10f, 0.88f, 0.95f);
+
+        // AI の侵食（`canon/LEDGER.md` 0068 / 0069 / **0070**）。
+        // ⚠⚠ 0070 から**単調ではない** — 3 周目で 1.0 に着き、帰りの A で回復する。
         private float _glitchLevel, _glitchOffsetX;
+        // 帰りの区間に入ってからの経過（回復の進み）。
+        private float _returnSec;
+        // 表示側のバグ（赤・シアンの分離）。本体と同じ文面・同じ可視数を書く。
+        private TMP_Text? _textR, _textC;
         // 地と文字に掛ける明るさ（1 = 平常。沈むだけで明るくはならない）。
         private float _glitchFlicker = 1f;
         // 化けの組み合わせが変わる刻み。**-1 = まだ一度も掛けていない**。
@@ -482,6 +495,7 @@ namespace FixedCamVr.Diagnostics
 
             // ⚠ **壊れは面が出ていなくても進める。** 出た瞬間から正しい強さで出るようにするため
             //    （届いた所で 0 から立ち上がると「連絡が来ると壊れる」に見える）。
+            TickReturnClock(Time.unscaledDeltaTime);
             TickGlitch(Time.unscaledTime);
             _logic.Tick(Time.unscaledDeltaTime);
             Apply(_logic.Weights);
@@ -587,10 +601,28 @@ namespace FixedCamVr.Diagnostics
             hintTmp.fontMaterial.renderQueue = GlyphQueue;
             _hint = hintTmp;
 
-            var textGo = new GameObject("CommsText");
-            textGo.transform.SetParent(rootGo.transform, worldPositionStays: false);
-            var tmp = textGo.AddComponent<TextMeshPro>();
-            tmp.font = jp;
+            // ⚠⚠ **表示側のバグ（赤とシアンへ分離してずれる）は複製 3 枚で作る**
+            //    （`canon/LEDGER.md` 0070・参考画像 2 枚目）。TMP の頂点を触る手もあるが、
+            //    `maxVisibleCharacters` が打鍵中ずっと変わってメッシュが組み直されるので、
+            //    **毎フレーム頂点へ書き戻す**必要がある。複製なら文面と可視数を写すだけで済む。
+            //    ⚠ 複製は本体より**先に**描く（queue が小さい ＝ 下に敷く）。
+            _textR = MakeGlyphSurface(rootGo.transform, jp, "CommsTextR", GhostQueueR, GhostRed);
+            _textC = MakeGlyphSurface(rootGo.transform, jp, "CommsTextC", GhostQueueC, GhostCyan);
+            _text = MakeGlyphSurface(rootGo.transform, jp, "CommsText", GlyphQueue, HmdTextStyle.Ink);
+            SetNotice(CommsNotice.None);   // 組み上げたら、まず畳んだ状態にする
+        }
+
+        /// <summary>
+        /// 文面の面を 1 枚組む（本体と、表示側のバグ用の複製 2 枚で共有）。
+        /// ⚠ <b>設定を 3 か所に書かない</b> — 折り返し幅も大きさも揃えもここ 1 つから出る。
+        /// </summary>
+        private static TMP_Text MakeGlyphSurface(Transform parent, TMP_FontAsset? jp,
+                                                 string name, int queue, Color color)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, worldPositionStays: false);
+            var tmp = go.AddComponent<TextMeshPro>();
+            if (jp != null) tmp.font = jp;
             // ⚠ 組むのは**いちばん長い行を持つ文面**（`menu text-audit` に最悪を測らせる）。
             tmp.text = LongestNoticeText;
             // 揃えは左（`HmdTextStyle` の規約）。中央にしてよいのは黒の中に単独で出る面だけで、
@@ -603,19 +635,17 @@ namespace FixedCamVr.Diagnostics
             tmp.fontSize = FontSize;
             tmp.enableWordWrapping = true;
             tmp.richText = false;
-            tmp.color = HmdTextStyle.Ink;
-            var rt = (RectTransform)textGo.transform;
+            tmp.color = color;
             // ⚠ 大きさは scale で掛ける（fontSize を上げるとメッシュの座標だけ広がる — LEDGER 0035）。
             //   ⇒ **折り返し幅も scale で割る**。ここを固定値にすると、字の大きさを直したときに
             //     折り返しだけ取り残されて面からはみ出す。
             float scale = TextScale;
-            rt.sizeDelta = new Vector2(PanelW * 0.92f / scale, BodyMaxH / scale);
-            textGo.transform.localScale = Vector3.one * scale;
+            ((RectTransform)go.transform).sizeDelta = new Vector2(PanelW * 0.92f / scale, BodyMaxH / scale);
+            go.transform.localScale = Vector3.one * scale;
             var overlay = Shader.Find("TextMeshPro/Distance Field Overlay");
             if (overlay != null) tmp.fontMaterial.shader = overlay;
-            tmp.fontMaterial.renderQueue = GlyphQueue;
-            _text = tmp;
-            SetNotice(CommsNotice.None);   // 組み上げたら、まず畳んだ状態にする
+            tmp.fontMaterial.renderQueue = queue;
+            return tmp;
         }
 
         /// <summary>
@@ -764,6 +794,8 @@ namespace FixedCamVr.Diagnostics
                 _lastShown = shown;
                 VisibleChars = shown;
             }
+            // 表示側のバグ（赤とシアンの分離）を本体へ揃える（`canon/LEDGER.md` 0070）。
+            SyncGhosts();
             ApplyHint(Mathf.Clamp01(w.hint));
             float pa = Mathf.Clamp01(w.panel) * _glitchFlicker;
             AppliedBody = Mathf.Clamp01(w.body);
@@ -799,15 +831,72 @@ namespace FixedCamVr.Diagnostics
         }
 
         /// <summary>
+        /// 表示側のバグ（赤とシアンの分離）を本体へ揃える（<c>canon/LEDGER.md</c> 0070）。
+        /// ⚠ <b>侵食が 0 のあいだは複製ごと消す</b>（描画も走らない）。
+        /// </summary>
+        private void SyncGhosts()
+        {
+            if (_text == null || _textR == null || _textC == null) return;
+            float dx = CommsGlitchLogic.SplitOffsetM(_glitchLevel, _corruptTick);
+            bool on = dx > 0.0001f && AppliedGlyph > 0.002f && VisibleChars > 0;
+            ApplyGhost(_textR, -dx, on);
+            ApplyGhost(_textC, dx, on);
+        }
+
+        /// <summary>
+        /// 分離の 1 層を本体へ揃える。
+        /// ⚠⚠ <b>文面・可視数・置き場所は本体から写す。</b> 別々に持つと、化けの組み合わせが
+        /// 1 刻みずれた瞬間に「違う字が 3 つ並ぶ」になり、分離ではなく**別の文が重なって**見える。
+        /// </summary>
+        private void ApplyGhost(TMP_Text ghost, float dx, bool on)
+        {
+            if (ghost.gameObject.activeSelf != on) ghost.gameObject.SetActive(on);
+            if (!on || _text == null) return;
+            if (!string.Equals(ghost.text, _text.text, System.StringComparison.Ordinal))
+                ghost.text = _text.text;
+            if (ghost.maxVisibleCharacters != VisibleChars) ghost.maxVisibleCharacters = VisibleChars;
+            // 明滅も一緒に浴びる（本体だけ沈むと分離だけが残って「色が出た」に見える）。
+            ghost.alpha = AppliedGlyph;
+            Vector3 p = _text.transform.localPosition;
+            ghost.transform.localPosition = new Vector3(p.x + dx, p.y, p.z);
+        }
+
+        /// <summary>
         /// 周回の壊れを 1 フレーム進める（<c>canon/LEDGER.md</c> 0068）。
         /// <b>進みは映像の劣化とまったく同じ値</b>（<see cref="DecayProgress"/>）。
         ///
         /// ⚠ <b>面が出ていないあいだも進める。</b> 届いた所で 0 から立ち上げると
         /// 「連絡が来ると壊れる」に見えて、因果が逆になる。
         /// </summary>
+        /// <summary>
+        /// 帰りの区間（<c>lap &gt; totalLaps</c>）に入ってからの経過を数える。
+        /// ⚠ 手前の周では 0 へ戻す — 戻さないと、次の体験者で**最初から回復済み**になる。
+        /// </summary>
+        private void TickReturnClock(float dt)
+        {
+            if (runDirector == null) { _returnSec = 0f; return; }
+            bool returning = runDirector.Lap > runDirector.TotalLaps;
+            _returnSec = returning ? _returnSec + Mathf.Max(0f, dt) : 0f;
+        }
+
+        /// <summary>
+        /// いまの侵食 0..1（<c>canon/LEDGER.md</c> 0070）。
+        /// ⚠⚠ <b>単調ではない</b> — 3 周目で 1.0 に着き（原型を保てない）、
+        /// 帰りの A で <see cref="CommsGlitchLogic.RecoveredLevel"/> まで戻る（なんとか復帰）。
+        /// 映像の劣化は単調のままなので、**ここだけが山になる**。
+        /// </summary>
+        private float ResolveCorruption()
+        {
+            // プレビューは侵食そのものを差し込む（回復の途中も `decay` で直に指定できる）。
+            if (_decayOverride >= 0f) return CommsGlitchLogic.LevelFor(_decayOverride);
+            int lap = runDirector != null ? runDirector.Lap : 1;
+            int total = runDirector != null ? runDirector.TotalLaps : 3;
+            return CommsGlitchLogic.CorruptionFor(DecayProgress, lap, total, _returnSec);
+        }
+
         private void TickGlitch(float timeSec)
         {
-            _glitchLevel = CommsGlitchLogic.LevelFor(DecayProgress);
+            _glitchLevel = ResolveCorruption();
             _glitchOffsetX = CommsGlitchLogic.OffsetXAt(timeSec, _glitchLevel);
             _glitchFlicker = CommsGlitchLogic.PanelFlickerAt(timeSec, _glitchLevel);
 

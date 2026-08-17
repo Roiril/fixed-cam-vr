@@ -45,7 +45,16 @@ namespace FixedCamVr.Streaming
         /// <c>JapaneseHudFontSetup</c> の収集元にこのファイルが入っているので、
         /// **ここに書いてあるだけで拾われる**。字を足したら <c>menu hud-font</c> を再実行する。
         /// </summary>
-        public const string Marks = "─│┼※";
+        public const string Marks =
+            // Mojibake の漢字（UTF-8 を別の符号化で読んだときに出る、読めない字）。
+            // ⚠ **意味のある語にならないものだけ**を選んである。
+            "繧縺蟒蜩讒髀蜿譛蜷螟邇隘迢蠑闔驕鬘蜻縲繝" +
+            // 豆腐（字が出せていない）。⚠ 0069 では避けたが 0070 で解禁した（下）。
+            "□■" +
+            // 記号・罫線
+            "※＊￥＞＜↑→〒＠・？！─│┼" +
+            // 小書きの仮名（化けた列の中に混じると「符号がずれた」に見える）
+            "ゅュャォィヮぁぃぇ";
 
         /// <summary>字が出なかったときの置き換え先。<b>全角</b>なので幅が変わらない。</summary>
         public const char Blank = '　';
@@ -62,11 +71,33 @@ namespace FixedCamVr.Streaming
         public const float Exponent = 2f;
 
         /// <summary>
-        /// 最大時に化ける字の割合。<b>5〜6 字に 1 字</b>。
-        /// ⚠ これ以上は文面が読めない。③「異常が検出されました。記録してください。」は
-        /// <b>4 周目 A の締め</b>で出て、<b>読まれないと締めのカットが進まない</b>。
+        /// 最大時に化ける字の割合。<b>3 周目は 4 字に 3 字が化ける ＝ 原型を保てない</b>
+        /// （2026-08-17・<c>canon/LEDGER.md</c> 0070「3周目のA~Cでは原型を保てなくなっている」）。
+        ///
+        /// ⚠⚠ **0069 まで 0.18 だった**（「文字は最後まで読める側へ倒す」）。
+        /// 上げられたのは、**③が出る 4 周目 A では回復している**から（<see cref="CorruptionFor"/>）。
+        /// 読める必要があるのは③だけで、そこは侵食が <see cref="RecoveredLevel"/> まで戻っている。
+        /// **制約が消えたのではなく、置き場所が変わった。**
         /// </summary>
-        public const float MaxCorruptShare = 0.18f;
+        public const float MaxCorruptShare = 0.75f;
+
+        /// <summary>
+        /// 帰りの A（<c>lap &gt; totalLaps</c>）で侵食が戻り切るまで (秒)。
+        /// ⚠ 瞬間に戻すと「壊れていた」印象ごと消える。数秒かけて持ち直す。
+        /// </summary>
+        public const float RecoverSec = 3.2f;
+
+        /// <summary>
+        /// 復帰後に残る侵食。<b>0 にしない</b> — 完全に元へ戻ると「何も起きていなかった」になる。
+        /// たまに 1 字が化けるくらいの傷が残る。
+        /// </summary>
+        public const float RecoveredLevel = 0.12f;
+
+        /// <summary>
+        /// 表示側のバグ（赤とシアンへ分離してずれる）の最大の振れ幅 (m)。
+        /// 面の幅は 0.76m なので <b>0.5%</b>。⚠ これ以上は「二重に見える」ではなく「別の文が 2 つある」に見える。
+        /// </summary>
+        public const float MaxSplitM = 0.004f;
 
         /// <summary>化けたうち「出なかった」（空白）になる割合。残りは <see cref="Marks"/> の記号。</summary>
         public const float BlankShare = 0.34f;
@@ -96,6 +127,47 @@ namespace FixedCamVr.Streaming
             if (p <= 0f) return 0f;
             float lv = Pow(p, Exponent);
             return lv <= OffThreshold ? 0f : lv;
+        }
+
+        /// <summary>
+        /// <b>AI の侵食 0..1。単調ではない</b>（<c>canon/LEDGER.md</c> 0070）。
+        ///
+        /// 3 周目 A で 1.0 に着き（原型を保てない）、<b>帰りの A で <see cref="RecoveredLevel"/> まで戻る</b>
+        /// （なんとか復帰して、最後の連絡を出す）。映像の劣化（<see cref="ScreenDecayLogic"/>）は
+        /// 単調のままなので、**ここだけが山になる** — 装置は壊れ続け、AI は持ち直す。
+        ///
+        /// ⚠ <paramref name="lap"/> は 1 始まり。<c>lap &gt; totalLaps</c> が帰りの区間
+        /// （`ShowRunReach` の到達可能な区間の式と同じ考え）。
+        /// </summary>
+        /// <param name="returnSec">帰りの区間に入ってからの経過 (秒)。</param>
+        public static float CorruptionFor(float decayProgress, int lap, int totalLaps, float returnSec)
+        {
+            float lv = LevelFor(decayProgress);
+            if (totalLaps < 1) totalLaps = 3;
+            if (lap <= totalLaps) return lv;
+
+            // 帰りの A。持ち直す（滑らかに ＝ 装置が自分で立て直している）。
+            float k = Smooth(Clamp01(returnSec / RecoverSec));
+            return lv + (RecoveredLevel - lv) * k;
+        }
+
+        /// <summary>
+        /// 表示側のバグ（赤とシアンの分離）の振れ幅 (m)。侵食に比例。
+        /// ⚠ <b>刻みごとに揺れる</b> — 一定だと「そういう書体」に見えて壊れて見えない。
+        /// </summary>
+        public static float SplitOffsetM(float level, int tick)
+        {
+            float lv = Clamp01(level);
+            if (lv <= OffThreshold) return 0f;
+            // 0.35〜1.0 の幅で揺らす。**0 にはしない**（分離が消える瞬間があると点滅に見える）。
+            float k = 0.35f + 0.65f * Hash01((uint)tick * 668265263u + 77u);
+            return MaxSplitM * lv * k;
+        }
+
+        private static float Smooth(float t)
+        {
+            t = Clamp01(t);
+            return t * t * (3f - 2f * t);
         }
 
         /// <summary>いまの刻み番号。<b>化けの組み合わせも発作もここから引く</b>ので、時刻の写し先は 1 つ。</summary>

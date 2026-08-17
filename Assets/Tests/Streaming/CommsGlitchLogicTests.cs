@@ -107,11 +107,13 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// ⚠⚠ <b>読めなくならない。</b> ③「異常が検出されました。記録してください。」は
-        /// <b>4 周目 A の締め</b>で出て、<b>読まれないと締めのカットが進まない</b>。
+        /// ⚠⚠ <b>上限を守る。</b> 3 周目は原型を保てない（4 字に 3 字が化ける）が、
+        /// **予算を超えて全部が消えることは無い**（`canon/LEDGER.md` 0070）。
+        /// ⚠ 「読める」を保証するのはここではなく <see cref="Corruption_RecoversOnReturnLap"/> —
+        /// **③が出る 4 周目 A では侵食が戻っている**。
         /// </summary>
         [Test]
-        public void Corrupt_LeavesTextReadable()
+        public void Corrupt_RespectsBudget()
         {
             int worst = 0;
             for (int tick = 0; tick < 600; tick++)
@@ -126,8 +128,75 @@ namespace FixedCamVr.Streaming.Tests
             //    余裕は端数の抽選（+1）のぶんだけ。
             int cap = (int)((Body.Length - 1) * CommsGlitchLogic.MaxCorruptShare) + 1;
             Assert.LessOrEqual(worst, cap,
-                               $"最悪の刻みで {worst} 字が化けた（上限 {cap}）— 読めない");
+                               $"最悪の刻みで {worst} 字が化けた（上限 {cap}）");
             Assert.Greater(worst, 0, "600 刻みで 1 字も化けないのは薄すぎる");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>帰りの A で回復する</b>（`canon/LEDGER.md` 0070 —
+        /// 「4周目のAでなんとか復帰して、体験者を助けようと…表示する」）。
+        /// **③はここで出るので、ここが読めないと締めのカットが進まない。**
+        /// </summary>
+        [Test]
+        public void Corruption_RecoversOnReturnLap()
+        {
+            const int total = 3;
+            // 3 周目（原型を保てない）
+            Assert.AreEqual(1f, CommsGlitchLogic.CorruptionFor(1f, total, total, 0f), 0.001f,
+                            "3 周目は満額のまま");
+            // 帰りの A へ入った瞬間はまだ壊れている（いきなり戻ると「壊れていた」印象ごと消える）
+            Assert.Greater(CommsGlitchLogic.CorruptionFor(1f, total + 1, total, 0f), 0.9f);
+            // 数秒で持ち直す
+            float mid = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
+                                                      CommsGlitchLogic.RecoverSec * 0.5f);
+            Assert.Less(mid, 0.9f, "半ばでは戻り始めている");
+            Assert.Greater(mid, CommsGlitchLogic.RecoveredLevel, "半ばで戻り切ってはいない");
+            float done = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
+                                                       CommsGlitchLogic.RecoverSec * 2f);
+            Assert.AreEqual(CommsGlitchLogic.RecoveredLevel, done, 0.001f, "戻り切る");
+            Assert.Greater(done, 0f, "⚠ 0 にはしない（完全に戻ると何も起きていなかったことになる）");
+        }
+
+        /// <summary>手前の周では回復しない（`returnSec` を渡しても効かない）。</summary>
+        [Test]
+        public void Corruption_DoesNotRecoverBeforeReturnLap()
+        {
+            for (int lap = 1; lap <= 3; lap++)
+                Assert.AreEqual(CommsGlitchLogic.LevelFor(1f),
+                                CommsGlitchLogic.CorruptionFor(1f, lap, 3, 99f), 0.0001f,
+                                $"{lap} 周目で回復してしまっている");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>化け先はすべて全角。</b> 半角が混じると**幅が変わって折り返しが動く**
+        /// （文字数を変えない設計の前提が崩れ、枠から溢れる）。
+        /// </summary>
+        [Test]
+        public void Marks_AreAllFullWidth()
+        {
+            foreach (char c in CommsGlitchLogic.Marks)
+            {
+                Assert.Greater(c, 0x7F, $"'{c}' が ASCII（半角）");
+                Assert.IsFalse(c >= 0xFF61 && c <= 0xFF9F, $"'{c}' が半角カナ");
+            }
+            Assert.Greater(CommsGlitchLogic.Marks.Length, 20,
+                           "化け先が少ないと同じ字ばかり出て『模様』に見える");
+            Assert.AreEqual(CommsGlitchLogic.Marks.Length,
+                            new System.Collections.Generic.HashSet<char>(CommsGlitchLogic.Marks).Count,
+                            "化け先に重複がある（その字だけ出やすくなる）");
+        }
+
+        /// <summary>表示側のバグ（分離）の振れ幅が上限を超えない。</summary>
+        [Test]
+        public void SplitOffset_StaysWithinLimit()
+        {
+            Assert.AreEqual(0f, CommsGlitchLogic.SplitOffsetM(0f, 3), "侵食 0 では分離しない");
+            for (int t = 0; t < 400; t++)
+            {
+                float dx = CommsGlitchLogic.SplitOffsetM(1f, t);
+                Assert.Greater(dx, 0f, $"tick={t} で分離が消えた（点滅に見える）");
+                Assert.LessOrEqual(dx, CommsGlitchLogic.MaxSplitM + 1e-6f, $"tick={t} で広がりすぎ");
+            }
         }
 
         /// <summary>進みが増えるほど化ける字も増える（1 周目は 0、3 周目でよく化ける）。</summary>

@@ -509,6 +509,10 @@ switch ($Action) {
             try {
                 $fs = [System.IO.File]::Open($editorLog, 'Open', 'Read', 'ReadWrite')
                 try {
+                    # ⚠⚠ **Unity は起動のたびに Editor.log を作り直す**（追記ではない）。
+                    #    走行後のサイズが走行前より小さければローテートされたので、**全部が今回の分**。
+                    #    2026-08-17 にここを取り違えて、検出を入れたのに 1 件も拾えなかった。
+                    if ($fs.Length -lt $logStart) { $logStart = 0 }
                     if ($fs.Length -gt $logStart) {
                         $fs.Position = $logStart
                         $sr = New-Object System.IO.StreamReader($fs)
