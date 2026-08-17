@@ -102,6 +102,10 @@ $Menus = [ordered]@{
     'glitch'           = @{ Method = 'FixedCamVr.Streaming.EditorTools.GlitchPreview.Run'
                             Desc = '乱れが起きるたびにどれだけ大きくなるかを 1 コマずつ焼く（→ make-preview-video.py で mp4）'
                             Out = 'Assets/Screenshots/glitch-preview/f0000.png' }
+    'eyes'             = @{ Method = 'FixedCamVr.Streaming.EditorTools.EyesPreview.Run'
+                            Desc = 'スクリーンの外の闇に目が開く異変を 1 コマずつ焼く（-Set density=0..1 / → make-preview-video.py で mp4）'
+                            Set = 'density=<0..1 開く目の割合>'
+                            Out = 'Assets/Screenshots/eyes-preview/stage_4_hold.png' }
     'text-audit'       = @{ Method = 'FixedCamVr.Streaming.EditorTools.HmdTextAudit.Run'
                             Desc = 'HMD 内の文字を全面まとめて測る（1 文字の見かけ角 / 枠からのはみ出し。⚠ 大きさ・文言を触ったら通す）'
                             Out = $null }

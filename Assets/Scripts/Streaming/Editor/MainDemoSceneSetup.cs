@@ -69,6 +69,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string TitleName = "Title";
         private const string BgmName = "[Bgm]";
         private const string SoundName = "[Sound]";
+        private const string EyesName = "[Eyes]";
 
         /// <summary>音源が焼かれているかの抜き取り検査（全部並べても意味が無いので代表を数本）。</summary>
         private static readonly string[] SoundProbeResources =
@@ -590,6 +591,12 @@ namespace FixedCamVr.Streaming.EditorTools
             //      設計の正本は `.claude/rules/sound-design.md`。
             CreateOrUpdateSound(logic.transform);
 
+            // 3.7. 闇の目（canon/LEDGER.md 0072）。スクリーンの外の黒い背景で目が開く異変。
+            //      カットの `eyes` が出す（TakeRunner → AnomalyEyes）ので、指されなければ 1 画素も出ない。
+            //      ⚠ **これもシーンに焼かれた GameObject** — コードだけでは APK に入らない。
+            //      確認は `grep "m_Name: \[Eyes\]" Assets/Scenes/Main.unity`。
+            CreateOrUpdateEyes(logic.transform, centerEye.transform, showControl);
+
             // 4. StatusHud（単一サーフェス・緩追従・TMP）。本番は startVisible=false・視界保護。右 B でトグル。
             //    lap / ゾーン / 次の cue / 信号 / 要再登録 を 1 枚に統合し、登録中は登録ガイダンスを強制表示。
             //    world-space（Logic 直下・head 非親）で StatusHud が自前に緩追従する。
@@ -1053,6 +1060,32 @@ namespace FixedCamVr.Streaming.EditorTools
                                  + $"{found}/{SoundProbeResources.Length} 本）。"
                                  + "`py -3.11 tools/make-sounds.py` を走らせてから焼き直すこと。");
             }
+        }
+
+        /// <summary>
+        /// 闇の目（<see cref="AnomalyEyes"/>）を [Eyes] へ冪等に置く（<c>canon/LEDGER.md</c> 0072）。
+        ///
+        /// ⚠ <b>Logic 直下に置く（head の子にしない）。</b> 群れは頭の<b>位置</b>だけを追い、
+        ///   向きはワールド固定なので、head の子にすると向きまで付いてきて HUD に見える。
+        /// ⚠ 実行時に自分の transform を頭の位置へ運ぶので、<b>他のものと同居させない</b>
+        ///   （[Tracker] に載せると周回・ゾーンの居場所ごと動く）。
+        /// </summary>
+        private static void CreateOrUpdateEyes(Transform parent, Transform head, ShowControlClient? showControl)
+        {
+            var existing = parent.Find(EyesName);
+            GameObject go;
+            if (existing != null) go = existing.gameObject;
+            else
+            {
+                go = new GameObject(EyesName);
+                go.transform.SetParent(parent, worldPositionStays: false);
+            }
+            var eyes = go.GetComponent<AnomalyEyes>();
+            if (eyes == null) eyes = go.AddComponent<AnomalyEyes>();
+            var so = new SerializedObject(eyes);
+            TrySetObjectRef(so, "head", head);
+            if (showControl != null) TrySetObjectRef(so, "showControl", showControl);
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static BgmDirector? CreateOrUpdateBgm(Transform parent)

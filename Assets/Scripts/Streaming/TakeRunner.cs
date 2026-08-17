@@ -95,6 +95,9 @@ namespace FixedCamVr.Streaming
         // 映像の上に人形を描く層（step.cg）。null なら CG は出ない（機能未配置でも演出は動く）。
         private ShowCgLayer? _cgLayer;
 
+        // スクリーンの外の闇で目が開く異変（step.eyes）。null なら目は出ない（同上）。
+        private AnomalyEyes? _eyes;
+
         // 時刻源。既定は Time.time。EditMode テストは時間が進まないため差し替える
         //（純ロジックは既に時刻を引数で受けており、束縛しているのはこの実行体だけ）。
         private Func<float>? _timeSource;
@@ -160,6 +163,19 @@ namespace FixedCamVr.Streaming
             // 機能が全死した過去の事故を繰り返さない）。
             _cgLayer = FindObjectOfType<ShowCgLayer>();
             if (_cgLayer == null && overlay != null) _cgLayer = overlay.gameObject.AddComponent<ShowCgLayer>();
+
+            // 闇の目（canon/LEDGER.md 0072）。**シーンに居なければ自分で載せる** — 群れは
+            // 頭に付いて動くだけで親を選ばないので、どこに載っていても同じ絵になる。
+            // prefab / シーンの配線漏れで機能が全死した過去の事故を繰り返さない。
+            _eyes = FindObjectOfType<AnomalyEyes>();
+            if (_eyes == null)
+            {
+                // ⚠ **自分の GameObject には載せない。** AnomalyEyes は自分の transform を
+                //    頭の位置へ運ぶので、[Tracker] に載せると周回・ゾーンの居場所ごと動く。
+                var go = new GameObject("[Eyes]");
+                go.transform.SetParent(transform, worldPositionStays: false);
+                _eyes = go.AddComponent<AnomalyEyes>();
+            }
 
             // 遷移層でカットが画面に出ないまま上書きされたら報告する（演出層と同じ規律を通す）。
             if (director != null) director.TransitionPreempted += OnTransitionPreempted;
@@ -630,6 +646,11 @@ namespace FixedCamVr.Streaming
             director.ApplySplit(step.splitX, step.splitFlip, step.splitFreeze);
             ApplyStepOverlay2(step, takeIndex: d.takeIndex, stepIndex: d.stepIndex);
 
+            // スクリーンの外の闇で目が開く異変（canon/LEDGER.md 0072）。**画面には触らない**ので
+            // どの source のカットにも足せる。同じ値を続けて言い直しても進みは巻き戻らないので、
+            // カットをまたいでも 1 つの出来事として続く。
+            _eyes?.Apply(step.eyes);
+
             Debug.Log($"[TakeRunner] {(d.takeStarted ? "演出開始" : "カット")} take={TakeId(d.takeIndex)} " +
                       $"step={d.stepIndex} source={source}" +
                       $"{(source == TakeSchema.SourceLive ? $" camera={step.camera}" : "")}");
@@ -855,6 +876,9 @@ namespace FixedCamVr.Streaming
             //    割れたまま固着するより桁違いに軽い。
             director?.ApplySplit(0f, false, false);
             overlay?.ClearSecondLayer();
+            // 闇の目も**カット単位の状態**。ここを通らない終わり方は無い（正常終了・中止・
+            // ラン開始・watchdog・報告で畳む、のすべてが ReleaseStepState を通る）。
+            _eyes?.Release();
         }
 
         private ShowStepDef? GetStep(int takeIndex, int stepIndex)

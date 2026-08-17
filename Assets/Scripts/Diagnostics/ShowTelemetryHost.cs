@@ -94,6 +94,7 @@ namespace FixedCamVr.Diagnostics
         private ShowSoundDirector? _sound;
         private SwitchAudioCue? _switchSfx;
         private ShowCgLayer? _cg;
+        private AnomalyEyes? _eyes;
         private TakeRunner? _takes;
 
         // --- 購読状態（多重購読を防ぐ）---
@@ -217,6 +218,7 @@ namespace FixedCamVr.Diagnostics
             if (_shell == null) _shell = FindObjectOfType<ContainmentShell>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_cg == null) _cg = FindObjectOfType<ShowCgLayer>();
+            if (_eyes == null) _eyes = FindObjectOfType<AnomalyEyes>();
             if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
             if (_sound == null) _sound = FindObjectOfType<ShowSoundDirector>();
             if (_switchSfx == null) _switchSfx = FindObjectOfType<SwitchAudioCue>();
@@ -503,6 +505,11 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>CG 人形が実際に描画されているか。<c>-</c>=シーンに居ない。</summary>
         private string CgState => _cg == null ? "-" : (_cg.IsVisible ? "1" : "0");
+
+        /// <summary>闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;</c>。</summary>
+        private string EyesState => _eyes == null
+            ? "-"
+            : $"{(_eyes.IsBuilt ? 1 : 0)}/{_eyes.OpenCount}/{_eyes.AppliedFade:F2}";
 
         /// <summary>
         /// 解像度の劣化を書く先（スクリーンの Renderer のマテリアル）を掴めているか。
@@ -873,6 +880,12 @@ namespace FixedCamVr.Diagnostics
             // 終幕の電力。**演出の外では 1.00** なので、本編中にこれが下がっていたら画が暗い理由がここ。
             _sb.Append(" pw=").Append(PowerState);
             _sb.Append(" cg=").Append(CgState);
+            //   eyes = 闇に開く目（`canon/LEDGER.md` 0072）。
+            //   **`<実体を組めたか>/<いま開いている目の数>/<画に出た不透明度>`** の 3 つ組。
+            //   ⚠ 3 つとも要る — シェーダが剥がれた（0/…）／カットが 1 度も指していない（1/0/0.00）／
+            //     指したのに 1 画素も出ていない（1/0/1.00 ＝ 座席表を組めていない）は**別の壊れ方**。
+            //   ⚠ 数は「重みを配った」ではなく**何個ぶんの目が実際に開いているか**（画に出た側）。
+            _sb.Append(" eyes=").Append(EyesState);
             // 音は**録画にも映らない**ので、実在の観測はここにしか無い。
             //   sndBuilt = 掴めた音源 / 掴めなかった音源（0 でなければ設計どおりに鳴っていない）
             //   sndAud   = いま AudioSource へ書いている音量の合計（**0 なら無音**）

@@ -1832,6 +1832,68 @@ def analyze(events, others, exp, warns=None):
             if after_ovl2 and max(after_ovl2) > 0.0:
                 verdict("FAIL", f"演出が終わった後も第 2 層が残っている（ovl2={max(after_ovl2):.2f}）")
 
+    # -- 闇に開く目（canon/LEDGER.md 0072）
+    # ⚠ 「カットが指した」は画に出たことを意味しない。シェーダが実行時 Shader.Find なので
+    #    ビルドから剥がれると 1 画素も出ないまま演出だけ正常に走る（2026-07-31 に覆いで踏んだ型）。
+    #    しかも**闇に出る演出なので、録画では暗くて確かめにくい**。手掛かりはこのキーだけ。
+    want_eyes = [f"{t['id']}#{i}" for t in exp["takes"]
+                 for i, s in enumerate(t["steps"]) if (fstr(s.get("eyes")) or 0.0) > 0.0]
+    eyes_raw = [str(v) for v in effect_samples(events, "eyes") if str(v) not in ("", "-")]
+    if want_eyes or eyes_raw:
+        any_effect_key = True
+        w()
+        w("### 闇に開く目")
+        w(f"  著作: {len(want_eyes)} カット")
+        parts = [v.split("/") for v in eyes_raw if v.count("/") == 2]
+        built = [p[0] for p in parts]
+        opened = []
+        fades = []
+        for p in parts:
+            try:
+                opened.append(int(p[1]))
+            except ValueError:
+                pass
+            try:
+                fades.append(float(p[2]))
+            except ValueError:
+                pass
+        if opened:
+            w(f"  同時に開いた目の最大 {max(opened)} 個（標本 {len(parts)}）")
+
+        if want_eyes and not parts:
+            verdict("WARN", "目を観測していないビルドのログ（eyes キーが無い）")
+        elif built and all(v == "0" for v in built):
+            verdict("FAIL", "目の実体を組めていない（eyes の 1 つ目が 0）— "
+                            "FixedCamVr/AnomalyEyes がビルドから剥がれている疑い"
+                            "（ProjectSettings の Always Included を見る）")
+        elif want_eyes and opened and max(opened) == 0:
+            verdict("FAIL", f"目を指すカットが {len(want_eyes)} 本あるのに 1 つも開いていない"
+                            f"（{', '.join(want_eyes)}）— そのカットが飛ばされていないか"
+                            "（ev=step）と、区間の滞在が兆し 4.0s より長いかを見る")
+        elif want_eyes and opened and max(opened) < 2:
+            verdict("WARN", f"大きい目しか開いていない（最大 {max(opened)} 個）— "
+                            "区間の滞在が 7.5 秒（兆し ＋ 凝視）より短くて開眼まで届いていない疑い")
+        elif want_eyes and opened:
+            verdict("OK", f"目が開いた（同時に最大 {max(opened)} 個）")
+
+        # 固着。目はカットの中でしか指されないので、演出が終わった後に残っていたら
+        # 次の体験者の視界に最初から目が居ることになる。
+        take_evs2 = [e for e in events if e.get("ev") == "take"]
+        if take_evs2 and take_evs2[-1].get("st") == "end":
+            t_end2 = fnum(take_evs2[-1], "t", 0.0)
+            after = [str(v) for v in effect_samples(events, "eyes", t_from=t_end2 + 2.0)
+                     if str(v).count("/") == 2]
+            stuck = [p.split("/")[2] for p in after]
+            vals = []
+            for v in stuck:
+                try:
+                    vals.append(float(v))
+                except ValueError:
+                    pass
+            if vals and max(vals) > 0.0:
+                verdict("FAIL", f"演出が終わった後も目が残っている（eyes の 3 つ目 {max(vals):.2f}）— "
+                                "次の体験者の視界に最初から目が居る。畳む経路を見る")
+
     # -- 端末内録画が 0 バイトで閉じていないか
     zero_rec = [e for e in rec_ev if e.get("v") == "stop" and fnum(e, "bytes") == 0]
     if any("bytes" in e for e in rec_ev):
