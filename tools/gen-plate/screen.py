@@ -257,9 +257,12 @@ def seam_report(img: np.ndarray, mask_path: str) -> str:
     lo, hi = max(1, x - band), min(w - 2, x + band)
     left, right = g[:, lo:x - 8].mean(), g[:, x + 8:hi].mean()
     step = float(np.abs(g[:, x - 1] - g[:, x + 1]).mean())
-    ok = "OK " if step <= 8.0 else "NG "
-    return (f"  {ok}継ぎ目 x={x}（枠の {x / w:.2f}）  素材側 {left:.1f} / 実写側 {right:.1f}"
-            f"  比 {left / max(right, 1e-6):.2f}  **段差 {step:.1f}**（8 以下）")
+    # ⚠ ここは**参考値**。合否は `deliver.py` が 1 か所で持つ
+    #   （この生の値には「その列にもともとある縦の構造」が下駄として乗っている。
+    #   恒等の入力＝素材がプレートそのものでも 5.1 出た。同じ数字を 2 か所に置かない）
+    return (f"  継ぎ目 x={x}（枠の {x / w:.2f}）  素材側 {left:.1f} / 実写側 {right:.1f}"
+            f"  比 {left / max(right, 1e-6):.2f}  勾配 {step:.1f}"
+            f"  ← 合否は deliver.py で見る")
 
 
 if __name__ == "__main__":
