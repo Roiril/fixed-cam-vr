@@ -208,6 +208,8 @@ namespace FixedCamVr.Streaming.Tests
             // 角 (-0.5, 0.5) から内側へ LaneOffsetM ずつ ＝ 2 本の道の交点。
             Assert.AreEqual(-0.5f + WalkGuidePath.LaneOffsetM, p.spot.x, 1e-3f);
             Assert.AreEqual(0.5f - WalkGuidePath.LaneOffsetM, p.spot.y, 1e-3f);
+            Assert.AreEqual(WalkGuidePath.SpotRadiusM, p.radiusM, 1e-4f,
+                            "描く輪と判定の円は同じ半径（別にすると指示が嘘になる）");
         }
 
         [Test]

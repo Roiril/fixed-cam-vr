@@ -402,6 +402,20 @@ namespace FixedCamVr.Streaming
         /// <summary>2 本の壁が平行すぎて交点が解けないとみなす外積の下限。</summary>
         public const float MinCrossForCorner = 0.2f;
 
+        /// <summary>
+        /// 導出した円の半径 (m)。<b>描く輪と判定の円はこれ 1 つ</b>。
+        ///
+        /// ⚠⚠ <b>0.35 → 0.245（0.7 倍）</b>（2026-08-17・ユーザー赤入れ
+        /// 「到達ポイント表示はもう少し小さめにお願い。今の 0.7 倍くらい」）。
+        /// <b>見た目だけ縮めない</b> — 判定の円を大きいままにすると、輪の外で導入が始まって
+        /// 「そこへ立て」という指示と食い違う（<c>canon/LEDGER.md</c> 0079 の要点そのもの）。
+        ///
+        /// ⚠ 卓が置いた円（<c>layout.startSpot</c>）はその半径を使う。人の判断を上書きしない。
+        /// ⚠ これ以上小さくしない — 立ち位置がシビアになり、着けない体験者が
+        /// <see cref="WalkGuideLogic.HoldMaxSec"/> 待つことになる。
+        /// </summary>
+        public const float SpotRadiusM = 0.245f;
+
         /// <summary>解けた道筋。</summary>
         public struct Path
         {
@@ -432,7 +446,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public static Path Solve(ShowLayoutDef? layout, ShowRoomDef? room)
         {
-            var path = new Path { radiusM = ShowStartSpotDef.DefaultRadiusM };
+            var path = new Path { radiusM = SpotRadiusM };
 
             // 床が無ければ何も出さない（捏造しない）。矢印の起点を床の縁から決めるので、
             // 床の実寸はどの経路でも要る。
