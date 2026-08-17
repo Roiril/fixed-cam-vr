@@ -236,6 +236,20 @@ namespace FixedCamVr.Streaming
                 EnterStage(CommsStage.Out);
         }
 
+        /// <summary>
+        /// <b>いま出ているものを引く</b>（読ませ終わるのを待たずに片づける）。
+        /// <see cref="Disable"/> と違って<b>演出として引く</b>ので、ぱっと消えない。
+        ///
+        /// 呼ぶのは 1 か所 — 導入が段 0 を抜けた瞬間（<c>canon/LEDGER.md</c> 0079）。
+        /// 誘導の指示が出たまま現実が割れ始めると、演出の上に文字が浮いたままになる。
+        /// </summary>
+        public void Retract()
+        {
+            if (_stage == CommsStage.Off || _stage == CommsStage.Out) return;
+            _guideWanted = false;
+            EnterStage(CommsStage.Out);
+        }
+
         /// <summary>畳む（ラン開始・本編を出た・中止）。</summary>
         public void Disable()
         {

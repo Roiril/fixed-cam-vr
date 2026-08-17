@@ -247,6 +247,57 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void Black_WhileGuiding_OnlyTheSpotOpensTheGate()
+        {
+            // ⚠⚠ **円を描いたら、開始の判定もその円でなければならない**（canon/LEDGER.md 0079）。
+            //    誘導が出ているあいだに安全網（外 → 中）や救済（中に立ったまま 1 秒）で始まると、
+            //    **指示された所より手前で演出が走る** ＝ 装置が出した指示が嘘になる。
+            var l = Make();
+            var guiding = Ready(outsideM: 3f);
+            guiding.guidingToSpot = true;
+            Advance(l, 1f, guiding);                     // 外に居た（安全網の前提を満たす）
+
+            var inside = Ready(outsideM: 0f);
+            inside.guidingToSpot = true;
+            Advance(l, IntroLogic.ConcealStartSec * 5f, inside);
+            Assert.AreEqual(IntroStage.Black, l.Stage,
+                            "誘導中に安全網／救済で始まった（円へ着く前に演出が走る）");
+
+            // 円へ着いた ＝ atStartSpot。
+            inside.atStartSpot = true;
+            l.Tick(0.1f, inside);
+            Assert.AreEqual(IntroStage.Real, l.Stage, "円へ着いても始まらない");
+        }
+
+        [Test]
+        public void Black_WhenTheGuideGivesUp_TheOldRuleComesBack()
+        {
+            // 誘導が諦めたら（WalkGuideLogic.HoldMaxSec 超過）guidingToSpot は false へ戻る。
+            // ここで従来の救済が生き返らないと、体験者は永久に置き去りになる。
+            var l = Make();
+            var guiding = Ready(outsideM: 0f);
+            guiding.guidingToSpot = true;
+            Advance(l, IntroLogic.ConcealStartSec * 5f, guiding);
+            Assert.AreEqual(IntroStage.Black, l.Stage);
+
+            Advance(l, IntroLogic.ConcealStartSec * 1.5f, Ready(outsideM: 0f));
+            Assert.AreEqual(IntroStage.Real, l.Stage, "諦めた後も出口が無い");
+        }
+
+        [Test]
+        public void Black_WhileGuiding_StaffSkipStillWorks()
+        {
+            // ⚠ スタッフの ⏭ は人の判断そのもの。誘導も含めて何であれ上書きできる。
+            var l = Make();
+            var guiding = Ready(outsideM: 3f);
+            guiding.guidingToSpot = true;
+            Advance(l, 2f, guiding);
+            l.RequestAdvance();
+            l.Tick(0.1f, guiding);
+            Assert.AreEqual(IntroStage.Real, l.Stage);
+        }
+
+        [Test]
         public void Black_DoesNotRescueBeforeTheAPress()
         {
             // 救済も「人が始めた」でゲートする。無条件の時間切れにすると、置いた HMD で走り出す。

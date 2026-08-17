@@ -233,6 +233,22 @@ namespace FixedCamVr.Streaming
         /// 従来どおりスタッフ操作だけで進む（縮退）。
         /// </summary>
         public bool atStartSpot;
+
+        /// <summary>
+        /// <b>歩行誘導が体験者へ「円へ行け」と言い切っているか</b>（<c>canon/LEDGER.md</c> 0079）。
+        ///
+        /// ⚠⚠ true のあいだ、段 0 の自動の出口は <see cref="atStartSpot"/>（＝ 円へ着いた）
+        /// <b>1 つだけ</b>になる。安全網（外 → 中）も救済（中に立ったまま 1 秒）も止まる。
+        ///
+        /// 理由: 床に円を描いて「ここへ来い」と言っておきながら、
+        /// 体験エリアへ<b>近づいただけ</b>で演出が始まったら、装置が出した指示が嘘になる。
+        ///
+        /// ⚠ <b>止めたぶんの出口は誘導の側が持つ</b>（<see cref="WalkGuideLogic.HoldMaxSec"/>）。
+        /// 着かないまま上限を超えると誘導が畳まれてここが false へ戻り、従来の判定が生き返る。
+        /// スタッフの ⏭（<see cref="RequestAdvance"/>）は元からゲートしていない。
+        /// </summary>
+        public bool guidingToSpot;
+
         /// <summary>頭の角速度 (度/秒)。大きいうちは枠を出さない（見ていない方向で枠が閉じる事故を防ぐ）。</summary>
         public float headTurnDegPerSec;
         /// <summary>スクリーンの方向が視野中心の近くにあるか。</summary>
@@ -476,13 +492,20 @@ namespace FixedCamVr.Streaming
                     // ⚠ **最初から中に立たされた体験者には出口が無い**（接近は「0.35m 縮む」余地が無く、
                     //    安全網は「外に居たことがある」を要求する）。人が始めたと言っていて、
                     //    位置が信用でき、それでも中に立ったまま `ConcealStartSec` 続いたら始める。
-                    bool concealStuck = input.startAuthorized && input.outsideValid && _insideBox;
+                    //
+                    // ⚠⚠ **歩行誘導が出ているあいだは、出口が「円へ着いた」1 つだけになる**
+                    //    （2026-08-17・`canon/LEDGER.md` 0079）。床に円を描いて「ここへ来い」と
+                    //    言っておきながら、体験エリアへ近づいただけで演出が始まったら指示が嘘になる。
+                    //    止めたぶんの出口は誘導の側が持つ（`WalkGuideLogic.HoldMaxSec` を超えると
+                    //    誘導が畳まれて `guidingToSpot` が false へ戻り、下の 2 つが生き返る）。
+                    bool concealStuck = input.startAuthorized && input.outsideValid
+                                        && _insideBox && !input.guidingToSpot;
                     _concealHeldSec = concealStuck ? _concealHeldSec + dt : 0f;
 
-                    bool auto = input.startAuthorized
-                                && (input.atStartSpot
-                                    || (input.outsideValid && _sawOutsideBox && _insideBox)
-                                    || _concealHeldSec >= ConcealStartSec);
+                    bool fallback = !input.guidingToSpot
+                                    && ((input.outsideValid && _sawOutsideBox && _insideBox)
+                                        || _concealHeldSec >= ConcealStartSec);
+                    bool auto = input.startAuthorized && (input.atStartSpot || fallback);
                     if (input.blackCleared && (advance || auto)) Enter(IntroStage.Real);
                     // 段 0 は maxSec の計時に含めない（待っている時間は演出の尺ではない）。
                     _totalElapsed = 0f;

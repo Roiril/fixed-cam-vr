@@ -200,5 +200,109 @@ namespace FixedCamVr.Streaming.Tests
             CollectionAssert.AreEqual(new[] { CommsNotice.Begin },
                                       Advance(l, CommsCueLogic.BeginDelaySec + 0.2f));
         }
+
+        // ------------------------------------------------------------------ ⓪ タイトルの直後
+
+        private static CommsCueInput Intro(bool authorized = true, bool waiting = true, bool idle = true) =>
+            new CommsCueInput
+            {
+                inIntro = true,
+                startAuthorized = authorized,
+                introWaiting = waiting,
+                panelIdle = idle,
+                dt = Dt,
+            };
+
+        private static System.Collections.Generic.List<CommsNotice> AdvanceIntro(
+            CommsCueLogic l, float sec, bool authorized = true, bool waiting = true, bool idle = true)
+        {
+            var seen = new System.Collections.Generic.List<CommsNotice>();
+            int n = (int)(sec / Dt);
+            for (int i = 0; i < n; i++)
+            {
+                CommsNotice v = l.Tick(Intro(authorized, waiting, idle));
+                if (v != CommsNotice.None) seen.Add(v);
+            }
+            return seen;
+        }
+
+        [Test]
+        public void TheTitleClosing_DeliversTheGreeting_ThenTheWalkOrder()
+        {
+            var l = new CommsCueLogic();
+            CollectionAssert.AreEqual(new[] { CommsNotice.Greeting },
+                                      AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f));
+            CollectionAssert.AreEqual(new[] { CommsNotice.Walk },
+                                      AdvanceIntro(l, CommsCueLogic.WalkGapSec + 0.1f));
+        }
+
+        [Test]
+        public void NothingComesOut_WhileTheTitleStillHoldsTheScreen()
+        {
+            // ⚠ 題字の上に受信票が重なる。
+            var l = new CommsCueLogic();
+            CollectionAssert.IsEmpty(AdvanceIntro(l, 10f, authorized: false));
+            CollectionAssert.AreEqual(new[] { CommsNotice.Greeting },
+                                      AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f));
+        }
+
+        [Test]
+        public void TheWalkOrder_WaitsForTheGreetingToRetract()
+        {
+            // ⚠ 面は 1 つしか無い。重ねると自己紹介が読まれないまま上書きされる。
+            var l = new CommsCueLogic();
+            AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f);
+            CollectionAssert.IsEmpty(AdvanceIntro(l, 30f, idle: false));
+            CollectionAssert.AreEqual(new[] { CommsNotice.Walk },
+                                      AdvanceIntro(l, CommsCueLogic.WalkGapSec + 0.1f));
+        }
+
+        [Test]
+        public void TheWalkOrder_RepeatsButNotForever()
+        {
+            var l = new CommsCueLogic();
+            AdvanceIntro(l, CommsCueLogic.GreetDelaySec + CommsCueLogic.WalkGapSec + 0.2f);
+            for (int i = 0; i < CommsCueLogic.WalkRepeatMax; i++)
+            {
+                CollectionAssert.AreEqual(new[] { CommsNotice.Walk },
+                                          AdvanceIntro(l, CommsCueLogic.WalkRepeatSec + 0.1f),
+                                          $"{i + 1} 回目の出し直し");
+            }
+            CollectionAssert.IsEmpty(AdvanceIntro(l, CommsCueLogic.WalkRepeatSec * 3f),
+                                     "同じ文が何度も来ると装置が壊れているように見える");
+        }
+
+        [Test]
+        public void TheIntroNotices_StopWhenTheShowStarts()
+        {
+            var l = new CommsCueLogic();
+            AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f);
+            // 段 0 を抜けた（演出が走り出した）。
+            CollectionAssert.IsEmpty(AdvanceIntro(l, 30f, waiting: false),
+                                     "現実が割れていく最中に文字が浮いていると世界が壊れる");
+        }
+
+        [Test]
+        public void TheIntroLatches_SurviveInsideTheIntro()
+        {
+            // ⚠⚠ 旧実装は「本編に居なければ ResetRun」だったので、導入では毎フレーム落ちて
+            //    ⓪が延々と出続ける（この構造を壊さないための固定）。
+            var l = new CommsCueLogic();
+            AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f);
+            Assert.IsTrue(l.GreetFired);
+            AdvanceIntro(l, 5f);
+            Assert.IsTrue(l.WalkFired);
+            CollectionAssert.DoesNotContain(AdvanceIntro(l, 5f), CommsNotice.Greeting);
+        }
+
+        [Test]
+        public void TheSecondVisitor_HearsTheGreetingAgain()
+        {
+            var l = new CommsCueLogic();
+            AdvanceIntro(l, CommsCueLogic.GreetDelaySec + CommsCueLogic.WalkGapSec + 0.2f);
+            l.ResetRun();
+            CollectionAssert.AreEqual(new[] { CommsNotice.Greeting },
+                                      AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f));
+        }
     }
 }

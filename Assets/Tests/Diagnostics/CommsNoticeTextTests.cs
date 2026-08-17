@@ -35,10 +35,27 @@ namespace FixedCamVr.Diagnostics.Tests
             return w;
         }
 
+        /// <summary>
+        /// 実際に画へ出る文面ぜんぶ。
+        /// ⚠⚠ <b><see cref="CommsPanel.LongestNoticeText"/> だけを測ってはいけない</b>
+        /// （2026-08-17・<c>canon/LEDGER.md</c> 0079）。あれは<b>いちばん長い行</b>を持つ文面で、
+        /// <b>いちばん行数が多い文面とは限らない</b>。①から自己紹介を外して⓪b を足した時、
+        /// 最長行は①・最大行数は⓪b になった ＝ 片方しか測らないと溢れを見逃す。
+        /// </summary>
+        private static System.Collections.Generic.IEnumerable<string> AllTexts()
+        {
+            foreach (CommsNotice n in System.Enum.GetValues(typeof(CommsNotice)))
+            {
+                string t = CommsPanel.NoticeText(n);
+                if (!string.IsNullOrEmpty(t)) yield return t;
+            }
+        }
+
         [Test]
         public void EveryLine_FitsTheBand()
         {
-            foreach (string line in CommsPanel.LongestNoticeText.Split('\n'))
+            foreach (string body in AllTexts())
+            foreach (string line in body.Split('\n'))
             {
                 Assert.LessOrEqual(FullWidth(line), MaxFullWidthPerLine,
                                    $"「{line}」が 1 行に入らない（折り返して行が増える）");
@@ -48,8 +65,32 @@ namespace FixedCamVr.Diagnostics.Tests
         [Test]
         public void LineCount_StaysWithinTheBandHeight()
         {
-            Assert.LessOrEqual(CommsPanel.LongestNoticeText.Split('\n').Length, MaxLines,
-                               "行が増えた。CommsPanel.BodyMaxH も一緒に上げること");
+            foreach (string body in AllTexts())
+            {
+                Assert.LessOrEqual(body.Split('\n').Length, MaxLines,
+                                   $"「{body.Replace("\n", "／")}」で行が増えた。"
+                                   + "CommsPanel.BodyMaxH も一緒に上げること");
+            }
+        }
+
+        /// <summary>
+        /// <see cref="CommsPanel.LongestNoticeText"/> が本当に最長行を持っているか。
+        /// <b>面の折り返し幅はこの 1 本から組まれる</b>ので、ここが嘘になると
+        /// 実行時に別の文面だけが枠から出る。
+        /// </summary>
+        [Test]
+        public void LongestNoticeText_ReallyHasTheLongestLine()
+        {
+            float best = 0f;
+            foreach (string body in AllTexts())
+            foreach (string line in body.Split('\n')) best = System.Math.Max(best, FullWidth(line));
+
+            float declared = 0f;
+            foreach (string line in CommsPanel.LongestNoticeText.Split('\n'))
+                declared = System.Math.Max(declared, FullWidth(line));
+
+            Assert.AreEqual(best, declared, 0.01f,
+                            "LongestNoticeText より長い行を持つ文面がある（面の折り返し幅がその文面で足りない）");
         }
 
         /// <summary>

@@ -195,6 +195,11 @@ namespace FixedCamVr.Tracking
             //    ここで外へ出て少し立つと、自動走行が導入の最初の絵まで通しで踏む。
             yield return StartCoroutine(ApproachFromOutside(layout, hasLine ? before : Vector2.zero));
 
+            // ⚠⚠ **歩行誘導が出る現場では、円へ着かないと導入が始まらない**（canon/LEDGER.md 0079）。
+            //    接近では抜けないので、ここを飛ばすと走行は 30 秒の時間切れを待つことになる。
+            //    タイトルを A で閉じるのと同じ理屈 — **走行側が実機と同じ入り方をする**。
+            yield return StartCoroutine(WalkToGuideSpot(layout));
+
             // ⚠ **導入は箱の外で流れる**（canon/LEDGER.md 0005）。終わるまで中へ入らない —
             //    入ると黒しか見えないので、演出の画が 1 枚も撮れない。
             float introWait = 0f;
@@ -407,6 +412,27 @@ namespace FixedCamVr.Tracking
             Vector2 trigger = StepOutUntil(dir, half, TriggerMarginM);
             Debug.Log($"[XPWalk] 近づく ({trigger.x:F2},{trigger.y:F2}) — 導入が始まるはず");
             yield return StartCoroutine(WalkTo(trigger));
+        }
+
+        /// <summary>
+        /// 歩行誘導の指定ポイントまで歩いて、少し留まる（<c>canon/LEDGER.md</c> 0079）。
+        ///
+        /// ⚠ <b>円が解けない現場では何もしない</b> — 導入は従来どおり接近で始まるので、
+        /// ここで止まると走行が丸ごと成立しなくなる。
+        /// </summary>
+        private IEnumerator WalkToGuideSpot(ShowLayoutDef? layout)
+        {
+            WalkGuidePath.Path path = WalkGuidePath.Solve(layout, _show != null ? _show.Room : null);
+            if (!path.valid)
+            {
+                Debug.Log("[XPWalk] 歩行誘導の円が解けない — 従来どおり接近だけで導入を待つ");
+                yield break;
+            }
+            Debug.Log($"[XPWalk] 指定ポイントへ ({path.spot.x:F2},{path.spot.y:F2}) 半径 {path.radiusM:F2}m");
+            yield return StartCoroutine(WalkTo(path.spot));
+            FaceCourseOrigin();
+            // 円の中に留まる（WalkGuideLogic.ArriveHoldSec）。取りこぼさないよう余裕を見る。
+            yield return new WaitForSeconds(WalkGuideLogic.ArriveHoldSec * 3f);
         }
 
         /// <summary>

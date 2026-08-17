@@ -1060,6 +1060,28 @@ def analyze(events, others, exp, warns=None):
                 verdict("FAIL", "①の連絡が届いていない — 本編に入った縁を見ていない"
                                 "（CommsCueLogic.BeginDelaySec / runDirector の配線）")
 
+            # ⓪ タイトルの直後の 2 通（canon/LEDGER.md 0079）。**順序が意味を持つ** —
+            #    名乗る前に指示が出ると、誰が喋っているのか分からないまま歩かされる。
+            def _first(kind):
+                return next((fnum(e, "t", 0.0) for e in comms if e.get("id") == kind), None)
+            t_greet, t_walk, t_begin = _first("Greeting"), _first("Walk"), _first("Begin")
+            if t_greet is None and t_walk is None:
+                verdict("WARN", "タイトル直後の⓪が 1 通も届いていない — 導入で連絡を出していない"
+                                "（CommsPanel の intro 未配線 / 古い APK）")
+            else:
+                if t_greet is None:
+                    verdict("FAIL", "⓪a 自己紹介が届いていない（体験の中で AI だと分かる唯一の所）")
+                if t_walk is None:
+                    verdict("FAIL", "⓪b 歩行の指示が届いていない — 矢印と円だけが出て、"
+                                    "何をすればよいか画に出ていない")
+                if t_greet is not None and t_walk is not None:
+                    if t_greet < t_walk:
+                        verdict("OK", f"⓪a 名乗り {t_greet:.1f}s → ⓪b 指示 {t_walk:.1f}s の順で届いた")
+                    else:
+                        verdict("FAIL", "⓪b の指示が⓪a の名乗りより先に出ている")
+                if t_walk is not None and t_begin is not None and t_begin <= t_walk:
+                    verdict("FAIL", "①が⓪b より先に出ている — 導入と本編の連絡が入れ替わっている")
+
             # ②の分岐が押した瞬間の値で決まっているか。ev=mark と ev=comms を時刻で対にする。
             marks = [e for e in events if e.get("ev") == "mark"]
             answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing")]
@@ -1845,6 +1867,81 @@ def analyze(events, others, exp, warns=None):
                                 "次の体験者へ持ち越される。畳む経路のどこかで 0 を書き戻していない")
             if after_ovl2 and max(after_ovl2) > 0.0:
                 verdict("FAIL", f"演出が終わった後も第 2 層が残っている（ovl2={max(after_ovl2):.2f}）")
+
+    # -- 歩行誘導（canon/LEDGER.md 0079）
+    # ⚠ ここが見るのは 3 つ。
+    #   ①実体を組めたか（シェーダが剥がれると 1 画素も出ないのに段は進む）
+    #   ②**円に着いてから導入が始まったか**（着く前に始まったら、装置が出した指示が嘘になる）
+    #   ③段 0 を抜けた後に残っていないか（床の光が残ると「まだ歩け」に見える）
+    guide_evs = [e for e in events if e.get("ev") == "guide"]
+    guide_raw = [str(v) for v in effect_samples(events, "guide") if str(v) not in ("", "-")]
+    if guide_evs or guide_raw:
+        any_effect_key = True
+        w()
+        w("### 歩行誘導（矢印と円）")
+        stages = [e.get("st", "?") for e in guide_evs]
+        w(f"  段: {' → '.join(stages) if stages else '（1 度も出ていない）'}")
+        gparts = [v.split("/") for v in guide_raw if v.count("/") == 3]
+        gbuilt = [p[0] for p in gparts]
+        chev = []
+        for p in gparts:
+            try:
+                chev.append(int(p[1]))
+            except ValueError:
+                pass
+        if chev:
+            w(f"  山形 {max(chev)} 個（標本 {len(gparts)}）")
+        spot_ev = next((e for e in guide_evs if "spot" in e), None)
+        if spot_ev is not None:
+            w(f"  円: ({spot_ev.get('spot','?')}) 半径 {spot_ev.get('r','?')}m"
+              f" / {'卓で著作' if spot_ev.get('auth') == '1' else '壁の角から導出'}")
+
+        if gbuilt and all(v == "0" for v in gbuilt):
+            verdict("FAIL", "歩行誘導の実体を組めていない（guide の 1 つ目が 0）— "
+                            "FixedCamVr/WalkGuideArrow / WalkGuideRing がビルドから剥がれている疑い"
+                            "（ProjectSettings の Always Included を見る）")
+        elif not guide_evs and not gparts:
+            verdict("WARN", "歩行誘導を観測していないビルドのログ（guide キーが無い）")
+        elif not guide_evs:
+            verdict("WARN", "歩行誘導が 1 度も出ていない — 床も壁の角も開始位置も未著作の疑い"
+                            "（卓の 🧱 部屋 / 🎬 開始位置）。導入は従来どおり接近で始まる")
+        else:
+            timed_out = any(e.get("to") == "1" for e in guide_evs)
+            arrived = any(e.get("st") == "Arrive" for e in guide_evs)
+            # 導入が段 0 を抜けた時刻（ev=intro stage=Real の最初）。
+            t_real = next((fnum(e, "t", 0.0) for e in events
+                           if e.get("ev") == "intro" and e.get("stage") == "Real"), None)
+            t_arrive = next((fnum(e, "t", 0.0) for e in guide_evs if e.get("st") == "Arrive"), None)
+            if chev and max(chev) == 0:
+                verdict("WARN", "円だけが出ていて矢印が 1 つも無い（山形 0）— "
+                                "道筋が短すぎる（壁の腕が床の縁に近い）")
+            if arrived and t_real is not None and t_arrive is not None:
+                if t_arrive <= t_real + 0.5:
+                    verdict("OK", f"円へ着いてから導入が始まった（着 {t_arrive:.1f}s → 段 1 {t_real:.1f}s）")
+                else:
+                    verdict("FAIL", f"円へ着く前に導入が始まった（段 1 {t_real:.1f}s → 着 {t_arrive:.1f}s）— "
+                                    "IntroInput.guidingToSpot が渡っていない疑い。指示が嘘になる")
+            elif timed_out:
+                verdict("WARN", "円へ着かないまま上限（WalkGuideLogic.HoldMaxSec）を超えて"
+                                "従来の開始判定へ戻した — 自動走行では正常。実機で出たら円の場所を疑う")
+            elif t_real is not None:
+                verdict("FAIL", "誘導が出ているのに、着きも諦めもしないまま導入が始まった — "
+                                "開始の経路が誘導を通っていない")
+
+            # 固着。段 0 を抜けた後に床の光が残っていないか。
+            if t_real is not None:
+                after_g = [str(v) for v in effect_samples(events, "guide", t_from=t_real + 3.0)
+                           if str(v).count("/") == 3]
+                left = []
+                for v in after_g:
+                    p = v.split("/")
+                    for k in (2, 3):
+                        f = fstr(p[k])
+                        if f is not None:
+                            left.append(f)
+                if left and max(left) > 0.01:
+                    verdict("FAIL", f"導入が始まった後も誘導が残っている（guide {max(left):.2f}）— "
+                                    "床に矢印が残ると「まだ歩け」に見える。畳む経路を見る")
 
     # -- 闇に開く目（canon/LEDGER.md 0075）
     # ⚠ 「カットが指した」は画に出たことを意味しない。シェーダが実行時 Shader.Find なので

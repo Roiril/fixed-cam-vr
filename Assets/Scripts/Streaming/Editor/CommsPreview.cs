@@ -25,6 +25,16 @@ namespace FixedCamVr.Streaming.EditorTools
     /// </summary>
     public static class CommsPreview
     {
+        /// <summary>
+        /// 撮る文面。⚠ <b>全部を並べる。</b> 1 つでも漏らすと、その文面だけ枠から溢れていても
+        /// 誰も気づけない（0079 で⓪a / ⓪b を足したときに漏らしかけた）。
+        /// </summary>
+        private static readonly CommsNotice[] Notices =
+        {
+            CommsNotice.Greeting, CommsNotice.Walk, CommsNotice.Begin,
+            CommsNotice.MarkLogged, CommsNotice.MarkNothing, CommsNotice.Prompt,
+        };
+
         private const string MainScenePath = "Assets/Scenes/Main.unity";
         private const string OutDirRel = "Screenshots/comms-preview";
 
@@ -134,11 +144,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     // 3 周目は 3 字以上化けた刻み、手前の周は 1 字でも化けた刻みを撮る。
                     int wantMin = decay >= 0.9f ? 3 : 1;
 
-                    foreach (CommsNotice notice in new[]
-                    {
-                        CommsNotice.Begin, CommsNotice.MarkLogged,
-                        CommsNotice.MarkNothing, CommsNotice.Prompt,
-                    })
+                    // ⚠ **全部の文面を撮る。** 1 つでも漏らすと、その文面だけ枠から溢れていても
+                    //   誰も気づけない（0079 で⓪a / ⓪b を足したときに漏らしかけた）。
+                    foreach (CommsNotice notice in Notices)
                     {
                         Disable(logic);
                         ApplyNow(apply, panel, logic);
@@ -245,7 +253,7 @@ namespace FixedCamVr.Streaming.EditorTools
                                      + "（`py -3.11 tools/ingest-sounds.py --only sfx_type`）");
                 }
 
-                Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 {decays.Length * 4} 枚"
+                Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 {decays.Length * Notices.Length} 枚"
                         + $"（周回の壊れ {string.Join(" / ", System.Array.ConvertAll(decays, d => d.ToString("0.00")))}）"
                         + $" → Assets/{OutDirRel}/\n"
                         + $"  枠が開く {inSec:0.00}s → 打つ {typeSec:0.00}s"

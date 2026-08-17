@@ -33,6 +33,9 @@ namespace FixedCamVr.Streaming
         [SerializeField] private CameraStreamRegistry? registry;
         [SerializeField] private ShowControlClient? showControl;
 
+        [Tooltip("歩行誘導（床の矢印と円）。段 0 のあいだだけ出る。null なら実行時に探す。")]
+        [SerializeField] private WalkGuide? walkGuide;
+
         [Tooltip("頭の Transform（角速度の観測）。null なら CenterEyeAnchor を名前で探す。")]
         [SerializeField] private Transform? head;
 
@@ -179,6 +182,9 @@ namespace FixedCamVr.Streaming
             shell?.SetHidden();
             sealedBox?.SetHidden();
             glitch?.ResetAll();
+            // ⚠ 自分が Update を止めるので、誘導は自分で畳んで去る（残すと床の光が残る）。
+            walkGuide?.ResetRun();
+            _guiding = false;
             ResetIgnite();
         }
 
@@ -192,6 +198,7 @@ namespace FixedCamVr.Streaming
             if (glitch == null) glitch = FindObjectOfType<GlitchFx>();
             if (registry == null) registry = FindObjectOfType<CameraStreamRegistry>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            if (walkGuide == null) walkGuide = FindObjectOfType<WalkGuide>();
             if (screen == null) screen = FindObjectOfType<MjpegScreen>();
             if (head == null)
             {
@@ -284,6 +291,9 @@ namespace FixedCamVr.Streaming
             bool registering = showControl?.CourseRegistrationActive ?? false;
             if (registering)
             {
+                // 誘導も現実を隠すもののひとつ（床に光を足す）。位置合わせ中は全部どける。
+                walkGuide?.Hide();
+                _guiding = false;
                 veil?.SetHidden();
                 structureWire?.SetHidden();
                 shell?.SetHidden();
@@ -303,7 +313,11 @@ namespace FixedCamVr.Streaming
             }
 
             // 中止中はここで折り返す。復帰は位置合わせの確定 1 つで済ませる（TryRecoverFromAbort）。
-            if (_aborted) { TryRecoverFromAbort(); return; }
+            if (_aborted) { walkGuide?.Hide(); _guiding = false; TryRecoverFromAbort(); return; }
+
+            // ⚠ **誘導は `_logic.Active` の外でも 1 回進める。** 段 0 を抜けた後・演出が終わった後は
+            //    `wanted=false` で引きに入るので、ここを早期 return の後ろへ置くと出しっぱなしになる。
+            UpdateWalkGuide();
 
             if (!_logic.Active)
             {
@@ -360,6 +374,28 @@ namespace FixedCamVr.Streaming
             _headTurn = Mathf.Lerp(_headTurn, inst, 1f - Mathf.Exp(-8f * dt));
         }
 
+        /// <summary>
+        /// 歩行誘導を 1 フレーム進める（<c>canon/LEDGER.md</c> 0079）。
+        ///
+        /// ⚠ <b>出すのは段 0 のあいだだけ。</b> 演出が始まったら引く（床の光が残っていると
+        /// 「まだ歩け」に見える）。<b>タイトルが画面を持っているうちも出さない</b> —
+        /// 題字の下に矢印が敷かれる。
+        /// </summary>
+        private void UpdateWalkGuide()
+        {
+            if (walkGuide == null) { _guiding = false; return; }
+            bool wanted = _def.enabled
+                          && _logic.Stage == IntroStage.Black
+                          && IsUserPresent()
+                          && IsStartAuthorized()
+                          && IsCourseRegistered();
+            walkGuide.Tick(wanted);
+            _guiding = walkGuide.Directing;
+        }
+
+        /// <summary>このフレーム、誘導が「円へ行け」と言い切っているか（<see cref="IntroInput"/> へ渡す）。</summary>
+        private bool _guiding;
+
         private IntroInput BuildInput()
         {
             bool valid = TryOutsideBoxM(out float outsideM);
@@ -368,6 +404,7 @@ namespace FixedCamVr.Streaming
                 blackCleared = _sinceStart >= blackClearSec,
                 startAuthorized = IsStartAuthorized(),
                 atStartSpot = IsAtStartSpot(),
+                guidingToSpot = _guiding,
                 headTurnDegPerSec = _headTurn,
                 frameCentered = IsScreenCentered(),
                 liveFresh = IsLiveFresh(),
@@ -451,6 +488,12 @@ namespace FixedCamVr.Streaming
             //    兼ねていたが、自動走行が被り検知だけを無効化するため意味が混ざっていた。
             if (!IsUserPresent() || !IsStartAuthorized()) { RearmStartSignal(); return false; }
             if (!IsCourseRegistered()) { _startSpot.NotifyUnavailable(); return false; }
+
+            // ⚠⚠ **歩行誘導が出ているあいだは円だけが出口**（2026-08-17・`canon/LEDGER.md` 0079）。
+            //    着いたら以後ずっと true（着いたことは取り消せない）。着かないまま誘導が諦めたら
+            //    Directing も Arrived も false になり、下の従来の判定（接近 → 線 → 円）が生き返る。
+            if (walkGuide != null && (walkGuide.Directing || walkGuide.Arrived)) return walkGuide.Arrived;
+
             var head2 = showControl?.HeadCourseXZProvider;
             if (head2 == null) { _startSpot.NotifyUnavailable(); return false; }
             Vector2 p = head2();
@@ -528,6 +571,9 @@ namespace FixedCamVr.Streaming
             _startLine.Reset();
             _startSpot.Rearm();
             _approach.Rearm();
+            // 歩行誘導も同じ 1 箇所で落とす（前の体験者が着いた円をそのまま引き継がない）。
+            walkGuide?.ResetRun();
+            _guiding = false;
             _warnedApproachNotArmed = false;
             _approachWaitSec = 0f;
         }

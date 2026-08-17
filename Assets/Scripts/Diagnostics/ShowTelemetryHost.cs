@@ -70,6 +70,7 @@ namespace FixedCamVr.Diagnostics
         private CameraSwitchDirector? _switch;
         private ShowRunDirector? _run;
         private IntroDirector? _intro;
+        private WalkGuide? _guide;
         private OutroDirector? _outro;
         private OutroReport? _report;
         private CommsPanel? _comms;
@@ -102,6 +103,7 @@ namespace FixedCamVr.Diagnostics
 
         // --- 遷移検出のための前回値 ---
         private IntroStage _lastStage = IntroStage.Off;
+        private WalkGuideStage _lastGuideStage = WalkGuideStage.Off;
 
         /// <summary>
         /// 終幕の段（Off/Flicker/Dark/Report/Done）。<b>2026-08-15 まで 1 行も出していなかった。</b>
@@ -198,6 +200,7 @@ namespace FixedCamVr.Diagnostics
             if (_switch == null) _switch = FindObjectOfType<CameraSwitchDirector>();
             if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
+            if (_guide == null) _guide = FindObjectOfType<WalkGuide>();
             if (_outro == null) _outro = FindObjectOfType<OutroDirector>();
             if (_report == null) _report = FindObjectOfType<OutroReport>();
             if (_comms == null) _comms = FindObjectOfType<CommsPanel>();
@@ -512,6 +515,18 @@ namespace FixedCamVr.Diagnostics
             : $"{(_eyes.IsBuilt ? 1 : 0)}/{_eyes.OpenCount}/{_eyes.AppliedFade:F2}";
 
         /// <summary>
+        /// 歩行誘導（<c>canon/LEDGER.md</c> 0079）。<b>組めたか / 山形の数 / 矢印 / 輪</b>。
+        ///
+        /// ⚠ <b>「段が進んだ」ではなく「画に出た」の側。</b> 組めていなければ（シェーダがビルドから
+        /// 剥がれていれば）1 画素も出ないのに段だけは進む。⚠ <b>山形が 0</b> なら円だけが出ている
+        /// （道筋が短すぎた ＝ 矢印が引けていない）。
+        /// </summary>
+        private string GuideState => _guide == null
+            ? "-"
+            : $"{(_guide.IsBuilt ? 1 : 0)}/{_guide.ChevronCount}/" +
+              $"{_guide.AppliedArrow:F2}/{_guide.AppliedRing:F2}";
+
+        /// <summary>
         /// 解像度の劣化を書く先（スクリーンの Renderer のマテリアル）を掴めているか。
         /// <c>-</c>=CameraFeelFx がシーンに居ない / 0=掴めていない ＝ **進みが動いても画は変わらない** / 1=書ける。
         /// </summary>
@@ -564,6 +579,20 @@ namespace FixedCamVr.Diagnostics
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
                      // 段 1 以降の行に auth=0 が出たら、卓の ⏭ で始まったということ。
                      $"auth={(_show != null && _show.StartAuthorized ? 1 : 0)}");
+            }
+
+            // 歩行誘導の段（Off/SpotIn/Trail/Hold/Arrive/Out/Done。canon/LEDGER.md 0079）。
+            // ⚠ **画に出た側を必ず一緒に出す** — built=0 なら 1 画素も出ていないのに段は進む。
+            //   spot は円の course 座標（導出か著作かで場所が変わるので、実際に使った値を残す）。
+            //   ⚠ st=Out で to=1 なら「着かないまま諦めて従来の開始判定へ戻した」。
+            if (_guide != null && _guide.Stage != _lastGuideStage)
+            {
+                _lastGuideStage = _guide.Stage;
+                Emit($"ev=guide st={_lastGuideStage} built={(_guide.IsBuilt ? 1 : 0)} " +
+                     $"path={(_guide.HasPath ? 1 : 0)} chev={_guide.ChevronCount} " +
+                     $"arrow={_guide.AppliedArrow:F2} ring={_guide.AppliedRing:F2} " +
+                     $"spot={_guide.Spot.x:F2},{_guide.Spot.y:F2} r={_guide.RadiusM:F2} " +
+                     $"auth={(_guide.SpotAuthored ? 1 : 0)} to={(_guide.TimedOut ? 1 : 0)}");
             }
 
             // 終幕の段（Off/Flicker/Dark/Report/Done）。**画に出た側**を必ず一緒に出す —
@@ -886,6 +915,9 @@ namespace FixedCamVr.Diagnostics
             //     指したのに 1 画素も出ていない（1/0/1.00 ＝ 座席表を組めていない）は**別の壊れ方**。
             //   ⚠ 数は「重みを配った」ではなく**何個ぶんの目が実際に開いているか**（画に出た側）。
             _sb.Append(" eyes=").Append(EyesState);
+            //   guide = 歩行誘導（canon/LEDGER.md 0079）。組めたか/山形の数/矢印/輪。
+            //   ⚠ 段 0 のあいだしか動かない。**本編で 0 以外が出たら畳み忘れ**。
+            _sb.Append(" guide=").Append(GuideState);
             // 音は**録画にも映らない**ので、実在の観測はここにしか無い。
             //   sndBuilt = 掴めた音源 / 掴めなかった音源（0 でなければ設計どおりに鳴っていない）
             //   sndAud   = いま AudioSource へ書いている音量の合計（**0 なら無音**）

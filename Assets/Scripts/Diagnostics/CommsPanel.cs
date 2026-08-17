@@ -58,6 +58,9 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("締めのカットが報告を待っているかを見るために読む。null なら実行時に探す。")]
         [SerializeField] private TimelineDirector? timeline;
 
+        [Tooltip("導入がまだ開始待ち（段 0）かを見るために読む。歩行誘導の 2 通に要る。null なら実行時に探す。")]
+        [SerializeField] private IntroDirector? intro;
+
         [Tooltip("頭の Transform。null なら CenterEyeAnchor を名前で探す。")]
         [SerializeField] private Transform? head;
 
@@ -225,12 +228,28 @@ namespace FixedCamVr.Diagnostics
             //    ⚠ **名前は出していない。** ユーザーの言い方（「今回サポートするエージェントです」）に
             //      名前が無いため。名乗らせる案は `canon/OPEN.md` に置いてある
             //      （世界観の昇格はユーザーが口にしたときだけ — `rules/canon-boundary.md`）。
-            CommsNotice.Begin => "今回の調査を支援するAIです\n調査を開始してください\n異変を認めたらボタンを長押し",
+            // ⚠⚠ **自己紹介はここへ移した**（2026-08-17・`canon/LEDGER.md` 0079・ユーザー指定
+            //    「タイトル演出の直後に、AIエージェントの自己紹介文を移動させる」）。
+            //    0073 では①の 1 行目だった。**文言は 1 字も変えていない** — 移したのは置き場所だけ。
+            CommsNotice.Greeting => "今回の調査を支援するAIです",
+            // ⚠⚠ **ユーザーが書いた形のまま**（0079 の逐語「矢印の方向から、指定されたポイントへ
+            //    移動してください。」）。読点・句点を勝手に落とさない。改行だけこちらで入れてある
+            //    （1 行 14 文字までなので、入れないと折り返し位置が文の途中になる）。
+            CommsNotice.Walk => "矢印の方向から、\n指定されたポイントへ\n移動してください。",
+            CommsNotice.Begin => "調査を開始してください\n異変を認めたらボタンを長押し",
             CommsNotice.MarkLogged => "異常が記録されました",
             CommsNotice.MarkNothing => "異常は検出されませんでした",
             CommsNotice.Prompt => "異常が検出されました。\n記録してください。",
             _ => "",
         };
+
+        /// <summary>
+        /// その連絡の文面（テストと <c>menu comms-preview</c> 用）。
+        /// ⚠ <b>全部の文面を機械で測れるようにするために公開している。</b>
+        /// <see cref="LongestNoticeText"/> だけを測っていた頃は、**行数の最悪が別の文面にある**と
+        /// 誰も気づけなかった（0079 で①が 2 行・⓪b が 3 行になって顕在化した）。
+        /// </summary>
+        public static string NoticeText(CommsNotice n) => TextFor(n);
 
         /// <summary>
         /// その文面を読ませる時間 (秒)。<b>役割で違う</b>（`canon/LEDGER.md` 0065）。
@@ -240,6 +259,10 @@ namespace FixedCamVr.Diagnostics
         private static float HoldSecFor(CommsNotice n) => n switch
         {
             CommsNotice.Begin => CommsPanelLogic.HoldBriefSec,
+            // ⓪a 名乗り。初対面の 1 行なので受領より長く、指示より短い。
+            CommsNotice.Greeting => CommsPanelLogic.HoldBriefSec,
+            // ⓪b 歩行の指示。**読まないと体験が始まらない**ので③と同じ扱い。
+            CommsNotice.Walk => CommsPanelLogic.HoldUrgentSec,
             CommsNotice.Prompt => CommsPanelLogic.HoldUrgentSec,
             _ => CommsPanelLogic.HoldReceiptSec,
         };
@@ -491,6 +514,7 @@ namespace FixedCamVr.Diagnostics
             if (runDirector == null) runDirector = FindObjectOfType<ShowRunDirector>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
             if (timeline == null) timeline = FindObjectOfType<TimelineDirector>();
+            if (intro == null) intro = FindObjectOfType<IntroDirector>();
             // ⚠ 打鍵音は**この面が持つ**（`ShowSoundDirector` は毎フレーム外から状態を見る層で、
             //    1 秒に 12 回・字の刻みちょうどには鳴らせない）。切替音と同じ構え。
             if (typeSfx == null) typeSfx = GetComponent<TypeAudioCue>();
@@ -558,15 +582,27 @@ namespace FixedCamVr.Diagnostics
                 }
             }
 
+            // ⚠ **導入でも連絡を出す**（2026-08-17・`canon/LEDGER.md` 0079）。出すのは段 0
+            //   （開始待ち）のあいだだけで、タイトルが画面を持っているうちは 1 文字も出さない。
+            bool inIntroPhase = runDirector != null && runDirector.Phase == ShowPhase.Intro;
+            bool introWaiting = inIntroPhase && intro != null && intro.Stage == IntroStage.Black;
             CommsNotice next = _cue.Tick(new CommsCueInput
             {
                 inRun = runDirector != null && runDirector.Phase == ShowPhase.Run,
+                inIntro = inIntroPhase,
+                startAuthorized = showControl == null || showControl.StartAuthorized,
+                introWaiting = introWaiting,
+                panelIdle = _logic.Stage == CommsStage.Off,
                 waitingForMark = timeline != null && timeline.IsWaitingForVisitorMark,
                 markPressed = markPressed,
                 markHadTake = markHadTake,
                 dt = Time.unscaledDeltaTime,
             });
             if (next != CommsNotice.None) Deliver(next);
+
+            // ⚠⚠ **段 0 を抜けたら、出ている連絡を引く。** 誘導の指示が残ったまま現実が割れ始めると、
+            //    演出の上に文字が浮く。畳む（Disable）のではなく**引く**ので、装置が片づけたように見える。
+            if (inIntroPhase && !introWaiting) _logic.Retract();
 
             // ⚠ **押している最中は面を開いたままにする**（`canon/LEDGER.md` 0058）。
             //   本編の外では開かない — 導入・終幕に手元の案内が浮くと世界が壊れる

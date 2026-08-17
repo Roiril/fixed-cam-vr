@@ -7,6 +7,17 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>何も出さない。</summary>
         None,
+        /// <summary>
+        /// ⓪a <b>タイトルが焼け切った直後</b>。スイが名乗る（<c>canon/LEDGER.md</c> 0079）。
+        /// ⚠ 0073 では①の 1 行目だったものを<b>ここへ移した</b> — 名乗るのは会う前で、
+        /// 調査の指示は装置に入ってからの方が順序として正しい。
+        /// </summary>
+        Greeting,
+        /// <summary>
+        /// ⓪b 名乗った後。<b>「矢印の方向から、指定されたポイントへ移動してください。」</b>
+        /// 床の矢印と円（<see cref="WalkGuide"/>）はこの連絡と対で出る。
+        /// </summary>
+        Walk,
         /// <summary>① 導入が明けて、映像だけになった直後。「調査を開始してください」。</summary>
         Begin,
         /// <summary>② 報告した瞬間、<b>演出が走っていた</b>。「異常が記録されました」。</summary>
@@ -20,8 +31,32 @@ namespace FixedCamVr.Streaming
     /// <summary>1 フレーム分の入力。<b>UnityEngine 非依存・dt 注入</b>。</summary>
     public struct CommsCueInput
     {
-        /// <summary>本編（<see cref="ShowPhase.Run"/>）に居るか。導入・終幕では連絡を出さない。</summary>
+        /// <summary>本編（<see cref="ShowPhase.Run"/>）に居るか。終幕では連絡を出さない。</summary>
         public bool inRun;
+
+        /// <summary>
+        /// 導入（<see cref="ShowPhase.Intro"/>）に居るか。
+        /// ⚠⚠ <b>2026-08-17 まで、導入では 1 通も出していなかった</b>（<c>canon/LEDGER.md</c> 0079）。
+        /// 歩行誘導はタイトルと導入演出のあいだで起きるので、ここを開けないと指示を出す面が無い。
+        /// </summary>
+        public bool inIntro;
+
+        /// <summary>
+        /// タイトルが画面を手放したか（<c>ShowControlClient.StartAuthorized</c>）。
+        /// <b>立つまでは 1 文字も出さない</b> — 題字の上に連絡が重なる。
+        /// </summary>
+        public bool startAuthorized;
+
+        /// <summary>
+        /// 導入がまだ段 0（開始待ち）に居るか。演出が走り出したら誘導の連絡は用済み。
+        /// </summary>
+        public bool introWaiting;
+
+        /// <summary>
+        /// 面が空いているか（<c>CommsStage.Off</c>）。<b>次の連絡は前のが引いてから</b>出す —
+        /// 重ねると自己紹介が読まれないまま指示に上書きされる。
+        /// </summary>
+        public bool panelIdle;
 
         /// <summary>「報告するまで」のカット（<c>durKind:"untilMark"</c>）が待っているか。</summary>
         public bool waitingForMark;
@@ -73,10 +108,36 @@ namespace FixedCamVr.Streaming
         /// <summary>③ 締めのカットが待ち始めてから促すまで (秒)。ユーザー指定「3s ほど」。</summary>
         public const float PromptAfterWaitSec = 3f;
 
+        /// <summary>
+        /// ⓪a タイトルが焼け切ってから名乗るまで (秒)。<b>一拍おく</b> —
+        /// 題字が消えたその瞬間に別の面が開くと、タイトルの余韻ごと上書きされる。
+        /// </summary>
+        public const float GreetDelaySec = 0.6f;
+
+        /// <summary>⓪b 自己紹介が引いてから指示を出すまで (秒)。</summary>
+        public const float WalkGapSec = 0.5f;
+
+        /// <summary>
+        /// ⓪b を出し直すまで (秒)。<b>床の矢印と円は出っぱなし</b>なので、文字は繰り返さなくても
+        /// 指示は画に残る。それでも動けない体験者のために、間を置いてもう一度だけ出す。
+        /// </summary>
+        public const float WalkRepeatSec = 18f;
+
+        /// <summary>
+        /// ⓪b を出し直せる回数。<b>無制限にしない</b> — 同じ文が何度も来ると、
+        /// 装置が壊れているように見える。
+        /// </summary>
+        public const int WalkRepeatMax = 2;
+
         private bool _beginFired;
         private bool _promptFired;
         private float _runSec;
         private float _waitSec;
+        private bool _greetFired;
+        private bool _walkFired;
+        private int _walkRepeats;
+        private float _introSec;
+        private float _idleSec;
 
         /// <summary>本編に入ってからの経過（診断用）。</summary>
         public float RunSec => _runSec;
@@ -96,19 +157,36 @@ namespace FixedCamVr.Streaming
             _promptFired = false;
             _runSec = 0f;
             _waitSec = 0f;
+            _greetFired = false;
+            _walkFired = false;
+            _walkRepeats = 0;
+            _introSec = 0f;
+            _idleSec = 0f;
         }
+
+        /// <summary>導入で名乗ったか（診断・テスト用）。</summary>
+        public bool GreetFired => _greetFired;
+
+        /// <summary>導入で歩行の指示を出したか（診断・テスト用）。</summary>
+        public bool WalkFired => _walkFired;
 
         /// <summary>時間を進め、このフレームに出す連絡を返す（無ければ <see cref="CommsNotice.None"/>）。</summary>
         public CommsNotice Tick(in CommsCueInput inp)
         {
+            float dtAll = inp.dt > 0f ? inp.dt : 0f;
+
+            // ⚠⚠ **導入の分岐が先。** 旧実装は「本編に居なければ ResetRun」だったので、
+            //    ここで落ちると導入のラッチも毎フレーム落ちて⓪が延々と出続ける。
+            if (inp.inIntro) return TickIntro(inp, dtAll);
+
             if (!inp.inRun)
             {
-                // 本編の外（導入・終幕・中止）では連絡を出さないし、状態も持ち越さない。
+                // 本編でも導入でもない（終幕・中止・停止）。連絡を出さないし、状態も持ち越さない。
                 ResetRun();
                 return CommsNotice.None;
             }
 
-            float dt = inp.dt > 0f ? inp.dt : 0f;
+            float dt = dtAll;
             _runSec += dt;
 
             // ⚠ 締めの待ちは「立っているあいだ」だけ数える。押された / 畳まれた時点で 0 へ戻す。
@@ -130,6 +208,49 @@ namespace FixedCamVr.Streaming
             if (promptDue) return CommsNotice.Prompt;
             if (beginDue) return CommsNotice.Begin;
             return CommsNotice.None;
+        }
+
+        /// <summary>
+        /// 導入（段 0）で出す 2 通（<c>canon/LEDGER.md</c> 0079）。
+        /// <b>名乗る → 引く → 指示</b>の順で、重ねない。
+        ///
+        /// ⚠ <b>タイトルが立っているあいだは何も出さない。</b> 題字の上に受信票が重なる。
+        /// ⚠ <b>演出が走り出したら止める。</b> 段 0 を抜けたら誘導の指示は用済みで、
+        /// パススルーが割れていく最中に文字が浮いていると世界が壊れる。
+        /// </summary>
+        private CommsNotice TickIntro(in CommsCueInput inp, float dt)
+        {
+            if (!inp.startAuthorized || !inp.introWaiting)
+            {
+                _idleSec = 0f;
+                return CommsNotice.None;
+            }
+            _introSec += dt;
+
+            if (!_greetFired)
+            {
+                if (_introSec < GreetDelaySec) return CommsNotice.None;
+                _greetFired = true;
+                _idleSec = 0f;
+                return CommsNotice.Greeting;
+            }
+
+            // ⚠ 前の連絡が引き切るまで数え始めない（面は 1 つしか無い）。
+            if (!inp.panelIdle) { _idleSec = 0f; return CommsNotice.None; }
+            _idleSec += dt;
+
+            if (!_walkFired)
+            {
+                if (_idleSec < WalkGapSec) return CommsNotice.None;
+                _walkFired = true;
+                _idleSec = 0f;
+                return CommsNotice.Walk;
+            }
+
+            if (_walkRepeats >= WalkRepeatMax || _idleSec < WalkRepeatSec) return CommsNotice.None;
+            _walkRepeats++;
+            _idleSec = 0f;
+            return CommsNotice.Walk;
         }
     }
 }

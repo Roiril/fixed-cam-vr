@@ -70,6 +70,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string BgmName = "[Bgm]";
         private const string SoundName = "[Sound]";
         private const string EyesName = "[Eyes]";
+        private const string WalkGuideName = "[WalkGuide]";
 
         /// <summary>音源が焼かれているかの抜き取り検査（全部並べても意味が無いので代表を数本）。</summary>
         private static readonly string[] SoundProbeResources =
@@ -503,9 +504,13 @@ namespace FixedCamVr.Streaming.EditorTools
             // 封印の箱（外から見た隔離）。world 空間の箱なので親の transform に依存しないが、
             // 隔離殻と同じ GameObject に載せて「境界を持つのはここ」を 1 箇所に見せる。
             var sealedBox = CreateSealedBox(introVeil.gameObject, showControl);
+            // 3.25. 歩行誘導（床の矢印と円）。タイトルの直後、体験者を所定の位置まで歩かせる
+            //       （canon/LEDGER.md 0079）。**world 空間の床の印**なので Logic 直下・head 非親。
+            //       ⚠ 描く輪と、導入が始まる円は同じもの（IntroDirector が Arrived だけで段 0 を抜ける）。
+            var walkGuide = CreateOrUpdateWalkGuide(logic.transform, showControl);
             var introDirector = CreateIntroDirector(logic.transform, runDirector, introVeil,
                 screenGo != null ? screenGo.GetComponent<GlitchFx>() : null,
-                registry, showControl, centerEye.transform, screenTf);
+                registry, showControl, centerEye.transform, screenTf, walkGuide);
             // ⚠ 導入の合図（IntroPrompt）は 2026-08-13 に**廃止**した（canon/LEDGER.md 0033）。
             //   「前進してください」型の小さい文字を出さない、というユーザー判定。
             //   上の DeleteIfExists が既存シーンからも外す。
@@ -627,6 +632,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 TrySetObjectRef(commsSo, "runDirector", runDirector);
                 if (showControl != null) TrySetObjectRef(commsSo, "showControl", showControl);
                 TrySetObjectRef(commsSo, "timeline", timelineDirector);
+                // 導入の段 0 のあいだだけ出す 2 通（canon/LEDGER.md 0079）に要る。
+                TrySetObjectRef(commsSo, "intro", introDirector);
                 TrySetObjectRef(commsSo, "typeSfx", typeSfx);
                 commsSo.ApplyModifiedPropertiesWithoutUndo();
             }
@@ -906,10 +913,35 @@ namespace FixedCamVr.Streaming.EditorTools
 
         // 導入演出の進行役。ShowPhase は増やさず Intro の内側のサブ状態を持つ。
         // show.json の run.intro が無い / enabled=false なら何もしない（従来の見えになる）。
+        /// <summary>
+        /// 歩行誘導（<see cref="WalkGuide"/>）を [WalkGuide] へ冪等に置く（<c>canon/LEDGER.md</c> 0079）。
+        ///
+        /// ⚠ <b>Logic 直下（head の子にしない）。</b> 床に置く印なので、頭に付いてくると HUD になる。
+        /// ⚠ course→world は毎フレーム自分で焼くので、親の transform には依存しない。
+        /// </summary>
+        private static WalkGuide CreateOrUpdateWalkGuide(Transform parent, ShowControlClient? showControl)
+        {
+            var existing = parent.Find(WalkGuideName);
+            GameObject go;
+            if (existing != null) go = existing.gameObject;
+            else
+            {
+                go = new GameObject(WalkGuideName);
+                go.transform.SetParent(parent, worldPositionStays: false);
+            }
+            var guide = go.GetComponent<WalkGuide>();
+            if (guide == null) guide = go.AddComponent<WalkGuide>();
+            var so = new SerializedObject(guide);
+            if (showControl != null) TrySetObjectRef(so, "showControl", showControl);
+            TrySetBool(so, "guideEnabled", true);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return guide;
+        }
+
         private static IntroDirector CreateIntroDirector(
             Transform parent, ShowRunDirector runDirector, IntroVeil veil, GlitchFx? glitch,
             CameraStreamRegistry registry, ShowControlClient? showControl,
-            Transform head, Transform? screenQuad)
+            Transform head, Transform? screenQuad, WalkGuide? walkGuide)
         {
             var go = new GameObject(IntroDirectorName);
             go.transform.SetParent(parent, worldPositionStays: false);
@@ -937,6 +969,7 @@ namespace FixedCamVr.Streaming.EditorTools
             if (showControl != null) TrySetObjectRef(so, "showControl", showControl);
             TrySetObjectRef(so, "head", head);
             if (screenQuad != null) TrySetObjectRef(so, "screenQuad", screenQuad);
+            if (walkGuide != null) TrySetObjectRef(so, "walkGuide", walkGuide);
             TrySetFloat(so, "blackClearSec", 5f);
             TrySetFloat(so, "centeredHalfAngleDeg", 25f);
             TrySetFloat(so, "freshFrameSec", 1.5f);
