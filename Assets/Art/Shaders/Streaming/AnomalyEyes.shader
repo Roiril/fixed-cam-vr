@@ -47,6 +47,10 @@ Shader "FixedCamVr/AnomalyEyes"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            // ⚠⚠ **Single Pass Instanced（Quest の既定）で両眼へ正しく描くために要る。**
+            //    無いと Editor では出るのに**実機で片眼にしか出ない / 位置がずれる**。
+            //    プレビューは単眼カメラなので、この誤りは絵からは絶対に分からない。
+            #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
@@ -114,6 +118,7 @@ Shader "FixedCamVr/AnomalyEyes"
                 float4 positionOS : POSITION;
                 float2 uv : TEXCOORD0;
                 float4 attr : TEXCOORD1;   // (順位, 大きい目か, 種, 籤)
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct Varyings
@@ -121,11 +126,14 @@ Shader "FixedCamVr/AnomalyEyes"
                 float4 positionHCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
                 float4 attr : TEXCOORD1;
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             Varyings vert(Attributes input)
             {
                 Varyings o;
+                UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 o.positionHCS = TransformObjectToHClip(input.positionOS.xyz);
                 o.uv = input.uv;
                 o.attr = input.attr;
@@ -134,6 +142,7 @@ Shader "FixedCamVr/AnomalyEyes"
 
             half4 frag(Varyings i) : SV_Target
             {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 float rank = i.attr.x;
                 float isBig = i.attr.y;
                 float seed = i.attr.z;
