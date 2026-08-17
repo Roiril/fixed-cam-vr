@@ -236,7 +236,11 @@ namespace FixedCamVr.Diagnostics
             //    移動してください。」）。読点・句点を勝手に落とさない。改行だけこちらで入れてある
             //    （1 行 14 文字までなので、入れないと折り返し位置が文の途中になる）。
             CommsNotice.Walk => "矢印の方向から、\n指定されたポイントへ\n移動してください。",
-            CommsNotice.Begin => "調査を開始してください\n異変を認めたらボタンを長押し",
+            // ⚠⚠ **「認めたら」→「見つけたら」**（2026-08-17・ユーザー指定）。
+            //    ⚠ 1 字増えて 1 行 15 文字になり、面の幅（14 文字）を越えるので**3 行へ割った**。
+            //      折り返しに任せると「ボタンを長押／し」のような所で切れる。
+            //      ⚠ 語を縮めて 1 行に収める（「ボタン長押し」等）のは**ユーザーの文言の書き換え**なのでしない。
+            CommsNotice.Begin => "調査を開始してください\n異変を見つけたら\nボタンを長押し",
             CommsNotice.MarkLogged => "異常が記録されました",
             CommsNotice.MarkNothing => "異常は検出されませんでした",
             CommsNotice.Prompt => "異常が検出されました。\n記録してください。",
@@ -275,7 +279,11 @@ namespace FixedCamVr.Diagnostics
         /// ⚠ <b>行数の最悪（2 行 ＝ ③）はここでは測れない。</b> 縦の座りは
         /// <c>menu comms-preview</c> の絵で見る（4 文面ぶん焼く）。
         /// </summary>
-        public static string LongestNoticeText => TextFor(CommsNotice.Begin);
+        /// ⚠⚠ <b>2026-08-17 に① → ②へ移した。</b> ①を 3 行へ割ったので、いちばん長い行を持つのは
+        /// ②の「異常は検出されませんでした」（13 文字）になった。
+        /// <c>CommsNoticeTextTests.LongestNoticeText_ReallyHasTheLongestLine</c> が
+        /// **本当に最長かを機械で確かめる**ので、文面を触った人はそこで落ちる。
+        public static string LongestNoticeText => TextFor(CommsNotice.MarkNothing);
 
         private readonly CommsPanelLogic _logic = new CommsPanelLogic();
         private readonly CommsCueLogic _cue = new CommsCueLogic();
