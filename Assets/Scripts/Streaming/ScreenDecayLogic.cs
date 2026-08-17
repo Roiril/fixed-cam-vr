@@ -62,13 +62,80 @@ namespace FixedCamVr.Streaming
         /// <summary>これ以下は「量子化しない」（＝今までと 1 ビットも変わらない画）。</summary>
         private const float OffThreshold = 0.0005f;
 
+        /// <summary>
+        /// <b>呪いが解けてから、視界が戻り切るまで (秒)。</b>
+        /// 出どころは <c>canon/LEDGER.md</c> 0083（「4周目のAで報告して現実世界に戻ったタイミングで、
+        /// 視界の悪さも元に戻そう」）。
+        ///
+        /// ⚠ 締めのカットの次は <c>live</c> 3.0 秒で、その頭に乱れ（0.5〜0.7 秒）が乗る。
+        /// <b>戻り始めは乱れが覆い、戻り切るのは乱れが引いた後</b>になる長さにしてある
+        /// （0050「推したら乱れたのちに元に戻って」）。残り約 1.8 秒は鮮明な現実の映像。
+        /// ⚠ これを 3 秒以上にすると、戻り切る前に終幕（画面が死ぬ Flicker）へ入って
+        /// <b>「戻った」が体験されないまま終わる</b>。
+        /// </summary>
+        public const float ReleaseSec = 1.2f;
+
         private float _progress;
         private int _lastLap = 1;
         private float _lastLapElapsed;
         private float _lapRef = LapRefSec;
 
-        /// <summary>いまの進み 0..1。</summary>
+        // 呪いが解けた（4 周目 A の締めが報告で進んだ）。
+        private bool _released;
+        private float _releaseSec;
+
+        /// <summary>
+        /// <b>装置の劣化そのものの進み 0..1</b>（単調・下がらない）。
+        ///
+        /// ⚠⚠ <b>呪いが解けても、これは下がらない。</b> 読み手が 3 つあり、下げてよいのは画だけ:
+        ///   - <c>ShowSoundDirector</c> — 装置の声の痩せ（<c>bed_device → bed_device_worn</c>）。
+        ///     <b>下げると音が新品へ戻り、「直った」を音で宣言する</b> ＝ 最も避けたい
+        ///     「クリア演出」がまさに音で出る。装置は呪いとは無関係に使い込まれている
+        ///   - <c>CommsGlitchLogic</c> — AI の侵食の入力（あちらは自前の山を描く）
+        ///   - 画 — こちらだけが <see cref="Shown"/> を読む
+        /// </summary>
         public float Progress => _progress;
+
+        /// <summary>
+        /// <b>画に出す進み。</b>呪いが解けると <see cref="ReleaseSec"/> かけて 0 へ落ちる。
+        /// 解像度（<see cref="ShownBlocks"/>）と色（<c>SetMono</c>）が<b>この 1 本を共有する</b>ので、
+        /// 両方が必ず一緒に戻る。
+        ///
+        /// ⚠ <b>片方だけ先に戻さない。</b> 色の側は露出 +0.95EV・粒 ×2.6・周辺光量・コントラストを
+        /// 派生させているので、ずらすと<b>順方向では絶対に作れない画</b>
+        /// （色があって粗い／鮮明な暗視）が数秒出る。
+        /// </summary>
+        public float Shown => _progress * (1f - ReleaseK);
+
+        /// <summary>
+        /// <see cref="Shown"/> に対応する「枠を横切るブロック数」。<b>0 = 量子化しない。</b>
+        /// ⚠ しきい値の門を <see cref="Blocks"/> と同じように通す。通さないと戻り切った所で
+        /// <see cref="FineBlocks"/>（800 ＝「ほとんど無変化」）が書かれ、**厳密な無変化にならない**。
+        /// </summary>
+        public float ShownBlocks => Shown <= OffThreshold ? 0f : BlocksFor(Shown);
+
+        /// <summary>呪いが解けたか（テレメトリ・テスト用）。</summary>
+        public bool Released => _released;
+
+        // 解除の進み 0..1（smoothstep 済み）。
+        private float ReleaseK => _released ? Smooth(Clamp01(_releaseSec / ReleaseSec)) : 0f;
+
+        /// <summary>
+        /// <b>呪いが解けた。</b>ここから <see cref="ReleaseSec"/> かけて視界が元へ戻る
+        /// （解像度と色が同じ 1 本の進みを共有しているので、<b>両方が一緒に戻る</b>）。
+        ///
+        /// ⚠⚠ <b>下がるのは画（<see cref="Shown"/>）だけ。</b> <see cref="Progress"/> は単調のまま —
+        /// 音（装置の声の痩せ）と AI の侵食が同じ値を読んでいるので、そちらまで戻すと
+        /// <b>「直った」を音で宣言する</b>ことになる。
+        ///
+        /// ⚠ 冪等。2 度目以降の報告では何も起きない（戻る途中で押し直しても速さが変わらない）。
+        /// </summary>
+        public void Release()
+        {
+            if (_released) return;
+            _released = true;
+            _releaseSec = 0f;
+        }
 
         /// <summary>いま使っている 1 周の目安 (秒)。診断用。</summary>
         public float LapRef => _lapRef;
@@ -87,6 +154,10 @@ namespace FixedCamVr.Streaming
             _lastLap = 1;
             _lastLapElapsed = 0f;
             _lapRef = LapRefSec;
+            // ⚠ 解けたラッチも落とす。落とさないと**次の体験者は最初から解けている**
+            //（画がいつまでも鮮明なまま）。
+            _released = false;
+            _releaseSec = 0f;
         }
 
         /// <summary>
@@ -99,8 +170,16 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Tick(float dt, bool running, int lap, int totalLaps, float lapElapsedSec)
         {
-            if (!running || dt <= 0f) return;
+            if (dt <= 0f) return;
             if (dt > MaxStepSec) dt = MaxStepSec;
+
+            // 解除の進み。
+            // ⚠⚠ **running を条件にしない。** 報告 → 現実の 3 秒 → 終幕 は連続した 1 つの出来事で、
+            //    その途中で相が Run から Finished へ移る。相を見ると**戻り切る前に凍り**、
+            //    「戻った」が体験されないまま画面が死ぬ。
+            if (_released && _releaseSec < ReleaseSec) _releaseSec += dt;
+
+            if (!running) return;
 
             if (lap != _lastLap)
             {
@@ -157,6 +236,9 @@ namespace FixedCamVr.Streaming
             => FineBlocks + (EndBlocks - FineBlocks) * Clamp01(progress);
 
         private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);
+
+        /// <summary>smoothstep。戻り始めと戻り終わりの角を取る（直線だと止まる瞬間が見える）。</summary>
+        private static float Smooth(float t) => t * t * (3f - 2f * t);
 
         private static float Clamp(float v, float lo, float hi) => v < lo ? lo : (v > hi ? hi : v);
     }

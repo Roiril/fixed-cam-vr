@@ -88,11 +88,34 @@ namespace FixedCamVr.Streaming
         /// <summary>終幕の合図が既に撃たれたか（テレメトリ用）。</summary>
         public bool EndingFired => _ending.Fired;
 
-        /// <summary>周回で進む解像度の劣化の進み 0..1（テレメトリ用）。</summary>
+        /// <summary>
+        /// 装置の劣化そのものの進み 0..1。<b>呪いが解けても下がらない</b>（単調）。
+        /// 読むのは<b>音</b>（装置の声の痩せ）と <c>CommsGlitchLogic</c>（AI の侵食の入力）。
+        /// ⚠ <b>画はこれを読まない</b> → <see cref="ScreenDecayShown"/>。
+        /// </summary>
         public float ScreenDecay => _decay.Progress;
 
+        /// <summary>
+        /// <b>いま画に出ている劣化の進み 0..1</b>（テレメトリ用）。呪いが解けると 0 へ戻る。
+        /// 「装置は使い込まれたまま、呪いだけが解けた」を分けて観測するために <see cref="ScreenDecay"/> と対で出す。
+        /// </summary>
+        public float ScreenDecayShown => _decay.Shown;
+
         /// <summary>いま画へ書いている「枠を横切るブロック数」（0 = 量子化していない・テレメトリ用）。</summary>
-        public float ScreenDecayBlocks => _decay.Blocks;
+        public float ScreenDecayBlocks => _decay.ShownBlocks;
+
+        /// <summary>視界の劣化が「呪いが解けた」で戻り始めたか（テレメトリ用）。</summary>
+        public bool ScreenDecayReleased => _decay.Released;
+
+        /// <summary>
+        /// <b>呪いが解けた。視界の悪さを元へ戻す</b>（<c>canon/LEDGER.md</c> 0083）。
+        /// 呼ぶのは <c>ShowControlClient.RecordVisitorMark</c> — <b>締めのカット
+        /// （<c>durKind:"untilMark"</c>）が報告で進んだときだけ</b>。
+        ///
+        /// ⚠ 1〜2 周目で異変を消したとき（<c>MarkResult.Dismissed</c>）には呼ばない。
+        /// あれは怪異を 1 つ消しただけで、呪いそのものは解けていない。
+        /// </summary>
+        public void ReleaseScreenDecay() => _decay.Release();
 
         /// <summary>
         /// 視界を黒で閉じるべきか。<b>終了</b>と<b>導入の中止</b>の 2 つで立つ。
@@ -329,10 +352,13 @@ namespace FixedCamVr.Streaming
         {
             _decay.Tick(Time.unscaledDeltaTime, _logic.Phase == ShowPhase.Run,
                         _logic.Lap, _logic.TotalLaps, _logic.LapElapsedSec);
-            _feel?.SetCoarseBlocks(_decay.Blocks);
+            // ⚠⚠ 画へ書くのは **Shown**（呪いが解けたら 0 へ戻る側）。生の Progress は
+            //    音と AI の侵食が読む — そちらまで戻すと「直った」を音で宣言することになる。
+            _feel?.SetCoarseBlocks(_decay.ShownBlocks);
             // 色が抜けるのも**同じ進み**。1 周目は暖色、3 周目の A で完全な無彩
             // （`canon/LEDGER.md` 0019）。別の時計で動かすと、装置として説明の付かない絵になる。
-            _feel?.SetMono(_decay.Progress);
+            // ⚠ 戻すときも同じ 1 本なので、解像度と色は必ず一緒に戻る。
+            _feel?.SetMono(_decay.Shown);
         }
 
         private bool AtStartZone()

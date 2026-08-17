@@ -80,6 +80,28 @@ namespace FixedCamVr.Streaming
         public enum Action { None, BeginStep, EndTake }
 
         /// <summary>
+        /// <b>体験者の報告が、何に効いたか。</b>
+        ///
+        /// ⚠⚠ <b>「効いたか」の bool では足りない。</b> 1〜2 周目の異変を消したのと、
+        /// 4 周目 A で締めのカットが進んだのは、体験としてまったく別の出来事
+        /// （前者は「異変が 1 つ消えた」、後者は<b>呪いが解けて現実へ戻る</b>）。
+        /// 混ぜると、1 周目で手形を消しただけで<b>視界の劣化まで戻ってしまう</b>。
+        /// </summary>
+        public enum MarkResult
+        {
+            /// <summary>効かなかった（解除できない怪異／何も走っていない／旗の無い演出）。</summary>
+            None = 0,
+            /// <summary>異変が消えた（<c>dismissible</c> の演出を畳んだ ＝ 1〜2 周目）。</summary>
+            Dismissed = 1,
+            /// <summary>
+            /// <b>締めのカット（<c>durKind:"untilMark"</c>）が報告を受けて進んだ。</b>
+            /// 台本の上ではここが「呪いが解けて現実へ戻る」1 点
+            /// （<c>canon/LEDGER.md</c> 0050 / 0082）。
+            /// </summary>
+            Released = 2,
+        }
+
+        /// <summary>
         /// 演出が終わった理由。<b>観測に出す</b>（<c>ev=take st=end why=</c>）ので、
         /// 「著作どおり終わった」と「体験者が消した」と「壊れて打ち切られた」がログで分かれる。
         /// これが無いと、報告で畳む機構が**効かなくても効きすぎても走行のログから判別できない**。
@@ -493,22 +515,22 @@ namespace FixedCamVr.Streaming
         /// ⚠ ②は実際に畳むのが次の <see cref="Tick"/> だが、<b>通ることはこの時点で確定している</b>ので
         /// true を返す（体験者の押下と画の変化のあいだに 1 フレームの猶予があるだけ）。
         /// </returns>
-        public bool NotifyMarkPressed(float now)
+        public MarkResult NotifyMarkPressed(float now)
         {
-            if (!_running) return false;
-            if (now < _stepBeganAt) return false;
+            if (!_running) return MarkResult.None;
+            if (now < _stepBeganAt) return MarkResult.None;
 
             _activeReported = true;
 
-            if (CurrentStepWait() == WaitMark) { SetCurrentStepEnd(now); return true; }
+            if (CurrentStepWait() == WaitMark) { SetCurrentStepEnd(now); return MarkResult.Released; }
 
             if (_activeTake >= 0 && _activeTake < _defs.Length && _defs[_activeTake].dismissible)
             {
                 _dismissPending = true;
-                return true;
+                return MarkResult.Dismissed;
             }
 
-            return false;
+            return MarkResult.None;
         }
 
         /// <summary>

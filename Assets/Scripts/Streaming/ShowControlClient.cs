@@ -2532,10 +2532,18 @@ namespace FixedCamVr.Streaming
         {
             VisitorMarkCount++;
             // 「報告するまで」のカット（4 周目 A の締め）と、dismissible な演出だけが反応する。
-            // ⚠ 戻り値が「解除が通ったか」。畳んだ本人が答えるので、凍らせる順序に依存しない。
-            LastMarkResolved = timelineDirector?.NotifyVisitorMark() ?? false;
+            // ⚠ 戻り値が「何に効いたか」。畳んだ本人が答えるので、凍らせる順序に依存しない。
+            TakeRunnerLogic.MarkResult result =
+                timelineDirector?.NotifyVisitorMark() ?? TakeRunnerLogic.MarkResult.None;
+            LastMarkResolved = result != TakeRunnerLogic.MarkResult.None;
+
+            // ⚠⚠ **呪いが解けるのは締めのカットが進んだ 1 回だけ**（`canon/LEDGER.md` 0083）。
+            //    1〜2 周目で異変を消した（Dismissed）ときに戻すと、**まだ呪われている最中に
+            //    視界が晴れて**、以後の周の劣化が「なぜまた悪くなるのか」説明できなくなる。
+            if (result == TakeRunnerLogic.MarkResult.Released) ResolveRunDirector()?.ReleaseScreenDecay();
+
             Debug.Log($"[ShowControl] 記録ボタン（体験者・左 X／Y） {VisitorMarkCount} 回目"
-                    + $"（解除は{(LastMarkResolved ? "通った" : "通らなかった")}）");
+                    + $"（解除は{(LastMarkResolved ? "通った" : "通らなかった")}・{result}）");
         }
 
         private void ApplyPostForActive()

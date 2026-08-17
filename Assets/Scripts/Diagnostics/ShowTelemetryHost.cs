@@ -1006,9 +1006,15 @@ namespace FixedCamVr.Diagnostics
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。
             if (_run != null)
             {
+                // ⚠⚠ **生（coarse）と画に出た側（coarseShown）は別物**（`canon/LEDGER.md` 0083）。
+                //    呪いが解けると画だけが 0 へ戻り、生は単調のまま — 音（装置の声の痩せ）と
+                //    AI の侵食が生を読んでいるので、そちらを戻すと「直った」を音で宣言してしまう。
+                //    **対で出さないと「解けたのか / そもそも劣化していないのか」が走行から読めない。**
                 _sb.Append(" coarse=").Append(_run.ScreenDecay.ToString("F2"));
+                _sb.Append(" coarseShown=").Append(_run.ScreenDecayShown.ToString("F2"));
                 _sb.Append(" cbx=").Append(_run.ScreenDecayBlocks.ToString("F0"));
                 _sb.Append(" coarseMat=").Append(CoarseMaterialState);
+                if (_run.ScreenDecayReleased) _sb.Append(" coarseRel=1");
             }
             if (_overlay != null)
                 _sb.Append(" ovl=").Append(OverlayStrength.ToString("F2"))

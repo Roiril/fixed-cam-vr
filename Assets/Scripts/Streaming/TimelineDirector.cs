@@ -82,7 +82,8 @@ namespace FixedCamVr.Streaming
         /// ⚠ 演出が 1 本も無ければ false。**演出が走っていたか**とは別物で、
         /// 走っていても <c>dismissible</c> でなければ false（3 周目の録画がそれ）。
         /// </summary>
-        public bool NotifyVisitorMark() => takeRunner != null && takeRunner.NotifyVisitorMark();
+        public TakeRunnerLogic.MarkResult NotifyVisitorMark()
+            => takeRunner != null ? takeRunner.NotifyVisitorMark() : TakeRunnerLogic.MarkResult.None;
 
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行の検証用）。</summary>
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;

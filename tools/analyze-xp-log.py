@@ -1834,6 +1834,36 @@ def analyze(events, others, exp, warns=None):
             verdict("WARN", f"進みが 1 標本（約 2 秒）で {max(jumps):.2f} 上がった — 段差に見える疑い。"
                             "ScreenDecayLogic.MaxRisePerSec を下げる")
 
+        # 呪いが解けたら視界が戻る（canon/LEDGER.md 0083）。
+        # ⚠ ラッチ（coarseRel）と**実際に下がったか**を対で見る。ラッチだけ見ると、
+        #   Tick が止まって戻り切らなかった場合に「戻った」と誤読する。
+        # ⚠ 見るのは **coarseShown**（画に出た側）。生の coarse は単調のままが正しい —
+        #   音（装置の声の痩せ）と AI の侵食が読んでいるので、生が下がったらそちらが壊れている。
+        released = [str(v) for v in effect_samples(events, "coarseRel")]
+        if "1" in released:
+            first = next(i for i, e in enumerate(events)
+                         if e.get("ev") == "sum" and str(e.get("coarseRel")) == "1")
+            after = [float(e["coarseShown"]) for e in events[first:]
+                     if e.get("ev") == "sum" and e.get("coarseShown") is not None]
+            raw_after = [float(e["coarse"]) for e in events[first:]
+                         if e.get("ev") == "sum" and e.get("coarse") is not None]
+            w(f"  呪いの解除: 視界を戻し始めた（画に出た進み 最小 {min(after):.2f}）"
+              if after else "  呪いの解除: 視界を戻し始めた")
+            if after and min(after) > 0.05:
+                verdict("FAIL", f"呪いが解けたのに視界が戻り切っていない（画の進み {min(after):.2f} 止まり）— "
+                                "ScreenDecayLogic の戻しが途中で止まっている疑い"
+                                "（相が Run を出た所で凍っていないか）")
+            elif after:
+                verdict("OK", "報告で呪いが解け、視界が元へ戻った")
+            # 生まで下がっていたら、音と AI の侵食が一緒に戻っている（＝「直った」を音で宣言している）。
+            if raw_after and min(raw_after) < max(raw_after) - 0.05:
+                verdict("FAIL", "呪いの解除で**生の劣化まで**下がっている — "
+                                "装置の声（bed_device の痩せ）と AI の侵食も一緒に戻ってしまう。"
+                                "画へ書くのは Shown、音と侵食へ渡すのは Progress")
+        elif max(decay_run) > 0.5:
+            verdict("WARN", "視界が劣化したまま解除されずに終わった — "
+                            "締めのカット（untilMark）へ報告が届いていないか、押されなかった")
+
     # 導入のあいだは 0 でなければならない（「1 周目の最初は今くらいの解像度」）。
     decay_intro = _decay_nums("coarse", t_to=run_t)
     if decay_intro and max(decay_intro) > 0.001:

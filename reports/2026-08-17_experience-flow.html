@@ -1,0 +1,396 @@
+<title>廻リ視 体験フロー</title>
+<style>
+/* 正本: ~/.claude/reference/design-tokens.md（assets/report.css の派生） */
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;
+  --radius: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li {
+  border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4);
+  position: relative; margin: 0;
+}
+.tl > li::before {
+  content: ""; position: absolute; left: -5px; top: .55em;
+  width: 8px; height: 8px; background: var(--accent);
+}
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+
+<div class="wrap">
+
+<p class="eyebrow">廻リ視 · 体験フロー</p>
+<h1>体験者が見るもの、聞くもの、できること</h1>
+<p class="sub">いまの実装と台本（<code>show.json</code> rev 35）から起こしたもの ／ 2026-08-17</p>
+
+<div class="lead">
+<p>体験は <strong>紙 → 被る → タイトルと歩行誘導 → 導入演出 → 3 周 ＋ 帰りの A → 終幕</strong> の順に進む。
+全体で 3 分以内。</p>
+<p>体験者にできる操作は <em>左手の X または Y を 1 秒長押しする</em> ことだけ。それが記録であり、同時に怪異の解除でもある。
+効くときと効かないときがあり、その差が物語になっている。</p>
+</div>
+
+<h2>1. 全体の流れ</h2>
+
+<div class="tblwrap">
+<table>
+<tr><th>段階</th><th>何が起きるか</th><th>尺</th><th>体験者がすること</th></tr>
+<tr><td>紙</td><td>調査依頼書を読む</td><td>—</td><td>読む</td></tr>
+<tr><td>待ち</td><td>真っ暗。スタッフが HMD を被せる</td><td>—</td><td>立つ</td></tr>
+<tr><td>タイトル</td><td>題字「廻リ視」が立ち、渦に巻かれて灰になる</td><td>約 5 秒</td><td>—<span class="muted">（A を押すのはスタッフ）</span></td></tr>
+<tr><td>歩行誘導</td><td>エージェントが名乗り、床に矢印と円が出る</td><td>着くまで<span class="muted">（上限 30 秒）</span></td><td><strong>円まで歩く</strong></td></tr>
+<tr><td>導入演出</td><td>現実が格下げされ、割れて、スクリーンへ吸い込まれる</td><td>約 10.2 秒</td><td>見る</td></tr>
+<tr><td>本編</td><td>A → B → C を 3 周。区間ごとに異変が出る</td><td>約 2 分</td><td><strong>歩く／異変を報告する</strong></td></tr>
+<tr><td>帰りの A</td><td>大量の人形。報告すると現実へ戻る</td><td>報告するまで<span class="muted">（上限 45 秒）</span></td><td><strong>報告する</strong></td></tr>
+<tr><td>終幕</td><td>スクリーンが電池切れのように消え、報告が打たれる</td><td>約 8.7 秒</td><td>読む</td></tr>
+</table>
+</div>
+
+<p>順路は <code>A（手前・南）→ B（東）→ C（北と西）</code>。カメラは 3 台が各区間を担当し、
+4 台目（D）は演出専用でゾーンに割り当てられていない。</p>
+
+<h2>2. 被る前 — 紙</h2>
+
+<p>調査依頼書を 1 枚渡す。SCP の収容記録に寄せた体裁で、調査者番号・発行日・七角の朱印が入っている。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>項目</th><th>中身</th></tr>
+<tr><td>人の呼び名</td><td>調査者<span class="muted">（装置は「観測装置」のまま）</span></td></tr>
+<tr><td>発行日</td><td>２０２６年９月６日<span class="muted">（会期 2 日とも初日で刷る）</span></td></tr>
+<tr><td>朱印</td><td>星形七角形 ＋ 7 つに割れた輪。輪の切れ目が星の頂点を向く<span class="muted">（封じ切れていない図）</span></td></tr>
+<tr><td>ボタンの伏線</td><td><em>「記録は自動的に保存され、可能な場合は対象の解除が行われる。」</em></td></tr>
+</table>
+</div>
+
+<p>この 1 行が要。X／Y は記録であると同時に解除でもあり、<strong>効くものと効かないものがある</strong>と紙が先に言っておく。
+3 周目に押しても消えないことが、不具合ではなく仕様として読める。何が解除できないかは書かない。</p>
+
+<h2>3. 開始 — タイトルと歩行誘導</h2>
+
+<div class="tblwrap">
+<table>
+<tr><th>いつ</th><th>画</th><th>エージェントの面</th><th>音</th></tr>
+<tr><td>周回リセット直後</td><td>真っ暗。注意書きだけが出ている</td><td>—</td><td>無音</td></tr>
+<tr><td>スタッフが A を押す</td><td>題字「廻リ視」が 0.6 秒で立つ</td><td>—</td><td>タイトルの一撃</td></tr>
+<tr><td>＋2 秒</td><td>題字が中心へ引き延ばされ、渦に巻かれて灰になる</td><td>—</td><td>息を呑む音</td></tr>
+<tr><td>灰が尽きてから</td><td>黒が開いてパススルー<span class="muted">（現実）</span>へ</td><td>—</td><td>—</td></tr>
+<tr><td>＋0.6 秒</td><td>—</td><td><strong>⓪a</strong>「今回の調査を支援する／エージェントです」</td><td>打鍵</td></tr>
+<tr><td>名乗りが引いて ＋0.5 秒</td><td><strong>床に円が現れ、東から山形の矢印が順に点く</strong></td><td><strong>⓪b</strong>「矢印の方向から、／指定されたポイントへ／移動してください。」</td><td>打鍵</td></tr>
+<tr><td>体験者が円へ 0.5 秒留まる</td><td>矢印が消え、輪だけが閉じる</td><td><strong>⓪c</strong>「ポイントに到着しました。／観測装置を起動します」</td><td>打鍵</td></tr>
+</table>
+</div>
+
+<p>円は壁の角の近く、半径 0.245m。<strong>描いた円と、導入が始まる判定の円は同じもの</strong>。
+誘導が出ているあいだ、ほかの開始条件（接近・時間切れ）は止まっている。指示した場所より手前で演出が走ると、装置が出した指示が嘘になるため。</p>
+
+<p>30 秒たっても着かなければ誘導を畳んで従来の判定へ戻す。「立っても始まらない」を作らないための逃げ道。
+⓪b は 18 秒おきにあと 2 回まで出し直す。</p>
+
+<h2>4. 導入演出 — 現実がスクリーンになる</h2>
+
+<p>視点は 1 度も動かない。動くのは現実の側の身分。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>段</th><th>尺</th><th>見えるもの</th><th>音</th></tr>
+<tr><td>0 <code>Black</code></td><td>待ち</td><td>素通しの現実。歩行誘導が出ている</td><td>部屋の音</td></tr>
+<tr><td>1 <code>Real</code></td><td>1.5 秒</td><td>素の現実。何も演出しない<span class="muted">（次の段の変化を読ませる比較対象）</span></td><td>部屋の音</td></tr>
+<tr><td>2 <code>Degrade</code></td><td>3.5 秒</td><td>色が抜け、コントラストが上がり、実物の輪郭が浮く</td><td><strong>装置の声が入り始める</strong></td></tr>
+<tr><td>3 <code>Structure</code></td><td>1.1 秒<span class="muted">（段 2 と重なる）</span></td><td>輪郭だけの世界<span class="muted">（壁の線とカメラの印は既定 OFF）</span></td><td>装置の声</td></tr>
+<tr><td>4 <code>Frame</code></td><td>2.5 秒</td><td><strong>見えているものが細かく割れ、スクリーンの矩形へ吸い込まれる。</strong>途中で中身がカメラ映像へ入れ替わる</td><td>割れる音 → <strong>0.37 秒の静けさ</strong> → スクリーンが出る音</td></tr>
+<tr><td>5 <code>Swap</code></td><td>1.6 秒</td><td>最後の破片が消えて映像だけになる。<strong>枠の中に自分が居る</strong></td><td>1.2 秒後に鈴が 1 回</td></tr>
+</table>
+</div>
+
+<p>合計は約 10.2 秒。段 3 は段 2 の後半から重なるので、単純な足し算にはならない。</p>
+
+<p>音が先に来る。装置の声は段 2 で入り、画が映像になるのは段 5。これが 10 秒を 1 つの出来事として繋いでいる。</p>
+
+<h2>5. 本編 — 1 周目</h2>
+
+<p>導入が明けたら、待たずに①が届く。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>区間</th><th>画面</th><th>報告すると</th></tr>
+<tr><td><strong>A</strong>（手前）</td><td>演出なし。素のライブ映像</td><td>「異常は検出されませんでした」</td></tr>
+<tr><td><strong>B</strong>（東）</td><td><strong>壁一面の血の手形。</strong>次の区間へ移るまで出続ける</td><td><span class="chip hot">消える</span>乱れが走って現実へ戻る</td></tr>
+<tr><td><strong>C</strong>（北・西）</td><td>演出なし</td><td>「異常は検出されませんでした」</td></tr>
+</table>
+</div>
+
+<p>①の文面は「調査を開始してください／異変を見つけたら／ボタンを長押し」。押し方が出るのはここ 1 回だけ。</p>
+
+<p><strong>1 周目 A では録画が始まっている。</strong>体験者が床の線を横切った所から、そのまま歩く姿を 15fps で残す。
+これが 3 周目の背景になる。体験者には何も知らされない。</p>
+
+<h2>6. 本編 — 2 周目</h2>
+
+<p>3 区間すべてに異変が出る。<strong>どれも報告で消える。</strong>ここで体験者は「このボタンで消せる」と学習する。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>区間</th><th>画面</th><th>尺</th><th>報告すると</th></tr>
+<tr><td><strong>A</strong></td><td>人形がカーテンの陰から見ている</td><td>3.5 秒</td><td><span class="chip hot">消える</span></td></tr>
+<tr><td><strong>B</strong></td><td>人形が木の壁の前に立つ</td><td>3.5 秒</td><td><span class="chip hot">消える</span></td></tr>
+<tr><td><strong>C</strong></td><td><strong>異形が目の前に全画面で出る</strong><span class="muted">（体験を通して驚かせるのはここ 1 回だけ）</span></td><td>2.5 秒</td><td><span class="chip hot">消える</span></td></tr>
+</table>
+</div>
+
+<p>尺はどれも「気づく 0.3 ＋ 押し始め 0.3 ＋ 長押し 1.0」で最低 1.6 秒かかることから決めてある。
+これより短いと、消せる設定にしても押し切る前に終わる。</p>
+
+<h2>7. 本編 — 3 周目<span class="chip">作品の核</span></h2>
+
+<p>ここだけ<strong>報告が効かない</strong>。エージェントが呪いに侵食されていて、原型を保てないため。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>区間</th><th>画面</th><th>報告すると</th></tr>
+<tr><td><strong>A</strong></td><td>①画面が左右に割れ、左半分が<strong>左右反転したライブ映像</strong>＝ 自分が 2 人いて中心へ向かう<br>②線を越えると左半分が凍る<br>③左半分が<strong>1 周目の録画</strong>へすり替わり、ひとりでに歩き出す<br>④無人の部屋 ＋ 体験者の位置に立つ CG 人形</td><td rowspan="3"><strong>効かない。</strong>「異常は検出されませんでした」が<strong>4 字に 3 字化けた状態</strong>で返る<br><span class="muted">エージェントが呪いに侵されていて、解除を実行できない</span></td></tr>
+<tr><td><strong>B</strong></td><td>1 周目の録画が流れ、流し終わると無人の部屋に自分の人形が立っている</td></tr>
+<tr><td><strong>C</strong></td><td>同上</td></tr>
+</table>
+</div>
+
+<p>いま歩いている自分が、映像の中に居ない。<strong>説明はしない。</strong>「手を上げてください」という合図は
+種明かしを先に配るのと同じなので廃止してある。</p>
+
+<p>映像そのものも周を重ねるごとに粗くなり、色が抜けていく。3 周目の A で最大に達し、そこからは変わらない。
+これは装置の劣化であって、エージェントの侵食とは別の話。</p>
+
+<h2>8. 帰りの A と終幕</h2>
+
+<div class="tblwrap">
+<table>
+<tr><th>いつ</th><th>何が起きるか</th></tr>
+<tr><td>帰りの A に入る</td><td>左半分に<strong>大量の人形</strong>、右半分に無人の部屋 ＋ 体験者の人形</td></tr>
+<tr><td>3 秒たっても押さない</td><td><strong>③</strong>「異常が検出されました。／記録してください。」<span class="muted">（その直前に人形の笑いが鳴り始め、押すまで続く）</span></td></tr>
+<tr><td><strong>報告する</strong></td><td><strong>エージェントが復帰しているので通る。</strong>乱れとともに人形が消え、すべてがライブ映像へ戻る<br><em>同時に呪いが解け、1.2 秒かけて視界の悪さ（粗さと色抜け）も元へ戻る</em></td></tr>
+<tr><td>＋3 秒</td><td>鮮明な現実の映像。そのまま終幕へ</td></tr>
+<tr><td>終幕 <code>Flicker</code> 6.0 秒</td><td>スクリーンが電池切れのようにちかちかしながら暗くなり、消える</td></tr>
+<tr><td><code>Dark</code> 1.2 秒</td><td>何も無い黒。間</td></tr>
+<tr><td><code>Report</code></td><td>報告が 1 字ずつ打鍵音と一緒に打たれる<span class="muted">（41 字・3.4 秒）</span></td></tr>
+</table>
+</div>
+
+<p>終幕に出る文面は次の 4 行。数字は全角で、体験者が押した回数がそのまま入る。</p>
+
+<pre><code>報告した怪異の数：０３
+
+十分なデータが取れました。
+調査完了です。
+装置を外してください。</code></pre>
+
+<p>最後に鳴っているのは無音。パススルーには戻さない。</p>
+
+<h2>9. 体験者ができること</h2>
+
+<p>操作は 1 つだけ。<strong>左手の X または Y を 1 秒長押し</strong>する。どちらを押しても同じなのは、被った体験者に手元が見えないから。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>押したとき</th><th>画</th><th>エージェントの面</th></tr>
+<tr><td>消せる異変が出ている<span class="muted">（1〜2 周目）</span></td><td><strong>乱れが走り、異変が消えて現実へ戻る</strong></td><td>「異常が記録されました」</td></tr>
+<tr><td>解けない怪異が出ている<span class="muted">（3 周目）</span></td><td>何も変わらない</td><td>化けて読めない<span class="muted">（エージェントが侵されている）</span></td></tr>
+<tr><td>何も出ていない</td><td>何も変わらない</td><td>「異常は検出されませんでした」</td></tr>
+<tr><td>帰りの A の締め</td><td><strong>すべてが現実へ戻り、視界の悪さも元に戻る</strong></td><td>—<span class="muted">（そのまま終幕へ）</span></td></tr>
+</table>
+</div>
+
+<p>返りは 3 つ。<strong>左コントローラの短い振動 ／ 面の下段のゲージ ／ エージェントの連絡</strong>。
+押さなくても体験は同じように進む。消える異変が消えないだけで、押さなかった人が失敗した気にはならない。</p>
+
+<p>右手のボタンはすべてスタッフ用。体験者はコントローラを 1 本しか持たない。</p>
+
+<h2>10. ずっと流れているもの</h2>
+
+<div class="tblwrap">
+<table>
+<tr><th>何</th><th>1 周目</th><th>2 周目</th><th>3 周目 A 以降</th></tr>
+<tr><td>映像の解像度</td><td>横 600 ブロック</td><td>400</td><td><strong>200</strong>（以後変わらない）</td></tr>
+<tr><td>色</td><td>暖色</td><td>抜けかけ</td><td><strong>完全な無彩</strong>＝ 夜間モード</td></tr>
+<tr><td>エージェントの面</td><td>きれい</td><td>たまに 1 字化ける</td><td><strong>4 字に 3 字が化けて読めない</strong></td></tr>
+<tr><td>エージェントの顔</td><td>無事</td><td>侵食されかける</td><td><strong>市松人形へ侵食される</strong></td></tr>
+<tr><td>映像の乱れ</td><td>ほとんど動かない</td><td>ほとんど動かない</td><td><strong>最後の 3 回で跳ねる</strong></td></tr>
+<tr><td>環境音</td><td>合成の部屋の音</td><td>別の音へ<span class="muted">（気づかれないようクロスフェード）</span></td><td>さらに別の音へ</td></tr>
+</table>
+</div>
+
+<p><strong>視界が悪くなるのも、エージェントがバグるのも、呪いのせい。</strong>
+だから帰りの A で報告が通って呪いが解けると、<strong>映像の粗さと色抜けは 1.2 秒かけて元に戻る</strong>。</p>
+
+<p>ただし<em>戻るのは画だけ</em>。装置の声（低い唸り）の痩せは戻らない — そこまで戻すと
+「直った」を音で宣言することになり、体験がクリア演出に見える。装置は呪いとは無関係に使い込まれている。
+エージェントの側も傷が残る（完全には戻らない）。</p>
+
+<p>ほかに、カメラが切り替わるたびに切替音が鳴り、面に字が出るたびに 12 文字/秒で打鍵音が鳴る。
+どちらも「装置が動いている音」で、劇伴ではない。</p>
+
+<p class="note">
+出どころ ── 台本 <code>tools/web-compositor/show.json</code>（rev 35・git 管理外の現場設定） ／
+判定 <code>.claude/canon/LEDGER.md</code> 0050・0070・0079・0081・0082 ／
+仕様 <code>.claude/rules/show-design.md</code>・<code>streaming.md</code>・<code>sound-design.md</code>。<br>
+まだ体験に出ていないもの ── 闇の目（360 度の目）は実装済みだが、どの区間にも置かれていない。
+帰りの A の解除を「エージェントが戻ったから効いた」と読める形にすること、
+「人形から人間に戻る」の終着点は未着手。<br>
+実機で人が被って確かめていない ── 歩行誘導の見え方、導入の割れ方、3 周目に「自分が居ない」と気づけるか。
+</p>
+
+</div>

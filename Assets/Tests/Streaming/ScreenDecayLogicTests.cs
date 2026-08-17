@@ -218,5 +218,126 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(1f, l.Progress, 0.02f, "3 周 + 帰りの A を歩き切ったら終端に届く");
             Assert.AreEqual(ScreenDecayLogic.EndBlocks, l.Blocks, 2f);
         }
+
+        // ---- 呪いが解ける（canon/LEDGER.md 0083）----
+        //
+        // 「エージェントがバグるのも、視界が徐々に悪くなるのも、呪いのせいという事にする。
+        //   なので、4周目のAで報告して現実世界に戻ったタイミングで、視界の悪さも元に戻そう」
+
+        /// <summary>落ち切った状態から呪いを解いて、戻り切るまで進める。</summary>
+        private static ScreenDecayLogic Cursed()
+        {
+            var l = new ScreenDecayLogic();
+            Run(l, 30f, lap: 1, totalLaps: 3, lapElapsedAtStart: 0f);
+            Run(l, 30f, lap: 2, totalLaps: 3, lapElapsedAtStart: 0f);
+            Run(l, 5f, lap: 3, totalLaps: 3, lapElapsedAtStart: 0f);
+            Assert.That(l.Progress, Is.GreaterThan(0.9f), "前提: 視界が落ち切っている");
+            return l;
+        }
+
+        [Test]
+        public void 呪いが解けると視界が元へ戻る()
+        {
+            ScreenDecayLogic l = Cursed();
+            l.Release();
+            Assert.That(l.Released, Is.True);
+
+            Run(l, ScreenDecayLogic.ReleaseSec, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+
+            Assert.AreEqual(0f, l.Shown, 0.001f, "画に出る進みは戻り切る");
+            Assert.AreEqual(0f, l.ShownBlocks, "量子化しない ＝ 1 周目の頭とまったく同じ画");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>下がるのは画だけ。</b> <see cref="ScreenDecayLogic.Progress"/> は
+        /// <c>ShowSoundDirector</c>（装置の声の痩せ <c>bed_device → bed_device_worn</c>）と
+        /// <c>CommsGlitchLogic</c>（AI の侵食の入力）が読んでいる。ここまで戻すと
+        /// <b>音が新品へ戻って「直った」を音で宣言する</b> ＝ 避けたかったクリア演出が音で出る。
+        /// </summary>
+        [Test]
+        public void 音とAIが読む進みは呪いが解けても下がらない()
+        {
+            ScreenDecayLogic l = Cursed();
+            float raw = l.Progress;
+            l.Release();
+            Run(l, ScreenDecayLogic.ReleaseSec * 2f, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+
+            Assert.That(l.Progress, Is.GreaterThanOrEqualTo(raw),
+                "装置は呪いとは無関係に使い込まれている（単調のまま）");
+            Assert.AreEqual(0f, l.Shown, 0.001f, "画だけが戻る");
+        }
+
+        [Test]
+        public void 戻る途中は滑らかで_いきなり切り替わらない()
+        {
+            ScreenDecayLogic l = Cursed();
+            float before = l.Shown;
+            l.Release();
+
+            Run(l, ScreenDecayLogic.ReleaseSec * 0.5f, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+            Assert.That(l.Shown, Is.LessThan(before), "半ばでは戻り始めている");
+            Assert.That(l.Shown, Is.GreaterThan(0.05f), "半ばで既に戻り切っていたら、切り替えと同じ");
+        }
+
+        /// <summary>戻り切った後、周の目標が上がり続けても<b>画は曇り直さない</b>。</summary>
+        [Test]
+        public void 戻った後の画は曇り直さない()
+        {
+            ScreenDecayLogic l = Cursed();
+            l.Release();
+            Run(l, ScreenDecayLogic.ReleaseSec, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+
+            Run(l, 20f, lap: 3, totalLaps: 3, lapElapsedAtStart: 0f);   // 目標は 1.0 のまま
+            Assert.AreEqual(0f, l.Shown, 0.001f, "解除の係数は落ちないので画は鮮明なまま");
+        }
+
+        /// <summary>
+        /// <b>本編を出ても戻り続ける。</b> 報告 → 現実の 3 秒 → 終幕 は連続した 1 つの出来事で、
+        /// その途中で相が <c>Run</c> から <c>Finished</c> へ移る。相を見て止めると
+        /// <b>戻り切る前に凍って、「戻った」が体験されないまま画面が死ぬ</b>。
+        /// </summary>
+        [Test]
+        public void 本編を出た後も戻り続ける()
+        {
+            ScreenDecayLogic l = Cursed();
+            l.Release();
+
+            float t = 0f;
+            while (t < ScreenDecayLogic.ReleaseSec)
+            {
+                t += Dt;
+                l.Tick(Dt, running: false, lap: 4, totalLaps: 3, lapElapsedSec: t);
+            }
+            Assert.AreEqual(0f, l.Shown, 0.001f, "終了の相でも戻り切る");
+        }
+
+        [Test]
+        public void 二度目の報告では速さが変わらない()
+        {
+            ScreenDecayLogic l = Cursed();
+            l.Release();
+            Run(l, ScreenDecayLogic.ReleaseSec * 0.5f, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+            float half = l.Shown;
+
+            l.Release();                                   // 押し直し（冪等であること）
+            Run(l, ScreenDecayLogic.ReleaseSec * 0.5f, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+
+            Assert.That(l.Shown, Is.LessThan(half), "巻き戻らない");
+            Assert.AreEqual(0f, l.Shown, 0.001f, "同じ尺で戻り切る（押すたびに戻し直さない）");
+        }
+
+        [Test]
+        public void 体験者が代わると呪いは掛かり直す()
+        {
+            ScreenDecayLogic l = Cursed();
+            l.Release();
+            Run(l, ScreenDecayLogic.ReleaseSec, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+
+            l.Reset();
+            Assert.That(l.Released, Is.False, "解除のラッチも落ちる");
+            Run(l, 30f, lap: 1, totalLaps: 3, lapElapsedAtStart: 0f);
+            Assert.That(l.Progress, Is.GreaterThan(0.4f), "2 人目もちゃんと呪われる");
+            Assert.That(l.Shown, Is.GreaterThan(0.4f), "画にも出る（解除が残っていない）");
+        }
     }
 }

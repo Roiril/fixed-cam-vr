@@ -280,6 +280,32 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.IsActive, Is.True);
         }
 
+        /// <summary>
+        /// <b>報告は「異変を消した」と「呪いが解けた」を区別して返す</b>（<c>canon/LEDGER.md</c> 0083）。
+        ///
+        /// ⚠⚠ bool（効いたか）では足りない。混ぜると、<b>1 周目で手形を消しただけで
+        /// 視界の劣化まで戻ってしまう</b> — 呪いが解けるのは 4 周目 A の締めの 1 回だけ。
+        /// </summary>
+        [Test]
+        public void MarkResult_SeparatesClearingAnAnomalyFromLiftingTheCurse()
+        {
+            // ①旗の立った演出を消した ＝ 異変が 1 つ消えただけ
+            TakeRunnerLogic cleared = Started(Make(Take(1, 1, dismissible: true)), 1, 1);
+            Assert.That(cleared.NotifyMarkPressed(2f),
+                Is.EqualTo(TakeRunnerLogic.MarkResult.Dismissed));
+
+            // ②締めのカット（untilMark）が進んだ ＝ 呪いが解ける所
+            TakeRunnerLogic closing = Started(Make(
+                Take(4, 0, dismissible: false, 0f, TakeRunnerLogic.WaitMark, 3f)), 4, 0);
+            Assert.That(closing.NotifyMarkPressed(2f),
+                Is.EqualTo(TakeRunnerLogic.MarkResult.Released));
+
+            // ③解除できない怪異（3 周目）＝ 何も起きない
+            TakeRunnerLogic cursed = Started(Make(Take(3, 0, dismissible: false)), 3, 0);
+            Assert.That(cursed.NotifyMarkPressed(2f),
+                Is.EqualTo(TakeRunnerLogic.MarkResult.None));
+        }
+
         /// <summary>終わり方の理由が観測へ出る（<c>ev=take st=end why=</c>）。混ざると走行の判定ができない。</summary>
         [Test]
         public void EndReason_DistinguishesEveryWayATakeCanEnd()

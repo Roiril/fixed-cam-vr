@@ -402,7 +402,7 @@ namespace FixedCamVr.Streaming
         /// 3 周目の録画は走っているが通らないので false になり、
         /// 「異常は検出されませんでした」が返る（それが正しい返事）。
         /// </returns>
-        public bool NotifyVisitorMark() => _logic.NotifyMarkPressed(Now);
+        public TakeRunnerLogic.MarkResult NotifyVisitorMark() => _logic.NotifyMarkPressed(Now);
 
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行が押す真似をするのに読む）。</summary>
         public bool IsWaitingForVisitorMark => _logic.IsWaitingForMark;
