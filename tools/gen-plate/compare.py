@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 import judge
 import metrics
+import posted
 
 FG = (232, 226, 214)
 DIM = (152, 148, 140)
@@ -58,7 +59,7 @@ def main() -> int:
         if not size_ok:
             out = out.resize(tuple(man["size"]), Image.LANCZOS)
         m = metrics.measure(seed, out, man)
-        checks = judge.build_checks(m, man, size_ok)
+        checks = judge.build_checks(m, man, size_ok, posted.measure_posted(seed, out, man))
         rows.append((os.path.basename(d), seed, out, m, checks))
 
     ch = int(cw * rows[0][1].size[1] / rows[0][1].size[0])

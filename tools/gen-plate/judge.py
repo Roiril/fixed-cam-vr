@@ -23,6 +23,7 @@ import sys
 from PIL import Image
 
 import metrics
+import posted
 import sheet as sheet_mod
 
 NAN = float("nan")
@@ -41,8 +42,14 @@ def _ok(v, test) -> bool:
     return True if v != v else bool(test(v))
 
 
-def build_checks(m: dict, man: dict, size_ok: bool) -> list[tuple]:
-    """(名前, 合否, 表示, 何を見ているか) の並び。**線はここ 1 か所**。"""
+def build_checks(m: dict, man: dict, size_ok: bool, p: dict | None = None) -> list[tuple]:
+    """(名前, 合否, 表示, 何を見ているか) の並び。**線はここ 1 か所**。
+
+    `m` は生成直後、`p` は**実機の post を通した後**の測定（`posted.py` と同じ変換）。
+    **指標ごとに見る場所が違う** — 作りの話（縁・接地・遠近・背景）は生成直後、
+    体験者に届く見え方の話（彩度・明るさ・暗部）は post 後。
+    """
+    p = p if p is not None else m
     lo, hi = man["min_area_pct"], man["max_area_pct"]
     c = [
         ("寸法", size_ok, f"{man['size'][0]}x{man['size'][1]} を期待",
@@ -77,13 +84,20 @@ def build_checks(m: dict, man: dict, size_ok: bool) -> list[tuple]:
         ("縁が刃物でない", _ok(m["edge"], lambda v: v <= 1.10),
          f"{_fmt(m['edge'])}（種の強い縁との比）", "切り抜きを貼ると縁だけ鋭い"),
         ("暗部が沈む",
-         _ok(m["dark_added"], lambda v: v <= m["dark_bg"] * 1.8 + 8.0),
-         f"足した所 {_fmt(m['dark_added'], 0)} / その場所の暗がり {_fmt(m['dark_bg'], 0)}",
+         _ok(p["dark_added"], lambda v: v <= p["dark_bg"] * 1.8 + 8.0),
+         f"足した所 {_fmt(p['dark_added'], 0)} / その場所の暗がり {_fmt(p['dark_bg'], 0)}"
+         "（post 後）",
          "暗がりで光っていると浮く"),
-        ("周りより明るくない", _ok(m["bright"], lambda v: v <= 1.45),
-         f"{_fmt(m['bright'])}（その場所との比）", "足したものだけ露出が違う"),
-        ("周りより鮮やかでない", _ok(m["sat"], lambda v: v <= 2.2),
-         f"{_fmt(m['sat'])}（その場所との比）", "彩度が高いと絵の具に見える"),
+        # ⚠⚠ この 3 つは**実機の post を通した後**の値で見る（`posted.py` の実測）。
+        #   素材は生映像の位置に入り、彩度を抜くポスト処理を浴びてから体験者へ届く。
+        #   生成直後の彩度 1.00〜5.00 は、post 後には**全走行 0.5〜1.4 に収束する** ＝
+        #   生成の段で追っても体験は変わらない。暗部（変化 89%）と明るさ（32%）も同じ。
+        ("周りより明るくない", _ok(p["bright"], lambda v: v <= 1.45),
+         f"{_fmt(p['bright'])}（post 後・その場所との比）", "足したものだけ露出が違う"),
+        ("周りより鮮やかでない", _ok(p["sat"], lambda v: v <= 1.8),
+         f"{_fmt(p['sat'])}（post 後・その場所との比）"
+         + (f" ← 生成直後は {_fmt(m['sat'])}" if abs(p["sat"] - m["sat"]) > 0.3 else ""),
+         "彩度が高いと絵の具に見える"),
     ]
     if m["ground"] == m["ground"]:
         c.append(("接地の影がある", m["ground"] >= 1.5, f"直下が {_fmt(m['ground'])} 暗い",
@@ -113,7 +127,8 @@ def run(run_dir: str, out_path: str | None, quiet_sheet: bool) -> int:
         out = out.resize(tuple(man["size"]), Image.LANCZOS)
 
     m = metrics.measure(seed, out, man)
-    checks = build_checks(m, man, size_ok)
+    p = posted.measure_posted(seed, out, man)
+    checks = build_checks(m, man, size_ok, p)
     ng = [c for c in checks if not c[1]]
 
     print(f"== {man['anomaly']} @ {man['site']}  place={man['place']}  "

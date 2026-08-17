@@ -87,19 +87,26 @@ def env_block(seed_path: str, size, m: dict, place: dict, surf_box, surf_say: st
     if place.get("keep_out"):
         lines.append(f"- **{place.get('keep_say', '反対側')}には置かないでください**"
                      "（はみ出しも、そこへ伸びる影も無し）")
+    # ⚠ ここに「参照は意匠だけの見本です」と足す案を試したが、**背景の保存はむしろ下がった**
+    #   （中央値 42.7 対 基準 55 前後・n=2）。参照を外す案も同様に決め手が無かった。
+    #   この場所の振れ幅（27〜79）が大きすぎて、プロンプトの手当てでは動かない（runs.md）。
     for r in refs:
         lines.append(f"- **参照画像（意匠の正本）**: {r}")
     return "\n".join(lines)
 
 
 def build(anomaly: dict, site: dict, place_str: str, scale: float, out_dir: str,
-          full_post: bool = False) -> dict:
+          full_post: bool = False, blur: float = 0.0, no_refs: bool = False) -> dict:
     gen_tone = _load_gen_tone()
     plate = Image.open(site["plate_abs"]).convert("RGB")
     size = plate.size
 
     post = gen_tone.load_post(site.get("cam"))
     seed = gen_tone.dim(plate, post, scale, exposure_only=not full_post)
+    if blur > 0:
+        # 種の解像感を落として渡す試験（モデルが入力の細かさに追随するか）
+        from PIL import ImageFilter
+        seed = seed.filter(ImageFilter.GaussianBlur(blur))
 
     # ⚠ プロンプトへ書くパスは**必ず絶対**（codex は -Cwd の下しか読めない。
     #   相対で書くと「入力画像が無い」まま似た部屋を描き起こされる）
@@ -124,7 +131,7 @@ def build(anomaly: dict, site: dict, place_str: str, scale: float, out_dir: str,
                                 [surf[0] - pad, surf[1] - pad, surf[2] + pad, surf[3] + pad])
 
     refs = []
-    for r in anomaly["refs"]:
+    for r in ([] if no_refs else anomaly["refs"]):
         dst = os.path.join(out_dir, os.path.basename(r))
         shutil.copyfile(r, dst)
         refs.append(dst)
@@ -156,7 +163,8 @@ def build(anomaly: dict, site: dict, place_str: str, scale: float, out_dir: str,
 
     manifest = dict(
         anomaly=anomaly["id"], site=site["id"], place=place["place"], scale=scale,
-        full_post=full_post, cam=site.get("cam"), plate=site["plate_abs"],
+        full_post=full_post, blur=blur, no_refs=no_refs,
+        cam=site.get("cam"), plate=site["plate_abs"],
         seed=seed_path, prompt=prompt_path, out=os.path.join(out_dir, "out.png"),
         size=list(size), target=target, target_region=region, extends_up=extends_up,
         keep_out=place["keep_out"], surface=anomaly["surface"],
@@ -177,6 +185,10 @@ def main() -> int:
     ap.add_argument("--scale", type=float, default=0.5, help="暗くする強さ（post の按分）")
     ap.add_argument("--full-post", action="store_true",
                     help="⚠ 監視カメラらしさごと種へ焼く（既定は露出だけ。理由は gen-tone.py）")
+    ap.add_argument("--blur", type=float, default=0.0,
+                    help="種をぼかしてから渡す（解像感を揃える試験）")
+    ap.add_argument("--no-refs", action="store_true",
+                    help="参照画像を渡さない（描き直しとの関係を見る試験）")
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--tag", default="", help="走行フォルダ名の後ろに付ける印")
     args = ap.parse_args()
@@ -189,7 +201,8 @@ def main() -> int:
         spec.REPO, "logs", "gen-plate",
         f"{stamp}_{anomaly['id']}_{site['id']}" + (f"_{args.tag}" if args.tag else ""))
 
-    man = build(anomaly, site, args.place, args.scale, out_dir, args.full_post)
+    man = build(anomaly, site, args.place, args.scale, out_dir, args.full_post,
+                args.blur, args.no_refs)
     print(f"走行 {out_dir}")
     print(f"  種 平均輝度 {man['seed_stats']['mean']:.1f}  "
           f"足す所 {man['target']}  置かない所 {man['keep_out']}")
