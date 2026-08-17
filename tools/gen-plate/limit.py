@@ -48,9 +48,8 @@ def parts_of(material, plate, mask, lap, show):
     （2026-08-17）。薄いほど「変わった画素」の集合が縮んで、残った濃い所だけで
     平均を取ることになるため。**掃引は計器の欠陥をよく暴く。**
     """
-    got, plain, inside = legible._delivered(material, plate, mask, lap, show)
+    got, plain, inside, sigma = legible._delivered(material, plate, mask, lap, show)
     h, w = got.shape
-    sigma = legible._noise_sigma(plain, inside)
     m = np.asarray(Image.open(mask).convert("L").resize((w, h), Image.BILINEAR),
                    dtype=np.float64) / 255.0
     added = metrics.clean(np.abs(got - plain) > max(3.0 * sigma, 4.0)) & (m > 0.5) & inside
@@ -60,7 +59,7 @@ def parts_of(material, plate, mask, lap, show):
 
 def score(material, plate, mask, lap, show, added, parts, m, sigma,
           inside) -> tuple[float, float, int]:
-    got, plain, _ = legible._delivered(material, plate, mask, lap, show)
+    got, plain, _, _s = legible._delivered(material, plate, mask, lap, show)
     reads, sizes = [], []
     for c in parts:
         sub = np.zeros_like(added)

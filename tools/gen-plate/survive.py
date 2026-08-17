@@ -116,8 +116,7 @@ def run(run_dir: str, lap: float, out_path: str) -> int:
 
     material = deliver.material_from_run(run_dir, man)
     mask = os.path.join(spec.REPO, "tools", "web-compositor", "masks", "split_left_half.png")
-    got, plain, inside = legible._delivered(material, man["plate"], mask, lap, show)
-    sigma = legible._noise_sigma(plain, inside)
+    got, plain, inside, sigma = legible._delivered(material, man["plate"], mask, lap, show)
     h, w = got.shape
 
     m = np.asarray(Image.open(mask).convert("L").resize((w, h), Image.BILINEAR),

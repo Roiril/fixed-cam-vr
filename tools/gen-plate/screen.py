@@ -20,6 +20,19 @@ Rec.601 → (0.52, 0.34, 0.14) へ変わるので **赤い着物は暗くなら�
 
 計算は**リニア空間**で行う（`rules/streaming.md`「post は linear 空間で効く」）。
 sRGB のまま計算した数値は丸ごと嘘になる。
+
+定数は shader / `CameraFeelFx` / `ShowFeelDef` と**突き合わせ済み**（2026-08-18）—
+グレア 0.55 / 彩度殺し 0.85 / 粒の床 0.10 / 固定パターン 0.035 / 赤外の輝度 (0.52,0.34,0.14) /
+周辺光量 0.58·r⁴ / 夜間モードの 0.16・0.95・0.10。`selftest.py` が枠への収め方を毎回照合する。
+
+**まだ再現していないもの**（分かっていて外してある。数値を読むときはここを思い出す）:
+
+- **自動露出の追従**（`_ExposureBias` / `agc=0.7`）。⚠ ただし追従が読むのは
+  **`MjpegScreen.SourceLuma` ＝ ライブ映像の明るさ**で、重ねた素材は入らない。
+  だから素材ありと素材なしに**同じだけ掛かる** ＝ 比べる分には消える
+  （絶対の明るさだけがその分ずれる）
+- **色差の粒**（低周波の色ノイズ）。帰りの A は彩度 0 なので出ない
+- 色収差・走査線・`_Pixelate` 側の硬い格子（この cue では使っていない）
 """
 from __future__ import annotations
 
@@ -144,7 +157,15 @@ def sample_source(chain, uv_u, uv_v, scale, lod, chroma_bias) -> tuple[np.ndarra
     return col * inside[..., None], inside
 
 
-def post(col: np.ndarray, uv_u, uv_v, p: dict, mono: float, lod: float) -> np.ndarray:
+def _block_noise(idx_y: np.ndarray, idx_x: np.ndarray) -> np.ndarray:
+    """格子の目ごとに 1 つの値を引く（-0.5..0.5）。shader の `Hash21(np + t)` と同じ形。"""
+    ny, nx = int(idx_y.max()) + 2, int(idx_x.max()) + 2
+    field = RNG.random((ny, nx)) - 0.5
+    return field[idx_y, idx_x]
+
+
+def post(col: np.ndarray, uv_u, uv_v, p: dict, mono: float, lod: float,
+         src_uv=None, src_size=None) -> np.ndarray:
     """レンズ → センサ → ISP。**順序は shader と同じ**（見た目の飾りではない）。"""
     dx, dy = uv_u - 0.5, uv_v - 0.5
     r2 = np.clip((dx * dx + dy * dy) * 4.0, 0, 1)
@@ -153,11 +174,27 @@ def post(col: np.ndarray, uv_u, uv_v, p: dict, mono: float, lod: float) -> np.nd
     col = col * (1.0 - vig * 0.58 * r2 * r2)[..., None]
 
     # センサ: 光ショット + 読み出し（粗い画ほど符号化が捨てる）
+    #
+    # ⚠⚠ **粒はソース画素の格子で刻む**（shader の `floor(srcPx / grainPx)`）。
+    #   枠の画素ごとに独立な雑音を振ると、**粗くなった画より粒の方が細かくなる** —
+    #   符号化は粒を真っ先に捨てるので、実機では起こりえない絵になる。
+    #   2026-08-18 まで枠の画素ごとに振っていた。帰りの A では 1 目が枠の 4.8 画素あるので、
+    #   **粒の見え方も、粒が人形の顔（5 標本）と競り合う度合いも別物**になっていた。
     y = np.maximum((col * LUMA_601).sum(-1), 0.0)
     grain_px = max(2.0 ** lod, 1.0)
     amp = (np.sqrt(y) * 0.030 + NOISE_DARK * 0.30) * (1.0 + mono * 2.6) / max(grain_px ** 0.6, 1.0)
-    col = col + (RNG.random(col.shape[:2]) - 0.5)[..., None] * amp[..., None]
-    col = col * (1.0 + (RNG.random(col.shape[:2]) - 0.5)[..., None] * NOISE_FIXED)
+    if src_uv is not None and src_size is not None:
+        sx = np.clip(src_uv[0], 0, 1) * max(src_size[0], 2)
+        sy = np.clip(src_uv[1], 0, 1) * max(src_size[1], 2)
+        col = col + _block_noise((sy / grain_px).astype(int),
+                                 (sx / grain_px).astype(int))[..., None] * amp[..., None]
+        # 固定パターン（画素ごとの感度ばらつき）も**ソース画素**の格子。低周波成分つき
+        f = (_block_noise(sy.astype(int), sx.astype(int))
+             + _block_noise((sy * 0.04).astype(int), (sx * 0.04).astype(int)) * 1.8)
+        col = col * (1.0 + f[..., None] * NOISE_FIXED)
+    else:
+        col = col + (RNG.random(col.shape[:2]) - 0.5)[..., None] * amp[..., None]
+        col = col * (1.0 + (RNG.random(col.shape[:2]) - 0.5)[..., None] * NOISE_FIXED)
 
     # ISP
     col = np.maximum(col, 0.0) * (2.0 ** (p["exposure"] + mono * 0.95))
@@ -195,6 +232,9 @@ def render(live_path, overlay_path, mask_path, p: dict, blocks: float, mono: flo
     r2 = np.clip((dx * dx + dy * dy) * 4.0, 0, 1)
     lod = lod0 + np.clip(r2 - 0.45, 0, None).mean() * 0.7   # 像面湾曲（面内で平均して 1 値に）
 
+    src_uv = ((uv_u - 0.5) / max(scale[0], 1e-4) + 0.5,
+              (uv_v - 0.5) / max(scale[1], 1e-4) + 0.5)
+
     col, _ = sample_source(mip_chain(live), uv_u, uv_v, scale, lod, chroma_bias)
     if overlay_path:
         ov = srgb_to_linear(np.asarray(Image.open(overlay_path).convert("RGB"), dtype=np.float64))
@@ -208,7 +248,7 @@ def render(live_path, overlay_path, mask_path, p: dict, blocks: float, mono: flo
             m = np.ones(frame[::-1])
         col = col * (1 - m[..., None]) + ov_col * m[..., None]
 
-    return post(col, uv_u, uv_v, p, mono, lod)
+    return post(col, uv_u, uv_v, p, mono, lod, src_uv, src_size)
 
 
 # --------------------------------------------------------------------- CLI

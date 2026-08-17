@@ -65,8 +65,13 @@ def transmission(lap: float | None, size, total_laps: float) -> tuple[dict, str]
       色      3 周目以降は**完全な無彩**（`_Mono` は劣化と同じ進み）
       明暗差  周りとの差をどこまで落とすと粒に埋もれるか
 
-    ⚠ 明暗差の下限は **2 点の実測を直線で結んだ目安**（1 周目 10% / 帰りの A 60%）。
+    ⚠ 明暗差の下限は **実測の最悪値を直線で結んだ値**（1 周目 35% / 帰りの A 50%）。
       素材ができたら `limit.py` で実際に確かめる。
+
+    ⚠⚠ **2026-08-18 に 10% / 60% から引き直した。** 旧値は粒を「枠の画素ごとの白色雑音」で
+      再現していた頃のもので、実機の粒は**ソース画素の格子**で刻まれる（帰りの A で枠の 4.8 画素）。
+      刻みを合わせたら粒が 4.5 倍になり、**1 周目の下限が 10% → 35%（3.5 倍きつい側）**へ動いた。
+      素材 3 本 × 周 3 通りで測った最悪値: 周 1 が 25/25/35% ・ 周 2 が 35% ・ 帰りの A が 50/50/50%。
     """
     if lap is None:
         return {}, ""
@@ -74,7 +79,7 @@ def transmission(lap: float | None, size, total_laps: float) -> tuple[dict, str]
     blocks = FINE_BLOCKS + (END_BLOCKS - FINE_BLOCKS) * prog
     contain = min(1.0, (size[0] / size[1]) / (16 / 9))      # 4:3 を 16:9 の枠へ
     src_px = size[0] / max(1.0, blocks * contain)
-    floor = 0.10 + 0.50 * prog
+    floor = 0.35 + 0.15 * prog
 
     lines = ["## この素材が通る伝送（機械が計算した節）", ""]
     lines.append(f"- この画像は装置の伝送を通ってから体験者に届きます（{int(lap)} 周目の映像）")

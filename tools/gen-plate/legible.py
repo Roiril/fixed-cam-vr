@@ -28,8 +28,8 @@ import screen
 import spec
 
 
-def _delivered(material, plate, mask, lap, show) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """素材ありの画・素材なし（プレートだけ）の画・**映像が写っている所**。**同じ乱数**で描く。
+def _delivered(material, plate, mask, lap, show):
+    """素材ありの画・素材なしの画・**映像が写っている所**・**粒の大きさ**。**同じ乱数**で描く。
 
     ⚠ 3 つ目は contain の黒帯を除く矩形。測る道具はこれで切ってから測る（`screen.frame_inside`）。
     """
@@ -43,27 +43,20 @@ def _delivered(material, plate, mask, lap, show) -> tuple[np.ndarray, np.ndarray
     blocks = screen.FINE_BLOCKS + (screen.END_BLOCKS - screen.FINE_BLOCKS) * prog
 
     out = []
-    for ov in (material, None):
-        screen.RNG = np.random.default_rng(20260817)      # 粒を揃える（差が粒で埋もれない）
+    for ov, seed in ((material, 20260817), (None, 20260817), (None, 99001)):
+        screen.RNG = np.random.default_rng(seed)          # 粒を揃える（差が粒で埋もれない）
         col = screen.render(plate, ov, mask if ov else None, p, blocks, prog)
         out.append(np.asarray(Image.fromarray(
             screen.linear_to_srgb(col).astype(np.uint8)).convert("L"), dtype=np.float64))
     with Image.open(plate) as im:
         inside = screen.frame_inside(im.size)
-    return out[0], out[1], inside
 
-
-def _noise_sigma(g: np.ndarray, inside: np.ndarray | None = None) -> float:
-    """その場の粒の大きさ。平らな所の高周波のばらつきで測る。
-
-    ⚠⚠ **黒帯を除いてから測る。** 除かないと、潰れて分散 0 の帯が「いちばん平らな所」として
-    選ばれ、粒が 1/3 に化ける（2026-08-18 実測 1.39 → 0.47 → 読みやすさが 2 倍に嵩上げ）。
-    """
-    hp = metrics.highpass(g)
-    if inside is not None:
-        hp = hp[inside]
-    flat = hp < np.percentile(hp, 60)
-    return float(np.std(hp[flat]) * 1.4826 + 1e-6)
+    # ⭐ **粒は「注いだ雑音そのもの」で測る**（同じ画を別の乱数でもう 1 枚描いて差を取る）。
+    #   ⚠⚠ 2026-08-18 まで 3x3 高域の散らばりで代用していた。実機の粒は**ソース画素の格子**で
+    #   刻まれる（帰りの A で枠の 4.8 画素）ので、3x3 では**格子の内側が平らに見えて粒を見落とす**。
+    #   代用をやめれば、粒の刻みが変わっても物差しは付いてくる。
+    sigma = float(np.std((out[1] - out[2])[inside]) / np.sqrt(2.0)) + 1e-6
+    return out[0], out[1], inside, sigma
 
 
 def _ring(mask: np.ndarray, box, pad: int) -> np.ndarray:
@@ -143,9 +136,8 @@ def main() -> int:
     with open(os.path.join(web, "show.json"), encoding="utf-8") as f:
         show = json.load(f)
 
-    got, plain, inside = _delivered(args.material, args.plate, mask, args.lap, show)
+    got, plain, inside, sigma = _delivered(args.material, args.plate, mask, args.lap, show)
     h, w = got.shape
-    sigma = _noise_sigma(plain, inside)
 
     m = np.asarray(Image.open(mask).convert("L").resize((w, h), Image.BILINEAR),
                    dtype=np.float64) / 255.0
