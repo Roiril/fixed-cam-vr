@@ -28,6 +28,8 @@ Shader "FixedCamVr/AnomalyEyes"
         _EyeTime("Time", Float) = 0
         _EyeGain("Gain", Range(0, 2)) = 1
         _EyeBlink("Blink Amount", Range(0, 1)) = 1
+        // 待機中の視線移動の強さ（AnomalyEyesLogic.Gaze）。0 = 正面を見たまま。
+        _EyeGaze("Gaze Amount", Range(0, 1)) = 0
         // ⚠ 参考画像の目は**ほぼ純白**。作品の暖色は残しつつ、ベージュから白へ寄せてある。
         _EyeColor("Sclera", Color) = (1.0, 0.965, 0.93, 1)
         _EyeRim("Rim (edge)", Color) = (0.62, 0.56, 0.50, 1)
@@ -65,6 +67,7 @@ Shader "FixedCamVr/AnomalyEyes"
                 float _EyeTime;
                 float _EyeGain;
                 float _EyeBlink;
+                float _EyeGaze;
                 float4 _EyeColor;
                 float4 _EyeRim;
             CBUFFER_END
@@ -105,6 +108,22 @@ Shader "FixedCamVr/AnomalyEyes"
             //（あちらは C# が段の中で 1 度だけ瞬かせる）。
             #define BLINK_RATE 0.11
             #define BLINK_SHARP 40.0
+            // 待機中の視線（canon/LEDGER.md 0084「待機中は目がぎょろぎょろ動く感じ」）。
+            // ⚠⚠ **滑らかに動かさない。** 実物の目は止まって一瞬で飛ぶ（サッカード）。
+            //    滑らかに回すと「機械のスキャン」に見える。開き方（0076）とまったく同じ理屈。
+            #define GAZE_RATE 0.80      // 1 秒あたりの停留の数 ＝ 1.25 秒に 1 度飛ぶ
+            #define GAZE_HOLD 0.94      // 停留の割合。残り 0.06 ＝ **0.075 秒で飛ぶ**（実物は 0.03〜0.08）
+            // 寄れる幅。⚠⚠ **「白目の余白」を上限にしない**（2026-08-17 に測って直した）。
+            //    虹彩が白目を食う目ほど余白が無くなり、**動きが白目の 2% ＝ 止まって見えた**。
+            //    実物の目も、横を見れば虹彩の一部は瞼の下へ隠れる。**このシェーダは虹彩を
+            //    瞼（cover）で切っているので、はみ出させて構わない。**
+            #define GAZE_REACH 0.72
+            #define GAZE_IRIS_KEEP 0.45  // 虹彩の何割ぶんを縁の内側に残すか（0 = 中心が縁まで行く）
+            #define GAZE_TILT 0.45      // 縦の動きは横より狭い（実物の目と同じ）
+            // ⚠ 目ごとに位相を散らす種の掛け数。**素数どうしにする** — 揃うと群れが 1 匹に見える。
+            #define GAZE_SEED_T 11.3
+            #define GAZE_SEED_X 3.1
+            #define GAZE_SEED_Y 7.7
 
             float h11(float p) { p = frac(p * 0.1031); p *= p + 33.33; p *= p + p; return frac(p); }
             float h21(float2 p)
@@ -253,7 +272,21 @@ Shader "FixedCamVr/AnomalyEyes"
                 // 大きい目ほど虹彩が白目を食う ＝ 参考 me3 の「巨大な虹彩と黒い内部」が自動的に出る。
                 float cy = 0.5 * (lidUp - lidDn) * open * SHAPE_SCALE;
                 float ir = irisR * (0.45 + 0.55 * open) * SHAPE_SCALE;
-                float2 q = float2(p.x, (p.y - cy) * aspect) / max(ir, 1e-3);
+
+                // 待機中の視線。**止まって、一瞬で飛ぶ。** 目ごとに位相が違うので、
+                // 群れ全体では「あちこちが順不同に動く」＝ ぎょろぎょろになる。
+                float gt = _EyeTime * GAZE_RATE + seed * GAZE_SEED_T;
+                float gi = floor(gt);
+                float gm = smoothstep(GAZE_HOLD, 1.0, frac(gt));
+                float2 gA = float2(h21(float2(gi, seed * GAZE_SEED_X)),
+                                   h21(float2(gi, seed * GAZE_SEED_Y))) * 2.0 - 1.0;
+                float2 gB = float2(h21(float2(gi + 1.0, seed * GAZE_SEED_X)),
+                                   h21(float2(gi + 1.0, seed * GAZE_SEED_Y))) * 2.0 - 1.0;
+                // 動ける幅。虹彩を GAZE_IRIS_KEEP ぶんだけ縁の内側に残す（残りは瞼が切る）。
+                float reach = max(SHAPE_SCALE - ir * GAZE_IRIS_KEEP, 0.0) * GAZE_REACH * _EyeGaze * open;
+                float2 gaze = lerp(gA, gB, gm) * reach * float2(1.0, GAZE_TILT);
+
+                float2 q = float2(p.x - gaze.x, (p.y - cy - gaze.y) * aspect) / max(ir, 1e-3);
                 float d = length(q);
                 float aaI = max(fwidth(d), 1e-4) * 1.2;
                 float irisMask = 1.0 - smoothstep(1.0 - aaI, 1.0 + aaI, d);

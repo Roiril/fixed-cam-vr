@@ -57,6 +57,8 @@ namespace FixedCamVr.Streaming
         private static readonly int TimeId = Shader.PropertyToID("_EyeTime");
         private static readonly int GainId = Shader.PropertyToID("_EyeGain");
         private static readonly int BlinkId = Shader.PropertyToID("_EyeBlink");
+        // 待機中の視線移動の強さ（`canon/LEDGER.md` 0084）。どの目がどこを見るかはシェーダが seed で散らす。
+        private static readonly int GazeId = Shader.PropertyToID("_EyeGaze");
         private static readonly int ColorId = Shader.PropertyToID("_EyeColor");
 
         private readonly AnomalyEyesLogic _logic = new();
@@ -214,6 +216,7 @@ namespace FixedCamVr.Streaming
             _mat.SetFloat(TimeId, _clock);
             _mat.SetFloat(GainId, gain);
             _mat.SetFloat(BlinkId, blink);
+            _mat.SetFloat(GazeId, _logic.Gaze);
             _mat.SetColor(ColorId, color);
             _renderer.enabled = true;
 

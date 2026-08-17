@@ -26,8 +26,14 @@ namespace FixedCamVr.Streaming.EditorTools
         /// <summary>撮影台。他の scene 幾何が写り込まないよう、誰も居ない高さへ。</summary>
         private static readonly Vector3 Stage = new(0f, 2000f, 0f);
 
-        /// <summary>持続を見せる尺 (秒)。全部開いてからも少し回す（瞬き・震えが見える）。</summary>
-        private const float HoldTailSec = 2.0f;
+        /// <summary>
+        /// 持続を見せる尺 (秒)。全部開いてからも回す（瞬き・震え・<b>待機中の視線</b>が見える）。
+        ///
+        /// ⚠⚠ <b>2.0 秒では視線の動きが 1 度も写らない</b>（2026-08-17・<c>canon/LEDGER.md</c> 0084）。
+        /// 視線は開き切って <see cref="AnomalyEyesLogic.GazeRiseSec"/>（0.9 秒）後に立ち上がり、
+        /// そこから <b>1.25 秒に 1 度</b>飛ぶ。5 秒あれば 3〜4 回の飛びが写る。
+        /// </summary>
+        private const float HoldTailSec = 5.0f;
 
         /// <summary>縦画角 (度)。16:9 で水平 約 102° ＝ Quest 3 の表示画角に近い。</summary>
         private const float FovDeg = 70f;
@@ -119,6 +125,23 @@ namespace FixedCamVr.Streaming.EditorTools
                     frames++;
                 }
 
+                // ⚠⚠ **閉じる段も撮る**（2026-08-17・`canon/LEDGER.md` 0084）。
+                //    ここを撮っていなかったので、0.45 秒の一様なフェードが
+                //    「閉じた」ではなく「電源が落ちた」に見えることに誰も気づけなかった。
+                for (float t = 0f; t < AnomalyEyesLogic.CloseSec + dt; t += dt)
+                {
+                    logic.Tick(dt, wanted: false, density: density);
+                    clock += dt;
+                    Write(mat, logic, clock);
+                    Shoot(cam, Path.Combine(dir, $"f{frames:0000}.png"));
+                    int open = AnomalyEyesMesh.CountOpen(seats, logic.Big, logic.Field, logic.Density);
+                    ledger.Append(frames).Append('\t').Append(F(total + t + dt)).Append('\t')
+                          .Append(logic.Stage).Append('\t')
+                          .Append(F(logic.Big)).Append('\t').Append(F(logic.Field)).Append('\t')
+                          .Append(F(logic.Intensity)).Append('\t').Append(open).Append('\n');
+                    frames++;
+                }
+
                 // 段ごとの静止画（数値が緑でも絵は必ず開く — rules/visual-verification.md §7）。
                 Shot(cam, mat, dir, "stage_1_hint_quarter", AnomalyEyesLogic.HintSec * 0.25f, density, 0f);
                 Shot(cam, mat, dir, "stage_1_hint_end", AnomalyEyesLogic.HintSec, density, 0f);
@@ -135,8 +158,19 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 割合を下げた版（カットの eyes が 1 未満のとき）。
                 Shot(cam, mat, dir, "hold_density040", full, 0.40f, 0f);
 
+                // ⚠⚠ **閉じる 3 段**（`canon/LEDGER.md` 0084）。開いた順の逆 —
+                //    いちめんが閉じる → 大きい目だけ残って止まる → 最後にすっと閉じる。
+                //    ここを並べて見ないと「間」が間になっているか分からない。
+                float closeMid = 0.5f * (AnomalyEyesLogic.CloseFieldAt + AnomalyEyesLogic.CloseHoldAt);
+                Shot(cam, mat, dir, "close_1_field", full,
+                     density, 0f, AnomalyEyesLogic.CloseSec * AnomalyEyesLogic.CloseFieldAt * 0.5f);
+                Shot(cam, mat, dir, "close_2_pause", full,
+                     density, 0f, AnomalyEyesLogic.CloseSec * closeMid);
+                Shot(cam, mat, dir, "close_3_last", full,
+                     density, 0f, AnomalyEyesLogic.CloseSec * (AnomalyEyesLogic.CloseHoldAt + 0.13f));
+
                 File.WriteAllText(Path.Combine(dir, "frames.tsv"), ledger.ToString());
-                Debug.Log($"[EyesPreview] {frames} コマ + 静止画 9 枚 + frames.tsv → Assets/{OutDirRel}/\n"
+                Debug.Log($"[EyesPreview] {frames} コマ + 静止画 12 枚 + frames.tsv → Assets/{OutDirRel}/\n"
                         + $"  目 {seats.Length} 個（候補 {AnomalyEyesMesh.CandidateCount} から重ならないものを詰めた）"
                         + $" / 割合 {density:F2}\n"
                         + $"  兆し {AnomalyEyesLogic.HintSec}s → 凝視 {AnomalyEyesLogic.StareSec}s → "
@@ -155,14 +189,19 @@ namespace FixedCamVr.Streaming.EditorTools
             }
         }
 
-        /// <summary>その時刻まで実ロジックを回して 1 枚撮る（頭の向きを <paramref name="yawDeg"/> へ）。</summary>
+        /// <summary>
+        /// その時刻まで実ロジックを回して 1 枚撮る（頭の向きを <paramref name="yawDeg"/> へ）。
+        /// <paramref name="closeSec"/> を渡すと、開き切ったあと**その秒数ぶん閉じてから**撮る。
+        /// </summary>
         private static void Shot(Camera cam, Material mat, string dir,
-                                 string name, float sec, float density, float yawDeg)
+                                 string name, float sec, float density, float yawDeg,
+                                 float closeSec = 0f)
         {
             var logic = new AnomalyEyesLogic();
             float dt = 1f / Fps;
             float clock = 0f;
             for (float t = 0f; t < sec; t += dt) { logic.Tick(dt, true, density); clock += dt; }
+            for (float t = 0f; t < closeSec; t += dt) { logic.Tick(dt, false, density); clock += dt; }
             Write(mat, logic, clock);
             cam.transform.rotation = Quaternion.Euler(0f, yawDeg, 0f);
             Shoot(cam, Path.Combine(dir, name + ".png"));
@@ -178,6 +217,10 @@ namespace FixedCamVr.Streaming.EditorTools
             mat.SetFloat("_EyeFade", l.Fade);
             mat.SetFloat("_EyeIntensity", l.Intensity);
             mat.SetFloat("_EyeTime", clock);
+            // ⚠⚠ **本番（AnomalyEyes.cs）が配る値をここでも全部配る。**
+            //    2026-08-17 に _EyeGaze を足したとき、ここへ足し忘れて
+            //    **プレビューだけ視線が動かないまま**「動きが小さい」と誤診した。
+            mat.SetFloat("_EyeGaze", l.Gaze);
         }
 
         private static string F(float v) => v.ToString("F3", CultureInfo.InvariantCulture);

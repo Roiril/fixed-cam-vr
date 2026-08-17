@@ -167,14 +167,84 @@ namespace FixedCamVr.Streaming.Tests
         // ---------------------------------------------------------------- ④ 畳む
 
         [Test]
-        public void Release_FadesOutWithoutAdvancing()
+        public void Release_ClosesWithoutAdvancing()
         {
             var l = Run(Hint + Stare + Swarm * 0.4f);
             float field = l.Field;
-            l.Tick(0.2f, wanted: false, density: 1f);
+            l.Tick(0.05f, wanted: false, density: 1f);
             Assert.That(l.Stage, Is.EqualTo(EyesStage.Fading));
-            Assert.That(l.Field, Is.EqualTo(field), "消えていく最中に開き続けてはいけない");
-            Assert.That(l.Fade, Is.LessThan(1f));
+            Assert.That(l.Field, Is.LessThan(field), "閉じ始めたら広がりは下がる");
+            Assert.That(l.Field, Is.GreaterThan(0f), "0.05 秒で全部消えるのは速すぎる");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>閉じるのは形であって不透明度ではない</b>（<c>canon/LEDGER.md</c> 0084）。
+        /// 一様に薄くすると「閉じた」ではなく「電源が落ちた」に見える。
+        /// </summary>
+        [Test]
+        public void Closing_KeepsFullOpacity_AndClosesByShape()
+        {
+            var l = Run(Hint + Stare + Swarm + 1f);
+            l.Tick(AnomalyEyesLogic.CloseSec * 0.5f, wanted: false, density: 1f);
+            Assert.That(l.Stage, Is.EqualTo(EyesStage.Fading));
+            Assert.That(l.Fade, Is.EqualTo(1f), "閉じている最中に薄くしない");
+            Assert.That(l.Field, Is.EqualTo(0f), "いちめんは先に閉じ切っている");
+            Assert.That(l.Big, Is.EqualTo(1f), "大きい目はまだ開いたまま（ここが間）");
+        }
+
+        /// <summary>
+        /// <b>開いた順の逆で閉じる</b> — いちめん → 間 → 大きい目。
+        /// 兆し（闇 → 断片 → 静止 → 見開く）と対になる形。
+        /// </summary>
+        [Test]
+        public void Closing_HasThePauseBeforeTheLastEyeShuts()
+        {
+            // いちめんが閉じ切る所
+            Assert.That(AnomalyEyesLogic.CloseFieldCurve(AnomalyEyesLogic.CloseFieldAt),
+                        Is.EqualTo(0f).Within(0.001f));
+            // 間のあいだ、大きい目は 1 のまま
+            float mid = 0.5f * (AnomalyEyesLogic.CloseFieldAt + AnomalyEyesLogic.CloseHoldAt);
+            Assert.That(AnomalyEyesLogic.CloseBigCurve(mid), Is.EqualTo(1f));
+            Assert.That(AnomalyEyesLogic.CloseBigCurve(AnomalyEyesLogic.CloseHoldAt), Is.EqualTo(1f));
+            // そのあと落ちる
+            Assert.That(AnomalyEyesLogic.CloseBigCurve(1f), Is.EqualTo(0f).Within(0.001f));
+            Assert.That(AnomalyEyesLogic.CloseHoldAt - AnomalyEyesLogic.CloseFieldAt,
+                        Is.GreaterThan(1f - AnomalyEyesLogic.CloseHoldAt),
+                        "間は最後の一閉じより長いこと（そこが効く）");
+        }
+
+        // ---------------------------------------------------------------- ④b 待機中の視線
+
+        /// <summary>
+        /// <b>開く動きと視線を重ねない</b>（0076「動かすものは 1 つに絞る」）。
+        /// 開き切って待機に入ってから動き出す。
+        /// </summary>
+        [Test]
+        public void Gaze_StaysStillUntilEveryEyeHasOpened()
+        {
+            Assert.That(Run(1.0f).Gaze, Is.EqualTo(0f), "兆しでは動かない");
+            Assert.That(Run(Hint + 1.0f).Gaze, Is.EqualTo(0f), "凝視は凝視（動かしたら凝視ではない）");
+            Assert.That(Run(Hint + Stare + Swarm * 0.5f).Gaze, Is.EqualTo(0f), "開いている最中も動かない");
+        }
+
+        [Test]
+        public void Gaze_RisesDuringTheHold()
+        {
+            var l = Run(Hint + Stare + Swarm + AnomalyEyesLogic.GazeRiseSec * 0.5f);
+            Assert.That(l.Stage, Is.EqualTo(EyesStage.Hold));
+            Assert.That(l.Gaze, Is.GreaterThan(0f).And.LessThan(1f), "一拍おいてから動き出す");
+            Assert.That(Run(Hint + Stare + Swarm + AnomalyEyesLogic.GazeRiseSec + 0.2f).Gaze,
+                        Is.EqualTo(1f));
+        }
+
+        /// <summary>閉じ始めたら視線は止まる（閉じる動きが主）。</summary>
+        [Test]
+        public void Gaze_StopsWhenTheEyesStartClosing()
+        {
+            var l = Run(Hint + Stare + Swarm + 2f);
+            Assert.That(l.Gaze, Is.EqualTo(1f));
+            l.Tick(AnomalyEyesLogic.GazeFallSec, wanted: false, density: 1f);
+            Assert.That(l.Gaze, Is.EqualTo(0f));
         }
 
         [Test]

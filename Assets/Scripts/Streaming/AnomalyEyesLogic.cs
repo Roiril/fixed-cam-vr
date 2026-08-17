@@ -66,8 +66,28 @@ namespace FixedCamVr.Streaming
         /// <summary>残りが開き切るまでの尺 (秒)。0075 の「3 秒くらいですべての目が開き」。</summary>
         public const float SwarmSec = 3.0f;
 
-        /// <summary>畳まれてから消えるまでの尺 (秒)。報告で畳む乱れ（420ms）とほぼ同じ長さ。</summary>
-        public const float FadeOutSec = 0.45f;
+        /// <summary>
+        /// <b>閉じる尺 (秒)。開くのと同じく「一気に → 止まる → 一気に」で組む</b>
+        /// （2026-08-17・<c>canon/LEDGER.md</c> 0084・ユーザー指定
+        /// 「閉じるときは、開くときと同じように緩急つけて」）。
+        ///
+        /// ⚠⚠ <b>2026-08-17 まで 0.45 秒の一様なフェードだった</b>（旧 <c>FadeOutSec</c>）。
+        /// 全部が同じ速さで薄くなるので、**閉じたのではなく消えた**（電源が落ちた）ように見える。
+        /// いまは<b>開いた順の逆で閉じる</b> — いちめんが順に閉じ、大きい目だけが残って、最後にそれが閉じる。
+        ///
+        /// ⚠ 不透明度（<see cref="Fade"/>）では閉じない。**形で閉じる**
+        /// （0028「外から消さない」と同じ考え — 薄くするのは消しゴムであって動きではない）。
+        /// </summary>
+        public const float CloseSec = 1.1f;
+
+        /// <summary>いちめんの目が閉じ切るまで（<see cref="CloseSec"/> に対する割合）。ここは速い。</summary>
+        public const float CloseFieldAt = 0.30f;
+
+        /// <summary>
+        /// 大きい目だけが残って止まっている終わり。<b>ここがいちばん長い</b>
+        /// （兆しの <see cref="HintHoldAt"/> と対になる ＝ 見開く前と閉じる前に同じ間がある）。
+        /// </summary>
+        public const float CloseHoldAt = 0.74f;
 
         /// <summary>「開いている」とみなす下限（観測の数え方を 1 か所に固定する）。</summary>
         public const float OpenEpsilon = 0.05f;
@@ -109,8 +129,21 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float SwarmSpan = 0.035f;
 
+        // ---- 待機中の視線（2026-08-17・0084「待機中は目がぎょろぎょろ動く感じ」）------------
+        /// <summary>
+        /// 開き切ってから視線が動き出すまでの立ち上がり (秒)。
+        /// ⚠ 0 にしない — 開いた瞬間に全部が動き出すと、開眼の一撃と重なって<b>どちらも流れる</b>
+        /// （0076「動かすものは 1 つに絞る」）。開き切った静止を一拍置いてから、目が動き始める。
+        /// </summary>
+        public const float GazeRiseSec = 0.9f;
+
+        /// <summary>閉じ始めたら視線を止めるまで (秒)。<b>閉じる動きが主</b>なので速く落とす。</summary>
+        public const float GazeFallSec = 0.25f;
+
         private float _t;          // この異変が出てからの経過（Fading では止める）
         private float _fade;
+        private float _close;      // 閉じる進み 0..1（Fading のあいだだけ動く）
+        private float _gaze;
 
         /// <summary>いまの段。</summary>
         public EyesStage Stage { get; private set; } = EyesStage.Off;
@@ -133,6 +166,16 @@ namespace FixedCamVr.Streaming
         /// <summary>開く目の割合 0..1（カットの <c>eyes</c> の値）。</summary>
         public float Density { get; private set; }
 
+        /// <summary>
+        /// <b>待機中の視線移動の強さ 0..1</b>（2026-08-17・<c>canon/LEDGER.md</c> 0084）。
+        /// 開き切って一拍置いてから 1 へ上がり、閉じ始めたら落ちる。
+        ///
+        /// ⚠ <b>どの目がいつどこを見るかはここで決めない。</b> 1 つの値では目ごとに散らせないので、
+        /// <b>強さだけを配ってシェーダが <c>seed</c> で位相を散らす</b>（瞬き <c>_EyeBlink</c> と同じ流儀）。
+        /// 全部が同時に同じ方向を見ると、群れではなく<b>1 匹の生き物</b>に見える。
+        /// </summary>
+        public float Gaze => _gaze;
+
         /// <summary>いま画に何か出ているか。</summary>
         public bool Visible => _fade > 0.001f && (Big > OpenEpsilon || Field > 0f);
 
@@ -140,8 +183,10 @@ namespace FixedCamVr.Streaming
         /// 向きを直してよいか（<c>false</c> ＝ 直してよい）。
         /// <b>残りが開き始めたら二度と回さない</b> — 開いた目が動くと「回っている」が見えてしまう。
         /// </summary>
+        /// ⚠ <b>閉じているあいだも回さない。</b> いちめんが閉じた後も大きい目が残って閉じるので、
+        /// <c>Field &gt; 0</c> だけを見ると<b>最後の 1 つが閉じる途中で群れごと回る</b>（2026-08-17）。
         public bool AnchorLocked => Stage == EyesStage.Swarm || Stage == EyesStage.Hold
-                                    || (Stage == EyesStage.Fading && Field > 0f);
+                                    || Stage == EyesStage.Fading;
 
         /// <summary>この異変が始まったフレームか（向きを頭へ合わせ直す縁）。</summary>
         public bool JustStarted { get; private set; }
@@ -164,25 +209,76 @@ namespace FixedCamVr.Streaming
                     JustStarted = true;
                 }
                 _fade = 1f;   // 立ち上がりは兆しの曲線そのものが担う（重ねてぼかさない）
+                _close = 0f;
                 _t += dt;
                 Advance();
+                // 待機に入ってから視線が動き出す（開く動きと重ねない）。
+                _gaze = Stage == EyesStage.Hold
+                    ? Mathf.Min(1f, _gaze + (GazeRiseSec > 0f ? dt / GazeRiseSec : 1f))
+                    : 0f;
                 return;
             }
 
             if (Stage == EyesStage.Off) return;
 
+            if (Stage != EyesStage.Fading)
+            {
+                // 閉じ始めた縁。**ここの値から 0 へ落とす** — 開き切る前に畳まれても形が飛ばない。
+                _bigAtClose = Big;
+                _fieldAtClose = Field;
+                _intensityAtClose = Intensity;
+                _close = 0f;
+            }
+
             // 畳まれた。**進みは止める**（消えていく最中に残りが開き始めると、
             // 押した行為の結果が「消えた」ではなく「増えた」に見える）。
             Stage = EyesStage.Fading;
-            _fade = FadeOutSec > 0f ? Mathf.Max(0f, _fade - dt / FadeOutSec) : 0f;
-            if (_fade > 0f) return;
+            _gaze = Mathf.Max(0f, _gaze - (GazeFallSec > 0f ? dt / GazeFallSec : 1f));
+            _close = CloseSec > 0f ? Mathf.Min(1f, _close + dt / CloseSec) : 1f;
+
+            // ⚠ 開いた順の逆で閉じる。**不透明度は最後まで 1**（薄くするのは動きではない）。
+            Field = _fieldAtClose * CloseFieldCurve(_close);
+            Big = _bigAtClose * CloseBigCurve(_close);
+            Intensity = _intensityAtClose * CloseFieldCurve(_close);
+
+            if (_close < 1f) return;
 
             Stage = EyesStage.Off;
             _t = 0f;
+            _fade = 0f;
+            _close = 0f;
+            _gaze = 0f;
             Big = 0f;
             Field = 0f;
             Intensity = 0f;
             Density = 0f;
+        }
+
+        // 閉じ始めた瞬間の値（ここから 0 へ落とす）。開き切る前に畳まれても形が飛ばない。
+        private float _bigAtClose, _fieldAtClose, _intensityAtClose;
+
+        /// <summary>
+        /// いちめんの目の閉じ方。<b>一気に閉じて、あとは 0 のまま</b>。
+        /// 順位の高い目から閉じる（<c>Field</c> を下げると外側から閉じる ＝ <b>開いた順の逆</b>）。
+        /// </summary>
+        public static float CloseFieldCurve(float x01)
+        {
+            float x = Mathf.Clamp01(x01);
+            if (x >= CloseFieldAt) return 0f;
+            // 頭を速く（一気に外側が閉じる）。
+            float u = x / CloseFieldAt;
+            return 1f - (1f - Mathf.Pow(1f - u, 2.2f));
+        }
+
+        /// <summary>
+        /// 大きい目の閉じ方。<b>いちめんが閉じるあいだも開いたまま → 長い静止 → 最後にすっと閉じる</b>。
+        /// 兆し（<see cref="HintCurve"/>）を逆から辿った形。
+        /// </summary>
+        public static float CloseBigCurve(float x01)
+        {
+            float x = Mathf.Clamp01(x01);
+            if (x < CloseHoldAt) return 1f;
+            return 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(CloseHoldAt, 1f, x));
         }
 
         private void Advance()
