@@ -25,8 +25,16 @@ Shader "FixedCamVr/CommsAvatar"
     Properties
     {
         _Face("Face (A = ink)", 2D) = "black" {}
+        // 侵食の行き先（市松人形）。⚠ **同じ大きさ・同じ座り**で焼いてあること。
+        _Face2("Face taken over (A = ink)", 2D) = "black" {}
         _Color("Ink color", Color) = (0.82, 0.78, 0.72, 1)
         _Opacity("Opacity (0..1)", Range(0, 1)) = 0
+
+        // 侵食の進み。0 = スイのまま / 1 = 完全に人形。`CommsPanel` が周回の壊れと同じ値を書く。
+        _FaceMix("Taken over (0..1)", Range(0, 1)) = 0
+        // 侵食の斑の大きさ（1 辺あたりの区画数）と、境目の柔らかさ。
+        _MixCells("Patch cells", Float) = 4.5
+        _MixSoft("Patch edge softness", Range(0.01, 0.5)) = 0.12
 
         // 角の丸み（1 辺に対する割合。0.5 で円）。
         _Radius("Corner radius (0..0.5)", Range(0, 0.5)) = 0.20
@@ -57,10 +65,15 @@ Shader "FixedCamVr/CommsAvatar"
 
             TEXTURE2D(_Face);
             SAMPLER(sampler_Face);
+            TEXTURE2D(_Face2);
+            SAMPLER(sampler_Face2);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _Color;
                 float _Opacity;
+                float _FaceMix;
+                float _MixCells;
+                float _MixSoft;
                 float _Radius;
                 float _Stroke;
                 float _FaceOn;
@@ -97,6 +110,29 @@ Shader "FixedCamVr/CommsAvatar"
                 return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
             }
 
+            float Hash21(float2 p)
+            {
+                p = frac(p * float2(123.34, 456.21));
+                p += dot(p, p + 45.32);
+                return frac(p.x * p.y);
+            }
+
+            /// <summary>
+            /// 侵食の斑。**乱数を実行時に振らない** — uv だけで決まるので、
+            /// 同じ進みなら毎フレーム同じ形。ちらつかせると「侵食」ではなく「ノイズ」に見える。
+            /// </summary>
+            float ValueNoise(float2 uv)
+            {
+                float2 i = floor(uv);
+                float2 f = frac(uv);
+                f = f * f * (3.0 - 2.0 * f);
+                float a = Hash21(i);
+                float b = Hash21(i + float2(1.0, 0.0));
+                float c = Hash21(i + float2(0.0, 1.0));
+                float d = Hash21(i + float2(1.0, 1.0));
+                return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+            }
+
             half4 frag(Varyings i) : SV_Target
             {
                 float2 p = i.uv - 0.5;
@@ -111,7 +147,16 @@ Shader "FixedCamVr/CommsAvatar"
                 float ring = saturate(outer - inner);
 
                 // ⚠ 使うのは A だけ。版は RGB が白の**マスク**で、絵ではない。
-                float face = SAMPLE_TEXTURE2D(_Face, sampler_Face, i.uv).a * _FaceOn * inner;
+                //
+                // ⚠⚠ **侵食は溶暗（クロスフェード）ではなく斑で置き換える**
+                //    （`canon/LEDGER.md` 0073）。混ぜると alpha が中間の灰へ落ちて、
+                //    **侵されているのではなく薄くなっている**ように見える（2 通り焼いて比べた）。
+                //    斑なら、その画素は必ずどちらかの顔で、境目だけが柔らかい。
+                float n = ValueNoise(i.uv * _MixCells);
+                float k = saturate((_FaceMix * (1.0 + _MixSoft) - n) / max(_MixSoft, 1e-4));
+                float a1 = SAMPLE_TEXTURE2D(_Face, sampler_Face, i.uv).a;
+                float a2 = SAMPLE_TEXTURE2D(_Face2, sampler_Face2, i.uv).a;
+                float face = lerp(a1, a2, k) * _FaceOn * inner;
 
                 float a = saturate(max(ring, face)) * _Opacity;
                 return half4(_Color.rgb, a);

@@ -106,6 +106,13 @@ namespace FixedCamVr.Diagnostics
         /// <summary>顔の版（<c>Resources.Load</c> のパス）。焼くのは <c>tools/make-comms-face.py</c>。</summary>
         private const string FaceResourcePath = "Comms/SuiFace";
 
+        /// <summary>
+        /// 侵食の行き先（市松人形）の版。<c>canon/LEDGER.md</c> 0073。
+        /// ⚠ <b>スイと同じ大きさ・同じ座りで焼いてあること</b>（<c>make-comms-face.py</c> の
+        /// <c>compose</c> が 2 枚を同じ規則で収める）。ずれると「侵食」ではなく「入れ替わり」に見える。
+        /// </summary>
+        private const string DollFaceResourcePath = "Comms/DollFace";
+
         /// <summary>顔の枠と切り抜きのシェーダ。⚠ <b>Always Included に入れてある</b>。</summary>
         private const string AvatarShaderName = "FixedCamVr/CommsAvatar";
         // ---- 縦の組み立て -------------------------------------------------------------
@@ -133,7 +140,9 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>
         /// 上段の上限 (m)。<b>折り返しの枠の高さ</b>で、実際に覆う高さは <see cref="_bodyBandH"/>。
-        /// 最悪は 2 行（①③）なので、そこに余裕を足した値。
+        /// ⚠⚠ <b>最悪は 3 行（①）</b>（2026-08-17・<c>canon/LEDGER.md</c> 0073 で自己紹介を足した）。
+        /// 1 行はおよそ 0.047m なので 3 行 ＝ 0.141m、そこに字の上下の余白 0.035m を足して 0.176m。
+        /// この値はその上限で、<b>ここを下回ると 4 行目へ折り返して面から溢れる</b>。
         /// </summary>
         private const float BodyMaxH = 0.20f;
 
@@ -209,7 +218,14 @@ namespace FixedCamVr.Diagnostics
             //    ⚠ キー名（X／Y）を出さない — 装置の面に入力機器の名前が出ると、
             //      調査の記録ではなくゲームの操作説明に見える。左で触れるのは X と Y だけで、
             //      **どちらでもよい**ので「手元のボタン」で足りる。
-            CommsNotice.Begin => "調査を開始してください\n異変を認めたらボタンを長押し",
+            // ⚠⚠ **1 行目は自己紹介**（2026-08-17・`canon/LEDGER.md` 0073・ユーザー指定
+            //    「スイから、今回サポートするエージェントです、みたいな感じに軽く自己紹介」）。
+            //    ここが**体験の中で AI だと分かる唯一の所** — 0067 で送り主を AIエージェントへ
+            //    変えたとき、画に出る文字は 1 字も変わっておらず読み取れなかった（0067 の但し書き）。
+            //    ⚠ **名前は出していない。** ユーザーの言い方（「今回サポートするエージェントです」）に
+            //      名前が無いため。名乗らせる案は `canon/OPEN.md` に置いてある
+            //      （世界観の昇格はユーザーが口にしたときだけ — `rules/canon-boundary.md`）。
+            CommsNotice.Begin => "今回の調査を支援するAIです\n調査を開始してください\n異変を認めたらボタンを長押し",
             CommsNotice.MarkLogged => "異常が記録されました",
             CommsNotice.MarkNothing => "異常は検出されませんでした",
             CommsNotice.Prompt => "異常が検出されました。\n記録してください。",
@@ -236,7 +252,7 @@ namespace FixedCamVr.Diagnostics
         /// ⚠ <b>行数の最悪（2 行 ＝ ③）はここでは測れない。</b> 縦の座りは
         /// <c>menu comms-preview</c> の絵で見る（4 文面ぶん焼く）。
         /// </summary>
-        internal static string LongestNoticeText => TextFor(CommsNotice.Begin);
+        public static string LongestNoticeText => TextFor(CommsNotice.Begin);
 
         private readonly CommsPanelLogic _logic = new CommsPanelLogic();
         private readonly CommsCueLogic _cue = new CommsCueLogic();
@@ -280,6 +296,8 @@ namespace FixedCamVr.Diagnostics
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         // 顔の枠（`CommsAvatar.shader`）。
         private static readonly int FaceTexId = Shader.PropertyToID("_Face");
+        private static readonly int Face2TexId = Shader.PropertyToID("_Face2");
+        private static readonly int FaceMixId = Shader.PropertyToID("_FaceMix");
         private static readonly int OpacityId = Shader.PropertyToID("_Opacity");
         private static readonly int RadiusId = Shader.PropertyToID("_Radius");
         private static readonly int StrokeId = Shader.PropertyToID("_Stroke");
@@ -342,11 +360,20 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         public bool AvatarBuilt => _avatarMat != null;
 
-        /// <summary>顔の版を掴めたか。<b>false なら枠だけが出て中身が空</b>。</summary>
-        public bool FaceArtBuilt { get; private set; }
+        /// <summary>
+        /// 掴めた顔の版の枚数（0〜2）。<b>0 なら枠だけが出て中身が空</b>、
+        /// <b>1 なら侵食が起きない</b>（スイのまま 3 周目を迎える）。
+        /// </summary>
+        public int FaceArtCount { get; private set; }
 
         /// <summary>直近に書いた顔の不透明度（「画に出た」側の観測）。</summary>
         public float AppliedFace { get; private set; }
+
+        /// <summary>
+        /// 直近に書いた侵食の進み（0 = スイ / 1 = 完全に市松人形）。
+        /// <b>周回の壊れ（<see cref="GlitchLevel"/>）と同じ値</b>なので、食い違ったら配線が壊れている。
+        /// </summary>
+        public float AppliedFaceMix { get; private set; }
 
         /// <summary>いま読んでいる周回の進み 0..1（<b>映像の劣化とまったく同じ値</b>）。</summary>
         public float DecayProgress =>
@@ -691,28 +718,36 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
             var art = Resources.Load<Texture2D>(FaceResourcePath);
-            FaceArtBuilt = art != null;
+            var doll = Resources.Load<Texture2D>(DollFaceResourcePath);
+            FaceArtCount = (art != null ? 1 : 0) + (doll != null ? 1 : 0);
             if (art == null)
             {
                 Debug.LogWarning($"[Comms] 顔の版 Resources/{FaceResourcePath} が無いので枠だけになります"
                                  + "（py -3.11 tools/make-comms-face.py）");
+            }
+            else if (doll == null)
+            {
+                // ⚠ 出ないのは「3 周目で人形に変わる」という筋そのもの。**画は普通に出る**ので、
+                //    走行の絵を見ても気づけない。だから言う。
+                Debug.LogWarning($"[Comms] 侵食の版 Resources/{DollFaceResourcePath} が無いので"
+                                 + "スイのまま変わりません（py -3.11 tools/make-comms-face.py）");
             }
 
             // ⚠⚠ 表示側のバグ（赤とシアンの分離）は**顔だけ**が浴びる（`_Stroke = 0`）。
             //    枠は装置の意匠なので分離させない — 分離させると「枠が二重にずれた」に見えて、
             //    壊れているのが AI ではなく面そのものだ、という別の話になる。
             _avatarGhostR = MakeAvatar(parent, "CommsAvatarGhostR", AvatarGhostQueueR,
-                                       GhostRed, art, avatar, stroke: 0f, out _avatarGhostMatR);
+                                       GhostRed, art, doll, avatar, stroke: 0f, out _avatarGhostMatR);
             _avatarGhostC = MakeAvatar(parent, "CommsAvatarGhostC", AvatarGhostQueueC,
-                                       GhostCyan, art, avatar, stroke: 0f, out _avatarGhostMatC);
+                                       GhostCyan, art, doll, avatar, stroke: 0f, out _avatarGhostMatC);
             _avatarRenderer = MakeAvatar(parent, "CommsAvatar", AvatarQueue,
-                                         HmdTextStyle.Ink, art, avatar,
+                                         HmdTextStyle.Ink, art, doll, avatar,
                                          stroke: CommsFaceLayout.StrokeK, out _avatarMat);
         }
 
         /// <summary>顔の面を 1 枚作る（本体と複製 2 枚で共有）。色と濃さは <see cref="Apply"/> が書く。</summary>
         private MeshRenderer MakeAvatar(Transform parent, string name, int queue, Color color,
-                                        Texture2D? art, Shader shader, float stroke,
+                                        Texture2D? art, Texture2D? doll, Shader shader, float stroke,
                                         out Material mat)
         {
             var go = new GameObject(name);
@@ -725,6 +760,9 @@ namespace FixedCamVr.Diagnostics
             var r = go.AddComponent<MeshRenderer>();
             mat = new Material(shader) { name = name + " (runtime)", renderQueue = queue };
             if (art != null) mat.SetTexture(FaceTexId, art);
+            // ⚠ 侵食の版が無ければ**スイを両方へ入れる**。空（黒）を入れると、
+            //   進みが上がるにつれて顔が斑に欠けていく ＝ 版が無いことが「別の演出」に化ける。
+            mat.SetTexture(Face2TexId, doll != null ? doll : art);
             mat.SetColor(ColorId, color);
             mat.SetFloat(RadiusId, CommsFaceLayout.RadiusK);
             mat.SetFloat(StrokeId, stroke);
@@ -977,8 +1015,16 @@ namespace FixedCamVr.Diagnostics
                 : 0f;
             bool on = AppliedFace > 0.004f;
 
+            // ⚠⚠ **侵食は周回の壊れとまったく同じ値を読む**（`canon/LEDGER.md` 0073）。
+            //    独自の曲線を持たせない — 2 つ持つと、片方だけ直したときに
+            //    「文字は原型を保てないのに顔はスイのまま」が黙って起きる。
+            //    あの値は 3 周目 A で 1.0（＝ 完全に人形）に着き、**帰りの A で戻る**
+            //    （`CommsGlitchLogic.CorruptionFor`）ので、AI の復帰がそのまま顔にも出る。
+            AppliedFaceMix = _glitchLevel;
+
             float x = CommsFaceLayout.CellCenterX(PanelW);
             _avatarMat.SetFloat(OpacityId, AppliedFace);
+            _avatarMat.SetFloat(FaceMixId, AppliedFaceMix);
             _avatarRenderer.enabled = on;
             _avatarRenderer.transform.localPosition = new Vector3(x, centerY, CommsFaceLayout.DepthM);
 
@@ -996,6 +1042,7 @@ namespace FixedCamVr.Diagnostics
             r.enabled = on;
             if (!on) return;
             m.SetFloat(OpacityId, AppliedFace);
+            m.SetFloat(FaceMixId, AppliedFaceMix);
             r.transform.localPosition = new Vector3(x, y, CommsFaceLayout.DepthM);
         }
 

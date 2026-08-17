@@ -91,7 +91,20 @@ namespace FixedCamVr.Streaming
 
         /// <summary>打ち終わるまでの下限・上限 (秒)。文面が伸びても間延びさせない。</summary>
         public const float MinTypeSec = 0.15f;
-        public const float MaxTypeSec = 2.5f;
+
+        /// <summary>
+        /// 打ち終わるまでの上限 (秒)。
+        ///
+        /// ⚠⚠ <b>2.5 → 3.5 へ上げた</b>（2026-08-17・<c>canon/LEDGER.md</c> 0073 で①へ自己紹介を
+        /// 足し、41 文字になったため）。上限が効くと<b>打鍵の間隔が <see cref="CharsPerSec"/> より
+        /// 短くなる</b> — 41 文字を 2.5 秒で打つと 61ms 間隔で、切り出した打鍵の尺（60ms）と
+        /// ぶつかって<b>1 発ずつが繋がった連続音</b>になる（`rules/sound-design.md` §4）。
+        /// **画は普通に出るので、音を聴くまで気づけない。**
+        /// ⚠ 上限そのものを消さないのは、うっかり長い文面を書いたときの安全網だから。
+        /// <c>CommsNoticeTextTests.LongestNotice_TypesSlowEnough_ForTheKeystrokeClips</c> が
+        /// 実際の文面で間隔を測るので、次に文面を伸ばす人はそこで落ちる。
+        /// </summary>
+        public const float MaxTypeSec = 3.5f;
 
         /// <summary>
         /// 読ませる時間 (秒)。<b>打ち終わってから</b>数える。

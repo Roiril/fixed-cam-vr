@@ -1148,19 +1148,20 @@ def analyze(events, others, exp, warns=None):
             elif bg:
                 verdict("OK", "連絡の面の地と縁が出ている（commsBg=1）")
 
-            # ⚠⚠ AIエージェントの顔（`canon/LEDGER.md` 0071）。`<枠>/<版>/<濃さ>`。
-            #    3 つとも別の壊れ方なので、**畳まずに 1 つずつ判定する**。
+            # ⚠⚠ AIエージェントの顔（`canon/LEDGER.md` 0071 / 0073）。
+            #    `<枠>/<版の枚数>/<濃さ>/<侵食>`。**4 つとも別の壊れ方**なので畳まず 1 つずつ見る。
             #    どれも Editor のプレビューでは必ず出るので、実機の手掛かりはここだけ。
             faces = [str(v) for v in effect_samples(events, "commsFace")
                      if str(v) not in ("", "-")]
             if faces:
-                parts = [f.split("/") for f in faces if f.count("/") == 2]
+                parts = [f.split("/") for f in faces if f.count("/") == 3]
                 frame = [p[0] for p in parts]
                 art = [p[1] for p in parts]
-                lit = []
+                lit, mix = [], []
                 for p in parts:
                     try:
                         lit.append(float(p[2]))
+                        mix.append(float(p[3]))
                     except ValueError:
                         pass
                 if frame and all(v == "0" for v in frame):
@@ -1174,8 +1175,21 @@ def analyze(events, others, exp, warns=None):
                 elif lit and max(lit) <= 0.004:
                     verdict("FAIL", "顔が 1 度も画に出ていない（commsFace の 3 つ目が全標本 0）— "
                                     "枠も版も在るのに濃さが乗っていない（CommsPanel.ApplyAvatar）")
-                elif lit:
-                    verdict("OK", f"AIエージェントの顔が出ている（最大の濃さ {max(lit):.2f}）")
+                else:
+                    if art and max(int(v) for v in art) < 2:
+                        # ⚠ 画は普通に出るので、**走行の絵を見ても気づけない**。
+                        verdict("FAIL", "侵食の版（市松人形）を掴めていない（commsFace の 2 つ目が 1）— "
+                                        "3 周目になっても顔がスイのまま変わらない。"
+                                        "Assets/Resources/Comms/DollFace.png を焼く")
+                    if lit:
+                        verdict("OK", f"AIエージェントの顔が出ている（最大の濃さ {max(lit):.2f}）")
+                    # ⚠⚠ 侵食は周回の壊れと同じ値のはず。届いていなければ顔だけ無事に見える。
+                    if mix and max(mix) <= 0.01 and gl and max(gl) > 0.01:
+                        verdict("FAIL", f"文字は壊れた（最大 {max(gl):.2f}）のに顔が侵食されていない"
+                                        "（commsFace の 4 つ目が全標本 0）— "
+                                        "CommsPanel.ApplyAvatar が _FaceMix を書けていない疑い")
+                    elif mix and max(mix) > 0.01:
+                        verdict("OK", f"顔が市松人形へ侵食された（最大 {max(mix):.2f}）")
 
             if gl and max(gl) <= 0.0:
                 verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "

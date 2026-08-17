@@ -3,13 +3,43 @@
 制定 2026-08-17（`canon/LEDGER.md` 0071）。世界観の判定は LEDGER、体験の骨格は
 `rules/show-design.md`「AIエージェントには顔がある」が正本。**ここは焼く側の罠だけ**。
 
-| | |
-|---|---|
-| 素材 | paperdoll の `chara/out/sui/expression.png` の 1 枚目（素の表情） |
-| 取り込み済みの切り抜き | `tools/comms-face/sui-neutral.png`（**paperdoll が無くても焼き直せる**） |
-| 焼く | `py -3.11 tools/make-comms-face.py --parts` |
-| 出る | `Assets/Resources/Comms/SuiFace.png`（256 角・RGB は白・**A だけが墨**） |
-| 検分 | `logs/comms-face/parts.png`（素材 / 外形 / 目 / 線 / 墨 / 焼き上がり / 110 画素） |
+**版は 2 枚**（2026-08-17・0073）。スイと、**侵食の行き先の市松人形**。
+
+| | スイ | 市松人形 |
+|---|---|---|
+| 素材 | paperdoll の `chara/out/sui/expression.png` の 1 枚目 | `tools/doll-ref/out/gen_standing.png` の頭 |
+| 取り込み済みの切り抜き | `tools/comms-face/sui-neutral.png` | `tools/comms-face/doll-neutral.png` |
+| 出る | `Assets/Resources/Comms/SuiFace.png` | `DollFace.png` |
+
+焼くのは `py -3.11 tools/make-comms-face.py --parts`（`--only sui|doll` で片方）。
+どちらも 256 角・RGB は白・**A だけが墨**。検分は `logs/comms-face/parts.png`
+（1 行が 1 枚 ＝ 素材 / 外形 / 区画 / 線 / 墨 / 焼き上がり / 110 画素）。
+
+## ⚠⚠ 人形は「正本の写真」からは焼けない
+
+正本は実物の写真（`tools/doll-ref/out/plate_front.jpg`）だが、**背景も髪も暗くて外形が取れない**
+（実測: 背景 L=26〜52 / 髪 L=27）。外形が無ければこの作り方は 1 行目から成立しない。
+⇒ 明るい地に立っている**資料の板**（`gen_standing.png`）を使う。
+⚠ 資料の位置づけと写真の癖は [[doll_reference_kit]]。
+
+## ⚠ 写実の素材には「線」が無い
+
+スイは元が線画なので、暗い所を彫れば髪の束も睫毛も出る。人形は写実なので**線が 1 本も無く**、
+同じ閾値で彫ると何も起きない ＝ **のっぺりした卵**（頭の形しか残らない）。
+
+⇒ **髪と顔の境目を線として自分で引く**（`DOLL_HAIRLINE_W`）。
+生え際が出れば、おかっぱの形も丸い顔も読める。
+⚠ 境目は 1 画素しかないので、造作（`DOLL_FEAT_W` = 1）より太らせないと 110 画素で消える。
+⚠ 造作の閾値を上げると**眉と目が繋がって大きな黒い塊**になる（絵で見つけた）。
+
+## ⚠⚠ 侵食は溶暗ではなく斑
+
+2 通り焼いて比べた。**混ぜる（クロスフェード）と alpha が中間の灰へ落ちて、
+「侵されている」ではなく「薄くなっている」**に見える。斑（値ノイズの閾値）なら
+どの画素も必ずどちらかの顔で、境目だけが柔らかい。
+
+⚠ 斑は **uv だけで決まる**（実行時に乱数を振らない）。ちらつかせると侵食ではなくノイズに見える。
+⚠ **2 枚は同じ規則で収める**（`compose`）。大きさや座りがずれると「入れ替わり」に見える。
 
 ## ⚠⚠ 明暗が逆なので「肌を塗らない」と顔が消える
 
