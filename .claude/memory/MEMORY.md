@@ -24,7 +24,7 @@
 - [sound_pipeline.md](sound_pipeline.md) - 音を作る道具と、耳を使わずに判定する方法。**計器の方が 4 回嘘をついた**（true peak / 直流の発散 / 書き出しでの再正規化 / 継ぎ目の物差し）／内蔵スピーカーは 200Hz 以下を返さない・遅延で広げるとモノで消える／実機ログとテストがそれぞれ実装の欠陥を 1 件ずつ捕まえた
 
 - [material_flow.md](material_flow.md) - 素材フローを触る前に：マスクは枠空間 16:9（実機は contain-fit を通さない）／**マスクの決め方は未着手＝工房の差分は見た秒数で変わる**／採用は show.json から導出／ラプラシアンは卓だけ／プロンプトの棚は 1 つでスロット無し
-- [codex_image_pipeline.md](codex_image_pipeline.md) - 卓の 🪄 から Codex で素材生成。**生成 AI に渡すのは「少し暗くしただけの環境」**（監視カメラらしさは post の役目。種に焼くとモデルが画を作り替える）／左右で指示を分けない／当たり外れは判定器で落とす（`tools/gen-plate/`）／背景保存は実測で成立（差分＝マスク）
+- [codex_image_pipeline.md](codex_image_pipeline.md) - **生成素材を作る前に読む**。層は 異変（場所に依らない）/ 場所（当日 1 ファイル）/ 伝送（機械が計算）／**判断は実機の経路を通した画で**（素材の中で見える欠点の半分は届かない・帰りの A は無彩）／**継ぎ目は届いた画でしか出ない**／プロンプトで動くのは視線となじませ規則の 2 つだけ、歩留まりは枚数で解く／計器のバグ 5 件と掃引の使い方。道具は [tools/gen-plate/](../../tools/gen-plate/README.md)、記録は [runs.md](../../tools/gen-plate/runs.md)
 
 - [show_json_is_live_config.md](show_json_is_live_config.md) - show.json は git 管理外の現場設定。卓の検証で書き換えると復元できない（検証サーバもポートを分けただけでは隔離にならない）
 
