@@ -65,9 +65,34 @@ namespace FixedCamVr.Streaming
             /// かつ開始条件は満たしていた）。時刻に届かなかっただけのものは持ち越さない。
             /// </summary>
             public bool chainWait;
+
+            /// <summary>
+            /// <b>体験者が異変を報告したら畳まれる演出か</b>（<c>show.json</c> の <c>dismissible</c>）。
+            /// 構造ガード（現カットが <see cref="WaitMark"/> / 終幕の合図が指す演出）は
+            /// <see cref="TakeRunner"/> 側で既に落としてあるので、ここに来た時点で
+            /// <b>この旗が立っていれば畳んでよい</b>。
+            /// </summary>
+            public bool dismissible;
         }
 
         public enum Action { None, BeginStep, EndTake }
+
+        /// <summary>
+        /// 演出が終わった理由。<b>観測に出す</b>（<c>ev=take st=end why=</c>）ので、
+        /// 「著作どおり終わった」と「体験者が消した」と「壊れて打ち切られた」がログで分かれる。
+        /// これが無いと、報告で畳む機構が**効かなくても効きすぎても走行のログから判別できない**。
+        /// </summary>
+        public enum EndReason
+        {
+            /// <summary>最後のカットまで流し切った。</summary>
+            Completed = 0,
+            /// <summary>watchdog（<c>maxDurationSec</c>）の強制終了。</summary>
+            Watchdog = 1,
+            /// <summary>policy=yield で、体験者が区間を移ったので打ち切った。</summary>
+            Yielded = 2,
+            /// <summary><b>体験者が異変を報告したので畳んだ。</b></summary>
+            VisitorDismissed = 3,
+        }
 
         /// <summary>区間を越えて待てるスロットの上限。超えたら古い方から捨てて報告する。</summary>
         public const int MaxCarrySlots = 2;
@@ -83,7 +108,19 @@ namespace FixedCamVr.Streaming
             public int stepIndex;      // BeginStep
             public bool takeStarted;   // BeginStep: この演出の 1 カット目（＝画面の占有を開始する）
             public int returnCamera;   // EndTake: 復帰先
-            public bool forced;        // EndTake: watchdog による強制終了
+
+            /// <summary>EndTake: なぜ終わったか。<see cref="forced"/> はここから導く（二重の真実を作らない）。</summary>
+            public EndReason reason;
+
+            /// <summary>EndTake: watchdog による強制終了か。</summary>
+            public bool forced => reason == EndReason.Watchdog;
+
+            /// <summary>
+            /// EndTake: <b>体験者が異変を報告して畳んだか。</b>
+            /// <see cref="TakeRunner"/> はこれを見て復帰の遷移を「乱れ」に変える
+            /// （黒の dip で返すと「カメラが切り替わった」に見えて、報告と因果が結ばれない）。
+            /// </summary>
+            public bool dismissed => reason == EndReason.VisitorDismissed;
 
             /// <summary>
             /// EndTake: この直後に次の演出が始まる（＝画面を返さずそのまま渡す）。
@@ -114,6 +151,12 @@ namespace FixedCamVr.Streaming
             CarryExpired = 2,
             /// <summary>持ち越し中に、塞いでいた演出が人為的に消えた（卓の緊急停止・介入・定義差し替え）。</summary>
             BlockerGone = 3,
+            /// <summary>
+            /// <b>体験者が異変を報告して画面を空けたので、その場で出るはずだったものを捨てた。</b>
+            /// 捨てないと、消した次のフレームに別の異常が噴き出して
+            /// <b>「消えた」が体験者に一度も見えない</b>（報告が壊れているようにしか読めない）。
+            /// </summary>
+            VisitorDismissed = 4,
         }
 
         /// <summary>
@@ -143,6 +186,8 @@ namespace FixedCamVr.Streaming
 
         // 走行中の演出。
         private bool _running;
+        // 体験者の報告を受けた。実際に畳むのは次の Tick（終わり方を EndTakeDecision 1 本に保つため）。
+        private bool _dismissPending;
         private int _activeTake = -1;
         private int _activeStep = -1;
         private float _stepEnd;
@@ -176,6 +221,7 @@ namespace FixedCamVr.Streaming
             ClearArmed();
             DropAllCarry(DropReason.BlockerGone, report: false); // 定義が変わった＝ index の意味が変わる
             _running = false;
+            _dismissPending = false;
             _activeTake = -1;
             _activeStep = -1;
             _hasCurrent = false;
@@ -188,6 +234,9 @@ namespace FixedCamVr.Streaming
             ClearArmed();
             DropAllCarry(DropReason.BlockerGone, report: false); // ラン境界なので報告不要
             _running = false;
+            // 前の体験者が押した 1 回を次のランへ持ち越さない。
+            _dismissPending = false;
+            DismissCount = 0;
             _activeTake = -1;
             _activeStep = -1;
             _hasCurrent = false;
@@ -211,7 +260,7 @@ namespace FixedCamVr.Streaming
             // 別の演出が始まって「返したのにまた持って行かれる」のを避けるため。
             if (_running && _defs[_activeTake].yieldOnZoneChange)
             {
-                Decision yielded = EndTakeDecision(newCam, forced: false);
+                Decision yielded = EndTakeDecision(newCam, EndReason.Yielded);
                 // 打ち切りで消える武装も**黙って消さない**（旧実装はここだけ報告が漏れていた）。
                 if (hadPrev) ReportRemainingDrops(prevLap, prevCam, -1, screenBusy: true);
                 ClearArmed();
@@ -275,8 +324,13 @@ namespace FixedCamVr.Streaming
 
             if (_running)
             {
+                // ⚠ **報告を watchdog より先に見る。** 同じフレームで両方揃ったら、体験者の行為の方を
+                //   理由にする（画も「乱れて消えた」になり、押した手応えが返る）。畳む先は同じ
+                //   EndTakeDecision なので、後片付けの経路は 1 本のまま増えない。
+                if (_dismissPending) return DismissDecision(latestZoneCam);
+
                 if (now >= _deadline)
-                    return EndTakeDecision(latestZoneCam, forced: true);
+                    return EndTakeDecision(latestZoneCam, EndReason.Watchdog);
 
                 // ⚠ ここで武装中の演出を決着させない（旧実装はしていた）。
                 //   画面が塞がっているのは**システム内部の都合**なので、著作された演出を捨てる理由にならない。
@@ -295,7 +349,7 @@ namespace FixedCamVr.Streaming
                         return BeginStepDecision(takeStarted: false);
                     }
                     // 次に出るものが既に控えているなら、画面を返さずそのまま渡す（連続の繋ぎ目に黒を挟まない）。
-                    return EndTakeDecision(latestZoneCam, forced: false, chainNext: HasNextReady());
+                    return EndTakeDecision(latestZoneCam, EndReason.Completed, chainNext: HasNextReady());
                 }
                 return default;
             }
@@ -338,17 +392,59 @@ namespace FixedCamVr.Streaming
         public const float WaitMark = -4f;
 
         /// <summary>
-        /// 尺が <c>untilMark</c> のカットを、体験者が異変を報告した時点で畳む
-        /// （<see cref="TakeRunner"/> が <c>ShowControlClient.RecordVisitorMark</c> から受ける）。
+        /// <b>体験者が異変を報告した</b>（左 X / Y の 1 秒長押し）。効き方は 2 つで、**排他**。
         ///
+        ///   ①現カットが <see cref="WaitMark"/>（<c>durKind:"untilMark"</c>）なら、
+        ///     報告は**そのカットが消費する**。4 周目 A の締めがこれで、畳んだ先には著作された
+        ///     次のカット（現実へ戻る 3 秒）がある。⚠ ここで演出ごと畳むとその 3 秒が丸ごと消え、
+        ///     しかも <c>run.outro.afterTakeId</c> が指す演出なので**終幕が早撃ちされる**。
+        ///   ②それ以外は、著作者が <c>dismissible</c> と宣言した演出**だけ**が畳まれて現実へ戻る
+        ///     （<c>canon/LEDGER.md</c> 0050「報告したらそれらが消え」「推したら乱れたのちに元に戻って」）。
+        ///
+        /// ⚠ **1 回の押下が 2 つの意味を持たないようにする。** ①で return するのがその保証。
         /// ⚠ **カットが始まってからの報告だけを数える。** 直前の区間で押した 1 回が持ち越されて
-        ///   締めのカットを素通りさせるのを防ぐ（線待ちと同じ理由）。
+        ///   カットを素通りさせるのを防ぐ（線待ちと同じ理由）。
+        /// ⚠ 実際に畳むのは次の <see cref="Tick"/>（<see cref="DismissDecision"/>）。ここで畳むと
+        ///   演出の終わり方が 2 経路になり、後片付けの網羅性が経路ごとに分かれる。
         /// </summary>
         public void NotifyMarkPressed(float now)
         {
-            if (!_running || CurrentStepWait() != WaitMark) return;
+            if (!_running) return;
             if (now < _stepBeganAt) return;
-            SetCurrentStepEnd(now);
+
+            if (CurrentStepWait() == WaitMark) { SetCurrentStepEnd(now); return; }
+
+            if (_activeTake >= 0 && _activeTake < _defs.Length && _defs[_activeTake].dismissible)
+                _dismissPending = true;
+        }
+
+        /// <summary>
+        /// 報告で畳んだ回数（テレメトリ・テスト用）。<b>「押した回数」ではなく「実際に消えた回数」</b> —
+        /// 押しても消えない演出の方が多いので、この 2 つを混ぜると効いたかが分からなくなる。
+        /// </summary>
+        public int DismissCount { get; private set; }
+
+        // 体験者の報告で走行中の演出を畳む。
+        //
+        // ⚠⚠ **畳んだ直後に別の異常が噴き出さないようにする。** 出てしまうと「消えた」が画に
+        //    1 フレームも出ず、体験者には報告が効かなかったようにしか見えない。
+        //    捨てるのは「画面が空いたら即座に出るもの」だけ ＝ Ready の武装と持ち越し（carry）。
+        //    **まだ時刻が来ていない武装（Waiting）は残す** — あれは後から別の異常として出るのが自然で、
+        //    消すと著作した内容が黙って減る。
+        private Decision DismissDecision(int latestZoneCam)
+        {
+            for (int k = _armedIndex.Count - 1; k >= 0; k--)
+            {
+                if (_armedState[k] != Armed.Ready) continue;
+                int dropped = _armedIndex[k];
+                RemoveArmedAt(k, out _);
+                TakeDropped?.Invoke(dropped, DropReason.VisitorDismissed);
+            }
+            DropAllCarry(DropReason.VisitorDismissed);
+            DismissCount++;
+            // **連続の渡し（chainNext）は立てない。** 渡すと画面が異常のまま次の演出へ移り、
+            // 現実が 1 フレームも出ない ＝ 報告の因果が画から消える。
+            return EndTakeDecision(latestZoneCam, EndReason.VisitorDismissed);
         }
 
         /// <summary>
@@ -438,6 +534,7 @@ namespace FixedCamVr.Streaming
         public void AbortActive()
         {
             _running = false;
+            _dismissPending = false;
             _activeTake = -1;
             _activeStep = -1;
             // 画面を取り返した直後に、溜まっていた持ち越しが噴き出さないようにする。
@@ -471,18 +568,21 @@ namespace FixedCamVr.Streaming
             takeStarted = takeStarted,
         };
 
-        private Decision EndTakeDecision(int latestZoneCam, bool forced, bool chainNext = false)
+        private Decision EndTakeDecision(int latestZoneCam, EndReason reason, bool chainNext = false)
         {
             int take = _activeTake;
             _running = false;
             _activeTake = -1;
             _activeStep = -1;
+            // 走行が終わったので、消化されなかった報告を次の演出へ持ち越さない
+            //（線待ち・untilMark が「カットが始まる前の事象を数えない」のと同じ理由）。
+            _dismissPending = false;
             return new Decision
             {
                 action = Action.EndTake,
                 takeIndex = take,
                 returnCamera = latestZoneCam,
-                forced = forced,
+                reason = reason,
                 chainNext = chainNext,
             };
         }

@@ -255,6 +255,11 @@ namespace FixedCamVr.Streaming
         // 状態機械（Down → 差し替え → Up）は黒と完全に同じで、見た目だけが変わる。
         private bool _curDipGlitch;
 
+        // この遷移の乱れを「起きた回数」に数えるか（既定 true）。
+        // false にするのは**体験者の操作で起きる乱れ**だけ — 数えると乱れの育ち方が
+        // 押した回数の関数になり、著作した曲線が人によって別物になる（GlitchFx.SetSustain 参照）。
+        private bool _curDipCountGlitch = true;
+
         // ゾーン切替そのものへ重ねる乱れの強さ（show.json control.switchGlitch）。0 = 重ねない。
         private float _switchGlitch;
 
@@ -348,6 +353,8 @@ namespace FixedCamVr.Streaming
             _dip = DipState.Idle;
             _dipTimer = 0f;
             _curDipGlitch = false;
+            _curDipCountGlitch = true;
+            _blackAction = null;
             _blackRedirect = -1;   // 消化されない予約を次の dip へ持ち越さない
         }
 
@@ -597,11 +604,16 @@ namespace FixedCamVr.Streaming
         /// 周回は画面ではなく <see cref="ZoneCommitted"/>（時計）が駆動するようになり、インサート中の
         /// 実ゾーン移動はその時点で既に周回へ反映済みだから（段 B）。
         /// </summary>
-        public void InsertReturn(int returnCamera, float downSec = -1f, float upSec = -1f, bool glitch = false)
+        public void InsertReturn(int returnCamera, float downSec = -1f, float upSec = -1f, bool glitch = false,
+                                 bool countEscalation = true)
         {
             _blackAction = null;   // 未消化の素材差し替えを次の dip へ持ち越さない
+            // ⚠ 差し替え先の予約も一緒に捨てる。捨てないと、離脱時インサートが積んだ
+            //    「黒の瞬間にこのカメラへ飛べ」が生き残り、**戻ったはずが insert のカメラへ飛ぶ**
+            //    （_blackAction 側だけ塞がれていて、こちらが漏れていた）。
+            _blackRedirect = -1;
             _logic.SetInsertActive(false);
-            StartDip(returnCamera, SwitchSource.Insert, downSec, upSec, glitch);
+            StartDip(returnCamera, SwitchSource.Insert, downSec, upSec, glitch, countEscalation);
         }
 
         /// <summary>
@@ -611,6 +623,7 @@ namespace FixedCamVr.Streaming
         public void TakeHoldEnd()
         {
             _blackAction = null;
+            _blackRedirect = -1;   // InsertReturn と同じ理由（未消化の差し替え先を残さない）
             _logic.SetInsertActive(false);
         }
 
@@ -659,11 +672,12 @@ namespace FixedCamVr.Streaming
         /// 予約方式は「消化されなかった予約が無関係な次の切替に漏れる」事故を構造的に許していた。
         /// </summary>
         private void StartDip(int target, SwitchSource source, float downSec = -1f, float upSec = -1f,
-                              bool glitch = false)
+                              bool glitch = false, bool countEscalation = true)
         {
             _curDipDown = downSec >= 0f ? downSec : dipDownSec;
             _curDipUp = upSec >= 0f ? upSec : dipUpSec;
             _curDipGlitch = glitch;
+            _curDipCountGlitch = countEscalation;
 
             // ⚠⚠ **リレーは「装置が入力を切り替えた」音。切り替わっていないなら鳴らさない。**
             //
@@ -760,7 +774,7 @@ namespace FixedCamVr.Streaming
             if (_curDipGlitch)
             {
                 SetDim(0f);
-                glitchFx?.SetSustain(t * TakeSchema.GlitchTransitionLevel);
+                glitchFx?.SetSustain(t * TakeSchema.GlitchTransitionLevel, _curDipCountGlitch);
             }
             else
             {

@@ -197,7 +197,14 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(d.forced, Is.True);
         }
 
-        /// <summary>報告は他の尺のカットには 1 ビットも効かない（進行に使わない、が規約）。</summary>
+        /// <summary>
+        /// <b>報告は他の尺のカットを「進めない」。</b> 早送りボタンにならない、が要点
+        /// （3 周目の演出は 2〜4 カットあるので、進むと台本が押しボタンで飛ばされる）。
+        ///
+        /// ⚠ 2026-08-17 から、演出に <c>dismissible</c> が立っていれば報告で**演出ごと畳まれる**。
+        ///   ここで確かめているのは<b>旗を立てていない演出</b>（＝ 既定）なので従来どおり何も起きない。
+        ///   畳む側の契約は <see cref="TakeVisitorDismissTests"/>。
+        /// </summary>
         [Test]
         public void MarkPress_DoesNotAffectOtherStepKinds()
         {

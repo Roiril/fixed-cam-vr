@@ -423,8 +423,20 @@ export function createRibbon(container, deps) {
     return ((seg && seg.takes) || []).find((t) => t.at === TAKE.AT_EXIT && t !== except) || null;
   }
 
+  /**
+   * この演出が終幕の合図（`run.outro.afterTakeId`）そのものか。
+   * ⚠ そこに「報告で消える」を立てると、残りのカットを飛ばして**終幕が早撃ちされる**ので、
+   *   実機（TakeRunner.SetTakes）が旗を落とす。卓でも同じ判定をして、立てさせない。
+   */
+  function isOutroAnchor(t) {
+    const anchor = (run && run.outro && run.outro.afterTakeId) || '';
+    return !!anchor && t.id === anchor;
+  }
+
   function takeIssue(t, camera) {
     if (!t.steps || !t.steps.length) return 'カットが 1 枚もありません（発火しません）';
+    if (t.dismissible && isOutroAnchor(t))
+      return '「報告で消える」は終幕の合図（run.outro.afterTakeId）が指す演出では効きません（実機が無効にします）';
     const lineBad = lineIssue(t, camera);
     if (lineBad) return lineBad;
     const bad = t.steps.map((s) => stepIssue(s, camera)).filter(Boolean);
@@ -1303,6 +1315,9 @@ export function createRibbon(container, deps) {
           <label class="chk" title="画面が塞がっていて出られなかったとき、区間を出ても『塞いでいた演出が終わるまで』待ちます。前の区間の離脱時演出が長くて、この区間の滞在が短いときに、著作した演出が消えるのを防ぎます。">
             <input class="rb-t-wait" type="checkbox" ${t.wait === TAKE.WAIT_CHAIN ? 'checked' : ''}
               ${t.at === TAKE.AT_EXIT ? 'disabled' : ''}>前の演出が終わるまで待つ</label>
+          <label class="chk" title="体験者が異変を報告（左 X／Y の長押し）したら、この演出は映像の乱れとともに畳まれて現実（ライブ映像）へ戻ります。既定は消えません。⚠ 終幕の合図（run.outro.afterTakeId）が指す演出では効きません。">
+            <input class="rb-t-dismiss" type="checkbox" ${t.dismissible ? 'checked' : ''}
+              ${isOutroAnchor(t) ? 'disabled' : ''}>報告で消える${isOutroAnchor(t) ? '（終幕の合図なので不可）' : ''}</label>
           <label class="chk"><input class="rb-t-once" type="checkbox" ${t.once !== false ? 'checked' : ''}>ラン内 1 回</label>
           <label>最大長<input class="rb-t-max" type="number" min="0" step="1" value="${t.maxDurationSec || 0}"><span class="rb-hint2">0=既定 ${TAKE.DEFAULT_MAX_DURATION_SEC}s</span></label>
         </div>
@@ -1338,6 +1353,8 @@ export function createRibbon(container, deps) {
       // 離脱時の演出は持ち越せない（別の区間で出すと文脈が最も壊れる）。
       t.wait = (i('.rb-t-wait').checked && t.at !== TAKE.AT_EXIT) ? TAKE.WAIT_CHAIN : TAKE.WAIT_SEGMENT;
       t.once = !!i('.rb-t-once').checked;
+      // 終幕の合図が指す演出では実機が旗を落とすので、卓でも立てさせない（見える形を実機と揃える）。
+      t.dismissible = !!i('.rb-t-dismiss').checked && !isOutroAnchor(t);
       t.maxDurationSec = Math.max(0, numOr(i('.rb-t-max').value, 0));
       markDirty(); render();
       // 開始位置を動かしたら「実測滞在に対して遅すぎないか」の警告をその場で更新する
@@ -1350,7 +1367,7 @@ export function createRibbon(container, deps) {
       const wEl = i('.rb-insp-warn');
       if (wEl) { wEl.textContent = isu ? `⚠ ${isu}` : ''; wEl.style.display = isu ? '' : 'none'; }
     };
-    inspectorEl.querySelectorAll('.rb-t-name, .rb-t-off, .rb-t-policy, .rb-t-wait, .rb-t-once, .rb-t-max, .rb-t-missed, .rb-t-line')
+    inspectorEl.querySelectorAll('.rb-t-name, .rb-t-off, .rb-t-policy, .rb-t-wait, .rb-t-once, .rb-t-dismiss, .rb-t-max, .rb-t-missed, .rb-t-line')
       .forEach((el) => { el.onchange = commit; });
     i('.rb-t-at').onchange = () => {
       commit();

@@ -17,6 +17,7 @@
           "wait": "segment",
           "once": true,
           "maxDurationSec": 0,
+          "dismissible": true,
           "steps": [
             {
               "source": "inherit",
@@ -71,6 +72,7 @@
           "wait": "segment",
           "once": true,
           "maxDurationSec": 0,
+          "dismissible": false,
           "steps": [
             {
               "source": "live",
@@ -151,6 +153,7 @@
           "wait": "segment",
           "once": true,
           "maxDurationSec": 40,
+          "dismissible": false,
           "steps": [
             {
               "source": "live",
@@ -312,6 +315,7 @@
           "wait": "segment",
           "once": true,
           "maxDurationSec": 0,
+          "dismissible": false,
           "steps": [
             {
               "source": "live",

@@ -225,9 +225,14 @@ def expected_from_show(show: dict):
                 "ifMissed": t.get("ifMissed") or "fireOnExit",
                 "lineId": t.get("lineId"),
                 "wait": t.get("wait") or "segment",
+                # 体験者が異変を報告したら畳まれる演出か（canon/LEDGER.md 0050）。
+                # 既定 false ＝ 消えない（JsonUtility の 0 埋めと同じ側へ倒してある）。
+                "dismissible": bool(t.get("dismissible")),
                 "steps": t.get("steps") or [],
             })
     exp["takes"] = takes
+    # 終幕の合図が指す演出は、旗が立っていても実機が落とす（畳むと終幕が早撃ちされる）。
+    exp["outroAnchorId"] = ((run.get("outro") or {}).get("afterTakeId") or "").strip()
 
     # 3 周目の録画カットが必要とする (周, カメラ)。ここが録れていないと実機は黙ってカットを飛ばす。
     needed = set()
@@ -1427,6 +1432,60 @@ def analyze(events, others, exp, warns=None):
                             "乱れの回数が想定より少ない（体験が短いか、著作が減った）")
         else:
             verdict("OK", f"乱れが {max(gl_n)} 回起きて、{max(gl_e):.2f} まで育った")
+        w()
+
+    # ------------------------------------------------------------------
+    # 報告で異常が消えたか（canon/LEDGER.md 0050「報告したらそれらが消え」）
+    #
+    # ⚠⚠ 押した回数（marks）と消えた回数（disN）は**別物**。消せる演出の方が少ないので、
+    #    marks だけ見ても機構が効いたかは 1 ビットも分からない。必ず対で読む。
+    # ⚠ 「消えすぎ」も見る — 3 周目の録画（作品の核）に旗が立つと、押しボタン 1 つで飛ぶ。
+    # ------------------------------------------------------------------
+    dismissible = [t for t in exp.get("takes", []) if t.get("dismissible")]
+    dis_n = [int(v) for v in effect_samples(events, "disN") if str(v).lstrip("-").isdigit()]
+    dismissed = [e for e in events
+                 if e.get("ev") == "take" and e.get("st") == "end" and e.get("why") == "mark"]
+    marks = [e for e in events if e.get("ev") == "mark"]
+    anchor = exp.get("outroAnchorId", "")
+
+    if dismissible or dismissed:
+        w("## 報告で異常が消えたか")
+        w(f"  報告 {len(marks)} 回 / 消えた {max(dis_n) if dis_n else 0} 回"
+          f" / 「報告で消える」と著作した演出 {len(dismissible)} 本")
+        for t in dismissible:
+            w(f"    著作 L{t['lap']}C{t['camera']} {t['id']}")
+        for e in dismissed:
+            w(f"    消えた t={fnum(e, 't', 0):.1f} {e.get('id')}")
+
+        # 著作と実機が食い違っていないか。旗が立っていない演出が消えたら、機構がどこかで漏れている。
+        armed_ids = {t["id"] for t in dismissible}
+        stray = [e.get("id") for e in dismissed if e.get("id") not in armed_ids]
+        if stray:
+            verdict("FAIL", f"「報告で消える」と著作していない演出が消えた: {', '.join(map(str, stray))}"
+                            " — 旗の解決（TakeRunner.SetTakes）か構造ガードが漏れている")
+
+        # 終幕の合図が指す演出は畳めない（畳むと残りのカットを飛ばして終幕が早撃ちされる）。
+        if anchor and any(t["id"] == anchor for t in dismissible):
+            verdict("FAIL", f"終幕の合図（run.outro.afterTakeId={anchor}）が指す演出に"
+                            "「報告で消える」が立っている — 実機は無効にするが、著作を直すこと")
+        if anchor and any(e.get("id") == anchor for e in dismissed):
+            verdict("FAIL", f"終幕の合図の演出 {anchor} が報告で畳まれた — 終幕が早撃ちされている")
+
+        # 数え方の食い違い（ev=take の理由と ev=sum の累計は同じ 1 つの出来事を数えている）。
+        if dis_n and max(dis_n) != len(dismissed):
+            verdict("WARN", f"消えた回数が食い違う（disN={max(dis_n)} / ev=take why=mark={len(dismissed)}）"
+                            " — どちらかの観測が取りこぼしている")
+
+        if not dismissible:
+            verdict("WARN", "「報告で消える」演出が 1 本も著作されていないのに消えている")
+        elif not marks:
+            verdict("WARN", "体験者が 1 度も報告していないので、消える機構は検証できていない")
+        elif not dismissed:
+            verdict("WARN", f"報告 {len(marks)} 回に対して 1 本も消えていない — "
+                            "消せる演出が走っていない区間で押したか、旗が実機へ届いていない"
+                            "（`ev=take st=end why=` が全部 done なら後者）")
+        else:
+            verdict("OK", f"報告 {len(marks)} 回で演出が {len(dismissed)} 本消えた")
         w()
 
     w("## 効果の実在（画・音に出たか）")

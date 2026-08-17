@@ -82,6 +82,16 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行の検証用）。</summary>
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;
 
+        /// <summary>
+        /// <b>報告で実際に演出が消えた回数</b>（テレメトリ用）。押した回数とは別物 —
+        /// 消えない演出の方が多いので、混ぜると「効いたか」がログから分からなくなる。
+        /// </summary>
+        public int DismissCount => takeRunner != null ? takeRunner.DismissCount : 0;
+
+        /// <summary>直近に演出が終わった理由（テレメトリ用）。</summary>
+        public TakeRunnerLogic.EndReason LastEndReason =>
+            takeRunner != null ? takeRunner.LastEndReason : TakeRunnerLogic.EndReason.Completed;
+
         /// <summary>走行中の演出の id（卓のモニタ用。走っていなければ空）。</summary>
         public string ActiveTakeId => takeRunner != null ? takeRunner.ActiveTakeId : "";
 

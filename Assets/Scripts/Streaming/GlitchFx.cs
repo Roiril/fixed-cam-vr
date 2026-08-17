@@ -62,13 +62,21 @@ namespace FixedCamVr.Streaming
             _logic.Pulse(_esc.ApplyLevel(level), _esc.ApplyHold(sec));
         }
 
-        /// <summary>持続する乱れ（遷移のあいだ継ぎ目を覆う）。0 で解除。</summary>
-        public void SetSustain(float level)
+        /// <summary>
+        /// 持続する乱れ（遷移のあいだ継ぎ目を覆う）。0 で解除。
+        ///
+        /// <paramref name="count"/> を false にすると、<b>この乱れは「起きた回数」に数えない</b>
+        /// （強さの倍率は掛かるが、以後の乱れを育てない）。使うのは
+        /// **体験者の操作で起きる乱れ**だけ — 数えると乱れの育ち方
+        /// （<see cref="GlitchEscalationLogic"/>・<c>canon/LEDGER.md</c> 0055「最後にかけて粗く」）が
+        /// <b>押した回数の関数</b>になり、同じ台本が人によって別の画と音になる。
+        /// </summary>
+        public void SetSustain(float level, bool count = true)
         {
             bool on = level > 0.001f;
             // ⚠ 立ち上がりだけを 1 回として数える。毎フレーム数えると遷移 1 回で天井へ張り付く
             //    （遷移は 90Hz で 20 フレーム続く）。
-            if (on && !_sustainOn) _esc.Notify();
+            if (on && !_sustainOn && count) _esc.Notify();
             _sustainOn = on;
             _logic.SetSustain(on ? _esc.ApplyLevel(level) : 0f);
         }

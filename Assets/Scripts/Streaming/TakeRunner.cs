@@ -246,6 +246,13 @@ namespace FixedCamVr.Streaming
             var takes = new List<ShowTakeDef>();
             var defs = new List<TakeRunnerLogic.Def>();
             bool anyLine = false;
+
+            // ⚠⚠ **終幕の合図が指す演出は、旗が立っていても報告では畳めない。**
+            //    EndingCueLogic は「指した演出が走らなくなった」で撃つので、報告で畳むと
+            //    著作された残りのカット（現行の台本なら「現実へ戻る 3 秒」）を飛ばして終幕が始まる。
+            //    データで上書きできない構造ガードとして、ここで旗ごと落とす。
+            //    ⚠ `ShowRunDirector` は参照しない（ShowControlClient が既に run を持っている）。
+            string outroAnchorId = showControl?.RunConfig?.outro?.afterTakeId ?? "";
             foreach (ShowTimelineSegmentDef? seg in segments)
             {
                 if (seg?.takes == null) continue;
@@ -264,8 +271,14 @@ namespace FixedCamVr.Streaming
                     // TickLines が回らず、線待ちのカットは watchdog まで永久に終わらない。**
                     int[] stepLines = BuildStepLineIndices(t);
                     foreach (int sl in stepLines) if (sl >= 0) { anyLine = true; break; }
+                    bool isOutroAnchor = !string.IsNullOrEmpty(outroAnchorId) && t.id == outroAnchorId;
+                    if (isOutroAnchor && t.dismissible)
+                        Debug.LogWarning($"[TakeRunner] 「報告で消える」を指定した演出が終幕の合図" +
+                                         $"（run.outro.afterTakeId）なので無効にした（take={t.id}）。" +
+                                         $"畳むと残りのカットを飛ばして終幕が早撃ちされる");
                     defs.Add(new TakeRunnerLogic.Def
                     {
+                        dismissible = t.dismissible && !isOutroAnchor,
                         stepLineIndex = stepLines,
                         lap = seg.lap,
                         camera = seg.camera,
@@ -359,14 +372,29 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 体験者が異変を報告した（左 X / Y の 2 秒長押し）。<c>untilMark</c> のカットだけが反応する。
-        /// <b>それ以外は 1 ビットも変わらない</b> — 報告は体験の進行に使わない、が規約
-        /// （唯一の例外が 4 周目 A の締め・canon/LEDGER.md 0050）。
+        /// 体験者が異変を報告した（左 X / Y の 1 秒長押し）。効き方は 2 つで**排他**
+        /// （判断は <see cref="TakeRunnerLogic.NotifyMarkPressed"/>）:
+        ///
+        ///   ①現カットが <c>durKind:"untilMark"</c> なら、そのカットが畳まれて次のカットへ進む（4 周目 A の締め）
+        ///   ②走行中の演出が <c>dismissible</c> なら、**演出ごと畳まれて乱れとともに現実へ戻る**
+        ///
+        /// どちらにも当たらなければ 1 ビットも変わらない（連絡の面が「異常が記録されました」と返すだけ）。
         /// </summary>
         public void NotifyVisitorMark() => _logic.NotifyMarkPressed(Now);
 
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行が押す真似をするのに読む）。</summary>
         public bool IsWaitingForVisitorMark => _logic.IsWaitingForMark;
+
+        /// <summary>
+        /// <b>報告で実際に演出が消えた回数</b>（テレメトリ用）。押した回数（<c>VisitorMarkCount</c>）とは別物 —
+        /// 消えない演出の方が多いので、混ぜると「効いたか」がログから分からなくなる。
+        /// </summary>
+        public int DismissCount => _logic.DismissCount;
+
+        /// <summary>直近に演出が終わった理由（テレメトリ用）。走行前は <c>Completed</c>。</summary>
+        public TakeRunnerLogic.EndReason LastEndReason => _lastEndReason;
+
+        private TakeRunnerLogic.EndReason _lastEndReason = TakeRunnerLogic.EndReason.Completed;
 
         /// <summary>ラン開始（体験者交代）。走行中の演出を畳み、once をクリアする。</summary>
         public void ResetRun()
@@ -729,11 +757,15 @@ namespace FixedCamVr.Streaming
 
         private void EndTake(TakeRunnerLogic.Decision d)
         {
+            _lastEndReason = d.reason;
             // 音は director の有無に関係なく必ず返す（画面が無くても占有だけ残さない）。
             EndTakeBgm();
-            if (director == null) return;
+            // ⚠ カット単位の資源（オーバーレイ・第 2 層・左右分割・録画・CG）は **画面の有無と無関係**。
+            //   これを director の null チェックより後ろに置いていた版は、画面を組めていない構成で
+            //   演出が走ると資源を掴んだまま終わっていた（中の呼び先はどれも null 安全）。
             ReleaseStepState();
             showControl?.SetInsertPostOverride(false, null);
+            if (director == null) return;
 
             // **次の演出が控えているなら画面を返さない**（連続の繋ぎ目に黒を挟まない）。
             // 返してしまうと、復帰の暗転（既定 70/100ms）と次の演出の入りの遷移が二重に出るうえ、
@@ -751,16 +783,43 @@ namespace FixedCamVr.Streaming
 
             // 画面を実際に持っていた時だけ返す。全 step が §6.4 で飛ばされた演出は画面に触っていないので、
             // ここで dip を掛けると「何も起きていないのに暗転する」ことになる。
-            if (director.InsertActive) director.InsertReturn(d.returnCamera);
-            Debug.Log($"[TakeRunner] 演出終了{(d.forced ? "（watchdog 強制）" : "")} → 復帰 camera={d.returnCamera}");
+            if (director.InsertActive)
+            {
+                if (d.dismissed) DismissReturn(d.returnCamera);
+                else director.InsertReturn(d.returnCamera);
+            }
+            Debug.Log($"[TakeRunner] 演出終了（{d.reason}） → 復帰 camera={d.returnCamera}");
+        }
+
+        /// <summary>
+        /// <b>報告で畳んだ演出を、黒ではなく「映像の乱れ」で現実へ返す。</b>
+        /// <c>canon/LEDGER.md</c> 0050「推したら乱れたのちに元に戻って」。
+        ///
+        /// ⚠ 黒の dip で返すと「カメラが切り替わった」の語彙になり、押した行為と画の変化が
+        ///   因果として結ばれない。クロスフェードは「作者が消した」に、砂嵐は「信号が切れた」に読まれる。
+        /// ⚠ <b>乱れの育ち（<see cref="GlitchEscalationLogic"/>）には数えさせない。</b> 数えると
+        ///   終盤の乱れの強さが体験者の押下回数の関数になり、著作した曲線
+        ///   （<c>canon/LEDGER.md</c> 0055「最後にかけて粗く」）が人によって別物になる ＝ 走行の再現性が消える。
+        /// </summary>
+        private void DismissReturn(int returnCamera)
+        {
+            if (director == null) return;
+            TakeSchema.SplitTransition(TakeSchema.DismissGlitchMs, out float down, out float up);
+            director.InsertReturn(returnCamera, down, up, glitch: true, countEscalation: false);
         }
 
         // 走行中の演出を安全に畳む（SetTakes / ResetRun / ライブ卓の介入の前に呼ぶ。凍結ストランドを残さない）。
         // releaseScreen=false なら「画面の占有だけ解いてカメラは動かさない」（ライブ卓が既に画面を取っている場合）。
         private void CleanupActive(bool releaseScreen = true)
         {
+            // ⚠⚠ **連続の渡し（chainNext）の最中は `_logic.IsActive` が false** — 前の演出は
+            //    EndTakeDecision で終わっていて、次の演出はまだ始まっていない。ところが
+            //    **画面の占有だけは保ったまま**なので、ここで早期 return すると
+            //    「占有が降りない ＋ Update の安全網（_chainPending）も消える」で画面が固まる。
+            //    渡しの最中かどうかを先に読んでから落とす。
+            bool handingOver = _chainPending;
             _chainPending = false;
-            if (!_logic.IsActive) return;
+            if (!_logic.IsActive && !handingOver) return;
             EndTakeBgm();
             ReleaseStepState();
             if (director != null && director.InsertActive)
@@ -771,7 +830,9 @@ namespace FixedCamVr.Streaming
             }
             // 中止では凍結を必ず畳む。ホールドは秒で必ず明けるので原理的に固着しないが、
             // 「画が止まったまま戻らない」はこの codebase が 4 回踏んだ事故の型なので二重に閉じる。
-            director.ClearFeelFx();
+            // ⚠ null 許容にする（同じメソッドの上と ReleaseStepState は既に `director?.`）。
+            //   director が解決できない構成で演出が走ると、中止のたびに NRE で止まっていた。
+            director?.ClearFeelFx();
             _logic.AbortActive();
         }
 

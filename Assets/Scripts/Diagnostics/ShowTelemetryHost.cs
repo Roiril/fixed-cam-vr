@@ -401,6 +401,19 @@ namespace FixedCamVr.Diagnostics
             : _comms.Stage == CommsStage.Off ? "off"
             : $"{_comms.Stage}/{_comms.AppliedGlyph:F2}/{_comms.AppliedOpen:F2}";
 
+        /// <summary>
+        /// 演出が終わった理由（<c>ev=take st=end why=</c>）。
+        /// <c>done</c> = 著作どおり流し切った / <c>wd</c> = watchdog の強制終了 /
+        /// <c>yield</c> = 体験者が区間を移って打ち切った / <b><c>mark</c> = 体験者が報告して消した</b>。
+        /// </summary>
+        private string TakeEndReason => _timeline == null ? "-" : _timeline.LastEndReason switch
+        {
+            TakeRunnerLogic.EndReason.Watchdog => "wd",
+            TakeRunnerLogic.EndReason.Yielded => "yield",
+            TakeRunnerLogic.EndReason.VisitorDismissed => "mark",
+            _ => "done",
+        };
+
         /// <summary>報告の面に<b>実際に書いた不透明度</b>（<c>nc</c> = 組めていない）。</summary>
         private string ReportAlphaState => _report == null
             ? "-"
@@ -629,11 +642,15 @@ namespace FixedCamVr.Diagnostics
                 Emit($"ev=ctrlmode v={(string.IsNullOrEmpty(ctrlMode) ? "?" : ctrlMode)} pt={PassthroughState}");
             }
 
-            // 演出（Take）の出入り。TakeRunner のログと突き合わせると理由まで分かる。
+            // 演出（Take）の出入り。
+            // ⚠⚠ **終わり方の理由を必ず添える。** 理由が無いと「著作どおり終わった」「体験者が報告して
+            //    消した」「壊れて打ち切られた」が尺の長短でしか区別できず、**報告で畳む機構が
+            //    効かなくても効きすぎてもログから判別できない**（2026-08-17 監査）。
             string takeId = _timeline != null ? _timeline.ActiveTakeId : "";
             if (takeId != _lastTakeId)
             {
-                if (!string.IsNullOrEmpty(_lastTakeId)) Emit($"ev=take id={_lastTakeId} st=end");
+                if (!string.IsNullOrEmpty(_lastTakeId))
+                    Emit($"ev=take id={_lastTakeId} st=end why={TakeEndReason}");
                 if (!string.IsNullOrEmpty(takeId)) Emit($"ev=take id={takeId} st=begin");
                 _lastTakeId = takeId;
             }
@@ -833,6 +850,11 @@ namespace FixedCamVr.Diagnostics
             if (_glitch != null && _glitch.Count > 0)
                 _sb.Append(" glN=").Append(_glitch.Count)
                    .Append(" glE=").Append(_glitch.Escalation01.ToString("F2"));
+            // **報告で実際に演出が消えた回数**（`canon/LEDGER.md` 0050「報告したらそれらが消え」）。
+            // ⚠ 押した回数（`marks=`）とは別物 — 消せる演出の方が少ないので、
+            //   marks だけ見ても「機構が効いたか」は 1 ビットも分からない。0 のあいだは出さない。
+            if (_timeline != null && _timeline.DismissCount > 0)
+                _sb.Append(" disN=").Append(_timeline.DismissCount);
 
             // --- 効果の実在（「段が進んだ」ではなく「画・音に出たか」）---
             // ここが全部揃っていても遷移は正常に見える、という壊れ方を 2026-07-31 に踏んだ。

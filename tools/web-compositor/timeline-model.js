@@ -148,6 +148,10 @@ export function newTake(id, over = {}) {
     // at=line のとき: どのラインか（layout.lines[].id）。ラインは担当カメラに紐づく。
     lineId: '',
     policy: TAKE.POLICY_HOLD, wait: TAKE.WAIT_SEGMENT, once: true, maxDurationSec: 0,
+    // 体験者が異変を報告したら、この演出は畳まれて現実（ライブ映像）へ戻るか。
+    // ⚠ 既定 false（消えない）。JsonUtility は欠落キーを false で埋めるので、
+    //   既存の show.json は挙動が 1 ビットも変わらない。
+    dismissible: false,
     steps: [],
     // 演出中だけの BGM（hasBgm=false = 区間で鳴っている曲がそのまま続く）。
     bgm: defaultBgm(), hasBgm: false,
@@ -225,6 +229,7 @@ function serializeTake(t) {
     wait: (t.wait === TAKE.WAIT_CHAIN && t.at !== TAKE.AT_EXIT) ? TAKE.WAIT_CHAIN : TAKE.WAIT_SEGMENT,
     once: t.once !== false,
     maxDurationSec: num(t.maxDurationSec, 0),
+    dismissible: !!t.dismissible,
     steps: (t.steps || []).map(serializeStep),
   };
   // present-flag 規約: false のときは入れ子キー自体を出さない（幽霊指示を作らない）。
@@ -280,6 +285,7 @@ function normalizeTake(t) {
     wait: (t.wait === TAKE.WAIT_CHAIN && t.at !== TAKE.AT_EXIT) ? TAKE.WAIT_CHAIN : TAKE.WAIT_SEGMENT,
     once: t.once !== false,
     maxDurationSec: num(t.maxDurationSec, 0),
+    dismissible: !!t.dismissible,
     hasBgm: !!t.hasBgm,
     bgm: { ...defaultBgm(), ...(t.bgm || {}) },
   });

@@ -47,6 +47,29 @@ namespace FixedCamVr.Streaming
         public bool once = true;                            // ラン内 1 回
         public float maxDurationSec;                        // watchdog。0 / 未指定 = コード既定 45
 
+        /// <summary>
+        /// <b>体験者が異変を報告したら、この演出は畳まれて現実（ライブ映像）へ戻るか。</b>
+        /// 出どころは <c>canon/LEDGER.md</c> 0050 のユーザー逐語
+        /// 「左半分に人形が大量にいて、それを異変だと思って**報告したらそれらが消え**」
+        /// 「**推したら乱れたのちに元に戻って**終幕で」。
+        ///
+        /// ⚠⚠ <b>既定は false（消えない）。</b> JsonUtility は欠落キーを false で埋めるので、
+        ///   既存の show.json・端末キャッシュ・焼き込みは**挙動が 1 ビットも変わらない**。
+        ///   否定形（<c>noDismiss</c> 等）で持つと、古いデータが全部「消せる」側へ倒れて
+        ///   <b>3 周目の録画（作品の核）が押しボタン 1 つで飛ぶ</b>。
+        ///
+        /// ⚠⚠ <b>旗を立てても消せない演出が 2 つある</b>（データで上書きできない構造ガード）:
+        ///   ①現カットが <see cref="TakeSchema.DurUntilMark"/> ＝ 報告はそのカットが消費する（排他）
+        ///   ②<c>run.outro.afterTakeId</c> が指す演出 ＝ 畳むと終幕が早撃ちされる
+        ///   （<see cref="EndingCueLogic"/> は「指した演出が走らなくなった」で撃つ）。
+        ///   どちらも <see cref="TakeRunner.SetTakes"/> / <see cref="TakeRunnerLogic.NotifyMarkPressed"/> が落とす。
+        ///
+        /// ⚠ <b>報告で現れてよいのは現実だけ。</b> 消えた跡に別の素材を出すと、報告が
+        ///   「驚かせる引き金」になる（0050 4 回目「報告ボタンは演出の引き金にはしない。
+        ///   驚かせるのは2周目Cの全画面にしよう」に反する）。
+        /// </summary>
+        public bool dismissible;
+
         public ShowStepDef[] steps = Array.Empty<ShowStepDef>();
 
         /// <summary>
@@ -307,6 +330,16 @@ namespace FixedCamVr.Streaming
 
         /// <summary>glitch 遷移で到達する乱れの強さ。</summary>
         public const float GlitchTransitionLevel = 0.85f;
+
+        /// <summary>
+        /// <b>報告で演出を畳むときの遷移の長さ (ms)。</b>カットの遷移（既定 220ms）より長い。
+        ///
+        /// ⚠ 短いと「消えた」ではなく「切り替わった」に見える。体験者は自分の行為の結果を
+        ///   探しているので、乱れが走り切ってから現実が出る間が要る。
+        /// ⚠ 逆に長くすると装置が壊れたように見える（乱れは既に <see cref="GlitchTransitionLevel"/>
+        ///   ＝ 0.85 まで上がるので、尺で強さを補う必要は無い）。
+        /// </summary>
+        public const float DismissGlitchMs = 420f;
 
         /// <summary>遷移全体の長さを「黒へ落とす / 黒から立ち上げる」へ配分する比（既存 70:100 に合わせる）。</summary>
         public const float DipDownRatio = 0.4f;

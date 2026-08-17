@@ -45,6 +45,19 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(tl.HasData(), Is.True);
         }
 
+        /// <summary>
+        /// <b>「報告で消える」が wire を往復する。</b> 卓（<c>timeline-model.js</c>）と実機が
+        /// 同じキーを読み書きしていることを、非既定値（true）を含む fixture で固定する。
+        /// ⚠ 片方だけ直すと**沈黙して食い違う** — 卓で立てた旗が保存で消えても誰も気づけない。
+        /// </summary>
+        [Test]
+        public void Dismissible_RoundTripsThroughTheWire()
+        {
+            ShowTimelineDef tl = Load();
+            Assert.That(Take(tl, 1, 0).dismissible, Is.True, "手形は報告で消える演出として著作してある");
+            Assert.That(Take(tl, 2, 1).dismissible, Is.False, "既定は消えない");
+        }
+
         [Test]
         public void EnterTake_ParsesStartRuleAndInheritance()
         {
