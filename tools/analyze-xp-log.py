@@ -1132,7 +1132,7 @@ def analyze(events, others, exp, warns=None):
                 else:
                     verdict("OK", f"⓪c が演出の始まりと同時に届いた（t={t_arrived:.1f}s）")
 
-            # ②の分岐が押した瞬間の値で決まっているか。ev=mark と ev=comms を時刻で対にする。
+            # ②の分岐が「解除が通ったか」と一致しているか。ev=mark と ev=comms を時刻で対にする。
             marks = [e for e in events if e.get("ev") == "mark"]
             answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing")]
             mark_ok = True

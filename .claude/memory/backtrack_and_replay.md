@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: d878fe09-d0a5-4cbe-8b4c-6f84c4527e41
-  modified: 2026-08-17T07:29:35.596Z
+  modified: 2026-08-17T21:02:17.252Z
 ---
 
 2026-08-17。契約は `.claude/rules/streaming.md` の「周回数は 2 つある」と
@@ -34,7 +34,10 @@ metadata:
 
 ⚠ **報告として数えるのは走行中の押下だけ。** 終わった後に猶予を作ると、連絡の面は
 「異常は検出されませんでした」と出したのに機械は「報告済み」になる ＝ 同じ 1 回の押下について
-画と機械が別のことを言う（`ShowControlClient.LastMarkHadTake` は押した瞬間に凍る）。
+画と機械が別のことを言う（連絡の面が読むのは `TakeRunnerLogic.NotifyMarkPressed` の**戻り値**
+＝ `ShowControlClient.LastMarkResolved` で、走行中でなければ false。
+⚠ 2026-08-17 まではここが `LastMarkHadTake`（押した瞬間の `ActiveTakeId`）だった —
+`canon/LEDGER.md` 0082 で「解除が通ったか」へ変わっている）。
 
 ⚠ **一度録れた区間は録り直さない。** `SegmentRecordWriter` は `FileMode.Create` なので、
 引き返して同じ区間へ戻ると**1 周目の映像が数秒の断片へ上書きされる**。3 周目に流すのはそれ。
