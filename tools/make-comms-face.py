@@ -8,17 +8,23 @@
 
 出どころ
 --------
-| 版 | 素材 | 取り込み済みの切り抜き |
+| 版 | 素材 | ここに置いてある切り抜き |
 |---|---|---|
 | スイ | **paperdoll で作った「スイ」**（`paperdoll/chara/out/sui/expression.png` の 1 枚目） | `tools/comms-face/sui-neutral.png` |
-| 市松人形 | **人形の資料**（`tools/doll-ref/out/gen_standing.png` の頭） | `tools/comms-face/doll-neutral.png` |
+| 市松人形 | **実物の写真から Codex に起こさせた線画**（`tools/doll-ref/out/gen_face_lineart.png`） | `tools/comms-face/doll-lineart.png` |
 
-どちらも切り抜きをここへ置いてあるので、**素材の置き場が消えても焼き直せる**。
+どちらもここへ置いてあるので、**素材の置き場が消えても焼き直せる**。
 
-⚠⚠ **人形は写真ではなく資料の板から焼いている。** 正本は実物の写真
-（`tools/doll-ref/out/plate_front.jpg`）だが、**あの写真は背景も髪も暗くて分けられない**
-（実測: 背景 L=26〜52 / 髪 L=27）。外形が取れなければこの作り方は成立しないので、
-明るい地に立っている資料の板を使う。⚠ 資料の位置づけは `memory/doll_reference_kit.md`。
+⚠⚠ **人形は写真からは焼けない。** 試して駄目だった順に 2 つ:
+
+1. **正本の写真**（`plate_front.jpg`）— 背景も髪も暗くて外形が取れない（実測: 背景 L=26〜52 / 髪 L=27）
+2. **明るい地に立つ資料の板**（`gen_standing.png`）— 外形は取れるが、**写実には彫るべき線が無い**。
+   髪と顔の境目を自分で引いてみたが、出たのは「丸い頭に丸い顔が浮いている」だけの絵で、
+   人形だと分からなかった（2026-08-17 のユーザー赤入れ「今はなんか変」）
+
+⇒ **実物の写真を参照に、Codex へ閉じた線画を描かせる**（依頼の作法は `tools/doll-ref/PROMPT.md`）。
+線画なら**スイと同じ形の素材**になるので、同じ規則がそのまま効く。
+⚠ 線画は**資料であって正本ではない**（`memory/doll_reference_kit.md`）。正本はいまも写真。
 
 ユーザー指定
 ------------
@@ -35,8 +41,8 @@
 
 | | スイ | 市松人形 |
 |---|---|---|
-| 髪 | **白銀**。明るさでは肌・背景と分けられず、手掛かりは赤み（R−B）だけ | **暗褐色**。明るさだけで分かれる |
-| 線 | 元の絵に**描かれた線**がある（髪の束・睫毛） | 写実なので**線が無い**。⇒ **髪と顔の境目を線として彫る** |
+| 外形 | **色の差**で背景と分ける（白銀の髪は明るさでは背景と 28 しか違わない） | **線で囲まれた内側を塗る**（線画なので、囲みの外が紙） |
+| 線 | 元の絵の**明るさの閾値**（描かれた線が暗い） | **線そのもの**（紙は 254・線は 0） |
 | 目 | 瞳が明るいので目の中だけ閾値を緩める | そのままで彫れる |
 
 ⚠⚠ **顔の肌まで塗るのは誤りではない。** 参考のスクショは「白い紙 ＋ 青い墨」で、肌は紙の色。
@@ -98,25 +104,22 @@ SUI_EYE_CORE_MIN_AREA = 120
 SUI_EYE_ZONE_TOP = 0.72   # 目を探す縦の範囲。⚠ 顎の影を拾わない線
 SUI_EYE_ZONE_PAD = 9      # 芯から瞳へ広げる幅
 
-# ---- 市松人形（`doll-neutral.png` の画素）-----------------------------------------
-DOLL_CROP = (14, 12, 426, 372)   # 髪の天辺 〜 顎の下（襟は入れない）
-DOLL_BG_TOL = 18.0    # 資料の板の地は明るい無地（実測 L=223）
-#: 外形をなめらかにする量。⚠ **写真の髪は毛先がほつれている**ので、そのまま焼くと
-#: 縁がざらついて「髪」ではなく「ノイズ」に見える。開いてから閉じて塊にする。
-DOLL_SMOOTH = 4
-#: 顔（白磁）とみなす明るさの下限。実測: 顔 199 / 髪 48〜84 / 地 223。
-DOLL_FACE_MIN_L = 150.0
-#: 顔の中の造作（眉・目・鼻・口）とみなす明るさの上限。実測: 口 121 / 目の芯はさらに暗い。
-#: ⚠ 上げると眉と目が繋がって**大きな黒い塊**になる（絵で見つけた）。
-DOLL_FEAT_MAX_L = 145.0
-#: 顔の中の造作は薄いものもある（鼻の稜線）ので、周りとの比でも拾う。
-DOLL_FEAT_REL = 0.18
-#: 造作を太らせる量。⚠ **1**。目も口も元から面積があるので、髪と同じ 2 にすると潰れる。
-DOLL_FEAT_W = 1
-#: 生え際を彫る太さ。⚠ **写実の素材には線が無い**ので、髪と顔の境目を線として自分で引く。
-#: これが無いと、髪も顔も同じ墨で塗られて**のっぺりした卵**になる。
-#: ⚠ 境目は 1 画素しかないので、造作より太らせないと 110 画素まで縮んだとき消える。
-DOLL_HAIRLINE_W = 3
+# ---- 市松人形（`doll-lineart.png` の画素）------------------------------------------
+#
+# ⚠⚠ **素材は写真ではなく「写真から起こした線画」**（2026-08-17・`canon/LEDGER.md` 0074・
+#    ユーザー赤入れ「人形の見た目をもう少し見やすく理解しやすくしてほしい。今はなんか変」）。
+#    写真から直に焼くと**丸い顔が丸い頭に浮いているだけ**の絵になり、人形だと分からなかった。
+#    原因は §「やり方は 2 行」の前提 — **写実には彫るべき線が無い**こと。
+#    ⇒ 実物の写真を参照として Codex に**閉じた線画**を描かせ、それを彫る（`tools/doll-ref/PROMPT.md`）。
+#    ⚠ これは**資料であって正本ではない**（`memory/doll_reference_kit.md`）。
+#      正本はいまも `tools/doll-ref/out/plate_front.jpg` の写真で、線画はそこから起こした 1 枚。
+DOLL_CROP = (130, 50, 895, 880)   # 髪の天辺 〜 襟の V（肩が広がる前で切る）
+#: 線とみなす明るさの上限。線画なので**紙は 254・線は 0** ときれいに分かれる。
+DOLL_LINE_MAX_L = 128.0
+#: 塗りつぶす前に線を閉じる量。⚠ 線が 1 画素でも途切れていると**塗りが外へ漏れて絵が壊れる**。
+DOLL_CLOSE = 1
+#: 線を太らせる量。⚠ **2**。1 では 110 画素で消えかけ、3 では前髪の線と眉が繋がる（絵で比べた）。
+DOLL_LINE_W = 2
 
 
 def _disk(r: int) -> np.ndarray:
@@ -205,31 +208,25 @@ def build_sui() -> dict[str, np.ndarray]:
 
 
 def build_doll() -> dict[str, np.ndarray]:
-    c, lum = _load(SRC_DIR / "doll-neutral.png", DOLL_CROP)
-    sil = _silhouette(c, DOLL_BG_TOL)
-    # ⚠ 毛先のほつれを落として塊にする（そのままだと縁が「髪」ではなく「ノイズ」に見える）。
-    sil = cv2.morphologyEx(sil, cv2.MORPH_OPEN, _disk(DOLL_SMOOTH))
-    sil = cv2.morphologyEx(sil, cv2.MORPH_CLOSE, _disk(DOLL_SMOOTH))
-    sil = _fill_holes(_largest(sil))
+    """線画から焼く。**外形は「線で囲まれた内側」＝ 塗りつぶしで取る**（明るさでは取れない）。"""
+    rgb = np.asarray(Image.open(SRC_DIR / "doll-lineart.png").convert("RGB")).astype(np.float32)
+    lum = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
+    h, w = lum.shape
+    raw = (lum < DOLL_LINE_MAX_L).astype(np.uint8)
 
-    # 白磁の顔。⚠ 髪（L=48〜84）とは明るさだけで分かれる — スイと違って赤みは要らない。
-    face = _fill_holes(_largest(cv2.morphologyEx(((lum > DOLL_FACE_MIN_L) & (sil > 0)).astype(np.uint8),
-                                                 cv2.MORPH_OPEN, _disk(3))))
+    # ⚠⚠ **線を閉じてから塗る。** 1 画素でも途切れていると塗りが外へ漏れて絵が丸ごと壊れる。
+    #    紙の側（縁から届く白）を塗って、その否定を外形にする。
+    closed = cv2.dilate(raw, _disk(DOLL_CLOSE))
+    flood = closed.copy()
+    cv2.floodFill(flood, np.zeros((h + 2, w + 2), np.uint8), (0, 0), 1)
+    sil = (~((flood > 0) & (closed == 0))).astype(np.uint8)
 
-    # ⚠⚠ **生え際は自分で引く。** 写実の素材には描かれた線が無いので、髪と顔の境目を線にする。
-    #    これが無いと髪も顔も同じ墨で塗られて、のっぺりした卵になる（頭の形しか残らない）。
-    hairline = cv2.dilate(((cv2.dilate(face, _disk(1)) > 0) & (face == 0) & (sil > 0)).astype(np.uint8),
-                          _disk(DOLL_HAIRLINE_W))
+    x0, y0, x1, y1 = DOLL_CROP
+    sil, raw = sil[y0:y1, x0:x1], raw[y0:y1, x0:x1]
+    src = rgb[y0:y1, x0:x1].astype(np.uint8)
 
-    # 顔の中の造作（眉・目・鼻・口）。⚠ 鼻の稜線は薄いので、絶対値と周りとの比の両方で拾う。
-    local = cv2.dilate(lum, _disk(4))
-    rel = 1.0 - lum / np.maximum(local, 1.0)
-    feat = (((lum < DOLL_FEAT_MAX_L) | (rel > DOLL_FEAT_REL)) & (face > 0)).astype(np.uint8)
-    feat = _drop_specks(feat, LINE_MIN_AREA)
-    feat = cv2.dilate(feat, _disk(DOLL_FEAT_W))
-
-    ink, line = _carve(sil, np.clip(hairline + feat, 0, 1).astype(np.uint8))
-    return {"src": c.astype(np.uint8), "sil": sil, "zone": face, "line": line, "ink": ink}
+    ink, line = _carve(sil, cv2.dilate(raw, _disk(DOLL_LINE_W)))
+    return {"src": src, "sil": sil, "zone": raw, "line": line, "ink": ink}
 
 
 def compose(ink: np.ndarray) -> Image.Image:
