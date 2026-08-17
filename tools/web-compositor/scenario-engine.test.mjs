@@ -379,12 +379,57 @@ test('画面: クールダウン中は commit しない / 凍結中も commit �
 test('周回: 順方向一致でのみ前進し、逆走・スキップは数えない', () => {
   const l = new LapCounter();
   l.setOrder([0, 1, 2]);
-  assert.equal(l.feed(2), false, 'スキップ（0→2）は前進しない');
+  // 0(start) → 2 は逆走。以後どこへ動いてもポインタは 0 に据え置かれ、
+  // 順路へ戻って 0→1→2→0 と踏み直すまで lap は上がらない。
+  assert.equal(l.feed(2), false, '逆走（0→2）は前進しない');
+  assert.equal(l.feed(1), false, '2→1 も逆走（2 の次は 0）');
+  assert.equal(l.feed(0), false, '1→0 も逆走');
+  assert.equal(l.currentLap, 1);
+  // 順路の頭（0）に居るので、ここから順方向に踏み直せば 1 周ぶん進む。
   assert.equal(l.feed(1), false);
-  assert.equal(l.feed(0), false, '逆走（1→0）は前進しない');
   assert.equal(l.feed(2), false);
   assert.equal(l.feed(0), true, '一周して lap++');
   assert.equal(l.currentLap, 2);
+});
+
+test('周回: 引き返した区間は「前にそこに居たときの周」として扱う', () => {
+  // ユーザー指定の並び: 1-C → 2-A → 引き返して 1-C → 2-A → 2-B。
+  const l = new LapCounter();
+  l.setOrder([0, 1, 2]);
+  l.seed(0);                                   // 1 周目 A からスタート
+  l.feed(1); assert.equal(l.segmentLap, 1);    // 1-B
+  l.feed(2); assert.equal(l.segmentLap, 1);    // 1-C
+  l.feed(0); assert.equal(l.segmentLap, 2);    // 2-A（1 周完了）
+  assert.equal(l.currentLap, 2);
+
+  l.feed(2);                                    // 引き返して C
+  assert.equal(l.segmentLap, 1, '引き返した C は 1 周目の区間');
+  assert.equal(l.currentLap, 2, '進行の周は減らない');
+
+  l.feed(0);
+  assert.equal(l.segmentLap, 2, '戻った A は 2 周目の区間');
+  l.feed(1);
+  assert.equal(l.segmentLap, 2, '順路へ復帰したら通常どおり進む');
+  assert.equal(l.position, 1, 'ポインタも順路へ復帰している');
+});
+
+test('周回: 2 区間ぶん引き返しても、先の周の区間を先取りしない', () => {
+  // 2-A から C へ、さらに B へと戻る。B は「A の次」に見えるが、来たのは C からなので前進ではない。
+  const l = new LapCounter();
+  l.setOrder([0, 1, 2]);
+  l.seed(0);
+  l.feed(1); l.feed(2); l.feed(0);              // 2-A
+  l.feed(2); assert.equal(l.segmentLap, 1);     // 引き返して 1-C
+  l.feed(1);
+  assert.equal(l.segmentLap, 1, '2 区間ぶん引き返した B も 1 周目の区間');
+  assert.equal(l.position, 0, 'ポインタは A に据え置かれる');
+  // 順路へ戻れば元どおり進む。
+  l.feed(2); l.feed(0);                         // 逆走で C → A
+  assert.equal(l.segmentLap, 2);
+  l.feed(1); assert.equal(l.segmentLap, 2);     // 2-B
+  l.feed(2); assert.equal(l.segmentLap, 2);     // 2-C
+  assert.equal(l.feed(0), true, '2 周目を踏破して lap 3');
+  assert.equal(l.currentLap, 3);
 });
 
 test('sampleAt: サンプル間は等速で補間し、両端は張り付く', () => {

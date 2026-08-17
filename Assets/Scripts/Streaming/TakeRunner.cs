@@ -407,6 +407,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public int DismissCount => _logic.DismissCount;
 
+        /// <summary>
+        /// <b>途中で切れた演出を出し直した回数</b>（テレメトリ用）。体験者が引き返して同じ区間へ戻り、
+        /// 報告していなかったので頭からやり直した回数。0 のままなら引き返しが起きていないか、
+        /// 引き返しても再演の判定が効いていない — <b>画からはどちらとも見分けが付かない</b>。
+        /// </summary>
+        public int ReplayCount => _logic.ReplayCount;
+
         /// <summary>直近に演出が終わった理由（テレメトリ用）。走行前は <c>Completed</c>。</summary>
         public TakeRunnerLogic.EndReason LastEndReason => _lastEndReason;
 

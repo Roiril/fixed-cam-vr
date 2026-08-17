@@ -1528,8 +1528,11 @@ namespace FixedCamVr.Streaming
             _dwellSubscribed = false;
         }
 
-        // CueScheduler の引数順は (camera, lap)。区間キーは (lap, camera) なので入れ替えて渡す。
-        private void OnSegmentEnteredForDwell(int camera, int lap)
+        // CueScheduler の引数順は (camera, segmentLap, progressLap)。区間キーは (lap, camera) なので
+        // 入れ替えて渡す。読むのは **区間の周**（逆走で戻る）— 引き返して 1 周目の C に立った
+        // 30 秒は「1 周目 C の滞在」であって「2 周目 C の滞在」ではない（卓の実測滞在は
+        // 「その区間に置いた演出が出るだけ居たか」を見る道具なので、居た場所で数える）。
+        private void OnSegmentEnteredForDwell(int camera, int lap, int progressLap)
             => _dwell.Enter(lap, camera, Time.realtimeSinceStartup);
 
         /// <summary>

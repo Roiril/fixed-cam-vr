@@ -475,16 +475,25 @@ def analyze(events, others, exp, warns=None):
     segs = [e for e in events if e.get("ev") == "seg"]
     order = exp["order"]
     seg_seq = []
+    # ⚠⚠ **周は 2 つある**（2026-08-17）。
+    #   `lap`  = 区間の周（逆走で戻る）＝ 演出・録画・post / BGM の区間キー
+    #   `plap` = 進行の周（単調増加）  ＝ 体験の終了判定
+    # 「3 周走ったか」は plap で見る。lap で見ると、最後に引き返した体験者を
+    # 「周回が足りない」と誤判定する。plap を出さない旧ログでは lap で代用する。
+    seg_prog = []
     for s in segs:
         # ⚠ `fnum(...) or -1` と書くと **カメラ 0 が falsy なので -1 に化ける**。
         # 順路の先頭カメラが常に 0 なので、この 1 文字で判定が全部ずれる。
         lap = int(fnum(s, "lap", -1))
         cam = int(fnum(s, "cam", -1))
+        plap = int(fnum(s, "plap", lap))
         seg_seq.append((fnum(s, "t", 0), lap, cam))
-    for t, lap, cam in seg_seq:
-        w(f"  t={t:7.1f}  {lap} 周目 / カメラ {cam}")
-    laps_seen = sorted({l for _, l, _ in seg_seq if l > 0})
-    w(f"  観測した周: {laps_seen}")
+        seg_prog.append(plap)
+    for (t, lap, cam), plap in zip(seg_seq, seg_prog):
+        back = "  ← 引き返し（進行は %d 周目）" % plap if plap != lap else ""
+        w(f"  t={t:7.1f}  {lap} 周目 / カメラ {cam}{back}")
+    laps_seen = sorted({l for l in seg_prog if l > 0})
+    w(f"  観測した周（進行）: {laps_seen}")
     if not laps_seen:
         verdict("FAIL", "区間の進入が 1 度も記録されていない（歩行かゾーン判定が効いていない）")
     else:
@@ -510,6 +519,28 @@ def analyze(events, others, exp, warns=None):
         if bad:
             verdict("WARN", f"順路どおりでない進入が {len(bad)} 回（例: t={bad[0][0]:.0f}s "
                             f"カメラ{bad[0][1]}→{bad[0][2]}、順路では {bad[0][3]}）")
+
+    # ---- 引き返しと再演（2026-08-17）----
+    # 体験者が後ろのカメラへ戻ると、区間キーは「前にそこに居たときの周」へ戻る。
+    # そこで途中で切れていた演出は、報告していなければ頭から出し直す。
+    #   ⚠ **引き返したこと**（lap ≠ plap）と **再演されたこと**（reN）は別物。
+    #     片方だけ見ても「効いたか」は分からない — 引き返していないのに 0 なのは正常で、
+    #     引き返したのに 0 なら（報告済みでない限り）機構が効いていない。
+    back_steps = [(t, lap, cam, plap)
+                  for (t, lap, cam), plap in zip(seg_seq, seg_prog) if plap != lap]
+    replay_n = [int(v) for v in effect_samples(events, "reN") if str(v).lstrip("-").isdigit()]
+    replays = max(replay_n) if replay_n else 0
+    if back_steps or replays:
+        w()
+        w("### 引き返しと再演")
+        for t, lap, cam, plap in back_steps:
+            w(f"  t={t:7.1f}  カメラ {cam} へ引き返した → {lap} 周目の区間として扱う（進行は {plap} 周目）")
+        w(f"  途中で切れた演出を出し直した回数: {replays}")
+        if back_steps and replays == 0:
+            verdict("OK", f"引き返しが {len(back_steps)} 回あったが再演は無し"
+                          "（切れた演出が無いか、報告済みだった）")
+        elif replays:
+            verdict("OK", f"引き返しで演出を {replays} 回出し直した")
 
     # 区間ごとの実測滞在
     w()
@@ -560,7 +591,10 @@ def analyze(events, others, exp, warns=None):
                     want = float(t["offsetSec"] or 0)
                     how = (f" / 進入 +{delay:.1f}s（著作 +{want:.1f}s）"
                            + ("" if abs(delay - want) <= 1.5 else " ⚠ ずれている"))
-            w(f"  ✅ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出た t={starts[0]:.0f}s{dur}{how} [{kinds}]")
+            # 引き返して出し直した演出は begin が複数出る（once でも決着していなければ再演する）。
+            again = (f" / {len(starts)} 回出た（引き返しての再演: "
+                     + " ".join(f"t={s:.0f}s" for s in starts[1:]) + "）") if len(starts) > 1 else ""
+            w(f"  ✅ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出た t={starts[0]:.0f}s{dur}{how}{again} [{kinds}]")
         else:
             reason = ""
             if stayed is None:

@@ -88,6 +88,11 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public int DismissCount => takeRunner != null ? takeRunner.DismissCount : 0;
 
+        /// <summary>
+        /// <b>途中で切れた演出を出し直した回数</b>（テレメトリ用）。引き返しが実際に再演へ繋がったかの唯一の証拠。
+        /// </summary>
+        public int ReplayCount => takeRunner != null ? takeRunner.ReplayCount : 0;
+
         /// <summary>直近に演出が終わった理由（テレメトリ用）。</summary>
         public TakeRunnerLogic.EndReason LastEndReason =>
             takeRunner != null ? takeRunner.LastEndReason : TakeRunnerLogic.EndReason.Completed;
@@ -139,7 +144,11 @@ namespace FixedCamVr.Streaming
 
         // ゾーン進入（deterministic post-Feed lap）。離脱区間の exit 演出即時 + 進入区間の
         // 演出武装を TakeRunner へ forward し、区間 post / bgm を貼り替える。
-        private void OnCameraEntered(int camera, int lap)
+        //
+        // ⚠ 読むのは **区間の周**（lap・逆走で戻る）。進行の周（progressLap）は使わない —
+        //   引き返した先は「前にそこに居たときの区間」として演出・post・BGM を貼るのが正しい
+        //   （進行の周で貼ると、まだ通っていない先の周の演出が消費される）。
+        private void OnCameraEntered(int camera, int lap, int progressLap)
         {
             bool hadPrev = _hasCurrent;
             int prevLap = _curLap, prevCam = _curCam;

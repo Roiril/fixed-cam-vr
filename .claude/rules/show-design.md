@@ -1131,6 +1131,26 @@ TMP の既定シェーダは `ZTest [unity_GUIZTestMode]` ＝ 既定 **LEqual** 
 - **時計は画面から独立**（段 B）: 確定は [`ZoneProgressionLogic`](../../Assets/Scripts/Streaming/ZoneProgressionLogic.cs) が
   dwell だけで行い、cue / インサート / override の凍結にも dip にも左右されない。**演出で画面が止まっていても、
   体験者が歩けば周回・区間追跡は進む**。逆にスタッフ手動 A・Web 固定・インサートの画面切替は時計を動かさない
+
+#### ⚠⚠ 体験者は引き返す（2026-08-17）
+
+**演出の途中で後ろのカメラへ戻る体験者が居る。** そのとき起きることは 2 つで、
+契約の正本は [streaming.md](streaming.md) の「周回数は 2 つある」と
+「引き返したら、途中で切れた演出を頭から出し直す」。ここで押さえるのは要点だけ:
+
+1. **引き返した先は「前にそこに居たときの区間」**。`1周目C → 2周目A → 引き返して C` は
+   `(1, C)` として扱う。旧実装は `(2, C)` と読んで、**まだ通っていない 2 周目 C の演出を
+   消費していた**（`once` なので、後で正規にそこへ来ても二度と出ない）
+2. **途中で切れた演出は、報告していなければその区間へ戻ったとき頭から出し直す**
+   （ユーザー指定「異変を報告済み → 再演出は無し／報告していない → 最初から再演出」）。
+   完走した演出は戻ってきても出ない
+
+⚠ **周回数は 2 つあり、混ぜると壊れる。** 終了判定（`lap > totalLaps`）は**進行の周**、
+演出・録画・区間 post / BGM は**区間の周**。区間の周を終了判定へ渡すと、
+帰りの A で 1 区間引き返した瞬間に**体験が終わらなくなる**。
+
+⚠ **一度録れた区間は録り直さない。** 引き返して同じ区間へ戻ると、放っておくと
+1 周目の映像が数秒の断片へ上書きされる（3 周目に流すのはその映像）。
 - 純ロジック（`LapCounterLogic` / `CueScheduleLogic` / `ZoneProgressionLogic`）は MonoBehaviour から分離済みで EditMode テストがある
   （`Assets/Tests/Tracking/LapCounterTests.cs` / `Assets/Tests/Streaming/CueSchedulerTests.cs` /
    `Assets/Tests/Streaming/ZoneProgressionLogicTests.cs`）。セマンティクスを変えるときはテストを先に直す

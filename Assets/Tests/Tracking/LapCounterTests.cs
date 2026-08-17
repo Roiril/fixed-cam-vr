@@ -39,6 +39,96 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(l.Position, Is.EqualTo(0));
         }
 
+        // ---- 区間の周（逆走で戻る）----
+        // 進行の周（CurrentLap）は単調増加で終了判定が読む。区間の周（SegmentLap）は
+        // 「いま体験者が居る区間」の周で、引き返すと前にそこに居たときの値へ戻る。
+        // これが無いと `1周目C → 2周目A → 引き返して C` が (2,C) と読まれ、**体験者が
+        // 2 周目の B を一度も通らないまま 2 周目 C の演出が消費される**（once なので二度と出ない）。
+
+        [Test]
+        public void Backtrack_SegmentLapReturnsToPreviousVisit_ProgressLapDoesNot()
+        {
+            // ユーザー指定の並び: 1-C → 2-A → 引き返して 1-C → 2-A → 2-B
+            var l = Make(0, 1, 2);
+            l.Seed(0);
+            l.Feed(1); Assert.That(l.SegmentLap, Is.EqualTo(1));  // 1-B
+            l.Feed(2); Assert.That(l.SegmentLap, Is.EqualTo(1));  // 1-C
+            l.Feed(0); Assert.That(l.SegmentLap, Is.EqualTo(2));  // 2-A（1 周完了）
+            Assert.That(l.CurrentLap, Is.EqualTo(2));
+
+            l.Feed(2);
+            Assert.That(l.SegmentLap, Is.EqualTo(1), "引き返した C は 1 周目の区間として扱う");
+            Assert.That(l.CurrentLap, Is.EqualTo(2), "進行の周は減らない（終了判定が壊れる）");
+
+            l.Feed(0);
+            Assert.That(l.SegmentLap, Is.EqualTo(2), "戻った A は 2 周目の区間");
+            l.Feed(1);
+            Assert.That(l.SegmentLap, Is.EqualTo(2), "順路へ復帰したら通常どおり進む");
+            Assert.That(l.Position, Is.EqualTo(1), "ポインタも順路へ復帰している");
+        }
+
+        [Test]
+        public void Backtrack_TwoSegments_DoesNotClaimTheNextLapSegment()
+        {
+            // 2-A から C へ、さらに B へ戻る。B は「A の次」に見えるが、来たのは C からなので前進ではない。
+            // ここを進入カメラだけで判定すると (2,B) を先取りしてしまう（設計レビューで見つかった穴）。
+            var l = Make(0, 1, 2);
+            l.Seed(0);
+            l.Feed(1); l.Feed(2); l.Feed(0);                       // 2-A
+            l.Feed(2); Assert.That(l.SegmentLap, Is.EqualTo(1));   // 引き返して 1-C
+            Assert.That(l.Feed(1), Is.False);
+            Assert.That(l.SegmentLap, Is.EqualTo(1), "2 区間ぶん引き返した B も 1 周目の区間");
+            Assert.That(l.Position, Is.EqualTo(0), "ポインタは A に据え置かれる");
+
+            // 順路へ戻れば元どおり進む（引き返しで進行が詰まったままにならない）。
+            l.Feed(2); l.Feed(0);
+            Assert.That(l.SegmentLap, Is.EqualTo(2));
+            l.Feed(1); Assert.That(l.SegmentLap, Is.EqualTo(2));   // 2-B
+            l.Feed(2); Assert.That(l.SegmentLap, Is.EqualTo(2));   // 2-C
+            Assert.That(l.Feed(0), Is.True, "2 周目を踏破して lap 3");
+            Assert.That(l.CurrentLap, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void SegmentLap_NeverExceedsProgressLap()
+        {
+            // 区間の周が進行の周を追い越すと、まだ到達していない周の演出・録画が生まれる。
+            var l = Make(0, 1, 2);
+            l.Seed(0);
+            foreach (int cam in new[] { 1, 2, 0, 2, 1, 2, 0, 1, 2, 0, 0, 1 })
+            {
+                l.Feed(cam);
+                Assert.That(l.SegmentLap, Is.LessThanOrEqualTo(l.CurrentLap),
+                    $"camera={cam} で区間の周が進行の周を追い越した");
+                Assert.That(l.SegmentLap, Is.GreaterThanOrEqualTo(1));
+            }
+        }
+
+        [Test]
+        public void Seed_UsesPreviousVisit_AndDoesNotAdvanceProgress()
+        {
+            var l = Make(0, 1, 2);
+            l.Seed(0);
+            l.Feed(1); l.Feed(2); l.Feed(0);                       // 2-A
+            Assert.That(l.Seed(2), Is.EqualTo(1), "一度居た C のシードは 1 周目の区間");
+            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.Position, Is.EqualTo(0), "シードは進行を動かさない");
+        }
+
+        [Test]
+        public void Reset_ClearsPerCameraMemory_SoNextVisitorStartsAtLapOne()
+        {
+            // 前の体験者の足跡が残ると、次の体験者の 1 周目が「前の人が最後に居たときの周」に化ける。
+            var l = Make(0, 1, 2);
+            l.Seed(0);
+            l.Feed(1); l.Feed(2); l.Feed(0); l.Feed(1); l.Feed(2); // 2-C まで進む
+            Assert.That(l.SegmentLap, Is.EqualTo(2));
+
+            l.Reset();
+            Assert.That(l.Seed(2), Is.EqualTo(1), "リセット後は一度も居たことが無い扱い");
+            Assert.That(l.SegmentLap, Is.EqualTo(1));
+        }
+
         [Test]
         public void SameCamera_DoesNotAdvance()
         {

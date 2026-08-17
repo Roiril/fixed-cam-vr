@@ -310,7 +310,11 @@ namespace FixedCamVr.Streaming.Recording
 
         // ---- 録画 ----
 
-        private void OnCameraEntered(int camera, int lap)
+        // ⚠ 読むのは **区間の周**（lap・逆走で戻る）。引き返して 1 周目 C に戻ったぶんは
+        //   `L1C2.mjr` へ上書きする ＝ 3 周目に流れるのは「その場所で最後に自分がした動き」になる。
+        //   進行の周で書くと、体験者が一度も達していない周の録画ができ、
+        //   3 周目のカットが指す `recLap` と食い違って**黙って飛ぶ**。
+        private void OnCameraEntered(int camera, int lap, int progressLap)
         {
             float now = Time.realtimeSinceStartup;
             ShowRecordDef? cfg = showControl != null ? showControl.RecordConfig : null;
@@ -338,6 +342,20 @@ namespace FixedCamVr.Streaming.Recording
             _startLine.Reset();
             _hasLastLineNow = false;
             if (cfg == null || !cfg.RecordsLap(lap)) { RebindTaps(); return; }
+
+            // ⚠⚠ **一度録れた区間は録り直さない。**
+            //   体験者が引き返すと区間キーは「前にそこに居たときの周」へ戻る
+            //   （`LapCounterLogic.SegmentLap`）ので、同じ (周, カメラ) へ二度入りうる。
+            //   `SegmentRecordWriter` は `FileMode.Create` で開くため、放っておくと
+            //   **1 周目の映像が、引き返してすぐ出ていった数秒の断片に置き換わる**。
+            //   3 周目に流すのはその映像 ＝ 作品の核なので、先に録れた方を守る。
+            //   （どちらが良い素材かは機械には決められない。壊さない側へ倒す。）
+            if (SegmentAlreadyRecorded(lap, camera))
+            {
+                Debug.Log($"[SegmentRecorder] 録画済みの区間へ戻ってきたので録り直さない lap={lap} camera={camera}");
+                RebindTaps();
+                return;
+            }
 
             CameraStream? stream = registry != null ? registry.Get(camera) : null;
             if (stream == null) { RebindTaps(); return; }
@@ -389,6 +407,16 @@ namespace FixedCamVr.Streaming.Recording
 
         /// <summary>この区間の pts（区間先頭からの経過 ms）。</summary>
         private static int PtsOf(Segment s, float now) => Mathf.RoundToInt((now - s.startTime) * 1000f);
+
+        // その (周, カメラ) を既に録ったか。**ファイルの実在で見る**（書き出しは区間を閉じるときなので、
+        // 走行中の追い録りは自前のリストで見る）。ラン開始で録画ディレクトリごと消えるので、
+        // 前の体験者のファイルを「録済み」と読むことはない。
+        private bool SegmentAlreadyRecorded(int lap, int camera)
+        {
+            foreach (Segment s in _segments)
+                if (s.lap == lap && s.camera == camera) return true;
+            return !string.IsNullOrEmpty(ResolveRecorded(lap, camera));
+        }
 
         /// <summary>走っている追い録りを全部閉じて実績を確定させる。閉じたら tap を張り直す。</summary>
         private void ClosePostRolls()

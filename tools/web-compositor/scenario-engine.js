@@ -333,27 +333,76 @@ export class SwitchDirector {
 
 // ---- 周回（LapCounterLogic）---------------------------------------------------
 
-/** 進行ポインタ方式。順方向一致でのみ前進し、order[0] へ戻ると lap++（1 始まり）。 */
+/**
+ * 進行ポインタ方式。順方向一致でのみ前進し、order[0] へ戻ると lap++（1 始まり）。
+ *
+ * **周回数は 2 つある**（LapCounterLogic と同じ・2026-08-17）:
+ *   - `currentLap`（進行の周）= 単調増加。終了判定・「N周目／全3周」の表示
+ *   - `segmentLap`（区間の周）= いま居る区間の周。**逆走で戻る**。区間キー (lap, camera) はこちら
+ *
+ * 前進は「ポインタの居る所に居た人が、その次へ進んだ」ときだけ
+ * （進入カメラだけを見ると、引き返した後の 1 歩を前進と読み違える）。
+ */
 export class LapCounter {
-  constructor() { this._order = []; this._pos = 0; this._lap = 1; }
+  constructor() { this._order = []; this._reset(); }
 
   get currentLap() { return this._lap; }
+  /** いま居る区間の周（逆走で戻る）。区間キーに使う。 */
+  get segmentLap() { return this._segLap; }
   get position() { return this._pos; }
   get order() { return this._order; }
 
-  setOrder(order) { this._order = Array.isArray(order) ? order.slice() : []; this._pos = 0; this._lap = 1; }
+  setOrder(order) { this._order = Array.isArray(order) ? order.slice() : []; this._reset(); }
 
-  reset() { this._pos = 0; this._lap = 1; }
+  reset() { this._reset(); }
+
+  _reset() {
+    this._pos = 0;
+    this._lap = 1;
+    this._segLap = 1;
+    this._hasPrev = false;
+    this._prevCamera = -1;
+    // カメラ index → そこを最後に確定したときの周。
+    this._lastLapByCamera = new Map();
+  }
 
   /** 戻り値は「この供給で lap が前進したか」。逆走 / 同一 / スキップは前進しない。 */
   feed(camera) {
     const n = this._order.length;
-    if (n === 0) return false;
-    const nextPos = (this._pos + 1) % n;
-    if (this._order[nextPos] !== camera) return false;
-    this._pos = nextPos;
-    if (this._pos === 0) { this._lap++; return true; }
-    return false;
+    if (n === 0) { this._segLap = this._lap; return false; }
+    if (!this._isForward(camera, n)) {
+      this._segLap = this._lastLapOf(camera);
+      this._remember(camera, this._segLap);
+      return false;
+    }
+    this._pos = (this._pos + 1) % n;
+    const advanced = this._pos === 0;
+    if (advanced) this._lap++;
+    this._segLap = this._lap;
+    this._remember(camera, this._segLap);
+    return advanced;
+  }
+
+  /** 起動・ランリセットで「いま居るゾーン」を初回進入として流す前に呼ぶ（進行は動かさない）。 */
+  seed(camera) {
+    this._segLap = this._lastLapOf(camera);
+    this._remember(camera, this._segLap);
+    return this._segLap;
+  }
+
+  _isForward(camera, n) {
+    if (this._order[(this._pos + 1) % n] !== camera) return false;
+    return !this._hasPrev || this._prevCamera === this._order[this._pos];
+  }
+
+  _lastLapOf(camera) {
+    return this._lastLapByCamera.has(camera) ? this._lastLapByCamera.get(camera) : this._lap;
+  }
+
+  _remember(camera, lap) {
+    this._lastLapByCamera.set(camera, lap);
+    this._hasPrev = true;
+    this._prevCamera = camera;
   }
 }
 
@@ -380,6 +429,18 @@ export const DROP_REASON = {
  */
 export const DROP_CODE = { screenBusy: 0, lostToAnotherTake: 1, carryExpired: 2, blockerGone: 3 };
 
+/**
+ * 演出 1 本の決着状態（TakeRunnerLogic.Outcome）。`once` の抑止はこれで見る。
+ * 途中で切れて報告もされていない演出は未決着のまま残り、その区間へ戻れば頭から出し直す。
+ *
+ * ⚠ **卓には体験者の報告が無い**ので、シミュレータは常に「報告していない」側を見せる
+ * （＝ 引き返したら必ず再演される）。実機では報告済みなら再演しない。
+ */
+export const OUTCOME = { NONE: 0, UNRESOLVED: 1, SETTLED: 2 };
+
+/** 同じ演出を出し直せる回数の上限（TakeRunnerLogic.MaxReplays）。 */
+export const MAX_REPLAYS = 2;
+
 /** 区間を越えて待てるスロットの上限（TakeRunnerLogic.MaxCarrySlots）。 */
 export const MAX_CARRY_SLOTS = 2;
 /** 持ち越しの寿命 (秒)（TakeRunnerLogic.CarryMaxWaitSec）。 */
@@ -403,7 +464,10 @@ const noDecision = () => ({
 export class TakeRunner {
   constructor() {
     this._defs = [];
-    this._fired = [];
+    // 演出ごとの決着状態（OUTCOME）と再演回数。`_fired`（開始した瞬間に立つ bool）の後継。
+    this._outcome = [];
+    this._replays = [];
+    this._replayCount = 0;
     this._armedIndex = [];
     this._armedDue = [];
     this._armedState = [];
@@ -431,10 +495,13 @@ export class TakeRunner {
   get baseZoneCamera() { return this._baseZoneCam; }
   get armedCount() { return this._armedIndex.length; }
   get carryCount() { return this._carryIndex.length; }
+  /** 途中で切れた演出を出し直した回数（TakeRunnerLogic.ReplayCount）。 */
+  get replayCount() { return this._replayCount; }
 
   setDefs(defs) {
     this._defs = defs || [];
-    this._fired = new Array(this._defs.length).fill(false);
+    this._outcome = new Array(this._defs.length).fill(OUTCOME.NONE);
+    this._replays = new Array(this._defs.length).fill(0);
     this._clearArmed();
     this._dropAllCarry(DROP_REASON.BLOCKER_GONE, false);
     this._running = false;
@@ -444,7 +511,9 @@ export class TakeRunner {
   }
 
   resetRun() {
-    this._fired.fill(false);
+    this._outcome.fill(OUTCOME.NONE);
+    this._replays.fill(0);
+    this._replayCount = 0;
     this._clearArmed();
     this._running = false;
     this._activeTake = -1;
@@ -466,7 +535,7 @@ export class TakeRunner {
     // policy=yield: 体験者が区間を移ったら演出を打ち切って画面を返す。
     // このとき離脱区間の exit 演出は発火しない（同時 1 本の原則を保つ）。
     if (this._running && this._defs[this._activeTake].yieldOnZoneChange) {
-      const yielded = this._endTakeDecision(newCam, false);
+      const yielded = this._endTakeDecision(newCam, false, false, true);
       // 打ち切りで消える武装も黙って消さない（C# 側と同じ）。
       if (hadPrev) this._reportRemainingDrops(prevLap, prevCam, -1, true);
       this._clearArmed();
@@ -581,6 +650,9 @@ export class TakeRunner {
 
   /** 走行中の演出を外部都合で畳む。 */
   abortActive() {
+    // 人が止めた演出は決着させる（同じ区間へ戻っても勝手に出し直さない）。
+    if (this._activeTake >= 0 && this._activeTake < this._outcome.length)
+      this._outcome[this._activeTake] = OUTCOME.SETTLED;
     this._running = false; this._activeTake = -1; this._activeStep = -1;
     // 画面を取り返した直後に、溜まっていた持ち越しが噴き出さないようにする。
     this._dropAllCarry(DROP_REASON.BLOCKER_GONE);
@@ -589,10 +661,15 @@ export class TakeRunner {
   // ---- 内部 ----
 
   _startTake(index, now, baseZoneCam) {
+    // 未決着のものを出し直したなら「再演」。上限（MAX_REPLAYS）まで。
+    if (this._outcome[index] === OUTCOME.UNRESOLVED) {
+      this._replays[index]++;
+      this._replayCount = (this._replayCount || 0) + 1;
+    }
     this._running = true;
     this._activeTake = index;
     this._activeStep = 0;
-    this._fired[index] = true;
+    this._outcome[index] = OUTCOME.UNRESOLVED;   // 決着は終わり方が決める
     this._baseZoneCam = baseZoneCam;
     const durs = this._defs[index].stepDurSec;
     this._stepEnd = stepEndTime(now, durs.length > 0 ? durs[0] : 0);
@@ -610,8 +687,14 @@ export class TakeRunner {
     };
   }
 
-  _endTakeDecision(latestZoneCam, forced, chainNext = false) {
+  _endTakeDecision(latestZoneCam, forced, chainNext = false, yielded = false) {
     const take = this._activeTake;
+    if (take >= 0 && take < this._outcome.length) {
+      // 体験者の歩きで切れた（yielded）ものだけが未決着で残る。卓には報告が無いので
+      // 実機の「報告済みなら決着」は再現しない（下振れ側＝必ず再演する側を見せる）。
+      const settled = !yielded || this._replays[take] >= MAX_REPLAYS;
+      this._outcome[take] = settled ? OUTCOME.SETTLED : OUTCOME.UNRESOLVED;
+    }
     this._running = false;
     this._activeTake = -1;
     this._activeStep = -1;
@@ -632,7 +715,10 @@ export class TakeRunner {
     for (let i = 0; i < this._defs.length; i++) {
       const d = this._defs[i];
       if (d.onExit || d.lap !== lap || d.camera !== camera) continue;
-      if (d.once && this._fired[i]) continue;
+      // 走行中の演出は武装しない（policy=hold は画面を持ったまま引き返せるので、
+      // 自分の区間へ戻ると自分自身を武装して二重に始まる）。
+      if (this._running && i === this._activeTake) continue;
+      if (d.once && this._outcome[i] === OUTCOME.SETTLED) continue;
       if (d.stepDurSec.length === 0) continue;   // カット空の演出は無視
       order.push(i);
     }
@@ -700,7 +786,8 @@ export class TakeRunner {
       const d = this._defs[i];
       if (d.lap !== lap || d.camera !== camera) continue;
       if (d.stepDurSec.length === 0) continue;
-      if (d.once && this._fired[i]) continue;
+      if (this._running && i === this._activeTake) continue;
+      if (d.once && this._outcome[i] === OUTCOME.SETTLED) continue;
       if (!d.onExit && (d.skipWhenMissed || !this._isArmed(i))) continue;
       if (this._carryIndex.includes(i)) continue;   // 持ち越したものはまだ生きている
       this.onTakeDropped(i, screenBusy ? DROP_REASON.SCREEN_BUSY : DROP_REASON.LOST);
@@ -713,7 +800,8 @@ export class TakeRunner {
       const d = this._defs[i];
       if (d.lap !== lap || d.camera !== camera) continue;
       if (d.stepDurSec.length === 0) continue;
-      if (d.once && this._fired[i]) continue;
+      if (this._running && i === this._activeTake) continue;
+      if (d.once && this._outcome[i] === OUTCOME.SETTLED) continue;
       if (d.onExit || (!d.skipWhenMissed && this._isArmed(i))) return i; // 配列順で先頭が勝つ
     }
     return -1;
@@ -885,7 +973,7 @@ export function createShowRunner(cfg) {
     if (!seeded) {
       seeded = true;
       hasSeg = true;
-      segLap = lap.currentLap;
+      segLap = lap.seed(segCam);
       segCam = c.startCamera;
       out.push(ev('seg', tMs, segLap, segCam));
       emit(out, c, takes.onZoneCommitted(segLap, segCam, false, segLap, segCam, now), tMs);
@@ -918,7 +1006,8 @@ export function createShowRunner(cfg) {
 
       if (lap.feed(zoneCam)) out.push(ev('lap', tMs, lap.currentLap));
 
-      const newLap = lap.currentLap;
+      // 区間キーは **区間の周**（逆走で戻る）。`lap` イベントは進行の周のまま。
+      const newLap = lap.segmentLap;
       out.push(ev('seg', tMs, newLap, zoneCam));
 
       emit(out, c, takes.onZoneCommitted(newLap, zoneCam, hasSeg, segLap, segCam, now), tMs);

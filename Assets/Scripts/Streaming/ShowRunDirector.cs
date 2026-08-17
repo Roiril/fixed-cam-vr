@@ -258,7 +258,12 @@ namespace FixedCamVr.Streaming
         }
 
         // 周回は「本編の区間進行」からだけ受ける（ゲートが閉じている導入・終了では来ない）。
-        private void OnCameraEntered(int camera, int lap) => _logic.NotifyLap(lap);
+        //
+        // ⚠⚠ 読むのは **進行の周**（progressLap・単調増加）。区間の周（lap）は逆走で戻るので、
+        //   ここへ渡すと「帰りの A に着いた体験者が 1 区間引き返した瞬間に周回が 3 へ落ちて、
+        //   体験が終わらなくなる」。終了判定は `lap > totalLaps` の 1 本しか無いので、
+        //   ここを間違えると出口が丸ごと消える。
+        private void OnCameraEntered(int camera, int lap, int progressLap) => _logic.NotifyLap(progressLap);
 
         private void Update()
         {

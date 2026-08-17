@@ -197,7 +197,7 @@ namespace FixedCamVr.Tracking.Tests
             timeline.SetTimeline(new[] { SegmentWithLiveTake(1, 0, takeCam: 2, durSec: 30f) });
 
             // ゾーン0進入（seed 相当）。演出を武装。pos は order[0]=cam0。
-            cueScheduler.NotifyCameraEntered(0, 1);
+            cueScheduler.NotifyCameraEntered(0, 1, 1);
 
             Invoke(runner, "Update");   // 進入 +0s → カット開始 → director.InsertBegin(2)
             PumpDirector(dir);          // begin dip → active=2

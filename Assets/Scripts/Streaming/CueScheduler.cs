@@ -168,12 +168,24 @@ namespace FixedCamVr.Streaming
         private CueScheduleLogic.CueOverride _pendingOv;
 
         /// <summary>
-        /// ゾーン進入（LapCounter 由来の (camera, lap)）を受けた直後に発火する。deterministic post-Feed lap。
+        /// ゾーン進入（LapCounter 由来）を受けた直後に発火する。引数は
+        /// <c>(camera, segmentLap, progressLap)</c>。
+        ///
+        /// ⚠⚠ <b>周回数が 2 つあるのは、逆走で戻ったときに両者が食い違うから</b>（2026-08-17）。
+        ///   - <b>segmentLap</b> = いま体験者が居る区間の周（逆走で戻る）。
+        ///     <b>区間キー (lap, camera) はこちら</b> — 演出・区間 post / BGM・端末内録画・実測滞在
+        ///   - <b>progressLap</b> = 進行ポインタが数えた周（単調増加）。
+        ///     <b>体験の終了判定はこちら</b>（<see cref="ShowRunLogic.NotifyLap"/>）。
+        ///     segmentLap を渡すと、帰りの A で引き返した瞬間に周回が戻って<b>体験が終わらなくなる</b>
+        ///
+        /// 3 引数にしてあるのは、購読者に「どちらの周を使うか」をコンパイラが必ず選ばせるため。
+        /// 片方だけ暗黙に流すと、選び間違いが沈黙したまま実機でしか出ない。
+        ///
         /// TimelineDirector が購読して区間 post / インサートを分配する（Insert source の切替はここに来ないので
         /// 周回・区間追跡は体験者のゾーン進行だけを見る）。cue 評価の後に発火するため、インサート cue が
         /// 区間 cue より後に PlayCue され最後の命令が勝つ。
         /// </summary>
-        public event Action<int, int>? CameraEntered;
+        public event Action<int, int, int>? CameraEntered;
 
         private void Awake()
         {
@@ -260,7 +272,16 @@ namespace FixedCamVr.Streaming
         /// 一致が無ければ「その進入で条件を満たすものは無い」ので保留中の発火はキャンセルする
         /// （トリガーゾーンを抜けたら遅延中の cue は取り消す）。
         /// </summary>
-        public void NotifyCameraEntered(int camera, int lap)
+        /// <param name="camera">確定したゾーンのカメラ index。</param>
+        /// <param name="lap">
+        /// <b>区間の周</b>（逆走で戻る）。cue の (lap, camera) 一致はこれで見る —
+        /// 引き返した先は「前にそこに居たときの周」として扱う（<see cref="CameraEntered"/> の注記）。
+        /// </param>
+        /// <param name="progressLap">
+        /// <b>進行の周</b>（単調増加）。ここでは使わず <see cref="CameraEntered"/> へ中継するだけ。
+        /// 終了判定を持つ購読者（<c>ShowRunDirector</c>）が読む。
+        /// </param>
+        public void NotifyCameraEntered(int camera, int lap, int progressLap)
         {
             // 本編の外（導入中・終了後）は区間進行を一切下流へ流さない。演出の武装・端末内録画・
             // 区間 post / BGM・実測滞在がまとめて止まる（下流それぞれに条件を配ると必ず片方を忘れる）。
@@ -288,7 +309,7 @@ namespace FixedCamVr.Streaming
             // cue 評価の後に TimelineDirector（区間 post / インサート）を駆動する。
             // 進入は Insert source ではここへ来ない（LapCounter が Zone のみ Feed するため）ので、
             // これが「体験者のゾーン進行」の単一かつ deterministic な信号になる。
-            CameraEntered?.Invoke(camera, lap);
+            CameraEntered?.Invoke(camera, lap, progressLap);
         }
 
         private void Update()

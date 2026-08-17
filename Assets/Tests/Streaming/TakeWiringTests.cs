@@ -149,7 +149,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         // ゾーン確定を（LapCounter 相当の経路で）流す。
-        private static void EnterZone(Rig rig, int camera, int lap) => rig.Scheduler.NotifyCameraEntered(camera, lap);
+        private static void EnterZone(Rig rig, int camera, int lap) => rig.Scheduler.NotifyCameraEntered(camera, lap, lap);
 
         // TakeRunner.Update + Director.Update を 1 フレーム分回す。
         private static void Frame(Rig rig)

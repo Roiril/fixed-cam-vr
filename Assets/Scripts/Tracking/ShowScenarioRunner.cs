@@ -133,11 +133,12 @@ namespace FixedCamVr.Tracking
             // **1 周目スタート領域の演出（at=enter / at=line）が永久に武装されない** — 実機では出るのに
             // シミュレータだけ「何も起きない」と嘘をつくことになる（2026-07-27 実害: 1 周目の通過ラインが
             // 卓で沈黙した）。離脱時の決着（ifMissed=fireOnExit）も hasSeg=false のままだと働かない。
-            trace.Add(new Event { kind = "seg", t = startMs, a = lap.CurrentLap, b = cfg.StartCamera, id = "" });
-            Emit(trace, cfg, takes.OnZoneCommitted(lap.CurrentLap, cfg.StartCamera,
-                hadPrev: false, prevLap: lap.CurrentLap, prevCam: cfg.StartCamera, now: startMs / 1000f), startMs);
+            int seedLap = lap.Seed(cfg.StartCamera);
+            trace.Add(new Event { kind = "seg", t = startMs, a = seedLap, b = cfg.StartCamera, id = "" });
+            Emit(trace, cfg, takes.OnZoneCommitted(seedLap, cfg.StartCamera,
+                hadPrev: false, prevLap: seedLap, prevCam: cfg.StartCamera, now: startMs / 1000f), startMs);
             hasSeg = true;
-            segLap = lap.CurrentLap;
+            segLap = seedLap;
             segCam = cfg.StartCamera;
 
             for (int tMs = startMs; tMs <= endMs; tMs += tick)
@@ -172,7 +173,9 @@ namespace FixedCamVr.Tracking
                     if (lap.Feed(zoneCam))
                         trace.Add(new Event { kind = "lap", t = tMs, a = lap.CurrentLap, b = -1, id = "" });
 
-                    int newLap = lap.CurrentLap;
+                    // 区間キーは **区間の周**（逆走で戻る）。`lap` イベントは進行の周のまま
+                    // （卓の表示は「N周目／全3周」なので単調でなければ読めない）。
+                    int newLap = lap.SegmentLap;
                     trace.Add(new Event { kind = "seg", t = tMs, a = newLap, b = zoneCam, id = "" });
 
                     TakeRunnerLogic.Decision d =

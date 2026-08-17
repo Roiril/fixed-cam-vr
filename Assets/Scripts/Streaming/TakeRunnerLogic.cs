@@ -18,7 +18,9 @@ namespace FixedCamVr.Streaming
     ///   3. ifMissed=fireOnExit: offsetSec に達する前に離脱したら、その離脱の瞬間に発火
     ///   4. 区間を離れた時点で未発火の演出は必ず決着する（発火 or 破棄）。**遅れて別区間で発火しない**
     ///      破棄したら必ず <see cref="TakeDropped"/> で報告する（黙って消さない）
-    ///   5. once はラン内 1 回（<see cref="ResetRun"/> でクリア）
+    ///   5. once はラン内 1 回。ただし <b>1 回 = 「始めた回数」ではなく「決着した回数」</b>
+    ///      （2026-08-17 に変更・<see cref="Outcome"/>）。途中で切れて報告もされていない演出は
+    ///      未決着のまま残り、その区間へ戻れば頭から出し直す（<see cref="ResetRun"/> で全部クリア）
     ///   6. ライブ卓の抑止中は発火しない
     ///   6b. **開始規則「このラインを通過したら」（at=line）** は時刻ではなく床のラインの横断で due になる
     ///       （<see cref="LineCrossLogic"/> の結果を <see cref="Tick"/> で受ける）。
@@ -94,6 +96,45 @@ namespace FixedCamVr.Streaming
             VisitorDismissed = 3,
         }
 
+        /// <summary>
+        /// 演出 1 本の決着状態。<c>once</c> の抑止はこれで判断する
+        /// （2026-08-17。旧実装は <c>bool _fired[]</c> で、**開始した瞬間に立っていた**）。
+        ///
+        /// ユーザー指定（引き返したときの扱い）:
+        /// 「異変を報告済み → 再演出は無し／異変を報告していない → 最初から再演出」。
+        /// つまり <c>once</c> が数えるのは「始めた回数」ではなく「<b>決着した回数</b>」で、
+        /// 途中で切れて報告もされていない演出はまだ決着していない。
+        /// </summary>
+        public enum Outcome : byte
+        {
+            /// <summary>まだ一度も始まっていない。</summary>
+            None = 0,
+
+            /// <summary>
+            /// 始めたが完走せず、報告もされていない。
+            /// <b>その区間へ戻れば頭から出し直す</b>（区間キーは <c>LapCounterLogic.SegmentLap</c> なので、
+            /// 引き返した先は「前にそこに居たときの区間」になり、自然に同じ演出が武装される）。
+            /// </summary>
+            Unresolved = 1,
+
+            /// <summary>
+            /// 決着した。<b>二度と出さない。</b>
+            /// 完走した / 体験者が報告した / watchdog が打ち切った / 人が止めた（卓の介入）。
+            /// </summary>
+            Settled = 2,
+        }
+
+        /// <summary>
+        /// 同じ演出を出し直せる回数の上限（＝ 最大 <c>1 + MaxReplays</c> 回まで始まる）。
+        ///
+        /// ⚠ 無制限にしない。ゾーン確定は dwell 0.5 秒なので、境界で往復されると
+        /// <b>1 カット目だけが 1 秒おきに繰り返される</b>。そうなると演出ではなく機械の反復に見える。
+        /// ⚠ 0 にもしない。ユーザー指定は「報告していない限りはもう一度出す」。
+        /// 2 回まで許すのは、往復が 1 度で済まない現場（人にぶつかる・スタッフに呼び止められる）を
+        /// 想定した余裕。使い切ったら決着させる（<see cref="Outcome.Settled"/>）。
+        /// </summary>
+        public const int MaxReplays = 2;
+
         /// <summary>区間を越えて待てるスロットの上限。超えたら古い方から捨てて報告する。</summary>
         public const int MaxCarrySlots = 2;
 
@@ -167,7 +208,14 @@ namespace FixedCamVr.Streaming
         public Action<int, DropReason>? TakeDropped;
 
         private Def[] _defs = Array.Empty<Def>();
-        private bool[] _fired = Array.Empty<bool>();
+        private Outcome[] _outcome = Array.Empty<Outcome>();
+
+        // 走行中の演出に報告が届いたか。dismissible かどうかに関わらず立てる —
+        // 「消える」と「報告された」は別の話で、消えない演出でも報告されたなら再演しない。
+        private bool _activeReported;
+
+        // 演出ごとの再演回数（MaxReplays の上限に使う）。
+        private int[] _replays = Array.Empty<int>();
 
         // 現区間で武装している enter 演出（配列順を保つ）。
         private readonly List<int> _armedIndex = new();
@@ -213,30 +261,46 @@ namespace FixedCamVr.Streaming
         /// <summary>武装中（発火待ち）の演出数。テスト・診断用。</summary>
         public int ArmedCount => _armedIndex.Count;
 
-        /// <summary>定義を差し替える。once の発火済みと進行はリセットする（新ラン相当）。</summary>
+        /// <summary>演出 1 本の決着状態（テスト・診断用）。範囲外は <see cref="Outcome.None"/>。</summary>
+        public Outcome OutcomeOf(int takeIndex)
+            => takeIndex >= 0 && takeIndex < _outcome.Length ? _outcome[takeIndex] : Outcome.None;
+
+        /// <summary>
+        /// <b>途中で切れた演出を出し直した回数</b>（テレメトリ・テスト用）。
+        /// これが無いと「引き返しても再演されなかった」と「そもそも引き返していない」を
+        /// 走行のログから区別できない。
+        /// </summary>
+        public int ReplayCount { get; private set; }
+
+        /// <summary>定義を差し替える。once の決着と進行はリセットする（新ラン相当）。</summary>
         public void SetDefs(Def[] defs)
         {
             _defs = defs ?? Array.Empty<Def>();
-            _fired = new bool[_defs.Length];
+            _outcome = new Outcome[_defs.Length];
+            _replays = new int[_defs.Length];
             ClearArmed();
             DropAllCarry(DropReason.BlockerGone, report: false); // 定義が変わった＝ index の意味が変わる
             _running = false;
             _dismissPending = false;
+            _activeReported = false;
             _activeTake = -1;
             _activeStep = -1;
             _hasCurrent = false;
         }
 
-        /// <summary>ラン開始（体験者交代）。once 発火済みと進行を全消去する。定義は保持。</summary>
+        /// <summary>ラン開始（体験者交代）。once の決着と進行を全消去する。定義は保持。</summary>
         public void ResetRun()
         {
-            for (int i = 0; i < _fired.Length; i++) _fired[i] = false;
+            for (int i = 0; i < _outcome.Length; i++) _outcome[i] = Outcome.None;
+            for (int i = 0; i < _replays.Length; i++) _replays[i] = 0;
             ClearArmed();
             DropAllCarry(DropReason.BlockerGone, report: false); // ラン境界なので報告不要
             _running = false;
             // 前の体験者が押した 1 回を次のランへ持ち越さない。
             _dismissPending = false;
+            _activeReported = false;
             DismissCount = 0;
+            ReplayCount = 0;
             _activeTake = -1;
             _activeStep = -1;
             _hasCurrent = false;
@@ -392,8 +456,18 @@ namespace FixedCamVr.Streaming
         public const float WaitMark = -4f;
 
         /// <summary>
-        /// <b>体験者が異変を報告した</b>（左 X / Y の 1 秒長押し）。効き方は 2 つで、**排他**。
+        /// <b>体験者が異変を報告した</b>（左 X / Y の 1 秒長押し）。することは 3 つ。
         ///
+        ///   ⓪<b>走行中の演出を「報告済み」として記録する</b>（2026-08-17）。<c>dismissible</c> か
+        ///     ⚠⚠ 記録するのは<b>走行中の報告だけ</b>。演出が終わった後の押下に猶予を作らない —
+        ///     連絡の面が出す答えは <c>ShowControlClient.LastMarkHadTake</c>（押した瞬間の
+        ///     <c>ActiveTakeId</c>）で凍っており、そこでは「異常は検出されませんでした」と表示済み。
+        ///     内部だけ「報告済み」にすると、<b>同じ 1 回の押下について画と機械が別のことを言う</b>
+        ///     （<c>analyze-xp-log.py</c> が <c>ev=mark take=</c> と <c>ev=comms id=</c> の
+        ///     食い違いを FAIL にしているのと同じ不整合を、こちらから作ることになる）。
+        ///     どうかに関わらず立てる。これで、その演出が後から途中で切れても
+        ///     <b>再演しない</b>（ユーザー指定「異変を報告済み → 再演出は無し」）。
+        ///     ①②に当たらない演出でも必ず通る道。
         ///   ①現カットが <see cref="WaitMark"/>（<c>durKind:"untilMark"</c>）なら、
         ///     報告は**そのカットが消費する**。4 周目 A の締めがこれで、畳んだ先には著作された
         ///     次のカット（現実へ戻る 3 秒）がある。⚠ ここで演出ごと畳むとその 3 秒が丸ごと消え、
@@ -401,16 +475,20 @@ namespace FixedCamVr.Streaming
         ///   ②それ以外は、著作者が <c>dismissible</c> と宣言した演出**だけ**が畳まれて現実へ戻る
         ///     （<c>canon/LEDGER.md</c> 0050「報告したらそれらが消え」「推したら乱れたのちに元に戻って」）。
         ///
-        /// ⚠ **1 回の押下が 2 つの意味を持たないようにする。** ①で return するのがその保証。
+        /// ⚠ **①②は排他。** 1 回の押下が 2 つの意味を持たないよう、①で return する。
+        ///   ⓪だけは両方に共通する（記録は意味ではなく事実）。
         /// ⚠ **カットが始まってからの報告だけを数える。** 直前の区間で押した 1 回が持ち越されて
         ///   カットを素通りさせるのを防ぐ（線待ちと同じ理由）。
         /// ⚠ 実際に畳むのは次の <see cref="Tick"/>（<see cref="DismissDecision"/>）。ここで畳むと
         ///   演出の終わり方が 2 経路になり、後片付けの網羅性が経路ごとに分かれる。
+        ///
         /// </summary>
         public void NotifyMarkPressed(float now)
         {
             if (!_running) return;
             if (now < _stepBeganAt) return;
+
+            _activeReported = true;
 
             if (CurrentStepWait() == WaitMark) { SetCurrentStepEnd(now); return; }
 
@@ -530,11 +608,20 @@ namespace FixedCamVr.Streaming
             if (_running) _stepEnd = endTime;
         }
 
-        /// <summary>走行中の演出を外部都合で畳む（卓の「■ 画面を取り返す」・ラン開始・定義差し替えの後片付け）。</summary>
+        /// <summary>
+        /// 走行中の演出を外部都合で畳む（卓の「■ 画面を取り返す」・ラン開始・定義差し替えの後片付け）。
+        ///
+        /// ⚠ **決着させる**（<see cref="Outcome.Settled"/>）。人が画面を取り返した演出を、
+        ///   体験者が同じ区間へ戻ったからといって勝手に出し直さない。
+        ///   「途中で切れたら出し直す」の対象は<b>体験者の歩き</b>で切れたものだけ。
+        /// </summary>
         public void AbortActive()
         {
+            if (_activeTake >= 0 && _activeTake < _outcome.Length)
+                _outcome[_activeTake] = Outcome.Settled;
             _running = false;
             _dismissPending = false;
+            _activeReported = false;
             _activeTake = -1;
             _activeStep = -1;
             // 画面を取り返した直後に、溜まっていた持ち越しが噴き出さないようにする。
@@ -545,10 +632,18 @@ namespace FixedCamVr.Streaming
 
         private void StartTake(int index, float now, int baseZoneCam)
         {
+            // 未決着のものを出し直したなら、それは「再演」。数えて観測に出す
+            //（黙って効いていないのか、そもそも引き返していないのかを走行のログで分けるため）。
+            if (_outcome[index] == Outcome.Unresolved)
+            {
+                _replays[index]++;
+                ReplayCount++;
+            }
             _running = true;
             _activeTake = index;
             _activeStep = 0;
-            _fired[index] = true;
+            _outcome[index] = Outcome.Unresolved;   // 決着は終わり方（EndTakeDecision）が決める
+            _activeReported = false;
             _baseZoneCam = baseZoneCam;
             float[] durs = _defs[index].stepDurSec;
             _stepBeganAt = now;
@@ -568,9 +663,25 @@ namespace FixedCamVr.Streaming
             takeStarted = takeStarted,
         };
 
+        // 演出が終わった。**ここが `once` の決着を決める唯一の場所。**
+        //
+        //   Completed        → 決着（最後まで流し切った）
+        //   VisitorDismissed → 決着（体験者が報告して消した）
+        //   Watchdog         → 決着（壊れて打ち切られた。同じものを繰り返して同じ所で止まらない）
+        //   Yielded          → **報告されていれば決着 / されていなければ未決着**
+        //                      ＝ 体験者の歩きで切れて、まだ見せ切れていない。その区間へ戻れば頭から出し直す
         private Decision EndTakeDecision(int latestZoneCam, EndReason reason, bool chainNext = false)
         {
             int take = _activeTake;
+            if (take >= 0 && take < _outcome.Length)
+            {
+                // 出し直せる回数を使い切ったものも決着させる（境界での往復で 1 カット目だけが
+                // 繰り返されるのを止める・MaxReplays）。
+                bool settled = reason != EndReason.Yielded || _activeReported
+                               || _replays[take] >= MaxReplays;
+                _outcome[take] = settled ? Outcome.Settled : Outcome.Unresolved;
+            }
+            _activeReported = false;
             _running = false;
             _activeTake = -1;
             _activeStep = -1;
@@ -593,6 +704,12 @@ namespace FixedCamVr.Streaming
         // 進入区間の enter / line 演出を武装する（offsetSec 昇順 → 同値は配列順）。
         // ライントリガー（onLine）は offsetSec を持たない（契約上 0）ので、同値タイブレーク＝配列順で並ぶ。
         // 武装さえすれば due 判定（IsDue）が時刻と位置を出し分けるので、ここに分岐は要らない。
+        //
+        // ⚠ 弾くのは **決着済み**（Settled）だけ。未決着（Unresolved）は武装される ＝
+        //   引き返して同じ区間へ戻れば頭から出し直す（ユーザー指定「報告していない限りもう一度出す」）。
+        // ⚠⚠ **走行中の演出は武装しない。** policy=hold の演出は画面を持ったまま次の区間へ行けるので、
+        //   引き返して自分の区間へ戻ると自分自身が武装され、終わった次の Tick で二重に始まる。
+        //   旧実装は `_fired` が開始時点で立っていたので、この穴は構造的に無かった。
         private void ArmEnterTakes(int lap, int camera, float now)
         {
             var order = new List<int>();
@@ -600,7 +717,8 @@ namespace FixedCamVr.Streaming
             {
                 Def d = _defs[i];
                 if (d.onExit || d.lap != lap || d.camera != camera) continue;
-                if (d.once && _fired[i]) continue;
+                if (_running && i == _activeTake) continue;
+                if (d.once && _outcome[i] == Outcome.Settled) continue;
                 if (d.stepDurSec.Length == 0) continue; // カット空の演出は無視
                 order.Add(i);
             }
@@ -678,7 +796,9 @@ namespace FixedCamVr.Streaming
                 Def d = _defs[i];
                 if (d.lap != lap || d.camera != camera) continue;
                 if (d.stepDurSec.Length == 0) continue;
-                if (d.once && _fired[i]) continue;
+                // 走行中のものは「出ないまま終わった」ではない（いま画に出ている）。
+                if (_running && i == _activeTake) continue;
+                if (d.once && _outcome[i] == Outcome.Settled) continue;
                 if (!d.onExit && (d.skipWhenMissed || !IsArmed(i))) continue;
                 // 持ち越したものはまだ生きている（捨てていない）ので報告しない。
                 if (_carryIndex.Contains(i)) continue;
@@ -697,7 +817,8 @@ namespace FixedCamVr.Streaming
                 Def d = _defs[i];
                 if (d.lap != lap || d.camera != camera) continue;
                 if (d.stepDurSec.Length == 0) continue;
-                if (d.once && _fired[i]) continue;
+                if (_running && i == _activeTake) continue;
+                if (d.once && _outcome[i] == Outcome.Settled) continue;
                 if (d.onExit || (!d.skipWhenMissed && IsArmed(i))) return i; // 配列順で先頭が勝つ
             }
             return -1;

@@ -293,8 +293,13 @@ namespace FixedCamVr.Diagnostics
             => Emit($"ev=screen cam={camera} src={src}");
 
         // 区間の進入（周回つき）。演出の武装・区間 post / BGM・録画の駆動点と同じ首。
-        private void OnCameraEntered(int camera, int lap)
-            => Emit($"ev=seg lap={lap} cam={camera}");
+        //
+        // ⚠ **周は 2 つ出す。** `lap` = 区間の周（逆走で戻る・演出の区間キー）／
+        //   `plap` = 進行の周（単調増加・終了判定）。食い違っていたら体験者が引き返している。
+        //   1 つしか出さないと「引き返して演出が再演された」と「著作が二重に置かれている」を
+        //   走行のログから区別できない。
+        private void OnCameraEntered(int camera, int lap, int progressLap)
+            => Emit($"ev=seg lap={lap} cam={camera} plap={progressLap}");
 
         private void OnPhaseChanged(ShowPhase phase)
             => Emit($"ev=phase v={phase} lap={(_run != null ? _run.Lap : -1)} " +
@@ -891,6 +896,11 @@ namespace FixedCamVr.Diagnostics
             //   marks だけ見ても「機構が効いたか」は 1 ビットも分からない。0 のあいだは出さない。
             if (_timeline != null && _timeline.DismissCount > 0)
                 _sb.Append(" disN=").Append(_timeline.DismissCount);
+            // **途中で切れた演出を出し直した回数**（体験者が引き返して同じ区間へ戻った・2026-08-17）。
+            // ⚠ 引き返しそのものは `ev=seg` の `lap` と `plap` の食い違いに出るが、
+            //   **それが再演へ繋がったか**はここにしか出ない（画では「演出が出た」としか見えない）。
+            if (_timeline != null && _timeline.ReplayCount > 0)
+                _sb.Append(" reN=").Append(_timeline.ReplayCount);
 
             // --- 効果の実在（「段が進んだ」ではなく「画・音に出たか」）---
             // ここが全部揃っていても遷移は正常に見える、という壊れ方を 2026-07-31 に踏んだ。

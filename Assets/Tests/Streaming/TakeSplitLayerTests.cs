@@ -167,7 +167,7 @@ namespace FixedCamVr.Streaming.Tests
             step.splitFlip = true;
             rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("lap3A", step)) });
 
-            rig.Scheduler.NotifyCameraEntered(0, 1);
+            rig.Scheduler.NotifyCameraEntered(0, 1, 1);
             Frame(rig);
 
             Assert.That(rig.Feel.SplitX, Is.EqualTo(0.5f).Within(1e-4f), "カットの splitX が画へ渡る");
@@ -185,7 +185,7 @@ namespace FixedCamVr.Streaming.Tests
             step.splitX = 0.5f;
             rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("lap3A", step)) });
 
-            rig.Scheduler.NotifyCameraEntered(0, 1);
+            rig.Scheduler.NotifyCameraEntered(0, 1, 1);
             Frame(rig);
             Assert.That(rig.Feel.SplitX, Is.EqualTo(0.5f).Within(1e-4f));
 
@@ -204,7 +204,7 @@ namespace FixedCamVr.Streaming.Tests
             step.splitX = 0.5f;
             rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("lap3A", step)) });
 
-            rig.Scheduler.NotifyCameraEntered(0, 1);
+            rig.Scheduler.NotifyCameraEntered(0, 1, 1);
             Frame(rig);
             Assert.That(rig.Feel.SplitX, Is.EqualTo(0.5f).Within(1e-4f));
 
@@ -221,7 +221,7 @@ namespace FixedCamVr.Streaming.Tests
             ShowStepDef b = LiveStep(1, 5f);   // 分割を指定していないカット
             rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("lap3A", a, b)) });
 
-            rig.Scheduler.NotifyCameraEntered(0, 1);
+            rig.Scheduler.NotifyCameraEntered(0, 1, 1);
             Frame(rig);
             Assert.That(rig.Feel.SplitX, Is.EqualTo(0.5f).Within(1e-4f));
 
@@ -250,7 +250,7 @@ namespace FixedCamVr.Streaming.Tests
             step.overlay2CueId = "gen_dolls";
             rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("lap4A", step)) });
 
-            rig.Scheduler.NotifyCameraEntered(0, 1);
+            rig.Scheduler.NotifyCameraEntered(0, 1, 1);
             Frame(rig);
 
             Assert.That(rig.Feel.Overlay2Strength, Is.EqualTo(1f).Within(1e-4f),
@@ -271,7 +271,7 @@ namespace FixedCamVr.Streaming.Tests
             step.overlay2CueId = "gen_dolls";
             rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("lap4A", step)) });
 
-            rig.Scheduler.NotifyCameraEntered(0, 1);
+            rig.Scheduler.NotifyCameraEntered(0, 1, 1);
             Frame(rig);
             Assert.That(rig.Feel.Overlay2Strength, Is.EqualTo(1f).Within(1e-4f));
 
@@ -287,7 +287,7 @@ namespace FixedCamVr.Streaming.Tests
             Rig rig = MakeRig();
             rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("plain", LiveStep(0, 5f))) });
 
-            rig.Scheduler.NotifyCameraEntered(0, 1);
+            rig.Scheduler.NotifyCameraEntered(0, 1, 1);
             Frame(rig);
 
             Assert.That(rig.Feel.Overlay2Strength, Is.EqualTo(0f));
