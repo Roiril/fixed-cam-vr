@@ -591,7 +591,7 @@ namespace FixedCamVr.Streaming.EditorTools
             //      設計の正本は `.claude/rules/sound-design.md`。
             CreateOrUpdateSound(logic.transform);
 
-            // 3.7. 闇の目（canon/LEDGER.md 0072）。スクリーンの外の黒い背景で目が開く異変。
+            // 3.7. 闇の目（canon/LEDGER.md 0075）。スクリーンの外の黒い背景で目が開く異変。
             //      カットの `eyes` が出す（TakeRunner → AnomalyEyes）ので、指されなければ 1 画素も出ない。
             //      ⚠ **これもシーンに焼かれた GameObject** — コードだけでは APK に入らない。
             //      確認は `grep "m_Name: \[Eyes\]" Assets/Scenes/Main.unity`。
@@ -1063,7 +1063,7 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         /// <summary>
-        /// 闇の目（<see cref="AnomalyEyes"/>）を [Eyes] へ冪等に置く（<c>canon/LEDGER.md</c> 0072）。
+        /// 闇の目（<see cref="AnomalyEyes"/>）を [Eyes] へ冪等に置く（<c>canon/LEDGER.md</c> 0075）。
         ///
         /// ⚠ <b>Logic 直下に置く（head の子にしない）。</b> 群れは頭の<b>位置</b>だけを追い、
         ///   向きはワールド固定なので、head の子にすると向きまで付いてきて HUD に見える。

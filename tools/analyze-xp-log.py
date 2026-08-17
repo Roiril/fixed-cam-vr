@@ -1846,7 +1846,7 @@ def analyze(events, others, exp, warns=None):
             if after_ovl2 and max(after_ovl2) > 0.0:
                 verdict("FAIL", f"演出が終わった後も第 2 層が残っている（ovl2={max(after_ovl2):.2f}）")
 
-    # -- 闇に開く目（canon/LEDGER.md 0072）
+    # -- 闇に開く目（canon/LEDGER.md 0075）
     # ⚠ 「カットが指した」は画に出たことを意味しない。シェーダが実行時 Shader.Find なので
     #    ビルドから剥がれると 1 画素も出ないまま演出だけ正常に走る（2026-07-31 に覆いで踏んだ型）。
     #    しかも**闇に出る演出なので、録画では暗くて確かめにくい**。手掛かりはこのキーだけ。

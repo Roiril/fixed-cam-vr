@@ -6,10 +6,10 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.Tests
 {
     /// <summary>
-    /// 闇に浮かぶ目の座席表（<c>canon/LEDGER.md</c> 0072）。
+    /// 闇に浮かぶ目の座席表（<c>canon/LEDGER.md</c> 0075）。
     ///
     /// ⚠ ここで押さえたい壊れ方:
-    /// ① 大きい目がスクリーンに重なる（0072「スクリーンの外の黒い背景を」に反する）
+    /// ① 大きい目がスクリーンに重なる（0075「スクリーンの外の黒い背景を」に反する）
     /// ② 大きい目が視界の外に置かれる（誰にも気づかれずに 7.5 秒が終わる）
     /// ③ 順位が大きい目からの角度でなくなる（波が広がらず、散発的な点滅になる）
     /// ④ 割合（<c>eyes</c>）が効かない
@@ -49,7 +49,7 @@ namespace FixedCamVr.Streaming.Tests
             float bottom = AnomalyEyesMesh.BigElevDeg - halfH;
             float top = AnomalyEyesMesh.BigElevDeg + halfH;
 
-            // ① スクリーンに重ならない（重なると装置の映像が目に隠される ＝ 0072「スクリーンの外の」に反する）。
+            // ① スクリーンに重ならない（重なると装置の映像が目に隠される ＝ 0075「スクリーンの外の」に反する）。
             //   横で外れているか、縦で外れているかのどちらかで足りる。
             bool clearSideways = left > ScreenHalfYawDeg + 1f || right < -ScreenHalfYawDeg - 1f;
             bool clearVertically = bottom > ScreenHalfPitchDeg - ScreenDropDeg + 1f;
@@ -65,27 +65,27 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void OtherEyes_KeepClearOfTheBigEye()
         {
-            // 加算合成では重なった 2 つが 1 つの塊に見える。要の 1 つが「白い染み」に化けない。
+            // 要の 1 つが隣と重なって「白い染み」に化けない。
+            // ⚠ 空ける角度は**相手の大きさで変わる**（定数にすると視界を埋める目が覆いかぶさる）。
             EyeSeat[] seats = AnomalyEyesMesh.BuildSeats();
             Vector3 big = AnomalyEyesMesh.BigDir;
-            for (int i = 1; i < seats.Length; i++)
+            foreach (EyeSeat s in seats)
             {
-                Assert.That(Vector3.Angle(seats[i].dir, big),
-                    Is.GreaterThanOrEqualTo(AnomalyEyesMesh.BigClearDeg - 0.01f),
-                    $"seat {i} が大きい目に重なる");
+                if (s.big) continue;
+                Assert.That(Vector3.Angle(s.dir, big),
+                    Is.GreaterThanOrEqualTo(AnomalyEyesMesh.ClearDegFor(s.sizeDeg) - 0.01f),
+                    $"大きさ {s.sizeDeg:F1}° の目が大きい目に重なる");
             }
         }
 
         [Test]
-        public void BigEye_IsFirstAndRanksAreDistanceFromIt()
+        public void RanksAreDistanceFromTheBigEye()
         {
             EyeSeat[] seats = AnomalyEyesMesh.BuildSeats();
-            Assert.That(seats[0].big, Is.True);
-            Assert.That(seats[0].rank, Is.EqualTo(0f), "波の起点");
-
             Vector3 big = AnomalyEyesMesh.BigDir;
-            for (int i = 1; i < seats.Length; i++)
+            for (int i = 0; i < seats.Length; i++)
             {
+                if (seats[i].big) { Assert.That(seats[i].rank, Is.EqualTo(0f), "波の起点"); continue; }
                 float expect = Vector3.Angle(seats[i].dir, big) / 180f;
                 Assert.That(seats[i].rank, Is.EqualTo(expect).Within(1e-3f),
                     $"順位は大きい目からの角度（seat {i}）");
@@ -165,17 +165,75 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Sizes_StayInRange()
+        public void Sizes_SpanFourTiers()
         {
+            // ⚠⚠ ここが「まだ全然足りていない」の主因だった（0076）。参考画像の目は枠幅の 18〜29% で、
+            //    こちらは 5〜10% しか無かった。**視界を埋める目が必ず何個かある**ことを固定する。
             EyeSeat[] seats = AnomalyEyesMesh.BuildSeats();
-            int near = 0;
-            for (int i = 1; i < seats.Length; i++)
+            int tiny = 0, mid = 0, near = 0, huge = 0;
+            foreach (EyeSeat s in seats)
             {
-                Assert.That(seats[i].sizeDeg, Is.GreaterThanOrEqualTo(AnomalyEyesMesh.SizeMinDeg - 1e-3f));
-                Assert.That(seats[i].sizeDeg, Is.LessThan(30f), "ふつうの目が大きい目より大きくならない");
-                if (seats[i].sizeDeg > AnomalyEyesMesh.SizeMaxDeg) near++;
+                if (s.big) continue;
+                if (s.sizeDeg < 8f) tiny++;
+                else if (s.sizeDeg < 20f) mid++;
+                else if (s.sizeDeg < 40f) near++;
+                else huge++;
             }
-            Assert.That(near, Is.GreaterThan(4), "視界を埋める近い目が何個かある（参考画像 me3）");
+            Assert.That(tiny, Is.GreaterThan(10), "遠くの点（密度と奥行き）");
+            Assert.That(mid, Is.GreaterThan(40), "ふつうの目");
+            Assert.That(near, Is.GreaterThan(15), "近い目");
+            Assert.That(huge, Is.GreaterThan(3), "視界を埋める目（参考画像 me3）");
+        }
+
+        [Test]
+        public void Seats_AreSortedSmallestFirst()
+        {
+            // 前乗算アルファは**後に描いた方が手前**。大きい ＝ 近い目を後に置かないと遠近が逆に見える。
+            EyeSeat[] seats = AnomalyEyesMesh.BuildSeats();
+            for (int i = 1; i < seats.Length; i++)
+                Assert.That(seats[i].sizeDeg, Is.GreaterThanOrEqualTo(seats[i - 1].sizeDeg - 1e-4f));
+        }
+
+        [Test]
+        public void Shapes_DifferFromEyeToEye()
+        {
+            // 全部が同じ形だと壁紙の模様に見える（Codex の指摘）。
+            EyeSeat[] seats = AnomalyEyesMesh.BuildSeats();
+            float aMin = 9f, aMax = -9f, upMin = 9f, upMax = -9f, irMin = 9f, irMax = -9f, omMin = 9f;
+            int halfOpen = 0, tilted = 0;
+            foreach (EyeSeat s in seats)
+            {
+                aMin = Mathf.Min(aMin, s.aspect); aMax = Mathf.Max(aMax, s.aspect);
+                upMin = Mathf.Min(upMin, s.lidUp); upMax = Mathf.Max(upMax, s.lidUp);
+                irMin = Mathf.Min(irMin, s.irisR); irMax = Mathf.Max(irMax, s.irisR);
+                omMin = Mathf.Min(omMin, s.openMax);
+                if (s.openMax < 0.85f) halfOpen++;
+                if (Mathf.Abs(s.rollDeg) > 20f) tilted++;
+            }
+            Assert.That(aMax - aMin, Is.GreaterThan(0.30f), "細い目と丸い目が混ざる");
+            Assert.That(upMax - upMin, Is.GreaterThan(0.15f), "瞼の上がり方が個体で違う");
+            Assert.That(irMax - irMin, Is.GreaterThan(0.20f), "虹彩の大きさが個体で違う");
+            Assert.That(omMin, Is.LessThan(0.80f), "半開きのまま止まる目がある");
+            Assert.That(halfOpen, Is.GreaterThan(20), "全部が全開にはならない");
+            Assert.That(tilted, Is.GreaterThan(30), "傾いた目が混ざる");
+        }
+
+        [Test]
+        public void BigEyes_HaveBiggerIrises()
+        {
+            // 大きい目ほど虹彩が白目を食う ＝ 参考 me3 の「巨大な虹彩と黒い内部」が自動的に出る。
+            EyeSeat[] seats = AnomalyEyesMesh.BuildSeats();
+            float smallSum = 0f, hugeSum = 0f;
+            int smallN = 0, hugeN = 0;
+            foreach (EyeSeat s in seats)
+            {
+                if (s.big) continue;
+                if (s.sizeDeg < 8f) { smallSum += s.irisR; smallN++; }
+                else if (s.sizeDeg > 40f) { hugeSum += s.irisR; hugeN++; }
+            }
+            Assert.That(smallN, Is.GreaterThan(0));
+            Assert.That(hugeN, Is.GreaterThan(0));
+            Assert.That(hugeSum / hugeN, Is.GreaterThan(smallSum / smallN * 1.3f));
         }
     }
 }

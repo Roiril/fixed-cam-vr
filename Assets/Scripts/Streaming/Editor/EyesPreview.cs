@@ -7,7 +7,7 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
-    /// <b>闇に目が開く異変を 1 コマずつ焼く</b>（<c>canon/LEDGER.md</c> 0072）。
+    /// <b>闇に目が開く異変を 1 コマずつ焼く</b>（<c>canon/LEDGER.md</c> 0075）。
     ///
     /// ⚠ <b>実シェーダ <c>FixedCamVr/AnomalyEyes</c> と実ロジック</b>（<see cref="AnomalyEyesLogic"/> ＋
     /// <see cref="AnomalyEyesMesh"/>）を通す。模写ではないので、開く順・大きさ・虹彩の彫りは実機と同じ式。
@@ -177,7 +177,6 @@ namespace FixedCamVr.Streaming.EditorTools
             mat.SetFloat("_EyeFade", l.Fade);
             mat.SetFloat("_EyeIntensity", l.Intensity);
             mat.SetFloat("_EyeTime", clock);
-            mat.SetFloat("_EyeAspect", AnomalyEyesMesh.AspectHeight);
         }
 
         private static string F(float v) => v.ToString("F3", CultureInfo.InvariantCulture);

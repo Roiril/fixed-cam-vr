@@ -6,7 +6,7 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.Tests
 {
     /// <summary>
-    /// 闇に目が開く異変の進み方（<c>canon/LEDGER.md</c> 0072）。
+    /// 闇に目が開く異変の進み方（<c>canon/LEDGER.md</c> 0075）。
     ///
     /// ⚠ ここで押さえたい壊れ方は 5 つ。どれも実機の画を眺めても気づきにくい:
     /// ① 兆しが直線で開く（最初から見えてしまう ＝「気づかれにくい」が消える）
@@ -37,21 +37,38 @@ namespace FixedCamVr.Streaming.Tests
         // ---------------------------------------------------------------- ① 兆し
 
         [Test]
-        public void Hint_StartsAlmostInvisible()
+        public void Hint_StartsInDarkness()
         {
-            // 頭の 1 秒でほとんど開いていない（視界の端にあっても気づかれない）。
-            var l = Run(1.0f);
+            // 最初のしばらくは 1 画素も出ない（闇のまま）。
+            var l = Run(Hint * 0.2f);
             Assert.That(l.Stage, Is.EqualTo(EyesStage.Hint));
-            Assert.That(l.Big, Is.LessThan(0.10f), "兆しの 1 秒で 1 割も開いていてはいけない");
+            Assert.That(l.Big, Is.EqualTo(0f), "頭は闇のまま");
             Assert.That(l.Field, Is.EqualTo(0f), "兆しでは大きい目 1 つだけ");
+        }
+
+        [Test]
+        public void Hint_HoldsAsAFragmentThenSnapsOpen()
+        {
+            // ⚠⚠ ここが 0076 の主題。**止まっている時間が長く、開くのは一瞬**。
+            //    初版は等速で開いていて、判定は「ゆっくり過ぎて怖くない」だった。
+            float mid1 = AnomalyEyesLogic.HintCurve(0.45f);
+            float mid2 = AnomalyEyesLogic.HintCurve(0.80f);
+            Assert.That(mid1, Is.EqualTo(AnomalyEyesLogic.HintCrackOpen).Within(1e-3f));
+            Assert.That(mid2, Is.EqualTo(mid1).Within(1e-3f), "断片のまま止まっている（長い間）");
+            Assert.That(mid1, Is.LessThan(0.25f), "止まっている間は気づかれない大きさ");
+
+            // 見開きは 0.2 秒以内（＝ 尺の 8% 未満）で終わる。
+            float snapSec = (AnomalyEyesLogic.HintSnapAt - AnomalyEyesLogic.HintHoldAt) * Hint;
+            Assert.That(snapSec, Is.LessThan(0.20f), "見開くのは一瞬でなければ怖くない");
+            Assert.That(AnomalyEyesLogic.HintCurve(1f), Is.EqualTo(1f).Within(1e-3f));
         }
 
         [Test]
         public void Hint_IsNotLinear()
         {
-            // 直線なら半分の時刻でちょうど 0.5。曲線であることを数値で固定する。
-            float half = Run(Hint * 0.5f).Big;
-            Assert.That(half, Is.LessThan(0.30f), "兆しは直線で開いてはいけない（指数 HintPow）");
+            // 直線なら半分の時刻でちょうど 0.5。
+            float half = AnomalyEyesLogic.HintCurve(0.5f);
+            Assert.That(half, Is.LessThan(0.30f), "兆しは直線で開いてはいけない");
         }
 
         [Test]
@@ -75,11 +92,24 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void Stare_BlinksOnceInTheMiddle()
+        {
+            // 静止のただ中で 1 度だけ落ちる。**閉じ切らない**（閉じると「消えた」に見える）。
+            float at = AnomalyEyesLogic.StareCurve(AnomalyEyesLogic.StareBlinkAt);
+            Assert.That(at, Is.EqualTo(AnomalyEyesLogic.StareBlinkFloor).Within(1e-3f));
+            Assert.That(at, Is.GreaterThan(0.02f), "閉じ切らない");
+            Assert.That(AnomalyEyesLogic.StareCurve(0.05f), Is.EqualTo(1f).Within(1e-3f));
+            Assert.That(AnomalyEyesLogic.StareCurve(0.95f), Is.EqualTo(1f).Within(1e-3f));
+            float blinkSec = 2f * AnomalyEyesLogic.StareBlinkHalf * Stare;
+            Assert.That(blinkSec, Is.LessThan(0.45f), "瞬きは一瞬（長いと「眠い目」に見える）");
+        }
+
+        [Test]
         public void Stare_IsLongEnoughToPressTheReportButton()
         {
-            // 長押し 1 秒（VisitorMarkHoldLogic.DefaultHoldSec）＋ 気づく時間。
-            Assert.That(Stare, Is.GreaterThanOrEqualTo(3.0f),
-                "凝視が 3 秒を切ると、気づいて長押しし切る前に全部開く");
+            // 長押し 1 秒（VisitorMarkHoldLogic.DefaultHoldSec）＋ 気づいて手を動かす時間。
+            Assert.That(Stare, Is.GreaterThanOrEqualTo(2.5f),
+                "凝視が 2.5 秒を切ると、気づいて長押しし切る前に全部開く");
         }
 
         // ---------------------------------------------------------------- ③ 開眼
@@ -95,6 +125,28 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void Swarm_RipplesThenPausesThenRushes()
+        {
+            // ⚠⚠ 等速で回すと「波が通り過ぎるのを眺める」になる。**間**が驚きを作る（0076）。
+            float ripple = AnomalyEyesLogic.SwarmCurve(AnomalyEyesLogic.SwarmRippleAt);
+            float pause = AnomalyEyesLogic.SwarmCurve(AnomalyEyesLogic.SwarmPauseAt - 0.01f);
+            Assert.That(ripple, Is.EqualTo(AnomalyEyesLogic.SwarmRippleField).Within(1e-3f));
+            Assert.That(pause, Is.EqualTo(ripple).Within(1e-3f), "さざめきの後は止まっている");
+            float pauseSec = (AnomalyEyesLogic.SwarmPauseAt - AnomalyEyesLogic.SwarmRippleAt) * Swarm;
+            Assert.That(pauseSec, Is.GreaterThan(0.25f), "間が短いと落差にならない");
+            Assert.That(AnomalyEyesLogic.SwarmCurve(AnomalyEyesLogic.SwarmRushAt),
+                Is.EqualTo(1f).Within(1e-3f), "一気に 360 度まで届く");
+        }
+
+        [Test]
+        public void SingleEye_OpensInAboutOneTenthOfASecond()
+        {
+            // ⚠ ここが「ゆっくり過ぎて怖くない」の主因だった（初版は 0.84 秒）。
+            float sec = AnomalyEyesLogic.SwarmSpan * Swarm;
+            Assert.That(sec, Is.LessThan(0.15f), "1 つの目は瞬時に開く（実物の目の速さ）");
+        }
+
+        [Test]
         public void Swarm_SpreadsOutwardFromTheBigEye()
         {
             // 波は大きい目のまわりから広がる（乱数の点滅にしない）。
@@ -106,10 +158,10 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void TotalToFullOpen_IsTenAndAHalfSeconds()
+        public void TotalToFullOpen_FitsInASegment()
         {
             // 設計値の固定。ここを動かすと「区間の滞在に収まる」前提が崩れる。
-            Assert.That(Hint + Stare + Swarm, Is.EqualTo(10.5f).Within(1e-3f));
+            Assert.That(Hint + Stare + Swarm, Is.EqualTo(8.4f).Within(1e-3f));
         }
 
         // ---------------------------------------------------------------- ④ 畳む

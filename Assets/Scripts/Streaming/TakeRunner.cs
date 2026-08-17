@@ -164,7 +164,7 @@ namespace FixedCamVr.Streaming
             _cgLayer = FindObjectOfType<ShowCgLayer>();
             if (_cgLayer == null && overlay != null) _cgLayer = overlay.gameObject.AddComponent<ShowCgLayer>();
 
-            // 闇の目（canon/LEDGER.md 0072）。**シーンに居なければ自分で載せる** — 群れは
+            // 闇の目（canon/LEDGER.md 0075）。**シーンに居なければ自分で載せる** — 群れは
             // 頭に付いて動くだけで親を選ばないので、どこに載っていても同じ絵になる。
             // prefab / シーンの配線漏れで機能が全死した過去の事故を繰り返さない。
             _eyes = FindObjectOfType<AnomalyEyes>();
@@ -646,7 +646,7 @@ namespace FixedCamVr.Streaming
             director.ApplySplit(step.splitX, step.splitFlip, step.splitFreeze);
             ApplyStepOverlay2(step, takeIndex: d.takeIndex, stepIndex: d.stepIndex);
 
-            // スクリーンの外の闇で目が開く異変（canon/LEDGER.md 0072）。**画面には触らない**ので
+            // スクリーンの外の闇で目が開く異変（canon/LEDGER.md 0075）。**画面には触らない**ので
             // どの source のカットにも足せる。同じ値を続けて言い直しても進みは巻き戻らないので、
             // カットをまたいでも 1 つの出来事として続く。
             _eyes?.Apply(step.eyes);

@@ -5,7 +5,7 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// <b>スクリーンの外の黒い背景に、360 度いちめんの目が開く</b>異変（<c>canon/LEDGER.md</c> 0072）。
+    /// <b>スクリーンの外の黒い背景に、360 度いちめんの目が開く</b>異変（<c>canon/LEDGER.md</c> 0075）。
     ///
     /// 進み方は <see cref="AnomalyEyesLogic"/>（純ロジック・テストあり）、座席表は
     /// <see cref="AnomalyEyesMesh"/>、目の形は <c>FixedCamVr/AnomalyEyes</c> シェーダ。
@@ -39,8 +39,8 @@ namespace FixedCamVr.Streaming
         [Tooltip("位置合わせ中に引っ込めるための ShowControlClient。null なら実行時に探す。")]
         [SerializeField] private ShowControlClient? showControl;
 
-        [Tooltip("目の明るさ。闇の中の加算合成なので、上げすぎると「発光する記号」に見える。")]
-        [SerializeField, Range(0f, 2f)] private float gain = 0.85f;
+        [Tooltip("目の明るさ。上げすぎると「発光する記号」に見える。")]
+        [SerializeField, Range(0f, 2f)] private float gain = 1.0f;
 
         [Tooltip("瞬きの量（0 = 瞬きしない）。")]
         [SerializeField, Range(0f, 1f)] private float blink = 1f;
@@ -57,7 +57,6 @@ namespace FixedCamVr.Streaming
         private static readonly int TimeId = Shader.PropertyToID("_EyeTime");
         private static readonly int GainId = Shader.PropertyToID("_EyeGain");
         private static readonly int BlinkId = Shader.PropertyToID("_EyeBlink");
-        private static readonly int AspectId = Shader.PropertyToID("_EyeAspect");
         private static readonly int ColorId = Shader.PropertyToID("_EyeColor");
 
         private readonly AnomalyEyesLogic _logic = new();
@@ -215,8 +214,6 @@ namespace FixedCamVr.Streaming
             _mat.SetFloat(TimeId, _clock);
             _mat.SetFloat(GainId, gain);
             _mat.SetFloat(BlinkId, blink);
-            // 虹彩を真円で描くための縦横比。**メッシュ側の値と対**（片方だけ直すと虹彩が歪む）。
-            _mat.SetFloat(AspectId, AnomalyEyesMesh.AspectHeight);
             _mat.SetColor(ColorId, color);
             _renderer.enabled = true;
 
