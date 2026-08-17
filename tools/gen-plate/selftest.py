@@ -28,9 +28,36 @@ import metrics
 RNG = np.random.default_rng(20260817)
 
 
+def check_fit() -> int:
+    """**枠への収め方が、実機の正本と一致しているか。**
+
+    同じ量の実装が 3 か所にある — `MjpegScreen.ContainScale`（C#・シェーダへ渡す正本）、
+    `compose.py` の伝送計算、`screen.py` の届いた画。2026-08-18 まで `screen.py` だけが
+    **cover（枠を埋めて上下を切る）**を返していて、届いた画を 1.33 倍に拡大したうえで
+    プレートの上下 12.5% ずつを捨てていた。
+
+    ⚠ **恒等の入力ではこれは出ない**（素材にも実写にも同じ変形が掛かるので差が 0 のまま）。
+    掃引でも出ない（単調に動く）。**別の実装と突き合わせる以外に出す道が無かった。**
+    """
+    import screen
+    bad = 0
+    for w, h in [(640, 480), (1280, 720), (1440, 1080), (2560, 1080), (480, 640)]:
+        sa, fa = w / h, screen.FRAME_W / screen.FRAME_H
+        want = (sa / fa, 1.0) if sa < fa else (1.0, fa / sa)   # ← MjpegScreen.cs 258 行と同じ式
+        got = screen.contain_scale((w, h), fa)
+        if abs(got[0] - want[0]) > 1e-9 or abs(got[1] - want[1]) > 1e-9:
+            print(f"NG 枠への収め方 {w}x{h}: {got[0]:.3f},{got[1]:.3f} "
+                  f"← 正本は {want[0]:.3f},{want[1]:.3f}（MjpegScreen.ContainScale）")
+            bad += 1
+    if not bad:
+        print("OK 枠への収め方   C# の正本と一致（縮む側が 1 未満 ＝ 黒帯が出る）")
+    return bad
+
+
 def _blob(shape, cx, cy, rx, ry) -> np.ndarray:
     y, x = np.ogrid[:shape[0], :shape[1]]
     return (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2) <= 1.0
+
 
 
 def fakes(seed: Image.Image, man: dict) -> dict[str, Image.Image]:
@@ -46,7 +73,12 @@ def fakes(seed: Image.Image, man: dict) -> dict[str, Image.Image]:
         s = 0.7 + 0.9 * (foot - y0) / max(1, y1 - y0)
         solid |= _blob((h, w), cx, foot - int(40 * s), int(16 * s), int(42 * s))
 
-    # 塊の色は、その場所の床より 50 明るい平らな色（種と確実に見分けが付く量）
+    # 塊の色は、その場所の床より 50 明るい平らな色（種と確実に見分けが付く量）。
+    # ⚠ **この偽物は場所によって強さが変わる。** 床の明るさの分布に当たる値になると、
+    #   そこでは輪郭が生まれず「貼り付け」として弱くなる（実測で外周の 35% しか段差にならない
+    #   場所がある）。⚠⚠ 暗い側へずらす案を試したが、**塊が暗くなるぶん粒の比が下がって
+    #   別の門（粒が乗っている）が誤って落ちた**ので取り下げた。
+    #   ⇒ **偽物を強くするのではなく、線を弱い偽物でも越えない位置に置く**（`judge.py` の 1.00）。
     tone = float(np.median(np.asarray(seed.convert("L"), dtype=np.float64)[y0:y1, x0:x1])) + 50.0
     body_flat = np.full_like(g, tone)
 
@@ -89,7 +121,7 @@ def main() -> int:
         man = json.load(f)
     seed = Image.open(man["seed"]).convert("RGB")
 
-    bad = 0
+    bad = check_fit()
     for name, im in fakes(seed, man).items():
         m = metrics.measure(seed, im, man)
         checks = judge.build_checks(m, man, True)

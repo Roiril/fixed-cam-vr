@@ -81,7 +81,10 @@ def build_checks(m: dict, man: dict, size_ok: bool, p: dict | None = None) -> li
          f"{m['parts']} 個（{man['min_parts']} 以上）", "1 つの塊に潰れていないか"),
         ("粒が乗っている", _ok(m["grain"], lambda v: v >= 0.45),
          f"{_fmt(m['grain'])}（周りの粒との比）", "つるつるだと CG に見える"),
-        ("縁が刃物でない", _ok(m["edge"], lambda v: v <= 1.10),
+        # ⚠ 線は 2026-08-18 に 1.10 → 1.00 へ下げた。`selftest.py` の貼り付けが**場所によって
+        #   1.08 まで弱くなり**（床と同じ明るさの所では輪郭が生まれない）、1.10 では素通りしていた。
+        #   実際の生成物は 0.48〜0.87（9 走行）なので、1.00 は両側に余裕がある。
+        ("縁が刃物でない", _ok(m["edge"], lambda v: v <= 1.00),
          f"{_fmt(m['edge'])}（種の強い縁との比）", "切り抜きを貼ると縁だけ鋭い"),
         ("暗部が沈む",
          _ok(p["dark_added"], lambda v: v <= p["dark_bg"] * 1.8 + 8.0),

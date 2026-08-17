@@ -9,6 +9,13 @@
 添える数字は **左右対称度**（顔を左右反転して重ねたときの一致度）。
 正面を向いた顔は高く、横を向くほど低い。⚠ **これは向きの代わりであって向きそのものではない**
 （横からの光でも下がる）。**同じプレートで撮った走行どうしを比べるためだけに使う。**
+
+⚠⚠ **背景を塗り直された走行では、この道具は顔ではなく壁を並べる。**
+顔を探す範囲が「種との差が出た所」なので、部屋ごと描き直されると**画面全体が範囲になり、
+いちばん明るい所＝カーテンや棚**が拾われる。2026-08-18 に、2026-08-17 の視線試験を見直したら
+**3 走行のうち 2 走行が壁の切り抜きで、記録された 0.06 / -0.16 はその値だった**
+（`runs.md`）。⇒ 下で背景の保存を測って、低ければ**数値を出す前に止める**。
+届いた画で数える方は差分マスクに依らない（`survive.py`）。
 """
 from __future__ import annotations
 
@@ -24,6 +31,7 @@ import metrics
 
 CELL = 104          # 1 個ぶんの高さ（画素）
 HEAD_FRAC = 0.42    # 塊の上から何割を頭とみなすか
+BG_MIN = 0.35       # 置く側の背景がこれ未満しか残っていなければ、顔は拾えない（judge.py と同じ線）
 
 
 def _font(size: int):
@@ -88,6 +96,14 @@ def build(run_dir: str, top: int) -> tuple[str, list[float]]:
         out = out.resize(tuple(man["size"]), Image.LANCZOS)
 
     m = metrics.measure(seed, out, man)
+    bg = float(m.get("bg_frac_place", 1.0))
+    if bg < BG_MIN:
+        # ⚠ SystemExit の本文は stderr へ出るので cp932 で化ける（`~/.claude/rules/windows-env.md` §2）。
+        #   読める側（reconfigure 済みの stdout）へ出してから落とす。
+        print(f"背景の保存が {bg * 100:.0f}%（{BG_MIN * 100:.0f}% 未満）＝ 部屋ごと描き直されている。\n"
+              "  この走行では「種との差」が画面全体になるので、拾えるのは顔ではなく壁になる。\n"
+              "  → 焼き直すか、差分マスクに依らない survive.py で届いた画を数える。")
+        raise SystemExit(2)
     boxes = faces(out, m["_added_mask"])
     if len(boxes) < 4:      # 顔が拾えない異変・暗すぎる回は、塊の上側で代用する
         boxes = [(max(0, (c["x0"] + c["x1"]) // 2 - max(8, int((c["y1"] - c["y0"]) * HEAD_FRAC) // 2)),

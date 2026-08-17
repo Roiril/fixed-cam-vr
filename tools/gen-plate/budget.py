@@ -31,13 +31,13 @@ import spec
 
 
 def measure_at(material, plate, mask, lap, show) -> dict:
-    got, plain = legible._delivered(material, plate, mask, lap, show)
+    got, plain, inside = legible._delivered(material, plate, mask, lap, show)
     h, w = got.shape
-    sigma = legible._noise_sigma(plain)
+    sigma = legible._noise_sigma(plain, inside)
     m = np.asarray(Image.open(mask).convert("L").resize((w, h), Image.BILINEAR),
                    dtype=np.float64) / 255.0
-    added = metrics.clean(np.abs(got - plain) > max(3.0 * sigma, 4.0)) & (m > 0.5)
-    live = m <= 0.5
+    added = metrics.clean(np.abs(got - plain) > max(3.0 * sigma, 4.0)) & (m > 0.5) & inside
+    live = (m <= 0.5) & inside
 
     r = dict(lap=lap, sigma=sigma, added_pct=float(added.sum() / max(1, (m > 0.5).sum()) * 100))
     if not added.any():
@@ -51,7 +51,7 @@ def measure_at(material, plate, mask, lap, show) -> dict:
         sub = np.zeros_like(added)
         sub[c["y0"]:c["y1"], c["x0"]:c["x1"]] = added[c["y0"]:c["y1"], c["x0"]:c["x1"]]
         ring = legible._ring(sub, (c["x0"], c["y0"], c["x1"], c["y1"]),
-                             pad=max(6, (c["y1"] - c["y0"]) // 4)) & (m > 0.5)
+                             pad=max(6, (c["y1"] - c["y0"]) // 4)) & (m > 0.5) & inside
         if ring.sum() < 60:
             continue
         reads.append(legible.readability(got, plain, sub, sigma))

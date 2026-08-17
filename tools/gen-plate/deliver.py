@@ -67,12 +67,12 @@ def run(material: str, plate: str, mask: str, lap: float, out_path: str) -> int:
               encoding="utf-8") as f:
         show = json.load(f)
 
-    got, plain = legible._delivered(material, plate, mask, lap, show)
+    got, plain, inside = legible._delivered(material, plate, mask, lap, show)
     h, w = got.shape
-    sigma = legible._noise_sigma(plain)
+    sigma = legible._noise_sigma(plain, inside)
     m = np.asarray(Image.open(mask).convert("L").resize((w, h), Image.BILINEAR),
                    dtype=np.float64) / 255.0
-    added = metrics.clean(np.abs(got - plain) > max(3.0 * sigma, 4.0)) & (m > 0.5)
+    added = metrics.clean(np.abs(got - plain) > max(3.0 * sigma, 4.0)) & (m > 0.5) & inside
 
     rows = []
     for c in metrics.components(added, min_area=120)[:24]:

@@ -96,8 +96,35 @@ def sample_lod(chain: list[np.ndarray], u: np.ndarray, v: np.ndarray, lod: float
 # --------------------------------------------------------------------- 経路
 
 def contain_scale(src_size, frame_aspect: float) -> tuple[float, float]:
+    """枠へ **contain**（全体を収めて余りを黒帯にする）ときのスケール。
+
+    ⚠⚠ **縮む側が 1 未満**になる。`MjpegScreen.ContainScale`（C# 258 行）が正本で、
+    `compose.py` の伝送計算も同じ式を持つ。4:3 を 16:9 へ入れるなら **(0.75, 1.0)**
+    ＝ 横に黒帯、映像は枠の 75% の幅。
+
+    2026-08-18 まで**分岐が反転していた**（1.0, 1.333 を返していた）。それは contain ではなく
+    **cover**（枠を埋めて上下を切る）で、届いた画は 1.33 倍に拡大され、
+    プレートの上下 12.5% ずつが消えていた。`ContainUv` の `inside`（黒帯）も 1 度も 0 にならず、
+    `sample_source` の letterbox は**到達しないコード**だった。
+    """
     sa = src_size[0] / src_size[1]
-    return (sa / frame_aspect, 1.0) if sa > frame_aspect else (1.0, frame_aspect / sa)
+    return (sa / frame_aspect, 1.0) if sa < frame_aspect else (1.0, frame_aspect / sa)
+
+
+def frame_inside(src_size, frame=(FRAME_W, FRAME_H)) -> np.ndarray:
+    """枠のうち **映像が写っている所**（contain の黒帯を除いた矩形）。
+
+    ⚠⚠ **届いた画を測る道具は、必ずここで切ってから測る。** 4:3 を 16:9 へ contain すると
+    枠の **25%（左右 12.5% ずつ）が黒帯**になる。黒帯は post の最後で 0 へ潰れる（粒すら残らない）ので、
+    「平らな所の高周波」で粒を測ると**帯そのものを測って粒が 1/3 に化ける**
+    （2026-08-18 実測: 1.39 → 0.47。読みやすさが 2 倍に嵩上げされた）。
+    """
+    scale = contain_scale(src_size, frame[0] / frame[1])
+    uv_u, uv_v = np.meshgrid((np.arange(frame[0]) + 0.5) / frame[0],
+                             (np.arange(frame[1]) + 0.5) / frame[1])
+    su = (uv_u - 0.5) / max(scale[0], 1e-4) + 0.5
+    sv = (uv_v - 0.5) / max(scale[1], 1e-4) + 0.5
+    return (su >= 0) & (su <= 1) & (sv >= 0) & (sv <= 1)
 
 
 def sample_source(chain, uv_u, uv_v, scale, lod, chroma_bias) -> tuple[np.ndarray, np.ndarray]:

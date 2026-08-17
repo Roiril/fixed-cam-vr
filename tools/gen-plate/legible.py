@@ -28,8 +28,11 @@ import screen
 import spec
 
 
-def _delivered(material, plate, mask, lap, show) -> tuple[np.ndarray, np.ndarray]:
-    """素材ありの画と、素材なし（プレートだけ）の画。**同じ乱数**で描く。"""
+def _delivered(material, plate, mask, lap, show) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """素材ありの画・素材なし（プレートだけ）の画・**映像が写っている所**。**同じ乱数**で描く。
+
+    ⚠ 3 つ目は contain の黒帯を除く矩形。測る道具はこれで切ってから測る（`screen.frame_inside`）。
+    """
     p = dict(exposure=-1.05, contrast=1.12, saturation=0.52, temperature=0.48,
              tint=0.0, lift=0.02, vignette=0.38)
     for k, v in (show.get("post") or {}).items():
@@ -45,12 +48,20 @@ def _delivered(material, plate, mask, lap, show) -> tuple[np.ndarray, np.ndarray
         col = screen.render(plate, ov, mask if ov else None, p, blocks, prog)
         out.append(np.asarray(Image.fromarray(
             screen.linear_to_srgb(col).astype(np.uint8)).convert("L"), dtype=np.float64))
-    return out[0], out[1]
+    with Image.open(plate) as im:
+        inside = screen.frame_inside(im.size)
+    return out[0], out[1], inside
 
 
-def _noise_sigma(g: np.ndarray) -> float:
-    """その場の粒の大きさ。平らな所の高周波のばらつきで測る。"""
+def _noise_sigma(g: np.ndarray, inside: np.ndarray | None = None) -> float:
+    """その場の粒の大きさ。平らな所の高周波のばらつきで測る。
+
+    ⚠⚠ **黒帯を除いてから測る。** 除かないと、潰れて分散 0 の帯が「いちばん平らな所」として
+    選ばれ、粒が 1/3 に化ける（2026-08-18 実測 1.39 → 0.47 → 読みやすさが 2 倍に嵩上げ）。
+    """
     hp = metrics.highpass(g)
+    if inside is not None:
+        hp = hp[inside]
     flat = hp < np.percentile(hp, 60)
     return float(np.std(hp[flat]) * 1.4826 + 1e-6)
 
@@ -132,13 +143,13 @@ def main() -> int:
     with open(os.path.join(web, "show.json"), encoding="utf-8") as f:
         show = json.load(f)
 
-    got, plain = _delivered(args.material, args.plate, mask, args.lap, show)
+    got, plain, inside = _delivered(args.material, args.plate, mask, args.lap, show)
     h, w = got.shape
-    sigma = _noise_sigma(plain)
+    sigma = _noise_sigma(plain, inside)
 
     m = np.asarray(Image.open(mask).convert("L").resize((w, h), Image.BILINEAR),
                    dtype=np.float64) / 255.0
-    added = metrics.clean(np.abs(got - plain) > max(3.0 * sigma, 4.0)) & (m > 0.5)
+    added = metrics.clean(np.abs(got - plain) > max(3.0 * sigma, 4.0)) & (m > 0.5) & inside
     parts = [c for c in metrics.components(added, min_area=120)][:24]
 
     rows = []
@@ -146,14 +157,14 @@ def main() -> int:
         box = (c["x0"], c["y0"], c["x1"], c["y1"])
         sub = np.zeros_like(added)
         sub[c["y0"]:c["y1"], c["x0"]:c["x1"]] = added[c["y0"]:c["y1"], c["x0"]:c["x1"]]
-        ring = _ring(sub, box, pad=max(6, (c["y1"] - c["y0"]) // 4)) & (m > 0.5)
+        ring = _ring(sub, box, pad=max(6, (c["y1"] - c["y0"]) // 4)) & (m > 0.5) & inside
         if ring.sum() < 60:
             continue
         rows.append(dict(h=c["y1"] - c["y0"], w=c["x1"] - c["x0"], area=c["area"],
                          cnr=readability(got, plain, sub, sigma), box=box))
 
     sizes = [(r["w"], r["h"]) for r in rows] or [(40, 60)]
-    ref = reference_band(plain, (m <= 0.5), sigma, sizes)
+    ref = reference_band(plain, (m <= 0.5) & inside, sigma, sizes)
     print(f"== 届いた画（周 {args.lap:.0f}）  枠 {w}x{h}  粒の大きさ {sigma:.2f}")
     if not rows:
         print("  足したものが 1 つも読めない（差が粒に埋もれている）")

@@ -48,18 +48,19 @@ def parts_of(material, plate, mask, lap, show):
     （2026-08-17）。薄いほど「変わった画素」の集合が縮んで、残った濃い所だけで
     平均を取ることになるため。**掃引は計器の欠陥をよく暴く。**
     """
-    got, plain = legible._delivered(material, plate, mask, lap, show)
+    got, plain, inside = legible._delivered(material, plate, mask, lap, show)
     h, w = got.shape
-    sigma = legible._noise_sigma(plain)
+    sigma = legible._noise_sigma(plain, inside)
     m = np.asarray(Image.open(mask).convert("L").resize((w, h), Image.BILINEAR),
                    dtype=np.float64) / 255.0
-    added = metrics.clean(np.abs(got - plain) > max(3.0 * sigma, 4.0)) & (m > 0.5)
+    added = metrics.clean(np.abs(got - plain) > max(3.0 * sigma, 4.0)) & (m > 0.5) & inside
     parts = metrics.components(added, min_area=120)[:24] if added.any() else []
-    return added, parts, m, sigma
+    return added, parts, m, sigma, inside
 
 
-def score(material, plate, mask, lap, show, added, parts, m, sigma) -> tuple[float, float, int]:
-    got, plain = legible._delivered(material, plate, mask, lap, show)
+def score(material, plate, mask, lap, show, added, parts, m, sigma,
+          inside) -> tuple[float, float, int]:
+    got, plain, _ = legible._delivered(material, plate, mask, lap, show)
     reads, sizes = [], []
     for c in parts:
         sub = np.zeros_like(added)
@@ -68,7 +69,7 @@ def score(material, plate, mask, lap, show, added, parts, m, sigma) -> tuple[flo
             continue
         reads.append(legible.readability(got, plain, sub, sigma))
         sizes.append((c["x1"] - c["x0"], c["y1"] - c["y0"]))
-    ref = legible.reference_band(plain, m <= 0.5, sigma, sizes or [(40, 60)])
+    ref = legible.reference_band(plain, (m <= 0.5) & inside, sigma, sizes or [(40, 60)])
     return (float(np.median(reads)) if reads else float("nan"),
             float(np.median(ref)) if ref else float("nan"), len(reads))
 
@@ -91,13 +92,14 @@ def main() -> int:
     tmp = os.path.join(spec.REPO, "logs", "gen-plate", "_limit")
     os.makedirs(tmp, exist_ok=True)
 
-    added, parts, m, sigma = parts_of(args.material, args.plate, mask, args.lap, show)
+    added, parts, m, sigma, inside = parts_of(args.material, args.plate, mask, args.lap, show)
     print(f"{'残す明暗差':>10}{'読みやすさ':>12}{'実物':>8}{'比':>7}{'塊':>5}   判定")
     print("-" * 52)
     cross = None
     for k in [float(x) for x in args.steps.split(",")]:
         path = faded(args.material, args.plate, k, os.path.join(tmp, f"k{int(k * 100):03d}.png"))
-        read, ref, n = score(path, args.plate, mask, args.lap, show, added, parts, m, sigma)
+        read, ref, n = score(path, args.plate, mask, args.lap, show, added, parts, m,
+                             sigma, inside)
         ratio = read / ref if (read == read and ref == ref and ref > 0) else float("nan")
         # ⚠ 合否は **Rose の基準（信号 ÷ 粒 ≥ 5）**で見る。実物の帯は文脈として出すだけ
         #   （実物側は「そこに無ければ何が見えるか」を隣の平均で代用するので、

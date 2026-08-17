@@ -184,11 +184,18 @@ def measure(seed: Image.Image, out: Image.Image, man: dict) -> dict:
     #     50 階調の段差を 1 画素で切っても、種の強い縁より小さい値になり捕まえられなかった）。
     #     勾配を「その場の明暗差」で割ると、1 画素で変われば約 0.5、3 画素かけると 0.2 になり、
     #     明暗差に依らず鋭さだけが残る。さらに種の縁で割るので場所にも依らない。
-    border = added & ~_shift_and(added)
+    #   ⚠⚠ **段差が無い所を縁として数えない**（2026-08-18・自己検査が場所で割れて判明）。
+    #     足した所の輪郭には、**背景と同じ明るさで重なった所**が混ざる（その画素は「足された」に
+    #     入らないので、輪郭が物の外周ではなく穴の縁になる）。そこは勾配 0 なので、
+    #     中央値を取ると**鋭さではなく「穴がどれだけ空いているか」を測る**ことになる。
+    #     実際、ある場所では貼り付けの偽物が **0.00** と出て、門を素通りした（他の場所では 1.12）。
+    #     ⇒ その場に段差がある輪郭だけで測る。無い所に「縁の鋭さ」は定義できない。
+    border = added & ~_shift_and(added) & (_range5(go) >= 10.0)
     sharp_o, sharp_s = sharpness(go), sharpness(gs)
     gm_s = grad_mag(gs)
     seed_edges = gm_s >= _p(gm_s[gm_s > 0], 90)
-    r["edge"] = float(np.median(sharp_o[border]) / max(1e-6, np.median(sharp_s[seed_edges])))
+    r["edge"] = (float(np.median(sharp_o[border]) / max(1e-6, np.median(sharp_s[seed_edges])))
+                 if border.sum() >= 40 else float("nan"))
 
     # 暗部: 足したものの暗い方が、その場所の暗がりまで沈んでいるか
     r["dark_added"] = _p(go[added], 5)
