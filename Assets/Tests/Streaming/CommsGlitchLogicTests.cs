@@ -186,6 +186,30 @@ namespace FixedCamVr.Streaming.Tests
                             "化け先に重複がある（その字だけ出やすくなる）");
         }
 
+        /// <summary>
+        /// ⚠⚠⚠ <b>化け先に読める字を入れない</b>（2026-08-17・<c>canon/LEDGER.md</c> 0072）。
+        ///
+        /// 面に AIエージェントの顔がついた（0071）ことで、<b>化けた字がその顔の発話として
+        /// 読まれる</b>ようになった。ユーザー赤入れ「キャラクターが"アユ"と言ってるみたいで
+        /// 面白くなってしまうから、読めない文字化けにして」。実際に小書きの仮名 2 つが並んで
+        /// 「ぁュ」＝「アユ」に見えていた。
+        ///
+        /// ⚠ 疑問符・感嘆符・句読点も同じ理由で外している。記号ではあるが、顔の隣に出ると
+        /// 「聞き返している」「驚いている」という<b>抑揚</b>として読まれる。
+        /// </summary>
+        [Test]
+        public void Marks_ContainNothingReadable()
+        {
+            foreach (char c in CommsGlitchLogic.Marks)
+            {
+                // 平仮名（U+3041–309F）と片仮名（U+30A1–30FF）。小書きも濁点も全部ここ。
+                Assert.IsFalse(c >= 0x3041 && c <= 0x309F, $"'{c}' が平仮名（読めてしまう）");
+                Assert.IsFalse(c >= 0x30A1 && c <= 0x30FF, $"'{c}' が片仮名（読めてしまう）");
+                // 発話の抑揚に読まれる約物。
+                Assert.IsFalse("？！。、，．?!".IndexOf(c) >= 0, $"'{c}' が発話の抑揚に読まれる");
+            }
+        }
+
         /// <summary>表示側のバグ（分離）の振れ幅が上限を超えない。</summary>
         [Test]
         public void SplitOffset_StaysWithinLimit()
