@@ -28,8 +28,9 @@ Shader "FixedCamVr/AnomalyEyes"
         _EyeTime("Time", Float) = 0
         _EyeGain("Gain", Range(0, 2)) = 1
         _EyeBlink("Blink Amount", Range(0, 1)) = 1
-        _EyeColor("Sclera", Color) = (1.0, 0.93, 0.84, 1)
-        _EyeRim("Rim (outer)", Color) = (1.0, 0.62, 0.30, 1)
+        // ⚠ 参考画像の目は**ほぼ純白**。作品の暖色は残しつつ、ベージュから白へ寄せてある。
+        _EyeColor("Sclera", Color) = (1.0, 0.965, 0.93, 1)
+        _EyeRim("Rim (edge)", Color) = (0.62, 0.56, 0.50, 1)
     }
 
     SubShader
@@ -71,16 +72,20 @@ Shader "FixedCamVr/AnomalyEyes"
             // ---- 目の形（すべて quad ローカル -1..1）------------------------------------
             // 目が quad の中で占める割合。残りは暈のための余白。
             #define SHAPE_SCALE 0.74
-            // 瞼の弧の半径（1 より少し大きい）。**2 つの円弧の差**で描くので目尻が尖る
-            //（べき乗だと接線が垂直になり、両端が丸い「目玉焼き」になる。実際に一度焼けた）。
-            #define LID_ARC 1.10
+            // 瞼の弧は**上下で別の半径**（頂点属性 form3）。同じにすると全部が同じ型に見える。
+            // 半径 1.04（尖る）〜1.34（丸い）。**2 つの円弧の差**で描くので目尻は必ず尖る。
             // 縁のゆらぎ。ゆっくりした歪み ＋ 細かい粗さの 2 段。
             #define LID_WARP  0.045
             #define LID_GRAIN 0.018
             // 粗い粒で縁を欠けさせる（版画・掠れ）。⚠ **細かいノイズにしない** —
             // VR ではちらつきとモアレになる。数画素の塊として量子化する。
             // ⚠ 実機は 1 度あたりの画素がこのプレビューの約 2 倍あるので、**ここで細かく見えるくらいが実機で丁度**。
-            #define DROP_CELLS 44.0
+            #define DROP_CELLS 52.0
+            // 粒を**横長**にする（縦にこの比を掛ける）。正方形の格子は「デジタルな四角いノイズ」に見える。
+            #define DROP_ANISO 0.78
+            // 白目の**内側**にも入れる欠け（版画の掻き取り）。
+            // ⚠ 参考画像の白目は**ほぼ無地**。0.08 でも「黒い雨」に見えた（実測）ので、気配だけ。
+            #define DROP_INNER 0.03
             #define DROP_EDGE  0.22     // 縁の帯でどれだけ欠けるか（参考画像は 10〜25%）
             // 縁とみなす帯の幅（**目の中央での高さ**に対する比）。
             // ⚠⚠ **その場の高さで割ってはいけない。** 目尻へ向かって高さが 0 に近づくので、
@@ -93,8 +98,9 @@ Shader "FixedCamVr/AnomalyEyes"
             #define RIM_INNER 0.30
             #define RIM_OUTER 0.12
             // 暈。⚠ 広いと**闇に灯った投光器**に見える。輪郭の外 1° 以内に収める。
-            #define GLOW_GAIN 0.055
-            #define GLOW_FALL 44.0
+            // ⚠ 2 巡とも「暈が残っている」と指摘された。輪郭のすぐ外だけに、ごく薄く。
+            #define GLOW_GAIN 0.022
+            #define GLOW_FALL 60.0
             // 瞬き（周期の逆数 / 鋭さ）。9 秒に 1 度・0.22 秒。**大きい目には掛けない**
             //（あちらは C# が段の中で 1 度だけ瞬かせる）。
             #define BLINK_RATE 0.11
@@ -121,6 +127,7 @@ Shader "FixedCamVr/AnomalyEyes"
                 float4 attr : TEXCOORD1;    // (順位, 大きい目か, 種, 籤)
                 float4 form : TEXCOORD2;    // (縦横比, 上瞼, 下瞼, 虹彩半径)
                 float4 form2 : TEXCOORD3;   // (開き切る量, 目尻の傾き, 瞳孔のずれ, 大きさ 0..1)
+                float4 form3 : TEXCOORD4;   // (上瞼の弧, 下瞼の弧, 横の歪み, -)
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -131,6 +138,7 @@ Shader "FixedCamVr/AnomalyEyes"
                 float4 attr : TEXCOORD1;
                 float4 form : TEXCOORD2;
                 float4 form2 : TEXCOORD3;
+                float4 form3 : TEXCOORD4;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -144,6 +152,7 @@ Shader "FixedCamVr/AnomalyEyes"
                 o.attr = input.attr;
                 o.form = input.form;
                 o.form2 = input.form2;
+                o.form3 = input.form3;
                 return o;
             }
 
@@ -163,6 +172,9 @@ Shader "FixedCamVr/AnomalyEyes"
                 float skew = i.form2.y;
                 float pupOff = i.form2.z;
                 float sizeN = i.form2.w;      // 0 = 小さい目 / 1 = 視界を埋める目
+                float arcUp = i.form3.x;
+                float arcDn = i.form3.y;
+                float warpX = i.form3.z;
 
                 // 籤に外れた目は最初から居ない（大きい目は籤に関係なく必ず出る）。
                 if (isBig < 0.5 && presence > _EyeDensity) discard;
@@ -190,17 +202,24 @@ Shader "FixedCamVr/AnomalyEyes"
                 float2 p = i.uv;
 
                 // 瞼の弧。目尻で厳密に 0・傾きは有限 ＝ 尖る。
-                float pu = p.x / SHAPE_SCALE;
-                float base = sqrt(max(LID_ARC * LID_ARC - 1.0, 1e-4));
-                float lid = (sqrt(max(LID_ARC * LID_ARC - pu * pu, 0.0)) - base) / (LID_ARC - base);
-                lid = saturate(lid);
-                lid *= 1.0 + lid * (LID_WARP * (n11(pu * 1.7 + seed * 17.0) * 2.0 - 1.0)
-                                    + LID_GRAIN * (n11(pu * 11.0 + seed * 23.0) * 2.0 - 1.0));
+                // ⚠ **上下で別の弧**にし、横も歪める（目頭と目尻で丸みが変わる）。
+                //    同じ弧を上下に使うと、傾きや大きさを変えても「全部が同じ型」に見える。
+                float pu = clamp(p.x / SHAPE_SCALE + warpX * (p.x / SHAPE_SCALE)
+                                 * (1.0 - abs(p.x / SHAPE_SCALE)), -1.0, 1.0);
+                float wob = 1.0 + (LID_WARP * (n11(pu * 1.7 + seed * 17.0) * 2.0 - 1.0)
+                                   + LID_GRAIN * (n11(pu * 11.0 + seed * 23.0) * 2.0 - 1.0));
+                float bU = sqrt(max(arcUp * arcUp - 1.0, 1e-4));
+                float bD = sqrt(max(arcDn * arcDn - 1.0, 1e-4));
+                float lidU = saturate((sqrt(max(arcUp * arcUp - pu * pu, 0.0)) - bU) / (arcUp - bU));
+                float lidD = saturate((sqrt(max(arcDn * arcDn - pu * pu, 0.0)) - bD) / (arcDn - bD));
+                lidU *= 1.0 + lidU * (wob - 1.0);
+                lidD *= 1.0 + lidD * (wob - 1.0);
+                float lid = max(lidU, lidD);      // 欠け・輪郭・暈は「目のどこか」で測る
 
                 // 目尻の高さ違い（片方を吊る）。上下を同じだけずらすので形は崩れない。
                 float tilt = skew * pu * lid * SHAPE_SCALE;
-                float up = lidUp * open * lid * SHAPE_SCALE + tilt;
-                float dn = -lidDn * open * lid * SHAPE_SCALE + tilt;
+                float up = lidUp * open * lidU * SHAPE_SCALE + tilt;
+                float dn = -lidDn * open * lidD * SHAPE_SCALE + tilt;
 
                 float aa = max(fwidth(p.y), 1e-4) * 1.2;
                 float cover = smoothstep(-aa, aa, up - p.y) * smoothstep(-aa, aa, p.y - dn);
@@ -211,16 +230,19 @@ Shader "FixedCamVr/AnomalyEyes"
                 // 縁からの距離（0 = 縁 / 1 = 帯の内側）。輪郭・欠け・暈の全部がこれを読む。
                 // ⚠ 基準は**目の中央での高さ**（その場の高さではない） ＝ 帯の幅が全体で一定になる。
                 float half_ = max(0.5 * (up - dn), 1e-5);
-                float halfMax = max(0.5 * (lidUp + lidDn) * open * SHAPE_SCALE, 1e-5);
+                float halfMax = max(0.5 * (lidUp * lidU + lidDn * lidD) * open * SHAPE_SCALE, 1e-5);
                 float dEdge = saturate(min(up - p.y, p.y - dn) / (halfMax * DROP_BAND));
 
                 // 粗い粒で縁を欠けさせる。開きかけは**全体が断片**になる（闇から弧が現れる）。
                 // ⚠ 粒の大きさは**画面での大きさ**を揃える（大きい目ほど細かく刻む）。
                 //    刻みを一定にすると、視界を埋める目だけ粒が巨大な市松模様になる。
-                float cells = DROP_CELLS * lerp(0.6, 2.6, sizeN);
-                float2 cell = floor(p * cells / SHAPE_SCALE + seed * 7.0);
+                float cells = DROP_CELLS * lerp(0.6, 3.4, sizeN);
+                // ⚠ **横長の粒**にする。正方形の格子は「デジタルな四角いノイズ」に見える（2 巡目の指摘）。
+                float2 cell = floor(p * float2(cells, cells * DROP_ANISO) / SHAPE_SCALE + seed * 7.0);
                 float grain = h21(cell);
-                float dropAmt = saturate((1.0 - dEdge) * DROP_EDGE + (1.0 - prog) * DROP_EARLY);
+                // 白目の内側にも欠けを入れる（版画の掻き取り）。縁だけだと面が一様に見える。
+                float dropAmt = saturate((1.0 - dEdge) * DROP_EDGE + DROP_INNER
+                                         + (1.0 - prog) * DROP_EARLY);
                 // ⚠⚠ **目尻では欠けさせない。** 高さが 1 セルを下回る所で欠けさせると、
                 //    先細りが階段状の塊に砕ける（実際に 2 度そうなった）。尖りは残す。
                 dropAmt *= smoothstep(0.12, 0.42, lid);
@@ -233,14 +255,18 @@ Shader "FixedCamVr/AnomalyEyes"
                 float ir = irisR * (0.45 + 0.55 * open) * SHAPE_SCALE;
                 float2 q = float2(p.x, (p.y - cy) * aspect) / max(ir, 1e-3);
                 float d = length(q);
-                float irisMask = 1.0 - smoothstep(0.90, 1.02, d);
+                float aaI = max(fwidth(d), 1e-4) * 1.2;
+                float irisMask = 1.0 - smoothstep(1.0 - aaI, 1.0 + aaI, d);
                 // 瞳孔は真円にしない（縦に潰れ、少しずれる）。
                 float2 pq = float2(q.x - pupOff, q.y * (1.25 + 0.5 * sizeN));
-                float pupil = 1.0 - smoothstep(0.40, 0.50, length(pq));
+                float pupil = 1.0 - smoothstep(0.45 - aaI, 0.45 + aaI, length(pq));
                 pupil *= 1.0 - 0.35 * _EyeIntensity;    // 凝視されると瞳孔が縮む
 
                 // 虹彩の彫り。粒が主・輪が従（版画のように掻き取った虹彩）。
-                float grit = h21(floor(q * lerp(15.0, 36.0, sizeN) + seed * 7.0));
+                // ⚠ 虹彩の座標で刻むと、大きい虹彩ほど粒が巨大になる（碁盤の目に見えた）。
+                //    白目と**同じ座標系・同じ横長**で刻んで、粒の大きさを揃える。
+                float grit = h21(floor(p * float2(cells, cells * DROP_ANISO) * 1.6 / SHAPE_SCALE
+                                       + seed * 13.0));
                 float rings = 0.5 + 0.5 * sin(d * 11.0 + seed * 9.0 + grit * 3.0);
                 float etch = saturate(grit * 0.75 + rings * 0.45 - 0.22);
                 float iris = lerp(0.02, 0.30, etch * etch);

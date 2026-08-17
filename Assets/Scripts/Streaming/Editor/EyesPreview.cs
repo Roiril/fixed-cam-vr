@@ -137,7 +137,8 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 File.WriteAllText(Path.Combine(dir, "frames.tsv"), ledger.ToString());
                 Debug.Log($"[EyesPreview] {frames} コマ + 静止画 9 枚 + frames.tsv → Assets/{OutDirRel}/\n"
-                        + $"  目 {seats.Length} 個（大きい目 1 ＋ {AnomalyEyesMesh.EyeCount}）/ 割合 {density:F2}\n"
+                        + $"  目 {seats.Length} 個（候補 {AnomalyEyesMesh.CandidateCount} から重ならないものを詰めた）"
+                        + $" / 割合 {density:F2}\n"
                         + $"  兆し {AnomalyEyesLogic.HintSec}s → 凝視 {AnomalyEyesLogic.StareSec}s → "
                         + $"開眼 {AnomalyEyesLogic.SwarmSec}s（全開まで "
                         + $"{AnomalyEyesLogic.HintSec + AnomalyEyesLogic.StareSec + AnomalyEyesLogic.SwarmSec}s）\n"

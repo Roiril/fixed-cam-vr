@@ -32,7 +32,8 @@ namespace FixedCamVr.Streaming.Tests
         public void Seats_HaveExactlyOneBigEye()
         {
             EyeSeat[] seats = AnomalyEyesMesh.BuildSeats();
-            Assert.That(seats.Length, Is.EqualTo(AnomalyEyesMesh.TotalCount));
+            Assert.That(seats.Length, Is.GreaterThan(50), "詰め切れずに数が減りすぎていないか");
+            Assert.That(seats.Length, Is.LessThanOrEqualTo(AnomalyEyesMesh.MaxEyes));
             int big = 0;
             foreach (EyeSeat s in seats) if (s.big) big++;
             Assert.That(big, Is.EqualTo(1), "気づかせる目は 1 つだけ（増やすと「1 つに見られている」が消える）");
@@ -63,19 +64,26 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void OtherEyes_KeepClearOfTheBigEye()
+        public void NoTwoEyesOverlap()
         {
-            // 要の 1 つが隣と重なって「白い染み」に化けない。
-            // ⚠ 空ける角度は**相手の大きさで変わる**（定数にすると視界を埋める目が覆いかぶさる）。
+            // ⚠⚠ **目は重ねない**（2026-08-17 ユーザー判定「目が重なってしまってるのは違和感がある」）。
+            //    重なると①手前が奥を切り取って「割れた目」に見え、②2 つで 1 つの塊に読める。
             EyeSeat[] seats = AnomalyEyesMesh.BuildSeats();
-            Vector3 big = AnomalyEyesMesh.BigDir;
-            foreach (EyeSeat s in seats)
+            // ⚠ 隙間は**楕円どうし**で測る（半幅の和で測ると、上下に並ぶ目が常に「重なり」に見える）。
+            float worst = 999f;
+            for (int i = 0; i < seats.Length; i++)
             {
-                if (s.big) continue;
-                Assert.That(Vector3.Angle(s.dir, big),
-                    Is.GreaterThanOrEqualTo(AnomalyEyesMesh.ClearDegFor(s.sizeDeg) - 0.01f),
-                    $"大きさ {s.sizeDeg:F1}° の目が大きい目に重なる");
+                for (int j = i + 1; j < seats.Length; j++)
+                {
+                    float gap = Vector3.Angle(seats[i].dir, seats[j].dir)
+                                - AnomalyEyesMesh.RadiusToward(seats[i], seats[j].dir)
+                                - AnomalyEyesMesh.RadiusToward(seats[j], seats[i].dir);
+                    worst = Mathf.Min(worst, gap);
+                    Assert.That(AnomalyEyesMesh.Separated(seats[i], seats[j]), Is.True,
+                        $"{seats[i].sizeDeg:F1}° と {seats[j].sizeDeg:F1}° の目が重なる（隙間 {gap:F2}°）");
+                }
             }
+            Assert.That(worst, Is.GreaterThanOrEqualTo(0f), $"いちばん近い 2 つの隙間 {worst:F2}°");
         }
 
         [Test]
@@ -108,12 +116,12 @@ namespace FixedCamVr.Streaming.Tests
                 if (s.dir.y > 0.35f) up++;
                 if (s.dir.y < -0.35f) down++;
             }
-            Assert.That(back, Is.GreaterThan(8), "真後ろにも目が居る");
-            Assert.That(front, Is.GreaterThan(8));
-            Assert.That(left, Is.GreaterThan(8));
-            Assert.That(right, Is.GreaterThan(8));
-            Assert.That(up, Is.GreaterThan(2), "上も空にしない");
-            Assert.That(down, Is.GreaterThan(2));
+            Assert.That(back, Is.GreaterThan(4), "真後ろにも目が居る");
+            Assert.That(front, Is.GreaterThan(4));
+            Assert.That(left, Is.GreaterThan(4));
+            Assert.That(right, Is.GreaterThan(4));
+            Assert.That(up, Is.GreaterThan(1), "上も空にしない");
+            Assert.That(down, Is.GreaterThan(1));
         }
 
         [Test]
@@ -179,10 +187,10 @@ namespace FixedCamVr.Streaming.Tests
                 else if (s.sizeDeg < 40f) near++;
                 else huge++;
             }
-            Assert.That(tiny, Is.GreaterThan(10), "遠くの点（密度と奥行き）");
-            Assert.That(mid, Is.GreaterThan(40), "ふつうの目");
-            Assert.That(near, Is.GreaterThan(15), "近い目");
-            Assert.That(huge, Is.GreaterThan(3), "視界を埋める目（参考画像 me3）");
+            Assert.That(tiny, Is.GreaterThan(8), "遠くの点（密度と奥行き）");
+            Assert.That(mid, Is.GreaterThan(20), "ふつうの目");
+            Assert.That(near, Is.GreaterThan(8), "近い目");
+            Assert.That(huge, Is.GreaterThan(2), "視界を埋める目（参考画像 me3）");
         }
 
         [Test]
@@ -214,8 +222,8 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(upMax - upMin, Is.GreaterThan(0.15f), "瞼の上がり方が個体で違う");
             Assert.That(irMax - irMin, Is.GreaterThan(0.20f), "虹彩の大きさが個体で違う");
             Assert.That(omMin, Is.LessThan(0.80f), "半開きのまま止まる目がある");
-            Assert.That(halfOpen, Is.GreaterThan(20), "全部が全開にはならない");
-            Assert.That(tilted, Is.GreaterThan(30), "傾いた目が混ざる");
+            Assert.That(halfOpen, Is.GreaterThan(10), "全部が全開にはならない");
+            Assert.That(tilted, Is.GreaterThan(15), "傾いた目が混ざる");
         }
 
         [Test]
