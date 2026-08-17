@@ -203,7 +203,7 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void MarkAfterTheTakeEnded_DoesNotCount_SoTheCommsAnswerAndTheReplayAgree()
         {
-            // 連絡の面が出す答えは ShowControlClient.LastMarkHadTake（押した瞬間の ActiveTakeId）で凍る。
+            // 連絡の面が出す答えは NotifyMarkPressed の戻り値（＝ ShowControlClient.LastMarkResolved）。
             // 終わった後の押下に猶予を作ると、同じ 1 回の押下について
             // 画は「異常は検出されませんでした」・機械は「報告済み」と別のことを言うことになる。
             var l = Make(Yielding(3, 2, 5f, 5f));

@@ -2501,37 +2501,41 @@ namespace FixedCamVr.Streaming
         /// （<c>durKind:"untilMark"</c>・`canon/LEDGER.md` 0050）。
         /// ⚠ <b>正誤は返す</b>（2026-08-16 に反転・`canon/LEDGER.md` 0054）。AIエージェントからの連絡が
         /// 「異常が記録されました」/「異常は検出されませんでした」を返す
-        /// （分岐の材料が下の <see cref="LastMarkHadTake"/>）。
+        /// （分岐の材料が下の <see cref="LastMarkResolved"/>）。
         /// ⭐ 押した時刻が残ると、<b>3 周目の反転に気づいたかが訊かずに分かる</b>
         /// （初見は消耗品なので、誘導せずに取れる観測の価値が高い）。
         /// </summary>
         public int VisitorMarkCount { get; private set; }
 
         /// <summary>
-        /// <b>直近の報告が届いた瞬間に、演出が画面を握っていたか。</b>
-        /// AIエージェントからの連絡の文面がこれで分かれる（`canon/LEDGER.md` 0054 ②）—
-        /// 走っていれば「異常が記録されました」、走っていなければ「異常は検出されませんでした」。
+        /// <b>直近の報告で、怪異の解除が通ったか</b>（2026-08-17・`canon/LEDGER.md` 0082）。
+        /// AIエージェントからの連絡の文面がこれで分かれる（0054 ②）—
+        /// 通れば「異常が記録されました」、通らなければ「異常は検出されませんでした」。
         ///
-        /// ⚠⚠ <b>読み手は「いま走っているか」を後から見てはいけない。</b>
-        /// <see cref="RecordVisitorMark"/> は <c>NotifyVisitorMark</c> で
-        /// <b>「報告するまで」のカットをその場で畳む</b>ので、次のフレームには
-        /// <c>ActiveTakeId</c> が空になっている ＝ <b>4 周目 A の締めで押したときだけ</b>
-        /// 「演出が無かった」に化けて、意味が真逆の連絡が返る。
-        /// だからここで<b>中継の前に</b>凍らせてある。<b>順序を入れ替えない。</b>
+        /// ⚠⚠ <b>「演出が走っていたか」ではない。</b> 2026-08-17 まではそれを見ていたので、
+        /// <b>3 周目の録画（入れ替わり）に押しても「異常が記録されました」と返っていた</b> ＝
+        /// 消えていないのに認めた顔をする。いまは <c>dismissible</c> が立っていない演出では
+        /// false ＝ <b>装置は本当に検出できていない</b>と返る。
+        ///
+        /// ⭐ これが 0082 の設定（解除を実行しているのはエージェント）を体験に出す唯一の場所。
+        /// 効かない周（3 周目）は、そのことが押すたびに文面で返る。
+        ///
+        /// ⚠ 供給は <c>TimelineDirector.NotifyVisitorMark</c> の<b>戻り値</b>。
+        /// 中継の前に <c>ActiveTakeId</c> を見て凍らせる旧実装は、締めのカットが
+        /// その場で畳まれる 4 周目 A で必ず逆になるための回避策だった。
+        /// <b>戻り値なら畳んだ本人が答えるので、順序の問題そのものが消える。</b>
         /// </summary>
-        public bool LastMarkHadTake { get; private set; }
+        public bool LastMarkResolved { get; private set; }
 
         /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
         public void RecordVisitorMark()
         {
             VisitorMarkCount++;
-            // ⚠⚠ **畳む前に凍らせる。** 下の NotifyVisitorMark が締めのカットを終わらせるので、
-            //     この 1 行を下へ動かすと 4 周目 A の連絡が必ず逆になる（上の注記）。
-            LastMarkHadTake = !string.IsNullOrEmpty(timelineDirector?.ActiveTakeId);
-            Debug.Log($"[ShowControl] 記録ボタン（体験者・左 X） {VisitorMarkCount} 回目"
-                    + $"（そのとき演出は{(LastMarkHadTake ? "走っていた" : "走っていなかった")}）");
-            // 「報告するまで」のカット（4 周目 A の締め）だけが反応する。ほかの進行には一切効かない。
-            timelineDirector?.NotifyVisitorMark();
+            // 「報告するまで」のカット（4 周目 A の締め）と、dismissible な演出だけが反応する。
+            // ⚠ 戻り値が「解除が通ったか」。畳んだ本人が答えるので、凍らせる順序に依存しない。
+            LastMarkResolved = timelineDirector?.NotifyVisitorMark() ?? false;
+            Debug.Log($"[ShowControl] 記録ボタン（体験者・左 X／Y） {VisitorMarkCount} 回目"
+                    + $"（解除は{(LastMarkResolved ? "通った" : "通らなかった")}）");
         }
 
         private void ApplyPostForActive()

@@ -1067,10 +1067,11 @@ def analyze(events, others, exp, warns=None):
     # ---------------- AIエージェントからの連絡 ----------------
     # 発火は 3 点（`canon/LEDGER.md` 0054）: ①導入が明けた直後 ②報告した瞬間（演出の有無で文面が
     # 変わる）③4 周目 A の締めで押さないまま 3 秒。
-    # ⚠⚠ **②の分岐がこの実装で唯一の危ない所。** 報告は `NotifyVisitorMark` で締めのカットを
-    #    その場で畳むので、演出の有無を後から見ると「締めで押したのに『検出されませんでした』」＝
-    #    意味が真逆の連絡になる。ここは `ev=mark` の `take=` と `ev=comms` の id を突き合わせて
+    # ⚠⚠ **②の分岐は「解除が通ったか」で決まる**（2026-08-17・`canon/LEDGER.md` 0082）。
+    #    ここは `ev=mark` の `res=` と `ev=comms` の id を突き合わせて
     #    **食い違っていたら FAIL** にする（画を見ても絶対に気づけない壊れ方なので）。
+    #    ⚠ 2026-08-17 まではキーが `take=`（演出が走っていたか）で、3 周目の入れ替わりに
+    #      押しても「異常が記録されました」と返っていた ＝ 消えていないのに認めた顔をしていた。
     # 観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
     comms = [e for e in events if e.get("ev") == "comms"]
     comms_built = effect_samples(events, "commsBuilt")
@@ -1143,16 +1144,25 @@ def analyze(events, others, exp, warns=None):
                 near = [a for a in answers if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
                 if not near:
                     continue
-                want = "MarkLogged" if str(m.get("take")) == "1" else "MarkNothing"
+                want = "MarkLogged" if str(m.get("res")) == "1" else "MarkNothing"
                 if near[0].get("id") != want:
                     mark_ok = False
                     verdict("FAIL",
-                            f"t={fnum(m,'t',0):.1f} の報告（そのとき演出 take={m.get('take')}）に対して "
+                            f"t={fnum(m,'t',0):.1f} の報告（解除 res={m.get('res')}）に対して "
                             f"{near[0].get('id')} が返っている — 期待は {want}。"
-                            "ShowControlClient.RecordVisitorMark が LastMarkHadTake を "
-                            "NotifyVisitorMark より**後**で確定させている疑い（意味が真逆になる）")
+                            "ShowControlClient.LastMarkResolved と CommsCueLogic.markResolved が "
+                            "食い違っている（画に出る意味が真逆になる）")
             if answers and mark_ok:
-                verdict("OK", f"②の返事が報告 {len(answers)} 回すべてに返り、演出の有無と一致した")
+                verdict("OK", f"②の返事が報告 {len(answers)} 回すべてに返り、解除の可否と一致した")
+
+            # ⚠⚠ **解除が 1 度も通らない台本は、ゲーム性が死んでいる**（`canon/LEDGER.md` 0082）。
+            #    体験者は「押すと消える」を 1〜2 周目で学習してはじめて、3 周目の「消えない」が効く。
+            #    dismissible を 1 つも立てていない show.json ではここが 0 になる。
+            resolved = [m for m in marks if str(m.get("res")) == "1"]
+            if marks and not resolved:
+                verdict("WARN", f"報告 {len(marks)} 回すべてで解除が通っていない（res=0）— "
+                                "台本の演出に dismissible が 1 つも立っていない疑い。"
+                                "1〜2 周目に消せる異変が無いと、3 周目の「消えない」が伝わらない")
 
             waited = [e for e in comms if e.get("id") == "Prompt"]
             if waited:

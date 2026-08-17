@@ -72,16 +72,19 @@ namespace FixedCamVr.Streaming
         public bool markPressed;
 
         /// <summary>
-        /// ⚠⚠ <b>その報告が届いた瞬間に演出が走っていたか。</b>
+        /// ⚠⚠ <b>その報告で怪異の解除が通ったか</b>（2026-08-17・<c>canon/LEDGER.md</c> 0082）。
+        /// 通れば <see cref="CommsNotice.MarkLogged"/>（異常が記録されました）、
+        /// 通らなければ <see cref="CommsNotice.MarkNothing"/>（異常は検出されませんでした）。
         ///
-        /// <b>「いま走っているか」を後から見てはいけない。</b> 報告は
-        /// <c>ShowControlClient.RecordVisitorMark</c> → <c>TimelineDirector.NotifyVisitorMark</c> と
-        /// 流れて、<b>untilMark のカットをその場で畳む</b>。だから次のフレームに演出の有無を見ると、
-        /// 4 周目 A の締めで押したときだけ「演出が無かった」に化けて
-        /// <see cref="CommsNotice.MarkNothing"/> ＝ <b>意味が真逆の連絡</b>が返る。
-        /// 供給は <c>ShowControlClient.LastMarkHadTake</c>（中継の<b>前</b>に確定させてある）。
+        /// ⚠⚠ <b>「演出が走っていたか」ではない。</b> 2026-08-17 まではそれを見ていたので、
+        /// <b>3 周目の入れ替わりに押しても「記録されました」と返っていた</b>。
+        /// いま false が返るのは、装置が本当に検出できていないから
+        /// （解除を実行するエージェントが侵食されている周 ＝ 0070）。
+        ///
+        /// 供給は <c>ShowControlClient.LastMarkResolved</c>
+        /// ＝ <c>TimelineDirector.NotifyVisitorMark</c> の戻り値。
         /// </summary>
-        public bool markHadTake;
+        public bool markResolved;
 
         /// <summary>経過（秒）。</summary>
         public float dt;
@@ -216,7 +219,7 @@ namespace FixedCamVr.Streaming
 
             // 優先は 報告 > 締めの催促 > 開始。**報告は体験者が起こした出来事**なので必ず勝つ
             // （押した手応えが返らないと、装置が壊れているように見える）。
-            if (inp.markPressed) return inp.markHadTake ? CommsNotice.MarkLogged : CommsNotice.MarkNothing;
+            if (inp.markPressed) return inp.markResolved ? CommsNotice.MarkLogged : CommsNotice.MarkNothing;
             if (promptDue) return CommsNotice.Prompt;
             if (beginDue) return CommsNotice.Begin;
             return CommsNotice.None;

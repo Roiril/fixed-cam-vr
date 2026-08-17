@@ -145,12 +145,17 @@ LTouch の仮想マップは `Three = None` / `Four = None` なので（`OVRInpu
   送り主は 2026-08-17 に AIエージェントへ変わった — `canon/LEDGER.md` 0067）:
   演出が走っていれば「異常が記録されました」、走っていなければ「異常は検出されませんでした」。
   返りは**左コントローラの短い振動 ＋ 手元の面 ＋ 連絡の面**（[`CommsPanel`](../../Assets/Scripts/Diagnostics/CommsPanel.cs)）
-- ⚠⚠ **その判定は「押した瞬間」の値でなければならない。** 報告は
-  `ShowControlClient.RecordVisitorMark` → `TimelineDirector.NotifyVisitorMark` と流れて
-  **締めのカットをその場で畳む**ので、「いま演出が走っているか」を後から見ると
-  **4 周目 A の締めで押したときだけ真逆の連絡が返る**。凍らせるのは
-  `ShowControlClient.LastMarkHadTake`（**中継の前**）で、順序を入れ替えると黙って壊れる。
-  `analyze-xp-log.py` が `ev=mark take=` と `ev=comms id=` の食い違いを FAIL にする
+- ⚠⚠ **分岐の材料は「解除が通ったか」**（2026-08-17・`canon/LEDGER.md` 0082）。
+  `ShowControlClient.LastMarkResolved` ＝ `TimelineDirector.NotifyVisitorMark` の**戻り値**。
+  - **「演出が走っていたか」ではない。** 2026-08-17 まではそれを見ていたので、
+    **3 周目の入れ替わり（消えない）に押しても「異常が記録されました」と返っていた** ＝
+    消えていないのに装置が認めた顔をする。いまは「異常は検出されませんでした」で、
+    **装置は本当に検出できていない**（解除を実行するエージェントが侵食されている周）
+  - ⭐ **凍らせる順序の問題が消えた。** 旧実装は中継の前に `ActiveTakeId` を見る必要があり
+    （締めのカットが報告でその場で畳まれるため）、1 行動かすと 4 周目 A の連絡が真逆になった。
+    **畳んだ本人が戻り値で答える**ので、その依存が構造的に無い
+  - `analyze-xp-log.py` が `ev=mark res=` と `ev=comms id=` の食い違いを FAIL にする。
+    **解除が 1 度も通らない走行は WARN**（台本に `dismissible` が 1 つも立っていない疑い）
 - **短押しでは通さない。** 歩きながら握り込むので、押した瞬間に決まると「触れただけ」が報告になる。
   判定は [`VisitorMarkHoldLogic`](../../Assets/Scripts/Input/VisitorMarkHoldLogic.cs)（純ロジック・
   テスト 6 本）。1 回の押しで 1 回だけ・離すとゲージは 0 へ戻る・**dt は 0.25 秒で切る**

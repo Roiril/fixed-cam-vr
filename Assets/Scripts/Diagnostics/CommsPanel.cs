@@ -589,17 +589,17 @@ namespace FixedCamVr.Diagnostics
         {
             if (!IsBuilt) return;
 
-            // ---- 報告の縁を取る。⚠ **演出の有無は `ShowControlClient` が押した瞬間に凍らせた値**を使う。
-            //      ここで `timeline.ActiveTakeId` を見ると、締めのカットは報告で畳まれた後なので
-            //      「演出は無かった」に化けて、4 周目 A の連絡が真逆になる。
-            bool markPressed = false, markHadTake = false;
+            // ---- 報告の縁を取る。⚠ **解除が通ったかは `ShowControlClient` が中継の戻り値で持っている**。
+            //      ここで `timeline.ActiveTakeId` を見ると「演出が走っていたか」しか分からず、
+            //      3 周目の入れ替わり（消えない）にも「記録されました」と返してしまう。
+            bool markPressed = false, markResolved = false;
             if (showControl != null)
             {
                 if (showControl.VisitorMarkCount != _lastMarkCount)
                 {
                     // 押し戻し（ラン開始で 0 に戻る）は報告ではない。
                     markPressed = showControl.VisitorMarkCount > _lastMarkCount;
-                    markHadTake = showControl.LastMarkHadTake;
+                    markResolved = showControl.LastMarkResolved;
                     _lastMarkCount = showControl.VisitorMarkCount;
                 }
             }
@@ -617,7 +617,7 @@ namespace FixedCamVr.Diagnostics
                 panelIdle = _logic.Stage == CommsStage.Off,
                 waitingForMark = timeline != null && timeline.IsWaitingForVisitorMark,
                 markPressed = markPressed,
-                markHadTake = markHadTake,
+                markResolved = markResolved,
                 dt = Time.unscaledDeltaTime,
             });
             if (next != CommsNotice.None) Deliver(next);

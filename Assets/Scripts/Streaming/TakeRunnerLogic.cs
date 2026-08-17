@@ -460,8 +460,8 @@ namespace FixedCamVr.Streaming
         ///
         ///   ⓪<b>走行中の演出を「報告済み」として記録する</b>（2026-08-17）。<c>dismissible</c> か
         ///     ⚠⚠ 記録するのは<b>走行中の報告だけ</b>。演出が終わった後の押下に猶予を作らない —
-        ///     連絡の面が出す答えは <c>ShowControlClient.LastMarkHadTake</c>（押した瞬間の
-        ///     <c>ActiveTakeId</c>）で凍っており、そこでは「異常は検出されませんでした」と表示済み。
+        ///     連絡の面が出す答えは <c>ShowControlClient.LastMarkResolved</c>（この関数の戻り値）で
+        ///     決まっており、走行中でなければ false ＝「異常は検出されませんでした」と表示済み。
         ///     内部だけ「報告済み」にすると、<b>同じ 1 回の押下について画と機械が別のことを言う</b>
         ///     （<c>analyze-xp-log.py</c> が <c>ev=mark take=</c> と <c>ev=comms id=</c> の
         ///     食い違いを FAIL にしているのと同じ不整合を、こちらから作ることになる）。
@@ -483,17 +483,32 @@ namespace FixedCamVr.Streaming
         ///   演出の終わり方が 2 経路になり、後片付けの網羅性が経路ごとに分かれる。
         ///
         /// </summary>
-        public void NotifyMarkPressed(float now)
+        /// <returns>
+        /// <b>この報告で解除が通ったか</b>（2026-08-17・<c>canon/LEDGER.md</c> 0082）。
+        /// ①②のどちらかに当たれば true。連絡の面の文面がこの 1 ビットで分かれる —
+        /// 通れば「異常が記録されました」、通らなければ「異常は検出されませんでした」。
+        ///
+        /// ⚠ <b>「演出が走っていたか」ではない。</b> 3 周目の録画は走っているが <c>dismissible</c> が
+        /// 立っていないので false ＝ <b>装置は本当に検出できていない</b>。それが正しい返事になる。
+        /// ⚠ ②は実際に畳むのが次の <see cref="Tick"/> だが、<b>通ることはこの時点で確定している</b>ので
+        /// true を返す（体験者の押下と画の変化のあいだに 1 フレームの猶予があるだけ）。
+        /// </returns>
+        public bool NotifyMarkPressed(float now)
         {
-            if (!_running) return;
-            if (now < _stepBeganAt) return;
+            if (!_running) return false;
+            if (now < _stepBeganAt) return false;
 
             _activeReported = true;
 
-            if (CurrentStepWait() == WaitMark) { SetCurrentStepEnd(now); return; }
+            if (CurrentStepWait() == WaitMark) { SetCurrentStepEnd(now); return true; }
 
             if (_activeTake >= 0 && _activeTake < _defs.Length && _defs[_activeTake].dismissible)
+            {
                 _dismissPending = true;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

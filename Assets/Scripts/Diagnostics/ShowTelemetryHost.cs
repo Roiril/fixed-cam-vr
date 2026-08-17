@@ -636,8 +636,10 @@ namespace FixedCamVr.Diagnostics
                 _lastMarkCount = _show.VisitorMarkCount;
                 Emit($"ev=mark n={_lastMarkCount} lap={(_run != null ? _run.Lap : -1)} " +
                      $"cam={(_switch != null && _switch.TryGetCurrentZoneCamera(out int mc) ? mc : -1)}"
-                     // その報告の瞬間に演出が走っていたか（AIエージェントからの連絡の文面がこれで分かれる）。
-                   + $" take={(_show.LastMarkHadTake ? 1 : 0)}");
+                     // ⚠⚠ **その報告で解除が通ったか**（2026-08-17・`canon/LEDGER.md` 0082）。
+                     //    連絡の面の文面がこれで分かれる。2026-08-17 まではキーが `take=`
+                     //    ＝「演出が走っていたか」で、3 周目の入れ替わりでも 1 が立っていた。
+                   + $" res={(_show.LastMarkResolved ? 1 : 0)}");
             }
 
             // AIエージェントからの連絡（`canon/LEDGER.md` 0054）。**1 通ごとに 1 行**。

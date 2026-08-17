@@ -15,13 +15,13 @@ namespace FixedCamVr.Streaming.Tests
     {
         private const float Dt = 1f / 72f;
 
-        private static CommsCueInput Run(bool waiting = false, bool mark = false, bool hadTake = false) =>
+        private static CommsCueInput Run(bool waiting = false, bool mark = false, bool resolved = false) =>
             new CommsCueInput
             {
                 inRun = true,
                 waitingForMark = waiting,
                 markPressed = mark,
-                markHadTake = hadTake,
+                markResolved = resolved,
                 dt = Dt,
             };
 
@@ -75,19 +75,26 @@ namespace FixedCamVr.Streaming.Tests
         // ------------------------------------------------------------------ ② 報告した瞬間
 
         [Test]
-        public void ReportingWhileSomethingIsPlaying_SaysItWasLogged()
+        public void WhenTheAnomalyIsCleared_TheAgentSaysItWasLogged()
         {
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
-            Assert.AreEqual(CommsNotice.MarkLogged, l.Tick(Run(mark: true, hadTake: true)));
+            Assert.AreEqual(CommsNotice.MarkLogged, l.Tick(Run(mark: true, resolved: true)));
         }
 
+        /// <summary>
+        /// ⚠⚠ <b>解除が通らなければ「検出されませんでした」。</b>
+        /// 3 周目の入れ替わり（<c>dismissible</c> でない演出）に押したときがこれで、
+        /// **演出は走っているのに** false が返る（`canon/LEDGER.md` 0082）。
+        /// 2026-08-17 まではここが「演出が走っていたか」だったので、消えていないのに
+        /// 「異常が記録されました」と認めた顔をしていた。
+        /// </summary>
         [Test]
-        public void ReportingWithNothingPlaying_SaysNothingWasDetected()
+        public void WhenNothingIsCleared_TheAgentSaysNothingWasDetected()
         {
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
-            Assert.AreEqual(CommsNotice.MarkNothing, l.Tick(Run(mark: true, hadTake: false)));
+            Assert.AreEqual(CommsNotice.MarkNothing, l.Tick(Run(mark: true, resolved: false)));
         }
 
         [Test]
@@ -103,16 +110,15 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void ReportingAtTheClosingCut_IsAnsweredAsLogged_NotAsNothing()
         {
-            // ⚠⚠ **この実装で唯一の危ない所。** 締めのカットは報告でその場で畳まれるので、
-            //     「いま演出が走っているか」を後から見ると必ず false になり、意味が真逆の連絡が返る。
-            //     ここは押した瞬間の値（markHadTake）を使っていることの固定。
+            // ⚠⚠ **締めのカット（untilMark）は報告を消費する ＝ 解除が通った側。**
+            //     供給は TimelineDirector.NotifyVisitorMark の戻り値なので、
+            //     「畳んだ後に演出の有無を見る」ことによる真逆の連絡は構造的に起きない。
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
             Advance(l, 1f, waiting: true);
 
-            // 締めのカットが待っている ＝ 演出は走っている。押した瞬間の値が渡ってくる。
             Assert.AreEqual(CommsNotice.MarkLogged,
-                            l.Tick(Run(waiting: true, mark: true, hadTake: true)));
+                            l.Tick(Run(waiting: true, mark: true, resolved: true)));
         }
 
         [Test]

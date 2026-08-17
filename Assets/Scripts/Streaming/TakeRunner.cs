@@ -394,9 +394,15 @@ namespace FixedCamVr.Streaming
         ///   ①現カットが <c>durKind:"untilMark"</c> なら、そのカットが畳まれて次のカットへ進む（4 周目 A の締め）
         ///   ②走行中の演出が <c>dismissible</c> なら、**演出ごと畳まれて乱れとともに現実へ戻る**
         ///
-        /// どちらにも当たらなければ 1 ビットも変わらない（連絡の面が「異常が記録されました」と返すだけ）。
+        /// どちらにも当たらなければ 1 ビットも変わらない。
         /// </summary>
-        public void NotifyVisitorMark() => _logic.NotifyMarkPressed(Now);
+        /// <returns>
+        /// <b>解除が通ったか</b>（2026-08-17・<c>canon/LEDGER.md</c> 0082）。
+        /// 連絡の面の文面がこれで分かれる。⚠ <b>「演出が走っていたか」ではない</b> —
+        /// 3 周目の録画は走っているが通らないので false になり、
+        /// 「異常は検出されませんでした」が返る（それが正しい返事）。
+        /// </returns>
+        public bool NotifyVisitorMark() => _logic.NotifyMarkPressed(Now);
 
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行が押す真似をするのに読む）。</summary>
         public bool IsWaitingForVisitorMark => _logic.IsWaitingForMark;

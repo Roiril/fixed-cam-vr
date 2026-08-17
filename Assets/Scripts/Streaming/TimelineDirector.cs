@@ -76,8 +76,13 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中の演出だけを畳んで画面をライブへ返す（卓の ■ 画面を取り返す）。</summary>
         public void AbortActive() => takeRunner?.AbortActive();
 
-        /// <summary>体験者の報告を演出へ中継する（untilMark のカットだけが反応する）。</summary>
-        public void NotifyVisitorMark() => takeRunner?.NotifyVisitorMark();
+        /// <summary>
+        /// 体験者の報告を演出へ中継し、<b>解除が通ったか</b>を返す
+        /// （2026-08-17・<c>canon/LEDGER.md</c> 0082）。
+        /// ⚠ 演出が 1 本も無ければ false。**演出が走っていたか**とは別物で、
+        /// 走っていても <c>dismissible</c> でなければ false（3 周目の録画がそれ）。
+        /// </summary>
+        public bool NotifyVisitorMark() => takeRunner != null && takeRunner.NotifyVisitorMark();
 
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行の検証用）。</summary>
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;
