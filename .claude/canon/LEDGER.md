@@ -3257,6 +3257,21 @@ EditMode 1434/1434。実機では未確認。
 採: `show.json` の **`L3C2#0` の 2 カット両方**へ `eyes: 1`（`timeline.rev` 35 → 36）。
 控えは `logs/show-backup/20260817_134829_show.json`。
 
+⚠⚠⚠ **この変更は台本に残っていない**（2026-08-17 の後で確認・`canon/LEDGER.md` 0082 の作業中）。
+卓のメモリもファイルも **`timeline.rev` = 35**、`eyes` を持つカットは **0 本**。
+控え（上のファイル）も rev 35 ＝ 入れる前の版なので、**rev 36 はどこにも無い**。
+
+- **闇の目は、いまの体験では 1 度も出ていない。** 実装（`AnomalyEyes`）は生きているが、
+  台本が呼んでいない
+- 消えた経路は未確定。0078 自身が警告している型（**卓のページを開いたまま保存すると、
+  古いページには「闇の目」の欄が無いので値が落ちる**）がいちばん疑わしい
+- ⚠ **「採」と書いてあることを実装済みと読まない。** 台本は git 管理外なので、
+  台帳の記録と現物が食い違っても差分に出ない。**`eyes` を持つカット数を数えるのが唯一の確認**:
+
+  ```bash
+  py -3.11 -c "import json,urllib.request;d=json.load(urllib.request.urlopen('http://127.0.0.1:8099/state'));print(sum(1 for s in d['timeline']['segments'] for t in s['takes'] for st in t['steps'] if st.get('eyes')))"
+  ```
+
 | カット | 何が映っているか | 闇の目 |
 |---|---|---|
 | 0 | **1 周目の録画**（`rec` / camera 2）＋ CG 人形 | 出す |
