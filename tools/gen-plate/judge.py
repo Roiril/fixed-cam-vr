@@ -114,6 +114,31 @@ def build_checks(m: dict, man: dict, size_ok: bool, p: dict | None = None) -> li
     return c
 
 
+def undelivered_note(ng: list, man: dict) -> list[str]:
+    """落ちた門のうち、**この cue では体験者に届かないもの**を名指しする。
+
+    ⚠⚠ **合否は動かさない**（門はどれも「モデルが編集ではなく描き起こした」印を兼ねている）。
+    ここが要るのは、**焼き直すかどうかの判断**のため — 手元の 25 走行を測り直したら、
+    全部の門を要求すると通るのは **4%（9 割ほしいなら 57 枚）**、
+    下の 3 つを外すと **28%（8 枚）**だった（`yield.py`）。
+    **届かない欠陥のために 7 倍焼くことになる。**
+    """
+    names = {c[0] for c in ng}
+    hit = []
+    if "寸法" in names:
+        hit.append("寸法（out_fit.png を素材に使えばよい）")
+    prog = float((man.get("transmission") or {}).get("progress") or 0.0)
+    if "周りより鮮やかでない" in names and prog >= 0.6:
+        hit.append(f"周りより鮮やかでない（周 {man['transmission']['lap']:.0f} は完全な無彩）")
+    if "置かない側を触っていない" in names and man.get("place") not in (None, "full"):
+        hit.append(f"置かない側を触っていない（place={man['place']} ＝ 反対側はライブが出る）")
+    if not hit:
+        return []
+    return ["  ⭐ このうち**体験者には届かない**もの: " + " / ".join(hit),
+            "     ⚠ ただし印としては読む — どれも「描き起こした回」に一緒に出る。"
+            "残りの門が通っているなら素材にしてよい"]
+
+
 def run(run_dir: str, out_path: str | None, quiet_sheet: bool) -> int:
     with open(os.path.join(run_dir, "manifest.json"), encoding="utf-8") as f:
         man = json.load(f)
@@ -144,6 +169,9 @@ def run(run_dir: str, out_path: str | None, quiet_sheet: bool) -> int:
     for name, ok, detail, why in checks:
         print(f"  {'OK ' if ok else 'NG '} {name:22s} {detail}")
     print(f"  → {'合格' if not ng else f'不合格 {len(ng)} 件'}")
+    if ng:
+        for line in undelivered_note(ng, man):
+            print(line)
     if m["keep_diff"] == 0.0 and man.get("keep_out"):
         print("  ⚠ 置かない側の差が厳密に 0。生成ではなく合成した疑い"
               "（走行フォルダに置き土産が無いか見る）")
