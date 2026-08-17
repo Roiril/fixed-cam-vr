@@ -1974,6 +1974,28 @@ def analyze(events, others, exp, warns=None):
             if chev and max(chev) == 0:
                 verdict("WARN", "円だけが出ていて矢印が 1 つも無い（山形 0）— "
                                 "道筋が短すぎる（壁の腕が床の縁に近い）")
+
+            # -- 説明と対で出たか / 矢印 → 円 の順（canon/LEDGER.md 0079 の赤入れ 4）
+            #    ⚠ どちらも**画からは区別できない**（保険で出た矢印も、順序が逆の円も、
+            #      1 枚の絵では同じに見える）。ここが唯一の手掛かり。
+            trail_ev = next((e for e in guide_evs if e.get("st") == "Trail"), None)
+            spot_ev2 = next((e for e in guide_evs if e.get("st") == "SpotIn"), None)
+            if trail_ev is not None and "told" in trail_ev:
+                if trail_ev.get("told") == "1":
+                    verdict("OK", "エージェントが説明を始めた縁で矢印が出た")
+                else:
+                    verdict("WARN", "説明が来ないまま保険（WalkGuideLogic.TellTimeoutSec）で矢印が出た — "
+                                    "⓪b「矢印の方向から…」が届いていない"
+                                    "（連絡の面を組めていない / CommsPanel の walkGuide 配線を見る）")
+            if trail_ev is not None:
+                r0 = fstr(trail_ev.get("ring", "0"))
+                if r0 is not None and r0 > 0.01:
+                    verdict("FAIL", f"矢印が出始めた時点で円が出ている（ring {r0:.2f}）— "
+                                    "矢印が全部出てから円、の順が壊れている")
+            if spot_ev2 is not None:
+                a0 = fstr(spot_ev2.get("arrow", "0"))
+                if a0 is not None and a0 < 0.99:
+                    verdict("FAIL", f"円が開き始めた時点で矢印が出切っていない（arrow {a0:.2f}）")
             if arrived and t_real is not None and t_arrive is not None:
                 if t_arrive <= t_real + 0.5:
                     verdict("OK", f"円へ着いてから導入が始まった（着 {t_arrive:.1f}s → 段 1 {t_real:.1f}s）")

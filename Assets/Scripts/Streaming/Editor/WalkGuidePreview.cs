@@ -104,7 +104,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 // 立って見る絵（連番）。円へ着く手前までを通しで焼く。
                 SetEye(cam, path);
-                float total = WalkGuideLogic.SpotInSec + WalkGuideLogic.TrailSec + HoldTailSec;
+                float total = WalkGuideLogic.TrailSec + WalkGuideLogic.SpotInSec + HoldTailSec;
                 for (float t = 0f; t < total; t += dt)
                 {
                     logic.Tick(Input(path, dt, wanted: true, dist: 9f));
@@ -121,18 +121,25 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
 
                 // 段ごとの静止画（数値が緑でも絵は必ず開く — rules/visual-verification.md §7）。
-                float spotIn = WalkGuideLogic.SpotInSec;
-                float trailEnd = spotIn + WalkGuideLogic.TrailSec;
-                Shot(cam, guide, path, dir, "eye_1_spot_half", spotIn * 0.5f, false, false);
-                Shot(cam, guide, path, dir, "eye_2_trail_half", spotIn + WalkGuideLogic.TrailSec * 0.5f, false, false);
-                Shot(cam, guide, path, dir, "eye_3_hold", trailEnd + 1.4f, false, false);
-                Shot(cam, guide, path, dir, "eye_4_arrive", trailEnd + 1.4f, true, false);
+                float trail = WalkGuideLogic.TrailSec;
+                float opened = trail + WalkGuideLogic.SpotInSec;
+                float spotOpening = trail + WalkGuideLogic.SpotInSec * 0.35f;
+                // 矢印が手前から 1 つずつ。**3 枚並べて数が増えているかを見る**（1 枚では判定できない）。
+                Shot(cam, guide, path, dir, "eye_1_trail_a", trail * 0.25f, false, false);
+                Shot(cam, guide, path, dir, "eye_2_trail_b", trail * 0.60f, false, false);
+                // 矢印が出切った直後。**ここで円が 1 画素でも出ていたら順序が壊れている。**
+                Shot(cam, guide, path, dir, "eye_3_trail_end", trail - 0.02f, false, false);
+                // 円が中心から開いている途中。半径を測れるのは真上だけなので対で撮る。
+                Shot(cam, guide, path, dir, "eye_4_spot_open", spotOpening, false, false);
+                Shot(cam, guide, path, dir, "top_spot_open", spotOpening, false, true);
+                Shot(cam, guide, path, dir, "eye_5_hold", opened + 1.4f, false, false);
+                Shot(cam, guide, path, dir, "eye_6_arrive", opened + 1.4f, true, false);
                 // 真上から（道筋と壁の関係を 1 枚で見る）。
-                Shot(cam, guide, path, dir, "top_hold", trailEnd + 1.4f, false, true);
-                Shot(cam, guide, path, dir, "top_arrive", trailEnd + 1.4f, true, true);
+                Shot(cam, guide, path, dir, "top_hold", opened + 1.4f, false, true);
+                Shot(cam, guide, path, dir, "top_arrive", opened + 1.4f, true, true);
 
                 File.WriteAllText(Path.Combine(dir, "frames.tsv"), ledger.ToString());
-                Debug.Log($"[WalkGuide] {frames} コマ + 静止画 6 枚 + frames.tsv → Assets/{OutDirRel}/\n"
+                Debug.Log($"[WalkGuide] {frames} コマ + 静止画 9 枚 + frames.tsv → Assets/{OutDirRel}/\n"
                         + $"  山形 {guide.ChevronCount} 個 / 組めた {(guide.IsBuilt ? "はい" : "いいえ")}\n"
                         + "  ⚠ 両眼視差・レンズ・パススルーは入っていない。床と壁は置き換えの暗い板。"
                         + "加算合成なので実機の明るい床では相対的に薄く見える");
@@ -174,10 +181,16 @@ namespace FixedCamVr.Streaming.EditorTools
             Shoot(cam, Path.Combine(dir, name + ".png"));
         }
 
+        /// <summary>
+        /// ⚠⚠ <b><c>told</c> を必ず立てる。</b> 矢印はエージェントが説明を始めるまで 1 つも出ない
+        /// （<c>canon/LEDGER.md</c> 0079 の赤入れ 4）。渡さないと保険（12 秒）が切れるまで待つので、
+        /// この尺（約 6 秒）のプレビューは<b>全コマ真っ暗になる</b>。
+        /// </summary>
         private static WalkGuideInput Input(in WalkGuidePath.Path path, float dt, bool wanted, float dist)
             => new WalkGuideInput
             {
-                wanted = wanted, posValid = true, distM = dist, radiusM = path.radiusM, dt = dt,
+                wanted = wanted, told = true,
+                posValid = true, distM = dist, radiusM = path.radiusM, dt = dt,
             };
 
         /// <summary>矢印の起点の少し後ろに立って、円の方を向く。</summary>

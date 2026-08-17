@@ -61,28 +61,55 @@ Shader "FixedCamVr/WalkGuideRing"
             #define R_SOFT 0.012
             #define A_SOFT 0.020
 
-            // 1 本の弧。r = 半径（判定の円 = 1）/ w = 半幅 / n = 切れ目の数 / duty = 描く割合 /
-            // spin = 回る速さ（毎秒何周）/ ph = 位相 / a = 濃さ / ord = 描き出す順
+            // ---- 開き方（登場）----
+            // ⚠⚠ **中心から広がりながら、少しだけ回って止まる**（2026-08-17・ユーザー赤入れ 4
+            //    「円も中心から、少し回転しながらかっこよく徐々に出るようにして」）。
+            //    それまでは弧が最初から所定の半径に居て、角度方向へ引かれるだけだった
+            //    ＝ 中心から出ないし、出るときに回らない。
+            // ⚠ 角度方向の描き出し（旧 `sweep`）は**やめた**。半径の成長と同時にやると
+            //    「3 つのことが起きている」になって、どれも読めない。
+            // 弧 1 段ぶんの時差。**内側から順に**開く。
+            // ⚠ `段の数 - 1`（4）× これ ＋ OPEN_SPAN が 1 を超えると、
+            //    いちばん外の弧が開き切らないまま段が終わる。
+            #define OPEN_STAGGER 0.085
+            #define OPEN_SPAN    0.66   // 1 本が開き切るまで（reveal のうちの割合）
+            #define OPEN_W_MIN   0.30   // 生まれた瞬間の帯の細さ（点から出るように見せる）
+            #define OPEN_TURN    0.30   // 開くあいだに余分に回る量（回転数）。着地で 0 になる
+            // 生まれた瞬間の弧の長さの割合。
+            // ⚠ **1 のままだと、中心に集まった 5 本が重なって「輪」ではなく染みに見える**（実測）。
+            //   短い弧が回りながら伸びる形にすると、小さいうちも意匠として読めて、
+            //   回っていることも同時に読める。
+            #define OPEN_DUTY_MIN 0.45
+
+            // 1 本の弧。R = 半径（判定の円 = 1）/ W = 半幅 / N = 切れ目の数 / DUTY = 描く割合 /
+            // SPIN = 回る速さ（毎秒何周）/ PH = 位相 / A = 濃さ / ORD = 開く順（内側から 0）
             float arc(float r, float ang, float R, float W, float N, float DUTY,
                       float SPIN, float PH, float A, float ORD, float reveal, float arrive)
             {
-                // 半径の帯
-                float band = 1.0 - smoothstep(W - R_SOFT, W + R_SOFT, abs(r - R));
+                // 開き（0 = 中心の点 / 1 = 所定の位置）。
+                float g = saturate((reveal - ORD * OPEN_STAGGER) / OPEN_SPAN);
+                if (g <= 0.0) return 0.0;
+                g = 1.0 - pow(1.0 - g, 3.0);        // 速く広がって、すっと着地する
+
+                // 半径の帯。生まれたては中心の細い点で、広がりながら太る。
+                float rad = R * g;
+                float w = W * lerp(OPEN_W_MIN, 1.0, g);
+                float band = 1.0 - smoothstep(w - R_SOFT, w + R_SOFT, abs(r - rad));
                 if (band <= 0.0) return 0.0;
 
                 // 切れ目。**着いたら埋まって 1 本の輪になる**。
-                float duty = lerp(DUTY, 1.0, arrive);
-                float seg = frac(ang / TAU * N + PH + SPIN * _Spin);
+                // 開いている最中は短く（上の OPEN_DUTY_MIN）。
+                float duty = lerp(DUTY, 1.0, arrive) * lerp(OPEN_DUTY_MIN, 1.0, g);
+                // ⚠ 余分な回転は着地（g=1）で 0 になるので、そのまま定常回転へ繋がる
+                //   （止まってから回り出すと、開きと回転が別の出来事に見える）。
+                //   向きは定常回転と揃える ＝ 内と外が逆へ回りながら開く。
+                float turn = (1.0 - g) * OPEN_TURN * sign(SPIN);
+                float seg = frac(ang / TAU * N + PH + SPIN * _Spin + turn * N);
                 float on = smoothstep(0.0, A_SOFT * N, seg) *
                            (1.0 - smoothstep(duty - A_SOFT * N, duty, seg));
                 if (duty >= 0.999) on = 1.0;
 
-                // 描き出し。弧が順に、それぞれ 1 周ぶん引かれていく。
-                float k = saturate((reveal - ORD * 0.16) / 0.62);
-                float sweep = 1.0 - smoothstep(k - 0.06, k, frac(ang / TAU + PH));
-                if (k >= 0.999) sweep = 1.0;
-
-                return band * on * sweep * A;
+                return band * on * A * g;
             }
 
             struct Attributes
@@ -122,20 +149,26 @@ Shader "FixedCamVr/WalkGuideRing"
 
                 // ⚠ 参考画像（HUD の同心弧）の骨格は **太い塊の弧 ＋ 細い線の弧** の対比。
                 //   太さを揃えると「輪が何重にもある」だけになり、装置の意匠に見えない。
-                // 主の輪 ＝ 判定の円そのもの（切れ目 3・ほとんど閉じている）
-                float a = arc(r, ang, 1.00, 0.024, 3.0, 0.88, 0.05, 0.00, 1.00, 0.0, rev, arv);
-                // 外の太い塊（参考の外周。短く切れて回る）
-                a += arc(r, ang, 1.22, 0.048, 4.0, 0.38, -0.06, 0.17, 0.60, 1.0, rev, arv);
-                // 外の細い線（塊のすぐ外を 1 本）
-                a += arc(r, ang, 1.34, 0.007, 2.0, 0.58, -0.06, 0.44, 0.40, 2.0, rev, arv);
-                // 内の細い線（速く逆へ回る）
-                a += arc(r, ang, 0.88, 0.008, 5.0, 0.56, -0.14, 0.31, 0.45, 2.0, rev, arv);
+                // ⚠⚠ **開く順（末尾から 2 つ目の引数）は半径の順**。中心から外へ波及して見せる。
+                //    意匠の重要さで並べると、内と外が入り混じって「中心から」が読めない。
                 // 内の太めの弧（ゆっくり）
-                a += arc(r, ang, 0.72, 0.026, 2.0, 0.50, 0.17, 0.62, 0.55, 3.0, rev, arv);
+                float a = arc(r, ang, 0.72, 0.026, 2.0, 0.50, 0.17, 0.62, 0.55, 0.0, rev, arv);
+                // 内の細い線（速く逆へ回る）
+                a += arc(r, ang, 0.88, 0.008, 5.0, 0.56, -0.14, 0.31, 0.45, 1.0, rev, arv);
+                // 主の輪 ＝ 判定の円そのもの（切れ目 3・ほとんど閉じている）
+                a += arc(r, ang, 1.00, 0.024, 3.0, 0.88, 0.05, 0.00, 1.00, 2.0, rev, arv);
+                // 外の太い塊（参考の外周。短く切れて回る）
+                a += arc(r, ang, 1.22, 0.048, 4.0, 0.38, -0.06, 0.17, 0.60, 3.0, rev, arv);
+                // 外の細い線（塊のすぐ外を 1 本）
+                a += arc(r, ang, 1.34, 0.007, 2.0, 0.58, -0.06, 0.44, 0.40, 4.0, rev, arv);
 
                 // 中の淡い面（「ここ」を面で示す。輪だけだと床の模様に紛れる）。
                 // ⚠ **濃くしない。** 0.085 で焼いたら茶色い円盤になって、輪の意匠が消えた（実測）。
-                a += 0.009 * rev * (1.0 - smoothstep(0.05, 0.62, r));
+                // ⚠ これも中心から広がる（半径を進みで割る）。面だけ先に全面へ出ると、
+                //   弧が中心から開いてくるのが読めなくなる。
+                float gf = saturate(rev / OPEN_SPAN);
+                gf = 1.0 - pow(1.0 - gf, 3.0);
+                a += 0.009 * gf * (1.0 - smoothstep(0.05, 0.62, r / max(gf, 1e-3)));
 
                 // 着いた合図: 輪から外へ 1 度だけ広がる波。
                 // ⚠⚠ **quad の外へ出さない。** 半径を QUAD_K より大きくすると縁で切られて

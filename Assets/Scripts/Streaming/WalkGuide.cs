@@ -81,6 +81,8 @@ namespace FixedCamVr.Streaming
         private static readonly int FlowId = Shader.PropertyToID("_Flow");
         private static readonly int SpinId = Shader.PropertyToID("_Spin");
         private static readonly int ArriveId = Shader.PropertyToID("_Arrive");
+        /// <summary>山形 1 つぶんの `reveal` の刻み（= 1 / (山形の数 - 1)）。</summary>
+        private static readonly int StepId = Shader.PropertyToID("_Step");
 
         private readonly WalkGuideLogic _logic = new WalkGuideLogic();
 
@@ -98,6 +100,7 @@ namespace FixedCamVr.Streaming
         private WalkGuidePath.Path _path;
         private int _chevrons;
         private float _spin;
+        private bool _told;
 
         /// <summary>いまの段（テレメトリ用）。</summary>
         public WalkGuideStage Stage => _logic.Stage;
@@ -184,8 +187,22 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             _logic.Reset();
+            _told = false;
             Hide();
         }
+
+        /// <summary>
+        /// <b>エージェントが説明し始めた</b>（⓪b「矢印の方向から…」が届いた）。
+        /// これが来るまで山形は 1 つも出ない（<c>canon/LEDGER.md</c> 0079 の赤入れ 4）。
+        ///
+        /// 呼ぶのは <c>CommsPanel.Deliver</c> 1 か所（Diagnostics → Streaming の向きは既存どおり）。
+        /// ⚠ <b>面が組めない現場では永久に来ない</b>ので、
+        /// <see cref="WalkGuideLogic.TellTimeoutSec"/> の保険が別に要る。
+        /// </summary>
+        public void NotifyExplaining() => _told = true;
+
+        /// <summary>説明の合図が届いたか（テレメトリ・診断用）。</summary>
+        public bool Told => _told;
 
         /// <summary>
         /// 誘導を 1 フレーム進める。<paramref name="wanted"/> は呼び出し側（<see cref="IntroDirector"/>）が
@@ -210,6 +227,7 @@ namespace FixedCamVr.Streaming
             bool changed = _logic.Tick(new WalkGuideInput
             {
                 wanted = want,
+                told = _told,
                 posValid = posValid,
                 distM = distM,
                 radiusM = _path.radiusM,
@@ -350,8 +368,11 @@ namespace FixedCamVr.Streaming
                 {
                     float t = n <= 1 ? 0f : i / (float)(n - 1);
                     float dist = Mathf.Lerp(first, Mathf.Max(first + ChevronL, last), t);
-                    // s = 円からの正規化距離（シェーダの点き方と流れが読む）。
-                    float s = len > 0.01f ? Mathf.Clamp01(dist / len) : 0f;
+                    // ⚠⚠ **s は「番号」の正規化**（0 = 円のいちばん近く / 1 = 起点）。
+                    //    距離で正規化すると、いちばん手前の山形の s が 0 まで下がらない
+                    //    （円と輪のぶん必ず余白がある）ので、`reveal` の後半が空回りして
+                    //    **最後の 1 つが出た後も何も起きない時間**ができる。
+                    float s = n > 1 ? i / (float)(n - 1) : 0f;
                     int b = verts.Count;
                     verts.Add(new Vector3(-hw, 0f, -dist - hl));
                     verts.Add(new Vector3(hw, 0f, -dist - hl));
@@ -400,7 +421,9 @@ namespace FixedCamVr.Streaming
             if (fwd.sqrMagnitude < 1e-8f) fwd = Vector3.forward;
             _root.SetPositionAndRotation(center, Quaternion.LookRotation(fwd, Vector3.up));
 
-            float arrow = w.arrow * w.spot;
+            // ⚠ **円の濃さを掛けない。** 矢印は円より先に出る（0079 の赤入れ 4）ので、
+            //   掛けると Trail のあいだ spot=0 で 1 画素も出なくなる。
+            float arrow = w.arrow;
             AppliedArrow = _chevrons > 0 ? arrow : 0f;
             AppliedRing = w.spot;
 
@@ -409,6 +432,8 @@ namespace FixedCamVr.Streaming
                 _arrowMat.SetFloat(RevealId, w.reveal);
                 _arrowMat.SetFloat(FadeId, arrow);
                 _arrowMat.SetFloat(FlowId, w.flow);
+                // 山形 1 つぶんの刻み。シェーダはこれで「その 1 つが出てからの進み」を解く。
+                _arrowMat.SetFloat(StepId, _chevrons > 1 ? 1f / (_chevrons - 1) : 1f);
             }
             if (_ringMat != null)
             {

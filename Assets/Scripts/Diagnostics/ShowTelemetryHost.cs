@@ -597,7 +597,10 @@ namespace FixedCamVr.Diagnostics
                      $"path={(_guide.HasPath ? 1 : 0)} chev={_guide.ChevronCount} " +
                      $"arrow={_guide.AppliedArrow:F2} ring={_guide.AppliedRing:F2} " +
                      $"spot={_guide.Spot.x:F2},{_guide.Spot.y:F2} r={_guide.RadiusM:F2} " +
-                     $"auth={(_guide.SpotAuthored ? 1 : 0)} to={(_guide.TimedOut ? 1 : 0)}");
+                     $"auth={(_guide.SpotAuthored ? 1 : 0)} to={(_guide.TimedOut ? 1 : 0)} " +
+                     // told=0 のまま矢印が出ていたら、**保険（12 秒）で出た** ＝ 説明と対になっていない
+                     // （連絡の面が組めない現場で起きる。画からは区別できないのでここにしか出ない）。
+                     $"told={(_guide.Told ? 1 : 0)}");
             }
 
             // 終幕の段（Off/Flicker/Dark/Report/Done）。**画に出た側**を必ず一緒に出す —

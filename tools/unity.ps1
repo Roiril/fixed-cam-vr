@@ -109,7 +109,7 @@ $Menus = [ordered]@{
     'walkguide'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.WalkGuidePreview.Run'
                             Desc = 'タイトル直後の歩行誘導（床の矢印と円）を 1 コマずつ焼く（-Set show=<show.json> / → make-preview-video.py で mp4）'
                             Set = 'show=<show.json のパス>'
-                            Out = 'Assets/Screenshots/walkguide-preview/eye_3_hold.png' }
+                            Out = 'Assets/Screenshots/walkguide-preview/eye_5_hold.png' }
     'text-audit'       = @{ Method = 'FixedCamVr.Streaming.EditorTools.HmdTextAudit.Run'
                             Desc = 'HMD 内の文字を全面まとめて測る（1 文字の見かけ角 / 枠からのはみ出し。⚠ 大きさ・文言を触ったら通す）'
                             Out = $null }

@@ -17,14 +17,22 @@ namespace FixedCamVr.Streaming.Tests
     {
         private const float Dt = 1f / 60f;
 
-        private static WalkGuideInput In(bool wanted, float dist, float r = 0.35f, float dt = Dt)
+        /// <summary>
+        /// ⚠ <paramref name="told"/> の既定は true（＝エージェントが説明を始めた後）。
+        /// 説明を待つ側の挙動は下の 2 本だけが false を渡す。
+        /// </summary>
+        private static WalkGuideInput In(bool wanted, float dist, float r = 0.35f, float dt = Dt,
+                                         bool told = true)
             => new WalkGuideInput
-            { wanted = wanted, posValid = true, distM = dist, radiusM = r, dt = dt };
+            { wanted = wanted, told = told, posValid = true, distM = dist, radiusM = r, dt = dt };
 
-        private static void Run(WalkGuideLogic l, float sec, bool wanted, float dist)
+        private static void Run(WalkGuideLogic l, float sec, bool wanted, float dist, bool told = true)
         {
-            for (float t = 0f; t < sec; t += Dt) l.Tick(In(wanted, dist));
+            for (float t = 0f; t < sec; t += Dt) l.Tick(In(wanted, dist, told: told));
         }
+
+        /// <summary>矢印が出切って、円も開き切るまで（＝ Hold に居る）。</summary>
+        private const float ThroughSpotIn = WalkGuideLogic.TrailSec + WalkGuideLogic.SpotInSec;
 
         // ---- 段 -------------------------------------------------------------
 
@@ -35,31 +43,93 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(WalkGuideStage.Off, l.Stage);
 
             l.Tick(In(true, 9f));
-            Assert.AreEqual(WalkGuideStage.SpotIn, l.Stage, "出したいと言われたら円から出る");
-
-            Run(l, WalkGuideLogic.SpotInSec, true, 9f);
-            Assert.AreEqual(WalkGuideStage.Trail, l.Stage, "円が出たら矢印が点き始める");
+            Assert.AreEqual(WalkGuideStage.Trail, l.Stage, "説明が始まったら矢印から出る");
 
             Run(l, WalkGuideLogic.TrailSec, true, 9f);
-            Assert.AreEqual(WalkGuideStage.Hold, l.Stage, "点き切ったら流れだけが回る");
+            Assert.AreEqual(WalkGuideStage.SpotIn, l.Stage, "矢印が全部出たら円が開き始める");
+
+            Run(l, WalkGuideLogic.SpotInSec, true, 9f);
+            Assert.AreEqual(WalkGuideStage.Hold, l.Stage, "出し切ったら流れだけが回る");
             Assert.IsTrue(l.Directing, "Hold のあいだは『円へ行け』と言い切っている");
         }
 
         [Test]
-        public void Weights_ShowSpotBeforeArrow()
+        public void Weights_ShowArrowBeforeSpot()
         {
             var l = new WalkGuideLogic();
-            Run(l, WalkGuideLogic.SpotInSec * 0.5f, true, 9f);
+            Run(l, WalkGuideLogic.TrailSec * 0.5f, true, 9f);
             WalkGuideWeights w = l.Weights;
-            Assert.Greater(w.spot, 0f, "円は出ている");
-            Assert.AreEqual(0f, w.arrow, 1e-4f, "行き先が決まる前に矢印は出さない");
+            Assert.Greater(w.arrow, 0f, "矢印は出ている");
+            Assert.Greater(w.reveal, 0f, "山形が手前から点き始めている");
+            Assert.Less(w.reveal, 1f, "まだ全部は出ていない");
+            Assert.AreEqual(0f, w.spot, 1e-4f,
+                            "矢印が全部出るまで円は 1 画素も出さない（0079 の赤入れ 4）");
+            Assert.AreEqual(0f, w.ring, 1e-4f);
+        }
+
+        [Test]
+        public void Spot_OpensOnlyAfterEveryChevronIsOut()
+        {
+            var l = new WalkGuideLogic();
+            // 矢印が出切る手前まで: 円は 1 画素も無い。
+            for (float t = 0f; t < WalkGuideLogic.TrailSec - Dt * 2f; t += Dt)
+            {
+                l.Tick(In(true, 9f));
+                Assert.AreEqual(0f, l.Weights.spot, 1e-4f, $"{t:0.00}s で円が出ている");
+            }
+            Assert.AreEqual(1f, l.Weights.reveal, 0.05f, "この時点で山形はほぼ全部出ている");
+
+            Run(l, WalkGuideLogic.SpotInSec * 0.4f, true, 9f);
+            WalkGuideWeights w = l.Weights;
+            Assert.AreEqual(WalkGuideStage.SpotIn, l.Stage);
+            Assert.AreEqual(1f, w.reveal, 1e-4f, "円が開くあいだ、矢印は出たまま");
+            Assert.Greater(w.spot, 0f, "円が開き始めている");
+            Assert.Less(w.ring, 1f, "まだ開き切っていない（中心から広がっている途中）");
+        }
+
+        // ---- 説明と対で出す ---------------------------------------------------
+
+        [Test]
+        public void NothingComesOut_UntilTheAgentStartsExplaining()
+        {
+            var l = new WalkGuideLogic();
+            Run(l, 5f, true, 9f, told: false);
+            Assert.AreEqual(WalkGuideStage.Off, l.Stage,
+                            "説明の前に矢印が出ると、指示と画が別々の出来事になる");
+            Assert.AreEqual(0f, l.Weights.arrow, 1e-4f);
+
+            l.Tick(In(true, 9f, told: true));
+            Assert.AreEqual(WalkGuideStage.Trail, l.Stage, "説明が始まったら出る");
+        }
+
+        [Test]
+        public void ComesOutAnyway_WhenTheAgentNeverSpeaks()
+        {
+            var l = new WalkGuideLogic();
+            Run(l, WalkGuideLogic.TellTimeoutSec - 0.5f, true, 9f, told: false);
+            Assert.AreEqual(WalkGuideStage.Off, l.Stage, "保険が先に発火すると順序が崩れる");
+
+            Run(l, 1f, true, 9f, told: false);
+            Assert.AreEqual(WalkGuideStage.Trail, l.Stage,
+                            "面が組めない現場でも、待たされたら誘導だけは出す");
+        }
+
+        [Test]
+        public void TheWaitDoesNotCarryOver_WhileTheGuideIsNotWanted()
+        {
+            var l = new WalkGuideLogic();
+            // 出せない状態（タイトルが立っている等）で長く待っても、保険の時計は進まない。
+            Run(l, WalkGuideLogic.TellTimeoutSec * 2f, false, 9f, told: false);
+            Run(l, 1f, true, 9f, told: false);
+            Assert.AreEqual(WalkGuideStage.Off, l.Stage,
+                            "出せなかった時間まで数えると、出せるようになった瞬間に飛び出す");
         }
 
         [Test]
         public void Arriving_ClosesTheRing_AndPullsTheArrowFirst()
         {
             var l = new WalkGuideLogic();
-            Run(l, WalkGuideLogic.SpotInSec + WalkGuideLogic.TrailSec + 0.5f, true, 9f);
+            Run(l, ThroughSpotIn + 0.5f, true, 9f);
             Assert.AreEqual(WalkGuideStage.Hold, l.Stage);
 
             Run(l, WalkGuideLogic.ArriveHoldSec + Dt, true, 0.05f);
@@ -78,7 +148,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Arrived_NeverGoesBack()
         {
             var l = new WalkGuideLogic();
-            Run(l, WalkGuideLogic.SpotInSec + WalkGuideLogic.TrailSec + 0.2f, true, 9f);
+            Run(l, ThroughSpotIn + 0.2f, true, 9f);
             Run(l, WalkGuideLogic.ArriveHoldSec + Dt, true, 0.05f);
             Assert.IsTrue(l.Arrived);
             Run(l, 2f, true, 9f);       // 円から出ても
@@ -101,7 +171,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Dwell_NeedsToBeContinuous()
         {
             var l = new WalkGuideLogic();
-            Run(l, WalkGuideLogic.SpotInSec + WalkGuideLogic.TrailSec + 0.2f, true, 9f);
+            Run(l, ThroughSpotIn + 0.2f, true, 9f);
             // 通りすがり: 円の中と外を行き来する
             for (int i = 0; i < 40; i++)
             {
@@ -115,7 +185,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Dwell_HasHysteresis_AtTheEdge()
         {
             var l = new WalkGuideLogic();
-            Run(l, WalkGuideLogic.SpotInSec + WalkGuideLogic.TrailSec + 0.2f, true, 9f);
+            Run(l, ThroughSpotIn + 0.2f, true, 9f);
             // 縁でわずかに震える（半径 0.35 に対して 0.34 ↔ 0.40）
             for (float t = 0f; t < WalkGuideLogic.ArriveHoldSec + 0.2f; t += Dt * 2f)
             {
@@ -129,7 +199,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Dwell_IgnoresJumpedFrames()
         {
             var l = new WalkGuideLogic();
-            Run(l, WalkGuideLogic.SpotInSec + WalkGuideLogic.TrailSec + 0.2f, true, 9f);
+            Run(l, ThroughSpotIn + 0.2f, true, 9f);
             // HMD の着脱・再開で 1 フレームが 3 秒ぶん飛ぶ
             l.Tick(In(true, 0.05f, dt: 3f));
             Assert.IsFalse(l.Arrived, "飛んだフレームで滞在を成立させない");
@@ -141,7 +211,7 @@ namespace FixedCamVr.Streaming.Tests
         public void TimesOut_AndHandsBackToTheOldStartRule()
         {
             var l = new WalkGuideLogic();
-            Run(l, WalkGuideLogic.SpotInSec + WalkGuideLogic.TrailSec + 0.2f, true, 9f);
+            Run(l, ThroughSpotIn + 0.2f, true, 9f);
             Assert.IsTrue(l.Directing);
 
             Run(l, WalkGuideLogic.HoldMaxSec + 0.2f, true, 9f);
@@ -174,7 +244,7 @@ namespace FixedCamVr.Streaming.Tests
 
             l.Reset();
             l.Tick(In(true, 9f));
-            Assert.AreEqual(WalkGuideStage.SpotIn, l.Stage, "ラン開始でやり直せる");
+            Assert.AreEqual(WalkGuideStage.Trail, l.Stage, "ラン開始でやり直せる");
         }
 
         // ---- 道筋 -----------------------------------------------------------

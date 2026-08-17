@@ -12,10 +12,17 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>出していない（タイトルが立っている / 本編 / 終幕 / 幾何が解けない）。</summary>
         Off,
-        /// <summary>円が現れている途中。<b>矢印より先に目的地を見せる</b>（行き先が無い矢印は方角にしかならない）。</summary>
-        SpotIn,
-        /// <summary>山形が起点から円へ向かって順に点いていく途中。</summary>
+        /// <summary>
+        /// <b>山形が手前から 1 つずつ出てくる途中</b>（体験者に近い方が先・円へ向かって進む）。
+        /// ⚠⚠ <b>2026-08-17 に円より先へ移した</b>（ユーザー赤入れ 4「矢印が手前の線から
+        /// 1 つづつ出てくるような感じにし、矢印が全部出たら、円も…」）。
+        /// それまでは円が先に出ていた。
+        /// </summary>
         Trail,
+        /// <summary>
+        /// <b>円が中心から回りながら広がる途中</b>。矢印が全部出てから始まる。
+        /// </summary>
+        SpotIn,
         /// <summary>出し切って、流れだけが回っている。<b>ここが体験者の持ち時間</b>。</summary>
         Hold,
         /// <summary>円へ着いた。弧が閉じて、矢印が先に引く。</summary>
@@ -64,6 +71,15 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool wanted;
 
+        /// <summary>
+        /// <b>エージェントが説明し始めたか</b>（⓪b「矢印の方向から…」が届いた）。
+        /// ⚠⚠ <b>矢印はこれが立つまで 1 つも出さない</b>（2026-08-17・ユーザー赤入れ 4
+        /// 「エージェントが説明し始めるときに、矢印が手前の線から 1 つづつ出てくるような感じに」）。
+        /// 供給は <c>CommsPanel.Deliver</c> →
+        /// <see cref="WalkGuide.NotifyExplaining"/>（Diagnostics → Streaming の向きは既存どおり）。
+        /// </summary>
+        public bool told;
+
         /// <summary>体験者の居場所が信用できるか（位置合わせ済みで頭のポーズが来ている）。</summary>
         public bool posValid;
 
@@ -95,11 +111,18 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public sealed class WalkGuideLogic
     {
-        /// <summary>円が現れるまで (秒)。弧が 1 本ずつ描かれる。</summary>
-        public const float SpotInSec = 0.9f;
+        /// <summary>
+        /// 山形が手前から 1 つずつ出切るまで (秒)。
+        /// ⚠ <b>1 つあたり <c>TrailSec ÷ 山形の数</c>。</b> 短いと「一斉に出た」に見え、
+        /// 長いと歩き出しが遅れる。7 個なら 1 つ 0.23 秒。
+        /// </summary>
+        public const float TrailSec = 1.6f;
 
-        /// <summary>山形が起点から円まで点き切るまで (秒)。</summary>
-        public const float TrailSec = 1.1f;
+        /// <summary>
+        /// 円が中心から広がり切るまで (秒)。<b>矢印が全部出てから</b>始まる。
+        /// 回りながら開くので、短いと回転が見えない。
+        /// </summary>
+        public const float SpotInSec = 1.2f;
 
         /// <summary>着いてから引き始めるまで (秒)。弧が閉じて、矢印が先に消える。</summary>
         public const float ArriveSec = 0.7f;
@@ -117,6 +140,18 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>長くもしない。</b> ここが伸びるほど「立っても始まらない」時間が伸びる。
         /// </summary>
         public const float HoldMaxSec = 30f;
+
+        /// <summary>
+        /// <b>説明が来ないまま出してしまう上限 (秒)。</b>
+        ///
+        /// 矢印は⓪b「矢印の方向から…」が届いてから出る（<see cref="WalkGuideInput.told"/>）。
+        /// ⚠ <b>連絡の面が組めない現場では、その合図が永久に来ない</b>（日本語フォントを解決できない・
+        /// 面のシェーダが剥がれた 等）。そのとき誘導ごと出ないと、体験者は指示も矢印も無いまま
+        /// <see cref="HoldMaxSec"/> 待つことになる。⇒ 待たされたら誘導だけでも出す。
+        /// ⚠ 通常経路（名乗り 4.0 秒 ＋ 引き 0.9 秒 ＋ 間 0.5 秒 …）は実測で約 7.6 秒なので、
+        /// **ここを 8 秒より短くすると保険が先に発火して順序が崩れる**。
+        /// </summary>
+        public const float TellTimeoutSec = 12f;
 
         /// <summary>円の中に留まって「着いた」とみなすまで (秒)。通りすがりで始めない。</summary>
         public const float ArriveHoldSec = 0.5f;
@@ -139,6 +174,7 @@ namespace FixedCamVr.Streaming
         private float _inSec;
         private bool _inside;
         private bool _arrived;
+        private float _armedSec;
 
         /// <summary>いまの段。</summary>
         public WalkGuideStage Stage => _stage;
@@ -185,6 +221,7 @@ namespace FixedCamVr.Streaming
             _inSec = 0f;
             _inside = false;
             _arrived = false;
+            _armedSec = 0f;
         }
 
         /// <summary>時間を進める。<b>段が変わったら true</b>（呼び出し側が縁でログと観測を出す）。</summary>
@@ -195,7 +232,8 @@ namespace FixedCamVr.Streaming
             UpdateArrival(input, dt);
 
             // 流れは出ているあいだだけ回す（畳んだ後も回すと、次に出したとき位相が飛ぶ）。
-            if (_stage == WalkGuideStage.Trail || _stage == WalkGuideStage.Hold)
+            if (_stage == WalkGuideStage.Trail || _stage == WalkGuideStage.SpotIn
+                || _stage == WalkGuideStage.Hold)
             {
                 _flow += dt * FlowPerSec;
                 if (_flow >= 1f) _flow -= Mathf.Floor(_flow);
@@ -207,21 +245,26 @@ namespace FixedCamVr.Streaming
                     // ⚠ **一度終わったら出し直さない**（Done から戻らない）。導入の段 0 は
                     //    位置合わせのやり直し等で行き来するので、戻れる形にすると
                     //    体験者の目の前で誘導が点滅する。出し直すのは Reset だけ。
-                    if (input.wanted) Enter(WalkGuideStage.SpotIn);
-                    break;
-
-                case WalkGuideStage.SpotIn:
-                    if (!input.wanted) { Enter(WalkGuideStage.Out); break; }
-                    _elapsed += dt;
-                    if (_arrived) { Enter(WalkGuideStage.Arrive); break; }
-                    if (_elapsed >= SpotInSec) Enter(WalkGuideStage.Trail);
+                    // ⚠⚠ **エージェントが説明し始めるまで 1 つも出さない**（`told`）。
+                    //    出せる状態で待った秒数だけを数える（`wanted` が false の間は 0 へ戻す）。
+                    if (!input.wanted) { _armedSec = 0f; break; }
+                    _armedSec += dt;
+                    if (input.told || _armedSec >= TellTimeoutSec) Enter(WalkGuideStage.Trail);
                     break;
 
                 case WalkGuideStage.Trail:
                     if (!input.wanted) { Enter(WalkGuideStage.Out); break; }
                     _elapsed += dt;
                     if (_arrived) { Enter(WalkGuideStage.Arrive); break; }
-                    if (_elapsed >= TrailSec) Enter(WalkGuideStage.Hold);
+                    // 山形が全部出たら、そこで初めて円が中心から広がる。
+                    if (_elapsed >= TrailSec) Enter(WalkGuideStage.SpotIn);
+                    break;
+
+                case WalkGuideStage.SpotIn:
+                    if (!input.wanted) { Enter(WalkGuideStage.Out); break; }
+                    _elapsed += dt;
+                    if (_arrived) { Enter(WalkGuideStage.Arrive); break; }
+                    if (_elapsed >= SpotInSec) Enter(WalkGuideStage.Hold);
                     break;
 
                 case WalkGuideStage.Hold:
@@ -293,23 +336,32 @@ namespace FixedCamVr.Streaming
             {
                 switch (_stage)
                 {
-                    case WalkGuideStage.SpotIn:
-                    {
-                        float k = Smooth(Clamp01(_elapsed / SpotInSec));
-                        return new WalkGuideWeights { spot = k, ring = k, flow = _flow };
-                    }
-
                     case WalkGuideStage.Trail:
                     {
-                        float k = Clamp01(_elapsed / TrailSec);
+                        // ⚠ **円はまだ 1 画素も出さない。** 山形が全部出てから広がる（0079 の赤入れ 4）。
+                        // ⚠ 濃さは即 1（山形 1 つずつの出方はシェーダ側が `reveal` から解く）。
+                        //    ここでゆっくり濃くすると、1 つずつ点く動きの上に全体のフェードが重なって
+                        //    「何が起きているか」が読めなくなる。
                         return new WalkGuideWeights
                         {
-                            spot = 1f, ring = 1f,
-                            // ⚠ **濃さは先に決まって、点く数だけが増える。**
-                            //    両方を同時に動かすと「2 つのことが起きている」に見える
-                            //    （連絡の面の `PanelInkAt` と同じ理屈）。
-                            arrow = Smooth(Clamp01(_elapsed / (TrailSec * 0.3f))),
-                            reveal = k,
+                            arrow = 1f,
+                            reveal = Clamp01(_elapsed / TrailSec),
+                            flow = _flow,
+                        };
+                    }
+
+                    case WalkGuideStage.SpotIn:
+                    {
+                        float t = Clamp01(_elapsed / SpotInSec);
+                        return new WalkGuideWeights
+                        {
+                            arrow = 1f, reveal = 1f,
+                            // ⚠ <b>開き（ring）は線形で渡す。</b> 弧を中心から広げるときの緩急は
+                            //   シェーダが持っている（<c>WalkGuideRing.shader</c> の `OPEN_*`）ので、
+                            //   ここでも均すと二重に掛かって「頭だけ速くて後がのろい」になる。
+                            ring = t,
+                            // 全体の濃さは均す（点き始めの 1 フレームで出現しない）。
+                            spot = Smooth(t),
                             flow = _flow,
                         };
                     }

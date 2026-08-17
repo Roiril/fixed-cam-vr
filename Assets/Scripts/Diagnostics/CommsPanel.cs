@@ -61,6 +61,9 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("導入がまだ開始待ち（段 0）かを見るために読む。歩行誘導の 2 通に要る。null なら実行時に探す。")]
         [SerializeField] private IntroDirector? intro;
 
+        [Tooltip("床の矢印と円。⓪b『矢印の方向から…』を出した瞬間に矢印を出させる。null なら実行時に探す。")]
+        [SerializeField] private WalkGuide? walkGuide;
+
         [Tooltip("頭の Transform。null なら CenterEyeAnchor を名前で探す。")]
         [SerializeField] private Transform? head;
 
@@ -537,6 +540,7 @@ namespace FixedCamVr.Diagnostics
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
             if (timeline == null) timeline = FindObjectOfType<TimelineDirector>();
             if (intro == null) intro = FindObjectOfType<IntroDirector>();
+            if (walkGuide == null) walkGuide = FindObjectOfType<WalkGuide>();
             // ⚠ 打鍵音は**この面が持つ**（`ShowSoundDirector` は毎フレーム外から状態を見る層で、
             //    1 秒に 12 回・字の刻みちょうどには鳴らせない）。切替音と同じ構え。
             if (typeSfx == null) typeSfx = GetComponent<TypeAudioCue>();
@@ -576,6 +580,13 @@ namespace FixedCamVr.Diagnostics
         public void Deliver(CommsNotice notice)
         {
             if (!IsBuilt || notice == CommsNotice.None) return;
+            // ⚠⚠ **床の矢印はこの連絡と対で出る**（`canon/LEDGER.md` 0079 の赤入れ 4
+            //    「エージェントが説明し始めるときに、矢印が手前の線から 1 つづつ出てくるような感じに」）。
+            //    ここで言わないと `WalkGuide` は保険（12 秒）が切れるまで 1 つも出さないので、
+            //    **説明と矢印が別々の出来事になる**。
+            // ⚠ 誘導そのものを出すか（幾何が解けたか・被っているか）は向こうが決める。
+            //    ここは「説明を始めた」という事実だけを渡す。
+            if (notice == CommsNotice.Walk) walkGuide?.NotifyExplaining();
             SetNotice(notice);
             // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。読ませる尺は役割で決まる。
             _logic.Begin(_charCount, HoldSecFor(notice));
