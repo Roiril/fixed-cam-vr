@@ -100,8 +100,22 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private float _duck;
 
+        /// <summary>劇伴が居てよい量（0..1）。<see cref="SetScoreGain"/>。**既定は 1**。</summary>
+        private float _score = 1f;
+
         /// <summary>劇伴を引く量を外から与える（0..1）。</summary>
         public void SetDuck(float duck) => _duck = Mathf.Clamp01(duck);
+
+        /// <summary>
+        /// 劇伴が居てよい量（0 = 鳴らさない / 1 = そのまま）。<see cref="ShowSoundDirector"/> が
+        /// 毎フレーム書く。<b>リセット後の黒だけ 1 で、題字が立つと退く</b>
+        /// （2026-08-18・<c>canon/LEDGER.md</c> 0088）。
+        ///
+        /// ⚠ <b>既定は 1。</b> `[Sound]` がシーンに焼かれていない構成では**従来どおり全編で鳴る** —
+        /// 音を配る側が居ないことを理由に劇伴まで黙らせると、切り分けが 1 段増える。
+        /// ⚠ <see cref="_duck"/> とは別の口（掛け算で両方効く）。あちらは一撃のたびの一時的な退き。
+        /// </summary>
+        public void SetScoreGain(float gain) => _score = Mathf.Clamp01(gain);
 
         /// <summary>いま鳴っているトラック id（無音なら空）。</summary>
         public string CurrentTrackId => _cur.src != null && _cur.src.isPlaying ? _cur.trackId : "";
@@ -473,9 +487,10 @@ namespace FixedCamVr.Streaming
                                       SoundFade.Gain(v.fadeT, SoundFade.Curve.Perceptual));
                     break;
             }
-            // 演出が引いている分をここで掛ける。**レーンの音量そのものは変えない**ので、
-            // 引き終われば必ず元の高さへ戻る（引いた状態が居座る事故を作らない）。
-            src.volume = Mathf.Clamp01(lane * (1f - _duck));
+            // 演出が引いている分と、劇伴が居てよい量をここで掛ける。
+            // **レーンの音量そのものは変えない**ので、引き終われば必ず元の高さへ戻る
+            // （引いた状態が居座る事故を作らない）。
+            src.volume = Mathf.Clamp01(lane * (1f - _duck) * _score);
 
             if (v.stopping && v.fadeT >= 1f && v.targetVolume <= 0.0001f && src.isPlaying)
             {
