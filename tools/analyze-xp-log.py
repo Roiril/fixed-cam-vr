@@ -1456,6 +1456,30 @@ def analyze(events, others, exp, warns=None):
             else:
                 verdict("OK", f"環境音が周ごとに入れ替わっている（{len(picked)} 本）")
 
+        # -- 劇伴（`canon/LEDGER.md` 0088）
+        #    リセット後の黒だけ鳴り、題字が立った縁で退く。**鳴らしているのは BgmDirector なので
+        #    `sndAud`（敷く音の合計）には 1 ビットも出ない** — 証拠はこのキーだけ。
+        score = timed_samples(events, "sndScore")
+        if score:
+            peak = max(v for _t, v in score)
+            w(f"  劇伴: 最大 {peak:.2f}（リセット後の黒だけ鳴る）")
+            if peak <= 0.01:
+                verdict("WARN", "劇伴が 1 度も鳴っていない（sndScore が 0 のまま）— "
+                                "黒で A を待つ間が無かった走行なら正常。待ったのに 0 なら "
+                                "BgmDirector が居ないか show.json の bgm 指定が無い")
+            # 導入が段 0（Black）を出たあと ＝ 題字はとうに閉じている。
+            # ⚠ 退く尺（2 秒）は段 0 の中で終わるので、ここに残っていたら退いていない。
+            after = [fnum(e, "t", 0.0) for e in intro if e.get("stage") not in (None, "Black")]
+            if after:
+                t0 = min(after)
+                late = [(t, v) for t, v in score if t >= t0 and v > 0.05]
+                if late:
+                    verdict("FAIL", f"題字が閉じたあとも劇伴が鳴っている（t={late[0][0]:.1f}s で "
+                                    f"sndScore={late[0][1]:.2f}・{len(late)} 回）— 本編は装置と部屋の音"
+                                    "だけになるはず（SoundBedLogic の score を見る）")
+                elif peak > 0.01:
+                    verdict("OK", f"劇伴は題字までで退いた（最大 {peak:.2f}）")
+
         # -- 節目の一撃
         by_id = {}
         for e in sfx_events:

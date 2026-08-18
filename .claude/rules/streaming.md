@@ -2262,6 +2262,13 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
   **指示を書かなければ演出は音に触らない＝その区間（カメラ）の曲がそのまま流れる**。
   卓は演出インスペクタに「🎵 この演出のあいだ: ◯◯（この区間の曲のまま / この演出で切り替え / 無音）」を常時表示し、
   変える時だけリボンのチップに `♪ 曲名` / `🔇` が出る（JS ミラー `resolveTakeBgm`）
+- ⚠⚠ **2026-08-18 から、劇伴が鳴ってよいのは「リセット後の黒（A 待ち）」だけ**
+  （`canon/LEDGER.md` 0088・正本は `rules/sound-design.md` §1）。
+  [`ShowSoundDirector`](../../Assets/Scripts/Streaming/Sound/ShowSoundDirector.cs) が毎フレーム
+  `BgmDirector.SetScoreGain` を書き、**題字が立った縁から 2 秒で 0 へ落とす**。
+  ⚠ これは**レーンごと黙らせる**ので、ここに書いてある区間 BGM・演出 BGM の著作は
+  **本編では 1 音も鳴らない**（機構は生きているが出口が閉じている）。区間ごとに曲を鳴らしたく
+  なったら、それは世界観の判定（`rules/canon-boundary.md`）— 先に訊く
 - **後方互換**: show.json に bgm 指定が無ければ `BgmDirector.defaultClip`（HorrBGM）を従来どおりループ。
   **⚠ シーンは `Setup Main Demo Scene` の再実行で [Bgm] を BgmDirector 化する必要がある**（未実行なら
   BgmDirector 不在 → 区間指示は無視され旧 AudioSource の固定ループが鳴る＝安全側）

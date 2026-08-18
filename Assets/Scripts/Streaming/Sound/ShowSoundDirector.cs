@@ -140,6 +140,13 @@ namespace FixedCamVr.Streaming
         /// <summary>笑う人形の増え具合 0..1（C に居るあいだ増える）。</summary>
         public float DollSwellNow => _beds.Swell01;
 
+        /// <summary>
+        /// 劇伴（`HorrBGM`）の取り分 0..1。<b>リセット後の黒だけ 1</b>で、題字が立つと退く
+        /// （<c>canon/LEDGER.md</c> 0088）。**画にも一撃のログにも出ない**ので、
+        /// 「本編で劇伴が鳴っていないか」を外から知る唯一の手。
+        /// </summary>
+        public float ScoreGain { get; private set; }
+
         // ---------------------------------------------------------------- 生成
 
         private void Awake()
@@ -265,6 +272,10 @@ namespace FixedCamVr.Streaming
             var g = _beds.Tick(dt, st);
             ApplyBeds(g);
             _bgm?.SetDuck(g.duck);
+            // ⚠ **劇伴は敷く音ではない**（`masterGain` も `bedsEnabled` も掛けない）。
+            //    高さは show.json の bgm 側が持っていて、ここが決めるのは「居てよいか」だけ。
+            ScoreGain = g.score;
+            _bgm?.SetScoreGain(g.score);
         }
 
         private void Resolve(float dt)

@@ -953,6 +953,10 @@ namespace FixedCamVr.Diagnostics
             //              合計だけ見ても「増えた」のか「大きくなった」のか分けられない
             _sb.Append(" sndSwap=").Append(_sound == null ? "-" : _sound.DollSwapGain.ToString("F2"));
             _sb.Append(" sndSwell=").Append(_sound == null ? "-" : _sound.DollSwellNow.ToString("F2"));
+            //   sndScore = 劇伴（HorrBGM）の取り分（`canon/LEDGER.md` 0088）。**リセット後の黒だけ 1**で
+            //              題字が立つと退く。BgmDirector が鳴らす音なので `sndAud`（敷く音の合計）には
+            //              1 ビットも出ない — 本編で劇伴が黙っている証拠はこのキーだけ。
+            _sb.Append(" sndScore=").Append(_sound == null ? "-" : _sound.ScoreGain.ToString("F2"));
             _sb.Append(" sfxN=").Append(_sound == null ? "-" : _sound.SpotCount.ToString());
             _sb.Append(" swN=").Append(_switchSfx == null
                                        ? "-"

@@ -138,6 +138,16 @@ namespace FixedCamVr.Streaming
         public float roomOpen;
         /// <summary>劇伴（`BgmDirector`）を引く量（0 = そのまま / 1 = 無音）。</summary>
         public float duck;
+
+        /// <summary>
+        /// <b>劇伴（`HorrBGM`）の取り分</b>（0 = 鳴らない / 1 = そのまま）。
+        /// <b>リセット後の黒で A を待っているあいだだけ 1</b> で、題字が立った縁で退く
+        /// （2026-08-18・<c>canon/LEDGER.md</c> 0088）。
+        ///
+        /// ⚠ <see cref="duck"/> とは別の口。あちらは<b>一撃が鳴った瞬間だけ</b>引くもので、
+        /// こちらは<b>体験のどこに劇伴が居てよいか</b>を決める。<c>BgmDirector</c> で両方掛かる。
+        /// </summary>
+        public float score;
     }
 
     /// <summary>
@@ -167,6 +177,18 @@ namespace FixedCamVr.Streaming
         private const float OpenSec = 0.35f;
         private const float DuckRiseSec = 0.05f;
         private const float DuckFallSec = 0.55f;
+
+        /// <summary>
+        /// 劇伴が退くまでの秒。<b>＝ 題字が立ってから焼け始めるまで</b>
+        /// （<see cref="TitleLogic.AutoDismissSec"/>）。字が焼け落ちる前に渡し終える。
+        /// </summary>
+        public const float ScoreFadeOutSec = TitleLogic.AutoDismissSec;
+
+        /// <summary>
+        /// 劇伴が戻るまでの秒。<b>退くより遅い</b> — 黒に落ちた直後の無音へ音楽が飛び込むと
+        /// 「次が始まった」と告げてしまう。
+        /// </summary>
+        public const float ScoreFadeInSec = 2.5f;
 
         /// <summary>位置合わせ作業中に敷く音を何倍にするか。**スタッフが喋れる高さまで引く。**</summary>
         public const float RegistrationDuckScale = 0.22f;
@@ -260,6 +282,9 @@ namespace FixedCamVr.Streaming
         /// <summary>笑う人形の増え具合 0..1（C に居るあいだ増え、離れると戻る）。</summary>
         private float _swell01;
 
+        /// <summary>劇伴の進み 0..1（<b>時間で動かす</b>。振幅にするのは出力の 1 行だけ）。</summary>
+        private float _scoreT;
+
         /// <summary>締めの群れへ譲ったか（人形が画から消えるまで一人ぶんを戻さない）。</summary>
         private bool _swapMuted;
 
@@ -290,6 +315,8 @@ namespace FixedCamVr.Streaming
             // 前の人の 3 周目 C で増えた人形を持ち越さない。
             _dollHold = 0f;
             _swell01 = 0f;
+            // 劇伴も無音から入れ直す（黒に落ちた所へ前の体験者の続きが鳴っていない）。
+            _scoreT = 0f;
             _swapMuted = false;
         }
 
@@ -339,6 +366,17 @@ namespace FixedCamVr.Streaming
             SoundFade.Cross(Clamp01(s.decay), out float fresh, out float worn);
             _cur.deviceWorn = _deviceTotal * worn;
             _cur.device = _deviceTotal * fresh;
+
+            // --- 劇伴 -------------------------------------------------------------
+            // ⚠ <b>ここだけ半減期で寄せない。</b> 半減期の寄せは振幅が指数で落ちる ＝ dB 直線なので、
+            //    「すぐ消えてから長く尾を引く」に聞こえる（`SoundFade` の注意書き）。劇伴は
+            //    **題字が立っているあいだに渡し終える**必要があるので、尺を決めて進みを送り、
+            //    振幅は聴感直線（`Perceptual`）に通す。
+            float scoreStep = dt / (t.score > _scoreT ? ScoreFadeInSec : ScoreFadeOutSec);
+            _scoreT = t.score > _scoreT
+                ? Math.Min(t.score, _scoreT + scoreStep)
+                : Math.Max(t.score, _scoreT - scoreStep);
+            _cur.score = SoundFade.Gain(_scoreT, SoundFade.Curve.Perceptual);
 
             _spotDuck = SoundFade.Approach(_spotDuck, 0f, DuckFallSec, dt);
             _cur.duck = SoundFade.Approach(_cur.duck, Math.Max(t.duck, _spotDuck),
@@ -452,6 +490,15 @@ namespace FixedCamVr.Streaming
             else if (s.introActive) g.device = DeviceForStage(s);
             else g.device = 1f;
 
+            // --- 劇伴（`HorrBGM`）------------------------------------------------
+            // **リセット後の黒で A を待っているあいだだけ鳴る。** 題字が立った縁で退いて、
+            // それ以降は装置と部屋の音だけになる（2026-08-18・`canon/LEDGER.md` 0088）。
+            //
+            // ⚠ **段でも周でもなく「題字が立ったか」で決める。** タイトルは導入の段 0 に被さる
+            //    薄い層なので、導入の段を読むと「黒で待っている」と「素通し」が同じ段になる。
+            // ⚠ 退く尺（`ScoreFadeOutSec`）は Tick が持つ。ここは 0 か 1 しか言わない。
+            g.score = s.titleVisible && !s.titleGlyphShowing ? 1f : 0f;
+
             // --- 人形の笑い -------------------------------------------------------
             // 締めのカットが報告を待っているあいだだけ鳴る（**押すまでループ**）。
             // ⚠ 鳴っているあいだは劇伴を深く退かせる。**一撃の退き（`PushSpotDuck`）と違って
@@ -488,6 +535,8 @@ namespace FixedCamVr.Streaming
                 // 作業中に人形を笑わせない（引くのではなく黙らせる）。
                 g.dolls = 0f;
                 g.dollOne = 0f;
+                // 劇伴も黙らせる（`duck` でも消えるが、観測に「鳴っている」と出さない）。
+                g.score = 0f;
                 g.roomOpen = 1f;
                 g.duck = 1f;
             }
@@ -496,6 +545,7 @@ namespace FixedCamVr.Streaming
             if (s.phase == ShowPhase.Finished && !s.outroActive)
             {
                 g.seal = g.room = g.device = g.noise = g.dolls = g.dollOne = 0f;
+                g.score = 0f;
                 g.duck = 1f;
             }
             return g;

@@ -523,6 +523,108 @@ namespace FixedCamVr.Streaming.Tests
             Assert.Less(l.Swell01, 0.01f, "増え具合が前の体験者の値から続いている");
         }
 
+        // ---- 劇伴（`HorrBGM`）・`canon/LEDGER.md` 0088 ---------------------------
+        //
+        // ⚠ ここが固定しているのは「どこで鳴るか」だけではない。**題字が焼け始める前に
+        //   渡し終える**という尺の約束と、**聴感直線で退く**という形の約束も含む
+        //   （振幅直線で落とすと「後半だけ急に消えた」に聞こえる — `SoundFade` の注意書き）。
+
+        /// <summary>リセット後の黒（字も光も無く、A を待っている）。</summary>
+        private static SoundShowState DarkWait()
+        {
+            var s = SoundShowState.Idle;
+            s.titleVisible = true;
+            return s;
+        }
+
+        /// <summary>A を押して題字が立っている。</summary>
+        private static SoundShowState TitleGlyph()
+        {
+            var s = DarkWait();
+            s.titleGlyphShowing = true;
+            return s;
+        }
+
+        [Test]
+        public void AfterTheReport_OnlyTheLapAmbientRemains()
+        {
+            // 4 周目 A。**報告するまでは笑い声、押したあとは 3 周目の背景音だけ**
+            //（`canon/LEDGER.md` 0088）。押したあとに何かが残ると「まだ続く」に聞こえる。
+            var l = new SoundBedLogic();
+            var closing = Run(4);
+            closing.dollPresent = true;      // 締めのカットに人形が立っている
+            closing.markWaiting = true;      // まだ報告していない
+            var g = Settle(l, closing, sec: 10f);
+            Assert.Greater(g.dolls, 0.9f, "報告を待っているあいだ人形が笑っていない");
+
+            var after = closing;
+            after.markWaiting = false;       // 報告を押した（人形はまだ画に居る）
+            g = Settle(l, after, sec: 5f);
+            Assert.Less(g.dolls, 0.01f, "報告のあとも群れが笑っている");
+            Assert.Less(g.dollOne + g.dollsGrowA + g.dollsGrowB, 0.01f,
+                        "報告のあとに一人ぶんの笑いが戻っている");
+            Assert.Less(g.score, 0.01f, "本編で HorrBGM が鳴っている");
+            Assert.Greater(g.room * g.roomLap3, SoundBedLogic.RoomInRun * 0.9f,
+                           "3 周目の背景音が鳴っていない");
+        }
+
+        [Test]
+        public void Score_PlaysOnlyInTheDark_BeforeTheTitle()
+        {
+            Assert.AreEqual(1f, SoundBedLogic.Target(DarkWait()).score, 1e-6f,
+                            "黒で A を待つあいだに劇伴が鳴っていない");
+            Assert.AreEqual(0f, SoundBedLogic.Target(TitleGlyph()).score, 1e-6f,
+                            "題字が立ったのに劇伴が残っている");
+            Assert.AreEqual(0f, SoundBedLogic.Target(Intro(IntroStage.Black)).score, 1e-6f,
+                            "導入へ入っても劇伴が鳴っている");
+            Assert.AreEqual(0f, SoundBedLogic.Target(Run(1)).score, 1e-6f,
+                            "本編で劇伴が鳴っている（装置と部屋の音だけになるはず）");
+        }
+
+        [Test]
+        public void Score_HandsOver_WhileTheTitleIsStillStanding()
+        {
+            var l = new SoundBedLogic();
+            Settle(l, DarkWait(), sec: 6f);
+            Assert.Greater(l.Gains.score, 0.99f, "黒のあいだに劇伴が満ちていない");
+
+            // 題字が立ってから焼け始めるまでの尺で渡し終える（字が燃える所には残らない）。
+            var g = Settle(l, TitleGlyph(), sec: SoundBedLogic.ScoreFadeOutSec);
+            Assert.Less(g.score, 0.01f, "題字が焼け始める時刻になっても劇伴が残っている");
+        }
+
+        [Test]
+        public void Score_FadesByLoudness_NotByAmplitude()
+        {
+            // 半分の時刻で振幅が半分なら、聴感では 8 割残って聞こえる。聴感直線ならもっと落ちている。
+            var l = new SoundBedLogic();
+            Settle(l, DarkWait(), sec: 6f);
+            var g = Settle(l, TitleGlyph(), sec: SoundBedLogic.ScoreFadeOutSec * 0.5f);
+            Assert.Less(g.score, 0.40f, "振幅が直線で落ちている（後半だけ急に消えたように聞こえる）");
+            Assert.Greater(g.score, 0.20f, "落ちるのが速すぎる（半分の時刻でもう消えている）");
+        }
+
+        [Test]
+        public void Score_ReturnsForTheNextVisitor()
+        {
+            var l = new SoundBedLogic();
+            Settle(l, Run(1), sec: 30f);
+            Assert.Less(l.Gains.score, 0.01f, "本編で劇伴が鳴っている");
+
+            l.Reset();
+            var g = Settle(l, DarkWait(), sec: 6f);
+            Assert.Greater(g.score, 0.99f, "次の体験者の黒で劇伴が戻っていない");
+        }
+
+        [Test]
+        public void Score_IsSilent_WhileStaffAreCalibrating()
+        {
+            var s = DarkWait();
+            s.registrationActive = true;
+            Assert.AreEqual(0f, SoundBedLogic.Target(s).score, 1e-6f,
+                            "位置合わせ中に劇伴が鳴っている（スタッフの声が通らない）");
+        }
+
         [Test]
         public void Tick_ApproachesTarget_WithoutOvershoot()
         {
