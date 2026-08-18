@@ -57,7 +57,8 @@ def measure(img: Image.Image) -> dict:
 FINE_BLOCKS, END_BLOCKS = 800.0, 267.0     # ScreenDecayLogic と対（値を変えたら両方直す）
 
 
-def transmission(lap: float | None, size, total_laps: float) -> tuple[dict, str]:
+def transmission(lap: float | None, size, total_laps: float,
+                 broad: bool = False) -> tuple[dict, str]:
     """**その周で伝送がどれだけ痩せるか**を計算して、プロンプトの 1 節にする。
 
     出る周が分かって初めて言えることが 3 つある（`tools/gen-plate/runs.md` の実測）:
@@ -65,7 +66,8 @@ def transmission(lap: float | None, size, total_laps: float) -> tuple[dict, str]
       色      3 周目以降は**完全な無彩**（`_Mono` は劣化と同じ進み）
       明暗差  周りとの差をどこまで落とすと粒に埋もれるか
 
-    ⚠ 明暗差の下限は **実測の最悪値を直線で結んだ値**（1 周目 35% / 帰りの A 50%）。
+    ⚠ 明暗差の下限は **実測の最悪値を直線で結んだ値**。細かい異変（人形）は 1 周目 35% /
+      帰りの A 50%、**面の広い異変（染み・`broad: true`）は 13% / 26%**。
       素材ができたら `limit.py` で実際に確かめる。
 
     ⚠⚠ **2026-08-18 に 10% / 60% から引き直した。** 旧値は粒を「枠の画素ごとの白色雑音」で
@@ -79,7 +81,11 @@ def transmission(lap: float | None, size, total_laps: float) -> tuple[dict, str]
     blocks = FINE_BLOCKS + (END_BLOCKS - FINE_BLOCKS) * prog
     contain = min(1.0, (size[0] / size[1]) / (16 / 9))      # 4:3 を 16:9 の枠へ
     src_px = size[0] / max(1.0, blocks * contain)
-    floor = 0.35 + 0.15 * prog
+    # ⚠⚠ **下限は異変の大きさで変わる。** 人形（小さくて細かい）は mip に壊されるが、
+    #   染みのような**面の広いもの**は低い周波数なので壊れない。実測（`stainfloor.py`）で
+    #   染みは 周 1 で 13% ・ 周 2 で 19% ・ 帰りの A で 26% ＝ **人形の 2.7 分の 1 の濃さで届く**。
+    #   同じ数字を当てると、染みに人形と同じ濃さを要求して「言われれば分かる汚れ」ではなくなる。
+    floor = (0.13 + 0.13 * prog) if broad else (0.35 + 0.15 * prog)
 
     lines = ["## この素材が通る伝送（機械が計算した節）", ""]
     lines.append(f"- この画像は装置の伝送を通ってから体験者に届きます（{int(lap)} 周目の映像）")
@@ -197,7 +203,7 @@ def build(anomaly: dict, site: dict, place_str: str, scale: float, out_dir: str,
             total_laps = float((json.load(f).get("run") or {}).get("totalLaps", 3))
     except (OSError, ValueError, TypeError):
         pass
-    trans, trans_text = transmission(lap, size, total_laps)
+    trans, trans_text = transmission(lap, size, total_laps, anomaly.get("broad", False))
 
     prompt = "\n\n".join(x for x in [
         fill(read("00-contract.md")),

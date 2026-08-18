@@ -62,6 +62,42 @@ def material_from_run(run_dir: str, man: dict) -> str:
     return dst
 
 
+def is_split(m: np.ndarray) -> bool:
+    """マスクが**縦の分割**か（左半分・右半分の類）。そうでなければシルエット。
+
+    列ごとの平均が 0 と 1 の間をほぼ 1 度だけ跨ぐなら分割。人形の頭のようなシルエットは
+    どの列も中途半端な値になるので、この判定で分かれる。
+    """
+    col = m.mean(axis=0)
+    if col.max() - col.min() < 0.2:
+        return False
+    return float(((col > 0.05) & (col < 0.95)).mean()) < 0.25
+
+
+def outline_step(got: np.ndarray, plain: np.ndarray, m: np.ndarray, band: int = 3) -> float:
+    """**シルエットの縁**に段差が出ていないか（素材の外周と、そのすぐ外のライブとの差）。
+
+    ⚠⚠ 縦の分割用の物差しは**シルエットには使えない**。列を 1 本選んで両側を比べる形なので、
+    頭のような形では「たまたまその列の上下にある構造」を測ることになる（2026-08-18 に、
+    ジャンプスケアが 5.6 と出て気づいた）。**マスクの縁に沿って測る。**
+
+    素材を置かない画（`plain`）で同じ量を引くのは分割の側と同じ理屈 —
+    縁の場所にもともとある構造が下駄になる。
+    """
+    inside = m > 0.5
+    grow = metrics._shift_or(metrics._shift_or(inside))
+    shrink = metrics._shift_and(metrics._shift_and(inside))
+    for _ in range(band - 2):
+        grow = metrics._shift_or(grow)
+        shrink = metrics._shift_and(shrink)
+    outer = grow & ~inside            # 縁のすぐ外（ライブが出ている所）
+    inner = inside & ~shrink          # 縁のすぐ内（素材が出ている所）
+    if outer.sum() < 40 or inner.sum() < 40:
+        return float("nan")
+    gap = lambda g: abs(float(g[inner].mean()) - float(g[outer].mean()))
+    return gap(got) - gap(plain)
+
+
 def run(material: str, plate: str, mask: str, lap: float, out_path: str) -> int:
     with open(os.path.join(spec.REPO, "tools", "web-compositor", "show.json"),
               encoding="utf-8") as f:
@@ -89,11 +125,13 @@ def run(material: str, plate: str, mask: str, lap: float, out_path: str) -> int:
     #   （素材＝プレートそのもの）で **5.1** が出て気づいた（2026-08-17）。
     #   下駄はプレートごとに違うので、生の値では場所をまたいで比べられない。
     col = m.mean(axis=0)
-    seam_x, seam = None, float("nan")
-    if col.max() - col.min() >= 0.2:
+    seam_x, seam, seam_kind = None, float("nan"), "縦の分割"
+    if is_split(m):
         seam_x = int(np.argmin(np.abs(col - 0.5)))
         cross = lambda g: float(np.abs(g[:, seam_x - 1] - g[:, seam_x + 1]).mean())
         seam = cross(got) - cross(plain)
+    elif (m > 0.5).any():
+        seam, seam_kind = outline_step(got, plain, m), "輪郭"
 
     ok_seam = seam != seam or seam <= SEAM_MAX
     ok_read = read == read and read >= READ_MIN
@@ -101,7 +139,7 @@ def run(material: str, plate: str, mask: str, lap: float, out_path: str) -> int:
 
     print(f"== 届いた画（周 {lap:.0f}）  粒 {sigma:.2f}")
     print(f"  {'OK ' if ok_seam else 'NG '}継ぎ目の段差   "
-          f"{'—' if seam != seam else f'{seam:.1f}'}（{SEAM_MAX:.0f} 以下）")
+          f"{'—' if seam != seam else f'{seam:.1f}'}（{SEAM_MAX:.0f} 以下・{seam_kind}）")
     print(f"  {'OK ' if ok_read else 'NG '}読みやすさ     "
           f"{'—' if read != read else f'{read:.1f}'}（{READ_MIN:.0f} 以上・中央値。"
           f"塊 {len(rows)} 個中 {bad} 個が線を下回る）")

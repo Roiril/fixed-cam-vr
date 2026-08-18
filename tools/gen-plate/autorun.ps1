@@ -16,6 +16,7 @@ param(
     [int]$Tries = 3,
     [double]$Scale = 0.5,
     [double]$Blur = 0.0,
+    [double]$Lap = 0,
     [switch]$NoRefs
 )
 
@@ -31,6 +32,7 @@ for ($i = 1; $i -le $Tries; $i++) {
               '--anomaly', $Anomaly, '--site', $Site, '--place', $Place,
               '--scale', $Scale, '--out-dir', $d)
     if ($Blur -gt 0) { $args += @('--blur', $Blur) }
+    if ($Lap -gt 0)  { $args += @('--lap', $Lap) }
     if ($NoRefs) { $args += '--no-refs' }
     & py @args | Out-Null
     $dirs += $d

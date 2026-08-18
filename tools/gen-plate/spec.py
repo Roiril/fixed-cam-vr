@@ -76,6 +76,7 @@ def load_anomaly(anomaly_id: str) -> dict:
         max_area_pct=_num(meta, "max_area_pct", 70.0),
         min_parts=int(_num(meta, "min_parts", 1)),
         persp=_flag(meta, "persp", False),
+        broad=_flag(meta, "broad", False),
         body=body.strip(),
         path=path,
     )
