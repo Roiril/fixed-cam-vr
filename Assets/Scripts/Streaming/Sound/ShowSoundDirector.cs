@@ -71,6 +71,15 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private BedVoice _dolls = new BedVoice();
         private bool _dollsAudible;
+
+        /// <summary>
+        /// 入れ替わった人形の笑い（3 周目・<c>canon/LEDGER.md</c> 0086）。
+        /// **一人 ＋ 増える 2 枚**で、C のあいだに後ろの 2 枚が入ってくる。
+        /// ⚠ ループ長を互いに素にしてある（11 / 13 / 17 秒）ので、3 枚が同じ所で巻き戻らない。
+        /// </summary>
+        private BedVoice _dollOne = new BedVoice();
+        private BedVoice _dollGrowA = new BedVoice(), _dollGrowB = new BedVoice();
+        private bool _dollOneAudible, _dollGrowAAudible, _dollGrowBAudible;
         private readonly System.Collections.Generic.Dictionary<string, AudioClip?> _spot =
             new System.Collections.Generic.Dictionary<string, AudioClip?>();
         private readonly System.Collections.Generic.Dictionary<SoundCue, int> _variant =
@@ -91,6 +100,12 @@ namespace FixedCamVr.Streaming
         /// （人形がたくさん出てくる所で笑いを鳴らす・<c>canon/LEDGER.md</c> 0062）。
         /// </summary>
         private TimelineDirector? _timeline;
+
+        /// <summary>
+        /// 映像の中に人形が立っているか（＝ 体験者と入れ替わったか）を見るために読む
+        /// （<c>canon/LEDGER.md</c> 0086）。**「3 周目」とは書かない** — 人形が立っていること自体を見る。
+        /// </summary>
+        private Cg.ShowCgLayer? _cg;
         private float _resolveAccum;
 
         // ---- 観測（テレメトリが読む）--------------------------------------------
@@ -116,6 +131,15 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float DollsGain { get; private set; }
 
+        /// <summary>
+        /// 入れ替わった人形の笑いの音量（3 枚の合計・<c>canon/LEDGER.md</c> 0086）。
+        /// **画にも一撃のログにも出ない**ので、鳴っているかを外から知る唯一の手。
+        /// </summary>
+        public float DollSwapGain { get; private set; }
+
+        /// <summary>笑う人形の増え具合 0..1（C に居るあいだ増える）。</summary>
+        public float DollSwellNow => _beds.Swell01;
+
         // ---------------------------------------------------------------- 生成
 
         private void Awake()
@@ -134,6 +158,9 @@ namespace FixedCamVr.Streaming
             _worn = MakeBed("DeviceWorn", "bed_device_worn", spatial: false);
             _noise = MakeBed("Noise", "bed_static", spatial: false);
             _dolls = MakeBed("Dolls", "bed_dolls_laugh", spatial: false);
+            _dollOne = MakeBed("DollOne", "bed_doll_one", spatial: false);
+            _dollGrowA = MakeBed("DollGrowA", "bed_dolls_grow_a", spatial: false);
+            _dollGrowB = MakeBed("DollGrowB", "bed_dolls_grow_b", spatial: false);
 
             foreach (SoundCue c in System.Enum.GetValues(typeof(SoundCue)))
             {
@@ -255,6 +282,7 @@ namespace FixedCamVr.Streaming
             if (_box == null) _box = FindObjectOfType<SealedBox>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
+            if (_cg == null) _cg = FindObjectOfType<Cg.ShowCgLayer>();
         }
 
         private SoundShowState ReadState()
@@ -289,7 +317,15 @@ namespace FixedCamVr.Streaming
             if (_show != null) s.registrationActive = _show.CourseRegistrationActive;
             // ⚠ ここが立った縁で人形が笑う。**「4 周目 A」とは書かない** — 締めのカットが
             //    待っていること自体を見るので、著作が変わっても追随する。
-            if (_timeline != null) s.markWaiting = _timeline.IsWaitingForVisitorMark;
+            if (_timeline != null)
+            {
+                s.markWaiting = _timeline.IsWaitingForVisitorMark;
+                // 増えるのは C だけ（区間のカメラ。画面に映っているカメラではない）。
+                s.camera = _timeline.CurrentCamera;
+            }
+            // ⚠ ここが立った縁 ＝ **体験者と人形が入れ替わった瞬間**（`canon/LEDGER.md` 0086）。
+            //    「3 周目」と書かず、人形が立っていること自体を見る。
+            if (_cg != null) s.dollPresent = _cg.IsVisible;
             return s;
         }
 
@@ -341,6 +377,20 @@ namespace FixedCamVr.Streaming
             CueAmbientStart(_dolls, dollsGain, ref _dollsAudible, fraction: 0f);
             sum += Set(_dolls, dollsGain);
             DollsGain = dollsGain;
+
+            // ⚠⚠ **入れ替わった人形も輪の頭から。** 一人ぶんの 1 声目は輪の 0 秒に置いてあるので、
+            //    頭出ししないと**入れ替わった瞬間に笑い声が来ない**（無音の所から鳴り始める）。
+            //    増える 2 枚も同じ扱いにする（走行ごとに違う所から入ると再現性が消える）。
+            float oneGain = g.dollOne * m;
+            float growAGain = g.dollsGrowA * m;
+            float growBGain = g.dollsGrowB * m;
+            CueAmbientStart(_dollOne, oneGain, ref _dollOneAudible, fraction: 0f);
+            CueAmbientStart(_dollGrowA, growAGain, ref _dollGrowAAudible, fraction: 0f);
+            CueAmbientStart(_dollGrowB, growBGain, ref _dollGrowBAudible, fraction: 0f);
+            sum += Set(_dollOne, oneGain);
+            sum += Set(_dollGrowA, growAGain);
+            sum += Set(_dollGrowB, growBGain);
+            DollSwapGain = oneGain + growAGain + growBGain;
             AudibleSum = sum;
 
             // 隔離は音量ではなく**帯域**で表す（音量を下げると「遠ざかった」に聞こえる）。
@@ -416,6 +466,7 @@ namespace FixedCamVr.Streaming
             LastCue = SoundCue.None;
             // 次の体験者でも同じ所から環境音が入る（頭出しの縁を作り直す）。
             _room2Audible = _room3Audible = _dollsAudible = false;
+            _dollOneAudible = _dollGrowAAudible = _dollGrowBAudible = false;
         }
     }
 }

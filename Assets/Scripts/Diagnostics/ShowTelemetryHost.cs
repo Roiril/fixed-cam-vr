@@ -947,6 +947,12 @@ namespace FixedCamVr.Diagnostics
             //   sndDolls = 人形の笑いの音量（`canon/LEDGER.md` 0066）。**報告を押すまでループ**
             //              するので、一撃のログ（ev=sfx）には出ない。鳴ったかはここにしか出ない。
             _sb.Append(" sndDolls=").Append(_sound == null ? "-" : _sound.DollsGain.ToString("F2"));
+            //   sndSwap  = 入れ替わった人形の笑いの音量（`canon/LEDGER.md` 0086）。3 周目 A の
+            //              入れ替わりで立ち、C を出るまで鳴り続ける。**これも一撃のログには出ない**
+            //   sndSwell = 笑う人形の増え具合 0..1（C に居るあいだ増える）。**音量とは別に出す** —
+            //              合計だけ見ても「増えた」のか「大きくなった」のか分けられない
+            _sb.Append(" sndSwap=").Append(_sound == null ? "-" : _sound.DollSwapGain.ToString("F2"));
+            _sb.Append(" sndSwell=").Append(_sound == null ? "-" : _sound.DollSwellNow.ToString("F2"));
             _sb.Append(" sfxN=").Append(_sound == null ? "-" : _sound.SpotCount.ToString());
             _sb.Append(" swN=").Append(_switchSfx == null
                                        ? "-"

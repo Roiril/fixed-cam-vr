@@ -94,7 +94,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 - ⚠ **数値が PASS でも PNG は必ず 1 度開く。** 縮小したコンタクトシートは索引にすぎない（1cm の線が消える）
 - ⚠ **音は録画に映らない。** 画は `quest-record.py` が撮れるが、音は実機で聴く以外に確かめる手段が無い。
   だから `ev=sfx` / `sndBuilt` / `sndAud` / `sndLpf` が唯一の証拠になる → `rules/sound-design.md` §7。
-  人に聴かせるのは `py -3.11 tools/sound-preview.py` の 2 本
+  人に聴かせるのは `py -3.11 tools/sound-preview.py` の 6 本
 - **被らないと分からないもの**（立体感・スケール・酔い・怖さの強度）は溜めて 1 回にまとめる →
   `rules/visual-verification.md`
 

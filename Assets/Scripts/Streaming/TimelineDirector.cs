@@ -89,6 +89,20 @@ namespace FixedCamVr.Streaming
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;
 
         /// <summary>
+        /// <b>いま体験者が居る区間のカメラ</b>（0 = A / 1 = B / 2 = C）。まだ 1 度も区間へ入って
+        /// いなければ -1。音が「増えるのは C だけ」を判断するために読む
+        /// （2026-08-18・<c>canon/LEDGER.md</c> 0086）。
+        ///
+        /// ⚠ 読んでいるのは <b>区間の周・カメラ</b>（<see cref="OnCameraEntered"/>）であって、
+        /// 画面に映っているカメラではない。演出が録画やプレートを流していても、
+        /// 体験者が立っている区間は変わらない。
+        /// </summary>
+        public int CurrentCamera => _hasCurrent ? _curCam : -1;
+
+        /// <summary>いま体験者が居る区間の周（1 始まり・逆走で戻る）。区間未確定なら -1。</summary>
+        public int CurrentLap => _hasCurrent ? _curLap : -1;
+
+        /// <summary>
         /// <b>報告で実際に演出が消えた回数</b>（テレメトリ用）。押した回数とは別物 —
         /// 消えない演出の方が多いので、混ぜると「効いたか」がログから分からなくなる。
         /// </summary>

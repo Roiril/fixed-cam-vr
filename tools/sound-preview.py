@@ -9,6 +9,7 @@ py -3.11 tools/sound-preview.py
   - `preview_materials.wav` … 素材を 1 本ずつ並べたもの（何がどんな音かを確かめる）
   - `preview_intro.wav` … 真っ暗 → A → 題字 → 導入 → 本編の入り口を通しで並べたもの（**流れ**）
   - `preview_ambient.wav` … 周ごとの環境音の入れ替え（**実機と同じ式**・ループの継ぎ目も入る）
+  - `preview_swap.wav` … 3 周目（入れ替わり → A・B は一人 → C で増える → 群れへ渡る）
   - どちらも波形＋スペクトログラムの PNG 付き
 
 ⚠⚠ **これは実機ではない。合否に使わない。**
@@ -76,6 +77,10 @@ MATERIALS = [
     ("amb_creak_1", "【鳴らない】家鳴り 1 — 2026-08-15 に全廃（音源は残してある）", 0),
     ("amb_creak_2", "【鳴らない】家鳴り 2 — 同上", 0),
     ("amb_bell", "鈴（もらった「鈴２」）— **段 3（輪郭だけの世界）の頭**に 1 回だけ", 0),
+    ("bed_dolls_laugh", "人形の群れ（4 周目 A の締め・8 体 40 回の輪）", 12.0),
+    ("bed_doll_one", "入れ替わった人形 — 一人（3 周目 A・B）", 11.0),
+    ("bed_dolls_grow_a", "同・増える 2 体（3 周目 C の前半）", 13.0),
+    ("bed_dolls_grow_b", "同・さらに増える 4 体（3 周目 C の後半）", 17.0),
 ]
 
 
@@ -336,6 +341,67 @@ def build_dolls() -> np.ndarray:
     return out
 
 
+def build_swap() -> np.ndarray:
+    """3 周目 — **体験者と人形が入れ替わってから、C で増えるまで**（`canon/LEDGER.md` 0086）。
+
+    実機の式をそのまま写している（`SoundBedLogic`）:
+      - 一人ぶんは入れ替わった縁から半減期 0.25 秒で立ち、消えるときは 0.8 秒
+      - 増え具合は **C に居るあいだ 9 秒で 0 → 1**（直線）（`SoundBedLogic.SwellRiseSec`）
+      - 2 枚目は 0〜0.55、3 枚目は 0.45〜1.0 に割り当て、**聴感直線**（t^(1/0.6)）で入れる
+
+    ⚠ 尺は実機と同じにしてある（区間 12 秒 ＋ C は増え切るまで）。**縮めない** —
+    増え方の速さがこの体験の判定そのものなので、早送りすると別のものを聴くことになる。
+    """
+    marks = [(3.0, 0, "3 周目 A — 入れ替わる（人形が笑い出す）"),
+             (15.0, 1, "3 周目 B — まだ一人"),
+             (27.0, 2, "3 周目 C — ここから増えていく"),
+             (40.0, -1, "4 周目 A — 群れへ渡る（一人ぶんは引く）")]
+    total = 51.0
+    n = int(total * sk.SR)
+
+    # --- 制御信号（1ms 刻み。実機は毎フレーム同じ式で進める）-------------------
+    cn = int(total * 1000)
+    dt = 0.001
+    one = np.zeros(cn)
+    swell = np.zeros(cn)
+    crowd = np.zeros(cn)
+    cur_one = cur_crowd = cur_swell = 0.0
+    for i in range(cn):
+        t = i * dt
+        cam = next((c for at, c, _l in reversed(marks) if t >= at), None)
+        present = cam is not None
+        closing = cam == -1                       # 4 周目 A ＝ 締めの群れ（一人ぶんは黙る）
+        tgt_one = 1.0 if (present and not closing) else 0.0
+        tgt_crowd = 1.0 if closing else 0.0
+        cur_one += (tgt_one - cur_one) * (1.0 - 0.5 ** (dt / (0.25 if tgt_one > cur_one else 0.8)))
+        cur_crowd += (tgt_crowd - cur_crowd) * (1.0 - 0.5 ** (dt / 0.25))
+        growing = tgt_one > 0.0 and cam == 2
+        cur_swell = (min(1.0, cur_swell + dt / 9.0) if growing
+                     else max(0.0, cur_swell - dt / 5.0))
+        one[i], swell[i], crowd[i] = cur_one, cur_swell, cur_crowd
+
+    def at_sr(c):
+        return np.interp(np.arange(n) / sk.SR, np.arange(cn) * dt, c)[:, None]
+
+    a = np.clip(swell / 0.55, 0, 1) ** (1 / 0.6)
+    b = np.clip((swell - 0.45) / 0.55, 0, 1) ** (1 / 0.6)
+
+    # 3 周目の敷く音（§4 の表）。装置は痩せた側が混ざっている。
+    out = (tile(load("bed_room_lap3"), total) * 0.34
+           + tile(load("bed_device_worn"), total) * 0.9
+           + tile(load("bed_device"), total) * 0.4)
+    g_one = at_sr(one)
+    out += tile(load("bed_doll_one"), total) * g_one
+    out += tile(load("bed_dolls_grow_a"), total) * g_one * at_sr(a)
+    out += tile(load("bed_dolls_grow_b"), total) * g_one * at_sr(b)
+    out += tile(load("bed_dolls_laugh"), total) * at_sr(crowd)
+
+    for at, cam, label in marks:
+        print(f"  {at:5.1f}s  {label}")
+    print(f"    増え切るのは {marks[2][0] + 9.0:.0f}s（C に着いてから 9 秒 ＝ `SwellRiseSec`）")
+    return out
+
+
 def emit(name: str, y: np.ndarray, note: str):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, f"{name}.wav")
@@ -360,6 +426,8 @@ def main() -> int:
     emit("preview_comms", build_comms(), "本編の敷く音の上で。頭の 2 本は速さの比べ")
     print("最後の演出（人形がたくさん出てくる所）:")
     emit("preview_dolls", build_dolls(), "笑い → 3 秒後に③の連絡。4 周目の敷く音の上で")
+    print("3 周目（入れ替わってから C で増えるまで）:")
+    emit("preview_swap", build_swap(), "実機と同じ式。**尺も実機どおり** — 増え方が判定そのもの")
     print(f"\n→ {OUT}")
     return 0
 

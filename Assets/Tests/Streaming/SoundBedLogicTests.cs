@@ -347,6 +347,182 @@ namespace FixedCamVr.Streaming.Tests
                         "体験が終わったのに笑っている");
         }
 
+        // ------------------------------------------- 入れ替わった人形の笑い（3 周目）
+
+        /// <summary>映像の中で体験者の場所に人形が立っている状態（<c>canon/LEDGER.md</c> 0086）。</summary>
+        private static SoundShowState Swapped(int camera, bool present = true)
+        {
+            var s = Run(3);
+            s.dollPresent = present;
+            s.camera = camera;
+            return s;
+        }
+
+        [Test]
+        public void Swap_TheDollStartsLaughing_TheMomentItReplacesTheVisitor()
+        {
+            // ⚠ 立った縁から鳴り始める（入れ替わりの瞬間に 1 声目が来る）。
+            var l = new SoundBedLogic();
+            Assert.AreEqual(0f, Settle(l, Run(3)).dollOne, 1e-3f, "人形が居ないのに笑っている");
+
+            // 0.5 秒（半減期 0.25 秒 × 2）で 3/4 は立っている。
+            var s = Swapped(camera: 0);
+            SoundBedGains g = default;
+            for (int i = 0; i < 45; i++) g = l.Tick(1f / 90f, s);
+            Assert.Greater(g.dollOne, 0.7f, "入れ替わったのに笑い出さない");
+        }
+
+        [Test]
+        public void Swap_OnlyOneDollLaughs_InZonesAandB()
+        {
+            // ユーザー指定「3-A,3-Bでは一人の女の子が笑ってる感じ」。
+            foreach (int cam in new[] { 0, 1 })
+            {
+                var l = new SoundBedLogic();
+                var g = Settle(l, Swapped(cam), sec: 30f);
+                Assert.Greater(g.dollOne, 0.99f, $"カメラ {cam} で一人ぶんが鳴っていない");
+                Assert.Less(g.dollsGrowA, 0.01f, $"カメラ {cam} で人形が増えている");
+                Assert.Less(g.dollsGrowB, 0.01f, $"カメラ {cam} で人形が増えている");
+            }
+        }
+
+        [Test]
+        public void Swell_TheDollsIncreaseOverTime_OnlyInZoneC()
+        {
+            // ユーザー指定「3-Cでは徐々に増えていく感じ」。**単調に増える**ことまで見る
+            //（途中で減ると「増えていく」ではなくなる）。
+            var l = new SoundBedLogic();
+            var s = Swapped(camera: SoundBedLogic.SwellCamera);
+            float prev = -1f;
+            SoundBedGains g = default;
+            for (int i = 0; i < (int)(SoundBedLogic.SwellRiseSec * 90f); i++)
+            {
+                g = l.Tick(1f / 90f, s);
+                float sum = g.dollsGrowA + g.dollsGrowB;
+                Assert.GreaterOrEqual(sum + 1e-4f, prev, "増える途中で減っている");
+                prev = sum;
+            }
+            Assert.Greater(g.dollsGrowA, 0.99f, "C に居続けたのに 2 体目が入り切らない");
+            Assert.Greater(g.dollsGrowB, 0.99f, "C に居続けたのに 3 枚目が入り切らない");
+
+            // 2 枚目が先、3 枚目が後（一度に全部来ない ＝ 段が付かない）。
+            var l2 = new SoundBedLogic();
+            var half = Settle(l2, s, sec: SoundBedLogic.SwellRiseSec * 0.4f);
+            Assert.Greater(half.dollsGrowA, half.dollsGrowB, "2 枚目と 3 枚目が同時に来ている");
+        }
+
+        [Test]
+        public void Swell_FallsBack_WhenTheVisitorLeavesZoneC()
+        {
+            // 引き返しても、増えた人形がその場に残らない。
+            var l = new SoundBedLogic();
+            Settle(l, Swapped(camera: SoundBedLogic.SwellCamera), sec: 30f);
+            var g = Settle(l, Swapped(camera: 1), sec: SoundBedLogic.SwellFallSec + 2f);
+            Assert.Less(g.dollsGrowA, 0.01f, "C を出たのに増えた人形が残っている");
+            Assert.Greater(g.dollOne, 0.99f, "一人ぶんまで消えている（笑うのは C だけではない）");
+        }
+
+        [Test]
+        public void Swap_SurvivesTheGapBetweenSegments()
+        {
+            // ⚠⚠ **区間の継ぎ目で人形が数フレーム消えても、笑いに穴を開けない。**
+            //    3 周目は区間ごとに別の演出が走るので、カットの入れ替わりで CG が一瞬消える。
+            var l = new SoundBedLogic();
+            Settle(l, Swapped(camera: 0), sec: 5f);
+
+            var gone = Swapped(camera: 1, present: false);
+            SoundBedGains g = default;
+            for (int i = 0; i < (int)(0.5f * 90f); i++) g = l.Tick(1f / 90f, gone);
+            Assert.Greater(g.dollOne, 0.99f, "区間の継ぎ目で笑いが途切れた");
+
+            // 保持を過ぎたら止まる（人形が本当に居なくなったら黙る）。
+            g = Settle(l, gone, sec: SoundBedLogic.DollHoldSec + 8f);
+            Assert.Less(g.dollOne, 0.01f, "人形が消えたのに笑い続けている");
+        }
+
+        [Test]
+        public void Swap_AndTheClosingCrowd_NeverSoundTogether()
+        {
+            // 4 周目 A も人形は立っているが、あちらは「たくさん出てくる」場面。
+            // 一人ぶんが混ざると数が濁る。
+            var s = Swapped(camera: 0);
+            s.lap = 4;
+            s.markWaiting = true;
+            var g = SoundBedLogic.Target(s);
+            Assert.AreEqual(1f, g.dolls, 1e-6f, "締めの群れが鳴っていない");
+            Assert.AreEqual(0f, g.dollOne, 1e-6f, "群れと入れ替わりの笑いが同時に鳴っている");
+        }
+
+        [Test]
+        public void Swap_DoesNotComeBack_AfterTheVisitorReports()
+        {
+            // ⚠⚠ 実機で踏んだ（2026-08-18）。4 周目 A は「人形が立っている ＋ 報告待ち」なので
+            //    一人ぶんは黙るが、**報告を押した瞬間に報告待ちが降りる**。人形はまだ画に残って
+            //    いるので、素直に書くと一人ぶんが戻って 3 秒鳴る（実測 0.78）。
+            //    報告のあとに笑い声が戻るのは、現実へ返す所の逆。
+            var l = new SoundBedLogic();
+            Settle(l, Swapped(camera: SoundBedLogic.SwellCamera), sec: 20f);
+
+            var closing = Swapped(camera: 0);
+            closing.lap = 4;
+            closing.markWaiting = true;
+            var g = Settle(l, closing, sec: 5f);
+            Assert.Greater(g.dolls, 0.99f, "締めの群れが鳴っていない");
+            Assert.Less(g.dollOne, 0.01f, "群れと同時に一人ぶんが鳴っている");
+
+            // 報告した（群れが止まる）。人形はまだ画に残っている。
+            var reported = Swapped(camera: 0);
+            reported.lap = 4;
+            g = Settle(l, reported, sec: 4f);
+            Assert.Less(g.dollOne, 0.01f, "報告のあとに笑い声が戻ってきた");
+            Assert.Less(g.dollsGrowA, 0.01f);
+
+            // 人形が画から消えれば解ける（次の体験者・別の周では普通に鳴る）。
+            var gone = Swapped(camera: 0, present: false);
+            Settle(l, gone, sec: SoundBedLogic.DollHoldSec + 4f);
+            g = Settle(l, Swapped(camera: 0), sec: 3f);
+            Assert.Greater(g.dollOne, 0.99f, "人形が出直しても二度と笑わない");
+        }
+
+        [Test]
+        public void Swap_IsSilentDuringRegistration_AndAfterTheShowEnds()
+        {
+            var l = new SoundBedLogic();
+            var reg = Swapped(camera: 0);
+            reg.registrationActive = true;
+            Assert.Less(Settle(l, reg, sec: 5f).dollOne, 0.01f, "位置合わせ中に人形が笑っている");
+
+            var done = Swapped(camera: 0);
+            done.phase = ShowPhase.Finished;
+            Assert.Less(Settle(new SoundBedLogic(), done, sec: 5f).dollOne, 0.01f,
+                        "体験が終わったのに笑っている");
+        }
+
+        [Test]
+        public void Swap_DucksTheScore_LessDeeplyThanTheClosingCrowd()
+        {
+            var l = new SoundBedLogic();
+            var g = Settle(l, Swapped(camera: 0), sec: 5f);
+            Assert.GreaterOrEqual(g.duck, SoundBedLogic.DollSwapDuck - 1e-2f, "劇伴が退いていない");
+            Assert.Less(SoundBedLogic.DollSwapDuck, SoundBedLogic.DollsDuck,
+                        "入れ替わりの退きが締めの群れより深い（山の順序が崩れる）");
+            // 笑いそのものは退かせない（切替の一撃が 9 回以上入る区間なので、引くと毎回凹む）。
+            Assert.Greater(g.dollOne, 0.99f);
+        }
+
+        [Test]
+        public void Swap_DoesNotCarryOver_ToTheNextVisitor()
+        {
+            var l = new SoundBedLogic();
+            Settle(l, Swapped(camera: SoundBedLogic.SwellCamera), sec: 30f);
+
+            l.Reset();
+            var g = l.Tick(1f / 90f, Swapped(camera: SoundBedLogic.SwellCamera));
+            Assert.Less(g.dollsGrowA, 0.01f, "前の体験者の C で増えた人形を持ち越している");
+            // ⚠ 1 フレームぶんは進んでいる（C に居るので）。見るのは「1 から始まっていない」こと。
+            Assert.Less(l.Swell01, 0.01f, "増え具合が前の体験者の値から続いている");
+        }
+
         [Test]
         public void Tick_ApproachesTarget_WithoutOvershoot()
         {

@@ -284,6 +284,92 @@ CHORUS_SEC = 12.0         # ループ 1 周の長さ（秒）。**表の始ま�
 CHORUS_GLIDE_POW = 1.4    # 音程の動き方（1 = 直線 / 大きいほど後半で動く）
 
 
+# ---- 同じ声を「増えていく人形」の 3 枚に分けて組むもの -----------------------
+#
+# ⚠ **これも「もらった音」の側**。掛けるのは並べ方・音程・音量・左右だけ（§4.5）。**種は無し**
+#    （乱数を使わず 1 声ずつ表に書く ＝ 同じ版なら同じ波形）。
+#
+# ユーザー指定（2026-08-18・`canon/LEDGER.md` 0086）:
+#   「体験者と人形が入れ替わったときと、入れ替わった後の3周目A-Cにて、人形の笑い声はないけど、
+#     これをつけてほしい。3-A,3-Bでは一人の女の子が笑ってる感じ。3-Cでは徐々に増えていく感じ」
+#
+# ⚠⚠ **「増えていく」を 1 本のループでは作れない。** ループは巻き戻るので、山を持たせると
+#    同じ波が何度も来て「繰り返している」と分かる（`canon/LEDGER.md` 0066 で踏んだ形）。
+#    ⇒ **層に分けて足す。** 一人（入れ替わった瞬間から最後まで）＋ 2 体 ＋ 4 体。
+#    C のあいだに後ろの 2 枚が順に入ってくるので、**実際に声の数が増える**
+#    （1 枚を大きくするのではない ＝ 近づいてくるのではなく、数が増える）。
+#
+# ⚠ **3 枚のループ長は互いに素にする**（19 / 13 / 17 秒 ＝ どれも素数）。揃えると 3 枚が同じ所で
+#    巻き戻り、そこだけ「1 周した」と分かる。この 3 つなら 4199 秒（70 分）戻ってこない。
+#
+# ⚠⚠ **1 枚目だけ長い。** A と B を合わせて 30 秒ほど**同じ 1 体だけが鳴り続ける**ので、
+#    短い輪だと巻き戻りが数えられてしまう（11 秒だと 3 周近く回る）。
+#
+# ⚠ **間を詰めない。** 笑いは余韻が 2 秒あるので 2.7 秒刻みで置くと**笑いっぱなし**になる
+#    （実測: 11 秒に 4 回で在音率 76%）。19 秒に 5 回 ＝ 55% で、笑いのあいだに部屋の音が戻る。
+#
+# ⚠ **1 体あたりの高さは 3 枚で同じ。** 揃え方は `swell_build`（1 枚目で決めた倍率を 3 枚へ掛ける）。
+#    1 枚ずつ狙いの LUFS へ合わせると、**枚数が増えるほど 1 体が小さくなり、足したのに増えない**。
+#
+# (始まり, 音程の始め, 音程の終わり, 音量 dB, 左右)   ※音程は 1.0 = 元のまま
+#
+# ⚠ 1 枚目は**同じ 1 体**が 4 回笑う（音程と左右を動かさない ＝ そこに立っている）。
+#    4 回とも音程の動きだけ変えてある（人は同じ笑い方を繰り返さない）。
+SWELL_ONE = [
+    ( 0.00, 1.12, 1.06, -3.5, +0.16),
+    ( 3.40, 1.08, 1.14, -5.5, +0.16),
+    ( 7.60, 1.14, 1.08, -4.2, +0.16),
+    (11.20, 1.06, 1.12, -6.2, +0.16),
+    (15.30, 1.10, 1.16, -4.8, +0.16),
+]
+
+# 2 枚目 — 2 体が増える（低い方が左・高い方が右）。⚠ **1 枚目と同じ音量の幅で書く**
+# （-3.5〜-6.5）。増えるのは「遠くで誰かが笑い出した」ではなく「**同じ距離に人形が増えた**」。
+# 実測: 4dB 下げて書いたら、3 枚を重ねても高さが 0.2dB しか動かず、増えたのが音にならなかった。
+SWELL_GROW_A = [
+    ( 0.00, 0.86, 0.92, -4.5, -0.52),
+    ( 1.80, 1.30, 1.24, -6.0, +0.58),
+    ( 4.40, 0.92, 0.86, -5.5, -0.52),
+    ( 6.70, 1.24, 1.32, -5.0, +0.58),
+    ( 9.10, 0.86, 0.90, -6.5, -0.52),
+    (11.10, 1.32, 1.26, -5.5, +0.58),
+]
+
+# 3 枚目 — さらに 4 体（外へ広がる）。⚠ **後ろの声を小さくしすぎない**（0062 の教訓）。
+# 素直に減らすと「笑いが遠ざかっていく」に聞こえて、増えている場面と逆になる。
+SWELL_GROW_B = [
+    ( 0.00, 0.72, 0.78, -6.0, -0.85),
+    ( 1.30, 1.18, 1.12, -5.0, +0.34),
+    ( 2.90, 0.98, 1.04, -6.5, -0.22),
+    ( 4.20, 1.44, 1.36, -7.5, +0.80),
+    ( 5.70, 0.78, 0.72, -5.5, -0.85),
+    ( 7.10, 1.12, 1.20, -6.0, +0.34),
+    ( 8.60, 1.04, 0.96, -7.0, -0.22),
+    (10.00, 1.36, 1.46, -6.5, +0.80),
+    (11.40, 0.72, 0.76, -6.0, -0.85),
+    (12.80, 1.20, 1.14, -5.5, +0.34),
+    (14.20, 0.96, 1.02, -7.0, -0.22),
+    (15.60, 1.46, 1.38, -7.5, +0.80),
+]
+
+# (出力名, ループ秒, 声)
+SWELL_LAYERS = [
+    ("bed_doll_one",     19.0, SWELL_ONE),
+    ("bed_dolls_grow_a", 13.0, SWELL_GROW_A),
+    ("bed_dolls_grow_b", 17.0, SWELL_GROW_B),
+]
+
+# 1 枚目（一人）の高さ。**この 1 つで 3 枚を揃える。**
+# -26 は「4 周目 A の群れ（-20 LUFS・同時に約 4 体）の 1 体ぶん」＝ 同じ人形が同じ距離で笑う高さ。
+SWELL_SOLO_LUFS = -26.0
+
+# (元ファイル名, 種の名前, 使い先)
+SWELL = [
+    ("ufufufu.mp3", "bed_doll_swell",
+     "3 周目 — 体験者と人形が入れ替わった瞬間から鳴り始め、C で数が増える"),
+]
+
+
 def glide(c: np.ndarray, r0: float, r1: float, sr: int) -> np.ndarray:
     """音程を <paramref name="r0"/> から <paramref name="r1"/> へ滑らせながら読む。
 
@@ -301,26 +387,22 @@ def glide(c: np.ndarray, r0: float, r1: float, sr: int) -> np.ndarray:
     return np.stack([np.interp(pos, np.arange(n_in), c[:, ch]) for ch in (0, 1)], axis=1)
 
 
-def chorus_build(y, sr: int, target_lufs: float):
-    """1 本の笑い声から「たくさんの人形が笑っている」を組む。**円環で作る。**
+def ring_mix(src: np.ndarray, voices, sec: float, sr: int):
+    """声を輪の上へ並べる。**端で折り返さず、はみ出したぶんを頭へ回り込ませる。**
 
-    ⚠⚠ **端で折り返さない。輪にして書く。** 報告を押すまでループするので、
-    継ぎ目が聞こえてはいけない。尻を頭へ混ぜる方式（`fold_loop`）だと、
+    ⚠⚠ ループするものは輪にして書く。尻を頭へ混ぜる方式（`fold_loop`）だと、
     **頭と尻が薄い**ぶんそこだけ密度が落ちて「1 周した」と分かる（実測: 端 -36dB / 中 -22dB）。
-    はみ出したぶんを頭へ回り込ませれば、**どの瞬間も同じ密度**になり継ぎ目は数学的に消える
+    回り込ませれば**どの瞬間も同じ密度**になり、継ぎ目は数学的に消える
     （`soundkit.loop_noise` が周波数領域でやっているのと同じ考え）。
     """
-    src = sk.env_fade(sk.to_stereo(trim(y)), 0.004, 0.02)
-
-    n = int(CHORUS_SEC * sr)
+    n = int(sec * sr)
     out = np.zeros((n, 2))
     spans = []
-    for at, r0, r1, db, pan in CHORUS_VOICES:
+    for at, r0, r1, db, pan in voices:
         v = glide(src, r0, r1, sr)
         lr = np.array([np.cos((pan + 1) * np.pi / 4), np.sin((pan + 1) * np.pi / 4)]) * np.sqrt(2)
         v = v * (10 ** (db / 20.0)) * lr
         i = int(at * sr) % n
-        # はみ出したぶんは頭へ回り込ませる（輪にする）。
         head = min(len(v), n - i)
         out[i:i + head] += v[:head]
         rest = len(v) - head
@@ -329,12 +411,79 @@ def chorus_build(y, sr: int, target_lufs: float):
             out[:take] += v[len(v) - rest:len(v) - rest + take]
             rest -= take
         spans.append((at, len(v) / sr))
+    return out, spans
+
+
+def chorus_build(y, sr: int, target_lufs: float):
+    """1 本の笑い声から「たくさんの人形が笑っている」を組む。**円環で作る**（<see cref="ring_mix"/>）。"""
+    src = sk.env_fade(sk.to_stereo(trim(y)), 0.004, 0.02)
+    out, spans = ring_mix(src, CHORUS_VOICES, CHORUS_SEC, sr)
 
     out = out * 10 ** ((target_lufs - sk.lufs(out)) / 20.0)
     tp = sk.true_peak_db(out)
     if tp > -3.0:
         out = out * 10 ** ((-3.0 - tp) / 20.0)
     return out, spans, CHORUS_SEC
+
+
+def swell_build(y, sr: int, layers, solo_lufs: float):
+    """同じ声から「増えていく人形」を層に分けて組む。**3 枚を 1 つの倍率で揃える。**
+
+    ⚠⚠ 1 枚ずつ狙いの LUFS へ合わせてはいけない。合わせると枚数が増えるほど 1 体あたりが
+    小さくなり、**層を足したのに「増えた」に聞こえない**（音色だけ濁る）。
+    1 枚目（一人）を <paramref name="solo_lufs"/> へ合わせ、**同じ倍率**を残りへ掛ける。
+    """
+    src = sk.env_fade(sk.to_stereo(trim(y)), 0.004, 0.02)
+    built = [(name, sec) + ring_mix(src, voices, sec, sr) for name, sec, voices in layers]
+
+    scale = 10 ** ((solo_lufs - sk.lufs(built[0][2])) / 20.0)
+    # 天井に当たるなら**3 枚まとめて**下げる（1 枚だけ下げると層の関係が崩れる）。
+    tp = max(sk.true_peak_db(out * scale) for _, _, out, _ in built)
+    if tp > -3.0:
+        scale *= 10 ** ((-3.0 - tp) / 20.0)
+    return [(name, sec, out * scale, spans) for name, sec, out, spans in built]
+
+
+def stack_lufs(built, sec: float = 60.0) -> float:
+    """3 枚を全部鳴らした状態（3 周目 C の終わり）の高さ。**4 周目 A の群れより下でなければならない。**"""
+    n = int(sec * sk.SR)
+    mix = np.zeros((n, 2))
+    for _name, _sec, out, _spans in built:
+        reps = int(np.ceil(n / len(out)))
+        mix += np.tile(out, (reps, 1))[:n]
+    return sk.lufs(mix)
+
+
+def ingest_swell(swell, src_dir: str) -> None:
+    """1 本の声を「増えていく人形」の 3 枚に分けて焼く（<see cref="SWELL"/>）。"""
+    for jp, stem, _why in swell:
+        src = os.path.join(src_dir, jp)
+        raw = os.path.join(RAW, f"src_{stem}.wav")
+        if os.path.exists(src):
+            if not decode(src, raw):
+                continue
+        elif not os.path.exists(raw):
+            print(f"  無い: {jp}（{src_dir} にも {RAW} にも）")
+            continue
+        else:
+            print(f"  元 mp3 が無いので復号済みを使う: {stem}")
+
+        y, sr = sk.read_wav(raw)
+        built = swell_build(y, sr, SWELL_LAYERS, SWELL_SOLO_LUFS)
+        for name, sec, out, spans in built:
+            sk.write_wav(os.path.join(OUT, f"{name}.wav"), out, peak_db=-3.0)
+            d = sk.describe(out)
+            print(f"  {name:16s} {len(spans)} 回 / {d['sec']:.2f}s   {d['lufs']:6.1f} LUFS   "
+                  f"tp {d['true_peak_db']:5.1f}dB   鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f}   "
+                  f"モノ {d['mono_db']:5.2f}dB   内蔵SP {d['speaker_db']:5.1f}dB")
+            marks = [str(sum(1 for at, dur in spans if ((k * 0.5 - at) % sec) < dur))
+                     for k in range(int(sec / 0.5))]
+            print(f"    0.5 秒ごとの声の数: {' '.join(marks)}")
+            print(f"    聞き分けられそうな山: {envelope_peaks(out)} 個 / {len(spans)} 回")
+        # ⚠ **3 枚を重ねた高さを必ず出す。** ここが 4 周目 A の群れ（-20 LUFS）を超えたら、
+        #    締めの演出が「いちばん多い」に聞こえなくなる。
+        print(f"    3 枚を重ねた高さ（3 周目 C の終わり）: {stack_lufs(built):.1f} LUFS"
+              f"（4 周目 A の群れは -20.0）")
 
 
 def ingest_chorus(chorus, src_dir: str) -> None:
@@ -651,10 +800,18 @@ def main() -> int:
         for jp, name, target, why in SWARMS:
             print(f"  {name:16s} ← {jp}\n      小刻みに並べる / {target:+.1f} LUFS"
                   f"（{SWARM_SEC:.2f}s）/ {why}")
+        for jp, name, target, why in CHORUS:
+            print(f"  {name:16s} ← {jp}\n      重ねて輪にする / {target:+.1f} LUFS"
+                  f"（{CHORUS_SEC:.1f}s・{len(CHORUS_VOICES)} 回）/ {why}")
+        for jp, _stem, why in SWELL:
+            layers = " + ".join(f"{n}({s:.0f}s・{len(v)} 回)" for n, s, v in SWELL_LAYERS)
+            print(f"  {'（増える 3 枚）':16s} ← {jp}\n      {layers}"
+                  f"\n      1 体ぶん {SWELL_SOLO_LUFS:+.1f} LUFS で 3 枚まとめて揃える / {why}")
         return 0
 
     names = ({p[1] for p in PLAN} | {c[1] for c in CUTS}
-             | {s[1] for s in SWARMS} | {c[1] for c in CHORUS})
+             | {s[1] for s in SWARMS} | {c[1] for c in CHORUS}
+             | {n for n, _s, _v in SWELL_LAYERS})
     if a.only is not None and not set(a.only) <= names:
         missing = sorted(set(a.only) - names)
         print(f"  PLAN にも CUTS にも無い名前: {', '.join(missing)}")
@@ -663,12 +820,16 @@ def main() -> int:
     cuts = [c for c in CUTS if a.only is None or c[1] in a.only]
     swarms = [s for s in SWARMS if a.only is None or s[1] in a.only]
     chorus = [c for c in CHORUS if a.only is None or c[1] in a.only]
+    # ⚠ 増える 3 枚は**家族で 1 つ**（1 枚目の高さで 3 枚を揃えるので、1 枚だけ焼き直せない）。
+    swell = SWELL if (a.only is None
+                      or any(n in a.only for n, _s, _v in SWELL_LAYERS)) else []
 
     os.makedirs(RAW, exist_ok=True)
     os.makedirs(OUT, exist_ok=True)
     ingest_cuts(cuts, a.src)
     ingest_swarms(swarms, a.src)
     ingest_chorus(chorus, a.src)
+    ingest_swell(swell, a.src)
     for jp, name, how, target, _why in plan:
         src = os.path.join(a.src, jp)
         raw = os.path.join(RAW, f"src_{name}.wav")

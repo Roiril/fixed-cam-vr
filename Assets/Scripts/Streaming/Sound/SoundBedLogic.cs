@@ -52,6 +52,24 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool markWaiting;
 
+        /// <summary>
+        /// <b>映像の中で、体験者の場所に人形が立っているか</b>（<c>ShowCgLayer.IsVisible</c>）。
+        /// 立った縁 ＝ <b>入れ替わった瞬間</b>で、そこから人形が笑い始める
+        /// （2026-08-18・<c>canon/LEDGER.md</c> 0086）。
+        ///
+        /// ⚠ <b>「3 周目」とは書かない。</b> 人形が立っていること自体を見るので、
+        /// 台本が変わっても追随する（0062 で <see cref="markWaiting"/> をそう作ったのと同じ）。
+        /// ⚠ 4 周目 A の締めも人形が立っているが、そちらは <see cref="markWaiting"/> が立つので
+        /// 区別できる（あちらは群れ・<see cref="SoundBedGains.dolls"/>）。
+        /// </summary>
+        public bool dollPresent;
+
+        /// <summary>
+        /// いま居る区間のカメラ（0 = A / 1 = B / 2 = C。-1 = 未確定）。
+        /// <b>笑う人形が増えるのは C だけ</b>という判断にだけ使う（<c>TimelineDirector.CurrentCamera</c>）。
+        /// </summary>
+        public int camera;
+
         public static SoundShowState Idle => new SoundShowState
         {
             introStage = IntroStage.Off,
@@ -95,6 +113,23 @@ namespace FixedCamVr.Streaming
         /// 器を借りている理由は 1 つだけで、<b>ループして出し入れできるのがここしか無い</b>から。
         /// </summary>
         public float dolls;
+
+        /// <summary>
+        /// <b>入れ替わった人形（一人）の笑い</b>（`bed_doll_one`）。映像の中で体験者の場所に
+        /// 人形が立っているあいだ鳴り続ける（2026-08-18・<c>canon/LEDGER.md</c> 0086）。
+        /// </summary>
+        public float dollOne;
+
+        /// <summary>同・増えた 2 体（`bed_dolls_grow_a`）。<b>C でだけ入ってくる。</b></summary>
+        public float dollsGrowA;
+
+        /// <summary>
+        /// 同・さらに増えた 4 体（`bed_dolls_grow_b`）。C の後半で入ってくる。
+        ///
+        /// ⚠ <b>3 枚は足し算で「増える」</b>（入れ替えではない）。1 枚を大きくすると
+        /// 「人形が近づいてくる」に聞こえて、数が増えたことにならない。
+        /// </summary>
+        public float dollsGrowB;
         /// <summary>
         /// 部屋の開き具合（1 = 広い / 0 = 隔離されて狭い）。低域通過フィルタの開度に写す。
         /// **隔離は音量ではなくここで表す** — 音量を下げると「遠ざかった」、
@@ -146,6 +181,49 @@ namespace FixedCamVr.Streaming
         private const float DollsRiseSec = 0.25f;
         private const float DollsFallSec = 0.35f;
 
+        // ---- 入れ替わった人形の笑い（3 周目・`canon/LEDGER.md` 0086）--------------
+        //
+        // 入れ替わった瞬間から鳴り始めるので、入りは速い（縁で 1 声目が立つ）。
+        // 切れは**画から人形が消えたとき**なので、押した手応えより緩い。
+        private const float DollOneRiseSec = 0.25f;
+        private const float DollOneFallSec = 0.8f;
+
+        /// <summary>
+        /// 締めの群れへ譲るときの切れ（半減期・秒）。**画から人形が消えるときより速い。**
+        ///
+        /// ⚠ 実機で踏んだ（2026-08-18）: 4 周目 A へ入った瞬間、群れは 0.25 秒で立つのに
+        /// 一人ぶんが 0.8 秒で引いたので、**2 秒間 2 つが重なって鳴っていた**（判定が捕まえた）。
+        /// 群れは笑いの壁なので、そこへ吸い込まれる速さで引く。
+        /// </summary>
+        private const float DollYieldFallSec = 0.2f;
+
+        /// <summary>
+        /// 人形が画から消えても、これだけは笑いを保つ（秒）。
+        ///
+        /// ⚠ <b>区間の継ぎ目で穴を開けないための保持。</b> 3 周目は区間ごとに別の演出が走るので、
+        /// カットの入れ替わりで <c>ShowCgLayer</c> が数フレーム消える。保持が無いと、
+        /// A → B → C の継ぎ目で笑いが 3 回途切れる（＝ 人形が消えて戻ったように聞こえる）。
+        /// </summary>
+        public const float DollHoldSec = 1.5f;
+
+        /// <summary>笑う人形が増えていく区間（C ＝ カメラ 2）。</summary>
+        public const int SwellCamera = 2;
+
+        /// <summary>
+        /// C に入ってから人形が増え切るまでの秒数。
+        ///
+        /// ⚠ <b>実測の滞在に合わせた値</b>（2026-08-18）。自動走行の区間滞在は <b>8 秒</b>で、
+        /// 14 秒にしていたら増え具合が 0.47 までしか行かず、<b>3 枚目が 1 度も入らなかった</b>。
+        /// 9 秒なら 8 秒で 0.89 ＝ 3 枚とも鳴った状態で C を出る（長く居れば満杯で保つ）。
+        /// </summary>
+        public const float SwellRiseSec = 9f;
+
+        /// <summary>C を離れたら戻る秒数（引き返しても、増えた人形がその場に残らない）。</summary>
+        public const float SwellFallSec = 5f;
+
+        /// <summary>人形が一人で笑っているあいだ、劇伴をどこまで引くか。**群れ（0.85）より浅い。**</summary>
+        public const float DollSwapDuck = 0.45f;
+
         /// <summary>本編で部屋のトーンをどこまで下げるか（装置の声の下に敷く）。</summary>
         public const float RoomInRun = 0.34f;
 
@@ -176,6 +254,18 @@ namespace FixedCamVr.Streaming
         /// <summary>環境音の位置（0 = 1 周目 / 1 = 2 周目 / 2 = 3 周目）。整数の間を連続で動く。</summary>
         private float _ambPos;
 
+        /// <summary>人形が画から消えてからの保持の残り（秒）。<see cref="DollHoldSec"/>。</summary>
+        private float _dollHold;
+
+        /// <summary>笑う人形の増え具合 0..1（C に居るあいだ増え、離れると戻る）。</summary>
+        private float _swell01;
+
+        /// <summary>締めの群れへ譲ったか（人形が画から消えるまで一人ぶんを戻さない）。</summary>
+        private bool _swapMuted;
+
+        /// <summary>同上（テレメトリが読む。**画にも一撃のログにも出ない**ので唯一の証拠）。</summary>
+        public float Swell01 => _swell01;
+
         /// <summary>
         /// 装置の声の**合計**（新しい方 ＋ 痩せた方）。平滑化はこの 1 本で行う。
         ///
@@ -197,6 +287,10 @@ namespace FixedCamVr.Streaming
             _deviceTotal = 0f;
             // 体験者が代わったら環境音も 1 周目へ戻す（**前の人の 3 周目から始めない**）。
             _ambPos = 0f;
+            // 前の人の 3 周目 C で増えた人形を持ち越さない。
+            _dollHold = 0f;
+            _swell01 = 0f;
+            _swapMuted = false;
         }
 
         /// <summary>一撃の音が鳴ったときに劇伴を短く引く（値は 0..1・そのまま最大値で上書き）。</summary>
@@ -207,14 +301,37 @@ namespace FixedCamVr.Streaming
 
         public SoundBedGains Tick(float dt, in SoundShowState s)
         {
-            SoundBedGains t = Target(s);
+            // 区間の継ぎ目で人形が数フレーム消えても笑いに穴を開けない（<see cref="DollHoldSec"/>）。
+            var st = s;
+            if (st.dollPresent) _dollHold = DollHoldSec;
+            else if (_dollHold > 0f)
+            {
+                _dollHold = Math.Max(0f, _dollHold - dt);
+                st.dollPresent = true;
+            }
+
+            // ⚠⚠ **締めの群れへ譲ったら、その人形が画から消えるまで戻さない。**
+            //    実機で踏んだ（2026-08-18）: 報告を押した瞬間に群れが止まり、人形はまだ画に残って
+            //    いるので**一人ぶんが 0.78 まで戻って 3 秒鳴った**。報告のあとに笑い声が戻るのは、
+            //    現実へ返す所（`canon/LEDGER.md` 0050）の逆をやっている。
+            //    ⚠ latch にせず「人形が消えるまで」にしてあるのは、`untilMark` のカットが
+            //      別の周に著作されても効き続けないようにするため。
+            if (!st.dollPresent) _swapMuted = false;
+            else if (st.markWaiting) _swapMuted = true;
+            if (_swapMuted) st.dollPresent = false;
+
+            SoundBedGains t = Target(st);
 
             _cur.seal = SoundFade.Approach(_cur.seal, t.seal, SealRiseSec, SealFallSec, dt);
             _cur.room = SoundFade.Approach(_cur.room, t.room, RoomSec, dt);
-            ApplyAmbientMix(dt, s.lap);
+            ApplyAmbientMix(dt, st.lap);
             _deviceTotal = SoundFade.Approach(_deviceTotal, t.device, DeviceRiseSec, DeviceFallSec, dt);
             _cur.noise = SoundFade.Approach(_cur.noise, t.noise, NoiseRiseSec, NoiseFallSec, dt);
             _cur.dolls = SoundFade.Approach(_cur.dolls, t.dolls, DollsRiseSec, DollsFallSec, dt);
+            _cur.dollOne = SoundFade.Approach(_cur.dollOne, t.dollOne, DollOneRiseSec,
+                                              st.markWaiting ? DollYieldFallSec : DollOneFallSec,
+                                              dt);
+            ApplyDollSwell(dt, t.dollOne > 0f, st.camera);
             _cur.roomOpen = SoundFade.Approach(_cur.roomOpen, t.roomOpen, OpenSec, dt);
 
             // 痩せ具合は等パワーで混ぜる。線形にすると**進行の途中で装置の声が凹む**
@@ -237,8 +354,10 @@ namespace FixedCamVr.Streaming
             outG.room *= keep;
             outG.device *= keep;
             outG.deviceWorn *= keep;
-            // ⚠ **人形の笑いは退かせない。** 退きは「節目の一撃を地に埋もれさせない」ための
-            //    仕組みで、笑い自体がその事件。自分で自分を引いたら意味が無い。
+            // ⚠ **人形の笑いは退かせない**（`dolls` / `dollOne` / `dollsGrow*`）。退きは
+            //    「節目の一撃を地に埋もれさせない」ための仕組みで、笑い自体がその事件。
+            //    自分で自分を引いたら意味が無い。3 周目は切替の一撃が 9 回以上入るので、
+            //    ここで引くと**笑いが切替のたびに凹む**。
             return outG;
         }
 
@@ -269,6 +388,39 @@ namespace FixedCamVr.Streaming
             _cur.roomLap1 = lo == 0 ? outGain : 0f;
             _cur.roomLap2 = lo == 0 ? inGain : outGain;
             _cur.roomLap3 = lo == 0 ? 0f : inGain;
+        }
+
+        /// <summary>
+        /// <b>C に居るあいだ、笑う人形が増えていく。</b>
+        ///
+        /// 判定は <c>canon/LEDGER.md</c> 0086（ユーザー逐語「3-A,3-Bでは一人の女の子が笑ってる感じ。
+        /// 3-Cでは徐々に増えていく感じ」）。
+        ///
+        /// ⚠ <b>1 枚を大きくするのではなく、層を足す。</b> 音量を上げると「人形が近づいてくる」に
+        /// 聞こえて、<b>数が増えたことにならない</b>。2 枚目（2 体）と 3 枚目（4 体）が
+        /// 重なりながら順に入ってくる。
+        ///
+        /// ⚠ <b>時間で増やす。</b> ここが <see cref="Target"/> ではなく Tick に居るのは、
+        /// 増え具合が状態ではなく<b>C に居た時間</b>だから（<see cref="ApplyAmbientMix"/> と同じ理由）。
+        ///
+        /// ⚠ 出し入れは<b>聴感直線</b>（<see cref="SoundFade.Curve.Perceptual"/>）。
+        /// 振幅を直線で動かすと、後半だけ急に増えたように聞こえる。
+        /// </summary>
+        private void ApplyDollSwell(float dt, bool laughing, int camera)
+        {
+            bool growing = laughing && camera == SwellCamera;
+            _swell01 = growing
+                ? Math.Min(1f, _swell01 + dt / SwellRiseSec)
+                : Math.Max(0f, _swell01 - dt / SwellFallSec);
+
+            // 2 枚は重なりながら入る（間を空けると「2 体増えた」「4 体増えた」の段が付く）。
+            float a = SoundFade.Gain(Clamp01(_swell01 / 0.55f), SoundFade.Curve.Perceptual);
+            float b = SoundFade.Gain(Clamp01((_swell01 - 0.45f) / 0.55f), SoundFade.Curve.Perceptual);
+
+            // ⚠ 一人ぶんの高さに乗せる。人形が画から消えたら、増えた 2 枚も一緒に引く
+            //    （**家族の出入りは 1 か所で決める**）。
+            _cur.dollsGrowA = _cur.dollOne * a;
+            _cur.dollsGrowB = _cur.dollOne * b;
         }
 
         /// <summary>いまの状態が求める「あるべき高さ」（寄せる前の目標）。**設計はここに書いてある。**</summary>
@@ -307,6 +459,16 @@ namespace FixedCamVr.Streaming
             g.dolls = s.markWaiting ? 1f : 0f;
             if (g.dolls > 0f) g.duck = Math.Max(g.duck, DollsDuck * g.dolls);
 
+            // --- 入れ替わった人形の笑い（3 周目）----------------------------------
+            // 映像の中で体験者の場所に人形が立っているあいだ、その人形が笑う。
+            // **入れ替わった瞬間から**（`dollPresent` が立った縁で 1 声目が鳴る）。
+            //
+            // ⚠ 締めの群れ（`dolls`）とは**同時に鳴らさない**。4 周目 A も人形は立っているが、
+            //    あちらは「たくさん出てくる」場面なので、一人ぶんの笑いが混ざると数が濁る。
+            // ⚠ 増える 2 枚は時間で決まるので Tick（`ApplyDollSwell`）が持つ。
+            g.dollOne = s.dollPresent && !s.markWaiting ? 1f : 0f;
+            if (g.dollOne > 0f) g.duck = Math.Max(g.duck, DollSwapDuck * g.dollOne);
+
             // --- 砂嵐 -----------------------------------------------------------
             g.noise = Clamp01(s.signalLost);
             if (g.noise > 0f)
@@ -323,7 +485,9 @@ namespace FixedCamVr.Streaming
                 g.room *= RegistrationDuckScale;
                 g.device *= RegistrationDuckScale;
                 g.noise *= RegistrationDuckScale;
-                g.dolls = 0f;                    // 作業中に人形を笑わせない（引くのではなく黙らせる）
+                // 作業中に人形を笑わせない（引くのではなく黙らせる）。
+                g.dolls = 0f;
+                g.dollOne = 0f;
                 g.roomOpen = 1f;
                 g.duck = 1f;
             }
@@ -331,7 +495,7 @@ namespace FixedCamVr.Streaming
             // 体験が終わった後は何も残さない（最後に鳴っているのは無音、が正しい）。
             if (s.phase == ShowPhase.Finished && !s.outroActive)
             {
-                g.seal = g.room = g.device = g.noise = g.dolls = 0f;
+                g.seal = g.room = g.device = g.noise = g.dolls = g.dollOne = 0f;
                 g.duck = 1f;
             }
             return g;

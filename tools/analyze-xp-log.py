@@ -180,6 +180,23 @@ def effect_samples(events, key: str, t_from: float = None, t_to: float = None):
     return out
 
 
+def timed_samples(events, key: str):
+    """<see cref="effect_samples"/> と同じだが **(時刻, 値) の組**で返す。
+
+    区間ごとに切って見たいものに要る（例: 増えてよいのは 3 周目 C だけ、という判定）。
+    ⚠ 数にならない値（`-` / `nc`）は落とす — 「居ない」を「0」と読むと未配線を壊れと誤診する。
+    """
+    out = []
+    for e in events:
+        if e.get("ev") not in ("intro", "sum") or key not in e:
+            continue
+        v = fnum(e, key)
+        if v is None:
+            continue
+        out.append((fnum(e, "t", 0.0), v))
+    return out
+
+
 def expected_from_show(show: dict):
     """show.json から期待値を作る。"""
     exp = {}
@@ -1492,6 +1509,66 @@ def analyze(events, others, exp, warns=None):
                                                   for e in comms):
                 verdict("WARN", "報告のあとも人形が笑ったまま走行が終わっている"
                                 f"（最後の sndDolls={dolls[-1]:.2f}）")
+
+        # -- 入れ替わった人形の笑い（`canon/LEDGER.md` 0086）
+        #    ⚠ これもループなので `ev=sfx` には出ない。見るのは `ev=sum` の
+        #      `sndSwap`（3 枚の合計の音量）と `sndSwell`（増え具合 0..1）。
+        #    ⚠ **2 つを対で見る。** 合計だけでは「増えた」のか「大きくなった」のか分けられない。
+        swap = timed_samples(events, "sndSwap")
+        swell = timed_samples(events, "sndSwell")
+        # 区間の窓（`ev=zone` の次の区間まで）。増えてよいのは 3 周目 C だけ。
+        zones = [(fnum(e, "t", 0.0), int(fnum(e, "cam", -1)), int(fnum(e, "lap", -1)))
+                 for e in events if e.get("ev") == "zone"]
+        zones.sort()
+        windows = [(t, zones[i + 1][0] if i + 1 < len(zones) else 1e9, cam, lap)
+                   for i, (t, cam, lap) in enumerate(zones)]
+        lap3 = [wd for wd in windows if wd[3] == 3]
+        if lap3 or swap:
+            if not swap:
+                verdict("WARN", "入れ替わった人形の笑いの観測が無い（sndSwap が 1 度も出ていない）"
+                                "— 古い APK か、ShowSoundDirector が居ない")
+            else:
+                peak = max(v for _t, v in swap)
+                # ⚠⚠ **画と突き合わせる。** `cg=1` ＝ 映像の中に人形が立っている ＝ 笑うはずの縁。
+                #    周の番号ではなく**効果どうし**を比べるので、台本が変わっても効く。
+                mute = [e for e in events
+                        if e.get("ev") == "sum" and str(e.get("cg")) == "1"
+                        and (fnum(e, "sndDolls", 0.0) or 0.0) <= 0.05
+                        and "sndSwap" in e and (fnum(e, "sndSwap", 0.0) or 0.0) <= 0.01]
+                if len(mute) >= 2:
+                    verdict("FAIL", f"映像の中に人形が立っているのに笑っていない（cg=1 で sndSwap=0 が "
+                                    f"{len(mute)} 回）— bed_doll_one を掴めているか、"
+                                    "ShowSoundDirector が ShowCgLayer を掴めているか")
+                if lap3 and peak <= 0.01:
+                    verdict("FAIL", "3 周目に入ったのに入れ替わった人形が笑っていない"
+                                    "（sndSwap が 0 のまま — bed_doll_one を掴めているか、"
+                                    "ShowSoundDirector が ShowCgLayer を掴めているか）")
+                elif peak > 0.01:
+                    verdict("OK", f"入れ替わった人形が笑った（sndSwap 最大 {peak:.2f}）")
+                # 増えるのは C だけ。A・B で増えていたら区間の判定が壊れている。
+                for t0, t1, cam, _lap in lap3:
+                    grew = [v for t, v in swell if t0 <= t < t1]
+                    if not grew:
+                        continue
+                    if cam == 2:
+                        w(f"  3 周目 C（{t1 - t0:.0f} 秒）で増え具合 {max(grew):.2f} まで")
+                        if t1 - t0 >= 8.0 and max(grew) < 0.3:
+                            verdict("FAIL", f"3 周目 C に {t1 - t0:.0f} 秒居たのに人形が増えていない"
+                                            f"（sndSwell 最大 {max(grew):.2f}）")
+                    elif max(grew) > 0.05:
+                        verdict("FAIL", f"3 周目 カメラ {cam} で人形が増えている"
+                                        f"（sndSwell 最大 {max(grew):.2f} — 増えるのは C だけ）")
+                # 締めの群れと重ならないこと（重なると「たくさん出てくる」が濁る）。
+                # ⚠ 同じ `ev=sum` の行に両方載るので、行ごとに突き合わせる。
+                # ⚠ 1 行だけなら**渡している最中**（群れが 0.25 秒で立ち、一人ぶんが 0.2 秒で引く）。
+                #    2 行以上 ＝ 2 秒以上重なっていたら、渡していないで並んで鳴っている。
+                both = [e for e in events
+                        if e.get("ev") == "sum"
+                        and (fnum(e, "sndSwap", 0.0) or 0.0) > 0.05
+                        and (fnum(e, "sndDolls", 0.0) or 0.0) > 0.5]
+                if len(both) >= 2:
+                    verdict("FAIL", f"締めの群れと入れ替わりの笑いが同時に鳴っている"
+                                    f"（{len(both)} 回・4 周目 A では群れだけが鳴る）")
 
         if intro_ran:
             # ⚠ 鳴らさなくなったものが鳴っていたら**戻ってしまっている**（0057）。
