@@ -59,6 +59,9 @@ namespace FixedCamVr.Streaming
         private static readonly int BlinkId = Shader.PropertyToID("_EyeBlink");
         // 待機中の視線移動の強さ（`canon/LEDGER.md` 0084）。どの目がどこを見るかはシェーダが seed で散らす。
         private static readonly int GazeId = Shader.PropertyToID("_EyeGaze");
+        // 笑い（下瞼が持ち上がる）と、閉じ中か（断片を止める）。`canon/LEDGER.md` 0085。
+        private static readonly int SmileId = Shader.PropertyToID("_EyeSmile");
+        private static readonly int ClosingId = Shader.PropertyToID("_EyeClosing");
         private static readonly int ColorId = Shader.PropertyToID("_EyeColor");
 
         private readonly AnomalyEyesLogic _logic = new();
@@ -175,7 +178,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Apply(float eyes) => _wanted = Mathf.Clamp01(eyes);
 
-        /// <summary>畳む（演出の終わり・中止・ラン開始）。消えるまでに <see cref="AnomalyEyesLogic.FadeOutSec"/>。</summary>
+        /// <summary>畳む（演出の終わり・中止・ラン開始）。閉じ切るまでに <see cref="AnomalyEyesLogic.CloseSec"/>（形で閉じる。薄くしない）。</summary>
         public void Release() => _wanted = 0f;
 
         private void LateUpdate()
@@ -209,7 +212,9 @@ namespace FixedCamVr.Streaming
 
             _mat.SetFloat(BigId, _logic.Big);
             _mat.SetFloat(FieldId, _logic.Field);
-            _mat.SetFloat(SpanId, AnomalyEyesLogic.SwarmSpan);
+            // ⚠ **定数ではなくロジックの値**。開くときと閉じるときで幅が違う（閉じる方が広い）。
+            //   定数を直に渡すと、1 つの目が閉じるのに 0.02 秒しかかからず瞼が下りて見えない。
+            _mat.SetFloat(SpanId, _logic.Span);
             _mat.SetFloat(DensityId, _logic.Density);
             _mat.SetFloat(FadeId, _logic.Fade);
             _mat.SetFloat(IntensityId, _logic.Intensity);
@@ -217,6 +222,8 @@ namespace FixedCamVr.Streaming
             _mat.SetFloat(GainId, gain);
             _mat.SetFloat(BlinkId, blink);
             _mat.SetFloat(GazeId, _logic.Gaze);
+            _mat.SetFloat(SmileId, _logic.Smile);
+            _mat.SetFloat(ClosingId, _logic.Closing);
             _mat.SetColor(ColorId, color);
             _renderer.enabled = true;
 

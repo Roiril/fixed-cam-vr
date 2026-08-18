@@ -185,11 +185,66 @@ namespace FixedCamVr.Streaming.Tests
         public void Closing_KeepsFullOpacity_AndClosesByShape()
         {
             var l = Run(Hint + Stare + Swarm + 1f);
-            l.Tick(AnomalyEyesLogic.CloseSec * 0.5f, wanted: false, density: 1f);
+            l.Tick(AnomalyEyesLogic.CloseSec * 0.72f, wanted: false, density: 1f);
             Assert.That(l.Stage, Is.EqualTo(EyesStage.Fading));
             Assert.That(l.Fade, Is.EqualTo(1f), "閉じている最中に薄くしない");
             Assert.That(l.Field, Is.EqualTo(0f), "いちめんは先に閉じ切っている");
             Assert.That(l.Big, Is.EqualTo(1f), "大きい目はまだ開いたまま（ここが間）");
+            Assert.That(l.Smile, Is.EqualTo(1f), "そのとき大きい目は笑い切っている");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>閉じる順の幅は開くときより広い</b>（2026-08-18 の赤入れ
+        /// 「最後の一つ以外も、目を閉じるようなアニメーションで閉じて」）。
+        /// 同じ幅だと 1 つの目が閉じるのに 30fps で 0.6 コマしかかからず、
+        /// <b>瞼が下りる過程が 1 コマも描かれない</b>（＝ 消えたようにしか見えない）。
+        /// </summary>
+        [Test]
+        public void Closing_TakesLongEnoughForALidToBeSeenComingDown()
+        {
+            var l = Run(Hint + Stare + Swarm + 1f);
+            Assert.That(l.Span, Is.EqualTo(AnomalyEyesLogic.SwarmSpan), "開いているあいだは開く幅");
+
+            l.Tick(0.05f, wanted: false, density: 1f);
+            Assert.That(l.Span, Is.EqualTo(AnomalyEyesLogic.CloseSpan), "閉じ始めたら閉じる幅");
+
+            // 1 つの目が閉じるのにかかる秒数 ＝ 幅 × いちめんが閉じる尺
+            float perEye = AnomalyEyesLogic.CloseSpan
+                           * AnomalyEyesLogic.CloseSec * AnomalyEyesLogic.CloseFieldAt;
+            Assert.That(perEye, Is.GreaterThan(0.08f),
+                        $"1 つ {perEye:0.000}s では瞼が下りて見えない（実物の瞬きは 0.1〜0.15 秒）");
+        }
+
+        /// <summary>
+        /// 開きかけの断片（<c>DROP_EARLY</c>）は<b>闇から現れるときだけ</b>。
+        /// 閉じるときも効かせると、瞼が下りるのではなく<b>砕けて散る</b>。
+        /// </summary>
+        [Test]
+        public void Closing_TellsTheShaderToStopFragmenting()
+        {
+            var l = Run(Hint + Stare + Swarm + 1f);
+            Assert.That(l.Closing, Is.EqualTo(0f), "開いているあいだは断片を止めない");
+            l.Tick(0.05f, wanted: false, density: 1f);
+            Assert.That(l.Closing, Is.EqualTo(1f));
+        }
+
+        /// <summary>
+        /// <b>最後の 1 つは笑ってから閉じる</b>（ユーザー赤入れ
+        /// 「笑っているみたいな感じで、目を細めてから閉じて」）。
+        /// ⚠ 細めるのは <c>Smile</c>（下瞼だけ持ち上げる）であって <c>Big</c> ではない —
+        /// <c>Big</c> を下げると上下から均等に狭まって<b>眠そうな目</b>になる。
+        /// </summary>
+        [Test]
+        public void TheLastEye_SmilesBeforeItShuts()
+        {
+            Assert.That(AnomalyEyesLogic.CloseSmileCurve(AnomalyEyesLogic.CloseFieldAt * 0.5f),
+                        Is.EqualTo(0f), "いちめんが閉じるあいだはまだ笑わない");
+            Assert.That(AnomalyEyesLogic.CloseSmileCurve(AnomalyEyesLogic.CloseSmileAt),
+                        Is.EqualTo(1f), "いちめんが閉じ切ったあとに笑い切る");
+            Assert.That(AnomalyEyesLogic.CloseSmileCurve(1f), Is.EqualTo(1f),
+                        "笑ったまま閉じる（閉じる直前に真顔へ戻らない）");
+            // 笑っているあいだ、開き具合そのものは落ちない
+            Assert.That(AnomalyEyesLogic.CloseBigCurve(AnomalyEyesLogic.CloseSmileAt), Is.EqualTo(1f));
         }
 
         /// <summary>

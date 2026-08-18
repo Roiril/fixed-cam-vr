@@ -212,7 +212,7 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             mat.SetFloat("_EyeBig", l.Big);
             mat.SetFloat("_EyeField", l.Field);
-            mat.SetFloat("_EyeSpan", AnomalyEyesLogic.SwarmSpan);
+            mat.SetFloat("_EyeSpan", l.Span);
             mat.SetFloat("_EyeDensity", l.Density);
             mat.SetFloat("_EyeFade", l.Fade);
             mat.SetFloat("_EyeIntensity", l.Intensity);
@@ -221,6 +221,8 @@ namespace FixedCamVr.Streaming.EditorTools
             //    2026-08-17 に _EyeGaze を足したとき、ここへ足し忘れて
             //    **プレビューだけ視線が動かないまま**「動きが小さい」と誤診した。
             mat.SetFloat("_EyeGaze", l.Gaze);
+            mat.SetFloat("_EyeSmile", l.Smile);
+            mat.SetFloat("_EyeClosing", l.Closing);
         }
 
         private static string F(float v) => v.ToString("F3", CultureInfo.InvariantCulture);

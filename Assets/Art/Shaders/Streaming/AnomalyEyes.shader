@@ -30,6 +30,9 @@ Shader "FixedCamVr/AnomalyEyes"
         _EyeBlink("Blink Amount", Range(0, 1)) = 1
         // 待機中の視線移動の強さ（AnomalyEyesLogic.Gaze）。0 = 正面を見たまま。
         _EyeGaze("Gaze Amount", Range(0, 1)) = 0
+        // 笑い（下瞼が持ち上がる。大きい目だけ）と、閉じ中か（開きかけの断片を止める）。
+        _EyeSmile("Smile", Range(0, 1)) = 0
+        _EyeClosing("Closing", Range(0, 1)) = 0
         // ⚠ 参考画像の目は**ほぼ純白**。作品の暖色は残しつつ、ベージュから白へ寄せてある。
         _EyeColor("Sclera", Color) = (1.0, 0.965, 0.93, 1)
         _EyeRim("Rim (edge)", Color) = (0.62, 0.56, 0.50, 1)
@@ -68,6 +71,8 @@ Shader "FixedCamVr/AnomalyEyes"
                 float _EyeGain;
                 float _EyeBlink;
                 float _EyeGaze;
+                float _EyeSmile;
+                float _EyeClosing;
                 float4 _EyeColor;
                 float4 _EyeRim;
             CBUFFER_END
@@ -124,6 +129,15 @@ Shader "FixedCamVr/AnomalyEyes"
             #define GAZE_SEED_T 11.3
             #define GAZE_SEED_X 3.1
             #define GAZE_SEED_Y 7.7
+            // 動き出す時刻を目ごとにずらす幅（_EyeGaze の 0→1 のあいだに順に動き出す）。
+            // ⚠⚠ **振れ幅を滑らかに上げてはいけない。** それは「ゆっくり動く」＝ サッカードではなく、
+            //    しかも全部が同時に動き出すので「スイッチが入った」に見える（2026-08-18 の赤入れ）。
+            #define GAZE_STAGGER 1.0
+            // 笑い。**下瞼が中央ほど持ち上がり、上瞼も少し下りる**（実物の笑い目 ^ ^ と同じ）。
+            // ⚠ 下だけを上げると「下半分を隠された目」＝ 半円になる（2026-08-18 に絵で見て直した）。
+            //    上も少し下ろすと、高さが元の 4 割まで詰まって**細めた**に見える。
+            #define SMILE_LIFT 0.95     // 下瞼（1.0 で中心線まで）
+            #define SMILE_TOP  0.25     // 上瞼（大きくすると眠そうな目に寄る）
 
             float h11(float p) { p = frac(p * 0.1031); p *= p + 33.33; p *= p + p; return frac(p); }
             float h21(float2 p)
@@ -240,6 +254,13 @@ Shader "FixedCamVr/AnomalyEyes"
                 float up = lidUp * open * lidU * SHAPE_SCALE + tilt;
                 float dn = -lidDn * open * lidD * SHAPE_SCALE + tilt;
 
+                // 笑い。**下瞼だけ**が中央ほど持ち上がる ＝ 上に凸の三日月（大きい目のみ）。
+                // ⚠ open を下げて細めると上下から均等に狭まる ＝ 眠そうな目になる。笑いは下だけ。
+                float smile = _EyeSmile * isBig;
+                up -= smile * SMILE_TOP * lidUp * lidU * open * SHAPE_SCALE;
+                dn += smile * SMILE_LIFT * lidDn * lidD * open * SHAPE_SCALE;
+                dn = min(dn, up);
+
                 float aa = max(fwidth(p.y), 1e-4) * 1.2;
                 float cover = smoothstep(-aa, aa, up - p.y) * smoothstep(-aa, aa, p.y - dn);
                 // ⚠⚠ **画素より細い帯は、その細さのぶんだけ薄くする。**
@@ -260,8 +281,10 @@ Shader "FixedCamVr/AnomalyEyes"
                 float2 cell = floor(p * float2(cells, cells * DROP_ANISO) / SHAPE_SCALE + seed * 7.0);
                 float grain = h21(cell);
                 // 白目の内側にも欠けを入れる（版画の掻き取り）。縁だけだと面が一様に見える。
+                // ⚠⚠ **断片は「闇から現れる」ときだけ。** 閉じるときも開き具合は小さくなるので、
+                //    ここを素通しにすると**瞼が下りるのではなく砕けて散る**（2026-08-18 の赤入れ）。
                 float dropAmt = saturate((1.0 - dEdge) * DROP_EDGE + DROP_INNER
-                                         + (1.0 - prog) * DROP_EARLY);
+                                         + (1.0 - prog) * DROP_EARLY * (1.0 - _EyeClosing));
                 // ⚠⚠ **目尻では欠けさせない。** 高さが 1 セルを下回る所で欠けさせると、
                 //    先細りが階段状の塊に砕ける（実際に 2 度そうなった）。尖りは残す。
                 dropAmt *= smoothstep(0.12, 0.42, lid);
@@ -283,7 +306,9 @@ Shader "FixedCamVr/AnomalyEyes"
                 float2 gB = float2(h21(float2(gi + 1.0, seed * GAZE_SEED_X)),
                                    h21(float2(gi + 1.0, seed * GAZE_SEED_Y))) * 2.0 - 1.0;
                 // 動ける幅。虹彩を GAZE_IRIS_KEEP ぶんだけ縁の内側に残す（残りは瞼が切る）。
-                float reach = max(SHAPE_SCALE - ir * GAZE_IRIS_KEEP, 0.0) * GAZE_REACH * _EyeGaze * open;
+                // ⚠ 目ごとに違う瞬間に動き出す（0/1 の門）。振れ幅は動き出した時点で満額。
+                float gGate = step(h11(seed * 5.7) * GAZE_STAGGER, _EyeGaze * (1.0 + GAZE_STAGGER));
+                float reach = max(SHAPE_SCALE - ir * GAZE_IRIS_KEEP, 0.0) * GAZE_REACH * gGate * open;
                 float2 gaze = lerp(gA, gB, gm) * reach * float2(1.0, GAZE_TILT);
 
                 float2 q = float2(p.x - gaze.x, (p.y - cy - gaze.y) * aspect) / max(ir, 1e-3);

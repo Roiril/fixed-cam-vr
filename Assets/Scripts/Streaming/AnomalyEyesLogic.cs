@@ -49,7 +49,7 @@ namespace FixedCamVr.Streaming
     ///   <see cref="ShowTakeDef.dismissible"/>（演出の側の仕組み・<c>LEDGER</c> 0050）であって、ここではない。
     ///
     /// ⚠ <b>時間はこの異変が出ているあいだだけ進む。</b> 畳まれたら
-    ///   <see cref="FadeOutSec"/> かけて消え、そこで進みが 0 に戻る ＝ <b>次に出るときは必ず兆しから</b>。
+    ///   <see cref="CloseSec"/> かけて閉じ、そこで進みが 0 に戻る ＝ <b>次に出るときは必ず兆しから</b>。
     /// </summary>
     public sealed class AnomalyEyesLogic
     {
@@ -78,16 +78,44 @@ namespace FixedCamVr.Streaming
         /// ⚠ 不透明度（<see cref="Fade"/>）では閉じない。**形で閉じる**
         /// （0028「外から消さない」と同じ考え — 薄くするのは消しゴムであって動きではない）。
         /// </summary>
-        public const float CloseSec = 1.1f;
-
-        /// <summary>いちめんの目が閉じ切るまで（<see cref="CloseSec"/> に対する割合）。ここは速い。</summary>
-        public const float CloseFieldAt = 0.30f;
+        public const float CloseSec = 1.6f;
 
         /// <summary>
-        /// 大きい目だけが残って止まっている終わり。<b>ここがいちばん長い</b>
+        /// いちめんの目が閉じ切るまで（<see cref="CloseSec"/> に対する割合）。
+        /// ⚠⚠ <b>ここは「速い」ではなく「瞼が下りるのが見える」速さ</b>
+        /// （2026-08-18・ユーザー赤入れ「最後の一つ以外も、目を閉じるようなアニメーションで閉じて」）。
+        /// 1 つの目が閉じるのにかかるのは <see cref="CloseSpan"/> × この尺 ＝ <b>0.11 秒</b>
+        /// （実物の瞬きと同じ）。旧値 0.30 × <see cref="SwarmSpan"/> では <b>0.012 秒</b>で、
+        /// 瞼が下りる過程が 1 コマも描かれず「消えた」に見えていた。
+        /// </summary>
+        public const float CloseFieldAt = 0.38f;
+
+        /// <summary>
+        /// <b>大きい目が笑い切るまで</b>（2026-08-18・ユーザー赤入れ
+        /// 「最後の一つは、笑っているみたいな感じで、目を細めてから閉じて」）。
+        /// 下瞼が持ち上がって上に凸の三日月になる（<see cref="Smile"/>）。
+        /// </summary>
+        public const float CloseSmileAt = 0.62f;
+
+        /// <summary>
+        /// 細めたまま止まっている終わり。<b>ここがいちばん長い</b>
         /// （兆しの <see cref="HintHoldAt"/> と対になる ＝ 見開く前と閉じる前に同じ間がある）。
         /// </summary>
-        public const float CloseHoldAt = 0.74f;
+        public const float CloseHoldAt = 0.82f;
+
+        /// <summary>
+        /// <b>閉じるときの順の幅。</b> 開く <see cref="SwarmSpan"/>（0.035）より広い。
+        ///
+        /// ⚠⚠ この 2 つを同じにすると<b>閉じる動きが原理的に描けない</b>。
+        /// 1 つの目が閉じるのにかかる時間 ＝ 幅 × いちめんが閉じる尺 なので、
+        /// 0.035 × 0.61 秒 = <b>0.021 秒</b> ＝ 30fps で 0.6 コマ。瞼は下りずに消える。
+        /// 0.18 なら 0.11 秒 ＝ 3.3 コマで、実物の瞬きと同じ速さになる。
+        /// ⚠ 広げすぎると「順に閉じる」が消えて全部が一斉に閉じる。
+        /// </summary>
+        public const float CloseSpan = 0.18f;
+
+        /// <summary>笑うときに下瞼がどれだけ持ち上がるか（0 = 笑わない）。絵を見て決めた値。</summary>
+        public const float SmileLift = 1.15f;
 
         /// <summary>「開いている」とみなす下限（観測の数え方を 1 か所に固定する）。</summary>
         public const float OpenEpsilon = 0.05f;
@@ -176,6 +204,30 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float Gaze => _gaze;
 
+        /// <summary>
+        /// <b>大きい目の笑い 0..1</b>（2026-08-18・ユーザー赤入れ
+        /// 「最後の一つは、笑っているみたいな感じで、目を細めてから閉じて」）。
+        /// 下瞼が中央ほど持ち上がって<b>上に凸の三日月</b>になる。
+        /// ⚠ <see cref="Big"/> を下げて細めるのとは別物 — あちらは上下から均等に狭まる（眠そうな目）。
+        /// 笑いは<b>下だけが上がる</b>。
+        /// </summary>
+        public float Smile { get; private set; }
+
+        /// <summary>
+        /// <b>いま閉じているか</b> 0..1。シェーダが「開きかけの断片」を止めるのに読む。
+        ///
+        /// ⚠⚠ 断片（<c>DROP_EARLY</c>）は<b>闇から現れるときの姿</b>で、開き具合が小さいほど強く欠ける。
+        /// 閉じるときも開き具合は小さくなるので、そのままだと<b>瞼が下りるのではなく砕けて散る</b>
+        /// （2026-08-18 の赤入れ「目を閉じるようなアニメーションで閉じて」の正体がこれ）。
+        /// </summary>
+        public float Closing => Stage == EyesStage.Fading ? 1f : 0f;
+
+        /// <summary>
+        /// いま配るべき<b>順の幅</b>（開く <see cref="SwarmSpan"/> / 閉じる <see cref="CloseSpan"/>）。
+        /// ⚠ <b>シェーダへ渡すのは必ずこれ</b>。定数を直に渡すと閉じる動きが描けない。
+        /// </summary>
+        public float Span => Stage == EyesStage.Fading ? CloseSpan : SwarmSpan;
+
         /// <summary>いま画に何か出ているか。</summary>
         public bool Visible => _fade > 0.001f && (Big > OpenEpsilon || Field > 0f);
 
@@ -210,6 +262,7 @@ namespace FixedCamVr.Streaming
                 }
                 _fade = 1f;   // 立ち上がりは兆しの曲線そのものが担う（重ねてぼかさない）
                 _close = 0f;
+                Smile = 0f;
                 _t += dt;
                 Advance();
                 // 待機に入ってから視線が動き出す（開く動きと重ねない）。
@@ -239,7 +292,10 @@ namespace FixedCamVr.Streaming
             // ⚠ 開いた順の逆で閉じる。**不透明度は最後まで 1**（薄くするのは動きではない）。
             Field = _fieldAtClose * CloseFieldCurve(_close);
             Big = _bigAtClose * CloseBigCurve(_close);
-            Intensity = _intensityAtClose * CloseFieldCurve(_close);
+            // ⚠ 強度は大きい目と同じ曲線で落とす。いちめんに合わせて落とすと、
+            //   笑っているあいだに瞳孔だけが開いていく（笑い目に見えない）。
+            Intensity = _intensityAtClose * CloseBigCurve(_close);
+            Smile = CloseSmileCurve(_close);
 
             if (_close < 1f) return;
 
@@ -252,6 +308,7 @@ namespace FixedCamVr.Streaming
             Field = 0f;
             Intensity = 0f;
             Density = 0f;
+            Smile = 0f;
         }
 
         // 閉じ始めた瞬間の値（ここから 0 へ落とす）。開き切る前に畳まれても形が飛ばない。
@@ -271,8 +328,23 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 大きい目の閉じ方。<b>いちめんが閉じるあいだも開いたまま → 長い静止 → 最後にすっと閉じる</b>。
+        /// <b>大きい目の笑い。</b> いちめんが閉じ切ってから細まり、以後は笑ったまま閉じる。
+        /// ⚠ <see cref="CloseBigCurve"/>（開き具合）とは別物 — あちらを下げると上下から均等に狭まって
+        /// <b>眠そうな目</b>になる。笑いは<b>下瞼だけが上がる</b>ので、形はシェーダが作る。
+        /// </summary>
+        public static float CloseSmileCurve(float x01)
+        {
+            float x = Mathf.Clamp01(x01);
+            if (x < CloseFieldAt) return 0f;
+            if (x < CloseSmileAt)
+                return Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(CloseFieldAt, CloseSmileAt, x));
+            return 1f;
+        }
+
+        /// <summary>
+        /// 大きい目の閉じ方。<b>いちめんが閉じるあいだも開いたまま → 細めて長い静止 → 最後にすっと閉じる</b>。
         /// 兆し（<see cref="HintCurve"/>）を逆から辿った形。
+        /// ⚠ 細めるのは <see cref="CloseSmileCurve"/> の仕事。ここは<b>最後に閉じ切る</b>ぶんだけを持つ。
         /// </summary>
         public static float CloseBigCurve(float x01)
         {
