@@ -647,11 +647,17 @@ Shader "FixedCamVr/ScreenComposite"
             ///   「機材が壊れた」へ戻り、体験者だけが襲われているという読みが消える（0089 の核心）。
             /// ⚠ 落とし方は 3 乗で、しかも**すぐ落ち始める**。緩やかだと体の外まで一様に濃い縞が
             ///   立って人型が読めなくなる（参考画像は芯が濃く、外へ流れる線ほど疎）。
+            /// ⚠⚠⚠ **縦と横を分ける**（2026-08-19 の 10 巡目・絵で直した）。楕円 1 つで書いていた頃は
+            ///   縦にも 3 乗で落ちるので、**頭と足元で 0 に近づき、そこだけ覆いが掛からずに
+            ///   元の体が見えていた**（実測: 頭の高さで 0.0003）。人型の縦の形を持っているのは
+            ///   `silSmear` の方なので、ここで縦を切る理由が無い — 切ってよいのは
+            ///   **体より上下へ大きく外れた所**（糸が垂れる範囲の外）だけ。
             float SwapReachField(float2 p, float spread)
             {
-                float2 e = p / float2(0.34 + spread * 0.40, 1.00 + spread * 0.18);
-                float k = 1.0 - smoothstep(0.22, 1.00, length(e));
-                return k * k * k;
+                float rx = 0.34 + spread * 0.40;
+                float kx = 1.0 - smoothstep(0.22, 1.00, abs(p.x) / max(rx, 1e-3));
+                float ky = 1.0 - smoothstep(1.02, 1.22, abs(p.y));
+                return kx * kx * kx * ky;
             }
 
             /// その行がどれだけ糸で塞がれているか 0..1。
@@ -678,7 +684,9 @@ Shader "FixedCamVr/ScreenComposite"
                 float h = max(_SwapRect.z, 1e-3);
                 float v = saturate((uv.y - (_SwapRect.y - h)) / (h * 2.0));   // 足元 0 → 頭 1
                 float x = _SwapFromTop > 0.5 ? 1.0 - v : v;
-                const float band = 0.5;   // 前線のぼけ幅（体の高さに対する割合）
+                // ⚠ **広げない**（2026-08-19 の 10 巡目に 0.50 → 0.30）。覆いは前線の後ろでしか
+                //   濃くならないので、ぼけ幅が体の半分もあると**ほどけ切る直前まで体が透けて見える**。
+                const float band = 0.30;  // 前線のぼけ幅（体の高さに対する割合）
                 return saturate((_SwapCover * (1.0 + band) - x) / band);
             }
 
@@ -907,9 +915,21 @@ Shader "FixedCamVr/ScreenComposite"
                             //   `silSmear` は行ごとに横へずれた人型なので、**縁はそれだけで崩れる** —
                             //   外へ散らすために別の場を足す必要が無い。
                             //   `field` は「読みに行く先が体から遠すぎる行」を切るためだけに残す。
-                            float w = saturate(silSmear * 1.15) * saturate(field * 3.0);
-                            float ink = SwapRowInk(rowR, SwapFront(sUv), _SwapKnot) * w;
-                            if (ink > 0.002)
+                            // ⚠⚠⚠ **`field` を重みに掛けない**（2026-08-19 の 10 巡目・絵で直した）。
+                            //   楕円は縦にも 3 乗で落ちるので、**頭と足元で 0 に近づき、そこだけ
+                            //   覆いが掛からずに元の体が見えていた**（実測: 頭の高さで 0.0003）。
+                            //   人型の縦の形を持っているのは `silSmear` の方で、そちらは
+                            //   行ごとに横へずれているから縁は勝手に崩れる。
+                            //   `field` は早期棄却（読みに行く先が体から遠すぎる行を切る）だけに使う。
+                            // ⚠⚠⚠ **芯は歪めていない人型（`sil`）で確実に覆う**（2026-08-19 の 10 巡目）。
+                            //   ずらした人型（`silSmear`）だけで作ると、**体の上を外した行がそのまま
+                            //   透けて元の体が見える**一方、体から離れた所には線が散る。
+                            //   ⇒ **芯 = `sil`（必ず黒くなる）／ ほつれ = `silSmear`（縁を崩す）**。
+                            //   7 巡目の「モデルの輪郭が目立つ」は**切り取り**として使ったときの話で、
+                            //   いまは黒く覆うのが指示（縁は下の `smoothstep` と行ごとのずれで崩れる）。
+                            float w = max(sil, silSmear * 0.85) * saturate(field * 2.0);
+                            float rowInk = SwapRowInk(rowR, SwapFront(sUv), _SwapKnot);
+                            if (rowInk * w > 0.002)
                             {
                                 // ⚠ 線を置く位置は**画面上の座標**（p0）で決める。読む位置（sUv）で
                                 //   決めると、帯を動かすたびに線まで一緒に動いて形が定まらない。
@@ -917,18 +937,20 @@ Shader "FixedCamVr/ScreenComposite"
                                                         floor(sampleUv.y * max(_SwapSmear.x, 4.0)),
                                                         floor(_SwapSeed * max(_SwapSmear.w, 1.0)),
                                                         spread);
-                                // ⚠⚠ **線を乗せるだけでは人が透けて見える**（2026-08-19 ユーザー指摘
-                                //   「人が見えてしまっているから覆うようにして隠して」）。線は行あたり
-                                //   3 本しか無いので、間から元の顔がそのまま読める。
-                                //   ⇒ 地も**帯ごとに歪めたぼかし画**へ置き換えて隠す。
-                                // ⚠ 置き換えの重み（`ink`）は滑らかなので、**切り取りの縁はできない**。
-                                //   6 巡目までは歪めていないマスク（`sil`）を混ぜていたので縁が出ていた。
-                                half3 warped = SampleBase(sUv, lod + _SwapLine.w, chromaBias);
-                                // ⚠ 素材に CG も混ぜる。ほどける当人が CG 側に居ることがある
-                                //   （4 周目 A は人形／Editor は代役）。premultiplied なので rgb はそのまま。
-                                warped = warped * (1.0 - silSmear) + cgS.rgb * sIn;
-                                swapCol = warped * lerp(1.0, SwapInkDark, hit);
-                                swapMix = saturate(ink);
+                                // ⚠⚠⚠ **覆いは黒。中身を 1 画素も見せない**（2026-08-19 の 10 巡目・
+                                //   ユーザー指摘「人の体が全部黒いもので覆われ、自分の体は直接は
+                                //   見られなくなり、黒いものが自分の腕などに合わせて動くことで分かる」）。
+                                //   9 巡目までは**引き伸ばした本人の画素**を置いていたので、
+                                //   明るい体は明るいまま残り、**人がそのまま見えていた**。
+                                //   参考画像の人型も**黒く潰れている**（実測 5 分位 16 ／ 背景の中央値 207）。
+                                //   ⇒ **芯は黒い塊で潰し、縁と外は黒い線だけがほつれる。**
+                                //   自分だと分かるのは中身ではなく**動く形**（腕が人型に付いてくる）。
+                                // ⚠ **裾では 1 画素も出さない。** 黒は明るい壁の上で薄くても目に付くので、
+                                //   `hit * w` をそのまま使うと**体の遠くまで黒い線が散る**（絵で確かめた）。
+                                float amt = max(smoothstep(0.35, 0.78, w),
+                                                hit * smoothstep(0.18, 0.52, w));
+                                swapCol = 0.0;
+                                swapMix = saturate(rowInk * amt);
                             }
                         }
 
