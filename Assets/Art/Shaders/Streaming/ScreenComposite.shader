@@ -139,18 +139,35 @@ Shader "FixedCamVr/ScreenComposite"
         _Overlay2Scale("Overlay 2 Contain Scale (xy)", Vector) = (1, 1, 0, 0)
         _Overlay2Strength("Overlay 2 Strength", Range(0, 1)) = 0
 
-        [Header(Swap morph (visitor becomes the doll))]
-        // 入れ替わりのノイズ（canon/LEDGER.md 0089）。**CG 層（人形）を砂へ化かす**ことで、
-        // 全画面ではなく「映像の中の体験者だけ」にノイズが湧き、人型に固まり、縮み、晴れる。
-        //   _SwapRect  (cx, cy, halfHeight, active) — 人型の投影中心と見かけの半高（枠 UV 空間）
-        //   _SwapCover 人型の中を足元から埋める前線 0..1
-        //   _SwapSolid 砂が実体（人形）へ戻る度合い 0..1
+        [Header(Swap morph (visitor unravels into scanlines))]
+        // 入れ替わりのほどけ（canon/LEDGER.md 0089 / 0090）。全画面ではなく
+        // **映像の中の体験者だけ**が水平の細い線にほどけ、もつれ、人形へ吸い込まれて晴れる。
+        // 線は描き足すのではなく**下の映像を行ごとに水平へ引き伸ばして**作る。
+        //   _SwapRect    (cx, cy, halfHeight, active) — 人型の投影中心と見かけの半高（枠 UV 空間）
+        //   _SwapCover   ほどけの前線 0..1
+        //   _SwapKnot    もつれが塊になっている度合い 0..1（1 で下を完全に隠す）
+        //   _SwapThread  体の外へ流れ出た糸の量 0..1
+        //   _SwapReal    CG が実体として見えている度合い 0..1
+        //   _SwapFromTop 1 = 頭からほどける / 0 = 足元から
         // 唯一の writer は SwapMorphFx（_Glitch を GlitchFx が独占するのと同じ流儀）。
         _SwapRect("Swap Rect (cx, cy, halfH, active)", Vector) = (0.5, 0.5, 0.2, 0)
         _SwapCover("Swap Cover", Range(0, 1)) = 0
-        _SwapSolid("Swap Solid", Range(0, 1)) = 0
-        // 砂のざわつきの時計（秒）。**_Time を使わない** — Editor のプレビューは 1 エディタフレームの中で
-        // 何コマも描くので、_Time だと連番 PNG の砂が全コマ同じになる（_GlitchSeed と同じ理由）。
+        _SwapKnot("Swap Knot", Range(0, 1)) = 0
+        _SwapThread("Swap Thread", Range(0, 1)) = 0
+        _SwapReal("Swap Real", Range(0, 1)) = 0
+        _SwapFromTop("Swap Unravels From Top", Range(0, 1)) = 1
+        // 線の濃さ。**引き伸ばした映像の色に掛ける**（単色を置かない）。
+        // xy = 黒く潰れる行 / zw = 明るいまま残る行。参考画像はこの 2 種が混ざっている。
+        // 監視カメラの画は場所で明るさが桁違いなので、固定色だと暗い所で 1 本も見えない。
+        _SwapInk("Swap Line Ink (dark mul, dark add, pale mul, pale add)", Vector) = (0.16, 0.010, 1.30, 0)
+        // 走査線の刻み。x = **枠の縦**に対する行数（映像の走査線と同じ密度に置く）/
+        // y = 引き伸ばしの最大倍率 / z = 水平のずれ幅（人型の半高に対する割合） /
+        // w = 行の組み替えの速さ (Hz)。
+        // ⚠ y と z を上げすぎると、引き伸ばした先が体の中を指す画素が画面じゅうに出て
+        //   全面が横線になる（`SwapReachField` が抑えているが、そちらも一緒に広がる）。
+        _SwapSmear("Swap Smear (rows, stretch, slip, hz)", Vector) = (180, 2.8, 0.16, 14)
+        // 糸のうねりの時計（秒）。**_Time を使わない** — Editor のプレビューは 1 エディタフレームの中で
+        // 何コマも描くので、_Time だと連番 PNG の糸が全コマ同じになる（_GlitchSeed と同じ理由）。
         _SwapSeed("Swap Seed (seconds)", Float) = 0
     }
 
@@ -191,8 +208,13 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _Overlay2Scale;
                 float _Overlay2Strength;
                 float4 _SwapRect;
+                float4 _SwapInk;
+                float4 _SwapSmear;
                 float _SwapCover;
-                float _SwapSolid;
+                float _SwapKnot;
+                float _SwapThread;
+                float _SwapReal;
+                float _SwapFromTop;
                 float _SwapSeed;
                 float _SplitX;
                 float _SplitFlipLeft;
@@ -322,6 +344,27 @@ Shader "FixedCamVr/ScreenComposite"
             }
 
             half4 SampleCgSoft(float2 uv, float lod) { return SampleCgTent(uv, CgSoftenTexels(lod)); }
+
+            /// 枠 UV → CG レイヤの UV。**contain-fit ＋ 実レンズの歪み**を通す。
+            ///
+            /// 実レンズの歪みを CG にも掛ける。CG はピンホール、実映像は樽型に歪んでいるので、
+            /// 掛けないと画面の端で必ずずれる（広角ほど大きい）。
+            /// **除算モデル**（Fitzgibbon）: r_u = r_d / (1 + k1 r_d^2)。多項式モデルと違って
+            /// 順・逆の両方に解析解があるので、卓の順投影（較正・ワイヤー重畳）とこの逆変換が
+            /// **厳密に一致する**。互いに近似の逆だと画面端で食い違い、較正の検証が成立しない。
+            ///
+            /// ⚠ 入れ替わりのスメアも**この関数で人型マスクを引く**。写経した変換を別に持つと、
+            ///   歪みや contain-fit を直したときに片方だけ取り残されて黙って食い違う。
+            float2 CgUvOf(float2 uv, out float inside)
+            {
+                float2 uvC = ContainUv(uv, _CgScale.xy, inside);
+                if (abs(_CgLens.x) > 1e-5)
+                {
+                    float2 n = (uvC - _CgLens.yz) / max(_CgFocalN.xy, 1e-4);
+                    uvC = _CgLens.yz + n / (1.0 + _CgLens.x * dot(n, n)) * _CgFocalN.xy;
+                }
+                return uvC;
+            }
 
             // 実写だけが受けている「色の粗さ」を CG にも掛ける。
             //
@@ -466,46 +509,126 @@ Shader "FixedCamVr/ScreenComposite"
                 return PickCoarse(blocks) ? 1.0 : 0.0;
             }
 
-            // ---- 入れ替わりのノイズ（canon/LEDGER.md 0089）--------------------------------
+            // ---- 入れ替わりのほどけ（canon/LEDGER.md 0089 / 0090）-------------------------
             //
             // 全画面の砂嵐は「機材が壊れた」で説明が付くので、その最中に何が入れ替わっても
-            // **入れ替わったことにならない**。だから砂は**人型の内側だけ**に湧かせる。
-            // 形は CG 層のアルファ（人形のシルエット）をそのまま使う ＝ 腕の姿勢も体の向きも
-            // 実際の体験者に付いてくる。背丈は SwapMorphFx が人形の縮尺で動かす。
+            // **入れ替わったことにならない**。だから乱れは**人型に紐づいて**起こす。
+            //
+            // ⚠⚠ **描き足した線ではなく、その人の画素を引き伸ばす**
+            //   （2026-08-19・ユーザーが参考画像を 3 枚渡して 2 度目の作り直し）。
+            //   参考画像は人型が**水平の細い線**に分解され、線ごとに横へずれて伸びている絵で、
+            //   **線の中身はその人自身の画素**。だから新しい絵を上に描くのではなく、
+            //   **下の映像を行ごとに水平へ引き伸ばして置き換える**。
+            //
+            //   1 度目（等高線の渦）を捨てた理由は焼いた絵に出ている:
+            //     ① 人型が読めなくなる（画面の広い範囲へ木目が広がり、どこが人だったか分からない）
+            //     ② 中身が体験者の画素でないので「本人がほどけた」に 1 ビットも見えない
+            //
+            // ⚠ **マスク（どこをほどくか）は当面 CG の人型シルエット。** 中身は既に本人の画素なので、
+            //   人体検知（MediaPipe 等）へ差し替えるときに直すのは `silSmear` / `sil` の 2 行で済む。
 
-            /// 砂の粒。**映像と同じ格子**で刻む（_CoarseBlocks が立っていればその目）。
-            /// 枠の座標で細かく刻むと、粗くなった画の上に画より細かい砂が乗る ＝ 符号化は砂を
-            /// 真っ先に捨てるので、物理的に起こりえない絵になる（センサの粒と同じ理屈）。
-            float2 SwapCell(float2 uv)
+            /// 人型を原点、身長の半分を 1 とする座標。線の密度と広がりが figure に付いてくるので、
+            /// 縮んでいく間も「同じ糸が集まっている」に見える（画素で刻むと縮小＝別物になる）。
+            float2 SwapFigureSpace(float2 uv)
             {
-                float bx = _CoarseBlocks > 1.0 ? _CoarseBlocks : 320.0;
-                float2 b = float2(bx, max(4.0, floor(bx / max(_FrameAspect, 1e-3))));
-                return floor(uv * b);
+                float h = max(_SwapRect.z, 1e-3);
+                return float2((uv.x - _SwapRect.x) * _FrameAspect, uv.y - _SwapRect.y) / h;
             }
 
-            /// 人型の中を足元から埋める前線。0 = まだ来ていない / 1 = 埋まった。
-            /// **足元から上へ**進むのは、そちらが「湧いてくる」に読めるから
-            /// （上から降ってくると、装置ではなく何かが降りてきたことになる）。
+            /// figure 空間 → 枠 UV（<see cref="SwapFigureSpace"/> の逆）。
+            float2 SwapFrameUv(float2 p)
+            {
+                float h = max(_SwapRect.z, 1e-3);
+                return float2(_SwapRect.x + p.x * h / max(_FrameAspect, 1e-3),
+                              _SwapRect.y + p.y * h);
+            }
+
+            /// 走査線スメアの読み出し先。**この uv で映像も人型マスクも引く**（別々に取ると、
+            /// 線が体の外へ流れた所でマスクが付いてこず、糸が体の縁でぶつ切りになる）。
+            ///
+            /// 行ごとに 3 つを掛ける:
+            ///   ① 縦を量子化する（その行の中心 1 本を行じゅうが読む）＝ 走査線になる
+            ///   ② 人型の中心から外へ引き伸ばす。**行ごとに倍率を変える**（同じだとただの拡大）
+            ///   ③ 水平にずらす。伸びた行ほど大きく流れる
+            ///
+            /// ⚠ **行の乱数は時間で組み替える。** 固定すると 2.6 秒ずっと同じ縞が貼り付いて、
+            ///   ほどけている最中なのに絵が止まって見える。
+            /// ⚠⚠ **行は枠の座標で刻む。figure 空間で刻んではいけない**（2026-08-19 に 1 度やった）。
+            ///   人型は縮む段で 1.65m → 0.40m になるので、figure に紐づけると行の高さも 1/4 になり、
+            ///   **縮み切る前に線が 1 画素を割って消える**（実際そうなり、縮む段が無地になった）。
+            ///   走査線は装置が持つものなので、画面に固定されているのが物理的にも正しい。
+            float2 SwapSmearUv(float2 uv, float reach, float t, out float rowR, out float rowS)
+            {
+                float rows = max(_SwapSmear.x, 4.0);
+                float row = floor(uv.y * rows);
+                float tick = floor(t * max(_SwapSmear.w, 1.0));
+                rowR = Hash21(float2(row, tick));
+                rowS = Hash21(float2(row + 137.0, tick + 41.0));
+
+                // 行の中心 1 本を行じゅうが読む（＝縦解像度が落ちて走査線になる）。
+                // 水平の動きだけは人型の中心を基準にするので figure 空間で解く。
+                float2 p = SwapFigureSpace(float2(uv.x, (row + 0.5) / rows));
+                // ⚠⚠ **どの行にも下限を置く。** 伸びもずれも 0 に近い行が残ると、
+                //   ほどけ切った瞬間にそこだけ元の顔が読めて「覆われて見えなくなった」が成立しない
+                //   （素直に rowS² と (rowR-0.5) を掛けると、行の半分近くがほぼ動かない）。
+                float stretch = 1.0 + reach * (0.55 + rowS * rowS * _SwapSmear.y);
+                p.x /= stretch;
+                float dir = rowR < 0.5 ? -1.0 : 1.0;
+                float mag = 0.30 + abs(rowR * 2.0 - 1.0) * 0.70;      // 0.30 〜 1.00
+                p.x -= dir * mag * reach * _SwapSmear.z * (0.55 + rowS * 0.80);
+                return SwapFrameUv(p);
+            }
+
+            /// 糸が届く範囲（人型を包む楕円）。<paramref name="spread"/> で外へ広がる。
+            ///
+            /// ⚠⚠ **これが無いと画面全体が横線になる**（2026-08-19 に 1 度そうなった）。
+            ///   引き伸ばした uv が体の中を指す画素は**体から遠くてもいくらでも出る**ので、
+            ///   「どこまで糸が届くか」は別に決めなければならない。全域が乱れた瞬間に
+            ///   「機材が壊れた」へ戻り、体験者だけが襲われているという読みが消える（0089 の核心）。
+            /// ⚠ 落とし方は 3 乗で、しかも**すぐ落ち始める**。緩やかだと体の外まで一様に濃い縞が
+            ///   立って人型が読めなくなる（参考画像は芯が濃く、外へ流れる線ほど疎）。
+            float SwapReachField(float2 p, float spread)
+            {
+                float2 e = p / float2(0.34 + spread * 0.40, 1.00 + spread * 0.18);
+                float k = 1.0 - smoothstep(0.22, 1.00, length(e));
+                return k * k * k;
+            }
+
+            /// その行がどれだけ糸で塞がれているか 0..1。
+            ///
+            /// ⚠ <paramref name="knot"/> が 1 のときは**全部の行**が塞がる。差し替えの 1 フレームが
+            ///   そこなので、隙間が残ると下の映像が入れ替わる瞬間が見えてしまう。
+            ///   緩むほど行が抜けて、隙間から下が覗く（参考画像も線の間に背景が見えている）。
+            float SwapRowInk(float rowR, float front, float knot)
+            {
+                float gate = smoothstep(0.72, 0.16, rowR);   // 半分ほどの行が濃く残る
+                return saturate(front * lerp(gate, 1.0, saturate(knot)));
+            }
+
+            /// ほどけの前線。0 = まだ / 1 = ほどけた。
+            /// **行き先の方向へほどける** — 人 → 人形は頭から（人形は足元に現れる）、
+            /// 人形 → 人は足元から（人は上へ育つ）。
             float SwapFront(float2 uv)
             {
-                float half_ = max(_SwapRect.z, 1e-3);
-                float v = saturate((uv.y - (_SwapRect.y - half_)) / (half_ * 2.0)); // 足元 0 → 頭 1
-                const float band = 0.45;   // 前線のぼけ幅（体の高さに対する割合）
-                return saturate((_SwapCover * (1.0 + band) - v) / band);
+                float h = max(_SwapRect.z, 1e-3);
+                float v = saturate((uv.y - (_SwapRect.y - h)) / (h * 2.0));   // 足元 0 → 頭 1
+                float x = _SwapFromTop > 0.5 ? 1.0 - v : v;
+                const float band = 0.5;   // 前線のぼけ幅（体の高さに対する割合）
+                return saturate((_SwapCover * (1.0 + band) - x) / band);
             }
 
-            /// この画素が砂になっているか 0..1。**しきい値は時間で動かさない** —
-            /// 動かすと埋まった所がちらちら戻り、「覆われた」に見えない。
-            float SwapMask(float2 uv)
+            /// 走査線の色。**素材は引き伸ばした下の映像そのもの**（新しい色を作らない）。
+            /// 行ごとに濃さを振って、参考画像の「黒く潰れた線」と「背景と同じ明るさの線」を混ぜる。
+            ///
+            /// ⚠ **単色で塗らない。** 塗ると黒い穴になって線に見えないし、
+            ///   その画素が「誰だったか」の手掛かりが 1 ビットも残らない。
+            /// ⚠ **中間色を作らない。** 素直に補間すると行の半分が元の色のままになり、
+            ///   線ではなく「少しぼけた画」に見える。参考画像の線は濃い / 淡いの 2 種が混ざっている。
+            half3 SwapLineColor(half3 c, float rowS)
             {
-                float pick = Hash21(SwapCell(uv) * 1.37 + 11.0);
-                return saturate((SwapFront(uv) - pick) * 6.0);
-            }
-
-            /// 砂そのものの明るさ。こちらは**時間で暴れる**（_SignalLost の砂嵐と同じ手触り）。
-            float SwapStatic(float2 uv)
-            {
-                return Hash21(SwapCell(uv) + floor(_SwapSeed * 24.0) * 7.0);
+                half3 dark = max(c * _SwapInk.x + _SwapInk.y, 0.0);
+                half3 pale = max(c * _SwapInk.z + _SwapInk.w, 0.0);
+                return lerp(pale, dark, smoothstep(0.42, 0.58, rowS));
             }
 
                         // 演出としての「映像の乱れ」の位置ずれ成分。帯（走査線ブロック）の一部だけを水平に飛ばし、
@@ -661,32 +784,76 @@ Shader "FixedCamVr/ScreenComposite"
                 {
                     // 乱れ・低解像度化は人形にも同じだけ掛ける（映像だけが壊れて人形が無傷だと必ず浮く）。
                     float cgIn;
-                    float2 uvC = ContainUv(sampleUv, _CgScale.xy, cgIn);
-                    // 実レンズの歪みを CG にも掛ける。CG はピンホール、実映像は樽型に歪んでいるので、
-                    // 掛けないと画面の端で必ずずれる（広角ほど大きい）。
-                    // **除算モデル**（Fitzgibbon）: r_u = r_d / (1 + k1 r_d^2)。多項式モデルと違って
-                    // 順・逆の両方に解析解があるので、卓の順投影（較正・ワイヤー重畳）とこの逆変換が
-                    // **厳密に一致する**。互いに近似の逆だと画面端で食い違い、較正の検証が成立しない。
-                    if (abs(_CgLens.x) > 1e-5)
-                    {
-                        float2 n = (uvC - _CgLens.yz) / max(_CgFocalN.xy, 1e-4);
-                        uvC = _CgLens.yz + n / (1.0 + _CgLens.x * dot(n, n)) * _CgFocalN.xy;
-                    }
+                    float2 uvC = CgUvOf(sampleUv, cgIn);
                     // 人形にも**映像と同じ伝送の痩せ**を掛ける（装置を通して見えている以上、同じだけ落ちる）。
                     half4 cg = SampleCgSoft(uvC, lod);
                     cg.rgb = CgChromaMatched(cg, uvC, lod);
 
-                    // 入れ替わりのノイズ。**人形を砂へ化かす**（別の層を足さない）ので、
-                    // 砂は人形とまったく同じ場所・同じ形・同じ後段（post・粒・管の縁）を通る。
                     // ⚠ premultiplied を崩さない — アルファに掛けた分は rgb にも掛ける。
                     half aCg = saturate(cg.a);
                     half3 rgbCg = cg.rgb;
                     if (_SwapRect.w > 0.5)
                     {
-                        float m = SwapMask(screenUv);
-                        float st = SwapStatic(screenUv);
-                        aCg *= m;
-                        rgbCg = lerp(half3(st, st, st) * aCg, cg.rgb * m, saturate(_SwapSolid));
+                        // 入れ替わりのほどけ。**下の映像そのものを行ごとに水平へ引き伸ばす**ので、
+                        // ほどけている最中も「誰がほどけているか」が画素に残っている。
+                        // ⚠ 人型（CG）と同じ `sampleUv` から起こす — 乱れが乗ったフレームで
+                        //   糸だけ元の位置に残ると、そこだけ別の層に見える。
+                        float sil = saturate(aCg);                    // その画素の人型（実体の形）
+                        float2 p0 = SwapFigureSpace(sampleUv);
+                        float spread = saturate(_SwapThread);
+                        float frontHere = SwapFront(sampleUv);        // この画素までほどけが来たか
+
+                        // 早い棄却。糸が届くのは体を包む楕円の中だけ（`SwapReachField`）なので、
+                        // 画面の大半はここで抜ける（本編は 1 画素も触らない）。
+                        // ⚠ ここでは**いちばん遠くまで届く行**の範囲で判定する（下の `span` の上限）。
+                        if (sil > 0.002 || SwapReachField(float2(p0.x / 1.30, p0.y), spread) > 0.002)
+                        {
+                            float rowR, rowS;
+                            float2 sUv = SwapSmearUv(sampleUv, spread, _SwapSeed, rowR, rowS);
+
+                            // ⚠ **行ごとに届く距離を変える。** 全行を同じ幅で切ると、
+                            //   縁が垂直な直線になって「バーコード」に見える（2026-08-19 の絵）。
+                            //   参考画像は長い線と短い線が混ざり、塊の縁が不揃いにほつれている。
+                            float span = 0.40 + rowS * 0.90;
+                            float field = SwapReachField(float2(p0.x / span, p0.y), spread);
+
+                            // 引き伸ばした先が体の中なら、この画素は**体の外へ流れ出た糸**。
+                            // ⚠ **同じ uv で映像と人型マスクの両方を引く。** 別々に取ると、
+                            //   線が体の外へ出た所でマスクが付いてこず、糸が縁でぶつ切りになる。
+                            float sIn;
+                            half4 cgS = SampleCgSoft(CgUvOf(sUv, sIn), lod);
+                            float silSmear = saturate(cgS.a) * sIn;
+                            // ⚠ **体そのもの（sil）には範囲を掛けない。** 掛けると人型の縁が削れて、
+                            //   ほどけ切る瞬間に体の輪郭から下の映像が漏れる。
+                            float reach = max(sil, silSmear * field);
+
+                            // 前線は**行の位置**で判定する（走査線の境目でほどけ方が揃う）。
+                            float ink = SwapRowInk(rowR, SwapFront(sUv), _SwapKnot) * reach;
+                            if (ink > 0.002)
+                            {
+                                // 引き伸ばす先は post の前の合成済み映像。**同じ関数で引く**ので、
+                                // 左右分割も凍結も差し替え素材も一緒にほどける。
+                                half3 smeared = SampleBase(sUv, lod + 0.35, chromaBias);
+                                // ⚠⚠ **素材に CG も混ぜる。** ほどける当人が CG 側に居ることがある
+                                //   （4 周目 A は人形が CG／Editor プレビューは体験者の代役が CG）。
+                                //   混ぜないとその当人だけスメアの素材から抜け落ち、
+                                //   **本人が消えて背景だけが横に伸びる**（2026-08-19 に絵で確かめた）。
+                                //   premultiplied なので rgb はそのまま足す。
+                                smeared = smeared * (1.0 - silSmear) + cgS.rgb * sIn;
+                                col = lerp(col, SwapLineColor(smeared, rowS), saturate(ink));
+                            }
+                        }
+
+                        // 糸は CG 層ではなく**映像の側**に描いたので、CG に残るのは実体だけ。
+                        // ⚠⚠ **ほどけが来ていない所は実体のまま残す**（2026-08-19 に絵で確かめて直した）。
+                        //   `_SwapReal` だけで消すと、**入れ替わりが始まった 1 フレーム目に当人が丸ごと
+                        //   消える**（実体は CG 層に居て、糸はまだ前線のぶんしか出ていないため）。
+                        //   体験者から見ると「ノイズに覆われて見えなくなる」ではなく「消えてから
+                        //   ノイズが出る」になる。実機の 4 周目 A（人形が CG）でも同じ。
+                        //   前線の後ろは糸が引き受け、前は実体が立っている。
+                        float body = saturate(max(_SwapReal, 1.0 - frontHere));
+                        aCg = sil * body;
+                        rgbCg = cg.rgb * body;
                     }
 
                     // premultiplied over（Porter-Duff 1984）。straight alpha の lerp から変えたのは、

@@ -9,7 +9,7 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
-    /// <b>入れ替わりのノイズ</b>（`canon/LEDGER.md` 0089）を連番 PNG へ焼く。Play しない。
+    /// <b>入れ替わりのほどけ</b>（`canon/LEDGER.md` 0089 / 0090）を連番 PNG へ焼く。Play しない。
     ///
     /// 音と違って画は撮れるが、**この演出は 2.6 秒の時間の形そのもの**なので静止画では判定できない
     /// （砂が湧く速さ・縮む速さ・晴れ方は 1 枚では 1 ビットも読めない）。だから連番で焼いて
@@ -17,13 +17,14 @@ namespace FixedCamVr.Streaming.EditorTools
     ///
     /// <b>本番と同じものを使う</b>（写経した式は必ずいつか食い違う）:
     ///   - 進み方は <see cref="SwapMorphLogic"/>（実機の <see cref="SwapMorphFx"/> が回すのと同じ純ロジック）
-    ///   - 砂の形は Stage が描く**人形のシルエットそのもの**（実機と同じ RT・同じ縮尺）
+    ///   - 糸の形は Stage が描く**人形のシルエットそのもの**（実機と同じ RT・同じ縮尺）
     ///   - 合成は実シェーダ <c>FixedCamVr/ScreenComposite</c> の
-    ///     <c>_SwapRect</c> / <c>_SwapCover</c> / <c>_SwapSolid</c> / <c>_SwapSeed</c>
+    ///     <c>_SwapRect</c> / <c>_SwapCover</c> / <c>_SwapKnot</c> / <c>_SwapThread</c> /
+    ///     <c>_SwapReal</c> / <c>_SwapFromTop</c> / <c>_SwapSeed</c>
     ///
     /// ⚠⚠ <b>1 つだけ実機と違う</b>: 実機の「体験者」は<b>映像の中</b>に居る（ライブ / 録画の実写）。
     ///   Editor には体験者が居ないので、**人の姿を CG の人体（Remy）で代役**にしてある。
-    ///   砂に覆われるのが実写か CG かの違いだけで、覆う側（シルエット・砂・段の進み）は同一。
+    ///   ほどけるのが実写か CG かの違いだけで、ほどく側（シルエット・糸・段の進み）は同一。
     ///   キャプションに毎回そう書く（何の絵か分からない PNG は証拠にならない）。
     ///
     /// 出力は <c>Assets/Screenshots/swap/</c>。
@@ -157,14 +158,15 @@ namespace FixedCamVr.Streaming.EditorTools
             float toH = toDoll ? Mathf.Max(0.05f, doll.heightM) : SwapHumanHeightM;
 
             int n = 0;
-            float capH = fromH, capCover = 0f, capSolid = 0f;
+            float capH = fromH, capCover = 0f, capKnot = 0f, capThread = 0f;
+            float capReal = toDoll ? 0f : 1f;
             ShowActorDef stageActor = first;
 
             void Shoot(string phase, float sec)
             {
                 string cap = $"{title}   {phase}   t={sec:0.00}s\n" +
-                             $"figure height {capH:0.00}m   sand cover {capCover:0.00}   " +
-                             $"solid {capSolid:0.00}\n{note}";
+                             $"figure height {capH:0.00}m   unravel {capCover:0.00}   " +
+                             $"knot {capKnot:0.00}   thread {capThread:0.00}   real {capReal:0.00}\n{note}";
                 stage.Composite(plate, cgVisible: true, post: post, caption: cap);
                 stage.Save($"f{frameBase + n:0000}.png");
                 n++;
@@ -176,7 +178,7 @@ namespace FixedCamVr.Streaming.EditorTools
             stage.PlaceActor(first, standXz, standYaw, geom);
             stage.SetActorHeight(first, fromH, geom);
             stage.SetGroundMul(1f);
-            stage.SetSwap(false, 0f, 0f, 0f);
+            stage.SetSwap(false, SwapMorphLogic.Sample.Idle, toDoll, 0f);
             for (int i = 0; i < SwapHeadFrames; i++)
                 Shoot("before", -(SwapHeadFrames - i) / (float)SwapFps);
 
@@ -207,8 +209,9 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 stage.SetActorHeight(cur, s.heightM, geom);
                 stage.SetGroundMul(s.ground);
-                stage.SetSwap(true, s.cover, s.solid, t);
-                capH = s.heightM; capCover = s.cover; capSolid = s.solid;
+                stage.SetSwap(true, s, toDoll, t);
+                capH = s.heightM; capCover = s.cover; capKnot = s.knot;
+                capThread = s.thread; capReal = s.real;
                 Shoot(PhaseLabel(s, dir, covered), t);
             }
 
@@ -221,10 +224,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 stage.UseActor(last);
                 stage.PlaceActor(last, standXz, standYaw, geom);
             }
-            stage.SetSwap(false, 0f, 0f, 0f);
+            stage.SetSwap(false, SwapMorphLogic.Sample.Idle, toDoll, 0f);
             stage.SetGroundMul(1f);
             stage.SetActorHeight(last, toH, geom);
-            capH = toH; capCover = 0f; capSolid = toDoll ? 1f : 0f;
+            capH = toH; capCover = 0f; capKnot = 0f; capThread = 0f;
+            capReal = toDoll ? 1f : 0f;
             for (int i = 0; i < SwapTailFrames; i++) Shoot("after", t + (i + 1) / (float)SwapFps);
 
             return n;
@@ -237,10 +241,11 @@ namespace FixedCamVr.Streaming.EditorTools
         /// </summary>
         private static string PhaseLabel(SwapMorphLogic.Sample s, SwapMorphLogic.Dir dir, bool covered)
         {
-            if (!covered) return "1 sand rises over the figure";
-            if (s.solid > 0.001f) return "3 sand settles into the doll";
-            if (s.cover < 0.999f) return "3 sand drains away";
-            return dir == SwapMorphLogic.Dir.ToDoll ? "2 shrinks to doll size" : "2 grows to human size";
+            if (!covered) return "1 unravels into thread";
+            if (s.real > 0.001f) return "3 thread settles into the doll";
+            if (s.thread < SwapMorphLogic.ThreadAtPull - 1e-3f) return "3 thread fades";
+            return dir == SwapMorphLogic.Dir.ToDoll
+                ? "2 drawn in, down to doll size" : "2 drawn out, up to human size";
         }
 
         /// <summary>

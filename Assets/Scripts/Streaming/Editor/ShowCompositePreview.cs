@@ -889,19 +889,22 @@ namespace FixedCamVr.Streaming.EditorTools
             // `ShowSwapPreview` だけが使う。**本番と同じ uniform を同じシェーダへ書く**ので、
             // ここで見えた絵はそのまま実機の絵になる（別の式を書かない）。
 
-            private bool _swapActive;
-            private float _swapCover, _swapSolid, _swapSeed;
+            private bool _swapActive, _swapFromTop;
+            private float _swapCover, _swapKnot, _swapThread, _swapReal, _swapSeed;
 
             /// <summary>影・接地影の濃さの倍率（砂の人型は光を遮らない）。</summary>
             private float _groundMul = 1f;
 
             /// <summary>入れ替わりの進みを渡す。uniform は <see cref="Composite"/> が書く
             /// （矩形は contain-fit が確定してからでないと解けないため）。</summary>
-            public void SetSwap(bool active, float cover, float solid, float seed)
+            public void SetSwap(bool active, in SwapMorphLogic.Sample s, bool fromTop, float seed)
             {
                 _swapActive = active;
-                _swapCover = Mathf.Clamp01(cover);
-                _swapSolid = Mathf.Clamp01(solid);
+                _swapCover = Mathf.Clamp01(s.cover);
+                _swapKnot = Mathf.Clamp01(s.knot);
+                _swapThread = Mathf.Clamp01(s.thread);
+                _swapReal = Mathf.Clamp01(s.real);
+                _swapFromTop = fromTop;
                 _swapSeed = seed;
             }
 
@@ -1291,7 +1294,10 @@ namespace FixedCamVr.Streaming.EditorTools
                     swapRect = new Vector4(sr.x, sr.y, sr.z, 1f);
                 _compositeMat.SetVector("_SwapRect", swapRect);
                 _compositeMat.SetFloat("_SwapCover", _swapActive ? _swapCover : 0f);
-                _compositeMat.SetFloat("_SwapSolid", _swapActive ? _swapSolid : 0f);
+                _compositeMat.SetFloat("_SwapKnot", _swapActive ? _swapKnot : 0f);
+                _compositeMat.SetFloat("_SwapThread", _swapActive ? _swapThread : 0f);
+                _compositeMat.SetFloat("_SwapReal", _swapActive ? _swapReal : 0f);
+                _compositeMat.SetFloat("_SwapFromTop", _swapFromTop ? 1f : 0f);
                 _compositeMat.SetFloat("_SwapSeed", _swapSeed);
 
                 SetCaption(caption);

@@ -6,11 +6,12 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// <b>入れ替わりのノイズ</b>の実体（`canon/LEDGER.md` 0089）。
-    /// <c>_SwapRect</c> / <c>_SwapCover</c> / <c>_SwapSolid</c> uniform の**唯一の writer**
+    /// <b>入れ替わりのほどけ</b>の実体（`canon/LEDGER.md` 0089 / 0090）。
+    /// <c>_SwapRect</c> / <c>_SwapCover</c> / <c>_SwapKnot</c> / <c>_SwapThread</c> /
+    /// <c>_SwapReal</c> / <c>_SwapFromTop</c> / <c>_SwapSeed</c> uniform の**唯一の writer**
     /// （<see cref="GlitchFx"/> が <c>_Glitch</c> を独占するのと同じ流儀）。
     ///
-    /// 全画面の砂嵐で入れ替えるのをやめ、**映像の中の体験者だけ**を砂で覆って入れ替える。
+    /// 全画面の砂嵐で入れ替えるのをやめ、**映像の中の体験者だけ**を糸にほどいて入れ替える。
     /// 進み方は <see cref="SwapMorphLogic"/>（純ロジック・テストあり）、形は
     /// <see cref="ShowCgLayer"/> が描く人形のシルエットそのもの。
     ///
@@ -29,7 +30,10 @@ namespace FixedCamVr.Streaming
     {
         private static readonly int SwapRectId = Shader.PropertyToID("_SwapRect");
         private static readonly int SwapCoverId = Shader.PropertyToID("_SwapCover");
-        private static readonly int SwapSolidId = Shader.PropertyToID("_SwapSolid");
+        private static readonly int SwapKnotId = Shader.PropertyToID("_SwapKnot");
+        private static readonly int SwapThreadId = Shader.PropertyToID("_SwapThread");
+        private static readonly int SwapRealId = Shader.PropertyToID("_SwapReal");
+        private static readonly int SwapFromTopId = Shader.PropertyToID("_SwapFromTop");
         private static readonly int SwapSeedId = Shader.PropertyToID("_SwapSeed");
 
         [Tooltip("スクリーンの Renderer。null なら同じ GameObject から取る。")]
@@ -63,8 +67,11 @@ namespace FixedCamVr.Streaming
         /// <summary>いまの向き（テレメトリ用）。</summary>
         public SwapMorphLogic.Dir Direction => _logic.Direction;
 
-        /// <summary>いま砂が人型をどこまで埋めているか 0..1（テレメトリ用。**画に出た側**）。</summary>
+        /// <summary>ほどけの前線 0..1（テレメトリ用。**画に出た側**）。</summary>
         public float Cover { get; private set; }
+
+        /// <summary>もつれが下を隠している度合い 0..1（テレメトリ用。**画に出た側**）。</summary>
+        public float Knot { get; private set; }
 
         /// <summary>いまの人型の背丈 (m)（テレメトリ用。**画に出た側**）。</summary>
         public float HeightM { get; private set; }
@@ -130,7 +137,7 @@ namespace FixedCamVr.Streaming
             // 1 フレーム目から正しい背丈で出す（Apply 直後の 1 コマだけ実寸で出るのを防ぐ）。
             cgLayer.SetSwapHeight(toDoll ? human : doll);
             cgLayer.SetGroundContact(toDoll ? 0f : 1f);
-            Write(cover: 0f, solid: 0f);
+            Write(SwapMorphLogic.Sample.Idle, toDoll);
             return true;
         }
 
@@ -161,6 +168,7 @@ namespace FixedCamVr.Streaming
             //   矩形は毎フレーム引き直すので、遅れても 1 フレームで、位置は次で追いつく。
             SwapMorphLogic.Sample s = _logic.Tick(Time.unscaledDeltaTime);
             Cover = s.cover;
+            Knot = s.knot;
             HeightM = s.heightM;
 
             // 砂に覆われている間だけ姿を替えられる（替わったことが 1 画素も見えない）。
@@ -174,7 +182,7 @@ namespace FixedCamVr.Streaming
                 cgLayer.SetSwapHeight(s.heightM);
                 cgLayer.SetGroundContact(s.ground);
             }
-            Write(s.cover, s.solid);
+            Write(s, _logic.Direction == SwapMorphLogic.Dir.ToDoll);
 
             if (s.justCovered)
             {
@@ -217,27 +225,39 @@ namespace FixedCamVr.Streaming
             cgLayer?.TrySwapToActor(_dollActorId);
         }
 
-        private void Write(float cover, float solid)
+        /// <summary>
+        /// 1 フレーム分を uniform へ流す。
+        /// <paramref name="toDoll"/> は<b>ほどける向き</b>を決める — 人 → 人形は頭から
+        /// （人形は足元に現れる）、人形 → 人は足元から（人は上へ育つ）。
+        /// どちらも「行き先の方向へほどける」。
+        /// </summary>
+        private void Write(in SwapMorphLogic.Sample s, bool toDoll)
         {
             if (_material == null) return;
             Vector4 rect = new Vector4(0.5f, 0.5f, 0.2f, 0f);
             RectResolved = cgLayer != null && cgLayer.TrySwapRect(out rect);
             if (!RectResolved) rect = new Vector4(0.5f, 0.5f, 0.2f, 0f);
             _material.SetVector(SwapRectId, rect);
-            _material.SetFloat(SwapCoverId, Mathf.Clamp01(cover));
-            _material.SetFloat(SwapSolidId, Mathf.Clamp01(solid));
+            _material.SetFloat(SwapCoverId, Mathf.Clamp01(s.cover));
+            _material.SetFloat(SwapKnotId, Mathf.Clamp01(s.knot));
+            _material.SetFloat(SwapThreadId, Mathf.Clamp01(s.thread));
+            _material.SetFloat(SwapRealId, Mathf.Clamp01(s.real));
+            _material.SetFloat(SwapFromTopId, toDoll ? 1f : 0f);
             _material.SetFloat(SwapSeedId, Time.unscaledTime);
         }
 
         private void ClearUniforms()
         {
             Cover = 0f;
+            Knot = 0f;
             HeightM = 0f;
             RectResolved = false;
             if (_material == null) return;
             _material.SetVector(SwapRectId, new Vector4(0.5f, 0.5f, 0.2f, 0f));
             _material.SetFloat(SwapCoverId, 0f);
-            _material.SetFloat(SwapSolidId, 0f);
+            _material.SetFloat(SwapKnotId, 0f);
+            _material.SetFloat(SwapThreadId, 0f);
+            _material.SetFloat(SwapRealId, 0f);
         }
     }
 }

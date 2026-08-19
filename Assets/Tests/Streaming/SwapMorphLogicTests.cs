@@ -7,10 +7,11 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.Tests
 {
     /// <summary>
-    /// <b>入れ替わりのノイズの決めごとを機械で守る。</b> 数値の良し悪しではなく、
-    /// ユーザーの言葉（2026-08-19・`canon/LEDGER.md` 0089）がそのまま段になっていることを固定する:
+    /// <b>入れ替わりのほどけの決めごとを機械で守る。</b> 数値の良し悪しではなく、
+    /// ユーザーの言葉（`canon/LEDGER.md` 0089 / 0090）がそのまま段になっていることを固定する:
     /// 「体験者を徐々にオーバーレイするノイズを走らせ、ノイズが人型になって体験者はノイズに覆われて
-    /// 見えなくなり、その後にノイズの人型が徐々に人形サイズになり、ノイズが晴れたら人形になる」。
+    /// 見えなくなり、その後にノイズの人型が徐々に人形サイズになり、ノイズが晴れたら人形になる」
+    /// ＋「線に分解されて人形へ吸い込まれるような」。
     /// </summary>
     public class SwapMorphLogicTests
     {
@@ -28,42 +29,66 @@ namespace FixedCamVr.Streaming.Tests
             return all;
         }
 
+        private static readonly SwapMorphLogic.Dir[] BothWays =
+            { SwapMorphLogic.Dir.ToDoll, SwapMorphLogic.Dir.ToHuman };
+
         [Test]
-        public void Rise_ThenMorph_ThenClear_InThatOrder()
+        public void Unravel_ThenDrawIn_ThenFade_InThatOrder()
         {
             List<SwapMorphLogic.Sample> all = RunAll(SwapMorphLogic.Dir.ToDoll);
             int covered = all.FindIndex(s => s.justCovered);
-            Assert.Greater(covered, 0, "覆い切る前に湧く段が要る");
+            Assert.Greater(covered, 0, "ほどけ切る前にほどける段が要る");
 
-            // 湧く段: 背丈は動かない（人型がまだ体験者の大きさで固まる前に縮み始めない）。
+            // ほどける段: 背丈は動かない（人型が固まる前に縮み始めない）。
             for (int i = 0; i < covered; i++)
-                Assert.AreEqual(HumanH, all[i].heightM, 1e-3f, $"湧く段 i={i} で背丈が動いた");
+                Assert.AreEqual(HumanH, all[i].heightM, 1e-3f, $"ほどける段 i={i} で背丈が動いた");
 
-            // 覆い切った後にだけ縮む。
+            // ほどけ切った後にだけ縮む。
             int shrank = all.FindIndex(s => s.heightM < HumanH - 1e-3f);
-            Assert.Greater(shrank, covered, "覆い切る前に縮み始めている（体験者が縮んで見える）");
+            Assert.Greater(shrank, covered, "ほどけ切る前に縮み始めている（体験者が縮んで見える）");
 
-            // 晴れる段は縮み切った後。
-            int cleared = all.FindIndex(s => s.solid > 0.001f);
-            Assert.Greater(cleared, shrank, "縮む前に実体が出ている");
-            Assert.AreEqual(DollH, all[cleared].heightM, 1e-3f, "晴れ始めた時点で人形の大きさでない");
+            // 実体が出るのは縮み切った後。
+            int settled = all.FindIndex(s => s.real > 0.001f);
+            Assert.Greater(settled, shrank, "縮む前に実体が出ている");
+            Assert.AreEqual(DollH, all[settled].heightM, 1e-3f, "晴れ始めた時点で人形の大きさでない");
+        }
+
+        [Test]
+        public void Knot_IsFullyOpaque_WhenTheScreenSwitches()
+        {
+            // ⚠⚠ **ここが「体験者が見えなくなる」の実体。** もつれが 1 でなければ、
+            //    差し替えの瞬間に映像の中の体験者が糸の隙間から見えている。
+            foreach (SwapMorphLogic.Dir dir in BothWays)
+            {
+                SwapMorphLogic.Sample at = RunAll(dir).Find(s => s.justCovered);
+                Assert.GreaterOrEqual(at.cover, 0.999f, $"{dir}: 前線がほどけ切っていない");
+                Assert.GreaterOrEqual(at.knot, 0.999f, $"{dir}: もつれが下を隠し切っていない");
+            }
+        }
+
+        [Test]
+        public void JustCovered_FiresExactlyOnce()
+        {
+            foreach (SwapMorphLogic.Dir dir in BothWays)
+                Assert.AreEqual(1, RunAll(dir).FindAll(s => s.justCovered).Count,
+                                $"{dir}: 画面の差し替えは 1 回でなければならない");
         }
 
         [Test]
         public void JustSettling_FiresOnce_AfterTheFigureFinishedShrinking()
         {
-            // ⚠⚠ 姿を人形へ替えてよい唯一の瞬間 — **縮み切っていて、まだ砂に覆われている**。
-            //    覆い切った瞬間（justCovered）に替えると、**縮んでいる間ずっと人形の形**になる。
+            // ⚠⚠ 姿を人形へ替えてよい唯一の瞬間 — **縮み切っていて、まだもつれに覆われている**。
+            //    ほどけ切った瞬間（justCovered）に替えると、**縮んでいる間ずっと人形の形**になる。
             //    人形を人の背丈へ引き伸ばしても人型には見えない（2026-08-19 に絵で確かめた）。
-            foreach (SwapMorphLogic.Dir dir in new[] { SwapMorphLogic.Dir.ToDoll, SwapMorphLogic.Dir.ToHuman })
+            foreach (SwapMorphLogic.Dir dir in BothWays)
             {
                 List<SwapMorphLogic.Sample> all = RunAll(dir);
                 Assert.AreEqual(1, all.FindAll(s => s.justSettling).Count, $"{dir}");
 
                 int settling = all.FindIndex(s => s.justSettling);
                 int covered = all.FindIndex(s => s.justCovered);
-                Assert.Greater(settling, covered, $"{dir}: 覆い切る前に姿を替えたら見えてしまう");
-                Assert.GreaterOrEqual(all[settling].cover, 0.999f, $"{dir}: 砂が覆い切っていない");
+                Assert.Greater(settling, covered, $"{dir}: ほどけ切る前に姿を替えたら見えてしまう");
+                Assert.Greater(all[settling].knot, 0.3f, $"{dir}: もつれが薄いので姿の差し替えが見える");
 
                 float endH = dir == SwapMorphLogic.Dir.ToDoll ? DollH : HumanH;
                 Assert.AreEqual(endH, all[settling].heightM, 1e-2f,
@@ -72,45 +97,60 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void JustCovered_FiresExactlyOnce()
+        public void Thread_RisesThenIsDrawnIn_AndNeverVanishesMidway()
         {
-            foreach (SwapMorphLogic.Dir dir in new[] { SwapMorphLogic.Dir.ToDoll, SwapMorphLogic.Dir.ToHuman })
+            // 「線に分解されて人形へ吸い込まれる」— 吸い込まれる段で糸が消えると
+            // 「集まって人形になった」ではなく「消えてから人形が出た」に見える。
+            foreach (SwapMorphLogic.Dir dir in BothWays)
             {
                 List<SwapMorphLogic.Sample> all = RunAll(dir);
-                Assert.AreEqual(1, all.FindAll(s => s.justCovered).Count,
-                                $"{dir}: 画面の差し替えは 1 回でなければならない");
+                int covered = all.FindIndex(s => s.justCovered);
+                int settling = all.FindIndex(s => s.justSettling);
+
+                Assert.AreEqual(1f, all[covered].thread, 1e-2f, $"{dir}: ほどけ切った所で糸が出切っていない");
+                Assert.AreEqual(SwapMorphLogic.ThreadAtPull, all[settling].thread, 1e-2f,
+                                $"{dir}: 吸い込み切った所で糸が残っていない");
+                Assert.AreEqual(0f, all[all.Count - 1].thread, 1e-3f, $"{dir}: 最後まで糸が残っている");
+
+                // 単調: ほどける段で増え、それ以降は減るだけ（行きつ戻りつしない）。
+                for (int i = 1; i <= covered; i++)
+                    Assert.GreaterOrEqual(all[i].thread, all[i - 1].thread - 1e-4f, $"{dir} i={i}");
+                for (int i = covered + 1; i < all.Count; i++)
+                    Assert.LessOrEqual(all[i].thread, all[i - 1].thread + 1e-4f, $"{dir} i={i}");
             }
         }
 
         [Test]
-        public void Covered_MeansFullyOpaque()
+        public void ToDoll_StartsInvisible_AndEndsAsTheDoll()
         {
             List<SwapMorphLogic.Sample> all = RunAll(SwapMorphLogic.Dir.ToDoll);
-            SwapMorphLogic.Sample at = all.Find(s => s.justCovered);
-            Assert.GreaterOrEqual(at.cover, 0.999f,
-                "覆い切っていないのに差し替えると、体験者が砂の下ではなく画の中で消える");
-        }
+            // ⚠ 始まりは CG が 1 画素も出てはいけない（映像の中の本物の体験者が立っている）。
+            Assert.AreEqual(0f, all[0].real, 1e-3f, "始まりに CG の実体が出ている");
+            Assert.Less(all[0].knot, 0.05f, "始まりからもつれが濃い");
 
-        [Test]
-        public void ToDoll_EndsAsTheDoll()
-        {
-            List<SwapMorphLogic.Sample> all = RunAll(SwapMorphLogic.Dir.ToDoll);
             SwapMorphLogic.Sample last = all[all.Count - 1];
             Assert.IsTrue(last.justFinished);
             Assert.AreEqual(DollH, last.heightM, 1e-3f);
-            Assert.AreEqual(1f, last.solid, 1e-3f, "砂が実体（人形）へ戻り切っていない");
-            Assert.AreEqual(1f, last.cover, 1e-3f, "人形になる向きでは砂は引かない（実体へ寄る）");
+            Assert.AreEqual(1f, last.real, 1e-3f, "人形が実体として残っていない");
+            Assert.AreEqual(0f, last.knot, 1e-3f, "もつれが残っている");
         }
 
         [Test]
-        public void ToHuman_EndsWithNothing()
+        public void ToHuman_StartsAsTheDoll_AndEndsWithNothing()
         {
             List<SwapMorphLogic.Sample> all = RunAll(SwapMorphLogic.Dir.ToHuman);
+            // ⚠ 始まりは人形がふつうに立っている（ほどけるのはその人形）。
+            Assert.AreEqual(1f, all[0].real, 5e-2f, "始まりに人形が出ていない");
+
+            // 実体はほどけ切る**前に**消える（縁が残ると隠し切ったように見えない）。
+            int covered = all.FindIndex(s => s.justCovered);
+            Assert.AreEqual(0f, all[covered].real, 1e-3f, "ほどけ切った所で人形の実体が残っている");
+
             SwapMorphLogic.Sample last = all[all.Count - 1];
             Assert.IsTrue(last.justFinished);
             Assert.AreEqual(HumanH, last.heightM, 1e-3f);
-            Assert.AreEqual(0f, last.cover, 1e-3f, "砂が引き切っていない（下のライブ映像が出ない）");
-            Assert.AreEqual(0f, last.solid, 1e-3f, "人へ戻る向きで人形を実体化させてはいけない");
+            Assert.AreEqual(0f, last.real, 1e-3f, "人へ戻る向きで CG を実体化させてはいけない");
+            Assert.AreEqual(0f, last.knot, 1e-3f, "もつれが残っている");
         }
 
         [Test]
@@ -129,7 +169,7 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Height_IsMonotone_AndStaysInsideTheEnds()
         {
-            foreach (SwapMorphLogic.Dir dir in new[] { SwapMorphLogic.Dir.ToDoll, SwapMorphLogic.Dir.ToHuman })
+            foreach (SwapMorphLogic.Dir dir in BothWays)
             {
                 List<SwapMorphLogic.Sample> all = RunAll(dir);
                 float lo = Mathf.Min(HumanH, DollH), hi = Mathf.Max(HumanH, DollH);
@@ -146,14 +186,14 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Ground_IsZeroWhileTheFigureIsSand()
+        public void Ground_IsZeroWhileTheFigureIsThread()
         {
-            // 砂の人型は光を遮らない。覆われているあいだは影も接地影も出ない。
-            foreach (SwapMorphLogic.Dir dir in new[] { SwapMorphLogic.Dir.ToDoll, SwapMorphLogic.Dir.ToHuman })
+            // 糸のもつれは光を遮らない。ほどけているあいだは影も接地影も出ない。
+            foreach (SwapMorphLogic.Dir dir in BothWays)
             {
                 List<SwapMorphLogic.Sample> all = RunAll(dir);
                 int covered = all.FindIndex(s => s.justCovered);
-                Assert.AreEqual(0f, all[covered].ground, 1e-3f, $"{dir}: 覆い切った所で影が残っている");
+                Assert.AreEqual(0f, all[covered].ground, 1e-3f, $"{dir}: ほどけ切った所で影が残っている");
             }
         }
 
@@ -171,13 +211,17 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Cover_IsMonotoneUntilCovered()
+        public void Cover_IsMonotone_AndStaysAtOneOnceUnravelled()
         {
-            // 「徐々にオーバーレイする」ので、湧く途中で砂が引いてはいけない。
-            List<SwapMorphLogic.Sample> all = RunAll(SwapMorphLogic.Dir.ToDoll);
-            int covered = all.FindIndex(s => s.justCovered);
-            for (int i = 1; i <= covered; i++)
-                Assert.GreaterOrEqual(all[i].cover, all[i - 1].cover - 1e-4f, $"i={i} で砂が引いた");
+            // 「徐々にオーバーレイする」ので、ほどける途中で前線が戻ってはいけない。
+            // ほどけ切った後も 1 のまま（戻すと体の下半分が唐突に実体へ復帰する）。
+            foreach (SwapMorphLogic.Dir dir in BothWays)
+            {
+                List<SwapMorphLogic.Sample> all = RunAll(dir);
+                for (int i = 1; i < all.Count; i++)
+                    Assert.GreaterOrEqual(all[i].cover, all[i - 1].cover - 1e-4f, $"{dir} i={i} で前線が戻った");
+                Assert.AreEqual(1f, all[all.Count - 1].cover, 1e-3f, $"{dir}: 最後に前線が 1 でない");
+            }
         }
 
         [Test]
@@ -190,7 +234,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.IsFalse(logic.Active);
             SwapMorphLogic.Sample s = logic.Tick(Dt);
             Assert.IsFalse(s.active);
-            Assert.IsFalse(s.justCovered, "畳んだ後に差し替えが走ると、砂が無い所で画面が変わる");
+            Assert.IsFalse(s.justCovered, "畳んだ後に差し替えが走ると、糸が無い所で画面が変わる");
         }
 
         [Test]
@@ -219,7 +263,7 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void HumanHeight_UsesTheSameEstimateAsTheArms()
         {
-            // ⚠ 腕の写像（ActorArmLogic）と同じ推定でなければ、砂の人型の背丈と腕の長さが食い違う。
+            // ⚠ 腕の写像（ActorArmLogic）と同じ推定でなければ、糸の人型の背丈と腕の長さが食い違う。
             const float head = 1.55f;
             Assert.AreEqual(Cg.ActorArmLogic.EstimateHeightM(head),
                             SwapMorphLogic.HumanHeightFrom(true, head), 1e-4f);
@@ -240,7 +284,7 @@ namespace FixedCamVr.Streaming.Tests
             float clear = 1f - SwapMorphLogic.RiseFrac - SwapMorphLogic.MorphFrac;
             Assert.Greater(SwapMorphLogic.RiseFrac, 0.1f);
             Assert.Greater(SwapMorphLogic.MorphFrac, 0.1f);
-            Assert.Greater(clear, 0.1f, "晴れる段が短すぎると「砂が晴れた」に読めない");
+            Assert.Greater(clear, 0.1f, "晴れる段が短すぎると「糸が晴れた」に読めない");
         }
     }
 }
