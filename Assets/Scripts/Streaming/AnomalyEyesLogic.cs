@@ -34,15 +34,20 @@ namespace FixedCamVr.Streaming
     ///   「目が開くのもゆっくり過ぎて怖くないし、演出として面白くない」だった。
     ///   <b>怖さは速さではなく落差から出る</b> — 長く止まってから 0.12 秒で見開く。
     ///
-    /// 段の並び（合計 8.4 秒。初版の 10.5 秒から詰めた）:
+    /// 段の並び（合計 <b>4.92 秒</b>。10.5 → 8.4 → **4.92** と 2 度詰めた）:
     /// <list type="number">
-    ///   <item><b>兆し</b>（<see cref="HintSec"/> = 2.6s）— 闇 → <b>断片</b>（弧と点）→ 長い静止 → <b>見開く</b></item>
-    ///   <item><b>凝視</b>（<see cref="StareSec"/> = 2.8s）— 静止。途中で 1 度だけ瞬く。
-    ///     <b>これが「気づいて報告ボタンを押すくらいの時間」</b>（気づく ＋ 手 ＋ 長押し 1 秒）</item>
+    ///   <item><b>兆し</b>（<see cref="HintSec"/> = 1.42s）— 闇 0.50 → <b>断片</b>（弧と点）0.10 →
+    ///     <b>静止 0.50</b> → <b>見開く 0.13</b> → 開いたまま 0.19</item>
+    ///   <item><b>凝視</b>（<see cref="StareSec"/> = 0.5s）— 静止。1 度だけ瞬く（0.055 秒）</item>
     ///   <item><b>開眼</b>（<see cref="SwarmSec"/> = 3.0s）— <b>さざめき → 間 → 一気に 360 度</b>。
     ///     1 つの目が開くのは 0.10 秒（<see cref="SwarmSpan"/>）</item>
     ///   <item><b>持続</b> — 畳まれるまで開いたまま</item>
     /// </list>
+    ///
+    /// ⚠⚠ <b>2026-08-20 に、止まっている 3 つ（闇 / 断片のまま静止 / 凝視）を 0.5 秒へ詰めた</b>
+    ///   （<c>canon/LEDGER.md</c> 0094・早回しの動画を見たユーザーの判定「こっちのほうがいい」）。
+    ///   <b>動いている所は 1 つも触っていない</b> — 断片が現れる 0.10 / 見開く 0.13 /
+    ///   さざめき 0.27 / 間 0.36 / 一気に 1.56 は 0076 のまま。詰めたのは「間」だけ。
     ///
     /// ⚠ <b>報告は引き金ではない。</b> 0075 の「ボタンはトリガーではなく、あくまでそれくらいの時間で」。
     ///   押さなくても段は同じ速さで進む。押した時に消えるのは
@@ -53,15 +58,23 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public sealed class AnomalyEyesLogic
     {
-        /// <summary>兆し（大きい目が 1 つだけ開く）の尺 (秒)。</summary>
-        public const float HintSec = 2.6f;
+        /// <summary>
+        /// 兆し（大きい目が 1 つだけ開く）の尺 (秒)。<b>2026-08-20 に 2.6 → 1.42</b>（0094）。
+        /// 内訳は 闇 0.50 ＋ 断片が現れる 0.10 ＋ 静止 0.50 ＋ 見開く 0.13 ＋ 開いたまま 0.19。
+        /// </summary>
+        public const float HintSec = 1.42f;
 
         /// <summary>
-        /// 凝視の尺 (秒)。<b>「気づいて報告ボタンを押すくらいの時間」</b>（0075）。
-        /// 気づく 0.8 ＋ 手を動かす 1.0 ＋ 長押し 1.0（<c>VisitorMarkHoldLogic.DefaultHoldSec</c>）。
-        /// ⚠ 縮めると「見られている」に気づく前に全部開く ＝ 大きい目 1 つの beat が消える。
+        /// 凝視の尺 (秒)。<b>2026-08-20 に 2.8 → 0.5</b>（0094）。
+        ///
+        /// ⚠⚠ <b>0075 の「気づいて報告ボタンを押すくらいの時間」は、ここで無くなった。</b>
+        /// 気づく 0.8 ＋ 手 1.0 ＋ 長押し 1.0 は 0.5 秒に収まらないので、
+        /// <b>体験者が押し切る前に残りが開き始める</b>。詰めた側を選んだのはユーザーの判定（0094）で、
+        /// 目の異変は <c>dismissible</c> を立てていない（＝ 押しても消えない・0084）ため、
+        /// 「押し切れるか」は体験の成否に効かない。
+        /// ⚠ 報告のための間を戻したくなったら、伸ばすのは<b>ここ</b>（開眼の側ではない）。
         /// </summary>
-        public const float StareSec = 2.8f;
+        public const float StareSec = 0.5f;
 
         /// <summary>残りが開き切るまでの尺 (秒)。0075 の「3 秒くらいですべての目が開き」。</summary>
         public const float SwarmSec = 3.0f;
@@ -121,21 +134,27 @@ namespace FixedCamVr.Streaming
         public const float OpenEpsilon = 0.05f;
 
         // ---- 兆しの中の刻み（HintSec に対する割合。**止まる → 一気に** を作る）------------
-        /// <summary>闇のまま。何も出ない。</summary>
-        public const float HintDarkAt = 0.35f;
-        /// <summary>断片（弧と点）が現れるまで。ここは速い（0.12 秒相当）。</summary>
-        public const float HintCrackAt = 0.39f;
-        /// <summary>断片のまま止まっている終わり。**ここがいちばん長い**。</summary>
-        public const float HintHoldAt = 0.88f;
-        /// <summary>見開き切るまで（0.12 秒相当）。</summary>
-        public const float HintSnapAt = 0.93f;
+        /// <summary>闇のまま。何も出ない（<b>0.50 秒</b>）。</summary>
+        public const float HintDarkAt = 0.352f;
+        /// <summary>断片（弧と点）が現れるまで。ここは速い（<b>0.10 秒</b>）。</summary>
+        public const float HintCrackAt = 0.425f;
+        /// <summary>
+        /// 断片のまま止まっている終わり（<b>0.50 秒</b>）。
+        /// ⚠ 2026-08-20 まで 1.27 秒で「いちばん長い間」だった（0094 で詰めた）。
+        /// </summary>
+        public const float HintHoldAt = 0.777f;
+        /// <summary>見開き切るまで（<b>0.13 秒</b>。ここは 0076 のまま）。</summary>
+        public const float HintSnapAt = 0.869f;
         /// <summary>断片のときの開き具合。<b>これ以上大きいと気づかれる</b>。</summary>
         public const float HintCrackOpen = 0.17f;
 
         // ---- 凝視の中の瞬き（StareSec に対する割合）---------------------------------------
         /// <summary>瞬きの中心。静止のただ中で 1 度だけ落ちる。</summary>
         public const float StareBlinkAt = 0.46f;
-        /// <summary>瞬きの半幅。</summary>
+        /// <summary>
+        /// 瞬きの半幅。⚠ 凝視が 0.5 秒になったので、瞬きは<b>全体で 0.055 秒</b>
+        /// （90Hz で 5 コマ）しかない。0094 の動画（30fps）ではほとんど見えていない。
+        /// </summary>
         public const float StareBlinkHalf = 0.055f;
         /// <summary>瞬きで閉じ切らない量（完全に閉じると「消えた」に見える）。</summary>
         public const float StareBlinkFloor = 0.12f;

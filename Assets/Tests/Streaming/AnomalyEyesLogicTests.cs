@@ -52,7 +52,7 @@ namespace FixedCamVr.Streaming.Tests
             // ⚠⚠ ここが 0076 の主題。**止まっている時間が長く、開くのは一瞬**。
             //    初版は等速で開いていて、判定は「ゆっくり過ぎて怖くない」だった。
             float mid1 = AnomalyEyesLogic.HintCurve(0.45f);
-            float mid2 = AnomalyEyesLogic.HintCurve(0.80f);
+            float mid2 = AnomalyEyesLogic.HintCurve(0.70f);
             Assert.That(mid1, Is.EqualTo(AnomalyEyesLogic.HintCrackOpen).Within(1e-3f));
             Assert.That(mid2, Is.EqualTo(mid1).Within(1e-3f), "断片のまま止まっている（長い間）");
             Assert.That(mid1, Is.LessThan(0.25f), "止まっている間は気づかれない大きさ");
@@ -104,12 +104,22 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(blinkSec, Is.LessThan(0.45f), "瞬きは一瞬（長いと「眠い目」に見える）");
         }
 
+        /// <summary>
+        /// ⚠⚠ <b>凝視はもう「報告を押し切る時間」ではない</b>（2026-08-20・<c>canon/LEDGER.md</c> 0094）。
+        /// 0075 は「気づく ＋ 手 ＋ 長押し 1 秒」で 2.8 秒を置いていたが、
+        /// 早回しの動画を見たユーザーが 0.5 秒を選んだ。**押し切る前に残りが開き始める。**
+        ///
+        /// ここは値を固定するだけのテスト —— 戻したくなったら伸ばすのは<b>凝視</b>で、
+        /// 開眼（3.0 秒）ではない。目の異変は <c>dismissible</c> を立てていない（0084）ので、
+        /// 押し切れるかは体験の成否に効かない。
+        /// </summary>
         [Test]
-        public void Stare_IsLongEnoughToPressTheReportButton()
+        public void Stare_IsNoLongerSizedForTheReportPress()
         {
-            // 長押し 1 秒（VisitorMarkHoldLogic.DefaultHoldSec）＋ 気づいて手を動かす時間。
-            Assert.That(Stare, Is.GreaterThanOrEqualTo(2.5f),
-                "凝視が 2.5 秒を切ると、気づいて長押しし切る前に全部開く");
+            Assert.That(Stare, Is.EqualTo(0.5f).Within(1e-3f));
+            const float pressSec = 0.8f + 1.0f + 1.0f;   // 気づく ＋ 手 ＋ 長押し
+            Assert.That(Stare, Is.LessThan(pressSec),
+                "押し切れる長さへ戻すなら、0094 を覆す判定が要る");
         }
 
         // ---------------------------------------------------------------- ③ 開眼
@@ -161,7 +171,16 @@ namespace FixedCamVr.Streaming.Tests
         public void TotalToFullOpen_FitsInASegment()
         {
             // 設計値の固定。ここを動かすと「区間の滞在に収まる」前提が崩れる。
-            Assert.That(Hint + Stare + Swarm, Is.EqualTo(8.4f).Within(1e-3f));
+            // 10.5（初版）→ 8.4（0076）→ **4.92**（0094 で止まる 3 つを 0.5 秒へ）。
+            Assert.That(Hint + Stare + Swarm, Is.EqualTo(4.92f).Within(1e-2f));
+            // 止まっている 3 つ ＝ 闇 / 断片のまま静止 / 凝視。**どれも 0.5 秒**。
+            Assert.That(Hint * AnomalyEyesLogic.HintDarkAt, Is.EqualTo(0.5f).Within(0.01f));
+            Assert.That(Hint * (AnomalyEyesLogic.HintHoldAt - AnomalyEyesLogic.HintCrackAt),
+                        Is.EqualTo(0.5f).Within(0.01f));
+            Assert.That(Stare, Is.EqualTo(0.5f).Within(1e-3f));
+            // 動いている所は 0076 のまま（見開く 0.13 秒）。
+            Assert.That(Hint * (AnomalyEyesLogic.HintSnapAt - AnomalyEyesLogic.HintHoldAt),
+                        Is.EqualTo(0.13f).Within(0.01f));
         }
 
         // ---------------------------------------------------------------- ④ 畳む
@@ -278,7 +297,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Gaze_StaysStillUntilEveryEyeHasOpened()
         {
             Assert.That(Run(1.0f).Gaze, Is.EqualTo(0f), "兆しでは動かない");
-            Assert.That(Run(Hint + 1.0f).Gaze, Is.EqualTo(0f), "凝視は凝視（動かしたら凝視ではない）");
+            Assert.That(Run(Hint + Stare * 0.5f).Gaze, Is.EqualTo(0f), "凝視は凝視（動かしたら凝視ではない）");
             Assert.That(Run(Hint + Stare + Swarm * 0.5f).Gaze, Is.EqualTo(0f), "開いている最中も動かない");
         }
 
@@ -365,7 +384,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Anchor_IsLockedOnceTheSwarmBegins()
         {
             Assert.That(Run(1.0f).AnchorLocked, Is.False, "兆しは回してよい（大きい目は視界の外）");
-            Assert.That(Run(Hint + 1.0f).AnchorLocked, Is.False, "凝視も回してよい");
+            Assert.That(Run(Hint + Stare * 0.5f).AnchorLocked, Is.False, "凝視も回してよい");
             Assert.That(Run(Hint + Stare + 0.5f).AnchorLocked, Is.True, "開き始めたら二度と回さない");
             Assert.That(Run(Hint + Stare + Swarm + 1f).AnchorLocked, Is.True);
         }
@@ -380,7 +399,7 @@ namespace FixedCamVr.Streaming.Tests
 
     /// <summary>
     /// 大きい目を視界へ入れ直す判断（<see cref="EyeAnchorLogic"/>）。
-    /// <b>これが無いと、体験者が別の方を向いているあいだに兆しと凝視の 7.5 秒が終わる。</b>
+    /// <b>これが無いと、体験者が別の方を向いているあいだに兆しと凝視の 1.92 秒が終わる。</b>
     /// </summary>
     public sealed class EyeAnchorLogicTests
     {

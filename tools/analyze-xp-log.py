@@ -2286,7 +2286,8 @@ def analyze(events, others, exp, warns=None):
         if take_evs2 and take_evs2[-1].get("st") == "end":
             t_end2 = fnum(take_evs2[-1], "t", 0.0)
             # ⚠ 猶予は 2.0 → 7.0 秒（0093）。カットが終わっても目は切らず流しきるので、
-            #   最悪ケース（兆しの途中で区間が変わる）で 8.4/2 の追い上げ ＋ 閉じ 1.6 ＝ 5.8 秒残る。
+            #   最悪ケース（兆しの途中で区間が変わる）で 4.92/2 の追い上げ ＋ 閉じ 1.6 ＝ 4.1 秒残る
+            #   （0094 で開くのが 8.4 → 4.92 秒になった。猶予は据え置き）。
             after = [str(v) for v in effect_samples(events, "eyes", t_from=t_end2 + 7.0)
                      if str(v).count("/") in (2, 4)]
             stuck = [p.split("/")[2] for p in after]

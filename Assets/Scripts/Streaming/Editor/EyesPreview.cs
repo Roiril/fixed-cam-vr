@@ -210,7 +210,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
         /// <summary>
         /// <b>止まっている 3 つを <paramref name="trim"/> 秒へ詰めたときの、開き切るまでの実時間</b>。
-        /// 0 以下なら著作どおり（8.4 秒）。
+        /// 0 以下なら著作どおり（4.92 秒）。
         /// </summary>
         private static float TrimmedOpenSec(float trim)
         {
