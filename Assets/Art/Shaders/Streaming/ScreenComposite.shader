@@ -165,12 +165,12 @@ Shader "FixedCamVr/ScreenComposite"
         // ⚠ 行数は**映像の粗さと独立**でよい（走査線は装置が走査した跡で、映像の内容ではない）。
         //   参考画像の線は 1〜2 画素で、180 行（1 行 4 画素）ではブラインドの羽根に見えた。
         _SwapSmear("Swap Smear (rows, width, center shift, hz)", Vector) = (320, 0.75, 0.10, 14)
-        // 黒い線。x = 閾値をばらつかせる細かさ（人型の半高が 1 の座標での本数）/
-        // y = 線が出る明るさの境目（大きいほど線が増える）/ z = 境目のばらつき幅 /
+        // 黒い線（行あたり 3 本まで）。x = 中心寄りの長い線の半幅の基準 /
+        // y = 外の短い線をどれだけ離すか / z = 長い線の中心のばらつき（すべて人型の半高が 1 の座標）/
         // w = **先に掛けるぼかしの量**（mip の段。顔も服の模様もここで消す）。
         // ⚠ w が 0 だと「引き伸ばした写真」にしか見えない。参考画像の線に細部が無いのはぼかしのため。
-        // ⚠ z が 0 だとただの 2 値化になって版画に見える。不ぞろいだからぼやけた階調に見える。
-        _SwapLine("Swap Line (dither, threshold, spread, blur lod)", Vector) = (15.0, 0.52, 0.60, 3.2)
+        // ⚠ x を人型の半幅（およそ 0.22）より小さくすると、輪郭を作る線が体に届かず細切れになる。
+        _SwapLine("Swap Line (long half, gap, center jitter, blur lod)", Vector) = (0.22, 0.12, 0.26, 3.2)
         // 糸のうねりの時計（秒）。**_Time を使わない** — Editor のプレビューは 1 エディタフレームの中で
         // 何コマも描くので、_Time だと連番 PNG の糸が全コマ同じになる（_GlitchSeed と同じ理由）。
         _SwapSeed("Swap Seed (seconds)", Float) = 0
@@ -596,26 +596,47 @@ Shader "FixedCamVr/ScreenComposite"
             /// 場所で明るさが桁違いなので、固定色だと暗い所で線が 1 本も見えない。
             static const float SwapInkDark = 0.16;
 
-            /// 黒い線が出る度合い 0..1。
+            /// その画素が黒い線の上か 0..1。**線は行あたり 3 本まで。**
             ///
             /// ⚠⚠ **明るい線を作らない**（2026-08-19 ユーザー指摘「輪郭を白色で表現するんじゃなくて、
-            ///   あくまで黒い線で表現する」）。白く見えるのは**地**（元の映像の明るい所）で、
-            ///   線ではない。暗い所ほど線が太く / 密になり、**閾値が不ぞろいなので遠目には
-            ///   ぼやけた階調に見える**。3 巡目まで「明るい線と暗い線が混ざる」と読んでいたのが誤り。
+            ///   あくまで黒い線で表現する」）。白く見えるのは**地**（帯ごとに歪めたぼかし画）で、
+            ///   線ではない。3 巡目まで「明るい線と暗い線が混ざる」と読んでいたのが誤り。
             ///
-            /// ⚠ 閾値のばらつき（`_SwapLine.z`）が 0 だと、ただの 2 値化になって版画に見える。
-            /// ⚠⚠ **知覚の明るさで比べる。** このシェーダは linear 空間で、実写の大半は
-            ///   0.05〜0.25 に集まっている（`rules/streaming.md` の post の節）。linear のまま
-            ///   0.5 を閾値に置くと**画面のほぼ全部が「暗い」判定になって真っ黒になる**
-            ///   （2026-08-19 に実際そうなり、計測値が全部 0 になった）。
-            float SwapLineHit(half3 warped, float2 p, float row, float tick)
+            /// ⚠⚠ **本数を決め打つ**（2026-08-19 ユーザー指定）:
+            ///   > 各横軸から見て、中心寄りに長めのを 1 本で、それで大体の崩れた輪郭を形成し、
+            ///   > それより外には 1〜2 本、それも短いのくらいしかつけちゃダメ
+            ///   > 線の細さはちょうどいいけど長さが短すぎて細切れ
+            ///
+            ///   暗さから線の密度を作る（ディザ）と 1 行に何十本もの断片ができて**細切れ**になる。
+            ///   そうではなく、**長い 1 本が輪郭を作り、外の 1〜2 本が短くほつれる**。
+            ///   行ごとに長い線の幅と中心が違うので、その端がそのまま崩れた輪郭になる。
+            float SwapLineHit(float px, float row, float tick, float reach)
             {
-                // ⚠ URP の `Luminance` は Core.hlsl だけでは入らない（Color.hlsl 側）。
-                //   このシェーダは他所でも Rec.709 の重みを直に書いているので、ここも同じにする。
-                float lum = pow(saturate(dot(warped, half3(0.2126, 0.7152, 0.0722))), 0.4545);
-                float n = Hash21(float2(floor(p.x * _SwapLine.x) * 0.71, row + tick * 3.0));
-                float thr = _SwapLine.y + (n - 0.5) * _SwapLine.z;
-                return smoothstep(thr + 0.07, thr - 0.07, lum);
+                // 中心寄りの長い線。**これが輪郭を作る**ので、幅と中心を行ごとに散らす。
+                float r0 = Hash21(float2(row, tick));
+                float r1 = Hash21(float2(row + 11.0, tick + 3.0));
+                // ⚠⚠ **幅も中心も大きく散らす。** 散らさないと全行が同じ所を同じ長さで覆い、
+                //   崩れた輪郭ではなく**縦の帯**になる（2026-08-19 に 1 度そうなった）。
+                //   端がばらつくことが輪郭の崩れそのもの。
+                float c0 = (r0 - 0.5) * _SwapLine.z;
+                float w0 = _SwapLine.x * (0.35 + r1 * r1 * 1.45) * reach;
+                float hit = step(abs(px - c0), w0);
+
+                // その外へ短い線を 1〜2 本。**長い線に触れさせない**（触れると 1 本に繋がって
+                // ただの長い線になり、ほつれて見えない）。
+                [unroll]
+                for (int i = 0; i < 2; i++)
+                {
+                    float r = Hash21(float2(row + 31.0 * (i + 1), tick + 7.0 * (i + 1)));
+                    float side = r < 0.5 ? -1.0 : 1.0;
+                    float gap = _SwapLine.y * (0.25 + frac(r * 17.13) * 1.10) * reach;
+                    float w = _SwapLine.x * (0.06 + frac(r * 53.7) * 0.22) * reach;
+                    float c = c0 + side * (w0 + gap + w);
+                    // 2 本目は 3 回に 1 回ほど休む（＝ 1 本だけの行が混ざる）。
+                    float on = i == 0 ? 1.0 : step(frac(r * 91.3), 0.62);
+                    hit = max(hit, on * step(abs(px - c), w));
+                }
+                return hit;
             }
 
             /// 糸が届く範囲（人型を包む楕円）。<paramref name="spread"/> で外へ広がる。
@@ -885,10 +906,13 @@ Shader "FixedCamVr/ScreenComposite"
 
                                 // ⑤ **黒い線だけを置く。** 白く見えるのは地（歪んだぼかし画）で、
                                 //   線ではない。地が下の映像と別の場所を読んでいるので、
-                                //   線が疎な所でも「差し替えの 1 フレームで下が隠れる」は保たれる。
-                                float hit = SwapLineHit(warped, SwapFigureSpace(sUv),
+                                //   線が 3 本しか無くても「差し替えの 1 フレームで下が隠れる」は保たれる。
+                                // ⚠ 線を置く位置は**画面上の座標**（p0）で決める。読む位置（sUv）で
+                                //   決めると、帯を動かすたびに線まで一緒に動いて輪郭が定まらない。
+                                float hit = SwapLineHit(p0.x,
                                                         floor(sampleUv.y * max(_SwapSmear.x, 4.0)),
-                                                        floor(_SwapSeed * max(_SwapSmear.w, 1.0)));
+                                                        floor(_SwapSeed * max(_SwapSmear.w, 1.0)),
+                                                        spread);
                                 half3 outCol = warped * lerp(1.0, SwapInkDark, hit);
                                 col = lerp(col, outCol, saturate(ink));
                             }
