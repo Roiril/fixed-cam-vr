@@ -104,7 +104,7 @@ $Menus = [ordered]@{
                             Out = 'Assets/Screenshots/glitch-preview/f0000.png' }
     'eyes'             = @{ Method = 'FixedCamVr.Streaming.EditorTools.EyesPreview.Run'
                             Desc = 'スクリーンの外の闇に目が開く異変を 1 コマずつ焼く（-Set density=0..1 / → make-preview-video.py で mp4）'
-                            Set = 'density=<0..1 開く目の割合>'
+                            Set = 'density=<0..1 開く目の割合> / trim=<止まる 3 つを詰める秒> / hold=<開けっ放しの秒>'
                             Out = 'Assets/Screenshots/eyes-preview/stage_4_hold.png' }
     'walkguide'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.WalkGuidePreview.Run'
                             Desc = 'タイトル直後の歩行誘導（床の矢印と円）を 1 コマずつ焼く（-Set show=<show.json> / → make-preview-video.py で mp4）'

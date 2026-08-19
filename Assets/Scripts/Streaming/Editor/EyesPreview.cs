@@ -59,6 +59,10 @@ namespace FixedCamVr.Streaming.EditorTools
             }
 
             float density = ParseArg("density", 1f);
+            // ⚠ **プレビュー限定の早回し**。出荷する尺（AnomalyEyesLogic の const）は 1 つも変えない。
+            //   止まっている 3 つ（闇 / 断片のまま静止 / 凝視）だけを、この秒数へ詰めて見せる。
+            float trim = ParseArg("trim", 0f);
+            float holdTail = ParseArg("hold", HoldTailSec);
 
             var camGo = new GameObject("[EyesPreview] Camera");
             var eyesGo = new GameObject("[EyesPreview] Eyes");
@@ -109,11 +113,14 @@ namespace FixedCamVr.Streaming.EditorTools
                 var ledger = new System.Text.StringBuilder();
                 ledger.AppendLine("frame\tsec\tstage\tbig\tfield\tintensity\topen");
 
-                float total = AnomalyEyesLogic.HintSec + AnomalyEyesLogic.StareSec
-                              + AnomalyEyesLogic.SwarmSec + HoldTailSec;
+                // 早回しでは「実時間で何秒回すか」が変わる。段の中をどこまで進めたかは logicT が持つ。
+                float logicT = 0f;
+                float total = TrimmedOpenSec(trim) + holdTail;
                 for (float t = 0f; t < total; t += dt)
                 {
-                    logic.Tick(dt, wanted: true, density: density);
+                    float step = dt * SpeedAt(logicT, trim);
+                    logicT += step;
+                    logic.Tick(step, wanted: true, density: density);
                     clock += dt;
                     Write(mat, logic, clock);
                     Shoot(cam, Path.Combine(dir, $"f{frames:0000}.png"));
@@ -143,6 +150,18 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
 
                 // 段ごとの静止画（数値が緑でも絵は必ず開く — rules/visual-verification.md §7）。
+                // ⚠ 早回しでは撮らない。ここは著作の尺で刻んでいるので、混ぜると
+                //   「どの尺の絵なのか」が分からない 1 組ができる。
+                if (trim > 0f)
+                {
+                    File.WriteAllText(Path.Combine(dir, "frames.tsv"), ledger.ToString());
+                    Debug.Log($"[EyesPreview] 早回し {frames} コマ → Assets/{OutDirRel}/\n"
+                            + $"  止まる 3 つを {trim:F2}s へ（闇 / 断片のまま静止 / 凝視）\n"
+                            + $"  開き切るまで {TrimmedOpenSec(trim):F2}s → 開けっ放し {holdTail:F2}s"
+                            + $" → 閉じ {AnomalyEyesLogic.CloseSec}s\n"
+                            + "  ⚠ 出荷する尺は 1 つも変えていない（プレビュー限定の早回し）");
+                    return;
+                }
                 Shot(cam, mat, dir, "stage_1_hint_quarter", AnomalyEyesLogic.HintSec * 0.25f, density, 0f);
                 Shot(cam, mat, dir, "stage_1_hint_end", AnomalyEyesLogic.HintSec, density, 0f);
                 float stareEnd = AnomalyEyesLogic.HintSec + AnomalyEyesLogic.StareSec;
@@ -187,6 +206,47 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (screenMat != null) UnityEngine.Object.DestroyImmediate(screenMat);
                 if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
             }
+        }
+
+        /// <summary>
+        /// <b>止まっている 3 つを <paramref name="trim"/> 秒へ詰めたときの、開き切るまでの実時間</b>。
+        /// 0 以下なら著作どおり（8.4 秒）。
+        /// </summary>
+        private static float TrimmedOpenSec(float trim)
+        {
+            float open = AnomalyEyesLogic.HintSec + AnomalyEyesLogic.StareSec + AnomalyEyesLogic.SwarmSec;
+            if (trim <= 0f) return open;
+            float dark = AnomalyEyesLogic.HintSec * AnomalyEyesLogic.HintDarkAt;
+            float held = AnomalyEyesLogic.HintSec
+                         * (AnomalyEyesLogic.HintHoldAt - AnomalyEyesLogic.HintCrackAt);
+            return open - dark - held - AnomalyEyesLogic.StareSec + trim * 3f;
+        }
+
+        /// <summary>
+        /// いま段のどこに居るかで決まる<b>早回しの倍率</b>（プレビュー限定）。
+        ///
+        /// 詰めるのは<b>止まっている 3 つだけ</b> — 闇 / 断片のまま静止 / 凝視。
+        /// 動いている所（断片が現れる・見開く・さざめき・間・一気に）は<b>1 倍のまま</b>で、
+        /// そこを速めると 0076 の緩急（止まる と 一気に）が消える。
+        ///
+        /// ⚠ 凝視を詰めると、その中の瞬き（尺の 11%）も一緒に縮む。
+        /// </summary>
+        private static float SpeedAt(float logicT, float trim)
+        {
+            if (trim <= 0f) return 1f;
+            float hint = AnomalyEyesLogic.HintSec;
+            if (logicT < hint)
+            {
+                float x = logicT / hint;
+                if (x < AnomalyEyesLogic.HintDarkAt)
+                    return hint * AnomalyEyesLogic.HintDarkAt / trim;
+                if (x < AnomalyEyesLogic.HintCrackAt) return 1f;
+                if (x < AnomalyEyesLogic.HintHoldAt)
+                    return hint * (AnomalyEyesLogic.HintHoldAt - AnomalyEyesLogic.HintCrackAt) / trim;
+                return 1f;
+            }
+            if (logicT < hint + AnomalyEyesLogic.StareSec) return AnomalyEyesLogic.StareSec / trim;
+            return 1f;
         }
 
         /// <summary>
