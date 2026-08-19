@@ -95,16 +95,16 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 打ち終わるまでの上限 (秒)。
         ///
-        /// ⚠⚠ <b>2.5 → 3.5 へ上げた</b>（2026-08-17・<c>canon/LEDGER.md</c> 0073 で①へ自己紹介を
-        /// 足し、41 文字になったため）。上限が効くと<b>打鍵の間隔が <see cref="CharsPerSec"/> より
-        /// 短くなる</b> — 41 文字を 2.5 秒で打つと 61ms 間隔で、切り出した打鍵の尺（60ms）と
-        /// ぶつかって<b>1 発ずつが繋がった連続音</b>になる（`rules/sound-design.md` §4）。
+        /// ⚠⚠ <b>3.5 → 4.5 へ上げた</b>（2026-08-19・<c>canon/LEDGER.md</c> 0094 で①が 4 行
+        /// 48 文字になったため）。上限が効くと<b>打鍵の間隔が <see cref="CharsPerSec"/> より
+        /// 短くなる</b> — 48 文字を 3.5 秒で打つと 73ms 間隔で、<b>その 1 通だけ速く打つ装置</b>に
+        /// なる（切り出した打鍵の尺 60ms を割れば連続音にもなる）。
         /// **画は普通に出るので、音を聴くまで気づけない。**
         /// ⚠ 上限そのものを消さないのは、うっかり長い文面を書いたときの安全網だから。
-        /// <c>CommsNoticeTextTests.LongestNotice_TypesSlowEnough_ForTheKeystrokeClips</c> が
-        /// 実際の文面で間隔を測るので、次に文面を伸ばす人はそこで落ちる。
+        /// <c>CommsNoticeTextTests.EveryNotice_TypesAtTheDeviceSpeed</c> が
+        /// <b>実際の文面で上限が効いていないこと</b>を確かめるので、次に文面を伸ばす人はそこで落ちる。
         /// </summary>
-        public const float MaxTypeSec = 3.5f;
+        public const float MaxTypeSec = 4.5f;
 
         /// <summary>
         /// 読ませる時間 (秒)。<b>打ち終わってから</b>数える。<b>全文面で同じ値</b>。
@@ -161,6 +161,20 @@ namespace FixedCamVr.Streaming
         public float TypeSec => _typeSec;
 
         /// <summary>
+        /// <b>読ませ終わった</b>（<see cref="HoldSec"/> を満たした、または最初から何も出ていない）。
+        ///
+        /// ⚠⚠ <b>「畳み終わった」ではない。</b> ここが立った瞬間はまだ枠が開いているので、
+        /// <b>次の連絡を入れれば同じ面のまま文面だけが替わる</b>（2026-08-19・
+        /// <c>canon/LEDGER.md</c> 0094・ユーザー指定「前の言葉を表示して 2s たったら、
+        /// そのスクリーンのまま、次の言葉が始まる。毎回消して表示しなおすのはしない」）。
+        /// 畳み終わり（<see cref="CommsStage.Off"/>）を待って次を出すと、
+        /// <b>枠が左へ畳まれてから開き直す</b> ＝ 毎回かならず吃る。
+        /// ⚠ 押している最中（<see cref="CommsStage.Guide"/>）は「読ませ終わった」に含めない —
+        ///   あれは連絡ではなく報告の手元表示で、次の連絡はその上へ届く。
+        /// </summary>
+        public bool DoneReading => _stage == CommsStage.Out || _stage == CommsStage.Off;
+
+        /// <summary>
         /// 連絡が届いた。<b>すでに出ていれば頭から出し直す</b>（重ねない）。
         /// </summary>
         /// <param name="charCount">
@@ -172,7 +186,12 @@ namespace FixedCamVr.Streaming
             // ⚠⚠ **いまの姿から動かす**（`canon/LEDGER.md` 0058）。②の連絡は「押した瞬間」に届くので、
             //    開きを 0 から張り直すと**押し終わるたびに枠が畳まれて開き直る**（毎回かならず起きる吃り）。
             //    報告の手元表示で既に開いていれば、横は動かず**丈だけが伸びて文面の場所ができる**。
-            EnterStage(CommsStage.In);
+            // ⚠⚠ **枠も丈も出来上がっているなら、開く段そのものを飛ばす**（2026-08-19・0094）。
+            //    通さないと、開き 1 → 1・丈 1 → 1 という**何も動かない 0.45 秒**が挟まり、
+            //    そのあいだ面が空になる（体験者から見れば「消えて、少し待って、また出た」）。
+            CommsWeights now = Weights;
+            bool chained = _stage != CommsStage.Off && now.open >= 0.999f && now.body >= 0.999f;
+            EnterStage(chained ? CommsStage.Type : CommsStage.In);
             _typeSec = charCount <= 0
                 ? 0f
                 : Clamp(charCount / CharsPerSec, MinTypeSec, MaxTypeSec);

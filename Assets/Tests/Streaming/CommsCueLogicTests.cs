@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using FixedCamVr.Streaming;
 using NUnit.Framework;
 
@@ -215,7 +215,7 @@ namespace FixedCamVr.Streaming.Tests
                 inIntro = true,
                 startAuthorized = authorized,
                 introWaiting = waiting,
-                panelIdle = idle,
+                panelDoneReading = idle,
                 dt = Dt,
             };
 
@@ -235,11 +235,12 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void TheTitleClosing_DeliversTheGreeting_ThenTheWalkOrder()
         {
+            // ⚠ 名乗りを読ませているあいだ（idle:false）は次を出さない。読ませ終わった縁で
+            //   **間を置かずに**指示が来る（2026-08-19・`canon/LEDGER.md` 0094・同じ面のまま繋ぐ）。
             var l = new CommsCueLogic();
             CollectionAssert.AreEqual(new[] { CommsNotice.Greeting },
-                                      AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f));
-            CollectionAssert.AreEqual(new[] { CommsNotice.Walk },
-                                      AdvanceIntro(l, CommsCueLogic.WalkGapSec + 0.1f));
+                                      AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f, idle: false));
+            CollectionAssert.AreEqual(new[] { CommsNotice.Walk }, AdvanceIntro(l, 0.1f));
         }
 
         [Test]
@@ -249,15 +250,16 @@ namespace FixedCamVr.Streaming.Tests
             var l = new CommsCueLogic();
             CollectionAssert.IsEmpty(AdvanceIntro(l, 10f, authorized: false));
             CollectionAssert.AreEqual(new[] { CommsNotice.Greeting },
-                                      AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f));
+                                      AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f, idle: false));
         }
 
         [Test]
-        public void TheWalkOrder_WaitsForTheGreetingToRetract()
+        public void TheWalkOrder_WaitsForTheGreetingToBeRead()
         {
             // ⚠ 面は 1 つしか無い。重ねると自己紹介が読まれないまま上書きされる。
+            // ⚠ 待つのは**読ませ終わり**であって畳み終わりではない（0094）。
             var l = new CommsCueLogic();
-            AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f);
+            AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f, idle: false);
             CollectionAssert.IsEmpty(AdvanceIntro(l, 30f, idle: false));
             CollectionAssert.AreEqual(new[] { CommsNotice.Walk },
                                       AdvanceIntro(l, CommsCueLogic.WalkGapSec + 0.1f));
@@ -327,7 +329,7 @@ namespace FixedCamVr.Streaming.Tests
             AdvanceIntro(l, 1f, waiting: false);      // ⓪c まで出し切る
             l.ResetRun();
             CollectionAssert.AreEqual(new[] { CommsNotice.Greeting },
-                                      AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f));
+                                      AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f, idle: false));
         }
     }
 }

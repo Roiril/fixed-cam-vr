@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using NUnit.Framework;
 
 namespace FixedCamVr.Diagnostics.Tests
@@ -46,9 +46,9 @@ namespace FixedCamVr.Diagnostics.Tests
         {
             string[] lines = VisitorMarkGuidance.Line(0.5f, confirming: false).Split('\n');
 
-            Assert.That(lines.Length, Is.EqualTo(2), "構成は「報告中」＋ゲージの 2 行");
+            Assert.That(lines.Length, Is.EqualTo(2), "構成は「解析中」＋ゲージの 2 行");
             // 見出しはゲージより小さい（バーの左上に添える）。
-            Assert.That(lines[0], Is.EqualTo($"<size={VisitorMarkGuidance.LabelPercent}%>報告中</size>"));
+            Assert.That(lines[0], Is.EqualTo($"<size={VisitorMarkGuidance.LabelPercent}%>解析中</size>"));
             Assert.That(VisitorMarkGuidance.LabelPercent, Is.LessThan(100));
         }
 

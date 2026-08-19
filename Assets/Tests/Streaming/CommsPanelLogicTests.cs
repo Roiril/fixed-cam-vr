@@ -229,7 +229,9 @@ namespace FixedCamVr.Streaming.Tests
             AdvanceUntil(l, CommsStage.Hold);
 
             l.Begin(Chars);
-            Assert.AreEqual(CommsStage.In, l.Stage);
+            // ⚠ 枠も丈も出来上がっているので、**開く段は挟まずに印字から**
+            //   （2026-08-19・`canon/LEDGER.md` 0094。挟むと何も動かない 0.45 秒だけ面が空になる）。
+            Assert.AreEqual(CommsStage.Type, l.Stage);
             Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "文面は 1 字目から出し直すこと");
             Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠は畳まないこと");
             Assert.AreEqual(1f, l.Weights.body, 0.001f, "丈も保つこと");
@@ -307,6 +309,47 @@ namespace FixedCamVr.Streaming.Tests
             var l = new CommsPanelLogic();
             l.Begin(0);
             AdvanceUntil(l, CommsStage.Hold);
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>連続して言う 2 通は、同じ面のまま繋がる</b>（2026-08-19・
+        /// <c>canon/LEDGER.md</c> 0094・ユーザー指定「前の言葉を表示して 2s たったら、
+        /// そのスクリーンのまま、次の言葉が始まる。毎回消して表示しなおすのはしない」）。
+        ///
+        /// 守るのは 2 つ — <b>枠を畳まない</b>（開き 1 のまま）と、<b>開く段を挟まない</b>
+        /// （挟むと何も動かない 0.45 秒のあいだ面が空になる ＝ 消えて、待って、また出た、に見える）。
+        /// </summary>
+        [Test]
+        public void TheNextNotice_ContinuesOnTheSameScreen()
+        {
+            var l = Started();
+            AdvanceUntil(l, CommsStage.Out);   // ＝ 読ませ終わった縁
+            Assert.IsTrue(l.DoneReading, "読ませ終わりの合図が立っていない");
+            Assert.AreEqual(1f, l.Weights.open, 0.001f, "この瞬間はまだ枠が開いていること");
+
+            l.Begin(Chars);                       // 次の連絡が届く
+
+            Assert.AreEqual(CommsStage.Type, l.Stage, "開く段を挟んでいる（面が空になる）");
+            Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠を畳んでいる");
+            Assert.AreEqual(1f, l.Weights.body, 0.001f, "丈を張り直している");
+            Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "前の文面が残っている");
+        }
+
+        /// <summary>
+        /// ⚠ <b>畳み切った後は、ちゃんと開く段から出す。</b> 上のテストと対で、
+        /// 「常に開く段を飛ばす」実装に倒れていないことを固定する。
+        /// </summary>
+        [Test]
+        public void AfterItFolded_TheNextNoticeOpensAgain()
+        {
+            var l = Started();
+            Advance(l, CommsPanelLogic.InSec + l.TypeSec + CommsPanelLogic.HoldSec
+                     + CommsPanelLogic.OutSec + 0.5f);
+            Assert.AreEqual(CommsStage.Off, l.Stage);
+
+            l.Begin(Chars);
+            Assert.AreEqual(CommsStage.In, l.Stage, "畳んだ後は開く段から出すこと");
+            Assert.AreEqual(0f, l.Weights.open, 0.001f);
         }
     }
 }

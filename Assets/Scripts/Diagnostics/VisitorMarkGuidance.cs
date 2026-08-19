@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using FixedCamVr.Tracking;
 
 namespace FixedCamVr.Diagnostics
@@ -36,8 +36,13 @@ namespace FixedCamVr.Diagnostics
     /// </summary>
     public static class VisitorMarkGuidance
     {
-        /// <summary>長押し中の見出し。<b>ゲージより小さく出す</b>（<see cref="LabelPercent"/>）。</summary>
-        public const string HoldingHead = "報告中";
+        /// <summary>
+        /// 長押し中の見出し。<b>ゲージより小さく出す</b>（<see cref="LabelPercent"/>）。
+        /// ⚠ <b>「報告中」→「解析中」</b>（2026-08-19・<c>canon/LEDGER.md</c> 0094）。
+        /// ①の連絡が「ボタンを長押ししてください／装置が解析して解呪します」と言うので、
+        /// 押しているあいだ画に出る語もそちらへ揃える（<b>同じ装置の言葉に聞こえること</b>）。
+        /// </summary>
+        public const string HoldingHead = "解析中";
 
         /// <summary>
         /// 見出しの大きさ（本文に対する %）。<b><see cref="HmdTextStyle.MinorPercent"/> と同じ値</b>で、

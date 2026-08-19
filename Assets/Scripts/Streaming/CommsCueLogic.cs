@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 
 namespace FixedCamVr.Streaming
 {
@@ -60,10 +60,15 @@ namespace FixedCamVr.Streaming
         public bool introWaiting;
 
         /// <summary>
-        /// 面が空いているか（<c>CommsStage.Off</c>）。<b>次の連絡は前のが引いてから</b>出す —
-        /// 重ねると自己紹介が読まれないまま指示に上書きされる。
+        /// 前の連絡を<b>読ませ終わった</b>か（<c>CommsPanelLogic.DoneReading</c>）。
+        ///
+        /// ⚠⚠ <b>「畳み終わった」ではない</b>（2026-08-19・<c>canon/LEDGER.md</c> 0094）。
+        /// ここが立った瞬間はまだ枠が開いているので、次の連絡を出せば
+        /// <b>同じ面のまま文面だけが替わる</b>（ユーザー指定「毎回消して表示しなおすのはしない」）。
+        /// 畳み終わりを待つと、枠が左へ畳まれてから開き直す ＝ 毎回かならず吃る。
+        /// ⚠ それでも<b>読ませ終わりは待つ</b> — 待たないと自己紹介が読まれないまま指示に上書きされる。
         /// </summary>
-        public bool panelIdle;
+        public bool panelDoneReading;
 
         /// <summary>「報告するまで」のカット（<c>durKind:"untilMark"</c>）が待っているか。</summary>
         public bool waitingForMark;
@@ -115,8 +120,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float BeginDelaySec = 0f;
 
-        /// <summary>③ 締めのカットが待ち始めてから促すまで (秒)。ユーザー指定「3s ほど」。</summary>
-        public const float PromptAfterWaitSec = 3f;
+        /// <summary>
+        /// ③ 締めのカットが待ち始めてから促すまで (秒)。
+        /// ⚠ <b>3 → 2 へ</b>（2026-08-19・<c>canon/LEDGER.md</c> 0094）。当初のユーザー指定は「3s ほど」。
+        /// ⚠ <c>ShowWalkDebugDriver.ReportHesitateSec</c>（4.5 秒）より短く保つ —
+        ///   自動走行が先に押してしまうと③は実機で一度も走らない。
+        /// </summary>
+        public const float PromptAfterWaitSec = 2f;
 
         /// <summary>
         /// ⓪a タイトルが焼け切ってから名乗るまで (秒)。<b>一拍おく</b> —
@@ -124,8 +134,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float GreetDelaySec = 0.6f;
 
-        /// <summary>⓪b 自己紹介が引いてから指示を出すまで (秒)。</summary>
-        public const float WalkGapSec = 0.5f;
+        /// <summary>
+        /// ⓪b 自己紹介を<b>読ませ終わってから</b>指示を出すまで (秒)。
+        /// ⚠⚠ <b>0.5 → 0</b>（2026-08-19・<c>canon/LEDGER.md</c> 0094）。0 でないと、
+        /// 読ませ終わった面が畳まれ始めてから次が届く ＝ <b>同じ面のまま繋がらない</b>
+        /// （<see cref="CommsCueInput.panelDoneReading"/>）。
+        /// </summary>
+        public const float WalkGapSec = 0f;
 
         /// <summary>
         /// ⓪b を出し直すまで (秒)。<b>床の矢印と円は出っぱなし</b>なので、文字は繰り返さなくても
@@ -259,7 +274,7 @@ namespace FixedCamVr.Streaming
             }
 
             // ⚠ 前の連絡が引き切るまで数え始めない（面は 1 つしか無い）。
-            if (!inp.panelIdle) { _idleSec = 0f; return CommsNotice.None; }
+            if (!inp.panelDoneReading) { _idleSec = 0f; return CommsNotice.None; }
             _idleSec += dt;
 
             if (!_walkFired)

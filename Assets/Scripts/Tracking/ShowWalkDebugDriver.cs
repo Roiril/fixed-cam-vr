@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -345,7 +345,7 @@ namespace FixedCamVr.Tracking
 
         /// <summary>
         /// 締めのカットが待ち始めてから押すまで (秒)。
-        /// ⚠ 連絡③の閾値（<c>CommsCueLogic.PromptAfterWaitSec</c> = 3s）より<b>長く</b>取る。
+        /// ⚠ 連絡③の閾値（<c>CommsCueLogic.PromptAfterWaitSec</c> = 2s）より<b>長く</b>取る。
         /// 縮めると③が走らず、催促は実機で検証されないまま出荷される。
         /// </summary>
         private const float ReportHesitateSec = 4.5f;

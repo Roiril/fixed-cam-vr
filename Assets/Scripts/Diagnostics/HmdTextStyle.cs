@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using UnityEngine;
 
 namespace FixedCamVr.Diagnostics
@@ -31,7 +31,7 @@ namespace FixedCamVr.Diagnostics
         // ⚠ 既定は本文 1 つだけ。補助と注目は**例外 2 か所のためにしか存在しない**
         //   （報告の面のラベル / 黒の上の 1 行）。段を増やすと微妙な差が再発する。
 
-        /// <summary>補助 — 主役の脇に小さく添える文字。<b>報告の面の「報告中」だけ</b>。</summary>
+        /// <summary>補助 — 主役の脇に小さく添える文字。<b>報告の面の「解析中」だけ</b>。</summary>
         public const float MinorDeg = 1.5f;
 
         /// <summary>本文 — <b>既定</b>。とくに理由が無ければこれ。</summary>

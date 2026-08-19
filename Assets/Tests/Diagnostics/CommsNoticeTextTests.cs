@@ -25,8 +25,9 @@ namespace FixedCamVr.Diagnostics.Tests
         /// <summary>
         /// 上段が想定している最悪の行数。<b><c>CommsPanel.BodyMaxH</c> はこの行数で決まっている</b>ので、
         /// 増やすならあちらも一緒に上げる（上げないと 1 行ぶん枠から溢れる）。
+        /// ⚠ 3 → 4（2026-08-19・<c>canon/LEDGER.md</c> 0094 で①へ「装置が解析して解呪します」を足した）。
         /// </summary>
-        private const int MaxLines = 3;
+        private const int MaxLines = 4;
 
         private static float FullWidth(string line)
         {
@@ -94,25 +95,28 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         /// <summary>
-        /// ⚠⚠ <b>打ち終わりの上限が効くと、打鍵の間隔が <c>CharsPerSec</c> より短くなる。</b>
-        /// 切り出した打鍵は 1 発 60ms あるので、そこを割ると<b>1 発ずつが繋がって連続音</b>になる
-        /// （`rules/sound-design.md` §4）。<b>画は普通に出るので、音を聴くまで気づけない。</b>
+        /// ⚠⚠ <b>打ち終わりの上限（<c>MaxTypeSec</c>）が効くと、打鍵の間隔が <c>CharsPerSec</c> より
+        /// 短くなる。</b> その 1 通だけ速く打つ装置になり、切り出した打鍵の尺（60ms）を割れば
+        /// <b>1 発ずつが繋がって連続音</b>にもなる（`rules/sound-design.md` §4）。
+        /// <b>画は普通に出るので、音を聴くまで気づけない。</b>
         ///
-        /// ⚠ <c>CommsPanelLogicTests.TypingSpeed_KeepsKeystrokesApart</c> は
-        /// <c>CharsPerSec</c> しか見ていないので、この経路（上限による圧縮）を捕まえられない。
+        /// ⚠ <b>全文面を測る</b>（2026-08-19）。<c>LongestNoticeText</c> は<b>いちばん長い行</b>を
+        /// 持つ文面で、<b>いちばん文字数が多い文面とは限らない</b>。①が 4 行 48 文字になったとき、
+        /// 最長行は⓪a・最多文字は①に分かれた ＝ 1 本だけ測ると上限の圧縮を見逃す。
         /// </summary>
         [Test]
-        public void LongestNotice_TypesSlowEnough_ForTheKeystrokeClips()
+        public void EveryNotice_TypesAtTheDeviceSpeed()
         {
-            string body = CommsPanel.LongestNoticeText;
-            var logic = new CommsPanelLogic();
-            logic.Begin(body.Length);
-
-            float step = logic.TypeSec / body.Length;
-            Assert.GreaterOrEqual(step, 0.060f,
-                                  $"{body.Length} 文字を {logic.TypeSec:0.00}s で打つと "
-                                + $"{step * 1000f:0} ms 間隔。打鍵が重なる"
-                                + "（CommsPanelLogic.MaxTypeSec を上げるか文面を短くする）");
+            foreach (string body in AllTexts())
+            {
+                var logic = new CommsPanelLogic();
+                logic.Begin(body.Length);
+                float step = logic.TypeSec / body.Length;
+                Assert.AreEqual(1f / CommsPanelLogic.CharsPerSec, step, 0.0005f,
+                                $"「{body.Replace("\n", "／")}」（{body.Length} 文字）が "
+                              + $"{step * 1000f:0} ms 間隔。装置の打鍵は 1 つの速さ"
+                              + "（CommsPanelLogic.MaxTypeSec を上げるか文面を短くする）");
+            }
         }
     }
 }

@@ -155,7 +155,7 @@ namespace FixedCamVr.Diagnostics
         private const float HintBandTopY = 0f;
 
         /// <summary>
-        /// 下段（`報告中` ＋ ゲージ）の帯の高さ (m)。<b>中身が変わらないので定数</b>
+        /// 下段（`解析中` ＋ ゲージ）の帯の高さ (m)。<b>中身が変わらないので定数</b>
         /// （補助段 1.5° の 2 行 ＋ 余白）。⚠ 上段と違って実寸を測らないのは、
         /// 文面が 1 つしか無く、ゲージの進捗で行数が変わらないため。
         /// </summary>
@@ -163,11 +163,13 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>
         /// 上段の上限 (m)。<b>折り返しの枠の高さ</b>で、実際に覆う高さは <see cref="_bodyBandH"/>。
-        /// ⚠⚠ <b>最悪は 3 行（①）</b>（2026-08-17・<c>canon/LEDGER.md</c> 0073 で自己紹介を足した）。
-        /// 1 行はおよそ 0.047m なので 3 行 ＝ 0.141m、そこに字の上下の余白 0.035m を足して 0.176m。
-        /// この値はその上限で、<b>ここを下回ると 4 行目へ折り返して面から溢れる</b>。
+        /// ⚠⚠ <b>最悪は 4 行（①）</b>（2026-08-19・<c>canon/LEDGER.md</c> 0094 で「装置が解析して
+        /// 解呪します」を足した）。1 行はおよそ 0.047m なので 4 行 ＝ 0.188m、
+        /// そこに字の上下の余白 0.035m を足して 0.223m。
+        /// この値はその上限で、<b>ここを下回ると 5 行目へ折り返して面から溢れる</b>。
+        /// ⚠ <c>CommsNoticeTextTests.MaxLines</c> と対の値。片方だけ動かさない。
         /// </summary>
-        private const float BodyMaxH = 0.20f;
+        private const float BodyMaxH = 0.25f;
 
         /// <summary>上段の字の上下に取る余白 (m)。</summary>
         private const float BodyPadM = 0.035f;
@@ -182,6 +184,16 @@ namespace FixedCamVr.Diagnostics
         private float BodyCenterY => HintBandTopY + _bodyBandH * 0.5f;
         /// <summary>縁の張り出し (m)。地より一回り大きい面を裏に置いて枠に見せる。</summary>
         private const float BezelM = 0.012f;
+
+        /// <summary>
+        /// 地の不透明度（2026-08-19・<c>canon/LEDGER.md</c> 0094・ユーザー指定
+        /// 「スクリーンの背景 → 黒い半透明に」）。<b>後ろの映像が透ける</b>。
+        /// ⚠ 縁が裏に敷いてあるので、中央の実効は 1-(1-<see cref="BezelAlpha"/>)(1-これ) ＝ 約 0.69。
+        /// </summary>
+        private const float PanelAlpha = 0.50f;
+
+        /// <summary>縁の不透明度。<b>地より薄い</b> — 濃くすると中央だけ透けなくなる。</summary>
+        private const float BezelAlpha = 0.38f;
 
         /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
         private const float FontSize = 0.07f;
@@ -223,58 +235,46 @@ namespace FixedCamVr.Diagnostics
         //    この装置は画像を表示していない — **1 文字ずつ印字している**。だから壊れるのは印字。
 
         /// <summary>
-        /// <b>文面（ユーザーが書いたまま・`canon/LEDGER.md` 0054）。</b>
+        /// <b>文面（ユーザーが書いたまま・`canon/LEDGER.md` 0094）。</b>
         ///
-        /// ⚠ <b>1 行は 14 文字まで</b>（面の幅から 1 文字 1.8° で入る数。折り返しは効くが
-        /// 3 行目は面から出る）。触ったら <c>.\tools\unity.ps1 menu text-audit</c> を通す。
-        /// ⚠ 文言を変えたら <c>menu hud-font</c> を再実行する（静的ベイクなので忘れると豆腐）。
-        /// ⚠ <b>句点の有無を勝手に揃えない</b> — ①②に無く③にあるのはユーザーが書いた形。
+        /// ⚠ <b>1 行は 14 文字まで</b>（面の幅から 1 文字 1.8° で入る数）。折り返しは効くが
+        /// 任せると文の途中で切れるので<b>改行はこちらで入れる</b>（語を縮めて 1 行に収めるのは
+        /// ユーザーの文言の書き換えなのでしない）。<b>行数は 4 行まで</b>（<see cref="BodyMaxH"/>）。
+        /// 触ったら `menu text-audit`（はみ出し）と `menu comms-preview`（縦の座り）を通す。
+        /// ⚠ 文言を変えたら `menu hud-font` を再実行する（静的ベイクなので忘れると豆腐）。
+        /// ⚠ <b>句点の有無を勝手に揃えない</b> — 文面ごとに違うのはユーザーが書いた形。
         /// ⚠ 語は手元の面（<see cref="VisitorMarkGuidance"/>）と揃える —
-        ///   あちらが「異変を報告」なのにこちらが「異常を記録」だと、同じ装置の言葉に聞こえない。
+        ///   あちらが「解析中」なのにこちらが「記録」だと、同じ装置の言葉に聞こえない。
         /// ⚠ <b>身体を操作する指示にしない</b>（0034 — 「右手をあげてください」を伏線にしない）。
         /// </summary>
         private static string TextFor(CommsNotice n) => n switch
         {
-            // ⚠⚠ **押し方はここにしか出ない**（2026-08-16・`canon/LEDGER.md` 0065）。
-            //    それまで下段に `X／Y：異変を報告` を常に出していたが、面が開くたび
-            //    ＝ 押している最中にも「押せ」と言い続けていた。**AIエージェントの言葉として 1 度だけ**言う。
+            // ⓪a 名乗り。⚠ **「AI」とは書かない。「エージェント」と書く**（`canon/LEDGER.md` 0080）。
+            //    ⚠ 紙の依頼書と同じ語（`docs/onsite/handout.html`「調査を支援するエージェント」）。
+            //      片方だけ直すと、紙と装置が別のものを指しているように読める。
+            //    ⚠⚠ **14 文字ちょうど**（帯に入るのは 14.8 文字）。1 文字でも足すと 2 行へ折り返す。
+            CommsNotice.Greeting => "私は調査支援エージェントです",
+            // ⓪b 歩行の指示。**この連絡が床の矢印を出す**（`WalkGuide.NotifyExplaining`）。
+            //    ⚠ 1 文目が 15 文字なので**2 行へ割ってある**（ユーザーの改行は文のあいだの 1 つだけ）。
+            CommsNotice.Walk => "開始ポイントを\nマークしました。\n矢印から向かってください。",
+            // ⓪c 演出の始まりの告知。**段 0 を抜けた縁**（＝ 導入演出が始まるのと同じフレーム）。
+            //    ⓪b が出ていれば引かずに上書きする（`Deliver` は頭から出し直す）。
+            CommsNotice.Arrived => "到着しました。\n観測装置を起動します。",
+            // ① 調査の開始。⚠⚠ **押し方はここにしか出ない**（2026-08-16・`canon/LEDGER.md` 0065）。
+            //    下段は状態だけを持ち、指示を持たない（押している最中に「押せ」と言い続けない）。
             //    ⚠ キー名（X／Y）を出さない — 装置の面に入力機器の名前が出ると、
             //      調査の記録ではなくゲームの操作説明に見える。左で触れるのは X と Y だけで、
-            //      **どちらでもよい**ので「手元のボタン」で足りる。
-            // ⚠⚠ **1 行目は自己紹介**（2026-08-17・`canon/LEDGER.md` 0073・ユーザー指定
-            //    「スイから、今回サポートするエージェントです、みたいな感じに軽く自己紹介」）。
-            //    ここが**体験の中で AI だと分かる唯一の所** — 0067 で送り主を AIエージェントへ
-            //    変えたとき、画に出る文字は 1 字も変わっておらず読み取れなかった（0067 の但し書き）。
-            //    ⚠ **名前は出していない。** ユーザーの言い方（「今回サポートするエージェントです」）に
-            //      名前が無いため。名乗らせる案は `canon/OPEN.md` に置いてある
-            //      （世界観の昇格はユーザーが口にしたときだけ — `rules/canon-boundary.md`）。
-            // ⚠⚠ **自己紹介はここへ移した**（2026-08-17・`canon/LEDGER.md` 0079・ユーザー指定
-            //    「タイトル演出の直後に、AIエージェントの自己紹介文を移動させる」）。
-            //    0073 では①の 1 行目だった。移したのは置き場所だけ。
-            // ⚠⚠ **「AI」とは書かない。「エージェント」と書く**（2026-08-17・`canon/LEDGER.md` 0080・
-            //    ユーザー指定「AIと書かずに、エージェントとしよう」）。0073 の逐語も
-            //    「今回サポートするエージェントです」で、**AI へ寄せたのはシュビーの言い換えだった**。
-            //    ⚠ **紙の依頼書と同じ語**（`docs/onsite/handout.html`「調査を支援するエージェント」）。
-            //      片方だけ直すと、紙と装置が別のものを指しているように読める。
-            //    ⚠ 18 文字になったので**2 行へ割った**（1 行 14 文字まで）。
-            CommsNotice.Greeting => "今回の調査を支援する\nエージェントです",
-            // ⚠⚠ **ユーザーが書いた形のまま**（0079 の逐語「矢印の方向から、指定されたポイントへ
-            //    移動してください。」）。読点・句点を勝手に落とさない。改行だけこちらで入れてある
-            //    （1 行 14 文字までなので、入れないと折り返し位置が文の途中になる）。
-            CommsNotice.Walk => "矢印の方向から、\n指定されたポイントへ\n移動してください。",
-            // ⚠⚠ **ユーザーが書いた形のまま**（2026-08-17 の赤入れ 3・逐語
-            //    「ポイントに到着しました。観測装置を起動します」）。改行だけこちらで入れてある。
-            //    ⚠ 出る瞬間は**導入演出が始まるのと同時**（ユーザー指定「演出は長いから、
-            //      エージェントスクリーンが出るのと演出開始は同時でいい」）。
-            CommsNotice.Arrived => "ポイントに到着しました。\n観測装置を起動します",
-            // ⚠⚠ **「認めたら」→「見つけたら」**（2026-08-17・ユーザー指定）。
-            //    ⚠ 1 字増えて 1 行 15 文字になり、面の幅（14 文字）を越えるので**3 行へ割った**。
-            //      折り返しに任せると「ボタンを長押／し」のような所で切れる。
-            //      ⚠ 語を縮めて 1 行に収める（「ボタン長押し」等）のは**ユーザーの文言の書き換え**なのでしない。
-            CommsNotice.Begin => "調査を開始してください\n異変を見つけたら\nボタンを長押し",
-            CommsNotice.MarkLogged => "異常が記録されました",
+            //      **どちらでもよい**ので「ボタン」で足りる。
+            //    ⚠⚠ **4 行目は「押すと何が起きるか」**（2026-08-19・0094）。
+            //      報告を「解呪」へ繋ぐ唯一の説明で、③の「解呪してください」はこれを読んだ前提に立つ。
+            CommsNotice.Begin => "調査を開始してください。\n異変を見つけたら\nボタンを長押ししてください\n装置が解析して解呪します",
+            // ②a 報告が通った（解除が効いた）。
+            CommsNotice.MarkLogged => "異常を検出しました",
+            // ②b 報告が通らなかった（3 周目は AI が侵食されていて通らない — 0082）。
             CommsNotice.MarkNothing => "異常は検出されませんでした",
-            CommsNotice.Prompt => "異常が検出されました。\n記録してください。",
+            // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0094）。
+            //    読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
+            CommsNotice.Prompt => "異常があなたを\n取り込もうとしています。\n解呪してください。",
             _ => "",
         };
 
@@ -287,18 +287,18 @@ namespace FixedCamVr.Diagnostics
         public static string NoticeText(CommsNotice n) => TextFor(n);
 
         /// <summary>
-        /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（13 文字）。
+        /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（⓪a の 14 文字）。
         ///
         /// ⚠ ここを短い文面にすると <c>menu text-audit</c> が<b>最悪の行を測らない</b>ので
         /// 「枠に収まっている」と嘘をつく。実行時はどの文面でも <see cref="SetNotice"/> が組み直す。
-        /// ⚠ <b>行数の最悪（2 行 ＝ ③）はここでは測れない。</b> 縦の座りは
-        /// <c>menu comms-preview</c> の絵で見る（4 文面ぶん焼く）。
-        /// </summary>
-        /// ⚠⚠ <b>2026-08-17 に① → ②へ移した。</b> ①を 3 行へ割ったので、いちばん長い行を持つのは
-        /// ②の「異常は検出されませんでした」（13 文字）になった。
+        /// ⚠ <b>行数の最悪（4 行 ＝ ①）はここでは測れない。</b> 縦の座りは
+        /// <c>menu comms-preview</c> の絵で見る。
+        /// ⚠⚠ <b>2026-08-19 に② → ⓪aへ移した</b>（`canon/LEDGER.md` 0094）。名乗りが
+        /// 「私は調査支援エージェントです」＝ 14 文字になり、帯に入る 14.8 文字にいちばん近い。
         /// <c>CommsNoticeTextTests.LongestNoticeText_ReallyHasTheLongestLine</c> が
         /// **本当に最長かを機械で確かめる**ので、文面を触った人はそこで落ちる。
-        public static string LongestNoticeText => TextFor(CommsNotice.MarkNothing);
+        /// </summary>
+        public static string LongestNoticeText => TextFor(CommsNotice.Greeting);
 
         private readonly CommsPanelLogic _logic = new CommsPanelLogic();
         private readonly CommsCueLogic _cue = new CommsCueLogic();
@@ -339,6 +339,13 @@ namespace FixedCamVr.Diagnostics
         private float _previewTimeSec;
         // ⚠ 地の色は**シェーダによってプロパティ名が違う**（URP は `_BaseColor` / 組み込みは `_Color`）。
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        // 半透明へ倒すためのプロパティ（URP の Unlit）。⚠ 組み込みの `Unlit/Color` には 1 つも無い。
+        private static readonly int SurfaceId = Shader.PropertyToID("_Surface");
+        private static readonly int BlendId = Shader.PropertyToID("_Blend");
+        private static readonly int SrcBlendId = Shader.PropertyToID("_SrcBlend");
+        private static readonly int DstBlendId = Shader.PropertyToID("_DstBlend");
+        private static readonly int ZWriteId = Shader.PropertyToID("_ZWrite");
+        private static readonly int AlphaClipId = Shader.PropertyToID("_AlphaClip");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         // 顔の枠（`CommsAvatar.shader`）。
         private static readonly int FaceTexId = Shader.PropertyToID("_Face");
@@ -624,7 +631,7 @@ namespace FixedCamVr.Diagnostics
                 inIntro = inIntroPhase,
                 startAuthorized = showControl == null || showControl.StartAuthorized,
                 introWaiting = introWaiting,
-                panelIdle = _logic.Stage == CommsStage.Off,
+                panelDoneReading = _logic.DoneReading,
                 waitingForMark = timeline != null && timeline.IsWaitingForVisitorMark,
                 markPressed = markPressed,
                 markResolved = markResolved,
@@ -981,12 +988,47 @@ namespace FixedCamVr.Diagnostics
             go.transform.localScale = new Vector3(w, h, 1f);
             go.AddComponent<MeshFilter>().sharedMesh = _panelMesh;
             var r = go.AddComponent<MeshRenderer>();
-            mat = new Material(shader) { name = name + " (runtime)", renderQueue = queue };
+            mat = new Material(shader) { name = name + " (runtime)" };
+            MakeTranslucent(mat);
+            mat.renderQueue = queue;   // ⚠ 半透明へ倒したあとに書く（倒す側が queue を上書きする）
             r.sharedMaterial = mat;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             r.receiveShadows = false;
             r.enabled = false;
             return r;
+        }
+
+        /// <summary>
+        /// 地と縁を<b>半透明</b>に倒す（2026-08-19・<c>canon/LEDGER.md</c> 0094・
+        /// ユーザー指定「スクリーンの背景 → 黒い半透明に」）。
+        ///
+        /// ⚠⚠ <b>色に alpha を書くだけでは 1 ビットも効かない。</b> URP の Unlit は既定が不透明で、
+        /// 面・キーワード・混ぜ方・深度書き込みの<b>4 つを全部倒して初めて</b> alpha が通る。
+        /// ⚠ <b>フォールバックの <c>Unlit/Color</c> には alpha が無い</b>（プロパティが 1 つも無いので
+        /// ここは丸ごと空振りし、従来どおり不透明で出る）。だから警告を出す — 黙って不透明に
+        /// なると、実機の画を拡大するまで誰も気づけない。
+        /// ⚠ <b>深度は書かない。</b> 書くと後ろの文字（TMP Overlay）が自分の地に隠れる。
+        /// </summary>
+        private static void MakeTranslucent(Material m)
+        {
+            if (!m.HasProperty(SurfaceId))
+            {
+                Debug.LogWarning($"[Comms] {m.shader.name} は半透明に倒せないので地が不透明になります");
+                return;
+            }
+            m.SetOverrideTag("RenderType", "Transparent");
+            m.SetFloat(SurfaceId, 1f);                     // 1 = Transparent
+            if (m.HasProperty(BlendId)) m.SetFloat(BlendId, 0f);   // 0 = Alpha
+            if (m.HasProperty(SrcBlendId))
+                m.SetFloat(SrcBlendId, (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (m.HasProperty(DstBlendId))
+                m.SetFloat(DstBlendId, (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (m.HasProperty(ZWriteId)) m.SetFloat(ZWriteId, 0f);
+            if (m.HasProperty(AlphaClipId)) m.SetFloat(AlphaClipId, 0f);
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            m.DisableKeyword("_ALPHATEST_ON");
+            m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            m.SetShaderPassEnabled("ShadowCaster", false);
         }
 
         private static Mesh BuildQuad()
@@ -1055,17 +1097,22 @@ namespace FixedCamVr.Diagnostics
             if (h > 0.0005f) h = Mathf.Max(h, CommsFaceLayout.MinBoxH);
             bool lit = pa > 0.01f && AppliedOpen > 0.001f && h > 0.0005f;
 
-            // 地のシェーダは alpha を持たない（不透明）ので、明るさで濃さを出す（暗い場所なので十分）。
+            // 地は**黒い半透明**（2026-08-19・`canon/LEDGER.md` 0094）。
+            // ⚠⚠ **薄めるのは alpha であって rgb ではない。** 2026-08-19 まで地は不透明で、
+            //    出入りを rgb の掛け算（黒へ寄せる）で作っていた。半透明にしたので、
+            //    そこを rgb のままにすると「消えていく」ではなく「黒くなっていく」に見える。
             if (_panelRenderer != null && _panelMat != null)
             {
-                SetFlatColor(_panelMat, new Color(0.050f * pa, 0.042f * pa, 0.038f * pa, 1f));
+                SetFlatColor(_panelMat, new Color(0.020f, 0.017f, 0.015f, PanelAlpha * pa));
                 _panelRenderer.enabled = lit;
                 SetFrame(_panelRenderer.transform, _panelLeftX, _panelW, AppliedOpen, cy, h);
             }
             if (_bezelRenderer != null && _bezelMat != null)
             {
                 // 縁は地より明るい。ここだけが「面がある」ことを伝える。
-                SetFlatColor(_bezelMat, new Color(0.150f * pa, 0.110f * pa, 0.085f * pa, 1f));
+                // ⚠ 縁は地の**裏に敷いた一回り大きい面**なので、中央では 2 枚が重なる
+                //   （合成は 1-(1-地)(1-縁)）。縁を濃くすると中央だけ透けなくなる。
+                SetFlatColor(_bezelMat, new Color(0.150f, 0.110f, 0.085f, BezelAlpha * pa));
                 _bezelRenderer.enabled = lit;
                 SetFrame(_bezelRenderer.transform, _bezelLeftX, _bezelW, AppliedOpen, cy,
                          h + BezelM * 2f);
