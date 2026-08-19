@@ -164,13 +164,13 @@ Shader "FixedCamVr/ScreenComposite"
         // w = 帯の組み替えの速さ (Hz)。
         // ⚠ 行数は**映像の粗さと独立**でよい（走査線は装置が走査した跡で、映像の内容ではない）。
         //   参考画像の線は 1〜2 画素で、180 行（1 行 4 画素）ではブラインドの羽根に見えた。
-        _SwapSmear("Swap Smear (rows, width, center shift, hz)", Vector) = (320, 0.75, 0.10, 14)
+        _SwapSmear("Swap Smear (rows, width, center shift, hz)", Vector) = (320, 0.20, 0.28, 14)
         // 黒い線（行あたり 3 本まで）。x = 中心寄りの長い線の半幅の基準 /
         // y = 外の短い線をどれだけ離すか / z = 長い線の中心のばらつき（すべて人型の半高が 1 の座標）/
         // w = **先に掛けるぼかしの量**（mip の段。顔も服の模様もここで消す）。
         // ⚠ w が 0 だと「引き伸ばした写真」にしか見えない。参考画像の線に細部が無いのはぼかしのため。
         // ⚠ x を人型の半幅（およそ 0.22）より小さくすると、輪郭を作る線が体に届かず細切れになる。
-        _SwapLine("Swap Line (long half, gap, center jitter, blur lod)", Vector) = (0.22, 0.12, 0.26, 3.2)
+        _SwapLine("Swap Line (long half, gap, center jitter, blur lod)", Vector) = (0.22, 0.12, 0.26, 0.8)
         // 糸のうねりの時計（秒）。**_Time を使わない** — Editor のプレビューは 1 エディタフレームの中で
         // 何コマも描くので、_Time だと連番 PNG の糸が全コマ同じになる（_GlitchSeed と同じ理由）。
         _SwapSeed("Swap Seed (seconds)", Float) = 0
@@ -662,7 +662,12 @@ Shader "FixedCamVr/ScreenComposite"
             float SwapRowInk(float rowR, float front, float knot)
             {
                 float gate = smoothstep(0.72, 0.16, rowR);   // 半分ほどの行が濃く残る
-                return saturate(front * lerp(gate, 1.0, saturate(knot)));
+                float k = saturate(knot);
+                // ⚠⚠ **緩むときは行を抜くだけでなく、全体も薄める**（2026-08-19 の 9 巡目）。
+                //   抜くだけだと、残った行（引き伸ばした画素）と抜けた行（下の映像）が
+                //   1 行おきに並んで**ブラインドの羽根**になる。人型が画面を覆う「人形 → 人」の
+                //   晴れる段でそれが顕著だった（絵で確かめて直した）。
+                return saturate(front * lerp(gate, 1.0, k) * (0.35 + 0.65 * k));
             }
 
             /// ほどけの前線。0 = まだ / 1 = ほどけた。
@@ -896,7 +901,13 @@ Shader "FixedCamVr/ScreenComposite"
                             //   輪郭は途切れによって作らずに線の感じでぼんやりと見えるように」）。
                             //   歪めていないマスク（`sil`）を混ぜると CG の縁がそのまま輪郭として出る。
                             //   下限（0.28）を残すのは、人の外にも線を薄く散らして縁を曖昧にするため。
-                            float w = field * (0.12 + 0.88 * silSmear);
+                            // ⚠⚠ **覆いの重みは「ずらした人型」だけで作る**（2026-08-19 の 9 巡目）。
+                            //   ここに `field`（楕円）を足していたので、**体の外の画面全体に薄い線が
+                            //   立って「全画面が乱れた」に戻っていた**（0089 の核心を自分で壊していた）。
+                            //   `silSmear` は行ごとに横へずれた人型なので、**縁はそれだけで崩れる** —
+                            //   外へ散らすために別の場を足す必要が無い。
+                            //   `field` は「読みに行く先が体から遠すぎる行」を切るためだけに残す。
+                            float w = saturate(silSmear * 1.15) * saturate(field * 3.0);
                             float ink = SwapRowInk(rowR, SwapFront(sUv), _SwapKnot) * w;
                             if (ink > 0.002)
                             {

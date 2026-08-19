@@ -219,7 +219,12 @@ namespace FixedCamVr.Streaming
                 // 吸い込まれる。もつれがほぐれながら、背丈の縮みに連れて集まる。
                 float u = Smooth((t - RiseFrac) / MorphFrac);
                 cover = 1f;
-                knot = Mathf.Lerp(1f, ThreadAtPull, u);
+                // ⚠⚠ **覆いはここで薄めない**（2026-08-19 の 9 巡目・絵で直した）。0089 の言葉は
+                //   「ノイズに覆われて見えなくなり、**その後にノイズの人型が**徐々に人形サイズに
+                //   なり」なので、縮んでいる間も覆われたままでなければならない。
+                //   薄めていた頃は、縮む段の途中で当人の顔がそのまま読めていた。
+                knot = 1f;
+                // 広がり（体の外へ流れ出た糸）だけは縮みに連れて引く。
                 thread = Mathf.Lerp(1f, ThreadAtPull, u);
                 real = 0f;
                 h01 = u;
@@ -229,7 +234,7 @@ namespace FixedCamVr.Streaming
                 // 晴れる。糸が消え、人形になる向きだけ実体が出る。
                 float u = Smooth((t - RiseFrac - MorphFrac) / clearFrac);
                 cover = 1f;
-                knot = Mathf.Lerp(ThreadAtPull, 0f, u);
+                knot = Mathf.Lerp(1f, 0f, u);
                 thread = Mathf.Lerp(ThreadAtPull, 0f, u);
                 real = _dir == Dir.ToDoll ? u : 0f;
                 h01 = 1f;
