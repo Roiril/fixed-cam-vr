@@ -855,9 +855,10 @@ Shader "FixedCamVr/ScreenComposite"
                     // ⚠ premultiplied を崩さない — アルファに掛けた分は rgb にも掛ける。
                     half aCg = saturate(cg.a);
                     half3 rgbCg = cg.rgb;
-                    // ⚠⚠ **入れ替わりの線は CG を重ねた後に掛ける**（2026-08-19）。先に掛けると
-                    //   人形（実機）や代役（Editor）が線を上書きして、線が乗っていない絵になる。
-                    half swapLineMul = 1.0;
+                    // ⚠⚠ **入れ替わりの絵は CG を重ねた後に混ぜる**（2026-08-19）。先に混ぜると
+                    //   人形（実機）や代役（Editor）が上書きして、線が乗っていない絵になる。
+                    half3 swapCol = 0.0;
+                    half swapMix = 0.0;
                     if (_SwapRect.w > 0.5)
                     {
                         // 入れ替わりのほどけ。**下の映像そのものを行ごとに水平へ引き伸ばす**ので、
@@ -886,8 +887,8 @@ Shader "FixedCamVr/ScreenComposite"
                             // 帯ごとに歪めた位置の人型。**縁が帯ごとに崩れている**ので、
                             // ここから作る重みには CG の輪郭がそのまま出ない。
                             float sIn;
-                            float silSmear = saturate(SampleCgSoft(CgUvOf(sUv, sIn),
-                                                                   lod + _SwapLine.w).a) * sIn;
+                            half4 cgS = SampleCgSoft(CgUvOf(sUv, sIn), lod + _SwapLine.w);
+                            float silSmear = saturate(cgS.a) * sIn;
 
                             // ⚠⚠ **マスクは切り取りではなく「線の濃さの重み」**（2026-08-19
                             //   ユーザー指摘「モデルに張り付ける感じだと、モデルの輪郭が目立って
@@ -905,11 +906,18 @@ Shader "FixedCamVr/ScreenComposite"
                                                         floor(sampleUv.y * max(_SwapSmear.x, 4.0)),
                                                         floor(_SwapSeed * max(_SwapSmear.w, 1.0)),
                                                         spread);
-                                // ⚠⚠ **2D の映像へ線だけを重ねる。地を置き換えない。**
-                                //   置き換えると、置き換えた領域の縁 ＝ マスクの縁が輪郭として出る。
-                                //   乗算なら重みが滑らかなぶんだけ線が薄くなるので、
-                                //   **どこにも縁ができない**。人の形は線の濃さと密度でぼんやり出る。
-                                swapLineMul = lerp(1.0, SwapInkDark, saturate(hit * ink));
+                                // ⚠⚠ **線を乗せるだけでは人が透けて見える**（2026-08-19 ユーザー指摘
+                                //   「人が見えてしまっているから覆うようにして隠して」）。線は行あたり
+                                //   3 本しか無いので、間から元の顔がそのまま読める。
+                                //   ⇒ 地も**帯ごとに歪めたぼかし画**へ置き換えて隠す。
+                                // ⚠ 置き換えの重み（`ink`）は滑らかなので、**切り取りの縁はできない**。
+                                //   6 巡目までは歪めていないマスク（`sil`）を混ぜていたので縁が出ていた。
+                                half3 warped = SampleBase(sUv, lod + _SwapLine.w, chromaBias);
+                                // ⚠ 素材に CG も混ぜる。ほどける当人が CG 側に居ることがある
+                                //   （4 周目 A は人形／Editor は代役）。premultiplied なので rgb はそのまま。
+                                warped = warped * (1.0 - silSmear) + cgS.rgb * sIn;
+                                swapCol = warped * lerp(1.0, SwapInkDark, hit);
+                                swapMix = saturate(ink);
                             }
                         }
 
@@ -930,8 +938,8 @@ Shader "FixedCamVr/ScreenComposite"
                     // この式が自動的に背景を (1-a) 倍する。不透明な人形（a=1）に対しては lerp と同値。
                     float s = saturate(_CgStrength) * cgIn;
                     col = col * (1.0 - aCg * s) + rgbCg * s;
-                    // ⚠ **線は最後。** 映像も人形（実機）も代役（Editor）も、まとめて線の下に入る。
-                    col *= swapLineMul;
+                    // ⚠ **ほどけは最後。** 映像も人形（実機）も代役（Editor）も、まとめてこの下に入る。
+                    col = lerp(col, swapCol, swapMix);
                 }
 
                 // ================= ここから撮像の順（レンズ → センサ → ISP）=================
