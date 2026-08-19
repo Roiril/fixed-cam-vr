@@ -159,13 +159,18 @@ Shader "FixedCamVr/ScreenComposite"
         // 線の濃さ。**引き伸ばした映像の色に掛ける**（単色を置かない）。
         // xy = 黒く潰れる行 / zw = 明るいまま残る行。参考画像はこの 2 種が混ざっている。
         // 監視カメラの画は場所で明るさが桁違いなので、固定色だと暗い所で 1 本も見えない。
-        _SwapInk("Swap Line Ink (dark mul, dark add, pale mul, pale add)", Vector) = (0.16, 0.010, 1.30, 0)
-        // 走査線の刻み。x = **枠の縦**に対する行数（映像の走査線と同じ密度に置く）/
-        // y = 引き伸ばしの最大倍率 / z = 水平のずれ幅（人型の半高に対する割合） /
-        // w = 行の組み替えの速さ (Hz)。
+        _SwapInk("Swap Line Ink (dark mul, dark add, pale mul, pale add)", Vector) = (0.11, 0.008, 1.45, 0)
+        // 走査線の刻み。x = **枠の縦**に対する行数 / y = 引き伸ばしの最大倍率 /
+        // z = 水平のずれ幅（人型の半高に対する割合） / w = 行の組み替えの速さ (Hz)。
         // ⚠ y と z を上げすぎると、引き伸ばした先が体の中を指す画素が画面じゅうに出て
         //   全面が横線になる（`SwapReachField` が抑えているが、そちらも一緒に広がる）。
-        _SwapSmear("Swap Smear (rows, stretch, slip, hz)", Vector) = (180, 2.8, 0.16, 14)
+        // ⚠ 行数は**映像の粗さと独立**でよい（走査線は装置が走査した跡で、映像の内容ではない）。
+        //   参考画像の線は 1〜2 画素で、180 行（1 行 4 画素）ではブラインドの羽根に見えた。
+        _SwapSmear("Swap Smear (rows, stretch, slip, hz)", Vector) = (320, 2.8, 0.22, 14)
+        // 線の刻み。x = 水平方向の区間の細かさ（人型の半高が 1 の座標での本数）/
+        // y = 線になる区間の割合（0.5 なら半分が線・半分が地）/ z = 区間ごとの追加のずれ。
+        // ⚠ これが無いと 1 本の線が長く伸び続けて「ブラインドの羽根」になる。
+        _SwapLine("Swap Line (seg density, line ratio, seg slip, -)", Vector) = (11.0, 0.52, 1.7, 0)
         // 糸のうねりの時計（秒）。**_Time を使わない** — Editor のプレビューは 1 エディタフレームの中で
         // 何コマも描くので、_Time だと連番 PNG の糸が全コマ同じになる（_GlitchSeed と同じ理由）。
         _SwapSeed("Swap Seed (seconds)", Float) = 0
@@ -210,6 +215,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _SwapRect;
                 float4 _SwapInk;
                 float4 _SwapSmear;
+                float4 _SwapLine;
                 float _SwapCover;
                 float _SwapKnot;
                 float _SwapThread;
@@ -557,7 +563,8 @@ Shader "FixedCamVr/ScreenComposite"
             ///   人型は縮む段で 1.65m → 0.40m になるので、figure に紐づけると行の高さも 1/4 になり、
             ///   **縮み切る前に線が 1 画素を割って消える**（実際そうなり、縮む段が無地になった）。
             ///   走査線は装置が持つものなので、画面に固定されているのが物理的にも正しい。
-            float2 SwapSmearUv(float2 uv, float reach, float t, out float rowR, out float rowS)
+            float2 SwapSmearUv(float2 uv, float reach, float t,
+                               out float rowR, out float rowS, out float lineAmt)
             {
                 float rows = max(_SwapSmear.x, 4.0);
                 float row = floor(uv.y * rows);
@@ -568,6 +575,17 @@ Shader "FixedCamVr/ScreenComposite"
                 // 行の中心 1 本を行じゅうが読む（＝縦解像度が落ちて走査線になる）。
                 // 水平の動きだけは人型の中心を基準にするので figure 空間で解く。
                 float2 p = SwapFigureSpace(float2(uv.x, (row + 0.5) / rows));
+
+                // ⚠⚠ **水平にも刻む。** 行ごとにしかずらさないと 1 本の線が長く伸び続け、
+                //   参考画像の「短い針が散っている」ではなく「ブラインドの羽根」になる
+                //   （2026-08-19 に実測: 線の長さ 85px 対 参考 30px）。区間ごとに別のずれを
+                //   与えるので、**下は隠れたまま線だけが短く見える**。
+                float seg = floor(p.x * _SwapLine.x + rowR * 53.0);
+                float segR = Hash21(float2(seg * 0.71, row + tick * 3.0));
+                // ⚠⚠ **線にならない区間を作る。** 参考画像は「地の上に細い針が散っている」絵で、
+                //   地も元の画素（引き伸ばされたもの）。全画素を濃淡へ振ると塗りつぶしになる。
+                lineAmt = smoothstep(_SwapLine.y + 0.16, _SwapLine.y - 0.16, segR);
+
                 // ⚠⚠ **どの行にも下限を置く。** 伸びもずれも 0 に近い行が残ると、
                 //   ほどけ切った瞬間にそこだけ元の顔が読めて「覆われて見えなくなった」が成立しない
                 //   （素直に rowS² と (rowR-0.5) を掛けると、行の半分近くがほぼ動かない）。
@@ -576,6 +594,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float dir = rowR < 0.5 ? -1.0 : 1.0;
                 float mag = 0.30 + abs(rowR * 2.0 - 1.0) * 0.70;      // 0.30 〜 1.00
                 p.x -= dir * mag * reach * _SwapSmear.z * (0.55 + rowS * 0.80);
+                p.x -= (segR - 0.5) * reach * _SwapSmear.z * _SwapLine.z;
                 return SwapFrameUv(p);
             }
 
@@ -624,11 +643,15 @@ Shader "FixedCamVr/ScreenComposite"
             ///   その画素が「誰だったか」の手掛かりが 1 ビットも残らない。
             /// ⚠ **中間色を作らない。** 素直に補間すると行の半分が元の色のままになり、
             ///   線ではなく「少しぼけた画」に見える。参考画像の線は濃い / 淡いの 2 種が混ざっている。
-            half3 SwapLineColor(half3 c, float rowS)
+            /// ⚠⚠ <paramref name="lineAmt"/> が 0 の所は**引き伸ばした画素をそのまま返す**。
+            ///   それが参考画像でいう「地」で、下の映像は既に隠れている（別の場所を読んでいる）。
+            ///   全画素を濃淡へ振ると、線ではなく塗りつぶしの帯になる。
+            half3 SwapLineColor(half3 c, float rowS, float lineAmt)
             {
                 half3 dark = max(c * _SwapInk.x + _SwapInk.y, 0.0);
                 half3 pale = max(c * _SwapInk.z + _SwapInk.w, 0.0);
-                return lerp(pale, dark, smoothstep(0.42, 0.58, rowS));
+                half3 ink = lerp(pale, dark, smoothstep(0.42, 0.58, rowS));
+                return lerp(c, ink, saturate(lineAmt));
             }
 
                         // 演出としての「映像の乱れ」の位置ずれ成分。帯（走査線ブロック）の一部だけを水平に飛ばし、
@@ -808,8 +831,9 @@ Shader "FixedCamVr/ScreenComposite"
                         // ⚠ ここでは**いちばん遠くまで届く行**の範囲で判定する（下の `span` の上限）。
                         if (sil > 0.002 || SwapReachField(float2(p0.x / 1.30, p0.y), spread) > 0.002)
                         {
-                            float rowR, rowS;
-                            float2 sUv = SwapSmearUv(sampleUv, spread, _SwapSeed, rowR, rowS);
+                            float rowR, rowS, lineAmt;
+                            float2 sUv = SwapSmearUv(sampleUv, spread, _SwapSeed,
+                                                     rowR, rowS, lineAmt);
 
                             // ⚠ **行ごとに届く距離を変える。** 全行を同じ幅で切ると、
                             //   縁が垂直な直線になって「バーコード」に見える（2026-08-19 の絵）。
@@ -840,7 +864,7 @@ Shader "FixedCamVr/ScreenComposite"
                                 //   **本人が消えて背景だけが横に伸びる**（2026-08-19 に絵で確かめた）。
                                 //   premultiplied なので rgb はそのまま足す。
                                 smeared = smeared * (1.0 - silSmear) + cgS.rgb * sIn;
-                                col = lerp(col, SwapLineColor(smeared, rowS), saturate(ink));
+                                col = lerp(col, SwapLineColor(smeared, rowS, lineAmt), saturate(ink));
                             }
                         }
 
