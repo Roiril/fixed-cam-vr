@@ -209,7 +209,11 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 stage.SetActorHeight(cur, s.heightM, geom);
                 stage.SetGroundMul(s.ground);
-                stage.SetSwap(true, s, toDoll, t);
+                // ⚠ 実機の「人 → 人形」では体験者は映像側だが、ここでは代役の CG。
+                //   実体として描き続けないと、代役だけ消えて背景（黒いカーテン）が出る。
+                //   ⚠ 縮む段も含める — そこで消すと「線の塊が縮む」が背景の塊になる。
+                //   晴れる段（real > 0）は人形が出る所なので読み替えない。
+                stage.SetSwap(true, s, toDoll, t, toDoll && s.real < 0.001f ? 1f : -1f);
                 capH = s.heightM; capCover = s.cover; capKnot = s.knot;
                 capThread = s.thread; capReal = s.real;
                 Shoot(PhaseLabel(s, dir, covered), t);

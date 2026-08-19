@@ -897,13 +897,21 @@ namespace FixedCamVr.Streaming.EditorTools
 
             /// <summary>入れ替わりの進みを渡す。uniform は <see cref="Composite"/> が書く
             /// （矩形は contain-fit が確定してからでないと解けないため）。</summary>
-            public void SetSwap(bool active, in SwapMorphLogic.Sample s, bool fromTop, float seed)
+            /// <param name="realOverride">
+            /// ⚠⚠ <b>Editor だけの読み替え。</b>実機の「人 → 人形」では体験者は<b>映像側</b>に居て、
+            /// CG 層に居るのは人形なので、ほどける段では CG を消さないと人形が先に見えてしまう。
+            /// ところが Editor では体験者が<b>代役の CG</b> なので、同じ uniform を渡すと
+            /// <b>代役だけが消えて背景（黒いカーテン）が露出する</b>（2026-08-19 に絵で確かめた）。
+            /// ⇒ ほどけ切るまでは実体として描き続ける。負値で「読み替えない」。
+            /// </param>
+            public void SetSwap(bool active, in SwapMorphLogic.Sample s, bool fromTop, float seed,
+                                float realOverride = -1f)
             {
                 _swapActive = active;
                 _swapCover = Mathf.Clamp01(s.cover);
                 _swapKnot = Mathf.Clamp01(s.knot);
                 _swapThread = Mathf.Clamp01(s.thread);
-                _swapReal = Mathf.Clamp01(s.real);
+                _swapReal = Mathf.Clamp01(realOverride >= 0f ? realOverride : s.real);
                 _swapFromTop = fromTop;
                 _swapSeed = seed;
             }

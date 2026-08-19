@@ -594,7 +594,7 @@ Shader "FixedCamVr/ScreenComposite"
 
             /// 線の黒さ。0 で真っ黒、1 で地のまま。**単色の黒を置かない** — 監視カメラの画は
             /// 場所で明るさが桁違いなので、固定色だと暗い所で線が 1 本も見えない。
-            static const float SwapInkDark = 0.16;
+            static const float SwapInkDark = 0.30;
 
             /// その画素が黒い線の上か 0..1。**線は行あたり 3 本まで。**
             ///
@@ -855,6 +855,9 @@ Shader "FixedCamVr/ScreenComposite"
                     // ⚠ premultiplied を崩さない — アルファに掛けた分は rgb にも掛ける。
                     half aCg = saturate(cg.a);
                     half3 rgbCg = cg.rgb;
+                    // ⚠⚠ **入れ替わりの線は CG を重ねた後に掛ける**（2026-08-19）。先に掛けると
+                    //   人形（実機）や代役（Editor）が線を上書きして、線が乗っていない絵になる。
+                    half swapLineMul = 1.0;
                     if (_SwapRect.w > 0.5)
                     {
                         // 入れ替わりのほどけ。**下の映像そのものを行ごとに水平へ引き伸ばす**ので、
@@ -880,41 +883,33 @@ Shader "FixedCamVr/ScreenComposite"
                             float span = 0.40 + rowS * 0.90;
                             float field = SwapReachField(float2(p0.x / span, p0.y), spread);
 
-                            // 引き伸ばした先が体の中なら、この画素は**体の外へ流れ出た糸**。
-                            // ⚠ **同じ uv で映像と人型マスクの両方を引く。** 別々に取ると、
-                            //   線が体の外へ出た所でマスクが付いてこず、糸が縁でぶつ切りになる。
+                            // 帯ごとに歪めた位置の人型。**縁が帯ごとに崩れている**ので、
+                            // ここから作る重みには CG の輪郭がそのまま出ない。
                             float sIn;
-                            half4 cgS = SampleCgSoft(CgUvOf(sUv, sIn), lod + _SwapLine.w);
-                            float silSmear = saturate(cgS.a) * sIn;
-                            // ⚠ **体そのもの（sil）には範囲を掛けない。** 掛けると人型の縁が削れて、
-                            //   ほどけ切る瞬間に体の輪郭から下の映像が漏れる。
-                            float reach = max(sil, silSmear * field);
+                            float silSmear = saturate(SampleCgSoft(CgUvOf(sUv, sIn),
+                                                                   lod + _SwapLine.w).a) * sIn;
 
-                            // 前線は**行の位置**で判定する（走査線の境目でほどけ方が揃う）。
-                            float ink = SwapRowInk(rowR, SwapFront(sUv), _SwapKnot) * reach;
+                            // ⚠⚠ **マスクは切り取りではなく「線の濃さの重み」**（2026-08-19
+                            //   ユーザー指摘「モデルに張り付ける感じだと、モデルの輪郭が目立って
+                            //   しまってあんまりよくなくて、そうじゃなくて 2D の映像にオーバーレイして、
+                            //   輪郭は途切れによって作らずに線の感じでぼんやりと見えるように」）。
+                            //   歪めていないマスク（`sil`）を混ぜると CG の縁がそのまま輪郭として出る。
+                            //   下限（0.28）を残すのは、人の外にも線を薄く散らして縁を曖昧にするため。
+                            float w = field * (0.12 + 0.88 * silSmear);
+                            float ink = SwapRowInk(rowR, SwapFront(sUv), _SwapKnot) * w;
                             if (ink > 0.002)
                             {
-                                // ① ぼかす。**顔も服の模様も先に消す**（`_SwapLine.w` ぶん mip を上げる）。
-                                //   これが無いと「引き伸ばした写真」にしか見えない。
-                                half3 warped = SampleBase(sUv, lod + _SwapLine.w, chromaBias);
-                                // ⚠⚠ **素材に CG も混ぜる。** ほどける当人が CG 側に居ることがある
-                                //   （4 周目 A は人形が CG／Editor プレビューは体験者の代役が CG）。
-                                //   混ぜないとその当人だけ素材から抜け落ち、
-                                //   **本人が消えて背景だけが横に伸びる**（2026-08-19 に絵で確かめた）。
-                                //   premultiplied なので rgb はそのまま足す。
-                                warped = warped * (1.0 - silSmear) + cgS.rgb * sIn;
-
-                                // ⑤ **黒い線だけを置く。** 白く見えるのは地（歪んだぼかし画）で、
-                                //   線ではない。地が下の映像と別の場所を読んでいるので、
-                                //   線が 3 本しか無くても「差し替えの 1 フレームで下が隠れる」は保たれる。
                                 // ⚠ 線を置く位置は**画面上の座標**（p0）で決める。読む位置（sUv）で
-                                //   決めると、帯を動かすたびに線まで一緒に動いて輪郭が定まらない。
+                                //   決めると、帯を動かすたびに線まで一緒に動いて形が定まらない。
                                 float hit = SwapLineHit(p0.x,
                                                         floor(sampleUv.y * max(_SwapSmear.x, 4.0)),
                                                         floor(_SwapSeed * max(_SwapSmear.w, 1.0)),
                                                         spread);
-                                half3 outCol = warped * lerp(1.0, SwapInkDark, hit);
-                                col = lerp(col, outCol, saturate(ink));
+                                // ⚠⚠ **2D の映像へ線だけを重ねる。地を置き換えない。**
+                                //   置き換えると、置き換えた領域の縁 ＝ マスクの縁が輪郭として出る。
+                                //   乗算なら重みが滑らかなぶんだけ線が薄くなるので、
+                                //   **どこにも縁ができない**。人の形は線の濃さと密度でぼんやり出る。
+                                swapLineMul = lerp(1.0, SwapInkDark, saturate(hit * ink));
                             }
                         }
 
@@ -935,6 +930,8 @@ Shader "FixedCamVr/ScreenComposite"
                     // この式が自動的に背景を (1-a) 倍する。不透明な人形（a=1）に対しては lerp と同値。
                     float s = saturate(_CgStrength) * cgIn;
                     col = col * (1.0 - aCg * s) + rgbCg * s;
+                    // ⚠ **線は最後。** 映像も人形（実機）も代役（Editor）も、まとめて線の下に入る。
+                    col *= swapLineMul;
                 }
 
                 // ================= ここから撮像の順（レンズ → センサ → ISP）=================
