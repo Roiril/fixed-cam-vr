@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廻リ視 シナリオ批評</title>
+<style>
+/* ============================================================
+ * report.css — 単一ファイル HTML レポート用テーマ
+ *
+ * 正本: ~/.claude/reference/design-tokens.md
+ *   → このファイルは派生。値を変えたいときは正本を直してからここへ配る。
+ *
+ * 使い方: style タグの中へ**全文インライン展開**する。
+ *   ⚠ このファイルの中に閉じタグの文字列を書かないこと。HTML の style 要素は
+ *     CSS コメントの中だろうと最初の閉じタグで終わるので、**以降の CSS が本文として画面に出る**
+ *     （2026-08-17 実害。この行自体が原因だった）。
+ *   外部参照は禁止（output-format.md: 単一ファイル・CDN 禁止・恒久的に開ける状態）。
+ * ============================================================ */
+
+:root {
+  /* --- color: light（既定） --------------------------------- */
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;  /* 18px+ / 太字 / 囲み線 / 図形のみ */
+  --accent-strong:    #a8493c;  /* 本文サイズの文字・リンク（AA） */
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  /* --- type ------------------------------------------------- */
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;    /* 12px  チップ・脚注 */
+  --fs-sm:   .875rem;   /* 14px  キャプション・表・出典 */
+  --fs-base: 1rem;      /* 16px  本文 */
+  --fs-md:   1.125rem;  /* 18px  リード・小見出し */
+  --fs-lg:   1.375rem;  /* 22px  h2 */
+  --fs-xl:   1.875rem;  /* 30px  h1 */
+
+  /* --- space（4px 系列。この外の値を書かない） ---------------- */
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;     /* 本文計測幅 */
+  --radius: 0;          /* 角丸は 0。円形要素のみ 50% を直接書く */
+}
+
+/* --- color: dark（OS 設定とページ属性の両方に追随） ------------ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+/* ============================================================
+ * base
+ * ============================================================ */
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+/* --- 見出し（明朝。上に置き、下または上に罫） ------------------ */
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }          /* 構造上の強調＝色なし */
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); } /* 意味強調＝1 節に 1〜2 回 */
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+/* ============================================================
+ * 部品
+ * ============================================================ */
+
+/* 見出し上の小ラベル */
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+/* タイトル直下の副題・日付 */
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+/* 結論の先出し */
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+/* 並列カード（3 列を目的にしない。中身の数で自然に折り返す） */
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+/* 時系列 */
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li {
+  border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4);
+  position: relative; margin: 0;
+}
+.tl > li::before {
+  content: ""; position: absolute; left: -5px; top: .55em;
+  width: 8px; height: 8px; background: var(--accent);
+}
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+/* 状態ラベル */
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+/* 表（必ず .tblwrap で囲む — 横スクロールは body ではなく表の側で） */
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+/* 図 */
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+/* 問いと答え */
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+/* コード */
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+/* 表内のトークン名・パスは折り返さない（狭幅では .tblwrap の横スクロールで吸収する） */
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+/* 弱い情報・末尾の注記 */
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+/* ============================================================
+ * responsive / motion / print
+ * ============================================================ */
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+<p class="eyebrow">廻リ視 · シナリオ批評 · 2026-08-19</p>
+<h1>体験者が通るシナリオと、その穴</h1>
+<p class="sub">実装（<code>Assets/Scripts/</code>）と台本（卓の <code>show.json</code> rev 896 / timeline rev 35）から起こした現状の一覧と、脚本の視点からの指摘 ／ 2026-08-19</p>
+
+<div class="lead">
+<p>骨格はできている。導入で現実がスクリーンに変わり、2 周かけて人形が近づき、3 周目で自分が映像から消える。ここまでは筋が通っている。</p>
+<p>足りないのは <strong>3 つ</strong>。①ユーザーが与えた人形の動機「ただ一緒に遊びたかった」が体験のどこにも出ていない。②入れ替わりを見せたのに、戻ったことを見せていない。③2 周目 A・B は「保留」と言われたまま、旧構成が台本に残っている。会期は 9/6・7。</p>
+</div>
+
+<h2>1. 体験者が通る順</h2>
+
+<p>操作は 1 つだけ。<strong>左手の X か Y を 1 秒長押しする</strong>。それが記録であり、同時に怪異の解除でもある。右手はスタッフが持つ。</p>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>幕</th><th>体験者が受け取るもの</th><th>尺</th><th>できること</th></tr></thead>
+<tbody>
+<tr><td>0 紙</td><td>調査依頼書（SCP 体裁）。██地点の壁面・管理番号 ＳＨ-ＫＢ-０２・対象の詳細は開示しない・「記録は自動的に保存され、可能な場合は対象の解除が行われる」</td><td>—</td><td>読む・署名する</td></tr>
+<tr><td>1 タイトル</td><td>真っ暗の中に注意書き → 題字「廻リ視」が立ち、中心へ引き延ばされて灰になる</td><td>約 5 秒</td><td>—（A を押すのはスタッフ）</td></tr>
+<tr><td>2 歩行誘導</td><td>⓪a スイが名乗る「今回の調査を支援する／エージェントです」→ ⓪b「矢印の方向から、／指定されたポイントへ／移動してください。」＋ 床に山形の矢印が 1 つずつ点き、円が中心から開く</td><td>着くまで<br>（上限 30 秒）</td><td>円まで歩く</td></tr>
+<tr><td>3 導入</td><td>⓪c「ポイントに到着しました。／観測装置を起動します」と同時に、現実の色が抜け、輪郭だけになり、割れてスクリーンの矩形へ吸い込まれる。枠の中に自分が居る</td><td>約 11 秒</td><td>見る</td></tr>
+<tr><td>4 一周目</td><td>① 「調査を開始してください／異変を見つけたら／ボタンを長押し」<br><strong>A</strong> 演出なし（この裏で録画が始まる）／ <strong>B</strong> 壁一面の血の手形／ <strong>C</strong> 演出なし</td><td>約 24 秒</td><td>歩く・報告する</td></tr>
+<tr><td>5 二周目</td><td><strong>A</strong> 人形がカーテンの陰から見ている 3.5 秒／ <strong>B</strong> 人形が木の壁の前に立つ 3.5 秒／ <strong>C</strong> 異形が全画面 2.5 秒（唯一のジャンプスケア）。<em>3 つとも報告すると消える</em></td><td>約 24 秒</td><td>同上</td></tr>
+<tr><td>6 三周目</td><td><strong>A</strong> 画面が左右に割れる。左＝反転したライブ映像で自分が 2 人 → 線を越えると左が凍る → 凍った自分が 1 周目の録画にすり替わってひとりでに歩き出す → 右半分も無人の部屋＋自分の位置に立つ人形へ<br><strong>B</strong> 録画が流れ、流し終わると無人の部屋に人形が立つ／ <strong>C</strong> 同じ ＋ スクリーンの外の闇に 360 度の目が開く<br><em>ここだけ報告が効かない。</em>返事は 4 字に 3 字が化けて読めない</td><td>約 24 秒〜</td><td>同上（効かない）</td></tr>
+<tr><td>7 帰りの A</td><td>左半分に大量の人形、右半分に無人の部屋＋自分の人形。人形の笑い声が鳴り続ける。3 秒待つと ③「異常が検出されました。／記録してください。」<br>報告すると乱れとともに全部がライブ映像へ戻り、視界の粗さと色抜けも 1.2 秒で元へ戻る</td><td>押すまで<br>（上限 45 秒）<br>＋4.5 秒</td><td>報告する</td></tr>
+<tr><td>8 終幕</td><td>スクリーンが電池切れのようにちかちかして消える（6 秒）→ 黒（1.2 秒）→ 報告が 1 字ずつ打鍵音とともに打たれる<br>「報告した怪異の数：０３ ／ 十分なデータが取れました。／ 調査完了です。／ 装置を外してください。」</td><td>約 12 秒</td><td>読む・外す</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>ずっと動いているもの</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th></th><th>1 周目</th><th>2 周目</th><th>3 周目 A 以降</th><th>報告が通った後</th></tr></thead>
+<tbody>
+<tr><th>映像の解像度</th><td>横 600 ブロック</td><td>400</td><td>200</td><td>1.2 秒で元へ</td></tr>
+<tr><th>色</th><td>暖色</td><td>抜けかけ</td><td>完全な無彩</td><td>同上</td></tr>
+<tr><th>スイの文字</th><td>きれい</td><td>たまに 1 字化ける</td><td>4 字に 3 字が化ける</td><td>読める（傷は残る）</td></tr>
+<tr><th>スイの顔</th><td>無事</td><td>侵食されかける</td><td>市松人形へ</td><td>戻る</td></tr>
+<tr><th>背景の音</th><td><code>bed_room</code></td><td><code>bed_room_lap2</code></td><td><code>bed_room_lap3</code></td><td>3 周目のまま</td></tr>
+<tr><th>装置の唸り</th><td colspan="3">周を重ねるごとに痩せる</td><td><strong>戻らない</strong></td></tr>
+</tbody>
+</table>
+</div>
+<p class="muted">劇伴（<code>HorrBGM</code>）が鳴るのは題字が立つまで。1 周目から先は装置の音と部屋の音だけ。</p>
+
+<h2>2. 効き目の大きい順に 4 つ</h2>
+
+<h3>① 2 周目 A・B は「保留」と言われたまま、旧構成が台本に残っている</h3>
+
+<p><strong>事実。</strong> 2026-08-15 にユーザーは区間ごとの割り付けを口にした（LEDGER 0050）。そこで「2周目Aはいったん保留／2周目Bも保留／2周目Cも保留」と言われ、台帳の棄却欄には「2 周目 A・B の『乱れ 0.7 → 人形の静止画 → 乱れ』（いまの台本）」と書かれた。C だけはその後「驚かせるのは2周目Cの全画面にしよう」と明示的に採用されている。</p>
+<p>ところが卓の台本（rev 896）の <code>L2C0#0</code> / <code>L2C1#0</code> は、いまも <code>glitch 0.7 → 人形の静止画 3.5 秒 → ライブ 0.6 秒</code> のままである。しかも 8/17 に、その尺だけが 2.4 → 3.5 秒・2.2 → 3.5 秒へ伸ばされている（LEDGER 0082）。<strong>捨てると書いた構成を、捨てないまま調整している。</strong></p>
+
+<p><strong>脚本として何が問題か。</strong> 2 周目は「近づいてくる」を担う唯一の幕なのに、A と B が同じ距離・同じ姿勢・同じ尺で 2 回出る。A のカーテンの陰も B の木の壁の前も、画の中で人形は中景に立ってこちらを見ている。距離が縮まないので、C の全画面だけが跳ぶ。上昇曲線ではなく、平坦 2 つと崖 1 つになっている。</p>
+
+<p><strong>こうする。</strong> 素材を 2 枚差し替えるだけで、幕の形が変わる。</p>
+<div class="tblwrap">
+<table>
+<thead><tr><th>区間</th><th>いま</th><th>案</th><th>作業</th></tr></thead>
+<tbody>
+<tr><td>2-A</td><td>カーテンの陰から見ている（中景）</td><td><strong>遠い。</strong> 部屋の奥、こちらを見ていない。小さくて、居ることに気づかなくてもよい大きさ</td><td>生成 1 枚</td></tr>
+<tr><td>2-B</td><td>木の壁の前に立つ（中景）</td><td><strong>近い。</strong> 中景で、はっきりこちらを見ている。A で見た個体と同じ服・同じ髪</td><td>生成 1 枚（現行を流用できる可能性）</td></tr>
+<tr><td>2-C</td><td>異形が全画面 2.5 秒</td><td>そのまま</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+<p>距離が単調に縮むと、C の全画面が「ついに届いた」になる。いまは「急に出た」になっている。<br>
+⚠ 2-C の異形は A・B の市松人形とは<strong>別個体の顔</strong>で、3 周目の CG 人形（全高 0.98m）とも別。<em>体験のなかに人形が 3 体いて、同じ存在として読めない。</em>2-C を A・B と同じ個体の顔にすると、「近づいてきたやつが、ついに目の前に来た」という 1 本の線になる。</p>
+
+<h3>② 人形の動機が、体験のどこにも出ていない</h3>
+
+<p><strong>事実。</strong> ユーザーが与えた設定は「人形などの設定は、呪縛例（呪縛霊）で、<em>来た人とただ一緒に遊びたかった</em>というもの」（LEDGER 0036）。</p>
+<p>いま画に出ている人形は、見ている・立っている・目の前に出る・大量に並ぶ・笑う。<strong>全部が脅威の記号として読める形をしている。</strong>笑い声も、この文脈では不気味さの側にしか働かない。そして終幕は「十分なデータが取れました。調査完了です。」で閉じる。</p>
+
+<p><strong>脚本として何が問題か。</strong> 恐怖は「分からない」で作れる。<strong>余韻は「分かってしまった」でしか作れない。</strong>いま体験が終わったあとに残るのは「怖かった」だけで、「あれは何だったのか」に答える材料が 1 つも置かれていない。人形の側の物語が、始まりも終わりもしていない。ユーザーが自分で「ただ一緒に遊びたかった」と決めているのだから、これは書かれていない設定ではなく、<strong>書いたのに使っていない設定</strong>である。</p>
+
+<p><strong>こうする。</strong> 3 案あるが、<strong>1 つで足りる</strong>。全部やると説明になる。</p>
+<div class="tblwrap">
+<table>
+<thead><tr><th></th><th>案</th><th>効き</th><th>手当て</th></tr></thead>
+<tbody>
+<tr><td>a<br><span class="chip hot">推す</span></td><td><strong>帰りの A で報告が通った直後、1 体だけ残す。</strong> 全部が現実へ戻る乱れのなかで、人形が 1 体だけ画の端に残り、こちらを見て、次のカットで居なくなる（4.5 秒のうち 1.5 秒）</td><td>言葉を 1 字も使わずに「敵ではなかった」が立つ。<strong>解除できたのに 1 体だけ消えない</strong>ので、解除の物語とも噛み合う</td><td>驚かせる形にしない（ユーザーは「報告ボタンは演出の引き金にはしない」と言っている＝驚かせない限り可）。素材は既存の CG 人形で足りる</td></tr>
+<tr><td>b</td><td><strong>紙に 1 行足す。</strong> 「対象は、接触者に対して敵対的行動を示さない。」— SCP 体裁のまま、敵ではないことを先に配る</td><td>2 周目の「見ている人形」の読みがその場で変わる。実装ゼロ</td><td>紙の文面はユーザーが全文を書いたもの（0041）。<strong>足すには判定が要る</strong></td></tr>
+<tr><td>c</td><td><strong>終幕の 4 行の前に、装置ではない声を 1 行置く。</strong></td><td>いちばん強い</td><td>終幕の 4 行はユーザーの逐語（0048）。その直前に別の声を割り込ませるのは大きい改変。<strong>推さない</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>③ 入れ替わりを見せたのに、戻ったことを見せていない</h3>
+
+<p><strong>事実。</strong> ユーザーの言葉は「X.Yボタンを押すと、怪異が解除されて<em>プレイヤーを人形から人間に戻したい</em>」（LEDGER 0081）。<br>
+いま起きるのは、人形が消える・映像がライブへ戻る・視界の粗さと色が 1.2 秒で戻る、の 3 つ。<strong>どれも「世界が直った」であって、「自分が戻った」ではない。</strong></p>
+
+<p><strong>脚本として何が問題か。</strong> 3 周目 A で <em>自分が消えて人形になる</em>という、この作品でいちばん強い出来事を見せている。対になるのは <em>自分が戻る</em>を見せることで、それが無いと、体験者は「人形が片づいた」としか受け取れない。帰りの A の右半分はライブ映像に戻るので、<strong>そこには本人が映っている</strong>。材料はもう画の中にある。誰もそこを見ろと言っていないだけ。</p>
+
+<p><strong>こうする。</strong> 文字を使わずに視線を自分へ向ける。</p>
+<ul>
+<li><strong>報告が通った瞬間、右半分（＝体験者が立っている側）だけ乱れを 0.3 秒長く残す。</strong>左が先に晴れて、自分の側が最後に晴れる。晴れた先に自分が居る。順序だけで視線が動く</li>
+<li>それでも足りなければ、<strong>人形が消えた跡に残光を 0.5 秒</strong>置く。人形が立っていた場所＝いま自分が立っている場所なので、残光は自分の足元を指す</li>
+</ul>
+<p>⚠「手を上げてください」型の指示は 2026-08-13 に「スマートではありません」と落とされている（0034）。<strong>誘導は画でやる。</strong></p>
+
+<h3>④ 3 周目が「装置の故障」に読まれる</h3>
+
+<p><strong>事実。</strong> 報告ボタンの意味は体験のなかで 3 回変わる。</p>
+<div class="tblwrap">
+<table>
+<thead><tr><th>いつ</th><th>起きること</th><th>体験者が読むこと</th><th>設定上の理由</th></tr></thead>
+<tbody>
+<tr><td>1〜2 周目</td><td>押すと異変が消える（4 回）</td><td>これは消す道具だ</td><td>エージェントが解除を実行している</td></tr>
+<tr><td>3 周目</td><td>押しても何も起きない。返事は化けて読めない</td><td><strong>壊れた／自分が下手なだけ</strong></td><td>エージェントが呪いに侵されていて解除できない</td></tr>
+<tr><td>帰りの A</td><td>また効く</td><td>直った</td><td>エージェントが復帰した</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>脚本として何が問題か。</strong> 設定の因果（呪い → AI が侵される → 解除できない → 復帰 → 解除できる）は筋が通っている。<strong>だが体験者に届く情報だけでは、この因果を組み立てられない。</strong>3 周目は文字が読めないので、「エージェントが助けようとしているが力尽きている」ことすら伝わらない。顔が人形に変わっていくのは唯一の手掛かりだが、それは <em>侵されている</em>ではなく <em>人形が乗っ取った</em>と読まれる方向で、②の「敵ではない」とも逆を向く。</p>
+<p>もう 1 つ。<strong>読めない文字が「装置の不具合」に見える</strong>と、この作品の土台（装置は正直に映している）が疑われる。疑われた瞬間、3 周目の「自分が居ない」も装置のバグとして処理されうる。</p>
+
+<p><strong>こうする。</strong> 3 周目の連絡を 1 通だけ、<strong>半分だけ読めるようにする</strong>。</p>
+<ul>
+<li>いまの侵食は文字ごとに一様。これを<strong>位置で変える</strong>と、化け字の語彙（0072 で「読めない文字化けにして」と指定された部分）を 1 字も変えずに済む</li>
+<li>読み残す字は <strong>3〜4 字</strong>。文にはしない。たとえば「異常」「解除」「不」のような、意味の断片だけ</li>
+<li>1 通だけ。3 周目に 3 通とも半分読めると、侵食が嘘になる</li>
+</ul>
+<p>これで「壊れた」ではなく「<strong>何か言おうとしている</strong>」になる。帰りの A で読めるようになったとき、復帰が出来事として立つ。<br>
+⚠ 実装は <code>CommsGlitchLogic.CorruptionFor</code> に文字位置の重みを足すだけで、化け先（<code>Marks</code>）には触らない。<strong>ただし「読めない文字化けにして」の指定に隣接するので、判定が要る。</strong></p>
+
+<h2>3. 次に効く 4 つ</h2>
+
+<h3>⑤ 3 周目 B・C が A の焼き直しで、24 秒がほぼ同じ情報</h3>
+<p>3 周目 A で入れ替わりという最大の転換が起きたあと、B と C は「録画が流れる → 無人の部屋に人形が立つ」を 2 回繰り返す。C には闇の目が入るが、それは別種の出来事で、人形の側は動かない。<strong>転換の直後に、新しい情報が 8 秒 × 2 回だけ止まる。</strong></p>
+<p><strong>こうする。</strong> B に 1 つだけ役割を足して、3 区間を 3 段にする。</p>
+<div class="tblwrap">
+<table>
+<thead><tr><th>区間</th><th>いま</th><th>案</th><th>読み</th></tr></thead>
+<tbody>
+<tr><td>3-A</td><td>入れ替わる</td><td>そのまま</td><td>自分が消えた</td></tr>
+<tr><td>3-B</td><td>録画＋人形が立つ</td><td><strong>人形が、こちらへ頭を向ける</strong></td><td>入れ替わった自分が、自分を見ている</td></tr>
+<tr><td>3-C</td><td>録画＋人形＋闇の目</td><td>そのまま</td><td>囲まれている</td></tr>
+</tbody>
+</table>
+</div>
+<p>「入れ替わる → 見られる → 囲まれる」で読める。実装は CG 人形の頭を 1 度だけ向けるだけで、腕はすでにコントローラ追従の仕組みがある。<br>
+⚠ ユーザーは 3 周目 B・C について「昔の自分を追うような形」と言っている（0050）。<strong>頭を向けるのはその形から外れるので、判定が要る。</strong></p>
+
+<h3>⑥ 山の順序が逆になっている</h3>
+<p>生理的な最大刺激（2 周目 C の全画面）が、認知的な最大転換（3 周目 A の入れ替わり）より<strong>先</strong>に来る。ジャンプスケアの直後、体験者は身構える。身構えた状態で「静かに自分が消えている」を出すと、刺激の落差で「何も起きない区間」と読まれかねない。</p>
+<p><strong>順序は動かせない</strong>（ユーザーが「驚かせるのは2周目Cの全画面にしよう」と指定している）。動かすのは落差の使い方。</p>
+<ul>
+<li><strong>2 周目 C の直後、背景の音を 2 秒だけ落とす。</strong>いまは切替音が鳴って次の区間が始まるだけ。全画面の後に音の空白を置くと、静けさが次の幕の入口になる</li>
+<li>3 周目 A の頭は左右分割の始まり＝自分が 2 人いる画。<strong>ここは説明を出さない方が強い</strong>ので、連絡は入れない（現状どおり）</li>
+</ul>
+
+<h3>⑦ 押さない体験者の 45 秒</h3>
+<p>帰りの A は報告するまで進まない（上限 45 秒）。3 秒後に ③「異常が検出されました。／記録してください。」が 1 度だけ出る。そのあいだ人形の笑い声がループし続ける。</p>
+<p>押せない体験者は必ず出る（ボタンを忘れた・怖くて動けない・指示を読み落とした）。その人にとって、この 45 秒は<strong>何が起きているか分からない時間</strong>になる。3 分の体験の 4 分の 1 である。</p>
+<p><strong>こうする。</strong> どちらか一方で足りる。</p>
+<ul>
+<li><strong>③ を 15 秒後にもう 1 度出す</strong>（⓪b が 18 秒おきに 2 回まで出し直すのと同じ流儀。回数上限つき）</li>
+<li><strong>上限 45 秒を 25〜30 秒へ縮める。</strong>押さなくても終幕へ進む。押さなかった人は視界が戻らないまま終わる — これは救済を置かないという既定（0083）とも噛み合う</li>
+</ul>
+
+<h3>⑧ スイに、感情移入の足場がない</h3>
+<p>体験者がスイから受け取るのは 6 通の一方通行。名乗り、指示、到着の確認、開始、受領、催促。<strong>それだけの相手が壊れても、装置の不調としか読まれない。</strong>キャラクターが立つ前に侵食が始まっている。</p>
+<p><strong>こうする。</strong> 文面を増やさずにやる。</p>
+<ul>
+<li><strong>顔を動かす。</strong>連絡が届いているあいだ、瞬きを 1 回入れる。素材（<code>tools/make-comms-face.py</code>）と焼く仕組みは既にある</li>
+<li>3 周目で<strong>それが止まる</strong>。人形の顔は動かない。侵食が「壊れた」ではなく「死んだ」に読める</li>
+</ul>
+<p>⚠ 顔は 1 枚の版から焼いている。瞬きには閉じ目の版がもう 1 枚要る。<strong>コストは中。</strong>①〜④が片づいてから。</p>
+
+<h2>4. 仕上げの 3 つ</h2>
+
+<h3>⑨ 終幕の数字が、意味を持たない</h3>
+<p>「報告した怪異の数：０３」。多いのが良いのか悪いのか、体験者に判断材料がない。押さなかった人には「０」が出る。</p>
+<p>文面はユーザーの逐語（0048）なので<strong>書き換えない</strong>。できるのは出し方だけ。いまは 4 行が上から順に打たれるので、数字は 1 行目＝最初に出る。<strong>数字だけを最後に打つ</strong>と、装置が集計してから答えたように見える。<code>OutroReport</code> の打鍵順を変えるだけで、文言は 1 字も動かない。</p>
+
+<h3>⑩ 世界の語と、現実の語が混ざっている</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>どこ</th><th>使っている語</th></tr></thead>
+<tbody>
+<tr><td>紙・終幕</td><td>怪異／観測装置／調査者</td></tr>
+<tr><td>連絡の面・手元の面</td><td>異変／報告</td></tr>
+<tr><td>注意書き</td><td>ヘッドセット／スタッフ</td></tr>
+</tbody>
+</table>
+</div>
+<p>SCP の体裁を採った以上、<strong>世界の中に出る文字は世界の語で揃う</strong>のが筋。いまはその線が引かれていない。<br>
+提案は<strong>線の位置を決めること</strong>だけ ——「世界の中に出る文字は世界の語（怪異・観測装置・調査者）、安全に関わる文字だけ現実の語（ヘッドセット・スタッフ）」。決めたうえで、どれを直すかは別の判断（連絡の面の文面もユーザーの逐語）。</p>
+
+<h3>⑪ 冒頭 20 秒が、手順の連続になっている</h3>
+<p>題字 → 名乗り → 「移動してください」→ 到着 → 「起動します」。ホラーの立ち上がりに、緊張ではなく手続きが 3 通来る。とくに ⓪c は完了通知の形をしている。</p>
+<p>ただし ⓪c と同時に導入演出が始まる（＝「起動します」と言った直後に現実が壊れ始める）ので、<strong>この順序自体は正しい</strong>。矢印と円の意匠もよくできている。<em>直すなら 3 通のうち 1 通に、調査対象へ触れる語を入れる</em> —— 手順しか言わない相手は、案内表示と区別がつかない。ただし文面はユーザーの逐語なので、優先度は低い。</p>
+
+<h2>5. 直すべきでないと判断したもの</h2>
+
+<p>批評として、触らない理由も書いておく。</p>
+<div class="grid">
+<div class="card"><b>劇伴を本編に入れないこと</b><span>装置が正直に映しているという信頼の上に、3 周目の反転が乗っている。音楽は「作者がいま怖いと言っている」外部の声なので、同じものを壊す。3 分で情動を立ち上げるには不利だが、それは承知のうえの選択</span></div>
+<div class="card"><b>「手を上げてください」を廃したこと</b><span>指示して、やらせて、後で違いを見せる形は、種明かしを先に配る。廃止は正しい</span></div>
+<div class="card"><b>報告を押さなくても体験が進むこと</b><span>進行の条件にすると、押さなかった人が失敗した気になる。帰りの A だけが例外で、そこは⑦で別に扱う</span></div>
+<div class="card"><b>紙の「可能な場合は」の 1 行</b><span>解除に効くものと効かないものがあると、被る前に配ってある。3 周目で効かないことが不具合ではなく仕様として読める。伏線として正確に働いている</span></div>
+<div class="card"><b>導入で音が画より先に来ること</b><span>装置の声は段 2 で入り、画が映像になるのは段 5。11 秒が 1 つの出来事として繋がっている</span></div>
+<div class="card"><b>装置の唸りは戻さないこと</b><span>解除で画だけが戻り、音は痩せたまま。全部戻すと「直った」を音で宣言することになり、クリア演出になる</span></div>
+</div>
+
+<h2>6. 判定してほしいのは 1 点だけ</h2>
+
+<dl class="qa">
+<dt>何に怖がってほしいか。</dt>
+<dd>すり替わりに気づく瞬間か、人形そのものか、自分がそこに居ることか。<strong>上の改善案の優先順位は、全部ここに依存する。</strong>「すり替わり」なら ③（戻りを見せる）と ⑤（3 周目 B）が先。「人形そのもの」なら ①（2 周目の距離）と ②（動機）が先。<br>
+<span class="muted">既定 ——「すり替わりに気づく瞬間」を主軸に置き、人形は手段として扱う。返事が無ければこれで進む（<code>canon/OPEN.md</code> Q2 の既定と同じ）。</span></dd>
+</dl>
+
+<p class="note">
+出どころ ── 台本 <code>tools/web-compositor/show.json</code>（rev 896・timeline rev 35）／ 判定 <code>.claude/canon/LEDGER.md</code> 0036・0041・0048・0050・0070・0079・0081〜0088 ／ 仕様 <code>.claude/rules/show-design.md</code>・<code>sound-design.md</code>・<code>streaming.md</code> ／ 現状フロー <code>reports/2026-08-17_experience-flow.html</code>。企画書（<code>docs/proposal/</code>・<code>docs/archive/</code>）は開いていない。<br>
+この文書の指摘と改善案は<strong>すべてシュビーの案で、判定は 1 つも入っていない</strong>。採るものが決まったら <code>canon/LEDGER.md</code> へ逐語で移る。
+</p>
+</div>
+
+</body>
+</html>
