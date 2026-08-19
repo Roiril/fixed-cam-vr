@@ -859,7 +859,8 @@ export function createRibbon(container, deps) {
     const bad = stepIssue(s, segCam);
     const tr = s.transition === TAKE.TRANS_CUT ? 'カット'
       : s.transition === TAKE.TRANS_FADE ? 'フェード'
-      : s.transition === TAKE.TRANS_GLITCH ? '乱れ' : '暗転';
+      : s.transition === TAKE.TRANS_GLITCH ? '乱れ'
+      : s.transition === TAKE.TRANS_SWAP ? '入れ替わり' : '暗転';
     const d = stepSeconds(s);
     return `${stepLabel(s)}${s.cueId ? ` + 素材 ${cueName(s.cueId)}` : ''} / 遷移 ${tr}`
       + ` / ${DUR_KIND_LABEL[d.kind] || ''}${bad ? ` / ⚠ ${bad}` : ''}`;
@@ -1520,6 +1521,7 @@ export function createRibbon(container, deps) {
           <option value="${TAKE.TRANS_DIP}"${s.transition === TAKE.TRANS_DIP || !s.transition ? ' selected' : ''}>暗転（dip）</option>
           <option value="${TAKE.TRANS_FADE}"${s.transition === TAKE.TRANS_FADE ? ' selected' : ''}>フェード</option>
           <option value="${TAKE.TRANS_GLITCH}"${s.transition === TAKE.TRANS_GLITCH ? ' selected' : ''}>乱れ（伝送の劣化を装う）</option>
+          <option value="${TAKE.TRANS_SWAP}"${s.transition === TAKE.TRANS_SWAP ? ' selected' : ''}>入れ替わり（体験者だけを砂が覆って人形になる）</option>
         </select></label>
         <label><input class="rb-s-transms" type="number" min="0" step="10" value="${s.transitionMs || 0}">ms<span class="rb-hint2">0=既定</span></label>
         <label title="カットが始まってから 1 回だけ走らせる映像の乱れ。遷移の「乱れ」とは別物で、こちらは体験者の注意を引くために使う">乱れ<input class="rb-s-glitch" type="number" min="0" max="1" step="0.05" value="${s.glitch || 0}"><span class="rb-hint2">0=出さない</span></label>

@@ -108,7 +108,15 @@ export const TAKE = {
   // 「体験者が異変を報告するまで」。4 周目 A の締めだけが使う（canon/LEDGER.md 0050）。
   DUR_UNTIL_MARK: 'untilMark',
   // TRANS_GLITCH = 黒ではなく「映像の乱れ」で覆って、その最中に差し替える（企画書 2.3）。
+  // TRANS_SWAP   = 入れ替わりのノイズ（canon/LEDGER.md 0089）。全画面ではなく**映像の中の体験者だけ**に
+  //                砂が湧き、人型に固まって覆い、人形の大きさへ縮み、晴れると人形になっている。
+  //                ⚠ 向きは指定しない — 「このカットが CG 人形を出すか」と「直前に出ていたか」から
+  //                  実機が導く（出す = 人 → 人形 / 出さない = 人形 → 人）。前後で同じなら乱れへ倒れる。
+  //                ⚠ 尺は transitionMs（既定 2600ms）。他の遷移より 1 桁長いのは、これが継ぎ目を
+  //                  隠す遷移ではなく**それ自体が見せ場**だから。
+  //                ⚠ 卓は CG 人形を描かないので、**この遷移はシミュレータの絵には出ない**（実機だけ）。
   TRANS_CUT: 'cut', TRANS_DIP: 'dip', TRANS_FADE: 'fade', TRANS_GLITCH: 'glitch',
+  TRANS_SWAP: 'swap',
   DEFAULT_MAX_DURATION_SEC: 45,
   FALLBACK_STEP_DUR_SEC: 4,
   DEFAULT_STEP_GLITCH_SEC: 0.25,
@@ -186,7 +194,8 @@ function serializeStep(s) {
     lineId: s.lineId || '',
     durSec: num(s.durSec, 0),
     transition: oneOf(s.transition,
-      [TAKE.TRANS_CUT, TAKE.TRANS_DIP, TAKE.TRANS_FADE, TAKE.TRANS_GLITCH], TAKE.TRANS_DIP),
+      [TAKE.TRANS_CUT, TAKE.TRANS_DIP, TAKE.TRANS_FADE, TAKE.TRANS_GLITCH, TAKE.TRANS_SWAP],
+      TAKE.TRANS_DIP),
     transitionMs: num(s.transitionMs, 0),
     glitch: num(s.glitch, 0),
     glitchSec: num(s.glitchSec, 0),

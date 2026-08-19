@@ -234,3 +234,22 @@ test('untilMark（体験者が報告するまで）も往復する', () => {
   });
   assert.equal(serializeTimelineV3(tl).segments[0].takes[0].steps[0].durKind, TAKE.DUR_UNTIL_MARK);
 });
+
+test('入れ替わり（swap）の遷移は往復する — 卓が保存しても消えない', () => {
+  // ⚠ 保存はキーの白名簿なので、判別子を足し忘れると 💾 のたびに dip へ倒れて
+  //   **入れ替わりが黙って消える**（手で書いた台本が失われる型の事故）。
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 3, camera: 0,
+      takes: [{
+        id: 'L3C0#0',
+        steps: [{ source: 'rec', camera: 0, recLap: 1, cg: 'doll',
+                  transition: 'swap', transitionMs: 2600 }],
+      }],
+    }],
+  });
+  const s = serializeTimelineV3(tl).segments[0].takes[0].steps[0];
+  assert.equal(s.transition, TAKE.TRANS_SWAP);
+  assert.equal(s.transitionMs, 2600);
+});

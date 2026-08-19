@@ -95,6 +95,12 @@ namespace FixedCamVr.Streaming
         // 映像の上に人形を描く層（step.cg）。null なら CG は出ない（機能未配置でも演出は動く）。
         private ShowCgLayer? _cgLayer;
 
+        /// <summary>
+        /// 入れ替わりのノイズが覆い切るのを待っている素材。覆い切る前に演出が畳まれたら
+        /// 誰も引き取らないので、<see cref="ReleaseStepState"/> が閉じる。
+        /// </summary>
+        private OverlayCueData? _pendingSwapCue;
+
         // スクリーンの外の闇で目が開く異変（step.eyes）。null なら目は出ない（同上）。
         private AnomalyEyes? _eyes;
 
@@ -590,30 +596,50 @@ namespace FixedCamVr.Streaming
 
             // CG 人形もカットごとに掛け替える。構図を決めるのは「その映像を撮った実カメラ」なので、
             // live でも rec でも step.camera を渡す（未指定なら今映しているカメラ）。
+            // **素材カット（clip / still）に人形は重ねない。**
+            // 素材は「いつどこで撮ったか分からない画」で、step.camera の較正とはパースが一致しない
+            // （camera 未指定なら直前のゾーンのカメラへ落ちるので、なおさら無関係な構図になる）。
+            // 重ねれば必ず浮いた絵になるので、出さずに理由を言う方がよい。
+            // rec（端末内録画）は step.camera で撮った画なので、そのカメラの較正がそのまま効く。
+            // 素材のうち、**そのカメラで撮った画**（rec / plate）だけは人形を重ねてよい。
+            // 一般の素材（clip / still）は撮影条件が分からないので、重ねれば必ず浮く。
+            bool cgBlocked = TakeSchema.IsAssetSource(step.source)
+                             && !TakeSchema.MatchesCameraPerspective(step.source);
+            bool toDoll = step.HasCg && !cgBlocked;
+
+            // ---- 入れ替わりのノイズ（`canon/LEDGER.md` 0089）--------------------------------
+            //
+            // ⚠ **CG を触る前に向きを決める。** 向きはデータに無く、「直前に人形が出ていたか」と
+            //   「このカットが人形を出すか」から導く（<see cref="TakeSchema.TransSwap"/> の説明）。
+            //   前後で同じなら入れ替わりではないので、乱れ遷移へ倒して理由を言う。
+            bool wantSwap = TakeSchema.IsSwapTransition(step.transition);
+            bool fromDoll = _cgLayer != null && _cgLayer.IsVisible;
+            bool swapUsable = wantSwap && _cgLayer != null && fromDoll != toDoll;
+            if (wantSwap && !swapUsable)
+                Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} の入れ替わりは成立しない" +
+                                 $"（人形 前={(fromDoll ? 1 : 0)} 後={(toDoll ? 1 : 0)}）→ 乱れ遷移へ倒す" +
+                                 $"（take={TakeId(d.takeIndex)}）");
+            var swapDir = toDoll ? SwapMorphLogic.Dir.ToDoll : SwapMorphLogic.Dir.ToHuman;
+
             if (_cgLayer != null)
             {
-                // **素材カット（clip / still）に人形は重ねない。**
-                // 素材は「いつどこで撮ったか分からない画」で、step.camera の較正とはパースが一致しない
-                // （camera 未指定なら直前のゾーンのカメラへ落ちるので、なおさら無関係な構図になる）。
-                // 重ねれば必ず浮いた絵になるので、出さずに理由を言う方がよい。
-                // rec（端末内録画）は step.camera で撮った画なので、そのカメラの較正がそのまま効く。
-                // 素材のうち、**そのカメラで撮った画**（rec / plate）だけは人形を重ねてよい。
-                // 一般の素材（clip / still）は撮影条件が分からないので、重ねれば必ず浮く。
-                bool cgBlocked = TakeSchema.IsAssetSource(step.source)
-                                 && !TakeSchema.MatchesCameraPerspective(step.source);
+                // ⚠⚠ 「人形 → 人」の入れ替わりは、**人形を出さないカットへ移るのと同時に**始まる。
+                //    先に掴んでおかないと、この直後の Hide が人形を消して砂が 1 コマも映らない
+                //    （砂の形は人形のシルエットそのものなので、人形が居なければ何も出ない）。
+                if (swapUsable && !toDoll) _cgLayer.HoldForSwap(true);
                 if (step.HasCg && cgBlocked)
                 {
                     Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} は素材（{step.source}）なので " +
                                      $"CG 人形 '{step.cg}' は出さない（素材の構図と人形のパースが合わないため）");
                 }
-                if (step.HasCg && !cgBlocked)
+                if (toDoll)
                     _cgLayer.Apply(step.cg, step.cgMode,
                                    step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
                                    step.hasPlacement ? step.placement : null);
                 else _cgLayer.Hide();
                 // 人形に付き従う劣化。人形を出さないカットでは必ず 0 へ戻す
                 // （残ると「何も居ない所の画だけが荒れている」という説明の付かない絵になる）。
-                _cgLayer.SetAura(step.HasCg && !cgBlocked ? step.aura : 0f);
+                _cgLayer.SetAura(toDoll ? step.aura : 0f);
             }
 
             // カット遷移（cut / dip / fade / glitch）。**source によって効かせ方が違う**:
@@ -621,12 +647,48 @@ namespace FixedCamVr.Streaming
             //   素材   … cut=瞬時に差し替え / dip=黒経由 / fade=素材のクロスフェード（overlay の fadeIn。従来どおり）
             //   glitch … 黒の代わりに「映像の乱れ」で覆い、その最中に差し替える（live / 素材とも同じ）
             // 旧実装は素材カットに遷移を一切効かせず、卓は 4 カット全部に遷移欄を出していた（嘘の UI）。
-            TakeSchema.SplitTransition(TakeSchema.ResolveTransitionMs(step.transition, step.transitionMs),
+            // 入れ替わりのノイズ。**画面を差し替える仕事は覆い切った瞬間まで待つ** —
+            // 素材も左右分割も第 2 層も、砂が体験者を隠し切ってから一斉に入れ替える。
+            // 早いと体験者が砂の下ではなく画の中で消え、遅いと砂の中で背景が動く。
+            bool swapping = false;
+            if (swapUsable)
+            {
+                float swapSec = TakeSchema.ResolveTransitionMs(step.transition, step.transitionMs) / 1000f;
+                _pendingSwapCue = cue;
+                swapping = director.TakeSwapBegin(
+                    source == TakeSchema.SourceLive ? step.camera : -1, swapSec, swapDir,
+                    () =>
+                    {
+                        _pendingSwapCue = null;
+                        PlayStepOverlay(cue, step);
+                        director.ApplySplit(step.splitX, step.splitFlip, step.splitFreeze);
+                        ApplyStepOverlay2(step, takeIndex: d.takeIndex, stepIndex: d.stepIndex);
+                    });
+                if (!swapping)
+                {
+                    _pendingSwapCue = null;
+                    // 掴みを解く（「人形 → 人」で保留していた Hide がここで走る）。
+                    _cgLayer?.HoldForSwap(false);
+                    Debug.LogWarning($"[TakeRunner] 入れ替わりのノイズを出せなかった → 乱れ遷移で差し替える" +
+                                     $"（take={TakeId(d.takeIndex)} step={d.stepIndex}）");
+                }
+            }
+
+            // ⚠ 入れ替わりに倒れたときの遷移は **glitch の既定尺**へ落とす。
+            //   swap の尺（既定 2.6 秒）をそのまま dip へ渡すと 2.6 秒の暗転になる。
+            string transKind = swapping || !wantSwap ? step.transition : TakeSchema.TransGlitch;
+            float transMs = swapping || !wantSwap ? step.transitionMs : 0f;
+            TakeSchema.SplitTransition(TakeSchema.ResolveTransitionMs(transKind, transMs),
                 out float downSec, out float upSec);
-            bool glitchTrans = TakeSchema.IsGlitchTransition(step.transition);
+            bool glitchTrans = TakeSchema.IsGlitchTransition(transKind);
 
             // 画面の占有とカメラ。live のときだけカメラを動かす。
-            if (source == TakeSchema.SourceLive)
+            // ⚠ 入れ替わりのノイズが走っているときは**ここで画面に触らない**（差し替えは onCovered）。
+            if (swapping)
+            {
+                // 何もしない（画面は SwapMorphFx が持っている）。
+            }
+            else if (source == TakeSchema.SourceLive)
             {
                 PlayStepOverlay(cue, step);   // live カットでも cue 重ねは即時（dip の黒で隠れる）
                 // 演出の 1 カット目が exit アンカー由来なら、離脱の dip の黒中に差し替える（中間カメラを見せない）。
@@ -636,8 +698,8 @@ namespace FixedCamVr.Streaming
             else
             {
                 // dip と glitch は「覆いの最中に差し替える」点で同じ扱い。fade / cut は覆いを作らない。
-                bool throughCover = step.transition == TakeSchema.TransDip || glitchTrans;
-                if (step.transition == TakeSchema.TransCut && cue != null && step.fadeInSec < 0f)
+                bool throughCover = transKind == TakeSchema.TransDip || glitchTrans;
+                if (transKind == TakeSchema.TransCut && cue != null && step.fadeInSec < 0f)
                     cue.fadeInSeconds = 0f;   // 「瞬時」はフェードも掛けない（明示指定があればそれを尊重）
                 // カメラは変えないが画面は演出が持つ。覆いがあるときだけ素材の差し替えをその最中に行う。
                 director.TakeHoldBegin(throughCover ? downSec : 0f, throughCover ? upSec : 0f,
@@ -656,8 +718,14 @@ namespace FixedCamVr.Streaming
             // 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）。**カットごとに毎回書く** —
             // 前のカットの分割・素材を引き継がせない（引き継ぐと「指定していないカット」で
             // 画が割れたまま・左半分が凍ったままになる）。
-            director.ApplySplit(step.splitX, step.splitFlip, step.splitFreeze);
-            ApplyStepOverlay2(step, takeIndex: d.takeIndex, stepIndex: d.stepIndex);
+            // ⚠ 入れ替わりのノイズでは**ここで書かない**（onCovered が持っている）。
+            //   ここで書くと、砂が湧いている最中に左半分の凍結が解け、人形の群れが消える ＝
+            //   「体験者が入れ替わった」ではなく「画面が切り替わった」に読まれる。
+            if (!swapping)
+            {
+                director.ApplySplit(step.splitX, step.splitFlip, step.splitFreeze);
+                ApplyStepOverlay2(step, takeIndex: d.takeIndex, stepIndex: d.stepIndex);
+            }
 
             // スクリーンの外の闇で目が開く異変（canon/LEDGER.md 0075）。**画面には触らない**ので
             // どの source のカットにも足せる。同じ値を続けて言い直しても進みは巻き戻らないので、
@@ -879,6 +947,12 @@ namespace FixedCamVr.Streaming
             _clipToken = -1;
             _stepFrames?.Dispose();
             _stepFrames = null;
+            // ⚠ 入れ替わりのノイズを先に畳む。畳まないと ShowCgLayer が人形を掴んだままで、
+            //   この直後の Hide が保留され、**砂の人形が次の体験者へ持ち越される**。
+            director?.CancelSwap();
+            // 覆い切る前に畳まれたら、待たせていた素材（開いた録画）は誰も引き取らない。ここで閉じる。
+            _pendingSwapCue?.frames?.Dispose();
+            _pendingSwapCue = null;
             _cgLayer?.Hide();
             _cgLayer?.SetAura(0f);
             // ⚠⚠ 左右分割と第 2 層も**カット単位の状態**なので、ここで必ず畳む。

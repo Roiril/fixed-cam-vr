@@ -318,9 +318,20 @@ namespace FixedCamVr.Streaming.Cg
             };
         }
 
-        /// <summary>CG を消す（カットが終わった / 指定の無いカットへ移った）。</summary>
+        /// <summary>
+        /// CG を消す（カットが終わった / 指定の無いカットへ移った）。
+        ///
+        /// ⚠ <b>入れ替わりのノイズが走っている間は畳まない</b>（<see cref="HoldForSwap"/>）。
+        /// 「人形 → 人」の入れ替わりは、人形を出さないカット（<c>cg</c> が空）へ移る<b>のと同時に</b>
+        /// 始まる。ここで素直に畳むと、砂が湧く前に人形が消えて**入れ替わりが 1 コマも映らない**。
+        /// </summary>
         public void Hide()
         {
+            if (_swapHold) { _hideDeferred = true; return; }
+            _hideDeferred = false;
+            // 乗っ取っていた背丈と影の倍率も必ず戻す（残すと次のカットの人形が砂の大きさで出る）。
+            _swapHeightM = 0f;
+            _groundMul = 1f;
             _visible = false;
             _rendering = false;
             _actorDef = null;
@@ -385,6 +396,100 @@ namespace FixedCamVr.Streaming.Cg
             WriteActorFocus();
         }
 
+        // ---- 入れ替わりのノイズ（canon/LEDGER.md 0089）----
+
+        /// <summary>入れ替わり中に人型の背丈を乗っ取る値 (m)。0 以下 = 乗っ取っていない。</summary>
+        private float _swapHeightM;
+
+        /// <summary>入れ替わり中は <see cref="Hide"/> を保留する。</summary>
+        private bool _swapHold;
+        private bool _hideDeferred;
+
+        /// <summary>影・接地影の濃さに掛ける倍率。砂の人型は光を遮らない。</summary>
+        private float _groundMul = 1f;
+
+        /// <summary>いま出している人形の id（入れ替わりが掴み直すため）。空 = 出していない。</summary>
+        public string CurrentActorId => _actorDef != null ? _actorDef.id : "";
+
+        /// <summary>いま出している人形の実寸 (m)。出していなければ 0。</summary>
+        public float CurrentActorHeightM => _actorDef != null ? Mathf.Max(0.05f, _actorDef.heightM) : 0f;
+
+        /// <summary>
+        /// <b>姿だけを差し替える</b>（立ち位置・向き・カメラ・乗っ取った背丈はそのまま）。
+        /// 入れ替わりのノイズが「砂に覆われている間に人の姿と人形の姿を入れ替える」ために使う。
+        ///
+        /// ⚠ <paramref name="actorId"/> が <c>actors[]</c> に無ければ<b>何もせず false</b>
+        ///   （<see cref="Hide"/> は呼ばない — 呼ぶと入れ替わりの最中に姿が消える）。
+        /// </summary>
+        public bool TrySwapToActor(string actorId)
+        {
+            if (string.IsNullOrEmpty(actorId) || showControl == null || _pose == null) return false;
+            if (_actorDef != null && _actorDef.id == actorId) return true;
+            if (showControl.FindActor(actorId) == null) return false;
+            Apply(actorId, _mode, _cameraIndex, _placement);
+            return _actorDef != null && _actorDef.id == actorId;
+        }
+
+        /// <summary>
+        /// 人型の背丈を乗っ取る（足元は動かさない）。0 以下で解除。
+        /// <see cref="SwapMorphFx"/> だけが呼ぶ。
+        /// </summary>
+        public void SetSwapHeight(float heightM)
+        {
+            _swapHeightM = heightM > 0f ? heightM : 0f;
+            if (_actorDef != null) ApplyActorScale(_actorDef);
+        }
+
+        /// <summary>影・接地影の濃さの倍率 0..1（1 = そのまま）。</summary>
+        public void SetGroundContact(float mul) => _groundMul = Mathf.Clamp01(mul);
+
+        /// <summary>
+        /// 入れ替わりのあいだ人形を掴んだままにする。<c>false</c> にした時点で、
+        /// 保留していた <see cref="Hide"/> があれば実行する。
+        /// </summary>
+        public void HoldForSwap(bool on)
+        {
+            _swapHold = on;
+            if (on) return;
+            if (_hideDeferred) { _hideDeferred = false; Hide(); }
+        }
+
+        /// <summary>いま実際に人形へ掛かっている背丈 (m)。入れ替わり中はその値。</summary>
+        public float EffectiveHeightM
+            => _swapHeightM > 0f ? _swapHeightM : (_actorDef != null ? Mathf.Max(0.2f, _actorDef.heightM) : 0f);
+
+        /// <summary>
+        /// 体験者の背丈 (m) の推定。HMD の高さから <see cref="ActorArmLogic.EstimateHeightM"/> で解く。
+        /// 頭が取れていなければ <see cref="SwapMorphLogic.FallbackHumanHeightM"/>。
+        ///
+        /// ⚠ 高さは<b>course の床（y=0）から</b>測る。ワールド y をそのまま使うと、
+        ///   位置合わせで床の高さが動いた分だけ人型が伸び縮みする。
+        /// </summary>
+        public float VisitorHeightM()
+        {
+            ShowBodyInput body = CurrentBody();
+            if (!body.HasHead) return SwapMorphLogic.FallbackHumanHeightM;
+            float floorY = CourseToWorld(Vector2.zero, 0f).y;
+            return SwapMorphLogic.HumanHeightFrom(true, body.HeadPos.y - floorY);
+        }
+
+        /// <summary>
+        /// 人型の投影中心と見かけの半高（枠 UV 空間）。シェーダの <c>_SwapRect</c> へ渡す。
+        /// <see cref="TryActorFocus"/> と<b>同じ式</b>を使う（写さない）。
+        /// 出せない（人形が居ない / カメラの後ろ）ときは false。
+        /// </summary>
+        public bool TrySwapRect(out Vector4 rect)
+        {
+            rect = new Vector4(0.5f, 0.5f, 0.2f, 0f);
+            if (_actorInstance == null || _virtualCam == null || !_rendering) return false;
+            Vector2 sc = _screen != null ? _screen.ContainScale : Vector2.one;
+            if (!TryActorFocus(_virtualCam, _actorInstance.transform.position, EffectiveHeightM, sc,
+                               1f, out Vector4 focus))
+                return false;
+            rect = new Vector4(focus.x, focus.y, focus.z, 1f);
+            return true;
+        }
+
         // ---- 人形に付き従う劣化 ----
 
         private float _aura;
@@ -414,7 +519,9 @@ namespace FixedCamVr.Streaming.Cg
                 return;
             }
 
-            float h = Mathf.Max(0.05f, _actorDef != null ? _actorDef.heightM : 0.4f);
+            // ⚠ 実効背丈で測る。入れ替わりで人型が伸び縮みするあいだ、荒れの半径だけ人形の実寸に
+            //   張り付いていると、砂の figure の足元にだけ小さな荒れが残る。
+            float h = Mathf.Max(0.05f, EffectiveHeightM > 0f ? EffectiveHeightM : 0.4f);
             Vector2 s = _screen != null ? _screen.ContainScale : Vector2.one;
             if (!TryActorFocus(_virtualCam, _actorInstance.transform.position, h, s, _aura,
                                out Vector4 focus))
@@ -919,7 +1026,9 @@ namespace FixedCamVr.Streaming.Cg
             if (_actorInstance == null) return;
 
             ShowRoomLightDef? light = ResolveLight();
-            float density = light != null ? Mathf.Clamp01(light.shadowDensity) : DefaultShadowDensity;
+            // 砂の人型は光を遮らない。入れ替わりの最中は影も接地影も消す（SwapMorphFx が倍率を送る）。
+            float density = (light != null ? Mathf.Clamp01(light.shadowDensity) : DefaultShadowDensity)
+                            * _groundMul;
             float softM = light != null ? Mathf.Max(0f, light.shadowSoftM) : DefaultShadowSoftM;
 
             // 部屋が未著作なら course y=0 の無限平面。**ここで諦めない**のが要点で、
@@ -949,7 +1058,7 @@ namespace FixedCamVr.Streaming.Cg
         {
             if (!EnsureBlob() || _actorInstance == null) return;
             Vector3 p = _actorInstance.transform.position;
-            float radius = GroundBlobRadiusM(def.heightM);
+            float radius = GroundBlobRadiusM(EffectiveHeightM > 0f ? EffectiveHeightM : def.heightM);
             _blob!.position = new Vector3(p.x, floorWorldY + BlobLiftM, p.z);
             // Quad を床へ寝かせる。シェーダが Cull Off なので表裏の取り違えで消えることはない。
             _blob.rotation = Quaternion.Euler(90f, 0f, 0f);
@@ -1137,7 +1246,8 @@ namespace FixedCamVr.Streaming.Cg
         private void ApplyActorScale(ShowActorDef def)
         {
             if (_actorInstance == null) return;
-            float h = Mathf.Max(0.2f, def.heightM);
+            // 入れ替わり中は背丈を乗っ取る（足元は原点なので、縮尺を変えるだけで足が動かない）。
+            float h = _swapHeightM > 0f ? _swapHeightM : Mathf.Max(0.2f, def.heightM);
             if (_actorIsFallbackCapsule)
             {
                 _actorInstance.transform.localScale = new Vector3(0.35f, h * 0.5f, 0.35f);
@@ -1172,7 +1282,7 @@ namespace FixedCamVr.Streaming.Cg
             // 足元は床（course y=0）。リグの実寸に合わせて縮尺済みなので原点＝足元でよい。
             Vector3 pos = CourseToWorld(xz, 0f);
             if (_actorRig == null || !_actorRig.HasRig)
-                pos.y += Mathf.Max(0.2f, def.heightM) * 0.5f;   // 代用カプセルは中心が原点
+                pos.y += Mathf.Max(0.2f, EffectiveHeightM) * 0.5f;   // 代用カプセルは中心が原点
             t.position = pos;
 
             float yaw;

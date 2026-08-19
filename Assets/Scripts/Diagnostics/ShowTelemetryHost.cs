@@ -95,6 +95,11 @@ namespace FixedCamVr.Diagnostics
         private ShowSoundDirector? _sound;
         private SwitchAudioCue? _switchSfx;
         private ShowCgLayer? _cg;
+        private SwapMorphFx? _swap;
+
+        // 入れ替わりのノイズ（canon/LEDGER.md 0089）。回数の変化で 1 行出す。
+        private int _lastSwapCount;
+        private bool _lastSwapActive;
         private AnomalyEyes? _eyes;
         private TakeRunner? _takes;
 
@@ -221,6 +226,7 @@ namespace FixedCamVr.Diagnostics
             if (_shell == null) _shell = FindObjectOfType<ContainmentShell>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_cg == null) _cg = FindObjectOfType<ShowCgLayer>();
+            if (_swap == null) _swap = FindObjectOfType<SwapMorphFx>();
             if (_eyes == null) _eyes = FindObjectOfType<AnomalyEyes>();
             if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
             if (_sound == null) _sound = FindObjectOfType<ShowSoundDirector>();
@@ -514,6 +520,14 @@ namespace FixedCamVr.Diagnostics
         /// <summary>CG 人形が実際に描画されているか。<c>-</c>=シーンに居ない。</summary>
         private string CgState => _cg == null ? "-" : (_cg.IsVisible ? "1" : "0");
 
+        /// <summary>
+        /// 入れ替わりのノイズ — <c>&lt;走っているか&gt;/&lt;被覆&gt;/&lt;背丈 m&gt;/&lt;矩形&gt;/&lt;累計&gt;</c>。
+        /// </summary>
+        private string SwapState => _swap == null
+            ? "-"
+            : $"{(_swap.Active ? 1 : 0)}/{_swap.Cover:F2}/{_swap.HeightM:F2}/" +
+              $"{(_swap.RectResolved ? 1 : 0)}/{_swap.Count}";
+
         /// <summary>闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;</c>。</summary>
         private string EyesState => _eyes == null
             ? "-"
@@ -752,6 +766,29 @@ namespace FixedCamVr.Diagnostics
                 }
             }
 
+            // 入れ替わりのノイズ（`canon/LEDGER.md` 0089）。**始まりと終わりの 2 行**を出す。
+            //   ⚠ 終わりの行に出す `cover` / `h` / `rect` が要る — 段が 3 つとも進んでも、
+            //     人形がカメラの後ろに居れば砂は 1 画素も出ない（`rect=0`）。「進んだ」と
+            //     「出た」を分けるのがこの 3 つ（`rules/visual-verification.md` の計装の規律）。
+            if (_swap != null)
+            {
+                bool act = _swap.Active;
+                if (_swap.Count != _lastSwapCount)
+                {
+                    _lastSwapCount = _swap.Count;
+                    Emit($"ev=swap st=begin n={_swap.Count} " +
+                         $"dir={(_swap.Direction == SwapMorphLogic.Dir.ToDoll ? "toDoll" : "toHuman")} " +
+                         $"h={_swap.HeightM:F2} rect={(_swap.RectResolved ? 1 : 0)}");
+                }
+                else if (_lastSwapActive && !act)
+                {
+                    Emit($"ev=swap st=end n={_swap.Count} " +
+                         $"dir={(_swap.Direction == SwapMorphLogic.Dir.ToDoll ? "toDoll" : "toHuman")} " +
+                         $"h={_swap.HeightM:F2} rect={(_swap.RectResolved ? 1 : 0)}");
+                }
+                _lastSwapActive = act;
+            }
+
             // 砂嵐（配信断＝強 / トラッキング明け＝弱）。累計は「多すぎないか」の直接の答えになる。
             if (_signal != null)
             {
@@ -924,6 +961,13 @@ namespace FixedCamVr.Diagnostics
             // 終幕の電力。**演出の外では 1.00** なので、本編中にこれが下がっていたら画が暗い理由がここ。
             _sb.Append(" pw=").Append(PowerState);
             _sb.Append(" cg=").Append(CgState);
+            //   swap = 入れ替わりのノイズ（`canon/LEDGER.md` 0089）。
+            //   **`<走っているか>/<砂の被覆>/<人型の背丈 m>/<矩形を書けたか>/<累計>`** の 5 つ組。
+            //   ⚠ 5 つとも要る — 段は進んだのに矩形が書けない（.../0/...＝ **画に 1 画素も出ない**）／
+            //     被覆が 0 のまま（人形のシルエットが取れていない）／背丈が動かない（縮んでいない）は
+            //     **別の壊れ方**。全画面の砂嵐と違って、これは「出ていない」が画で分かりにくい。
+            //   ⚠ 累計は 1 体験で **2**（3 周目 A の人 → 人形、4 周目 A の人形 → 人）。
+            _sb.Append(" swap=").Append(SwapState);
             //   eyes = 闇に開く目（`canon/LEDGER.md` 0075）。
             //   **`<実体を組めたか>/<いま開いている目の数>/<画に出た不透明度>`** の 3 つ組。
             //   ⚠ 3 つとも要る — シェーダが剥がれた（0/…）／カットが 1 度も指していない（1/0/0.00）／

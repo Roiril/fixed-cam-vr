@@ -138,6 +138,20 @@ Shader "FixedCamVr/ScreenComposite"
         _Mask2Tex("Overlay 2 Mask (R, screen space)", 2D) = "black" {}
         _Overlay2Scale("Overlay 2 Contain Scale (xy)", Vector) = (1, 1, 0, 0)
         _Overlay2Strength("Overlay 2 Strength", Range(0, 1)) = 0
+
+        [Header(Swap morph (visitor becomes the doll))]
+        // 入れ替わりのノイズ（canon/LEDGER.md 0089）。**CG 層（人形）を砂へ化かす**ことで、
+        // 全画面ではなく「映像の中の体験者だけ」にノイズが湧き、人型に固まり、縮み、晴れる。
+        //   _SwapRect  (cx, cy, halfHeight, active) — 人型の投影中心と見かけの半高（枠 UV 空間）
+        //   _SwapCover 人型の中を足元から埋める前線 0..1
+        //   _SwapSolid 砂が実体（人形）へ戻る度合い 0..1
+        // 唯一の writer は SwapMorphFx（_Glitch を GlitchFx が独占するのと同じ流儀）。
+        _SwapRect("Swap Rect (cx, cy, halfH, active)", Vector) = (0.5, 0.5, 0.2, 0)
+        _SwapCover("Swap Cover", Range(0, 1)) = 0
+        _SwapSolid("Swap Solid", Range(0, 1)) = 0
+        // 砂のざわつきの時計（秒）。**_Time を使わない** — Editor のプレビューは 1 エディタフレームの中で
+        // 何コマも描くので、_Time だと連番 PNG の砂が全コマ同じになる（_GlitchSeed と同じ理由）。
+        _SwapSeed("Swap Seed (seconds)", Float) = 0
     }
 
     SubShader
@@ -176,6 +190,10 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _OverlayOffset;
                 float4 _Overlay2Scale;
                 float _Overlay2Strength;
+                float4 _SwapRect;
+                float _SwapCover;
+                float _SwapSolid;
+                float _SwapSeed;
                 float _SplitX;
                 float _SplitFlipLeft;
                 float _SplitFreezeLeft;
@@ -448,7 +466,49 @@ Shader "FixedCamVr/ScreenComposite"
                 return PickCoarse(blocks) ? 1.0 : 0.0;
             }
 
-            // 演出としての「映像の乱れ」の位置ずれ成分。帯（走査線ブロック）の一部だけを水平に飛ばし、
+            // ---- 入れ替わりのノイズ（canon/LEDGER.md 0089）--------------------------------
+            //
+            // 全画面の砂嵐は「機材が壊れた」で説明が付くので、その最中に何が入れ替わっても
+            // **入れ替わったことにならない**。だから砂は**人型の内側だけ**に湧かせる。
+            // 形は CG 層のアルファ（人形のシルエット）をそのまま使う ＝ 腕の姿勢も体の向きも
+            // 実際の体験者に付いてくる。背丈は SwapMorphFx が人形の縮尺で動かす。
+
+            /// 砂の粒。**映像と同じ格子**で刻む（_CoarseBlocks が立っていればその目）。
+            /// 枠の座標で細かく刻むと、粗くなった画の上に画より細かい砂が乗る ＝ 符号化は砂を
+            /// 真っ先に捨てるので、物理的に起こりえない絵になる（センサの粒と同じ理屈）。
+            float2 SwapCell(float2 uv)
+            {
+                float bx = _CoarseBlocks > 1.0 ? _CoarseBlocks : 320.0;
+                float2 b = float2(bx, max(4.0, floor(bx / max(_FrameAspect, 1e-3))));
+                return floor(uv * b);
+            }
+
+            /// 人型の中を足元から埋める前線。0 = まだ来ていない / 1 = 埋まった。
+            /// **足元から上へ**進むのは、そちらが「湧いてくる」に読めるから
+            /// （上から降ってくると、装置ではなく何かが降りてきたことになる）。
+            float SwapFront(float2 uv)
+            {
+                float half_ = max(_SwapRect.z, 1e-3);
+                float v = saturate((uv.y - (_SwapRect.y - half_)) / (half_ * 2.0)); // 足元 0 → 頭 1
+                const float band = 0.45;   // 前線のぼけ幅（体の高さに対する割合）
+                return saturate((_SwapCover * (1.0 + band) - v) / band);
+            }
+
+            /// この画素が砂になっているか 0..1。**しきい値は時間で動かさない** —
+            /// 動かすと埋まった所がちらちら戻り、「覆われた」に見えない。
+            float SwapMask(float2 uv)
+            {
+                float pick = Hash21(SwapCell(uv) * 1.37 + 11.0);
+                return saturate((SwapFront(uv) - pick) * 6.0);
+            }
+
+            /// 砂そのものの明るさ。こちらは**時間で暴れる**（_SignalLost の砂嵐と同じ手触り）。
+            float SwapStatic(float2 uv)
+            {
+                return Hash21(SwapCell(uv) + floor(_SwapSeed * 24.0) * 7.0);
+            }
+
+                        // 演出としての「映像の乱れ」の位置ずれ成分。帯（走査線ブロック）の一部だけを水平に飛ばし、
             // 強いときは垂直の同期ずれも足す。**全層のサンプル前**に掛けるので、ライブ・差し替え素材・
             // マスク・CG が一緒にずれる = 差し替えの継ぎ目も一緒に乱れて隠れる（企画書 2.3）。
             // 枠外へ出た分は ContainUv が黒に落とすので、伝送のブロック落ちに見える。
@@ -615,11 +675,25 @@ Shader "FixedCamVr/ScreenComposite"
                     // 人形にも**映像と同じ伝送の痩せ**を掛ける（装置を通して見えている以上、同じだけ落ちる）。
                     half4 cg = SampleCgSoft(uvC, lod);
                     cg.rgb = CgChromaMatched(cg, uvC, lod);
+
+                    // 入れ替わりのノイズ。**人形を砂へ化かす**（別の層を足さない）ので、
+                    // 砂は人形とまったく同じ場所・同じ形・同じ後段（post・粒・管の縁）を通る。
+                    // ⚠ premultiplied を崩さない — アルファに掛けた分は rgb にも掛ける。
+                    half aCg = saturate(cg.a);
+                    half3 rgbCg = cg.rgb;
+                    if (_SwapRect.w > 0.5)
+                    {
+                        float m = SwapMask(screenUv);
+                        float st = SwapStatic(screenUv);
+                        aCg *= m;
+                        rgbCg = lerp(half3(st, st, st) * aCg, cg.rgb * m, saturate(_SwapSolid));
+                    }
+
                     // premultiplied over（Porter-Duff 1984）。straight alpha の lerp から変えたのは、
                     // **影が「乗算」だから** — 影を rgb=0 / a=濃さ の断片として同じ RT に描けば、
                     // この式が自動的に背景を (1-a) 倍する。不透明な人形（a=1）に対しては lerp と同値。
                     float s = saturate(_CgStrength) * cgIn;
-                    col = col * (1.0 - saturate(cg.a) * s) + cg.rgb * s;
+                    col = col * (1.0 - aCg * s) + rgbCg * s;
                 }
 
                 // ================= ここから撮像の順（レンズ → センサ → ISP）=================

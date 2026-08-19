@@ -53,14 +53,23 @@ def main() -> int:
         return 1
 
     w, h = Image.open(frames[0]).size
+    # ⚠ H.264（yuv420p）は**縦横とも偶数**でないとエンコーダが開かない。
+    #   奇数のまま渡すと ffmpeg が `height not divisible by 2` で落ち、
+    #   **0 バイトの mp4 が残る**（実測 2026-08-19。1280x893）。1 画素だけ切って偶数へ。
+    even_w, even_h = w - (w % 2), h - (h % 2)
+    if (even_w, even_h) != (w, h):
+        print(f"⚠ {w}x{h} は奇数を含むので {even_w}x{even_h} へ 1 画素切る（H.264 の制約）")
     OUTDIR.mkdir(parents=True, exist_ok=True)
     mp4 = OUTDIR / f"{datetime.now():%Y%m%d_%H%M%S}_{name}.mp4"
 
     writer = imageio_ffmpeg.write_frames(
-        str(mp4), (w, h), fps=FPS, quality=8, macro_block_size=1)
+        str(mp4), (even_w, even_h), fps=FPS, quality=8, macro_block_size=1)
     writer.send(None)
     for p in frames:
-        writer.send(Image.open(p).convert("RGB").tobytes())
+        im = Image.open(p).convert("RGB")
+        if im.size != (even_w, even_h):
+            im = im.crop((0, 0, even_w, even_h))
+        writer.send(im.tobytes())
     writer.close()
 
     if audio is not None:
@@ -78,7 +87,7 @@ def main() -> int:
             mp4.unlink()
             mp4 = muxed
 
-    print(f"{mp4.relative_to(ROOT)}  ({len(frames)} コマ / {len(frames)/FPS:.1f} 秒 / {w}x{h}"
+    print(f"{mp4.relative_to(ROOT)}  ({len(frames)} コマ / {len(frames)/FPS:.1f} 秒 / {even_w}x{even_h}"
           f"{' ＋ 音' if audio is not None else ''})")
     return 0
 

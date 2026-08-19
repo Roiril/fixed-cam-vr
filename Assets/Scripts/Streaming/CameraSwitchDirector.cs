@@ -210,6 +210,9 @@ namespace FixedCamVr.Streaming
         [Tooltip("画のホールド / 焼き付きを出す CameraFeelFx。null なら同 GameObject から取得。")]
         [SerializeField] private CameraFeelFx? feelFx;
 
+        [Tooltip("入れ替わりのノイズ（transition:\"swap\"）。null なら乱れ遷移へ倒す。")]
+        [SerializeField] private SwapMorphFx? swapFx;
+
         [Header("Timing")]
         // switchCooldownSec / minDwellSec は **非シリアライズ**（既定 0.5s）。旧 2/2 が 1.8m 四方の部屋スケールに
         // 過大で「歩くとカメラ切替が起きず、止まった瞬間に遅れて切替わる」不具合の原因だった。SerializeField だと
@@ -326,6 +329,8 @@ namespace FixedCamVr.Streaming
             if (glitchFx == null) glitchFx = GetComponent<GlitchFx>();
             if (feelFx == null) feelFx = GetComponent<CameraFeelFx>();
             if (feelFx == null) feelFx = FindObjectOfType<CameraFeelFx>();
+            if (swapFx == null) swapFx = GetComponent<SwapMorphFx>();
+            if (swapFx == null) swapFx = FindObjectOfType<SwapMorphFx>();
             var r = GetComponent<Renderer>();
             _material = r != null ? r.material : null;
             _logic.Configure(switchCooldownSec, manualHoldSec);
@@ -520,6 +525,43 @@ namespace FixedCamVr.Streaming
             // カメラは変えない。registry.SetActive(同じ index) は早期 return するので切替イベントも出ない。
             StartDip(_logic.Current, SwitchSource.Insert, downSec, upSec, glitch);
         }
+
+        /// <summary>
+        /// <b>入れ替わりのノイズで画面を占有する</b>（<c>transition:"swap"</c>・`canon/LEDGER.md` 0089）。
+        ///
+        /// dip 状態機械は使わない。黒も全画面の砂嵐も出さず、<b>映像の中の体験者（＝人形の
+        /// シルエット）だけ</b>を砂で覆い、覆い切った 1 フレームで画面を差し替える。
+        /// 差し替えの中身（素材・カメラ・左右分割・第 2 層）は <paramref name="onCovered"/> が持つ。
+        ///
+        /// ⚠ <b>失敗したら false を返す</b>（人形が居ない / カメラ姿勢が未著作 / 位置合わせが未完了）。
+        ///   呼び出し側は乱れ遷移へ倒すこと — 黙って何も起きないと、体験者は画面が固まったと感じる。
+        /// </summary>
+        /// <param name="targetCamera">覆い切った瞬間に切り替えるカメラ（-1 = 変えない）。</param>
+        public bool TakeSwapBegin(int targetCamera, float totalSec, SwapMorphLogic.Dir dir,
+                                  Action? onCovered)
+        {
+            if (swapFx == null) return false;
+            bool ok = swapFx.Begin(dir, totalSec, () =>
+            {
+                if (targetCamera >= 0 && registry != null && registry.ActiveIndex != targetCamera)
+                {
+                    // 周回に数えない（インサートと同じ扱い）。
+                    _commitSource = SwitchSource.Insert;
+                    registry.SetActive(targetCamera);
+                    _commitSource = SwitchSource.External;
+                    audioCue?.Play();
+                }
+                onCovered?.Invoke();
+            });
+            if (ok) _logic.SetInsertActive(true);
+            return ok;
+        }
+
+        /// <summary>入れ替わりのノイズを途中で畳む（演出の中止・ランリセット・体験の終了）。</summary>
+        public void CancelSwap() => swapFx?.Cancel();
+
+        /// <summary>入れ替わりのノイズが走っているか。</summary>
+        public bool SwapActive => swapFx != null && swapFx.Active;
 
         /// <summary>
         /// enter インサート: 現在の映像から insert カメラへ dip-to-black で切り替える（Insert source ＝周回に数えない）。
@@ -756,6 +798,9 @@ namespace FixedCamVr.Streaming
         /// <summary>凍結・焼き付きをすべて畳む（ラン開始・演出の中止・体験の終了）。</summary>
         public void ClearFeelFx()
         {
+            // ⚠ 入れ替わりのノイズもここで畳む。**「画が止まったまま戻らない」の型**（この codebase が
+            //   4 回踏んだ）と同じで、砂の人型が掴んだ人形を離さないまま次の体験者へ持ち越されうる。
+            swapFx?.Cancel();
             feelFx?.ResetAll();
             // ⚠ 分割も必ず畳む。残すと**画が割れたまま・左半分が凍ったまま**次の体験者へ持ち越される。
             feelFx?.ClearSplit();

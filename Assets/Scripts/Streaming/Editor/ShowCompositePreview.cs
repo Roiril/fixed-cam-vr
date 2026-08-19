@@ -32,7 +32,7 @@ namespace FixedCamVr.Streaming.EditorTools
     /// 各カメラ 1 枚の <c>calibcheck_&lt;camera&gt;.png</c> も出す（プレート + 部屋ワイヤー + 床格子のみ・post なし）。
     /// 較正が合っているかを人が判定するための絵で、卓のワイヤー重畳の Unity 版にあたる。
     /// </summary>
-    public static class ShowCompositePreview
+    public static partial class ShowCompositePreview
     {
         private const string OutDirRel = "Screenshots/cgviz";
         private const string CgLayerName = "ShowCg";
@@ -884,6 +884,54 @@ namespace FixedCamVr.Streaming.EditorTools
                 { hideFlags = HideFlags.HideAndDontSave };
             }
 
+            // ---- 入れ替わりのノイズ（`canon/LEDGER.md` 0089）のプレビュー ----
+            //
+            // `ShowSwapPreview` だけが使う。**本番と同じ uniform を同じシェーダへ書く**ので、
+            // ここで見えた絵はそのまま実機の絵になる（別の式を書かない）。
+
+            private bool _swapActive;
+            private float _swapCover, _swapSolid, _swapSeed;
+
+            /// <summary>影・接地影の濃さの倍率（砂の人型は光を遮らない）。</summary>
+            private float _groundMul = 1f;
+
+            /// <summary>入れ替わりの進みを渡す。uniform は <see cref="Composite"/> が書く
+            /// （矩形は contain-fit が確定してからでないと解けないため）。</summary>
+            public void SetSwap(bool active, float cover, float solid, float seed)
+            {
+                _swapActive = active;
+                _swapCover = Mathf.Clamp01(cover);
+                _swapSolid = Mathf.Clamp01(solid);
+                _swapSeed = seed;
+            }
+
+            public void SetGroundMul(float mul) => _groundMul = Mathf.Clamp01(mul);
+
+            /// <summary>人形を差し替える（プレハブごと作り直す）。</summary>
+            public void UseActor(ShowActorDef def)
+            {
+                if (_actor != null) { DestroyImmediate(_actor); _actor = null; _rig = null; }
+                _shadowMat = null;   // 新しい Renderer へ付け直す
+                EnsureActor(def);
+            }
+
+            /// <summary>
+            /// 人形の背丈を乗っ取る（足元は動かさない）。<see cref="ShowCgLayer.SetSwapHeight"/> と同じ扱い。
+            /// 接地影の半径も一緒に付いてくる。
+            /// </summary>
+            public void SetActorHeight(ShowActorDef def, float heightM, Geometry geom)
+            {
+                if (_actor == null) return;
+                float h = Mathf.Max(0.05f, heightM);
+                if (_rig != null)
+                {
+                    float k = Mathf.Clamp(h / Mathf.Max(0.1f, _rig.MeasuredHeightM), 0.05f, 20f);
+                    _actor.transform.localScale = Vector3.one * k;
+                }
+                _actorHeightM = h;
+                ApplyLightAndGround(def, geom);
+            }
+
             // ---- 人形 ----
 
             public void PlaceActor(ShowActorDef def, Vector2 courseXz, float yawDeg, Geometry geom)
@@ -1075,7 +1123,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 ShowRoomLightDef? light = room != null && room.hasLight && room.light != null ? room.light : null;
                 float lightYaw = light != null ? light.yawDeg : 30f;
                 float lightPitch = light != null ? light.pitchDeg : 55f;
-                float density = light != null ? Mathf.Clamp01(light.shadowDensity) : 0.55f;
+                // 砂の人型は光を遮らない（入れ替わりの最中は 0 へ落とす）。
+                float density = (light != null ? Mathf.Clamp01(light.shadowDensity) : 0.55f) * _groundMul;
                 float softM = light != null ? Mathf.Max(0f, light.shadowSoftM) : 0.12f;
 
                 // course 相対の光。ワールド固定にすると、トラッキング原点の向き次第で部屋に対する
@@ -1233,6 +1282,17 @@ namespace FixedCamVr.Streaming.EditorTools
                     ShowCgLayer.TryActorFocus(_cgCam, _actor.transform.position, _actorHeightM,
                                               contain, _aura, out focus);
                 _compositeMat.SetVector("_ActorFocus", focus);
+
+                // 入れ替わりのノイズ。矩形は `ShowCgLayer.TryActorFocus`（本番と同じ式）で解く。
+                Vector4 swapRect = new Vector4(0.5f, 0.5f, 0.2f, 0f);
+                if (_swapActive && _actor != null
+                    && ShowCgLayer.TryActorFocus(_cgCam, _actor.transform.position, _actorHeightM,
+                                                 contain, 1f, out Vector4 sr))
+                    swapRect = new Vector4(sr.x, sr.y, sr.z, 1f);
+                _compositeMat.SetVector("_SwapRect", swapRect);
+                _compositeMat.SetFloat("_SwapCover", _swapActive ? _swapCover : 0f);
+                _compositeMat.SetFloat("_SwapSolid", _swapActive ? _swapSolid : 0f);
+                _compositeMat.SetFloat("_SwapSeed", _swapSeed);
 
                 SetCaption(caption);
                 _outCam.Render();

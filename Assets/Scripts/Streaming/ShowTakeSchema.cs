@@ -330,6 +330,35 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const string TransGlitch = "glitch";
 
+        /// <summary>
+        /// <b>入れ替わりのノイズ</b>（<c>canon/LEDGER.md</c> 0089）。全画面の砂嵐で覆う代わりに、
+        /// <b>映像の中の体験者だけ</b>にノイズが湧き、人型に固まって体験者を隠し、そのまま
+        /// 人形の大きさへ縮み、晴れると人形になっている。逆向き（人形 → 人）も同じ機構。
+        ///
+        /// 向きは<b>データで指定しない</b> — 「このカットが人形を出すか（<c>cg</c> が空でないか）」と
+        /// 「直前に人形が出ていたか」から導く（<see cref="SwapMorphLogic.Dir"/>）。
+        /// 出す ⇒ 人 → 人形 ／ 出さない ⇒ 人形 → 人。前後で同じなら入れ替わりではないので
+        /// <see cref="TransGlitch"/> へ倒す（<see cref="TakeRunner"/> が警告を出す）。
+        ///
+        /// ⚠ 尺は <c>transitionMs</c>（既定 <see cref="DefaultSwapMs"/>）。dip / glitch と違って
+        ///   <see cref="SplitTransition"/> の 40:60 では割らない — 段が 3 つあるため
+        ///   （湧く → 縮む → 晴れる）配分は <see cref="SwapMorphLogic"/> が持つ。
+        /// </summary>
+        public const string TransSwap = "swap";
+
+        /// <summary>
+        /// 入れ替わりのノイズで<b>「人の側」の姿</b>に使う <c>actors[].id</c>。
+        ///
+        /// ⚠⚠ <b>人形を人の背丈へ引き伸ばしても人型には見えない</b>（2026-08-19 に絵で確かめた）。
+        ///   市松人形は頭が大きいので、1.65m へ拡大すると人ではなく<b>頭の巨大な何か</b>になる。
+        ///   ユーザーの言葉は「ノイズが<b>人型</b>になって…その後にノイズの人型が徐々に<b>人形サイズ</b>に
+        ///   なり、ノイズが晴れたら<b>人形</b>になる」なので、<b>縮んでいる間の形は人</b>でなければならない。
+        ///
+        /// ⚠ 無ければ人形を引き伸ばして代用する（警告を 1 回出す）。**入れ替わりごと止めない** —
+        ///   形が理想的でないことは、演出が 1 度も出ないことより桁違いに軽い。
+        /// </summary>
+        public const string SwapHumanActorId = "visitor";
+
         /// <summary>演出の最大長 (秒)。超えたらランタイムが強制終了する（不変条件 2）。</summary>
         public const float DefaultMaxDurationSec = 45f;
 
@@ -344,6 +373,13 @@ namespace FixedCamVr.Streaming
 
         /// <summary>glitch 遷移全体の既定 (ms)。黒より少し長く取らないと「壊れた」に見えない。</summary>
         public const float DefaultGlitchMs = 220f;
+
+        /// <summary>
+        /// 入れ替わりのノイズ全体の既定 (ms)。**桁が違う**のは、これが継ぎ目を隠す遷移ではなく
+        /// <b>それ自体が見せ場</b>だから（湧く → 縮む → 晴れる の 3 段を読ませる必要がある）。
+        /// 2.6 秒は 15fps の映像で各段が 8〜12 コマ乗る長さ。これより短いと縮む段が飛んで見える。
+        /// </summary>
+        public const float DefaultSwapMs = 2600f;
 
         /// <summary>glitch 遷移で到達する乱れの強さ。</summary>
         public const float GlitchTransitionLevel = 0.85f;
@@ -431,11 +467,15 @@ namespace FixedCamVr.Streaming
             if (transition == TransCut) return 0f;
             if (ms > 0f) return ms;
             if (transition == TransFade) return DefaultFadeMs;
+            if (transition == TransSwap) return DefaultSwapMs;
             return transition == TransGlitch ? DefaultGlitchMs : DefaultDipMs;
         }
 
         /// <summary>遷移の見た目が「黒」ではなく「乱れ」か。</summary>
         public static bool IsGlitchTransition(string? transition) => transition == TransGlitch;
+
+        /// <summary>遷移が「入れ替わりのノイズ」か（<see cref="TransSwap"/>）。</summary>
+        public static bool IsSwapTransition(string? transition) => transition == TransSwap;
 
         /// <summary>
         /// 素材定義の値と step の上書きを合成する（<c>-1</c> = 継承）。

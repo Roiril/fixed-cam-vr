@@ -275,6 +275,23 @@ namespace FixedCamVr.Streaming.EditorTools
                 TrySetObjectRef(cgSo, "screenRenderer", screenGo.GetComponent<Renderer>());
                 TrySetObjectRef(cgSo, "showControl", Object.FindObjectOfType<ShowControlClient>(includeInactive: true));
                 cgSo.ApplyModifiedPropertiesWithoutUndo();
+
+                // 入れ替わりのノイズ（`canon/LEDGER.md` 0089・transition:"swap"）。
+                // **CG レイヤの後に置く** — 砂の形は人形のシルエットそのものなので、
+                // 人形の層が居ないと 1 画素も出ない。
+                var swapFx = screenGo.GetComponent<SwapMorphFx>();
+                if (swapFx == null) swapFx = screenGo.AddComponent<SwapMorphFx>();
+                var swapSo = new SerializedObject(swapFx);
+                TrySetObjectRef(swapSo, "screenRenderer", screenGo.GetComponent<Renderer>());
+                TrySetObjectRef(swapSo, "cgLayer", cgLayer);
+                TrySetObjectRef(swapSo, "glitchFx", screenGo.GetComponent<GlitchFx>());
+                swapSo.ApplyModifiedPropertiesWithoutUndo();
+                if (director != null)
+                {
+                    var dirSwapSo = new SerializedObject(director);
+                    TrySetObjectRef(dirSwapSo, "swapFx", swapFx);
+                    dirSwapSo.ApplyModifiedPropertiesWithoutUndo();
+                }
             }
 
             int cgLayerIndex = LayerMask.NameToLayer(CgLayerName);

@@ -917,6 +917,59 @@ def analyze(events, others, exp, warns=None):
         verdict("WARN", f"2 秒以上続いた砂嵐が {len(long_spans)} 回（最長 {max(s[1] for s in long_spans):.1f}s）")
     w()
 
+    # ---------------- 入れ替わりのノイズ ----------------
+    # `canon/LEDGER.md` 0089。全画面の砂嵐で入れ替えるのをやめ、**映像の中の体験者だけ**を
+    # 砂で覆って入れ替える。
+    #
+    # ⚠⚠ **「段が進んだ」だけを見ない。** 3 段（湧く → 縮む → 晴れる）が完走しても、
+    #    人形がカメラの後ろに居れば矩形が書けず、砂は 1 画素も出ない。しかも全画面の砂嵐と違って
+    #    「出ていない」が録画から読みにくい（人形は最後に普通に出るので、絵だけ見ると成立して見える）。
+    #    だから **rect（矩形を書けたか）と cover（実際に砂が乗った割合）を判定に入れる**。
+    w("## 入れ替わりのノイズ（人 ⇄ 人形）")
+    swaps = [e for e in events if e.get("ev") == "swap"]
+    begins = [e for e in swaps if e.get("st") == "begin"]
+    ends = [e for e in swaps if e.get("st") == "end"]
+    for e in swaps:
+        w(f"  t={fnum(e, 't', 0):7.1f}  {e.get('st', '?'):5s} {e.get('dir', '?'):7s} "
+          f"背丈 {fnum(e, 'h', 0):.2f}m 矩形 {e.get('rect', '?')}")
+    # 画に出た側。`swap=<走ったか>/<被覆>/<背丈>/<矩形>/<累計>`
+    cov_max, rect_ok, swap_n = 0.0, 0, 0
+    for smp in sums:
+        raw = smp.get("swap")
+        if not raw or raw == "-":
+            continue
+        parts = raw.split("/")
+        if len(parts) < 5:
+            continue
+        try:
+            cov_max = max(cov_max, float(parts[1]))
+            rect_ok = max(rect_ok, int(parts[3]))
+            swap_n = max(swap_n, int(parts[4]))
+        except ValueError:
+            continue
+    if not swaps and swap_n == 0:
+        w("  記録なし（この走行では入れ替わりのカットへ到達していない）")
+    else:
+        w(f"  走った回数 {swap_n} / 砂の被覆の最大 {cov_max:.2f} / 矩形を書けた {rect_ok}")
+        dirs = [e.get("dir") for e in begins]
+        if rect_ok == 0:
+            verdict("FAIL", "入れ替わりの矩形を 1 度も書けていない（rect=0）— 砂は 1 画素も出ていない。"
+                            "人形がカメラの後ろ / 位置合わせが未完了 / 人形の層が居ない")
+        elif cov_max < 0.9:
+            verdict("FAIL", f"砂が人型を覆い切っていない（被覆の最大 {cov_max:.2f}）— "
+                            "体験者が隠れないまま画面が差し替わっている")
+        elif len(ends) < len(begins):
+            verdict("WARN", f"入れ替わりが途中で畳まれた（begin {len(begins)} / end {len(ends)}）")
+        elif swap_n < 2:
+            verdict("WARN", f"入れ替わりが {swap_n} 回だけ（著作は 3 周目 A と 4 周目 A の 2 回）— "
+                            "走行が途中で終わったか、片方のカットへ到達していない")
+        elif "toDoll" not in dirs or "toHuman" not in dirs:
+            verdict("WARN", f"向きが片方だけ（{'/'.join(d or '?' for d in dirs)}）— "
+                            "人 → 人形 と 人形 → 人 の両方が要る")
+        else:
+            verdict("OK", f"入れ替わりが {swap_n} 回、砂の被覆 {cov_max:.2f} まで乗った")
+    w()
+
     # ---------------- 表示 fps ----------------
     w("## 表示（VR の快適性）")
     fps = [fnum(s, "fps") for s in sums if fnum(s, "fps") is not None]

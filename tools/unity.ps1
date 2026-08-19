@@ -136,6 +136,10 @@ $Menus = [ordered]@{
                             Desc = '実写プレート × CG 人形の合成を PNG 化（合成品質の一次証拠）'
                             Set = 'show=<show.json のパス> / decay=<0..1 周回で進む解像度の劣化>'
                             Out = 'Assets/Screenshots/cgviz' }
+    'swap'             = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.RunSwap'
+                            Desc = '入れ替わりのノイズ（人 ⇄ 人形）を連番 PNG 化。動画は make-preview-video.py'
+                            Set = 'show=<show.json のパス>'
+                            Out = 'Assets/Screenshots/swap' }
     'actor'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorVizPreview.Run'
                             Desc = 'CG 人形を 4 ポーズ × 2 角度で PNG 化'
                             Set = 'actor=<人形名>'
