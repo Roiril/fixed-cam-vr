@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using FixedCamVr.Streaming;
 using NUnit.Framework;
 
@@ -241,20 +241,18 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// 連絡が届いてから畳み切るまでの尺は<b>文面の役割で違う</b>
-        /// （2026-08-16・<c>canon/LEDGER.md</c> 0065）。単一の値を全文面へ使わない。
+        /// 読ませる尺は<b>全文面で同じ</b>（2026-08-19・<c>canon/LEDGER.md</c> 0092・
+        /// 「出し切った後残す時間は一律 2s」）。役割ごとに分けていた 3 つ（0065）は畳んだ。
+        /// ⚠ <b>長い文面ほど画に居る時間は自然に長い</b>（打つ尺が文字数から決まる）。
         /// </summary>
         [Test]
-        public void HoldSec_IsShortestForAReceipt()
+        public void HoldSec_IsTheSameForEveryNotice()
         {
-            Assert.That(CommsPanelLogic.HoldReceiptSec,
-                        Is.LessThan(CommsPanelLogic.HoldBriefSec), "受領は指示より短い");
-            Assert.That(CommsPanelLogic.HoldBriefSec,
-                        Is.LessThan(CommsPanelLogic.HoldUrgentSec), "催促はいちばん長い");
+            Assert.AreEqual(2.0f, CommsPanelLogic.HoldSec, 0.001f);
             // 報告 1 回で面が灯る総尺（押し始めから）。**10 秒級に戻さない**。
             float total = VisitorMarkHoldSec
                         + CommsPanelLogic.InSec + CommsPanelLogic.MinTypeSec
-                        + CommsPanelLogic.HoldReceiptSec + CommsPanelLogic.OutSec;
+                        + CommsPanelLogic.HoldSec + CommsPanelLogic.OutSec;
             Assert.That(total, Is.LessThan(6f), $"報告 1 回に {total:0.0}s は長い");
         }
 
@@ -295,7 +293,7 @@ namespace FixedCamVr.Streaming.Tests
             l.SetGuideWanted(true);                       // 押し始め
             AdvanceUntil(l, CommsStage.Guide);
             l.SetGuideWanted(true);                       // 押しっぱなし（縁ではない）
-            l.Begin(Chars, CommsPanelLogic.HoldReceiptSec);   // 長押し成立 → ②が届く
+            l.Begin(Chars);                               // 長押し成立 → ②が届く
             AdvanceUntil(l, CommsStage.Type);
 
             l.SetGuideWanted(true);                       // まだ離していない

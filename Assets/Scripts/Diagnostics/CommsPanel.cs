@@ -287,25 +287,6 @@ namespace FixedCamVr.Diagnostics
         public static string NoticeText(CommsNotice n) => TextFor(n);
 
         /// <summary>
-        /// その文面を読ませる時間 (秒)。<b>役割で違う</b>（`canon/LEDGER.md` 0065）。
-        /// ①は押し方を含むので長め、②は自分の行為への返事なので最短、③は読まれないと
-        /// 締めが進まないので最長。
-        /// </summary>
-        private static float HoldSecFor(CommsNotice n) => n switch
-        {
-            CommsNotice.Begin => CommsPanelLogic.HoldBriefSec,
-            // ⓪a 名乗り。初対面の 1 行なので受領より長く、指示より短い。
-            CommsNotice.Greeting => CommsPanelLogic.HoldBriefSec,
-            // ⓪b 歩行の指示。**読まないと体験が始まらない**ので③と同じ扱い。
-            CommsNotice.Walk => CommsPanelLogic.HoldUrgentSec,
-            // ⓪c 演出の始まりの告知。**受領と同じ最短**にする — 体験者はこの直後から
-            // 現実が格下げされていく画を見るので、面が長く居座ると演出を隠す。
-            CommsNotice.Arrived => CommsPanelLogic.HoldReceiptSec,
-            CommsNotice.Prompt => CommsPanelLogic.HoldUrgentSec,
-            _ => CommsPanelLogic.HoldReceiptSec,
-        };
-
-        /// <summary>
         /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（13 文字）。
         ///
         /// ⚠ ここを短い文面にすると <c>menu text-audit</c> が<b>最悪の行を測らない</b>ので
@@ -605,8 +586,9 @@ namespace FixedCamVr.Diagnostics
             //    ここは「説明を始めた」という事実だけを渡す。
             if (notice == CommsNotice.Walk) walkGuide?.NotifyExplaining();
             SetNotice(notice);
-            // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。読ませる尺は役割で決まる。
-            _logic.Begin(_charCount, HoldSecFor(notice));
+            // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。
+            // 読ませる尺は**全文面で同じ 2 秒**（`canon/LEDGER.md` 0092）。
+            _logic.Begin(_charCount);
             LastNotice = notice;
             PulseCount++;
             Debug.Log($"[Comms] AIエージェントからの連絡 {notice}「{TextFor(notice).Replace("\n", "／")}」"
@@ -654,7 +636,7 @@ namespace FixedCamVr.Diagnostics
             //    それまではここで `_logic.Retract()` を打っていたが、いまは同じ縁で⓪c
             //    「ポイントに到着しました。観測装置を起動します」が届く。⓪b の指示が出ている最中でも
             //    `Deliver` が頭から出し直すので、枠は開いたまま文面だけが替わる。
-            //    ⓪c は読ませ終われば自分で引く（`HoldReceiptSec`）ので、畳む処理は要らない。
+            //    ⓪c は読ませ終われば自分で引く（`HoldSec`）ので、畳む処理は要らない。
 
             // ⚠ **押している最中は面を開いたままにする**（`canon/LEDGER.md` 0058）。
             //   本編の外では開かない — 導入・終幕に手元の案内が浮くと世界が壊れる

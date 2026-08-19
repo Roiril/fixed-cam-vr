@@ -107,33 +107,18 @@ namespace FixedCamVr.Streaming
         public const float MaxTypeSec = 3.5f;
 
         /// <summary>
-        /// 読ませる時間 (秒)。<b>打ち終わってから</b>数える。
+        /// 読ませる時間 (秒)。<b>打ち終わってから</b>数える。<b>全文面で同じ値</b>。
         ///
-        /// ⚠⚠ <b>1 つの値を全文面に使わない</b>（2026-08-16・<c>canon/LEDGER.md</c> 0065）。
-        /// 7 秒固定だったころは、報告 1 回で面が <b>10.2 秒</b>灯っていた（3 分の体験の 5.7%）。
-        /// <b>読む時間は打鍵中にもう始まっている</b>ので、打ち終わってから要るのは
-        /// 「読み落としたぶんを拾う」時間だけ。それが何秒要るかは<b>文面の役割で違う</b>。
+        /// ⚠⚠ <b>役割ごとに分けていた 3 つ（4.0 / 2.5 / 5.0）は 2026-08-19 に畳んだ</b>
+        /// （<c>canon/LEDGER.md</c> 0092・ユーザー指定「基本、出し切るまでに文字は読めるので、
+        /// 出し切った後残す時間は一律 2s に」）。<b>読む時間は打鍵中にもう始まっている</b>ので、
+        /// 打ち終わってから要るのは読み落としを拾う時間だけ — そこは文面の役割では変わらない。
+        /// ⚠ 長い文面ほど画に居る時間は自然に長くなる（打つ尺が文字数から決まる）。
+        ///   <b>だから役割で足す必要が無い</b>。
+        /// ⚠ 0065 の「1 つの値を全文面に使わない」は<b>ここで覆っている</b>。
+        ///   あれが避けたのは 7 秒固定（報告 1 回で面が 10.2 秒灯る）で、2 秒はその向きの逆。
         /// </summary>
-        public const float HoldSec = HoldBriefSec;
-
-        /// <summary>
-        /// ① 調査の指示。<b>本編の入口で 1 度だけ</b>出て、操作の教え方もここに乗る。
-        /// 読み落とすと押し方が分からないまま体験が終わるので、受領より長い。
-        /// </summary>
-        public const float HoldBriefSec = 4.0f;
-
-        /// <summary>
-        /// ② 報告の受領。<b>いちばん短い</b> — 体験者<b>自身の行為</b>への返事なので、
-        /// 何が起きたかは既に分かっている。読み落としても失うものが無い。
-        /// ⚠ ここが長いと、押すたびに視界の隅が塞がって「装置が喋りすぎ」になる。
-        /// </summary>
-        public const float HoldReceiptSec = 2.5f;
-
-        /// <summary>
-        /// ③ 締めの催促。<b>いちばん長い</b> — これを読まないと締めのカットが進まない
-        /// （体験者が押すまで待っている）。読ませ切ることを優先する。
-        /// </summary>
-        public const float HoldUrgentSec = 5.0f;
+        public const float HoldSec = 2.0f;
 
         /// <summary>引くまで (秒)。ぱっと消すと「消えた」ではなく「壊れた」に見える。</summary>
         public const float OutSec = 0.9f;
@@ -159,7 +144,6 @@ namespace FixedCamVr.Streaming
         private CommsStage _stage = CommsStage.Off;
         private float _elapsed;
         private float _typeSec = MinTypeSec;
-        private float _holdSec = HoldBriefSec;
         private bool _guideWanted;
         // 段へ入った瞬間の姿。**そこから動かす**ので、どの段へ移っても飛ばない。
         // ⚠⚠ **4 つ全部を覚える。** 2026-08-16 まで開きと丈しか継承しておらず、
@@ -183,11 +167,7 @@ namespace FixedCamVr.Streaming
         /// 打つ文字数。<b>尺はここから決まる</b>（文面が伸びれば打つ時間も伸びる）。
         /// 0 以下なら文字の段を飛ばす。
         /// </param>
-        /// <param name="holdSec">
-        /// 読ませる時間 (秒)。<b>文面の役割ごとに違う</b>（<see cref="HoldBriefSec"/> /
-        /// <see cref="HoldReceiptSec"/> / <see cref="HoldUrgentSec"/>）。0 以下は既定へ倒す。
-        /// </param>
-        public void Begin(int charCount, float holdSec = HoldBriefSec)
+        public void Begin(int charCount)
         {
             // ⚠⚠ **いまの姿から動かす**（`canon/LEDGER.md` 0058）。②の連絡は「押した瞬間」に届くので、
             //    開きを 0 から張り直すと**押し終わるたびに枠が畳まれて開き直る**（毎回かならず起きる吃り）。
@@ -196,7 +176,6 @@ namespace FixedCamVr.Streaming
             _typeSec = charCount <= 0
                 ? 0f
                 : Clamp(charCount / CharsPerSec, MinTypeSec, MaxTypeSec);
-            _holdSec = holdSec > 0f ? holdSec : HoldBriefSec;
         }
 
         /// <summary>段を移る。<b>いまの姿を覚えてから</b>移る（そこから動かすので飛ばない）。</summary>
@@ -267,7 +246,7 @@ namespace FixedCamVr.Streaming
                 case CommsStage.Hold:
                     // 読ませ終わったら引く。⚠ ただし**まだ押している最中なら開いたまま残す** —
                     //    引いてすぐ開き直すのは、体験者から見れば 1 度の操作の途中のちらつき。
-                    if (_elapsed >= _holdSec)
+                    if (_elapsed >= HoldSec)
                         EnterStage(_guideWanted ? CommsStage.Guide : CommsStage.Out);
                     break;
                 case CommsStage.Out:

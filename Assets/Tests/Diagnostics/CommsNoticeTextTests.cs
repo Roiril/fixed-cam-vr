@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 
 using FixedCamVr.Diagnostics;
 using FixedCamVr.Streaming;
@@ -106,7 +106,7 @@ namespace FixedCamVr.Diagnostics.Tests
         {
             string body = CommsPanel.LongestNoticeText;
             var logic = new CommsPanelLogic();
-            logic.Begin(body.Length, CommsPanelLogic.HoldBriefSec);
+            logic.Begin(body.Length);
 
             float step = logic.TypeSec / body.Length;
             Assert.GreaterOrEqual(step, 0.060f,

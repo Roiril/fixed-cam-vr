@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System.IO;
 using System.Reflection;
 using FixedCamVr.Diagnostics;
@@ -118,7 +118,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 float yawOff = ConstF(typeof(CommsPanel), "YawOffsetDeg", -20f);
                 float pitchOff = ConstF(typeof(CommsPanel), "PitchOffsetDeg", 10f);
                 float inSec = ConstF(typeof(CommsPanelLogic), "InSec", 0.45f);
-                float holdSec = ConstF(typeof(CommsPanelLogic), "HoldSec", 7f);
+                float holdSec = ConstF(typeof(CommsPanelLogic), "HoldSec", 2f);
                 float outSec = ConstF(typeof(CommsPanelLogic), "OutSec", 0.9f);
 
                 // ---- 1 枚目: 視界の中の座り（正面を向いた頭から見て、面がどこに立つか）----
