@@ -11,12 +11,14 @@ namespace FixedCamVr.Streaming
     /// <see cref="AnomalyEyesMesh"/>、目の形は <c>FixedCamVr/AnomalyEyes</c> シェーダ。
     /// ここがやるのは <b>3 つだけ</b> — 実体を組む / 頭に付いて回る / 数を材質へ書く。
     ///
-    /// <b>出す・出さないはカットが決める</b>（<c>steps[].eyes</c> → <see cref="TakeRunner"/> →
-    /// <see cref="Apply"/>）。演出の仕組みへ乗せてあるので、
+    /// <b>どの区間で出すかはカットが決める</b>（<c>steps[].eyes</c> → <see cref="TakeRunner"/> →
+    /// <see cref="Apply"/>）。⚠⚠ <b>いつ開き始めていつ閉じ始めるかはカットではなく体験者の居場所</b>
+    /// （<see cref="EyesCueLogic"/>・2026-08-19・<c>canon/LEDGER.md</c> 0093）。
+    /// 演出の仕組みへ乗せてあるので、
     /// <list type="bullet">
     ///   <item>報告で消える（<see cref="ShowTakeDef.dismissible"/>・<c>LEDGER</c> 0050）</item>
-    ///   <item>区間を出れば畳まれる（<c>policy:"yield"</c>）</item>
-    ///   <item>中止・ラン開始・watchdog で必ず落ちる（<c>TakeRunner.ReleaseStepState</c>）</item>
+    ///   <item>区間を出れば<b>流しきって</b>畳まれる（<c>policy:"yield"</c> → <see cref="Release"/>）</item>
+    ///   <item>中止・ラン開始・watchdog で必ず落ちる（<c>TakeRunner.CleanupActive</c> → <see cref="Abort"/>）</item>
     /// </list>
     /// が<b>ぜんぶ既存の経路のまま効く</b>。新しい掛けっぱなしの状態を作らない
     /// （この codebase は「凍結が解けない」を 4 回踏んでいる）。
@@ -66,6 +68,8 @@ namespace FixedCamVr.Streaming
 
         private readonly AnomalyEyesLogic _logic = new();
         private readonly EyeAnchorLogic _anchor = new();
+        // 開き始め・閉じ始めを体験者の居場所で決める層（canon/LEDGER.md 0093）。
+        private readonly EyesCueLogic _cue = new();
 
         private MeshRenderer? _renderer;
         private Material? _mat;
@@ -104,6 +108,19 @@ namespace FixedCamVr.Streaming
         /// <summary>座席の総数（大きい目を含む）。0 なら座席表を組めていない。</summary>
         public int SeatCount => _seats.Length;
 
+        /// <summary>
+        /// 体験者が区間のどこまで来たか 0..1。<b>-1 = 位置では測っていない</b>
+        /// （未登録・layout 不在 ＝ 従来どおりカットの終わりで畳む）。テレメトリ用。
+        /// </summary>
+        public float SpanProgress01 => _spanProgress01;
+        private float _spanProgress01 = -1f;
+
+        /// <summary>終了演出へ入ったか（半ばを過ぎた / 区間を出た）。テレメトリ用。</summary>
+        public bool IsFinishing => _cue.Finishing;
+
+        /// <summary>いまの進みの速さ（1 = 著作どおり / 2 = 追い上げ中）。テレメトリ用。</summary>
+        public float Rate => _cue.Rate;
+
         private void Awake()
         {
             Resolve();
@@ -114,10 +131,7 @@ namespace FixedCamVr.Streaming
         private void OnDisable()
         {
             // 掛けっぱなしにしない。次に有効化されたら必ず兆しから始まる。
-            _wanted = 0f;
-            _logic.Tick(999f, wanted: false, density: 0f);
-            _anchor.Reset();
-            Hide();
+            Abort();
         }
 
         private void OnDestroy()
@@ -178,8 +192,30 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Apply(float eyes) => _wanted = Mathf.Clamp01(eyes);
 
-        /// <summary>畳む（演出の終わり・中止・ラン開始）。閉じ切るまでに <see cref="AnomalyEyesLogic.CloseSec"/>（形で閉じる。薄くしない）。</summary>
+        /// <summary>
+        /// カットが終わった（区間を出た・演出が閉じた）。
+        ///
+        /// ⚠⚠ <b>ここでは切らない。流しきる</b>（2026-08-19・<c>canon/LEDGER.md</c> 0093
+        /// 「演出途中にもしカメラが切り替わったら、倍速にするなどして、強制打ち切りではなく流しきって」）。
+        /// 開き切っていなければ <see cref="EyesCueLogic.HurryRate"/> 倍で追い上げ、
+        /// 開き切ってから <see cref="AnomalyEyesLogic.CloseSec"/> かけて閉じる（形で閉じる。薄くしない）。
+        /// <b>本当に消すのは <see cref="Abort"/></b>（ラン開始・中止・位置合わせ）。
+        /// </summary>
         public void Release() => _wanted = 0f;
+
+        /// <summary>
+        /// <b>無かったことにする</b>（ラン開始・卓からの中止・位置合わせ・無効化）。
+        /// <see cref="Release"/> と違って 1 フレームで消える —— 体験者が交代したのに
+        /// 前の人の目が閉じ残ると、次の人は<b>最初から見られている</b>状態で始まる。
+        /// </summary>
+        public void Abort()
+        {
+            _wanted = 0f;
+            _cue.Reset();
+            _logic.Reset();
+            _anchor.Reset();
+            Hide();
+        }
 
         private void LateUpdate()
         {
@@ -189,10 +225,20 @@ namespace FixedCamVr.Streaming
             _clock += dt;
 
             // 位置合わせ中は引っ込める（現実に線を重ねて合わせる作業を邪魔しない — rules/show-design.md）。
-            bool registering = showControl != null && showControl.CourseRegistrationActive;
-            bool wanted = _wanted > 0f && !registering;
+            // ⚠ ここは「流しきる」の側ではない。合わせている人の視界から**すぐ**消す。
+            if (showControl != null && showControl.CourseRegistrationActive)
+            {
+                if (_logic.Stage != EyesStage.Off || _cue.Running) Abort();
+                return;
+            }
 
-            _logic.Tick(dt, wanted, _wanted);
+            // 開き始め・閉じ始めは体験者の居場所が決める（canon/LEDGER.md 0093）。
+            // カットが言うのは「この区間で出す」までで、尺は言わない。
+            ZoneSpan span = showControl != null ? showControl.ZoneSpan : default;
+            _cue.Tick(_wanted > 0f, _logic.Stage, span);
+            _spanProgress01 = span.valid ? span.progress01 : -1f;
+
+            _logic.Tick(dt, _cue.Wanted, _wanted, _cue.Rate);
 
             if (_logic.Stage == EyesStage.Off) { Hide(); return; }
             if (_renderer == null || _mat == null) return;

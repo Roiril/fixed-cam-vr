@@ -48,6 +48,13 @@ namespace FixedCamVr.Tracking
         public PlayerZone? CurrentZone => _current;
 
         /// <summary>
+        /// いま生きているゾーン配列（読み取り用）。区間の長さを測るのに
+        /// <b>同じカメラの矩形すべて</b>が要る（<see cref="ZoneSpanMath"/>）—— 貪欲分解は
+        /// 1 つのカメラを複数の矩形に割ることがあり、入った矩形だけでは区間の長さにならない。
+        /// </summary>
+        public PlayerZone[] Zones => zones;
+
+        /// <summary>
         /// Pick 確定でゾーンが変わった時に発火する（旧ゾーン, 新ゾーン）。
         /// 初回取得時は旧ゾーンが null。周回カウント（LapCounter）等の外部消費者向け。
         /// 発火は registry.SetActive と同じ箇所（cameraIndex 未変化のゾーン間移動でも発火する点に注意）。

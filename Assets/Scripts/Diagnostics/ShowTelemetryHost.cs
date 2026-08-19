@@ -528,10 +528,15 @@ namespace FixedCamVr.Diagnostics
             : $"{(_swap.Active ? 1 : 0)}/{_swap.Cover:F2}/{_swap.HeightM:F2}/" +
               $"{(_swap.RectResolved ? 1 : 0)}/{_swap.Count}";
 
-        /// <summary>闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;</c>。</summary>
+        /// <summary>
+        /// 闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;/&lt;区間の進み&gt;/&lt;速さ&gt;</c>。
+        /// 後ろ 2 つは 2026-08-19（<c>canon/LEDGER.md</c> 0093）に足した。
+        /// <b>進み -1 = 位置では測っていない</b>（未登録・layout 不在）。速さ 2.00 = 追い上げ中。
+        /// </summary>
         private string EyesState => _eyes == null
             ? "-"
-            : $"{(_eyes.IsBuilt ? 1 : 0)}/{_eyes.OpenCount}/{_eyes.AppliedFade:F2}";
+            : $"{(_eyes.IsBuilt ? 1 : 0)}/{_eyes.OpenCount}/{_eyes.AppliedFade:F2}/" +
+              $"{_eyes.SpanProgress01:F2}/{_eyes.Rate:F2}";
 
         /// <summary>
         /// 歩行誘導（<c>canon/LEDGER.md</c> 0079）。<b>組めたか / 山形の数 / 矢印 / 輪</b>。
@@ -969,7 +974,10 @@ namespace FixedCamVr.Diagnostics
             //   ⚠ 累計は 1 体験で **2**（3 周目 A の人 → 人形、4 周目 A の人形 → 人）。
             _sb.Append(" swap=").Append(SwapState);
             //   eyes = 闇に開く目（`canon/LEDGER.md` 0075）。
-            //   **`<実体を組めたか>/<いま開いている目の数>/<画に出た不透明度>`** の 3 つ組。
+            //   **`<実体を組めたか>/<いま開いている目の数>/<画に出た不透明度>/<区間の進み>/<速さ>`**。
+            //   ⚠ 後ろ 2 つは 0093（位置で開閉する）で足した。**進みが -1 のまま動かない走行は、
+            //     位置を測れていない**（未登録 / layout 不在）＝ 開閉はカットの尺で起きている。
+            //     速さが 1.00 のまま終わったなら、追い上げは 1 度も要らなかった（歩くのが遅い人）。
             //   ⚠ 3 つとも要る — シェーダが剥がれた（0/…）／カットが 1 度も指していない（1/0/0.00）／
             //     指したのに 1 画素も出ていない（1/0/1.00 ＝ 座席表を組めていない）は**別の壊れ方**。
             //   ⚠ 数は「重みを配った」ではなく**何個ぶんの目が実際に開いているか**（画に出た側）。

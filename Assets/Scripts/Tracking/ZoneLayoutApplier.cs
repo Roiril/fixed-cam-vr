@@ -51,6 +51,7 @@ namespace FixedCamVr.Tracking
         {
             if (showControl != null) showControl.LayoutChanged += OnLayoutChanged;
             if (courseFrame != null) courseFrame.Changed += OnFrameChanged;
+            if (tracker != null) tracker.ZoneChanged += OnZoneChanged;
             _subscribed = true;
         }
 
@@ -59,6 +60,8 @@ namespace FixedCamVr.Tracking
             if (!_subscribed) return;
             if (showControl != null) showControl.LayoutChanged -= OnLayoutChanged;
             if (courseFrame != null) courseFrame.Changed -= OnFrameChanged;
+            if (tracker != null) tracker.ZoneChanged -= OnZoneChanged;
+            _spanValid = false;
             _subscribed = false;
         }
 
@@ -100,6 +103,49 @@ namespace FixedCamVr.Tracking
             }
             var trk = tracker;
             showControl.CurrentZoneLabelProvider = () => trk != null && trk.CurrentZone != null ? trk.CurrentZone.Label : "";
+            // 区間の進み（canon/LEDGER.md 0093）。**その場で測る** — 進みは頭の位置の関数でしかないので、
+            // 毎フレーム更新して持ち回るより、読まれた時に 1 回内積を取る方が食い違いようが無い。
+            showControl.ZoneSpanProvider = SampleZoneSpan;
+        }
+
+        // ---- 区間の進み（canon/LEDGER.md 0093）------------------------------------------------
+        // 「入った瞬間の立ち位置」と「奥の端」だけを覚えておき、進みは読まれるたびに測る。
+        // 入った瞬間は PlayerZoneTracker.ZoneChanged（生の判定）で拾う。ショーの確定（dwell 0.5s）
+        // より少し早いが、**幾何としては生の方が正しい**（体験者が線を跨いだのはその瞬間）。
+        private bool _spanValid;
+        private Vector3 _spanAxis;
+        private float _spanEntryU, _spanFarU;
+        private int _spanCamera = -1;
+        private int _spanVisit;
+
+        private void OnZoneChanged(PlayerZone? _, PlayerZone entered)
+        {
+            _spanValid = false;
+            _spanVisit++;
+            if (entered == null || tracker == null || headTransform == null) return;
+
+            PlayerZone[] zones = tracker.Zones;
+            var boxes = new SpanBox[zones.Length];
+            int index = -1;
+            for (int i = 0; i < zones.Length; i++)
+            {
+                PlayerZone z = zones[i];
+                if (z == null) continue;
+                boxes[i] = new SpanBox(z.Center, z.Rotation, z.HalfExtents, z.CameraIndex);
+                if (z == entered) index = i;
+            }
+            if (index < 0) return;
+
+            _spanCamera = entered.CameraIndex;
+            _spanValid = ZoneSpanMath.Solve(boxes, index, headTransform.position,
+                                            out _spanAxis, out _spanEntryU, out _spanFarU);
+        }
+
+        private ZoneSpan SampleZoneSpan()
+        {
+            if (!_spanValid || headTransform == null) return default;
+            float p = ZoneSpanMath.Progress01(headTransform.position, _spanAxis, _spanEntryU, _spanFarU);
+            return new ZoneSpan(true, _spanCamera, _spanVisit, p);
         }
 
         /// <summary>layout を解決し、ゾーンを作り直して tracker へ流し込む。layout が無ければ何もしない。</summary>
@@ -111,6 +157,8 @@ namespace FixedCamVr.Tracking
                 return;
 
             PlayerZone[] zones = BuildZones(rects);
+            // 箱を作り直したら、覚えていた「入った所 → 奥の端」はもう別の空間の値。次の進入で測り直す。
+            _spanValid = false;
             tracker.SetZonesRuntime(zones);
             tracker.SetHysteresisShrink(hyst);
             Debug.Log($"[ZoneLayoutApplier] rebuilt zones={zones.Length} (src={src}, hyst={hyst:F3})");

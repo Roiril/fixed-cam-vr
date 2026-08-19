@@ -2220,7 +2220,8 @@ def analyze(events, others, exp, warns=None):
         w()
         w("### 闇に開く目")
         w(f"  著作: {len(want_eyes)} カット")
-        parts = [v.split("/") for v in eyes_raw if v.count("/") == 2]
+        # 3 つ組は 0093（2026-08-19）より前のビルド。5 つ組は 進み と 速さ が付く。
+        parts = [v.split("/") for v in eyes_raw if v.count("/") in (2, 4)]
         built = [p[0] for p in parts]
         opened = []
         fades = []
@@ -2236,6 +2237,32 @@ def analyze(events, others, exp, warns=None):
         if opened:
             w(f"  同時に開いた目の最大 {max(opened)} 個（標本 {len(parts)}）")
 
+        # 位置で開閉しているか（canon/LEDGER.md 0093）。進み -1 = 測れていない。
+        spans, rates = [], []
+        for p in parts:
+            if len(p) < 5:
+                continue
+            try:
+                spans.append(float(p[3]))
+            except ValueError:
+                pass
+            try:
+                rates.append(float(p[4]))
+            except ValueError:
+                pass
+        if spans:
+            measured = [v for v in spans if v >= 0.0]
+            if not measured:
+                verdict("WARN", "区間の進みを 1 度も測れていない（eyes の 4 つ目が常に -1）— "
+                                "位置合わせが済んでいないか layout が届いていない。"
+                                "目の開閉はカットの尺で起きている（0093 より前の挙動）")
+            else:
+                w(f"  区間の進み 最大 {max(measured):.2f}（測れた標本 {len(measured)}/{len(spans)}）")
+                if rates and max(rates) > 1.01:
+                    w(f"  追い上げが効いた（速さ 最大 {max(rates):.2f}）")
+                elif rates:
+                    w("  追い上げは 1 度も要らなかった（区間の半ばまでに開き切っている）")
+
         if want_eyes and not parts:
             verdict("WARN", "目を観測していないビルドのログ（eyes キーが無い）")
         elif built and all(v == "0" for v in built):
@@ -2245,10 +2272,11 @@ def analyze(events, others, exp, warns=None):
         elif want_eyes and opened and max(opened) == 0:
             verdict("FAIL", f"目を指すカットが {len(want_eyes)} 本あるのに 1 つも開いていない"
                             f"（{', '.join(want_eyes)}）— そのカットが飛ばされていないか"
-                            "（ev=step）と、区間の滞在が兆し 4.0s より長いかを見る")
+                            "（ev=step）と、区間の進み（eyes の 4 つ目）が動いているかを見る")
         elif want_eyes and opened and max(opened) < 2:
             verdict("WARN", f"大きい目しか開いていない（最大 {max(opened)} 個）— "
-                            "区間の滞在が 7.5 秒（兆し ＋ 凝視）より短くて開眼まで届いていない疑い")
+                            "0093 の追い上げ（区間の半ばで倍速）が効いていれば開眼まで必ず届く。"
+                            "速さ（eyes の 5 つ目）が 1.00 のままなら、終了要求が届いていない")
         elif want_eyes and opened:
             verdict("OK", f"目が開いた（同時に最大 {max(opened)} 個）")
 
@@ -2257,8 +2285,10 @@ def analyze(events, others, exp, warns=None):
         take_evs2 = [e for e in events if e.get("ev") == "take"]
         if take_evs2 and take_evs2[-1].get("st") == "end":
             t_end2 = fnum(take_evs2[-1], "t", 0.0)
-            after = [str(v) for v in effect_samples(events, "eyes", t_from=t_end2 + 2.0)
-                     if str(v).count("/") == 2]
+            # ⚠ 猶予は 2.0 → 7.0 秒（0093）。カットが終わっても目は切らず流しきるので、
+            #   最悪ケース（兆しの途中で区間が変わる）で 8.4/2 の追い上げ ＋ 閉じ 1.6 ＝ 5.8 秒残る。
+            after = [str(v) for v in effect_samples(events, "eyes", t_from=t_end2 + 7.0)
+                     if str(v).count("/") in (2, 4)]
             stuck = [p.split("/")[2] for p in after]
             vals = []
             for v in stuck:

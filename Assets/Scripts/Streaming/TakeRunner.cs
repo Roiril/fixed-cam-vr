@@ -435,6 +435,10 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             CleanupActive();
+            // ⚠⚠ CleanupActive は「走行中の演出が無ければ」何もしないで返る。ところが闇の目は
+            //    カットより長生きする（0093 の流しきり）ので、**演出が終わった後のラン開始**が
+            //    そこをすり抜ける。体験者の交代でだけは、走行中かどうかに関わらず落とす。
+            _eyes?.Abort();
             _logic.ResetRun();
             // 前の体験者の位置・横断状態を持ち越さない（ラン開始直後に幽霊の横断を作らない）。
             _lineCross.Reset();
@@ -935,6 +939,10 @@ namespace FixedCamVr.Streaming
             // ⚠ null 許容にする（同じメソッドの上と ReleaseStepState は既に `director?.`）。
             //   director が解決できない構成で演出が走ると、中止のたびに NRE で止まっていた。
             director?.ClearFeelFx();
+            // ⚠⚠ 闇の目は Release では消えない（流しきる）。**中止・ラン開始・卓の緊急停止は
+            //    「無かったことにする」側**なので、ここだけは 1 フレームで落とす。
+            //    落とさないと、次の体験者が被った直後に前の人の目が閉じ残っている。
+            _eyes?.Abort();
             _logic.AbortActive();
         }
 
@@ -965,6 +973,9 @@ namespace FixedCamVr.Streaming
             overlay?.ClearSecondLayer();
             // 闇の目も**カット単位の状態**。ここを通らない終わり方は無い（正常終了・中止・
             // ラン開始・watchdog・報告で畳む、のすべてが ReleaseStepState を通る）。
+            // ⚠⚠ **ここは切らない**（2026-08-19・canon/LEDGER.md 0093）。開いている途中で
+            //    区間が変わったら、目は倍速で開き切ってから閉じる ＝ 数秒はカットより長生きする。
+            //    体験者を替える側（CleanupActive）だけが Abort で本当に消す。
             _eyes?.Release();
         }
 

@@ -1223,6 +1223,14 @@ namespace FixedCamVr.Streaming
         /// <summary>現在ゾーンのラベルを返す供給元（null なら空文字）。</summary>
         public Func<string>? CurrentZoneLabelProvider;
         /// <summary>
+        /// <b>いまの区間をどこまで来たか</b>の供給元（ZoneLayoutApplier が注入・<c>canon/LEDGER.md</c> 0093）。
+        /// null なら <see cref="ZoneSpan.valid"/> が false ＝ 位置では測らない（演出はカットの終わりに任せる）。
+        /// </summary>
+        public Func<ZoneSpan>? ZoneSpanProvider;
+
+        /// <summary>いまの区間の進み。供給元が居なければ「測れない」を返す。</summary>
+        public ZoneSpan ZoneSpan => ZoneSpanProvider != null ? ZoneSpanProvider() : default;
+        /// <summary>
         /// course space の (XZ, y) をワールド座標へ変換する供給元（CourseFrame.CourseToWorld を注入）。
         /// CG レイヤの仮想カメラ・人形を位置合わせ済みの実空間へ置くのに使う。null ならワールド＝course。
         /// </summary>

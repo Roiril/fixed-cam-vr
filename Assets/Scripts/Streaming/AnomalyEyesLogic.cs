@@ -243,14 +243,40 @@ namespace FixedCamVr.Streaming
         /// <summary>この異変が始まったフレームか（向きを頭へ合わせ直す縁）。</summary>
         public bool JustStarted { get; private set; }
 
+        /// <summary>
+        /// <b>ぜんぶ落とす</b>（ラン開始・中止・無効化）。<see cref="Tick"/> に <c>wanted:false</c> を
+        /// 渡すのとは別物 —— あちらは<b>閉じる演出を始める</b>。ここは<b>無かったことにする</b>。
+        /// ⚠ 体験者の交代でここを通らないと、次の人の視界に前の人の目が閉じ残る。
+        /// </summary>
+        public void Reset()
+        {
+            Stage = EyesStage.Off;
+            _t = 0f;
+            _fade = 0f;
+            _close = 0f;
+            _gaze = 0f;
+            Big = 0f;
+            Field = 0f;
+            Intensity = 0f;
+            Density = 0f;
+            Smile = 0f;
+            JustStarted = false;
+        }
+
         /// <summary>1 フレーム進める。</summary>
         /// <param name="dt">経過 (秒)</param>
         /// <param name="wanted">カットが出せと言っているか</param>
         /// <param name="density">開く目の割合 0..1（カットの <c>eyes</c>）</param>
-        public void Tick(float dt, bool wanted, float density)
+        /// <param name="rate">
+        /// 進みの速さ（1 = 著作どおり）。<b>区間の半ばを過ぎても開き切っていないときの追い上げ</b>に使う
+        /// （<see cref="EyesCueLogic"/>・<c>canon/LEDGER.md</c> 0093）。
+        /// ⚠ <b>閉じる側は速めない</b>（呼び手が 1 を渡す）。1 つの瞼が下りるのは 0.11 秒しかなく、
+        /// 倍にすると 0085 の赤入れ（閉じるアニメーション）が消える。
+        /// </param>
+        public void Tick(float dt, bool wanted, float density, float rate = 1f)
         {
             JustStarted = false;
-            dt = Mathf.Max(0f, dt);
+            dt = Mathf.Max(0f, dt) * Mathf.Max(0f, rate);
 
             if (wanted)
             {

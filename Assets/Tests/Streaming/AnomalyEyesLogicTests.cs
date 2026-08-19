@@ -316,6 +316,38 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.Big, Is.LessThan(0.01f), "2 人目も必ず兆しから");
         }
 
+        /// <summary>
+        /// <b>追い上げ</b>（2026-08-19・<c>canon/LEDGER.md</c> 0093）。区間の半ばまでに開き切って
+        /// いなければ倍速で進む。⚠ <b>飛ばすのではなく速める</b> — 段の並びも緩急も同じものを通る。
+        /// </summary>
+        [Test]
+        public void Rate_SpeedsUpTheSameCurve_WithoutSkippingStages()
+        {
+            var fast = new AnomalyEyesLogic();
+            for (int i = 0; i < 60; i++) fast.Tick(0.05f, wanted: true, density: 1f, rate: 2f);
+            var slow = Run(0.05f * 60 * 2f);
+            Assert.That(fast.Stage, Is.EqualTo(slow.Stage), "倍速でも同じ段に居る");
+            Assert.That(fast.Big, Is.EqualTo(slow.Big).Within(1e-3f));
+        }
+
+        /// <summary>
+        /// <see cref="AnomalyEyesLogic.Reset"/> は「無かったことにする」。
+        /// <c>wanted:false</c>（閉じる演出を始める）とは別物 — 体験者の交代でこちらを通らないと、
+        /// 次の人の視界に前の人の目が閉じ残る。
+        /// </summary>
+        [Test]
+        public void Reset_DropsEverythingInOneFrame()
+        {
+            var l = Run(Hint + Stare + Swarm);
+            Assert.That(l.Visible, Is.True);
+            l.Reset();
+            Assert.That(l.Stage, Is.EqualTo(EyesStage.Off));
+            Assert.That(l.Visible, Is.False);
+            Assert.That(l.Fade, Is.EqualTo(0f));
+            Assert.That(l.Big, Is.EqualTo(0f));
+            Assert.That(l.Field, Is.EqualTo(0f));
+        }
+
         [Test]
         public void Reapply_DoesNotRestartWithinTheSameEvent()
         {
