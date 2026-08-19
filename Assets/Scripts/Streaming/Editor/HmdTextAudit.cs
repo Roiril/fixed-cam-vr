@@ -56,11 +56,15 @@ namespace FixedCamVr.Streaming.EditorTools
                           Probe = OutroReportText.Compose(3) },
             // ⚠ この面は TMP を **2 つ**持つ（上段 = 文面 / 下段 = 報告の押し方）。
             //    フィールドを名指ししないと、先に組んだ方が測られて「狙いと違う」と誤って落ちる。
+            // ⚠⚠ 狙い値に **`CommsPanel.Scale`** を掛けてある（2026-08-19・`canon/LEDGER.md` 0091 で
+            //    面ごと 2/3 にした）。この面だけは根の倍率で字も一緒に縮むので、
+            //    段の素の値（1.8° / 1.5°）と突き合わせると必ず「外れ」と出る。
             new Surface { Name = "AIエージェントからの連絡", Type = typeof(CommsPanel),
-                          FixedDistanceM = 1.5f, BuildsItsOwnText = true, Field = "_text" },
+                          FixedDistanceM = 1.5f, BuildsItsOwnText = true, Field = "_text",
+                          TierDeg = HmdTextStyle.BodyDeg * CommsPanel.Scale },
             new Surface { Name = "AIエージェントからの連絡（下段）", Type = typeof(CommsPanel),
                           FixedDistanceM = 1.5f, BuildsItsOwnText = true, Field = "_hint",
-                          TierDeg = HmdTextStyle.MinorDeg,
+                          TierDeg = HmdTextStyle.MinorDeg * CommsPanel.Scale,
                           // 長押し中の 2 行（ゲージが 10 目盛でいちばん長い）。
                           Probe = VisitorMarkGuidance.Line(0.6f, confirming: false) },
             new Surface { Name = "ステータス", Type = typeof(StatusHud),

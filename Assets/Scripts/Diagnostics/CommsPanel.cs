@@ -109,6 +109,23 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private const float PanelW = 0.76f;
 
+        /// <summary>
+        /// 面ぜんたいの倍率（2026-08-19・<c>canon/LEDGER.md</c> 0091・ユーザー指定
+        /// 「AIエージェントのスクリーンの大きさを今の 2/3 にしてほしい」）。<b>根（<c>CommsRoot</c>）に掛ける</b>ので、地・縁・顔の枠・文字・
+        /// 壊れの複製が<b>1 つの値で同じだけ縮む</b>。
+        ///
+        /// ⚠⚠ <b>この下に書いてある寸法と見かけ角は、倍率を掛ける前の値。</b>
+        /// 実際に見えるのは全部その 2/3 で、主な所は
+        /// 文面の帯 28° → <b>19.2°</b> ／ 顔を含む全幅 35.0° → <b>24.0°</b>。
+        /// 置き場所（<see cref="YawOffsetDeg"/> / <see cref="PitchOffsetDeg"/> / <see cref="DistanceM"/>）は
+        /// 面の原点の角度なので<b>動かない</b> — 面は文面の帯の中心へ向かって縮む。
+        ///
+        /// ⚠ <b>字も一緒に縮む</b>（本文 1.8° → 1.2° / 補助 1.5° → 1.0°）。
+        /// 字だけ据え置くと 1 行 14 文字が帯に入らず、折り返しの前提（3 行まで）が崩れる。
+        /// <c>menu text-audit</c> の狙い値もこの倍率を掛けてある（<c>HmdTextAudit</c>）。
+        /// </summary>
+        public const float Scale = 2f / 3f;
+
         /// <summary>顔の版（<c>Resources.Load</c> のパス）。焼くのは <c>tools/make-comms-face.py</c>。</summary>
         private const string FaceResourcePath = "Comms/SuiFace";
 
@@ -680,7 +697,9 @@ namespace FixedCamVr.Diagnostics
             _root.rotation = Quaternion.LookRotation(basePos - head.position, Vector3.up);
             // 周回の壊れ（`canon/LEDGER.md` 0068）。発作の刻みだけ、面ごと横へ飛ぶ。
             // ⚠ 追従の値そのものは汚さない（`_yawFollow` に足すと、飛んだ先から追従が始まって尾を引く）。
-            _root.position = basePos + _root.right * _glitchOffsetX;
+            // ⚠ 飛ぶ幅も面と同じだけ縮める（`Scale`）。ここだけ実寸のままにすると、
+            //   面が小さくなったぶん**飛びだけが大きく**見える。
+            _root.position = basePos + _root.right * (_glitchOffsetX * Scale);
         }
 
         private void Build()
@@ -696,6 +715,9 @@ namespace FixedCamVr.Diagnostics
             var rootGo = new GameObject("CommsRoot");
             rootGo.transform.SetParent(transform, worldPositionStays: false);
             _root = rootGo.transform;
+            // ⚠ 大きさは**根 1 か所**で決める（`canon/LEDGER.md` 0091）。
+            //   個々の寸法へ倍率を配ると、次に足した部品が掛け忘れられて 1 つだけ大きく残る。
+            _root.localScale = Vector3.one * Scale;
 
             // 地（受信票の面）。⚠ 標準シェーダが見つからなければ**文字だけ**にする
             //    （面が無くても読めるので、体験は止めない）。
