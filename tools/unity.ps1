@@ -109,7 +109,7 @@ $Menus = [ordered]@{
     'eyejack'          = @{ Method = 'FixedCamVr.Streaming.EditorTools.EyeJackPreview.Run'
                             Desc = '目の視界ジャック（当日写真ぱぱぱ）を stationary / walker の 2 通りで焼く（→ make-preview-video.py で mp4）'
                             Set = 'photos=<正規化済み写真のフォルダ（既定 tools/web-compositor/eyejack/norm）>'
-                            Out = 'Assets/Screenshots/eyejack-preview/stationary_f0000.png' }
+                            Out = 'Assets/Screenshots/eyejack-preview/stationary/f0000.png' }
     'walkguide'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.WalkGuidePreview.Run'
                             Desc = 'タイトル直後の歩行誘導（床の矢印と円）を 1 コマずつ焼く（-Set show=<show.json> / → make-preview-video.py で mp4）'
                             Set = 'show=<show.json のパス>'

@@ -12,9 +12,12 @@ namespace FixedCamVr.Streaming.EditorTools
     /// 2 通りの体験者を通しで焼く:
     /// <list type="bullet">
     ///   <item><b>stationary</b> — 足を止めた人。全開 + 1 拍で乗っ取り → 写真が尽きて返す → 目が閉じる</item>
-    ///   <item><b>walker</b> — 歩き続ける人。区間の半分（約 3.5 秒）の縁で乗っ取り →
-    ///     目は裏で追い上げて閉じる → 写真が尽きて返すと目はもう居ない</item>
+    ///   <item><b>walker</b> — 歩き続ける人。区間の半分（約 3.5 秒）の縁で乗っ取り
+    ///     （目はまだ開き切っていないので裏で追い上げる）→ 写真が尽きて返す → 目が閉じる</item>
     /// </list>
+    ///
+    /// ⚠ どちらも<b>「写真が終わる → 視界が戻る → 目が閉じる」の順</b>になっていること。
+    /// 覆いの裏で閉じていたら 0084 の「閉じたのではなく消えた」に戻っている。
     ///
     /// ⚠ <b>実シェーダ・実ロジック</b>（<see cref="EyeJackLogic"/> ＋ <see cref="EyesCueLogic"/> ＋
     /// <see cref="AnomalyEyesLogic"/>）を通す。配線は <c>AnomalyEyes.DriveJack</c> の写し —
@@ -126,6 +129,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 cam.backgroundColor = Color.black;
                 cam.transform.SetPositionAndRotation(Stage, Quaternion.identity);
 
+                // ⚠ **2 通りを別フォルダへ焼く。** `make-preview-video.py` は `f0000.png` の連番しか
+                //   拾わないので、1 つのフォルダに接頭辞で 2 通り入れると mp4 にできない。
                 Bake(cam, eyeMat, jackMat, jr, seats, photos, dir, "stationary", walking: false);
                 Bake(cam, eyeMat, jackMat, jr, seats, photos, dir, "walker", walking: true);
 
@@ -152,8 +157,10 @@ namespace FixedCamVr.Streaming.EditorTools
 
         /// <summary>1 通りの体験者を通しで焼く（配線は AnomalyEyes.DriveJack の写し）。</summary>
         private static void Bake(Camera cam, Material eyeMat, Material jackMat, MeshRenderer jackRenderer,
-                                 EyeSeat[] seats, Texture2D[] photos, string dir, string name, bool walking)
+                                 EyeSeat[] seats, Texture2D[] photos, string rootDir, string name, bool walking)
         {
+            string dir = Path.Combine(rootDir, name);
+            Directory.CreateDirectory(dir);
             var eyes = new AnomalyEyesLogic();
             var cue = new EyesCueLogic();
             var jack = new EyeJackLogic();
@@ -198,7 +205,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
 
                 clock += dt;
-                Shoot(cam, Path.Combine(dir, $"{name}_f{frames:0000}.png"));
+                Shoot(cam, Path.Combine(dir, $"f{frames:0000}.png"));
                 int open = AnomalyEyesMesh.CountOpen(seats, eyes.Big, eyes.Field, eyes.Density);
                 ledger.Append(frames).Append('\t').Append(F(t)).Append('\t')
                       .Append(eyes.Stage).Append('\t').Append(F(progress)).Append('\t')
@@ -210,7 +217,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 全部終わったら 1 秒だけ余韻を焼いて切り上げる（stationary の尻の無駄を削る）。
                 if (eyes.Stage == EyesStage.Off && jack.Spent && t < total - 1.5f) total = t + 1f;
             }
-            File.WriteAllText(Path.Combine(dir, $"{name}_frames.tsv"), ledger.ToString());
+            File.WriteAllText(Path.Combine(dir, "frames.tsv"), ledger.ToString());
         }
 
         private static void WriteEyes(Material mat, AnomalyEyesLogic l, float clock)
