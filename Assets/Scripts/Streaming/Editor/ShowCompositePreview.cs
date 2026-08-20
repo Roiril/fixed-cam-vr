@@ -444,7 +444,7 @@ namespace FixedCamVr.Streaming.EditorTools
             private RenderTexture? _cgRt;
             private float _swapMaskHeightM = -1f;
             private Texture2D? _swapMaskPlate;
-            private Vector4 _swapMaskCfg = new Vector4(0f, 0.055f, 0.20f, 2.0f);
+            private Vector4 _swapMaskCfg = new Vector4(0f, 0.035f, 0.13f, 3.0f);
             private readonly System.Collections.Generic.List<Texture2D> _baked = new();
             /// MSAA の RT は直接 ReadPixels できないので、測定用に非 MSAA へ解決してから読む。
             private RenderTexture? _cgResolve;
@@ -1376,7 +1376,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 _compositeMat.SetTexture("_SwapMaskTex",
                     _swapMaskPlate != null ? (Texture)_swapMaskPlate : Texture2D.blackTexture);
                 _compositeMat.SetVector("_SwapMask",
-                    _swapMaskPlate != null ? _swapMaskCfg : new Vector4(0f, 0.055f, 0.20f, 2.0f));
+                    _swapMaskPlate != null ? _swapMaskCfg : new Vector4(0f, 0.035f, 0.13f, 3.0f));
                 _compositeMat.SetFloat("_SwapCover", _swapActive ? _swapCover : 0f);
                 _compositeMat.SetFloat("_SwapKnot", _swapActive ? _swapKnot : 0f);
                 _compositeMat.SetFloat("_SwapThread", _swapActive ? _swapThread : 0f);

@@ -157,7 +157,7 @@ Shader "FixedCamVr/ScreenComposite"
         // 映像の中の人を拾う無人プレート（そのカメラで撮った、誰も居ない画）。
         _SwapMaskTex("Swap Mask Plate", 2D) = "black" {}
         // x = 使うか / y,z = 差の下限・上限 / w = 差を取る mip の段（粗くするほどノイズが消える）
-        _SwapMask("Swap Mask (on, lo, hi, lod)", Vector) = (0, 0.055, 0.20, 2.0)
+        _SwapMask("Swap Mask (on, lo, hi, lod)", Vector) = (0, 0.035, 0.13, 3.0)
         _SwapCover("Swap Cover", Range(0, 1)) = 0
         _SwapKnot("Swap Knot", Range(0, 1)) = 0
         _SwapThread("Swap Thread", Range(0, 1)) = 0
@@ -644,9 +644,13 @@ Shader "FixedCamVr/ScreenComposite"
                 float pick = step(0.46, r2);          // 半分弱の行が長い線
                 float len = lerp(fine, coarse, pick);
                 float u = frac((px + r1 * len) / max(len, 1e-4));
-                // 行ごとに濃さを振る（全行を同じ割合で塗ると平板になる）。
-                // ⚠ **上限を 0.95 に。** 1 まで許すと半分の行がベタになり、また線に見えなくなる。
-                float d = min(0.95, duty * (0.72 + r2 * 0.56));
+                // ⚠⚠⚠ **芯は完全に塗る。散らすのは縁だけ**（2026-08-20・ユーザー指定
+                //   「人は完全に黒色で塗りつぶされ、人は 1 ミリも映像内に映らないようにしてほしい。
+                //   ただ、塗りつぶしで人の輪郭を鮮明にするのではなく、線でぼやけさせたい」）。
+                //   11 巡目は中まで 5% 抜いていたので、**そこから体が透けていた**。
+                //   輪郭がぼやけるのは縁の散らしが担うので、芯を埋めても硬いシルエットにはならない。
+                float jitter = lerp(0.72 + r2 * 0.56, 1.0, smoothstep(0.72, 0.97, duty));
+                float d = saturate(duty * jitter);
                 return step(u, d);
             }
 
@@ -680,11 +684,15 @@ Shader "FixedCamVr/ScreenComposite"
             {
                 float gate = smoothstep(0.72, 0.16, rowR);   // 半分ほどの行が濃く残る
                 float k = saturate(knot);
-                // ⚠⚠ **緩むときは行を抜くだけでなく、全体も薄める**（2026-08-19 の 9 巡目）。
-                //   抜くだけだと、残った行（引き伸ばした画素）と抜けた行（下の映像）が
-                //   1 行おきに並んで**ブラインドの羽根**になる。人型が画面を覆う「人形 → 人」の
-                //   晴れる段でそれが顕著だった（絵で確かめて直した）。
-                return saturate(front * lerp(gate, 1.0, k) * (0.35 + 0.65 * k));
+                // ⚠⚠⚠ **締まるときは薄めない**（2026-08-20・ユーザー指定「人は完全に黒色で
+                //   塗りつぶされ、人は 1 ミリも映像内に映らないようにしてほしい」）。
+                //   `knot` は**ほどける段で 0 → 1**・晴れる段で 1 → 0 と両方向に動くので、
+                //   値だけで薄めると**ほどけている最中がずっと半透明**になり、体が透けて見える。
+                //   ほどけ切ったか（`_SwapCover`）で向きを分ける。
+                // ⚠⚠ **緩むときは行を抜くだけでなく全体も薄める**（2026-08-19 の 9 巡目）。
+                //   抜くだけだと、残った行と抜けた行が 1 行おきに並んで**ブラインドの羽根**になる。
+                float loose = step(0.999, _SwapCover) * (1.0 - k);
+                return saturate(front * lerp(1.0, gate * 0.35, loose));
             }
 
             /// ほどけの前線。0 = まだ / 1 = ほどけた。
@@ -852,12 +860,22 @@ Shader "FixedCamVr/ScreenComposite"
                                     _SwapRect0.y + p.y * h0);
                 if (uv0.x < 0.0 || uv0.x > 1.0 || uv0.y < 0.0 || uv0.y > 1.0) return 0.0;
 
-                float lodD = lod + _SwapMask.w;
                 float plateIn;
                 float2 uvP = ContainUv(RotateUvSteps(uv0, _UvRotSteps), _LiveScale.xy, plateIn);
-                half3 pl = SAMPLE_TEXTURE2D_LOD(_SwapMaskTex, sampler_SwapMaskTex, uvP, lodD).rgb;
-                half3 cur = SampleBase(uv0, lodD, 0.0);
-                float d = max(abs(cur.r - pl.r), max(abs(cur.g - pl.g), abs(cur.b - pl.b)));
+
+                // ⚠⚠ **粗さの違う 2 段で取って大きい方を採る**（2026-08-20）。
+                //   粗い段は**人の中の穴を埋める**（服と背景の明るさがたまたま近い所で
+                //   マスクが抜け、そこだけ体が透ける）。細かい段は**縁を保つ**。
+                //   片方だけだと「穴が空く」か「輪郭が膨らむ」のどちらかになる。
+                float lodA = lod + _SwapMask.w;
+                float lodB = lod + max(_SwapMask.w - 2.0, 0.0);
+                half3 plA = SAMPLE_TEXTURE2D_LOD(_SwapMaskTex, sampler_SwapMaskTex, uvP, lodA).rgb;
+                half3 plB = SAMPLE_TEXTURE2D_LOD(_SwapMaskTex, sampler_SwapMaskTex, uvP, lodB).rgb;
+                half3 curA = SampleBase(uv0, lodA, 0.0);
+                half3 curB = SampleBase(uv0, lodB, 0.0);
+                float dA = max(abs(curA.r - plA.r), max(abs(curA.g - plA.g), abs(curA.b - plA.b)));
+                float dB = max(abs(curB.r - plB.r), max(abs(curB.g - plB.g), abs(curB.b - plB.b)));
+                float d = max(dA, dB);
                 return plateIn * smoothstep(_SwapMask.y, _SwapMask.z, d);
             }
 
