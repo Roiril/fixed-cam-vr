@@ -522,6 +522,13 @@ namespace FixedCamVr.Streaming
             catch (Exception e) { Debug.LogWarning($"[ScreenOverlay] partial file delete failed: {e.Message}"); }
         }
 
+        /// <summary>
+        /// 静止画素材を URL キャッシュ込みで読む（mip 付き）。**表示状態には触らない。**
+        /// 入れ替わりの無人プレート先読み（<see cref="ShowControlClient"/> → SwapMorphFx）が使う。
+        /// </summary>
+        public Task<Texture2D?> LoadStillCachedAsync(string url, CancellationToken ct)
+            => LoadTextureAsync(url, ct);
+
         private async Task<Texture2D?> LoadTextureAsync(string url, CancellationToken ct)
         {
             if (_urlTextureCache.TryGetValue(url, out var cached) && cached != null) return cached;

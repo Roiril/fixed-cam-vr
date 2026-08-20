@@ -541,7 +541,11 @@ namespace FixedCamVr.Streaming
                                   Action? onCovered)
         {
             if (swapFx == null) return false;
-            bool ok = swapFx.Begin(dir, totalSec, () =>
+            // 覆いの相手（映像の中の人）が写っているのは**いま画面に出ているカメラ**
+            // （swap はカメラを動かさずに始まり、差し替えは覆い切った縁）。
+            // その無人プレートを差分マスクの相手として束縛する。
+            int plateCamera = registry != null ? registry.ActiveIndex : -1;
+            bool ok = swapFx.Begin(dir, totalSec, plateCamera, () =>
             {
                 if (targetCamera >= 0 && registry != null && registry.ActiveIndex != targetCamera)
                 {

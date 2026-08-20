@@ -178,6 +178,18 @@ namespace FixedCamVr.Streaming
         public float eyes;
 
         /// <summary>
+        /// <b>目の視界ジャック</b>（<c>canon/LEDGER.md</c> 0099）。目が開いたら視界を乗っ取り、
+        /// 当日撮った写真（<c>show.json</c> トップレベル <c>eyejack.photos[]</c>）を
+        /// ぱぱぱっと流す。<see cref="eyes"/> が 0 のカットでは意味を持たない。
+        ///
+        /// 発火・尺・終わりの分岐は <see cref="EyeJackLogic"/> が持ち、**ここで指せるのは
+        /// 「やるか」だけ**（当日に触る面を増やさない）。写真が 0 枚なら何も起きない
+        /// （目は従来どおり）。既定 false — JsonUtility は欠落キーを false で埋めるので、
+        /// 既存の show.json は挙動が 1 ビットも変わらない。
+        /// </summary>
+        public bool eyeJack;
+
+        /// <summary>
         /// 人形に付き従う劣化の強さ 0..1（0 = 出さない）。人形のまわりだけ画が荒れ、人形が動くと荒れも動く。
         ///
         /// 全域一様な乱れはすべて機材のせいにできるので安全に見える（＝慣れる）。**対象に紐づく
@@ -359,6 +371,13 @@ namespace FixedCamVr.Streaming
         ///   形が理想的でないことは、演出が 1 度も出ないことより桁違いに軽い。
         /// </summary>
         public const string SwapHumanActorId = "visitor";
+
+        /// <summary>
+        /// 入れ替わりの差分マスク（0095）に使う<b>無人プレート cue の id 規約</b>。
+        /// 卓が撮った無人の実写プレートは `plate_A` / `plate_B` … の id で cues[] に居る。
+        /// 無ければ CG の形で覆う（SwapMorphFx が警告を出す）。
+        /// </summary>
+        public static string SwapPlateCueId(string cameraId) => "plate_" + cameraId;
 
         /// <summary>演出の最大長 (秒)。超えたらランタイムが強制終了する（不変条件 2）。</summary>
         public const float DefaultMaxDurationSec = 45f;

@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -763,6 +764,20 @@ namespace FixedCamVr.Streaming
                 out var c) ? c : new Color(1f, 0.812f, 0.62f, 1f);
     }
 
+    /// <summary>
+    /// 目の視界ジャックに流す当日写真（show.json トップレベル <c>eyejack</c>・
+    /// <c>canon/LEDGER.md</c> 0099）。<c>photos[]</c> は卓のサーバが
+    /// <c>tools/web-compositor/eyejack/</c> に置かれた写真を正規化して並べる URL 列
+    /// （ファイル名順 = 決定的）。空 = ジャックは発火しない（目は従来どおり）。
+    /// </summary>
+    [Serializable] public sealed class ShowEyeJackDef
+    {
+        public string[] photos = Array.Empty<string>();
+
+        /// <summary>実データを持つか（JsonUtility の既定オブジェクトを present と読まない）。</summary>
+        public bool HasData() => photos != null && photos.Length > 0;
+    }
+
     /// <summary>CG レイヤに立てる人形の定義。show.json トップレベル <c>actors</c>。</summary>
     [Serializable] public sealed class ShowActorDef
     {
@@ -1228,6 +1243,53 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Func<ZoneSpan>? ZoneSpanProvider;
 
+        // ---- 目の視界ジャック（canon/LEDGER.md 0099）----
+
+        // show.json トップレベル eyejack.photos[]（生 URL）。ライブ / キャッシュ / 焼き込みで更新。
+        private string[] _eyeJackPhotos = Array.Empty<string>();
+        private int _eyeJackPhotosRev;
+
+        /// <summary>写真リストが変わるたびに増える（<see cref="EyeJackPhotoStore"/> の変更検出用）。</summary>
+        public int EyeJackPhotosRev => _eyeJackPhotosRev;
+
+        /// <summary>著作された写真の枚数（届いた・デコードできたとは別 — そちらは AnomalyEyes 側）。</summary>
+        public int EyeJackPhotoListedCount => _eyeJackPhotos.Length;
+
+        /// <summary>
+        /// 端末に実際に用意できた写真の枚数（<see cref="AnomalyEyes"/> が配線する）。
+        /// heartbeat で卓へ送る — 2 台のうち片方だけ写真が届いていないのは**無音の失敗**で、
+        /// ここに出さないと当日誰も気づけない。null = 目の実体が居ない。
+        /// </summary>
+        public Func<int>? EyeJackReadyCountProvider;
+
+        /// <summary>視界ジャックの写真（解決済み URL 列。ファイル名順のまま。空要素はそのまま返す —
+        /// 読む側（<see cref="EyeJackPhotoStore"/>）が飛ばす）。</summary>
+        public string[] ResolveEyeJackPhotoUrls()
+        {
+            if (_eyeJackPhotos.Length == 0) return Array.Empty<string>();
+            var arr = new string[_eyeJackPhotos.Length];
+            for (int i = 0; i < _eyeJackPhotos.Length; i++)
+            {
+                string u = _eyeJackPhotos[i] ?? "";
+                arr[i] = string.IsNullOrEmpty(u) ? "" : ShowAssetResolver.Resolve(u, server);
+            }
+            return arr;
+        }
+
+        private void SetEyeJackPhotos(string[]? photos)
+        {
+            photos ??= Array.Empty<string>();
+            if (photos.Length == _eyeJackPhotos.Length)
+            {
+                bool same = true;
+                for (int i = 0; i < photos.Length; i++)
+                    if (photos[i] != _eyeJackPhotos[i]) { same = false; break; }
+                if (same) return;
+            }
+            _eyeJackPhotos = photos;
+            _eyeJackPhotosRev++;
+        }
+
         /// <summary>いまの区間の進み。供給元が居なければ「測れない」を返す。</summary>
         public ZoneSpan ZoneSpan => ZoneSpanProvider != null ? ZoneSpanProvider() : default;
         /// <summary>
@@ -1285,6 +1347,7 @@ namespace FixedCamVr.Streaming
             public ShowActorDef[]? actors;        // CG レイヤの人形定義
             public ShowRunDef? run;               // 体験の骨格（周数・導入・終端）。欠落 = コード既定
             public ShowFeelDef? feel;             // 撮像の質（装置らしさ）。欠落 = コード既定
+            public ShowEyeJackDef? eyejack;       // 目の視界ジャックの当日写真（欠落 = 0 枚）
         }
         [Serializable] private class CameraDef
         {
@@ -1330,6 +1393,9 @@ namespace FixedCamVr.Streaming
             public ShowFeelDef? feel;           // 撮像の質（PC 不在でも同じ画で始まる）
             // 体験の骨格（PC 不在の現地でも 3 周で終わるように往復させる）。
             public ShowRunDef? run;
+            // 視界ジャックの当日写真リスト（PC 不在の再起動でも同じ写真で走る。実バイトは別途
+            // persistentDataPath/eyejack/ に写真ごとキャッシュされる — EyeJackPhotoStore）。
+            public ShowEyeJackDef? eyejack;
             // 直近に既知だった runEpoch。起動時にこれを「既知値」として復元し、
             // PC 不在の再起動で同一 epoch を誤リセットしない。
             public int runEpoch;
@@ -1409,6 +1475,13 @@ namespace FixedCamVr.Streaming
             _overlay = GetComponent<ScreenOverlayController>();
             var renderer = GetComponent<Renderer>();
             _material = renderer != null ? renderer.material : null;
+
+            // 入れ替わりの差分マスク（0095）へ無人プレートを配る。SwapMorphFx は同じ
+            // Screen GameObject に居る（MainDemoSceneSetup）。居なければ配線しないだけで、
+            // 入れ替わりは CG の形へ縮退する（SwapMorphFx 側が警告を出す）。
+            _swapFx = GetComponent<SwapMorphFx>();
+            if (_swapFx == null) _swapFx = FindObjectOfType<SwapMorphFx>();
+            _swapFx?.SetPlateProvider(SwapPlateFor);
 
             // ゾーン自律切替・オペレータ override でアクティブカメラが変わったら
             // そのカメラ別 post を貼り直す（server 不在でも効かせたいので Awake で購読）。
@@ -1909,6 +1982,10 @@ namespace FixedCamVr.Streaming
             _bgmDefault = (state.bgm != null && state.bgm.IsActionable()) ? state.bgm : null;
             PushBgm();
 
+            // 1.64) 視界ジャックの当日写真。**ライブは正**なので空も含めてそのまま採る
+            //       （卓のフォルダから写真を消したら、端末からも消えるのが正しい）。
+            SetEyeJackPhotos(state.eyejack?.photos);
+
             // cue 解決関数は毎回張り直す（_cues の参照が更新されるため）。CueScheduler / InsertController 共通。
             cueScheduler?.SetCueResolver(ResolveCue);
             timelineDirector?.SetCueResolver(ResolveCue);
@@ -2143,6 +2220,50 @@ namespace FixedCamVr.Streaming
         //   - timeline が v2 → 従来どおり TimelineDirector が cues / insert / post を分配
         //   - timeline 不在 → schedule.entries を CueScheduler へ直接供給
         // v3 判定が偽なら**一切挙動が変わらない**（既存 show.json は従来経路のまま = 退避路）。
+        // ---- 入れ替わりの無人プレート（0095 の実機側の配線）----------------------------
+        //
+        // `plate_<カメラid>` cue の静止画を**前もって**読んで持っておき、SwapMorphFx が
+        // Begin の瞬間に同期で掴めるようにする。Begin してから読み始めると、覆いの 2.6 秒に
+        // ダウンロードが間に合わず、最初の数十フレームだけ CG の形で覆ってから差分へ
+        // 切り替わる ＝ 覆いの形が途中で跳ねる。
+        private SwapMorphFx? _swapFx;
+        private Texture2D?[] _swapPlates = Array.Empty<Texture2D?>();
+        private int _swapPlateGen;
+
+        private Texture? SwapPlateFor(int cameraIndex)
+            => cameraIndex >= 0 && cameraIndex < _swapPlates.Length ? _swapPlates[cameraIndex] : null;
+
+        private void RefreshSwapPlates()
+        {
+            int gen = ++_swapPlateGen;
+            if (_swapPlates.Length != _cameras.Length)
+                _swapPlates = new Texture2D?[_cameras.Length];
+            for (int i = 0; i < _cameras.Length; i++)
+            {
+                CameraDef? cam = _cameras[i];
+                if (cam == null || string.IsNullOrEmpty(cam.id)) continue;
+                OverlayCueData? cue = ResolveCue(TakeSchema.SwapPlateCueId(cam.id));
+                if (cue == null || string.IsNullOrEmpty(cue.sourceUrl)) continue;
+                _ = LoadSwapPlateAsync(i, cue.sourceUrl, gen);
+            }
+        }
+
+        private async Task LoadSwapPlateAsync(int index, string url, int gen)
+        {
+            if (_overlay == null) return;
+            try
+            {
+                Texture2D? tex = await _overlay.LoadStillCachedAsync(url, destroyCancellationToken);
+                if (gen != _swapPlateGen || tex == null) return;
+                if (index < _swapPlates.Length) _swapPlates[index] = tex;
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ShowControl] 無人プレートの先読みに失敗（camera index {index}）: {e.Message}");
+            }
+        }
+
         private void PushCueSource()
         {
             if (TimelineActive && timelineDirector != null)
@@ -2159,6 +2280,10 @@ namespace FixedCamVr.Streaming
                 timelineDirector?.Clear();
                 cueScheduler?.SetScheduleFromDefs(_schedule?.entries);
             }
+
+            // cue の定義が変わるたびに、入れ替わり用の無人プレートも先読みし直す
+            // （URL は ScreenOverlayController がキャッシュするので、同じ素材なら 2 回目は無料）。
+            RefreshSwapPlates();
         }
 
         // 直近で警告した内容（同じ設定で毎回吠えない）。
@@ -2233,6 +2358,7 @@ namespace FixedCamVr.Streaming
             if (state.actors != null && state.actors.Length > 0) _actors = state.actors;
             if (state.run != null) _run = state.run;
             if (state.feel != null && !state.feel.LooksUnset()) _feel = state.feel;
+            if (state.eyejack != null && state.eyejack.HasData()) SetEyeJackPhotos(state.eyejack.photos);
             if (state.layout != null && state.layout.HasData())
             {
                 _layout = state.layout;
@@ -2614,6 +2740,7 @@ namespace FixedCamVr.Streaming
                     actors = _actors,
                     run = _run,
                     feel = _feel,
+                    eyejack = new ShowEyeJackDef { photos = _eyeJackPhotos },
                     runEpoch = _knownRunEpoch,
                     switchDwellSec = _switchDwellSec,
                     switchCooldownSec = _switchCooldownSec,
@@ -2671,6 +2798,7 @@ namespace FixedCamVr.Streaming
                 if (cfg.actors != null && cfg.actors.Length > 0) _actors = cfg.actors;
                 if (cfg.run != null) _run = cfg.run;
                 if (cfg.feel != null && !cfg.feel.LooksUnset()) _feel = cfg.feel;
+                if (cfg.eyejack != null && cfg.eyejack.HasData()) SetEyeJackPhotos(cfg.eyejack.photos);
                 if (cfg.schedule != null && cfg.schedule.HasData())
                 {
                     _schedule = cfg.schedule;
@@ -2749,6 +2877,10 @@ namespace FixedCamVr.Streaming
             public float targetSec;     // 目安の尺（超過は警告するだけで体験は止めない）
             public int totalLaps;       // 走り切る周数
             public bool endHolding;     // 終了条件は満たしたが走行中の演出を見せ切っている
+            // 視界ジャックの写真（listed = show.json が言う枚数 / ready = この端末に用意できた枚数）。
+            // 2 台のうち片方だけ届いていないのは無音の失敗 — 卓のこの表示にしか出ない。
+            public int eyeJackListed = -1;
+            public int eyeJackReady = -1;
 
             // 遅延の内訳（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
             // **絶対の end-to-end ではない** — 配信端末と Unity で時計の基準が違い引き算できないため、
@@ -2822,6 +2954,8 @@ namespace FixedCamVr.Streaming
                     hb.takeId = timelineDirector != null ? timelineDirector.ActiveTakeId : "";
                     hb.registered = CourseRegisteredProvider == null || CourseRegisteredProvider();
                     hb.needsReReg = CourseNeedsReRegProvider != null && CourseNeedsReRegProvider();
+                    hb.eyeJackListed = _eyeJackPhotos.Length;
+                    hb.eyeJackReady = EyeJackReadyCountProvider != null ? EyeJackReadyCountProvider() : -1;
 
                     if (active != null)
                     {

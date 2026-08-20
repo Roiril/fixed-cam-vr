@@ -931,9 +931,11 @@ def analyze(events, others, exp, warns=None):
     ends = [e for e in swaps if e.get("st") == "end"]
     for e in swaps:
         w(f"  t={fnum(e, 't', 0):7.1f}  {e.get('st', '?'):5s} {e.get('dir', '?'):7s} "
-          f"背丈 {fnum(e, 'h', 0):.2f}m 矩形 {e.get('rect', '?')}")
-    # 画に出た側。`swap=<走ったか>/<被覆>/<背丈>/<矩形>/<累計>`
-    cov_max, rect_ok, swap_n = 0.0, 0, 0
+          f"背丈 {fnum(e, 'h', 0):.2f}m 矩形 {e.get('rect', '?')} "
+          f"差分マスク {e.get('mask', '?')} 人の代役 {e.get('vis', '?')}")
+    # 画に出た側。`swap=<走ったか>/<被覆>/<背丈>/<矩形>/<累計>/<差分マスク>`
+    # （6 つ目は 2026-08-21〜。旧ログは 5 つ組のまま読める）
+    cov_max, rect_ok, swap_n, mask_ok = 0.0, 0, 0, None
     for smp in sums:
         raw = smp.get("swap")
         if not raw or raw == "-":
@@ -945,6 +947,8 @@ def analyze(events, others, exp, warns=None):
             cov_max = max(cov_max, float(parts[1]))
             rect_ok = max(rect_ok, int(parts[3]))
             swap_n = max(swap_n, int(parts[4]))
+            if len(parts) >= 6:
+                mask_ok = max(mask_ok or 0, int(parts[5]))
         except ValueError:
             continue
     if not swaps and swap_n == 0:
@@ -968,6 +972,18 @@ def analyze(events, others, exp, warns=None):
                             "人 → 人形 と 人形 → 人 の両方が要る")
         else:
             verdict("OK", f"入れ替わりが {swap_n} 回、砂の被覆 {cov_max:.2f} まで乗った")
+        # 覆いの形の出どころ（2026-08-21〜）。数値が緑でも、CG の形で覆っていたら
+        # 映像の中の人と位置がずれうる（0095 の縮退経路）。走った回だけ判定する。
+        if swaps or swap_n > 0:
+            no_plate = [e for e in begins if e.get("mask") == "0"]
+            if no_plate:
+                verdict("WARN", f"無人プレートを掴めずに覆った回がある（{len(no_plate)} 回）— "
+                                "覆いは CG の形＝映像の中の人とずれうる。"
+                                "show.json の cues に plate_<カメラid> があるか・配信で届くかを見る")
+            no_vis = [e for e in swaps if e.get("vis") == "0" and e.get("st") == "end"]
+            if no_vis:
+                verdict("WARN", f"人の代役（actors[] の visitor）へ替えられなかった回がある"
+                                f"（{len(no_vis)} 回）— 覆いの形が人形の引き伸ばし＝人型に見えない")
     w()
 
     # ---------------- 表示 fps ----------------
@@ -2318,6 +2334,79 @@ def analyze(events, others, exp, warns=None):
             if vals and max(vals) > 0.0:
                 verdict("FAIL", f"演出が終わった後も目が残っている（eyes の 3 つ目 {max(vals):.2f}）— "
                                 "次の体験者の視界に最初から目が居る。畳む経路を見る")
+
+    # -- 目の視界ジャック（canon/LEDGER.md 0099）
+    # ⚠ 「写真が届いた」と「画に出た」と「どう終わったか」は別。当日フォルダが空のまま走ると
+    #    ジャックは黙って出ない（体験は壊れないので、ここでしか気づけない）。
+    want_jack = [f"{t['id']}#{i}" for t in exp["takes"]
+                 for i, s in enumerate(t["steps"])
+                 if s.get("eyeJack") and (fstr(s.get("eyes")) or 0.0) > 0.0]
+    jack_raw = [str(v) for v in effect_samples(events, "jack") if str(v) not in ("", "-")]
+    jack_ev = [e for e in events if e.get("ev") == "jack"]
+    if want_jack or jack_raw or jack_ev:
+        any_effect_key = True
+        w()
+        w("### 目の視界ジャック（当日写真）")
+        w(f"  著作: {len(want_jack)} カット")
+        jparts = [v.split("/") for v in jack_raw if v.count("/") == 3]
+        jbuilt = [p[0] for p in jparts]
+        photos, shown = [], []
+        for p in jparts:
+            try:
+                photos.append(int(p[1]))
+            except ValueError:
+                pass
+            try:
+                shown.append(int(p[2]))
+            except ValueError:
+                pass
+        if photos:
+            w(f"  端末に用意できた写真 最大 {max(photos)} 枚")
+        begins = [e for e in jack_ev if e.get("st") == "begin"]
+        ends = [e for e in jack_ev if e.get("st") == "end"]
+        for e in begins:
+            w(f"  t={fnum(e,'t',0):7.1f}  乗っ取り開始（{e.get('n','?')} 枚 / 1 枚 {e.get('per','?')}s）")
+        for e in ends:
+            w(f"  t={fnum(e,'t',0):7.1f}  返した（{JACK_END_WHY.get(e.get('why',''), e.get('why','?'))}"
+              f" / 出した {e.get('shown','?')} 枚）")
+
+        if want_jack and not jparts:
+            verdict("WARN", "視界ジャックを観測していないビルドのログ（jack キーが無い）")
+        elif jbuilt and all(v == "0" for v in jbuilt):
+            verdict("FAIL", "視界ジャックの面を組めていない（jack の 1 つ目が 0）— "
+                            "FixedCamVr/EyeJack がビルドから剥がれている疑い"
+                            "（ProjectSettings の Always Included を見る）")
+        elif want_jack and photos and max(photos) == 0:
+            verdict("WARN", "当日写真が 1 枚も端末に用意できていない（jack の 2 つ目が 0）— "
+                            "卓の eyejack フォルダが空か、配れていない。"
+                            "体験は壊れないが、ジャックは出ない（目だけになる）")
+        elif want_jack and not begins:
+            verdict("FAIL", f"視界ジャックを指すカットが {len(want_jack)} 本あるのに 1 度も出ていない"
+                            f"（{', '.join(want_jack)}）— そのカットが飛ばされていないか（ev=step）と、"
+                            "目が開いたか（eyes）を見る")
+        elif begins and shown and max(shown) == 0:
+            verdict("FAIL", "乗っ取ったのに写真を 1 枚も画に出していない（jack の 3 つ目が 0）")
+        elif begins:
+            verdict("OK", f"視界ジャックが出た（{len(begins)} 回 / 出した写真 最大 {max(shown) if shown else 0} 枚）")
+
+        # 終わり方の分岐（0099）。done = 写真が尽きた（止まっている人）/ cut = 区間の畳み（歩く人）。
+        # ⚠ wd（安全網）が出たら尺の計算が壊れている。
+        for e in ends:
+            if e.get("why") == "wd":
+                verdict("FAIL", "視界ジャックが安全網で打ち切られた（why=wd）— "
+                                "写真の尺の計算が壊れている（EyeJackLogic を見る）")
+        # 乗っ取ったまま終わっていないか（凍結の型）。
+        if len(begins) > len(ends):
+            verdict("FAIL", "視界ジャックが乗っ取ったまま返っていない — 視界が写真で塞がったまま終わる")
+        # 固着（演出が終わった後も乗っ取っている）。
+        take_evs3 = [e for e in events if e.get("ev") == "take"]
+        if take_evs3 and take_evs3[-1].get("st") == "end":
+            t_end3 = fnum(take_evs3[-1], "t", 0.0)
+            after_j = [str(v) for v in effect_samples(events, "jack", t_from=t_end3 + 2.0)
+                       if str(v).count("/") == 3]
+            if any(p.split("/")[3] == "1" for p in after_j):
+                verdict("FAIL", "演出が終わった後も視界ジャックが出ている（jack の 4 つ目が 1）— "
+                                "次の体験者の視界が写真で塞がる。畳む経路を見る")
 
     # -- 端末内録画が 0 バイトで閉じていないか
     zero_rec = [e for e in rec_ev if e.get("v") == "stop" and fnum(e, "bytes") == 0]

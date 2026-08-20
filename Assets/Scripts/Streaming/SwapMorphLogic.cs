@@ -76,6 +76,16 @@ namespace FixedCamVr.Streaming
         public const float MaxHumanHeightM = 2.10f;
 
         /// <summary>
+        /// 背景差分（`_SwapMask`）のしきい値と mip。**実機（SwapMorphFx）と Editor プレビュー
+        /// （ShowCompositePreview）が同じ値をここから引く** — 別々に持つと、プレビューで
+        /// 詰めた値が実機に届かず沈黙して食い違う。
+        /// lo 未満の差は粒（符号化のゆらぎ）、hi 以上は人。lod は差を取るときの粗さ。
+        /// </summary>
+        public const float MaskDiffLo = 0.060f;
+        public const float MaskDiffHi = 0.20f;
+        public const float MaskDiffLod = 0.6f;
+
+        /// <summary>
         /// ほどけ切った瞬間に 1 回だけ走らせる全画面の乱れ（強さ / 秒）。
         ///
         /// ⚠ <b>これは「入れ替わりを隠す」ためのものではない。</b> 隠すのは糸のもつれの仕事で、

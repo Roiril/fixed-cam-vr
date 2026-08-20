@@ -129,6 +129,9 @@ namespace FixedCamVr.Diagnostics
         private int _lastMarkCount;
         private int _lastCommsPulse;
         private string _lastTakeId = "";
+        // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
+        private bool _lastJackActive;
+        private int _jackShownAtBegin;
         private string _lastCtrlMode = "";
         private string _lastCueId = "";
         private bool _lastStormOn;
@@ -521,12 +524,15 @@ namespace FixedCamVr.Diagnostics
         private string CgState => _cg == null ? "-" : (_cg.IsVisible ? "1" : "0");
 
         /// <summary>
-        /// 入れ替わりのノイズ — <c>&lt;走っているか&gt;/&lt;被覆&gt;/&lt;背丈 m&gt;/&lt;矩形&gt;/&lt;累計&gt;</c>。
+        /// 入れ替わりのノイズ —
+        /// <c>&lt;走っているか&gt;/&lt;被覆&gt;/&lt;背丈 m&gt;/&lt;矩形&gt;/&lt;累計&gt;/&lt;差分マスク&gt;</c>。
+        /// 6 つ目（2026-08-21〜）: 1 = 無人プレートの差分で覆えている / 0 = CG の形へ縮退
+        /// （映像の中の人と位置がずれうる）。`analyze-xp-log.py` と**対**。
         /// </summary>
         private string SwapState => _swap == null
             ? "-"
             : $"{(_swap.Active ? 1 : 0)}/{_swap.Cover:F2}/{_swap.HeightM:F2}/" +
-              $"{(_swap.RectResolved ? 1 : 0)}/{_swap.Count}";
+              $"{(_swap.RectResolved ? 1 : 0)}/{_swap.Count}/{(_swap.MaskPlateBound ? 1 : 0)}";
 
         /// <summary>
         /// 闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;/&lt;区間の進み&gt;/&lt;速さ&gt;</c>。
@@ -537,6 +543,19 @@ namespace FixedCamVr.Diagnostics
             ? "-"
             : $"{(_eyes.IsBuilt ? 1 : 0)}/{_eyes.OpenCount}/{_eyes.AppliedFade:F2}/" +
               $"{_eyes.SpanProgress01:F2}/{_eyes.Rate:F2}";
+
+        /// <summary>
+        /// 目の視界ジャック（<c>canon/LEDGER.md</c> 0099）—
+        /// <c>&lt;面を組めたか&gt;/&lt;端末に用意できた写真&gt;/&lt;画に出した累計&gt;/&lt;いま乗っ取り中か&gt;</c>。
+        ///
+        /// ⚠ 4 つとも要る — シェーダが剥がれた（0/…）／写真が届いていない（1/0/…＝ **当日フォルダが
+        /// 空のまま**）／発火したのに 1 枚も画に出ていない（…/0/1）は**別の壊れ方**。
+        /// 2 つ目は「show.json が言う枚数」ではなく**この端末がデコードまで済ませた枚数**（画に出せる側）。
+        /// </summary>
+        private string JackState => _eyes == null
+            ? "-"
+            : $"{(_eyes.JackBuilt ? 1 : 0)}/{_eyes.JackPhotoCount}/{_eyes.JackShownTotal}/" +
+              $"{(_eyes.JackActive ? 1 : 0)}";
 
         /// <summary>
         /// 歩行誘導（<c>canon/LEDGER.md</c> 0079）。<b>組めたか / 山形の数 / 矢印 / 輪</b>。
@@ -720,6 +739,27 @@ namespace FixedCamVr.Diagnostics
                 _lastTakeId = takeId;
             }
 
+            // 目の視界ジャックの出入り（canon/LEDGER.md 0099）。
+            // ⚠ **終わり方の理由（why）を必ず添える** — done（写真が尽きた・止まっている体験者）と
+            //    cut（区間の畳み・歩き続ける体験者）は 0099 の分岐そのもので、
+            //    ここが無いと「どちらの終わり方だったか」を機械で確かめられない。
+            bool jackActive = _eyes != null && _eyes.JackActive;
+            if (jackActive != _lastJackActive)
+            {
+                if (jackActive)
+                {
+                    _jackShownAtBegin = _eyes!.JackShownTotal;
+                    Emit($"ev=jack st=begin n={_eyes.JackShowCount} per={_eyes.JackPerSec:F2} " +
+                         $"photos={_eyes.JackPhotoCount}");
+                }
+                else
+                {
+                    Emit($"ev=jack st=end why={(_eyes != null ? _eyes.JackLastEndWhy : "?")} " +
+                         $"shown={(_eyes != null ? _eyes.JackShownTotal - _jackShownAtBegin : 0)}");
+                }
+                _lastJackActive = jackActive;
+            }
+
             // 画面に出ている素材（cue）。演出のカットが素材へ切り替わった瞬間が見える。
             // ⚠ Current は動画の Prepare 完了**前**に代入されるので、これだけでは「素材が来た」証明にならない。
             //    合成の重み ovl（シェーダの _OverlayStrength そのもの）を必ず添える。
@@ -783,13 +823,15 @@ namespace FixedCamVr.Diagnostics
                     _lastSwapCount = _swap.Count;
                     Emit($"ev=swap st=begin n={_swap.Count} " +
                          $"dir={(_swap.Direction == SwapMorphLogic.Dir.ToDoll ? "toDoll" : "toHuman")} " +
-                         $"h={_swap.HeightM:F2} rect={(_swap.RectResolved ? 1 : 0)}");
+                         $"h={_swap.HeightM:F2} rect={(_swap.RectResolved ? 1 : 0)} " +
+                         $"mask={(_swap.MaskPlateBound ? 1 : 0)} vis={(_swap.HumanActorShown ? 1 : 0)}");
                 }
                 else if (_lastSwapActive && !act)
                 {
                     Emit($"ev=swap st=end n={_swap.Count} " +
                          $"dir={(_swap.Direction == SwapMorphLogic.Dir.ToDoll ? "toDoll" : "toHuman")} " +
-                         $"h={_swap.HeightM:F2} rect={(_swap.RectResolved ? 1 : 0)}");
+                         $"h={_swap.HeightM:F2} rect={(_swap.RectResolved ? 1 : 0)} " +
+                         $"mask={(_swap.MaskPlateBound ? 1 : 0)} vis={(_swap.HumanActorShown ? 1 : 0)}");
                 }
                 _lastSwapActive = act;
             }
@@ -982,6 +1024,8 @@ namespace FixedCamVr.Diagnostics
             //     指したのに 1 画素も出ていない（1/0/1.00 ＝ 座席表を組めていない）は**別の壊れ方**。
             //   ⚠ 数は「重みを配った」ではなく**何個ぶんの目が実際に開いているか**（画に出た側）。
             _sb.Append(" eyes=").Append(EyesState);
+            //   jack = 目の視界ジャック（`canon/LEDGER.md` 0099）。組めたか/写真/出した累計/乗っ取り中。
+            _sb.Append(" jack=").Append(JackState);
             //   guide = 歩行誘導（canon/LEDGER.md 0079）。組めたか/山形の数/矢印/輪。
             //   ⚠ 段 0 のあいだしか動かない。**本編で 0 以外が出たら畳み忘れ**。
             _sb.Append(" guide=").Append(GuideState);

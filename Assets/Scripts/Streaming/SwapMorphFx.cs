@@ -36,6 +36,8 @@ namespace FixedCamVr.Streaming
         private static readonly int SwapRealId = Shader.PropertyToID("_SwapReal");
         private static readonly int SwapFromTopId = Shader.PropertyToID("_SwapFromTop");
         private static readonly int SwapSeedId = Shader.PropertyToID("_SwapSeed");
+        private static readonly int SwapMaskTexId = Shader.PropertyToID("_SwapMaskTex");
+        private static readonly int SwapMaskId = Shader.PropertyToID("_SwapMask");
 
         [Tooltip("スクリーンの Renderer。null なら同じ GameObject から取る。")]
         [SerializeField] private Renderer? screenRenderer;
@@ -49,6 +51,16 @@ namespace FixedCamVr.Streaming
         private readonly SwapMorphLogic _logic = new SwapMorphLogic();
         private Material? _material;
         private Action? _onCovered;
+
+        /// <summary>
+        /// カメラ index → そのカメラの**無人プレート**（0095 の背景差分の相手）。
+        /// <see cref="ShowControlClient"/> が `plate_&lt;カメラ id&gt;` cue から先読みして配線する。
+        /// null / 解決不能なら従来どおり CG のシルエットで覆う（覆い自体は成立する）。
+        /// </summary>
+        private Func<int, Texture?>? _plateProvider;
+
+        /// <summary>プレートを掴めなかったことは向きごとに 1 回だけ言う。</summary>
+        private bool _warnedNoPlate;
 
         /// <summary>入れ替わりの前に出ていた人形の id（晴れる段でここへ戻す）。</summary>
         private string _dollActorId = "";
@@ -87,6 +99,22 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool RectResolved { get; private set; }
 
+        /// <summary>
+        /// 無人プレートを掴んで差分マスクで覆えているか（テレメトリ用）。
+        /// **false なら覆いは CG の形** ＝ 映像の中の人とずれうる（0095 の縮退経路）。
+        /// </summary>
+        public bool MaskPlateBound { get; private set; }
+
+        /// <summary>
+        /// この入れ替わりで人の代役（actors[] の visitor）へ替えられたか（テレメトリ用）。
+        /// ⚠ <c>_humanShown</c>（いま人の姿か）ではなく**ラッチ** — 終わり際は人形へ戻すので、
+        /// 生の状態を読むと「使えたのに 0」が出る。
+        /// </summary>
+        public bool HumanActorShown { get; private set; }
+
+        /// <summary>無人プレートの供給元を配線する（<see cref="ShowControlClient"/> が呼ぶ）。</summary>
+        public void SetPlateProvider(Func<int, Texture?>? provider) => _plateProvider = provider;
+
         private void Awake()
         {
             if (screenRenderer == null) screenRenderer = GetComponent<Renderer>();
@@ -108,7 +136,9 @@ namespace FixedCamVr.Streaming
         ///  「人形 → 人」は前のカットの人形をそのまま使う）。
         /// </summary>
         /// <returns>始められたか。人形が居なければ false（呼び出し側が乱れ遷移へ倒す）。</returns>
-        public bool Begin(SwapMorphLogic.Dir dir, float totalSec, Action? onCovered)
+        /// <param name="plateCamera">覆いの相手（映像の中の人）が写っているカメラ index。
+        /// その無人プレートを差分マスクの相手に束縛する（-1 / 掴めない = CG の形で覆う）。</param>
+        public bool Begin(SwapMorphLogic.Dir dir, float totalSec, int plateCamera, Action? onCovered)
         {
             if (cgLayer == null || !cgLayer.IsVisible || cgLayer.CurrentActorHeightM <= 0f)
             {
@@ -116,6 +146,8 @@ namespace FixedCamVr.Streaming
                                  "（カメラ姿勢が未著作 / 位置合わせが未完了 / actor が show.json に無い）");
                 return false;
             }
+
+            BindMaskPlate(plateCamera);
 
             float human = cgLayer.VisitorHeightM();
             float doll = cgLayer.CurrentActorHeightM;
@@ -125,6 +157,7 @@ namespace FixedCamVr.Streaming
             _onCovered = onCovered;
             _dollActorId = cgLayer.CurrentActorId;
             _humanShown = false;
+            HumanActorShown = false;
             Count++;
             cgLayer.HoldForSwap(true);
 
@@ -212,6 +245,7 @@ namespace FixedCamVr.Streaming
         {
             if (cgLayer == null || _humanShown) return;
             _humanShown = cgLayer.TrySwapToActor(TakeSchema.SwapHumanActorId);
+            if (_humanShown) HumanActorShown = true;
             if (_humanShown || _warnedNoHuman) return;
             _warnedNoHuman = true;
             Debug.LogWarning($"[SwapMorphFx] actors[] に '{TakeSchema.SwapHumanActorId}' が無い" +
@@ -224,6 +258,27 @@ namespace FixedCamVr.Streaming
             if (!_humanShown) return;
             _humanShown = false;
             cgLayer?.TrySwapToActor(_dollActorId);
+        }
+
+        /// <summary>
+        /// 覆いの相手（映像の中の人）を拾う無人プレートを束縛する（0095 の実機側の配線）。
+        /// 掴めなければ従来どおり CG の形で覆う — 縮退であって失敗ではない（入れ替わりは成立する）。
+        /// </summary>
+        private void BindMaskPlate(int plateCamera)
+        {
+            Texture? plate = plateCamera >= 0 ? _plateProvider?.Invoke(plateCamera) : null;
+            MaskPlateBound = plate != null && _material != null;
+            if (_material == null) return;
+            _material.SetTexture(SwapMaskTexId, plate != null ? plate : Texture2D.blackTexture);
+            // しきい値と mip は Editor プレビュー（ShowCompositePreview）と同じ値を 1 か所から引く。
+            _material.SetVector(SwapMaskId, new Vector4(
+                MaskPlateBound ? 1f : 0f,
+                SwapMorphLogic.MaskDiffLo, SwapMorphLogic.MaskDiffHi, SwapMorphLogic.MaskDiffLod));
+            if (MaskPlateBound || _warnedNoPlate) return;
+            _warnedNoPlate = true;
+            Debug.LogWarning($"[SwapMorphFx] 無人プレートを掴めない（camera={plateCamera}）" +
+                             " → 覆いは CG の形で出す（映像の中の人と位置がずれうる）。" +
+                             " show.json の cues に plate_<カメラid> が要る");
         }
 
         /// <summary>
@@ -256,12 +311,17 @@ namespace FixedCamVr.Streaming
             Knot = 0f;
             HeightM = 0f;
             RectResolved = false;
+            // MaskPlateBound は畳んでも残す（`ev=swap st=end` が「その回はどちらの形で
+            // 覆ったか」を読むため。次の Begin の BindMaskPlate が必ず上書きする）。
             if (_material == null) return;
             _material.SetVector(SwapRectId, new Vector4(0.5f, 0.5f, 0.2f, 0f));
             _material.SetFloat(SwapCoverId, 0f);
             _material.SetFloat(SwapKnotId, 0f);
             _material.SetFloat(SwapThreadId, 0f);
             _material.SetFloat(SwapRealId, 0f);
+            // プレートは次の Begin が束縛し直す。x=0 で差分の読みだけ止める（テクスチャは残ってよい）。
+            _material.SetVector(SwapMaskId, new Vector4(
+                0f, SwapMorphLogic.MaskDiffLo, SwapMorphLogic.MaskDiffHi, SwapMorphLogic.MaskDiffLod));
         }
     }
 }
