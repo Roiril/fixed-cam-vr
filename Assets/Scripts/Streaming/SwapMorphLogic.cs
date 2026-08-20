@@ -161,6 +161,29 @@ namespace FixedCamVr.Streaming
         public bool Active => _active;
         public Dir Direction => _dir;
 
+        /// <summary>
+        /// <b>映像の中に写っている姿</b>の背丈 (m)。**マスクはこの大きさで引く**
+        /// （`ScreenComposite` の `_SwapRect0`）。
+        ///
+        /// ⚠⚠ 人型（`Sample.heightM`）とは別物。人型は縮む / 育つが、**映像の中の人は動かない**。
+        ///   人 → 人形は始めから終わりまで体験者の背丈。人形 → 人は<b>ほどけ切った縁で映像が
+        ///   差し替わる</b>ので、そこから人の背丈になる。
+        /// </summary>
+        public float MaskHeightM => _dir == Dir.ToDoll ? _fromH : (_covered ? _toH : _fromH);
+
+        /// <summary>
+        /// マスクを引く枠。<paramref name="rect"/>（いまの人型の投影）の**足元を動かさずに**、
+        /// 背丈だけ <paramref name="maskHeightM"/> の分へ引き直す。
+        /// **実機とプレビューで同じ式を使う**（写経すると必ずいつか食い違う）。
+        /// </summary>
+        public static Vector4 MaskRect(Vector4 rect, float heightM, float maskHeightM)
+        {
+            if (heightM <= 1e-4f || maskHeightM <= 1e-4f) return rect;
+            float foot = rect.y - rect.z;
+            float hz = rect.z * (maskHeightM / heightM);
+            return new Vector4(rect.x, foot + hz, hz, rect.w);
+        }
+
         /// <summary>進み 0..1（テレメトリ用）。走っていなければ 0。</summary>
         public float Progress01 => _active && _total > 0f ? Mathf.Clamp01(_elapsed / _total) : 0f;
 

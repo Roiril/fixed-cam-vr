@@ -29,6 +29,7 @@ namespace FixedCamVr.Streaming
     public sealed class SwapMorphFx : MonoBehaviour
     {
         private static readonly int SwapRectId = Shader.PropertyToID("_SwapRect");
+        private static readonly int SwapRect0Id = Shader.PropertyToID("_SwapRect0");
         private static readonly int SwapCoverId = Shader.PropertyToID("_SwapCover");
         private static readonly int SwapKnotId = Shader.PropertyToID("_SwapKnot");
         private static readonly int SwapThreadId = Shader.PropertyToID("_SwapThread");
@@ -238,6 +239,9 @@ namespace FixedCamVr.Streaming
             RectResolved = cgLayer != null && cgLayer.TrySwapRect(out rect);
             if (!RectResolved) rect = new Vector4(0.5f, 0.5f, 0.2f, 0f);
             _material.SetVector(SwapRectId, rect);
+            // ⚠ マスク（映像の中の人）は**縮まない枠**で引く。人型が縮んでも映像の人はそのまま。
+            _material.SetVector(SwapRect0Id,
+                SwapMorphLogic.MaskRect(rect, s.heightM, _logic.MaskHeightM));
             _material.SetFloat(SwapCoverId, Mathf.Clamp01(s.cover));
             _material.SetFloat(SwapKnotId, Mathf.Clamp01(s.knot));
             _material.SetFloat(SwapThreadId, Mathf.Clamp01(s.thread));

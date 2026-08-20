@@ -157,17 +157,38 @@ namespace FixedCamVr.Streaming.EditorTools
             float fromH = toDoll ? SwapHumanHeightM : Mathf.Max(0.05f, doll.heightM);
             float toH = toDoll ? Mathf.Max(0.05f, doll.heightM) : SwapHumanHeightM;
 
+            // ⚠⚠ **映像の中に人を焼き込む**（2026-08-20）。入れ替わりの対象は
+            //   「映像の中に写っている人」で、CG の人形ではない。プレビューは人を CG の代役で
+            //   演じているので、焼き込まないと**映像の中には誰も居ない** ＝
+            //   映像から人を拾う経路（`SwapDiffSil`）を絵で確かめられない。
+            //   実機の構造（録画 / ライブに人が写っていて、覚いの下で画面が差し替わる）と揃える。
+            stage.UseActor(human);
+            stage.PlaceActor(human, standXz, standYaw, geom);
+            stage.SetActorHeight(human, SwapHumanHeightM, geom);
+            stage.SetSwap(false, SwapMorphLogic.Sample.Idle, toDoll, 0f);
+            Plate platePerson = stage.BakeActorIntoPlate(plate, " + person");
+
+            stage.UseActor(doll);
+            stage.PlaceActor(doll, standXz, standYaw, geom);
+            stage.SetActorHeight(doll, Mathf.Max(0.05f, doll.heightM), geom);
+            Plate plateDoll = stage.BakeActorIntoPlate(plate, " + doll");
+
+            // 差分の相手は**無人のプレート**（実機は卓が撮った `plate_<ID>_<時刻>.jpg`）。
+            stage.SetSwapMaskPlate(plate.texture);
+
             int n = 0;
             float capH = fromH, capCover = 0f, capKnot = 0f, capThread = 0f;
             float capReal = toDoll ? 0f : 1f;
             ShowActorDef stageActor = first;
+            Plate shown = toDoll ? platePerson : plateDoll;   // いま映像に写っている画
+            bool cgOn = false;                                // CG は入れ替わった後の姿だけ
 
             void Shoot(string phase, float sec)
             {
                 string cap = $"{title}   {phase}   t={sec:0.00}s\n" +
                              $"figure height {capH:0.00}m   unravel {capCover:0.00}   " +
                              $"knot {capKnot:0.00}   thread {capThread:0.00}   real {capReal:0.00}\n{note}";
-                stage.Composite(plate, cgVisible: true, post: post, caption: cap);
+                stage.Composite(shown, cgVisible: cgOn, post: post, caption: cap);
                 stage.Save($"f{frameBase + n:0000}.png");
                 n++;
             }
@@ -178,6 +199,7 @@ namespace FixedCamVr.Streaming.EditorTools
             stage.PlaceActor(first, standXz, standYaw, geom);
             stage.SetActorHeight(first, fromH, geom);
             stage.SetGroundMul(1f);
+            cgOn = false;   // 頭では人も人形も**映像の中**に写っている（CG は出さない）
             stage.SetSwap(false, SwapMorphLogic.Sample.Idle, toDoll, 0f);
             for (int i = 0; i < SwapHeadFrames; i++)
                 Shoot("before", -(SwapHeadFrames - i) / (float)SwapFps);
@@ -193,7 +215,13 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 SwapMorphLogic.Sample s = logic.Tick(dt);
                 t += dt;
-                if (s.justCovered) covered = true;
+                if (s.justCovered)
+                {
+                    covered = true;
+                    // ⚠ **画面が差し替わるのは覆い切った 1 フレーム**（実機と同じ縁）。
+                    //   人 → 人形は録画（人あり）→ 無人プレート、人形 → 人はその逆。
+                    shown = toDoll ? plate : platePerson;
+                }
 
                 // 砂に覆われている間だけ姿を替えられる（替わったことが 1 画素も見えない）。
                 // **背丈が動いている間の形は、どちらの向きでも人**（人形を拡大しても人型に見えない）。
@@ -209,24 +237,20 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 stage.SetActorHeight(cur, s.heightM, geom);
                 stage.SetGroundMul(s.ground);
-                // ⚠ 実機の体験者は映像側に居るが、ここでは代役の CG。
-                //   実体として描き続けないと、代役だけ消えて背景（黒いカーテン）が出る。
-                //   ⚠ 縮む段も含める — そこで消すと「線の塊が縮む」が背景の塊になる。
-                //   晴れる段で `real` が上がる向き（人 → 人形）だけは読み替えない。
-                // ⚠⚠ **人形 → 人でも描き続ける**（2026-08-19・ユーザー指摘「一度黒いのが消えてから
-                //   出現するが、それでは無から人が出てきたみたいになる」）。この向きは `real` が
-                //   最後まで 0 なので、旧実装では**覆いが晴れても人が居ないまま**で、
-                //   演出が終わった次のコマに人が丸ごと現れていた。実機は下がライブ映像なので
-                //   人はずっとそこに居る — **その構造をプレビューでも再現する**。
-                stage.SetSwap(true, s, toDoll, t, s.real < 0.001f ? 1f : -1f);
+                // CG が要るのは**入れ替わった後の人形**だけ（人はもう映像の中に居る）。
+                cgOn = toDoll && covered;
+                // ⚠ マスクは映像の中の人を拾う（`SwapDiffSil`）。人型は縮む / 育つが
+                //   映像の中の人は動かないので、引く枠の背丈を別に渡す。
+                stage.SetSwap(true, s, toDoll, t, -1f, logic.MaskHeightM);
                 capH = s.heightM; capCover = s.cover; capKnot = s.knot;
                 capThread = s.thread; capReal = s.real;
                 Shoot(PhaseLabel(s, dir, covered), t);
             }
 
             // ---- 尾: 入れ替わった後のふつうの画 ----
-            // 人 → 人形は人形が残る。人へ戻る向きは実機なら CG が消えて実写の体験者が出る所なので、
-            // ここでだけ代役を出して「戻った先に人が居る」を絵にする。
+            // 人 → 人形は無人の映像に CG の人形が立つ。人へ戻る向きは映像の中に人が写っている。
+            shown = toDoll ? plate : platePerson;
+            cgOn = toDoll;
             if (!ReferenceEquals(last, stageActor))
             {
                 stageActor = last;

@@ -442,6 +442,10 @@ namespace FixedCamVr.Streaming.EditorTools
             private Material? _blobMat;
 
             private RenderTexture? _cgRt;
+            private float _swapMaskHeightM = -1f;
+            private Texture2D? _swapMaskPlate;
+            private Vector4 _swapMaskCfg = new Vector4(0f, 0.055f, 0.20f, 2.0f);
+            private readonly System.Collections.Generic.List<Texture2D> _baked = new();
             /// MSAA の RT は直接 ReadPixels できないので、測定用に非 MSAA へ解決してから読む。
             private RenderTexture? _cgResolve;
             private Texture2D? _cgRead;
@@ -905,8 +909,9 @@ namespace FixedCamVr.Streaming.EditorTools
             /// ⇒ ほどけ切るまでは実体として描き続ける。負値で「読み替えない」。
             /// </param>
             public void SetSwap(bool active, in SwapMorphLogic.Sample s, bool fromTop, float seed,
-                                float realOverride = -1f)
+                                float realOverride = -1f, float maskHeightM = -1f)
             {
+                _swapMaskHeightM = maskHeightM;
                 _swapActive = active;
                 _swapCover = Mathf.Clamp01(s.cover);
                 _swapKnot = Mathf.Clamp01(s.knot);
@@ -914,6 +919,68 @@ namespace FixedCamVr.Streaming.EditorTools
                 _swapReal = Mathf.Clamp01(realOverride >= 0f ? realOverride : s.real);
                 _swapFromTop = fromTop;
                 _swapSeed = seed;
+            }
+
+            /// <summary>
+            /// 差分マスクに使う<b>無人プレート</b>を渡す。null で従来（CG のシルエット）へ戻る。
+            /// </summary>
+            public void SetSwapMaskPlate(Texture2D? plate)
+            {
+                _swapMaskPlate = plate;
+                _swapMaskCfg.x = plate != null ? 1f : 0f;
+            }
+
+            /// <summary>
+            /// プレート（無人）に、いま立っている CG を焼き込んで<b>「人が写っている映像」</b>を作る。
+            ///
+            /// ⚠⚠ 入れ替わりの対象は**映像の中に写っている人**（3 周目なら 1 周目の録画の中の自分、
+            ///   帰りの A ならライブの自分）で、CG の人形ではない。プレビューは人を CG の代役で
+            ///   演じているので、そのままだと**映像の中には誰も居ない** — 差分から人を拾う経路を
+            ///   絵で確かめられない。⇒ 一度だけ焼き込んで、以後は映像の側に人が居る状態で回す。
+            /// </summary>
+            public Plate BakeActorIntoPlate(Plate plate, string suffix)
+            {
+                EnsureRenderTargets(plate.width, plate.height);
+                if (_cgRt == null || _cgResolve == null || _cgRead == null) return plate;
+
+                _cgCam.Render();
+                Graphics.Blit(_cgRt, _cgResolve);
+                RenderTexture.active = _cgResolve;
+                _cgRead.ReadPixels(new Rect(0f, 0f, _cgRt.width, _cgRt.height), 0, 0);
+                _cgRead.Apply();
+                RenderTexture.active = null;
+
+                Color32[] cg = _cgRead.GetPixels32();
+                int cw = _cgRead.width, chh = _cgRead.height;
+                Color32[] bg = plate.texture.GetPixels32();
+                int w = plate.width, h = plate.height;
+                var outP = new Color32[w * h];
+                for (int y = 0; y < h; y++)
+                {
+                    int cy = Mathf.Clamp(Mathf.RoundToInt((y + 0.5f) * chh / h - 0.5f), 0, chh - 1);
+                    for (int x = 0; x < w; x++)
+                    {
+                        int cx = Mathf.Clamp(Mathf.RoundToInt((x + 0.5f) * cw / w - 0.5f), 0, cw - 1);
+                        Color32 c = cg[cy * cw + cx];
+                        Color32 b = bg[y * w + x];
+                        // CG レイヤは premultiplied（本番と同じ）。over 合成は rgb + dst*(1-a)。
+                        float ia = 1f - c.a / 255f;
+                        outP[y * w + x] = new Color32(
+                            (byte)Mathf.Min(255f, c.r + b.r * ia),
+                            (byte)Mathf.Min(255f, c.g + b.g * ia),
+                            (byte)Mathf.Min(255f, c.b + b.b * ia), 255);
+                    }
+                }
+                var baked = new Texture2D(w, h, TextureFormat.RGB24, mipChain: true)
+                {
+                    name = plate.texture.name + suffix, hideFlags = HideFlags.HideAndDontSave,
+                    wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear,
+                };
+                baked.SetPixels32(outP);
+                baked.Apply();
+                _baked.Add(baked);
+                return new Plate { texture = baked, width = w, height = h, missing = false,
+                                   label = plate.label + suffix };
             }
 
             public void SetGroundMul(float mul) => _groundMul = Mathf.Clamp01(mul);
@@ -1301,6 +1368,15 @@ namespace FixedCamVr.Streaming.EditorTools
                                                  contain, 1f, out Vector4 sr))
                     swapRect = new Vector4(sr.x, sr.y, sr.z, 1f);
                 _compositeMat.SetVector("_SwapRect", swapRect);
+                // マスクを引く枠。**映像の中の人は縮まない**ので、人型が縮んでも元の大きさで引く。
+                _compositeMat.SetVector("_SwapRect0",
+                    _swapMaskHeightM > 0f
+                        ? SwapMorphLogic.MaskRect(swapRect, _actorHeightM, _swapMaskHeightM)
+                        : swapRect);
+                _compositeMat.SetTexture("_SwapMaskTex",
+                    _swapMaskPlate != null ? (Texture)_swapMaskPlate : Texture2D.blackTexture);
+                _compositeMat.SetVector("_SwapMask",
+                    _swapMaskPlate != null ? _swapMaskCfg : new Vector4(0f, 0.055f, 0.20f, 2.0f));
                 _compositeMat.SetFloat("_SwapCover", _swapActive ? _swapCover : 0f);
                 _compositeMat.SetFloat("_SwapKnot", _swapActive ? _swapKnot : 0f);
                 _compositeMat.SetFloat("_SwapThread", _swapActive ? _swapThread : 0f);
@@ -1510,6 +1586,8 @@ namespace FixedCamVr.Streaming.EditorTools
             public void Dispose()
             {
                 RenderTexture.active = null;
+                foreach (Texture2D t in _baked) if (t != null) DestroyImmediate(t);
+                _baked.Clear();
                 ReleaseCgRt();
                 if (_outRt != null)
                 {

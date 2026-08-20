@@ -151,6 +151,13 @@ Shader "FixedCamVr/ScreenComposite"
         //   _SwapFromTop 1 = 頭からほどける / 0 = 足元から
         // 唯一の writer は SwapMorphFx（_Glitch を GlitchFx が独占するのと同じ流儀）。
         _SwapRect("Swap Rect (cx, cy, halfH, active)", Vector) = (0.5, 0.5, 0.2, 0)
+        // ⚠⚠ **ほどけ始めた瞬間の矩形**。映像の中の人は縮まないので、マスクは**この枠で引く**
+        //   （`_SwapRect` は縮む段で小さくなる。そちらで引くと人型が縮むたびにマスクが外れる）。
+        _SwapRect0("Swap Rect At Begin (cx, cy, halfH)", Vector) = (0.5, 0.5, 0.2, 0)
+        // 映像の中の人を拾う無人プレート（そのカメラで撮った、誰も居ない画）。
+        _SwapMaskTex("Swap Mask Plate", 2D) = "black" {}
+        // x = 使うか / y,z = 差の下限・上限 / w = 差を取る mip の段（粗くするほどノイズが消える）
+        _SwapMask("Swap Mask (on, lo, hi, lod)", Vector) = (0, 0.055, 0.20, 2.0)
         _SwapCover("Swap Cover", Range(0, 1)) = 0
         _SwapKnot("Swap Knot", Range(0, 1)) = 0
         _SwapThread("Swap Thread", Range(0, 1)) = 0
@@ -190,6 +197,7 @@ Shader "FixedCamVr/ScreenComposite"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
             TEXTURE2D(_LiveTex);    SAMPLER(sampler_LiveTex);
+            TEXTURE2D(_SwapMaskTex); SAMPLER(sampler_SwapMaskTex);
             TEXTURE2D(_OverlayTex); SAMPLER(sampler_OverlayTex);
             TEXTURE2D(_MaskTex);    SAMPLER(sampler_MaskTex);
             // CG レイヤ（実カメラの双子の仮想カメラが描く人形）。スクリーン空間・アルファ = 被覆率。
@@ -213,6 +221,8 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _Overlay2Scale;
                 float _Overlay2Strength;
                 float4 _SwapRect;
+                float4 _SwapRect0;
+                float4 _SwapMask;
                 float4 _SwapSmear;
                 float4 _SwapLine;
                 float _SwapCover;
@@ -820,6 +830,38 @@ Shader "FixedCamVr/ScreenComposite"
                 return col;
             }
 
+            /// <b>映像の中に写っている人</b>を、無人プレートとの差で拾う。−1 = 使わない。
+            ///
+            /// ⚠⚠ **入れ替わりの対象は映像の中の人であって、CG の人形ではない**
+            ///   （3 周目なら 1 周目の録画の中の自分、帰りの A ならライブの自分）。
+            ///   CG のシルエットで覆うと、**いまの体験者の立ち位置**に黒が出る —
+            ///   3 周目の映像は過去の自分なので、まったく別の場所を覆うことになる。
+            /// ⚠ 固定視点カメラなので**背景差分で足りる**（人体検知の推論を実機で回さない）。
+            ///   無人プレートは卓が既に撮っていて（`plate_<ID>_<時刻>.jpg`）、素材としても配っている。
+            /// ⚠⚠ **マスクは「ほどけ始めた瞬間の枠」で引く**（`_SwapRect0`）。映像の中の人は
+            ///   縮まないので、縮んだ `_SwapRect` で引くと縮む段でマスクが人から外れる。
+            /// ⚠ **粗い mip で取る**（`_SwapMask.w`）。等倍だと粒と符号化のゆらぎを人として拾う。
+            float SwapDiffSil(float2 uv, float lod)
+            {
+                if (_SwapMask.x < 0.5) return -1.0;
+
+                // いまの人型枠 → ほどけ始めた瞬間の枠（映像の中の人はそこに写っている）。
+                float2 p = SwapFigureSpace(uv);
+                float h0 = max(_SwapRect0.z, 1e-3);
+                float2 uv0 = float2(_SwapRect0.x + p.x * h0 / max(_FrameAspect, 1e-3),
+                                    _SwapRect0.y + p.y * h0);
+                if (uv0.x < 0.0 || uv0.x > 1.0 || uv0.y < 0.0 || uv0.y > 1.0) return 0.0;
+
+                float lodD = lod + _SwapMask.w;
+                float plateIn;
+                float2 uvP = ContainUv(RotateUvSteps(uv0, _UvRotSteps), _LiveScale.xy, plateIn);
+                half3 pl = SAMPLE_TEXTURE2D_LOD(_SwapMaskTex, sampler_SwapMaskTex, uvP, lodD).rgb;
+                half3 cur = SampleBase(uv0, lodD, 0.0);
+                float d = max(abs(cur.r - pl.r), max(abs(cur.g - pl.g), abs(cur.b - pl.b)));
+                return plateIn * smoothstep(_SwapMask.y, _SwapMask.z, d);
+            }
+
+
             half4 frag(Varyings input) : SV_Target
             {
                 // 枠の座標（post FX の空間。卓の FS_POST と一致させる側）と、
@@ -857,127 +899,145 @@ Shader "FixedCamVr/ScreenComposite"
                 //      レターボックスされている分（_LiveScale.x=0.75）だけ人形が水平 1.33 倍外側へずれていた
                 //      ＝ 姿勢を完璧に測っても絶対に合わない（2026-07-27 監査 CRITICAL 1）。
                 //      letterbox 帯に人形が出ないのは正しい挙動（映像の外に人形は居ない）。
+                // ⚠⚠⚠ **ほどけは CG が居なくても走る**（2026-08-20）。覆う相手は
+                //   **映像の中に写っている人**なので、CG（人形）が出ているかとは無関係。
+                //   `_CgStrength` の内側に置いていたころは、**人形を出さないカットでは
+                //   入れ替わりが 1 画素も出なかった**（プレビューで踏んだ）。
+                float cgIn = 0.0;
+                half4 cg = half4(0.0, 0.0, 0.0, 0.0);
+                half aCg = 0.0;
+                half3 rgbCg = half3(0.0, 0.0, 0.0);
                 if (_CgStrength > 0.001)
                 {
                     // 乱れ・低解像度化は人形にも同じだけ掛ける（映像だけが壊れて人形が無傷だと必ず浮く）。
-                    float cgIn;
                     float2 uvC = CgUvOf(sampleUv, cgIn);
                     // 人形にも**映像と同じ伝送の痩せ**を掛ける（装置を通して見えている以上、同じだけ落ちる）。
-                    half4 cg = SampleCgSoft(uvC, lod);
+                    cg = SampleCgSoft(uvC, lod);
                     cg.rgb = CgChromaMatched(cg, uvC, lod);
-
                     // ⚠ premultiplied を崩さない — アルファに掛けた分は rgb にも掛ける。
-                    half aCg = saturate(cg.a);
-                    half3 rgbCg = cg.rgb;
-                    // ⚠⚠ **入れ替わりの絵は CG を重ねた後に混ぜる**（2026-08-19）。先に混ぜると
-                    //   人形（実機）や代役（Editor）が上書きして、線が乗っていない絵になる。
-                    half3 swapCol = 0.0;
-                    half swapMix = 0.0;
-                    if (_SwapRect.w > 0.5)
+                    aCg = saturate(cg.a);
+                    rgbCg = cg.rgb;
+                }
+                // ⚠⚠ **入れ替わりの絵は CG を重ねた後に混ぜる**（2026-08-19）。先に混ぜると
+                //   人形（実機）や代役（Editor）が上書きして、線が乗っていない絵になる。
+                half3 swapCol = 0.0;
+                half swapMix = 0.0;
+                if (_SwapRect.w > 0.5)
+                {
+                    // 入れ替わりのほどけ。**下の映像そのものを行ごとに水平へ引き伸ばす**ので、
+                    // ほどけている最中も「誰がほどけているか」が画素に残っている。
+                    // ⚠ 人型（CG）と同じ `sampleUv` から起こす — 乱れが乗ったフレームで
+                    //   糸だけ元の位置に残ると、そこだけ別の層に見える。
+                    // その画素の人型。**映像の中の人が居るなら、そちらが正**
+                    // （`SwapDiffSil`。負値 = 無人プレートが配られていないので CG の形へ落ちる）。
+                    float silCg = saturate(aCg);
+                    float silDiff = SwapDiffSil(sampleUv, lod);
+                    // ⚠⚠ **ほどけ切る手前で CG の形へ渡す。** 覆い切った縁で画面が差し替わる
+                    //   （録画 → 無人プレート）ので、そこから先に映像の中の人はもう居ない。
+                    //   渡すのは全面が覆われている最中なので、形が変わっても 1 画素も見えない。
+                    float sil = silDiff < 0.0 ? silCg
+                              : lerp(silDiff, silCg, smoothstep(0.86, 1.0, _SwapCover));
+                    float2 p0 = SwapFigureSpace(sampleUv);
+                    float spread = saturate(_SwapThread);
+                    float frontHere = SwapFront(sampleUv);        // この画素までほどけが来たか
+
+                    // 早い棄却。糸が届くのは体を包む楕円の中だけ（`SwapReachField`）なので、
+                    // 画面の大半はここで抜ける（本編は 1 画素も触らない）。
+                    // ⚠ ここでは**いちばん遠くまで届く行**の範囲で判定する（下の `span` の上限）。
+                    if (sil > 0.002 || silCg > 0.002
+                        || SwapReachField(float2(p0.x / 1.30, p0.y), spread) > 0.002)
                     {
-                        // 入れ替わりのほどけ。**下の映像そのものを行ごとに水平へ引き伸ばす**ので、
-                        // ほどけている最中も「誰がほどけているか」が画素に残っている。
-                        // ⚠ 人型（CG）と同じ `sampleUv` から起こす — 乱れが乗ったフレームで
-                        //   糸だけ元の位置に残ると、そこだけ別の層に見える。
-                        float sil = saturate(aCg);                    // その画素の人型（実体の形）
-                        float2 p0 = SwapFigureSpace(sampleUv);
-                        float spread = saturate(_SwapThread);
-                        float frontHere = SwapFront(sampleUv);        // この画素までほどけが来たか
+                        float rowR, rowS;
+                        float2 sUv = SwapSmearUv(sampleUv, spread, _SwapSeed, rowR, rowS);
 
-                        // 早い棄却。糸が届くのは体を包む楕円の中だけ（`SwapReachField`）なので、
-                        // 画面の大半はここで抜ける（本編は 1 画素も触らない）。
-                        // ⚠ ここでは**いちばん遠くまで届く行**の範囲で判定する（下の `span` の上限）。
-                        if (sil > 0.002 || SwapReachField(float2(p0.x / 1.30, p0.y), spread) > 0.002)
+                        // ⚠ **行ごとに届く距離を変える。** 全行を同じ幅で切ると、
+                        //   縁が垂直な直線になって「バーコード」に見える（2026-08-19 の絵）。
+                        //   参考画像は長い線と短い線が混ざり、塊の縁が不揃いにほつれている。
+                        float span = 0.40 + rowS * 0.90;
+                        float field = SwapReachField(float2(p0.x / span, p0.y), spread);
+
+                        // 帯ごとに歪めた位置の人型。**縁が帯ごとに崩れている**ので、
+                        // ここから作る重みには CG の輪郭がそのまま出ない。
+                        float sIn;
+                        half4 cgS = SampleCgSoft(CgUvOf(sUv, sIn), lod + _SwapLine.w);
+                        float smDiff = SwapDiffSil(sUv, lod);
+                        float smCg = saturate(cgS.a) * sIn;
+                        float silSmear = smDiff < 0.0 ? smCg
+                                       : lerp(smDiff, smCg, smoothstep(0.86, 1.0, _SwapCover));
+
+                        // ⚠⚠ **マスクは切り取りではなく「線の濃さの重み」**（2026-08-19
+                        //   ユーザー指摘「モデルに張り付ける感じだと、モデルの輪郭が目立って
+                        //   しまってあんまりよくなくて、そうじゃなくて 2D の映像にオーバーレイして、
+                        //   輪郭は途切れによって作らずに線の感じでぼんやりと見えるように」）。
+                        //   歪めていないマスク（`sil`）を混ぜると CG の縁がそのまま輪郭として出る。
+                        //   下限（0.28）を残すのは、人の外にも線を薄く散らして縁を曖昧にするため。
+                        // ⚠⚠ **覆いの重みは「ずらした人型」だけで作る**（2026-08-19 の 9 巡目）。
+                        //   ここに `field`（楕円）を足していたので、**体の外の画面全体に薄い線が
+                        //   立って「全画面が乱れた」に戻っていた**（0089 の核心を自分で壊していた）。
+                        //   `silSmear` は行ごとに横へずれた人型なので、**縁はそれだけで崩れる** —
+                        //   外へ散らすために別の場を足す必要が無い。
+                        //   `field` は「読みに行く先が体から遠すぎる行」を切るためだけに残す。
+                        // ⚠⚠⚠ **`field` を重みに掛けない**（2026-08-19 の 10 巡目・絵で直した）。
+                        //   楕円は縦にも 3 乗で落ちるので、**頭と足元で 0 に近づき、そこだけ
+                        //   覆いが掛からずに元の体が見えていた**（実測: 頭の高さで 0.0003）。
+                        //   人型の縦の形を持っているのは `silSmear` の方で、そちらは
+                        //   行ごとに横へずれているから縁は勝手に崩れる。
+                        //   `field` は早期棄却（読みに行く先が体から遠すぎる行を切る）だけに使う。
+                        // ⚠⚠⚠ **芯は歪めていない人型（`sil`）で確実に覆う**（2026-08-19 の 10 巡目）。
+                        //   ずらした人型（`silSmear`）だけで作ると、**体の上を外した行がそのまま
+                        //   透けて元の体が見える**一方、体から離れた所には線が散る。
+                        //   ⇒ **芯 = `sil`（必ず黒くなる）／ ほつれ = `silSmear`（縁を崩す）**。
+                        //   7 巡目の「モデルの輪郭が目立つ」は**切り取り**として使ったときの話で、
+                        //   いまは黒く覆うのが指示（縁は下の `smoothstep` と行ごとのずれで崩れる）。
+                        float w = max(sil, silSmear * 0.85) * saturate(field * 2.0);
+                        float rowInk = SwapRowInk(rowR, SwapFront(sUv), _SwapKnot);
+                        if (rowInk * w > 0.002)
                         {
-                            float rowR, rowS;
-                            float2 sUv = SwapSmearUv(sampleUv, spread, _SwapSeed, rowR, rowS);
-
-                            // ⚠ **行ごとに届く距離を変える。** 全行を同じ幅で切ると、
-                            //   縁が垂直な直線になって「バーコード」に見える（2026-08-19 の絵）。
-                            //   参考画像は長い線と短い線が混ざり、塊の縁が不揃いにほつれている。
-                            float span = 0.40 + rowS * 0.90;
-                            float field = SwapReachField(float2(p0.x / span, p0.y), spread);
-
-                            // 帯ごとに歪めた位置の人型。**縁が帯ごとに崩れている**ので、
-                            // ここから作る重みには CG の輪郭がそのまま出ない。
-                            float sIn;
-                            half4 cgS = SampleCgSoft(CgUvOf(sUv, sIn), lod + _SwapLine.w);
-                            float silSmear = saturate(cgS.a) * sIn;
-
-                            // ⚠⚠ **マスクは切り取りではなく「線の濃さの重み」**（2026-08-19
-                            //   ユーザー指摘「モデルに張り付ける感じだと、モデルの輪郭が目立って
-                            //   しまってあんまりよくなくて、そうじゃなくて 2D の映像にオーバーレイして、
-                            //   輪郭は途切れによって作らずに線の感じでぼんやりと見えるように」）。
-                            //   歪めていないマスク（`sil`）を混ぜると CG の縁がそのまま輪郭として出る。
-                            //   下限（0.28）を残すのは、人の外にも線を薄く散らして縁を曖昧にするため。
-                            // ⚠⚠ **覆いの重みは「ずらした人型」だけで作る**（2026-08-19 の 9 巡目）。
-                            //   ここに `field`（楕円）を足していたので、**体の外の画面全体に薄い線が
-                            //   立って「全画面が乱れた」に戻っていた**（0089 の核心を自分で壊していた）。
-                            //   `silSmear` は行ごとに横へずれた人型なので、**縁はそれだけで崩れる** —
-                            //   外へ散らすために別の場を足す必要が無い。
-                            //   `field` は「読みに行く先が体から遠すぎる行」を切るためだけに残す。
-                            // ⚠⚠⚠ **`field` を重みに掛けない**（2026-08-19 の 10 巡目・絵で直した）。
-                            //   楕円は縦にも 3 乗で落ちるので、**頭と足元で 0 に近づき、そこだけ
-                            //   覆いが掛からずに元の体が見えていた**（実測: 頭の高さで 0.0003）。
-                            //   人型の縦の形を持っているのは `silSmear` の方で、そちらは
-                            //   行ごとに横へずれているから縁は勝手に崩れる。
-                            //   `field` は早期棄却（読みに行く先が体から遠すぎる行を切る）だけに使う。
-                            // ⚠⚠⚠ **芯は歪めていない人型（`sil`）で確実に覆う**（2026-08-19 の 10 巡目）。
-                            //   ずらした人型（`silSmear`）だけで作ると、**体の上を外した行がそのまま
-                            //   透けて元の体が見える**一方、体から離れた所には線が散る。
-                            //   ⇒ **芯 = `sil`（必ず黒くなる）／ ほつれ = `silSmear`（縁を崩す）**。
-                            //   7 巡目の「モデルの輪郭が目立つ」は**切り取り**として使ったときの話で、
-                            //   いまは黒く覆うのが指示（縁は下の `smoothstep` と行ごとのずれで崩れる）。
-                            float w = max(sil, silSmear * 0.85) * saturate(field * 2.0);
-                            float rowInk = SwapRowInk(rowR, SwapFront(sUv), _SwapKnot);
-                            if (rowInk * w > 0.002)
-                            {
-                                // ⚠ 線を置く位置は**画面上の座標**（p0）で決める。読む位置（sUv）で
-                                //   決めると、帯を動かすたびに線まで一緒に動いて形が定まらない。
-                                // 黒の割合。人型の中はほぼ埋まり、縁と外へ向かって疎になる。
-                                // ⚠ **裾を切りすぎない**（2026-08-19 の 11 巡目）。参考画像は人型の外にも
-                                //   黒い線が散っていて、そこが無いと**黒いベタが 1 つ浮いている**絵になる。
-                                float duty = smoothstep(0.025, 0.55, w);
-                                float hit = SwapLineHit(p0.x,
-                                                        floor(sampleUv.y * max(_SwapSmear.x, 4.0)),
-                                                        floor(_SwapSeed * max(_SwapSmear.w, 1.0)),
-                                                        spread, duty);
-                                // ⚠⚠⚠ **覆いは黒。中身を 1 画素も見せない**（2026-08-19 の 10 巡目・
-                                //   ユーザー指摘「人の体が全部黒いもので覆われ、自分の体は直接は
-                                //   見られなくなり、黒いものが自分の腕などに合わせて動くことで分かる」）。
-                                //   9 巡目までは**引き伸ばした本人の画素**を置いていたので、
-                                //   明るい体は明るいまま残り、**人がそのまま見えていた**。
-                                //   参考画像の人型も**黒く潰れている**（実測 5 分位 16 ／ 背景の中央値 207）。
-                                //   ⇒ **芯は黒い塊で潰し、縁と外は黒い線だけがほつれる。**
-                                //   自分だと分かるのは中身ではなく**動く形**（腕が人型に付いてくる）。
-                                // ⚠ **芯を別に塗らない**（2026-08-19 の 11 巡目）。`duty` が既に
-                                //   人型の中を 93% まで埋めるので、ここで塊を足すと線が消えてベタに戻る。
-                                float amt = hit;
-                                swapCol = 0.0;
-                                swapMix = saturate(rowInk * amt);
-                            }
+                            // ⚠ 線を置く位置は**画面上の座標**（p0）で決める。読む位置（sUv）で
+                            //   決めると、帯を動かすたびに線まで一緒に動いて形が定まらない。
+                            // 黒の割合。人型の中はほぼ埋まり、縁と外へ向かって疎になる。
+                            // ⚠ **裾を切りすぎない**（2026-08-19 の 11 巡目）。参考画像は人型の外にも
+                            //   黒い線が散っていて、そこが無いと**黒いベタが 1 つ浮いている**絵になる。
+                            float duty = smoothstep(0.025, 0.55, w);
+                            float hit = SwapLineHit(p0.x,
+                                                    floor(sampleUv.y * max(_SwapSmear.x, 4.0)),
+                                                    floor(_SwapSeed * max(_SwapSmear.w, 1.0)),
+                                                    spread, duty);
+                            // ⚠⚠⚠ **覆いは黒。中身を 1 画素も見せない**（2026-08-19 の 10 巡目・
+                            //   ユーザー指摘「人の体が全部黒いもので覆われ、自分の体は直接は
+                            //   見られなくなり、黒いものが自分の腕などに合わせて動くことで分かる」）。
+                            //   9 巡目までは**引き伸ばした本人の画素**を置いていたので、
+                            //   明るい体は明るいまま残り、**人がそのまま見えていた**。
+                            //   参考画像の人型も**黒く潰れている**（実測 5 分位 16 ／ 背景の中央値 207）。
+                            //   ⇒ **芯は黒い塊で潰し、縁と外は黒い線だけがほつれる。**
+                            //   自分だと分かるのは中身ではなく**動く形**（腕が人型に付いてくる）。
+                            // ⚠ **芯を別に塗らない**（2026-08-19 の 11 巡目）。`duty` が既に
+                            //   人型の中を 93% まで埋めるので、ここで塊を足すと線が消えてベタに戻る。
+                            float amt = hit;
+                            swapCol = 0.0;
+                            swapMix = saturate(rowInk * amt);
                         }
-
-                        // 糸は CG 層ではなく**映像の側**に描いたので、CG に残るのは実体だけ。
-                        // ⚠⚠ **ほどけが来ていない所は実体のまま残す**（2026-08-19 に絵で確かめて直した）。
-                        //   `_SwapReal` だけで消すと、**入れ替わりが始まった 1 フレーム目に当人が丸ごと
-                        //   消える**（実体は CG 層に居て、糸はまだ前線のぶんしか出ていないため）。
-                        //   体験者から見ると「ノイズに覆われて見えなくなる」ではなく「消えてから
-                        //   ノイズが出る」になる。実機の 4 周目 A（人形が CG）でも同じ。
-                        //   前線の後ろは糸が引き受け、前は実体が立っている。
-                        float body = saturate(max(_SwapReal, 1.0 - frontHere));
-                        aCg = sil * body;
-                        rgbCg = cg.rgb * body;
                     }
 
-                    // premultiplied over（Porter-Duff 1984）。straight alpha の lerp から変えたのは、
-                    // **影が「乗算」だから** — 影を rgb=0 / a=濃さ の断片として同じ RT に描けば、
-                    // この式が自動的に背景を (1-a) 倍する。不透明な人形（a=1）に対しては lerp と同値。
-                    float s = saturate(_CgStrength) * cgIn;
-                    col = col * (1.0 - aCg * s) + rgbCg * s;
-                    // ⚠ **ほどけは最後。** 映像も人形（実機）も代役（Editor）も、まとめてこの下に入る。
-                    col = lerp(col, swapCol, swapMix);
+                    // 糸は CG 層ではなく**映像の側**に描いたので、CG に残るのは実体だけ。
+                    // ⚠⚠ **ほどけが来ていない所は実体のまま残す**（2026-08-19 に絵で確かめて直した）。
+                    //   `_SwapReal` だけで消すと、**入れ替わりが始まった 1 フレーム目に当人が丸ごと
+                    //   消える**（実体は CG 層に居て、糸はまだ前線のぶんしか出ていないため）。
+                    //   体験者から見ると「ノイズに覆われて見えなくなる」ではなく「消えてから
+                    //   ノイズが出る」になる。実機の 4 周目 A（人形が CG）でも同じ。
+                    //   前線の後ろは糸が引き受け、前は実体が立っている。
+                    float body = saturate(max(_SwapReal, 1.0 - frontHere));
+                    aCg = sil * body;
+                    rgbCg = cg.rgb * body;
                 }
+
+                // premultiplied over（Porter-Duff 1984）。straight alpha の lerp から変えたのは、
+                // **影が「乗算」だから** — 影を rgb=0 / a=濃さ の断片として同じ RT に描けば、
+                // この式が自動的に背景を (1-a) 倍する。不透明な人形（a=1）に対しては lerp と同値。
+                float s = saturate(_CgStrength) * cgIn;
+                col = col * (1.0 - aCg * s) + rgbCg * s;
+                // ⚠ **ほどけは最後。** 映像も人形（実機）も代役（Editor）も、まとめてこの下に入る。
+                col = lerp(col, swapCol, swapMix);
 
                 // ================= ここから撮像の順（レンズ → センサ → ISP）=================
                 // ⚠⚠ 旧実装は **現像 → レンズ → センサ** の逆順だった。だから
