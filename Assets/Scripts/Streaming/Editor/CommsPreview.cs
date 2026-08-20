@@ -10,7 +10,10 @@ namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
     /// <b>AIエージェントからの連絡（<see cref="CommsPanel"/>）の出方を 1 コマずつ焼く。</b>
-    /// 出るまで 0.45 秒・読ませる 7 秒・引くまで 0.9 秒の全部を、実装と同じ重みで撮る。
+    /// <b>文面 8 通を通しで</b> — 枠が開く 0.45 秒・打つ（文字数 ÷ 12）・読ませる 2 秒・
+    /// 引く 0.9 秒の全部を、実装と同じ重みで撮る。
+    /// ⚠ 順序と間は <see cref="CommsCueLogic"/> に決めさせている（尺を写して並べていない）ので、
+    /// ⓪a → ⓪b と① → ①b が<b>同じ面のまま繋がる</b>のもそのまま写る。
     ///
     /// ⚠ <b>Unity が実際に描いた絵</b>（CPU の模写ではない）。地・縁・文字の色も、
     /// 面が先で文字が後という遅れも、<see cref="CommsPanelLogic"/> と
@@ -205,9 +208,15 @@ namespace FixedCamVr.Streaming.EditorTools
                 panel.SetMarkState(0f, confirming: false);
                 logic.GetType().GetMethod("SetGuideWanted")!.Invoke(logic, new object[] { false });
 
-                // ---- 出て、読ませて、引くまでを 1 コマずつ（いちばん重い ③ で撮る）----
-                // ⚠ **229 コマ ＝ 撮影だけで 20 分。** 壊れの見え方を詰めるときは要らないので
-                //    `-Set frames=0` で飛ばせる（動画を作るときだけ撮る）。
+                // ---- 1 回の体験ぶんを通しで撮る（実装の尺そのまま）--------------------------
+                // ⚠⚠ **文面 8 通を全部、実装が決めた尺で並べる**（2026-08-19・ユーザー依頼
+                //    「全部のテキストを表示 / 2s 残存とか、アニメーションを実装されているもので
+                //    再現した動画をください」）。それまでは③ 1 通だけを 229 コマ撮っていた。
+                //
+                // ⚠ **順序と間は <see cref="CommsCueLogic"/> に決めさせる**（尺を写して並べない）。
+                //   ここが書くのは「体験者が何をしたか」だけ — 導入に居る / 円へ着いた /
+                //   本編へ入った / ボタンを長押しした / 締めのカットが待ち始めた。
+                //   ⓪a → ⓪b と① → ①b が**同じ面のまま繋がる**のも、実装がそう返すからそう写る。
                 bool wantFrames = EditorCliArgs.Get("frames") != "0";
                 if (!wantFrames)
                 {
@@ -215,29 +224,66 @@ namespace FixedCamVr.Streaming.EditorTools
                     return;
                 }
                 Disable(logic);
-                ApplyNow(apply, panel, logic);
-                panel.Deliver(CommsNotice.Prompt);
+                panel.SetMarkState(0f, confirming: false);
                 PlaceStraightAhead(root, tmp, dist);
-                Disable(logic);
                 ApplyNow(apply, panel, logic);
 
                 float dt = 1f / Fps;
+                // 体験者が何をするか（秒）。**実装が決める尺はここに 1 つも無い。**
+                const float ArrivedAt = 11.0f;   // 円へ着いた ＝ 段 0 を抜けた（⓪c）
+                const float RunAt = 17.0f;       // 導入演出が明けた（①）
+                const float Press1At = 28.0f;    // 1 回目の報告（通る ＝ ②a）
+                const float Press2At = 34.5f;    // 2 回目の報告（通らない ＝ ②b）
+                const float WaitAt = 41.0f;      // 締めのカットが待ち始めた（③は 2 秒後）
+                const float EndAt = 49.0f;
+                float markHoldSec = ConstF(typeof(FixedCamVr.Input.VisitorMarkHoldLogic),
+                                           "DefaultHoldSec", 1.0f);
+
+                var cue = new CommsCueLogic();
+                MethodInfo guideWanted = logic.GetType().GetMethod("SetGuideWanted")!;
+                PropertyInfo doneReading = logic.GetType().GetProperty("DoneReading")!;
                 // ⚠ **打鍵が鳴るコマを書き出す**（`canon/LEDGER.md` 0056）。音を後から Python 側で
                 //    数え直すと、実機と違う所で鳴る動画ができて判断が狂う（`menu glitch` の
                 //    `frames.tsv` と同じ流儀 — 数えるのは Unity、並べるのが Python）。
                 var taps = new System.Text.StringBuilder("frame\tchars\thit\n");
                 int lastTyped = panel.TypedCount;
-                for (int i = 0; i < Fps * 0.3f; i++)
-                {
-                    taps.Append(n).Append("\t").Append(panel.VisibleChars).Append("\t0\n");
-                    Shoot(cam, Frame(dir, n++));   // 出る前の間
-                }
+                float holdT = -1f;               // 長押しの経過（負 ＝ 押していない）
+                int presses = 0;
 
-                panel.Deliver(CommsNotice.Prompt);
-                float typeSec = TypeSec(logic);
-                float total = inSec + typeSec + holdSec + outSec + 0.2f;
-                for (float t = 0f; t < total; t += dt)
+                for (float t = 0f; t < EndAt; t += dt)
                 {
+                    // 体験者の長押し（1 秒）。押しているあいだ面は開き、走っている連絡は片づく。
+                    bool release = false;
+                    if ((presses == 0 && t >= Press1At) || (presses == 1 && t >= Press2At))
+                    {
+                        if (holdT < 0f) holdT = 0f;
+                        holdT += dt;
+                        panel.SetMarkState(Mathf.Clamp01(holdT / markHoldSec), confirming: false);
+                        guideWanted.Invoke(logic, new object[] { true });
+                        if (holdT >= markHoldSec)
+                        {
+                            release = true;
+                            holdT = -1f;
+                            presses++;
+                            panel.SetMarkState(0f, confirming: false);
+                        }
+                    }
+
+                    CommsNotice next = cue.Tick(new CommsCueInput
+                    {
+                        inIntro = t < RunAt,
+                        inRun = t >= RunAt,
+                        startAuthorized = true,
+                        introWaiting = t < ArrivedAt,
+                        panelDoneReading = (bool)doneReading.GetValue(logic),
+                        waitingForMark = t >= WaitAt,
+                        markPressed = release,
+                        markResolved = presses == 1,   // 1 回目は通る / 2 回目は通らない
+                        dt = dt,
+                    });
+                    if (next != CommsNotice.None) panel.Deliver(next);
+                    if (release) guideWanted.Invoke(logic, new object[] { false });
+
                     Step(logic, apply, panel, dt);
                     // ⚠ 実際に鳴らした数（`TypedCount`）の増分で見る ＝ **改行で鳴らない規則も
                     //    そのまま入る**（コマ数から数え直すと、そこだけ実機と違う動画になる）。
@@ -257,7 +303,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 {decays.Length * Notices.Length} 枚"
                         + $"（周回の壊れ {string.Join(" / ", System.Array.ConvertAll(decays, d => d.ToString("0.00")))}）"
                         + $" → Assets/{OutDirRel}/\n"
-                        + $"  枠が開く {inSec:0.00}s → 打つ {typeSec:0.00}s"
+                        + $"  通し: {EndAt:0} 秒 ＝ 文面 8 通（⓪a→⓪b / ①→①b は同じ面のまま繋がる）\n"
+                        + $"  枠が開く {inSec:0.00}s → 打つ 文字数÷{ConstF(typeof(CommsPanelLogic), "CharsPerSec", 12f):0}"
                         + $" → 読ませる {holdSec:0.0}s → 引く {outSec:0.00}s\n"
                         + $"  置き場所: 頭から {dist:0.0}m・左へ {-yawOff:0}°・下へ {pitchOff:0}°");
             }

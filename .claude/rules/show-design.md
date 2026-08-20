@@ -959,6 +959,7 @@ AIエージェントのスクリーンもバグるような演出を徐々に…
 | 壊し方 | 字が記号（`─│┼※`）へ化ける／字が出ない（全角の空白）／面がたまに横へ飛ぶ／地と文字が沈む |
 | 書き手 | `CommsPanel.TickGlitch` / `ApplyCorruption` / `Apply`（**単一 writer**） |
 | 見る | `.\tools\unity.ps1 menu comms-preview`（4 段階 ＋ 化けていない刻みも撮る） |
+| 動画 | 上のあと `py -3.11 tools/comms-preview-audio.py` → `py -3.11 tools/make-preview-video.py Assets/Screenshots/comms-preview comms --audio logs/preview/comms_type.wav`（**文面 8 通を通しで 49 秒**・打鍵の音つき） |
 | 観測 | `ev=sum` の **`commsGl`（強さ）/ `commsCx`（実際に化けた字の数）**、`ev=comms` の `decay` |
 
 - ⚠⚠ **化け先が意味を持ってはいけない。** 「異常が記録されました」→「異常が記録されません」は
