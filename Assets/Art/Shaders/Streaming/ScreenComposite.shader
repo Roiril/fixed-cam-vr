@@ -170,7 +170,7 @@ Shader "FixedCamVr/ScreenComposite"
         // （人型の半高が 1 の座標）。**y と w はもう読んでいない**（2026-08-20 に
         // 幅の伸縮と「組み替えの速さ」を廃止し、sin の重ね合わせで連続に流すようにした）。
         // ⚠ 行数は**映像の粗さと独立**でよい（走査線は装置が走査した跡で、映像の内容ではない）。
-        _SwapSmear("Swap Smear (rows, width, center shift, hz)", Vector) = (320, 0.0, 0.09, 0)
+        _SwapSmear("Swap Smear (rows, width, center shift, hz)", Vector) = (320, 0.0, 0.24, 0)
         // ⚠ x / y / z は**もう読んでいない**（2026-08-20 に線の矩形波を廃止した）。
         // w = **マスクを引くときに掛けるぼかしの量**（mip の段。細かい粒を人と読まないため）。
         _SwapLine("Swap Line (long half, gap, center jitter, blur lod)", Vector) = (0.22, 0.12, 0.26, 0.8)
@@ -594,18 +594,25 @@ Shader "FixedCamVr/ScreenComposite"
             {
                 // ⚠ **高い周波数を主にする。** 低い波だけだと「波打つ板」で人型の輪郭が読めたまま
                 //   残る。1 帯が数画素なので、数帯ごとに向きが変わるくらいで初めて縁が崩れる。
-                return sin(rowN *  97.0 + t * 2.30) * 0.45
-                     + sin(rowN * 251.0 - t * 3.70 + 1.7) * 0.75
-                     + sin(rowN * 613.0 + t * 5.10 + 4.2) * 0.55;
+                // ⚠⚠ **高すぎると波に見えない**（2026-08-20・ユーザー指摘「もっと細かくて
+                //   波と分かるような波にして」）。1 周期が 3 帯まで詰まると隣の帯が逆へ動くので、
+                //   目には**乱れた縁**としか映らない。8〜20 帯で 1 周する範囲に収める
+                //   （rows = 320 に対して 55 / 137 / 290 ＝ 18 / 7.3 / 3.4 周期）。
+                return sin(rowN *  55.0 + t * 2.30) * 0.55
+                     + sin(rowN * 137.0 - t * 3.70 + 1.7) * 0.80
+                     + sin(rowN * 290.0 + t * 5.10 + 4.2) * 0.35;
             }
 
-            float2 SwapSmearUv(float2 uv, float reach, float t, out float rowR, out float rowS)
+            /// <paramref name="k"/> は<b>ずれ量の倍率</b>。**1 つの倍率だけで引くと帯は
+            /// 平行移動するだけ**で、長さは元の人型の幅のまま。2 段引いて max を取ると
+            /// 「元の位置からずれ先まで」が塗られて**帯が横に長く伸びる**（2026-08-20）。
+            float2 SwapSmearUv(float2 uv, float reach, float t, float k, out float rowR, out float rowS)
             {
                 float rows = max(_SwapSmear.x, 4.0);
                 float row = floor(uv.y * rows);
                 float rowN = (row + 0.5) / rows;
 
-                float o = SwapRowShift(rowN, t) * (1.0 / 1.75);      // 合計を ±1 へ正規化
+                float o = SwapRowShift(rowN, t) * (1.0 / 1.70);      // 合計を ±1 へ正規化
                 // 揺れの大きさ自体もゆっくり流れる（同じ形が貼り付いて見えないように）。
                 o *= 0.72 + 0.28 * sin(rowN * 6.1 - t * 0.9);
 
@@ -615,7 +622,7 @@ Shader "FixedCamVr/ScreenComposite"
                 // 行の中心 1 本を行じゅうが読む（＝縦解像度が落ちて走査線になる）。
                 // 水平の動きだけは人型の中心を基準にするので figure 空間で解く。
                 float2 p = SwapFigureSpace(float2(uv.x, rowN));
-                p.x -= o * reach * _SwapSmear.z;
+                p.x -= o * reach * _SwapSmear.z * k;
                 return SwapFrameUv(p);
             }
 
@@ -948,8 +955,9 @@ Shader "FixedCamVr/ScreenComposite"
                     if (sil > 0.002 || silCg > 0.002
                         || SwapReachField(float2(p0.x / 1.30, p0.y), spread) > 0.002)
                     {
-                        float rowR, rowS;
-                        float2 sUv = SwapSmearUv(sampleUv, spread, _SwapSeed, rowR, rowS);
+                        float rowR, rowS, rowR2, rowS2;
+                        float2 sUv  = SwapSmearUv(sampleUv, spread, _SwapSeed, 1.00, rowR, rowS);
+                        float2 sUv2 = SwapSmearUv(sampleUv, spread, _SwapSeed, 0.42, rowR2, rowS2);
 
                         // ⚠ **行ごとに届く距離を変える。** 全行を同じ幅で切ると、
                         //   縁が垂直な直線になって「バーコード」に見える（2026-08-19 の絵）。
@@ -961,7 +969,10 @@ Shader "FixedCamVr/ScreenComposite"
                         // ここから作る重みには CG の輪郭がそのまま出ない。
                         float sIn;
                         half4 cgS = SampleCgSoft(CgUvOf(sUv, sIn), lod + _SwapLine.w);
-                        float smDiff = SwapDiffSil(sUv, lod);
+                        // ⚠⚠ **2 段のずれ量で引いて max**（2026-08-20・ユーザー指摘
+                        //   「全部の黒い帯をもっと長くして」）。1 段だと帯は平行移動するだけで、
+                        //   長さが人型の幅のままになる。
+                        float smDiff = max(SwapDiffSil(sUv, lod), SwapDiffSil(sUv2, lod));
                         float smCg = saturate(cgS.a) * sIn;
                         float silSmear = smDiff < 0.0 ? smCg
                                        : lerp(smDiff, smCg, smoothstep(0.86, 1.0, _SwapCover));
