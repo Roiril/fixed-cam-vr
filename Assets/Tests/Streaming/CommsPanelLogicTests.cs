@@ -230,7 +230,7 @@ namespace FixedCamVr.Streaming.Tests
 
             l.Begin(Chars);
             // ⚠ 枠も丈も出来上がっているので、**開く段は挟まずに印字から**
-            //   （2026-08-19・`canon/LEDGER.md` 0094。挟むと何も動かない 0.45 秒だけ面が空になる）。
+            //   （2026-08-19・`canon/LEDGER.md` 0096。挟むと何も動かない 0.45 秒だけ面が空になる）。
             Assert.AreEqual(CommsStage.Type, l.Stage);
             Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "文面は 1 字目から出し直すこと");
             Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠は畳まないこと");
@@ -313,7 +313,7 @@ namespace FixedCamVr.Streaming.Tests
 
         /// <summary>
         /// ⚠⚠ <b>連続して言う 2 通は、同じ面のまま繋がる</b>（2026-08-19・
-        /// <c>canon/LEDGER.md</c> 0094・ユーザー指定「前の言葉を表示して 2s たったら、
+        /// <c>canon/LEDGER.md</c> 0096・ユーザー指定「前の言葉を表示して 2s たったら、
         /// そのスクリーンのまま、次の言葉が始まる。毎回消して表示しなおすのはしない」）。
         ///
         /// 守るのは 2 つ — <b>枠を畳まない</b>（開き 1 のまま）と、<b>開く段を挟まない</b>

@@ -1165,12 +1165,20 @@ def analyze(events, others, exp, warns=None):
                 verdict("FAIL", "①の連絡が届いていない — 本編に入った縁を見ていない"
                                 "（CommsCueLogic.BeginDelaySec / runDirector の配線）")
 
+            # ①b 押し方（canon/LEDGER.md 0097）。**①を読ませ終わった縁**で間を置かず続く。
+            # ⚠ ここが欠けると、体験者は押し方も「押すと何が起きるか」も一度も読まないまま終わる。
+            if "Begin" in ids and "BeginHow" not in ids:
+                verdict("FAIL", "①b『異変を見つけたら…』が届いていない — "
+                                "押し方の説明が 1 度も画に出ていない"
+                                "（CommsPanelLogic.DoneReading / panelDoneReading の配線）")
+
             # ⓪ タイトルの直後の 2 通（canon/LEDGER.md 0079）。**順序が意味を持つ** —
             #    名乗る前に指示が出ると、誰が喋っているのか分からないまま歩かされる。
             def _first(kind):
                 return next((fnum(e, "t", 0.0) for e in comms if e.get("id") == kind), None)
             t_greet, t_walk = _first("Greeting"), _first("Walk")
             t_arrived, t_begin = _first("Arrived"), _first("Begin")
+            t_how = _first("BeginHow")
             if t_greet is None and t_walk is None:
                 verdict("WARN", "タイトル直後の⓪が 1 通も届いていない — 導入で連絡を出していない"
                                 "（CommsPanel の intro 未配線 / 古い APK）")
@@ -1187,6 +1195,16 @@ def analyze(events, others, exp, warns=None):
                         verdict("FAIL", "⓪b の指示が⓪a の名乗りより先に出ている")
                 if t_walk is not None and t_begin is not None and t_begin <= t_walk:
                     verdict("FAIL", "①が⓪b より先に出ている — 導入と本編の連絡が入れ替わっている")
+            # ①b は①の後（順序が逆なら、押し方を読んでから「開始してください」が来る）。
+            if t_begin is not None and t_how is not None:
+                gap = t_how - t_begin
+                if gap <= 0:
+                    verdict("FAIL", "①b が①より先に出ている")
+                elif gap > 8.0:
+                    verdict("WARN", f"①→①b が {gap:.1f}s 空いている — 同じ面のまま繋がっていない疑い"
+                                    "（②③に割り込まれた回なら正常）")
+                else:
+                    verdict("OK", f"① {t_begin:.1f}s → ①b {gap:.1f}s 後 の順で届いた")
 
             # ⓪c 演出の始まりの告知。**導入演出が始まったのと同じ縁**で出る（0079 の赤入れ 3）。
             # ⚠ 導入まで走らなかった走行では出ないのが正常なので、段 1 を踏んだときだけ判定する。

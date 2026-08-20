@@ -25,8 +25,18 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>段 0 を抜けた縁で出す</b>ので、⓪b（歩行の指示）が出ていればそれを押しのけて上書きする。
         /// </summary>
         Arrived,
-        /// <summary>① 導入が明けて、映像だけになった直後。「調査を開始してください」。</summary>
+        /// <summary>① 導入が明けて、映像だけになった直後。「調査を開始してください。」</summary>
         Begin,
+        /// <summary>
+        /// ①b <b>①を読ませ終わった縁</b>。「異変を見つけたら／ボタンを長押ししてください／
+        /// 装置が解析して解呪します」（2026-08-19・<c>canon/LEDGER.md</c> 0097・ユーザー指定
+        /// 「調査を開始してください→異変をみつけたら〜と、表示は時間的に分けて。その間を切り詰める」）。
+        ///
+        /// ⚠ <b>1 通に戻さない。</b> 4 行を一度に出すと、読み手は「開始の合図」と「押し方の説明」を
+        /// 同時に読むことになる。分けたぶんは<b>間を 0 にして同じ面のまま繋ぐ</b>ので、
+        /// 画としては「文面が入れ替わる」1 続きに見える。
+        /// </summary>
+        BeginHow,
         /// <summary>② 報告した瞬間、<b>演出が走っていた</b>。「異常が記録されました」。</summary>
         MarkLogged,
         /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異常は検出されませんでした」。</summary>
@@ -62,7 +72,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 前の連絡を<b>読ませ終わった</b>か（<c>CommsPanelLogic.DoneReading</c>）。
         ///
-        /// ⚠⚠ <b>「畳み終わった」ではない</b>（2026-08-19・<c>canon/LEDGER.md</c> 0094）。
+        /// ⚠⚠ <b>「畳み終わった」ではない</b>（2026-08-19・<c>canon/LEDGER.md</c> 0096）。
         /// ここが立った瞬間はまだ枠が開いているので、次の連絡を出せば
         /// <b>同じ面のまま文面だけが替わる</b>（ユーザー指定「毎回消して表示しなおすのはしない」）。
         /// 畳み終わりを待つと、枠が左へ畳まれてから開き直す ＝ 毎回かならず吃る。
@@ -122,7 +132,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// ③ 締めのカットが待ち始めてから促すまで (秒)。
-        /// ⚠ <b>3 → 2 へ</b>（2026-08-19・<c>canon/LEDGER.md</c> 0094）。当初のユーザー指定は「3s ほど」。
+        /// ⚠ <b>3 → 2 へ</b>（2026-08-19・<c>canon/LEDGER.md</c> 0096）。当初のユーザー指定は「3s ほど」。
         /// ⚠ <c>ShowWalkDebugDriver.ReportHesitateSec</c>（4.5 秒）より短く保つ —
         ///   自動走行が先に押してしまうと③は実機で一度も走らない。
         /// </summary>
@@ -136,7 +146,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// ⓪b 自己紹介を<b>読ませ終わってから</b>指示を出すまで (秒)。
-        /// ⚠⚠ <b>0.5 → 0</b>（2026-08-19・<c>canon/LEDGER.md</c> 0094）。0 でないと、
+        /// ⚠⚠ <b>0.5 → 0</b>（2026-08-19・<c>canon/LEDGER.md</c> 0096）。0 でないと、
         /// 読ませ終わった面が畳まれ始めてから次が届く ＝ <b>同じ面のまま繋がらない</b>
         /// （<see cref="CommsCueInput.panelDoneReading"/>）。
         /// </summary>
@@ -155,6 +165,7 @@ namespace FixedCamVr.Streaming
         public const int WalkRepeatMax = 2;
 
         private bool _beginFired;
+        private bool _beginHowFired;
         private bool _promptFired;
         private float _runSec;
         private float _waitSec;
@@ -180,6 +191,7 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             _beginFired = false;
+            _beginHowFired = false;
             _promptFired = false;
             _runSec = 0f;
             _waitSec = 0f;
@@ -190,6 +202,9 @@ namespace FixedCamVr.Streaming
             _introSec = 0f;
             _idleSec = 0f;
         }
+
+        /// <summary>①b（押し方）まで出したか（診断・テスト用）。</summary>
+        public bool BeginHowFired => _beginHowFired;
 
         /// <summary>導入で名乗ったか（診断・テスト用）。</summary>
         public bool GreetFired => _greetFired;
@@ -232,11 +247,19 @@ namespace FixedCamVr.Streaming
             if (beginDue) _beginFired = true;
             if (promptDue) _promptFired = true;
 
+            // ①b は①を**読ませ終わった縁**で、間を置かずに続ける（`canon/LEDGER.md` 0097）。
+            // ⚠ **①を出したそのフレームには立たない**（`!beginDue`）。面はまだ Deliver されておらず
+            //   「読ませ終わった」が true のままなので、見ないと 2 通が同じフレームに揃って片方が消える。
+            bool howDue = !beginDue && _beginFired && !_beginHowFired && inp.panelDoneReading;
+
             // 優先は 報告 > 締めの催促 > 開始。**報告は体験者が起こした出来事**なので必ず勝つ
             // （押した手応えが返らないと、装置が壊れているように見える）。
             if (inp.markPressed) return inp.markResolved ? CommsNotice.MarkLogged : CommsNotice.MarkNothing;
             if (promptDue) return CommsNotice.Prompt;
             if (beginDue) return CommsNotice.Begin;
+            // ⚠ ①b だけは**押しのけられても消費しない**（上の 2 つと違う）。押し方の説明なので、
+            //   ②や③に割り込まれた回では**その連絡を読ませ終わってから**改めて出す。
+            if (howDue) { _beginHowFired = true; return CommsNotice.BeginHow; }
             return CommsNotice.None;
         }
 

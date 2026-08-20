@@ -31,7 +31,8 @@ namespace FixedCamVr.Streaming.EditorTools
         /// </summary>
         private static readonly CommsNotice[] Notices =
         {
-            CommsNotice.Greeting, CommsNotice.Walk, CommsNotice.Arrived, CommsNotice.Begin,
+            CommsNotice.Greeting, CommsNotice.Walk, CommsNotice.Arrived,
+            CommsNotice.Begin, CommsNotice.BeginHow,
             CommsNotice.MarkLogged, CommsNotice.MarkNothing, CommsNotice.Prompt,
         };
 

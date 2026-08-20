@@ -25,9 +25,9 @@ namespace FixedCamVr.Diagnostics.Tests
         /// <summary>
         /// 上段が想定している最悪の行数。<b><c>CommsPanel.BodyMaxH</c> はこの行数で決まっている</b>ので、
         /// 増やすならあちらも一緒に上げる（上げないと 1 行ぶん枠から溢れる）。
-        /// ⚠ 3 → 4（2026-08-19・<c>canon/LEDGER.md</c> 0094 で①へ「装置が解析して解呪します」を足した）。
+        /// ⚠ 0096 で①が 4 行になり 4 へ上げたが、0097 で①と①b へ割ったので 3 へ戻した。
         /// </summary>
-        private const int MaxLines = 4;
+        private const int MaxLines = 3;
 
         private static float FullWidth(string line)
         {
