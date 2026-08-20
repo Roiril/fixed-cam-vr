@@ -85,6 +85,7 @@ namespace FixedCamVr.Diagnostics
         private const float ResolveRetrySec = 1f;
 
         private TMP_Text? _text;
+        private HeadYawFollow? _follow;
         private float _alpha;
         private float _resolveWait;
         private int _shownCount = -1;
@@ -161,8 +162,12 @@ namespace FixedCamVr.Diagnostics
             GameObject? go = null;
             try
             {
+                // ⚠⚠ **頭のヨーだけを追う根の下へ置く**（2026-08-20 ユーザー赤入れ・
+                //    注意書きと同じ指摘）。head-lock のままだと上下に振っても面が眼から離れず、
+                //    4 行を読むあいだずっと目の前に貼り付く。題字と同じ `HeadYawFollow` に乗せる。
+                _follow = HeadYawFollow.Attach(transform, "ReportYawFollow");
                 go = new GameObject("Label");
-                go.transform.SetParent(transform, worldPositionStays: false);
+                go.transform.SetParent(_follow.transform, worldPositionStays: false);
                 var tmp = go.AddComponent<TextMeshPro>();
                 tmp.font = jp;
                 // ⚠⚠ **揃えは左**（`canon/LEDGER.md` 0063）。塊を中央へ運ぶのは SetBody。
@@ -193,6 +198,8 @@ namespace FixedCamVr.Diagnostics
             {
                 Debug.LogWarning($"[OutroReport] 実体を組めません — 報告は出しません: {e.Message}");
                 if (go != null) Destroy(go);
+                if (_follow != null) Destroy(_follow.gameObject);
+                _follow = null;
                 _text = null;
             }
         }
@@ -336,6 +343,9 @@ namespace FixedCamVr.Diagnostics
                 }
                 _alpha = 0f;
                 SetAlpha(0f);
+                // ⚠ 出ていないあいだは頭の正面へ置き直し続ける。1 字目が打たれた瞬間に
+                //   前の向きから緩慢に寄ってくると、報告が視界の外から流れ込む。
+                _follow?.SnapToHead();
                 return;
             }
 

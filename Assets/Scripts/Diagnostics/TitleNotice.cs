@@ -106,8 +106,10 @@ namespace FixedCamVr.Diagnostics
         private const float ResolveRetrySec = 1f;
 
         private TMP_Text? _text;
+        private HeadYawFollow? _follow;
         private float _alpha;
         private float _resolveWait;
+        private bool _wasShown;
 
         private void Awake()
         {
@@ -120,6 +122,7 @@ namespace FixedCamVr.Diagnostics
         {
             // 次に有効化されたときは黒の中へ改めて現れる（消えかけの途中から再開しない）。
             _alpha = 0f;
+            _wasShown = false;
             SetAlpha(0f);
         }
 
@@ -144,8 +147,13 @@ namespace FixedCamVr.Diagnostics
                 // ⚠ 3D の TextMeshPro のまま（世界空間 Canvas へ移す利点は無かった）。
                 //    2026-08-14 に Canvas 方式も試したが、絵は同じで実機ログの
                 //    `Screen position out of view frustum` も減らなかった（`canon/OPEN.md`）。
+                // ⚠⚠ **頭のヨーだけを追う根の下へ置く**（2026-08-20 ユーザー赤入れ
+                //    「目の前に追従するんだけど見づらい」）。頭の子のまま局所座標だけ決めると
+                //    ＝ head-lock で、上下に振っても面が眼から離れない。題字と同じ法則
+                //    （`HeadYawFollow` ＝ 本編のスクリーンと同じ `YawFollowLogic`）に乗せる。
+                _follow = HeadYawFollow.Attach(transform, "NoticeYawFollow");
                 go = new GameObject("Label");
-                go.transform.SetParent(transform, worldPositionStays: false);
+                go.transform.SetParent(_follow.transform, worldPositionStays: false);
                 var tmp = go.AddComponent<TextMeshPro>();
                 tmp.font = jp;
                 tmp.text = NoticeText;
@@ -169,9 +177,9 @@ namespace FixedCamVr.Diagnostics
                 rt.sizeDelta = new Vector2(TextWidthM / scale, TextHeightM / scale);
                 go.transform.localScale = Vector3.one * scale;
 
-                // 頭の正面やや下。head-lock（CenterEyeAnchor 直下に置かれる前提）なので、
-                // ここでは局所の置き場所だけを決める。題字は yaw だけ追うが、この面は
-                // 黒と同じく頭に貼り付いたままでよい — 読み終わるまで視界から外れない方が正しい。
+                // 頭の正面やや下。姿勢は追従根が持つので、ここでは根から見た置き場所だけを決める。
+                // ⚠ **黒の面（TitleScreen の覆い）はこれに乗っていない** — 覆いが頭から離れると
+                //   振り向いた瞬間に縁が視界へ入って現実が細く覗く。動かすのは読ませる字だけ。
                 float rad = pitchOffsetDeg * Mathf.Deg2Rad;
                 float d = Mathf.Max(distanceM, 0.5f);
                 go.transform.localPosition = new Vector3(0f, -Mathf.Sin(rad) * d, Mathf.Cos(rad) * d);
@@ -194,6 +202,8 @@ namespace FixedCamVr.Diagnostics
                 // 組めなかった側は必ず「出さない」で終わらせる（半端な面を残さない）。
                 Debug.LogWarning($"[TitleNotice] 実体を組めません — 注意書きは出しません: {e.Message}");
                 if (go != null) Destroy(go);
+                if (_follow != null) Destroy(_follow.gameObject);
+                _follow = null;
                 _text = null;
             }
         }
@@ -257,6 +267,10 @@ namespace FixedCamVr.Diagnostics
             }
 
             bool show = ShouldShow();
+            // ⚠ **出る縁で頭の正面へ置き直す。** 置き直さないと、前に消えたときのヨーから
+            //   緩慢に寄ってくる ＝ 注意書きが視界の外から流れ込む。
+            if (show && !_wasShown) _follow?.SnapToHead();
+            _wasShown = show;
             float target = show ? 1f : 0f;
             float sec = show ? fadeInSec : fadeOutSec;
             _alpha = Mathf.MoveTowards(_alpha, target, Time.unscaledDeltaTime / Mathf.Max(0.01f, sec));

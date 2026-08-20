@@ -85,15 +85,16 @@ namespace FixedCamVr.Streaming
         //    値ごとそれに合わせる。**ヨーだけ追い、上下と傾きは追わない** —
         //    見上げれば題字は下に残る ＝ 眼に貼り付かない。
         //
-        // 値は `ScreenAnchor` と対。**片方だけ変えない**（体験の中で追従の癖が 2 種類になる）。
-        private const float YawDeadzoneDeg = 0.5f;
-        private const float YawTrailDeg = 0f;          // 頭の正面ちょうどを目指して、そこで止まる
-        private const float SmoothTimeSec = 0.30f;
-        private const float MaxYawSpeedDegPerSec = 110f;
-        private const float CatchUpThresholdDeg = 45f;
-        private const float CatchUpBoost = 2f;
+        // 値は `HeadYawFollow` が唯一の供給元（`ScreenAnchor` と対）。**ここに数字を書かない** —
+        // 書くと体験の中で追従の癖が 2 種類になる。
+        private const float YawDeadzoneDeg = HeadYawFollow.YawDeadzoneDeg;
+        private const float YawTrailDeg = HeadYawFollow.YawTrailDeg;   // 頭の正面ちょうどを目指して、そこで止まる
+        private const float SmoothTimeSec = HeadYawFollow.SmoothTimeSec;
+        private const float MaxYawSpeedDegPerSec = HeadYawFollow.MaxYawSpeedDegPerSec;
+        private const float CatchUpThresholdDeg = HeadYawFollow.CatchUpThresholdDeg;
+        private const float CatchUpBoost = HeadYawFollow.CatchUpBoost;
         /// <summary>これを超える dt は着脱・pause 明けとみなし、種を置き直して 1 フレーム進めない。</summary>
-        private const float ResumeGapSec = 0.5f;
+        private const float ResumeGapSec = HeadYawFollow.ResumeGapSec;
 
         // ⚠ **スクリーンに見せないための仕掛けはこの 2 つ**（ユーザー指示「スクリーンっぽさは
         //    感じさせないように」）: ①版を 3 つの奥行きへ離してある（両眼視差で層が分かれる）
