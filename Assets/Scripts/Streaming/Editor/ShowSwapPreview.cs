@@ -219,11 +219,13 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 SwapMorphLogic.Sample s = logic.Tick(dt);
                 t += dt;
-                if (s.justCovered)
+                if (s.justCovered) covered = true;
+                if (s.justSwapScreen)
                 {
-                    covered = true;
-                    // ⚠ **画面が差し替わるのは覆い切った 1 フレーム**（実機と同じ縁）。
-                    //   人 → 人形は録画（人あり）→ 無人プレート、人形 → 人はその逆。
+                    // ⚠⚠ **画面が差し替わる縁は向きで違う**（実機と同じ `justSwapScreen`）。
+                    //   人 → 人形は覆い切った縁で録画（人あり）→ 無人プレート。
+                    //   人形 → 人は**育ち切った縁**で無人プレート → 人ありへ（覆いが人の
+                    //   大きさになるまで当人を隠せないため）。
                     shown = toDoll ? plate : platePerson;
                 }
 

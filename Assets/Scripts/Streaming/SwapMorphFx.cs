@@ -17,11 +17,14 @@ namespace FixedCamVr.Streaming
     ///
     /// <b>この 3 つを同じ時計で動かすのが仕事</b>:
     ///   1. 人型の背丈（<see cref="ShowCgLayer.SetSwapHeight"/>）— 体験者の背丈 ⇄ 人形の背丈
-    ///   2. 砂の被覆と実体化（uniform）
-    ///   3. <b>画面の差し替え</b>（覆い切った 1 フレームで <c>onCovered</c> を 1 回だけ呼ぶ）
+    ///   2. 覆いの被覆と実体化（uniform）
+    ///   3. <b>画面の差し替え</b>（<see cref="SwapMorphLogic.Sample.justSwapScreen"/> の
+    ///      1 フレームで <c>onCovered</c> を 1 回だけ呼ぶ）
     ///
-    /// ⚠ 3 が早いと体験者が砂の下ではなく画の中で消え、遅いと砂の中で背景が動く。
-    ///   だから差し替えは <see cref="SwapMorphLogic.Sample.justCovered"/> の 1 フレームでしか行わない。
+    /// ⚠ 3 が早いと体験者が覆いの下ではなく画の中で消え、遅いと覆いの中で背景が動く。
+    ///   ⚠⚠ <b>その縁は向きで違う</b> — 人形 → 人は覆いが人の大きさへ育ち切ってから
+    ///   （<c>justSwapScreen</c> の説明）。<see cref="SwapMorphLogic.Sample.justCovered"/> を
+    ///   直接読まないこと。
     /// ⚠ <b>人形を掴んだままにする</b>（<see cref="ShowCgLayer.HoldForSwap"/>）。「人形 → 人」は
     ///   人形を出さないカットへ移るのと同時に始まるので、掴まないと 1 コマも映らない。
     /// </summary>
@@ -218,13 +221,16 @@ namespace FixedCamVr.Streaming
             }
             Write(s, _logic.Direction == SwapMorphLogic.Dir.ToDoll);
 
-            if (s.justCovered)
+            // 画面の差し替え。⚠ **縁は向きで違う**（`SwapMorphLogic.Sample.justSwapScreen`）—
+            // 人形 → 人は覆いが人の大きさへ育ち切ってから差し替える（早いと、はみ出した当人を
+            // 隠すために実寸の黒い人型を先に立てることになる）。
+            if (s.justSwapScreen)
             {
                 Action? act = _onCovered;
                 _onCovered = null;
                 act?.Invoke();
                 // 人型の外で同時に起きる差し替え（左半分の凍結解除・人形の群れの消滅）を覆う。
-                // **入れ替わりを隠すためではない** — そちらは既に砂が覆い切っている。
+                // **入れ替わりを隠すためではない** — そちらは既に覆いが隠し切っている。
                 glitchFx?.Pulse(SwapMorphLogic.VeilLevel, SwapMorphLogic.VeilSec);
             }
 

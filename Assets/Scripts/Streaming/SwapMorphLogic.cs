@@ -127,8 +127,26 @@ namespace FixedCamVr.Streaming
             /// <summary>影・接地影の濃さの倍率 0..1。糸のもつれは光を遮らない。</summary>
             public readonly float ground;
 
-            /// <summary>このフレームでほどけ切った（＝画面を差し替える 1 フレーム）。</summary>
+            /// <summary>このフレームでほどけ切った（覆いが下を完全に隠した縁）。</summary>
             public readonly bool justCovered;
+
+            /// <summary>
+            /// このフレームで<b>画面を差し替える</b>（素材・カメラ・左右分割・第 2 層を一斉に入れ替える）。
+            ///
+            /// ⚠⚠ <b>縁は向きで違う</b>（2026-08-21・ユーザー赤入れ「人形→人間で、人型の黒いのが
+            ///   見えてしまう」）。原理は 1 つ — <b>覆いが相手を隠し切れるようになった瞬間</b>:
+            ///   <list type="bullet">
+            ///   <item>人 → 人形 … <see cref="justCovered"/>。覆いは<b>実寸の当人の形</b>で立っているので、
+            ///     ほどけ切った時点でもう隠せている</item>
+            ///   <item>人形 → 人 … <see cref="justSettling"/>（育ち切った縁）。差し替えると映像に
+            ///     <b>実寸の当人</b>が現れるが、覆い（人型）は人形の大きさから育つ途中なので
+            ///     <b>まだ小さくて隠せない</b>。早く差し替えると、はみ出した当人を隠すために
+            ///     「実寸の人型の黒」を先に立てることになり、**黒い人型がそのまま見えてしまう**</item>
+            ///   </list>
+            ///   ⇒ 人形 → 人は<b>育ち切るまで素材のまま</b>（無人プレート）にしておく。
+            ///   体験者に見えるのは「黒い波が人の大きさへ育つ → 画が変わる → 晴れて人が現れる」。
+            /// </summary>
+            public readonly bool justSwapScreen;
 
             /// <summary>
             /// このフレームで<b>晴れる段へ入った</b>（＝人型を人形へ差し替える 1 フレーム）。
@@ -141,7 +159,8 @@ namespace FixedCamVr.Streaming
 
             public Sample(bool active, float cover, float knot, float thread, float real,
                           float heightM, float ground,
-                          bool justCovered, bool justSettling, bool justFinished)
+                          bool justCovered, bool justSettling, bool justFinished,
+                          bool justSwapScreen)
             {
                 this.active = active;
                 this.cover = cover;
@@ -153,9 +172,11 @@ namespace FixedCamVr.Streaming
                 this.justCovered = justCovered;
                 this.justSettling = justSettling;
                 this.justFinished = justFinished;
+                this.justSwapScreen = justSwapScreen;
             }
 
-            public static Sample Idle => new Sample(false, 0f, 0f, 0f, 0f, 0f, 1f, false, false, false);
+            public static Sample Idle
+                => new Sample(false, 0f, 0f, 0f, 0f, 0f, 1f, false, false, false, false);
         }
 
         private bool _active;
@@ -285,8 +306,11 @@ namespace FixedCamVr.Streaming
             bool justFinished = t >= 1f;
             if (justFinished) _active = false;
 
+            // 画面を差し替える縁は**覆いが相手を隠し切れるようになった瞬間**（`justSwapScreen` の説明）。
+            bool justSwapScreen = _dir == Dir.ToDoll ? justCovered : justSettling;
+
             return new Sample(true, cover, knot, thread, real, LerpHeight(h01), Ground(real),
-                              justCovered, justSettling, justFinished);
+                              justCovered, justSettling, justFinished, justSwapScreen);
         }
 
         /// <summary>

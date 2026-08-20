@@ -894,28 +894,24 @@ Shader "FixedCamVr/ScreenComposite"
                     {
                         // その画素の人型 ＝ **芯**。映像の中の人が居るなら差分が正、
                         // 無人プレートが配られていなければ CG の形へ落ちる（0095）。
-                        // ⚠⚠ **差分を引く区間は向きで逆**（2026-08-21）。「映像の中に人が居る間」
-                        //   だけが差分の出番で、それは向きで反対側になる:
+                        //
+                        // ⚠⚠⚠ **差分を引くのは人 → 人形のほどける段だけ**（2026-08-21）。
+                        //   差分は「映像の中の当人」を拾うので、**映像に当人が居る間**しか出番が無い:
                         //   - 人 → 人形: ほどける段は当人がライブに居る → 差分。覆い切った縁で
                         //     画面が無人へ差し替わるので、そこから先は CG の形へ渡す（0095）
-                        //   - 人形 → 人: ほどける段の画は素材（無人 ＋ 生成画像）で、差分は
-                        //     **生成画像を人と誤読する**ので引かない。覆い切った縁でライブへ
-                        //     差し替わり、そこから当人が映像に居る → **CG との和**で覆う
-                        //     （育ち切る前の小さい CG だけだと、当人が縁からはみ出て見える）
-                        float sil;
-                        if (_SwapFromTop > 0.5)
-                        {
-                            float hand = smoothstep(0.86, 1.0, _SwapCover);
-                            float silDiff = hand >= 0.999 ? -1.0 : SwapDiffSil(sampleUv, lod);
-                            sil = silDiff < 0.0 ? silCg : lerp(silDiff, silCg, hand);
-                        }
-                        else
-                        {
-                            // ⚠ **写像なし**（SwapDiffAt）で引く。当人は実寸で静止しているので、
-                            //   育ちかけの小さい枠を通すと頭や肩が写像の外へ出て拾えない。
-                            float silDiff = _SwapCover >= 0.999 ? SwapDiffAt(sampleUv, lod) : -1.0;
-                            sil = silDiff < 0.0 ? silCg : max(silCg, silDiff);
-                        }
+                        //   - 人形 → 人: **差し替えが育ち切るまで来ない**ので（`justSwapScreen`）、
+                        //     覆っている間ずっと画は素材（無人プレート）＝ 映像に当人は居ない。
+                        //     引くだけ無駄で、しかも生成画像を人と誤読する
+                        //
+                        // ⚠⚠ **人形 → 人で「実寸の当人の形」を足さない**（ユーザー赤入れ
+                        //   「人形→人間で、人型の黒いのが見えてしまう」）。一度そうしていたのは
+                        //   差し替えを覆い切った縁で行っていたからで、**当人がはみ出す方を
+                        //   差し替えの側で解いた**いまは要らない。足すと、育っている最中に
+                        //   実寸の黒い人型が立って「黒い波が育つ」が読めなくなる。
+                        float hand = smoothstep(0.86, 1.0, _SwapCover);
+                        float silDiff = (_SwapFromTop > 0.5 && hand < 0.999)
+                            ? SwapDiffSil(sampleUv, lod) : -1.0;
+                        float sil = silDiff < 0.0 ? silCg : lerp(silDiff, silCg, hand);
 
                         float rows = max(_SwapSmear.x, 4.0);
                         float rowN = (floor(sampleUv.y * rows) + 0.5) / rows;

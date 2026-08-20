@@ -97,6 +97,41 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void ScreenSwap_WaitsUntilTheCoverCanHideTheOtherSide()
+        {
+            // ⚠⚠ 画面の差し替えは**覆いが相手を隠し切れるようになった瞬間**（向きで縁が違う）。
+            //   人形 → 人で覆い切った縁に差し替えると、映像に実寸の当人が現れるのに覆いは
+            //   まだ人形の大きさ ＝ はみ出す。それを隠そうと実寸の黒い人型を立てた結果が
+            //   ユーザー赤入れ「人形→人間で、人型の黒いのが見えてしまう」（2026-08-21）。
+            foreach (SwapMorphLogic.Dir dir in BothWays)
+            {
+                List<SwapMorphLogic.Sample> all = RunAll(dir);
+                Assert.AreEqual(1, all.FindAll(s => s.justSwapScreen).Count,
+                                $"{dir}: 画面の差し替えはラン中 1 回だけ");
+
+                int swap = all.FindIndex(s => s.justSwapScreen);
+                int covered = all.FindIndex(s => s.justCovered);
+                int settling = all.FindIndex(s => s.justSettling);
+
+                if (dir == SwapMorphLogic.Dir.ToDoll)
+                {
+                    Assert.AreEqual(covered, swap, "人 → 人形: 覆い切った縁で差し替える");
+                }
+                else
+                {
+                    Assert.AreEqual(settling, swap, "人形 → 人: 育ち切った縁で差し替える");
+                    Assert.Greater(swap, covered,
+                        "人形 → 人: 覆い切った縁で差し替えると、育ちかけの覆いから当人がはみ出す");
+                    Assert.AreEqual(HumanH, all[swap].heightM, 1e-2f,
+                        "人形 → 人: 覆いが人の大きさへ育ち切る前に差し替えている");
+                }
+                // どちらの向きでも、差し替えの瞬間は覆いが下を完全に隠している。
+                Assert.AreEqual(1f, all[swap].knot, 1e-3f, $"{dir}: 差し替えの瞬間に隙間がある");
+                Assert.AreEqual(1f, all[swap].cover, 1e-3f, $"{dir}: 差し替えの瞬間にほどけ切っていない");
+            }
+        }
+
+        [Test]
         public void Thread_RisesThenIsDrawnIn_AndNeverVanishesMidway()
         {
             // 「線に分解されて人形へ吸い込まれる」— 吸い込まれる段で糸が消えると
@@ -235,6 +270,7 @@ namespace FixedCamVr.Streaming.Tests
             SwapMorphLogic.Sample s = logic.Tick(Dt);
             Assert.IsFalse(s.active);
             Assert.IsFalse(s.justCovered, "畳んだ後に差し替えが走ると、糸が無い所で画面が変わる");
+            Assert.IsFalse(s.justSwapScreen, "畳んだ後に画面が差し替わると、覆いが無い所で画が変わる");
         }
 
         [Test]
