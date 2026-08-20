@@ -82,7 +82,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 入れ替わりが起きるのはカメラ A（course の順路の頭）。3 周目 A / 4 周目 A の両方がここ。
                 const int cameraIndex = 0;
                 PreviewCameraDef? cam = show.CameraAt(cameraIndex);
-                Plate plate = stage.LoadPlate(cam != null ? cam.id : "");
+                // `-Set plate=white` で一様な明るい地に差し替える。**帯の端が読めるかの判定用**
+                // （現場の映像は右半分が真っ黒で、黒い覆いが背景と同化して絵から判定できない）。
+                Plate plate = EditorCliArgs.Get("plate") == "white"
+                    ? stage.MakeFlatPlate(0.90f)
+                    : stage.LoadPlate(cam != null ? cam.id : "");
                 Geometry geom = stage.AimVirtualCamera(cam, plate.width, plate.height);
                 if (!geom.usable)
                 {

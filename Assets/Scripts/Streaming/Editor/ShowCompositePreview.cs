@@ -444,7 +444,7 @@ namespace FixedCamVr.Streaming.EditorTools
             private RenderTexture? _cgRt;
             private float _swapMaskHeightM = -1f;
             private Texture2D? _swapMaskPlate;
-            private Vector4 _swapMaskCfg = new Vector4(0f, 0.045f, 0.16f, 2.0f);
+            private Vector4 _swapMaskCfg = new Vector4(0f, 0.060f, 0.20f, 0.6f);
             private readonly System.Collections.Generic.List<Texture2D> _baked = new();
             /// MSAA の RT は直接 ReadPixels できないので、測定用に非 MSAA へ解決してから読む。
             private RenderTexture? _cgResolve;
@@ -740,6 +740,29 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (loaded == null) return null;
                 label = $"{Ascii(loaded.name)} {loaded.width}x{loaded.height}";
                 return loaded;
+            }
+
+            /// <summary>
+            /// 一様な明るさのプレート。**帯が読めるかを判定するためだけ**の絵に使う
+            /// （`menu swap -Set plate=white`）。現場の映像は右半分が真っ黒なので、
+            /// 黒い覆いが背景と同化して**帯の端が見えるかを絵から判定できない**。
+            /// </summary>
+            public Plate MakeFlatPlate(float level)
+            {
+                var tex = new Texture2D(FallbackPlateW, FallbackPlateH, TextureFormat.RGB24,
+                                        mipChain: true)
+                {
+                    name = "flat", hideFlags = HideFlags.HideAndDontSave,
+                    wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear,
+                };
+                var px = new Color32[FallbackPlateW * FallbackPlateH];
+                byte v = (byte)Mathf.Clamp(Mathf.RoundToInt(level * 255f), 0, 255);
+                for (int i = 0; i < px.Length; i++) px[i] = new Color32(v, v, v, 255);
+                tex.SetPixels32(px);
+                tex.Apply();
+                _baked.Add(tex);
+                return new Plate { texture = tex, width = FallbackPlateW, height = FallbackPlateH,
+                                   missing = false, label = $"flat {level:0.00}" };
             }
 
             private static Texture2D MakeGrayPlate()
@@ -1376,7 +1399,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 _compositeMat.SetTexture("_SwapMaskTex",
                     _swapMaskPlate != null ? (Texture)_swapMaskPlate : Texture2D.blackTexture);
                 _compositeMat.SetVector("_SwapMask",
-                    _swapMaskPlate != null ? _swapMaskCfg : new Vector4(0f, 0.045f, 0.16f, 2.0f));
+                    _swapMaskPlate != null ? _swapMaskCfg : new Vector4(0f, 0.060f, 0.20f, 0.6f));
                 _compositeMat.SetFloat("_SwapCover", _swapActive ? _swapCover : 0f);
                 _compositeMat.SetFloat("_SwapKnot", _swapActive ? _swapKnot : 0f);
                 _compositeMat.SetFloat("_SwapThread", _swapActive ? _swapThread : 0f);

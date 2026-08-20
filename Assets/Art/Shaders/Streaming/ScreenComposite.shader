@@ -157,7 +157,7 @@ Shader "FixedCamVr/ScreenComposite"
         // 映像の中の人を拾う無人プレート（そのカメラで撮った、誰も居ない画）。
         _SwapMaskTex("Swap Mask Plate", 2D) = "black" {}
         // x = 使うか / y,z = 差の下限・上限 / w = 差を取る mip の段（粗くするほどノイズが消える）
-        _SwapMask("Swap Mask (on, lo, hi, lod)", Vector) = (0, 0.045, 0.16, 2.0)
+        _SwapMask("Swap Mask (on, lo, hi, lod)", Vector) = (0, 0.060, 0.20, 0.6)
         _SwapCover("Swap Cover", Range(0, 1)) = 0
         _SwapKnot("Swap Knot", Range(0, 1)) = 0
         _SwapThread("Swap Thread", Range(0, 1)) = 0
@@ -166,11 +166,15 @@ Shader "FixedCamVr/ScreenComposite"
         // ⚠ **線の色を作るプロパティは置かない**（2026-08-19 に `_SwapInk` を削除）。
         //   参考画像の線の明暗はその画素が元々どこの色だったかで決まっていて、乱数ではない。
         //   濃淡を振るのは「元の映像を捨てて縞を描き足す」のと同じことだった。
-        // 帯の刻み。x = **枠の縦**に対する行数（＝ 1 帯が何画素か）/ z = 横ずれの大きさ
+        // 帯の刻み。x = **枠の縦**に対する行数（＝ 1 帯が何画素か。48 行 ＝ 実機で 15〜20 画素）/
+        // ⚠⚠ **細くしない**（2026-08-20・ユーザーが参考画像を送ってきた）。320 行（3 画素）は
+        //   走査線であって、参考画像の**太い筆で引いた横棒**にはならない。
+        //   ⚠ 行数を変えたら `SwapRowShift` の周波数も対で直す（帯あたりの周期が変わる）。
+        // z = 横ずれの大きさ
         // （人型の半高が 1 の座標）。**y と w はもう読んでいない**（2026-08-20 に
         // 幅の伸縮と「組み替えの速さ」を廃止し、sin の重ね合わせで連続に流すようにした）。
         // ⚠ 行数は**映像の粗さと独立**でよい（走査線は装置が走査した跡で、映像の内容ではない）。
-        _SwapSmear("Swap Smear (rows, width, center shift, hz)", Vector) = (320, 0.0, 0.24, 0)
+        _SwapSmear("Swap Smear (rows, width, center shift, hz)", Vector) = (48, 0.0, 0.26, 0)
         // ⚠ x / y / z は**もう読んでいない**（2026-08-20 に線の矩形波を廃止した）。
         // w = **マスクを引くときに掛けるぼかしの量**（mip の段。細かい粒を人と読まないため）。
         _SwapLine("Swap Line (long half, gap, center jitter, blur lod)", Vector) = (0.22, 0.12, 0.26, 0.8)
@@ -598,9 +602,12 @@ Shader "FixedCamVr/ScreenComposite"
                 //   波と分かるような波にして」）。1 周期が 3 帯まで詰まると隣の帯が逆へ動くので、
                 //   目には**乱れた縁**としか映らない。8〜20 帯で 1 周する範囲に収める
                 //   （rows = 320 に対して 55 / 137 / 290 ＝ 18 / 7.3 / 3.4 周期）。
-                return sin(rowN *  55.0 + t * 2.30) * 0.55
-                     + sin(rowN * 137.0 - t * 3.70 + 1.7) * 0.80
-                     + sin(rowN * 290.0 + t * 5.10 + 4.2) * 0.35;
+                // ⚠⚠ **周波数は行数（`_SwapSmear.x`）とセットで決める。** 1 周期が 3 帯まで
+                //   詰まると隣の帯が逆へ動き、目には**乱れた縁**としか映らない。
+                //   8〜20 帯で 1 周する範囲に収める（rows = 48 に対して 2.2 / 4.9 / 10.8 周期）。
+                return sin(rowN * 14.0 + t * 2.30) * 0.55
+                     + sin(rowN * 31.0 - t * 3.70 + 1.7) * 0.80
+                     + sin(rowN * 68.0 + t * 5.10 + 4.2) * 0.35;
             }
 
             /// <paramref name="k"/> は<b>ずれ量の倍率</b>。**1 つの倍率だけで引くと帯は
@@ -955,58 +962,48 @@ Shader "FixedCamVr/ScreenComposite"
                     if (sil > 0.002 || silCg > 0.002
                         || SwapReachField(float2(p0.x / 1.30, p0.y), spread) > 0.002)
                     {
-                        float rowR, rowS, rowR2, rowS2;
-                        float2 sUv  = SwapSmearUv(sampleUv, spread, _SwapSeed, 1.00, rowR, rowS);
-                        float2 sUv2 = SwapSmearUv(sampleUv, spread, _SwapSeed, 0.42, rowR2, rowS2);
+                        // ⚠⚠⚠ **帯は「描く」。マスクをずらすのではない**（2026-08-20・ユーザーが
+                        //   参考画像を送ってきた）。マスク（面）を横へずらして max を取る方式は、
+                        //   どれだけ段を刻んでも**面が広がって 1 つの黒い塊**になるだけで、
+                        //   参考画像の「太い横棒を位置をずらしながら並べた」絵にはならない
+                        //   （4 回作り直して絵で確かめた）。
+                        //
+                        //   ⇒ 帯 1 本ごとに**横棒を 1 本描く**。
+                        //     中心 = sin の重ね合わせ（`SwapRowShift`）／ 半長 = 行ごとに別の sin。
+                        //     どちらも時間で連続に流れるので、棒が波打ちながら左右へ泳ぐ。
+                        float rows = max(_SwapSmear.x, 4.0);
+                        float rowN = (floor(sampleUv.y * rows) + 0.5) / rows;
 
-                        // ⚠ **行ごとに届く距離を変える。** 全行を同じ幅で切ると、
-                        //   縁が垂直な直線になって「バーコード」に見える（2026-08-19 の絵）。
-                        //   参考画像は長い線と短い線が混ざり、塊の縁が不揃いにほつれている。
-                        float span = 0.40 + rowS * 0.90;
-                        float field = SwapReachField(float2(p0.x / span, p0.y), spread);
+                        // その行に人が居るか。**行の中心 1 点だけ引く**（面を引くと塊に戻る）。
+                        float2 rowMid = float2(_SwapRect.x, rowN);
+                        float rIn;
+                        float rowCg = saturate(SampleCgSoft(CgUvOf(rowMid, rIn), lod + 1.0).a) * rIn;
+                        float rowDiff = SwapDiffSil(rowMid, lod + 1.0);
+                        // ⚠⚠ **ほどけ切る手前で CG の形へ渡す**（0095 と同じ理屈）。覆い切った縁で
+                        //   画面が差し替わる（人あり → 無人プレート）ので、そこから先に映像の中の
+                        //   人は居ない。渡さないと**覆いが丸ごと消える**（2026-08-20 に絵で踏んだ）。
+                        float rowHas = rowDiff < 0.0 ? rowCg
+                                     : lerp(rowDiff, rowCg, smoothstep(0.86, 1.0, _SwapCover));
+                        rowHas = saturate(rowHas * 1.35);
 
-                        // 帯ごとに歪めた位置の人型。**縁が帯ごとに崩れている**ので、
-                        // ここから作る重みには CG の輪郭がそのまま出ない。
-                        float sIn;
-                        half4 cgS = SampleCgSoft(CgUvOf(sUv, sIn), lod + _SwapLine.w);
-                        // ⚠⚠ **2 段のずれ量で引いて max**（2026-08-20・ユーザー指摘
-                        //   「全部の黒い帯をもっと長くして」）。1 段だと帯は平行移動するだけで、
-                        //   長さが人型の幅のままになる。
-                        float smDiff = max(SwapDiffSil(sUv, lod), SwapDiffSil(sUv2, lod));
-                        float smCg = saturate(cgS.a) * sIn;
-                        float silSmear = smDiff < 0.0 ? smCg
-                                       : lerp(smDiff, smCg, smoothstep(0.86, 1.0, _SwapCover));
+                        // 棒の中心と半長。⚠ **半長の下限は人型の半幅（0.22）より大きく**
+                        //   取る（0091 の「1 画素も見せない」を棒だけで満たすため）。
+                        float barC = SwapRowShift(rowN, _SwapSeed) * (1.0 / 1.70) * _SwapSmear.z;
+                        float barLenW = 0.5 + 0.5 * sin(rowN * 43.0 - _SwapSeed * 2.7);
+                        // ⚠ **長くしすぎない。** 半長 0.52（体半幅の 2.4 倍）＋ 中心のずれ 0.48 で
+                        //   画面幅の 36% が黒くなり、帯が 1 本も読めない塊になった。
+                        float barH = (0.24 + 0.16 * barLenW) * rowHas;
+                        // 端は少しだけぼかす（参考画像の棒は筆の跡で、端が硬くない）。
+                        float bar = 1.0 - smoothstep(barH - 0.035, barH + 0.035, abs(p0.x - barC));
 
-                        // ⚠⚠ **マスクは切り取りではなく「線の濃さの重み」**（2026-08-19
-                        //   ユーザー指摘「モデルに張り付ける感じだと、モデルの輪郭が目立って
-                        //   しまってあんまりよくなくて、そうじゃなくて 2D の映像にオーバーレイして、
-                        //   輪郭は途切れによって作らずに線の感じでぼんやりと見えるように」）。
-                        //   歪めていないマスク（`sil`）を混ぜると CG の縁がそのまま輪郭として出る。
-                        //   下限（0.28）を残すのは、人の外にも線を薄く散らして縁を曖昧にするため。
-                        // ⚠⚠ **覆いの重みは「ずらした人型」だけで作る**（2026-08-19 の 9 巡目）。
-                        //   ここに `field`（楕円）を足していたので、**体の外の画面全体に薄い線が
-                        //   立って「全画面が乱れた」に戻っていた**（0089 の核心を自分で壊していた）。
-                        //   `silSmear` は行ごとに横へずれた人型なので、**縁はそれだけで崩れる** —
-                        //   外へ散らすために別の場を足す必要が無い。
-                        //   `field` は「読みに行く先が体から遠すぎる行」を切るためだけに残す。
-                        // ⚠⚠⚠ **`field` を重みに掛けない**（2026-08-19 の 10 巡目・絵で直した）。
-                        //   楕円は縦にも 3 乗で落ちるので、**頭と足元で 0 に近づき、そこだけ
-                        //   覆いが掛からずに元の体が見えていた**（実測: 頭の高さで 0.0003）。
-                        //   人型の縦の形を持っているのは `silSmear` の方で、そちらは
-                        //   行ごとに横へずれているから縁は勝手に崩れる。
-                        //   `field` は早期棄却（読みに行く先が体から遠すぎる行を切る）だけに使う。
-                        // ⚠⚠⚠ **芯は歪めていない人型（`sil`）で確実に覆う**（2026-08-19 の 10 巡目）。
-                        //   ずらした人型（`silSmear`）だけで作ると、**体の上を外した行がそのまま
-                        //   透けて元の体が見える**一方、体から離れた所には線が散る。
-                        //   ⇒ **芯 = `sil`（必ず黒くなる）／ ほつれ = `silSmear`（縁を崩す）**。
-                        //   7 巡目の「モデルの輪郭が目立つ」は**切り取り**として使ったときの話で、
-                        //   いまは黒く覆うのが指示（縁は下の `smoothstep` と行ごとのずれで崩れる）。
-                        // ⚠⚠⚠ **覚いの形は「ずらしたマスク」そのもの**（2026-08-20）。
-                        //   ずらしていない側（`sil`）を混ぜていたころは、**ずれていない輪郭が
-                        //   芯として残る**ので、いくら帯を動かしても縁が硬いままだった。
-                        //   ずれが小さいので人型は保たれ、崩れるのは縁だけになる。
-                        float w = silSmear * saturate(field * 2.0);
-                        float rowInk = SwapRowInk(rowR, SwapFront(sUv), _SwapKnot);
+                        float rowR = 0.5 + 0.5 * sin(rowN * 89.0 + _SwapSeed * 1.31);
+
+                        // ⚠⚠ **縦の範囲は楕円（`SwapReachField`）で切る。** 棒は行の代表点 1 つで
+                        //   出すか決めるので、これが無いと**人型の上下へどこまでも棒が並ぶ**
+                        //   （2026-08-20 に絵で確かめた。画面が全部黒くなった）。
+                        float field = SwapReachField(float2(p0.x / 1.20, p0.y), spread);
+                        float w = bar * rowHas * saturate(field * 2.0);
+                        float rowInk = SwapRowInk(rowR, SwapFront(sampleUv), _SwapKnot);
                         if (rowInk * w > 0.002)
                         {
                             // ⚠⚠⚠ **線の矩形波はやめた**（2026-08-20・ユーザー指摘
