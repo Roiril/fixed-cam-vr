@@ -335,6 +335,18 @@
       <div id="recUse" class="rec-use"></div>
     </section>
 
+    <section class="recpanel" data-group="show">
+      <h2 class="mc-title">👁 目の写真（3 周目 C の視界ジャック）
+        <span class="hint">目がたくさん開いたところで<b>視界を乗っ取って、当日撮った写真をぱぱぱっと流す</b>。撮った写真を <code>tools/web-compositor/eyejack/</code> へ放り込んで「📥 取り込む」を押すだけ（縮小・向き・明るさはここで揃える）。流す順は<b>ファイル名順</b>。0 枚なら何も起きない（目だけ出る）。カットの側で「視界ジャック」に印を付けると出る。</span>
+      </h2>
+      <div class="run-bar">
+        <button id="ejApply" class="accent" title="eyejack/ の写真を正規化して show.json へ配る">📥 取り込む</button>
+        <button id="ejOpen" title="写真を置くフォルダを開く">📂 フォルダを開く</button>
+        <span id="ejState" class="ed-status"></span>
+      </div>
+      <div id="ejList" class="rec-use"></div>
+    </section>
+
     <section class="multicam" data-group="place show live">
       <h2 class="mc-title">
         マルチカメラ（監視）

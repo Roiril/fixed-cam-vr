@@ -734,7 +734,7 @@ namespace FixedCamVr.Streaming
             // スクリーンの外の闇で目が開く異変（canon/LEDGER.md 0075）。**画面には触らない**ので
             // どの source のカットにも足せる。同じ値を続けて言い直しても進みは巻き戻らないので、
             // カットをまたいでも 1 つの出来事として続く。
-            _eyes?.Apply(step.eyes);
+            _eyes?.Apply(step.eyes, step.eyeJack);
 
             Debug.Log($"[TakeRunner] {(d.takeStarted ? "演出開始" : "カット")} take={TakeId(d.takeIndex)} " +
                       $"step={d.stepIndex} source={source}" +

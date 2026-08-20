@@ -1518,6 +1518,59 @@ if ($('#recPost')) $('#recPost').onchange = () => saveRecord({ postSec: Math.max
 if ($('#recMaxMB')) $('#recMaxMB').onchange = () => saveRecord({ maxTotalMB: Math.max(10, parseInt($('#recMaxMB').value, 10) || 200) });
 if ($('#recFps')) $('#recFps').onchange = () => saveRecord({ fpsCap: Math.max(1, parseFloat($('#recFps').value) || 15) });
 
+// ---- 👁 目の写真（視界ジャック・canon/LEDGER.md 0099）------------------------
+//   当日の操作面はこの 1 つだけ。「フォルダへ写真を放り込む → 📥 取り込む」で完了する。
+//   ⚠ 正規化（縮小・EXIF の向き・減光）はサーバがやる。端末でやると失敗が実機でしか出ない。
+function renderEyeJack(data) {
+  const el = $('#ejList');
+  const st = $('#ejState');
+  if (!el) return;
+  const items = (data && data.items) || [];
+  const applied = (data && data.applied) || [];
+  const errors = (data && data.errors) || [];
+  if (st) {
+    // 「フォルダにある枚数」と「実機へ配った枚数」は別。ずれていたら取り込み待ち。
+    const pending = items.length !== applied.length;
+    st.textContent = items.length === 0
+      ? 'フォルダに写真がありません（ジャックは出ません）'
+      : `${items.length} 枚${pending ? '（未取り込み — 📥 を押す）' : ' を配布中'}`;
+    st.className = 'ed-status ' + (items.length === 0 ? '' : (pending ? 'err' : 'ok'));
+  }
+  const rows = items.map((it, i) => `<div class="rec-row ok">${i + 1}. <b>${escapeHtml(it.name)}</b>`
+    + ` <span class="rec-why">${it.w}×${it.h} / ${Math.round(it.size / 1024)} KB`
+    + `${it.src !== it.name ? ` ← ${escapeHtml(it.src)}` : ''}</span></div>`);
+  for (const e of errors) rows.push(`<div class="rec-row ng">❌ <span class="rec-why">${escapeHtml(e)}</span></div>`);
+  if (!rows.length) {
+    rows.push('<div class="rec-row muted">📂 フォルダを開く → 当日撮った写真を入れる → 📥 取り込む</div>');
+  }
+  el.innerHTML = rows.join('');
+}
+async function loadEyeJack() {
+  try {
+    const r = await fetch('/eyejack/list');
+    renderEyeJack(await r.json());
+  } catch { renderEyeJack(null); }
+}
+if ($('#ejApply')) {
+  $('#ejApply').onclick = async () => {
+    const st = $('#ejState');
+    if (st) { st.textContent = '取り込み中…'; st.className = 'ed-status'; }
+    try {
+      const r = await fetch('/eyejack/apply', { method: 'POST' });
+      const j = await r.json();
+      if (st) {
+        st.textContent = j.ok ? `✓ ${j.count} 枚を配りました` : '✕ 取り込めません';
+        st.className = 'ed-status ' + (j.ok ? 'ok' : 'err');
+      }
+    } catch {
+      if (st) { st.textContent = '✕ 卓サーバ断'; st.className = 'ed-status err'; }
+    }
+    loadEyeJack();
+  };
+}
+if ($('#ejOpen')) $('#ejOpen').onclick = () => fetch('/open-dir?dir=eyejack');
+loadEyeJack();
+
 // ---- ✅ 本番前チェック（自動更新）------------------------------------------
 //   「押す前に見る場所」を 1 枚に集約する。各行がそのまま切り分けの入口。
 // 参照している素材が**ディスクに実在するか**はサーバに聞く（ブラウザからファイルの有無は見えない）。
@@ -1584,6 +1637,19 @@ function preflightRows() {
       rows.push({ s: 'ng', label: '位置合わせ', detail: '未登録 — 右トリガー 2 秒長押しで登録（ゾーンが実空間に合いません）' });
     } else if (u.registered === true) {
       rows.push({ s: 'ok', label: '位置合わせ', detail: '登録済み' });
+    }
+    // 👁 目の写真が **この機に** 届いているか（canon/LEDGER.md 0099）。
+    // ⚠ 2 台のうち片方だけ落とせていないのは**無音の失敗**。画にも音にも出ず、
+    //   当日はその機に当たった体験者だけジャックが出ない。ここが唯一の手掛かり。
+    // 旧 Unity は送らない → -1 で、この行は出ない（後方互換）。
+    const ejL = Number(u.eyeJackListed);
+    const ejR = Number(u.eyeJackReady);
+    if (Number.isFinite(ejR) && ejR >= 0 && Number.isFinite(ejL) && ejL > 0) {
+      rows.push(ejR >= ejL
+        ? { s: 'ok', label: '目の写真', detail: `Quest に ${ejR} 枚 届いています` }
+        : { s: 'ng', label: '目の写真',
+            detail: `Quest には ${ejR}/${ejL} 枚しか届いていません — 卓サーバへの接続を確認`
+                    + '（30 秒ごとに自動で取り直します）' });
     }
   }
 

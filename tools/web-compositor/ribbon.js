@@ -1546,6 +1546,7 @@ export function createRibbon(container, deps) {
       </div>
       <div class="rb-grid" title="スクリーンの外の黒い背景で、360 度いちめんに目が開く。大きい目が 1 つ先に開いて体験者を見て、気づいて報告するころに残りが一気に開く（全開まで 10.5 秒）。スクリーンには重ならないので、どの映像のカットにも足せる">
         <label>闇の目<input class="rb-s-eyes" type="number" min="0" max="1" step="0.05" value="${s.eyes || 0}"><span class="rb-hint2">0=出さない / 1=全部の目が開く（大きい目は必ず出る）</span></label>
+        <label class="chk rb-s-eyejack-l" style="display:${(s.eyes || 0) > 0 ? '' : 'none'}" title="目が開いたら視界を乗っ取って、当日撮った写真をぱぱぱっと流す。写真は 👁 目の写真パネルで配る（0 枚なら何も起きない）"><input class="rb-s-eyejack" type="checkbox" ${s.eyeJack ? 'checked' : ''}>視界ジャック（当日写真）</label>
       </div>
       <div class="rb-grid rb-s-place" style="display:${fixedPlace ? '' : 'none'}">
         <label title="course 空間の X（東西）。フロアマップと同じ座標系">X<input class="rb-s-px" type="number" step="0.05" value="${round2(pl.x)}">m</label>
@@ -1607,6 +1608,9 @@ export function createRibbon(container, deps) {
       // 人形を出さないカットでは荒れも出せない（実機も 0 へ落とす）。
       s.aura = s.cg ? Math.max(0, Math.min(1, numOr(r('.rb-s-aura').value, 0))) : 0;
       s.eyes = Math.max(0, Math.min(1, numOr(r('.rb-s-eyes').value, 0)));
+      s.eyeJack = r('.rb-s-eyejack').checked;
+      // 目を出さないカットで視界ジャックだけ立っていても実機は何もしない。欄ごと隠す。
+      r('.rb-s-eyejack-l').style.display = s.eyes > 0 ? '' : 'none';
       s.strength = numOr(r('.rb-s-strength').value, -1);
       s.fadeInSec = numOr(r('.rb-s-fin').value, -1);
       s.fadeOutSec = numOr(r('.rb-s-fout').value, -1);
@@ -1615,7 +1619,7 @@ export function createRibbon(container, deps) {
       markDirty(); render();
       if (rebuild) renderStepRows(t);
     };
-    row.querySelectorAll('.rb-s-cue, .rb-s-transms, .rb-s-trans, .rb-s-strength, .rb-s-fin, .rb-s-fout, .rb-s-tstart, .rb-s-tend, .rb-s-glitchsec, .rb-s-hold, .rb-s-aura, .rb-s-eyes, .rb-s-burnsec')
+    row.querySelectorAll('.rb-s-cue, .rb-s-transms, .rb-s-trans, .rb-s-strength, .rb-s-fin, .rb-s-fout, .rb-s-tstart, .rb-s-tend, .rb-s-glitchsec, .rb-s-hold, .rb-s-aura, .rb-s-eyes, .rb-s-eyejack, .rb-s-burnsec')
       .forEach((el) => { el.onchange = () => commit(false); });
     // 乱れの強さを 0 にしたら秒欄を畳む（0 のとき秒だけ残っていると「効いているのか」が読めない）。
     r('.rb-s-glitch').onchange = () => commit(true);

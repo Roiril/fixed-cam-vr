@@ -200,6 +200,9 @@ tools/web-compositor/show.json.bak
 tools/web-compositor/show.json.tmp
 tools/web-compositor/masks/
 tools/web-compositor/audio/
+# 目の視界ジャックの当日写真（canon/LEDGER.md 0099）。会場で撮った写真そのものなので
+# コミットしない（人が写る・体験日ごとに入れ替わる）。norm/ はサーバが作り直せる。
+tools/web-compositor/eyejack/
 # 実測滞在時間の集計（会場・体験者ごとの観測データ。設定ではないのでコミットしない）
 tools/web-compositor/dwell_stats.json
 tools/web-compositor/dwell_stats.json.tmp

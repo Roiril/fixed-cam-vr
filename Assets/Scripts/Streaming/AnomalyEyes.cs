@@ -35,6 +35,16 @@ namespace FixedCamVr.Streaming
         /// <summary>目のシェーダ名。ビルドから剥がれないよう Always Included にも入れてある。</summary>
         public const string ShaderName = "FixedCamVr/AnomalyEyes";
 
+        /// <summary>視界ジャックのシェーダ名（<c>canon/LEDGER.md</c> 0099）。同じく Always Included。</summary>
+        public const string JackShaderName = "FixedCamVr/EyeJack";
+
+        // 視界ジャックの面の置き方。頭に固定した quad 1 枚（乗っ取りなので HUD 的な固定が正しい —
+        // 群れが「向きを追うと HUD に見える」から追わないのと逆の理由で、ここは追う）。
+        private const float JackDistM = 1.8f;      // 眼からの距離。近すぎると輻輳の負担（HmdTextStyle と同域）
+        private const float JackHalfFovXDeg = 55f; // 覆う半画角。Quest 3 の表示画角より広めに取る
+        private const float JackHalfFovYDeg = 50f;
+        private const float JackMargin = 1.35f;    // レンズ周縁と首振り 1 フレームの余白
+
         [Tooltip("追従する頭（CenterEyeAnchor）。null なら名前で探し、無ければ Camera.main。")]
         [SerializeField] private Transform? head;
 
@@ -65,11 +75,16 @@ namespace FixedCamVr.Streaming
         private static readonly int SmileId = Shader.PropertyToID("_EyeSmile");
         private static readonly int ClosingId = Shader.PropertyToID("_EyeClosing");
         private static readonly int ColorId = Shader.PropertyToID("_EyeColor");
+        private static readonly int JackTexId = Shader.PropertyToID("_JackTex");
+        private static readonly int JackOnId = Shader.PropertyToID("_JackOn");
+        private static readonly int JackUvId = Shader.PropertyToID("_JackUv");
 
         private readonly AnomalyEyesLogic _logic = new();
         private readonly EyeAnchorLogic _anchor = new();
         // 開き始め・閉じ始めを体験者の居場所で決める層（canon/LEDGER.md 0093）。
         private readonly EyesCueLogic _cue = new();
+        // 視界ジャック（canon/LEDGER.md 0099）。目の内側の段 — 闇の所有者を 2 つにしない。
+        private readonly EyeJackLogic _jack = new();
 
         private MeshRenderer? _renderer;
         private Material? _mat;
@@ -77,8 +92,18 @@ namespace FixedCamVr.Streaming
         private EyeSeat[] _seats = System.Array.Empty<EyeSeat>();
         private float _clock;
 
+        // 視界ジャックの実体（頭に固定する全視界 quad）と、当日写真の店。
+        private EyeJackPhotoStore? _photos;
+        private Transform? _jackQuad;
+        private MeshRenderer? _jackRenderer;
+        private Material? _jackMat;
+        private Mesh? _jackMesh;
+        private Texture2D[] _jackShots = System.Array.Empty<Texture2D>();
+        private int _jackShownIndex = -1;
+
         // カットが言った値（毎フレームではなくカットの縁でだけ書き換わる。左右分割と同じ流儀）。
         private float _wanted;
+        private bool _jackWanted;
 
         /// <summary>
         /// 実体（メッシュ + 材質）を組めたか。<b>false なら目は一生出ない</b> —
@@ -121,6 +146,27 @@ namespace FixedCamVr.Streaming
         /// <summary>いまの進みの速さ（1 = 著作どおり / 2 = 追い上げ中）。テレメトリ用。</summary>
         public float Rate => _cue.Rate;
 
+        // ---- 視界ジャックの観測（canon/LEDGER.md 0099。テレメトリ・卓 heartbeat 用）----
+
+        /// <summary>ジャックの面（quad + シェーダ）を組めたか。false なら一生出ない。</summary>
+        public bool JackBuilt => _jackRenderer != null;
+
+        /// <summary>いま視界を乗っ取っているか。</summary>
+        public bool JackActive => _jack.Active;
+
+        /// <summary>端末に用意できた（デコード済みの）写真の枚数。</summary>
+        public int JackPhotoCount => _photos?.ReadyCount ?? 0;
+
+        /// <summary>この発火で出す枚数と 1 枚の尺（begin のログ用）。</summary>
+        public int JackShowCount => _jack.ShowCount;
+        public float JackPerSec => _jack.PerSec;
+
+        /// <summary>実際に画へ出した写真の累計（「画に出た側」の観測）。</summary>
+        public int JackShownTotal { get; private set; }
+
+        /// <summary>直近の終わり方（"done" / "cut" / "wd" / "abort"。まだなら空）。</summary>
+        public string JackLastEndWhy { get; private set; } = "";
+
         private void Awake()
         {
             Resolve();
@@ -138,8 +184,14 @@ namespace FixedCamVr.Streaming
         {
             if (_mat != null) DestroySafe(_mat);
             if (_mesh != null) DestroySafe(_mesh);
+            if (_jackMat != null) DestroySafe(_jackMat);
+            if (_jackMesh != null) DestroySafe(_jackMesh);
             _mat = null;
             _mesh = null;
+            _jackMat = null;
+            _jackMesh = null;
+            _photos?.Dispose();
+            _photos = null;
         }
 
         private void Resolve()
@@ -151,6 +203,10 @@ namespace FixedCamVr.Streaming
                 else if (Camera.main != null) head = Camera.main.transform;
             }
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            // 卓の heartbeat へ「この端末に写真が何枚届いたか」を出す（2 台のうち片方だけ
+            // 届いていないのは無音の失敗 — canon/LEDGER.md 0099「当日にドタバタしたくない」）。
+            if (showControl != null)
+                showControl.EyeJackReadyCountProvider = () => _photos?.ReadyCount ?? 0;
         }
 
         private void Build()
@@ -181,6 +237,54 @@ namespace FixedCamVr.Streaming
             _renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
             _renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
             _renderer.allowOcclusionWhenDynamic = false;
+
+            BuildJack();
+        }
+
+        /// <summary>
+        /// 視界ジャックの面（頭に固定する全視界 quad）を組む。目とは独立に失敗してよい —
+        /// 組めなければジャックだけが出ない（目は従来どおり）。
+        /// </summary>
+        private void BuildJack()
+        {
+            if (_jackRenderer != null) return;
+            var shader = Shader.Find(JackShaderName);
+            if (shader == null)
+            {
+                Debug.LogWarning($"[EyeJack] シェーダ {JackShaderName} が見つかりません。視界ジャックは出ません。");
+                return;
+            }
+
+            float hw = JackDistM * Mathf.Tan(JackHalfFovXDeg * Mathf.Deg2Rad) * JackMargin;
+            float hh = JackDistM * Mathf.Tan(JackHalfFovYDeg * Mathf.Deg2Rad) * JackMargin;
+            _jackMesh = new Mesh { name = "EyeJackQuad" };
+            _jackMesh.vertices = new[]
+            {
+                new Vector3(-hw, -hh, 0f), new Vector3(hw, -hh, 0f),
+                new Vector3(-hw, hh, 0f), new Vector3(hw, hh, 0f),
+            };
+            _jackMesh.uv = new[]
+            {
+                new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f),
+            };
+            _jackMesh.triangles = new[] { 0, 2, 1, 2, 3, 1 };
+            _jackMesh.RecalculateBounds();
+
+            var go = new GameObject("EyeJackQuad");
+            // 親の transform は群れの都合（頭の位置 + FaceHead の向き）で動くので、
+            // world 座標を毎フレーム直接書く（worldPositionStays: false で入れて即上書き）。
+            go.transform.SetParent(transform, worldPositionStays: false);
+            go.AddComponent<MeshFilter>().sharedMesh = _jackMesh;
+            _jackRenderer = go.AddComponent<MeshRenderer>();
+            _jackMat = new Material(shader) { name = "EyeJack (runtime)" };
+            _jackRenderer.sharedMaterial = _jackMat;
+            _jackRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _jackRenderer.receiveShadows = false;
+            _jackRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            _jackRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+            _jackRenderer.allowOcclusionWhenDynamic = false;
+            _jackRenderer.enabled = false;
+            _jackQuad = go.transform;
         }
 
         /// <summary>
@@ -189,8 +293,16 @@ namespace FixedCamVr.Streaming
         ///
         /// ⚠ <b>毎フレームではなくカットの縁で呼ばれる</b>（左右分割・人形と同じ）。
         ///   同じ値を続けて言われても<b>進みは巻き戻らない</b>ので、カットをまたいでも 1 つの出来事として続く。
+        ///
+        /// <paramref name="jack"/> = 目の視界ジャック（<c>steps[].eyeJack</c>・<c>canon/LEDGER.md</c> 0099）。
+        /// <paramref name="eyes"/> が 0 なら意味を持たない。同じくカットをまたいで 1 つの出来事
+        /// （カット 1 → 2 の縁で二度目は始まらない — <see cref="EyeJackLogic.Spent"/>）。
         /// </summary>
-        public void Apply(float eyes) => _wanted = Mathf.Clamp01(eyes);
+        public void Apply(float eyes, bool jack = false)
+        {
+            _wanted = Mathf.Clamp01(eyes);
+            _jackWanted = jack;
+        }
 
         /// <summary>
         /// カットが終わった（区間を出た・演出が閉じた）。
@@ -200,8 +312,14 @@ namespace FixedCamVr.Streaming
         /// 開き切っていなければ <see cref="EyesCueLogic.HurryRate"/> 倍で追い上げ、
         /// 開き切ってから <see cref="AnomalyEyesLogic.CloseSec"/> かけて閉じる（形で閉じる。薄くしない）。
         /// <b>本当に消すのは <see cref="Abort"/></b>（ラン開始・中止・位置合わせ）。
+        /// ⚠ ジャックは流しきらない — 乗っ取った視界を返すのは即座でなければならない
+        ///   （「今設定してるところで止める」・0099）。次の <c>LateUpdate</c> で消える。
         /// </summary>
-        public void Release() => _wanted = 0f;
+        public void Release()
+        {
+            _wanted = 0f;
+            _jackWanted = false;
+        }
 
         /// <summary>
         /// <b>無かったことにする</b>（ラン開始・卓からの中止・位置合わせ・無効化）。
@@ -211,10 +329,14 @@ namespace FixedCamVr.Streaming
         public void Abort()
         {
             _wanted = 0f;
+            _jackWanted = false;
+            if (_jack.Active) JackLastEndWhy = "abort";
+            _jack.Reset();
             _cue.Reset();
             _logic.Reset();
             _anchor.Reset();
             Hide();
+            HideJack();
         }
 
         private void LateUpdate()
@@ -224,11 +346,15 @@ namespace FixedCamVr.Streaming
             float dt = Time.unscaledDeltaTime;
             _clock += dt;
 
+            // 当日写真の同期は常に回す（位置合わせ中・演出の外でも。落とすだけで画には触らない）。
+            _photos ??= new EyeJackPhotoStore();
+            _photos.Tick(showControl, Time.unscaledTime);
+
             // 位置合わせ中は引っ込める（現実に線を重ねて合わせる作業を邪魔しない — rules/show-design.md）。
             // ⚠ ここは「流しきる」の側ではない。合わせている人の視界から**すぐ**消す。
             if (showControl != null && showControl.CourseRegistrationActive)
             {
-                if (_logic.Stage != EyesStage.Off || _cue.Running) Abort();
+                if (_logic.Stage != EyesStage.Off || _cue.Running || _jack.Active) Abort();
                 return;
             }
 
@@ -238,7 +364,20 @@ namespace FixedCamVr.Streaming
             _cue.Tick(_wanted > 0f, _logic.Stage, span);
             _spanProgress01 = span.valid ? span.progress01 : -1f;
 
-            _logic.Tick(dt, _cue.Wanted, _wanted, _cue.Rate);
+            // ⚠⚠ **視界ジャックが覆っているあいだは閉じさせない**（canon/LEDGER.md 0099 / 0084）。
+            //   覆いの裏で閉じるのは「閉じた」ではなく「消えた」— 0084 の赤入れ
+            //   「閉じるときは、開くときと同じように緩急つけて」で作った 1.6 秒が、
+            //   歩き続ける体験者では**1 フレームも見えないまま**終わる（区間の半分で
+            //   終了演出に入るのと、ジャックが出るのが同じ縁だから）。
+            //   ⚠ 開く側は塞がない（`_cue.Wanted` が false でも `Hold` に留めるだけ）。
+            //   ⚠ 掛けっぱなしにならない — ジャックは armed が落ちた次のフレームで必ず消える。
+            _logic.Tick(dt, _cue.Wanted || _jack.Active, _wanted, _cue.Rate);
+
+            // 視界ジャック（canon/LEDGER.md 0099）。
+            // ⚠ **目の Stage==Off の早期 return より前に置く。** 歩く体験者では、目が閉じ切った後も
+            //   ジャックが数百 ms 残る（半分の縁で発火 → 目は追い上げ 1.6s で閉じ、写真は総尺 2.4s）。
+            //   後ろに置くと、その残りのあいだ面が凍る（stale な写真が視界に貼り付いたまま）。
+            DriveJack(dt);
 
             if (_logic.Stage == EyesStage.Off) { Hide(); return; }
             if (_renderer == null || _mat == null) return;
@@ -289,6 +428,80 @@ namespace FixedCamVr.Streaming
             f.y = 0f;
             if (f.sqrMagnitude < 1e-6f) return;
             transform.rotation = Quaternion.LookRotation(f.normalized, Vector3.up);
+        }
+
+        /// <summary>
+        /// 視界ジャックの 1 フレーム分（判断は <see cref="EyeJackLogic"/>、ここは配線と描画だけ）。
+        /// </summary>
+        private void DriveJack(float dt)
+        {
+            bool armed = _jackWanted && _wanted > 0f;
+            _jack.Tick(dt, armed, _logic.Stage, _cue.HalfReached, _photos?.ReadyCount ?? 0);
+
+            if (_jack.JustStarted)
+            {
+                // 発火の瞬間の一式を写し取る（最中にリストが入れ替わっても順序が崩れない）。
+                _jackShots = _photos != null ? _photos.Snapshot() : System.Array.Empty<Texture2D>();
+                _jackShownIndex = -1;
+                JackLastEndWhy = "";
+            }
+            if (_jack.FinishEyesRequested)
+            {
+                // 「写真が終わったら元に戻して目も消えて終わる」（0099）。効くのは次フレームの _cue.Tick。
+                _cue.RequestFinish();
+            }
+            if (_jack.EndedWhy != "") JackLastEndWhy = _jack.EndedWhy;
+
+            if (!_jack.Active || _jackRenderer == null || _jackMat == null
+                || _jackQuad == null || head == null)
+            {
+                HideJack();
+                return;
+            }
+
+            int idx = Mathf.Min(_jack.PhotoIndex, _jackShots.Length - 1);
+            Texture2D? tex = idx >= 0 ? _jackShots[idx] : null;
+            if (tex == null) { HideJack(); return; }
+
+            // 頭に固定（視界そのものの乗っ取りなので、群れと違ってここは向きも追う）。
+            _jackQuad.SetPositionAndRotation(
+                head.position + head.rotation * new Vector3(0f, 0f, JackDistM), head.rotation);
+
+            if (idx != _jackShownIndex)
+            {
+                _jackShownIndex = idx;
+                JackShownTotal++;
+                _jackMat.SetTexture(JackTexId, tex);
+                _jackMat.SetVector(JackUvId, CoverUv(tex));
+            }
+            _jackMat.SetFloat(JackOnId, 1f);
+            _jackRenderer.enabled = true;
+        }
+
+        /// <summary>
+        /// cover-fit の uv 変換（xy = scale / zw = offset）。写真の中央を切り出して面を埋める —
+        /// 余白（黒）を作ると「画像が浮いている」に見えて乗っ取りにならない。
+        /// public なのは Editor プレビュー（EyeJackPreview）が同じ式を使うため（複製すると黙ってずれる）。
+        /// </summary>
+        public static Vector4 CoverUv(Texture2D tex)
+        {
+            float quadAspect = Mathf.Tan(JackHalfFovXDeg * Mathf.Deg2Rad)
+                               / Mathf.Tan(JackHalfFovYDeg * Mathf.Deg2Rad);
+            float photoAspect = tex.height > 0 ? (float)tex.width / tex.height : 1f;
+            if (photoAspect > quadAspect)
+            {
+                float sx = quadAspect / photoAspect;
+                return new Vector4(sx, 1f, (1f - sx) * 0.5f, 0f);
+            }
+            float sy = photoAspect / quadAspect;
+            return new Vector4(1f, sy, 0f, (1f - sy) * 0.5f);
+        }
+
+        private void HideJack()
+        {
+            _jackShownIndex = -1;
+            if (_jackRenderer != null) _jackRenderer.enabled = false;
+            if (_jackMat != null) _jackMat.SetFloat(JackOnId, 0f);
         }
 
         private void Hide()

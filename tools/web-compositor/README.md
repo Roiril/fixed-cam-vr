@@ -321,7 +321,9 @@ node --test "tools/web-compositor/*.test.mjs"
 | POST | `/save?type=image\|video&to=recordings&cam=A` | 📷 静止画 / ⏺ 録画の保存（`to=recordings` で撮影フォルダ、`cam` でファイル名接頭辞。生=`A` / 合成済み=`A_quest`） |
 | GET | `/open-dir?dir=recordings` | 撮影フォルダをファイルマネージャで開く（📂 撮影フォルダ ボタン） |
 | GET | `/captures/list` | カット素材一覧。`captures/` + `recordings/` + `testassets/`（`kind:"test"` 付き・UI は末尾の optgroup へ）。`archive/` は**返さない** |
-| POST/GET | `/unity/heartbeat` / `/unity/status` | Unity の生存・アクティブカメラ報告（**卓サーバ生存判定もこの 2 秒ポーリングが担う**。`/state` は long-poll で最大 25s ブロックするため断の検知に使えない） |
+| GET | `/eyejack/list` | 👁 目の写真の一覧。`eyejack/` の写真を**正規化してから**（長辺 1280 / EXIF の向きを焼き込み / 減光 / JPEG q85）`eyejack/norm/` を返す。`applied[]` は show.json へ配布済みの URL |
+| POST | `/eyejack/apply` | いまの `eyejack/norm/` を show.json の `eyejack.photos[]` へ焼く（**ファイル名順 = 決定的**）。当日の操作はこの 1 つ |
+| POST/GET | `/unity/heartbeat` / `/unity/status` | Unity の生存・アクティブカメラ報告（**卓サーバ生存判定もこの 2 秒ポーリングが担う**。`/state` は long-poll で最大 25s ブロックするため断の検知に使えない）。`eyeJackReady` / `eyeJackListed` = **その機に写真が何枚届いたか**（片方の機だけ欠けるのは無音の失敗） |
 | POST | `/export-build` | 焼き込み。レスポンスに `exportedAt` / `showRev` / `hosts[]`（焼き込んだカメラ接続先）/ `missingCues[]` を含む |
 | GET/POST | `/dwell/stats` / `/dwell/reset` | 区間 (lap,camera) の**実測滞在時間**（heartbeat の `dwell[]` を集計・`dwell_stats.json` に永続化）。リボンの「実測 平均 Ns」が読む |
 

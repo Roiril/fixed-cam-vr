@@ -138,6 +138,9 @@ export function newStep(over = {}) {
     // 闇に開く目（canon/LEDGER.md 0072）。開く目の割合 0..1（0 = 出さない）。
     // 段（兆し 4.0s → 凝視 3.5s → 開眼 3.0s）は実機の AnomalyEyesLogic が持つ ＝ 卓では触れない。
     eyes: 0,
+    // 目の視界ジャック（canon/LEDGER.md 0099）。当日撮った写真をぱぱぱっと流す。
+    // 発火・尺・終わり方は実機の EyeJackLogic が持つ ＝ 卓が指せるのは「やるか」だけ。
+    eyeJack: false,
     // 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）。3 周目 A と 4 周目 A だけが使う。
     // ⚠ **卓にまだ編集 UI が無い**（show.json を手で書く）。ここに置いてあるのは
     //    「卓が保存したときに消えない」ようにするため — serializeStep はキーの白名簿なので、
@@ -204,6 +207,7 @@ function serializeStep(s) {
     burnSec: num(s.burnSec, 0),
     aura: num(s.aura, 0),
     eyes: Math.max(0, Math.min(1, num(s.eyes, 0))),
+    eyeJack: !!s.eyeJack,
     // 左右分割と第 2 層（canon/LEDGER.md 0050）。**卓に編集 UI は無いが必ず書き戻す** —
     // 白名簿から漏れると、show.json へ手で書いた台本が 💾 保存の一押しで消える。
     splitX: Math.max(0, Math.min(1, num(s.splitX, 0))),

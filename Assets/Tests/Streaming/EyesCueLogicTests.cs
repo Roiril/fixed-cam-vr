@@ -167,5 +167,75 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(c.Wanted, Is.False);
             Assert.That(c.Rate, Is.EqualTo(1f));
         }
+
+        // ------------------------------------------- ⑤ 外からの終了要求（視界ジャック・0099）
+
+        /// <summary>
+        /// 視界ジャックの写真が尽きたら「元に戻して目も消えて終わる」（<c>canon/LEDGER.md</c> 0099）。
+        /// 位置の半分と同じ扱いで閉じへ入る。
+        /// </summary>
+        [Test]
+        public void RequestFinish_WhileOpen_StartsClosing()
+        {
+            var c = new EyesCueLogic();
+            c.Tick(true, EyesStage.Off, Span(0f));
+            c.Tick(true, EyesStage.Hold, Span(0.2f));   // まだ半分に達していない
+            Assert.That(c.Finishing, Is.False);
+
+            c.RequestFinish();
+            c.Tick(true, EyesStage.Hold, Span(0.2f));
+            Assert.That(c.Finishing, Is.True, "写真が尽きたら閉じへ入る");
+            Assert.That(c.Wanted, Is.False, "開き切っているのでそのまま閉じる");
+        }
+
+        [Test]
+        public void RequestFinish_OutsideRun_DoesNotCarryOver()
+        {
+            var c = new EyesCueLogic();
+            c.RequestFinish();                          // 出番の外で言われた
+            c.Tick(true, EyesStage.Off, Span(0f));
+            Assert.That(c.Finishing, Is.False, "次の出番へ持ち越さない");
+        }
+
+        [Test]
+        public void RequestFinish_WorksWithoutSpan()
+        {
+            // 位置を測れない現場でも、止まっている体験者の「写真が終わったら閉じる」は成立する。
+            var c = new EyesCueLogic();
+            c.Tick(true, EyesStage.Off, default);
+            c.Tick(true, EyesStage.Hold, default);
+            c.RequestFinish();
+            c.Tick(true, EyesStage.Hold, default);
+            Assert.That(c.Finishing, Is.True);
+        }
+
+        // ------------------------------------------- ⑥ 半分に「実際に到達した」の観測（0099）
+
+        [Test]
+        public void HalfReached_TracksPositionOnly_NotCutEnd()
+        {
+            var c = new EyesCueLogic();
+            c.Tick(true, EyesStage.Off, Span(0f));
+            Assert.That(c.HalfReached, Is.False);
+
+            // カットが終わっただけでは立たない（ジャックを次の区間で始めさせない）。
+            c.Tick(armed: false, EyesStage.Hint, Span(0.2f, camera: 0, visit: 8));
+            Assert.That(c.HalfReached, Is.False);
+            Assert.That(c.Finishing, Is.True, "終了演出そのものは従来どおり入る");
+        }
+
+        [Test]
+        public void HalfReached_SetsAtHalf_AndClearsForNextRun()
+        {
+            var c = new EyesCueLogic();
+            c.Tick(true, EyesStage.Off, Span(0f));
+            c.Tick(true, EyesStage.Swarm, Span(0.5f));
+            Assert.That(c.HalfReached, Is.True);
+
+            c.Tick(true, EyesStage.Hold, Span(0.9f));   // 追い上げ → 開き切った
+            c.Tick(true, EyesStage.Off, Span(0.9f));    // 閉じ切った
+            c.Tick(true, EyesStage.Off, Span(0.0f, camera: 0, visit: 9));
+            Assert.That(c.HalfReached, Is.False, "次の出番へ持ち越さない");
+        }
     }
 }

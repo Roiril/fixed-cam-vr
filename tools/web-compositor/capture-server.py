@@ -59,16 +59,25 @@ AUDIO = os.path.join(ROOT, 'audio')
 # 🕹 ショーシミュレーションで記録した「歩き方」（scenario JSON）。show.json とは混ぜない
 # （ショーの設定と検証入力を分ける・計画 2026-07-25_show-simulator.md §6）。
 SCENARIOS = os.path.join(ROOT, 'scenarios')
+# 目の視界ジャックに流す当日写真（canon/LEDGER.md 0099）。
+#   eyejack/      ← 当日、撮った写真をそのまま放り込む場所（人が触るのはここだけ）
+#   eyejack/norm/ ← サーバが正規化したもの（実際に配るのはこちら）
+# ⚠ **正規化は必ず PC で済ませる。** 12MP をそのまま端末へ配ると、Quest の
+#   Texture2D.LoadImage で 1 枚 50MB 級の一時確保が走り、EXIF の回転も効かない（縦写真が横を向く）。
+EYEJACK = os.path.join(ROOT, 'eyejack')
+EYEJACK_NORM = os.path.join(EYEJACK, 'norm')
 os.makedirs(CAPTURES, exist_ok=True)
 os.makedirs(MASKS, exist_ok=True)
 os.makedirs(RECORDINGS, exist_ok=True)
 os.makedirs(AUDIO, exist_ok=True)
 os.makedirs(TESTASSETS, exist_ok=True)
+os.makedirs(EYEJACK_NORM, exist_ok=True)
 
 # /save?to= と /open-dir?dir= の保存先ホワイトリスト（パストラバーサル防止）
 SAVE_DIRS = {'captures': CAPTURES, 'recordings': RECORDINGS}
 # /open-dir?dir= だけで開いてよいフォルダ（保存はしない）
-OPEN_DIRS = {'testassets': TESTASSETS, 'archive': ARCHIVE, 'audio': AUDIO, 'masks': MASKS}
+OPEN_DIRS = {'testassets': TESTASSETS, 'archive': ARCHIVE, 'audio': AUDIO, 'masks': MASKS,
+             'eyejack': EYEJACK}
 
 # エクスポート時に「ローカル URL → 実ファイル」を解決するディレクトリ対応表。
 LOCAL_URL_DIRS = {
@@ -78,6 +87,7 @@ LOCAL_URL_DIRS = {
     '/static-inputs/': STATIC_INPUTS,
     '/audio/': AUDIO,
     '/testassets/': TESTASSETS,
+    '/eyejack/norm/': EYEJACK_NORM,
 }
 # リポジトリルート（tools/web-compositor から 2 つ上）。エクスポート先の解決に使う。
 REPO_ROOT = os.path.dirname(os.path.dirname(ROOT))
@@ -96,6 +106,13 @@ REPO_ROOT = os.path.dirname(os.path.dirname(ROOT))
 #     ・同時 1 ジョブ・上限 300 秒。超えたら子ごと殺す（Windows は powershell を殺しても
 #       codex の子が残るので taskkill /T /F）
 #     ・生成は show.json を一切書かない（cue にするのは既存の 💾 経路だけ）
+# 目の視界ジャックの写真を正規化するときの値（canon/LEDGER.md 0099）。
+#   長辺: 全視界に出すので、これ以上あっても見た目が変わらないのに端末の確保だけが増える。
+#   明るさ: **暗順応した視界へ出す**ので落とす（そのままだと眩しい。LEDGER 0015「不快にはならないように」）。
+#   ⚠ 実機で見て決め直す値。ここを触ったら `menu eyejack` の絵と実機の走行を対で見る。
+EYEJACK_LONG_EDGE = 1280
+EYEJACK_BRIGHTNESS = 0.72
+
 GEN_WORK = os.path.join(tempfile.gettempdir(), 'fixedcam-gen')
 GEN_TIMEOUT_SEC = 300
 CODEX_RUNNER = os.path.join(os.path.expanduser('~'), '.claude', 'scripts', 'codex-run.ps1')
@@ -319,6 +336,10 @@ def _default_show():
                    'maxTotalMB': 200, 'fpsCap': 15},
         # CG レイヤに立てる人形の定義（cameras[i].pose が著作済みのカメラでのみ出る）。
         'actors': [],
+        # 目の視界ジャックに流す当日写真（canon/LEDGER.md 0099）。
+        # 卓の「👁 目の写真」パネルが eyejack/norm/ の一覧をここへ焼く（ファイル名順 = 決定的）。
+        # 空 = ジャックは出ない（目は従来どおり）。
+        'eyejack': {'photos': []},
         # レンズ（内部パラメータ）。cameras[i].lensRef が参照する。
         # 較正で「画角を固定して解く」ときの供給源で、**同型機で共有できる**のが要点
         # （旧: 供給源が「そのカメラの前回の解」だけで、4 点で雑に解いた f が翌日
@@ -1168,6 +1189,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._get_generate_status(parse_qs(urlparse(self.path).query))
         if path == '/audio/list':
             return self._json(self._list_audio())
+        if path == '/eyejack/list':
+            return self._get_eyejack()
         if path == '/reveal':
             q = parse_qs(urlparse(self.path).query)
             return self._reveal(q.get('name', [''])[0])
@@ -1500,6 +1523,9 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path.startswith('/atelier'):
             return self._atelier_post(parsed)
 
+        # 目の視界ジャックの当日写真を show.json へ焼く（canon/LEDGER.md 0099）。
+        if parsed.path == '/eyejack/apply':
+            return self._post_eyejack_apply()
 
         return self._json({'ok': False, 'error': 'unknown endpoint'}, 404)
 
@@ -1526,7 +1552,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     # show.json の部分更新。トップレベルの許可キーのみ shallow に置換する。
     _STATE_KEYS = ('cameras', 'cues', 'post', 'control', 'layout', 'schedule', 'timeline',
-                   'bgmTracks', 'bgm', 'actors', 'record', 'run', 'lenses', 'feel')
+                   'bgmTracks', 'bgm', 'actors', 'record', 'run', 'lenses', 'feel', 'eyejack')
 
     def _post_state(self):
         body = self._read_json_body()
@@ -1695,6 +1721,14 @@ class Handler(SimpleHTTPRequestHandler):
         for step in self._step_asset_slots(show):
             step['assetUrl'] = bake(step['assetUrl'])
 
+        # 目の視界ジャックの当日写真（canon/LEDGER.md 0099）。焼き込んでおけば、
+        # **卓が居ない機でも写真が出る**（当日の保険。写真は撮った直後に焼き直すのが本筋だが、
+        # 焼けなかった機は long-poll で受け取る → どちらの経路でも成立する）。
+        ej = show.get('eyejack') or {}
+        if ej.get('photos'):
+            ej['photos'] = [bake(u) for u in ej['photos'] if u]
+            show['eyejack'] = ej
+
         # cue 参照走査: timeline / schedule / ライブ control が指す cueId が cues[] に実在するか検証。
         # 全 cue のアセットは上のループで焼き込み済み（cueId 参照は新規アセットを持たない）ため
         # 追加コピーは不要。ここでは dangling 参照を missingCues として返し UI で気づけるようにする。
@@ -1813,6 +1847,90 @@ class Handler(SimpleHTTPRequestHandler):
                                   x['name'] if x['kind'] == 'test' else '',
                                   -x['mtime']))
         return items
+
+    # ---- 目の視界ジャックの当日写真（canon/LEDGER.md 0099）----------------------
+
+    def _sync_eyejack(self):
+        """`eyejack/` に置かれた写真を正規化して `eyejack/norm/` へ揃え、一覧を返す。
+
+        当日の手順を「フォルダへ写真を放り込む」1 つに畳むための層。
+        **正規化はここ（PC）で完結させる** — 端末でやると失敗が実機でしか出ず、当日直せない。
+
+        やること 4 つ:
+          ・EXIF の回転を**画素へ焼き込む**（Unity は EXIF を読まないので、やらないと縦写真が横を向く）
+          ・長辺 1280 へ縮小（全視界に出すので、これ以上は見た目が変わらないのに 50MB 級の確保が走る）
+          ・**暗順応した視界へ出すので減光する**（そのままだと眩しい。LEDGER 0015「不快にはならないように」）
+          ・JPEG q85 で書き直す
+
+        元ファイルは触らない（撮り直しの原本なので）。元より新しい正規化物があれば作り直さない。
+        """
+        items, errors = [], []
+        if not os.path.isdir(EYEJACK):
+            return {'items': items, 'errors': errors, 'dir': EYEJACK}
+        try:
+            from PIL import Image, ImageEnhance, ImageOps
+        except ImportError:
+            return {'items': items, 'dir': EYEJACK,
+                    'errors': ['Pillow が入っていないので写真を正規化できません'
+                               '（py -3.11 -m pip install pillow）']}
+
+        for n in sorted(os.listdir(EYEJACK), key=str.lower):
+            src = os.path.join(EYEJACK, n)
+            if not os.path.isfile(src):
+                continue
+            ext = n.rsplit('.', 1)[-1].lower() if '.' in n else ''
+            if ext not in ('jpg', 'jpeg', 'png', 'webp', 'bmp'):
+                continue
+            stem = os.path.splitext(n)[0]
+            dest = os.path.join(EYEJACK_NORM, stem + '.jpg')
+            try:
+                if (not os.path.exists(dest)
+                        or os.path.getmtime(dest) < os.path.getmtime(src)):
+                    with Image.open(src) as im:
+                        im = ImageOps.exif_transpose(im).convert('RGB')
+                        im.thumbnail((EYEJACK_LONG_EDGE, EYEJACK_LONG_EDGE), Image.LANCZOS)
+                        im = ImageEnhance.Brightness(im).enhance(EYEJACK_BRIGHTNESS)
+                        im.save(dest, 'JPEG', quality=85, optimize=True)
+                st = os.stat(dest)
+                with Image.open(dest) as im2:
+                    wpx, hpx = im2.size
+                items.append({'name': stem + '.jpg', 'url': '/eyejack/norm/' + quote(stem + '.jpg'),
+                              'src': n, 'w': wpx, 'h': hpx,
+                              'size': st.st_size, 'mtime': st.st_mtime})
+            except Exception as e:      # 1 枚の失敗で全部を落とさない（当日、他の写真は使える）
+                errors.append(f'{n}: {e}')
+
+        # 元が消えた写真の正規化物を掃除する（消したのに配り続けない）。
+        keep = {it['name'] for it in items}
+        for n in os.listdir(EYEJACK_NORM):
+            if n not in keep and os.path.isfile(os.path.join(EYEJACK_NORM, n)):
+                try:
+                    os.remove(os.path.join(EYEJACK_NORM, n))
+                except OSError:
+                    pass
+        return {'items': items, 'errors': errors, 'dir': EYEJACK}
+
+    def _get_eyejack(self):
+        """写真を正規化してから一覧を返す（卓の「👁 目の写真」パネルが 1 回だけ叩く）。"""
+        data = self._sync_eyejack()
+        with _show_cond:
+            data['applied'] = list((_show.get('eyejack') or {}).get('photos') or [])
+        return self._json(data)
+
+    def _post_eyejack_apply(self):
+        """いま `eyejack/norm/` にある写真を show.json の `eyejack.photos[]` へ焼く。
+
+        ⚠ **URL の並びはファイル名順**（決定的 — 同じ版なら同じ順で出る）。
+        """
+        data = self._sync_eyejack()
+        urls = [it['url'] for it in data['items']]
+
+        def apply(show):
+            show['eyejack'] = {'photos': urls}
+
+        _mutate_show(apply)
+        return self._json({'ok': True, 'count': len(urls), 'photos': urls,
+                           'errors': data['errors']})
 
     # ---- 素材工房 -------------------------------------------------------------
 

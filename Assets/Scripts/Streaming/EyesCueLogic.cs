@@ -51,9 +51,17 @@ namespace FixedCamVr.Streaming
         /// <summary>この区間ではもう出し切った（同じ滞在で二度目を始めない）。</summary>
         public bool Spent { get; private set; }
 
+        /// <summary>
+        /// <b>区間の半分（<see cref="FinishAt"/>）に体験者が実際に到達したか</b>。
+        /// <see cref="Finishing"/> と違い、カットの終わり（<c>armed</c> 落ち）や区間離脱では立たない。
+        /// 視界ジャック（<see cref="EyeJackLogic"/>）が「歩き続ける体験者」の発火の縁として読む。
+        /// </summary>
+        public bool HalfReached { get; private set; }
+
         private bool _hasSpan;
         private int _startCamera = -1;
         private int _startVisit = -1;
+        private bool _finishRequested;
 
         /// <summary>やり直す（ラン開始・中止）。</summary>
         public void Reset()
@@ -63,9 +71,22 @@ namespace FixedCamVr.Streaming
             Finishing = false;
             Running = false;
             Spent = false;
+            HalfReached = false;
             _hasSpan = false;
             _startCamera = -1;
             _startVisit = -1;
+            _finishRequested = false;
+        }
+
+        /// <summary>
+        /// <b>外の層が「終了演出に入れ」と言った</b>（視界ジャックの写真が尽きた —
+        /// 「動かなかったら写真が終わったら元に戻して目も消えて終わる」・<c>canon/LEDGER.md</c> 0099）。
+        /// 位置の半分と同じ扱いで、開き切っていなければ追い上げてから閉じる。
+        /// 出番の外で呼ばれたら何もしない（次の出番へ持ち越さない）。
+        /// </summary>
+        public void RequestFinish()
+        {
+            if (Running) _finishRequested = true;
         }
 
         /// <summary>1 フレーム分の判断。</summary>
@@ -80,6 +101,8 @@ namespace FixedCamVr.Streaming
             {
                 Running = false;
                 Finishing = false;
+                HalfReached = false;
+                _finishRequested = false;
                 Spent = true;
             }
             if (Spent && (!armed || (span.valid && span.visit != _startVisit))) Spent = false;
@@ -90,10 +113,13 @@ namespace FixedCamVr.Streaming
                 {
                     Wanted = false;
                     Rate = 1f;
+                    _finishRequested = false;
                     return;
                 }
                 Running = true;
                 Finishing = false;
+                HalfReached = false;
+                _finishRequested = false;
                 _hasSpan = span.valid;
                 _startCamera = span.camera;
                 _startVisit = span.visit;
@@ -105,7 +131,8 @@ namespace FixedCamVr.Streaming
             bool left = !armed || (_hasSpan && !sameVisit);
             // C の長さの半分まで来た。
             bool half = sameVisit && span.progress01 >= FinishAt;
-            if (left || half) Finishing = true;
+            if (half) HalfReached = true;
+            if (left || half || _finishRequested) Finishing = true;
 
             // 閉じ始められるのは開き切ってから。閉じ始めたらもう戻らない。
             bool openDone = stage == EyesStage.Hold || stage == EyesStage.Fading;

@@ -106,6 +106,10 @@ $Menus = [ordered]@{
                             Desc = 'スクリーンの外の闇に目が開く異変を 1 コマずつ焼く（-Set density=0..1 / → make-preview-video.py で mp4）'
                             Set = 'density=<0..1 開く目の割合> / trim=<止まる 3 つを詰める秒> / hold=<開けっ放しの秒>'
                             Out = 'Assets/Screenshots/eyes-preview/stage_4_hold.png' }
+    'eyejack'          = @{ Method = 'FixedCamVr.Streaming.EditorTools.EyeJackPreview.Run'
+                            Desc = '目の視界ジャック（当日写真ぱぱぱ）を stationary / walker の 2 通りで焼く（→ make-preview-video.py で mp4）'
+                            Set = 'photos=<正規化済み写真のフォルダ（既定 tools/web-compositor/eyejack/norm）>'
+                            Out = 'Assets/Screenshots/eyejack-preview/stationary_f0000.png' }
     'walkguide'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.WalkGuidePreview.Run'
                             Desc = 'タイトル直後の歩行誘導（床の矢印と円）を 1 コマずつ焼く（-Set show=<show.json> / → make-preview-video.py で mp4）'
                             Set = 'show=<show.json のパス>'
