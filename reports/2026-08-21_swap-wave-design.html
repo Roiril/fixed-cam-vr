@@ -1,0 +1,416 @@
+<title>黒い波の設計</title>
+<style>
+/* ============================================================
+ * report.css — 単一ファイル HTML レポート用テーマ
+ *
+ * 正本: ~/.claude/reference/design-tokens.md
+ *   → このファイルは派生。値を変えたいときは正本を直してからここへ配る。
+ *
+ * 使い方: style タグの中へ**全文インライン展開**する。
+ *   ⚠ このファイルの中に閉じタグの文字列を書かないこと。HTML の style 要素は
+ *     CSS コメントの中だろうと最初の閉じタグで終わるので、**以降の CSS が本文として画面に出る**
+ *     （2026-08-17 実害。この行自体が原因だった）。
+ *   外部参照は禁止（output-format.md: 単一ファイル・CDN 禁止・恒久的に開ける状態）。
+ * ============================================================ */
+
+:root {
+  /* --- color: light（既定） --------------------------------- */
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;  /* 18px+ / 太字 / 囲み線 / 図形のみ */
+  --accent-strong:    #a8493c;  /* 本文サイズの文字・リンク（AA） */
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  /* --- type ------------------------------------------------- */
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;    /* 12px  チップ・脚注 */
+  --fs-sm:   .875rem;   /* 14px  キャプション・表・出典 */
+  --fs-base: 1rem;      /* 16px  本文 */
+  --fs-md:   1.125rem;  /* 18px  リード・小見出し */
+  --fs-lg:   1.375rem;  /* 22px  h2 */
+  --fs-xl:   1.875rem;  /* 30px  h1 */
+
+  /* --- space（4px 系列。この外の値を書かない） ---------------- */
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;     /* 本文計測幅 */
+  --radius: 0;          /* 角丸は 0。円形要素のみ 50% を直接書く */
+}
+
+/* --- color: dark（OS 設定とページ属性の両方に追随） ------------ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+/* ============================================================
+ * base
+ * ============================================================ */
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+/* --- 見出し（明朝。上に置き、下または上に罫） ------------------ */
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }          /* 構造上の強調＝色なし */
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); } /* 意味強調＝1 節に 1〜2 回 */
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+/* ============================================================
+ * 部品
+ * ============================================================ */
+
+/* 見出し上の小ラベル */
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+/* タイトル直下の副題・日付 */
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+/* 結論の先出し */
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+/* 並列カード（3 列を目的にしない。中身の数で自然に折り返す） */
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+/* 時系列 */
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li {
+  border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4);
+  position: relative; margin: 0;
+}
+.tl > li::before {
+  content: ""; position: absolute; left: -5px; top: .55em;
+  width: 8px; height: 8px; background: var(--accent);
+}
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+/* 状態ラベル */
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+/* 表（必ず .tblwrap で囲む — 横スクロールは body ではなく表の側で） */
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+/* 図 */
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+/* 問いと答え */
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+/* コード */
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+/* 表内のトークン名・パスは折り返さない（狭幅では .tblwrap の横スクロールで吸収する） */
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+/* 弱い情報・末尾の注記 */
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+/* ============================================================
+ * responsive / motion / print
+ * ============================================================ */
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+<div class="wrap">
+  <p class="eyebrow">廻リ視 · 入れ替わりの覆い（transition:"swap"） · 設計のみ</p>
+  <h1>黒い波の設計</h1>
+  <p class="sub">かっこよく・アートチックに・インタラクティブに ／ 2026-08-21 シュビー</p>
+
+  <div class="lead">
+    <p>美学の柱を 3 本立て、その下に設計を 8 本置く。骨子は「<strong>波は揺れずに走る</strong>」
+    「<strong>ほつれが墨の質感を作る</strong>」「<strong>応答するのは黒（呪い）だけ</strong>」。
+    実装は 3 段階に分け、1 段ごとに白地の動画で判定する。隠し切り（芯 ∪ 棒の構造・0091・0100）は
+    1 ビットも触らない。</p>
+  </div>
+
+  <h2>1. 美学の柱 — 全部の判断をここから導く</h2>
+
+  <div class="grid">
+    <div class="card">
+      <h3>縦は機械、横は生き物</h3>
+      <p>帯の格子（48 行の等間隔）は装置の走査線で、<strong>縦は絶対に揺らさない</strong>。
+      有機的な動きはすべて横方向（端の波・ほつれ・走り）に置く。
+      機械の規則の上で黒だけが生きて動く、という対比が「アートチック」の正体。
+      帯を回す・行の高さを揺らす・縦に曲げる、は全部この柱に反するので却下。</p>
+    </div>
+    <div class="card">
+      <h3>装置は正直、呪いは応答する</h3>
+      <p>インタラクティブにするのは<strong>黒だけ</strong>。映像・post・カメラは 1 ビットも
+      反応しない。作品の恐怖は「装置は正直に映している」という信頼の上に乗っているので、
+      装置側を反応させた瞬間に壊れる。呪いだけが体験者に応える、という分離が
+      インタラクティブ性と正直さを両立させる唯一の形。</p>
+    </div>
+    <div class="card">
+      <h3>黒だけで組む</h3>
+      <p>明るい線・色・白は使わない（0091）。かっこよさは<strong>形と時間（緩急）だけ</strong>で作る。
+      参考画像の美しさは「太い筆致 ＋ かすれ ＋ 余白」＝ 書の語彙であって、色の語彙ではない。</p>
+    </div>
+  </div>
+
+  <h2>2. 「かっこいい」の分解 — いまの波に足りない 4 つ</h2>
+
+  <p>いまの波は対称な sin の重ね合わせ ＝ <strong>振り子</strong>。連続で読めるが穏やかで、
+  「ゆらゆらした切り絵」に寄っている。動きのかっこよさの文法に照らすと、足りないのは:</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>文法</th><th>いま</th><th>あるべき形</th></tr>
+    <tr><td><strong>緩急</strong></td><td>sin ＝ 立ち上がりも減衰も同じ速さ</td>
+        <td>立ち上がりは速く、減衰は遅く（attack–decay の非対称パルス）</td></tr>
+    <tr><td><strong>方向</strong></td><td>全帯がその場で伸縮するだけ。山が移動しない</td>
+        <td>波の山が体を<strong>走る</strong>。向きは段の物語と結ぶ</td></tr>
+    <tr><td><strong>対比</strong></td><td>太い棒だけ。密度が一様</td>
+        <td>太い芯と細く長い針の対比。密な帯群と疎な帯群の呼吸</td></tr>
+    <tr><td><strong>キメ</strong></td><td>差し替えの縁に画の変化が無い（乱れパルスだけ）</td>
+        <td>物語の縁（justSwapScreen）に視覚の最大の一拍を置く</td></tr>
+  </table></div>
+
+  <h2>3. 設計 8 本</h2>
+
+  <h3>A. 走る波（背骨）</h3>
+  <p><strong>何</strong>: 波の山（crest）が体を駆け抜ける成分を 1 本足す。形は sin ではなく
+  非対称パルス — 山の前縁は 0.05 体高で立ち上がり、後ろへ exp で減衰して尾を引く。
+  山の間隔は体高の 1.2 倍（画面にいつも 1 つだけ山がある）。</p>
+  <p><strong>向きは段の物語と結ぶ</strong>:</p>
+  <div class="tblwrap"><table>
+    <tr><th>段</th><th>山の走り方</th><th>なぜ</th></tr>
+    <tr><td>ほどける</td><td>前線と同じ向きに、前線より約 1.5 倍速く</td>
+        <td>波が前線の先触れになる。「これから食われる場所」を波が先に舐める</td></tr>
+    <tr><td>縮む / 育つ</td><td>行き先（人形の足元 / 人の背丈）へ向かって収束 / 湧き上がる</td>
+        <td>吸い込み・成長に方向の証拠が付く</td></tr>
+    <tr><td>晴れる</td><td>最後の 1 本が走り抜け、その<strong>後ろから</strong>帯が消える</td>
+        <td>波が体を「離れていく」。終わりに因果が付く</td></tr>
+  </table></div>
+  <p><strong>骨子</strong>: <code>SwapWaveExt</code> に crest 項を足す。
+  <code>crest(rowN, t) = amp · pulse(frac((rowN − c(t)) / 間隔))</code>、c(t) は段の進みから導く
+  （時計は既存の <code>_SwapCover</code> / <code>_SwapThread</code> / <code>_SwapSeed</code> で足りる）。</p>
+
+  <h3>B. 細いほつれ（質感）</h3>
+  <p><strong>何</strong>: 帯の中の細い帯（15px の行のうち縦中央 5px）が、棒の先からさらに伸びる針。
+  長さは<strong>裾の重い分布</strong> — 短いのが大半、ごく稀にすごく長い。参考画像の実測
+  （中央値 13px / 最大 257px）をそのまま設計値にする。行ごとの長さは hash(行) で固定。</p>
+  <p><strong>時間の繋ぎ方が要点</strong>: 針の長さを時間で乱数的に変えるとパチパチする（0098 で
+  階段を廃した理由と同じ）。⇒ <strong>針は A の山に引きずり出される</strong> —
+  crest が通っている行だけ針が伸び、通り過ぎると縮む。時間は連続のまま、
+  「波が体から糸を引き抜いていく」という因果が画に出る。</p>
+  <p><strong>縮む段だけ向きを持たせる</strong>: 針が行き先へ向かって流れる ＝ モーションライン。
+  吸い込みの方向性は A と B の二重で効かせる。</p>
+
+  <h3>C. 稀に跳ぶ帯（アクセント）</h3>
+  <p><strong>何</strong>: hash(行) 上位 10% の行だけ、段あたり 1〜2 回、一瞬だけ大きく突き出して戻る
+  （立ち上がり 0.15 秒・減衰 0.3 秒）。規則的な波の上に事故のような棘が乗り、信号の乱れらしくなる。</p>
+  <p class="note">頻度を上げると全体がノイズへ戻って 0089（全画面の乱れの否定）に逆行する。
+  入れすぎの検査は「1 画面に同時に跳んでいる帯 ≤ 2」。</p>
+
+  <h3>D. キメの一拍（物語の縁と視覚の縁を揃える）</h3>
+  <p><strong>何</strong>: <code>justSwapScreen</code>（画面が実際に差し替わる 1 フレーム）の縁から
+  0.25 秒、最大の山が全身を走り抜ける。振幅 2 倍・針 2 倍。既存の乱れパルス（0.55 × 0.20 秒）と
+  同じ縁なので、<strong>画・乱れ・音（sfx_glitch）が同じ瞬間に揃う</strong>。新しい音は足さない
+  （sound-design 規約 — 装置の音はもう鳴っている）。</p>
+  <p><strong>なぜ</strong>: 世界が実際に変わるフレームがそこ。いちばん大きい視覚の一拍を
+  物語のいちばん大きい縁に置くのが「キメ」の定義そのもの。</p>
+
+  <h3>E. 全身のエネルギー（インタラクティブ第 1 層 — 歩速）</h3>
+  <p><strong>何</strong>: 体験者の歩く速さが波の全体エネルギーになる。
+  立ち止まると波が静かな呼吸に沈み、歩く・動くと荒れる。</p>
+  <div class="tblwrap"><table>
+    <tr><th>項目</th><th>設計</th></tr>
+    <tr><td>入力</td><td>頭の XZ 速度（<code>BodyInputHistory</code> 由来。新しいセンサ無し）</td></tr>
+    <tr><td>平滑</td><td>半減期 0.8 秒（純ロジック <code>SwapEnergyLogic</code>・dt 注入・テスト可能）</td></tr>
+    <tr><td>写像</td><td>energy = clamp01(速度 / 1.2 m/s)。振幅倍率 0.55 + 0.45·energy ／ 山の速さ 0.7 + 0.6·energy</td></tr>
+    <tr><td>下限</td><td>静止でも 0.55（完全に止めると死んで見える。静の怖さは「小さく蠢き続ける」こと）</td></tr>
+  </table></div>
+  <p><strong>なぜ効くか</strong>: 説明ゼロで「自分に反応している」を発見させられる。
+  体験者は本能的に足を止める → 波が静まる → また動くと目を覚ます。
+  行動のループが指示なしで生まれる。これが「インタラクティブ」の本体。</p>
+  <p><strong>規律</strong>: 変わるのは見た目だけ。<strong>総尺・段の進行・差し替えの縁は
+  1 ミリも動かさない</strong>（動かすと「歩かない体験者で演出が終わらない」を作る）。</p>
+
+  <h3>F. 局所のホットスポット（インタラクティブ第 2 層 — 手）</h3>
+  <p><strong>何</strong>: 手が速く動いた場所の周辺だけ、帯の振幅・針・跳びが増える。
+  腕を振ると<strong>その腕のあたりの波が毛羽立つ</strong>。</p>
+  <div class="tblwrap"><table>
+    <tr><th>項目</th><th>設計</th></tr>
+    <tr><td>入力</td><td>既にある <code>ShowBodyInput</code>（頭＋両手のワールド位置）。CG と同じ較正で画面へ投影（<code>TryActorFocus</code> と同じ流儀）</td></tr>
+    <tr><td>uniform</td><td>手 2 点 ×（uv + 半径 + エネルギー）＝ 2 本。テクスチャ読み増ゼロ</td></tr>
+    <tr><td>結合</td><td>弱く（ゲイン 0.2〜0.4）。平滑の遅れ 0.3 秒は消さない — 遅れて反応することが「気づかれた」と読ませる演出そのもの</td></tr>
+    <tr><td>退化</td><td>手が取れない（コントローラ持ち・トラッキング切れ）→ エネルギー 0 → A〜D の絵に自然に落ちる。切り分けの分岐を増やさない</td></tr>
+  </table></div>
+
+  <h3>G. 追従そのもの（インタラクティブ第 3 層 — 既にある。軸として明文化）</h3>
+  <p>差分マスクはライブの本人を毎フレーム追う（腕を上げれば黒も上がる — 0091 の
+  「黒いものが自分の腕などに合わせて動くことで分かる」はここで既に成立している）。
+  人形 → 人の育つ塊は<strong>いまの立ち位置</strong>に付いてくる（CG follow）。
+  横へ一歩ずれると黒が付いてくる — これが第 3 層。<strong>新規実装ゼロ</strong>。
+  設計上の指示は 1 つだけ: <code>BodyInputHistory</code> の 0.15 秒の遅れを「ずれ」として
+  消しにいかない。あの遅れが生き物性そのもの。</p>
+
+  <h3>H. 余韻（終わり方が上品さを決める）</h3>
+  <p>人 → 人形: 晴れた後、人形の輪郭に針が 2〜3 本だけ 0.5 秒残ってから引く
+  （呪いが食事を終える）。人形 → 人: 最後の帯が人の肩から上へ剥がれて終わる。
+  どちらも「消える」ではなく「離れる」。A の晴れ方（最後の山の後ろから消える）と同じ原理の適用。</p>
+
+  <h2>4. やってはいけない側（この設計の外周）</h2>
+
+  <ul>
+    <li><strong>進行を入力にしない。</strong> 入れ替わりは体験者が何をしても必ず完走する
+    （watchdog の思想）。入力が変えてよいのは見た目だけ</li>
+    <li><strong>報告ボタンを読まない</strong>（0050。読んでよいのは untilMark の 1 か所だけ）</li>
+    <li><strong>乱数を使わない。</strong> hash（行・周期番号）と体の入力だけ。同じ入力 → 同じ絵</li>
+    <li><strong>フレーム履歴を持たない。</strong> 残像が欲しければ「同じ波を 0.1 秒前の時刻で再評価して
+    薄く引く」で決定論のまま作れる（ただし薄い黒は体の外にしか置けない — 隠し切りは常に全黒）</li>
+    <li><strong>明るい線を出さない</strong>（0090・0091）。かすれ・針・山、全部黒</li>
+    <li><strong>映像側を反応させない。</strong> post・露出・乱れの育ち（GlitchEscalation）に
+    体の入力を混ぜない — 応答するのは呪いだけ</li>
+  </ul>
+
+  <h2>5. 判定の設計（作る前に決めておく）</h2>
+
+  <ul>
+    <li><strong>静止画では判定できない</strong>（走る波・エネルギー応答は動画でしか見えない）。
+    門は白地の動画: <code>menu swap -Set plate=white</code> → <code>make-preview-video.py</code></li>
+    <li><strong>層を 1 つずつ入れて焼く。</strong> <code>-Set</code> フラグで A〜F を個別に
+    切れるようにする。まとめて入れると「どれが効いたか」が消える（troubleshooting の教訓）</li>
+    <li><strong>機械の門 3 つ</strong>: ①隠し切り不変（白地 covered の人の灰色 ≤ 現行 3% 台）
+    ②山の移動が時系列で観測できる（行ごとの端 x を抽出 → 山の行位置が単調に動く）
+    ③針の長さ分布（中央値 / 最大の比が参考画像 13/257 のオーダー）</li>
+    <li><strong>E / F はプレビューに「台本の動き」が要る。</strong> 代役が
+    静止 1 秒 → 歩行 1 秒 → 手を振る、を演じる台本を <code>ShowSwapPreview</code> に足す。
+    これが無いと応答の層は絵で判定できない（実機頼みになる）</li>
+    <li><strong>最終判定は実機で人が被って歩く。</strong> 自動走行はカメラの前に誰も居ないので
+    覆いが 1 画素も出ない（20260821_052102 で確定済み）。機械で取れるのは
+    mask / rect / vis / 被覆まで</li>
+  </ul>
+
+  <h2>6. 実装の段階</h2>
+
+  <ul class="tl">
+    <li><span class="date">第 1 段</span><span class="headline">A ＋ B ＋ D（かっこよさの背骨）</span>
+    入力なし。シェーダ（SwapWaveExt / mixBar）と SwapMorphFx の uniform 1 個（キメの経過秒）だけ。
+    白地動画で判定して赤入れをもらう</li>
+    <li><span class="date">第 2 段</span><span class="headline">E ＋ G の明文化（全身の応答）</span>
+    純ロジック SwapEnergyLogic ＋ uniform 1 個 ＋ プレビューの台本。実機で被って確かめる価値が
+    初めて出る段</li>
+    <li><span class="date">第 3 段</span><span class="headline">F ＋ C ＋ H（局所応答・アクセント・余韻）</span>
+    1・2 段の赤入れを見てから量を決める（特に C は入れすぎが下品）</li>
+    <li><span class="date">保留</span><span class="headline">視線への反応（判定待ち）</span>
+    画面を見つめると波が一瞬静まる＝「見られていることを呪いが知覚する」。強いが、
+    呪いの性格（世界観）を新しく決める話なので OPEN.md の案に置いた。ユーザーが口にするまで実装しない</li>
+  </ul>
+
+  <h2>7. コストと危険</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>何</th><th>見立て</th></tr>
+    <tr><td>GPU</td><td>全部 ALU のみ（新しいテクスチャ読みゼロ）。既存の箱棄却の内側 ＝ 画面の 1〜2 割 × 2.6 秒。
+    隔離殻の 90→39fps の型（全画面で毎画素の重い数式）には当たらない</td></tr>
+    <tr><td>決定論</td><td>入力駆動になるほど「プレビュー ＝ 台本、実機 ＝ 本人」の差が広がる。
+    台本を実機のテレメトリ（実走行の頭・手の軌跡）から作れば埋まる — 将来の手として記録</td></tr>
+    <tr><td>過剰化</td><td>E・F のゲインを上げすぎると「呪い」ではなく「エフェクトのデモ」になる。
+    結合は弱く・遅れは残す、が保険。数値は全部 1 か所（SwapWaveExt と SwapEnergyLogic の const）に置く</td></tr>
+    <tr><td>実機の見かけ</td><td>実機では人型が画面のごく一部（100〜300px）。針の細さは行の 1/3（5px）が下限で、
+    それ以下は符号化と mip で消える。白地動画は必ず実寸でも確認する</td></tr>
+  </table></div>
+
+  <p class="note">正本: 覆いの構造と差し替えの縁は .claude/rules/streaming.md「遷移『入れ替わりのノイズ』」／
+  ユーザー逐語は canon/LEDGER.md 0089・0090・0091・0098・0100。この文書は設計のみ（実装なし）。
+  保留 1 件（視線反応）は canon/OPEN.md の案に登録済み。</p>
+</div>
