@@ -142,7 +142,7 @@ $Menus = [ordered]@{
                             Out = 'Assets/Screenshots/cgviz' }
     'swap'             = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.RunSwap'
                             Desc = '入れ替わりのノイズ（人 ⇄ 人形）を連番 PNG 化。動画は make-preview-video.py'
-                            Set = 'show=<show.json のパス> / plate=white（帯の判定はこれ） / layers=<ABCDEFH|none>（黒い波の層を 1 つずつ）'
+                            Set = 'show=<show.json のパス> / plate=white（帯の判定はこれ） / layers=<ABCDEFH|none>（黒い波の層を 1 つずつ） / hold=1（3周目A の入り＝包まれたまま → 引き継ぎ）'
                             Out = 'Assets/Screenshots/swap' }
     'actor'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowActorVizPreview.Run'
                             Desc = 'CG 人形を 4 ポーズ × 2 角度で PNG 化'

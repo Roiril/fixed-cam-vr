@@ -314,6 +314,13 @@ namespace FixedCamVr.Streaming
         public int CameraCount => registry != null ? registry.Count : 0;
 
         /// <summary>
+        /// <b>いま画面に出しているカメラ</b> index（registry の実値。-1 = 未確定）。
+        /// ⚠ <c>SwitchDirectorLogic.Current</c>（この Director が把握している値）とは別物 —
+        /// 卓の cameraOverride は registry を直接叩くので、実際に映っているのはこちら。
+        /// </summary>
+        public int ActiveCameraIndex => registry != null ? registry.ActiveIndex : -1;
+
+        /// <summary>
         /// この Director が切り替える registry（未配線なら null）。
         /// 「自分と同じ registry を回している Director か」を呼び出し側が確かめるために公開する
         /// （<see cref="ShowControlClient"/> の遅延解決が別リグの Director を掴むのを防ぐ）。
@@ -537,8 +544,9 @@ namespace FixedCamVr.Streaming
         ///   呼び出し側は乱れ遷移へ倒すこと — 黙って何も起きないと、体験者は画面が固まったと感じる。
         /// </summary>
         /// <param name="targetCamera">覆い切った瞬間に切り替えるカメラ（-1 = 変えない）。</param>
+        /// <param name="minX">覆いを効かせる左端（枠 UV・0 = 制限しない。カットの <c>swapMinX</c>）。</param>
         public bool TakeSwapBegin(int targetCamera, float totalSec, SwapMorphLogic.Dir dir,
-                                  Action? onCovered)
+                                  Action? onCovered, float minX = 0f)
         {
             if (swapFx == null) return false;
             // 覆いの相手（映像の中の人）が写っているのは**いま画面に出ているカメラ**
@@ -556,9 +564,26 @@ namespace FixedCamVr.Streaming
                     audioCue?.Play();
                 }
                 onCovered?.Invoke();
-            });
+            }, minX);
             if (ok) _logic.SetInsertActive(true);
             return ok;
+        }
+
+        /// <summary>
+        /// <b>覆いを包み切ったまま保持する</b>（`canon/LEDGER.md` 0102・カットの <c>swapHold</c>）。
+        /// 段は進まず、次のカットの <c>transition:"swap"</c> が縮む段から引き継ぐ。
+        ///
+        /// ⚠ <b>画面には触らない。</b> 覆いを立てるだけなので、映像・カメラ・左右分割はカットの
+        /// ふつうの経路（<see cref="TakeHoldBegin"/> / <see cref="ApplySplit"/>）が持つ。
+        /// </summary>
+        /// <param name="cgCamera">人の代役を立てるときの構図のカメラ index。</param>
+        /// <param name="minX">覆いを効かせる左端（枠 UV・0 = 制限しない）。</param>
+        /// <returns>覆いを立てられたか。false でも体験は成立する（覆いが出ないだけ）。</returns>
+        public bool TakeVeilHoldBegin(int cgCamera, float minX)
+        {
+            if (swapFx == null) return false;
+            int plateCamera = registry != null ? registry.ActiveIndex : -1;
+            return swapFx.BeginHold(plateCamera, cgCamera >= 0 ? cgCamera : plateCamera, minX);
         }
 
         /// <summary>入れ替わりのノイズを途中で畳む（演出の中止・ランリセット・体験の終了）。</summary>
@@ -566,6 +591,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>入れ替わりのノイズが走っているか。</summary>
         public bool SwapActive => swapFx != null && swapFx.Active;
+
+        /// <summary>覆いを包み切ったまま保持しているか（<see cref="TakeVeilHoldBegin"/> 中）。</summary>
+        public bool SwapHolding => swapFx != null && swapFx.Holding;
+
+        /// <summary>カメラ切替の音を 1 発鳴らす（カットの <c>switchSfx</c>）。音源が無ければ無音。</summary>
+        public void PlaySwitchSfx() => audioCue?.Play();
 
         /// <summary>
         /// enter インサート: 現在の映像から insert カメラへ dip-to-black で切り替える（Insert source ＝周回に数えない）。

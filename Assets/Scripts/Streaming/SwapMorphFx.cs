@@ -45,6 +45,8 @@ namespace FixedCamVr.Streaming
         private static readonly int SwapWave2Id = Shader.PropertyToID("_SwapWave2");
         private static readonly int SwapHotAId = Shader.PropertyToID("_SwapHotA");
         private static readonly int SwapHotBId = Shader.PropertyToID("_SwapHotB");
+        private static readonly int SwapMinXId = Shader.PropertyToID("_SwapMinX");
+        private static readonly int SwapDiffHoldId = Shader.PropertyToID("_SwapDiffHold");
         private static readonly int FrameAspectId = Shader.PropertyToID("_FrameAspect");
 
         [Tooltip("スクリーンの Renderer。null なら同じ GameObject から取る。")]
@@ -89,6 +91,26 @@ namespace FixedCamVr.Streaming
         /// <summary>人の姿が用意されていないことは 1 回だけ言う（毎回言うとログが埋まる）。</summary>
         private bool _warnedNoHuman;
 
+        /// <summary>
+        /// 覆いを効かせる左端（枠 UV・0 = 制限しない）。カットの <c>swapMinX</c> がそのまま入る。
+        /// ⚠ 分割の左側で差分を引くと、鏡映しの人物・録画の人物まで拾って包む（0102）。
+        /// </summary>
+        private float _minX;
+
+        /// <summary>
+        /// <b>覆い切っていても差分を読み続ける</b>（映像にまだ当人が写っている）。
+        /// 持続の覆い（<see cref="BeginHold"/>）の間だけ立つ。
+        ///
+        /// ⚠ シェーダは既定で「覆い切ったら CG の形へ渡す」（<c>hand</c>）。それは
+        /// <b>覆い切った縁で画面が無人へ差し替わる</b>前提だからで、持続の覆いはまだ差し替えていない。
+        /// ここを立てないと、包んでいる間ずっと覆いが<b>いまの体験者の立ち位置</b>（CG の形）に出て、
+        /// 映像の中の人からずれる。
+        /// </summary>
+        private bool _diffHold;
+
+        /// <summary>持続の覆いが自分で人の代役を立てたか（畳むときに自分で消す責任を持つ）。</summary>
+        private bool _holdAppliedCg;
+
         /// <summary>入れ替わりが走っているか（テレメトリ用）。</summary>
         public bool Active => _logic.Active;
 
@@ -109,6 +131,18 @@ namespace FixedCamVr.Streaming
 
         /// <summary>このランで入れ替わりが走った回数（テレメトリ用）。</summary>
         public int Count { get; private set; }
+
+        /// <summary>
+        /// <b>包まれたまま保持しているか</b>（0102）。true のあいだ段は進まず、波だけ走る。
+        /// <see cref="Active"/> は true のままなので、テレメトリはこの 2 つを対で読む。
+        /// </summary>
+        public bool Holding => _logic.Held;
+
+        /// <summary>このランで持続の覆いを立てた回数（テレメトリ用）。</summary>
+        public int HoldCount { get; private set; }
+
+        /// <summary>いま画へ書いている覆いの左端（枠 UV・テレメトリ用）。</summary>
+        public float MinX => _minX;
 
         /// <summary>
         /// いま画へ書いている山の振幅（figure 単位・テレメトリ用。**画に出た側**）。
@@ -181,7 +215,9 @@ namespace FixedCamVr.Streaming
         /// <returns>始められたか。人形が居なければ false（呼び出し側が乱れ遷移へ倒す）。</returns>
         /// <param name="plateCamera">覆いの相手（映像の中の人）が写っているカメラ index。
         /// その無人プレートを差分マスクの相手に束縛する（-1 / 掴めない = CG の形で覆う）。</param>
-        public bool Begin(SwapMorphLogic.Dir dir, float totalSec, int plateCamera, Action? onCovered)
+        /// <param name="minX">覆いを効かせる左端（枠 UV・0 = 制限しない）。カットの <c>swapMinX</c>。</param>
+        public bool Begin(SwapMorphLogic.Dir dir, float totalSec, int plateCamera, Action? onCovered,
+                          float minX = 0f)
         {
             if (cgLayer == null || !cgLayer.IsVisible || cgLayer.CurrentActorHeightM <= 0f)
             {
@@ -190,15 +226,21 @@ namespace FixedCamVr.Streaming
                 return false;
             }
 
-            BindMaskPlate(plateCamera);
+            // 包まれたまま待っていたなら、ほどける段を飛ばして縮む段から始める（0102）。
+            // ⚠ 覆いは既に立っているので、ここで巻き戻すと「1 度晴れてからまた包まれる」に見える。
+            bool startCovered = _logic.Held;
+            if (!startCovered) BindMaskPlate(plateCamera);   // 持続の覆いが束縛したプレートをそのまま使う
+            _diffHold = false;   // ここから先は画面が差し替わる ＝ 覆いの形は CG へ渡す
+            _minX = Mathf.Clamp01(minX);
+            _holdAppliedCg = false;   // 以後の Hide の責任はカット（TakeRunner）が持つ
 
             float human = cgLayer.VisitorHeightM();
             float doll = cgLayer.CurrentActorHeightM;
             bool toDoll = dir == SwapMorphLogic.Dir.ToDoll;
-            _logic.Begin(dir, totalSec, toDoll ? human : doll, toDoll ? doll : human);
-            _wave.Begin(dir, totalSec);
+            _logic.Begin(dir, totalSec, toDoll ? human : doll, toDoll ? doll : human, startCovered);
+            _wave.Begin(dir, totalSec, keepTravel: startCovered);
             // 前の体験者の速さを持ち越さない（次の人が立ち止まっているのに波が荒れている、を作らない）。
-            _energy.Reset();
+            if (!startCovered) _energy.Reset();
 
             CrestAmpPeak = 0f;
             EnergyPeak = 0f;
@@ -226,11 +268,90 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
+        /// <b>包まれたまま保持する</b>（`canon/LEDGER.md` 0102 の 3 周目 A の入り）。
+        /// 段は 1 ミリも進まず、覆いは「ほどけ切った 1 フレーム」の姿で立ち続ける。波だけが走る。
+        ///
+        /// 覆いの形の供給元として<b>人の代役</b>（<see cref="TakeSchema.SwapHumanActorId"/>）を立てるが、
+        /// <c>_SwapReal</c> = 0 なので<b>実体としては 1 画素も描かれない</b>。
+        /// 既に何か出ている（前のカットの人形 / 走行中の入れ替わり）なら触らない。
+        ///
+        /// <b>2 回目以降は値の更新だけ</b>（カットが変わっても覆いは切れない）。
+        /// </summary>
+        /// <param name="plateCamera">覆いの相手が写っているカメラ index（-1 / 掴めない = CG の形）。</param>
+        /// <param name="cgCamera">人の代役を立てるときの構図のカメラ index。</param>
+        /// <param name="minX">覆いを効かせる左端（枠 UV・0 = 制限しない）。</param>
+        /// <returns>覆いを立てられたか。false なら覆いは出ない（体験の筋は通る）。</returns>
+        public bool BeginHold(int plateCamera, int cgCamera, float minX)
+        {
+            if (cgLayer == null)
+            {
+                Debug.LogWarning("[SwapMorphFx] 人形の層が居ないので持続の覆いを出せない");
+                return false;
+            }
+
+            _minX = Mathf.Clamp01(minX);
+
+            // 既に包んでいる（前のカットから続いている）なら、値の更新だけで抜ける。
+            if (_logic.Held) return true;
+
+            // ⚠ 走行中の入れ替わりを持続の覆いで乗っ取らない（縮み・晴れの途中で段が止まる）。
+            if (_logic.Active)
+            {
+                Debug.LogWarning("[SwapMorphFx] 入れ替わりが走っている間は持続の覆いを立てない");
+                return false;
+            }
+
+            // 覆いの形（人型のシルエット）を供給する代役を立てる。
+            // ⚠ カットは cg を指していないので、ここで立てたものは**自分で畳む責任を持つ**。
+            if (!cgLayer.IsVisible || cgLayer.CurrentActorId != TakeSchema.SwapHumanActorId)
+            {
+                cgLayer.Apply(TakeSchema.SwapHumanActorId, TakeSchema.CgFollow, cgCamera);
+                _holdAppliedCg = true;
+            }
+            if (!cgLayer.IsVisible)
+            {
+                _holdAppliedCg = false;
+                Debug.LogWarning($"[SwapMorphFx] 人の代役 '{TakeSchema.SwapHumanActorId}' を立てられない" +
+                                 $"（カメラ {cgCamera} の姿勢・較正が未著作 / actors[] に無い）" +
+                                 " → 持続の覆いは出さない（鏡映し → 凍結 → 録画の筋はそのまま通る）");
+                return false;
+            }
+
+            BindMaskPlate(plateCamera);
+            _diffHold = true;   // 画面はまだ差し替わっていない ＝ 映像の中の当人を差分で拾い続ける
+
+            float human = cgLayer.VisitorHeightM();
+            _logic.BeginHold(human);
+            _wave.Begin(SwapMorphLogic.Dir.ToDoll, SwapMorphLogic.DefaultTotalSec);
+            _energy.Reset();
+
+            CrestAmpPeak = 0f;
+            EnergyPeak = 0f;
+            HotPeak = 0;
+
+            _onCovered = null;
+            _dollActorId = "";
+            _humanShown = true;
+            HumanActorShown = true;
+            HoldCount++;
+            cgLayer.HoldForSwap(true);
+            cgLayer.SetSwapHeight(human);
+            cgLayer.SetGroundContact(0f);
+            // 1 フレーム目から包み切った姿で出す（ほどける過程を見せない）。
+            Write(_logic.Tick(0f), SwapWaveLogic.Wave.Idle, true);
+            return true;
+        }
+
+        /// <summary>
         /// 途中で畳む（演出の中止・ランリセット・体験の終了）。
         /// <b>覆い切る前に畳んだら <c>onCovered</c> は呼ばない</b> — 呼ぶと砂が無い所で画面が差し替わる。
         /// </summary>
         public void Cancel()
         {
+            bool ownedCg = _holdAppliedCg;
+            _holdAppliedCg = false;
+            _diffHold = false;
+            _minX = 0f;
             _logic.Cancel();
             _wave.Cancel();
             _energy.Reset();
@@ -242,6 +363,8 @@ namespace FixedCamVr.Streaming
             cgLayer.SetSwapHeight(0f);
             cgLayer.SetGroundContact(1f);
             cgLayer.HoldForSwap(false);
+            // 持続の覆いが自分で立てた代役は自分で畳む（カットは cg を指していないので誰も消さない）。
+            if (ownedCg) cgLayer.Hide();
         }
 
         private void LateUpdate()
@@ -253,6 +376,9 @@ namespace FixedCamVr.Streaming
             //   「同じ LateUpdate の中で cgLayer が先に居る」ことに依存させない —
             //   矩形は毎フレーム引き直すので、遅れても 1 フレームで、位置は次で追いつく。
             float dt = Time.unscaledDeltaTime;
+            // 包まれたままの間は、映像の中の当人の見かけ（＝背丈）を追う。追わないと、
+            // 体験者が近づいて大きく写っているのに覆いの枠が入場時の大きさで固まる。
+            if (_logic.Held && cgLayer != null) _logic.UpdateHoldHeight(cgLayer.VisitorHeightM());
             SwapMorphLogic.Sample s = _logic.Tick(dt);
             Cover = s.cover;
             Knot = s.knot;
@@ -295,6 +421,8 @@ namespace FixedCamVr.Streaming
 
             // 終わり。人形の背丈と影を戻し、掴みを解く。
             // 「人形 → 人」なら掴みを解いた瞬間に保留していた Hide が走って人形が消える。
+            _diffHold = false;
+            _minX = 0f;
             ClearUniforms();
             if (cgLayer == null) return;
             RestoreDoll();
@@ -367,6 +495,9 @@ namespace FixedCamVr.Streaming
             _material.SetFloat(SwapRealId, Mathf.Clamp01(s.real));
             _material.SetFloat(SwapFromTopId, toDoll ? 1f : 0f);
             _material.SetFloat(SwapSeedId, Time.unscaledTime);
+            // 覆いを効かせる左端と、差分を読み続けるか（0102）。**どちらもカットが宣言した値**。
+            _material.SetFloat(SwapMinXId, _minX);
+            _material.SetFloat(SwapDiffHoldId, _diffHold ? 1f : 0f);
         }
 
         /// <summary>
@@ -431,6 +562,9 @@ namespace FixedCamVr.Streaming
             _material.SetFloat(SwapKnotId, 0f);
             _material.SetFloat(SwapThreadId, 0f);
             _material.SetFloat(SwapRealId, 0f);
+            // ⚠ 制限も差分の保持も必ず畳む。残すと次のカットの覆いが右半分にしか出ない。
+            _material.SetFloat(SwapMinXId, 0f);
+            _material.SetFloat(SwapDiffHoldId, 0f);
             // プレートは次の Begin が束縛し直す。x=0 で差分の読みだけ止める（テクスチャは残ってよい）。
             _material.SetVector(SwapMaskId, new Vector4(
                 0f, SwapMorphLogic.MaskDiffLo, SwapMorphLogic.MaskDiffHi, SwapMorphLogic.MaskDiffLod));

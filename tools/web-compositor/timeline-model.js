@@ -146,6 +146,12 @@ export function newStep(over = {}) {
     //    「卓が保存したときに消えない」ようにするため — serializeStep はキーの白名簿なので、
     //    足さないと手で書いた値が 💾 保存のたびに黙って消える。
     splitX: 0, splitFlip: false, splitFreeze: false, overlay2CueId: '',
+    // 持続の覆い（canon/LEDGER.md 0102。3 周目 A の入りだけが使う）。
+    //   swapHold  = このカットのあいだ覆いを包み切ったまま保持する（次の swap が縮む段から引き継ぐ）
+    //   swapMinX  = 覆いを効かせる左端（枠 UV・0 = 制限しない）。**左右分割と併せるときは必ず指す** —
+    //               芯は合成後の画と無人プレートの差で引くので、制限しないと左半分の鏡映しの人物まで包む
+    //   switchSfx = 画の差し替えと同時にカメラ切替の音を 1 発鳴らす（2 周目 C の接近）
+    swapHold: false, swapMinX: 0, switchSfx: false,
     cg: '', cgMode: TAKE.CG_FOLLOW,
     // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
@@ -214,6 +220,10 @@ function serializeStep(s) {
     splitFlip: !!s.splitFlip,
     splitFreeze: !!s.splitFreeze,
     overlay2CueId: s.overlay2CueId || '',
+    // 持続の覆いと切替音（canon/LEDGER.md 0102）。**白名簿から漏れると 💾 保存の一押しで消える**。
+    swapHold: !!s.swapHold,
+    swapMinX: Math.max(0, Math.min(1, num(s.swapMinX, 0))),
+    switchSfx: !!s.switchSfx,
     cg: s.cg || '',
     cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED], TAKE.CG_FOLLOW),
   };

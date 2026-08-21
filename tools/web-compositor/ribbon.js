@@ -1524,6 +1524,7 @@ export function createRibbon(container, deps) {
           <option value="${TAKE.TRANS_SWAP}"${s.transition === TAKE.TRANS_SWAP ? ' selected' : ''}>入れ替わり（体験者だけを砂が覆って人形になる）</option>
         </select></label>
         <label><input class="rb-s-transms" type="number" min="0" step="10" value="${s.transitionMs || 0}">ms<span class="rb-hint2">0=既定</span></label>
+        <label class="chk" title="このカットで画が差し替わるのと同時に、カメラ切替の音を 1 発鳴らす。カメラを動かさない素材のカットでも「視点が急に切り替わった」として聞かせたいときに使う（カメラが実際に変わるカットでは自動で鳴るので不要）"><input class="rb-s-switchsfx" type="checkbox" ${s.switchSfx ? 'checked' : ''}>切替音を鳴らす</label>
         <label title="カットが始まってから 1 回だけ走らせる映像の乱れ。遷移の「乱れ」とは別物で、こちらは体験者の注意を引くために使う">乱れ<input class="rb-s-glitch" type="number" min="0" max="1" step="0.05" value="${s.glitch || 0}"><span class="rb-hint2">0=出さない</span></label>
         <label class="rb-s-glitchsec-l" style="display:${(s.glitch || 0) > 0 ? '' : 'none'}"><input class="rb-s-glitchsec" type="number" min="0.05" step="0.05" value="${s.glitchSec > 0 ? s.glitchSec : TAKE.DEFAULT_STEP_GLITCH_SEC}">s</label>
         <label title="カットの頭で画をこの秒数だけ止める。ライブも録画も一緒に凍る。再開したとき、体験者は自分が思っていたのと違う位置に居る">静止<input class="rb-s-hold" type="number" min="0" max="5" step="0.1" value="${s.hold || 0}">s<span class="rb-hint2">0=止めない</span></label>
@@ -1543,6 +1544,8 @@ export function createRibbon(container, deps) {
         <label class="chk"><input class="rb-s-splitflip" type="checkbox" ${s.splitFlip ? 'checked' : ''}>左半分を左右反転（ライブだけ）</label>
         <label class="chk"><input class="rb-s-splitfreeze" type="checkbox" ${s.splitFreeze ? 'checked' : ''}>左半分を凍らせる</label>
         <label title="1 枚目とは別に、もう 1 つ素材を重ねる。左と右へ別のものを同時に置くときだけ要る（静止画のみ）">第 2 の素材<select class="rb-s-ovl2">${ovl2Opts}</select></label>
+        <label class="chk" title="このカットのあいだ、黒い覆いを包み切ったまま止める。次のカットの遷移「入れ替わり」が縮む段から引き継ぐ。3 周目 A の入り（最初から包まれている）で使う"><input class="rb-s-swaphold" type="checkbox" ${s.swapHold ? 'checked' : ''}>覆いを包んだまま保つ</label>
+        <label title="黒い覆いを効かせる左端。左右分割と併せるときは分割位置と同じ値を入れる（入れないと左半分の鏡映しの人物まで包む）">覆いの左端<input class="rb-s-swapminx" type="number" min="0" max="1" step="0.05" value="${s.swapMinX || 0}"><span class="rb-hint2">0=制限しない</span></label>
       </div>
       <div class="rb-grid" title="スクリーンの外の黒い背景で、360 度いちめんに目が開く。大きい目が 1 つ先に開いて体験者を見て、気づいて報告するころに残りが一気に開く（全開まで 10.5 秒）。スクリーンには重ならないので、どの映像のカットにも足せる">
         <label>闇の目<input class="rb-s-eyes" type="number" min="0" max="1" step="0.05" value="${s.eyes || 0}"><span class="rb-hint2">0=出さない / 1=全部の目が開く（大きい目は必ず出る）</span></label>
@@ -1595,6 +1598,11 @@ export function createRibbon(container, deps) {
       s.splitFlip = r('.rb-s-splitflip').checked;
       s.splitFreeze = r('.rb-s-splitfreeze').checked;
       s.overlay2CueId = r('.rb-s-ovl2').value;
+      // 持続の覆い（canon/LEDGER.md 0102）。⚠ 保持は「入れ替わり」以外の遷移のカットでしか意味を持たない
+      //   （入れ替わりのカットは自分で段を進めるので、実機側も swapHold を読まない）。
+      s.swapHold = r('.rb-s-swaphold').checked;
+      s.swapMinX = Math.max(0, Math.min(1, numOr(r('.rb-s-swapminx').value, 0)));
+      s.switchSfx = r('.rb-s-switchsfx').checked;
       s.durSec = s.durKind === TAKE.DUR_SEC ? Math.max(0.2, numOr(r('.rb-s-dur').value, TAKE.FALLBACK_STEP_DUR_SEC)) : 0;
       s.transition = r('.rb-s-trans').value;
       s.transitionMs = Math.max(0, numOr(r('.rb-s-transms').value, 0));

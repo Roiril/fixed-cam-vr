@@ -625,6 +625,20 @@ namespace FixedCamVr.Streaming
                                  $"（take={TakeId(d.takeIndex)}）");
             var swapDir = toDoll ? SwapMorphLogic.Dir.ToDoll : SwapMorphLogic.Dir.ToHuman;
 
+            // ---- 持続の覆い（`canon/LEDGER.md` 0102）-----------------------------------------
+            //
+            // このカットのあいだ、覆いを包み切った状態で保持する（3 周目 A の入り）。
+            // ⚠ 覆いの形の供給元として**人の代役**を立てるので、CG を消す側の分岐（下の Hide）を
+            //   通してはいけない。通すと HoldForSwap が Hide を保留し、**入れ替わりが終わった
+            //   瞬間にその保留が走って人形が消える**（次のカットのプレート＋人形が空になる）。
+            // ⚠ 立てられなかった（較正未着・actors[] に visitor が無い）なら false へ倒す ＝
+            //   覆いは出ないが CG は従来どおり畳まれ、鏡映し → 凍結 → 録画 の筋はそのまま通る。
+            bool holdVeil = step.swapHold && !wantSwap
+                && director.TakeVeilHoldBegin(step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
+                                              step.swapMinX);
+            // 覆いを引き継がないカットへ移ったら畳む（画が割れたまま・包まれたまま残さない）。
+            if (!holdVeil && !wantSwap && director.SwapHolding) director.CancelSwap();
+
             if (_cgLayer != null)
             {
                 // ⚠⚠ 「人形 → 人」の入れ替わりは、**人形を出さないカットへ移るのと同時に**始まる。
@@ -640,7 +654,9 @@ namespace FixedCamVr.Streaming
                     _cgLayer.Apply(step.cg, step.cgMode,
                                    step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
                                    step.hasPlacement ? step.placement : null);
-                else _cgLayer.Hide();
+                // ⚠ 持続の覆いが立てた代役は畳まない（畳むと覆いの形が消える）。
+                //   この代役を消す責任は SwapMorphFx.Cancel が持つ。
+                else if (!holdVeil) _cgLayer.Hide();
                 // 人形に付き従う劣化。人形を出さないカットでは必ず 0 へ戻す
                 // （残ると「何も居ない所の画だけが荒れている」という説明の付かない絵になる）。
                 _cgLayer.SetAura(toDoll ? step.aura : 0f);
@@ -667,7 +683,7 @@ namespace FixedCamVr.Streaming
                         PlayStepOverlay(cue, step);
                         director.ApplySplit(step.splitX, step.splitFlip, step.splitFreeze);
                         ApplyStepOverlay2(step, takeIndex: d.takeIndex, stepIndex: d.stepIndex);
-                    });
+                    }, step.swapMinX);
                 if (!swapping)
                 {
                     _pendingSwapCue = null;
@@ -709,6 +725,14 @@ namespace FixedCamVr.Streaming
                 director.TakeHoldBegin(throughCover ? downSec : 0f, throughCover ? upSec : 0f,
                     () => PlayStepOverlay(cue, step), glitchTrans);
             }
+
+            // 視点が急に切り替わった音（カットの `switchSfx`・`canon/LEDGER.md` 0102）。
+            // ⚠ **画を差し替えるのと同じ行から鳴らす** — 別の層（`SoundCueLogic` の毎フレーム観測）に
+            //   置くと、0.5〜1.2 秒刻みで連打される 2 周目 C の接近では取りこぼす。
+            // ⚠ カメラが実際に変わるカットは Director が既に鳴らすので、そこで立てると二重に鳴る。
+            if (step.switchSfx && !(source == TakeSchema.SourceLive && step.camera >= 0
+                                    && director.ActiveCameraIndex != step.camera))
+                director.PlaySwitchSfx();
 
             // カット頭の単発の乱れ（遷移とは別物。企画書 2.3 の「注意・移動の誘導」に使う）。
             if (step.glitch > 0.001f)

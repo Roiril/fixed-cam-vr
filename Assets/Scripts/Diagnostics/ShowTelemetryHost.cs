@@ -97,6 +97,10 @@ namespace FixedCamVr.Diagnostics
         private ShowCgLayer? _cg;
         private SwapMorphFx? _swap;
 
+        /// <summary>持続の覆い（0102）の縁を出すためのラッチ。</summary>
+        private int _lastWrapCount;
+        private bool _lastWrapHolding;
+
         // 入れ替わりのノイズ（canon/LEDGER.md 0089）。回数の変化で 1 行出す。
         private int _lastSwapCount;
         private bool _lastSwapActive;
@@ -542,6 +546,21 @@ namespace FixedCamVr.Diagnostics
               $"{_swap.CrestAmp:F2}/{_swap.Energy01:F2}/{_swap.HotPoints}";
 
         /// <summary>
+        /// <b>持続の覆い</b>（<c>canon/LEDGER.md</c> 0102）—
+        /// <c>&lt;包んだままか&gt;/&lt;覆いの左端&gt;/&lt;立てた回数&gt;/&lt;矩形を書けたか&gt;/&lt;差分で覆えたか&gt;</c>。
+        ///
+        /// ⚠⚠ <b><see cref="SwapState"/> とは別に出す。</b> 包んでいるあいだ入れ替わりは
+        /// <c>Active</c> だが段は進まないので、<c>swap=</c> だけを見ると
+        /// 「被覆 1.00 のまま何分も止まっている壊れた入れ替わり」に読める。
+        /// ⚠ 左端が 0 のまま包んでいたら<b>左半分の鏡映しの人物まで包んでいる</b>
+        /// （3 周目 A では 0.50 が正）。<c>analyze-xp-log.py</c> と<b>対</b>。
+        /// </summary>
+        private string WrapState => _swap == null
+            ? "-"
+            : $"{(_swap.Holding ? 1 : 0)}/{_swap.MinX:F2}/{_swap.HoldCount}/" +
+              $"{(_swap.RectResolved ? 1 : 0)}/{(_swap.MaskPlateBound ? 1 : 0)}";
+
+        /// <summary>
         /// 闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;/&lt;区間の進み&gt;/&lt;速さ&gt;</c>。
         /// 後ろ 2 つは 2026-08-19（<c>canon/LEDGER.md</c> 0093）に足した。
         /// <b>進み -1 = 位置では測っていない</b>（未登録・layout 不在）。速さ 2.00 = 追い上げ中。
@@ -824,6 +843,23 @@ namespace FixedCamVr.Diagnostics
             //     「出た」を分けるのがこの 3 つ（`rules/visual-verification.md` の計装の規律）。
             if (_swap != null)
             {
+                // 持続の覆い（0102）。**立てた / 畳んだの 2 行**。入れ替わりの begin / end とは
+                // 別の系統なので、`ev=swap` の対応（begin と end の数）を崩さない。
+                bool holding = _swap.Holding;
+                if (_swap.HoldCount != _lastWrapCount)
+                {
+                    _lastWrapCount = _swap.HoldCount;
+                    Emit($"ev=wrap st=on n={_swap.HoldCount} minx={_swap.MinX:F2} " +
+                         $"rect={(_swap.RectResolved ? 1 : 0)} mask={(_swap.MaskPlateBound ? 1 : 0)}");
+                }
+                else if (_lastWrapHolding && !holding)
+                {
+                    // 引き継いだ（入れ替わりへ）のか、畳まれた（演出の中止・カットが変わった）のか。
+                    Emit($"ev=wrap st=off n={_swap.HoldCount} " +
+                         $"why={(_swap.Active ? "swap" : "drop")}");
+                }
+                _lastWrapHolding = holding;
+
                 bool act = _swap.Active;
                 if (_swap.Count != _lastSwapCount)
                 {
@@ -1025,6 +1061,12 @@ namespace FixedCamVr.Diagnostics
             //     **別の壊れ方**。全画面の砂嵐と違って、これは「出ていない」が画で分かりにくい。
             //   ⚠ 累計は 1 体験で **2**（3 周目 A の人 → 人形、4 周目 A の人形 → 人）。
             _sb.Append(" swap=").Append(SwapState);
+            //   wrap = 持続の覆い（`canon/LEDGER.md` 0102。3 周目 A の入り）。
+            //   **`<包んだままか>/<覆いの左端>/<立てた回数>/<矩形>/<差分マスク>`**。
+            //   ⚠ `swap=` と対で読む — 包んでいるあいだ入れ替わりは走っている（Active）が
+            //     段は進まないので、`swap=` だけでは「止まった入れ替わり」と区別できない。
+            //   ⚠ 左端が 0.00 のまま包んでいたら、左半分の鏡映しの人物まで包んでいる。
+            _sb.Append(" wrap=").Append(WrapState);
             //   eyes = 闇に開く目（`canon/LEDGER.md` 0075）。
             //   **`<実体を組めたか>/<いま開いている目の数>/<画に出た不透明度>/<区間の進み>/<速さ>`**。
             //   ⚠ 後ろ 2 つは 0093（位置で開閉する）で足した。**進みが -1 のまま動かない走行は、

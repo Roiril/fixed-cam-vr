@@ -31,6 +31,9 @@ import {
   normalizeStartSpot, START_SPOT_DEFAULT, START_RADIUS_MIN, START_RADIUS_MAX,
 } from './intro-model.js';
 import { CAM_COLORS, camColor, GEO } from './palette.js';
+import {
+  mirrorLine, mirrorResidualM, mirrorSideCheck, calibUsableForMirror, MIRROR_TOLERANCE_M,
+} from './line-mirror.js';
 
 // 配色は palette.js が正。palette は依存ゼロなので、
 // 「floormap は common.js に依存させない」決めを守ったまま 1 本にできる
@@ -828,25 +831,106 @@ export function createFloorMap(container, deps) {
       const info = document.createElement('span');
       const mismatch = Number.isInteger(l.camera) && l.camera >= 0 && zone >= 0 && zone !== l.camera;
       const tooShort = lineLength(l) < LINE_MIN_LENGTH_M;
-      info.className = 'fm-line-info' + (mismatch || tooShort || !(l.camera >= 0) ? ' warn' : '');
       const uses = lineUses[l.id] || 0;
+      // 鏡像の線は「まだ元の線の鏡か」を数値で出す（canon/LEDGER.md 0102）。
+      //   ⚠ 片方を動かしただけでは何も起きないので、**ここに出さないと崩れたことに気づけない**。
+      const mSrc = l.mirrorOf ? arr.find((o) => o && o.id === l.mirrorOf) : null;
+      const mRes = mSrc ? mirrorResidualM(calibOf(l.camera), mSrc, l) : null;
+      const mirrorStale = mRes != null && mRes > MIRROR_TOLERANCE_M;
+      info.className = 'fm-line-info'
+        + (mismatch || tooShort || mirrorStale || !(l.camera >= 0) ? ' warn' : '');
       info.textContent = tooShort ? '⚠ 短すぎる'
         : mismatch ? `⚠ 線の場所は ${camLabelIdx(zone)}`
         : !(l.camera >= 0) ? '⚠ 担当なし'
+        : mirrorStale ? `⚠ 鏡が ${Math.round(mRes * 100)}cm ずれ`
+        : mRes != null ? `🪞 ${labelOfId(arr, l.mirrorOf)} の鏡`
         : uses ? `${uses} 演出` : '未使用';
       info.title = tooShort ? `${LINE_MIN_LENGTH_M}m 未満のラインは無効（誤検出のもと）`
         : mismatch ? `担当は ${camLabelIdx(l.camera)} ですが線は ${camLabelIdx(zone)} のゾーンに引かれています。`
           + '体験者がここを通る時の区間と食い違うので、担当を変えるか線を移してください。'
         : !(l.camera >= 0) ? '担当カメラを決めると、その区間の演出からだけ選べるようになります。'
+        : mirrorStale ? `元の線「${labelOfId(arr, l.mirrorOf)}」を動かしたので鏡像がずれています。`
+          + '元の線の 🪞 を押して作り直してください（このままだと 3 周目の録画が凍結位置と合いません）。'
+        : mRes != null ? `「${labelOfId(arr, l.mirrorOf)}」を画像空間で反転した線です`
         : `${uses} 本の演出がこのラインを使っています`;
+
+      // 🪞 この線の鏡像を作る / 作り直す（canon/LEDGER.md 0102）。
+      //   3 周目 A は左半分だけライブを左右反転して読むので、「凍結の線」と「録画の起点」は
+      //   **画像空間の鏡**で対応していなければならない。course 空間で対称に置いても、
+      //   カメラが対称軸の真上に無い限り画面上では対称に写らない（＝ 録画が外から始まる）。
+      const mir = document.createElement('button');
+      mir.className = 'fm-reg-btn fm-line-mirror'; mir.textContent = '🪞';
+      const pairIdx = arr.findIndex((o) => o && o.mirrorOf === l.id);
+      const mirCal = calibOf(l.camera);
+      const mirUsable = calibUsableForMirror(mirCal);
+      mir.disabled = !mirUsable || l.mirrorOf;
+      mir.title = l.mirrorOf
+        ? `この線は「${labelOfId(arr, l.mirrorOf)}」の鏡像です（元の線の 🪞 で作り直します）`
+        : !mirUsable
+          ? 'このカメラが較正されていないと鏡へ写せません（🎯 カメラを合わせる）'
+          : pairIdx >= 0
+            ? '鏡像を作り直す（元の線を動かしたら必ず押す）'
+            : '画像空間の鏡へ写した線を作る（3 周目 A の録画の起点）';
+      mir.onclick = () => mirrorLineInto(i);
 
       const del = document.createElement('button');
       del.className = 'fm-reg-btn fm-reg-del'; del.textContent = '🗑'; del.title = '削除';
       del.onclick = () => deleteLine(i);
 
-      row.append(badge, lab, cam, dir, info, del);
+      row.append(badge, lab, cam, dir, info, mir, del);
       listEl.appendChild(row);
     });
+  }
+
+  // 較正（cameras[i].calib）。無ければ null。**pose では鏡へ写せない** —
+  // 内部行列（fxPx / cxPx / 歪み）が無いと画素と床の対応が付かない。
+  function calibOf(cameraIndex) {
+    const c = Number.isInteger(cameraIndex) && cameraIndex >= 0 ? cameras[cameraIndex] : null;
+    return c && c.hasCalib !== false && c.calib && c.calib.fxPx > 1 ? c.calib : null;
+  }
+
+  function labelOfId(arr, id) {
+    const l = (arr || []).find((o) => o && o.id === id);
+    return l ? (l.label || l.id) : id;
+  }
+
+  /**
+   * 線 index の**画像空間の鏡像**を作る / 作り直す（canon/LEDGER.md 0102）。
+   *
+   * ⚠ 既に鏡像がある（`mirrorOf` がこの線を指す線がある）なら**その線の座標だけ**を書き換える。
+   *   新しく作ると、`record.startLineId` や演出が指している id が置き去りになる。
+   */
+  function mirrorLineInto(i) {
+    const arr = lineArr();
+    const src = arr[i];
+    if (!src) return;
+    const calib = calibOf(src.camera);
+    const m = mirrorLine(calib, src);
+    if (m.error) { alert(`鏡へ写せません: ${m.error}`); return; }
+
+    const side = mirrorSideCheck(calib, src);
+    let note = '';
+    if (!side.ok) note = `\n\n⚠ ${side.detail}`;
+
+    const at = arr.findIndex((o) => o && o.mirrorOf === src.id);
+    if (at >= 0) {
+      Object.assign(arr[at], m);
+      markDirty(); renderLineList(); render();
+      alert(`「${arr[at].label || arr[at].id}」を作り直しました。${note}`);
+      return;
+    }
+    if (arr.length >= LINE_MAX) { alert('線の本数が上限です'); return; }
+    arr.push({
+      id: nextLineId(),
+      camera: src.camera,
+      ...m,
+      dir: src.dir || LINE_DIR_BOTH,
+      label: `${src.label || src.id}（鏡）`,
+      mirrorOf: src.id,
+    });
+    markDirty(); renderLineList(); render();
+    alert('鏡像の線を作りました。⏺ 端末内録画パネルで「録り始めの線」にこれを選んでください。'
+          + note);
   }
 
   function deleteLine(i) {

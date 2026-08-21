@@ -189,8 +189,17 @@ namespace FixedCamVr.Streaming
         private bool _settling;
         private float _coverPeak;
 
+        /// <summary>包まれたまま止まっているか（<see cref="BeginHold"/> 中）。段は進まない。</summary>
+        private bool _held;
+
         public bool Active => _active;
         public Dir Direction => _dir;
+
+        /// <summary>
+        /// <b>包まれたまま止まっている</b>か（`canon/LEDGER.md` 0102 の 3 周目 A の入り）。
+        /// true のあいだ <see cref="Tick"/> は「覆い切った 1 フレーム」を返し続け、縁は 1 つも立たない。
+        /// </summary>
+        public bool Held => _held;
 
         /// <summary>
         /// <b>映像の中に写っている姿</b>の背丈 (m)。**マスクはこの大きさで引く**
@@ -222,11 +231,24 @@ namespace FixedCamVr.Streaming
         /// 入れ替わりを始める。<paramref name="fromHeightM"/> / <paramref name="toHeightM"/> は
         /// 人型の背丈（足元は動かない）。
         /// </summary>
-        public void Begin(Dir dir, float totalSec, float fromHeightM, float toHeightM)
+        /// <param name="startCovered">
+        /// <b>ほどける段を飛ばして縮む段から始める</b>（`canon/LEDGER.md` 0102）。
+        /// 直前のカットが <see cref="BeginHold"/> で包み切っていたときに渡す — ほどき直すと
+        /// 「1 度晴れてからまた包まれる」に見える。
+        ///
+        /// ⚠ <b><see cref="_covered"/> は false のままにする。</b> true にすると
+        ///   <see cref="Sample.justCovered"/> が永久に立たず、人 → 人形の
+        ///   <see cref="Sample.justSwapScreen"/> ＝ <b>画面の差し替えが 1 度も起きない</b>。
+        ///   進みを縮む段の頭へ置けば、最初の <see cref="Tick"/> で <c>cover</c> が 1 になって
+        ///   その 1 フレームで縁が立つ（＝ 包まれたまま画が入れ替わる、が狙いどおり出る）。
+        /// </param>
+        public void Begin(Dir dir, float totalSec, float fromHeightM, float toHeightM,
+                          bool startCovered = false)
         {
             _active = true;
-            _elapsed = 0f;
+            _held = false;
             _total = Mathf.Clamp(totalSec > 0f ? totalSec : DefaultTotalSec, MinTotalSec, MaxTotalSec);
+            _elapsed = startCovered ? RiseFrac * _total : 0f;
             _dir = dir;
             _fromH = Mathf.Max(0.05f, fromHeightM);
             _toH = Mathf.Max(0.05f, toHeightM);
@@ -235,10 +257,45 @@ namespace FixedCamVr.Streaming
             _coverPeak = 0f;
         }
 
+        /// <summary>
+        /// <b>包まれたまま止める</b>（`canon/LEDGER.md` 0102 の 3 周目 A の入り）。段は 1 ミリも進まない。
+        ///
+        /// 覆いは「ほどけ切った 1 フレーム」の姿で固定される（<c>cover</c> = <c>knot</c> =
+        /// <c>thread</c> = 1）。<b>波だけは生きている</b> — 山・針・跳びは
+        /// <see cref="SwapWaveLogic"/> が別の時計で走らせるので、止まって見えるのは段だけ。
+        ///
+        /// 向きは <see cref="Dir.ToDoll"/> 固定。映像の中の当人を覆っているので、
+        /// マスクの枠（<see cref="MaskHeightM"/>）は人の背丈でなければならない。
+        /// </summary>
+        public void BeginHold(float humanHeightM)
+        {
+            _active = true;
+            _held = true;
+            _dir = Dir.ToDoll;
+            _total = DefaultTotalSec;
+            // 進みは「ほどけ切った所」で止める。ここから縮む段へ素直に繋がる。
+            _elapsed = RiseFrac * _total;
+            _fromH = _toH = Mathf.Max(0.05f, humanHeightM);
+            _covered = true;
+            _settling = false;
+            _coverPeak = 1f;
+        }
+
+        /// <summary>
+        /// 包んだままの背丈を追う（体験者が近づく / 離れると映像の中の見かけが変わる）。
+        /// <see cref="BeginHold"/> 中だけ効く。
+        /// </summary>
+        public void UpdateHoldHeight(float humanHeightM)
+        {
+            if (!_held) return;
+            _fromH = _toH = Mathf.Max(0.05f, humanHeightM);
+        }
+
         /// <summary>途中で畳む（演出の中止・ランリセット）。次の <see cref="Tick"/> は Idle を返す。</summary>
         public void Cancel()
         {
             _active = false;
+            _held = false;
             _elapsed = 0f;
             _covered = false;
             _settling = false;
@@ -249,6 +306,11 @@ namespace FixedCamVr.Streaming
         public Sample Tick(float dt)
         {
             if (!_active) return Sample.Idle;
+
+            // 包まれたまま（0102）。**縁を 1 つも立てない** — ここで justCovered を立てると
+            // 画面の差し替えが持続の途中で走る（次のカットの swap が持つ仕事を横取りする）。
+            if (_held)
+                return new Sample(true, 1f, 1f, 1f, 0f, _fromH, 0f, false, false, false, false);
 
             _elapsed += Mathf.Max(0f, dt);
             float t = Mathf.Clamp01(_elapsed / Mathf.Max(_total, 1e-4f));

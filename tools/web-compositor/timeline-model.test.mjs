@@ -253,3 +253,38 @@ test('入れ替わり（swap）の遷移は往復する — 卓が保存して�
   assert.equal(s.transition, TAKE.TRANS_SWAP);
   assert.equal(s.transitionMs, 2600);
 });
+
+test('持続の覆いと切替音は往復する — 卓が保存しても消えない', () => {
+  // ⚠⚠ 保存はキーの白名簿。3 周目 A の入り（canon/LEDGER.md 0102）は手で書く台本なので、
+  //   足し忘れると 💾 の一押しで **覆いも切替音も黙って消える**（この codebase が
+  //   splitX / dismissible で 2 回踏んだ型）。
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 3, camera: 0,
+      takes: [{
+        id: 'L3C0#0',
+        steps: [
+          { source: 'live', camera: 0, splitX: 0.5, splitFlip: true,
+            swapHold: true, swapMinX: 0.5 },
+          { source: 'clip', assetUrl: '/recordings/pov_4.webm', switchSfx: true },
+        ],
+      }],
+    }],
+  });
+  const st = serializeTimelineV3(tl).segments[0].takes[0].steps;
+  assert.equal(st[0].swapHold, true);
+  assert.equal(st[0].swapMinX, 0.5);
+  assert.equal(st[0].switchSfx, false, '指定していないものは既定へ倒す');
+  assert.equal(st[1].switchSfx, true);
+  assert.equal(st[1].swapHold, false);
+});
+
+test('覆いの左端は 0..1 へ丸める（枠の外を指す台本を実機へ配らない）', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{ lap: 3, camera: 0,
+      takes: [{ id: 't', steps: [{ source: 'live', swapMinX: 3.4 }] }] }],
+  });
+  assert.equal(serializeTimelineV3(tl).segments[0].takes[0].steps[0].swapMinX, 1);
+});

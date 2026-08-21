@@ -298,7 +298,43 @@ def collect_moments(rows):
         if e.get("ev") == "storm" and e.get("v") == "on":
             ms.append(Moment(3, "storm", f"on_cam{e.get('cam','?')}", r["t"],
                              f"砂嵐が始まった（カメラ {e.get('cam','?')}）"))
+
+    # -- 凍結と録画の頭（`canon/LEDGER.md` 0102 の「凍結と開始位置が合わない」）
+    #
+    # ⚠⚠ **この 2 コマは並べないと判定できない。** ずれは「録画の人が凍結の人と違う所に居る」
+    #    という**2 枚の差**でしか出ないので、1 枚ずつ眺めても分からない（実際そうやって
+    #    「なんとなく外から始まる」としか言えていなかった）。
+    #    切り出しは 2 枚とも**フル解像度**。並べた 1 枚は下の `pair_sheet` が作る。
+    ms.extend(collect_freeze_pair(rows))
     return ms
+
+
+# 凍結のカットは `ev=step` に splitFreeze を持たない（テレメトリは著作を知らない）ので、
+# 「入れ替わりが引き継がれた縁」＝ `ev=wrap st=off why=swap` を基準にする。
+# それが無いログでは `ev=recplay v=open` の直前の `ev=step` を凍結とみなす。
+def collect_freeze_pair(rows):
+    out = []
+    wraps = [r for r in rows if r["ev"].get("ev") == "wrap"]
+    plays = [r for r in rows if r["ev"].get("ev") == "recplay" and r["ev"].get("v") == "open"]
+    if not plays:
+        return out
+    for play in plays:
+        t_play = play["t"]
+        lap = play["ev"].get("lap", "?")
+        cam = play["ev"].get("cam", "?")
+        # 引き継ぎの縁（覆いが入れ替わりへ渡った瞬間）＝ 実機が画面を差し替えた所。
+        edge = None
+        for r in wraps:
+            if r["ev"].get("st") == "off" and r["ev"].get("why") == "swap" and r["t"] <= t_play:
+                edge = r
+        if edge is None:
+            continue
+        # 凍結の最後の 1 コマ（渡す直前）と、録画が載った直後の 1 コマ。
+        out.append(Moment(4, "pair", f"freeze_lap{lap}cam{cam}", max(edge["t"] - 0.10, 0.0),
+                          "凍結の最後のコマ（この位置から録画が歩き出すはず）"))
+        out.append(Moment(4, "pair", f"rechead_lap{lap}cam{cam}", t_play + 0.20,
+                          f"録画の頭（{lap} 周目 カメラ {cam}）— 凍結と同じ位置に人が居るか"))
+    return out
 
 
 # ---------------------------------------------------------------- 切り出し
@@ -377,9 +413,48 @@ def contact_sheets(moments, outdir: str):
     return sheets
 
 
+def pair_sheets(moments, outdir: str):
+    """凍結のコマと録画の頭のコマを**横に並べた 1 枚**を作る（`canon/LEDGER.md` 0102）。
+
+    ⚠ 縮小しない（`rules/visual-verification.md` §7）。並べるだけで、画素はそのまま。
+      位置のずれを目で測るための絵なので、細い手足が消えたら意味が無くなる。
+    ⚠ 中央に基準の縦線を引く（左右分割の境目 = 鏡の軸）。線が無いと「どちらが外か」が読めない。
+    """
+    pairs = {}
+    for m in moments:
+        if m.kind != "pair" or not m.path:
+            continue
+        key = m.name.split("_", 1)[1] if "_" in m.name else m.name
+        pairs.setdefault(key, {})[m.name.split("_", 1)[0]] = m
+    out = []
+    for key, d in sorted(pairs.items()):
+        a, b = d.get("freeze"), d.get("rechead")
+        if a is None or b is None:
+            continue
+        ia, ib = cv2.imread(a.path), cv2.imread(b.path)
+        if ia is None or ib is None:
+            continue
+        h = min(ia.shape[0], ib.shape[0])
+        ia, ib = ia[:h], ib[:h]
+        for img in (ia, ib):
+            cv2.line(img, (img.shape[1] // 2, 0), (img.shape[1] // 2, h - 1), (0, 200, 255), 1)
+        gap = np.zeros((h, 8, 3), np.uint8)
+        gap[:] = (40, 40, 40)
+        sheet = np.hstack([ia, gap, ib])
+        strip = np.zeros((52, sheet.shape[1], 3), np.uint8)
+        cv2.putText(strip, "LEFT: last frozen frame   RIGHT: first recorded frame  (%s)" % key,
+                    (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(strip, "the person should stand at the same spot on both sides of the mirror line",
+                    (8, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (170, 220, 255), 1, cv2.LINE_AA)
+        path = os.path.join(outdir, "_pair_%s.png" % key)
+        cv2.imwrite(path, np.vstack([sheet, strip]))
+        out.append(path)
+    return out
+
+
 # ---------------------------------------------------------------- 索引
 
-GROUP_TITLE = ["導入の段", "演出", "相", "砂嵐"]
+GROUP_TITLE = ["導入の段", "演出", "相", "砂嵐", "凍結と録画の頭"]
 
 
 def sanity_notes(moments, estimated: bool):
@@ -425,7 +500,9 @@ def write_index(path, log, video, moments, offset, estimated, basis, fps, dur, s
             fh.write("## 索引（コンタクトシート）\n\n")
             for s in sheets:
                 fh.write("- `%s`\n" % os.path.basename(s))
-            fh.write("\n**判定に使うのは下の個別 PNG。** シートは縮小してあるので細い線が消える。\n\n")
+            fh.write("\n**判定に使うのは下の個別 PNG。** `_contact_*.png` は縮小してあるので"
+                     "細い線が消える。⚠ `_pair_*.png`（凍結と録画の頭）は**縮小していない** — "
+                     "位置のずれを画素で測るための絵なので、そのまま開いてよい。\n\n")
 
         for g, title in enumerate(GROUP_TITLE):
             group = [m for m in moments if m.group == g]
@@ -493,7 +570,7 @@ def main(argv=None):
     os.makedirs(outdir, exist_ok=True)
 
     written, fps, dur = extract(args.video, moments, outdir)
-    sheets = contact_sheets(moments, outdir)
+    sheets = contact_sheets(moments, outdir) + pair_sheets(moments, outdir)
     notes = sanity_notes(moments, estimated)
     index = os.path.join(outdir, "index.md")
     write_index(index, args.log, args.video, moments, offset, estimated, basis,

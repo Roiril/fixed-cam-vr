@@ -153,14 +153,23 @@ namespace FixedCamVr.Streaming
         public static float CrestSpeedFig(float totalSec) => CrestSpeedRatio * FrontSpeedFig(totalSec);
 
         /// <summary>入れ替わりの始まりで呼ぶ（<see cref="SwapMorphLogic.Begin"/> と対）。</summary>
-        public void Begin(SwapMorphLogic.Dir dir, float totalSec)
+        /// <param name="keepTravel">
+        /// <b>山の走った距離を引き継ぐ</b>（`canon/LEDGER.md` 0102 の持続の覆い → 入れ替わり）。
+        /// 0 へ戻すと、包まれたまま走っていた山がその 1 フレームで体の外へ飛んで湧き直す
+        /// ＝ 覆いが続いているのに波だけ切れる。⚠ <b>段の進み（<c>_progressPeak</c>）は引き継がない</b> —
+        /// 呼び出し側の <see cref="SwapMorphLogic.Progress01"/> が正で、こちらは単調化の器にすぎない。
+        /// </param>
+        public void Begin(SwapMorphLogic.Dir dir, float totalSec, bool keepTravel = false)
         {
             _active = true;
             _dir = dir;
             _total = Mathf.Clamp(totalSec > 0f ? totalSec : SwapMorphLogic.DefaultTotalSec,
                                  SwapMorphLogic.MinTotalSec, SwapMorphLogic.MaxTotalSec);
-            _elapsed = 0f;
-            _travel = 0f;
+            if (!keepTravel)
+            {
+                _elapsed = 0f;
+                _travel = 0f;
+            }
             _beatLeft = 0f;
             _progressPeak = 0f;
         }

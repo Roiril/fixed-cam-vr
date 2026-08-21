@@ -193,6 +193,11 @@ Shader "FixedCamVr/ScreenComposite"
         //   xy = 中心 ／ z = 半径 ／ w = 結合済みの強さ（0 = 使わない）
         _SwapHotA("Swap Hot A (px, py, r, amount)", Vector) = (0, 0, 0, 0)
         _SwapHotB("Swap Hot B (px, py, r, amount)", Vector) = (0, 0, 0, 0)
+        // 持続の覆い（`canon/LEDGER.md` 0102）。**唯一の writer は SwapMorphFx**。
+        //   _SwapMinX     覆いを効かせる左端（枠 UV・0 = 制限しない）。左右分割の右側だけに効かせる
+        //   _SwapDiffHold 1 = 覆い切っていても差分を読み続ける（映像にまだ当人が写っている）
+        _SwapMinX("Swap Min X (0=off)", Range(0, 1)) = 0
+        _SwapDiffHold("Swap Diff Hold", Range(0, 1)) = 0
     }
 
     SubShader
@@ -241,6 +246,8 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _SwapWave2;
                 float4 _SwapHotA;
                 float4 _SwapHotB;
+                float _SwapMinX;
+                float _SwapDiffHold;
                 float _SwapCover;
                 float _SwapKnot;
                 float _SwapThread;
@@ -1016,8 +1023,13 @@ Shader "FixedCamVr/ScreenComposite"
                     //   **実寸の当人の上半身が箱の外に出て、芯が届かず丸見えになる**（絵で踏んだ）。
                     float2 pM = float2((sampleUv.x - _SwapRect0.x) * _FrameAspect,
                                        sampleUv.y - _SwapRect0.y) / max(_SwapRect0.z, 1e-3);
-                    if ((abs(p0.x) < 1.25 && abs(p0.y) < 1.35)
-                        || (abs(pM.x) < 1.25 && abs(pM.y) < 1.35))
+                    // ⚠⚠ **左右分割と併せるときは左端を切る**（0102）。芯は**合成後の画**と
+                    //   無人プレートの差で引くので、制限しないと左半分の鏡映しの人物・録画の人物まで
+                    //   拾って包む（同じ人が 2 か所に写っているのが 3 周目 A の作りそのもの）。
+                    float sideOk = step(_SwapMinX, sampleUv.x);
+                    if (sideOk > 0.5
+                        && ((abs(p0.x) < 1.25 && abs(p0.y) < 1.35)
+                            || (abs(pM.x) < 1.25 && abs(pM.y) < 1.35)))
                     {
                         // その画素の人型 ＝ **芯**。映像の中の人が居るなら差分が正、
                         // 無人プレートが配られていなければ CG の形へ落ちる（0095）。
@@ -1035,7 +1047,10 @@ Shader "FixedCamVr/ScreenComposite"
                         //   差し替えを覆い切った縁で行っていたからで、**当人がはみ出す方を
                         //   差し替えの側で解いた**いまは要らない。足すと、育っている最中に
                         //   実寸の黒い人型が立って「黒い波が育つ」が読めなくなる。
-                        float hand = smoothstep(0.86, 1.0, _SwapCover);
+                        // ⚠⚠ 覆い切ったら CG の形へ渡す（`hand`）のは、**覆い切った縁で画面が
+                        //   無人へ差し替わる**前提だから。持続の覆い（0102）はまだ差し替えていないので、
+                        //   渡すと覆いが**いまの体験者の立ち位置**へ出て、映像の中の人からずれる。
+                        float hand = smoothstep(0.86, 1.0, _SwapCover) * (1.0 - _SwapDiffHold);
                         float silDiff = (_SwapFromTop > 0.5 && hand < 0.999)
                             ? SwapDiffSil(sampleUv, lod) : -1.0;
                         float sil = silDiff < 0.0 ? silCg : lerp(silDiff, silCg, hand);

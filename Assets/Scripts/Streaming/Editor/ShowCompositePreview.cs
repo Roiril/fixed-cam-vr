@@ -920,6 +920,10 @@ namespace FixedCamVr.Streaming.EditorTools
             private bool _swapActive, _swapFromTop;
             private float _swapCover, _swapKnot, _swapThread, _swapReal, _swapSeed;
 
+            // 持続の覆いと左右分割（`canon/LEDGER.md` 0102）。3 周目 A の入りを絵にするために要る。
+            private float _swapMinX, _swapDiffHold;
+            private float _splitX, _splitFlipLeft, _splitFreezeLeft;
+
             /// <summary>影・接地影の濃さの倍率（砂の人型は光を遮らない）。</summary>
             private float _groundMul = 1f;
 
@@ -943,6 +947,29 @@ namespace FixedCamVr.Streaming.EditorTools
                 _swapReal = Mathf.Clamp01(realOverride >= 0f ? realOverride : s.real);
                 _swapFromTop = fromTop;
                 _swapSeed = seed;
+            }
+
+            /// <summary>
+            /// 持続の覆いの 2 値（0102）。<paramref name="minX"/> は覆いを効かせる左端（枠 UV・
+            /// 0 = 制限しない）、<paramref name="diffHold"/> は「覆い切っていても差分を読み続ける」。
+            /// <b>実機（<see cref="SwapMorphFx"/>）と同じ uniform を同じシェーダへ書く。</b>
+            /// </summary>
+            public void SetSwapHold(float minX, bool diffHold)
+            {
+                _swapMinX = Mathf.Clamp01(minX);
+                _swapDiffHold = diffHold ? 1f : 0f;
+            }
+
+            /// <summary>
+            /// 左右分割（<c>canon/LEDGER.md</c> 0050）。3 周目 A の「鏡映し」を絵にするために要る。
+            /// ⚠ <b>凍結（freeze）は <c>_EchoTex</c> を要求する</b>ので、プレビューでは渡さない
+            /// （静止画のプレートを凍らせても絵は 1 画素も変わらない）。
+            /// </summary>
+            public void SetSplit(float splitX, bool flipLeft)
+            {
+                _splitX = Mathf.Clamp01(splitX);
+                _splitFlipLeft = flipLeft ? 1f : 0f;
+                _splitFreezeLeft = 0f;
             }
 
             // ---- 黒い波（設計 A〜F・`reports/2026-08-21_swap-wave-design.html`）----
@@ -1469,6 +1496,13 @@ namespace FixedCamVr.Streaming.EditorTools
                 _compositeMat.SetFloat("_SwapReal", _swapActive ? _swapReal : 0f);
                 _compositeMat.SetFloat("_SwapFromTop", _swapFromTop ? 1f : 0f);
                 _compositeMat.SetFloat("_SwapSeed", _swapSeed);
+                // 持続の覆いと左右分割（0102 / 0050）。**走っていない間は必ず 0 へ倒す** —
+                // 残すと次の絵の覆いが右半分にしか出ず、原因が絵からは読めない。
+                _compositeMat.SetFloat("_SwapMinX", _swapActive ? _swapMinX : 0f);
+                _compositeMat.SetFloat("_SwapDiffHold", _swapActive ? _swapDiffHold : 0f);
+                _compositeMat.SetFloat("_SplitX", _splitX);
+                _compositeMat.SetFloat("_SplitFlipLeft", _splitFlipLeft);
+                _compositeMat.SetFloat("_SplitFreezeLeft", _splitFreezeLeft);
 
                 SetCaption(caption);
                 _outCam.Render();

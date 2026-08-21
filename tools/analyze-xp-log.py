@@ -1022,6 +1022,121 @@ def analyze(events, others, exp, warns=None):
                   "応答の層（E / F）はこの走行では効いていない。静かな呼吸の側の絵")
     w()
 
+    # ---------------- 持続の覆い（3 周目 A の入り）----------------
+    #
+    # ⚠⚠ **`swap=` だけでは判定できない。** 包んでいるあいだ入れ替わりは Active だが段は進まない
+    #    ので、`swap=` を素朴に読むと「被覆 1.00 のまま何秒も止まっている壊れた入れ替わり」に見える。
+    #    `wrap=` は「包んだままか / 覆いの左端 / 立てた回数 / 矩形 / 差分マスク」の 5 つ組。
+    # ⚠ 著作に `swapHold` が 1 つも無い走行ではこの節を出さない（起きようのないことを赤くしない）。
+    hold_authored = [(t["id"], i, st) for t in exp["takes"]
+                     for i, st in enumerate(t["steps"]) if st.get("swapHold")]
+    wrap_lines = [e for e in events if e.get("ev") == "wrap"]
+    wrap_n, wrap_minx, wrap_rect, wrap_mask = 0, None, None, None
+    for smp in sums:
+        raw = smp.get("wrap")
+        if not raw or raw == "-":
+            continue
+        parts = raw.split("/")
+        if len(parts) < 5:
+            continue
+        try:
+            wrap_n = max(wrap_n, int(parts[2]))
+            if int(parts[0]):      # 包んでいる最中のサンプルだけが左端・形の証拠になる
+                wrap_minx = max(wrap_minx or 0.0, float(parts[1]))
+                wrap_rect = max(wrap_rect or 0, int(parts[3]))
+                wrap_mask = max(wrap_mask or 0, int(parts[4]))
+        except ValueError:
+            continue
+
+    if hold_authored or wrap_n or wrap_lines:
+        w("## 持続の覆い（3 周目 A の入り）")
+        w(f"  著作 {len(hold_authored)} カット"
+          + (f"（{', '.join(f'{tid}#{i}' for tid, i, _ in hold_authored)}）" if hold_authored else "")
+          + f" / 立てた回数 {wrap_n}")
+        for e in wrap_lines:
+            w(f"  t={fnum(e, 't', 0):7.1f}  {e.get('st', '?'):3s} "
+              + (f"左端 {e.get('minx', '?')} 矩形 {e.get('rect', '?')} 差分 {e.get('mask', '?')}"
+                 if e.get("st") == "on" else f"理由 {e.get('why', '?')}"))
+        if not hold_authored:
+            verdict("WARN", f"著作に無いのに覆いが {wrap_n} 回立っている — "
+                            "show.json の swapHold と実機のカットが食い違っている")
+        elif wrap_n == 0 and not wrap_lines:
+            if any(t["id"].startswith("L3C0") for t in exp["takes"]):
+                verdict("WARN", "覆いが 1 度も立っていない — 3 周目 A へ到達していないか、"
+                                "人の代役（actors[] の visitor）／カメラ A の較正が無くて立てられなかった"
+                                "（実機ログの [SwapMorphFx] を見る）")
+        else:
+            authored_minx = max((st.get("swapMinX") or 0) for _t, _i, st in hold_authored) \
+                if hold_authored else 0
+            if wrap_rect == 0:
+                verdict("FAIL", "覆いの矩形を 1 度も書けていない（rect=0）— 黒は 1 画素も出ていない。"
+                                "人形の層が居ない / カメラ A の姿勢が未著作 / 位置合わせ未完了")
+            elif authored_minx > 0.01 and (wrap_minx or 0) < 0.01:
+                verdict("FAIL", f"覆いの左端が 0 のまま包んでいる（著作は {authored_minx:.2f}）— "
+                                "**左半分の鏡映しの人物まで包んでいる**。"
+                                "カットの swapMinX が実機へ届いていない")
+            else:
+                verdict("OK", f"覆いを {wrap_n} 回立てた（左端 {wrap_minx if wrap_minx is not None else 0:.2f}"
+                              f" / 差分マスク {wrap_mask}）")
+            if wrap_mask == 0:
+                verdict("WARN", "無人プレートを掴めずに包んだ — 覆いは CG の形＝映像の中の人とずれうる。"
+                                "show.json の cues に plate_A があるか・配信で届くかを見る")
+            dropped = [e for e in wrap_lines if e.get("st") == "off" and e.get("why") == "drop"]
+            if dropped:
+                verdict("WARN", f"覆いが入れ替わりへ引き継がれずに畳まれた回がある（{len(dropped)} 回）— "
+                                "凍結の次のカットが transition:\"swap\" になっているか、"
+                                "演出が途中で中止されていないかを見る")
+        w()
+
+    # ---------------- 凍結から録画の頭まで ----------------
+    #
+    # ⚠⚠ 「凍結が消える地点より外から録画が始まる」（0102）を数値で見る唯一の場所。
+    #    画からは「跳んだ」としか読めず、原因（線の対応 / 歩線の違い / 継ぎ目が裸）を分けられない。
+    # 測るのは **凍結のカットが画面を取った時刻 → 録画が実際にテクスチャへ載り始めた時刻**。
+    #    著作の尺（凍結 1.2 秒）＋ 覆いの引き継ぎ（1 フレーム）が期待値。
+    freeze_steps = [(t["id"], i, st) for t in exp["takes"]
+                    for i, st in enumerate(t["steps"]) if st.get("splitFreeze")]
+    if freeze_steps:
+        w("## 凍結から録画の頭まで")
+        step_ev = [e for e in events if e.get("ev") == "step"]
+        play_ev = [e for e in events if e.get("ev") == "recplay" and e.get("v") == "open"]
+        for tid, idx, st in freeze_steps:
+            fz = next((e for e in step_ev
+                       if e.get("take") == tid and e.get("i") == str(idx)), None)
+            if fz is None:
+                w(f"  {tid}#{idx}: 凍結のカットへ到達していない")
+                continue
+            t0 = fnum(fz, "t", 0.0)
+            nxt = next((e for e in play_ev if fnum(e, "t", 0.0) >= t0), None)
+            want = (st.get("durSec") or 0) or 1.2
+            if nxt is None:
+                verdict("FAIL", f"{tid}#{idx}: 凍結の後に録画が 1 度も画へ載っていない — "
+                                "3 周目の左半分は凍ったまま（録画が録れていない / recLap の指定違い）")
+                continue
+            gap = fnum(nxt, "t", 0.0) - t0
+            w(f"  {tid}#{idx}: 凍結 t={t0:.2f} → 録画の頭 t={fnum(nxt, 't', 0):.2f}"
+              f"（間隔 {gap:.2f}s / 著作 {want:.2f}s）"
+              f" lap={nxt.get('lap')} cam={nxt.get('cam')}")
+            if gap < want - 0.35:
+                verdict("WARN", f"{tid}#{idx}: 凍結が著作より {want - gap:.2f}s 短い — "
+                                "凍結の 1 枚を読ませる間が足りていない")
+            elif gap > want + 0.8:
+                verdict("WARN", f"{tid}#{idx}: 凍結から録画までが {gap:.2f}s（著作 {want:.2f}s）— "
+                                "覆いの引き継ぎが成立せず乱れ遷移へ倒れた疑い"
+                                "（ev=wrap の why=drop と実機ログの [TakeRunner] を見る）")
+            else:
+                verdict("OK", f"{tid}#{idx}: 凍結 {gap:.2f}s で録画へ渡った")
+            # 録画の周が著作と合っているか（recLap 1 → 2 の変更が実機へ届いたか）。
+            swap_step = next((t["steps"][idx + 1] for t in exp["takes"]
+                              if t["id"] == tid and idx + 1 < len(t["steps"])), None)
+            if swap_step and swap_step.get("source") == "rec":
+                want_lap = swap_step.get("recLap") or 1
+                got_lap = nxt.get("lap")
+                if got_lap is not None and str(want_lap) != str(got_lap):
+                    verdict("FAIL", f"{tid}#{idx}: 流れた録画が {got_lap} 周目（著作は {want_lap} 周目）— "
+                                    "端末キャッシュが古い設定で走っている疑い")
+        w()
+
     # ---------------- 表示 fps ----------------
     w("## 表示（VR の快適性）")
     fps = [fnum(s, "fps") for s in sums if fnum(s, "fps") is not None]

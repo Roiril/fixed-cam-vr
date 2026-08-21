@@ -17,6 +17,9 @@ import { createAtelier } from './atelier.js';
 import { createActorsPanel } from './actors.js';
 import { createAlignUi } from './align-ui.js';
 import { calibBadgeText, lensesOf, lensTrustIssues } from './calib-session.js';
+import {
+  mirrorResidualM, mirrorSideCheck, calibUsableForMirror, MIRROR_TOLERANCE_M,
+} from './line-mirror.js';
 import { introConfig, introStageSec, introDurationLabel, introPreflightRow } from './intro-model.js';
 // 体験の骨格（走り切る周数 ＋ もどりの区間）。既定値と「その区間を踏むか」の判定はここが単一の正。
 // ⚠ 順路は app.js の courseOrder()（カメラ台数でクランプする方）を渡す — リボンが並べる順と
@@ -1880,6 +1883,55 @@ function preflightRows() {
   else if (gone.length) rows.push({ s: 'ng', label: '演出素材', detail: `ファイルが見つからない: ${gone.map((u) => u.split('/').pop()).join(', ')} — 消したか名前を変えた可能性` });
   else if (noSrc.length) rows.push({ s: 'warn', label: '演出素材', detail: `素材未設定: ${noSrc.join(', ')}` });
   else rows.push({ s: 'ok', label: '演出素材', detail: `参照素材 ${new Set(refUrls).size} 件はすべて実在・映像あり` });
+
+  // 🪞 凍結の線と録画の起点が**画像空間の鏡**で対応しているか（canon/LEDGER.md 0102）。
+  //   3 周目 A は左半分だけライブを左右反転して読むので、course 空間で対称に置いても
+  //   画面上では対称に写らない（カメラが対称軸の真上に無い限り）＝ 録画が凍結位置の外から始まる。
+  //   ⚠ **片方の線を動かしても何も起きない**ので、ここで言わないと本番まで気づけない。
+  //   対を持たない線しか無い現場ではこの行を出さない（起きようのない不備を直させない）。
+  {
+    const lines = (state?.layout?.lines) || [];
+    const byId = new Map(lines.filter((l) => l && l.id).map((l) => [l.id, l]));
+    const stale = [], unresolved = [], sideBad = [];
+    let checked = 0;
+    for (const l of lines) {
+      if (!l || !l.mirrorOf) continue;
+      const src = byId.get(l.mirrorOf);
+      const cal = (cams[l.camera] && cams[l.camera].calib) || null;
+      if (!src) { unresolved.push(`${l.label || l.id}（元の線が無い）`); continue; }
+      if (!calibUsableForMirror(cal)) {
+        unresolved.push(`${l.label || l.id}（${camLabelOf(l.camera)} が未較正）`);
+        continue;
+      }
+      const res = mirrorResidualM(cal, src, l);
+      if (res == null) { unresolved.push(`${l.label || l.id}（写っていない）`); continue; }
+      checked++;
+      if (res > MIRROR_TOLERANCE_M) {
+        stale.push(`${l.label || l.id} が ${Math.round(res * 100)}cm ずれ`);
+      }
+      const side = mirrorSideCheck(cal, src);
+      if (!side.ok) sideBad.push(`${src.label || src.id}: ${side.detail}`);
+    }
+    // 録画の起点が「鏡で作った線」を指しているか。指していなければ course 空間の鏡のままの疑い。
+    const startId = state?.record?.startLineId || '';
+    const startLine = startId ? byId.get(startId) : null;
+    if (stale.length) {
+      rows.push({ s: 'ng', label: '🪞 鏡の線',
+        detail: `${stale.join(' / ')} — 元の線を動かしたので作り直しが要ります`
+          + '（📏 通過ラインの一覧で元の線の 🪞 を押す）' });
+    } else if (sideBad.length) {
+      rows.push({ s: 'ng', label: '🪞 鏡の線', detail: sideBad.join(' / ') });
+    } else if (startLine && !startLine.mirrorOf) {
+      rows.push({ s: 'warn', label: '🪞 鏡の線',
+        detail: `録り始めの線「${startLine.label || startLine.id}」は 🪞 で作った線ではありません`
+          + ' — 凍結の線の 🪞 で作り直すと、3 周目の録画が凍結位置から始まります' });
+    } else if (unresolved.length) {
+      rows.push({ s: 'warn', label: '🪞 鏡の線', detail: `判定できない: ${unresolved.join(' / ')}` });
+    } else if (checked) {
+      rows.push({ s: 'ok', label: '🪞 鏡の線',
+        detail: `${checked} 組が画像空間の鏡で対応しています（ずれ ${Math.round(MIRROR_TOLERANCE_M * 100)}cm 以内）` });
+    }
+  }
 
   // 端末内録画: 「録画」カットが指す (周, カメラ) を実機が本当に録るか。
   //   ここが食い違うと実機はそのカットを黙って飛ばす（卓には何も出ない）。参照が無ければ行ごと出さない。

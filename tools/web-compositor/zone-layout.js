@@ -62,6 +62,10 @@ export function linesFromLayout(layout) {
       x1: l.x1, z1: l.z1, x2: l.x2, z2: l.z2,
       dir: [LINE_DIR_BOTH, LINE_DIR_FWD, LINE_DIR_BACK].includes(l.dir) ? l.dir : LINE_DIR_BOTH,
       label: typeof l.label === 'string' ? l.label : '',
+      // この線が「どの線の画像空間の鏡像か」（canon/LEDGER.md 0102）。空 = ふつうの線。
+      // ⚠ **白名簿から漏れると 💾 保存の一押しで対が消える** — そうなると本番前チェックは
+      //   「鏡対応が崩れている」を二度と言えず、録画の起点が黙ってずれたまま本番へ行く。
+      mirrorOf: typeof l.mirrorOf === 'string' ? l.mirrorOf : '',
     });
   }
   return out;

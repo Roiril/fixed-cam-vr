@@ -40,6 +40,15 @@ namespace FixedCamVr.Streaming.EditorTools
         private const int SwapHeadFrames = 12;
         private const int SwapTailFrames = 24;
 
+        /// <summary>
+        /// 持続の覆い（0102）を見せるコマ数。<b>実機の凍結の尺（1.2 秒）より長く取る</b> —
+        /// 「止まっているあいだに薄まらないか」は短い区間では読めない。
+        /// </summary>
+        private const int SwapHoldFrames = 45;
+
+        /// <summary>プレビューで使う覆いの左端（実機の 3 周目 A の著作値と同じ）。</summary>
+        private const float SwapHoldMinX = 0.5f;
+
         /// <summary>体験者の代役に使う人体プレハブ（Resources 配下）。</summary>
         private const string SwapHumanPrefab = "ShowActors/Remy";
 
@@ -223,10 +232,20 @@ namespace FixedCamVr.Streaming.EditorTools
                 Debug.Log($"[SwapViz] 黒い波の層: {layers.Label}" +
                           "（A 走る波 / B 針 / C 跳び / D キメ / E 歩速 / F 手 / H 余韻）");
 
-                written += RenderSwap(stage, plate, geom, post, doll, human, standXz, standYaw,
-                                      SwapMorphLogic.Dir.ToDoll, layers, written);
-                written += RenderSwap(stage, plate, geom, post, doll, human, standXz, standYaw,
-                                      SwapMorphLogic.Dir.ToHuman, layers, written);
+                // `-Set hold=1` で **3 周目 A の入り**（0102）だけを焼く。
+                // 包まれたまま → 縮む段から引き継ぐ、という新しい形は 2 本の swap では出ない。
+                if (EditorCliArgs.Get("hold") == "1")
+                {
+                    written += RenderVeilHold(stage, plate, geom, post, doll, human,
+                                              standXz, standYaw, layers, written);
+                }
+                else
+                {
+                    written += RenderSwap(stage, plate, geom, post, doll, human, standXz, standYaw,
+                                          SwapMorphLogic.Dir.ToDoll, layers, written);
+                    written += RenderSwap(stage, plate, geom, post, doll, human, standXz, standYaw,
+                                          SwapMorphLogic.Dir.ToHuman, layers, written);
+                }
             }
             catch (Exception e)
             {
@@ -241,6 +260,151 @@ namespace FixedCamVr.Streaming.EditorTools
             if (written > 0)
                 Debug.Log($"[SwapViz] {written} コマを保存: Assets/{SwapOutDirRel}/f0000.png …\n" +
                           $"  動画にする: py -3.11 tools/make-preview-video.py Assets/{SwapOutDirRel} swap");
+        }
+
+        /// <summary>
+        /// <b>3 周目 A の入り</b>（`canon/LEDGER.md` 0102）を焼く。
+        /// 包まれたまま（段は止まって波だけ走る）→ そこから縮む段へ引き継ぐ、の 1 本。
+        ///
+        /// ⚠⚠ <b>ここでしか判定できないものが 3 つある</b>:
+        ///   ①包んだまま止まっているあいだ、覆いが薄まったり晴れたりしないか
+        ///   ②<c>_SwapMinX</c> が効いて<b>左半分の鏡映しの人物を包まない</b>か
+        ///   ③引き継いだ 1 フレーム目に「1 度晴れてまた包まれる」が出ないか
+        /// ⚠ 凍結（<c>splitFreeze</c>）は静止画のプレートでは絵に出ないので掛けない。
+        /// </summary>
+        private static int RenderVeilHold(Stage stage, Plate plate, Geometry geom, PostParams post,
+                                          ShowActorDef doll, ShowActorDef human,
+                                          Vector2 standXz, float standYaw,
+                                          SwapLayers layers, int frameBase)
+        {
+            const string title = "L3C0  wrapped from the start, then drawn in";
+            const string note = "** the person here is a CG stand-in; on the device it is the live video";
+            const float minX = SwapHoldMinX;
+            float humanH = SwapHumanHeightM;
+            float dollH = Mathf.Max(0.05f, doll.heightM);
+
+            // 映像の中に人を焼き込む（覆いの相手）。左半分は鏡映しなので同じ 1 枚から出る。
+            stage.UseActor(human);
+            stage.PlaceActor(human, standXz, standYaw, geom);
+            stage.SetActorHeight(human, humanH, geom);
+            stage.SetSwap(false, SwapMorphLogic.Sample.Idle, true, 0f);
+            Plate platePerson = stage.BakeActorIntoPlate(plate, " + person");
+            stage.SetSwapMaskPlate(plate.texture);
+
+            int n = 0;
+            float capH = humanH, capCover = 0f, capKnot = 0f, capThread = 0f, capReal = 0f;
+            SwapWaveLogic.Wave capWave = SwapWaveLogic.Wave.Idle;
+            string capPhase = "";
+            float capT = 0f;
+            Plate shown = platePerson;
+            bool cgOn = false;
+
+            void Shoot()
+            {
+                string cap = $"{title}   {capPhase}   t={capT:0.00}s\n" +
+                             $"figure height {capH:0.00}m   unravel {capCover:0.00}   " +
+                             $"knot {capKnot:0.00}   thread {capThread:0.00}   real {capReal:0.00}\n" +
+                             $"wave {layers.Label}   crest y {capWave.crestY:+0.00;-0.00}   " +
+                             $"amp {capWave.crestAmp:0.00}   " +
+                             $"split 0.50 mirrored   veil right of x={minX:0.00}\n{note}";
+                stage.Composite(shown, cgVisible: cgOn, post: post, caption: cap);
+                stage.Save($"f{frameBase + n:0000}.png");
+                n++;
+            }
+
+            // 分割（鏡映し）はこの 1 本のあいだ掛け続ける。段 2 の差し替えでも切らない
+            // （実機は splitX=0 へ戻すが、覆いの制限は `swapMinX` が別に持っている）。
+            stage.SetSplit(0.5f, flipLeft: true);
+
+            var logic = new SwapMorphLogic();
+            var wave = new SwapWaveLogic();
+            var energy = new SwapEnergyLogic();
+            const float dt = 1f / SwapFps;
+
+            // ---- 包まれたまま（実機の `BeginHold`）----
+            logic.BeginHold(humanH);
+            wave.Begin(SwapMorphLogic.Dir.ToDoll, SwapMorphLogic.DefaultTotalSec);
+            stage.UseActor(human);
+            stage.PlaceActor(human, standXz, standYaw, geom);
+            stage.SetSwapHold(minX, diffHold: true);
+            capPhase = "0 wrapped (held)";
+            for (int i = 0; i < SwapHoldFrames; i++)
+            {
+                SwapMorphLogic.Sample s = logic.Tick(dt);
+                capT += dt;
+                stage.SetActorHeight(human, s.heightM, geom);
+                stage.SetGroundMul(s.ground);
+                stage.SetSwap(true, s, true, capT, -1f, logic.MaskHeightM);
+                ShowBodyInput body = ScriptedBody(capT, SwapMorphLogic.DefaultTotalSec,
+                                                  stage.ActorFootWorld, humanH, standYaw);
+                energy.Tick(dt, body);
+                capWave = layers.Apply(wave.Tick(dt, logic.Progress01,
+                    layers.Energy ? energy.AmpMul : SwapEnergyLogic.NeutralEnergy,
+                    layers.Energy ? energy.SpeedMul : SwapEnergyLogic.NeutralEnergy));
+                stage.SetSwapWave(capWave, body.LeftHandPos, layers.Hot ? energy.LeftHot01 : 0f,
+                                  body.RightHandPos, layers.Hot ? energy.RightHot01 : 0f);
+                capH = s.heightM; capCover = s.cover; capKnot = s.knot;
+                capThread = s.thread; capReal = s.real;
+                Shoot();
+            }
+
+            // ---- 引き継ぎ（実機の `Begin(..., startCovered: true)`）----
+            logic.Begin(SwapMorphLogic.Dir.ToDoll, SwapMorphLogic.DefaultTotalSec,
+                        humanH, dollH, startCovered: true);
+            wave.Begin(SwapMorphLogic.Dir.ToDoll, SwapMorphLogic.DefaultTotalSec, keepTravel: true);
+            ShowActorDef cur = human;
+            bool settled = false;
+            for (int guard = 0; guard < 600 && logic.Active; guard++)
+            {
+                SwapMorphLogic.Sample s = logic.Tick(dt);
+                capT += dt;
+                if (s.justSwapScreen)
+                {
+                    // 覆いは既に立っているので、この 1 フレームで画が無人へ差し替わる。
+                    shown = plate;
+                    stage.SetSwapHold(minX, diffHold: false);   // 以後は CG の形へ渡す（実機と同じ）
+                }
+                if (s.justSettling && !settled)
+                {
+                    settled = true;
+                    cur = doll;
+                    stage.UseActor(doll);
+                    stage.PlaceActor(doll, standXz, standYaw, geom);
+                }
+                stage.SetActorHeight(cur, s.heightM, geom);
+                stage.SetGroundMul(s.ground);
+                cgOn = settled;
+                stage.SetSwap(true, s, true, capT, -1f, logic.MaskHeightM);
+                if (s.justSwapScreen && layers.Beat) wave.NotifyBeat();
+                ShowBodyInput body = ScriptedBody(capT, SwapMorphLogic.DefaultTotalSec,
+                                                  stage.ActorFootWorld, humanH, standYaw);
+                energy.Tick(dt, body);
+                capWave = layers.Apply(wave.Tick(dt, logic.Progress01,
+                    layers.Energy ? energy.AmpMul : SwapEnergyLogic.NeutralEnergy,
+                    layers.Energy ? energy.SpeedMul : SwapEnergyLogic.NeutralEnergy));
+                stage.SetSwapWave(capWave, body.LeftHandPos, layers.Hot ? energy.LeftHot01 : 0f,
+                                  body.RightHandPos, layers.Hot ? energy.RightHot01 : 0f);
+                capH = s.heightM; capCover = s.cover; capKnot = s.knot;
+                capThread = s.thread; capReal = s.real;
+                capPhase = settled ? "3 thread settles into the doll" : "2 drawn in, down to doll size";
+                Shoot();
+            }
+
+            // ---- 尾: 無人プレート ＋ 人形 ----
+            stage.SetSwap(false, SwapMorphLogic.Sample.Idle, true, 0f);
+            stage.SetSwapWave(SwapWaveLogic.Wave.Idle);
+            stage.SetSwapHold(0f, diffHold: false);
+            stage.SetGroundMul(1f);
+            stage.SetActorHeight(doll, dollH, geom);
+            shown = plate;
+            cgOn = true;
+            capH = dollH; capCover = 0f; capKnot = 0f; capThread = 0f; capReal = 1f;
+            capWave = SwapWaveLogic.Wave.Idle;
+            capPhase = "after";
+            for (int i = 0; i < SwapTailFrames; i++) { capT += dt; Shoot(); }
+
+            stage.SetSplit(0f, flipLeft: false);
+            return n;
         }
 
         /// <summary>1 方向ぶんを焼く。戻り値は書いたコマ数。</summary>
