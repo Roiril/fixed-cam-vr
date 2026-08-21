@@ -1,0 +1,398 @@
+<title>接近の連写</title>
+<style>
+/* ============================================================
+ * report.css — 単一ファイル HTML レポート用テーマ
+ *
+ * 正本: ~/.claude/reference/design-tokens.md
+ *   → このファイルは派生。値を変えたいときは正本を直してからここへ配る。
+ *
+ * 使い方: style タグの中へ**全文インライン展開**する。
+ *   ⚠ このファイルの中に閉じタグの文字列を書かないこと。HTML の style 要素は
+ *     CSS コメントの中だろうと最初の閉じタグで終わるので、**以降の CSS が本文として画面に出る**
+ *     （2026-08-17 実害。この行自体が原因だった）。
+ *   外部参照は禁止（output-format.md: 単一ファイル・CDN 禁止・恒久的に開ける状態）。
+ * ============================================================ */
+
+:root {
+  /* --- color: light（既定） --------------------------------- */
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;  /* 18px+ / 太字 / 囲み線 / 図形のみ */
+  --accent-strong:    #a8493c;  /* 本文サイズの文字・リンク（AA） */
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  /* --- type ------------------------------------------------- */
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;    /* 12px  チップ・脚注 */
+  --fs-sm:   .875rem;   /* 14px  キャプション・表・出典 */
+  --fs-base: 1rem;      /* 16px  本文 */
+  --fs-md:   1.125rem;  /* 18px  リード・小見出し */
+  --fs-lg:   1.375rem;  /* 22px  h2 */
+  --fs-xl:   1.875rem;  /* 30px  h1 */
+
+  /* --- space（4px 系列。この外の値を書かない） ---------------- */
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;     /* 本文計測幅 */
+  --radius: 0;          /* 角丸は 0。円形要素のみ 50% を直接書く */
+}
+
+/* --- color: dark（OS 設定とページ属性の両方に追随） ------------ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+/* ============================================================
+ * base
+ * ============================================================ */
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+/* --- 見出し（明朝。上に置き、下または上に罫） ------------------ */
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }          /* 構造上の強調＝色なし */
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); } /* 意味強調＝1 節に 1〜2 回 */
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+/* ============================================================
+ * 部品
+ * ============================================================ */
+
+/* 見出し上の小ラベル */
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+/* タイトル直下の副題・日付 */
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+/* 結論の先出し */
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+/* 並列カード（3 列を目的にしない。中身の数で自然に折り返す） */
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+/* 時系列 */
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li {
+  border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4);
+  position: relative; margin: 0;
+}
+.tl > li::before {
+  content: ""; position: absolute; left: -5px; top: .55em;
+  width: 8px; height: 8px; background: var(--accent);
+}
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+/* 状態ラベル */
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+/* 表（必ず .tblwrap で囲む — 横スクロールは body ではなく表の側で） */
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+/* 図 */
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+/* 問いと答え */
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+/* コード */
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+/* 表内のトークン名・パスは折り返さない（狭幅では .tblwrap の横スクロールで吸収する） */
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+/* 弱い情報・末尾の注記 */
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+/* ============================================================
+ * responsive / motion / print
+ * ============================================================ */
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+<div class="wrap">
+  <p class="eyebrow">廻リ視 · 2周目C · 設計のみ（LEDGER 0101）</p>
+  <h1>接近の連写</h1>
+  <p class="sub">カメラがパパパパっと切り替わる ＝ 人形視点で近づいてくる ／ 2026-08-22 シュビー</p>
+
+  <div class="lead">
+    <p>2周目C の全画面ジャンプスケア（0050 で判定済み・現行 cue_monster_C 2.5 秒）を
+    「<strong>接近 → 到達</strong>」の 2 幕へ拡張する。接近は<strong>当日撮る実写</strong> —
+    人形の背丈（40cm）の低いアングルで、C の立ち位置へ近づきながら撮った 5〜7 枚を、
+    加速するリズムで連打する。仕組みは 0099（視界ジャック）の当日写真パイプラインの相似形。
+    写真が無ければ<strong>現行の 2.5 秒へそのまま退化する</strong>ので、当日壊れない。</p>
+  </div>
+
+  <h2>1. 体験者から見た画</h2>
+
+  <p>2周目、C 区間。画面はいつもの C のライブ。突然、装置が<strong>知らない信号</strong>へ切り替わる —
+  床すれすれの低い視点の実写が、パ、パ、パパパッと加速しながら出る。写っているのは
+  <strong>いま自分が居るこの部屋</strong>で、1 枚ごとに<strong>自分の立っている場所へ近づいてくる</strong>。
+  切替のリレー音が連打とともに速くなり、最後の 1 枚が届いた瞬間 — 音が止み、全画面の一枚（到達）。
+  ひと呼吸おいて乱れとともにライブへ戻る。画面の中の自分は、いつも通りそこに立っている。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>拍</th><th>画</th><th>尺（初期値）</th><th>音</th></tr>
+    <tr><td>接近 1</td><td>写真 1（いちばん遠い。部屋の隅から）</td><td>0.55s</td><td>切替のリレー 1 発</td></tr>
+    <tr><td>接近 2〜5</td><td>写真 2〜5（1 枚ごとに立ち位置へ寄る）</td><td>0.38 / 0.27 / 0.19 / 0.14s</td><td>1 発ずつ・加速</td></tr>
+    <tr><td><strong>到達</strong></td><td>全画面の一枚（既定 = 現行 cue_monster_C）</td><td>1.4s</td><td><strong>無音</strong>（音が止むのがキメ）</td></tr>
+    <tr><td>戻り</td><td>乱れ → C のライブ</td><td>0.3s + 0.8s</td><td>乱れの音（既存）</td></tr>
+  </table></div>
+
+  <p>合計およそ 3.5 秒（現行 2.5 + 0.8 秒からの増分は約 1 秒）。</p>
+
+  <h2>2. 設計の根 — なぜこの形か</h2>
+
+  <ul>
+    <li><strong>人形視点は「低さ」で語る。</strong> 写真を 40cm（人形の背丈）で撮るだけで、
+    説明を 1 文字も出さずに「小さいものが歩いている」と読める。高さが語彙のすべて</li>
+    <li><strong>近づいてくる怖さは「加速」で語る。</strong> 等間隔で切り替えるとスライドショーになる。
+    等比 0.7 で詰めていくリズムだけが「勢いよく迫ってくる」を作る</li>
+    <li><strong>実写であること。</strong> 体験者が実際に見た壁・床と同じものが写っているから信じられる。
+    生成画像で部屋を描くと、部屋が嘘になった瞬間に「映像の演出」へ落ちる</li>
+    <li><strong>到達で 0050 の全画面と接続する。</strong> 現行の驚き（全画面で出た瞬間）は捨てない。
+    接近はその驚きに<strong>原因</strong>（何が来たのか）を与える前段。突然出るより、
+    来ると分かっていて避けられない方が怖い</li>
+    <li><strong>装置の語彙で組む。</strong> 各カットは装置にとって「切替」— 切替音の連打が加速し、
+    到達で<strong>音が止む</strong>。無音がいちばん大きい一拍。
+    ⚠ 驚かせるための突発音は音の規約で禁止（`rules/sound-design.md`）。この設計はそれに反しない —
+    新しい音源はゼロで、既存の切替音（ユーザー提供 sfx_switch_1）を止めるだけ</li>
+  </ul>
+
+  <h2>3. 0099（視界ジャック）との書き分け</h2>
+
+  <p>「写真をぱぱぱっと」は 0099（3周目C）と同じ手筋なので、<strong>書き分けないと同じ手品を
+  2 回見せることになる</strong>。差は 3 つあり、体験の弧としては段が上がる関係に置く:</p>
+
+  <div class="tblwrap"><table>
+    <tr><th></th><th>接近の連写（この設計・2周目C）</th><th>視界ジャック（0099・3周目C）</th></tr>
+    <tr><td>出る面</td><td><strong>スクリーンの中</strong>（装置の信号が乗っ取られる）</td><td><strong>視界そのもの</strong>（あなたの目が乗っ取られる）</td></tr>
+    <tr><td>視点の性質</td><td><strong>1 本の道を接近</strong>（方向と目的がある）</td><td>散らばった複数の目（方向がない）</td></tr>
+    <tr><td>主体</td><td>人形（低い 1 つの視点）</td><td>大量の人形の目（0099「3-Cで現れる目は 4-Aで出る大量の人形の目」）</td></tr>
+    <tr><td>意味</td><td>装置への侵入</td><td>体験者への侵入</td></tr>
+  </table></div>
+
+  <p>2周目「装置が乗っ取られた」→ 3周目「今度はあなたの目が」— 同じ語彙の反復が
+  エスカレーションとして働く。<strong>写真の撮り方も逆にする</strong>: こちらは一本道・低さ固定、
+  0099 は散点・高さいろいろ。同じ当日の撮影ルーチンで両方撮れる（§4 の台本）。</p>
+
+  <h2>4. 素材 — 当日撮影の台本（設営後・5 分）</h2>
+
+  <ul>
+    <li><strong>高さ 40cm 固定</strong>（しゃがんでスマホを膝の下に。人形の目の高さ）</li>
+    <li><strong>道</strong>: C 区間の外の隅（立ち位置から約 3m）→ C の立ち位置へ向かって
+    <strong>0.5m 刻みで 5〜7 枚</strong>。毎枚、立ち位置へ正対（横持ち固定）</li>
+    <li><strong>最後の 1 枚（任意）</strong>: 立ち位置の 0.3m 手前・やや見上げ。
+    撮れなければ到達は現行 cue_monster_C のまま</li>
+    <li><strong>置き場</strong>: 卓の <code>dollpov/</code> フォルダへ放り込む（0099 の
+    <code>eyejack/</code> と同じ作法 — サーバが正規化し、<strong>ファイル名順 ＝ 接近順</strong>。
+    <code>01_〜.jpg</code> のように番号を付ける）</li>
+    <li>⚠ <strong>設営が終わって照明が本番と同じになってから撮る</strong>。設営前に撮ると
+    映り込む物と明るさが本番の部屋とずれ、実写の強み（信じられること）が消える</li>
+  </ul>
+
+  <h2>5. 仕組み</h2>
+
+  <h3>スキーマと著作</h3>
+  <ul>
+    <li>show.json に <code>dollpov: {photos: []}</code>（0099 の <code>eyejack</code> と同型。
+    卓のパネル・正規化・配布・端末キャッシュ・heartbeat の枚数報告まで相似形）</li>
+    <li>カットの新 source <strong><code>"povburst"</code></strong> を 1 つ足す。
+    パラメータは「使う枚数の上限」だけ。<strong>リズムはコードの const</strong>
+    （純ロジック <code>PovBurstLogic</code>・テストで固定）。
+    卓で 6 カットの秒を手打ちさせる案は却下 — 加速の比率は演出の本体で、手打ちは必ず崩れる。
+    しかも<strong>枚数は当日決まる</strong>ので、著作時にカット数を確定できない</li>
+    <li>L2C2#0 の組み替え: <code>step0 = povburst</code> → <code>step1 = 到達
+    （cue_monster_C・1.4s・cut）</code> → <code>step2 = live 0.8s</code>（現行の戻り）。
+    <code>dismissible</code> は take に付いたまま</li>
+  </ul>
+
+  <h3>退化の梯子（0099「当日ドタバタしたくない、堅牢に」と同じ要求）</h3>
+  <div class="tblwrap"><table>
+    <tr><th>状態</th><th>何が出るか</th></tr>
+    <tr><td>写真 3 枚以上</td><td>接近 → 到達（この設計の全部）</td></tr>
+    <tr><td>写真 3 枚未満 / 未着</td><td>接近を飛ばして到達だけ ＝ <strong>現行とほぼ同じ体験</strong>（§6.4 の「飛ばす」流儀）</td></tr>
+    <tr><td>到達の素材も無い</td><td>take ごと飛ぶ（既存の挙動）。体験は続く</td></tr>
+  </table></div>
+  <p>卓の本番前チェックに「🐾 接近の写真 N 枚」を出す（0099 の readiness と同じ行儀）。</p>
+
+  <h3>音・記録・報告との関係</h3>
+  <ul>
+    <li><strong>音</strong>: 画を差し替える同じ行から切替音を 1 発ずつ（<code>TypeAudioCue</code> 流儀 —
+    絵と音が同じ数えから出る）。既存の音程 ±3.5% / 音量 ±1.5dB の散らしをそのまま使う。
+    到達の縁は<strong>鳴らさない</strong></li>
+    <li><strong>記録</strong>: 端末内録画はライブの受信 tap から録るので、連写は録画に混ざらない
+    （2周目の録画は帰りの A で流れる — 汚してはいけない）</li>
+    <li><strong>報告</strong>: dismissible の窓は実質「到達の 1.4 秒 ＋ 戻り」。接近 1.53 秒では
+    押し切れない（長押し 1.0s ＋ 気づき）が、<strong>到達を報告で畳めば「来たものを解呪で追い返した」</strong>
+    が成立する。現行の 2.5 秒窓とほぼ同じ広さで、体験の意味だけ濃くなる</li>
+    <li><strong>周回・時計</strong>: policy hold・カメラは動かさない・ショーの時計は従来どおり進む（既存保証）</li>
+  </ul>
+
+  <h3>観測（効果の実在）</h3>
+  <p><code>ev=burst built=/shown=/strike=</code>（写真を組めたか / 実際に出した枚数 / 到達に達したか）と
+  <code>ev=sum</code> の <code>burst=</code>。<code>ShowTelemetryHost</code> と
+  <code>analyze-xp-log.py</code> を対で。「段が進んだ」ではなく「画に出た」を出す（規約どおり）。</p>
+
+  <h2>6. リズム（初期値と理由）</h2>
+
+  <ul>
+    <li><strong>0.55 → 0.38 → 0.27 → 0.19 → 0.14 秒</strong>（等比 約 0.7・5 枚で計 1.53 秒）</li>
+    <li>1 枚目だけ長い — 「いま何が映った?」を読ませる間。ここが短いと全部が「ちらつき」になる</li>
+    <li>下限 0.14 秒（72Hz で 10 フレーム）。これ以下は「何か光った」にしかならない</li>
+    <li>hash(枚番号) で ±15% だけ揺らす — 完全な等比は機械の正確さが出て、迫ってくる生き物に見えない。
+    乱数は使わない（同じ版 ＝ 同じリズム）</li>
+    <li>写真が 6〜7 枚あるときは頭に 0.5 秒台を足す（加速の距離が伸びるだけ。下限側は変えない）</li>
+  </ul>
+
+  <h2>7. 判定の設計</h2>
+
+  <ul>
+    <li><strong>静止画では判定できない</strong>（この演出はリズムそのもの）。<code>menu burst</code> で
+    連番 PNG → <code>make-preview-video.py</code> の動画が門。仮写真（部屋の実写でなくてよい）で
+    リズムだけ先に判定できる</li>
+    <li>リズムの数値は <code>PovBurstLogic</code> のテストで固定（加速が単調・下限を割らない・
+    合計が尺に収まる）</li>
+    <li>2周目C は自動走行が通る区間なので、実機走行で <code>burst=</code> が取れる。
+    画は evidence の PNG で「写真が実際に出たか」まで見る</li>
+    <li>怖さ・低さが「人形の視点」に読めるかは被らないと分からない — 溜めて 1 回
+    （`rules/visual-verification.md` の規約どおり）</li>
+  </ul>
+
+  <h2>8. 危険と対処</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>危険</th><th>対処</th></tr>
+    <tr><td>0099 と「同じ手品を 2 回」に見える</td><td>§3 の書き分け（面・方向・主体）を守る。写真の撮り方も逆にする（一本道 vs 散点）</td></tr>
+    <tr><td>写真の色・明るさが浮く</td><td>スクリーンの合成を通るので post・粗さ・粒は自動で同じだけ掛かる。撮影を設営後にやる（§4）のが残りの半分</td></tr>
+    <tr><td>接近が「部屋の紹介」に見える</td><td>1 枚ごとに必ず立ち位置へ寄る（横に逸れる写真を入れない）。向きの一貫が「目的を持った接近」を作る</td></tr>
+    <tr><td>加速しすぎて読めない</td><td>下限 0.14 秒。同時に、到達の 1.4 秒ホールドが「見せる時間」を引き受ける</td></tr>
+    <tr><td>当日写真が撮れない</td><td>退化の梯子（§5）。現行の体験がそのまま残る</td></tr>
+  </table></div>
+
+  <h2>9. 実装の段階（すべて未実装）</h2>
+
+  <ul class="tl">
+    <li><span class="date">第 1 段</span><span class="headline">リズムと画（コア）</span>
+    <code>PovBurstLogic</code>（純ロジック＋テスト）・source <code>"povburst"</code>・
+    <code>menu burst</code> プレビュー。仮写真でリズムを判定に出す</li>
+    <li><span class="date">第 2 段</span><span class="headline">当日写真の道</span>
+    卓の <code>dollpov/</code> フォルダ・正規化・配布・端末キャッシュ・本番前チェック
+    （0099 の相似形。設計済みの型のコピー）</li>
+    <li><span class="date">第 3 段</span><span class="headline">音と観測</span>
+    切替音の連打（既存音源）・<code>ev=burst</code>・analyze の対・著作（L2C2#0 の組み替え）</li>
+  </ul>
+
+  <h2>10. ユーザーに訊くこと（既定つき・返事が無くても進める）</h2>
+
+  <div class="qa">
+    <dt>到達の一枚は何にするか</dt>
+    <dd><strong>既定 = 現行の cue_monster_C のまま</strong>（0050 の判定を壊さない）。
+    案 = 市松人形のクロースへ差し替える — 「人形視点」と名指しした以上、来たのは人形なので
+    到達も人形の方が筋が通る。ただし素材（人形の顔の生成 or 実物の接写）が要るので、
+    接近だけ先に入れて到達は後から差し替えられる形にしておく（cueId 1 個の話）。</dd>
+  </div>
+
+  <p class="note">正本: ユーザー逐語は canon/LEDGER.md 0101（この設計の発注）・0050（2周目C の全画面）・
+  0099（当日写真の型）。実装はまだ 1 行も無い。設計の疑問 1 件（到達の一枚）は canon/OPEN.md の案にも登録。</p>
+</div>
