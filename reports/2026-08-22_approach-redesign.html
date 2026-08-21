@@ -1,0 +1,417 @@
+<title>接近の再設計</title>
+<style>
+/* ============================================================
+ * report.css — 単一ファイル HTML レポート用テーマ
+ *
+ * 正本: ~/.claude/reference/design-tokens.md
+ *   → このファイルは派生。値を変えたいときは正本を直してからここへ配る。
+ *
+ * 使い方: style タグの中へ**全文インライン展開**する。
+ *   ⚠ このファイルの中に閉じタグの文字列を書かないこと。HTML の style 要素は
+ *     CSS コメントの中だろうと最初の閉じタグで終わるので、**以降の CSS が本文として画面に出る**
+ *     （2026-08-17 実害。この行自体が原因だった）。
+ *   外部参照は禁止（output-format.md: 単一ファイル・CDN 禁止・恒久的に開ける状態）。
+ * ============================================================ */
+
+:root {
+  /* --- color: light（既定） --------------------------------- */
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;  /* 18px+ / 太字 / 囲み線 / 図形のみ */
+  --accent-strong:    #a8493c;  /* 本文サイズの文字・リンク（AA） */
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  /* --- type ------------------------------------------------- */
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;    /* 12px  チップ・脚注 */
+  --fs-sm:   .875rem;   /* 14px  キャプション・表・出典 */
+  --fs-base: 1rem;      /* 16px  本文 */
+  --fs-md:   1.125rem;  /* 18px  リード・小見出し */
+  --fs-lg:   1.375rem;  /* 22px  h2 */
+  --fs-xl:   1.875rem;  /* 30px  h1 */
+
+  /* --- space（4px 系列。この外の値を書かない） ---------------- */
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;     /* 本文計測幅 */
+  --radius: 0;          /* 角丸は 0。円形要素のみ 50% を直接書く */
+}
+
+/* --- color: dark（OS 設定とページ属性の両方に追随） ------------ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+/* ============================================================
+ * base
+ * ============================================================ */
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+/* --- 見出し（明朝。上に置き、下または上に罫） ------------------ */
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }          /* 構造上の強調＝色なし */
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); } /* 意味強調＝1 節に 1〜2 回 */
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+/* ============================================================
+ * 部品
+ * ============================================================ */
+
+/* 見出し上の小ラベル */
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+/* タイトル直下の副題・日付 */
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+/* 結論の先出し */
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+/* 並列カード（3 列を目的にしない。中身の数で自然に折り返す） */
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+/* 時系列 */
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li {
+  border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4);
+  position: relative; margin: 0;
+}
+.tl > li::before {
+  content: ""; position: absolute; left: -5px; top: .55em;
+  width: 8px; height: 8px; background: var(--accent);
+}
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+/* 状態ラベル */
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+/* 表（必ず .tblwrap で囲む — 横スクロールは body ではなく表の側で） */
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+/* 図 */
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+/* 問いと答え */
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+/* コード */
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+/* 表内のトークン名・パスは折り返さない（狭幅では .tblwrap の横スクロールで吸収する） */
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+/* 弱い情報・末尾の注記 */
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+/* ============================================================
+ * responsive / motion / print
+ * ============================================================ */
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+<div class="wrap">
+  <p class="eyebrow">廻リ視 · 2周目B/C → 3周目A · 設計のみ（LEDGER 0102）</p>
+  <h1>接近の再設計</h1>
+  <p class="sub">当日録画と白衣で「追いつかれる」を作り、3-A の「包まれた自分」へ繋ぐ ／ 2026-08-22 シュビー</p>
+
+  <div class="lead">
+    <p>0101 の第 1 版（写真の加速連写）を<strong>この設計で置き換える</strong>。変わったのは 4 つ —
+    ①2周目の monster 3 本（A・B・C）を消す ②接近は写真ではなく<strong>当日の準備中に撮る録画クリップ</strong>
+    ③<strong>白衣</strong>で「録画の人物 ＝ リアルタイムの自分」と思わせる ④接近の「追いつき」が
+    3-A の入り（<strong>最初から黒いノイズに包まれた自分</strong>）へ直結する。
+    ライブ映像への依存は 2-B・2-C からゼロになる — 事故る芽がない。</p>
+  </div>
+
+  <h2>1. 全体の弧 — 2-B から 3-A まで 1 本の話にする</h2>
+
+  <ul class="tl">
+    <li><span class="date">2-B</span><span class="headline">予備動作（1 回だけ）</span>
+    ライブの B に、一瞬だけ<strong>知らない低い視点</strong>が割り込んで戻る（約 1 秒・遠景・人物なし）。
+    「いまのは何?」だけ残す</li>
+    <li><span class="date">2-C</span><span class="headline">本番 — 4 回の視点乗っ取りと追いつき</span>
+    C の画面は入った時から<strong>偽ライブ（当日録画）</strong>。そこへ低い視点の接近クリップが
+    4 回、間隔を詰めながら割り込む。4 回目で白衣の背中に<strong>追いつく</strong></li>
+    <li><span class="date">C の残り</span><span class="headline">白衣が消える</span>
+    追いつきの後、C の画面は<strong>無人</strong>のまま（映像から「自分」が居なくなった）。
+    区間を出るまで戻らない</li>
+    <li><span class="date">3-A</span><span class="headline">包まれた自分と、来る自分</span>
+    入った瞬間から<strong>右半分の自分は黒いノイズに包まれている</strong>（捕まったまま）。
+    鏡映しの反対側からリアルタイムの自分が来る。凍結 → <strong>2周目 A の録画</strong>が
+    同じ位置から歩き出す → 包まれていたものが晴れて<strong>人形</strong>が立っている</li>
+  </ul>
+
+  <p>2-B の 1 回が文法を教え、2-C の 4 回が距離を詰め、3-A が結果を見せる。
+  ジャンプスケア（1 枚の絵の衝撃）から<strong>因果の恐怖（追われて、追いつかれて、取られた）</strong>への転換。</p>
+
+  <h2>2. 白衣の仕掛け — 録画を「リアルタイムの自分」と思わせる</h2>
+
+  <ul>
+    <li><strong>体験者に白衣（みたいなもの）を着せ、当日録画の被写体も白衣を着る。</strong>
+    監視カメラの粗い画で人物の同定に使えるのは服の色と形だけ — そこを揃えれば
+    「白衣が映っている ＝ 自分が映っている」と読まれる</li>
+    <li><strong>設定と噛む</strong>: 紙の依頼書の「怪異調査員」に制服が生まれる。
+    白衣を渡して着せる行為そのものが没入の入口になる（機材の都合に見えない）</li>
+    <li><strong>映る時間を絞る</strong>（ユーザー指定）: 接近クリップは
+    <strong>参加者が映っていない所から</strong>始め、白衣の人物が映る時間を最小にする。
+    映るほど「動きが自分と違う」に気づく機会が増える — 疑いの面積を減らす</li>
+    <li><strong>副産物が 3 つ</strong>: ①服装の個人差が消える（誰が来ても録画素材が成立する）
+    ②暗い部屋で白衣は明るい ＝ 背景差分（入れ替わりの芯）が立ちやすくなる
+    ③3-A の黒い覆いが白衣の上に乗る ＝ コントラスト最大で「包まれた」が読める</li>
+    <li><strong>運用</strong>: 不織布の使い捨て白衣（サイズフリー・HMD と干渉しない前掛け型でも可）。
+    onsite チェックリストに「被せる前に着せる」を足す</li>
+  </ul>
+
+  <h2>3. 2-B — 予備動作</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>拍</th><th>画</th><th>尺</th><th>備考</th></tr>
+    <tr><td>進入 +2.0s まで</td><td>ライブの B（普段どおり）</td><td>—</td><td>take 未発火の区間</td></tr>
+    <tr><td>割り込み</td><td>低い視点の遠景クリップ（<strong>人物なし</strong>・部屋の隅から）</td><td>0.9s</td><td>cut in / cut out。切替音 1 発</td></tr>
+    <tr><td>戻り</td><td>ライブの B</td><td>0.6s（現行 monster の戻りと同型）</td><td>take 終了</td></tr>
+  </table></div>
+
+  <p>2-B はライブのままでよい（まだ何も仕掛けていないので事故る要素がない）。
+  割り込みが 1 秒 ＝ 報告の長押し（1.0s ＋ 気づき）では押し切れないので dismissible は立てない（§8）。</p>
+
+  <h2>4. 2-C — 本番</h2>
+
+  <h3>時系列（実測滞在 約 7 秒に収める）</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>#</th><th>画</th><th>尺</th><th>音</th></tr>
+    <tr><td>0</td><td><strong>偽ライブ</strong>: 当日録画のカメラ C。白衣は画面の端に一瞬 or 不在</td><td>1.2s</td><td>—</td></tr>
+    <tr><td>1</td><td>POV 1（遠い。白衣は米粒 or 不在）</td><td>0.7s</td><td>切替 1 発</td></tr>
+    <tr><td>2</td><td>偽ライブ</td><td>1.0s</td><td>切替 1 発</td></tr>
+    <tr><td>3</td><td>POV 2（近い。歩きの揺れ）</td><td>0.7s</td><td>切替 1 発</td></tr>
+    <tr><td>4</td><td>偽ライブ</td><td>0.8s</td><td>切替 1 発</td></tr>
+    <tr><td>5</td><td>POV 3（すぐそこ。白衣の一部が画面に入る）</td><td>0.6s</td><td>切替 1 発</td></tr>
+    <tr><td>6</td><td>偽ライブ</td><td>0.5s</td><td>切替 1 発</td></tr>
+    <tr><td>7</td><td><strong>POV 4 — 追いつき</strong>: 白衣の背中が画面を埋める。手が届く寸前で乱れて途切れる</td><td>1.2s</td><td>切替 1 発 → <strong>無音</strong></td></tr>
+    <tr><td>8</td><td><strong>捕まった後</strong>: 無人の C（白衣が消えた）</td><td>区間を出るまで（untilZoneChange）</td><td>—</td></tr>
+  </table></div>
+
+  <p>#0〜7 で約 6.7 秒。挟む録画（偽ライブ）が詰まっていくのが「勢いよく」の実体で、
+  POV クリップ自体は歩きの揺れを持つ実写（写真より生々しい）。全部が録画なので
+  <strong>この区間はライブに 1 秒も依存しない</strong>。</p>
+
+  <h3>撮影の台本（設営後・白衣のスタンドインと 2 人で 10 分）</h3>
+
+  <ul>
+    <li><strong>偽ライブ（base_C）</strong>: <strong>本物のカメラ C の配信から録る</strong>（画角・粗さ・色が
+    定義上完全一致）。白衣の人が C 区間の入口に立つ・少し動く・端へ捌ける、を 60 秒。使う区間は卓で trim</li>
+    <li><strong>POV 1〜3</strong>: 手持ちスマホ・<strong>高さ 40cm</strong>（人形の目線・0101 のまま）・
+    C の立ち位置へ向かって遠 → 近。<strong>毎カット必ず立ち位置へ正対</strong>（横に逸れると「部屋の紹介」になる）</li>
+    <li><strong>POV 4</strong>: 白衣の背中の至近（0.5m）。ゆっくり寄って最後に少し速く</li>
+    <li><strong>after（#8）</strong>: 無人の C。既存の plate_C でも可（静止画で足りる）</li>
+    <li>⚠ <strong>照明を本番と同じにしてから撮る</strong>。偽ライブが本物に見えるかは照明の一致がすべて</li>
+    <li>置き場は卓へ（cue 登録: <code>fake_live_C</code> / <code>pov_1..4</code> / 2-B 用 <code>pov_0</code>）。
+    素材が無ければそのカットは飛ぶ（§6.4）＝ <strong>C はただのライブに退化</strong>して体験は続く</li>
+  </ul>
+
+  <h2>5. 3-A — 包まれた自分と、来る自分</h2>
+
+  <h3>新しい時系列</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>#</th><th>左半分</th><th>右半分</th><th>終わり</th></tr>
+    <tr><td>0</td><td>鏡映しのライブ（従来どおり反転）＝ 反対側から<strong>リアルタイムの自分が来る</strong></td><td>ライブの自分に<strong>持続の黒い覆い</strong>（入った瞬間から包まれている。黒は本人の動きに付いてくる）</td><td>line_freeze 横断まで</td></tr>
+    <tr><td>1</td><td><strong>凍結</strong>（従来どおり）</td><td>包まれたまま</td><td>1.2s</td></tr>
+    <tr><td>2</td><td><strong>2周目 A の録画</strong>が凍結位置から歩き出す（recLap 1 → 2 へ変更）</td><td>覆いが縮んで晴れ、<strong>人形</strong>が立っている（入れ替わりの後半だけを使う）</td><td>録画の尺</td></tr>
+    <tr><td>3</td><td colspan="2">無人プレート ＋ 人形（従来どおり）</td><td>区間を出るまで</td></tr>
+  </table></div>
+
+  <ul>
+    <li><strong>鏡映しは残す。意味が変わる</strong> — 「もう 1 人の自分」ではなく、
+    捕まった自分（右）に対して「まだ捕まっていない自分（左）が歩いてくる」。
+    2-C の追いつきから筋が通る（0102「追いついたことから 3-A につなげたい」）</li>
+    <li><strong>右半分の覆いはライブ＋持続の黒</strong>（録画の白衣を包む案は捨て —
+    黒が本人の腕・歩きに付いてくることが 0091 の核で、録画では動きが本人と合わない）。
+    実体は入れ替わりの覆い（芯 ∪ 棒）の<strong>「包まれたまま」保持状態</strong>を新設する:
+    覆い切った状態（knot=1）で止めて、波だけ生かす。step2 の swap は
+    <strong>ほどける段を飛ばして縮む段から</strong>始める（もう包まれているので）</li>
+    <li>⚠ <strong>覆いは分割の右側だけに効かせる</strong>（新規の制約）。差分マスクは合成後の画を読むので、
+    制限しないと<strong>左の鏡映しの人物・録画の人物まで黒が拾って包む</strong>。
+    figure 空間の箱に <code>uv.x &gt; splitX</code> を足す</li>
+    <li>白衣の効き: 2-A 録画の人物は<strong>本物の体験者本人（白衣）</strong>。凍結した鏡映し（白衣）から
+    録画（白衣）への継ぎ目は、服が同じぶんさらに立ちにくい</li>
+  </ul>
+
+  <h3>凍結と開始位置が合わない — 原因は 3 つある</h3>
+
+  <p>現行: 凍結は <code>line_freeze</code>、録画の起点は <code>line_rec_start</code>
+  （course 空間で対角軸に対する<strong>鏡像</strong>として置かれた別の線）。
+  「録画が外から始まる」のはこの構成の残差で、原因を分けると:</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>原因</th><th>何が起きるか</th><th>手当て</th></tr>
+    <tr><td>① course の鏡 ≠ 画像の鏡</td><td>カメラ A の実姿勢が対称軸の真上に無い限り、course で対称な 2 点は<strong>画面上では対称に写らない</strong>（透視・歪み）。鏡像の線を course で作っている現行は原理的にずれる</td><td>卓に<strong>「線を鏡へ写す」</strong>を足す: line_freeze を、カメラ A の較正を使って<strong>画像空間で splitX に対して反転</strong>し、床へ逆投影して line_rec_start を焼き直す。①はこれで消える</td></tr>
+    <tr><td>② 横断点が周ごとに違う</td><td>線は約 1.5m あり、凍結は 3 周目の横断点・録画の頭は 2 周目の横断点。歩線が違えばその差だけずれる</td><td>線を<strong>通路の狭い所に短く</strong>引き直す（現行 line_freeze は「検証用の仮置き」とラベルされている — 本番前に現地で引き直す前提を明記）。残差は③で覆う</td></tr>
+    <tr><td>③ 継ぎ目が裸</td><td>凍結 → 録画の切替が cut だと、残ったずれがそのまま「跳んだ」に見える</td><td>差し替えの縁に<strong>乱れ</strong>（既存 transition glitch・0.2s 程度）。ずれの残りを知覚から外す</td></tr>
+  </table></div>
+
+  <p><strong>規律</strong>: line_freeze と line_rec_start は<strong>対の資産</strong>。
+  片方を動かしたら必ず鏡ボタンで作り直す。卓の本番前チェックに
+  「凍結の線と録画の起点が鏡対応か」（較正があれば機械照合できる）を足す。
+  観測は analyze に「凍結の時刻 → 録画の頭の時刻」の間隔と、evidence に
+  <strong>凍結コマと録画頭コマを並べた 1 枚</strong>を足す（位置のずれを目で測れる形にする）。</p>
+
+  <h2>6. 消すもの</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>何</th><th>処置</th></tr>
+    <tr><td>L2C0#0（cue_monster_A・3.5s）</td><td><strong>削除</strong>（0102「2周目A,Bの保留にしてたものも消して」）</td></tr>
+    <tr><td>L2C1#0（cue_monster_B・3.5s）</td><td><strong>削除</strong> → 2-B は §3 の予備動作へ</td></tr>
+    <tr><td>L2C2#0（cue_monster_C・2.5s・ジャンプスケア）</td><td><strong>置換</strong> → 2-C は §4 の本番へ</td></tr>
+    <tr><td>cue_monster_A/B/C（素材）</td><td>cues 庫には<strong>残す</strong>（take から外すだけ。素材は消さない）</td></tr>
+    <tr><td>0050 の「驚かせるのは2周目Cの全画面」</td><td>役割は POV 4（追いつき）が引き継ぐ — 全画面の 1 枚ではなく「届いた瞬間」</td></tr>
+    <tr><td>0101 の第 1 版設計（写真の加速連写・dollpov フォルダ）</td><td><strong>この設計で置き換え</strong>（写真 → 録画クリップ。当日撮影の低さ 40cm・加速の原理は引き継ぐ）</td></tr>
+  </table></div>
+
+  <h2>7. 事故りにくさ（この設計の骨）</h2>
+
+  <ul>
+    <li><strong>2-B・2-C はライブ依存ゼロ</strong>: 全カットが録画。配信が全滅していても演出は完走する</li>
+    <li><strong>退化の梯子</strong>: 素材が無いカットは飛ぶ（既存 §6.4）→ 2-C はただのライブへ。
+    3-A の持続の覆いは差分が組めなければ CG の形へ（既存の縮退）。録画（2-A）が無ければ
+    step2 は飛んで step3（プレート＋人形）へ — どの段で壊れても体験は続く</li>
+    <li><strong>決定論</strong>: 偽ライブ・POV とも同じ素材・同じ尺で毎回同じ絵。
+    実機とプレビューの差が出るのは 3-A の覆い（本人の動き）だけ</li>
+  </ul>
+
+  <h2>8. 問と既定（返事が無くても既定で進める）</h2>
+
+  <div class="qa">
+    <dt>新しい 2-B・2-C に「報告で消える」（dismissible）を立てるか</dt>
+    <dd><strong>既定 = 立てない。</strong> 予備動作 0.9 秒は物理的に押し切れず、
+    2-C の追いつきは 3-A の前提なので消されると筋が壊れる。押した人には
+    「異常は検出されませんでした」が返る ＝ <strong>装置にはこの接近が見えていない</strong>、という
+    読みが立つ（侵食の弧 0082 とも矛盾しない）。解呪の成功体験は 1周目B が担い続ける。</dd>
+    <dt>2-C の合間（偽ライブ）を本物のライブにするか</dt>
+    <dd><strong>既定 = 全部録画。</strong> 0102「リアルタイム映像は事故しやすい」に従う。
+    ライブに一瞬でも戻すと、POV に映る白衣と画面の自分の位置が食い違う瞬間が生まれうる。</dd>
+    <dt>3-A 右半分の「包まれた自分」の中身</dt>
+    <dd><strong>既定 = ライブ ＋ 持続の覆い。</strong> 黒が本人の動きに付いてくることが
+    「自分が捕まっている」の唯一の証拠（0091）。覆いが完全に隠すので、ライブでも事故の芽は
+    「差分が組めない」だけ ＝ CG の形へ縮退して成立する。</dd>
+  </div>
+
+  <h2>9. 実装の段階（すべて未実装）</h2>
+
+  <ul class="tl">
+    <li><span class="date">第 1 段</span><span class="headline">著作と素材の道</span>
+    2周目 3 本の削除・2-B/2-C の take 組み替え（全部既存スキーマ: clip カット＋秒）・
+    素材 cue の登録枠・カメラ C の配信から偽ライブを録る口（卓）。コードは最小</li>
+    <li><span class="date">第 2 段</span><span class="headline">3-A の機構</span>
+    持続の覆い（包まれたまま保持・右半分制限・ほどけ飛ばしの swap）・recLap 2 への変更・
+    切替音の連打（画を差し替える同じ行から）</li>
+    <li><span class="date">第 3 段</span><span class="headline">位置合わせと判定の道具</span>
+    卓の「線を鏡へ写す」・本番前チェック（鏡対応・素材の有無・record.laps に 2）・
+    analyze の「凍結 → 録画頭」間隔・evidence の並べ 1 枚・白衣の onsite チェックリスト</li>
+  </ul>
+
+  <p class="note">正本: ユーザー逐語は canon/LEDGER.md 0102（この改稿の発注）・0101（第 1 版）・
+  0050・0091・0095。現行の著作の確認値: 2周目 monster 3 本はすべて dismissible / record.startLineId =
+  line_rec_start / line_freeze は「検証用の仮置き」ラベル / 3-A step2 は recLap 1。
+  実装はまだ 1 行も無い。第 1 版の設計書（2026-08-22_doll-pov-burst.html）はこの文書で置き換え。</p>
+</div>
