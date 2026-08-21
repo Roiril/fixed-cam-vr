@@ -41,6 +41,11 @@ namespace FixedCamVr.Streaming
         private static readonly int SwapSeedId = Shader.PropertyToID("_SwapSeed");
         private static readonly int SwapMaskTexId = Shader.PropertyToID("_SwapMaskTex");
         private static readonly int SwapMaskId = Shader.PropertyToID("_SwapMask");
+        private static readonly int SwapWaveId = Shader.PropertyToID("_SwapWave");
+        private static readonly int SwapWave2Id = Shader.PropertyToID("_SwapWave2");
+        private static readonly int SwapHotAId = Shader.PropertyToID("_SwapHotA");
+        private static readonly int SwapHotBId = Shader.PropertyToID("_SwapHotB");
+        private static readonly int FrameAspectId = Shader.PropertyToID("_FrameAspect");
 
         [Tooltip("スクリーンの Renderer。null なら同じ GameObject から取る。")]
         [SerializeField] private Renderer? screenRenderer;
@@ -52,6 +57,16 @@ namespace FixedCamVr.Streaming
         [SerializeField] private GlitchFx? glitchFx;
 
         private readonly SwapMorphLogic _logic = new SwapMorphLogic();
+
+        /// <summary>
+        /// 黒い波の形と時間（設計 A〜D）。<b>段の進みには 1 ビットも触らない</b> —
+        /// <see cref="_logic"/> の <c>Progress01</c> を読むだけの片方向。
+        /// </summary>
+        private readonly SwapWaveLogic _wave = new SwapWaveLogic();
+
+        /// <summary>体験者の歩き・手の速さ（設計 E / F）。取れなければ 0 ＝ 静かな呼吸へ落ちる。</summary>
+        private readonly SwapEnergyLogic _energy = new SwapEnergyLogic();
+
         private Material? _material;
         private Action? _onCovered;
 
@@ -94,6 +109,31 @@ namespace FixedCamVr.Streaming
 
         /// <summary>このランで入れ替わりが走った回数（テレメトリ用）。</summary>
         public int Count { get; private set; }
+
+        /// <summary>
+        /// いま画へ書いている山の振幅（figure 単位・テレメトリ用。**画に出た側**）。
+        /// 走っているのにここが 0 のままなら、段は進んでいるのに<b>波が 1 画素も出ていない</b>
+        /// （uniform の配線が切れた / 倍率が 0）。
+        /// </summary>
+        public float CrestAmp { get; private set; }
+
+        /// <summary>全身のエネルギー 0..1（テレメトリ用。0 = 立ち止まっている / 体が取れていない）。</summary>
+        public float Energy01 { get; private set; }
+
+        /// <summary>手のホットスポットを書けた点の数 0..2（テレメトリ用）。</summary>
+        public int HotPoints { get; private set; }
+
+        /// <summary>
+        /// この回の山の振幅の最大（テレメトリ用）。<b>畳んでも残す</b> — <c>ev=swap st=end</c> は
+        /// 走り終わった後に出るので、生の値を読むと必ず 0 になる（<see cref="MaskPlateBound"/> と同じ理由）。
+        /// </summary>
+        public float CrestAmpPeak { get; private set; }
+
+        /// <summary>この回のエネルギーの最大（テレメトリ用）。0 = 一度も動いていない / 体が取れない。</summary>
+        public float EnergyPeak { get; private set; }
+
+        /// <summary>この回に書けた手のホットスポットの最大点数（テレメトリ用）。</summary>
+        public int HotPeak { get; private set; }
 
         /// <summary>
         /// <c>_SwapRect</c> を書けたか。**false なら砂は 1 画素も出ない**
@@ -156,6 +196,13 @@ namespace FixedCamVr.Streaming
             float doll = cgLayer.CurrentActorHeightM;
             bool toDoll = dir == SwapMorphLogic.Dir.ToDoll;
             _logic.Begin(dir, totalSec, toDoll ? human : doll, toDoll ? doll : human);
+            _wave.Begin(dir, totalSec);
+            // 前の体験者の速さを持ち越さない（次の人が立ち止まっているのに波が荒れている、を作らない）。
+            _energy.Reset();
+
+            CrestAmpPeak = 0f;
+            EnergyPeak = 0f;
+            HotPeak = 0;
 
             _onCovered = onCovered;
             _dollActorId = cgLayer.CurrentActorId;
@@ -174,7 +221,7 @@ namespace FixedCamVr.Streaming
             // 1 フレーム目から正しい背丈で出す（Apply 直後の 1 コマだけ実寸で出るのを防ぐ）。
             cgLayer.SetSwapHeight(toDoll ? human : doll);
             cgLayer.SetGroundContact(toDoll ? 0f : 1f);
-            Write(SwapMorphLogic.Sample.Idle, toDoll);
+            Write(SwapMorphLogic.Sample.Idle, SwapWaveLogic.Wave.Idle, toDoll);
             return true;
         }
 
@@ -185,6 +232,8 @@ namespace FixedCamVr.Streaming
         public void Cancel()
         {
             _logic.Cancel();
+            _wave.Cancel();
+            _energy.Reset();
             _onCovered = null;
             ClearUniforms();
             if (cgLayer == null) { _humanShown = false; return; }
@@ -203,10 +252,18 @@ namespace FixedCamVr.Streaming
             //   歩いている体験者の上で砂だけが遅れて付いてくる。実行順は Script Execution Order ではなく
             //   「同じ LateUpdate の中で cgLayer が先に居る」ことに依存させない —
             //   矩形は毎フレーム引き直すので、遅れても 1 フレームで、位置は次で追いつく。
-            SwapMorphLogic.Sample s = _logic.Tick(Time.unscaledDeltaTime);
+            float dt = Time.unscaledDeltaTime;
+            SwapMorphLogic.Sample s = _logic.Tick(dt);
             Cover = s.cover;
             Knot = s.knot;
             HeightM = s.heightM;
+
+            // 黒い波（設計 A〜F）。**段の進みより後・uniform を書く前**に解く。
+            // ⚠ キメの一拍はこのフレームの波に乗せる（物語の縁と視覚の縁を揃えるのが D の全部）。
+            if (s.justSwapScreen) _wave.NotifyBeat();
+            _energy.Tick(dt, cgLayer != null ? cgLayer.BodySnapshot : Cg.ShowBodyInput.None);
+            SwapWaveLogic.Wave w = _wave.Tick(dt, _logic.Progress01, _energy.AmpMul, _energy.SpeedMul);
+            Energy01 = _energy.Energy01;
 
             // 砂に覆われている間だけ姿を替えられる（替わったことが 1 画素も見えない）。
             //   覆い切った縁   … 人形 → 人。ここから人の形で育つ
@@ -219,7 +276,7 @@ namespace FixedCamVr.Streaming
                 cgLayer.SetSwapHeight(s.heightM);
                 cgLayer.SetGroundContact(s.ground);
             }
-            Write(s, _logic.Direction == SwapMorphLogic.Dir.ToDoll);
+            Write(s, w, _logic.Direction == SwapMorphLogic.Dir.ToDoll);
 
             // 画面の差し替え。⚠ **縁は向きで違う**（`SwapMorphLogic.Sample.justSwapScreen`）—
             // 人形 → 人は覆いが人の大きさへ育ち切ってから差し替える（早いと、はみ出した当人を
@@ -293,7 +350,7 @@ namespace FixedCamVr.Streaming
         /// （人形は足元に現れる）、人形 → 人は足元から（人は上へ育つ）。
         /// どちらも「行き先の方向へほどける」。
         /// </summary>
-        private void Write(in SwapMorphLogic.Sample s, bool toDoll)
+        private void Write(in SwapMorphLogic.Sample s, in SwapWaveLogic.Wave w, bool toDoll)
         {
             if (_material == null) return;
             Vector4 rect = new Vector4(0.5f, 0.5f, 0.2f, 0f);
@@ -301,8 +358,9 @@ namespace FixedCamVr.Streaming
             if (!RectResolved) rect = new Vector4(0.5f, 0.5f, 0.2f, 0f);
             _material.SetVector(SwapRectId, rect);
             // ⚠ マスク（映像の中の人）は**縮まない枠**で引く。人型が縮んでも映像の人はそのまま。
-            _material.SetVector(SwapRect0Id,
-                SwapMorphLogic.MaskRect(rect, s.heightM, _logic.MaskHeightM));
+            Vector4 rect0 = SwapMorphLogic.MaskRect(rect, s.heightM, _logic.MaskHeightM);
+            _material.SetVector(SwapRect0Id, rect0);
+            WriteWave(w, rect0);
             _material.SetFloat(SwapCoverId, Mathf.Clamp01(s.cover));
             _material.SetFloat(SwapKnotId, Mathf.Clamp01(s.knot));
             _material.SetFloat(SwapThreadId, Mathf.Clamp01(s.thread));
@@ -311,16 +369,64 @@ namespace FixedCamVr.Streaming
             _material.SetFloat(SwapSeedId, Time.unscaledTime);
         }
 
+        /// <summary>
+        /// 黒い波を uniform へ流す（設計 A〜F）。<b>手の位置は実寸の人の figure 空間</b>
+        /// （<paramref name="rect0"/> 側）で渡す — シェーダの <c>pM</c> と同じ空間。
+        /// 人型の空間（<c>_SwapRect</c>）で渡すと、人型が縮むほど手が体から離れていく。
+        /// </summary>
+        private void WriteWave(in SwapWaveLogic.Wave w, Vector4 rect0)
+        {
+            if (_material == null) return;
+            CrestAmp = w.crestAmp;
+            CrestAmpPeak = Mathf.Max(CrestAmpPeak, w.crestAmp);
+            EnergyPeak = Mathf.Max(EnergyPeak, Energy01);
+            _material.SetVector(SwapWaveId, new Vector4(w.crestY, w.crestAmp, w.needle, w.spike));
+            _material.SetVector(SwapWave2Id, new Vector4(w.elapsed, w.beat, w.clear01, w.ampMul));
+
+            Cg.ShowBodyInput body = cgLayer != null ? cgLayer.BodySnapshot : Cg.ShowBodyInput.None;
+            Vector4 hotA = HotFor(body.LeftValid, body.LeftHandPos, _energy.LeftHot01, rect0);
+            Vector4 hotB = HotFor(body.RightValid, body.RightHandPos, _energy.RightHot01, rect0);
+            HotPoints = (hotA.w > 0f ? 1 : 0) + (hotB.w > 0f ? 1 : 0);
+            HotPeak = Mathf.Max(HotPeak, HotPoints);
+            _material.SetVector(SwapHotAId, hotA);
+            _material.SetVector(SwapHotBId, hotB);
+        }
+
+        /// <summary>
+        /// 手 1 点ぶんのホットスポット。取れない（コントローラ持ち・トラッキング切れ・カメラの後ろ）
+        /// なら 0 を返す ＝ 設計 A〜D の絵に自然に落ちる（切り分けの分岐を増やさない）。
+        /// </summary>
+        private Vector4 HotFor(bool valid, Vector3 world, float hot01, Vector4 rect0)
+        {
+            if (!valid || hot01 <= 0.001f || cgLayer == null) return Vector4.zero;
+            if (!cgLayer.TrySwapFrameUv(world, out Vector2 uv)) return Vector4.zero;
+            float h = Mathf.Max(rect0.z, 1e-3f);
+            // シェーダの `pM` と同じ式（枠 UV → 実寸の人の figure 空間）。
+            float aspect = _material != null ? _material.GetFloat(FrameAspectId) : 0f;
+            if (aspect <= 0.01f) aspect = 16f / 9f;   // まだ 1 枚も届いていないとき
+            return new Vector4((uv.x - rect0.x) * aspect / h, (uv.y - rect0.y) / h,
+                               SwapWaveLogic.HotRadiusFig, hot01 * SwapEnergyLogic.HotGain);
+        }
+
         private void ClearUniforms()
         {
             Cover = 0f;
             Knot = 0f;
             HeightM = 0f;
             RectResolved = false;
+            CrestAmp = 0f;
+            Energy01 = 0f;
+            HotPoints = 0;
             // MaskPlateBound は畳んでも残す（`ev=swap st=end` が「その回はどちらの形で
             // 覆ったか」を読むため。次の Begin の BindMaskPlate が必ず上書きする）。
             if (_material == null) return;
             _material.SetVector(SwapRectId, new Vector4(0.5f, 0.5f, 0.2f, 0f));
+            // 黒い波も畳む。⚠ **ampMul は 1**（0 にすると次の Begin までの 1 フレーム、
+            // 基本の波まで消える。既定 1 = 従来の絵）。
+            _material.SetVector(SwapWaveId, Vector4.zero);
+            _material.SetVector(SwapWave2Id, new Vector4(0f, 0f, 0f, 1f));
+            _material.SetVector(SwapHotAId, Vector4.zero);
+            _material.SetVector(SwapHotBId, Vector4.zero);
             _material.SetFloat(SwapCoverId, 0f);
             _material.SetFloat(SwapKnotId, 0f);
             _material.SetFloat(SwapThreadId, 0f);

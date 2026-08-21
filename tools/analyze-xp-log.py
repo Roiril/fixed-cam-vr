@@ -941,9 +941,11 @@ def analyze(events, others, exp, warns=None):
         w(f"  t={fnum(e, 't', 0):7.1f}  {e.get('st', '?'):5s} {e.get('dir', '?'):7s} "
           f"背丈 {fnum(e, 'h', 0):.2f}m 矩形 {e.get('rect', '?')} "
           f"差分マスク {e.get('mask', '?')} 人の代役 {e.get('vis', '?')}")
-    # 画に出た側。`swap=<走ったか>/<被覆>/<背丈>/<矩形>/<累計>/<差分マスク>`
-    # （6 つ目は 2026-08-21〜。旧ログは 5 つ組のまま読める）
+    # 画に出た側。`swap=<走ったか>/<被覆>/<背丈>/<矩形>/<累計>/<差分マスク>/
+    #                <山の振幅>/<エネルギー>/<手の点>`
+    # （6 つ目は 2026-08-21〜、7〜9 つ目は黒い波。旧ログは短いまま読める）
     cov_max, rect_ok, swap_n, mask_ok = 0.0, 0, 0, None
+    crest_max, energy_max, hot_max = None, None, None
     for smp in sums:
         raw = smp.get("swap")
         if not raw or raw == "-":
@@ -957,6 +959,10 @@ def analyze(events, others, exp, warns=None):
             swap_n = max(swap_n, int(parts[4]))
             if len(parts) >= 6:
                 mask_ok = max(mask_ok or 0, int(parts[5]))
+            if len(parts) >= 9:
+                crest_max = max(crest_max or 0.0, float(parts[6]))
+                energy_max = max(energy_max or 0.0, float(parts[7]))
+                hot_max = max(hot_max or 0, int(parts[8]))
         except ValueError:
             continue
     if not swaps and swap_n == 0:
@@ -992,6 +998,28 @@ def analyze(events, others, exp, warns=None):
             if no_vis:
                 verdict("WARN", f"人の代役（actors[] の visitor）へ替えられなかった回がある"
                                 f"（{len(no_vis)} 回）— 覆いの形が人形の引き伸ばし＝人型に見えない")
+
+        # 黒い波（`reports/2026-08-21_swap-wave-design.html` の設計 A〜F）。
+        # ⚠⚠ **「段が進んだ」ではなく「効果が出た」を見る。** 山の振幅は**画へ書いた値**なので、
+        #    走っているのに 0 なら uniform の配線が切れている（絵からは気づけない —
+        #    従来の波だけの絵が普通に出るので、走行の PNG は正常に見える）。
+        # ⚠ エネルギーと手の点は**立ち止まっている体験者では 0 が正しい**ので判定に使わない。
+        #    手はコントローラを持っていると取れない（既定の運用では取れない方が普通）。
+        ends_wave = [e for e in ends if e.get("crest") is not None]
+        if crest_max is not None or ends_wave:
+            peak = crest_max if crest_max is not None else 0.0
+            for e in ends_wave:
+                peak = max(peak, fnum(e, "crest", 0.0) or 0.0)
+            w(f"  黒い波: 山の振幅の最大 {peak:.2f} / "
+              f"エネルギーの最大 {energy_max if energy_max is not None else 0.0:.2f} / "
+              f"手の点 {hot_max if hot_max is not None else 0}")
+            if rect_ok == 1 and peak <= 0.0:
+                verdict("FAIL", "黒い波が 1 度も画へ書かれていない（山の振幅が常に 0）— "
+                                "段は進んでいるのに走る波・針・跳びが出ていない。"
+                                "SwapMorphFx の uniform（_SwapWave / _SwapWave2）の配線を見る")
+            elif (energy_max or 0.0) <= 0.0 and (hot_max or 0) == 0:
+                w("  ⓘ 体の入力が 1 度も動いていない（立ち止まっていた / 体が取れていない）— "
+                  "応答の層（E / F）はこの走行では効いていない。静かな呼吸の側の絵")
     w()
 
     # ---------------- 表示 fps ----------------

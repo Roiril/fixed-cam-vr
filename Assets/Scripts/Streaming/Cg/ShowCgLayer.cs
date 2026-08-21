@@ -546,16 +546,51 @@ namespace FixedCamVr.Streaming.Cg
             if (cam == null) return false;
             float h = Mathf.Max(0.05f, heightM);
             Vector3 center = footWorld + Vector3.up * (h * 0.5f);
-            Vector3 vp = cam.WorldToViewportPoint(center);
-            if (vp.z <= 0.01f) return false;
-
-            Vector3 vpTop = cam.WorldToViewportPoint(center + Vector3.up * (h * 0.5f));
-            float cx = (vp.x - 0.5f) * containScale.x + 0.5f;
-            float cy = (vp.y - 0.5f) * containScale.y + 0.5f;
-            float radius = Mathf.Clamp(Mathf.Abs(vpTop.y - vp.y) * containScale.y, 0.02f, 0.6f);
-            focus = new Vector4(cx, cy, radius, Mathf.Clamp01(aura));
+            if (!TryFrameUv(cam, center, containScale, out Vector2 c)) return false;
+            // ⚠ 上端は**戻り値を見ない**（見かけの半高は差だけ要る。旧実装もそうだった —
+            //   ここで false へ倒すと、カメラが人型の中に入った瞬間に荒れが消える）。
+            TryFrameUv(cam, center + Vector3.up * (h * 0.5f), containScale, out Vector2 top);
+            float radius = Mathf.Clamp(Mathf.Abs(top.y - c.y), 0.02f, 0.6f);
+            focus = new Vector4(c.x, c.y, radius, Mathf.Clamp01(aura));
             return true;
         }
+
+        /// <summary>
+        /// ワールドの 1 点を<b>枠 UV</b>（＝シェーダが `_SwapRect` / `_ActorFocus` を測る空間）へ落とす。
+        /// 仮想カメラのビューポート → contain-fit 枠 は <c>ContainUv</c> の逆変換
+        /// <c>p = (uv - 0.5) / s + 0.5</c>。
+        ///
+        /// <see cref="TryActorFocus"/> がこれを 2 回呼ぶ（中心と上端）ので、写像はここ 1 か所。
+        /// 戻り値はカメラの前に居るか — <b>false でも <paramref name="uv"/> は書く</b>
+        /// （差だけが要る呼び出しがある。上を見よ）。
+        /// </summary>
+        public static bool TryFrameUv(Camera cam, Vector3 world, Vector2 containScale, out Vector2 uv)
+        {
+            uv = new Vector2(0.5f, 0.5f);
+            if (cam == null) return false;
+            Vector3 vp = cam.WorldToViewportPoint(world);
+            uv = new Vector2((vp.x - 0.5f) * containScale.x + 0.5f,
+                             (vp.y - 0.5f) * containScale.y + 0.5f);
+            return vp.z > 0.01f;
+        }
+
+        /// <summary>
+        /// 黒い波（<see cref="SwapWaveLogic"/>）が手の位置を画へ落とすための入口。
+        /// <b>人形と同じ仮想カメラ・同じ contain-fit</b> を通す（別経路で組むと合成とずれる）。
+        /// </summary>
+        public bool TrySwapFrameUv(Vector3 world, out Vector2 uv)
+        {
+            uv = new Vector2(0.5f, 0.5f);
+            if (_virtualCam == null || !_rendering) return false;
+            Vector2 sc = _screen != null ? _screen.ContainScale : Vector2.one;
+            return TryFrameUv(_virtualCam, world, sc, out uv);
+        }
+
+        /// <summary>
+        /// 黒い波が読む体の入力。<b>人形と同じ時刻</b>（＝ 映像の遅延ぶん過去）を返すので、
+        /// 波のエネルギーと人型の位置が同じ瞬間の体を指す。
+        /// </summary>
+        public ShowBodyInput BodySnapshot => CurrentBody();
 
         /// <summary>
         /// CG を描き直す間隔の上限 (秒)。ライブのフレーム更新が観測できないとき

@@ -180,6 +180,19 @@ Shader "FixedCamVr/ScreenComposite"
         // 糸のうねりの時計（秒）。**_Time を使わない** — Editor のプレビューは 1 エディタフレームの中で
         // 何コマも描くので、_Time だと連番 PNG の糸が全コマ同じになる（_GlitchSeed と同じ理由）。
         _SwapSeed("Swap Seed (seconds)", Float) = 0
+        // 黒い波（`reports/2026-08-21_swap-wave-design.html`）。**唯一の writer は SwapMorphFx**、
+        // 値の正本は `SwapWaveLogic` / `SwapEnergyLogic` の const（数値を 2 か所に置かない）。
+        //   x = 走る山の中心（figure y。-1 足元 / +1 頭）
+        //   y = 山の振幅（figure 単位）／ z = 針の強さ ／ w = 稀に跳ぶ帯の強さ
+        // ⚠ すべて 0 で**従来の絵に戻る**（層を切って焼く `-Set layers=` はこれで効く）。
+        _SwapWave("Swap Wave (crestY, crestAmp, needle, spike)", Vector) = (0, 0, 0, 0)
+        //   x = 入れ替わりが始まってからの秒 ／ y = キメの一拍 1..0 ／ z = 晴れる段の進み 0..1
+        //   w = 基本の波へ掛ける倍率（全身のエネルギー。**既定 1**）
+        _SwapWave2("Swap Wave 2 (elapsed, beat, clear, ampMul)", Vector) = (0, 0, 0, 1)
+        // 手のホットスポット（設計 F）。位置は**実寸の人の figure 空間**（`_SwapRect0` 側 = `pM`）。
+        //   xy = 中心 ／ z = 半径 ／ w = 結合済みの強さ（0 = 使わない）
+        _SwapHotA("Swap Hot A (px, py, r, amount)", Vector) = (0, 0, 0, 0)
+        _SwapHotB("Swap Hot B (px, py, r, amount)", Vector) = (0, 0, 0, 0)
     }
 
     SubShader
@@ -224,6 +237,10 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _SwapMask;
                 float4 _SwapSmear;
                 float4 _SwapLine;
+                float4 _SwapWave;
+                float4 _SwapWave2;
+                float4 _SwapHotA;
+                float4 _SwapHotB;
                 float _SwapCover;
                 float _SwapKnot;
                 float _SwapThread;
@@ -586,6 +603,116 @@ Shader "FixedCamVr/ScreenComposite"
                 extR = max((0.05 + breath + shift) * k, 0.02);
             }
 
+            // ---- 黒い波（`reports/2026-08-21_swap-wave-design.html` の設計 A〜F）--------------
+            //
+            // 上の `SwapWaveExt` は**その場で伸縮する対称な波**（＝ 振り子）で、連続で読めるが穏やかで
+            // 「ゆらゆらした切り絵」に寄っていた。足りなかったのは 4 つ — **緩急・方向・対比・キメ**。
+            //
+            // ⚠⚠ **縦は機械、横は生き物。** 帯の格子（48 行の等間隔）は装置の走査線なので
+            //   **縦は絶対に揺らさない**。有機的な動きは全部横（端の波・ほつれ・走り）に置く。
+            //   機械の規則の上で黒だけが生きて動く、という対比が「アートチック」の正体。
+            // ⚠⚠ **黒だけで組む**（`canon/LEDGER.md` 0091）。明るい線・色・白を出さない。
+            //   かっこよさは**形と時間（緩急）だけ**で作る。
+            // ⚠ 時計と段の値は C#（`SwapWaveLogic` / `SwapEnergyLogic`）、
+            //   **形の寸法はここ**（この 4 関数の const）。数値を 2 か所へ書かない。
+
+            /// 走る波（設計 A）。**sin ではなく非対称パルス** — 前縁は体高の 5% で立ち上がり、
+            /// 後ろへ exp で減衰して尾を引く（立ち上がりが速く減衰が遅い ＝ 緩急）。
+            /// 向きは `_SwapFromTop`（人 → 人形は下へ / 人形 → 人は上へ）。1 本の swap で変わらない。
+            float SwapCrest(float pRowY)
+            {
+                if (_SwapWave.y <= 0.0001) return 0.0;
+                float dir = _SwapFromTop > 0.5 ? -1.0 : 1.0;
+                float s = (pRowY - _SwapWave.x) * dir;      // >0 = まだ来ていない / <0 = 通り過ぎた
+                const float RISE = 0.10;                    // 前縁（体高の 5% ＝ figure 0.10）
+                float tail = 0.55 * (1.0 + _SwapWave2.y);   // キメの一拍では尾が伸びる
+                return s > 0.0 ? 1.0 - smoothstep(0.0, RISE, s) : exp(s / tail);
+            }
+
+            /// 手が速く動いた所だけ毛羽立つ（設計 F）。
+            /// ⚠⚠ 位置は**実寸の人の figure 空間**（`pM`）。縮む人型の空間で渡すと、
+            ///   人型が縮むほどホットスポットが体から離れていく（映像の中の腕はそこに在り続ける）。
+            /// ⚠ 結合は弱く、平滑の遅れ（0.3 秒）は消さない — **遅れて反応することが
+            ///   「気づかれた」と読ませる演出そのもの**（強さは `SwapEnergyLogic.HotGain`）。
+            float SwapHot(float2 pM)
+            {
+                float h = 0.0;
+                if (_SwapHotA.w > 0.0001)
+                {
+                    float2 d = (pM - _SwapHotA.xy) / max(_SwapHotA.z, 1e-3);
+                    h += _SwapHotA.w * exp(-dot(d, d));
+                }
+                if (_SwapHotB.w > 0.0001)
+                {
+                    float2 d = (pM - _SwapHotB.xy) / max(_SwapHotB.z, 1e-3);
+                    h += _SwapHotB.w * exp(-dot(d, d));
+                }
+                return h;
+            }
+
+            /// 稀に跳ぶ帯（設計 C）。hash(行) 上位 10% の行だけが、段あたり 1〜2 回、
+            /// 一瞬だけ大きく突き出して戻る（立ち上がり 0.15 秒・減衰 0.30 秒）。
+            /// 規則的な波の上に**事故のような棘**が乗ると、信号の乱れらしくなる。
+            ///
+            /// ⚠⚠ **頻度を上げない。** 上げると全体がノイズへ戻り、0089（全画面の乱れの否定）に逆行する。
+            ///   検査は「1 画面に同時に跳んでいる帯 ≤ 2」（`tools/swap-motion-audit.py`）。
+            ///   48 行 × 上位 10% ≒ 5 行、うち跳んでいるのは 0.45 / 1.5 秒 ＝ 同時 1.4 本。
+            float SwapSpike(float rowN)
+            {
+                if (_SwapWave.w <= 0.0001) return 0.0;
+                if (Hash21(float2(rowN * 131.0, 7.0)) < 0.90) return 0.0;
+                const float PERIOD = 1.5, ATK = 0.15, DEC = 0.30;
+                float t = frac(_SwapWave2.x / PERIOD + Hash21(float2(rowN * 57.0, 19.0))) * PERIOD;
+                float env = t < ATK ? smoothstep(0.0, ATK, t) : saturate(1.0 - (t - ATK) / DEC);
+                return env * _SwapWave.w;
+            }
+
+            /// 針（設計 B）。帯の中の**縦中央だけ**（15 画素の行のうち 5 画素）が、棒の先から伸びる。
+            /// 長さは**裾の重い分布** — 短いのが大半、ごく稀にすごく長い。参考画像の実測
+            /// （中央値 13px / 最大 257px ＝ 人型の高さの 1.5% / 29%）をそのまま設計値にしてある
+            /// （`pow(u, 4.3)` の中央値 0.05 がその比）。行ごとの長さは hash(行) で固定。
+            ///
+            /// ⚠⚠ **時間で長さを振らない**（パチパチする。0098 が階段を廃したのと同じ理由）。
+            ///   代わりに**山に引きずり出される** — 山が通っている行だけ伸び、通り過ぎると縮む。
+            ///   時間は連続のまま「波が体から糸を引き抜いていく」因果が画に出る。
+            float SwapNeedleFig(float rowN, float rowFrac, float pRowY, float crest, float hot)
+            {
+                if (_SwapWave.z <= 0.0001) return 0.0;
+                const float MAXFIG = 0.58;   // 参考画像の最大 257px ＝ 人型の高さの 29%
+                // 縦中央 1/3 だけ。縁はなだらかに（硬く切ると 1 画素の点滅になる）。
+                float mid = 1.0 - smoothstep(0.13, 0.30, abs(rowFrac - 0.5));
+                if (mid <= 0.0) return 0.0;
+                float len = MAXFIG * pow(Hash21(float2(rowN * 79.0, 31.0)), 4.3);
+                // 山に引きずり出される。0.25 は地の質感（全部を山に預けると体の大半が無地になる）。
+                float pull = 0.25 + 0.75 * crest;
+                // 縮む / 育つ段だけ**行き先へ向かって流れる** ＝ モーションライン。
+                // ⚠ 段の判定は knot（縮む / 育つ段だけ 1）。C# から段を渡さないで済む。
+                float aim = step(0.999, _SwapCover) * step(0.999, _SwapKnot)
+                          * (_SwapFromTop > 0.5 ? -1.0 : 1.0);
+                float bias = clamp(1.0 + 0.5 * aim * pRowY, 0.35, 1.5);
+                return len * mid * pull * bias * (1.0 + hot) * _SwapWave.z;
+            }
+
+            /// 晴れ方（設計 A の晴れる段 ＋ H の余韻）。**最後の山が走り抜け、その後ろから帯が消える** —
+            /// 「消える」ではなく「離れていく」。人 → 人形は人形の輪郭に針が数本残ってから引き、
+            /// 人形 → 人は最後の帯が肩から上へ剥がれて終わる（どちらも山の進む向きの帰結）。
+            ///
+            /// ⚠⚠ **効かせるのは緩み（1 - knot）の分だけ。** 晴れる段の 1 フレーム目（knot = 1）は
+            ///   人型を人形へ差し替える縁なので、そこで 1 行でも抜けると差し替えが見える。
+            float SwapClearFade(float rowN, float pRowY)
+            {
+                float clear01 = _SwapWave2.z;
+                if (clear01 <= 0.0001) return 1.0;
+                float dir = _SwapFromTop > 0.5 ? -1.0 : 1.0;
+                // 山の行き先に近い行が最後に残る（人 → 人形は足元 ＝ 人形が現れる所）。
+                float order = saturate(0.5 + 0.5 * pRowY * dir);
+                float jitter = Hash21(float2(rowN * 313.0, 5.0));
+                float death = min(order * 0.78 + jitter * 0.14, 0.92);
+                death = max(death, step(0.94, jitter));   // 余韻: 数本だけ最後まで残る
+                float fade = 1.0 - smoothstep(death - 0.20, death, clear01);
+                return lerp(1.0, fade, 1.0 - saturate(_SwapKnot));
+            }
+
             /// その行がどれだけ糸で塞がれているか 0..1。
             ///
             /// ⚠ <paramref name="knot"/> が 1 のときは**全部の行**が塞がる。差し替えの 1 フレームが
@@ -915,6 +1042,7 @@ Shader "FixedCamVr/ScreenComposite"
 
                         float rows = max(_SwapSmear.x, 4.0);
                         float rowN = (floor(sampleUv.y * rows) + 0.5) / rows;
+                        float rowFrac = frac(sampleUv.y * rows);   // 帯の中の縦位置（針は中央だけ）
 
                         // 帯の棒 ＝ **行の中心線で引いた人型を、波の量ぶん横へ引き伸ばしたもの**。
                         // 自分の列から extR / extL だけ内側へ寄った点に体が在れば、この画素は棒の上。
@@ -933,6 +1061,25 @@ Shader "FixedCamVr/ScreenComposite"
                         float pRowY = (rowN - _SwapRect.y) / max(_SwapRect.z, 1e-3);
                         float extL, extR;
                         SwapWaveExt(rowN, _SwapSeed, _SwapThread, extL, extR);
+
+                        // ---- 黒い波を端へ足す（設計 A / B / C / E / F）----------------------
+                        // ⚠ **足すだけ。** どの層も棒の端を伸ばす方向にしか働かないので、
+                        //   隠し切り（芯 ∪ 棒）は 1 ビットも弱くならない。
+                        // ⚠ テクスチャの読みは 1 つも増えていない（全部 ALU）。7 タップのままなので、
+                        //   隔離殻で踏んだ「全画面で毎画素の重い数式 ＝ 90fps → 39fps」には当たらない。
+                        float hot = SwapHot(pM);
+                        float crest = SwapCrest(pRowY);
+                        // 全身のエネルギー（E）は**基本の波**に掛かる（山・針・跳びは C# 側で掛けてある）。
+                        float amp = max(_SwapWave2.w, 0.0);
+                        extL *= amp;
+                        extR *= amp;
+                        float crestExt = _SwapWave.y * crest * (1.0 + hot);
+                        float needle = SwapNeedleFig(rowN, rowFrac, pRowY, crest, hot);
+                        // 跳びは**片側だけ**（行ごとに向きを固定）。両側だと「膨らんだ」に見えて棘にならない。
+                        float spike = SwapSpike(rowN) * 0.45 * (1.0 + hot);
+                        float spikeR = Hash21(float2(rowN * 211.0, 3.0)) < 0.5 ? 0.0 : spike;
+                        extL += crestExt + needle + (spike - spikeR);
+                        extR += crestExt + needle + spikeR;
                         float stub = 0.0;
                         {
                             float aIn;
@@ -955,7 +1102,13 @@ Shader "FixedCamVr/ScreenComposite"
                         // ⚠⚠ **覆いは黒。中身を 1 画素も見せない**（0091 / 0096）。
                         //   自分だと分かるのは中身ではなく**動く形**（棒の帯が人型に付いてくる）。
                         float rowRand = 0.5 + 0.5 * sin(rowN * 89.0 + _SwapSeed * 1.31);
-                        float rowInk = SwapRowInk(rowRand, frontHere, _SwapKnot);
+                        // 走る波は前線より 1.5 倍速いので、**まだほどけていない所を先に舐める**
+                        // （設計 A の「先触れ」）。ここが無いと、山が前線の外に出た瞬間に
+                        // 行の墨が 0 になって**山そのものが見えなくなる**。
+                        // ⚠ 下の `body`（CG の実体をどこまで残すか）には混ぜない — 人形が斑に消える。
+                        float frontInk = saturate(frontHere + crest * 0.35 * step(_SwapCover, 0.999));
+                        float rowInk = SwapRowInk(rowRand, frontInk, _SwapKnot)
+                                     * SwapClearFade(rowN, pRowY);
                         float w = max(mixBar, smoothstep(0.10, 0.45, sil));
                         swapCol = 0.0;
                         swapMix = saturate(rowInk * w);

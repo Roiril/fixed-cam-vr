@@ -945,6 +945,42 @@ namespace FixedCamVr.Streaming.EditorTools
                 _swapSeed = seed;
             }
 
+            // ---- 黒い波（設計 A〜F・`reports/2026-08-21_swap-wave-design.html`）----
+            //
+            // **本番と同じ純ロジック**（`SwapWaveLogic` / `SwapEnergyLogic`）が解いた値を、
+            // 本番と同じ uniform へ書くだけ。ここで見えた絵はそのまま実機の絵になる。
+
+            private SwapWaveLogic.Wave _swapWave = SwapWaveLogic.Wave.Idle;
+            private Vector3 _hotLeftWorld, _hotRightWorld;
+            private float _hotLeft, _hotRight;
+
+            /// <summary>
+            /// 1 フレーム分の黒い波を渡す。手のホットスポットは<b>ワールド座標</b>で受け取り、
+            /// 本番（<see cref="SwapMorphFx"/>）と同じ写像で実寸の人の figure 空間へ落とす
+            /// （<see cref="Composite"/> が枠を解いてから変換する）。強さ 0 で「その手は無い」。
+            /// </summary>
+            public void SetSwapWave(in SwapWaveLogic.Wave w,
+                                   Vector3 leftHand = default, float leftHot = 0f,
+                                   Vector3 rightHand = default, float rightHot = 0f)
+            {
+                _swapWave = w;
+                _hotLeftWorld = leftHand;
+                _hotLeft = leftHot;
+                _hotRightWorld = rightHand;
+                _hotRight = rightHot;
+            }
+
+            /// <summary>手 1 点ぶんの uniform（本番の <c>SwapMorphFx.HotFor</c> と同じ式）。</summary>
+            private Vector4 HotUniform(Vector3 world, float hot01, Vector4 rect0, Vector2 contain)
+            {
+                if (hot01 <= 0.001f) return Vector4.zero;
+                if (!ShowCgLayer.TryFrameUv(_cgCam, world, contain, out Vector2 uv))
+                    return Vector4.zero;
+                float h = Mathf.Max(rect0.z, 1e-3f);
+                return new Vector4((uv.x - rect0.x) * _frameAspect / h, (uv.y - rect0.y) / h,
+                                   SwapWaveLogic.HotRadiusFig, hot01 * SwapEnergyLogic.HotGain);
+            }
+
             /// <summary>
             /// 差分マスクに使う<b>無人プレート</b>を渡す。null で従来（CG のシルエット）へ戻る。
             /// </summary>
@@ -1059,6 +1095,12 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 ApplyLightAndGround(def, geom);
             }
+
+            /// <summary>
+            /// いま立っている代役の足元（ワールド）。黒い波の台本（<c>ShowSwapPreview</c>）が
+            /// 頭と手の位置をここから組む。立っていなければ原点。
+            /// </summary>
+            public Vector3 ActorFootWorld => _actor != null ? _actor.transform.position : Vector3.zero;
 
             public void HideActor()
             {
@@ -1335,6 +1377,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     : new Vector2(1f, _frameAspect / srcAspect);
 
                 _contain = contain;
+                // ⚠ 枠の縦横比は**書く**（本番は MjpegScreen が書く）。書かないとマテリアルの既定
+                //   1.7778 が使われ、枠が 16:9 でないシーンでは figure 空間が横に歪む。
+                _compositeMat.SetFloat("_FrameAspect", _frameAspect);
                 _compositeMat.SetTexture("_LiveTex", plate.texture);
                 _compositeMat.SetVector("_LiveScale", new Vector4(contain.x, contain.y, 0f, 0f));
                 // CG は**ライブと同じ contain 枠**。ここを生の screenUv にすると、4:3 の映像が 16:9 の枠へ
@@ -1393,10 +1438,24 @@ namespace FixedCamVr.Streaming.EditorTools
                     swapRect = new Vector4(sr.x, sr.y, sr.z, 1f);
                 _compositeMat.SetVector("_SwapRect", swapRect);
                 // マスクを引く枠。**映像の中の人は縮まない**ので、人型が縮んでも元の大きさで引く。
-                _compositeMat.SetVector("_SwapRect0",
-                    _swapMaskHeightM > 0f
-                        ? SwapMorphLogic.MaskRect(swapRect, _actorHeightM, _swapMaskHeightM)
-                        : swapRect);
+                Vector4 swapRect0 = _swapMaskHeightM > 0f
+                    ? SwapMorphLogic.MaskRect(swapRect, _actorHeightM, _swapMaskHeightM)
+                    : swapRect;
+                _compositeMat.SetVector("_SwapRect0", swapRect0);
+                // 黒い波（設計 A〜F）。⚠ 走っていない間は 0（＝ 従来の絵）へ倒す。
+                // ⚠ ampMul の既定は **1**。0 を書くと基本の波まで消える。
+                _compositeMat.SetVector("_SwapWave", _swapActive
+                    ? new Vector4(_swapWave.crestY, _swapWave.crestAmp, _swapWave.needle,
+                                  _swapWave.spike)
+                    : Vector4.zero);
+                _compositeMat.SetVector("_SwapWave2", _swapActive
+                    ? new Vector4(_swapWave.elapsed, _swapWave.beat, _swapWave.clear01,
+                                  _swapWave.ampMul)
+                    : new Vector4(0f, 0f, 0f, 1f));
+                _compositeMat.SetVector("_SwapHotA", _swapActive
+                    ? HotUniform(_hotLeftWorld, _hotLeft, swapRect0, contain) : Vector4.zero);
+                _compositeMat.SetVector("_SwapHotB", _swapActive
+                    ? HotUniform(_hotRightWorld, _hotRight, swapRect0, contain) : Vector4.zero);
                 _compositeMat.SetTexture("_SwapMaskTex",
                     _swapMaskPlate != null ? (Texture)_swapMaskPlate : Texture2D.blackTexture);
                 _compositeMat.SetVector("_SwapMask",

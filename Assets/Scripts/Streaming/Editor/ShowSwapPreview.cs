@@ -46,6 +46,98 @@ namespace FixedCamVr.Streaming.EditorTools
         /// <summary>代役の背丈 (m)。実機は HMD の高さから解く（<see cref="SwapMorphLogic.HumanHeightFrom"/>）。</summary>
         private const float SwapHumanHeightM = SwapMorphLogic.FallbackHumanHeightM;
 
+        /// <summary>
+        /// 黒い波の層の切り替え（<c>-Set layers=ABDEF</c>）。
+        ///
+        /// ⚠⚠ <b>層は 1 つずつ入れて焼く</b>（設計 5 節）。まとめて入れると「どれが効いたか」が消える。
+        /// 既定（指定なし / <c>all</c>）は全部 on。<c>none</c> で 1 つも入れない ＝ 前の版の絵。
+        /// </summary>
+        private readonly struct SwapLayers
+        {
+            /// <summary>A 走る波 / B 細いほつれ / C 稀に跳ぶ帯 / D キメの一拍。</summary>
+            public readonly bool Crest, Needle, Spike, Beat;
+
+            /// <summary>E 全身のエネルギー（歩速） / F 局所のホットスポット（手） / H 余韻（晴れ方）。</summary>
+            public readonly bool Energy, Hot, Afterglow;
+
+            public SwapLayers(bool crest, bool needle, bool spike, bool beat,
+                              bool energy, bool hot, bool afterglow)
+            {
+                Crest = crest; Needle = needle; Spike = spike; Beat = beat;
+                Energy = energy; Hot = hot; Afterglow = afterglow;
+            }
+
+            public static SwapLayers Parse(string? spec)
+            {
+                if (string.IsNullOrEmpty(spec) || spec == "all")
+                    return new SwapLayers(true, true, true, true, true, true, true);
+                string s = spec!.ToUpperInvariant();
+                if (s == "NONE") return new SwapLayers(false, false, false, false, false, false, false);
+                return new SwapLayers(s.Contains("A"), s.Contains("B"), s.Contains("C"),
+                                      s.Contains("D"), s.Contains("E"), s.Contains("F"),
+                                      s.Contains("H"));
+            }
+
+            /// <summary>絵に焼くラベル（何が入った絵なのか分からない PNG は証拠にならない）。</summary>
+            public string Label =>
+                (Crest ? "A" : "-") + (Needle ? "B" : "-") + (Spike ? "C" : "-") +
+                (Beat ? "D" : "-") + (Energy ? "E" : "-") + (Hot ? "F" : "-") +
+                (Afterglow ? "H" : "-");
+
+            /// <summary>切った層の成分を 0 に倒す（シェーダ側は 0 で従来の絵に戻る）。</summary>
+            public SwapWaveLogic.Wave Apply(in SwapWaveLogic.Wave w)
+                => new SwapWaveLogic.Wave(
+                    Crest ? w.crestY : 0f,
+                    Crest ? w.crestAmp : 0f,
+                    Needle ? w.needle : 0f,
+                    Spike ? w.spike : 0f,
+                    w.elapsed,
+                    Beat ? w.beat : 0f,
+                    Afterglow ? w.clear01 : 0f,
+                    Energy ? w.ampMul : 1f);
+        }
+
+        /// <summary>
+        /// 代役の体の入力を<b>台本</b>で作る（設計 5 節「E / F はプレビューに台本の動きが要る」）。
+        /// <b>静止 → 歩行 → 手を振る</b>を入れ替わりの尺の中で演じさせる。これが無いと
+        /// 応答の層（E / F）は絵で判定できず、実機頼みになる。
+        ///
+        /// ⚠⚠ <b>実機との 2 つ目の違い</b>（1 つ目は「体験者が CG の代役」）:
+        ///   台本が作るのは<b>体の入力だけ</b>で、代役の絵は歩かないし手も振らない
+        ///   （絵を動かすと、映像へ焼き込んだ人と CG がずれて別の判定不能が生まれる）。
+        ///   ⇒ ここで判定できるのは「波がエネルギーに応えるか」「手の周りが毛羽立つか」の 2 つだけ。
+        ///   <b>絵と体の一致は実機で被って歩くまで分からない。</b>
+        /// </summary>
+        private static ShowBodyInput ScriptedBody(float t, float total, Vector3 foot,
+                                                  float heightM, float yawDeg)
+        {
+            float standSec = 0.35f * total;
+            float walkSec = 0.35f * total;
+            Quaternion rot = Quaternion.Euler(0f, yawDeg, 0f);
+            Vector3 right = rot * Vector3.right;
+            Vector3 fwd = rot * Vector3.forward;
+
+            // 歩行は**半径 0.25m の円を 1.1 m/s で回る**。sin の往復にすると速さが脈打って
+            // エネルギーが 0 と全開を往復する（＝ 何に反応しているのか絵から読めない）。
+            Vector3 sway = Vector3.zero;
+            if (t > standSec)
+            {
+                const float r = 0.25f, v = 1.1f;
+                float w = v / r;
+                float tw = Mathf.Min(t - standSec, walkSec);   // 手を振る段では歩みを止める
+                sway = right * (r * (Mathf.Cos(w * tw) - 1f)) + fwd * (r * Mathf.Sin(w * tw));
+            }
+
+            // 手を振るのは**右だけ**（左と比べられないと「手に反応した」が読めない）。
+            float waveT = Mathf.Max(0f, t - (standSec + walkSec));
+            float swing = waveT > 0f ? Mathf.Sin(waveT * 2f * Mathf.PI * 1.6f) * 0.30f : 0f;
+            Vector3 shoulder = foot + Vector3.up * (heightM * 0.80f) + sway;
+            return new ShowBodyInput(
+                true, foot + Vector3.up * heightM + sway, yawDeg,
+                true, shoulder - right * 0.26f,
+                true, shoulder + right * (0.26f + swing) + Vector3.up * (swing * 0.5f));
+        }
+
         // public なのは CLI（`unity.ps1 menu swap`）が -executeMethod で直接呼ぶため。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Swap Morph", priority = 253)]
         public static void RunSwap() => ExecuteSwap(EditorCliArgs.Get("show"));
@@ -126,10 +218,15 @@ namespace FixedCamVr.Streaming.EditorTools
                 PostParams post = ShowCompositePreviewPlan.ResolvePost(
                     null, show.CameraPost(cameraIndex), show.post);
 
+                // 黒い波の層（`-Set layers=A` で 1 層だけ、`none` で前の版の絵）。
+                SwapLayers layers = SwapLayers.Parse(EditorCliArgs.Get("layers"));
+                Debug.Log($"[SwapViz] 黒い波の層: {layers.Label}" +
+                          "（A 走る波 / B 針 / C 跳び / D キメ / E 歩速 / F 手 / H 余韻）");
+
                 written += RenderSwap(stage, plate, geom, post, doll, human, standXz, standYaw,
-                                      SwapMorphLogic.Dir.ToDoll, written);
+                                      SwapMorphLogic.Dir.ToDoll, layers, written);
                 written += RenderSwap(stage, plate, geom, post, doll, human, standXz, standYaw,
-                                      SwapMorphLogic.Dir.ToHuman, written);
+                                      SwapMorphLogic.Dir.ToHuman, layers, written);
             }
             catch (Exception e)
             {
@@ -150,7 +247,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private static int RenderSwap(Stage stage, Plate plate, Geometry geom, PostParams post,
                                       ShowActorDef doll, ShowActorDef human,
                                       Vector2 standXz, float standYaw,
-                                      SwapMorphLogic.Dir dir, int frameBase)
+                                      SwapMorphLogic.Dir dir, SwapLayers layers, int frameBase)
         {
             bool toDoll = dir == SwapMorphLogic.Dir.ToDoll;
             string title = toDoll ? "L3C0  visitor -> doll" : "L4C0  doll -> visitor";
@@ -183,6 +280,9 @@ namespace FixedCamVr.Streaming.EditorTools
             int n = 0;
             float capH = fromH, capCover = 0f, capKnot = 0f, capThread = 0f;
             float capReal = toDoll ? 0f : 1f;
+            // 黒い波（設計 A〜F）。**絵に焼く** — 何の層が入った絵なのか分からない PNG は証拠にならない。
+            SwapWaveLogic.Wave capWave = SwapWaveLogic.Wave.Idle;
+            float capEnergy = 0f, capHotL = 0f, capHotR = 0f;
             ShowActorDef stageActor = first;
             Plate shown = toDoll ? platePerson : plateDoll;   // いま映像に写っている画
             bool cgOn = false;                                // CG は入れ替わった後の姿だけ
@@ -191,7 +291,12 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 string cap = $"{title}   {phase}   t={sec:0.00}s\n" +
                              $"figure height {capH:0.00}m   unravel {capCover:0.00}   " +
-                             $"knot {capKnot:0.00}   thread {capThread:0.00}   real {capReal:0.00}\n{note}";
+                             $"knot {capKnot:0.00}   thread {capThread:0.00}   real {capReal:0.00}\n" +
+                             $"wave {layers.Label}   crest y {capWave.crestY:+0.00;-0.00}   " +
+                             $"amp {capWave.crestAmp:0.00}   needle {capWave.needle:0.00}   " +
+                             $"spike {capWave.spike:0.00}   beat {capWave.beat:0.00}   " +
+                             $"clear {capWave.clear01:0.00}   energy {capEnergy:0.00}   " +
+                             $"hot L{capHotL:0.00} R{capHotR:0.00}\n{note}";
                 stage.Composite(shown, cgVisible: cgOn, post: post, caption: cap);
                 stage.Save($"f{frameBase + n:0000}.png");
                 n++;
@@ -211,6 +316,10 @@ namespace FixedCamVr.Streaming.EditorTools
             // ---- 入れ替わり ----
             var logic = new SwapMorphLogic();
             logic.Begin(dir, SwapMorphLogic.DefaultTotalSec, fromH, toH);
+            // **本番と同じ純ロジック**（`SwapMorphFx` が回すのと同じもの）。写経した式は必ずいつか食い違う。
+            var wave = new SwapWaveLogic();
+            wave.Begin(dir, SwapMorphLogic.DefaultTotalSec);
+            var energy = new SwapEnergyLogic();
             const float dt = 1f / SwapFps;
             float t = 0f;
             bool covered = false;         // もう砂が覆い切ったか（段の名前に要る）
@@ -248,6 +357,21 @@ namespace FixedCamVr.Streaming.EditorTools
                 // ⚠ マスクは映像の中の人を拾う（`SwapDiffSil`）。人型は縮む / 育つが
                 //   映像の中の人は動かないので、引く枠の背丈を別に渡す。
                 stage.SetSwap(true, s, toDoll, t, -1f, logic.MaskHeightM);
+
+                // ---- 黒い波（設計 A〜F）。実機（`SwapMorphFx.LateUpdate`）と同じ順で解く ----
+                if (s.justSwapScreen && layers.Beat) wave.NotifyBeat();
+                // 手と頭は台本。⚠ 手の位置は**実寸の人の背丈**で組む（映像の中の人は縮まない）。
+                ShowBodyInput body = ScriptedBody(t, SwapMorphLogic.DefaultTotalSec,
+                                                  stage.ActorFootWorld, SwapHumanHeightM, standYaw);
+                energy.Tick(dt, body);
+                float ampMul = layers.Energy ? energy.AmpMul : SwapEnergyLogic.NeutralEnergy;
+                float speedMul = layers.Energy ? energy.SpeedMul : SwapEnergyLogic.NeutralEnergy;
+                capWave = layers.Apply(wave.Tick(dt, logic.Progress01, ampMul, speedMul));
+                capEnergy = layers.Energy ? energy.Energy01 : 0f;
+                capHotL = layers.Hot ? energy.LeftHot01 : 0f;
+                capHotR = layers.Hot ? energy.RightHot01 : 0f;
+                stage.SetSwapWave(capWave, body.LeftHandPos, capHotL, body.RightHandPos, capHotR);
+
                 capH = s.heightM; capCover = s.cover; capKnot = s.knot;
                 capThread = s.thread; capReal = s.real;
                 Shoot(PhaseLabel(s, dir, covered), t);
@@ -264,10 +388,13 @@ namespace FixedCamVr.Streaming.EditorTools
                 stage.PlaceActor(last, standXz, standYaw, geom);
             }
             stage.SetSwap(false, SwapMorphLogic.Sample.Idle, toDoll, 0f);
+            stage.SetSwapWave(SwapWaveLogic.Wave.Idle);
             stage.SetGroundMul(1f);
             stage.SetActorHeight(last, toH, geom);
             capH = toH; capCover = 0f; capKnot = 0f; capThread = 0f;
             capReal = toDoll ? 1f : 0f;
+            capWave = SwapWaveLogic.Wave.Idle;
+            capEnergy = 0f; capHotL = 0f; capHotR = 0f;
             for (int i = 0; i < SwapTailFrames; i++) Shoot("after", t + (i + 1) / (float)SwapFps);
 
             return n;

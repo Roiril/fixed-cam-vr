@@ -525,14 +525,21 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>
         /// 入れ替わりのノイズ —
-        /// <c>&lt;走っているか&gt;/&lt;被覆&gt;/&lt;背丈 m&gt;/&lt;矩形&gt;/&lt;累計&gt;/&lt;差分マスク&gt;</c>。
+        /// <c>&lt;走っているか&gt;/&lt;被覆&gt;/&lt;背丈 m&gt;/&lt;矩形&gt;/&lt;累計&gt;/&lt;差分マスク&gt;/
+        /// &lt;山の振幅&gt;/&lt;エネルギー&gt;/&lt;手の点&gt;</c>。
         /// 6 つ目（2026-08-21〜）: 1 = 無人プレートの差分で覆えている / 0 = CG の形へ縮退
-        /// （映像の中の人と位置がずれうる）。`analyze-xp-log.py` と**対**。
+        /// （映像の中の人と位置がずれうる）。
+        ///
+        /// 7〜9 つ目は<b>黒い波</b>（設計 A〜F）。⚠⚠ <b>「段が進んだ」ではなく「効果が出た」を出す</b> —
+        /// 山の振幅は**画へ書いた値**なので、走っているのに 0 なら段だけが進んでいる。
+        /// エネルギーと手の点は<b>立ち止まっている体験者では 0 が正しい</b>（判定に使わない）。
+        /// `analyze-xp-log.py` と**対**。
         /// </summary>
         private string SwapState => _swap == null
             ? "-"
             : $"{(_swap.Active ? 1 : 0)}/{_swap.Cover:F2}/{_swap.HeightM:F2}/" +
-              $"{(_swap.RectResolved ? 1 : 0)}/{_swap.Count}/{(_swap.MaskPlateBound ? 1 : 0)}";
+              $"{(_swap.RectResolved ? 1 : 0)}/{_swap.Count}/{(_swap.MaskPlateBound ? 1 : 0)}/" +
+              $"{_swap.CrestAmp:F2}/{_swap.Energy01:F2}/{_swap.HotPoints}";
 
         /// <summary>
         /// 闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;/&lt;区間の進み&gt;/&lt;速さ&gt;</c>。
@@ -828,10 +835,13 @@ namespace FixedCamVr.Diagnostics
                 }
                 else if (_lastSwapActive && !act)
                 {
+                    // ⚠ 黒い波の 3 つは**この回の最大**（走り終わってから出る行なので、
+                    //   生の値を読むと必ず 0 になる）。
                     Emit($"ev=swap st=end n={_swap.Count} " +
                          $"dir={(_swap.Direction == SwapMorphLogic.Dir.ToDoll ? "toDoll" : "toHuman")} " +
                          $"h={_swap.HeightM:F2} rect={(_swap.RectResolved ? 1 : 0)} " +
-                         $"mask={(_swap.MaskPlateBound ? 1 : 0)} vis={(_swap.HumanActorShown ? 1 : 0)}");
+                         $"mask={(_swap.MaskPlateBound ? 1 : 0)} vis={(_swap.HumanActorShown ? 1 : 0)} " +
+                         $"crest={_swap.CrestAmpPeak:F2} e={_swap.EnergyPeak:F2} hot={_swap.HotPeak}");
                 }
                 _lastSwapActive = act;
             }
