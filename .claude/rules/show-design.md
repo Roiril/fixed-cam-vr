@@ -71,6 +71,21 @@ C:West:  (-0.8, 1,  0)    hx=(0.55, 2, 1.0)   x ∈ [-1.35, -0.25]  cam 2
 これを「未配線」と読むと、実際には別にある原因（今回はパススルーの初期化失敗とシェーダの
 ビルド剥がれ）を見落とす。**確実なのは実機ログを読むこと** — 今回の 3 件はすべてログに出ていた。
 
+**⚠⚠ 角括弧の名前は YAML がクォートするので、素朴な grep は必ず空振りする**（2026-08-23）。
+このプロジェクトの GameObject は `[Sound]` / `[Tracker]` / `[Comms]` / `[WalkGuide]` のように
+角括弧付きの名前が多いが、シーン YAML では **`m_Name: '[Sound]'`** と書かれる。
+
+```bash
+grep -c "m_Name: \[Sound\]"  Assets/Scenes/Main.unity   # → 0（[] が文字クラスとして解釈される）
+grep -cF "m_Name: [Sound]"   Assets/Scenes/Main.unity   # → 0（クォートを含まないので一致しない）
+grep -cF "m_Name: '[Sound]'" Assets/Scenes/Main.unity   # → 1 ✓
+```
+
+⚠ **数えるなら名前ではなく script の guid で数える**（`<型>.cs.meta` の guid をシーンで grep）。
+名前は表示のためのもので、参照の実体は guid。2026-08-23 に「`[Sound]` がシーンに無い」と
+危うく誤報しかけた（実際は正しく焼かれていて、**空振りしたのは grep の書き方**だった）
+— `~/.claude/rules/work-style.md` §2「道具が空を返すことは、対象が無いことの証拠にならない」。
+
 ### ゾーン校正の再設計（2026-07-16〜・形状は PC / 位置合わせは HMD 2 点登録）
 
 **旧 ZoneCalibrator（ゾーンを HMD 内でドラッグ・リサイズ・回転）は廃止**。校正を 2 つに分解した（設計 [.claude/plans/2026-07-16_zone-authoring-redesign.md](../plans/2026-07-16_zone-authoring-redesign.md)）：
