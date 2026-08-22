@@ -174,9 +174,11 @@ function syncRecBtn() {
 async function waitAutoStop(d, maxSec, countdownSec) {
   const deadline = Date.now() + (maxSec + countdownSec + 8) * 1000;
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 400));
     if (!recording) return;                     // 手で止めた
-    const st = await api('/shoot/devices');
+    // ⚠ **この端末だけ**を見る。全台を叩くと 1 巡に数秒かかり、
+    //   カウントダウンや自動停止の瞬間を見逃す（実測で 2 秒の待ちが 1 度も観測できなかった）。
+    const st = await api(`/shoot/devices?host=${encodeURIComponent(d.host)}`);
     const cd = ((st || {}).items || []).find((x) => x.host === d.host);
     if (!cd) continue;
     if (cd.counting) { $('#recState').textContent = `構えて ${cd.countdownLeft}…`; continue; }
@@ -236,7 +238,9 @@ function renderTakes() {
       <td class="${short ? 'sh-ng' : ''}">${dur ? dur.toFixed(1) + '秒' : '?'}</td>
       <td>${t.codec || '?'} / ${t.pixFmt || '?'}</td>
       <td>${(t.capturedAt || '').replace('T', ' ')}</td>
-      <td><button data-act="prev">試写</button> <button data-act="adopt">採用</button></td>
+      <td><button data-act="prev">試写</button> ${t.url === src
+        ? '<button data-act="unadopt">採用をやめる</button>'
+        : '<button data-act="adopt">採用</button>'}</td>
     </tr>`;
   }).join('');
   $('#takes').querySelector('tbody').innerHTML = body
@@ -246,6 +250,7 @@ function renderTakes() {
       const url = b.closest('tr').dataset.url;
       const t = list.find((x) => x.url === url);
       if (b.dataset.act === 'prev') preview(t);
+      else if (b.dataset.act === 'unadopt') unadopt();
       else adopt(t);
     };
   }
@@ -258,18 +263,28 @@ function preview(t) {
   if (!t) { v.removeAttribute('src'); return; }
   v.src = t.url;
   v.loop = false;
+  const base = '（実機で画に出るのはここだけ）';
   const apply = () => {
     const w = headWindow(neededHeadSec(segments(), shotName(cur)), Number($('#inPoint').value));
-    $('#prevNote').textContent = `頭の ${w.start.toFixed(2)}〜${w.end.toFixed(2)} 秒だけを繰り返す`
-      + '（実機で画に出るのはここだけ）';
+    $('#prevNote').textContent =
+      `頭の ${w.start.toFixed(2)}〜${w.end.toFixed(2)} 秒だけを繰り返す${base}`;
     v.currentTime = w.start;
-    v.play().catch(() => {});
-    clearInterval(v.dataset.timer);
+    // ⚠ **自動再生の失敗を握りつぶさない**。`onloadedmetadata` はクリックの文脈から外れるので、
+    //   ブラウザの設定によっては muted でも拒否される。黙って止まると
+    //   「素材が壊れている」と誤診する（実際に検証中そう見えた）。
+    v.play().catch(() => {
+      $('#prevNote').textContent =
+        `頭の ${w.start.toFixed(2)}〜${w.end.toFixed(2)} 秒${base} — `
+        + '自動再生が止められた。映像をクリックすると始まる';
+    });
+    clearInterval(Number(v.dataset.timer));
     const timer = setInterval(() => {
       if (v.currentTime >= w.end || v.ended) { v.currentTime = w.start; v.play().catch(() => {}); }
     }, 60);
-    v.dataset.timer = timer;
+    v.dataset.timer = String(timer);
   };
+  // 止まっていたら映像をクリックで始められる（上の警告と対）。
+  v.onclick = () => { v.play().catch(() => {}); };
   v.onloadedmetadata = apply;
   if (v.readyState >= 1) apply();
 }
@@ -277,6 +292,18 @@ function preview(t) {
 $('#inPoint').oninput = () => { if (curTake) preview(curTake); };
 
 // ---- 採用 -------------------------------------------------------------------
+/** 採用を取り消す（url を空で送る）。間違って採用したときの戻り道。素材は消さない。 */
+async function unadopt() {
+  const r = await api('/shoot/adopt', { cueId: shotName(cur), url: '' });
+  if (!r || !r.ok) {
+    $('#recState').innerHTML = `<span class="sh-ng">取り消せなかった: ${(r || {}).detail || ''}</span>`;
+    return;
+  }
+  await loadState();
+  await refreshTakes();
+  $('#recState').innerHTML = '<span class="sh-warn">採用を取り消した</span>';
+}
+
 async function adopt(t) {
   if (!t) return;
   const inPoint = Number($('#inPoint').value) || 0;

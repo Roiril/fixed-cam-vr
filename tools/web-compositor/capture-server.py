@@ -142,12 +142,16 @@ def _probe_media(path):
     m = re.search(r'Duration:\s*(\d+):(\d\d):(\d\d(?:\.\d+)?)', err)
     if m:
         out['durSec'] = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
-    m = re.search(r'Video:\s*([A-Za-z0-9]+)[^,]*,\s*([a-z0-9()]+)[^,]*,\s*(\d+)x(\d+)', err)
+    m = re.search(r'Video:\s*([A-Za-z0-9]+)', err)
     if m:
         out['codec'] = m.group(1)
-        out['pixFmt'] = m.group(2)
-        out['width'] = int(m.group(3))
-        out['height'] = int(m.group(4))
+    # ⚠ 画素形式は括弧の中に**カンマを含む**（`yuv420p(tv, smpte170m, progressive), 480x640`）。
+    #   `[^,]*` で読み飛ばそうとすると解像度の手前で外れて、符号化も寸法も黙って取れない。
+    m = re.search(r',\s*([a-z][a-z0-9]*)(?:\([^)]*\))?,\s*(\d{2,5})x(\d{2,5})', err)
+    if m:
+        out['pixFmt'] = m.group(1)
+        out['width'] = int(m.group(2))
+        out['height'] = int(m.group(3))
     m = re.search(r'([\d.]+)\s*fps', err)
     if m:
         out['fps'] = float(m.group(1))
@@ -1363,7 +1367,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/caminfo':
             return self._get_cam_info(parse_qs(urlparse(self.path).query))
         if path == '/shoot/devices':
-            return self._json(self._shoot_devices())
+            q = parse_qs(urlparse(self.path).query)
+            return self._json(self._shoot_devices((q.get('host', [''])[0] or '').strip()))
         if path == '/shoot/takes':
             return self._json(self._shoot_takes(parse_qs(urlparse(self.path).query)))
         if path == '/shoot/manifest':
@@ -1505,10 +1510,18 @@ class Handler(SimpleHTTPRequestHandler):
                         'port': int(c.get('port') or 8080)})
         return out
 
-    def _shoot_devices(self):
-        """各端末の録画状態。**録りっぱなしの検出**にも使う（本番前チェック ②）。"""
+    def _shoot_devices(self, only_host=''):
+        """
+        各端末の録画状態。**録りっぱなしの検出**にも使う（本番前チェック ②）。
+
+        ⚠ `only_host` で 1 台に絞れる。録画中のポーリングで全台（3 台 × 2 リクエスト）を
+          叩くと 1 巡に数秒かかり、**カウントダウンや自動停止の瞬間を見逃す**（実測で
+          2 秒のカウントダウンが 1 度も観測できなかった）。
+        """
         items = []
         for c in self._shoot_cams():
+            if only_host and c['host'] != only_host:
+                continue
             ok, st = _shoot_get(c['host'], c['port'], '/record/status', timeout=3.0)
             ok2, hl = _shoot_get(c['host'], c['port'], '/health', timeout=3.0)
             items.append({
@@ -1643,8 +1656,26 @@ class Handler(SimpleHTTPRequestHandler):
         """
         cue_id = str(body.get('cueId') or '')
         url = str(body.get('url') or '')
-        if not cue_id or not url:
-            return self._json({'ok': False, 'detail': 'cueId / url が必要です'}, 400)
+        if not cue_id:
+            return self._json({'ok': False, 'detail': 'cueId が必要です'}, 400)
+
+        # url が空 = **採用の取り消し**（間違って採用したときの唯一の戻り道）。
+        # 現場では普通に起きるので、卓の cue エディタへ回らせない。
+        if not url:
+            cleared = {'hit': False}
+
+            def clear(show):
+                for c in (show.get('cues') or []):
+                    if c.get('id') == cue_id:
+                        c['sourceUrl'] = ''
+                        cleared['hit'] = True
+
+            rev = _mutate_show(clear)
+            if not cleared['hit']:
+                return self._json({'ok': False, 'detail': f'cue が無い: {cue_id}'}, 404)
+            return self._json({'ok': True, 'rev': rev, 'cueId': cue_id, 'url': '',
+                               'note': '採用を取り消した（素材は残っている）'})
+
         src = self._resolve_local_asset(url)
         if not src:
             return self._json({'ok': False, 'detail': f'素材が見つからない: {url}'}, 400)
