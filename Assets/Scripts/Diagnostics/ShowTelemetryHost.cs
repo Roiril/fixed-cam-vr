@@ -524,8 +524,17 @@ namespace FixedCamVr.Diagnostics
         /// <summary>合成のマテリアルを掴めているか。<c>-</c>=シーンに居ない / 0=未解決 / 1=解決済み。</summary>
         private string OverlayMaterial => _overlay == null ? "-" : (_overlay.HasMaterial ? "1" : "0");
 
-        /// <summary>CG 人形が実際に描画されているか。<c>-</c>=シーンに居ない。</summary>
-        private string CgState => _cg == null ? "-" : (_cg.IsVisible ? "1" : "0");
+        /// <summary>
+        /// CG の層 — <c>&lt;層が描かれているか&gt;/&lt;それが人形か&gt;</c>。<c>-</c>=シーンに居ない。
+        ///
+        /// ⚠⚠ <b>2 つ組にしたのは、1 つ目だけでは「人形が立っている」と読めないから</b>
+        /// （2026-08-22）。覆いの形を出す<b>人の代役</b>でも 1 つ目は 1 になるので、
+        /// <c>analyze-xp-log.py</c> が「人形が立っているのに笑っていない」と誤判定していた。
+        /// 人形かを訊く側は<b>必ず 2 つ目を読む</b>（C# の <see cref="Cg.ShowCgLayer.DollVisible"/> と対）。
+        /// </summary>
+        private string CgState => _cg == null
+            ? "-"
+            : $"{(_cg.IsVisible ? 1 : 0)}/{(_cg.DollVisible ? 1 : 0)}";
 
         /// <summary>
         /// 入れ替わりのノイズ —

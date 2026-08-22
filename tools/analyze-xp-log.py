@@ -1791,14 +1791,19 @@ def analyze(events, others, exp, warns=None):
                                 "— 古い APK か、ShowSoundDirector が居ない")
             else:
                 peak = max(v for _t, v in swap)
-                # ⚠⚠ **画と突き合わせる。** `cg=1` ＝ 映像の中に人形が立っている ＝ 笑うはずの縁。
+                # ⚠⚠ **画と突き合わせる。** 映像の中に人形が立っている ＝ 笑うはずの縁。
                 #    周の番号ではなく**効果どうし**を比べるので、台本が変わっても効く。
+                # ⚠⚠ **`cg=` の 2 つ目を読む**（2026-08-22）。1 つ目は「CG の層が描かれているか」で、
+                #    覆いの形を出す**人の代役**でも 1 になる。1 つ目で判定していた頃は、
+                #    2 周目 C の保持（代役）を「人形が立っている」と読んで
+                #    「立っているのに笑っていない」と誤って FAIL を出していた。
+                #    旧ログ（1 桁の `cg=1`）は人形かを区別できないので**判定から外す**。
                 mute = [e for e in events
-                        if e.get("ev") == "sum" and str(e.get("cg")) == "1"
+                        if e.get("ev") == "sum" and str(e.get("cg", "")).endswith("/1")
                         and (fnum(e, "sndDolls", 0.0) or 0.0) <= 0.05
                         and "sndSwap" in e and (fnum(e, "sndSwap", 0.0) or 0.0) <= 0.01]
                 if len(mute) >= 2:
-                    verdict("FAIL", f"映像の中に人形が立っているのに笑っていない（cg=1 で sndSwap=0 が "
+                    verdict("FAIL", f"映像の中に人形が立っているのに笑っていない（cg=…/1 で sndSwap=0 が "
                                     f"{len(mute)} 回）— bed_doll_one を掴めているか、"
                                     "ShowSoundDirector が ShowCgLayer を掴めているか")
                 if lap3 and peak <= 0.01:

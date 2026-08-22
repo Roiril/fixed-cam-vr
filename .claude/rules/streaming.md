@@ -1621,6 +1621,11 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
 | `swapHold` | このカットのあいだ、入れ替わりの覆いを**包み切った状態で保持する**（段は 1 ミリも進まない・波だけ走る） |
 | `swapMinX` | 覆いを効かせる**左端**（枠 UV・0 = 制限しない） |
 
+**使う場所は 2 つ**（2026-08-22・0103）: ①3 周目 A の 3 カット（`swapMinX: 0.5`）
+②**2 周目 C の末尾**（`plate_C` の untilZoneChange・`swapMinX: 0`）— 追いつきの後、
+無人の C に黒く包まれた人型を立たせ、**追いついた文脈を黒が 3 周目 A まで運ぶ**。
+区間の切れ目は `ReleaseStepState` が畳んで 3 周目 A が立て直す（隙間はゾーン切替の dip が覆う）。
+
 - 判断は [`SwapMorphLogic.BeginHold`](../../Assets/Scripts/Streaming/SwapMorphLogic.cs)、
   実体は [`SwapMorphFx.BeginHold`](../../Assets/Scripts/Streaming/SwapMorphFx.cs)、
   配線は `TakeRunner` → `CameraSwitchDirector.TakeVeilHoldBegin`
@@ -1643,6 +1648,15 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
   **実体としては 1 画素も描かずに**立てる（`_SwapReal` = 0）。立てられない現場
   （較正未着・`actors[]` に `visitor` が無い）では**覆いが出ないだけ**で、
   鏡映し → 凍結 → 録画 の筋はそのまま通る
+- ⚠⚠ **代役を「人形が立っている」と読ませない**（2026-08-22・実機の走行で 2 穴を踏んだ）。
+  「人形か」を訊く側は **`ShowCgLayer.DollVisible`**（`IsVisible && 代役でない`）を読む:
+  - **音** — `ShowSoundDirector.dollPresent` が `IsVisible` だった頃、2 周目 C の保持中に
+    **入れ替わった人形の笑いが鳴り、カメラ C なので増員（swell）まで育った**
+    （実測 sndSwap 0 → 2.29 / sndSwell 0 → 0.71・走行 20260822_080731）
+  - **入れ替わりの向き** — `TakeRunner.fromDoll` が `IsVisible` だった頃、保持から渡る
+    swap カットで「人形 → 人形 ＝ 成立しない」へ倒れ、**引き継ぎが 1 度も走らない**。
+    プレビュー（`menu swap`）は TakeRunner を通らないので**絵では出ない** — 走行の
+    `[TakeRunner] 入れ替わりは成立しない（人形 前=1 後=1）` 警告が唯一の手掛かり
 - ⚠ **`TakeRunner` は保持中のカットで `ShowCgLayer.Hide()` を呼ばない。** 呼ぶと
   `HoldForSwap` が Hide を保留し、**入れ替わりが終わった瞬間にその保留が走って人形が消える**
   （次のカットのプレート＋人形が空になる）。代役を畳む責任は `SwapMorphFx.Cancel` が持つ

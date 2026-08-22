@@ -381,7 +381,9 @@ stream」では発火しないようにした）で、これが**前回のビル
 | `bg=` | `ev=boot` | カメラ背景が透明か（`透明/全体`）。**不透明ならパススルーは 1 画素も出ない** | `Camera.allCameras` |
 | `font=` | `ev=boot` | 日本語フォントを解決できたか（0 = HMD 内が豆腐） | `JapaneseHudFont.TryGet()` |
 | `ovl=` / `ovlMat=` | `ev=sum` / `ev=cue` | 合成の重み（＝素材が実際に画面へ混ざったか）とマテリアル解決 | `ScreenOverlayController.Strength` / `.HasMaterial`（新設） |
-| `cg=` | `ev=sum` | CG 人形が実際に描画されているか | `ShowCgLayer.IsVisible` |
+| `cg=` | `ev=sum` | **`<層が描かれているか>/<それが人形か>`** の 2 つ組（2026-08-22〜）。
+⚠ 1 つ目は覆いの形を出す**人の代役**でも 1 になる。**人形かを訊く側は必ず 2 つ目を読む** |
+`ShowCgLayer.IsVisible` / `DollVisible` |
 | `bgm=` / `bgmTrk=` | `ev=sum` / `ev=bgm` | 音が実際に鳴っているか | `BgmDirector.IsPlaying` / `.CurrentTrackId` |
 | **`ev=step`** | 遷移 | **演出のカットが画面を取ったか、飛ばされたか**（`played=` / `why=`） | `TakeRunner.StepResolved`（新設） |
 

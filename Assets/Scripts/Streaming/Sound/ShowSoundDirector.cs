@@ -336,7 +336,12 @@ namespace FixedCamVr.Streaming
             }
             // ⚠ ここが立った縁 ＝ **体験者と人形が入れ替わった瞬間**（`canon/LEDGER.md` 0086）。
             //    「3 周目」と書かず、人形が立っていること自体を見る。
-            if (_cg != null) s.dollPresent = _cg.IsVisible;
+            // ⚠⚠ **DollVisible を読む（IsVisible ではなく）。** 持続の覆い（swapHold）と
+            //    ほどける段は人の代役を立てるので、IsVisible だと**黒に包まれた「まだ人形で
+            //    ないもの」に人形の笑いが付く**。実測（2026-08-22 走行 20260822_080731）:
+            //    2 周目 C の保持中に sndSwap 0 → 2.29 / swell 0 → 0.71 まで育っていた。
+            //    人形の声が鳴り始めてよいのは、晴れて実体が出た縁だけ。
+            if (_cg != null) s.dollPresent = _cg.DollVisible;
             return s;
         }
 

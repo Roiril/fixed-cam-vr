@@ -195,6 +195,27 @@ namespace FixedCamVr.Streaming.Cg
         public bool IsVisible => _visible && _rendering;
 
         /// <summary>
+        /// <b>映像の中に人形が立っているか。</b>「人形として読んでよいか」を訊く側はこちらを読む
+        /// （<see cref="IsVisible"/> は「CG の層が描かれているか」で、**人の代役も含む**）。
+        ///
+        /// ⚠⚠ 持続の覆い（`swapHold`）と入れ替わりのほどける段は、覆いの形の供給元として
+        ///   **人の代役（visitor）**を立てる。それを <see cref="IsVisible"/> で「人形が居る」と
+        ///   読むと 2 つ壊れる（2026-08-22 に実機の走行で両方踏んだ）:
+        ///   ①音 — 2 周目 C の保持中に「入れ替わった人形の笑い」が鳴り、カメラ C なので
+        ///     増員（swell）まで育つ（実測 sndSwap 0 → 2.29 / sndSwell 0 → 0.71）
+        ///   ②入れ替わりの向き — 3 周目 A の swap カットで fromDoll=true に化け、
+        ///     「人形 → 人形」＝ 成立しないと誤読して**保持からの引き継ぎごと乱れ遷移へ倒れる**
+        /// </summary>
+        public bool DollVisible => IsDoll(IsVisible, _actorDef != null ? _actorDef.id : "");
+
+        /// <summary>
+        /// 「いま出ている CG を<b>人形</b>として読んでよいか」の判定（純関数・テストで固定）。
+        /// 実体を持たないので <see cref="Tests"/> から直接呼べる。
+        /// </summary>
+        public static bool IsDoll(bool visible, string actorId)
+            => visible && !string.IsNullOrEmpty(actorId) && actorId != TakeSchema.SwapHumanActorId;
+
+        /// <summary>
         /// 身体入力（ハンドトラッキング）が要るか。**人形を出していない間は false** なので、
         /// 供給側（OvrHandTrackingBridge）は毎フレームの GetHandState を丸ごと省ける。
         /// </summary>

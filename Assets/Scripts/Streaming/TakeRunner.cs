@@ -617,7 +617,11 @@ namespace FixedCamVr.Streaming
             //   「このカットが人形を出すか」から導く（<see cref="TakeSchema.TransSwap"/> の説明）。
             //   前後で同じなら入れ替わりではないので、乱れ遷移へ倒して理由を言う。
             bool wantSwap = TakeSchema.IsSwapTransition(step.transition);
-            bool fromDoll = _cgLayer != null && _cgLayer.IsVisible;
+            // ⚠⚠ **DollVisible を読む（IsVisible ではなく）。** 持続の覆い（swapHold）は人の代役を
+            //   立てたまま swap のカットへ渡すので、IsVisible だと fromDoll=true に化けて
+            //   「人形 → 人形 ＝ 成立しない」へ倒れ、**保持からの引き継ぎが 1 度も走らない**
+            //   （2026-08-22。プレビューは TakeRunner を通らないので絵では出ず、ここでしか捕まらない）。
+            bool fromDoll = _cgLayer != null && _cgLayer.DollVisible;
             bool swapUsable = wantSwap && _cgLayer != null && fromDoll != toDoll;
             if (wantSwap && !swapUsable)
                 Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} の入れ替わりは成立しない" +
