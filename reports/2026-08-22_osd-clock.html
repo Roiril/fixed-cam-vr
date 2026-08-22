@@ -1,0 +1,292 @@
+<title>スクリーンの時刻表示（OSD）設計</title>
+<style>
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+  --measure: 46rem;
+  --radius: 0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">廻リ視 · 設計 · 2026-08-22</p>
+  <h1>スクリーンの時刻表示（OSD）</h1>
+  <p class="sub">canon/LEDGER.md 0108 ／ 設計のみ・実装はまだ</p>
+
+  <div class="lead">
+    <p>スクリーンの左上に <code>2026/09/06 14:23:45</code> の形で日付と時刻を常時出す。
+    描くのは <strong>ScreenComposite シェーダの 1 層</strong>（砂嵐の後・管の縁の前）で、
+    虚構上は<strong>カメラではなく観測装置（画面の側）が打っている時計</strong>とする。
+    だからカメラ切替・差し込み・録画・砂嵐のどれでも表示は変わらず、
+    <em>3 周目の録画の上にも「いまの時刻」が進み続ける</em> —
+    録画には焼き込まれていないので、これが構造的に成立する。
+    時刻は端末の実時刻（既定）。場所表示と報告数は出さない（ユーザー判定）。</p>
+  </div>
+
+  <h2>1. 何を出すか</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>項目</th><th>値</th><th>理由</th></tr>
+    <tr><td>文字列</td><td><code>2026/09/06 14:23:45</code>（19 字・すべて半角）</td>
+      <td>参考画像 004.jpg と同じ <code>yyyy/MM/dd HH:mm:ss</code>。秒が刻むこと自体が「ライブである」の主張</td></tr>
+    <tr><td>場所</td><td>映像枠の左上。余白は枠の高さの 4%</td><td>参考画像どおり。管の角丸（<code>_CrtRound</code> 0.07）に掛からない位置</td></tr>
+    <tr><td>大きさ</td><td>1 字の高さ ＝ 枠の高さの約 4.7% ＝ <strong>見かけ 1.0°</strong></td>
+      <td>読めるが主張しない。HmdTextStyle の段（補助 1.5°）より小さいのは意図 — これは読ませる面ではなく画の一部。⚠ 実機で 2 回続けて「読めない」を出した前歴があるので、走行で必ず確かめる（§7）</td></tr>
+    <tr><td>字体</td><td>等幅セルに敷いたサンセリフの数字（自前アトラス）</td><td>監視カメラの OSD の姿。等幅でないと秒の刻みで幅が揺れる</td></tr>
+    <tr><td>色</td><td>生成りに寄せた白 ＋ 暗い縁（アトラスに焼き込む）</td><td>参考画像は白＋影。純白だと暖色の画の上で 1 か所だけ浮く</td></tr>
+    <tr><td>出さないもの</td><td>場所（CAM2 廊下 相当）・報告数</td><td><strong>ユーザー判定（0108）</strong>。区間が短く 3 つしかない／決められた数が無い</td></tr>
+  </table></div>
+
+  <h2>2. 時刻の出どころ</h2>
+
+  <p><strong>既定は端末の実時刻</strong>（<code>DateTime.Now</code>）。当日が 9/6 なら自動で
+  <code>2026/09/06</code> になり、リハーサルの日はその日の日付が出る — どちらも現実なので嘘がない。
+  「装置は正直に映している」がこの作品の恐怖の土台（rules/sound-design.md §1）で、
+  <em>時計だけは絶対に嘘をつかない</em>ことが「スクリーン＝現実」の担保になる。</p>
+
+  <ul>
+    <li>固定の日付（例: 本番前でも常に 2026/09/06）にしたい場合は世界観の判定なので
+      <code>canon/OPEN.md</code> の問 Q12 に既定つきで置いた。返事が無ければ実時刻で進む</li>
+    <li>実時刻を使う以上、<strong>Quest 2 台の時計のずれが体験者に見える</strong>。
+      実装時に docs/onsite-checklist.md §0 へ「2 台の時計を確認」を 1 行足す</li>
+  </ul>
+
+  <h2>3. どの層で描くか（設計の核）</h2>
+
+  <p>TMP の面ではなく <strong>ScreenComposite シェーダの 1 層</strong>として合成する。
+  面を別に立てると <code>_ScreenPower</code>（終幕の電池切れ）・dip・管の曲面・縁の暗さに乗らず、
+  「画面の上に別の層が貼ってある」＝合成の証拠そのものになる。
+  StaffViewing の門・ZTest の罠（TitleNotice が 1 文字も出なかった件）とも無縁になる。</p>
+
+  <p>挿入点は<strong>砂嵐（<code>_SignalLost</code> の混合）の後・管の縁（<code>_CrtEdge</code>）の前</strong>:</p>
+
+  <pre>ソース（mip 劣化・夜間モード）→ CG 人形 → レンズ → センサ → ISP(post)
+  → 走査線 → aura → 乱れ → 入れ替わりの覆い → 管の点灯 → 砂嵐
+  → <strong>★ OSD（時刻）</strong>
+  → 管の縁・角丸 → dip（切替の黒） → _ScreenPower（終幕）</pre>
+
+  <p>この位置の意味: <strong>映像（feed）に起きることは OSD に及ばず、
+  装置（画面）に起きることは OSD も一緒に受ける</strong>。
+  虚構として「時計はカメラではなく観測装置が打っている」（DVR の OSD と同じ）で一貫する。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>場面</th><th>表示</th><th>なぜ</th></tr>
+    <tr><td>導入 段 0〜3（空の管）</td><td><strong>出ない</strong>（<code>× _IntroLive</code>）</td><td>装置は点いているが、まだ何も映していない</td></tr>
+    <tr><td>導入 段 4〜5（映像が出る）</td><td>映像と一緒に現れる</td><td>覆いのセル越しに映像ごと見え始める</td></tr>
+    <tr><td>カメラ切替（dip）</td><td>黒には一緒に沈み、明けても同じ時計が続く</td><td>dip は装置側。時計は連続</td></tr>
+    <tr><td><strong>人形視点の差し込み・3 周目の録画・無人プレート</strong></td><td><strong>出続ける。時刻は「いま」のまま進む</strong></td><td>§4 — この設計の核心</td></tr>
+    <tr><td>乱れ（<code>_Glitch</code>）</td><td>乱れない（後段なので）</td><td>乱れは伝送側。映像だけが裂けて時計は微動もしない ＝「表示は現実」が立つ</td></tr>
+    <tr><td>信号断（砂嵐）</td><td>砂嵐の上に出続ける</td><td>feed が切れても装置は時刻を知っている</td></tr>
+    <tr><td>周回の劣化・夜間モード</td><td>影響を受けない（鮮明なまま）</td><td>劣化は伝送・撮像側。粗い映像の上の鮮明な OSD は実物の DVR と同じ</td></tr>
+    <tr><td>左右分割・凍結・持続の覆い</td><td>その上に乗る</td><td>合成後の最上段なので個別対応が要らない</td></tr>
+    <tr><td>終幕 Flicker</td><td><strong>画と一緒にちかちか消える</strong>（<code>_ScreenPower</code>）</td><td>電池が切れるのは画の一部ではなく装置そのもの（0048）</td></tr>
+    <tr><td>目の視界ジャック・位置合わせ</td><td>特別扱いなし（視界ごと乗っ取られる／スクリーンごと扱われる）</td><td>—</td></tr>
+  </table></div>
+
+  <h2>4. 録画との関係 — なぜ「合成でない感じ」が構造的に立つか</h2>
+
+  <ul>
+    <li><strong>端末内録画（SegmentRecorder）は配信の生 JPEG 列</strong>で、OSD は焼き込まれない。
+      3 周目にその録画が流れるとき、上に乗る OSD は<strong>いまの時刻で進み続ける</strong> —
+      装置が「これは今の映像だ」と主張し続けるので、映像の中に自分が居ないという反転が
+      「録画だから」で説明できなくなる</li>
+    <li>人形視点の mp4・無人プレート・生成画像も同じ。どのカットにも同じ時計が乗る ＝
+      すべて「同じ装置がいま映しているもの」に見える</li>
+    <li>逆に、OSD を録画側へ焼き込む方式（画面録り）にすると
+      3 周目に<strong>過去の時刻が出て種明かしになる</strong>。だから表示時合成の一択</li>
+  </ul>
+
+  <h2>5. 実装部品（実装時のファイル一覧）</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>部品</th><th>何</th></tr>
+    <tr><td><code>OsdClockLogic</code><br><span class="muted">Streaming・純ロジック</span></td>
+      <td><code>DateTime → "yyyy/MM/dd HH:mm:ss"</code> の整形と「秒が変わった縁」の検出。
+      dt 注入・EditMode テスト（書式・ゼロ詰め・縁）</td></tr>
+    <tr><td><code>ScreenOsd</code><br><span class="muted">MonoBehaviour</span></td>
+      <td><code>_OsdTex / _OsdRect / _OsdOpacity</code> の<strong>唯一の writer</strong>
+      （CameraFeelFx と同じく MjpegScreen の Renderer の材質を掴む）。
+      秒が変わったときだけ、約 512×48 の Texture2D へアトラスからグリフを CPU で敷き直して
+      <code>Apply</code>（1Hz・毎フレームは書かない）。値は const で持つ
+      （SerializeField は既存シーン YAML で 0 に読まれる罠）</td></tr>
+    <tr><td><code>ScreenComposite.shader</code></td>
+      <td>uniform 3 つを追加し §3 の位置で premultiplied over。
+      <strong>既定 <code>_OsdRect = (0,0,0,0)</code> なら 1 画素も変えない</strong> —
+      uniform を書かない場面（卓・Editor の各プレビュー・旧シーン）は従来と同じ絵。
+      post の FS_POST 一致規約の<strong>対象外</strong>（<code>_Glitch</code> と同じ別系統）</td></tr>
+    <tr><td><code>Assets/Resources/Osd/OsdGlyphs.png</code></td>
+      <td>焼いた版。<code>0-9 / :</code> と空白の 13 グリフを等幅セルで 1 列に。
+      <code>tools/make-osd-font.py</code> が SourceHanSansJP（同梱・OFL）から焼く
+      （白字＋暗い縁。64px 角。題字・顔と同じ「版を焼く」流儀）。
+      TMP ではないので <code>menu hud-font</code> は無関係</td></tr>
+    <tr><td><code>MainDemoSceneSetup</code></td>
+      <td>MjpegScreen の GameObject へ AddComponent（冪等）。<strong>ビルド前に <code>menu scene</code> 再実行が必須</strong>（シーンに焼かれていないと APK に入らない）</td></tr>
+  </table></div>
+
+  <h2>6. 観測（音と同じく、出たかはログでしか分からない要素がある）</h2>
+
+  <ul>
+    <li><code>ev=sum</code> に <strong><code>osd=&lt;組めたか&gt;/&lt;刻んだ回数&gt;/&lt;不透明度&gt;</code></strong> を足す。
+      「組めたか」＝材質を掴めてテクスチャを書けたか（効果の実在）、
+      「刻んだ回数」＝秒の縁で敷き直した累計（時計が進んでいる証拠）</li>
+    <li>判定は <code>analyze-xp-log.py</code> の「## 効果の実在」節へ:
+      本編で組めていない → FAIL ／ 電源が入っているのに刻みが止まっている → FAIL。
+      <strong>ShowTelemetryHost と対で直す</strong>（片方だけだと沈黙して食い違う）</li>
+    <li>画の証拠: <code>quest-record.py --walk</code> → <code>xp-evidence</code> の PNG 左上に写る。
+      縮小一覧では 1.0° の字は潰れるので、判定はフル解像度で開く（visual-verification §7）</li>
+  </ul>
+
+  <h2>7. 見る手段と検証</h2>
+
+  <ul>
+    <li><strong><code>menu osd</code></strong>（新設・Play 不要）: <strong>固定時刻</strong>を渡して
+      6 状態を PNG に焼く — 素 / 砂嵐 / 乱れ最大 / 劣化最大（3 周目相当） / 終幕の途中 / 導入 段 4。
+      固定時刻なのは決定論のため（同じ版は同じ絵。プレビューに実時刻を混ぜない）。
+      左上の余白が管の縁の暗さでどこまで沈むかもここで確かめて余白を決める</li>
+    <li>EditMode: <code>OsdClockLogicTests</code>（書式・秒の縁）＋ 固定入力に対する敷き直しの決定論</li>
+    <li>実機走行: <code>osd=</code> キーと PNG。<strong>1.0°/字が実際に読めるかは被って確かめる</strong>
+      （見かけ角の机上見積もりは 2 回続けて外した前歴がある — hmd_text_style.md）</li>
+  </ul>
+
+  <h2>8. やってはいけないこと</h2>
+
+  <ul>
+    <li>❌ <strong>録画へ焼き込まない。</strong> 3 周目に過去の時刻が出て種明かしになる（§4）</li>
+    <li>❌ <strong>時刻で嘘をつかない。</strong> 巻き戻し・停止・加速などの時計の演出は、
+      「装置は正直」という 3 周目の土台を壊す。やりたくなったらユーザー判定（canon）を先に取る</li>
+    <li>❌ <strong>文字化け（CommsGlitch）を移植しない。</strong> 呪いに侵されるのは AI の面。
+      装置の時計まで化けると「装置も嘘をつくかもしれない」になる。
+      装置が死ぬのは終幕の電力（<code>_ScreenPower</code>）だけ</li>
+    <li>❌ TMP の面にしない（§3 の理由）</li>
+    <li>❌ 場所・報告数の行を足さない（0108 のユーザー判定）</li>
+    <li>❌ 全角にしない。時刻はデータそのもの（HmdTextStyle 書式 4・5 の側）</li>
+  </ul>
+
+  <h2>9. 未決（既定つきで OPEN に置いたもの）</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>#</th><th>問</th><th>既定</th></tr>
+    <tr><td>Q12</td><td>日付は端末の実時刻でよいか（本番前の走行・リハではその日の日付が出る）</td>
+      <td>実時刻。当日は自動で 2026/09/06 になる。固定日付は「装置は正直」と衝突するので、要るならユーザーの判定で</td></tr>
+  </table></div>
+
+  <p class="note">出典: canon/LEDGER.md 0108（ユーザー逐語）／ 参考画像 C:\Users\kouga\Downloads\004.jpg ／
+  合成順は Assets/Art/Shaders/Streaming/ScreenComposite.shader の実測（2026-08-22 時点・1302〜1378 行）。
+  実装値（1.0°・余白 4%・挿入点・実時刻）はシュビーの判断で、絵と走行で確かめてから確定する。</p>
+</div>
