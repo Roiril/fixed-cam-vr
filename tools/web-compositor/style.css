@@ -893,6 +893,12 @@ input:-webkit-autofill:active {
 /* ===================================================================== */
 .mode-nav { display: flex; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line-soft); }
 .mode-btn { padding: 7px 16px; font-size: var(--fs-body); letter-spacing: .06em; }
+/* 別ページへ出るリンク（撮影コンソール）。モード切替と**同じ見た目にしない** —
+   押すとページごと変わるので、戻ってこられることが分かる形にする。 */
+.mode-btn.mode-link {
+  display: inline-block; text-decoration: none; margin-left: 10px;
+  border-style: dashed;
+}
 .mode-btn.active {
   background: var(--accent-color); border-color: var(--accent-color);
   color: #000; font-weight: 600; opacity: 1;
