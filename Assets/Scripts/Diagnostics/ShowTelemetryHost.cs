@@ -1287,7 +1287,8 @@ namespace FixedCamVr.Diagnostics
                     _sb.Append(" jit=").Append(lat.ArrivalJitterMs.ToString("F0"));
                     _sb.Append(" dec=").Append(lat.DecodeMs.ToString("F0"));
                     _sb.Append(" age=").Append(lat.SourceAgeMs.ToString("F0"));
-                    if (h != null && h.IsThrottling) _sb.Append(" thr=1");
+                    // thr=1 は「配信端末が熱い」（v0.11.0 以降アプリは絞っていない）。
+                    if (h != null && h.IsHot) _sb.Append(" thr=1");
                 }
             }
             Emit(_sb.ToString());

@@ -468,7 +468,7 @@ namespace FixedCamVr.Diagnostics
             if (signalFx != null && signalFx.TrackingFrozen) return ShowAlert.TrackingLost;
 
             var active = registry != null ? registry.GetActive() : null;
-            if ((active?.Health?.throttleStage ?? 0) > 0) return ShowAlert.Throttled;
+            if ((active?.Health?.throttleStage ?? 0) > 0) return ShowAlert.Hot;
 
             // 床の高さを測っていない位置合わせ＝線や人形が沈んで見える原因。体験は成立するので最後。
             if (courseFrame != null && courseFrame.HasRegistration && !courseFrame.HasFloorY)

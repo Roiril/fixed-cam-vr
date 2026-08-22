@@ -344,11 +344,12 @@ namespace FixedCamVr.Streaming
             }
 
             // recv-fps 窓ロール + lag 検出 + stall watchdog を純ロジックに委譲。
-            // 配信側が熱で自動降格している間は lag 判定を抑止する（張り直しても直らず、悪化させるだけ）。
+            // 配信端末が熱いあいだは lag 判定を抑止する（張り直しても直らず、悪化させるだけ）。
+            // ⚠ streamer v0.11.0 でアプリ側の throttle は消えたが、その先で OS が絞るので抑止は要る。
             float phoneFps = _health?.fps ?? 0f;
             _latency.SetDisplayRate(DisplayRateInfo.CurrentHz);
             _latency.SetSourceAgeMs(_health?.latestFrameAgeMs ?? 0f);
-            var reason = _watchdog.EndTick(now, udt, phoneFps, _health?.IsThrottling ?? false);
+            var reason = _watchdog.EndTick(now, udt, phoneFps, _health?.IsHot ?? false);
             if (reason == StreamWatchdogLogic.ReconnectReason.Lag)
             {
                 Debug.Log($"[CameraStream] lag detected (recv={_watchdog.ReceivedFps:F1}/phone={phoneFps:F1}). reconnecting.");

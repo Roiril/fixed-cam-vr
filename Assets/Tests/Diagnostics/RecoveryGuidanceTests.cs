@@ -36,7 +36,7 @@ namespace FixedCamVr.Diagnostics.Tests
         {
             // 3 台のうちどれを見に行けばいいか分からないとスタッフは動けない。
             Assert.That(RecoveryGuidance.What(ShowAlert.NoVideo, 2), Does.Contain("カメラ2"));
-            Assert.That(RecoveryGuidance.What(ShowAlert.Throttled, 3), Does.Contain("カメラ3"));
+            Assert.That(RecoveryGuidance.What(ShowAlert.Hot, 3), Does.Contain("カメラ3"));
         }
 
         [Test]
@@ -75,8 +75,8 @@ namespace FixedCamVr.Diagnostics.Tests
             // 宣言順が優先度。体験が止まっているものが先。
             Assert.That((int)ShowAlert.IntroAborted, Is.LessThan((int)ShowAlert.NeedsReRegistration));
             Assert.That((int)ShowAlert.NeedsReRegistration, Is.LessThan((int)ShowAlert.NoVideo));
-            Assert.That((int)ShowAlert.NoVideo, Is.LessThan((int)ShowAlert.Throttled));
-            Assert.That((int)ShowAlert.Throttled, Is.LessThan((int)ShowAlert.FloorNotMeasured));
+            Assert.That((int)ShowAlert.NoVideo, Is.LessThan((int)ShowAlert.Hot));
+            Assert.That((int)ShowAlert.Hot, Is.LessThan((int)ShowAlert.FloorNotMeasured));
         }
     }
 }

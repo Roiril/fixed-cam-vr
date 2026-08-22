@@ -181,12 +181,12 @@ export function approachPrecheck({ state, segments, assets, takesByShot, manifes
              detail: `今日撮ったものではない: ${stale.map(({ r }) => r.cueId).join(' / ')}`
                      + ' — 照明が違うので撮り直す' };
   }
-  // ④ 熱段（撮影時と本番で画質が違う）
+  // ④ 熱段（撮影時と本番で fps が違う。配信側 v0.11.0 から画質は落ちないが fps は OS が絞る）
   const hot = used.map((r) => ({ r, m: (manifest || {})[r.src] }))
     .filter(({ m }) => m && Number.isFinite(m.throttleStage) && m.throttleStage > 0);
   if (hot.length) {
     return { s: 'warn', label: '接近の素材',
-             detail: `熱で画質が落ちた状態で撮った素材がある: ${hot.map(({ r }) => r.cueId).join(' / ')}`
+             detail: `端末が熱い状態で撮った素材がある: ${hot.map(({ r }) => r.cueId).join(' / ')}`
                      + ' — 端末を冷ましてから撮り直すと本番と揃う' };
   }
   const warn = used.filter((r) => r.level === 'warn');

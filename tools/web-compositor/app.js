@@ -1099,7 +1099,7 @@ function renderRunPanel() {
       const bits = [`観測 ${sum}ms`, `揺らぎ ${Math.round(j)}`, `展開 ${Math.round(d)}`, `提示 ${Math.round(p)}`];
       if (age > 0) bits.push(`配信側の鮮度 ${Math.round(age)}ms`);
       if (u.displayHz) bits.push(`${Math.round(u.displayHz)}Hz`);
-      if (Number(u.throttleStage) > 0) bits.push('⚠ 配信端末が発熱で降格中');
+      if (Number(u.throttleStage) > 0) bits.push('⚠ 配信端末が熱い');
       latEl.textContent = '映像の遅れ: ' + bits.join(' / ') + '（撮影・エンコード・伝送の下限は含まない）';
       latEl.className = 'run-next' + (sum > 60 || Number(u.throttleStage) > 0 ? ' hot' : '');
     }
@@ -1873,8 +1873,10 @@ function preflightRows() {
     const sum = Math.round((Number(u.latencyJitterMs) || 0) + (Number(u.latencyDecodeMs) || 0)
       + (Number(u.latencyPresentMs) || 0));
     if (Number(u.throttleStage) > 0) {
-      rows.push({ s: 'ng', label: '映像の遅れ',
-        detail: `配信端末が発熱で品質を落としています（段 ${u.throttleStage}）— 冷ますか送風。観測 ${sum}ms` });
+      // 配信側 v0.11.0 からアプリは絞らない（体験中に画質を落とさないため）。
+      // それでも赤で止めるのは、この先 OS が突然絞るから — 冷ましてから本番に入る。
+      rows.push({ s: 'ng', label: '配信端末の熱',
+        detail: `配信端末が熱くなっています（段 ${u.throttleStage}）— 冷ますか送風。このままだと OS が絞る。観測 ${sum}ms` });
     } else if (sum > 60) {
       rows.push({ s: 'warn', label: '映像の遅れ', detail: `観測 ${sum}ms（揺らぎ ${Math.round(Number(u.latencyJitterMs) || 0)}ms）— Wi-Fi の混雑を疑う` });
     } else {

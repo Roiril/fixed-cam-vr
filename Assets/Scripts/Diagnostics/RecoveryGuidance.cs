@@ -20,8 +20,11 @@ namespace FixedCamVr.Diagnostics
         NoVideo,
         /// <summary>ヘッドセットが自己位置を見失った。</summary>
         TrackingLost,
-        /// <summary>配信端末が熱で画質を落としている。体験は続けられる。</summary>
-        Throttled,
+        /// <summary>
+        /// 配信端末が熱い。⚠ streamer v0.11.0 で熱による fps・画質の低下は全廃したので
+        /// 「いま落ちている」ではなく「この先 OS に絞られる」の警告（体験は続けられる）。
+        /// </summary>
+        Hot,
         /// <summary>床の高さを測っていない位置合わせ（線や人形が沈んで見える）。</summary>
         FloorNotMeasured,
     }
@@ -66,7 +69,7 @@ namespace FixedCamVr.Diagnostics
                 ShowAlert.NotRegistered => "部屋の位置を測っていません",
                 ShowAlert.NoVideo => cam + "の映像が届いていません",
                 ShowAlert.TrackingLost => "ヘッドセットが自分の位置を見失いました",
-                ShowAlert.Throttled => cam + "が熱で画質を落としています",
+                ShowAlert.Hot => cam + "が熱くなっています",
                 ShowAlert.FloorNotMeasured => "床の高さを測っていません",
                 _ => "",
             };
@@ -95,7 +98,7 @@ namespace FixedCamVr.Diagnostics
             //   2026-08-12 に撤去済み・`canon/LEDGER.md`）。現場でできることに書き直した。
             ShowAlert.NoVideo => "カメラの画面が消えていないか見る\n直らなければ端末を再起動する",
             ShowAlert.TrackingLost => "明るい方を向いて数歩歩く",
-            ShowAlert.Throttled => "体験はこのまま続けられる\n次の人の前に充電を外して冷ます",
+            ShowAlert.Hot => "体験はこのまま続けられる\n次の人の前に充電を外して冷ます",
             ShowAlert.FloorNotMeasured => "トリガー2秒：位置合わせを開始\n×印に先を着けて打ち直す",
             _ => "",
         };

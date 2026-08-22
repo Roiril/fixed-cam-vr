@@ -188,7 +188,8 @@ def compare_health(before, after):
                 notes.append("cam%s: ISO %d -> %d (x%.1f) - the room got %s, not your change"
                              % (key, iso_b, iso_a, ratio, "darker" if iso_a > iso_b else "brighter"))
         if a.get("throttleStage") in (1, 2):
-            notes.append("cam%s: thermal throttleStage=%s - fps and quality are being reduced"
+            # streamer v0.11.0 からアプリは絞らない。これは「この先 OS が絞る」の警告。
+            notes.append("cam%s: the phone is hot (stage %s) - the OS may throttle it; cool it down"
                          % (key, a.get("throttleStage")))
     return notes
 

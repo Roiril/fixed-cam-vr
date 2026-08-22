@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 9c9e9742-4d99-47bc-8b46-e7eb4d64ed2b
-  modified: 2026-07-29T03:29:11.526Z
+  modified: 2026-08-22T08:54:31.865Z
 ---
 
 2026-07-29 に企画書（学会論文版）の要求へ合わせて足したもの。契約は `.claude/rules/streaming.md`。
@@ -33,7 +33,19 @@ metadata:
 **絶対値が要るなら配信アプリ（fixed-cam-streamer）に「`X-Capture-Ns` と同じ基準の現在時刻」を返す口が要る。**
 入れば `LatencyEstimatorLogic.ObserveArrival` のオフセット推定に差し替えるだけで済む形にしてある。
 
-`/health` の熱フィールドを読むようになり、**降格中は lag 判定を抑止**する。
-旧実装は熱で落ちた fps を経路の詰まりと誤認して 5 秒ごとに張り直し、黒 / 砂嵐を出しながら悪化させていた。
+`/health` の熱フィールドを読むようになり、**配信端末が熱いあいだは lag 判定を抑止**する
+（`StreamMetadata.IsHot`）。旧実装は熱で落ちた fps を経路の詰まりと誤認して 5 秒ごとに張り直し、
+黒 / 砂嵐を出しながら悪化させていた。
+
+⚠⚠ **streamer v0.11.0（2026-08-22）で、配信アプリは熱で fps と画質を落とさなくなった**
+（本番の体験中に映像が劣化するのが致命的なため。実測: 1.9 時間稼働の 3 台が
+14.8 / 29.9 / 14.8fps → **59.4 / 59.3 / 33.2fps**）。
+
+- **抑止は残す。** アプリが絞らなくなったぶん熱の上がり方は速く、**その先で OS が絞る**。
+  そのときも経路は詰まっていないので、張り直すと同じ悪化を招く
+- ⚠ **`throttleStage` の意味が変わった** — 「絞っている段」ではなく**熱の段**（0/1/2）。
+  キー名は Unity・Web 卓・`quest-record.py` の 6 箇所が読む wire 契約なので据え置き。
+  **値が 0 でないことは「いま画質が落ちている」を意味しない**
+- ⚠ `ShowAlert.Throttled` → **`ShowAlert.Hot`**、`IsThrottling` → **`IsHot`** に改名済み
 
 関連: [[show_run_skeleton]]
