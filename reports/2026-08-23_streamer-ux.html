@@ -339,10 +339,32 @@ pre code { background: none; padding: 0; }
 
   <p>⚠⚠ <strong>ボタンが全部むらさきで出た。</strong> テーマが <code>Theme.MaterialComponents</code> なので XML の <code>&lt;Button&gt;</code> は <code>MaterialButton</code> になり、<code>android:background</code> を無視して <code>colorPrimary</code> で塗る。<code>app:backgroundTint</code> へ直した。<strong>同じ画面の中で作法が 2 つある</strong>（<code>ToggleButton</code> とコードで作った <code>Button</code> は <code>android:background</code> が効く）。あわせてパネルの背景を不透明にした（半透明だと下のレンズ列が透ける）。</p>
 
+  <h3>鏡合わせが「需要」として数えられていること（3 台の対照で確定）</h3>
+
+  <p>同じ v0.13.0・3 台とも <code>clientCount=0</code>・鏡合わせだけが違う状態で測った。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th></th><th><code>encodeIdle</code></th><th>最後のフレーム</th></tr>
+    <tr><td>A（鏡 ON）</td><td><strong>false</strong></td><td>29ms 前</td></tr>
+    <tr><td>B・C（鏡 OFF）</td><td>true</td><td>148 秒前</td></tr>
+    <tr><td>A の鏡を切って 13 秒後</td><td>true</td><td>13.1 秒前</td></tr>
+  </table></div>
+
+  <p>⚠ <strong><code>fps</code> では判定できない</strong>（1 秒窓の直近値なので encode が止まっても 30 前後を返し続ける）。見るのは <code>encodeIdle</code> と <code>latestFrameAgeMs</code>。</p>
+
+  <h3>実機で 2 つ目のバグが出た — 「減光しない」の早期 return が IDLE を殺していた</h3>
+
+  <div class="lead">
+    <p>撮影パネルを開いている間は減光しない、を <code>setDisplayActive</code> の頭で <code>return</code> だけして実装したら、<strong>IDLE の計時を食い潰したまま次を仕込まず、以後 IDLE が二度と来なくなった</strong>。計時を始めるのは画面タップだけで、パネルのボタンは touch を食うのでタップとして届かない。</p>
+    <p>症状: パネルを開いた 1 台が <strong>20 分以上、全輝度 ＋ 鏡合わせの復号を回し続けた</strong>。3 台のうちその 1 台だけ <code>thermalStatus</code> が 1 段高い（4 / 3 / 2）。⇒ パネルが開いているときは<strong>数え直してから</strong> return する。併せて、パネルを開いたら鏡合わせを切る（裏に隠れるので回す理由が無い）。</p>
+    <p>⭐ <strong>一般化</strong>: 「この条件のときは何もしない」を早期 return で書くとき、<strong>その関数が周期的な仕掛けの受け皿になっていないか</strong>を見る。受け皿なら、何もしないぶん次を仕込み直さないと二度と来ない。</p>
+  </div>
+
+  <p>直したあとの実測（logcat の <code>displayActive</code>）: 復帰 → <code>true</code> ／ パネルを開いて 25 秒 → <strong>遷移 0</strong> ／ パネルを閉じて 30 秒後 → <code>false</code>。</p>
+
   <h3>確かめていない</h3>
 
   <ul>
-    <li><strong>鏡合わせ「だけ」で encode が回るか。</strong> 検証中ずっと Quest（192.168.11.12）が 3 台の <code>/video</code> を掴んでいて <code>clientCount=1</code> だったので、需要が鏡合わせ由来かクライアント由来かを切り分けられていない。状況証拠は「鏡を入れた瞬間に熱の行から <code>[encode休止]</code> が消えた」だけ。<strong>誰も見ていない状態で 1 度やり直す</strong></li>
     <li>実際に据えて撮る一巡（人が三脚を振って継ぎ目を消す／⏺ から採用まで）は、会場と白衣が要るので当日</li>
   </ul>
 
