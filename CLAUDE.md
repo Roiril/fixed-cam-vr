@@ -88,6 +88,9 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 
 - **`py -3.11 tools/quest-record.py --sec 45 --walk` の 1 回で A・B・C が揃う**（HMD 不要）。
   依存は `tools/requirements.txt`
+- ⚠⚠ **機を指定するなら `--serial`。`ANDROID_SERIAL` は効かない**（走行は自分で機を選び直す）。
+  焼いた APK を**両機に入れてから**走らせるのがいちばん安い — 古い APK の機に当たると
+  「実装が効いていない」の顔で出る（`memory/quest_fleet_two_devices.md`）
 - ⚠ **計器は「状態が進んだ」ではなく「効果が出た」を出す。** 2026-07-31、判定が「FAIL ゼロ・演出 7 本 OK」と
   出した走行の画に、導入演出が 1 段も出ていなかった。以後 `veil` / `wire` / `cg` / `bgm` / `font` を判定に入れる
 - ⚠ **観測項目は C# の `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す**（片方だけだと沈黙して食い違う）

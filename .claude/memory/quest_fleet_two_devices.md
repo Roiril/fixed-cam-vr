@@ -106,3 +106,30 @@ stall watchdog の誤発火（`_everReceived` ガード不在）だった。**�
   全機がそうなら「充電するか寝かせて待て」と言う
 - 手で寝かせる: `py -3.11 tools/quest-fleet.py sleep <serial>` / 起こす: `wake`
 - **1 回使ったらこまめに寝かせる。** 待ち時間（ビルド 10 分など）のあいだ起こしておく理由は無い
+
+## ⚠⚠ `ANDROID_SERIAL` は `quest-record.py` に効かない。走行ごとに機が変わる（2026-08-22 実害）
+
+**`adb` には効くが走行スクリプトには効かない。** `quest-record.py` は自分で
+`quest-fleet.py pick` を呼び、**温度と最終使用で機を選び直す**（それが本来の設計）。
+なので `ANDROID_SERIAL=<serial> py -3.11 tools/quest-record.py …` と書くと、
+**インストール先と走行先が別の機になる**ことがある。
+
+⇒ **走行の機は `--serial <serial>` で渡す。**
+
+```bash
+adb -s <serial> install -r --no-streaming Builds/mawarimi.apk
+py -3.11 tools/quest-record.py --sec 200 --walk --serial <serial>
+```
+
+⚠⚠ **症状が「実装が効いていない」の顔で出る。** 2026-08-22 に、直したはずのテレメトリが
+1 つも出ず、`swap=` が 9 つ組から 6 つ組へ**逆行**した。コードにも APK にも異常は無く、
+**古い APK が入ったもう 1 台で走っていた**のが真相（10 分溶かした）。
+
+**気づき方は 2 つ。どちらも走行の直後に 5 秒で見られる:**
+
+- `logs/capture/<日時>_meta.json` の **`serial`** を見る（走行が実際に使った機）
+- テレメトリの**キーの数が前回より減っていたら、まず APK の新旧を疑う**
+  （コードを疑う前に。ログのキーは単調に増えるので、減るのは古い APK でしか起こらない）
+
+⭐ **走行前に両機へ入れておくのがいちばん安い**（`adb -s <各 serial> install`）。
+どちらが選ばれても新しい APK になる。

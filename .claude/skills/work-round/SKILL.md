@@ -47,8 +47,11 @@ description: 廻リ視の作りこみを 1 周回す型。演出・絵・物語�
 ```
 
 ```bash
-py -3.11 tools/quest-record.py --sec 45 --walk
+py -3.11 tools/quest-record.py --sec 45 --walk --serial <serial>
 ```
+
+⚠ **`--serial` を渡す（`ANDROID_SERIAL` は効かない）。** 焼いた APK は**両機に入れてから**走る —
+古い APK の機に当たると「実装が効いていない」に見える（`memory/quest_fleet_two_devices.md`）。
 
 走行 1 回で画・ログ・判定・切り出しが揃う（`logs/capture/` と `logs/evidence/`）。
 **HMD を被らずにここまで来る。**
