@@ -233,3 +233,7 @@ __pycache__/
 
 # 人形のリグ付けの中間成果物（rig_doll.py で再生成できる・4096 のテクスチャが重い）
 tools/doll-rig/out/
+
+# Codex 等の別エージェントのローカル設定（config はマシン固有・skills は .claude/skills への junction）
+.codex/
+.agents/

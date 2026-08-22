@@ -1,3 +1,17 @@
+---
+name: sound-design
+description: 廻リ視の音の正本（層の規律 / 実機の物理 / 音量の揃え方 / 各場面の設計 / 素材 2 系統 / 検査と観測）。音を触る前に読む
+paths:
+  - "Assets/Scripts/Streaming/Sound/**"
+  - "Assets/Resources/Sound/**"
+  - "Assets/Tests/Streaming/Sound*"
+  - "Assets/Tests/Streaming/*AudioCue*"
+  - "tools/make-sounds.py"
+  - "tools/ingest-sounds.py"
+  - "tools/soundkit.py"
+  - "tools/sound-*.py"
+---
+
 ⚠⚠ **2026-08-15 に導入の段が旧構成へ戻り、音の置き場も動いた**（`canon/LEDGER.md` 0044）。
 封印の箱を退避したので、隔離が閉じる段も闇の中で管が点く段も無くなった。いまの導入は
 **段 4 で現実が割れ、段 5 でスクリーンが出る**。

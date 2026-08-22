@@ -4,25 +4,26 @@ paths:
   - "ProjectSettings/**"
   - "Packages/**"
   - ".claude/rules/*.md"
-description: 1 Unity プロジェクトに同居する 廻リ視(FixedCam) と TableDuo を並列に進める時の干渉防止規約
+description: 1 Unity プロジェクトに同居する 廻リ視(FixedCam)・TableDuo・MyCobotHand を並列に進める時の干渉防止規約
 ---
 
-# 同居 2 プロジェクトの干渉防止（廻リ視 / TableDuo）
+# 同居 3 プロジェクトの干渉防止（廻リ視 / TableDuo / MyCobotHand）
 
-この Unity プロジェクトには **2 つの独立アプリが 1 つの Unity プロジェクトとして同居**している：
+この Unity プロジェクトには **3 つの独立アプリが 1 つの Unity プロジェクトとして同居**している：
 
 | アプリ | ユーザー呼称 | 名前空間 / asmdef | シーン | パッケージ ID | コード |
 |---|---|---|---|---|---|
 | **廻リ視（FixedCam・本体）** | **fixedcam** / 本体 / カメラ | `FixedCamVr.*` | `Assets/Scenes/Main.unity` | `com.roiril.mawarimi` | `Assets/Scripts/` |
 | **TableDuo（手アバター調査）** | **ハンド** / 手 / テーブル | `TableDuoVr.*` | `Assets/TableDuo/Scenes/TableDuoMain.unity` | `com.roiril.tableduo` | `Assets/TableDuo/` |
+| **MyCobotHand（テレオペ）** | **ロボットハンド** / mycobot | `MyCobotHandVr` | `Assets/MyCobotHand/Scenes/HandTeleop.unity` | `com.mycobot.handteleop` | `Assets/MyCobotHand/` |
 
-**⚠ 呼称で取り違えない**: ユーザーは「fixedcam」「ハンド」で呼ぶ。正式名（廻リ視 / TableDuo）からは導けない（特に「ハンド」⇄ TableDuo は名前に hand が出ない）。**作業前にこの表で対象アプリを確定**してから着手する。
+**⚠ 呼称で取り違えない**: ユーザーは「fixedcam」「ハンド」「ロボットハンド」で呼ぶ。正式名からは導けない（**「ハンド」= TableDuo / 「ロボットハンド」= MyCobotHand — 名前が似ているが別アプリ**）。**作業前にこの表で対象アプリを確定**してから着手する。
 
 別シュビー（並列エージェント / worktree / 別セッション）と本シュビーが**別々のアプリを同時に進めることがある**。下記は壊さないための絶対規約。
 
 ## 根底原則
 
-**「2 アプリは別物。互いの領域・共有資源に踏み込まない。Unity Editor とビルドは奪い合わない」**
+**「3 アプリは別物。互いの領域・共有資源に踏み込まない。Unity Editor とビルドは奪い合わない」**
 
 ## 1. コードは完全分離（既存・厳守）
 
@@ -35,13 +36,13 @@ description: 1 Unity プロジェクトに同居する 廻リ視(FixedCam) と T
 
 ## 2. 共有資源 = 触ったら両方に効く（最重要）
 
-1 プロジェクトなので以下は **2 アプリで共有**。片方の都合で書き換えると**もう片方を巻き込んで壊す**：
+1 プロジェクトなので以下は **3 アプリで共有**。1 つの都合で書き換えると**他のアプリを巻き込んで壊す**：
 
 | 共有資源 | 罠 |
 |---|---|
 | **Unity Editor（1 インスタンス）** | MCP 編集・Play・Build が全部この 1 個を奪い合う。**2 つの作業が同時に Editor を触ると壊れる** |
 | **`ProjectSettings/*`**（productName / packageID / Quality / Graphics / XR） | 1 個を共有。CLAUDE.md 禁止事項で「理由なく変更しない」。**ビルドは productName/ID を一時 swap して finally 復元する（[BuildVariants.cs](../../Assets/Editor/BuildVariants.cs)）** |
-| **共有 `.asset`**（`Assets/Settings/URP-*` / OVR config / `Assets/XR/*`） | 片方のレンダリング都合で弄ると両アプリの絵が変わる |
+| **共有 `.asset`**（`Assets/Settings/URP-*` / OVR config / `Assets/XR/*`） | 片方のレンダリング都合で弄ると全アプリの絵が変わる |
 | **開いているシーン** | Editor は同時に 1 シーンしか開けない。片方のシーンを開くともう片方の作業は中断 |
 | `Packages/manifest.json` | 依存はどちらのアプリにも入る。追加削除はユーザー事前報告（CLAUDE.md） |
 
@@ -64,14 +65,14 @@ description: 1 Unity プロジェクトに同居する 廻リ視(FixedCam) と T
 | Unity MCP でのシーン・コンポーネント編集 | **×** | Editor 単一インスタンス。本シュビーが逐次で行う |
 | **`unity.ps1` の build / test / menu** | **×** | batchmode も `Temp/UnityLockfile` を取る。**2 本目は即エラーで落ちる**（`Assert-NotLocked`）。GUI の Editor が開いていても同じ |
 | ビルド / Play Mode 検証 | **×** | Editor・ProjectSettings 奪い合い。逐次のみ |
-| 共有 .asset / ProjectSettings の変更 | **×** | 両アプリに波及。逐次 + 影響説明必須 |
+| 共有 .asset / ProjectSettings の変更 | **×** | 全アプリに波及。逐次 + 影響説明必須 |
 
 worktree の罠（base が古い等）は [git-workflow.md](git-workflow.md) も参照。
 
 ## 5. 実機（Quest 2 台）運用
 
 - adb は **必ず `-s <serial>` で対象指定**（複数台繋がると無指定コマンドは `more than one device` で失敗）
-- 2 アプリはパッケージ ID が違うので 1 台の Quest に**並存できる**（上書きし合わない）
+- 3 アプリはパッケージ ID が違うので 1 台の Quest に**並存できる**（上書きし合わない）
 - 「最新が入ってるか」はパッケージ ID 別に `dumpsys package <id>` の `lastUpdateTime` で確認
 
 ## 6. 単一アプリ対象の作業（レビュー / 監査 / リファクタ / サブエージェント）
