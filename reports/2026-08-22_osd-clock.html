@@ -127,7 +127,7 @@ pre code { background: none; padding: 0; }
 <div class="wrap">
   <p class="eyebrow">廻リ視 · 設計 · 2026-08-22</p>
   <h1>スクリーンの時刻表示（OSD）</h1>
-  <p class="sub">canon/LEDGER.md 0108 ／ 設計のみ・実装はまだ</p>
+  <p class="sub">canon/LEDGER.md 0108 ／ <strong>実装済み（2026-08-22）</strong>・実機未検証 ／ 契約の正本は rules/streaming.md</p>
 
   <div class="lead">
     <p>スクリーンの左上に <code>2026/09/06 14:23:45</code> の形で日付と時刻を常時出す。
@@ -137,6 +137,10 @@ pre code { background: none; padding: 0; }
     <em>3 周目の録画の上にも「いまの時刻」が進み続ける</em> —
     録画には焼き込まれていないので、これが構造的に成立する。
     時刻は端末の実時刻（既定）。場所表示と報告数は出さない（ユーザー判定）。</p>
+    <p><strong>2026-08-22 に実装した。</strong> EditMode 1620/1620・<code>menu osd</code> の 8 状態で
+    「映像側の異変（砂嵐・乱れ・劣化）では変わらず、装置側（切替の黒・終幕の電力）では一緒に沈み、
+    まだ何も映していない管には出ない」ことを確認。<em>実機未検証</em> — 1 字 1.0° が被って読めるかは
+    机上で決められない。</p>
   </div>
 
   <h2>1. 何を出すか</h2>
@@ -145,11 +149,24 @@ pre code { background: none; padding: 0; }
     <tr><th>項目</th><th>値</th><th>理由</th></tr>
     <tr><td>文字列</td><td><code>2026/09/06 14:23:45</code>（19 字・すべて半角）</td>
       <td>参考画像 004.jpg と同じ <code>yyyy/MM/dd HH:mm:ss</code>。秒が刻むこと自体が「ライブである」の主張</td></tr>
-    <tr><td>場所</td><td>映像枠の左上。余白は枠の高さの 4%</td><td>参考画像どおり。管の角丸（<code>_CrtRound</code> 0.07）に掛からない位置</td></tr>
-    <tr><td>大きさ</td><td>1 字の高さ ＝ 枠の高さの約 4.7% ＝ <strong>見かけ 1.0°</strong></td>
-      <td>読めるが主張しない。HmdTextStyle の段（補助 1.5°）より小さいのは意図 — これは読ませる面ではなく画の一部。⚠ 実機で 2 回続けて「読めない」を出した前歴があるので、走行で必ず確かめる（§7）</td></tr>
-    <tr><td>字体</td><td>等幅セルに敷いたサンセリフの数字（自前アトラス）</td><td>監視カメラの OSD の姿。等幅でないと秒の刻みで幅が揺れる</td></tr>
-    <tr><td>色</td><td>生成りに寄せた白 ＋ 暗い縁（アトラスに焼き込む）</td><td>参考画像は白＋影。純白だと暖色の画の上で 1 か所だけ浮く</td></tr>
+    <tr><td>場所</td><td><strong>映像の左上</strong>（枠ではなく contain-fit の内側）。余白は枠の高さの 4%</td>
+      <td>参考画像どおり。管の角丸（<code>_CrtRound</code> 0.07）に掛からない位置。<br>
+      ⚠ <em>枠の左上に置くと字が letterbox の黒帯に乗る</em> — 映像は 4:3・枠は 16:9 なので
+      左右に必ず黒帯が出て、そこだけコントラストが最大になり主張が強くなる（実装中に絵で見て直した）</td></tr>
+    <tr><td>大きさ</td><td>1 字の高さ ＝ 枠の高さの <strong>2.43%</strong> ＝ 見かけ <strong>0.89°</strong>。
+      文字列の全幅は枠幅の <strong>18.3%</strong></td>
+      <td><strong>参考画像 004.jpg の実測に合わせた</strong>（画像 512×288 で字高 7px = 2.43% / 全幅 95px = 18.6%）。
+      HmdTextStyle の段（補助 1.5°）より小さいのは意図 — これは読ませる面ではなく画の一部。
+      ⚠ 実機で 2 回続けて「読めない」を出した前歴があるので、走行で必ず確かめる（§7）</td></tr>
+    <tr><td>字体・詰め</td><td>等幅セル。<strong>セル幅 ＝ フォントの送り幅</strong>（送り/字高 = 0.71）</td>
+      <td>監視カメラの OSD の姿。等幅でないと秒の刻みで幅が揺れる。<br>
+      ⚠ <em>同梱フォントの数字は幅/字高 = 0.706 で、参考画像（0.71）とほぼ同じ比率だった</em> —
+      ずれていたのはセル幅だけで、初版は 40px 取っていて参考より 64% 広く字が離れていた
+      （2026-08-22 ユーザー赤入れ「文字の詰め方等は参考画像に合わせてほしい」）</td></tr>
+    <tr><td>色</td><td>生成り <code>(232,226,214)</code> ＋ <strong>不透明な暗い縁 5px</strong>（版に焼き込む）</td>
+      <td>参考画像は白＋影。純白だと暖色の画の上で 1 か所だけ浮く。<br>
+      ⚠ <em>縁が読みやすさの主役</em> — 実測で縁 3px では砂嵐（平均輝度 140）の上のコントラストが
+      9.9 しか無く読めなかった。5px・不透明で 19.3（素の状態も 36.1 → 42.5）</td></tr>
     <tr><td>出さないもの</td><td>場所（CAM2 廊下 相当）・報告数</td><td><strong>ユーザー判定（0108）</strong>。区間が短く 3 つしかない／決められた数が無い</td></tr>
   </table></div>
 
@@ -235,9 +252,24 @@ pre code { background: none; padding: 0; }
       <code>tools/make-osd-font.py</code> が SourceHanSansJP（同梱・OFL）から焼く
       （白字＋暗い縁。64px 角。題字・顔と同じ「版を焼く」流儀）。
       TMP ではないので <code>menu hud-font</code> は無関係</td></tr>
+    <tr><td><code>OsdGlyphImporter</code><br><span class="muted">Editor</span></td>
+      <td>版の取り込み設定を機械で固定。<strong><code>isReadable</code> が要る</strong>（CPU で読んで敷き直すため。
+      落ちていると実機でだけ例外になり時計が丸ごと出ない）／ミップは作らない（GPU では 1 度も引かない）／
+      <code>sRGB</code> は立てる（これはマスクではなく色そのもの）</td></tr>
     <tr><td><code>MainDemoSceneSetup</code></td>
       <td>MjpegScreen の GameObject へ AddComponent（冪等）。<strong>ビルド前に <code>menu scene</code> 再実行が必須</strong>（シーンに焼かれていないと APK に入らない）</td></tr>
   </table></div>
+
+  <h3>実装中に絵で見つけた罠</h3>
+  <ul>
+    <li><strong>版の v を反転してはいけない。</strong> Unity はテクスチャを左下原点で持つので、
+      PNG の 1 行目（字の上）は v=1 側。矩形の上端も <code>o.y=1</code> なのでそのまま渡す。
+      <code>1.0 - o.y</code> にすると<em>字が上下逆さまに出た</em>（1 回書いて <code>menu osd</code> で発見）</li>
+    <li><strong>矩形の内外を分岐にしない</strong>（<code>step</code> のマスクで切る）。
+      非一様分岐の中でテクスチャを引くと暗黙の微分＝ミップの段の選択が壊れる</li>
+    <li>敷き直し先はミップを持たせる。実機では 1 字が約 16 画素まで縮むので、
+      無いと秒が刻むたびに字がちらつく</li>
+  </ul>
 
   <h2>6. 観測（音と同じく、出たかはログでしか分からない要素がある）</h2>
 
@@ -255,11 +287,17 @@ pre code { background: none; padding: 0; }
   <h2>7. 見る手段と検証</h2>
 
   <ul>
-    <li><strong><code>menu osd</code></strong>（新設・Play 不要）: <strong>固定時刻</strong>を渡して
-      6 状態を PNG に焼く — 素 / 砂嵐 / 乱れ最大 / 劣化最大（3 周目相当） / 終幕の途中 / 導入 段 4。
+    <li><strong><code>menu osd</code></strong>（Play 不要）: <strong>固定時刻</strong>（2026/09/06 14:23:45）で
+      <strong>8 状態</strong>を PNG に焼く — 素 / 砂嵐 / 乱れ最大 / 劣化最大（3 周目相当） /
+      切替の黒 / 終幕の電力 / 導入 段 4 / 導入 段 0〜3。
       固定時刻なのは決定論のため（同じ版は同じ絵。プレビューに実時刻を混ぜない）。
-      左上の余白が管の縁の暗さでどこまで沈むかもここで確かめて余白を決める</li>
-    <li>EditMode: <code>OsdClockLogicTests</code>（書式・秒の縁）＋ 固定入力に対する敷き直しの決定論</li>
+      ⚠ 実装（<code>ScreenOsd</code>）をそのまま通す（矩形の式も敷き直しも模写しない）</li>
+    <li><strong>字が出ているかは数値でも測れる</strong>: 素の絵から「字の画素」のマスクを作り、
+      各状態でマスク内外の輝度差を見る。実測 — 素 67.3 / 砂嵐 50.0 / 乱れ 64.6 / 劣化 62.0 /
+      切替の黒 45.9 / 終幕 43.5 / 導入段 4 41.9 / <strong>導入段 0〜3 は 1.2（＝出ていない・期待どおり）</strong>。
+      ⚠ 最大輝度だけで見ると背景が明るい状態（砂嵐・夜間モード）で判定できない</li>
+    <li>EditMode: <code>OsdClockLogicTests</code> 10 本（書式・秒の縁・版との対応・
+      <strong>Python と C# のセルの並びの一致</strong>）</li>
     <li>実機走行: <code>osd=</code> キーと PNG。<strong>1.0°/字が実際に読めるかは被って確かめる</strong>
       （見かけ角の机上見積もりは 2 回続けて外した前歴がある — hmd_text_style.md）</li>
   </ul>

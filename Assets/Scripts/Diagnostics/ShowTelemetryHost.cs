@@ -105,6 +105,7 @@ namespace FixedCamVr.Diagnostics
         private int _lastSwapCount;
         private bool _lastSwapActive;
         private AnomalyEyes? _eyes;
+        private ScreenOsd? _osd;
         private TakeRunner? _takes;
 
         // --- 購読状態（多重購読を防ぐ）---
@@ -235,6 +236,7 @@ namespace FixedCamVr.Diagnostics
             if (_cg == null) _cg = FindObjectOfType<ShowCgLayer>();
             if (_swap == null) _swap = FindObjectOfType<SwapMorphFx>();
             if (_eyes == null) _eyes = FindObjectOfType<AnomalyEyes>();
+            if (_osd == null) _osd = FindObjectOfType<ScreenOsd>();
             if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
             if (_sound == null) _sound = FindObjectOfType<ShowSoundDirector>();
             if (_switchSfx == null) _switchSfx = FindObjectOfType<SwitchAudioCue>();
@@ -597,6 +599,20 @@ namespace FixedCamVr.Diagnostics
             ? "-"
             : $"{(_eyes.IsBuilt ? 1 : 0)}/{_eyes.OpenCount}/{_eyes.AppliedFade:F2}/" +
               $"{_eyes.SpanProgress01:F2}/{_eyes.Rate:F2}";
+
+        /// <summary>
+        /// 装置が打っている時計（<c>canon/LEDGER.md</c> 0108）—
+        /// <c>&lt;組めたか&gt;/&lt;刻んだ回数&gt;/&lt;不透明度&gt;</c>。
+        ///
+        /// ⚠ <b>3 つとも要る。</b> 版か材質を掴めていない（0/…）／組めたのに 1 度も刻んでいない
+        /// （1/0/… ＝ <see cref="ScreenOsd.Tick"/> が回っていない）／刻んでいるのに画へ書いていない
+        /// （…/1..N/0.00）は**別の壊れ方**で、どれも<b>画には「時計が無い」としか出ない</b>。
+        /// ⚠ 刻んだ回数は<b>秒が変わった回数</b>なので、走行秒とおおむね一致する。
+        /// 大きく足りなければ、途中で敷き直しが止まっている。
+        /// </summary>
+        private string OsdState => _osd == null
+            ? "-"
+            : $"{(_osd.Built ? 1 : 0)}/{_osd.Ticks}/{_osd.Opacity:F2}";
 
         /// <summary>
         /// 目の視界ジャック（<c>canon/LEDGER.md</c> 0099）—
@@ -1104,6 +1120,10 @@ namespace FixedCamVr.Diagnostics
             //     指したのに 1 画素も出ていない（1/0/1.00 ＝ 座席表を組めていない）は**別の壊れ方**。
             //   ⚠ 数は「重みを配った」ではなく**何個ぶんの目が実際に開いているか**（画に出た側）。
             _sb.Append(" eyes=").Append(EyesState);
+            //   osd = 装置が打っている時計（`canon/LEDGER.md` 0108）。組めたか/刻んだ回数/不透明度。
+            //   ⚠ **本編で 1/0/… なら時計が止まっている**（秒が変わっても敷き直していない）。
+            //     画には「時計が無い」としか出ないので、ここが唯一の手掛かり。
+            _sb.Append(" osd=").Append(OsdState);
             //   jack = 目の視界ジャック（`canon/LEDGER.md` 0099）。組めたか/写真/出した累計/乗っ取り中。
             _sb.Append(" jack=").Append(JackState);
             //   guide = 歩行誘導（canon/LEDGER.md 0079）。組めたか/山形の数/矢印/輪。

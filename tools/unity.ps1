@@ -110,6 +110,9 @@ $Menus = [ordered]@{
                             Desc = '目の視界ジャック（当日写真ぱぱぱ）を stationary / walker の 2 通りで焼く（→ make-preview-video.py で mp4）'
                             Set = 'photos=<正規化済み写真のフォルダ（既定 tools/web-compositor/eyejack/norm）>'
                             Out = 'Assets/Screenshots/eyejack-preview/stationary/f0000.png' }
+    'osd'              = @{ Method = 'FixedCamVr.Streaming.EditorTools.OsdPreview.Run'
+                            Desc = 'スクリーン左上の時刻表示を 8 状態で焼く（砂嵐・乱れ・劣化では変わらず、切替の黒・終幕では一緒に沈むか）'
+                            Out = 'Assets/Screenshots/osd-preview/osd_0_plain.png' }
     'walkguide'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.WalkGuidePreview.Run'
                             Desc = 'タイトル直後の歩行誘導（床の矢印と円）を 1 コマずつ焼く（-Set show=<show.json> / → make-preview-video.py で mp4）'
                             Set = 'show=<show.json のパス>'
@@ -322,6 +325,13 @@ $PyBakes = @{
         Desc = 'AIエージェントの顔の版を焼き直す（`canon/LEDGER.md` 0071）'
         Out  = 'Assets/Resources/Comms/SuiFace.png'
         Src  = @('tools/make-comms-face.py', 'tools/comms-face/sui-neutral.png')
+    }
+    # ⚠ 時計のセルの並び（GLYPHS）は Python と C# の**両方**に書いてある。片方だけ直すと
+    #   実機で別の字が出るので、`OsdClockLogic.cs` も入力として見る。
+    'py -3.11 tools/make-osd-font.py' = @{
+        Desc = 'スクリーン左上の時刻表示の版を焼き直す（`canon/LEDGER.md` 0108）'
+        Out  = 'Assets/Resources/Osd/OsdGlyphs.png'
+        Src  = @('tools/make-osd-font.py', 'Assets/Scripts/Streaming/OsdClockLogic.cs')
     }
 }
 

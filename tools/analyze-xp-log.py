@@ -2483,6 +2483,52 @@ def analyze(events, others, exp, warns=None):
     # ⚠ 「カットが指した」は画に出たことを意味しない。シェーダが実行時 Shader.Find なので
     #    ビルドから剥がれると 1 画素も出ないまま演出だけ正常に走る（2026-07-31 に覆いで踏んだ型）。
     #    しかも**闇に出る演出なので、録画では暗くて確かめにくい**。手掛かりはこのキーだけ。
+    # --- 装置が打っている時計（canon/LEDGER.md 0108）---
+    #
+    # ⚠ 著作に紐づかない（カットが指すものではなく**常に出ている**）ので、
+    #   「出るはずだったか」を show.json から導けない。だから走行そのものを見る。
+    # ⚠ 画には「時計が無い」としか出ず、しかも左上の小さな字なので録画では気づきにくい。
+    osd_all = [str(v) for v in effect_samples(events, "osd")]
+    if osd_all:
+        any_effect_key = True
+        w()
+        w("### 装置の時計（左上の日付と時刻）")
+        parts = [v.split("/") for v in osd_all if v.count("/") == 2]
+        if not parts:
+            # 値が全部 `-` ＝ シーンに ScreenOsd が居ない。**`menu scene` の焼き直し忘れ**。
+            verdict("FAIL", "時計の実体がシーンに居ない（osd が常に -）— "
+                            ".\\tools\\unity.ps1 menu scene でシーンを焼き直す")
+        else:
+            built = max(int(p[0]) for p in parts if p[0].isdigit())
+            ticks = [int(p[1]) for p in parts if p[1].isdigit()]
+            fades = []
+            for p in parts:
+                try:
+                    fades.append(float(p[2]))
+                except ValueError:
+                    pass
+            span = max(t for t, _ in timed_samples(events, "osd")) if ticks else 0.0
+            grew = (max(ticks) - min(ticks)) if ticks else 0
+            w(f"  組めた: {'はい' if built else 'いいえ'}"
+              f" / 刻んだ回数: {max(ticks) if ticks else 0}"
+              f" / 濃さ: {max(fades) if fades else 0:.2f}")
+            if not built:
+                verdict("FAIL", "時計の版か材質を掴めていない（osd の 1 つ目が 0）— "
+                                "py -3.11 tools/make-osd-font.py で版を焼き、"
+                                "Read/Write Enabled が立っているか見る")
+            elif ticks and max(ticks) == 0:
+                verdict("FAIL", "時計を 1 度も敷いていない（osd の 2 つ目が 0）")
+            elif grew == 0 and span > 10.0:
+                # ⚠ **秒は必ず変わる**ので、増えていないなら敷き直しが止まっている
+                #   （＝画に出ている時刻がその時点で凍っている ＝ 録画に見える）。
+                verdict("FAIL", f"時計が止まっている（{span:.0f} 秒のあいだ刻んだ回数が "
+                                f"{max(ticks)} のまま）")
+            elif fades and max(fades) <= 0.001:
+                verdict("FAIL", "時計を敷いているのに画へ書いていない（osd の 3 つ目が 0.00）")
+            elif span > 30.0 and grew < span * 0.5:
+                verdict("WARN", f"時計の刻みが走行の長さに追いついていない"
+                                f"（{span:.0f} 秒で {grew} 回）")
+
     want_eyes = [f"{t['id']}#{i}" for t in exp["takes"]
                  for i, s in enumerate(t["steps"]) if (fstr(s.get("eyes")) or 0.0) > 0.0]
     eyes_raw = [str(v) for v in effect_samples(events, "eyes") if str(v) not in ("", "-")]

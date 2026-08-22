@@ -251,6 +251,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 //   シーンに壊れた参照が焼かれる。形は実行時（Awake）に組み直す。
                 if (screenGo.GetComponent<CrtScreenMesh>() == null)
                     screenGo.AddComponent<CrtScreenMesh>();
+
+                // 装置が打っている時計（左上の日付と時刻・`canon/LEDGER.md` 0108）。
+                // ⚠ **シーンに焼かないと APK に入らない**。付いていなければ `_OsdRect` は
+                //   0 のままなので、シェーダは 1 画素も触らない ＝ 時計が黙って出ない。
+                if (screenGo.GetComponent<ScreenOsd>() == null)
+                    screenGo.AddComponent<ScreenOsd>();
             }
 
             // 0.6. CameraSwitchInput（[Streaming] 上・キーボード切替）を Director 経由へ配線。

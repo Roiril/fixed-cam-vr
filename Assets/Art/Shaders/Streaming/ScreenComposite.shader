@@ -113,6 +113,18 @@ Shader "FixedCamVr/ScreenComposite"
         // ソースはライブ映像と同じなので contain-fit も _LiveScale を共用する。
         _EchoTex("Echo (frozen frame)", 2D) = "black" {}
         _Echo("Echo Mix", Range(0, 1)) = 0
+        [Header(OSD (the device clock))]
+        // スクリーン左上の日付と時刻（`canon/LEDGER.md` 0108）。**唯一の writer は ScreenOsd**。
+        // 虚構上は**カメラではなく観測装置（画面の側）が打っている時計**なので、
+        // 映像に起きること（切替・差し込み・録画・乱れ・劣化・信号断）では 1 ビットも変わらず、
+        // 装置に起きること（切替の黒・管の縁・終幕の電力）は一緒に受ける。
+        //   _OsdTex     = いまの時刻を敷き直した 1 枚（straight alpha・生成りの字＋暗い縁）
+        //   _OsdRect    = 枠 UV の矩形 (x, y, w, h)。**w が 0 なら 1 画素も触らない**
+        //                 ＝ この uniform を書かない場面（卓・各プレビュー・旧シーン）は従来と同じ絵
+        //   _OsdOpacity = 不透明度
+        _OsdTex("OSD Text", 2D) = "black" {}
+        _OsdRect("OSD Rect (x, y, w, h in frame uv)", Vector) = (0, 0, 0, 0)
+        _OsdOpacity("OSD Opacity", Range(0, 1)) = 1
         [Header(Switch and Signal FX (out of FS_POST parity))]
         // ↓ これらは web-compositor の FS_POST 一致規約の対象外（別系統 uniform）。
         //   dip-to-black（切替演出）と信号ロスト（配信断のフェイルソフト＝砂嵐）を post FX の後段にかける。
@@ -224,6 +236,8 @@ Shader "FixedCamVr/ScreenComposite"
             // 第 2 の差し替え層（左右分割で片側だけ別の素材を出す）。
             TEXTURE2D(_Overlay2Tex); SAMPLER(sampler_Overlay2Tex);
             TEXTURE2D(_Mask2Tex);    SAMPLER(sampler_Mask2Tex);
+            // 装置が打っている時計（ScreenOsd が秒ごとに敷き直す 1 枚）。
+            TEXTURE2D(_OsdTex);      SAMPLER(sampler_OsdTex);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _LiveScale;
@@ -277,6 +291,8 @@ Shader "FixedCamVr/ScreenComposite"
                 float _Aberration;
                 float _Pixelate;
                 // FS_POST 一致規約の対象外（別系統）。CameraSwitchDirector / SignalLostFx / GlitchFx が駆動。
+                float4 _OsdRect;
+                float _OsdOpacity;
                 float _SwitchDim;
                 float _SignalLost;
                 float _Glitch;
@@ -1353,6 +1369,43 @@ Shader "FixedCamVr/ScreenComposite"
                     half3 stat = half3(st, st, st);
                     col = lerp(col, stat, sl);
                     col *= 1.0 - 0.30 * sl; // 減光
+                }
+
+                // --- OSD: 装置が打っている時計（`canon/LEDGER.md` 0108）---
+                //
+                // ユーザーの狙い（逐語）: 「カメラが切り替わって演出が入っても、この表示が
+                // 変わらずあり続けることで、スクリーン＝現実であり合成でない感じを強めたい」。
+                //
+                // ⚠⚠ **砂嵐の後・管の形の前**という位置が意味そのもの。
+                //   前へ動かすと砂嵐や乱れが時計を飲む ＝ 時計が feed の一部になり、
+                //   「装置が別に打っている」が崩れる。後ろへ動かすと管の縁の暗さも角の外の黒も
+                //   受けなくなり、**管の外に字が浮く**（装置の外に貼った層に見える）。
+                //   この後に来る 切替の黒（_SwitchDim）と 終幕の電力（_ScreenPower）は
+                //   どちらも装置側の出来事なので、時計が一緒に沈むのが正しい。
+                //
+                // ⚠ **映像を出していない管には出さない**（_IntroLive）。導入の段 0〜3 は
+                //   「装置は点いているが、まだ何も映していない」。**演出の外では 1** なので
+                //   本編・終幕は 1 ビットも変わらない（砂嵐と同じ切り方）。
+                // ⚠ 3 周目に流れるのは 1 周目の**録画**だが、録画は配信の生 JPEG で OSD を
+                //   焼き込んでいないので、ここで乗る時計は「いま」のまま進む。
+                //   これが「合成でない感じ」を構造的に成立させている（焼き込む方式にすると
+                //   3 周目に過去の時刻が出て種明かしになる）。
+                if (_OsdRect.z > 0.0001 && _IntroLive > 0.001)
+                {
+                    float2 o = (screenUv - _OsdRect.xy) / max(_OsdRect.zw, 1e-4);
+                    // ⚠⚠ **矩形の内外を分岐にしない。** 分岐にすると非一様分岐の中で
+                    //   テクスチャを引くことになり、暗黙の微分（＝ミップの段の選択）が壊れる。
+                    //   外側の if は uniform 同士の比較なので画面全体で一様＝ここには当たらない。
+                    float inside = step(0.0, o.x) * step(o.x, 1.0)
+                                 * step(0.0, o.y) * step(o.y, 1.0);
+                    // ⚠⚠ **v は反転しない。** Unity はテクスチャを左下原点で持つので、
+                    //   PNG の 1 行目（＝字の上）は v=1 側に来る。矩形の上端も o.y=1 なので、
+                    //   そのまま渡すと向きが揃う。`1.0 - o.y` にすると**字が上下逆さまに出る**
+                    //   （2026-08-22 に 1 度そう書いて、`menu osd` の絵で見つけた）。
+                    half4 g = SAMPLE_TEXTURE2D(_OsdTex, sampler_OsdTex, o);
+                    float a = saturate(g.a) * inside
+                            * saturate(_OsdOpacity) * saturate(_IntroLive);
+                    col = col * (1.0 - a) + g.rgb * a;
                 }
 
                 // ブラウン管の面。**縁へ向かって落ち、角の外は黒**。
