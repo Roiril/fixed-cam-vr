@@ -30,6 +30,10 @@
  *
  * 印刷: A4 縦・等倍。背景の色は出なくてよい（線と文字だけで成立させてある）。
  *       刷り込み範囲 273mm。文言を足したら必ず高さを測り直すこと。
+ *
+ * ⚠ ブラウザから直に刷ると日付と URL がヘッダ・フッタに乗る（作中資料に現実の言葉が混ざる）。
+ *   **handout.pdf を刷る。** 文言を直したら焼き直すこと:
+ *     "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new --disable-gpu  *       --no-pdf-header-footer --print-to-pdf=docs\onsite\handout.pdf docs/onsite/handout.html
  * ============================================================ */
 
     :root {
