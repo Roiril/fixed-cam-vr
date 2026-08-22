@@ -1,0 +1,271 @@
+<title>差し込みを位置駆動へ</title>
+<style>
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;
+  --radius: 0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+<div class="wrap">
+  <p class="eyebrow">廻リ視 · 設計</p>
+  <h1>差し込みを位置駆動へ</h1>
+  <p class="sub">予備動作を 2-C の頭へ・接近を 2-C の中間の線へ ／ <code>canon/LEDGER.md</code> 0107 ／ 2026-08-22 ／ <strong>設計のみ・実装は未着手</strong></p>
+
+  <div class="lead">
+    <p>2 周目 B の差し込みを畳んで、<strong>2-C の中で「入って即（予備動作）→ 中間の線を越えて（接近）」の二拍</strong>にする。接近の開始だけを位置に紐づけ、<strong>取りこぼしても 3 周目 A を潰さない</strong>ことを最優先に置く。<br>
+    著作の変更に加えて、<strong>接近の演出は <code>policy</code> を <code>hold</code> から <code>yield</code> へ変える</strong>。これが「3-A を潰さない」を機構として保証する唯一の点で、設計の中心はここ。</p>
+  </div>
+
+  <h2>1. 決まったこと（ユーザー判断・0107）</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>論点</th><th>判断</th></tr>
+    <tr><td>予備動作の開始</td><td><strong>2-C に入って即</strong>（<code>at="enter"</code>）。線は使わない</td></tr>
+    <tr><td>接近の開始</td><td><strong>2-C の中間に引いた線</strong>を越えたとき（<code>at="line"</code>）</td></tr>
+    <tr><td>接近を踏まない体験者</td><td><strong>構造上いない</strong>（線が通路を跨ぐため）。踏まなければ出さなくてよい</td></tr>
+    <tr><td>予備動作の再生中に線を踏んだら</td><td><strong>予備動作が終わってから接近を流す</strong></td></tr>
+    <tr><td>2-C の黒に包まれる画</td><td>見ないで進む人がいて<strong>よい</strong>。<em>3-A を潰さないが最優先</em></td></tr>
+  </table></div>
+
+  <h2>2. 線の位置（スクショから実測）</h2>
+
+  <p>指定のスクショを画素で測り、ゾーンの塗り（青帯の東端 ＝ course <code>x = -0.45</code>、1m ＝ 478px）を基準に course へ落とした。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>スクショの印</th><th>実測 course x</th><th>この設計での扱い</th></tr>
+    <tr><td>左（予備動作）</td><td><strong>-0.40</strong></td><td><strong>線は引かない</strong>。<code>at="enter"</code> が構造的に同じ場所を満たす（C の西端は -0.45）</td></tr>
+    <tr><td>右（連続接近）</td><td><strong>+0.05</strong></td><td><code>line_approach</code> として新設</td></tr>
+  </table></div>
+
+  <p>C の帯は <code>x ∈ [-0.45, 0.90]</code>・<code>z ∈ [0.45, 0.90]</code>。線は帯を確実に跨ぐよう <strong>z を 0.42〜0.95</strong> に取る（両端を帯の外へ少し出す）。担当は <code>camera: 2</code>、<code>dir: "both"</code>（<code>once</code> が二重発火を防ぐ）。</p>
+
+  <h3>この位置なら自動走行も踏む</h3>
+
+  <p>走行（<code>ShowWalkDebugDriver</code>）は各カメラの代表タイルを結ぶ。実測すると <strong>B (-0.675, 0.075) → C (+0.225, 0.675)</strong> と東進するので、<code>x = +0.05</code> は経路上にある。C へ入る <code>x = -0.45</code> から線まで 0.5m あり、ゾーン確定（dwell 0.5 秒）が先に済むので<strong>武装後に踏む</strong>。</p>
+
+  <p class="muted">この線をもっと東（例えば +0.30）へ置くと代表点 +0.225 を越えてしまい、<strong>走行は永久に踏まない</strong>（検証手段が消える）。いまの位置はその内側にある。</p>
+
+  <h2>3. 変更の一覧</h2>
+
+  <h3>著作（show.json・卓から編集）</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>#</th><th>変更</th><th>理由</th></tr>
+    <tr><td>1</td><td><code>layout.lines</code> に <code>line_approach</code> を追加（x=+0.05 / z 0.42〜0.95 / camera 2 / both）</td><td>接近の開始点</td></tr>
+    <tr><td>2</td><td><strong><code>L2C1#0</code>（2 周目 B の演出）を削除</strong></td><td>予備動作が 2-C へ移るため。2 周目 B は差し込みの無いライブになる</td></tr>
+    <tr><td>3</td><td>2 周目 C に <strong><code>L2C2#0</code> ＝ 予備動作</strong>（<code>at=enter</code> / <code>offsetSec=0</code> / <code>policy=hold</code> / <code>once</code>）。カットは現行の 2 枚（<code>pov_0</code> 0.9s ＋ <code>live</code> 0.6s）をそのまま移す</td><td>「入って即」。<strong>2 枚目の live 0.6s を落とさない</strong> — これが「一度割り込んで戻る」を作っている</td></tr>
+    <tr><td>4</td><td>2 周目 C に <strong><code>L2C2#1</code> ＝ 接近</strong>（<code>at=line</code> / <code>lineId=line_approach</code> / <code>ifMissed=skip</code> / <strong><code>policy=yield</code></strong> / <code>once</code>）。カット列は現行のまま（人形視点 4 つ → <code>live</code> ＋ <code>swapHold</code> の <code>untilZoneChange</code>）</td><td>後半で発火。skip と yield が「3-A を潰さない」を担う</td></tr>
+    <tr><td>5</td><td>cue <code>pov_0</code> の <code>camera</code> を B → C へ</td><td>卓の整理（再生には効かない）</td></tr>
+  </table></div>
+
+  <h3>道具・文書</h3>
+
+  <ul>
+    <li>撮影コンソールの <code>pov_0</code> のラベル「2 周目 B の予備動作」→ <strong>「2 周目 C の予備動作」</strong>（<code>shoot-model.js</code>）</li>
+    <li><code>docs/onsite-checklist.md</code> の表の「2 周目 B 用」も同じコミットで直す</li>
+    <li><code>rules/show-design.md</code> の 2-C の時系列を書き直す（下の 5 節の形）</li>
+    <li><code>rules/sound-design.md</code> の切替音の帰属（2-B の 1 発 ＋ 2-C の 4 発）を<strong>すべて 2-C</strong> へ</li>
+  </ul>
+
+  <h2>4. <code>policy=yield</code> が設計の中心</h2>
+
+  <p>接近の演出は最後のカットが <code>durKind:"untilZoneChange"</code>（黒い覆いを区間の終わりまで保つ）。<strong>現行の <code>hold</code> のままこれを後半へ動かすと、遅く発火した分だけ 3-A に食い込む。</strong></p>
+
+  <div class="tblwrap"><table>
+    <tr><th></th><th><code>hold</code>（現行）</th><th><code>yield</code>（この設計）</th></tr>
+    <tr><td>区間 C を出たとき</td><td>画面を持ったまま 3-A へ入る</td><td><strong>その場で畳まれる</strong></td></tr>
+    <tr><td>3-A の入れ替わり</td><td>接近が終わるまで武装されず、待っている間に区間を出れば捨てられる</td><td><strong>頭から普通に始まる</strong></td></tr>
+    <tr><td>2-C の黒い覆い</td><td>C を出た後も続く</td><td>C を出たら消える（<em>判断 3 で許容</em>）</td></tr>
+  </table></div>
+
+  <p>判断 3（「見ないで進む人は見ないでよい ／ 3-A を潰さないが最優先」）をそのまま機構にすると <code>yield</code> になる。<strong>副産物として、「<code>untilZoneChange</code> のカットが区間外で始まると次の区間確定まで畳まれない」という機構の穴が、この演出については構造的に消える</strong>（3-A の演出は既に <code>policy=yield</code>）。したがって<strong>機構側のコード変更は要らない</strong>。</p>
+
+  <p class="muted">穴そのものは <code>hold</code> の演出に <code>untilZoneChange</code> のカットを置いたときだけ残る。この変更後、その組み合わせは著作に 1 つも無くなる。将来また置くなら、そのとき機構を直す。</p>
+
+  <h2>5. 変更後の 2 周目 C</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>いつ</th><th>何が起きるか</th><th>尺</th></tr>
+    <tr><td>C に入って即</td><td><strong>予備動作</strong>：人形視点の遠景が 1 度割り込み、ライブへ戻る</td><td>1.5s（0.9 ＋ 0.6）</td></tr>
+    <tr><td>—</td><td>ライブのまま歩く（線まで 0.5m ＝ 約 1〜1.7 秒）</td><td>—</td></tr>
+    <tr><td><code>x = +0.05</code> を越えた瞬間</td><td><strong>接近</strong>：人形視点 4 カットが乱れを混ぜて詰まり、4 回目で背中に追いつく</td><td>4.1s</td></tr>
+    <tr><td>追いついた直後</td><td>ライブへ戻り、<strong>そこに居る自分は黒い覆いに包まれている</strong></td><td>C を出るまで</td></tr>
+  </table></div>
+
+  <h3>予備動作の最中に線を踏んだら</h3>
+
+  <p>既存の機構がそのまま判断 4 を満たす。接近は開始条件を満たした時点で <code>Ready</code> にラッチされ、<strong>画面が空く（予備動作が終わる）のを待ってから出る</strong>。演出どうしの引き継ぎなので復帰の暗転は挟まらない。</p>
+
+  <p class="muted">距離で見ると、予備動作 1.5 秒のあいだに進むのは 0.45〜0.9m。C の西端から線まで 0.5m なので、<strong>速い体験者では実際に起こる</strong>。そのときは「割り込み → 戻る」の間が詰まって、ほぼ連続した 5 カットに見える。</p>
+
+  <h2>6. 壁の長さが 2 系統で食い違っている <span class="chip hot">要確認</span></h2>
+
+  <p>スクショの指摘（「横方向の壁の長さの解釈が違う」）を追ったところ、<strong>show.json の中で壁が 2 か所に別々の長さで入っていた</strong>。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>どこ</th><th>横腕</th><th>誰が使うか</th></tr>
+    <tr><td><code>layout.wall</code>（旧・L 字の 3 点）</td><td>(-0.5, 0.5) → <strong>(0.5, 0.5)</strong> ＝ 1.00m</td><td>HMD の位置合わせで実物に重ねるワイヤー</td></tr>
+    <tr><td><code>layout.room.walls</code> の <code>w1</code></td><td>(-0.5, 0.5) → <strong>(0.09, 0.5)</strong> ＝ 0.59m</td><td>CG のオクルーダ・影の落ち先・導入の構造線</td></tr>
+  </table></div>
+
+  <p><strong>41cm 違う。</strong> どちらかが実物と違っており、実物が 1.00m なら CG の人形が壁の東側で隠れずに出る（あるいはその逆）。これは今回の差し込みとは独立した不整合なので、<strong>この設計では触らない</strong>。当日メジャーで実測して、卓の 🧱 部屋で片方に揃えるのが正しい直し方。</p>
+
+  <p class="muted">なお接近の線（+0.05）は、短い方の壁（東端 0.09）のすぐ西に来る。どちらの長さであっても線は壁より北の通路を跨ぐので、<strong>この不整合は線の判定には影響しない</strong>。</p>
+
+  <h2>7. 検証</h2>
+
+  <ol>
+    <li><strong>卓の ▶ 検証</strong>で 2 周目 C を歩かせ、「入って即 → 線 → 接近」の順に出ることと、線を踏まずに抜けたとき接近が出ない（skip）ことを見る</li>
+    <li><strong>実機の自動走行</strong>（<code>quest-record.py --walk</code>）。<code>ev=step</code> で予備動作 2 カット ＋ 接近 5 カットが <code>played=1</code>、<code>ev=take st=end</code> の <code>why</code> が <code>yield</code> か <code>done</code> か、そして <strong>3-A の <code>L3C0#0</code> が頭から走る</strong>ことを確認</li>
+    <li><strong>解析器</strong>は show.json から期待値を作るので、著作を変えれば自動で追従する</li>
+  </ol>
+
+  <p>⚠ <strong>卓の「滞在より後に始まる演出」の警告は <code>at=line</code> では出ない</strong>（卓は位置を秒に落とせないため）。接近を線に移すとこの警告が黙る。代わりに走行の <code>ev=step</code> で見る。</p>
+
+  <h2>8. やらないこと</h2>
+
+  <ul>
+    <li><strong>予備動作用の線</strong> — <code>at=enter</code> で足りる（判断 1）。線が増えるほど当日の引き直しと鏡の管理が増える</li>
+    <li><strong>機構（<code>TakeRunnerLogic</code>）の変更</strong> — <code>yield</code> が同じ問題を構造的に解く（4 節）</li>
+    <li><strong>接近のカットを削って尺を作る</strong> — 黒い覆いを見せるために接近を短くする案は、判断 3 が「見なくてよい」と決めたので不要</li>
+    <li><strong>壁の長さの修正</strong> — 独立した不整合。実測してから直す（6 節）</li>
+  </ul>
+
+  <p class="note">
+    検討の経緯: 設計案を design-critic に通し、verdict 部分採用。指摘のうち「接近を <code>fireOnExit</code> にすると 3-A が消える」「線を東へ置くと自動走行が踏まない」は実コードと代表点の計算で確認し、<strong>ユーザーの判断（skip・線を西へ）が両方とも回避している</strong>ことを確かめた。「予備動作は 2 カット」という指摘も実データで確認し、この設計に反映した。<br>
+    主要参照: <code>canon/LEDGER.md</code> 0102-0107 ／ <code>rules/show-design.md</code>（接近の弧）／ <code>rules/streaming.md</code>（通過ライン・持続の覆い）／ <code>Assets/Scripts/Streaming/TakeRunnerLogic.cs</code> ／ <code>Assets/Scripts/Tracking/ShowWalkDebugDriver.cs</code>
+  </p>
+</div>
