@@ -21,6 +21,7 @@ import {
   mirrorResidualM, mirrorSideCheck, calibUsableForMirror, MIRROR_TOLERANCE_M,
 } from './line-mirror.js';
 import { introConfig, introStageSec, introDurationLabel, introPreflightRow } from './intro-model.js';
+import { approachPrecheck } from './shoot-model.js';
 // 体験の骨格（走り切る周数 ＋ もどりの区間）。既定値と「その区間を踏むか」の判定はここが単一の正。
 // ⚠ 順路は app.js の courseOrder()（カメラ台数でクランプする方）を渡す — リボンが並べる順と
 //   同じでなければ、卓の中で「踏む区間」の答えが 2 つできる。
@@ -1595,6 +1596,35 @@ function checkAssetsExist(urls) {
     .finally(() => { assetChecking = false; });
 }
 
+// 当日の素材撮り（接近）の状態。本番前チェックが読む。
+//   ⚠ /shoot/devices は端末へ実 HTTP を投げるので、**接近の素材を使う台本のときだけ**・
+//     30 秒に 1 回に絞る（本番中に配信端末を叩き続けない）。
+let shootManifest = {}, shootDevices = [], shootTakesByShot = {};
+let shootFetching = false, shootFetchedAt = 0;
+
+function refreshShootInfo(segs) {
+  const uses = (segs || []).some((s) => (s.takes || []).some((t) => (t.steps || []).some(
+    (st) => st && typeof st.cueId === 'string'
+      && (st.cueId === 'fake_live_C' || st.cueId.startsWith('pov_')))));
+  if (!uses) { shootDevices = []; return; }
+  if (shootFetching || Date.now() - shootFetchedAt < 30000) return;
+  shootFetching = true;
+  Promise.all([
+    fetch('/shoot/manifest').then((r) => r.json()).catch(() => null),
+    fetch('/shoot/devices').then((r) => r.json()).catch(() => null),
+  ]).then(([m, d]) => {
+    shootManifest = (m && m.items) || {};
+    shootDevices = (d && d.items) || [];
+    shootTakesByShot = {};
+    for (const [url, e] of Object.entries(shootManifest)) {
+      const s = e.shot || '';
+      if (!s) continue;
+      (shootTakesByShot[s] ||= []).push({ url, ...e });
+    }
+    shootFetchedAt = Date.now();
+  }).finally(() => { shootFetching = false; });
+}
+
 function preflightRows() {
   const rows = [];
   const cams = state?.cameras || [];
@@ -1883,6 +1913,22 @@ function preflightRows() {
   else if (gone.length) rows.push({ s: 'ng', label: '演出素材', detail: `ファイルが見つからない: ${gone.map((u) => u.split('/').pop()).join(', ')} — 消したか名前を変えた可能性` });
   else if (noSrc.length) rows.push({ s: 'warn', label: '演出素材', detail: `素材未設定: ${noSrc.join(', ')}` });
   else rows.push({ s: 'ok', label: '演出素材', detail: `参照素材 ${new Set(refUrls).size} 件はすべて実在・映像あり` });
+
+  // 🎬 接近の素材（当日撮る 6 本）。**一般の素材チェックでは足りない 3 つ**を見る:
+  //   ①頭の窓に対して尺が足りているか（実機は足りないカットを黙って飛ばす）
+  //   ②録りっぱなしの端末（本番中ずっと熱と容量を食う）
+  //   ③撮影日が今日か（前会場の素材＝照明不一致は何度検分しても直らない）
+  //   判定は shoot-model.js（node テストあり）。撮影コンソールと同じ答えを読む。
+  refreshShootInfo(segs);
+  rows.push(approachPrecheck({
+    state, segments: segs,
+    // 素材の実在は 1 つ上の「演出素材」行が見ている（二重に赤くしない）。
+    assets: null,
+    takesByShot: shootTakesByShot,
+    manifest: shootManifest,
+    devices: shootDevices,
+    nowIso: new Date().toISOString(),
+  }));
 
   // 🪞 凍結の線と録画の起点が**画像空間の鏡**で対応しているか（canon/LEDGER.md 0102）。
   //   3 周目 A は左半分だけライブを左右反転して読むので、course 空間で対称に置いても

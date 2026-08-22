@@ -41,7 +41,7 @@ import time
 import urllib.request
 import uuid as _uuidlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs, quote, unquote
+from urllib.parse import urlparse, parse_qs, quote, unquote, urlencode
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CAPTURES = os.path.join(ROOT, 'captures')
@@ -121,6 +121,113 @@ def _transcode_to_mp4(src):
     except OSError:
         pass
     return dst, 'mp4 へ変換した（Quest で再生できる形式）'
+
+def _probe_media(path):
+    """
+    動画の尺・寸法・符号化を測る（当日の素材が実機で再生できるかの検分）。
+
+    ffmpeg の `-i` は stderr に情報を吐いて exit 1 で終わる（入力だけで出力が無いため）ので、
+    **戻り値ではなく stderr を読む**。ffmpeg が無ければ空の dict（判定しない側へ倒す）。
+    """
+    exe = _ffmpeg_exe()
+    if not exe or not os.path.isfile(path):
+        return {}
+    try:
+        r = subprocess.run([exe, '-hide_banner', '-i', path],
+                           capture_output=True, timeout=30)
+    except Exception:
+        return {}
+    err = (r.stderr or b'').decode('utf-8', 'replace')
+    out = {}
+    m = re.search(r'Duration:\s*(\d+):(\d\d):(\d\d(?:\.\d+)?)', err)
+    if m:
+        out['durSec'] = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    m = re.search(r'Video:\s*([A-Za-z0-9]+)[^,]*,\s*([a-z0-9()]+)[^,]*,\s*(\d+)x(\d+)', err)
+    if m:
+        out['codec'] = m.group(1)
+        out['pixFmt'] = m.group(2)
+        out['width'] = int(m.group(3))
+        out['height'] = int(m.group(4))
+    m = re.search(r'([\d.]+)\s*fps', err)
+    if m:
+        out['fps'] = float(m.group(1))
+    return out
+
+
+def _trim_head(src, in_point_sec):
+    """
+    素材の頭を `in_point_sec` だけ送った**別ファイル**を作る。戻り値は (パス or None, 注記)。
+
+    端末内録画は全フレームが I フレームなので `-c copy` でも**正確に切れる**（再圧縮しない ＝
+    画質が 1 ビットも落ちない）。ブラウザ録画由来の素材はキーフレーム間隔が長いので、
+    `-c copy` だと指定より手前へ寄る。そこは注記で言う（黙って寄せない）。
+    """
+    exe = _ffmpeg_exe()
+    if not exe:
+        return None, 'ffmpeg が無いので頭を切れない（頭を送らずに採用してください）'
+    stem, ext = os.path.splitext(os.path.basename(src))
+    dst = os.path.join(RECORDINGS, f'{stem}-in{in_point_sec:.2f}'.replace('.', '_') + ext)
+    if os.path.exists(dst):
+        return dst, '同じ頭で切ったものが既にあったので再利用した'
+    cmd = [exe, '-y', '-loglevel', 'error', '-ss', f'{in_point_sec:.3f}', '-i', src,
+           '-c', 'copy', '-movflags', '+faststart', '-an', dst]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=120)
+    except Exception as e:
+        return None, f'頭の切り出しに失敗: {e}'
+    if r.returncode != 0 or not os.path.exists(dst) or os.path.getsize(dst) == 0:
+        err = (r.stderr or b'').decode('utf-8', 'replace').strip().splitlines()
+        return None, '頭の切り出しに失敗: ' + (err[-1] if err else f'exit {r.returncode}')
+    return dst, f'頭を {in_point_sec:.2f} 秒送った（再圧縮していない）'
+
+
+def _shoot_get(host, port, path, timeout=4.0):
+    """配信端末の HTTP エンドポイントを叩いて JSON を返す。(ok, obj or 文字列)。"""
+    try:
+        r = urllib.request.urlopen(f'http://{host}:{port}{path}', timeout=timeout)
+        body = r.read(1 << 20)
+        try:
+            return True, json.loads(body.decode('utf-8'))
+        except Exception:
+            return True, {'raw': body[:200].decode('utf-8', 'replace')}
+    except Exception as e:
+        return False, str(e)[:120]
+
+
+# 当日の素材撮りの台帳（どのテイクをいつ・どの端末で撮ったか）。
+#   show.json とは混ぜない（設定ではなく観測の記録。rev を上げると Quest へ無駄な再適用が飛ぶ）。
+#   ⚠ 時刻は **卓の時計** で刻む。端末の時計は現場でずれるので信用しない。
+SHOOT_MANIFEST = os.path.join(RECORDINGS, 'approach-manifest.json')
+_shoot_lock = threading.Lock()
+
+
+def _shoot_manifest():
+    with _shoot_lock:
+        try:
+            with open(SHOOT_MANIFEST, encoding='utf-8') as f:
+                d = json.load(f)
+            return d if isinstance(d, dict) else {}
+        except Exception:
+            return {}
+
+
+def _shoot_manifest_put(url, entry):
+    with _shoot_lock:
+        try:
+            with open(SHOOT_MANIFEST, encoding='utf-8') as f:
+                d = json.load(f)
+            if not isinstance(d, dict):
+                d = {}
+        except Exception:
+            d = {}
+        d[url] = entry
+        os.makedirs(RECORDINGS, exist_ok=True)
+        tmp = SHOOT_MANIFEST + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, SHOOT_MANIFEST)
+        return d
+
 
 # /open-dir?dir= だけで開いてよいフォルダ（保存はしない）
 OPEN_DIRS = {'testassets': TESTASSETS, 'archive': ARCHIVE, 'audio': AUDIO, 'masks': MASKS,
@@ -1255,6 +1362,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._proxy_cam(parse_qs(urlparse(self.path).query))
         if path == '/caminfo':
             return self._get_cam_info(parse_qs(urlparse(self.path).query))
+        if path == '/shoot/devices':
+            return self._json(self._shoot_devices())
+        if path == '/shoot/takes':
+            return self._json(self._shoot_takes(parse_qs(urlparse(self.path).query)))
+        if path == '/shoot/manifest':
+            return self._json({'ok': True, 'items': _shoot_manifest()})
         if path == '/cam/liveness':
             # 卓が 2 秒ごとに読む「各配信元から実際にバイトが来ているか」。
             return self._json({'ok': True, 'cams': _live_snapshot()})
@@ -1374,6 +1487,201 @@ class Handler(SimpleHTTPRequestHandler):
     # PC → カメラの HTTP は /diag が既に同じ経路で引いていて実績がある。
     #
     # ⚠ タイムアウトは短く。位置合わせ面が数秒おきに叩くので、届かない端末で待たせない。
+    # ================= 当日の素材撮り（2 周目 B・C の接近） =================
+    #
+    # 卓 → 配信端末（streamer v0.10.0 の /record/*）の中継と、回収・検分・採用。
+    # 判定は shoot-model.js（ブラウザ側・node テストあり）が持ち、ここは I/O だけ。
+
+    def _shoot_cams(self):
+        """show.json の cameras のうち host が入っているもの（撮影に使える端末）。"""
+        out = []
+        with _show_cond:
+            cams = list(_show.get('cameras') or [])
+        for i, c in enumerate(cams):
+            host = (c.get('host') or '').strip()
+            if not host:
+                continue
+            out.append({'index': i, 'id': c.get('id') or '', 'host': host,
+                        'port': int(c.get('port') or 8080)})
+        return out
+
+    def _shoot_devices(self):
+        """各端末の録画状態。**録りっぱなしの検出**にも使う（本番前チェック ②）。"""
+        items = []
+        for c in self._shoot_cams():
+            ok, st = _shoot_get(c['host'], c['port'], '/record/status', timeout=3.0)
+            ok2, hl = _shoot_get(c['host'], c['port'], '/health', timeout=3.0)
+            items.append({
+                **c,
+                'reachable': bool(ok),
+                'recording': bool(ok and isinstance(st, dict) and st.get('recording')),
+                'counting': bool(ok and isinstance(st, dict) and st.get('counting')),
+                'countdownLeft': (st or {}).get('countdownLeft', 0) if isinstance(st, dict) else 0,
+                'shot': (st or {}).get('shot', '') if isinstance(st, dict) else '',
+                'takeCount': (st or {}).get('takeCount', 0) if isinstance(st, dict) else 0,
+                # v0.9.0 以前は /record/list を持たない。卓はこれで新旧を切り分ける。
+                'canList': bool(ok and isinstance(st, dict) and 'takeCount' in st),
+                'throttleStage': (hl or {}).get('throttleStage', 0) if isinstance(hl, dict) else 0,
+                'thermalStatus': (hl or {}).get('thermalStatus', 0) if isinstance(hl, dict) else 0,
+                'status': st if isinstance(st, dict) else {},
+            })
+        return {'ok': True, 'items': items}
+
+    def _shoot_takes(self, q):
+        """端末に残っているテイクと、卓が回収済みのテイクを合わせて返す。"""
+        host = (q.get('host', [''])[0] or '').strip()
+        port = int((q.get('port', ['8080'])[0] or '8080'))
+        device = []
+        if host:
+            ok, lst = _shoot_get(host, port, '/record/list', timeout=5.0)
+            if ok and isinstance(lst, dict):
+                device = lst.get('items') or []
+        man = _shoot_manifest()
+        # 回収済み（卓のディスクに在るもの）。素材一覧と同じ /recordings/ URL で返す。
+        local = []
+        for url, e in man.items():
+            p = self._resolve_local_asset(url)
+            if p and os.path.isfile(p):
+                local.append({'url': url, **e})
+        local.sort(key=lambda x: x.get('capturedAt') or '', reverse=True)
+        return {'ok': True, 'device': device, 'local': local}
+
+    def _shoot_post(self, path):
+        try:
+            n = int(self.headers.get('Content-Length') or 0)
+            body = json.loads(self.rfile.read(n).decode('utf-8')) if n else {}
+        except Exception as e:
+            return self._json({'ok': False, 'detail': f'body が読めない: {e}'}, 400)
+
+        host = str(body.get('host') or '').strip()
+        port = int(body.get('port') or 8080)
+
+        if path == '/shoot/start':
+            if not host:
+                return self._json({'ok': False, 'detail': 'host が空です'}, 400)
+            shot = str(body.get('shot') or '')
+            qs = urlencode({'shot': shot, 'maxSec': int(body.get('maxSec') or 0),
+                            'countdownSec': int(body.get('countdownSec') or 0)})
+            ok, r = _shoot_get(host, port, f'/record/start?{qs}', timeout=6.0)
+            return self._json({'ok': bool(ok), 'result': r})
+
+        if path == '/shoot/stop':
+            if not host:
+                return self._json({'ok': False, 'detail': 'host が空です'}, 400)
+            ok, r = _shoot_get(host, port, '/record/stop', timeout=15.0)
+            return self._json({'ok': bool(ok), 'result': r})
+
+        if path == '/shoot/pull':
+            return self._shoot_pull(body, host, port)
+
+        if path == '/shoot/adopt':
+            return self._shoot_adopt(body)
+
+        if path == '/shoot/delete':
+            name = str(body.get('name') or '')
+            if not host or not name:
+                return self._json({'ok': False, 'detail': 'host / name が必要です'}, 400)
+            ok, r = _shoot_get(host, port, f'/record/delete?{urlencode({"name": name})}', timeout=6.0)
+            return self._json({'ok': bool(ok), 'result': r})
+
+        return self._json({'ok': False, 'detail': 'unknown'}, 404)
+
+    def _shoot_pull(self, body, host, port):
+        """
+        端末から 1 本回収して recordings/ へ置き、検分して台帳へ載せる。
+
+        ⚠ 保存名は**毎回一意**（テイク番号 + 時刻）。同名で差し替えると Quest の
+          ローカルキャッシュが古い版を再生し続ける（撮り直したのに変わらない）。
+        """
+        name = str(body.get('name') or '')
+        shot = str(body.get('shot') or '')
+        if not host or not name:
+            return self._json({'ok': False, 'detail': 'host / name が必要です'}, 400)
+        if not re.fullmatch(r'[A-Za-z0-9_.\-]{1,128}', name) or '..' in name:
+            return self._json({'ok': False, 'detail': 'name が不正です'}, 400)
+
+        os.makedirs(RECORDINGS, exist_ok=True)
+        dst = os.path.join(RECORDINGS, name)
+        # 同名が既にあれば連番を足す（端末を初期化して番号が戻っても上書きしない）。
+        base, ext = os.path.splitext(name)
+        k = 1
+        while os.path.exists(dst):
+            k += 1
+            dst = os.path.join(RECORDINGS, f'{base}-{k}{ext}')
+        try:
+            url = f'http://{host}:{port}/record/file?{urlencode({"name": name})}'
+            with urllib.request.urlopen(url, timeout=120) as r, open(dst, 'wb') as f:
+                shutil.copyfileobj(r, f)
+        except Exception as e:
+            try:
+                os.remove(dst)
+            except OSError:
+                pass
+            return self._json({'ok': False, 'detail': f'回収に失敗: {e}'}, 502)
+
+        meta = _probe_media(dst)
+        # 撮影時の熱段（本番と画質が違うかの判定に使う）。
+        okh, hl = _shoot_get(host, port, '/health', timeout=3.0)
+        rel = '/recordings/' + os.path.basename(dst)
+        entry = {
+            'name': os.path.basename(dst), 'shot': shot,
+            # ⚠ 卓の時計で刻む（端末の時計は現場でずれる）。
+            'capturedAt': datetime.datetime.now().isoformat(timespec='seconds'),
+            'host': host, 'bytes': os.path.getsize(dst),
+            'throttleStage': (hl or {}).get('throttleStage', 0) if okh and isinstance(hl, dict) else None,
+            **meta,
+        }
+        _shoot_manifest_put(rel, entry)
+        return self._json({'ok': True, 'url': rel, 'entry': entry})
+
+    def _shoot_adopt(self, body):
+        """
+        撮ったテイクを cue へ採用する（`cues[].sourceUrl` を書く）。
+
+        ⚠ **`POST /state` を使わない**。あれは cues 配列を丸ごと差し替えるので、
+          卓の別タブが編集中の cue を消す。ここは 1 件だけ触る。
+        """
+        cue_id = str(body.get('cueId') or '')
+        url = str(body.get('url') or '')
+        if not cue_id or not url:
+            return self._json({'ok': False, 'detail': 'cueId / url が必要です'}, 400)
+        src = self._resolve_local_asset(url)
+        if not src:
+            return self._json({'ok': False, 'detail': f'素材が見つからない: {url}'}, 400)
+
+        # 頭を送るなら、切り出した**別ファイル**を採用する（元のテイクは残す）。
+        # ⚠ カットの trimStartSec（偽ライブの 0 / 1.9 / 3.6 / 5.0）は著作の値なので触らない。
+        #   撮影の都合をそこへ書くと、素材を差し替えたとき古い頭合わせが別素材に効く。
+        try:
+            in_point = float(body.get('inPointSec') or 0)
+        except (TypeError, ValueError):
+            in_point = 0.0
+        note = ''
+        if in_point > 0.01:
+            cut, note = _trim_head(src, in_point)
+            if cut:
+                url = '/recordings/' + os.path.basename(cut)
+                base = _shoot_manifest().get('/recordings/' + os.path.basename(src), {})
+                _shoot_manifest_put(url, {
+                    **base, 'name': os.path.basename(cut), 'trimmedFrom': os.path.basename(src),
+                    'inPointSec': in_point, **_probe_media(cut),
+                })
+            elif note:
+                return self._json({'ok': False, 'detail': note}, 500)
+
+        found = {'hit': False}
+
+        def apply(show):
+            for c in (show.get('cues') or []):
+                if c.get('id') == cue_id:
+                    c['sourceUrl'] = url
+                    found['hit'] = True
+
+        rev = _mutate_show(apply)
+        if not found['hit']:
+            return self._json({'ok': False, 'detail': f'cue が無い: {cue_id}'}, 404)
+        return self._json({'ok': True, 'rev': rev, 'cueId': cue_id, 'url': url, 'note': note})
+
     def _get_cam_info(self, q):
         host = (q.get('host', [''])[0] or '').strip()
         auth = (q.get('auth', [''])[0] or '').strip()
@@ -1512,6 +1820,9 @@ class Handler(SimpleHTTPRequestHandler):
                 _unity_status.clear()
                 _unity_status.update(body)
             return self._json({'ok': True, 'dwellMerged': merged})
+        if parsed.path in ('/shoot/start', '/shoot/stop', '/shoot/pull',
+                           '/shoot/adopt', '/shoot/delete'):
+            return self._shoot_post(parsed.path)
         if parsed.path == '/dwell/reset':
             with _dwell_lock:
                 _dwell_stats['items'] = {}
