@@ -76,7 +76,6 @@ namespace FixedCamVr.Streaming
             _presentMs = 1.5f / f * 1000f;
         }
 
-        /// <summary>配信側の鮮度を取り込む。</summary>
         /// <summary>
         /// 配信側の <c>/health.latestFrameAgeMs</c> を取り込む。
         ///
