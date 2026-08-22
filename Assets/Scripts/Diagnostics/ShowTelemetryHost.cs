@@ -1137,6 +1137,16 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" swN=").Append(_switchSfx == null
                                        ? "-"
                                        : (_switchSfx.HasClips ? _switchSfx.PlayedCount.ToString() : "nc"));
+            //   swAlert = そのうち**警告音つき**で鳴った回数（`canon/LEDGER.md` 0106）。
+            //             人形視点が差し込まれるカット（カットの `switchSfx`）だけがここに乗る。
+            //             `nc` は警告つきの音源を掴めていない ＝ その差し込みも素の切替音で鳴っている。
+            //             ⚠ **画にも動画にも違いが出ない**（音は録画に映らない）ので、
+            //                「警告音が混ざったか」の証拠はこのキーだけ。
+            _sb.Append(" swAlert=").Append(_switchSfx == null
+                                           ? "-"
+                                           : (_switchSfx.HasAlertClip
+                                              ? _switchSfx.AlertCount.ToString()
+                                              : "nc"));
             //   typeN = 連絡の面の打鍵の累計（`canon/LEDGER.md` 0056）。**出た文字数と対で見る** —
             //           `nc` は音源を掴めていない ＝ 字は出るのに無音。
             //           解析器が「連絡 n 通ぶんの字数の合計」と突き合わせて FAIL にする。

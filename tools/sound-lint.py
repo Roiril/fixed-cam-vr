@@ -65,7 +65,7 @@ SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何�
 #       これは「発振器を置いた」ではなく**人が笑っている**という事実で、直す先が無い。
 RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_close",
             "sfx_screen_on", "bed_room_lap2", "bed_room_lap3",
-            "sfx_shatter", "sfx_switch_1", "amb_dolls_laugh",
+            "sfx_shatter", "sfx_switch_1", "sfx_switch_alert", "amb_dolls_laugh",
             "bed_dolls_laugh", "bed_doll_one", "bed_dolls_grow_a", "bed_dolls_grow_b"}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 

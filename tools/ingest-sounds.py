@@ -370,6 +370,43 @@ SWELL = [
 ]
 
 
+# ---- 既に焼いた音へ、もらった音を薄く重ねるもの ------------------------------
+#
+# ⚠ **これも「もらった音」の側**（合成ではない）。掛けるのは切り出し・音量・端の処理だけで、
+#    イコライザも圧縮も掛けない（`rules/sound-design.md` §4.5）。
+#
+# ⚠⚠ **土台は「既に焼いた wav」を読む。** 同じ切替音でなければ「切替音 ＋ 警告」にならないので、
+#    土台を焼き直したらこちらも焼き直す（`--only <土台の名前>` でも付いてくるようにしてある）。
+#
+# ユーザー指定（2026-08-22・`canon/LEDGER.md` 0106）:
+#   「人形視点に切り替わる演出が差し込まれるところの、カメラ切り替えの時の音を、
+#     既存の音 ＋ 警告音の合成にしてほしい」「3 回音が連続してなるため、余白を抜いたうえ
+#     1 つだけを切り抜いて」「警告音は小さめに調整して、あくまで、通常の切り替え音がメインだが、
+#     少しバグっているような感じにしてほしい」
+#
+# ⚠⚠ **1 発（本体 0.55 秒）を丸ごとは使わない。** 理由 2 つ:
+#    ① 土台の切替音は 238ms しかない。それより長い定常のブザーを足すと
+#      「通常の切替音がメイン」が崩れる（実測: 350ms 以上にすると合成のラウドネスが
+#       土台の -23.0 LUFS から -24〜-27 へ離れる ＝ もう別の音）
+#    ② `SwitchAudioCue` は AudioSource を 1 本使い回して `Stop()` してから鳴らすので、
+#      2 周目 C の連打（実測の最短 0.8 秒刻み）では長い音が次の切替に打ち切られる
+#
+# ⚠ 元の mp3 は 1.09 秒周期で **21 発**入っている（ユーザーの言う「3 回」より多い）。
+#    切り出すのは 1 発目だけ。前後の余白と、次の発までの床（-25dB の残響）は抜く。
+#
+# (元ファイル名, 土台の出力名, 出力名, 切り出す秒, 土台に対する dB, 使い先)
+MIXES = [
+    ("警告音.mp3", "sfx_switch_1", "sfx_switch_alert", 0.24, -12.0,
+     "**人形視点が差し込まれるカット**の切替音（2 周目 B の 1 発 ＋ 2 周目 C の 4 発）。"
+     "ゾーン切替は `sfx_switch_1` のままで、こちらだけ警告音が薄く混ざる"),
+]
+
+MIX_ONSET_DB = -20.0   # これを超えたら 1 発の頭
+MIX_PRE = 0.003        # 頭の手前に残す
+MIX_IN = 0.002         # 頭のクリック止め（ブザーの立ち上がりは速いので短く）
+MIX_FADE = 0.040       # 尻のフェード。⚠ 定常音を素で切るとクリックが出る（基音 187Hz の 7 周期ぶん）
+
+
 def glide(c: np.ndarray, r0: float, r1: float, sr: int) -> np.ndarray:
     """音程を <paramref name="r0"/> から <paramref name="r1"/> へ滑らせながら読む。
 
@@ -781,6 +818,64 @@ def ingest_cuts(cuts, src_dir: str) -> None:
                   f"粗さ {d['rough']:4.2f}  内蔵SP {d['speaker_db']:5.1f}dB")
 
 
+def mix_build(y, sr: int, base: np.ndarray, body_sec: float, rel_db: float):
+    """もらった音の 1 発を切り出して、既に焼いた土台へ薄く重ねる（<see cref="MIXES"/>）。
+
+    ⚠ **音量は土台との関係で決める。** 「小さめ」は絶対値ではなく「通常の切替音がメイン」という
+    関係のことなので、土台のラウドネスを基準に `rel_db` だけ下げる。
+    """
+    st = sk.to_stereo(trim(y))
+    env = np.max(np.abs(st), axis=1)
+    thr = 10 ** (MIX_ONSET_DB / 20)
+    head = int(np.argmax(env > thr)) if np.any(env > thr) else 0
+    a = max(0, head - int(MIX_PRE * sr))
+    seg = sk.env_fade(st[a:a + int((MIX_PRE + body_sec) * sr)], MIX_IN, MIX_FADE)
+    seg = seg * 10 ** ((sk.lufs(base) + rel_db - sk.lufs(seg)) / 20.0)
+
+    out = np.zeros((max(len(base), len(seg)), 2))
+    out[:len(base)] += base
+    out[:len(seg)] += seg
+    # ⚠ 天井に当たったら**両方まとめて**下げる（土台だけ下げると主従の関係が崩れる）。
+    tp = sk.true_peak_db(out)
+    if tp > -3.0:
+        out = out * 10 ** ((-3.0 - tp) / 20.0)
+    return out, seg
+
+
+def ingest_mixes(mixes, src_dir: str) -> None:
+    """既に焼いた音へ、もらった音を薄く重ねて焼く（<see cref="MIXES"/>）。"""
+    for jp, base_name, name, body, rel, _why in mixes:
+        src = os.path.join(src_dir, jp)
+        raw = os.path.join(RAW, f"src_{name}.wav")
+        if os.path.exists(src):
+            if not decode(src, raw):
+                continue
+        elif not os.path.exists(raw):
+            print(f"  無い: {jp}（{src_dir} にも {RAW} にも）")
+            continue
+        else:
+            print(f"  元 mp3 が無いので復号済みを使う: {name}")
+
+        base_path = os.path.join(OUT, f"{base_name}.wav")
+        if not os.path.exists(base_path):
+            # ⚠ 土台が無いまま焼くと「警告音だけ」が切替音の名前で出来る（無音より悪い）。
+            print(f"  土台が無い: {base_name}.wav（先にそちらを焼くこと）")
+            continue
+        base = sk.to_stereo(sk.read_wav(base_path)[0])
+
+        y, sr = sk.read_wav(raw)
+        out, seg = mix_build(y, sr, base, body, rel)
+        sk.write_wav(os.path.join(OUT, f"{name}.wav"), out, peak_db=-3.0)
+        d, b, g = sk.describe(out), sk.describe(base), sk.describe(seg)
+        print(f"  {name:16s} {base_name} ＋ 警告 {body * 1000:.0f}ms（{rel:+.1f}dB）")
+        print(f"    土台 {b['lufs']:6.1f} → 合成 {d['lufs']:6.1f} LUFS   "
+              f"tp {b['true_peak_db']:5.1f} → {d['true_peak_db']:5.1f}dB   "
+              f"警告だけ {g['lufs']:6.1f} LUFS")
+        print(f"    鋭さ {b['sharp']:4.2f} → {d['sharp']:4.2f}   粗さ {d['rough']:4.2f}   "
+              f"内蔵SP {b['speaker_db']:5.1f} → {d['speaker_db']:5.1f}dB   "
+              f"重心 {b['centroid_hz']:5.0f} → {d['centroid_hz']:5.0f}Hz")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--list", action="store_true")
@@ -807,11 +902,14 @@ def main() -> int:
             layers = " + ".join(f"{n}({s:.0f}s・{len(v)} 回)" for n, s, v in SWELL_LAYERS)
             print(f"  {'（増える 3 枚）':16s} ← {jp}\n      {layers}"
                   f"\n      1 体ぶん {SWELL_SOLO_LUFS:+.1f} LUFS で 3 枚まとめて揃える / {why}")
+        for jp, base_name, name, body, rel, why in MIXES:
+            print(f"  {name:16s} ← {base_name} ＋ {jp}")
+            print(f"      1 発から {body * 1000:.0f}ms を {rel:+.1f}dB で重ねる / {why}")
         return 0
 
     names = ({p[1] for p in PLAN} | {c[1] for c in CUTS}
              | {s[1] for s in SWARMS} | {c[1] for c in CHORUS}
-             | {n for n, _s, _v in SWELL_LAYERS})
+             | {n for n, _s, _v in SWELL_LAYERS} | {m[2] for m in MIXES})
     if a.only is not None and not set(a.only) <= names:
         missing = sorted(set(a.only) - names)
         print(f"  PLAN にも CUTS にも無い名前: {', '.join(missing)}")
@@ -823,6 +921,8 @@ def main() -> int:
     # ⚠ 増える 3 枚は**家族で 1 つ**（1 枚目の高さで 3 枚を揃えるので、1 枚だけ焼き直せない）。
     swell = SWELL if (a.only is None
                       or any(n in a.only for n, _s, _v in SWELL_LAYERS)) else []
+    # ⚠ 重ねる音は**土台と対**。`--only <土台>` でも焼き直す（土台だけ新しいと食い違う）。
+    mixes = [m for m in MIXES if a.only is None or m[2] in a.only or m[1] in a.only]
 
     os.makedirs(RAW, exist_ok=True)
     os.makedirs(OUT, exist_ok=True)
@@ -882,6 +982,8 @@ def main() -> int:
               f"{before['lufs']:6.1f} → {d['lufs']:6.1f} LUFS   "
               f"tp {before['true_peak_db']:5.1f} → {d['true_peak_db']:5.1f}dB   "
               f"鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f} 内蔵SP {d['speaker_db']:5.1f}dB")
+    # ⚠ **土台を焼いた後に呼ぶ**（PLAN のループの後）。順番を変えると 1 世代古い土台へ重ねる。
+    ingest_mixes(mixes, a.src)
     print(f"\n→ {OUT}\n次: py -3.11 tools/sound-lint.py  →  .\\tools\\unity.ps1 menu sound-import")
     return 0
 

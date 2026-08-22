@@ -23,6 +23,12 @@ namespace FixedCamVr.Streaming
     ///
     /// ⚠ クリップ未設定なら無音スキップ（仕組みだけ残す）。既定の音は
     /// <c>Resources/Sound/sfx_switch_1</c> から拾う（`tools/ingest-sounds.py` が焼く）。
+    ///
+    /// ⚠⚠ <b>人形視点が差し込まれるカットだけ、警告音つきの音で鳴る</b>
+    /// （<c>canon/LEDGER.md</c> 0106 ・<see cref="PlayAlert"/>）。ゾーン切替は素の音のまま。
+    /// 呼び分けているのは <see cref="CameraSwitchDirector.PlaySwitchSfx"/> 1 か所だけで、
+    /// そこを通るのは<b>カットの <c>switchSfx</c></b>（＝ カメラを動かさない素材カットが
+    /// 「視点が急に切り替わった」として鳴らす音）。
     /// </summary>
     [RequireComponent(typeof(AudioSource))]
     public sealed class SwitchAudioCue : MonoBehaviour
@@ -36,6 +42,16 @@ namespace FixedCamVr.Streaming
         /// ⚠ ここを戻しても音は増えない — 先に <c>tools/ingest-sounds.py</c> へ音源を足すこと。
         /// </summary>
         public const int DefaultVariantCount = 1;
+
+        /// <summary>
+        /// <b>人形視点が差し込まれるカット</b>の音（<c>canon/LEDGER.md</c> 0106）。
+        /// 素の切替音（<c>sfx_switch_1</c>）の上に、もらった警告音を 240ms だけ
+        /// -12dB で重ねた 1 本で、焼くのは <c>tools/ingest-sounds.py</c> の <c>MIXES</c>。
+        ///
+        /// ⚠ <b>Inspector の口は持たない</b>（差し替えるなら <c>MIXES</c> の 2 つの数を直して焼き直す）。
+        /// SerializeField にすると、シーンに焼かれた null と Resources の関係を次の人が調べることになる。
+        /// </summary>
+        public const string AlertResourceName = "Sound/sfx_switch_alert";
 
         [Tooltip("再生に使う AudioSource。null なら同 GameObject から取得。")]
         [SerializeField] private AudioSource? source;
@@ -52,13 +68,23 @@ namespace FixedCamVr.Streaming
         [SerializeField] private float pitchSpread = 0.035f;
 
         private AudioClip?[] _clips = new AudioClip?[0];
+        private AudioClip? _alertClip;
         private int _next;
 
-        /// <summary>鳴らした累計（テレメトリ用）。</summary>
+        /// <summary>鳴らした累計（テレメトリ用）。<b>警告つきもここに乗る。</b></summary>
         public int PlayedCount { get; private set; }
+
+        /// <summary>警告つきで鳴らした累計（テレメトリ用）。</summary>
+        public int AlertCount { get; private set; }
 
         /// <summary>音源を掴めているか。**false なら切替は無音のまま。**</summary>
         public bool HasClips => _clips.Length > 0;
+
+        /// <summary>
+        /// 警告つきの音源を掴めているか。**false なら人形視点の差し込みも素の切替音で鳴る**
+        /// （無音にはしない — 切替音そのものが消えると体験が壊れる）。
+        /// </summary>
+        public bool HasAlertClip => _alertClip != null;
 
         private void Awake()
         {
@@ -74,6 +100,16 @@ namespace FixedCamVr.Streaming
 
         private void ResolveClips()
         {
+            // ⚠ 警告つきは素の切替音とは独立に解決する（片方が無くてももう片方は鳴る）。
+            _alertClip = Resources.Load<AudioClip>(AlertResourceName);
+            if (_alertClip == null)
+            {
+                Debug.LogWarning($"[Sound] 警告つきの切替音がありません（Resources/{AlertResourceName}）。"
+                                 + "人形視点の差し込みも素の切替音で鳴ります。"
+                                 + "`py -3.11 tools/ingest-sounds.py --only sfx_switch_alert` の後に "
+                                 + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+            }
+
             if (switchClips != null && switchClips.Length > 0)
             {
                 var keep = new System.Collections.Generic.List<AudioClip?>(switchClips.Length);
@@ -104,7 +140,24 @@ namespace FixedCamVr.Streaming
             if (source == null || _clips.Length == 0) return;
             var clip = _clips[_next];
             _next = (_next + 1) % _clips.Length;
-            if (clip == null) return;
+            PlayClip(clip);
+        }
+
+        /// <summary>
+        /// <b>警告音つき</b>で 1 回鳴らす（人形視点が差し込まれるカット・<c>canon/LEDGER.md</c> 0106）。
+        /// 警告つきの音源を掴めていなければ<b>素の切替音へ落ちる</b>（無音にはしない）。
+        /// </summary>
+        public void PlayAlert()
+        {
+            if (_alertClip == null) { Play(); return; }
+            if (source == null) return;
+            PlayClip(_alertClip);
+            AlertCount++;
+        }
+
+        private void PlayClip(AudioClip? clip)
+        {
+            if (source == null || clip == null) return;
 
             source.clip = clip;
             source.pitch = 1f + Random.Range(-pitchSpread, pitchSpread);

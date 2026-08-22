@@ -1524,7 +1524,7 @@ export function createRibbon(container, deps) {
           <option value="${TAKE.TRANS_SWAP}"${s.transition === TAKE.TRANS_SWAP ? ' selected' : ''}>入れ替わり（体験者だけを砂が覆って人形になる）</option>
         </select></label>
         <label><input class="rb-s-transms" type="number" min="0" step="10" value="${s.transitionMs || 0}">ms<span class="rb-hint2">0=既定</span></label>
-        <label class="chk" title="このカットで画が差し替わるのと同時に、カメラ切替の音を 1 発鳴らす。カメラを動かさない素材のカットでも「視点が急に切り替わった」として聞かせたいときに使う（カメラが実際に変わるカットでは自動で鳴るので不要）"><input class="rb-s-switchsfx" type="checkbox" ${s.switchSfx ? 'checked' : ''}>切替音を鳴らす</label>
+        <label class="chk" title="このカットで画が差し替わるのと同時に、カメラ切替の音を 1 発鳴らす。カメラを動かさない素材のカットでも「視点が急に切り替わった」として聞かせたいときに使う（カメラが実際に変わるカットでは自動で鳴るので不要）。この音には警告音が薄く混ざる — ゾーン切替の音とは別の 1 本"><input class="rb-s-switchsfx" type="checkbox" ${s.switchSfx ? 'checked' : ''}>切替音を鳴らす（警告音つき）</label>
         <label title="カットが始まってから 1 回だけ走らせる映像の乱れ。遷移の「乱れ」とは別物で、こちらは体験者の注意を引くために使う">乱れ<input class="rb-s-glitch" type="number" min="0" max="1" step="0.05" value="${s.glitch || 0}"><span class="rb-hint2">0=出さない</span></label>
         <label class="rb-s-glitchsec-l" style="display:${(s.glitch || 0) > 0 ? '' : 'none'}"><input class="rb-s-glitchsec" type="number" min="0.05" step="0.05" value="${s.glitchSec > 0 ? s.glitchSec : TAKE.DEFAULT_STEP_GLITCH_SEC}">s</label>
         <label title="カットの頭で画をこの秒数だけ止める。ライブも録画も一緒に凍る。再開したとき、体験者は自分が思っていたのと違う位置に居る">静止<input class="rb-s-hold" type="number" min="0" max="5" step="0.1" value="${s.hold || 0}">s<span class="rb-hint2">0=止めない</span></label>

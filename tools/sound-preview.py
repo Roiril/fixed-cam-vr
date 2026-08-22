@@ -70,6 +70,7 @@ MATERIALS = [
     ("sfx_screen_noise", "【鳴らない】その後のノイズ — 2026-08-16 に外した（音源は残してある）", 0),
     ("sfx_swap", "【鳴らない】装置が点く — 同じ縁をもらった音（sfx_screen_on）が取った", 0),
     ("sfx_switch_1", "カメラ切替（もらった「カメラ切り替え」・**変種は 1 本だけ**）", 0),
+    ("sfx_switch_alert", "同・**人形視点が差し込まれるカット**（もらった「警告音」を 240ms だけ薄く重ねたもの）", 0),
     ("sfx_glitch_1", "映像の乱れ 1", 0),
     ("sfx_glitch_2", "映像の乱れ 2", 0),
     ("sfx_glitch_3", "映像の乱れ 3", 0),
@@ -403,6 +404,47 @@ def build_swap() -> np.ndarray:
     return out
 
 
+def build_switch() -> np.ndarray:
+    """**人形視点が差し込まれるカット**の切替音（`canon/LEDGER.md` 0106）。
+
+    前半は**素の切替音と合成音の対比**（無音の上で、差だけを聴く）、後半は
+    **2 周目 C の実際の刻み**（`show.json` の 1.0 / 0.9 / 0.8 / 1.4 秒・2 周目の敷く音の上で）。
+
+    ⚠ 乱れの音（`sfx_glitch_*`）は入れていない。実機では継ぎ目に重なるが、ここで判定したいのは
+    警告音の量なので、まず素で聴ける形にしてある。
+    ⚠ 散らし方は `SwitchAudioCue` の写し（gain 0.85 / 音程 ±3.5% / 音量 ±1.5dB）。**向こうを変えたらここも直す。**
+    """
+    rng = np.random.default_rng(20260822)
+    plain, alert = load("sfx_switch_1"), load("sfx_switch_alert")
+
+    def shot(clip: np.ndarray) -> np.ndarray:
+        r = 1.0 + float(rng.uniform(-0.035, 0.035))
+        m = max(8, int(len(clip) / r))
+        x = np.linspace(0, len(clip) - 1, m)
+        c = np.stack([np.interp(x, np.arange(len(clip)), clip[:, ch]) for ch in (0, 1)], axis=1)
+        return c * 0.85 * 10 ** (float(rng.uniform(-1.5, 1.5)) / 20.0)
+
+    total, bed_from, start = 14.0, 6.0, 7.0
+    steps = (1.0, 0.9, 0.8, 1.4)
+    out = np.zeros((int(total * sk.SR), 2))
+
+    for at in (0.5, 1.5):
+        lay(out, shot(plain), at)
+    for at in (3.5, 4.5):
+        lay(out, shot(alert), at)
+
+    # 本編の敷く音（§4 の表・2 周目）。切替音がこの上でどう立つかを聴く。
+    lay(out, tile(load("bed_room_lap2"), total - bed_from) * 0.34, bed_from)
+    lay(out, tile(load("bed_device"), total - bed_from), bed_from)
+    at = start
+    for sec in steps:
+        lay(out, shot(alert), at)
+        at += sec
+    print(f"   0.5s 素の切替音 x2   3.5s 合成 x2   {start:.0f}s 2 周目 C の刻み "
+          f"{' / '.join(f'{s:.1f}' for s in steps)} 秒（4 発）")
+    return out
+
+
 def emit(name: str, y: np.ndarray, note: str):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, f"{name}.wav")
@@ -429,6 +471,8 @@ def main() -> int:
     emit("preview_dolls", build_dolls(), "笑い → 3 秒後に③の連絡。4 周目の敷く音の上で")
     print("3 周目（入れ替わってから C で増えるまで）:")
     emit("preview_swap", build_swap(), "実機と同じ式。**尺も実機どおり** — 増え方が判定そのもの")
+    print("人形視点が差し込まれるカットの切替音:")
+    emit("preview_switch", build_switch(), "前半は素と合成の対比 / 後半は 2 周目 C の刻み")
     print(f"\n→ {OUT}")
     return 0
 

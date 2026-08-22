@@ -1713,6 +1713,20 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
 **正常終了では必ず残っていた**。いまは `TakeRunner.ReleaseStepState` が持つので
 正常終了・中止・ラン開始のすべてを通る。`TakeSplitLayerTests` が固定する。
 
+
+⚠⚠ **この経路は警告音つきの音で鳴る**（2026-08-22・`canon/LEDGER.md` 0106）。
+`sfx_switch_1` の上にユーザー指定の警告音を 240ms だけ -12dB で重ねた
+**`sfx_switch_alert`** で、正本は `rules/sound-design.md`。
+**ゾーン切替・インサート・Web 固定は素の音のまま。**
+
+- 呼び分けは `CameraSwitchDirector.PlaySwitchSfx` **1 か所**（この旗が通る唯一の経路）。
+  素の音で鳴らしたい素材カットが出てきたら、**そこで分けずにカット側へ旗を足す**
+- ⚠ 警告つきの音源を掴めなければ**素の切替音へ落ちる**（無音にしない）
+- ⚠⚠ **画にも動画にも違いが出ない。** 観測は `ev=sum` の **`swAlert=`**
+  （`nc` = 音源が無い ＝ 差し込みも素の音で鳴っている）と、機械の門は
+  `SwitchAudioCueTests`。判定は `analyze-xp-log.py` の「## 音（鳴ったか）」。
+  **`ShowTelemetryHost` と対で直す**
+
 #### カットの尺「この床の線を横切るまで」（`durKind:"untilLine"` / `steps[].lineId`）— 2026-08-15
 
 **区間の中で位置を待てる唯一の尺。** 3 周目 A の凍結点がこれを使う。

@@ -595,8 +595,16 @@ namespace FixedCamVr.Streaming
         /// <summary>覆いを包み切ったまま保持しているか（<see cref="TakeVeilHoldBegin"/> 中）。</summary>
         public bool SwapHolding => swapFx != null && swapFx.Holding;
 
-        /// <summary>カメラ切替の音を 1 発鳴らす（カットの <c>switchSfx</c>）。音源が無ければ無音。</summary>
-        public void PlaySwitchSfx() => audioCue?.Play();
+        /// <summary>
+        /// カメラ切替の音を 1 発鳴らす（カットの <c>switchSfx</c>）。音源が無ければ無音。
+        ///
+        /// ⚠⚠ <b>ここは警告音つきで鳴る</b>（<c>canon/LEDGER.md</c> 0106）。この経路を通るのは
+        /// <b>カメラを動かさない素材カット</b>＝ 実質「人形視点の差し込み」だけで、
+        /// ゾーン切替・インサート・Web 固定は <see cref="SwitchAudioCue.Play"/> のまま。
+        /// 素の音で鳴らしたい素材カットが出てきたら、<b>ここで分けずにカット側へ旗を足す</b>
+        /// （呼び分けを増やすと「どの経路が警告つきか」が読めなくなる）。
+        /// </summary>
+        public void PlaySwitchSfx() => audioCue?.PlayAlert();
 
         /// <summary>
         /// enter インサート: 現在の映像から insert カメラへ dip-to-black で切り替える（Insert source ＝周回に数えない）。

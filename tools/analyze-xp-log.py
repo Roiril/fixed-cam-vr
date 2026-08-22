@@ -267,6 +267,10 @@ def expected_from_show(show: dict):
                 needed.add((s.get("recLap") or 1, s.get("camera")))
     exp["recNeeded"] = needed
 
+    # 警告つきの切替音が鳴るカット（カットの switchSfx・canon/LEDGER.md 0106）。
+    # ⚠ 音は録画に映らないので、期待値の出どころはここだけ。
+    exp["switchSfxSteps"] = sum(1 for t in takes for s in t["steps"] if s.get("switchSfx"))
+
     # 録るべき区間（record.laps × course.order）。1 つでも欠けると、それを指す録画カットは
     # 実機で無言に飛ぶ。recNeeded（要求する側）と対で見ると「録り忘れ」と「使い忘れ」を切り分けられる。
     exp["recShould"] = ({(lap, cam) for lap in exp["recLaps"] for cam in exp["order"]}
@@ -1673,6 +1677,7 @@ def analyze(events, others, exp, warns=None):
     aud = effect_samples(events, "sndAud")
     lpf = effect_samples(events, "sndLpf")
     sw_n = effect_samples(events, "swN")
+    sw_alert = effect_samples(events, "swAlert")
 
     if not built and not sfx_events:
         w("  音の観測キーが 1 つも無い（この計装より前のビルドのログ）")
@@ -1916,6 +1921,28 @@ def analyze(events, others, exp, warns=None):
                         verdict("FAIL", f"画面は {zone_switches} 回切り替わったのに切替音が 0 回")
                     elif int(last) > 0:
                         verdict("OK", f"切替音が {last} 回鳴った")
+                except ValueError:
+                    pass
+        # -- 警告つきの切替音（人形視点が差し込まれるカット・canon/LEDGER.md 0106）
+        #    ⚠ 画にも動画にも違いが出ないので、ここが唯一の証拠。
+        if sw_alert:
+            last = str(sw_alert[-1])
+            want = exp.get("switchSfxSteps", 0)
+            if last == "nc":
+                verdict("FAIL", "警告つきの切替音の音源が無い — 人形視点の差し込みも"
+                                "素の切替音で鳴っている。"
+                                "`py -3.11 tools/ingest-sounds.py --only sfx_switch_alert` の後に "
+                                "`tools/unity.ps1 menu sound-import` を走らせる")
+            elif last != "-":
+                w(f"  警告つきの切替音: {last} 回（著作は {want} カット）")
+                try:
+                    n = int(last)
+                    if n == 0 and want > 0:
+                        verdict("WARN", f"警告つきの切替音が 1 度も鳴っていない"
+                                        f"（著作は {want} カット）— その差し込みに到達して"
+                                        "いないか、配線が切れている")
+                    elif n > 0:
+                        verdict("OK", f"警告つきの切替音が {n} 回鳴った")
                 except ValueError:
                     pass
 
