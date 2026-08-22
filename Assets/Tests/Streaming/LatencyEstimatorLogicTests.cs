@@ -101,7 +101,9 @@ namespace FixedCamVr.Streaming.Tests
             l.Reset();
             Assert.That(l.HasCaptureStamp, Is.False);
             Assert.That(l.DecodeMs, Is.EqualTo(0f));
-            Assert.That(l.SourceAgeMs, Is.EqualTo(0f));
+            // ⚠ 0 ではなく -1（不明）。張り替えた直後は新しい端末から /health を 1 度も取れていない。
+            //   0 は「たったいま来た」の嘘になり、カメラ切替のたびに出る。
+            Assert.That(l.SourceAgeMs, Is.EqualTo(-1f), "張り替え直後の鮮度は「不明」");
         }
 
         [Test]

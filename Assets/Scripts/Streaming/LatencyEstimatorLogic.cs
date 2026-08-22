@@ -138,7 +138,15 @@ namespace FixedCamVr.Streaming
             else if (delta < _bucketMin[_head]) _bucketMin[_head] = delta;
         }
 
-        /// <summary>接続の張り替えでリセットする（別端末の値を持ち越さない）。</summary>
+        /// <summary>
+        /// 接続の張り替えでリセットする（別端末の値を持ち越さない）。
+        ///
+        /// ⚠⚠ <b>鮮度は 0 ではなく <c>-1</c>（不明）へ戻す。</b> 張り替えた直後は新しい端末から
+        /// <c>/health</c> をまだ 1 度も取れていないので、0 は「たったいま来た」という嘘になる。
+        /// カメラの切替は本番中ずっと起きるので、ここが 0 だと<b>切り替わるたびに嘘が出る</b>
+        /// （<see cref="SetSourceAgeMs"/> の注記と同じ罠。2026-08-23 に同じ形を 4 か所で踏んだ —
+        /// 配信側・Unity の取り込み・卓の表示・ここ）。
+        /// </summary>
         public void Reset()
         {
             _hasSample = false;
@@ -146,7 +154,7 @@ namespace FixedCamVr.Streaming
             _headStartMs = 0.0;
             _lastDeltaMs = 0.0;
             _decodeMs = 0f;
-            _sourceAgeMs = 0f;
+            _sourceAgeMs = -1f;
             for (int i = 0; i < Buckets; i++) { _bucketUsed[i] = false; _bucketMin[i] = 0.0; }
         }
 
