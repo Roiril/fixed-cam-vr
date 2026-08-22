@@ -55,6 +55,20 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 
 | `GET /record/start?shot=&maxSec=&countdownSec=` ほか | 端末内録画（v0.10.0〜）。`/record/stop` `/record/status` `/record/list` `/record/file` `/record/delete` | 卓（`tools/web-compositor`）だけが使う。Unity は触らない |
 
+### ⚠ 「配信が回っているか」を `/health` から読むときの 2 つの罠（2026-08-23）
+
+どちらも現場で誤診を作る。**判定に使うのは `encodeIdle` と `latestFrameAgeMs` の 2 つ。**
+
+- ⚠⚠ **`fps` で判定しない。** あれは 1 秒ウィンドウの**直近値**で、encode が止まっても
+  最後に計算された値（30 前後）を返し続ける。実測: `clientCount=0` / `encodeIdle=true` /
+  最後のフレームが 148 秒前、の端末が `fps=29.8` を返した
+- ⚠⚠ **`latestFrameAgeMs` の `-1` は「たったいま」ではなく「起動してから 1 枚も作っていない」。**
+  `lastPublishMs == 0` の番兵（`FrameStats.toJson`）。0 と読むと**止まっている端末を
+  「回っている」と誤診する**。実際に別セッションが `-1` を「≈0 秒前」と読んだ
+
+⇒ **止まっていることの証拠は `encodeIdle=true`。** 経過時間で言いたいなら、
+`totalFrames > 0` を確かめてから `latestFrameAgeMs` を読む。
+
 リポジトリ: [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)（private）。APK ビルド・インストール手順はそちらの README 参照。
 
 ## 配信アプリの画面 — 据える人・撮る人の仕事は端末に置く（v0.13.0・2026-08-23）
