@@ -348,7 +348,9 @@ namespace FixedCamVr.Streaming
             // ⚠ streamer v0.11.0 でアプリ側の throttle は消えたが、その先で OS が絞るので抑止は要る。
             float phoneFps = _health?.fps ?? 0f;
             _latency.SetDisplayRate(DisplayRateInfo.CurrentHz);
-            _latency.SetSourceAgeMs(_health?.latestFrameAgeMs ?? 0f);
+            // ⚠ `/health` を 1 度も取れていないときも **0 ではなく -1（不明）**。
+            //   0 を渡すと「たったいま来た」に化ける（`SetSourceAgeMs` の注記）。
+            _latency.SetSourceAgeMs(_health?.latestFrameAgeMs ?? -1f);
             var reason = _watchdog.EndTick(now, udt, phoneFps, _health?.IsHot ?? false);
             if (reason == StreamWatchdogLogic.ReconnectReason.Lag)
             {

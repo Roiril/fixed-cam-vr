@@ -114,12 +114,20 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.ArrivalJitterMs, Is.EqualTo(0f).Within(0.5f));
         }
 
+        /// <summary>
+        /// ⚠⚠ <b>負の値を 0 へ潰さない</b>（2026-08-23 に反転した）。
+        /// <c>-1</c> は配信側の番兵「まだ 1 枚も作っていない」で、0 にすると
+        /// <b>「たったいま来た」に化けて、止まっている端末を正常と誤診する</b>。
+        /// 入れ直した直後の端末は <c>totalFrames=0</c> なので必ずこれになる。
+        /// </summary>
         [Test]
-        public void SourceAgeIsClampedToNonNegative()
+        public void SourceAgeKeepsTheUnknownSentinel()
         {
             var l = new LatencyEstimatorLogic();
+            l.SetSourceAgeMs(-1f);
+            Assert.That(l.SourceAgeMs, Is.EqualTo(-1f), "-1（不明）を 0 へ潰さない");
             l.SetSourceAgeMs(-5f);
-            Assert.That(l.SourceAgeMs, Is.EqualTo(0f));
+            Assert.That(l.SourceAgeMs, Is.EqualTo(-1f), "不正な負値も同じ「不明」へ寄せる");
             l.SetSourceAgeMs(120f);
             Assert.That(l.SourceAgeMs, Is.EqualTo(120f));
         }

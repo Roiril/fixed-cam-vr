@@ -77,7 +77,17 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>配信側の鮮度を取り込む。</summary>
-        public void SetSourceAgeMs(float ms) => _sourceAgeMs = ms >= 0f ? ms : 0f;
+        /// <summary>
+        /// 配信側の <c>/health.latestFrameAgeMs</c> を取り込む。
+        ///
+        /// ⚠⚠ <b><c>-1</c> は「まだ 1 枚も作っていない」の番兵</b>（配信側 <c>FrameStats.toJson</c> が
+        /// <c>lastPublishMs == 0</c> のときに返す）。**0 へ潰してはいけない** —
+        /// 「たったいま来た」に化けて、**止まっている端末を正常と誤診する**
+        /// （2026-08-23 に配信側のセッションが実際に踏んだ。入れ直した直後の端末は
+        /// <c>totalFrames=0</c> なので必ずこれになる）。
+        /// ⚠ 不正な負値も同じ「不明」へ寄せる（読む側が 1 つの番兵だけ知っていれば済む）。
+        /// </summary>
+        public void SetSourceAgeMs(float ms) => _sourceAgeMs = ms < 0f ? -1f : ms;
 
         /// <summary>デコード所要を 1 枚ぶん取り込む（指数平滑）。</summary>
         public void ObserveDecode(float ms)

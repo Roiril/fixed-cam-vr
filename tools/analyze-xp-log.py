@@ -906,8 +906,13 @@ def analyze(events, others, exp, warns=None):
             d["n"] += 1
             for k in ("rx", "tx", "jit", "dec", "age"):
                 v = fnum(c, k)
-                if v is not None:
-                    d[k].append(v)
+                if v is None:
+                    continue
+                # ⚠ `age` の **-1 は「まだ 1 枚も作っていない」の番兵**（配信側 /health）。
+                #   平均へ混ぜると「鮮度が良い」方へ引っ張られて、止まっている端末を隠す。
+                if k == "age" and v < 0:
+                    continue
+                d[k].append(v)
             dv = fnum(c, "drop", 0)
             if dv:
                 d["drop"] = max(d["drop"], dv)
