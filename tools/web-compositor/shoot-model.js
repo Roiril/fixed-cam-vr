@@ -9,7 +9,13 @@
 //
 // 移植元は無い（卓だけの機能）。ただし cue → 実機の契約は rules/streaming.md が正。
 
-/** ショットの並び順は撮る順。0.1 の白衣 → 0.2 偽ライブ → 0.3 POV（onsite-checklist §0）。 */
+/**
+ * ショットの並び順は撮る順（onsite-checklist §0）。
+ *
+ * ⚠ **偽ライブ（fake_live_C）は 0104 で廃止した。** 差し込みは人形視点だけで、
+ *   2-C の連続演出中はライブに戻らない（戻るのは追いつきの後・黒マスクと同時）。
+ *   当日撮るのはこの 5 本だけ。
+ */
 export const SHOTS = [
   {
     cueId: 'pov_0', label: '2 周目 B の予備動作', dev: 'pov',
@@ -17,21 +23,16 @@ export const SHOTS = [
     recSec: 2,
   },
   {
-    cueId: 'fake_live_C', label: '偽ライブ（カメラ C）', dev: 'cam',
-    hint: '白衣の人が C 区間の入口に立つ → 少し動く → 端へ捌ける',
-    recSec: 10,
-  },
-  {
     cueId: 'pov_1', label: '人形視点 ① 遠い', dev: 'pov',
-    hint: '遠い。白衣は米粒か不在。高さ 40cm で正対', recSec: 2,
+    hint: '遠い。白衣は米粒か不在。高さ 40cm で正対', recSec: 3,
   },
   {
     cueId: 'pov_2', label: '人形視点 ② 近い', dev: 'pov',
-    hint: '近い。歩きの揺れが出る速さで', recSec: 2,
+    hint: '近い。歩きの揺れが出る速さで', recSec: 3,
   },
   {
     cueId: 'pov_3', label: '人形視点 ③ すぐそこ', dev: 'pov',
-    hint: 'すぐそこ。白衣の一部が画面に入る', recSec: 2,
+    hint: 'すぐそこ。白衣の一部が画面に入る', recSec: 3,
   },
   {
     cueId: 'pov_4', label: '人形視点 ④ 追いつき', dev: 'pov',

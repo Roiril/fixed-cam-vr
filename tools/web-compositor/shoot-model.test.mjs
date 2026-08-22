@@ -10,20 +10,28 @@ import {
   allShotStatus, isFromToday, approachPrecheck, adoptName, headWindow,
 } from './shoot-model.js';
 
-// 2 周目 C の著作を模した segments（偽ライブが 4 カット・trim を進める）。
+// 2 周目 C の著作を模した segments（0104: 人形視点だけの飛び飛び → ライブ + 黒マスク）。
 const segments = () => [{
   lap: 2, camera: 2, takes: [{
     id: 'L2C2#0',
     steps: [
-      { source: 'clip', cueId: 'fake_live_C', trimStartSec: 0, durSec: 1.2 },
-      { source: 'clip', cueId: 'pov_1', trimStartSec: -1, durSec: 0.7 },
-      { source: 'clip', cueId: 'fake_live_C', trimStartSec: 1.9, durSec: 1.0 },
-      { source: 'clip', cueId: 'pov_2', trimStartSec: -1, durSec: 0.7 },
-      { source: 'clip', cueId: 'fake_live_C', trimStartSec: 3.6, durSec: 0.8 },
-      { source: 'clip', cueId: 'pov_3', trimStartSec: -1, durSec: 0.6 },
-      { source: 'clip', cueId: 'fake_live_C', trimStartSec: 5.0, durSec: 0.5 },
-      { source: 'clip', cueId: 'pov_4', trimStartSec: -1, durSec: 1.2 },
-      { source: 'plate', cueId: 'plate_C', durSec: 0 },
+      { source: 'clip', cueId: 'pov_1', trimStartSec: -1, durSec: 1.0 },
+      { source: 'clip', cueId: 'pov_2', trimStartSec: -1, durSec: 0.9 },
+      { source: 'clip', cueId: 'pov_3', trimStartSec: -1, durSec: 0.8 },
+      { source: 'clip', cueId: 'pov_4', trimStartSec: -1, durSec: 1.4 },
+      { source: 'live', cueId: '', durKind: 'untilZoneChange', durSec: 0, swapHold: true },
+    ],
+  }],
+}];
+
+// 1 本の素材を trim で進めながら複数カットが使う形（機能の検査用・現行の著作には無い）。
+const multiCutSegments = () => [{
+  lap: 1, camera: 0, takes: [{
+    id: 'T#0',
+    steps: [
+      { source: 'clip', cueId: 'reel', trimStartSec: 0, durSec: 1.2 },
+      { source: 'clip', cueId: 'reel', trimStartSec: 1.9, durSec: 1.0 },
+      { source: 'clip', cueId: 'reel', trimStartSec: 5.0, durSec: 0.5 },
     ],
   }],
 }];
@@ -32,22 +40,23 @@ const cues = (over = {}) => ({
   cues: SHOTS.map((s) => ({ id: s.cueId, sourceUrl: over[s.cueId] ?? '' })),
 });
 
-test('SHOTS: 6 本・cueId が重複しない', () => {
-  assert.equal(SHOTS.length, 6);
-  assert.equal(new Set(SHOTS.map(shotName)).size, 6);
-  // 撮る順は onsite-checklist §0 と対（2 周目 B → 偽ライブ → POV）。
+test('SHOTS: 5 本・cueId が重複しない（偽ライブは 0104 で廃止）', () => {
+  assert.equal(SHOTS.length, 5);
+  assert.equal(new Set(SHOTS.map(shotName)).size, 5);
+  // 撮る順は onsite-checklist §0 と対（2 周目 B → POV ①〜④）。
   assert.equal(shotName(SHOTS[0]), 'pov_0');
-  assert.equal(shotName(SHOTS[1]), 'fake_live_C');
+  assert.equal(shotName(SHOTS[1]), 'pov_1');
+  assert.ok(!SHOTS.some((s) => shotName(s) === 'fake_live_C'), '偽ライブを復活させない');
 });
 
-test('neededHeadSec: 同じ cue を進めながら使う偽ライブは max(trim + dur)', () => {
-  // 0+1.2 / 1.9+1.0 / 3.6+0.8 / 5.0+0.5 → 5.5 が要求
-  assert.equal(neededHeadSec(segments(), 'fake_live_C'), 5.5);
+test('neededHeadSec: 同じ cue を trim を進めながら使うなら max(trim + dur)', () => {
+  // 0+1.2 / 1.9+1.0 / 5.0+0.5 → 5.5 が要求
+  assert.equal(neededHeadSec(multiCutSegments(), 'reel'), 5.5);
 });
 
 test('neededHeadSec: 1 カットの POV はその尺（trim の -1 は 0 扱い）', () => {
-  assert.equal(neededHeadSec(segments(), 'pov_1'), 0.7);
-  assert.equal(neededHeadSec(segments(), 'pov_4'), 1.2);
+  assert.equal(neededHeadSec(segments(), 'pov_1'), 1.0);
+  assert.equal(neededHeadSec(segments(), 'pov_4'), 1.4);
 });
 
 test('neededHeadSec: 参照が無ければ null（今の著作では使わない素材）', () => {
@@ -57,63 +66,69 @@ test('neededHeadSec: 参照が無ければ null（今の著作では使わない
 });
 
 test('neededHeadSec: 尺が別条件で決まるカット（durSec<=0）は数えない', () => {
-  // plate_C は untilZoneChange なので durSec=0。ここを数えると「0 秒でよい」になる。
-  assert.equal(neededHeadSec(segments(), 'plate_C'), null);
+  // untilZoneChange のカットは durSec=0。ここを数えると「0 秒でよい」になる。
+  const segs = [{ lap: 1, camera: 0, takes: [{ id: 'T#1', steps: [
+    { source: 'plate', cueId: 'plate_X', durKind: 'untilZoneChange', durSec: 0 },
+  ] }] }];
+  assert.equal(neededHeadSec(segs, 'plate_X'), null);
 });
 
-test('cutCount: 偽ライブは 4 カット・POV は 1 カット', () => {
-  assert.equal(cutCount(segments(), 'fake_live_C'), 4);
+test('cutCount: 同じ cue の複数カットを数える・未使用は 0', () => {
+  assert.equal(cutCount(multiCutSegments(), 'reel'), 3);
   assert.equal(cutCount(segments(), 'pov_2'), 1);
   assert.equal(cutCount(segments(), 'pov_0'), 0);
 });
 
 // ---- 1 ショットの状態 ----
 test('shotStatus: 素材未採用は ng', () => {
-  const st = shotStatus(SHOTS[2], cues(), segments(), null, []);
+  const st = shotStatus(SHOTS[1], cues(), segments(), null, []);
   assert.equal(st.level, 'ng');
   assert.match(st.reason, /未採用/);
 });
 
 test('shotStatus: 採用済みでファイルが実在すれば ok', () => {
   const state = cues({ pov_1: '/recordings/pov_1_t01.mp4' });
-  const st = shotStatus(SHOTS[2], state, segments(), new Set(['/recordings/pov_1_t01.mp4']), []);
+  const st = shotStatus(SHOTS[1], state, segments(), new Set(['/recordings/pov_1_t01.mp4']), []);
   assert.equal(st.level, 'ok');
 });
 
 test('shotStatus: 実在しないファイルは ng（消したか名前を変えた）', () => {
   const state = cues({ pov_1: '/recordings/gone.mp4' });
-  const st = shotStatus(SHOTS[2], state, segments(), new Set(), []);
+  const st = shotStatus(SHOTS[1], state, segments(), new Set(), []);
   assert.equal(st.level, 'ng');
   assert.match(st.reason, /見つからない/);
 });
 
+// trim を進めながら複数カットが使う素材（要求 5.5s）に対する尺の判定。
+// 現行の著作に multi-cut は無いが、機能としては残っている（0104 の前はこれが偽ライブだった）。
+const reelShot = { cueId: 'reel', label: '検査用', dev: 'pov', hint: '', recSec: 10 };
+const reelState = (url) => ({ cues: [{ id: 'reel', sourceUrl: url }] });
+
 test('shotStatus: 尺が要求に足りなければ ng（実機がカットを飛ばす）', () => {
-  const url = '/recordings/fake_live_C_t01.mp4';
-  const state = cues({ fake_live_C: url });
+  const url = '/recordings/reel_t01.mp4';
   const takes = [{ url, durSec: 4.0 }];   // 要求 5.5s
-  const st = shotStatus(SHOTS[1], state, segments(), new Set([url]), takes);
+  const st = shotStatus(reelShot, reelState(url), multiCutSegments(), new Set([url]), takes);
   assert.equal(st.level, 'ng');
   assert.match(st.reason, /1\.5s 足りない/);
 });
 
 test('shotStatus: 余裕が少なければ warn（頭がぶれると足りなくなる）', () => {
-  const url = '/recordings/fake_live_C_t02.mp4';
-  const state = cues({ fake_live_C: url });
+  const url = '/recordings/reel_t02.mp4';
   const takes = [{ url, durSec: 5.5 + SHORT_MARGIN_SEC - 0.1 }];
-  const st = shotStatus(SHOTS[1], state, segments(), new Set([url]), takes);
+  const st = shotStatus(reelShot, reelState(url), multiCutSegments(), new Set([url]), takes);
   assert.equal(st.level, 'warn');
   assert.equal(st.ok, true, '警告であって不合格ではない');
 });
 
 test('shotStatus: 尺が分からないテイクは尺で落とさない', () => {
   const url = '/recordings/x.mp4';
-  const state = cues({ fake_live_C: url });
+  const state = cues({ pov_1: url });
   const st = shotStatus(SHOTS[1], state, segments(), new Set([url]), [{ url }]);
   assert.equal(st.level, 'ok');
 });
 
-test('allShotStatus: 6 本ぶん返す', () => {
-  assert.equal(allShotStatus(cues(), segments(), null, {}).length, 6);
+test('allShotStatus: 5 本ぶん返す', () => {
+  assert.equal(allShotStatus(cues(), segments(), null, {}).length, 5);
 });
 
 // ---- 撮影日 ----

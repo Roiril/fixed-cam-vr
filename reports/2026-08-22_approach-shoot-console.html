@@ -143,7 +143,7 @@ pre code { background: none; padding: 0; }
 <div class="wrap">
   <p class="eyebrow">廻リ視 · 設計</p>
   <h1>接近シーンの当日撮影 — 設計</h1>
-  <p class="sub">2 周目 B・C「偽ライブ ⇄ 人形視点」の素材 6 本を、当日焦らずミスらず撮って反映する環境 ／ 2026-08-22 ／ <strong>P0〜P3 実装済み・実機検証は配信スマホの接続待ち</strong></p>
+  <p class="sub">2 周目 B・C の人形視点クリップ 5 本を、当日焦らずミスらず撮って反映する環境 ／ 2026-08-22 ／ <strong>P0〜P3 実装済み・実機検証は配信スマホの接続待ち</strong></p>
 
   <div class="lead">
     <p><strong>P0（8 カットの連続再生が実機で成立するか）は測り終えた — 成立する。</strong> 8 カットすべてが著作どおりの間隔で走り、画も毎カット切り替わっていた。停滞（発火してから画に出るまで）は素材の先読みを実装して <strong>最大 280ms → 166ms</strong>（最短カット 0.5 秒の 56% → 33%）。素材は <strong>mp4 のままでよい</strong>。<br>
@@ -152,16 +152,15 @@ pre code { background: none; padding: 0; }
 
   <h2>1. 対象と、いまの手順で事故が起きる場所</h2>
 
-  <p>撮るのは 6 本。すべて録画素材で、ライブには 1 秒も依存しない（<code>canon/LEDGER.md</code> 0102）。</p>
+  <p>撮るのは <strong>5 本</strong>。2 周目 C の連続演出中はライブへ戻らず、人形視点だけが飛び飛びに出る（<code>canon/LEDGER.md</code> 0102 / <strong>0104</strong>）。戻るのは追いつきの直後、体験者が黒マスクに覆われるときだけ。</p>
 
   <div class="tblwrap"><table>
     <tr><th>cue</th><th>何</th><th>画に出る所</th><th>撮る手段（現行）</th></tr>
-    <tr><td><code>fake_live_C</code></td><td>偽ライブ（カメラ C の当日録画）</td><td>頭 5.5 秒を trim 0 / 1.9 / 3.6 / 5.0 で 4 回</td><td>卓の ⏺（ブラウザ録画 → mp4 変換）</td></tr>
     <tr><td><code>pov_0</code></td><td>2 周目 B の予備動作（遠景・人物なし）</td><td>頭 0.9 秒</td><td rowspan="5">スマホ標準カメラ → USB 転送 → 手動変換 → プルダウンで割当</td></tr>
-    <tr><td><code>pov_1</code></td><td>人形視点① 遠い</td><td>頭 0.7 秒</td></tr>
-    <tr><td><code>pov_2</code></td><td>人形視点② 近い</td><td>頭 0.7 秒</td></tr>
-    <tr><td><code>pov_3</code></td><td>人形視点③ すぐそこ</td><td>頭 0.6 秒</td></tr>
-    <tr><td><code>pov_4</code></td><td>人形視点④ 追いつき（白衣の背中）</td><td>頭 1.2 秒</td></tr>
+    <tr><td><code>pov_1</code></td><td>人形視点① 遠い</td><td>頭 1.0 秒</td></tr>
+    <tr><td><code>pov_2</code></td><td>人形視点② 近い</td><td>頭 0.9 秒</td></tr>
+    <tr><td><code>pov_3</code></td><td>人形視点③ すぐそこ</td><td>頭 0.8 秒</td></tr>
+    <tr><td><code>pov_4</code></td><td>人形視点④ 追いつき（白衣の背中）</td><td>頭 1.4 秒</td></tr>
   </table></div>
 
   <p>現行手順（<code>docs/onsite-checklist.md</code> §0）で事故が起きる場所:</p>
@@ -169,7 +168,7 @@ pre code { background: none; padding: 0; }
   <div class="tblwrap"><table>
     <tr><th>手順</th><th>何が起きうるか</th></tr>
     <tr><td>スマホ標準カメラで POV を撮る</td><td>HEVC / HDR / 縦持ちなど形式の事故。実機で「動画のカットだけ出ない」</td></tr>
-    <tr><td>USB でファイルを PC へ運ぶ</td><td>時間を食う。ファイル名（VID_2026…）と cue の対応付けを 6 回手でやる — 取り違えても誰も気づかない</td></tr>
+    <tr><td>USB でファイルを PC へ運ぶ</td><td>時間を食う。ファイル名（VID_2026…）と cue の対応付けを 5 回手でやる — 取り違えても誰も気づかない</td></tr>
     <tr><td>「録画ボタンを押した直後から本番」</td><td>押してから構えるまでの乱れが頭に入る。使われるのは頭 0.6〜1.2 秒だけなので、そこが本番</td></tr>
     <tr><td>撮り手が構図を確認できない</td><td>高さ 40cm・C の立ち位置へ正対、を勘で守る。撮り直しの判断が遅れる</td></tr>
     <tr><td>変換（<code>to-mp4.py</code>）が手動 CLI</td><td>飛ばすと当日「動画のカットだけ出ない」で詰む</td></tr>
@@ -189,7 +188,7 @@ pre code { background: none; padding: 0; }
 
   <ul>
     <li><strong>8 カットすべて <code>played=1</code></strong>。間隔は 1.21 / 0.71 / 1.00 / 0.71 / 0.81 / 0.61 / 0.51 / 1.20 秒で<strong>著作値と一致</strong></li>
-    <li><strong>画も毎カット切り替わっていた</strong>（録画から切り出して確認）。偽ライブの trim も設計どおり進み、C の再生位置が 0.5 → 2.0 → 2.3 → 3.6 → 3.9 秒と動いていた</li>
+    <li><strong>画も毎カット切り替わっていた</strong>（録画から切り出して確認）。当時の著作（偽ライブを挟む 9 カット版）では trim も設計どおり進み、C の再生位置が 0.5 → 2.0 → 2.3 → 3.6 → 3.9 秒と動いていた。<strong>0104 後の 5 カット版でも同じく全カット <code>played=1</code> で走ることを再確認済み</strong>（停滞は最大 175ms ＝ 最短カット 0.8 秒の 22%）</li>
     <li>残る停滞は <strong>Prepare の 135ms 前後</strong>。<code>_player.Stop()</code> → url 代入 → <code>Prepare()</code> を毎カット通るためで、<em>同じファイルでも短絡しない</em>。消すには VideoPlayer を 2 本持って次カットを先行 Prepare するしかない（未実装・実機で人が見て要否を判断する）</li>
   </ul>
 
@@ -236,14 +235,14 @@ pre code { background: none; padding: 0; }
 
   <div class="tblwrap"><table>
     <tr><th>観点</th><th>ブラウザ ⏺（現行）</th><th>端末内録画（採用）</th></tr>
-    <tr><td>画の一致</td><td>MJPEG を canvas 経由で再エンコード（1 世代劣化 ＋ ブラウザのタイマー任せ）</td><td><strong>配信とまったく同じフレーム</strong>。偽ライブが本物に見える根拠が定義上成立</td></tr>
+    <tr><td>画の一致</td><td>MJPEG を canvas 経由で再エンコード（1 世代劣化 ＋ ブラウザのタイマー任せ）</td><td><strong>配信とまったく同じフレーム</strong>。人形視点が同じ装置の映像に見える</td></tr>
     <tr><td>Wi-Fi 断</td><td>テイクが欠ける</td><td><strong>テイクは端末内で完走</strong>。回収は復帰後でよい</td></tr>
     <tr><td>形式</td><td>webm(VP9) → ffmpeg 変換必須（ffmpeg 不在で詰む）</td><td>H.264 / yuv420p の mp4 が直接出る。<strong>変換工程ごと消える</strong></td></tr>
     <tr><td>頭の切り出し</td><td>GOP 依存でシークが粗い</td><td>全 I フレームなので <code>-ss … -c copy</code> で<strong>再エンコードなしに正確</strong></td></tr>
     <tr><td>構図の確認</td><td>撮り手からは見えない</td><td><strong>撮り手が端末画面で見ながら構えられる</strong>（決め手はここ）</td></tr>
   </table></div>
 
-  <p>偽ライブは設置済みカメラ C の端末へ卓からリモート開始（端末に触らない ＝ 構図を乱さない）。POV は手持ちの streamer 端末。ブラウザ ⏺ は fallback として残す。</p>
+  <p>5 本とも手持ちの streamer 端末で撮る（<code>canon/LEDGER.md</code> 0104 で偽ライブが廃止され、当日カメラ C の配信を録る工程は無くなった）。ブラウザ ⏺ は fallback として残す。</p>
 
   <h2>4. streamer v0.10.0 の変更</h2>
 
@@ -278,7 +277,7 @@ pre code { background: none; padding: 0; }
 
   <ol>
     <li><strong>ショットカード</strong> — 指示 1 行（「白衣の背中の至近。もう届いている所から」）・対象端末のライブプレビュー（<code>/cam</code> プロキシ）・傾き表示（<code>/caminfo</code> の実測値）・端末の熱と容量（<code>/record/status</code>）</li>
-    <li><strong>⏺</strong> — 偽ライブは卓からリモート開始（maxSec=10・カウントダウンなし）。POV は撮り手が端末のボタンで開始（カウントダウン 3 秒）</li>
+    <li><strong>⏺</strong> — 卓から開始（カウントダウン 3 秒 → 規定秒で自動停止）。手持ちなので、卓を押す人と端末を持つ人の 2 人で回す</li>
     <li><strong>自動停止</strong> — 規定秒で止まる。手で ⏹ を数える仕事が消える</li>
     <li><strong>自動回収</strong> — 卓が <code>/record/list</code> の差分で新テイクを検知 → 取得 → 検分（実尺・解像度・向き・熱段）→ 台帳へ登録。テイクの帰属は<strong>コンソールでいま選ばれているショット</strong>（取り違えは次の試写で見える）</li>
     <li><strong>頭ループ試写</strong> — 実際に画面へ出る<strong>頭の窓だけ</strong>をループ再生。「使われるのは頭だけ」を UI の形そのもので言う</li>
@@ -298,16 +297,16 @@ pre code { background: none; padding: 0; }
 
   <h2>6. 検査 — ✅ 本番前チェックに「接近の素材」行</h2>
 
-  <p>効く順に並べる。①②が赤なら体験が壊れ、③④が赤なら偽ライブがばれる。</p>
+  <p>効く順に並べる。①②が赤なら体験が壊れ、③④が赤なら人形視点が「同じ部屋の映像」に見えなくなる。</p>
 
   <div class="tblwrap"><table>
     <tr><th>#</th><th>検査</th><th>何を防ぐか</th></tr>
     <tr><td>①</td><td>採用漏れ・ファイル欠損・実尺不足（要求＋0.5 秒未満）</td><td>カットが実機で飛ばされ、C がただのライブへ退化する</td></tr>
     <tr><td>②</td><td><strong>録画しっぱなしの端末</strong>（発見済み全端末の <code>/record/status</code>）</td><td>本番中ずっと熱と容量を食い、配信の品質が落ちる</td></tr>
     <tr><td>③</td><td>採用素材の撮影日が今日でない</td><td>前会場の素材の混入 ＝ 照明不一致。何度検分しても直らない最悪の事故</td></tr>
-    <tr><td>④</td><td>撮影時と現在の<strong>熱段の不一致</strong>（S2 で撮った素材は q25 / 15fps — ライブが S0 だと粗さが合わない）</td><td>偽ライブとライブの質感が食い違い、切り替えの瞬間にばれる</td></tr>
+    <tr><td>④</td><td>撮影時と現在の<strong>熱段の不一致</strong>（S2 で撮った素材は q25 / 15fps — ライブが S0 だと粗さが合わない）</td><td>人形視点とライブの質感が食い違い、追いつきの後に戻る所でばれる</td></tr>
     <tr><td>⑤</td><td>解像度・向きがカメラ C と同一（640×480 横）</td><td>letterbox の形が変わって「別の映像」に見える</td></tr>
-    <tr><td class="muted">保留</td><td class="muted">偽ライブの頭と現在のライブの明るさ差</td><td class="muted">④が先に同じ事故を捕まえる。④で不足と分かったら足す</td></tr>
+    <tr><td class="muted">保留</td><td class="muted">素材の頭と現在のライブの明るさ差</td><td class="muted">④が先に同じ事故を捕まえる。④で不足と分かったら足す</td></tr>
   </table></div>
 
   <h2>7. 当日の回し方（2 人 10 分のまま・順序で再取付リスクを消す)</h2>
@@ -319,7 +318,6 @@ pre code { background: none; padding: 0; }
     <li>白衣を着せる（§0.1 のまま）</li>
     <li><strong>B を取り付ける前に</strong>、その端末を手持ちにして POV 5 本を撮る（コンソールが 1 本ずつ誘導・撮り手は端末画面で構図を確認）</li>
     <li>B を取り付けて較正する（外して戻す、が発生しない）</li>
-    <li>C の端末へ卓からリモートで偽ライブを録る（C には誰も触らない）</li>
     <li>コンソールで採用 → ▶ 検証で通し → ✅ 本番前チェックが緑</li>
   </ol>
 
@@ -377,7 +375,7 @@ pre code { background: none; padding: 0; }
 
   <ul>
     <li><strong>本番の照明・本番の設置で実際の 6 本を撮る</strong>（当日の作業そのもの）</li>
-    <li>▶ 検証で 2 周目 C を通し、割り込みの間合いと偽ライブの繋がりを目で見る（素材が揃ってから）</li>
+    <li>▶ 検証で 2 周目 C を通し、飛び飛びの間合いと追いつきの後の黒を目で見る（素材が揃ってから）</li>
     <li>端末 A に 5 月のテスト録画が 6 本残っている（<code>rec_2026-05-30_*</code>・容量のみ。消すかは運用判断）</li>
   </ul>
 
