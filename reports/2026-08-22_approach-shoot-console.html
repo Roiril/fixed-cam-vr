@@ -143,7 +143,7 @@ pre code { background: none; padding: 0; }
 <div class="wrap">
   <p class="eyebrow">廻リ視 · 設計</p>
   <h1>接近シーンの当日撮影 — 設計</h1>
-  <p class="sub">2 周目 B・C「偽ライブ ⇄ 人形視点」の素材 6 本を、当日焦らずミスらず撮って反映する環境 ／ 2026-08-22 ／ 設計のみ・実装は未着手</p>
+  <p class="sub">2 周目 B・C「偽ライブ ⇄ 人形視点」の素材 6 本を、当日焦らずミスらず撮って反映する環境 ／ 2026-08-22 ／ <strong>P0〜P3 実装済み・実機検証は配信スマホの接続待ち</strong></p>
 
   <div class="lead">
     <p><strong>P0（8 カットの連続再生が実機で成立するか）は測り終えた — 成立する。</strong> 8 カットすべてが著作どおりの間隔で走り、画も毎カット切り替わっていた。停滞（発火してから画に出るまで）は素材の先読みを実装して <strong>最大 280ms → 166ms</strong>（最短カット 0.5 秒の 56% → 33%）。素材は <strong>mp4 のままでよい</strong>。<br>
@@ -341,13 +341,26 @@ pre code { background: none; padding: 0; }
   <h2>9. 実装の順とテスト</h2>
 
   <div class="tblwrap"><table>
-    <tr><th>段</th><th>内容</th><th>検証</th></tr>
-    <tr><td><strong>P0</strong> <span class="chip">完了</span></td><td>8 カットの実機実測 ＋ 停滞の計装 ＋ 素材の先読み（§2）</td><td>走行 2 回で実測。テスト 1607/1607。<strong>mp4 のままで成立と確定</strong></td></tr>
-    <tr><td>P1</td><td>streamer v0.10.0（§4）</td><td>JVM テスト ＋ 実機 1 台で start → list → file の一連</td></tr>
-    <tr><td>P2</td><td><code>shoot.html</code> ＋ サーバ API（pull / adopt / manifest）＋ <code>shoot-model.js</code></td><td>node テスト ＋ サーバは既存 <code>test_*.py</code> の流儀。通しは「撮る → 採用 → ▶ 検証」</td></tr>
-    <tr><td>P3</td><td>本番前チェック「接近の素材」行（§6）＋ checklist §0 書き換え</td><td>チェック行の判定を <code>shoot-model.js</code> に置き node テストで固定</td></tr>
+    <tr><th>段</th><th>内容</th><th>状態</th></tr>
+    <tr><td><strong>P0</strong> <span class="chip hot">完了</span></td><td>8 カットの実機実測 ＋ 停滞の計装（<code>ev=clip</code>）＋ 素材の先読み（§2）</td><td>Quest 走行 2 回で実測。EditMode 1607/1607。<strong>mp4 のままで成立と確定</strong></td></tr>
+    <tr><td><strong>P1</strong> <span class="chip">実装済</span></td><td>streamer v0.10.0（§4）＋ <code>RecordShotPolicy</code>（純ロジック）</td><td>JVM テスト 24 本 ＋ APK ビルド通過。<strong>実機検証は配信スマホの USB 接続待ち</strong></td></tr>
+    <tr><td><strong>P2</strong> <span class="chip">実装済</span></td><td><code>shoot.html</code> ＋ サーバ API（devices / takes / pull / adopt / manifest）＋ <code>shoot-model.js</code></td><td>node 437/437。ブラウザ実操作で要求尺の導出・端末固定・旧アプリ検出を確認</td></tr>
+    <tr><td><strong>P3</strong> <span class="chip">実装済</span></td><td>本番前チェック「接近の素材」行（§6）＋ checklist §0 書き換え</td><td>実画面で 6 本の未採用が出ることを確認</td></tr>
     <tr><td class="muted">P4</td><td class="muted">保留: 2 本目の VideoPlayer で次カットを先行 Prepare（残り 135ms を消す）</td><td class="muted">実機で人が見て要否を決めてから</td></tr>
   </table></div>
+
+  <h3>残っている実機検証（配信スマホを USB で PC に繋いだら 10 分）</h3>
+
+  <ol>
+    <li>3 台へ v0.10.0 を入れる —
+      <code>cd C:\Users\kouga\Projects\Mobile\fixed-cam-streamer</code> →
+      <code>./gradlew installDebug</code>（JAVA_HOME は Unity 同梱の OpenJDK）</li>
+    <li>撮影コンソールを開いて、端末の欄から「旧アプリ（要 v0.10.0）」が消えることを確認</li>
+    <li>POV を 1 本撮る — カウントダウンの振動 → 自動停止の振動 → 自動回収 → 頭ループ試写 → 採用</li>
+    <li>▶ 検証で 2 周目 C を通し、割り込みの間合いを見る</li>
+  </ol>
+
+  <p class="muted">無線 adb（<code>adb connect &lt;ip&gt;:5555</code>）は端末側で無効なので、APK の更新には USB が要る。</p>
 
   <h2>10. やらないこと</h2>
 
