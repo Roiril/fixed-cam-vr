@@ -129,7 +129,15 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 
 ## キャプチャ / 録画（全て PC 内に保存・スマホには書かない）
 
-- **📷 配信をキャプチャ**（静止画 JPEG）/ **⏱ 3秒後にキャプチャ**（セルフタイマー）/ **⏺ 配信を録画**（webm、MJPEG を canvas 経由で MediaRecorder）
+- **📷 配信をキャプチャ**（静止画 JPEG）/ **⏱ 3秒後にキャプチャ**（セルフタイマー）/
+  **⏺ 配信を録画**（MJPEG を canvas 経由で MediaRecorder → webm）
+  - ⚠⚠ **保存の瞬間にサーバが mp4(H.264) へ変換する**（2026-08-22）。ブラウザは webm しか
+    吐かないが、**Unity の VideoPlayer が Android で VP9 を再生できるかは端末依存**で、
+    当日に「動画のカットだけ出ない」で詰む（動いている cue はすべて mp4）。
+    変換は `capture-server.py` の `_transcode_to_mp4`（ffmpeg・`-pix_fmt yuv420p` が必須 —
+    yuv444 だと Android の MediaCodec が開けない）。失敗したら webm を残して注記を返す
+  - 外から持ち込んだ動画（スマホ等）は **`py -3.11 tools/web-compositor/to-mp4.py <パス>`**。
+    既に H.264 / yuv420p の mp4 なら再圧縮しない
 - 保存先 = **`tools/web-compositor/captures/`**（`.gitignore` 済み）。`/save?type=image|video` に POST
 - **💾 保存済み（PC内）** ギャラリー: 一覧表示、各々「白/黒に接続」で再利用、**サムネ/📂ボタンで保存場所をエクスプローラーで開く**（`/reveal?name=` → `explorer /select`）
 

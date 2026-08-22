@@ -75,6 +75,53 @@ os.makedirs(EYEJACK_NORM, exist_ok=True)
 
 # /save?to= と /open-dir?dir= の保存先ホワイトリスト（パストラバーサル防止）
 SAVE_DIRS = {'captures': CAPTURES, 'recordings': RECORDINGS}
+
+def _ffmpeg_exe():
+    """ffmpeg の実行ファイル。PATH に無ければ imageio-ffmpeg の同梱版へ落ちる。無ければ None。"""
+    exe = shutil.which('ffmpeg')
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+def _transcode_to_mp4(src):
+    """
+    録画（webm/VP9）を **mp4(H.264)** へ変換する。戻り値は (mp4 のパス or None, 人が読む注記)。
+
+    ⚠⚠ **Quest へ配る動画は mp4 でなければならない。** ブラウザの MediaRecorder は
+      webm しか吐かないが、Unity の VideoPlayer が Android で VP9 を再生できるかは端末依存で、
+      **当日に「動画のカットだけ出ない」で詰む**（実際に動いている cue はすべて mp4）。
+      変換に失敗したら **webm を残して注記を返す**（保存そのものは失敗させない）。
+
+    ⚠ `-pix_fmt yuv420p` は必須。MediaRecorder の出力は yuv444 になることがあり、
+      Android の MediaCodec がそれを開けない。
+    """
+    if not src.lower().endswith('.webm'):
+        return None, ''
+    exe = _ffmpeg_exe()
+    if not exe:
+        return None, 'ffmpeg が無いので webm のまま保存した（Quest で再生できない可能性がある）'
+    dst = src[:-5] + '.mp4'
+    cmd = [exe, '-y', '-loglevel', 'error', '-i', src,
+           '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+           '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', dst]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=300)
+    except Exception as e:
+        return None, f'mp4 変換に失敗（webm のまま）: {e}'
+    if r.returncode != 0 or not os.path.exists(dst) or os.path.getsize(dst) == 0:
+        err = (r.stderr or b'').decode('utf-8', 'replace').strip().splitlines()
+        return None, 'mp4 変換に失敗（webm のまま）: ' + (err[-1] if err else f'exit {r.returncode}')
+    try:
+        os.remove(src)   # 同じ中身が 2 つ並ぶと、素材一覧でどちらを選んだか分からなくなる
+    except OSError:
+        pass
+    return dst, 'mp4 へ変換した（Quest で再生できる形式）'
+
 # /open-dir?dir= だけで開いてよいフォルダ（保存はしない）
 OPEN_DIRS = {'testassets': TESTASSETS, 'archive': ARCHIVE, 'audio': AUDIO, 'masks': MASKS,
              'eyejack': EYEJACK}
@@ -1514,11 +1561,22 @@ class Handler(SimpleHTTPRequestHandler):
             stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
             prefix = f'cam{cam}_' if cam else 'cap_'
             name = f'{prefix}{stamp}.{ext}'
-            with open(os.path.join(dest, name), 'wb') as f:
+            path = os.path.join(dest, name)
+            with open(path, 'wb') as f:
                 f.write(data)
+            note = ''
+            if typ == 'video':
+                # ⚠⚠ **Quest へ配るのは mp4(H.264)。** ブラウザの MediaRecorder は webm(VP9) しか
+                #    吐かないが、Unity の VideoPlayer が Android で VP9 を再生できるかは端末依存で、
+                #    **当日に「動画だけ出ない」で詰む**（既に動いている cue はすべて mp4）。
+                #    保存の瞬間に変換して不確実性を消す。手数は増えない（押すだけ）。
+                mp4, note = _transcode_to_mp4(path)
+                if mp4:
+                    name = os.path.basename(mp4)
             url = ('/recordings/' if dest is RECORDINGS else '/captures/') + name
+            size = os.path.getsize(os.path.join(dest, name))
             return self._json({'ok': True, 'name': name, 'url': url, 'dir': to,
-                               'type': typ, 'size': len(data)})
+                               'type': typ, 'size': size, 'note': note})
 
         if parsed.path.startswith('/atelier'):
             return self._atelier_post(parsed)
