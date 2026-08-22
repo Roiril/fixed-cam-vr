@@ -1959,8 +1959,11 @@ def analyze(events, others, exp, warns=None):
             w(f"  人形の呼びかけ: {len(calls)} 回（著作は {want_call} カット）")
             if not calls:
                 verdict("WARN", f"人形の呼びかけが 1 度も鳴っていない（著作は {want_call} カット）— "
-                                "その差し込みに到達していないか、音源を掴めていない。"
-                                "`py -3.11 tools/ingest-sounds.py --only sfx_doll_call` の後に "
+                                "①そのカットの素材（当日撮る人形視点）が無くて**カットごと飛んだ** "
+                                "②その差し込みに到達していない ③音源を掴めていない、の順に疑う。"
+                                "①は下の「演出のカット」節の『素材（clip / still）が解決できない』に出る "
+                                "＝ 当日まではこれが正常な 0 で、実装の証拠にはならない。"
+                                "③なら `py -3.11 tools/ingest-sounds.py --only sfx_doll_call` の後に "
                                 "`tools/unity.ps1 menu sound-import`")
             else:
                 verdict("OK", f"人形の呼びかけが {len(calls)} 回鳴った")
