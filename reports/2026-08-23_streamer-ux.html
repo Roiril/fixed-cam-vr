@@ -143,7 +143,7 @@ pre code { background: none; padding: 0; }
 <div class="wrap">
   <p class="eyebrow">廻リ視 · 設計</p>
   <h1>配信アプリに「据える」と「撮る」を置く</h1>
-  <p class="sub">fixed-cam-streamer v0.13.0 ／ 2026-08-23 ／ <strong>実装・JVM テスト 142 件・APK ビルドまで完了。実機で触ってはいない</strong></p>
+  <p class="sub">fixed-cam-streamer v0.13.0 ／ 2026-08-23 ／ <strong>実装・テスト・Pixel 7a 3 台への導入と実機確認まで完了</strong></p>
 
   <div class="lead">
     <p><strong>置き場を役割で決め直した。</strong> 三脚に据える人も、人形視点を撮る人も、見ているのはスマホの画面であって卓ではない。それなのに据える補助は 1 つも無く、撮る操作は卓からの遠隔だけだった。<br>
@@ -326,12 +326,24 @@ pre code { background: none; padding: 0; }
     <li>不正な名前（<code>../../secret.mp4</code>）を弾くこと、届かない端末で理由が返ること</li>
   </ul>
 
+  <h3>実機で確かめた（Pixel 7a ×3・v0.13.0 導入済み）</h3>
+
+  <ul>
+    <li><strong>補助線の位置を画素で測った</strong>（目で見て「合っている」と言わない）。縦線は <strong>x=540</strong> ＝ 画面幅 1080 のちょうど中央、映像の矩形は <strong>1080×1439（比 0.7505）</strong>で配信の 480×640（3:4）と一致。横線はその矩形の縦中央 y=1227。<strong>鏡の軸は映像の横中央に立っている</strong></li>
+    <li><strong>卓の自動発見が通った</strong> —— パネルに「卓 iiyama（192.168.11.11:8099） rev 966」。端末側の設定作業はゼロ</li>
+    <li><strong>指示が実機に出た</strong> —— 5 本すべて。<code>pov_0</code> は「画に出るのは頭 0.9 秒（1 カットで使う）」「素材が未採用 — 撮って『卓へ送って採用』」</li>
+    <li>鏡合わせが動く —— 「右の鏡像」の札と「左右のずれ 1.6（小さいほど対称）」</li>
+  </ul>
+
+  <h3>実機で 1 つ直した</h3>
+
+  <p>⚠⚠ <strong>ボタンが全部むらさきで出た。</strong> テーマが <code>Theme.MaterialComponents</code> なので XML の <code>&lt;Button&gt;</code> は <code>MaterialButton</code> になり、<code>android:background</code> を無視して <code>colorPrimary</code> で塗る。<code>app:backgroundTint</code> へ直した。<strong>同じ画面の中で作法が 2 つある</strong>（<code>ToggleButton</code> とコードで作った <code>Button</code> は <code>android:background</code> が効く）。あわせてパネルの背景を不透明にした（半透明だと下のレンズ列が透ける）。</p>
+
   <h3>確かめていない</h3>
 
   <ul>
-    <li><strong>実機に入れて触っていない。</strong> 鏡合わせの見え方（8fps・640×480 の復号が体感でどうか、継ぎ目の読み取りやすさ）、撮影パネルの文字サイズと押しやすさ、卓の自動発見が現場の Wi-Fi で何秒で入るか</li>
-    <li>⚠ <strong>卓サーバは再起動しないと新しい口を持たない。</strong> いま動いているものは改修前のコードで立っている</li>
-    <li>⚠ 配信スマホの APK 更新は <strong>USB が要る</strong>（無線 adb は無効）。入れた直後はアプリが止まっているので <code>monkey</code> で起こす</li>
+    <li><strong>鏡合わせ「だけ」で encode が回るか。</strong> 検証中ずっと Quest（192.168.11.12）が 3 台の <code>/video</code> を掴んでいて <code>clientCount=1</code> だったので、需要が鏡合わせ由来かクライアント由来かを切り分けられていない。状況証拠は「鏡を入れた瞬間に熱の行から <code>[encode休止]</code> が消えた」だけ。<strong>誰も見ていない状態で 1 度やり直す</strong></li>
+    <li>実際に据えて撮る一巡（人が三脚を振って継ぎ目を消す／⏺ から採用まで）は、会場と白衣が要るので当日</li>
   </ul>
 
   <h2>9. 併せて直したドキュメント</h2>
