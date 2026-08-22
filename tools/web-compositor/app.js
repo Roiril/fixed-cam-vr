@@ -1094,7 +1094,14 @@ function renderRunPanel() {
     if (!unityAlive) { latEl.textContent = '映像の遅れ: —（Unity 未接続）'; latEl.className = 'run-next'; }
     else {
       const j = Number(u.latencyJitterMs) || 0, d = Number(u.latencyDecodeMs) || 0,
-            p = Number(u.latencyPresentMs) || 0, age = Number(u.sourceAgeMs) || 0;
+            p = Number(u.latencyPresentMs) || 0;
+      // ⚠⚠ **配信側の鮮度は `-1` が「不明」の番兵**（端末が起動してから 1 枚も作っていない /
+      //   Unity がまだ `/health` を取れていない）。`|| 0` で潰すと「たったいま来た」に化ける。
+      //   ⇒ 不明は不明のまま持ち、**数字を出さない**（下の `age > 0`）。
+      //   ⚠ `age >= 0` へ緩めないこと —— 「配信側の鮮度 0ms」は嘘になる。
+      //   2026-08-23: 端末側（`FrameStats`）・Unity 側（`LatencyEstimatorLogic`）でも同じ誤読を踏んだ。
+      const ageRaw = Number(u.sourceAgeMs);
+      const age = Number.isFinite(ageRaw) ? ageRaw : -1;
       const sum = Math.round(j + d + p);
       const bits = [`観測 ${sum}ms`, `揺らぎ ${Math.round(j)}`, `展開 ${Math.round(d)}`, `提示 ${Math.round(p)}`];
       if (age > 0) bits.push(`配信側の鮮度 ${Math.round(age)}ms`);
