@@ -1362,7 +1362,7 @@ def analyze(events, others, exp, warns=None):
     #    ここは `ev=mark` の `res=` と `ev=comms` の id を突き合わせて
     #    **食い違っていたら FAIL** にする（画を見ても絶対に気づけない壊れ方なので）。
     #    ⚠ 2026-08-17 まではキーが `take=`（演出が走っていたか）で、3 周目の入れ替わりに
-    #      押しても「異常が記録されました」と返っていた ＝ 消えていないのに認めた顔をしていた。
+    #      押しても「異変を抹消しました」と返っていた ＝ 消えていないのに認めた顔をしていた。
     # 観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
     comms = [e for e in events if e.get("ev") == "comms"]
     comms_built = effect_samples(events, "commsBuilt")
