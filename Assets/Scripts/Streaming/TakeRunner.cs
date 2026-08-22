@@ -104,6 +104,9 @@ namespace FixedCamVr.Streaming
         // スクリーンの外の闇で目が開く異変（step.eyes）。null なら目は出ない（同上）。
         private AnomalyEyes? _eyes;
 
+        // 人形の呼びかけ（step.dollCall・canon/LEDGER.md 0109）。null なら鳴らないだけで画は進む。
+        private ShowSoundDirector? _sound;
+
         // 時刻源。既定は Time.time。EditMode テストは時間が進まないため差し替える
         //（純ロジックは既に時刻を引数で受けており、束縛しているのはこの実行体だけ）。
         private Func<float>? _timeSource;
@@ -182,6 +185,11 @@ namespace FixedCamVr.Streaming
                 go.transform.SetParent(transform, worldPositionStays: false);
                 _eyes = go.AddComponent<AnomalyEyes>();
             }
+
+            // 人形の呼びかけ（canon/LEDGER.md 0109）。**無ければ自分で載せない** — 音の器は
+            // `[Sound]` が丸ごと持っており（敷く音 11 本 + 一撃の声 6 本）、ここで作ると
+            // 二重に鳴る。`menu scene` が焼いていない構成では、呼びかけだけが黙る。
+            _sound = FindObjectOfType<ShowSoundDirector>();
 
             // 遷移層でカットが画面に出ないまま上書きされたら報告する（演出層と同じ規律を通す）。
             if (director != null) director.TransitionPreempted += OnTransitionPreempted;
@@ -737,6 +745,19 @@ namespace FixedCamVr.Streaming
             if (step.switchSfx && !(source == TakeSchema.SourceLive && step.camera >= 0
                                     && director.ActiveCameraIndex != step.camera))
                 director.PlaySwitchSfx();
+
+            // 人形の呼びかけ（カットの `dollCall`・`canon/LEDGER.md` 0109）。
+            // ⚠ **切替音と同じ行から撃つ。** 毎フレーム状態を見る `SoundCueLogic` に置くと、
+            //   0.8〜1.4 秒刻みで進む 2 周目 C の接近では頭を取りこぼす。
+            // ⚠ 音（1.60 秒）はカット（1.4 秒）より長いが**画は待たない**。はみ出した 0.2 秒は
+            //   次のカットへ被る（ユーザー指示・0109「映像はこの音を無視してそのまま先に進んで ok」）。
+            // ⚠ 引き返して同じ演出が頭から再演されたら**もう 1 度鳴る**。画も再演されるので、
+            //   ここだけ黙ると「追いついたのに声がしない」になる（`memory/backtrack_and_replay.md`）。
+            if (step.dollCall && _sound != null && !_sound.PlaySpot(SoundCue.DollCall))
+                Debug.LogWarning("[TakeRunner] 人形の呼びかけの音源がありません"
+                                 + "（Resources/Sound/sfx_doll_call）。カットは無言で進みます。"
+                                 + "`py -3.11 tools/ingest-sounds.py --only sfx_doll_call` の後に "
+                                 + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
 
             // カット頭の単発の乱れ（遷移とは別物。企画書 2.3 の「注意・移動の誘導」に使う）。
             if (step.glitch > 0.001f)

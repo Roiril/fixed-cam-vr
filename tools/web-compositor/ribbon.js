@@ -1525,6 +1525,7 @@ export function createRibbon(container, deps) {
         </select></label>
         <label><input class="rb-s-transms" type="number" min="0" step="10" value="${s.transitionMs || 0}">ms<span class="rb-hint2">0=既定</span></label>
         <label class="chk" title="このカットで画が差し替わるのと同時に、カメラ切替の音を 1 発鳴らす。カメラを動かさない素材のカットでも「視点が急に切り替わった」として聞かせたいときに使う（カメラが実際に変わるカットでは自動で鳴るので不要）。この音には警告音が薄く混ざる — ゾーン切替の音とは別の 1 本"><input class="rb-s-switchsfx" type="checkbox" ${s.switchSfx ? 'checked' : ''}>切替音を鳴らす（警告音つき）</label>
+        <label class="chk" title="このカットで画が差し替わるのと同時に、人形の呼びかけ「あーそぼー」を 1 回鳴らす（1.60 秒）。立てているのは 2 周目 C の追いつき（pov_4）だけ。音がカットより長くても画は待たず、はみ出したぶんは次のカットへ被る"><input class="rb-s-dollcall" type="checkbox" ${s.dollCall ? 'checked' : ''}>人形の呼びかけを鳴らす</label>
         <label title="カットが始まってから 1 回だけ走らせる映像の乱れ。遷移の「乱れ」とは別物で、こちらは体験者の注意を引くために使う">乱れ<input class="rb-s-glitch" type="number" min="0" max="1" step="0.05" value="${s.glitch || 0}"><span class="rb-hint2">0=出さない</span></label>
         <label class="rb-s-glitchsec-l" style="display:${(s.glitch || 0) > 0 ? '' : 'none'}"><input class="rb-s-glitchsec" type="number" min="0.05" step="0.05" value="${s.glitchSec > 0 ? s.glitchSec : TAKE.DEFAULT_STEP_GLITCH_SEC}">s</label>
         <label title="カットの頭で画をこの秒数だけ止める。ライブも録画も一緒に凍る。再開したとき、体験者は自分が思っていたのと違う位置に居る">静止<input class="rb-s-hold" type="number" min="0" max="5" step="0.1" value="${s.hold || 0}">s<span class="rb-hint2">0=止めない</span></label>
@@ -1603,6 +1604,7 @@ export function createRibbon(container, deps) {
       s.swapHold = r('.rb-s-swaphold').checked;
       s.swapMinX = Math.max(0, Math.min(1, numOr(r('.rb-s-swapminx').value, 0)));
       s.switchSfx = r('.rb-s-switchsfx').checked;
+      s.dollCall = r('.rb-s-dollcall').checked;
       s.durSec = s.durKind === TAKE.DUR_SEC ? Math.max(0.2, numOr(r('.rb-s-dur').value, TAKE.FALLBACK_STEP_DUR_SEC)) : 0;
       s.transition = r('.rb-s-trans').value;
       s.transitionMs = Math.max(0, numOr(r('.rb-s-transms').value, 0));

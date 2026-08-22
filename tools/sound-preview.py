@@ -445,6 +445,49 @@ def build_switch() -> np.ndarray:
     return out
 
 
+def build_call() -> np.ndarray:
+    """**人形の呼びかけ**（`canon/LEDGER.md` 0109）。
+
+    前半は**声だけ**（掛けた手当てそのものを聴く）、後半は**2 周目 C の接近そのまま** —
+    人形視点 4 カットの刻み（1.0 / 0.9 / 0.8 秒）で警告つきの切替音が並び、
+    **4 カット目（追いつき）の頭で声が重なる**。本編の敷く音（2 周目）の上。
+
+    ⚠ ここで判定してほしいのは 2 つ: **切替音と重なって声が読めるか**と、**音量**。
+    どちらも `tools/ingest-sounds.py` の `VOICES` の 1 数字（`lufs`）で動く。
+    ⚠ 散らし方は実機の写し — 切替音は音程 ±3.5% / 音量 ±1.5dB、**声は散らさない**。
+    """
+    rng = np.random.default_rng(20260823)
+    alert, call = load("sfx_switch_alert"), load("sfx_doll_call")
+
+    def shot(clip: np.ndarray) -> np.ndarray:
+        r = 1.0 + float(rng.uniform(-0.035, 0.035))
+        m = max(8, int(len(clip) / r))
+        x = np.linspace(0, len(clip) - 1, m)
+        c = np.stack([np.interp(x, np.arange(len(clip)), clip[:, ch]) for ch in (0, 1)], axis=1)
+        return c * 0.85 * 10 ** (float(rng.uniform(-1.5, 1.5)) / 20.0)
+
+    total, bed_from, start = 12.0, 4.0, 5.0
+    steps = (1.0, 0.9, 0.8)      # pov_1 → pov_2 → pov_3 →（この後が pov_4 ＝ 追いつき）
+    out = np.zeros((int(total * sk.SR), 2))
+
+    lay(out, call, 0.6)          # まず声だけ（無音の上で）
+
+    # 本編の敷く音（§4 の表・2 周目）。声がこの上でどう立つかを聴く。
+    lay(out, tile(load("bed_room_lap2"), total - bed_from) * 0.34, bed_from)
+    lay(out, tile(load("bed_device"), total - bed_from), bed_from)
+
+    at = start
+    for sec in steps:
+        lay(out, shot(alert), at)
+        at += sec
+    lay(out, shot(alert), at)    # 4 カット目の切替音
+    lay(out, call, at)           # **同じ縁で声**（散らさない・gain 1.0）
+    print(f"   0.6s 声だけ   {start:.0f}s 接近の刻み "
+          f"{' / '.join(f'{x:.1f}' for x in steps)} 秒 → "
+          f"{at:.1f}s で 4 カット目（切替音 ＋ 声が同時）")
+    return out
+
+
 def emit(name: str, y: np.ndarray, note: str):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, f"{name}.wav")
@@ -473,6 +516,8 @@ def main() -> int:
     emit("preview_swap", build_swap(), "実機と同じ式。**尺も実機どおり** — 増え方が判定そのもの")
     print("人形視点が差し込まれるカットの切替音:")
     emit("preview_switch", build_switch(), "前半は素と合成の対比 / 後半は 2 周目 C の刻み")
+    print("人形の呼びかけ（2 周目 C の追いつき）:")
+    emit("preview_call", build_call(), "前半は声だけ / 後半は切替音と重なった所")
     print(f"\n→ {OUT}")
     return 0
 

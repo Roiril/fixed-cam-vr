@@ -370,6 +370,34 @@ namespace FixedCamVr.Streaming
             LastCue = c;
         }
 
+        /// <summary>
+        /// <b>外から 1 発鳴らす</b>（カットが持つ音。<c>canon/LEDGER.md</c> 0109 の人形の呼びかけ）。
+        /// 掴めていなければ <c>false</c> を返す（呼んだ側が沈黙に気づける）。
+        ///
+        /// ⚠⚠ <b>音程も音量も散らさない。</b> <see cref="SfxPlayer.Play"/> の既定は
+        /// 音程 ±3% / 音量 ±1.2dB で、それは「1 回の体験で 9 回以上並ぶ装置の音」のための値。
+        /// <b>もらった人の声を毎回わずかに変えるのは、もらった音を別の音にすること</b>
+        /// （`rules/sound-design.md` §4.5）。1 度しか鳴らないので散らす理由も無い。
+        ///
+        /// ⚠ <see cref="SwitchAudioCue"/> には相乗りさせない。あちらは <c>AudioSource</c> を
+        /// 1 本使い回して <c>Stop()</c> してから鳴らすので、<b>1.6 秒の声は次の切替で打ち切られる</b>
+        /// （2 周目 C の刻みは実測 0.8 秒）。<see cref="SfxPlayer"/> は 6 声あるので生き残る。
+        /// </summary>
+        public bool PlaySpot(SoundCue c)
+        {
+            string res = SoundCueLogic.ResourceName(c);
+            if (res.Length == 0) return false;
+            if (SoundCueLogic.VariantCount(c) > 1) return false;   // 変種を持つものは FireCue の側
+            if (!_spot.TryGetValue(res, out var clip) || clip == null) return false;
+            // ⚠ **鳴らせたかを見る。** 声が 1 本も無い（発声器が起きていない）ときに
+            //    true を返すと、呼んだ側の警告が出ないまま無音になる。
+            if (_sfx == null || !_sfx.Play(clip, gain: 1f, pitchSpread: 0f, gainSpreadDb: 0f))
+                return false;
+            _beds.PushSpotDuck(SoundCueLogic.DuckFor(c));
+            LastCue = c;
+            return true;
+        }
+
         private void ApplyBeds(in SoundBedGains g)
         {
             float m = bedsEnabled ? masterGain : 0f;

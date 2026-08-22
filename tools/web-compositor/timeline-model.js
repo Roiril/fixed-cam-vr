@@ -151,7 +151,9 @@ export function newStep(over = {}) {
     //   swapMinX  = 覆いを効かせる左端（枠 UV・0 = 制限しない）。**左右分割と併せるときは必ず指す** —
     //               芯は合成後の画と無人プレートの差で引くので、制限しないと左半分の鏡映しの人物まで包む
     //   switchSfx = 画の差し替えと同時にカメラ切替の音を 1 発鳴らす（2 周目 C の接近）
-    swapHold: false, swapMinX: 0, switchSfx: false,
+    //   dollCall  = 画の差し替えと同時に人形の呼びかけ「あーそぼー」を 1 回鳴らす
+    //               （canon/LEDGER.md 0109。立てているのは 2 周目 C の追いつき pov_4 だけ）
+    swapHold: false, swapMinX: 0, switchSfx: false, dollCall: false,
     cg: '', cgMode: TAKE.CG_FOLLOW,
     // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
@@ -224,6 +226,7 @@ function serializeStep(s) {
     swapHold: !!s.swapHold,
     swapMinX: Math.max(0, Math.min(1, num(s.swapMinX, 0))),
     switchSfx: !!s.switchSfx,
+    dollCall: !!s.dollCall,
     cg: s.cg || '',
     cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED], TAKE.CG_FOLLOW),
   };

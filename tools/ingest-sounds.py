@@ -24,6 +24,7 @@ py -3.11 tools/ingest-sounds.py --list     # 何をどこへ入れるか
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import subprocess
 import sys
@@ -405,6 +406,54 @@ MIX_ONSET_DB = -20.0   # これを超えたら 1 発の頭
 MIX_PRE = 0.003        # 頭の手前に残す
 MIX_IN = 0.002         # 頭のクリック止め（ブザーの立ち上がりは速いので短く）
 MIX_FADE = 0.040       # 尻のフェード。⚠ 定常音を素で切るとクリックが出る（基音 187Hz の 7 周期ぶん）
+
+
+# ---- もらった録音を「聞ける」ところまで手当てするもの（声）-------------------
+#
+# ⚠⚠ §4.5 は「もらった音は音量と端の処理しか掛けない」。ここは `TAME` と同じ**明示的な例外**で、
+#    入れてよいのは**ユーザーが指示したとき**だけ。勝手に足さない。
+#
+# ユーザー指示（2026-08-22・`canon/LEDGER.md` 0109）:
+#   「音は小さく、ノイズも少し混ざっています。音が小さいの以外は、いい感じの味わいになっています。
+#     良い感じにカットして、聞き心地が悪くない程度に加工、音量など調節して、使えるレベルにしてほしい」
+#
+# 元は 16kHz / 8kbps の AAC（音声メモ）。**尖頭が -34.9dBFS しかない**ので、
+# そのままでは体験の中で聞こえない。掛けたのは 4 つだけ:
+#
+#   `cut`   切り出し。**決め打ち**（自動では取れない → 下の ⚠⚠）
+#   `hp`    直流と低域のうねりを落とす（素材の 150Hz 以下は声より 15dB 低く、中身が無い）
+#   `shelf` こもりを減らす。上は 4.7kHz で符号化器が捨てているので**戻らない**
+#   `level` 軽い圧縮。「あー」と「そーぼー」の差が 11.5dB あり、頭が切替音に負ける
+#
+# ⚠⚠ **切る所は決め打ちにする。** 自動の無音落とし（`trim`）は -60dBFS の絶対値なので、
+#    この素材では尻の減衰（尖頭 -60〜-75dBFS）を掴めず **3.316 秒でぶつ切りにする**
+#    （＝ 1.23 秒になる）。ユーザーの指示は 1.60 秒であることを前提に組まれている
+#    （「1.6s ですこしずれると思うが、0.2s くらいなので映像はこの音を無視して先に進んで ok」）ので、
+#    自動に任せると**指示そのものが成り立たなくなる**。§4.5「減衰の終わりを自動で探さない」と同じ罠。
+#
+# ⚠⚠ **高さは -20.0 LUFS**（天井は他と同じ -3dBTP）。根拠と、そうしなかった選択肢:
+#    ・切替音（-22.8）と**同時に鳴る**ので、揃えると混ざって「声」に読まれない。3dB 上に置く
+#    ・尖頭で揃える（§3 の「一度きりの山」＝ -3dBTP）と **-17.3 LUFS** ＝ 本編でいちばん大きい音に
+#      なる。声は 0.012 秒で立ち上がる一撃ではないので驚かしにはなりにくいが、
+#      §1（劇伴を足さない ＝ 作者が怖いと叫ばない）に近い所まで寄る
+#    ・⚠ **ここが最初の赤入れ点**。「小さい」と言われたら -17.3 まで、
+#      「驚く」と言われたら切替音と同じ -23.0 まで。動かすのはこの 1 数字だけ
+VOICES = [
+    {
+        "src": "あーそぼー.m4a",
+        "name": "sfx_doll_call",
+        "cut": (2.020, 3.620),          # 秒（元ファイルの時刻）
+        "hp": 85.0,                     # Hz
+        "shelf": (1800.0, 2.5),         # (Hz, dB)
+        "level": (-22.0, 2.0),          # (閾値 dBFS, 比) ⚠ 閾値は下駄を履かせた後の値
+        "fade": (0.012, 0.110),         # (頭, 尻) 秒。尻は減衰に乗せるので長い
+        "lufs": -20.0,
+        "why": "2 周目 C の接近・**人形視点の最後のカット**（`pov_4` ＝ 追いつき）の頭で 1 回だけ。"
+               "画（1.4 秒）より 0.2 秒長いが、映像は待たずに次のカットへ進む",
+    },
+]
+
+VOICE_PRE_DB = 30.0    # 圧縮の前に履かせる下駄。⚠ `level` の閾値はこの後の値で書いてある
 
 
 def glide(c: np.ndarray, r0: float, r1: float, sr: int) -> np.ndarray:
@@ -842,6 +891,85 @@ def mix_build(y, sr: int, base: np.ndarray, body_sec: float, rel_db: float):
     return out, seg
 
 
+def soft_level(y: np.ndarray, th_db: float, ratio: float,
+               att: float = 0.012, rel: float = 0.180) -> np.ndarray:
+    """音節どうしの差だけを詰める（`VOICES` の `level`）。
+
+    ⚠ **これは §4.5 の例外**。ユーザーが「聞き心地が悪くない程度に加工」と指示したぶんだけ掛ける。
+    比 2.0 は「差を半分にする」という意味で、素材の起伏そのものは残る
+    （実測: 「あー」と「そーぼー」の差 11.5dB → 6.2dB）。
+
+    ⚠ 検出は**両チャンネルの最大**で行い、掛ける倍率は左右で同じにする
+    （別々に掛けると声が左右に揺れる）。
+    """
+    x = y * 10 ** (VOICE_PRE_DB / 20.0)      # ⚠ 閾値は下駄を履かせた後の値で書いてある
+    key = np.max(np.abs(x), axis=1)
+    a = math.exp(-1.0 / (sk.SR * att))
+    r = math.exp(-1.0 / (sk.SR * rel))
+    th = 10 ** (th_db / 20.0)
+    g = np.empty(len(key))
+    env = 0.0
+    for i, v in enumerate(key):
+        env = a * env + (1 - a) * v if v > env else r * env + (1 - r) * v
+        if env > th:
+            edb = 20 * math.log10(env + 1e-12)
+            g[i] = 10 ** ((th_db + (edb - th_db) / ratio - edb) / 20.0)
+        else:
+            g[i] = 1.0
+    return (x * g[:, None]) * 10 ** (-VOICE_PRE_DB / 20.0)
+
+
+def ingest_voices(voices, src_dir: str) -> None:
+    """もらった声を、聞ける所まで手当てして焼く（<see cref="VOICES"/>）。"""
+    for v in voices:
+        name = v["name"]
+        src = os.path.join(src_dir, v["src"])
+        raw = os.path.join(RAW, f"src_{name}.wav")
+        if os.path.exists(src):
+            if not decode(src, raw):
+                continue
+        elif not os.path.exists(raw):
+            print(f"  無い: {v['src']}（{src_dir} にも {RAW} にも）")
+            continue
+        else:
+            print(f"  元の録音が無いので復号済みを使う: {name}")
+
+        y, _sr = sk.read_wav(raw)
+        y = sk.to_stereo(y)
+        before = sk.describe(y)
+
+        t0, t1 = v["cut"]
+        y = y[int(t0 * sk.SR):int(t1 * sk.SR)]
+        if v.get("hp"):
+            y = sk.biquad(y, "hp", v["hp"])
+        if v.get("shelf"):
+            fc, db = v["shelf"]
+            y = sk.biquad(y, "hs", fc, gain_db=db)
+        if v.get("level"):
+            y = soft_level(y, *v["level"])
+        fi, fo = v.get("fade", (EDGE_FADE, EDGE_FADE))
+        y = sk.env_fade(y, fi, fo)
+
+        # ⚠ **ラウドネス合わせは 1 回では決まらない。** R128 は絶対ゲート（-70 LUFS）を持つので、
+        #    持ち上げると今まで数えていなかった小さな区間が数に入り、狙いから 0.5dB ほど外れる
+        #    （実測: 1 回だと -20.0 のつもりで -20.5 になった）。落ち着くまで回す。
+        for _ in range(6):
+            d_db = v["lufs"] - sk.lufs(y)
+            y = y * 10 ** (d_db / 20.0)
+            if abs(d_db) < 0.05:
+                break
+        tp = sk.true_peak_db(y)
+        if tp > -3.0:
+            y = y * 10 ** ((-3.0 - tp) / 20.0)
+
+        sk.write_wav(os.path.join(OUT, f"{name}.wav"), y, peak_db=-3.0)
+        d = sk.describe(y)
+        print(f"  {name:16s} {before['sec']:5.2f}s → {d['sec']:5.2f}s   "
+              f"{before['lufs']:6.1f} → {d['lufs']:6.1f} LUFS   "
+              f"tp {before['true_peak_db']:5.1f} → {d['true_peak_db']:5.1f}dB   "
+              f"鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f} 内蔵SP {d['speaker_db']:5.1f}dB")
+
+
 def ingest_mixes(mixes, src_dir: str) -> None:
     """既に焼いた音へ、もらった音を薄く重ねて焼く（<see cref="MIXES"/>）。"""
     for jp, base_name, name, body, rel, _why in mixes:
@@ -905,11 +1033,18 @@ def main() -> int:
         for jp, base_name, name, body, rel, why in MIXES:
             print(f"  {name:16s} ← {base_name} ＋ {jp}")
             print(f"      1 発から {body * 1000:.0f}ms を {rel:+.1f}dB で重ねる / {why}")
+        for v in VOICES:
+            t0, t1 = v["cut"]
+            print(f"  {v['name']:16s} ← {v['src']}")
+            print(f"      {t0:.3f}〜{t1:.3f}s を切り出し / 低域切り {v['hp']:.0f}Hz / "
+                  f"高域 {v['shelf'][1]:+.1f}dB / 圧縮 {v['level'][1]:.1f}:1 / "
+                  f"{v['lufs']:+.1f} LUFS / {v['why']}")
         return 0
 
     names = ({p[1] for p in PLAN} | {c[1] for c in CUTS}
              | {s[1] for s in SWARMS} | {c[1] for c in CHORUS}
-             | {n for n, _s, _v in SWELL_LAYERS} | {m[2] for m in MIXES})
+             | {n for n, _s, _v in SWELL_LAYERS} | {m[2] for m in MIXES}
+             | {v["name"] for v in VOICES})
     if a.only is not None and not set(a.only) <= names:
         missing = sorted(set(a.only) - names)
         print(f"  PLAN にも CUTS にも無い名前: {', '.join(missing)}")
@@ -923,9 +1058,11 @@ def main() -> int:
                       or any(n in a.only for n, _s, _v in SWELL_LAYERS)) else []
     # ⚠ 重ねる音は**土台と対**。`--only <土台>` でも焼き直す（土台だけ新しいと食い違う）。
     mixes = [m for m in MIXES if a.only is None or m[2] in a.only or m[1] in a.only]
+    voices = [v for v in VOICES if a.only is None or v["name"] in a.only]
 
     os.makedirs(RAW, exist_ok=True)
     os.makedirs(OUT, exist_ok=True)
+    ingest_voices(voices, a.src)
     ingest_cuts(cuts, a.src)
     ingest_swarms(swarms, a.src)
     ingest_chorus(chorus, a.src)

@@ -62,11 +62,15 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 1 回鳴らす。<paramref name="pitchSpread"/> と <paramref name="gainSpreadDb"/> は
         /// 毎回ふる幅（0 なら振らない）。
+        ///
+        /// ⚠ <b>鳴らせたかを返す。</b> クリップが無いときと、<c>Awake</c> が走っていなくて
+        /// 声が 1 本も無いときは <c>false</c>。**呼んだ側が沈黙に気づけるようにするため**で、
+        /// 音は録画にも画にも出ないので、返り値を捨てると失敗が永久に見えない。
         /// </summary>
-        public void Play(AudioClip? clip, float gain = 1f, float pitchSpread = 0.03f,
+        public bool Play(AudioClip? clip, float gain = 1f, float pitchSpread = 0.03f,
                          float gainSpreadDb = 1.2f)
         {
-            if (clip == null || _pool.Length == 0) return;
+            if (clip == null || _pool.Length == 0) return false;
             var src = _pool[_next];
             _next = (_next + 1) % _pool.Length;
 
@@ -80,6 +84,7 @@ namespace FixedCamVr.Streaming
             src.PlayScheduled(AudioSettings.dspTime + ScheduleLeadSec);
             PlayedCount++;
             LastGain = g;
+            return true;
         }
 
         /// <summary>ラン開始・中止で鳴っているものを黙らせる（前の体験者の音を持ち越さない）。</summary>

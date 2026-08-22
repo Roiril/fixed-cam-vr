@@ -271,6 +271,10 @@ def expected_from_show(show: dict):
     # ⚠ 音は録画に映らないので、期待値の出どころはここだけ。
     exp["switchSfxSteps"] = sum(1 for t in takes for s in t["steps"] if s.get("switchSfx"))
 
+    # 人形の呼びかけが鳴るカット（カットの dollCall・canon/LEDGER.md 0109）。
+    # ⚠ 同上。画にも動画にも差が出ないので、期待値の出どころはここだけ。
+    exp["dollCallSteps"] = sum(1 for t in takes for s in t["steps"] if s.get("dollCall"))
+
     # 録るべき区間（record.laps × course.order）。1 つでも欠けると、それを指す録画カットは
     # 実機で無言に飛ぶ。recNeeded（要求する側）と対で見ると「録り忘れ」と「使い忘れ」を切り分けられる。
     exp["recShould"] = ({(lap, cam) for lap in exp["recLaps"] for cam in exp["order"]}
@@ -1945,6 +1949,24 @@ def analyze(events, others, exp, warns=None):
                         verdict("OK", f"警告つきの切替音が {n} 回鳴った")
                 except ValueError:
                     pass
+
+        # -- 人形の呼びかけ（2 周目 C の追いつき・canon/LEDGER.md 0109）
+        #    ⚠ 1 回の体験で 1 度しか鳴らない。`ev=sfx id=DollCall` が唯一の証拠で、
+        #      画にも動画にも差は出ない（声はカットより 0.2 秒長いだけで画を止めない）。
+        want_call = exp.get("dollCallSteps", 0)
+        calls = [e for e in sfx_events if str(e.get("id")) == "DollCall"]
+        if want_call:
+            w(f"  人形の呼びかけ: {len(calls)} 回（著作は {want_call} カット）")
+            if not calls:
+                verdict("WARN", f"人形の呼びかけが 1 度も鳴っていない（著作は {want_call} カット）— "
+                                "その差し込みに到達していないか、音源を掴めていない。"
+                                "`py -3.11 tools/ingest-sounds.py --only sfx_doll_call` の後に "
+                                "`tools/unity.ps1 menu sound-import`")
+            else:
+                verdict("OK", f"人形の呼びかけが {len(calls)} 回鳴った")
+        elif calls:
+            verdict("FAIL", f"著作に無い人形の呼びかけが {len(calls)} 回鳴った — "
+                            "show.json の dollCall と実機が食い違っている")
 
     # ---------------- 効果の実在 ----------------
     # 「段が進んだ」「演出が走った」は、画・音に何かが出たことを意味しない。

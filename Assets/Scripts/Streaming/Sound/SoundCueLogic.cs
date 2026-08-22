@@ -61,6 +61,19 @@ namespace FixedCamVr.Streaming
         /// ⚠ 2026-08-16 に段 3 の頭からここへ移した（<c>canon/LEDGER.md</c> 0057）。
         /// </summary>
         Bell,
+        /// <summary>
+        /// <b>人形の呼びかけ</b>（「あーそぼー」）。2 周目 C の接近で、
+        /// <b>人形視点の最後のカット（追いつき）が始まると同時に</b> 1 回だけ鳴る
+        /// （<c>canon/LEDGER.md</c> 0109・ユーザー提供の録音）。
+        ///
+        /// ⚠⚠ <b>この列挙だけは <see cref="SoundCueLogic"/> が縁を検出しない。</b>
+        /// カットが持つ音なので、画を差し替えるのと同じ行（<see cref="TakeRunner"/>）から
+        /// <see cref="ShowSoundDirector.PlaySpot"/> で撃つ。毎フレーム外から状態を見る層に
+        /// 置くと、0.8〜1.4 秒刻みで進む 2 周目 C の接近では頭を取りこぼす
+        /// （連絡の面の打鍵・カメラ切替と同じ理由）。
+        /// ここに居るのは<b>音源の登録簿としての意味</b>（`Awake` の先読みと `ev=sfx` の名前）。
+        /// </summary>
+        DollCall,
     }
 
     /// <summary>
@@ -321,6 +334,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.Glitch: return "sfx_glitch";      // 3 種から順に選ぶ
                 case SoundCue.Creak: return "amb_creak";        // 2 種
                 case SoundCue.Bell: return "amb_bell";
+                case SoundCue.DollCall: return "sfx_doll_call";
                 default: return "";
             }
         }

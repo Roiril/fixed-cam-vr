@@ -254,7 +254,7 @@ test('入れ替わり（swap）の遷移は往復する — 卓が保存して�
   assert.equal(s.transitionMs, 2600);
 });
 
-test('持続の覆いと切替音は往復する — 卓が保存しても消えない', () => {
+test('持続の覆い・切替音・人形の呼びかけは往復する — 卓が保存しても消えない', () => {
   // ⚠⚠ 保存はキーの白名簿。3 周目 A の入り（canon/LEDGER.md 0102）は手で書く台本なので、
   //   足し忘れると 💾 の一押しで **覆いも切替音も黙って消える**（この codebase が
   //   splitX / dismissible で 2 回踏んだ型）。
@@ -267,7 +267,7 @@ test('持続の覆いと切替音は往復する — 卓が保存しても消え
         steps: [
           { source: 'live', camera: 0, splitX: 0.5, splitFlip: true,
             swapHold: true, swapMinX: 0.5 },
-          { source: 'clip', assetUrl: '/recordings/pov_4.webm', switchSfx: true },
+          { source: 'clip', assetUrl: '/recordings/pov_4.webm', switchSfx: true, dollCall: true },
         ],
       }],
     }],
@@ -278,6 +278,10 @@ test('持続の覆いと切替音は往復する — 卓が保存しても消え
   assert.equal(st[0].switchSfx, false, '指定していないものは既定へ倒す');
   assert.equal(st[1].switchSfx, true);
   assert.equal(st[1].swapHold, false);
+  // 人形の呼びかけ（canon/LEDGER.md 0109）。⚠ **白名簿から漏れると 💾 保存の一押しで消える** —
+  //    卓が show.json を書き直したとき、実機は黙って無言のカットを出す（画に差は出ない）。
+  assert.equal(st[0].dollCall, false, '指定していないものは既定へ倒す');
+  assert.equal(st[1].dollCall, true, '呼びかけは 💾 保存で消えない');
 });
 
 test('覆いの左端は 0..1 へ丸める（枠の外を指す台本を実機へ配らない）', () => {
