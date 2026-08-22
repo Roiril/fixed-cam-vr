@@ -1,0 +1,342 @@
+<title>接近の撮影コンソール</title>
+<style>
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;
+  --radius: 0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">廻リ視 · 設計</p>
+  <h1>接近シーンの当日撮影 — 設計</h1>
+  <p class="sub">2 周目 B・C「偽ライブ ⇄ 人形視点」の素材 6 本を、当日焦らずミスらず撮って反映する環境 ／ 2026-08-22 ／ 設計のみ・実装は未着手</p>
+
+  <div class="lead">
+    <p>柱は 3 本。<strong>①録画を配信アプリの端末内録画へ一本化</strong>（streamer v0.10.0）、<strong>②卓に撮影コンソール</strong>（1 ショットずつ誘導 → 自動回収 → 頭だけ試写 → 採用）、<strong>③検査を本番前チェックへ機械化</strong>。ただしその前に <strong>P0: 8 カットの連続再生が実機で成立するかを、コードを書かずに測る</strong>。8/22 の走行は素材未設定でカットが飛ばされた状態であり、0.5〜1.2 秒刻みの連続 Prepare は一度も実機を通っていない。ここが崩れると素材の形式ごと変わるので、入れ物より先に測る。</p>
+  </div>
+
+  <h2>1. 対象と、いまの手順で事故が起きる場所</h2>
+
+  <p>撮るのは 6 本。すべて録画素材で、ライブには 1 秒も依存しない（<code>canon/LEDGER.md</code> 0102）。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>cue</th><th>何</th><th>画に出る所</th><th>撮る手段（現行）</th></tr>
+    <tr><td><code>fake_live_C</code></td><td>偽ライブ（カメラ C の当日録画）</td><td>頭 5.5 秒を trim 0 / 1.9 / 3.6 / 5.0 で 4 回</td><td>卓の ⏺（ブラウザ録画 → mp4 変換）</td></tr>
+    <tr><td><code>pov_0</code></td><td>2 周目 B の予備動作（遠景・人物なし）</td><td>頭 0.9 秒</td><td rowspan="5">スマホ標準カメラ → USB 転送 → 手動変換 → プルダウンで割当</td></tr>
+    <tr><td><code>pov_1</code></td><td>人形視点① 遠い</td><td>頭 0.7 秒</td></tr>
+    <tr><td><code>pov_2</code></td><td>人形視点② 近い</td><td>頭 0.7 秒</td></tr>
+    <tr><td><code>pov_3</code></td><td>人形視点③ すぐそこ</td><td>頭 0.6 秒</td></tr>
+    <tr><td><code>pov_4</code></td><td>人形視点④ 追いつき（白衣の背中）</td><td>頭 1.2 秒</td></tr>
+  </table></div>
+
+  <p>現行手順（<code>docs/onsite-checklist.md</code> §0）で事故が起きる場所:</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>手順</th><th>何が起きうるか</th></tr>
+    <tr><td>スマホ標準カメラで POV を撮る</td><td>HEVC / HDR / 縦持ちなど形式の事故。実機で「動画のカットだけ出ない」</td></tr>
+    <tr><td>USB でファイルを PC へ運ぶ</td><td>時間を食う。ファイル名（VID_2026…）と cue の対応付けを 6 回手でやる — 取り違えても誰も気づかない</td></tr>
+    <tr><td>「録画ボタンを押した直後から本番」</td><td>押してから構えるまでの乱れが頭に入る。使われるのは頭 0.6〜1.2 秒だけなので、そこが本番</td></tr>
+    <tr><td>撮り手が構図を確認できない</td><td>高さ 40cm・C の立ち位置へ正対、を勘で守る。撮り直しの判断が遅れる</td></tr>
+    <tr><td>変換（<code>to-mp4.py</code>）が手動 CLI</td><td>飛ばすと当日「動画のカットだけ出ない」で詰む</td></tr>
+  </table></div>
+
+  <h2>2. P0 — 先に測る: 8 カットの連続再生は実機で成立するか</h2>
+
+  <p>設計検討（design-critic）で最初に立った指摘で、コード照合の結果も一致した。<em>この演出の再生自体がまだ実機を通っていない</em>。</p>
+
+  <ul>
+    <li>クリップのカットは毎回 <code>_player.Stop()</code> → URL 代入 → <code>Prepare()</code> を通る。同じファイルでも短絡しない（<code>ScreenOverlayController.cs:283-295</code>）</li>
+    <li>カットの尺は<strong>発火時刻から</strong>数える（<code>TakeRunnerLogic.cs:692</code>）。Prepare 中は前のフレームが凍結表示されるので、Prepare が 0.3 秒なら 0.5 秒のカットは 0.2 秒しか画に出ない</li>
+    <li>動画は<strong>発火時に初回ダウンロード</strong>する（<code>ScreenOverlayController.cs:288</code>）。事前に読むのは無人プレートの静止画だけ（<code>ShowControlClient.cs:2263</code> 付近）。つまり最初の偽ライブのカット（1.2 秒）の中で DL と Prepare の両方が走る</li>
+    <li>8/22 の実機走行（<code>logs/evidence/20260822_*</code>）は cue の <code>sourceUrl</code> が空 ＝ クリップのカットは全部飛ばされ、保持（<code>swapHold</code>）とプレートだけが検証された</li>
+  </ul>
+
+  <h3>測り方（コード変更ほぼゼロ）</h3>
+
+  <ol>
+    <li><code>testassets/</code> の 6 秒動画（fake_live の要求 5.5 秒を満たす）を 6 つの cue へ既存の cue エディタで仮当てする</li>
+    <li><code>py -3.11 tools/quest-record.py --sec 60 --walk</code> を 1 回（両機に APK を入れてから・<code>--serial</code> 指定）</li>
+    <li>各カットが<strong>画に出た実秒</strong>と、DL / Prepare の停滞を測る。テレメトリに無ければ <code>ShowTelemetryHost</code> と <code>analyze-xp-log.py</code> を対で足す（既存規約の範囲）</li>
+  </ol>
+
+  <h3>結果による分岐</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>結果</th><th>方式</th><th>この設計への影響</th></tr>
+    <tr><td>停滞が体感に出ない</td><td><strong>mp4 のまま</strong>（本命）</td><td>変更なし。以降のフェーズをそのまま進める</td></tr>
+    <tr><td>初回 DL / Prepare が尺を食う</td><td>Unity に<strong>先読み</strong>を足す — timeline が参照するクリップ cue を定義到着時に DL（プレートの先読みと同型）。足りなければ 2 本目の VideoPlayer で次カットを事前 Prepare</td><td>Unity 変更が 1 件入る（P4）。素材の形式は不変</td></tr>
+    <tr><td>それでも停滞する</td><td><strong>フレーム列</strong>（<code>OverlayCueData.frames</code> = <code>IFrameSequence</code>。周回録画と同じ経路・Prepare ゼロ）</td><td>納品物が mp4 から JPEG 列に変わる。採用時にサーバが分解する工程が増え、形式検査から H.264 の項が消える</td></tr>
+    <tr><td>（最後の手）</td><td>8 カットを<strong>1 本に焼く</strong></td><td>ショット単位の採用・撮り直しが崩れるので、上 3 つが全部駄目なときだけ</td></tr>
+  </table></div>
+
+  <h2>3. 録画は端末内録画へ一本化する</h2>
+
+  <p>streamer には既に端末内録画がある（<code>FrameRecorder.kt</code>: 配信と同じ JPEG フレーム列を MediaCodec で H.264 mp4 に焼く。全フレーム I フレーム・実タイムスタンプ・容量 / 30 分ガード付き。<code>/record/start</code> ほか 4 endpoint も実装済みで、現在未使用）。これを主経路にする。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>観点</th><th>ブラウザ ⏺（現行）</th><th>端末内録画（採用）</th></tr>
+    <tr><td>画の一致</td><td>MJPEG を canvas 経由で再エンコード（1 世代劣化 ＋ ブラウザのタイマー任せ）</td><td><strong>配信とまったく同じフレーム</strong>。偽ライブが本物に見える根拠が定義上成立</td></tr>
+    <tr><td>Wi-Fi 断</td><td>テイクが欠ける</td><td><strong>テイクは端末内で完走</strong>。回収は復帰後でよい</td></tr>
+    <tr><td>形式</td><td>webm(VP9) → ffmpeg 変換必須（ffmpeg 不在で詰む）</td><td>H.264 / yuv420p の mp4 が直接出る。<strong>変換工程ごと消える</strong></td></tr>
+    <tr><td>頭の切り出し</td><td>GOP 依存でシークが粗い</td><td>全 I フレームなので <code>-ss … -c copy</code> で<strong>再エンコードなしに正確</strong></td></tr>
+    <tr><td>構図の確認</td><td>撮り手からは見えない</td><td><strong>撮り手が端末画面で見ながら構えられる</strong>（決め手はここ）</td></tr>
+  </table></div>
+
+  <p>偽ライブは設置済みカメラ C の端末へ卓からリモート開始（端末に触らない ＝ 構図を乱さない）。POV は手持ちの streamer 端末。ブラウザ ⏺ は fallback として残す。</p>
+
+  <h2>4. streamer v0.10.0 の変更</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>endpoint</th><th>変更</th></tr>
+    <tr><td><code>GET /record/start</code></td><td>パラメータ追加: <code>shot</code>（ファイル命名 <code>&lt;shot&gt;_t&lt;NN&gt;_&lt;時刻&gt;.mp4</code>・無指定は従来名）／ <code>maxSec</code>（自動停止）／ <code>countdownSec</code>（開始前カウントダウン。バイブ 3-2-1 → 録画開始、自動停止で二連バイブ）</td></tr>
+    <tr><td><code>GET /record/list</code></td><td>新設。全テイクの一覧（name / shot / bytes / durMs / 撮影時の熱段）</td></tr>
+    <tr><td><code>GET /record/file?name=</code></td><td>新設。任意テイクの取得（現行は <code>/record/last</code> の 1 本だけ）</td></tr>
+    <tr><td><code>POST /record/delete</code></td><td>新設。回収済みテイクの掃除（卓からのみ叩く）</td></tr>
+    <tr><td><code>GET /record/status</code></td><td>拡張: <code>shot</code> / <code>takeCount</code> を追加</td></tr>
+  </table></div>
+
+  <ul>
+    <li>画面は既存の録画トグルボタンに「押すとカウントダウンしてから録画・規定秒で自動停止」を足すだけ。<strong>ショットリスト UI と <code>/record/plan</code>（卓 → 端末のショット配布）は作らない</strong> — 卓と端末で状態を二重に持つ第 2 の UI になる。ショットは 6 個で固定・現場は 2 人。「押してから構える」を直しているのはカウントダウンと自動停止の 2 つだけで、それで足りる</li>
+    <li>容量 / 30 分 / 熱のガードは既存のまま。録画は encode 需要に数える挙動（<code>DemandPolicy</code>）も既存のまま</li>
+    <li>POV 端末は cameraId「?」のままでビーコン発見される。A/B/C の枠に縛る変更はしない</li>
+    <li>純ロジック（命名・カウントダウン・自動停止の判定）は JVM テストで固定（v0.5.1 で新設したテスト基盤に載せる）</li>
+  </ul>
+
+  <h2>5. 卓の撮影コンソール（<code>shoot.html</code>）</h2>
+
+  <p>別ページにする（<code>sim.html</code> と同じ立て付け）。ライブ卓の 1 ページを太らせず、当日はこの画面だけを全画面で使う。判定は <code>shoot-model.js</code>（DOM 非依存の純関数）＋ node テスト — 卓の流儀のまま。</p>
+
+  <h3>ショットの定義はコードに置く（show.json に足さない）</h3>
+
+  <ul>
+    <li>cue にフィールドを足す案は<strong>却下</strong>。cue エディタは保存時にフィールドの白名簿でオブジェクトを作り直す（<code>cue-editor.js:225-231</code>）ので、<em>未知キーは次に誰かが cue を保存した瞬間に消える</em>（<code>serializeStep</code> で実害の出た型と同じ）</li>
+    <li>ショット 6 個（cueId・表示名・指示 1 行・撮る長さ・撮る手段）は <code>shoot-model.js</code> の定数。<strong>要求尺（頭の窓）だけは timeline から機械導出する</strong> — fake_live なら参照カットの max(trimStartSec + durSec) = 5.5 秒。著作が変われば要求も追従し、手順書が古びない</li>
+  </ul>
+
+  <h3>テイクの流れ（1 ショット 1 画面）</h3>
+
+  <ol>
+    <li><strong>ショットカード</strong> — 指示 1 行（「白衣の背中の至近。もう届いている所から」）・対象端末のライブプレビュー（<code>/cam</code> プロキシ）・傾き表示（<code>/caminfo</code> の実測値）・端末の熱と容量（<code>/record/status</code>）</li>
+    <li><strong>⏺</strong> — 偽ライブは卓からリモート開始（maxSec=10・カウントダウンなし）。POV は撮り手が端末のボタンで開始（カウントダウン 3 秒）</li>
+    <li><strong>自動停止</strong> — 規定秒で止まる。手で ⏹ を数える仕事が消える</li>
+    <li><strong>自動回収</strong> — 卓が <code>/record/list</code> の差分で新テイクを検知 → 取得 → 検分（実尺・解像度・向き・熱段）→ 台帳へ登録。テイクの帰属は<strong>コンソールでいま選ばれているショット</strong>（取り違えは次の試写で見える）</li>
+    <li><strong>頭ループ試写</strong> — 実際に画面へ出る<strong>頭の窓だけ</strong>をループ再生。「使われるのは頭だけ」を UI の形そのもので言う</li>
+    <li><strong>採用 / 撮り直し</strong> — 採用で cue の <code>sourceUrl</code> が入る。テイクは全部残り、前のテイクへワンクリックで戻せる</li>
+  </ol>
+
+  <h3>採用まわりの決め（3 つとも事故の防波堤）</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>決め</th><th>理由</th></tr>
+    <tr><td>頭合わせは<strong>ファイル側を切る</strong>（採用時に in-point を指定 → <code>-c copy</code> で頭切りした別ファイルを採用。元テイクは残す）。step の <code>trimStartSec</code> は触らない</td><td>撮影都合の値を著作へ書くと、素材を差し替えたとき古い頭合わせが別素材に効く。偽ライブの 0 / 1.9 / 3.6 / 5.0 は「頭からの進み」の設計値として意味を保つ</td></tr>
+    <tr><td>採用はサーバ側の 1 API（<code>POST /shoot/adopt</code> が show.json のメモリを直接更新・rev++）。<code>shoot.html</code> から <code>/state</code> を丸ごと POST しない</td><td><code>/state</code> は cues 配列ごと差し替えるので、開きっぱなしの卓の他画面の編集を消す</td></tr>
+    <tr><td>採用ファイル名は<strong>毎回一意</strong>（テイク番号＋時刻）</td><td>Quest は URL → ローカル DL のキャッシュを持つ（<code>ScreenOverlayController.cs:73</code>）。同名で差し替えると<em>撮り直したのに古い版が再生され続ける</em></td></tr>
+  </table></div>
+
+  <p>台帳は <code>recordings/approach-manifest.json</code>（サーバが書く）: ファイル・ショット・テイク番号・回収時刻（<strong>卓の時計が正</strong>。端末の時計は名前のヒント扱い）・端末 id・撮影時の熱段・検分結果・採用フラグ。最後に既存の ▶ 検証（L2C1#0 / L2C2#0 の通し試写）と ✅ 本番前チェックへの 1 クリック導線を置く。</p>
+
+  <h2>6. 検査 — ✅ 本番前チェックに「接近の素材」行</h2>
+
+  <p>効く順に並べる。①②が赤なら体験が壊れ、③④が赤なら偽ライブがばれる。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>#</th><th>検査</th><th>何を防ぐか</th></tr>
+    <tr><td>①</td><td>採用漏れ・ファイル欠損・実尺不足（要求＋0.5 秒未満）</td><td>カットが実機で飛ばされ、C がただのライブへ退化する</td></tr>
+    <tr><td>②</td><td><strong>録画しっぱなしの端末</strong>（発見済み全端末の <code>/record/status</code>）</td><td>本番中ずっと熱と容量を食い、配信の品質が落ちる</td></tr>
+    <tr><td>③</td><td>採用素材の撮影日が今日でない</td><td>前会場の素材の混入 ＝ 照明不一致。何度検分しても直らない最悪の事故</td></tr>
+    <tr><td>④</td><td>撮影時と現在の<strong>熱段の不一致</strong>（S2 で撮った素材は q25 / 15fps — ライブが S0 だと粗さが合わない）</td><td>偽ライブとライブの質感が食い違い、切り替えの瞬間にばれる</td></tr>
+    <tr><td>⑤</td><td>解像度・向きがカメラ C と同一（640×480 横）</td><td>letterbox の形が変わって「別の映像」に見える</td></tr>
+    <tr><td class="muted">保留</td><td class="muted">偽ライブの頭と現在のライブの明るさ差</td><td class="muted">④が先に同じ事故を捕まえる。④で不足と分かったら足す</td></tr>
+  </table></div>
+
+  <h2>7. 当日の回し方（2 人 10 分のまま・順序で再取付リスクを消す)</h2>
+
+  <p>POV 撮影用の 4 台目が無い現場では B の端末を借りるが、<strong>較正済みの端末を外して戻すと較正が壊れる</strong>。撮る順序で回避する:</p>
+
+  <ol>
+    <li>照明を本番と同じにする（ここから先の素材だけが有効）</li>
+    <li>白衣を着せる（§0.1 のまま）</li>
+    <li><strong>B を取り付ける前に</strong>、その端末を手持ちにして POV 5 本を撮る（コンソールが 1 本ずつ誘導・撮り手は端末画面で構図を確認）</li>
+    <li>B を取り付けて較正する（外して戻す、が発生しない）</li>
+    <li>C の端末へ卓からリモートで偽ライブを録る（C には誰も触らない）</li>
+    <li>コンソールで採用 → ▶ 検証で通し → ✅ 本番前チェックが緑</li>
+  </ol>
+
+  <p>予備の 4 台目があればそれを使う（cameraId「?」のままで発見される）。手順書 <code>docs/onsite-checklist.md</code> §0 の書き換えは実装と同じコミットで行う（doc-sync）。</p>
+
+  <h2>8. 堅牢性 — 障害と挙動</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>障害</th><th>挙動</th></tr>
+    <tr><td>録画中に Wi-Fi 断</td><td>テイクは端末内で完走。回収は復帰後に <code>/record/list</code> の差分で拾い直す</td></tr>
+    <tr><td>卓サーバ / PC が落ちる</td><td>録画は端末単体で成立。台帳は回収時に端末側の一覧から再構築できる</td></tr>
+    <tr><td>ffmpeg 不在</td><td>端末経路は変換不要なので撮影は完走。頭切りだけ不可 → 「頭切りなしで採用」へ縮退し警告</td></tr>
+    <tr><td>端末の容量・熱</td><td>既存ガード（1GB / 500MB / 30 分・熱スロットル）＋ ショットカードに常時表示</td></tr>
+    <tr><td>撮り直したのに変わらない</td><td>一意ファイル名で構造的に起きない（§5）</td></tr>
+    <tr><td>show.json の巻き戻り</td><td>書き込みは全部サーバ API 経由。ファイル直書きはしない（既知の罠のまま）</td></tr>
+    <tr><td>本番中に誤って ⏺</td><td>コンソールは Unity heartbeat のラン進行を見て録画開始を止める（警告バー）</td></tr>
+  </table></div>
+
+  <h2>9. 実装の順とテスト</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>段</th><th>内容</th><th>検証</th></tr>
+    <tr><td><strong>P0</strong></td><td>8 カットの実機実測（§2。testassets 仮当て・コード変更ほぼゼロ）</td><td><code>quest-record.py --walk</code> 1 回 ＋ ev / PNG。<strong>ここの結果が方式を確定する</strong></td></tr>
+    <tr><td>P1</td><td>streamer v0.10.0（§4）</td><td>JVM テスト ＋ 実機 1 台で start → list → file の一連</td></tr>
+    <tr><td>P2</td><td><code>shoot.html</code> ＋ サーバ API（pull / adopt / manifest）＋ <code>shoot-model.js</code></td><td>node テスト ＋ サーバは既存 <code>test_*.py</code> の流儀。通しは「撮る → 採用 → ▶ 検証」</td></tr>
+    <tr><td>P3</td><td>本番前チェック「接近の素材」行（§6）＋ checklist §0 書き換え</td><td>チェック行の判定を <code>shoot-model.js</code> に置き node テストで固定</td></tr>
+    <tr><td class="muted">P4</td><td class="muted">P0 の結果が要求したときだけ: Unity のクリップ先読み等（§2 の分岐）</td><td class="muted">EditMode テスト ＋ walk 再測</td></tr>
+  </table></div>
+
+  <h2>10. やらないこと</h2>
+
+  <ul>
+    <li><code>/record/plan</code> と端末側ショットリスト UI — 状態の二重化。カウントダウンと自動停止だけで「押してから構える」は直る</li>
+    <li>継ぎ目カード（trim 境界の前後フレームを静止画で並べる面）— 「0.7 秒ぶん人が動いたか」は静止画 2 枚では判定できない。▶ 検証の通しで見る</li>
+    <li>頭ループ試写への本番画質トグル — ▶ 検証と重複</li>
+    <li>明るさ差の検査 — 熱段の検査（§6 ④）が先に効く。保留</li>
+    <li>目の視界ジャック（当日写真）の統合 — 台帳の形は将来載せられるようにしておくが、範囲外</li>
+    <li>Unity の変更 — P0 が要求したときだけ（P4）</li>
+  </ul>
+
+  <p>著作判断として残るのは 1 つ: <strong>POV を監視カメラと同じ粗さで出すか</strong>（端末内録画に一本化すると自動でそちらへ倒れる）。<code>canon/OPEN.md</code> に案として置いた。既定は「同じ粗さ」で、コンソールは外部ファイルの取り込み口を残すのでいつでも覆せる。</p>
+
+  <p class="note">
+    検討の経緯: 設計案を design-critic（独立レビュー）に通し、verdict 部分採用。指摘で変えた点 — 実測 P0 を先頭へ／cue へのメタ追加を却下（保存白名簿で消える）／一人撮影フローと継ぎ目カードを削除／検査の優先順を入れ替え。コードの指摘は全件 grep で実物照合済み。<br>
+    主要参照: <code>docs/onsite-checklist.md</code> §0 ／ <code>canon/LEDGER.md</code> 0102-0103 ／ <code>.claude/memory/approach_and_veil_hold.md</code> ／ <code>Assets/Scripts/Streaming/ScreenOverlayController.cs</code>・<code>TakeRunnerLogic.cs</code>・<code>OverlayCueData.cs</code> ／ <code>tools/web-compositor/capture-server.py</code>・<code>cue-editor.js</code> ／ <code>fixed-cam-streamer</code>: <code>FrameRecorder.kt</code>・<code>HttpServer.kt</code>・<code>ThermalPolicy.kt</code>
+  </p>
+</div>
