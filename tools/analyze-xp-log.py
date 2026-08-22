@@ -664,6 +664,60 @@ def analyze(events, others, exp, warns=None):
         else:
             w(f"  ✅ {tid}: 尺 {dur:.1f}s / 滞在 {stay:.1f}s（余裕 {-over:.1f}s）")
 
+    # ---------------- 動画カットの停滞 ----------------
+    # カットの尺は発火時刻から数える（TakeRunnerLogic.StepEndTime）ので、動画の
+    # ダウンロード + Prepare にかかった時間はそのまま「画に出ない時間」になる。
+    # ev=step played=1 は「画面を取った」しか言わないので、ここでしか観測できない。
+    # 短いカットを連続で差し替える演出（2 周目 C の接近）はこれで成否が決まる。
+    clips = [e for e in events if e.get("ev") == "clip"]
+    # 著作された動画カットの最短尺（この値を停滞が食い切ると画が前のカットのまま残る）。
+    clip_durs = [float(s.get("durSec") or 0) for t in exp["takes"] for s in t["steps"]
+                 if s.get("source") in ("clip", "plate") and float(s.get("durSec") or 0) > 0]
+    if clips or clip_durs:
+        w("## 動画カットの停滞（発火 → 画に出るまで）")
+        if not clips:
+            if clip_durs:
+                w("  ⚠ 観測していないビルドのログ（ev=clip が無い）")
+                verdict("WARN", "動画カットの停滞を観測していないビルド"
+                                "（ev=clip キーが無い）— 連続カットの成否が判定できない")
+        else:
+            # ⚠ ev=clip の dl / prep / tot は **ミリ秒**、著作の durSec は **秒**。
+            #    混ぜると割合が 1000 倍になる（実際に 56000% と出した）。比較は秒に揃える。
+            tot_ms = sorted(fnum(e, "tot", 0) or 0 for e in clips)
+            worst = max(clips, key=lambda e: fnum(e, "tot", 0) or 0)
+            med_ms = tot_ms[len(tot_ms) // 2]
+            max_ms = max(tot_ms)
+            cached = sum(1 for e in clips if (fnum(e, "cache", 0) or 0) >= 1)
+            w(f"  観測 {len(clips)} 回 / 中央値 {med_ms:.0f}ms / 最大 {max_ms:.0f}ms"
+              f"（{worst.get('id')} — 落とす {fnum(worst, 'dl', 0):.0f}ms"
+              f" + 用意 {fnum(worst, 'prep', 0):.0f}ms）/ キャッシュ済み {cached}/{len(clips)}")
+            # 用意（Prepare）はファイルサイズによらずほぼ一定で、先読みでも消えない下限。
+            prep_ms = sorted(fnum(e, "prep", 0) or 0 for e in clips)
+            w(f"  用意だけで 中央値 {prep_ms[len(prep_ms) // 2]:.0f}ms / 最大 {max(prep_ms):.0f}ms"
+              f" — 素材を先に落としても、ここは残る")
+            if clip_durs:
+                shortest = min(clip_durs)
+                # 最短のカットに対して停滞が何割を食うか。1.0 を超えると画は 1 フレームも出ない。
+                eaten = (max_ms / 1000.0) / shortest if shortest > 0 else 0
+                w(f"  著作の最短カット {shortest:.2f}s に対し、最大の停滞は {eaten * 100:.0f}%")
+                if eaten >= 1.0:
+                    verdict("FAIL", f"動画カットの停滞（最大 {max_ms:.0f}ms）が"
+                                    f"最短カット {shortest:.2f}s を食い切る"
+                                    f" — そのカットは画に 1 フレームも出ない")
+                elif eaten >= 0.3:
+                    verdict("WARN", f"動画カットの停滞（最大 {max_ms:.0f}ms）が"
+                                    f"最短カット {shortest:.2f}s の {eaten * 100:.0f}% を食う"
+                                    f" — 著作した尺より短く見える")
+                else:
+                    verdict("OK", f"動画カットの停滞は最短カットの {eaten * 100:.0f}%"
+                                  f"（最大 {max_ms:.0f}ms / {shortest:.2f}s）")
+            # 初回だけ落として以後キャッシュに当たるなら、当日の 1 本目だけが遅い。
+            first_dl = [fnum(e, "dl", 0) or 0 for e in clips if (fnum(e, "cache", 0) or 0) < 1]
+            if first_dl and max(first_dl) > 300:
+                w(f"  ⚠ 初回のダウンロードが最大 {max(first_dl):.0f}ms"
+                  f" — 素材を先に落としておかないと 1 回目のカットだけ停滞する")
+        w()
+
     drops = [ln for tag, ln in others if tag == "TakeRunner" and ("出ないまま" in ln or "drop" in ln.lower())]
     if drops:
         w()

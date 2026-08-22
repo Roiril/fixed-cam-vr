@@ -146,7 +146,8 @@ pre code { background: none; padding: 0; }
   <p class="sub">2 周目 B・C「偽ライブ ⇄ 人形視点」の素材 6 本を、当日焦らずミスらず撮って反映する環境 ／ 2026-08-22 ／ 設計のみ・実装は未着手</p>
 
   <div class="lead">
-    <p>柱は 3 本。<strong>①録画を配信アプリの端末内録画へ一本化</strong>（streamer v0.10.0）、<strong>②卓に撮影コンソール</strong>（1 ショットずつ誘導 → 自動回収 → 頭だけ試写 → 採用）、<strong>③検査を本番前チェックへ機械化</strong>。ただしその前に <strong>P0: 8 カットの連続再生が実機で成立するかを、コードを書かずに測る</strong>。8/22 の走行は素材未設定でカットが飛ばされた状態であり、0.5〜1.2 秒刻みの連続 Prepare は一度も実機を通っていない。ここが崩れると素材の形式ごと変わるので、入れ物より先に測る。</p>
+    <p><strong>P0（8 カットの連続再生が実機で成立するか）は測り終えた — 成立する。</strong> 8 カットすべてが著作どおりの間隔で走り、画も毎カット切り替わっていた。停滞（発火してから画に出るまで）は素材の先読みを実装して <strong>最大 280ms → 166ms</strong>（最短カット 0.5 秒の 56% → 33%）。素材は <strong>mp4 のままでよい</strong>。<br>
+    残る柱は 3 本。<strong>①録画を配信アプリの端末内録画へ一本化</strong>（streamer v0.10.0）、<strong>②卓に撮影コンソール</strong>（1 ショットずつ誘導 → 自動回収 → 頭だけ試写 → 採用）、<strong>③検査を本番前チェックへ機械化</strong>。</p>
   </div>
 
   <h2>1. 対象と、いまの手順で事故が起きる場所</h2>
@@ -174,9 +175,35 @@ pre code { background: none; padding: 0; }
     <tr><td>変換（<code>to-mp4.py</code>）が手動 CLI</td><td>飛ばすと当日「動画のカットだけ出ない」で詰む</td></tr>
   </table></div>
 
-  <h2>2. P0 — 先に測る: 8 カットの連続再生は実機で成立するか</h2>
+  <h2>2. P0 — 測った: 8 カットの連続再生は実機で成立する <span class="chip hot">実測済み</span></h2>
 
-  <p>設計検討（design-critic）で最初に立った指摘で、コード照合の結果も一致した。<em>この演出の再生自体がまだ実機を通っていない</em>。</p>
+  <p>設計検討で最初に立った指摘は「この演出の再生自体がまだ実機を通っていない」。testassets の動画を 6 つの cue へ仮当てして走らせ、計装（<code>ev=clip</code>）を足して測った。</p>
+
+  <h3>結果</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th></th><th>落とす</th><th>用意（Prepare）</th><th>合計</th><th>最短カット 0.5s の</th></tr>
+    <tr><td>先読みなし</td><td>0〜152ms</td><td>128〜167ms</td><td>最大 <strong>280ms</strong></td><td><strong>56%</strong></td></tr>
+    <tr><td><strong>先読みあり</strong>（実装済み）</td><td><strong>0ms</strong>（9/9 キャッシュ）</td><td>120〜166ms</td><td>最大 <strong>166ms</strong></td><td><strong>33%</strong></td></tr>
+  </table></div>
+
+  <ul>
+    <li><strong>8 カットすべて <code>played=1</code></strong>。間隔は 1.21 / 0.71 / 1.00 / 0.71 / 0.81 / 0.61 / 0.51 / 1.20 秒で<strong>著作値と一致</strong></li>
+    <li><strong>画も毎カット切り替わっていた</strong>（録画から切り出して確認）。偽ライブの trim も設計どおり進み、C の再生位置が 0.5 → 2.0 → 2.3 → 3.6 → 3.9 秒と動いていた</li>
+    <li>残る停滞は <strong>Prepare の 135ms 前後</strong>。<code>_player.Stop()</code> → url 代入 → <code>Prepare()</code> を毎カット通るためで、<em>同じファイルでも短絡しない</em>。消すには VideoPlayer を 2 本持って次カットを先行 Prepare するしかない（未実装・実機で人が見て要否を判断する）</li>
+  </ul>
+
+  <h3>実装したもの（この判断のために入れた）</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>何</th><th>どこ</th></tr>
+    <tr><td>停滞の計装（<code>ev=clip id= dl= prep= tot= cache=</code>）</td><td><code>ScreenOverlayController.ClipLatency</code> → <code>ShowTelemetryHost</code> → <code>analyze-xp-log.py</code>「## 動画カットの停滞」</td></tr>
+    <tr><td>動画素材の先読み</td><td><code>ScreenOverlayController.PrefetchVideo</code> ← <code>ShowControlClient.PrefetchTimelineClips</code>（無人プレートの先読みと同じ立ち位置）</td></tr>
+  </table></div>
+
+  <p><code>ev=step played=1</code> は「画面を取った」しか言わないので、停滞は <code>ev=clip</code> にしか出ない。<strong>本番素材は数 MB</strong> なので、先読みが無ければ落とす時間はテスト素材（24KB）よりさらに伸びていた。逆に、先読みが効いていれば素材の大きさは停滞に効かない。</p>
+
+  <h3>参考: 判断の分かれ道だったもの（いずれも不要になった）</h3>
 
   <ul>
     <li>クリップのカットは毎回 <code>_player.Stop()</code> → URL 代入 → <code>Prepare()</code> を通る。同じファイルでも短絡しない（<code>ScreenOverlayController.cs:283-295</code>）</li>
@@ -196,11 +223,11 @@ pre code { background: none; padding: 0; }
   <h3>結果による分岐</h3>
 
   <div class="tblwrap"><table>
-    <tr><th>結果</th><th>方式</th><th>この設計への影響</th></tr>
-    <tr><td>停滞が体感に出ない</td><td><strong>mp4 のまま</strong>（本命）</td><td>変更なし。以降のフェーズをそのまま進める</td></tr>
-    <tr><td>初回 DL / Prepare が尺を食う</td><td>Unity に<strong>先読み</strong>を足す — timeline が参照するクリップ cue を定義到着時に DL（プレートの先読みと同型）。足りなければ 2 本目の VideoPlayer で次カットを事前 Prepare</td><td>Unity 変更が 1 件入る（P4）。素材の形式は不変</td></tr>
-    <tr><td>それでも停滞する</td><td><strong>フレーム列</strong>（<code>OverlayCueData.frames</code> = <code>IFrameSequence</code>。周回録画と同じ経路・Prepare ゼロ）</td><td>納品物が mp4 から JPEG 列に変わる。採用時にサーバが分解する工程が増え、形式検査から H.264 の項が消える</td></tr>
-    <tr><td>（最後の手）</td><td>8 カットを<strong>1 本に焼く</strong></td><td>ショット単位の採用・撮り直しが崩れるので、上 3 つが全部駄目なときだけ</td></tr>
+    <tr><th>方式</th><th>判定</th></tr>
+    <tr><td><strong>mp4 ＋ 先読み</strong></td><td><strong>採用</strong>。停滞 166ms（最短カットの 33%）。素材の形式は mp4 のままでよく、撮影環境の設計はそのまま成立する</td></tr>
+    <tr><td>2 本目の VideoPlayer で次カットを先行 Prepare</td><td>保留。残り 135ms を消せるが実装が重い。<strong>実機で人が見て要否を決める</strong>（数値だけで判断しない）</td></tr>
+    <tr><td>フレーム列（<code>OverlayCueData.frames</code>・Prepare ゼロ）</td><td>不要。採用していれば納品物が mp4 から JPEG 列に変わり、採用時の分解工程が増えていた</td></tr>
+    <tr><td>8 カットを 1 本に焼く</td><td>不要。ショット単位の採用・撮り直しが崩れる最後の手だった</td></tr>
   </table></div>
 
   <h2>3. 録画は端末内録画へ一本化する</h2>
@@ -315,11 +342,11 @@ pre code { background: none; padding: 0; }
 
   <div class="tblwrap"><table>
     <tr><th>段</th><th>内容</th><th>検証</th></tr>
-    <tr><td><strong>P0</strong></td><td>8 カットの実機実測（§2。testassets 仮当て・コード変更ほぼゼロ）</td><td><code>quest-record.py --walk</code> 1 回 ＋ ev / PNG。<strong>ここの結果が方式を確定する</strong></td></tr>
+    <tr><td><strong>P0</strong> <span class="chip">完了</span></td><td>8 カットの実機実測 ＋ 停滞の計装 ＋ 素材の先読み（§2）</td><td>走行 2 回で実測。テスト 1607/1607。<strong>mp4 のままで成立と確定</strong></td></tr>
     <tr><td>P1</td><td>streamer v0.10.0（§4）</td><td>JVM テスト ＋ 実機 1 台で start → list → file の一連</td></tr>
     <tr><td>P2</td><td><code>shoot.html</code> ＋ サーバ API（pull / adopt / manifest）＋ <code>shoot-model.js</code></td><td>node テスト ＋ サーバは既存 <code>test_*.py</code> の流儀。通しは「撮る → 採用 → ▶ 検証」</td></tr>
     <tr><td>P3</td><td>本番前チェック「接近の素材」行（§6）＋ checklist §0 書き換え</td><td>チェック行の判定を <code>shoot-model.js</code> に置き node テストで固定</td></tr>
-    <tr><td class="muted">P4</td><td class="muted">P0 の結果が要求したときだけ: Unity のクリップ先読み等（§2 の分岐）</td><td class="muted">EditMode テスト ＋ walk 再測</td></tr>
+    <tr><td class="muted">P4</td><td class="muted">保留: 2 本目の VideoPlayer で次カットを先行 Prepare（残り 135ms を消す）</td><td class="muted">実機で人が見て要否を決めてから</td></tr>
   </table></div>
 
   <h2>10. やらないこと</h2>
@@ -330,7 +357,7 @@ pre code { background: none; padding: 0; }
     <li>頭ループ試写への本番画質トグル — ▶ 検証と重複</li>
     <li>明るさ差の検査 — 熱段の検査（§6 ④）が先に効く。保留</li>
     <li>目の視界ジャック（当日写真）の統合 — 台帳の形は将来載せられるようにしておくが、範囲外</li>
-    <li>Unity の変更 — P0 が要求したときだけ（P4）</li>
+    <li>Unity のこれ以上の変更 — 先読みまでで停滞は 33% に収まった。残り 135ms（Prepare）を消す二重 VideoPlayer は、実機で人が見て必要と判断したときだけ</li>
   </ul>
 
   <p>著作判断として残るのは 1 つ: <strong>POV を監視カメラと同じ粗さで出すか</strong>（端末内録画に一本化すると自動でそちらへ倒れる）。<code>canon/OPEN.md</code> に案として置いた。既定は「同じ粗さ」で、コンソールは外部ファイルの取り込み口を残すのでいつでも覆せる。</p>

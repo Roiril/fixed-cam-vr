@@ -108,7 +108,7 @@ namespace FixedCamVr.Diagnostics
         private TakeRunner? _takes;
 
         // --- 購読状態（多重購読を防ぐ）---
-        private bool _subSwitch, _subRun, _subCues, _subRegistry, _subTakes, _subRec;
+        private bool _subSwitch, _subRun, _subCues, _subRegistry, _subTakes, _subRec, _subClip;
 
         // --- 遷移検出のための前回値 ---
         private IntroStage _lastStage = IntroStage.Off;
@@ -244,6 +244,11 @@ namespace FixedCamVr.Diagnostics
                 _takes.StepResolved += OnStepResolved;
                 _subTakes = true;
             }
+            if (!_subClip && _overlay != null)
+            {
+                _overlay.ClipLatency += OnClipLatency;
+                _subClip = true;
+            }
             if (!_subSwitch && _switch != null)
             {
                 _switch.ZoneCommitted += OnZoneCommitted;
@@ -287,6 +292,8 @@ namespace FixedCamVr.Diagnostics
             if (_subCues && _cues != null) _cues.CameraEntered -= OnCameraEntered;
             if (_subRegistry && _registry != null) _registry.ActiveChanged -= OnActiveChanged;
             if (_subTakes && _takes != null) _takes.StepResolved -= OnStepResolved;
+            if (_subClip && _overlay != null) _overlay.ClipLatency -= OnClipLatency;
+            _subClip = false;
             if (_subRec && _recorder != null)
             {
                 _recorder.SegmentOpened -= OnRecSegmentOpened;
@@ -331,6 +338,18 @@ namespace FixedCamVr.Diagnostics
                                     bool played, string why)
             => Emit($"ev=step take={(string.IsNullOrEmpty(takeId) ? "?" : takeId)} i={stepIndex} " +
                     $"src={source} cam={camera} played={(played ? 1 : 0)} why={why}");
+
+        /// <summary>
+        /// 動画カットが発火してから画に出るまでの内訳。<b>短いカットを連続で差し替える演出の要</b>。
+        ///
+        /// カットの尺は発火時刻から数える（<c>TakeRunnerLogic.StepEndTime</c>）ので、ここが尺に
+        /// 近づくとその分だけ画に出る時間が減る。<c>ev=step played=1</c> は「画面を取った」しか
+        /// 言わないので、停滞はこのイベントでしか観測できない。
+        /// </summary>
+        private void OnClipLatency(string cueId, float dlSec, float prepSec, bool cached)
+            => Emit($"ev=clip id={(string.IsNullOrEmpty(cueId) ? "?" : cueId)} " +
+                    $"dl={dlSec * 1000f:F0} prep={prepSec * 1000f:F0} " +
+                    $"tot={(dlSec + prepSec) * 1000f:F0} cache={(cached ? 1 : 0)}");
 
         // ---------------------------------------------------------------- 効果の実在（読み取りだけ）
 

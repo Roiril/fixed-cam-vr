@@ -71,6 +71,16 @@ namespace FixedCamVr.Streaming
         private readonly Dictionary<string, Texture2D> _urlTextureCache = new();
         // 動画 URL → DL 済みローカル mp4 パスのキャッシュ。
         private readonly Dictionary<string, string> _videoFileCache = new();
+        // 先読み中の URL（同じ素材を 2 回落としに行かないための門）。
+        private readonly HashSet<string> _prefetching = new();
+
+        // 動画カットが「発火してから画に出るまで」の内訳。カットの尺は発火時刻から数える
+        // （TakeRunnerLogic.StepEndTime）ので、ここが伸びた分だけ画に出る時間が減る。
+        // 0.5〜1.2 秒刻みで差し替える演出（2 周目 C の接近）ではそれが体験に直接出る。
+        private float _clipFireAt;
+        private float _clipDlSec;
+        private bool _clipCached;
+        private string _clipCueId = "";
         // 世代（stale ロード/Prepare 破棄）+ 動画 Prepare ライフサイクル（保留/タイムアウト/受理/エラー中止）の純判定。
         // PlayCue が非同期ロードを挟む間に次の PlayCue が来たら古い方を破棄する。動画 cue の Prepare 失敗経路
         // （errorReceived / タイムアウト）で _current を解放し、CameraSwitchDirector が cueActive=true のまま
@@ -89,6 +99,15 @@ namespace FixedCamVr.Streaming
 
         /// <summary>スクリーンの material を掴めているか。false なら合成は 1 画素も効かない。</summary>
         public bool HasMaterial => _material != null;
+
+        /// <summary>
+        /// 動画カットが画に出るまでの内訳（cue id / ダウンロード秒 / Prepare 秒 / キャッシュ済みか）。
+        ///
+        /// <b>カットの尺は発火時刻から数える</b>ので、ここが伸びるとその分だけ画に出る時間が減る。
+        /// 短いカットを連続で差し替える演出では、これが尺を食い切って
+        /// 「著作した秒数は流れているのに画は前のカットのまま」になりうる。
+        /// </summary>
+        public event Action<string, float, float, bool>? ClipLatency;
 
 
         // フレーム列ソースの再生開始時刻（Time.time）。
@@ -201,6 +220,11 @@ namespace FixedCamVr.Streaming
         public int PlayCue(OverlayCueData data)
         {
             if (_material == null || _player == null) return -1;
+            // 発火時刻はここで取る（マスクや素材のロードもカットの尺を食うので、動画分岐の中では遅い）。
+            _clipFireAt = Time.realtimeSinceStartup;
+            _clipDlSec = 0f;
+            _clipCached = false;
+            _clipCueId = string.IsNullOrEmpty(data.id) ? (data.displayName ?? "?") : data.id;
             int gen = _logic.BeginPlay();
             _ = RunPlayCueAsync(data, gen, destroyCancellationToken);
             return gen;
@@ -285,7 +309,10 @@ namespace FixedCamVr.Streaming
                     // Android ネイティブ VideoPlayer は Python http.server(HTTP/1.0) からの
                     // HTTP ストリーミングを扱えず NuCachedSource2 error -1 で落ちる。
                     // UnityWebRequest（=画像で実証済みのスタック）でローカルに DL してから再生する。
+                    float dlStart = Time.realtimeSinceStartup;
+                    _clipCached = _videoFileCache.ContainsKey(data.sourceUrl);
                     string localUrl = await GetLocalVideoUrlAsync(data.sourceUrl, ct);
+                    _clipDlSec = Time.realtimeSinceStartup - dlStart;
                     if (gen != _logic.Generation || ct.IsCancellationRequested) return;
                     _player.source = VideoSource.Url;
                     _player.url = localUrl;
@@ -468,6 +495,32 @@ namespace FixedCamVr.Streaming
             if (_feelFx == null) _feelFx = FindObjectOfType<CameraFeelFx>();
         }
 
+        /// <summary>
+        /// 動画素材を先にローカルへ落としておく（fire-and-forget・失敗しても何も起きない）。
+        ///
+        /// <b>カットの尺は発火時刻から数える</b>ので、発火してからダウンロードすると
+        /// その分だけ画に出る時間が減る。実測（2026-08-22・testassets 24KB）で
+        /// 落とすのに 32〜152ms かかり、0.5 秒のカットでは無視できない
+        /// （本番素材は数 MB なのでさらに伸びる）。無人プレートの先読みと同型。
+        ///
+        /// ⚠ 用意（Prepare・実測 145ms）はここでは消えない。消せるのはダウンロードだけ。
+        /// </summary>
+        public void PrefetchVideo(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return;
+            if (_videoFileCache.ContainsKey(url)) return;   // 既に落としてある
+            if (!_prefetching.Add(url)) return;             // 進行中（同じ素材を 2 回落とさない）
+            _ = PrefetchVideoAsync(url, destroyCancellationToken);
+        }
+
+        private async Task PrefetchVideoAsync(string url, CancellationToken ct)
+        {
+            try { await GetLocalVideoUrlAsync(url, ct); }
+            catch (OperationCanceledException) { }
+            catch (Exception e) { Debug.LogWarning($"[ScreenOverlay] 動画の先読みに失敗: {url} ({e.Message})"); }
+            finally { _prefetching.Remove(url); }
+        }
+
         // 動画 URL をローカルへ DL して file:// パスを返す（Android ネイティブ HTTP ストリーミング回避）。
         // 同一 URL はキャッシュして再 DL しない。失敗時は元 URL を返してストリーミングへ fallback。
         private async Task<string> GetLocalVideoUrlAsync(string url, CancellationToken ct)
@@ -590,6 +643,13 @@ namespace FixedCamVr.Streaming
         {
             // stale な Prepare 完了（準備中に別 cue へ切り替え済み）は現行 cue を乗っ取らない。
             if (!_logic.AcceptPrepared()) return;
+            // 発火 → 画に出るまでの内訳を 1 回だけ出す（連続カットの停滞を測る唯一の手段）。
+            if (!string.IsNullOrEmpty(_clipCueId))
+            {
+                float total = Time.realtimeSinceStartup - _clipFireAt;
+                ClipLatency?.Invoke(_clipCueId, _clipDlSec, Mathf.Max(0f, total - _clipDlSec), _clipCached);
+                _clipCueId = "";
+            }
             var cue = _current;
             if (cue == null || _material == null) return;
 

@@ -2284,6 +2284,38 @@ namespace FixedCamVr.Streaming
             // cue の定義が変わるたびに、入れ替わり用の無人プレートも先読みし直す
             // （URL は ScreenOverlayController がキャッシュするので、同じ素材なら 2 回目は無料）。
             RefreshSwapPlates();
+            PrefetchTimelineClips();
+        }
+
+        /// <summary>
+        /// 台本が参照する動画素材を先に落としておく。
+        ///
+        /// <b>カットの尺は発火時刻から数える</b>ので、発火してから落とすとその分だけ画に出る時間が減る。
+        /// 実測（2026-08-22・testassets 24KB）で発火 → 画まで最大 280ms、うち落とすのに 152ms。
+        /// 0.5〜1.2 秒刻みで差し替える演出（2 周目 C の接近）では体験に直接出るし、
+        /// 本番素材は数 MB なのでさらに伸びる。無人プレートの先読みと同じ立ち位置。
+        ///
+        /// ⚠ 消えるのは落とす時間だけ。用意（Prepare・実測 145ms）は発火時に必ず掛かる。
+        /// </summary>
+        private void PrefetchTimelineClips()
+        {
+            if (_overlay == null || _timeline?.segments == null) return;
+            foreach (ShowTimelineSegmentDef seg in _timeline.segments)
+            {
+                if (seg?.takes == null) continue;
+                foreach (ShowTakeDef take in seg.takes)
+                {
+                    if (take?.steps == null) continue;
+                    foreach (ShowStepDef step in take.steps)
+                    {
+                        if (step == null || string.IsNullOrEmpty(step.cueId)) continue;
+                        OverlayCueData? cue = ResolveCue(step.cueId);
+                        // 動画だけが対象（静止画は LoadStillCachedAsync 側のキャッシュに乗る）。
+                        if (cue != null && cue.SourceIsVideo && !string.IsNullOrEmpty(cue.sourceUrl))
+                            _overlay.PrefetchVideo(cue.sourceUrl);
+                    }
+                }
+            }
         }
 
         // 直近で警告した内容（同じ設定で毎回吠えない）。
