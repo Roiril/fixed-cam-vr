@@ -4,7 +4,8 @@
 // 流れ: ショットを選ぶ → ⏺（端末が自動停止）→ 卓が新テイクを回収 → 頭の窓だけ試写 → 採用。
 
 import {
-  SHOTS, shotName, shotStatus, neededHeadSec, cutCount, headWindow, adoptName,
+  SHOTS, loadShots, shotName, shotStatus, neededHeadSec, cutCount, headWindow, adoptName,
+  countdownSecOf,
 } from './shoot-model.js';
 
 const $ = (s) => document.querySelector(s);
@@ -19,7 +20,7 @@ let state = null;          // show.json
 let devices = [];          // /shoot/devices
 let takes = { device: [], local: [] };
 let manifest = {};
-let cur = SHOTS[0];        // 選択中のショット
+let cur = null;            // 選択中のショット（shots.json 読み込み後に入る）
 let curTake = null;        // 試写しているテイク
 
 const segments = () => (state && state.timeline && state.timeline.segments) || [];
@@ -102,7 +103,7 @@ function selectShot() {
   $('#shotTitle').textContent = cur.label;
   $('#shotHint').innerHTML = cur.hint.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   $('#maxSec').value = cur.recSec;
-  $('#countSec').value = cur.dev === 'pov' ? 3 : 0;   // 手持ちだけ構える時間が要る
+  $('#countSec').value = countdownSecOf(cur);
   syncDevSelect();
   renderShotList();
   renderState();
@@ -326,6 +327,9 @@ async function loadState() {
 }
 
 (async () => {
+  // ⚠ ショット定義が先。これが無いと一覧も指示文も空のまま「撮るものが無い」に見える。
+  await loadShots();
+  cur = SHOTS[0];
   await loadState();
   await loadDevices();
   await refreshTakes();

@@ -53,7 +53,66 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 | `GET /health` | `{uptimeMs, totalFrames, totalBytes, fps, sentFrames, latestFrameAgeMs, clientCount, eisMode, oisMode, afMode, cropRatio, zoomRatio, aeState, aeLock, awbLock, expUs, iso, flicker}`（v0.5.0〜 後半は CaptureResult 直読みの実効値 = 決定性の観測用）+ `{thermalStatus, thermalHeadroom, throttleStage, encodeIdle, batteryTempC, plugged}`（v0.7.0〜 発熱抑制の観測。**⚠ clientCount=0 のとき fps=0・totalFrames 静止は需要駆動 encode 停止の正常動作**。throttleStage 1/2 は熱スロットル中＝fps/画質が自動降下している） | 任意。`CameraStream.RefreshHealthAsync()` で都度取得（HudDump からのモニタ用）。`sentFrames` と `totalFrames` の差分が広がる時は HTTP ワーカ詰まり（**⚠ sentFrames はクライアント接続ごとに加算される** — Quest + web 卓 /cam プロキシ等の多クライアント時は sent ≈ 接続数×totalFrames が正常。単一クライアント前提でしか差分ヒューリスティックを使わない）。`latestFrameAgeMs` が大きい時はカメラ stall |
 | `GET /` | 簡易ステータス HTML | ブラウザ確認用 |
 
+| `GET /record/start?shot=&maxSec=&countdownSec=` ほか | 端末内録画（v0.10.0〜）。`/record/stop` `/record/status` `/record/list` `/record/file` `/record/delete` | 卓（`tools/web-compositor`）だけが使う。Unity は触らない |
+
 リポジトリ: [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)（private）。APK ビルド・インストール手順はそちらの README 参照。
+
+## 配信アプリの画面 — 据える人・撮る人の仕事は端末に置く（v0.13.0・2026-08-23）
+
+**役割で機能の置き場を決める。** 三脚に据える人も、人形視点を撮る人も、見ているのは
+スマホの画面であって卓ではない。それまで「据える」の補助は何も無く、「撮る」は卓からの
+遠隔操作だけだった（＝撮る人が卓まで歩くか、卓の人に口で頼む形）。
+
+### 据える — 補助線と鏡合わせ
+
+| 出るもの | 中身 | 既定 |
+|---|---|---|
+| **鏡の軸** | 配信画像の**横中央**に縦線 | **カメラ A だけ ON** |
+| **水平** | 縦中央に横線 ＋ 傾きが 1° 以内かで色が変わる | カメラ A だけ ON |
+| **三分割** | 3×3 | 手動 |
+| **🪞 鏡で確かめる** | 左半分を**右半分の鏡像**に置き換えて出す。継ぎ目が消える所が左右対称。ずれを数値でも出す | 手動 |
+
+⚠⚠ **鏡の軸は「配信画像の横中央」であって `splitX` ではない。** 受け側は枠 UV の 0.5 で
+反転する（`ScreenComposite.shader` の `uvSrc.x = 1.0 - uvSrc.x`）ので、分割位置を動かしても
+軸は動かない（動くのは「どちらの半分に出るか」だけ）。同じ注意が
+[`line-mirror.js`](../../tools/web-compositor/line-mirror.js) の冒頭にもある。
+
+- **なぜ鏡合わせが要るか**: 「カメラ A を左右対称に据える」を目で測るのは難しく、壁の縁が
+  数 cm ずれても気づけない。本番と同じことをその場でやれば、判断が「対称かを測る」から
+  「継ぎ目が見えるか」に変わる（`canon/LEDGER.md` 0050 — A は L 字経路の手前で唯一環境が左右対称）
+- **なぜ端末が持つか**: これは台本の事実で、**卓が落ちていても据えられる**必要がある。
+  だから `GuideSpec.kt` に持ち、卓からは配らない
+- ⚠ 鏡合わせは配信されている JPEG を読むので、**需要駆動 encode の需要として数える**
+  （`DemandPolicy.hasDemand(..., localPreview)`）。数えないと encode が止まって画が固まり、
+  しかも「カメラが壊れた」の顔で出る
+- ⚠ **cameraId を付け替えたら補助線の選択は既定へ戻る。** A で出した鏡の軸が C の端末に残ると、
+  「合わせるべき目標」に見える線が、合わせてはいけない場所に出たままになる
+
+### 撮る — 撮影パネル（🎬）
+
+卓が配る指示を読み、その場で撮り、尺を確かめ、卓へ渡すまでを端末で終える。
+
+| 端末 → 卓 | 何 |
+|---|---|
+| `GET /shoot/plan?cam=<id>` | 今日撮るもの（指示文・尺・**画に出るのは頭 N 秒**・採用状況 ✅⚠—） |
+| `POST /shoot/collect` | 撮ったテイクを卓へ。回収 → 検分 →（`adopt` なら）採用まで 1 往復 |
+
+- **何を撮るかは卓が正**（`shots.json` ＋ show.json の timeline から導出）。端末に写しを持たせると、
+  著作を直した日に手元の指示だけが古いまま残り、現場では「撮ったのに実機で出ない」としてしか現れない
+- **録画中に「あと N 秒」を出す。** 要求尺に届いたかを**撮っている最中に**言う（止めてから短かったと
+  分かる形にしない）。送った後は卓が測った実測で「⚠ 尺が足りない（要求 1.4 秒 / 撮れた 1.0 秒）」
+- **卓が居なくても撮れる。** ファイルは端末に残り、後から送れる
+
+### 卓の在り処は発見の announce から入る
+
+卓（`capture-server.py`）は 5 秒ごとに `fixedcam-discovery/1` の **show-server announce** を
+ブロードキャストしている。端末はそれを受けて送信元 IP ＋ `httpPort` を刻む
+（`DiscoveryProtocol.showServerPort` → `DeskAddress`）。**現場での設定作業も、卓の画面を
+開いておく必要も無い。** 形（IPv4 ＋ ポート）が通った値だけを使う — ブロードキャストは
+誰でも出せるので、パス・認証情報・他スキームは弾く。
+
+⚠ **配信アプリは v0.13.0 以上**（補助線・鏡合わせ・撮影パネル）。v0.12.0 以前は端末側に
+撮影の面が無く、当日は卓からの遠隔操作だけになる。
 
 ## MJPEG デコード
 

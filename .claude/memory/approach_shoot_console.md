@@ -8,6 +8,11 @@ metadata:
   modified: 2026-08-22T07:48:50.447Z
 ---
 
+⚠⚠ **2026-08-23 から、撮る面は配信スマホにもある**（streamer v0.13.0 の「🎬 撮影」）。
+撮るのはスマホを持っている人なので、指示・⏺・尺の確認・卓へ渡すはそちらが主経路。
+卓のこのコンソールは**頭の窓の試写と選び直し**に残る → [[streamer_operator_ui]]。
+下の罠（停滞・命名・採用・時計）は**両方の経路に効く**ので、そのまま読む。
+
 `canon/LEDGER.md` 0102 の接近を「当日ミスなく撮る」ための環境（2026-08-22）。
 設計書は [reports/2026-08-22_approach-shoot-console.html](../../reports/2026-08-22_approach-shoot-console.html)、
 契約は `rules/streaming.md`（動画素材の先読み）、卓の説明は
@@ -48,8 +53,10 @@ cue は庫に残してあるが take からは外してある。`shoot-model.tes
 
 ## 3. ショットの定義を cue に足すと、次の cue 保存で消える
 
-`cue-editor.js` の保存はフィールドの白名簿でオブジェクトを組み直す。だから
-`shoot-model.js`（コード）に持つ。**要求尺だけは timeline から導出**するので著作に追従する。
+`cue-editor.js` の保存はフィールドの白名簿でオブジェクトを組み直す。だから cue に足さない。
+**置き場は `tools/web-compositor/shots.json`**（2026-08-23 に `shoot-model.js` の定数から出した。
+読む相手がブラウザ・卓のサーバ・配信スマホの 3 つになったため）。
+**要求尺だけは timeline から導出**するので著作に追従する。
 
 ## 4. 採用ファイル名を毎回一意にしないと「撮り直したのに変わらない」
 
@@ -83,7 +90,7 @@ Quest は URL → ローカル DL のキャッシュを持つ（`ScreenOverlayCo
 （ブラウザは Happy Eyeballs で並行試行するので出ない）。
 サーバ側を疑う前にここを見る — 2026-08-22 に「録画中のポーリングが遅い」と誤診しかけた。
 
-## 7. streamer は v0.10.0 が要る。旧アプリは黙って失敗しない
+## 7. streamer は v0.10.0 が要る（撮影パネルは v0.13.0）。旧アプリは黙って失敗しない
 
 `/record/start?shot=&maxSec=&countdownSec=` と `/record/list` `/record/file` `/record/delete` は
 v0.10.0 で追加。v0.9.0 は `shot=` を**無視して録画だけ始める**ので、

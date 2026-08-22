@@ -5,10 +5,19 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   SHOTS, SHORT_MARGIN_SEC, shotName, neededHeadSec, cutCount, shotStatus,
   allShotStatus, isFromToday, approachPrecheck, adoptName, headWindow,
+  setShots, shotsLoaded, countdownSecOf,
 } from './shoot-model.js';
+
+// ショット定義は shots.json が正（卓のサーバ・配信スマホも同じファイルを読む）。
+// ブラウザは fetch、ここは fs。**同じ実体を食わせる**ことが要点で、定義を写さない。
+const SHOTS_JSON = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./shots.json', import.meta.url)), 'utf-8'));
+setShots(SHOTS_JSON.shots);
 
 // 2 周目 C の著作を模した segments（0104: 人形視点だけの飛び飛び → ライブ + 黒マスク）。
 const segments = () => [{
@@ -215,4 +224,50 @@ test('headWindow: 頭の窓は in-point から要求尺ぶん', () => {
   assert.deepStrictEqual(headWindow(0.7, 0.3), { start: 0.3, end: 1.0 });
   // 要求が無い（今の著作では使わない）ときも試写はできる。
   assert.deepStrictEqual(headWindow(null, 0), { start: 0, end: 2 });
+});
+
+
+// ---- shots.json（3 者が読む単一の正）--------------------------------------
+test('読み込む前の判定は ❌「読めていない」（空を「使っていない」と混同しない）', async () => {
+  // ⚠ 同じモジュールは 1 度しか初期化されないので、**未読込の状態を作るには読み直す**。
+  //   ここを「setShots([]) で空にする」で代用すると、検査したい経路（shotsReady=false）を
+  //   1 行も通らない。
+  const fresh = await import('./shoot-model.js?unloaded=1');
+  assert.equal(fresh.shotsLoaded(), false);
+  const row = fresh.approachPrecheck({ state: cues(), segments: segments() });
+  assert.equal(row.s, 'ng');
+  assert.match(row.detail, /shots\.json/);
+  // 読み込んだ側は従来どおり答える（相互に汚さない）。
+  assert.equal(shotsLoaded(), true);
+});
+
+test('shots.json の各ショットが必須の欄を持つ', () => {
+  assert.ok(SHOTS.length >= 1);
+  for (const s of SHOTS) {
+    assert.match(s.cueId, /^[A-Za-z0-9_-]+$/, `cueId は streamer の shot= に渡す（安全な文字だけ）: ${s.cueId}`);
+    assert.ok(s.label && s.hint, `${s.cueId} に label / hint が要る（スマホの撮影指示に出る）`);
+    assert.ok(s.recSec > 0, `${s.cueId} の recSec`);
+    assert.ok(['pov', 'cam'].includes(s.dev), `${s.cueId} の dev`);
+  }
+});
+
+test('countdownSecOf は定義値 → 手持ちの既定 3 → 据置き 0', () => {
+  assert.equal(countdownSecOf({ dev: 'pov', countdownSec: 5 }), 5);
+  assert.equal(countdownSecOf({ dev: 'pov' }), 3);
+  assert.equal(countdownSecOf({ dev: 'cam' }), 0);
+});
+
+
+// ---- 移植の一致（node / Python が同じ答えを出す）-----------------------------
+// 卓のサーバ（capture-server.py）が同じ式を持つ。**同じフィクスチャを両方が食う**ので、
+// 片方だけ直せばどちらかが落ちる。Python 側は test_shoot_plan.py。
+test('shoot-fixture.json の期待値と一致する（Python 移植との共通の物差し）', () => {
+  const fx = JSON.parse(
+    readFileSync(fileURLToPath(new URL('./shoot-fixture.json', import.meta.url)), 'utf-8'));
+  for (const [cueId, want] of Object.entries(fx.expect.neededHeadSec)) {
+    assert.equal(neededHeadSec(fx.segments, cueId), want, `neededHeadSec(${cueId})`);
+  }
+  for (const [cueId, want] of Object.entries(fx.expect.cutCount)) {
+    assert.equal(cutCount(fx.segments, cueId), want, `cutCount(${cueId})`);
+  }
 });

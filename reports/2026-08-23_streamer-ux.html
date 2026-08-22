@@ -1,0 +1,349 @@
+<title>配信アプリの据える・撮る</title>
+<style>
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;
+  --radius: 0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">廻リ視 · 設計</p>
+  <h1>配信アプリに「据える」と「撮る」を置く</h1>
+  <p class="sub">fixed-cam-streamer v0.13.0 ／ 2026-08-23 ／ <strong>実装・JVM テスト 142 件・APK ビルドまで完了。実機で触ってはいない</strong></p>
+
+  <div class="lead">
+    <p><strong>置き場を役割で決め直した。</strong> 三脚に据える人も、人形視点を撮る人も、見ているのはスマホの画面であって卓ではない。それなのに据える補助は 1 つも無く、撮る操作は卓からの遠隔だけだった。<br>
+    足したのは 2 つ。<strong>①補助線と鏡合わせ</strong>（カメラ A を左右対称に据えるための道具）、<strong>②撮影パネル</strong>（今日撮るもの・⏺・尺の確認・卓へ渡すが 1 画面）。卓の在り処は、卓が既に出しているブロードキャストから自動で入る。</p>
+  </div>
+
+  <h2>1. いまの形</h2>
+
+  <p>当日、配信スマホの前後で 3 人が別のことをしている。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>誰</th><th>何をする</th><th>何を見ていたか（改修前）</th></tr>
+    <tr><td>据える人</td><td>三脚に載せて A / B / C の位置と向きを決める</td><td>プレビューと傾きの数値だけ。<strong>構図の手掛かりは無い</strong></td></tr>
+    <tr><td>撮る人</td><td>人形視点 5 本を手持ちで撮る</td><td>プレビューだけ。<strong>指示も、撮れたかの判定も、卓にしか無い</strong></td></tr>
+    <tr><td>卓の人</td><td>採用・検分・本番前チェック</td><td>撮影コンソール（<code>shoot.html</code>）</td></tr>
+  </table></div>
+
+  <p>これで何が起きるか。</p>
+
+  <ul>
+    <li><strong>カメラ A は左右対称に据えないと 3 周目 A の演出が崩れる</strong>（<code>canon/LEDGER.md</code> 0050 — A は L 字経路の手前で唯一環境が左右対称）。それを確かめる手段が現場に無かった。<code>ROUNDS.md</code> の実測でも「カメラ A は対称軸の真上に無い」と書いてある</li>
+    <li><strong>撮る操作が卓専用</strong>。撮る人は卓まで歩くか、卓の人に口で頼む。撮れた尺が足りているかも、卓の画面を見に行かないと分からない</li>
+    <li>撮っている最中に「あと何秒必要か」を知る手段が無い。<strong>止めてから短かったと分かる</strong></li>
+  </ul>
+
+  <h2>2. 決めた線引き</h2>
+
+  <div class="grid">
+    <div class="card"><b>据える＝端末が正</b><span>「A は左右対称」は台本の事実。<strong>卓が落ちていても据えられる</strong>必要がある。だから端末のコードに持ち、卓からは配らない</span></div>
+    <div class="card"><b>撮る＝卓が正・面は端末</b><span>何を何秒撮るかはその日の台本で決まる。端末に写しを持たせると、台本を直した日に手元の指示だけが古くなる。<strong>指示は卓から配り、操作の面は端末に置く</strong></span></div>
+    <div class="card"><b>卓に残すもの</b><span>大きな画面が要る仕事だけ ——<strong>頭の窓の試写</strong>と選び直し。撮影コンソールはそこへ縮む</span></div>
+  </div>
+
+  <h2>3. 据える — 補助線と鏡合わせ</h2>
+
+  <h3>鏡の軸は「配信画像の横中央」</h3>
+
+  <p>3 周目 A は画面を縦に割り、<strong>左半分だけライブを左右反転して読む</strong>。反転は <code>ScreenComposite.shader</code> の <code>uvSrc.x = 1.0 - uvSrc.x</code> —— つまり枠 UV の <strong>0.5</strong> で、contain-fit は左右対称なので<strong>ソース画像の横中央</strong>が鏡の軸になる。</p>
+
+  <figure>
+    <svg viewBox="0 0 640 250" role="img" aria-label="配信画像の横中央が鏡の軸。左半分は右半分の鏡像として読まれる">
+      <g font-family="var(--gothic)" font-size="13">
+        <rect x="60" y="40" width="320" height="240" fill="none" stroke="currentColor" stroke-width="1.5" transform="translate(0,-30)"/>
+        <line x1="220" y1="10" x2="220" y2="250" stroke="var(--accent)" stroke-width="2"/>
+        <text x="220" y="238" text-anchor="middle" fill="var(--accent)" font-weight="700">鏡の軸 = 画像の横中央</text>
+        <text x="140" y="35" text-anchor="middle" fill="currentColor">左半分</text>
+        <text x="140" y="55" text-anchor="middle" fill="var(--mute)" font-size="11">右半分の鏡像として読まれる</text>
+        <text x="300" y="35" text-anchor="middle" fill="currentColor">右半分</text>
+        <text x="300" y="55" text-anchor="middle" fill="var(--mute)" font-size="11">そのまま</text>
+        <line x1="60" y1="200" x2="380" y2="200" stroke="var(--line)" stroke-width="1" stroke-dasharray="3 3"/>
+        <text x="60" y="218" fill="var(--mute)" font-size="11">配信画像 640×480</text>
+
+        <g transform="translate(420,0)">
+          <text x="0" y="35" fill="currentColor" font-weight="700">据えるとき</text>
+          <text x="0" y="62" fill="var(--mute)" font-size="12">環境の対称面を</text>
+          <text x="0" y="82" fill="var(--mute)" font-size="12">この軸に合わせる</text>
+          <text x="0" y="118" fill="currentColor" font-weight="700">確かめ方</text>
+          <text x="0" y="145" fill="var(--mute)" font-size="12">左半分を右半分の鏡像に</text>
+          <text x="0" y="165" fill="var(--mute)" font-size="12">置き換えて出す</text>
+          <text x="0" y="185" fill="var(--accent)" font-size="12" font-weight="700">継ぎ目が消えれば対称</text>
+        </g>
+      </g>
+    </svg>
+    <figcaption>⚠ 軸は <code>splitX</code> ではない。分割位置を動かしても軸は動かない（動くのは「どちらの半分に出るか」だけ）。同じ注意が <code>line-mirror.js</code> の冒頭にもある。</figcaption>
+  </figure>
+
+  <h3>出るもの</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>補助線</th><th>中身</th><th>既定</th></tr>
+    <tr><td><strong>鏡の軸</strong></td><td>配信画像の横中央に縦線</td><td><strong>cameraId が A のときだけ</strong></td></tr>
+    <tr><td><strong>水平</strong></td><td>縦中央に横線 ＋ 傾き ±1° 以内かで色が変わる（<code>TiltMath</code> の値）</td><td>同上</td></tr>
+    <tr><td>三分割</td><td>3×3</td><td>手動</td></tr>
+    <tr><td><strong>🪞 鏡で確かめる</strong></td><td>左半分を右半分の鏡像に置き換える ＋ ずれの数値</td><td>手動</td></tr>
+  </table></div>
+
+  <p>B・C で鏡の軸を既定にしないのは、<strong>合わせてはいけないから</strong>。あの 2 台は環境が左右対称ではないので、対称に据えるとかえって不自然になる。端末は cameraId ごとに一言添える（B・C は「左右反転はカメラ A だけ」）。</p>
+
+  <h3>なぜ鏡合わせなのか</h3>
+
+  <p>「左右対称に据わっているか」を目で測るのは難しい。壁の縁が数 cm ずれていても気づけない。そこで<strong>本番と同じことをその場でやる</strong>。左半分を右半分の鏡像に置き換えて出せば、判断が「対称かを測る」から<strong>「継ぎ目が見えるか」</strong>に変わる。</p>
+
+  <p>数値も添える。画像とその左右反転との平均絶対差（<code>MirrorMath.symmetryError</code>）で、<strong>小さいほど対称</strong>。⚠ 絶対値には意味が無い（照明と被写体で基準が動く）。使い方は「同じ場面で下がる向きへ動かす」だけで、閾値で合否は出さない。</p>
+
+  <h3>踏んだ穴 — 鏡合わせは「需要」だった</h3>
+
+  <div class="lead">
+    <p>鏡合わせは配信されている JPEG を横から読む。需要駆動 encode（<code>DemandPolicy</code>）が数えていたのは <code>/video</code> の接続と録画だけなので、<strong>誰も見ていない現場では encode が止まり、据えている最中に画が固まる</strong>。しかも症状は「カメラが壊れた」の顔で出る。</p>
+    <p><code>FrameDistributor.localPreview</code> を足して需要の第 3 項にした。⚠ <code>videoClients</code> を増やして済ませない —— あれは <code>/health</code> の <code>clientCount</code> として卓に出るので、<strong>「誰かが見ている」と嘘をつく</strong>ことになる。</p>
+  </div>
+
+  <h2>4. 撮る — 撮影パネル（🎬）</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>順</th><th>画面</th><th>要点</th></tr>
+    <tr><td>①</td><td>ショット一覧（✅ / ⚠ / —）</td><td>採用状況は卓が持っているものをそのまま出す</td></tr>
+    <tr><td>②</td><td>指示文と「<strong>画に出るのは頭 1.4 秒（2 カットで使う）</strong>」</td><td>要求秒は台本の timeline から機械導出。著作を変えれば追従する</td></tr>
+    <tr><td>③</td><td>⏺ 撮る（構えて 3・2・1 → 指定の尺で自動停止）</td><td>既存の端末内録画（v0.10.0）をそのまま使う</td></tr>
+    <tr><td>④</td><td><strong>録画中に「画に出る 1.4 秒まで あと 0.9 秒」</strong></td><td>止めてから短かったと分かる形にしない</td></tr>
+    <tr><td>⑤</td><td>撮れたもの（尺・送信済み・採用中・短い）</td><td>端末の実測は再起動しても残る（SharedPreferences）</td></tr>
+    <tr><td>⑥</td><td>「卓へ送って採用」</td><td>卓が測った実測が返る。足りなければ <strong>⚠ 尺が足りない（要求 1.4 秒 / 撮れた 1.0 秒）— 撮り直す</strong></td></tr>
+  </table></div>
+
+  <h3>端末 → 卓の 2 本</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>口</th><th>何</th></tr>
+    <tr><td><code>GET /shoot/plan?cam=&lt;id&gt;</code></td><td>今日撮るもの。<code>shots.json</code> ＋ show.json の timeline から卓が導く</td></tr>
+    <tr><td><code>POST /shoot/collect</code></td><td>撮ったテイクを卓へ。回収 → 検分 →（<code>adopt</code> なら）採用まで 1 往復</td></tr>
+  </table></div>
+
+  <ul>
+    <li><strong>端末は自分の IP を送らない。</strong> 卓は接続元アドレスから取りに来る。テザリングや複数 NIC では「端末が思っている自分の IP」と「卓から見えるアドレス」が食い違う</li>
+    <li>この口を足すために <code>_shoot_pull</code> / <code>_shoot_adopt</code> を<strong>中核（辞書を返す）とハンドラ（応答を書く）に割った</strong>。検分・一意名・台帳・頭送りの作法を 2 つに割らないため</li>
+    <li><strong>卓が居なくても撮れる。</strong> ファイルは端末に残り、後から送れる（画面上部に「卓が見つからない」と出る）</li>
+  </ul>
+
+  <h2>5. 卓の在り処は、既にブロードキャストされていた</h2>
+
+  <p>最初に考えたのは「卓 → 端末の HTTP リクエストに <code>X-Desk-Url</code> ヘッダを付ける」。やめた。それだと<strong>卓の画面を開いている間しか届かない</strong>（端末を叩くのは撮影コンソールのポーリングだから）。</p>
+
+  <p>卓は 5 秒ごとに <code>fixedcam-discovery/1</code> の <strong>show-server announce</strong> を出している（<code>capture-server.py</code> の <code>_disc_sender</code>）。端末はそれを拾って送信元 IP ＋ <code>httpPort</code> を刻むだけでよい。<strong>プロトコルの変更も、現場での設定作業も、卓の画面を開いておく必要も無い。</strong></p>
+
+  <p>⚠ ブロードキャストは誰でも出せるので、<code>DeskAddress</code> が形を検める —— IPv4 リテラル ＋ ポート、パスなし、<code>http</code> のみ。端末が卓へ送るのは撮った動画だけで、送るのは撮った本人が押したときだけ。</p>
+
+  <h2>6. 単一の正が 1 つ動いた</h2>
+
+  <p>ショットの定義（指示文・尺・構える秒）は <code>shoot-model.js</code> の定数だった。読む相手が 3 つになったので外へ出した —— ブラウザ・<strong>卓のサーバ（Python）</strong>・<strong>配信スマホ</strong>。JS の定数のままでは Python から読めず、スマホへ配る指示文が二重管理になる。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>置き場</th><th>読む相手</th></tr>
+    <tr><td><code>tools/web-compositor/shots.json</code></td><td><code>shoot-model.js</code>（<code>loadShots()</code>）／ <code>capture-server.py</code>（<code>_shots_def()</code>）／ 配信スマホ（<code>/shoot/plan</code> 経由）</td></tr>
+  </table></div>
+
+  <h3>移植を「気をつける」で守らない</h3>
+
+  <p>「頭に何秒要るか」（<code>neededHeadSec</code> / <code>cutCount</code>）が JS と Python の 2 つになった。期待値を <code>shoot-fixture.json</code> に置き、<strong>node と Python の両方が同じファイルを食う</strong>。片方だけ直せば必ずどちらかが落ちる。</p>
+
+  <p><code>/shoot/plan</code> が返す<strong>欄の名前</strong>も 2 言語にまたがる契約なので、<code>PlanPayloadContractTest</code> が欄の集合ごと固定した。黙って改名すると、スマホは既定値を読んで<strong>「全部 — のまま」「短いのに緑」</strong>になる。例外は出ない。</p>
+
+  <p>もう 1 つ、読み込む前の穴を塞いだ。<code>SHOTS</code> は空で始まり <code>setShots()</code> で入るので、読む前に判定を呼ぶと空配列 ＝「この台本は接近を使っていない」＝ <strong>緑</strong>を返してしまう。<code>shotsLoaded()</code> の門を置いて ❌「shots.json が読めていない」を出す。</p>
+
+  <h2>7. 実装したもの</h2>
+
+  <h3>配信アプリ（fixed-cam-streamer v0.13.0）</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>ファイル</th><th>役</th><th>JVM テスト</th></tr>
+    <tr><td><code>GuideSpec.kt</code></td><td>補助線の置き場・<code>fitCenter</code> の矩形・cameraId ごとの既定</td><td>6</td></tr>
+    <tr><td><code>MirrorMath.kt</code></td><td>左右対称のずれと、鏡像の並べ替え</td><td>8</td></tr>
+    <tr><td><code>DeskAddress.kt</code></td><td>卓の在り処の検証（ブロードキャスト由来の値を通す門）</td><td>4</td></tr>
+    <tr><td><code>ShootPlan.kt</code></td><td>卓が配る指示の読み取りと、画面に出る言い回し</td><td>10</td></tr>
+    <tr><td><code>GuideOverlayView.kt</code></td><td>PreviewView の上に重ねる描画（Android グルー）</td><td>—</td></tr>
+    <tr><td><code>ShootPanelController.kt</code></td><td>撮影パネルの配線（Android グルー）</td><td>—</td></tr>
+    <tr><td><code>DeskClient.kt</code></td><td>卓への HTTP（新規依存なし・<code>HttpURLConnection</code>）</td><td>—</td></tr>
+    <tr><td><code>DemandPolicy.kt</code></td><td>需要に <code>localPreview</code> を足した</td><td>+4</td></tr>
+    <tr><td><code>DiscoveryProtocol.kt</code></td><td>show-server announce の読み取りを足した</td><td>+3</td></tr>
+    <tr><td><code>FrameRecorder.kt</code></td><td>経過秒と撮り終えた尺を出す（<code>elapsedSec()</code> / <code>lastDurSec</code>）</td><td>—</td></tr>
+  </table></div>
+
+  <h3>卓（fixed-cam-vr / tools/web-compositor）</h3>
+
+  <div class="tblwrap"><table>
+    <tr><th>ファイル</th><th>何</th></tr>
+    <tr><td><code>shots.json</code> <span class="chip hot">新</span></td><td>ショット定義の単一の正（3 者が読む）</td></tr>
+    <tr><td><code>shoot-fixture.json</code> <span class="chip hot">新</span></td><td>node と Python が同じ期待値を食うためのフィクスチャ</td></tr>
+    <tr><td><code>test_shoot_plan.py</code> <span class="chip hot">新</span></td><td>移植の一致・状態判定・<strong>欄の名前の契約</strong></td></tr>
+    <tr><td><code>capture-server.py</code></td><td><code>/shoot/plan</code> ＋ <code>/shoot/collect</code>。<code>_do_pull</code> / <code>_do_adopt</code> へ中核を割った</td></tr>
+    <tr><td><code>shoot-model.js</code></td><td><code>SHOTS</code> を <code>shots.json</code> から注入。読み込み前は ❌ を出す門</td></tr>
+  </table></div>
+
+  <h2>8. 確かめたこと・確かめていないこと</h2>
+
+  <h3>確かめた</h3>
+
+  <ul>
+    <li><strong>JVM テスト 142 件</strong>（+28）と <strong>node 27 件</strong>（+3）・<strong>Python 35 件</strong>（+11）が緑。APK は <code>assembleDebug</code> が通る</li>
+    <li><code>GET /shoot/plan?cam=A</code> を <strong>HTTP 経由で</strong>叩き、5 本すべてに要求秒が出た（0.9 / 1.0 / 0.9 / 0.8 / 1.4 秒 ＝ 手順書の値と一致）</li>
+    <li><code>POST /shoot/collect</code> を<strong>端から端まで</strong>通した。配信端末もどきを立て、回収 → ffprobe の検分 → 台帳 → 要求との突き合わせまで。6 秒の素材で <code>short=false</code>、0.57 秒の素材で <code>short=true</code></li>
+    <li>不正な名前（<code>../../secret.mp4</code>）を弾くこと、届かない端末で理由が返ること</li>
+  </ul>
+
+  <h3>確かめていない</h3>
+
+  <ul>
+    <li><strong>実機に入れて触っていない。</strong> 鏡合わせの見え方（8fps・640×480 の復号が体感でどうか、継ぎ目の読み取りやすさ）、撮影パネルの文字サイズと押しやすさ、卓の自動発見が現場の Wi-Fi で何秒で入るか</li>
+    <li>⚠ <strong>卓サーバは再起動しないと新しい口を持たない。</strong> いま動いているものは改修前のコードで立っている</li>
+    <li>⚠ 配信スマホの APK 更新は <strong>USB が要る</strong>（無線 adb は無効）。入れた直後はアプリが止まっているので <code>monkey</code> で起こす</li>
+  </ul>
+
+  <h2>9. 併せて直したドキュメント</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>どこ</th><th>何</th></tr>
+    <tr><td><code>.claude/rules/streaming.md</code></td><td>「配信アプリの画面 — 据える人・撮る人の仕事は端末に置く」を新設（契約の正本）</td></tr>
+    <tr><td><code>docs/onsite-checklist.md</code></td><td>§0.2b をスマホ完結の手順へ。§0.2c は卓での試写だけに縮小。<strong>§0.2d「カメラ A を左右対称に据える」を新設</strong></td></tr>
+    <tr><td><code>.claude/memory/streamer_operator_ui.md</code></td><td>触る前に読む罠（新規）</td></tr>
+    <tr><td><code>.claude/memory/approach_shoot_console.md</code></td><td>撮る面がスマホにもあることと、ショット定義の置き場</td></tr>
+    <tr><td><code>tools/web-compositor/README.md</code> / streamer の <code>README.md</code></td><td>機能・API・設計メモ</td></tr>
+  </table></div>
+
+  <p class="note">生成: 2026-08-23 ／ 実装は fixed-cam-streamer v0.13.0（versionCode 14）と fixed-cam-vr の <code>tools/web-compositor</code>。</p>
+</div>

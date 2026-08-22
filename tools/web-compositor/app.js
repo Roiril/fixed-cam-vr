@@ -21,7 +21,7 @@ import {
   mirrorResidualM, mirrorSideCheck, calibUsableForMirror, MIRROR_TOLERANCE_M,
 } from './line-mirror.js';
 import { introConfig, introStageSec, introDurationLabel, introPreflightRow } from './intro-model.js';
-import { approachPrecheck } from './shoot-model.js';
+import { approachPrecheck, loadShots } from './shoot-model.js';
 // 体験の骨格（走り切る周数 ＋ もどりの区間）。既定値と「その区間を踏むか」の判定はここが単一の正。
 // ⚠ 順路は app.js の courseOrder()（カメラ台数でクランプする方）を渡す — リボンが並べる順と
 //   同じでなければ、卓の中で「踏む区間」の答えが 2 つできる。
@@ -2538,6 +2538,9 @@ if ($('#runDiag')) {
 }
 
 buildGlobalFx();
+// ショット定義（shots.json）。本番前チェックの「接近の素材」が読む。読めるまでその行は
+// ❌「ショット定義が読めていない」を出す（空を「使っていない」と読ませない）。
+loadShots().catch((e) => console.warn('shots.json が読めない:', e));
 // 作業面の復元は全部の初期化が済んでから（上の restoreMode の注意書きを参照）。
 restoreMode();
 pollState();

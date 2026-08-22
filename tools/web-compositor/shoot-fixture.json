@@ -1,0 +1,61 @@
+{
+  "_": [
+    "「頭に何秒要るか」の移植を固定するフィクスチャ。",
+    "同じ入力を **node（shoot-model.test.mjs）と Python（test_shoot_plan.py）の両方**が食う。",
+    "",
+    "なぜ 2 つあるか: 判定は元々ブラウザ（shoot-model.js）だけの仕事だったが、",
+    "配信スマホへ指示を配るために卓のサーバ（Python）でも同じ答えが要るようになった。",
+    "移植は「気をつける」では守れないので、期待値をここに置いて両方から突き合わせる。",
+    "片方だけ直すと、必ずどちらかのテストが落ちる。"
+  ],
+  "segments": [
+    {
+      "lap": 2,
+      "camera": 2,
+      "takes": [
+        {
+          "id": "L2C2#0",
+          "steps": [
+            { "source": "clip", "cueId": "pov_1", "trimStartSec": -1, "durSec": 1.0 },
+            { "source": "clip", "cueId": "pov_2", "trimStartSec": -1, "durSec": 0.9 },
+            { "source": "clip", "cueId": "pov_3", "trimStartSec": -1, "durSec": 0.8 },
+            { "source": "clip", "cueId": "pov_4", "trimStartSec": -1, "durSec": 1.4 },
+            { "source": "live", "cueId": "", "durKind": "untilZoneChange", "durSec": 0 }
+          ]
+        }
+      ]
+    },
+    {
+      "lap": 1,
+      "camera": 0,
+      "takes": [
+        {
+          "id": "T#0",
+          "steps": [
+            { "source": "clip", "cueId": "reel", "trimStartSec": 0, "durSec": 1.2 },
+            { "source": "clip", "cueId": "reel", "trimStartSec": 1.9, "durSec": 1.0 },
+            { "source": "clip", "cueId": "reel", "trimStartSec": 5.0, "durSec": 0.5 },
+            { "source": "clip", "cueId": "openEnded", "durKind": "untilZoneChange", "durSec": 0 }
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "neededHeadSec": {
+      "pov_1": 1.0,
+      "pov_2": 0.9,
+      "pov_3": 0.8,
+      "pov_4": 1.4,
+      "reel": 5.5,
+      "openEnded": null,
+      "notUsed": null
+    },
+    "cutCount": {
+      "pov_1": 1,
+      "reel": 3,
+      "openEnded": 1,
+      "notUsed": 0
+    }
+  }
+}

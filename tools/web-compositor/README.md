@@ -408,6 +408,11 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 [reports/2026-08-22_approach-shoot-console.html](../../reports/2026-08-22_approach-shoot-console.html)、
 現場の手順は [docs/onsite-checklist.md](../../docs/onsite-checklist.md) §0。
 
+⚠⚠ **2026-08-23 から、同じことが配信スマホの画面でもできる**（streamer v0.13.0 の「🎬 撮影」）。
+撮るのはスマホを持っている人なので、指示を読む・撮る・尺を確かめる・卓へ渡すはそちらが主経路。
+卓のこの面は**選び直しと頭の窓の試写**（大きな画面が要る仕事）に残る。
+スマホ側の設計は [reports/2026-08-23_streamer-ux.html](../../reports/2026-08-23_streamer-ux.html)。
+
 **録画は配信アプリの端末内録画（streamer v0.10.0 の `/record/*`）へ一本化してある。**
 ブラウザの ⏺ は fallback として残るが、当日の主経路ではない。理由は 5 つ:
 
@@ -436,9 +441,12 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 
 ### 守っていること（踏むと痛い順）
 
-- ⚠⚠ **ショットの定義は `shoot-model.js`（コード）に持つ。cue には足さない。**
+- ⚠⚠ **ショットの定義は [`shots.json`](shots.json) が単一の正。cue には足さない。**
   cue エディタは保存時にフィールドの白名簿でオブジェクトを組み直すので、
-  **cue へ足した未知キーは次に誰かが cue を保存した瞬間に消える**
+  **cue へ足した未知キーは次に誰かが cue を保存した瞬間に消える**。
+  読む相手は 3 つ — ブラウザ（`shoot-model.js` が `loadShots()` で読む）・卓のサーバ
+  （`_shots_def()`）・**配信スマホ**（`GET /shoot/plan` 経由）。
+  2026-08-23 まで `shoot-model.js` の定数だったが、Python から読めずスマホへ配れないので外へ出した
 - ⚠⚠ **採用ファイル名は毎回一意**（テイク番号 + 時刻）。Quest は URL → ローカル DL のキャッシュを
   持つので、同名で差し替えると**撮り直したのに古い版が再生され続ける**（アプリ再起動まで）
 - ⚠⚠ **`POST /state` を使わない**。あれは cues 配列を丸ごと差し替えるので、
@@ -460,6 +468,20 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 | POST | `/shoot/pull` | 1 本回収 → `recordings/` へ → 検分 → 台帳 |
 | POST | `/shoot/adopt` | `cues[].sourceUrl` を書く（`inPointSec` を渡すと頭を切って採用） |
 | POST | `/shoot/delete` | 端末側のテイクを消す |
+| GET | `/shoot/plan?cam=<id>` | **配信スマホが読む**「今日撮るもの」（指示文・尺・要求秒・採用状況）。`shots.json` ＋ timeline から導く |
+| POST | `/shoot/collect` | **配信スマホから**「このテイクを卓へ」。回収 → 検分 →（`adopt` なら）採用まで 1 往復。⚠ 端末の host は body ではなく**接続元アドレス**を使う |
+
+### 「頭に何秒要るか」は 2 つの言語にある
+
+`neededHeadSec` / `cutCount` は元々ブラウザ（`shoot-model.js`）だけの計算だったが、
+スマホへ指示を配るために **Python（`capture-server.py`）にも同じ式が要る**ようになった。
+移植を「気をつける」で守らないために、期待値を [`shoot-fixture.json`](shoot-fixture.json) に置き、
+**node（`shoot-model.test.mjs`）と Python（`test_shoot_plan.py`）の両方が同じファイルを食う**。
+片方だけ直せば必ずどちらかが落ちる。
+
+`GET /shoot/plan` が返す欄の名前も 2 言語にまたがる契約なので、
+`test_shoot_plan.py` の `PlanPayloadContractTest` が欄の集合ごと固定している
+（黙って改名すると、スマホは既定値を読んで「全部 — のまま」「短いのに緑」になる）。
 
 ### ✅ 本番前チェックの「接近の素材」
 

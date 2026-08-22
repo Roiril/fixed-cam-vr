@@ -12,37 +12,47 @@
 /**
  * ショットの並び順は撮る順（onsite-checklist §0）。
  *
+ * ⚠ **中身は `shots.json` が正**（2026-08-23〜）。読む相手が 3 つに増えたから —
+ *   卓のブラウザ（ここ）・卓のサーバ（`capture-server.py`）・**配信スマホ**
+ *   （`GET /shoot/plan` で撮影パネルへ配る）。JS の定数のままだと Python から読めず、
+ *   スマホへ配る指示文が二重管理になる。
+ *
  * ⚠ **偽ライブ（fake_live_C）は 0104 で廃止した。** 差し込みは人形視点だけで、
  *   2-C の連続演出中はライブに戻らない（戻るのは追いつきの後・黒マスクと同時）。
- *   当日撮るのはこの 5 本だけ。
+ *
+ * この配列は**参照が固定**（中身だけ差し替える）ので、`import { SHOTS }` した側は
+ * 読み込みの前後で持ち替えなくてよい。ただし **`setShots` を呼ぶまで空**なので、
+ * 判定関数は「読めていない」を黙って「使っていない」と混同しないよう明示的に落とす。
  */
-export const SHOTS = [
-  {
-    cueId: 'pov_0', label: '2 周目 C の予備動作', dev: 'pov',
-    hint: '部屋の隅からの遠景。人物は入れない。高さ 40cm で C の立ち位置へ正対',
-    recSec: 2,
-  },
-  {
-    cueId: 'pov_1', label: '人形視点 ① 遠い', dev: 'pov',
-    hint: '遠い。白衣は米粒か不在。高さ 40cm で正対', recSec: 3,
-  },
-  {
-    cueId: 'pov_2', label: '人形視点 ② 近い', dev: 'pov',
-    hint: '近い。歩きの揺れが出る速さで', recSec: 3,
-  },
-  {
-    cueId: 'pov_3', label: '人形視点 ③ すぐそこ', dev: 'pov',
-    hint: 'すぐそこ。白衣の一部が画面に入る', recSec: 3,
-  },
-  {
-    cueId: 'pov_4', label: '人形視点 ④ 追いつき', dev: 'pov',
-    hint: '白衣の背中の至近（0.5m）。**もう届いている所から**撮り始める（寄る過程は画に出ない）',
-    recSec: 3,
-  },
-];
+export const SHOTS = [];
+
+let shotsReady = false;
+
+/** ショット定義が読み込まれているか。読めていない状態を沈黙させないための門。 */
+export const shotsLoaded = () => shotsReady;
+
+/** `shots.json` の中身を入れる。ブラウザは [loadShots]、node テストは fs から呼ぶ。 */
+export function setShots(list) {
+  SHOTS.length = 0;
+  for (const s of list || []) SHOTS.push(s);
+  shotsReady = true;
+  return SHOTS;
+}
+
+/** ブラウザ用。ページの起動で 1 度だけ呼ぶ。 */
+export async function loadShots(url = './shots.json') {
+  const r = await fetch(url, { cache: 'no-cache' });
+  if (!r.ok) throw new Error(`shots.json が読めない (${r.status})`);
+  const j = await r.json();
+  return setShots(j.shots);
+}
 
 /** ショット名（streamer の `shot=` に渡す値）。cueId をそのまま使う。 */
 export const shotName = (shot) => (shot && shot.cueId) || '';
+
+/** 構える秒数。定義に無ければ手持ち（pov）だけ 3 秒。 */
+export const countdownSecOf = (shot) =>
+  (shot && Number.isFinite(shot.countdownSec)) ? shot.countdownSec : (shot && shot.dev === 'pov' ? 3 : 0);
 
 const num = (v) => {
   const n = Number(v);
@@ -157,6 +167,11 @@ export function isFromToday(capturedAtIso, nowIso) {
  * ① 採用漏れ・欠損・尺不足 → ② 録りっぱなしの端末 → ③ 撮影日 → ④ 熱段の不一致
  */
 export function approachPrecheck({ state, segments, assets, takesByShot, manifest, devices, nowIso }) {
+  // ⚠ 読めていないことを「使っていない」と混同させない。空配列は下で ok を返してしまう。
+  if (!shotsLoaded()) {
+    return { s: 'ng', label: '接近の素材',
+             detail: 'ショット定義（shots.json）が読めていない — 卓を開き直す' };
+  }
   const rows = allShotStatus(state, segments, assets, takesByShot);
   const used = rows.filter((r) => r.cuts > 0);
   if (!used.length) {

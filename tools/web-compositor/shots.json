@@ -1,0 +1,57 @@
+{
+  "_": [
+    "当日の素材撮り（canon/LEDGER.md 0102 / 0104 の接近）で撮るショットの定義。",
+    "ここが単一の正。読むのは 3 つ — 卓のブラウザ（shoot-model.js）・卓のサーバ（capture-server.py）・",
+    "配信スマホ（GET /shoot/plan 経由で fixed-cam-streamer の撮影パネル）。",
+    "",
+    "⚠ cue には足さない。cue エディタの保存はフィールドの白名簿でオブジェクトを組み直すので、",
+    "  cue へ足した未知キーは次に誰かが cue を保存した瞬間に消える（cue-editor.js の saveCue）。",
+    "⚠ show.json にも足さない。あれは現場で書き換わる live 設定で git 管理外。ここは著作の一部。",
+    "",
+    "並び順は撮る順（docs/onsite-checklist.md §0）。",
+    "recSec は撮る長さ、countdownSec は構える時間。「画に出るのは頭 N 秒」は timeline から",
+    "機械導出するのでここには書かない（著作を変えたら要求も追従する）。"
+  ],
+  "shots": [
+    {
+      "cueId": "pov_0",
+      "label": "2 周目 C の予備動作",
+      "dev": "pov",
+      "hint": "部屋の隅からの遠景。人物は入れない。高さ 40cm で C の立ち位置へ正対",
+      "recSec": 2,
+      "countdownSec": 3
+    },
+    {
+      "cueId": "pov_1",
+      "label": "人形視点 ① 遠い",
+      "dev": "pov",
+      "hint": "遠い。白衣は米粒か不在。高さ 40cm で正対",
+      "recSec": 3,
+      "countdownSec": 3
+    },
+    {
+      "cueId": "pov_2",
+      "label": "人形視点 ② 近い",
+      "dev": "pov",
+      "hint": "近い。歩きの揺れが出る速さで",
+      "recSec": 3,
+      "countdownSec": 3
+    },
+    {
+      "cueId": "pov_3",
+      "label": "人形視点 ③ すぐそこ",
+      "dev": "pov",
+      "hint": "すぐそこ。白衣の一部が画面に入る",
+      "recSec": 3,
+      "countdownSec": 3
+    },
+    {
+      "cueId": "pov_4",
+      "label": "人形視点 ④ 追いつき",
+      "dev": "pov",
+      "hint": "白衣の背中の至近（0.5m）。**もう届いている所から**撮り始める（寄る過程は画に出ない）",
+      "recSec": 3,
+      "countdownSec": 3
+    }
+  ]
+}

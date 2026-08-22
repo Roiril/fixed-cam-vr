@@ -185,6 +185,103 @@ def _trim_head(src, in_point_sec):
     return dst, f'頭を {in_point_sec:.2f} 秒送った（再圧縮していない）'
 
 
+# ---- ショット定義（shots.json）と「頭に何秒要るか」------------------------------
+#
+# ⚠ **定義は shots.json が単一の正**。読む相手が 3 つある —
+#   卓のブラウザ（shoot-model.js）・ここ・**配信スマホ**（GET /shoot/plan で撮影パネルへ配る）。
+#   スマホが自前で持つと、指示文と尺が黙って古くなる（現場で気づけない類の食い違い）。
+#
+# ⚠ 下の 2 つは shoot-model.js の `neededHeadSec` / `cutCount` の移植。
+#   **同じフィクスチャで両方をテストする**（`shoot-fixture.json` を node と Python の双方が食う）。
+#   片方だけ直せばテストが落ちる — 移植を「気をつける」で守らない。
+
+SHOTS_JSON = os.path.join(ROOT, 'shots.json')
+_shots_cache = {'mtime': None, 'shots': []}
+
+
+def _shots_def():
+    """shots.json のショット定義（mtime で読み直す）。読めなければ空。"""
+    try:
+        m = os.path.getmtime(SHOTS_JSON)
+    except OSError:
+        return []
+    if _shots_cache['mtime'] != m:
+        try:
+            with open(SHOTS_JSON, encoding='utf-8') as f:
+                d = json.load(f)
+            _shots_cache['shots'] = [s for s in (d.get('shots') or []) if s.get('cueId')]
+            _shots_cache['mtime'] = m
+        except Exception as e:
+            print(f'[shots] shots.json が読めない: {e}', file=sys.stderr)
+            return _shots_cache['shots']
+    return _shots_cache['shots']
+
+
+def _num(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    return f if f == f and f not in (float('inf'), float('-inf')) else 0.0
+
+
+def needed_head_sec(segments, cue_id):
+    """
+    その cue の「頭から何秒が画に出るか」。同じ素材を複数のカットが trimStartSec を
+    進めながら使うので **max(trimStartSec + durSec)**。参照が無ければ None。
+    durSec<=0 は尺が別の条件で決まるカット（untilZoneChange 等）なので数えない。
+    """
+    if not cue_id:
+        return None
+    out = None
+    for seg in segments or []:
+        for take in (seg.get('takes') or []):
+            for st in (take.get('steps') or []):
+                if not st or st.get('cueId') != cue_id:
+                    continue
+                dur = _num(st.get('durSec'))
+                if dur <= 0:
+                    continue
+                trim = max(0.0, _num(st.get('trimStartSec')))
+                out = max(0.0 if out is None else out, trim + dur)
+    return out
+
+
+def cut_count(segments, cue_id):
+    """その cue を参照しているカットの数。"""
+    n = 0
+    for seg in segments or []:
+        for take in (seg.get('takes') or []):
+            for st in (take.get('steps') or []):
+                if st and st.get('cueId') == cue_id:
+                    n += 1
+    return n
+
+
+# 余裕がこれ以下なら警告（shoot-model.js の SHORT_MARGIN_SEC と対）。
+SHORT_MARGIN_SEC = 0.5
+
+
+def shot_status(cue, need, adopted_dur):
+    """
+    1 ショットの状態。`cue` は show.json の cue（無ければ None）、`adopted_dur` は
+    採用中テイクの尺（分からなければ None）。返すのは (level, reason, fix)。
+    """
+    if not cue:
+        return 'ng', 'この cue が show.json に無い', '卓のカメラ列で cue を作る'
+    if not (cue.get('sourceUrl') or ''):
+        return 'ng', '素材が未採用', '撮って「卓へ送って採用」'
+    if need is not None and adopted_dur is not None and adopted_dur > 0:
+        margin = adopted_dur - need
+        if margin < 0:
+            return ('ng',
+                    f'尺が {-margin:.1f}s 足りない（要求 {need:.1f}s / 素材 {adopted_dur:.1f}s）',
+                    f'{need:.1f}s より長く撮り直す')
+        if margin < SHORT_MARGIN_SEC:
+            return 'warn', f'余裕が {margin:.1f}s しかない', '撮り直して余裕を作る'
+    return 'ok', '', ''
+
+
 def _shoot_get(host, port, path, timeout=4.0):
     """配信端末の HTTP エンドポイントを叩いて JSON を返す。(ok, obj or 文字列)。"""
     try:
@@ -1373,6 +1470,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(self._shoot_takes(parse_qs(urlparse(self.path).query)))
         if path == '/shoot/manifest':
             return self._json({'ok': True, 'items': _shoot_manifest()})
+        if path == '/shoot/plan':
+            # 配信スマホの撮影パネルが読む「今日撮るもの」。cam= は端末の cameraId。
+            pq = parse_qs(urlparse(self.path).query)
+            return self._json(self._shoot_plan((pq.get('cam', [''])[0] or '').strip()))
         if path == '/cam/liveness':
             # 卓が 2 秒ごとに読む「各配信元から実際にバイトが来ているか」。
             return self._json({'ok': True, 'cams': _live_snapshot()})
@@ -1559,6 +1660,103 @@ class Handler(SimpleHTTPRequestHandler):
         local.sort(key=lambda x: x.get('capturedAt') or '', reverse=True)
         return {'ok': True, 'device': device, 'local': local}
 
+    def _shoot_plan(self, cam_id):
+        """
+        配信スマホの撮影パネルへ配る「今日撮るもの」。
+
+        **指示文・尺・要求秒・採用状況を、卓が唯一の正として配る。** スマホ側に写しを
+        持たせない — 現場で著作を変えたとき、手元の紙とスマホの表示が食い違う経路を作らない。
+
+        `cam_id` はその端末の cameraId（A/B/C/D/?）。`dev:"cam"` のショット（そのカメラ自身で
+        撮るもの）は当該端末にだけ「あなたの担当」と出す。手持ち（`dev:"pov"`）はどの端末でも撮れる。
+        """
+        shots = _shots_def()
+        if not shots:
+            return {'ok': False, 'detail': 'shots.json が読めない（卓の設置ミス）'}
+        with _show_cond:
+            show = json.loads(json.dumps(_show))
+        segs = ((show.get('timeline') or {}).get('segments')) or []
+        cues = {c.get('id'): c for c in (show.get('cues') or []) if c.get('id')}
+        man = _shoot_manifest()
+
+        # 回収済みテイクを cue ごとに束ねる（url → 台帳の entry）。
+        by_shot = {}
+        for url, e in man.items():
+            key = e.get('shot') or ''
+            if not key:
+                continue
+            by_shot.setdefault(key, []).append({'url': url, **e})
+        for lst in by_shot.values():
+            lst.sort(key=lambda x: x.get('capturedAt') or '', reverse=True)
+
+        items = []
+        for sh in shots:
+            cue_id = sh.get('cueId')
+            cue = cues.get(cue_id)
+            need = needed_head_sec(segs, cue_id)
+            src = (cue or {}).get('sourceUrl') or ''
+            takes = by_shot.get(cue_id, [])
+            adopted = next((t for t in takes if t.get('url') == src), None)
+            level, reason, fix = shot_status(cue, need, (adopted or {}).get('durSec'))
+            dev = sh.get('dev') or 'pov'
+            mine = True if dev != 'cam' else (cam_id == ((cue or {}).get('camera') or ''))
+            items.append({
+                'cueId': cue_id,
+                'label': sh.get('label') or cue_id,
+                'hint': sh.get('hint') or '',
+                'recSec': sh.get('recSec') or 3,
+                'countdownSec': (sh.get('countdownSec')
+                                 if isinstance(sh.get('countdownSec'), int)
+                                 else (3 if dev == 'pov' else 0)),
+                'dev': dev,
+                'forThisDevice': bool(mine),
+                'needSec': need,
+                'cuts': cut_count(segs, cue_id),
+                'status': level, 'reason': reason, 'fix': fix,
+                # スマホが「この端末のこのファイルはもう送った」を印すための対応表。
+                'adoptedName': os.path.basename(src) if src else '',
+                'collected': [t.get('name') or '' for t in takes],
+            })
+        return {'ok': True, 'desk': socket.gethostname(), 'rev': int(show.get('rev') or 0),
+                'nowIso': datetime.datetime.now().isoformat(timespec='seconds'),
+                'shots': items}
+
+    def _shoot_collect(self, body, host, port):
+        """
+        **スマホから**「このテイクを卓へ」。回収 → 検分 → （`adopt` なら）採用まで 1 往復。
+
+        既存の `_shoot_pull` / `_shoot_adopt` をそのまま使う（検分・一意名・台帳・頭送りの
+        作法を 2 つに割らない）。返す `short` は「要求尺に足りているか」の答えで、
+        **撮った本人がその場で撮り直しを決められる**ようにここまで返す。
+        """
+        name = str(body.get('name') or '')
+        shot = str(body.get('shot') or '')
+        adopt = bool(body.get('adopt'))
+        payload, code = self._do_pull(name, shot, host, port)
+        if not payload.get('ok'):
+            return self._json(payload, code)
+
+        entry = payload.get('entry') or {}
+        url = payload.get('url') or ''
+        # 要求尺（この素材の頭が何秒画に出るか）を添えて返す。**撮った本人が撮り直しを決められる**
+        # ようにここまで返す — 卓の画面を見に行かないと分からない形にしない。
+        with _show_cond:
+            segs = (((_show.get('timeline') or {}).get('segments')) or [])[:]
+        need = needed_head_sec(segs, shot)
+        dur = entry.get('durSec')
+        out = {'ok': True, 'url': url, 'entry': entry, 'need': need, 'adopted': False,
+               'short': bool(need is not None and isinstance(dur, (int, float))
+                             and dur > 0 and dur < need)}
+        if adopt:
+            a_payload, a_code = self._do_adopt(shot, url, body.get('inPointSec'))
+            out['adopted'] = bool(a_payload.get('ok'))
+            out['adoptNote'] = a_payload.get('note') or a_payload.get('detail') or ''
+            if not a_payload.get('ok'):
+                # 回収は済んでいる（素材は卓にある）。採用だけ失敗した、と分かる形で返す。
+                out['ok'] = True
+                out['detail'] = f"回収したが採用できなかった: {a_payload.get('detail') or ''}"
+        return self._json(out)
+
     def _shoot_post(self, path):
         try:
             n = int(self.headers.get('Content-Length') or 0)
@@ -1587,6 +1785,12 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/shoot/pull':
             return self._shoot_pull(body, host, port)
 
+        if path == '/shoot/collect':
+            # **配信スマホから**呼ばれる口。回収 → 検分 → （任意で）採用までを 1 往復で終える。
+            # ⚠ host は body ではなく **接続元** を既定にする。端末が自分の IP をどう見ているかは
+            #   卓から届くアドレスと一致するとは限らない（テザリング・複数 NIC）。
+            return self._shoot_collect(body, host or self.client_address[0], port)
+
         if path == '/shoot/adopt':
             return self._shoot_adopt(body)
 
@@ -1600,18 +1804,24 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json({'ok': False, 'detail': 'unknown'}, 404)
 
     def _shoot_pull(self, body, host, port):
+        payload, code = self._do_pull(str(body.get('name') or ''),
+                                      str(body.get('shot') or ''), host, port)
+        return self._json(payload, code)
+
+    def _do_pull(self, name, shot, host, port):
         """
-        端末から 1 本回収して recordings/ へ置き、検分して台帳へ載せる。
+        端末から 1 本回収して recordings/ へ置き、検分して台帳へ載せる。返すのは (payload, code)。
 
         ⚠ 保存名は**毎回一意**（テイク番号 + 時刻）。同名で差し替えると Quest の
           ローカルキャッシュが古い版を再生し続ける（撮り直したのに変わらない）。
+
+        ⚠ **`_json` を呼ばない**（辞書を返す）。卓の UI（`/shoot/pull`）とスマホ
+          （`/shoot/collect` — 回収と採用を続けて行う）の 2 経路が同じ中核を使うため。
         """
-        name = str(body.get('name') or '')
-        shot = str(body.get('shot') or '')
         if not host or not name:
-            return self._json({'ok': False, 'detail': 'host / name が必要です'}, 400)
+            return {'ok': False, 'detail': 'host / name が必要です'}, 400
         if not re.fullmatch(r'[A-Za-z0-9_.\-]{1,128}', name) or '..' in name:
-            return self._json({'ok': False, 'detail': 'name が不正です'}, 400)
+            return {'ok': False, 'detail': 'name が不正です'}, 400
 
         os.makedirs(RECORDINGS, exist_ok=True)
         dst = os.path.join(RECORDINGS, name)
@@ -1630,7 +1840,7 @@ class Handler(SimpleHTTPRequestHandler):
                 os.remove(dst)
             except OSError:
                 pass
-            return self._json({'ok': False, 'detail': f'回収に失敗: {e}'}, 502)
+            return {'ok': False, 'detail': f'回収に失敗: {e}'}, 502
 
         meta = _probe_media(dst)
         # 撮影時の熱段（本番と画質が違うかの判定に使う）。
@@ -1645,19 +1855,22 @@ class Handler(SimpleHTTPRequestHandler):
             **meta,
         }
         _shoot_manifest_put(rel, entry)
-        return self._json({'ok': True, 'url': rel, 'entry': entry})
+        return {'ok': True, 'url': rel, 'entry': entry}, 200
 
     def _shoot_adopt(self, body):
+        payload, code = self._do_adopt(str(body.get('cueId') or ''),
+                                       str(body.get('url') or ''), body.get('inPointSec'))
+        return self._json(payload, code)
+
+    def _do_adopt(self, cue_id, url, in_point_raw):
         """
-        撮ったテイクを cue へ採用する（`cues[].sourceUrl` を書く）。
+        撮ったテイクを cue へ採用する（`cues[].sourceUrl` を書く）。返すのは (payload, code)。
 
         ⚠ **`POST /state` を使わない**。あれは cues 配列を丸ごと差し替えるので、
           卓の別タブが編集中の cue を消す。ここは 1 件だけ触る。
         """
-        cue_id = str(body.get('cueId') or '')
-        url = str(body.get('url') or '')
         if not cue_id:
-            return self._json({'ok': False, 'detail': 'cueId が必要です'}, 400)
+            return {'ok': False, 'detail': 'cueId が必要です'}, 400
 
         # url が空 = **採用の取り消し**（間違って採用したときの唯一の戻り道）。
         # 現場では普通に起きるので、卓の cue エディタへ回らせない。
@@ -1672,19 +1885,19 @@ class Handler(SimpleHTTPRequestHandler):
 
             rev = _mutate_show(clear)
             if not cleared['hit']:
-                return self._json({'ok': False, 'detail': f'cue が無い: {cue_id}'}, 404)
-            return self._json({'ok': True, 'rev': rev, 'cueId': cue_id, 'url': '',
-                               'note': '採用を取り消した（素材は残っている）'})
+                return {'ok': False, 'detail': f'cue が無い: {cue_id}'}, 404
+            return {'ok': True, 'rev': rev, 'cueId': cue_id, 'url': '',
+                    'note': '採用を取り消した（素材は残っている）'}, 200
 
         src = self._resolve_local_asset(url)
         if not src:
-            return self._json({'ok': False, 'detail': f'素材が見つからない: {url}'}, 400)
+            return {'ok': False, 'detail': f'素材が見つからない: {url}'}, 400
 
         # 頭を送るなら、切り出した**別ファイル**を採用する（元のテイクは残す）。
         # ⚠ カットの trimStartSec（偽ライブの 0 / 1.9 / 3.6 / 5.0）は著作の値なので触らない。
         #   撮影の都合をそこへ書くと、素材を差し替えたとき古い頭合わせが別素材に効く。
         try:
-            in_point = float(body.get('inPointSec') or 0)
+            in_point = float(in_point_raw or 0)
         except (TypeError, ValueError):
             in_point = 0.0
         note = ''
@@ -1698,7 +1911,7 @@ class Handler(SimpleHTTPRequestHandler):
                     'inPointSec': in_point, **_probe_media(cut),
                 })
             elif note:
-                return self._json({'ok': False, 'detail': note}, 500)
+                return {'ok': False, 'detail': note}, 500
 
         found = {'hit': False}
 
@@ -1710,8 +1923,8 @@ class Handler(SimpleHTTPRequestHandler):
 
         rev = _mutate_show(apply)
         if not found['hit']:
-            return self._json({'ok': False, 'detail': f'cue が無い: {cue_id}'}, 404)
-        return self._json({'ok': True, 'rev': rev, 'cueId': cue_id, 'url': url, 'note': note})
+            return {'ok': False, 'detail': f'cue が無い: {cue_id}'}, 404
+        return {'ok': True, 'rev': rev, 'cueId': cue_id, 'url': url, 'note': note}, 200
 
     def _get_cam_info(self, q):
         host = (q.get('host', [''])[0] or '').strip()
@@ -1852,7 +2065,7 @@ class Handler(SimpleHTTPRequestHandler):
                 _unity_status.update(body)
             return self._json({'ok': True, 'dwellMerged': merged})
         if parsed.path in ('/shoot/start', '/shoot/stop', '/shoot/pull',
-                           '/shoot/adopt', '/shoot/delete'):
+                           '/shoot/adopt', '/shoot/delete', '/shoot/collect'):
             return self._shoot_post(parsed.path)
         if parsed.path == '/dwell/reset':
             with _dwell_lock:

@@ -14,6 +14,7 @@
 - [warm_palette.md](warm_palette.md) - 色は 7 箇所に散っている（post / 箱 / 題字 / 輪郭 / 構造線 / 人形 / 焼き込み）。暖色へ寄せたとき直した所と、直さなかった所の理由／彩度を上げないと色温度は 65% 捨てられる／赤は R を大きく取れば逆に明るくなる
 - [title_screen.md](title_screen.md) - タイトル画面「廻リ視」：壁を隠しているのは重みではなく描画順／題字は焼いた版 1 枚（4ch が別の意味を持つマスク・押し出さず 3 層を離す・かすれは割合から閾値を逆算）／Normal の A は閉じるだけ／組めなければ素通しへ倒す
 - [take_continuity.md](take_continuity.md) - 演出の待ち・連続・継ぎ目：持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が所有する／相乗り分岐にテストが無い
+- [streamer_operator_ui.md](streamer_operator_ui.md) - **配信スマホ側の面**（補助線・鏡合わせ・撮影パネル・卓の自動発見・v0.13.0）。役割で置き場を決める芯／鏡の軸は splitX ではない／鏡合わせを需要に数えないと画が固まる／Kotlin のブロックコメントは入れ子／ショット定義が shots.json へ出た（空を緑にしない門）／卓の在り処は既にブロードキャストされていた
 - [approach_shoot_console.md](approach_shoot_console.md) - **当日の素材撮り**（撮影コンソール / streamer v0.10.0 の端末内録画 / 動画カットの先読み）。停滞は `ev=clip` にしか出ない（用意 135ms は先読みでも消えない）／8 カットの連続再生は実測で成立・mp4 のままでよい／ショットの定義を cue に足すと消える／採用名を一意にしないと「撮り直したのに変わらない」／配信スマホの更新は USB が要る
 - [approach_and_veil_hold.md](approach_and_veil_hold.md) - 接近の再設計（0102）を触る前に：**startCovered で _covered を true にすると画面差し替えが 1 度も起きない**／保持中に Hide を呼ぶと終わりに人形が消える／シェーダの hand は「画面が差し替わった」前提／偽ライブは trim を進める（trimEnd は指定しない）／卓の白名簿と mirrorOf／鏡の軸は splitX ではなく枠の中央
 - [backtrack_and_replay.md](backtrack_and_replay.md) - 体験者が引き返したとき：周は 2 つ（進行／区間）／前進は直前のカメラも見る／once は「決着した回数」で未報告の中断は頭から再演／録画は上書きしない
