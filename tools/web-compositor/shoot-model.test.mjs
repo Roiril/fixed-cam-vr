@@ -189,13 +189,13 @@ test('approachPrecheck: ③ 前の日に撮った素材（照明が違う）', (
   assert.match(row.detail, /今日撮ったものではない/);
 });
 
-test('approachPrecheck: ④ 熱で画質が落ちた素材は warn', () => {
+test('approachPrecheck: ④ 端末が熱い状態で撮った素材は warn', () => {
   const base = okSetup();
   const u = base.state.cues.find((c) => c.id === 'pov_3').sourceUrl;
   base.manifest[u] = { capturedAt: '2026-08-22T10:00:00', throttleStage: 2 };
   const row = approachPrecheck(base);
   assert.equal(row.s, 'warn');
-  assert.match(row.detail, /熱で画質/);
+  assert.match(row.detail, /端末が熱い/);
 });
 
 test('approachPrecheck: 台帳が無い素材は日付・熱で落とさない（判定できないだけ）', () => {

@@ -18,7 +18,7 @@
  */
 export const SHOTS = [
   {
-    cueId: 'pov_0', label: '2 周目 B の予備動作', dev: 'pov',
+    cueId: 'pov_0', label: '2 周目 C の予備動作', dev: 'pov',
     hint: '部屋の隅からの遠景。人物は入れない。高さ 40cm で C の立ち位置へ正対',
     recSec: 2,
   },
