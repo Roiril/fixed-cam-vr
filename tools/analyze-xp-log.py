@@ -2529,7 +2529,13 @@ def analyze(events, others, exp, warns=None):
                     fades.append(float(p[2]))
                 except ValueError:
                     pass
-            span = max(t for t, _ in timed_samples(events, "osd")) if ticks else 0.0
+            # ⚠⚠ **`timed_samples` は使えない。** あれは `fnum` で数にならない値を落とすので、
+            #   `osd=1/47/1.00` のような複合値は**全部落ちて空になる**（2026-08-23 に踏んだ —
+            #   `max()` が空列で落ち、**走行のレポートが 1 つも出なくなっていた**）。
+            #   複合値のキーは時刻を自分で拾う。
+            osd_t = [fnum(e, "t", 0.0) for e in events
+                     if e.get("ev") in ("intro", "sum") and "osd" in e]
+            span = max(osd_t) if osd_t else 0.0
             grew = (max(ticks) - min(ticks)) if ticks else 0
             w(f"  組めた: {'はい' if built else 'いいえ'}"
               f" / 刻んだ回数: {max(ticks) if ticks else 0}"
