@@ -2084,6 +2084,19 @@ py -3.11 tools/swap-motion-audit.py --label all --baseline none
   Begin してから読むと 2.6 秒の覆いにダウンロードが間に合わない
 - どのカメラのプレートかは **swap 開始時に画面へ出ているカメラ**（`registry.ActiveIndex`。
   swap はカメラを動かさずに始まり、差し替えは覆い切った縁なので）
+- ⚠⚠ **持続の覆い（`swapHold`）は違う — カットが宣言したカメラで選ぶ**（2026-08-23）。
+  こちらは**区間へ入った最初のフレームで立つ**ので、`ActiveIndex` を読むと
+  **まだ前の区間のカメラが出ている**（画面の切替は数十 ms 遅れる）。
+  実測（3 周目 A・ユーザー走行と自動走行の両方）:
+
+      t=195.96  wrap st=on  minx=0.50    ← ここでプレートを決める
+      t=196.01  screen cam=0             ← 画面がカメラ A になるのは 50ms 後
+
+  カメラ A の映像を **plate_C（別の部屋）** と比べるので、差分が箱いっぱいで飽和し
+  **右半分が真っ黒**になる。⚠ **`mask=1` は「掴めたか」しか言わない**ので、
+  間違ったプレートでも 1 が出る（ログからは正常に見える）。
+  ⇒ `CameraSwitchDirector.TakeVeilHoldBegin` は `cgCamera`（＝ `step.camera`）を
+  プレートにも使う。**入れ替わり（`TakeSwapBegin`）の側は従来どおり**
 - 掴めなければ **CG の形へ縮退 ＋ 警告 1 回**（入れ替わりは成立する）。観測は `ev=swap` の
   `mask=`（`analyze-xp-log.py` が WARN を出す）
 - しきい値と mip は `SwapMorphLogic.MaskDiffLo/Hi/Lod` **1 か所**（実機と Editor プレビューが同じ値を引く）

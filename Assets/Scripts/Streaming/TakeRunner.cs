@@ -687,6 +687,19 @@ namespace FixedCamVr.Streaming
             {
                 float swapSec = TakeSchema.ResolveTransitionMs(step.transition, step.transitionMs) / 1000f;
                 _pendingSwapCue = cue;
+                // ⚠⚠ **素材が無いカットへ移るときは、覆いを待たずに畳む**（2026-08-23・ユーザー指定
+                //   「抹消したら生成の人形は消えるようにしてほしい」）。
+                //   4 周目 A の締めは左半分が生成画像の人形・右半分が無人プレートで、
+                //   覆いは**そのどちらも 1 画素も隠さない**（`swapMinX` 未指定 ＝ 人型の周りだけ）。
+                //   隠れない素材のために覆い切るのを待つと、報告してから **1.95 秒**（実測）
+                //   人形が残る ＝ 抹消したという行為の結果が返らない。
+                //   ⚠ **素材を出す側は従来どおり onCovered。** 早く出すと体験者が砂の下ではなく
+                //   画の中で入れ替わる（下の onCovered のコメントが正本）。
+                if (cue == null)
+                {
+                    PlayStepOverlay(null, step);
+                    ApplyStepOverlay2(step, takeIndex: d.takeIndex, stepIndex: d.stepIndex);
+                }
                 swapping = director.TakeSwapBegin(
                     source == TakeSchema.SourceLive ? step.camera : -1, swapSec, swapDir,
                     () =>

@@ -146,6 +146,20 @@ namespace FixedCamVr.Streaming
         /// <summary>いまの進みの速さ（1 = 著作どおり / 2 = 追い上げ中）。テレメトリ用。</summary>
         public float Rate => _cue.Rate;
 
+        /// <summary>
+        /// <b>いまカットが「目を出せ」と言っているか</b>（<c>steps[].eyes</c> の値）。テレメトリ用。
+        ///
+        /// ⚠⚠ <b>これが無いと、目が開いた理由を外から切り分けられない</b>（2026-08-23）。
+        /// 4 周目 A で目が 1 つ開く報告を追ったとき、著作は 3 周目 C しか目を宣言していないのに
+        /// 実機では開いていた。開いた数・不透明度・速さは出していたが、
+        /// <b>「誰が開けと言ったか」を 1 つも出していなかった</b>ので、
+        /// カットの指示が残っているのか、流しきりが降りていないのかを区別できなかった。
+        /// </summary>
+        public float WantedLevel => _wanted;
+
+        /// <summary>流しきりの状態（<see cref="EyesCueLogic"/>）。テレメトリ用。</summary>
+        public bool CueRunning => _cue.Running;
+
         // ---- 視界ジャックの観測（canon/LEDGER.md 0099。テレメトリ・卓 heartbeat 用）----
 
         /// <summary>ジャックの面（quad + シェーダ）を組めたか。false なら一生出ない。</summary>

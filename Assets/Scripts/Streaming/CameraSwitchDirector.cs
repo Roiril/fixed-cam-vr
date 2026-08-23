@@ -582,8 +582,17 @@ namespace FixedCamVr.Streaming
         public bool TakeVeilHoldBegin(int cgCamera, float minX)
         {
             if (swapFx == null) return false;
-            int plateCamera = registry != null ? registry.ActiveIndex : -1;
-            return swapFx.BeginHold(plateCamera, cgCamera >= 0 ? cgCamera : plateCamera, minX);
+            // ⚠⚠ 無人プレートは**このカットが映すカメラ**で選ぶ（2026-08-23）。
+            //   ActiveIndex（いま画面に出ているカメラ）で選んでいたが、区間へ入った最初の
+            //   フレームでは**まだ前の区間のカメラが出ている**（画面の切替は数十 ms 遅れる）。
+            //   実測: 3 周目 A の覆いが立った 50ms 後にカメラ A へ切り替わっており、
+            //   覆いは plate_C（別の部屋）を掴んでいた。別の部屋どうしを比べるので差分が
+            //   箱いっぱいで飽和し、**右半分が真っ黒**になる。
+            //   ⚠ ログの `mask=1` は「掴めたか」しか言わないので、間違ったプレートでも 1 が出る。
+            int plateCamera = cgCamera >= 0
+                ? cgCamera
+                : (registry != null ? registry.ActiveIndex : -1);
+            return swapFx.BeginHold(plateCamera, plateCamera, minX);
         }
 
         /// <summary>入れ替わりのノイズを途中で畳む（演出の中止・ランリセット・体験の終了）。</summary>

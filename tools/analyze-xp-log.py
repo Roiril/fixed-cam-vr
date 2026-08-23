@@ -2642,7 +2642,9 @@ def analyze(events, others, exp, warns=None):
         w("### 闇に開く目")
         w(f"  著作: {len(want_eyes)} カット")
         # 3 つ組は 0093（2026-08-19）より前のビルド。5 つ組は 進み と 速さ が付く。
-        parts = [v.split("/") for v in eyes_raw if v.count("/") in (2, 4)]
+        # 7 つ組（2026-08-23）は **カットの指示** と **流しきり中か** が付く —
+        # 「著作が言っていないのに目が開く」を外から切り分けるために足した。
+        parts = [v.split("/") for v in eyes_raw if v.count("/") in (2, 4, 6)]
         built = [p[0] for p in parts]
         opened = []
         fades = []

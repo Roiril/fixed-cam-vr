@@ -616,14 +616,15 @@ namespace FixedCamVr.Diagnostics
               $"{(_swap.RectResolved ? 1 : 0)}/{(_swap.MaskPlateBound ? 1 : 0)}";
 
         /// <summary>
-        /// 闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;/&lt;区間の進み&gt;/&lt;速さ&gt;</c>。
+        /// 闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;/&lt;区間の進み&gt;/&lt;速さ&gt;/&lt;カットの指示&gt;/&lt;流しきり中か&gt;</c>。
         /// 後ろ 2 つは 2026-08-19（<c>canon/LEDGER.md</c> 0093）に足した。
         /// <b>進み -1 = 位置では測っていない</b>（未登録・layout 不在）。速さ 2.00 = 追い上げ中。
         /// </summary>
         private string EyesState => _eyes == null
             ? "-"
             : $"{(_eyes.IsBuilt ? 1 : 0)}/{_eyes.OpenCount}/{_eyes.AppliedFade:F2}/" +
-              $"{_eyes.SpanProgress01:F2}/{_eyes.Rate:F2}";
+              $"{_eyes.SpanProgress01:F2}/{_eyes.Rate:F2}/" +
+              $"{_eyes.WantedLevel:F2}/{(_eyes.CueRunning ? 1 : 0)}";
 
         /// <summary>
         /// 装置が打っている時計（<c>canon/LEDGER.md</c> 0108）—
