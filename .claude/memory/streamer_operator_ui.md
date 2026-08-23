@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 3f8a1b93-ad92-45db-8404-e8cb45e0f296
-  modified: 2026-08-23T10:59:34.936Z
+  modified: 2026-08-23T11:25:41.150Z
 ---
 
 配信アプリ（[fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) v0.13.0・2026-08-23）に
@@ -69,6 +69,13 @@ contain-fit は左右対称なので、これはソース画像の横中央と�
 
 ⚠ 前面（`onStart`〜`onStop`）でないときは窓も止める。ただし**パネルは閉じない** —
 戻ったときに選んでいたショットが消えると押し直しになる。
+
+⚠⚠ **窓と読み物の並べ方を向きで変える**（横持ちは左右、縦持ちは上下）。上下のまま横持ちにすると、
+窓の帯が低く横に広いだけになり、4:3 の画が**縦で頭打ちして親指の爪ほどにしか出ない**
+（Pixel 7 Pro 実機 2340×1080 で幅 333px。横の余白はぜんぶ黒）。**長い辺を窓に渡す。**
+⚠ `orientation` は `configChanges` に入っている（回しても配信を切らないため）ので
+**Activity は作り直されず、`layout-land` は効かない**。`onConfigurationChanged` で
+自分で `LinearLayout.orientation` と weight を組み替える（`applyShootPanelOrientation`）。
 
 ## 3. ⚠⚠ Kotlin のブロックコメントは**入れ子になる**
 
