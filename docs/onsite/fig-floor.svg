@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 178 188" width="178mm" height="188mm" role="img" aria-labelledby="t d">
+<title id="t">現場の床を真上から見た配置</title>
+<desc id="d">1.8 メートル四方の床を真上から見た平面図。床は 15 センチ角のタイル単位で 3 つの領域に塗り分けられ、それぞれを 1 台のカメラが担当する。北西の角から東へ 0.59 メートル、南へ 1.22 メートルのL 字パーテーションが床の上に立つ。壁と塗り分けのほかには何も描いていない。</desc>
+<style>
+  text  { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
+  .zone { font-size: 4.2px; font-weight: bold; fill: #6a6a6a; }
+  .dim  { font-size: 2.4px; fill: #333; }
+  .cap  { font-family: "Times New Roman", "Yu Mincho", serif; font-size: 3.2px; font-weight: bold; }
+  .edge { fill: none; stroke: #9a9a9a; stroke-width: .2; }
+  .out  { fill: none; stroke: #000; stroke-width: .3; }
+  .wall { fill: #000; }
+  .dl   { fill: none; stroke: #333; stroke-width: .2; }
+</style>
+<g id="floor">
+<rect x="16.00" y="14.00" width="37.50" height="125.00" fill="#dcdcdc"/>
+<rect x="53.50" y="14.00" width="112.50" height="37.50" fill="#c2c2c2"/>
+<rect x="53.50" y="51.50" width="112.50" height="112.50" fill="#f2f2f2"/>
+<rect x="16.00" y="139.00" width="37.50" height="25.00" fill="#f2f2f2"/>
+<path d="M53.50,139.00 L53.50,14.00" class="edge"/>
+<path d="M53.50,51.50 L166.00,51.50" class="edge"/>
+<path d="M16.00,139.00 L53.50,139.00" class="edge"/>
+<rect x="16.00" y="14.00" width="150.00" height="150.00" class="out"/>
+</g>
+<g id="walls">
+<path d="M49.33,49.00 L98.50,49.00 L98.50,45.67 L49.33,45.67 Z" class="wall"/>
+<path d="M47.67,47.33 L47.67,149.00 L51.00,149.00 L51.00,47.33 Z" class="wall"/>
+</g>
+<text x="109.33" y="108.83" class="zone" text-anchor="middle">A</text>
+<text x="32.67" y="78.00" class="zone" text-anchor="middle">B</text>
+<text x="116.00" y="32.17" class="zone" text-anchor="middle">C</text>
+<path d="M16.00,170.00 L166.00,170.00" class="dl"/>
+<text x="91.00" y="168.60" class="dim" text-anchor="middle">1.80 m</text>
+<path d="M10.00,14.00 L10.00,164.00" class="dl"/>
+<text x="8.60" y="89.00" class="dim" text-anchor="middle" transform="rotate(-90 8.60 89.00)">1.80 m</text>
+<text x="73.92" y="44.93" class="dim" text-anchor="middle">0.59 m</text>
+<text x="44.13" y="98.17" class="dim" text-anchor="middle" transform="rotate(-90 44.13 98.17)">1.22 m</text>
+<path d="M162.00,11.00 L162.00,5.00" class="dl"/>
+<path d="M160.80,6.40 L162.00,4.40 L163.20,6.40 Z" fill="#333"/>
+<text x="162.00" y="13.00" class="dim" text-anchor="middle">北</text>
+<text x="89.00" y="184.00" class="cap" text-anchor="middle">図. 現場の床を真上から見た配置。塗りはカメラの担当領域、黒帯は L 字パーテーション。</text>
+</svg>
