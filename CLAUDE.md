@@ -100,6 +100,11 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
   人に聴かせるのは `py -3.11 tools/sound-preview.py` の 9 本
 - **被らないと分からないもの**（立体感・スケール・酔い・怖さの強度）は溜めて 1 回にまとめる →
   `rules/visual-verification.md`
+- ⚠ **検証出力は放っておくと 1 日で数 GB 積む**（1 走行の mp4 が 300〜450MB）。
+  2026-08-23 に C: の空きが 0 になり、走行が落ちた。刈るのは
+  `py -3.11 tools/prune-logs.py`（既定は dry-run・`--apply` で実削除）。
+  走行の数値証拠（`_xp.log` / `_logcat.log` / `_meta.json` / `-report.md`）と
+  `Logs/gen-plate` / `Logs/sound/ingest` は日付に関わらず残る
 
 ## スタック
 
