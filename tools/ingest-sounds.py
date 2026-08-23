@@ -874,7 +874,7 @@ def _cep_env(mag: np.ndarray, lifter: int) -> np.ndarray:
 def keep_formant(z: np.ndarray, y: np.ndarray, n: int = 2048, hop: int = 512,
                  lifter: int = 42, cap_db: float = 14.0,
                  floor_db: float = -60.0, top_hz: float = 5000.0,
-                 sr: int = None) -> np.ndarray:
+                 sr: int = None, amount: float = 1.0) -> np.ndarray:
     """<paramref name="z"/>（高さを下げた音）の**声色を** <paramref name="y"/>（元）**へ戻す**。
 
     高さを下げると声色も一緒に下がって「体格の大きい別人」になる。同じ時刻の元の包絡で
@@ -914,7 +914,7 @@ def keep_formant(z: np.ndarray, y: np.ndarray, n: int = 2048, hop: int = 512,
         if np.sqrt((yf ** 2).mean()) > floor:
             g = np.clip(_cep_env(np.abs(np.fft.rfft(yf * win, axis=0)), lifter)
                         / (_cep_env(np.abs(Z), lifter) + 1e-9), 1.0 / cap, cap)
-            Z = Z * (g ** (1.0 - lead))
+            Z = Z * (g ** (amount * (1.0 - lead)))
         out[i:i + n] += np.fft.irfft(Z, n=n, axis=0) * win
         wsum[i:i + n] += win ** 2
     # 足した無音を捨てて元の位置へ戻す（重みは 4 枚ぶん乗っているので割れる）。
@@ -945,11 +945,15 @@ def keep_shape(z: np.ndarray, y: np.ndarray, sr: int,
     return z[:n] * np.interp(np.arange(n), idx + k // 2, g)[:, None]
 
 
-def pitch_down(y: np.ndarray, ratio: float, sr: int, formant: bool = True) -> np.ndarray:
+def pitch_down(y: np.ndarray, ratio: float, sr: int,
+               formant: float = 1.0) -> np.ndarray:
     """**尺と声色を変えずに高さだけ** <paramref name="ratio"/> 倍にする（<see cref="LAUGH_PITCH"/>）。
 
     尺を `ratio` 倍へ縮めてから `ratio` 倍の速さで読む ＝ **尺は元どおり・高さだけ下がる**。
     そのあと声色を元へ戻す（<see cref="keep_formant"/>）。
+
+    <paramref name="formant"/> は**声色をどれだけ戻すか** 0..1。
+    1 ＝ 同じ女の子が低い声で笑う / 0 ＝ 体格の大きい別人（`tools/laugh-lab/` で聴き比べられる）。
     """
     if abs(ratio - 1.0) < 1e-6:
         return y
@@ -957,7 +961,7 @@ def pitch_down(y: np.ndarray, ratio: float, sr: int, formant: bool = True) -> np
     if len(z) < len(y):
         z = np.pad(z, ((0, len(y) - len(z)), (0, 0)))
     z = z[:len(y)]
-    return keep_shape(keep_formant(z, y, sr=sr) if formant else z, y, sr)
+    return keep_shape(keep_formant(z, y, sr=sr, amount=float(formant)) if formant else z, y, sr)
 
 
 def laugh_source(y: np.ndarray, sr: int) -> np.ndarray:

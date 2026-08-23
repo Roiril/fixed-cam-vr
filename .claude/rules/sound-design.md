@@ -370,6 +370,10 @@ DSP バッファを 512 にすれば粒が半分になるが、CPU が増えて�
 - **物証は `py -3.11 tools/sound-pitch.py`**（基音 Hz と呼びかけとの比）。
   `--gate` が計器そのものを答えの分かる音で通す
 - 聴く: `logs/sound/preview_pitch.wav`（呼びかけ → 一人 → 呼びかけ → 群れ → 重ねる）
+- **つまみで探すなら [`tools/laugh-lab/`](../../tools/laugh-lab/README.md)**（`serve.ps1` → 8130）。
+  鳴らしっぱなしのまま高さ・**声色**・速さを動かせる。⚠ **卓サーバ（8099）とは別物**で、
+  `show.json` も実機も触らない。組み方は `ingest-sounds.py` の関数そのものを呼ぶので、
+  **台で聴いた音がそのまま焼ける**
 - ⚠ **実機未検証**（2026-08-23）。**耳の判定は未確定** — 「まだ高い」「下げすぎ」は
   どちらも `LAUGH_PITCH` の 1 数字で動く（下げるほど小さい値）
 
@@ -829,6 +833,7 @@ py -3.11 tools/ingest-sounds.py        # もらった音の取り込みと切り
 py -3.11 tools/sound-lint.py           # 検査 → reports/<日付>_sound.html
 py -3.11 tools/sound-pitch.py          # 声の高さ（基音 Hz）→ --gate で計器自体を通す
 py -3.11 tools/sound-preview.py        # 人が聴く 10 本 → logs/sound/
+py -3.11 tools/laugh-lab/server.py     # 笑い声のつまみ台（8130・鳴らしっぱなしで即反映）
 ```
 ```powershell
 .\tools\unity.ps1 menu sound-import    # ⚠ 焼き直したら必須

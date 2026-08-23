@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>笑い声の調整台 — 廻リ視</title>
+<style>
+:root{
+  --paper:#f5efe2; --card:#ece4d4; --ink:#2b2723; --mute:#6a6257; --line:#d8cdb8;
+  --accent:#b85042; --accent-strong:#a8493c; --accent-2:#5f7d70;
+  --fs-xs:.75rem; --fs-sm:.875rem; --fs-base:1rem; --fs-md:1.125rem; --fs-lg:1.375rem; --fs-xl:1.875rem;
+  --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+  --sans:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic",Meiryo,sans-serif;
+  --serif:"Shippori Mincho","Yu Mincho","Hiragino Mincho ProN",serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --paper:#191512; --card:#221d18; --ink:#ede6d6; --mute:#a99e90; --line:#3a332b;
+  --accent:#e0663a; --accent-strong:#e87d55; --accent-2:#8fae9f;
+}}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:var(--fs-base);line-height:1.8;}
+.wrap{max-width:46rem;margin:0 auto;padding:32px 16px 64px}
+.eyebrow{font-size:var(--fs-xs);letter-spacing:.12em;color:var(--mute);margin:0 0 4px}
+h1{font-family:var(--serif);font-size:var(--fs-xl);line-height:1.35;margin:0 0 4px;border-bottom:3px solid var(--ink);padding-bottom:8px}
+.sub{font-size:var(--fs-sm);color:var(--mute);margin:8px 0 24px}
+h2{font-family:var(--serif);font-size:var(--fs-lg);line-height:1.35;margin:32px 0 12px;border-bottom:1px solid var(--line);padding-bottom:4px}
+.lead{background:var(--card);border-left:4px solid var(--accent);padding:12px 16px;margin:0 0 24px}
+.lead p{margin:0;font-size:var(--fs-sm)}
+
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
+button{font-family:var(--sans);font-size:var(--fs-sm);color:var(--ink);background:var(--card);
+  border:1px solid var(--line);border-radius:0;padding:8px 16px;cursor:pointer;line-height:1.5}
+button:hover{border-color:var(--ink)}
+button:disabled{color:var(--mute);cursor:default;border-color:var(--line)}
+button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--line);display:inline-block;margin-right:8px;vertical-align:middle}
+.dot.play{background:var(--accent)}
+.dot.busy{background:var(--accent-2)}
+
+.row{display:grid;grid-template-columns:7rem 1fr 6.5rem;gap:12px;align-items:center;margin:0 0 12px}
+.row label{font-size:var(--fs-sm)}
+.row .val{font-family:var(--mono);font-size:var(--fs-sm);text-align:right;color:var(--ink)}
+.row .val small{color:var(--mute);display:block;font-size:var(--fs-xs);line-height:1.4}
+input[type=range]{width:100%;accent-color:var(--accent);background:transparent}
+.hint{grid-column:2/4;font-size:var(--fs-xs);color:var(--mute);margin:-8px 0 12px;line-height:1.6}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:0 0 16px}
+.cell{background:var(--paper);padding:8px 12px}
+.cell .k{font-size:var(--fs-xs);color:var(--mute)}
+.cell .v{font-family:var(--mono);font-size:var(--fs-md)}
+.cell .v em{font-style:normal;color:var(--mute);font-size:var(--fs-sm)}
+
+table{width:100%;border-collapse:collapse;font-size:var(--fs-sm);margin:0 0 16px}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;line-height:1.5}
+th{color:var(--mute);font-weight:400;font-size:var(--fs-xs)}
+td.n{font-family:var(--mono);text-align:right}
+.note{font-size:var(--fs-sm);color:var(--mute);margin:16px 0 0}
+code{font-family:var(--mono);font-size:.9em}
+.err{border-left:4px solid var(--accent);background:var(--card);padding:8px 12px;font-size:var(--fs-sm);margin:0 0 16px}
+.err:empty{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+<p class="eyebrow">廻リ視 · 音の調整台</p>
+<h1>笑い声の調整台</h1>
+<p class="sub">人形の笑いを鳴らしっぱなしにして、高さ・声色・速さを動かす ／ 卓サーバ（8099）とは別物で、show.json も実機も触らない</p>
+
+<div class="lead">
+<p>つまみを動かすと、いま鳴っている輪が途切れないまま新しい音へ入れ替わります。組み方は <code>tools/ingest-sounds.py</code> そのものなので、ここで聴いた音がそのまま焼けます。決めたら「この値を採用」を押してください。</p>
+</div>
+
+<div class="bar">
+  <button id="play">▶ 鳴らす</button>
+  <button id="callBtn">あーそぼーを重ねる</button>
+  <span id="status"><span class="dot" id="dot"></span><span id="statusText">止まっています</span></span>
+</div>
+
+<div class="err" id="err"></div>
+
+<h2>どれを聴くか</h2>
+<div class="bar" id="layers"></div>
+
+<h2>つまみ</h2>
+
+<div class="row">
+  <label for="pitch">高さ</label>
+  <input type="range" id="pitch" min="0.25" max="1.00" step="0.01" value="0.45">
+  <span class="val" id="pitchV">0.45<small>倍</small></span>
+</div>
+<p class="hint">素材の何倍の高さで鳴らすか。小さいほど低い。いま焼いてあるのは <span id="baked">—</span>。</p>
+
+<div class="row">
+  <label for="formant">声色</label>
+  <input type="range" id="formant" min="0" max="1" step="0.05" value="1">
+  <span class="val" id="formantV">1.00</span>
+</div>
+<p class="hint">1 = 同じ女の子が低い声で笑う ／ 0 = 体格の大きい別人になる。間は連続。</p>
+
+<div class="row">
+  <label for="speed">速さ</label>
+  <input type="range" id="speed" min="0.70" max="1.40" step="0.01" value="1">
+  <span class="val" id="speedV">1.00<small>倍</small></span>
+</div>
+<p class="hint">高さを変えずに笑い方だけ速く／ゆっくりする。下げすぎると笑いが重なって「笑いっぱなし」になるので、下の在音率を見る。</p>
+
+<div class="row">
+  <label for="gain">音量</label>
+  <input type="range" id="gain" min="-12" max="6" step="0.5" value="0">
+  <span class="val" id="gainV">0.0<small>dB</small></span>
+</div>
+<p class="hint">焼くときの狙い（一人 -26 / 群れ -20 LUFS）からのずれ。天井 -3dBTP には自動で当たる。</p>
+
+<h2>いま鳴っているもの</h2>
+<div class="grid" id="stats"></div>
+
+<table>
+<tr><th>基準</th><th></th></tr>
+<tr><td>呼びかけ「あーそぼー」</td><td class="n" id="refCall">—</td></tr>
+<tr><td>笑いの素材（加工前）</td><td class="n" id="refRaw">—</td></tr>
+</table>
+
+<h2>決める</h2>
+<div class="bar">
+  <button id="choose">この値を採用</button>
+  <span id="chosen" class="note"></span>
+</div>
+<p class="note">採用しても <code>ingest-sounds.py</code> は書き換わりません（ブラウザから追跡下のソースを触らない）。値は <code>tools/laugh-lab/chosen.json</code> に残るので、焼くときはシュビーに言うか <code>py -3.11 tools/ingest-sounds.py --only bed_doll_one bed_dolls_grow_a bed_dolls_grow_b bed_dolls_laugh</code> を打ってください。</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const KEYS = ["pitch","formant","speed","gain"];
+const state = {pitch:0.45, formant:1, speed:1, gain:0, layer:"one"};
+let ctx = null, node = null, gainNode = null, buf = null, startedAt = 0, playing = false;
+let seq = 0, timer = null, callBuf = null;
+
+function setStatus(text, cls){
+  $("statusText").textContent = text;
+  $("dot").className = "dot" + (cls ? " " + cls : "");
+}
+
+async function state0(){
+  const r = await fetch("/api/state").then(r => r.json());
+  $("refCall").textContent = r.call_f0.toFixed(0) + " Hz";
+  $("refRaw").textContent = r.raw_f0.toFixed(0) + " Hz";
+  $("baked").textContent = r.baked.toFixed(2) + " 倍";
+  const box = $("layers");
+  for (const [k, name] of Object.entries(r.layers)){
+    const b = document.createElement("button");
+    b.textContent = name; b.dataset.layer = k;
+    if (k === state.layer) b.classList.add("on");
+    b.onclick = () => {
+      state.layer = k;
+      [...box.children].forEach(c => c.classList.toggle("on", c.dataset.layer === k));
+      schedule(0);
+    };
+    box.appendChild(b);
+  }
+}
+
+function showStats(s){
+  const ref = parseFloat($("refCall").textContent) || 1;
+  const rows = [
+    ["基音", s.f0.toFixed(0) + " Hz", "呼びかけの " + (s.f0 / ref).toFixed(2) + " 倍"],
+    ["低い方 / 高い方", s.f0_lo.toFixed(0) + " / " + s.f0_hi.toFixed(0), "Hz"],
+    ["高さ", s.lufs.toFixed(1) + " LUFS", "尖頭 " + s.peak.toFixed(1) + " dBTP"],
+    ["在音率", s.voiced + " %", "100% は笑いっぱなし"],
+    ["輪", s.sec.toFixed(0) + " 秒", s.voices + " 回"],
+  ];
+  $("stats").innerHTML = rows.map(([k, v, sub]) =>
+    `<div class="cell"><div class="k">${k}</div><div class="v">${v} <em>${sub}</em></div></div>`).join("");
+}
+
+function url(){
+  const q = new URLSearchParams({layer: state.layer});
+  KEYS.forEach(k => q.set(k, state[k]));
+  return "/api/render?" + q.toString();
+}
+
+async function render(){
+  const mine = ++seq;
+  setStatus(playing ? "組み直しています…" : "組んでいます…", "busy");
+  let res;
+  try {
+    res = await fetch(url());
+  } catch (e) { return fail(e.message); }
+  if (mine !== seq) return;                     // 追い越されたら捨てる
+  if (!res.ok){
+    const j = await res.json().catch(() => ({error: res.statusText}));
+    return fail(j.error || "失敗");
+  }
+  $("err").textContent = "";
+  try { showStats(JSON.parse(decodeURIComponent(res.headers.get("X-Stats")))); } catch (e) {}
+  const ab = await res.arrayBuffer();
+  if (mine !== seq) return;
+  const next = await ctx.decodeAudioData(ab);
+  if (mine !== seq) return;
+  swap(next);
+}
+
+function fail(msg){
+  $("err").textContent = "⚠ " + msg;
+  setStatus(playing ? "鳴っています（古い音のまま）" : "止まっています", playing ? "play" : "");
+}
+
+/** 鳴っている輪を止めずに、同じ位相から新しい輪へ渡す。 */
+function swap(next){
+  const at = ctx.currentTime;
+  const XF = 0.35;
+  let offset = 0;
+  if (buf && playing && Math.abs(buf.duration - next.duration) < 0.01){
+    offset = (at - startedAt) % next.duration;   // 同じ長さなら位相を保つ
+  }
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(1.0, at + XF);
+  g.connect(ctx.destination);
+  const n = ctx.createBufferSource();
+  n.buffer = next; n.loop = true;
+  n.connect(g);
+  n.start(at, offset);
+
+  if (node && gainNode){
+    gainNode.gain.setValueAtTime(gainNode.gain.value, at);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, at + XF);
+    node.stop(at + XF + 0.05);
+  }
+  node = n; gainNode = g; buf = next; startedAt = at - offset; playing = true;
+  $("play").textContent = "■ 止める";
+  setStatus("鳴っています", "play");
+}
+
+function stop(){
+  if (node){
+    const at = ctx.currentTime;
+    gainNode.gain.setValueAtTime(gainNode.gain.value, at);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, at + 0.2);
+    node.stop(at + 0.3);
+  }
+  node = null; gainNode = null; buf = null; playing = false;
+  $("play").textContent = "▶ 鳴らす";
+  setStatus("止まっています");
+}
+
+function schedule(ms){
+  clearTimeout(timer);
+  timer = setTimeout(() => { if (ctx) render(); }, ms);
+}
+
+for (const k of KEYS){
+  const el = $(k), out = $(k + "V");
+  const fmt = () => {
+    const v = parseFloat(el.value);
+    out.childNodes[0].nodeValue = k === "gain" ? v.toFixed(1) : v.toFixed(2);
+  };
+  el.addEventListener("input", () => {
+    state[k] = parseFloat(el.value);
+    fmt();
+    schedule(220);                                // 動かしている間は投げない
+  });
+  fmt();
+}
+
+$("play").onclick = async () => {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+  if (playing) stop(); else render();
+};
+
+$("callBtn").onclick = async () => {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+  if (!callBuf) callBuf = await ctx.decodeAudioData(await (await fetch("/api/call")).arrayBuffer());
+  const s = ctx.createBufferSource();
+  s.buffer = callBuf; s.connect(ctx.destination); s.start();
+};
+
+$("choose").onclick = async () => {
+  const body = Object.assign({}, state, {when: new Date().toISOString()});
+  const r = await fetch("/api/choose", {method: "POST", headers: {"Content-Type": "application/json"},
+                                        body: JSON.stringify(body)});
+  const j = await r.json();
+  $("chosen").textContent = j.ok
+    ? `採用: 高さ ${state.pitch.toFixed(2)} / 声色 ${state.formant.toFixed(2)} / 速さ ${state.speed.toFixed(2)} / 音量 ${state.gain.toFixed(1)}dB`
+    : "書けなかった: " + j.error;
+};
+
+state0();
+</script>
+</body>
+</html>

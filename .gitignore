@@ -186,6 +186,8 @@ $RECYCLE.BIN/
 
 # web compositor のキャプチャ/録画（PC ローカル成果物・コミットしない）
 tools/web-compositor/captures/
+# 調整台で採用した値のメモ（現場ごとの値なので配らない）
+tools/laugh-lab/chosen.json
 tools/web-compositor/recordings/
 # 旧環境で撮った素材の退避先（素材一覧には出さない。捨てずに残すだけ）
 tools/web-compositor/archive/
