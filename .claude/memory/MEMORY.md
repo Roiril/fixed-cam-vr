@@ -19,6 +19,7 @@
 - [approach_and_veil_hold.md](approach_and_veil_hold.md) - 接近の再設計（0102）を触る前に：**startCovered で _covered を true にすると画面差し替えが 1 度も起きない**／保持中に Hide を呼ぶと終わりに人形が消える／シェーダの hand は「画面が差し替わった」前提／偽ライブは trim を進める（trimEnd は指定しない）／卓の白名簿と mirrorOf／鏡の軸は splitX ではなく枠の中央
 - [backtrack_and_replay.md](backtrack_and_replay.md) - 体験者が引き返したとき：周は 2 つ（進行／区間）／前進は直前のカメラも見る／once は「決着した回数」で未報告の中断は頭から再演／録画は上書きしない
 - [show_run_skeleton.md](show_run_skeleton.md) - 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／凍結を増やさない／**終わり方の出口は 4 つ（合図・周回・時間切れ・卓）**
+- [camera_feel_flicker.md](camera_feel_flicker.md) - 「カメラ映像がちかちかする」の切り分け（配信スマホを直に測る / `feel` を卓から切る＝焼き直し不要 / **明るさと色を別々に測る**）。犯人は配信側ではなく自前の色ノイズで、**1-A だけなのは画がいちばん暗いから**
 - [glitch_and_latency.md](glitch_and_latency.md) - 乱れ演出と遅延計測：_Glitch と _SignalLost は別系統／post は 4 箇所同時に直す／絶対 E2E は測っていない（配信側に /clock が要る）
 - [swap_veil_mask.md](swap_veil_mask.md) - 黒い覆いの形は 2 系統（持続の覆い＝背景差分 100% / 入れ替わりの段＝CG 100%。混ざる区間は無い）／差分は linear なので明るい面は 4% の変化で拾い暗い面は 3.7 倍でも拾わない／実測：プレートが同日なら誤検出 2.8%・設営が変われば 52.6%／**カメラがずれても全体は黒くならない**（輪郭だけ・4° で 19% 飽和・後半ほど強い）／**拾えなかった画素の受け皿が無い**（黒い服は 29% しか覆えない）／2 段 mip が実質 1 段
 - [screen_decay.md](screen_decay.md) - 周回で進む解像度の劣化：post ではなく別系統 uniform（対応表は C# にしかない）／段差を作らない 3 つの仕掛け／進むのは Run 相だけで終了では保持／3 周目の録画も同じだけ粗くなる（2026-08-06 の設計判断をユーザーが覆した）
