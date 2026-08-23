@@ -8,7 +8,6 @@ py -3.11 tools/sound-preview.py
 出るもの（`logs/sound/`）:
   - `preview_materials.wav` … 素材を 1 本ずつ並べたもの（何がどんな音かを確かめる）
   - `preview_intro.wav` … 真っ暗 → A → 題字 → 導入 → 本編の入り口を通しで並べたもの（**流れ**）
-  - `preview_ambient.wav` … 周ごとの環境音の入れ替え（**実機と同じ式**・ループの継ぎ目も入る）
   - `preview_swap.wav` … 3 周目（入れ替わり → A・B は一人 → C で増える → 群れへ渡る）
   - どちらも波形＋スペクトログラムの PNG 付き
 
@@ -56,9 +55,7 @@ BELL_AFTER_SWAP = 1.2
 
 MATERIALS = [
     ("bed_seal", "【退避中】封印の箱の唸り — 箱を外したので鳴らない", 6.0),
-    ("bed_room", "環境音・1 周目（合成の部屋のトーン）", 6.0),
-    ("bed_room_lap2", "環境音・2 周目（もらった dark horror ambient）", 8.0),
-    ("bed_room_lap3", "環境音・3 周目（もらった dark horror soundscape）", 8.0),
+    ("bed_room", "部屋のトーン（合成）— **導入と終幕だけ**。本編では鳴らない（0115）", 6.0),
     ("bed_device", "装置の声・新しい（1 周目）", 6.0),
     ("bed_device_worn", "装置の声・痩せた（3 周目）", 6.0),
     ("bed_static", "信号断の砂嵐", 4.0),
@@ -88,6 +85,32 @@ MATERIALS = [
 def load(name: str) -> np.ndarray:
     y, _ = sk.read_wav(os.path.join(SRC, f"{name}.wav"))
     return sk.to_stereo(y)
+
+
+# ---- 本編の背景 ＝ 劇伴（`canon/LEDGER.md` 0115）-----------------------------
+#
+# 2026-08-23 から 1〜3 周目の背景は `HorrBGM` 1 本になった（周ごとの環境音は退役）。
+# **卓が鳴らす音なので `Assets/Resources/Sound/` には無い** — mp3 をここで復号して混ぜる。
+#
+# ⚠ 高さは実機と同じ: `show.json` の bgm は volume -1 ＝ トラック側の 0.5 が効く。
+#   素の mp3 は -21.7 LUFS なので、掛けた後は **-27.7 LUFS**（打鍵 -32 より 4.3dB 上）。
+SCORE_MP3 = os.path.join(ROOT, "Assets", "Art", "Audio", "HorrBGM.mp3")
+SCORE_WAV = os.path.join(ROOT, "logs", "sound", "ingest", "src_score_horrbgm.wav")
+SCORE_VOLUME = 0.5
+
+
+def load_score() -> np.ndarray:
+    """劇伴を**卓と同じ音量**で返す。初回だけ mp3 を復号して置いておく。"""
+    if not os.path.exists(SCORE_WAV):
+        import subprocess
+
+        import imageio_ffmpeg
+        os.makedirs(os.path.dirname(SCORE_WAV), exist_ok=True)
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-v", "error", "-i", SCORE_MP3,
+                        "-ar", str(sk.SR), "-ac", "2", "-c:a", "pcm_s16le", SCORE_WAV],
+                       check=True)
+    y, _ = sk.read_wav(SCORE_WAV)
+    return sk.to_stereo(y) * SCORE_VOLUME
 
 
 def tile(y: np.ndarray, sec: float) -> np.ndarray:
@@ -197,54 +220,9 @@ def build_intro() -> np.ndarray:
     return mix
 
 
-def build_ambient() -> np.ndarray:
-    """周ごとの環境音の入れ替え（`canon/LEDGER.md` 0049）を、**実機と同じ混ぜ方**で並べる。
-
-    ユーザー指示は「差し替えを気づかれないようにクロスフェード」で、
-    **気づくかどうかは耳でしか判定できない**（数値はどれも上限の内側に収まってしまう）。
-    だからここは近似ではなく、`SoundBedLogic.ApplyAmbientMix` と同じ式を写している:
-
-      - 位置（0..2）を**半減期 2.5 秒**で寄せる
-      - その小数部を等パワー（cos/sin）で 2 本へ配る ＝ 二乗の和が常に 1
-
-    ⚠ **2 周目の尺は 18.7 秒**なので、この 25 秒の区間で 1 度ループする。
-    **入れ替えと巻き戻りの両方が 1 本で聴ける。**
-    """
-    half_life = 2.5
-    laps = [("bed_room", 14.0), ("bed_room_lap2", 25.0), ("bed_room_lap3", 16.0)]
-    total = sum(sec for _n, sec in laps)
-    n = int(total * sk.SR)
-
-    beds = [tile(load(name), total) for name, _sec in laps]
-
-    # 各標本での位置（実機は毎フレーム寄せる。ここは 1 標本ごとに同じ式で進める）
-    pos = np.zeros(n)
-    cur = 0.0
-    dt = 1.0 / sk.SR
-    k = 0.5 ** (dt / half_life)
-    edges, acc = [], 0.0
-    for _name, sec in laps:
-        acc += sec
-        edges.append(acc)
-    for i in range(n):
-        t = i * dt
-        target = 0.0 if t < edges[0] else (1.0 if t < edges[1] else 2.0)
-        cur = target + (cur - target) * k
-        pos[i] = cur
-
-    lo = np.clip(np.floor(pos), 0, 1).astype(int)
-    f = pos - lo
-    out_g = np.cos(f * np.pi / 2)[:, None]
-    in_g = np.sin(f * np.pi / 2)[:, None]
-
-    mix = np.zeros((n, 2))
-    for i in range(3):
-        w = np.where(lo == i, out_g[:, 0], 0.0) + np.where(lo + 1 == i, in_g[:, 0], 0.0)
-        mix += beds[i][:n] * w[:, None]
-
-    print(f"  1 周目 0.0〜{edges[0]:.0f}s / 2 周目 〜{edges[1]:.0f}s（18.7s で 1 度ループ）"
-          f" / 3 周目 〜{edges[2]:.0f}s ・ 入れ替えは半減期 {half_life} 秒")
-    return mix
+# ⚠ 周ごとの環境音の入れ替え（旧 `preview_ambient` / `canon/LEDGER.md` 0049）は
+#   2026-08-23 に退役した（0115 — 3 本とも「怖くない」と退けられ、背景は劇伴 1 本になった）。
+#   聴き直したくなったら git 履歴の `build_ambient` を戻す。
 
 
 # --- 連絡の面の打鍵（`canon/LEDGER.md` 0056）--------------------------------
@@ -303,7 +281,8 @@ def build_comms() -> np.ndarray:
     total = t + 1.5
 
     # 本編の高さ（`rules/sound-design.md` §4 の表）。
-    out = tile(load("bed_room"), total) * 0.34 + tile(load("bed_device"), total) * 1.0
+    # ⚠ 背景は劇伴（0115）。**打鍵が大きすぎないかはこの上で聴く** — 部屋のトーンは本編に居ない。
+    out = tile(load_score(), total) + tile(load("bed_device"), total) * 1.0
     for at, hits, cps, label in marks:
         lay(out, type_burst(hits, cps, rng), at)
         print(f"  {at:5.1f}s  {label}")
@@ -326,8 +305,8 @@ def build_dolls() -> np.ndarray:
     t_mark = t_laugh + 25.0            # ここで報告を押した（笑いが止まる）
     total = t_mark + 3.0
 
-    # 4 周目 ＝ 装置は痩せ切っていて、環境音は 3 周目のもの（§4 の表）。
-    out = (tile(load("bed_room_lap3"), total) * 0.34
+    # 4 周目 ＝ 装置は痩せ切っている。背景は劇伴（0115・笑いのあいだは実機だと 0.85 退く）。
+    out = (tile(load_score(), total) * 0.15
            + tile(load("bed_device_worn"), total) * 1.0)
 
     # 笑いは輪。押されるまで鳴り続ける（実機は `SoundBedLogic.dolls` が音量を出し入れする）。
@@ -390,7 +369,8 @@ def build_swap() -> np.ndarray:
     b = np.clip((swell - 0.45) / 0.55, 0, 1) ** (1 / 0.6)
 
     # 3 周目の敷く音（§4 の表）。装置は痩せた側が混ざっている。
-    out = (tile(load("bed_room_lap3"), total) * 0.34
+    # 背景は劇伴（0115）。一人ぶんの笑いが鳴っているあいだは実機だと 0.45 退くので掛けてある。
+    out = (tile(load_score(), total) * 0.55
            + tile(load("bed_device_worn"), total) * 0.9
            + tile(load("bed_device"), total) * 0.4)
     g_one = at_sr(one)
@@ -457,7 +437,7 @@ def build_switch() -> np.ndarray:
         lay(out, shot(plain[pick(SWITCH_VARIANTS_N)]), 11.0 + 0.62 * i)
 
     # ③ 本編の敷く音（§4 の表・2 周目）。切替音がこの上でどう立つかを聴く。
-    lay(out, tile(load("bed_room_lap2"), total - bed_from) * 0.34, bed_from)
+    lay(out, tile(load_score(), total - bed_from), bed_from)
     lay(out, tile(load("bed_device"), total - bed_from), bed_from)
     at = start
     # ⚠ 素と警告つきを交ぜる（実機の 2 周目 C は接近のカットとゾーン切替が混ざる）。
@@ -499,7 +479,7 @@ def build_call() -> np.ndarray:
     lay(out, call, 0.6)          # まず声だけ（無音の上で）
 
     # 本編の敷く音（§4 の表・2 周目）。声がこの上でどう立つかを聴く。
-    lay(out, tile(load("bed_room_lap2"), total - bed_from) * 0.34, bed_from)
+    lay(out, tile(load_score(), total - bed_from), bed_from)
     lay(out, tile(load("bed_device"), total - bed_from), bed_from)
 
     at = start
@@ -581,8 +561,6 @@ def main() -> int:
     emit("preview_materials", build_materials(), "何がどんな音か")
     print("導入の流れ:")
     emit("preview_intro", build_intro(), "⚠ 近似。実機の混ざり方は SoundBedLogic が決める")
-    print("周ごとの環境音の入れ替え:")
-    emit("preview_ambient", build_ambient(), "実機と同じ式（等パワー・半減期 2.5 秒）")
     print("連絡の面の打鍵:")
     emit("preview_comms", build_comms(), "本編の敷く音の上で。頭の 2 本は速さの比べ")
     print("最後の演出（人形がたくさん出てくる所）:")

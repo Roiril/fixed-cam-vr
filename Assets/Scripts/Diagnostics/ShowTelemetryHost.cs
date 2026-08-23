@@ -530,19 +530,9 @@ namespace FixedCamVr.Diagnostics
         private string SoundCutoffState =>
             _sound == null ? "-" : (_sound.RoomCutoffHz / 1000f).ToString("F1");
 
-        /// <summary>
-        /// 周ごとの環境音の取り分（`0.00/1.00/0.00`）。**入れ替わりはここにしか出ない** —
-        /// 二乗の和が常に 1 なので、合計を見ている <c>sndAud</c> は 1 ビットも動かない。
-        /// </summary>
-        private string SoundAmbientState
-        {
-            get
-            {
-                if (_sound == null) return "-";
-                SoundBedGains g = _sound.Bed;
-                return $"{g.roomLap1:F2}/{g.roomLap2:F2}/{g.roomLap3:F2}";
-            }
-        }
+        // ⚠ 周ごとの環境音（旧 <c>sndAmb</c>）は 2026-08-23 に観測から外した
+        //   （`canon/LEDGER.md` 0115）。3 本の環境音ごと退役して背景は劇伴 1 本になったので、
+        //   見るのは <c>sndScore</c> 側になった。
 
         private string ShellRevealState => _shell == null ? "-" : (_shell.Revealing ? "1" : "0");
 
@@ -1164,9 +1154,6 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" sndBuilt=").Append(SoundBuiltState);
             _sb.Append(" sndAud=").Append(SoundAudibleState);
             _sb.Append(" sndLpf=").Append(SoundCutoffState);
-            //   sndAmb = 周ごとの環境音の取り分（1 周目/2 周目/3 周目）。**入れ替わったかの唯一の証拠**
-            //            — 合計は常に一定なので `sndAud` には出ない（canon/LEDGER.md 0049）
-            _sb.Append(" sndAmb=").Append(SoundAmbientState);
             //   sndDolls = 人形の笑いの音量（`canon/LEDGER.md` 0066）。**報告を押すまでループ**
             //              するので、一撃のログ（ev=sfx）には出ない。鳴ったかはここにしか出ない。
             _sb.Append(" sndDolls=").Append(_sound == null ? "-" : _sound.DollsGain.ToString("F2"));
@@ -1176,9 +1163,10 @@ namespace FixedCamVr.Diagnostics
             //              合計だけ見ても「増えた」のか「大きくなった」のか分けられない
             _sb.Append(" sndSwap=").Append(_sound == null ? "-" : _sound.DollSwapGain.ToString("F2"));
             _sb.Append(" sndSwell=").Append(_sound == null ? "-" : _sound.DollSwellNow.ToString("F2"));
-            //   sndScore = 劇伴（HorrBGM）の取り分（`canon/LEDGER.md` 0088）。**リセット後の黒だけ 1**で
-            //              題字が立つと退く。BgmDirector が鳴らす音なので `sndAud`（敷く音の合計）には
-            //              1 ビットも出ない — 本編で劇伴が黙っている証拠はこのキーだけ。
+            //   sndScore = 劇伴（HorrBGM）の取り分（`canon/LEDGER.md` 0115）。**黒から 3 周目の
+            //              終わりまで 1** で、終幕で退く。BgmDirector が鳴らす音なので
+            //              `sndAud`（敷く音の合計）には 1 ビットも出ない — 本編で背景が鳴っている
+            //              証拠はこのキーだけ（0115 で環境音を退役させたので、ここが 0 なら無音）。
             _sb.Append(" sndScore=").Append(_sound == null ? "-" : _sound.ScoreGain.ToString("F2"));
             _sb.Append(" sfxN=").Append(_sound == null ? "-" : _sound.SpotCount.ToString());
             _sb.Append(" swN=").Append(_switchSfx == null

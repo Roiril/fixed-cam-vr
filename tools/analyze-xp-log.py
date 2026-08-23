@@ -1776,57 +1776,34 @@ def analyze(events, others, exp, warns=None):
                 else:
                     verdict("OK", "隔離が閉じたときに部屋の帯域が狭まっている")
 
-        # -- 周ごとの環境音が入れ替わったか（`canon/LEDGER.md` 0049）
-        # ⚠ **合計は常に一定**（取り分の二乗和が 1）なので、`sndAud` には 1 ビットも出ない。
-        #    入れ替わりの証拠はこのキーだけ。
-        amb = effect_samples(events, "sndAmb")
-        if amb:
-            picked = set()
-            for a in amb:
-                parts = str(a).split("/")
-                if len(parts) != 3:
-                    continue
-                try:
-                    vals = [float(p) for p in parts]
-                except ValueError:
-                    continue
-                top = max(range(3), key=lambda i: vals[i])
-                if vals[top] > 0.9:
-                    picked.add(top + 1)
-            w(f"  環境音: {amb[-1]}（1 周目/2 周目/3 周目の取り分）"
-              f" — 鳴っていたのは {'・'.join(f'{p} 周目' for p in sorted(picked)) or '判定できず'}")
-            laps_seen = {int(e["lap"]) for e in events if str(e.get("lap", "")).isdigit()}
-            expect = {1} | ({2} if 2 in laps_seen else set()) | ({3} if 3 in laps_seen else set())
-            missing = sorted(expect - picked)
-            if missing:
-                verdict("FAIL", f"{'・'.join(f'{m} 周目' for m in missing)}の環境音へ入れ替わっていない"
-                                "（`bed_room_lap2` / `bed_room_lap3` を掴めているか sndBuilt を見る）")
-            else:
-                verdict("OK", f"環境音が周ごとに入れ替わっている（{len(picked)} 本）")
-
-        # -- 劇伴（`canon/LEDGER.md` 0088）
-        #    リセット後の黒だけ鳴り、題字が立った縁で退く。**鳴らしているのは BgmDirector なので
-        #    `sndAud`（敷く音の合計）には 1 ビットも出ない** — 証拠はこのキーだけ。
+        # -- 劇伴が本編で鳴り続けているか（`canon/LEDGER.md` 0115）
+        #    ⚠⚠ 2026-08-23 に**逆になった**判定。旧版（0088）は「本編で鳴っていたら FAIL」で、
+        #    いまは**本編で鳴っていなかったら FAIL**。周ごとの環境音（旧 `sndAmb`）は退役し、
+        #    1〜3 周目の背景はこれ 1 本しか無いので、ここが 0 なら**背景が丸ごと無音**。
+        #    ⚠ 鳴らしているのは BgmDirector なので `sndAud`（敷く音の合計）には 1 ビットも出ない。
         score = timed_samples(events, "sndScore")
         if score:
             peak = max(v for _t, v in score)
-            w(f"  劇伴: 最大 {peak:.2f}（リセット後の黒だけ鳴る）")
+            w(f"  劇伴: 最大 {peak:.2f}（黒から 3 周目の終わりまで鳴り続ける）")
             if peak <= 0.01:
-                verdict("WARN", "劇伴が 1 度も鳴っていない（sndScore が 0 のまま）— "
-                                "黒で A を待つ間が無かった走行なら正常。待ったのに 0 なら "
-                                "BgmDirector が居ないか show.json の bgm 指定が無い")
-            # 導入が段 0（Black）を出たあと ＝ 題字はとうに閉じている。
-            # ⚠ 退く尺（2 秒）は段 0 の中で終わるので、ここに残っていたら退いていない。
-            after = [fnum(e, "t", 0.0) for e in intro if e.get("stage") not in (None, "Black")]
-            if after:
-                t0 = min(after)
-                late = [(t, v) for t, v in score if t >= t0 and v > 0.05]
-                if late:
-                    verdict("FAIL", f"題字が閉じたあとも劇伴が鳴っている（t={late[0][0]:.1f}s で "
-                                    f"sndScore={late[0][1]:.2f}・{len(late)} 回）— 本編は装置と部屋の音"
-                                    "だけになるはず（SoundBedLogic の score を見る）")
-                elif peak > 0.01:
-                    verdict("OK", f"劇伴は題字までで退いた（最大 {peak:.2f}）")
+                verdict("FAIL", "劇伴が 1 度も鳴っていない（sndScore が 0 のまま）— "
+                                "**本編の背景が無音**。BgmDirector が居ないか "
+                                "show.json の bgm 指定が無い（`canon/LEDGER.md` 0115）")
+            else:
+                # 本編（周が立っているあいだ）の最小値を見る。1 度でも落ちていたら、
+                # そこが「区切り」として聞こえる ＝ ユーザーが言った「流れ続ける」に反する。
+                run = [fnum(e, "sndScore") for e in events
+                       if e.get("ev") in ("intro", "sum")
+                       and "sndScore" in e
+                       and str(e.get("lap", "")).isdigit() and int(e["lap"]) >= 1]
+                run = [v for v in run if v is not None]
+                if run and min(run) < 0.9:
+                    verdict("FAIL", f"本編で劇伴が凹んでいる（最小 {min(run):.2f}）— "
+                                    "背景は 1 本しか無いので、ここが落ちると穴になる")
+                elif run:
+                    verdict("OK", f"劇伴が本編で鳴り続けている（最小 {min(run):.2f}）")
+                else:
+                    verdict("OK", f"劇伴が鳴っている（最大 {peak:.2f}・本編まで走っていない走行）")
 
         # -- 節目の一撃
         by_id = {}

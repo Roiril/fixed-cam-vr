@@ -66,7 +66,7 @@ SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何�
 #    ⚠ 2026-08-23 追加: カメラ切替の**変種 6 本**と警告つき 6 本（`canon/LEDGER.md` 0112）。
 #       音源は 0057 のものと同じ 1 本で、切り出し方と並べ方だけが違う。
 RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_close",
-            "sfx_screen_on", "bed_room_lap2", "bed_room_lap3",
+            "sfx_screen_on",
             "sfx_shatter", "amb_dolls_laugh",
             "bed_dolls_laugh", "bed_doll_one", "bed_dolls_grow_a", "bed_dolls_grow_b",
             # ⚠ 人の声は倍音が揃うので純度が 0.62 出る（上限 0.60）。実物がそうである以上、

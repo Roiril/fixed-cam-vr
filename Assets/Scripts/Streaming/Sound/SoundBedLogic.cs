@@ -41,11 +41,6 @@ namespace FixedCamVr.Streaming
         /// <summary>映像の解像度の劣化（0 = 新しい / 1 = 落ち切った）。<see cref="ScreenDecayLogic"/>。</summary>
         public float decay;
 
-        /// <summary>
-        /// いまの周（1 始まり）。<b>環境音を周ごとに入れ替えるために読む</b>
-        /// （2026-08-15・<c>canon/LEDGER.md</c> 0049）。0 以下は 1 周目として扱う。
-        /// </summary>
-        public int lap;
         /// <summary>信号断の強さ（<see cref="SignalLostFx"/>）。</summary>
         public float signalLost;
         /// <summary>位置合わせ作業中（スタッフが実物に線を重ねている）。</summary>
@@ -96,17 +91,14 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>2026-08-15 から常に 0</b> — 箱を退避したので定位する先が無い（音源は残してある）。
         /// </summary>
         public float seal;
-        /// <summary>部屋のトーン（**3 本の合計**。どれをどれだけ鳴らすかは下の取り分）。</summary>
-        public float room;
-
         /// <summary>
-        /// 周ごとの環境音の取り分。<b>二乗の和が常に 1</b>（等パワー）なので、
-        /// <see cref="room"/> に掛けても入れ替えの最中に音の密度が凹まない。
+        /// 部屋のトーン（<c>bed_room</c> 1 本）。
         ///
-        /// 1 周目 = 合成の <c>bed_room</c> / 2 周目・3 周目 = ユーザー指定の音源
-        /// （2026-08-15・<c>canon/LEDGER.md</c> 0049）。
+        /// ⚠⚠ <b>2026-08-23 から本編では 0</b>（<c>canon/LEDGER.md</c> 0115）。周ごとに
+        /// 入れ替えていた 3 本の環境音は退役し、1〜3 周目の背景は劇伴（<see cref="score"/>）が持つ。
+        /// ここが鳴るのは<b>導入と終幕だけ</b> ＝ 体験者が実際に立っている部屋の音。
         /// </summary>
-        public float roomLap1, roomLap2, roomLap3;
+        public float room;
         /// <summary>装置（カメラ・伝送・スクリーン）の声。新しい方。</summary>
         public float device;
         /// <summary>同・痩せた方。<see cref="SoundShowState.decay"/> で等パワーに混ざる。</summary>
@@ -150,8 +142,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// <b>劇伴（`HorrBGM`）の取り分</b>（0 = 鳴らない / 1 = そのまま）。
-        /// <b>リセット後の黒で A を待っているあいだだけ 1</b> で、題字が立った縁で退く
-        /// （2026-08-18・<c>canon/LEDGER.md</c> 0088）。
+        ///
+        /// ⚠⚠ <b>2026-08-23 から本編でも鳴る</b>（<c>canon/LEDGER.md</c> 0115・ユーザー逐語
+        /// 「1~3周目に設定した環境音が怖くなくて、全部HorrorBGMにしてほしい」）。
+        /// リセット後の黒から 3 周目の終わりまで<b>切れずに流れ続ける</b>のが正で、
+        /// 0 に落ちるのは<b>終幕・位置合わせ・体験の終わり</b>だけ。
+        /// 旧仕様（黒のあいだだけ・0088）はここで置き換わった。
         ///
         /// ⚠ <see cref="duck"/> とは別の口。あちらは<b>一撃が鳴った瞬間だけ</b>引くもので、
         /// こちらは<b>体験のどこに劇伴が居てよいか</b>を決める。<c>BgmDirector</c> で両方掛かる。
@@ -165,8 +161,10 @@ namespace FixedCamVr.Streaming
     ///
     /// 設計の正本は <c>.claude/rules/sound-design.md</c>。要点は 3 つ:
     ///
-    /// 1. <b>層は「装置の音」と「現実の音」の 2 つだけ。</b> 劇伴（作者の声）を足すと
-    ///    「装置は正直に映している」という前提が壊れ、3 周目のすり替えに気づく瞬間の価値が下がる
+    /// 1. <b>敷く音は「装置の音」と「現実の音」の 2 つだけ。</b> ⚠⚠ ただし
+    ///    <b>2026-08-23 から劇伴が全編に居る</b>（<c>canon/LEDGER.md</c> 0115）。
+    ///    周ごとに入れ替えていた 3 本の環境音を「怖くない」と退けたのはユーザーで、
+    ///    背景は <c>HorrBGM</c> 1 本になった。ここが持つのは<b>その下で鳴る装置の声</b>
     /// 2. <b>音は絵より先に来る。</b> 段 2（色が抜ける）で装置の声が入り始め、画が変わり切るのは段 5。
     ///    これが 13 秒の導入を「1 つの出来事」として繋ぐ（切替の J カットと同じ考え）
     /// 3. <b>隔離は帯域で表す。</b> 段 5 で会場が黒へ落ちるとき、部屋の音は<b>小さくならず狭くなる</b>
@@ -188,10 +186,12 @@ namespace FixedCamVr.Streaming
         private const float DuckFallSec = 0.55f;
 
         /// <summary>
-        /// 劇伴が退くまでの秒。<b>＝ 題字が立ってから焼け始めるまで</b>
-        /// （<see cref="TitleLogic.AutoDismissSec"/>）。字が焼け落ちる前に渡し終える。
+        /// 劇伴が退くまでの秒。<b>いま退くのは終幕の頭だけ</b>（本編では鳴りっぱなし・0115）。
+        /// 装置の声が引き切る尺（<see cref="OutroDeviceFadeSec"/> 1.5 秒）より少し長く取って、
+        /// <b>音楽が装置より後に消える</b>ようにしてある — 逆にすると装置が死んだ後に
+        /// 音楽だけが残り、「まだ続く」と告げてしまう。
         /// </summary>
-        public const float ScoreFadeOutSec = TitleLogic.AutoDismissSec;
+        public const float ScoreFadeOutSec = 2.0f;
 
         /// <summary>
         /// 劇伴が戻るまでの秒。<b>退くより遅い</b> — 黒に落ちた直後の無音へ音楽が飛び込むと
@@ -255,8 +255,14 @@ namespace FixedCamVr.Streaming
         /// <summary>人形が一人で笑っているあいだ、劇伴をどこまで引くか。**群れ（0.85）より浅い。**</summary>
         public const float DollSwapDuck = 0.45f;
 
-        /// <summary>本編で部屋のトーンをどこまで下げるか（装置の声の下に敷く）。</summary>
-        public const float RoomInRun = 0.34f;
+        /// <summary>
+        /// <b>本編の部屋のトーン。0 ＝ 鳴らさない</b>（2026-08-23・<c>canon/LEDGER.md</c> 0115）。
+        ///
+        /// 旧値は 0.34（装置の声の下に敷いていた）。周ごとに入れ替わる 3 本の環境音ごと退役して、
+        /// 1〜3 周目の背景は劇伴が持つ。定数を残してあるのは<b>「本編には部屋が居ない」を
+        /// 1 か所で言うため</b>で、戻すならここを 0.34 へ書けば元の敷き方に戻る。
+        /// </summary>
+        public const float RoomInRun = 0f;
 
         /// <summary>隔離が閉じ切ったときの部屋の開き具合。0 にはしない（完全に無響は不自然）。</summary>
         public const float RoomOpenSealed = 0.16f;
@@ -272,18 +278,8 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float SpotBedDuck = 0.55f;
 
-        /// <summary>
-        /// 周ごとの環境音を入れ替える速さ（半減期・秒）。
-        /// **気づかれない長さにする** — 半減期 2.5 秒なら、入れ替わりに約 8 秒かかる。
-        /// 1 周 30 秒に対して 1/4 なので、区間を歩いているあいだに静かに入れ替わる。
-        /// </summary>
-        public const float AmbientCrossHalfLifeSec = 2.5f;
-
         private SoundBedGains _cur;
         private float _spotDuck;
-
-        /// <summary>環境音の位置（0 = 1 周目 / 1 = 2 周目 / 2 = 3 周目）。整数の間を連続で動く。</summary>
-        private float _ambPos;
 
         /// <summary>人形が画から消えてからの保持の残り（秒）。<see cref="DollHoldSec"/>。</summary>
         private float _dollHold;
@@ -319,8 +315,6 @@ namespace FixedCamVr.Streaming
             _cur.roomOpen = 1f;
             _spotDuck = 0f;
             _deviceTotal = 0f;
-            // 体験者が代わったら環境音も 1 周目へ戻す（**前の人の 3 周目から始めない**）。
-            _ambPos = 0f;
             // 前の人の 3 周目 C で増えた人形を持ち越さない。
             _dollHold = 0f;
             _swell01 = 0f;
@@ -360,7 +354,6 @@ namespace FixedCamVr.Streaming
 
             _cur.seal = SoundFade.Approach(_cur.seal, t.seal, SealRiseSec, SealFallSec, dt);
             _cur.room = SoundFade.Approach(_cur.room, t.room, RoomSec, dt);
-            ApplyAmbientMix(dt, st.lap);
             _deviceTotal = SoundFade.Approach(_deviceTotal, t.device, DeviceRiseSec, DeviceFallSec, dt);
             _cur.noise = SoundFade.Approach(_cur.noise, t.noise, NoiseRiseSec, NoiseFallSec, dt);
             _cur.dolls = SoundFade.Approach(_cur.dolls, t.dolls, DollsRiseSec, DollsFallSec, dt);
@@ -409,35 +402,6 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 周ごとの環境音の取り分を進める。<b>入れ替わりに気づかれないための形。</b>
-        ///
-        /// 判定は <c>canon/LEDGER.md</c> 0049（ユーザー逐語「2周目と3周目の環境音を、以下にそれぞれ
-        /// クロスフェードで入れ替えるようにして」「差し替えを気づかれないようにクロスフェードをお願い」）。
-        ///
-        /// ⚠ <b>周の番号で直接切り替えない。</b> 位置（0..2）を半減期で寄せ、その小数部を
-        /// <see cref="SoundFade.Cross"/> に渡す。こうすると
-        /// <b>どの瞬間も二乗の和が厳密に 1</b> ＝ 混ざっている最中に密度が凹まない
-        /// （線形に混ぜると真ん中で -3dB の谷ができ、それが「切り替わった」の合図になる）。
-        ///
-        /// ⚠ <b>音量では入れ替えを表さない。</b> 3 本とも同じ高さ（-32 LUFS）へ揃えてあるので、
-        /// 取り分だけが動く。片方が大きいと、どれだけ滑らかに混ぜても気づかれる。
-        /// </summary>
-        private void ApplyAmbientMix(float dt, int lap)
-        {
-            // 1 周目 = 0 / 2 周目 = 1 / 3 周目**以降** = 2（帰りの A も 3 周目の続きとして扱う）。
-            float target = lap <= 1 ? 0f : (lap == 2 ? 1f : 2f);
-            _ambPos = SoundFade.Approach(_ambPos, target, AmbientCrossHalfLifeSec, dt);
-
-            int lo = (int)_ambPos;
-            if (lo < 0) lo = 0; else if (lo > 1) lo = 1;
-            SoundFade.Cross(_ambPos - lo, out float outGain, out float inGain);
-
-            _cur.roomLap1 = lo == 0 ? outGain : 0f;
-            _cur.roomLap2 = lo == 0 ? inGain : outGain;
-            _cur.roomLap3 = lo == 0 ? 0f : inGain;
-        }
-
-        /// <summary>
         /// <b>C に居るあいだ、笑う人形が増えていく。</b>
         ///
         /// 判定は <c>canon/LEDGER.md</c> 0086（ユーザー逐語「3-A,3-Bでは一人の女の子が笑ってる感じ。
@@ -448,7 +412,7 @@ namespace FixedCamVr.Streaming
         /// 重なりながら順に入ってくる。
         ///
         /// ⚠ <b>時間で増やす。</b> ここが <see cref="Target"/> ではなく Tick に居るのは、
-        /// 増え具合が状態ではなく<b>C に居た時間</b>だから（<see cref="ApplyAmbientMix"/> と同じ理由）。
+        /// 増え具合が状態ではなく<b>C に居た時間</b>だから。
         ///
         /// ⚠ 出し入れは<b>聴感直線</b>（<see cref="SoundFade.Curve.Perceptual"/>）。
         /// 振幅を直線で動かすと、後半だけ急に増えたように聞こえる。
@@ -483,6 +447,8 @@ namespace FixedCamVr.Streaming
             g.seal = 0f;
 
             // --- 部屋 -----------------------------------------------------------
+            // ⚠⚠ **本編（Run）では鳴らない**（<see cref="RoomInRun"/> ＝ 0・0115）。
+            //    鳴るのは導入と終幕だけ ＝ 体験者が実際に立っている部屋の音。
             if (s.titleVisible) g.room = 0f;                       // タイトルは世界の手前
             else if (s.outroActive) g.room = OutroRoom(s.outroElapsedSec);
             else if (s.introActive) g.room = 0.85f;
@@ -500,13 +466,16 @@ namespace FixedCamVr.Streaming
             else g.device = 1f;
 
             // --- 劇伴（`HorrBGM`）------------------------------------------------
-            // **リセット後の黒で A を待っているあいだだけ鳴る。** 題字が立った縁で退いて、
-            // それ以降は装置と部屋の音だけになる（2026-08-18・`canon/LEDGER.md` 0088）。
+            // ⚠⚠ **2026-08-23 から、リセット後の黒から 3 周目の終わりまで鳴り続ける**
+            //    （`canon/LEDGER.md` 0115。旧 0088 の「黒のあいだだけ」はここで置き換わった）。
+            //    周ごとに入れ替えていた 3 本の環境音は退役し、背景はこれ 1 本になった。
             //
-            // ⚠ **段でも周でもなく「題字が立ったか」で決める。** タイトルは導入の段 0 に被さる
-            //    薄い層なので、導入の段を読むと「黒で待っている」と「素通し」が同じ段になる。
+            // ⚠ **段でも周でも切らない。** 途中で 0 を挟むと、そこが「区切り」として聞こえる —
+            //    ユーザーが言っているのは**流れ続ける背景**なので、穴を作らないことが仕様。
+            // ⚠ 落とすのは**終幕**だけ。装置が引くのと一緒に音楽も引き、終わりに音を残さない
+            //    （下の `registrationActive` / `Finished` でも 0 になる）。
             // ⚠ 退く尺（`ScoreFadeOutSec`）は Tick が持つ。ここは 0 か 1 しか言わない。
-            g.score = s.titleVisible && !s.titleGlyphShowing ? 1f : 0f;
+            g.score = s.outroActive ? 0f : 1f;
 
             // --- 人形の笑い -------------------------------------------------------
             // 締めのカットが報告を待っているあいだだけ鳴る（**押すまでループ**）。
@@ -614,6 +583,10 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 終幕の部屋。<b>装置が黙るぶんだけ、体験者が実際に立っている部屋が前へ出る。</b>
+        ///
+        /// ⚠ 0115 から本編の部屋は 0 なので、ここは<b>無音から立ち上がる</b>
+        /// （<see cref="RoomInRun"/> ＝ 0 なので式はそのまま成り立つ）。劇伴が引くのと入れ替わりに
+        /// 部屋が出てくる ＝ <b>作られた音が引いて、現実の音だけが残る</b>。
         ///
         /// ⚠ <b>終幕で足す音は 1 つも無い。</b> 装置が引いた後に残るのは元からあった部屋の音だけで、
         /// それも <see cref="ShowPhase.Finished"/> の分岐が Done で無音へ落とす
