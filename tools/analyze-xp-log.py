@@ -1802,6 +1802,17 @@ def analyze(events, others, exp, warns=None):
                                     "背景は 1 本しか無いので、ここが落ちると穴になる")
                 elif run:
                     verdict("OK", f"劇伴が本編で鳴り続けている（最小 {min(run):.2f}）")
+                # ⚠⚠ **取り分が 1 でも、音源が止まっていれば無音。** `sndScore` は
+                #    `ShowSoundDirector` が書いた倍率でしかなく、鳴らしているのは BgmDirector。
+                #    0115 より前は本編で劇伴が黙っている前提だったので、レーンが止まっていても
+                #    誰も困らなかった。**いまはこれが背景そのもの**なので、両方見る。
+                lane = [str(e.get("bgm", "")) for e in events
+                        if e.get("ev") == "sum" and "bgm" in e
+                        and str(e.get("lap", "")).isdigit() and int(e["lap"]) >= 1]
+                if lane and "0" in lane:
+                    verdict("FAIL", f"本編で BGM のレーンが止まっている"
+                                    f"（{lane.count('0')}/{len(lane)} 標本で bgm=0）— "
+                                    "取り分（sndScore）が 1 でも音源が止まっていれば無音")
                 else:
                     verdict("OK", f"劇伴が鳴っている（最大 {peak:.2f}・本編まで走っていない走行）")
 
