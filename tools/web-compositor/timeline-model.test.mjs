@@ -73,14 +73,18 @@ test('resolveBgmLane carries the current track forward across silent segments', 
     { lap: 2, camera: 1, hasBgm: true, bgm: { action: 'play', trackId: 'bgm_a' } },
   ];
   const lane = resolveBgmLane(segs, [0, 1, 2], 2, '');
+  const at = (k) => ({ trackId: lane.get(k).trackId, change: lane.get(k).change });
   // 1 周目: cam0 で開始 → cam1 は指示なしで継続 → cam2 で停止
-  assert.deepEqual(lane.get('1:0'), { trackId: 'bgm_a', change: 'start' });
-  assert.deepEqual(lane.get('1:1'), { trackId: 'bgm_a', change: null });
-  assert.deepEqual(lane.get('1:2'), { trackId: '', change: 'stop' });
+  assert.deepEqual(at('1:0'), { trackId: 'bgm_a', change: 'start' });
+  assert.deepEqual(at('1:1'), { trackId: 'bgm_a', change: null });
+  assert.deepEqual(at('1:2'), { trackId: '', change: 'stop' });
   // 2 周目: cam0 は無音のまま → cam1 で再開 → cam2 は継続
-  assert.deepEqual(lane.get('2:0'), { trackId: '', change: null });
-  assert.deepEqual(lane.get('2:1'), { trackId: 'bgm_a', change: 'start' });
-  assert.deepEqual(lane.get('2:2'), { trackId: 'bgm_a', change: null });
+  assert.deepEqual(at('2:0'), { trackId: '', change: null });
+  assert.deepEqual(at('2:1'), { trackId: 'bgm_a', change: 'start' });
+  assert.deepEqual(at('2:2'), { trackId: 'bgm_a', change: null });
+  // カットが触っていないので、入りと出は同じ曲。
+  assert.equal(lane.get('1:1').endTrackId, 'bgm_a');
+  assert.equal(lane.get('1:1').stepChange, false);
 });
 
 test('resolveBgmLane starts from the run default and marks same-track as retune', () => {
@@ -89,9 +93,10 @@ test('resolveBgmLane starts from the run default and marks same-track as retune'
     { lap: 1, camera: 2, hasBgm: true, bgm: { action: 'play', trackId: 'bgm_root', restart: true } },
   ];
   const lane = resolveBgmLane(segs, [0, 1, 2], 1, 'bgm_root');
-  assert.deepEqual(lane.get('1:0'), { trackId: 'bgm_root', change: null });   // ラン既定が鳴っている
-  assert.deepEqual(lane.get('1:1'), { trackId: 'bgm_root', change: 'retune' }); // 同一トラック → 位置維持
-  assert.deepEqual(lane.get('1:2'), { trackId: 'bgm_root', change: 'start' });  // restart → 頭出し
+  const at = (k) => ({ trackId: lane.get(k).trackId, change: lane.get(k).change });
+  assert.deepEqual(at('1:0'), { trackId: 'bgm_root', change: null });   // ラン既定が鳴っている
+  assert.deepEqual(at('1:1'), { trackId: 'bgm_root', change: 'retune' }); // 同一トラック → 位置維持
+  assert.deepEqual(at('1:2'), { trackId: 'bgm_root', change: 'start' });  // restart → 頭出し
 });
 
 // ---- CG 人形の立ち位置（steps[].placement）------------------------------------
@@ -291,4 +296,57 @@ test('覆いの左端は 0..1 へ丸める（枠の外を指す台本を実機�
       takes: [{ id: 't', steps: [{ source: 'live', swapMinX: 3.4 }] }] }],
   });
   assert.equal(serializeTimelineV3(tl).segments[0].takes[0].steps[0].swapMinX, 1);
+});
+
+// ---- カットが差し替える劇伴（canon/LEDGER.md 0118）------------------------------
+//   演出の bgm（占有・終わったら戻る）とは別物。カットのは**レーンそのものの書き換え**で、
+//   演出が終わっても区間を移っても鳴り続ける。
+
+test('カットの劇伴は往復する — 卓が保存しても消えない', () => {
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 2, camera: 2,
+      takes: [{
+        id: 'L2C2#1',
+        steps: [
+          { source: 'clip', cueId: 'pov_4', dollCall: true },
+          { source: 'live', camera: 2,
+            bgm: { action: 'play', trackId: 'bgm_LostPlace2', fadeInSec: 3, fadeOutSec: 3 },
+            hasBgm: true },
+        ],
+      }],
+    }],
+  });
+  const st = serializeTimelineV3(tl).segments[0].takes[0].steps;
+  assert.equal(st[0].hasBgm, false, '指示の無いカットは劇伴を持たない');
+  assert.equal(st[0].bgm, undefined, '幽霊の bgm を書き出さない');
+  assert.equal(st[1].hasBgm, true);
+  assert.equal(st[1].bgm.trackId, 'bgm_LostPlace2');
+  assert.equal(st[1].bgm.fadeInSec, 3, 'クロスフェードの尺が 💾 保存で消えない');
+});
+
+test('resolveBgmLane はカットの差し替えを次の区間へ持ち越す', () => {
+  // ⚠ ここを持ち越さないと、**卓だけが古い曲を表示して実機と食い違う**。
+  const segs = [
+    {
+      lap: 2, camera: 2,
+      takes: [{
+        id: 'L2C2#1',
+        steps: [
+          { source: 'clip', cueId: 'pov_4' },
+          { source: 'live', hasBgm: true, bgm: { action: 'play', trackId: 'bgm_next' } },
+        ],
+      }],
+    },
+    { lap: 3, camera: 0, takes: [] },
+  ];
+  const lane = resolveBgmLane(segs, [0, 1, 2], 3, 'bgm_root');
+  // 2-C は「入った時は既定 / 出る時は差し替え後」。
+  assert.equal(lane.get('2:2').trackId, 'bgm_root');
+  assert.equal(lane.get('2:2').endTrackId, 'bgm_next');
+  assert.equal(lane.get('2:2').stepChange, true);
+  // 3 周目以降は差し替え後の曲が続く（区間に指示は無い）。
+  assert.equal(lane.get('3:0').trackId, 'bgm_next');
+  assert.equal(lane.get('3:0').stepChange, false);
 });

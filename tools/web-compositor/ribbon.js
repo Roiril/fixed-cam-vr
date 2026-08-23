@@ -708,8 +708,14 @@ export function createRibbon(container, deps) {
     if (bgmSt) {
       const mark = bgmSt.change === 'start' ? '▶' : bgmSt.change === 'retune' ? '≡' : bgmSt.change === 'stop' ? '■' : '🎵';
       const label = bgmSt.trackId ? trackName(bgmSt.trackId) : (bgmSt.change === 'stop' ? '停止' : '無音');
-      bgmEl.textContent = `${mark} ${label}`;
-      bgmEl.className = 'rb-seg-bgm' + (bgmSt.change ? ' chg' : '');
+      // カットが区間の途中で曲を差し替えることがある（canon/LEDGER.md 0119）。
+      // **入った時の曲だけを書くと、卓と実機が食い違って見える**ので行き先も並べる。
+      const end = bgmSt.stepChange
+        ? ` → ${bgmSt.endTrackId ? trackName(bgmSt.endTrackId) : '無音'}`
+        : '';
+      bgmEl.textContent = `${mark} ${label}${end}`;
+      if (end) bgmEl.title = 'この区間のカットが途中で劇伴を差し替えます';
+      bgmEl.className = 'rb-seg-bgm' + (bgmSt.change || bgmSt.stepChange ? ' chg' : '');
     }
 
     el.querySelector('.rb-seg-add').onclick = (e) => { e.stopPropagation(); addTake(lap, ci, TAKE.AT_ENTER); };

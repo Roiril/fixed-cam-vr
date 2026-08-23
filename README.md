@@ -52,6 +52,7 @@
 
 主要コンポーネントの仕様（エンドポイント・遅延対策・show.json 設定契約・スクリーン合成モデル）は [.claude/rules/streaming.md](.claude/rules/streaming.md) に集約。
 音の設計・実機の物理・素材の作り方は [.claude/rules/sound-design.md](.claude/rules/sound-design.md) が正本（`tools/make-sounds.py` で焼き、`tools/sound-lint.py` で検査し、`tools/sound-pitch.py` で声の高さを測り、`tools/sound-preview.py` で人に聴かせる。笑い声のつまみ台は [tools/laugh-lab/](tools/laugh-lab/README.md)）。
+**劇伴だけは出口が違う** — `tools/make-bgm-track.py` がもらった曲から切り出して `tools/web-compositor/audio/` へ置き、卓が URL で配る（APK には焼かない）。
 
 ### 演出の事前オーサリング → ビルド焼き込み（Phase 3.7 の使い方）
 

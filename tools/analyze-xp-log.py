@@ -291,6 +291,21 @@ def expected_from_show(show: dict):
     # ⚠ 同上。画にも動画にも差が出ないので、期待値の出どころはここだけ。
     exp["dollCallSteps"] = sum(1 for t in takes for s in t["steps"] if s.get("dollCall"))
 
+    # カットが差し替える劇伴（カットの bgm・canon/LEDGER.md 0119）。
+    # ⚠ **これも音なので録画に映らない。** `ev=bgm trk=` が唯一の証拠。
+    #   演出の bgm（占有・終われば戻る）とは別物なので混ぜない — こちらは鳴りっぱなしになる。
+    # 入れ替わりのノイズを使うカット（カットの transition:"swap"）。
+    # ⚠ **本数を決め打ちにしない**（2026-08-23・0119 で 2 → 1 になった）。著作から数える。
+    exp["swapSteps"] = sum(1 for t in takes for s in t["steps"]
+                           if (s.get("transition") or "") == "swap")
+
+    exp["stepBgmTracks"] = [
+        s["bgm"].get("trackId", "")
+        for t in takes for s in t["steps"]
+        if s.get("hasBgm") and isinstance(s.get("bgm"), dict)
+        and s["bgm"].get("action") == "play" and s["bgm"].get("trackId")
+    ]
+
     # 録るべき区間（record.laps × course.order）。1 つでも欠けると、それを指す録画カットは
     # 実機で無言に飛ぶ。recNeeded（要求する側）と対で見ると「録り忘れ」と「使い忘れ」を切り分けられる。
     exp["recShould"] = ({(lap, cam) for lap in exp["recLaps"] for cam in exp["order"]}
@@ -1048,8 +1063,12 @@ def analyze(events, others, exp, warns=None):
                 hot_max = max(hot_max or 0, int(parts[8]))
         except ValueError:
             continue
+    want_swaps = exp.get("swapSteps", 0)
     if not swaps and swap_n == 0:
-        w("  記録なし（この走行では入れ替わりのカットへ到達していない）")
+        if want_swaps == 0:
+            w("  著作に入れ替わりのカットが 1 つも無い（0119 で 4 周目 A だけになった）")
+        else:
+            w("  記録なし（この走行では入れ替わりのカットへ到達していない）")
     else:
         w(f"  走った回数 {swap_n} / 砂の被覆の最大 {cov_max:.2f} / 矩形を書けた {rect_ok}")
         dirs = [e.get("dir") for e in begins]
@@ -1061,10 +1080,12 @@ def analyze(events, others, exp, warns=None):
                             "体験者が隠れないまま画面が差し替わっている")
         elif len(ends) < len(begins):
             verdict("WARN", f"入れ替わりが途中で畳まれた（begin {len(begins)} / end {len(ends)}）")
-        elif swap_n < 2:
-            verdict("WARN", f"入れ替わりが {swap_n} 回だけ（著作は 3 周目 A と 4 周目 A の 2 回）— "
-                            "走行が途中で終わったか、片方のカットへ到達していない")
-        elif "toDoll" not in dirs or "toHuman" not in dirs:
+        elif swap_n < want_swaps:
+            verdict("WARN", f"入れ替わりが {swap_n} 回だけ（著作は {want_swaps} 回）— "
+                            "走行が途中で終わったか、どれかのカットへ到達していない")
+        elif want_swaps >= 2 and ("toDoll" not in dirs or "toHuman" not in dirs):
+            # ⚠ 著作が 1 本しか無い走行でここを見ない（0119 で人 → 人形の入れ替わりは廃止され、
+            #   残るのは 4 周目 A の人形 → 人だけ。見ると**正しい走行が毎回 WARN する**）。
             verdict("WARN", f"向きが片方だけ（{'/'.join(d or '?' for d in dirs)}）— "
                             "人 → 人形 と 人形 → 人 の両方が要る")
         else:
@@ -2039,6 +2060,34 @@ def analyze(events, others, exp, warns=None):
         elif calls:
             verdict("FAIL", f"著作に無い人形の呼びかけが {len(calls)} 回鳴った — "
                             "show.json の dollCall と実機が食い違っている")
+
+        # -- カットが差し替える劇伴（呼びかけの次のカット・canon/LEDGER.md 0119）
+        #    ⚠ **これも画に出ない。** 追いついた文脈を運ぶのは黒い覆いではなく曲になったので、
+        #      ここが鳴っていなければ **2 周目 C の追いつきが 3 周目 A へ何も渡していない**。
+        want_tracks = exp.get("stepBgmTracks") or []
+        if want_tracks:
+            lane_ev = [e for e in events if e.get("ev") == "bgm"]
+            played = [str(e.get("trk", "")) for e in lane_ev]
+            w(f"  カットが替える劇伴: 著作 {'/'.join(want_tracks)} / "
+              f"実機のレーン {' → '.join(played) if played else '（1 度も変わっていない）'}")
+            missing = [t for t in want_tracks if t not in played]
+            if missing:
+                verdict("WARN", f"カットが指した劇伴が鳴っていない（{'/'.join(missing)}）— "
+                                "①そのカットの素材が無くて**カットごと飛んだ** "
+                                "②その差し込みに到達していない "
+                                "③`bgmTracks` にその id が無い ④卓が音源を配れていない、の順に疑う。"
+                                "①なら下の「演出のカット」節に理由が出る")
+            else:
+                verdict("OK", f"カットが劇伴を差し替えた（{'/'.join(want_tracks)}）")
+                # ⚠ 「鳴った」だけでは足りない。**呼びかけの後**でなければ演出として成立しない。
+                if calls:
+                    t_call = min(fnum(e, "t", 0.0) for e in calls)
+                    t_swap = min([fnum(e, "t", 0.0) for e in lane_ev
+                                  if str(e.get("trk", "")) in want_tracks], default=None)
+                    if t_swap is not None and t_swap < t_call:
+                        verdict("FAIL", f"劇伴が呼びかけより先に替わっている"
+                                        f"（劇伴 {t_swap:.1f}s < 呼びかけ {t_call:.1f}s）— "
+                                        "カットの並びが著作と食い違っている")
 
     # ---------------- 効果の実在 ----------------
     # 「段が進んだ」「演出が走った」は、画・音に何かが出たことを意味しない。

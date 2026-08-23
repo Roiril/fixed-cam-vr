@@ -54,7 +54,8 @@
               "cg": "",
               "cgMode": "follow",
               "hasPost": false,
-              "hasPlacement": false
+              "hasPlacement": false,
+              "hasBgm": false
             }
           ],
           "hasBgm": false
@@ -115,7 +116,8 @@
               "cg": "",
               "cgMode": "follow",
               "hasPost": false,
-              "hasPlacement": false
+              "hasPlacement": false,
+              "hasBgm": false
             }
           ],
           "bgm": {
@@ -202,7 +204,8 @@
               "cg": "",
               "cgMode": "follow",
               "hasPost": false,
-              "hasPlacement": false
+              "hasPlacement": false,
+              "hasBgm": false
             },
             {
               "source": "clip",
@@ -239,7 +242,8 @@
               "cg": "",
               "cgMode": "follow",
               "hasPost": false,
-              "hasPlacement": false
+              "hasPlacement": false,
+              "hasBgm": false
             },
             {
               "source": "clip",
@@ -290,7 +294,8 @@
                 "pixelate": 0
               },
               "hasPost": true,
-              "hasPlacement": false
+              "hasPlacement": false,
+              "hasBgm": false
             },
             {
               "source": "clip",
@@ -327,7 +332,8 @@
               "cg": "",
               "cgMode": "follow",
               "hasPost": false,
-              "hasPlacement": false
+              "hasPlacement": false,
+              "hasBgm": false
             }
           ],
           "hasBgm": false
@@ -388,7 +394,8 @@
               "cg": "",
               "cgMode": "follow",
               "hasPost": false,
-              "hasPlacement": false
+              "hasPlacement": false,
+              "hasBgm": false
             }
           ],
           "hasBgm": false

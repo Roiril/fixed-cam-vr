@@ -271,6 +271,29 @@ namespace FixedCamVr.Streaming
         public bool hasPost;
 
         /// <summary>
+        /// <b>このカットから劇伴を差し替える</b>（<c>canon/LEDGER.md</c> 0119）。
+        /// 型は区間 BGM と同じ <see cref="ShowBgmDef"/>（-1 = トラック既定を継承）。
+        ///
+        /// ⚠⚠ <b>演出の <see cref="ShowTakeDef.bgm"/> とは意味が違う。</b>
+        ///   あちらは<b>占有</b>（演出のあいだだけ差し替え、終わったら区間の曲へ戻る）。
+        ///   こちらは<b>レーンそのものの書き換え</b>で、<b>演出が終わっても区間を移っても鳴り続ける</b>。
+        ///   「ここから先はこの曲」と言いたいときに使う口で、戻すのは
+        ///   別の指示（区間 / カット / 演出）かランのリセットだけ。
+        ///
+        /// 立てているのは <b>2 周目 C の接近、呼びかけ（「あーそぼー」）の次のカット</b>だけ
+        /// （ユーザー指示「あーそーぼーの後、…クロスフェードで再生を始めてほしい」）。
+        /// 区間の縁ではなくカットに載せているのは、<b>差し替えの合図が呼びかけだから</b> —
+        /// 区間に載せると 3 周目 A に入るまで鳴り始めない。
+        ///
+        /// ⚠ 同じトラックを指すカットを 2 度通っても<b>頭出しし直さない</b>
+        ///   （<see cref="BgmPlanLogic.Decide"/> が Retune へ倒す）。引き返して演出が
+        ///   再演されても曲は続く。
+        /// ⚠ 演出が音を占有中（<see cref="ShowTakeDef.bgm"/>）なら鳴らさず<b>戻り先だけ</b>変わる。
+        /// </summary>
+        public ShowBgmDef? bgm;
+        public bool hasBgm;                 // present-flag（宣言 bool が正。TimelinePresentFlags 参照）
+
+        /// <summary>
         /// <c>durKind:"untilLine"</c> のときに待つ床の線（<c>layout.lines[].id</c>）。
         /// **カットの中で位置に反応する唯一の口**で、3 周目 A の凍結点がこれを使う。
         ///

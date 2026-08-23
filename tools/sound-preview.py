@@ -113,6 +113,46 @@ def load_score() -> np.ndarray:
     return sk.to_stereo(y) * SCORE_VOLUME
 
 
+# ---- 追いつきの後で入れ替わる劇伴（`canon/LEDGER.md` 0119）--------------------
+#
+# ⚠ こちらは **卓の `audio/`** に置く（`bgmTracks[].url` が指す場所）。git 管理外。
+#   焼くのは `tools/make-bgm-track.py`。素材そのものが元曲の 2:06 から切ってある。
+# ⚠ 高さは実機と同じ **0.57**。素で揃えると 0.30 だが、この曲は正体が 200Hz より下にあって
+#   内蔵スピーカーで -11.6dB 落ちるので、**通した後**で `HorrBGM@0.50` に揃えてある。
+SCORE2_MP3 = os.path.join(ROOT, "tools", "web-compositor", "audio", "LostPlace2.mp3")
+SCORE2_WAV = os.path.join(ROOT, "logs", "sound", "ingest", "src_score_lostplace2.wav")
+SCORE2_VOLUME = 0.57
+
+
+def load_score2() -> np.ndarray:
+    """入れ替わった後の劇伴を**実機と同じ音量**で返す。"""
+    if not os.path.exists(SCORE2_WAV):
+        import subprocess
+
+        import imageio_ffmpeg
+        os.makedirs(os.path.dirname(SCORE2_WAV), exist_ok=True)
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-v", "error", "-i", SCORE2_MP3,
+                        "-ar", str(sk.SR), "-ac", "2", "-c:a", "pcm_s16le", SCORE2_WAV],
+                       check=True)
+    y, _ = sk.read_wav(SCORE2_WAV)
+    return sk.to_stereo(y) * SCORE2_VOLUME
+
+
+def through_speaker(y: np.ndarray) -> np.ndarray:
+    """**Quest の内蔵スピーカー**を通した音（`soundkit.speaker_loss_db` と同じ近似）。
+
+    ⚠ これは「実機で耳に届く形」であって、ヘッドホンで聴いた印象ではない。
+      低い方に正体がある曲は、ここを通すと**別の音になる**。
+    """
+    m = sk.to_stereo(y)
+    out = np.empty_like(m)
+    for c in range(m.shape[1]):
+        v = sk.biquad_fft(sk.biquad_fft(m[:, c], "hp", 200.0, 0.707, 0.0, sk.SR),
+                          "hp", 200.0, 0.707, 0.0, sk.SR)
+        out[:, c] = sk.biquad_fft(v, "lp", 12000.0, 0.707, 0.0, sk.SR)
+    return out
+
+
 def tile(y: np.ndarray, sec: float) -> np.ndarray:
     """ループ素材を必要な長さまで繰り返す（**継ぎ目の確認も兼ねる**）。"""
     n = int(sec * sk.SR)
@@ -583,6 +623,52 @@ def build_pitch() -> np.ndarray:
     return out
 
 
+def build_score_swap() -> np.ndarray:
+    """**呼びかけの後で劇伴が入れ替わる所**（`canon/LEDGER.md` 0119）。
+
+    追いついた文脈を運ぶのが黒い覆いではなく曲になったので、**ここが演出そのもの**。
+    判定してほしいのは 2 つ:
+
+    1. **新しい曲の音量**（`show.json` の `bgmTracks[].volume` = 0.57）
+    2. **クロスフェードの尺**（カットの `bgm.fadeInSec` = 3.0 秒）
+
+    ⚠⚠ **同じ中身を 2 回鳴らす。** 前半はヘッドホン、後半は**内蔵スピーカーを通した形**。
+      この曲は正体が 200Hz より下にあるので、**2 つは別の音に聞こえるのが正しい**。
+      展示で耳に届くのは後半の方。
+    """
+    seg, gap = 17.0, 1.0
+    call = load("sfx_doll_call")
+    sw = load("sfx_switch_alert_1")
+    dev = load("bed_device")
+    a, b = load_score(), load_score2()
+
+    one = np.zeros((int(seg * sk.SR), 2))
+    # 装置の声（本編と同じ 0.5 前後）。曲だけで判定すると実機より静かな場に置くことになる。
+    lay(one, tile(dev, seg), 0.0, 0.5)
+    # 追いつきまでは HorrBGM。t=5.4 から 3 秒かけて等パワーで入れ替わる。
+    fade_at, fade_sec = 5.4, 3.0
+    n_fade = int(fade_sec * sk.SR)
+    t = np.linspace(0.0, 1.0, n_fade)
+    out_g, in_g = np.cos(t * np.pi / 2), np.sin(t * np.pi / 2)
+    i0 = int(fade_at * sk.SR)
+    head = int(40 * sk.SR)
+    lay(one, a[head:head + i0], 0.0)                                    # 交代まで
+    lay(one, a[head + i0:head + i0 + n_fade], fade_at, out_g)
+    lay(one, b[:n_fade], fade_at, in_g)                                 # 入る側は曲の頭 = 2:06
+    lay(one, b[n_fade:int(seg * sk.SR)], fade_at + fade_sec)
+    # 呼びかけ（カットの頭 = 交代の 1.4 秒前）と、同じ縁の警告つき切替音。
+    lay(one, sw, fade_at - 1.4)
+    lay(one, call, fade_at - 1.4)
+
+    total = seg * 2 + gap
+    out = np.zeros((int(total * sk.SR), 2))
+    lay(out, one, 0.0)
+    lay(out, through_speaker(one), seg + gap)
+    print(f"   0.0s HorrBGM ＋ 装置の声   {fade_at - 1.4:.1f}s あーそぼー（＋警告つき切替）   "
+          f"{fade_at:.1f}s 交代（3 秒）   {seg + gap:.1f}s 同じ中身を**内蔵スピーカー越し**で")
+    return out
+
+
 def main() -> int:
     print("素材を 1 本ずつ:")
     emit("preview_materials", build_materials(), "何がどんな音か")
@@ -604,6 +690,9 @@ def main() -> int:
     print("笑いの高さ（呼びかけと並べる）:")
     emit("preview_pitch", build_pitch(),
          "呼びかけ → 一人 → 呼びかけ → 群れ → 重ねる。**同じ人形に聞こえるか**")
+    print("追いつきの後で劇伴が入れ替わる所:")
+    emit("preview_score_swap", build_score_swap(),
+         "前半ヘッドホン / 後半は内蔵スピーカー越し。**音量と交代の尺**が判定")
     print(f"\n→ {OUT}")
     return 0
 

@@ -656,6 +656,59 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(Field(rig.Runner, "_bgmOverrideActive"), Is.False);
         }
 
+        // ---- カットの BGM（レーンそのものの書き換え・canon/LEDGER.md 0119）--------------
+        //
+        // 演出の BGM（上）は**占有**で、終われば区間の曲へ戻る。カットの BGM は**レーンの書き換え**で、
+        // 演出が終わっても区間を移っても鳴り続ける。2 周目 C の呼びかけ（「あーそぼー」）の次のカットが
+        // これを使う ＝ 追いついた文脈を、黒い覆いではなく曲が 3 周目 A まで運ぶ。
+
+        [Test]
+        public void StepBgm_RewritesTheLane_AndSurvivesTheTakeEnding()
+        {
+            Rig rig = MakeRig();
+            BgmDirector bgm = AttachBgm(rig);
+            bgm.ApplySegment(Bgm(BgmPlanLogic.ActionPlay, "amb"), present: true);
+
+            ShowStepDef call = LiveStep(3, 1f);          // 呼びかけのカット（曲はまだ替わらない）
+            ShowStepDef after = LiveStep(3, 1f);         // その次のカットで替わる
+            after.bgm = Bgm(BgmPlanLogic.ActionPlay, "score");
+            after.hasBgm = true;
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", call, after)) });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(Field(bgm, "_laneTrackId"), Is.EqualTo("amb"), "呼びかけのカットでは替わらない");
+
+            _now = 1.1f;
+            Frame(rig);
+            Assert.That(Field(bgm, "_laneTrackId"), Is.EqualTo("score"), "次のカットでレーンが替わる");
+            Assert.That(Field(bgm, "_takeOverrideActive"), Is.False, "占有ではない（戻す口を作らない）");
+
+            _now = 3f;
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.False);
+            Assert.That(Field(bgm, "_laneTrackId"), Is.EqualTo("score"),
+                        "演出が終わっても前の曲へ戻らない — ここが take の bgm との違い");
+        }
+
+        [Test]
+        public void StepBgm_IsNotAppliedWhenTheStepIsSkipped()
+        {
+            // 素材が無くて飛ばされたカットで曲だけ替わると、走行から「なぜ替わったか」が読めない。
+            Rig rig = MakeRig();
+            BgmDirector bgm = AttachBgm(rig);
+            bgm.ApplySegment(Bgm(BgmPlanLogic.ActionPlay, "amb"), present: true);
+
+            ShowStepDef missing = ClipStep("", 1f);      // assetUrl 空 = 解決できない
+            missing.bgm = Bgm(BgmPlanLogic.ActionPlay, "score");
+            missing.hasBgm = true;
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", missing)) });
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(Field(bgm, "_laneTrackId"), Is.EqualTo("amb"), "飛ばしたカットは曲を替えない");
+        }
+
         // ---- 開始規則「このラインを通過したら」の使えないライン（2026-07-27 監査） ----
 
         private static ShowTakeDef LineTake(string id, string lineId, string ifMissed, params ShowStepDef[] steps) => new()

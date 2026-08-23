@@ -33,7 +33,12 @@ export function newSeg(lap, camera) {
 // 区間列を course.order 順に走査し、各区間で「鳴っている BGM」を carry-forward で解決する。
 //   Unity 側 BgmPlanLogic.Decide の JS ミラー（指示の無い区間は前の曲が続く / 同一トラックは retune）。
 //   タイムラインの BGM 帯（どこで曲が変わり、どこで止まるか）と ▶ 検証パネルが共有する。
-//   返り値: Map<"lap:camera", { trackId, change }>  change = 'start' | 'retune' | 'stop' | null
+//   返り値: Map<"lap:camera", { trackId, change, endTrackId, stepChange }>
+//     trackId    = 区間に入った時に鳴っている曲   change = 'start' | 'retune' | 'stop' | null
+//     endTrackId = 区間を出る時に鳴っている曲（**カットが途中で差し替えることがある**）
+//     stepChange = 区間の途中でカットが差し替えたか（canon/LEDGER.md 0119）
+//   ⚠ **carry-forward は endTrackId で行う。** ここを trackId のままにすると、カットが
+//     差し替えた曲が次の区間から消え、**卓だけが古い曲を表示する**（実機は鳴らし続ける）。
 export function resolveBgmLane(segments, order, lapCount, rootTrackId = '') {
   const at = new Map();
   const segs = segments || [];
@@ -52,7 +57,19 @@ export function resolveBgmLane(segments, order, lapCount, rootTrackId = '') {
           cur = '';
         }
       }
-      at.set(`${lap}:${cam}`, { trackId: cur, change });
+      const enter = cur;
+      // カットの差し替え（レーンの書き換え）。演出 → カットの順に見る ＝ 実機の実行順。
+      // ⚠ 演出の bgm（占有）はレーンを動かさないのでここでは読まない（resolveTakeBgm の担当）。
+      for (const t of (s && s.takes) || []) {
+        for (const st of (t && t.steps) || []) {
+          if (!st || !st.hasBgm || !st.bgm) continue;
+          if (st.bgm.action === 'play' && st.bgm.trackId) cur = st.bgm.trackId;
+          else if (st.bgm.action === 'stop') cur = '';
+        }
+      }
+      at.set(`${lap}:${cam}`, {
+        trackId: enter, change, endTrackId: cur, stepChange: cur !== enter,
+      });
     }
   }
   return at;
@@ -159,6 +176,12 @@ export function newStep(over = {}) {
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
     placement: { x: 0, z: 0, yawDeg: 0 }, hasPlacement: false,
     post: { ...FX_DEFAULT }, hasPost: false,
+    // このカットから劇伴を差し替える（canon/LEDGER.md 0119）。
+    // ⚠ **演出の bgm（占有・終わったら戻る）とは意味が違う。** こちらはレーンそのものの
+    //   書き換えで、演出が終わっても区間を移っても鳴り続ける。
+    // ⚠ **卓にまだ編集 UI が無い**（show.json を手で書く）。ここと serializeStep に
+    //   置いてあるのは「卓が保存したときに消えない」ようにするため。
+    bgm: defaultBgm(), hasBgm: false,
     ...over,
   };
 }
@@ -241,6 +264,9 @@ function serializeStep(s) {
   } else {
     out.hasPlacement = false;
   }
+  // カットが差し替える劇伴（canon/LEDGER.md 0119）。present-flag 規約は take / 区間と同じ。
+  if (s.hasBgm) out.bgm = { ...defaultBgm(), ...(s.bgm || {}) };
+  out.hasBgm = !!s.hasBgm;
   return out;
 }
 
@@ -325,6 +351,8 @@ function normalizeTake(t) {
     hasPost: !!s.hasPost,
     placement: { x: 0, z: 0, yawDeg: 0, ...(s.placement || {}) },
     hasPlacement: !!s.hasPlacement,
+    bgm: { ...defaultBgm(), ...(s.bgm || {}) },
+    hasBgm: !!s.hasBgm,
   }));
   return out;
 }

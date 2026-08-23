@@ -603,6 +603,13 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
+            // このカットから劇伴を差し替える（`canon/LEDGER.md` 0119）。
+            // ⚠ **演出の bgm（占有）とは別の口。** こちらはレーンそのものを書き換えるので、
+            //   演出が終わっても区間を移っても鳴り続ける。
+            // ⚠ **飛ばすカットでは掛けない**（上の !playable で return 済み）。素材が無くて
+            //   画が出なかったカットで曲だけ変わると、走行から「なぜ変わったか」が読めなくなる。
+            BeginStepBgm(step);
+
             // post 層はカットごとに掛け替える（無指定のカットでは解除して区間 / カメラ / global へ戻す）。
             showControl?.SetInsertPostOverride(step.hasPost && step.post != null, step.hasPost ? step.post : null);
 
@@ -914,6 +921,17 @@ namespace FixedCamVr.Streaming
             if (bgmDirector == null) bgmDirector = FindObjectOfType<BgmDirector>();
             if (bgmDirector == null) return;
             _bgmOverrideActive = bgmDirector.BeginTakeOverride(take.bgm, take.hasBgm && take.bgm != null);
+        }
+
+        // カットの BGM 指示を掛ける（`canon/LEDGER.md` 0119）。
+        // ⚠⚠ **占有ではなくレーンの書き換え**なので、`ApplySegment` を通す。`BeginTakeOverride` を
+        //   使うと演出の終わりに前の曲へ戻ってしまい、「ここから先はこの曲」が書けない。
+        // ⚠ 演出が音を占有中なら鳴らず、戻り先だけが変わる（`ApplySegment` の契約）。
+        private void BeginStepBgm(ShowStepDef step)
+        {
+            if (!step.hasBgm || step.bgm == null) return;
+            if (bgmDirector == null) bgmDirector = FindObjectOfType<BgmDirector>();
+            bgmDirector?.ApplySegment(step.bgm, present: true);
         }
 
         // 演出が終わった / 畳まれた。占有していたならレーン（区間の曲）へ返す。

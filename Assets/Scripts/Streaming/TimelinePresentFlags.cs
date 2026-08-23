@@ -38,6 +38,8 @@ namespace FixedCamVr.Streaming
                             step.hasPost = step.hasPost && step.post != null;
                             // CG 人形の立ち位置も同じ規約。幽霊の placement で人形が原点に立たない。
                             step.hasPlacement = step.hasPlacement && step.placement != null;
+                            // カットが差し替える劇伴も同じ規約。幽霊の bgm でレーンが書き換わらない。
+                            step.hasBgm = step.hasBgm && step.bgm != null;
                         }
                     }
             }

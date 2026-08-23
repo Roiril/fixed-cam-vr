@@ -10,6 +10,7 @@
 |---|---|
 | 合成の原器（DSP・測定） | `tools/soundkit.py` |
 | 素材を焼く | `tools/make-sounds.py` → `Assets/Resources/Sound/` |
+| **劇伴を切り出す** | `tools/make-bgm-track.py` → **`tools/web-compositor/audio/`**（0119）。⚠ 出口が違う — APK ではなく**卓が URL で配る**。`show.json` の `bgmTracks[]` から参照。**git 管理外なので `TRACKS` の表が唯一の記録** |
 | 検査（合否＋絵） | `tools/sound-lint.py` → `reports/<日付>_sound.html` / `Assets/Screenshots/sound/` |
 | 人に聴かせる | `tools/sound-preview.py` → `logs/sound/preview_*.wav` |
 | 取り込み設定 | `.\tools\unity.ps1 menu sound-import` |
@@ -20,6 +21,10 @@
 
 ⚠ **numpy はこの機に入っている**（2.4.6）。`~/.claude/rules/windows-env.md` の
 「numpy は入っていない」は少なくともこの機では古い。scipy と ffmpeg は無い。
+
+⚠ **ffmpeg は `imageio_ffmpeg` が同梱している**（`imageio_ffmpeg.get_ffmpeg_exe()`）。
+PATH に `ffmpeg` は無いが、mp3 の復号・切り出し・書き出しはこれで全部できる
+（`ingest-sounds.py` と `make-bgm-track.py` が使っている）。
 
 ## 計器の方が嘘をつく（1 日で 4 回踏み、2026-08-18 にもう 1 回）
 

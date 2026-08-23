@@ -146,10 +146,32 @@ namespace FixedCamVr.Streaming
         /// <summary>URL 解決に使う卓サーバ参照（ライブ URL の絶対化）。</summary>
         public void SetServer(ShowServerSource? server) => _server = server;
 
-        /// <summary>show.json の bgmTracks を差し替える。</summary>
+        /// <summary>show.json の bgmTracks を差し替え、**まだ落としていない曲を先に落とす**。</summary>
         public void SetTracks(ShowBgmTrackDef[]? tracks)
         {
             _tracks = tracks ?? Array.Empty<ShowBgmTrackDef>();
+            _ = PrefetchTracksAsync();
+        }
+
+        /// <summary>
+        /// 表にある曲を全部落としてキャッシュへ入れる（<c>ShowControlClient.PrefetchTimelineClips</c> と同じ立ち位置）。
+        ///
+        /// ⚠⚠ <b>指示が来てから落とすと、その分だけ曲の入りが遅れる。</b> 実測（2026-08-23・
+        /// <c>canon/LEDGER.md</c> 0119）: 人形の呼びかけ（t=91.9）の次のカットで劇伴を差し替える著作に対し、
+        /// 実機でレーンが替わったのは <b>t=94.2</b>。カットの尺（1.4 秒）を差し引いた
+        /// <b>0.9 秒が 3.6MB の取得と復号</b>だった。会場の電波が細ければもっと延びる。
+        /// ⭐ <b>先に落としたら 2.27 秒 → 1.39 秒</b>（呼びかけからレーンが替わるまで）＝
+        /// <b>カットの尺そのもの</b>になった（実測・同日の走行 2 本）。
+        ///
+        /// ⚠ 失敗しても黙って諦める（`LoadClipAsync` が警告を出す）。必要になった時にもう一度落とす。
+        /// </summary>
+        private async Task PrefetchTracksAsync()
+        {
+            foreach (var t in _tracks)
+            {
+                if (t == null || string.IsNullOrEmpty(t.url) || _clips.ContainsKey(t.url)) continue;
+                await LoadClipAsync(t.url);
+            }
         }
 
         /// <summary>
