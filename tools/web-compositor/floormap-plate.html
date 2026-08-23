@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>フロアマップ（壁と塗りだけ）</title>
+<!--
+  卓のフロアマップから「壁」と「塗られた床」だけを抜いた版。
+  位置合わせ点・カメラ姿勢・通過ライン・開始位置は描かない。
+
+  ⚠ 配色と幾何は floormap.js / palette.js / room-model.js からそのまま持ってくる。
+    ここで色や寸法を決め直さない（卓と別物になると「塗ったはずの色と違う」が起きる）。
+  ⚠ 描画定数（SIZE / PAD / EXTENT / 各 alpha / 線幅）は floormap.js の render() の写し。
+    向こうを変えたらここも変える。
+
+  使い方: 卓サーバを立てて http://localhost:8099/floormap-plate.html
+          ?scale=3 で解像度倍率（既定 3 = 1380px 角）/ ?bg=none で背景透過
+-->
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+import { camColor, GEO } from './palette.js';
+import { roomFromLayout, wallFootprint, floorRect, roomHasData } from './room-model.js';
+
+// ---- floormap.js render() の写し -------------------------------------------
+const SIZE = 460, PAD = 46, EXTENT = 0.95;
+const scale = (SIZE - 2 * PAD) / (2 * EXTENT);
+const courseToPx = (x, z) => [SIZE / 2 + x * scale, SIZE / 2 - z * scale];
+
+const qs = new URLSearchParams(location.search);
+const DPR = Math.max(1, +(qs.get('scale') || 3));
+const TRANSPARENT = qs.get('bg') === 'none';
+
+const cv = document.getElementById('c');
+cv.width = cv.height = SIZE * DPR;
+cv.style.width = cv.style.height = SIZE + 'px';
+const ctx = cv.getContext('2d');
+ctx.scale(DPR, DPR);
+
+const layout = await fetch('/state?rev=0').then((r) => r.json()).then((s) => s.layout);
+const g = layout.grid;
+const f = layout.floor;
+const fw = f.w / 2, fd = f.d / 2;
+const cellAt = (r, c) => ((g.cells[r] || '')[c] || '.');
+
+if (!TRANSPARENT) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, SIZE, SIZE); }
+
+// ---- タイル -----------------------------------------------------------------
+for (let r = 0; r < g.rows; r++) {
+  for (let c = 0; c < g.cols; c++) {
+    const ch = cellAt(r, c);
+    const [px0, py0] = courseToPx(-fw + c * g.tileM, fd - r * g.tileM);
+    const [px1, py1] = courseToPx(-fw + (c + 1) * g.tileM, fd - (r + 1) * g.tileM);
+    if (/[0-8]/.test(ch)) {
+      ctx.fillStyle = camColor(parseInt(ch, 10));
+      ctx.globalAlpha = 0.62;                       // 配信中のカメラだけ 0.92（ここでは配信していない）
+    } else {
+      ctx.fillStyle = 'rgba(255,250,240,0.02)';
+    }
+    ctx.fillRect(px0, py0, px1 - px0, py1 - py0);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---- 格子 -------------------------------------------------------------------
+ctx.strokeStyle = 'rgba(255,250,240,0.08)';
+ctx.lineWidth = 1;
+for (let c = 0; c <= g.cols; c++) {
+  const [px, ay] = courseToPx(-fw + c * g.tileM, fd);
+  const [, by] = courseToPx(-fw + c * g.tileM, -fd);
+  ctx.beginPath(); ctx.moveTo(px, ay); ctx.lineTo(px, by); ctx.stroke();
+}
+for (let r = 0; r <= g.rows; r++) {
+  const [ax, py] = courseToPx(-fw, fd - r * g.tileM);
+  const [bx] = courseToPx(fw, fd - r * g.tileM);
+  ctx.beginPath(); ctx.moveTo(ax, py); ctx.lineTo(bx, py); ctx.stroke();
+}
+
+// ---- 床外周 -----------------------------------------------------------------
+const [fx0, fy0] = courseToPx(-fw, fd), [fx1, fy1] = courseToPx(fw, -fd);
+ctx.strokeStyle = 'rgba(255,250,240,0.30)';
+ctx.lineWidth = 1.5;
+ctx.strokeRect(fx0, fy0, fx1 - fx0, fy1 - fy0);
+
+// ---- 方位 -------------------------------------------------------------------
+ctx.fillStyle = 'rgba(255,250,240,0.4)';
+ctx.font = '11px system-ui, sans-serif';
+ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+ctx.fillText('N', SIZE / 2, PAD - 16);
+ctx.fillText('S', SIZE / 2, SIZE - PAD + 16);
+ctx.fillText('W', PAD - 20, SIZE / 2);
+ctx.fillText('E', SIZE - PAD + 20, SIZE / 2);
+
+// ---- L 字壁（layout.wall。位置合わせリチュアルが読んでいる 3 点）------------
+const w = layout.wall;
+if (w) {
+  ctx.strokeStyle = 'rgba(255,222,173,0.85)';
+  ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  let p = courseToPx(w.endZ[0], w.endZ[1]); ctx.moveTo(p[0], p[1]);
+  p = courseToPx(w.corner[0], w.corner[1]); ctx.lineTo(p[0], p[1]);
+  p = courseToPx(w.endX[0], w.endX[1]); ctx.lineTo(p[0], p[1]);
+  ctx.stroke();
+}
+
+// ---- 部屋のプロキシ（実機で人形を隠す壁。drawRoom の薄い方）-----------------
+const { room, hasRoom } = roomFromLayout(layout);
+if (room && hasRoom) {
+  ctx.save();
+  ctx.globalAlpha = 0.4;
+  if (roomHasData(room)) {
+    const fr = floorRect(room);
+    const [x0, y0] = courseToPx(fr.xLo, fr.zHi);
+    const [x1, y1] = courseToPx(fr.xHi, fr.zLo);
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = GEO.wall; ctx.lineWidth = 1;
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.setLineDash([]);
+  }
+  for (const wall of room.walls) {
+    const pts = wallFootprint(wall);
+    if (!pts.length) continue;
+    const path = () => {
+      ctx.beginPath();
+      pts.forEach((q, i) => { const [x, y] = courseToPx(q.x, q.z); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      ctx.closePath();
+    };
+    ctx.save(); path(); ctx.fillStyle = GEO.wall; ctx.globalAlpha *= 0.24; ctx.fill(); ctx.restore();
+    ctx.save(); path(); ctx.strokeStyle = GEO.wall; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+  }
+  ctx.restore();
+}
+
+document.title = 'フロアマップ（壁と塗りだけ）';
+</script>
+</body>
+</html>
