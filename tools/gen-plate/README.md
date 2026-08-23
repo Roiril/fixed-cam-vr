@@ -27,9 +27,15 @@ cue の素材にする。4 周目 A の「左半分に大量の人形」がこ�
 ⚠ **異変の本文に「左のカーテン」「木の合板の壁」と書かない。** それは場所であって異変ではない。
 書いてよいのは「布の上に」「壁に」まで。どの布かは `sites` が決める。
 
-## 2. 当日の手順（3 手）
+## 2. 当日の手順（4 手）
 
 ```bash
+# 0) その日のプレートを撮る（卓を開かなくてよい。配信中のカメラから 1 枚取る）
+py -3.11 tools/gen-plate/grab.py --cam A
+#    → tools/web-compositor/captures/plate_A_<日時>.jpg
+#    ⚠ 撮る前に /info の tiltPitchDeg / tiltRollDeg を 2 回読んで、動いていないことを見る
+#      （据え直しの途中の機を撮ると、素材だけ別の部屋になる）
+
 # 1) 場所を作る（面の箱を下書きし、箱を描いた PNG を出す）
 py -3.11 tools/gen-plate/site.py draft --plate <その日のプレート.jpg> --id A_20260901 --cam A
 #    → logs/gen-plate/sites/A_20260901_surfaces.png を開いて、箱を sites/A_20260901.json で直す
@@ -317,6 +323,7 @@ py -3.11 tools/gen-plate/yield.py        # 場所ごとの合格率と、9 割�
 
 | | |
 |---|---|
+| `grab.py` | **その日のプレートを撮る**（配信中のカメラの MJPEG から、いちばんぶれていない 1 枚） |
 | `spec.py` | 異変・場所・箱の読み書き。**compose と judge の単一の正** |
 | `compose.py` | 異変 ＋ 場所 → `prompt.txt` / `seed.png` / `manifest.json` |
 | `site.py` | 場所の下書きと、面の箱を描いた確認用 PNG |
