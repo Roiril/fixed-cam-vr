@@ -75,6 +75,7 @@ code{font-family:var(--mono);font-size:.9em}
   <button id="play">▶ 鳴らす</button>
   <button id="callBtn">あーそぼーを重ねる</button>
   <button id="bedBtn" class="on">背景を敷く</button>
+  <span id="scoreName" class="note" style="margin:0"></span>
   <span id="status"><span class="dot" id="dot"></span><span id="statusText">止まっています</span></span>
 </div>
 
@@ -146,7 +147,8 @@ async function state0(){
   const r = await fetch("/api/state").then(r => r.json());
   $("refCall").textContent = r.call_f0.toFixed(0) + " Hz";
   $("refRaw").textContent = r.raw_f0.toFixed(0) + " Hz";
-  $("baked").textContent = r.baked.toFixed(2) + " 倍";
+  $("baked").textContent = r.baked.toFixed(2) + " 倍（速さ " + r.speed.toFixed(2) + "）";
+  $("scoreName").textContent = "劇伴: " + r.score;
   const box = $("layers");
   for (const [k, name] of Object.entries(r.layers)){
     const b = document.createElement("button");

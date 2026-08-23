@@ -57,6 +57,7 @@ prev = _load("sound_preview", "sound-preview.py")   # 劇伴の音量と復号�
 SRC_WAV = os.path.join(ROOT, "logs", "sound", "ingest", "src_bed_doll_swell.wav")
 CALL_WAV = os.path.join(ROOT, "Assets", "Resources", "Sound", "sfx_doll_call.wav")
 CHOSEN = os.path.join(HERE, "chosen.json")
+RAW_DIR = os.path.join(ROOT, "logs", "sound", "ingest")
 
 # 層 = 焼いている 4 本そのもの（`ingest-sounds.py` の表を読む）。
 #   (表示名, 声の表, 輪の秒, 狙いの LUFS, 説明)
@@ -95,6 +96,64 @@ def laugh_src(pitch_ratio: float, formant: float, speed: float) -> np.ndarray:
 _bed_cache: dict[float, np.ndarray] = {}
 
 
+CONSOLE = "http://localhost:8099/state"
+AUDIO_DIR = os.path.join(TOOLS, "web-compositor", "audio")
+
+
+def show_score():
+    """**卓が本編で鳴らしている劇伴**を、卓と同じ音量で返す。返すのは (波形, 名前)。
+
+    ⚠⚠ **敷く背景は「実際に鳴っている曲」でなければ意味が無い。** 2026-08-23 に劇伴が
+    2 周目 C で `LostPlace2` へ渡るようになったので（並行セッションの著作・卓 rev 996）、
+    **人形が笑う 3 周目以降の下に居るのはそちら**。HorrBGM を敷いたままだと別の曲の上で
+    音量を決めることになる。
+
+    ⚠ **卓が動いていなければ HorrBGM へ落ちる**（`sound-preview.load_score` と同じもの）。
+    台は卓に依存しない — 落ちたことは名前で分かるようにしてある。
+    ⚠ **卓は読むだけ**（GET /state）。`show.json` を書かない・卓を再起動しない。
+    """
+    try:
+        import urllib.request
+        with urllib.request.urlopen(CONSOLE, timeout=3) as r:
+            st = json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return prev.load_score(), "HorrBGM（卓が居ないので既定）"
+
+    # 著作の中で最後に `play` された曲 ＝ 本編の後半（人形が笑う所）で鳴っているもの。
+    last = (st.get("bgm") or {}).get("trackId")
+
+    def walk(o):
+        nonlocal last
+        if isinstance(o, dict):
+            b = o.get("bgm")
+            if isinstance(b, dict) and b.get("action") == "play" and b.get("trackId"):
+                last = b["trackId"]
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(st.get("timeline") or {})
+
+    for t in st.get("bgmTracks") or []:
+        if t.get("id") != last:
+            continue
+        path = os.path.join(AUDIO_DIR, os.path.basename(t.get("url", "")))
+        if not os.path.exists(path):
+            break
+        wav = os.path.join(RAW_DIR, "src_score_" + os.path.splitext(os.path.basename(path))[0] + ".wav")
+        if not os.path.exists(wav):
+            import subprocess
+
+            import imageio_ffmpeg
+            os.makedirs(RAW_DIR, exist_ok=True)
+            subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-v", "error", "-i", path,
+                            "-ar", str(sk.SR), "-ac", "2", "-c:a", "pcm_s16le", wav], check=True)
+        vol = float(t.get("volume", 0.5))
+        return sk.to_stereo(sk.read_wav(wav)[0]) * vol, f"{t.get('name', last)}（卓の音量 {vol:.2f}）"
+    return prev.load_score(), "HorrBGM（卓に曲が無いので既定）"
+
+
 def bed_for(sec: float) -> np.ndarray:
     """**本編の背景**（劇伴 ＋ 装置の声）を、輪と同じ長さの継ぎ目なしループで返す。
 
@@ -113,7 +172,8 @@ def bed_for(sec: float) -> np.ndarray:
     n = int(sec * sk.SR)
     xf = int(ing.LOOP_XF * sk.SR)
     out = np.zeros((n, 2))
-    for src, gain in ((prev.load_score(), 1.0),
+    score, _name = show_score()
+    for src, gain in ((score, 1.0),
                       (sk.to_stereo(sk.read_wav(os.path.join(ROOT, "Assets", "Resources",
                                                              "Sound", "bed_device.wav"))[0]), 1.0)):
         reps = int(np.ceil((n + xf) / len(src))) + 1
@@ -227,7 +287,8 @@ def reference() -> dict:
     src, ssr = sk.read_wav(SRC_WAV)
     raw, _ = pitch.f0_median(src, ssr)
     return {"call_f0": round(float(f0), 1), "raw_f0": round(float(raw), 1),
-            "baked": ing.LAUGH_PITCH,
+            "baked": ing.LAUGH_PITCH, "speed": ing.LAUGH_SPEED,
+            "score": show_score()[1],
             "layers": {k: v[0] for k, v in LAYERS.items()}}
 
 
@@ -323,7 +384,8 @@ def main() -> int:
     print(f"笑い声の調整台 → http://localhost:{port}/")
     print(f"  呼びかけ（あーそぼー） {r['call_f0']:.0f}Hz / 素材 {r['raw_f0']:.0f}Hz "
           f"/ いま焼いてある倍率 {r['baked']}")
-    print("  ⚠ 卓サーバ（8099）とは別。show.json も実機も触らない")
+    print(f"  敷く劇伴: {show_score()[1]}")
+    print("  ⚠ 卓サーバ（8099）とは別。読むだけで show.json は書かない")
     with Server(("127.0.0.1", port), Handler) as httpd:
         try:
             httpd.serve_forever()
