@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 3f8a1b93-ad92-45db-8404-e8cb45e0f296
-  modified: 2026-08-22T17:20:24.978Z
+  modified: 2026-08-23T10:59:34.936Z
 ---
 
 配信アプリ（[fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) v0.13.0・2026-08-23）に
@@ -50,6 +50,25 @@ contain-fit は左右対称なので、これはソース画像の横中央と�
 
 ⚠ 前面でないとき（`onStop`）・IDLE に落ちたときは自動で切る。
 切り忘れると背景で JPEG を復号し続け、需要も立ったままになる。
+
+## 2b. ⚠⚠ 面がプレビューを覆うなら、面の中に窓を置く（v0.14.0・2026-08-23）
+
+撮影パネルは全面不透明で、**開いている間はカメラのプレビューが 1 画素も見えない**。
+「撮る最中に見るのはこの面だけ」という設計意図で覆っていたが、実際には
+**構えるのも撮る最中**なので、何が録れているか分からないまま撮ることになっていた。
+
+⇒ パネルの中に窓（`shootPreview` ＝ 2 つめの `GuideOverlayView`）を置き、
+`FrameDistributor` の JPEG を流す。鏡合わせと同じ経路なので、
+**ループは 1 本に統合した**（`MainActivity.updateFramePump()`）。どちらも
+`localPreview` を立てないと encode が止まるので、需要の管理も 1 か所になる。
+
+⚠ **窓に出すのは配信されている JPEG で、`Preview` ユースケースの画ではない。**
+プレビュー側は `Camera2Interop.Extender` の手ブレ補正 OFF が乗っていない（あれは
+`ImageAnalysis` のテンプレートに刺してある）ので、隠れクロップで画角が食い違いうる。
+**「録れる画を見ている」と言えるのは配信の画だけ。**
+
+⚠ 前面（`onStart`〜`onStop`）でないときは窓も止める。ただし**パネルは閉じない** —
+戻ったときに選んでいたショットが消えると押し直しになる。
 
 ## 3. ⚠⚠ Kotlin のブロックコメントは**入れ子になる**
 
