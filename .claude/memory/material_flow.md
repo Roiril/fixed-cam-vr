@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 2d1c5a0d-26a4-43f3-9ef9-6c8a4816b72a
-  modified: 2026-08-05T11:05:06.392Z
+  modified: 2026-08-23T11:29:51.504Z
 ---
 
 **素材まわりを触る前に、この 4 つを確認する。**（2026-07-30 に立て直した。設計は
@@ -89,6 +89,44 @@ cue に残らないので焼き直せない。設計案は
 - 旧 `prompts.json` の 7 件は台帳へ移行済み（`promptsMigratedAt`）。API は撤去、ファイルは移行元として残置
 - **作風のコツ（静止→異常な一拍 / 瞬間移動）は卓に出さない**。陳腐化して嘘になるので [[web_compositor]] に置いたまま。
   卓に出すのは道具選びに効く 1 行だけ（Veo / Flow は弾かれる・Kling とローカル Wan は寛容）
+
+## 5. 設営が変わったら何を取り直すか（2026-08-23 に 1 度通した）
+
+壁を動かすと**その日の素材が全部使えなくなる**。実測で、13 時台に撮ったプレートと 19 時台の
+プレートは **A 46.5% / B 41.7% / C 59.9% の画素**が変わっていた（`>24` 階調）。
+
+| 取り直す | 手順 |
+|---|---|
+| 無人プレート 3 本 | `grab.py --cam A/B/C`（卓を開かずに配信中のカメラから 1 枚） |
+| 場所ファイル 3 つ | `site.py draft` → **プレートに 40px グリッドを乗せた画を作って箱を手で決める**（下書きは当たらない） |
+| 生成素材（人形 / 手形 / 顔染み） | `autorun.ps1` を 3 グループ並列。10 枚で 15 分ほど |
+| ↑ のうち**半分マスクで出すもの** | **`spill.py` で「境目を跨ぐ塊 0」まで焼く**。人形は `--place left-40`（0120） |
+| 差分マスク 2 枚 | `make-diff-mask.py --keep-all --roi ...`（手形・顔染み。人形は幾何マスク） |
+| cue の URL 7 件 | **`/state` へ `cues` を POST**（下記） |
+
+| 取り直さない | 理由 |
+|---|---|
+| `split_left_half` / `split_right_half` | 幾何マスク。場所に依らない |
+| 入れ替わりの黒マスク | **CG の人型 100%**（0119 以降。背景差分の系統は廃止された）→ [[swap_veil_mask]] |
+| `cue_monster_*` / `cue_hand_B` / `cue_ningyo_A` | timeline から参照されていない古い cue |
+
+⚠⚠ **`pov_0`〜`pov_4`（2 周目 C の接近）は機械では撮り直せない。** 人が端末を持って
+「高さ 40cm で正対」「白衣の背中の至近 0.5m」を撮るもの（`shots.json` が定義）。
+**設営が変わったら、この 5 本だけは人の手が要る** → [[approach_shoot_console]]。
+
+### cue の URL を書き換える経路
+
+⚠ **卓サーバが動いている間は、`show.json` をディスクへ直接書いても巻き戻る**（メモリが正）。
+
+```python
+st = json.load(urllib.request.urlopen("http://127.0.0.1:8099/state"))   # 現在の cues を取る
+# … 該当 cue の sourceUrl / maskUrl だけ差し替える …
+urllib.request.urlopen(Request(".../state", data=json.dumps({"cues": cues}).encode(), method="POST"))
+```
+
+`cues` は `_STATE_KEYS` に入っているので丸ごと差し替わる。**取得と POST の間だけが競合窓**なので、
+他のセッションが卓を触っていても被害が小さい（`cameras` や `timeline` には触らない）。
+書けたら **`curl -o NUL -w "%{http_code}"` で全 URL が 200 で配信されるか**を見る。
 
 ## 卓サーバを再起動すると起きること
 

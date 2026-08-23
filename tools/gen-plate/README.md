@@ -49,7 +49,14 @@ py -3.11 tools/gen-plate/compose.py --anomaly dolls-many --site A_20260901 --pla
 #    codex-run.ps1 -Mode image ...
 py -3.11 tools/gen-plate/judge.py   --run logs/gen-plate/<走行>   # 生成直後の作り
 py -3.11 tools/gen-plate/deliver.py --run logs/gen-plate/<走行>   # ⭐ 体験者が見る画
+py -3.11 tools/gen-plate/spill.py   --run logs/gen-plate/<走行>   # ⭐ 半分マスクの cue はこれも
 ```
+
+⭐ **半分マスク（`split_left_half` / `split_right_half`）で出す素材は `spill.py` を必ず通す。**
+`judge.py` の「置かない側」は `place` を基準に測るので、`--place` を狭めると数字の意味が変わる。
+体験者に効くのは**合成マスクの境目 1 本**で、そこを跨いだ塊は**実機で縦に切れる**（`canon/LEDGER.md` 0120）。
+⚠ **跨ぐ塊が 0 になるまで焼く。** 手元の 8 走行では `left-half` の 7 走行すべてが跨いでいた
+（`left-40` へ狭めると 4 枚中 2 枚が 0 になる）。
 
 合格したら明るさを戻して素材にする（`dim` と同じ指定で）:
 
@@ -336,6 +343,7 @@ py -3.11 tools/gen-plate/yield.py        # 場所ごとの合格率と、9 割�
 | `deliver.py` | ⭐ **届いた画の合否**（継ぎ目と読みやすさを 1 枚で同時に） |
 | `legible.py` | 届いた画で**実物と同じだけ読めるか**（粒に埋もれていないか） |
 | `budget.py` | **その周で出すなら、どこまで届くか**（1 周目と 3 周目で桁が違う） |
+| `spill.py` | ⭐ **合成マスクの境目を跨いだ塊はあるか**（半分マスクの cue は必ず通す。0120） |
 | `limit.py` | **どこまで沈めても読めるか**（薄めながら検出限界を探す） |
 | `posted.py` | **実機の post を通した後**で測り直す（追う価値のある欠点を選ぶ） |
 | `stats.py` | 走行をまとめて条件ごとの中央値を出す（1 枚の当たり外れに騙されない） |
