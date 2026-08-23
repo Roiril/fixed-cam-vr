@@ -710,7 +710,7 @@ def build_outro() -> np.ndarray:
     lay(one, off, lead)
     # 報告の打鍵は Collapse ＋ Dark の後（＝ 装置がまだ 1 つだけ仕事をしている）。
     rng = np.random.default_rng(2026)
-    lay(one, type_burst(report_chars, TYPE_CPS, rng), lead + collapse + dark, sk.db(TYPE_GAIN_DB))
+    lay(one, type_burst(report_chars, TYPE_CPS, rng), lead + collapse + dark)
 
     total = seg * 2 + gap
     out = np.zeros((int(total * sk.SR), 2))
