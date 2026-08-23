@@ -211,8 +211,13 @@ def main() -> int:
         rel = med / ref
         print(f"{label:22s} {med:7.1f}Hz {lo:7.1f}Hz {hi:7.1f}Hz {rel:9.2f}x   "
               f"{formants(y, s)}  {note}")
-    print("\n狙い: 笑いの基音が呼びかけ（あーそぼー）の 0.8〜1.3 倍に収まっていること"
-          "（`canon/LEDGER.md` 0117）")
+    ing = _load_ingest()
+    print(f"\nいまの値: 高さ x{ing.LAUGH_PITCH:.2f} / 速さ x{ing.LAUGH_SPEED:.2f}"
+          "（`tools/ingest-sounds.py`）")
+    print("⚠ **狙いの倍率は決まっていない。** 0117 は「あーそぼーくらい」＝ 呼びかけの 1.0 倍前後まで"
+          "下げたが、\n   0118 で「ちょっと低すぎるかも」と退けられ、**1.8 倍前後**へ戻した"
+          "（ユーザーが調整台で耳で決めた値）。\n"
+          "   ここは合否を出す表ではない — 値を動かしたときに**どこへ着いたか**を見るためのもの。")
     return 0
 
 

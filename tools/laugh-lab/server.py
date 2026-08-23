@@ -52,6 +52,7 @@ def _load(name: str, filename: str):
 
 ing = _load("ingest_sounds", "ingest-sounds.py")
 pitch = _load("sound_pitch", "sound-pitch.py")
+prev = _load("sound_preview", "sound-preview.py")   # 劇伴の音量と復号のやり方だけ借りる
 
 SRC_WAV = os.path.join(ROOT, "logs", "sound", "ingest", "src_bed_doll_swell.wav")
 CALL_WAV = os.path.join(ROOT, "Assets", "Resources", "Sound", "sfx_doll_call.wav")
@@ -91,7 +92,39 @@ def laugh_src(pitch_ratio: float, formant: float, speed: float) -> np.ndarray:
     return src
 
 
-def build(layer: str, pitch_ratio: float, formant: float, speed: float, gain_db: float):
+_bed_cache: dict[float, np.ndarray] = {}
+
+
+def bed_for(sec: float) -> np.ndarray:
+    """**本編の背景**（劇伴 ＋ 装置の声）を、輪と同じ長さの継ぎ目なしループで返す。
+
+    ⚠⚠ **音量の判断を無音の上でやらせないための背景。** 2026-08-23、この台で笑いの音量を
+    -10.5dB と決めたが、そのとき鳴っていたのは笑いだけだった。実機では劇伴（-27.7 LUFS）と
+    装置の声（-32.0）が下に居るので、**同じ音でも埋もれ方がまるで違う**。
+    `rules/sound-design.md` が割れる音について書いている「⚠ 敷く音の上で聴く」と同じ罠を、
+    この台が作っていた。
+
+    ⚠ **数値（`stats`）には混ぜない。** 混ぜると音量の目安が背景こみの値になって読めなくなる。
+    """
+    key = round(sec, 3)
+    hit = _bed_cache.get(key)
+    if hit is not None:
+        return hit
+    n = int(sec * sk.SR)
+    xf = int(ing.LOOP_XF * sk.SR)
+    out = np.zeros((n, 2))
+    for src, gain in ((prev.load_score(), 1.0),
+                      (sk.to_stereo(sk.read_wav(os.path.join(ROOT, "Assets", "Resources",
+                                                             "Sound", "bed_device.wav"))[0]), 1.0)):
+        reps = int(np.ceil((n + xf) / len(src))) + 1
+        cut = np.tile(src, (reps, 1))[:n + xf]
+        out += ing.fold_loop(cut)[:n] * gain
+    _bed_cache[key] = out
+    return out
+
+
+def build(layer: str, pitch_ratio: float, formant: float, speed: float, gain_db: float,
+          bed: bool = True):
     """選んだ層を、いまのパラメータで組む。**組み方は `ingest-sounds.py` のまま。**"""
     sr = sk.SR
     src = laugh_src(pitch_ratio, formant, speed)
@@ -140,7 +173,15 @@ def build(layer: str, pitch_ratio: float, formant: float, speed: float, gain_db:
         "lufs": round(sk.lufs(out), 1),
         "peak": round(tp, 1),
         "voiced": round(100.0 * float(np.mean(db > db.max() - 25.0))),
+        "bed": bool(bed),
     }
+    # ⚠ 背景は**数値を出したあと**で足す（`stats` は笑いだけの値でなければ読めない）。
+    if bed:
+        b = bed_for(sec)
+        out = out + b[:len(out)]
+        tp2 = true_peak_fast(out)
+        if tp2 > -3.0:
+            out = out * 10 ** ((-3.0 - tp2) / 20.0)
     return out, sr, stats
 
 
@@ -238,7 +279,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                      max(0.20, min(1.60, num("pitch", ing.LAUGH_PITCH))),
                                      max(0.0, min(1.0, num("formant", 1.0))),
                                      max(0.60, min(1.60, num("speed", 1.0))),
-                                     max(-24.0, min(12.0, num("gain", 0.0))))
+                                     max(-24.0, min(12.0, num("gain", 0.0))),
+                                     q.get("bed", ["1"])[0] != "0")
             except Exception as e:  # 落とさない — ブラウザ側で赤く出す
                 return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
             b = wav_bytes(y, sr)

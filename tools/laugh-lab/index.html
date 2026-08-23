@@ -74,6 +74,7 @@ code{font-family:var(--mono);font-size:.9em}
 <div class="bar">
   <button id="play">▶ 鳴らす</button>
   <button id="callBtn">あーそぼーを重ねる</button>
+  <button id="bedBtn" class="on">背景を敷く</button>
   <span id="status"><span class="dot" id="dot"></span><span id="statusText">止まっています</span></span>
 </div>
 
@@ -86,8 +87,8 @@ code{font-family:var(--mono);font-size:.9em}
 
 <div class="row">
   <label for="pitch">高さ</label>
-  <input type="range" id="pitch" min="0.25" max="1.00" step="0.01" value="0.45">
-  <span class="val" id="pitchV">0.45<small>倍</small></span>
+  <input type="range" id="pitch" min="0.25" max="1.00" step="0.01" value="0.80">
+  <span class="val" id="pitchV">0.80<small>倍</small></span>
 </div>
 <p class="hint">素材の何倍の高さで鳴らすか。小さいほど低い。いま焼いてあるのは <span id="baked">—</span>。</p>
 
@@ -100,8 +101,8 @@ code{font-family:var(--mono);font-size:.9em}
 
 <div class="row">
   <label for="speed">速さ</label>
-  <input type="range" id="speed" min="0.70" max="1.40" step="0.01" value="1">
-  <span class="val" id="speedV">1.00<small>倍</small></span>
+  <input type="range" id="speed" min="0.70" max="1.40" step="0.01" value="0.79">
+  <span class="val" id="speedV">0.79<small>倍</small></span>
 </div>
 <p class="hint">高さを変えずに笑い方だけ速く／ゆっくりする。下げすぎると笑いが重なって「笑いっぱなし」になるので、下の在音率を見る。</p>
 
@@ -110,7 +111,7 @@ code{font-family:var(--mono);font-size:.9em}
   <input type="range" id="gain" min="-12" max="6" step="0.5" value="0">
   <span class="val" id="gainV">0.0<small>dB</small></span>
 </div>
-<p class="hint">焼くときの狙い（一人 -26 / 群れ -20 LUFS）からのずれ。天井 -3dBTP には自動で当たる。</p>
+<p class="hint">焼くときの狙い（一人 -36.5 / 群れ -30.5 LUFS）からのずれ。天井 -3dBTP には自動で当たる。<br>⚠ <strong>音量は「背景を敷く」を押した状態で決める。</strong>無音の上で決めると、実機で劇伴（-27.7 LUFS）と装置の声（-32.0）に埋もれる。</p>
 
 <h2>いま鳴っているもの</h2>
 <div class="grid" id="stats"></div>
@@ -132,7 +133,7 @@ code{font-family:var(--mono);font-size:.9em}
 <script>
 const $ = id => document.getElementById(id);
 const KEYS = ["pitch","formant","speed","gain"];
-const state = {pitch:0.45, formant:1, speed:1, gain:0, layer:"one"};
+const state = {pitch:0.80, formant:1, speed:0.79, gain:0, layer:"one", bed:1};
 let ctx = null, node = null, gainNode = null, buf = null, startedAt = 0, playing = false;
 let seq = 0, timer = null, callBuf = null;
 
@@ -168,13 +169,14 @@ function showStats(s){
     ["高さ", s.lufs.toFixed(1) + " LUFS", "尖頭 " + s.peak.toFixed(1) + " dBTP"],
     ["在音率", s.voiced + " %", "100% は笑いっぱなし"],
     ["輪", s.sec.toFixed(0) + " 秒", s.voices + " 回"],
+    ["数値の出どころ", s.bed ? "笑いだけ" : "笑いだけ", s.bed ? "音は背景こみ" : "音も笑いだけ"],
   ];
   $("stats").innerHTML = rows.map(([k, v, sub]) =>
     `<div class="cell"><div class="k">${k}</div><div class="v">${v} <em>${sub}</em></div></div>`).join("");
 }
 
 function url(){
-  const q = new URLSearchParams({layer: state.layer});
+  const q = new URLSearchParams({layer: state.layer, bed: state.bed});
   KEYS.forEach(k => q.set(k, state[k]));
   return "/api/render?" + q.toString();
 }
@@ -267,6 +269,12 @@ $("play").onclick = async () => {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
   await ctx.resume();
   if (playing) stop(); else render();
+};
+
+$("bedBtn").onclick = () => {
+  state.bed = state.bed ? 0 : 1;
+  $("bedBtn").classList.toggle("on", !!state.bed);
+  schedule(0);
 };
 
 $("callBtn").onclick = async () => {
