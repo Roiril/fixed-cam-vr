@@ -2290,7 +2290,7 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 台本が参照する動画素材を先に落としておく。
+        /// 台本が参照する素材（動画・静止画・マスク）を先に落としておく。
         ///
         /// <b>カットの尺は発火時刻から数える</b>ので、発火してから落とすとその分だけ画に出る時間が減る。
         /// 実測（2026-08-22・testassets 24KB）で発火 → 画まで最大 280ms、うち落とすのに 152ms。
@@ -2298,10 +2298,16 @@ namespace FixedCamVr.Streaming
         /// 本番素材は数 MB なのでさらに伸びる。無人プレートの先読みと同じ立ち位置。
         ///
         /// ⚠ 消えるのは落とす時間だけ。用意（Prepare・実測 145ms）は発火時に必ず掛かる。
+        ///
+        /// <b>静止画を含めたのは 2026-08-23。</b>それまで温めていたのは <c>plate_*</c> だけで、
+        /// 生成素材は発火してから読み始めていた。実測（1 周目 B の手形・541KB の PNG）で
+        /// 発火 t=54.01 → 画 t=54.22 ＝ <b>210ms のあいだ生映像が見えていた</b>。
+        /// 同じ走行の無人プレート（3 周目 B / C）は先読み済みなので 0ms で出ている。
         /// </summary>
         private void PrefetchTimelineClips()
         {
             if (_overlay == null || _timeline?.segments == null) return;
+            var stills = new List<string>();
             foreach (ShowTimelineSegmentDef seg in _timeline.segments)
             {
                 if (seg?.takes == null) continue;
@@ -2310,12 +2316,59 @@ namespace FixedCamVr.Streaming
                     if (take?.steps == null) continue;
                     foreach (ShowStepDef step in take.steps)
                     {
-                        if (step == null || string.IsNullOrEmpty(step.cueId)) continue;
-                        OverlayCueData? cue = ResolveCue(step.cueId);
-                        // 動画だけが対象（静止画は LoadStillCachedAsync 側のキャッシュに乗る）。
-                        if (cue != null && cue.SourceIsVideo && !string.IsNullOrEmpty(cue.sourceUrl))
-                            _overlay.PrefetchVideo(cue.sourceUrl);
+                        if (step == null) continue;
+                        CollectCueAssets(step.cueId, stills);
+                        CollectCueAssets(step.overlay2CueId, stills);
                     }
+                }
+            }
+            if (stills.Count > 0) _ = PrefetchStillsAsync(stills, ++_prefetchStillGen);
+        }
+
+        /// <summary>
+        /// cue 1 つぶんの素材を先読みへ回す。動画はここで落とし始め、静止画とマスクは
+        /// <paramref name="stills"/> へ積む（逐次に落とすため）。
+        ///
+        /// <b>マスクは動画 cue にも付く。</b><c>PlayCueAsync</c> はマスクを素材より先に await するので、
+        /// 素材だけ温めてもマスクのぶんの待ちが残る。
+        /// </summary>
+        private void CollectCueAssets(string cueId, List<string> stills)
+        {
+            if (_overlay == null || string.IsNullOrEmpty(cueId)) return;
+            OverlayCueData? cue = ResolveCue(cueId);
+            if (cue == null) return;
+            if (cue.SourceIsVideo)
+            {
+                if (!string.IsNullOrEmpty(cue.sourceUrl)) _overlay.PrefetchVideo(cue.sourceUrl);
+            }
+            else if (!string.IsNullOrEmpty(cue.sourceUrl) && !stills.Contains(cue.sourceUrl))
+            {
+                stills.Add(cue.sourceUrl);
+            }
+            if (!string.IsNullOrEmpty(cue.maskUrl) && !stills.Contains(cue.maskUrl))
+                stills.Add(cue.maskUrl);
+        }
+
+        // 静止画の先読みの世代（cue の定義が変わったら古いループを捨てる）。
+        private int _prefetchStillGen;
+
+        /// <summary>
+        /// 静止画素材とマスクを<b>1 本ずつ</b>読んでキャッシュへ乗せる。
+        ///
+        /// 一気に投げないのは、同じ Wi-Fi を 3 台ぶんの MJPEG が使っているため。
+        /// 体験が始まるまでに終わればよく、急ぐ必要は無い。
+        /// </summary>
+        private async Task PrefetchStillsAsync(List<string> urls, int gen)
+        {
+            if (_overlay == null) return;
+            foreach (string url in urls)
+            {
+                if (gen != _prefetchStillGen) return;   // 新しい定義が来た
+                try { await _overlay.LoadStillCachedAsync(url, destroyCancellationToken); }
+                catch (OperationCanceledException) { return; }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[ShowControl] 素材の先読みに失敗: {url} ({e.Message})");
                 }
             }
         }
