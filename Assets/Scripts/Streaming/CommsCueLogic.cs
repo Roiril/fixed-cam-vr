@@ -37,11 +37,11 @@ namespace FixedCamVr.Streaming
         /// 画としては「文面が入れ替わる」1 続きに見える。
         /// </summary>
         BeginHow,
-        /// <summary>② 報告した瞬間、<b>解除が通った</b>。「異変を抹消しました」。</summary>
+        /// <summary>② 報告した瞬間、<b>解除が通った</b>。「異変を排除しました」。</summary>
         MarkLogged,
         /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異常は検出されませんでした」。</summary>
         MarkNothing,
-        /// <summary>③ 4 周目 A の締めで、押さないまま時間が過ぎた。「異常があなたを取り込もうとしています。抹消してください。」</summary>
+        /// <summary>③ 4 周目 A の締めで、押さないまま時間が過ぎた。「異常があなたを取り込もうとしています。排除してください。」</summary>
         Prompt,
     }
 
@@ -88,11 +88,11 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// ⚠⚠ <b>その報告で怪異の解除が通ったか</b>（2026-08-17・<c>canon/LEDGER.md</c> 0082）。
-        /// 通れば <see cref="CommsNotice.MarkLogged"/>（異変を抹消しました）、
+        /// 通れば <see cref="CommsNotice.MarkLogged"/>（異変を排除しました）、
         /// 通らなければ <see cref="CommsNotice.MarkNothing"/>（異常は検出されませんでした）。
         ///
         /// ⚠⚠ <b>「演出が走っていたか」ではない。</b> 2026-08-17 まではそれを見ていたので、
-        /// <b>3 周目の入れ替わりに押しても「抹消しました」と返っていた</b>。
+        /// <b>3 周目の入れ替わりに押しても「排除しました」と返っていた</b>。
         /// いま false が返るのは、装置が本当に検出できていないから
         /// （解除を実行するエージェントが侵食されている周 ＝ 0070）。
         ///
