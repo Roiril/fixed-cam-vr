@@ -23,24 +23,26 @@ namespace FixedCamVr.Tests.Streaming
         {
             var l = Make();
             l.Begin();
-            Assert.AreEqual(OutroStage.Flicker, l.Stage);
+            Assert.AreEqual(OutroStage.Collapse, l.Stage);
             Assert.IsTrue(l.Active);
             Assert.IsTrue(l.Presenting);
-            // 始まった瞬間に暗くなると「切れかけ」ではなく「切れた」になる。
-            Assert.Greater(l.ScreenPower, 0.5f);
+            // 潰れているあいだ電力は 1 のまま（消え方は ScreenCollapse が持つ・二重に暗くしない）。
+            Assert.AreEqual(1f, l.ScreenPower, 1e-4f);
+            Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f, "始まった瞬間はまだふつうの画");
             Assert.AreEqual(0f, l.ReportAlpha, 1e-4f, "報告はまだ出さない");
         }
 
         [Test]
-        public void Stages_FlickerThenDarkThenReport()
+        public void Stages_CollapseThenDarkThenReport()
         {
             var l = Make();
             l.Begin();
             OutroTiming t = OutroTiming.Default;
 
-            l.Tick(t.flickerSec);
+            l.Tick(t.collapseSec);
             Assert.AreEqual(OutroStage.Dark, l.Stage);
             Assert.AreEqual(0f, l.ScreenPower, 1e-4f, "消えた後は 0 のまま");
+            Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f, "段を出たら潰れの進みは 0 へ戻す");
             Assert.AreEqual(0f, l.ReportAlpha, 1e-4f);
 
             l.Tick(t.darkSec);
@@ -51,6 +53,17 @@ namespace FixedCamVr.Tests.Streaming
         }
 
         [Test]
+        public void Report_StartsWithinTwoSecondsOfTheEnd()
+        {
+            // ⚠⚠ ユーザー判定「テンポが悪く、終わったかがわかりずらい」（`canon/LEDGER.md` 0111）。
+            //    旧構成は 7.2 秒（ちかちか 6.0 ＋ 黒 1.2）だった。ここが伸びたら回帰。
+            OutroTiming t = OutroTiming.Default;
+            float toFirstChar = t.collapseSec + t.darkSec;
+            Assert.LessOrEqual(toFirstChar, 2.2f,
+                "終わってから報告が出始めるまでが長い（旧 7.2 秒に戻っていないか）");
+        }
+
+        [Test]
         public void Done_KeepsTheReportUpAndTheScreenOff()
         {
             // 報告は次のランまで消えない。Active は落ちるが Presenting は立ったまま
@@ -58,7 +71,7 @@ namespace FixedCamVr.Tests.Streaming
             var l = Make();
             l.Begin();
             OutroTiming t = OutroTiming.Default;
-            l.Tick(t.flickerSec);
+            l.Tick(t.collapseSec);
             l.Tick(t.darkSec);
             l.Tick(t.reportFadeSec);
 
@@ -67,6 +80,7 @@ namespace FixedCamVr.Tests.Streaming
             Assert.IsTrue(l.Presenting, "文字を出したままなので Director は配り続ける");
             Assert.AreEqual(1f, l.ReportAlpha, 1e-4f);
             Assert.AreEqual(0f, l.ScreenPower, 1e-4f);
+            Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f);
             Assert.AreEqual(OutroEvent.None, l.Tick(60f), "終わった後は何も起きない");
         }
 
@@ -76,7 +90,7 @@ namespace FixedCamVr.Tests.Streaming
             var l = Make();
             l.Begin();
             OutroTiming t = OutroTiming.Default;
-            l.Tick(t.flickerSec);
+            l.Tick(t.collapseSec);
             l.Tick(t.darkSec);                       // → Report
             Assert.AreEqual(OutroStage.Report, l.Stage);
             Assert.AreEqual(0f, l.ReportAlpha, 1e-3f);
@@ -93,6 +107,7 @@ namespace FixedCamVr.Tests.Streaming
             var l = Make();
             Assert.AreEqual(OutroStage.Off, l.Stage);
             Assert.AreEqual(1f, l.ScreenPower, 1e-4f);
+            Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f, "出していない間は潰れも 0（恒等）");
             Assert.AreEqual(0f, l.ReportAlpha, 1e-4f);
             Assert.IsFalse(l.Presenting);
         }
@@ -108,58 +123,57 @@ namespace FixedCamVr.Tests.Streaming
             Assert.IsFalse(l.Presenting);
             Assert.AreEqual(OutroStage.Off, l.Stage);
             Assert.AreEqual(1f, l.ScreenPower, 1e-4f);
+            Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f);
             Assert.AreEqual(0f, l.ReportAlpha, 1e-4f);
             Assert.AreEqual(OutroEvent.None, l.Tick(10f));
         }
 
-        // --- 電池が切れかけの管 -------------------------------------------------
+        // --- ブラウン管の電源断（`canon/LEDGER.md` 0111）---------------------------
 
         [Test]
-        public void Flicker_StartsBrightAndEndsCompletelyDark()
+        public void Collapse_NeverFlickers()
         {
-            // ⚠ 頭で落ちると「切れかけ」ではなく「切れた」になり、体験の終わりが事故に見える。
-            //   実装した日に、刻み番号のハッシュが 0 番で必ず 0 を返してこれを踏んだ。
-            Assert.AreEqual(1f, OutroLogic.FlickerPower(0f, 0f), 1e-4f, "頭は点いている");
-            Assert.AreEqual(0f, OutroLogic.FlickerPower(1f, 6f), 1e-4f, "終わりは必ず 0 まで落とし切る");
-        }
-
-        [Test]
-        public void Flicker_GetsDimmerOnAverageAsTheBatteryDies()
-        {
-            // 1 サンプルは落ちた瞬間かもしれないので、窓の平均で比べる（それが「だんだん」の意味）。
-            float a = MeanPower(0.00f, 0.25f);
-            float b = MeanPower(0.35f, 0.60f);
-            float c = MeanPower(0.70f, 0.95f);
-            Assert.Greater(a, b, "前半 → 中盤で暗くなる");
-            Assert.Greater(b, c, "中盤 → 終盤で暗くなる");
-            Assert.Greater(a, 0.7f, "序盤はほとんど落ちない（電池の放電曲線）");
-            Assert.Less(c, 0.35f, "終盤はほとんど点いていない");
-        }
-
-        [Test]
-        public void Flicker_ActuallyFlickers()
-        {
-            // 単調に暗くなるだけでは「ちかちか」にならない。同じ窓の中で明暗が割れていること。
-            int lit = 0, dark = 0;
-            for (int i = 0; i < 400; i++)
+            // ⚠⚠ **これがこの実装の存在理由**（ユーザー判定「ちかちかする演出は目に悪いのでやめたい」）。
+            //   進みは単調に増えるだけで、1 度も戻らない。往復する動きは
+            //   (a) 光過敏の危険帯（6〜24Hz）を作り、(b) 原理的に終端に読めない。
+            var l = Make();
+            l.Begin();
+            float prev = -1f;
+            for (int i = 0; i < 90; i++)
             {
-                float p = 0.30f + 0.40f * i / 399f;
-                float v = OutroLogic.FlickerPower(p, p * OutroTiming.Default.flickerSec);
-                if (v > 0.5f) lit++; else if (v < 0.2f) dark++;
+                l.Tick(OutroTiming.Default.collapseSec / 90f);
+                if (l.Stage != OutroStage.Collapse) break;
+                Assert.GreaterOrEqual(l.ScreenCollapse, prev, "潰れの進みが戻った（＝ ちかちかしている）");
+                prev = l.ScreenCollapse;
             }
-            Assert.Greater(lit, 20, "点いている瞬間がある");
-            Assert.Greater(dark, 20, "落ちている瞬間がある");
+            Assert.Greater(prev, 0.9f, "段の終わりまでに潰れ切る");
         }
 
         [Test]
-        public void Flicker_IsDeterministic()
+        public void Collapse_IsDeterministic()
         {
             // 乱数を使っていない（同じ版は同じ絵）。音の合成と同じ流儀。
-            for (int i = 0; i < 50; i++)
+            var a = Make(); var b = Make();
+            a.Begin(); b.Begin();
+            for (int i = 0; i < 40; i++)
             {
-                float p = i / 49f;
-                float t = p * OutroTiming.Default.flickerSec;
-                Assert.AreEqual(OutroLogic.FlickerPower(p, t), OutroLogic.FlickerPower(p, t), 0f);
+                a.Tick(0.02f); b.Tick(0.02f);
+                Assert.AreEqual(a.ScreenCollapse, b.ScreenCollapse, 0f);
+            }
+        }
+
+        [Test]
+        public void Collapse_KeepsThePowerOnSoTheTubeIsNotDimmedTwice()
+        {
+            // 「装置が死んだ」を言うスイッチは `ScreenPower` 1 本だけ。潰れているあいだに
+            // 電力まで落とすと、線になる前に画が沈んで「潰れた」が読めなくなる。
+            var l = Make();
+            l.Begin();
+            for (int i = 0; i < 8; i++)
+            {
+                l.Tick(OutroTiming.Default.collapseSec / 10f);
+                if (l.Stage != OutroStage.Collapse) break;
+                Assert.AreEqual(1f, l.ScreenPower, 1e-4f);
             }
         }
 
@@ -168,21 +182,37 @@ namespace FixedCamVr.Tests.Streaming
         {
             // run.outro が無い / 旧キーしか無い show.json（全部 0）でも走り切る。
             var t = new OutroTiming().Sanitized();
-            Assert.AreEqual(OutroTiming.Default.flickerSec, t.flickerSec, 1e-4f);
+            Assert.AreEqual(OutroTiming.Default.collapseSec, t.collapseSec, 1e-4f);
             Assert.AreEqual(OutroTiming.Default.darkSec, t.darkSec, 1e-4f);
             Assert.AreEqual(OutroTiming.Default.reportFadeSec, t.reportFadeSec, 1e-4f);
-            Assert.AreEqual(8.7f, t.TotalSec, 1e-3f, "合計が変わったら解析の期待値も直すこと");
+            Assert.AreEqual(3.6f, t.TotalSec, 1e-3f, "合計が変わったら解析の期待値も直すこと");
+        }
+
+        [Test]
+        public void Timing_RefusesACollapseThatIsNotAnEvent()
+        {
+            // ⚠⚠ 旧キーの値（`flickerSec: 6.0`）をそのまま新キーへ写されても通さない。
+            //   電源断は一回性の事象で、2 秒を超えたらそれはもう別の演出。
+            var slow = new OutroTiming { collapseSec = 6.0f, darkSec = 1.2f, reportFadeSec = 1.5f }.Sanitized();
+            Assert.AreEqual(OutroTiming.Default.collapseSec, slow.collapseSec, 1e-4f);
+
+            var tooFast = new OutroTiming { collapseSec = 0.05f, darkSec = 1.2f, reportFadeSec = 1.5f }.Sanitized();
+            Assert.AreEqual(OutroTiming.Default.collapseSec, tooFast.collapseSec, 1e-4f);
+
+            // 範囲の内側は著作した値をそのまま使う。
+            var ok = new OutroTiming { collapseSec = 1.4f, darkSec = 1.2f, reportFadeSec = 1.5f }.Sanitized();
+            Assert.AreEqual(1.4f, ok.collapseSec, 1e-4f);
         }
 
         [Test]
         public void Def_WithOnlyTheOldKeysStillRunsWithDefaults()
         {
-            // 旧 show.json（unswapSec / openSec / restoreSec / holdSec しか持たない）は
+            // 旧 show.json（flickerSec しか持たない / さらに古い unswapSec ほか）は
             // JsonUtility が新キーを 0 で埋める。enabled は生きているので既定で走ること。
-            var def = new ShowOutroDef { enabled = true, flickerSec = 0f, darkSec = 0f, reportFadeSec = 0f };
+            var def = new ShowOutroDef { enabled = true, collapseSec = 0f, darkSec = 0f, reportFadeSec = 0f };
             Assert.IsFalse(def.LooksUnset(), "enabled が立っているので「キーごと無い」ではない");
             OutroTiming t = def.ToTiming();
-            Assert.AreEqual(OutroTiming.Default.flickerSec, t.flickerSec, 1e-4f);
+            Assert.AreEqual(OutroTiming.Default.collapseSec, t.collapseSec, 1e-4f);
             Assert.AreEqual(OutroTiming.Default.darkSec, t.darkSec, 1e-4f);
             Assert.AreEqual(OutroTiming.Default.reportFadeSec, t.reportFadeSec, 1e-4f);
         }
@@ -190,20 +220,8 @@ namespace FixedCamVr.Tests.Streaming
         [Test]
         public void Def_LooksUnsetWhenJsonUtilityZeroedEverything()
         {
-            var def = new ShowOutroDef { enabled = false, flickerSec = 0f, darkSec = 0f, reportFadeSec = 0f };
+            var def = new ShowOutroDef { enabled = false, collapseSec = 0f, darkSec = 0f, reportFadeSec = 0f };
             Assert.IsTrue(def.LooksUnset());
-        }
-
-        private static float MeanPower(float p0, float p1)
-        {
-            const int n = 200;
-            float sum = 0f;
-            for (int i = 0; i < n; i++)
-            {
-                float p = p0 + (p1 - p0) * i / (n - 1f);
-                sum += OutroLogic.FlickerPower(p, p * OutroTiming.Default.flickerSec);
-            }
-            return sum / n;
         }
     }
 }

@@ -26,7 +26,8 @@ namespace FixedCamVr.Streaming
     /// 独自の周回カウンタを持たせない — 2 つ持つと片方だけ直したときに黙って食い違う。
     ///
     /// ⚠ <b>乱数を使わない。</b> 刻み番号のハッシュで決めるので、同じ版・同じ時刻は同じ絵になる
-    /// （<c>OutroLogic.FlickerPower</c> と同じ流儀）。
+    /// （この codebase の演出はすべてこの流儀 — 変えていないのに差が出ると、
+    /// 何が効いたのか分からなくなる）。
     /// </summary>
     public sealed class CommsGlitchLogic
     {

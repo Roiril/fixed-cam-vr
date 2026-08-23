@@ -91,11 +91,14 @@ Shader "FixedCamVr/ScreenComposite"
         // 終幕。**装置に届いている電力**（canon/LEDGER.md 0048「電池が切れかけみたいな感じで
         //   だんだんとちかちかしながら消えていき」）。画の**いちばん最後**に掛ける ＝
         //   映像も砂嵐も管の縁も一緒に落ちる（電池が切れるのは画の一部ではなく装置そのもの）。
-        // ⚠ ちらつきの形はここに持たせない。`OutroLogic.FlickerPower` が数値で出すので、
-        //   実際に書いた値をテレメトリに出せて、EditMode テストで固定でき、毎回同じ絵になる。
         // ⚠ 既定 **1**（点いている）。0 を既定にすると、この uniform を書かない場面
         //   （本編・導入・卓のプレビュー・Editor の合成プレビュー）で画がまるごと消える。
         _ScreenPower("Screen Power (1=on, 0=dead)", Range(0, 1)) = 1
+        // 終幕: ブラウン管の電源断の進み（0 = ふつうの画 / 1 = 点が消え切った）。
+        // 形（潰れる → 縮む → 消える の割合・線の太さ・明るさの上限）は **このシェーダが持つ**。
+        // `OutroLogic.ScreenCollapse` が出すのは進みだけ（数字を 2 か所に書かない）。
+        // ⚠ 既定 **0**（恒等）。`_ScreenPower` とは逆向きなので取り違えないこと。
+        _ScreenCollapse("Screen Collapse (0=normal, 1=gone)", Range(0, 1)) = 0
         // 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
         // 一様な脱色ではなく「明るい所に色が残り、暗がりが無彩へ落ちる」形になる。
         _ChromaKill("Dark Chroma Kill (ISP noise reduction)", Range(0, 1)) = 0
@@ -311,6 +314,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _CrtIgnite;
                 float _IntroLive;
                 float _ScreenPower;
+                float _ScreenCollapse;
                 float _ExposureBias;
                 float _Echo;
                 float _CoarseBlocks;
@@ -455,6 +459,71 @@ Shader "FixedCamVr/ScreenComposite"
                 float r = _CrtRound * min(half.x, half.y);
                 float2 q = abs(p) - (half - r);
                 return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+            }
+
+            // ================= 終幕: ブラウン管の電源断 =================
+            //
+            // 逐語は `canon/LEDGER.md` 0111、設計は `reports/2026-08-23_outro-redesign.html`。
+            // 画が縦に潰れて横一本の線になり、線が中央へ縮んで点になり、残光が消える。
+            //
+            // ⚠⚠ **形の寸法はここが正**（C# は進み `_ScreenCollapse` だけを出す）。
+            //   2 か所に数字を書くと、片方だけ直したときに黙って食い違う。
+            // ⚠⚠ **一方向。往復も反復もしない。** 反復する明滅は原理的に終端に読めないうえ、
+            //   6〜24Hz は光過敏の危険帯（0111 で廃止した旧 `Flicker` がそれだった）。
+            // ⚠ **線が育つ向きの動きを 1 フレームも入れない** — 逆向きは「起動しかけ」に反転する。
+
+            // 潰れの内訳（進みに対する割合）。合計 1.0。
+            #define COLLAPSE_SQUEEZE_END 0.389   // ここまでで縦が潰れて線になる（0.9s なら 0.35s）
+            #define COLLAPSE_SHRINK_END  0.722   // ここまでで線が横に縮んで点になる（同 0.30s）
+                                                 // 残り（同 0.25s）は残光が消える
+            // 線の太さ・点の幅（枠に対する割合）
+            #define COLLAPSE_LINE_H  0.006
+            #define COLLAPSE_POINT_W 0.004
+
+            /// 潰れたぶんの明るさの上限。
+            ///
+            /// ⚠⚠ **エネルギー保存にしない。** 1/0.006 ＝ 167 倍になり、暗所の VR で
+            /// 視界の中心に閃光を置くことになる（ユーザーの「目に悪い」と同じ軸の問題を作る）。
+            ///
+            /// ⚠⚠ **1.25 は「白飛びさせない」から決めた値**（`menu outro` の実測・2026-08-23）。
+            /// 素の画の尖頭は 0.797 なので、1.25 を超えたぶんは 1.0 に飽和する ＝
+            /// **装置が元々持っていない光を演出が作る**ことになる。2.5 で焼いたときは
+            /// 白飛びが 0 px → 537 px（画面の 0.10%）へ増えた。
+            /// ⚠ **上げるなら実測を取り直す**（素の画の尖頭は post とプレートで変わる）。
+            /// ⚠ 暗所の実機で眩しくないかは、被って 1 度見るまで確定しない。
+            #define COLLAPSE_GAIN_MAX 1.25
+
+            /// 電源断の逆写像とマスク。**c=0 のとき厳密に恒等**（本編・導入は 1 ビットも変わらない）。
+            ///
+            /// ⚠ 分岐は uniform 同士の比較なので画面全体で一様 ＝ 暗黙の微分は壊れない。
+            /// ⚠ マスクは **画面座標（rawUv）で測る** — 潰れた座標で `fwidth` を取ると
+            ///   1/squeeze で発散して、線そのものが黙って消える。
+            void CollapseScreen(float c, float2 rawUv, out float2 uv, out float mask, out float gain)
+            {
+                uv = rawUv;
+                mask = 1.0;
+                gain = 1.0;
+                if (c <= 0.0001) return;
+
+                // ① 縦が潰れる → ② 横が縮む → ③ 残光が消える
+                float sq = 1.0 - smoothstep(0.0, COLLAPSE_SQUEEZE_END, c) * (1.0 - COLLAPSE_LINE_H);
+                float sh = 1.0 - smoothstep(COLLAPSE_SQUEEZE_END, COLLAPSE_SHRINK_END, c)
+                                 * (1.0 - COLLAPSE_POINT_W);
+                float fade = 1.0 - smoothstep(COLLAPSE_SHRINK_END, 1.0, c);
+
+                // 画面 → 元の画。潰れた帯の外は範囲外へ出る（そこはマスクが切る）。
+                uv = 0.5 + (rawUv - 0.5) / float2(max(sh, 1e-4), max(sq, 1e-4));
+
+                float2 d = abs(rawUv - 0.5);
+                float aa = fwidth(rawUv.y) + 1e-5;
+                mask = (1.0 - smoothstep(0.5 * sq - aa, 0.5 * sq + aa, d.y))
+                     * (1.0 - smoothstep(0.5 * sh - aa, 0.5 * sh + aa, d.x));
+
+                // 潰れたぶん明るい。**上限つき、しかも縮む段では落とす**
+                // （尖頭を保持すると暗所で残像が残る。実物の電源断も線は一瞬で暗くなる）。
+                float squeezeGain = min(1.0 / max(sq, 1e-4), COLLAPSE_GAIN_MAX);
+                gain = lerp(squeezeGain, 1.0,
+                            smoothstep(COLLAPSE_SQUEEZE_END, COLLAPSE_SHRINK_END, c)) * fade;
             }
 
             float Hash21(float2 p)
@@ -958,7 +1027,17 @@ Shader "FixedCamVr/ScreenComposite"
             {
                 // 枠の座標（post FX の空間。卓の FS_POST と一致させる側）と、
                 // テクスチャを引く座標（低解像度化 → 乱れ の順に劣化させた側）を分ける。
-                float2 screenUv = input.uv;
+                //
+                // ⚠⚠ **終幕の電源断はここで掛ける。** 潰れるのは「画」なので、post も OSD も
+                //   乱れも一緒に潰れるのが正しい（`col` に成り切った末尾では、もう潰す材料が無い）。
+                //   ⚠ **管のガラス（`CrtSdf`）だけは `rawUv` を使う** — 潰れるのは中の画で、
+                //     管の枠ではない。潰れた uv を渡すと `fwidth` が 1/squeeze で発散し、
+                //     角を切る `saturate(-d/aa)` が **線そのものを黙って消す**。
+                float2 rawUv = input.uv;
+                float2 collapseUv; float collapseMask; float collapseGain;
+                CollapseScreen(_ScreenCollapse, rawUv, collapseUv, collapseMask, collapseGain);
+
+                float2 screenUv = collapseUv;
                 float2 sampleUv = GlitchUv(PixelateUv(screenUv));
 
                 // 伝送が痩せたぶん（mip）＋ **周辺の解像度低下**（像面湾曲。実レンズは角ほど像がゆるい）。
@@ -1408,12 +1487,19 @@ Shader "FixedCamVr/ScreenComposite"
                     col = col * (1.0 - a) + g.rgb * a;
                 }
 
+                // 終幕の電源断。**画が線へ潰れて点になる**（`CollapseScreen` が形を持つ）。
+                // ⚠ 管のガラス（下）より前に掛ける — 潰れた線も管の中にあるものなので、
+                //   管の縁の暗さと角の切り落としはその後から掛かるのが正しい順序。
+                // ⚠ 演出の外では mask=1 / gain=1 ＝ 恒等。
+                col *= collapseMask * collapseGain;
+
                 // ブラウン管の面。**縁へ向かって落ち、角の外は黒**。
                 // ヴィネット（レンズ）とは別のもの — あちらは光が届かない話で、こちらは管の形。
                 // だから post の最後（切替の暗転より前）に、枠の座標で掛ける。
+                // ⚠⚠ **`screenUv` ではなく `rawUv`** — 潰れるのは中の画で、管の枠ではない（上）。
                 if (_CrtEdge > 0.001 || _CrtRound > 0.001)
                 {
-                    float d = CrtSdf(screenUv);
+                    float d = CrtSdf(rawUv);
                     // 縁の内側 _CrtEdgeWidth のあいだで暗くなる（管のガラスが厚くなる所）
                     float inner = saturate(-d / max(_CrtEdgeWidth, 1e-3));
                     col *= 1.0 - saturate(_CrtEdge) * (1.0 - inner) * (1.0 - inner);

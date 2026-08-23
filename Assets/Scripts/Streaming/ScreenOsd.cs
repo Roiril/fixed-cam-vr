@@ -83,6 +83,20 @@ namespace FixedCamVr.Streaming
         public float Opacity { get; private set; }
 
         /// <summary>
+        /// <b>時計を消す</b>（立てているあいだ <see cref="Opacity"/> は 0）。
+        ///
+        /// 立てるのは <c>OutroDirector</c> だけ — <b>終幕の電源断の頭</b>で消す
+        /// （<c>canon/LEDGER.md</c> 0111）。潰れていく画の上に時計を残すと、
+        /// 矩形のサンプルの暗黙微分が飛んで<b>灰色の帯</b>になる（字ではなく汚れに見える）。
+        ///
+        /// ⚠ <b>時刻で嘘をつくのとは別のこと。</b> 禁じられているのは巻き戻し・停止・加速で
+        /// （<c>rules/streaming.md</c>「装置が打っている時計」）、装置ごと落ちるときに
+        /// 一緒に消えるのは装置の挙動として正しい。
+        /// ⚠ 立てっぱなしにしない — 戻すのは <c>OutroDirector.ResetScreen</c> 1 本。
+        /// </summary>
+        public bool Suppressed { get; set; }
+
+        /// <summary>
         /// いまの時刻の出どころ。**既定は端末の実時刻**（<c>canon/OPEN.md</c> Q12）。
         /// 当日が 9/6 なら自動で <c>2026/09/06</c> になり、リハの日はその日の日付が出る —
         /// どちらも現実なので嘘がない。
@@ -198,7 +212,9 @@ namespace FixedCamVr.Streaming
             float top = 0.5f + 0.5f * Mathf.Clamp(fit.y, 0.05f, 1f);
             float x = left + MarginK / aspect;
             float y = top - MarginK - h;
-            Opacity = 1f;
+            // 終幕の電源断の頭で消える（`Suppressed`）。矩形は書いたままにして不透明度だけ落とす
+            // — 矩形を 0 にすると復帰のときに組み直しが要る。
+            Opacity = Suppressed ? 0f : 1f;
             _material.SetVector(OsdRectId, new Vector4(x, y, w, h));
             _material.SetFloat(OsdOpacityId, Opacity);
         }

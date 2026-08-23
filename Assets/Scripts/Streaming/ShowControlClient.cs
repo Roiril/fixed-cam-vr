@@ -657,20 +657,22 @@ namespace FixedCamVr.Streaming
         public string afterTakeId = "";
 
         // 尺の既定は 2 箇所（ここと <see cref="OutroTiming.Default"/>）に現れる。値は一致させること。
-        // ⚠ 2026-08-15 にキーが入れ替わった（旧 unswapSec / openSec / restoreSec / holdSec）。
+        // ⚠ キーは 2 度入れ替わっている:
+        //    2026-08-15  旧 unswapSec / openSec / restoreSec / holdSec → flickerSec ほか（0048）
+        //    2026-08-23  flickerSec → collapseSec（0111・ちかちかを電源断へ置き換えた）
         //    旧キーしか持たない show.json（焼き込み・端末キャッシュ）では新キーが 0 になり、
         //    Sanitized() が既定へ倒すので**そのまま走る**。
-        public float flickerSec = 6.0f;
+        public float collapseSec = 0.9f;
         public float darkSec = 1.2f;
         public float reportFadeSec = 1.5f;
 
         /// <summary>キーごと無い（JsonUtility が 0 で埋めた）形か。</summary>
         public bool LooksUnset() =>
-            !enabled && flickerSec <= 0f && darkSec <= 0f && reportFadeSec <= 0f;
+            !enabled && collapseSec <= 0f && darkSec <= 0f && reportFadeSec <= 0f;
 
         public OutroTiming ToTiming() => new OutroTiming
         {
-            flickerSec = flickerSec, darkSec = darkSec, reportFadeSec = reportFadeSec,
+            collapseSec = collapseSec, darkSec = darkSec, reportFadeSec = reportFadeSec,
         }.Sanitized();
     }
 

@@ -123,6 +123,10 @@ namespace FixedCamVr.Diagnostics
         private OutroStage _lastOutroStage = OutroStage.Off;
         private bool _outroSeen;
 
+        /// <summary>電源断が画へ出た最大値（<c>clMax</c>）。<b>段の縁だけでは取れない</b>。</summary>
+        private float _collapseMax;
+        private bool _collapseSeen;
+
         /// <summary>
         /// タイトルの段（Off/Wait/In/Hold/Out/Done）。<b>2026-08-14 まで 1 つも観測していなかった</b> —
         /// 体験の入口そのものなのに、出たかどうかがログから分からなかった。
@@ -193,6 +197,14 @@ namespace FixedCamVr.Diagnostics
                 _resolveAccum = 0f;
                 Resolve();
                 PollConfig();  // 毎フレームだと DescribeConfig の文字列生成が無駄になるのでここで
+            }
+
+            // 電源断は 0.9 秒で終わるうえ `ev=outro` は段の縁でしか出ないので、
+            // **画へ出た最大値をここで拾う**（`clMax`・`canon/LEDGER.md` 0111）。
+            if (_outro != null && _outro.CollapseWritten >= 0f)
+            {
+                _collapseSeen = true;
+                if (_outro.CollapseWritten > _collapseMax) _collapseMax = _outro.CollapseWritten;
             }
 
             PollTransitions(udt);
@@ -413,12 +425,25 @@ namespace FixedCamVr.Diagnostics
         /// スクリーンの電力（<c>_ScreenPower</c>）に<b>実際に書いた値</b>。
         ///
         /// <c>-</c> = 終幕の実行体がシーンに居ない / <c>nc</c> = <b>書く先の材質を掴めていない</b>
-        /// （＝ ちかちかしながら消える過程は一生画に出ない）。段が Flicker を通っているのに
-        /// ずっと 1.00 なら、重みは動いているのに画は明るいまま。
+        /// （＝ 装置が死ぬ過程は一生画に出ない）。
+        /// ⚠ 2026-08-23 から <b>Collapse のあいだは 1.00 のまま</b>で、Dark 以降 0 になる
+        /// （消え方そのものは <see cref="CollapseState"/> が持つ）。
         /// </summary>
         private string PowerState => _outro == null
             ? "-"
             : (_outro.PowerWritten < 0f ? "nc" : _outro.PowerWritten.ToString("F2"));
+
+        /// <summary>
+        /// <b>電源断が実際に画へ出たか</b>（<c>_ScreenCollapse</c>・<c>canon/LEDGER.md</c> 0111）。
+        ///
+        /// ⚠⚠ <b>これが無いと「潰れなかった」を誰も検出できない。</b> 段は正しく進み、
+        /// <c>pw</c> も Dark 以降 0 になるので、**書けていなくても既存の判定は全部 PASS する**
+        /// （画は「0.9 秒ふつうに映ってから黒へ瞬断」になり、暗い現場では目視でも区別できない）。
+        /// 段が Collapse を通っているのにずっと 0.00 なら、進みは配っているのに 1 画素も潰れていない。
+        /// </summary>
+        private string CollapseState => _outro == null
+            ? "-"
+            : (_outro.CollapseWritten < 0f ? "nc" : _outro.CollapseWritten.ToString("F2"));
 
         /// <summary>
         /// 報告の面が<b>組めたか</b>（<c>-</c> = 面がシーンに居ない）。false なら日本語フォントか
@@ -711,15 +736,16 @@ namespace FixedCamVr.Diagnostics
                      $"told={(_guide.Told ? 1 : 0)}");
             }
 
-            // 終幕の段（Off/Flicker/Dark/Report/Done）。**画に出た側**を必ず一緒に出す —
-            // pw は実際に材質へ書いた電力（nc なら掴めていない ＝ 一生ちかちかしない）、
+            // 終幕の段（Off/Collapse/Dark/Report/Done）。**画に出た側**を必ず一緒に出す —
+            // cl は実際に材質へ書いた電源断の進み（0 のままなら 1 画素も潰れていない）、
+            // pw は電力（nc なら材質を掴めていない ＝ 装置が死ぬ過程が一生画に出ない）、
             // rep / repBuilt は報告の面（built=0 なら最後の 4 行が 1 文字も出ない）。
             // marks は報告の数そのもの（○○ に入る値が正しいかは、これでしか確かめられない）。
             if (_outro != null && (!_outroSeen || _outro.Stage != _lastOutroStage))
             {
                 _outroSeen = true;
                 _lastOutroStage = _outro.Stage;
-                Emit($"ev=outro stage={_lastOutroStage} pw={PowerState} " +
+                Emit($"ev=outro stage={_lastOutroStage} pw={PowerState} cl={CollapseState} " +
                      $"rep={ReportAlphaState} repBuilt={ReportBuiltState} " +
                      // repChars = 報告を打ち切るまでに鳴る打鍵の数（改行を除く字数）。
                      // 解析器が `ev=sum` の `repTypeN` と突き合わせる（`canon/LEDGER.md` 0063）。
@@ -1212,6 +1238,13 @@ namespace FixedCamVr.Diagnostics
                                             ? "-"
                                             : (_report.TypeSfxBuilt ? _report.TypedCount.ToString() : "nc"));
             _sb.Append(" repShown=").Append(_report == null ? "-" : _report.VisibleChars.ToString());
+            //   clMax = **電源断が画へ出た最大値**（`canon/LEDGER.md` 0111）。
+            //   ⚠⚠ `ev=outro` は段の縁でしか出ないので、そこの `cl` は必ず頭の値（≒0）になる。
+            //     潰れ切ったかは**走行全体の最大値**でしか取れない（敷く音を最大値で見るのと同じ理屈・
+            //     `rules/sound-design.md` §7）。0.9 未満なら、進みを配っているのに画が潰れ切っていない。
+            _sb.Append(" clMax=").Append(_outro == null
+                                         ? "-"
+                                         : (_collapseSeen ? _collapseMax.ToString("F2") : "nc"));
             //   ctrlL / ctrlR = コントローラの <繋がっている>/<位置が取れている>。
             //   ⚠⚠ **2 つ目が 0 のとき、手元の面（報告の押し方・操作早見表）は出ない。**
             //   2026-08-16 まで接続しか見ておらず、位置が無効なコントローラのアンカーが

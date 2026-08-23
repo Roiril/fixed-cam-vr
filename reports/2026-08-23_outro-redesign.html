@@ -165,16 +165,18 @@ pre code { background: none; padding: 0; }
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">廻リ視 · 終幕 · 設計</p>
+  <p class="eyebrow">廻リ視 · 終幕 · 実装済み</p>
   <h1>終幕の再設計 — ちかちかをやめ、電源断で終わる</h1>
-  <p class="sub">canon/LEDGER.md 0111 への設計案 ／ 2026-08-23 ／ 独立した設計批評 2 体の収束を根拠に採る</p>
+  <p class="sub">canon/LEDGER.md 0111 ／ 2026-08-23 実装 ／ 独立した設計批評 2 体の収束を根拠に採った</p>
 
   <div class="lead">
-    <p>ちかちか 6 秒を、<em>管が縦に潰れて横一本の線になり、点になって消える</em> 0.9 秒に置き換える。
+    <p>ちかちか 6 秒を、<em>管が縦に潰れて横一本の線になり、点になって消える</em> 0.9 秒に置き換えた。
     体験全体が浴びせてきた「異変の語彙」（明滅・乱れ・劣化）と正反対の、
     一方向で戻らない一回性の事象だけが「終わった」と読める。
-    報告の 1 文字目は現状の 7.2 秒後 → <strong>2.1 秒後</strong>、
-    打ち終わりは 10.6 秒 → <strong>5.5 秒</strong>。反復する明滅はゼロになる。</p>
+    報告の 1 文字目は 7.2 秒後 → <strong>2.1 秒後</strong>、
+    打ち終わりは 10.6 秒 → <strong>5.5 秒</strong>。反復する明滅はゼロ。
+    <strong>実装済み</strong>（EditMode 1632/1632・<code>menu outro</code> の 31 コマで確認・白飛び 0 px）。
+    実機で被る検証だけが残っている。</p>
   </div>
 
   <h2>1. 診断 — なぜテンポが悪く、なぜ終わったと読めないか</h2>
@@ -252,9 +254,10 @@ pre code { background: none; padding: 0; }
   <em>現状は打鍵 3.4 秒の途中（段 Done ＝ 1.5 秒）で部屋の音が切れており、この欠陥も同時に直る</em>。
   ⚠ 音のランプは段の尺から切り離す（下の罠 3）。</p>
 
-  <h2>4. 実装の作用点と、先に潰しておく罠</h2>
+  <h2>4. 実装の作用点と、潰した罠</h2>
 
-  <p>批評 2 体が実コードを読んで挙げた指摘。実装時はここから着手する。</p>
+  <p>批評 2 体が実コードを読んで挙げた指摘。<strong>9 件すべて実装で潰してある</strong>
+  （この節は、次に終幕を触る人が同じ穴に落ちないための記録）。</p>
 
   <div class="tblwrap"><table>
     <tr><th>#</th><th>何</th><th>どうする</th></tr>
@@ -304,38 +307,69 @@ pre code { background: none; padding: 0; }
       （死んだ決定論コードを残さない）</td></tr>
   </table></div>
 
-  <h2>5. 段階分割（安い順に 3 段）</h2>
+  <h2>5. 実装の結果（2026-08-23）</h2>
+
+  <p>設計どおり 3 段すべて実装した。<strong>EditMode 1632/1632 通過</strong>、
+  <code>menu outro</code> で 31 コマを焼いて各段を目視確認済み。</p>
 
   <div class="tblwrap"><table>
-    <tr><th>Phase</th><th>何</th><th>この時点で得られるもの</th></tr>
-    <tr><td>1</td><td><code>OutroLogic</code> だけ直す — Flicker の明滅を単調な減光に置き換え、尺を 0.9s に詰める</td>
-      <td><strong>シェーダ変更ゼロで「目に悪い」と「テンポ」が両方消える。</strong>
-      EditMode テストで単調性（明滅ゼロ）と決定論を固定できる</td></tr>
-    <tr><td>2</td><td><code>_ScreenCollapse</code>（縦潰れ → 線 → 点）＋ <code>menu outro</code> プレビュー（PNG 連番）＋ テレメトリ <code>cl=</code></td>
-      <td>電源断の画。焼いた画から線の尖頭輝度を実測して上限を確定できる</td></tr>
-    <tr><td>3</td><td>音 — 装置の声の即断と部屋の音の裾を、段の尺から独立した固定ランプへ。打鍵完了まで部屋の音を保つ</td>
-      <td>画と音が揃う。現状の「打鍵の途中で部屋の音が切れる」も直る</td></tr>
+    <tr><th>測ったもの</th><th>結果</th></tr>
+    <tr><td>報告の 1 文字目まで</td><td><strong>2.10 秒</strong>（旧 7.2 秒）</td></tr>
+    <tr><td>終幕の合計</td><td><strong>3.60 秒</strong>（旧 8.7 秒）</td></tr>
+    <tr><td>反復する明滅</td><td><strong>ゼロ</strong>（進みが 1 度も戻らないことをテストで固定）</td></tr>
+    <tr><td>白飛びした画素</td><td><strong>全コマ 0 px</strong>（素の画と同じ。上限 2.5 では 537 px 出ていた）</td></tr>
+    <tr><td>いちばん明るいコマの尖頭</td><td>0.882 ＝ 素の画の尖頭（0.797）の <strong>1.11 倍</strong></td></tr>
+    <tr><td>絵で確かめたこと</td><td>縦に潰れる → 線 → 縮む → 点 → 消える／管の角丸と縁の暗さは潰れていない／時計は潰れの頭で消える</td></tr>
   </table></div>
 
-  <h2>6. 判定を待つもの（既定つき）</h2>
+  <p>設計時に「実機でしか決まらない」としていた線の輝度上限は、
+  <strong>白飛びさせない値</strong>という基準で実測から 1.25 に確定した
+  （素の画の尖頭 0.797 × 1.25 ≒ 1.0）。装置が元々持っていない光を演出が作らない、という線引き。
+  ただし<em>暗所の VR で眩しく感じるかは被るまで確定しない</em>ので、そこは判定待ちに残してある。</p>
+
+  <h3>実装したファイル</h3>
+
+  <ul>
+    <li><code>OutroLogic.cs</code> — 段を <code>Collapse</code> へ、尺を 0.9/1.2/1.5 へ、
+    進みだけを出す <code>ScreenCollapse</code>。明滅のコード（<code>FlickerPower</code> /
+    <code>Hash01</code>）はテストごと削除</li>
+    <li><code>ScreenComposite.shader</code> — <code>_ScreenCollapse</code> と
+    <code>CollapseScreen</code>（形の寸法はここが正）。<code>CrtSdf</code> は元の枠の uv へ</li>
+    <li><code>OutroDirector.cs</code> — 2 本の uniform の writer、<code>ResetScreen</code> で
+    3 つ（電力・潰れ・時計）を必ず一緒に戻す</li>
+    <li><code>ScreenOsd.cs</code> — <code>Suppressed</code>（潰れの頭で時計を消す）</li>
+    <li><code>SoundBedLogic.cs</code> / <code>ShowSoundDirector.cs</code> — 段名の分岐を廃し、
+    終幕の頭からの経過＋固定尺（1.5 / 2.0 秒）へ</li>
+    <li><code>ShowTelemetryHost.cs</code> / <code>analyze-xp-log.py</code> —
+    <code>cl=</code> と <code>clMax=</code> を対で</li>
+    <li><code>OutroPreview.cs</code>（新設）＋ <code>unity.ps1</code> に <code>menu outro</code></li>
+  </ul>
+
+  <h2>6. 判定を待つもの（既定つき・どれも未実装）</h2>
 
   <dl class="qa">
+    <dt>線の明るさは暗所で眩しくないか</dt>
+    <dd>上限 1.25 は「白飛びさせない」から実測で決めた値で、<strong>暗所の VR で被るまで確定しない</strong>。
+    眩しければ下げる（1.0 にすると「潰れても明るくならない」）。
+    見かけの明るさの机上見積もりはこのプロジェクトで 2 回続けて外している。</dd>
     <dt>時計を残して止める版を入れるか</dt>
     <dd>独立設計側の案：画だけ先に消えて<strong>時計だけが黒い管に残り、最後の 1 秒を刻んで止まってから</strong>管が潰れる。
     「3 分間刻み続けた唯一の不動点が止まる」は作品自身の言葉で書いた終了宣言になる。
     ただし <code>rules/streaming.md</code> の「時刻で嘘をつかない（停止も嘘）」に終幕の例外を書き足すことになり、
     時計に気づいていなかった体験者には効かない。
-    <strong>既定：入れない</strong>（契約に穴を開けず、時計は画と一緒に潰れて落ちる）。</dd>
-    <dt>0048 の「電池が切れかけ」という比喩ごと置き換えてよいか</dt>
-    <dd>0111 で否定されたのは逐語では「ちかちか」まで。ただし切れかけの表現手段（明滅）が消えたので、
-    比喩だけ残しても画にする手が無い。<strong>既定：「装置が役目を終えて落ちる」に置き換える</strong>。</dd>
+    <strong>既定：入れない</strong>（いまの実装は潰れの頭 12% で時計を消す — 潰れた座標のまま引くと
+    暗黙の微分が飛んで灰色の帯になるため。装置ごと落ちるので筋は通る）。</dd>
     <dt>打ち終わった後の終端の記号は要るか</dt>
     <dd>報告を打ち終わると以後は永久に無変化・無音で、「まだ続くのか」と待つ体験者が残る可能性がある
     （分かりづらさの残り 1 つ）。<strong>既定：このまま</strong>
     — 4 行目「装置を外してください。」が指示そのもので、打鍵音が止まることが音の終端になる。</dd>
+    <dt>「電池が切れかけ」という比喩ごと置き換えてよかったか</dt>
+    <dd>0111 で否定されたのは逐語では「ちかちか」まで。ただし切れかけの表現手段（明滅）が消えたので、
+    比喩だけ残しても画にする手が無い。<strong>「装置が調査を終えて落ちる」に置き換えた</strong>。
+    比喩を戻したいなら別の判定が要る。</dd>
     <dt>報告の数字を最後に打つか</dt>
     <dd>既存の案（2026-08-19）。いまは 1 行目の数字が最初に出る。順を変えると「集計してから答えた」ように見える。
-    文言は 1 字も動かさない。<strong>既定：今回は触らない</strong>（本件と独立に判定できる）。</dd>
+    文言は 1 字も動かさない。<strong>既定：今回は触っていない</strong>（本件と独立に判定できる）。</dd>
   </dl>
 
   <h2>7. 退けた代案</h2>
@@ -353,19 +387,25 @@ pre code { background: none; padding: 0; }
       新しい一撃を足さない規約にも反する</td></tr>
   </table></div>
 
-  <h2>8. 検証の設計</h2>
+  <h2>8. 検証（3 つ通過・1 つ残り）</h2>
 
   <ul>
-    <li><strong>安い門</strong>：EditMode テストで「潰れの進行が単調（明滅ゼロ）」「決定論（同じ時刻は同じ値）」
-    「畳む全経路で ResetScreen が通る」を固定。<code>SoundBedLogic</code> の段名分岐も同じコミットで</li>
-    <li><strong>絵の門</strong>：<code>menu outro</code>（新設・PNG 連番）で潰れの形と線の尖頭輝度を実測。
-    数値が緑でも絵は必ず開く</li>
-    <li><strong>走行の門</strong>：<code>ev=outro</code> の <code>cl=</code> と <code>pw=</code> を
-    <code>analyze-xp-log.py</code> が判定（潰れ段に <code>cl</code> が動かなければ FAIL）。
-    <code>ShowTelemetryHost</code> と対で直す</li>
-    <li><strong>被る門</strong>：線の明るさが暗所の VR で眩しくないかは実機で被る以外に確かめる手が無い。
-    次の被り検証に混ぜる（visual-verification の「溜めて 1 回」）</li>
+    <li>✅ <strong>安い門</strong>：EditMode 1632/1632。「潰れの進みが 1 度も戻らない（明滅ゼロ）」
+    「決定論」「潰れ中に電力を二重に落とさない」「報告の 1 文字目まで 2.2 秒以内」
+    「音が段名に依存しない」「旧キーの 6.0 秒を新キーへ写しても通さない」を固定</li>
+    <li>✅ <strong>絵の門</strong>：<code>menu outro</code> の 31 コマ。潰れ → 線 → 縮む → 点 → 消える
+    の各段を目視確認。管の角丸・縁の暗さは潰れておらず、時計は潰れの頭で消えている</li>
+    <li>✅ <strong>数値の門</strong>：白飛び全コマ 0 px（素の画と同じ）。
+    尖頭は素の 1.11 倍まで。平均は単調減少で往復なし</li>
+    <li>⬜ <strong>被る門</strong>：線の明るさが暗所の VR で眩しくないか、電源断が「終わった」と
+    読まれるかは実機で被る以外に確かめる手が無い。次の被り検証に混ぜる
+    （visual-verification の「溜めて 1 回」）</li>
   </ul>
+
+  <p>走行時の観測は <code>ev=outro</code> の <code>cl=</code> と <code>ev=sum</code> の
+  <code>clMax=</code>。<code>analyze-xp-log.py</code> が「潰れ切ったか / 途中で止まったか /
+  1 画素も出ていないか」を判定する。<em>この観測が無いと「潰れなかった」を誰も検出できない</em>
+  — 段は正しく進み <code>pw</code> も Dark 以降 0 になるので、他の判定は全部 PASS してしまう。</p>
 
   <p class="note">
     出どころ：canon/LEDGER.md 0111（2026-08-23 のユーザー判定・逐語）。

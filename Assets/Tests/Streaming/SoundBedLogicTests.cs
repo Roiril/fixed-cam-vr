@@ -140,6 +140,68 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void Outro_SoundDoesNotDependOnTheStageName()
+        {
+            // ⚠⚠ **段名を変えたら終幕が丸ごと無音になる**、を構造的に起こさない
+            //   （`canon/LEDGER.md` 0111 で Flicker → Collapse へ改名した）。
+            //   旧実装は `st != OutroStage.Flicker` で切っており、名前を変えた瞬間に
+            //   装置の声が全段 0 になる形だった。**画は正しく落ちるので実機で聴くまで気づけない。**
+            //   いまは終幕の頭からの経過だけを読むので、どの段でも同じ経過なら同じ音になる。
+            foreach (OutroStage st in System.Enum.GetValues(typeof(OutroStage)))
+            {
+                if (st == OutroStage.Off) continue;
+                var s = SoundShowState.Idle;
+                s.outroActive = true;
+                s.outroStage = st;
+                s.outroElapsedSec = 0f;
+                Assert.AreEqual(1f, SoundBedLogic.Target(s).device, 1e-4f,
+                    $"終幕の頭（段 {st}）で装置の声が鳴っていない — 段名で分岐していないか");
+            }
+        }
+
+        [Test]
+        public void Outro_DeviceFadesOutOverItsOwnFixedTime()
+        {
+            // 音のランプは**段の尺から独立**（段を詰めても音だけ速くならない）。
+            var s = SoundShowState.Idle;
+            s.outroActive = true;
+            s.outroStage = OutroStage.Collapse;
+
+            s.outroElapsedSec = 0f;
+            Assert.AreEqual(1f, SoundBedLogic.Target(s).device, 1e-4f);
+
+            s.outroElapsedSec = SoundBedLogic.OutroDeviceFadeSec * 0.5f;
+            float mid = SoundBedLogic.Target(s).device;
+            Assert.Greater(mid, 0.1f);
+            Assert.Less(mid, 0.9f);
+
+            // 画（潰れ 0.9 秒）が終わった後も、音はまだ引き切っていない ＝ 音が少し遅れて終わる。
+            s.outroElapsedSec = 0.9f;
+            Assert.Greater(SoundBedLogic.Target(s).device, 0f,
+                "画が落ち切った時点で音まで 0 だと「ぶつっと切れた」になる");
+
+            s.outroElapsedSec = SoundBedLogic.OutroDeviceFadeSec;
+            Assert.AreEqual(0f, SoundBedLogic.Target(s).device, 1e-4f);
+        }
+
+        [Test]
+        public void Outro_RoomRisesAsTheDeviceGoesQuiet()
+        {
+            // 装置が黙るぶんだけ、体験者が実際に立っている部屋が前へ出る（新しい音は足さない）。
+            var s = SoundShowState.Idle;
+            s.outroActive = true;
+            s.outroStage = OutroStage.Collapse;
+
+            s.outroElapsedSec = 0f;
+            float first = SoundBedLogic.Target(s).room;
+            s.outroElapsedSec = SoundBedLogic.OutroRoomRiseSec;
+            float last = SoundBedLogic.Target(s).room;
+
+            Assert.AreEqual(SoundBedLogic.RoomInRun, first, 1e-4f, "頭は本編と同じ高さ");
+            Assert.Greater(last, first, "装置が引くぶん部屋がせり上がる");
+        }
+
+        [Test]
         public void Decay_CrossfadesDeviceEqualPower_NoDipInTheMiddle()
         {
             // 周回で装置の声が痩せる。2 本の録り分けは無相関なので、**線形に混ぜると途中で凹む**。

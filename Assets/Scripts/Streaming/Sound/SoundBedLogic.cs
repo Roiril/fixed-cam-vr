@@ -24,10 +24,19 @@ namespace FixedCamVr.Streaming
         public OutroStage outroStage;
 
         /// <summary>
-        /// 終幕のいまの段の進み 0..1。<b>装置の声が「絵と同じ速さで」細るために要る</b>
-        /// （段だけだと 6 秒の Flicker のあいだ音が一定になり、消えていく画と食い違う）。
+        /// <b>終幕に入ってからの総経過（秒）。</b>
+        ///
+        /// ⚠⚠ <b>段の進み（<c>OutroLogic.StageProgress01</c>）を読んではいけない</b>（2026-08-23）。
+        /// あれは段相対なので、段の尺を変えると<b>音のランプだけが黙って速くなる</b> —
+        /// 電源断へ作り替えたとき（<c>canon/LEDGER.md</c> 0111）、消える段は 6.0 秒から
+        /// 0.9 秒になった。段相対のままなら部屋の音のせり上がりが 6.7 倍速になり、
+        /// 「せり上がる音」として聞こえていた（誰も決めていない変更）。
+        ///
+        /// 音は<b>画と別の、固定の尺</b>で引く（<see cref="SoundBedLogic.OutroDeviceFadeSec"/> /
+        /// <see cref="SoundBedLogic.OutroRoomRiseSec"/>）。画が 0.9 秒で落ちても、
+        /// 装置の声はその後 0.6 秒かけて引き切る ＝ <b>音が画より少し遅れて終わる</b>。
         /// </summary>
-        public float outroProgress01;
+        public float outroElapsedSec;
         public ShowPhase phase;
         /// <summary>映像の解像度の劣化（0 = 新しい / 1 = 落ち切った）。<see cref="ScreenDecayLogic"/>。</summary>
         public float decay;
@@ -475,7 +484,7 @@ namespace FixedCamVr.Streaming
 
             // --- 部屋 -----------------------------------------------------------
             if (s.titleVisible) g.room = 0f;                       // タイトルは世界の手前
-            else if (s.outroActive) g.room = OutroRoom(s.outroStage, s.outroProgress01);
+            else if (s.outroActive) g.room = OutroRoom(s.outroElapsedSec);
             else if (s.introActive) g.room = 0.85f;
             else g.room = RoomInRun;
 
@@ -486,7 +495,7 @@ namespace FixedCamVr.Streaming
             // --- 装置 -----------------------------------------------------------
             // ⚠ **絵より先に来る。** 段 2（色が抜ける）で入り始め、段 5 で画が変わる。
             if (s.titleVisible) g.device = 0f;
-            else if (s.outroActive) g.device = OutroDevice(s.outroStage, s.outroProgress01);
+            else if (s.outroActive) g.device = OutroDevice(s.outroElapsedSec);
             else if (s.introActive) g.device = DeviceForStage(s);
             else g.device = 1f;
 
@@ -574,19 +583,34 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 終幕の装置。<b>ちかちかしながら消えていくのと同じ進みで細っていく。</b>
+        /// 装置の声が引き切るまで（秒・終幕の頭から数える）。
+        ///
+        /// ⚠⚠ <b>段の尺と結ばない。</b> 画（電源断）は 0.9 秒で落ちるが、音まで 0.9 秒で
+        /// 切ると「ぶつっと切れた」になる。3 分間鳴り続けた唸りが<b>画より少し遅れて</b>
+        /// 引き切ることで、消えたこと自体が終幕の音になる（新しい音を 1 本も足さずに済む）。
+        /// </summary>
+        public const float OutroDeviceFadeSec = 1.5f;
+
+        /// <summary>
+        /// 部屋の音が前へ出切るまで（秒・終幕の頭から数える）。装置の声より少し遅い。
+        /// </summary>
+        public const float OutroRoomRiseSec = 2.0f;
+
+        /// <summary>
+        /// 終幕の装置。<b>3 分間鳴り続けた唸りが引いていく。</b>
         /// **山を作らない**（決め台詞を置かない）。
         ///
-        /// ⚠ <b>ちらつきそのものを音へ写さない。</b> 電力は 6〜24Hz で跳ねるので、
-        /// そのまま音量に掛けると低い唸りには「切れかけ」ではなく歪みとして乗る
-        /// （しかも 90Hz のフレームで階段状に切り替わるのでクリックが出る）。
-        /// 写すのは<b>痩せていく方だけ</b>で、ちかちかは画が担う。
+        /// ⚠⚠ <b>段を読まない</b>（2026-08-23・<c>canon/LEDGER.md</c> 0111）。旧実装は
+        /// <c>st != OutroStage.Flicker</c> で切っており、**段名を変えた瞬間に終幕が丸ごと無音**に
+        /// なる形だった（画は正しく落ちるので、実機で聴くまで気づけない）。
+        /// いまは終幕に入ってからの経過だけを読むので、段の構成が変わっても追随する。
+        ///
+        /// ⚠ <b>消え方そのものを音へ写さない。</b> 画は 0.9 秒で潰れて点になるが、
+        /// それを音量へ掛けると「潰れた」ではなく歪みとして乗る（旧ちかちかで踏んだのと同じ型）。
+        /// 写すのは<b>痩せていく方だけ</b>で、消え方は画が担う。
         /// </summary>
-        private static float OutroDevice(OutroStage st, float p)
-        {
-            if (st != OutroStage.Flicker) return 0f;   // Dark 以降は消えている
-            return 1f - Smooth(Clamp01(p));
-        }
+        private static float OutroDevice(float elapsedSec)
+            => 1f - Smooth(Clamp01(elapsedSec / OutroDeviceFadeSec));
 
         /// <summary>
         /// 終幕の部屋。<b>装置が黙るぶんだけ、体験者が実際に立っている部屋が前へ出る。</b>
@@ -595,12 +619,10 @@ namespace FixedCamVr.Streaming
         /// それも <see cref="ShowPhase.Finished"/> の分岐が Done で無音へ落とす
         /// （`rules/sound-design.md`「終わりに音を残さない」）。
         /// </summary>
-        private static float OutroRoom(OutroStage st, float p)
+        private static float OutroRoom(float elapsedSec)
         {
             const float RoomAlone = 0.85f;
-            if (st == OutroStage.Flicker)
-                return RoomInRun + (RoomAlone - RoomInRun) * Smooth(Clamp01(p));
-            return RoomAlone;                 // Dark / Report — 部屋だけが残る
+            return RoomInRun + (RoomAlone - RoomInRun) * Smooth(Clamp01(elapsedSec / OutroRoomRiseSec));
         }
 
         private static float Smooth(float t) => t * t * (3f - 2f * t);

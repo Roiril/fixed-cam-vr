@@ -338,7 +338,7 @@ namespace FixedCamVr.Streaming.Tests
             foreach (OutroStage st in System.Enum.GetValues(typeof(OutroStage)))
             {
                 s.outroStage = st;
-                s.outroProgress01 = 0.5f;
+                s.outroElapsedSec = 0.5f;
                 for (int i = 0; i < 8; i++)
                 {
                     l.Tick(Dt, s, 0f, out int n);

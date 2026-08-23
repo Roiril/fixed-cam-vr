@@ -113,6 +113,9 @@ $Menus = [ordered]@{
     'osd'              = @{ Method = 'FixedCamVr.Streaming.EditorTools.OsdPreview.Run'
                             Desc = 'スクリーン左上の時刻表示を 8 状態で焼く（砂嵐・乱れ・劣化では変わらず、切替の黒・終幕では一緒に沈むか）'
                             Out = 'Assets/Screenshots/osd-preview/osd_0_plain.png' }
+    'outro'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.OutroPreview.Run'
+                            Desc = '終幕の電源断（管が潰れて線 → 点 → 消える）を 31 コマ焼く（一方向か / 線が眩しくないか / 管のガラスが潰れていないか）'
+                            Out = 'Assets/Screenshots/outro/outro_00.png' }
     'walkguide'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.WalkGuidePreview.Run'
                             Desc = 'タイトル直後の歩行誘導（床の矢印と円）を 1 コマずつ焼く（-Set show=<show.json> / → make-preview-video.py で mp4）'
                             Set = 'show=<show.json のパス>'

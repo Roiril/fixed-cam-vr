@@ -1303,9 +1303,10 @@ def analyze(events, others, exp, warns=None):
 
     # ---------------- 終幕 ----------------
     # ⚠⚠ 終幕は「装置が力尽きて報告を出す」だけの演出なので、**録画からは「暗い」としか読めない**
-    #    （ちかちかしながら消えるのも、黒の中に文字が出るのも、暗い部屋の録画では判別が難しい）。
+    #    （管が潰れて消えるのも、黒の中に文字が出るのも、暗い部屋の録画では判別が難しい）。
     #    画に出たかを見る手はここしかない:
-    #      pw       = 実際に材質へ書いた電力（nc なら書く先を掴めていない ＝ 一生ちかちかしない）
+    #      cl/clMax = 電源断が実際に画へ出たか（0 のままなら 1 画素も潰れていない・LEDGER 0111）
+    #      pw       = 実際に材質へ書いた電力（nc なら書く先を掴めていない）
     #      repBuilt = 報告の面を組めたか（0 なら最後の 4 行が 1 文字も出ない）
     #      armed/cue = 著作した合図（run.outro.afterTakeId）が武装したか / そこから始まったか
     #    観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
@@ -1313,7 +1314,7 @@ def analyze(events, others, exp, warns=None):
     if outro:
         w("## 終幕（消えて、報告が出たか）")
         for e in outro:
-            w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} pw={e.get('pw')} "
+            w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} pw={e.get('pw')} cl={e.get('cl')} "
               f"rep={e.get('rep')} repBuilt={e.get('repBuilt')} "
               f"repChars={e.get('repChars')} repSfx={e.get('repSfx')} marks={e.get('marks')} "
               f"armed={e.get('armed')} cue={e.get('cue')}")
@@ -1323,16 +1324,40 @@ def analyze(events, others, exp, warns=None):
         else:
             if any(str(e.get("pw")) == "nc" for e in outro):
                 verdict("FAIL", "終幕がスクリーンの材質を掴めていない（pw=nc）— 電力を書けないので、"
-                                "ちかちかしながら消える過程が 1 度も画に出ない")
+                                "装置が死ぬ過程が 1 度も画に出ない")
             if any(str(e.get("repBuilt")) == "0" for e in outro):
                 verdict("FAIL", "終幕の報告の面を組めていない（repBuilt=0）— 最後の 4 行が 1 文字も"
                                 "出ない。日本語フォントの静的ベイクを確かめる（menu hud-font）")
-            for want in ("Flicker", "Dark", "Report"):
+            for want in ("Collapse", "Dark", "Report"):
                 if want not in ostages:
                     verdict("WARN", f"終幕の段 {want} が出ていない")
+
+            # -- 電源断が画に出たか（`canon/LEDGER.md` 0111）------------------------
+            # ⚠⚠ **`ev=outro` の `cl` は必ず頭の値（≒0）**（段の縁でしか出ないため）。
+            #    潰れ切ったかは `ev=sum` の `clMax`（走行全体の最大値）でしか取れない。
+            # ⚠⚠ **これが無いと「潰れなかった」を誰も検出できない** — 段は正しく進み、
+            #    pw も Dark 以降 0 になるので、書けていなくても他の判定は全部 PASS する
+            #    （画は「0.9 秒ふつうに映ってから黒へ瞬断」になり、暗い現場では目視でも同じに見える）。
+            cl_all = [v for v in effect_samples(events, "clMax") if str(v) not in ("-", "nc")]
+            if any(str(e.get("cl")) == "nc" for e in outro):
+                verdict("FAIL", "電源断を画へ書けていない（cl=nc）— スクリーンの材質を掴めていない")
+            elif not cl_all:
+                verdict("WARN", "電源断の観測（clMax）が出ていない — 古い APK か "
+                                "ShowTelemetryHost 未更新（0111 より前のビルド）")
+            else:
+                cl_max = max(float(v) for v in cl_all)
+                if cl_max >= 0.9:
+                    verdict("OK", f"電源断が画に出た（管が潰れて消えた・clMax {cl_max:.2f}）")
+                elif cl_max > 0.05:
+                    verdict("FAIL", f"電源断が途中で止まっている（clMax {cl_max:.2f} < 0.9）— "
+                                    "潰れ切る前に段が変わった。collapseSec と実測を突き合わせる")
+                else:
+                    verdict("FAIL", "電源断が 1 画素も画に出ていない（clMax≒0）— 進みは配っているのに "
+                                    "_ScreenCollapse が効いていない。シェーダの焼き直しを確かめる")
+
             # 「段が進んだ」ではなく「画に出た」。Report 以降は電力 0 でなければ消えていない。
             # ⚠ Dark は入れない。段の遷移と電力の書き込みは同じフレームで、実行順は未定義なので、
-            #   Dark へ入った 1 行だけ Flicker の値が載りうる（偽の FAIL になる）。
+            #   Dark へ入った 1 行だけ Collapse の値が載りうる（偽の FAIL になる）。
             after = [e for e in outro if e.get("stage") in ("Report", "Done")]
             if after and any(fnum(e, "pw", 1.0) > 0.05 for e in after):
                 verdict("FAIL", "スクリーンが消え切っていない（Dark 以降で pw>0.05）")

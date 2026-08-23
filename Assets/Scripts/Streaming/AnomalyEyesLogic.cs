@@ -25,7 +25,8 @@ namespace FixedCamVr.Streaming
     /// <b>スクリーンの外の黒い背景に、360 度いちめんの目が開く</b>異変の進み方。
     /// 出どころは <c>canon/LEDGER.md</c> 0075（言葉と参考画像）と 0076（緩急の作り直し）。
     ///
-    /// <b>形はシェーダに持たせない</b>（<see cref="OutroLogic.FlickerPower"/> と同じ流儀）。
+    /// <b>時計はここが持つ</b>（<see cref="OutroLogic.ScreenCollapse"/> と同じ流儀 —
+    /// 進みを数値で出せば、実際に画へ書いた値をテレメトリに出せて、テストで固定でき、毎回同じ絵になる）。
     /// ここが出すのは 4 つの数だけで、どの目がいつ開くかはシェーダが
     /// <see cref="Field"/> と目ごとの順位（<c>rank</c>）から解く。
     ///

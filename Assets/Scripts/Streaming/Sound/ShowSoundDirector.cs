@@ -315,8 +315,11 @@ namespace FixedCamVr.Streaming
                 s.outroActive = true;
                 s.outroStage = _outro.Stage;
                 // ⚠ 2026-08-15 から**重みは受け取らない**（終幕は覆いにも隔離にも触らないので
-                //    `IntroWeights` を出さなくなった）。音が読むのは段と、その段の進みだけ。
-                s.outroProgress01 = _outro.StageProgress01;
+                //    `IntroWeights` を出さなくなった）。
+                // ⚠⚠ 2026-08-23 から**段の進みも渡さない**（`canon/LEDGER.md` 0111）。
+                //    段相対の進みを音のランプに使うと、段の尺を変えたときに音だけが黙って
+                //    速くなる。音は終幕の頭からの経過だけを読み、固定の尺で引く。
+                s.outroElapsedSec = _outro.TotalElapsedSec;
             }
             if (_run != null)
             {
