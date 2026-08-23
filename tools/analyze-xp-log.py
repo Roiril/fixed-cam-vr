@@ -1790,12 +1790,21 @@ def analyze(events, others, exp, warns=None):
                                 "**本編の背景が無音**。BgmDirector が居ないか "
                                 "show.json の bgm 指定が無い（`canon/LEDGER.md` 0115）")
             else:
-                # 本編（周が立っているあいだ）の最小値を見る。1 度でも落ちていたら、
+                # 本編（`phase=Run` かつ終幕より前）の最小値を見る。1 度でも落ちていたら、
                 # そこが「区切り」として聞こえる ＝ ユーザーが言った「流れ続ける」に反する。
+                #
+                # ⚠⚠ **終幕と `Finished` を外す。** どちらも劇伴が 0 へ落ちるのが正なので、
+                #    入れると**正しい走行が毎回 FAIL する**（実測の走行は 71 標本のうち
+                #    15 が `Finished` だった）。終幕の縁は `ev=outro` の最初の時刻で切る。
+                t_outro = min([fnum(e, "t", 0.0) for e in outro], default=None)
+
+                def in_run(e):
+                    if e.get("phase") != "Run":
+                        return False
+                    return t_outro is None or fnum(e, "t", 0.0) < t_outro
+
                 run = [fnum(e, "sndScore") for e in events
-                       if e.get("ev") in ("intro", "sum")
-                       and "sndScore" in e
-                       and str(e.get("lap", "")).isdigit() and int(e["lap"]) >= 1]
+                       if e.get("ev") == "sum" and "sndScore" in e and in_run(e)]
                 run = [v for v in run if v is not None]
                 if run and min(run) < 0.9:
                     verdict("FAIL", f"本編で劇伴が凹んでいる（最小 {min(run):.2f}）— "
@@ -1807,8 +1816,7 @@ def analyze(events, others, exp, warns=None):
                 #    0115 より前は本編で劇伴が黙っている前提だったので、レーンが止まっていても
                 #    誰も困らなかった。**いまはこれが背景そのもの**なので、両方見る。
                 lane = [str(e.get("bgm", "")) for e in events
-                        if e.get("ev") == "sum" and "bgm" in e
-                        and str(e.get("lap", "")).isdigit() and int(e["lap"]) >= 1]
+                        if e.get("ev") == "sum" and "bgm" in e and in_run(e)]
                 if lane and "0" in lane:
                     verdict("FAIL", f"本編で BGM のレーンが止まっている"
                                     f"（{lane.count('0')}/{len(lane)} 標本で bgm=0）— "
