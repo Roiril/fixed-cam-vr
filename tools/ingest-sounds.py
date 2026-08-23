@@ -299,6 +299,32 @@ SWARMS = [
 ]
 
 
+# ---- 笑い声全体の高さ -------------------------------------------------------
+#
+# ユーザー指示（2026-08-23・`canon/LEDGER.md` 0117）:
+#   「人形の笑い声が全体的に高すぎるから、あーそぼーくらいの高さ前後になるように調整してほしい」
+#
+# 実測（`tools/sound-pitch.py`）:
+#   呼びかけ `sfx_doll_call`（あーそぼー） … 基音 **225Hz**（頭の「あー」だけなら 234Hz）
+#   笑い `ufufufu.mp3` の素          … 基音 **502Hz**  ＝ **1 オクターブ以上高い**
+#
+# ⇒ 下の表の音程（`CHORUS_VOICES` / `SWELL_*` の 2・3 列目）**すべてに掛かる 1 つの倍率**。
+#    表は「どの人形がどれだけ高いか」の**相対**を持っているので、ここだけ動かせば全部が動く。
+#
+# ⚠⚠ **テープ（`glide`）で下げてはいけない。** テープは速さごと変えるので、0.45 倍にすると
+#    笑いが **2.2 倍長くなる**。本体 0.75 秒 ＋ 余韻 1.2 秒の笑いが 4.3 秒になり、
+#    31 秒の輪に 9 回置いた 0110 の並べ方（塊と間・在音率）が丸ごと壊れる ＝ 「笑いっぱなし」。
+#    ⇒ **尺を変えずに高さだけ下げる**（<see cref="pitch_down"/>）。表の刻みは 1 つも動かさない。
+#
+# ⚠⚠ **声色（フォルマント）は元のまま残す。** 高さだけ下げると声帯だけが下がった状態 ＝
+#    **同じ女の子が低い声で笑っている**になる。声色も一緒に下げると体格の大きい別人になり、
+#    呼びかけ（同じ人の声）と繋がらない。ユーザーの言う「あーそぼーくらい」は**同じ人**の話。
+#
+# ⚠ **これは §4.5 の「音程」の側**（掛けてよいのは並べ方・音程・音量・左右）。イコライザでも
+#    圧縮でもない — 包絡を元へ戻すのは「音程を変えたことによる副作用を打ち消す」ための処理。
+LAUGH_PITCH = 0.45        # 笑い素材ぜんぶに掛かる音程の倍率（1.0 = 元のまま）
+
+
 # ---- 1 本の声を「たくさんの人形が笑っている」に組むもの ---------------------
 #
 # ⚠ **これも「もらった音」の側**。掛けるのは並べ方・音程・音量・左右だけで、
@@ -662,7 +688,7 @@ def ring_mix(src: np.ndarray, voices, sec: float, sr: int):
 
 def chorus_build(y, sr: int, target_lufs: float):
     """1 本の笑い声から「たくさんの人形が笑っている」を組む。**円環で作る**（<see cref="ring_mix"/>）。"""
-    src = sk.env_fade(sk.to_stereo(trim(y)), 0.004, 0.02)
+    src = laugh_source(y, sr)
     out, spans = ring_mix(src, CHORUS_VOICES, CHORUS_SEC, sr)
 
     out = out * 10 ** ((target_lufs - sk.lufs(out)) / 20.0)
@@ -679,7 +705,7 @@ def swell_build(y, sr: int, layers, solo_lufs: float):
     小さくなり、**層を足したのに「増えた」に聞こえない**（音色だけ濁る）。
     1 枚目（一人）を <paramref name="solo_lufs"/> へ合わせ、**同じ倍率**を残りへ掛ける。
     """
-    src = sk.env_fade(sk.to_stereo(trim(y)), 0.004, 0.02)
+    src = laugh_source(y, sr)
     built = [(name, sec) + ring_mix(src, voices, sec, sr) for name, sec, voices in layers]
 
     scale = 10 ** ((solo_lufs - sk.lufs(built[0][2])) / 20.0)
@@ -791,6 +817,155 @@ def resample(c: np.ndarray, ratio: float) -> np.ndarray:
     n = max(8, int(len(c) / ratio))
     x = np.linspace(0, len(c) - 1, n)
     return np.stack([np.interp(x, np.arange(len(c)), c[:, ch]) for ch in (0, 1)], axis=1)
+
+
+def time_squeeze(y: np.ndarray, s: float, sr: int,
+                 frame: float = 0.030, seek: float = 0.006) -> np.ndarray:
+    """**高さを変えずに尺だけ** <paramref name="s"/> 倍にする（s < 1 で短くなる）。
+
+    波形の似ている所を探して重ねる（WSOLA）。単音の声向き — **周期の合う位置で繋ぐ**ので、
+    位相をいじる方式（フェーズボコーダ）のような滲みが出ない。
+
+    ⚠ 探す幅（`seek`）は**基音の 1 周期より広く**取る。狭いと繋ぎ目で波が食い違って
+      「じりじり」が乗る（笑い素材の基音 502Hz ＝ 周期 2.0ms なので 6ms）。
+    """
+    n = int(frame * sr) // 2 * 2
+    hs = n // 2
+    ha = max(1, int(round(hs / s)))
+    d = int(seek * sr)
+    win = np.hanning(n + 1)[:n][:, None]
+    m = len(y)
+    # ⚠ **尻に窓 1 枚ぶんの無音を足してから回す。** 足さないと最後の窓が置けず、
+    #   **素材の減衰の終わり（笑いの余韻）が丸ごと落ちる**。実測: 落ちると輪の継ぎ目の
+    #   手前が完全な無音になり、`sound-lint.py` の密度差が +10dB 悪化した。
+    y = np.pad(y, ((0, n + d), (0, 0)))
+    out = np.zeros((int(m * s) + 2 * n, y.shape[1]))
+    wsum = np.zeros((len(out), 1))
+    ref = y[:n]
+    pos = 0
+    o = 0
+    while pos + n + d < len(y) and o + n < len(out):
+        lo = max(0, pos - d)
+        hi = min(len(y) - n, pos + d)
+        if hi <= lo or len(ref) < n:
+            best = max(0, min(pos, len(y) - n))
+        else:
+            seg = y[lo:hi + n].mean(axis=1)
+            cc = np.correlate(seg, ref.mean(axis=1), mode="valid")
+            sq = np.concatenate([[0.0], np.cumsum(seg ** 2)])
+            nrm = np.sqrt(np.maximum(sq[n:n + len(cc)] - sq[:len(cc)], 0.0) + 1e-9)
+            best = lo + int(np.argmax(cc / nrm))
+        out[o:o + n] += y[best:best + n] * win
+        wsum[o:o + n] += win
+        ref = y[best + hs:best + hs + n]
+        pos += ha
+        o += hs
+    k = int(m * s)
+    return out[:k] / np.maximum(wsum[:k], 1e-6)
+
+
+def _cep_env(mag: np.ndarray, lifter: int) -> np.ndarray:
+    """倍音の櫛を均して**声色（包絡）だけ**を取り出す（ケプストラム）。"""
+    c = np.fft.irfft(np.log(mag + 1e-9), axis=0)
+    c[lifter:-lifter] = 0.0
+    return np.exp(np.fft.rfft(c, axis=0).real)
+
+
+def keep_formant(z: np.ndarray, y: np.ndarray, n: int = 2048, hop: int = 512,
+                 lifter: int = 42, cap_db: float = 14.0,
+                 floor_db: float = -60.0, top_hz: float = 5000.0,
+                 sr: int = None) -> np.ndarray:
+    """<paramref name="z"/>（高さを下げた音）の**声色を** <paramref name="y"/>（元）**へ戻す**。
+
+    高さを下げると声色も一緒に下がって「体格の大きい別人」になる。同じ時刻の元の包絡で
+    割り戻せば、**声帯だけが低い同じ人**に戻る。⚠ やっているのは時間で変わるフィルタ 1 枚で、
+    倍音そのものには触らない。
+
+    ⚠ 持ち上げ幅に蓋（`cap_db`）を掛ける。1 オクターブ下げると**上の 1 オクターブが空になる**ので、
+      蓋が無いとそこの雑音だけを 40dB 持ち上げて「しゃりしゃり」が出る。
+
+    ⚠⚠ **無音の所は素通しにする**（`floor_db`）。音が鳴っていない枠にも包絡の比は掛かるので、
+      **床の雑音だけが最大 14dB 動く**。耳には何も起きないが、**輪の継ぎ目の密度差が
+      10dB 悪化して `sound-lint.py` が落ちる**（笑いは 3.4 秒に 1 回で、継ぎ目の手前は無音）。
+
+    ⚠⚠ **上の方は戻さない**（`top_hz`）。高さを 0.45 倍に下げると **5.4kHz より上が空になる**ので、
+      そこを「元と同じ濃さへ」持ち上げると**補間の雑音だけを 14dB 上げる**ことになる。
+      実測: 蓋を全帯域に掛けると波高が **18.5 → 25.1dB** へ膨らみ（＝ 棘が立つ）、
+      -3dBTP の天井に当たってラウドネスが 1.4dB 削られた。上限を 5kHz にすると 19.9dB で収まる。
+      声の共鳴は 5kHz より下にあり、素材自体 4.7kHz より上をほとんど持っていない。
+    """
+    win = np.hanning(n + 1)[:n][:, None]
+    m = min(len(z), len(y))
+    # ⚠⚠ **頭と尻に窓 1 枚ぶんの無音を足す。** 足さないと最初の数標本を覆う窓が 1 枚しかなく、
+    #    窓の重みがほぼ 0 の所で**その重みで割ることになって 100 倍に化ける**
+    #    （実測: 素材の頭 5ms の尖頭が 0.00085 → 0.092 ＝ 聞こえる打撃音が付いた）。
+    z = np.pad(z[:m], ((n, n), (0, 0)))
+    y = np.pad(y[:m], ((n, n), (0, 0)))
+    out = np.zeros((m + 3 * n, z.shape[1]))
+    wsum = np.zeros((len(out), 1))
+    cap = 10 ** (cap_db / 20.0)
+    floor = np.abs(y).max() * 10 ** (floor_db / 20.0)
+    # 上の方へ向かって 1.0（素通し）へ寄せる帯（1 オクターブかけて渡す）。
+    f = np.fft.rfftfreq(n, 1.0 / (sr or sk.SR))
+    lead = np.clip(np.log2(np.maximum(f, 1.0) / top_hz), 0.0, 1.0)[:, None]
+    for i in range(0, len(z) - n + 1, hop):
+        zf, yf = z[i:i + n], y[i:i + n]
+        Z = np.fft.rfft(zf * win, axis=0)
+        if np.sqrt((yf ** 2).mean()) > floor:
+            g = np.clip(_cep_env(np.abs(np.fft.rfft(yf * win, axis=0)), lifter)
+                        / (_cep_env(np.abs(Z), lifter) + 1e-9), 1.0 / cap, cap)
+            Z = Z * (g ** (1.0 - lead))
+        out[i:i + n] += np.fft.irfft(Z, n=n, axis=0) * win
+        wsum[i:i + n] += win ** 2
+    # 足した無音を捨てて元の位置へ戻す（重みは 4 枚ぶん乗っているので割れる）。
+    return (out[n:n + m] / np.maximum(wsum[n:n + m], 1e-6))
+
+
+def keep_shape(z: np.ndarray, y: np.ndarray, sr: int,
+               win: float = 0.020, cap_db: float = 12.0) -> np.ndarray:
+    """<paramref name="z"/> の**大きさの移り変わり**を <paramref name="y"/>（元）へ合わせる。
+
+    ⚠⚠ **笑いの余韻が痩せるのを防ぐ。** 重ねて繋ぐ方式（WSOLA）は、息のような
+    でたらめな成分を重ねると打ち消し合って **3dB ほど失う**。実測: 本体は -6.5dB
+    下がったのに、余韻（0.8〜2.2 秒）は **-9dB** 下がっていた ＝ 余韻だけが 2.5dB 痩せた。
+    0110 の「尻を切ってはいけない（余韻が消えて乾いた音になる）」と同じものを、
+    切らずに痩せさせていたことになる。
+
+    ⚠ これは音量の処理（§4.5 で掛けてよい側）。圧縮とは逆向き — **元の形へ戻す**だけ。
+    """
+    k = int(win * sr)
+    n = min(len(z), len(y))
+    idx = np.arange(0, n - k, k // 2)
+    if len(idx) < 2:
+        return z
+    ry = np.array([np.sqrt(np.mean(y[i:i + k] ** 2)) for i in idx]) + 1e-12
+    rz = np.array([np.sqrt(np.mean(z[i:i + k] ** 2)) for i in idx]) + 1e-12
+    cap = 10 ** (cap_db / 20.0)
+    g = np.clip(ry / rz, 1.0 / cap, cap)
+    return z[:n] * np.interp(np.arange(n), idx + k // 2, g)[:, None]
+
+
+def pitch_down(y: np.ndarray, ratio: float, sr: int, formant: bool = True) -> np.ndarray:
+    """**尺と声色を変えずに高さだけ** <paramref name="ratio"/> 倍にする（<see cref="LAUGH_PITCH"/>）。
+
+    尺を `ratio` 倍へ縮めてから `ratio` 倍の速さで読む ＝ **尺は元どおり・高さだけ下がる**。
+    そのあと声色を元へ戻す（<see cref="keep_formant"/>）。
+    """
+    if abs(ratio - 1.0) < 1e-6:
+        return y
+    z = resample(time_squeeze(y, ratio, sr), ratio)
+    if len(z) < len(y):
+        z = np.pad(z, ((0, len(y) - len(z)), (0, 0)))
+    z = z[:len(y)]
+    return keep_shape(keep_formant(z, y, sr=sr) if formant else z, y, sr)
+
+
+def laugh_source(y: np.ndarray, sr: int) -> np.ndarray:
+    """笑い素材を輪へ並べる前の姿（`CHORUS` と `SWELL` で**同じもの**を使う）。
+
+    ⚠ **高さを下げるのはここ 1 か所**（40 回・9 回と並べたあとで掛けると別々にずれる）。
+    """
+    return pitch_down(sk.env_fade(sk.to_stereo(trim(y)), 0.004, 0.02), LAUGH_PITCH, sr)
 
 
 def pan_lr(p: float) -> np.ndarray:

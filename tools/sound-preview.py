@@ -556,6 +556,33 @@ def emit(name: str, y: np.ndarray, note: str):
           f"tp {d['true_peak_db']:5.1f}dB  内蔵SP {d['speaker_db']:5.1f}dB  — {note}")
 
 
+def build_pitch() -> np.ndarray:
+    """**笑いの高さ**を呼びかけと並べて聴く（`canon/LEDGER.md` 0117）。
+
+    ユーザー指示「人形の笑い声が全体的に高すぎるから、あーそぼーくらいの高さ前後に」。
+    ⇒ **呼びかけ → 一人の笑い → 呼びかけ → 群れ → 呼びかけ** の順で、素の無音の上に並べる。
+
+    ⚠ **敷く音を敷かない。** ここで判定するのは高さと声色だけなので、
+      装置の声が乗ると 200Hz 前後が埋まって比べにくくなる（他の見本とは狙いが違う）。
+    ⚠ 判定してほしいのは 2 つ: **同じ人形に聞こえるか**と、**まだ高い / 下げすぎか**。
+      どちらも `ingest-sounds.py` の `LAUGH_PITCH` の 1 数字で動く（下げるほど小さい値）。
+    ⚠ 数値の物証は `py -3.11 tools/sound-pitch.py`（基音 Hz と呼びかけとの比）。
+    """
+    call = load("sfx_doll_call")
+    one, crowd = load("bed_doll_one"), load("bed_dolls_laugh")
+    total = 30.0
+    out = np.zeros((int(total * sk.SR), 2))
+    lay(out, call, 0.5)
+    lay(out, one[:int(9.0 * sk.SR)], 2.8)
+    lay(out, call, 12.5)
+    lay(out, crowd[:int(9.0 * sk.SR)], 14.8)
+    lay(out, call, 24.5)
+    lay(out, one[int(12.0 * sk.SR):int(18.0 * sk.SR)], 24.5)
+    print("   0.5s あーそぼー   2.8s 一人（3 周 A・B）   12.5s あーそぼー   "
+          "14.8s 群れ（4 周 A）   24.5s 声と一人を重ねる")
+    return out
+
+
 def main() -> int:
     print("素材を 1 本ずつ:")
     emit("preview_materials", build_materials(), "何がどんな音か")
@@ -574,6 +601,9 @@ def main() -> int:
          "変種 6 本 → 旧（1 本を 8 発）→ 新（6 本を 8 発）→ 2 周目 C の刻み")
     print("人形の呼びかけ（2 周目 C の追いつき）:")
     emit("preview_call", build_call(), "前半は声だけ / 後半は切替音と重なった所")
+    print("笑いの高さ（呼びかけと並べる）:")
+    emit("preview_pitch", build_pitch(),
+         "呼びかけ → 一人 → 呼びかけ → 群れ → 重ねる。**同じ人形に聞こえるか**")
     print(f"\n→ {OUT}")
     return 0
 
