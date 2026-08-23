@@ -63,6 +63,11 @@ namespace FixedCamVr.Streaming
         private int _startVisit = -1;
         private bool _finishRequested;
 
+        // カットが「この区間で目を出す」と言い始めた瞬間の居場所（Declare が刻む）。
+        private bool _declHasSpan;
+        private int _declCamera = -1;
+        private int _declVisit = -1;
+
         /// <summary>やり直す（ラン開始・中止）。</summary>
         public void Reset()
         {
@@ -76,6 +81,34 @@ namespace FixedCamVr.Streaming
             _startCamera = -1;
             _startVisit = -1;
             _finishRequested = false;
+            _declHasSpan = false;
+            _declCamera = -1;
+            _declVisit = -1;
+        }
+
+        /// <summary>
+        /// <b>カットが「目を出す」と言い始めた</b>（<c>steps[].eyes</c> が 0 → 正になった縁）。
+        /// その瞬間の居場所を刻んでおき、<b>別の区間では出番を始めない</b>。
+        ///
+        /// ⚠⚠ <b>これが無いと、宣言していない区間で目が 1 つ開く</b>（2026-08-23 の実害・4 周目 A）。
+        /// 区間の切り替わりは<b>2 つの速さで進む</b> —— <see cref="ZoneSpan"/> は体験者が線を跨いだ
+        /// <b>生の瞬間</b>に進み（<c>ZoneLayoutApplier.OnZoneChanged</c>）、ショーのカット切替は
+        /// <b>0.5 秒の滞在を待ってから</b>進む。その 0.5 秒のあいだ、
+        /// <b>前の区間のカットがまだ「目を出す」と言ったまま、居場所だけが次の区間になっている</b>。
+        /// <see cref="Spent"/> は滞在が変われば降りるので、そこで新しい出番が始まってしまい、
+        /// 次の区間の頭で大きい目が 1 つだけ開いて閉じていた
+        /// （実測 <c>logs/capture/20260823_151457_xp.log</c> t=488.06
+        ///  <c>lap=4 take=L4C0#0 eyes=1/1/1.00/0.01/2.00/<b>0.00</b>/1</c> ＝
+        ///  <b>カットは何も言っていないのに出番が走っている</b>）。
+        ///
+        /// ⚠ <b>位置を測れない現場では刻んでも効かない</b>（<see cref="ZoneSpan.valid"/> false）。
+        /// 未登録の機で目が一生出なくなる方が高い（<see cref="Tick"/> の ④ と同じ理由）。
+        /// </summary>
+        public void Declare(ZoneSpan span)
+        {
+            _declHasSpan = span.valid;
+            _declCamera = span.camera;
+            _declVisit = span.visit;
         }
 
         /// <summary>
@@ -109,7 +142,10 @@ namespace FixedCamVr.Streaming
 
             if (!Running)
             {
-                if (!armed || Spent)
+                // ⚠⚠ **宣言された区間でしか始めない**（`Declare` を見よ）。滞在が変われば `Spent` は
+                //    降りるが、それは「次にこの区間で言われたら出せる」という意味であって、
+                //    **前の区間の言い残しで次の区間の頭に目を開いてよい**という意味ではない。
+                if (!armed || Spent || !DeclaredHere(span))
                 {
                     Wanted = false;
                     Rate = 1f;
@@ -139,5 +175,14 @@ namespace FixedCamVr.Streaming
             Wanted = !Finishing || !openDone;
             Rate = Finishing && !openDone ? HurryRate : 1f;
         }
+
+        /// <summary>
+        /// いま居る区間が、カットが目を宣言した区間か。
+        /// <b>刻まれていない／位置を測れないときは常に true</b>（<see cref="Tick"/> の ④ と同じ思想 —
+        /// 位置を必須条件にすると、位置合わせをしていない機で目が一生出なくなる）。
+        /// </summary>
+        private bool DeclaredHere(ZoneSpan span)
+            => !_declHasSpan || !span.valid
+               || (span.visit == _declVisit && span.camera == _declCamera);
     }
 }

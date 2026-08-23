@@ -51,11 +51,30 @@ namespace FixedCamVr.Streaming
         [Tooltip("位置合わせ中に引っ込めるための ShowControlClient。null なら実行時に探す。")]
         [SerializeField] private ShowControlClient? showControl;
 
+        /// <summary>
+        /// 出荷する明るさ。<b>Editor プレビュー（<c>EyesPreview</c>）もこれを書く</b> —
+        /// 書かないとプレビューだけシェーダ既定の 1.0 で描かれ、<b>明るさを触っても絵が変わらない</b>。
+        ///
+        /// ⚠ <b>シーン（<c>Main.unity</c> の <c>[Eyes]</c>）に焼かれている値が実物</b>。ここの既定が効くのは
+        /// <c>[Eyes]</c> を作り直したときだけなので、<b>片方だけ動かすと黙って食い違う</b>。
+        /// 2026-08-23 に 0.85 → 0.50（ユーザー赤入れ「目が明るすぎる。もう少し暗くしてほしい」）。
+        /// </summary>
+        public const float DefaultGain = 0.5f;
+
         [Tooltip("目の明るさ。上げすぎると「発光する記号」に見える。")]
-        [SerializeField, Range(0f, 2f)] private float gain = 1.0f;
+        [SerializeField, Range(0f, 2f)] private float gain = DefaultGain;
+
+        /// <summary>出荷する瞬きの量。<see cref="DefaultGain"/> と同じ理由でプレビューも書く。</summary>
+        public const float DefaultBlink = 1f;
 
         [Tooltip("瞬きの量（0 = 瞬きしない）。")]
-        [SerializeField, Range(0f, 1f)] private float blink = 1f;
+        [SerializeField, Range(0f, 1f)] private float blink = DefaultBlink;
+
+        /// <summary>
+        /// 出荷する目の色。<b>シェーダ既定（生成りに近い白）とは別の値</b>なので、
+        /// プレビューが書かないと**プレビューだけ色が違う**。
+        /// </summary>
+        public static readonly Color DefaultColor = new(1.0f, 0.93f, 0.84f, 1f);
 
         [Tooltip("目の色。作品の色（暖色）へ寄せた白（参考画像の目は白い）。")]
         [SerializeField] private Color color = new(1.0f, 0.93f, 0.84f, 1f);
@@ -314,7 +333,15 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Apply(float eyes, bool jack = false)
         {
-            _wanted = Mathf.Clamp01(eyes);
+            float want = Mathf.Clamp01(eyes);
+            // ⚠⚠ **言い始めた縁で「どの区間で言われたか」を刻む。** カットの切替は滞在 0.5 秒を
+            //    待ってから進むのに、居場所（ZoneSpan）は線を跨いだ瞬間に進むので、その 0.5 秒は
+            //    **前の区間のカットが「目を出す」と言ったまま、居場所だけ次の区間**になっている。
+            //    刻まないと、そこで新しい出番が始まり**宣言していない区間の頭で目が 1 つ開く**
+            //    （2026-08-23 の 4 周目 A）。詳しくは <see cref="EyesCueLogic.Declare"/>。
+            if (want > 0f && _wanted <= 0f)
+                _cue.Declare(showControl != null ? showControl.ZoneSpan : default);
+            _wanted = want;
             _jackWanted = jack;
         }
 

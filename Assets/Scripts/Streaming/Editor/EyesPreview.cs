@@ -283,6 +283,13 @@ namespace FixedCamVr.Streaming.EditorTools
             mat.SetFloat("_EyeGaze", l.Gaze);
             mat.SetFloat("_EyeSmile", l.Smile);
             mat.SetFloat("_EyeClosing", l.Closing);
+            // ⚠⚠ **明るさ・瞬き・色も配る。** 2026-08-23 まで書いておらず、プレビューだけ
+            //    シェーダ既定（明るさ 1.0・生成りに近い白）で描かれていた ＝
+            //    **明るさを触っても絵が 1 画素も変わらない**計器だった。
+            //    ⚠ 足し忘れは `AnomalyEyesPreviewParityTests` が落とす（2 度目なので機械で守る）。
+            mat.SetFloat("_EyeGain", AnomalyEyes.DefaultGain);
+            mat.SetFloat("_EyeBlink", AnomalyEyes.DefaultBlink);
+            mat.SetColor("_EyeColor", AnomalyEyes.DefaultColor);
         }
 
         private static string F(float v) => v.ToString("F3", CultureInfo.InvariantCulture);

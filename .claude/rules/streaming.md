@@ -1585,10 +1585,27 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
 | 判断 | [`AnomalyEyesLogic`](../../Assets/Scripts/Streaming/AnomalyEyesLogic.cs)（純ロジック・テスト 21 本） |
 | 座席表 | [`AnomalyEyesMesh`](../../Assets/Scripts/Streaming/AnomalyEyesMesh.cs)（候補 900 から**重ならないものだけ**を詰める・**乱数を使わない**） |
 | 実行体 | [`AnomalyEyes`](../../Assets/Scripts/Streaming/AnomalyEyes.cs)（シーンの `[Eyes]`。`MainDemoSceneSetup` が置く） |
-| 形 | `Assets/Art/Shaders/Streaming/AnomalyEyes.shader`（Queue **Background+100** / `Blend One One`） |
+| 形 | `Assets/Art/Shaders/Streaming/AnomalyEyes.shader`（Queue **Background+100** / `Blend One OneMinusSrcAlpha`） |
 | 卓 | カット詳細の「闇の目」（0..1） |
-| 見る | `.\tools\unity.ps1 menu eyes`（375 コマ ＋ 段ごとの静止画 9 枚。`-Set density=0..1`） |
-| 観測 | `ev=sum` の **`eyes=<組めたか>/<開いている数>/<不透明度>/<区間の進み>/<速さ>`** |
+| 見る | `.\tools\unity.ps1 menu eyes`（348 コマ ＋ 段ごとの静止画 12 枚。`-Set density=0..1`） |
+| 観測 | `ev=sum` の **`eyes=<組めたか>/<開いている数>/<不透明度>/<区間の進み>/<速さ>/<カットの指示>/<流しきり中か>`** |
+
+⚠⚠ **明るさ（`gain`）の実物はシーンに焼かれている**（`Main.unity` の `[Eyes]`）。
+C# の `AnomalyEyes.DefaultGain` が効くのは `[Eyes]` を作り直したときだけなので、
+**片方だけ動かすと黙って食い違う**（`MainDemoSceneSetup.CreateOrUpdateEyes` は参照しか書かないので、
+`menu scene` はシーンの値を上書きしない）。
+
+- **2026-08-23 に 0.85 → 0.50**（ユーザー赤入れ「目が明るすぎる。もう少し暗くしてほしい」）。
+  画に出る値で 尖頭 0.872 → 0.688・灯った画素の平均 0.397 → 0.308（`menu eyes` の `stage_4_hold` 実測）
+- ⚠⚠ **`EyesPreview` も同じ値を書く。** 2026-08-23 まで `_EyeGain` / `_EyeBlink` / `_EyeColor` を
+  配っておらず、**プレビューだけシェーダ既定**（明るさ 1.0・生成りに近い白）で描かれていた ＝
+  **明るさを触っても絵が 1 画素も変わらない計器**だった。
+  **同じ書き漏らしは 2 度目**（1 度目は 2026-08-17 の `_EyeGaze` で「動きが小さい」と誤診）なので、
+  [`AnomalyEyesPreviewParityTests`](../../Assets/Tests/Streaming/AnomalyEyesPreviewParityTests.cs) が
+  **本番が書く uniform をプレビューが 1 つでも落としたら落とす**（`gain` のシーンと const の
+  食い違いも同じテストが見る）
+- ⚠ **明るさは alpha に掛からない**（`return half4(col * _EyeGain, a)`）。下げても目の形は同じだけ闇を隠す。
+  だから**灯った画素の数はほぼ変わらない**（実測 -0.2%）— 面積で判定すると「何も起きていない」に見える
 
 ⚠⚠ **開き始めと閉じ始めは、カットの尺ではなく体験者の居場所が決める**
 （2026-08-19・`canon/LEDGER.md` 0093・[`EyesCueLogic`](../../Assets/Scripts/Streaming/EyesCueLogic.cs)）。
@@ -1608,6 +1625,35 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
 ⚠ **0 は矩形の端ではなく「入った所」**（重なりとヒステリシスのぶん、確定するのは端より内側）。
 ⚠ **位置を測れない現場**（未登録 / layout 不在）では進みが **-1** で出て、従来どおりカットの終わりで畳む。
 位置を必須条件にすると、位置合わせをしていない機で目が一生出なくなる。
+
+##### ⚠⚠ 出番は「宣言された区間」でしか始まらない（2026-08-23）
+
+ユーザー赤入れ「3-C ですべての目が閉じた後、4-A で目が一つ出てきてしまっている」。
+
+**区間の切り替わりは 2 つの速さで進む。**
+
+| 何 | いつ進むか |
+|---|---|
+| 居場所（`ZoneSpan.visit` / `camera`） | 体験者が**線を跨いだ生の瞬間**（`ZoneLayoutApplier.OnZoneChanged`） |
+| ショーのカット切替（`steps[].eyes` の値） | **滞在 0.5 秒を待ってから** |
+
+その 0.5 秒のあいだ、**3 周目 C のカットがまだ `eyes:1` を言ったまま、居場所だけが 4 周目 A**
+になっている。`Spent`（同じ滞在で二度目を始めない錠）は滞在が変われば降りるので、
+**そこで新しい出番が始まり、次の区間の頭で大きい目が 1 つだけ開いて閉じていた**。
+
+⇒ [`EyesCueLogic.Declare`](../../Assets/Scripts/Streaming/EyesCueLogic.cs) が
+**「言い始めた縁の居場所」**を刻み、`Tick` はそこでしか出番を始めない。
+刻むのは `AnomalyEyes.Apply`（`eyes` が 0 → 正になった縁だけ）。
+
+- **引き返して入り直したときは従来どおり頭から再演する** — カットが撃ち直されて
+  新しい滞在で刻み直されるため（`ReEnteringTheZone_StartsAgain_WhenTheCutDeclaresAgain`）
+- ⚠ **位置を測れない現場では刻んでも効かない**（上の ④ と同じ思想。効かない機で目が一生出なくなる方が高い）
+- ⚠ **画からは「流しきり」と区別が付かない。** カットが終わっても目は数秒残るのが正しい（0093）ので、
+  実機で見ても両者は同じに見える。判定は `analyze-xp-log.py` の
+  **「カットが何も言っていないのに目が開き直した」** — 一度**閉じ切った**所から
+  **指示 0 のまま開き直した**縁だけを見る（`eyes` の 3 つ目と 6 つ目）。
+  実測 `logs/capture/20260823_151457_xp.log` t=488.1
+  `lap=4 take=L4C0#0 eyes=1/1/1.00/0.01/2.00/`**`0.00`**`/1`
 
 **段は 3 つ。尺は著作させない**（`eyes` で指せるのは「出すか」と「何割の目が開くか」だけ）。
 ⚠⚠ **等速で開かない。「止まる」と「一気に」の繰り返しで組んである**（`canon/LEDGER.md` 0076）:

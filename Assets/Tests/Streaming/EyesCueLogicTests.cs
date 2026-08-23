@@ -119,6 +119,7 @@ namespace FixedCamVr.Streaming.Tests
         public void AfterClosing_DoesNotRestartInTheSameZone()
         {
             var c = new EyesCueLogic();
+            c.Declare(Span(0f));
             c.Tick(true, EyesStage.Off, Span(0f));
             c.Tick(true, EyesStage.Hold, Span(0.5f));   // 閉じ始める
             c.Tick(true, EyesStage.Off, Span(0.7f));    // 閉じ切った
@@ -128,10 +129,76 @@ namespace FixedCamVr.Streaming.Tests
             c.Tick(true, EyesStage.Off, Span(0.8f));
             Assert.That(c.Wanted, Is.False, "同じ滞在で二度目は始めない");
 
-            // 次の区間へ入れば、また出せる。
+            // 次の区間で**改めて宣言されれば**、また出せる。
+            c.Declare(Span(0f, camera: 0, visit: 9));
             c.Tick(true, EyesStage.Off, Span(0.0f, camera: 0, visit: 9));
             Assert.That(c.Wanted, Is.True);
             Assert.That(c.Finishing, Is.False);
+        }
+
+        // ------------------------------- ⑦ 宣言していない区間で始めない（2026-08-23 の 4 周目 A）
+
+        /// <summary>
+        /// ⚠⚠ <b>ユーザー赤入れ（2026-08-23）「3-C ですべての目が閉じた後、4-A で目が一つ出てきてしまっている」。</b>
+        ///
+        /// 区間の切り替わりは 2 つの速さで進む —— 居場所（<see cref="ZoneSpan"/>）は体験者が線を跨いだ
+        /// <b>生の瞬間</b>に、ショーのカット切替は<b>滞在 0.5 秒を待ってから</b>。その 0.5 秒のあいだ
+        /// <c>armed</c> は前の区間の言い残しで立ったままなので、<see cref="EyesCueLogic.Spent"/> が
+        /// 滞在の変化で降りた所へ**新しい出番が始まり、次の区間の頭で大きい目が 1 つ開いていた**。
+        /// </summary>
+        [Test]
+        public void LingeringArm_DoesNotStartARunInTheNextZone()
+        {
+            var c = new EyesCueLogic();
+            c.Declare(Span(0f, camera: 2, visit: 7));      // 3 周目 C のカットが言った
+            c.Tick(true, EyesStage.Off, Span(0f));
+            c.Tick(true, EyesStage.Hold, Span(0.5f));      // 半ばで閉じ始める
+            c.Tick(true, EyesStage.Off, Span(0.9f));       // 閉じ切った
+            Assert.That(c.Spent, Is.True);
+
+            // 体験者が線を跨いだ。**カットはまだ切り替わっていない**（滞在 0.5 秒待ち）ので armed は立ったまま。
+            c.Tick(armed: true, EyesStage.Off, Span(0.02f, camera: 0, visit: 8));
+            Assert.That(c.Running, Is.False, "宣言していない区間で出番を始めない");
+            Assert.That(c.Wanted, Is.False, "4 周目 A の頭で目が 1 つ開かない");
+
+            // 0.5 秒後にカットが切り替わって armed が降りても、やはり何も始まらない。
+            c.Tick(armed: false, EyesStage.Off, Span(0.05f, camera: 0, visit: 8));
+            Assert.That(c.Wanted, Is.False);
+            Assert.That(c.Running, Is.False);
+        }
+
+        /// <summary>
+        /// 引き返して同じ区間へ入り直したら<b>また出る</b>（⑦ の対）。カットが撃ち直されて
+        /// 宣言が新しい滞在で刻まれるので、<see cref="EyesCueLogic.Spent"/> の門は開く。
+        /// </summary>
+        [Test]
+        public void ReEnteringTheZone_StartsAgain_WhenTheCutDeclaresAgain()
+        {
+            var c = new EyesCueLogic();
+            c.Declare(Span(0f, camera: 2, visit: 7));
+            c.Tick(true, EyesStage.Off, Span(0f));
+            c.Tick(true, EyesStage.Hold, Span(0.5f));
+            c.Tick(true, EyesStage.Off, Span(0.9f));
+
+            // 区間を出た（カットが終わって armed が降りる）→ 戻ってきて、カットが撃ち直された。
+            c.Tick(false, EyesStage.Off, Span(0.3f, camera: 1, visit: 8));
+            c.Declare(Span(0f, camera: 2, visit: 9));
+            c.Tick(true, EyesStage.Off, Span(0f, camera: 2, visit: 9));
+            Assert.That(c.Wanted, Is.True, "入り直せば頭から再演する");
+            Assert.That(c.Finishing, Is.False);
+        }
+
+        /// <summary>
+        /// 位置を測れない現場（未登録・layout 不在）では宣言を刻んでも効かない。
+        /// <b>位置を必須条件にしない</b>（④ と同じ思想 — 効かない機で目が一生出なくなる方が高い）。
+        /// </summary>
+        [Test]
+        public void DeclarationWithoutSpan_DoesNotGate()
+        {
+            var c = new EyesCueLogic();
+            c.Declare(default);
+            c.Tick(true, EyesStage.Off, default);
+            Assert.That(c.Wanted, Is.True);
         }
 
         // ---------------------------------------------------------------- ④ 位置が無い現場
