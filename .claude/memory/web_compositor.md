@@ -115,6 +115,7 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 | `capture-server.py` | ローカルサーバ（静的配信 + show 制御 + /cam プロキシ + 保存 API） |
 | `serve.ps1` | 起動スクリプト |
 | `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json long-poll。schedule / course.order も表示） |
+| `floormap-plate.html` | **人に見せる用のフロアマップ**（2026-08-24）。壁・塗られた床・カメラ A〜C だけを、卓と同じ配色・同じ座標で描く。位置合わせ点 / 通過ライン / 開始位置 / 部屋のプロキシは出さない。⚠ **配色は `palette.js` を import。描画定数（SIZE 460 / PAD 46 / EXTENT 0.95 / 各 alpha / 線幅）は `floormap.js` の `render()` の写しなので、向こうを変えたらここも変える。** PNG は headless Chrome の `--screenshot` で焼く（`?scale=N` で倍率・`?bg=none` で透過） |
 | `schedule.js` | **タイムライン UI**（2026-07-19 マトリクスから全面改装）。「1周目: A\|B\|C → 2周目: …」を course.order 順に横連結、区間クリックで cue 割当（delaySec / once）。データモデルは schedule.entries のまま。**⚠ タイムラインで直接いじれるのは cueId / delaySec / once の 3 つだけ**。マスク・素材・フェード・trim は cue 側（カメラ列で作成 → 周ごとに別 cue を割当）、**画像加工 post はカメラ単位で周ごと変更不可**（rules/streaming.md「編集の粒度と自由度」が正） |
 
 **撤去済み（2026-06-16）**: `main.js` / `sources.js` / `cue-editor.js` / `console.js` / `multicam.html`（プロンプト・ギャラリー・2 タブ・別ページ合成エディタ）。**⚠ `pipeline.js`（色統計マッチング→ラプラシアン）はユーザー要望で復活し現役**（app.js が import、境界ブレンドバーが駆動）。以降の「合成パイプライン」節は現役の説明として読む。AI 動画生成の知見は末尾に残す。
