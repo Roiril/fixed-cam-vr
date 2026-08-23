@@ -687,19 +687,20 @@ namespace FixedCamVr.Streaming
             {
                 float swapSec = TakeSchema.ResolveTransitionMs(step.transition, step.transitionMs) / 1000f;
                 _pendingSwapCue = cue;
-                // ⚠⚠ **素材が無いカットへ移るときは、覆いを待たずに畳む**（2026-08-23・ユーザー指定
-                //   「抹消したら生成の人形は消えるようにしてほしい」）。
-                //   4 周目 A の締めは左半分が生成画像の人形・右半分が無人プレートで、
-                //   覆いは**そのどちらも 1 画素も隠さない**（`swapMinX` 未指定 ＝ 人型の周りだけ）。
-                //   隠れない素材のために覆い切るのを待つと、報告してから **1.95 秒**（実測）
-                //   人形が残る ＝ 抹消したという行為の結果が返らない。
-                //   ⚠ **素材を出す側は従来どおり onCovered。** 早く出すと体験者が砂の下ではなく
-                //   画の中で入れ替わる（下の onCovered のコメントが正本）。
-                if (cue == null)
-                {
-                    PlayStepOverlay(null, step);
-                    ApplyStepOverlay2(step, takeIndex: d.takeIndex, stepIndex: d.stepIndex);
-                }
+                // ⚠⚠ **1 層目（左半分の生成素材）だけ、覆いを待たずに畳む**（2026-08-23・ユーザー指定
+                //   「抹消したら生成の人形は消える」→ 赤入れ「右半分は以前のまま、左半分だけ
+                //   生成を乱れとともに抹消したらすぐ消す」）。
+                //   4 周目 A の締めは 1 層目が生成画像の人形（マスクで左半分）・
+                //   **第 2 層が右半分の無人プレート**。覆いは `swapMinX` 未指定 ＝ 人型の周りだけなので
+                //   1 層目を 1 画素も隠さず、待つと報告から **1.95 秒**（実測）人形が残る。
+                //   乱れは同じフレームの `step.glitch` が撃つ（下の「カット頭の単発の乱れ」）。
+                //
+                //   ⚠⚠ **第 2 層はここで畳まない。** 一度そうして人形 → 体験者の入れ替わりを壊した —
+                //   右半分が覆いより先にライブへ戻ると、**入れ替わる前から本物の体験者が写っている**
+                //   ので「黒い波が育って人になる」が読めなくなる。第 2 層は従来どおり onCovered。
+                //   ⚠ **素材を出す側も従来どおり onCovered**（早く出すと体験者が砂の下ではなく
+                //   画の中で入れ替わる）。ここで畳んでよいのは「もう出さないと決まっている素材」だけ。
+                if (cue == null) PlayStepOverlay(null, step);
                 swapping = director.TakeSwapBegin(
                     source == TakeSchema.SourceLive ? step.camera : -1, swapSec, swapDir,
                     () =>
