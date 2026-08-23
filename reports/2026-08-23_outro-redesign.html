@@ -1,0 +1,380 @@
+<title>終幕の再設計 — ちかちかをやめ、電源断で終わる</title>
+<style>
+/* ============================================================
+ * report.css — 単一ファイル HTML レポート用テーマ
+ * 正本: ~/.claude/reference/design-tokens.md
+ * ============================================================ */
+
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;
+  --radius: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">廻リ視 · 終幕 · 設計</p>
+  <h1>終幕の再設計 — ちかちかをやめ、電源断で終わる</h1>
+  <p class="sub">canon/LEDGER.md 0111 への設計案 ／ 2026-08-23 ／ 独立した設計批評 2 体の収束を根拠に採る</p>
+
+  <div class="lead">
+    <p>ちかちか 6 秒を、<em>管が縦に潰れて横一本の線になり、点になって消える</em> 0.9 秒に置き換える。
+    体験全体が浴びせてきた「異変の語彙」（明滅・乱れ・劣化）と正反対の、
+    一方向で戻らない一回性の事象だけが「終わった」と読める。
+    報告の 1 文字目は現状の 7.2 秒後 → <strong>2.1 秒後</strong>、
+    打ち終わりは 10.6 秒 → <strong>5.5 秒</strong>。反復する明滅はゼロになる。</p>
+  </div>
+
+  <h2>1. 診断 — なぜテンポが悪く、なぜ終わったと読めないか</h2>
+
+  <p>現状の終幕は Flicker 6.0 秒 → 黒 1.2 秒 → 報告の打鍵 3.4 秒。
+  「終わった」と確定できるのは報告が読めてからなので、
+  <strong>体験の終了から約 11 秒間、体験者は何が起きているのか分からないまま待つ</strong>。</p>
+
+  <p>分かりづらさの原因は長さではなく語彙にある。体験者は 3 分間
+  「画面が変になる ＝ 異変」と学習させられ続けた直後にいる。
+  ちかちかしながら消えていくスクリーンは、その文法の中では「また何か起きた」としか読めない。
+  <em>明滅は往復する動きなので、原理的に終端に見えない</em>（まだ戻るかもしれない、を常に残す）。</p>
+
+  <p>加えて安全の問題がある。現状の明滅は 6〜24Hz
+  （<code>OutroLogic.FlickerRateLo/Hi</code>）で、
+  光過敏性発作の危険帯（3〜30Hz）のただ中にある。VR で視界の中心を占める面の明滅としては、
+  「目に悪い」は感覚ではなく実害の指摘として正しい。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th></th><th>現状</th><th>この案</th></tr>
+    <tr><td>Finished → 報告の 1 文字目</td><td>7.2 秒</td><td><strong>2.1 秒</strong></td></tr>
+    <tr><td>Finished → 報告を打ち終わる</td><td>10.6 秒</td><td><strong>5.5 秒</strong></td></tr>
+    <tr><td>反復する明滅</td><td>6〜24Hz × 6 秒</td><td><strong>ゼロ</strong>（単発・一方向のみ）</td></tr>
+    <tr><td>消え方の意味</td><td>電池が切れかけ（＝また壊れた、と読める）</td><td>装置が役目を終えて落ちる（＝終了の宣言）</td></tr>
+  </table></div>
+
+  <h2>2. 動かしていないもの</h2>
+
+  <ul>
+    <li>パススルーへは戻さない。背景は黒のまま（LEDGER 0048 — この部分は不変）</li>
+    <li>報告 4 行の文言・1 字ずつの打鍵・12 字/秒・左寄せ（0048 / 0063）</li>
+    <li>終幕の合図の機構（<code>run.outro.afterTakeId</code> / <code>EndingCueLogic</code>）</li>
+    <li>報告は次のランまで出したまま（OPEN の既定）</li>
+    <li>新しい音源・一撃は足さない（sound-design「終幕に足す一撃は 1 つも無い」）</li>
+    <li>時刻 OSD で嘘をつかない（巻き戻し・停止・加速の禁止）</li>
+  </ul>
+
+  <h2>3. 設計 — 「記録終了」（装置が自分で落ちる）</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>段</th><th>尺</th><th>何が起きるか</th></tr>
+    <tr><td><code>Collapse</code></td><td><strong>0.9s</strong></td>
+      <td>ブラウン管の電源断。画（映像・砂嵐・時計・粒、発光しているものすべて）が
+      <strong>縦に潰れて横一本の線</strong>になり（0.35s）、
+      線が中央へ縮んで<strong>点</strong>になり（0.3s）、残光が消える（0.25s）。
+      単発・一方向・戻らない。明滅は 1 度も無い</td></tr>
+    <tr><td><code>Dark</code></td><td>1.2s</td>
+      <td>何も無い黒。間。<span class="muted">（現状のまま — 問題にされたのは 6 秒の側で、
+      この間は報告に重みを与える）</span></td></tr>
+    <tr><td><code>Report</code></td><td>1.5s〜</td>
+      <td>報告の 4 行が 1 字ずつ打鍵音つきで打たれる（従来どおり・3.4s で打ち切る）</td></tr>
+    <tr><td><code>Done</code></td><td>—</td><td>文字だけが黒に残る。次のランまで</td></tr>
+  </table></div>
+
+  <h3>なぜこれが「終わった」と読めるか</h3>
+
+  <ul>
+    <li><strong>体験がまだ一度も見せていない身振りだから。</strong>
+    3 分間の語彙はすべて「揺れる・乱れる・劣化する」＝ 往復と漸進。
+    潰れて線になって点で消えるのは、秩序だった一方向の一回性の事象で、その対比だけが終端を作る</li>
+    <li><strong>「壊れた」ではなく「切れた」の記号だから。</strong>
+    テレビの電源が落ちる画は、ブラウン管を知らない体験者にも「画が消えた」としては必ず読める。
+    知っている体験者には「電源断」として一段強く効く。二層で、どちらか一方に賭けていない</li>
+    <li><strong>意味は「装置が自分で仕事を終えた」。</strong>
+    誰かが外から切った、にはしない — 外部の意図を示唆すると「まだ何かいる」と読まれ、
+    死んだ装置が直後に報告を打つ矛盾も立つ。調査が完了したから装置が閉じた、
+    という筋なら直後の「調査完了です。」へまっすぐ繋がる</li>
+  </ul>
+
+  <h3>音</h3>
+
+  <p>新しい音は 1 本も足さない。装置の声（唸り）を潰れの頭で引き切り、
+  <strong>3 分間鳴り続けた音が消えること自体を終幕の音にする</strong>。
+  部屋の音は現行どおり前へ出て、最後の 1 字が打たれた縁から約 1 秒で無音へ落とす。
+  <em>現状は打鍵 3.4 秒の途中（段 Done ＝ 1.5 秒）で部屋の音が切れており、この欠陥も同時に直る</em>。
+  ⚠ 音のランプは段の尺から切り離す（下の罠 3）。</p>
+
+  <h2>4. 実装の作用点と、先に潰しておく罠</h2>
+
+  <p>批評 2 体が実コードを読んで挙げた指摘。実装時はここから着手する。</p>
+
+  <div class="tblwrap"><table>
+    <tr><th>#</th><th>何</th><th>どうする</th></tr>
+    <tr><td>1</td><td>uv 変形の作用点</td>
+      <td>潰すのは<strong>発光面のサンプル座標だけ</strong>。<code>ScreenComposite.shader</code> の
+      frag 冒頭（<code>screenUv</code> 導出・961 行付近）で逆写像する。
+      末尾の <code>col</code> には潰す材料がもう無い。
+      管のガラス（角丸 <code>_CrtRound</code>・縁 <code>_CrtEdge</code>）は<strong>元の uv のまま</strong>計算する
+      — 潰れた uv を <code>CrtSdf</code> に渡すと <code>fwidth</code> が発散して線そのものが黙って消える</td></tr>
+    <tr><td>2</td><td>OSD（時計）</td>
+      <td>潰れの頭 0.1 秒で <code>_OsdOpacity</code> を 0 へ。潰した uv で OSD を引くと
+      暗黙微分でミップが飛んで灰の帯になるため、一緒に潰すのではなく先に消す
+      （装置が落ちる話と矛盾しない）</td></tr>
+    <tr><td>3</td><td>音のランプ</td>
+      <td><code>ShowSoundDirector</code> は <code>StageProgress01</code>（段相対）を読んでいるので、
+      段を 6.0s → 0.9s にすると部屋の音のせり上がりが黙って 6.7 倍速になる。
+      装置の声・部屋の音のランプは<strong>段の尺から独立した固定尺</strong>（1.5〜2.0s）へ切り替える。
+      <code>SoundBedLogic</code> は <code>OutroStage.Flicker</code> を名前で分岐しているので、
+      段名の変更と<strong>同じコミット</strong>で直す（片方だけだと終幕が黙って無音になる）</td></tr>
+    <tr><td>4</td><td>効果の実在の観測</td>
+      <td><code>_ScreenCollapse</code> を書けなくても既存判定は全部 PASS する
+      （画は「0.9 秒ライブ → 黒へ瞬断」になりログは OK と言う）。
+      <code>ev=outro</code> に <code>cl=</code>（材質へ実際に書いた潰れ値）を足し、
+      <code>analyze-xp-log.py</code> の終幕節と<strong>対で</strong>直す。
+      「状態は進んだが効果が出ていない」をこの codebase は繰り返し踏んでいる</td></tr>
+    <tr><td>5</td><td>線の明るさ</td>
+      <td>輝度補償はエネルギー保存にせず<strong>上限を置く</strong>
+      — linear で潰れ直前の画面平均の 2〜3 倍・絶対 0.5 以下、縮む段では減衰させる（残像対策）。
+      確定値は <code>menu outro</code> プレビューの実測と、実機で被る 1 回で決める
+      （見かけの明るさの机上見積もりは 2 回続けて外した前歴がある）。
+      ⚠ <strong>線が育つ向きの動きは 1 フレームも入れない</strong> — 逆向きは「起動しかけ」に反転する</td></tr>
+    <tr><td>6</td><td>show.json のキー</td>
+      <td><code>flickerSec</code> → <code>collapseSec</code> に改名し、<code>Sanitized</code> の許容を
+      <strong>0.4〜2.0 秒</strong>に絞る（現行 Pick は 0.01〜60 なので、古いキャッシュの 6.0 が
+      「6 秒の崩壊」として通ってしまう）。旧キーは読み捨て。
+      既定は C# / 卓 / <code>capture-server.py</code> の 3 者で揃える（既存の流儀）</td></tr>
+    <tr><td>7</td><td>畳む経路</td>
+      <td><code>ResetScreen()</code> 1 本に集約 — power=1 / collapse=0 / OSD 不透明度=1 を
+      必ず一緒に書き戻す。終幕を畳むすべての経路（終わった / ラン開始 / 相変化 / OnDisable）が通る。
+      「凍結が解けない」を 4 回踏んだ型を新しい uniform で再生産しない</td></tr>
+    <tr><td>8</td><td>_ScreenPower との分担</td>
+      <td><code>_ScreenPower</code> が「死んだ」の唯一のスイッチ（Collapse 中は 1・Dark 以降 0）、
+      <code>_ScreenCollapse</code> は Collapse 段以外 0。二重に暗くしない。
+      writer はどちらも <code>OutroDirector</code> だけ</td></tr>
+    <tr><td>9</td><td>死んだコードの掃除</td>
+      <td><code>FlickerPower</code> / <code>Hash01</code> は使わなくなったらテストごと消す
+      （死んだ決定論コードを残さない）</td></tr>
+  </table></div>
+
+  <h2>5. 段階分割（安い順に 3 段）</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>Phase</th><th>何</th><th>この時点で得られるもの</th></tr>
+    <tr><td>1</td><td><code>OutroLogic</code> だけ直す — Flicker の明滅を単調な減光に置き換え、尺を 0.9s に詰める</td>
+      <td><strong>シェーダ変更ゼロで「目に悪い」と「テンポ」が両方消える。</strong>
+      EditMode テストで単調性（明滅ゼロ）と決定論を固定できる</td></tr>
+    <tr><td>2</td><td><code>_ScreenCollapse</code>（縦潰れ → 線 → 点）＋ <code>menu outro</code> プレビュー（PNG 連番）＋ テレメトリ <code>cl=</code></td>
+      <td>電源断の画。焼いた画から線の尖頭輝度を実測して上限を確定できる</td></tr>
+    <tr><td>3</td><td>音 — 装置の声の即断と部屋の音の裾を、段の尺から独立した固定ランプへ。打鍵完了まで部屋の音を保つ</td>
+      <td>画と音が揃う。現状の「打鍵の途中で部屋の音が切れる」も直る</td></tr>
+  </table></div>
+
+  <h2>6. 判定を待つもの（既定つき）</h2>
+
+  <dl class="qa">
+    <dt>時計を残して止める版を入れるか</dt>
+    <dd>独立設計側の案：画だけ先に消えて<strong>時計だけが黒い管に残り、最後の 1 秒を刻んで止まってから</strong>管が潰れる。
+    「3 分間刻み続けた唯一の不動点が止まる」は作品自身の言葉で書いた終了宣言になる。
+    ただし <code>rules/streaming.md</code> の「時刻で嘘をつかない（停止も嘘）」に終幕の例外を書き足すことになり、
+    時計に気づいていなかった体験者には効かない。
+    <strong>既定：入れない</strong>（契約に穴を開けず、時計は画と一緒に潰れて落ちる）。</dd>
+    <dt>0048 の「電池が切れかけ」という比喩ごと置き換えてよいか</dt>
+    <dd>0111 で否定されたのは逐語では「ちかちか」まで。ただし切れかけの表現手段（明滅）が消えたので、
+    比喩だけ残しても画にする手が無い。<strong>既定：「装置が役目を終えて落ちる」に置き換える</strong>。</dd>
+    <dt>打ち終わった後の終端の記号は要るか</dt>
+    <dd>報告を打ち終わると以後は永久に無変化・無音で、「まだ続くのか」と待つ体験者が残る可能性がある
+    （分かりづらさの残り 1 つ）。<strong>既定：このまま</strong>
+    — 4 行目「装置を外してください。」が指示そのもので、打鍵音が止まることが音の終端になる。</dd>
+    <dt>報告の数字を最後に打つか</dt>
+    <dd>既存の案（2026-08-19）。いまは 1 行目の数字が最初に出る。順を変えると「集計してから答えた」ように見える。
+    文言は 1 字も動かさない。<strong>既定：今回は触らない</strong>（本件と独立に判定できる）。</dd>
+  </dl>
+
+  <h2>7. 退けた代案</h2>
+
+  <div class="tblwrap"><table>
+    <tr><th>案</th><th>退けた理由</th></tr>
+    <tr><td>砂嵐で終わる</td><td>信号断＝異変の語彙。終端に読めない</td></tr>
+    <tr><td>ゆっくりフェードだけ</td><td>安全だが、漸進は劣化（異変の語彙）と区別できず「終わった」の記号性が無い</td></tr>
+    <tr><td>破片を吐き出して現実へ帰す（導入の逆）</td><td>0048 が「パススルーへ戻さない」で棄却済み</td></tr>
+    <tr><td>報告を先に出し、背後で画面が死ぬ（並列化）</td><td>テンポは最速だが、打鍵音と装置の死ぬ音が重なり、
+      点いたままの画面の上に文字が乗って「黒の中の掲示」の構図が壊れる</td></tr>
+    <tr><td>画を凍らせてから消す（記録終了の Seal 段）</td><td>凍結は 3 周目 A で使った異変の語彙。
+      終幕に持ち込むと最後の 1 手がまた曖昧になる</td></tr>
+    <tr><td>物理スイッチの「カチッ」を鳴らす</td><td>外部の意図＝「誰かが切った」を示唆する。
+      新しい一撃を足さない規約にも反する</td></tr>
+  </table></div>
+
+  <h2>8. 検証の設計</h2>
+
+  <ul>
+    <li><strong>安い門</strong>：EditMode テストで「潰れの進行が単調（明滅ゼロ）」「決定論（同じ時刻は同じ値）」
+    「畳む全経路で ResetScreen が通る」を固定。<code>SoundBedLogic</code> の段名分岐も同じコミットで</li>
+    <li><strong>絵の門</strong>：<code>menu outro</code>（新設・PNG 連番）で潰れの形と線の尖頭輝度を実測。
+    数値が緑でも絵は必ず開く</li>
+    <li><strong>走行の門</strong>：<code>ev=outro</code> の <code>cl=</code> と <code>pw=</code> を
+    <code>analyze-xp-log.py</code> が判定（潰れ段に <code>cl</code> が動かなければ FAIL）。
+    <code>ShowTelemetryHost</code> と対で直す</li>
+    <li><strong>被る門</strong>：線の明るさが暗所の VR で眩しくないかは実機で被る以外に確かめる手が無い。
+    次の被り検証に混ぜる（visual-verification の「溜めて 1 回」）</li>
+  </ul>
+
+  <p class="note">
+    出どころ：canon/LEDGER.md 0111（2026-08-23 のユーザー判定・逐語）。
+    設計の確度の根拠：独立に走らせた設計批評 2 体（一方は本案の批評、他方は白紙からの設計）が
+    「管が潰れて線 → 点になる電源断」「異変の語彙では終わりを語れない」「新しい一撃は足さない」
+    「線の輝度は実機でしか確定しない」に独立に収束した。
+    相違点（時計の停止・Seal 凍結・意味づけ）は §6 / §7 に判定材料として残した。
+    現行実装：Assets/Scripts/Streaming/OutroLogic.cs / OutroDirector.cs、
+    Assets/Art/Shaders/Streaming/ScreenComposite.shader。
+    関連：OPEN.md「終幕」節（2026-08-15 の「管が縮んで線になる」案が本案の前身）。
+  </p>
+</div>
