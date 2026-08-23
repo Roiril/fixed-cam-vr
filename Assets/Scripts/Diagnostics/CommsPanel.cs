@@ -253,8 +253,9 @@ namespace FixedCamVr.Diagnostics
             // ⓪a 名乗り。⚠ **「AI」とは書かない。「エージェント」と書く**（`canon/LEDGER.md` 0080）。
             //    ⚠ 紙の依頼書と同じ語（`docs/onsite/handout.html`「調査を支援するエージェント」）。
             //      片方だけ直すと、紙と装置が別のものを指しているように読める。
-            //    ⚠⚠ **14 文字ちょうど**（帯に入るのは 14.8 文字）。1 文字でも足すと 2 行へ折り返す。
-            CommsNotice.Greeting => "私は調査支援エージェントです",
+            //    ⚠ 1 行 14 文字を超える（17 文字）ので**2 行へ割ってある**（2026-08-23・0124）。
+            //      任せると「私は調査を支援するエージ／ェントです」と語の途中で切れる。
+            CommsNotice.Greeting => "私は調査を支援する\nエージェントです",
             // ⓪b 歩行の指示。**この連絡が床の矢印を出す**（`WalkGuide.NotifyExplaining`）。
             //    ⚠ 1 文目が 15 文字なので**2 行へ割ってある**（ユーザーの改行は文のあいだの 1 つだけ）。
             CommsNotice.Walk => "開始ポイントを\nマークしました。\n矢印から向かってください。",
@@ -280,7 +281,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.MarkNothing => "異常は検出されませんでした",
             // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
             //    読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
-            CommsNotice.Prompt => "異常があなたを\n取り込もうとしています。\n排除してください。",
+            CommsNotice.Prompt => "異常があなたと私を\n取り込もうとしています。\n排除してください。",
             _ => "",
         };
 
@@ -293,18 +294,19 @@ namespace FixedCamVr.Diagnostics
         public static string NoticeText(CommsNotice n) => TextFor(n);
 
         /// <summary>
-        /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（⓪a の 14 文字）。
+        /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（①b の 3 行目・14 文字）。
         ///
         /// ⚠ ここを短い文面にすると <c>menu text-audit</c> が<b>最悪の行を測らない</b>ので
         /// 「枠に収まっている」と嘘をつく。実行時はどの文面でも <see cref="SetNotice"/> が組み直す。
         /// ⚠ <b>行数の最悪（4 行 ＝ ①）はここでは測れない。</b> 縦の座りは
         /// <c>menu comms-preview</c> の絵で見る。
-        /// ⚠⚠ <b>2026-08-19 に② → ⓪aへ移した</b>（`canon/LEDGER.md` 0096）。名乗りが
-        /// 「私は調査支援エージェントです」＝ 14 文字になり、帯に入る 14.8 文字にいちばん近い。
+        /// ⚠⚠ <b>2026-08-23 に⓪a → ①bへ移した</b>（`canon/LEDGER.md` 0124）。名乗りが
+        /// 「私は調査を支援する／エージェントです」＝ 2 行に割れて最長が 9 文字になり、
+        /// ①bの 3 行目「装置が解析して対処を試みます」＝ 14 文字が最長になった。
         /// <c>CommsNoticeTextTests.LongestNoticeText_ReallyHasTheLongestLine</c> が
         /// **本当に最長かを機械で確かめる**ので、文面を触った人はそこで落ちる。
         /// </summary>
-        public static string LongestNoticeText => TextFor(CommsNotice.Greeting);
+        public static string LongestNoticeText => TextFor(CommsNotice.BeginHow);
 
         private readonly CommsPanelLogic _logic = new CommsPanelLogic();
         private readonly CommsCueLogic _cue = new CommsCueLogic();

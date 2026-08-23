@@ -1874,6 +1874,23 @@ def analyze(events, others, exp, warns=None):
                                     f"（ev=sfx id={want} が 0 本）")
             if all(by_id.get(k, 0) > 0 for k in want_ids):
                 verdict("OK", "導入の 3 つの節目が全部鳴った")
+
+        # -- 終幕の電源断（`canon/LEDGER.md` 0125）--------------------------------
+        #    ⚠⚠ **音は録画に映らない**ので、`ev=sfx id=PowerOff` が唯一の証拠。
+        #       画（clMax）が正しく潰れていても、音だけ黙って落ちていることがある
+        #       （音源が焼かれていない / Resources に入っていない / 発声器が起きていない）。
+        #    ⚠ **終幕まで走った走行だけ見る**（途中で切れた走行で毎回 FAIL を出さない）。
+        outro_ran = any(e.get("stage") in ("Collapse", "Dark", "Report", "Done") for e in outro)
+        if outro_ran:
+            n_off = by_id.get("PowerOff", 0)
+            if n_off == 0:
+                verdict("FAIL", "終幕まで進んだのに電源が落ちる音が鳴っていない"
+                                "（ev=sfx id=PowerOff が 0 本）— 画だけ潰れて無音で終わっている")
+            elif n_off > 1:
+                verdict("FAIL", f"電源が落ちる音が {n_off} 回鳴っている（1 回のはず）— "
+                                "終幕を抜ける前に再武装している")
+            else:
+                verdict("OK", "終幕の電源が落ちる音が 1 度だけ鳴った")
         # -- 人形がたくさん出てくる所の笑い（`canon/LEDGER.md` 0062）
         #    鳴る縁は「締めのカットが報告を待ち始めたこと」なので、**その場面まで走ったときだけ**
         #    見る（走り切らなかった走行で毎回 FAIL を出さない）。待ったことの証拠は

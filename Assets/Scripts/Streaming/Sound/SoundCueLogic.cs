@@ -43,8 +43,9 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 終幕 — 隔離が開いて現実が戻る。
         /// ⚠ <b>2026-08-15 以降は鳴らない</b>（<c>canon/LEDGER.md</c> 0048）。終幕はパススルーへ
-        /// 戻さなくなり、隔離が開く段そのものが無くなった。<b>終幕に足す音は 1 本も無い。</b>
-        /// 音源は残してある。
+        /// 戻さなくなり、隔離が開く段そのものが無くなった。音源は残してある。
+        /// ⚠ 終幕に鳴るのは <see cref="PowerOff"/> 1 本だけ（2026-08-23・0125）。
+        /// <b>この音が復活すると黙って 2 本重なる。</b>
         /// </summary>
         ShellOpen,
         /// <summary>映像の乱れ（<see cref="GlitchFx"/> と同時）。</summary>
@@ -74,6 +75,18 @@ namespace FixedCamVr.Streaming
         /// ここに居るのは<b>音源の登録簿としての意味</b>（`Awake` の先読みと `ev=sfx` の名前）。
         /// </summary>
         DollCall,
+        /// <summary>
+        /// <b>終幕 — 装置の電源が落ちる</b>（段 <see cref="OutroStage.Collapse"/> の頭で 1 回だけ）。
+        /// 音源はユーザー提供の mp3（2026-08-23・<c>canon/LEDGER.md</c> 0125）。
+        ///
+        /// ⚠ <b>「終幕に足す音は 1 本も無い」（0048）はここで覆っている。</b> 画は
+        /// 2026-08-23（0111）にブラウン管の電源断へ作り替わっており、
+        /// <b>その画に対応する音をユーザーが指定した</b>。
+        /// ⚠ 鳴らす縁は<b>終幕が始まったこと</b>（<c>outroActive</c> の立ち上がり）で、
+        /// 段名は読まない — 段名を読むと、名前を変えた日に黙って無音になる
+        /// （<see cref="SoundShowState.outroElapsedSec"/> の注記と同じ轍）。
+        /// </summary>
+        PowerOff,
     }
 
     /// <summary>
@@ -148,6 +161,8 @@ namespace FixedCamVr.Streaming
         private float _glitchCooldown;
         private bool _glyphWasShowing;
         private bool _bellFired;
+        /// <summary>終幕の電源断を鳴らしたか。<b>終幕を抜けたフレームで自分で落ちる。</b></summary>
+        private bool _powerOffFired;
 
         /// <summary>段 5 に入ってからの秒数。<b>鈴はここで数える</b>（外から段の経過が来ないため）。</summary>
         private float _swapSec;
@@ -165,6 +180,7 @@ namespace FixedCamVr.Streaming
             _glitchArmed = true;
             _glitchCooldown = 0f;
             _glyphWasShowing = false;
+            _powerOffFired = false;
             ResetIntroLatches();
         }
 
@@ -246,11 +262,27 @@ namespace FixedCamVr.Streaming
             }
 
             // --- 終幕 -----------------------------------------------------------
-            // ⚠⚠ **2026-08-15 から 1 本も鳴らさない**（`canon/LEDGER.md` 0048）。
-            //    隔離が開く段が無くなり、終幕は「装置が力尽きて報告を出す」だけになった。
-            //    足す音が無いのは欠落ではなく設計 — 装置が引いた後に残るのは部屋の音だけで、
-            //    それも Done で無音へ落ちる（`rules/sound-design.md`「終わりに音を残さない」）。
-            //    <see cref="SoundCue.ShellOpen"/> の enum と音源は残してある。
+            // ⚠⚠ **2026-08-23 に 1 本だけ足した**（`canon/LEDGER.md` 0125・ユーザー指定
+            //    「最後の電源が落ちるときにこの効果音を鳴らしてほしい」）。0048 の
+            //    「終幕に足す音は 1 本も無い」はここで覆っている — あれはパススルーへ戻す
+            //    5 段を廃止したときの判断で、いまの画は**ブラウン管の電源断**（0111）。
+            //
+            // ⚠⚠ **縁は「終幕が始まった」であって段名ではない。** 段名で切ると、名前を
+            //    変えた日に黙って無音になる（2026-08-23 に敷く音で実際に踏んだ形）。
+            //    終幕の頭 ＝ 潰れ始める瞬間なので、電源断の音はここ 1 点でよい。
+            // ⚠ **`ResetIntroLatches` には入れない。** あれは導入の段 0 で落ちるので、
+            //    終幕の後に導入へ戻らない限り再武装しない ＝ 2 人目以降が無音になる。
+            //    ここは**終幕が終わったフレーム**で自分から再武装する。
+            if (s.outroActive)
+            {
+                if (!_powerOffFired)
+                {
+                    _powerOffFired = true;
+                    Push(SoundCue.PowerOff, ref count);
+                }
+            }
+            else _powerOffFired = false;
+            //    <see cref="SoundCue.ShellOpen"/> の enum と音源は残してある（鳴らさない）。
 
             // ⚠⚠ **人形の笑いはここには無い**（2026-08-16・`canon/LEDGER.md` 0066）。
             //    報告を押すまで**ループ**するので、一撃ではなく敷く音の器に載せてある
@@ -313,6 +345,8 @@ namespace FixedCamVr.Streaming
                 case SoundCue.ShellOpen: return 0.40f;
                 case SoundCue.Glitch: return 0.35f;
                 case SoundCue.Bell: return 0.45f;
+                // 終幕の頭。劇伴は 2.0 秒かけて退く途中なので、まだ鳴っている上に置かれる。
+                case SoundCue.PowerOff: return 0.60f;
                 case SoundCue.Creak: return 0.15f;   // 退かせすぎると芝居がかる
                 default: return 0f;
             }
@@ -335,6 +369,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.Creak: return "amb_creak";        // 2 種
                 case SoundCue.Bell: return "amb_bell";
                 case SoundCue.DollCall: return "sfx_doll_call";
+                case SoundCue.PowerOff: return "sfx_power_off";
                 default: return "";
             }
         }

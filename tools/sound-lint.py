@@ -71,7 +71,11 @@ RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_
             "bed_dolls_laugh", "bed_doll_one", "bed_dolls_grow_a", "bed_dolls_grow_b",
             # ⚠ 人の声は倍音が揃うので純度が 0.62 出る（上限 0.60）。実物がそうである以上、
             #    通すために作り変える方が §4.5 違反になる。
-            "sfx_doll_call"}
+            "sfx_doll_call",
+            # ⚠ ブラウン管の電源断は**線が 1 本まっすぐ落ちる音そのもの**なので
+            #    純度 0.86 / 突出 28.9dB が出る。これは「発振器に聞こえる」のではなく
+            #    「実物のブラウン管がそういう音を出す」— 通すために作り変えたら別の音になる。
+            "sfx_power_off"}
 RECORDED |= {f"sfx_switch_{i}" for i in range(1, 9)}
 RECORDED |= {f"sfx_switch_alert_{i}" for i in range(1, 9)}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」

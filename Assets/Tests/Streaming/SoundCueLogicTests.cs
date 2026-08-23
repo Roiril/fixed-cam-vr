@@ -327,24 +327,55 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Outro_AddsNoSoundAtAll()
+        public void Outro_FiresOnlyThePowerOff_AndOnlyOnce()
         {
-            // ⚠ **終幕に足す音は 1 本も無い**（canon/LEDGER.md 0048）。装置が引いた後に残るのは
-            //    部屋の音だけで、それも Done で無音へ落ちる（`rules/sound-design.md`
-            //    「終わりに音を残さない」）。ここに一撃を戻すなら、それは世界観の判定が要る。
+            // ⚠⚠ **終幕に鳴るのは電源断 1 本だけ**（2026-08-23・canon/LEDGER.md 0125）。
+            //    0048 の「終幕に足す音は 1 本も無い」はユーザー指定で覆った。
+            //    装置が引いた後に残るのは部屋の音だけ、という設計は変わっていないので、
+            //    **2 本目を足すならそれは世界観の判定が要る**（ここが止める）。
             var l = new SoundCueLogic();
             var s = SoundShowState.Idle;
             s.outroActive = true;
+            s.outroStage = OutroStage.Collapse;
+            s.outroElapsedSec = 0f;
+
+            var fired = l.Tick(Dt, s, 0f, out int n);
+            Assert.AreEqual(1, n, "終幕の頭で鳴ったのが 1 本ではない");
+            Assert.AreEqual(SoundCue.PowerOff, fired[0]);
+
             foreach (OutroStage st in System.Enum.GetValues(typeof(OutroStage)))
             {
                 s.outroStage = st;
                 s.outroElapsedSec = 0.5f;
                 for (int i = 0; i < 8; i++)
                 {
-                    l.Tick(Dt, s, 0f, out int n);
-                    Assert.AreEqual(0, n, $"終幕 {st} で音が鳴った");
+                    l.Tick(Dt, s, 0f, out int m);
+                    Assert.AreEqual(0, m, $"終幕 {st} で音が鳴り続けている");
                 }
             }
+        }
+
+        [Test]
+        public void PowerOff_RearmsForTheNextVisitor()
+        {
+            // ⚠⚠ **導入のラッチ（`ResetIntroLatches`）に相乗りさせない。** あれが落ちるのは
+            //    導入の段 0 なので、そこへ乗せると「終幕 → 次の人の導入」の順でしか戻らない。
+            //    ここは**終幕を抜けたフレーム**で自分から再武装する。
+            //    （2026-08-14 に導入の音で「1 人目だけ鳴る」を踏んだのと同じ形。）
+            var l = new SoundCueLogic();
+            var s = SoundShowState.Idle;
+            s.outroActive = true;
+            s.outroStage = OutroStage.Collapse;
+            Assert.AreEqual(1, CountOf(l, SoundCue.PowerOff, Dt, s));
+
+            s.outroActive = false;
+            s.outroStage = OutroStage.Off;
+            for (int i = 0; i < 8; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.PowerOff, Dt, s), "終幕の外で鳴った");
+
+            s.outroActive = true;
+            s.outroStage = OutroStage.Collapse;
+            Assert.AreEqual(1, CountOf(l, SoundCue.PowerOff, Dt, s), "2 人目の終幕が無音");
         }
 
         [Test]

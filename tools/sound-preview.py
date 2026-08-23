@@ -71,7 +71,8 @@ MATERIALS = [
     ("sfx_glitch_1", "映像の乱れ 1", 0),
     ("sfx_glitch_2", "映像の乱れ 2", 0),
     ("sfx_glitch_3", "映像の乱れ 3", 0),
-    ("sfx_shell_open", "終幕 — 隔離が開いて現実が戻る", 0),
+    ("sfx_shell_open", "【鳴らない】終幕 — 隔離が開いて現実が戻る（0048 で段ごと廃止）", 0),
+    ("sfx_power_off", "終幕 — **装置の電源が落ちる**（もらった TV-Turn_Off01-1）。潰れ始めと同じ縁", 0),
     ("amb_creak_1", "【鳴らない】家鳴り 1 — 2026-08-15 に全廃（音源は残してある）", 0),
     ("amb_creak_2", "【鳴らない】家鳴り 2 — 同上", 0),
     ("amb_bell", "鈴（もらった「鈴２」）— **段 3（輪郭だけの世界）の頭**に 1 回だけ", 0),
@@ -280,7 +281,7 @@ COMMS = [
     ("異変を見つけたら／ボタンを長押ししてください／装置が解析して対処を試みます", 35),
     ("異変を排除しました", 9),
     ("異常は検出されませんでした", 13),
-    ("異常があなたを／取り込もうとしています。／排除してください。", 28),
+    ("異常があなたと私を／取り込もうとしています。／排除してください。", 30),
 ]
 
 
@@ -669,6 +670,58 @@ def build_score_swap() -> np.ndarray:
     return out
 
 
+def build_outro() -> np.ndarray:
+    """**終幕**（`canon/LEDGER.md` 0111 の電源断 ＋ 0125 の電源が落ちる音）。
+
+    判定してほしいのは 2 つ:
+
+    1. **電源が落ちる音の高さ**（`ingest-sounds.py` の -17.0 LUFS）。装置の声と劇伴が
+       まだ鳴っている上に置かれるので、埋もれても突き出てもいけない
+    2. **その後の静けさ**（装置の声が 1.5 秒で引き、部屋の音が前へ出て、報告の打鍵だけが残る）
+
+    ⚠⚠ **同じ中身を 2 回鳴らす。** 前半はヘッドホン、後半は**内蔵スピーカーを通した形**。
+      展示で耳に届くのは後半の方。
+    """
+    seg, gap, lead = 9.0, 1.0, 3.0
+    # 実機の尺（`OutroTiming.Default` / `SoundBedLogic` の写し）。向こうを変えたらここも直す。
+    collapse, dark = 0.9, 1.2
+    dev_fade, room_rise, score_fade = 1.5, 2.0, 2.0
+    report_chars = 41                       # `OutroReportText.Compose` の見える字（改行は鳴らさない）
+
+    dev, room = load("bed_device_worn"), load("bed_room")
+    off = load("sfx_power_off")
+    score = load_score2()                   # 終幕の手前は入れ替わった後の曲（0119）
+
+    one = np.zeros((int(seg * sk.SR), 2))
+    n_dev_fade = int(dev_fade * sk.SR)
+    n_room = int(room_rise * sk.SR)
+    n_score = int(score_fade * sk.SR)
+
+    # 本編の続き（装置の声 1.0 / 劇伴 / 部屋は 0）→ lead 秒で終幕へ入る。
+    lay(one, tile(dev, lead), 0.0, 1.0)
+    lay(one, tile(dev, dev_fade), lead, ramp(n_dev_fade, 1.0, 0.0))
+    lay(one, tile(score, lead), 0.0, 1.0)
+    lay(one, tile(score, score_fade), lead, ramp(n_score, 1.0, 0.0))
+    # 部屋の音は終幕の頭からせり上がる（装置が引いたぶん現実が前へ出る）。
+    lay(one, tile(room, room_rise), lead, ramp(n_room, 0.0, 0.85))
+    lay(one, tile(room, seg - lead - room_rise), lead + room_rise, 0.85)
+
+    # ⚠ 電源が落ちる音は**終幕の頭**。画が潰れ始めるのと同じフレーム。
+    lay(one, off, lead)
+    # 報告の打鍵は Collapse ＋ Dark の後（＝ 装置がまだ 1 つだけ仕事をしている）。
+    rng = np.random.default_rng(2026)
+    lay(one, type_burst(report_chars, TYPE_CPS, rng), lead + collapse + dark, sk.db(TYPE_GAIN_DB))
+
+    total = seg * 2 + gap
+    out = np.zeros((int(total * sk.SR), 2))
+    lay(out, one, 0.0)
+    lay(out, through_speaker(one), seg + gap)
+    print(f"   0.0s 本編の続き   {lead:.1f}s **電源が落ちる**（画は潰れ始める）   "
+          f"{lead + collapse + dark:.1f}s 報告の打鍵（{report_chars} 字）   "
+          f"{seg + gap:.1f}s 同じ中身を**内蔵スピーカー越し**で")
+    return out
+
+
 def main() -> int:
     print("素材を 1 本ずつ:")
     emit("preview_materials", build_materials(), "何がどんな音か")
@@ -693,6 +746,9 @@ def main() -> int:
     print("追いつきの後で劇伴が入れ替わる所:")
     emit("preview_score_swap", build_score_swap(),
          "前半ヘッドホン / 後半は内蔵スピーカー越し。**音量と交代の尺**が判定")
+    print("終幕（電源が落ちて、報告が打たれる）:")
+    emit("preview_outro", build_outro(),
+         "前半ヘッドホン / 後半は内蔵スピーカー越し。**電源が落ちる音の高さ**が判定")
     print(f"\n→ {OUT}")
     return 0
 
