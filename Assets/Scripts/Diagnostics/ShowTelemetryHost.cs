@@ -1167,6 +1167,14 @@ namespace FixedCamVr.Diagnostics
                                            : (_switchSfx.HasAlertClip
                                               ? _switchSfx.AlertCount.ToString()
                                               : "nc"));
+            //   swVar = 焼けている変種の本数 / この走行で実際に鳴った異なり数
+            //           （`canon/LEDGER.md` 0112「毎回同じではなく」）。
+            //           ⚠ **累計（swN）だけでは「6 本焼いたのに 1 本しか鳴っていない」を見分けられない。**
+            //              焼き忘れ・`menu sound-import` 忘れは左が落ちる形で出る（6 → 1）。
+            //              ⚠ 画にも動画にも違いが出ないので、変種が効いた証拠はこのキーだけ。
+            _sb.Append(" swVar=").Append(_switchSfx == null
+                                         ? "-"
+                                         : $"{_switchSfx.ClipCount}/{_switchSfx.DistinctUsedCount}");
             //   typeN = 連絡の面の打鍵の累計（`canon/LEDGER.md` 0056）。**出た文字数と対で見る** —
             //           `nc` は音源を掴めていない ＝ 字は出るのに無音。
             //           解析器が「連絡 n 通ぶんの字数の合計」と突き合わせて FAIL にする。

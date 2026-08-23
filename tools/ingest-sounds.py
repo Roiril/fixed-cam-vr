@@ -73,13 +73,10 @@ PLAN = [
     ("鈴２.mp3", "amb_bell", "lufs", -28.0,
      "**完全にスクリーンになった所**（段 5 の入れ替えが終わった後）に 1 回だけ。"
      "誰も鳴らしていないのに鳴る"),
-    # ⚠ **カメラ切替はユーザー指定の音源**（2026-08-16・`canon/LEDGER.md` 0057）。
-    #    合成の 3 変種（`make-sounds.py` の `sfx_switch`）を置き換えた。
-    #    1 回の体験で 9 回以上鳴るので「繰り返す一撃」の高さ（-23 LUFS・§3）へ揃える。
-    # ⚠ `lufs!` — 波高 28dB の一撃なので素の音量合わせでは -3dBTP の天井に当たって
-    #    -25.4 LUFS 止まりだった（他の一撃より 2.4dB 低い ＝ 暗転の中で聞こえにくい）。
-    ("カメラ切り替え.mp3", "sfx_switch_1", "lufs!", -23.0,
-     "カメラ切替（dip の黒の中で鳴る）。**変種は 1 本だけ** — 散らすのは音程と音量で行う"),
+    # ⚠⚠ **カメラ切替は 2026-08-23 から `VARIANTS` が焼く**（`canon/LEDGER.md` 0112）。
+    #    元は同じ「カメラ切り替え.mp3」だが、1 本ではなく **6 本の変種**になったので
+    #    PLAN からは外してある（ここに書き戻すと `sfx_switch_1` が 1 本で上書きされ、
+    #    残り 5 本だけが古い世代になる ＝ 音量の家族が崩れる）。
     # ⚠ 尖頭で揃えない。エネルギーの立ち上がりは尾が長く、尖頭で合わせると聴感が突出する。
     # ⚠⚠ **-19.0 → -17.0**（2026-08-13・`canon/LEDGER.md` 0030「何の音もなしに出るのは違和感がある」）。
     #    旧値は「導入の山（破砕）を超えないように」抑えたものだが、**破砕は同日に廃止**したので
@@ -168,6 +165,43 @@ TAME = {
     "amb_bell": (4200.0, -10.0, 1.2),
 }
 
+# ---- 1 本の録音から「毎回すこしずつ違う」変種を焼くもの ----------------------
+#
+# ⚠ **これも「もらった音」の側**（合成ではない）。掛けるのは切り出し・並べ方・音程・音量と
+#    端の処理だけで、イコライザも圧縮も残響も掛けない（`rules/sound-design.md` §4.5）。
+#
+# ユーザー指定（2026-08-23・`canon/LEDGER.md` 0112）:
+#   「カメラが切り替わるときの音を毎回同じではなく、加工して毎回違うようにしたい」
+#   「使う音声素材を増やすのではなくうまく加工して」
+#
+# **素材の中身**（実測・`logs/sound/ingest/src_sfx_switch_1.wav` 238ms）:
+#   ・立ち上がりは **5.5ms に 1 つだけ**。-10dB へ 15ms、-20dB へ 75ms
+#   ・**尾に二次の粒が 4 つ**（56 / 71 / 77 / 96ms・-19 / -20 / -22 / -28dB）。
+#     110ms より後はほぼ床（-33dB 前後）＝ **そこを切っても聴感では変わらない**
+#   ・重心は 8522 → 2668Hz と落ちる
+#
+# ⇒ **頭（0〜50ms）は毎回そのまま置く。**そこがこの音の身元で、変えると別の装置になる。
+#   変えるのは**尾の来る時刻・長さ・高さ・音程**（＝ がらがら鳴る粒がいくつ・いつ来るか）。
+#   0110 で笑いの「音節の数」を変えたのと同じ手で、素材の中にある構造を使う。
+#
+# ⚠ **左右は振らない。** この音は `spatialBlend=0`（装置の音）で、耳の脇の内蔵スピーカーでは
+#    可聴差にならず、素材の `mono_db -2.52`（下限 -3.5）を削るだけになる。
+#
+SWITCH_SRC = ("カメラ切り替え.mp3", "sfx_switch")   # (元ファイル, 出力名の頭)
+# (頭の音程, 尾の遅れ秒, 尾の長さ秒, 尾の音程, 尾の dB, 残る粒の数, 覚え書き)
+SWITCH_HEAD_SEC = 0.050   # 頭として毎回置く長さ（一撃の本体は 15ms で -10dB まで落ちる）
+SWITCH_TAIL_AT = 0.0505   # 素材で尾が始まる時刻
+SWITCH_TAIL_FADE = 0.012
+SWITCH_LUFS = -23.0       # 1 本目（素のまま）を置く高さ。§3 の「繰り返す一撃」
+SWITCH_VARIANTS = [
+    (1.000, 0.0505, 0.188, 1.000,   0.0, 4, "素のまま（基準・いまのファイルと同じ）"),
+    (1.062, 0.0455, 0.014, 1.030,  -1.0, 1, "すぐ止む"),
+    (0.948, 0.0585, 0.036, 0.960,  +1.5, 3, "低くて、尾が遅れて来る"),
+    (1.030, 0.0430, 0.024, 1.085,  -2.0, 2, "尾が早く、高い"),
+    (0.965, 0.0505, 0.062, 0.930,   0.0, 4, "低くて、尾が長い"),
+    (1.092, 0.0000, 0.000, 1.000, -99.0, 0, "乾いた 1 発（尾なし）"),
+]
+
 # ---- 1 発の録音を小刻みに並べて 1 本にするもの ------------------------------
 #
 # ⚠ **これも「もらった音」の側**（合成ではない）。掛けるのは並べ方・音量・音程と端の処理だけで、
@@ -178,26 +212,80 @@ TAME = {
 #    ユーザー指示は「割れる音はちゃんとこれを鳴らす前に終わらせて静かにしてから」なので、
 #    **1.70 秒 ＝ 鳴り終わってから 0.37 秒の静けさが残る**（`canon/LEDGER.md` 0057）。
 #
-# (元ファイル名, 出力名, 目標 LUFS, 使い先)
+SWARM_SEC = 1.70          # 全長（上の逆算）。⚠ 2026-08-23 の作り直しでも動かしていない
+#
+# ⚠⚠ **2026-08-23 に作り直した**（`canon/LEDGER.md` 0112・ユーザー指示「もっとクオリティを
+#    上げて気持ち良くしたい」「使う音声素材を増やすのではなくうまく加工して」）。
+#    旧版の測り直しで分かった 3 つ:
+#
+#    1. **一撃が無かった。** 25ms 窓の山が **150ms** にあり、頭は -3.2dB から膨らんでいた。
+#       原因は減り方を `(1-u)^1.9` という**頭が平らな式**で書いていたこと — そのあいだに
+#       粒の重なりが 1 → 6.5 と増えるので、設計上は減っていても**実際は膨らむ**
+#    2. **粒が 130ms あり、常に 6.5 個重なっていた** ＝ 1 粒 1 粒が聞こえない
+#    3. **尻が敷く音に埋まっていた。** 1.2〜1.7 秒は **-37.6 LUFS** で、段 4 の敷く音
+#       （room ＋ device で約 -30.5 LUFS）より 7dB 低い ＝ 「小さくなった」ではなく
+#       「無くなった」。0057 の「静かにしてから」の**縁が立たない**
+#
+# ⚠ 揃えるのは**頭 0.5 秒の短期ラウドネス**。統合 LUFS は尺と尻の疎さの関数なので、
+#    そこを狙うと「尻を静かにするほど頭を上げる」という逆向きの力が働く。
+SWARM_HEAD_WIN = 0.50
+SWARM_HEAD_LUFS = -14.7   # 旧版の実測値。**ここを下げると「小さくなった」と聞こえる**
+SWARM_GRAIN_HEAD = 0.070  # 頭の粒（押し込み＋中間。重なって轟くが、粒立ちは残る）
+SWARM_GRAIN_TAIL = 0.022  # 尻の粒（破片 1 つ）
+SWARM_GRAIN_POW = 0.80
+# 刻みの折れ目は**画の縁に合わせる**（`IntroShatterCurve` の PullAt 0.18 ＝ 0.45 秒で
+# 破片が動き出し、CloseAt 0.60 ＝ 1.50 秒で閉じ切る）。音だけ別の弧を描かせない。
+SWARM_KNEE_U = 0.265      # 0.45 秒
+SWARM_SETTLE_U = 0.882    # 1.50 秒
+SWARM_STEP_HEAD = 0.0145  # 頭の刻み（≈ 69 粒/秒 ＝「ほんとに小刻み」）
+SWARM_STEP_KNEE = 0.030
+SWARM_STEP_TAIL = 0.062   # 尻の刻み（散っていく ＝ まばらになる）
+SWARM_STEP_JITTER = 0.34  # 刻みの揺らぎ（±・比）。等間隔だと機械の連射になる
+SWARM_PITCH_HEAD = 0.86   # 音程の中心（頭）
+SWARM_PITCH_TAIL = 1.58   # 同（尻）。破片が小さくなるほど高い
+SWARM_PITCH_SPREAD = 0.17 # 1 粒ごとの散らし（±・比）
+# ⚠⚠ **減り方は dB の折れ線で書く。** 滑らかな式（`(1-u)^p`）だと頭が平らなあいだに
+#    重なりが増えて**膨らむ**（旧版の山が 150ms にあった理由）。
+#    最初の 0.15 秒で 5.5dB 落として重なりを打ち消し、以後は画の縁に合わせて折る。
+#    ⚠ 最後の -15.5dB は**敷く音（約 -30.5 LUFS）へ沈ませない**ための下限。
+#      実測: -14.0 で 1.2〜1.7 秒が **-30.9 LUFS**（敷く音と同じ高さ ＝ かろうじて聞こえる）。
+#      -15.5 だと -33.6、-19.0 だと -34.7 で、どちらも旧版と同じ「消えた」に戻る。
+SWARM_FALL_KNOTS = ((0.000,   0.0),
+                    (0.088,  -5.5),   # 0.15s ＝ 重なりが増え切るところ
+                    (0.265,  -8.5),   # 0.45s ＝ 画の PullAt（破片が動き出す）
+                    (0.600, -13.0),   # 1.02s
+                    (1.000, -14.0))   # 1.70s ＝「最後らへんは本当に小さく」
+SWARM_GAIN_JITTER_DB = 2.5
+SWARM_POP_AT = (0.33, 0.46, 0.61, 0.78)  # 単独で立つ「ピシッ」（大きめの破片が 1 つ落ちる）
+SWARM_POP_DB = 5.0
+SWARM_PAN_MIN = 0.10      # 左右の散らし。**時間とともに広げる**（破片が飛び散る）
+SWARM_PAN_MAX = 0.95
+SWARM_DRIVE_MAX = 6.0     # 頭の高さへ届かないときに丸めてよい上限
+SWARM_SEED = 20260823
+# 素材（PC-Mouse06-1・端を落とした後の時刻）の一撃 4 つ。粒はここから「長さ」を切る。
+#   0.005 押し込み（本体の頭。長く取ると中間と戻りまで入る ＝ 割れの轟き）
+#   0.049 中間の小さな粒
+#   0.101 戻りの手前（-6.5dB の一撃）
+#   0.119 **戻りの本体（素材でいちばん大きい）**
+# ⚠ 旧版は 1 種類（0.005 から 130ms）しか使っておらず、しかも尻の 12ms フェードが
+#    **いちばん大きい一撃の本体を毎粒で潰していた**。
+SWARM_SHARD_AT = (0.0050, 0.0490, 0.1010, 0.1190)
+SWARM_SHARD_MIX = (0.30, 0.24, 0.20, 0.26)   # 粒が短くなってから、どれを引くか
+SWARM_SHARD_LONG = 0.048  # これより長い粒は押し込みから切る（轟きは 1 種類でよい）
+# t=0 の一撃。(時刻, 一撃番号, 音程, dB, 左右)
+# ⚠ **音程を下げると「大きい破片」になる。** 実測で 0.30 まで下げても内蔵スピーカーの
+#    損失は -0.5dB（重心 2428Hz）＝ この素材の「重み」は下の 1 オクターブにしか無い。
+SWARM_IMPACT = ((0.000, 3, 0.38, +5.0, 0.00),
+                (0.009, 0, 0.60, -1.0, 0.00))
+SWARM_IMPACT_LEN = 0.190
+
+# (元ファイル名, 出力名, **頭 0.5 秒の**短期ラウドネス, 使い先)
+# ⚠ 3 つ目は統合 LUFS ではない（上の `SWARM_HEAD_LUFS` の理由）。
 SWARMS = [
-    ("PC-Mouse06-mp3/PC-Mouse06/PC-Mouse06-1.mp3", "sfx_shatter", -19.0,
+    ("PC-Mouse06-mp3/PC-Mouse06/PC-Mouse06-1.mp3", "sfx_shatter", SWARM_HEAD_LUFS,
      "段 4 — 現実が細かく割れてスクリーンへ吸い込まれる。2026-08-16 ユーザー指定の音源を"
      "小刻みに並べ、音程と音量を散らしながら**だんだん小さく**する"),
 ]
-
-SWARM_SEC = 1.70          # 全長（上の逆算）
-SWARM_GRAIN = 0.130       # 1 粒の長さ（元の一撃は本体 155ms）
-SWARM_STEP_HEAD = 0.021   # 頭の刻み（≈ 48 粒/秒 ＝「ほんとに小刻み」）
-SWARM_STEP_TAIL = 0.052   # 尻の刻み（散っていく ＝ まばらになる）
-SWARM_STEP_JITTER = 0.18  # 刻みの揺らぎ（±・比）。等間隔だと機械の連射になる
-SWARM_PITCH_HEAD = 0.92   # 音程の中心（頭）
-SWARM_PITCH_TAIL = 1.38   # 同（尻）。破片が小さくなるほど高い
-SWARM_PITCH_SPREAD = 0.20 # 1 粒ごとの散らし（±・比）
-SWARM_TAIL_DB = -30.0     # 最後の粒の高さ（「最後らへんは本当に小さく」）
-SWARM_DECAY_POW = 1.9     # 減り方の曲線（1 = 直線 / 大きいほど早く小さくなる）
-SWARM_GAIN_JITTER_DB = 2.5
-SWARM_PAN = 0.55          # 左右の散らし（0 = 真ん中 / 1 = 片側だけ）
-SWARM_SEED = 20260816
 
 
 # ---- 1 本の声を「たくさんの人形が笑っている」に組むもの ---------------------
@@ -423,11 +511,20 @@ SWELL = [
 # ⚠ 元の mp3 は 1.09 秒周期で **21 発**入っている（ユーザーの言う「3 回」より多い）。
 #    切り出すのは 1 発目だけ。前後の余白と、次の発までの床（-25dB の残響）は抜く。
 #
-# (元ファイル名, 土台の出力名, 出力名, 切り出す秒, 土台に対する dB, 使い先)
+# ⚠⚠ **2026-08-23 から土台は 6 本ある**（`canon/LEDGER.md` 0112）。素の切替音が毎回違うのに
+#    警告つきだけ 1 本だと、**人形視点の 5 発だけが「毎回同じ」に戻る**（そこがいちばん
+#    連続して鳴る場所なので、いちばん目立つ）。土台と同じ番号で 6 本焼く。
+#
+# ⚠⚠ **警告音の高さは 6 本で同じにする。** 土台ごとのラウドネスを基準にすると、
+#    尾の短い変種（ラウドネスが高く出る）で警告だけが 6dB 大きくなる — 同じ警報が
+#    切り替えのたびに大きさを変えることになり、0106 の「あくまで通常の切り替え音がメイン」が
+#    崩れる。基準は**常に 1 本目**（素のまま）のラウドネス。
+#
+# (元ファイル名, 土台の出力名の頭, 出力名の頭, 本数, 切り出す秒, 1 本目に対する dB, 使い先)
 MIXES = [
-    ("警告音.mp3", "sfx_switch_1", "sfx_switch_alert", 0.24, -12.0,
+    ("警告音.mp3", "sfx_switch", "sfx_switch_alert", len(SWITCH_VARIANTS), 0.24, -12.0,
      "**人形視点が差し込まれるカット**の切替音（2 周目 B の 1 発 ＋ 2 周目 C の 4 発）。"
-     "ゾーン切替は `sfx_switch_1` のままで、こちらだけ警告音が薄く混ざる"),
+     "ゾーン切替は素の `sfx_switch_*` のままで、こちらだけ警告音が薄く混ざる"),
 ]
 
 MIX_ONSET_DB = -20.0   # これを超えたら 1 発の頭
@@ -685,47 +782,186 @@ def resample(c: np.ndarray, ratio: float) -> np.ndarray:
     return np.stack([np.interp(x, np.arange(len(c)), c[:, ch]) for ch in (0, 1)], axis=1)
 
 
-def swarm_build(y, sr: int, target_lufs: float):
-    """1 発の録音を小刻みに並べて、だんだん小さくなる群れにする。
+def pan_lr(p: float) -> np.ndarray:
+    """左右へ等パワーで振る係数（片側へ寄せるだけなのでモノにしても消えない）。"""
+    return np.array([np.cos((p + 1) * np.pi / 4), np.sin((p + 1) * np.pi / 4)]) * np.sqrt(2)
+
+
+def short_lufs(y: np.ndarray, a: float, b: float, sr: int = None) -> float:
+    """`a`〜`b` 秒だけのラウドネス（**尺に依らない高さ**を見るため）。"""
+    sr = sr or sk.SR
+    s = y[int(a * sr):int(b * sr)]
+    return sk.lufs(s) if len(s) > 100 else -99.0
+
+
+def swarm_fall_db(u: float) -> float:
+    return float(np.interp(u, [k[0] for k in SWARM_FALL_KNOTS],
+                           [k[1] for k in SWARM_FALL_KNOTS]))
+
+
+def swarm_grain_len(u: float) -> float:
+    return SWARM_GRAIN_HEAD * (SWARM_GRAIN_TAIL / SWARM_GRAIN_HEAD) ** (u ** SWARM_GRAIN_POW)
+
+
+def swarm_step(u: float) -> float:
+    """刻み。**画の縁（PullAt / CloseAt）で折れる。**"""
+    if u <= SWARM_KNEE_U:
+        return SWARM_STEP_HEAD + (SWARM_STEP_KNEE - SWARM_STEP_HEAD) * (u / SWARM_KNEE_U)
+    if u <= SWARM_SETTLE_U:
+        return SWARM_STEP_KNEE * (SWARM_STEP_TAIL / SWARM_STEP_KNEE) ** (
+            (u - SWARM_KNEE_U) / (SWARM_SETTLE_U - SWARM_KNEE_U))
+    return SWARM_STEP_TAIL
+
+
+def swarm_shard(st: np.ndarray, sr: int, at: float, length: float,
+                fade_out: float = 0.012) -> np.ndarray:
+    """素材の途中から 1 粒を切る。**頭のフェードは 0.4ms**（一撃を鈍らせない最小）。"""
+    a = int(at * sr)
+    s = st[a:a + int(length * sr)]
+    return sk.env_fade(s, 0.0004, min(fade_out, length * 0.35))
+
+
+def swarm_build(y, sr: int, head_lufs: float):
+    """1 発の録音を小刻みに並べて、**t=0 に一撃を置き、散って静まる**群れにする。
 
     ⚠ **等間隔・等音量にしない。** そうすると「割れた」ではなく「連射した」に聞こえる。
-    刻み・音程・音量・左右をすべて種固定の乱数で散らす。
+    ⚠ **粒の長さを時間で縮める。** 頭は長い粒が重なって轟き、尻は破片 1 つが単独で鳴る。
+      密度だけで弧を作ると、頭の音量（＝ 重なりの数）を density と一緒に失う。
     """
     st = sk.to_stereo(trim(y))
-    env = np.max(np.abs(st), axis=1)
-    head = int(np.argmax(env > 10 ** (CUT_ONSET_DB / 20))) if np.any(env > 10 ** (CUT_ONSET_DB / 20)) else 0
-    a = max(0, head - int(0.003 * sr))
-    grain = sk.env_fade(st[a:a + int(SWARM_GRAIN * sr)], 0.0, 0.012)
-
     rng = np.random.default_rng(SWARM_SEED)
-    n = int(SWARM_SEC * sr) + len(grain) + int(0.05 * sr)
+    n = int((SWARM_SEC + 0.40) * sr)
     out = np.zeros((n, 2))
-    tail_lin = 10 ** (SWARM_TAIL_DB / 20.0)
 
-    t, count = 0.0, 0
+    # ① t=0 の一撃（大きい破片が 1 つ割れる）。ここが 25ms 窓の山になる。
+    for (at, idx, ratio, db, p) in SWARM_IMPACT:
+        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], SWARM_IMPACT_LEN, 0.030), ratio)
+        i = int(at * sr)
+        out[i:i + len(g)] += g * 10 ** (db / 20.0) * pan_lr(p)
+
+    # ② 散っていく破片
+    t, count, head_n = 0.012, 0, 0
+    pops = list(SWARM_POP_AT)
     while t < SWARM_SEC:
         u = t / SWARM_SEC
-        g = sk.env_fade(resample(grain, SWARM_PITCH_HEAD + (SWARM_PITCH_TAIL - SWARM_PITCH_HEAD) * u
-                                 + float(rng.uniform(-SWARM_PITCH_SPREAD, SWARM_PITCH_SPREAD))),
-                        0.0, 0.010)
-        amp = (1.0 - u) ** SWARM_DECAY_POW
-        amp = tail_lin + (1.0 - tail_lin) * amp
+        gl = swarm_grain_len(u)
+        # 粒が短い ＝ 破片 1 つなので、素材の中の一撃から引く。長いあいだは押し込みから。
+        idx = 0 if gl > SWARM_SHARD_LONG else int(rng.choice(len(SWARM_SHARD_AT),
+                                                            p=SWARM_SHARD_MIX))
+        ratio = (SWARM_PITCH_HEAD + (SWARM_PITCH_TAIL - SWARM_PITCH_HEAD) * u
+                 + float(rng.uniform(-SWARM_PITCH_SPREAD, SWARM_PITCH_SPREAD)))
+        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], gl), max(0.35, ratio))
+        amp = 10 ** (swarm_fall_db(u) / 20.0)
         amp *= 10 ** (float(rng.uniform(-SWARM_GAIN_JITTER_DB, SWARM_GAIN_JITTER_DB)) / 20.0)
-        # 左右は等パワーで振る（片側へ寄せるだけなのでモノにしても消えない）。
-        pan = float(rng.uniform(-SWARM_PAN, SWARM_PAN))
-        lr = np.array([np.cos((pan + 1) * np.pi / 4), np.sin((pan + 1) * np.pi / 4)]) * np.sqrt(2)
+        if pops and u >= pops[0]:
+            amp *= 10 ** (SWARM_POP_DB / 20.0)
+            pops.pop(0)
+        p = float(rng.uniform(-1, 1)) * (SWARM_PAN_MIN
+                                         + (SWARM_PAN_MAX - SWARM_PAN_MIN) * u)
         i = int(t * sr)
-        out[i:i + len(g)] += g * amp * lr
-        step = (SWARM_STEP_HEAD + (SWARM_STEP_TAIL - SWARM_STEP_HEAD) * u)
-        t += step * (1.0 + float(rng.uniform(-SWARM_STEP_JITTER, SWARM_STEP_JITTER)))
+        seg = g * amp * pan_lr(p)
+        out[i:i + len(seg)] += seg
+        if t < 0.45:
+            head_n += 1
+        t += swarm_step(u) * (1.0 + float(rng.uniform(-SWARM_STEP_JITTER,
+                                                      SWARM_STEP_JITTER)))
         count += 1
 
     out = sk.env_fade(out, 0.0, 0.05)
-    out = out * 10 ** ((target_lufs - sk.lufs(out)) / 20.0)
-    tp = sk.true_peak_db(out)
+    nz = np.where(np.max(np.abs(out), axis=1) > 1e-5)[0]
+    if len(nz):
+        out = out[:nz[-1] + 1]
+
+    # ③ **頭 0.5 秒の高さ**で揃える（届かなければ必要なぶんだけ尖頭を丸める）。
+    drive = 0.0
+    while True:
+        z = sk.soft_clip(out, drive) if drive > 0 else out
+        g = 10 ** ((head_lufs - short_lufs(z, 0.0, SWARM_HEAD_WIN, sr)) / 20.0)
+        tp = sk.true_peak_db(z * g)
+        if tp <= -3.0 or drive >= SWARM_DRIVE_MAX:
+            z = z * g if tp <= -3.0 else z * g * 10 ** ((-3.0 - tp) / 20.0)
+            return z, count, head_n, drive
+        drive += 0.5
+
+
+def switch_build(y, sr: int):
+    """1 本の切替音から**毎回すこしずつ違う**変種を焼く（<see cref="SWITCH_VARIANTS"/>）。
+
+    ⚠⚠ **1 本ずつ高さを揃えない。** ラウドネスは尺の関数なので、尾を短くしただけの変種が
+    「短いぶん平均が高い」と判定されて小さく絞られる（`CUTS` の教訓と同型で向きが逆）。
+    揃えるのは**頭 35ms の実効値**で、そこがこの音の身元。そのあと **1 本目で決めた
+    丸めと倍率を 6 本すべてへ掛ける**。
+    """
+    src = sk.env_fade(sk.to_stereo(trim(y)), 0.0008, 0.008)
+
+    def one(head_ratio, tail_at, tail_len, tail_ratio, tail_db, *_):
+        head = resample(sk.env_fade(src[:int(SWITCH_HEAD_SEC * sr)], 0.0, 0.006), head_ratio)
+        out = np.zeros((int(0.32 * sr), 2))
+        out[:len(head)] += head
+        if tail_db > -50.0:
+            a = int(SWITCH_TAIL_AT * sr)
+            tail = sk.env_fade(src[a:a + int(tail_len * sr)], 0.002,
+                               min(SWITCH_TAIL_FADE, tail_len * 0.30))
+            tail = resample(tail, tail_ratio) * 10 ** (tail_db / 20.0)
+            i = int(tail_at * sr)
+            out[i:i + len(tail)] += tail
+        out = sk.env_fade(out, 0.0, 0.008)
+        nz = np.where(np.max(np.abs(out), axis=1) > 1e-5)[0]
+        return out[:nz[-1] + 1] if len(nz) else out
+
+    def head_db(z, sec=0.035):
+        s = z[:int(sec * sr)]
+        return 20 * np.log10(max(float(np.sqrt(np.mean(s ** 2))), 1e-9))
+
+    built = [one(*v) for v in SWITCH_VARIANTS]
+    ref = head_db(built[0])
+    built = [b * 10 ** (float(np.clip(ref - head_db(b), -3.0, 3.0)) / 20.0) for b in built]
+
+    drive = 0.0
+    while True:
+        z = sk.soft_clip(built[0], drive) if drive > 0 else built[0]
+        g = 10 ** ((SWITCH_LUFS - sk.lufs(z)) / 20.0)
+        if sk.true_peak_db(z * g) <= -3.0 or drive >= 12.0:
+            break
+        drive += 0.5
+    built = [(sk.soft_clip(b, drive) if drive > 0 else b) * g for b in built]
+    tp = max(sk.true_peak_db(b) for b in built)
     if tp > -3.0:
-        out = out * 10 ** ((-3.0 - tp) / 20.0)
-    return out, count
+        built = [b * 10 ** ((-3.0 - tp) / 20.0) for b in built]
+    return built, drive
+
+
+def ingest_switch(variants, src_dir: str) -> None:
+    """カメラ切替の変種を焼く（<see cref="SWITCH_VARIANTS"/>）。
+
+    ⚠ **`MIXES` より先に呼ぶ。** 警告つきはこの 6 本を土台にする。
+    """
+    if not variants:
+        return
+    jp, stem = SWITCH_SRC
+    raw = os.path.join(RAW, f"src_{stem}_1.wav")
+    src = os.path.join(src_dir, jp)
+    if os.path.exists(src):
+        if not decode(src, raw):
+            return
+    elif not os.path.exists(raw):
+        print(f"  無い: {jp}（{src_dir} にも {RAW} にも）")
+        return
+    else:
+        print(f"  元 mp3 が無いので復号済みを使う: {stem}")
+
+    y, sr = sk.read_wav(raw)
+    built, drive = switch_build(y, sr)
+    print(f"  {stem}_1..{len(built)}  丸め {drive:.1f}dB を 6 本へ（頭 35ms で揃えてある）")
+    for i, (b, v) in enumerate(zip(built, variants), start=1):
+        name = f"{stem}_{i}"
+        if name not in {f"{stem}_{k}" for k in range(1, len(SWITCH_VARIANTS) + 1)}:
+            continue
+        sk.write_wav(os.path.join(OUT, f"{name}.wav"), b, peak_db=-3.0)
+        d = sk.describe(b)
+        print(f"    {name:16s} {d['sec']:5.3f}s 粒{v[5]}  {d['lufs']:6.1f} LUFS  "
+              f"tp {d['true_peak_db']:5.2f}dB  鋭さ {d['sharp']:4.2f}  "
+              f"内蔵SP {d['speaker_db']:5.1f}dB  モノ {d['mono_db']:5.2f}dB  — {v[6]}")
 
 
 def ingest_swarms(swarms, src_dir: str) -> None:
@@ -743,15 +979,25 @@ def ingest_swarms(swarms, src_dir: str) -> None:
             print(f"  元 mp3 が無いので復号済みを使う: {name}")
 
         y, sr = sk.read_wav(raw)
-        out, count = swarm_build(y, sr, target)
+        out, count, head_n, drive = swarm_build(y, sr, target)
         sk.write_wav(os.path.join(OUT, f"{name}.wav"), out, peak_db=-3.0)
         d = sk.describe(out)
         # 尻がちゃんと静かになっているか（**ユーザー指示の要**なので数字で出す）。
         last = out[-int(0.25 * sk.SR):]
         rest = 20 * np.log10(max(float(np.sqrt(np.mean(last ** 2))), 1e-9))
-        print(f"  {name:16s} {count} 粒 / {d['sec']:.2f}s   {d['lufs']:6.1f} LUFS   "
-              f"tp {d['true_peak_db']:5.1f}dB   最後の 0.25s {rest:5.1f}dB   "
-              f"鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f} 内蔵SP {d['speaker_db']:5.1f}dB")
+        # ⚠ **25ms 窓の山が頭に無ければ「一撃」になっていない**（旧版はここが 150ms だった）。
+        w = int(0.025 * sk.SR)
+        env = [float(np.sqrt(np.mean(out[i:i + w] ** 2))) for i in range(0, len(out) - w, w)]
+        top = int(np.argmax(env)) * 25
+        print(f"  {name:16s} {count} 粒（0.45s までに {head_n}）/ {d['sec']:.2f}s   "
+              f"丸め {drive:.1f}dB   tp {d['true_peak_db']:5.1f}dB   山 {top}ms")
+        print(f"    頭 0.5s {short_lufs(out, 0.0, 0.5):6.1f} LUFS   "
+              f"0.5-1.2s {short_lufs(out, 0.5, 1.2):6.1f}   "
+              f"1.2-1.7s {short_lufs(out, 1.2, 1.7):6.1f}（段 4 の敷く音は約 -30.5）   "
+              f"最後の 0.25s {rest:5.1f}dB")
+        print(f"    通し {d['lufs']:6.1f} LUFS   波高 {d['crest_db']:4.1f}dB   "
+              f"鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f} 内蔵SP {d['speaker_db']:5.1f}dB   "
+              f"モノ {d['mono_db']:5.2f}dB")
 
 
 def cut_strokes(y, sr: int, step_sec: float, target_lufs: float):
@@ -919,11 +1165,14 @@ def ingest_cuts(cuts, src_dir: str) -> None:
                   f"粗さ {d['rough']:4.2f}  内蔵SP {d['speaker_db']:5.1f}dB")
 
 
-def mix_build(y, sr: int, base: np.ndarray, body_sec: float, rel_db: float):
+def mix_build(y, sr: int, base: np.ndarray, body_sec: float, rel_db: float,
+              ref_lufs: float = None):
     """もらった音の 1 発を切り出して、既に焼いた土台へ薄く重ねる（<see cref="MIXES"/>）。
 
     ⚠ **音量は土台との関係で決める。** 「小さめ」は絶対値ではなく「通常の切替音がメイン」という
     関係のことなので、土台のラウドネスを基準に `rel_db` だけ下げる。
+    ⚠⚠ **土台が家族（変種）のときは `ref_lufs` に 1 本目の高さを渡す。** 各変種のラウドネスは
+    尺の関数なので、そのまま基準にすると**警報の大きさが切り替えのたびに変わる**（0112）。
     """
     st = sk.to_stereo(trim(y))
     env = np.max(np.abs(st), axis=1)
@@ -931,7 +1180,8 @@ def mix_build(y, sr: int, base: np.ndarray, body_sec: float, rel_db: float):
     head = int(np.argmax(env > thr)) if np.any(env > thr) else 0
     a = max(0, head - int(MIX_PRE * sr))
     seg = sk.env_fade(st[a:a + int((MIX_PRE + body_sec) * sr)], MIX_IN, MIX_FADE)
-    seg = seg * 10 ** ((sk.lufs(base) + rel_db - sk.lufs(seg)) / 20.0)
+    ref = sk.lufs(base) if ref_lufs is None else ref_lufs
+    seg = seg * 10 ** ((ref + rel_db - sk.lufs(seg)) / 20.0)
 
     out = np.zeros((max(len(base), len(seg)), 2))
     out[:len(base)] += base
@@ -1023,10 +1273,14 @@ def ingest_voices(voices, src_dir: str) -> None:
 
 
 def ingest_mixes(mixes, src_dir: str) -> None:
-    """既に焼いた音へ、もらった音を薄く重ねて焼く（<see cref="MIXES"/>）。"""
-    for jp, base_name, name, body, rel, _why in mixes:
+    """既に焼いた音へ、もらった音を薄く重ねて焼く（<see cref="MIXES"/>）。
+
+    ⚠ **土台の本数ぶん焼く。** 警告の高さは**常に 1 本目**を基準にするので、
+    どの番号で鳴っても同じ警報の大きさになる。
+    """
+    for jp, base_stem, stem, count, body, rel, _why in mixes:
         src = os.path.join(src_dir, jp)
-        raw = os.path.join(RAW, f"src_{name}.wav")
+        raw = os.path.join(RAW, f"src_{stem}.wav")
         if os.path.exists(src):
             if not decode(src, raw):
                 continue
@@ -1034,26 +1288,30 @@ def ingest_mixes(mixes, src_dir: str) -> None:
             print(f"  無い: {jp}（{src_dir} にも {RAW} にも）")
             continue
         else:
-            print(f"  元 mp3 が無いので復号済みを使う: {name}")
+            print(f"  元 mp3 が無いので復号済みを使う: {stem}")
 
-        base_path = os.path.join(OUT, f"{base_name}.wav")
-        if not os.path.exists(base_path):
+        first = os.path.join(OUT, f"{base_stem}_1.wav")
+        if not os.path.exists(first):
             # ⚠ 土台が無いまま焼くと「警告音だけ」が切替音の名前で出来る（無音より悪い）。
-            print(f"  土台が無い: {base_name}.wav（先にそちらを焼くこと）")
+            print(f"  土台が無い: {base_stem}_1.wav（先にそちらを焼くこと）")
             continue
-        base = sk.to_stereo(sk.read_wav(base_path)[0])
+        ref_lufs = sk.lufs(sk.to_stereo(sk.read_wav(first)[0]))
 
         y, sr = sk.read_wav(raw)
-        out, seg = mix_build(y, sr, base, body, rel)
-        sk.write_wav(os.path.join(OUT, f"{name}.wav"), out, peak_db=-3.0)
-        d, b, g = sk.describe(out), sk.describe(base), sk.describe(seg)
-        print(f"  {name:16s} {base_name} ＋ 警告 {body * 1000:.0f}ms（{rel:+.1f}dB）")
-        print(f"    土台 {b['lufs']:6.1f} → 合成 {d['lufs']:6.1f} LUFS   "
-              f"tp {b['true_peak_db']:5.1f} → {d['true_peak_db']:5.1f}dB   "
-              f"警告だけ {g['lufs']:6.1f} LUFS")
-        print(f"    鋭さ {b['sharp']:4.2f} → {d['sharp']:4.2f}   粗さ {d['rough']:4.2f}   "
-              f"内蔵SP {b['speaker_db']:5.1f} → {d['speaker_db']:5.1f}dB   "
-              f"重心 {b['centroid_hz']:5.0f} → {d['centroid_hz']:5.0f}Hz")
+        print(f"  {stem}_1..{count}  ＋ 警告 {body * 1000:.0f}ms"
+              f"（1 本目に対し {rel:+.1f}dB ＝ 6 本とも同じ高さ）")
+        for i in range(1, count + 1):
+            base_path = os.path.join(OUT, f"{base_stem}_{i}.wav")
+            if not os.path.exists(base_path):
+                print(f"    土台が無い: {base_stem}_{i}.wav")
+                continue
+            base = sk.to_stereo(sk.read_wav(base_path)[0])
+            out, seg = mix_build(y, sr, base, body, rel, ref_lufs)
+            sk.write_wav(os.path.join(OUT, f"{stem}_{i}.wav"), out, peak_db=-3.0)
+            d, b, g = sk.describe(out), sk.describe(base), sk.describe(seg)
+            print(f"    {stem}_{i:<12d} 土台 {b['lufs']:6.1f} → 合成 {d['lufs']:6.1f} LUFS   "
+                  f"tp {d['true_peak_db']:5.2f}dB   警告だけ {g['lufs']:6.1f} LUFS   "
+                  f"鋭さ {d['sharp']:4.2f}   内蔵SP {d['speaker_db']:5.1f}dB")
 
 
 def main() -> int:
@@ -1072,8 +1330,14 @@ def main() -> int:
         for jp, name, n, target, step, why in CUTS:
             print(f"  {name+'_1..'+str(n):16s} ← {jp}\n      切り出し / 連なり {target:+.1f} LUFS"
                   f"（{1/step:.0f} 発/秒）/ {why}")
+        jp, stem = SWITCH_SRC
+        print(f"  {stem+'_1..'+str(len(SWITCH_VARIANTS)):16s} ← {jp}")
+        print(f"      尾の来る時刻・長さ・高さ・音程を変えた変種 / 1 本目を {SWITCH_LUFS:+.1f} LUFS へ")
+        for i, v in enumerate(SWITCH_VARIANTS, start=1):
+            print(f"        {i}: 粒{v[5]} 頭x{v[0]:.3f} 尾@{v[1]*1000:.0f}ms "
+                  f"{v[2]*1000:.0f}ms x{v[3]:.3f} {v[4]:+.1f}dB — {v[6]}")
         for jp, name, target, why in SWARMS:
-            print(f"  {name:16s} ← {jp}\n      小刻みに並べる / {target:+.1f} LUFS"
+            print(f"  {name:16s} ← {jp}\n      小刻みに並べる / 頭 0.5s を {target:+.1f} LUFS へ"
                   f"（{SWARM_SEC:.2f}s）/ {why}")
         for jp, name, target, why in CHORUS:
             print(f"  {name:16s} ← {jp}\n      重ねて輪にする / {target:+.1f} LUFS"
@@ -1082,9 +1346,9 @@ def main() -> int:
             layers = " + ".join(f"{n}({s:.0f}s・{len(v)} 回)" for n, s, v in SWELL_LAYERS)
             print(f"  {'（増える 3 枚）':16s} ← {jp}\n      {layers}"
                   f"\n      1 体ぶん {SWELL_SOLO_LUFS:+.1f} LUFS で 3 枚まとめて揃える / {why}")
-        for jp, base_name, name, body, rel, why in MIXES:
-            print(f"  {name:16s} ← {base_name} ＋ {jp}")
-            print(f"      1 発から {body * 1000:.0f}ms を {rel:+.1f}dB で重ねる / {why}")
+        for jp, base_stem, stem, count, body, rel, why in MIXES:
+            print(f"  {stem+'_1..'+str(count):16s} ← {base_stem}_1..{count} ＋ {jp}")
+            print(f"      1 発から {body * 1000:.0f}ms を {rel:+.1f}dB（1 本目基準）で重ねる / {why}")
         for v in VOICES:
             t0, t1 = v["cut"]
             print(f"  {v['name']:16s} ← {v['src']}")
@@ -1093,9 +1357,12 @@ def main() -> int:
                   f"{v['lufs']:+.1f} LUFS / {v['why']}")
         return 0
 
+    switch_names = {f"{SWITCH_SRC[1]}_{i}" for i in range(1, len(SWITCH_VARIANTS) + 1)}
+    alert_names = {f"{m[2]}_{i}" for m in MIXES for i in range(1, m[3] + 1)}
     names = ({p[1] for p in PLAN} | {c[1] for c in CUTS}
              | {s[1] for s in SWARMS} | {c[1] for c in CHORUS}
-             | {n for n, _s, _v in SWELL_LAYERS} | {m[2] for m in MIXES}
+             | {n for n, _s, _v in SWELL_LAYERS} | alert_names
+             | switch_names | {SWITCH_SRC[1]}
              | {v["name"] for v in VOICES})
     if a.only is not None and not set(a.only) <= names:
         missing = sorted(set(a.only) - names)
@@ -1108,13 +1375,19 @@ def main() -> int:
     # ⚠ 増える 3 枚は**家族で 1 つ**（1 枚目の高さで 3 枚を揃えるので、1 枚だけ焼き直せない）。
     swell = SWELL if (a.only is None
                       or any(n in a.only for n, _s, _v in SWELL_LAYERS)) else []
+    # ⚠ 切替の変種は**家族で 1 つ**（1 本目で決めた丸めと倍率を 6 本へ掛けるので 1 本だけ焼けない）。
+    switch = (SWITCH_VARIANTS if (a.only is None or SWITCH_SRC[1] in a.only
+                                  or bool(switch_names & set(a.only))) else [])
     # ⚠ 重ねる音は**土台と対**。`--only <土台>` でも焼き直す（土台だけ新しいと食い違う）。
-    mixes = [m for m in MIXES if a.only is None or m[2] in a.only or m[1] in a.only]
+    mixes = [m for m in MIXES
+             if a.only is None or bool(alert_names & set(a.only)) or m[1] in a.only
+             or bool(switch_names & set(a.only))]
     voices = [v for v in VOICES if a.only is None or v["name"] in a.only]
 
     os.makedirs(RAW, exist_ok=True)
     os.makedirs(OUT, exist_ok=True)
     ingest_voices(voices, a.src)
+    ingest_switch(switch, a.src)
     ingest_cuts(cuts, a.src)
     ingest_swarms(swarms, a.src)
     ingest_chorus(chorus, a.src)

@@ -69,8 +69,8 @@ MATERIALS = [
     ("sfx_screen_on", "段 4 の終わり — スクリーンが出る（もらった Cyber14-1）。**導入の山**", 0),
     ("sfx_screen_noise", "【鳴らない】その後のノイズ — 2026-08-16 に外した（音源は残してある）", 0),
     ("sfx_swap", "【鳴らない】装置が点く — 同じ縁をもらった音（sfx_screen_on）が取った", 0),
-    ("sfx_switch_1", "カメラ切替（もらった「カメラ切り替え」・**変種は 1 本だけ**）", 0),
-    ("sfx_switch_alert", "同・**人形視点が差し込まれるカット**（もらった「警告音」を 240ms だけ薄く重ねたもの）", 0),
+    ("sfx_switch_1", "カメラ切替（もらった「カメラ切り替え」・**変種 1/6**。残り 5 本は preview_switch）", 0),
+    ("sfx_switch_alert_1", "同・**人形視点が差し込まれるカット**（もらった「警告音」を 240ms だけ薄く重ねたもの）", 0),
     ("sfx_glitch_1", "映像の乱れ 1", 0),
     ("sfx_glitch_2", "映像の乱れ 2", 0),
     ("sfx_glitch_3", "映像の乱れ 3", 0),
@@ -184,9 +184,10 @@ def build_intro() -> np.ndarray:
     lay(mix, load("sfx_shatter"), t_frame)
     lay(mix, load("sfx_screen_on"), t_frame + FRAME * SCREEN_ON_AT)
     lay(mix, load("amb_bell"), t_swap + BELL_AFTER_SWAP)
-    # ⚠ 切替は 1 本だけ（もらった音源）。実機は音程と音量を散らすが、ここでは並べるだけ。
-    for at in (t_run + 2.2, t_run + 5.6, t_run + 8.4):
-        lay(mix, load("sfx_switch_1"), at, 0.9)
+    # ⚠ 切替は**変種を回す**（2026-08-23・`canon/LEDGER.md` 0112）。
+    #    実機は音程と音量も散らすが、ここでは並べるだけ。6 本の違いは `preview_switch` で聴く。
+    for i, at in enumerate((t_run + 2.2, t_run + 5.6, t_run + 8.4)):
+        lay(mix, load(f"sfx_switch_{1 + (i % 6)}"), at, 0.9)
 
     print(f"  真っ暗 0.0 / A {t_a:.1f} / 題字が消え始める {t_glyph_out:.1f} / "
           f"素通し {t_black:.1f} / 段 1 {t_real:.1f} / 格下げ {t_degrade:.1f} / "
@@ -404,18 +405,27 @@ def build_swap() -> np.ndarray:
     return out
 
 
-def build_switch() -> np.ndarray:
-    """**人形視点が差し込まれるカット**の切替音（`canon/LEDGER.md` 0106）。
+SWITCH_VARIANTS_N = 6      # ⚠ `SwitchAudioCue.DefaultVariantCount` の写し
 
-    前半は**素の切替音と合成音の対比**（無音の上で、差だけを聴く）、後半は
-    **2 周目 C の実際の刻み**（`show.json` の 1.0 / 0.9 / 0.8 / 1.4 秒・2 周目の敷く音の上で）。
+
+def build_switch() -> np.ndarray:
+    """カメラ切替の音（`canon/LEDGER.md` 0112 の変種 ＋ 0106 の警告つき）。
+
+    3 つ並べる:
+
+    1. **変種を 1 本ずつ**（無音の上で、6 本の違いだけを聴く）
+    2. **旧版の鳴り方 → 新しい鳴り方**（同じ刻みで 8 発ずつ。ここが 0112 の判定）
+    3. **2 周目 C の実際の刻み**（`show.json` の 1.0 / 0.9 / 0.8 / 1.4 秒・敷く音の上で）。
+       ここは**警告つき**が並ぶ場所で、素と交ざる
 
     ⚠ 乱れの音（`sfx_glitch_*`）は入れていない。実機では継ぎ目に重なるが、ここで判定したいのは
-    警告音の量なので、まず素で聴ける形にしてある。
-    ⚠ 散らし方は `SwitchAudioCue` の写し（gain 0.85 / 音程 ±3.5% / 音量 ±1.5dB）。**向こうを変えたらここも直す。**
+    切替音そのものなので、まず素で聴ける形にしてある。
+    ⚠ 散らし方は `SwitchAudioCue` の写し（gain 0.85 / 音程 ±3.5% / 音量 ±1.5dB /
+    **直前と同じ変種は引かない**）。**向こうを変えたらここも直す。**
     """
-    rng = np.random.default_rng(20260822)
-    plain, alert = load("sfx_switch_1"), load("sfx_switch_alert")
+    rng = np.random.default_rng(20260823)
+    plain = [load(f"sfx_switch_{i}") for i in range(1, SWITCH_VARIANTS_N + 1)]
+    alert = [load(f"sfx_switch_alert_{i}") for i in range(1, SWITCH_VARIANTS_N + 1)]
 
     def shot(clip: np.ndarray) -> np.ndarray:
         r = 1.0 + float(rng.uniform(-0.035, 0.035))
@@ -424,24 +434,40 @@ def build_switch() -> np.ndarray:
         c = np.stack([np.interp(x, np.arange(len(clip)), clip[:, ch]) for ch in (0, 1)], axis=1)
         return c * 0.85 * 10 ** (float(rng.uniform(-1.5, 1.5)) / 20.0)
 
-    total, bed_from, start = 14.0, 6.0, 7.0
+    last = [-1]
+
+    def pick(n: int) -> int:
+        v = int(rng.integers(0, n - 1))
+        if v >= last[0]:
+            v += 1
+        last[0] = v
+        return v
+
+    total, bed_from, start = 26.0, 18.0, 19.0
     steps = (1.0, 0.9, 0.8, 1.4)
     out = np.zeros((int(total * sk.SR), 2))
 
-    for at in (0.5, 1.5):
-        lay(out, shot(plain), at)
-    for at in (3.5, 4.5):
-        lay(out, shot(alert), at)
+    # ① 変種を 1 本ずつ（0.55 秒刻み）
+    for i, c in enumerate(plain):
+        lay(out, c * 0.85, 0.5 + 0.55 * i)
+    # ② 旧版の鳴り方（1 本だけ）→ 新しい鳴り方（6 本を回す）。同じ刻みで並べる
+    for i in range(8):
+        lay(out, shot(plain[0]), 5.0 + 0.62 * i)
+    for i in range(8):
+        lay(out, shot(plain[pick(SWITCH_VARIANTS_N)]), 11.0 + 0.62 * i)
 
-    # 本編の敷く音（§4 の表・2 周目）。切替音がこの上でどう立つかを聴く。
+    # ③ 本編の敷く音（§4 の表・2 周目）。切替音がこの上でどう立つかを聴く。
     lay(out, tile(load("bed_room_lap2"), total - bed_from) * 0.34, bed_from)
     lay(out, tile(load("bed_device"), total - bed_from), bed_from)
     at = start
-    for sec in steps:
-        lay(out, shot(alert), at)
+    # ⚠ 素と警告つきを交ぜる（実機の 2 周目 C は接近のカットとゾーン切替が混ざる）。
+    for k, sec in enumerate(steps):
+        i = pick(SWITCH_VARIANTS_N)
+        lay(out, shot((alert if k % 3 != 2 else plain)[i]), at)
         at += sec
-    print(f"   0.5s 素の切替音 x2   3.5s 合成 x2   {start:.0f}s 2 周目 C の刻み "
-          f"{' / '.join(f'{s:.1f}' for s in steps)} 秒（4 発）")
+    print(f"   0.5s 変種を 1 本ずつ（{SWITCH_VARIANTS_N} 本）   "
+          f"5s 旧（1 本を 8 発）→ 11s 新（6 本を 8 発）   "
+          f"{start:.0f}s 2 周目 C の刻み {' / '.join(f'{s:.1f}' for s in steps)} 秒")
     return out
 
 
@@ -457,7 +483,7 @@ def build_call() -> np.ndarray:
     ⚠ 散らし方は実機の写し — 切替音は音程 ±3.5% / 音量 ±1.5dB、**声は散らさない**。
     """
     rng = np.random.default_rng(20260823)
-    alert, call = load("sfx_switch_alert"), load("sfx_doll_call")
+    alert, call = load("sfx_switch_alert_1"), load("sfx_doll_call")
 
     def shot(clip: np.ndarray) -> np.ndarray:
         r = 1.0 + float(rng.uniform(-0.035, 0.035))
@@ -488,6 +514,55 @@ def build_call() -> np.ndarray:
     return out
 
 
+REF = os.path.join(OUT, "ref")
+
+
+def build_break() -> np.ndarray:
+    """**パススルーが割れて 2D に移るところ**（`canon/LEDGER.md` 0112）。
+
+    段 4 の実際の縁で 3 回鳴らす:
+
+    1. 新しい割れる音**だけ**（素で形を聴く）
+    2. **旧版 → 新版**（同じ場所に置いて比べる。`logs/sound/ref/sfx_shatter_prev.wav` が
+       あるときだけ。無ければ飛ばす）
+    3. **段 4 の通し**（割れる → 0.37 秒の静けさ → スクリーンが出る → 1.2 秒後に鈴）。
+       ⚠ ここが 0057 でユーザーが指定した並びで、判定はこの形でしかできない
+
+    ⚠ 敷く音（部屋 ＋ 装置）を下に置く。**尻が敷く音へ沈むかどうか**が今回直した点なので、
+    素の無音で聴くと直っているように聞こえてしまう。
+    """
+    new = load("sfx_shatter")
+    prev_path = os.path.join(REF, "sfx_shatter_prev.wav")
+    prev = None
+    if os.path.exists(prev_path):
+        prev, _ = sk.read_wav(prev_path)
+        prev = sk.to_stereo(prev)
+
+    total = 24.0
+    out = np.zeros((int(total * sk.SR), 2))
+    # ① 素で 1 回
+    lay(out, new, 0.5)
+    # ② 旧 → 新（敷く音の上で）
+    bed_from = 3.5
+    lay(out, tile(load("bed_room"), total - bed_from) * 0.85, bed_from)
+    lay(out, tile(load("bed_device"), total - bed_from), bed_from)
+    at = 4.5
+    if prev is not None:
+        lay(out, prev, at)
+        at += 3.0
+    lay(out, new, at)
+    at += 3.5
+    # ③ 段 4 の通し（0057 の並び）
+    lay(out, new, at)
+    lay(out, load("sfx_screen_on"), at + FRAME * SCREEN_ON_AT)
+    lay(out, load("amb_bell"), at + FRAME + BELL_AFTER_SWAP)
+    print(f"   0.5s 新しい割れる音だけ   "
+          f"{'4.5s 旧 → 7.5s 新（敷く音の上）' if prev is not None else '（旧版が無いので比べは飛ばす）'}   "
+          f"{at:.1f}s 段 4 の通し（割れる → 静けさ {FRAME * (1 - SCREEN_ON_AT):.2f}s → "
+          f"スクリーン → 鈴）")
+    return out
+
+
 def emit(name: str, y: np.ndarray, note: str):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, f"{name}.wav")
@@ -514,8 +589,11 @@ def main() -> int:
     emit("preview_dolls", build_dolls(), "笑い → 3 秒後に③の連絡。4 周目の敷く音の上で")
     print("3 周目（入れ替わってから C で増えるまで）:")
     emit("preview_swap", build_swap(), "実機と同じ式。**尺も実機どおり** — 増え方が判定そのもの")
-    print("人形視点が差し込まれるカットの切替音:")
-    emit("preview_switch", build_switch(), "前半は素と合成の対比 / 後半は 2 周目 C の刻み")
+    print("パススルーが割れて 2D に移るところ:")
+    emit("preview_break", build_break(), "旧 → 新の比べ ＋ 段 4 の通し（0057 の並び）")
+    print("カメラ切替の変種:")
+    emit("preview_switch", build_switch(),
+         "変種 6 本 → 旧（1 本を 8 発）→ 新（6 本を 8 発）→ 2 周目 C の刻み")
     print("人形の呼びかけ（2 周目 C の追いつき）:")
     emit("preview_call", build_call(), "前半は声だけ / 後半は切替音と重なった所")
     print(f"\n→ {OUT}")

@@ -623,8 +623,10 @@ REGISTRY = {
     # 一撃
     # ⚠⚠ `sfx_switch_*` は 2026-08-16 にユーザー提供の「カメラ切り替え.mp3」1 本へ置き換えた
     #    （`canon/LEDGER.md` 0057・`tools/ingest-sounds.py` が焼く）。**ここに戻すと上書きしてしまう。**
-    #    合成版の関数（`sfx_switch`）は設計の記録として残してあるが、**変種は 1 本だけ**になり
-    #    `sfx_switch_2/3` は消した（`SwitchAudioCue.DefaultVariantCount` = 1）。
+    #    合成版の関数（`sfx_switch`）は設計の記録として残してある。
+    # ⚠⚠ **2026-08-23 から変種は 6 本ある**（`canon/LEDGER.md` 0112・`SWITCH_VARIANTS`）。
+    #    どれも**もらった音源 1 本から**焼いており、合成は 1 ビットも混ざっていない。
+    #    ここへ `sfx_switch_2/3` を戻すと、もらった音の変種を合成音で上書きすることになる。
     "sfx_glitch_1": (lambda: sfx_glitch(0), False, False),
     "sfx_glitch_2": (lambda: sfx_glitch(1), False, False),
     "sfx_glitch_3": (lambda: sfx_glitch(2), False, False),

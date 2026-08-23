@@ -168,6 +168,22 @@ def _pos(v, default):
     return f if f is not None and f > 0 else default
 
 
+# カメラ切替の変種の本数（`SwitchAudioCue.DefaultVariantCount` /
+# `ingest-sounds.py` の `SWITCH_VARIANTS` の写し・`canon/LEDGER.md` 0112）。
+# ⚠ **3 か所を対で直す。** 片方だけ増やすと「焼いたのに FAIL」か「減ったのに OK」になる。
+SWITCH_VARIANTS_WANT = 6
+
+
+def _sw_played(sw_n) -> int:
+    """切替音の累計（数に読めなければ 0）。**変種の判定は 2 発以上鳴ってからでないと出せない。**"""
+    if not sw_n:
+        return 0
+    try:
+        return int(str(sw_n[-1]))
+    except ValueError:
+        return 0
+
+
 def effect_samples(events, key: str, t_from: float = None, t_to: float = None):
     """ev=intro / ev=sum が持つ「効果の実在」キーの値列を、時間窓で切って返す。
 
@@ -1687,6 +1703,7 @@ def analyze(events, others, exp, warns=None):
     lpf = effect_samples(events, "sndLpf")
     sw_n = effect_samples(events, "swN")
     sw_alert = effect_samples(events, "swAlert")
+    sw_var = effect_samples(events, "swVar")
 
     if not built and not sfx_events:
         w("  音の観測キーが 1 つも無い（この計装より前のビルドのログ）")
@@ -1921,7 +1938,8 @@ def analyze(events, others, exp, warns=None):
             last = str(sw_n[-1])
             if last == "nc":
                 verdict("FAIL", "切替音の音源が無い — カメラ切替がすべて無音。"
-                                "Resources/Sound/sfx_switch_1..3 を焼く")
+                                "`py -3.11 tools/ingest-sounds.py --only sfx_switch_1` の後に "
+                                "`tools/unity.ps1 menu sound-import`")
             elif last != "-":
                 zone_switches = len([e for e in events if e.get("ev") == "screen"])
                 w(f"  カメラ切替の音: {last} 回（画面の切替 {zone_switches} 回）")
@@ -1940,7 +1958,7 @@ def analyze(events, others, exp, warns=None):
             if last == "nc":
                 verdict("FAIL", "警告つきの切替音の音源が無い — 人形視点の差し込みも"
                                 "素の切替音で鳴っている。"
-                                "`py -3.11 tools/ingest-sounds.py --only sfx_switch_alert` の後に "
+                                "`py -3.11 tools/ingest-sounds.py --only sfx_switch_1` の後に "
                                 "`tools/unity.ps1 menu sound-import` を走らせる")
             elif last != "-":
                 w(f"  警告つきの切替音: {last} 回（著作は {want} カット）")
@@ -1954,6 +1972,31 @@ def analyze(events, others, exp, warns=None):
                         verdict("OK", f"警告つきの切替音が {n} 回鳴った")
                 except ValueError:
                     pass
+
+        # -- 切替音の変種（`canon/LEDGER.md` 0112）
+        #    ⚠⚠ **画にも動画にも違いが出ない。** 「毎回同じではなく」が効いた証拠はここだけ。
+        #       swVar=<焼けた本数>/<この走行で鳴った異なり数>。
+        if sw_var:
+            last = str(sw_var[-1])
+            if last != "-" and "/" in last:
+                try:
+                    built, used = (int(x) for x in last.split("/", 1))
+                except ValueError:
+                    built = used = -1
+                if built >= 0:
+                    w(f"  切替音の変種: {built} 本を掴み、{used} 種が鳴った")
+                    if built < SWITCH_VARIANTS_WANT:
+                        verdict("FAIL",
+                                f"切替音の変種が {built}/{SWITCH_VARIANTS_WANT} しか無い — "
+                                "焼き忘れか `menu sound-import` 忘れ。そのぶん同じ波形が並ぶ。"
+                                "`py -3.11 tools/ingest-sounds.py --only sfx_switch_1` の後に "
+                                "`tools/unity.ps1 menu sound-import`")
+                    elif used <= 1 and _sw_played(sw_n) >= 2:
+                        verdict("FAIL",
+                                f"{built} 本あるのに {used} 種しか鳴っていない — "
+                                "変種を選ぶ経路（`SwitchAudioCue.Pick`）が効いていない")
+                    elif used >= 2:
+                        verdict("OK", f"切替音が {used} 種で鳴った（{built} 本中）")
 
         # -- 人形の呼びかけ（2 周目 C の追いつき・canon/LEDGER.md 0109）
         #    ⚠ 1 回の体験で 1 度しか鳴らない。`ev=sfx id=DollCall` が唯一の証拠で、

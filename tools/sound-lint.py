@@ -63,13 +63,17 @@ SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何�
 #       — 母音は基本波と倍音でできているので、少ない体数で重ねるほど純度が上がる
 #       （実測: 8 体 40 回 = 0.51 / 2 体 = 0.68 / 1 体 = 0.58）。
 #       これは「発振器を置いた」ではなく**人が笑っている**という事実で、直す先が無い。
+#    ⚠ 2026-08-23 追加: カメラ切替の**変種 6 本**と警告つき 6 本（`canon/LEDGER.md` 0112）。
+#       音源は 0057 のものと同じ 1 本で、切り出し方と並べ方だけが違う。
 RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_close",
             "sfx_screen_on", "bed_room_lap2", "bed_room_lap3",
-            "sfx_shatter", "sfx_switch_1", "sfx_switch_alert", "amb_dolls_laugh",
+            "sfx_shatter", "amb_dolls_laugh",
             "bed_dolls_laugh", "bed_doll_one", "bed_dolls_grow_a", "bed_dolls_grow_b",
             # ⚠ 人の声は倍音が揃うので純度が 0.62 出る（上限 0.60）。実物がそうである以上、
             #    通すために作り変える方が §4.5 違反になる。
             "sfx_doll_call"}
+RECORDED |= {f"sfx_switch_{i}" for i in range(1, 9)}
+RECORDED |= {f"sfx_switch_alert_{i}" for i in range(1, 9)}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 
 # 発振器が居るか（掃引する純音も捕まる）。実測: 純音 0.93〜1.00 / 帯ノイズの掃引 0.31〜0.43 /
