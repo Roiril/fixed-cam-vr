@@ -534,6 +534,19 @@ namespace FixedCamVr.Streaming
             }
         }
 
+        /// <summary>
+        /// クリップ取得の試行回数と、待ちの初期値（指数バックオフ: 1s → 2s → 4s → 8s ＝ 最大 15 秒待つ）。
+        ///
+        /// ⚠⚠ **リトライが無いと、その体験は最後まで無音になる**（2026-08-30 実測）。
+        /// 起動直後は Wi-Fi がまだ立ち上がっていないことがあり、実機の走行では
+        /// アプリ起動の <b>7 秒後</b>に `Cannot connect to destination host` で 1 度失敗しただけで、
+        /// BGM が二度と鳴らなかった。BGM は起動時の <c>Begin()</c> で 1 回要求されるだけなので、
+        /// そこで落ちると再要求の機会が無い（区間指示を書いていない台本では特にそう）。
+        /// しかも**警告は logcat にしか出ない** ＝ 当日は誰も気づけない。
+        /// </summary>
+        private const int ClipFetchAttempts = 4;
+        private const float ClipFetchBackoffSec = 1f;
+
         // ---- クリップ読み込み（URL → AudioClip・キャッシュ付き）------------------
         private async Task<AudioClip?> LoadClipAsync(string url)
         {
@@ -542,17 +555,37 @@ namespace FixedCamVr.Streaming
 
             string resolved = ShowAssetResolver.Resolve(url, _server);
             AudioType type = GuessAudioType(resolved);
-            using var req = UnityWebRequestMultimedia.GetAudioClip(resolved, type);
-            if (req.downloadHandler is DownloadHandlerAudioClip dh)
-                dh.streamAudio = false;   // ループ範囲のシークが要るので全体を展開する
-            var op = req.SendWebRequest();
-            while (!op.isDone) await Task.Yield();
-            if (req.result != UnityWebRequest.Result.Success)
+
+            AudioClip? clip = null;
+            for (int attempt = 1; attempt <= ClipFetchAttempts; attempt++)
             {
-                Debug.LogWarning($"[Bgm] クリップ取得に失敗: {resolved} ({req.error})");
-                return null;
+                using var req = UnityWebRequestMultimedia.GetAudioClip(resolved, type);
+                if (req.downloadHandler is DownloadHandlerAudioClip dh)
+                    dh.streamAudio = false;   // ループ範囲のシークが要るので全体を展開する
+                var op = req.SendWebRequest();
+                while (!op.isDone) await Task.Yield();
+
+                if (req.result == UnityWebRequest.Result.Success)
+                {
+                    clip = DownloadHandlerAudioClip.GetContent(req);
+                    if (attempt > 1)
+                        Debug.Log($"[Bgm] クリップ取得に成功（{attempt} 回目）: {resolved}");
+                    break;
+                }
+
+                if (attempt >= ClipFetchAttempts)
+                {
+                    // ⚠ 最後の 1 回だけ Error にする。走行レポートの「実機ログの警告」節が拾い、
+                    //    **無音のまま全員を通す**経路を機械で検出できるようにする。
+                    Debug.LogError($"[Bgm] クリップ取得に失敗（{ClipFetchAttempts} 回試行）: {resolved} ({req.error})" +
+                                   " — この体験は BGM 無しで走ります");
+                    return null;
+                }
+                float wait = ClipFetchBackoffSec * (1 << (attempt - 1));
+                Debug.LogWarning($"[Bgm] クリップ取得に失敗（{attempt}/{ClipFetchAttempts}・{wait:F0}s 後に再試行）: " +
+                                 $"{resolved} ({req.error})");
+                await Task.Delay((int)(wait * 1000f));
             }
-            var clip = DownloadHandlerAudioClip.GetContent(req);
             if (clip == null) return null;
             _clips[url] = clip;
             return clip;
