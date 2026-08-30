@@ -1,0 +1,469 @@
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廻リ視の展示ネットワーク</title>
+<style>
+:root {
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;
+  --accent-strong:    #a8493c;
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;
+  --fs-sm:   .875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.375rem;
+  --fs-xl:   1.875rem;
+
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;
+  --radius: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); }
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li {
+  border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4);
+  position: relative; margin: 0;
+}
+.tl > li::before {
+  content: ""; position: absolute; left: -5px; top: .55em;
+  width: 8px; height: 8px; background: var(--accent);
+}
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+
+<div class="wrap">
+
+<p class="eyebrow">廻リ視 · 展示ネットワーク</p>
+<h1>ルータを持ち込む方式に変えた</h1>
+<p class="sub">仕組み ／ 当日の手順 ／ 2026-08-31 の実測</p>
+
+<div class="lead">
+<p>会場の Wi-Fi を使うのをやめて、<strong>自分のルータを持ち込んで住所を自分で決める</strong>方式にした。会場がどこであっても同じ番号のネットワークが立ち上がるので、当日ネットワークについて調べることは何も無い。置いて電源を入れるだけ。</p>
+<p>今日いちど全部を実測した。<strong>土台は繋がっている</strong> — PC・カメラ 3 台・Quest 2 台がそろって所定の番号を持ち、端末どうしも通信できていた。要対応が 3 件ある（Quest の電波掃引・カメラ B の電波・APK が古い）。</p>
+</div>
+
+<h2>1. 何をしたのか</h2>
+
+<h3>この作品が通信していること</h3>
+
+<p>体験の間、機械どうしが交わしているのは 3 種類だけで、<strong>どれも建物の中で閉じている</strong>。インターネットは 1 バイトも要らない。</p>
+
+<ul>
+<li>配信スマホ 3 台 → Quest（カメラの映像）</li>
+<li>PC の卓 → Quest（設定・演出の合図・録画した動画・当日の写真）</li>
+<li>PC の卓 → スマホ（撮影の指示・状態の確認）</li>
+</ul>
+
+<h3>会場の Wi-Fi を使うと壊れる 3 つ</h3>
+
+<div class="grid">
+<div class="card"><b>住所が毎回変わる</b><span>会場の Wi-Fi は繋いだ順に番号を配る（DHCP）。昨日 .34 だったスマホが今日 .51 になる。Quest は .34 を見に行くので黒いまま</span></div>
+<div class="card"><b>端末どうしが喋れない</b><span>公共の AP は端末を互いに隔離するのが既定。同じ Wi-Fi にいるのにスマホと Quest が直接通信できない。会場の設定なので直せない</span></div>
+<div class="card"><b>混んでいる</b><span>来場者のスマホが数百台。受信の駒が落ちる</span></div>
+</div>
+
+<p>とくに 1 つ目は実際に起きていた。方式を変える前の焼き込み値は <code>192.168.11.34</code> / <code>.3</code> / <code>.12</code> というバラバラな番号で、これは会場ではなく研究室の Wi-Fi が配った順にすぎない。</p>
+
+<h3>やったこと — 自分の LAN を持ち歩く</h3>
+
+<p>研究室の実験用ルータ（NEC Aterm WG2600HP）を持ち込んで、<em>会場の回線に一切繋がない孤立したネットワーク</em>を自分で立てる。住所は全部こちらで決めて、端末に書き込んでおく。</p>
+
+<figure>
+<svg viewBox="0 0 540 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ルータを中心に、有線の PC と、Wi-Fi のスマホ 3 台・Quest 2 台がぶら下がる構成図">
+  <g font-family="var(--gothic)" font-size="16" fill="var(--ink)">
+
+    <!-- edges -->
+    <g stroke="var(--mute)" stroke-width="1.3" fill="none">
+      <path d="M148 155 H196"/>
+      <path d="M348 155 C368 155 368 35 384 35"/>
+      <path d="M348 155 C368 155 368 93 384 93"/>
+      <path d="M348 155 H384"/>
+      <path d="M348 155 C368 155 368 217 384 217"/>
+      <path d="M348 155 C368 155 368 275 384 275"/>
+    </g>
+
+    <!-- router -->
+    <rect x="196" y="127" width="152" height="56" fill="var(--card)" stroke="var(--ink)" stroke-width="1.4"/>
+    <text x="272" y="152" text-anchor="middle" font-weight="700">ルータ</text>
+    <text x="272" y="172" text-anchor="middle" font-size="13" fill="var(--mute)">192.168.10.1</text>
+
+    <!-- pc -->
+    <rect x="4" y="127" width="144" height="56" fill="var(--card)" stroke="var(--ink)" stroke-width="1.4"/>
+    <text x="76" y="152" text-anchor="middle" font-weight="700">オペレータ卓</text>
+    <text x="76" y="172" text-anchor="middle" font-size="13" fill="var(--mute)">192.168.10.10</text>
+    <text x="172" y="148" text-anchor="middle" font-size="13" fill="var(--mute)">有線</text>
+
+    <!-- phones -->
+    <rect x="384" y="12" width="144" height="46" fill="var(--card)" stroke="var(--ink)" stroke-width="1.4"/>
+    <text x="396" y="30">カメラ A</text><text x="516" y="30" text-anchor="end" font-size="14" fill="var(--mute)">.21</text>
+    <text x="396" y="51" font-size="12" fill="var(--mute)">配信スマホ</text>
+
+    <rect x="384" y="70" width="144" height="46" fill="var(--card)" stroke="var(--ink)" stroke-width="1.4"/>
+    <text x="396" y="88">カメラ B</text><text x="516" y="88" text-anchor="end" font-size="14" fill="var(--mute)">.22</text>
+    <text x="396" y="109" font-size="12" fill="var(--mute)">配信スマホ</text>
+
+    <rect x="384" y="128" width="144" height="46" fill="var(--card)" stroke="var(--ink)" stroke-width="1.4"/>
+    <text x="396" y="146">カメラ C</text><text x="516" y="146" text-anchor="end" font-size="14" fill="var(--mute)">.23</text>
+    <text x="396" y="167" font-size="12" fill="var(--mute)">配信スマホ</text>
+
+    <!-- quests -->
+    <rect x="384" y="194" width="144" height="46" fill="var(--card)" stroke="var(--ink)" stroke-width="1.4"/>
+    <text x="396" y="212">Quest</text><text x="516" y="212" text-anchor="end" font-size="14" fill="var(--mute)">.31</text>
+    <text x="396" y="233" font-size="12" fill="var(--mute)">890864</text>
+
+    <rect x="384" y="252" width="144" height="46" fill="var(--card)" stroke="var(--ink)" stroke-width="1.4"/>
+    <text x="396" y="270">Quest</text><text x="516" y="270" text-anchor="end" font-size="14" fill="var(--mute)">.32</text>
+    <text x="396" y="291" font-size="12" fill="var(--mute)">7S06BW</text>
+
+    <text x="456" y="318" text-anchor="middle" font-size="13" fill="var(--mute)">5GHz Wi-Fi（W52）</text>
+
+    <!-- wan -->
+    <g stroke="var(--accent)" stroke-width="1.5" fill="none">
+      <path d="M272 183 V213" stroke-dasharray="4 4"/>
+      <path d="M262 190 L282 210 M282 190 L262 210"/>
+    </g>
+    <text x="262" y="240" text-anchor="middle" font-size="14" fill="var(--accent-strong)" font-weight="700">会場の回線には繋がない</text>
+    <text x="262" y="260" text-anchor="middle" font-size="13" fill="var(--mute)">WAN ポートは空のまま</text>
+  </g>
+</svg>
+<figcaption>持っていくのはこの図ごと。会場側から借りるのは電源だけ。</figcaption>
+</figure>
+
+<h3>住所の割り当て</h3>
+
+<div class="tblwrap">
+<table>
+<tr><th>番号</th><th>機材</th><th>決め方</th></tr>
+<tr><td><code>192.168.10.1</code></td><td>ルータ本体</td><td>—</td></tr>
+<tr><td><code>192.168.10.10</code></td><td>オペレータ卓 PC</td><td><strong>ルータ側で予約</strong>（有線の MAC）</td></tr>
+<tr><td><code>192.168.10.21</code></td><td>カメラ A（Phone01）</td><td>端末側に書く</td></tr>
+<tr><td><code>192.168.10.22</code></td><td>カメラ B（Phone02）</td><td>端末側に書く</td></tr>
+<tr><td><code>192.168.10.23</code></td><td>カメラ C（Phone03）</td><td>端末側に書く</td></tr>
+<tr><td><code>192.168.10.24</code></td><td>カメラ D（演出専用）</td><td>端末側に書く。使わない日は空でよい</td></tr>
+<tr><td><code>192.168.10.31</code></td><td>Quest <code>2G0YC1ZF890864</code></td><td>端末側に書く</td></tr>
+<tr><td><code>192.168.10.32</code></td><td>Quest <code>2G0YC1ZF7S06BW</code></td><td>端末側に書く</td></tr>
+</table>
+</div>
+
+<p>自動で配る範囲は <code>.2</code>〜<code>.10</code> の 9 個に狭めてある。だから <code>.11</code> 以降に手で書いた番号は、<strong>自動配布とぶつかりようがない</strong>。来客の PC が繋いでも、取れるのは <code>.2</code>〜<code>.9</code> だけ。</p>
+
+<h3>なぜ「端末側に書く」のか</h3>
+
+<p>ルータには「この機械にはいつもこの番号」と覚えさせる機能（MAC 予約）があり、最初はそれで済ませるつもりだった。8/30 に実機で測って、<em>この方式は当日壊れる</em>と分かった。</p>
+
+<dl class="qa">
+<dt>覚える鍵になる MAC が、そもそも偽物</dt>
+<dd>Quest 2 台とも Wi-Fi の MAC がランダム値だった（<code>36:1e:88:…</code> / <code>c2:14:15:…</code>）。予約は MAC を鍵にするので、鍵が毎回変わると効かない。</dd>
+
+<dt>しかも「ネットワークを削除して入れ直す」と MAC が変わる</dt>
+<dd>公式の資料には「再登録しても同じ MAC が返る」と書いてあるが、Pixel 7a で実際に変わった（<code>d6:6c:20:…</code> → <code>96:fb:79:…</code>）。<strong>当日いちばんやりがちな操作がこれ</strong>。</dd>
+
+<dt>外れても画面には何も出ない</dt>
+<dd>番号が違うだけで Wi-Fi には繋がっている。人からは正常に見えたまま、Quest だけが黒い。</dd>
+</dl>
+
+<p>端末側に書いてあれば MAC に依存しないし、ルータを別の機体に替えても設定が生きる。PC だけ例外にしたのは、<strong>PC 側の設定を 1 つも変えないため</strong> — 有線の MAC はランダム化されないので予約が確実に効くし、このルータを外して研究室の有線に戻すとき何もしなくていい。</p>
+
+<h3>ルータの中で実際に変えたのは 2 つだけ</h3>
+
+<p>8/30 に実機で一通り通した。設定画面で触ったのは次の 2 つで、あとは初期値のままでよかった。</p>
+
+<ul>
+<li><strong>自動で配る範囲を <code>.2</code>〜<code>.10</code> の 9 個に狭めた</strong>（初期値は 32 個）</li>
+<li><strong>PC の有線 MAC を <code>.10</code> に予約した</strong></li>
+</ul>
+
+<p>見て確認しただけで変えなかったもの：背面スイッチが <code>RT</code>（<code>BR</code> だと番号を配る機能そのものが動かない）／5GHz のチャネルが <code>W52</code>（<code>W53</code>・<code>W56</code> は気象レーダーを検出すると通信が切れて 30 分そのチャネルが使えない。<strong>本番中に起きるとカメラ 3 台が同時に落ちる</strong>）／ネットワーク分離が OFF（ON にすると、会場の AP で踏む事故を自分で作ることになる）。</p>
+
+<h2>2. 当日、別の会場でどうするか</h2>
+
+<div class="lead">
+<p><strong>会場のネットワークについて調べることは何も無い。</strong> Wi-Fi の名前も、パスワードも、繋がるかどうかも関係ない。ルータが「持ち歩けるネットワークそのもの」なので、コンセントさえあれば同じ <code>192.168.10.x</code> が立ち上がる。</p>
+</div>
+
+<h3>設営（10 分）</h3>
+
+<p>順序が決まっている。<strong>ルータ → 端末 → 確認</strong>。飛ばすと次が確かめられない。</p>
+
+<ol>
+<li><strong>ルータを置いて電源を入れる。</strong> 2.4GHz と 5GHz のランプが両方点くまで待つ。<strong>WAN ポートには何も挿さない</strong></li>
+<li><strong>PC の LAN ケーブルを LAN ポートへ</strong>（WAN ではない）。<code>ipconfig</code> で <code>192.168.10.10</code> が来ていること</li>
+<li><strong>スマホ 3 台の電源を入れる。</strong> Wi-Fi は自分で <code>kougaku-lab-exp-a</code> に付く。配信アプリを起動して、画面の cameraId が A / B / C と表の割り当てで合っているか見る</li>
+<li><strong>Quest 2 台の電源を入れる</strong></li>
+<li><strong>1 本流して全部を一望する。</strong> 在席している端末・cameraId・フレームの状況が 1 画面に出る</li>
+</ol>
+
+<pre><code>py -3.11 tools/net-scan.py</code></pre>
+
+<p>ここで <code>.1</code>（ルータ）・<code>.21</code>・<code>.22</code>・<code>.23</code>（配信 3 台）・<code>.31</code>・<code>.32</code>（Quest）が並べば土台は完成。PC 自身はこの一覧に出ない（<code>ipconfig</code> で見る）。Quest は応答しないことがあるので、出なくても異常ではない。</p>
+
+<ol start="6">
+<li><strong>卓の 🩺 疎通診断を押す。</strong> PC→カメラ・卓の呼びかけ・Quest の生存の 3 経路が ✅ になるか</li>
+<li><strong>Quest でアプリを起動して、卓のライブ状態でカメラ本数・音・コントローラを見る。</strong> 音とコントローラは画にも録画にも出ないので、ここでしか分からない</li>
+</ol>
+
+<h3>当日やってはいけないこと</h3>
+
+<div class="tblwrap">
+<table>
+<tr><th>やりがちな操作</th><th>何が起きるか</th><th>代わりに</th></tr>
+<tr><td>繋がらないので Wi-Fi を削除して入れ直す</td><td>手で書いた番号が消える。MAC も変わる</td><td>まず <code>net-scan.py</code>。番号は生きていることが多い</td></tr>
+<tr><td>端末の Wi-Fi を切って入れ直す</td><td>保存済みの別の AP へ勝手に移る。8/30 に <strong>5 台とも研究室の AP へ移った</strong></td><td>触らない。移ったかは <code>net-scan.py</code> に出なくなることで分かる</td></tr>
+<tr><td>ゲスト用の SSID（<code>-gx</code> / <code>-ax</code>）に繋ぐ</td><td>端末どうしの通信が切られる。会場 AP と同じ事故</td><td><code>kougaku-lab-exp-a</code> だけを使う</td></tr>
+<tr><td>スマホを放置して画面が消える</td><td><strong>配信が止まる。</strong> 番号は正しいので「ネットワークの問題」に見える</td><td>充電しながら画面が消えない設定にしてある。伏せない</td></tr>
+<tr><td>2.4GHz（<code>-g</code>）に繋ぐ</td><td>受信の駒が配信の 2/3 くらいまで落ちる</td><td>5GHz（<code>-a</code>）へ寄せる</td></tr>
+</table>
+</div>
+
+<h3>症状 → 最初に見る所</h3>
+
+<div class="tblwrap">
+<table>
+<tr><th>症状</th><th>まず見る</th></tr>
+<tr><td>端末が <code>192.168.10.x</code> を取れない</td><td>ルータが RT モードか。ランプが 2 つとも点いてから繋いだか</td></tr>
+<tr><td>PC からカメラが見えない</td><td>ネットワーク分離が ON になっていないか。ゲスト SSID に繋いでいないか</td></tr>
+<tr><td>映像が数十秒おきに全部止まる</td><td>5GHz が W53 / W56 に落ちていないか（レーダー検出の瞬断）</td></tr>
+<tr><td>卓では映るのに Quest だけ映らない</td><td>Quest の番号と焼き込み値がずれていないか。端末のキャッシュが古くないか</td></tr>
+<tr><td>番号は正しいのに映像が来ない</td><td>配信アプリが起動しているか。<strong>画面が消えていないか</strong></td></tr>
+<tr><td>急に全台が繋がらなくなった</td><td>別の AP へ移っていないか</td></tr>
+</table>
+</div>
+
+<h3>ネットワークぶんの持ち物</h3>
+
+<p>ルータ本体 ／ AC アダプタ ／ LAN ケーブル ／ スマホの充電器 3〜4 本 ／ 電源タップ。<strong>ルータの設定を書き出したファイル</strong>もあると、初期化されても数分で戻せる（下記の未対応 3 を見る）。</p>
+
+<h2>3. いまの状態</h2>
+
+<p class="muted">2026-08-31 02:00〜02:22 に実測。ルータは立ったまま、カメラ 3 台と Quest 2 台が繋がった状態。</p>
+
+<h3>土台は全部立っている</h3>
+
+<div class="tblwrap">
+<table>
+<tr><th>見たもの</th><th>結果</th></tr>
+<tr><td>PC の番号</td><td>有線で <code>192.168.10.10</code>（ルータの予約が効いている）。同時に Wi-Fi で研究室のネットワークも持っていて、<strong>卓を止めずに開発できる</strong></td></tr>
+<tr><td>カメラ 3 台</td><td><code>.21</code>=A ／ <code>.22</code>=B ／ <code>.23</code>=C。アプリは 3 台とも v0.13.0、傾きは 3 台とも <code>ok</code>、映像を出し続けている</td></tr>
+<tr><td>Quest 2 台</td><td><code>.31</code>=890864 ／ <code>.32</code>=7S06BW。手順書の表と一致</td></tr>
+<tr><td>端末どうしの通信</td><td>Quest から PC・カメラの両方に届いた。Quest が卓から動画を落とし、設定も<strong>卓から生で受け取った</strong>（<code>src=live</code>）。分離は起きていない</td></tr>
+<tr><td>PC からカメラの映像</td><td>3 台とも <strong>29.8 fps</strong>（10 秒ずつ実測）。配信側は健全</td></tr>
+<tr><td>Quest の端末キャッシュ</td><td>古い <code>192.168.11.x</code> が残っていたが、起動時に捨てられて新しい番号で上書きされた</td></tr>
+</table>
+</div>
+
+<h3>要対応 1 — Quest が 10 秒ごとに電波を掃引していた</h3>
+
+<p>Quest 側の受信が配信の 2/3 ほどしか出ておらず、<strong>3 台が同時に落ち込む</strong>波が周期的に出ていた。原因は映像経路ではなく、Quest の設定パネル（Wi-Fi の画面）が終了しないまま残っていて、<em>10 秒ごとに Wi-Fi の全チャネルを掃きに行っていた</em>こと。掃引の間は電波が別のチャネルへ出ているので、3 本の映像が一緒に途切れる。</p>
+
+<p>設定パネルを終了させたら、45 秒あたりの掃引が 8 回から 1 回に減り、受信も戻った。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>Quest の受信 fps（配信側は 29.5〜30.0）</th><th>カメラ A</th><th>カメラ B</th><th>カメラ C</th></tr>
+<tr><td>掃引が走っていたとき</td><td>23.3</td><td>17.6</td><td>22.0</td></tr>
+<tr><td>設定パネルを終了させた後</td><td><strong>27.2</strong></td><td>19.7</td><td><strong>26.3</strong></td></tr>
+<tr><td class="muted">参考：ルータ導入前（8/23・研究室の AP）</td><td class="muted">29.5</td><td class="muted">29.5</td><td class="muted">29.2</td></tr>
+</table>
+</div>
+
+<p>そのうえで体験を 200 秒まるごと通した（HMD 無しの自動走行）。<strong>映像の途切れが消えた</strong>。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>200 秒の走行で起きたこと</th><th>8/30 19:56</th><th>8/31 02:16<span class="chip">掃引を止めた後</span></th></tr>
+<tr><td>映像の張り直し</td><td>30 回</td><td><strong>0 回</strong></td></tr>
+<tr><td>砂嵐（信号が途切れて出る演出）</td><td>1 回・体験の 2.4%</td><td><strong>0 回・0.0%</strong></td></tr>
+<tr><td>カメラが繋がっていなかった観測</td><td>3 / 149</td><td><strong>0 / 100</strong></td></tr>
+<tr><td>受信 fps（A / B / C）</td><td>24.1 / 23.5 / 22.4</td><td>27.4 / 19.3 / 26.7</td></tr>
+</table>
+</div>
+
+<p>体験そのものは 3 周を完走し、著作した演出 9 本すべてが出て、終幕まで進んだ。残った ❌ 2 件（録り始めの線・2 周目カメラ 0 の録画）は 8/30 と同じもので、ネットワークとは別の話。</p>
+
+<p>当日は <strong>Quest の設定画面を開いたまま体験を始めない</strong>。開いてしまったら、いちどホームへ戻して閉じる。手で静的 IP を入れた直後がいちばん危ない — 設定画面を開いた直後だから。</p>
+
+<h3>要対応 2 — カメラ B の電波が弱い</h3>
+
+<p>掃引を止めても、カメラ B だけ他の 2 台より 7 fps 低いまま残った。PC（有線）から引くと B も 29.8 fps 出るので、<strong>スマホと配信アプリは正常</strong>。弱いのは <em>ルータと B の間の電波</em>。</p>
+
+<div class="tblwrap">
+<table>
+<tr><th>PC からの応答（10 回）</th><th>カメラ A</th><th>カメラ B</th><th>カメラ C</th></tr>
+<tr><td>平均</td><td>7 ms</td><td><strong>25 ms</strong></td><td>4 ms</td></tr>
+<tr><td>最大</td><td>15 ms</td><td><strong>61 ms</strong></td><td>13 ms</td></tr>
+<tr><td>届かなかった回</td><td>0 / 10</td><td><strong>1 / 10</strong></td><td>0 / 10</td></tr>
+</table>
+</div>
+
+<p>200 秒の走行でも同じで、B だけ受信 19.3 fps、取りこぼしは 2094 枚（A は 482 枚、C は 642 枚）だった。</p>
+
+<p>見る順番は 3 つ。<strong>① B が 5GHz（<code>-a</code>）に繋がっているか</strong> — 2.4GHz に落ちているとちょうどこの症状になる。② ルータと B の間に金属や人体、距離があるか。③ B は 3 台でいちばん熱い（45.0℃）ので、置き場所を風の通る所へ。</p>
+
+<h3>要対応 3 — 両方の Quest の APK が、BGM 修正より古い</h3>
+
+<p>入っている APK は 8/30 19:50 に焼いたもの。BGM の取得に失敗したとき諦めずに 4 回試すようにした修正は 20:12 のコミットなので、<strong>まだ端末に入っていない</strong>。<code>[Bgm] クリップ取得に失敗</code> は 8/30 の走行でも、<strong>今日の走行でも同じように出た</strong>。</p>
+
+<pre><code>.\tools\unity.ps1 build fixedcam</code></pre>
+
+<p>焼き直して 2 台とも入れ直す。<strong>片方だけに入れない</strong> — 古い APK の機に当たると「直したはずの不具合がまだある」という顔で出る。</p>
+
+<h3>まだ決めていないこと・確かめられなかったこと</h3>
+
+<div class="tblwrap">
+<table>
+<tr><th>件</th><th>いまの状態</th><th>判断の材料</th></tr>
+<tr><td>Quest の自動張り替え（<code>discoveryEnabled</code>）</td><td><code>false</code>（止まっている）</td><td>番号を固定した以上、普段は使われない。<strong>端末を 1 台入れ替えたときや、静的 IP を入れ忘れたときの保険</strong>としては戻す価値がある。切った理由に心当たりが無ければ戻す</td></tr>
+<tr><td>焼き込みの番号（<code>Phone0*.asset</code> / <code>ShowServer.asset</code>）</td><td>新しい番号が入っているが<strong>コミットしていない</strong></td><td>これは現場ごとに変わる値なので意図的にコミットしていない。ただし作業ツリーを巻き戻すと <code>192.168.11.x</code> に戻る。当日までこのファイルを戻さない</td></tr>
+<tr><td>ルータ設定の書き出しファイル</td><td><strong>見つからなかった</strong>（ダウンロード・デスクトップ・ドキュメントを見た）</td><td>ルータが初期化されると設定画面をもう一度たどることになる。<code>メンテナンス → 設定値の保存＆復元</code> で 1 ファイル取っておくのが、展示の保険としていちばん効く</td></tr>
+<tr><td>8/30 の走行で掃引が走っていたか</td><td><strong>確かめられない</strong></td><td>保存してある logcat は Unity と例外だけに絞ってあり、掃引の行（情報レベル）は最初から入っていない。<em>出ていないことは、無かったことの証拠にならない</em></td></tr>
+<tr><td>スマホ 3 台に他の Wi-Fi が保存されたままか</td><td>未確認</td><td>いま 3 台とも <code>192.168.10.x</code> にいるので当面は問題ない。会場で強い AP があると移る可能性は残る。端末の Wi-Fi 一覧で見る</td></tr>
+</table>
+</div>
+
+<p class="note">
+実測に使ったもの — <code>tools/net-scan.py</code>（在席端末の一覧）／ 各カメラの <code>/info</code> <code>/health</code> ／ Quest 実機の logcat ／ <code>quest-record.py --walk</code> の 200 秒走行（<code>Logs/capture/20260831_021634-report.md</code>）／ 比較に 8/23 と 8/30 の走行レポート。<br>
+手順書の正本は <code>docs/onsite/network-setup.md</code>、当日の全体手順は <code>docs/onsite-checklist.md</code>。
+</p>
+
+</div>
