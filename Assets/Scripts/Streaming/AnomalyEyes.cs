@@ -389,7 +389,9 @@ namespace FixedCamVr.Streaming
 
             // 当日写真の同期は常に回す（位置合わせ中・演出の外でも。落とすだけで画には触らない）。
             _photos ??= new EyeJackPhotoStore();
-            _photos.Tick(showControl, Time.unscaledTime);
+            // ⚠ 乗っ取りの最中は差し替えを仕掛けない。`_jackShots` は Snapshot の**参照**なので、
+            //    同期の完了が走ると掴んでいるテクスチャごと破棄される（機序は Tick の doc）。
+            _photos.Tick(showControl, Time.unscaledTime, inUse: _jack.Active);
 
             // 位置合わせ中は引っ込める（現実に線を重ねて合わせる作業を邪魔しない — rules/show-design.md）。
             // ⚠ ここは「流しきる」の側ではない。合わせている人の視界から**すぐ**消す。

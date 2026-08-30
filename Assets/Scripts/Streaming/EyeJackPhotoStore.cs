@@ -62,9 +62,20 @@ namespace FixedCamVr.Streaming
         /// 毎フレーム呼んでよい（変更が無ければ int 比較 1 回で返る）。
         /// リストの変更・再試行時刻で同期を仕掛ける。
         /// </summary>
-        public void Tick(ShowControlClient? show, float now)
+        /// <param name="inUse">
+        /// いま視界ジャックが走っているか。<b>走っている間は差し替えを仕掛けない。</b>
+        ///
+        /// ⚠⚠ <see cref="SyncAsync"/> は完了時に <c>Clear()</c> で <c>_ready</c> のテクスチャを
+        /// <c>Destroy</c> するが、<see cref="AnomalyEyes"/> は発火の瞬間に <see cref="Snapshot"/> で
+        /// **参照の配列**を掴んでいるだけなので、破棄されると次のコマで <c>tex == null</c> になり
+        /// <b>残りの写真が 1 枚も出ないまま乗っ取りが終わる</b>（2026-08-30）。
+        /// 踏むのは「写真を 1 枚でも落とせていない（30 秒ごとに再試行）状態で 3 周目 C に入り、
+        /// ジャックの 2.4 秒に再試行が重なったとき」と「卓が写真リストを編集したとき」。
+        /// 延期しても rev も再試行時刻も進めないので、ジャックが終われば次のフレームで仕掛かる。
+        /// </param>
+        public void Tick(ShowControlClient? show, float now, bool inUse = false)
         {
-            if (show == null || _syncing) return;
+            if (show == null || _syncing || inUse) return;
             bool revChanged = show.EyeJackPhotosRev != _seenRev;
             bool retryDue = _incomplete && now >= _retryAt;
             if (!revChanged && !retryDue) return;
@@ -135,7 +146,13 @@ namespace FixedCamVr.Streaming
                 Clear();
                 _ready.AddRange(texes);
                 _incomplete = missed;
-                Prune(keep);
+                // ⚠⚠ **取りこぼした回は掃除しない**（2026-08-30）。ファイル名は
+                //    「卓のホストを含む**絶対 URL** の SHA1」（`ShowAssetResolver` が相対 URL を
+                //    卓のホストで解決する）なので、**卓の IP が変わると全キーが変わる**。
+                //    そのとき 1 枚も落とせていなくても旧ファイルは全部 `keep` から漏れて消え、
+                //    「卓が死んでいても前回のキャッシュから出す」という設計がその場で破れる。
+                //    当日の Wi-Fi 再接続・DHCP の更新で普通に起きる。
+                if (!missed) Prune(keep);
                 if (_urls.Length > 0 || _ready.Count > 0)
                     Debug.Log($"[EyeJack] 写真 {_ready.Count}/{_urls.Length} 枚を用意した" +
                               (missed ? "（取りこぼしあり — 30 秒後に再試行）" : ""));

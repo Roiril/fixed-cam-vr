@@ -133,5 +133,60 @@ namespace FixedCamVr.Tests.Streaming
             Assert.IsTrue(l.Armed);
             Assert.IsTrue(l.Tick(true, ""));
         }
+
+        // ---- 人が止めた演出は「終わった」に数えない（2026-08-30）--------------------
+        //
+        // ⚠ 実害の型: 締めの演出（L4C0#0）が走っている最中にオペレータが 📺 カメラ固定 か
+        //    ■ 画面を取り返す を押すと、著作された「現実へ戻る 4.5 秒」を飛ばして終幕が始まる。
+
+        [Test]
+        public void InterruptedByOperator_DoesNotFire()
+        {
+            var l = Make();
+            l.Tick(true, "L4C0#0");        // 締めの演出が走っている
+            Assert.IsTrue(l.Armed);
+
+            l.NotifyInterrupted();          // 卓が画面を握った
+            Assert.IsFalse(l.Armed, "人が止めたら武装は落ちる");
+            Assert.IsFalse(l.Tick(true, ""), "空になっても撃たない");
+        }
+
+        [Test]
+        public void AfterTheInterruptionClears_ItCanArmAndFireAgain()
+        {
+            // 介入が解けて、その演出がもう一度走って終わったなら、そのときは正しく撃つ。
+            var l = Make();
+            l.Tick(true, "L4C0#0");
+            l.NotifyInterrupted();
+            Assert.IsFalse(l.Tick(true, ""));
+
+            l.Tick(true, "L4C0#0");        // 走り直した
+            Assert.IsTrue(l.Armed);
+            Assert.IsTrue(l.Tick(true, ""), "最後まで走ったので撃つ");
+        }
+
+        [Test]
+        public void InterruptionDoesNotResurrectAnAlreadyFiredCue()
+        {
+            // 撃った後の介入で再武装しない（終幕が 2 回始まらない）。落ちるのは ResetRun だけ。
+            var l = Make();
+            l.Tick(true, "L4C0#0");
+            Assert.IsTrue(l.Tick(true, ""));
+            Assert.IsTrue(l.Fired);
+
+            l.NotifyInterrupted();
+            l.Tick(true, "L4C0#0");
+            Assert.IsFalse(l.Tick(true, ""), "既に撃っているので二度は撃たない");
+        }
+
+        [Test]
+        public void InterruptionBeforeTheTakeEverRan_ChangesNothing()
+        {
+            var l = Make();
+            l.NotifyInterrupted();
+            Assert.IsFalse(l.Armed);
+            l.Tick(true, "L4C0#0");
+            Assert.IsTrue(l.Armed, "介入の後でも、走れば普通に武装する");
+        }
     }
 }

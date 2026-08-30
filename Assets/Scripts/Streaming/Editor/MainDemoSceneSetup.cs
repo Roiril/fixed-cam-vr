@@ -1340,14 +1340,20 @@ namespace FixedCamVr.Streaming.EditorTools
             var go = new GameObject(DiagnosticsName);
             go.transform.SetParent(parent, worldPositionStays: false);
 
-            // HudLogDumper: 接続 / カメラ / ゾーン / HMD を [HudDump] プレフィックスで Console に吐く
-            // （MCP read_console で時系列取得するため。診断中は 1s 周期・本番は 30 等へ）。
+            // HudLogDumper: 接続 / カメラ / ゾーン / HMD を [HudDump] プレフィックスで Console に吐く。
+            //
+            // ⚠⚠ **30 秒周期で焼く**（2026-08-30 に 1 秒から）。Quest の logcat は他プロセスが 76% を
+            //    占めており（memory/onsite_experience_test.md）、毎秒 `[HudDump]` を積むと
+            //    **走行前半のログが押し流されて肝心のエラーが読めない**。`analyze-xp-log.py` が
+            //    その取りこぼしを WARN で検出する形になっていて、自分でその状況を作っていた。
+            //    フィールド自身の Tooltip も「本番は 30s 推奨」と書いている。
+            //    診断で細かく見たいときは Inspector で 1 に戻す（このセットアップを再実行すると 30 に戻る）。
             var dumper = go.AddComponent<HudLogDumper>();
             var dumperSo = new SerializedObject(dumper);
             TrySetObjectRef(dumperSo, "registry", registry);
             TrySetObjectRef(dumperSo, "tracker", tracker);
             TrySetObjectRef(dumperSo, "hmd", hmd);
-            TrySetFloat(dumperSo, "periodicIntervalSec", 1f);
+            TrySetFloat(dumperSo, "periodicIntervalSec", 30f);
             dumperSo.ApplyModifiedPropertiesWithoutUndo();
 
             // HudToggleInput: Editor（Flat シーン）用の H キーで StatusHud をトグル（実機は右 B）。

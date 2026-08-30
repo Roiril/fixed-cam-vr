@@ -1264,6 +1264,26 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Func<int>? EyeJackReadyCountProvider;
 
+        /// <summary>
+        /// コントローラの生死（左接続 / 左位置 / 右接続 / 右位置）。<c>OvrControllerBridge</c> が配線する
+        /// （Streaming は OVR を参照しない規約なので、向こうから書きに来る — 既存の provider と同じ流儀）。
+        ///
+        /// ⚠⚠ heartbeat で卓へ送る。**切れても画にも音にも 1 ビットも出ない** — 左は体験者の唯一の
+        /// 入力（報告）なので、電池切れ・スリープで死ぬと報告が 1 件も上がらないまま終幕を迎える。
+        /// null = 未配線（卓側は「不明」として扱う）。
+        /// </summary>
+        public Func<(bool lConnected, bool lTracked, bool rConnected, bool rTracked)>? ControllerStateProvider;
+
+        // 音の実行体。**音は録画に映らない**ので、鳴っているかの唯一の証拠を heartbeat へ載せる。
+        // 後から生えることがあるので、解決できるまで heartbeat のたびに探す（周期は秒単位）。
+        private ShowSoundDirector? _soundDirector;
+        private ShowSoundDirector? ResolveSoundDirector()
+        {
+            if (_soundDirector != null) return _soundDirector;
+            _soundDirector = FindObjectOfType<ShowSoundDirector>();
+            return _soundDirector;
+        }
+
         /// <summary>視界ジャックの写真（解決済み URL 列。ファイル名順のまま。空要素はそのまま返す —
         /// 読む側（<see cref="EyeJackPhotoStore"/>）が飛ばす）。</summary>
         public string[] ResolveEyeJackPhotoUrls()
@@ -1509,43 +1529,76 @@ namespace FixedCamVr.Streaming
             catch (Exception e) { Debug.LogWarning($"[ShowControl] 初期化失敗: {e.Message}"); }
         }
 
+        /// <summary>
+        /// 初期化の 1 工程。**例外をここで止める**（隣の工程へ波及させない）。
+        ///
+        /// ⚠⚠ 旧実装は 9 工程を 1 個の try で囲んでいたので、**途中の 1 つが投げると
+        /// それ以降が永久に走らなかった**（2026-08-30 に分離）。とくに <c>PushCourseAndSchedule</c> が
+        /// 飛ぶと <c>LapCounter</c> へ <c>course.order</c> が届かず、**周回が 1 も進まない
+        /// ＝ 体験が終わらない**。卓が居れば long-poll の <c>Apply</c> が上書き復旧するが、
+        /// **PC 不在の現場では復旧経路がゼロ**。工程は互いに独立なので、1 つ落ちても残りは意味を持つ。
+        ///
+        /// 失敗は <c>LogError</c>（<c>LogWarning</c> ではない）。走行レポートの「実機ログの警告」節が
+        /// エラーを FAIL として拾うので、**気づけない初期化の片落ち**を作らない。
+        /// </summary>
+        private void InitStep(string name, Action body)
+        {
+            try { body(); }
+            catch (Exception e) { Debug.LogError($"[ShowControl] 初期化の「{name}」で失敗（他の工程は続けます）: {e}"); }
+        }
+
+        private async Task InitStepAsync(string name, Func<Task> body)
+        {
+            try { await body(); }
+            catch (OperationCanceledException) { throw; }   // 破棄・無効化はここで握らない
+            catch (Exception e) { Debug.LogError($"[ShowControl] 初期化の「{name}」で失敗（他の工程は続けます）: {e}"); }
+        }
+
         private async Task InitializeAsync(CancellationToken ct)
         {
+            // ⚠ 工程ごとに独立して落とす（機序は InitStep の doc）。順序は変えていない。
             // 1) 焼き込み StreamingAssets/show/show.json（最下位）。無ければ何もしない。
-            await LoadBakedShowAsync(ct);
+            await InitStepAsync("焼き込みの読込", () => LoadBakedShowAsync(ct));
             // 2) 端末キャッシュ（焼き込みを上書き）。ライブが既に適用済みなら両方スキップ（ライブ優先）。
-            if (_rev < 0) LoadAndApplyCache();
+            InitStep("端末キャッシュの適用", () => { if (_rev < 0) LoadAndApplyCache(); });
             // 2.5) 録画係。**卓が居なくても録れなければならない**（1 周目を録って 3 周目に流すのは
             //      現地 PC 不在でも成立する体験）。旧実装はライブ受信の Apply でしか EnsureRecorder を
             //      呼んでおらず、焼き込み / 端末キャッシュの record.enabled は読むだけで録画係が
             //      生成されず、Quest 単体では 1 フレームも録れなかった（2026-07-29 修正）。
-            EnsureRecorder();
+            InitStep("録画係の生成", EnsureRecorder);
             // 2.6) 体験の骨格。録画係と同じ理由で**卓が居なくても成立させる**（3 周で終わることは
             //      現地 PC 不在でも体験の一部）。相は Intro から始まる（起動＝導入）。
-            ResolveRunDirector()?.Configure(_run);
-            PushFeel();
+            InitStep("骨格の設定", () => ResolveRunDirector()?.Configure(_run));
+            InitStep("撮像の質", PushFeel);
             // 3) 統合後の接続先・post を一度反映（焼き込み/キャッシュのどちらが勝っても 1 回）。
-            ApplyCameraEndpoints();
-            ApplyPostForActive();
+            InitStep("カメラの接続先", ApplyCameraEndpoints);
+            InitStep("画像加工", ApplyPostForActive);
             // 3.5) カメラ切替タイミング（焼き込み / キャッシュ由来。未指定なら Director がコード既定へ戻す）。
-            ApplySwitchTiming();
+            InitStep("切替タイミング", ApplySwitchTiming);
             // 3.6) BGM。トラック表 + ラン既定を供給して再生を開始する（show.json に bgm 指定が
             //      無ければ BgmDirector の既定クリップ = 従来の固定ループがそのまま鳴る）。
-            var bgm = ResolveBgmDirector();
-            if (bgm != null)
+            InitStep("BGM", () =>
             {
-                bgm.SetServer(server);
-                PushBgm();
-                bgm.Begin();
-            }
+                var bgm = ResolveBgmDirector();
+                if (bgm != null)
+                {
+                    bgm.SetServer(server);
+                    PushBgm();
+                    bgm.Begin();
+                }
+            });
             // 4) 周回順・スケジュールを LapCounter / CueScheduler へ供給。
-            PushCourseAndSchedule();
+            //    ⚠ **ここが飛ぶと体験が終わらない**（course.order が届かず周回が進まない）。
+            InitStep("周回順・演出表", PushCourseAndSchedule);
             // 5) layout / course が入っていれば通知（ZoneLayoutApplier / LapCounter が再取得）。
-            if (_layout != null)
+            InitStep("layout / course の通知", () =>
             {
-                LayoutChanged?.Invoke();
-                CourseChanged?.Invoke();
-            }
+                if (_layout != null)
+                {
+                    LayoutChanged?.Invoke();
+                    CourseChanged?.Invoke();
+                }
+            });
         }
 
         private void OnDestroy()
@@ -2020,6 +2073,8 @@ namespace FixedCamVr.Streaming
                 //  activeCue の遷移として畳む（ここで StopOverlay すると _appliedCue と実状態がずれ、
                 //  同じ cue を次に発火できなくなる）。
                 timelineDirector?.AbortActive();
+                // 人が止めた演出は「終わった」に数えない（終幕の早撃ちを断つ・2026-08-30）。
+                ResolveRunDirector()?.NotifyTakeInterrupted();
             }
 
             // 1.66) カメラ切替の現場調整（control.minDwellSec / switchCooldownSec）。
@@ -2110,6 +2165,10 @@ namespace FixedCamVr.Streaming
             // インサートも同条件で抑止する（activeCue 非空 or cameraOverride 非空中は発火しない）。
             bool liveSuppressed = !string.IsNullOrEmpty(cueId) || !string.IsNullOrEmpty(_appliedOverride);
             timelineDirector?.SetSuppressed(liveSuppressed);
+            // ⚠ 卓が画面を握っているあいだは終幕の合図を武装させない（2026-08-30）。
+            //    抑止は走行中の演出を畳んで ActiveTakeId を空にするので、そのままだと
+            //    `EndingCueLogic` が「著作した演出が終わった」と読んで終幕を早撃ちする。
+            if (liveSuppressed) ResolveRunDirector()?.NotifyTakeInterrupted();
             // スタッフが介入している間の区間は「体験者の滞在」として測らない
             //（カメラ固定中はゾーン追跡自体が止まるので、そのまま測ると滞在が水増しされる）。
             if (liveSuppressed) _dwell.Reset();
@@ -2834,9 +2893,28 @@ namespace FixedCamVr.Streaming
                     // どの APK が書いたキャッシュか。次の起動で照合して、別 APK のものなら捨てる。
                     buildGuid = Application.buildGUID ?? "",
                 };
-                File.WriteAllText(ConfigCachePath, JsonUtility.ToJson(cfg));
+                WriteAtomic(ConfigCachePath, JsonUtility.ToJson(cfg));
             }
             catch (Exception e) { Debug.LogWarning($"[ShowControl] 設定キャッシュ保存失敗: {e.Message}"); }
+        }
+
+        /// <summary>
+        /// <c>.tmp</c> へ書いてから差し替える。**書いている途中で電源が落ちても、既にある版が壊れない。**
+        ///
+        /// ⚠ 素の <c>File.WriteAllText</c> は既存ファイルを先に truncate するので、そこで切れると
+        /// **壊れた JSON が残る**。次の起動は毎回パースに失敗して焼き込み値へ落ちる ＝
+        /// 卓が居ない現場では設定が黙って巻き戻る。同じ手当てが
+        /// <c>CourseFrame.SaveRegistration</c> にもある（あちらが壊れると位置合わせが消えて
+        /// 導入が自動では二度と始まらない）。
+        /// </summary>
+        internal static void WriteAtomic(string path, string text)
+        {
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, text);
+            if (!File.Exists(path)) { File.Move(tmp, path); return; }
+            // File.Replace は同一ボリューム前提。使えない環境（一部の Android）では消してから移す。
+            try { File.Replace(tmp, path, null); }
+            catch { File.Delete(path); File.Move(tmp, path); }
         }
 
         /// <summary>ログ用に識別子を頭 8 文字へ詰める（全部出しても現場では読めない）。</summary>
@@ -2954,6 +3032,21 @@ namespace FixedCamVr.Streaming
             // 位置合わせの状態。registered=false / needsReReg=true のまま体験を始めるとゾーンがズレたまま動く。
             public bool registered;
             public bool needsReReg;
+            // ---- 当日「気づけない失敗」の 2 系統（2026-08-30 追加）------------------------------
+            // どちらも**画にも録画にも 1 ビットも出ない**ので、卓がここを出さないと現場で検知できない。
+            //
+            // コントローラ。左は体験者の唯一の入力（報告）、右はスタッフの操作（ランリセット・位置合わせ）。
+            // ⚠ 接続と位置は別物 — 電源が入っていれば接続は true だが、カメラから見えていないと姿勢は無効。
+            public bool ctrlLConnected;
+            public bool ctrlLTracked;
+            public bool ctrlRConnected;
+            public bool ctrlRTracked;
+            // 音。⚠⚠ **音は録画に映らない**（CLAUDE.md）。掴めなかった音源が 1 つでもあれば
+            //    設計どおりには鳴っておらず、audible が 0.0 なら**そもそも無音**。
+            //    -1 = 音の実行体がシーンに居ない（`menu scene` の焼き直し漏れ）。
+            public int sndResolved = -1;
+            public int sndMissing = -1;
+            public float sndAudible = -1f;
             // 体験の骨格（ShowRunDirector 由来）。卓のラン状態パネルが「導入中 0:12」「2 周目 ・
             // 経過 1:05 / 目安 3:00」「終了（次の体験者へ）」を出すのに要る。
             //   phase: "INTRO" | "RUN" | "END"
@@ -3043,6 +3136,20 @@ namespace FixedCamVr.Streaming
                     hb.needsReReg = CourseNeedsReRegProvider != null && CourseNeedsReRegProvider();
                     hb.eyeJackListed = _eyeJackPhotos.Length;
                     hb.eyeJackReady = EyeJackReadyCountProvider != null ? EyeJackReadyCountProvider() : -1;
+
+                    // 当日「気づけない失敗」の 2 系統（機序は Heartbeat の doc）。
+                    if (ControllerStateProvider != null)
+                    {
+                        var (lc, lt, rc, rt) = ControllerStateProvider();
+                        hb.ctrlLConnected = lc;
+                        hb.ctrlLTracked = lt;
+                        hb.ctrlRConnected = rc;
+                        hb.ctrlRTracked = rt;
+                    }
+                    ShowSoundDirector? snd = ResolveSoundDirector();
+                    hb.sndResolved = snd != null ? snd.ClipsResolved : -1;
+                    hb.sndMissing = snd != null ? snd.ClipsMissing : -1;
+                    hb.sndAudible = snd != null ? snd.AudibleSum : -1f;
 
                     if (active != null)
                     {

@@ -457,9 +457,21 @@ namespace FixedCamVr.Streaming.Recording
             Debug.Log($"[SegmentRecorder] 録画終了{(capped ? "（容量が足りず尺が縮んだ）" : "")} " +
                       $"lap={s.lap} camera={s.camera} frames={_lastFrames} bytes={_lastBytes} " +
                       $"起点={(_lastStarted ? "線" : "末尾")} → {path}");
-            if (_lastFrames == 0)
+            // ⚠⚠ **実績を読む前に「書き終わったか」を見る**（2026-08-30）。書き出しは背景スレッドで、
+            //    `Dispose` の待ちは 300ms で打ち切る（メインスレッドを止めないため）。打ち切られた回では
+            //    `WrittenFrames` はまだ 0 なので、そのまま読むと**録れているのに「1 枚も録れていない」**と
+            //    警告し、`SegmentClosed` に frames=0 を配って解析器が偽の FAIL を出す。
+            if (!s.writer.FlushCompleted)
+            {
+                Debug.LogWarning($"[SegmentRecorder] 書き出しが間に合わなかった lap={s.lap} camera={s.camera} " +
+                                 $"— 背景で続いています（渡した枚数 {s.writer.QueuedFrames}）。" +
+                                 $"実績は未確定なので、この区間の枚数・容量は過少に出ます");
+            }
+            else if (_lastFrames == 0)
+            {
                 Debug.LogWarning($"[SegmentRecorder] 1 枚も録れていない lap={s.lap} camera={s.camera} " +
                                  $"— この区間を指す録画カットは無言で飛びます");
+            }
             SegmentClosed?.Invoke(s.lap, s.camera, _lastFrames, _lastBytes);
         }
 

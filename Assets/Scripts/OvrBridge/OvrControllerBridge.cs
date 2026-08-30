@@ -96,6 +96,13 @@ namespace FixedCamVr.OvrBridge
                  "null でも報告そのものは動く（画に出ないだけ）。")]
         [SerializeField] private CommsPanel? comms;
         private int _lastCommsPulse;
+        // 連絡の面を毎フレーム探しに行かないための再試行の間隔（面が無い構成での 90Hz 全走査を断つ）。
+        private const float CommsResolveRetrySec = 2f;
+        private float _commsRetryAt;
+
+        // コントローラの生死（heartbeat 経由で卓が読む）。⚠ 接続と位置は別物 — 電源が入っていれば
+        // 接続は true だが、カメラから見えていないと姿勢は無効（memory/hmd 系の既知の罠）。
+        private bool _lConnected, _lTracked, _rConnected, _rTracked;
 
         private void Start()
         {
@@ -137,6 +144,16 @@ namespace FixedCamVr.OvrBridge
             {
                 var reg = courseRegistration;
                 showControl.CourseRegistrationActiveProvider = () => reg.IsActive;
+            }
+
+            // コントローラが生きているかを卓へ流す（2026-08-30）。
+            // ⚠⚠ **切れても画にも音にも出ない。** 左は体験者の唯一の入力なので、電池切れ・スリープで
+            //    死ぬと `CommsPanel.ApplyHint` が押し方の案内を黙って空文字にするだけで、卓にも HMD にも
+            //    何も出ない。オペレータが気づくのは終幕の報告が「０」になったとき ＝ もう手遅れ。
+            //    Streaming は OVR を参照しない規約なので、両方を知っているここから書きに来る。
+            if (showControl != null)
+            {
+                showControl.ControllerStateProvider = () => (_lConnected, _lTracked, _rConnected, _rTracked);
             }
 
             _modeLogic.Configure(LongPressSec);
@@ -244,13 +261,22 @@ namespace FixedCamVr.OvrBridge
             bool rConnected = OVRInput.IsControllerConnected(OVRInput.Controller.RTouch);
             bool rTracked = rConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.RTouch);
             guidePanel?.SetControllerState(rConnected, rTracked);
+            _rConnected = rConnected;
+            _rTracked = rTracked;
 
             bool regActive = courseRegistration != null && courseRegistration.IsActive;
 
             // AIエージェントからの連絡が届いたら、体験者の手（左）を震わせる。
             // ⚠ 連絡の面（Diagnostics）も体験の骨格（Streaming）も OVR を参照しない規約なので、
             //    **向こうから読みに来る**（ShowBodyInput / UserPresentProvider と同じ流儀）。
-            if (comms == null) comms = FindObjectOfType<CommsPanel>();
+            // ⚠ 未配線のときは**間隔を置いて**探す（2026-08-30）。素の `if (comms == null)` は
+            //    `[Comms]` を持たない構成で **90Hz で全 GameObject を走査し続ける**。
+            //    `ShowTelemetryHost` は同じ解決を最初から間隔つきでやっていて、ここだけ非対称だった。
+            if (comms == null && Time.unscaledTime >= _commsRetryAt)
+            {
+                comms = FindObjectOfType<CommsPanel>();
+                if (comms == null) _commsRetryAt = Time.unscaledTime + CommsResolveRetrySec;
+            }
             if (comms != null && comms.PulseCount != _lastCommsPulse)
             {
                 _lastCommsPulse = comms.PulseCount;
@@ -288,11 +314,14 @@ namespace FixedCamVr.OvrBridge
             // 左コントローラに追従する面は廃止した。
             // ⚠ 位置の有効性はこの面の見え方には効かない（頭に追従する）が、観測（ctrlL）と
             //    人形の左腕が動いているかの手掛かりのために一緒に渡す。
+            // ⚠ 左の生死は面の有無に関わらず測る（卓の heartbeat が読む）。
+            //   面が無い構成でも、体験者の入力が死んでいることは分からなければならない。
+            _lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
+            _lTracked = _lConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
             if (comms != null)
             {
-                bool lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
-                bool lTracked = lConnected
-                                && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
+                bool lConnected = _lConnected;
+                bool lTracked = _lTracked;
                 comms.SetControllerState(lConnected, lTracked);
                 comms.SetMarkState(_markHold.Progress01, _markHold.Confirming);
             }

@@ -411,6 +411,18 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
       `ShowRunLogic` は `_phase` を `Finished` にしない（`_endHeldSec` の分岐）ので、
       **`phase` だけ見ていると「本編」のままで、体験がもう終わっていることが分からない**
     - **`lapSec`** = いまの周の経過。企画書の「各周およそ 30 秒」は周単位でしか判定できない
+  - ⚠⚠ **当日「気づけない失敗」の 2 系統を載せた**（2026-08-30・卓のライブ状態に 2 行）。
+    どちらも**画にも録画にも 1 ビットも出ない**ので、卓が出さないと現場で検知できない。
+    - **`sndResolved` / `sndMissing` / `sndAudible`**（`ShowSoundDirector` 由来・`-1` = 実行体が居ない）。
+      `CLAUDE.md` 自身が「**音は録画に映らない**ので `ev=sfx` / `sndBuilt` が唯一の証拠」と書いているのに、
+      その証拠は logcat にしか無く**当日は読めなかった** ＝ 無音のまま全員を通す経路が空いていた。
+      卓は `sndMissing > 0` で ❌、`sndAudible == 0` で ⚠（導入の頭は正しく無音なので止めない）。
+      ⚠ 「BGM」欄は `show.json` のトラック定義を見ているだけで、実機が鳴らせているかは見ていない
+    - **`ctrlLConnected` / `ctrlLTracked` / `ctrlRConnected` / `ctrlRTracked`**
+      （`OvrControllerBridge.ControllerStateProvider` 経由。Streaming は OVR を参照しない規約なので
+      向こうから書きに来る）。**左は体験者の唯一の入力**で、切れると `CommsPanel.ApplyHint` が
+      押し方の案内を黙って空文字にするだけ ＝ 報告が 1 件も上がらないまま終幕を迎える。
+      ⚠ **接続と位置は別物**（伏せてある / 体の陰では接続だけ true で姿勢が無効 = 正常）
 
 - **実測滞在時間**（2026-07-25〜）: 区間 (lap, camera) に体験者が実際に居た秒数を
   [`SegmentDwellLog`](../../Assets/Scripts/Streaming/SegmentDwellLog.cs)（純ロジック）が測り、heartbeat の

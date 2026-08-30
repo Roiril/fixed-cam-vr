@@ -123,7 +123,23 @@ namespace FixedCamVr.Streaming
         {
             // MjpegScreen が Awake で .material をインスタンス化するので同じものを共有する。
             _screen = GetComponent<MjpegScreen>();
-            _material = GetComponent<Renderer>().material;
+            var rend = GetComponent<Renderer>();
+            if (rend == null)
+            {
+                // 他の writer に合わせて null を許容する（MjpegScreen 側と対）。
+                Debug.LogError("[ScreenOverlay] Renderer が無い — 差し替えが 1 枚も出せません");
+                enabled = false;
+                return;
+            }
+            _material = rend.material;
+
+            // 前のセッションが残した動画キャッシュを掃除する（2026-08-30）。
+            // ⚠ Quest のアプリは force-kill されるのが普通なので **OnDestroy はしばしば走らない**。
+            //    素材 URL は時刻入り（`/captures/…_20260823_194234.mp4`）で撮り直すたびに変わるため、
+            //    掃除しないと端末に mp4 が積み続ける（1 本 1.0〜1.6MB）。しかも SegmentRecorder が
+            //    同じ領域を使うので、**録画の容量を食う**。
+            //    起動時点で `_videoFileCache` は空 ＝ 残っている `ovr_*.mp4` は全部前のセッションの孤児。
+            PruneOrphanVideoCache();
 
             _player = gameObject.AddComponent<VideoPlayer>();
             _player.playOnAwake = false;
@@ -135,6 +151,34 @@ namespace FixedCamVr.Streaming
             _player.errorReceived += OnVideoError;
 
             ApplyStrength(0f);
+        }
+
+        /// <summary>
+        /// 前のセッションが残した <c>ovr_*.mp4</c> を消す。<c>SegmentRecorder</c> は
+        /// <c>rec/</c> の下に書くので巻き込まない（パターンで絞る）。失敗しても体験は続ける。
+        /// </summary>
+        private static void PruneOrphanVideoCache()
+        {
+            try
+            {
+                string dir = Application.temporaryCachePath;
+                if (!Directory.Exists(dir)) return;
+                int n = 0;
+                long bytes = 0;
+                foreach (string p in Directory.GetFiles(dir, "ovr_*.mp4"))
+                {
+                    try
+                    {
+                        bytes += new FileInfo(p).Length;
+                        File.Delete(p);
+                        n++;
+                    }
+                    catch { /* 使用中・権限。1 本落とせなくても残りは掃除する */ }
+                }
+                if (n > 0)
+                    Debug.Log($"[ScreenOverlay] 前のセッションの動画キャッシュを掃除した: {n} 本 / {bytes / (1024 * 1024)}MB");
+            }
+            catch (Exception e) { Debug.LogWarning($"[ScreenOverlay] 動画キャッシュの掃除に失敗: {e.Message}"); }
         }
 
         private void OnDestroy()

@@ -2399,7 +2399,7 @@ MonoBehaviour:
   tracker: {fileID: 729808748}
   hmd: {fileID: 612330381}
   fpsWindowSec: 1
-  periodicIntervalSec: 1
+  periodicIntervalSec: 30
   initialDump: 1
 --- !u!1 &1694318004
 GameObject:

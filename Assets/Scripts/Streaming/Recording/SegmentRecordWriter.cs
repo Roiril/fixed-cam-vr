@@ -43,8 +43,19 @@ namespace FixedCamVr.Streaming.Recording
         /// </summary>
         public const float DefaultPostSec = 2f;
 
-        /// <summary>書き出しの待ち上限 (ms)。超えたら諦めて体験へ戻る（背景スレッドは書き続ける）。</summary>
-        private const int FlushTimeoutMs = 2000;
+        /// <summary>
+        /// 書き出しの待ち上限 (ms)。超えたら諦めて体験へ戻る（背景スレッドは書き続ける）。
+        /// **これはメインスレッドの停止時間の上限**なので短い（VR で数百 ms を超えると酔いに出る）。
+        /// 実測は数十 ms なので、通常は 1 度も当たらない。
+        /// </summary>
+        private const int FlushTimeoutMs = 300;
+
+        /// <summary>
+        /// 録り始めの合図（<c>record.startLineId</c>）が効いた区間で、**起点から先に残す上限** (ms)。
+        /// 起点だけで切ると、長く留まった体験者ぶんが RAM に積み続ける（落とすのが容量上限だけになる）。
+        /// 実測滞在は 7 秒前後なので、30 秒は著作の意図（線 → 区間の終わり）を切らない余裕がある。
+        /// </summary>
+        private const int StartWindowMs = 30_000;
 
         /// <summary>録画の上限。0 以下は「無制限」ではなく既定値へ倒す（暴走させない）。</summary>
         public readonly struct Limits
@@ -79,6 +90,8 @@ namespace FixedCamVr.Streaming.Recording
         private long _written;
         private int _writtenFrames;
         private bool _stopped;
+        private volatile bool _flushDone;   // 背景スレッドが書き終えたか（実績が確定したか）
+        private int _queuedFrames;          // 書き出しへ渡した枚数（Dispose で確定）
         private volatile bool _capped;
         private int _lastPtsMs = -1;
 
@@ -107,6 +120,19 @@ namespace FixedCamVr.Streaming.Recording
         /// <see cref="Dispose"/> の後に読むこと。
         /// </summary>
         public int WrittenFrames => Interlocked.CompareExchange(ref _writtenFrames, 0, 0);
+
+        /// <summary>
+        /// 書き出しが終わっているか。<b>false のあいだ <see cref="WrittenBytes"/> /
+        /// <see cref="WrittenFrames"/> は未確定（0 のことがある）。</b>
+        /// <see cref="Dispose"/> の待ちを打ち切ったときに false のまま返る。
+        /// </summary>
+        public bool FlushCompleted => _flushDone;
+
+        /// <summary>
+        /// 書き出しへ渡した枚数（<see cref="Dispose"/> で確定・以後不変）。
+        /// <see cref="FlushCompleted"/> が false のときに「録れているはずの枚数」を言える唯一の値。
+        /// </summary>
+        public int QueuedFrames => _queuedFrames;
 
         /// <summary>いまリングに載っている枚数（診断用）。</summary>
         public int BufferedFrames => _ring.Count;
@@ -207,8 +233,13 @@ namespace FixedCamVr.Streaming.Recording
                 Item head = _ring.Peek();
                 // 録り始めの合図が来ていれば、**そこより前だけ**を落とす（末尾の窓は見ない）。
                 // 来ていなければ従来どおり「末尾 tailSec 秒」。
+                // ⚠ 起点の合図が来ていれば「そこより前」を落とす。**ただし時間の上限は残す**
+                //    （2026-08-30）。起点だけで切ると、その区間に長く留まった体験者ぶんが
+                //    丸ごと RAM に積み続ける — 落とす条件が容量上限だけになり、
+                //    **ラン全体の残量（maxTotalMB・既定 200MB）いっぱいまで managed byte[] で載る**。
+                //    実測滞在は 7 秒前後なので 30 秒あれば著作の意図（線から区間の終わりまで）は満たす。
                 bool tooOld = _startPtsMs >= 0
-                    ? head.ptsMs < _startPtsMs
+                    ? (head.ptsMs < _startPtsMs || anchor - head.ptsMs > StartWindowMs)
                     : anchor - head.ptsMs > _tailMs;
                 bool tooBig = _ringBytes > _limits.maxBytes;
                 if (!tooOld && !tooBig) break;
@@ -233,9 +264,18 @@ namespace FixedCamVr.Streaming.Recording
             _ringBytes = RecordedSegmentFormat.HeaderBytes;
             if (items.Length == 0) return;
 
+            _queuedFrames = items.Length;
             var thread = new Thread(() => Flush(items)) { IsBackground = true, Name = "SegmentRecordWriter" };
             thread.Start();
             // 2.7MB 程度なので実測は数十 ms。万一詰まっても体験を止めない（待ちは打ち切る）。
+            //
+            // ⚠⚠ **ここはメインスレッドで、しかも体験者が区間を跨いだその瞬間に走る**
+            //    （`SegmentRecorder.Close` ← `OnCameraEntered` / `Update`）。VR で数百 ms を超える
+            //    フリーズは実害（酔い）なので、待ちは短く切って背景へ逃がす（2026-08-30 に 2000ms から）。
+            //    打ち切ったときは実績（WrittenBytes / WrittenFrames）がまだ 0 なので、
+            //    **呼び手は `FlushCompleted` を見てから数値を読むこと** — 見ないと
+            //    「録れているのに 1 枚も録れていない」と警告し、`SegmentClosed` に frames=0 を配って
+            //    解析器（analyze-xp-log.py）が偽の FAIL を出す。
             try { thread.Join(FlushTimeoutMs); } catch { }
         }
 
@@ -271,6 +311,7 @@ namespace FixedCamVr.Streaming.Recording
             finally
             {
                 try { fs?.Dispose(); } catch { }
+                _flushDone = true;   // 失敗経路でも「もう待っても増えない」を伝える
             }
         }
     }

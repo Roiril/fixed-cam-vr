@@ -50,11 +50,29 @@ namespace FixedCamVr.Streaming
             _fired = false;
         }
 
-        /// <summary>周回リセット（新しい体験者）。<b>フラグが落ちる唯一の場所。</b></summary>
+        /// <summary>周回リセット（新しい体験者）。<b>武装と発火の両方が落ちる唯一の場所。</b></summary>
         public void ResetRun()
         {
             _seen = false;
             _fired = false;
+        }
+
+        /// <summary>
+        /// <b>人が演出を止めた</b>（卓の 📺 カメラ固定 / 手動 cue / ■ 画面を取り返す）。武装だけ落とす。
+        ///
+        /// ⚠⚠ これが無いと**終幕が早撃ちされる**（2026-08-30）。<see cref="Tick"/> は
+        /// 「指した演出が走っていた ＆ いま走っていない」で撃つが、<b>走らなくなった理由を見ていない</b>。
+        /// <c>TakeRunner.AbortActive</c> と <c>SetSuppressed(true)</c> はどちらも <c>CleanupActive</c> を通って
+        /// <c>ActiveTakeId</c> を空にするので、**締めの演出の最中にオペレータがカメラを固定するだけで
+        /// 相が Finished へ落ちる**。現行の台本（<c>L4C0#0</c>）ではそこで著作された
+        /// 「現実へ戻る 4.5 秒」のカットが丸ごと飛ぶ。
+        ///
+        /// 落とすのは <c>_seen</c> だけ（<c>_fired</c> は触らない）。介入が解けた後にその演出が
+        /// もう一度走って終われば、そのときは正しく撃つ。
+        /// </summary>
+        public void NotifyInterrupted()
+        {
+            _seen = false;
         }
 
         /// <summary>

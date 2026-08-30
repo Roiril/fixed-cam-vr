@@ -360,7 +360,20 @@ namespace FixedCamVr.Tracking
                     floorSpreadM = _floorSpreadM,
                     regSchema = _regSchema,
                 };
-                File.WriteAllText(RegistrationPath, JsonUtility.ToJson(data));
+                // ⚠⚠ `.tmp` へ書いてから差し替える（2026-08-30）。素の WriteAllText は既存ファイルを
+                //    先に truncate するので、そこで電源が落ちると**壊れた registration.json が残る**。
+                //    次の起動は読み込みに失敗して未登録扱いになり、course 変換が identity へ落ちる ＝
+                //    **通過ライン・開始位置・接近の判定が原理的に成立せず、導入が自動では二度と始まらない**
+                //    （現場では「立っても始まらない」としか見えず、出口はスタッフの ⏭ だけになる）。
+                //    同じ手当てが ShowControlClient.WriteAtomic にもある（設定キャッシュ側）。
+                string tmp = RegistrationPath + ".tmp";
+                File.WriteAllText(tmp, JsonUtility.ToJson(data));
+                if (!File.Exists(RegistrationPath)) File.Move(tmp, RegistrationPath);
+                else
+                {
+                    try { File.Replace(tmp, RegistrationPath, null); }
+                    catch { File.Delete(RegistrationPath); File.Move(tmp, RegistrationPath); }
+                }
             }
             catch (Exception e)
             {

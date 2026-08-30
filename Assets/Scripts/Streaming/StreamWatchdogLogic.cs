@@ -110,6 +110,11 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private bool _everReceived;
 
+        // 「接続は張れているのに 1 枚も来ない」を測るための、接続確立の立ち上がり時刻。
+        // _lastFrameTime は触らない（SignalLostFx が「未受信カメラ」の判定に 0 を読むため・A2）。
+        private bool _prevConnected;
+        private float _connectedSince;
+
         /// <summary>
         /// LoadImage 失敗時。連続失敗が枚数 or 時間の閾値を超え、かつ cooldown 明けなら true（要再接続）。
         /// true 返却時は streak をクリアし _lastReconnectTime を更新する。
@@ -144,8 +149,13 @@ namespace FixedCamVr.Streaming
         /// <b>lag 判定を行わない</b>。熱で落ちた fps は経路の詰まりではないので、張り直しても直らないどころか
         /// 黒 / 砂嵐が出たうえに再接続の負荷でさらに熱が上がる（5 秒ごとの再接続ループになる）。
         /// stall は熱でも「本当にフレームが来ていない」ので従来どおり効かせる。
+        ///
+        /// <paramref name="connected"/> は「MJPEG の接続が確立しているか」（<c>MjpegStreamReceiver.IsConnected</c>）。
+        /// **1 枚も受けていないのに接続だけ生きている**（半開 TCP・配信が黙った）を拾うためにだけ使う。
+        /// 既定 false ＝ 渡さない呼び出し側の挙動は 1 ビットも変わらない。
         /// </summary>
-        public ReconnectReason EndTick(float now, float unscaledDt, float phoneFps, bool sourceThrottling)
+        public ReconnectReason EndTick(float now, float unscaledDt, float phoneFps, bool sourceThrottling,
+                                       bool connected = false)
         {
             // lag 判定の前提（phoneFps>1）を外し、溜まった窓も捨てる
             // （捨てないと熱が引いた瞬間に古い蓄積で即再接続する）。
@@ -197,6 +207,30 @@ namespace FixedCamVr.Streaming
             {
                 _lastReconnectTime = now;
                 return ReconnectReason.Stall; // _lastFrameTime は書き換えない（A2）。
+            }
+
+            // 3b. 接続は張れたのに 1 枚も来ない（半開 TCP / 配信が黙った）。
+            //
+            // ⚠⚠ 上の stall は `_everReceived` を前提にしているので、**ヘッダだけ返して
+            //    黙った配信**が素通りする穴が空いていた。接続確立後の read には
+            //    タイムアウトが無く（Mono の NetworkStream.ReadAsync は token で切れない）、
+            //    破れるのは RequestReconnect の socket.Close だけなのに、その引き金 3 つ
+            //    （stall / lag / decode-fail）が**どれも「フレームが 1 枚は来ている」**を
+            //    前提にしている。⇒ そのカメラは公演の最後まで砂嵐のまま復帰しない。
+            //    現場に居ないカメラでは connected が false のままなので、
+            //    「居ないものへ張り直しを撒かない」という上の意図はそのまま保たれる。
+            if (connected && !_prevConnected) _connectedSince = now; // 確立の立ち上がりを基準にする
+            if (!connected) _connectedSince = 0f;
+            _prevConnected = connected;
+
+            if (!_everReceived
+                && _connectedSince > 0f
+                && !_suspended
+                && now - _connectedSince >= StallReconnectSec
+                && now - _lastReconnectTime >= StallReconnectSec)
+            {
+                _lastReconnectTime = now;
+                return ReconnectReason.Stall;
             }
 
             return ReconnectReason.None;

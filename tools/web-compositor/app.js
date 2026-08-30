@@ -188,18 +188,35 @@ function latches() {
   return out;
 }
 
+// ⛑ / ▶ が届かなかった理由。**次の描画で消えない**（renderLatchBar が毎回書き足す）。
+// 押した瞬間だけ出す文言にすると、long-poll の更新に 1 秒で上書きされて誰も読めない。
+let lastLatchError = '';
+
 // ⛑ が解除する対象（体験を壊すものだけ）。▶ ラン開始 も同じ集合を消す。
+//
+// ⚠⚠ **1 つずつ結果を見る**（2026-08-30）。旧実装は 4 種の postCommand を投げっぱなしで、
+//    `postCommand` はサーバ断でも例外を出さず `{ok:false}` を返すだけ（common.js）。
+//    ＝ 瞬断や卓の再起動中に押すと**押した感触だけ残って何も解除されない**。
+//    前の体験者のカメラ固定・演出・素材を抱えたまま次の人を入れることになる。
+// 戻り値は「届かなかったものの名前」。空配列 ＝ 全部通った。
 async function clearBreakingLatches() {
-  await postCommand({ type: 'setCameraOverride', camera: null });
-  await postCommand({ type: 'stopCue' });
+  const failed = [];
+  const step = async (label, cmd) => {
+    const r = await postCommand(cmd);
+    if (!r || r.ok === false) failed.push(label);
+  };
+  await step('カメラ固定', { type: 'setCameraOverride', camera: null });
+  await step('手動の演出', { type: 'stopCue' });
   // 走行中の演出も畳む（stopCue だけでは自動発火の演出に届かない。2026-07-28）。
-  await postCommand({ type: 'abortTake' });
+  await step('走行中の演出', { type: 'abortTake' });
   // ⚠ ここで latches()（＝卓のメモリ state）を見ない。long-poll 遅延で古いことがあり、
   //    取りこぼすと「前の体験者の素材が次の演出に出る」という最悪の形で残る。必ず取り直す。
   const s = await getState();
-  for (const sl of ((s && s.control && s.control.slots) || [])) {
-    if (sl && sl.name) await postCommand({ type: 'bindSlot', name: sl.name, url: '' });
+  if (!s) { failed.push('素材スロット（状態を読めません）'); return failed; }
+  for (const sl of ((s.control && s.control.slots) || [])) {
+    if (sl && sl.name) await step(`素材スロット ${sl.name}`, { type: 'bindSlot', name: sl.name, url: '' });
   }
+  return failed;
 }
 
 function renderLatchBar() {
@@ -209,7 +226,13 @@ function renderLatchBar() {
   bar.style.display = ls.length ? '' : 'none';
   bar.classList.toggle('warn-only', ls.length > 0 && breaking.length === 0);
   const t = $('#latchText');
-  if (t) t.textContent = (breaking.length ? '⚠ ' : '注意 ') + ls.map((l) => l.text).join(' ／ ');
+  if (t) {
+    let msg = (breaking.length ? '⚠ ' : '注意 ') + ls.map((l) => l.text).join(' ／ ');
+    // 届かなかった解除は、latch が消えるまで出し続ける（1 秒後の描画で流さない）。
+    if (lastLatchError) msg += (ls.length ? ' ／ ' : '') + lastLatchError;
+    t.textContent = msg;
+  }
+  if (lastLatchError) bar.style.display = '';
   const btn = $('#latchClearAll');
   if (btn) btn.style.display = breaking.length ? '' : 'none';
   const ctrl = (state && state.control) || {};
@@ -218,7 +241,16 @@ function renderLatchBar() {
   const stop = $('#emgStop');
   if (stop) stop.classList.toggle('armed', !!ctrl.activeCue);
 }
-if ($('#latchClearAll')) $('#latchClearAll').onclick = () => clearBreakingLatches();
+if ($('#latchClearAll')) $('#latchClearAll').onclick = async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;                       // 連打で 4 種の command が交差しない
+  const failed = await clearBreakingLatches();
+  btn.disabled = false;
+  lastLatchError = failed.length
+    ? `⛑ 解除が届きませんでした: ${failed.join(' / ')}（卓サーバを確認）`
+    : '';
+  renderLatchBar();
+};
 
 // アクティブカメラ id（heartbeat の index 優先）
 function activeCamId() {
@@ -1162,9 +1194,21 @@ if ($('#runStart')) {
     ctrl.slots = [];   // 前の体験者のために束縛した素材を持ち越さない（2026-07-28）
     const r = await postState({ control: ctrl });
     // 走行中の演出は control の書き換えでは畳まれない（activeCue を使わないため）。世代カウンタで確実に止める。
-    await postCommand({ type: 'abortTake' });
+    const rAbort = await postCommand({ type: 'abortTake' });
+    // ⚠⚠ **両方の結果を見る**（2026-08-30）。旧実装は `postState` の結果だけで成功表示を出しており、
+    //    `abortTake` が届かなくても「リセットしました」と出ていた ＝ **前の体験者の演出を
+    //    抱えたまま次の人を入れる**。どちらも失敗時は例外ではなく `{ok:false}` を返すだけ。
+    const okState = r && r.ok !== false;
+    const okAbort = rAbort && rAbort.ok !== false;
     const el = $('#runNext');
-    if (el && r && r.ok !== false) el.textContent = `▶ ラン開始（epoch ${ctrl.runEpoch}）— 周回 / 演出 / 固定 / 素材スロットをリセットしました`;
+    if (el) {
+      if (okState && okAbort) {
+        el.textContent = `▶ ラン開始（epoch ${ctrl.runEpoch}）— 周回 / 演出 / 固定 / 素材スロットをリセットしました`;
+      } else {
+        const ng = [!okState && '周回・固定・素材スロット', !okAbort && '走行中の演出'].filter(Boolean);
+        el.textContent = `⚠ ラン開始が途中までしか届いていません（未処理: ${ng.join(' / ')}）— 卓サーバを確認して押し直す`;
+      }
+    }
   };
 }
 // ⏭ 導入を終える / 🏁 体験を終える / ⚡ 乱れ — いずれも世代カウンタで届ける
@@ -1690,6 +1734,49 @@ function preflightRows() {
         : { s: 'ng', label: '目の写真',
             detail: `Quest には ${ejR}/${ejL} 枚しか届いていません — 卓サーバへの接続を確認`
                     + '（30 秒ごとに自動で取り直します）' });
+    }
+
+    // 🔊 音（2026-08-30 追加）。⚠⚠ **音は録画に映らない**（CLAUDE.md）ので、
+    //   これが無いと「無音のまま全員通す」経路が空いたままになる。旧 Unity は送らない → -1 で行が出ない。
+    //   ⚠ 卓の「BGM」欄は show.json のトラック定義を見ているだけで、実機が鳴らせているかは見ていない。
+    const sndMissing = Number(u.sndMissing);
+    const sndResolved = Number(u.sndResolved);
+    const sndAudible = Number(u.sndAudible);
+    if (Number.isFinite(sndMissing) && sndMissing >= 0) {
+      if (sndMissing > 0) {
+        rows.push({ s: 'ng', label: '音',
+          detail: `音源を ${sndMissing} 本 掴めていません（掴めた ${sndResolved} 本）`
+                  + ' — 設計どおりには鳴りません。実機ログの [Sound] を見る' });
+      } else if (Number.isFinite(sndAudible) && sndAudible <= 0.001) {
+        // 導入の頭など、正しく無音の瞬間もある。**止める材料にはしないが黙らない。**
+        rows.push({ s: 'warn', label: '音',
+          detail: `音源は ${sndResolved} 本 揃っていますが、いま出力が 0.00（無音）`
+                  + ' — 導入の頭なら正常。本編で続くなら端末の音量とヘッドホンを確認' });
+      } else {
+        rows.push({ s: 'ok', label: '音', detail: `音源 ${sndResolved} 本 / 出力 ${sndAudible.toFixed(2)}` });
+      }
+    }
+
+    // 🎮 コントローラ（2026-08-30 追加）。⚠⚠ **切れても画にも音にも出ない。**
+    //   左は体験者の唯一の入力（報告）。死ぬと報告が 1 件も上がらないまま終幕を迎え、
+    //   オペレータが気づくのは報告数が「０」になったとき ＝ もう手遅れ。
+    //   右が死ぬとランリセットも位置合わせもできない。
+    //   ⚠ 接続と位置は別物 — 伏せてある / 体の陰では接続だけ true で姿勢が無効になる（正常）。
+    if (typeof u.ctrlLConnected === 'boolean') {
+      const parts = [];
+      if (!u.ctrlLConnected) parts.push('左（体験者の報告）が切れています');
+      if (!u.ctrlRConnected) parts.push('右（スタッフ操作）が切れています');
+      if (parts.length) {
+        rows.push({ s: 'ng', label: 'コントローラ',
+          detail: parts.join(' ／ ') + ' — 電池・スリープを確認（左が死ぬと報告が 1 件も上がりません）' });
+      } else {
+        const pos = [u.ctrlLTracked ? null : '左は位置が取れていません',
+                     u.ctrlRTracked ? null : '右は位置が取れていません'].filter(Boolean);
+        rows.push(pos.length
+          ? { s: 'warn', label: 'コントローラ',
+              detail: `両方つながっています（${pos.join(' ／ ')}）— 伏せてある / 体の陰なら正常` }
+          : { s: 'ok', label: 'コントローラ', detail: '左右とも生きています' });
+      }
     }
   }
 

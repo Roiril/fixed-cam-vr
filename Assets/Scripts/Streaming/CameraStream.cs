@@ -351,7 +351,8 @@ namespace FixedCamVr.Streaming
             // ⚠ `/health` を 1 度も取れていないときも **0 ではなく -1（不明）**。
             //   0 を渡すと「たったいま来た」に化ける（`SetSourceAgeMs` の注記）。
             _latency.SetSourceAgeMs(_health?.latestFrameAgeMs ?? -1f);
-            var reason = _watchdog.EndTick(now, udt, phoneFps, _health?.IsHot ?? false);
+            // connected を渡すのは「接続は張れたのに 1 枚も来ない」を拾うため（StreamWatchdogLogic 3b）。
+            var reason = _watchdog.EndTick(now, udt, phoneFps, _health?.IsHot ?? false, _receiver.IsConnected);
             if (reason == StreamWatchdogLogic.ReconnectReason.Lag)
             {
                 Debug.Log($"[CameraStream] lag detected (recv={_watchdog.ReceivedFps:F1}/phone={phoneFps:F1}). reconnecting.");

@@ -223,6 +223,20 @@ namespace FixedCamVr.Streaming
             // 名指ししたもの**（canon/LEDGER.md 0048）。落とす場所はここ 1 つ。
             _ending.ResetRun();
             ApplyGate();
+            // ⚠⚠ **ゲートを閉じた「後」にもう一度武装を落とす**（2026-08-30）。
+            //    ラン開始の号令元（`ShowControlClient.TriggerRunReset` / `BeginNewVisitorRunLocal`）は
+            //    `timelineDirector.ResetRun()` → `RunReset?.Invoke()` → ここ、の順で走る。
+            //    中央の `RunReset` は `LapCounter.ResetRun` → `SeedCurrentZone` →
+            //    `CueScheduler.NotifyCameraEntered` → `TakeRunnerLogic.ArmEnterTakes` まで届くが、
+            //    **その時点ではまだ前の相のゲートが開いている**（閉じるのは直上の `ApplyGate`）。
+            //    ＝ 前の体験者が本編を走っている最中にラン開始を押すと、シード先のカメラに
+            //    lap=1 の演出があれば**導入中に本編の演出が武装され、次フレームで画面を奪う**。
+            //    カットが `untilZoneChange` ならゲートが閉じているぶんゾーン変化も届かず、
+            //    watchdog（既定 45 秒）まで導入の裏で居座る。
+            //    号令元の順序を入れ替える手もあるが、**導入を挟まない設定**（`introEnabled:false`）では
+            //    `_logic.BeginRun()` が即 `RunBegan` を返して `OnRunBegan` → `BeginMainRun` →
+            //    `RunReset` が走るので、号令元の残りと二重リセットになる。ここで落とす方が安全。
+            timelineDirector?.ResetRun();
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             NotifyPhaseIfChanged();
             RunRestarted?.Invoke();
@@ -230,6 +244,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>導入を今すぐ終える（卓 / 現地のスタッフ操作）。</summary>
         public void RequestAdvanceIntro() => _logic.RequestAdvance();
+
+        /// <summary>
+        /// <b>人が走行中の演出を止めた</b>（卓の 📺 カメラ固定 / 手動 cue / ■ 画面を取り返す）。
+        /// 終幕の合図の武装だけ落とす — 詳しい機序は <see cref="EndingCueLogic.NotifyInterrupted"/>。
+        /// </summary>
+        public void NotifyTakeInterrupted() => _ending.NotifyInterrupted();
 
         /// <summary>
         /// 慣らし歩行の計時を今から始める（導入演出が終わった合図）。<c>IntroDirector</c> が呼ぶ。

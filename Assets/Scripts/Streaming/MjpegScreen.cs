@@ -168,6 +168,18 @@ namespace FixedCamVr.Streaming
         private void Awake()
         {
             _renderer = GetComponent<Renderer>();
+            // ⚠ 同じ GameObject を掴む他の writer（CameraFeelFx / GlitchFx / SignalLostFx / SwapMorphFx /
+            //    ScreenOsd / OutroDirector / CameraSwitchDirector）は全部 null を許容しているのに、
+            //    **ここだけ素で参照していた**（2026-08-30 に揃えた）。prefab を組み直して Renderer が
+            //    外れると Awake がここで落ち、下の `_tex` の生成（＝ 未初期化 Texture2D が Quest GPU で
+            //    白ノイズ化するのを防ぐ黒塗り）まで到達しない。しかも他の writer は黙って no-op する。
+            if (_renderer == null)
+            {
+                Debug.LogError("[MjpegScreen] Renderer が無い — スクリーンに何も出せません。" +
+                               "この GameObject の MeshRenderer を確認（`menu scene` で組み直す）");
+                enabled = false;
+                return;
+            }
             _material = _renderer.material; // インスタンス化（スクリーンは 1 枚想定）
 
             if (!UseRegistry)

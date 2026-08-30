@@ -271,5 +271,85 @@ namespace FixedCamVr.Streaming.Tests
             //  now-_lastReconnectTime=1<10 で再発火ゲートが阻む）。
             Assert.That(w.EndTick(now: 51f, unscaledDt: 0.016f, phoneFps: 0f), Is.EqualTo(Reason.None));
         }
+
+        // ---- 3b: 接続は張れたのに 1 枚も来ない -----------------------------------------
+        //
+        // ⚠ 実害の型: 配信スマホが HTTP ヘッダを返した直後に Wi-Fi が切れる / スリープする。
+        //    read はタイムアウトを持たず（Mono の ReadAsync は token で切れない）、
+        //    破れるのは RequestReconnect だけなのに、その引き金 3 つが
+        //    「フレームが 1 枚は来ている」を前提にしている ＝ 公演の最後まで砂嵐のまま。
+
+        [Test]
+        public void Connected_ButNeverReceived_FiresStallAfter10s()
+        {
+            var w = new StreamWatchdogLogic();
+            // 接続確立（now=5）。この時点では発火しない。
+            Assert.That(w.EndTick(5f, 0.016f, 0f, false, connected: true), Is.EqualTo(Reason.None));
+            Assert.That(w.EndTick(14f, 0.016f, 0f, false, connected: true), Is.EqualTo(Reason.None),
+                "確立から 9s ではまだ待つ");
+            Assert.That(w.EndTick(15f, 0.016f, 0f, false, connected: true), Is.EqualTo(Reason.Stall),
+                "確立から StallReconnectSec で張り直す");
+        }
+
+        [Test]
+        public void NotConnected_AndNeverReceived_StaysQuiet()
+        {
+            // 現場に居ないカメラ（host 未設定 / 電源が入っていない）へ張り直しを撒かない。
+            // これは 2026-07-31 の実測（走行 240s で 24 回の無駄な再接続）で入れた既存の意図。
+            var w = new StreamWatchdogLogic();
+            for (float t = 1f; t <= 60f; t += 1f)
+            {
+                Assert.That(w.EndTick(t, 0.016f, 0f, false, connected: false), Is.EqualTo(Reason.None),
+                    $"t={t}: 接続できていないカメラでは発火しない");
+            }
+        }
+
+        [Test]
+        public void Connected_ThenFrameArrives_HandsOverToTheNormalStall()
+        {
+            var w = new StreamWatchdogLogic();
+            w.EndTick(5f, 0.016f, 0f, false, connected: true);
+            w.OnFrameDecoded(6f);   // 1 枚来た ＝ 以後は従来の stall の担当
+            Assert.That(w.EndTick(15f, 0.016f, 0f, false, connected: true), Is.EqualTo(Reason.None),
+                "最終フレームから 9s ではまだ待つ（確立からではなく最終フレームから数える）");
+            Assert.That(w.EndTick(16f, 0.016f, 0f, false, connected: true), Is.EqualTo(Reason.Stall));
+            Assert.That(w.LastFrameRealtime, Is.EqualTo(6f), "A2: stall は最終 decode 時刻を汚さない");
+        }
+
+        [Test]
+        public void Reconnect_RestartsTheGraceFromTheNewHandshake()
+        {
+            // 張り直した後にまた黙る配信でも、確立のたびに猶予から数え直す（連打しない）。
+            var w = new StreamWatchdogLogic();
+            w.EndTick(5f, 0.016f, 0f, false, connected: true);
+            Assert.That(w.EndTick(15f, 0.016f, 0f, false, connected: true), Is.EqualTo(Reason.Stall));
+
+            w.EndTick(16f, 0.016f, 0f, false, connected: false);  // 切断
+            w.EndTick(17f, 0.016f, 0f, false, connected: true);   // 再確立
+            Assert.That(w.EndTick(26f, 0.016f, 0f, false, connected: true), Is.EqualTo(Reason.None),
+                "再確立から 9s ではまだ待つ");
+            Assert.That(w.EndTick(27f, 0.016f, 0f, false, connected: true), Is.EqualTo(Reason.Stall));
+        }
+
+        [Test]
+        public void Suspended_DoesNotFire_EvenWhenConnectedAndSilent()
+        {
+            // HMD を外している間は表示を止めているだけ（従来の stall と同じ扱い）。
+            var w = new StreamWatchdogLogic();
+            w.EndTick(5f, 0.016f, 0f, false, connected: true);
+            w.SetSuspended(true, 6f);
+            Assert.That(w.EndTick(20f, 0.016f, 0f, false, connected: true), Is.EqualTo(Reason.None));
+        }
+
+        [Test]
+        public void OmittingConnected_KeepsTheOldBehaviour()
+        {
+            // 既定 false ＝ 引数を渡さない既存の呼び出し側は 1 ビットも変わらない。
+            var w = new StreamWatchdogLogic();
+            for (float t = 1f; t <= 60f; t += 1f)
+            {
+                Assert.That(w.EndTick(t, 0.016f, 0f), Is.EqualTo(Reason.None), $"t={t}");
+            }
+        }
     }
 }

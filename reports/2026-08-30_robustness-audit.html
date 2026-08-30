@@ -1,0 +1,593 @@
+<title>廻リ視 堅牢化監査</title>
+<style>
+  :root {
+    --paper: #f5efe2;
+    --card: #ece4d4;
+    --ink: #2b2723;
+    --mute: #6a6257;
+    --line: #d8cdb8;
+    --accent: #b85042;
+    --accent-strong: #a8493c;
+    --accent-2: #5f7d70;
+    --accent-2-strong: #526c61;
+
+    --fs-xs: 0.75rem;
+    --fs-sm: 0.875rem;
+    --fs-base: 1rem;
+    --fs-md: 1.125rem;
+    --fs-lg: 1.375rem;
+    --fs-xl: 1.875rem;
+
+    --mincho: "Shippori Mincho", "Yu Mincho", "Hiragino Mincho ProN", serif;
+    --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #191512;
+      --card: #221d18;
+      --ink: #ede6d6;
+      --mute: #a99e90;
+      --line: #3a332b;
+      --accent: #e0663a;
+      --accent-strong: #e87d55;
+      --accent-2: #8fae9f;
+      --accent-2-strong: #a3bfb1;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #191512;
+    --card: #221d18;
+    --ink: #ede6d6;
+    --mute: #a99e90;
+    --line: #3a332b;
+    --accent: #e0663a;
+    --accent-strong: #e87d55;
+    --accent-2: #8fae9f;
+    --accent-2-strong: #a3bfb1;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--gothic);
+    font-size: var(--fs-base);
+    line-height: 1.8;
+    margin: 0;
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; }
+
+  h1, h2, h3 {
+    font-family: var(--mincho);
+    line-height: 1.35;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h1 { font-size: var(--fs-xl); }
+  h2 {
+    font-size: var(--fs-lg);
+    border-bottom: 3px solid var(--ink);
+    padding-bottom: 8px;
+    margin: 48px 0 24px;
+  }
+  h3 { font-size: var(--fs-md); margin: 0; }
+
+  .eyebrow {
+    font-size: var(--fs-xs);
+    letter-spacing: .12em;
+    color: var(--mute);
+    margin: 0 0 8px;
+  }
+  .lede { font-size: var(--fs-md); margin: 16px 0 0; }
+  .meta { font-size: var(--fs-sm); color: var(--mute); margin: 8px 0 0; }
+
+  header { border-bottom: 2px solid var(--line); padding-bottom: 24px; }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    margin: 32px 0 0;
+  }
+  .summary div { background: var(--card); padding: 12px 16px; }
+  .summary dt { font-size: var(--fs-xs); color: var(--mute); letter-spacing: .12em; }
+  .summary dd {
+    font-family: var(--mono);
+    font-size: var(--fs-lg);
+    font-variant-numeric: tabular-nums;
+    margin: 4px 0 0;
+  }
+
+  .item { border-top: 1px solid var(--line); padding: 24px 0 0; margin: 24px 0 0; }
+  /* 見出しの太罫の直後に細罫を重ねない（二重線に見える）。:first-of-type は
+     .wrap 直下の最初の div にしか効かず、section ごとの先頭には当たらない。 */
+  h2 + .item { border-top: none; padding-top: 0; margin-top: 0; }
+  .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+  .id {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--mute);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip {
+    font-size: var(--fs-xs);
+    letter-spacing: .12em;
+    padding: 2px 8px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .crit { color: var(--paper); background: var(--accent); border-color: var(--accent); }
+  .high { color: var(--ink); border-color: var(--ink); }
+  .med  { color: var(--mute); border-color: var(--line); }
+  .done { color: var(--accent-2-strong); border-color: var(--accent-2); }
+  .open { color: var(--accent-strong); border-color: var(--accent); }
+
+  dl.q { margin: 16px 0 0; }
+  dl.q dt {
+    font-size: var(--fs-xs);
+    letter-spacing: .12em;
+    color: var(--mute);
+    margin: 12px 0 0;
+  }
+  dl.q dd { margin: 4px 0 0; }
+
+  code, .mono { font-family: var(--mono); font-size: 0.9em; }
+  a { color: var(--accent-strong); }
+
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+  th, td { border-bottom: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; line-height: 1.5; }
+  th { font-size: var(--fs-xs); letter-spacing: .12em; color: var(--mute); font-weight: normal; white-space: nowrap; }
+
+  .note {
+    background: var(--card);
+    border-left: 4px solid var(--accent);
+    padding: 12px 16px;
+    margin: 24px 0 0;
+  }
+  .note.calm { border-left-color: var(--line); }
+  .note p { margin: 0; }
+  .note p + p { margin-top: 8px; }
+
+  ul { margin: 8px 0 0; padding-left: 1.4em; }
+  li { margin: 4px 0 0; }
+  em { font-style: normal; color: var(--accent-strong); }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">FIXED-CAM-VR / 廻リ視</p>
+  <h1>展示前の堅牢化監査</h1>
+  <p class="lede">正常系ではなく「壊し方」を探した。視点を直交させた 5 系統の監査と、Critical 判定 2 件の反証にかけた結果。</p>
+  <p class="meta">2026-08-30 ／ 対象 <span class="mono">Assets/Scripts</span> ランタイム 154 ファイル・46,131 行 ＋ 卓 <span class="mono">tools/web-compositor</span>。TableDuo / MyCobotHand は対象外。</p>
+
+  <dl class="summary">
+    <div><dt>CRITICAL</dt><dd>2</dd></div>
+    <div><dt>HIGH</dt><dd>7</dd></div>
+    <div><dt>修正して検証済み</dt><dd>12</dd></div>
+    <div><dt>EDITMODE テスト</dt><dd>1650 / 1650</dd></div>
+  </dl>
+</header>
+
+<h2>まず結論</h2>
+
+<p>このコードベースは試作品ではない。純ロジックが MonoBehaviour から分離されていてテストが 1,640 本あり、イベント購読の <code>+=</code> と <code>-=</code> は 43 組すべて対になっていて、シェーダの剥がれ対策も静的フォントの焼き直しガードも実害から学んだ形で入っている。1,291 メソッド中 100 行超はわずか 10 個。<em>探して出てきたのは、設計の欠陥ではなく「相の境界」と「人が介入した瞬間」に集中した穴だった。</em></p>
+
+<p>最も危ないのは、<strong>オペレータが体験の途中で操作したときに起きること</strong>。本番で一番よく起きる操作なのに、そこだけ検証の網が薄い。Critical 2 件・High のうち 3 件がこの型に属する。</p>
+
+<div class="note">
+  <p><strong>展示当日に必ず決めておくこと</strong>が 2 つある。どちらもコードではなく運用の判断なので、こちらでは変えていない。</p>
+  <p>① 右グリップの誤爆をどう扱うか（C-2）　② Development ビルドで焼くこと（H-7）。②を守らないと検証手段が全部消える。</p>
+</div>
+
+<h2>検証の土台</h2>
+
+<p>修正の前後で同じものを回している。<em>「直った」ではなく「他を壊していない」を毎回確かめる</em>ため、5 バッチに分けて 1 バッチごとにテストを通した。</p>
+
+<div class="scroll">
+<table>
+  <tr><th>経路</th><th>回したもの</th><th>結果</th></tr>
+  <tr><td>EditMode</td><td><code>unity.ps1 test</code>（コンパイル込み）</td><td>修正前 1640 / 1640 → 修正後 <strong>1650 / 1650</strong>（新規 10 本）</td></tr>
+  <tr><td>卓（JS）</td><td><code>node --test tools/web-compositor/*.test.mjs</code></td><td>443 / 443</td></tr>
+  <tr><td>シェーダ剥がれ</td><td>実行時 <code>Shader.Find</code> される名前と Always Included の突き合わせ（機械照合）</td><td>プロジェクト内 13 本すべて安全（<span class="mono">ShowOccluder</span> 等 4 本は <code>Resources/</code> のマテリアル経由）</td></tr>
+  <tr><td>シーンの未割当参照</td><td><code>Main.unity</code> の <code>fileID: 0</code> を C# の null ガードと突き合わせ</td><td>未割当 12 件はすべて <code>nullable</code> 宣言 ＋ ガードあり。<strong>守りが無いまま未割当は 0 件</strong></td></tr>
+  <tr><td>重複コード</td><td>正規化 8 行窓のハッシュ一致</td><td>ランタイム側は軽微。集中しているのは Editor プレビュー（本番実行に乗らない）</td></tr>
+</table>
+</div>
+
+<h2>Critical</h2>
+
+<div class="item">
+  <div class="head">
+    <span class="id">C-1</span>
+    <span class="chip crit">CRITICAL</span>
+    <span class="chip done">修正済み</span>
+    <h3>ラン開始が、導入中に本編の演出を呼び出す</h3>
+  </div>
+  <dl class="q">
+    <dt>問題</dt>
+    <dd><code>ShowControlClient.TriggerRunReset</code> は <code>RunReset</code> を配ってから最後に <code>BeginRun()</code> を呼ぶ。相を導入へ落としてゲートを閉じるのはその <code>BeginRun</code> の中なので、<em>イベントを配っている間はまだ前の相のゲートが開いている</em>。連鎖は <code>LapCounter.ResetRun</code> → <code>SeedCurrentZone</code> → <code>CueScheduler.NotifyCameraEntered</code> → <code>TakeRunnerLogic.ArmEnterTakes</code> まで届き、1 周目の演出が武装される。ゲートを閉じても<strong>武装リストは消えない</strong>ので、次のフレームで発火する。</dd>
+
+    <dt>なぜ本番で危険か</dt>
+    <dd>導入演出の裏で 1 周目の演出が画面を占有する。現行台本のそのカットは「次にカメラが切り替わるまで」なので、<em>ゲートが閉じている以上ゾーン変化が届かず、45 秒の watchdog まで解けない</em>。同時に <code>_insertActive</code> が立ってゾーン自動切替も導入中ずっと凍る。体験者は導入の黒の中で 45 秒待たされ、オペレータからは「新しい人を入れたのに始まらない」としか見えない。</dd>
+
+    <dt>発生条件</dt>
+    <dd>前の体験者が<strong>本編を走っている最中</strong>に「▶ ラン開始」か右グリップ 2 秒長押し。かつシードで採られたカメラに lap=1 の演出がある（現行 <code>show.json</code> では camera=1 ＝ カメラ B の <code>L1C1#0</code>、<code>offsetSec</code> 0）。かつ卓が画面を握っていない。<span class="mono">— 反証エージェントが 6 点すべてを実コードで確認し「部分的に成立（機序は正しい／発火はシード先が camera 1 のときだけ）」と判定。</span></dd>
+
+    <dt>修正</dt>
+    <dd><code>ShowRunDirector.BeginRun</code> の <code>ApplyGate()</code> <strong>直後</strong>に <code>timelineDirector.ResetRun()</code> を通す。号令元の順序は変えていない — 導入を挟まない設定（<code>introEnabled:false</code>）では <code>BeginRun</code> が即 <code>RunBegan</code> を返して <code>BeginMainRun → RunReset</code> が走るので、<em>順序を入れ替えると今度は二重リセットになる</em>。</dd>
+
+    <dt>副作用・注意</dt>
+    <dd>導入無効の設定でも武装が一度クリアされるが、直後の <code>BeginMainRun</code> が正しく再武装する。既存 1,650 テストは不変。<strong>実機での再現確認は未実施</strong>（静的読解と反証のみ）。</dd>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="head">
+    <span class="id">C-2</span>
+    <span class="chip crit">CRITICAL</span>
+    <span class="chip open">未修正 / 判断待ち</span>
+    <h3>右グリップの 2 秒長押しが、体験中でもランをリセットする</h3>
+  </div>
+  <dl class="q">
+    <dt>問題</dt>
+    <dd><code>ControllerModeLogic.Tick</code> の Normal ケースで、グリップ長押し → ランリセット、トリガー長押し → 位置合わせ入場が、<em>相でも体験者の在・不在でもゲートされていない</em>。</dd>
+
+    <dt>なぜ本番で危険か</dt>
+    <dd>グリップは Touch を普通に持つと中指が乗る位置。<strong>オペレータが右コントローラを持ったまま握り直すだけで、体験中の visitor が導入へ巻き戻る</strong>。once 発火済みも 1 周目の録画も消えるので、復旧手段が無い（3 周目に流す素材が消えるので、その体験者は作品の核を見られない）。トリガー側はさらに悪く、位置合わせへ入ると <code>rules/show-design.md</code> の規約で<strong>覆い・隔離殻・終了の黒が全部どく</strong> ＝ 体験者に会場が丸見えになる。</dd>
+
+    <dt>発生条件</dt>
+    <dd>本編中に右コントローラのグリップを 2 秒握る、またはトリガーを 2 秒引く。卓を操作しながら持ち替えるだけで起こりうる。</dd>
+
+    <dt>修正方針（3 案）</dt>
+    <dd>
+      <ul>
+        <li>相でゲートする（本編中は無効）— 確実だが「途中で打ち切って次の人へ」ができなくなる</li>
+        <li><strong>HMD が被られていない</strong>（<code>OVRPlugin.userPresent == false</code>）を条件に足す — 交代のタイミングでは効き、体験中は効かない。いちばん筋が良い</li>
+        <li>本編中だけ長押し時間を延ばす（例 2 秒 → 5 秒）— 挙動を残したまま誤爆確率だけ下げる</li>
+      </ul>
+    </dd>
+
+    <dt>なぜ勝手に変えなかったか</dt>
+    <dd>「体験を途中で打ち切って次の人へ」は現場で実際にやる操作で、どの案もその手触りを変える。さらに <code>memory/controller_input_final.md</code> に<strong>「右手 4 入力が最終形・機能追加禁止（2026-07-23 ユーザー宣言）」</strong>がある。<em>運用でどちらのリスクを取るかはユーザーの判断</em>なので、案だけ出して手を入れていない。</dd>
+  </dl>
+</div>
+
+<h2>High</h2>
+
+<div class="item">
+  <div class="head">
+    <span class="id">H-1</span>
+    <span class="chip high">HIGH</span>
+    <span class="chip done">修正済み</span>
+    <h3>接続は張れたのに 1 枚も来ないカメラが、公演の最後まで復帰しない</h3>
+  </div>
+  <dl class="q">
+    <dt>問題</dt>
+    <dd>MJPEG の接続確立後の <code>ReadAsync</code> にタイムアウトが無い（Mono は進行中の read を token で切れないので、破れるのは <code>RequestReconnect</code> の <code>socket.Close</code> だけ）。ところがその引き金 3 つが<strong>全部「フレームが 1 枚は来ている」を前提にしている</strong> — stall は <code>_everReceived</code>、lag は <code>_recvFps &gt; 0</code>、decode-fail はフレーム到来が前提。</dd>
+
+    <dt>なぜ本番で危険か</dt>
+    <dd>そのカメラは<em>公演の最後まで砂嵐のまま固定される</em>。<code>IsConnected</code> は true・<code>ReceivedFps</code> は 0 で、指数バックオフの再接続も回らない（read がブロックしたままなのでループが 1 周もしない）。discovery は「別エンドポイントの候補がある」ときしか張り替えないので、同じ IP で黙った端末は救えない。</dd>
+
+    <dt>発生条件</dt>
+    <dd>配信スマホが HTTP ヘッダを返した<strong>直後</strong>に Wi-Fi 断／スリープ／encode 停止。会場の混雑した Wi-Fi では普通に起きる。起動直後の 1 台目で踏むと、その公演はずっとカメラが 1 本欠けたまま。</dd>
+
+    <dt>修正</dt>
+    <dd><code>StreamWatchdogLogic.EndTick</code> に <code>connected</code>（既定 false）を足し、<strong>「1 枚も受けていないが接続だけ生きている」を接続確立からの経過で拾う</strong>判定を独立に追加。既存の stall 判定には 1 行も触っていない。<code>CameraStream</code> が <code>_receiver.IsConnected</code> を渡す。</dd>
+
+    <dt>副作用・注意</dt>
+    <dd>「現場に居ないカメラへ 10 秒ごとに永久に張り直しを撒かない」という既存の意図は保たれる（居ないカメラは <code>connected</code> が false のまま）。回帰テスト 6 本を追加 — うち 1 本は<strong>引数を渡さない既存の呼び出しで挙動が 1 ビットも変わらないこと</strong>を 60 秒ぶん固定している。<code>LastFrameRealtime</code>（砂嵐の判定に使う）は触っていない。</dd>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="head">
+    <span class="id">H-2</span>
+    <span class="chip high">HIGH</span>
+    <span class="chip done">修正済み</span>
+    <h3>オペレータの介入で、終幕が著作された終わり方を飛ばして始まる</h3>
+  </div>
+  <dl class="q">
+    <dt>問題</dt>
+    <dd><code>EndingCueLogic</code> は「指した演出が走っていた ＆ いま走っていない」で終幕を撃つが、<em>走らなくなった理由を見ていない</em>。<code>TakeRunner.AbortActive</code>（■ 画面を取り返す）と <code>SetSuppressed(true)</code>（📺 カメラ固定）はどちらも <code>CleanupActive</code> を通って <code>ActiveTakeId</code> を空にする。</dd>
+
+    <dt>なぜ本番で危険か</dt>
+    <dd>締めの演出中にオペレータがカメラを固定するだけで、その場で相が Finished へ落ちる。現行台本では 2 本目のカット（<code>transition:"swap"</code> の<strong>「現実へ戻る 4.5 秒」</strong>）が丸ごと飛ぶ。体験の最後の一手が消えるので、その回の体験者だけ別の作品を見て帰ることになる。</dd>
+
+    <dt>発生条件</dt>
+    <dd>相が Run、<code>L4C0#0</code> が<strong>走り始めたあと</strong>に、カメラ列の切替ボタンか「■ 画面を取り返す」を押す。1 本目のカットは <code>untilMark</code>（報告するまで・最大 45 秒）なので、待ち時間が長く感じて介入したくなる場面とちょうど重なる。</dd>
+
+    <dt>修正</dt>
+    <dd><code>EndingCueLogic.NotifyInterrupted()</code> を足し、<strong>武装だけ落とす</strong>（<code>_fired</code> は触らない）。呼ぶのは <code>ShowControlClient</code> の 2 箇所 — 卓の抑止が立っている間と <code>abortTake</code> を受けたとき。回帰テスト 4 本。</dd>
+
+    <dt>副作用・注意</dt>
+    <dd><em>介入した回は終幕の合図が撃たれなくなる</em>ので、体験は従来の安全網（<code>endHoldMaxSec</code> 60 秒 / <code>hardLimitSec</code>）まで続く。オペレータが終わらせたいときは「🏁 体験を終える」を押す。<strong>この挙動変化は意図的</strong> — 早撃ちで著作が消えるより、終わりが遅れて人が押す方が復旧できる。</dd>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="head">
+    <span class="id">H-3</span>
+    <span class="chip high">HIGH</span>
+    <span class="chip done">修正済み</span>
+    <h3>写真の再取得が、再生中の視界ジャックのテクスチャを破棄する</h3>
+  </div>
+  <dl class="q">
+    <dt>問題</dt>
+    <dd><code>EyeJackPhotoStore.SyncAsync</code> は完了時に <code>Clear()</code> で <code>_ready</code> の <code>Texture2D</code> を <code>Destroy</code> する。<code>AnomalyEyes</code> は発火の瞬間に <code>Snapshot()</code> で<strong>参照の配列</strong>を掴んでいるだけなので、破棄されると次のコマで <code>tex == null</code> になる。</dd>
+
+    <dt>なぜ本番で危険か</dt>
+    <dd>3 周目 C の視界ジャック（当日撮った写真をぱぱぱっと出す 2.4 秒）が、<em>残りの写真を 1 枚も出さないまま終わる</em>。画としては「乗っ取りが一瞬で解けた」に見えるだけで、ログにもエラーが出ない。</dd>
+
+    <dt>発生条件</dt>
+    <dd>写真を 1 枚でも落とせていない状態（<code>_incomplete</code> ＝ 30 秒ごとに再試行）で 3 周目 C に入り、ジャックの 2.4 秒に再試行が重なる。または卓が写真リストを編集した瞬間。<strong>「写真が全部は届いていない」は当日わりと起きる状態</strong>なので、確率は低くない。</dd>
+
+    <dt>修正</dt>
+    <dd><code>Tick</code> に <code>inUse</code>（既定 false）を足し、<code>AnomalyEyes</code> が <code>_jack.Active</code> を渡す。使用中は rev も再試行時刻も進めずに戻るので、ジャックが終われば次のフレームで仕掛かる。</dd>
+
+    <dt>副作用・注意</dt>
+    <dd>差し替えが最大 2.4 秒遅れるだけ。<code>inUse</code> の既定 false により、他の呼び出し側の挙動は不変。</dd>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="head">
+    <span class="id">H-4</span>
+    <span class="chip high">HIGH</span>
+    <span class="chip done">修正済み</span>
+    <h3>当日、音が鳴っていないことに誰も気づけない</h3>
+  </div>
+  <dl class="q">
+    <dt>問題</dt>
+    <dd>heartbeat に<strong>音の状態が 1 ビットも無かった</strong>。卓の本番前チェックが見る「BGM」行は <code>show.json</code> のトラック定義だけで、実機が鳴らせているかは見ていない。同じくコントローラの接続状態も無く、左（＝体験者の唯一の入力）が切れると <code>CommsPanel</code> が押し方の案内を黙って空文字にするだけだった。</dd>
+
+    <dt>なぜ本番で危険か</dt>
+    <dd><code>CLAUDE.md</code> 自身が「<strong>音は録画に映らない</strong>ので <code>ev=sfx</code> / <code>sndBuilt</code> が唯一の証拠」と書いているのに、その証拠は logcat にしかなく<em>当日は読めない</em>。無音のまま全員を通す経路が空いていた。コントローラも同じで、オペレータが気づくのは終幕の報告数が「０」になったとき ＝ もう手遅れ。</dd>
+
+    <dt>発生条件</dt>
+    <dd>音源の解決失敗（<code>menu scene</code> の焼き直し漏れ・Resources の欠落）、端末の音量が 0、ヘッドホンの接続不良。コントローラは電池切れ・スリープ。<strong>どれも画には 1 ビットも出ない。</strong></dd>
+
+    <dt>修正</dt>
+    <dd>heartbeat に 7 フィールド追加（<code>sndResolved</code> / <code>sndMissing</code> / <code>sndAudible</code> / 左右の接続と位置）。卓のライブ状態に「🔊 音」「🎮 コントローラ」の 2 行を出す。音源を掴めていなければ ❌、出力 0.00 なら ⚠（導入の頭は正しく無音なので止める材料にはしない）、左右どちらかが切れていれば ❌。</dd>
+
+    <dt>副作用・注意</dt>
+    <dd>旧 Unity は送らないので値は <code>-1</code> になり、卓は行を出さない（後方互換）。<code>ShowSoundDirector</code> の解決は heartbeat の周期（秒単位）で、解決できるまで探す。</dd>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="head">
+    <span class="id">H-5</span>
+    <span class="chip high">HIGH</span>
+    <span class="chip done">修正済み</span>
+    <h3>起動シーケンスが途中で落ちると、その先が永久に走らない</h3>
+  </div>
+  <dl class="q">
+    <dt>問題</dt>
+    <dd><code>InitializeAsync</code> の 9 工程が 1 個の <code>try</code> に包まれ、例外は <code>LogWarning</code> 1 行で握り潰されて<strong>再試行が無かった</strong>。</dd>
+
+    <dt>なぜ本番で危険か</dt>
+    <dd>工程 N で落ちると N+1 以降が永久に走らない。とくに <code>PushCourseAndSchedule</code> が飛ぶと <code>LapCounter</code> に <code>course.order</code> が届かず、<em>周回が 1 も進まない ＝ 体験が終わらない</em>。卓が居れば long-poll の <code>Apply</code> が上書き復旧するが、<strong>PC 不在の現場では復旧経路がゼロ</strong>。</dd>
+
+    <dt>発生条件</dt>
+    <dd>焼き込み JSON の破損、端末キャッシュの破損、Resources の欠落、シーンの配線落ち。どれも単発では低確率だが、9 工程のどこかで起きる確率はその和になる。</dd>
+
+    <dt>修正</dt>
+    <dd>工程ごとに <code>InitStep</code> / <code>InitStepAsync</code> で囲み、失敗を <code>LogError</code>（<code>LogWarning</code> ではない）で名指しする。<em>順序は 1 つも変えていない。</em></dd>
+
+    <dt>副作用・注意</dt>
+    <dd><code>LogError</code> にしたので、走行レポートの「実機ログの警告」節がエラーとして拾い <strong>FAIL になる</strong> — 気づけない片落ちを作らないための意図的な選択。<code>OperationCanceledException</code> は握らず上へ通す（破棄・無効化を握り潰さない）。</dd>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="head">
+    <span class="id">H-6</span>
+    <span class="chip high">HIGH</span>
+    <span class="chip done">修正済み</span>
+    <h3>区間の切り替わりでメインスレッドが最大 2 秒止まり、しかも「録れていない」と嘘をつく</h3>
+  </div>
+  <dl class="q">
+    <dt>問題</dt>
+    <dd><code>SegmentRecordWriter.Dispose</code> が <code>thread.Join(2000)</code> でブロックする。呼ばれるのは <code>SegmentRecorder.Close</code> ← <code>OnCameraEntered</code> ＝ <strong>体験者がゾーンを跨いだその瞬間</strong>。さらに Join がタイムアウトすると <code>WrittenFrames</code> がまだ 0 なので、呼び手が「1 枚も録れていない」と警告し <code>SegmentClosed</code> に frames=0 を配っていた。</dd>
+
+    <dt>なぜ本番で危険か</dt>
+    <dd>VR で数百 ms を超えるフリーズは酔いに直結する。しかも起きる瞬間が「歩いて角を曲がったところ」なので、体験の中で最も動いている場面と重なる。加えて偽の 0 報告が <code>analyze-xp-log.py</code> の誤 FAIL を生み、<em>本当の録画失敗と区別できなくなる</em>。</dd>
+
+    <dt>発生条件</dt>
+    <dd>ディスクが逼迫している／書き込みが遅い端末／同時に他のプロセスが I/O を掴んでいる。通常は数十 ms で終わるので、<strong>当日に初めて出る</strong>型。</dd>
+
+    <dt>修正</dt>
+    <dd>待ちを 300ms へ短縮し、<code>FlushCompleted</code> / <code>QueuedFrames</code> を公開。呼び手は書き終わっていないときは「間に合わなかった（渡した枚数 N・実績は未確定）」と出し、<strong>「1 枚も録れていない」の警告は出さない</strong>。</dd>
+
+    <dt>副作用・注意</dt>
+    <dd>打ち切った回は <code>SegmentClosed</code> の枚数・容量が過少に出る（ラン全体の容量会計もその分ずれる）。<em>背景スレッドは書き続けるのでファイル自体は完成する</em>。300ms でも足りない環境では警告が毎回出るので、そのときはさらに検討する。</dd>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="head">
+    <span class="id">H-7</span>
+    <span class="chip high">HIGH</span>
+    <span class="chip open">未修正 / 運用判断</span>
+    <h3><code>-Release</code> で焼くと、現地の診断手段が全部消える</h3>
+  </div>
+  <dl class="q">
+    <dt>問題</dt>
+    <dd><code>ShowTelemetryHost</code> / <code>ShowWalkDebugDriver</code> / <code>RegVizDebugDriver</code> / <code>VeilAlignmentProbe</code> の 4 つが <code>if (!Debug.isDebugBuild) return;</code> で始まる。<code>unity.ps1 build fixedcam -Release</code> はこれを全部黙らせる。</dd>
+
+    <dt>なぜ本番で危険か</dt>
+    <dd><code>[XP]</code> が 1 行も出ないので、<strong>このプロジェクトの検証系（自己申告テレメトリ・<code>analyze-xp-log.py</code> の判定・自動走行）が丸ごと使えなくなる</strong>。残るのは StatusHud と logcat の生ログだけ。当日トラブルが起きたときに原因へ到達する手段が消える。</dd>
+
+    <dt>発生条件</dt>
+    <dd>展示当日に「提出用だから Release で」と判断して焼いたとき。</dd>
+
+    <dt>修正方針</dt>
+    <dd>当日は <strong>Development ビルドで焼くと決めて</strong> <code>docs/onsite-checklist.md</code> に明記する（いちばん安い）。恒久的に直すならテレメトリの門を <code>isDebugBuild</code> から <code>StreamingAssets</code> の旗へ移す（走行ドライバは <code>isDebugBuild</code> のままでよい）。</dd>
+
+    <dt>なぜ勝手に変えなかったか</dt>
+    <dd>Development ビルドはプロファイラ接続を開き、わずかに性能が落ちる。<em>「本番でどちらを取るか」は展示の要件次第</em>で、コード側で決める話ではない。</dd>
+  </dl>
+</div>
+
+<h2>Medium</h2>
+
+<p>本番で体験が止まるほどではないが、当日の運用か長時間運用で効いてくるもの。<em>下の 4 件は直した</em>（どれも副作用が小さく、既存テストが不変であることを確認済み）。</p>
+
+<div class="scroll">
+<table>
+  <tr><th>状態</th><th>問題</th><th>どう効くか</th><th>対応</th></tr>
+
+  <tr>
+    <td><span class="chip done">済</span></td>
+    <td>卓の「▶ ラン開始」が <code>abortTake</code> の結果を見ずに成功と表示していた</td>
+    <td>瞬断で走行中の演出が畳まれなくても「リセットしました」と出る ＝ <strong>前の体験者の演出を抱えたまま次の人を入れる</strong></td>
+    <td>両方の <code>ok</code> を見て、失敗した側を名指しする</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip done">済</span></td>
+    <td>卓の「⛑ 全部解除」が 4 種の command を投げっぱなしにしていた</td>
+    <td>サーバ断のとき<strong>押した感触だけ残って何も解除されない</strong>（<code>postCommand</code> は例外を出さず <code>{ok:false}</code> を返すだけ）</td>
+    <td>1 つずつ結果を見て、届かなかったものを警告帯へ出し続ける（次の描画で流さない）</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip done">済</span></td>
+    <td><code>registration.json</code> と設定キャッシュが非アトミック書き込み</td>
+    <td>書き込み中の電源断で<strong>壊れた JSON が残る</strong>。位置合わせが消えると course 変換が identity へ落ち、通過ライン・開始位置・接近の判定が全部成立しない ＝ <em>導入が自動では二度と始まらない</em></td>
+    <td><code>.tmp</code> へ書いてから <code>File.Replace</code>（使えない環境ではフォールバック）</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip done">済</span></td>
+    <td>動画キャッシュ（<code>ovr_*.mp4</code>）が <code>OnDestroy</code> でしか消えない</td>
+    <td>Quest のアプリは force-kill されるので <code>OnDestroy</code> はしばしば走らない。素材 URL は時刻入りで撮り直すたびに変わるため、<strong>セッションを跨いで端末に積み続ける</strong>（1 本 1.0〜1.6MB・録画と同じ領域を食う）</td>
+    <td><code>Awake</code> で前セッションの孤児を掃除</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip done">済</span></td>
+    <td>写真キャッシュの <code>Prune</code> が、1 枚も落とせなかった回でも走っていた</td>
+    <td>キーは「卓のホストを含む絶対 URL の SHA1」なので、<strong>卓の IP が変わると全キーが変わって旧ファイルが全部消える</strong>。当日の Wi-Fi 再接続で普通に起きる</td>
+    <td>取りこぼした回は掃除しない</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip done">済</span></td>
+    <td>録画の <code>Trim</code> が、起点方式のとき時間上限を持たない</td>
+    <td>長く留まった体験者ぶんが managed <code>byte[]</code> で積み続ける（落とすのが容量上限だけ ＝ ラン全体の残量いっぱい）</td>
+    <td>起点から 30 秒の上限を追加（実測滞在は 7 秒前後）</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip done">済</span></td>
+    <td><code>HudLogDumper</code> が毎秒ログを吐いていた（フィールドの Tooltip 自身が「本番は 30s 推奨」と書いている）</td>
+    <td>Quest の logcat は他プロセスが 76% を占める。毎秒積むと<strong>走行前半が押し流されて肝心のエラーが読めない</strong></td>
+    <td>シーンとセットアップの両方を 30 秒へ</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip done">済</span></td>
+    <td><code>MjpegScreen</code> / <code>ScreenOverlayController</code> だけ <code>Renderer</code> の null ガードが無かった（他の 8 箇所には全部ある）</td>
+    <td>prefab を組み直して Renderer が外れると <code>Awake</code> が落ち、<strong>未初期化 Texture2D の黒塗りに到達しない</strong>（Quest GPU で白ノイズ化する既知の罠）。他のコンポーネントは黙って no-op する</td>
+    <td>他の 8 箇所と同じ形に揃え、<code>LogError</code> ＋ <code>enabled = false</code></td>
+  </tr>
+
+  <tr>
+    <td><span class="chip done">済</span></td>
+    <td><code>OvrControllerBridge</code> が <code>Update</code> 直下で <code>FindObjectOfType&lt;CommsPanel&gt;()</code></td>
+    <td>連絡の面が無い構成で <strong>90Hz で全 GameObject を走査し続ける</strong>（同じ解決を <code>ShowTelemetryHost</code> は間隔つきでやっていて非対称だった）</td>
+    <td>解決できないときは 2 秒間隔へ</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip med">未対応</span></td>
+    <td>差し替え素材のテクスチャキャッシュが <code>OnDestroy</code> でしか解放されない</td>
+    <td>素材 URL は時刻入りなので、<strong>展示日に素材を撮り直すたびに永久に積む</strong>。1 枚 1.2〜4.9MB、20 回撮り直すと 25〜100MB。アプリ再起動でリセットされるので当日は致命的ではない</td>
+    <td>cue セットの更新時に、現行タイムラインが参照しない分を <code>Destroy</code>（世代カウンタは <code>_swapPlates</code> に既存）</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip med">未対応</span></td>
+    <td><code>Dispose</code> 中に走行中の <code>SyncAsync</code> が完走するとテクスチャが漏れる</td>
+    <td>終了時のみなので実害は小さい</td>
+    <td>継続側で <code>_disposed</code> を見て破棄する</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip med">未対応</span></td>
+    <td><code>DiscoveryClient</code> のブロッキング <code>Receive</code> が ThreadPool スレッドを 1 本占有し続ける</td>
+    <td>Unity の ThreadPool は小さい。他の非同期処理が詰まる余地がある</td>
+    <td>専用 <code>Thread</code> へ移す</td>
+  </tr>
+
+  <tr>
+    <td><span class="chip med">未対応</span></td>
+    <td><code>OvrControllerBridge</code> の 11 個のオブジェクト参照が、シーンの prefab 上書き 1 箇所にしか無い（フォールバックがあるのは 2 つだけ）</td>
+    <td>シーンのマージや <code>menu scene</code> の再実行で 1 行落ちると、<code>courseRegistration</code> なら<strong>位置合わせ中に覆いがどかない</strong>、<code>courseFrame</code> なら<strong>OS recenter が「要再登録」を立てない</strong>。どちらも警告が 1 行も出ない</td>
+    <td>serialized 参照が全部非 null であることを見る EditMode テスト（既存の <code>StreamingLogicPrefabFieldsTests</code> は 2 フィールドしか見ていない）</td>
+  </tr>
+</table>
+</div>
+
+<h2>Low</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>問題</th><th>影響</th></tr>
+  <tr><td><code>MjpegStreamReceiver</code> が次の boundary が届くまでフレームを publish しない</td><td>常時 1 フレーム（30fps で約 33ms）遅れる。100ms 予算に対しては無視できない。パートの <code>Content-Length</code> を読めば消せる</td></tr>
+  <tr><td><code>X-Frame-Seq</code> を送らない配信（IP Camera Lite）では <code>_SrcFrame</code> が進まない</td><td>センサ粒が静止する。画は出るので気づけない</td></tr>
+  <tr><td><code>RequestReconnect</code> が Dispose 済み CTS を Cancel して警告を出しうる</td><td>無害だが現場ログを汚す</td></tr>
+  <tr><td>報告の長押しが相を見ない（導入中・終幕中でも <code>VisitorMarkCount</code> が増える）</td><td>終幕の報告数に混ざる。連絡の面は導入を先に分岐するので誤発火はしない</td></tr>
+  <tr><td><code>TakeRunnerLogic</code> の <code>if (now &lt; _stepBeganAt)</code> が死んだガード</td><td>コメントが謳う保護は成立していない。現状そのような経路が無いので実害なし（コメントを直す）</td></tr>
+  <tr><td>Editor プレビュー系に 8 行窓の重複が 64 箇所</td><td>本番実行に乗らない。保守性のみ</td></tr>
+  <tr><td><code>Main.unity</code> に廃止フィールド <code>markPanel</code> の上書きが残っている</td><td>害は無い。<code>menu scene</code> の再焼きで消える</td></tr>
+</table>
+</div>
+
+<h2>明日本番展示するとしたら、まだ何が怖いか</h2>
+
+<p>直した 12 件は<strong>どれも実機で再現確認していない</strong>（静的読解・反証・EditMode テストまで）。以下は怖い順。</p>
+
+<div class="item">
+  <div class="head"><span class="id">01</span><h3>右グリップの誤爆（C-2）— これだけは人間の運用で塞ぐしかない</h3></div>
+  <p>今日の時点で<em>コードは何も守っていない</em>。オペレータが右コントローラを持ったまま中指に力を入れて 2 秒経てば、体験中の人が導入へ戻る。復旧できない。当日までに ① 上の 3 案のどれかを入れる ② 入れないなら「本編中は右コントローラを卓に置く」を手順に書いて徹底する、のどちらかを決めてほしい。</p>
+</div>
+
+<div class="item">
+  <div class="head"><span class="id">02</span><h3>会場の Wi-Fi</h3></div>
+  <p>H-1 を直したので「1 枚も来ないまま固まる」は自動で張り直すようになったが、<strong>帯域そのものが細い場合は何も解決していない</strong>。2.4GHz だと受信 fps が配信の 2/3 まで落ち、導入の最後の段は映像が届いていることを要求するので<em>帯域が細いだけで演出が出ない</em>。AP のクライアントアイソレーションは技術で救えない（卓の 🩺 疎通診断で即検出できる。自前 AP の持ち込みが第一選択）。</p>
+</div>
+
+<div class="item">
+  <div class="head"><span class="id">03</span><h3>設定の出どころが 4 つあり、rev では食い違いが分からない</h3></div>
+  <p>焼き込み &lt; 端末キャッシュ &lt; ライブ の優先順位で、2026-07-31 には <strong>PC・焼き込み・Quest 2 台のキャッシュの 4 者がずれていて正しいのは 1 つだけ</strong>という実測がある。<code>timeline.rev</code> は全部一致していたので気づけなかった。<code>buildGuid</code> の照合が入って APK を焼き直せばキャッシュは捨てられるようになったが、<em>同じ APK のまま卓の設定だけ変えた場合は今も食い違う</em>。当日は走行レポート冒頭の「実機が使った設定」を必ず読む。</p>
+</div>
+
+<div class="item">
+  <div class="head"><span class="id">04</span><h3>実機での再現確認をしていない</h3></div>
+  <p>とくに C-1 と H-2 は<strong>相の境界の 1 フレーム</strong>を扱っているので、EditMode では踏めない経路が残っている可能性がある。当日までに <code>py -3.11 tools/quest-record.py --sec 45 --walk</code> を 1 回通して、走行レポートが緑であることと、<em>導入中に本編の演出が出ないこと</em>を画で確かめてほしい。この監査で入れた修正はすべて「守りを足す」方向なので体験を壊す変更ではないが、確かめていないことは確かめていない。</p>
+</div>
+
+<div class="item">
+  <div class="head"><span class="id">05</span><h3>音は今も、聴く以外に確かめる手段がない</h3></div>
+  <p>H-4 で「音源を掴めたか・出力が 0 でないか」は卓に出るようになった。<strong>だが「正しい音が鳴っているか」は依然として人が聴くしかない</strong>。間違ったクリップが正しく再生されていれば全部 ✅ になる。開演前に <code>py -3.11 tools/sound-preview.py</code> の 9 本を一度通しておく。</p>
+</div>
+
+<div class="item">
+  <div class="head"><span class="id">06</span><h3>数十人を通したときのメモリ</h3></div>
+  <p>直したのは録画バッファと動画ファイル。<strong>差し替え素材のテクスチャキャッシュは今も解放されない</strong>（Medium・未対応）。ただし積むのは「素材を撮り直した回数」に比例するので、開演後に撮り直さない運用なら増えない。長時間運用で不安なら<em>休憩ごとにアプリを再起動する</em>のがいちばん確実で安い。</p>
+</div>
+
+<div class="note calm">
+  <p><strong>逆に、怖くないと分かったもの。</strong></p>
+  <p>イベント購読の解除漏れはゼロ（43 組すべて対）。<code>Update</code> の hot path に <code>GetComponent</code> / <code>Find</code> / LINQ は無い。シェーダの剥がれ対策は全 13 本で機能している。シーンの未割当参照は 12 件あるが全部 <code>nullable</code> 宣言 ＋ ガード付き。<code>Script Execution Order</code> は未設定だが、依存は <code>Start</code> か <code>FindObjectOfType</code> フォールバックに寄せてあり Awake 間の依存が無い。ハードコードされた IP・ポート・パスは 1 件も見つからなかった。</p>
+</div>
+
+</div>
