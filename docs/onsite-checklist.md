@@ -10,9 +10,11 @@
 ## 1. 持ち物・機材
 
 - [ ] Quest 3 本体（充電済み）+ USB-C ケーブル（PC 接続用）
-- [ ] 配信スマホ 3〜4 台（DroidCam または IP Webcam インストール済み・全台フル充電）
+- [ ] 配信スマホ 3〜4 台（**fixed-cam-streamer** インストール済み・cameraId 設定済み・全台フル充電）
 - [ ] ノート PC（Unity 2022.3.62f2 LTS + Android Build Support、adb 通る状態）
-- [ ] Wi-Fi ルータ（5GHz、可能なら別 SSID で切り出し。来場者端末と分ける）
+- [ ] **Wi-Fi ルータ（NEC Aterm WG2600HP）＋ AC アダプタ** — 会場の Wi-Fi は使わない。
+      設営と固定 IP の手順は [onsite/network-setup.md](onsite/network-setup.md) が正本
+      （会場 AP のクライアントアイソレーションと DHCP の IP 変動は、これで構造的に消える）
 - [ ] 体験空間（4 畳半以上推奨。PlayerZone 3 つ＝中央／右／左を AABB で配置できる広さ）
 - [ ] 養生テープ（ゾーン境界を床に貼って体験者の目印にする）
 - [ ] **白衣（不織布の使い捨て・サイズフリー）を体験者ぶん ＋ スタンドイン 1 着**
@@ -149,13 +151,15 @@ course 空間で対称に置いても、カメラ A が対称軸の真上に無�
 
 ## 2. 事前セットアップ（PC 側、現場到着後 5 分）
 
-1. [ ] スマホ全台で配信アプリ起動 → 各 IP をメモ
-   - DroidCam: `http://<phone-ip>:4747/mjpegfeed?640x480`
-   - IP Webcam: `http://<phone-ip>:8080/video`
-2. [ ] PC ブラウザで上記 URL を直接開いて映像が見える事を全台で確認
-3. [ ] Unity Editor で `Assets/Settings/Cameras/Phone01.asset` 〜 を開いて `host` を実 IP に書き換え
-   - Inspector の **Test Connection** ボタンで疎通確認できる
-4. [ ] **Tools > FixedCamVr > Diagnostics > Ping DroidCams** で全 `CameraSource` 一括到達確認
+0. [ ] **ルータ（Aterm）を先に立てる。** 2.4GHz・5GHz のランプが両方点くまで待ってから端末を繋ぐ
+   - 手順の正本は [onsite/network-setup.md](onsite/network-setup.md)。**IP は端末側で静的に振ってある**ので、
+     ここで IP をメモして書き換える作業は**もう無い**（`.21`=A / `.22`=B / `.23`=C / `.24`=D / `.11`=PC）
+1. [ ] スマホ全台で配信アプリ（fixed-cam-streamer）を起動
+   - 画面に出る **cameraId が割当と合っているか**見る（入れ替わっていると演出が別のカメラに出る）
+2. [ ] PC ブラウザで `http://192.168.10.21:8080/` 〜 を直接開いて映像が見える事を全台で確認
+   - **これが端末間通信の証明**。開かなければネットワーク分離が ON か、ゲスト SSID に繋がっている
+3. [ ] `.asset` / `show.json` の `host` は固定値のままでよい。**変わっていたら誰かが触っている** — 戻す
+4. [ ] **卓の 🩺 疎通診断** — PC→カメラ HTTP / beacon / Quest heartbeat の 3 経路が ✅ か
 5. [ ] Build Settings が `Assets/Scenes/Main.unity` のみ enabled であることを確認
 6. [ ] **Main.unity を開いて Tools > FixedCamVr > Setup > Setup Main Demo Scene を実行**
    - Phase 2.7 用の `[Zones]` (Center / Right / Left) と `[Tracker]` を自動配置
