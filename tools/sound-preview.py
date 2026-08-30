@@ -464,31 +464,41 @@ def build_switch() -> np.ndarray:
         last[0] = v
         return v
 
-    total, bed_from, start = 26.0, 18.0, 19.0
+    total, bed_from, start = 34.0, 25.0, 26.0
     steps = (1.0, 0.9, 0.8, 1.4)
     out = np.zeros((int(total * sk.SR), 2))
 
     # ① 変種を 1 本ずつ（0.55 秒刻み）
     for i, c in enumerate(plain):
         lay(out, c * 0.85, 0.5 + 0.55 * i)
+    # ①b 素 → 警告つき の対（同じ変種で続けて鳴らす）。
+    #    ⚠ ここが 0106 の判定そのもの。無いと「警告が混ざっているか」を耳で確かめる場が
+    #      どこにも無い（2026-08-31 に気づいた — §「人形視点が…」は「前半は素と合成の対比」と
+    #      書いてあったが、実際は素の変種しか並べていなかった）。
+    for i in range(SWITCH_VARIANTS_N):
+        lay(out, plain[i] * 0.85, 4.6 + 1.20 * i)
+        lay(out, alert[i] * 0.85, 4.6 + 1.20 * i + 0.5)
     # ② 旧版の鳴り方（1 本だけ）→ 新しい鳴り方（6 本を回す）。同じ刻みで並べる
     for i in range(8):
-        lay(out, shot(plain[0]), 5.0 + 0.62 * i)
+        lay(out, shot(plain[0]), 12.4 + 0.62 * i)
     for i in range(8):
-        lay(out, shot(plain[pick(SWITCH_VARIANTS_N)]), 11.0 + 0.62 * i)
+        lay(out, shot(plain[pick(SWITCH_VARIANTS_N)]), 18.4 + 0.62 * i)
 
     # ③ 本編の敷く音（§4 の表・2 周目）。切替音がこの上でどう立つかを聴く。
     lay(out, tile(load_score(), total - bed_from), bed_from)
     lay(out, tile(load("bed_device"), total - bed_from), bed_from)
     at = start
-    # ⚠ 素と警告つきを交ぜる（実機の 2 周目 C は接近のカットとゾーン切替が混ざる）。
-    for k, sec in enumerate(steps):
-        i = pick(SWITCH_VARIANTS_N)
-        lay(out, shot((alert if k % 3 != 2 else plain)[i]), at)
+    # ⚠⚠ **4 発とも警告つき。** show.json の 2 周目 C 接近（`L2C2#1`）は pov_1〜pov_4 が
+    #    連続で、あいだにゾーン切替は入らない（`switchSfx` は 4 つとも true）。
+    #    以前ここは 3 発に 1 発を素にしていたが、それだと警告の密度が実機より低く聞こえる。
+    #    ⚠ このほかに予備動作（`L2C2#0` の pov_0）が先に 1 発ある ＝ 1 体験で計 5 発。
+    for sec in steps:
+        lay(out, shot(alert[pick(SWITCH_VARIANTS_N)]), at)
         at += sec
     print(f"   0.5s 変種を 1 本ずつ（{SWITCH_VARIANTS_N} 本）   "
-          f"5s 旧（1 本を 8 発）→ 11s 新（6 本を 8 発）   "
-          f"{start:.0f}s 2 周目 C の刻み {' / '.join(f'{s:.1f}' for s in steps)} 秒")
+          f"4.6s 素 → 警告つき の対（{SWITCH_VARIANTS_N} 組）   "
+          f"12.4s 旧（1 本を 8 発）→ 18.4s 新（6 本を 8 発）   "
+          f"{start:.0f}s 2 周目 C の刻み {' / '.join(f'{s:.1f}' for s in steps)} 秒（4 発とも警告つき）")
     return out
 
 
