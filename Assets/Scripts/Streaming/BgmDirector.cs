@@ -553,12 +553,18 @@ namespace FixedCamVr.Streaming
             if (string.IsNullOrEmpty(url)) return null;
             if (_clips.TryGetValue(url, out var cached)) return cached;
 
-            string resolved = ShowAssetResolver.Resolve(url, _server);
-            AudioType type = GuessAudioType(resolved);
-
             AudioClip? clip = null;
+            string resolved = "";
             for (int attempt = 1; attempt <= ClipFetchAttempts; attempt++)
             {
+                // ⚠⚠ **解決は毎回やり直す**（2026-08-31 実測）。show.json の bgm は相対 URL
+                //    （`/audio/HorrBGM.mp3`）で、絶対 URL にするには卓の接続先が要る。ところが
+                //    `PushBgm()` の `SetTracks` が先読みを起こす経路では **`SetServer` より先に**
+                //    ここへ来ることがあり、そのとき `_server` は null ＝ 相対のまま残る。
+                //    ループの外で 1 度だけ解決していたので、**4 回とも同じ壊れた URL を叩いていた**
+                //    （`Cannot connect to destination host` ×4 → 無音のまま体験が走る）。
+                resolved = ShowAssetResolver.Resolve(url, _server);
+                AudioType type = GuessAudioType(resolved);
                 using var req = UnityWebRequestMultimedia.GetAudioClip(resolved, type);
                 if (req.downloadHandler is DownloadHandlerAudioClip dh)
                     dh.streamAudio = false;   // ループ範囲のシークが要るので全体を展開する

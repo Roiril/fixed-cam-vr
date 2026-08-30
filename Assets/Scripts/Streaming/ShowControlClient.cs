@@ -1910,6 +1910,9 @@ namespace FixedCamVr.Streaming
         {
             var dir = ResolveBgmDirector();
             if (dir == null) return;
+            // ⚠ 接続先を先に渡す。`SetTracks` は即座に先読みを起こすので、ここが後だと
+            //   相対 URL（/audio/*.mp3）を解決できないまま取りに行く（2026-08-31 実測）。
+            dir.SetServer(server);
             dir.SetTracks(_bgmTracks);
             string sig = _bgmDefault == null ? ""
                 : $"{_bgmDefault.action}|{_bgmDefault.trackId}|{_bgmDefault.loop}|{_bgmDefault.startSec}|"
