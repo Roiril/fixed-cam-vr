@@ -209,6 +209,10 @@ pre code { background: none; padding: 0; }
 
 <p>研究室の実験用ルータ（NEC Aterm WG2600HP）を持ち込んで、<em>会場の回線に一切繋がない孤立したネットワーク</em>を自分で立てる。住所は全部こちらで決めて、端末に書き込んでおく。</p>
 
+<p><strong>Wi-Fi は飛んでいる。</strong>ルータの仕事は「電波を出して端末をつなぐ」と「外のインターネットへ中継する」の 2 つで、切ってあるのは後者だけ。カメラも Quest も <code>kougaku-lab-exp-a</code> という 5GHz の Wi-Fi にぶら下がっている（実測: 5180MHz / WPA2 / 866Mbps）。この Wi-Fi にスマホで繋ぐと電波は強いのに Web は開かない — それで正しい。</p>
+
+<p>体験はもともと建物の中だけで完結していて、外へ出る通信が 1 つも無い。PC は有線で、Quest とカメラは Wi-Fi で、同じルータの中にいる。</p>
+
 <figure>
 <svg viewBox="0 0 540 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ルータを中心に、有線の PC と、Wi-Fi のスマホ 3 台・Quest 2 台がぶら下がる構成図">
   <g font-family="var(--gothic)" font-size="16" fill="var(--ink)">
@@ -263,8 +267,9 @@ pre code { background: none; padding: 0; }
       <path d="M272 183 V213" stroke-dasharray="4 4"/>
       <path d="M262 190 L282 210 M282 190 L262 210"/>
     </g>
-    <text x="262" y="240" text-anchor="middle" font-size="14" fill="var(--accent-strong)" font-weight="700">会場の回線には繋がない</text>
+    <text x="262" y="240" text-anchor="middle" font-size="14" fill="var(--accent-strong)" font-weight="700">インターネットには繋がない</text>
     <text x="262" y="260" text-anchor="middle" font-size="13" fill="var(--mute)">WAN ポートは空のまま</text>
+    <text x="262" y="280" text-anchor="middle" font-size="13" fill="var(--mute)">（Wi-Fi は飛んでいる）</text>
   </g>
 </svg>
 <figcaption>持っていくのはこの図ごと。会場側から借りるのは電源だけ。</figcaption>
