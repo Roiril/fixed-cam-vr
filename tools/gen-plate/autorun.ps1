@@ -9,9 +9,10 @@
 # ⚠ 判定が緑でも `sheet.png` と `heads.png` を開くまでが 1 周。
 #
 # ⚠⚠ **別の異変を同時に焼かない**（2026-09-04 実測・README §9）。同時に走る Codex の exec の間で
-#   絵が入れ替わる（手形の走行に幕の顔が入った）。同じ異変の N 枚並列は構わない（入れ替わっても同じ指示）。
-#   そのため autorun は鍵（logs/gen-plate/.autorun.lock）を持ち、別の autorun が走っていれば終わるまで待つ。
-#   終わりに out.png の md5 を突き合わせ、同じ絵が 2 走行に入っていたら警告する。
+#   絵が入れ替わる（手形の走行に幕の顔が入った）。同じ異変の N 枚並列だと**同じ絵が 2 走行に入る**
+#   （重複。4 枚中 2 枚が一致した）。そのため autorun は
+#   - 鍵（logs/gen-plate/.autorun.lock）を持ち、別の autorun が走っていれば終わるまで待つ
+#   - 終わりに out.png の md5 を突き合わせ、重複した枚を **1 枚ずつ**焼き直す（1 回まで）
 
 [CmdletBinding()]
 param(
@@ -22,7 +23,8 @@ param(
     [double]$Scale = 0.5,
     [double]$Blur = 0.0,
     [double]$Lap = 0,
-    [switch]$NoRefs
+    [switch]$NoRefs,
+    [switch]$NoRetry
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,49 +46,76 @@ for ($i = 1; $i -le $Tries; $i++) {
     $dirs += $d
 }
 
-# --- 鍵: 別の autorun（別の異変）が Codex を回している間は待つ ---
-$waited = $false
-while (Test-Path -LiteralPath $lock) {
-    $age = (Get-Date) - (Get-Item -LiteralPath $lock).LastWriteTime
-    if ($age.TotalMinutes -gt 20) {
-        "古い鍵（$([int]$age.TotalMinutes) 分前）を外す: $lock"
-        Remove-Item -LiteralPath $lock -Force
-        break
+function Wait-Lock {
+    $waited = $false
+    while (Test-Path -LiteralPath $lock) {
+        $age = (Get-Date) - (Get-Item -LiteralPath $lock).LastWriteTime
+        if ($age.TotalMinutes -gt 20) {
+            "古い鍵（$([int]$age.TotalMinutes) 分前）を外す: $lock"
+            Remove-Item -LiteralPath $lock -Force
+            break
+        }
+        if (-not $waited) {
+            "別の autorun が焼いている（$((Get-Content -LiteralPath $lock -Raw).Trim())）。終わるまで待つ — 別の異変を同時に焼くと絵が入れ替わる"
+            $waited = $true
+        }
+        Start-Sleep -Seconds 10
     }
-    if (-not $waited) {
-        "別の autorun が焼いている（$(Get-Content -LiteralPath $lock -Raw)）。終わるまで待つ — 別の異変を同時に焼くと絵が入れ替わる"
-        $waited = $true
-    }
-    Start-Sleep -Seconds 10
+    Set-Content -LiteralPath $lock -Value "$PID $Anomaly $(Get-Date -Format s)" -Encoding UTF8
 }
-Set-Content -LiteralPath $lock -Value "$PID $Anomaly $(Get-Date -Format s)" -Encoding UTF8
 
+function Release-Lock { Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue }
+
+function Get-RunnerArgs([string]$d) {
+    @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runner,
+      '-PromptFile', (Join-Path $d 'prompt.txt'), '-Mode', 'image',
+      '-Cwd', $d, '-OutDir', $d, '-OutImage', (Join-Path $d 'out.png'))
+}
+
+function Find-Dups([string[]]$ds) {
+    $hashes = foreach ($d in $ds) {
+        $p = Join-Path $d 'out.png'
+        if (Test-Path -LiteralPath $p) {
+            [pscustomobject]@{ dir = $d; hash = (Get-FileHash -LiteralPath $p -Algorithm MD5).Hash }
+        }
+    }
+    $hashes | Group-Object hash | Where-Object { $_.Count -gt 1 }
+}
+
+# --- 並列で焼く（鍵の中で） ---
+Wait-Lock
 try {
     "焼く: $Tries 枚を並列（$Anomaly @ $Site / $Place）"
     $procs = foreach ($d in $dirs) {
-        Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList @(
-            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runner,
-            '-PromptFile', (Join-Path $d 'prompt.txt'), '-Mode', 'image',
-            '-Cwd', $d, '-OutDir', $d, '-OutImage', (Join-Path $d 'out.png'))
+        Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList (Get-RunnerArgs $d)
     }
     $procs | Wait-Process -Timeout 900
 }
-finally {
-    Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
-}
+finally { Release-Lock }
 
-# --- 入れ替わりの印: 同じ絵が 2 走行に入っていないか ---
-$hashes = foreach ($d in $dirs) {
-    $p = Join-Path $d 'out.png'
-    if (Test-Path -LiteralPath $p) {
-        [pscustomobject]@{ dir = (Split-Path -Leaf $d); hash = (Get-FileHash -LiteralPath $p -Algorithm MD5).Hash }
-    }
-}
-$dups = $hashes | Group-Object hash | Where-Object { $_.Count -gt 1 }
+# --- 重複（同じ絵が 2 走行に入る）は 1 枚ずつ焼き直す ---
+$dups = Find-Dups $dirs
 if ($dups) {
     ""
-    "⚠⚠ 同じ絵が複数の走行に入っている（入れ替わりの印。README §9）:"
-    foreach ($g in $dups) { "   " + (($g.Group | ForEach-Object { $_.dir }) -join ' = ') }
+    "⚠ 同じ絵が複数の走行に入っている（並列の重複。README §9）:"
+    foreach ($g in $dups) { "   " + (($g.Group | ForEach-Object { Split-Path -Leaf $_.dir }) -join ' = ') }
+    if (-not $NoRetry) {
+        $retry = @(foreach ($g in $dups) { $g.Group | Select-Object -Skip 1 | ForEach-Object { $_.dir } })
+        "  → $($retry.Count) 枚を 1 枚ずつ焼き直す"
+        Wait-Lock
+        try {
+            foreach ($d in $retry) {
+                Remove-Item -LiteralPath (Join-Path $d 'out.png') -Force -ErrorAction SilentlyContinue
+                & powershell.exe @(Get-RunnerArgs $d) | Out-Null
+            }
+        }
+        finally { Release-Lock }
+        $again = Find-Dups $dirs
+        if ($again) {
+            "⚠⚠ 焼き直しても重複が残った: " + (($again | ForEach-Object { ($_.Group | ForEach-Object { Split-Path -Leaf $_.dir }) -join ' = ' }) -join ' / ')
+        }
+        else { "  重複は解けた" }
+    }
 }
 
 # 判定して良い順に並べる（exit 0 = 合格 / 1 = 不合格）
