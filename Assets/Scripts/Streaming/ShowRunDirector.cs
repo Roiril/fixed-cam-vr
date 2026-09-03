@@ -108,6 +108,13 @@ namespace FixedCamVr.Streaming
         public bool ScreenDecayReleased => _decay.Released;
 
         /// <summary>
+        /// <b>解除の進み 0..1</b>（0 = まだ呪われている / 1 = 戻り切った）。
+        /// 画だけでなく <b>AI の侵食（<c>CommsGlitchLogic</c>）もこの 1 本で消える</b>
+        /// （2026-09-03・<c>canon/LEDGER.md</c> 0129）。呪いが解けた瞬間は 1 つなので時計も 1 つ。
+        /// </summary>
+        public float ScreenDecayReleaseK => _decay.ReleaseK;
+
+        /// <summary>
         /// <b>呪いが解けた。視界の悪さを元へ戻す</b>（<c>canon/LEDGER.md</c> 0083）。
         /// 呼ぶのは <c>ShowControlClient.RecordVisitorMark</c> — <b>締めのカット
         /// （<c>durKind:"untilMark"</c>）が報告で進んだときだけ</b>。

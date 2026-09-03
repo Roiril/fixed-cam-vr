@@ -142,19 +142,63 @@ namespace FixedCamVr.Streaming.Tests
         {
             const int total = 3;
             // 3 周目（原型を保てない）
-            Assert.AreEqual(1f, CommsGlitchLogic.CorruptionFor(1f, total, total, 0f), 0.001f,
+            Assert.AreEqual(1f, CommsGlitchLogic.CorruptionFor(1f, total, total, 0f, 0f), 0.001f,
                             "3 周目は満額のまま");
             // 帰りの A へ入った瞬間はまだ壊れている（いきなり戻ると「壊れていた」印象ごと消える）
-            Assert.Greater(CommsGlitchLogic.CorruptionFor(1f, total + 1, total, 0f), 0.9f);
+            Assert.Greater(CommsGlitchLogic.CorruptionFor(1f, total + 1, total, 0f, 0f), 0.9f);
             // 数秒で持ち直す
             float mid = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                      CommsGlitchLogic.RecoverSec * 0.5f);
+                                                      CommsGlitchLogic.RecoverSec * 0.5f, 0f);
             Assert.Less(mid, 0.9f, "半ばでは戻り始めている");
             Assert.Greater(mid, CommsGlitchLogic.RecoveredLevel, "半ばで戻り切ってはいない");
             float done = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                       CommsGlitchLogic.RecoverSec * 2f);
+                                                       CommsGlitchLogic.RecoverSec * 2f, 0f);
             Assert.AreEqual(CommsGlitchLogic.RecoveredLevel, done, 0.001f, "戻り切る");
-            Assert.Greater(done, 0f, "⚠ 0 にはしない（完全に戻ると何も起きていなかったことになる）");
+            Assert.Greater(done, 0f,
+                           "⚠ 報告の前に 0 にはしない（押す前に直ると、報告が何も変えなかったことになる）");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>報告が通って呪いが解けたら、普通のエージェントに戻る</b>
+        /// （2026-09-03・<c>canon/LEDGER.md</c> 0129 — ユーザー
+        /// 「呪いを消したら普通のエージェントに戻るようにしてほしい」）。
+        /// <b>帰りの A の傷（<see cref="CommsGlitchLogic.RecoveredLevel"/>）ごと消える</b> —
+        /// 侵食は呪いのせい（0083）なので、原因が消えたのに侵食だけが残ってはいけない。
+        /// </summary>
+        [Test]
+        public void Corruption_ClearsWhenCurseReleased()
+        {
+            const int total = 3;
+            // 帰りの A で持ち直したところ（報告の直前）。まだ傷が残っている。
+            float before = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
+                                                          CommsGlitchLogic.RecoverSec * 2f, 0f);
+            Assert.AreEqual(CommsGlitchLogic.RecoveredLevel, before, 0.001f);
+
+            // 解除の途中（画が戻りつつある）。傷は減っているが、まだ 0 ではない。
+            float mid = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
+                                                      CommsGlitchLogic.RecoverSec * 2f, 0.5f);
+            Assert.Less(mid, before, "解除が進んだのに侵食が減っていない");
+            Assert.Greater(mid, 0f, "途中で 0 に飛ぶと「消えた」ではなく「切れた」に見える");
+
+            // 戻り切ったら **1 画素も壊れていない**（顔もスイに戻る ＝ CommsPanel の _FaceMix が 0）。
+            float after = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
+                                                        CommsGlitchLogic.RecoverSec * 2f, 1f);
+            Assert.AreEqual(0f, after, 0.0001f, "呪いが解けても侵食が残っている");
+            Assert.AreEqual("あいうえお", CommsGlitchLogic.Corrupt("あいうえお", after, tick: 7),
+                            "侵食 0 なら文面は 1 字も化けない");
+        }
+
+        /// <summary>
+        /// 解除は<b>どの周で起きても</b>そのときの侵食を消す（掛け算なので周に依らない）。
+        /// ⚠ 台本の上では帰りの A の 1 点だけだが、ここが周に依存すると
+        /// 「締めのカットを別の周に置いた」だけで黙って壊れる。
+        /// </summary>
+        [Test]
+        public void Corruption_ReleaseClearsRegardlessOfLap()
+        {
+            for (int lap = 1; lap <= 4; lap++)
+                Assert.AreEqual(0f, CommsGlitchLogic.CorruptionFor(1f, lap, 3, 0f, 1f), 0.0001f,
+                                $"{lap} 周目で解除が効いていない");
         }
 
         /// <summary>手前の周では回復しない（`returnSec` を渡しても効かない）。</summary>
@@ -163,7 +207,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             for (int lap = 1; lap <= 3; lap++)
                 Assert.AreEqual(CommsGlitchLogic.LevelFor(1f),
-                                CommsGlitchLogic.CorruptionFor(1f, lap, 3, 99f), 0.0001f,
+                                CommsGlitchLogic.CorruptionFor(1f, lap, 3, 99f, 0f), 0.0001f,
                                 $"{lap} 周目で回復してしまっている");
         }
 

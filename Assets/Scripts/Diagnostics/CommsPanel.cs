@@ -1233,8 +1233,9 @@ namespace FixedCamVr.Diagnostics
             // ⚠⚠ **侵食は周回の壊れとまったく同じ値を読む**（`canon/LEDGER.md` 0073）。
             //    独自の曲線を持たせない — 2 つ持つと、片方だけ直したときに
             //    「文字は原型を保てないのに顔はスイのまま」が黙って起きる。
-            //    あの値は 3 周目 A で 1.0（＝ 完全に人形）に着き、**帰りの A で戻る**
-            //    （`CommsGlitchLogic.CorruptionFor`）ので、AI の復帰がそのまま顔にも出る。
+            //    あの値は 3 周目 A で 1.0（＝ 完全に人形）に着き、**帰りの A で戻り**、
+            //    **報告で呪いが解けると 0（＝ 完全にスイ）へ消える**
+            //    （`CommsGlitchLogic.CorruptionFor`・0129）ので、AI の復帰がそのまま顔にも出る。
             AppliedFaceMix = _glitchLevel;
 
             float x = CommsFaceLayout.CellCenterX(PanelW);
@@ -1311,9 +1312,10 @@ namespace FixedCamVr.Diagnostics
         }
 
         /// <summary>
-        /// いまの侵食 0..1（<c>canon/LEDGER.md</c> 0070）。
+        /// いまの侵食 0..1（<c>canon/LEDGER.md</c> 0070 / <b>0129</b>）。
         /// ⚠⚠ <b>単調ではない</b> — 3 周目で 1.0 に着き（原型を保てない）、
-        /// 帰りの A で <see cref="CommsGlitchLogic.RecoveredLevel"/> まで戻る（なんとか復帰）。
+        /// 帰りの A で <see cref="CommsGlitchLogic.RecoveredLevel"/> まで戻り（なんとか復帰）、
+        /// <b>報告が通って呪いが解けると 0 へ消える</b>（普通のエージェントに戻る）。
         /// 映像の劣化は単調のままなので、**ここだけが山になる**。
         /// </summary>
         private float ResolveCorruption()
@@ -1322,7 +1324,10 @@ namespace FixedCamVr.Diagnostics
             if (_decayOverride >= 0f) return CommsGlitchLogic.LevelFor(_decayOverride);
             int lap = runDirector != null ? runDirector.Lap : 1;
             int total = runDirector != null ? runDirector.TotalLaps : 3;
-            return CommsGlitchLogic.CorruptionFor(DecayProgress, lap, total, _returnSec);
+            // ⚠ 解除の進みは **画が戻るのと同じ 1 本**（`ScreenDecayLogic.ReleaseK`）。
+            //   ここで自前に数え直すと、片方だけ直したときに黙って食い違う。
+            float releaseK = runDirector != null ? runDirector.ScreenDecayReleaseK : 0f;
+            return CommsGlitchLogic.CorruptionFor(DecayProgress, lap, total, _returnSec, releaseK);
         }
 
         private void TickGlitch(float timeSec)

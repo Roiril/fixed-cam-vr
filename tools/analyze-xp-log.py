@@ -2477,11 +2477,32 @@ def analyze(events, others, exp, warns=None):
                                 "（相が Run を出た所で凍っていないか）")
             elif after:
                 verdict("OK", "報告で呪いが解け、視界が元へ戻った")
-            # 生まで下がっていたら、音と AI の侵食が一緒に戻っている（＝「直った」を音で宣言している）。
+            # 生まで下がっていたら、音の痩せが一緒に戻っている（＝「直った」を音で宣言している）。
             if raw_after and min(raw_after) < max(raw_after) - 0.05:
                 verdict("FAIL", "呪いの解除で**生の劣化まで**下がっている — "
-                                "装置の声（bed_device の痩せ）と AI の侵食も一緒に戻ってしまう。"
-                                "画へ書くのは Shown、音と侵食へ渡すのは Progress")
+                                "装置の声（bed_device の痩せ）が新品へ戻ってしまう。"
+                                "画へ書くのは Shown、音へ渡すのは Progress")
+
+            # ⚠⚠ **AI の侵食も一緒に消える**（`canon/LEDGER.md` 0129 —
+            #    「呪いを消したら普通のエージェントに戻るようにしてほしい」）。
+            #    画（coarseShown）と**別々に壊れる**ので畳まない — 画が戻っても侵食が残れば、
+            #    体験者から見えるのは「呪いを消したのにエージェントがバグったまま」。
+            gl_after = []
+            for e in events[first:]:
+                if e.get("ev") != "sum":
+                    continue
+                try:
+                    gl_after.append(float(e["commsGl"]))
+                except (KeyError, TypeError, ValueError):
+                    pass
+            if gl_after and min(gl_after) > 0.01:
+                verdict("FAIL", f"呪いが解けたのに AI の侵食が残っている"
+                                f"（commsGl {min(gl_after):.2f} 止まり）— "
+                                "報告した後も文字が化け、顔が市松人形のまま。"
+                                "CommsPanel.ResolveCorruption が ScreenDecayReleaseK を"
+                                "渡せていない疑い")
+            elif gl_after:
+                verdict("OK", "呪いが解け、AIエージェントが普通に戻った（侵食が 0 まで落ちた）")
         elif max(decay_run) > 0.5:
             verdict("WARN", "視界が劣化したまま解除されずに終わった — "
                             "締めのカット（untilMark）へ報告が届いていないか、押されなかった")

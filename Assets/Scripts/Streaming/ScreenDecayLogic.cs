@@ -91,7 +91,8 @@ namespace FixedCamVr.Streaming
         ///   - <c>ShowSoundDirector</c> — 装置の声の痩せ（<c>bed_device → bed_device_worn</c>）。
         ///     <b>下げると音が新品へ戻り、「直った」を音で宣言する</b> ＝ 最も避けたい
         ///     「クリア演出」がまさに音で出る。装置は呪いとは無関係に使い込まれている
-        ///   - <c>CommsGlitchLogic</c> — AI の侵食の入力（あちらは自前の山を描く）
+        ///   - <c>CommsGlitchLogic</c> — AI の侵食の入力（あちらは自前の山を描く）。
+        ///     ⚠ <b>侵食が消えるのは解除の側</b>（<see cref="ReleaseK"/>）であって、ここではない
         ///   - 画 — こちらだけが <see cref="Shown"/> を読む
         /// </summary>
         public float Progress => _progress;
@@ -117,16 +118,27 @@ namespace FixedCamVr.Streaming
         /// <summary>呪いが解けたか（テレメトリ・テスト用）。</summary>
         public bool Released => _released;
 
-        // 解除の進み 0..1（smoothstep 済み）。
-        private float ReleaseK => _released ? Smooth(Clamp01(_releaseSec / ReleaseSec)) : 0f;
+        /// <summary>
+        /// <b>解除の進み 0..1</b>（smoothstep 済み・0 = まだ呪われている / 1 = 戻り切った）。
+        ///
+        /// ⚠⚠ <b>AI の侵食もこの 1 本を読む</b>（2026-09-03・<c>canon/LEDGER.md</c> 0129 —
+        /// <c>CommsGlitchLogic.CorruptionFor</c>）。呪いが解けた瞬間は 1 つしかないので、
+        /// <b>画と AI が同じ時計で戻る</b>。侵食の側に別の時計を置くと、
+        /// 片方だけ直したときに黙って食い違う（0068 の「独自の周回カウンタを持たせない」と同じ理由）。
+        /// </summary>
+        public float ReleaseK => _released ? Smooth(Clamp01(_releaseSec / ReleaseSec)) : 0f;
 
         /// <summary>
         /// <b>呪いが解けた。</b>ここから <see cref="ReleaseSec"/> かけて視界が元へ戻る
         /// （解像度と色が同じ 1 本の進みを共有しているので、<b>両方が一緒に戻る</b>）。
         ///
         /// ⚠⚠ <b>下がるのは画（<see cref="Shown"/>）だけ。</b> <see cref="Progress"/> は単調のまま —
-        /// 音（装置の声の痩せ）と AI の侵食が同じ値を読んでいるので、そちらまで戻すと
+        /// 音（装置の声の痩せ）が同じ値を読んでいるので、そちらまで戻すと
         /// <b>「直った」を音で宣言する</b>ことになる。
+        ///
+        /// ⚠ <b>AI の侵食は <see cref="ReleaseK"/> を読んで 0 へ消える</b>
+        /// （2026-09-03・<c>canon/LEDGER.md</c> 0129「呪いを消したら普通のエージェントに戻る」）。
+        /// 装置は使い込まれたまま、<b>呪いに由来するものだけが消える</b> — 音は装置、侵食は呪い。
         ///
         /// ⚠ 冪等。2 度目以降の報告では何も起きない（戻る途中で押し直しても速さが変わらない）。
         /// </summary>

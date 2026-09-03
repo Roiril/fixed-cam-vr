@@ -251,8 +251,11 @@ namespace FixedCamVr.Streaming.Tests
         /// <summary>
         /// ⚠⚠ <b>下がるのは画だけ。</b> <see cref="ScreenDecayLogic.Progress"/> は
         /// <c>ShowSoundDirector</c>（装置の声の痩せ <c>bed_device → bed_device_worn</c>）と
-        /// <c>CommsGlitchLogic</c>（AI の侵食の入力）が読んでいる。ここまで戻すと
+        /// <c>CommsGlitchLogic</c>（AI の侵食の入力 ＝ 山の高さ）が読んでいる。ここまで戻すと
         /// <b>音が新品へ戻って「直った」を音で宣言する</b> ＝ 避けたかったクリア演出が音で出る。
+        ///
+        /// ⚠ <b>AI の侵食が消えるのは <see cref="ScreenDecayLogic.ReleaseK"/> の側</b>
+        /// （2026-09-03・<c>canon/LEDGER.md</c> 0129）。入力は単調のまま、解除だけが侵食を 0 にする。
         /// </summary>
         [Test]
         public void 音とAIが読む進みは呪いが解けても下がらない()
@@ -265,6 +268,28 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.Progress, Is.GreaterThanOrEqualTo(raw),
                 "装置は呪いとは無関係に使い込まれている（単調のまま）");
             Assert.AreEqual(0f, l.Shown, 0.001f, "画だけが戻る");
+        }
+
+        /// <summary>
+        /// <b>解除の進みは画と AI が共有する 1 本</b>（2026-09-03・<c>canon/LEDGER.md</c> 0129）。
+        /// <c>CommsPanel</c> がこれを <c>CommsGlitchLogic.CorruptionFor</c> へ渡して侵食を 0 にする。
+        /// ⚠ 侵食の側に別の時計を置くと、片方だけ直したときに黙って食い違う。
+        /// </summary>
+        [Test]
+        public void 解除の進みは画とAIで同じ1本()
+        {
+            ScreenDecayLogic l = Cursed();
+            Assert.AreEqual(0f, l.ReleaseK, 0.0001f, "報告の前は 0（＝ 侵食はそのまま）");
+
+            l.Release();
+            Run(l, ScreenDecayLogic.ReleaseSec * 0.5f, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+            Assert.That(l.ReleaseK, Is.GreaterThan(0f).And.LessThan(1f), "途中は途中の値");
+
+            Run(l, ScreenDecayLogic.ReleaseSec, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
+            Assert.AreEqual(1f, l.ReleaseK, 0.0001f, "戻り切ったら 1（＝ 侵食は 0）");
+
+            l.Reset();
+            Assert.AreEqual(0f, l.ReleaseK, 0.0001f, "次の体験者は最初から解けていない");
         }
 
         [Test]

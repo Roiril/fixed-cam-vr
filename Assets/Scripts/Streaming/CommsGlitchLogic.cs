@@ -101,8 +101,13 @@ namespace FixedCamVr.Streaming
         public const float RecoverSec = 3.2f;
 
         /// <summary>
-        /// 復帰後に残る侵食。<b>0 にしない</b> — 完全に元へ戻ると「何も起きていなかった」になる。
-        /// たまに 1 字が化けるくらいの傷が残る。
+        /// <b>帰りの A へ入って持ち直した後、まだ残っている侵食。</b>
+        /// たまに 1 字が化けるくらいの傷が残る ＝ <b>呪いはまだ解けていない</b>。
+        ///
+        /// ⚠⚠ <b>0 にしない。</b> ここで 0 にすると、体験者が③を読んで報告する前に
+        /// AI が直り切ってしまい、<b>報告が何も変えなかった</b>ことになる。
+        /// 傷が消えるのは報告が通った瞬間で、そちらは <see cref="CorruptionFor"/> の
+        /// <c>releaseK</c> が 0 まで持っていく（2026-09-03・<c>canon/LEDGER.md</c> 0129）。
         /// </summary>
         public const float RecoveredLevel = 0.12f;
 
@@ -143,25 +148,47 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// <b>AI の侵食 0..1。単調ではない</b>（<c>canon/LEDGER.md</c> 0070）。
+        /// <b>AI の侵食 0..1。単調ではない</b>（<c>canon/LEDGER.md</c> 0070 / <b>0129</b>）。
         ///
-        /// 3 周目 A で 1.0 に着き（原型を保てない）、<b>帰りの A で <see cref="RecoveredLevel"/> まで戻る</b>
-        /// （なんとか復帰して、最後の連絡を出す）。映像の劣化（<see cref="ScreenDecayLogic"/>）は
-        /// 単調のままなので、**ここだけが山になる** — 装置は壊れ続け、AI は持ち直す。
+        /// 3 周目 A で 1.0 に着き（原型を保てない）、<b>帰りの A で <see cref="RecoveredLevel"/> まで戻り</b>
+        /// （なんとか復帰して③を出す）、<b>その③に応えた報告が通ると 0 へ消える</b>
+        /// （呪いが解けた ＝ 侵食の原因そのものが無くなった）。
+        /// 映像の劣化（<see cref="ScreenDecayLogic.Progress"/>）は単調のままなので、
+        /// <b>ここだけが山になる</b> — 装置は使い込まれ続け、AI だけが呪いから解ける。
+        ///
+        /// ⚠⚠ <b>2 段は別の出来事。</b> 1 段目（<paramref name="returnSec"/>）は AI が自力で持ち直した
+        /// ぶんで、<b>まだ呪われている</b>から傷が残る。2 段目（<paramref name="releaseK"/>）は
+        /// 体験者の報告が呪いを解いたぶんで、<b>残らない</b>。混ぜて 1 本の曲線にすると
+        /// 「体験者が押したから直った」が消える（2026-09-03・ユーザー
+        /// 「呪いを消したら普通のエージェントに戻るようにしてほしい」）。
         ///
         /// ⚠ <paramref name="lap"/> は 1 始まり。<c>lap &gt; totalLaps</c> が帰りの区間
         /// （`ShowRunReach` の到達可能な区間の式と同じ考え）。
         /// </summary>
         /// <param name="returnSec">帰りの区間に入ってからの経過 (秒)。</param>
-        public static float CorruptionFor(float decayProgress, int lap, int totalLaps, float returnSec)
+        /// <param name="releaseK">
+        /// <b>呪いの解除の進み 0..1</b>（<see cref="ScreenDecayLogic.ReleaseK"/>）。
+        /// ⚠ <b>自前の時計を持たない</b> — 画が戻るのと同じ 1 本を読む。呪いが解けた瞬間は
+        /// 1 つしかないので、2 つ持つと片方だけ直したときに黙って食い違う。
+        /// </param>
+        public static float CorruptionFor(float decayProgress, int lap, int totalLaps, float returnSec,
+                                          float releaseK)
         {
             float lv = LevelFor(decayProgress);
             if (totalLaps < 1) totalLaps = 3;
-            if (lap <= totalLaps) return lv;
+            if (lap > totalLaps)
+            {
+                // 帰りの A。持ち直す（滑らかに ＝ AI が自分で立て直している）。⚠ 傷は残る。
+                float k = Smooth(Clamp01(returnSec / RecoverSec));
+                lv += (RecoveredLevel - lv) * k;
+            }
 
-            // 帰りの A。持ち直す（滑らかに ＝ 装置が自分で立て直している）。
-            float k = Smooth(Clamp01(returnSec / RecoverSec));
-            return lv + (RecoveredLevel - lv) * k;
+            // 呪いが解けた。⚠ **残りの傷ごと消す** — 侵食は呪いのせい（0083）なので、
+            //    原因が消えたのに侵食だけが残ると、体験者の報告が何も変えなかったことになる。
+            //    ⚠ 掛け算なので、どの周で解けても「そのときの侵食が消える」で通る。
+            float rk = Clamp01(releaseK);
+            if (rk > 0f) lv *= 1f - rk;
+            return lv <= OffThreshold ? 0f : lv;
         }
 
         /// <summary>
