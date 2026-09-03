@@ -40,6 +40,9 @@ import sys
 from datetime import datetime, timedelta
 
 import cv2
+
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import numpy as np
 
 XP = re.compile(r"\[XP\]\s+(.*)$")
@@ -169,6 +172,82 @@ def stamp_of(video: str):
         return None
 
 
+def fit_offset_from_screen(video: str, rows, hint, trust_hint: bool = False):
+    """**画そのもので時刻を合わせる**（時計を 1 つも信用しない・2026-09-03）。
+
+    カメラ切替は暗転（`_SwitchDim`）を挟むので、**スクリーンの中が 1〜2 コマだけ真っ暗になる**。
+    その谷を録画から拾い、ログの `ev=screen` の並びといちばん合う offset を探す。
+
+    ⚠⚠ **これが要る理由**: サイドカーの `record_started_iso` は **PC の時計**、
+    `[XP]` の時刻は **実機の時計**（logcat の行頭）。2 つの時計は平気で 10 秒ずれる
+    （2026-09-03 実測 9.70 秒）。**画と音を突き合わせる作業は、そのずれがそのまま結果になる。**
+
+    ⚠⚠ **コマ番号 ÷ fps を秒に使わない。** `screenrecord` はコマを落とすので、
+    平均 fps から出した秒は**真の時刻から 1 秒以上ずれる**（実測: コマ 3000 で +1.12 秒）。
+    `CAP_PROP_POS_MSEC`（＝ 本当の提示時刻）を読む。
+
+    ⚠ 谷の判定は**きつく**（周りの 25% 未満）。緩いと 1 回の切替で 2 つ拾い、
+    0.86 秒ずれた別の解に吸い付く（実際にそれで 1 度外した）。
+    """
+    marks = [r["t"] for r in rows if r["ev"].get("ev") == "screen"]
+    if len(marks) < 4:
+        return None, f"⚠ 画で合わせられない（`ev=screen` が {len(marks)} 件しかない）"
+
+    cap = cv2.VideoCapture(video)
+    if not cap.isOpened():
+        return None, "⚠ 画で合わせられない（録画を開けない）"
+    ts, lv = [], []
+    while True:
+        t = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+        ok, f = cap.read()
+        if not ok:
+            break
+        h = f[:, : f.shape[1] // 2] if f.shape[1] > f.shape[0] * 1.4 else f
+        H, W = h.shape[:2]
+        ts.append(t)
+        lv.append(float(h[int(H * 0.32):int(H * 0.68), int(W * 0.25):int(W * 0.80)].mean()))
+    cap.release()
+    if len(lv) < 120:
+        return None, "⚠ 画で合わせられない（コマが足りない）"
+
+    win = 33   # 前後およそ 0.5 秒
+    dips = []
+    for i in range(win, len(lv) - win):
+        around = max(max(lv[i - win:i - 4]), max(lv[i + 4:i + win]))
+        if around <= 2.0 or lv[i] >= around * 0.25:
+            continue
+        if lv[i] != min(lv[max(0, i - 4):i + 5]):
+            continue
+        if dips and ts[i] - dips[-1] < 0.5:
+            continue
+        dips.append(ts[i])
+    if len(dips) < 4:
+        return None, f"⚠ 画で合わせられない（暗転が {len(dips)} 件しか見つからない）"
+
+    # ⚠ 時計から出した hint は**当てにならないことがある**（PC と実機の時計が 10 秒ずれる）。
+    #    信用してよいと分かっているときだけ窓を絞る。
+    lo, hi = ((-30.0, 30.0) if hint is None or not trust_hint
+              else (hint - 3.0, hint + 3.0))
+    best = None
+    off = lo
+    while off <= hi:
+        res = [min(dips, key=lambda x: abs(x - (m + off))) - (m + off) for m in marks]
+        good = [r for r in res if abs(r) < 0.5]
+        if len(good) >= 4:
+            err = sum(r * r for r in good) / len(good)
+            if best is None or (len(good), -err) > (best[2], -best[1]):
+                best = (off, err, len(good), sorted(good)[len(good) // 2])
+        off += 0.005
+    if best is None:
+        return None, "⚠ 画で合わせられない（暗転とログの並びが噛み合わない）"
+    o, err, n, med = best
+    # ⚠ 残りの偏り（画が出るまでの遅れ）は真ん中へ寄せる。実測でおよそ +0.09 秒。
+    o += med
+    return o, (f"**画で合わせた**。カメラ切替の暗転 {n} 点をログの `ev=screen` と突き合わせ"
+               f"（ばらつき {err ** 0.5:.2f} 秒・遅れ {med:+.2f} 秒を補正）。"
+               f"⚠ 時計は 1 つも使っていない")
+
+
 def resolve_offset(video: str, rows, offset_arg):
     """(offset秒, 推定か, 根拠の文) を返す。offset は `録画秒 = XP秒 + offset`。"""
     t0 = zero_wall(rows)
@@ -186,10 +265,28 @@ def resolve_offset(video: str, rows, offset_arg):
             started = meta.get("record_started_iso")
             if started and t0:
                 rec0 = datetime.fromisoformat(started)
+                # ⚠⚠ **2 つの時刻は別々の時計で刻まれている。**
+                #    `record_started_iso` は PC の `datetime.now()`、
+                #    `t=0 の壁時計` は logcat の行頭 ＝ **実機の時計**。
+                #    引き算するだけだと、**時計のずれがそのまま画と音のずれになる**
+                #    （2026-09-03 実測: この Quest は PC より 9.70 秒進んでいて、
+                #     出した対応表が 9.35 秒ずれ、目の場面が別の瞬間で切り出されていた）。
+                skew = meta.get("device_clock_skew_sec")
                 off = (t0 - rec0).total_seconds()
-                return off, False, (
-                    f"サイドカー {os.path.basename(side)} の record_started_iso="
-                    f"{rec0.strftime('%H:%M:%S.%f')[:-3]} と、t=0 の壁時計 {t0_txt} の差")
+                if isinstance(skew, (int, float)):
+                    off -= float(skew)
+                    return off, False, (
+                        f"サイドカー {os.path.basename(side)} の record_started_iso="
+                        f"{rec0.strftime('%H:%M:%S.%f')[:-3]}（PC の時計）と、"
+                        f"t=0 の壁時計 {t0_txt}（実機の時計）の差から、"
+                        f"時計のずれ {float(skew):+.2f} 秒を引いたもの")
+                return off, True, (
+                    f"⚠ **推定**。サイドカー {os.path.basename(side)} に "
+                    f"`device_clock_skew_sec` が無い（この計装より前の走行）。"
+                    f"record_started_iso={rec0.strftime('%H:%M:%S.%f')[:-3]} は **PC の時計**、"
+                    f"t=0 の壁時計 {t0_txt} は **実機の時計**なので、"
+                    f"**2 つの時計のずれ（実測で 10 秒近いことがある）ぶん外れている**。"
+                    f"`--offset` を渡すか、`--fit-screen` で画から合わせ直すこと")
         except (ValueError, OSError, json.JSONDecodeError) as e:
             print("sidecar unusable: %s" % e, file=sys.stderr)
 
@@ -531,6 +628,8 @@ def main(argv=None):
     ap.add_argument("--out", default=None, help="出力先（既定 logs/evidence/<録画の日時>/）")
     ap.add_argument("--offset", type=float, default=None,
                     help="録画秒 = XP秒 + この値。録画が先に始まっていれば負")
+    ap.add_argument("--no-fit", action="store_true",
+                    help="画（カメラ切替の暗転）で合わせ直さない。⚠ 時計のずれがそのまま残る")
     ap.add_argument("--all-runs", action="store_true",
                     help="ログを最後の走行だけに絞らない")
     args = ap.parse_args(argv)
@@ -552,6 +651,19 @@ def main(argv=None):
         rows, n_boot = slice_last_run(rows)
 
     offset, estimated, basis = resolve_offset(args.video, rows, args.offset)
+    # ⚠⚠ **画で合わせ直すのが正**（2026-09-03）。時計を 1 つも使わないので、
+    #    PC と実機の時計のずれ（実測 9.70 秒）に影響されない。
+    #    人が `--offset` を渡したときだけは、その判断を上書きしない。
+    if args.offset is None and not args.no_fit:
+        fitted, why = fit_offset_from_screen(args.video, rows, offset,
+                                             trust_hint=not estimated)
+        if fitted is not None:
+            if offset is not None and abs(fitted - offset) > 0.5:
+                print("時計から出した offset %+.2f を、画で合わせた %+.2f へ差し替えた（差 %.2f 秒）"
+                      % (offset, fitted, fitted - offset))
+            offset, estimated, basis = fitted, False, why
+        else:
+            print(why)
     if offset is None:
         print("cannot line up the log with the video: %s" % basis, file=sys.stderr)
         print("  pass --offset <sec> (rec = xp + offset)", file=sys.stderr)

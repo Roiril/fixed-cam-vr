@@ -365,6 +365,28 @@ def convert(raw_path, out_path, right_eye=True, scale=1.0):
 
 # ---------------------------------------------------------------- 録画
 
+def clock_skew(serial: str) -> float | None:
+    """**実機の時計 − PC の時計**（秒）。取れなければ None。
+
+    ⚠⚠ **サイドカーの時刻と `[XP]` の時刻は別々の時計で刻まれている。**
+    `record_started_iso` は PC の `datetime.now()`、`t=0 の壁時計` は logcat の行頭 ＝ **実機の時計**。
+    2 つを引き算すると、**時計のずれがそのまま画と音のずれになる**。
+
+    実測（2026-09-03）: この Quest は PC より **9.70 秒進んでいた**。おかげで
+    `xp-evidence.py` が出した対応表は 9.35 秒ずれ、目の場面を切り出すと別の瞬間が出ていた。
+    """
+    try:
+        t0 = datetime.now()
+        r = subprocess.run(["adb", "-s", serial, "shell", "date", "+%s.%N"],
+                           capture_output=True, text=True, timeout=20)
+        t1 = datetime.now()
+        dev = float(r.stdout.strip())
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return None
+    pc = (t0.timestamp() + t1.timestamp()) / 2.0
+    return dev - pc
+
+
 def record(serial, secs, walk, size=None, warmup=5.0, with_log=True):
     """アプリを起動してから録る。起動と録画開始の**壁時計**を返す。
 
@@ -542,6 +564,13 @@ def main():
     print("pulled: %s (%.1f MB)" % (raw, size_mb))
     adb(serial, "shell", "rm", "-f", REMOTE)
 
+    # 実機と PC の時計のずれ（サイドカーの時刻を `[XP]` と突き合わせるのに要る）。
+    skew = clock_skew(serial)
+    if skew is None:
+        print("  ⚠ 実機の時計を読めなかった（画と音の対応が数秒ずれる）")
+    elif abs(skew) > 1.0:
+        print("  実機の時計は PC より %+.2f 秒（サイドカーに書いた。対応表はこれで補正する）" % skew)
+
     # サイドカーは変換の前に書く。ここが xp-evidence.py の時刻対応の正になる。
     meta = {
         "serial": serial,
@@ -549,6 +578,9 @@ def main():
         "sec": args.sec,
         "app_started_iso": app_started.isoformat(timespec="milliseconds"),
         "record_started_iso": rec_started.isoformat(timespec="milliseconds"),
+        # ⚠⚠ **上の 2 つは PC の時計。`[XP]` の時刻は実機の時計（logcat の行頭）。**
+        #    引き算するときはこのずれを足さないと、その分だけ画と音がずれる（2026-09-03 実測 9.70 秒）。
+        "device_clock_skew_sec": skew,
         "camera_health_before": before,
         "camera_health_after": after,
     }
