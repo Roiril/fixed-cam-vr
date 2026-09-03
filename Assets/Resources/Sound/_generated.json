@@ -1,25 +1,158 @@
 {
-  "sfx_screen_noise": {
-    "sec": 1.15,
-    "true_peak_db": -9.56,
-    "lufs": -22.0,
-    "crest_db": 17.7,
-    "centroid_hz": 3757,
+  "bed_device": {
+    "sec": 12.0,
+    "true_peak_db": -23.35,
+    "lufs": -32.0,
+    "crest_db": 13.3,
+    "centroid_hz": 3062,
     "bands_db": {
-      "sub": -58.6,
-      "low": -6.2,
-      "mid": -6.5,
-      "high": -3.3,
-      "air": -11.8
+      "sub": -6.2,
+      "low": -11.2,
+      "mid": -8.3,
+      "high": -2.8,
+      "air": -19.3
     },
     "dc": 0.0,
-    "mono_db": -1.14,
-    "speaker_db": -0.2,
-    "sharp": 1.68,
-    "rough": 0.07,
+    "mono_db": -0.0,
+    "speaker_db": -0.7,
+    "sharp": 1.21,
+    "rough": 0.02,
+    "tonal_db": 15.0,
+    "purity": 0.34,
+    "loop": true,
+    "mono": true,
+    "seam": {
+      "jump": 0.45,
+      "kink": 0.06,
+      "rms_d_db": 0.4,
+      "rms_d_max": 4.53
+    }
+  },
+  "bed_device_worn": {
+    "sec": 12.0,
+    "true_peak_db": -21.06,
+    "lufs": -32.0,
+    "crest_db": 12.7,
+    "centroid_hz": 1626,
+    "bands_db": {
+      "sub": -3.9,
+      "low": -5.4,
+      "mid": -6.0,
+      "high": -13.2,
+      "air": -33.1
+    },
+    "dc": 0.0,
+    "mono_db": 0.0,
+    "speaker_db": -2.4,
+    "sharp": 0.94,
+    "rough": 0.03,
+    "tonal_db": 10.9,
+    "purity": 0.26,
+    "loop": true,
+    "mono": true,
+    "seam": {
+      "jump": 1.34,
+      "kink": 0.64,
+      "rms_d_db": 0.79,
+      "rms_d_max": 8.12
+    }
+  },
+  "bed_static": {
+    "sec": 6.0,
+    "true_peak_db": -18.36,
+    "lufs": -28.0,
+    "crest_db": 14.1,
+    "centroid_hz": 4583,
+    "bands_db": {
+      "sub": -8.9,
+      "low": -5.9,
+      "mid": -9.3,
+      "high": -6.4,
+      "air": -5.7
+    },
+    "dc": 0.0,
+    "mono_db": 0.0,
+    "speaker_db": -1.0,
+    "sharp": 1.53,
+    "rough": 0.03,
+    "tonal_db": 10.8,
+    "purity": 0.32,
+    "loop": true,
+    "mono": true,
+    "seam": {
+      "jump": 0.32,
+      "kink": 0.53,
+      "rms_d_db": -0.3,
+      "rms_d_max": 4.28
+    }
+  },
+  "sfx_glitch_1": {
+    "sec": 0.26,
+    "true_peak_db": -6.45,
+    "lufs": -23.0,
+    "crest_db": 19.9,
+    "centroid_hz": 2070,
+    "bands_db": {
+      "sub": -36.8,
+      "low": -12.4,
+      "mid": -0.9,
+      "high": -8.7,
+      "air": -28.7
+    },
+    "dc": 5e-05,
+    "mono_db": 0.0,
+    "speaker_db": -0.1,
+    "sharp": 1.32,
+    "rough": 0.13,
     "tonal_db": 11.1,
-    "purity": 0.28,
+    "purity": 0.08,
     "loop": false,
-    "mono": false
+    "mono": true
+  },
+  "sfx_glitch_2": {
+    "sec": 0.26,
+    "true_peak_db": -9.2,
+    "lufs": -23.0,
+    "crest_db": 16.9,
+    "centroid_hz": 2690,
+    "bands_db": {
+      "sub": -28.2,
+      "low": -11.4,
+      "mid": -0.8,
+      "high": -11.1,
+      "air": -19.2
+    },
+    "dc": 0.00019,
+    "mono_db": 0.0,
+    "speaker_db": -0.2,
+    "sharp": 1.42,
+    "rough": 0.17,
+    "tonal_db": 10.6,
+    "purity": 0.1,
+    "loop": false,
+    "mono": true
+  },
+  "sfx_glitch_3": {
+    "sec": 0.26,
+    "true_peak_db": -14.59,
+    "lufs": -23.0,
+    "crest_db": 13.8,
+    "centroid_hz": 5933,
+    "bands_db": {
+      "sub": -43.6,
+      "low": -40.8,
+      "mid": -20.5,
+      "high": -2.0,
+      "air": -4.4
+    },
+    "dc": 3e-05,
+    "mono_db": 0.0,
+    "speaker_db": -0.2,
+    "sharp": 2.67,
+    "rough": 0.06,
+    "tonal_db": 10.4,
+    "purity": 0.0,
+    "loop": false,
+    "mono": true
   }
 }

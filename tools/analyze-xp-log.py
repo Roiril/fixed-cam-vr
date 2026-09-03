@@ -1809,6 +1809,73 @@ def analyze(events, others, exp, warns=None):
             else:
                 verdict("OK", "音源はすべて掴めている")
 
+        # -- 音が定位しているか（`canon/LEDGER.md` 0130）
+        #    ⚠⚠ **定位していないことは、画にも録画にも一撃のログにも出ない。**
+        #       spatializer（Meta XR Audio）はステレオのクリップを処理しないので、
+        #       `spatialBlend=1` でも頭の中で鳴るだけ ＝ **音は鳴っている**。
+        #       snd3d=<名簿で掴めた本数>/<ステレオのまま>/<いま 3D で鳴っている敷く音>。
+        d3 = effect_samples(events, "snd3d")
+        if d3:
+            last = str(d3[-1])
+            parts = last.split("/")
+            if len(parts) == 3:
+                try:
+                    have, stereo, live = (int(x) for x in parts)
+                except ValueError:
+                    have = stereo = live = -1
+                if have >= 0:
+                    w(f"  定位: 名簿 {have} 本 / ステレオのまま {stereo} 本 / "
+                      f"いま 3D で鳴っている敷く音 {live} 本")
+                    if stereo > 0:
+                        verdict("FAIL", f"3D で鳴らす音が {stereo} 本ステレオのまま — "
+                                        "音は鳴るが**定位しない**（頭の中で鳴る）。"
+                                        "`py -3.11 tools/ingest-sounds.py` / `make-sounds.py` で"
+                                        "焼き直して `tools/unity.ps1 menu sound-import`")
+                    elif have == 0:
+                        verdict("FAIL", "3D の名簿を 1 本も掴めていない — "
+                                        "`Resources/Sound/` が空か、名簿と焼いた名前が食い違っている")
+                    else:
+                        verdict("OK", f"3D で鳴らす音は {have} 本ともモノ（定位する）")
+                    # ⚠ 敷く音が 1 本も 3D になっていない ＝ 頭かスクリーンの Transform を
+                    #    掴めていない（掴めないときは 2D へ落とす設計なので**無音にはならない**）。
+                    peak_live = max((int(str(x).split("/")[2]) for x in d3
+                                     if len(str(x).split("/")) == 3
+                                     and str(x).split("/")[2].lstrip("-").isdigit()),
+                                    default=0)
+                    if peak_live == 0:
+                        verdict("WARN", "3D で鳴っていた敷く音が 1 度も無い — 装置の唸りも"
+                                        "人形の笑いも鳴らない走行なら正常。鳴っていたのに 0 なら"
+                                        "頭（CenterEyeAnchor）かスクリーンを掴めていない")
+                    else:
+                        verdict("OK", f"敷く音が最大 {peak_live} 本 3D で鳴っていた")
+        else:
+            verdict("WARN", "定位の観測が無い（snd3d が 1 度も出ていない）— "
+                            "この計装より前のビルドのログ")
+
+        # -- 人形の笑いの方角（`canon/LEDGER.md` 0130「周囲のランダムな位置」）
+        #    ⚠ **どの 2 つも近づきすぎていないこと**を見る。90° の区画へ 1 つずつ入れて
+        #      ±35° 振るので、いちばん近い 2 つでも 20° は空く。空いていなければ引き直しが壊れている。
+        az = effect_samples(events, "sndAz")
+        if az:
+            last = str(az[-1])
+            try:
+                degs = [float(x) for x in last.split("/")]
+            except ValueError:
+                degs = []
+            if len(degs) == 4:
+                gaps = []
+                for i in range(4):
+                    for j in range(i + 1, 4):
+                        d_ = abs(degs[i] - degs[j]) % 360.0
+                        gaps.append(min(d_, 360.0 - d_))
+                w(f"  人形の笑いの方角: {'° / '.join(f'{g:.0f}' for g in degs)}°"
+                  f"（いちばん近い 2 つで {min(gaps):.0f}°）")
+                if min(gaps) < 20.0:
+                    verdict("FAIL", f"笑いの方角が重なっている（最短 {min(gaps):.0f}°）— "
+                                    "`SpatialAudio.PickLaughBearings` の区画割りが壊れている")
+                else:
+                    verdict("OK", f"笑いが 4 方向に散っている（最短 {min(gaps):.0f}°）")
+
         # -- **実際に音量を書いたか。** 指示がいくら正しくてもここが 0 なら無音
         if aud:
             vals = [fstr(a) for a in aud]
@@ -2111,6 +2178,26 @@ def analyze(events, others, exp, warns=None):
                                 "`tools/unity.ps1 menu sound-import`")
             else:
                 verdict("OK", f"人形の呼びかけが {len(calls)} 回鳴った")
+                # ⚠⚠ **「後ろから」が成立したかは sndCall にしか出ない**
+                #    （`canon/LEDGER.md` 0130）。0 が正面 / 180 が真後ろ。
+                #    -1 は頭（CenterEyeAnchor）を掴めずに 2D で鳴らしたということ ＝
+                #    **音は鳴っているので画にもログの回数にも出ない**。
+                call_az = [str(v) for v in effect_samples(events, "sndCall") if str(v) != "-"]
+                seen_az = [int(v.split("/", 1)[1]) for v in call_az
+                           if "/" in v and v.split("/", 1)[1].lstrip("-").isdigit()
+                           and int(v.split("/", 1)[0]) > 0]
+                if not seen_az:
+                    verdict("WARN", "呼びかけの方角の観測が無い（sndCall）— "
+                                    "この計装より前のビルドのログ")
+                elif seen_az[-1] < 0:
+                    verdict("FAIL", "呼びかけが 2D で鳴った（頭の Transform を掴めていない）— "
+                                    "「後ろから」が成立していない。CenterEyeAnchor を探す経路"
+                                    "（`ShowSoundDirector.Resolve`）を見る")
+                elif not (145 <= seen_az[-1] <= 215):
+                    verdict("FAIL", f"呼びかけが後ろから鳴っていない（方角 {seen_az[-1]}°・"
+                                    "0 が正面 / 180 が真後ろ）")
+                else:
+                    verdict("OK", f"呼びかけが後ろから鳴った（方角 {seen_az[-1]}°）")
         elif calls:
             verdict("FAIL", f"著作に無い人形の呼びかけが {len(calls)} 回鳴った — "
                             "show.json の dollCall と実機が食い違っている")

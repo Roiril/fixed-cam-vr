@@ -609,17 +609,18 @@ def sfx_title_out() -> np.ndarray:
 
 # ===========================================================================
 
-# (合成関数, ループするか, モノで書くか)
+# (合成関数, ループするか)
 #
-# ⚠ **モノ = 3D で鳴らす音。** Unity の spatializer はモノのクリップしか処理しない。
-#    ステレオで書くと `spatialBlend=1` にしても定位せず、頭の中で鳴り続ける。
+# ⚠⚠ **モノで書くかはここに書かない。** 3D で鳴らす音の名簿は `soundkit.MONO3D` 1 か所で、
+#    C# 側（`SpatialAudio.MonoRequired`）と対になっている（`canon/LEDGER.md` 0130）。
+#    ここに 3 つ目の値として持たせていた 2026-09-03 までの形は、名簿が 2 か所に増えるので廃した。
 REGISTRY = {
     # ループ（敷く音）
-    "bed_seal": (bed_seal, True, True),        # ← 封印の箱に定位する（3D）
-    "bed_room": (bed_room, True, False),
-    "bed_device": (bed_device, True, False),
-    "bed_device_worn": (bed_device_worn, True, False),
-    "bed_static": (bed_static, True, False),
+    "bed_seal": (bed_seal, True),        # ← 封印の箱に定位する（3D。いまは鳴らない）
+    "bed_room": (bed_room, True),
+    "bed_device": (bed_device, True),          # ← スクリーンに定位する（3D）
+    "bed_device_worn": (bed_device_worn, True),  # ← 同上
+    "bed_static": (bed_static, True),          # ← 同上
     # 一撃
     # ⚠⚠ `sfx_switch_*` は 2026-08-16 にユーザー提供の「カメラ切り替え.mp3」1 本へ置き換えた
     #    （`canon/LEDGER.md` 0057・`tools/ingest-sounds.py` が焼く）。**ここに戻すと上書きしてしまう。**
@@ -627,9 +628,9 @@ REGISTRY = {
     # ⚠⚠ **2026-08-23 から変種は 6 本ある**（`canon/LEDGER.md` 0112・`SWITCH_VARIANTS`）。
     #    どれも**もらった音源 1 本から**焼いており、合成は 1 ビットも混ざっていない。
     #    ここへ `sfx_switch_2/3` を戻すと、もらった音の変種を合成音で上書きすることになる。
-    "sfx_glitch_1": (lambda: sfx_glitch(0), False, False),
-    "sfx_glitch_2": (lambda: sfx_glitch(1), False, False),
-    "sfx_glitch_3": (lambda: sfx_glitch(2), False, False),
+    "sfx_glitch_1": (lambda: sfx_glitch(0), False),   # ← スクリーンに定位する（3D）
+    "sfx_glitch_2": (lambda: sfx_glitch(1), False),   # ← 同上
+    "sfx_glitch_3": (lambda: sfx_glitch(2), False),   # ← 同上
     # ⚠ `sfx_seal_close` は 2026-08-12 にユーザー提供の「黒い中に入るときの金属音」へ
     #    置き換えた（`tools/ingest-sounds.py` が焼く）。**ここに戻すと上書きしてしまう。**
     #    合成版の関数は設計の記録として残してある。
@@ -639,12 +640,12 @@ REGISTRY = {
     # ⚠ `sfx_screen_on` もユーザー提供の mp3（同上）。
     # ⚠ `sfx_screen_noise` は 2026-08-16 から**鳴らさない**（0057「ノイズは鳴らさない」）。
     #    音源は退避路として焼き続ける（`sfx_swap` / `sfx_seal_close` と同じ扱い）。
-    "sfx_screen_noise": (sfx_screen_noise, False, False),
-    "sfx_swap": (sfx_swap, False, False),
-    "sfx_shell_open": (sfx_shell_open, False, False),
+    "sfx_screen_noise": (sfx_screen_noise, False),
+    "sfx_swap": (sfx_swap, False),
+    "sfx_shell_open": (sfx_shell_open, False),
     # sfx_title_in は 2026-08-12 にユーザー提供の「シネマチックなタイトル」へ置き換えた
     # (tools/ingest-sounds.py が焼く)。合成版の関数は設計の記録として残してある。
-    "sfx_title_out": (sfx_title_out, False, False),
+    "sfx_title_out": (sfx_title_out, False),
 }
 
 
@@ -656,10 +657,13 @@ def main(argv):
         if name not in REGISTRY:
             print(f"  ? 未知: {name}")
             continue
-        fn, is_loop, is_mono = REGISTRY[name]
+        fn, is_loop = REGISTRY[name]
+        is_mono = name in sk.MONO3D
         y = fn()
-        if is_mono and np.asarray(y).ndim == 2:
-            y = np.asarray(y).mean(axis=1)
+        # ⚠⚠ **モノへ落としたら高さを戻す**（`soundkit.to_mono_keep_lufs`）。
+        #    左右に散らした成分は打ち消し合うので、素のまま平均すると設計より小さく落ちる。
+        if is_mono:
+            y = sk.to_mono_keep_lufs(y, peak_db=PEAK_DB)
         path = os.path.join(OUT_DIR, f"{name}.wav")
         sk.write_wav(path, y, peak_db=PEAK_DB, dither=True, mono=is_mono)
         d = sk.describe(y)

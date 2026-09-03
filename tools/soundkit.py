@@ -33,6 +33,56 @@ SR = 48000
 RNG_SEED = 20260812
 """既定の乱数種。**同じスクリプトは同じ波形を出す**（差分がノイズで埋まらない）。"""
 
+MONO3D = {
+    # 装置の音（スクリーンから）
+    *(f"sfx_switch_{i}" for i in range(1, 7)),
+    *(f"sfx_switch_alert_{i}" for i in range(1, 7)),
+    "sfx_glitch_1", "sfx_glitch_2", "sfx_glitch_3",
+    "sfx_screen_on", "sfx_power_off",
+    "bed_device", "bed_device_worn", "bed_static",
+    # 連絡の面（AIエージェントのスクリーン）から
+    *(f"sfx_type_{i}" for i in range(1, 9)),
+    # 人形（周囲・後ろ）
+    "bed_dolls_laugh", "bed_doll_one", "bed_dolls_grow_a", "bed_dolls_grow_b",
+    "sfx_doll_call",
+    # 封印の箱（2026-08-15 から鳴らない。モノで焼いてあるので名簿に残す）
+    "bed_seal",
+}
+"""**3D で鳴らす音源の名簿**（2026-09-03・`canon/LEDGER.md` 0130）。
+
+⚠⚠ spatializer（Meta XR Audio）は**モノのクリップしか処理しない**。ステレオのまま渡すと
+`spatialBlend=1` にしても定位せず、**頭の中で鳴り続ける**（音は鳴るので気づけない）。
+
+⚠⚠ **`Assets/Scripts/Streaming/Sound/SpatialAudio.cs` の `MonoRequired` と同じ中身にすること。**
+`tools/sound-lint.py` が両者を突き合わせて落とす（片方だけ直すと沈黙して食い違う）。
+"""
+
+
+def to_mono_keep_lufs(y: np.ndarray, peak_db: float = -3.0, sr: int = SR) -> np.ndarray:
+    """ステレオをモノへ落とし、**落とす前の高さへ戻す**。
+
+    ⚠⚠ **単に平均すると音量が下がる。** 左右に散らした成分は打ち消し合うので、実測で
+    切替音は -2.6dB / 乱れの音は -2.1dB 小さくなる。`rules/sound-design.md` §3 は素材ごとの
+    高さを LUFS で揃えてあるので、**下がったぶんだけ設計が崩れる**（しかも「3D にした」
+    という別の変更に紛れて気づけない）。
+
+    ⚠ 戻したぶん尖頭が上がるので、-3dBTP の天井に当たったら下げる（そこだけは高さより優先）。
+    """
+    y = np.asarray(y, dtype=np.float64)
+    if y.ndim != 2:
+        return y
+    want = lufs(y, sr)
+    m = y.mean(axis=1)
+    for _ in range(6):
+        d = want - lufs(m, sr)
+        m = m * 10 ** (d / 20.0)
+        if abs(d) < 0.05:
+            break
+    tp = true_peak_db(m)
+    if tp > peak_db:
+        m = m * 10 ** ((peak_db - tp) / 20.0)
+    return m
+
 
 # ---------------------------------------------------------------------------
 # 基本波形

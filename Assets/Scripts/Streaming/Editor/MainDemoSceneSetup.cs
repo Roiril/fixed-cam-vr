@@ -209,7 +209,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 var audioSource = screenGo.GetComponent<AudioSource>();
                 if (audioSource == null) audioSource = screenGo.AddComponent<AudioSource>();
                 audioSource.playOnAwake = false;
-                audioSource.spatialBlend = 0f;
+                // ⚠ 切替音は**スクリーンから**鳴る（2026-09-03・`canon/LEDGER.md` 0130）。
+                //   実行時は SwitchAudioCue.Awake が同じ設定を書くので、ここは焼いたシーンを
+                //   実行時と揃えるためだけ（Inspector で見たときに食い違わない）。
+                SpatialAudio.Configure(audioSource);
                 var audioCue = screenGo.GetComponent<SwitchAudioCue>();
                 if (audioCue == null) audioCue = screenGo.AddComponent<SwitchAudioCue>();
                 var audioSo = new SerializedObject(audioCue);

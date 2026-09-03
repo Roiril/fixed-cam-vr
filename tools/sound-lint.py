@@ -23,6 +23,7 @@ import datetime
 import io
 import math
 import os
+import re
 import sys
 
 import numpy as np
@@ -171,6 +172,14 @@ def check(name: str, y: np.ndarray, is_loop: bool) -> tuple[dict, list[str]]:
     if name not in RECORDED and d["tonal_db"] > TONAL_MAX:
         bad.append(f"発振器に聞こえる（突出 {d['tonal_db']}dB / 上限 {TONAL_MAX}）— "
                    "純音をやめて狭帯域ノイズ（soundkit.tone_band）にする")
+    # ⚠⚠ **3D で鳴らす音はモノでなければ定位しない**（`soundkit.MONO3D`・2026-09-03・
+    #    `canon/LEDGER.md` 0130）。spatializer（Meta XR Audio）はステレオを処理しないので、
+    #    `spatialBlend=1` にしても頭の中で鳴り続ける ＝ **音は鳴るので気づけない**。
+    ch = y.shape[1] if np.asarray(y).ndim == 2 else 1
+    if name in sk.MONO3D and ch != 1:
+        bad.append(f"3D で鳴らす音がステレオのまま（{ch}ch）— 定位しない。"
+                   "`ingest-sounds.py` / `make-sounds.py` で焼き直す")
+
     sharp_lim, rough_lim = (2.5, 0.4) if is_loop else (3.5, 1.0)
     if d["sharp"] > sharp_lim:
         bad.append(f"耳に刺さる（鋭さ {d['sharp']} / 上限 {sharp_lim}）")
@@ -213,6 +222,35 @@ ul{margin:8px 0;padding:8px 16px 12px 34px;color:var(--ng);font-size:13px}
 </style>"""
 
 
+SPATIAL_CS = os.path.join(ROOT, "Assets", "Scripts", "Streaming", "Sound", "SpatialAudio.cs")
+
+
+def check_spatial_pairing() -> list[str]:
+    """**焼く側（`soundkit.MONO3D`）と鳴らす側（`SpatialAudio.MonoRequired`）を突き合わせる。**
+
+    ⚠⚠ 片方だけ直すと、**音は鳴るが定位しない**という気づけない壊れ方をする
+    （画にも録画にも一撃のログにも出ない）。名簿が 2 か所にある以上、機械で照合する。
+    """
+    if not os.path.exists(SPATIAL_CS):
+        return [f"C# 側が無い: {SPATIAL_CS}"]
+    src = io.open(SPATIAL_CS, encoding="utf-8").read()
+    # ⚠ **宣言そのものを探す。** 単に "MonoRequired" を探すと、クラスの説明にある
+    #    `<see cref="MonoRequired"/>` を先に拾って、その後の最初の `{` から読んでしまう
+    #    （2026-09-03 に実際に踏んだ。定数名が 1 つ余計に出て NG になった）。
+    m = re.search(r"MonoRequired\s*=\s*", src)
+    lo = src.find("{", m.end()) if m else -1
+    hi = src.find("};", lo) if lo >= 0 else -1
+    if lo < 0 or hi < 0:
+        return ["C# 側の MonoRequired を読めない（書き方を変えたなら sound-lint も直す）"]
+    cs = set(re.findall(r'"([^"]+)"', src[lo:hi]))
+    out = []
+    for miss in sorted(sk.MONO3D - cs):
+        out.append(f"焼く側にしか無い: {miss}（SpatialAudio.MonoRequired へ足す）")
+    for extra in sorted(cs - sk.MONO3D):
+        out.append(f"鳴らす側にしか無い: {extra}（soundkit.MONO3D へ足す）")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=DEFAULT_DIR)
@@ -223,7 +261,15 @@ def main() -> int:
         print(f"WAV が無い: {a.dir}")
         return 1
 
-    rows, fails = [], 0
+    pairing = check_spatial_pairing()
+    if pairing:
+        print("  [NG] 3D の名簿が焼く側と鳴らす側で食い違っている")
+        for p in pairing:
+            print(f"        - {p}")
+    else:
+        print(f"  [ok] 3D の名簿が一致（{len(sk.MONO3D)} 本）")
+
+    rows, fails = [], (1 if pairing else 0)
     for name in names:
         y, sr = sk.read_wav(os.path.join(a.dir, f"{name}.wav"))
         is_loop = name.startswith("bed_")

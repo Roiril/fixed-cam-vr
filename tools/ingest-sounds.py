@@ -41,6 +41,27 @@ RAW = os.path.join(ROOT, "logs", "sound", "ingest")
 OUT = os.path.join(ROOT, "Assets", "Resources", "Sound")
 DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
 
+
+def emit(name: str, y, peak_db: float = -3.0):
+    """焼いた音を書き、**書いたとおりの波形を返す**（呼んだ側はこれを measure する）。
+
+    ⚠⚠ **3D で鳴らす音はここでモノになる**（`soundkit.MONO3D`・2026-09-03・
+    `canon/LEDGER.md` 0130）。spatializer はモノのクリップしか処理しないので、
+    ステレオのまま出すと `spatialBlend=1` でも定位せず**頭の中で鳴り続ける**。
+
+    ⚠ **落としたら高さを戻す**（`sk.to_mono_keep_lufs`）。素のまま平均すると
+    切替音で -2.6dB / 乱れの音で -2.1dB 下がり、`rules/sound-design.md` §3 の
+    高さの設計が「3D にした」という別の変更に紛れて崩れる。
+
+    ⚠ 返り値を捨てて元の（ステレオの）配列を測ると、**印字だけが嘘になる**。
+    """
+    if name in sk.MONO3D:
+        y = sk.to_mono_keep_lufs(y, peak_db=peak_db)
+        sk.write_wav(os.path.join(OUT, f"{name}.wav"), y, peak_db=peak_db, mono=True)
+        return y
+    sk.write_wav(os.path.join(OUT, f"{name}.wav"), y, peak_db=peak_db)
+    return y
+
 # (元ファイル名, 出力名, 揃え方, 目標, 使い先)
 #
 # ⚠ **「使い先」はシュビーの判断**であって、ユーザーが指定したのは
@@ -770,7 +791,7 @@ def ingest_swell(swell, src_dir: str) -> None:
         y, sr = sk.read_wav(raw)
         built = swell_build(y, sr, SWELL_LAYERS, SWELL_SOLO_LUFS)
         for name, sec, out, spans in built:
-            sk.write_wav(os.path.join(OUT, f"{name}.wav"), out, peak_db=-3.0)
+            out = emit(name, out)
             d = sk.describe(out)
             print(f"  {name:16s} {len(spans)} 回 / {d['sec']:.2f}s   {d['lufs']:6.1f} LUFS   "
                   f"tp {d['true_peak_db']:5.1f}dB   鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f}   "
@@ -801,7 +822,7 @@ def ingest_chorus(chorus, src_dir: str) -> None:
 
         y, sr = sk.read_wav(raw)
         out, spans, total = chorus_build(y, sr, target)
-        sk.write_wav(os.path.join(OUT, f"{name}.wav"), out, peak_db=-3.0)
+        out = emit(name, out)
         d = sk.describe(out)
         print(f"  {name:16s} {len(spans)} 回 / {d['sec']:.2f}s   {d['lufs']:6.1f} LUFS   "
               f"tp {d['true_peak_db']:5.1f}dB   鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f}   "
@@ -827,6 +848,8 @@ def envelope_peaks(y, sr: int = None, win: float = 0.05, drop_db: float = 4.0) -
     """
     sr = sr or sk.SR
     n = int(win * sr)
+    # ⚠ 3D で鳴らす音はモノで焼くので（`emit`）、ここへ 1 次元の配列が来る。
+    y = sk.to_stereo(np.asarray(y))
     m = np.array([np.sqrt(np.mean(np.mean(y[i:i + n], axis=1) ** 2))
                   for i in range(0, len(y) - n, n)])
     db = 20 * np.log10(np.maximum(m, 1e-9))
@@ -1178,7 +1201,7 @@ def ingest_switch(variants, src_dir: str) -> None:
         name = f"{stem}_{i}"
         if name not in {f"{stem}_{k}" for k in range(1, len(SWITCH_VARIANTS) + 1)}:
             continue
-        sk.write_wav(os.path.join(OUT, f"{name}.wav"), b, peak_db=-3.0)
+        b = emit(name, b)
         d = sk.describe(b)
         print(f"    {name:16s} {d['sec']:5.3f}s 粒{v[5]}  {d['lufs']:6.1f} LUFS  "
               f"tp {d['true_peak_db']:5.2f}dB  鋭さ {d['sharp']:4.2f}  "
@@ -1201,7 +1224,7 @@ def ingest_swarms(swarms, src_dir: str) -> None:
 
         y, sr = sk.read_wav(raw)
         out, count, head_n, drive = swarm_build(y, sr, target)
-        sk.write_wav(os.path.join(OUT, f"{name}.wav"), out, peak_db=-3.0)
+        out = emit(name, out)
         d = sk.describe(out)
         # 尻がちゃんと静かになっているか（**ユーザー指示の要**なので数字で出す）。
         last = out[-int(0.25 * sk.SR):]
@@ -1373,7 +1396,7 @@ def ingest_cuts(cuts, src_dir: str) -> None:
             print(f"  ⚠ {name}: {expect} 発のはずが {len(segs)} 発だった。"
                   f"元ファイルか CUT_* の閾値を確かめること")
         for i, seg in enumerate(segs):
-            sk.write_wav(os.path.join(OUT, f"{name}_{i + 1}.wav"), seg, peak_db=-3.0)
+            segs[i] = emit(f"{name}_{i + 1}", seg)
         if not segs:
             continue
         print(f"  {name}_1..{len(segs)}  倍率 {20 * np.log10(max(gain, 1e-9)):+.1f}dB  "
@@ -1485,7 +1508,7 @@ def ingest_voices(voices, src_dir: str) -> None:
         if tp > -3.0:
             y = y * 10 ** ((-3.0 - tp) / 20.0)
 
-        sk.write_wav(os.path.join(OUT, f"{name}.wav"), y, peak_db=-3.0)
+        y = emit(name, y)
         d = sk.describe(y)
         print(f"  {name:16s} {before['sec']:5.2f}s → {d['sec']:5.2f}s   "
               f"{before['lufs']:6.1f} → {d['lufs']:6.1f} LUFS   "
@@ -1528,7 +1551,7 @@ def ingest_mixes(mixes, src_dir: str) -> None:
                 continue
             base = sk.to_stereo(sk.read_wav(base_path)[0])
             out, seg = mix_build(y, sr, base, body, rel, ref_lufs)
-            sk.write_wav(os.path.join(OUT, f"{stem}_{i}.wav"), out, peak_db=-3.0)
+            out = emit(f"{stem}_{i}", out)
             d, b, g = sk.describe(out), sk.describe(base), sk.describe(seg)
             print(f"    {stem}_{i:<12d} 土台 {b['lufs']:6.1f} → 合成 {d['lufs']:6.1f} LUFS   "
                   f"tp {d['true_peak_db']:5.2f}dB   警告だけ {g['lufs']:6.1f} LUFS   "
@@ -1659,7 +1682,7 @@ def main() -> int:
             if tp > -3.0:
                 y = y * 10 ** ((-3.0 - tp) / 20.0)
 
-        sk.write_wav(os.path.join(OUT, f"{name}.wav"), y, peak_db=-3.0)
+        y = emit(name, y)
         d = sk.describe(y)
         print(f"  {name:16s} {before['sec']:5.2f}s → {d['sec']:5.2f}s   "
               f"{before['lufs']:6.1f} → {d['lufs']:6.1f} LUFS   "

@@ -1168,6 +1168,28 @@ namespace FixedCamVr.Diagnostics
             //              `sndAud`（敷く音の合計）には 1 ビットも出ない — 本編で背景が鳴っている
             //              証拠はこのキーだけ（0115 で環境音を退役させたので、ここが 0 なら無音）。
             _sb.Append(" sndScore=").Append(_sound == null ? "-" : _sound.ScoreGain.ToString("F2"));
+            //   snd3d = 音の定位（`canon/LEDGER.md` 0130）。
+            //           <名簿で掴めた本数>/<ステレオのままの本数>/<いま 3D で鳴っている敷く音>
+            //   ⚠⚠ **真ん中が 0 でなければ定位していない。** spatializer はモノしか処理しないので、
+            //      ステレオのクリップは `spatialBlend=1` でも頭の中で鳴る ＝ **音は鳴っている**。
+            //      画にも録画にも一撃のログにも出ないので、ここが唯一の証拠。
+            //   ⚠ 右が 0 のまま本編が進むなら、頭かスクリーンの Transform を掴めていない
+            //      （掴めないときは 2D へ落とす設計なので、無音にはならず黙って頭の中で鳴る）。
+            _sb.Append(" snd3d=").Append(_sound == null
+                                         ? "-"
+                                         : $"{_sound.SpatialClipCount}/{_sound.StereoInSpatial}"
+                                           + $"/{_sound.SpatialBedsAudible}");
+            //   sndAz = 人形の笑い 4 声の方角（度・ワールド）。**体験者ごとに引き直す**ので
+            //           走行ごとに違う。90° ごとの区画へ 1 つずつ入るので、
+            //           **どの 2 つも 20° より近づかない**（近ければ引き直しが壊れている）。
+            _sb.Append(" sndAz=").Append(_sound == null ? "-" : _sound.LaughBearingsText);
+            //   sndCall = 人形の呼びかけ（あーそーぼー）。<鳴らした回数>/<見かけの方角（度）>。
+            //   ⚠ 方角は 0 が正面・180 が真後ろ。**145〜215 の外なら「後ろから」が成立していない。**
+            //      -1 は頭の Transform を掴めずに 2D で鳴らしたということ。
+            _sb.Append(" sndCall=").Append(_sound == null
+                                           ? "-"
+                                           : $"{_sound.CallCount}/"
+                                             + Mathf.RoundToInt(_sound.LastCallAzimuthDeg));
             _sb.Append(" sfxN=").Append(_sound == null ? "-" : _sound.SpotCount.ToString());
             _sb.Append(" swN=").Append(_switchSfx == null
                                        ? "-"

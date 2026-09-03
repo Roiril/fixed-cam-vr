@@ -120,7 +120,12 @@ namespace FixedCamVr.Streaming
             {
                 source.playOnAwake = false;
                 source.loop = false;
-                source.spatialBlend = 0f; // 2D（配置に依らない）
+                // ⚠⚠ **切替音はスクリーンから鳴る**（2026-09-03・`canon/LEDGER.md` 0130）。
+                //    この部品は Screen（`ScreenOverlayController` の GameObject）に乗っていて、
+                //    その Transform は `ScreenAnchor` が頭の正面へ運んでいる ＝
+                //    **置き直す必要が無い**。ここで 3D にするだけで音がスクリーンに付く。
+                //    ⚠ 大きさは変えない（`SpatialAudio` の但し書き。減衰の区間へ入らない）。
+                SpatialAudio.Configure(source);
             }
             ResolveClips();
         }

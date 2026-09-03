@@ -365,7 +365,12 @@ namespace FixedCamVr.Diagnostics
             //    絵と音が同じ数えから出るので、ずれようがない。
             //    ⚠ **増えた字数ぶん鳴らさない。** 1 フレームで 2 字進んだら（コマ落ち）
             //      同じ DSP 時刻に 2 発重なって 1 つの大きな音に潰れる。1 発だけ鳴らす。
-            if (shown > _lastShown && IsVisibleChar(shown - 1)) typeSfx?.Play();
+            //    ⚠⚠ **鳴らす場所も同じ行が決める**（2026-09-03・`canon/LEDGER.md` 0130）。
+            //      打鍵は「スクリーン関係の音」なので、字が出ている面そのものから鳴る。
+            //      渡すのは文字の Transform（`_follow` の下に居る）で、
+            //      この部品が乗っている GameObject ではない（あちらは動かない ＝ 足元から鳴る）。
+            if (shown > _lastShown && IsVisibleChar(shown - 1))
+                typeSfx?.Play(_text.transform.position);
             _lastShown = shown;
             VisibleChars = shown;
 

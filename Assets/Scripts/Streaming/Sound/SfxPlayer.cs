@@ -19,6 +19,10 @@ namespace FixedCamVr.Streaming
     ///
     /// ⚠ <b>予約の先読みは音声バッファ 1 個ぶんより長く取る。</b> 短いと「もう過ぎた時刻」を
     /// 指すことがあり、その回だけ遅れて鳴る（＝ ときどきずれる、という最も追いにくい壊れ方）。
+    ///
+    /// ⚠⚠ <b>1 発ごとに 2D / 3D が変わる。</b> 声は使い回すので、<see cref="Play"/> は毎回
+    /// <c>spatialBlend</c> を書き直す（<paramref name="at"/> を渡さなければ 2D へ戻す）。
+    /// 書き直さないと、直前の 3D の設定が次の 2D の音に残る。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class SfxPlayer : MonoBehaviour
@@ -41,6 +45,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>直前に鳴らしたものの実効音量（テレメトリ用）。</summary>
         public float LastGain { get; private set; }
+
+        /// <summary>3D で鳴らした累計（テレメトリ用）。<b>音は録画に映らないのでここだけが証拠。</b></summary>
+        public int SpatialCount { get; private set; }
 
         private void Awake()
         {
@@ -66,9 +73,13 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>鳴らせたかを返す。</b> クリップが無いときと、<c>Awake</c> が走っていなくて
         /// 声が 1 本も無いときは <c>false</c>。**呼んだ側が沈黙に気づけるようにするため**で、
         /// 音は録画にも画にも出ないので、返り値を捨てると失敗が永久に見えない。
+        ///
+        /// <paramref name="at"/> を渡すと<b>その場所から</b>鳴る（渡さなければ 2D）。
+        /// 置いた先は world 固定で、鳴っているあいだ追従しない
+        /// （<see cref="SpatialAudio.Behind"/> の但し書き）。
         /// </summary>
         public bool Play(AudioClip? clip, float gain = 1f, float pitchSpread = 0.03f,
-                         float gainSpreadDb = 1.2f)
+                         float gainSpreadDb = 1.2f, Vector3? at = null)
         {
             if (clip == null || _pool.Length == 0) return false;
             var src = _pool[_next];
@@ -80,7 +91,16 @@ namespace FixedCamVr.Streaming
             src.clip = clip;
             src.pitch = 1f + Random.Range(-pitchSpread, pitchSpread);
             src.volume = g;
-            src.spatialBlend = 0f;
+            if (at.HasValue)
+            {
+                src.transform.position = at.Value;
+                SpatialAudio.Configure(src);
+                SpatialCount++;
+            }
+            else
+            {
+                SpatialAudio.MakeFlat(src);
+            }
             src.PlayScheduled(AudioSettings.dspTime + ScheduleLeadSec);
             PlayedCount++;
             LastGain = g;

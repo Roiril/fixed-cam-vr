@@ -44,7 +44,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 seen++;
                 string name = System.IO.Path.GetFileNameWithoutExtension(path);
                 bool isBed = name.StartsWith("bed_");
-                bool isSpatial = name == "bed_seal";
+                // ⚠⚠ **3D で鳴らす音の名簿は `SpatialAudio.MonoRequired` 1 か所**
+                //    （2026-09-03・`canon/LEDGER.md` 0130）。ここに条件を書き足すと、
+                //    実行時の観測（`SpatialAudio.CountStereo`）と黙って食い違う。
+                bool isSpatial = System.Array.IndexOf(SpatialAudio.MonoRequired, name) >= 0;
                 if (Apply(path, isBed, isSpatial)) changed.Add(path);
             }
 

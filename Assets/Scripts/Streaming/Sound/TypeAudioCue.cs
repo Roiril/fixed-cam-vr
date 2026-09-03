@@ -75,11 +75,18 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        /// <summary>1 文字ぶん鳴らす。<b>音源が無ければ黙って何もしない</b>（体験は止めない）。</summary>
-        public void Play()
+        /// <summary>
+        /// 1 文字ぶん、<paramref name="at"/>（＝ 面そのもの）から鳴らす。
+        /// <b>音源が無ければ黙って何もしない</b>（体験は止めない）。
+        ///
+        /// ⚠⚠ <b>位置は呼ぶ側が渡す。</b> この部品が付いている GameObject は動かず、
+        /// 実際に画へ出ている面は <c>CommsRoot</c>（別の Transform）が持っている。
+        /// ここで <c>transform.position</c> を読むと、<b>体験者の足元から打鍵が鳴る</b>。
+        /// </summary>
+        public void Play(Vector3 at)
         {
             if (_clips.Count == 0 || player == null) return;
-            player.Play(Pick(), 1f, PitchSpread, GainSpreadDb);
+            player.Play(Pick(), 1f, PitchSpread, GainSpreadDb, at);
             PlayedCount++;
         }
 

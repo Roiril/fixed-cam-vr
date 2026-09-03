@@ -106,6 +106,26 @@ namespace FixedCamVr.Streaming
         private Cg.ShowCgLayer? _cg;
         private float _resolveAccum;
 
+        // ---- 音を置く先（2026-09-03・`canon/LEDGER.md` 0130）----------------------
+
+        /// <summary>
+        /// 体験者の頭。<b>笑いの輪の中心</b>と、呼びかけの「後ろ」を決める。
+        /// 掴めなければ音は 2D へ落ちる（黙って別の場所から鳴らさない）。
+        /// </summary>
+        private Transform? _head;
+
+        /// <summary>
+        /// スクリーン（<see cref="ScreenOverlayController"/> の GameObject）。
+        /// <c>ScreenAnchor</c> がこれを頭の正面へ運んでいるので、**装置の音はここに付ければ足りる**。
+        /// </summary>
+        private Transform? _screen;
+
+        /// <summary>
+        /// 人形の笑い 4 声の方角（ワールド・度）。<b>体験者ごとに引き直す</b>
+        /// （<see cref="ResetRun"/>）。90° ごとの区画へ 1 つずつ入るので重ならない。
+        /// </summary>
+        private readonly float[] _laughBearings = new float[4];
+
         // ---- 観測（テレメトリが読む）--------------------------------------------
 
         /// <summary>読めなかったクリップの本数。**0 でなければ音は設計どおりに出ていない。**</summary>
@@ -138,6 +158,37 @@ namespace FixedCamVr.Streaming
         /// <summary>笑う人形の増え具合 0..1（C に居るあいだ増える）。</summary>
         public float DollSwellNow => _beds.Swell01;
 
+        // ---- 3D の観測（`canon/LEDGER.md` 0130）----------------------------------
+
+        /// <summary>3D で鳴らす名簿のうち、実際に掴めた本数。</summary>
+        public int SpatialClipCount { get; private set; }
+
+        /// <summary>
+        /// そのうち<b>ステレオのまま</b>だった本数。<b>0 でなければ定位していない。</b>
+        /// 音は鳴るので、画にも録画にも一撃のログにも出ない — ここだけが証拠。
+        /// </summary>
+        public int StereoInSpatial { get; private set; }
+
+        /// <summary>
+        /// いま実際に 3D で鳴っている敷く音の本数（音量 &gt; 0 かつ <c>spatialBlend</c> が 1）。
+        /// <b>置き場所を掴めずに 2D へ落ちたら減る</b>ので、頭やスクリーンの取りこぼしがここに出る。
+        /// </summary>
+        public int SpatialBedsAudible { get; private set; }
+
+        /// <summary>人形の笑い 4 声の方角（度）を「/」で繋いだもの。テレメトリ用。</summary>
+        public string LaughBearingsText =>
+            $"{Mathf.RoundToInt(_laughBearings[0])}/{Mathf.RoundToInt(_laughBearings[1])}"
+            + $"/{Mathf.RoundToInt(_laughBearings[2])}/{Mathf.RoundToInt(_laughBearings[3])}";
+
+        /// <summary>人形の呼びかけを鳴らした累計。</summary>
+        public int CallCount { get; private set; }
+
+        /// <summary>
+        /// 直前の呼びかけの見かけの方角（度・0 が正面 / 180 が真後ろ）。
+        /// <b>後ろから鳴った証拠はここにしか無い。</b> 頭を掴めずに 2D で鳴らしたときは負。
+        /// </summary>
+        public float LastCallAzimuthDeg { get; private set; } = -1f;
+
         /// <summary>
         /// 劇伴（`HorrBGM`）の取り分 0..1。<b>リセット後の黒から 3 周目の終わりまで 1</b>で、
         /// 終幕で退く（<c>canon/LEDGER.md</c> 0115）。**画にも一撃のログにも出ない**ので、
@@ -153,15 +204,27 @@ namespace FixedCamVr.Streaming
             _sfx = GetComponent<SfxPlayer>();
             if (_sfx == null) _sfx = gameObject.AddComponent<SfxPlayer>();
 
-            _seal = MakeBed("Seal", "bed_seal", spatial: true);
+            // ⚠⚠ **どれを 3D にするかは `canon/LEDGER.md` 0130 の 3 行**（2026-09-03）。
+            //    装置の音（搬送・電源・砂嵐）はスクリーンから、人形の笑いは体験者の周囲から。
+            //    部屋のトーンだけは 2D のまま — **現実の音は全周にある**ので、
+            //    1 点から鳴らすと「部屋」ではなく「部屋の音が出る何か」になる。
+            _seal = MakeBed("Seal", "bed_seal", spatial: true,
+                            minDistance: 1.6f, maxDistance: 30f);   // 箱は world の固定物（いまは鳴らない）
             _room = MakeBed("Room", "bed_room", spatial: false, lowPass: true);
-            _device = MakeBed("Device", "bed_device", spatial: false);
-            _worn = MakeBed("DeviceWorn", "bed_device_worn", spatial: false);
-            _noise = MakeBed("Noise", "bed_static", spatial: false);
-            _dolls = MakeBed("Dolls", "bed_dolls_laugh", spatial: false);
-            _dollOne = MakeBed("DollOne", "bed_doll_one", spatial: false);
-            _dollGrowA = MakeBed("DollGrowA", "bed_dolls_grow_a", spatial: false);
-            _dollGrowB = MakeBed("DollGrowB", "bed_dolls_grow_b", spatial: false);
+            _device = MakeBed("Device", "bed_device", spatial: true);
+            _worn = MakeBed("DeviceWorn", "bed_device_worn", spatial: true);
+            _noise = MakeBed("Noise", "bed_static", spatial: true);
+            _dolls = MakeBed("Dolls", "bed_dolls_laugh", spatial: true);
+            _dollOne = MakeBed("DollOne", "bed_doll_one", spatial: true);
+            _dollGrowA = MakeBed("DollGrowA", "bed_dolls_grow_a", spatial: true);
+            _dollGrowB = MakeBed("DollGrowB", "bed_dolls_grow_b", spatial: true);
+            SpatialAudio.PickLaughBearings(_laughBearings);
+
+            // ⚠⚠ **ステレオのまま 3D に置かれていないかを起動時に数える。**
+            //    定位していないことは画にも録画にも出ない（音が鳴ってはいる）ので、
+            //    ここで数えないと永久に気づけない。テレメトリの `snd3d` に出る。
+            StereoInSpatial = SpatialAudio.CountStereo(ResourceDir, out int spatialSeen);
+            SpatialClipCount = spatialSeen;
 
             foreach (SoundCue c in System.Enum.GetValues(typeof(SoundCue)))
             {
@@ -177,7 +240,9 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        private BedVoice MakeBed(string label, string res, bool spatial, bool lowPass = false)
+        private BedVoice MakeBed(string label, string res, bool spatial, bool lowPass = false,
+                                 float minDistance = SpatialAudio.MinDistanceM,
+                                 float maxDistance = SpatialAudio.MaxDistanceM)
         {
             var bed = new BedVoice();
             var go = new GameObject($"[Bed{label}]");
@@ -207,21 +272,10 @@ namespace FixedCamVr.Streaming
                                  + "`.\\tools\\unity.ps1 menu sound-import` を実行すること。");
             }
 
-            if (spatial)
-            {
-                // ⚠ **spatializer はモノのクリップしか処理しない。** ステレオを渡すと
-                //    `spatialBlend=1` にしても頭の中で鳴り続ける（`tools/soundkit.py` の write_wav 参照）。
-                s.spatialBlend = 1f;
-                s.spatialize = true;
-                s.rolloffMode = AudioRolloffMode.Logarithmic;
-                s.minDistance = 1.6f;
-                s.maxDistance = 30f;
-                s.dopplerLevel = 0f;      // 体験者が歩いた程度で音程が変わってはいけない
-            }
-            else
-            {
-                s.spatialBlend = 0f;
-            }
+            // ⚠ **spatializer はモノのクリップしか処理しない。** ステレオを渡すと
+            //    `spatialBlend=1` にしても頭の中で鳴り続ける（`SpatialAudio.CountStereo` が数える）。
+            if (spatial) SpatialAudio.Configure(s, minDistance, maxDistance);
+            else SpatialAudio.MakeFlat(s);
 
             if (lowPass)
             {
@@ -288,6 +342,19 @@ namespace FixedCamVr.Streaming
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
             if (_cg == null) _cg = FindObjectOfType<Cg.ShowCgLayer>();
+            // 音を置く先（`canon/LEDGER.md` 0130）。**掴めるまで 2 秒ごとに探し続ける** —
+            // スクリーンは prefab instance なので、ここが起きる順番に依らない。
+            if (_screen == null)
+            {
+                var overlay = FindObjectOfType<ScreenOverlayController>();
+                if (overlay != null) _screen = overlay.transform;
+            }
+            if (_head == null)
+            {
+                var anchor = GameObject.Find("CenterEyeAnchor");
+                if (anchor != null) _head = anchor.transform;
+                else if (Camera.main != null) _head = Camera.main.transform;
+            }
         }
 
         private SoundShowState ReadState()
@@ -361,7 +428,7 @@ namespace FixedCamVr.Streaming
             float gain = c == SoundCue.Glitch && _glitch != null ? _glitch.SfxGain : 1f;
             // ⚠ masterGain は SfxPlayer.Play の中で掛かる。ここで渡すと**二乗になる**
             //   （既定 1.0 なので今まで見えていなかっただけ。下げた瞬間に効果音だけ沈む）。
-            _sfx?.Play(clip, gain);
+            _sfx?.Play(clip, gain, at: PlaceFor(c));
             _beds.PushSpotDuck(SoundCueLogic.DuckFor(c));
             LastCue = c;
         }
@@ -387,11 +454,50 @@ namespace FixedCamVr.Streaming
             if (!_spot.TryGetValue(res, out var clip) || clip == null) return false;
             // ⚠ **鳴らせたかを見る。** 声が 1 本も無い（発声器が起きていない）ときに
             //    true を返すと、呼んだ側の警告が出ないまま無音になる。
-            if (_sfx == null || !_sfx.Play(clip, gain: 1f, pitchSpread: 0f, gainSpreadDb: 0f))
+            if (_sfx == null || !_sfx.Play(clip, gain: 1f, pitchSpread: 0f, gainSpreadDb: 0f,
+                                           at: PlaceFor(c)))
                 return false;
             _beds.PushSpotDuck(SoundCueLogic.DuckFor(c));
             LastCue = c;
             return true;
+        }
+
+        /// <summary>
+        /// その節目をどこから鳴らすか（<c>null</c> ＝ 2D・2026-09-03・<c>canon/LEDGER.md</c> 0130）。
+        ///
+        /// **スクリーンから鳴るのは装置が出す音だけ。** 割れる音（<see cref="SoundCue.Shatter"/>）は
+        /// <b>現実が割れる</b>音で視界ぜんたいに起きるし、鈴（<see cref="SoundCue.Bell"/>）と
+        /// 題字の音は誰も鳴らしていない ＝ どちらも装置の外側。1 点に置くと出どころが
+        /// できてしまうので 2D のまま置く。
+        ///
+        /// ⚠ 置き場所を掴めなければ <c>null</c> を返して 2D へ落とす。
+        /// <b>黙って別の場所から鳴らすより、定位を捨てる方が事故が小さい。</b>
+        /// </summary>
+        private Vector3? PlaceFor(SoundCue c)
+        {
+            switch (c)
+            {
+                // 装置の音 — スクリーンから
+                case SoundCue.Glitch:
+                case SoundCue.ScreenOn:
+                case SoundCue.PowerOff:
+                    return _screen != null ? _screen.position : (Vector3?)null;
+                // 人形の呼びかけ — 鳴らした瞬間の**後ろ**（そこに置いたまま動かさない）
+                case SoundCue.DollCall:
+                    if (_head == null)
+                    {
+                        LastCallAzimuthDeg = -1f;
+                        CallCount++;
+                        return null;
+                    }
+                    var at = SpatialAudio.Behind(_head, SpatialAudio.PickCallOffAxisDeg(),
+                                                 out float az);
+                    LastCallAzimuthDeg = az;
+                    CallCount++;
+                    return at;
+                default:
+                    return null;
+            }
         }
 
         private void ApplyBeds(in SoundBedGains g)
@@ -451,6 +557,58 @@ namespace FixedCamVr.Streaming
                     _seal.src.spatialBlend = 0f;
                 }
             }
+
+            PlaceBeds();
+        }
+
+        /// <summary>
+        /// 敷く音を毎フレーム置き直す（2026-09-03・<c>canon/LEDGER.md</c> 0130）。
+        ///
+        /// | 何 | どこ |
+        /// |---|---|
+        /// | 装置の唸り・砂嵐 | スクリーン（<c>ScreenAnchor</c> が運んでいる Transform） |
+        /// | 人形の笑い 4 声 | 頭を中心とした輪の <see cref="_laughBearings"/> |
+        ///
+        /// ⚠⚠ <b>笑いは頭の位置に付いていく（向きには付いていかない）。</b> 体験者は区間ごとに
+        /// 歩くので、ワールドへ釘で留めると「周囲に居る」が保てない。方角はワールドで固定なので、
+        /// <b>振り向けば笑い声の方を向ける</b>。
+        ///
+        /// ⚠ 置き先を掴めなければ 2D へ落とす。<see cref="SpatialBedsAudible"/> がそのぶん減るので、
+        /// 「3D にしたつもりで頭を掴めていない」がテレメトリに出る。
+        /// </summary>
+        private void PlaceBeds()
+        {
+            int n = 0;
+            n += PlaceAt(_device, _screen);
+            n += PlaceAt(_worn, _screen);
+            n += PlaceAt(_noise, _screen);
+            n += PlaceOnRing(_dolls, 0);
+            n += PlaceOnRing(_dollOne, 1);
+            n += PlaceOnRing(_dollGrowA, 2);
+            n += PlaceOnRing(_dollGrowB, 3);
+            SpatialBedsAudible = n;
+        }
+
+        /// <summary>1 本を <paramref name="at"/> へ置く。鳴っていて 3D なら 1 を返す。</summary>
+        private static int PlaceAt(BedVoice b, Transform? at)
+        {
+            if (b.src == null || !b.ok) return 0;
+            if (at == null) { SpatialAudio.MakeFlat(b.src); return 0; }
+            b.src.transform.position = at.position;
+            if (b.src.spatialBlend < 1f) SpatialAudio.Configure(b.src);
+            return b.src.volume > 0.0005f ? 1 : 0;
+        }
+
+        /// <summary>1 本を笑いの輪の <paramref name="slot"/> 番へ置く。</summary>
+        private int PlaceOnRing(BedVoice b, int slot)
+        {
+            if (b.src == null || !b.ok) return 0;
+            if (_head == null) { SpatialAudio.MakeFlat(b.src); return 0; }
+            b.src.transform.position = SpatialAudio.Ring(_head, _laughBearings[slot],
+                                                         SpatialAudio.LaughRadiusM,
+                                                         SpatialAudio.LaughDropM);
+            if (b.src.spatialBlend < 1f) SpatialAudio.Configure(b.src);
+            return b.src.volume > 0.0005f ? 1 : 0;
         }
 
         private static float Set(BedVoice b, float gain)
@@ -495,6 +653,11 @@ namespace FixedCamVr.Streaming
             // 次の体験者でも同じ所から笑いが入る（頭出しの縁を作り直す）。
             _dollsAudible = false;
             _dollOneAudible = _dollGrowAAudible = _dollGrowBAudible = false;
+            // ⚠ **方角は体験者ごとに引き直す**（`canon/LEDGER.md` 0130「ランダムな位置」）。
+            //    走行のあいだは動かさない — 鳴っている最中に動かすと、人形が歩いて聞こえる。
+            SpatialAudio.PickLaughBearings(_laughBearings);
+            LastCallAzimuthDeg = -1f;
+            CallCount = 0;
         }
     }
 }
