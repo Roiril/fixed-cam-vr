@@ -23,13 +23,17 @@ namespace FixedCamVr.OvrBridge
     /// キーボード経由の切替（<c>CameraSwitchInput</c> の Tab / 1-9・Editor 用）は残っている。
     /// 封印モード（旧 Run/Staff）・スティック・cue 試射は撤去した。
     ///
-    /// <b>左は体験者の手。読むのは X / Y だけ</b>（2026-08-15・<c>canon/LEDGER.md</c> 0042 / 0050）:
-    /// どちらを押しても同じで、<b>1 秒長押し</b>で異変の報告になる（<see cref="VisitorMarkHoldLogic"/>。
+    /// <b>左は体験者の手。読むのは「どのボタンでも」</b>（2026-09-03・<c>canon/LEDGER.md</c> 0128
+    /// ユーザー指定「体験者が押すボタン、X/Y だけじゃなく、どのボタンを押してもいいようにしてほしい。
+    /// これは、言語選択も報告も全部含めて」）。一覧は <see cref="LeftAnyButtons"/>。
+    /// <b>1 秒長押し</b>で異変の報告になる（<see cref="VisitorMarkHoldLogic"/>。
     /// 2026-08-16 に 2 秒から半分へ・<c>canon/LEDGER.md</c> 0059）。
     /// 押し方と進捗は<b>AIエージェントからの連絡の面（<see cref="CommsPanel"/>）の下段</b>が出す
     /// （2026-08-16・<c>canon/LEDGER.md</c> 0058。コントローラに追従する面は廃止した）。
-    /// スティック・トリガー・グリップ・A/B は左からは 1 ビットも読まない。
-    /// ⚠⚠ <b>体験前の注意書きが出ているあいだだけ、同じ X／Y が言語の切り替えになる</b>
+    /// ⚠ <b>どれを押しても同じ</b>という 0050 の芯は変わっていない（被った体験者に手元は見えない）。
+    /// 変わったのは「同じ」の範囲が X／Y の 2 つから左のボタン全部になったこと。
+    /// <b>スティックの倒しだけは読まない</b>（ボタンではなく、親指が乗っているだけで倒れる）。
+    /// ⚠⚠ <b>体験前の注意書きが出ているあいだだけ、同じボタンが言語の切り替えになる</b>
     /// （2026-09-03 ユーザー指定・日本語 / English / Français）。<b>入力は増えていない</b> —
     /// 段で意味が変わるだけで、A が「カメラ送り」から「タイトルを閉じる」へ変わったのと同じ形。
     /// そのあいだ報告のゲージは進めない（言語を選んだだけで異変の報告が 1 件立たないように）。
@@ -87,11 +91,70 @@ namespace FixedCamVr.OvrBridge
         // 判定が壊れる（unity-prefab-fields の罠）。調整不要なので const 固定。
         private const float LongPressSec = 2.0f;
 
+        /// <summary>
+        /// <b>体験者が押せるもの、全部</b>（2026-09-03 ユーザー指定「体験者が押すボタン、X/Y だけじゃなく、
+        /// どのボタンを押してもいいようにしてほしい。これは、言語選択も報告も全部含めて」）。
+        ///
+        /// 名前はすべて<b>左にしか無い物理ボタン</b>なので、右（スタッフ）と取り違えようが無い
+        /// （右の A / B / トリガー / グリップは `RButton` 系・`RTouch` 明示で読んでいる）。
+        ///
+        /// ⚠ <b>スティックの倒し（<c>LThumbstickUp</c> 等）は入れない。</b> あれはボタンではなく、
+        /// 歩いているあいだ親指が乗っているだけで倒れる。1 秒握れば報告になる以上、
+        /// <b>倒しっぱなしが異変の報告に化ける</b>。押し込み（<c>LThumbstick</c>）は入れてある。
+        /// ⚠ <c>Start</c>（左のメニュー）は OS が持っていく現場もある。
+        /// <b>その場合は押しても何も届かないだけ</b>で、ほかのボタンが効くので体験は止まらない。
+        ///
+        /// ⚠ 記号（三本線のメニュー字など）をこのファイルへ書かない。<b>フォントの収集元なので、
+        /// コメントの字まで焼かれる</b>（元フォントに無い字は「欠落」として毎回報告に出る）。
+        /// </summary>
+        private static readonly OVRInput.RawButton[] LeftAnyButtons =
+        {
+            OVRInput.RawButton.X,
+            OVRInput.RawButton.Y,
+            OVRInput.RawButton.Start,          // 左のメニューボタン
+            OVRInput.RawButton.LIndexTrigger,  // 人差し指
+            OVRInput.RawButton.LHandTrigger,   // 握り
+            OVRInput.RawButton.LThumbstick,    // スティックの押し込み（倒しではない）
+        };
+
+        /// <summary>
+        /// <see cref="LeftAnyButtons"/> をまとめたもの。<b>一覧から導出する</b> —
+        /// 手で書くと片方だけ足して「握りでは報告できるのに言語が変わらない」が起きる。
+        /// </summary>
+        private static readonly OVRInput.RawButton LeftAnyMask = OrAll(LeftAnyButtons);
+
+        private static OVRInput.RawButton OrAll(OVRInput.RawButton[] buttons)
+        {
+            OVRInput.RawButton mask = OVRInput.RawButton.None;
+            for (int i = 0; i < buttons.Length; i++) mask |= buttons[i];
+            return mask;
+        }
+
+        /// <summary>
+        /// 左のどれかが<b>このフレームに押された</b>か。
+        ///
+        /// ⚠⚠ <b>まとめたマスクで <c>GetDown</c> を呼んではいけない。</b>
+        /// <c>OVRInput.GetResolvedButtonDown</c> は<b>前フレームにマスクのどれかが押されていたら
+        /// 問答無用で false を返す</b>（`OVRInput.cs`）。握りに指を掛けたまま X を押す持ち方は普通なので、
+        /// まとめて渡すと<b>言語が一度も切り替わらない現場ができる</b>（しかも握っている人にだけ起きる）。
+        /// ⇒ <b>1 つずつ聞く。</b> 単独のビットなら「前フレームに押されていたか」もそのボタンの話になる。
+        /// </summary>
+        private static bool AnyLeftButtonDown()
+        {
+            for (int i = 0; i < LeftAnyButtons.Length; i++)
+                if (OVRInput.GetDown(LeftAnyButtons[i], OVRInput.Controller.LTouch)) return true;
+            return false;
+        }
+
         // モード状態機械（純ロジック。入力を bool/float で Tick する）。
         private readonly ControllerModeLogic _modeLogic = new();
 
-        // 体験者の報告ボタン（左 X / 左 Y）の 2 秒長押し（純ロジック）。
+        // 体験者の報告ボタン（左のどれか）の長押し（純ロジック）。
         private readonly VisitorMarkHoldLogic _markHold = new();
+
+        // 言語を選んでいたあいだ押していた手を、そのまま報告として数えないためのラッチ。
+        // 一度離すまで true（`ControllerModeLogic` の長押しラッチと同じ約束）。
+        private bool _markNeedsRelease;
 
         // OS recenter 購読済みフラグ（OVRManager.display は初期化順で null のことがあるためリトライする）。
         private bool _recenterSubscribed;
@@ -243,7 +306,7 @@ namespace FixedCamVr.OvrBridge
             bool gripDown = OVRInput.GetDown(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
             bool triggerDown = OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
 
-            // ---- 体験者の手（左）。**X でも Y でもよい**（2026-08-15・canon/LEDGER.md 0050）----
+            // ---- 体験者の手（左）。**どのボタンでもよい**（2026-09-03・canon/LEDGER.md 0128）----
             // ⚠⚠ **`Button.Three` / `Button.Four` を `Controller.LTouch` と組み合わせてはいけない。**
             //    LTouch の仮想マップは `Three = RawButton.None` / `Four = RawButton.None` で
             //    （`OVRInput.cs` の `OVRControllerLTouch`）、**押しても永遠に false になる**。
@@ -251,11 +314,9 @@ namespace FixedCamVr.OvrBridge
             //    `ShouldResolveController` は LTouch 指定のとき Touch を弾く。
             //    2026-08-15 まで記録ボタンはこの形で書かれていて、**実機で一度も発火していなかった**
             //    （実機で押した記録が無く、ログにも `[XP] ev=mark` が 1 行も出ていない）。
-            // ⇒ **物理ボタンを名指しする `RawButton` を使う**（X / Y は左にしか無いので取り違えない）。
-            bool leftMarkHeld = OVRInput.Get(OVRInput.RawButton.X | OVRInput.RawButton.Y,
-                                             OVRInput.Controller.LTouch);
-            bool leftDown = OVRInput.GetDown(OVRInput.RawButton.X | OVRInput.RawButton.Y,
-                                             OVRInput.Controller.LTouch);
+            // ⇒ **物理ボタンを名指しする `RawButton` を使う**（下の一覧は全部左にしか無い名前）。
+            bool leftMarkHeld = OVRInput.Get(LeftAnyMask, OVRInput.Controller.LTouch);
+            bool leftDown = AnyLeftButtonDown();
 
             // 監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る＝「入力は届いている」）。
             // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。
@@ -341,8 +402,16 @@ namespace FixedCamVr.OvrBridge
                 haptics?.LeftMark();
             }
 
+            // ⚠⚠ **言語を選んだ手を、そのまま報告として数えない**（2026-09-03）。
+            //    どのボタンでも通るようになったので、**押したまま**注意書きが閉じられる筋が現実に出た
+            //    （体験者が握りに指を掛けて言語を巡らせ、その間にスタッフが右 A を押す）。
+            //    ゲートを外した瞬間から積み始めるので、**本編の 1 秒後に身に覚えの無い報告が 1 件立つ**。
+            //    ⇒ 選んでいるあいだに押していたら、**一度離すまで数えない**。
+            if (langChoosing && leftMarkHeld) _markNeedsRelease = true;
+            else if (!leftMarkHeld) _markNeedsRelease = false;
+
             bool markFired = _markHold.Tick(Time.deltaTime,
-                                            leftMarkHeld && !langChoosing
+                                            leftMarkHeld && !langChoosing && !_markNeedsRelease
                                             && mode == ControllerModeLogic.Mode.Normal);
             if (markFired)
             {
@@ -458,6 +527,8 @@ namespace FixedCamVr.OvrBridge
                 FindObjectOfType<ShowRunDirector>()?.BeginRun();
             }
             // 体験者が代わるので、進行中の報告の長押しと余韻も落とす。
+            // ⚠ 離し待ちのラッチは**落とさない** — ここで消すと、注意書きが出直した瞬間に
+            //   握ったままの手が報告として数え直される（それを止めるためのラッチなので）。
             _markHold.Reset();
             haptics?.Fire(); // 長押し発火（ランリセット）
             Debug.Log("[OvrBridge] Normal: ランリセット（右グリップ 2 秒長押し）");

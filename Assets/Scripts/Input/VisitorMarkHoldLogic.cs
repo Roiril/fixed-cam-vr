@@ -3,7 +3,7 @@
 namespace FixedCamVr.Input
 {
     /// <summary>
-    /// <b>体験者の報告ボタン（左 X / 左 Y）の長押し</b>を数える純ロジック。
+    /// <b>体験者の報告ボタン（左のどれか）の長押し</b>を数える純ロジック。
     /// UnityEngine / OVRInput へ一切依存せず、入力と経過時間だけを <see cref="Tick"/> で受ける。
     ///
     /// 判定は <c>canon/LEDGER.md</c> 0050（ユーザー逐語）:
@@ -84,7 +84,8 @@ namespace FixedCamVr.Input
         /// 1 フレーム進める。閾値へ達した最初の 1 フレームだけ true を返す。
         /// </summary>
         /// <param name="dt">このフレームの経過時間 (秒)。<see cref="MaxStepSec"/> で切られる。</param>
-        /// <param name="held">左の X または Y が押されているか。</param>
+        /// <param name="held">左のボタンがどれか 1 つでも押されているか（一覧は
+        /// <c>OvrControllerBridge.LeftAnyButtons</c>。2026-09-03 に X／Y から左の全ボタンへ広げた）。</param>
         public bool Tick(float dt, bool held)
         {
             float step = dt < 0f ? 0f : (dt > MaxStepSec ? MaxStepSec : dt);

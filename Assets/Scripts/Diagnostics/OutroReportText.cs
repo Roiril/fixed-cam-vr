@@ -11,7 +11,7 @@ namespace FixedCamVr.Diagnostics
     /// 装置を外してください。 みたいなことを書いて終了にしてほしい」。
     ///
     /// ⚠ <b>4 行はユーザーが書いたまま出す</b>（句点も含めて）。○○ に入るのは
-    /// <c>ShowControlClient.VisitorMarkCount</c>（左 X / Y の 2 秒長押しの回数）。
+    /// <c>ShowControlClient.VisitorMarkCount</c>（左のどれかのボタンの 1 秒長押しの回数）。
     ///
     /// ⚠ <b>数は全角。</b> 紙の依頼書が「観測者番号 ０３７」と全角で組んであるので、
     /// 同じ装置が出す数字の形を揃える（<c>canon/LEDGER.md</c> 0041）。
