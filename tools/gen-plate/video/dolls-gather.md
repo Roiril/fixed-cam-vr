@@ -27,6 +27,9 @@ for a,b in (('tools/web-compositor/captures/plate_A_<日時>.jpg','logs/gen-plat
     Image.open(a).convert('RGB').resize((1280,960), Image.LANCZOS).save(b)"
 ```
 
+- **2026-09-04 の候補で焼いてある**: `logs/gen-plate/seedance_first_A_20260904.png`（8/23 19:42 のプレート）/
+  `seedance_last_A_20260904.png`（`gen_dollsA_left_20260904_0703.png`・まとまった群れ）。
+  散った群れ（`gen_dollsA_left_20260904_0231d.png`）を到達点にするなら最終コマを差し替える
 - **2 倍（1280x960）**。整数倍なので位置が 1 画素もずれない
 - **比率 4:3**。16:9 は上下が切られて実写と重ならない
 - 静止画は `_raw` ではなく採用した方（undim 済み）。プレートと同じ明るさでないと①の頭と尻で露出が変わる
