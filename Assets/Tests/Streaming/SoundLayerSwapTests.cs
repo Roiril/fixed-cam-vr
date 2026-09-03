@@ -75,6 +75,79 @@ namespace FixedCamVr.Streaming.Tests
             Assert.Less(g.score, 0.2f, "0.8 秒で劇伴がほぼ退いていること");
         }
 
+        /// <summary>
+        /// ⚠⚠ <b>入れ替わりの途中で背景が凹まない</b>（等パワーの対・2026-09-04）。
+        /// 初版は劇伴の退き（聴感直線）と風の入り（聴感直線）を別々に走らせていて、
+        /// 中央で合成パワーが 0.20（-7dB）まで凹んでいた（走行 20260903_210843 の t=107.4 に
+        /// 劇伴 0.21 / 呪い 0.44 の標本）。ユーザー指示は「クロスフェードで入れ替える」（0131）。
+        /// </summary>
+        [Test]
+        public void Otherworld_CrossfadeKeepsTheBackgroundPowerFlat()
+        {
+            var logic = new SoundBedLogic();
+            var s = Run(1, 1);
+            Settle(logic, s, 6f);
+
+            s.otherworld = true;
+            AssertPowerFlat(logic, s, 1.2f, g => g.score, g => g.wind, "入り");
+            s.otherworld = false;
+            AssertPowerFlat(logic, s, 1.2f, g => g.score, g => g.wind, "戻り");
+        }
+
+        /// <summary>3 周目 B の入れ替わり（劇伴 → 呪いの 2 本）も同じ。</summary>
+        [Test]
+        public void Curse_CrossfadeKeepsTheBackgroundPowerFlat()
+        {
+            var logic = new SoundBedLogic();
+            Settle(logic, Run(3, 0), 4f);
+            AssertPowerFlat(logic, Run(3, 1), 4f, g => g.score, g => g.beat, "3 周目 B");
+        }
+
+        /// <summary>
+        /// 呪い → ホワイトノイズの受け渡しのあいだ、<b>劇伴は 0 のまま</b>で、
+        /// 2 つのパワーの和は 1 から動かない。⚠ 相手を <c>max</c> で見る実装だと、
+        /// 受け渡しの中央で劇伴が 0.7 まで戻る（和で見ること）。
+        /// </summary>
+        [Test]
+        public void Release_HandoffKeepsTheScoreSilent_AndThePowerFlat()
+        {
+            var logic = new SoundBedLogic();
+            Settle(logic, Run(3, 1), 4f);
+            var s = Run(4, 0);
+            Settle(logic, s, 2f);
+
+            s.curseReleased = true;
+            float maxScore = 0f;
+            for (int i = 0; i < (int)(4f / Dt); i++)
+            {
+                var g = logic.Tick(Dt, s);
+                maxScore = System.Math.Max(maxScore, g.score);
+                float p = g.beat * g.beat + g.white * g.white;
+                Assert.That(p, Is.EqualTo(1f).Within(0.03f), $"受け渡しの途中で背景が動いた（{i} tick 目）");
+            }
+            Assert.Less(maxScore, 0.05f, "受け渡しの途中で劇伴が戻った");
+        }
+
+        /// <summary>
+        /// 2 つの倍率が入れ替わるあいだ、<b>途中の tick でも</b>二乗の和が 1 のままで、
+        /// かつ両方が同時に立つ瞬間がある（＝ 切り替えではなく入れ替え）。
+        /// </summary>
+        private static void AssertPowerFlat(SoundBedLogic logic, SoundShowState s, float sec,
+                                            System.Func<SoundBedGains, float> a,
+                                            System.Func<SoundBedGains, float> b, string where)
+        {
+            bool sawBoth = false;
+            for (int i = 0; i < (int)(sec / Dt); i++)
+            {
+                var g = logic.Tick(Dt, s);
+                float x = a(g), y = b(g);
+                Assert.That(x * x + y * y, Is.EqualTo(1f).Within(0.03f),
+                            $"{where}: {i} tick 目で合成パワーが 1 から外れた（{x:F3} / {y:F3}）");
+                if (x > 0.3f && y > 0.3f) sawBoth = true;
+            }
+            Assert.IsTrue(sawBoth, $"{where}: 両方が立つ瞬間が無い ＝ 入れ替えではなく切り替えになっている");
+        }
+
         /// <summary>抜けたら劇伴が戻る（風は消える）。</summary>
         [Test]
         public void LeavingTheOtherworld_BringsTheScoreBack()

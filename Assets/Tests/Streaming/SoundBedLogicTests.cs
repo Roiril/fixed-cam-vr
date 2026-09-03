@@ -12,7 +12,8 @@ namespace FixedCamVr.Streaming.Tests
     public class SoundBedLogicTests
     {
         private static SoundShowState Intro(IntroStage stage, float shell = 0f,
-                                            float degrade = 0f, float shatter = 0f, float live = 0f)
+                                            float degrade = 0f, float shatter = 0f, float live = 0f,
+                                            float passthrough = 1f)
         {
             var s = SoundShowState.Idle;
             s.introActive = true;
@@ -22,7 +23,44 @@ namespace FixedCamVr.Streaming.Tests
             s.introWeights.degrade = degrade;
             s.introWeights.shatter = shatter;
             s.introWeights.live = live;
+            // ⚠ `Inactive` は passthrough 0（本編と同じ見え）。導入の途中は現実が見えているので 1 を既定にする。
+            s.introWeights.passthrough = passthrough;
             return s;
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>帯域が閉じる縁はパススルーが消えること</b>（2026-09-04）。0044 で隔離が閉じる段が
+        /// 無くなってから <c>shell</c> は導入の全段で 0 のままで、帯域は 1 度も閉じていなかった
+        /// （走行 20260903_210843: <c>sndLpf=22.0</c> が全標本）。いまの導入で会場が消えるのは
+        /// 段 5（映像だけになる）なので、<c>passthrough</c> が 0 へ落ちるのと一緒に閉じる。
+        /// </summary>
+        [Test]
+        public void Swap_ClosesTheBand_WhenPassthroughGoesAway()
+        {
+            var open = SoundBedLogic.Target(Intro(IntroStage.Swap, passthrough: 1f));
+            var half = SoundBedLogic.Target(Intro(IntroStage.Swap, passthrough: 0.5f));
+            var shut = SoundBedLogic.Target(Intro(IntroStage.Swap, passthrough: 0f));
+            Assert.AreEqual(1f, open.roomOpen, 1e-4f, "現実が見えているあいだは開いている");
+            Assert.Less(half.roomOpen, open.roomOpen, "消え始めで閉じ始めること");
+            Assert.Greater(half.roomOpen, shut.roomOpen, "段階的に閉じること");
+            Assert.AreEqual(SoundBedLogic.RoomOpenSealed, shut.roomOpen, 1e-4f, "消え切ったら閉じ切る");
+            Assert.AreEqual(open.room, shut.room, 1e-6f, "閉じるのは帯域で、音量は変えない");
+        }
+
+        /// <summary>
+        /// 終幕は現実へ返す段なので部屋は開いている。導入が終わった後の <c>IntroWeights</c> は
+        /// passthrough 0 のまま残るが、それを読んで閉じてはいけない。
+        /// </summary>
+        [Test]
+        public void Outro_KeepsTheRoomOpen_EvenThoughPassthroughWeightIsZero()
+        {
+            var s = SoundShowState.Idle;
+            s.outroActive = true;
+            s.outroElapsedSec = 3f;
+            s.introWeights = IntroWeights.Inactive;   // passthrough = 0
+            var g = SoundBedLogic.Target(s);
+            Assert.AreEqual(1f, g.roomOpen, 1e-4f, "終幕で部屋が閉じている");
+            Assert.Greater(g.room, 0.5f, "終幕では部屋の音が前へ出る");
         }
 
         [Test]

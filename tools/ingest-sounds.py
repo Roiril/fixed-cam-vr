@@ -691,11 +691,31 @@ SWELL = [
 #    切り替えのたびに大きさを変えることになり、0106 の「あくまで通常の切り替え音がメイン」が
 #    崩れる。基準は**常に 1 本目**（素のまま）のラウドネス。
 #
-# (元ファイル名, 土台の出力名の頭, 出力名の頭, 本数, 切り出す秒, 1 本目に対する dB, 使い先)
+# ⚠⚠ **2026-09-04 に 240ms / -12dB → 420ms / -4dB / 頭から 35ms 遅れ へ直した**
+#    （`canon/LEDGER.md` 0134・ユーザー逐語「実際は他と同じに聞こえている」）。
+#    旧値は**警告を素の無音の上で聴いて**決めたもので、実機でこの音が鳴る場では
+#    ① 劇伴（-27.7 LUFS）と装置の唸り（-32）が下に敷いてあり、
+#    ② 人形視点の 4 カットは `transition:"glitch"` なので**乱れの一撃（-23 LUFS・260ms）が
+#       同じフレームで鳴る**（走行ログ 20260903_210843: カットの 30〜40ms 後に `ev=sfx id=Glitch`）。
+#    警告だけで -36 LUFS の旧値は、劇伴より 8dB・乱れより 13dB 下 ＝ 存在しないのと同じだった。
+#    「土台の重心 8kHz と警告 187Hz は帯域が離れているので小さくても聞こえる」という
+#    旧注記は、**隠す相手を土台だと思っていた**のが誤り（隠すのは劇伴と乱れ）。
+#
+#    新値の狙い（数値で確かめる。耳の判定は `preview_alert.wav` で人がする）:
+#    - 警告だけで **-28 LUFS 前後** ＝ 劇伴と同じ高さ。乱れ（-23）の下 5dB で、
+#      乱れの 260ms が終わった後に**警告だけが 0.15 秒残る**（尺 420ms ＞ 乱れ 260 ＋ 遅れ 35）
+#    - 頭の一撃は 1 ビットも変えない（35ms 遅らせるので警告の立ち上がりが一撃の身元を汚さない。
+#      35ms は融合の窓の内側なので「音が 2 つ」には聞こえない）
+#    - 土台の尖頭（-3dBTP）は警告の山と重ならないので、合成後も土台は下がらない
+#    - ⚠ 「あくまで通常の切り替え音がメイン」は**頭の一撃が最も大きいこと**で保つ
+#      （20ms 窓で一撃 -20dBFS に対し警告 -30dBFS 前後）。合成の統合 LUFS は上がるが、
+#      それは警告が聞こえるようになった分そのもの
+#
+# (元ファイル名, 土台の出力名の頭, 出力名の頭, 本数, 切り出す秒, 1 本目に対する dB, 頭からの遅れ秒, 使い先)
 MIXES = [
-    ("警告音.mp3", "sfx_switch", "sfx_switch_alert", len(SWITCH_VARIANTS), 0.24, -12.0,
-     "**人形視点が差し込まれるカット**の切替音（2 周目 B の 1 発 ＋ 2 周目 C の 4 発）。"
-     "ゾーン切替は素の `sfx_switch_*` のままで、こちらだけ警告音が薄く混ざる"),
+    ("警告音.mp3", "sfx_switch", "sfx_switch_alert", len(SWITCH_VARIANTS), 0.42, -4.0, 0.035,
+     "**カットの `switchSfx` が立つ所**の切替音（いまは 2 周目 B のバックルームズ 1 発 ＋ "
+     "2 周目 C の人形視点 5 発）。ゾーン切替は素の `sfx_switch_*` のままで、こちらだけ警告音が混ざる"),
 ]
 
 MIX_ONSET_DB = -20.0   # これを超えたら 1 発の頭
@@ -1586,13 +1606,17 @@ def ingest_cuts(cuts, src_dir: str) -> None:
 
 
 def mix_build(y, sr: int, base: np.ndarray, body_sec: float, rel_db: float,
-              ref_lufs: float = None):
-    """もらった音の 1 発を切り出して、既に焼いた土台へ薄く重ねる（<see cref="MIXES"/>）。
+              ref_lufs: float = None, at_sec: float = 0.0):
+    """もらった音の 1 発を切り出して、既に焼いた土台へ重ねる（<see cref="MIXES"/>）。
 
     ⚠ **音量は土台との関係で決める。** 「小さめ」は絶対値ではなく「通常の切替音がメイン」という
     関係のことなので、土台のラウドネスを基準に `rel_db` だけ下げる。
     ⚠⚠ **土台が家族（変種）のときは `ref_lufs` に 1 本目の高さを渡す。** 各変種のラウドネスは
     尺の関数なので、そのまま基準にすると**警報の大きさが切り替えのたびに変わる**（0112）。
+    ⚠ `at_sec` は土台の頭から警告を置く位置。**頭の一撃（土台の 0〜15ms）に警告の立ち上がりを
+    重ねない**ためのもので、融合の窓（約 30ms）の内側なら「音が 2 つ」には聞こえない。
+    ⚠ 返す `seg` は**置いた位置に合わせて頭に無音を足したもの**（呼んだ側が土台と引き算で
+    突き合わせられるように、長さも合成と同じにしてある）。
     """
     st = sk.to_stereo(trim(y))
     env = np.max(np.abs(st), axis=1)
@@ -1603,14 +1627,19 @@ def mix_build(y, sr: int, base: np.ndarray, body_sec: float, rel_db: float,
     ref = sk.lufs(base) if ref_lufs is None else ref_lufs
     seg = seg * 10 ** ((ref + rel_db - sk.lufs(seg)) / 20.0)
 
-    out = np.zeros((max(len(base), len(seg)), 2))
+    i0 = max(0, int(at_sec * sr))
+    n = max(len(base), i0 + len(seg))
+    out = np.zeros((n, 2))
     out[:len(base)] += base
-    out[:len(seg)] += seg
+    placed = np.zeros((n, 2))
+    placed[i0:i0 + len(seg)] += seg
+    out += placed
     # ⚠ 天井に当たったら**両方まとめて**下げる（土台だけ下げると主従の関係が崩れる）。
     tp = sk.true_peak_db(out)
     if tp > -3.0:
-        out = out * 10 ** ((-3.0 - tp) / 20.0)
-    return out, seg
+        g = 10 ** ((-3.0 - tp) / 20.0)
+        out, placed = out * g, placed * g
+    return out, placed
 
 
 def soft_level(y: np.ndarray, th_db: float, ratio: float,
@@ -1698,7 +1727,7 @@ def ingest_mixes(mixes, src_dir: str) -> None:
     ⚠ **土台の本数ぶん焼く。** 警告の高さは**常に 1 本目**を基準にするので、
     どの番号で鳴っても同じ警報の大きさになる。
     """
-    for jp, base_stem, stem, count, body, rel, _why in mixes:
+    for jp, base_stem, stem, count, body, rel, at, _why in mixes:
         src = os.path.join(src_dir, jp)
         raw = os.path.join(RAW, f"src_{stem}.wav")
         if os.path.exists(src):
@@ -1718,19 +1747,24 @@ def ingest_mixes(mixes, src_dir: str) -> None:
         ref_lufs = sk.lufs(sk.to_stereo(sk.read_wav(first)[0]))
 
         y, sr = sk.read_wav(raw)
-        print(f"  {stem}_1..{count}  ＋ 警告 {body * 1000:.0f}ms"
-              f"（1 本目に対し {rel:+.1f}dB ＝ 6 本とも同じ高さ）")
+        print(f"  {stem}_1..{count}  ＋ 警告 {body * 1000:.0f}ms を頭から {at * 1000:.0f}ms に"
+              f"（1 本目に対し {rel:+.1f}dB ＝ {count} 本とも同じ高さ）")
         for i in range(1, count + 1):
             base_path = os.path.join(OUT, f"{base_stem}_{i}.wav")
             if not os.path.exists(base_path):
                 print(f"    土台が無い: {base_stem}_{i}.wav")
                 continue
             base = sk.to_stereo(sk.read_wav(base_path)[0])
-            out, seg = mix_build(y, sr, base, body, rel, ref_lufs)
+            out, seg = mix_build(y, sr, base, body, rel, ref_lufs, at)
             out = emit(f"{stem}_{i}", out)
             d, b, g = sk.describe(out), sk.describe(base), sk.describe(seg)
+            # ⚠ 「土台がメイン」は**頭 20ms の実効値**で見る（統合 LUFS は警告の尺で動くので使えない）。
+            head_n = int(0.020 * sr)
+            def _db(z):
+                return 20 * np.log10(max(float(np.sqrt(np.mean(z[:head_n] ** 2))), 1e-9))
             print(f"    {stem}_{i:<12d} 土台 {b['lufs']:6.1f} → 合成 {d['lufs']:6.1f} LUFS   "
                   f"tp {d['true_peak_db']:5.2f}dB   警告だけ {g['lufs']:6.1f} LUFS   "
+                  f"頭20ms 土台 {_db(base):5.1f} / 合成 {_db(out):5.1f}dBFS   "
                   f"鋭さ {d['sharp']:4.2f}   内蔵SP {d['speaker_db']:5.1f}dB")
 
 
@@ -1769,9 +1803,10 @@ def main() -> int:
             layers = " + ".join(f"{n}({s:.0f}s・{len(v)} 回)" for n, s, v in SWELL_LAYERS)
             print(f"  {'（増える 3 枚）':16s} ← {jp}\n      {layers}"
                   f"\n      1 体ぶん {SWELL_SOLO_LUFS:+.1f} LUFS で 3 枚まとめて揃える / {why}")
-        for jp, base_stem, stem, count, body, rel, why in MIXES:
+        for jp, base_stem, stem, count, body, rel, at, why in MIXES:
             print(f"  {stem+'_1..'+str(count):16s} ← {base_stem}_1..{count} ＋ {jp}")
-            print(f"      1 発から {body * 1000:.0f}ms を {rel:+.1f}dB（1 本目基準）で重ねる / {why}")
+            print(f"      1 発から {body * 1000:.0f}ms を {rel:+.1f}dB（1 本目基準）で"
+                  f"頭から {at * 1000:.0f}ms に重ねる / {why}")
         for v in VOICES:
             t0, t1 = v["cut"]
             print(f"  {v['name']:16s} ← {v['src']}")

@@ -45,11 +45,17 @@ namespace FixedCamVr.Streaming
         public const string DefaultResourcePrefix = "Sound/sfx_switch_";
 
         /// <summary>
-        /// <b>人形視点が差し込まれるカット</b>の音（<c>canon/LEDGER.md</c> 0106）。
-        /// 素の切替音の上に、もらった警告音を 240ms だけ -12dB で重ねた 6 本で、
+        /// <b>カットの <c>switchSfx</c> が立つ所</b>の音（<c>canon/LEDGER.md</c> 0106・
+        /// いまは人形視点の 5 発と 2 周目 B のバックルームズ 1 発）。
+        /// 素の切替音の上に、もらった警告音を 420ms・-4dB・頭から 35ms 遅れで重ねた 6 本で、
         /// 焼くのは <c>tools/ingest-sounds.py</c> の <c>MIXES</c>。
         ///
-        /// ⚠ <b>Inspector の口は持たない</b>（差し替えるなら <c>MIXES</c> の 2 つの数を直して焼き直す）。
+        /// ⚠⚠ <b>2026-09-04 まで 240ms / -12dB だった</b>（0134・ユーザー逐語
+        /// 「実際は他と同じに聞こえている」）。警告だけで -36 LUFS は、下に敷いてある劇伴（-27.7）と
+        /// 同じフレームで鳴る乱れの一撃（-23）に埋もれて、素の切替音と区別が付かなかった。
+        /// 旧値を決めたときは<b>警告を素の無音の上で聴いていた</b>のが原因。
+        ///
+        /// ⚠ <b>Inspector の口は持たない</b>（差し替えるなら <c>MIXES</c> の 3 つの数を直して焼き直す）。
         /// SerializeField にすると、シーンに焼かれた null と Resources の関係を次の人が調べることになる。
         /// </summary>
         public const string AlertResourcePrefix = "Sound/sfx_switch_alert_";

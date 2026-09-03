@@ -1888,6 +1888,26 @@ def analyze(events, others, exp, warns=None):
             vals = [v for _t, v in rows if v is not None]
             return max(vals) if vals else None
 
+        def _both_up(rows_a, rows_b, thr=0.30):
+            """両方が `thr` を超えている標本のうち、**次の標本でも超えていたもの**の時刻。
+
+            ⚠ 1 標本だけでは落とさない（2026-09-04）。入れ替えは等パワーの対なので、
+            クロスフェードの中央では両方が 0.71 まで立つ。それは「同時に鳴っている」ではなく
+            入れ替えの途中。標本は 2 秒おきで入れ替えは最長 2 秒なので、**2 標本続けて**
+            両方が立っていれば入れ替えではない。
+            """
+            b_at = {round(t, 1): (v or 0.0) for t, v in rows_b}
+            ts = sorted((t, (v or 0.0)) for t, v in rows_a)
+            hits = []
+            for i, (t, v) in enumerate(ts):
+                if v <= thr or b_at.get(round(t, 1), 0.0) <= thr:
+                    continue
+                if i + 1 < len(ts):
+                    t2, v2 = ts[i + 1]
+                    if v2 > thr and b_at.get(round(t2, 1), 0.0) > thr:
+                        hits.append(t)
+            return hits
+
         # 異世界（バックルームズ）が映った回数は演出のカットから数える。
         otherworld_steps = [e for e in events if e.get("ev") == "step"
                             and str(e.get("src", "")) == "plate"
@@ -1898,8 +1918,7 @@ def analyze(events, others, exp, warns=None):
             if pk is not None and pk > 0.01:
                 verdict("OK", f"異世界が映っているあいだ風が鳴った（最大 {pk:.2f}）")
                 # ⚠ 「その時流れてる環境音は切る」— 風が立っているあいだ劇伴が 0 であること。
-                bad = [t for t, v in wind if (v or 0.0) > 0.30
-                       and any(abs(t2 - t) < 0.05 and (v2 or 0.0) > 0.30 for t2, v2 in score_s)]
+                bad = _both_up(wind, score_s)
                 if bad:
                     verdict("FAIL", f"風と劇伴が同時に鳴っている（{len(bad)} 標本）— "
                                     "0131 は「その時流れてる環境音は切る」")
@@ -1921,8 +1940,7 @@ def analyze(events, others, exp, warns=None):
                           and (fnum(e, "lap", 0.0) or 0) >= 3 for e in events if e.get("ev") == "seg")
             if pk is not None and pk > 0.01:
                 verdict("OK", f"3 周目 B から呪いの 2 本が鳴った（最大 {pk:.2f}）")
-                bad = [t for t, v in curse if (v or 0.0) > 0.30
-                       and any(abs(t2 - t) < 0.05 and (v2 or 0.0) > 0.30 for t2, v2 in score_s)]
+                bad = _both_up(curse, score_s)
                 if bad:
                     verdict("FAIL", f"呪いの 2 本と劇伴が同時に鳴っている（{len(bad)} 標本）— "
                                     "0131 は「クロスフェードで入れ替える」")
@@ -2010,21 +2028,41 @@ def analyze(events, others, exp, warns=None):
                 # ⚠⚠ **終幕と `Finished` を外す。** どちらも劇伴が 0 へ落ちるのが正なので、
                 #    入れると**正しい走行が毎回 FAIL する**（実測の走行は 71 標本のうち
                 #    15 が `Finished` だった）。終幕の縁は `ev=outro` の最初の時刻で切る。
-                t_outro = min([fnum(e, "t", 0.0) for e in outro], default=None)
+                # ⚠⚠ **終幕の縁は `stage=Off` を除いて取る**（2026-09-04）。起動直後に
+                #    `ev=outro stage=Off` が 1 本出るので、それを含めて min を取ると t≈5 秒が
+                #    「終幕の頭」になり、**本編の標本が 1 つも残らず、この判定は黙って飛んでいた**
+                #    （走行 20260903_210843: 劇伴が 0 まで落ちた標本が 4 つあるのに何も言わなかった）。
+                t_outro = min([fnum(e, "t", 0.0) for e in outro
+                               if str(e.get("stage", "")) not in ("", "Off")], default=None)
 
                 def in_run(e):
                     if e.get("phase") != "Run":
                         return False
                     return t_outro is None or fnum(e, "t", 0.0) < t_outro
 
-                run = [fnum(e, "sndScore") for e in events
+                # ⚠⚠ **見るのは劇伴 1 本ではなく「背景の総量」**（2026-09-04）。0131 から劇伴は
+                #    風・呪いの 2 本・ホワイトノイズに**入れ替わる**ので、劇伴だけ見ると正しい走行が
+                #    毎回 FAIL する。入れ替えは等パワーの対（`SoundBedLogic.Tick`）なので、
+                #    4 つの**パワーの和**は途中でも 1 から動かない。ここが 0.5 を割ったら谷。
+                #    ⚠ 初版（Perceptual の対）は中央で 0.20 まで凹んでいた — その走行はここで落ちる。
+                def bg_power(e):
+                    p = 0.0
+                    for k in ("sndScore", "sndWind", "sndCurse", "sndWhite"):
+                        v = fnum(e, k)
+                        if v is not None:
+                            p += v * v
+                    return p
+
+                run = [(fnum(e, "t", 0.0), bg_power(e)) for e in events
                        if e.get("ev") == "sum" and "sndScore" in e and in_run(e)]
-                run = [v for v in run if v is not None]
-                if run and min(run) < 0.9:
-                    verdict("FAIL", f"本編で劇伴が凹んでいる（最小 {min(run):.2f}）— "
-                                    "背景は 1 本しか無いので、ここが落ちると穴になる")
+                holes = [t for t, p in run if p < 0.5]
+                if run and holes:
+                    verdict("FAIL", f"本編で背景が凹んでいる（{len(holes)} 標本・最初は t={holes[0]:.1f}s）— "
+                                    "劇伴と置き換える 3 つ（風・呪い・ホワイトノイズ）の合成パワーが "
+                                    "0.5 を割った。等パワーの入れ替えなら和は 1 から動かない")
                 elif run:
-                    verdict("OK", f"劇伴が本編で鳴り続けている（最小 {min(run):.2f}）")
+                    verdict("OK", f"本編で背景が途切れていない"
+                                  f"（劇伴＋置き換えの合成パワー 最小 {min(p for _t, p in run):.2f}）")
                 # ⚠⚠ **取り分が 1 でも、音源が止まっていれば無音。** `sndScore` は
                 #    `ShowSoundDirector` が書いた倍率でしかなく、鳴らしているのは BgmDirector。
                 #    0115 より前は本編で劇伴が黙っている前提だったので、レーンが止まっていても
@@ -2035,6 +2073,8 @@ def analyze(events, others, exp, warns=None):
                     verdict("FAIL", f"本編で BGM のレーンが止まっている"
                                     f"（{lane.count('0')}/{len(lane)} 標本で bgm=0）— "
                                     "取り分（sndScore）が 1 でも音源が止まっていれば無音")
+                elif lane:
+                    verdict("OK", f"本編で BGM のレーンが生きていた（{len(lane)} 標本すべて bgm=1）")
                 else:
                     verdict("OK", f"劇伴が鳴っている（最大 {peak:.2f}・本編まで走っていない走行）")
 

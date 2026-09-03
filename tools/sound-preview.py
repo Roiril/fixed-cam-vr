@@ -67,7 +67,7 @@ MATERIALS = [
     ("sfx_screen_noise", "【鳴らない】その後のノイズ — 2026-08-16 に外した（音源は残してある）", 0),
     ("sfx_swap", "【鳴らない】装置が点く — 同じ縁をもらった音（sfx_screen_on）が取った", 0),
     ("sfx_switch_1", "カメラ切替（もらった「カメラ切り替え」・**変種 1/6**。残り 5 本は preview_switch）", 0),
-    ("sfx_switch_alert_1", "同・**人形視点が差し込まれるカット**（もらった「警告音」を 240ms だけ薄く重ねたもの）", 0),
+    ("sfx_switch_alert_1", "同・**カットの switchSfx が立つ所**（もらった「警告音」を 420ms・-4dB で頭から 35ms 遅れて重ねたもの。0134）", 0),
     ("sfx_glitch_1", "映像の乱れ 1", 0),
     ("sfx_glitch_2", "映像の乱れ 2", 0),
     ("sfx_glitch_3", "映像の乱れ 3", 0),
@@ -548,6 +548,94 @@ def build_call() -> np.ndarray:
 REF = os.path.join(OUT, "ref")
 
 
+def build_alert() -> np.ndarray:
+    """**警告つきの切替音を、実機で鳴る場に置いて聴く**（`canon/LEDGER.md` 0134）。
+
+    0106 の版（240ms / -12dB）は警告を**素の無音の上で**聴いて決めた。実機ではその下に劇伴と
+    装置の唸りが敷いてあり、人形視点の 4 カットは `transition:"glitch"` なので**乱れの一撃が
+    同じフレームで鳴る**。そこでは警告（-36 LUFS）が消えて「他と同じに聞こえる」と判定された。
+    ここはその場を再現して、**旧の版 → 新の版**を同じ所に置く:
+
+    1. 旧 → 新 を素の無音の上で 3 組（違いそのものを聴く。旧は `logs/sound/ref/` に退避した版）
+    2. 2 周目 C の接近そのまま — 劇伴（乱れのたびに 0.35 退く）＋ 装置の唸り ＋ カットごとの乱れの一撃
+       ＋ 警告つきの切替 ＋ 4 カット目で声。**旧の版 → 新の版**
+    3. 同じ 2 回を**内蔵スピーカー越し**で（展示で耳に届くのはこちら）
+
+    ⚠ 散らし方は実機の写し（切替 gain 0.85 / 音程 ±3.5% / 音量 ±1.5dB、乱れは 1 回目の 0.80）。
+    ⚠ 劇伴の退きは `SoundBedLogic` の半減期 0.55 秒を包絡で写した近似。
+    """
+    rng = np.random.default_rng(20260904)
+    new = [load(f"sfx_switch_alert_{i}") for i in range(1, SWITCH_VARIANTS_N + 1)]
+    prev = []
+    for i in range(1, SWITCH_VARIANTS_N + 1):
+        p = os.path.join(REF, f"sfx_switch_alert_prev_{i}.wav")
+        if os.path.exists(p):
+            prev.append(sk.to_stereo(sk.read_wav(p)[0]))
+    glitch = [load(f"sfx_glitch_{i}") for i in range(1, 4)]
+    call = load("sfx_doll_call")
+
+    def shot(clip: np.ndarray, gain: float = 0.85, pitch: float = 0.035, db: float = 1.5) -> np.ndarray:
+        r = 1.0 + float(rng.uniform(-pitch, pitch))
+        m = max(8, int(len(clip) / r))
+        x = np.linspace(0, len(clip) - 1, m)
+        c = np.stack([np.interp(x, np.arange(len(clip)), clip[:, ch]) for ch in (0, 1)], axis=1)
+        return c * gain * 10 ** (float(rng.uniform(-db, db)) / 20.0)
+
+    steps = (1.0, 0.9, 0.8, 1.4)          # pov_1 → pov_2 → pov_3 → pov_4（追いつき）
+    seg = 8.0
+
+    def approach(alerts: list) -> np.ndarray:
+        one = np.zeros((int(seg * sk.SR), 2))
+        score = tile(load_score(), seg)
+        # 劇伴は乱れの一撃のたびに 0.35 退き、半減期 0.55 秒で戻る（`SoundCueLogic.DuckFor(Glitch)`）。
+        tt = np.arange(len(score)) / sk.SR
+        env = np.ones(len(score))
+        at, cuts = 1.5, []
+        for sec in steps:
+            cuts.append(at)
+            at += sec
+        for tc in cuts:
+            d = 0.35 * np.exp(-np.maximum(tt - (tc + 0.035), 0.0) * np.log(2) / 0.55) * (tt >= tc + 0.035)
+            env = np.minimum(env, 1.0 - d)
+        lay(one, score * env[:, None], 0.0)
+        lay(one, tile(load("bed_device"), seg), 0.0)
+        for k, tc in enumerate(cuts):
+            lay(one, shot(alerts[k % len(alerts)]), tc)
+            # 乱れの一撃は次のフレーム（+35ms）。1 回目の高さ 0.80 → 徐々に 1.0（ここは 0.85）。
+            lay(one, shot(glitch[k % 3], gain=0.85, pitch=0.03, db=1.2), tc + 0.035)
+        lay(one, call, cuts[-1])          # 4 カット目の頭で声（散らさない）
+        return one
+
+    parts: list = []
+    t = 0.5
+    total = 0.5 + 3 * 2.0 + 1.0 + (seg + 0.8) * 4 + 1.0
+    out = np.zeros((int(total * sk.SR), 2))
+    if prev:
+        for i in range(3):
+            lay(out, prev[i] * 0.85, t)
+            lay(out, new[i] * 0.85, t + 0.8)
+            t += 2.0
+    else:
+        for i in range(3):
+            lay(out, new[i] * 0.85, t)
+            t += 2.0
+    t += 1.0
+    marks = []
+    for label, alerts in (("旧", prev if prev else new), ("新", new)):
+        block = approach(alerts)
+        lay(out, block, t)
+        marks.append((label, t))
+        t += seg + 0.8
+    for label, alerts in (("旧", prev if prev else new), ("新", new)):
+        block = through_speaker(approach(alerts))
+        lay(out, block, t)
+        marks.append((label + "・内蔵SP", t))
+        t += seg + 0.8
+    print("   0.5s 旧 → 新 を素で 3 組   "
+          + "   ".join(f"{tt:.1f}s {lab}（接近の 4 カット・1.5s から）" for lab, tt in marks))
+    return out
+
+
 def build_break() -> np.ndarray:
     """**パススルーが割れて 2D に移るところ**（`canon/LEDGER.md` 0112）。
 
@@ -750,6 +838,9 @@ def main() -> int:
          "変種 6 本 → 旧（1 本を 8 発）→ 新（6 本を 8 発）→ 2 周目 C の刻み")
     print("人形の呼びかけ（2 周目 C の追いつき）:")
     emit("preview_call", build_call(), "前半は声だけ / 後半は切替音と重なった所")
+    print("警告つきの切替音（0134・実機で鳴る場に置いて、旧 → 新）:")
+    emit("preview_alert", build_alert(),
+         "素で 3 組 → 接近そのまま（旧 → 新）→ 同じ 2 回を内蔵スピーカー越し。**警告が聞こえるか**が判定")
     print("笑いの高さ（呼びかけと並べる）:")
     emit("preview_pitch", build_pitch(),
          "呼びかけ → 一人 → 呼びかけ → 群れ → 重ねる。**同じ人形に聞こえるか**")

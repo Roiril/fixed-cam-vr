@@ -481,27 +481,43 @@ namespace FixedCamVr.Streaming
             //    「すぐ消えてから長く尾を引く」に聞こえる（`SoundFade` の注意書き）。劇伴は
             //    **題字が立っているあいだに渡し終える**必要があるので、尺を決めて進みを送り、
             //    振幅は聴感直線（`Perceptual`）に通す。
-            // ⚠⚠ **異世界の出入りだけ速い。** 演出が 4.0 秒しかないので、劇伴が 2.0 秒かけて
-            //    退くと窓の半分を食う（`OtherworldFadeSec`）。**戻りも同じ尺**にしてあるのは、
-            //    片道だけ速いと抜けた後に無音の谷ができるから。
-            //    ⚠ 判定に `_windT` を混ぜるのは、**風が引き切るまで**戻りも速くするため。
-            bool fastScore = st.otherworld || _windT > 0.001f;
-            float scoreStep = dt / (fastScore ? OtherworldFadeSec
-                                              : (t.score > _scoreT ? ScoreFadeInSec : ScoreFadeOutSec));
+            // ⚠⚠ **ここが動くのは「劇伴が 1 人で出入りする」ときだけ**（黒からの入り・終幕の退き・
+            //    位置合わせ・体験の終わり）。**置き換える相手（風・呪い・ホワイトノイズ）との入れ替えは
+            //    ここでは動かさず、下の等パワーの補で引く**（2026-09-04）。
+            //    2026-09-03 の初版は `Target` が相手の立つあいだ `score = 0` を言い、こちらの
+            //    聴感直線の退きと相手の聴感直線の入りを同じ尺で走らせていた。
+            //    それは**中央で合成パワーが 0.315² × 2 ＝ 0.20（-7dB）へ凹む**クロスフェードで、
+            //    走行 20260903_210843 の t=107.4 に劇伴 0.21 / 呪い 0.44 という標本が残っている
+            //    （`SoundFade` の注意書きが線形について言っている谷より深い）。
+            //    ユーザー指示は「クロスフェードで入れ替える」（0131）なので谷は仕様違反。
+            float scoreStep = dt / (t.score > _scoreT ? ScoreFadeInSec : ScoreFadeOutSec);
             _scoreT = t.score > _scoreT
                 ? Math.Min(t.score, _scoreT + scoreStep)
                 : Math.Max(t.score, _scoreT - scoreStep);
-            _cur.score = SoundFade.Gain(_scoreT, SoundFade.Curve.Perceptual);
+            float scoreSolo = SoundFade.Gain(_scoreT, SoundFade.Curve.Perceptual);
 
             // --- 劇伴を置き換える 3 つ（0131）------------------------------------
-            // ⚠ **劇伴と同じ器**（時間で進みを送り、振幅は聴感直線）。半減期で寄せると形が揃わない。
+            // 時間で進みを送るのは劇伴と同じ。**振幅は等パワー（sin）**に通す —
+            // 劇伴の補（cos）と対にして、入れ替わりの途中で合成パワーが 1 から動かないようにする。
+            // ⚠⚠ **異世界の出入りだけ速い。** 演出が 4.0 秒しかないので、劇伴の既定（2.0 秒）で
+            //    退くと窓の半分を食う（`OtherworldFadeSec`）。**戻りも同じ尺** — 補で引く形なので
+            //    風の進みが 1 本あれば往復とも同じ尺になる（片道だけ速い谷は構造的にできない）。
             _windT = Ramp(_windT, t.wind, dt / OtherworldFadeSec);
             _curseT = Ramp(_curseT, t.beat, dt / CurseFadeSec);
             _whiteT = Ramp(_whiteT, t.white, dt / CurseFadeSec);
-            _cur.wind = SoundFade.Gain(_windT, SoundFade.Curve.Perceptual);
+            _cur.wind = SoundFade.Gain(_windT, SoundFade.Curve.EqualPower);
             // ⚠ **2 本は必ず同じ値**（1 つの背景を 2 枚で作っている）。
-            _cur.beat = _cur.horror2 = SoundFade.Gain(_curseT, SoundFade.Curve.Perceptual);
-            _cur.white = SoundFade.Gain(_whiteT, SoundFade.Curve.Perceptual);
+            _cur.beat = _cur.horror2 = SoundFade.Gain(_curseT, SoundFade.Curve.EqualPower);
+            _cur.white = SoundFade.Gain(_whiteT, SoundFade.Curve.EqualPower);
+
+            // ⚠⚠ **劇伴は「相手の合成パワーの補」だけ鳴る。** 相手が sin で立つあいだ劇伴は cos で退き、
+            //    sin² ＋ cos² ＝ 1 なので背景の総量が動かない。呪い → ホワイトノイズの受け渡し
+            //    （相手どうしの入れ替え）のあいだも、パワーの和は 1 のままなので劇伴は 0 に留まる
+            //    （`max` で見ると受け渡しの中央で劇伴が 0.7 まで戻ってしまう — 和で見ること）。
+            //    相手が誰も居なければ補は 1 ＝ 劇伴は 1 人の出入り（`scoreSolo`）そのもの。
+            float replacedPower = _cur.wind * _cur.wind + _cur.beat * _cur.beat
+                                  + _cur.white * _cur.white;
+            _cur.score = scoreSolo * (float)Math.Sqrt(Math.Max(0.0, 1.0 - replacedPower));
 
             _spotDuck = SoundFade.Approach(_spotDuck, 0f, DuckFallSec, dt);
             _cur.duck = SoundFade.Approach(_cur.duck, Math.Max(t.duck, _spotDuck),
@@ -578,7 +594,14 @@ namespace FixedCamVr.Streaming
             else g.room = RoomInRun;
 
             // 隔離が閉じるほど部屋が狭くなる。**音量ではなく帯域**（`roomOpen`）で表す。
+            // ⚠⚠ **閉じる縁は「パススルーが消える」こと**（2026-09-04）。2026-08-15（0044）に
+            //    隔離が閉じる段が無くなってから `introWeights.shell` は導入の全段で 0 のままで、
+            //    帯域は 1 度も閉じていなかった（走行 20260903_210843: `sndLpf=22.0` が全 149 標本。
+            //    `analyze-xp-log.py` が毎回「部屋の帯域が動いていない」と警告していた）。
+            //    いまの導入で会場が消えるのは段 5（映像だけになる・`passthrough` 1 → 0）なので、
+            //    そこで閉じる。⚠ 導入の外（終幕）では読まない — 終幕は現実へ返す段なので部屋は開いている。
             float sealed01 = Math.Max(s.introWeights.shell, 0f);
+            if (s.introActive) sealed01 = Math.Max(sealed01, 1f - Clamp01(s.introWeights.passthrough));
             g.roomOpen = 1f - (1f - RoomOpenSealed) * Clamp01(sealed01);
 
             // --- 装置 -----------------------------------------------------------
@@ -623,9 +646,11 @@ namespace FixedCamVr.Streaming
             // ⚠ 終わりまで鳴らす（終幕の劇伴の代わり）。落ちるのは体験が終わったときだけ。
             g.white = s.curseReleased ? 1f : 0f;
 
-            // ⚠⚠ **入れ替えなので、置き換える側が鳴っているあいだ劇伴は 0。**
-            //    `Tick` が同じ尺で送るのでクロスフェードになる（片方だけ先に消えない）。
-            if (g.wind > 0f || g.beat > 0f || g.white > 0f) g.score = 0f;
+            // ⚠⚠ **入れ替えなので、置き換える側が鳴っているあいだ劇伴は 0 になる — が、ここでは
+            //    `score` を落とさない。** 落とすのは `Tick` の等パワーの補（相手が立ったぶんだけ
+            //    cos で引く）。ここで 0 を言うと、劇伴の 1 人の退き（聴感直線）と相手の入りが
+            //    別々の曲線で走り、中央で -7dB の谷になる（2026-09-03 の初版がそうだった）。
+            //    `score` は「劇伴が居てよい場所か」だけを言う。
 
             // --- 人形の笑い -------------------------------------------------------
             // 締めのカットが報告を待っているあいだだけ鳴る（**押すまでループ**）。
