@@ -7,6 +7,11 @@
 # 落ち方が毎回同じときだけ、プロンプトを直しに行く（tools/gen-plate/README.md §8）。
 #
 # ⚠ 判定が緑でも `sheet.png` と `heads.png` を開くまでが 1 周。
+#
+# ⚠⚠ **別の異変を同時に焼かない**（2026-09-04 実測・README §9）。同時に走る Codex の exec の間で
+#   絵が入れ替わる（手形の走行に幕の顔が入った）。同じ異変の N 枚並列は構わない（入れ替わっても同じ指示）。
+#   そのため autorun は鍵（logs/gen-plate/.autorun.lock）を持ち、別の autorun が走っていれば終わるまで待つ。
+#   終わりに out.png の md5 を突き合わせ、同じ絵が 2 走行に入っていたら警告する。
 
 [CmdletBinding()]
 param(
@@ -24,6 +29,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 $runner = Join-Path $env:USERPROFILE '.claude\scripts\codex-run.ps1'
+$lock = Join-Path $repo 'logs\gen-plate\.autorun.lock'
 
 $dirs = @()
 for ($i = 1; $i -le $Tries; $i++) {
@@ -38,14 +44,50 @@ for ($i = 1; $i -le $Tries; $i++) {
     $dirs += $d
 }
 
-"焼く: $Tries 枚を並列（$Anomaly @ $Site / $Place）"
-$procs = foreach ($d in $dirs) {
-    Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList @(
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runner,
-        '-PromptFile', (Join-Path $d 'prompt.txt'), '-Mode', 'image',
-        '-Cwd', $d, '-OutDir', $d, '-OutImage', (Join-Path $d 'out.png'))
+# --- 鍵: 別の autorun（別の異変）が Codex を回している間は待つ ---
+$waited = $false
+while (Test-Path -LiteralPath $lock) {
+    $age = (Get-Date) - (Get-Item -LiteralPath $lock).LastWriteTime
+    if ($age.TotalMinutes -gt 20) {
+        "古い鍵（$([int]$age.TotalMinutes) 分前）を外す: $lock"
+        Remove-Item -LiteralPath $lock -Force
+        break
+    }
+    if (-not $waited) {
+        "別の autorun が焼いている（$(Get-Content -LiteralPath $lock -Raw)）。終わるまで待つ — 別の異変を同時に焼くと絵が入れ替わる"
+        $waited = $true
+    }
+    Start-Sleep -Seconds 10
 }
-$procs | Wait-Process -Timeout 900
+Set-Content -LiteralPath $lock -Value "$PID $Anomaly $(Get-Date -Format s)" -Encoding UTF8
+
+try {
+    "焼く: $Tries 枚を並列（$Anomaly @ $Site / $Place）"
+    $procs = foreach ($d in $dirs) {
+        Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runner,
+            '-PromptFile', (Join-Path $d 'prompt.txt'), '-Mode', 'image',
+            '-Cwd', $d, '-OutDir', $d, '-OutImage', (Join-Path $d 'out.png'))
+    }
+    $procs | Wait-Process -Timeout 900
+}
+finally {
+    Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
+}
+
+# --- 入れ替わりの印: 同じ絵が 2 走行に入っていないか ---
+$hashes = foreach ($d in $dirs) {
+    $p = Join-Path $d 'out.png'
+    if (Test-Path -LiteralPath $p) {
+        [pscustomobject]@{ dir = (Split-Path -Leaf $d); hash = (Get-FileHash -LiteralPath $p -Algorithm MD5).Hash }
+    }
+}
+$dups = $hashes | Group-Object hash | Where-Object { $_.Count -gt 1 }
+if ($dups) {
+    ""
+    "⚠⚠ 同じ絵が複数の走行に入っている（入れ替わりの印。README §9）:"
+    foreach ($g in $dups) { "   " + (($g.Group | ForEach-Object { $_.dir }) -join ' = ') }
+}
 
 # 判定して良い順に並べる（exit 0 = 合格 / 1 = 不合格）
 $results = foreach ($d in $dirs) {
@@ -64,8 +106,11 @@ $results | Sort-Object ng | ForEach-Object {
     "  NG {0,2} : {1}" -f $_.ng, (Split-Path -Leaf $_.dir)
     "           {0}" -f ($_.note -replace '\s+', ' ')
 }
-$best = ($results | Sort-Object ng | Select-Object -First 1).dir
+$bestRow = ($results | Sort-Object ng | Select-Object -First 1)
+$best = $bestRow.dir
 ""
 "いちばん良かったのは $best"
 "  絵を開く:  $best\sheet.png  /  $best\heads.png"
 "  素材にする: py -3.11 tools/gen-tone.py undim $best\out.png tools\web-compositor\captures\<名前>.png --cam <id>"
+
+if ($bestRow.ng -eq 0) { exit 0 } else { exit 1 }
