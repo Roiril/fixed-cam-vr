@@ -203,10 +203,14 @@ PC ホスト + Quest 2 台の運用が確立（接続テスト済み）。手ア
 **Unity は CLI で操作する。** 入口は [tools/unity.ps1](tools/unity.ps1) だけで、Editor を GUI で開かない。
 
 ```powershell
-.\tools\unity.ps1 doctor            # 前提（Editor / Android モジュール / py / adb）
+.\tools\unity.ps1 doctor            # 前提（Editor / Android モジュール / py / adb / 焼き込みの新しさ）
 .\tools\unity.ps1 build fixedcam    # → Builds/mawarimi.apk
 .\tools\unity.ps1 build fixedcam -Release
 ```
+
+**`build fixedcam` は毎回、卓の著作を APK へ焼き込んでから焼く**（`tools/export-show-build.py` が
+`tools/web-compositor/show.json` と参照素材を `Assets/StreamingAssets/show/` へ写す）。
+卓の「📦 ビルド用エクスポート」を押す必要は無い。飛ばすなら `-NoExport`。
 
 **手動 Build Settings は使わない**（3 アプリが同名・同 ID になり Quest 上で共存できなくなる）。
 [BuildVariants.cs](Assets/Editor/BuildVariants.cs) が productName / ID をビルド時だけ swap する：

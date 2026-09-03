@@ -4,8 +4,9 @@
 # CLI が変わったときに直すのはこのファイルだけで済む。
 #
 #   .\tools\unity.ps1 doctor                    # 前提が揃っているか（最初にこれ）
-#   .\tools\unity.ps1 build fixedcam            # 廻リ視 APK
+#   .\tools\unity.ps1 build fixedcam            # 廻リ視 APK（卓の著作を焼き込んでから焼く）
 #   .\tools\unity.ps1 build fixedcam -Release   # 提出用（Development なし）
+#   .\tools\unity.ps1 build fixedcam -NoExport  # 前回焼き込んだ著作のまま焼く
 #   .\tools\unity.ps1 build tableduo-desktop    # 実機ゼロの L0 検証用 Standalone
 #   .\tools\unity.ps1 test
 #   .\tools\unity.ps1 menu                      # Editor の機能を CLI から呼ぶ（引数なしで一覧）
@@ -34,6 +35,10 @@ param(
 
     # 焼き直し待ちのチェックを承知の上で飛ばす（git checkout 直後は mtime が揃うので誤検知しうる）
     [switch]$Force,
+
+    # 卓の著作を StreamingAssets へ焼き込む工程を飛ばす（build fixedcam の既定は「毎回やる」）。
+    # ⚠ 飛ばすと、この APK は前回焼き込んだ著作で走る。卓なしの機ではそれがそのまま体験になる。
+    [switch]$NoExport,
 
     # menu に値を渡す（`-Set actor=Ichimatsu -Set show=path\to\show.json`）。
     # -executeMethod は引数を取れないので、Unity のコマンドラインへ `-fcv key=value` として積む。
@@ -454,6 +459,11 @@ switch ($Action) {
             }
         }
 
+        # 焼き込み（StreamingAssets/show）が卓の著作と一致しているか。build fixedcam は毎回焼き直すので、
+        # ✗ が出ても「次のビルドで直る」。ここで見せるのは、いま端末に入っている APK の中身を疑うため。
+        Write-Host "── 卓の著作と焼き込み ──" -ForegroundColor Cyan
+        & py -3.11 (Join-Path $PSScriptRoot 'export-show-build.py') --check | ForEach-Object { Write-Host "  $_" }
+
         # 「揃っているのに build が落ちる」の最頻値がこれ。前提と並べて必ず見せる（§Assert-NotLocked）
         Write-Host "── いま誰か握っていないか ──" -ForegroundColor Cyan
         if (Test-Path (Join-Path $Root 'Temp\UnityLockfile')) {
@@ -480,6 +490,20 @@ switch ($Action) {
             Show-Apps; exit 2
         }
         Assert-NotLocked
+
+        # 卓の著作（show.json + 参照アセット）を StreamingAssets へ焼き込む。**毎回やる。**
+        #   焼き込みは以前まで卓の「📦 ビルド用エクスポート」でしか更新されず、押し忘れると
+        #   古いまま残った（実際に timeline.rev 33 のまま卓は 44 まで進んでいた）。
+        #   端末キャッシュが焼き込みより上なので普段は表に出ないが、**APK を焼き直すと
+        #   キャッシュは捨てられる**ので、焼き直した機を卓なしで起動すると古い著作で走る。
+        if ($App -eq 'fixedcam' -and -not $NoExport) {
+            & py -3.11 (Join-Path $PSScriptRoot 'export-show-build.py')
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "✗ 卓の著作を焼き込めなかった (exit=$LASTEXITCODE)" -ForegroundColor Red
+                Write-Host "  古い焼き込みのまま焼くと決めたなら -NoExport" -ForegroundColor DarkGray
+                exit 3
+            }
+        }
 
         if ($App -eq 'fixedcam' -and -not $Force) {
             $stale = Get-StaleBakes

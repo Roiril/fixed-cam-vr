@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6841e293-f127-41c1-9c9f-172f7a816f5f
-  modified: 2026-08-01T16:08:28.144Z
+  modified: 2026-09-03T11:47:17.395Z
 ---
 
 `tools/web-compositor/show.json` は **gitignore されていて git 管理外**（現場の DHCP IP や
@@ -88,3 +88,24 @@ curl.exe -m 3 -s http://127.0.0.1:8099/state | py -3.11 -c "import sys,json;d=js
 ⇒ **直接書いたら卓サーバを入れ直す。** または卓の UI / API 経由で書く。
 ⇒ **走行のたびに `ev=config rev=` を見る。** 上げたはずの rev が実機に出ていなければ届いていない。
    解析レポートの「## 実機が使った設定」に出る。
+
+## APK の焼き込みは、いちばん下にあるので古くても気づけない（2026-09-03）
+
+`Assets/StreamingAssets/show/show.json` は**卓の 📦 ボタンでしか更新されなかった**。
+手で押す 1 手なので押し忘れる。実際に `timeline.rev` が 33（8/17）のまま止まっていて、
+卓は 44 まで進んでいた。当時の差は「3 周目 A が 1 周目 A の録画で、左右分割も無い」。
+
+**気づけないのは、優先順位が 焼き込み < 端末キャッシュ < ライブ だから。** 卓に一度でも繋いだ機は
+キャッシュの側で走るので、焼き込みが何周遅れていても画は正しい。
+⚠ **ただし APK を焼き直すとキャッシュは捨てられる**（`CachedConfig.buildGuid` の照合・2026-08-14 から）。
+**焼き直した機を卓なしで起動した時だけ**、古い著作がそのまま体験になる。当日いちばん踏みやすい形。
+
+⇒ **`unity.ps1 build fixedcam` が毎回焼き込むようにした**（[`tools/export-show-build.py`](../../tools/export-show-build.py)）。
+焼き込みの中身は卓と共通（[`export_build.py`](../../tools/web-compositor/export_build.py)・
+テストは `test_export_build.py`）。飛ばすのは `-NoExport`。
+いま古いかを見るのは `py -3.11 tools/export-show-build.py --check`（`unity.ps1 doctor` も出す）。
+
+⚠ **この CLI は卓のディスク上の `show.json` を読む**（サーバのメモリではない）。上の節のとおり
+サーバはメモリを正とするので、**卓で著作したまま保存が走っていない状態では 1 手ぶん古いものを焼く**
+可能性がある。`_mutate_show` は変更のたびに書き出すので通常は一致するが、
+`ev=config rev=` と焼き込みの rev が食い違ったらここを疑う。
