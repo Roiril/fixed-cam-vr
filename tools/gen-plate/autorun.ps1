@@ -118,8 +118,23 @@ if ($dups) {
     }
 }
 
+# --- 半分マスクの place なら、境目を跨いだ塊を後処理で消す（despill.py・0120） ---
+$despilled = @()
+if ($Place -match '^(left|right)-') {
+    foreach ($d in $dirs) {
+        if (-not (Test-Path (Join-Path $d 'out.png'))) { continue }
+        & py -3.11 (Join-Path $PSScriptRoot 'spill.py') --run $d 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            & py -3.11 (Join-Path $PSScriptRoot 'despill.py') --run $d 2>&1 | ForEach-Object { "  $_" }
+            $dd = "${d}_despill"
+            if ($LASTEXITCODE -eq 0 -and (Test-Path (Join-Path $dd 'out.png'))) { $despilled += $dd }
+        }
+    }
+    if ($despilled.Count -gt 0) { "跨いだ塊を消した走行 $($despilled.Count) 本も判定に入れる（_despill）" }
+}
+
 # 判定して良い順に並べる（exit 0 = 合格 / 1 = 不合格）
-$results = foreach ($d in $dirs) {
+$results = foreach ($d in ($dirs + $despilled)) {
     if (-not (Test-Path (Join-Path $d 'out.png'))) {
         [pscustomobject]@{ dir = $d; ng = 99; note = 'image=MISSING' }
         continue
