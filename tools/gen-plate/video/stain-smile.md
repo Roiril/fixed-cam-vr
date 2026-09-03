@@ -52,14 +52,17 @@ for a,b in (('tools/web-compositor/captures/gen_stainA_left_20260904_0656.png','
 ## ① 笑い始める — プロンプト（首尾フレーム・4〜5 秒・ループ OFF）
 
 ```
-Animate from the first frame to the last frame. Only the stain on the curtain changes, very slowly,
-the way a damp stain creeps through fabric: the mouth-shaped dark patch stretches wider and its two
-corners rise, until the face in the stain has settled into a faint, knowing smile; the two eye
-patches narrow a little. The stain stays blotchy and soft-edged — it never becomes a drawing.
-Nothing else changes: no camera movement, and the curtain, its folds, the rail and the light stay
-exactly as in the input frames. Keep the brightness, contrast, colour, sharpness and grain of the
-input.
+The camera is locked on a tripod and never moves: no pan, tilt, zoom, roll or shake, and the
+framing is identical in every frame. Animate from the first frame to the last frame. Only the
+stain on the curtain changes, very slowly, the way a damp stain creeps through fabric: the
+mouth-shaped dark patch stretches wider and its two corners rise, until the face in the stain has
+settled into a faint, knowing smile; the two eye patches narrow a little. The stain stays blotchy
+and soft-edged — it never becomes a drawing. Nothing else changes: the curtain, its folds, the
+rail and the light stay exactly as in the input frames. Keep the brightness, contrast, colour,
+sharpness and grain of the input.
 ```
+
+カメラが固定になる仕掛けは `dolls-gather.md` と同じ 3 つ（先頭の 1 文／首尾フレームの背景が同じ 1 枚／焼いた後に 1 コマ目と最終コマの差を測る）。
 
 ネガティブは**空**。
 
@@ -82,6 +85,7 @@ py -3.11 -c "import imageio_ffmpeg,subprocess,sys; subprocess.run([imageio_ffmpe
 | 顔が別の顔になった | `The face keeps its shape and position; only its expression changes.` |
 | 線や歯が出た | `No lines, no teeth, no outline — only soft dark patches on cloth.` |
 | 幕が揺れた | `The curtain itself does not move at all.` |
+| それでもカメラが動いた | `Static locked-off tripod shot. The background pixels stay exactly the same from the first frame to the last.` |
 
 ⚠ **2 周目 A は 2 画素が 1 つに潰れ、暗い幕の上の変化は届きにくい**（`compose.py --lap 2`）。
 笑みは「口が 1.5 倍に広がって両端が上がる」くらい大きく動かさないと届かない。

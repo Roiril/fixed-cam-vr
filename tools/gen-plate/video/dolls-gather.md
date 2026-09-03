@@ -38,18 +38,26 @@ for a,b in (('tools/web-compositor/captures/plate_A_<日時>.jpg','logs/gen-plat
 ## ① 集まる — プロンプト（首尾フレーム・5〜10 秒・ループ OFF）
 
 ```
-Animate from the first frame to the last frame. The room starts empty. Then Japanese ichimatsu
-dolls come into the left half of the picture from several different places at once — from beyond
-the left edge, from under the hem of the curtain, from behind the stand legs, and from below the
-bottom edge close to the lens — and gather on the floor until they are exactly where the last
-frame shows them. They do not walk smoothly: they shuffle, totter and slide in small uneven steps,
-each at its own timing; some crawl, some are already sitting when they appear. Nothing else
-changes — the camera, the curtain, the floor and the light stay exactly as in the input frames,
-and the right half of the picture stays empty. Keep the brightness, contrast, colour, sharpness
-and grain of the input.
+The camera is locked on a tripod and never moves: no pan, tilt, zoom, roll or shake, and the
+framing is identical in every frame. Animate from the first frame to the last frame. The room
+starts empty. Then Japanese ichimatsu dolls come into the left half of the picture from several
+different places at once — from beyond the left edge, from under the hem of the curtain, from
+behind the stand legs, and from below the bottom edge close to the lens — and gather on the floor
+until they are exactly where the last frame shows them. They do not walk smoothly: they shuffle,
+totter and slide in small uneven steps, each at its own timing; some crawl, some are already
+sitting when they appear. Nothing else changes — the curtain, the floor and the light stay exactly
+as in the input frames, and the right half of the picture stays empty. Keep the brightness,
+contrast, colour, sharpness and grain of the input.
 ```
 
 ネガティブは**空**。
+
+**カメラが固定になる仕掛けは 3 つ**（プロンプトの 1 文だけに頼らない）:
+
+1. 先頭の 1 文（locked on a tripod / no pan, tilt, zoom, roll or shake / framing identical）
+2. **首尾フレームの背景が同じ 1 枚**であること。1 コマ目（プレート）と最終コマ（人形の静止画）は同じプレートから作っているので、
+   両端で背景の画素が一致する。カメラが動くと最終コマに辿り着けないので、動かさない方へ強く縛られる
+3. 焼いた後に**測る**: 1 コマ目とプレート、最終コマと静止画の差（下の「戻すとき」の 2)・3)）。平均の差が 3 を超えたらカメラが動いている
 
 ⚠ 「curtain」「stand legs」は 2026-08-23 の A の並び（幕が正面・パイプの脚が幕の裾）。
 当日のプレートに無いものは、その日のプレートに写っているものへ言い換える（出てくる口を 3〜4 つ挙げる、が要点）。
@@ -64,6 +72,7 @@ and grain of the input.
 | 全員がこちらを見て歩く | `Most of them look where they are going; only a few turn their heads toward the camera and stop.` |
 | 最初から人形が居る | `For the first second the floor is completely empty.` |
 | 背景が動いた | `The curtain and the floor do not move at all.` |
+| それでもカメラが動いた（ズーム・揺れ） | `Static locked-off tripod shot. The background pixels stay exactly the same from the first frame to the last.`（それでも駄目なら道具を替える — Kling は固定に強い） |
 
 ⚠ **4 周目 A は完全な白黒で、この画像の 3.2 画素が 1 つに潰れる**（`compose.py --lap 4` の節）。
 届いた画で残るのは**大きな移動**だけ。首の小さな動きや指先は見えない。
