@@ -1,4 +1,5 @@
 #nullable enable
+using FixedCamVr.Streaming;
 
 namespace FixedCamVr.Diagnostics
 {
@@ -33,6 +34,36 @@ namespace FixedCamVr.Diagnostics
             "装置を外してください。";
 
         /// <summary>
+        /// 数の見出し（体験者が選んだ言語・2026-09-03）。
+        /// ⚠ Latin は<b>数のあとに続けて書く</b>ので末尾に半角空白を持つ。
+        /// フランス語はコロンの<b>前にも</b>空白を置く（あちらの組版）。
+        /// </summary>
+        public static string CountLabelOf(ShowLang lang) => lang switch
+        {
+            ShowLang.En => "Anomalies reported: ",
+            ShowLang.Fr => "Anomalies signalées : ",
+            _ => CountLabel,
+        };
+
+        /// <summary>
+        /// 結びの 3 行（体験者が選んだ言語）。<b>日本語の 4 行と同じことを言う</b> —
+        /// 行を足しも減らしもしない（<c>canon/LEDGER.md</c> 0048 が書いた構成そのもの）。
+        /// ⚠ 語は連絡の面と揃える（「調査」＝ survey / enquête）。
+        /// </summary>
+        public static string ClosingLinesOf(ShowLang lang) => lang switch
+        {
+            ShowLang.En =>
+                "We have enough data.\n" +
+                "Survey complete.\n" +
+                "Please remove the device.",
+            ShowLang.Fr =>
+                "Données suffisantes.\n" +
+                "Enquête terminée.\n" +
+                "Veuillez retirer l'appareil.",
+            _ => ClosingLines,
+        };
+
+        /// <summary>
         /// 全角数字の並び。<b>ここに literal で置いてあるのは、フォントのベイクに拾わせるため</b>
         /// （収集元はソースの非 ASCII 文字なので、書式で組み立てるだけだと 1 文字も焼かれない）。
         /// </summary>
@@ -56,6 +87,23 @@ namespace FixedCamVr.Diagnostics
         /// （測った値と、装置が言うことは別のもの。<b>この空行はシュビーが決めた</b>）。
         /// </summary>
         public static string Compose(int markCount)
-            => CountLabel + FullWidth(markCount) + "\n\n" + ClosingLines;
+            => Compose(markCount, ShowLanguage.Current);
+
+        /// <summary>
+        /// 言語を明示して組む（テストと <c>menu text-audit</c> 用）。
+        ///
+        /// ⚠ <b>数字を全角にするのは日本語だけ。</b> 全角は「紙の依頼書（観測者番号 ０３７）と
+        /// 同じ装置の数字の形」を狙ったもので（0041）、Latin の文の中に混ぜると
+        /// <b>その 1 文字だけ倍の幅になって桁がずれる</b> ＝ 別の装置の出力に見える。
+        /// </summary>
+        public static string Compose(int markCount, ShowLang lang)
+            => CountLabelOf(lang) + CountOf(markCount, lang) + "\n\n" + ClosingLinesOf(lang);
+
+        /// <summary>その言語で書いた回数。負の数は 0 として扱う（<see cref="FullWidth"/> と同じ規律）。</summary>
+        public static string CountOf(int markCount, ShowLang lang)
+            => lang == ShowLang.Ja
+               ? FullWidth(markCount)
+               : (markCount <= 0 ? "0" : markCount.ToString(
+                     System.Globalization.CultureInfo.InvariantCulture));
     }
 }

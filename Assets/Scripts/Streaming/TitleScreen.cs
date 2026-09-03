@@ -246,6 +246,13 @@ namespace FixedCamVr.Streaming
             _dismissRequested = false;
             _yawSeeded = false;
             _driftSec = 0f;
+            // ▶ 体験者が替わったので言語を既定へ戻す（2026-09-03）。
+            // ⚠ **ここが唯一の戻し場所。** タイトルの出し直しは相の遷移からもランリセットからも
+            //    卓の ⏭ からも必ずここを通るので、置き場所を増やすと戻し忘れではなく
+            //    「二重に戻して体験者の選択が消える」側の事故になる。
+            // ⚠ 実体を組めていない現場（下の早期 return）でも戻す — 注意書きが出ないなら
+            //    そもそも選べないので、前の体験者の言語が残る方が確実に間違い。
+            ShowLanguage.Reset();
             if (!titleEnabled || !IsBuilt)
             {
                 if (!IsBuilt && !_warnedNotBuilt)

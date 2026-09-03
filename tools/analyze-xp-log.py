@@ -1736,6 +1736,43 @@ def analyze(events, others, exp, warns=None):
     if ctrl_any:
         w()
 
+    # ---------------- 言語（体験者が読んでいた言語）----------------
+    # ⚠⚠ **画にも音にも出ない。** 走行の PNG に写るのは「文字が出ている」ことだけで、
+    #    それが日本語だったのか English だったのかは読めない（読めるのは絵を開いた人だけで、
+    #    判定スクリプトは通してしまう）。観測の出どころは C# の `ShowTelemetryHost` の
+    #    `lang` / `langN`。**片方だけ直すと沈黙して食い違う。**
+    # ⚠ **2 つで 1 組**。`lang` だけだと「選ばれなかった（＝ 日本語のまま）」と
+    #   「押しても切り替わらない（＝ 壊れている）」がどちらも `ja` で区別できない。
+    lang_rows = [e for e in events if e.get("ev") == "sum" and "lang" in e]
+    if lang_rows:
+        w("## 言語（体験者が読んでいた言語）")
+        final = str(lang_rows[-1].get("lang"))
+        changes = max((int(fnum(e, "langN", 0) or 0) for e in lang_rows), default=0)
+        w(f"  最後まで {final} / 切り替え {changes} 回")
+
+        # ⚠⚠ **切り替えてよいのは体験前の注意書きが出ているあいだだけ**（相 Intro）。
+        #    本編が始まってからも変わるなら、`TitleNotice.IsShowing` の門が漏れている ＝
+        #    体験者が異変を報告しようと握り込むたびに文面の言語が変わる。
+        #    画では「文字が出ている」ようにしか見えないので、ここでしか捕まらない。
+        leaked = []
+        prev = None
+        for e in lang_rows:
+            n = int(fnum(e, "langN", 0) or 0)
+            if prev is not None and n > prev and str(e.get("phase", "")) not in ("", "Intro"):
+                leaked.append((fnum(e, "t", 0.0), str(e.get("phase")), str(e.get("lang"))))
+            prev = n
+        if leaked:
+            where = " / ".join(f"t={t:.1f} 相={ph}→{lg}" for t, ph, lg in leaked[:4])
+            verdict("FAIL", f"注意書きが引っ込んだ後にも言語が変わった {len(leaked)} 回（{where}）— "
+                            "左 X／Y の門（TitleNotice.IsShowing）が漏れている。"
+                            "体験者が異変を報告するたびに文面の言語が変わる")
+        elif changes > 0:
+            verdict("OK", f"言語は注意書きの中だけで {changes} 回変わり、{final} で本編へ入った")
+        else:
+            # 自動走行（--walk）は誰も押さないので、これが普通。異常ではない。
+            verdict("OK", f"言語は既定（{final}）のまま — 誰も切り替えていない")
+        w()
+
     # ---------------- 音（鳴ったか）----------------
     # ⚠⚠ **音は録画に映らない。** 画は `quest-record.py` が撮って人が開けば分かるが、
     #    音は実機で被って聴く以外に確かめる手段が無い（しかもこの作業をしているシュビーは

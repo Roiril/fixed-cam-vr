@@ -704,6 +704,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 体験者の報告ボタンの面（長押しの進捗と接続状態を push）。
                 // タイトル画面。**A の意味がここで分岐する**（立っていれば閉じる / 無ければカメラ送り）。
                 if (titleScreen != null) TrySetObjectRef(bridgeSo, "titleScreen", titleScreen);
+                // 体験前の注意書きの面。**左 X／Y が言語の切り替えになる段かの門**（2026-09-03）。
+                // ⚠ 未配線でも実行時に間隔を置いて探すので体験は止まらないが、その間は
+                //   「押しても言語が変わらない」に見える。ここで繋いでおくのが正。
+                TrySetObjectRef(bridgeSo, "titleNotice", notice);
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
             }
 

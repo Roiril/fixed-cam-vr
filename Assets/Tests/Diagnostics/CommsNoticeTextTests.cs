@@ -29,12 +29,17 @@ namespace FixedCamVr.Diagnostics.Tests
         /// </summary>
         private const int MaxLines = 3;
 
-        private static float FullWidth(string line)
-        {
-            float w = 0f;
-            foreach (char c in line) w += c < 0x80 ? 0.5f : 1f;
-            return w;
-        }
+        /// <summary>
+        /// 行の幅（全角を 1 とする）。物差しは <b>面の折り返し幅を決めるのと同じもの</b>
+        /// （<see cref="HmdTextStyle.LineWidth"/>）— 別々に数えると、テストと実物が
+        /// 「どの文面がいちばん長いか」で食い違う。
+        ///
+        /// ⚠⚠ <b>「非 ASCII ＝ 全角」ではない</b>（2026-09-03 に踏んだ）。フランス語の
+        /// アクセント付き（é è à ç …）は U+00C0 以降だが<b>字は半角の Latin</b>なので、
+        /// <c>c &lt; 0x80</c> で切ると « L'anomalie a été supprimée. » が
+        /// 15 文字ぶんと数えられて、実際は収まっているのに落ちる。
+        /// </summary>
+        private static float FullWidth(string line) => HmdTextStyle.LineWidth(line);
 
         /// <summary>
         /// 実際に画へ出る文面ぜんぶ。
@@ -43,34 +48,57 @@ namespace FixedCamVr.Diagnostics.Tests
         /// <b>いちばん行数が多い文面とは限らない</b>。①から自己紹介を外して⓪b を足した時、
         /// 最長行は①・最大行数は⓪b になった ＝ 片方しか測らないと溢れを見逃す。
         /// </summary>
-        private static System.Collections.Generic.IEnumerable<string> AllTexts()
+        /// <remarks>
+        /// ⚠⚠ <b>3 言語ぶん測る</b>（2026-09-03・言語選択）。Latin は 1 文字が半角なので、
+        /// 同じ内容でも<b>行の文字数は倍近くになる</b> — 日本語だけ測って通しても、
+        /// English / Français のときだけ枠から出る（実機で 1 言語だけ壊れる形）。
+        /// </remarks>
+        private static System.Collections.Generic.IEnumerable<(ShowLang lang, string text)> AllTexts()
         {
+            foreach (ShowLang lang in ShowLanguage.All)
             foreach (CommsNotice n in System.Enum.GetValues(typeof(CommsNotice)))
             {
-                string t = CommsPanel.NoticeText(n);
-                if (!string.IsNullOrEmpty(t)) yield return t;
+                string t = CommsPanel.NoticeText(n, lang);
+                if (!string.IsNullOrEmpty(t)) yield return (lang, t);
             }
         }
 
         [Test]
         public void EveryLine_FitsTheBand()
         {
-            foreach (string body in AllTexts())
+            foreach ((ShowLang lang, string body) in AllTexts())
             foreach (string line in body.Split('\n'))
             {
                 Assert.LessOrEqual(FullWidth(line), MaxFullWidthPerLine,
-                                   $"「{line}」が 1 行に入らない（折り返して行が増える）");
+                                   $"[{ShowLanguage.Code(lang)}]「{line}」が 1 行に入らない（折り返して行が増える）");
             }
         }
 
         [Test]
         public void LineCount_StaysWithinTheBandHeight()
         {
-            foreach (string body in AllTexts())
+            foreach ((ShowLang lang, string body) in AllTexts())
             {
                 Assert.LessOrEqual(body.Split('\n').Length, MaxLines,
-                                   $"「{body.Replace("\n", "／")}」で行が増えた。"
+                                   $"[{ShowLanguage.Code(lang)}]「{body.Replace("\n", "／")}」で行が増えた。"
                                    + "CommsPanel.BodyMaxH も一緒に上げること");
+            }
+        }
+
+        /// <summary>
+        /// <b>どの言語でも 8 通そろっている。</b> 1 通でも空だと、その言語のときだけ
+        /// <b>面が開いて何も書かれずに畳まれる</b>（画には「開いて閉じた」しか出ないので、
+        /// 走行の絵を開いても抜けに気づけない）。
+        /// </summary>
+        [Test]
+        public void EveryLanguage_HasEveryNotice()
+        {
+            foreach (CommsNotice n in System.Enum.GetValues(typeof(CommsNotice)))
+            {
+                if (string.IsNullOrEmpty(CommsPanel.NoticeText(n, ShowLang.Ja))) continue;
+                foreach (ShowLang lang in ShowLanguage.All)
+                    Assert.That(CommsPanel.NoticeText(n, lang), Is.Not.Empty,
+                                $"{n} の {ShowLanguage.Code(lang)} が無い");
             }
         }
 
@@ -83,7 +111,7 @@ namespace FixedCamVr.Diagnostics.Tests
         public void LongestNoticeText_ReallyHasTheLongestLine()
         {
             float best = 0f;
-            foreach (string body in AllTexts())
+            foreach ((ShowLang _, string body) in AllTexts())
             foreach (string line in body.Split('\n')) best = System.Math.Max(best, FullWidth(line));
 
             float declared = 0f;
@@ -107,13 +135,14 @@ namespace FixedCamVr.Diagnostics.Tests
         [Test]
         public void EveryNotice_TypesAtTheDeviceSpeed()
         {
-            foreach (string body in AllTexts())
+            foreach ((ShowLang lang, string body) in AllTexts())
             {
                 var logic = new CommsPanelLogic();
                 logic.Begin(body.Length);
                 float step = logic.TypeSec / body.Length;
                 Assert.AreEqual(1f / CommsPanelLogic.CharsPerSec, step, 0.0005f,
-                                $"「{body.Replace("\n", "／")}」（{body.Length} 文字）が "
+                                $"[{ShowLanguage.Code(lang)}]「{body.Replace("\n", "／")}」"
+                              + $"（{body.Length} 文字）が "
                               + $"{step * 1000f:0} ms 間隔。装置の打鍵は 1 つの速さ"
                               + "（CommsPanelLogic.MaxTypeSec を上げるか文面を短くする）");
             }

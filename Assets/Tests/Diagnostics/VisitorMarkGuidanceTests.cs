@@ -15,6 +15,37 @@ namespace FixedCamVr.Diagnostics.Tests
     public sealed class VisitorMarkGuidanceTests
     {
         /// <summary>
+        /// ⚠ <c>Line(progress, confirming)</c> は<b>体験者が選んだ言語</b>を読む（2026-09-03）。
+        /// 前のテストが回した言語が残っていると、逐語の突き合わせが理由なく落ちる。
+        /// </summary>
+        [SetUp]
+        public void ResetLanguage() => FixedCamVr.Streaming.ShowLanguage.Reset();
+
+        /// <summary>
+        /// <b>どの言語でも「見出し ＋ ゲージ」の 2 行</b>で、ゲージは 1 文字も変わらない。
+        /// ⚠ 見出しだけが訳される — ゲージは記号なので訳す物が無い。ここが崩れると、
+        /// 言語を変えた瞬間に下段のレイアウトだけ別物になる。
+        /// </summary>
+        [Test]
+        public void EveryLanguage_KeepsTheSameShape()
+        {
+            string jaBar = VisitorMarkGuidance.Line(0.5f, false, FixedCamVr.Streaming.ShowLang.Ja)
+                                              .Split('\n')[1];
+            foreach (var lang in FixedCamVr.Streaming.ShowLanguage.All)
+            {
+                string[] lines = VisitorMarkGuidance.Line(0.5f, false, lang).Split('\n');
+                Assert.That(lines.Length, Is.EqualTo(2), $"{lang}");
+                Assert.That(lines[0],
+                            Is.EqualTo($"<size={VisitorMarkGuidance.LabelPercent}%>"
+                                     + $"{VisitorMarkGuidance.HoldingHeadOf(lang)}</size>"), $"{lang}");
+                Assert.That(lines[1], Is.EqualTo(jaBar), $"{lang} でゲージが変わっている");
+                Assert.That(VisitorMarkGuidance.HoldingHeadOf(lang), Is.Not.Empty, $"{lang}");
+                // 押していないときは、どの言語でも空（下段は状態しか持たない）。
+                Assert.That(VisitorMarkGuidance.Line(0f, false, lang), Is.Empty, $"{lang}");
+            }
+        }
+
+        /// <summary>
         /// ⚠⚠ <b>押していないときは何も出さない</b>（2026-08-16・<c>canon/LEDGER.md</c> 0065）。
         /// 下段は<b>状態</b>だけを持ち、指示は持たない。押し方は①の連絡が 1 度だけ言う。
         ///

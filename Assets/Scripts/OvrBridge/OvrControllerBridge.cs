@@ -29,6 +29,10 @@ namespace FixedCamVr.OvrBridge
     /// 押し方と進捗は<b>AIエージェントからの連絡の面（<see cref="CommsPanel"/>）の下段</b>が出す
     /// （2026-08-16・<c>canon/LEDGER.md</c> 0058。コントローラに追従する面は廃止した）。
     /// スティック・トリガー・グリップ・A/B は左からは 1 ビットも読まない。
+    /// ⚠⚠ <b>体験前の注意書きが出ているあいだだけ、同じ X／Y が言語の切り替えになる</b>
+    /// （2026-09-03 ユーザー指定・日本語 / English / Français）。<b>入力は増えていない</b> —
+    /// 段で意味が変わるだけで、A が「カメラ送り」から「タイトルを閉じる」へ変わったのと同じ形。
+    /// そのあいだ報告のゲージは進めない（言語を選んだだけで異変の報告が 1 件立たないように）。
     /// HMD 非装着→SignalLostFx / OS recenter→CourseFrame.MarkNeedsReRegistration のパッシブ系は現状維持。
     /// </summary>
     public sealed class OvrControllerBridge : MonoBehaviour
@@ -99,6 +103,13 @@ namespace FixedCamVr.OvrBridge
         // 連絡の面を毎フレーム探しに行かないための再試行の間隔（面が無い構成での 90Hz 全走査を断つ）。
         private const float CommsResolveRetrySec = 2f;
         private float _commsRetryAt;
+
+        [Tooltip("体験前の注意書きの面（[Title] 上）。**左 X／Y で言語を巡らせてよい段かの門**。" +
+                 "null でも体験は従来どおり動く（言語が日本語から変わらないだけ）。")]
+        [SerializeField] private TitleNotice? titleNotice;
+        // 注意書きの面も間隔を置いて探す（面が無い構成での 90Hz 全走査を断つ。comms と同じ理由）。
+        private const float NoticeResolveRetrySec = 2f;
+        private float _noticeRetryAt;
 
         // コントローラの生死（heartbeat 経由で卓が読む）。⚠ 接続と位置は別物 — 電源が入っていれば
         // 接続は true だが、カメラから見えていないと姿勢は無効（memory/hmd 系の既知の罠）。
@@ -243,6 +254,8 @@ namespace FixedCamVr.OvrBridge
             // ⇒ **物理ボタンを名指しする `RawButton` を使う**（X / Y は左にしか無いので取り違えない）。
             bool leftMarkHeld = OVRInput.Get(OVRInput.RawButton.X | OVRInput.RawButton.Y,
                                              OVRInput.Controller.LTouch);
+            bool leftDown = OVRInput.GetDown(OVRInput.RawButton.X | OVRInput.RawButton.Y,
+                                             OVRInput.Controller.LTouch);
 
             // 監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る＝「入力は届いている」）。
             // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。
@@ -303,8 +316,34 @@ namespace FixedCamVr.OvrBridge
             // ⚠ **短押しでは通さない**（2026-08-15）。歩きながら握り込むので、押した瞬間に決まると
             //    「触れただけ」が報告になる。位置合わせの点サンプルと同じ「意思のある長押し」にする。
             // ⚠ 位置合わせ中（スタッフ作業）は数えない。作業のあいだ手元でゲージが伸びない。
+            // ---- 言語の選択（体験前の注意書きが出ているあいだだけ）------------------------
+            // 2026-09-03 ユーザー指定「言語選択をできるようにしてほしい。日本語、英語、フランス語の
+            // 3 種類で。最初の注意書きが表示されている間に、体験者がもつコントローラーから
+            // 切り替えできるように」。
+            //
+            // ⚠ **入力を増やしていない。** 左で読むのは X／Y だけのまま（2026-07-23 の凍結と
+            //    2026-08-15 の「左は X/Y の 2 つだけ」は生きている）。段で意味が変わるだけで、
+            //    これは A が「カメラ送り」から「タイトルを閉じる」へ変わったのと同じ形。
+            // ⚠⚠ **門は「面が画に出ているか」**（`TitleNotice.IsShowing`）。段だけを見ると、
+            //    フォントが解決できず面が組めていない現場で**見えない切り替えが起きる**。
+            // ⚠ **選べる間は報告のゲージを進めない。** 押した瞬間に言語が変わるので、
+            //    そのまま握り込むと「言語を選んだだけ」が異変の報告として数えられる
+            //    （終幕の報告の数が、まだ始まってもいないのに 1 から始まる）。
+            if (titleNotice == null && Time.unscaledTime >= _noticeRetryAt)
+            {
+                titleNotice = FindObjectOfType<TitleNotice>();
+                if (titleNotice == null) _noticeRetryAt = Time.unscaledTime + NoticeResolveRetrySec;
+            }
+            bool langChoosing = titleNotice != null && titleNotice.IsShowing;
+            if (langChoosing && leftDown && ShowLanguage.Cycle())
+            {
+                // 受理の 1 発だけ返す（`LeftNotify` は連絡が届いた合図なので混ぜない）。
+                haptics?.LeftMark();
+            }
+
             bool markFired = _markHold.Tick(Time.deltaTime,
-                                            leftMarkHeld && mode == ControllerModeLogic.Mode.Normal);
+                                            leftMarkHeld && !langChoosing
+                                            && mode == ControllerModeLogic.Mode.Normal);
             if (markFired)
             {
                 showControl?.RecordVisitorMark();

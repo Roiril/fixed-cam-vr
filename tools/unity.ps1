@@ -121,7 +121,8 @@ $Menus = [ordered]@{
                             Set = 'show=<show.json のパス>'
                             Out = 'Assets/Screenshots/walkguide-preview/eye_5_hold.png' }
     'text-audit'       = @{ Method = 'FixedCamVr.Streaming.EditorTools.HmdTextAudit.Run'
-                            Desc = 'HMD 内の文字を全面まとめて測る（1 文字の見かけ角 / 枠からのはみ出し。⚠ 大きさ・文言を触ったら通す）'
+                            Desc = 'HMD 内の文字を全面まとめて測る（1 文字の見かけ角 / 枠からのはみ出し。⚠ 大きさ・文言を触ったら 3 言語ぶん通す）'
+                            Set = 'lang=ja|en|fr（体験者が読む面の言語。既定 ja。Latin は半角ぶん行が長くなるので 3 つとも測る）'
                             Out = $null }
     'sound-import'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.SoundImportSetup.ApplySoundImportSettings'
                             Desc = '音の取り込み設定を揃える（⚠ 音を焼き直したら必須。正規化・Streaming が混ざると設計した音量が消える）'

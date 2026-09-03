@@ -47,7 +47,15 @@ namespace FixedCamVr.Streaming.EditorTools
             public bool BuildsItsOwnText;      // Awake で TMP を組む面（Edit モードでは走っていない）
         }
 
-        private static readonly Surface[] Surfaces =
+        /// <summary>
+        /// 測る面の一覧。
+        ///
+        /// ⚠⚠ <b>static readonly ではなくメソッドなのは、言語で <see cref="Surface.Probe"/> が
+        /// 変わるから</b>（2026-09-03）。フィールド初期化子は class が読まれた瞬間に走るので、
+        /// <c>-Set lang=fr</c> を読む前の言語（＝ 既定の日本語）で焼き付いてしまい、
+        /// <b>フランス語を指定しても日本語を測って「収まっている」と言う</b>。
+        /// </summary>
+        private static Surface[] BuildSurfaces() => new Surface[]
         {
             new Surface { Name = "体験前の注意書き", Type = typeof(TitleNotice),
                           DistanceField = "distanceM", BuildsItsOwnText = true },
@@ -97,16 +105,27 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             if (!EditorCliArgs.EnsureScene(MainScenePath)) return;
 
+            // ⚠⚠ **体験者が読む面は 3 言語ある**（2026-09-03）。Latin は 1 文字が半角なので
+            //    同じ内容でも行が長くなり、**日本語だけ測っても枠に収まっている保証にならない**。
+            //    `-Set lang=ja|en|fr`。既定は日本語（＝ 従来の挙動）。
+            ShowLang lang = ShowLanguage.Parse(EditorCliArgs.Get("lang"));
+            ShowLang restore = ShowLanguage.Current;
+            ShowLanguage.Select(lang);
+            string langCode = ShowLanguage.Code(lang);
+            // 絵は言語ごとに別名で残す（上書きすると 3 言語を並べて見られない）。
+            string shotSuffix = lang == ShowLang.Ja ? "" : "_" + langCode;
+
             var spawned = new List<GameObject>();
             var sb = new StringBuilder(2048);
             int bad = 0;
             int index = 0;
             Directory.CreateDirectory(Path.Combine(Application.dataPath, ShotDirRel));
 
-            sb.Append("[HmdTextAudit] 面 / 距離 / 1文字の見かけ角（狙い） / いちばん長い行 vs 枠\n");
+            sb.Append($"[HmdTextAudit] 言語={langCode} / 面 / 距離 / 1文字の見かけ角（狙い）"
+                    + " / いちばん長い行 vs 枠\n");
             try
             {
-                foreach (Surface s in Surfaces)
+                foreach (Surface s in BuildSurfaces())
                 {
                     index++;
                     var comp = Object.FindObjectOfType(s.Type, includeInactive: true) as MonoBehaviour;
@@ -148,7 +167,8 @@ namespace FixedCamVr.Streaming.EditorTools
 
                     // ⚠ 数字が緑でも絵は必ず開く（rules/visual-verification.md §10）。
                     //   全部を**同じ画角**で撮るので、並べれば見かけの大きさがそのまま比べられる。
-                    Shoot(comp.transform, tmp, dist, Path.Combine(ShotDir, $"{index:00}_{Ascii(s.Name)}.png"));
+                    Shoot(comp.transform, tmp, dist,
+                          Path.Combine(ShotDir, $"{index:00}_{Ascii(s.Name)}{shotSuffix}.png"));
 
                     bool sizeOk = Mathf.Abs(deg - s.TierDeg) <= TolDeg;
                     bool fitOk = lineW <= frameW * 1.001f;
@@ -161,6 +181,8 @@ namespace FixedCamVr.Streaming.EditorTools
             finally
             {
                 foreach (GameObject go in spawned) if (go != null) Object.DestroyImmediate(go);
+                // 検査のために回した言語を戻す（Editor に選択を残さない）。
+                ShowLanguage.Select(restore);
             }
 
             sb.Append($"  段: 補助 {HmdTextStyle.MinorDeg:0.0}° / 本文 {HmdTextStyle.BodyDeg:0.0}° / 注目 {HmdTextStyle.AlertDeg:0.0}°\n");

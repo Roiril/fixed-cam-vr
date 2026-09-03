@@ -77,6 +77,34 @@ namespace FixedCamVr.Diagnostics
         /// <summary>3D の TextMeshPro が透視カメラのとき内部で掛ける係数（TMP_Text.m_fontScale）。</summary>
         public const float MeshFontScale = 0.1f;
 
+        /// <summary>
+        /// 1 文字のおよその幅（<b>全角を 1 とする</b>）。行が枠に収まるかを<b>机上で</b>見るための物差し。
+        ///
+        /// ⚠⚠ <b>「非 ASCII ＝ 全角」ではない</b>（2026-09-03・言語選択で踏んだ）。
+        /// フランス語のアクセント付き（é è à ç …）は U+00C0 以降だが<b>字は半角の Latin</b>で、
+        /// <c>c &lt; 0x80</c> で切ると « L'anomalie a été supprimée. » が 15 文字ぶんと数えられ、
+        /// 実際は収まっているのに落ちる（＝ 文言を無意味に削ることになる）。
+        ///
+        /// ⚠ <b>これは目安であって実測ではない。</b> 実測は <c>menu text-audit</c> が
+        /// Unity の組んだメッシュから取る（<c>-Set lang=ja|en|fr</c>）。
+        /// ここは「テストと面の折り返し幅がどの文面を最悪とみなすか」を揃えるためだけにある。
+        /// </summary>
+        public static float CharWidth(char c)
+        {
+            if (c < 0x0370) return 0.5f;                  // ASCII / Latin-1 / Latin 拡張 / IPA
+            if (c >= 0x2010 && c <= 0x201F) return 0.5f;  // ‐ – — ‘ ’ “ ”（Latin の約物）
+            return 1f;                                     // 仮名・漢字・全角記号
+        }
+
+        /// <summary>行の幅（全角を 1 とする）。<see cref="CharWidth"/> の合計。</summary>
+        public static float LineWidth(string line)
+        {
+            float w = 0f;
+            if (line != null)
+                foreach (char c in line) w += CharWidth(c);
+            return w;
+        }
+
         /// <summary>見かけ角 <paramref name="deg"/> を距離 <paramref name="distanceM"/> での世界サイズ (m) にする。</summary>
         public static float WorldEm(float deg, float distanceM)
             => 2f * Mathf.Max(0.01f, distanceM) * Mathf.Tan(deg * 0.5f * Mathf.Deg2Rad);

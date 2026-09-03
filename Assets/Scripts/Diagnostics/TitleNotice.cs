@@ -22,6 +22,15 @@ namespace FixedCamVr.Diagnostics
     ///
     /// ⚠ 文言に新しい漢字・記号を足したら `Tools/FixedCamVr/Setup/Generate Japanese HUD Font` を
     /// 再実行する（静的ベイクなので忘れると実機で豆腐になる）。
+    ///
+    /// ⚠⚠ <b>この面は言語の選択も兼ねる</b>（2026-09-03 ユーザー指定）。注意書きの下に
+    /// 選べる 3 つ（日本語 / English / Français）を並べ、いま選んでいるものを括弧で囲む。
+    /// 巡らせるのは<b>体験者が持つ左コントローラの X／Y</b>で、入力を読むのは
+    /// <c>OvrControllerBridge</c>（OVRInput を触れるのは Assembly-CSharp だけ）。
+    /// この面が出ていない間は切り替わらない（<see cref="IsShowing"/> が門）。
+    /// 選ばれた言語は <see cref="ShowLanguage.Current"/> が持ち、
+    /// AIエージェントの連絡・手元のゲージ・終幕の報告が同じ値を読む。
+    /// <b>スタッフが読む面（StatusHud・操作早見表・位置合わせ）は日本語のまま。</b>
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class TitleNotice : MonoBehaviour
@@ -42,23 +51,114 @@ namespace FixedCamVr.Diagnostics
         [SerializeField, Min(0.01f)] private float fadeOutSec = 0.2f;
 
         /// <summary>
-        /// 注意書きの本文。<b>改行の位置まで含めてここが唯一の供給元</b>。
+        /// 注意書きの本文（日本語）。<b>改行の位置まで含めてここが唯一の供給元</b>。
         ///
         /// ⚠⚠ <b>紙（<c>docs/onsite/handout.html</c> の 2 枚目）と同じことを言う</b>（2026-08-14）。
         /// 紙は 0039 / 0040 で 2 度差し替えたのに、この面だけ 0023 ⑤ の旧文言が残っていて、
         /// **同じ安全の掲示が受付とヘッドセットの中で食い違っていた**（`canon/OPEN.md` の宿題）。
         /// ⚠ <b>改行は 1 行 20 文字まで</b>（<see cref="TextWidthM"/> に 1 文字 1.8° で入る数）。
         /// 2026-08-15 に字を 1.8° へ上げたので、旧の 1 行 24〜26 文字では横 46° を超えて
-        /// 読むのに首を振ることになる。
+        /// 読むのに首を振ることになる。<b>英語・フランス語は半角なので 40 文字まで。</b>
         /// ⚠ 文言を変えたら <c>menu hud-font</c> を再実行する（静的ベイクなので忘れると豆腐）。
         /// </summary>
-        private const string NoticeText =
+        private const string NoticeJa =
             "本作品にはホラー表現および、\n" +
             "不安や恐怖を感じる演出が含まれます\n" +
             "\n" +
             "体験中に気分が悪くなった場合は、\n" +
             "その場で立ち止まり、ヘッドセットを外して\n" +
             "スタッフにお声がけください";
+
+        /// <summary>
+        /// 注意書きの本文（English）。<b>日本語と同じことを言う</b> — 訳し足しも訳し落としもしない
+        /// （安全の掲示なので、言語で内容が変わったらそれは別の掲示）。
+        /// </summary>
+        private const string NoticeEn =
+            "This work contains horror imagery and\n" +
+            "scenes meant to unsettle or frighten.\n" +
+            "\n" +
+            "If you feel unwell at any point, stop\n" +
+            "where you are, remove the headset and\n" +
+            "let a member of staff know.";
+
+        /// <summary>注意書きの本文（Français）。<see cref="NoticeEn"/> と同じ規律。</summary>
+        private const string NoticeFr =
+            "Cette expérience contient des scènes\n" +
+            "d'horreur, conçues pour inquiéter\n" +
+            "ou effrayer.\n" +
+            "\n" +
+            "Si vous vous sentez mal, arrêtez-vous,\n" +
+            "retirez le casque et prévenez\n" +
+            "un membre du personnel.";
+
+        /// <summary>
+        /// 言語の名前。<b>それぞれの言語で書く</b>（"Japanese" ではなく「日本語」）—
+        /// 読めない言語の名前が読めない言語で書いてあると、自分の言語を選べない。
+        ///
+        /// ⚠⚠ <b>表示用の文字列がここにあるのは、このファイルがフォントの収集元だから</b>
+        /// （<c>JapaneseHudFontSetup.CollectHudCharset()</c> ＝ <c>tools/unity.ps1</c> の
+        /// <c>hud-font</c> の <c>Src</c>）。<c>ShowLanguage</c> 側へ移すと収集元の追加が要り、
+        /// 忘れると<b>実機で豆腐になるのに警告が 1 件も出ない</b>（0035 の「声」と同じ型）。
+        /// </summary>
+        private static string NameOf(ShowLang lang) => lang switch
+        {
+            ShowLang.En => "English",
+            ShowLang.Fr => "Français",
+            _ => "日本語",
+        };
+
+        /// <summary>
+        /// いま選んでいる言語の印。<b>色ではなく括弧</b>（この面は <c>richText</c> を切ってあり、
+        /// 白 1 色しか出せない）。全角の角括弧は <see cref="NameOf"/> と同じ理由でここに置く。
+        /// </summary>
+        private static string Marked(ShowLang lang, ShowLang current)
+            => lang == current ? "［" + NameOf(lang) + "］" : NameOf(lang);
+
+        /// <summary>
+        /// 選べる言語を 1 行に並べたもの。区切りは<b>全角空白</b>
+        /// （半角空白 1 つだと、日本語と Latin が地続きに見えて 3 つに読めない）。
+        /// </summary>
+        private static string ChooserLine(ShowLang current)
+        {
+            var sb = new System.Text.StringBuilder(48);
+            for (int i = 0; i < ShowLanguage.All.Length; i++)
+            {
+                if (i > 0) sb.Append('　');
+                sb.Append(Marked(ShowLanguage.All[i], current));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 切り替え方の 1 行。<b>キー名（X／Y）を出さない</b> — 被った体験者に手元は見えないので、
+        /// どちらを押しても同じにしてある（<c>canon/LEDGER.md</c> 0050）。
+        /// AIエージェントの連絡①bが「ボタンを長押ししてください」と言うのと同じ言い方に揃える。
+        /// </summary>
+        private static string HintOf(ShowLang lang) => lang switch
+        {
+            ShowLang.En => "Press the button to change language.",
+            ShowLang.Fr => "Appuyez pour changer de langue.",
+            _ => "手元のボタンで言語が変わります",
+        };
+
+        /// <summary>本文だけ（言語ごと）。テストと <c>menu text-audit</c> が読む。</summary>
+        public static string BodyFor(ShowLang lang) => lang switch
+        {
+            ShowLang.En => NoticeEn,
+            ShowLang.Fr => NoticeFr,
+            _ => NoticeJa,
+        };
+
+        /// <summary>
+        /// 面に出す全文 ＝ <b>注意書き ＋ 空行 ＋ 言語の並び ＋ 切り替え方</b>。
+        ///
+        /// ⚠ <b>言語の並びは注意書きと同じ面に出す。</b> 別の面を立てると、
+        /// 「まだ何も始まっていない黒の中」に装置の UI が 2 枚並ぶ（世界に混ざる面が増える）。
+        /// ⚠ <b>選べることは、選ぶ前の言語でも読めなければならない。</b> だから 3 つの名前を
+        /// 常に全部出す（次の言語だけを出す形は、いま何が選べるのかが分からない）。
+        /// </summary>
+        public static string ComposeFor(ShowLang lang)
+            => BodyFor(lang) + "\n\n" + ChooserLine(lang) + "\n" + HintOf(lang);
 
         /// <summary>
         /// タイトルの黒（<c>FixedCamVr/TitleVeil</c> = 4950）と題字（<c>TitleGlyph</c> = 4960）より
@@ -79,8 +179,13 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private const float TextWidthM = 1.70f;
 
-        /// <summary>文字の並ぶ高さ (m)。6 行 ＋ 行間。</summary>
-        private const float TextHeightM = 1.00f;
+        /// <summary>
+        /// 文字の並ぶ高さ (m)。<b>いちばん行数の多い言語</b>（Français ＝ 7 行）＋ 空行 ＋
+        /// 言語の並び ＋ 切り替え方 ＝ 10 行 ＋ 行間。
+        /// ⚠ 揃えは縦中央（<c>TextAlignmentOptions.Left</c>）なので、ここが実際の行数より
+        /// 低いと塊が枠からはみ出して<b>上下が視界の外へ出る</b>。文言を足したら一緒に上げる。
+        /// </summary>
+        private const float TextHeightM = 1.75f;
 
         /// <summary>
         /// 文字の拡大率。<b>距離から逆算する</b>（<see cref="HmdTextStyle"/> が唯一の正）。
@@ -110,6 +215,18 @@ namespace FixedCamVr.Diagnostics
         private float _alpha;
         private float _resolveWait;
         private bool _wasShown;
+        /// <summary>いま面に書いてある言語。<see cref="ShowLanguage.Current"/> と食い違ったら組み直す。</summary>
+        private ShowLang _shownLang = ShowLanguage.Default;
+
+        /// <summary>
+        /// <b>いま注意書きが画に出ているか</b>（＝ 言語を選べる間か）。
+        ///
+        /// <c>OvrControllerBridge</c> がこれを見て、左（体験者）のボタンを言語の切り替えへ回す。
+        /// ⚠ <b>「段が Wait」ではなく「面が組めていて、かつ出る条件を満たしている」</b>を返す —
+        /// 面が組めていない現場（フォントが解決できない等）では言語の並びが 1 文字も見えないので、
+        /// 押しても何も起きない方が正しい（見えない切り替えは、体験者には壊れているのと同じ）。
+        /// </summary>
+        public bool IsShowing => _text != null && ShouldShow();
 
         private void Awake()
         {
@@ -156,7 +273,8 @@ namespace FixedCamVr.Diagnostics
                 go.transform.SetParent(_follow.transform, worldPositionStays: false);
                 var tmp = go.AddComponent<TextMeshPro>();
                 tmp.font = jp;
-                tmp.text = NoticeText;
+                _shownLang = ShowLanguage.Current;
+                tmp.text = ComposeFor(_shownLang);
                 // ⚠ 揃えは**左**（`HmdTextStyle` の規約）。中央にしてよいのは「掲げる言葉」だけで、
                 //   これは**読ませる文章**（安全の掲示）。5 行の散文を中央揃えにすると行頭が毎行ずれる。
                 //   枠幅を最長行に合わせてあるので、左揃えでも塊としては視界の中央に座る。
@@ -264,6 +382,15 @@ namespace FixedCamVr.Diagnostics
                     _resolveWait = 0f;
                     ResolveRefs();
                 }
+            }
+
+            // 体験者が手元のボタンで言語を巡らせたら、その場で書き直す。
+            // ⚠ **文字列を作り直すのは変わったフレームだけ。** 毎フレーム組み直すと、
+            //   TMP がメッシュを作り直して黒の中で 90Hz ぶんの GC を回す。
+            if (_shownLang != ShowLanguage.Current)
+            {
+                _shownLang = ShowLanguage.Current;
+                _text.text = ComposeFor(_shownLang);
             }
 
             bool show = ShouldShow();

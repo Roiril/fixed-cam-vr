@@ -248,7 +248,7 @@ namespace FixedCamVr.Diagnostics
         ///   あちらが「解析中」なのにこちらが「記録」だと、同じ装置の言葉に聞こえない。
         /// ⚠ <b>身体を操作する指示にしない</b>（0034 — 「右手をあげてください」を伏線にしない）。
         /// </summary>
-        private static string TextFor(CommsNotice n) => n switch
+        private static string TextJa(CommsNotice n) => n switch
         {
             // ⓪a 名乗り。⚠ **「AI」とは書かない。「エージェント」と書く**（`canon/LEDGER.md` 0080）。
             //    ⚠ 紙の依頼書と同じ語（`docs/onsite/handout.html`「調査を支援するエージェント」）。
@@ -286,12 +286,68 @@ namespace FixedCamVr.Diagnostics
         };
 
         /// <summary>
+        /// 文面（English・2026-09-03）。<b>日本語と同じことを、同じ順で言う。</b>
+        ///
+        /// ⚠ <b>制約は日本語と同じ 2 つ</b>（<c>CommsNoticeTextTests</c> が機械で落とす）:
+        /// 1 行は<b>半角 28 文字</b>まで（＝ 全角 14）、<b>3 行</b>まで。
+        /// ⚠ <b>キー名（X／Y）を出さない</b> — 日本語と同じ理由（装置の面に入力機器の名前が出ると
+        /// 調査の記録ではなくゲームの操作説明に見える）。
+        /// ⚠ 「調査」は survey、「解析」は analyse で通す（手元のゲージの "Analysing" と対）。
+        /// </summary>
+        private static string TextEn(CommsNotice n) => n switch
+        {
+            CommsNotice.Greeting => "I am the agent assisting\nthe survey.",
+            CommsNotice.Walk => "Start point marked.\nFollow the arrow.",
+            CommsNotice.Arrived => "You have arrived.\nActivating the device.",
+            CommsNotice.Begin => "Begin the survey.",
+            // ①b 3 行目は「押すと何が起きるか」（日本語と同じ役割・0096）。
+            CommsNotice.BeginHow => "If you see an anomaly,\nhold down the button and\nthe device will analyse it.",
+            CommsNotice.MarkLogged => "The anomaly was removed.",
+            CommsNotice.MarkNothing => "No anomaly was detected.",
+            // ③ ここだけが体験者自身を名指しする（0096）。
+            CommsNotice.Prompt => "An anomaly is trying to\nabsorb you and me.\nRemove it.",
+            _ => "",
+        };
+
+        /// <summary>文面（Français）。<see cref="TextEn"/> と同じ規律。</summary>
+        private static string TextFr(CommsNotice n) => n switch
+        {
+            CommsNotice.Greeting => "Je suis l'agent qui assiste\ncette enquête.",
+            CommsNotice.Walk => "Point de départ marqué.\nSuivez la flèche.",
+            CommsNotice.Arrived => "Vous êtes arrivé.\nDémarrage de l'appareil.",
+            CommsNotice.Begin => "Commencez l'enquête.",
+            CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez le bouton.\nL'appareil l'analysera.",
+            CommsNotice.MarkLogged => "L'anomalie a été supprimée.",
+            CommsNotice.MarkNothing => "Aucune anomalie détectée.",
+            CommsNotice.Prompt => "Une anomalie tente de nous\nabsorber, vous et moi.\nSupprimez-la.",
+            _ => "",
+        };
+
+        /// <summary>
+        /// 体験者が選んだ言語の文面（<see cref="ShowLanguage.Current"/>）。
+        /// 選ぶのは体験前の注意書きが出ているあいだだけなので、<b>この面が開いている最中に
+        /// 言語が変わることはない</b>（＝ 打っている途中で文面が入れ替わらない）。
+        /// </summary>
+        private static string TextFor(CommsNotice n) => TextFor(n, ShowLanguage.Current);
+
+        /// <summary>言語を明示した文面（テストと <c>menu text-audit</c> 用）。</summary>
+        private static string TextFor(CommsNotice n, ShowLang lang) => lang switch
+        {
+            ShowLang.En => TextEn(n),
+            ShowLang.Fr => TextFr(n),
+            _ => TextJa(n),
+        };
+
+        /// <summary>
         /// その連絡の文面（テストと <c>menu comms-preview</c> 用）。
         /// ⚠ <b>全部の文面を機械で測れるようにするために公開している。</b>
         /// <see cref="LongestNoticeText"/> だけを測っていた頃は、**行数の最悪が別の文面にある**と
         /// 誰も気づけなかった（0079 で①が 2 行・⓪b が 3 行になって顕在化した）。
         /// </summary>
         public static string NoticeText(CommsNotice n) => TextFor(n);
+
+        /// <summary>言語を明示した文面（テストが 3 言語ぶん測るために公開している）。</summary>
+        public static string NoticeText(CommsNotice n, ShowLang lang) => TextFor(n, lang);
 
         /// <summary>
         /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（①b の 3 行目・14 文字）。
@@ -306,7 +362,36 @@ namespace FixedCamVr.Diagnostics
         /// <c>CommsNoticeTextTests.LongestNoticeText_ReallyHasTheLongestLine</c> が
         /// **本当に最長かを機械で確かめる**ので、文面を触った人はそこで落ちる。
         /// </summary>
-        public static string LongestNoticeText => TextFor(CommsNotice.BeginHow);
+        /// <remarks>
+        /// ⚠⚠ <b>2026-09-03 に手で選ぶのをやめた</b>（言語が 3 つになったので）。
+        /// 3 言語 × 8 文面の中から<b>いちばん長い行を持つ文面を機械が選ぶ</b> —
+        /// 手で書いておくと、English だけ長い行があるのに日本語の文面を宣言したまま気づけない
+        /// （選び間違いは「その言語のときだけ枠から出る」＝ 実機で 1 言語だけ壊れる形で出る）。
+        /// ⚠ 幅の物差しは <see cref="HmdTextStyle.LineWidth"/>（テストもここを使う ＝ 1 か所）。
+        /// </remarks>
+        public static string LongestNoticeText => _longestNoticeText ??= FindLongestNoticeText();
+
+        private static string? _longestNoticeText;
+
+        private static string FindLongestNoticeText()
+        {
+            string best = "";
+            float bestW = -1f;
+            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (CommsNotice n in System.Enum.GetValues(typeof(CommsNotice)))
+            {
+                string body = TextFor(n, lang);
+                if (string.IsNullOrEmpty(body)) continue;
+                float w = 0f;
+                foreach (string line in body.Split('\n'))
+                {
+                    float lw = HmdTextStyle.LineWidth(line);
+                    if (lw > w) w = lw;
+                }
+                if (w > bestW) { bestW = w; best = body; }
+            }
+            return best;
+        }
 
         private readonly CommsPanelLogic _logic = new CommsPanelLogic();
         private readonly CommsCueLogic _cue = new CommsCueLogic();

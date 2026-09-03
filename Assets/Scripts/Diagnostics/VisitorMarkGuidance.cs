@@ -1,4 +1,5 @@
 ﻿#nullable enable
+using FixedCamVr.Streaming;
 using FixedCamVr.Tracking;
 
 namespace FixedCamVr.Diagnostics
@@ -45,6 +46,20 @@ namespace FixedCamVr.Diagnostics
         public const string HoldingHead = "解析中";
 
         /// <summary>
+        /// 見出し（体験者が選んだ言語・2026-09-03）。
+        /// ⚠ <b>連絡①bの動詞と同じ語にする</b>（日本語が「解析して」/「解析中」で揃っているのと同じに、
+        /// English は "analyse" / "Analysing"、Français は « analysera » / « Analyse »）。
+        /// 揃っていないと、同じ装置が 2 つの言い方をしているように読める。
+        /// ⚠ 文言を変えたら <c>menu hud-font</c> を再実行する（静的ベイク）。
+        /// </summary>
+        public static string HoldingHeadOf(ShowLang lang) => lang switch
+        {
+            ShowLang.En => "Analysing",
+            ShowLang.Fr => "Analyse",
+            _ => HoldingHead,
+        };
+
+        /// <summary>
         /// 見出しの大きさ（本文に対する %）。<b><see cref="HmdTextStyle.MinorPercent"/> と同じ値</b>で、
         /// <c>HmdTextStyleTests.LabelPercent_MatchesMinorTier</c> が食い違いを落とす。
         /// ここが const なのは、この面の文言をテストで逐語固定しているため。
@@ -72,9 +87,16 @@ namespace FixedCamVr.Diagnostics
         /// <param name="progress01">長押しの進捗 [0,1]。0 なら押していない。</param>
         /// <param name="confirming">発火直後の余韻の最中か（<b>いまは画に出さない</b>）。</param>
         public static string Line(float progress01, bool confirming)
+            => Line(progress01, confirming, ShowLanguage.Current);
+
+        /// <summary>
+        /// 言語を明示して組む（テストと <c>menu text-audit</c> 用）。
+        /// ⚠ ゲージは言語で変わらない — 記号だけなので訳す物が無い。
+        /// </summary>
+        public static string Line(float progress01, bool confirming, ShowLang lang)
         {
             if (progress01 <= 0f) return "";
-            return $"<size={LabelPercent}%>{HoldingHead}</size>\n"
+            return $"<size={LabelPercent}%>{HoldingHeadOf(lang)}</size>\n"
                  + RegistrationGuidance.ProgressBar(progress01, 1f, Slots);
         }
     }

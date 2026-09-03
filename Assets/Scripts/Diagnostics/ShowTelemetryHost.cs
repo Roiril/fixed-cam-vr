@@ -1247,6 +1247,15 @@ namespace FixedCamVr.Diagnostics
                                                          : (bool?)_guidePanel.ControllerConnected,
                                                          _guidePanel == null ? null
                                                          : (bool?)_guidePanel.ControllerTracked));
+            //   lang / langN = 体験者が読んでいる言語と、この走行で変わった回数（2026-09-03）。
+            //   ⚠⚠ **画にも音にも出ない。** 注意書き・AIエージェントの連絡・終幕の報告は
+            //     どれも「文字が出ている」ことしか外から見えないので、**どの言語で出ていたかは
+            //     ここにしか残らない**（走行の PNG を開いても、英語で出すつもりが日本語だったことは
+            //     読めるが、日本語で出すつもりが英語だったことは気づかれずに通る）。
+            //   ⚠ **2 つで 1 組**。`lang` だけだと「選ばれなかった」と「切り替えが効いていない」が
+            //     区別できない（どちらも ja のまま）。`langN` が 0 なら押しても変わっていない。
+            _sb.Append(" lang=").Append(ShowLanguage.Code(ShowLanguage.Current));
+            _sb.Append(" langN=").Append(ShowLanguage.ChangeCount);
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。
