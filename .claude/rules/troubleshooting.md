@@ -3,7 +3,7 @@ name: troubleshooting
 description: 「うまく動かない」時に層を切り分けるための診断フロー。Unity / 配信側 / ネットワーク / Meta XR / ビルド の責任境界マップ
 paths:
   - "Assets/**"
-  - ".claude/**"
+  - "tools/**"
 ---
 
 # 層別トラブルシュートガイド
