@@ -57,8 +57,12 @@ def build_checks(m: dict, man: dict, size_ok: bool, p: dict | None = None) -> li
         # ⚠ 寸法が違う出力は**縮める時点で全画素が少し動く**ので、そのままの線では測れない
         #   （実測: 96% を保っていた回が、縮めた版では 86% に見える）。線を緩める代わりに
         #   「置かない側の差」（下）が本体の門として効く
+        # ⚠ 面の広い異変（max_area_pct ≥ 70・壁一面の手形）は置く側がほぼ覆われるので 35% は通らない。
+        #   そこだけ「100% − 上限 − 5%」へ下げる（2026-09-04・手形 3 枚とも 7〜20% で落ちていた）。
+        #   描き起こしの検出は反対側の門（90%）が引き続き効く
         ("背景を塗り直していない",
-         (m["bg_frac_place"] >= (0.35 if size_ok else 0.20)
+         (m["bg_frac_place"] >= (min(0.35 if size_ok else 0.20, max(0.10, 1.0 - hi / 100.0 - 0.05))
+                                 if hi >= 70 else (0.35 if size_ok else 0.20))
           and m["bg_frac_keep"] >= (0.90 if size_ok else 0.60)),
          f"触っていない画素 置く側 {m['bg_frac_place'] * 100:.0f}% / "
          f"反対側 {m['bg_frac_keep'] * 100:.0f}%" + ("" if size_ok else "（縮めた版で測った参考値）"),
