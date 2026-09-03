@@ -2825,7 +2825,7 @@ namespace FixedCamVr.Streaming
             //    視界が晴れて**、以後の周の劣化が「なぜまた悪くなるのか」説明できなくなる。
             if (result == TakeRunnerLogic.MarkResult.Released) ResolveRunDirector()?.ReleaseScreenDecay();
 
-            Debug.Log($"[ShowControl] 記録ボタン（体験者・左 X／Y） {VisitorMarkCount} 回目"
+            Debug.Log($"[ShowControl] 記録ボタン（体験者・左のどれか） {VisitorMarkCount} 回目"
                     + $"（解除は{(LastMarkResolved ? "通った" : "通らなかった")}・{result}）");
         }
 
