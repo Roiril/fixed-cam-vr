@@ -602,6 +602,12 @@ namespace FixedCamVr.Streaming
             //    そこで閉じる。⚠ 導入の外（終幕）では読まない — 終幕は現実へ返す段なので部屋は開いている。
             float sealed01 = Math.Max(s.introWeights.shell, 0f);
             if (s.introActive) sealed01 = Math.Max(sealed01, 1f - Clamp01(s.introWeights.passthrough));
+            // ⚠ **本編のあいだは閉じたまま。** 導入が明けた瞬間に開き直すと、消えていく部屋の尾
+            //    （`RoomInRun` = 0 へ 0.9 秒で寄る）が「広がりながら遠ざかる」に聞こえる
+            //    （走行 20260904_014122: 段 5 で 9.1kHz まで閉じ、本編に入った 0.6 秒後の標本で
+            //    7.6kHz ＝ 半減期 0.35 秒で 22kHz へ戻る途中だった）。隔離は本編でも続いているので、
+            //    開くのは終幕だけ。
+            else if (s.phase == ShowPhase.Run && !s.outroActive) sealed01 = 1f;
             g.roomOpen = 1f - (1f - RoomOpenSealed) * Clamp01(sealed01);
 
             // --- 装置 -----------------------------------------------------------

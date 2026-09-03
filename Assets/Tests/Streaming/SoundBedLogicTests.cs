@@ -48,6 +48,21 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
+        /// 本編は隔離されたまま（閉じたまま）。導入が明けた瞬間に開き直すと、消えていく部屋の尾が
+        /// 「広がりながら遠ざかる」に聞こえる（走行 20260904_014122: 段 5 で 9.1kHz まで閉じ、
+        /// 本編に入った 0.6 秒後の標本で 7.6kHz ＝ 22kHz へ戻る途中だった）。
+        /// </summary>
+        [Test]
+        public void Run_KeepsTheBandSealed_UntilTheOutro()
+        {
+            var run = SoundShowState.Idle;
+            run.phase = ShowPhase.Run;
+            run.introWeights = IntroWeights.Inactive;
+            Assert.AreEqual(SoundBedLogic.RoomOpenSealed, SoundBedLogic.Target(run).roomOpen, 1e-4f,
+                            "本編で部屋が開き直している");
+        }
+
+        /// <summary>
         /// 終幕は現実へ返す段なので部屋は開いている。導入が終わった後の <c>IntroWeights</c> は
         /// passthrough 0 のまま残るが、それを読んで閉じてはいけない。
         /// </summary>
@@ -55,6 +70,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Outro_KeepsTheRoomOpen_EvenThoughPassthroughWeightIsZero()
         {
             var s = SoundShowState.Idle;
+            s.phase = ShowPhase.Run;
             s.outroActive = true;
             s.outroElapsedSec = 3f;
             s.introWeights = IntroWeights.Inactive;   // passthrough = 0

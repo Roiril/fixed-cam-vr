@@ -239,7 +239,15 @@ def collect_log(serial, dump_path, xp_path):
 
 
 def run_tool(script, *argv):
-    """付属のツールを呼ぶ。落ちても録画そのものは残っているので、止めずに続ける。"""
+    """付属のツールを呼ぶ。落ちても録画そのものは残っているので、止めずに続ける。
+
+    ⚠ 子ツールの出力に `⚠` や `❌` が混じるので、**自分の stdout も UTF-8 にしてから**印字する。
+    cp932 のままだと `print` が `UnicodeEncodeError` で落ち、**証拠（xp-evidence）の工程が
+    走らないまま終わる**（2026-09-04 走行 20260904_014122 で実際に起きた）。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     cmd = [sys.executable, os.path.join("tools", script), *[str(a) for a in argv]]
     print("$ " + " ".join(cmd))
     # 子ツールの print も UTF-8 で揃える（pipe 越しだと子側は locale 既定＝cp932 になり、
