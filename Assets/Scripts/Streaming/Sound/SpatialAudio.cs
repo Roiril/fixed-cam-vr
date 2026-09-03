@@ -98,6 +98,10 @@ namespace FixedCamVr.Streaming
             "sfx_glitch_1", "sfx_glitch_2", "sfx_glitch_3",
             "sfx_screen_on", "sfx_power_off",
             "bed_device", "bed_device_worn", "bed_static",
+            // 目（2026-09-03・`canon/LEDGER.md` 0131）。**1 つ 1 つがその目の方角から鳴る**
+            "sfx_eye_1", "sfx_eye_2", "sfx_eye_3",
+            "sfx_eye_4", "sfx_eye_5", "sfx_eye_6",
+            "sfx_eye_big",
             // 連絡の面（AIエージェントのスクリーン）から
             "sfx_type_1", "sfx_type_2", "sfx_type_3", "sfx_type_4",
             "sfx_type_5", "sfx_type_6", "sfx_type_7", "sfx_type_8",

@@ -236,6 +236,8 @@ namespace FixedCamVr.Streaming
                 else if (Camera.main != null) head = Camera.main.transform;
             }
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            // 目が開く音（0131）。掴めなければ無音で開くだけ（体験は止めない）。
+            if (_sound == null) _sound = FindObjectOfType<ShowSoundDirector>();
             // 卓の heartbeat へ「この端末に写真が何枚届いたか」を出す（2 台のうち片方だけ
             // 届いていないのは無音の失敗 — canon/LEDGER.md 0099「当日にドタバタしたくない」）。
             if (showControl != null)
@@ -382,7 +384,7 @@ namespace FixedCamVr.Streaming
 
         private void LateUpdate()
         {
-            if (head == null) Resolve();
+            if (head == null || _sound == null) Resolve();
 
             float dt = Time.unscaledDeltaTime;
             _clock += dt;
@@ -422,7 +424,12 @@ namespace FixedCamVr.Streaming
             //   後ろに置くと、その残りのあいだ面が凍る（stale な写真が視界に貼り付いたまま）。
             DriveJack(dt);
 
-            if (_logic.Stage == EyesStage.Off) { Hide(); return; }
+            if (_logic.Stage == EyesStage.Off)
+            {
+                Hide();
+                _lastOpenCount = 0;   // 次の出番で 1 発目から鳴る（0131）
+                return;
+            }
             if (_renderer == null || _mat == null) return;
 
             // 群れは頭の**位置**にだけ付いて動く。向きはワールド固定（頭に張り付くと HUD に見える）。
@@ -461,6 +468,108 @@ namespace FixedCamVr.Streaming
             OpenCount = _seats.Length == 0
                 ? 0
                 : AnomalyEyesMesh.CountOpen(_seats, _logic.Big, _logic.Field, _logic.Density);
+
+            // ⚠ **数え直した後に鳴らす**（`OpenCount` を読むので）。
+            DriveEyeSfx(dt);
+        }
+
+        // ---- 目が開く音（2026-09-03・`canon/LEDGER.md` 0131）------------------------
+
+        /// <summary>
+        /// 一撃の最短間隔（秒）。
+        ///
+        /// ⚠⚠ <b>1 つの目に 1 発は鳴らせない。</b> 開くのは 189 個で、開眼の 3 秒に収まる
+        /// （実測: 0.25 秒ごとに 10 / 17 / 0 / 47 / 40 / 32 / 24 / 17 / 2 個 ＝ 最大 188 個/秒）。
+        /// 1 発ずつ鳴らせば太鼓ではなく雑音になり、6 声の発声器も尾で埋まる。
+        ///
+        /// 0.09 秒に間引くと <b>約 20 発</b>になり、<b>開き方の形がそのまま出る</b> ——
+        /// さざめきで数発 → <b>間</b>で止まり → 一気に連なる。等間隔の連打にはならない。
+        /// </summary>
+        public const float EyeSfxMinIntervalSec = 0.09f;
+
+        /// <summary>一撃ごとに振る音程の幅（±）。切替音（0.035）より広い。</summary>
+        public const float EyeSfxPitchSpread = 0.05f;
+
+        /// <summary>同・音量（± dB）。<b>連なるぶん広く取る</b>（打鍵と同じ流儀）。</summary>
+        public const float EyeSfxGainSpreadDb = 2.0f;
+
+        private ShowSoundDirector? _sound;
+        private int _lastOpenCount;
+        private float _eyeSfxCooldown;
+
+        /// <summary>鳴らした一撃の累計（テレメトリ用）。<b>音は録画に映らない。</b></summary>
+        public int EyeSfxCount { get; private set; }
+
+        /// <summary>大きい目の音を鳴らしたか（1 回の出番に 1 度きり・テレメトリ用）。</summary>
+        public bool EyeBigSfxFired { get; private set; }
+
+        /// <summary>
+        /// <b>目が開いた分だけ一撃を鳴らす</b>（最短間隔で間引く）。
+        ///
+        /// 鳴らす場所は<b>いちばん最後に開いた目の方角</b>（`canon/LEDGER.md` 0130 の 3D）。
+        /// ⚠ 場所を持たせないと 20 発が同じ 1 点から来て、開いているのが「いちめん」に聞こえない。
+        /// </summary>
+        private void DriveEyeSfx(float dt)
+        {
+            if (_eyeSfxCooldown > 0f) _eyeSfxCooldown -= dt;
+
+            // ⚠ **大きい目の音は兆しの段の頭で撃つ**（見開く瞬間ではない）。素材の頭に無音が
+            //    足してあり、いちばん大きいところが見開く瞬間へ来るように焼いてある
+            //    （`tools/ingest-sounds.py` の `ALIGN`）。実行時に足し引きしない。
+            if (_logic.JustStarted)
+            {
+                _lastOpenCount = 0;
+                EyeBigSfxFired = _sound != null
+                                 && _sound.PlaySpot(SoundCue.EyeBig, BigEyeWorld());
+                if (_sound != null && !EyeBigSfxFired)
+                    Debug.LogWarning("[Eyes] 大きい目の音源がありません"
+                                     + "（Resources/Sound/sfx_eye_big）。目は無音で開きます。"
+                                     + "`py -3.11 tools/ingest-sounds.py --only sfx_eye_big` の後に "
+                                     + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+            }
+
+            int now = OpenCount;
+            if (now > _lastOpenCount)
+            {
+                // ⚠ **閉じるときは鳴らさない**（`Fading` は数が減るので、そもそもここへ来ない）。
+                if (_eyeSfxCooldown <= 0f && _sound != null
+                    && _sound.PlaySpot(SoundCue.EyeOpen, NewestOpenEyeWorld(),
+                                       EyeSfxPitchSpread, EyeSfxGainSpreadDb))
+                {
+                    _eyeSfxCooldown = EyeSfxMinIntervalSec;
+                    EyeSfxCount++;
+                }
+                _lastOpenCount = now;
+            }
+            else if (now < _lastOpenCount)
+            {
+                _lastOpenCount = now;
+            }
+        }
+
+        /// <summary>大きい目のワールド位置。</summary>
+        private Vector3 BigEyeWorld()
+            => transform.TransformPoint(AnomalyEyesMesh.BigDir * AnomalyEyesMesh.RadiusM);
+
+        /// <summary>
+        /// <b>いちばん最後に開いた目</b>のワールド位置（開く順位がいまの進みにいちばん近いもの）。
+        /// 座席が無ければ大きい目へ落とす。
+        /// </summary>
+        private Vector3 NewestOpenEyeWorld()
+        {
+            float best = -1f;
+            Vector3 dir = AnomalyEyesMesh.BigDir;
+            for (int i = 0; i < _seats.Length; i++)
+            {
+                EyeSeat s = _seats[i];
+                if (s.big || s.presence > _logic.Density) continue;
+                if (AnomalyEyesLogic.EyeOpen(_logic.Field, s.rank) * s.openMax
+                    <= AnomalyEyesLogic.OpenEpsilon) continue;
+                if (s.rank <= best) continue;
+                best = s.rank;
+                dir = s.dir;
+            }
+            return transform.TransformPoint(dir * AnomalyEyesMesh.RadiusM);
         }
 
         /// <summary>群れの向きを頭の水平の向きへ合わせる（大きい目が視界の端に来る）。</summary>

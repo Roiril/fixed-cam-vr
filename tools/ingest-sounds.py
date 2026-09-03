@@ -129,6 +129,34 @@ PLAN = [
     #
     #    ("dragon-studio-dark-horror-ambient-05-425468.mp3", "bed_room_lap2", "lufs", -32.0, ...)
     #    ("universfield-dark-horror-soundscape-345814.mp3",  "bed_room_lap3", "lufs", -32.0, ...)
+
+    # ---- 2026-09-03・`canon/LEDGER.md` 0131（ユーザー指定の 6 本）-----------------
+    #
+    # ⚠⚠ **高さは「置き換える相手」から決めた。** 4 本とも劇伴の代わりに鳴るので、
+    #    入れ替わったときに大きさが跳ねないことが条件になる。実測の劇伴（卓の `volume` 込み）:
+    #    `HorrBGM` = -21.7 LUFS × 0.50 ＝ **実効 -27.7** ／
+    #    `LostPlace2` = -17.2 LUFS × 0.57 ＝ **実効 -22.1**。
+    ("怖い風の音.wav", "bed_wind", "lufs", -26.0,
+     "**別の場所（バックルームズ）が映っているあいだだけ**（0122 の演出）。"
+     "そのあいだ劇伴は切るので、これ 1 本しか鳴っていない。"
+     "⚠ 2-B で退く劇伴は `HorrBGM`（実効 -27.7）。1.7dB だけ上に置いて「世界が変わった」を出す"),
+    # ⚠⚠ **実機の内蔵スピーカーではほとんど鳴らない**（内蔵SP **-21.0dB** ＝ ほぼ全部が 150Hz 以下）。
+    #    §2 の制約そのもので、`rules/sound-design.md` の下限（ループは -6.0dB）を 15dB 下回る。
+    #    **ユーザーが選んだ音源なので直さない**（§4.5）。ヘッドホンなら鳴る。
+    ("怖いビート.wav", "bed_beat", "lufs", -25.0,
+     "3 周目 B から呪いが排除されるまで。**`bed_horror2` と 2 本同時に鳴る**。"
+     "⚠ 2 本の和が `LostPlace2` の実効 -22.1 と釣り合うように、1 本ずつは -25.0"),
+    ("ホラーなBMG2.wav", "bed_horror2", "lufs", -25.0,
+     "同上（対の 1 本）。⚠ モノ互換 -4.66dB は下限（-3.5）を割るが、"
+     "もらった音なので直さない（§4.5）"),
+    ("ホワイトノイズ.mp3", "bed_white", "lufs", -28.0,
+     "**呪いが排除された後**（報告が通ってから終わりまで）。⚠ 素材は 15 分あるので "
+     "`SLICE` で 20 秒だけ取って輪にする。高さは退いた劇伴（`HorrBGM` 実効 -27.7）に合わせる"),
+    # ⚠ 尖頭で揃えると波高 21dB のぶん実力より小さく出るので `lufs!`（`sfx_screen_on` と同じ）。
+    ("大きい目が出現.mp3", "sfx_eye_big", "lufs!", -18.0,
+     "**最初の大きい目が見開く瞬間**に、いちばん大きいところが来るよう頭へ無音を足してある"
+     "（`ALIGN`）。⚠ 高さは終幕の電源断（-17.0）と割れる音（-22.1）のあいだ ＝ "
+     "3 周目 C の山だが、導入の山（-13.0）は超えない"),
 ]
 
 # ---- ループにする音の折り返し（秒）-----------------------------------------
@@ -205,6 +233,34 @@ TAME = {
     "amb_bell": (4200.0, -10.0, 1.2),
 }
 
+# ---- 素材の一部だけを使う（秒・開始と終わり）--------------------------------
+#
+# ⚠ **これは「端の処理」の側**（`rules/sound-design.md` §4.5）。切り出す以外は何もしない。
+SLICE = {
+    # ホワイトノイズは **15 分**ある（2026-09-03 実測 899.9 秒）。呪いが消えてから終幕までに
+    # 要るのは十数秒なので、**輪にできる長さだけ**取る。定常なノイズなので、どこを取っても同じ。
+    "bed_white": (60.0, 80.0),
+    # 大きい目の音は 9.58 秒で、-30dB を切るのが 5.20 秒。そこから先は無音を運ぶだけ。
+    "sfx_eye_big": (0.0, 5.60),
+}
+
+# ---- 素材の「いちばん大きいところ」を、鳴らしてから何秒目に置くか -------------
+#
+# ⚠⚠ **これは音を作り変えているのではなく、頭に無音を足しているだけ。**
+#    ユーザー指示（2026-09-03・`canon/LEDGER.md` 0131）は
+#    「最初に出る大きい目が開くときに合わせて、これの音量が一番大きいところが流れるように」。
+#
+#    大きい目が見開くのは **兆しの段の進み 0.869 ＝ 頭から 1.234 秒**
+#    （`AnomalyEyesLogic.HintSnapAt` × `HintSec`）。素材の最大点（0.4 秒窓の RMS）は
+#    **0.62 秒**なので、頭へ 0.61 秒の無音を足すと最大点がちょうどそこへ来る。
+#
+# ⚠ **実行時に計算させない。** 「素材の最大点」と「見開く時刻」を C# で足し引きすると、
+#    片方を動かしたときに黙って合わなくなる。**焼いた時点で合っている**方が確かめられる
+#    （`sound-lint.py` が最大点の位置を測って落とす）。
+ALIGN = {
+    "sfx_eye_big": 1.234,
+}
+
 # ---- 1 本の録音から「毎回すこしずつ違う」変種を焼くもの ----------------------
 #
 # ⚠ **これも「もらった音」の側**（合成ではない）。掛けるのは切り出し・並べ方・音程・音量と
@@ -240,6 +296,36 @@ SWITCH_VARIANTS = [
     (1.030, 0.0430, 0.024, 1.085,  -2.0, 2, "尾が早く、高い"),
     (0.965, 0.0505, 0.062, 0.930,   0.0, 4, "低くて、尾が長い"),
     (1.092, 0.0000, 0.000, 1.000, -99.0, 0, "乾いた 1 発（尾なし）"),
+]
+
+# ---- 目が 1 つ開くたびの一撃（2026-09-03・`canon/LEDGER.md` 0131）--------------
+#
+# ユーザー指示「目がそれぞれ出現するときの音を〈怖いドラム単発〉にする。**ほかと同じ仕組みで、
+# 全部同じ音ではなく少しずつ変えること**」。⇒ 切替音（`SWITCH_VARIANTS`）と同じ手で、
+# **もらった 1 本から** 6 本を焼く（合成は 1 ビットも混ぜない）。
+#
+# **素材の中身**（実測・`logs/sound/ingest/src_sfx_eye.wav` 4.14 秒）:
+#   ・頭 0〜0.15 秒が本体。最大から **-20dB を切るのが 0.65 秒 / -30dB が 1.20 秒**
+#   ・波高 27.0dB ＝ 立ち上がりの鋭い 1 発。150Hz 以下に寄っている（内蔵SP -7.3dB）
+#
+# ⚠⚠ **尾を切るのは「気持ちよくするため」ではなく、重なるから。** 開眼の 3 秒に 20 発近く
+#    並ぶので（下の実測）、4 秒の尾をそのまま鳴らすと **6 声すべてが尾で埋まって
+#    次の一撃が奪われる**。頭（0.16 秒）はどの変種にもそのまま入っているので同じ太鼓に聞こえる。
+EYE_SRC = ("怖いドラム単発.wav", "sfx_eye")
+EYE_HEAD_SEC = 0.160      # 頭として毎回置く長さ（本体はここに収まる）
+EYE_TAIL_AT = 0.165       # 素材で尾が始まる時刻
+EYE_TAIL_FADE = 0.030
+EYE_BUF_SEC = 1.00        # 変種 1 本ぶんの器
+EYE_LUFS = -26.0          # 1 本目を置く高さ。⚠ §3 の「繰り返す一撃」(-23) より 3dB 低い —
+#                           3 秒に 20 発が重なるので、1 発ずつを切替音と同じ高さにすると和が山になる
+# (頭の音程, 尾の遅れ秒, 尾の長さ秒, 尾の音程, 尾の dB, 覚え書き)
+EYE_VARIANTS = [
+    (1.000, 0.165, 0.560, 1.000,   0.0, "素のまま（基準）"),
+    (1.070, 0.150, 0.120, 1.045,  -1.5, "すぐ止む"),
+    (0.930, 0.205, 0.300, 0.945,  +1.0, "低くて、尾が遅れて来る"),
+    (1.045, 0.150, 0.190, 1.090,  -2.0, "尾が早く、高い"),
+    (0.955, 0.165, 0.640, 0.920,   0.0, "低くて、尾が長い"),
+    (1.105, 0.000, 0.000, 1.000, -99.0, "乾いた 1 発（尾なし）"),
 ]
 
 # ---- 1 発の録音を小刻みに並べて 1 本にするもの ------------------------------
@@ -1175,6 +1261,81 @@ def switch_build(y, sr: int):
     return built, drive
 
 
+def drum_build(y, sr: int):
+    """1 発の太鼓から**毎回すこしずつ違う**変種を焼く（<see cref="EYE_VARIANTS"/>）。
+
+    ⚠ <see cref="switch_build"/> と**同じ手順**（頭を毎回そのまま置き、尾だけ変える。高さは
+    頭の実効値で揃えてから 1 本目で決めた倍率を全部へ掛ける）。違うのは長さの定数だけ。
+    """
+    src = sk.env_fade(sk.to_stereo(trim(y)), 0.0008, 0.010)
+
+    def one(head_ratio, tail_at, tail_len, tail_ratio, tail_db, *_):
+        head = resample(sk.env_fade(src[:int(EYE_HEAD_SEC * sr)], 0.0, 0.010), head_ratio)
+        out = np.zeros((int(EYE_BUF_SEC * sr), 2))
+        n = min(len(head), len(out))
+        out[:n] += head[:n]
+        if tail_db > -50.0:
+            a = int(EYE_TAIL_AT * sr)
+            tail = sk.env_fade(src[a:a + int(tail_len * sr)], 0.004,
+                               min(EYE_TAIL_FADE, tail_len * 0.30))
+            tail = resample(tail, tail_ratio) * 10 ** (tail_db / 20.0)
+            i = int(tail_at * sr)
+            m = min(len(tail), len(out) - i)
+            if m > 0:
+                out[i:i + m] += tail[:m]
+        out = sk.env_fade(out, 0.0, 0.012)
+        nz = np.where(np.max(np.abs(out), axis=1) > 1e-5)[0]
+        return out[:nz[-1] + 1] if len(nz) else out
+
+    def head_db(z, sec=0.120):
+        s = z[:int(sec * sr)]
+        return 20 * np.log10(max(float(np.sqrt(np.mean(s ** 2))), 1e-9))
+
+    built = [one(*v) for v in EYE_VARIANTS]
+    ref = head_db(built[0])
+    built = [b * 10 ** (float(np.clip(ref - head_db(b), -3.0, 3.0)) / 20.0) for b in built]
+
+    drive = 0.0
+    while True:
+        z = sk.soft_clip(built[0], drive) if drive > 0 else built[0]
+        g = 10 ** ((EYE_LUFS - sk.lufs(z)) / 20.0)
+        if sk.true_peak_db(z * g) <= -3.0 or drive >= 12.0:
+            break
+        drive += 0.5
+    built = [(sk.soft_clip(b, drive) if drive > 0 else b) * g for b in built]
+    tp = max(sk.true_peak_db(b) for b in built)
+    if tp > -3.0:
+        built = [b * 10 ** ((-3.0 - tp) / 20.0) for b in built]
+    return built, drive
+
+
+def ingest_eyes(variants, src_dir: str) -> None:
+    """目が 1 つ開くたびの一撃を焼く（<see cref="EYE_VARIANTS"/>・0131）。"""
+    if not variants:
+        return
+    jp, stem = EYE_SRC
+    raw = os.path.join(RAW, f"src_{stem}.wav")
+    src = os.path.join(src_dir, jp)
+    if os.path.exists(src):
+        if not decode(src, raw):
+            return
+    elif not os.path.exists(raw):
+        print(f"  無い: {jp}（{src_dir} にも {RAW} にも）")
+        return
+    else:
+        print(f"  元 mp3 が無いので復号済みを使う: {stem}")
+
+    y, sr = sk.read_wav(raw)
+    built, drive = drum_build(y, sr)
+    print(f"  {stem}_1..{len(built)}  丸め {drive:.1f}dB を {len(built)} 本へ（頭 120ms で揃えてある）")
+    for i, (b, v) in enumerate(zip(built, variants), start=1):
+        b = emit(f"{stem}_{i}", b)
+        d = sk.describe(b)
+        print(f"    {stem}_{i:<12d} {d['sec']:5.3f}s  {d['lufs']:6.1f} LUFS  "
+              f"tp {d['true_peak_db']:5.2f}dB  鋭さ {d['sharp']:4.2f}  "
+              f"内蔵SP {d['speaker_db']:5.1f}dB — {v[5]}")
+
+
 def ingest_switch(variants, src_dir: str) -> None:
     """カメラ切替の変種を焼く（<see cref="SWITCH_VARIANTS"/>）。
 
@@ -1338,6 +1499,21 @@ def decode(src: str, dst: str) -> bool:
         print(f"  復号に失敗: {os.path.basename(src)}\n    {r.stderr.strip()[:200]}")
         return False
     return True
+
+
+def loudest_sec(y: np.ndarray, sr: int, win: float = 0.40) -> float:
+    """**いちばん大きいところ**（<paramref name="win"/> 秒窓の実効値が最大になる時刻の中央）。
+
+    ⚠ 尖頭ではなく窓の実効値で測る。1 標本の尖頭は「大きく聞こえる所」とは限らない
+    （`rules/sound-design.md` §3 の「ピークで揃えない」と同じ理由）。
+    """
+    m = sk.to_stereo(np.asarray(y)).mean(axis=1)
+    n = int(win * sr)
+    if len(m) <= n:
+        return len(m) / sr / 2.0
+    c = np.cumsum(np.concatenate([[0.0], m ** 2]))
+    e = (c[n:] - c[:-n])
+    return (int(np.argmax(e)) + n / 2.0) / sr
 
 
 def trim(y: np.ndarray) -> np.ndarray:
@@ -1580,6 +1756,9 @@ def main() -> int:
         for i, v in enumerate(SWITCH_VARIANTS, start=1):
             print(f"        {i}: 粒{v[5]} 頭x{v[0]:.3f} 尾@{v[1]*1000:.0f}ms "
                   f"{v[2]*1000:.0f}ms x{v[3]:.3f} {v[4]:+.1f}dB — {v[6]}")
+        jp, stem = EYE_SRC
+        print(f"  {stem+'_1..'+str(len(EYE_VARIANTS)):16s} ← {jp}")
+        print(f"      尾の来る時刻・長さ・高さ・音程を変えた変種 / 1 本目を {EYE_LUFS:+.1f} LUFS へ")
         for jp, name, target, why in SWARMS:
             print(f"  {name:16s} ← {jp}\n      小刻みに並べる / 頭 0.5s を {target:+.1f} LUFS へ"
                   f"（{SWARM_SEC:.2f}s）/ {why}")
@@ -1601,12 +1780,14 @@ def main() -> int:
                   f"{v['lufs']:+.1f} LUFS / {v['why']}")
         return 0
 
+    eye_names = {f"{EYE_SRC[1]}_{i}" for i in range(1, len(EYE_VARIANTS) + 1)}
     switch_names = {f"{SWITCH_SRC[1]}_{i}" for i in range(1, len(SWITCH_VARIANTS) + 1)}
     alert_names = {f"{m[2]}_{i}" for m in MIXES for i in range(1, m[3] + 1)}
     names = ({p[1] for p in PLAN} | {c[1] for c in CUTS}
              | {s[1] for s in SWARMS} | {c[1] for c in CHORUS}
              | {n for n, _s, _v in SWELL_LAYERS} | alert_names
              | switch_names | {SWITCH_SRC[1]}
+             | eye_names | {EYE_SRC[1]}
              | {v["name"] for v in VOICES})
     if a.only is not None and not set(a.only) <= names:
         missing = sorted(set(a.only) - names)
@@ -1619,6 +1800,9 @@ def main() -> int:
     # ⚠ 増える 3 枚は**家族で 1 つ**（1 枚目の高さで 3 枚を揃えるので、1 枚だけ焼き直せない）。
     swell = SWELL if (a.only is None
                       or any(n in a.only for n, _s, _v in SWELL_LAYERS)) else []
+    # ⚠ 目の一撃も**家族で 1 つ**（切替と同じ理由）。
+    eyes = (EYE_VARIANTS if (a.only is None or EYE_SRC[1] in a.only
+                             or bool(eye_names & set(a.only))) else [])
     # ⚠ 切替の変種は**家族で 1 つ**（1 本目で決めた丸めと倍率を 6 本へ掛けるので 1 本だけ焼けない）。
     switch = (SWITCH_VARIANTS if (a.only is None or SWITCH_SRC[1] in a.only
                                   or bool(switch_names & set(a.only))) else [])
@@ -1632,6 +1816,7 @@ def main() -> int:
     os.makedirs(OUT, exist_ok=True)
     ingest_voices(voices, a.src)
     ingest_switch(switch, a.src)
+    ingest_eyes(eyes, a.src)
     ingest_cuts(cuts, a.src)
     ingest_swarms(swarms, a.src)
     ingest_chorus(chorus, a.src)
@@ -1649,6 +1834,14 @@ def main() -> int:
             print(f"  元 mp3 が無いので復号済みを使う: {name}")
 
         y, sr = sk.read_wav(raw)
+        # ⚠ **切り出しがいちばん先**（`SLICE`）。折り返しも音量合わせも切ったあとの中身で決める。
+        # ⚠⚠ **測る前に切る。** `describe` は帯域・鋭さ・粗さを全長で解くので、15 分の素材
+        #    （ホワイトノイズ）を切る前に測ると**数分かかる**（2026-09-03 に実際に待った）。
+        if name in SLICE:
+            # ⚠ 変数名に `a` / `b` を使わない（`a` は argparse の名前空間・この関数の引数）。
+            #    2026-09-03 に影を作って `sfx_eye_big` だけ焼けなかった。
+            cut_from, cut_to = SLICE[name]
+            y = y[int(cut_from * sr):int(cut_to * sr)]
         before = sk.describe(y)
         # ⚠ ループにする音は **端を落とさない**（頭と尻の無音がそのまま折り返しの材料になる）。
         #    切ってから折り返すと、素材の「入り」と「終わり」の空気が消えて別の音になる。
@@ -1657,6 +1850,18 @@ def main() -> int:
         else:
             y = sk.to_stereo(trim(y))
             y = sk.env_fade(y, EDGE_FADE, EDGE_FADE)
+        # ⚠⚠ **いちばん大きいところを、鳴らしてから何秒目に置くか**（`ALIGN`・0131）。
+        #    頭へ無音を足すだけで、音そのものは 1 ビットも触らない。
+        if name in ALIGN:
+            want = ALIGN[name]
+            at = loudest_sec(y, sr)
+            pad = int(round((want - at) * sr))
+            if pad > 0:
+                y = np.concatenate([np.zeros((pad, y.shape[1])), y], axis=0)
+            elif pad < 0:
+                y = y[-pad:]
+            print(f"    {name}: いちばん大きいところ {at:.3f}s → {loudest_sec(y, sr):.3f}s"
+                  f"（狙い {want:.3f}s・頭へ {pad / sr:+.3f}s）")
 
         # ⚠ **音量を揃える前に掛ける**（削った分だけラウドネスが下がるので、後に掛けると狙いが外れる）。
         if name in TAME:

@@ -79,6 +79,15 @@ RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_
             "sfx_power_off"}
 RECORDED |= {f"sfx_switch_{i}" for i in range(1, 9)}
 RECORDED |= {f"sfx_switch_alert_{i}" for i in range(1, 9)}
+#    ⚠ 2026-09-03 追加: ユーザー指定の 6 本（`canon/LEDGER.md` 0131）。
+#       風・ビート・ホラーな曲・ホワイトノイズ・太鼓の一撃・大きい目の出現。
+#       **どれも実録 / 既成曲**なので、突出と純度の判定からは外す。
+#       ⚠ **内蔵スピーカーとモノ互換の判定は外していない** — あれは「実機で聞こえるか」の話で、
+#          もらった音でも聞こえないものは聞こえない（`sfx_title_in` と同じ扱い）。
+#          既知の NG は 2 本: `bed_beat`（内蔵SP -21.0dB ＝ ほぼ全部が 150Hz 以下）と
+#          `bed_horror2`（モノ互換 -4.66dB）。**どちらも直さない**（§4.5）。
+RECORDED |= {"bed_wind", "bed_beat", "bed_horror2", "bed_white", "sfx_eye_big"}
+RECORDED |= {f"sfx_eye_{i}" for i in range(1, 9)}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 
 # 発振器が居るか（掃引する純音も捕まる）。実測: 純音 0.93〜1.00 / 帯ノイズの掃引 0.31〜0.43 /

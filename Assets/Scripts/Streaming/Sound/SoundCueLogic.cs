@@ -87,6 +87,29 @@ namespace FixedCamVr.Streaming
         /// （<see cref="SoundShowState.outroElapsedSec"/> の注記と同じ轍）。
         /// </summary>
         PowerOff,
+
+        /// <summary>
+        /// <b>目が 1 つ開く</b>（<c>canon/LEDGER.md</c> 0131・ユーザー提供の太鼓）。
+        /// 6 種を回して音程と音量を散らす（切替音と同じ仕組み）。
+        ///
+        /// ⚠⚠ <b>この列挙も <see cref="SoundCueLogic"/> は縁を検出しない。</b>
+        /// 開くのは <see cref="AnomalyEyes"/> の中の出来事で、**どの目が開いたか**まで要る
+        /// （その目の方角から鳴らすため）。毎フレーム外から見る層には置けない。
+        ///
+        /// ⚠ <b>1 発ずつ鳴らすと 3 秒に 189 発になる。</b> 開くのは実測で 63 個/秒なので、
+        /// <see cref="AnomalyEyes"/> 側が最短間隔で間引く。ここに居るのは
+        /// <b>音源の登録簿としての意味</b>（<c>Awake</c> の先読みと <c>ev=sfx</c> の名前）。
+        /// </summary>
+        EyeOpen,
+
+        /// <summary>
+        /// <b>最初の大きい目が見開く</b>（同上）。1 回の体験で 1 度きり。
+        ///
+        /// ⚠⚠ <b>鳴らすのは兆しの段の頭</b>で、見開く瞬間ではない。素材の頭に無音を足して
+        /// <b>いちばん大きいところが見開く瞬間（頭から 1.234 秒）へ来るように焼いてある</b>
+        /// （<c>tools/ingest-sounds.py</c> の <c>ALIGN</c>）。実行時に足し引きしない。
+        /// </summary>
+        EyeBig,
     }
 
     /// <summary>
@@ -348,6 +371,10 @@ namespace FixedCamVr.Streaming
                 // 終幕の頭。劇伴は 2.0 秒かけて退く途中なので、まだ鳴っている上に置かれる。
                 case SoundCue.PowerOff: return 0.60f;
                 case SoundCue.Creak: return 0.15f;   // 退かせすぎると芝居がかる
+                // 大きい目が見開く所。3 周目 C の山なので深く退かせる
+                case SoundCue.EyeBig: return 0.75f;
+                // ⚠ **目の一撃は退かせない**（0f）。3 秒に 20 発近く並ぶので、1 発ごとに引くと
+                //    背景が波打つ（人形の笑いを退かせないのと同じ理由 —— 事件そのものだから）
                 default: return 0f;
             }
         }
@@ -370,6 +397,8 @@ namespace FixedCamVr.Streaming
                 case SoundCue.Bell: return "amb_bell";
                 case SoundCue.DollCall: return "sfx_doll_call";
                 case SoundCue.PowerOff: return "sfx_power_off";
+                case SoundCue.EyeOpen: return "sfx_eye";        // 6 種
+                case SoundCue.EyeBig: return "sfx_eye_big";
                 default: return "";
             }
         }
@@ -381,6 +410,7 @@ namespace FixedCamVr.Streaming
             {
                 case SoundCue.Glitch: return 3;
                 case SoundCue.Creak: return 2;
+                case SoundCue.EyeOpen: return 6;
                 default: return 1;
             }
         }

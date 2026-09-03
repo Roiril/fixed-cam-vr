@@ -40,6 +40,9 @@ MONO3D = {
     "sfx_glitch_1", "sfx_glitch_2", "sfx_glitch_3",
     "sfx_screen_on", "sfx_power_off",
     "bed_device", "bed_device_worn", "bed_static",
+    # 目（2026-09-03・0131）。**1 つ 1 つがその目の方角から鳴る**ので 3D
+    *(f"sfx_eye_{i}" for i in range(1, 7)),
+    "sfx_eye_big",
     # 連絡の面（AIエージェントのスクリーン）から
     *(f"sfx_type_{i}" for i in range(1, 9)),
     # 人形（周囲・後ろ）

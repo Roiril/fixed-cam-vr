@@ -70,9 +70,44 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// いま居る区間のカメラ（0 = A / 1 = B / 2 = C。-1 = 未確定）。
-        /// <b>笑う人形が増えるのは C だけ</b>という判断にだけ使う（<c>TimelineDirector.CurrentCamera</c>）。
+        /// <b>笑う人形が増えるのは C だけ</b>という判断と、<b>呪いの 2 本が入る縁</b>
+        /// （3 周目 B）に使う（<c>TimelineDirector.CurrentCamera</c>）。
         /// </summary>
         public int camera;
+
+        /// <summary>
+        /// いま居る周（1 始まり。0 = 未確定）。<b>呪いの 2 本が入る縁</b>を決めるためだけに読む
+        /// （2026-09-03・<c>canon/LEDGER.md</c> 0131「3-B から」）。
+        /// </summary>
+        public int lap;
+
+        /// <summary>
+        /// <b>画面ごと別の場所（バックルームズ）へ飛んでいるか</b>
+        /// （2026-09-03・<c>canon/LEDGER.md</c> 0131 / 演出は 0122）。
+        ///
+        /// ⚠ これが立っているあいだ<b>劇伴は切れて風の音だけになる</b>。
+        /// 判断の元は「いま画面を取っているカットの素材 id」で、
+        /// <see cref="ShowSoundDirector.OtherworldCuePrefix"/> が持っている。
+        /// </summary>
+        public bool otherworld;
+
+        /// <summary>
+        /// <b>呪いが排除されたか</b>（<c>ShowRunDirector.ScreenDecayReleased</c>・0129 / 0131）。
+        /// 立った縁で、呪いの 2 本がホワイトノイズへ入れ替わる。
+        /// </summary>
+        public bool curseReleased;
+
+        /// <summary>
+        /// <b>呪いの 2 本が始まったか</b>（0131）。3 周目 B へ入った縁で立つラッチで、
+        /// <b><see cref="SoundBedLogic.Tick"/> が自分で立てる</b>（外から渡す値ではない）。
+        ///
+        /// ⚠ 区間の条件（<see cref="lap"/> / <see cref="camera"/>）をそのまま毎フレーム見ると、
+        /// 体験者が 3 周目 C から A へ<b>引き返した瞬間に曲が止まる</b>
+        /// （引き返しは実際に起きる —— <c>rules/show-design.md</c>「体験者は引き返す」）。
+        /// ユーザー指示は「3-B <b>から</b> 呪いが排除される<b>まで</b>」という区間なので、
+        /// 始点は縁・終点は呪いが決める。
+        /// </summary>
+        public bool curseArmed;
 
         public static SoundShowState Idle => new SoundShowState
         {
@@ -131,6 +166,27 @@ namespace FixedCamVr.Streaming
         /// 「人形が近づいてくる」に聞こえて、数が増えたことにならない。
         /// </summary>
         public float dollsGrowB;
+        /// <summary>
+        /// <b>別の場所の風</b>（`bed_wind`・2026-09-03・<c>canon/LEDGER.md</c> 0131）。
+        /// バックルームズが画面を取っているあいだだけ 1。⚠ そのあいだ <see cref="score"/> は 0。
+        /// </summary>
+        public float wind;
+
+        /// <summary>
+        /// <b>呪いのビート</b>（`bed_beat`）。3 周目 B から呪いが排除されるまで 1。
+        /// ⚠ <see cref="horror2"/> と<b>常に同じ値</b>（2 本で 1 つの背景）。
+        /// </summary>
+        public float beat;
+
+        /// <summary>同・重なるもう 1 本（`bed_horror2`）。</summary>
+        public float horror2;
+
+        /// <summary>
+        /// <b>呪いが排除された後のホワイトノイズ</b>（`bed_white`）。
+        /// 報告が通ってから体験が終わるまで 1。
+        /// </summary>
+        public float white;
+
         /// <summary>
         /// 部屋の開き具合（1 = 広い / 0 = 隔離されて狭い）。低域通過フィルタの開度に写す。
         /// **隔離は音量ではなくここで表す** — 音量を下げると「遠ざかった」、
@@ -198,6 +254,32 @@ namespace FixedCamVr.Streaming
         /// 「次が始まった」と告げてしまう。
         /// </summary>
         public const float ScoreFadeInSec = 2.5f;
+
+        /// <summary>
+        /// <b>別の場所（バックルームズ）の出入り</b>の尺（秒・2026-09-03・<c>canon/LEDGER.md</c> 0131）。
+        ///
+        /// ⚠⚠ <b>劇伴の退き（<see cref="ScoreFadeOutSec"/> 2.0 秒）をそのまま使えない。</b>
+        /// 演出は <b>4.0 秒</b>しかないので、2 秒かけて退くと窓の半分を食う。
+        /// 画は <c>transition:"glitch"</c> で一瞬に切り替わるので、音もそれに合わせる。
+        /// ⚠ 戻りも同じ尺（片道だけ速いと、抜けた後に無音の谷ができる）。
+        /// </summary>
+        public const float OtherworldFadeSec = 0.6f;
+
+        /// <summary>
+        /// <b>呪いの 2 本とホワイトノイズの出入り</b>の尺（秒・0131）。
+        /// ユーザー指示「今ある環境音とはクロスフェードで入れ替える」なので、
+        /// <b>劇伴が退く尺（<see cref="ScoreFadeOutSec"/>）と同じ</b>にしてある
+        /// —— 片方だけ速いと、入れ替わりの途中に谷か山ができる。
+        /// </summary>
+        public const float CurseFadeSec = ScoreFadeOutSec;
+
+        /// <summary>
+        /// 呪いの 2 本が入り始める区間のカメラ（1 = B）。<b>3 周目 B から</b>（0131）。
+        /// </summary>
+        public const int CurseCamera = 1;
+
+        /// <summary>呪いの 2 本が入り始める周（3 周目）。</summary>
+        public const int CurseLap = 3;
 
         /// <summary>位置合わせ作業中に敷く音を何倍にするか。**スタッフが喋れる高さまで引く。**</summary>
         public const float RegistrationDuckScale = 0.22f;
@@ -290,8 +372,20 @@ namespace FixedCamVr.Streaming
         /// <summary>劇伴の進み 0..1（<b>時間で動かす</b>。振幅にするのは出力の 1 行だけ）。</summary>
         private float _scoreT;
 
+        // ⚠⚠ **劇伴を置き換える 3 つは、劇伴とまったく同じ器で動かす**（0131）。
+        //    半減期で寄せる敷く音（`SoundFade.Approach`）と混ぜると、片方が dB 直線・
+        //    片方が聴感直線になって、入れ替わりの途中に谷か山ができる。
+        //    ⚠ `beat` と `horror2` は**常に同じ値**（2 本で 1 つの背景）なので進みは 1 本。
+        private float _windT, _curseT, _whiteT;
+
         /// <summary>締めの群れへ譲ったか（人形が画から消えるまで一人ぶんを戻さない）。</summary>
         private bool _swapMuted;
+
+        /// <summary>
+        /// <b>呪いの 2 本が始まったか</b>（0131）。3 周目 B へ入った縁で立ち、
+        /// 呪いが排除された縁で降りる。<b>引き返しで消えないためのラッチ。</b>
+        /// </summary>
+        private bool _curseOn;
 
         /// <summary>同上（テレメトリが読む。**画にも一撃のログにも出ない**ので唯一の証拠）。</summary>
         public float Swell01 => _swell01;
@@ -320,8 +414,15 @@ namespace FixedCamVr.Streaming
             _swell01 = 0f;
             // 劇伴も無音から入れ直す（黒に落ちた所へ前の体験者の続きが鳴っていない）。
             _scoreT = 0f;
+            // 前の体験者の風・呪い・ホワイトノイズを持ち越さない（0131）。
+            _windT = _curseT = _whiteT = 0f;
+            _curseOn = false;
             _swapMuted = false;
         }
+
+        /// <summary>進みを目標へ 1 フレームぶん送る（行き過ぎない）。</summary>
+        private static float Ramp(float cur, float target, float step)
+            => target > cur ? Math.Min(target, cur + step) : Math.Max(target, cur - step);
 
         /// <summary>一撃の音が鳴ったときに劇伴を短く引く（値は 0..1・そのまま最大値で上書き）。</summary>
         public void PushSpotDuck(float amount)
@@ -350,6 +451,12 @@ namespace FixedCamVr.Streaming
             else if (st.markWaiting) _swapMuted = true;
             if (_swapMuted) st.dollPresent = false;
 
+            // 呪いの 2 本のラッチ（0131）。⚠ **立てる縁と降ろす縁を別々に見る** —
+            //    区間の条件だけだと引き返しで消え、解除だけだと 3 周目より前から鳴る。
+            if (st.lap > CurseLap || (st.lap == CurseLap && st.camera >= CurseCamera)) _curseOn = true;
+            if (st.curseReleased) _curseOn = false;
+            st.curseArmed = _curseOn;
+
             SoundBedGains t = Target(st);
 
             _cur.seal = SoundFade.Approach(_cur.seal, t.seal, SealRiseSec, SealFallSec, dt);
@@ -374,11 +481,27 @@ namespace FixedCamVr.Streaming
             //    「すぐ消えてから長く尾を引く」に聞こえる（`SoundFade` の注意書き）。劇伴は
             //    **題字が立っているあいだに渡し終える**必要があるので、尺を決めて進みを送り、
             //    振幅は聴感直線（`Perceptual`）に通す。
-            float scoreStep = dt / (t.score > _scoreT ? ScoreFadeInSec : ScoreFadeOutSec);
+            // ⚠⚠ **異世界の出入りだけ速い。** 演出が 4.0 秒しかないので、劇伴が 2.0 秒かけて
+            //    退くと窓の半分を食う（`OtherworldFadeSec`）。**戻りも同じ尺**にしてあるのは、
+            //    片道だけ速いと抜けた後に無音の谷ができるから。
+            //    ⚠ 判定に `_windT` を混ぜるのは、**風が引き切るまで**戻りも速くするため。
+            bool fastScore = st.otherworld || _windT > 0.001f;
+            float scoreStep = dt / (fastScore ? OtherworldFadeSec
+                                              : (t.score > _scoreT ? ScoreFadeInSec : ScoreFadeOutSec));
             _scoreT = t.score > _scoreT
                 ? Math.Min(t.score, _scoreT + scoreStep)
                 : Math.Max(t.score, _scoreT - scoreStep);
             _cur.score = SoundFade.Gain(_scoreT, SoundFade.Curve.Perceptual);
+
+            // --- 劇伴を置き換える 3 つ（0131）------------------------------------
+            // ⚠ **劇伴と同じ器**（時間で進みを送り、振幅は聴感直線）。半減期で寄せると形が揃わない。
+            _windT = Ramp(_windT, t.wind, dt / OtherworldFadeSec);
+            _curseT = Ramp(_curseT, t.beat, dt / CurseFadeSec);
+            _whiteT = Ramp(_whiteT, t.white, dt / CurseFadeSec);
+            _cur.wind = SoundFade.Gain(_windT, SoundFade.Curve.Perceptual);
+            // ⚠ **2 本は必ず同じ値**（1 つの背景を 2 枚で作っている）。
+            _cur.beat = _cur.horror2 = SoundFade.Gain(_curseT, SoundFade.Curve.Perceptual);
+            _cur.white = SoundFade.Gain(_whiteT, SoundFade.Curve.Perceptual);
 
             _spotDuck = SoundFade.Approach(_spotDuck, 0f, DuckFallSec, dt);
             _cur.duck = SoundFade.Approach(_cur.duck, Math.Max(t.duck, _spotDuck),
@@ -477,6 +600,33 @@ namespace FixedCamVr.Streaming
             // ⚠ 退く尺（`ScoreFadeOutSec`）は Tick が持つ。ここは 0 か 1 しか言わない。
             g.score = s.outroActive ? 0f : 1f;
 
+            // --- 別の場所（バックルームズ）の風 -----------------------------------
+            // 2026-09-03・`canon/LEDGER.md` 0131・ユーザー指定「バックルーム的な異世界が
+            // 表示されている間だけこれを流して、**その時流れてる環境音は切る**」。
+            // ⚠ 「環境音」は 0115 以降**劇伴のこと**（周ごとの環境音は退役済み）。
+            //    装置の唸りは切らない —— 装置は動き続けていて、映しているものが変わっただけ。
+            g.wind = s.otherworld ? 1f : 0f;
+
+            // --- 3 周目 B から、呪いが排除されるまでの 2 本 ------------------------
+            // 0131・ユーザー指定「3-B から、最後に呪いが排除されるまで、この 2 つを一緒に流す。
+            // 今ある環境音とはクロスフェードで入れ替える」。
+            // ⚠⚠ **一度入ったら、呪いが排除されるまで消えない**（`_curseOn` のラッチ・`Tick` が立てる）。
+            //    区間の条件だけで見ると、体験者が 3 周目 C から A へ**引き返した瞬間に曲が止まる**
+            //    （引き返しは実際に起きる —— `rules/show-design.md`「体験者は引き返す」）。
+            //    ユーザー指示は「3-B **から** 呪いが排除される**まで**」という**区間**なので、
+            //    始点は縁・終点は呪いが決める。
+            bool curseZone = s.curseArmed && !s.curseReleased;
+            g.beat = g.horror2 = curseZone ? 1f : 0f;
+
+            // --- 呪いが排除された後 ----------------------------------------------
+            // 0131・ユーザー指定「呪いが消された後は、ホワイトノイズを流す」。
+            // ⚠ 終わりまで鳴らす（終幕の劇伴の代わり）。落ちるのは体験が終わったときだけ。
+            g.white = s.curseReleased ? 1f : 0f;
+
+            // ⚠⚠ **入れ替えなので、置き換える側が鳴っているあいだ劇伴は 0。**
+            //    `Tick` が同じ尺で送るのでクロスフェードになる（片方だけ先に消えない）。
+            if (g.wind > 0f || g.beat > 0f || g.white > 0f) g.score = 0f;
+
             // --- 人形の笑い -------------------------------------------------------
             // 締めのカットが報告を待っているあいだだけ鳴る（**押すまでループ**）。
             // ⚠ 鳴っているあいだは劇伴を深く退かせる。**一撃の退き（`PushSpotDuck`）と違って
@@ -513,6 +663,8 @@ namespace FixedCamVr.Streaming
                 // 作業中に人形を笑わせない（引くのではなく黙らせる）。
                 g.dolls = 0f;
                 g.dollOne = 0f;
+                // 風・呪い・ホワイトノイズも黙らせる（0131）。
+                g.wind = g.beat = g.horror2 = g.white = 0f;
                 // 劇伴も黙らせる（`duck` でも消えるが、観測に「鳴っている」と出さない）。
                 g.score = 0f;
                 g.roomOpen = 1f;
@@ -523,6 +675,7 @@ namespace FixedCamVr.Streaming
             if (s.phase == ShowPhase.Finished && !s.outroActive)
             {
                 g.seal = g.room = g.device = g.noise = g.dolls = g.dollOne = 0f;
+                g.wind = g.beat = g.horror2 = g.white = 0f;
                 g.score = 0f;
                 g.duck = 1f;
             }

@@ -617,6 +617,16 @@ namespace FixedCamVr.Diagnostics
               $"{_eyes.WantedLevel:F2}/{(_eyes.CueRunning ? 1 : 0)}";
 
         /// <summary>
+        /// 目が開く音（<c>canon/LEDGER.md</c> 0131）。<c>&lt;一撃の累計&gt;/&lt;大きい目を鳴らせたか&gt;</c>。
+        ///
+        /// ⚠⚠ <b>音は録画に映らない。</b> 目が開いているのに一撃が 0 なら、
+        /// 音源を掴めていないか（大きい目の側は 0 で出る）、間引きが壊れている。
+        /// </summary>
+        private string EyeSfxState => _eyes == null
+            ? "-"
+            : $"{_eyes.EyeSfxCount}/{(_eyes.EyeBigSfxFired ? 1 : 0)}";
+
+        /// <summary>
         /// 装置が打っている時計（<c>canon/LEDGER.md</c> 0108）—
         /// <c>&lt;組めたか&gt;/&lt;刻んだ回数&gt;/&lt;不透明度&gt;</c>。
         ///
@@ -1183,6 +1193,18 @@ namespace FixedCamVr.Diagnostics
             //           走行ごとに違う。90° ごとの区画へ 1 つずつ入るので、
             //           **どの 2 つも 20° より近づかない**（近ければ引き直しが壊れている）。
             _sb.Append(" sndAz=").Append(_sound == null ? "-" : _sound.LaughBearingsText);
+            //   sndWind  = 別の場所（バックルームズ）の風（`canon/LEDGER.md` 0131）。
+            //   ⚠⚠ **異世界が映っているあいだだけ立ち、そのあいだ `sndScore` は 0**。
+            //      画は 4 秒の演出として出るが、**音が入れ替わったかは画に 1 ビットも出ない**。
+            //   sndCurse = 3 周目 B から呪いが排除されるまでの 2 本（**2 本とも同じ値**）。
+            //   sndWhite = 呪いが排除された後のホワイトノイズ。
+            //   ⚠ 3 つとも `sndAud`（敷く音の合計）にも乗るが、**どれが鳴っているかは分けないと出ない**。
+            _sb.Append(" sndWind=").Append(_sound == null ? "-" : _sound.WindGain.ToString("F2"));
+            _sb.Append(" sndCurse=").Append(_sound == null ? "-" : _sound.CurseGain.ToString("F2"));
+            _sb.Append(" sndWhite=").Append(_sound == null ? "-" : _sound.WhiteGain.ToString("F2"));
+            //   sndEye = 目が開く音（0131）。<一撃の累計>/<大きい目を鳴らせたか>。
+            //   ⚠ **目が開いた数（`eyes` の 2 つ目）と対で見る** — 開いているのに 0 なら鳴っていない。
+            _sb.Append(" sndEye=").Append(EyeSfxState);
             //   sndCall = 人形の呼びかけ（あーそーぼー）。<鳴らした回数>/<見かけの方角（度）>。
             //   ⚠ 方角は 0 が正面・180 が真後ろ。**145〜215 の外なら「後ろから」が成立していない。**
             //      -1 は頭の Transform を掴めずに 2D で鳴らしたということ。

@@ -27,6 +27,20 @@ namespace FixedCamVr.Streaming
         /// <summary><c>Resources</c> の中の置き場。</summary>
         public const string ResourceDir = "Sound/";
 
+        /// <summary>
+        /// <b>別の場所（異世界）の素材 id の頭</b>（2026-09-03・<c>canon/LEDGER.md</c> 0131）。
+        ///
+        /// いま画面を取っているカットの <c>cueId</c>（<see cref="TakeRunner.ActiveStepCueId"/>）が
+        /// これで始まっていれば「異世界が映っている」とみなし、風が鳴って劇伴が切れる。
+        ///
+        /// ⚠⚠ <b>ここは現場の著作（`show.json`）に踏み込んでいる唯一の場所。</b>
+        /// 卓で cue の名前を変えると<b>音が黙って止まる</b>（画は 1 画素も変わらない）。
+        /// だから <c>analyze-xp-log.py</c> が「異世界のカットが出たのに風が鳴っていない」を FAIL にする。
+        /// ⚠ 素材の側に「これは異世界だ」と書ける欄が無いので名前で判じている。
+        /// 欄を足すなら <c>rules/streaming.md</c> の契約・卓の編集面・端末キャッシュを対で直すこと。
+        /// </summary>
+        public const string OtherworldCuePrefix = "backrooms";
+
         /// <summary>隔離が開いているときの部屋の帯域（＝ 素通し）。</summary>
         public const float OpenCutoffHz = 22000f;
 
@@ -62,6 +76,23 @@ namespace FixedCamVr.Streaming
         //    （`canon/LEDGER.md` 0115）。`_room` は導入と終幕でだけ鳴る部屋のトーン。
         private BedVoice _seal = new BedVoice(), _room = new BedVoice(), _device = new BedVoice();
         private BedVoice _worn = new BedVoice(), _noise = new BedVoice();
+
+        /// <summary>
+        /// <b>別の場所（バックルームズ）の風</b>（2026-09-03・<c>canon/LEDGER.md</c> 0131）。
+        /// ⚠ <b>2D。</b> 異世界そのものの音なので全周にある（部屋のトーンと同じ理屈）。
+        /// </summary>
+        private BedVoice _wind = new BedVoice();
+
+        /// <summary>
+        /// <b>3 周目 B から呪いが排除されるまでの 2 本</b>（同上）。⚠ <b>2 本で 1 つの背景</b>で、
+        /// 音量は常に同じ値。⚠ 2D（劇伴の代わりなので定位しない）。
+        /// </summary>
+        private BedVoice _beat = new BedVoice(), _horror2 = new BedVoice();
+
+        /// <summary>
+        /// <b>呪いが排除された後のホワイトノイズ</b>（同上）。⚠ 2D。
+        /// </summary>
+        private BedVoice _white = new BedVoice();
 
         /// <summary>
         /// 人形の笑い。**報告を押すまでループ**（<c>canon/LEDGER.md</c> 0066）。
@@ -104,6 +135,11 @@ namespace FixedCamVr.Streaming
         /// （<c>canon/LEDGER.md</c> 0086）。**「3 周目」とは書かない** — 人形が立っていること自体を見る。
         /// </summary>
         private Cg.ShowCgLayer? _cg;
+
+        /// <summary>
+        /// いま画面を取っているカットを見るために読む（異世界が映っているか・0131）。
+        /// </summary>
+        private TakeRunner? _takes;
         private float _resolveAccum;
 
         // ---- 音を置く先（2026-09-03・`canon/LEDGER.md` 0130）----------------------
@@ -157,6 +193,18 @@ namespace FixedCamVr.Streaming
 
         /// <summary>笑う人形の増え具合 0..1（C に居るあいだ増える）。</summary>
         public float DollSwellNow => _beds.Swell01;
+
+        // ---- 劇伴を置き換える 3 つ（`canon/LEDGER.md` 0131）----------------------
+        // ⚠⚠ **どれも画にも一撃のログにも出ない。** 鳴っているかを外から知る唯一の手。
+
+        /// <summary>別の場所の風の音量（0..1）。異世界が映っているあいだだけ立つ。</summary>
+        public float WindGain { get; private set; }
+
+        /// <summary>呪いの 2 本の音量（0..1・<b>2 本とも同じ値</b>）。3 周目 B から排除まで。</summary>
+        public float CurseGain { get; private set; }
+
+        /// <summary>ホワイトノイズの音量（0..1）。呪いが排除された後。</summary>
+        public float WhiteGain { get; private set; }
 
         // ---- 3D の観測（`canon/LEDGER.md` 0130）----------------------------------
 
@@ -218,6 +266,11 @@ namespace FixedCamVr.Streaming
             _dollOne = MakeBed("DollOne", "bed_doll_one", spatial: true);
             _dollGrowA = MakeBed("DollGrowA", "bed_dolls_grow_a", spatial: true);
             _dollGrowB = MakeBed("DollGrowB", "bed_dolls_grow_b", spatial: true);
+            // ⚠ **劇伴を置き換える 3 つは 2D**（0131）。背景そのものなので出どころを作らない。
+            _wind = MakeBed("Wind", "bed_wind", spatial: false);
+            _beat = MakeBed("Beat", "bed_beat", spatial: false);
+            _horror2 = MakeBed("Horror2", "bed_horror2", spatial: false);
+            _white = MakeBed("White", "bed_white", spatial: false);
             SpatialAudio.PickLaughBearings(_laughBearings);
 
             // ⚠⚠ **ステレオのまま 3D に置かれていないかを起動時に数える。**
@@ -342,6 +395,7 @@ namespace FixedCamVr.Streaming
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
             if (_cg == null) _cg = FindObjectOfType<Cg.ShowCgLayer>();
+            if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
             // 音を置く先（`canon/LEDGER.md` 0130）。**掴めるまで 2 秒ごとに探し続ける** —
             // スクリーンは prefab instance なので、ここが起きる順番に依らない。
             if (_screen == null)
@@ -396,6 +450,18 @@ namespace FixedCamVr.Streaming
                 s.markWaiting = _timeline.IsWaitingForVisitorMark;
                 // 増えるのは C だけ（区間のカメラ。画面に映っているカメラではない）。
                 s.camera = _timeline.CurrentCamera;
+                // ⚠ **区間の周**を読む（進行の周ではない・`rules/show-design.md`「周回数は 2 つある」）。
+                //    呪いの 2 本は「体験者がいま居る区間」で決まる。
+                s.lap = _timeline.CurrentLap;
+            }
+            // ⚠ **呪いが排除されたか**（0129 / 0131）。画が戻るのと同じ 1 本を読む。
+            if (_run != null) s.curseReleased = _run.ScreenDecayReleased;
+            // ⚠ **異世界が映っているか。** 画面を取っているカットの素材 id で判じる（上の但し書き）。
+            if (_takes != null)
+            {
+                string cue = _takes.ActiveStepCueId;
+                s.otherworld = cue.Length > 0 && cue.StartsWith(OtherworldCuePrefix,
+                                                                System.StringComparison.Ordinal);
             }
             // ⚠ ここが立った縁 ＝ **体験者と人形が入れ替わった瞬間**（`canon/LEDGER.md` 0086）。
             //    「3 周目」と書かず、人形が立っていること自体を見る。
@@ -408,17 +474,25 @@ namespace FixedCamVr.Streaming
             return s;
         }
 
-        private void FireCue(SoundCue c)
+        /// <summary>
+        /// その節目の音源を 1 つ選ぶ（変種を持つものは順に回す）。
+        /// ⚠ <b>回す状態は 1 か所</b>（<see cref="FireCue"/> と <see cref="PlaySpot"/> が共有する）。
+        /// 2 か所に持つと、同じ音を別の経路から鳴らしたときに同じ波形が並ぶ。
+        /// </summary>
+        private string NextResource(SoundCue c)
         {
             string baseName = SoundCueLogic.ResourceName(c);
+            if (baseName.Length == 0) return "";
             int n = SoundCueLogic.VariantCount(c);
-            string res = baseName;
-            if (n > 1)
-            {
-                int v = _variant.TryGetValue(c, out int cur) ? cur : 0;
-                res = $"{baseName}_{v + 1}";
-                _variant[c] = (v + 1) % n;
-            }
+            if (n <= 1) return baseName;
+            int v = _variant.TryGetValue(c, out int cur) ? cur : 0;
+            _variant[c] = (v + 1) % n;
+            return $"{baseName}_{v + 1}";
+        }
+
+        private void FireCue(SoundCue c)
+        {
+            string res = NextResource(c);
             if (!_spot.TryGetValue(res, out var clip) || clip == null) return;
             // ⚠ **乱れだけ、起きた回数で少しずつ大きくなる**（`canon/LEDGER.md` 0055）。
             //   数えているのは GlitchFx 1 か所で、画と同じ進みを読む — 音が別に数えると
@@ -446,16 +520,18 @@ namespace FixedCamVr.Streaming
         /// 1 本使い回して <c>Stop()</c> してから鳴らすので、<b>1.6 秒の声は次の切替で打ち切られる</b>
         /// （2 周目 C の刻みは実測 0.8 秒）。<see cref="SfxPlayer"/> は 6 声あるので生き残る。
         /// </summary>
-        public bool PlaySpot(SoundCue c)
+        public bool PlaySpot(SoundCue c, Vector3? at = null,
+                             float pitchSpread = 0f, float gainSpreadDb = 0f)
         {
-            string res = SoundCueLogic.ResourceName(c);
+            string res = NextResource(c);
             if (res.Length == 0) return false;
-            if (SoundCueLogic.VariantCount(c) > 1) return false;   // 変種を持つものは FireCue の側
             if (!_spot.TryGetValue(res, out var clip) || clip == null) return false;
             // ⚠ **鳴らせたかを見る。** 声が 1 本も無い（発声器が起きていない）ときに
             //    true を返すと、呼んだ側の警告が出ないまま無音になる。
-            if (_sfx == null || !_sfx.Play(clip, gain: 1f, pitchSpread: 0f, gainSpreadDb: 0f,
-                                           at: PlaceFor(c)))
+            // ⚠ 置き場所は呼んだ側が指せる（目は「その目の方角」から鳴る・0131）。
+            //    指さなければ <see cref="PlaceFor"/> が決める。
+            if (_sfx == null || !_sfx.Play(clip, gain: 1f, pitchSpread: pitchSpread,
+                                           gainSpreadDb: gainSpreadDb, at: at ?? PlaceFor(c)))
                 return false;
             _beds.PushSpotDuck(SoundCueLogic.DuckFor(c));
             LastCue = c;
@@ -510,6 +586,14 @@ namespace FixedCamVr.Streaming
             sum += Set(_device, g.device * m);
             sum += Set(_worn, g.deviceWorn * m);
             sum += Set(_noise, g.noise * m);
+            // 劇伴を置き換える 3 つ（0131）。⚠ **`masterGain` は掛ける**（現場で全体を下げたときに
+            //    ここだけ残ると、下げた意味が無くなる）。劇伴と違って敷く音の器に載っているため。
+            WindGain = Set(_wind, g.wind * m);
+            CurseGain = Set(_beat, g.beat * m);
+            sum += WindGain + CurseGain;
+            sum += Set(_horror2, g.horror2 * m);
+            WhiteGain = Set(_white, g.white * m);
+            sum += WhiteGain;
             // ⚠ **鳴り始めは必ず輪の同じ所から。** 12 秒の輪を常時回しているので、
             //    頭出ししないと**体験者ごとに違う所から笑い出す**（走行の再現性が消える）。
             float dollsGain = g.dolls * m;

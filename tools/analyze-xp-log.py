@@ -1876,6 +1876,95 @@ def analyze(events, others, exp, warns=None):
                 else:
                     verdict("OK", f"笑いが 4 方向に散っている（最短 {min(gaps):.0f}°）")
 
+        # -- 劇伴を置き換える 3 つ（`canon/LEDGER.md` 0131）
+        #    ⚠⚠ **どれも画に 1 ビットも出ない。** 異世界の演出は画としては出るが、
+        #       そのとき音が入れ替わったかは録画からは分からない。
+        wind = timed_samples(events, "sndWind")
+        curse = timed_samples(events, "sndCurse")
+        white = timed_samples(events, "sndWhite")
+        score_s = timed_samples(events, "sndScore")
+
+        def _peak(rows):
+            vals = [v for _t, v in rows if v is not None]
+            return max(vals) if vals else None
+
+        # 異世界（バックルームズ）が映った回数は演出のカットから数える。
+        otherworld_steps = [e for e in events if e.get("ev") == "step"
+                            and str(e.get("src", "")) == "plate"
+                            and fnum(e, "played", 0.0) == 1.0]
+        if wind:
+            pk = _peak(wind)
+            w(f"  別の場所の風: 最大 {pk:.2f}")
+            if pk is not None and pk > 0.01:
+                verdict("OK", f"異世界が映っているあいだ風が鳴った（最大 {pk:.2f}）")
+                # ⚠ 「その時流れてる環境音は切る」— 風が立っているあいだ劇伴が 0 であること。
+                bad = [t for t, v in wind if (v or 0.0) > 0.30
+                       and any(abs(t2 - t) < 0.05 and (v2 or 0.0) > 0.30 for t2, v2 in score_s)]
+                if bad:
+                    verdict("FAIL", f"風と劇伴が同時に鳴っている（{len(bad)} 標本）— "
+                                    "0131 は「その時流れてる環境音は切る」")
+                else:
+                    verdict("OK", "風が鳴っているあいだ劇伴は切れていた")
+            elif otherworld_steps:
+                verdict("FAIL", "別の場所のカットが画に出たのに風が 1 度も鳴っていない — "
+                                "`ShowSoundDirector.OtherworldCuePrefix`（backrooms）と "
+                                "show.json の cue id が食い違っていないか見る")
+            else:
+                verdict("WARN", "別の場所の演出に到達していない走行（風は鳴らなくて正常）")
+        else:
+            verdict("WARN", "風の観測が無い（sndWind）— この計装より前のビルドのログ")
+
+        if curse:
+            pk = _peak(curse)
+            w(f"  呪いの 2 本: 最大 {pk:.2f}")
+            reached = any(fnum(e, "lap", 0.0) is not None
+                          and (fnum(e, "lap", 0.0) or 0) >= 3 for e in events if e.get("ev") == "seg")
+            if pk is not None and pk > 0.01:
+                verdict("OK", f"3 周目 B から呪いの 2 本が鳴った（最大 {pk:.2f}）")
+                bad = [t for t, v in curse if (v or 0.0) > 0.30
+                       and any(abs(t2 - t) < 0.05 and (v2 or 0.0) > 0.30 for t2, v2 in score_s)]
+                if bad:
+                    verdict("FAIL", f"呪いの 2 本と劇伴が同時に鳴っている（{len(bad)} 標本）— "
+                                    "0131 は「クロスフェードで入れ替える」")
+            elif reached:
+                verdict("FAIL", "3 周目まで進んだのに呪いの 2 本が 1 度も鳴っていない — "
+                                "`bed_beat` / `bed_horror2` を掴めているか（sndBuilt）を見る")
+            else:
+                verdict("WARN", "3 周目 B に到達していない走行（呪いの 2 本は鳴らなくて正常）")
+
+        if white:
+            pk = _peak(white)
+            w(f"  ホワイトノイズ: 最大 {pk:.2f}")
+            released = any("coarseRel" in e for e in events)
+            if pk is not None and pk > 0.01:
+                verdict("OK", f"呪いが排除された後にホワイトノイズが鳴った（最大 {pk:.2f}）")
+            elif released:
+                verdict("FAIL", "呪いが排除されたのにホワイトノイズが鳴っていない — "
+                                "`bed_white` を掴めているか（sndBuilt）を見る")
+
+        # -- 目が開く音（0131）
+        #    ⚠ **目が開いた数と対で見る。** 開いているのに 0 なら鳴っていない。
+        eye_sfx = effect_samples(events, "sndEye")
+        if eye_sfx:
+            last = str(eye_sfx[-1])
+            parts = last.split("/")
+            if len(parts) == 2 and parts[0].isdigit():
+                hits, big = int(parts[0]), parts[1]
+                eyes_open = max((int(str(v).split("/")[1]) for v in effect_samples(events, "eyes")
+                                 if len(str(v).split("/")) >= 2
+                                 and str(v).split("/")[1].isdigit()), default=0)
+                w(f"  目が開く音: {hits} 発（開いた目は最大 {eyes_open} 個 / 大きい目 {big}）")
+                if eyes_open <= 1:
+                    verdict("WARN", "目が 1 つも開いていない走行（音も鳴らなくて正常）")
+                elif hits == 0:
+                    verdict("FAIL", f"目が {eyes_open} 個開いたのに一撃が 1 発も鳴っていない — "
+                                    "`sfx_eye_1..6` を掴めているか（sndBuilt）を見る")
+                elif big == "0":
+                    verdict("FAIL", "大きい目の音が鳴っていない（sfx_eye_big）— "
+                                    "見開く瞬間に山が来る仕掛けが効いていない")
+                else:
+                    verdict("OK", f"目の一撃が {hits} 発・大きい目の音も鳴った")
+
         # -- **実際に音量を書いたか。** 指示がいくら正しくてもここが 0 なら無音
         if aud:
             vals = [fstr(a) for a in aud]

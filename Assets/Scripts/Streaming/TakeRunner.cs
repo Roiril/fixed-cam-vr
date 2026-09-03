@@ -122,6 +122,16 @@ namespace FixedCamVr.Streaming
         public string ActiveTakeId => _logic.IsActive ? TakeId(_logic.ActiveTakeIndex) : "";
 
         /// <summary>
+        /// <b>いま画面を取っているカットの素材 id</b>（<c>steps[].cueId</c>）。演出が走っていなければ空。
+        ///
+        /// 音が「いま何が映っているか」を知るための唯一の口（2026-09-03・<c>canon/LEDGER.md</c> 0131）。
+        /// ⚠ <b>飛ばしたカットでは書かない</b>（画面を取っていないので）。
+        /// </summary>
+        public string ActiveStepCueId => _logic.IsActive ? _activeStepCueId : "";
+
+        private string _activeStepCueId = "";
+
+        /// <summary>
         /// カット 1 つを解決した瞬間に上がる<b>観測専用</b>イベント。
         /// 引数は (演出 id, カット index, source, camera, 画面を取ったか, 理由トークン)。
         ///
@@ -603,6 +613,10 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
+            // いま画面を取っているカットの素材 id（音が読む・`canon/LEDGER.md` 0131）。
+            // ⚠ **飛ばす判定の後**（画面を取れなかったカットの id を立てない）。
+            _activeStepCueId = step.cueId ?? "";
+
             // このカットから劇伴を差し替える（`canon/LEDGER.md` 0119）。
             // ⚠ **演出の bgm（占有）とは別の口。** こちらはレーンそのものを書き換えるので、
             //   演出が終わっても区間を移っても鳴り続ける。
@@ -1007,6 +1021,7 @@ namespace FixedCamVr.Streaming
             bool handingOver = _chainPending;
             _chainPending = false;
             if (!_logic.IsActive && !handingOver) return;
+            _activeStepCueId = "";   // 音が「まだ異世界が映っている」と読まない（0131）
             EndTakeBgm();
             ReleaseStepState();
             if (director != null && director.InsertActive)
