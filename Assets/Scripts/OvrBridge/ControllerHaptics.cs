@@ -24,7 +24,7 @@ namespace FixedCamVr.OvrBridge
         /// <summary>
         /// <b>体験者の手（左）へ返す振動。</b> スタッフの手（右）とは別の時間軸で鳴る。
         ///
-        /// 体験者が持つのは記録ボタン（左 X）だけで、返すのは「受け取った」の 1 種類。
+        /// 体験者が持つのは記録ボタン（左のどれか）だけで、返すのは「受け取った」の 1 種類。
         /// <b>正誤は返さない</b> — 返すと答え合わせになり、装置が「何が異変か」を判定してしまう
         /// （この作品の恐怖は「装置は正直に映すだけ」の上に乗っている）。
         /// </summary>
@@ -45,7 +45,7 @@ namespace FixedCamVr.OvrBridge
         /// <summary>長押しカウント進行の進捗 [0,1]。0（or 1）で HoldTick 停止。</summary>
         public void SetHoldProgress(float progress01) => _logic.SetHoldProgress(progress01);
 
-        /// <summary>体験者の報告ボタン（左 X / 左 Y）の 2 秒長押しが通った。<b>返すのはこれだけ。</b></summary>
+        /// <summary>体験者の報告ボタン（左のどれか）の 1 秒長押しが通った。<b>返すのはこれだけ。</b></summary>
         public void LeftMark() => _left.Trigger(HapticSequenceLogic.Pattern.Action);
 
         /// <summary>

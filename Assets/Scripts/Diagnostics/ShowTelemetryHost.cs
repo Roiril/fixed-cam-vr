@@ -134,7 +134,7 @@ namespace FixedCamVr.Diagnostics
         private TitleStage _lastTitleStage = TitleStage.Off;
         private bool _titleSeen;
 
-        /// <summary>直近に出した記録ボタンの回数（体験者の左 X）。</summary>
+        /// <summary>直近に出した記録ボタンの回数（体験者の左のどれか）。</summary>
         private int _lastMarkCount;
         private int _lastCommsPulse;
         private string _lastTakeId = "";
@@ -756,7 +756,7 @@ namespace FixedCamVr.Diagnostics
                      $"cue={(_run != null && _run.EndingFired ? 1 : 0)}");
             }
 
-            // 体験者の記録ボタン（左 X）。**押した時刻が残ると、3 周目の反転に気づいたかが
+            // 体験者の記録ボタン（左のどれか）。**押した時刻が残ると、3 周目の反転に気づいたかが
             // 訊かずに分かる**（初見は消耗品なので、誘導せずに取れる観測の価値が高い）。
             // 区間を併記するのは「どこで押したか」が無いと後から読めないため。
             if (_show != null && _show.VisitorMarkCount != _lastMarkCount)

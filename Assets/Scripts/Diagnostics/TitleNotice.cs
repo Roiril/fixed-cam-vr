@@ -25,7 +25,7 @@ namespace FixedCamVr.Diagnostics
     ///
     /// ⚠⚠ <b>この面は言語の選択も兼ねる</b>（2026-09-03 ユーザー指定）。注意書きの下に
     /// 選べる 3 つ（日本語 / English / Français）を並べ、いま選んでいるものを括弧で囲む。
-    /// 巡らせるのは<b>体験者が持つ左コントローラの X／Y</b>で、入力を読むのは
+    /// 巡らせるのは<b>体験者が持つ左コントローラのどのボタンでもよい</b>（2026-09-03・0128）。入力を読むのは
     /// <c>OvrControllerBridge</c>（OVRInput を触れるのは Assembly-CSharp だけ）。
     /// この面が出ていない間は切り替わらない（<see cref="IsShowing"/> が門）。
     /// 選ばれた言語は <see cref="ShowLanguage.Current"/> が持ち、
@@ -130,8 +130,8 @@ namespace FixedCamVr.Diagnostics
         }
 
         /// <summary>
-        /// 切り替え方の 1 行。<b>キー名（X／Y）を出さない</b> — 被った体験者に手元は見えないので、
-        /// どちらを押しても同じにしてある（<c>canon/LEDGER.md</c> 0050）。
+        /// 切り替え方の 1 行。<b>キー名を出さない</b> — 被った体験者に手元は見えないので、
+        /// <b>どれを押しても同じ</b>にしてある（<c>canon/LEDGER.md</c> 0050 / 0128）。
         /// AIエージェントの連絡①bが「ボタンを長押ししてください」と言うのと同じ言い方に揃える。
         /// </summary>
         private static string HintOf(ShowLang lang) => lang switch

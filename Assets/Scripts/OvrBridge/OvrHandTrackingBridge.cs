@@ -73,7 +73,7 @@ namespace FixedCamVr.OvrBridge
             bool rv = TryReadHand(OVRPlugin.Hand.HandRight, ref _right, out Vector3 rp);
 
             // **左だけ、素手が取れなければコントローラの姿勢で代える**（2026-08-15 ユーザー指示）。
-            // 体験者は左コントローラを持って歩く（X / Y 長押しで異変を報告する・show-design.md）ので、
+            // 体験者は左コントローラを持って歩く（どれかのボタンの長押しで異変を報告する・show-design.md）ので、
             // 握った手はハンドトラッキングされず、**映像の中の人形の左腕が体側で止まっていた**。
             //
             // ⚠ **右は代えない。** 右を持つのはスタッフで、体験者ではない。代えると
