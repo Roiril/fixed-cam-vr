@@ -133,6 +133,11 @@ Shader "FixedCamVr/ScreenComposite"
         //   dip-to-black（切替演出）と信号ロスト（配信断のフェイルソフト＝砂嵐）を post FX の後段にかける。
         _SwitchDim("Switch Dip Dim", Range(0, 1)) = 0
         _SignalLost("Signal Lost (static)", Range(0, 1)) = 0
+        // 砂の下に**画が 1 枚も無いか**（1 = 無い）。SignalLostFx が唯一の writer。
+        // 砂は掛け算で乗るので、下に画が無いと真っ黒に掛かって何も見えなくなる。
+        // カメラが 1 台も繋がっていない現場はこの砂だけで体験が流れる（canon/LEDGER.md 0025）ので、
+        // そのときだけ地を持ち上げる。⚠ **既定は 1**（書き忘れたら明るい側へ倒す）。
+        _SignalFloor("Signal Lost: nothing under the sand", Range(0, 1)) = 1
         // 演出としての「映像の乱れ」。障害表示（_SignalLost）とは所有者も意味も別。
         //   _Glitch     = 強さ (0-1)。GlitchFx が唯一の writer。
         //   _GlitchSeed = 時間シード (秒)。_Time に依らないので Editor プレビューで再現できる。
@@ -298,6 +303,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _OsdOpacity;
                 float _SwitchDim;
                 float _SignalLost;
+                float _SignalFloor;
                 float _Glitch;
                 float _GlitchSeed;
                 // 同じく別系統。CameraFeelFx（撮像の質と残像）と ShowCgLayer（_ActorFocus）が駆動。
@@ -581,6 +587,42 @@ Shader "FixedCamVr/ScreenComposite"
             {
                 return lerp(half3(0.52, 0.115, 0.038), half3(1.0, 0.84, 0.62), saturate(e));
             }
+
+            /// 信号ロストの砂（`canon/LEDGER.md` 0131）。
+            ///
+            /// ⚠⚠ **置き換えではなく掛け算**なので、`SAND_LO` と対になる上限は
+            /// `2 - SAND_LO` として式の中で導く。**平均を 1.0 に保つのがこの演出の芯**で、
+            /// 片方だけ手で書くと平均がずれ、直したはずの「映像との段差」がそのまま戻る。
+            ///   0.18 ⇒ 粒ごとの振れは 0.18〜1.82 倍（約 10 倍）。砂には見えるが平均は動かない
+            #define SAND_LO 0.18
+
+            /// 砂の地（`PhosphorColor(0.55)` に掛ける）。**足す。`max` で切らない。**
+            /// `max` で切ると、下限より暗い所が全部ひとつの値へ潰れて**映像の暗部が丸ごと消える**
+            /// （実測: 暗い部屋のプレートで面がまるごと平らな茶色になった。2026-09-03 に絵で見つけた）。
+            ///
+            /// 2 つあるのは、**砂の下に画があるかどうかで要る明るさが違う**から。
+            ///   LIVE = 画がある（最後のフレームが残っている）。ほとんど足さない ＝ 段差が出ない
+            ///   DEAD = 画が 1 枚も無い（0025 の現場）。この砂だけで体験が流れるので消えない明るさ
+            /// linear で約 0.008 と 0.084（sRGB で約 21 と 82）。切り替えるのは `_SignalFloor`。
+            #define SAND_FLOOR_LIVE 0.015
+            #define SAND_FLOOR_DEAD 0.15
+
+            /// 受け側で乗る粒（平均 0 の**足し算**）。掛け算だけだと、暗い所は
+            /// 「暗いものに 10 倍の幅を掛けても暗いまま」なので**映像がそのまま読める**
+            /// （2026-09-03 に絵で見つけた。掛け算だけの版は砂ではなく「粒の乗った映像」だった）。
+            /// 実物の受信機の雑音も信号の大きさに依らない加算なので、**暗い所ほど強く出る**のが正しい。
+            /// ⚠ 平均 0 なので、足しても画の明るさは動かない（黒で切られるぶんだけ僅かに上がる）。
+            #define SAND_ADD 0.030
+
+            /// 砂の色。**明るさ 1.0 の暖色**（`PhosphorColor(0.62)` を輝度で割ったもの）。
+            /// 掛けても輝度が動かないので、上の「平均 0」を壊さずに色だけ付く。
+            #define SAND_TINT half3(1.346, 0.928, 0.690)
+
+            /// 粒の格子と刻み。**格子で切らないと 1 画素ごとに散り、頭が動くたびに沸く。**
+            /// 横をわずかに長く取る（走査は水平に帯域が延びるので、実物の砂も縦より横が広い）。
+            #define SAND_CELL_X 210.0
+            #define SAND_CELL_Y 150.0
+            #define SAND_HZ     30.0
 
             /// 粗さの出どころは 2 つあり、**粗い方だけ**を掛ける（2 つの格子が干渉すると縞が出る）。
             ///   _Pixelate     著作した値（post 12 項目。卓の FS_POST と同式・硬い格子のまま）
@@ -1458,8 +1500,14 @@ Shader "FixedCamVr/ScreenComposite"
                 }
 
                 // --- 信号ロスト砂嵐（FS_POST 一致規約の対象外・別系統）---
-                // 手続き砂嵐へクロスフェード + 減光。強=1.0（配信断）/ 弱（トラッキングロスト）は低い値。
+                // 強=1.0（配信断）/ 弱（トラッキングロスト）は低い値。
                 // 演出の乱れより後に置く: 実際に信号が切れたら、演出が何をしていても障害表示が勝つ。
+                //
+                // ⚠⚠ **砂は置き換えではなく掛け算**（`canon/LEDGER.md` 0131）。
+                //   平均 1.0 の乗数として乗せるので、局所の明るさと色はそのまま残り、形だけが潰れる。
+                //   置き換えていたころは無彩の linear 0.34（sRGB 147）へ跳んでいて、
+                //   暗い部屋の映像（linear 0.049 / sRGB 52）から **6.9 倍明るく**なっていた。
+                //   ユーザー: 「前に移っている映像との差が激しく目がちかちかするし、集中が途切れてしまう」。
                 //
                 // ⚠⚠ **管の形（下のブロック）より前に置く。** 砂嵐は管の中で生まれるものなので、
                 //   後ろに置くと**角の丸みも縁の暗さも上書きした四角い砂の板**になる
@@ -1472,10 +1520,38 @@ Shader "FixedCamVr/ScreenComposite"
                 float sl = saturate(_SignalLost) * saturate(_IntroLive);
                 if (sl > 0.001)
                 {
-                    float st = Hash21(screenUv * 320.0 + floor(_Time.y * 60.0)); // ~60Hz でざわつく砂嵐
-                    half3 stat = half3(st, st, st);
-                    col = lerp(col, stat, sl);
-                    col *= 1.0 - 0.30 * sl; // 減光
+                    // 粒は**格子で切る**。連続の `Hash21` は 1 画素ごとに散るので、
+                    // 頭が動くたびに面がちりちり沸く（HMD ではこれがいちばん目に障る）。
+                    // 横をわずかに長く取る — 走査は水平に帯域が延びるので、実物の砂も縦より横が広い。
+                    // 時間は 30Hz で刻む（表示 90Hz で 3 フレーム保つ。60Hz は表示と拍が合わず明滅した）。
+                    // ⚠ 時間は必ず**巻き戻して**使う。`_Time.y` は起動から増え続けるので、
+                    //   展示で 1 日開けっ放しにすると値が大きくなりすぎ、格子の整数（0〜210）が
+                    //   float の刻みに飲まれて**粒が数倍に太る**。0〜1023 に畳めば見た目は変わらない。
+                    float tq = fmod(floor(_Time.y * SAND_HZ), 1024.0);
+                    float tr = fmod(_Time.y, 1024.0);
+                    float2 cell = floor(screenUv * float2(SAND_CELL_X, SAND_CELL_Y));
+                    float fine = Hash21(cell + tq * 1.7);
+                    // 大きな斑がゆっくり流れる。一様に沸かせると「砂」ではなく「板」に見える。
+                    float roll = ValueNoise21(screenUv * float2(6.0, 4.0)
+                                              + float2(tr * 0.7, tr * 0.23));
+                    float n = saturate(fine * 0.80 + roll * 0.20);
+                    // 足し算の粒は別に引く。同じ抽選を使い回すと明暗が揃って粒の種類が減る。
+                    float add = Hash21(cell + tq * 3.1 + 19.0);
+
+                    // 砂の地。燐光の色から取る ＝ 砂も管が光って出しているもの。
+                    // ⚠ **足す。`max` で切らない**（切ると映像の暗部が丸ごと平らになる）。
+                    // ⚠ 量は「砂の下に画があるか」で変える — 画があるときはほとんど足さない。
+                    float floorK = lerp(SAND_FLOOR_LIVE, SAND_FLOOR_DEAD, saturate(_SignalFloor));
+                    half3 bed = col + PhosphorColor(0.55) * floorK;
+                    // 乗数の平均は 1.0。粒ごとの振れ幅は約 10 倍あるので砂には見えるが、
+                    // 局所の平均は動かないので、前の映像から段差なく砂へ移る。
+                    // ⚠ **掛け算だけでは足りない**（暗い所に映像がそのまま残る）ので、
+                    //   平均 0 の足し算を重ねる。効くのは暗い所ほど強い。
+                    half3 sand = bed * (SAND_LO + n * (2.0 - SAND_LO * 2.0))
+                               + SAND_TINT * ((add - 0.5) * (2.0 * SAND_ADD));
+
+                    col = lerp(col, sand, sl);
+                    col *= 1.0 - 0.10 * sl; // わずかに沈む（「映像が来ていない」を残す）
                 }
 
                 // --- OSD: 装置が打っている時計（`canon/LEDGER.md` 0108）---

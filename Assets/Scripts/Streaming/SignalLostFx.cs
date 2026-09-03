@@ -21,6 +21,7 @@ namespace FixedCamVr.Streaming
     public sealed class SignalLostFx : MonoBehaviour
     {
         private static readonly int SignalLostId = Shader.PropertyToID("_SignalLost");
+        private static readonly int SignalFloorId = Shader.PropertyToID("_SignalFloor");
 
         [Header("References")]
         [Tooltip("アクティブカメラの最終フレーム時刻を読む CameraStreamRegistry。")]
@@ -48,6 +49,7 @@ namespace FixedCamVr.Streaming
 
         private Material? _material;
         private float _level;
+        private float _floor;
         private float _trackingHoldRemaining;
         private bool _trackingReported;
 
@@ -80,6 +82,7 @@ namespace FixedCamVr.Streaming
         private void OnEnable()
         {
             _level = 0f;
+            _floor = 0f;
             _lastActiveStream = null; // 次の Update でアクティブ参照を再シードさせる
             SetLevel(0f);
         }
@@ -87,6 +90,7 @@ namespace FixedCamVr.Streaming
         private void OnDisable()
         {
             _level = 0f;
+            _floor = 0f;
             SetLevel(0f);
         }
 
@@ -118,6 +122,9 @@ namespace FixedCamVr.Streaming
 
             // 配信断判定（suspend 中は表示を止めているだけなので数えない = トラッキング系で扱う）。
             bool signalStale = false;
+            // 砂の下に画が 1 枚も無いか。**砂は掛け算で乗る**（ScreenComposite の `_SignalFloor`）ので、
+            // 下が真っ黒だと何も見えない。一度も受信していないカメラのときだけ地を持ち上げる。
+            bool noPicture = false;
             if (active != null && !active.IsSuspended)
             {
                 float last = active.LastFrameRealtime;
@@ -127,16 +134,26 @@ namespace FixedCamVr.Streaming
                 }
                 // 一度もフレームを受信していないカメラ（黒プレースホルダ表示中）は last==0 で上の判定が
                 // 発火せず素の黒が露出する。アクティブ化から lostThresholdSec 超過で砂嵐に覆う。
-                else if (Time.realtimeSinceStartup - _activeSinceRealtime > lostThresholdSec) signalStale = true;
+                else if (Time.realtimeSinceStartup - _activeSinceRealtime > lostThresholdSec)
+                {
+                    signalStale = true;
+                    noPicture = true;
+                }
             }
 
             // 目標レベル: 配信断 = 強（1.0） / トラッキングロスト = 弱 / 通常 = 0。
             float target = signalStale ? 1f : (trackingLost ? weakLevel : 0f);
             float rate = rampSec > 0f ? dt / rampSec : 1f;
             _level = Mathf.MoveTowards(_level, target, rate);
+            _floor = Mathf.MoveTowards(_floor, noPicture ? 1f : 0f, rate);
             SetLevel(_level);
         }
 
-        private void SetLevel(float v) => _material?.SetFloat(SignalLostId, Mathf.Clamp01(v));
+        private void SetLevel(float v)
+        {
+            if (_material == null) return;
+            _material.SetFloat(SignalLostId, Mathf.Clamp01(v));
+            _material.SetFloat(SignalFloorId, Mathf.Clamp01(_floor));
+        }
     }
 }

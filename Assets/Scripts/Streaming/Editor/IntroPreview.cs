@@ -117,6 +117,8 @@ namespace FixedCamVr.Streaming.EditorTools
         private static readonly int GlitchId = Shader.PropertyToID("_Glitch");
         private static readonly int GlitchSeedId = Shader.PropertyToID("_GlitchSeed");
         private static readonly int SignalLostId = Shader.PropertyToID("_SignalLost");
+        private static readonly int SignalFloorId = Shader.PropertyToID("_SignalFloor");
+        private static readonly int LiveTexId = Shader.PropertyToID("_LiveTex");
 
         // public なのは CLI（`unity.ps1 menu intro`）が -executeMethod で直接呼ぶため。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Intro", priority = 238)]
@@ -319,6 +321,8 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly Transform _head;
             private readonly Camera _cam;
             private readonly Material _screenMat;
+            /// <summary>本編の映像として敷いてあるプレート（<see cref="Shot.noSignal"/> で外す）。</summary>
+            private readonly Texture? _liveTex;
             private readonly IntroVeil _veil;
             private readonly ContainmentShell _shell;
             private readonly float _halfM;
@@ -359,6 +363,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 _outRt = outRt; _readback = readback; _outW = outW; _outH = outH;
                 _plateLabel = plateLabel; _screenMatLabel = screenMatLabel; _showLabel = showLabel;
                 _timing = timing; _glitchOnSwap = glitchOnSwap;
+                _liveTex = screenMat.GetTexture(LiveTexId);
             }
 
             public static Stage Create(string outDir)
@@ -580,6 +585,13 @@ namespace FixedCamVr.Streaming.EditorTools
                 _screenMat.SetFloat(GlitchSeedId, shot.index * 3.1f + shot.p * 7.3f);
                 // 配信断（＝ カメラが繋がっていない）。実機では SignalLostFx が書く。
                 _screenMat.SetFloat(SignalLostId, shot.noSignal ? 1f : 0f);
+                // 砂は掛け算で乗るので、下に画があるかで地の持ち上げ方が変わる。
+                // この枚は「カメラが繋がっていない」＝ 砂の下は 1 枚も無い。
+                _screenMat.SetFloat(SignalFloorId, shot.noSignal ? 1f : 0f);
+                // ⚠⚠ **映像そのものを外す。** 「カメラが繋がっていない」は画が 1 枚も来ていない
+                //   状態なので、プレートを敷いたままだと砂の下に部屋が残り、
+                //   `canon/LEDGER.md` 0025 の現場（砂だけで体験が流れる）を 1 枚も映さない。
+                _screenMat.SetTexture(LiveTexId, shot.noSignal ? Texture2D.blackTexture : _liveTex);
 
                 // 覆い・殻は自分で子 GameObject を作る（レイヤは継がない）。撮る直前に揃える。
                 SetLayerRecursive(_root.transform, IntroLayer);
@@ -785,6 +797,7 @@ namespace FixedCamVr.Streaming.EditorTools
             mat.SetFloat("_CgStrength", 0f);
             mat.SetFloat("_SwitchDim", 0f);
             mat.SetFloat("_SignalLost", 0f);
+            mat.SetFloat("_SignalFloor", 0f);
 
             CameraFeelFx.Settings feel = CameraFeelFx.Settings.Resolve(null);
             var feelLogic = new CameraFeelLogic

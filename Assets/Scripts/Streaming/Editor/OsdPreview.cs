@@ -167,6 +167,9 @@ namespace FixedCamVr.Streaming.EditorTools
         private static void ResetState(Material m)
         {
             m.SetFloat("_SignalLost", 0f);
+            // この 8 枚はプレート（＝ 最後のフレーム）の上に描くので、砂の下に画がある。
+            // ⚠ 材質の既定は 1（画が無い側）なので、明示的に 0 へ戻さないと地が持ち上がる。
+            m.SetFloat("_SignalFloor", 0f);
             m.SetFloat("_Glitch", 0f);
             m.SetFloat("_CoarseBlocks", 0f);
             m.SetFloat("_Mono", 0f);
