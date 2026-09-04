@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: aa629b9d-978a-41e5-b9f1-d22062359145
-  modified: 2026-09-04T15:33:48.368Z
+  modified: 2026-09-04T15:58:29.145Z
 ---
 
 # 上流が無いと、Android が展示網の自動接続を殺す（2026-09-05 実測）
@@ -59,6 +59,20 @@ adb -s <serial> shell "settings put global captive_portal_detection_enabled 0"
 ⚠ **予防は「これから」にしか効かない。** 既に書き込まれた恒久無効は消えない
 （実測: フラグを入れてから再起動しても戻らなかった）。**順番は「手で選び直す → 予防」ではなく
 「予防を入れておく → 一度手で選び直す」**で、以後は付かない。
+
+### ⭐ ここまで実証済み（2026-09-05・Quest 2 台）
+
+`tools/wifi-rejoin.ps1 -Verify` を通して確かめた。**推定ではない。**
+
+1. **`cmd wifi connect-network <ssid> wpa2 <pass>` で恒久無効が解ける**
+   （＝ 人が端末で選び直すのと同じ効果。ヘルプに出ない隠れコマンドだが動く）
+2. **静的 IP は保たれる。** この経路で繋いでも `.31` / `.32` のまま
+   （⚠ 「設定が作り直されて DHCP に戻る」と予想したが**外れた**）
+3. **予防を入れた状態なら、再起動しても戻ってくる。** 2 台とも `★ 戻りました`。
+   直後の `dumpsys wifi` で `NETWORK_SELECTION_DISABLED_NO_INTERNET` の記述が **0 件**
+
+⚠ **パスワードは人が打つ。** スクリプトは `Read-Host -AsSecureString` で受けるので、
+画面にも履歴にも残らない。**シュビーは代われない**（何度頼まれても同じ）。
 
 ⭐ **根っこから消すなら、Aterm の WAN を上流のある回線へ挿す。** 検証が通れば
 この判定自体が起きないので、Quest もスマホも全部まとめて解決する。会場に挿せる線があるなら
