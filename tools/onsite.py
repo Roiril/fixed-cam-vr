@@ -667,8 +667,19 @@ def cmd_watch(args):
     print(f"監視を始めます（{args.sec} 秒ごと / 自動復旧 {'あり' if not args.no_fix else 'なし'}）")
     print(f"記録: {logp}")
 
-    def say(msg):
-        line = f"{datetime.now():%H:%M:%S}  {msg}"
+    said: dict[str, float] = {}
+
+    def say(msg, key=None, repeat_after=300.0):
+        """記録する。**同じことを言い続けない。**
+
+        ⚠ 2 日間 無人で回すので、同じ行を 20 秒ごとに書くと本物の変化が埋もれる。
+        同じ key は `repeat_after` 秒に 1 回だけ。`key=None` なら毎回書く（状態の変わり目）。
+        """
+        if key is not None:
+            if time.time() - said.get(key, 0) < repeat_after:
+                return
+            said[key] = time.time()
+        line = f"{datetime.now():%m-%d %H:%M:%S}  {msg}"
         print(line, flush=True)
         with io.open(logp, "a", encoding="utf-8", newline="\n") as f:
             f.write(line + "\n")
@@ -682,8 +693,12 @@ def cmd_watch(args):
                 alive = got > 0
                 snap["cameras"].append({"id": cid, "host": host, "bytes": got, "alive": alive})
                 if alive:
+                    # 戻ったことは必ず 1 行残す（変わり目が無いと、復旧が効いたのか
+                    # たまたま直ったのかが後から分からない）。
+                    if said.pop(f"dead:{cid}", None):
+                        say(f"カメラ{cid}（{host}）が戻りました（{got // 1024}KB）")
                     continue
-                say(f"カメラ{cid}（{host}）からバイトが出ていません")
+                say(f"カメラ{cid}（{host}）からバイトが出ていません", key=f"dead:{cid}")
                 if args.no_fix:
                     continue
                 # ⚠ 直し過ぎない。落ちている時にだけ・1 台につき 90 秒に 1 回まで。
@@ -697,7 +712,7 @@ def cmd_watch(args):
             #    まとめて無音になる。落ちていたら立て直す（serve は冪等で、
             #    既に開いていれば何もしない ＝ 2 つ立つ事故は起きない）。
             if not listening_pids(8099):
-                say("⚠ 卓が落ちています（実機側には何も出ません）。立て直します")
+                say("⚠ 卓が落ちています（実機側には何も出ません）。立て直します", key="desk")
                 cmd_serve(argparse.Namespace())
                 time.sleep(2)
 
@@ -705,7 +720,10 @@ def cmd_watch(args):
             age = hb.get("ageSec")
             snap["quest"] = {"ageSec": age}
             if age is not None and age > 30:
-                say(f"Quest の heartbeat が {age:.0f} 秒 途切れています")
+                say(f"Quest の heartbeat が {age:.0f} 秒 途切れています", key="hb")
+            elif age is not None and "hb" in said:
+                said.pop("hb", None)
+                say("Quest の heartbeat が戻りました")   # 戻りは毎回書く（変わり目なので）
             with io.open(os.path.join(LOG_DIR, "watch-latest.json"), "w",
                          encoding="utf-8", newline="\n") as f:
                 json.dump(snap, f, ensure_ascii=False)
