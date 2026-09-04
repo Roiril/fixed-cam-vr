@@ -36,6 +36,8 @@ namespace FixedCamVr.Diagnostics
     ///
     /// ⚠ <b>追従は本編のスクリーンと同じ法則</b>（<see cref="YawFollowLogic"/>・ヨーだけ）。
     /// 新しい追従を書かない — 体験の中で追従の癖が 2 種類になると、どちらも「板」に見える。
+    /// ⚠⚠ ただし<b>出る瞬間はいつも頭の正面</b>（畳まれているあいだ <c>LateUpdate</c> が種を捨てる）。
+    /// 追従を持ち越すと、面は<b>前に消えた場所から回り込んでくる</b>。
     ///
     /// ⚠ <b>読まなくても体験は進む。</b> 既読の操作は作らない（体験者が持つ唯一の入力 ＝ 左のボタンは
     /// 記録専用で、兼用すると押した時刻の意味が濁る）。
@@ -755,7 +757,22 @@ namespace FixedCamVr.Diagnostics
 
         private void LateUpdate()
         {
-            if (!IsBuilt || !_logic.Active || head == null || _root == null) return;
+            if (!IsBuilt || head == null || _root == null) return;
+
+            // ⚠⚠ **引っ込んでいるあいだに種を捨てる**（2026-09-04・ユーザー報告
+            //    「エージェントのスクリーンが出るとき、毎回、違うところから回ってくる」）。
+            //    追従はこの下の `Step` でしか進まないので、面が畳まれているあいだ
+            //    `_yawFollow` は**前に消えた場所のヨー**で凍る。捨てないと、次の連絡は
+            //    そこから現在の頭へ向かって回り込んでくる ＝ **出るたびに違う方角から来る**
+            //    （体験者は区間を歩いて向きを変えるので、差は 180° まで開く）。
+            //    種が無ければ下の `Reseat` が**出る瞬間の頭**を種にするので、面は必ず正面へ開く。
+            // ⚠ `TitleScreen` は周回リセットで同じことをしている（`_yawSeeded = false`）。
+            //    あちらはランに 1 度しか出ないので縁がそこしかないだけで、規律は同じ。
+            if (!_logic.Active)
+            {
+                _yawSeeded = false;
+                return;
+            }
 
             float dt = Time.unscaledDeltaTime;
             float headYaw = head.eulerAngles.y;
