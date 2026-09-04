@@ -1,0 +1,322 @@
+<!-- ⚠ charset は自分で名乗る。卓（SimpleHTTPRequestHandler）は .html に charset を付けずに
+     配るので、これが無いと会場のスマホで全文が文字化けする（実際に化けた）。 -->
+<meta charset="utf-8">
+<title>廻リ視 設営手順</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
+<!--
+  会場での設営手順（電源を入れるところから）。会期 2026-09-06・07。
+
+  ⚠ この面は**外の回線が無くても開ける**ように作る。
+     フォントは Google Fonts を引くが、届かなければ端末のゴシックへ落ちる。
+     画像・外部スクリプトは 1 つも使わない。
+     卓が立っていれば http://192.168.10.10:8099/runbook.html で読める。
+
+  デザインは卓（style.css）と同じ言語 — 純黒 / クリーム #fffaf0 / アクセント #ffdead。
+  暗い会場で読むものなので単一テーマに倒し、色は全部ここで明示する。
+-->
+<style>
+  :root{
+    --ink:#fffaf0; --ground:#050505; --raise:#0e0e0e;
+    --accent:#ffdead; --ok:#5ad19a; --warn:#ffae5e; --stop:#ff6b5e;
+    --line:rgba(255,250,240,.16); --line2:rgba(255,250,240,.30);
+    --mute:rgba(255,250,240,.56); --sub:rgba(255,250,240,.78);
+    --sans:"Noto Sans JP",-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif;
+    --mono:"Roboto Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font:16px/1.72 var(--sans); font-weight:400;
+    padding:0 18px calc(64px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:44rem; margin:0 auto}
+
+  /* ---- 表紙 ---- */
+  header{padding:34px 0 22px; border-bottom:1px solid var(--line2)}
+  .eyebrow{
+    font:500 11px/1 var(--mono); letter-spacing:.22em; text-transform:uppercase;
+    color:var(--accent);
+  }
+  h1{
+    font-size:30px; line-height:1.25; margin:12px 0 10px; font-weight:700;
+    letter-spacing:.04em; text-wrap:balance;
+  }
+  .lede{color:var(--sub); margin:0; font-size:15px}
+
+  /* ---- これだけは ---- */
+  .stops{margin:24px 0 0; display:grid; gap:1px; background:var(--line); border:1px solid var(--line)}
+  .stop{background:var(--raise); padding:14px 16px}
+  .stop b{display:block; color:var(--stop); font-size:14px; letter-spacing:.02em}
+  .stop span{display:block; color:var(--sub); font-size:14px; margin-top:3px}
+
+  /* ---- 工程 ---- */
+  h2{
+    margin:52px 0 0; padding-top:18px; border-top:1px solid var(--line2);
+    font-size:20px; font-weight:700; letter-spacing:.04em; text-wrap:balance;
+    display:flex; align-items:baseline; gap:12px;
+  }
+  h2 .n{
+    font:500 12px/1 var(--mono); color:var(--accent); letter-spacing:.1em;
+    border:1px solid var(--line2); padding:5px 7px; flex:none;
+  }
+  .when{color:var(--mute); font-size:13px; margin:6px 0 0}
+
+  ol.steps{list-style:none; margin:16px 0 0; padding:0; display:grid; gap:14px}
+  ol.steps>li{
+    padding-left:30px; position:relative; font-size:15px;
+  }
+  ol.steps>li::before{
+    content:counter(s); counter-increment:s;
+    position:absolute; left:0; top:.15em;
+    font:500 12px/1 var(--mono); color:var(--mute);
+  }
+  ol.steps{counter-reset:s}
+  ol.steps>li>b{color:var(--ink); font-weight:700}
+
+  p{margin:14px 0 0; font-size:15px}
+  .note{color:var(--mute); font-size:14px; margin:6px 0 0; padding-left:30px}
+  ol.steps>li .note{padding-left:0}
+
+  code{font:400 .88em/1.5 var(--mono); color:var(--accent); word-break:break-all}
+  pre{
+    margin:10px 0 0; padding:12px 14px; background:#000; border:1px solid var(--line);
+    overflow-x:auto; font:400 13px/1.6 var(--mono); color:var(--ink);
+  }
+  pre code{color:var(--ink)}
+
+  /* ---- 注意の段 ---- */
+  .flag{
+    margin:14px 0 0; padding:12px 14px; border-left:3px solid var(--warn);
+    background:var(--raise); font-size:14px; color:var(--sub);
+  }
+  .flag.stopc{border-left-color:var(--stop)}
+  .flag.okc{border-left-color:var(--ok)}
+  .flag b{color:var(--ink)}
+
+  /* ---- 住所表 ---- */
+  .addr{width:100%; border-collapse:collapse; margin:16px 0 0; font-size:14px}
+  .addr th,.addr td{
+    text-align:left; padding:8px 10px; border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  .addr th{color:var(--mute); font-weight:500; font-size:12px; letter-spacing:.08em}
+  .addr td:first-child{font-family:var(--mono); color:var(--accent); white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+
+  /* ---- 症状表 ---- */
+  .fix{display:grid; gap:1px; background:var(--line); border:1px solid var(--line); margin:16px 0 0}
+  .fix>div{background:var(--raise); padding:12px 14px; font-size:14px}
+  .fix .sym{color:var(--ink); font-weight:700}
+  .fix .act{color:var(--sub); margin-top:3px}
+
+  footer{margin:56px 0 0; padding-top:18px; border-top:1px solid var(--line2);
+    color:var(--mute); font-size:13px}
+  a{color:var(--accent)}
+  @media (max-width:600px){
+    body{font-size:15px; padding:0 14px 64px}
+    h1{font-size:25px}
+    h2{font-size:18px}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">2026-09-06 / 07　展示当日</div>
+  <h1>廻リ視 — 電源を入れるところからの設営</h1>
+  <p class="lede">
+    会場は研究室ではなく、Wi-Fi も別。<b>ルータを持って行くので、機材どうしのつながりは会場が変わっても同じ</b>ように戻る。
+    会場側の Wi-Fi は体験に一切使わない。
+  </p>
+</header>
+
+<div class="stops">
+  <div class="stop">
+    <b>会場の Wi-Fi に、配信スマホと Quest を繋がない</b>
+    <span>繋いだ瞬間にその端末が別のネットワークへ移り、映像が止まる。しかも画面には何も出ない。使うのは Aterm が出す <code>kougaku-lab-exp-a</code> だけ。</span>
+  </div>
+  <div class="stop">
+    <b>位置合わせは 2 台とも取り直す</b>
+    <span>部屋が変わるので、端末に残っている登録は使えない。登録は機ごとの物理的な事実なので、片方からコピーもできない。</span>
+  </div>
+  <div class="stop">
+    <b>当日はビルドしない</b>
+    <span>APK は 9/4 22:52 のものが 2 台に入っている。当日焼くと端末の設定キャッシュが捨てられ、取り直しから始まることになる。</span>
+  </div>
+</div>
+
+<!-- ================= 0 ================= -->
+<h2><span class="n">0</span>持って行く</h2>
+<p class="when">出る前に。ひとつでも欠けると当日どうにもならないものだけ。</p>
+
+<ol class="steps">
+  <li><b>Aterm（ルータ）本体と AC アダプタ</b>、LAN ケーブル 1 本
+    <div class="note">これが体験のネットワークそのもの。会場の設備は使わない。</div></li>
+  <li><b>PC</b> と AC。電源タップ（口数は機材ぶん）</li>
+  <li><b>Quest 2 台</b>と充電ケーブル。<b>配信スマホ 3 台</b>と充電ケーブル、固定具</li>
+  <li><b>USB ケーブル</b>（配信スマホを PC へ繋ぐ用）
+    <div class="note">工程 3 の無線 adb を開けるのに要る。これが無いと、当日カメラが落ちても遠隔で直せない。</div></li>
+  <li><b>白衣</b>（体験者ぶん ＋ スタンドイン 1 着）、人形、養生テープ</li>
+</ol>
+
+<div class="flag okc">
+  <b>目の写真は要らなくなった。</b>9/4 に取りやめたので、人形の目線で写真を撮る仕事は消えている。
+</div>
+
+<!-- ================= 1 ================= -->
+<h2><span class="n">1</span>電源を入れる</h2>
+<p class="when">順番が決まっている。飛ばすと次が確かめられない。</p>
+
+<ol class="steps">
+  <li><b>Aterm を先に立てる。</b>背面スイッチが <code>RT</code> であることを見てから電源を入れる
+    <div class="note">BR（ブリッジ）だと DHCP が動かず、誰も IP を取れない。</div></li>
+  <li><b>2.4GHz と 5GHz のランプが両方点くまで待つ。</b>点いてから他の機材を繋ぐ</li>
+  <li><b>PC の電源を入れて、サインインする</b>
+    <div class="note">サインインすると卓（オペレータ卓サーバ）が自動で立つ。<b>サインイン画面で止めない</b> — 自動ログオンは切ってあるので、そこで止まると卓は立たない。</div></li>
+  <li><b>LAN ケーブルで PC と Aterm を繋ぐ。</b>挿すのは <code>LAN</code> ポート（<code>WAN</code> ではない）
+    <div class="note">PC 側の設定は何も要らない。ルータが有線の MAC を見て <code>192.168.10.10</code> を渡す。</div></li>
+  <li><b>配信スマホ 3 台の電源を入れ、配信アプリを起動する。</b>画面に出る A / B / C が割当と合っているか見る</li>
+  <li><b>Quest 2 台の電源を入れる</b></li>
+</ol>
+
+<div class="flag">
+  <b>Aterm はインターネットに繋がっていない。</b>WAN 側には何も挿さなくてよい。体験は全部この中で閉じている。
+  外の回線が要るのはシュビー（Claude）に頼むときだけで、そちらは会場の Wi-Fi かスマホのテザリングを PC が別に掴む。
+  <b>外が無くても体験は動く。</b>
+</div>
+
+<table class="addr">
+  <tr><th>住所</th><th>機材</th><th>決め方</th></tr>
+  <tr><td>192.168.10.1</td><td>Aterm（ルータ）</td><td>本体</td></tr>
+  <tr><td>192.168.10.10</td><td>PC（卓）</td><td>ルータが有線 MAC を見て渡す</td></tr>
+  <tr><td>.21 / .22 / .23</td><td>カメラ A / B / C</td><td>端末側で静的</td></tr>
+  <tr><td>.31 / .32</td><td>Quest 2 台</td><td>端末側で静的</td></tr>
+</table>
+
+<!-- ================= 2 ================= -->
+<h2><span class="n">2</span>つながりを確かめる</h2>
+<p class="when">PC で 1 行。ここが通らないうちは先へ進まない。</p>
+
+<pre><code>py -3.11 tools/onsite.py check</code></pre>
+
+<p>結果は行ごとに「何が」「どう直すか」まで出る。スマホから見るなら、卓が立った後に当日パネルを開いて「点検する」を押す。</p>
+
+<pre><code>http://192.168.10.10:8099/onsite.html</code></pre>
+
+<div class="flag">
+  <b>ここで必ず見るもの。</b>PC が <code>192.168.10.10</code> を持っているか。カメラ 3 台から実際にバイトが流れたか。
+  端末が名乗る A / B / C が割当と合っているか。<b>名乗りがずれていると、演出が別のカメラに出る。</b>
+</div>
+
+<!-- ================= 3 ================= -->
+<h2><span class="n">3</span>無線 adb を開ける</h2>
+<p class="when">配信スマホを USB で PC に挿して 1 回。設営のたびに要る。</p>
+
+<pre><code>py -3.11 tools/onsite.py adb-open</code></pre>
+
+<div class="flag stopc">
+  <b>端末を再起動すると閉じる。</b>閉じていると、当日そのカメラが黒くなっても遠隔で一手も打てない
+  （画面を起こすのもアプリを起こし直すのも、この経路を通る）。<b>いまは 3 台とも閉じている。</b>
+</div>
+
+<!-- ================= 4 ================= -->
+<h2><span class="n">4</span>据え付けと較正</h2>
+<p class="when">カメラを置いて、向きを決めて、色を止める。</p>
+
+<ol class="steps">
+  <li><b>カメラ A / B / C を据え付ける</b>（レンズは超広角のまま。較正が 104.3° を前提にしている）</li>
+  <li><b>較正を取り直す。</b>とくに <b>カメラ C</b>
+    <div class="note">いま C は、端末の傾きと保存してある較正が <b>51° ずれている</b>。前に動かして取り直していない。このままだと CG 人形が C の映像で盛大にずれる。</div></li>
+  <li><b>照明を本番の状態にしてから、3 台とも端末の 🔓 露出/AF ロックを押す</b>
+    <div class="note">押さないと露出が自動で動き、素材を撮った時と本番で色が変わる。照明を変えたら押し直す。</div></li>
+  <li><b>Quest 2 台で位置合わせを取る</b>（右トリガー 2 秒長押しから登録）
+    <div class="note">部屋が変わったので、両方とも必須。片方で取った登録は、もう片方では使えない。</div></li>
+</ol>
+
+<!-- ================= 5 ================= -->
+<h2><span class="n">5</span>当日の素材を撮る</h2>
+<p class="when">人形を置いた後。10 分・2 人。</p>
+
+<ol class="steps">
+  <li><b>スタンドインに白衣を着せる</b>（体験者にも被せる前に着せる。「調査員の制服です」で通す）</li>
+  <li><b>人形視点を 5 本撮る。</b>手順は撮る人が持つスマホの「🎬 撮影」が 1 ショットずつ誘導する
+    <div class="note">高さ 40cm 固定。毎カット C の立ち位置へ正対する。録画ボタンを押した直後から本番なので、いちばん見せたい状態から撮り始める。</div></li>
+</ol>
+
+<div class="flag">
+  <b>撮る前に配信スマホの充電ケーブルを抜いて冷ます。</b>熱を持った端末で撮った素材は、本番の画と粗さが揃わない。
+  配信を止めるだけでは下がらない（実測で 8 分に 0.5℃）。
+</div>
+
+<!-- ================= 6 ================= -->
+<h2><span class="n">6</span>開場前の点検</h2>
+<p class="when">Quest を本番と同じ台数だけ起動してから。</p>
+
+<pre><code>py -3.11 tools/onsite.py check --deep</code></pre>
+
+<p><code>--deep</code> は 20 秒かけて実機の報告を集める。これを付けないと、<b>音・コントローラの行が出ない</b>。どちらも画にも録画にも出ないので、ここでしか分からない。</p>
+
+<div class="flag stopc">
+  <b>NG が 0 になるまで開場しない。</b>warn は読んで判断してよい。
+</div>
+
+<!-- ================= 7 ================= -->
+<h2><span class="n">7</span>会期中</h2>
+<p class="when">走らせっぱなしにする。</p>
+
+<pre><code>py -3.11 tools/onsite.py watch</code></pre>
+
+<p>20 秒ごとに全カメラから実際にバイトを引き、出ていなければ自分で起こし直す。卓が落ちていれば立て直す。記録は <code>logs/onsite/</code> に残る。</p>
+
+<p><b>体験者 1 人につき人がやることは 5 つ。</b>これ以上は増やさない。</p>
+<ol class="steps">
+  <li>白衣を着せる</li>
+  <li>左コントローラを渡して、口で説明する</li>
+  <li>ヘッドセットを被せる</li>
+  <li><b>右 A</b> — タイトルを閉じて始める</li>
+  <li>終わったら <b>右グリップ 2 秒長押し</b> — 次の体験者へ</li>
+</ol>
+
+<div class="flag okc">
+  <b>④⑤ は卓の ▶ でも代われるが、現地の手だけで回る。</b>卓が落ちても体験は止まらない。
+</div>
+
+<!-- ================= 8 ================= -->
+<h2><span class="n">8</span>困ったとき</h2>
+<p class="when">症状から原因へ飛ばない。まず点検で「どの台か」を決める。</p>
+
+<div class="fix">
+  <div><div class="sym">1 台だけ黒い / 砂嵐</div>
+       <div class="act">当日パネルの「配信端末を起こし直す」。画面が消えた端末とアプリが落ちた端末に効く。</div></div>
+  <div><div class="sym">3 台が同時に、周期的に途切れる</div>
+       <div class="act">Quest の設定パネルが生きている。当日パネルの「Quest の設定パネルを閉じる」。</div></div>
+  <div><div class="sym">卓では映るのに Quest だけ映らない</div>
+       <div class="act">端末の設定キャッシュが古い。<code>onsite.py fix cache</code> のあと Quest を再起動。</div></div>
+  <div><div class="sym">急に全台が繋がらない</div>
+       <div class="act">別の AP へ移っていないか。<b>Wi-Fi を入れ直さない</b> — 入れ直すと保存済みの別のネットワークが選ばれ、事態が悪化する。</div></div>
+  <div><div class="sym">映像が数十秒おきに全部止まる</div>
+       <div class="act">5GHz のチャネルが DFS 帯に落ちている。Aterm の設定で <code>W52</code> に固定する。</div></div>
+  <div><div class="sym">卓（PC の画面）が落ちた</div>
+       <div class="act"><code>py -3.11 tools/onsite.py serve</code>。⚠ 2 つ立てない。2 つあると互いの設定を巻き戻し合う。</div></div>
+  <div><div class="sym">シュビーに繋がらない</div>
+       <div class="act">会場の回線の問題。<b>体験には関係ない。</b>当日パネルで回す。</div></div>
+</div>
+
+<!-- ================= 9 ================= -->
+<h2><span class="n">9</span>撤収</h2>
+<ol class="steps">
+  <li>Quest とスマホの録画・ログを PC へ回収する</li>
+  <li>Aterm の電源を落とす前に、卓を止めなくてよい（勝手に落ちる）</li>
+  <li><b>次の日も同じ会場なら、機材の設定はそのままでよい。</b>電源を落として、翌朝は工程 1 から
+    <div class="note">⚠ 端末を再起動すると無線 adb は閉じるので、工程 3 をもう一度。</div></li>
+</ol>
+
+<footer>
+  この面は卓が配っているので、外の回線が無くても
+  <code>http://192.168.10.10:8099/runbook.html</code> で開く。<br>
+  詳しい根拠は <code>docs/onsite-checklist.md</code> と <code>docs/onsite/network-setup.md</code>。
+</footer>
+
+</div>

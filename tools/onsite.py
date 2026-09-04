@@ -221,8 +221,18 @@ def check_desk(rows: Rows, show: dict):
     if "✓" in line or "同じ" in line:
         rows.add(sec, "ok", "APK の焼き込み", line.replace("✓", "").strip())
     else:
-        rows.add(sec, "ng", "APK の焼き込み", line or (err.strip()[:120] or "判定できません"),
-                 "卓の 📦 ビルド用エクスポート、または py -3.11 tools/export-show-build.py")
+        # ⚠ **rev の差だけで赤くしない。** 卓は beacon を受け取るたびに show.json を書き戻すので、
+        #   誰も操作していなくても rev は勝手に進む。それを NG にすると常時点灯になり、
+        #   **本物の NG が読み飛ばされる**。著作が変わったかは timeline.rev で見る。
+        pairs = re.findall(r"rev=(\d+) timeline\.rev=(\d+)", line)
+        if len(pairs) == 2 and pairs[0][1] == pairs[1][1]:
+            rows.add(sec, "warn", "APK の焼き込み",
+                     f"著作は同じ（timeline.rev={pairs[0][1]}）。rev だけ "
+                     f"{pairs[0][0]} → {pairs[1][0]} に進んでいます",
+                     "卓に一度でも繋ぐ機なら実害なし。卓なしで起動する機があるなら焼き込みを更新する")
+        else:
+            rows.add(sec, "ng", "APK の焼き込み", line or (err.strip()[:120] or "判定できません"),
+                     "卓の 📦 ビルド用エクスポート、または py -3.11 tools/export-show-build.py")
 
     ips = local_ipv4()
     if DESK_IP in ips:
@@ -236,6 +246,23 @@ def check_desk(rows: Rows, show: dict):
     rows.add(sec, "ok" if rc == 0 else "warn", "ルータ",
              f"{ROUTER_IP} 応答あり" if rc == 0 else f"{ROUTER_IP} 無応答",
              "Aterm の電源と RT モードを見る（BR だと DHCP が動かない）")
+
+    # ⚠⚠ **体験に外の回線は要らない。要るのはシュビーだけ。** ここを分けて出さないと、
+    #    会場で「ネットが無い ＝ 展示が動かない」と誤読する。
+    #    ⚠ Aterm は上流を持たないので `192.168.10.1` は「宛先ネットワークに到達できません」を返す。
+    #      Windows はそれを見て既定経路から降格させ、外向きは Wi-Fi 側へ流す（実測）。
+    #      有線の方がメトリックは低い（25 < 35）ので、**メトリックだけ見ると逆に読める**。
+    rc, _, _ = run(["ping", "-n", "1", "-w", "1500", "8.8.8.8"], timeout=12)
+    if rc == 0:
+        _, out, _ = run(["powershell", "-NoProfile", "-Command",
+                         "(Find-NetRoute -RemoteIPAddress 8.8.8.8 | "
+                         "Select-Object -First 1).InterfaceAlias"], timeout=25)
+        via = (out.strip().splitlines() or [""])[0]
+        rows.add(sec, "ok", "外の回線（シュビー用）", f"通っています{f'（{via} 経由）' if via else ''}")
+    else:
+        rows.add(sec, "warn", "外の回線（シュビー用）",
+                 "外へ出られません — **体験は動きます**が、シュビーには頼れません",
+                 "当日パネル（onsite.html）で回す。要るならスマホのテザリングを PC へ")
     return state
 
 
