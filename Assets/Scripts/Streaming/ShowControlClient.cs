@@ -1359,9 +1359,21 @@ namespace FixedCamVr.Streaming
 
         private string ConfigCachePath => Path.Combine(Application.persistentDataPath, configCacheFileName);
 
+        /// <summary>
+        /// 焼き込みが持つ「卓の URL → <c>sa://</c> URL」の 1 対。<c>export_build.bake</c> が出す。
+        /// ⚠ <c>JsonUtility</c> は Dictionary を読めないので配列で受ける。
+        /// </summary>
+        [Serializable] private class AssetMapEntry
+        {
+            public string from = "";
+            public string to = "";
+        }
+
         [Serializable] private class ShowState
         {
             public int rev;
+            /// <summary>焼き込みだけが持つ素材の対応表（ライブ / キャッシュには無い）。</summary>
+            public AssetMapEntry[] assetMap = Array.Empty<AssetMapEntry>();
             public CameraDef[] cameras = Array.Empty<CameraDef>();
             public CueDef[] cues = Array.Empty<CueDef>();
             public PostParams? post;
@@ -2539,6 +2551,8 @@ namespace FixedCamVr.Streaming
         {
             if (_rev >= 0) return;
             ConfigOrigin = "baked";
+            // 素材の対応表を先に取る（この後に走る端末キャッシュの適用が使う）。
+            BuildBakedAssetMap(state.assetMap);
             _cameras = state.cameras ?? Array.Empty<CameraDef>();
             foreach (var c in _cameras)
             {
@@ -2916,6 +2930,104 @@ namespace FixedCamVr.Streaming
 
         // ---- 端末ローカル設定キャッシュ（PC 不在起動でも Web 設定を参照するため）----
 
+        // ---- 端末キャッシュの素材を焼き込みへ読み替える（2026-09-05）----
+        //
+        // ⚠⚠ 設定の優先順位は **焼き込み < 端末キャッシュ < ライブ**。キャッシュ（<see cref="SaveCache"/>）は
+        //    卓から受け取った URL をそのまま保存するので、**卓に一度でも繋いだ機は「卓を指す相対 URL」を
+        //    持ったまま再起動する**。その機を卓なしで起動すると素材が 1 つも解決できない
+        //    （実機 Quest α のキャッシュを実測: 素材 URL 39 本すべてが `/captures/...` の相対で
+        //    `sa://` は 0 本だった）。動画は `AbortCurrentCue` で畳まれてライブ映像へ戻り、
+        //    静止画とマスクは出ないまま体験が進む。
+        //
+        // ⚠ 読み替えるのは**キャッシュ経路だけ**。ライブが来れば `_cues` ごと上書きされるので、
+        //   卓が生きているときは卓の最新素材が出る（会期中の差し替え運用は保たれる）。
+        //   焼き込みに無い素材（最後の焼き込み後に卓で足したもの）は触らない ＝ 従来どおりの挙動。
+
+        private readonly Dictionary<string, string> _bakedAssetMap = new();
+
+        private void BuildBakedAssetMap(AssetMapEntry[]? entries)
+        {
+            _bakedAssetMap.Clear();
+            if (entries == null) return;
+            foreach (AssetMapEntry e in entries)
+            {
+                if (e == null || string.IsNullOrEmpty(e.from) || string.IsNullOrEmpty(e.to)) continue;
+                _bakedAssetMap[e.from] = e.to;
+            }
+        }
+
+        // 1 本を読み替える。焼き込みに無ければ false（呼び手は元の値のまま置く）。
+        private bool TryRemap(string url, out string baked)
+        {
+            baked = url;
+            if (string.IsNullOrEmpty(url)) return false;
+            if (!_bakedAssetMap.TryGetValue(url, out var found)) return false;
+            if (string.IsNullOrEmpty(found) || found == url) return false;
+            baked = found;
+            return true;
+        }
+
+        private void RemapCachedAssetsToBaked()
+        {
+            if (_bakedAssetMap.Count == 0)
+            {
+                // 焼き込みが無い / 対応表を持たない古い APK。**黙って旧挙動へ落ちるのがいちばん危ない**ので必ず言う。
+                Debug.LogWarning("[ShowControl] 焼き込みの素材対応表が無いので、端末キャッシュの素材 URL は"
+                                 + "卓を指したままです（卓が落ちると素材が出ません）。APK を焼き直してください");
+                return;
+            }
+
+            int n = 0;
+            foreach (CueDef c in _cues)
+            {
+                if (c == null) continue;
+                if (TryRemap(c.maskUrl, out string m)) { c.maskUrl = m; n++; }
+                if (TryRemap(c.sourceUrl, out string s)) { c.sourceUrl = s; n++; }
+            }
+            foreach (ShowBgmTrackDef t in _bgmTracks)
+            {
+                if (t == null) continue;
+                if (TryRemap(t.url, out string u)) { t.url = u; n++; }
+            }
+            // v3 の演出はカット自身が素材 URL を持つ。ここが抜けると「演出の映像だけ出ない」。
+            if (_timeline != null && _timeline.segments != null)
+            {
+                foreach (ShowTimelineSegmentDef seg in _timeline.segments)
+                {
+                    if (seg?.takes == null) continue;
+                    foreach (ShowTakeDef take in seg.takes)
+                    {
+                        if (take?.steps == null) continue;
+                        foreach (ShowStepDef step in take.steps)
+                        {
+                            if (step == null) continue;
+                            if (TryRemap(step.assetUrl, out string a)) { step.assetUrl = a; n++; }
+                        }
+                    }
+                }
+            }
+            // 目の写真。実バイトは EyeJackPhotoStore が別に持つが、URL も揃えておく。
+            if (_eyeJackPhotos.Length > 0)
+            {
+                var photos = new string[_eyeJackPhotos.Length];
+                bool changed = false;
+                for (int i = 0; i < _eyeJackPhotos.Length; i++)
+                {
+                    photos[i] = TryRemap(_eyeJackPhotos[i], out string p) ? p : _eyeJackPhotos[i];
+                    if (photos[i] != _eyeJackPhotos[i]) { changed = true; n++; }
+                }
+                if (changed) SetEyeJackPhotos(photos);
+            }
+
+            if (n > 0)
+            {
+                // 走行レポートの「実機が使った設定」に出るので、現地で 1 行で判る。
+                ConfigOrigin = "cache+baked";
+                Debug.Log($"[ShowControl] 端末キャッシュの素材 {n} 本を焼き込み（sa://）へ読み替えた"
+                          + "（卓が落ちても素材が出る）");
+            }
+        }
+
         private void SaveCache()
         {
             try
@@ -3034,6 +3146,10 @@ namespace FixedCamVr.Streaming
                 // カメラ切替タイミングを復元（0=未指定でコード既定。ApplySwitchTiming は InitializeAsync が呼ぶ）。
                 _switchDwellSec = cfg.switchDwellSec;
                 _switchCooldownSec = cfg.switchCooldownSec;
+                // ⚠⚠ **卓の URL を焼き込みへ読み替える**（2026-09-05）。ここが無いと、一度でも
+                //    卓に繋いだ機は「卓を指す URL」を持ったまま再起動し、卓が落ちていると
+                //    素材が 1 つも解決できない（実機のキャッシュを実測: 素材 URL 39 本すべてが相対）。
+                RemapCachedAssetsToBaked();
                 Debug.Log($"[ShowControl] 端末キャッシュ設定を適用: {ConfigCachePath} " +
                           $"(cameras={_cameras.Length}, layout={( _layout != null ? "yes" : "no")}, " +
                           $"cues={_cues.Length}, schedule={( _schedule != null ? _schedule.entries.Length : 0)}, " +

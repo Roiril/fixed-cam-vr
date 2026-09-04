@@ -131,6 +131,10 @@ def export_build(show, repo_root, dirs, out_dir=None):
     used_names = set()     # 本エクスポートで割当済みのファイル名
     src_to_dest = {}       # 実ファイル abs → dest 名（同一ファイルは 1 回だけコピー）
     unresolved = []        # ローカル URL なのに実ファイルが無いもの（APK に入らない = 現地で無映像）
+    # 卓の URL → sa:// URL の対応表。**端末キャッシュを焼き込みへ読み替えるために実機が使う。**
+    # ⚠ `copied` では代用できない。同じ実ファイルを複数の URL が指すとき、2 本目以降は
+    #   `src_to_dest` で早期 return するので `copied` に積まれない（対応表からは漏れる）。
+    url_map = {}
 
     def bake(url):
         fp = resolve_local_asset(url, dirs)
@@ -142,7 +146,9 @@ def export_build(show, repo_root, dirs, out_dir=None):
                 unresolved.append(url)
             return url  # 外部 URL / 空 / 解決不能はそのまま
         if fp in src_to_dest:
-            return 'sa://assets/' + quote(src_to_dest[fp])
+            out = 'sa://assets/' + quote(src_to_dest[fp])
+            url_map[url] = out
+            return out
         base = os.path.basename(fp)
         stem, ext = os.path.splitext(base)
         name, i = base, 1
@@ -154,7 +160,9 @@ def export_build(show, repo_root, dirs, out_dir=None):
         dest = os.path.join(assets_dir, name)
         shutil.copy2(fp, dest)
         copied.append({'from': url, 'to': 'assets/' + name, 'size': os.path.getsize(dest)})
-        return 'sa://assets/' + quote(name)
+        out = 'sa://assets/' + quote(name)
+        url_map[url] = out
+        return out
 
     for cue in show.get('cues', []):
         if cue.get('maskUrl'):
@@ -198,6 +206,17 @@ def export_build(show, repo_root, dirs, out_dir=None):
         if seg.get('hasBgm') and b.get('action') == 'play' and b.get('trackId'):
             ref_tracks.add(b['trackId'])
     missing_tracks = sorted(t for t in ref_tracks if t not in track_ids)
+
+    # 卓の URL → sa:// URL の対応表を焼き込みへ載せる（2026-09-05）。
+    #
+    # ⚠⚠ **端末キャッシュは焼き込みより優先される**（`ShowControlClient` の 焼き込み < キャッシュ <
+    #   ライブ）。キャッシュには卓の相対 URL がそのまま入るので、一度でも卓に繋いだ機は
+    #   「卓を指す URL」を持ったまま再起動する。卓が落ちていると素材が 1 つも解決できない。
+    #   実機（Quest α）のキャッシュを実測したところ、素材 URL 39 本すべてが相対だった。
+    #   実機はこの表で読み替える（`ShowControlClient.RemapCachedAssetsToBaked`）。
+    #
+    # ⚠ JsonUtility は Dictionary を読めないので配列で持つ。
+    show['assetMap'] = [{'from': k, 'to': v} for k, v in sorted(url_map.items())]
 
     show_path = os.path.join(out_dir, 'show.json')
     # UTF-8 / LF 固定（Unity JsonUtility が読む契約）。
