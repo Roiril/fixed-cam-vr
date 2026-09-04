@@ -334,6 +334,21 @@ def pick(devs, state, require_app=True, require_reg=False):
 
 # ---------------------------------------------------------------- 表示
 
+# ⚠⚠ **2 台の呼び名**（2026-09-04 ユーザー宣言）。ユーザーはこの名前で機を指す。
+#    **serial から名前は導けないので、ここが唯一の対応表**（`.claude/memory/quest_fleet_two_devices.md` と対）。
+#    α = **自動走行を回す機**（ユーザーが被って見る側）／ β = もう 1 台。
+#    ⚠ 機を入れ替えたらここを直す。直さないと、人と機械が別の機を指したまま会話が進む。
+NAMES = {
+    "2G0YC1ZF890864": "a",   # クエストα
+    "2G0YC1ZF7S06BW": "b",   # クエストβ
+}
+
+
+def name_of(serial):
+    """serial → 'a' / 'b'（未登録は '?'）。人へ出すときは「クエストα」「クエストβ」。"""
+    return NAMES.get(serial, "?")
+
+
 def fmt_row(d, state):
     soc = "%.1f" % d["soc_c"] if d.get("soc_c") is not None else "-"
     bt = "%.1f" % d["batt_c"] if d.get("batt_c") is not None else "-"
@@ -356,8 +371,9 @@ def fmt_row(d, state):
     wf = d.get("wifi", {})
     wifi = "%s %dM %d" % (wf.get("band", "-"), wf.get("mbps", 0), wf.get("rssi", 0))
     mark = "*" if state.get("lastUsed") == d["serial"] else " "
-    return "%s %-15s %-6s %6s %-5s %-8s %-14s %-19s %-9s %s" % (
-        mark, d["serial"], d["wake"], soc, lvs, tname, wifi, apps, regs, used)
+    return "%s %-4s %-15s %-6s %6s %-5s %-8s %-14s %-19s %-9s %s" % (
+        mark, name_of(d["serial"]), d["serial"], d["wake"], soc, lvs, tname,
+        wifi, apps, regs, used)
 
 
 # APK より新しいソースがあるかを見るディレクトリ。**Assets/ 全部は走査しない**
@@ -423,13 +439,14 @@ def apk_freshness(apk=DEFAULT_APK):
 def cmd_list(args):
     state = load_state()
     devs = collect()
-    print("  %-15s %-6s %6s %-5s %-8s %-14s %-19s %-9s %s" % (
-        "serial", "wake", "soc C", "level", "thermal", "wifi", "apk updated",
-        "course", "disk"))
-    print("-" * 112)
+    print("  %-4s %-15s %-6s %6s %-5s %-8s %-14s %-19s %-9s %s" % (
+        "name", "serial", "wake", "soc C", "level", "thermal", "wifi",
+        "apk updated", "course", "disk"))
+    print("-" * 117)
     for d in devs:
         if not d.get("_online"):
-            print("  %-15s %s" % (d["serial"], d.get("state", "offline")))
+            print("  %-4s %-15s %s" % (
+                name_of(d["serial"]), d["serial"], d.get("state", "offline")))
             continue
         print(fmt_row(d, state))
     print()
@@ -437,8 +454,9 @@ def cmd_list(args):
     if runs:
         print("runs so far:")
         for s, r in runs.items():
-            print("  %-15s %d run(s), %d s total, last %s" % (
-                s, r.get("count", 0), int(r.get("sec", 0)), r.get("lastAtIso", "-")))
+            print("  %-4s %-15s %d run(s), %d s total, last %s" % (
+                name_of(s), s, r.get("count", 0), int(r.get("sec", 0)),
+                r.get("lastAtIso", "-")))
     line, stale = apk_freshness()
     print()
     print(("WARN: " if stale else "") + line)
@@ -446,7 +464,7 @@ def cmd_list(args):
     for w in warns:
         print("WARN: " + w)
     if best:
-        print("\nnext -> %s  (%s)" % (best["serial"], reason))
+        print("\nnext -> %s %s  (%s)" % (name_of(best["serial"]), best["serial"], reason))
     return 0
 
 
