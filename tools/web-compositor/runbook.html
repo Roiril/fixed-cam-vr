@@ -235,6 +235,30 @@
 
 <pre><code>py -3.11 tools/onsite.py adb-open</code></pre>
 
+<p><b>同じ USB のうちに、配信アプリを v0.14.0 へ上げる。</b>入っているのは v0.13.0 で、
+差分は 3 台とも「撮影パネル」の修正だけ。</p>
+
+<pre><code>cd C:\Users\kouga\Projects\Mobile\fixed-cam-streamer
+adb -s &lt;serial&gt; install -r --no-streaming app\build\outputs\apk\debug\app-debug.apk</code></pre>
+
+<div class="flag">
+  <b>なぜ上げるか。</b>v0.13.0 は<b>撮影パネルを開くと減光の計時が止まり、全輝度のまま
+  鏡合わせの復号を回し続ける</b>（実測で 20 分以上・その 1 台だけ熱が 1 段高くなった）。
+  熱段が上がると画が粗くなる。<br>
+  v0.14.0 は<b>パネルの中に窓が出る</b> — 13.0 のパネルは全面不透明で、
+  <b>開いている間は何が録れているか見えない</b>。人形視点を撮るのはこのパネルなので、
+  ここが見えるかどうかで撮り直しの回数が変わる。横持ちでも窓が潰れないように直してある。<br>
+  ⚠ <code>/info</code> と <code>/health</code> のフィールドは 1 つも変えていないので、
+  配信・発見・テレメトリの経路は壊れない（差分を確認済み）。
+</div>
+
+<div class="flag">
+  <b>入れたら 1 台ずつ確かめてから次へ。</b><code>/info</code> の <code>appVersion</code> が
+  0.14.0 になったか、<b>cameraId とレンズが変わっていないか</b>、映像が戻ったか。
+  <code>py -3.11 tools/onsite.py check</code> が 3 つとも見る。<br>
+  ⚠ インストールはアプリを落とす。<b>画面を起こしてから起動しないとフレーム 0 で固着する</b>。
+</div>
+
 <div class="flag stopc">
   <b>端末を再起動すると閉じる。</b>閉じていると、当日そのカメラが黒くなっても遠隔で一手も打てない
   （画面を起こすのもアプリを起こし直すのも、この経路を通る）。<b>いまは 3 台とも閉じている。</b>
