@@ -1,4 +1,5 @@
 #nullable enable
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FixedCamVr.Streaming
@@ -44,6 +45,28 @@ namespace FixedCamVr.Streaming
         {
             string path = Application.streamingAssetsPath + "/" + relativeUnderStreamingAssets;
             return IsAbsolute(path) ? path : "file://" + path;
+        }
+
+        /// <summary>
+        /// 焼き込みの対応表（卓の URL → <c>sa://</c> URL）で 1 本を読み替える。
+        ///
+        /// ⚠⚠ **端末キャッシュは焼き込みより優先される**ので、卓に一度でも繋いだ機は
+        ///   「卓を指す相対 URL」を持ったまま再起動する。卓が落ちているとその URL は解決できない。
+        ///   対応表は <c>export_build.bake</c> が焼き込み show.json の <c>assetMap</c> に載せる。
+        ///
+        /// ⚠ <b>表に無いものは触らない</b>（最後の焼き込み後に卓で足した素材は従来どおり卓を指す）。
+        ///   既に <c>sa://</c> のもの・外部の絶対 URL も、表に載らないので自然に素通しになる。
+        /// </summary>
+        /// <returns>読み替えたら true。<paramref name="baked"/> は false のとき元の値。</returns>
+        public static bool TryRemapToBaked(IReadOnlyDictionary<string, string>? map, string? url, out string baked)
+        {
+            baked = url ?? "";
+            if (map == null || map.Count == 0) return false;
+            if (string.IsNullOrEmpty(url)) return false;
+            if (!map.TryGetValue(url!, out string? found)) return false;
+            if (string.IsNullOrEmpty(found) || found == url) return false;
+            baked = found!;
+            return true;
         }
 
         private static bool IsAbsolute(string url)

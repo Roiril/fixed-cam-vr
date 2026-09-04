@@ -2956,16 +2956,9 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        // 1 本を読み替える。焼き込みに無ければ false（呼び手は元の値のまま置く）。
+        // 1 本を読み替える。判定は ShowAssetResolver に置いてある（EditMode テストで固定するため）。
         private bool TryRemap(string url, out string baked)
-        {
-            baked = url;
-            if (string.IsNullOrEmpty(url)) return false;
-            if (!_bakedAssetMap.TryGetValue(url, out var found)) return false;
-            if (string.IsNullOrEmpty(found) || found == url) return false;
-            baked = found;
-            return true;
-        }
+            => ShowAssetResolver.TryRemapToBaked(_bakedAssetMap, url, out baked);
 
         private void RemapCachedAssetsToBaked()
         {
