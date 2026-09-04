@@ -56,6 +56,9 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("消えるまでの秒。ぱっと消すと題字の立ち上がりと喧嘩する。")]
         [SerializeField, Min(0.01f)] private float fadeOutSec = 0.2f;
 
+        [Tooltip("言語を切り替えたときの音。null なら同 GameObject から取得（無ければ足す）。")]
+        [SerializeField] private LangSwitchAudioCue? switchSfx;
+
         /// <summary>
         /// 注意書きの本文（日本語）。<b>改行の位置まで含めてここが唯一の供給元</b>。
         ///
@@ -285,6 +288,12 @@ namespace FixedCamVr.Diagnostics
         private ShowLang _shownLang = ShowLanguage.Default;
 
         /// <summary>
+        /// 最後に見た「体験者が押して変わった回数」（<see cref="ShowLanguage.ChangeCount"/>）。
+        /// <b>音を鳴らす縁はここでしか作らない</b> — 言語そのものはリセットと検査でも変わる。
+        /// </summary>
+        private int _lastLangChange;
+
+        /// <summary>
         /// <b>いま注意書きが画に出ているか</b>（＝ 言語を選べる間か）。
         ///
         /// <c>OvrControllerBridge</c> がこれを見て、左（体験者）のボタンを言語の切り替えへ回す。
@@ -312,6 +321,10 @@ namespace FixedCamVr.Diagnostics
         private void ResolveRefs()
         {
             if (titleScreen == null) titleScreen = FindObjectOfType<TitleScreen>();
+            // ⚠ 音は**この面が持つ**（`CommsPanel` の打鍵と同じ構え）。毎フレーム外から
+            //    状態を見る層（`SoundCueLogic`）は、押した瞬間ちょうどには鳴らせない。
+            if (switchSfx == null) switchSfx = GetComponent<LangSwitchAudioCue>();
+            if (switchSfx == null) switchSfx = gameObject.AddComponent<LangSwitchAudioCue>();
         }
 
         private void Build()
@@ -545,6 +558,16 @@ namespace FixedCamVr.Diagnostics
             {
                 _shownLang = ShowLanguage.Current;
                 _text.text = ComposeFor(_shownLang);
+                // ⚠⚠ **音は字を書き替えているこの行から鳴らす**（0153）。入力の側で鳴らすと、
+                //    面が組めていない現場（フォント不在）で**画は変わらないのに音だけ鳴る**。
+                // ⚠⚠ **鳴らすのは「体験者が押して変わった」ときだけ。**
+                //    言語は体験者の交代（`ShowLanguage.Reset`）と Editor の検査
+                //    （`Select`）でも変わるので、`Current` の変化で鳴らすと
+                //    **前の人が英語を選んでいた回のリセットで、誰も押していないのに鳴る**。
+                //    押した回だけ増えるのは `ChangeCount` の 1 つ（`Cycle` でしか増えない）。
+                int changes = ShowLanguage.ChangeCount;
+                if (changes > _lastLangChange) switchSfx?.Play();
+                _lastLangChange = changes;
                 // ⚠⚠ **案内も書き直す**（0151 から「次にすること」が言語で変わる）。
                 //    忘れると、本文だけ替わって最後の 1 行が前の言語のまま残る。
                 if (_footer != null) _footer.text = FooterFor(_shownLang);

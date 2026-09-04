@@ -76,6 +76,8 @@ MATERIALS = [
     ("amb_creak_1", "【鳴らない】家鳴り 1 — 2026-08-15 に全廃（音源は残してある）", 0),
     ("amb_creak_2", "【鳴らない】家鳴り 2 — 同上", 0),
     ("amb_bell", "鈴（もらった「鈴２」）— **段 3（輪郭だけの世界）の頭**に 1 回だけ", 0),
+    ("sfx_lang_1", "言語の切り替え 1（もらった switch1・**交互の 1 本目**・0153）", 0),
+    ("sfx_lang_2", "同 2（switch2・**交互の 2 本目**）", 0),
     ("bed_dolls_laugh", "人形の群れ（4 周目 A の締め・8 体 40 回の輪）", 12.0),
     ("bed_doll_one", "入れ替わった人形 — 一人（3 周目 A・B）", 11.0),
     ("bed_dolls_grow_a", "同・増える 2 体（3 周目 C の前半）", 13.0),
@@ -379,6 +381,23 @@ def build_comms() -> np.ndarray:
     for at, text, cps, label in marks:
         lay(out, type_text(text, cps, rng), at)
         print(f"  {at:5.1f}s  {label}")
+    return out
+
+
+def build_lang() -> np.ndarray:
+    """**言語を切り替えたときの音**（0153）。注意書きが出ている黒の中 ＝ 下に居るのは劇伴だけ。
+
+    体験者が 4 回押した所を並べてある。**交互**（1 → 2 → 1 → 2）に聞こえるか、
+    2 本の大きさが揃っているか（尖頭で揃えて実測 -27.2 / -27.7 LUFS）を耳で見る。
+    ⚠ 実機は音程も音量も散らさない（`LangSwitchAudioCue`）ので、ここでも散らさない。
+    """
+    press = [1.5, 3.0, 4.5, 6.0]
+    total = press[-1] + 2.5
+    # 黒の中は劇伴だけ（`rules/sound-design.md` §4 の表・リセット後の黒）。
+    out = tile(load_score(), total)
+    for i, at in enumerate(press):
+        lay(out, load(f"sfx_lang_{i % 2 + 1}"), at)
+        print(f"  {at:5.1f}s  {i + 1} 回目 → sfx_lang_{i % 2 + 1}")
     return out
 
 
@@ -941,6 +960,8 @@ def main() -> int:
     emit("preview_comms", build_comms(), "本編の敷く音の上で。頭の 2 本は速さの比べ")
     print("最後の演出（人形がたくさん出てくる所）:")
     emit("preview_dolls", build_dolls(), "笑い → 3 秒後に③の連絡。4 周目の敷く音の上で")
+    emit("preview_lang", build_lang(),
+         "言語の切り替えを 4 回（交互に鳴るか・2 本の大きさが揃っているか）")
     print("3 周目（入れ替わってから C で増えるまで）:")
     emit("preview_swap", build_swap(), "実機と同じ式。**尺も実機どおり** — 増え方が判定そのもの")
     print("パススルーが割れて 2D に移るところ:")
