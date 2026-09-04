@@ -2170,11 +2170,15 @@ def analyze(events, others, exp, warns=None):
             elif peak < 7:
                 verdict("WARN", f"笑いの点が最大 {peak} か所 — 群れ（8）にも 3 周目 C（7）にも"
                                 "届いていない。そこまで走っていない走行なら正常")
+            elif peak > 15:
+                # 体は 15 しか居ない（群れ 8 ＋ 3 周目の 1+2+4）。超えたら数え方が壊れている。
+                verdict("FAIL", f"笑いの点が最大 {peak} か所 — 焼いてある体は 15 しか無い。"
+                                "数え方が壊れている（ShowSoundDirector.PlaceLaughLayer）")
             elif peak > 8:
-                # 層の切り替わりで消えかけの声まで数えている（`LaughAudibleGain` が効いていない）。
-                verdict("WARN", f"笑いの点が最大 {peak} か所 — 群れは 8 体しか居ないので、"
-                                "層の切り替わりで消えかけの声まで数えている疑い"
-                                "（ShowSoundDirector.LaughAudibleGain）")
+                # ⭐ **これは正常。** 3 周目 C の 7 体が退きながら 4 周目 A の群れ 8 体が立つ
+                #    2 秒ほど、**両方が実際に鳴っている**（実測 t=121.4 で 群れ 0.11 / 入替 2.26）。
+                verdict("OK", f"笑いが最大 {peak} か所から鳴った"
+                              "（3 周目の 7 体と群れの 8 体が入れ替わる 2 秒は重なる）")
             else:
                 verdict("OK", f"笑いが最大 {peak} か所から鳴った（周囲に大勢いる）")
             # ⭐ **増え方がそのまま出る。** 3 周目は 1 → 3 → 7、4 周目 A で 8。
