@@ -37,6 +37,8 @@ MONO3D = {
     # 装置の音（スクリーンから）
     *(f"sfx_switch_{i}" for i in range(1, 7)),
     *(f"sfx_switch_alert_{i}" for i in range(1, 7)),
+    # ⚠ 警告だけの 1 本（0145）。土台と同じスクリーンから鳴るのでモノで焼く。
+    "sfx_switch_warn",
     "sfx_glitch_1", "sfx_glitch_2", "sfx_glitch_3",
     "sfx_screen_on", "sfx_power_off",
     "bed_device", "bed_device_worn", "bed_static",

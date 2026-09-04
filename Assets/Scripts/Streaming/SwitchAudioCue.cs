@@ -61,6 +61,21 @@ namespace FixedCamVr.Streaming
         public const string AlertResourcePrefix = "Sound/sfx_switch_alert_";
 
         /// <summary>
+        /// <b>警告音だけ</b>（頭に 35ms の無音つき・<c>MIXES</c> が 1 本目から切り出して焼く）。
+        /// 2026-09-04 に足した（<c>canon/LEDGER.md</c> 0145・ユーザー逐語
+        /// 「警告音を、4回数を重ねるにつれて大きくなるようにしてほしい」）。
+        ///
+        /// ⚠⚠ <b>混ぜた 1 本では大きさを動かせない。</b> <see cref="AlertResourcePrefix"/> は
+        /// 土台と警告を焼き込んであるので、音量を上げると<b>土台ごと大きくなる</b>
+        /// （0106 / 0134 の「あくまで通常の切り替え音がメイン」が崩れる）。
+        /// ⇒ 土台は素の変種を鳴らし、これを<b>同じ時刻に予約して重ねる</b>。
+        /// 35ms のずれは<b>波形に焼いてある</b>ので、実行時に作らない。
+        ///
+        /// ⚠ これが無ければ<b>混ぜた 1 本へ落ちる</b>（＝ 0134 までの挙動・大きさは一定）。
+        /// </summary>
+        public const string WarnResourceName = "Sound/sfx_switch_warn";
+
+        /// <summary>
         /// 既定音の本数。<b>2026-08-23 に 1 → 6</b>（<c>canon/LEDGER.md</c> 0112）。
         /// ⚠ ここを増やしても音は増えない — 先に <c>tools/ingest-sounds.py</c> の
         /// <c>SWITCH_VARIANTS</c> へ行を足して焼くこと（素と警告つきの<b>両方</b>）。
@@ -83,6 +98,9 @@ namespace FixedCamVr.Streaming
 
         private AudioClip[] _clips = new AudioClip[0];
         private AudioClip[] _alertClips = new AudioClip[0];
+        private AudioClip? _warnClip;
+        private AudioSource? _warnSource;
+        private readonly AlertEscalationLogic _esc = new AlertEscalationLogic();
         private int _last = -1;
         private int _usedMask;
 
@@ -119,6 +137,26 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool HasAlertClip => _alertClips.Length > 0;
 
+        /// <summary>
+        /// 警告だけの音源を掴めているか（0145）。
+        /// <b>false なら混ぜた 1 本へ落ちる</b> ＝ 大きさは一定のまま（0134 までの挙動）。
+        /// ⚠ 画にも録画にも出ないので、テレメトリの <c>swAlert</c> の 3 つ目がここを出す。
+        /// </summary>
+        public bool HasWarnClip => _warnClip != null;
+
+        /// <summary>
+        /// 直前の警告に掛けた倍率（テレメトリ用・0145）。まだ鳴っていなければ 0。
+        /// ⚠⚠ <b>回を重ねて上がっているかは、ここでしか分からない。</b>
+        /// </summary>
+        public float AlertGain => _esc.LastGain;
+
+        /// <summary>
+        /// ラン開始で警告の育ちを落とす（0145）。
+        /// ⚠⚠ <b>落とさないと 2 人目以降は 1 発目から最大で鳴る。</b>
+        /// 呼ぶのは <c>ShowRunDirector.BeginRun</c>（乱れの育ちと同じ場所・同じ理由）。
+        /// </summary>
+        public void ResetRun() => _esc.ResetRun();
+
         private void Awake()
         {
             if (source == null) source = GetComponent<AudioSource>();
@@ -133,12 +171,30 @@ namespace FixedCamVr.Streaming
                 //    ⚠ 大きさは変えない（`SpatialAudio` の但し書き。減衰の区間へ入らない）。
                 SpatialAudio.Configure(source);
             }
+            // ⚠ 警告は**土台と同じフレームで別々に**鳴らすので声を 2 本目に持つ（0145）。
+            //   1 本を使い回すと、警告を鳴らした時点で土台が `Stop()` される。
+            //   ⚠ シーンには焼かない（AddComponent で足りるものを焼くと `menu scene` の
+            //   工程が 1 つ増え、焼き忘れという新しい壊れ方を作る）。
+            if (_warnSource == null) _warnSource = gameObject.AddComponent<AudioSource>();
+            _warnSource.playOnAwake = false;
+            _warnSource.loop = false;
+            _warnSource.pitch = 1f;   // ⚠ 警告は音程を振らない（尺が変わるブザーなので）
+            SpatialAudio.Configure(_warnSource);
             ResolveClips();
         }
 
         private void ResolveClips()
         {
             // ⚠ 警告つきは素の切替音とは独立に解決する（片方が無くてももう片方は鳴る）。
+            _warnClip = Resources.Load<AudioClip>(WarnResourceName);
+            if (_warnClip == null)
+            {
+                Debug.LogWarning($"[Sound] 警告だけの音源がありません（Resources/{WarnResourceName}）。"
+                                 + "混ぜた 1 本で鳴らすので、警告は回を重ねても大きくなりません"
+                                 + "（`canon/LEDGER.md` 0145）。"
+                                 + "`py -3.11 tools/ingest-sounds.py --only sfx_switch_1` の後に "
+                                 + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+            }
             _alertClips = LoadSeries(AlertResourcePrefix);
             if (_alertClips.Length < DefaultVariantCount)
             {
@@ -197,9 +253,33 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void PlayAlert()
         {
-            if (_alertClips.Length == 0) { Play(); return; }
             if (source == null) return;
+
+            // ⭐ **警告だけを別の声で重ねる**（0145）。土台は素の変種そのままなので、
+            //    警告の大きさを回ごとに動かしても**切替音は 1 ビットも変わらない**。
+            if (_warnClip != null && _warnSource != null && _clips.Length > 0)
+            {
+                // ⚠⚠ **予約の時刻は 1 度だけ取って両方へ渡す。** それぞれで
+                //    `AudioSettings.dspTime` を読むと、あいだに経った分だけずれる
+                //    （35ms の関係は波形に焼いてあるので、実行時に足すものは何も無い）。
+                double at = AudioSettings.dspTime + SfxPlayer.ScheduleLeadSec;
+                PlayClip(_clips[Pick(_clips.Length)], at);
+
+                _warnSource.clip = _warnClip;
+                _warnSource.pitch = 1f;
+                // ⚠ **警告は音量を散らさない。** 土台の ±1.5dB をここにも掛けると、
+                //   1 段 1.6dB の育ちが乱数に埋もれて「重ねるにつれて大きくなる」が消える。
+                _warnSource.volume = Mathf.Clamp01(gain * _esc.Next());
+                _warnSource.Stop();
+                _warnSource.PlayScheduled(at);
+                AlertCount++;
+                return;
+            }
+
+            // 落ちる先: 混ぜた 1 本（0134 までの挙動・大きさは一定）。
+            if (_alertClips.Length == 0) { Play(); return; }
             PlayClip(_alertClips[Pick(_alertClips.Length)]);
+            _esc.Next();
             AlertCount++;
         }
 
@@ -223,7 +303,11 @@ namespace FixedCamVr.Streaming
             return v;
         }
 
-        private void PlayClip(AudioClip? clip)
+        /// <param name="at">
+        /// 予約する DSP 時刻。<b>0 以下なら自分で取る。</b>
+        /// ⚠ 警告と重ねるときは<b>呼ぶ側が 1 度だけ取って両方へ渡す</b>（0145）。
+        /// </param>
+        private void PlayClip(AudioClip? clip, double at = 0.0)
         {
             if (source == null || clip == null) return;
 
@@ -233,7 +317,7 @@ namespace FixedCamVr.Streaming
             source.Stop();
             // ⚠ 予約の先読みは音声バッファ 1 個ぶんより長く取る（短いと「もう過ぎた時刻」を
             //    指す回ができ、その回だけ遅れる ＝ ときどきずれる、という最も追いにくい壊れ方）。
-            source.PlayScheduled(AudioSettings.dspTime + SfxPlayer.ScheduleLeadSec);
+            source.PlayScheduled(at > 0.0 ? at : AudioSettings.dspTime + SfxPlayer.ScheduleLeadSec);
             PlayedCount++;
         }
     }

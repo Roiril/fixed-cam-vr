@@ -43,6 +43,8 @@ namespace FixedCamVr.Streaming
 
         private BgmDirector? _bgm;
         private GlitchFx? _glitch;
+        /// <summary>警告音の育ち（0145）を落とすため。⚠ 落とさないと 2 人目が最大から始まる。</summary>
+        private SwitchAudioCue? _switchCue;
         private CameraFeelFx? _feel;
         private IntroDirector? _intro;
         private bool _subscribed;
@@ -226,6 +228,10 @@ namespace FixedCamVr.Streaming
             //    演出が固まった）ので、その経路では**前の体験者の画の状態が次のランへ持ち越される**。
             _feel?.ResetAll();
             _glitch?.ResetAll();
+            // ⚠⚠ **警告音の育ちも落とす**（2026-09-04・0145）。乱れの育ちと同じ理由で、
+            //    落とさないと次の体験者は 1 発目から最大の警告を聞く。
+            //    画にも録画にも出ないので、走行の `swAlert` の 2 つ目でしか気づけない。
+            _switchCue?.ResetRun();
             // 終幕の合図も落とす。**ユーザーが「周回リセットのときにリセットされるフラグ」と
             // 名指ししたもの**（canon/LEDGER.md 0048）。落とす場所はここ 1 つ。
             _ending.ResetRun();
@@ -303,6 +309,7 @@ namespace FixedCamVr.Streaming
             if (switchDirector == null) switchDirector = FindObjectOfType<CameraSwitchDirector>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
             if (_glitch == null) _glitch = FindObjectOfType<GlitchFx>();
+            if (_switchCue == null) _switchCue = FindObjectOfType<SwitchAudioCue>();
             if (_feel == null) _feel = FindObjectOfType<CameraFeelFx>();
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
         }

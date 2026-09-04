@@ -360,7 +360,12 @@ SWARM_SEC = 1.70          # 全長（上の逆算）。⚠ 2026-08-23 の作り�
 # ⚠ 揃えるのは**頭 0.5 秒の短期ラウドネス**。統合 LUFS は尺と尻の疎さの関数なので、
 #    そこを狙うと「尻を静かにするほど頭を上げる」という逆向きの力が働く。
 SWARM_HEAD_WIN = 0.50
-SWARM_HEAD_LUFS = -14.7   # 旧版の実測値。**ここを下げると「小さくなった」と聞こえる**
+# ⚠⚠ **2026-09-04 にユーザーが実機で聴いて 6dB 下げた**（`canon/LEDGER.md` 0144・逐語
+#    「最初の、パススルーが割れて2Dになる遷移のカタカタ音が大きすぎるので、今の半分くらいに
+#    音量下げて」）。まず -6dB（振幅の半分）へ落とし、聴いて「**まだ大きいかも**」と出たので
+#    **さらに -4dB**。合わせて **-10dB ＝ 元の 0.32 倍**。-14.7 は 0112 で旧版に揃えた値だった。
+#    ⚠ 尺・粒・刻み・音程・減り方は 1 つも動かしていない（大きさだけの指示だったので）。
+SWARM_HEAD_LUFS = -24.7   # 0112 は -14.7（旧版の実測値）。0144 で -6dB → さらに -4dB
 SWARM_GRAIN_HEAD = 0.070  # 頭の粒（押し込み＋中間。重なって轟くが、粒立ちは残る）
 SWARM_GRAIN_TAIL = 0.022  # 尻の粒（破片 1 つ）
 SWARM_GRAIN_POW = 0.80
@@ -718,7 +723,8 @@ SWELL = [
 #
 # (元ファイル名, 土台の出力名の頭, 出力名の頭, 本数, 切り出す秒, 1 本目に対する dB, 頭からの遅れ秒, 使い先)
 MIXES = [
-    ("警告音.mp3", "sfx_switch", "sfx_switch_alert", len(SWITCH_VARIANTS), 0.42, -4.0, 0.035,
+    ("警告音.mp3", "sfx_switch", "sfx_switch_alert", "sfx_switch_warn",
+     len(SWITCH_VARIANTS), 0.42, -4.0, 0.035,
      "**カットの `switchSfx` が立つ所**の切替音（いまは 2 周目 B のバックルームズ 1 発 ＋ "
      "2 周目 C の人形視点 5 発）。ゾーン切替は素の `sfx_switch_*` のままで、こちらだけ警告音が混ざる"),
 ]
@@ -1841,7 +1847,7 @@ def ingest_mixes(mixes, src_dir: str) -> None:
     ⚠ **土台の本数ぶん焼く。** 警告の高さは**常に 1 本目**を基準にするので、
     どの番号で鳴っても同じ警報の大きさになる。
     """
-    for jp, base_stem, stem, count, body, rel, at, _why in mixes:
+    for jp, base_stem, stem, warn_stem, count, body, rel, at, _why in mixes:
         src = os.path.join(src_dir, jp)
         raw = os.path.join(RAW, f"src_{stem}.wav")
         if os.path.exists(src):
@@ -1871,6 +1877,18 @@ def ingest_mixes(mixes, src_dir: str) -> None:
             base = sk.to_stereo(sk.read_wav(base_path)[0])
             out, seg = mix_build(y, sr, base, body, rel, ref_lufs, at)
             out = emit(f"{stem}_{i}", out)
+            # ⚠⚠ **警告だけを別ファイルにも焼く**（2026-09-04・`canon/LEDGER.md` 0145）。
+            #    ユーザー指示「警告音を、4回数を重ねるにつれて大きくなるようにしてほしい」。
+            #    混ぜた 1 本では**土台ごと大きくなる**ので、警告の大きさを実行時に動かせない。
+            #    ⭐ `seg` は **35ms の無音を頭に持ったまま**なので、鳴らす側は土台と
+            #    **同じ時刻に予約するだけ**でよい（ずれを実行時に作らない）。
+            #    ⚠ 基準は **1 本目**（`ref_lufs` と同じ理由。変種ごとに警告の高さが変わらない）。
+            if warn_stem and i == 1:
+                warn = emit(warn_stem, seg)
+                wd = sk.describe(warn)
+                print(f"    {warn_stem:<16s} 警告だけ {wd['lufs']:6.1f} LUFS   "
+                      f"tp {wd['true_peak_db']:5.2f}dB   長さ {len(warn) / sr:.3f}s   "
+                      f"内蔵SP {wd['speaker_db']:5.1f}dB")
             d, b, g = sk.describe(out), sk.describe(base), sk.describe(seg)
             # ⚠ 「土台がメイン」は**頭 20ms の実効値**で見る（統合 LUFS は警告の尺で動くので使えない）。
             head_n = int(0.020 * sr)
@@ -1917,10 +1935,12 @@ def main() -> int:
             layers = " + ".join(f"{n}({s:.0f}s・{len(v)} 回)" for n, s, v in SWELL_LAYERS)
             print(f"  {'（増える 3 枚）':16s} ← {jp}\n      {layers}"
                   f"\n      1 体ぶん {SWELL_SOLO_LUFS:+.1f} LUFS で 3 枚まとめて揃える / {why}")
-        for jp, base_stem, stem, count, body, rel, at, why in MIXES:
+        for jp, base_stem, stem, warn_stem, count, body, rel, at, why in MIXES:
             print(f"  {stem+'_1..'+str(count):16s} ← {base_stem}_1..{count} ＋ {jp}")
             print(f"      1 発から {body * 1000:.0f}ms を {rel:+.1f}dB（1 本目基準）で"
                   f"頭から {at * 1000:.0f}ms に重ねる / {why}")
+            print(f"  {warn_stem:16s} ← 同じ警告だけ（頭に {at * 1000:.0f}ms の無音つき）。"
+                  f"実行時に大きさを動かすのはこちら（0145）")
         for v in VOICES:
             t0, t1 = v["cut"]
             print(f"  {v['name']:16s} ← {v['src']}")
@@ -1931,10 +1951,13 @@ def main() -> int:
 
     eye_names = {f"{EYE_SRC[1]}_{i}" for i in range(1, len(EYE_VARIANTS) + 1)}
     switch_names = {f"{SWITCH_SRC[1]}_{i}" for i in range(1, len(SWITCH_VARIANTS) + 1)}
-    alert_names = {f"{m[2]}_{i}" for m in MIXES for i in range(1, m[3] + 1)}
+    # ⚠ MIXES の並びを変えたらここも直る形にしておく（位置で引かない）。
+    alert_names = {f"{stem}_{i}" for _jp, _b, stem, _w, count, *_r in MIXES
+                   for i in range(1, count + 1)}
+    warn_names = {w for _jp, _b, _s, w, *_r in MIXES if w}
     names = ({p[1] for p in PLAN} | {c[1] for c in CUTS}
              | {s[1] for s in SWARMS} | {c[1] for c in CHORUS}
-             | {n for n, _s, _v in SWELL_LAYERS} | alert_names
+             | {n for n, _s, _v in SWELL_LAYERS} | alert_names | warn_names
              | switch_names | {SWITCH_SRC[1]}
              | eye_names | {EYE_SRC[1]}
              | {v["name"] for v in VOICES})
@@ -1958,6 +1981,7 @@ def main() -> int:
     # ⚠ 重ねる音は**土台と対**。`--only <土台>` でも焼き直す（土台だけ新しいと食い違う）。
     mixes = [m for m in MIXES
              if a.only is None or bool(alert_names & set(a.only)) or m[1] in a.only
+             or bool(warn_names & set(a.only))
              or bool(switch_names & set(a.only))]
     voices = [v for v in VOICES if a.only is None or v["name"] in a.only]
 

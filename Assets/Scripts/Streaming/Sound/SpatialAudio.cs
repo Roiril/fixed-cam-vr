@@ -127,6 +127,8 @@ namespace FixedCamVr.Streaming
             "sfx_switch_4", "sfx_switch_5", "sfx_switch_6",
             "sfx_switch_alert_1", "sfx_switch_alert_2", "sfx_switch_alert_3",
             "sfx_switch_alert_4", "sfx_switch_alert_5", "sfx_switch_alert_6",
+            // ⚠ 警告だけの 1 本（0145）。土台と同じスクリーンから、同じ時刻に重ねて鳴る。
+            "sfx_switch_warn",
             "sfx_glitch_1", "sfx_glitch_2", "sfx_glitch_3",
             "sfx_screen_on", "sfx_power_off",
             "bed_device", "bed_device_worn", "bed_static",

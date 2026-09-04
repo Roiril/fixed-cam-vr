@@ -1233,11 +1233,21 @@ namespace FixedCamVr.Diagnostics
             //             `nc` は警告つきの音源を掴めていない ＝ その差し込みも素の切替音で鳴っている。
             //             ⚠ **画にも動画にも違いが出ない**（音は録画に映らない）ので、
             //                「警告音が混ざったか」の証拠はこのキーだけ。
+            //   ⚠⚠ **2026-09-04 から 3 つ組**（`canon/LEDGER.md` 0145）:
+            //      &lt;回数&gt;/&lt;直前に警告へ掛けた倍率&gt;/&lt;警告だけの音源を掴めたか 1|0&gt;。
+            //      回数だけでは「回を重ねて大きくなったか」が分からない（0134 で
+            //      「鳴った回数は正しいのに聞こえない」を踏んだのと同じ形）。
+            //      3 つ目が 0 なら混ぜた 1 本へ落ちている ＝ **大きさは一定のまま**。
             _sb.Append(" swAlert=").Append(_switchSfx == null
                                            ? "-"
-                                           : (_switchSfx.HasAlertClip
+                                           : (_switchSfx.HasAlertClip || _switchSfx.HasWarnClip
                                               ? _switchSfx.AlertCount.ToString()
                                               : "nc"));
+            if (_switchSfx != null && (_switchSfx.HasAlertClip || _switchSfx.HasWarnClip))
+            {
+                _sb.Append('/').Append(_switchSfx.AlertGain.ToString("F2"))
+                   .Append('/').Append(_switchSfx.HasWarnClip ? '1' : '0');
+            }
             //   swVar = 焼けている変種の本数 / この走行で実際に鳴った異なり数
             //           （`canon/LEDGER.md` 0112「毎回同じではなく」）。
             //           ⚠ **累計（swN）だけでは「6 本焼いたのに 1 本しか鳴っていない」を見分けられない。**

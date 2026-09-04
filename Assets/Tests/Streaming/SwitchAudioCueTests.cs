@@ -91,6 +91,62 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
+        /// 警告だけの 1 本（0145）。⚠ これが無いと<b>混ぜた 1 本へ落ちて大きさが一定になる</b>。
+        /// </summary>
+        [Test]
+        public void WarnClip_IsInResources_AndIsNotOneOfTheMixedOnes()
+        {
+            var warn = Resources.Load<AudioClip>(SwitchAudioCue.WarnResourceName);
+            Assert.IsNotNull(warn,
+                             $"Resources/{SwitchAudioCue.WarnResourceName} が無い — "
+                             + "`ingest-sounds.py --only sfx_switch_1` の後に "
+                             + "`unity.ps1 menu sound-import` を通す");
+
+            for (int i = 1; i <= SwitchAudioCue.DefaultVariantCount; i++)
+            {
+                Assert.AreNotSame(warn, Alert(i), $"警告だけが {i} 番の混ぜた 1 本と同じ実体");
+                Assert.AreNotSame(warn, Plain(i), $"警告だけが {i} 番の素と同じ実体");
+            }
+
+            // ⚠ 頭の 35ms は無音（`MIXES` の `at`）。**実行時にずれを足さない**ための焼き込み。
+            Assert.Greater(warn!.length, 0.4f, "警告だけの尺が短すぎる（切り出しが変わった？）");
+        }
+
+        /// <summary>
+        /// <b>回を重ねるごとに警告が大きくなる</b>（0145・ユーザー指定）。
+        /// ⚠⚠ <b>土台は 1 ビットも動かない</b>ので、育ちは <c>AlertGain</c> にしか出ない。
+        /// </summary>
+        [Test]
+        public void PlayAlert_MakesTheWarningLouderEachTime()
+        {
+            var go = new GameObject("switch-audio-alert-ramp");
+            try
+            {
+                var cue = Wake(go);
+                Assert.IsTrue(cue.HasWarnClip, "警告だけの音源を掴めていない");
+
+                float prev = 0f;
+                for (int n = 1; n <= AlertEscalationLogic.RampToCount; n++)
+                {
+                    cue.PlayAlert();
+                    Assert.Greater(cue.AlertGain, prev, $"{n} 発目が前より大きくなっていない");
+                    prev = cue.AlertGain;
+                }
+                Assert.AreEqual(1f, cue.AlertGain, 1e-4f, "最後がちょうど 1.0 になっていない");
+
+                // ⚠⚠ 落とさないと 2 人目が最大から始まる。
+                cue.ResetRun();
+                cue.PlayAlert();
+                Assert.AreEqual(AlertEscalationLogic.GainFor(1), cue.AlertGain, 1e-4f,
+                                "ラン開始で育ちが落ちていない");
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
+        /// <summary>
         /// 警告つきは<b>素とは別に数える</b>（走行ログの <c>swAlert</c> の出どころ）。
         /// 累計（<c>swN</c>）には両方が乗る。
         /// </summary>

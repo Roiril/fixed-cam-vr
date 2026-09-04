@@ -2291,9 +2291,12 @@ def analyze(events, others, exp, warns=None):
                                 "`py -3.11 tools/ingest-sounds.py --only sfx_switch_1` の後に "
                                 "`tools/unity.ps1 menu sound-import` を走らせる")
             elif last != "-":
-                w(f"  警告つきの切替音: {last} 回（著作は {want} カット）")
+                # ⚠⚠ 2026-09-04 から 3 つ組（0145）: <回数>/<直前の倍率>/<警告だけを掴めたか>。
+                #    古いログは回数だけなので、分けて読む。
+                parts = last.split("/")
+                w(f"  警告つきの切替音: {parts[0]} 回（著作は {want} カット）")
                 try:
-                    n = int(last)
+                    n = int(parts[0])
                     if n == 0 and want > 0:
                         verdict("WARN", f"警告つきの切替音が 1 度も鳴っていない"
                                         f"（著作は {want} カット）— その差し込みに到達して"
@@ -2302,6 +2305,39 @@ def analyze(events, others, exp, warns=None):
                         verdict("OK", f"警告つきの切替音が {n} 回鳴った")
                 except ValueError:
                     pass
+
+                if len(parts) >= 3:
+                    # ⚠⚠ **「回を重ねて大きくなったか」はここでしか分からない**（0145）。
+                    #    画にも録画にも出ないし、回数が正しくても大きさは一定でありうる
+                    #    （0134 で踏んだ形と同じ）。
+                    if parts[2] != "1":
+                        verdict("FAIL", "警告だけの音源を掴めていない（sfx_switch_warn）— "
+                                        "混ぜた 1 本で鳴っているので、警告は回を重ねても"
+                                        "大きくならない。"
+                                        "`py -3.11 tools/ingest-sounds.py --only sfx_switch_1` の後に "
+                                        "`tools/unity.ps1 menu sound-import`")
+                    else:
+                        gains = []
+                        for v in sw_alert:
+                            q = str(v).split("/")
+                            if len(q) < 2:
+                                continue
+                            try:
+                                g = float(q[1])
+                            except ValueError:
+                                continue
+                            if g > 0 and (not gains or abs(g - gains[-1]) > 1e-4):
+                                gains.append(g)
+                        if gains:
+                            w("  警告の育ち: " + " → ".join(f"{g:.2f}" for g in gains))
+                        if len(gains) >= 2 and gains[-1] > gains[0] + 1e-3:
+                            verdict("OK", f"警告が回を重ねて大きくなった"
+                                          f"（{gains[0]:.2f} → {gains[-1]:.2f}）")
+                        elif len(gains) >= 2:
+                            verdict("FAIL", f"警告が {len(gains)} 回鳴ったのに大きくなっていない"
+                                            f"（{gains[0]:.2f} → {gains[-1]:.2f}）— "
+                                            "ラン開始で育ちが落ちていないか、"
+                                            "AlertEscalationLogic が効いていない")
 
         # -- 切替音の変種（`canon/LEDGER.md` 0112）
         #    ⚠⚠ **画にも動画にも違いが出ない。** 「毎回同じではなく」が効いた証拠はここだけ。
