@@ -59,6 +59,11 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             new Surface { Name = "体験前の注意書き", Type = typeof(TitleNotice),
                           DistanceField = "distanceM", BuildsItsOwnText = true },
+            // ⚠ この面も TMP を **2 つ**持つ（本文 ＋ 並びの下の小さな案内・2026-09-04・0147）。
+            //    フィールドを名指ししないと、先に組んだ本文が 2 度測られて案内が 1 度も測られない。
+            new Surface { Name = "体験前の注意書き（小さな案内）", Type = typeof(TitleNotice),
+                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_footer",
+                          TierDeg = HmdTextStyle.MinorDeg },
             new Surface { Name = "終幕の報告", Type = typeof(OutroReport),
                           DistanceField = "distanceM", BuildsItsOwnText = true,
                           Probe = OutroReportText.Compose(3) },

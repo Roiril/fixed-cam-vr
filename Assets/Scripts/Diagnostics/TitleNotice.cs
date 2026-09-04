@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using FixedCamVr.Streaming;
 using TMPro;
 using UnityEngine;
@@ -28,6 +28,10 @@ namespace FixedCamVr.Diagnostics
     /// 巡らせるのは<b>体験者が持つ左コントローラのどのボタンでもよい</b>（2026-09-03・0128）。入力を読むのは
     /// <c>OvrControllerBridge</c>（OVRInput を触れるのは Assembly-CSharp だけ）。
     /// この面が出ていない間は切り替わらない（<see cref="IsShowing"/> が門）。
+    /// ⚠⚠ <b>切り替え方と「選んだらスタッフへ」は、一回り小さい字で 3 言語ぶん出す</b>
+    /// （2026-09-04・<c>canon/LEDGER.md</c> 0147）。選択中の言語だけで書くと、
+    /// <b>それを読めない人には切り替え方が届かない</b>。面は TMP を <b>2 つ</b>持ち
+    /// （本文 1.8° / 案内 1.5°）、<see cref="StackLabels"/> が実測した高さで縦に積む。
     /// 選ばれた言語は <see cref="ShowLanguage.Current"/> が持ち、
     /// AIエージェントの連絡・手元のゲージ・終幕の報告が同じ値を読む。
     /// <b>スタッフが読む面（StatusHud・操作早見表・位置合わせ）は日本語のまま。</b>
@@ -130,16 +134,28 @@ namespace FixedCamVr.Diagnostics
         }
 
         /// <summary>
-        /// 切り替え方の 1 行。<b>キー名を出さない</b> — 被った体験者に手元は見えないので、
+        /// 並びの下に置く<b>小さな案内</b>（2026-09-04・<c>canon/LEDGER.md</c> 0147・ユーザー指定
+        /// 「英語とフランス語話者は分からないから、文字を小さくして多言語で書いておく」
+        /// 「言語を選んだらスタッフに声をかけてスタートなのでその旨も」）。
+        ///
+        /// ⚠⚠ <b>選ばれている言語に関わらず、いつも 3 言語ぶんを出す。</b>
+        /// 切り替え方を選択中の言語だけで書くと、<b>それを読めない人には切り替え方が届かない</b>
+        /// （＝ 日本語のまま始めるしかない）。並びの 3 つの名前を常に全部出すのと同じ理由。
+        /// ⚠ <b>キー名を出さない</b> — 被った体験者に手元は見えないので、
         /// <b>どれを押しても同じ</b>にしてある（<c>canon/LEDGER.md</c> 0050 / 0128）。
-        /// AIエージェントの連絡①bが「ボタンを長押ししてください」と言うのと同じ言い方に揃える。
+        /// ⚠ 1 行は<b>全角 24 / 半角 48 まで</b>（本文より小さい 1.5° ぶん多く入る）。
+        /// ⚠ この面の 2 つ目の TMP に出す（本文と字の大きさが違うので分けてある）。
         /// </summary>
-        private static string HintOf(ShowLang lang) => lang switch
-        {
-            ShowLang.En => "Press the button to change language.",
-            ShowLang.Fr => "Appuyez pour changer de langue.",
-            _ => "手元のボタンで言語が変わります",
-        };
+        private const string FooterText =
+            "ボタンで言語が変わります\n" +
+            "言語を選んだらスタッフにお声がけください\n" +
+            "Press the button to change language.\n" +
+            "Then let a staff member know to start.\n" +
+            "Appuyez pour changer de langue.\n" +
+            "Puis prévenez le personnel pour commencer.";
+
+        /// <summary>小さな案内の全文（テストと <c>menu text-audit</c> が読む）。</summary>
+        public static string Footer() => FooterText;
 
         /// <summary>本文だけ（言語ごと）。テストと <c>menu text-audit</c> が読む。</summary>
         public static string BodyFor(ShowLang lang) => lang switch
@@ -150,7 +166,8 @@ namespace FixedCamVr.Diagnostics
         };
 
         /// <summary>
-        /// 面に出す全文 ＝ <b>注意書き ＋ 空行 ＋ 言語の並び ＋ 切り替え方</b>。
+        /// 面に出す全文 ＝ <b>注意書き ＋ 空行 ＋ 言語の並び</b>。
+        /// <b>切り替え方は <see cref="Footer"/>（一回り小さい 2 つ目の TMP）が持つ。</b>
         ///
         /// ⚠ <b>言語の並びは注意書きと同じ面に出す。</b> 別の面を立てると、
         /// 「まだ何も始まっていない黒の中」に装置の UI が 2 枚並ぶ（世界に混ざる面が増える）。
@@ -158,7 +175,7 @@ namespace FixedCamVr.Diagnostics
         /// 常に全部出す（次の言語だけを出す形は、いま何が選べるのかが分からない）。
         /// </summary>
         public static string ComposeFor(ShowLang lang)
-            => BodyFor(lang) + "\n\n" + ChooserLine(lang) + "\n" + HintOf(lang);
+            => BodyFor(lang) + "\n\n" + ChooserLine(lang);
 
         /// <summary>
         /// タイトルの黒（<c>FixedCamVr/TitleVeil</c> = 4950）と題字（<c>TitleGlyph</c> = 4960）より
@@ -181,11 +198,22 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>
         /// 文字の並ぶ高さ (m)。<b>いちばん行数の多い言語</b>（Français ＝ 7 行）＋ 空行 ＋
-        /// 言語の並び ＋ 切り替え方 ＝ 10 行 ＋ 行間。
+        /// 言語の並び ＝ 9 行 ＋ 行間。
         /// ⚠ 揃えは縦中央（<c>TextAlignmentOptions.Left</c>）なので、ここが実際の行数より
         /// 低いと塊が枠からはみ出して<b>上下が視界の外へ出る</b>。文言を足したら一緒に上げる。
+        /// ⚠ <b>縦の置き場所はこの枠では決まらない</b>（<see cref="StackLabels"/> が
+        /// 実測した高さから 2 つを積む）。ここは折り返しと溢れのための枠。
         /// </summary>
         private const float TextHeightM = 1.75f;
+
+        /// <summary>小さな案内の枠の高さ (m)。3 言語 × 2 行 ＝ 6 行 ＋ 行間。</summary>
+        private const float FooterHeightM = 0.90f;
+
+        /// <summary>
+        /// 注意書きの塊と、小さな案内のあいだ (m)。2.6m 先で約 2.4° ＝ 1 行ぶんの空き。
+        /// 詰めると本文の続きに読め、空けすぎると別の掲示に見える。
+        /// </summary>
+        private const float FooterGapM = 0.11f;
 
         /// <summary>
         /// 文字の拡大率。<b>距離から逆算する</b>（<see cref="HmdTextStyle"/> が唯一の正）。
@@ -200,6 +228,13 @@ namespace FixedCamVr.Diagnostics
         private float TextScale =>
             HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, Mathf.Max(distanceM, 0.5f), FontSize);
 
+        /// <summary>
+        /// 小さな案内の拡大率。段は<b>補助（1.5°）</b>（<see cref="HmdTextStyle.MinorDeg"/>）。
+        /// ⚠ <b>段を増やさない</b>（0052 の「段は 3 つ」）。ここは既にある補助段をそのまま使う。
+        /// </summary>
+        private float FooterScale =>
+            HmdTextStyle.MeshScale(HmdTextStyle.MinorDeg, Mathf.Max(distanceM, 0.5f), FontSize);
+
         /// <summary>TMP の Overlay 版（<c>ZTest Always</c>）。<b>Always Included に入っている。</b></summary>
         private const string OverlayShaderName = "TextMeshPro/Distance Field Overlay";
 
@@ -211,6 +246,8 @@ namespace FixedCamVr.Diagnostics
         private const float ResolveRetrySec = 1f;
 
         private TMP_Text? _text;
+        /// <summary>並びの下の小さな案内（3 言語）。<b>言語で中身は変わらない</b>。</summary>
+        private TMP_Text? _footer;
         private HeadYawFollow? _follow;
         private float _alpha;
         private float _resolveWait;
@@ -250,6 +287,10 @@ namespace FixedCamVr.Diagnostics
 
         private void Build()
         {
+            // ⚠⚠ **2 度呼ばれても組み直さない**（`CommsPanel.Build` と同じ）。
+            //    `menu text-audit` はこの面の TMP を 2 つ測るので **Awake を 2 回**起こす。
+            //    守らないと面が 2 組ぶら下がり、字が二重に重なる。
+            if (_text != null) return;
             // ⚠ 日本語が出せないなら何も出さない。豆腐（□）が並ぶ方が、注意書きが無いより悪い。
             var jp = JapaneseHudFont.TryGet();
             if (jp == null)
@@ -269,40 +310,15 @@ namespace FixedCamVr.Diagnostics
                 //    ＝ head-lock で、上下に振っても面が眼から離れない。題字と同じ法則
                 //    （`HeadYawFollow` ＝ 本編のスクリーンと同じ `YawFollowLogic`）に乗せる。
                 _follow = HeadYawFollow.Attach(transform, "NoticeYawFollow");
-                go = new GameObject("Label");
-                go.transform.SetParent(_follow.transform, worldPositionStays: false);
-                var tmp = go.AddComponent<TextMeshPro>();
-                tmp.font = jp;
                 _shownLang = ShowLanguage.Current;
-                tmp.text = ComposeFor(_shownLang);
-                // ⚠ 揃えは**左**（`HmdTextStyle` の規約）。中央にしてよいのは「掲げる言葉」だけで、
-                //   これは**読ませる文章**（安全の掲示）。5 行の散文を中央揃えにすると行頭が毎行ずれる。
-                //   枠幅を最長行に合わせてあるので、左揃えでも塊としては視界の中央に座る。
-                tmp.alignment = TextAlignmentOptions.Left;
-                tmp.fontSize = FontSize;
-                // 折り返しは残す（文言を足した誰かが枠の外へ流れ出さないための安全網）。
-                tmp.enableWordWrapping = true;
-                tmp.richText = false;
-                // 題字の朱と競合させない、抑えた白。純白だと黒の中で浮いて掲示物に見える。
-                tmp.color = HmdTextStyle.Ink;
-
-                var rt = (RectTransform)go.transform;
-                // ⚠ **大きさは scale で掛ける。** fontSize を上げるとメッシュの座標が広がるだけで、
-                //    見かけの大きさは同じ。小さい字を拡大する方が、頂点の座標が素直に収まる。
-                //    ⇒ **折り返し幅も同じ scale で割る**。ここを固定値にすると、字の大きさを
-                //      直したときに折り返しだけ取り残されて枠からはみ出す。
-                float scale = TextScale;
-                rt.sizeDelta = new Vector2(TextWidthM / scale, TextHeightM / scale);
-                go.transform.localScale = Vector3.one * scale;
-
-                // 頭の正面やや下。姿勢は追従根が持つので、ここでは根から見た置き場所だけを決める。
-                // ⚠ **黒の面（TitleScreen の覆い）はこれに乗っていない** — 覆いが頭から離れると
-                //   振り向いた瞬間に縁が視界へ入って現実が細く覗く。動かすのは読ませる字だけ。
-                float rad = pitchOffsetDeg * Mathf.Deg2Rad;
-                float d = Mathf.Max(distanceM, 0.5f);
-                go.transform.localPosition = new Vector3(0f, -Mathf.Sin(rad) * d, Mathf.Cos(rad) * d);
-                // 傾けない（傾けると台形に見えて、行の揃いが崩れる）。
-                go.transform.localRotation = Quaternion.identity;
+                var tmp = MakeLabel(jp, "Label", ComposeFor(_shownLang), TextScale, TextHeightM);
+                go = tmp.gameObject;
+                // ⚠⚠ **小さな案内は 2 つ目の TMP**（2026-09-04・0147）。1 つの TMP に混ぜるには
+                //    リッチテキストの `<size>` が要り、そうすると行の幅を測る物差し
+                //    （`HmdTextStyle.LineWidth`）がタグの字まで数える ＝ 全部の判定が狂う。
+                //    段の違う字を並べる面は 2 つ持つ（`CommsPanel` の上段・下段と同じ形）。
+                TMP_Text footer = MakeLabel(jp, "Footer", Footer(), FooterScale, FooterHeightM);
+                _footer = footer;
 
                 // タイトルの黒に潰されないように、黒と題字より後に描く。fontMaterial の getter が
                 // インスタンスを作るので、共有マテリアルを汚さない。
@@ -311,20 +327,108 @@ namespace FixedCamVr.Diagnostics
                 //    ＝ 既定で LEqual。この面は **2.6m** に立つのに、本編のスクリーン（不透明・
                 //    ZWrite On）が **2.0m** に居るので、**注意書きはスクリーンの深度に隠れて
                 //    1 文字も出ていなかった**。しかも警告は 1 件も出ない。
-                UseOverlayShader(tmp);
-                tmp.fontMaterial.renderQueue = RenderQueue;
+                foreach (TMP_Text t in new[] { tmp, footer })
+                {
+                    UseOverlayShader(t);
+                    t.fontMaterial.renderQueue = RenderQueue;
+                }
                 _text = tmp;
+                StackLabels();
             }
             catch (System.Exception e)
             {
                 // 組めなかった側は必ず「出さない」で終わらせる（半端な面を残さない）。
                 Debug.LogWarning($"[TitleNotice] 実体を組めません — 注意書きは出しません: {e.Message}");
                 if (go != null) Destroy(go);
+                if (_footer != null) Destroy(_footer.gameObject);
                 if (_follow != null) Destroy(_follow.gameObject);
                 _follow = null;
                 _text = null;
+                _footer = null;
             }
         }
+
+        /// <summary>
+        /// 字の面を 1 枚組む。<b>2 枚は段（字の大きさ）だけが違う</b> — 揃え・折り返し・色・
+        /// 置き場所の決め方はすべて同じ。
+        ///
+        /// ⚠ 揃えは<b>左</b>（<c>HmdTextStyle</c> の規約）。中央にしてよいのは「掲げる言葉」だけで、
+        /// これは<b>読ませる文章</b>（安全の掲示）。散文を中央揃えにすると行頭が毎行ずれる。
+        /// ⚠ <b>大きさは scale で掛ける</b>（fontSize を上げるとメッシュの座標が広がるだけ）。
+        /// ⇒ <b>折り返し幅も同じ scale で割る</b>。固定値にすると、字の大きさを直したときに
+        /// 折り返しだけ取り残されて枠からはみ出す。
+        /// ⚠ <b>枠幅は 2 枚とも同じ</b> ＝ 左端が揃う（小さい方だけ内側から始まると段落に見えない）。
+        /// </summary>
+        private TMP_Text MakeLabel(TMP_FontAsset font, string name, string text,
+                                   float scale, float frameHeightM)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(_follow!.transform, worldPositionStays: false);
+            var tmp = go.AddComponent<TextMeshPro>();
+            tmp.font = font;
+            tmp.text = text;
+            tmp.alignment = TextAlignmentOptions.Left;
+            tmp.fontSize = FontSize;
+            // 折り返しは残す（文言を足した誰かが枠の外へ流れ出さないための安全網）。
+            tmp.enableWordWrapping = true;
+            tmp.richText = false;
+            // 題字の朱と競合させない、抑えた白。純白だと黒の中で浮いて掲示物に見える。
+            tmp.color = HmdTextStyle.Ink;
+
+            var rt = (RectTransform)go.transform;
+            rt.sizeDelta = new Vector2(TextWidthM / scale, frameHeightM / scale);
+            go.transform.localScale = Vector3.one * scale;
+            // 傾けない（傾けると台形に見えて、行の揃いが崩れる）。
+            go.transform.localRotation = Quaternion.identity;
+            return tmp;
+        }
+
+        /// <summary>
+        /// 注意書きと小さな案内を<b>実測した高さで縦に積み、塊ごと視線の据わりへ運ぶ</b>。
+        ///
+        /// ⚠⚠ <b>枠の高さでは積めない。</b> 枠（<see cref="TextHeightM"/>）は最悪の行数に合わせた
+        /// 大きめの器で、実際の字はその中に縦中央で座る。枠で積むと言語によって 40cm 空く。
+        /// ⚠⚠ <b>言語で行数が変わる</b>（日本語 6 行 / Français 7 行）ので、<b>言語を変えるたびに
+        /// 積み直す</b>。積み直しを忘れると、行数の少ない言語で塊が下へずれる。
+        /// ⚠ <c>ForceMeshUpdate</c> は<b>2 回呼ぶ</b> — 1 回目でまだ焼かれていないグリフの
+        /// 焼き付けを要求し、2 回目で焼けたものを含めて組み直す（`OutroReport.SetBody` と同じ）。
+        /// </summary>
+        private void StackLabels()
+        {
+            if (_text == null || _footer == null) return;
+            float s1 = TextScale, s2 = FooterScale;
+            float h1 = Measure(_text) * s1;
+            float h2 = Measure(_footer) * s2;
+            float total = h1 + FooterGapM + h2;
+
+            // 頭の正面やや下。姿勢は追従根が持つので、ここでは根から見た置き場所だけを決める。
+            // ⚠ **黒の面（TitleScreen の覆い）はこれに乗っていない** — 覆いが頭から離れると
+            //   振り向いた瞬間に縁が視界へ入って現実が細く覗く。動かすのは読ませる字だけ。
+            float rad = pitchOffsetDeg * Mathf.Deg2Rad;
+            float d = Mathf.Max(distanceM, 0.5f);
+            float baseY = -Mathf.Sin(rad) * d;
+            float z = Mathf.Cos(rad) * d;
+
+            // 上が注意書き、下が小さな案内。**2 枚を合わせた塊の中心**が据わりに来る。
+            PlaceInk(_text, s1, baseY + total * 0.5f - h1 * 0.5f, z);
+            PlaceInk(_footer, s2, baseY - total * 0.5f + h2 * 0.5f, z);
+        }
+
+        /// <summary>字が実際に占める高さ（面のローカル単位）。⚠ 枠ではなく字の側。</summary>
+        private static float Measure(TMP_Text t)
+        {
+            t.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
+            t.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
+            return t.preferredHeight;
+        }
+
+        /// <summary>
+        /// 字の塊の中心が <paramref name="centerY"/> に来るように面を置く。
+        /// ⚠ <b>x は動かさない</b> — 枠幅を最長行に合わせてあるので、左揃えのまま塊が中央に座る。
+        /// </summary>
+        private static void PlaceInk(TMP_Text t, float scale, float centerY, float z)
+            => t.transform.localPosition =
+                   new Vector3(0f, centerY - t.textBounds.center.y * scale, z);
 
         /// <summary>
         /// TMP の <b>Overlay 版</b>（<c>ZTest Always</c>）へ差し替える。
@@ -391,6 +495,9 @@ namespace FixedCamVr.Diagnostics
             {
                 _shownLang = ShowLanguage.Current;
                 _text.text = ComposeFor(_shownLang);
+                // ⚠ **行数が変わるので積み直す**（日本語 6 行 / Français 7 行）。
+                //   忘れると、行数の少ない言語で塊が下へずれたまま出る。
+                StackLabels();
             }
 
             bool show = ShouldShow();
@@ -407,9 +514,17 @@ namespace FixedCamVr.Diagnostics
         private void SetAlpha(float a)
         {
             if (_text == null) return;
-            _text.alpha = a;
+            // ⚠ **2 枚とも同じだけ濃くする。** 片方だけ残ると、注意書きが消えた黒の中に
+            //   案内だけが浮く（世界が始まっているのに装置の外の言葉が居る）。
+            SetAlpha(_text, a);
+            if (_footer != null) SetAlpha(_footer, a);
+        }
+
+        private static void SetAlpha(TMP_Text t, float a)
+        {
+            t.alpha = a;
             // 完全に消えている間は描画そのものを止める（体験中ずっと 0 の文字を描く理由が無い）。
-            if (_text.gameObject.activeSelf != (a > 0.002f)) _text.gameObject.SetActive(a > 0.002f);
+            if (t.gameObject.activeSelf != (a > 0.002f)) t.gameObject.SetActive(a > 0.002f);
         }
     }
 }

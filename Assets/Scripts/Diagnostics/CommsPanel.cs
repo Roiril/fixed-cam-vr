@@ -283,7 +283,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.MarkNothing => "異常は検出されませんでした",
             // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
             //    読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
-            CommsNotice.Prompt => "異常があなたと私を\n取り込もうとしています。\n排除してください。",
+            CommsNotice.Prompt => "異常があなたを\n取り込もうとしています。\n排除してください。",
             _ => "",
         };
 
@@ -307,7 +307,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.MarkLogged => "The anomaly was removed.",
             CommsNotice.MarkNothing => "No anomaly was detected.",
             // ③ ここだけが体験者自身を名指しする（0096）。
-            CommsNotice.Prompt => "An anomaly is trying to\nabsorb you and me.\nRemove it.",
+            CommsNotice.Prompt => "An anomaly is trying to\nabsorb you.\nRemove it.",
             _ => "",
         };
 
@@ -321,7 +321,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez le bouton.\nL'appareil l'analysera.",
             CommsNotice.MarkLogged => "L'anomalie a été supprimée.",
             CommsNotice.MarkNothing => "Aucune anomalie détectée.",
-            CommsNotice.Prompt => "Une anomalie tente de nous\nabsorber, vous et moi.\nSupprimez-la.",
+            CommsNotice.Prompt => "Une anomalie tente de vous\nabsorber.\nSupprimez-la.",
             _ => "",
         };
 
