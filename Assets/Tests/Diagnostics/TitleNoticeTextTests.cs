@@ -138,56 +138,64 @@ namespace FixedCamVr.Diagnostics.Tests
         /// これがこの案内の存在理由そのものなので、機械で持つ。
         /// </summary>
         [Test]
-        public void Footer_SpeaksEveryLanguage()
+        public void Footer_ExplainsSwitchingInEveryLanguage()
         {
-            string f = TitleNotice.Footer();
-            StringAssert.Contains("ボタン", f, "日本語で切り替え方が書かれていない");
-            StringAssert.Contains("button", f, "English で切り替え方が書かれていない");
-            StringAssert.Contains("Appuyez", f, "Français で切り替え方が書かれていない");
+            foreach (ShowLang lang in ShowLanguage.All)
+            {
+                string f = TitleNotice.FooterFor(lang);
+                StringAssert.Contains("ボタン", f, $"[{lang}] 日本語で切り替え方が書かれていない");
+                StringAssert.Contains("button", f, $"[{lang}] English で切り替え方が書かれていない");
+                StringAssert.Contains("Appuyez", f, $"[{lang}] Français で切り替え方が書かれていない");
+            }
         }
 
         /// <summary>
-        /// <b>選んだ後どうするか</b>も 3 言語で言う（ユーザー指定「言語を選んだらスタッフに
-        /// 声をかけてスタートなのでその旨も」）。⚠ 切り替え方だけ訳して、
-        /// 次にすることを片方の言語に置き忘れるのがいちばん起きやすい。
+        /// <b>選んだ後どうするかは、選んでいる言語で 1 行だけ</b>（0151 で 3 言語 → 1 行へ整理）。
+        /// この行を読むのは言語を選んだ後なので、そのとき選ばれているのは<b>読める言語</b>。
+        /// ⚠ 3 言語ぶん並べると、誰にとっても 2 行が読めない字の壁になる。
         /// </summary>
         [Test]
-        public void Footer_TellsEveryoneToCallStaff()
+        public void Footer_TellsWhatToDoNext_InTheChosenLanguage()
         {
-            string f = TitleNotice.Footer();
-            StringAssert.Contains("スタッフ", f, "日本語でスタッフへ声をかける旨が無い");
-            StringAssert.Contains("staff", f, "English でスタッフへ声をかける旨が無い");
-            StringAssert.Contains("personnel", f, "Français でスタッフへ声をかける旨が無い");
+            (ShowLang lang, string mine, string[] others)[] cases =
+            {
+                (ShowLang.Ja, "スタッフにお声がけください", new[] { "staff member", "personnel" }),
+                (ShowLang.En, "tell a staff member", new[] { "スタッフにお声がけ", "prévenez le personnel" }),
+                (ShowLang.Fr, "prévenez le personnel", new[] { "スタッフにお声がけ", "tell a staff member" }),
+            };
+            foreach ((ShowLang lang, string mine, string[] others) in cases)
+            {
+                string f = TitleNotice.FooterFor(lang);
+                StringAssert.Contains(mine, f, $"[{lang}] 次にすることが自分の言語で無い");
+                foreach (string other in others)
+                    StringAssert.DoesNotContain(other, f, $"[{lang}] 他の言語の行まで出ている");
+            }
         }
 
         /// <summary>案内の行も枠に入る（本文より小さいので入る数が違う）。</summary>
         [Test]
         public void FooterLines_FitTheFrame()
         {
-            foreach (string line in TitleNotice.Footer().Split('\n'))
+            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (string line in TitleNotice.FooterFor(lang).Split('\n'))
                 Assert.LessOrEqual(FullWidth(line), MaxFullWidthPerFooterLine,
-                                   $"案内の「{line}」が 1 行に入らない");
+                                   $"[{ShowLanguage.Code(lang)}] 案内の「{line}」が 1 行に入らない");
         }
 
         /// <summary>
-        /// 案内は<b>言語で変わらない</b>（3 言語を常に全部出すので、選択で中身が動く余地が無い）。
-        /// ⚠ ここが破れると <c>StackLabels</c> の「案内は積み直さなくてよい」前提も崩れる。
+        /// <b>案内は 4 行</b>（切り替え方 3 行 ＋ 空行 ＋ 次にすること 1 行）。
+        /// ⚠ 行が増えると塊が縦に伸びて、上下の端を読むのに首を振ることになる
+        /// （縦の実測は <c>TitleNoticeLayoutTests.TheWholeStack_FitsInTheView</c>）。
         /// </summary>
         [Test]
-        public void Footer_DoesNotDependOnTheChosenLanguage()
+        public void Footer_KeepsItsFourLines()
         {
-            ShowLang before = ShowLanguage.Current;
-            try
+            foreach (ShowLang lang in ShowLanguage.All)
             {
-                ShowLanguage.Select(ShowLang.Ja);
-                string ja = TitleNotice.Footer();
-                foreach (ShowLang lang in ShowLanguage.All)
-                {
-                    ShowLanguage.Select(lang);
-                    Assert.AreEqual(ja, TitleNotice.Footer(), $"{lang} で中身が変わった");
-                }
+                string[] lines = TitleNotice.FooterFor(lang).Split('\n');
+                Assert.AreEqual(5, lines.Length, $"[{lang}] 切り替え方 3 ＋ 空行 ＋ 次にすること");
+                Assert.That(lines[3], Is.Empty, $"[{lang}] 次にすることは空行で離す");
             }
-            finally { ShowLanguage.Select(before); }
         }
 
         private static int Count(string s, char c)

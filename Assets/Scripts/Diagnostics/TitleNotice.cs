@@ -28,10 +28,12 @@ namespace FixedCamVr.Diagnostics
     /// 巡らせるのは<b>体験者が持つ左コントローラのどのボタンでもよい</b>（2026-09-03・0128）。入力を読むのは
     /// <c>OvrControllerBridge</c>（OVRInput を触れるのは Assembly-CSharp だけ）。
     /// この面が出ていない間は切り替わらない（<see cref="IsShowing"/> が門）。
-    /// ⚠⚠ <b>切り替え方と「選んだらスタッフへ」は、一回り小さい字で 3 言語ぶん出す</b>
+    /// ⚠⚠ <b>切り替え方は一回り小さい字で 3 言語ぶん出す</b>
     /// （2026-09-04・<c>canon/LEDGER.md</c> 0147）。選択中の言語だけで書くと、
-    /// <b>それを読めない人には切り替え方が届かない</b>。面は TMP を <b>2 つ</b>持ち
-    /// （本文 1.8° / 案内 1.5°）、<see cref="StackLabels"/> が実測した高さで縦に積む。
+    /// <b>それを読めない人には切り替え方が届かない</b>。
+    /// ⚠ <b>「選んだらスタッフへ」は選んでいる言語で 1 行だけ</b>（0151 で 6 行 → 4 行へ整理）。
+    /// 面は TMP を <b>2 つ</b>持ち（本文 1.8° / 案内 1.5°）、
+    /// <see cref="StackLabels"/> が実測した高さで縦に積む。
     /// 選ばれた言語は <see cref="ShowLanguage.Current"/> が持ち、
     /// AIエージェントの連絡・手元のゲージ・終幕の報告が同じ値を読む。
     /// <b>スタッフが読む面（StatusHud・操作早見表・位置合わせ）は日本語のまま。</b>
@@ -145,17 +147,40 @@ namespace FixedCamVr.Diagnostics
         /// <b>どれを押しても同じ</b>にしてある（<c>canon/LEDGER.md</c> 0050 / 0128）。
         /// ⚠ 1 行は<b>全角 24 / 半角 48 まで</b>（本文より小さい 1.5° ぶん多く入る）。
         /// ⚠ この面の 2 つ目の TMP に出す（本文と字の大きさが違うので分けてある）。
+        ///
+        /// ⚠⚠ <b>2026-09-04（0151）に 6 行 → 4 行へ整理した</b>（ユーザー指定
+        /// 「文字が増えたので整理して読みやすさを重視してください」）。**3 言語ぶん出すのは
+        /// 切り替え方だけ**にして、「選んだらスタッフへ」は<b>選んでいる言語 1 行だけ</b>にした。
+        /// ⚠ 順序は固定（日本語 → English → Français）。選択中を先頭へ動かすと、
+        /// ボタンで巡らせるたびに 3 行が並び替わってちらつく。
         /// </summary>
-        private const string FooterText =
+        private const string SwitchLines =
             "ボタンで言語が変わります\n" +
-            "言語を選んだらスタッフにお声がけください\n" +
             "Press the button to change language.\n" +
-            "Then let a staff member know to start.\n" +
-            "Appuyez pour changer de langue.\n" +
-            "Puis prévenez le personnel pour commencer.";
+            "Appuyez pour changer de langue.";
 
-        /// <summary>小さな案内の全文（テストと <c>menu text-audit</c> が読む）。</summary>
-        public static string Footer() => FooterText;
+        /// <summary>
+        /// 選び終わった人が次にすること。<b>ここだけは選んでいる言語で 1 行</b>。
+        ///
+        /// ⚠⚠ <b>3 言語ぶん出さなくてよい理由</b>: この行を読むのは<b>言語を選んだ後</b>で、
+        /// そのとき選ばれているのは<b>その人が読める言語</b>。読めなければ上の 3 行が
+        /// 切り替え方を教えるので、切り替えてからここへ戻ってくる。
+        /// ⚠ 安全の掲示の最後（体調が悪いときの「スタッフにお声がけください」）と
+        /// <b>同じ言い回しが 2 度出る</b>ので、こちらは「言語を選んだら」を頭に付けて役割を分ける。
+        /// </summary>
+        private static string ReadyLineOf(ShowLang lang) => lang switch
+        {
+            ShowLang.En => "Once you have chosen, tell a staff member.",
+            ShowLang.Fr => "Une fois choisie, prévenez le personnel.",
+            _ => "言語を選んだらスタッフにお声がけください",
+        };
+
+        /// <summary>
+        /// 小さな案内の全文（テストと <c>menu text-audit</c> が読む）＝
+        /// <b>切り替え方 3 行 ＋ 空行 ＋ 次にすること 1 行</b>。
+        /// </summary>
+        public static string FooterFor(ShowLang lang)
+            => SwitchLines + "\n\n" + ReadyLineOf(lang);
 
         /// <summary>本文だけ（言語ごと）。テストと <c>menu text-audit</c> が読む。</summary>
         public static string BodyFor(ShowLang lang) => lang switch
@@ -206,14 +231,18 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private const float TextHeightM = 1.75f;
 
-        /// <summary>小さな案内の枠の高さ (m)。3 言語 × 2 行 ＝ 6 行 ＋ 行間。</summary>
+        /// <summary>小さな案内の枠の高さ (m)。切り替え方 3 行 ＋ 空行 ＋ 次にすること ＝ 5 行ぶん。</summary>
         private const float FooterHeightM = 0.90f;
 
         /// <summary>
-        /// 注意書きの塊と、小さな案内のあいだ (m)。2.6m 先で約 2.4° ＝ 1 行ぶんの空き。
-        /// 詰めると本文の続きに読め、空けすぎると別の掲示に見える。
+        /// 注意書きの塊と、小さな案内のあいだ (m)。2.6m 先で約 1.3° ＝ 半行ぶんの空き。
+        /// ⚠ <b>字の側で測った実寸の空き</b>（0151）。行送りの高さで積んでいた頃は
+        /// ここに書いた値の 2.6 倍が画に出ていた。
+        /// ⚠ <b>案内は言語の並びに付いている</b>（切り替え方を言う行なので・0151）。
+        /// 空けすぎると別の掲示に見え、詰めすぎると本文の続きに読める。
+        /// 案内の中の「次にすること」は空行 1 つで離してある。
         /// </summary>
-        private const float FooterGapM = 0.11f;
+        private const float FooterGapM = 0.06f;
 
         /// <summary>
         /// 文字の拡大率。<b>距離から逆算する</b>（<see cref="HmdTextStyle"/> が唯一の正）。
@@ -317,7 +346,7 @@ namespace FixedCamVr.Diagnostics
                 //    リッチテキストの `<size>` が要り、そうすると行の幅を測る物差し
                 //    （`HmdTextStyle.LineWidth`）がタグの字まで数える ＝ 全部の判定が狂う。
                 //    段の違う字を並べる面は 2 つ持つ（`CommsPanel` の上段・下段と同じ形）。
-                TMP_Text footer = MakeLabel(jp, "Footer", Footer(), FooterScale, FooterHeightM);
+                TMP_Text footer = MakeLabel(jp, "Footer", FooterFor(_shownLang), FooterScale, FooterHeightM);
                 _footer = footer;
 
                 // タイトルの黒に潰されないように、黒と題字より後に描く。fontMaterial の getter が
@@ -397,8 +426,10 @@ namespace FixedCamVr.Diagnostics
         {
             if (_text == null || _footer == null) return;
             float s1 = TextScale, s2 = FooterScale;
-            float h1 = Measure(_text) * s1;
-            float h2 = Measure(_footer) * s2;
+            (float top, float bottom) a = Ink(_text);
+            (float top, float bottom) b = Ink(_footer);
+            float h1 = (a.top - a.bottom) * s1;
+            float h2 = (b.top - b.bottom) * s2;
             float total = h1 + FooterGapM + h2;
 
             // 頭の正面やや下。姿勢は追従根が持つので、ここでは根から見た置き場所だけを決める。
@@ -410,25 +441,44 @@ namespace FixedCamVr.Diagnostics
             float z = Mathf.Cos(rad) * d;
 
             // 上が注意書き、下が小さな案内。**2 枚を合わせた塊の中心**が据わりに来る。
-            PlaceInk(_text, s1, baseY + total * 0.5f - h1 * 0.5f, z);
-            PlaceInk(_footer, s2, baseY - total * 0.5f + h2 * 0.5f, z);
+            PlaceInk(_text, s1, baseY + total * 0.5f - h1 * 0.5f, (a.top + a.bottom) * 0.5f, z);
+            PlaceInk(_footer, s2, baseY - total * 0.5f + h2 * 0.5f, (b.top + b.bottom) * 0.5f, z);
         }
 
-        /// <summary>字が実際に占める高さ（面のローカル単位）。⚠ 枠ではなく字の側。</summary>
-        private static float Measure(TMP_Text t)
+        /// <summary>
+        /// <b>実際に組まれた字</b>の上端・下端（面のローカル単位）。
+        ///
+        /// ⚠⚠ <b><c>preferredHeight</c> では積めない</b>（2026-09-04・0151 で実測して直した）。
+        /// あれは<b>行送りの高さ</b>なので、上下に字の無い余白（アセンダ・ディセンダぶん）を含む。
+        /// 実測では狙い 0.075m の空きが<b>画では 0.194m</b>＝ 2.6 倍になっていた
+        /// （＝ 空きの値を触っても、その差のぶんは効かない）。
+        /// ⚠ <c>textBounds</c> も使わない（<b>枠を返すことがある</b>・<c>memory/hmd_text_style.md</c>）。
+        /// ⚠ <c>ForceMeshUpdate</c> は<b>2 回呼ぶ</b> — 1 回目でまだ焼かれていないグリフの
+        /// 焼き付けを要求し、2 回目で焼けたものを含めて組み直す（`OutroReport.SetBody` と同じ）。
+        /// </summary>
+        private static (float top, float bottom) Ink(TMP_Text t)
         {
             t.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
             t.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
-            return t.preferredHeight;
+            TMP_TextInfo info = t.textInfo;
+            float top = float.NegativeInfinity, bottom = float.PositiveInfinity;
+            for (int i = 0; i < info.characterCount; i++)
+            {
+                TMP_CharacterInfo ci = info.characterInfo[i];
+                if (!ci.isVisible) continue;      // 空白・改行は字が無いので数えない
+                if (ci.topLeft.y > top) top = ci.topLeft.y;
+                if (ci.bottomRight.y < bottom) bottom = ci.bottomRight.y;
+            }
+            // 字が 1 つも無い（組めていない）なら高さ 0 として扱う — 積み方は壊さない。
+            return top > bottom ? (top, bottom) : (0f, 0f);
         }
 
         /// <summary>
         /// 字の塊の中心が <paramref name="centerY"/> に来るように面を置く。
         /// ⚠ <b>x は動かさない</b> — 枠幅を最長行に合わせてあるので、左揃えのまま塊が中央に座る。
         /// </summary>
-        private static void PlaceInk(TMP_Text t, float scale, float centerY, float z)
-            => t.transform.localPosition =
-                   new Vector3(0f, centerY - t.textBounds.center.y * scale, z);
+        private static void PlaceInk(TMP_Text t, float scale, float centerY, float inkCenterY, float z)
+            => t.transform.localPosition = new Vector3(0f, centerY - inkCenterY * scale, z);
 
         /// <summary>
         /// TMP の <b>Overlay 版</b>（<c>ZTest Always</c>）へ差し替える。
@@ -495,6 +545,9 @@ namespace FixedCamVr.Diagnostics
             {
                 _shownLang = ShowLanguage.Current;
                 _text.text = ComposeFor(_shownLang);
+                // ⚠⚠ **案内も書き直す**（0151 から「次にすること」が言語で変わる）。
+                //    忘れると、本文だけ替わって最後の 1 行が前の言語のまま残る。
+                if (_footer != null) _footer.text = FooterFor(_shownLang);
                 // ⚠ **行数が変わるので積み直す**（日本語 6 行 / Français 7 行）。
                 //   忘れると、行数の少ない言語で塊が下へずれたまま出る。
                 StackLabels();
@@ -539,6 +592,7 @@ namespace FixedCamVr.Diagnostics
             if (_text == null) return;
             _shownLang = lang;
             _text.text = ComposeFor(lang);
+            if (_footer != null) _footer.text = FooterFor(lang);
             StackLabels();
             _alpha = 1f;
             SetAlpha(1f);

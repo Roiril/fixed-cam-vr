@@ -107,8 +107,10 @@ namespace FixedCamVr.Tests.Diagnostics
             Assert.Less(f.top, b.bottom, "案内が本文に重なっている");
             float gap = b.bottom - f.top;
             float want = Const("FooterGapM");
-            Assert.That(gap, Is.InRange(want * 0.5f, want * 2.2f),
-                        $"空きが {gap:0.000}m（狙い {want:0.000}m）");
+            // ⚠⚠ **狙いとほぼ一致すること**（0151）。ここが緩いと、積み方が行送りの高さで
+            //    計算されていた頃の 2.6 倍（狙い 0.075m が画では 0.194m）を見逃す。
+            Assert.That(gap, Is.EqualTo(want).Within(0.006f),
+                        $"空きが {gap:0.000}m（狙い {want:0.000}m）— 字の側で積めていない");
         }
 
         /// <summary>
@@ -170,6 +172,9 @@ namespace FixedCamVr.Tests.Diagnostics
             ShowLanguage.Select(ShowLang.Fr);   // いちばん行数の多い言語
             late!.Invoke(notice, null);
             Assert.AreEqual(TitleNotice.ComposeFor(ShowLang.Fr), body.text, "文面が替わっていない");
+            // ⚠⚠ 案内の最後の 1 行も言語で変わる（0151）。本文だけ替えると、
+            //    「次にすること」が前の言語のまま残る。
+            Assert.AreEqual(TitleNotice.FooterFor(ShowLang.Fr), footer.text, "案内が替わっていない");
             Assert.That(CenterNow(), Is.EqualTo(baseY).Within(0.08f), "Français で積み直していない");
         }
     }
