@@ -2187,5 +2187,5 @@ Seedance の首尾フレーム: `logs/gen-plate/seedance_stain_first_20260904.pn
 
 安い門: `EyeSoundTests.EyeBig_OpeningFollowsTheSoundsLoudness`（焼いた音を測って表と突き合わせる）・
         `menu eyes` の連番 ＋ `eyes-preview-audio.py` の音で mp4（旧 → 新）。
-実機: （未）
-差: （未）
+実機: 両機へ導入済み（2026-09-04 11:51 の APK）。**音と絵の一致は被って判定する**（ログには出ない）
+差: （未・見てもらってから）
