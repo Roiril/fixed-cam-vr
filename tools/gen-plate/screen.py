@@ -271,7 +271,7 @@ def main() -> int:
     ap.add_argument("--no-mono", action="store_true", help="夜間モードを切って見る（比較用）")
     ap.add_argument("--no-post", action="store_true",
                     help="post（レンズ→センサ→ISP）と夜間モードを丸ごと切る。"
-                         "⚠ **その cue だけ post を掛けない**を検討するときの絵（0138）。"
+                         "⚠ **その cue だけ post を掛けない**を検討するときの絵（0141）。"
                          "劣化と色差は装置の伝送そのものなので残る")
     ap.add_argument("--post-set", default="",
                     help="post の値を差し替えて見る（例 exposure=0,vignette=0.1）")
