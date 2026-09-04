@@ -91,6 +91,13 @@ XP_PID = re.compile(r"/\w+\s*\(\s*(\d+)\s*\)")
 # **画面全体が輪郭として拾われ**、視野が黒枠の中に小さく収まった動画になる（実測で踏んだ）。
 DARK_LEVEL = 28
 
+# 片眼の視野が半画面に占める面積。Quest 3 の実測はどの走行でも 0.60〜0.62 に張り付く。
+# ⚠ 下限が緩いと、部屋が暗い走行で**題字や構造線の輪郭を視野と取り違える**
+#   （2026-09-05 実害: 面積比 0.127 の 842x1038 で焼き、画の一部を全画面へ引き伸ばした動画が出た。
+#    同じ機の正しい値は 0.606 の 1548x1788）。GOOD に届いた時点で探索を打ち切る。
+EYE_MIN_AREA = 0.30
+EYE_GOOD_AREA = 0.55
+
 
 def adb(serial, *args, **kw):
     cmd = ["adb"]
@@ -278,8 +285,8 @@ def find_eye_quad(frame, right_eye=True):
     if not cnts:
         return None, half.shape
     c = max(cnts, key=cv2.contourArea)
-    # 視野は画面のそれなりの割合を占める。小さすぎるものはノイズ。
-    if cv2.contourArea(c) < 0.02 * half.shape[0] * half.shape[1]:
+    # 視野は半画面の 6 割を占める。それより小さい輪郭は視野ではなく、画の中の明るいもの。
+    if cv2.contourArea(c) < EYE_MIN_AREA * half.shape[0] * half.shape[1]:
         return None, half.shape
     peri = cv2.arcLength(c, True)
     quad = None
@@ -314,22 +321,43 @@ def build_warp(quad):
     return cv2.getPerspectiveTransform(quad, dst), W, H
 
 
-def brightest_frame_quad(path, right_eye=True, probe=40):
-    """明るいフレームを探して 4 隅を決める。導入は真っ黒から始まるので先頭では取れない。"""
+def eye_quad_from_video(path, right_eye=True, probe=80):
+    """動画をサンプリングして 4 隅を決める。導入は真っ黒から始まるので先頭では取れない。
+
+    **選ぶのは明るさではなく面積。** かつては「いちばん明るいフレーム」で決めていたが、
+    部屋が暗い走行では画面のほとんどが黒く、閾値を超えるのが**題字と構造線だけ**になる。
+    その輪郭を視野として採ると、画の一部を全画面へ引き伸ばした動画ができる（2026-09-05 実害）。
+    しかも**明るさで選んでいる限り、暗い走行ほど確実にそれを選ぶ**。視野は面積が一定なので、
+    面積で選べば取り違えない。
+    """
     cap = cv2.VideoCapture(path)
     n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
-    best, best_lum = None, -1.0
+    best, best_area, hits, good, seen = None, 0.0, 0, 0, 0
     for i in np.linspace(0, max(n - 1, 0), num=min(probe, max(n, 1)), dtype=int):
         cap.set(cv2.CAP_PROP_POS_FRAMES, int(i))
         ok, fr = cap.read()
         if not ok:
             continue
-        lum = float(fr.mean())
-        if lum > best_lum:
-            q, _ = find_eye_quad(fr, right_eye)
-            if q is not None:
-                best, best_lum = q, lum
+        seen += 1
+        q, half = find_eye_quad(fr, right_eye)
+        if q is None:
+            continue
+        area = float(cv2.contourArea(q)) / (half[0] * half[1])
+        hits += 1
+        if area > best_area:
+            best, best_area = q, area
+        if area >= EYE_GOOD_AREA:
+            good += 1
+            # 視野の実測値に届いたものを数枚見たら打ち切る。1 枚で決めると、たまたま縁が
+            # 欠けたフレームを引いて視野を 2% ほど小さく取る（実測 1548 対 1574）。
+            if good >= 3:
+                break
     cap.release()
+    if best is None:
+        print("視野の四角形が 1 枚も取れなかった（%d 枚を見た）。画面が暗すぎるか、"
+              "録画に体験が写っていない" % seen, file=sys.stderr)
+    else:
+        print("eye viewport: 半画面の %.0f%% / %d 枚中 %d 枚で検出" % (best_area * 100, seen, hits))
     return best
 
 
@@ -338,9 +366,11 @@ def brightest_frame_quad(path, right_eye=True, probe=40):
 def convert(raw_path, out_path, right_eye=True, scale=1.0):
     import imageio_ffmpeg as iio
 
-    quad = brightest_frame_quad(raw_path, right_eye)
+    quad = eye_quad_from_video(raw_path, right_eye)
     if quad is None:
-        print("could not find the eye viewport (screen stayed black?)", file=sys.stderr)
+        # ⚠ ここで代用の矩形を作らない。中身とラベルの食い違った動画を出すくらいなら、
+        #    生の録画（両眼・台形のまま）を人が見るほうがよい。
+        print("片眼の切り出しを中止した。生の録画はそのまま残してある", file=sys.stderr)
         return False
     M, W, H = build_warp(quad)
     if scale != 1.0:
