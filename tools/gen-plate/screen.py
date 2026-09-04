@@ -214,7 +214,7 @@ def post(col: np.ndarray, uv_u, uv_v, p: dict, mono: float, lod: float,
 
 
 def render(live_path, overlay_path, mask_path, p: dict, blocks: float, mono: float,
-           frame=(FRAME_W, FRAME_H)) -> np.ndarray:
+           frame=(FRAME_W, FRAME_H), no_sensor: bool = False) -> np.ndarray:
     live = srgb_to_linear(np.asarray(Image.open(live_path).convert("RGB"), dtype=np.float64))
     src_size = (live.shape[1], live.shape[0])
     scale = contain_scale(src_size, frame[0] / frame[1])
@@ -248,6 +248,8 @@ def render(live_path, overlay_path, mask_path, p: dict, blocks: float, mono: flo
             m = np.ones(frame[::-1])
         col = col * (1 - m[..., None]) + ov_col * m[..., None]
 
+    if no_sensor:
+        return col
     return post(col, uv_u, uv_v, p, mono, lod, src_uv, src_size)
 
 
@@ -267,6 +269,12 @@ def main() -> int:
     ap.add_argument("--mask")
     ap.add_argument("--lap", type=float, default=4.0, help="何周目として劣化させるか（1..4）")
     ap.add_argument("--no-mono", action="store_true", help="夜間モードを切って見る（比較用）")
+    ap.add_argument("--no-post", action="store_true",
+                    help="post（レンズ→センサ→ISP）と夜間モードを丸ごと切る。"
+                         "⚠ **その cue だけ post を掛けない**を検討するときの絵（0138）。"
+                         "劣化と色差は装置の伝送そのものなので残る")
+    ap.add_argument("--post-set", default="",
+                    help="post の値を差し替えて見る（例 exposure=0,vignette=0.1）")
     ap.add_argument("--out", default="logs/gen-plate/screen.png")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
@@ -276,6 +284,13 @@ def main() -> int:
              tint=0.0, lift=0.02, vignette=0.38)
     for k, v in (show.get("post") or {}).items():
         if k in p and isinstance(v, (int, float)):
+            p[k] = float(v)
+    if args.post_set:
+        for kv in args.post_set.split(","):
+            k, _, v = kv.partition("=")
+            k = k.strip()
+            if k not in p:
+                raise SystemExit(f"post に無い値: {k}（{', '.join(sorted(p))}）")
             p[k] = float(v)
 
     web = os.path.join(spec.REPO, "tools", "web-compositor")
@@ -294,12 +309,18 @@ def main() -> int:
     blocks = FINE_BLOCKS + (END_BLOCKS - FINE_BLOCKS) * progress
     mono = 0.0 if args.no_mono else progress
 
-    col = render(live, overlay, mask, p, blocks, mono)
+    if args.no_post:
+        # 素通し（露出も色も触らない）。劣化と色差だけが残る
+        p = dict(exposure=0.0, contrast=1.0, saturation=1.0, temperature=0.0,
+                 tint=0.0, lift=0.0, vignette=0.0)
+        mono = 0.0
+    col = render(live, overlay, mask, p, blocks, mono, no_sensor=args.no_post)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     img = linear_to_srgb(col).astype(np.uint8)
     Image.fromarray(img).save(args.out)
     print(f"{args.out}  周 {args.lap:.0f} → 劣化 {progress:.2f} / {blocks:.0f} ブロック / "
-          f"夜間モード {mono:.2f}")
+          f"夜間モード {mono:.2f}" + ("  ⚠ post を切った（素通し）" if args.no_post else "")
+          + (f"  post 差し替え {args.post_set}" if args.post_set else ""))
 
     if mask:
         print(seam_report(img, mask))
