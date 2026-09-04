@@ -97,6 +97,32 @@ py -3.11 -c "import imageio_ffmpeg,subprocess,sys; subprocess.run([imageio_ffmpe
 `stain` `smile` `face` は通っている語ではない（未検証）。弾かれたら `the dark patch on the cloth` と言い換える。
 画が原因なら明るい版（`gen-tone.py dim ... --scale 0.15` で戻せる）。
 
+## ⚠⚠ 実際にもらった動画は、画角も顔も並びも違った（2026-09-04・0148）
+
+**4:3 で渡したのに 16:9（854x480）で返り、部屋も顔も描き直されていた。並びも逆だった**
+（1 コマ目が笑み・最終コマが元の顔）。⇒ **動画そのものは素材にできない。置き直す。**
+
+```bash
+# 1) 倍率と位置を測る（動画の 3 点 : 素材の 3 点。顔なら目 2 つと口）
+py -3.11 tools/gen-plate/fitvideo.py --video <もらった.mp4> --plate <プレート.jpg> \
+    --probe "255,68,325,73,295,145:215,80,252,93,227,139" \
+    --probe-frame <動画のコマ.png> --probe-material <素材.png> --out /dev/null
+
+# 2) 置き直す（音を落とし・逆再生し・マスクの中だけ動画にし・明るさをプレートへ合わせる）
+py -3.11 tools/gen-plate/fitvideo.py --video <もらった.mp4> \
+    --plate tools/web-compositor/captures/plate_A_<日時>.jpg \
+    --mask tools/web-compositor/masks/cue_stain_A_<日付>_vid.png --match \
+    --scale 0.6683 --at 30,8 --reverse \
+    --out tools/web-compositor/captures/gen_stainA_smile_<日付>.mp4
+```
+
+⚠ **`--match` を外さない。** 動画の幕はプレートより暗い（実測 中央値 63 対 90）ので、
+そのまま置くと**届いた画が真っ黒**になる。マスクの中の明るい方 30%（＝ 染まっていない布）で合わせる。
+⚠ **回転は入れない。** 3 点で相似変換を解くと数度の回転が出るが、掛けると幕ごと傾いて一目で分かる。
+⚠ **動画の中の別の物がマスクに入り込む。** 実測では動画の幕のパイプが素材 y=168 に来て、
+染みを横切る暗い帯になった。⇒ **マスクの下端を切る**（`--mask` に切った版を渡す）。
+置いた後に、マスクの中の行ごとの明るさをプレートと比べると、入り込んだ物がすぐ出る。
+
 ## 戻すとき
 
 ```bash
