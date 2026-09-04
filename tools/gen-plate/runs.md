@@ -952,3 +952,27 @@ autorun の重複の焼き直しを足した版で。**4 枚とも別の絵**（
 
 確認は `--preview` の右下（合成）を拡大して 3 か所 — 接地の隙間 / 右の継ぎ目 / 明るさ。
 `logs/gen-plate/refit_1341_composite.png` が当日役のプレートに貼った 1 枚。
+
+### 2026-09-04 15:26 いま繋がっているカメラ B で通した（体験者が見る画まで）
+
+```bash
+py -3.11 tools/gen-plate/grab.py --cam B
+py -3.11 tools/gen-plate/refit.py --material <素材> --base-plate <8/23 19:42> --day-plate <いまの> \
+    --quad 0,0,240,0,240,317,0,336 --out <当日素材> --mask <当日マスク> --preview logs/gen-plate/refit_now.png
+py -3.11 tools/gen-plate/screen.py --overlay <当日素材> --mask <当日マスク> --live <いまの> --lap 1 \
+    --out logs/gen-plate/seen_hands_B_lap1.png
+py -3.11 tools/gen-plate/screen.py --live <いまの> --lap 1 --out logs/gen-plate/seen_live_B_lap1.png   # 下駄を測る相手
+```
+
+⚠ **部屋が変わっていた**（左手の壁の前に大きな合板が立てかけてある）。壁ごとの素材はその上に乗るので狙いどおり動いた。
+床の線は素材の元とほぼ同じ（x0:340 / x230:319）。ずれの推定は相関 0.31 で 0 に倒れた。
+
+| | 値 |
+|---|---|
+| 継ぎ目の段差（合成なしとの差） | **1.85**（線 4.0） |
+| マスクの外 | **最大差 0.0** ＝ 画素まで同じ |
+| 届いた壁の濃淡の幅 | **87 階調** |
+| 壁の面の明るさ | 38.7（部屋の他は 35.4） |
+
+⭐ **`screen.py` が印字する「勾配 8.6」は生の値で、下駄が乗っている。**
+合成なしの同じ画で同じ列を測ると 1.04 あり、差し引くと 1.85。**生の値で合否を決めない**（README §3.4）。
