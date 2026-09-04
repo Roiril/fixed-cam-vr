@@ -90,6 +90,10 @@ namespace FixedCamVr.Diagnostics
         private float _alpha;
         private float _resolveWait;
         private int _shownCount = -1;
+        // いま出ている文面の言語。⚠ **報告の数だけを見ていると、数が 0 のまま終わった体験者に
+        // 起動時の日本語が出る**（`Build` が Awake で組むので、そこでの言語は必ず既定）。
+        // 相方の注意書き（`TitleNotice`）は最初からこれを持っていて、片方だけ漏れていた。
+        private ShowLang _shownLang = ShowLanguage.Default;
         // 打鍵の刻み。**画に何文字出したか**をここから決め、同じ数えから音を鳴らす。
         private float _typeElapsed;
         private int _charCount;
@@ -272,6 +276,7 @@ namespace FixedCamVr.Diagnostics
             _lastShown = 0;
             VisibleChars = 0;
             _shownCount = markCount;
+            _shownLang = ShowLanguage.Current;
 
             if (!wasActive) tmp.gameObject.SetActive(false);
         }
@@ -332,7 +337,9 @@ namespace FixedCamVr.Diagnostics
             if (!wanted)
             {
                 int n = showControl != null ? showControl.VisitorMarkCount : 0;
-                if (n != _shownCount) SetBody(n);
+                // ⚠ 言語も見る。報告を 1 度も押さなかった体験者は数が 0 のまま終わるので、
+                //   数だけを見ていると Awake で組んだ日本語がそのまま出る（2026-09-04）。
+                if (n != _shownCount || _shownLang != ShowLanguage.Current) SetBody(n);
                 // 次のランのために打鍵を頭へ戻す（前の体験者の続きから打ち始めない）。
                 if (_typeElapsed > 0f)
                 {

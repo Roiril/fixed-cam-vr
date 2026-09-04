@@ -644,6 +644,19 @@ namespace FixedCamVr.Streaming
                 }
                 if (req.result != UnityWebRequest.Result.Success) return null;
                 var tex = WithMipmaps(DownloadHandlerTexture.GetContent(req));
+                // ⚠⚠ **待っているあいだに、別の要求が同じ URL を先に格納していることがある**
+                //    （2026-09-04）。在庫の確認からここまでに待ちが 3 つあり、その間の要求を
+                //    覚えていない。素材の先読み（`ShowControlClient.PrefetchStillsAsync`）と、
+                //    その素材を出す cue が同じ URL を掴むのは設計上の通常動作。
+                //    後から書いた方で上書きすると、**先に入っていた 1 枚が辞書から消えて
+                //    `OnDestroy` の掃除が届かなくなる**（Unity のテクスチャは GC で消えない）。
+                //    先に入った方を使い、自分が落とした方を捨てる。
+                if (_urlTextureCache.TryGetValue(url, out var raced) && raced != null)
+                {
+                    if (Application.isPlaying) Destroy(tex);
+                    else DestroyImmediate(tex);
+                    return raced;
+                }
                 _urlTextureCache[url] = tex;
                 return tex;
             }

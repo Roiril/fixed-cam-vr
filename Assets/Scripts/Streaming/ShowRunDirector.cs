@@ -45,6 +45,8 @@ namespace FixedCamVr.Streaming
         private GlitchFx? _glitch;
         /// <summary>警告音の育ち（0145）を落とすため。⚠ 落とさないと 2 人目が最大から始まる。</summary>
         private SwitchAudioCue? _switchCue;
+        private Recording.SegmentRecorder? _recorder;
+        private LangSwitchAudioCue? _langSwitchCue;
         private CameraFeelFx? _feel;
         private IntroDirector? _intro;
         private bool _subscribed;
@@ -232,6 +234,11 @@ namespace FixedCamVr.Streaming
             //    落とさないと次の体験者は 1 発目から最大の警告を聞く。
             //    画にも録画にも出ないので、走行の `swAlert` の 2 つ目でしか気づけない。
             _switchCue?.ResetRun();
+            // ⚠⚠ **言語切替の音も落とす**（2026-09-04）。もらった 2 本を交互に鳴らす順番は
+            //    体験者ごとに 1 本目からで、`rules/sound-design.md` の「次の人には同じ順で聞こえる」が
+            //    そう決めている。**この配線だけが漏れていて、`ResetRun` の呼び出し元が
+            //    Assets 全体に 1 つも無かった**（`memory/visitor_sound_reset.md` と同じ型）。
+            _langSwitchCue?.ResetRun();
             // 終幕の合図も落とす。**ユーザーが「周回リセットのときにリセットされるフラグ」と
             // 名指ししたもの**（canon/LEDGER.md 0048）。落とす場所はここ 1 つ。
             _ending.ResetRun();
@@ -250,6 +257,13 @@ namespace FixedCamVr.Streaming
             //    `_logic.BeginRun()` が即 `RunBegan` を返して `OnRunBegan` → `BeginMainRun` →
             //    `RunReset` が走るので、号令元の残りと二重リセットになる。ここで落とす方が安全。
             timelineDirector?.ResetRun();
+            // ⚠⚠ **録画係も同じ理由でここで落とす**（2026-09-04）。上の演出と同型で、こちらは
+            //    **録画**が導入中に開く。開いてしまうと本編で開き直せないので
+            //    （`SegmentRecorder.SegmentAlreadyRecorded` が「録画済み」と読む）、3 周目に流す
+            //    映像が導入の末尾で固定される。**実害は B / C で打ち切って交代したとき**
+            //    （3 周目 B / C が `recLap:1` を読む）。3 周目 A は `recLap:2` なので影響しない。
+            //    ⚠ epoch は進めない（卓の runEpoch とずれると前の体験者のファイルを再生する）。
+            _recorder?.ResetRunKeepEpoch();
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             NotifyPhaseIfChanged();
             RunRestarted?.Invoke();
@@ -312,6 +326,9 @@ namespace FixedCamVr.Streaming
             if (_switchCue == null) _switchCue = FindObjectOfType<SwitchAudioCue>();
             if (_feel == null) _feel = FindObjectOfType<CameraFeelFx>();
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
+            if (_recorder == null) _recorder = FindObjectOfType<Recording.SegmentRecorder>();
+            // ⚠ 言語切替の音は `TitleNotice` が実行時に AddComponent するので、Inspector には出ない。
+            if (_langSwitchCue == null) _langSwitchCue = FindObjectOfType<LangSwitchAudioCue>();
         }
 
         // 周回は「本編の区間進行」からだけ受ける（ゲートが閉じている導入・終了では来ない）。

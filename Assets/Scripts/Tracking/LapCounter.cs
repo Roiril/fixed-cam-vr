@@ -256,10 +256,28 @@ namespace FixedCamVr.Tracking
         private void ApplyOrder()
         {
             int[] order = showControl != null ? showControl.CourseOrder : Array.Empty<int>();
-            _logic.SetOrder(order);
-            if (logChanges)
-                Debug.Log($"[LapCounter] order={FormatOrder(order)} (n={order.Length}) → lap=1 / pos=0");
+            // ⚠⚠ **順路が変わっていなければ触らない**（2026-09-04）。`SetOrder` は中で `Reset()` を
+            //    呼ぶので（lap=1 / pos=0 / 足跡クリア）、会期中に卓でフロアマップを保存して
+            //    `CourseChanged` が飛ぶだけで、**体験中の人の周回が 1 に戻る**。終了の出口は
+            //    `lap > totalLaps` の 1 本しかないので、その人は時間切れまで終われない。
+            if (_appliedOrder == null || !OrderEquals(_appliedOrder, order))
+            {
+                _appliedOrder = (int[])order.Clone();
+                _logic.SetOrder(order);
+                if (logChanges)
+                    Debug.Log($"[LapCounter] order={FormatOrder(order)} (n={order.Length}) → lap=1 / pos=0");
+            }
             SeedCurrentZone();
+        }
+
+        // 適用済みの順路（同じ順路の再適用で周回を巻き戻さないため）。null は「まだ 1 度も適用していない」。
+        private int[]? _appliedOrder;
+
+        private static bool OrderEquals(int[] a, int[] b)
+        {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+            return true;
         }
 
         // 起動時 / order 変更時、既にスタート領域に居るため ActiveChanged は発火しない。

@@ -207,6 +207,24 @@ namespace FixedCamVr.Streaming.Recording
         /// </summary>
         public void ResetRunLocal() => ResetRun(CurrentEpoch + 1);
 
+        /// <summary>
+        /// <b>epoch を進めずに、開いてしまった書き手を閉じて捨てる。</b>
+        ///
+        /// ⚠⚠ ラン開始の号令は `RunReset?.Invoke()` → <c>ShowRunDirector.BeginRun</c> の順で走るが、
+        ///   <c>RunReset</c> の時点では**ゲートがまだ前の相のまま開いている**（閉じるのは
+        ///   <c>BeginRun</c> の中の <c>ApplyGate</c>）。そのため周回リセットの再シードが
+        ///   <c>OnCameraEntered</c> までそのまま届き、**導入中に lap=1 の区間が開く**。
+        ///   本編に入って再シードされても <see cref="SegmentAlreadyRecorded"/> が「録画済み」と
+        ///   読んで開き直さないので、3 周目に流す映像が**導入の末尾**で固定される。
+        ///   実害が出るのは B / C で打ち切って交代したとき（3 周目 B / C が 1 周目を読む）。
+        ///   3 周目 A は 2 周目を読むので影響しない。
+        ///
+        /// ⚠ <b>epoch は進めない。</b> 卓が配る runEpoch とずれると、前の体験者のファイルが
+        ///   このランの録画として再生される（<see cref="ResetRun"/> の注記と同じ理由）。
+        ///   呼ぶのは <c>ShowRunDirector.BeginRun</c> の <c>ApplyGate</c> の後 1 か所だけ。
+        /// </summary>
+        public void ResetRunKeepEpoch() => ResetRun(CurrentEpoch);
+
         // ---- 録り始めの線（record.startLineId・`canon/LEDGER.md` 0061）----
         //
         // ⚠⚠ **自前の検出器を持つ。`TakeRunner` の線と共有しない。**

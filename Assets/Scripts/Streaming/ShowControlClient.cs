@@ -965,6 +965,12 @@ namespace FixedCamVr.Streaming
         private ScreenOverlayController? _overlay;
         private Material? _material;
         private int _rev = -1;
+        // 適用に失敗した版と、その版で何回失敗したか（`PollLoopAsync` の巻き戻し用）。
+        private int _applyFailRev = int.MinValue;
+        private int _applyFailCount;
+        // 同じ版で何回まで再試行するか。超えたら諦めて先へ進む（恒久的に壊れた設定で
+        // 2 秒ごとに例外を吐き続けると、logcat のリングバッファを食い潰して走行の前半が落ちる）。
+        private const int ApplyRetryMax = 3;
         private string _appliedCue = "";
         private string _appliedOverride = "";
 
@@ -1962,8 +1968,37 @@ namespace FixedCamVr.Streaming
                     }
                     if (state.rev != _rev)
                     {
+                        // ⚠⚠ **版番号を進めるのは適用しきってから。**（2026-09-04）
+                        //   進めた後で `Apply` が途中で落ちると、ポーリングは 2 秒後に再開するのに
+                        //   **同じ設定は二度と来ない**（版が進んでいるので `!=` が偽）。卓は配れた顔を
+                        //   しているので、当日は「操作したのに実機が反応しない」としか見えない。
+                        int prevRev = _rev;
                         _rev = state.rev;
-                        Apply(state);
+                        try
+                        {
+                            Apply(state);
+                            _applyFailRev = int.MinValue;
+                            _applyFailCount = 0;
+                        }
+                        catch (Exception e)
+                        {
+                            if (_applyFailRev != state.rev) { _applyFailRev = state.rev; _applyFailCount = 0; }
+                            _applyFailCount++;
+                            if (_applyFailCount < ApplyRetryMax)
+                            {
+                                _rev = prevRev;   // 巻き戻して次のポーリングで同じ版をもう一度受ける
+                                Debug.LogError($"[ShowControl] 設定の適用に失敗（rev={state.rev}・"
+                                               + $"{_applyFailCount}/{ApplyRetryMax} 回目・巻き戻して再試行）: {e}");
+                            }
+                            else
+                            {
+                                // 恒久的に壊れた設定。これ以上回しても同じなので先へ進める
+                                // （半分だけ適用された状態は残るが、次の変更で上書きされる）。
+                                Debug.LogError($"[ShowControl] 設定の適用に {ApplyRetryMax} 回失敗（rev={state.rev}）。"
+                                               + $"この版は諦める: {e}");
+                            }
+                            try { await Task.Delay(1000, ct); } catch (OperationCanceledException) { return; }
+                        }
                     }
                 }
                 catch (OperationCanceledException) { return; }
@@ -2160,9 +2195,12 @@ namespace FixedCamVr.Streaming
                 // 無条件クリアし、override 前に積まれたゾーン保留が cooldown 後に Zone commit して固定が破れるのを防ぐ。
                 // Director 未配線（null）なら _logic 自体が無く stale-pending バグも起きないので null-safe skip で正しい。
                 ResolveSwitchDirector()?.SetOverrideActive(hasOverride);
-                if (hasOverride && registry != null)
+                // ⚠ `state.cameras` は卓の JSON 由来なので、欠けていれば null・要素も null でありうる
+                //   （すぐ上の `_cameras` の走査が null 要素を飛ばしているのと同じ前提）。無防備に
+                //   触ると `Apply` がここで落ち、この版の設定が丸ごと適用されない。
+                if (hasOverride && registry != null && state.cameras != null)
                 {
-                    int idx = Array.FindIndex(state.cameras, c => c.id == ovr);
+                    int idx = Array.FindIndex(state.cameras, c => c != null && c.id == ovr);
                     if (idx >= 0) SetActiveOverride(idx);
                     else Debug.LogWarning($"[ShowControl] unknown camera id: {ovr}");
                 }

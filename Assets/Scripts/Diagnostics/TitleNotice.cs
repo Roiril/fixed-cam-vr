@@ -566,7 +566,12 @@ namespace FixedCamVr.Diagnostics
                 //    **前の人が英語を選んでいた回のリセットで、誰も押していないのに鳴る**。
                 //    押した回だけ増えるのは `ChangeCount` の 1 つ（`Cycle` でしか増えない）。
                 int changes = ShowLanguage.ChangeCount;
-                if (changes > _lastLangChange) switchSfx?.Play();
+                // ⚠⚠ **比べる側も体験者ごとに 0 へ戻る**（2026-09-04）。`ChangeCount` は
+                //    `ShowLanguage.Reset` で 0 に戻るのに、`_lastLangChange` を戻す場所は
+                //    このブロックの中しかない。前の人が 3 回押して日本語へ戻していると
+                //    `_shownLang == Current` でここへ入らず 3 が残り、**次の人の 1 回目が
+                //    `1 > 3` で偽になって無音になる**。増減ではなく「変わったか」で見る。
+                if (changes != _lastLangChange && changes > 0) switchSfx?.Play();
                 _lastLangChange = changes;
                 // ⚠⚠ **案内も書き直す**（0151 から「次にすること」が言語で変わる）。
                 //    忘れると、本文だけ替わって最後の 1 行が前の言語のまま残る。

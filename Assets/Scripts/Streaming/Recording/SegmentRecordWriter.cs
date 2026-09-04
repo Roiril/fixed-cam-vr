@@ -93,6 +93,8 @@ namespace FixedCamVr.Streaming.Recording
         private volatile bool _flushDone;   // 背景スレッドが書き終えたか（実績が確定したか）
         private int _queuedFrames;          // 書き出しへ渡した枚数（Dispose で確定）
         private volatile bool _capped;
+        // 書き出しの失敗を報告したか（`_capped` と混ぜない — あちらは「尺が縮んだ」の意味）。
+        private volatile bool _writeFailed;
         private int _lastPtsMs = -1;
 
         // 切り替えの瞬間の pts（-1 = まだ切り替わっていない）。ここから先は**古い側を落とさない**
@@ -303,9 +305,20 @@ namespace FixedCamVr.Streaming.Recording
                 Interlocked.Exchange(ref _written, written);
                 Interlocked.Exchange(ref _writtenFrames, frames);
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 // ディスク満杯・権限・端末側の都合。録画は諦めるが体験は続ける（不変条件 1）。
+                // ⚠⚠ **黙って諦めない**（2026-09-04）。ここを握りつぶすと、`_capped` は
+                //    「容量で尺が縮んだ」と同じ顔になる。3 周目に映像が出ない当日、原因が
+                //    ディスクなのか台本なのか切り分けられない。1 度だけ出す（背景スレッドから
+                //    毎フレーム吠えると logcat のリングバッファを食う）。
+                if (!_writeFailed)
+                {
+                    _writeFailed = true;
+                    // ⚠ このファイルは `using UnityEngine;` を持たない（`System.IO.Path` と
+                    //   自前の `Path` プロパティの衝突を避けている）。完全修飾で呼ぶ。
+                    UnityEngine.Debug.LogError($"[SegmentRecordWriter] 書き出しに失敗（この区間は諦める） {_path}: {e}");
+                }
                 _capped = true;
             }
             finally

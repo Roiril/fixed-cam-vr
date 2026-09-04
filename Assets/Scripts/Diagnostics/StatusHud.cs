@@ -194,6 +194,32 @@ namespace FixedCamVr.Diagnostics
             if (_visible && autoHideSec > 0f) _hideAt = Time.unscaledTime + autoHideSec;
         }
 
+        // ⚠⚠ **ラン開始で必ず消す**（2026-09-04）。落とす経路が右 B のトグルしか無いので、
+        //    本編中にスタッフが開いて閉じ忘れると、体験者の視線前方に日本語の業務表示が
+        //    残ったままになる。**画にしか出ない**（`IsVisible` は heartbeat にもテレメトリにも
+        //    乗らない）ので、卓でも当日パネルでも気づけない。
+        //    シーンの既定は `autoHideSec: 0` ＝ 自動で閉じないので、ここが唯一の受け皿。
+        private void Start()
+        {
+            _runDirector = FindObjectOfType<ShowRunDirector>();
+            if (_runDirector != null)
+            {
+                _runDirector.RunRestarted += OnRunRestarted;
+                _runRestartHooked = true;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (_runRestartHooked && _runDirector != null) _runDirector.RunRestarted -= OnRunRestarted;
+            _runRestartHooked = false;
+        }
+
+        private void OnRunRestarted() => SetVisible(false);
+
+        private ShowRunDirector? _runDirector;
+        private bool _runRestartHooked;
+
         private void Update()
         {
             // オートハイド（手動表示のみ・登録ガイダンスは対象外）。
