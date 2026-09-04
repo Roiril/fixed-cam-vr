@@ -62,7 +62,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// <b>音は動かしていない</b>（0135 は「音にアニメーションを合わせる」）。
+        /// <b>音は動かしていない</b>（0138 は「音にアニメーションを合わせる」）。
         /// 焼いた <c>sfx_eye_big</c> のいちばん大きいところ（0.4 秒窓の実効値）は
         /// 0131 のとおり頭から 1.234 秒のまま（<c>tools/ingest-sounds.py</c> の <c>ALIGN</c>）。
         /// ここが動いたら、下の表（<see cref="AnomalyEyesLogic.HintOpenKnots"/>）を測り直すこと。
@@ -97,7 +97,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// ⚠⚠ <b>大きい目の開き方は、音の聴感の形そのもの</b>（0135・ユーザー逐語
+        /// ⚠⚠ <b>大きい目の開き方は、音の聴感の形そのもの</b>（0138・ユーザー逐語
         /// 「音にアニメーションを合わせてほしい。自然な感じに」）。
         ///
         /// 焼いたファイルを測って <see cref="AnomalyEyesLogic.HintOpenKnots"/> と突き合わせる:

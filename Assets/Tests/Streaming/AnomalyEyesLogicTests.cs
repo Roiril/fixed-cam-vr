@@ -50,7 +50,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Hint_OpensAtTheSoundsOnset_ThenFollowsItsSwell()
         {
             // ⚠⚠ 0076 の主題（**止まっている時間が長く、開くのは一瞬**）は残しつつ、
-            //    0135 で「一瞬」の置き場を**音の頭**に移した。音が立つまでは 1 画素も出ない。
+            //    0138 で「一瞬」の置き場を**音の頭**に移した。音が立つまでは 1 画素も出ない。
             float justBefore = AnomalyEyesLogic.HintCurve((AnomalyEyesLogic.HintOnsetSec - 0.02f) / Hint);
             Assert.That(justBefore, Is.EqualTo(0f), "音が立つ前は闇のまま");
 
@@ -180,7 +180,7 @@ namespace FixedCamVr.Streaming.Tests
             // 設計値の固定。ここを動かすと「区間の滞在に収まる」前提が崩れる。
             // 10.5（初版）→ 8.4（0076）→ **4.92**（0094 で止まる 3 つを 0.5 秒へ）。
             Assert.That(Hint + Stare + Swarm, Is.EqualTo(4.92f).Within(1e-2f));
-            // 止まっている 3 つ ＝ 闇 / 開き切ってからの静止 / 凝視（0135 で断片の静止は無くなった）。
+            // 止まっている 3 つ ＝ 闇 / 開き切ってからの静止 / 凝視（0138 で断片の静止は無くなった）。
             // 闇は音の頭（0.70）まで。開き切ってからの静止は 0.45。凝視は 0.5。
             Assert.That(AnomalyEyesLogic.HintOnsetSec, Is.EqualTo(0.70f).Within(0.01f));
             Assert.That(Hint - AnomalyEyesLogic.HintFullSec, Is.EqualTo(0.45f).Within(0.01f));

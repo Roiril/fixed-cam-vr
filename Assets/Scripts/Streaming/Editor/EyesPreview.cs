@@ -216,7 +216,7 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             float open = AnomalyEyesLogic.HintSec + AnomalyEyesLogic.StareSec + AnomalyEyesLogic.SwarmSec;
             if (trim <= 0f) return open;
-            // 止まっている 3 つ ＝ 闇 / 開き切ってからの静止 / 凝視（0135 で「断片のまま静止」は無くなった）。
+            // 止まっている 3 つ ＝ 闇 / 開き切ってからの静止 / 凝視（0138 で「断片のまま静止」は無くなった）。
             float dark = AnomalyEyesLogic.HintOnsetSec;
             float held = AnomalyEyesLogic.HintSec - AnomalyEyesLogic.HintFullSec;
             return open - dark - held - AnomalyEyesLogic.StareSec + trim * 3f;
@@ -227,7 +227,7 @@ namespace FixedCamVr.Streaming.EditorTools
         ///
         /// 詰めるのは<b>止まっている 3 つだけ</b> — 闇 / 開き切ってからの静止 / 凝視。
         /// 動いている所（音に沿って開く・さざめき・間・一気に）は<b>1 倍のまま</b>で、
-        /// そこを速めると 0076 の緩急（止まる と 一気に）と 0135 の音との一致が消える。
+        /// そこを速めると 0076 の緩急（止まる と 一気に）と 0138 の音との一致が消える。
         ///
         /// ⚠ 凝視を詰めると、その中の瞬き（尺の 11%）も一緒に縮む。
         /// ⚠ 早回しでは音と合わない（音は詰められない）。音との一致を見るなら trim を渡さないこと。
