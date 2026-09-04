@@ -1189,10 +1189,16 @@ namespace FixedCamVr.Diagnostics
                                          ? "-"
                                          : $"{_sound.SpatialClipCount}/{_sound.StereoInSpatial}"
                                            + $"/{_sound.SpatialBedsAudible}");
-            //   sndAz = 人形の笑い 4 声の方角（度・ワールド）。**体験者ごとに引き直す**ので
-            //           走行ごとに違う。90° ごとの区画へ 1 つずつ入るので、
-            //           **どの 2 つも 20° より近づかない**（近ければ引き直しが壊れている）。
+            //   sndAz = 人形の笑いの方角（度・ワールド）。**体験者ごとに引き直す**ので走行ごとに違う。
+            //           ⚠⚠ **2026-09-04 から 8 個**（体ごとに 1 つ・`canon/LEDGER.md` 0139）。
+            //           360° を等分した区画へ 1 つずつ入るので、**どの 2 つも区画の 1/3 より
+            //           近づかない**（8 体なら 15°。近ければ引き直しが壊れている）。
             _sb.Append(" sndAz=").Append(_sound == null ? "-" : _sound.LaughBearingsText);
+            //   sndLaugh = **いま何か所から笑いが鳴っているか**（0139）。
+            //   ⚠⚠ 「周囲に大勢いる」が成立したかの唯一の証拠。**画にも録画にも出ない。**
+            //      4 周目 A の群れで 8・3 周目 C で 7（1 ＋ 2 ＋ 4）が満点で、
+            //      1 なら体ごとに分けた意味が消えている（焼き忘れ／取り込み忘れ）。
+            _sb.Append(" sndLaugh=").Append(_sound == null ? "-" : _sound.LaughPoints.ToString());
             //   sndWind  = 別の場所（バックルームズ）の風（`canon/LEDGER.md` 0131）。
             //   ⚠⚠ **異世界が映っているあいだだけ立ち、そのあいだ `sndScore` は 0**。
             //      画は 4 秒の演出として出るが、**音が入れ替わったかは画に 1 ビットも出ない**。

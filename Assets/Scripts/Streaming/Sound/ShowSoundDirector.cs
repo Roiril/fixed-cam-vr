@@ -95,20 +95,36 @@ namespace FixedCamVr.Streaming
         private BedVoice _white = new BedVoice();
 
         /// <summary>
+        /// <b>笑いの 1 層</b>（体ごとの声の束・2026-09-04・<c>canon/LEDGER.md</c> 0139）。
+        ///
+        /// ⚠⚠ <b>1 層 ＝ 1 点ではない。</b> 焼く側（<c>ingest-sounds.py</c> の <c>LAUGH_BODIES</c>）が
+        /// 表の左右の位置で体ごとに割ってあり、ここはその**体の数だけ声を持って別々の方角へ置く**。
+        /// ユーザー指定「いろんな場所から同時に少しずらして鳴らすくらいしっかりしたい」。
+        /// </summary>
+        private sealed class LaughLayer
+        {
+            public BedVoice[] bodies = System.Array.Empty<BedVoice>();
+            /// <summary>体ごとの輪のスロット（<see cref="_laughSpots"/> の添字）。</summary>
+            public int[] slots = System.Array.Empty<int>();
+            /// <summary>直前まで鳴っていたか（頭出しの縁を作るため・体で共有する）。</summary>
+            public bool audible;
+        }
+
+        /// <summary>
         /// 人形の笑い。**報告を押すまでループ**（<c>canon/LEDGER.md</c> 0066）。
         /// 敷く音の器に載せているが地の音ではない — ループして出し入れできるのがここだけだから。
+        /// <b>8 体が輪をひとまわり埋める</b>（0139）。
         /// </summary>
-        private BedVoice _dolls = new BedVoice();
-        private bool _dollsAudible;
+        private readonly LaughLayer _dolls = new LaughLayer();
 
         /// <summary>
         /// 入れ替わった人形の笑い（3 周目・<c>canon/LEDGER.md</c> 0086）。
         /// **一人 ＋ 増える 2 枚**で、C のあいだに後ろの 2 枚が入ってくる。
         /// ⚠ ループ長を互いに素にしてある（11 / 13 / 17 秒）ので、3 枚が同じ所で巻き戻らない。
         /// </summary>
-        private BedVoice _dollOne = new BedVoice();
-        private BedVoice _dollGrowA = new BedVoice(), _dollGrowB = new BedVoice();
-        private bool _dollOneAudible, _dollGrowAAudible, _dollGrowBAudible;
+        private readonly LaughLayer _dollOne = new LaughLayer();
+        private readonly LaughLayer _dollGrowA = new LaughLayer();
+        private readonly LaughLayer _dollGrowB = new LaughLayer();
         private readonly System.Collections.Generic.Dictionary<string, AudioClip?> _spot =
             new System.Collections.Generic.Dictionary<string, AudioClip?>();
         private readonly System.Collections.Generic.Dictionary<SoundCue, int> _variant =
@@ -157,10 +173,14 @@ namespace FixedCamVr.Streaming
         private Transform? _screen;
 
         /// <summary>
-        /// 人形の笑い 4 声の方角（ワールド・度）。<b>体験者ごとに引き直す</b>
-        /// （<see cref="ResetRun"/>）。90° ごとの区画へ 1 つずつ入るので重ならない。
+        /// 人形の笑いの置き場所（方角・距離・高さ）。<b>体験者ごとに引き直す</b>
+        /// （<see cref="ResetRun"/>）。360° を等分した区画へ 1 つずつ入るので重ならない。
+        ///
+        /// ⚠ <b>群れ（8 体）と 3 周目の 3 層（1 ＋ 2 ＋ 4 ＝ 7 体）は同じ輪を分け合う</b>
+        /// （同時には鳴らない）。3 周目に一人で笑っていた体が、4 周目 A では同じ方角の 1 体になる。
         /// </summary>
-        private readonly float[] _laughBearings = new float[4];
+        private readonly SpatialAudio.LaughSpot[] _laughSpots =
+            new SpatialAudio.LaughSpot[SpatialAudio.LaughSlots];
 
         // ---- 観測（テレメトリが読む）--------------------------------------------
 
@@ -223,10 +243,30 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public int SpatialBedsAudible { get; private set; }
 
-        /// <summary>人形の笑い 4 声の方角（度）を「/」で繋いだもの。テレメトリ用。</summary>
-        public string LaughBearingsText =>
-            $"{Mathf.RoundToInt(_laughBearings[0])}/{Mathf.RoundToInt(_laughBearings[1])}"
-            + $"/{Mathf.RoundToInt(_laughBearings[2])}/{Mathf.RoundToInt(_laughBearings[3])}";
+        /// <summary>
+        /// 人形の笑いの方角（度）を「/」で繋いだもの。テレメトリ用。
+        /// <b>2026-09-04 から 8 個</b>（体ごとに 1 つ・<c>canon/LEDGER.md</c> 0139）。
+        /// </summary>
+        public string LaughBearingsText
+        {
+            get
+            {
+                var sb = new System.Text.StringBuilder(40);
+                for (int i = 0; i < _laughSpots.Length; i++)
+                {
+                    if (i > 0) sb.Append('/');
+                    sb.Append(Mathf.RoundToInt(_laughSpots[i].bearingDeg));
+                }
+                return sb.ToString();
+            }
+        }
+
+        /// <summary>
+        /// <b>いま画に紐づかずに鳴っている笑いの点の数</b>（テレメトリ用・0139）。
+        /// ⚠⚠ **「周囲に大勢いる」が成立したかの唯一の証拠。** 1 なら 1 点から鳴っていて、
+        /// 体ごとに分けた意味が消えている（画にも録画にも出ない）。
+        /// </summary>
+        public int LaughPoints { get; private set; }
 
         /// <summary>人形の呼びかけを鳴らした累計。</summary>
         public int CallCount { get; private set; }
@@ -262,16 +302,18 @@ namespace FixedCamVr.Streaming
             _device = MakeBed("Device", "bed_device", spatial: true);
             _worn = MakeBed("DeviceWorn", "bed_device_worn", spatial: true);
             _noise = MakeBed("Noise", "bed_static", spatial: true);
-            _dolls = MakeBed("Dolls", "bed_dolls_laugh", spatial: true);
-            _dollOne = MakeBed("DollOne", "bed_doll_one", spatial: true);
-            _dollGrowA = MakeBed("DollGrowA", "bed_dolls_grow_a", spatial: true);
-            _dollGrowB = MakeBed("DollGrowB", "bed_dolls_grow_b", spatial: true);
+            // ⚠⚠ **体ごとに 1 声。輪のスロットは層をまたいで割り振る**（0139）。
+            //    群れ 8 体が輪を埋め、3 周目の 3 層は同じ輪の一部を使う（同時に鳴らない）。
+            MakeLaughLayer(_dolls, "Dolls", "bed_dolls_laugh", 8, firstSlot: 0);
+            MakeLaughLayer(_dollOne, "DollOne", "bed_doll_one", 1, firstSlot: 0);
+            MakeLaughLayer(_dollGrowA, "DollGrowA", "bed_dolls_grow_a", 2, firstSlot: 1);
+            MakeLaughLayer(_dollGrowB, "DollGrowB", "bed_dolls_grow_b", 4, firstSlot: 3);
             // ⚠ **劇伴を置き換える 3 つは 2D**（0131）。背景そのものなので出どころを作らない。
             _wind = MakeBed("Wind", "bed_wind", spatial: false);
             _beat = MakeBed("Beat", "bed_beat", spatial: false);
             _horror2 = MakeBed("Horror2", "bed_horror2", spatial: false);
             _white = MakeBed("White", "bed_white", spatial: false);
-            SpatialAudio.PickLaughBearings(_laughBearings);
+            SpatialAudio.PickLaughSpots(_laughSpots);
 
             // ⚠⚠ **ステレオのまま 3D に置かれていないかを起動時に数える。**
             //    定位していないことは画にも録画にも出ない（音が鳴ってはいる）ので、
@@ -290,6 +332,26 @@ namespace FixedCamVr.Streaming
                     LoadSpot(res);
                 }
                 _variant[c] = 0;
+            }
+        }
+
+        /// <summary>
+        /// 笑いの 1 層を<b>体の数だけ</b>作る（<c>canon/LEDGER.md</c> 0139）。
+        /// 体が 1 つなら焼いた名前はそのまま、2 つ以上なら <c>_1..N</c>（焼く側の <c>body_name</c> と対）。
+        ///
+        /// ⚠ スロットは <paramref name="firstSlot"/> から順に取る。輪を 1 周ぶんしか持たないので、
+        /// はみ出したら折り返す（体数を増やすときは <see cref="SpatialAudio.LaughSlots"/> も増やす）。
+        /// </summary>
+        private void MakeLaughLayer(LaughLayer layer, string label, string stem, int bodies,
+                                    int firstSlot)
+        {
+            layer.bodies = new BedVoice[bodies];
+            layer.slots = new int[bodies];
+            for (int i = 0; i < bodies; i++)
+            {
+                string res = bodies == 1 ? stem : $"{stem}_{i + 1}";
+                layer.bodies[i] = MakeBed(bodies == 1 ? label : $"{label}{i + 1}", res, spatial: true);
+                layer.slots[i] = (firstSlot + i) % Mathf.Max(1, _laughSpots.Length);
             }
         }
 
@@ -520,8 +582,14 @@ namespace FixedCamVr.Streaming
         /// 1 本使い回して <c>Stop()</c> してから鳴らすので、<b>1.6 秒の声は次の切替で打ち切られる</b>
         /// （2 周目 C の刻みは実測 0.8 秒）。<see cref="SfxPlayer"/> は 6 声あるので生き残る。
         /// </summary>
+        /// <param name="follow">
+        /// 渡すと、鳴っているあいだ<b>この Transform に付いていく</b>（0139）。
+        /// 目のように「置き場所そのものが動く」音に要る。
+        /// ⚠ 呼びかけ（後ろから）は<b>渡してはいけない</b> — 振り向いても声が回り込み続ける。
+        /// </param>
         public bool PlaySpot(SoundCue c, Vector3? at = null,
-                             float pitchSpread = 0f, float gainSpreadDb = 0f)
+                             float pitchSpread = 0f, float gainSpreadDb = 0f,
+                             Transform? follow = null)
         {
             string res = NextResource(c);
             if (res.Length == 0) return false;
@@ -531,7 +599,8 @@ namespace FixedCamVr.Streaming
             // ⚠ 置き場所は呼んだ側が指せる（目は「その目の方角」から鳴る・0131）。
             //    指さなければ <see cref="PlaceFor"/> が決める。
             if (_sfx == null || !_sfx.Play(clip, gain: 1f, pitchSpread: pitchSpread,
-                                           gainSpreadDb: gainSpreadDb, at: at ?? PlaceFor(c)))
+                                           gainSpreadDb: gainSpreadDb, at: at ?? PlaceFor(c),
+                                           follow: follow))
                 return false;
             _beds.PushSpotDuck(SoundCueLogic.DuckFor(c));
             LastCue = c;
@@ -596,9 +665,11 @@ namespace FixedCamVr.Streaming
             sum += WhiteGain;
             // ⚠ **鳴り始めは必ず輪の同じ所から。** 12 秒の輪を常時回しているので、
             //    頭出ししないと**体験者ごとに違う所から笑い出す**（走行の再現性が消える）。
+            // ⚠⚠ **体ぜんぶを同じ所へ頭出しする**（0139）。表は 8 体の掛け合いとして composed して
+            //    あるので（「順番を変えながら次々に笑う」）、体ごとにずらすと**その composition が壊れる**。
+            //    ずれは表の中の時刻が既に持っている。
             float dollsGain = g.dolls * m;
-            CueAmbientStart(_dolls, dollsGain, ref _dollsAudible, fraction: 0f);
-            sum += Set(_dolls, dollsGain);
+            sum += SetLaughLayer(_dolls, dollsGain);
             DollsGain = dollsGain;
 
             // ⚠⚠ **入れ替わった人形も輪の頭から。** 一人ぶんの 1 声目は輪の 0 秒に置いてあるので、
@@ -607,12 +678,9 @@ namespace FixedCamVr.Streaming
             float oneGain = g.dollOne * m;
             float growAGain = g.dollsGrowA * m;
             float growBGain = g.dollsGrowB * m;
-            CueAmbientStart(_dollOne, oneGain, ref _dollOneAudible, fraction: 0f);
-            CueAmbientStart(_dollGrowA, growAGain, ref _dollGrowAAudible, fraction: 0f);
-            CueAmbientStart(_dollGrowB, growBGain, ref _dollGrowBAudible, fraction: 0f);
-            sum += Set(_dollOne, oneGain);
-            sum += Set(_dollGrowA, growAGain);
-            sum += Set(_dollGrowB, growBGain);
+            sum += SetLaughLayer(_dollOne, oneGain);
+            sum += SetLaughLayer(_dollGrowA, growAGain);
+            sum += SetLaughLayer(_dollGrowB, growBGain);
             DollSwapGain = oneGain + growAGain + growBGain;
             AudibleSum = sum;
 
@@ -666,11 +734,35 @@ namespace FixedCamVr.Streaming
             n += PlaceAt(_device, _screen);
             n += PlaceAt(_worn, _screen);
             n += PlaceAt(_noise, _screen);
-            n += PlaceOnRing(_dolls, 0);
-            n += PlaceOnRing(_dollOne, 1);
-            n += PlaceOnRing(_dollGrowA, 2);
-            n += PlaceOnRing(_dollGrowB, 3);
-            SpatialBedsAudible = n;
+            int laugh = PlaceLaughLayer(_dolls) + PlaceLaughLayer(_dollOne)
+                        + PlaceLaughLayer(_dollGrowA) + PlaceLaughLayer(_dollGrowB);
+            LaughPoints = laugh;
+            SpatialBedsAudible = n + laugh;
+        }
+
+        /// <summary>層ぜんぶへ同じ高さを書く（体は同じ層の中では同じ大きさ）。</summary>
+        private float SetLaughLayer(LaughLayer layer, float gain)
+        {
+            // 頭出しの縁は層で 1 度だけ見る（体ごとに見ても同じ縁になるが、意図を 1 か所に置く）。
+            bool audible = gain > 0.0005f;
+            bool cue = audible && !layer.audible;
+            layer.audible = audible;
+
+            float sum = 0f;
+            foreach (BedVoice b in layer.bodies)
+            {
+                if (cue && b.src != null && b.ok && b.src.clip != null) b.src.time = 0f;
+                sum += Set(b, gain);
+            }
+            return sum;
+        }
+
+        /// <summary>層の体を輪のそれぞれのスロットへ置く。鳴っていて 3D な体の数を返す。</summary>
+        private int PlaceLaughLayer(LaughLayer layer)
+        {
+            int n = 0;
+            for (int i = 0; i < layer.bodies.Length; i++) n += PlaceOnRing(layer.bodies[i], layer.slots[i]);
+            return n;
         }
 
         /// <summary>1 本を <paramref name="at"/> へ置く。鳴っていて 3D なら 1 を返す。</summary>
@@ -688,9 +780,9 @@ namespace FixedCamVr.Streaming
         {
             if (b.src == null || !b.ok) return 0;
             if (_head == null) { SpatialAudio.MakeFlat(b.src); return 0; }
-            b.src.transform.position = SpatialAudio.Ring(_head, _laughBearings[slot],
-                                                         SpatialAudio.LaughRadiusM,
-                                                         SpatialAudio.LaughDropM);
+            SpatialAudio.LaughSpot spot = _laughSpots[slot];
+            b.src.transform.position = SpatialAudio.Ring(_head, spot.bearingDeg,
+                                                         spot.radiusM, spot.dropM);
             if (b.src.spatialBlend < 1f) SpatialAudio.Configure(b.src);
             return b.src.volume > 0.0005f ? 1 : 0;
         }
@@ -704,26 +796,13 @@ namespace FixedCamVr.Streaming
             return v;
         }
 
-        /// <summary>
-        /// 黙っていた敷く音が鳴り始めるとき、**素材の決まった所へ頭出しする**。
-        ///
-        /// ⚠⚠ 敷く音は起動時から音量 0 で回りっぱなしなので、そのままだと
-        /// <b>鳴り始める瞬間に素材のどこに居るかが走行ごとに違う</b>（＝ 同じ設定で毎回違う体験）。
-        /// いま使っているのは人形の笑い 3 本で、どれも <c>fraction: 0</c> ＝ 輪の頭から入る
-        /// （1 声目がそこに置いてある）。
-        ///
-        /// ⚠ 周ごとの環境音（<c>bed_room_lap2</c> / <c>_lap3</c>）でも使っていたが、
-        /// 2026-08-23 に退役した（<c>canon/LEDGER.md</c> 0115）。あちらは素材の途中
-        /// （厚い所）から入れる必要があったので <c>fraction</c> を持たせてある。
-        /// </summary>
-        private static void CueAmbientStart(BedVoice b, float gain, ref bool wasAudible,
-                                            float fraction)
-        {
-            bool audible = gain > 0.0005f;
-            if (audible && !wasAudible && b.src != null && b.ok && b.src.clip != null)
-                b.src.time = b.src.clip.length * fraction;
-            wasAudible = audible;
-        }
+        // ⚠⚠ **頭出しは <see cref="SetLaughLayer"/> が持つ**（2026-09-04・0139）。
+        //    敷く音は起動時から音量 0 で回りっぱなしなので、そのままだと**鳴り始める瞬間に
+        //    素材のどこに居るかが走行ごとに違う**（＝ 同じ設定で毎回違う体験）。
+        //    旧 `CueAmbientStart` は 1 本ずつ縁を見る形だったが、笑いが体ごとに分かれて
+        //    **層の中の体は同じ縁で同じ所へ**戻さなければならなくなった（掛け合いが崩れる）ので、
+        //    層でまとめて見る形へ移した。
+        //    ⚠ 周ごとの環境音（`bed_room_lap2` / `_lap3`）でも使っていたが 0115 で退役した。
 
         // ---------------------------------------------------------------- 外からの号令
 
@@ -735,11 +814,10 @@ namespace FixedCamVr.Streaming
             _sfx?.StopAll();
             LastCue = SoundCue.None;
             // 次の体験者でも同じ所から笑いが入る（頭出しの縁を作り直す）。
-            _dollsAudible = false;
-            _dollOneAudible = _dollGrowAAudible = _dollGrowBAudible = false;
+            _dolls.audible = _dollOne.audible = _dollGrowA.audible = _dollGrowB.audible = false;
             // ⚠ **方角は体験者ごとに引き直す**（`canon/LEDGER.md` 0130「ランダムな位置」）。
             //    走行のあいだは動かさない — 鳴っている最中に動かすと、人形が歩いて聞こえる。
-            SpatialAudio.PickLaughBearings(_laughBearings);
+            SpatialAudio.PickLaughSpots(_laughSpots);
             LastCallAzimuthDeg = -1f;
             CallCount = 0;
         }

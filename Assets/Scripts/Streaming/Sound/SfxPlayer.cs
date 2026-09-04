@@ -47,6 +47,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private double[] _busyUntil = System.Array.Empty<double>();
 
+        /// <summary>
+        /// 声ごとの<b>追う相手</b>と、その局所座標（<c>canon/LEDGER.md</c> 0139）。
+        /// null なら鳴らした場所に置いたまま動かさない（既定）。
+        /// </summary>
+        private Transform?[] _followOf = System.Array.Empty<Transform?>();
+        private Vector3[] _followLocal = System.Array.Empty<Vector3>();
+
         /// <summary>これまでに鳴らした本数（テレメトリ用。**「鳴らした」であって「聞こえた」ではない**）。</summary>
         public int PlayedCount { get; private set; }
 
@@ -72,6 +79,31 @@ namespace FixedCamVr.Streaming
                 _pool[i] = s;
             }
             _busyUntil = new double[n];
+            _followOf = new Transform?[n];
+            _followLocal = new Vector3[n];
+        }
+
+        /// <summary>
+        /// <b>追う相手が動いたら、鳴っている音も付いていく</b>（<c>canon/LEDGER.md</c> 0139）。
+        ///
+        /// ⚠⚠ <b>長い一撃は置きっぱなしだとずれる。</b> 大きい目の音は <b>6.2 秒</b>あり、
+        /// そのあいだ目の群れは頭の位置に付いて動く（<see cref="AnomalyEyes"/>）。置いたままだと
+        /// 体験者が 1.5m 歩いた時点で <b>9.5°</b>（半径 9m）食い違う ＝ 見えている目と鳴っている所が離れる。
+        ///
+        /// ⚠ <b>追わせるのは opt-in。</b> 人形の呼びかけ（あーそーぼー）は「鳴らした瞬間の後ろ」へ
+        /// 置いたまま動かさないのが仕様で、追わせると振り向いても声が回り込み続けて装置の音になる。
+        /// </summary>
+        private void LateUpdate()
+        {
+            double now = AudioSettings.dspTime;
+            for (int i = 0; i < _pool.Length; i++)
+            {
+                var f = _followOf[i];
+                if (f == null) continue;
+                if (_busyUntil[i] <= now) { _followOf[i] = null; continue; }
+                var s = _pool[i];
+                if (s != null) s.transform.position = f.TransformPoint(_followLocal[i]);
+            }
         }
 
         /// <summary>
@@ -86,8 +118,13 @@ namespace FixedCamVr.Streaming
         /// 置いた先は world 固定で、鳴っているあいだ追従しない
         /// （<see cref="SpatialAudio.Behind"/> の但し書き）。
         /// </summary>
+        /// <param name="follow">
+        /// 渡すと、鳴っているあいだ<b>この Transform に付いていく</b>（<c>canon/LEDGER.md</c> 0139）。
+        /// 局所座標は鳴らした瞬間に焼くので、相手が回っても向きごと付いていく。
+        /// ⚠ 既定の null は「置いたまま動かさない」— 呼びかけ（後ろから）はそちらでなければならない。
+        /// </param>
         public bool Play(AudioClip? clip, float gain = 1f, float pitchSpread = 0.03f,
-                         float gainSpreadDb = 1.2f, Vector3? at = null)
+                         float gainSpreadDb = 1.2f, Vector3? at = null, Transform? follow = null)
         {
             if (clip == null || _pool.Length == 0) return false;
             int slot = PickVoice();
@@ -99,11 +136,18 @@ namespace FixedCamVr.Streaming
             src.clip = clip;
             src.pitch = 1f + Random.Range(-pitchSpread, pitchSpread);
             src.volume = g;
+            _followOf[slot] = null;
             if (at.HasValue)
             {
                 src.transform.position = at.Value;
                 SpatialAudio.Configure(src);
                 SpatialCount++;
+                // ⚠ 相手が回っても付いていけるよう**局所座標**で覚える（world との差分では回転が乗らない）。
+                if (follow != null)
+                {
+                    _followOf[slot] = follow;
+                    _followLocal[slot] = follow.InverseTransformPoint(at.Value);
+                }
             }
             else
             {
@@ -164,6 +208,7 @@ namespace FixedCamVr.Streaming
                 if (s != null) s.Stop();
             }
             for (int i = 0; i < _busyUntil.Length; i++) _busyUntil[i] = 0.0;
+            for (int i = 0; i < _followOf.Length; i++) _followOf[i] = null;
         }
     }
 }

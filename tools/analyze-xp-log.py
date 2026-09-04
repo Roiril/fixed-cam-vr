@@ -2149,6 +2149,30 @@ def analyze(events, others, exp, warns=None):
                 verdict("WARN", "報告のあとも人形が笑ったまま走行が終わっている"
                                 f"（最後の sndDolls={dolls[-1]:.2f}）")
 
+        # -- **周囲に大勢いるか**（`canon/LEDGER.md` 0139）
+        #    ⚠⚠ **画にも録画にも 1 ビットも出ない。** 笑いは体ごとに 1 声で焼いてあり、
+        #       体ごとに別の方角へ置く。1 点から鳴っていても音は鳴るので、ここだけが証拠。
+        #       満点は 4 周目 A の群れで 8・3 周目 C で 7（一人 1 ＋ 2 体 ＋ 4 体）。
+        laugh = [int(v) for v in effect_samples(events, "sndLaugh")
+                 if str(v) not in ("-", "nc") and str(v).lstrip("-").isdigit()]
+        if not laugh:
+            verdict("WARN", "笑いの点の観測が無い（sndLaugh）— この計装より前のビルドのログ")
+        else:
+            peak = max(laugh)
+            w(f"  笑いが鳴っていた場所の数: 最大 {peak}")
+            if peak == 0:
+                verdict("WARN", "笑いが 1 度も鳴っていない走行（3 周目まで走っていなければ正常）")
+            elif peak == 1:
+                verdict("FAIL", "笑いが 1 か所からしか鳴っていない — 体ごとに焼いた 15 本を"
+                                "掴めていない（`py -3.11 tools/ingest-sounds.py --only "
+                                "bed_dolls_laugh bed_doll_one bed_dolls_grow_a bed_dolls_grow_b` "
+                                "の後に `tools/unity.ps1 menu sound-import`）")
+            elif peak < 7:
+                verdict("WARN", f"笑いの点が最大 {peak} か所 — 群れ（8）にも 3 周目 C（7）にも"
+                                "届いていない。そこまで走っていない走行なら正常")
+            else:
+                verdict("OK", f"笑いが最大 {peak} か所から鳴った（周囲に大勢いる）")
+
         # -- 入れ替わった人形の笑い（`canon/LEDGER.md` 0086）
         #    ⚠ これもループなので `ev=sfx` には出ない。見るのは `ev=sum` の
         #      `sndSwap`（3 枚の合計の音量）と `sndSwell`（増え具合 0..1）。

@@ -812,7 +812,7 @@ def syllable_skip(src: np.ndarray, skip: float, sr: int) -> np.ndarray:
     return sk.env_fade(src[i:], 0.006, 0.02)
 
 
-def ring_mix(src: np.ndarray, voices, sec: float, sr: int):
+def ring_mix(src: np.ndarray, voices, sec: float, sr: int, flat_pan: bool = False):
     """声を輪の上へ並べる。**端で折り返さず、はみ出したぶんを頭へ回り込ませる。**
 
     ⚠⚠ ループするものは輪にして書く。尻を頭へ混ぜる方式（`fold_loop`）だと、
@@ -823,6 +823,10 @@ def ring_mix(src: np.ndarray, voices, sec: float, sr: int):
     声は `(始まり, 音程の始め, 音程の終わり, 音量 dB, 左右)` に、
     **6 つ目として「頭を何秒落とすか」**（<see cref="syllable_skip"/>）を足せる。
     省くと 0 ＝ 従来どおり素材を丸ごと使う（`CHORUS_VOICES` と 2・3 枚目はこちら）。
+
+    ⚠⚠ **`flat_pan=True` は左右を振らない**（2026-09-04・`canon/LEDGER.md` 0139）。
+    体ごとに分けて焼くとき、**左右の位置は 3D の置き場所が持つ**ので、波形に焼き込むと
+    二重に効く（しかもモノへ落とす時点で消える）。
     """
     n = int(sec * sr)
     out = np.zeros((n, 2))
@@ -831,7 +835,11 @@ def ring_mix(src: np.ndarray, voices, sec: float, sr: int):
         at, r0, r1, db, pan = voice[:5]
         skip = voice[5] if len(voice) > 5 else 0.0
         v = glide(syllable_skip(src, skip, sr), r0, r1, sr)
-        lr = np.array([np.cos((pan + 1) * np.pi / 4), np.sin((pan + 1) * np.pi / 4)]) * np.sqrt(2)
+        if flat_pan:
+            lr = np.array([1.0, 1.0])
+        else:
+            lr = np.array([np.cos((pan + 1) * np.pi / 4),
+                           np.sin((pan + 1) * np.pi / 4)]) * np.sqrt(2)
         v = v * (10 ** (db / 20.0)) * lr
         i = int(at * sr) % n
         head = min(len(v), n - i)
@@ -845,16 +853,93 @@ def ring_mix(src: np.ndarray, voices, sec: float, sr: int):
     return out, spans
 
 
-def chorus_build(y, sr: int, target_lufs: float):
-    """1 本の笑い声から「たくさんの人形が笑っている」を組む。**円環で作る**（<see cref="ring_mix"/>）。"""
-    src = laugh_source(y, sr)
-    out, spans = ring_mix(src, CHORUS_VOICES, CHORUS_SEC, sr)
+# ---- 笑いを「体ごと」に分けて焼く（2026-09-04・`canon/LEDGER.md` 0139）------------
+#
+# ユーザー指定「いっぱい、見えない者が自分の周囲にいる感じの怖さです。
+#              なので、いろんな場所から同時に少しずらして鳴らすくらいしっかりしたい」。
+#
+# ⚠⚠ **表は最初から体ごとに書き分けてあった。** `CHORUS_VOICES` の注記
+#    「同じ音程 ＝ 同じ人形。左右の位置も人形ごとに固定してある（そこに立っている）」がそれで、
+#    **左右の位置（pan）がその体の立ち位置**。ところが 1 本のステレオへ混ぜてから
+#    `MONO3D` でモノへ落としていたので、**立ち位置は書いた端から捨てられ、
+#    8 体ぜんぶが 1 点から鳴っていた**。
+#    ⇒ 体ごとに別のファイルへ焼き、Unity が別々の方角へ置く。
+#
+# ⚠ **鳴る中身は 1 つも変わらない。** 分けるだけで、時刻も音程も音量も表のまま。
+#    合計の高さも変わらない（下の「体を全部足した高さ」で毎回確かめる）。
+LAUGH_PAN_TOL = 0.05      # これ以下の pan の差は「同じ体」（一人ぶんは 0.10〜0.24 に散っている）
 
-    out = out * 10 ** ((target_lufs - sk.lufs(out)) / 20.0)
-    tp = sk.true_peak_db(out)
+# 名前 → 体数。**表から割った数と食い違ったら落とす**（表を触ったら気づける）。
+LAUGH_BODIES = {
+    "bed_dolls_laugh": 8,     # 4 周目 A の群れ
+    "bed_doll_one": 1,        # 3 周目 A・B の一人
+    "bed_dolls_grow_a": 2,    # 3 周目 C で入る 2 体
+    "bed_dolls_grow_b": 4,    # 同・さらに 4 体
+}
+
+
+def split_bodies(voices, name: str):
+    """表を**体ごと**に割る（左右の位置 ＝ 立ち位置）。数が合わなければ落とす。"""
+    want = LAUGH_BODIES[name]
+    groups = []
+    for p in sorted({v[4] for v in voices}):
+        if groups and p - groups[-1][-1] <= LAUGH_PAN_TOL:
+            groups[-1].append(p)
+        else:
+            groups.append([p])
+    if len(groups) != want:
+        raise SystemExit(
+            f"  {name}: 表から割れた体数が {len(groups)}（LAUGH_BODIES は {want}）。"
+            f"左右の位置 {[round(g[0], 2) for g in groups]}。"
+            "表を変えたなら LAUGH_BODIES と Unity 側（SpatialAudio.MonoRequired /"
+            " ShowSoundDirector.LaughBodies）も対で直すこと")
+    where = {p: i for i, g in enumerate(groups) for p in g}
+    out = [[] for _ in groups]
+    for v in voices:
+        out[where[v[4]]].append(v)
+    return out
+
+
+def sum_tracks(tracks):
+    """体ごとのトラックを足す（＝ 実機で 8 か所から同時に鳴っている状態）。"""
+    total = np.zeros_like(tracks[0])
+    for t in tracks:
+        total += t
+    return total
+
+
+def fit_gain(tracks, target_lufs: float) -> float:
+    """**体を全部足した状態**を狙いの高さへ合わせる倍率（1 体ずつ合わせてはいけない）。
+
+    ⚠⚠ 1 体ずつ狙いへ合わせると、笑いの回数が少ない体ほど大きくなる
+    （`switch_build` の「ラウドネスは尺の関数」と同じ罠）。**倍率は 1 つ**。
+    ⚠ 天井は**体ごとにも**見る（`emit` が 1 本ずつ -3dBTP で丸めるので、
+    そこで削られると足し合わせが狙いから外れる）。
+    """
+    g = 10 ** ((target_lufs - sk.lufs(sum_tracks(tracks))) / 20.0)
+    tp = max([sk.true_peak_db(sum_tracks(tracks) * g)]
+             + [sk.true_peak_db(t * g) for t in tracks])
     if tp > -3.0:
-        out = out * 10 ** ((-3.0 - tp) / 20.0)
-    return out, spans, CHORUS_SEC
+        g *= 10 ** ((-3.0 - tp) / 20.0)
+    return g
+
+
+def body_name(stem: str, i: int, n: int) -> str:
+    """体が 1 つなら従来の名前のまま、2 つ以上なら `_1..N`。"""
+    return stem if n == 1 else f"{stem}_{i + 1}"
+
+
+def chorus_build(y, sr: int, target_lufs: float):
+    """1 本の笑い声から「たくさんの人形が笑っている」を組む。**円環で作る**（<see cref="ring_mix"/>）。
+
+    ⚠ 返すのは**体ごとのトラック**（0139）。混ぜた 1 本はもう焼かない。
+    """
+    src = laugh_source(y, sr)
+    _, spans = ring_mix(src, CHORUS_VOICES, CHORUS_SEC, sr)
+    bodies = split_bodies(CHORUS_VOICES, "bed_dolls_laugh")
+    tracks = [ring_mix(src, b, CHORUS_SEC, sr, flat_pan=True)[0] for b in bodies]
+    g = fit_gain(tracks, target_lufs)
+    return [t * g for t in tracks], [len(b) for b in bodies], spans, CHORUS_SEC
 
 
 def swell_build(y, sr: int, layers, solo_lufs: float):
@@ -863,25 +948,38 @@ def swell_build(y, sr: int, layers, solo_lufs: float):
     ⚠⚠ 1 枚ずつ狙いの LUFS へ合わせてはいけない。合わせると枚数が増えるほど 1 体あたりが
     小さくなり、**層を足したのに「増えた」に聞こえない**（音色だけ濁る）。
     1 枚目（一人）を <paramref name="solo_lufs"/> へ合わせ、**同じ倍率**を残りへ掛ける。
+
+    ⚠ 1 枚は**体ごとのトラックの束**（0139）。倍率は 3 枚ぜんぶで 1 つのまま。
     """
     src = laugh_source(y, sr)
-    built = [(name, sec) + ring_mix(src, voices, sec, sr) for name, sec, voices in layers]
+    built = []
+    for name, sec, voices in layers:
+        bodies = split_bodies(voices, name)
+        tracks = [ring_mix(src, b, sec, sr, flat_pan=True)[0] for b in bodies]
+        _, spans = ring_mix(src, voices, sec, sr)
+        built.append((name, sec, tracks, spans))
 
-    scale = 10 ** ((solo_lufs - sk.lufs(built[0][2])) / 20.0)
+    # 1 枚目（一人）の**体を全部足した状態**を狙いへ。同じ倍率を残りへ掛ける。
+    scale = 10 ** ((solo_lufs - sk.lufs(sum_tracks(built[0][2]))) / 20.0)
     # 天井に当たるなら**3 枚まとめて**下げる（1 枚だけ下げると層の関係が崩れる）。
-    tp = max(sk.true_peak_db(out * scale) for _, _, out, _ in built)
+    tp = max(sk.true_peak_db(t * scale) for _, _, tracks, _ in built for t in tracks)
     if tp > -3.0:
         scale *= 10 ** ((-3.0 - tp) / 20.0)
-    return [(name, sec, out * scale, spans) for name, sec, out, spans in built]
+    return [(name, sec, [t * scale for t in tracks], spans)
+            for name, sec, tracks, spans in built]
 
 
 def stack_lufs(built, sec: float = 60.0) -> float:
-    """3 枚を全部鳴らした状態（3 周目 C の終わり）の高さ。**4 周目 A の群れより下でなければならない。**"""
+    """3 枚を全部鳴らした状態（3 周目 C の終わり）の高さ。**4 周目 A の群れより下でなければならない。**
+
+    ⚠ 体ごとに分けても、実機では**全部が同時に鳴る**ので足して測る（0139）。
+    """
     n = int(sec * sk.SR)
     mix = np.zeros((n, 2))
-    for _name, _sec, out, _spans in built:
-        reps = int(np.ceil(n / len(out)))
-        mix += np.tile(out, (reps, 1))[:n]
+    for _name, _sec, tracks, _spans in built:
+        for out in tracks:
+            reps = int(np.ceil(n / len(out)))
+            mix += np.tile(out, (reps, 1))[:n]
     return sk.lufs(mix)
 
 
@@ -901,16 +999,21 @@ def ingest_swell(swell, src_dir: str) -> None:
 
         y, sr = sk.read_wav(raw)
         built = swell_build(y, sr, SWELL_LAYERS, SWELL_SOLO_LUFS)
-        for name, sec, out, spans in built:
-            out = emit(name, out)
-            d = sk.describe(out)
-            print(f"  {name:16s} {len(spans)} 回 / {d['sec']:.2f}s   {d['lufs']:6.1f} LUFS   "
-                  f"tp {d['true_peak_db']:5.1f}dB   鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f}   "
-                  f"モノ {d['mono_db']:5.2f}dB   内蔵SP {d['speaker_db']:5.1f}dB")
+        for name, sec, tracks, spans in built:
+            n = len(tracks)
+            # ⚠ **足した状態の高さ**を先に出す（1 体ずつの LUFS は設計値ではない）。
+            print(f"  {name:16s} {n} 体 / {len(spans)} 回 / {sec:.1f}s   "
+                  f"足すと {sk.lufs(sum_tracks(tracks)):6.1f} LUFS")
+            for i, t in enumerate(tracks):
+                t = emit(body_name(name, i, n), t)
+                d = sk.describe(t)
+                print(f"    {body_name(name, i, n):20s} {d['lufs']:6.1f} LUFS  "
+                      f"tp {d['true_peak_db']:5.1f}dB  鋭さ {d['sharp']:4.2f} "
+                      f"粗さ {d['rough']:4.2f}  内蔵SP {d['speaker_db']:5.1f}dB")
             marks = [str(sum(1 for at, dur in spans if ((k * 0.5 - at) % sec) < dur))
                      for k in range(int(sec / 0.5))]
             print(f"    0.5 秒ごとの声の数: {' '.join(marks)}")
-            print(f"    聞き分けられそうな山: {envelope_peaks(out)} 個 / {len(spans)} 回")
+            print(f"    聞き分けられそうな山: {envelope_peaks(sum_tracks(tracks))} 個 / {len(spans)} 回")
         # ⚠ **3 枚を重ねた高さを必ず出す。** ここが 4 周目 A の群れ（-20 LUFS）を超えたら、
         #    締めの演出が「いちばん多い」に聞こえなくなる。
         print(f"    3 枚を重ねた高さ（3 周目 C の終わり）: {stack_lufs(built):.1f} LUFS"
@@ -932,12 +1035,18 @@ def ingest_chorus(chorus, src_dir: str) -> None:
             print(f"  元 mp3 が無いので復号済みを使う: {name}")
 
         y, sr = sk.read_wav(raw)
-        out, spans, total = chorus_build(y, sr, target)
-        out = emit(name, out)
-        d = sk.describe(out)
-        print(f"  {name:16s} {len(spans)} 回 / {d['sec']:.2f}s   {d['lufs']:6.1f} LUFS   "
-              f"tp {d['true_peak_db']:5.1f}dB   鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f}   "
-              f"モノ {d['mono_db']:5.2f}dB   内蔵SP {d['speaker_db']:5.1f}dB")
+        tracks, counts, spans, total = chorus_build(y, sr, target)
+        n = len(tracks)
+        # ⚠ **足した状態の高さが設計値**（-30.5 LUFS）。1 体ずつの数字ではない。
+        print(f"  {name:16s} {n} 体 / {len(spans)} 回 / {total:.1f}s   "
+              f"足すと {sk.lufs(sum_tracks(tracks)):6.1f} LUFS（狙い {target:+.1f}）")
+        for i, t in enumerate(tracks):
+            t = emit(body_name(name, i, n), t)
+            d = sk.describe(t)
+            print(f"    {body_name(name, i, n):20s} {counts[i]} 回  {d['lufs']:6.1f} LUFS  "
+                  f"tp {d['true_peak_db']:5.1f}dB  鋭さ {d['sharp']:4.2f} "
+                  f"粗さ {d['rough']:4.2f}  内蔵SP {d['speaker_db']:5.1f}dB")
+        out = sum_tracks(tracks)
         # 重なりの様子（0.5 秒ごとに何体が鳴っているか）。
         # **「一部重なる」が指定なので数で出す** — 全部 1 なら重なっていないし、
         # 常に 4 以上なら 1 つの塊に潰れている。

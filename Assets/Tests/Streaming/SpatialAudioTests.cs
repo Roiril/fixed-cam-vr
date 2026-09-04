@@ -43,10 +43,21 @@ namespace FixedCamVr.Streaming.Tests
             }
             for (int i = 1; i <= TypeAudioCue.VariantCount; i++)
                 Assert.IsTrue(set.Contains($"sfx_type_{i}"), $"sfx_type_{i} が名簿に無い");
-            foreach (string res in new[] { "bed_device", "bed_device_worn", "bed_static",
-                                           "bed_dolls_laugh", "bed_doll_one",
-                                           "bed_dolls_grow_a", "bed_dolls_grow_b" })
+            foreach (string res in new[] { "bed_device", "bed_device_worn", "bed_static" })
                 Assert.IsTrue(set.Contains(res), $"{res} が名簿に無い");
+            // ⚠⚠ **笑いは体ごとに 1 本**（2026-09-04・`canon/LEDGER.md` 0139）。
+            //    数は焼く側の `ingest-sounds.py` の `LAUGH_BODIES` と対で、
+            //    足りないと**その体だけ黙る**（画にも録画にも出ない）。
+            Assert.IsTrue(set.Contains("bed_doll_one"), "bed_doll_one が名簿に無い（一人ぶんは 1 体）");
+            foreach (var (stem, bodies) in new[] { ("bed_dolls_laugh", 8),
+                                                   ("bed_dolls_grow_a", 2),
+                                                   ("bed_dolls_grow_b", 4) })
+            {
+                Assert.IsFalse(set.Contains(stem),
+                               $"{stem}（混ぜた 1 本）はもう焼いていない — 名簿から外すこと");
+                for (int i = 1; i <= bodies; i++)
+                    Assert.IsTrue(set.Contains($"{stem}_{i}"), $"{stem}_{i} が名簿に無い");
+            }
             foreach (var c in new[] { SoundCue.Glitch, SoundCue.ScreenOn,
                                       SoundCue.PowerOff, SoundCue.DollCall })
             {
@@ -152,28 +163,80 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// 4 声は<b>90° の区画へ 1 つずつ</b>入るので、いちばん近い 2 つでも
-        /// <c>90 - 2×35 = 20°</c> は空く。⚠ 一様乱数にすると重なる回ができ、
-        /// その回だけ「周囲の」が成立しない（走行ログの <c>sndAz</c> と同じ判定）。
+        /// 体は<b>360° を等分した区画へ 1 つずつ</b>入り、振り幅は区画の 1/3 まで。
+        /// だからいちばん近い 2 つでも<b>区画の 1/3</b>（8 体なら 15°）は空く。
+        /// ⚠ 一様乱数にすると重なる回ができ、その回だけ「周囲に大勢いる」が成立しない
+        /// （走行ログの <c>sndAz</c> と同じ判定・<c>canon/LEDGER.md</c> 0139）。
         /// </summary>
         [Test]
-        public void PickLaughBearings_NeverPutsTwoDollsInTheSamePlace()
+        public void PickLaughSpots_NeverPutsTwoDollsInTheSamePlace()
         {
-            var got = new float[4];
-            for (int trial = 0; trial < 400; trial++)
+            foreach (int count in new[] { 4, SpatialAudio.LaughSlots })
             {
-                SpatialAudio.PickLaughBearings(got);
-                for (int i = 0; i < got.Length; i++)
+                var got = new SpatialAudio.LaughSpot[count];
+                float sector = 360f / count;
+                for (int trial = 0; trial < 400; trial++)
                 {
-                    Assert.That(got[i], Is.InRange(0f, 360f));
-                    for (int j = i + 1; j < got.Length; j++)
+                    SpatialAudio.PickLaughSpots(got);
+                    for (int i = 0; i < got.Length; i++)
                     {
-                        float d = Mathf.Abs(Mathf.DeltaAngle(got[i], got[j]));
-                        Assert.GreaterOrEqual(d, 20f - 1e-3f,
-                                              $"{got[i]:F1}° と {got[j]:F1}° が近すぎる");
+                        Assert.That(got[i].bearingDeg, Is.InRange(0f, 360f));
+                        for (int j = i + 1; j < got.Length; j++)
+                        {
+                            float d = Mathf.Abs(Mathf.DeltaAngle(got[i].bearingDeg,
+                                                                 got[j].bearingDeg));
+                            Assert.GreaterOrEqual(d, sector / 3f - 1e-3f,
+                                                  $"{count} 体: {got[i].bearingDeg:F1}° と "
+                                                  + $"{got[j].bearingDeg:F1}° が近すぎる");
+                        }
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// <b>距離と高さも揃えない</b>（0139）。きれいな円の上に等間隔で並ぶと
+        /// 「輪に沿って置いた」に聞こえて、「いろんな場所に居る」にならない。
+        /// </summary>
+        [Test]
+        public void PickLaughSpots_SpreadsDistanceAndHeight()
+        {
+            var got = new SpatialAudio.LaughSpot[SpatialAudio.LaughSlots];
+            float rMin = float.MaxValue, rMax = float.MinValue;
+            float dMin = float.MaxValue, dMax = float.MinValue;
+            for (int trial = 0; trial < 200; trial++)
+            {
+                SpatialAudio.PickLaughSpots(got);
+                foreach (var s in got)
+                {
+                    Assert.That(s.radiusM, Is.InRange(
+                        SpatialAudio.LaughRadiusM - SpatialAudio.LaughRadiusJitterM,
+                        SpatialAudio.LaughRadiusM + SpatialAudio.LaughRadiusJitterM));
+                    Assert.That(s.dropM, Is.InRange(
+                        SpatialAudio.LaughDropM - SpatialAudio.LaughDropJitterM,
+                        SpatialAudio.LaughDropM + SpatialAudio.LaughDropJitterM));
+                    rMin = Mathf.Min(rMin, s.radiusM); rMax = Mathf.Max(rMax, s.radiusM);
+                    dMin = Mathf.Min(dMin, s.dropM); dMax = Mathf.Max(dMax, s.dropM);
+                }
+            }
+            Assert.Greater(rMax - rMin, SpatialAudio.LaughRadiusJitterM,
+                           "距離が散っていない（きれいな円になっている）");
+            Assert.Greater(dMax - dMin, SpatialAudio.LaughDropJitterM, "高さが散っていない");
+        }
+
+        /// <summary>
+        /// <b>輪のスロットは群れの体数ぶん要る</b>（0139）。足りないと折り返して
+        /// 2 体が同じ場所から鳴る（画にも録画にも出ない）。
+        /// </summary>
+        [Test]
+        public void LaughSlots_CoverTheSwarm()
+        {
+            Assert.GreaterOrEqual(SpatialAudio.LaughSlots, 8,
+                                  "4 周目 A の群れは 8 体（ingest-sounds.py の LAUGH_BODIES）");
+            int monoLaugh = 0;
+            foreach (string s in SpatialAudio.MonoRequired)
+                if (s.StartsWith("bed_dolls_laugh_")) monoLaugh++;
+            Assert.AreEqual(8, monoLaugh, "群れ 8 体ぶんが 3D の名簿に載っていること");
         }
 
         /// <summary>

@@ -69,7 +69,11 @@ SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何�
 RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_close",
             "sfx_screen_on",
             "sfx_shatter", "amb_dolls_laugh",
-            "bed_dolls_laugh", "bed_doll_one", "bed_dolls_grow_a", "bed_dolls_grow_b",
+            # 笑いは体ごとに 1 本（2026-09-04・`canon/LEDGER.md` 0139）。
+            *(f"bed_dolls_laugh_{i}" for i in range(1, 9)),
+            "bed_doll_one",
+            *(f"bed_dolls_grow_a_{i}" for i in range(1, 3)),
+            *(f"bed_dolls_grow_b_{i}" for i in range(1, 5)),
             # ⚠ 人の声は倍音が揃うので純度が 0.62 出る（上限 0.60）。実物がそうである以上、
             #    通すために作り変える方が §4.5 違反になる。
             "sfx_doll_call",

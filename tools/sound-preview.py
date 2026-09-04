@@ -83,7 +83,29 @@ MATERIALS = [
 ]
 
 
+# ⚠⚠ **笑いは体ごとに焼いてある**（2026-09-04・`canon/LEDGER.md` 0139）。
+#    実機は体ごとに別の方角へ置くが、**試聴は 2 本の耳で聴く**ので、ここでは足して 1 本にする。
+#    ⇒ ここで聴けるのは**中身と高さ**だけ。広がりは聴けない（実機で被るか、下の
+#      `preview_laugh_ring.wav` で疑似的に振ったものを聴く）。
+#    焼く側の `ingest-sounds.py` の `LAUGH_BODIES` と対。
+LAUGH_BODIES = {
+    "bed_dolls_laugh": 8,
+    "bed_doll_one": 1,
+    "bed_dolls_grow_a": 2,
+    "bed_dolls_grow_b": 4,
+}
+
+
 def load(name: str) -> np.ndarray:
+    """素材を読む。**笑いは体ごとのファイルを足して返す**（0139）。"""
+    n = LAUGH_BODIES.get(name, 1)
+    if n > 1:
+        out = None
+        for i in range(1, n + 1):
+            y, _ = sk.read_wav(os.path.join(SRC, f"{name}_{i}.wav"))
+            y = sk.to_stereo(y)
+            out = y if out is None else out + y
+        return out
     y, _ = sk.read_wav(os.path.join(SRC, f"{name}.wav"))
     return sk.to_stereo(y)
 
@@ -545,6 +567,66 @@ def build_call() -> np.ndarray:
     return out
 
 
+def build_laugh_ring() -> np.ndarray:
+    """**周囲に大勢いる**を耳で確かめる（2026-09-04・`canon/LEDGER.md` 0139）。
+
+    ユーザー指定「いっぱい、見えない者が自分の周囲にいる感じの怖さ…いろんな場所から同時に
+    少しずらして鳴らすくらいしっかりしたい」。
+
+    ⚠⚠ **これはヘッドホン用の近似で、実機の定位ではない。** 実機は Meta XR の HRTF が
+    前後・上下まで解くが、ここでやるのは**左右の振り分けと、後ろの体を少し曇らせる**だけ。
+    それでも「1 点から鳴っているか / 何か所からか」は判る。
+
+    並び:
+      1. **旧**（体を全部足して 1 点から）… 4 周目 A の群れが 8 体ぶん重なった 1 つの声
+      2. **新**（8 体を輪へ振って）… 同じ中身が別々の場所から
+      3. 3 周目 C の増え方（一人 → ＋2 体 → ＋4 体）を新しい置き方で
+    """
+    import math
+
+    def spread(bodies, bearings, sec):
+        out = np.zeros((int(sec * sk.SR), 2))
+        for y, deg in zip(bodies, bearings):
+            t = tile(y, sec)
+            rad = math.radians(deg)
+            # 左右は等パワー。⚠ 後ろ（|deg|>90）は**耳介の陰**ぶん高い方を落とす（前後の手掛かり）。
+            pan = math.sin(rad)
+            l = math.cos((pan + 1) * math.pi / 4) * math.sqrt(2)
+            r = math.sin((pan + 1) * math.pi / 4) * math.sqrt(2)
+            m = t[:, 0] * 0.5 + t[:, 1] * 0.5
+            if math.cos(rad) < 0:
+                m = sk.biquad_fft(m, "lp", 4200.0, 0.707, 0.0, sk.SR)
+            out += np.stack([m * l, m * r], axis=1)
+        return out
+
+    def bodies_of(stem, n):
+        return [sk.to_stereo(sk.read_wav(os.path.join(SRC, f"{stem}_{i}.wav"))[0])
+                for i in range(1, n + 1)]
+
+    swarm = bodies_of("bed_dolls_laugh", 8)
+    ga = bodies_of("bed_dolls_grow_a", 2)
+    gb = bodies_of("bed_dolls_grow_b", 4)
+    one = load("bed_doll_one")
+
+    seg, gap = 12.0, 1.0
+    total = seg * 4 + gap * 3
+    out = np.zeros((int(total * sk.SR), 2))
+
+    # ① 旧: 8 体を足して 1 点（真正面）から
+    lay(out, spread([sum(swarm[1:], swarm[0])], [0.0], seg), 0.0)
+    # ② 新: 8 体を輪へ（45° ごと・少し振る）
+    ring8 = [22.0, 70.0, 108.0, 156.0, 198.0, 246.0, 292.0, 334.0]
+    lay(out, spread(swarm, ring8, seg), seg + gap)
+    # ③ 3 周目 C の増え方（一人 → ＋2 → ＋4）を新しい置き方で
+    at = (seg + gap) * 2
+    lay(out, spread([one], [22.0], seg), at)
+    lay(out, spread([one] + ga, [22.0, 70.0, 108.0], seg), at + seg + gap)
+
+    print(f"   0.0s 旧（8 体を足して 1 点から）   {seg + gap:.1f}s 新（8 体を輪へ）   "
+          f"{at:.1f}s 一人   {at + seg + gap:.1f}s 一人 ＋ 2 体")
+    return out
+
+
 REF = os.path.join(OUT, "ref")
 
 
@@ -838,6 +920,9 @@ def main() -> int:
          "変種 6 本 → 旧（1 本を 8 発）→ 新（6 本を 8 発）→ 2 周目 C の刻み")
     print("人形の呼びかけ（2 周目 C の追いつき）:")
     emit("preview_call", build_call(), "前半は声だけ / 後半は切替音と重なった所")
+    print("人形の笑い — 周囲に大勢いるか（0139・旧 1 点 → 新 8 か所）:")
+    emit("preview_laugh_ring", build_laugh_ring(),
+         "⚠ ヘッドホン用の近似（左右と前後の曇りだけ）。**何か所から鳴っているか**が判定")
     print("警告つきの切替音（0134・実機で鳴る場に置いて、旧 → 新）:")
     emit("preview_alert", build_alert(),
          "素で 3 組 → 接近そのまま（旧 → 新）→ 同じ 2 回を内蔵スピーカー越し。**警告が聞こえるか**が判定")

@@ -45,8 +45,12 @@ MONO3D = {
     "sfx_eye_big",
     # 連絡の面（AIエージェントのスクリーン）から
     *(f"sfx_type_{i}" for i in range(1, 9)),
-    # 人形（周囲・後ろ）
-    "bed_dolls_laugh", "bed_doll_one", "bed_dolls_grow_a", "bed_dolls_grow_b",
+    # 人形（周囲・後ろ）。⚠⚠ **笑いは体ごとに 1 本**（2026-09-04・`canon/LEDGER.md` 0139）。
+    # 表の左右の位置 ＝ その体の立ち位置なので、混ぜて 1 点から鳴らすと立ち位置が消える。
+    *(f"bed_dolls_laugh_{i}" for i in range(1, 9)),   # 4 周目 A の群れ 8 体
+    "bed_doll_one",                                   # 3 周目 A・B の一人（1 体なので名前はそのまま）
+    *(f"bed_dolls_grow_a_{i}" for i in range(1, 3)),  # 3 周目 C で入る 2 体
+    *(f"bed_dolls_grow_b_{i}" for i in range(1, 5)),  # 同・さらに 4 体
     "sfx_doll_call",
     # 封印の箱（2026-08-15 から鳴らない。モノで焼いてあるので名簿に残す）
     "bed_seal",

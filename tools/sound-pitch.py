@@ -42,9 +42,13 @@ TARGETS = [
     ("呼びかけ あーそぼー", os.path.join(SND, "sfx_doll_call.wav"), "基準"),
     ("笑い 素材（生）", os.path.join(RAW, "src_bed_doll_swell.wav"), "加工前"),
     ("笑い 一人 3周A・B", os.path.join(SND, "bed_doll_one.wav"), "ここが主役"),
-    ("笑い 2枚目 3周C", os.path.join(SND, "bed_dolls_grow_a.wav"), ""),
-    ("笑い 3枚目 3周C", os.path.join(SND, "bed_dolls_grow_b.wav"), ""),
-    ("笑い 群れ 4周A", os.path.join(SND, "bed_dolls_laugh.wav"), "8 体ぶんの幅がある"),
+    # ⚠ 笑いは体ごとに焼いてある（2026-09-04・`canon/LEDGER.md` 0139）。高さを測るのは
+    #    **体 1 つぶん**でよい（同じ体は同じ音程で書いてある）。群れの幅は下の 3 つを並べて見る。
+    ("笑い 2枚目 3周C（体1）", os.path.join(SND, "bed_dolls_grow_a_1.wav"), ""),
+    ("笑い 3枚目 3周C（体1）", os.path.join(SND, "bed_dolls_grow_b_1.wav"), ""),
+    ("笑い 群れ 4周A（体1）", os.path.join(SND, "bed_dolls_laugh_1.wav"), "低い方の体"),
+    ("笑い 群れ 4周A（体5）", os.path.join(SND, "bed_dolls_laugh_5.wav"), "真ん中あたり"),
+    ("笑い 群れ 4周A（体8）", os.path.join(SND, "bed_dolls_laugh_8.wav"), "高い方の体"),
 ]
 
 

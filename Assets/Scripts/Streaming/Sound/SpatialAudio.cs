@@ -43,15 +43,47 @@ namespace FixedCamVr.Streaming
 
         // ---- 人形の笑いの輪 -----------------------------------------------------
 
+        /// <summary>
+        /// <b>笑いを置く場所の数</b>（2026-09-04・<c>canon/LEDGER.md</c> 0139）。
+        /// ユーザー指定「いっぱい、見えない者が自分の周囲にいる感じ…いろんな場所から同時に
+        /// 少しずらして鳴らすくらいしっかりしたい」。
+        ///
+        /// ⚠ <b>4 周目 A の群れの体数（8）に合わせてある。</b> 3 周目の 3 層（1 ＋ 2 ＋ 4 ＝ 7 体）は
+        /// 群れと同時に鳴らないので、同じ輪を分け合う。
+        /// </summary>
+        public const int LaughSlots = 8;
+
         /// <summary>笑いを置く輪の半径 (m)。<b>大きさには効かない</b>（上の但し書き）。</summary>
         public const float LaughRadiusM = 2.5f;
+
+        /// <summary>
+        /// 同・振る幅 (m)。<b>きれいな円の上に並べない</b> — 等距離だと「輪に沿って置いた」に
+        /// 聞こえる。前後の奥行きが出ると「いろんな場所」になる。
+        /// </summary>
+        public const float LaughRadiusJitterM = 0.6f;
 
         /// <summary>笑いを頭より下へ置く量 (m)。人形は背が低い。</summary>
         public const float LaughDropM = 0.30f;
 
+        /// <summary>同・振る幅 (m)。高さも揃えない（座っている / 立っている の差）。</summary>
+        public const float LaughDropJitterM = 0.18f;
+
+        /// <summary>笑い 1 体ぶんの置き場所（方角・距離・高さ）。</summary>
+        public struct LaughSpot
+        {
+            public float bearingDeg;
+            public float radiusM;
+            public float dropM;
+        }
+
         /// <summary>
         /// 笑いを置く方角の刻み（度）。4 声を <b>90° ごとの区画</b>へ 1 つずつ入れる。
         /// ⚠ 完全な一様乱数にすると 2 体が重なる回ができ、「周囲の」が成立しない回が出る。
+        ///
+        /// ⚠⚠ <b>2026-09-04（<c>canon/LEDGER.md</c> 0139）から、笑いはこの輪を使っていない。</b>
+        /// 人形はスクリーンの中に見えているので、鳴らす先は画面上のその場所
+        /// （<see cref="LaughAimLogic"/>）。仕組みは残してあるので、戻すなら
+        /// <c>ShowSoundDirector.LaughFollowsScreen</c> を false にする。
         /// </summary>
         public const float LaughSectorDeg = 90f;
 
@@ -105,8 +137,14 @@ namespace FixedCamVr.Streaming
             // 連絡の面（AIエージェントのスクリーン）から
             "sfx_type_1", "sfx_type_2", "sfx_type_3", "sfx_type_4",
             "sfx_type_5", "sfx_type_6", "sfx_type_7", "sfx_type_8",
-            // 人形（周囲・後ろ）
-            "bed_dolls_laugh", "bed_doll_one", "bed_dolls_grow_a", "bed_dolls_grow_b",
+            // 人形（周囲・後ろ）。⚠⚠ **笑いは体ごとに 1 本**（2026-09-04・`canon/LEDGER.md` 0139）。
+            // 焼く側の `ingest-sounds.py` の `LAUGH_BODIES` と対（数が食い違うと沈黙して欠ける）。
+            "bed_dolls_laugh_1", "bed_dolls_laugh_2", "bed_dolls_laugh_3", "bed_dolls_laugh_4",
+            "bed_dolls_laugh_5", "bed_dolls_laugh_6", "bed_dolls_laugh_7", "bed_dolls_laugh_8",
+            "bed_doll_one",
+            "bed_dolls_grow_a_1", "bed_dolls_grow_a_2",
+            "bed_dolls_grow_b_1", "bed_dolls_grow_b_2",
+            "bed_dolls_grow_b_3", "bed_dolls_grow_b_4",
             "sfx_doll_call",
             // 封印の箱（2026-08-15 から鳴らない。モノで焼いてあるので名簿に残す）
             "bed_seal",
@@ -140,6 +178,27 @@ namespace FixedCamVr.Streaming
             if (src == null) return;
             src.spatialBlend = 0f;
             src.spatialize = false;
+        }
+
+        // ---- 画に見えている場所から鳴らす（0139）--------------------------------
+
+        /// <summary>
+        /// <b>枠 uv（スクリーン枠空間・0..1）→ スクリーン面のワールド位置</b>
+        /// （2026-09-04・<c>canon/LEDGER.md</c> 0139）。
+        ///
+        /// スクリーンに映っているものは、そこから鳴るのが「見た目と音の位置の一致」。
+        /// 枠は <paramref name="screen"/> の Quad そのもので、局所の頂点は ±0.5 なので
+        /// 実寸は <c>lossyScale</c>（<see cref="Streaming.CrtScreenMesh"/> は 4 隅と 4 辺を動かさない）。
+        ///
+        /// ⚠ <b>v は下が 0</b>（ビューポートと <c>Texture2D.GetPixels32</c> の並びに合わせてある）。
+        /// ⚠ 管の膨らみ（中央 5.5cm）は無視する — 2m 先で 1.6° 未満で、向きには効かない。
+        /// </summary>
+        public static Vector3 FrameUvToWorld(Transform screen, Vector2 uv)
+        {
+            Vector3 s = screen.lossyScale;
+            return screen.position
+                   + screen.right * ((uv.x - 0.5f) * s.x)
+                   + screen.up * ((uv.y - 0.5f) * s.y);
         }
 
         /// <summary>
@@ -183,16 +242,31 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 笑いを置く方角を <paramref name="count"/> 個、<b>重ならないように</b>引く。
-        /// 90° ごとの区画へ 1 つずつ入れ、区画ごとに振る（輪ぜんたいの向きも毎回変わる）。
+        /// 笑いを置く場所を <paramref name="into"/> の数だけ、<b>重ならないように</b>引く。
+        /// 360° を等分した区画へ 1 つずつ入れ、区画の中で振る（輪ぜんたいの向きも毎回変わる）。
+        ///
+        /// ⚠⚠ <b>振り幅は区画の 1/3 まで</b>（2026-09-04・<c>canon/LEDGER.md</c> 0139）。
+        /// 8 体では区画が 45° しかないので、旧値（±35°）のままだと隣と重なって
+        /// 「いろんな場所」が崩れる。1/3 なら最短でも区画の 1/3 ぶん（8 体で 15°）空く。
+        ///
+        /// ⚠ <b>距離と高さも振る。</b> 方角だけ散らして距離を揃えると、頭を中心とした
+        /// きれいな円になって「並べた」に聞こえる。
         /// </summary>
-        public static void PickLaughBearings(float[] into)
+        public static void PickLaughSpots(LaughSpot[] into)
         {
+            if (into.Length == 0) return;
+            float sector = 360f / into.Length;
+            float jitter = sector / 3f;
             float baseDeg = Random.Range(0f, 360f);
             for (int i = 0; i < into.Length; i++)
             {
-                into[i] = Mathf.Repeat(baseDeg + i * LaughSectorDeg
-                                       + Random.Range(-LaughJitterDeg, LaughJitterDeg), 360f);
+                into[i] = new LaughSpot
+                {
+                    bearingDeg = Mathf.Repeat(baseDeg + i * sector
+                                              + Random.Range(-jitter, jitter), 360f),
+                    radiusM = LaughRadiusM + Random.Range(-LaughRadiusJitterM, LaughRadiusJitterM),
+                    dropM = LaughDropM + Random.Range(-LaughDropJitterM, LaughDropJitterM),
+                };
             }
         }
 

@@ -55,10 +55,14 @@ CUES = {
 # 敷く音: テレメトリのキー → その値で鳴る音源たち。
 BEDS = {
     "sndCurse": ["bed_beat", "bed_horror2"],   # 2 本とも同じ値（0131）
-    "sndDolls": ["bed_dolls_laugh"],
+    # ⚠ 笑いは体ごとに 1 本（0139）。走行の混ぜ直しでは**全部の体を足す**
+    #    （実機は別々の方角から鳴っているが、ここは 2 本の耳で聴く 1 本を作る道具）。
+    "sndDolls": [f"bed_dolls_laugh_{i}" for i in range(1, 9)],
     # ⚠ `sndSwap` は 3 枚の**合計**（一人 ＋ 増える 2 枚）。ログは内訳を持たないので、
     #    1 枚目から順に 1.0 ずつ配る（`SoundBedLogic.ApplyDollSwell` の入り方に近い）。
-    "sndSwap": ["bed_doll_one", "bed_dolls_grow_a", "bed_dolls_grow_b"],
+    "sndSwap": (["bed_doll_one"]
+                + [f"bed_dolls_grow_a_{i}" for i in range(1, 3)]
+                + [f"bed_dolls_grow_b_{i}" for i in range(1, 5)]),
     "sndWind": ["bed_wind"],
     "sndWhite": ["bed_white"],
 }

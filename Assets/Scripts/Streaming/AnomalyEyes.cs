@@ -519,8 +519,12 @@ namespace FixedCamVr.Streaming
             if (_logic.JustStarted)
             {
                 _lastOpenCount = 0;
+                // ⚠⚠ **6.2 秒あるので付いていかせる**（2026-09-04・`canon/LEDGER.md` 0139）。
+                //    目の群れは頭の**位置**に付いて動くので、置きっぱなしだと体験者が 1.5m 歩いた
+                //    時点で 9.5°（半径 9m）ずれる ＝ 見えている目と鳴っている所が離れる。
                 EyeBigSfxFired = _sound != null
-                                 && _sound.PlaySpot(SoundCue.EyeBig, BigEyeWorld());
+                                 && _sound.PlaySpot(SoundCue.EyeBig, BigEyeWorld(),
+                                                    follow: transform);
                 if (_sound != null && !EyeBigSfxFired)
                     Debug.LogWarning("[Eyes] 大きい目の音源がありません"
                                      + "（Resources/Sound/sfx_eye_big）。目は無音で開きます。"
@@ -532,9 +536,12 @@ namespace FixedCamVr.Streaming
             if (now > _lastOpenCount)
             {
                 // ⚠ **閉じるときは鳴らさない**（`Fading` は数が減るので、そもそもここへ来ない）。
+                // ⚠ 1 発 0.15〜0.86 秒と短いが、**群れと同じ相手へ付いていかせる**（0139）。
+                //    開眼の 3 秒は体験者がいちばん動く所で、置きっぱなしだと最後の 1 発ほどずれる。
                 if (_eyeSfxCooldown <= 0f && _sound != null
                     && _sound.PlaySpot(SoundCue.EyeOpen, NewestOpenEyeWorld(),
-                                       EyeSfxPitchSpread, EyeSfxGainSpreadDb))
+                                       EyeSfxPitchSpread, EyeSfxGainSpreadDb,
+                                       follow: transform))
                 {
                     _eyeSfxCooldown = EyeSfxMinIntervalSec;
                     EyeSfxCount++;
