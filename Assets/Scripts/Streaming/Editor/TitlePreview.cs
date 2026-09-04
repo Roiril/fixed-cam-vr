@@ -1,6 +1,7 @@
-#nullable enable
+﻿#nullable enable
 
 using System.IO;
+using FixedCamVr.Diagnostics;
 using UnityEditor;
 using UnityEngine;
 
@@ -77,6 +78,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
 
+            // ---- 体験者がいちばん最初に見る画（段 Wait ＝ 黒 ＋ 注意書き）----
+            ShootFirstScreen(cam, title, titleGo.transform);
+
             // ---- 出現の途中と、出し切り ----
             Shot(cam, title, WeightsAt(0.30f), 0f, "in_030");
             Shot(cam, title, WeightsAt(0.70f), 0f, "in_070");
@@ -121,9 +125,55 @@ namespace FixedCamVr.Streaming.EditorTools
                     "段が Wait のままか、TitleGlyph が 1 画素も描いていない。**絵を信用しないこと**");
             }
 
-            Debug.Log($"[TitlePreview] 静止画 11 枚 → {OutDir} / 閉じる演出 {SeqFrames} 枚 → {SeqDir}" +
+            Debug.Log($"[TitlePreview] 静止画 14 枚（うち最初の画 3 言語） → {OutDir} / 閉じる演出 {SeqFrames} 枚 → {SeqDir}" +
                       $"（hold の最大 {holdPeak}）。" +
                       "**done.png に壁（背景の灰）が箱の外にしか無いことを必ず見る**");
+        }
+
+        /// <summary>
+        /// <b>体験者がいちばん最初に見る画</b>（段 <see cref="TitleStage.Wait"/> ＝ 黒だけ ＋
+        /// 注意書き ＋ 言語の並び ＋ 小さな案内）を 3 言語ぶん撮る。
+        ///
+        /// ⚠⚠ <b>この画は <c>menu text-audit</c> では判定できない。</b> あの絵は面ごとに
+        /// 原点を画面中心へ運んでから撮るので、<b>2 枚をどう積んだか・視界の中でどれだけを
+        /// 占めるかは 1 枚も写らない</b>（測っているのは大きさとはみ出しだけ）。
+        ///
+        /// ⚠ 題字は出さない（A を押すまで立たない）。ここに字が出ていたら段が違う。
+        /// </summary>
+        private static void ShootFirstScreen(Camera cam, TitleScreen title, Transform head)
+        {
+            var go = new GameObject("[TitleNoticePreview]") { hideFlags = HideFlags.HideAndDontSave };
+            go.transform.SetParent(head, worldPositionStays: false);
+            var notice = go.AddComponent<TitleNotice>();
+
+            // 黒だけの段。**重みは実物の状態機械から取る**（ここで数値を書くと段が変わったとき黙って食い違う）。
+            var waitLogic = new TitleLogic();
+            waitLogic.Begin();
+            title.Apply(waitLogic.Weights, 0f);
+
+            ShowLang restore = ShowLanguage.Current;
+            try
+            {
+                foreach (ShowLang lang in ShowLanguage.All)
+                {
+                    ShowLanguage.Select(lang);
+                    notice.EditorShow(lang);
+                    string code = ShowLanguage.Code(lang);
+                    int peak = Capture(cam, Path.Combine(OutDir, $"title_first_{code}.png"));
+                    // ⚠ **「撮れた」ではなく「字が写った」を数える。** 黒だけなら 13 にしかならない。
+                    if (peak < GlyphPeakMin)
+                    {
+                        Debug.LogError($"[TitlePreview] first_{code} に注意書きが写っていない" +
+                                       $"（最大 {peak} < {GlyphPeakMin}）。フォントを解決できていないか、" +
+                                       "面が組めていない。**絵を信用しないこと**");
+                    }
+                }
+            }
+            finally
+            {
+                ShowLanguage.Select(restore);
+                Object.DestroyImmediate(go);
+            }
         }
 
         /// <summary>

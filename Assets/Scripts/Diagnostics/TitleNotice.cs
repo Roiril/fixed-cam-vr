@@ -526,5 +526,23 @@ namespace FixedCamVr.Diagnostics
             // 完全に消えている間は描画そのものを止める（体験中ずっと 0 の文字を描く理由が無い）。
             if (t.gameObject.activeSelf != (a > 0.002f)) t.gameObject.SetActive(a > 0.002f);
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Editor プレビューから、指定の言語で組んで出し切った状態にする（Play しないで絵を出すため）。
+        /// ⚠ <b>実物の <see cref="Build"/> と <see cref="StackLabels"/> を通す</b> —
+        /// プレビュー専用の組み立てを別に書くと、絵と実機が食い違う（この codebase が何度も踏んだ型）。
+        /// </summary>
+        public void EditorShow(ShowLang lang)
+        {
+            Build();
+            if (_text == null) return;
+            _shownLang = lang;
+            _text.text = ComposeFor(lang);
+            StackLabels();
+            _alpha = 1f;
+            SetAlpha(1f);
+        }
+#endif
     }
 }
