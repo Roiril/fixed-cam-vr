@@ -442,6 +442,19 @@ def quest_rows(rows: Rows):
                  f"{level}% / {'充電中' if ac else '未接続'}",
                  "本番中は挿しっぱなしにする")
 
+        # ⚠⚠ **繋がっている間は何も出ない失敗。** 上流の無いネットワークは Android に
+        #    恒久無効化され、次に電源を入れた時だけ戻ってこない（展示の朝に全機が同時に踏む）。
+        g = wifi_guard(s)
+        if g["disabled"]:
+            rows.add(sec, "ng", tag + " の自動接続",
+                     "Android が Wi-Fi を恒久的に無効化しています"
+                     + (f"（{g['ssid']}）" if g["ssid"] else "")
+                     + " — いま繋がっていても、電源を入れ直すと戻りません",
+                     "端末の Wi-Fi 設定でそのネットワークを 1 度手で選び直す（adb からは戻せない）")
+        else:
+            rows.add(sec, "ok", tag + " の自動接続",
+                     f"生きています（接続チェック={g['guard']}）")
+
         _, ps, _ = run(["adb", "-s", s, "shell", "ps -A | grep mawarimi"], 20)
         if "mawarimi" in ps:
             running.append(s)
@@ -762,6 +775,66 @@ def cmd_watch(args):
 
 # ================= adb-open / fix / serve =================
 
+# ================= 自動接続が殺される問題（2026-09-05 発見）=================
+#
+# ⚠⚠ **Aterm に上流が無いので、Android がこのネットワークを「使えない」と判断して
+#     恒久的に自動接続の対象から外す。**
+#
+#   dumpsys wifi:
+#     NetworkSelectionStatus       NETWORK_SELECTION_PERMANENTLY_DISABLED
+#     mNetworkSelectionDisableReason NETWORK_SELECTION_DISABLED_NO_INTERNET_PERMANENT
+#
+#   たちが悪いのは **繋がっている間は何も起きない**こと。既に張れている接続はそのまま続くので、
+#   卓でも画でも異常が出ない。**次に電源を入れ直した時に、初めて戻ってこない。**
+#   ＝ 展示の朝、全機が同時に踏む形。
+#
+#   相手は Quest だけではない。**配信スマホ 3 台も Android** なので同じ。
+#
+#   直す（恒久無効を消す）: adb からはできない。**端末の Wi-Fi 設定で 1 度手で選び直す**
+#   （手で選ぶと User Selected が立って無効化が解ける）。
+#   予防（二度と付かないようにする）: 接続チェックそのものを切る。下の 1 行。
+
+CAPTIVE_KEYS = ("captive_portal_mode", "captive_portal_detection_enabled")
+
+
+def wifi_guard(serial: str) -> dict:
+    """その機の「自動接続を殺す仕掛け」を止め、いま殺されていないかを見る。"""
+    for k in CAPTIVE_KEYS:
+        run(["adb", "-s", serial, "shell", f"settings put global {k} 0"], timeout=20)
+    _, got, _ = run(["adb", "-s", serial, "shell",
+                     f"settings get global {CAPTIVE_KEYS[0]}"], timeout=20)
+    _, dump, _ = run(["adb", "-s", serial, "shell", "dumpsys wifi"], timeout=60)
+    disabled = "NETWORK_SELECTION_PERMANENTLY_DISABLED" in dump
+    reason = "NO_INTERNET" if "DISABLED_NO_INTERNET" in dump else ""
+    ssid = ""
+    m = re.search(r'Ignoring network selection disabled SSID: "([^"]+)"', dump)
+    if m:
+        ssid = m.group(1)
+    return {"guard": got.strip().splitlines()[0].strip() if got.strip() else "?",
+            "disabled": disabled, "reason": reason, "ssid": ssid}
+
+
+def cmd_wifi_guard(args):
+    rc, out, _ = run(["adb", "devices"], timeout=25)
+    serials = [l.split()[0] for l in out.splitlines()[1:]
+               if l.strip() and l.split()[-1] == "device"]
+    if not serials:
+        print("adb に 1 台も出ていません。USB を挿す（配信スマホは :5555 が閉じていれば USB 必須）")
+        return 1
+    for s in serials:
+        r = wifi_guard(s)
+        name = QUEST_NAMES.get(s, s)
+        if r["disabled"]:
+            print(f"{name}  ⚠ 自動接続が殺されています"
+                  + (f"（{r['ssid']} / 理由 {r['reason']}）" if r["ssid"] else "")
+                  + "\n    → **端末の Wi-Fi 設定で、そのネットワークを 1 度手で選び直す。**"
+                    "adb からは戻せません")
+        else:
+            print(f"{name}  自動接続は生きています")
+        print(f"    予防（接続チェックを切る）= {r['guard']}（0 なら入っている）")
+    return 0
+
+
 def cmd_adb_open(args):
     """USB で繋がっている Android に無線 adb を開ける。**設営のたびに 1 回**。
 
@@ -786,8 +859,14 @@ def cmd_adb_open(args):
         rc2, o2, e2 = run(["adb", "connect", f"{addr}:5555"], timeout=15)
         good = "connected" in (o2 + e2)
         print(f"{s}  {addr}:5555  {'開きました' if good else (o2 + e2).strip()[:70]}")
+        # ⚠⚠ USB を挿しているこの一瞬が、**自動接続を殺す仕掛けを止められる唯一の機会**。
+        #    上流の無いネットワークは Android に恒久無効化され、次に電源を入れた時に戻らない。
+        g = wifi_guard(s)
+        print(f"    接続チェックを切りました（{g['guard']}）"
+              + ("  ⚠ この機は既に自動接続が殺されています — "
+                 "端末の Wi-Fi 設定で 1 度手で選び直すこと" if g["disabled"] else ""))
         ok += 1 if good else 0
-    print(f"\n{ok}/{len(usb)} 台。⚠ 端末を再起動すると閉じます（設営後にもう一度)")
+    print(f"\n{ok}/{len(usb)} 台。⚠ 端末を再起動すると :5555 は閉じます（設営後にもう一度)")
     return 0 if ok else 1
 
 
@@ -871,8 +950,12 @@ def main(argv=None):
     p.add_argument("--no-fix", action="store_true")
     p.set_defaults(func=cmd_watch)
 
-    p = sub.add_parser("adb-open", help="USB の端末に無線 adb を開ける")
+    p = sub.add_parser("adb-open", help="USB の端末に無線 adb を開ける＋自動接続の予防を入れる")
     p.set_defaults(func=cmd_adb_open)
+
+    p = sub.add_parser("wifi-guard",
+                       help="上流の無い網で Android が自動接続を殺すのを止める／殺されていないか見る")
+    p.set_defaults(func=cmd_wifi_guard)
 
     p = sub.add_parser("fix", help="個別の復旧")
     p.add_argument("name", nargs="?", default="")
