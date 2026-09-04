@@ -149,39 +149,77 @@ course 空間で対称に置いても、カメラ A が対称軸の真上に無�
 
 ---
 
-## 2. 事前セットアップ（PC 側、現場到着後 5 分）
+## 2. 現場に着いてから（PC で打つのは 3 行だけ）
+
+**当日ユーザーは PC を触らない。** 押す物はスマホの当日パネル
+`http://192.168.10.10:8099/onsite.html`（同じ LAN なら誰の端末からでも開く）。
+判断が要ることはシュビーに頼む（`.claude/skills/onsite/SKILL.md`）。
 
 0. [ ] **ルータ（Aterm）を先に立てる。** 2.4GHz・5GHz のランプが両方点くまで待ってから端末を繋ぐ
    - 手順の正本は [onsite/network-setup.md](onsite/network-setup.md)。**IP は端末側で静的に振ってある**ので、
-     ここで IP をメモして書き換える作業は**もう無い**（`.21`=A / `.22`=B / `.23`=C / `.24`=D / `.11`=PC）
-1. [ ] スマホ全台で配信アプリ（fixed-cam-streamer）を起動
-   - 画面に出る **cameraId が割当と合っているか**見る（入れ替わっていると演出が別のカメラに出る）
-2. [ ] PC ブラウザで `http://192.168.10.21:8080/` 〜 を直接開いて映像が見える事を全台で確認
-   - **これが端末間通信の証明**。開かなければネットワーク分離が ON か、ゲスト SSID に繋がっている
-3. [ ] `.asset` / `show.json` の `host` は固定値のままでよい。**変わっていたら誰かが触っている** — 戻す
-4. [ ] **卓の 🩺 疎通診断** — PC→カメラ HTTP / beacon / Quest heartbeat の 3 経路が ✅ か
-5. [ ] Build Settings が `Assets/Scenes/Main.unity` のみ enabled であることを確認
-6. [ ] **Main.unity を開いて Tools > FixedCamVr > Setup > Setup Main Demo Scene を実行**
-   - Phase 2.7 用の `[Zones]` (Center / Right / Left) と `[Tracker]` を自動配置
-   - HMD 内ステータス表示 (`StatusHud` Canvas・world-space 緩追従) と診断コンテナ (`Diagnostics`: HudLogDumper / HmdTrajectoryRecorder / HudToggleInput) を Logic 配下に配置
-   - **`ControllerGuidePanel`**（スタッフ専用の操作早見表・右コントローラ追従）を Logic 配下に配置し `OvrControllerBridge.guidePanel` へ結線（RightHandAnchor 不在時はスキップ）
-   - **`StartupFader`** を CenterEyeAnchor 配下に配置（Play 直後の砂時計 / 接続待ちを黒で隠してフェードイン）
-   - `OvrControllerBridge.statusHud` への参照も自動で結線
-   - **`ControllerHaptics`**（右コントローラ振動）を `[Streaming]` に冪等 add し `OvrControllerBridge.haptics` に結線
-   - **`[Bgm]`**（起動中ループ BGM: `Assets/Art/Audio/HorrBGM.mp3`・2D・PlayOnAwake）を Logic 配下に get-or-create（音量は Inspector 調整可・Setup 再実行で潰れない）
-   - 再実行可能（既存配置は削除して再生成。旧 `DebugHud` Canvas も掃除される）
-7. [ ] **URP RendererFeature を手動配線**（Phase 3 FX を実機で出すために必須）
-   - `Assets/Settings/URP-Balanced-Renderer.asset` を Inspector で開く
-   - **Add Renderer Feature → Full Screen Pass Renderer Feature** を追加
-   - Pass Material = `Assets/Art/Materials/Fx/FxCrtMaterial.mat` (無ければ **Tools > FixedCamVr > Setup > Create CRT Material** で生成)
-   - Inject Point = `After Rendering Post Processing`
-   - Bind to Color Texture = ON
-8. [ ] Player Settings 確認（[TROUBLESHOOTING.md Q.ビルド入らない](../TROUBLESHOOTING.md) も参照）
-   - Scripting Backend: IL2CPP / Target Architectures: ARM64 のみ / Min API Level: 29+
-9. [ ] Quest 3 を USB-C 接続 → `adb devices` で `device` 表示を確認
-10. [ ] **File > Build Settings > Build And Run**
+     ここで IP をメモして書き換える作業は**もう無い**（`.21`=A / `.22`=B / `.23`=C / `.24`=D / `.10`=PC）
+1. [ ] **PC を起こす（ログオンする）。** 卓はログオン時に自動で立つ
+   （スタートアップの `mawarimi-desk`）。
+   ⚠ **サインイン画面で止まっていると立たない** — 自動ログオンは切ってあるので、誰かが 1 度サインインする
+2. [ ] スマホ全台で配信アプリを起動し、画面の **cameraId が割当と合っているか**見る
+3. [ ] **配信スマホを USB に挿して、無線 adb を開ける**
+
+   ```bash
+   py -3.11 tools/onsite.py adb-open
+   ```
+
+   ⚠⚠ **端末を再起動すると閉じる。** 閉じていると、当日その端末が落ちたとき**遠隔で 1 手も打てない**
+   （画面を起こすのもアプリを起こし直すのも adb 経由）。設営のたびにやる
+4. [ ] **点検を 1 回通す。** Quest を本番と同じ台数だけ起動してから
+
+   ```bash
+   py -3.11 tools/onsite.py check --deep
+   ```
+
+   NG が 0 になるまで開場しない。行ごとに直し方が出る。スマホからなら当日パネルの「点検する」
+5. [ ] **設営と照明が決まったら、3 台とも端末の 🔓 露出/AF ロックを押す**
+   （素材を撮った時と本番で色が変わるのを止める。点検が warn で名指しする）
+6. [ ] **会期中は監視を走らせておく**
+
+   ```bash
+   py -3.11 tools/onsite.py watch
+   ```
+
+   20 秒ごとに全カメラから実際にバイトを引き、出ていなければ起こし直す。卓が落ちていれば立て直す
+
+> ⚠ **ビルドは当日やらない。** Unity を開く・Build Settings を確認する・URP の
+> RendererFeature を配線する・Build And Run する — これは全部**下の「前日までに」**へ移した。
+> 当日に焼くと、**端末キャッシュが捨てられて設定を取り直すところから始まる**ことになる。
 
 ---
+
+## 2-. 前日までに済ませる（当日ここへ戻らないために）
+
+**この節が終わっていれば、当日 PC でやるのは §2 の 3 コマンドだけになる。**
+
+- [ ] `Main.unity` を開いて **Tools > FixedCamVr > Setup > Setup Main Demo Scene**
+      （CLI なら `.\tools\unity.ps1 menu scene`）
+- [ ] **URP RendererFeature の配線**（Phase 3 FX を実機で出すために必須）
+   - `Assets/Settings/URP-Balanced-Renderer.asset` を Inspector で開く
+   - **Add Renderer Feature → Full Screen Pass Renderer Feature**
+   - Pass Material = `Assets/Art/Materials/Fx/FxCrtMaterial.mat`
+     （無ければ **Setup > Create CRT Material**）
+   - Inject Point = `After Rendering Post Processing` / Bind to Color Texture = ON
+- [ ] Build Settings が `Assets/Scenes/Main.unity` のみ enabled
+- [ ] Player Settings: IL2CPP / ARM64 のみ / Min API 29+
+- [ ] **APK を焼いて 2 台とも入れる**
+
+   ```powershell
+   .\tools\unity.ps1 build fixedcam
+   py -3.11 tools/quest-fleet.py sync
+   ```
+
+   ⚠ HMD 内の日本語を 1 文字でも増やしたら、先に `.\tools\unity.ps1 menu hud-font`
+   （フォントは静的ベイク。忘れると実機で豆腐になる。**収集元 .cs のコメントの日本語も焼く**ので、
+   コメントを 1 行直しただけでもビルドのガードが落ちる）
+- [ ] **2 台とも位置合わせが入っているか**（`py -3.11 tools/onsite.py check` の「位置合わせ」行）
+      ⚠ 登録は端末ローカルの物理的事実なので**機の間でコピーできない**。現地で 2 台ぶん取る
+- [ ] Quest 2 台・配信スマホ 3 台をフル充電。**AC を持って行く**
 
 ## 3. 起動後 60 秒チェック（HMD を被って）
 

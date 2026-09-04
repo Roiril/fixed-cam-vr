@@ -1493,6 +1493,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self._get_discovery()
         if path == '/diag':
             return self._get_diag()
+        if path == '/onsite/check':
+            # 直前の点検結果（走らせ直さない）。当日パネルを開いた瞬間に出す用。
+            try:
+                with open(os.path.join(REPO_ROOT, 'logs', 'onsite', 'check-latest.json'),
+                          'r', encoding='utf-8') as f:
+                    return self._json({'ok': True, **json.load(f)})
+            except Exception:
+                return self._json({'ok': False, 'error': 'まだ 1 度も点検していません'}, 404)
         return super().do_GET()
 
     # 🕹 記録済みシナリオ（scenarios/*.json）の一覧。本体は静的配信（/scenarios/<name>.json）で読む。
@@ -2147,8 +2155,132 @@ class Handler(SimpleHTTPRequestHandler):
         # 目の視界ジャックの当日写真を show.json へ焼く（canon/LEDGER.md 0099）。
         if parsed.path == '/eyejack/apply':
             return self._post_eyejack_apply()
+        if parsed.path == '/eyejack/upload':
+            return self._post_eyejack_upload()
+        if parsed.path == '/eyejack/clear':
+            return self._post_eyejack_clear()
+        if parsed.path == '/onsite/check':
+            return self._post_onsite_check()
+        if parsed.path == '/onsite/fix':
+            return self._post_onsite_fix()
 
         return self._json({'ok': False, 'error': 'unknown endpoint'}, 404)
+
+    # ================= 当日パネル（onsite.html）=================
+    #
+    # **PC を触らずに当日を回すための口。** スマホのブラウザから同じ LAN で叩く。
+    # ⚠ ここは 127.0.0.1 に絞らない（絞ると目的が消える）。代わりに
+    #   **引数を一切受け取らない**形にしてある — 走らせるコマンドは固定で、
+    #   外から文字列が渡る経路が無い（/generate の Codex 起動とはそこが違う）。
+
+    @staticmethod
+    def _split_multipart(body: bytes, boundary: bytes):
+        """multipart/form-data を最小限だけ解く。返すのは [(filename, bytes)]。
+
+        ⚠ `cgi` は 3.13 で消えるので使わない。ここが要るのは
+        「ファイル名と中身」だけなので、境界で割って CRLFCRLF で頭を落とす。
+        """
+        out = []
+        sep = b'--' + boundary
+        for part in body.split(sep):
+            if not part or part[:2] == b'--':
+                continue
+            head, _, data = part.partition(b'\r\n\r\n')
+            if not data:
+                continue
+            m = re.search(rb'filename="([^"]*)"', head)
+            if not m or not m.group(1):
+                continue
+            name = m.group(1).decode('utf-8', 'replace')
+            out.append((os.path.basename(name), data.rstrip(b'\r\n')))
+        return out
+
+    def _post_eyejack_upload(self):
+        """スマホから写真を直接置く。**取り込みまではやらない**（押した順を確定させてから）。
+
+        ⚠ **並ぶ順はファイル名順**（`_post_eyejack_apply`）。撮った順を保つため、
+          いま入っている枚数の続きから連番を打ち直す。
+        """
+        ctype = self.headers.get('Content-Type', '')
+        m = re.search(r'boundary=([^;]+)', ctype)
+        if 'multipart/form-data' not in ctype or not m:
+            return self._json({'ok': False, 'error': 'multipart/form-data で送ってください'}, 400)
+        length = int(self.headers.get('Content-Length', 0))
+        if length <= 0 or length > 220 * 1024 * 1024:
+            return self._json({'ok': False, 'error': f'大きさが扱えません ({length} bytes)'}, 400)
+        body = self.rfile.read(length)
+        parts = self._split_multipart(body, m.group(1).strip('"').encode())
+        if not parts:
+            return self._json({'ok': False, 'error': '写真が入っていません'}, 400)
+
+        os.makedirs(EYEJACK, exist_ok=True)
+        ok = [n for n in sorted(os.listdir(EYEJACK))
+              if n.lower().endswith(('.jpg', '.jpeg', '.png', '.heic', '.webp'))]
+        base = len(ok)
+        saved = []
+        for i, (name, data) in enumerate(parts, 1):
+            ext = os.path.splitext(name)[1].lower() or '.jpg'
+            if ext not in ('.jpg', '.jpeg', '.png', '.heic', '.webp'):
+                continue
+            fn = f'{base + i:02d}_{re.sub(r"[^A-Za-z0-9._-]", "_", name)}'
+            with open(os.path.join(EYEJACK, fn), 'wb') as f:
+                f.write(data)
+            saved.append(fn)
+        return self._json({'ok': True, 'saved': saved, 'total': base + len(saved)})
+
+    def _post_eyejack_clear(self):
+        """写真を全部消す（差し替え・取りやめ）。**norm/ も掃除する** — 残っていると
+        次の取り込みで前の写真が混ざる。"""
+        n = 0
+        for d in (EYEJACK, EYEJACK_NORM):
+            if not os.path.isdir(d):
+                continue
+            for name in os.listdir(d):
+                fp = os.path.join(d, name)
+                if os.path.isfile(fp) and name.lower().endswith(
+                        ('.jpg', '.jpeg', '.png', '.heic', '.webp')):
+                    os.remove(fp)
+                    n += 1
+        return self._json({'ok': True, 'removed': n})
+
+    def _post_onsite_check(self):
+        """`tools/onsite.py check` を走らせて、結果の JSON をそのまま返す。
+
+        ⚠ 引数は受け取らない（固定コマンド）。1 回 30〜60 秒かかるので、
+          呼ぶ側は待つか、直前の結果（`logs/onsite/check-latest.json`）を読む。
+        """
+        script = os.path.join(REPO_ROOT, 'tools', 'onsite.py')
+        latest = os.path.join(REPO_ROOT, 'logs', 'onsite', 'check-latest.json')
+        try:
+            subprocess.run(['py', '-3.11', script, 'check'], cwd=REPO_ROOT,
+                           capture_output=True, timeout=240)
+        except Exception as e:
+            return self._json({'ok': False, 'error': str(e)}, 500)
+        try:
+            with open(latest, 'r', encoding='utf-8') as f:
+                return self._json({'ok': True, **json.load(f)})
+        except Exception as e:
+            return self._json({'ok': False, 'error': f'結果を読めません: {e}'}, 500)
+
+    # 決まった復旧だけを名前で呼べるようにする。**名前は白名簿**（外から文字列が渡らない）。
+    _ONSITE_FIXES = {
+        'cameras': '配信端末を起こし直す',
+        'panel': 'Quest の設定パネルを閉じる',
+    }
+
+    def _post_onsite_fix(self):
+        name = (self._read_json_body().get('name') or '').strip()
+        if name not in self._ONSITE_FIXES:
+            return self._json({'ok': False, 'error': '知らない復旧名です'}, 400)
+        script = os.path.join(REPO_ROOT, 'tools', 'onsite.py')
+        try:
+            p = subprocess.run(['py', '-3.11', script, 'fix', name], cwd=REPO_ROOT,
+                               capture_output=True, text=True, encoding='utf-8',
+                               errors='replace', timeout=180)
+        except Exception as e:
+            return self._json({'ok': False, 'error': str(e)}, 500)
+        return self._json({'ok': True, 'what': self._ONSITE_FIXES[name],
+                           'log': (p.stdout or '').strip()[-1500:]})
 
     # 🕹 記録した歩き（scenario JSON）を scenarios/<name>.json へ保存する。
     #   show.json には一切触らない（検証入力とショー設定を混ぜない）。

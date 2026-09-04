@@ -1755,6 +1755,12 @@ namespace FixedCamVr.Streaming
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
             ResolveBgmDirector()?.ResetRun();
+            // ⚠⚠ 体験の音も落とす。**ここが抜けていると 2 人目以降で 2 つ壊れる**（2026-09-04 に発見）:
+            //   ① 人形の笑いの方角が 1 人目のまま（`PickLaughSpots` は Awake でしか引かないので、
+            //      0130「ランダムな位置」が 1 人目にしか成立していなかった）
+            //   ② 前の体験者の一撃・敷く音・頭出しラッチが次のタイトル画面へ流れ込む
+            // どちらも**画にも録画にも 1 ビットも出ない**（音は録画に映らない）。
+            ResolveSoundDirector()?.ResetRun();
             // 端末内録画も世代を切り替える（前の体験者の映像を次のランへ持ち越さない・端末に残さない）。
             ResolveRecorder()?.ResetRun(_knownRunEpoch);
             RunReset?.Invoke();
@@ -1778,6 +1784,7 @@ namespace FixedCamVr.Streaming
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
             ResolveBgmDirector()?.ResetRun();
+            ResolveSoundDirector()?.ResetRun();   // 卓経由（TriggerRunReset）と対称に保つ
             // 現地は卓と runEpoch を共有できないので、録画側は自分で世代を進める。
             ResolveRecorder()?.ResetRunLocal();
             RunReset?.Invoke();

@@ -5,6 +5,8 @@
 > `OPEN` = 未確定とシュビーの案 / `ROUNDS` = 周回の賭けと差）。混ぜない — 規律は `rules/canon-boundary.md`。
 > 作りこみの思想は `.claude/reference/why.md`。
 
+- [onsite_day_ops.md](onsite_day_ops.md) - **当日（9/6・7）の運用**。PC を触らない 3 層（機械が勝手に / スマホの当日パネル / シュビー）／`onsite.py check` は卓の本番前チェックと**重ならない**（統合しない）／**古い heartbeat で判定させない**・2 台の欠けは 20 秒の窓の最悪値で見る／目の写真の 3 経路／ログオン自動起動は冪等が必須・`.cmd` は ASCII だけ／自動復旧で Wi-Fi には触らない
+- [visitor_sound_reset.md](visitor_sound_reset.md) - **2 人目以降だけ壊れていた**：`ShowSoundDirector.ResetRun` が本番から 1 度も呼ばれておらず、笑いの方角が 1 人目のまま固定・前の人の音が次のタイトルへ流れ込んでいた（画にも録画にも出ない）。同じ型の探し方と、まだ確かめていないこと
 - [onsite_experience_test.md](onsite_experience_test.md) - 体験を実機で丸ごと検証する 4 点セット（[XP] テレメトリ / HMD 不要の自動走行 / 判定スクリプト / 機の選択）＋ logcat 収集の真因（他プロセスが 76%）と「解析が嘘をつく経路」
 - [quest_fleet_two_devices.md](quest_fleet_two_devices.md) - **クエストα = `2G0YC1ZF890864`（自動走行を回す機）／ クエストβ = `2G0YC1ZF7S06BW`**。Quest 2 台を交互に使う道具と、機ごとに違って必ず食い違う 4 つ（キャッシュ / APK / 帯域 / 位置合わせ）。熱で選ぶ理由・adb pull が使えない話
 
