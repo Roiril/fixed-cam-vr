@@ -2170,8 +2170,18 @@ def analyze(events, others, exp, warns=None):
             elif peak < 7:
                 verdict("WARN", f"笑いの点が最大 {peak} か所 — 群れ（8）にも 3 周目 C（7）にも"
                                 "届いていない。そこまで走っていない走行なら正常")
+            elif peak > 8:
+                # 層の切り替わりで消えかけの声まで数えている（`LaughAudibleGain` が効いていない）。
+                verdict("WARN", f"笑いの点が最大 {peak} か所 — 群れは 8 体しか居ないので、"
+                                "層の切り替わりで消えかけの声まで数えている疑い"
+                                "（ShowSoundDirector.LaughAudibleGain）")
             else:
                 verdict("OK", f"笑いが最大 {peak} か所から鳴った（周囲に大勢いる）")
+            # ⭐ **増え方がそのまま出る。** 3 周目は 1 → 3 → 7、4 周目 A で 8。
+            #    ⚠ 数が増えずに音量だけ上がっているなら、体ごとに分けた意味が消えている。
+            steps = sorted({v for v in laugh if v > 0})
+            if len(steps) >= 2:
+                w(f"  笑いの増え方: {' → '.join(str(v) for v in steps)} か所")
 
         # -- 入れ替わった人形の笑い（`canon/LEDGER.md` 0086）
         #    ⚠ これもループなので `ev=sfx` には出ない。見るのは `ev=sum` の

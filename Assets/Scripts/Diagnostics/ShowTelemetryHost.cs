@@ -1198,6 +1198,10 @@ namespace FixedCamVr.Diagnostics
             //   ⚠⚠ 「周囲に大勢いる」が成立したかの唯一の証拠。**画にも録画にも出ない。**
             //      4 周目 A の群れで 8・3 周目 C で 7（1 ＋ 2 ＋ 4）が満点で、
             //      1 なら体ごとに分けた意味が消えている（焼き忘れ／取り込み忘れ）。
+            //   ⚠ 数えるのは**聞こえる大きさで鳴っている体**だけ
+            //      （`ShowSoundDirector.LaughAudibleGain` = -34dB）。層の出し入れは半減期で
+            //      寄せるので、切り替わった後も消えかけの声が長く 0 に届かない。
+            //      「置けているか」の閾値で数えると 1.5 秒だけ 15 と出た（走行 20260904_125334）。
             _sb.Append(" sndLaugh=").Append(_sound == null ? "-" : _sound.LaughPoints.ToString());
             //   sndWind  = 別の場所（バックルームズ）の風（`canon/LEDGER.md` 0131）。
             //   ⚠⚠ **異世界が映っているあいだだけ立ち、そのあいだ `sndScore` は 0**。

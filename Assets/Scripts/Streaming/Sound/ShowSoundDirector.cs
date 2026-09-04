@@ -262,9 +262,16 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// <b>いま画に紐づかずに鳴っている笑いの点の数</b>（テレメトリ用・0139）。
+        /// 笑いを「聞こえている」と数える下限（0139）。<b>-34dB</b>。
+        /// ⚠ 層の切り替わりで消えかけの声（50dB 下）を数に入れないための線。
+        /// </summary>
+        public const float LaughAudibleGain = 0.02f;
+
+        /// <summary>
+        /// <b>いま何か所から笑いが聞こえているか</b>（テレメトリ用・0139）。
         /// ⚠⚠ **「周囲に大勢いる」が成立したかの唯一の証拠。** 1 なら 1 点から鳴っていて、
         /// 体ごとに分けた意味が消えている（画にも録画にも出ない）。
+        /// 満点は 4 周目 A の群れで <b>8</b>・3 周目 C で <b>7</b>（一人 1 ＋ 2 体 ＋ 4 体）。
         /// </summary>
         public int LaughPoints { get; private set; }
 
@@ -734,10 +741,11 @@ namespace FixedCamVr.Streaming
             n += PlaceAt(_device, _screen);
             n += PlaceAt(_worn, _screen);
             n += PlaceAt(_noise, _screen);
-            int laugh = PlaceLaughLayer(_dolls) + PlaceLaughLayer(_dollOne)
-                        + PlaceLaughLayer(_dollGrowA) + PlaceLaughLayer(_dollGrowB);
-            LaughPoints = laugh;
-            SpatialBedsAudible = n + laugh;
+            int audible = 0;
+            n += PlaceLaughLayer(_dolls, ref audible) + PlaceLaughLayer(_dollOne, ref audible)
+                 + PlaceLaughLayer(_dollGrowA, ref audible) + PlaceLaughLayer(_dollGrowB, ref audible);
+            LaughPoints = audible;
+            SpatialBedsAudible = n;
         }
 
         /// <summary>層ぜんぶへ同じ高さを書く（体は同じ層の中では同じ大きさ）。</summary>
@@ -757,11 +765,26 @@ namespace FixedCamVr.Streaming
             return sum;
         }
 
-        /// <summary>層の体を輪のそれぞれのスロットへ置く。鳴っていて 3D な体の数を返す。</summary>
-        private int PlaceLaughLayer(LaughLayer layer)
+        /// <summary>
+        /// 層の体を輪のそれぞれのスロットへ置く。返すのは<b>鳴っていて 3D な体の数</b>で、
+        /// <paramref name="audible"/> には<b>実際に聞こえる大きさで鳴っている体</b>だけを足す。
+        ///
+        /// ⚠⚠ <b>2 つは別の数</b>（2026-09-04 の走行 20260904_125334 で分かった）。
+        /// 層の出し入れは半減期で寄せるので、切り替わった後も消えかけの声が長く 0 に届かない。
+        /// 「置けているか」の閾値（<c>0.0005</c>）で数えると、3 周目 C から 4 周目 A へ移る
+        /// <b>1.5 秒だけ 15 か所</b>と出た（そのとき消えかけの 7 声は合計 0.01 ＝ 50dB 下で聞こえない）。
+        /// ⇒ 「何か所から聞こえるか」は <see cref="LaughAudibleGain"/> で数える。
+        /// </summary>
+        private int PlaceLaughLayer(LaughLayer layer, ref int audible)
         {
             int n = 0;
-            for (int i = 0; i < layer.bodies.Length; i++) n += PlaceOnRing(layer.bodies[i], layer.slots[i]);
+            for (int i = 0; i < layer.bodies.Length; i++)
+            {
+                BedVoice b = layer.bodies[i];
+                n += PlaceOnRing(b, layer.slots[i]);
+                if (b.ok && b.src != null && b.src.volume > LaughAudibleGain
+                    && b.src.spatialBlend >= 1f) audible++;
+            }
             return n;
         }
 
