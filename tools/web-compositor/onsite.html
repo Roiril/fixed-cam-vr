@@ -100,6 +100,15 @@
 <div id="rows"></div>
 
 <h2>目の写真</h2>
+<!-- ⚠ 台本が視界ジャックを使っていなければ、ここは畳む。使わない口を開けておくと
+     「送ったのに出ない」を現場で作る（2026-09-04 / LEDGER 0152 でユーザーが取りやめた）。
+     判定は台本から採るので、印を戻せばこの面も勝手に戻る。 -->
+<div class="verdict" id="eyeOff" hidden>
+  いまの台本では出ません（<b>2026-09-04 に取りやめ</b>）。撮る仕事はありません。<br>
+  <span style="opacity:.75">闇の目は今までどおり出ます。消えたのは視界が写真に乗っ取られるところだけ。</span>
+</div>
+<p class="note" id="eyeWait">台本を読んでいます…</p>
+<div id="eyeBody" hidden>
 <p class="note">
   人形を置いた場所から、人形の目の高さで 4〜8 枚。いろんな向きで。<br>
   明るさと向きは揃えるので、気にしなくてよい。
@@ -110,6 +119,7 @@
 </div>
 <button id="btnClear">全部消す（ジャックをやめる）</button>
 <p class="msg" id="mEye"></p>
+</div>
 
 <h2>直す</h2>
 <button id="fixCameras">配信端末を起こし直す</button>
@@ -131,8 +141,22 @@ setInterval(clock, 1000); clock();
 // ⚠ 見るのは **/diag の http**（PC → カメラの実接続）。beacon だけ来ていて http が
 //   通らないのは AP の分離なので、そこは点検の側で言う。
 async function live(){
-  let d = null, u = null;
+  let d = null, u = null, s = null;
   try { [d, u] = await Promise.all([j('/diag'), j('/unity/status')]); } catch (e) {}
+
+  // ---- 台本が視界ジャックを使っているか --------------------------------------
+  // ⚠ **1 回きりの読み込みでやらない。** 1 度 fetch が転ぶと（実際に
+  //   ERR_NO_BUFFER_SPACE で転んだ）その面が**確信をもって間違ったまま**居座る。
+  //   ここで毎周見れば、転んでも 5 秒後に直る。台本から採るので、印を戻せば面も戻る。
+  // ⚠ 分からないうちは**どちらも出さない**。「撮ってください」と誤って出す方が高くつく。
+  try { s = await j('/state'); } catch (e) {}
+  if (s) {
+    const uses = ((s.timeline || {}).segments || []).some((seg) =>
+      (seg.takes || []).some((t) => (t.steps || []).some((st) => st && st.eyeJack)));
+    $('eyeOff').hidden = uses;
+    $('eyeBody').hidden = !uses;
+    $('eyeWait').hidden = true;
+  }
   const cams = (d && d.cameras || []).filter((c) => c.host);
   $('lamps').innerHTML = cams.map((c) =>
     `<div class="lamp ${c.http ? 'ok' : 'ng'}"><b>${c.http ? '●' : '×'}</b><small>カメラ${c.id}</small></div>`
