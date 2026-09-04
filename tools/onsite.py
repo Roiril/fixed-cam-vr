@@ -3,6 +3,8 @@
 
     py -3.11 tools/onsite.py check          # 開場前点検。全部の経路を PASS/FAIL で 1 画面
     py -3.11 tools/onsite.py check --deep   # ＋ 目の写真が 2 台とも届いたかを 20 秒かけて見る
+    py -3.11 tools/onsite.py takes          # 端末に残っている人形視点の素材を見る
+    py -3.11 tools/onsite.py takes --adopt  # 各 cue の最新テイクを回収して採用まで済ませる
     py -3.11 tools/onsite.py eyejack        # 写真を探して → 取り込んで → 届いたかまで確認
     py -3.11 tools/onsite.py watch          # 会期中の監視。落ちた端末を自分で起こし直す
     py -3.11 tools/onsite.py adb-open       # USB の端末に無線 adb を開ける（設営時に 1 回）
@@ -51,7 +53,7 @@ DESK = "http://127.0.0.1:8099"
 # ---- 展示ネットワークの設計値（docs/onsite/network-setup.md が正本）--------------------
 DESK_IP = "192.168.10.10"
 ROUTER_IP = "192.168.10.1"
-STREAMER_MIN_VERSION = (0, 13, 0)   # 撮影パネル・補助線・鏡合わせが入った版
+STREAMER_MIN_VERSION = (0, 14, 0)   # 構えている最中の窓が入った版（rules/streaming.md）
 WIDE_FOV_DEG = 104.3                # 超広角。較正がこの画角を前提にしている
 QUEST_NAMES = {"2G0YC1ZF890864": "α", "2G0YC1ZF7S06BW": "β"}
 
@@ -327,7 +329,7 @@ def check_cameras(rows: Rows, show: dict):
         if ver_tuple(info.get("appVersion", "")) < STREAMER_MIN_VERSION:
             rows.add(sec, "ng", tag + " 版",
                      f"{info.get('appVersion')} — 撮影パネルが無く、当日の素材撮りができません",
-                     "skills/streamer-android-build で v0.13.0 以上を入れる")
+                     "skills/streamer-android-build で v0.14.0 以上を入れる")
 
         fov = float(info.get("lensFovDeg") or 0)
         if abs(fov - WIDE_FOV_DEG) > 2.0:
@@ -897,6 +899,141 @@ def cmd_fix(args):
     return 1
 
 
+# ============================ 撮った素材の反映 ==============================
+#
+# 当日の流れ（ユーザーの言葉）:
+#   「いずれかのカメラで撮影して端末に残しておく → 撮ったと言う → 反映して焼き直す → 実機で使う」
+#
+# 撮る人は卓へ歩かない。**端末に残っているものを、こちらから取りに行く。**
+# 端末の「🎬 撮影」で「卓へ送って採用」を押していれば済んでいるが、押していなくても
+# ここが同じ所へ運ぶ（押し忘れ・卓が居なかった・後から撮り直した、が現場では普通に起きる）。
+
+
+def _shoot_devices() -> list[dict]:
+    """卓が知っている配信端末（host / port / cameraId）。卓が居なければ空。"""
+    d = get_json(f"{DESK}/shoot/devices", timeout=8.0) or {}
+    return [i for i in (d.get("items") or []) if i.get("host")]
+
+
+def _device_takes(dev: dict) -> list[dict]:
+    """その端末に残っているテイク。新しい順。"""
+    lst = get_json(f"http://{dev['host']}:{dev.get('port', 8080)}/record/list", timeout=8.0)
+    if not isinstance(lst, dict):
+        return []
+    items = [i for i in (lst.get("items") or []) if i.get("name")]
+    for i in items:
+        i["shot"] = _shot_of(i["name"])
+        i["take"] = _take_of(i["name"])
+    # 名前の末尾が撮影時刻なので、名前で並べれば時系列になる。
+    items.sort(key=lambda i: i["name"], reverse=True)
+    return items
+
+
+def _shot_of(name: str) -> str:
+    m = re.fullmatch(r"(.+)_t(\d+)_(\d{8}_\d{6})\.mp4", name)
+    return m.group(1) if m else ""
+
+
+def _take_of(name: str) -> int:
+    m = re.fullmatch(r"(.+)_t(\d+)_(\d{8}_\d{6})\.mp4", name)
+    return int(m.group(2)) if m else 0
+
+
+def _plan_shots(cam: str = "?") -> dict:
+    """卓が配る「今日撮るもの」を cueId → shot の辞書で。取れなければ空。"""
+    p = get_json(f"{DESK}/shoot/plan?cam={cam}", timeout=8.0) or {}
+    return {s.get("cueId"): s for s in (p.get("shots") or []) if s.get("cueId")}
+
+
+def cmd_takes(args):
+    """端末に残っている素材を一覧し、`--adopt` なら回収 → 検分 → 採用まで済ませる。
+
+    ⚠ **採用するのは各 cue のいちばん新しいテイクだけ。** 撮り直しは新しい番号で残るので、
+      「最後に撮ったものが本番で使われる」が現場の直感と一致する。古いテイクは端末に残す
+      （消さない — 現場で戻したくなったときの唯一の道）。
+
+    ⚠ 尺の判定は**卓が測った実測**で出す（端末の概算ではない）。要求秒に足りなければ
+      赤で名指しする。足りないまま焼くと、実機ではそのカットだけ画が止まって見える。
+    """
+    devs = _shoot_devices()
+    if not devs:
+        print("卓に繋がらない（卓が動いていないか、別の網に居る）")
+        print("  卓を立てるなら: py -3.11 tools/onsite.py serve")
+        return 1
+
+    plan = _plan_shots()
+    found: dict[str, list[tuple[dict, dict]]] = {}
+    print("端末に残っているもの")
+    for d in devs:
+        cam = d.get("cameraId") or "?"
+        takes = _device_takes(d)
+        if not d.get("reachable"):
+            print(f"  カメラ {cam} ({d['host']})  — 届かない")
+            continue
+        if not takes:
+            print(f"  カメラ {cam} ({d['host']})  — 何も撮っていない")
+            continue
+        print(f"  カメラ {cam} ({d['host']})  {len(takes)} 本")
+        for t in takes:
+            mb = (t.get("bytes") or 0) / 1048576.0
+            print(f"      {t['name']}  {mb:.1f}MB")
+            if t["shot"]:
+                found.setdefault(t["shot"], []).append((d, t))
+
+    # 台本が要求しているショットと突き合わせる（撮り漏らしはここでしか出ない）。
+    if plan:
+        missing = [c for c in plan if c not in found]
+        print()
+        print(f"台本のショット {len(plan)} 本 / 撮れているもの {len(found)} 本")
+        if missing:
+            print("  まだ撮っていない: " + " ".join(missing))
+
+    if not args.adopt:
+        if found:
+            print()
+            print("反映するなら: py -3.11 tools/onsite.py takes --adopt")
+        return 0
+
+    # ---- 回収 → 検分 → 採用 -------------------------------------------------
+    print()
+    print("回収して採用します（各 cue の最新テイク）")
+    ng = 0
+    for cue, entries in sorted(found.items()):
+        if plan and cue not in plan:
+            print(f"  {cue}  — 台本にこの cue が無いので飛ばす")
+            continue
+        dev, take = entries[0]          # 名前の降順 = 撮った時刻の降順
+        pulled = post_json(f"{DESK}/shoot/pull",
+                           {"name": take["name"], "shot": cue,
+                            "host": dev["host"], "port": dev.get("port", 8080)},
+                           timeout=180.0)
+        if not (pulled or {}).get("ok"):
+            print(f"  {cue}  ❌ 回収できない: {(pulled or {}).get('detail', '返事なし')}")
+            ng += 1
+            continue
+        e = pulled.get("entry") or {}
+        adopted = post_json(f"{DESK}/shoot/adopt",
+                            {"cueId": cue, "url": pulled.get("url")}, timeout=30.0)
+        if not (adopted or {}).get("ok"):
+            print(f"  {cue}  ❌ 採用できない: {(adopted or {}).get('detail', '返事なし')}")
+            ng += 1
+            continue
+        dur = e.get("durSec")
+        need = (plan.get(cue) or {}).get("needSec")
+        shape = f"{e.get('codec', '?')} {e.get('width', 0)}x{e.get('height', 0)}"
+        line = f"  {cue}  ✅ {take['name']}  {dur if dur else '?'} 秒  {shape}"
+        if need and dur and dur < need:
+            line += f"  ⚠ 尺が足りない（要求 {need} 秒）— 撮り直す"
+            ng += 1
+        print(line)
+
+    print()
+    if ng:
+        print(f"⚠ {ng} 件そのままでは使えない。上の行を読む")
+    print("焼き直す: .\\tools\\unity.ps1 build fixedcam   （show.json は毎回 APK へ焼き込まれる）")
+    return 1 if ng else 0
+
+
 def cmd_serve(args):
     """卓を立てる。**冪等** — 既に :8099 が開いていれば何もしない。
 
@@ -944,6 +1081,11 @@ def main(argv=None):
     p.add_argument("--replace", action="store_true", help="前の写真を消してから入れる")
     p.add_argument("--no-export", action="store_true", help="APK 焼き込みへの書き出しを飛ばす")
     p.set_defaults(func=cmd_eyejack)
+
+    p = sub.add_parser("takes", help="端末に残っている素材を見る／反映する")
+    p.add_argument("--adopt", action="store_true",
+                   help="各 cue の最新テイクを回収して採用まで済ませる")
+    p.set_defaults(func=cmd_takes)
 
     p = sub.add_parser("watch", help="会期中の監視と自動復旧")
     p.add_argument("--sec", type=int, default=20)

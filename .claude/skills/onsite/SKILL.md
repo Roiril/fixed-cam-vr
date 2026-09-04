@@ -23,6 +23,7 @@ description: 展示当日（2026-09-06・07）の運用。開場前の点検・�
 |---|---|
 | 「今どう」「点検して」「開場前チェック」 | `py -3.11 tools/onsite.py check` → **NG だけを読み上げる**（OK は数だけ） |
 | 「写真を撮った」「反映して」 | ⚠ **目の写真は 0152 でやめた。**下の節を読んでから答える |
+| 「撮った」「人形視点を撮ったから反映して」 | `py -3.11 tools/onsite.py takes` で**何が残っているか**を見る → `takes --adopt` → APK を焼き直す |
 | 「カメラが黒い」「砂嵐」 | `check` で**どの台か**を先に確定 → `fix cameras` |
 | 「3 台とも途切れる」 | `py -3.11 tools/onsite.py fix panel`（Quest の設定パネルの掃引） |
 | 「見てて」「監視して」 | `py -3.11 tools/onsite.py watch`（**背景で走らせて黙る** — `rules/work-style.md` §10） |
