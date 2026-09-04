@@ -1,4 +1,4 @@
-using FixedCamVr.Diagnostics;
+﻿using FixedCamVr.Diagnostics;
 using FixedCamVr.Streaming;
 using NUnit.Framework;
 
@@ -54,18 +54,19 @@ namespace FixedCamVr.Tests.Diagnostics
         }
 
         /// <summary>
-        /// 打ち切るまでの尺（言語ごと）。<b>速さは装置の声なので言語で変えない</b>ので、
-        /// Latin は文字数のぶんそのまま長くなる（同じ内容で日本語のおよそ 2 倍）。
-        /// ⚠ 上限を分けてあるのはそのため。ここを日本語の 6 秒で縛ると、
-        /// <b>4 行を削るしかなくなる</b> ＝ 言語で終わり方が変わる。
+        /// 打ち切るまでの尺（言語ごと）。<b>速さは言語で違う</b>（日本語 12 / Latin 18 文字/秒・
+        /// <c>canon/LEDGER.md</c> 0149）ので、Latin の字数の多さ（およそ 2 倍）は
+        /// <b>1.5 倍ぶんが速さで吸われる</b>。⚠ 残りは尺の側に出るので、
+        /// <b>上限は 1 つで足りる</b>（0149 まで Latin だけ 8 秒に緩めてあった）。
         /// </summary>
         [Test]
         public void EveryLanguage_TypesWithinAReadableSpan()
         {
             foreach (ShowLang lang in ShowLanguage.All)
             {
-                float sec = KeystrokesOf(OutroReportText.Compose(0, lang)) / CommsPanelLogic.CharsPerSec;
-                float max = lang == ShowLang.Ja ? 6f : 8f;
+                float sec = KeystrokesOf(OutroReportText.Compose(0, lang))
+                          / CommsPanelLogic.CharsPerSecFor(lang);
+                const float max = 6f;
                 Assert.That(sec, Is.GreaterThan(2f), $"{lang}: 速すぎると「一気に出た」に見える");
                 Assert.That(sec, Is.LessThan(max), $"{lang}: 打ち切るまで {sec:F1}s は長い — 文言を詰める");
             }
@@ -129,7 +130,9 @@ namespace FixedCamVr.Tests.Diagnostics
         [Test]
         public void Compose_TypesWithinAReadableSpan()
         {
-            float sec = KeystrokesOf(OutroReportText.Compose(0)) / CommsPanelLogic.CharsPerSec;
+            // ⚠ 言語を明示する（速さも文面も言語で変わるので、他のテストが選んだ言語に依存させない）。
+            float sec = KeystrokesOf(OutroReportText.Compose(0, ShowLang.Ja))
+                      / CommsPanelLogic.CharsPerSecFor(ShowLang.Ja);
             Assert.That(sec, Is.GreaterThan(2f), "速すぎると「一気に出た」に見える");
             Assert.That(sec, Is.LessThan(6f), $"打ち切るまで {sec:F1}s は長い — 文言を詰める");
         }

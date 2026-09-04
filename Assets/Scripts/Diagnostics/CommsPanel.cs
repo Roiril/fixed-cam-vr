@@ -31,8 +31,8 @@ namespace FixedCamVr.Diagnostics
     ///
     /// <b>打鍵音</b>（<c>canon/LEDGER.md</c> 0056・2026-08-16）: 1 文字が出るたびに 1 発鳴る。
     /// 鳴らすのは <see cref="TypeAudioCue"/> で、<b>字を画へ書いているのと同じ行</b>から呼ぶ —
-    /// 絵と音が同じ数えから出るのでずれようがない。速さ（12 文字/秒）は
-    /// <see cref="CommsPanelLogic.CharsPerSec"/> がそのまま打鍵の間隔になる。
+    /// 絵と音が同じ数えから出るのでずれようがない。速さ（<b>日本語 12 / Latin 18 文字/秒</b>・0149）は
+    /// <see cref="CommsPanelLogic.CharsPerSecFor"/> がそのまま打鍵の間隔になる。
     ///
     /// ⚠ <b>追従は本編のスクリーンと同じ法則</b>（<see cref="YawFollowLogic"/>・ヨーだけ）。
     /// 新しい追従を書かない — 体験の中で追従の癖が 2 種類になると、どちらも「板」に見える。

@@ -290,6 +290,7 @@ def build_intro() -> np.ndarray:
 
 # --- 連絡の面の打鍵（`canon/LEDGER.md` 0056）--------------------------------
 #
+# ⚠ ここは**日本語の速さ**（Latin は 18 ＝ `CharsPerSecLatin`・0149）。下の見本は日本語の文面。
 # ⚠ 打つ速さ・散らし幅は **C# 側と対**（`CommsPanelLogic.CharsPerSec` /
 #   `TypeAudioCue`）。片方だけ変えると、聴いて決めた密度が実機と違う。
 TYPE_CPS = 12.0
@@ -298,6 +299,18 @@ TYPE_GAIN_DB = 2.0      # ±（`TypeAudioCue.GainSpreadDb`）
 TYPE_VARIANTS = 8
 
 # (文面, 打つ字数 ＝ **見える字だけ**。改行では鳴らさない)
+# 速さの聴き比べ（0149）。**①b の実際の文面**を使う ＝ 空白の分布まで実機と同じ。
+COMPARE = [
+    ("異変を見つけたら\nボタンを長押ししてください\n装置が解析して対処を試みます",
+     12.0, "①b 日本語 12 文字/秒（変えていない）"),
+    ("If you see an anomaly,\nhold down the button and\nthe device will analyse it.",
+     12.0, "①b English 12 文字/秒（0149 まで・6.1 秒）"),
+    ("If you see an anomaly,\nhold down the button and\nthe device will analyse it.",
+     18.0, "①b English 18 文字/秒（採った速さ・4.1 秒）"),
+    ("If you see an anomaly,\nhold down the button and\nthe device will analyse it.",
+     22.0, "①b English 22 文字/秒（0056 が退けた速さ）"),
+]
+
 COMMS = [
     ("調査を開始してください。", 12),
     ("異変を見つけたら／ボタンを長押ししてください／装置が解析して対処を試みます", 35),
@@ -309,11 +322,23 @@ COMMS = [
 
 def type_burst(hits: int, cps: float, rng: np.random.Generator) -> np.ndarray:
     """1 通ぶんの打鍵。**実機と同じ選び方**（直前と同じ変種を引かない・音程と音量を散らす）。"""
+    return type_text("x" * hits, cps, rng)
+
+
+def type_text(text: str, cps: float, rng: np.random.Generator) -> np.ndarray:
+    """**実際の文面**を刻んで鳴らす。
+
+    ⚠ 実機は 1 文字ぶん進むたびに 1 発だが、**空白と改行では鳴らない**（`isVisible`）。
+    Latin は 15〜20% が空白なので、**同じ速さでも発音の密度は日本語より疎い** —
+    「18 文字/秒は速すぎないか」を耳で判定できるように、字の並びごと再現する（0149）。
+    """
     clips = [load(f"sfx_type_{i + 1}") for i in range(TYPE_VARIANTS)]
     step = int(sk.SR / cps)
-    out = np.zeros((step * hits + max(len(c) for c in clips), 2))
+    out = np.zeros((step * len(text) + max(len(c) for c in clips), 2))
     last = -1
-    for i in range(hits):
+    for i, glyph in enumerate(text):
+        if glyph in (" ", "\n", "\u3000"):
+            continue                # 字が出ないので鳴らさない（尺だけ進む）
         v = int(rng.integers(0, TYPE_VARIANTS - 1))
         if v >= last:
             v += 1                      # 直前と同じものを引かない
@@ -331,23 +356,28 @@ def type_burst(hits: int, cps: float, rng: np.random.Generator) -> np.ndarray:
 def build_comms() -> np.ndarray:
     """打鍵を**本編の敷く音の上**で聴く（単体で聴くと必ず大きく感じる）。
 
-    頭に「いまの速さ（22 文字/秒）」と「変更後（12 文字/秒）」を並べてある。
-    **1 文字 1 発は 22 文字/秒だと連続音になる** — そこが判定してほしい所。
+    頭に**同じ 1 通を 4 通りの速さ**で並べてある（2026-09-04・0149）。
+    ①b を 日本語 12 → English 12 → English 18（採った速さ）→ English 22 の順。
+    **判定してほしいのは 1 つだけ — 18 文字/秒がまだカタカタに聞こえるか**
+    （22 は 0056 が「連続音になる」として退けた速さ。境目を耳で測るために並べてある）。
     """
     rng = np.random.default_rng(20260816)
-    marks = [(1.5, 11, 22.0, "① 22 文字/秒（いまの絵の速さ）"),
-             (4.0, 11, TYPE_CPS, "① 12 文字/秒（変更後）")]
-    t = 7.0
+    marks = []
+    t = 1.5
+    for text, cps, label in COMPARE:
+        marks.append((t, text, cps, label))
+        t += len(text) / cps + 2.0
+    t += 1.0
     for text, hits in COMMS:
-        marks.append((t, hits, TYPE_CPS, f"「{text}」{hits} 字"))
+        marks.append((t, "x" * hits, TYPE_CPS, f"「{text}」{hits} 字"))
         t += hits / TYPE_CPS + 2.5
     total = t + 1.5
 
     # 本編の高さ（`rules/sound-design.md` §4 の表）。
     # ⚠ 背景は劇伴（0115）。**打鍵が大きすぎないかはこの上で聴く** — 部屋のトーンは本編に居ない。
     out = tile(load_score(), total) + tile(load("bed_device"), total) * 1.0
-    for at, hits, cps, label in marks:
-        lay(out, type_burst(hits, cps, rng), at)
+    for at, text, cps, label in marks:
+        lay(out, type_text(text, cps, rng), at)
         print(f"  {at:5.1f}s  {label}")
     return out
 

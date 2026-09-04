@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using FixedCamVr.Streaming;
 using TMPro;
 using UnityEngine;
@@ -15,8 +15,9 @@ namespace FixedCamVr.Diagnostics
     ///
     /// <b>出方</b>（<c>canon/LEDGER.md</c> 0063・2026-08-16）: <b>1 字ずつ打たれ、1 字ごとに
     /// 打鍵音が 1 発鳴る</b>（AIエージェントからの連絡＝<see cref="CommsPanel"/> と同じ装置の印字）。
-    /// 速さは <see cref="CommsPanelLogic.CharsPerSec"/> をそのまま使う — 同じ装置が違う速さで
-    /// 打つと、別の装置が 2 台あるように聞こえる。
+    /// 速さは <see cref="CommsPanelLogic.CharsPerSecFor"/> をそのまま使う — 同じ装置が
+    /// 面によって違う速さで打つと、別の装置が 2 台あるように聞こえる。
+    /// ⚠ <b>言語では変わる</b>（日本語 12 / Latin 18 文字/秒・0149）。1 人が浴びるのは 1 言語だけ。
     ///
     /// ⚠ <b>不透明度のフェードは持たない。</b> 打鍵そのものが出現の演出で、重ねると
     /// 頭の数文字だけ薄いという半端な絵になる。<c>run.outro.reportFadeSec</c> は
@@ -357,8 +358,10 @@ namespace FixedCamVr.Diagnostics
             // 1 字ずつ出す。⚠ **切り上げ**（0 より大きければ 1 字目は出ている）。
             int shown = _charCount <= 0
                       ? 0
-                      : Mathf.Clamp(Mathf.CeilToInt(_typeElapsed * CommsPanelLogic.CharsPerSec),
-                                    0, _charCount);
+                      : Mathf.Clamp(
+                            Mathf.CeilToInt(_typeElapsed
+                                            * CommsPanelLogic.CharsPerSecFor(ShowLanguage.Current)),
+                            0, _charCount);
             if (_text.maxVisibleCharacters != shown) _text.maxVisibleCharacters = shown;
 
             // ⚠⚠ **打鍵音は、字を画へ書いているこの行から鳴らす**（`canon/LEDGER.md` 0063）。

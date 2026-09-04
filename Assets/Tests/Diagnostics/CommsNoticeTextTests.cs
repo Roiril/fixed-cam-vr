@@ -135,17 +135,24 @@ namespace FixedCamVr.Diagnostics.Tests
         [Test]
         public void EveryNotice_TypesAtTheDeviceSpeed()
         {
-            foreach ((ShowLang lang, string body) in AllTexts())
+            ShowLang before = ShowLanguage.Current;
+            try
             {
-                var logic = new CommsPanelLogic();
-                logic.Begin(body.Length);
-                float step = logic.TypeSec / body.Length;
-                Assert.AreEqual(1f / CommsPanelLogic.CharsPerSec, step, 0.0005f,
-                                $"[{ShowLanguage.Code(lang)}]「{body.Replace("\n", "／")}」"
-                              + $"（{body.Length} 文字）が "
-                              + $"{step * 1000f:0} ms 間隔。装置の打鍵は 1 つの速さ"
-                              + "（CommsPanelLogic.MaxTypeSec を上げるか文面を短くする）");
+                foreach ((ShowLang lang, string body) in AllTexts())
+                {
+                    // ⚠ 速さは言語で違う（日本語 12 / Latin 18・0149）。**その言語で測る**。
+                    ShowLanguage.Select(lang);
+                    var logic = new CommsPanelLogic();
+                    logic.Begin(body.Length);
+                    float step = logic.TypeSec / body.Length;
+                    Assert.AreEqual(1f / CommsPanelLogic.CharsPerSecFor(lang), step, 0.0005f,
+                                    $"[{ShowLanguage.Code(lang)}]「{body.Replace("\n", "／")}」"
+                                  + $"（{body.Length} 文字）が "
+                                  + $"{step * 1000f:0} ms 間隔。装置の打鍵はその言語で 1 つの速さ"
+                                  + "（CommsPanelLogic.MaxTypeSec を上げるか文面を短くする）");
+                }
             }
+            finally { ShowLanguage.Select(before); }
         }
     }
 }

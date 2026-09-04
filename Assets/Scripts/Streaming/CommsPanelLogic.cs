@@ -86,8 +86,39 @@ namespace FixedCamVr.Streaming
         /// もらった素材の押し込み→戻りの間隔（実測 80ms）の両方に近い。
         /// ⚠ 音の側は <see cref="CommsPanelLogic"/> の刻みを**そのまま数える**ので、
         /// ここを変えると打鍵の密度も一緒に変わる（対で直す必要は無い ＝ ずれようがない）。
+        ///
+        /// ⚠⚠ <b>これは日本語の速さ。Latin は <see cref="CharsPerSecLatin"/></b>
+        /// （2026-09-04・<c>canon/LEDGER.md</c> 0149）。<see cref="CharsPerSecFor"/> が唯一の窓口。
         /// </summary>
         public const float CharsPerSec = 12f;
+
+        /// <summary>
+        /// English / Français を 1 秒あたり何文字打つか（2026-09-04・<c>canon/LEDGER.md</c> 0149・
+        /// ユーザー報告「英語とフランス語は、日本語と同じ速さだと遅く感じるかもしれない」）。
+        ///
+        /// <b>同じことを言うのに Latin は仮名漢字の 1.8〜2.0 倍の字数が要る</b>（実測: 8 通の合計で
+        /// 日本語 160 字 / English 292 字 / Français 312 字）。同じ速さで打つと、
+        /// <b>読む側は 2 倍待つ</b>（①b は 2.92 秒 → 6.08 秒）。
+        ///
+        /// ⚠⚠ <b>上限を決めているのは打鍵音の粒立ち</b>（速いほど良いのではない）。実測:
+        /// 音源 8 本は<b>実効 59.8ms</b>（-40dBFS まで）で、-12dB が 15ms・-20dB が 24.8ms・
+        /// -30dB が 44.0ms。18 ＝ <b>55.6ms 間隔</b>なら前の一撃は -35dB まで落ちていて、
+        /// 人が個々の打鍵を分けて聞ける 15〜20 発/秒の内側に収まる。
+        /// ⚠ <b>実際の発音はもっと疎い</b> — 空白では鳴らない（<c>isVisible</c>）ので、
+        /// English は約 17% が無音になり<b>およそ 15 発/秒</b>。
+        /// ⚠ 22（45.5ms）は 0056 が「連続音になる」として退けた値。**ここを超えない**。
+        ///
+        /// ⚠ <b>「装置の声が言語で変わる」は体験者には起きない</b> — 1 人が浴びるのは 1 言語だけで、
+        /// 2 つの速さを聞き比べられるのは開発側だけ。<b>読ませる相手は言語ごとに違う</b>方を採る。
+        /// </summary>
+        public const float CharsPerSecLatin = 18f;
+
+        /// <summary>
+        /// その言語の打鍵の速さ。<b>速さを読む所は必ずここを通す</b>
+        /// （<c>CommsPanel</c> / <c>OutroReport</c> / テスト / 打鍵の見本）。
+        /// </summary>
+        public static float CharsPerSecFor(ShowLang lang)
+            => lang == ShowLang.Ja ? CharsPerSec : CharsPerSecLatin;
 
         /// <summary>打ち終わるまでの下限・上限 (秒)。文面が伸びても間延びさせない。</summary>
         public const float MinTypeSec = 0.15f;
@@ -106,11 +137,12 @@ namespace FixedCamVr.Streaming
         /// <b>実際の文面で上限が効いていないこと</b>を確かめるので、次に文面を伸ばす人はそこで落ちる。
         ///
         /// ⚠⚠ <b>2026-09-03 に 3.5 → 7.0 へ上げた</b>（言語選択・3 言語）。
-        /// 同じことを言うのに Latin は仮名漢字の<b>およそ 2.4 倍の文字数</b>が要る
-        /// （①b は 日本語 37 文字 / English 75 文字）。<b>打鍵の速さは装置の声なので言語で変えない</b>
-        /// （<see cref="CharsPerSec"/> を上げると、日本語のときだけ別の装置に聞こえる）ので、
-        /// 伸びるのは<b>尺の側</b>。上限を上げないと English / Français のときだけ上限が効いて
+        /// 同じことを言うのに Latin は仮名漢字の<b>1.8〜2.0 倍の文字数</b>が要るので、
+        /// 上限を上げないと English / Français のときだけ上限が効いて
         /// <b>その言語でだけ速く打つ</b>ことになる ＝ 実機で 1 言語だけ壊れる形になる。
+        /// ⚠ <b>2026-09-04（0149）に速さの側も言語で分けた</b>（Latin 18 文字/秒）ので、
+        /// いちばん長い Latin の文面でも 4.1 秒 ＝ <b>この上限には遠く届かない</b>。
+        /// それでも下げないのは、<b>うっかり長い文面を書いたときの安全網</b>だから。
         /// ⚠ <b>日本語の見え方は 1 ビットも変わらない</b>（日本語の最長は 37 文字 ＝ 3.08 秒で、
         /// 旧上限 3.5 でも新上限 7.0 でも一度も効かない）。
         /// </summary>
@@ -204,7 +236,7 @@ namespace FixedCamVr.Streaming
             EnterStage(chained ? CommsStage.Type : CommsStage.In);
             _typeSec = charCount <= 0
                 ? 0f
-                : Clamp(charCount / CharsPerSec, MinTypeSec, MaxTypeSec);
+                : Clamp(charCount / CharsPerSecFor(ShowLanguage.Current), MinTypeSec, MaxTypeSec);
         }
 
         /// <summary>段を移る。<b>いまの姿を覚えてから</b>移る（そこから動かすので飛ばない）。</summary>
