@@ -216,20 +216,21 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             float open = AnomalyEyesLogic.HintSec + AnomalyEyesLogic.StareSec + AnomalyEyesLogic.SwarmSec;
             if (trim <= 0f) return open;
-            float dark = AnomalyEyesLogic.HintSec * AnomalyEyesLogic.HintDarkAt;
-            float held = AnomalyEyesLogic.HintSec
-                         * (AnomalyEyesLogic.HintHoldAt - AnomalyEyesLogic.HintCrackAt);
+            // 止まっている 3 つ ＝ 闇 / 開き切ってからの静止 / 凝視（0135 で「断片のまま静止」は無くなった）。
+            float dark = AnomalyEyesLogic.HintOnsetSec;
+            float held = AnomalyEyesLogic.HintSec - AnomalyEyesLogic.HintFullSec;
             return open - dark - held - AnomalyEyesLogic.StareSec + trim * 3f;
         }
 
         /// <summary>
         /// いま段のどこに居るかで決まる<b>早回しの倍率</b>（プレビュー限定）。
         ///
-        /// 詰めるのは<b>止まっている 3 つだけ</b> — 闇 / 断片のまま静止 / 凝視。
-        /// 動いている所（断片が現れる・見開く・さざめき・間・一気に）は<b>1 倍のまま</b>で、
-        /// そこを速めると 0076 の緩急（止まる と 一気に）が消える。
+        /// 詰めるのは<b>止まっている 3 つだけ</b> — 闇 / 開き切ってからの静止 / 凝視。
+        /// 動いている所（音に沿って開く・さざめき・間・一気に）は<b>1 倍のまま</b>で、
+        /// そこを速めると 0076 の緩急（止まる と 一気に）と 0135 の音との一致が消える。
         ///
         /// ⚠ 凝視を詰めると、その中の瞬き（尺の 11%）も一緒に縮む。
+        /// ⚠ 早回しでは音と合わない（音は詰められない）。音との一致を見るなら trim を渡さないこと。
         /// </summary>
         private static float SpeedAt(float logicT, float trim)
         {
@@ -237,13 +238,10 @@ namespace FixedCamVr.Streaming.EditorTools
             float hint = AnomalyEyesLogic.HintSec;
             if (logicT < hint)
             {
-                float x = logicT / hint;
-                if (x < AnomalyEyesLogic.HintDarkAt)
-                    return hint * AnomalyEyesLogic.HintDarkAt / trim;
-                if (x < AnomalyEyesLogic.HintCrackAt) return 1f;
-                if (x < AnomalyEyesLogic.HintHoldAt)
-                    return hint * (AnomalyEyesLogic.HintHoldAt - AnomalyEyesLogic.HintCrackAt) / trim;
-                return 1f;
+                if (logicT < AnomalyEyesLogic.HintOnsetSec)
+                    return AnomalyEyesLogic.HintOnsetSec / trim;
+                if (logicT < AnomalyEyesLogic.HintFullSec) return 1f;
+                return (hint - AnomalyEyesLogic.HintFullSec) / trim;
             }
             if (logicT < hint + AnomalyEyesLogic.StareSec) return AnomalyEyesLogic.StareSec / trim;
             return 1f;

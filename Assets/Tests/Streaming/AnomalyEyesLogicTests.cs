@@ -47,19 +47,26 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Hint_HoldsAsAFragmentThenSnapsOpen()
+        public void Hint_OpensAtTheSoundsOnset_ThenFollowsItsSwell()
         {
-            // ⚠⚠ ここが 0076 の主題。**止まっている時間が長く、開くのは一瞬**。
-            //    初版は等速で開いていて、判定は「ゆっくり過ぎて怖くない」だった。
-            float mid1 = AnomalyEyesLogic.HintCurve(0.45f);
-            float mid2 = AnomalyEyesLogic.HintCurve(0.70f);
-            Assert.That(mid1, Is.EqualTo(AnomalyEyesLogic.HintCrackOpen).Within(1e-3f));
-            Assert.That(mid2, Is.EqualTo(mid1).Within(1e-3f), "断片のまま止まっている（長い間）");
-            Assert.That(mid1, Is.LessThan(0.25f), "止まっている間は気づかれない大きさ");
+            // ⚠⚠ 0076 の主題（**止まっている時間が長く、開くのは一瞬**）は残しつつ、
+            //    0135 で「一瞬」の置き場を**音の頭**に移した。音が立つまでは 1 画素も出ない。
+            float justBefore = AnomalyEyesLogic.HintCurve((AnomalyEyesLogic.HintOnsetSec - 0.02f) / Hint);
+            Assert.That(justBefore, Is.EqualTo(0f), "音が立つ前は闇のまま");
 
-            // 見開きは 0.2 秒以内（＝ 尺の 8% 未満）で終わる。
-            float snapSec = (AnomalyEyesLogic.HintSnapAt - AnomalyEyesLogic.HintHoldAt) * Hint;
-            Assert.That(snapSec, Is.LessThan(0.20f), "見開くのは一瞬でなければ怖くない");
+            // 音の頭で一気に（0.04 秒で 0.45 まで）。等速なら 0.04 秒では 0.15 も開かない。
+            float atOnset = AnomalyEyesLogic.HintCurve((AnomalyEyesLogic.HintOnsetSec + 0.04f) / Hint);
+            Assert.That(atOnset, Is.GreaterThanOrEqualTo(0.40f), "音の頭で一気に開いていない");
+
+            // 音の膨らみのとおりに 0.27 秒で開き切り、以後は戻らない（瞬きは凝視の仕事）。
+            float prev = 0f;
+            for (float u = 0f; u <= 0.30f; u += 0.005f)
+            {
+                float v = AnomalyEyesLogic.HintOpenAt(u);
+                Assert.That(v, Is.GreaterThanOrEqualTo(prev - 1e-4f), $"音の頭から {u:F3}s で戻っている");
+                prev = v;
+            }
+            Assert.That(AnomalyEyesLogic.HintOpenAt(0.27f), Is.EqualTo(1f).Within(1e-3f), "0.27 秒で開き切る");
             Assert.That(AnomalyEyesLogic.HintCurve(1f), Is.EqualTo(1f).Within(1e-3f));
         }
 
@@ -173,14 +180,14 @@ namespace FixedCamVr.Streaming.Tests
             // 設計値の固定。ここを動かすと「区間の滞在に収まる」前提が崩れる。
             // 10.5（初版）→ 8.4（0076）→ **4.92**（0094 で止まる 3 つを 0.5 秒へ）。
             Assert.That(Hint + Stare + Swarm, Is.EqualTo(4.92f).Within(1e-2f));
-            // 止まっている 3 つ ＝ 闇 / 断片のまま静止 / 凝視。**どれも 0.5 秒**。
-            Assert.That(Hint * AnomalyEyesLogic.HintDarkAt, Is.EqualTo(0.5f).Within(0.01f));
-            Assert.That(Hint * (AnomalyEyesLogic.HintHoldAt - AnomalyEyesLogic.HintCrackAt),
-                        Is.EqualTo(0.5f).Within(0.01f));
+            // 止まっている 3 つ ＝ 闇 / 開き切ってからの静止 / 凝視（0135 で断片の静止は無くなった）。
+            // 闇は音の頭（0.70）まで。開き切ってからの静止は 0.45。凝視は 0.5。
+            Assert.That(AnomalyEyesLogic.HintOnsetSec, Is.EqualTo(0.70f).Within(0.01f));
+            Assert.That(Hint - AnomalyEyesLogic.HintFullSec, Is.EqualTo(0.45f).Within(0.01f));
             Assert.That(Stare, Is.EqualTo(0.5f).Within(1e-3f));
-            // 動いている所は 0076 のまま（見開く 0.13 秒）。
-            Assert.That(Hint * (AnomalyEyesLogic.HintSnapAt - AnomalyEyesLogic.HintHoldAt),
-                        Is.EqualTo(0.13f).Within(0.01f));
+            // 動いている所は音の形そのもの（頭から 0.27 秒で開き切る）。
+            Assert.That(AnomalyEyesLogic.HintFullSec - AnomalyEyesLogic.HintOnsetSec,
+                        Is.EqualTo(0.27f).Within(0.01f));
         }
 
         // ---------------------------------------------------------------- ④ 畳む

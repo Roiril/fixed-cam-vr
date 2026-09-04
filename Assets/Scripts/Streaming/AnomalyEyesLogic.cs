@@ -37,8 +37,8 @@ namespace FixedCamVr.Streaming
     ///
     /// 段の並び（合計 <b>4.92 秒</b>。10.5 → 8.4 → **4.92** と 2 度詰めた）:
     /// <list type="number">
-    ///   <item><b>兆し</b>（<see cref="HintSec"/> = 1.42s）— 闇 0.50 → <b>断片</b>（弧と点）0.10 →
-    ///     <b>静止 0.50</b> → <b>見開く 0.13</b> → 開いたまま 0.19</item>
+    ///   <item><b>兆し</b>（<see cref="HintSec"/> = 1.42s）— 闇 0.70 → <b>音の頭で一気に</b>（0.04 秒で 0.45 まで）→
+    ///     <b>音の膨らみに沿って開き切る</b>（頭から 0.27 秒）→ 開いたまま 0.45</item>
     ///   <item><b>凝視</b>（<see cref="StareSec"/> = 0.5s）— 静止。1 度だけ瞬く（0.055 秒）</item>
     ///   <item><b>開眼</b>（<see cref="SwarmSec"/> = 3.0s）— <b>さざめき → 間 → 一気に 360 度</b>。
     ///     1 つの目が開くのは 0.10 秒（<see cref="SwarmSpan"/>）</item>
@@ -49,6 +49,19 @@ namespace FixedCamVr.Streaming
     ///   （<c>canon/LEDGER.md</c> 0094・早回しの動画を見たユーザーの判定「こっちのほうがいい」）。
     ///   <b>動いている所は 1 つも触っていない</b> — 断片が現れる 0.10 / 見開く 0.13 /
     ///   さざめき 0.27 / 間 0.36 / 一気に 1.56 は 0076 のまま。詰めたのは「間」だけ。
+    ///
+    /// ⚠⚠ <b>2026-09-04 に、兆しの開き方を「音の形」に合わせた</b>（<c>canon/LEDGER.md</c> 0135・
+    ///   ユーザー逐語「最初におおきい目が開く時のアニメーションと、開く時の音が、一致感があまりない。
+    ///   音にアニメーションを合わせてほしい。自然な感じに」）。
+    ///   0131 で「見開く瞬間（1.234 秒）に音のいちばん大きいところ」を置いたが、音（もらった
+    ///   <c>大きい目が出現.mp3</c>）は<b>0.66 秒で一気に立ち上がり、0.27 秒で膨らみ切って、あとは
+    ///   1 秒以上鳴り続ける</b>形で、いちばん大きい所は事件ではなく<b>持続の途中</b>だった。
+    ///   絵の方は 0.50 秒で断片が出て 0.50 秒止まり、1.10〜1.23 秒で見開く ＝ <b>音の頭（0.66）には
+    ///   絵の出来事が無く、絵の見開き（1.23）には音の出来事が無い</b>。これが一致感の無さの正体。
+    ///   ⇒ 断片と静止をやめ、<b>闇 → 音の頭で一気に → 音の膨らみのとおりに開き切る</b>にした。
+    ///   開き具合は音の聴感（実効値の 0.6 乗・持続の高さで正規化）を 10ms で測った表
+    ///   （<see cref="HintOpenKnots"/>）そのもの。音は 1 ビットも動かしていない。
+    ///   「止まる → 一気に」（0076）は<b>闇 0.70 秒 → 音の頭</b>の落差として残っている。
     ///
     /// ⚠ <b>報告は引き金ではない。</b> 0075 の「ボタンはトリガーではなく、あくまでそれくらいの時間で」。
     ///   押さなくても段は同じ速さで進む。押した時に消えるのは
@@ -61,7 +74,7 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>
         /// 兆し（大きい目が 1 つだけ開く）の尺 (秒)。<b>2026-08-20 に 2.6 → 1.42</b>（0094）。
-        /// 内訳は 闇 0.50 ＋ 断片が現れる 0.10 ＋ 静止 0.50 ＋ 見開く 0.13 ＋ 開いたまま 0.19。
+        /// 内訳は 闇 0.70 ＋ 音の頭で一気に〜膨らみ切る 0.27（<see cref="HintOpenKnots"/>）＋ 開いたまま 0.45。
         /// </summary>
         public const float HintSec = 1.42f;
 
@@ -134,20 +147,39 @@ namespace FixedCamVr.Streaming
         /// <summary>「開いている」とみなす下限（観測の数え方を 1 か所に固定する）。</summary>
         public const float OpenEpsilon = 0.05f;
 
-        // ---- 兆しの中の刻み（HintSec に対する割合。**止まる → 一気に** を作る）------------
-        /// <summary>闇のまま。何も出ない（<b>0.50 秒</b>）。</summary>
-        public const float HintDarkAt = 0.352f;
-        /// <summary>断片（弧と点）が現れるまで。ここは速い（<b>0.10 秒</b>）。</summary>
-        public const float HintCrackAt = 0.425f;
+        // ---- 兆しの中の刻み（秒。**闇 → 音の頭で一気に → 音の膨らみのとおりに** を作る・0135）-------
         /// <summary>
-        /// 断片のまま止まっている終わり（<b>0.50 秒</b>）。
-        /// ⚠ 2026-08-20 まで 1.27 秒で「いちばん長い間」だった（0094 で詰めた）。
+        /// <b>大きい目が動き出す時刻</b>（兆しの頭から・秒）＝ 音の頭。
+        ///
+        /// 焼いた <c>sfx_eye_big</c> は頭に 0.653 秒の無音を持ち、音が立つのは <b>0.66 秒</b>
+        /// （10ms 窓の実効値が持続の高さの -30dB を越える所）。鳴らすのは兆しの頭のフレームで、
+        /// <see cref="SfxPlayer.ScheduleLeadSec"/>（0.035 秒）だけ先読みして予約するので、
+        /// 耳に届く頭は 0.695 秒。絵の 1 コマの遅れと音の出口の遅れはほぼ相殺するので 0.70。
+        /// ⚠ 音を焼き直したら <c>EyeSoundTests.EyeBig_OpeningFollowsTheSoundsLoudness</c> が落ちる
+        /// （焼いたファイルを測って、この値と下の表を突き合わせる）。
         /// </summary>
-        public const float HintHoldAt = 0.777f;
-        /// <summary>見開き切るまで（<b>0.13 秒</b>。ここは 0076 のまま）。</summary>
-        public const float HintSnapAt = 0.869f;
-        /// <summary>断片のときの開き具合。<b>これ以上大きいと気づかれる</b>。</summary>
-        public const float HintCrackOpen = 0.17f;
+        public const float HintOnsetSec = 0.70f;
+
+        /// <summary>
+        /// <b>開き具合の表</b>（音の頭からの秒 → 開き具合）。<b>音の聴感そのもの</b>:
+        /// 焼いた <c>sfx_eye_big</c> の 10ms 実効値を持続の高さ（1.0〜1.5 秒の平均）で割り、
+        /// 0.6 乗（Stevens の法則）して、戻らないように最大値で保持し、1 で止めたもの。
+        ///
+        /// 形は <b>2 段</b>: 頭で一気に 0.45 まで（0.04 秒）→ 0.6 前後の肩（0.05〜0.12 秒）→
+        /// もう一段膨らんで開き切る（0.27 秒）。肩は音の中にある膨らみの段そのもので、
+        /// 消すと音と別の動きになる。
+        /// ⚠ 表を手で整えない。音を焼き直したら測り直して写す（テストが突き合わせる）。
+        /// </summary>
+        public static readonly float[,] HintOpenKnots =
+        {
+            { 0.00f, 0.18f }, { 0.01f, 0.25f }, { 0.02f, 0.36f }, { 0.03f, 0.40f },
+            { 0.04f, 0.45f }, { 0.06f, 0.55f }, { 0.09f, 0.59f }, { 0.12f, 0.64f },
+            { 0.14f, 0.64f }, { 0.17f, 0.83f }, { 0.19f, 0.91f }, { 0.22f, 0.93f },
+            { 0.27f, 1.00f },
+        };
+
+        /// <summary>開き切る時刻（兆しの頭から・秒）＝ 音の頭 ＋ 表の最後。</summary>
+        public static float HintFullSec => HintOnsetSec + HintOpenKnots[HintOpenKnots.GetLength(0) - 1, 0];
 
         // ---- 凝視の中の瞬き（StareSec に対する割合）---------------------------------------
         /// <summary>瞬きの中心。静止のただ中で 1 度だけ落ちる。</summary>
@@ -437,19 +469,32 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 兆しの曲線。<b>闇 → 断片 → 長い静止 → 見開く</b>。
-        /// ⚠ 直線にも指数にもしない。<b>止まっている時間が長いほど、開いた瞬間が効く</b>。
+        /// 兆しの曲線。<b>闇 → 音の頭で一気に → 音の膨らみのとおりに開き切る</b>（0135）。
+        /// <paramref name="x01"/> は <see cref="HintSec"/> に対する進み。
+        /// ⚠ 直線にも指数にもしない。形は <see cref="HintOpenKnots"/>（音を測った表）そのもの。
+        /// 闇が 0.70 秒続いてから音と同時に開くので、「止まる → 一気に」（0076）は残っている。
         /// </summary>
         public static float HintCurve(float x01)
         {
-            float x = Mathf.Clamp01(x01);
-            if (x < HintDarkAt) return 0f;
-            if (x < HintCrackAt)
-                return Mathf.SmoothStep(0f, HintCrackOpen, Mathf.InverseLerp(HintDarkAt, HintCrackAt, x));
-            if (x < HintHoldAt) return HintCrackOpen;
-            if (x < HintSnapAt)
-                return Mathf.SmoothStep(HintCrackOpen, 1f, Mathf.InverseLerp(HintHoldAt, HintSnapAt, x));
-            return 1f;
+            float u = Mathf.Clamp01(x01) * HintSec - HintOnsetSec;
+            return HintOpenAt(u);
+        }
+
+        /// <summary>音の頭から <paramref name="secSinceOnset"/> 秒後の開き具合（表の線形補間）。</summary>
+        public static float HintOpenAt(float secSinceOnset)
+        {
+            if (secSinceOnset < 0f) return 0f;
+            int n = HintOpenKnots.GetLength(0);
+            if (secSinceOnset >= HintOpenKnots[n - 1, 0]) return HintOpenKnots[n - 1, 1];
+            for (int i = 1; i < n; i++)
+            {
+                float t1 = HintOpenKnots[i, 0];
+                if (secSinceOnset > t1) continue;
+                float t0 = HintOpenKnots[i - 1, 0];
+                float v0 = HintOpenKnots[i - 1, 1], v1 = HintOpenKnots[i, 1];
+                return t1 > t0 ? Mathf.Lerp(v0, v1, (secSinceOnset - t0) / (t1 - t0)) : v1;
+            }
+            return HintOpenKnots[n - 1, 1];
         }
 
         /// <summary>凝視の曲線。開き切ったまま、途中で 1 度だけ瞬く。</summary>

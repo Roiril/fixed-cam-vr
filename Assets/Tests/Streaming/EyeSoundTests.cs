@@ -62,15 +62,13 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// ⚠⚠ <b>いちばん大きいところが「見開く瞬間」に来ている。</b>
-        /// 兆しの段の進み <see cref="AnomalyEyesLogic.HintSnapAt"/> ×
-        /// <see cref="AnomalyEyesLogic.HintSec"/> ＝ 頭から 1.234 秒。
-        ///
-        /// ⚠ 素材の頭に無音を足して焼いてある（<c>tools/ingest-sounds.py</c> の <c>ALIGN</c>）ので、
-        /// <b>実行時に足し引きしない</b>。ここが崩れたら焼き直しが要る。
+        /// <b>音は動かしていない</b>（0135 は「音にアニメーションを合わせる」）。
+        /// 焼いた <c>sfx_eye_big</c> のいちばん大きいところ（0.4 秒窓の実効値）は
+        /// 0131 のとおり頭から 1.234 秒のまま（<c>tools/ingest-sounds.py</c> の <c>ALIGN</c>）。
+        /// ここが動いたら、下の表（<see cref="AnomalyEyesLogic.HintOpenKnots"/>）を測り直すこと。
         /// </summary>
         [Test]
-        public void EyeBig_LoudestPointLandsWhenTheBigEyeSnapsOpen()
+        public void EyeBig_ClipIsUnchanged_LoudestPointStaysAt1234()
         {
             var clip = Resources.Load<AudioClip>($"{ShowSoundDirector.ResourceDir}sfx_eye_big");
             if (clip == null)
@@ -78,12 +76,9 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.Ignore("sfx_eye_big が無い（先に焼く）");
                 return;
             }
-            float want = AnomalyEyesLogic.HintSnapAt * AnomalyEyesLogic.HintSec;
-            Assert.That(want, Is.EqualTo(1.234f).Within(0.01f), "見開く時刻（焼く側と対の値）");
-
+            const float want = 1.234f;
             var data = new float[clip.samples * clip.channels];
             clip.GetData(data, 0);
-            // 0.4 秒窓の実効値がいちばん大きい所（焼く側の `loudest_sec` と同じ物差し）。
             int win = (int)(0.4f * clip.frequency) * clip.channels;
             Assert.Greater(data.Length, win, "素材が窓より長いこと");
             double run = 0;
@@ -97,8 +92,82 @@ namespace FixedCamVr.Streaming.Tests
             }
             float at = (bestAt / (float)clip.channels + win / (2f * clip.channels)) / clip.frequency;
             Assert.That(at, Is.EqualTo(want).Within(0.06f),
-                        $"いちばん大きいところが {at:F3}s（狙い {want:F3}s）— "
-                        + "`tools/ingest-sounds.py` の ALIGN で焼き直す");
+                        $"いちばん大きいところが {at:F3}s（0131 の {want:F3}s から動いている）— "
+                        + "音を焼き直したなら AnomalyEyesLogic.HintOpenKnots を測り直す");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>大きい目の開き方は、音の聴感の形そのもの</b>（0135・ユーザー逐語
+        /// 「音にアニメーションを合わせてほしい。自然な感じに」）。
+        ///
+        /// 焼いたファイルを測って <see cref="AnomalyEyesLogic.HintOpenKnots"/> と突き合わせる:
+        /// 10ms 窓の実効値を持続の高さ（1.0〜1.5 秒の平均）で割り、0.6 乗して、最大値で保持し、1 で止める。
+        /// 音の頭（-30dB を越える所）が <see cref="AnomalyEyesLogic.HintOnsetSec"/> から
+        /// 先読み（<see cref="SfxPlayer.ScheduleLeadSec"/>）を引いた所に来ていること。
+        /// ⚠ 音を焼き直すとここが落ちる ＝ 表を測り直す合図。手で整えて通さない。
+        /// </summary>
+        [Test]
+        public void EyeBig_OpeningFollowsTheSoundsLoudness()
+        {
+            var clip = Resources.Load<AudioClip>($"{ShowSoundDirector.ResourceDir}sfx_eye_big");
+            if (clip == null)
+            {
+                Assert.Ignore("sfx_eye_big が無い（先に焼く）");
+                return;
+            }
+            var data = new float[clip.samples * clip.channels];
+            clip.GetData(data, 0);
+            int ch = clip.channels;
+            int win = (int)(0.010f * clip.frequency);
+            int frames = clip.samples / win;
+            var rms = new float[frames];
+            for (int f = 0; f < frames; f++)
+            {
+                double acc = 0;
+                for (int s = 0; s < win; s++)
+                {
+                    double m = 0;
+                    for (int c = 0; c < ch; c++) m += data[((f * win) + s) * ch + c];
+                    m /= ch;
+                    acc += m * m;
+                }
+                rms[f] = (float)System.Math.Sqrt(acc / win);
+            }
+            // 持続の高さ（1.0〜1.5 秒）。
+            double plateau = 0; int np = 0;
+            for (int f = 100; f < 150 && f < frames; f++) { plateau += rms[f]; np++; }
+            plateau /= System.Math.Max(1, np);
+            Assert.Greater(plateau, 1e-4, "持続の高さが測れない（無音か）");
+
+            // 音の頭。
+            float thr = (float)(plateau * System.Math.Pow(10.0, -30.0 / 20.0));
+            int onsetF = -1;
+            for (int f = 0; f < frames; f++) { if (rms[f] > thr) { onsetF = f; break; } }
+            Assert.GreaterOrEqual(onsetF, 0, "音の頭が見つからない");
+            float onset = onsetF * 0.010f;
+            float wantOnset = AnomalyEyesLogic.HintOnsetSec - SfxPlayer.ScheduleLeadSec;
+            Assert.That(onset, Is.EqualTo(wantOnset).Within(0.03f),
+                        $"音の頭 {onset:F3}s に対し、絵は {wantOnset:F3}s から動く（AnomalyEyesLogic.HintOnsetSec）");
+
+            // 聴感の形（最大値で保持・1 で止める）と表を突き合わせる。
+            float hold = 0f;
+            var loud = new float[frames];
+            for (int f = 0; f < frames; f++)
+            {
+                float v = Mathf.Min(1f, Mathf.Pow((float)(rms[f] / plateau), 0.6f));
+                hold = Mathf.Max(hold, v);
+                loud[f] = hold;
+            }
+            int n = AnomalyEyesLogic.HintOpenKnots.GetLength(0);
+            for (int i = 0; i < n; i++)
+            {
+                float u = AnomalyEyesLogic.HintOpenKnots[i, 0];
+                float want = AnomalyEyesLogic.HintOpenKnots[i, 1];
+                int f = onsetF + Mathf.RoundToInt(u / 0.010f);
+                Assert.Less(f, frames);
+                Assert.That(want, Is.EqualTo(loud[f]).Within(0.12f),
+                            $"音の頭から {u:F2}s: 表 {want:F2} / 音 {loud[f]:F2} — 表を測り直すこと");
+            }
         }
 
         /// <summary>
