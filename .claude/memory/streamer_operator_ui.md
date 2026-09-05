@@ -196,5 +196,83 @@ JS の定数のままでは Python から読めず、スマホへ配る指示文
 （パネルが `clickable` で touch を食う）ので、「タップして復帰 → …」の検証手順が
 黙って最初の 1 手から成立しなくなる。**測る前に画面を 1 枚撮って状態を確かめる。**
 
+## 12. 画面を作り直した（v0.15.0・2026-09-05）— 映像の上に何も置かない
+
+配信の画は 4:3。**横持ちの画面はそれより横長なので、映像を高さいっぱいに出しても左右に帯が残る。**
+v0.14.0 まではそこを黒いまま空けて、ステータスとボタンを映像の上に重ねていた。
+⇒ 帯（レール）を映像の外へ出す。実測（Pixel 7a 横持ち・使える面 914×359dp）:
+
+| | 実測 |
+|---|---|
+| 読む列 | 200dp（`RailMetrics` の上限） |
+| 映像 | 514dp。4:3 を高さいっぱいに出すのに要るのは 479dp ＝ **縮まない** |
+| 押す列 | 200dp・2 列 3 段。下端まで 173dp 余る |
+
+⚠ **はみ出しは 2 回出た。1 回目を直した版にも残っていた。**
+上の帯 109dp ＋ ボタン列 296dp ＝ 405dp が 1 つ目。レールに分けた後、
+**ボタン 6 個を 1 列に積んで 408dp** が 2 つ目（使えるのは 342dp）。
+⇒ **「重なりを消した」と「はみ出しが直った」は別の話。** 積んだ高さを数で持つ
+（`RailMetrics.controlColumns` / `controlStackDp` と `RailMetricsTest`）。
+
+## 13. ⚠⚠ 子が付いたまま GridLayout の `columnCount` を減らすと落ちる
+
+```
+IllegalArgumentException: columnCount must be greater than or equal to the maximum
+  of all grid indices (and spans) defined in the LayoutParams of each child
+    at GridLayout.setColumnCount → MainActivity.applyRailOrientation
+```
+
+押す所の列数を向きで変えている（縦持ち 3 / 横持ち 2）ので、**回した瞬間に必ず踏む**。
+実機 3 台とも同じ行で死んだ（Android の版が違っても同じ）。
+
+⇒ **空にしてから列数を変え、段と列を明示して入れ直す。**
+子が 0 なら比べる相手が無いので必ず通り、入れ直す側は `spec(段)` `spec(列)` を
+自分で与えるので食い違いようがない。ボタンの実体は使い回すので状態も配線も保たれる。
+
+⇒ **`onConfigurationChanged` は `try/catch` で包む。** 並べ方の組み替えは見た目の話で、
+**落ちると配信ごと止まる** ＝ 体験が止まる。失敗しても前の並びのまま生き残らせ、`Log.e` は必ず吐く。
+
+## 14. ⚠⚠ 代わりの機械で確かめたとき、**その機械に無い経路は確かめていない**
+
+上の落ちるバグを、わたしは焼いた後に自分で見つけられなかった。
+実機のスマホが手元に無かったので **Quest の 2D パネルへ入れて縦持ちを実測し**、
+「実機で見た」と報告した。**Quest のパネルは回らない。** 回す経路を 1 度も通していないのに、
+通した経路（縦持ちの寸法・撮影パネル）と同じ確信度で書いていた。
+
+⇒ **代替機で見たときは「何を通したか」を並べて書く。** 通していない経路は
+**未確認として名指しする**（「回転は未確認」と書いてあれば、焼く前に人へ頼めた）。
+
+## 15. 実機を触らずに向きを変えて測る道具
+
+**回転そのものは `wm size` で起こせる。** 表示の形が変われば `Configuration.orientation` が
+変わるので、`onConfigurationChanged` は本物と同じ経路を通る。
+
+```bash
+adb -s <serial> shell wm size 2400x1080   # 横長にする ＝ 縦→横の設定変更
+adb -s <serial> shell wm size reset       # ⚠ 必ず戻す
+```
+
+**寸法は `uiautomator dump` の bounds で読む**（目視で「入っている」と決めない）。
+
+```bash
+adb -s <serial> shell uiautomator dump /sdcard/ui.xml   # MSYS_NO_PATHCONV=1 を付ける
+```
+
+⚠ `wm size` で変わるのは**表示の形だけで、カメラの回転は起きない**。
+だから映像は縦のまま枠に入る。**画角の見え方はこれでは確かめられない**（人が回すしかない）。
+⚠ `uiautomator` は UI スレッドが暇にならないと `ERROR: could not get idle state` を返す。
+周期更新を回している画面では落ちるので、そのときは screencap に切り替える。
+
+## 16. ⚠ adb が 2 つあると、サーバごと固まる
+
+この機体には **SideQuest 同梱**と **Unity SDK 同梱**の adb がある。版が違うので、
+片方のクライアントがもう片方のサーバを殺しに行き、**両方の待ちが刺さる**。
+`adb devices` が無言で返らなくなる（2026-09-05 に 10 分ほど潰した）。
+
+⇒ 直すのは `Get-Process adb | Stop-Process -Force` → **使う方の adb で `start-server`**。
+⚠ 生きているかは **パイプを外して終了コードで見る**（`RC_OUT=$(timeout 25 adb devices); RC=$?`）。
+`adb devices | head` だと `head` の 0 が返り、**固まっているのに生きて見える**
+（`~/.claude/rules/work-style.md` §2-3 の 2 番）。
+
 関連: [[approach_shoot_console]] / [[camera_fleet]] / [[quest_fleet_two_devices]] /
 [[show_json_is_live_config]] / [[web_compositor]]
