@@ -425,7 +425,7 @@ def clock_skew(serial: str) -> float | None:
     return dev - pc
 
 
-def record(serial, secs, walk, size=None, warmup=5.0, with_log=True):
+def record(serial, secs, walk, size=None, warmup=5.0, with_log=True, relief=False):
     """アプリを起動してから録る。起動と録画開始の**壁時計**を返す。
 
     **⚠ 順序を逆にしてはいけない。** screenrecord を先に始めて VR アプリを起動すると、
@@ -452,6 +452,11 @@ def record(serial, secs, walk, size=None, warmup=5.0, with_log=True):
     start = ["shell", "am", "start"]
     if walk:
         start += ["-e", "xpwalk", "1"]
+    # ⚠⚠ ホラー軽減モードは**左コントローラの長押しでしか入れない**ので、
+    #    素の走行では音の経路が 1 度も通らない（`canon/LEDGER.md` 0154）。
+    #    ⚠ 校正は両側を流す — 付けない走行と付けた走行を 1 本ずつ。
+    if relief:
+        start += ["-e", "relief", "1"]
     start += ["-n", ACT]
     adb(serial, *start)
     app_started = datetime.now()
@@ -540,6 +545,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sec", type=int, default=45, help="録る秒数（screenrecord の上限は 180）")
     ap.add_argument("--walk", action="store_true", help="自動走行させる（導入が自動で始まる）")
+    ap.add_argument("--relief", action="store_true",
+                    help="ホラー軽減モードで走らせる（既存の音が半分・陽気な曲。--walk と併用）")
     ap.add_argument("--serial", help="省略すると quest-fleet.py pick が選ぶ")
     ap.add_argument("--raw", help="録らずに、既にある mp4 を変換するだけ")
     ap.add_argument("--left", action="store_true", help="右眼でなく左眼を使う")
@@ -575,7 +582,7 @@ def main():
         print("  before: " + ln)
 
     app_started, rec_started = record(serial, args.sec, args.walk, args.size,
-                                      with_log=not args.no_log)
+                                      with_log=not args.no_log, relief=args.relief)
 
     # ログはバッファに溜まる一方なので、重い pull より先に落とす。
     dump_path = os.path.join(OUTDIR, f"{stamp}_logcat.log")

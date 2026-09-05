@@ -1773,6 +1773,80 @@ def analyze(events, others, exp, warns=None):
             verdict("OK", f"言語は既定（{final}）のまま — 誰も切り替えていない")
         w()
 
+    # ---------------- ホラー軽減モード（2026-09-05・canon/LEDGER.md 0154）----------------
+    # ⚠⚠ **画にも録画にも 1 ビットも出ない。** 効くのは音だけで、音は録画に映らない。
+    #    観測の出どころは C# の `ShowTelemetryHost` の `relief`（5 つ組）。
+    #    **片方だけ直すと沈黙して食い違う。**
+    #      `<入っているか>/<切り替えた回数>/<既存の音の倍率>/<陽気な曲の音量>/<曲の再生位置>`
+    # ⚠ 自動走行（--walk）は誰も長押ししないので、**入っていないのが普通**。
+    #    ここで見るのは「入っていないのに何かが起きていないか」と「入ったなら実際に効いたか」。
+    relief_rows = [e for e in events if e.get("ev") == "sum" and "relief" in e]
+    if relief_rows:
+        w("## ホラー軽減モード（体験者が注意書きで長押しして選ぶ）")
+
+        def _relief(e):
+            f = str(e.get("relief", "")).split("/")
+            f += ["-"] * (5 - len(f))
+            return f
+
+        def _f(s):
+            try:
+                return float(s)
+            except (TypeError, ValueError):
+                return None
+
+        toggles = max((int(p[1]) for p in map(_relief, relief_rows) if p[1].isdigit()), default=0)
+        on_rows = [e for e in relief_rows if _relief(e)[0] == "1"]
+        off_rows = [e for e in relief_rows if _relief(e)[0] == "0"]
+        w(f"  入っていた {len(on_rows)}/{len(relief_rows)} 標本 / 切り替え {toggles} 回")
+
+        # ⚠⚠ **走行の頭で持ち越していないか**（ユーザー指定「周回リセット時に次に持ち込まない」）。
+        #    前の体験者の選択が残ると、何も押していない人が陽気な曲でホラーを見る。
+        head = _relief(relief_rows[0])
+        if head[0] != "0" or head[1] not in ("0", "-"):
+            verdict("FAIL", f"走行の頭で既に軽減モードだった（relief={'/'.join(head)}）— "
+                            "前の体験者から持ち越している"
+                            "（TitleScreen.BeginTitle の HorrorRelief.Reset が効いていない）")
+        # 平時に既存の音を触っていないか（＝ 倍率が 1.00 のまま）。
+        bad_off = [e for e in off_rows
+                   if _f(_relief(e)[2]) is not None and abs(_f(_relief(e)[2]) - 1.0) > 0.01]
+        if bad_off:
+            got = _relief(bad_off[0])[2]
+            verdict("FAIL", f"軽減モードでないのに既存の音の倍率が {got}（本来 1.00）— "
+                            "AudioListener.volume を誰かが書いている")
+        if not on_rows:
+            miss = [e for e in relief_rows if _relief(e)[2] == "-"]
+            if len(miss) == len(relief_rows):
+                verdict("FAIL", "軽減モードの音（HorrorReliefAudio）がシーンに居ない — "
+                                "長押ししても音は 1 ビットも変わらない"
+                                "（`.\\tools\\unity.ps1 menu scene` で焼き直す）")
+            else:
+                verdict("OK", "軽減モードには誰も入っていない（自動走行では普通）")
+        else:
+            # ① 既存の音が半分になったか（engine から読み直した値）。
+            bad_gain = [e for e in on_rows
+                        if _f(_relief(e)[2]) is None or abs(_f(_relief(e)[2]) - 0.5) > 0.01]
+            if bad_gain:
+                got = _relief(bad_gain[0])[2]
+                verdict("FAIL", f"軽減モードなのに既存の音の倍率が {got}（本来 0.50）— "
+                                "AudioListener に書けていない")
+            else:
+                verdict("OK", f"軽減モードのあいだ既存の音は 0.50 倍だった（{len(on_rows)} 標本）")
+            # ② 陽気な曲が**本当に鳴った**か。音量ではなく**再生位置が進んだか**で見る
+            #    （音量だけなら、クリップを掴めていなくても 1.00 と出る）。
+            times = [_f(_relief(e)[4]) for e in on_rows]
+            times = [t for t in times if t is not None]
+            if not times or max(times) <= 0.0:
+                verdict("FAIL", "軽減モードなのに陽気な曲が鳴っていない"
+                                "（再生位置が 0 のまま）— bed_relief の焼き忘れか掴み損ね"
+                                "（`py -3.11 tools/ingest-sounds.py --only bed_relief`）")
+            elif max(times) < 1.0:
+                verdict("WARN", f"陽気な曲の再生位置が {max(times):.1f}s しか進んでいない — "
+                                "入った直後に走行が終わったのでなければ止まっている")
+            else:
+                verdict("OK", f"陽気な曲は {max(times):.1f}s まで進んだ（本当に鳴っている）")
+        w()
+
     # ---------------- 音（鳴ったか）----------------
     # ⚠⚠ **音は録画に映らない。** 画は `quest-record.py` が撮って人が開けば分かるが、
     #    音は実機で被って聴く以外に確かめる手段が無い（しかもこの作業をしているシュビーは

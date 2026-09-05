@@ -253,6 +253,14 @@ namespace FixedCamVr.Streaming
             // ⚠ 実体を組めていない現場（下の早期 return）でも戻す — 注意書きが出ないなら
             //    そもそも選べないので、前の体験者の言語が残る方が確実に間違い。
             ShowLanguage.Reset();
+            // ▶ ホラー軽減モードも同じ縁で落とす（2026-09-05・ユーザー指定
+            //   「周回リセット時に次に持ち込まない事も注意」）。
+            // ⚠⚠ **前の人が軽減モードで体験して、次の人が何も押していないのに
+            //   陽気な曲でホラーを見る**、が起きてはいけない。しかも音は録画に映らないので、
+            //   持ち越しても画には 1 ビットも出ない（`memory/visitor_sound_reset.md` と同じ型）。
+            // ⚠ 落ちたことは `HorrorReliefAudio` が毎フレーム見ていて、曲は退いて頭へ戻る
+            //   （リセットの相手を増やさない）。
+            HorrorRelief.Reset();
             if (!titleEnabled || !IsBuilt)
             {
                 if (!IsBuilt && !_warnedNotBuilt)

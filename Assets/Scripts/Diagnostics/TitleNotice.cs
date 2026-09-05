@@ -37,6 +37,12 @@ namespace FixedCamVr.Diagnostics
     /// 選ばれた言語は <see cref="ShowLanguage.Current"/> が持ち、
     /// AIエージェントの連絡・手元のゲージ・終幕の報告が同じ値を読む。
     /// <b>スタッフが読む面（StatusHud・操作早見表・位置合わせ）は日本語のまま。</b>
+    ///
+    /// ⚠⚠ <b>この面はホラー軽減モードの入口も兼ねる</b>（2026-09-05 ユーザー指定・
+    /// <c>canon/LEDGER.md</c> 0154）。同じボタンを<b>短く押せば言語・
+    /// <see cref="Streaming.HorrorRelief.HoldSec"/> 秒長押しすれば軽減モード</b>で、
+    /// <b>入力は 1 つも増えていない</b>（2026-07-23 の凍結は生きている）。
+    /// 案内は <see cref="ReliefLineOf"/> が 1 行で持ち、入っているあいだは ［］ で囲む。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class TitleNotice : MonoBehaviour
@@ -179,11 +185,51 @@ namespace FixedCamVr.Diagnostics
         };
 
         /// <summary>
-        /// 小さな案内の全文（テストと <c>menu text-audit</c> が読む）＝
-        /// <b>切り替え方 3 行 ＋ 空行 ＋ 次にすること 1 行</b>。
+        /// <b>ホラー軽減モードの 1 行</b>（2026-09-05 ユーザー指定
+        /// 「各言語で、ボタン長押しするとホラー軽減モードに入れますと書き入れといてほしい。
+        /// ホラー軽減モード：既存の音が1/2になり、陽気なBGMが流れますと簡単に説明を」）。
+        ///
+        /// ⚠⚠ <b>選んでいる言語で 1 行だけ</b>（切り替え方の 3 行とは扱いが違う）。
+        /// 3 言語ぶん出さない理由は <see cref="ReadyLineOf"/> と同じ — この行を読むのは
+        /// <b>言語を選んだ後</b>で、そのとき選ばれているのはその人が読める言語。
+        /// 読めなければ上の 3 行が切り替え方を教える。0147 の「切り替え方だけは 3 言語ぶん」は
+        /// <b>切り替え方を読めないと切り替えられない</b>という循環があるからで、ここには無い。
+        /// ⚠ <b>0151 で 6 行 → 4 行へ整理した面</b>なので、足すのは 1 行まで。
+        /// 3 言語ぶん（＋3 行）にすると、あのとき削った分がそのまま戻る。
+        ///
+        /// ⚠ <b>入っているあいだは囲む</b>（言語の並びと同じ ［］ の作法。この面は
+        /// <c>richText</c> を切ってあり白 1 色しか出せないので、囲みだけが状態の手掛かり）。
+        /// 入ったのが分からないと、体験者は効くまで押し続ける。
+        ///
+        /// ⚠ <b>Français だけ「音が半分」を落としてある。</b> 3 つとも 1 行 24 全角に収める必要が
+        /// あり（<c>HmdTextStyle.LineWidth</c>）、フランス語で 3 つ言うと 25.5 になる。
+        /// 残したのは<b>体験者への約束</b>の側（怖さが和らぐ・陽気な曲が鳴る）で、
+        /// 落としたのは仕掛けの説明。⚠ 縮めて 3 つ入れようとして «musique»（形容詞なし）に
+        /// すると「陽気な」が消える ＝ 約束の方が壊れる。
         /// </summary>
-        public static string FooterFor(ShowLang lang)
-            => SwitchLines + "\n\n" + ReadyLineOf(lang);
+        public static string ReliefLineOf(ShowLang lang, bool on) => lang switch
+        {
+            ShowLang.En => on ? "[Less horror] Hold again to turn it off."
+                              : "Hold: less horror, half volume, cheery music.",
+            ShowLang.Fr => on ? "[Horreur adoucie] Maintenez pour annuler."
+                              : "Maintenez : horreur adoucie, musique gaie.",
+            _ => on ? "［ホラー軽減中］もう一度長押しで戻ります"
+                    : "長押しでホラー軽減（音が半分・陽気な曲）",
+        };
+
+        /// <summary>
+        /// 小さな案内の全文（テストと <c>menu text-audit</c> が読む）＝
+        /// <b>切り替え方 3 行 ＋ 空行 ＋ ホラー軽減 1 行 ＋ 次にすること 1 行</b>。
+        ///
+        /// ⚠ 下の 2 行は<b>どちらも選んでいる言語</b>なので、空行で離さず続けて置く
+        /// （離すと 3 つの塊に見えて、0151 で減らした「字の壁」がまた立つ）。
+        /// ⚠ 並びは<b>「選ぶ → 決める → 呼ぶ」の順</b>。次にすることが最後に来る。
+        /// </summary>
+        public static string FooterFor(ShowLang lang, bool relief)
+            => SwitchLines + "\n\n" + ReliefLineOf(lang, relief) + "\n" + ReadyLineOf(lang);
+
+        /// <summary>いま選ばれている状態で組む（実行時と <c>menu text-audit</c> はこちら）。</summary>
+        public static string FooterFor(ShowLang lang) => FooterFor(lang, HorrorRelief.Enabled);
 
         /// <summary>本文だけ（言語ごと）。テストと <c>menu text-audit</c> が読む。</summary>
         public static string BodyFor(ShowLang lang) => lang switch
@@ -234,8 +280,12 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private const float TextHeightM = 1.75f;
 
-        /// <summary>小さな案内の枠の高さ (m)。切り替え方 3 行 ＋ 空行 ＋ 次にすること ＝ 5 行ぶん。</summary>
-        private const float FooterHeightM = 0.90f;
+        /// <summary>
+        /// 小さな案内の枠の高さ (m)。切り替え方 3 行 ＋ 空行 ＋ ホラー軽減 ＋ 次にすること ＝ 6 行ぶん。
+        /// ⚠ 2026-09-05 に 5 行（0.90）から 1 行ぶん上げた。行を足したらここも上げる —
+        /// 枠が足りないと折り返しが起きて<b>行数がさらに増える</b>。
+        /// </summary>
+        private const float FooterHeightM = 1.10f;
 
         /// <summary>
         /// 注意書きの塊と、小さな案内のあいだ (m)。2.6m 先で約 1.3° ＝ 半行ぶんの空き。
@@ -286,6 +336,12 @@ namespace FixedCamVr.Diagnostics
         private bool _wasShown;
         /// <summary>いま面に書いてある言語。<see cref="ShowLanguage.Current"/> と食い違ったら組み直す。</summary>
         private ShowLang _shownLang = ShowLanguage.Default;
+
+        /// <summary>
+        /// いま面に書いてあるホラー軽減モードの状態。<see cref="HorrorRelief.Enabled"/> と
+        /// 食い違ったら案内だけ組み直す（本文と言語の並びはこの状態で変わらない）。
+        /// </summary>
+        private bool _shownRelief;
 
         /// <summary>
         /// 最後に見た「体験者が押して変わった回数」（<see cref="ShowLanguage.ChangeCount"/>）。
@@ -353,13 +409,15 @@ namespace FixedCamVr.Diagnostics
                 //    （`HeadYawFollow` ＝ 本編のスクリーンと同じ `YawFollowLogic`）に乗せる。
                 _follow = HeadYawFollow.Attach(transform, "NoticeYawFollow");
                 _shownLang = ShowLanguage.Current;
+                _shownRelief = HorrorRelief.Enabled;
                 var tmp = MakeLabel(jp, "Label", ComposeFor(_shownLang), TextScale, TextHeightM);
                 go = tmp.gameObject;
                 // ⚠⚠ **小さな案内は 2 つ目の TMP**（2026-09-04・0147）。1 つの TMP に混ぜるには
                 //    リッチテキストの `<size>` が要り、そうすると行の幅を測る物差し
                 //    （`HmdTextStyle.LineWidth`）がタグの字まで数える ＝ 全部の判定が狂う。
                 //    段の違う字を並べる面は 2 つ持つ（`CommsPanel` の上段・下段と同じ形）。
-                TMP_Text footer = MakeLabel(jp, "Footer", FooterFor(_shownLang), FooterScale, FooterHeightM);
+                TMP_Text footer = MakeLabel(jp, "Footer", FooterFor(_shownLang, _shownRelief),
+                                            FooterScale, FooterHeightM);
                 _footer = footer;
 
                 // タイトルの黒に潰されないように、黒と題字より後に描く。fontMaterial の getter が
@@ -575,9 +633,22 @@ namespace FixedCamVr.Diagnostics
                 _lastLangChange = changes;
                 // ⚠⚠ **案内も書き直す**（0151 から「次にすること」が言語で変わる）。
                 //    忘れると、本文だけ替わって最後の 1 行が前の言語のまま残る。
-                if (_footer != null) _footer.text = FooterFor(_shownLang);
+                if (_footer != null) _footer.text = FooterFor(_shownLang, _shownRelief);
                 // ⚠ **行数が変わるので積み直す**（日本語 6 行 / Français 7 行）。
                 //   忘れると、行数の少ない言語で塊が下へずれたまま出る。
+                StackLabels();
+            }
+
+            // ホラー軽減モードに入った / 出た（2026-09-05）。
+            // ⚠⚠ **入ったことが画に出なければ、体験者は効くまで押し続ける。**
+            //    この面の中では音も鳴っていない（黒の中）ので、返せるのは振動とこの 1 行だけ。
+            // ⚠ 書き替えるのは案内だけ（本文と言語の並びはこの状態で変わらない）。
+            //    それでも積み直すのは、日本語と英語で行の高さが同じとは限らないため
+            //    ＝ **状態で行数が変わらなくても、字が変われば実測した高さは変わる**。
+            if (_shownRelief != HorrorRelief.Enabled)
+            {
+                _shownRelief = HorrorRelief.Enabled;
+                if (_footer != null) _footer.text = FooterFor(_shownLang, _shownRelief);
                 StackLabels();
             }
 
@@ -619,8 +690,9 @@ namespace FixedCamVr.Diagnostics
             Build();
             if (_text == null) return;
             _shownLang = lang;
+            _shownRelief = HorrorRelief.Enabled;
             _text.text = ComposeFor(lang);
-            if (_footer != null) _footer.text = FooterFor(lang);
+            if (_footer != null) _footer.text = FooterFor(lang, _shownRelief);
             StackLabels();
             _alpha = 1f;
             SetAlpha(1f);

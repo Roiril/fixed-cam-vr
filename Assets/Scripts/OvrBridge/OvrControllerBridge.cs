@@ -38,6 +38,12 @@ namespace FixedCamVr.OvrBridge
     /// （2026-09-03 ユーザー指定・日本語 / English / Français）。<b>入力は増えていない</b> —
     /// 段で意味が変わるだけで、A が「カメラ送り」から「タイトルを閉じる」へ変わったのと同じ形。
     /// そのあいだ報告のゲージは進めない（言語を選んだだけで異変の報告が 1 件立たないように）。
+    /// ⚠⚠ <b>2026-09-05 から、その同じボタンの長押しがホラー軽減モードになる</b>
+    /// （ユーザー指定・<c>canon/LEDGER.md</c> 0154）。注意書きの中では
+    /// <b>短押し（離した時）= 次の言語 ／ <see cref="HorrorRelief.HoldSec"/> 秒長押し = 軽減モード</b>で、
+    /// <b>入力もボタンも 1 つも増えていない</b>（2026-07-23 の凍結は生きている）。
+    /// 押した瞬間の言語切替は<b>離した時へ移した</b> — 押した瞬間のままだと、長押しの途中で
+    /// 必ず言語が 1 つ進む。
     /// HMD 非装着→SignalLostFx / OS recenter→CourseFrame.MarkNeedsReRegistration のパッシブ系は現状維持。
     /// </summary>
     public sealed class OvrControllerBridge : MonoBehaviour
@@ -135,27 +141,29 @@ namespace FixedCamVr.OvrBridge
             return mask;
         }
 
-        /// <summary>
-        /// 左のどれかが<b>このフレームに押された</b>か。
-        ///
-        /// ⚠⚠ <b>まとめたマスクで <c>GetDown</c> を呼んではいけない。</b>
-        /// <c>OVRInput.GetResolvedButtonDown</c> は<b>前フレームにマスクのどれかが押されていたら
-        /// 問答無用で false を返す</b>（`OVRInput.cs`）。握りに指を掛けたまま X を押す持ち方は普通なので、
-        /// まとめて渡すと<b>言語が一度も切り替わらない現場ができる</b>（しかも握っている人にだけ起きる）。
-        /// ⇒ <b>1 つずつ聞く。</b> 単独のビットなら「前フレームに押されていたか」もそのボタンの話になる。
-        /// </summary>
-        private static bool AnyLeftButtonDown()
-        {
-            for (int i = 0; i < LeftAnyButtons.Length; i++)
-                if (OVRInput.GetDown(LeftAnyButtons[i], OVRInput.Controller.LTouch)) return true;
-            return false;
-        }
-
         // モード状態機械（純ロジック。入力を bool/float で Tick する）。
         private readonly ControllerModeLogic _modeLogic = new();
 
         // 体験者の報告ボタン（左のどれか）の長押し（純ロジック）。
         private readonly VisitorMarkHoldLogic _markHold = new();
+
+        /// <summary>
+        /// <b>注意書きの中だけ</b>の長押し ＝ ホラー軽減モードの出入り（2026-09-05・
+        /// <c>canon/LEDGER.md</c> 0154）。<b>報告と同じ純ロジックを使い回す</b> —
+        /// 欲しいのは「閾値で 1 回だけ発火し、離すまでラッチし、1 フレームの dt を切る」で、
+        /// それは <see cref="VisitorMarkHoldLogic"/> がちょうど持っているもの。
+        /// 秒数だけ違う（<see cref="HorrorRelief.HoldSec"/>）。
+        /// </summary>
+        private readonly VisitorMarkHoldLogic _reliefHold = new();
+
+        /// <summary>前フレームに左のどれかを押していたか（<b>離した瞬間</b>を作るため）。</summary>
+        private bool _leftWasHeld;
+
+        /// <summary>
+        /// いまの押下は<b>長押しとして使い切った</b>（＝ 離しても言語を巡らせない）。
+        /// ⚠ 無いと、軽減モードへ入った手を離した瞬間に言語まで 1 つ進む。
+        /// </summary>
+        private bool _leftPressConsumed;
 
         // 言語を選んでいたあいだ押していた手を、そのまま報告として数えないためのラッチ。
         // 一度離すまで true（`ControllerModeLogic` の長押しラッチと同じ約束）。
@@ -234,6 +242,10 @@ namespace FixedCamVr.OvrBridge
             {
                 showControl.ControllerStateProvider = () => (_lConnected, _lTracked, _rConnected, _rTracked);
             }
+
+            // 注意書きの中の長押し（ホラー軽減モード）。**余韻は要らない** — 「報告しました」に
+            // あたる出し先が無く、状態そのものは面の 1 行が出し続ける。
+            _reliefHold.Configure(HorrorRelief.HoldSec, confirmSec: 0f);
 
             _modeLogic.Configure(LongPressSec);
             _modeLogic.Reset(ControllerModeLogic.Mode.Normal);
@@ -321,7 +333,6 @@ namespace FixedCamVr.OvrBridge
             //    （実機で押した記録が無く、ログにも `[XP] ev=mark` が 1 行も出ていない）。
             // ⇒ **物理ボタンを名指しする `RawButton` を使う**（下の一覧は全部左にしか無い名前）。
             bool leftMarkHeld = OVRInput.Get(LeftAnyMask, OVRInput.Controller.LTouch);
-            bool leftDown = AnyLeftButtonDown();
 
             // 監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る＝「入力は届いている」）。
             // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。
@@ -401,11 +412,48 @@ namespace FixedCamVr.OvrBridge
                 if (titleNotice == null) _noticeRetryAt = Time.unscaledTime + NoticeResolveRetrySec;
             }
             bool langChoosing = titleNotice != null && titleNotice.IsShowing;
-            if (langChoosing && leftDown && ShowLanguage.Cycle())
+
+            // ---- 注意書きの中では、同じボタンが 2 つの意味を持つ（2026-09-05・0154）----
+            //   短押し（離した時）= 次の言語 ／ 長押し = ホラー軽減モードの出入り
+            //
+            // ⚠⚠ **押した瞬間に言語を巡らせる形（2026-09-03〜09-04）は使えなくなった。**
+            //    長押しの途中で必ず言語が 1 つ進むので、Français を選んだ人が軽減モードへ
+            //    入るたびに日本語へ戻る（逆に、軽減モードへ入るたび言語が変わる）。
+            //    **1 押下に 2 つの意味を持たせるなら、決着は離した時にしか置けない。**
+            //
+            // ⚠⚠ **離れたかは「まとめたマスクの level 読み」で見る**（`GetUp` を 1 つずつ聞かない）。
+            //    握りに指を掛けたまま X を離す持ち方だと、`GetUp(X)` は true になるのに
+            //    手はまだ押している ＝ 短押しとして確定してしまう。
+            //    `OVRInput.Get` はマスクの OR なので、**全部離れた瞬間**だけが縁になる。
+            //    ⚠ 逆に `GetDown` はマスクで呼んではいけない（`OVRInput.GetResolvedButtonDown` は
+            //      前フレームにマスクのどれかが押されていたら問答無用で false）。
+            //      押した瞬間へ戻すことがあれば、必ず 1 つずつ聞くこと。
+            if (langChoosing)
             {
-                // 受理の 1 発だけ返す（`LeftNotify` は連絡が届いた合図なので混ぜない）。
-                haptics?.LeftMark();
+                if (_reliefHold.Tick(Time.deltaTime, leftMarkHeld))
+                {
+                    HorrorRelief.Toggle();
+                    haptics?.LeftMark();   // 受理の 1 発（`LeftNotify` は連絡の合図なので混ぜない）
+                    _leftPressConsumed = true;
+                    Debug.Log($"[Relief] ホラー軽減モード {(HorrorRelief.Enabled ? "ON" : "OFF")}"
+                              + $"（長押し {HorrorRelief.HoldSec:0.0}s / 切り替え "
+                              + $"{HorrorRelief.ChangeCount} 回目）");
+                }
+                if (_leftWasHeld && !leftMarkHeld)
+                {
+                    if (!_leftPressConsumed && ShowLanguage.Cycle()) haptics?.LeftMark();
+                    _leftPressConsumed = false;
+                }
             }
+            else
+            {
+                // ⚠⚠ **面が閉じたら計時を捨てる。** 捨てないと、体験者が押しっぱなしのまま
+                //    スタッフが右 A を押した回に、**本編に入ってから軽減モードが切り替わる**
+                //    （面が無いので何が起きたか誰にも見えない）。
+                _reliefHold.Reset();
+                _leftPressConsumed = false;
+            }
+            _leftWasHeld = leftMarkHeld;
 
             // ⚠⚠ **言語を選んだ手を、そのまま報告として数えない**（2026-09-03）。
             //    どのボタンでも通るようになったので、**押したまま**注意書きが閉じられる筋が現実に出た
@@ -440,7 +488,10 @@ namespace FixedCamVr.OvrBridge
             }
             // 長押しの手応えも左へ返す（右の HoldTick とは別の時間軸）。
             // 進捗 1 で HoldTick は止まり、代わりに上の LeftMark が鳴る。
-            haptics?.SetLeftHoldProgress(_markHold.Progress01);
+            // ⚠ **注意書きの中では軽減モードのランプが同じ口から出る**（2026-09-05）。
+            //    どちらか一方しか進まない（面が出ているあいだ報告は数えない）ので、
+            //    大きい方を渡せば足りる。左が受け取る振動は 3 つのままで、4 つ目を作っていない。
+            haptics?.SetLeftHoldProgress(Mathf.Max(_markHold.Progress01, _reliefHold.Progress01));
 
             // 長押しカウント進行を HoldTick 振動へ（トリガー入場 / グリップ ランリセット / 登録の 0.5s ホールド
             // 平均サンプリングの最大を流す。登録中は SampleHoldProgress01 が 0.5 秒ホールドの進行ランプを鳴らす）。

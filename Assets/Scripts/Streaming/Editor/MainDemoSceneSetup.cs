@@ -76,6 +76,8 @@ namespace FixedCamVr.Streaming.EditorTools
         private static readonly string[] SoundProbeResources =
         {
             "bed_room", "bed_device", "bed_seal", "sfx_switch_1", "sfx_seal_close", "sfx_shatter",
+            // ホラー軽減モードの曲（`tools/ingest-sounds.py --only bed_relief` が焼く）。
+            "bed_relief",
         };
         private const string BgmClipPath = "Assets/Art/Audio/HorrBGM.mp3";
         /// <summary>CG 人形だけを置くレイヤ。仮想カメラだけが描き、HMD カメラからは外す。</summary>
@@ -1109,6 +1111,11 @@ namespace FixedCamVr.Streaming.EditorTools
             }
             if (go.GetComponent<SfxPlayer>() == null) go.AddComponent<SfxPlayer>();
             if (go.GetComponent<ShowSoundDirector>() == null) go.AddComponent<ShowSoundDirector>();
+            // ホラー軽減モードの音（2026-09-05・`canon/LEDGER.md` 0154）。
+            // ⚠⚠ **これが焼かれていないと、長押ししても音は 1 ビットも変わらない**
+            //   （面の 1 行だけが「軽減中」と言い、実際には何も起きない）。
+            //   コードを足しただけでは APK に入らない — `menu scene` の再実行が要る。
+            if (go.GetComponent<HorrorReliefAudio>() == null) go.AddComponent<HorrorReliefAudio>();
 
             // 音源が焼かれているかをここで 1 度だけ見る。無いまま実機へ持っていくと
             // **完全な無音でも何のエラーも出ない**（音は録画にも映らないので気づけない）。

@@ -21,6 +21,15 @@ namespace FixedCamVr.Diagnostics.Tests
     /// </summary>
     public sealed class TitleNoticeTextTests
     {
+        /// <summary>面が持つ 2 つの状態（ホラー軽減モードの外 / 中）。<b>両方測る</b>。</summary>
+        private static readonly bool[] BothReliefStates = { false, true };
+
+        [SetUp]
+        public void ResetRelief() => HorrorRelief.Reset();
+
+        [TearDown]
+        public void RestoreRelief() => HorrorRelief.Reset();
+
         /// <summary>
         /// 1 行に入る全角の数（枠 1.70m ÷ 2.6m 先で 1 文字 1.8°）。
         /// ⚠ 机上の目安で、実測は <c>menu text-audit -Set lang=…</c>。
@@ -140,9 +149,10 @@ namespace FixedCamVr.Diagnostics.Tests
         [Test]
         public void Footer_ExplainsSwitchingInEveryLanguage()
         {
+            foreach (bool relief in BothReliefStates)
             foreach (ShowLang lang in ShowLanguage.All)
             {
-                string f = TitleNotice.FooterFor(lang);
+                string f = TitleNotice.FooterFor(lang, relief);
                 StringAssert.Contains("ボタン", f, $"[{lang}] 日本語で切り替え方が書かれていない");
                 StringAssert.Contains("button", f, $"[{lang}] English で切り替え方が書かれていない");
                 StringAssert.Contains("Appuyez", f, $"[{lang}] Français で切り替え方が書かれていない");
@@ -163,9 +173,10 @@ namespace FixedCamVr.Diagnostics.Tests
                 (ShowLang.En, "tell a staff member", new[] { "スタッフにお声がけ", "prévenez le personnel" }),
                 (ShowLang.Fr, "prévenez le personnel", new[] { "スタッフにお声がけ", "tell a staff member" }),
             };
+            foreach (bool relief in BothReliefStates)
             foreach ((ShowLang lang, string mine, string[] others) in cases)
             {
-                string f = TitleNotice.FooterFor(lang);
+                string f = TitleNotice.FooterFor(lang, relief);
                 StringAssert.Contains(mine, f, $"[{lang}] 次にすることが自分の言語で無い");
                 foreach (string other in others)
                     StringAssert.DoesNotContain(other, f, $"[{lang}] 他の言語の行まで出ている");
@@ -176,25 +187,121 @@ namespace FixedCamVr.Diagnostics.Tests
         [Test]
         public void FooterLines_FitTheFrame()
         {
+            foreach (bool relief in BothReliefStates)
             foreach (ShowLang lang in ShowLanguage.All)
-            foreach (string line in TitleNotice.FooterFor(lang).Split('\n'))
+            foreach (string line in TitleNotice.FooterFor(lang, relief).Split('\n'))
                 Assert.LessOrEqual(FullWidth(line), MaxFullWidthPerFooterLine,
-                                   $"[{ShowLanguage.Code(lang)}] 案内の「{line}」が 1 行に入らない");
+                                   $"[{ShowLanguage.Code(lang)}/軽減{relief}] "
+                                   + $"案内の「{line}」が 1 行に入らない");
         }
 
         /// <summary>
-        /// <b>案内は 4 行</b>（切り替え方 3 行 ＋ 空行 ＋ 次にすること 1 行）。
+        /// <b>案内は 5 行</b>（切り替え方 3 行 ＋ 空行 ＋ ホラー軽減 ＋ 次にすること）。
         /// ⚠ 行が増えると塊が縦に伸びて、上下の端を読むのに首を振ることになる
         /// （縦の実測は <c>TitleNoticeLayoutTests.TheWholeStack_FitsInTheView</c>）。
+        /// ⚠ <b>下の 2 行は空行で離さない</b> — どちらも選んでいる言語なので 1 つの塊。
+        /// 離すと 0151 で減らした「字の壁」がまた立つ。
         /// </summary>
         [Test]
-        public void Footer_KeepsItsFourLines()
+        public void Footer_KeepsItsSixLines()
+        {
+            foreach (bool relief in BothReliefStates)
+            foreach (ShowLang lang in ShowLanguage.All)
+            {
+                string[] lines = TitleNotice.FooterFor(lang, relief).Split('\n');
+                Assert.AreEqual(6, lines.Length,
+                                $"[{lang}] 切り替え方 3 ＋ 空行 ＋ ホラー軽減 ＋ 次にすること");
+                Assert.That(lines[3], Is.Empty, $"[{lang}] 下の 2 行は空行で離す");
+                Assert.That(lines[4], Is.Not.Empty, $"[{lang}] ホラー軽減の行が無い");
+            }
+        }
+
+        // --- ホラー軽減モード（2026-09-05・0154）--------------------------------------
+
+        /// <summary>
+        /// ⚠⚠ <b>各言語で書く</b>（ユーザー指定「各言語で、ボタン長押しするとホラー軽減モードに
+        /// 入れますと書き入れといてほしい」）。訳し忘れると、その言語の体験者だけ
+        /// <b>逃げ道があることを知らないまま怖い体験に入る</b>。
+        /// </summary>
+        [Test]
+        public void Relief_IsWrittenInEveryLanguage()
+        {
+            foreach (bool relief in BothReliefStates)
+            {
+                Assert.AreNotEqual(TitleNotice.ReliefLineOf(ShowLang.Ja, relief),
+                                   TitleNotice.ReliefLineOf(ShowLang.En, relief));
+                Assert.AreNotEqual(TitleNotice.ReliefLineOf(ShowLang.En, relief),
+                                   TitleNotice.ReliefLineOf(ShowLang.Fr, relief));
+                Assert.AreNotEqual(TitleNotice.ReliefLineOf(ShowLang.Fr, relief),
+                                   TitleNotice.ReliefLineOf(ShowLang.Ja, relief));
+                foreach (ShowLang lang in ShowLanguage.All)
+                    Assert.That(TitleNotice.ReliefLineOf(lang, relief), Is.Not.Empty, $"{lang}");
+            }
+        }
+
+        /// <summary>
+        /// <b>入る前は「どうすれば入れるか」と「何が起きるか」の両方を言う</b>
+        /// （ユーザー指定「ホラー軽減モード：既存の音が1/2になり、陽気なBGMが流れます と簡単に説明を」）。
+        /// ⚠ 入り方だけだと、体験者は何が起きるか分からないまま押すか押さないかを決めることになる。
+        /// </summary>
+        [Test]
+        public void ReliefLine_Off_SaysHowToEnterAndWhatHappens()
+        {
+            (ShowLang lang, string how, string what)[] cases =
+            {
+                (ShowLang.Ja, "長押し", "陽気な曲"),
+                (ShowLang.En, "Hold", "cheery music"),
+                (ShowLang.Fr, "Maintenez", "musique gaie"),
+            };
+            foreach ((ShowLang lang, string how, string what) in cases)
+            {
+                string line = TitleNotice.ReliefLineOf(lang, on: false);
+                StringAssert.Contains(how, line, $"[{lang}] 入り方が書かれていない");
+                StringAssert.Contains(what, line, $"[{lang}] 何が起きるかが書かれていない");
+            }
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>入っているあいだは、入っていると分かる。</b> この面は <c>richText</c> を
+        /// 切ってあり白 1 色しか出せないので、<b>囲み（［］/ []）だけが状態の手掛かり</b>。
+        /// 分からないと体験者は効くまで押し続ける（＝ 何度も出入りする）。
+        /// ⚠ <b>出方も同じ行に書く。</b> 誤って入った人の出口が、この 1 行しかない。
+        /// </summary>
+        [Test]
+        public void ReliefLine_On_ShowsTheStateAndTheWayOut()
+        {
+            (ShowLang lang, string mark, string out_)[] cases =
+            {
+                (ShowLang.Ja, "［", "長押し"),
+                (ShowLang.En, "[", "Hold"),
+                (ShowLang.Fr, "[", "Maintenez"),
+            };
+            foreach ((ShowLang lang, string mark, string out_) in cases)
+            {
+                string on = TitleNotice.ReliefLineOf(lang, on: true);
+                StringAssert.Contains(mark, on, $"[{lang}] 入っている印が無い");
+                StringAssert.Contains(out_, on, $"[{lang}] 出方が書かれていない");
+                StringAssert.DoesNotContain(mark, TitleNotice.ReliefLineOf(lang, on: false),
+                                            $"[{lang}] 入っていないのに印が出ている");
+            }
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>軽減の囲みを本文側へ持ち込まない。</b> 本文（<see cref="TitleNotice.ComposeFor"/>）の
+        /// ［］は<b>いま選んでいる言語</b>の印で、<c>ExactlyOneEntry_IsMarked</c> が 1 個であることを
+        /// 守っている。軽減の状態を同じ面へ足すと、そこが 2 個になって
+        /// <b>どちらが言語の選択か分からなくなる</b>。
+        /// </summary>
+        [Test]
+        public void Relief_DoesNotTouchTheLanguageChooser()
         {
             foreach (ShowLang lang in ShowLanguage.All)
             {
-                string[] lines = TitleNotice.FooterFor(lang).Split('\n');
-                Assert.AreEqual(5, lines.Length, $"[{lang}] 切り替え方 3 ＋ 空行 ＋ 次にすること");
-                Assert.That(lines[3], Is.Empty, $"[{lang}] 次にすることは空行で離す");
+                HorrorRelief.Select(false);
+                string off = TitleNotice.ComposeFor(lang);
+                HorrorRelief.Select(true);
+                Assert.AreEqual(off, TitleNotice.ComposeFor(lang),
+                                $"[{lang}] 軽減モードで本文か言語の並びが変わっている");
             }
         }
 

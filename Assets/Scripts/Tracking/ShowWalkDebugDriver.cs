@@ -28,6 +28,14 @@ namespace FixedCamVr.Tracking
     /// 起動:
     ///   <c>adb shell am start -e xpwalk 1 -n com.roiril.mawarimi/com.unity3d.player.UnityPlayerActivity</c>
     /// ログは全て <c>[XPWalk]</c> タグ。体験そのものの観測は <c>[XP]</c>（ShowTelemetryHost）が出す。
+    ///
+    /// ⚠⚠ <b><c>-e relief 1</c> を足すと、注意書きの中でホラー軽減モードへ入った走行になる</b>
+    /// （2026-09-05・<c>canon/LEDGER.md</c> 0154）。あのモードは<b>左コントローラの長押しでしか
+    /// 入れない</b>ので、素の走行では音の経路が 1 度も通らない ＝
+    /// <b>実機で効いているかを確かめる手段が無い</b>。
+    /// ⚠ <b>校正は両側を流す</b>（`~/.claude/rules/work-style.md` §2-3）— 付けない走行で
+    /// <c>relief=0/0/1.00/…</c>、付けた走行で <c>relief=1/1/0.50/…</c> が出て初めて、
+    /// 対象と計器のどちらが正しいかが決まる。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class ShowWalkDebugDriver : MonoBehaviour
@@ -70,7 +78,13 @@ namespace FixedCamVr.Tracking
             Debug.Log("[XPWalk] 起動フラグ検出 — 自動走行を予約（8 秒後）");
         }
 
-        private static bool FlagPresent()
+        private static bool FlagPresent() => ExtraPresent("xpwalk");
+
+        /// <summary>
+        /// 起動フラグを 1 つ読む（Android は intent の extra・それ以外はコマンドライン引数）。
+        /// ⚠ <b>読めなければ false</b> — 走行の起動そのものを例外で止めない。
+        /// </summary>
+        private static bool ExtraPresent(string name)
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
             try
@@ -78,17 +92,17 @@ namespace FixedCamVr.Tracking
                 using var up = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
                 using var act = up.GetStatic<AndroidJavaObject>("currentActivity");
                 using var intent = act.Call<AndroidJavaObject>("getIntent");
-                string v = intent.Call<string>("getStringExtra", "xpwalk");
+                string v = intent.Call<string>("getStringExtra", name);
                 return !string.IsNullOrEmpty(v);
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[XPWalk] intent extra 読取失敗: {e.Message}");
+                Debug.LogWarning($"[XPWalk] intent extra 読取失敗（{name}）: {e.Message}");
                 return false;
             }
 #else
             foreach (string a in Environment.GetCommandLineArgs())
-                if (string.Equals(a, "-xpwalk", StringComparison.OrdinalIgnoreCase)) return true;
+                if (string.Equals(a, "-" + name, StringComparison.OrdinalIgnoreCase)) return true;
             return false;
 #endif
         }
@@ -165,6 +179,16 @@ namespace FixedCamVr.Tracking
                 //    走行の画に 1 枚も写らない**（安全の掲示なのに、実機で読めるか確かめる手段が無い）。
                 Debug.Log("[XPWalk] 注意書きを読む間（真っ暗な待ち）");
                 yield return new WaitForSeconds(NoticeReadSec);
+
+                // ⚠⚠ **ここでしか入れない**（体験者の長押しは注意書きが出ているあいだだけ効く）。
+                //    しかも `TitleScreen.BeginTitle` が落とすので、**A を押す前のこの位置**でなければ
+                //    次のリセットで消える。実機の押下と同じ入口（`Toggle`）を通す。
+                if (ExtraPresent("relief"))
+                {
+                    FixedCamVr.Streaming.HorrorRelief.Toggle();
+                    Debug.Log("[XPWalk] ホラー軽減モードへ入った（-e relief 1）— "
+                              + "既存の音が半分になり、陽気な曲が流れる走行になる");
+                }
 
                 if (title.RequestAdvance()) Debug.Log("[XPWalk] タイトルを A で閉じた（実機と同じ入り方）");
                 else Debug.LogWarning($"[XPWalk] タイトルの A が効かない（{title.DescribeAdvanceBlock()}）");

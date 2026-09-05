@@ -91,6 +91,10 @@ RECORDED |= {f"sfx_switch_alert_{i}" for i in range(1, 9)}
 #          既知の NG は 2 本: `bed_beat`（内蔵SP -21.0dB ＝ ほぼ全部が 150Hz 以下）と
 #          `bed_horror2`（モノ互換 -4.66dB）。**どちらも直さない**（§4.5）。
 RECORDED |= {"bed_wind", "bed_beat", "bed_horror2", "bed_white", "sfx_eye_big"}
+#    ⚠ 2026-09-05 追加: ホラー軽減モードの曲（ユーザー指定の既成曲）。
+#       **歌もので、旋律と歌声がそのまま純度と突出に出る**。作り変えたら別の曲になる（§4.5）。
+#       ⚠ 内蔵スピーカー（-2.5dB）・鋭さ（1.40）・粗さ（0.03）は素のまま線の内側なので外していない。
+RECORDED |= {"bed_relief"}
 RECORDED |= {f"sfx_eye_{i}" for i in range(1, 9)}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 

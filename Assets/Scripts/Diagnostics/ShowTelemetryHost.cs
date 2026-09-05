@@ -93,6 +93,8 @@ namespace FixedCamVr.Diagnostics
         private ContainmentShell? _shell;
         private BgmDirector? _bgm;
         private ShowSoundDirector? _sound;
+        /// <summary>ホラー軽減モードの音（2026-09-05・<c>canon/LEDGER.md</c> 0154）。</summary>
+        private HorrorReliefAudio? _relief;
         private SwitchAudioCue? _switchSfx;
         private ShowCgLayer? _cg;
         private SwapMorphFx? _swap;
@@ -251,6 +253,7 @@ namespace FixedCamVr.Diagnostics
             if (_osd == null) _osd = FindObjectOfType<ScreenOsd>();
             if (_takes == null) _takes = FindObjectOfType<TakeRunner>();
             if (_sound == null) _sound = FindObjectOfType<ShowSoundDirector>();
+            if (_relief == null) _relief = FindObjectOfType<HorrorReliefAudio>();
             if (_switchSfx == null) _switchSfx = FindObjectOfType<SwitchAudioCue>();
 
             if (!_subTakes && _takes != null)
@@ -1322,6 +1325,23 @@ namespace FixedCamVr.Diagnostics
             //     区別できない（どちらも ja のまま）。`langN` が 0 なら押しても変わっていない。
             _sb.Append(" lang=").Append(ShowLanguage.Code(ShowLanguage.Current));
             _sb.Append(" langN=").Append(ShowLanguage.ChangeCount);
+            //   relief = ホラー軽減モード（2026-09-05・`canon/LEDGER.md` 0154）。
+            //   **`<入っているか>/<切り替えた回数>/<既存の音の倍率>/<陽気な曲の音量>/<曲の再生位置>`**
+            //   ⚠⚠ **5 つとも要る。** 音は録画に映らないので、ここが唯一の証拠になる:
+            //     ・1/1/1.00/… → 入ったのに **AudioListener に書けていない**（[Sound] に
+            //       `HorrorReliefAudio` が焼かれていない ＝ `menu scene` の忘れ）
+            //     ・1/1/0.50/0.00/0.00 → 音量は半分になったが**曲を掴めていない**
+            //       （`bed_relief` の焼き忘れ）
+            //     ・1/1/0.50/1.00/0.00 → 音量を書いたのに**再生位置が進んでいない** ＝ 鳴っていない
+            //       （`rules/work-style.md` §2-3「初期化されたかは通し番号か経過時間で見る」）
+            //   ⚠ **倍率は自分が書いた値ではなく engine から読み直したもの**（「書いたつもり」を出さない）。
+            //   ⚠ 走行の頭で `0/0/…` でなければ、**前の体験者から持ち越している**
+            //     （`TitleScreen.BeginTitle` の `HorrorRelief.Reset` が効いていない）。
+            _sb.Append(" relief=").Append(HorrorRelief.Enabled ? 1 : 0)
+               .Append('/').Append(HorrorRelief.ChangeCount)
+               .Append('/').Append(_relief == null ? "-" : _relief.ListenerVolume.ToString("F2"))
+               .Append('/').Append(_relief == null ? "-" : _relief.BgmGain.ToString("F2"))
+               .Append('/').Append(_relief == null ? "-" : _relief.BgmTimeSec.ToString("F1"));
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。
