@@ -502,8 +502,14 @@ namespace FixedCamVr.OvrBridge
             if (langChoosing && leftMarkHeld) _markNeedsRelease = true;
             else if (!leftMarkHeld) _markNeedsRelease = false;
 
+            // ⚠⚠ **締めに入って最初の数秒は、握っても溜まらない**（`canon/LEDGER.md` 0178・
+            //    ユーザー指定「4-A に入ってから 4s は、押しても反応しない」）。
+            //    ⚠ **入力ごと止める。** 押させてから捨てると、ゲージだけ溜まって何も起きない
+            //      ＝ 装置が壊れて見える（「反応しない」は「溜まらない」で表す）。
+            bool markTooEarly = showControl != null && showControl.IsMarkTooEarly;
             bool markFired = _markHold.Tick(Time.deltaTime,
                                             leftMarkHeld && !langChoosing && !_markNeedsRelease
+                                            && !markTooEarly
                                             && mode == ControllerModeLogic.Mode.Normal);
             if (markFired)
             {

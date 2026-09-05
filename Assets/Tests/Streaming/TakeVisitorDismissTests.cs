@@ -188,8 +188,10 @@ namespace FixedCamVr.Streaming.Tests
             TakeRunnerLogic l = Started(Make(
                 Take(1, 1, dismissible: true, 0f, TakeRunnerLogic.WaitMark, 3f)), 1, 1);
 
-            l.NotifyMarkPressed(2f);
-            TakeRunnerLogic.Decision d = l.Tick(2f, 1);
+            // ⚠ 締めのカットは入って `MarkGraceSec` のあいだ受け付けない（0178）。
+            float t = TakeRunnerLogic.MarkGraceSec + 1f;
+            l.NotifyMarkPressed(t);
+            TakeRunnerLogic.Decision d = l.Tick(t, 1);
 
             Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep), "次のカットへ進む");
             Assert.That(d.stepIndex, Is.EqualTo(1));
@@ -297,7 +299,8 @@ namespace FixedCamVr.Streaming.Tests
             // ②締めのカット（untilMark）が進んだ ＝ 呪いが解ける所
             TakeRunnerLogic closing = Started(Make(
                 Take(4, 0, dismissible: false, 0f, TakeRunnerLogic.WaitMark, 3f)), 4, 0);
-            Assert.That(closing.NotifyMarkPressed(2f),
+            // ⚠ 締めは入って `MarkGraceSec` のあいだ受け付けない（0178）。
+            Assert.That(closing.NotifyMarkPressed(TakeRunnerLogic.MarkGraceSec + 1f),
                 Is.EqualTo(TakeRunnerLogic.MarkResult.Released));
 
             // ③解除できない怪異（3 周目）＝ 何も起きない

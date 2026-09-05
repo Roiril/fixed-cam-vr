@@ -183,8 +183,71 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.Tick(10f, 0).stepIndex, Is.EqualTo(0));
             Assert.That(l.Tick(11f, 0).action, Is.EqualTo(TakeRunnerLogic.Action.None));
 
-            l.NotifyMarkPressed(12f);
-            Assert.That(l.Tick(12f, 0).stepIndex, Is.EqualTo(1));
+            // ⚠ 猶予（MarkGraceSec）を過ぎてから押す（0178 で 4 秒は受け付けなくなった）。
+            float t = 10f + TakeRunnerLogic.MarkGraceSec + 1f;
+            l.NotifyMarkPressed(t);
+            Assert.That(l.Tick(t, 0).stepIndex, Is.EqualTo(1));
+        }
+
+        // ---------------------------------------------------- 締めの受け付け猶予（0178）
+
+        /// <summary>
+        /// ⚠⚠ <b>締めのカットに入って最初の数秒は、押しても受け付けない</b>
+        /// （2026-09-06・<c>canon/LEDGER.md</c> 0178・ユーザー指定
+        /// 「4-A に入ってから 4s は、押しても反応しないようにしてほしい」）。
+        /// </summary>
+        [Test]
+        public void ClosingTake_IgnoresTheReport_ForTheFirstFewSeconds()
+        {
+            TakeRunnerLogic l = Make(MarkStep(4, 0));
+            l.OnZoneCommitted(4, 0, false, 0, 0, 0f);
+            Assert.That(l.Tick(0f, 0).stepIndex, Is.EqualTo(0));
+
+            Assert.That(l.IsMarkTooEarly(0f), Is.True, "入った瞬間は受け付けない");
+            Assert.That(l.IsMarkTooEarly(TakeRunnerLogic.MarkGraceSec - 0.1f), Is.True);
+            Assert.That(l.NotifyMarkPressed(TakeRunnerLogic.MarkGraceSec - 0.1f),
+                        Is.EqualTo(TakeRunnerLogic.MarkResult.None), "猶予の中で受け付けた");
+            Assert.That(l.Tick(TakeRunnerLogic.MarkGraceSec - 0.1f, 0).action,
+                        Is.EqualTo(TakeRunnerLogic.Action.None), "猶予の中の報告でカットが進んだ");
+
+            Assert.That(l.IsMarkTooEarly(TakeRunnerLogic.MarkGraceSec + 0.1f), Is.False);
+            Assert.That(l.NotifyMarkPressed(TakeRunnerLogic.MarkGraceSec + 0.1f),
+                        Is.EqualTo(TakeRunnerLogic.MarkResult.Released), "猶予を過ぎても受け付けない");
+        }
+
+        /// <summary>
+        /// ⚠ <b>猶予がかかるのは締めのカットだけ。</b> 1〜3 周目の演出はいままでどおり
+        /// 押した瞬間に効く（<c>dismissible</c>）。ここを取り違えると体験の大半で報告が死ぬ。
+        /// </summary>
+        [Test]
+        public void OtherTakes_AreNotAffectedByTheClosingGrace()
+        {
+            TakeRunnerLogic l = Make(new TakeRunnerLogic.Def
+            {
+                lap = 4, camera = 0, onExit = false, offsetSec = 0f,
+                skipWhenMissed = false, once = true, dismissible = true,
+                stepDurSec = new[] { 5f },
+            });
+            l.OnZoneCommitted(4, 0, false, 0, 0, 0f);
+            Assert.That(l.Tick(0f, 0).stepIndex, Is.EqualTo(0));
+
+            Assert.That(l.ActiveTakeWaitsForMark, Is.False, "締めのカットではない");
+            Assert.That(l.IsMarkTooEarly(0.1f), Is.False, "締め以外にも猶予が掛かっている");
+            Assert.That(l.NotifyMarkPressed(0.1f),
+                        Is.EqualTo(TakeRunnerLogic.MarkResult.Dismissed));
+        }
+
+        /// <summary>③の時計（<c>ClosingTakeSec</c>）は締めのカットに居るあいだだけ進む。</summary>
+        [Test]
+        public void ClosingTakeSec_IsNegative_OutsideTheClosingTake()
+        {
+            TakeRunnerLogic l = Make(MarkStep(4, 0));
+            Assert.That(l.ClosingTakeSec(0f), Is.LessThan(0f), "走っていないのに正の値");
+
+            l.OnZoneCommitted(4, 0, false, 0, 0, 3f);
+            l.Tick(3f, 0);
+            Assert.That(l.ClosingTakeSec(3f), Is.EqualTo(0f).Within(1e-3f));
+            Assert.That(l.ClosingTakeSec(8f), Is.EqualTo(5f).Within(1e-3f));
         }
 
         /// <summary>報告しない体験者でも必ず終わる（押さなかった人を置き去りにしない）。</summary>

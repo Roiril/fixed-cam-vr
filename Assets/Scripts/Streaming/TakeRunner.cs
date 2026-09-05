@@ -476,6 +476,12 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行が押す真似をするのに読む）。</summary>
         public bool IsWaitingForVisitorMark => _logic.IsWaitingForMark;
 
+        /// <summary>締めのカットに入ってからの秒数（走っていなければ負）。③の時計。</summary>
+        public float ClosingTakeSec => _logic.ClosingTakeSec(Now);
+
+        /// <summary>いま押しても受け付けない（締めに入って <c>MarkGraceSec</c> 未満）。</summary>
+        public bool IsMarkTooEarly => _logic.IsMarkTooEarly(Now);
+
         /// <summary>
         /// <b>報告で実際に演出が消えた回数</b>（テレメトリ用）。押した回数（<c>VisitorMarkCount</c>）とは別物 —
         /// 消えない演出の方が多いので、混ぜると「効いたか」がログから分からなくなる。

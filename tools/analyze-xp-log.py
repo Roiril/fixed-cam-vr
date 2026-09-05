@@ -1555,6 +1555,13 @@ def analyze(events, others, exp, warns=None):
 
             # ③は 2 通（canon/LEDGER.md 0168）。③a「止まってください！」→ ③b「異常があなたを…」。
             # ⚠ ③a は**打鍵を鳴らさない**ので、chars=0 で届くのが正常（下の打鍵の合計に混ぜない）。
+            #
+            # ⚠⚠ **2026-09-06（0178）に時計が変わった。** ③は「報告待ちが立ってから 2 秒」ではなく
+            #    **「締めのカットに入ってから 5 秒」**（`CommsCueLogic.HaltAfterClosingSec`）で出る。
+            #    ＝ **押しても押さなくても③a →③b は必ず流れる。**
+            #    ⇒ **③b が届いて③a が無い走行は FAIL**（順序が崩れている）。
+            #    ⇒ **③a が届いて③b が無い走行も FAIL**（0168 の頃は「押したら正常」だったが、
+            #      いまは押しても③b は続く。欠けていたら配線が壊れている）。
             t_halt = _first("Halt")
             waited = [e for e in comms if e.get("id") == "Prompt"]
             if t_halt is not None and waited:
@@ -1567,10 +1574,11 @@ def analyze(events, others, exp, warns=None):
                 verdict("FAIL", "③b は届いたのに③a『止まってください！』が届いていない（0168）— "
                                 "CommsCueLogic の Halt を見ていない古い APK の疑い")
             elif t_halt is not None:
-                verdict("WARN", "③a は届いたが③b『異常があなたを…』が届いていない — "
-                                "③a を読ませ終わる前に体験者が報告したなら正常")
+                verdict("FAIL", "③a は届いたのに③b『異常があなたを…』が届いていない（0178）— "
+                                "報告で③b を止める古い実装の疑い。いまは押しても続く約束")
             elif any(str(e.get("wait")) == "1" for e in comms):
-                verdict("WARN", "締めのカットが待っていたのに③の催促が届いていない")
+                verdict("FAIL", "締めのカットまで来たのに③が 1 通も届いていない（0178）— "
+                                "③は締めに入ってからの時計で出るので、押した／押さないに関わらず出る")
 
             # ---- 打鍵音（`canon/LEDGER.md` 0056）----
             # ⚠⚠ **音は録画に映らない。** 字が 1 文字ずつ出る絵は PNG で確かめられるが、

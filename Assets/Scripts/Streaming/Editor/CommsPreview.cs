@@ -265,11 +265,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 const float RunAt = 17.0f;       // 導入演出が明けた（①）
                 const float Press1At = 28.0f;    // 1 回目の報告（通る ＝ ②a）
                 const float Press2At = 34.5f;    // 2 回目の報告（通らない ＝ ②b）
-                const float WaitAt = 41.0f;      // 締めのカットが待ち始めた（③a は 2 秒後）
+                const float WaitAt = 41.0f;      // **締めのカットに入った**（③a は 5 秒後・0178）
                 // ⚠⚠ **③a を挟んだぶん伸びた**（2026-09-06・0168）。③a が 1.35 秒画に居て、
                 //    そこから③b が打ち始めるので、49 のままだと**③b が引き切る前に切れる**
                 //    （＝ 出来上がった動画の最後だけが無い、という気づきにくい形）。
-                const float EndAt = 51.5f;
+                const float EndAt = 55.0f;
                 float markHoldSec = ConstF(typeof(FixedCamVr.Input.VisitorMarkHoldLogic),
                                            "DefaultHoldSec", 1.0f);
 
@@ -310,7 +310,7 @@ namespace FixedCamVr.Streaming.EditorTools
                         startAuthorized = true,
                         introWaiting = t < ArrivedAt,
                         panelDoneReading = (bool)doneReading.GetValue(logic),
-                        waitingForMark = t >= WaitAt,
+                        closingSec = t >= WaitAt ? t - WaitAt : -1f,
                         markPressed = release,
                         markResolved = presses == 1,   // 1 回目は通る / 2 回目は通らない
                         dt = dt,

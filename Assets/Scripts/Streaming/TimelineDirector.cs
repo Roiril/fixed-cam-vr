@@ -88,6 +88,12 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行の検証用）。</summary>
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;
 
+        /// <summary>締めのカットに入ってからの秒数（走っていなければ負）。③の時計（0178）。</summary>
+        public float ClosingTakeSec => takeRunner != null ? takeRunner.ClosingTakeSec : -1f;
+
+        /// <summary>いま押しても受け付けない（締めに入って <c>TakeRunnerLogic.MarkGraceSec</c> 未満）。</summary>
+        public bool IsMarkTooEarly => takeRunner != null && takeRunner.IsMarkTooEarly;
+
         /// <summary>
         /// <b>いま体験者が居る区間のカメラ</b>（0 = A / 1 = B / 2 = C）。まだ 1 度も区間へ入って
         /// いなければ -1。音が「増えるのは C だけ」を判断するために読む

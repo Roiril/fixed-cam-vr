@@ -745,7 +745,8 @@ namespace FixedCamVr.Diagnostics
                 startAuthorized = showControl == null || showControl.StartAuthorized,
                 introWaiting = introWaiting,
                 panelDoneReading = _logic.DoneReading,
-                waitingForMark = timeline != null && timeline.IsWaitingForVisitorMark,
+                // ③の時計は**締めのカットに入ってから**（0178）。報告待ちが立つのは待たない。
+                closingSec = timeline != null ? timeline.ClosingTakeSec : -1f,
                 markPressed = markPressed,
                 markResolved = markResolved,
                 dt = Time.unscaledDeltaTime,

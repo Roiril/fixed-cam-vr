@@ -373,7 +373,11 @@ namespace FixedCamVr.Tracking
 
         /// <summary>
         /// 締めのカットが待ち始めてから押すまで (秒)。
-        /// ⚠ 連絡③の閾値（<c>CommsCueLogic.PromptAfterWaitSec</c> = 2s）より<b>長く</b>取る。
+        /// ⚠ <b>もう③の閾値とは連動しない</b>（2026-09-06・<c>canon/LEDGER.md</c> 0178）。
+        /// ③は<b>締めのカットに入ってからの時計</b>（<c>CommsCueLogic.HaltAfterClosingSec</c>）で出るので、
+        /// ここが短くても③は必ず出る。⚠ ただし
+        /// <c>TakeRunnerLogic.MarkGraceSec</c>（4s・締めに入って最初は受け付けない）より
+        /// <b>報告待ちが立つのが後</b>なので、自動走行の押下が捨てられることは無い。
         /// 縮めると③が走らず、催促は実機で検証されないまま出荷される。
         /// </summary>
         private const float ReportHesitateSec = 4.5f;

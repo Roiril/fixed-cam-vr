@@ -2890,9 +2890,26 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public int CurseReleasedCount { get; private set; }
 
+        /// <summary>
+        /// <b>いま押しても受け付けない</b>（締めのカットに入って
+        /// <see cref="TakeRunnerLogic.MarkGraceSec"/> 未満・<c>canon/LEDGER.md</c> 0178）。
+        /// 入力ごと止めるのは <c>OvrControllerBridge</c> で、ここは万一届いたときの受け皿。
+        /// </summary>
+        public bool IsMarkTooEarly => timelineDirector != null && timelineDirector.IsMarkTooEarly;
+
         /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
         public void RecordVisitorMark()
         {
+            // ⚠⚠ **締めに入って最初の数秒は「無かったこと」にする**（0178・ユーザー指定
+            //    「4-A に入ってから 4s は、押しても反応しないようにしてほしい」）。
+            //    ⚠ **数える前に返す。** 数えてから捨てると、終幕の報告数に幽霊が 1 件乗る
+            //      （`OutroReportText` の「報告した怪異の数」）。
+            if (IsMarkTooEarly)
+            {
+                Debug.Log($"[ShowControl] 記録ボタン — 締めに入って {TakeRunnerLogic.MarkGraceSec:0.0}s "
+                        + "経っていないので受け付けない（canon/LEDGER.md 0178）");
+                return;
+            }
             VisitorMarkCount++;
             // 「報告するまで」のカット（4 周目 A の締め）と、dismissible な演出だけが反応する。
             // ⚠ 戻り値が「何に効いたか」。畳んだ本人が答えるので、凍らせる順序に依存しない。

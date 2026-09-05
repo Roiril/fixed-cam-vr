@@ -265,6 +265,9 @@ namespace FixedCamVr.Streaming
         // — 横断には CrossLatchSec(0.6s) の猶予があるので、これが無いと区間へ入る途中で踏んだ線が
         //   カットの開始直後に効いて、1 カット目が一瞬で飛ぶ。
         private float _stepBeganAt = float.NegativeInfinity;
+        // 現カット（take）が始まった時刻。**締めの受け付け猶予と③の時計がこれを基準にする**
+        // （`canon/LEDGER.md` 0178）。step ではなく take の頭 ＝ 体験者が 4 周目 A へ入った瞬間。
+        private float _takeBeganAt = float.NegativeInfinity;
         private float _deadline;
         private int _baseZoneCam;
 
@@ -478,6 +481,19 @@ namespace FixedCamVr.Streaming
         public const float WaitMark = -4f;
 
         /// <summary>
+        /// <b>締めのカットに入ってから、報告を受け付け始めるまで (秒)</b>
+        /// （2026-09-06・<c>canon/LEDGER.md</c> 0178・ユーザー指定
+        /// 「4-A に入ってから 4s は、押しても反応しないようにしてほしい」）。
+        ///
+        /// ⚠⚠ <b>ここを 0 に戻すと、締めが素通りできる。</b> 4 周目 A は入った瞬間から
+        /// 人形の動画が 8 秒流れるが、その最中に押されると装置は「異常は検出されませんでした」と
+        /// 返すだけで、体験者には<b>押し損</b>にしか見えない。
+        /// ⚠ <b>反応しない ＝ 数えもしない。</b> ゲージも溜まらない（<c>OvrControllerBridge</c> が
+        /// 入力ごと止める）。数えてから捨てると、終幕の報告数に幽霊が 1 件乗る。
+        /// </summary>
+        public const float MarkGraceSec = 4f;
+
+        /// <summary>
         /// <b>体験者が異変を報告した</b>（左 X / Y の 1 秒長押し）。することは 3 つ。
         ///
         ///   ⓪<b>走行中の演出を「報告済み」として記録する</b>（2026-08-17）。<c>dismissible</c> か
@@ -519,6 +535,10 @@ namespace FixedCamVr.Streaming
         {
             if (!_running) return MarkResult.None;
             if (now < _stepBeganAt) return MarkResult.None;
+            // ⚠⚠ **締めに入って最初の数秒は受け付けない**（`MarkGraceSec`・0178）。
+            //    入口は `OvrControllerBridge` で止めてあるが、**口が 2 つあるものは 2 つとも塞ぐ**
+            //    （卓・自動走行・将来の別経路がここへ直接来る）。
+            if (IsMarkTooEarly(now)) return MarkResult.None;
 
             _activeReported = true;
 
@@ -598,6 +618,38 @@ namespace FixedCamVr.Streaming
         /// 一度も検証されない（走行はコントローラを持たない）。
         /// </summary>
         public bool IsWaitingForMark => _running && CurrentStepWait() == WaitMark;
+
+        /// <summary>
+        /// いま走っているのが<b>締めのカット</b>か（<c>durKind:"untilMark"</c> の段を持つ）。
+        /// ⚠ <b>「4 周目 A」と書かない。</b> 決めているのは著作で、区間の番号ではない
+        /// （台本を差し替えても、報告を待つカットが締めであることは変わらない）。
+        /// </summary>
+        public bool ActiveTakeWaitsForMark
+        {
+            get
+            {
+                if (!_running || _activeTake < 0 || _activeTake >= _defs.Length) return false;
+                float[]? d = _defs[_activeTake].stepDurSec;
+                if (d == null) return false;
+                for (int i = 0; i < d.Length; i++) if (d[i] == WaitMark) return true;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 締めのカットに入ってからの秒数（走っていなければ <b>負</b>）。
+        /// ③「止まってください！」の時計がこれ（<c>CommsCueLogic.HaltAfterClosingSec</c>）。
+        /// </summary>
+        public float ClosingTakeSec(float now)
+            => ActiveTakeWaitsForMark ? now - _takeBeganAt : -1f;
+
+        /// <summary>
+        /// <b>いま押しても受け付けない</b>（締めのカットに入って <see cref="MarkGraceSec"/> 未満）。
+        /// 読むのは <c>OvrControllerBridge</c>（入力ごと止める）と
+        /// <c>ShowControlClient.RecordVisitorMark</c>（万一届いても数えない）。
+        /// </summary>
+        public bool IsMarkTooEarly(float now)
+            => ActiveTakeWaitsForMark && now - _takeBeganAt < MarkGraceSec;
 
         /// <summary>走行中のカットが待っている線の slot index（待っていなければ -1）。</summary>
         private int CurrentStepLine()
@@ -684,6 +736,7 @@ namespace FixedCamVr.Streaming
             _baseZoneCam = baseZoneCam;
             float[] durs = _defs[index].stepDurSec;
             _stepBeganAt = now;
+            _takeBeganAt = now;
             _stepEnd = StepEndTime(now, durs.Length > 0 ? durs[0] : 0f);
             _deadline = now + TakeSchema.ResolveMaxDuration(_defs[index].maxDurationSec);
         }

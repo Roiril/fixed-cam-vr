@@ -125,8 +125,16 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool panelDoneReading;
 
-        /// <summary>「報告するまで」のカット（<c>durKind:"untilMark"</c>）が待っているか。</summary>
-        public bool waitingForMark;
+        /// <summary>
+        /// <b>締めのカット（<c>durKind:"untilMark"</c> の段を持つ take）に入ってからの秒数</b>。
+        /// 走っていなければ<b>負</b>。供給は <c>TimelineDirector.ClosingTakeSec</c>。
+        ///
+        /// ⚠⚠ <b>2026-09-06 に「報告待ちが立ってからの秒数」から替えた</b>
+        /// （<c>canon/LEDGER.md</c> 0178）。前は報告待ちの段（人形の動画が終わったあと）から
+        /// 数えていたので、<b>その段のあいだに押した人は③を一度も見なかった</b>。
+        /// いまは<b>締めへ入った瞬間から</b>数えるので、押しても押さなくても③は出る。
+        /// </summary>
+        public float closingSec;
 
         /// <summary>このフレームに報告が届いたか（縁）。</summary>
         public bool markPressed;
@@ -159,6 +167,8 @@ namespace FixedCamVr.Streaming
     /// ③4 周目 A で体験者がボタンを押さずに 3 秒ほど経過。
     ///
     /// ⚠ <b>①①b③はラン 1 回につき 1 度だけ。②は押すたび。</b>
+    /// ⚠⚠ <b>③は締めへ入ってからの時計で出る</b>（2026-09-06・0178）。報告待ちが立つのを待たないので、
+    /// <b>押しても押さなくても③a →③b は必ず流れる</b>。
     /// ⚠ <b>本編の進行は 1 ビットも変わらない。</b> 連絡は読まなくても勝手に引く
     /// （既読の操作を作らない — <see cref="CommsPanelLogic"/>）。
     /// </summary>
@@ -177,13 +187,21 @@ namespace FixedCamVr.Streaming
         public const float BeginDelaySec = 0f;
 
         /// <summary>
-        /// ③a 締めのカットが待ち始めてから<b>「止まってください！」</b>まで (秒)。
-        /// ⚠ ③b（異常があなたを…）は<b>これを読ませ終わった縁</b>で続く（間は持たない）。
-        /// ⚠ <b>3 → 2 へ</b>（2026-08-19・<c>canon/LEDGER.md</c> 0096）。当初のユーザー指定は「3s ほど」。
-        /// ⚠ <c>ShowWalkDebugDriver.ReportHesitateSec</c>（4.5 秒）より短く保つ —
-        ///   自動走行が先に押してしまうと③は実機で一度も走らない。
+        /// ③a <b>締めのカットに入ってから「止まってください！」まで (秒)</b>
+        /// （2026-09-06・<c>canon/LEDGER.md</c> 0178・ユーザー指定
+        /// 「止まってください！が出るのは、押してないとき一律 5s にしてみて」）。
+        ///
+        /// ⚠⚠ <b>基準が「報告待ちが立ってから」から「締めへ入ってから」へ替わった。</b>
+        /// 4 周目 A は入った瞬間から人形の動画が 8 秒流れるので、5 秒のここは<b>まだ動画の最中</b> —
+        /// 人形が振り向いて手を伸ばしている所へ「止まってください！」が重なる。
+        /// ⚠ 旧実装（待ちが立ってから 2 秒 ＝ 入って 10 秒）は、動画のあいだに押した人が
+        /// <b>③を一度も見ないまま終わる</b>形だった。
+        ///
+        /// ⚠ ③b（異常があなたを…）は<b>③a を読ませ終わった縁</b>で続く（間は持たない）。
+        /// ⚠ <see cref="TakeRunnerLogic.MarkGraceSec"/>（4 秒）より<b>後</b>に置く —
+        ///   受け付けない時間の中で促すと、装置が「押すな」と「押せ」を同時に言うことになる。
         /// </summary>
-        public const float PromptAfterWaitSec = 2f;
+        public const float HaltAfterClosingSec = 5f;
 
         /// <summary>
         /// ⓪a タイトルが焼け切ってから名乗るまで (秒)。<b>一拍おく</b> —
@@ -216,7 +234,6 @@ namespace FixedCamVr.Streaming
         private bool _haltFired;
         private bool _promptFired;
         private float _runSec;
-        private float _waitSec;
         private bool _greetFired;
         private bool _walkFired;
         private bool _arrivedFired;
@@ -226,9 +243,6 @@ namespace FixedCamVr.Streaming
 
         /// <summary>本編に入ってからの経過（診断用）。</summary>
         public float RunSec => _runSec;
-
-        /// <summary>締めのカットが待っている時間（診断用）。</summary>
-        public float WaitSec => _waitSec;
 
         /// <summary>
         /// 体験 1 回ぶんの状態を落とす。
@@ -243,7 +257,6 @@ namespace FixedCamVr.Streaming
             _haltFired = false;
             _promptFired = false;
             _runSec = 0f;
-            _waitSec = 0f;
             _greetFired = false;
             _walkFired = false;
             _arrivedFired = false;
@@ -296,10 +309,6 @@ namespace FixedCamVr.Streaming
             float dt = dtAll;
             _runSec += dt;
 
-            // ⚠ 締めの待ちは「立っているあいだ」だけ数える。押された / 畳まれた時点で 0 へ戻す。
-            if (inp.waitingForMark) _waitSec += dt;
-            else _waitSec = 0f;
-
             // ⚠⚠ **ラッチは「出したもの」ではなく「このフレームに条件が揃ったもの」全部を消費する。**
             //     1 フレームに 2 つ揃ったとき、出せるのは 1 通だけ（面が 1 つしかない）。
             //     消費しないと、押しのけられた方が次のフレームに遅れて出て、
@@ -311,16 +320,19 @@ namespace FixedCamVr.Streaming
             //     ⚠ ラッチの形も入れ替えていない — **時間で立つ方を消費し、
             //       読ませ終わりで立つ方は消費しない**（下の `beginDue`）。
             bool howDue = !_beginHowFired && _runSec >= BeginDelaySec;
-            bool haltDue = !_haltFired && inp.waitingForMark && _waitSec >= PromptAfterWaitSec;
             if (howDue) _beginHowFired = true;
-            if (haltDue) _haltFired = true;
+
+            // ③a は**締めのカットに入ってから** `HaltAfterClosingSec` 秒（0178）。
+            // ⚠⚠ **消費しない。面が空くまで待って、必ず出す。** ユーザー指定が
+            //    「止まってください！以降の流れは全員に見せる」なので、報告に押しのけられて
+            //    消えてよい連絡ではない（時間で立つ①を消費するのとはここが違う）。
+            //    面が塞がっていれば `panelDoneReading` が false のあいだ待つ ＝ 割り込まない。
+            bool haltDue = !_haltFired && inp.closingSec >= HaltAfterClosingSec
+                           && inp.panelDoneReading;
 
             // ③b は③a を**読ませ終わった縁**で、間を置かずに続ける（①→①b と同じ形）。
-            // ⚠⚠ **待ちが続いていることを見る。** 見ないと、③a のあとに体験者が報告しても
-            //    ③b だけが遅れて届く ＝ 押したのに「排除してください」と言われる。
-            bool promptDue = !haltDue && _haltFired && !_promptFired
-                             && inp.waitingForMark && inp.panelDoneReading;
-            if (promptDue) _promptFired = true;
+            // ⚠⚠ **報告したかは見ない**（0178）。③a を見せた以上、続きも見せる。
+            bool promptDue = !haltDue && _haltFired && !_promptFired && inp.panelDoneReading;
 
             // ①b「調査を開始してください。」は①を**読ませ終わった縁**で、間を置かずに続ける
             // （`canon/LEDGER.md` 0097 の形のまま・0174 で中身が入れ替わった）。
@@ -331,8 +343,8 @@ namespace FixedCamVr.Streaming
             // 優先は 報告 > 締めの催促 > 開始。**報告は体験者が起こした出来事**なので必ず勝つ
             // （押した手応えが返らないと、装置が壊れているように見える）。
             if (inp.markPressed) return inp.markResolved ? CommsNotice.MarkLogged : CommsNotice.MarkNothing;
-            if (haltDue) return CommsNotice.Halt;
-            if (promptDue) return CommsNotice.Prompt;
+            if (haltDue) { _haltFired = true; return CommsNotice.Halt; }
+            if (promptDue) { _promptFired = true; return CommsNotice.Prompt; }
             if (howDue) return CommsNotice.BeginHow;
             // ⚠ ①だけは**押しのけられても消費しない**（上の 2 つと違う）。開始の合図なので、
             //   ②や③に割り込まれた回では**その連絡を読ませ終わってから**改めて出す。
