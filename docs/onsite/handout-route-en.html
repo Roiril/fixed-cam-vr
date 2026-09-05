@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>調査依頼書 / 展示の注意（経路つき） — 待機者に渡す資料（廻リ視）</title>
+  <title>Survey Request / Visitor Notice with route — handout (Mawarimi)</title>
   <style>
     /* ============================================================
  * 待機者に渡す資料。A4 が 2 枚。**両面刷りにしない。別々の紙に刷る。**
@@ -306,6 +306,37 @@
         margin: 0 0 4mm;
       }
     }
+    /* --- English 版だけ（build_handout.py が差し込む） ----------- */
+    :root {
+      --mincho: Georgia, "Times New Roman", "Yu Mincho", serif;
+      --gothic: "Segoe UI", Arial, "Yu Gothic UI", sans-serif;
+    }
+
+    .sheet {
+      letter-spacing: .01em;
+    }
+
+    h1 {
+      font-size: 19pt;
+      letter-spacing: .18em;
+      text-indent: .18em;
+    }
+
+    .subject,
+    .mgmt,
+    dl.items dt {
+      letter-spacing: .04em;
+    }
+
+    .slots .val {
+      letter-spacing: .06em;
+    }
+
+    /* ⚠ 1 枚目の h2（字間 .22em）も掛かる。Latin だと「T h e   o b s e r …」になる */
+    h2,
+    .sheet.exhibit h2 {
+      letter-spacing: .04em;
+    }
 
     /* --- 画面表示（印刷とは別。狭い幅で読めるようにする） -------- */
     @media screen and (max-width: 230mm) {
@@ -382,10 +413,10 @@
 
     <div class="head">
       <div class="slots">
-        調査者番号 <span class="blank"></span><br>
+        Surveyor No. <span class="blank"></span><br>
         <!-- 展示は 9/6・9/7 の 2 日。**発行日は依頼が出された日**であって体験の日ではないので、
              2 日とも会期初日で刷る（前日付の書類は不自然ではない）。番号だけが人ごとに違う -->
-        発行日 <span class="val">２０２６年９月６日</span>
+        Date of issue <span class="val">6 September 2026</span>
       </div>
       <!-- 朱印（2026-08-17・`canon/LEDGER.md` 0081）。**組織名を入れない**（誰も言っていない設定を
            資料に焼き付けないため）。図は 星形七角形 {7/3} ＋ 7 つに割れた輪 ＋ 角枠。
@@ -410,60 +441,60 @@
       </div>
     </div>
 
-    <h1>調査依頼書</h1>
-    <p class="subject">件名：壁面周辺の観測調査について</p>
+    <h1>Survey Request</h1>
+    <p class="subject">Subject: observational survey of the area around the wall</p>
 
-    <p class="lead-line">下記のとおり、観測調査を依頼する。</p>
+    <p class="lead-line">The observational survey set out below is hereby requested.</p>
 
-    <p class="ki">記</p>
+    
 
     <dl class="items">
-      <dt>一、調査対象</dt>
+      <dt>1. Subject of the survey</dt>
       <dd>
-        <p><span class="redact">██</span>地点にて回収された壁面<br>
-          <span class="mgmt">管理番号：ＳＨ-ＫＢ-０２</span>
+        <p>Wall surface recovered at site <span class="redact">██</span><br>
+          <span class="mgmt">Control No.: SH-KB-02</span>
         </p>
       </dd>
 
-      <dt>二、対象の詳細</dt>
+      <dt>2. Details of the subject</dt>
       <dd>
-        <p>調査者への開示は行わない。</p>
+        <p>Not disclosed to the surveyor.</p>
       </dd>
 
-      <dt>三、調査方法</dt>
+      <dt>3. Method</dt>
       <dd>
-        <p>観測装置を装着し、表示される映像を確認しながら所定の経路を移動すること。<br>
-          映像は、調査者の位置に応じて自動的に切り替わる。<br>
-          観測中、エージェントが装置を通じて調査者の活動を支援する。<br>
-          指示を受けた場合は、その内容に従うこと。
+        <p>Wear the observation device and proceed along the designated route while watching the images shown.<br>
+          The images switch automatically according to the surveyor's position.<br>
+          During observation, an agent assists the surveyor through the device.<br>
+          Follow any instruction given.
         </p>
       </dd>
 
-      <dt>四、記録</dt>
+      <dt>4. Records</dt>
       <dd>
         <!-- ⚠⚠ 「検出された場合は」がボタンの伏線（`canon/LEDGER.md` 0081）。
              X／Y は記録であると同時に**解除**でもあり、**効くものと効かないものがある**。
              紙が先にそう言っておくと、3 周目に押しても消えないことが不具合に見えない。
              ⚠ **何が解除できないかは書かない**（書くと入れ替わりの伏線が割れる）。 -->
-        <p>映像内に異変を見つけた場合は、その都度、手元のボタンを長押しすること。<br>
-          エージェントが解析し、異変が検出された場合は装置が対処を試みる。</p>
+        <p>Whenever an anomaly is found in the images, hold down the button in your hand.<br>
+          The agent analyses it, and if an anomaly is detected the device attempts to remove it.</p>
       </dd>
     </dl>
 
-    <p class="owari">以上</p>
+    
 
     <div class="band">
-      <h2>観測装置について</h2>
+      <h2>The observation device</h2>
       <p>
-        本装置は、通常では確認できない怪異を観測するための装置である。<br>
-        観測中は、調査を中断する場合を除き、装置を外さないこと。
+        This device exists to observe phenomena that cannot ordinarily be perceived.<br>
+        Do not remove the device during observation, except to discontinue the survey.
       </p>
     </div>
 
     <div class="band sign">
-      <p>上記の内容を確認した。</p>
-      <p>調査者署名<span class="blank"></span></p>
-      <p class="note">本書は調査終了後に回収する。</p>
+      <p>I have read and understood the above.</p>
+      <p>Surveyor's signature<span class="blank"></span></p>
+      <p class="note">This document is collected at the end of the survey.</p>
     </div>
 
   </div>
@@ -475,12 +506,12 @@
 
     <p class="work">廻リ視</p>
 
-    <h2>ご体験の前に</h2>
+    <h2>Before you begin</h2>
     <p class="warn">
-      本作品には、ホラー表現および不安や恐怖を感じる演出が含まれます。
+      This work contains horror imagery and scenes meant to unsettle or frighten.
     </p>
     <p class="warn">
-      体験中に気分が悪くなった場合は、その場で立ち止まり、ヘッドセットを外してスタッフにお声がけください。
+      If you feel unwell at any point, stop where you are, remove the headset and let a member of staff know.
     </p>
 
     <!-- ⚠ 2026-09-06 に段を 2 つ落とした（ユーザー判定）。戻すときは重複を見ること。
@@ -489,14 +520,11 @@
            どこにも残っていない**（3 周とは書いてある）
          「技術上の注意」— 通信状況で映像が乱れる、の 1 行だけだった -->
         <div class="band route">
-      <!-- ⚠ 語は 1 枚目の依頼書に合わせる（2026-09-06 ユーザー判定）。
-           あちらが「所定の経路を移動すること」なので、この面も「経路」。
-           順路・道・ルートに書き換えない -->
-      <h2>経路</h2>
+      <h2>Route</h2>
       <div class="cols">
         <figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 103 99" width="84.0mm" height="80.7mm" role="img" aria-labelledby="rt rd">
-<title id="rt">経路</title>
-<desc id="rd">壁を真上から見た図。L 字の壁があり、その外周を一周する破線の道が描いてある。入口は横に伸びた腕の東の端。そこから壁の内側を西へ進み、縦の腕の東側を南へ下り、南端を回って壁の外側を西から北へ上がり、壁の北側を東へ戻って入口へ着く。矢印はこの一方向だけを指し、同じ道を繰り返す。</desc>
+<title id="rt">Route</title>
+<desc id="rd">A plan view of the wall. An L-shaped wall is drawn with a dashed route running once around it. The entrance is at the east end of the horizontal arm. From there the route runs west along the inside of the wall, south along the east face of the vertical arm, around its south end, north along the outside, then east along the north side back to the entrance. The arrows point one way only.</desc>
 <style>
   text  { font-family: "Yu Gothic", "Noto Sans JP", Meiryo, sans-serif; }
   .thing{ font-size: 4.6px; font-weight: bold; fill: #000; }
@@ -512,16 +540,15 @@
 <g transform="translate(49.45,4.00) rotate(-0.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
 <path d="M78.10,20.80 L20.80,20.80 L20.80,78.10" class="wall"/>
 <circle cx="94.90" cy="37.60" r="2.8" fill="#000"/>
-<text x="98.30" y="48.60" class="sub" text-anchor="end">最初は</text>
-<text x="98.30" y="55.00" class="sub" text-anchor="end">ここから入る</text>
-<line x1="22.40" y1="52.20" x2="29.50" y2="52.20" class="lead"/>
-<text x="30.70" y="53.80" class="thing" text-anchor="start">壁</text>
+<text x="98.30" y="48.60" class="sub" text-anchor="end">Start here</text>
+<text x="22.60" y="53.80" class="thing" text-anchor="start">Wall</text>
 </svg></figure>
         <div>
-          <p>壁のまわりを、矢印の向きに 3 周します。</p>
-          <p>右手で手すりをたどりながら進みます。手は離さないでください。</p>
-          <p>画面に映るのは、自分の視点の映像ではありません。</p>
-          <p class="warn">足元が見づらいので、<span class="nb">ゆっくりゆっくり</span>、慎重に歩いてください。</p>
+          <p>You walk around the wall three times, in the direction of the arrows.</p>
+          <p>Follow the handrail with your right hand as you go. Do not let go of it.</p>
+          <p>What you see on the screen is not the view from where you are standing.</p>
+          <p class="warn">Your feet are hard to see. Walk <span class="nb">slowly, very slowly</span>,
+            and with care.</p>
         </div>
       </div>
     </div>

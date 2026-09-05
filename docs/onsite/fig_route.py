@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""待機者に渡す資料の順路図（真上から見た平面図）。  py -3.11 docs/onsite/fig_route.py
+"""待機者に渡す資料の経路図（真上から見た平面図）。  py -3.11 docs/onsite/fig_route.py
 
+日本語と English の 2 枚を書く（fig-route.svg / fig-route-en.svg）。形は同じで文字だけが違う。
 fig_room.py（スタッフ用の斜投影）とは別物。こちらは体験者に「どちら回りか」だけを伝える。
 
-⚠ 描くのは壁と順路だけ（2026-09-05 ユーザー判定）。カメラ・位置合わせの点・導入の線・
+⚠ 描くのは壁と経路だけ（2026-09-05 ユーザー判定）。カメラ・位置合わせの点・導入の線・
    床のテープの枠は描かない。足すたびに、伝えたい 1 本の線が読みにくくなる。
 
 ⚠⚠ 形はユーザーの手描き（2026-09-05・`canon/LEDGER.md` 0163）に合わせる。要点は 4 つ:
@@ -24,14 +25,14 @@ fig_room.py（スタッフ用の斜投影）とは別物。こちらは体験者
    正本は `tools/walk-guide/build_walk_guide.py`（`Joint.blend` の実測値。同じ食い違いが
    そこにも書いてある）。0164 では 1.0m と置いていたが、実測値へ直した。
    食い違っているあいだは下で警告を出す。
-順路は壁との最短距離を測ってから出す（目で見て決めない。壁を突き抜けた図を刷ると事故になる）。
+経路は壁との最短距離を測ってから出す（目で見て決めない。壁を突き抜けた図を刷ると事故になる）。
 """
 import io, json, math, os, sys
 
 sys.stdout.reconfigure(encoding="utf-8")   # cp932 の端末で ⚠ を print すると落ちる
 
 SHOW = r"C:\Users\kouga\Projects\Unity\fixed-cam-vr\tools\web-compositor\show.json"
-DST = r"C:\Users\kouga\Projects\Unity\fixed-cam-vr\docs\onsite\fig-route.svg"
+OUT_DIR = r"C:\Users\kouga\Projects\Unity\fixed-cam-vr\docs\onsite"
 
 S, OX, OY = 60.0, 50.8, 50.8
 VW, VH = 103, 99           # viewBox（描くものにぴったり合わせてある。余白は 4 単位）
@@ -60,7 +61,7 @@ if abs(lens[0] - lens[1]) > 0.05:
           f"図は実測の {ARM}m / {ARM}m で引いた。"
           f"CG の遮蔽と登録時のワイヤーは show.json の値で出ているので、卓の部屋の設定を見ること")
 
-# ---- 順路（壁から D 離した直角の道。時計回りに 1 周） ----------------------
+# ---- 経路（壁から D 離した直角の道。時計回りに 1 周） ----------------------
 # 入口 → 内側を西 → 内側を南 → 南端を回って西 → 外側を北 → 外側を東 → 入口
 # ⚠ 実際に歩く道は壁の芯から 0.24m（walk-guide の D_WALK）。図は文字を置く幅を取るために
 #   0.28m で引いてある。読む人には見えない差だが、寸法の図として使わないこと
@@ -125,64 +126,100 @@ def seg_dist(p, a, b):
 
 PATH, SAMPLES = rounded(WAY)
 
-MIN_CLEAR = 0.15   # m。これを割ると図の上で順路が壁に噛む
+MIN_CLEAR = 0.15   # m。これを割ると図の上で経路が壁に噛む
 worst = min(seg_dist(p, (w[0], w[1]), (w[2], w[3])) for p in SAMPLES for w in walls)
 print(f"壁との最短 {worst * 100:.1f}cm")
 if worst < MIN_CLEAR:
-    raise SystemExit(f"順路が壁に近すぎる（{worst * 100:.1f}cm）")
+    raise SystemExit(f"経路が壁に近すぎる（{worst * 100:.1f}cm）")
 
-out = []
-A = out.append
-A('<?xml version="1.0" encoding="UTF-8"?>')
-A(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {VW} {VH}"'
-  f' width="{MM_W}mm" height="{VH * MM_W / VW:.1f}mm" role="img" aria-labelledby="rt rd">')
-A('<title id="rt">経路</title>')
-A('<desc id="rd">壁を真上から見た図。L 字の壁があり、その外周を一周する破線の道が描いてある。'
-  '入口は横に伸びた腕の東の端。そこから壁の内側を西へ進み、縦の腕の東側を南へ下り、'
-  '南端を回って壁の外側を西から北へ上がり、壁の北側を東へ戻って入口へ着く。'
-  '矢印はこの一方向だけを指し、同じ道を繰り返す。</desc>')
-A('''<style>
+# ---- 文字（形は同じ。ここだけが言語で変わる） ------------------------------
+# ⚠ 英語の "Wall" は「壁」より広い。同じ置き方だと内側の破線に噛むので右揃えにした
+#   （figure.mjs の重なり検査で出た）。
+LABELS = {
+    "ja": {"file": "fig-route.svg", "title": "経路", "wall": "壁", "wall_anchor": "start",
+           "wall_x": -0.335, "lead": True, "enter": ["最初は", "ここから入る"]},
+    "en": {"file": "fig-route-en.svg", "title": "Route", "wall": "Wall", "wall_anchor": "start",
+           "wall_x": -0.47, "lead": False, "enter": ["Start here"]},
+}
+
+STYLE = """<style>
   text  { font-family: "Yu Gothic", "Noto Sans JP", Meiryo, sans-serif; }
   .thing{ font-size: 4.6px; font-weight: bold; fill: #000; }
   .sub  { font-size: 4.6px; font-weight: bold; fill: #1a1a1a; }
   .wall { fill: none; stroke: #000; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
   .flow { fill: none; stroke: #333; stroke-width: 1.2; stroke-dasharray: 3.6 2.6; stroke-linecap: butt; }
   .lead { fill: none; stroke: #000; stroke-width: .35; }
-</style>''')
+</style>"""
 
-# 順路
-A(f'<path d="{PATH}" class="flow"/>')
+DESC = ("壁を真上から見た図。L 字の壁があり、その外周を一周する破線の道が描いてある。"
+        "入口は横に伸びた腕の東の端。そこから壁の内側を西へ進み、縦の腕の東側を南へ下り、"
+        "南端を回って壁の外側を西から北へ上がり、壁の北側を東へ戻って入口へ着く。"
+        "矢印はこの一方向だけを指し、同じ道を繰り返す。")
 
-# 進む向き（矢じりは辺の中ほどに置く）
-for i in ARROW_AT:
-    a, b = WAY[i], WAY[(i + 1) % len(WAY)]
-    m = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-    d, _ = unit(a, b)
-    # 図の Y は南北が反転しているので、画面上の向きは (dx, -dz)。
-    # ⚠ rotate() は Y が下向きの座標系での角。符号を反転させると道が逆回りに見える
-    ang = math.degrees(math.atan2(-d[1], d[0]))
-    x, y = P(*m)
-    A(f'<g transform="translate({x:.2f},{y:.2f}) rotate({ang:.1f})">'
-      f'<path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>')
+DESC_EN = ("A plan view of the wall. An L-shaped wall is drawn with a dashed route running once "
+           "around it. The entrance is at the east end of the horizontal arm. From there the route "
+           "runs west along the inside of the wall, south along the east face of the vertical arm, "
+           "around its south end, north along the outside, then east along the north side back to "
+           "the entrance. The arrows point one way only.")
 
-# 壁
-A(f'<path d="M{pt((walls[0][2], walls[0][3]))} L{pt((walls[0][0], walls[0][1]))}'
-  f' L{pt((walls[1][2], walls[1][3]))}" class="wall"/>')
 
-# 入口（道の角の上の点。丸めていないので線とちょうど重なる）
-# ラベルは点の真下へ右揃えで置く。近いので引き出し線は要らない
-ex, ey = P(*WAY[0])
-A(f'<circle cx="{ex:.2f}" cy="{ey:.2f}" r="2.8" fill="#000"/>')
-A(f'<text x="{ex + 3.4:.2f}" y="{ey + 11.0:.2f}" class="sub" text-anchor="end">最初は</text>')
-A(f'<text x="{ex + 3.4:.2f}" y="{ey + 17.4:.2f}" class="sub" text-anchor="end">ここから入る</text>')
+def emit(lang):
+    L = LABELS[lang]
+    out = []
+    A = out.append
+    A('<?xml version="1.0" encoding="UTF-8"?>')
+    A(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {VW} {VH}"'
+      f' width="{MM_W}mm" height="{VH * MM_W / VW:.1f}mm" role="img" aria-labelledby="rt rd">')
+    A(f'<title id="rt">{L["title"]}</title>')
+    A(f'<desc id="rd">{DESC_EN if lang == "en" else DESC}</desc>')
+    A(STYLE)
 
-# 壁のラベル（縦の腕と道のあいだ。引き出し線で壁を指す）
-lx, ly = P(-0.335, -0.05)
-A(f'<line x1="{lx - 1.0:.2f}" y1="{ly - 1.6:.2f}" x2="{lx - 6.4:.2f}" y2="{ly - 1.6:.2f}" class="lead"/>')
-A(f'<text x="{lx:.2f}" y="{ly:.2f}" class="thing">壁</text>')
+    # 経路
+    A(f'<path d="{PATH}" class="flow"/>')
 
-A('</svg>')
+    # 進む向き（矢じりは辺の中ほどに置く）
+    for i in ARROW_AT:
+        a, b = WAY[i], WAY[(i + 1) % len(WAY)]
+        m = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+        d, _ = unit(a, b)
+        # 図の Y は南北が反転しているので、画面上の向きは (dx, -dz)。
+        # ⚠ rotate() は Y が下向きの座標系での角。符号を反転させると道が逆回りに見える
+        ang = math.degrees(math.atan2(-d[1], d[0]))
+        x, y = P(*m)
+        A(f'<g transform="translate({x:.2f},{y:.2f}) rotate({ang:.1f})">'
+          f'<path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>')
 
-os.makedirs(os.path.dirname(DST), exist_ok=True)
-io.open(DST, "w", encoding="utf-8", newline="\n").write("\n".join(out))
-print("wrote", DST)
+    # 壁
+    A(f'<path d="M{pt((walls[0][2], walls[0][3]))} L{pt((walls[0][0], walls[0][1]))}'
+      f' L{pt((walls[1][2], walls[1][3]))}" class="wall"/>')
+
+    # 入口（道の角の上の点。丸めていないので線とちょうど重なる）
+    # ラベルは点の真下へ右揃えで置く。近いので引き出し線は要らない
+    ex, ey = P(*WAY[0])
+    A(f'<circle cx="{ex:.2f}" cy="{ey:.2f}" r="2.8" fill="#000"/>')
+    for k, line in enumerate(L["enter"]):
+        A(f'<text x="{ex + 3.4:.2f}" y="{ey + 11.0 + 6.4 * k:.2f}" class="sub"'
+          f' text-anchor="end">{line}</text>')
+
+    # 壁のラベル（縦の腕と道のあいだ。引き出し線で壁を指す）
+    lx, ly = P(L["wall_x"], -0.05)
+    wx, _ = P(CORNER[0], -0.05)
+    # ⚠ English は引き出し線を引かない。"Wall" は「壁」より広く、線を足すと
+    #    内側の破線との隙間が 1mm を切る。壁のすぐ横に置けば線は要らない
+    if L["lead"]:
+        # 壁の面から字の直前まで（浮かせない）
+        A(f'<line x1="{wx + 1.6:.2f}" y1="{ly - 1.6:.2f}" x2="{lx - 1.2:.2f}" y2="{ly - 1.6:.2f}"'
+          f' class="lead"/>')
+    A(f'<text x="{lx:.2f}" y="{ly:.2f}" class="thing"'
+      f' text-anchor="{L["wall_anchor"]}">{L["wall"]}</text>')
+
+    A('</svg>')
+
+    dst = os.path.join(OUT_DIR, L["file"])
+    io.open(dst, "w", encoding="utf-8", newline="\n").write("\n".join(out))
+    print("wrote", dst)
+
+
+os.makedirs(OUT_DIR, exist_ok=True)
+for _lang in ("ja", "en"):
+    emit(_lang)

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 103 99" width="84.0mm" height="80.7mm" role="img" aria-labelledby="rt rd">
-<title id="rt">経路</title>
-<desc id="rd">壁を真上から見た図。L 字の壁があり、その外周を一周する破線の道が描いてある。入口は横に伸びた腕の東の端。そこから壁の内側を西へ進み、縦の腕の東側を南へ下り、南端を回って壁の外側を西から北へ上がり、壁の北側を東へ戻って入口へ着く。矢印はこの一方向だけを指し、同じ道を繰り返す。</desc>
+<title id="rt">Route</title>
+<desc id="rd">A plan view of the wall. An L-shaped wall is drawn with a dashed route running once around it. The entrance is at the east end of the horizontal arm. From there the route runs west along the inside of the wall, south along the east face of the vertical arm, around its south end, north along the outside, then east along the north side back to the entrance. The arrows point one way only.</desc>
 <style>
   text  { font-family: "Yu Gothic", "Noto Sans JP", Meiryo, sans-serif; }
   .thing{ font-size: 4.6px; font-weight: bold; fill: #000; }
@@ -17,8 +17,6 @@
 <g transform="translate(49.45,4.00) rotate(-0.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
 <path d="M78.10,20.80 L20.80,20.80 L20.80,78.10" class="wall"/>
 <circle cx="94.90" cy="37.60" r="2.8" fill="#000"/>
-<text x="98.30" y="48.60" class="sub" text-anchor="end">最初は</text>
-<text x="98.30" y="55.00" class="sub" text-anchor="end">ここから入る</text>
-<line x1="22.40" y1="52.20" x2="29.50" y2="52.20" class="lead"/>
-<text x="30.70" y="53.80" class="thing" text-anchor="start">壁</text>
+<text x="98.30" y="48.60" class="sub" text-anchor="end">Start here</text>
+<text x="22.60" y="53.80" class="thing" text-anchor="start">Wall</text>
 </svg>
