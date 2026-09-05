@@ -25,14 +25,27 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>段 0 を抜けた縁で出す</b>ので、⓪b（歩行の指示）が出ていればそれを押しのけて上書きする。
         /// </summary>
         Arrived,
-        /// <summary>① 導入が明けて、映像だけになった直後。「調査を開始してください。」</summary>
+        /// <summary>
+        /// ①b <b>①「異変を見つけたら…」を読ませ終わった縁</b>。「調査を開始してください。」
+        ///
+        /// ⚠⚠ <b>2026-09-06 に①b へ回った</b>（<c>canon/LEDGER.md</c> 0174・ユーザー指定
+        /// 「調査を開始してくださいと、異変を見つけたらボタンを長押ししてくださいの順番を逆にしよう」）。
+        /// それまでは本編に入った直後の 1 通目だった（0097）。
+        /// ⚠ 名前は <c>Begin</c> のまま — <b>順番ではなく文面の名前</b>で、
+        /// 走行ログ（<c>ev=comms id=</c>）と解析器がこの綴りで繋がっている。
+        /// </summary>
         Begin,
         /// <summary>
-        /// ①b <b>①を読ませ終わった縁</b>。「異変を見つけたら／ボタンを長押ししてください／
+        /// ① <b>導入が明けて、映像だけになった直後</b>。「異変を見つけたら／ボタンを長押ししてください／
         /// 装置が解析して対処を試みます」（2026-08-19・<c>canon/LEDGER.md</c> 0097・ユーザー指定
         /// 「調査を開始してください→異変をみつけたら〜と、表示は時間的に分けて。その間を切り詰める」）。
         ///
-        /// ⚠ <b>1 通に戻さない。</b> 4 行を一度に出すと、読み手は「開始の合図」と「押し方の説明」を
+        /// ⚠⚠ <b>2026-09-06 に 1 通目へ回った</b>（<c>canon/LEDGER.md</c> 0174・ユーザー指定
+        /// 「調査を開始してくださいと、異変を見つけたらボタンを長押ししてくださいの順番を逆にしよう」）。
+        /// ⚠ 名前は <c>BeginHow</c> のまま — <b>順番ではなく文面の名前</b>で、
+        /// 走行ログ（<c>ev=comms id=</c>）と解析器がこの綴りで繋がっている。
+        ///
+        /// ⚠ <b>1 通に戻さない。</b> 4 行を一度に出すと、読み手は「押し方の説明」と「開始の合図」を
         /// 同時に読むことになる。分けたぶんは<b>間を 0 にして同じ面のまま繋ぐ</b>ので、
         /// 画としては「文面が入れ替わる」1 続きに見える。
         /// </summary>
@@ -145,14 +158,15 @@ namespace FixedCamVr.Streaming
     /// ①パススルーから 2D スクリーンへの遷移が終わった後 ②報告を送信したとき（演出の有無で文面が変わる）
     /// ③4 周目 A で体験者がボタンを押さずに 3 秒ほど経過。
     ///
-    /// ⚠ <b>①③はラン 1 回につき 1 度だけ。②は押すたび。</b>
+    /// ⚠ <b>①①b③はラン 1 回につき 1 度だけ。②は押すたび。</b>
     /// ⚠ <b>本編の進行は 1 ビットも変わらない。</b> 連絡は読まなくても勝手に引く
     /// （既読の操作を作らない — <see cref="CommsPanelLogic"/>）。
     /// </summary>
     public sealed class CommsCueLogic
     {
         /// <summary>
-        /// ① 本編に入ってから連絡が届くまで (秒)。
+        /// ① 本編に入ってから連絡（<see cref="CommsNotice.BeginHow"/>「異変を見つけたら…」）が
+        /// 届くまで (秒)。⚠ <b>1 通目が何かは 2026-09-06 に入れ替わった</b>（0174）。
         ///
         /// ⚠⚠ <b>1.5 → 0</b>（2026-08-16・<c>canon/LEDGER.md</c> 0058・ユーザー指示
         /// 「終わったらそのまま鈴を鳴らし、すぐに調査を開始してくださいを表示する。3s またなくていい」）。
@@ -238,7 +252,10 @@ namespace FixedCamVr.Streaming
             _idleSec = 0f;
         }
 
-        /// <summary>①b（押し方）まで出したか（診断・テスト用）。</summary>
+        /// <summary>①b（開始の合図「調査を開始してください。」）まで出したか（診断・テスト用）。</summary>
+        public bool BeginFired => _beginFired;
+
+        /// <summary>①（押し方「異変を見つけたら…」）を出したか（診断・テスト用）。</summary>
         public bool BeginHowFired => _beginHowFired;
 
         /// <summary>③a（止まってください！）を出したか（診断・テスト用）。</summary>
@@ -287,9 +304,15 @@ namespace FixedCamVr.Streaming
             //     1 フレームに 2 つ揃ったとき、出せるのは 1 通だけ（面が 1 つしかない）。
             //     消費しないと、押しのけられた方が次のフレームに遅れて出て、
             //     体験者から見ると「報告したのに関係ない連絡が来た」になる。
-            bool beginDue = !_beginFired && _runSec >= BeginDelaySec;
+            // ⚠⚠ **1 通目は①「異変を見つけたら…」**（2026-09-06・0174 で入れ替えた）。
+            //     番号は**出る順**に振ってある（① = 押し方 / ①b = 開始の合図）。
+            //     ⚠ enum の名前（`BeginHow` / `Begin`）は入れ替えていない — あれは文面の名前で、
+            //       走行ログの `ev=comms id=` と解析器がその綴りで繋がっている。
+            //     ⚠ ラッチの形も入れ替えていない — **時間で立つ方を消費し、
+            //       読ませ終わりで立つ方は消費しない**（下の `beginDue`）。
+            bool howDue = !_beginHowFired && _runSec >= BeginDelaySec;
             bool haltDue = !_haltFired && inp.waitingForMark && _waitSec >= PromptAfterWaitSec;
-            if (beginDue) _beginFired = true;
+            if (howDue) _beginHowFired = true;
             if (haltDue) _haltFired = true;
 
             // ③b は③a を**読ませ終わった縁**で、間を置かずに続ける（①→①b と同じ形）。
@@ -299,20 +322,21 @@ namespace FixedCamVr.Streaming
                              && inp.waitingForMark && inp.panelDoneReading;
             if (promptDue) _promptFired = true;
 
-            // ①b は①を**読ませ終わった縁**で、間を置かずに続ける（`canon/LEDGER.md` 0097）。
-            // ⚠ **①を出したそのフレームには立たない**（`!beginDue`）。面はまだ Deliver されておらず
+            // ①b「調査を開始してください。」は①を**読ませ終わった縁**で、間を置かずに続ける
+            // （`canon/LEDGER.md` 0097 の形のまま・0174 で中身が入れ替わった）。
+            // ⚠ **①を出したそのフレームには立たない**（`!howDue`）。面はまだ Deliver されておらず
             //   「読ませ終わった」が true のままなので、見ないと 2 通が同じフレームに揃って片方が消える。
-            bool howDue = !beginDue && _beginFired && !_beginHowFired && inp.panelDoneReading;
+            bool beginDue = !howDue && _beginHowFired && !_beginFired && inp.panelDoneReading;
 
             // 優先は 報告 > 締めの催促 > 開始。**報告は体験者が起こした出来事**なので必ず勝つ
             // （押した手応えが返らないと、装置が壊れているように見える）。
             if (inp.markPressed) return inp.markResolved ? CommsNotice.MarkLogged : CommsNotice.MarkNothing;
             if (haltDue) return CommsNotice.Halt;
             if (promptDue) return CommsNotice.Prompt;
-            if (beginDue) return CommsNotice.Begin;
-            // ⚠ ①b だけは**押しのけられても消費しない**（上の 2 つと違う）。押し方の説明なので、
+            if (howDue) return CommsNotice.BeginHow;
+            // ⚠ ①だけは**押しのけられても消費しない**（上の 2 つと違う）。開始の合図なので、
             //   ②や③に割り込まれた回では**その連絡を読ませ終わってから**改めて出す。
-            if (howDue) { _beginHowFired = true; return CommsNotice.BeginHow; }
+            if (beginDue) { _beginFired = true; return CommsNotice.Begin; }
             return CommsNotice.None;
         }
 

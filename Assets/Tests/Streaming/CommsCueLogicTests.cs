@@ -50,65 +50,75 @@ namespace FixedCamVr.Streaming.Tests
         /// ⚠⚠ <b>①と①b は時間で分ける</b>（2026-08-19・<c>canon/LEDGER.md</c> 0097・ユーザー指定
         /// 「調査を開始してください→異変をみつけたら〜と、表示は時間的に分けて。その間を切り詰める」）。
         /// ①b は<b>①を読ませ終わった縁</b>で、間を置かずに続く（同じ面のまま文面だけ替わる）。
+        ///
+        /// ⚠⚠ <b>2026-09-06 に中身を入れ替えた</b>（<c>canon/LEDGER.md</c> 0174・ユーザー指定
+        /// 「調査を開始してくださいと、異変を見つけたらボタンを長押ししてくださいの順番を逆にしよう」）。
+        /// <b>① ＝ 押し方（<c>BeginHow</c>）/ ①b ＝ 開始の合図（<c>Begin</c>）</b>。
+        /// enum の名前は文面の名前なので入れ替えていない（走行ログの <c>id=</c> がこの綴り）。
         /// </summary>
         [Test]
-        public void TheOpeningNotice_IsFollowedByTheHowTo_AsSoonAsItIsRead()
+        public void TheHowTo_IsFollowedByTheOpeningNotice_AsSoonAsItIsRead()
         {
             var l = new CommsCueLogic();
-            // ①が出て、読ませているあいだ（read:false）は次が来ない。
-            CollectionAssert.AreEqual(new[] { CommsNotice.Begin },
+            // ①（押し方）が出て、読ませているあいだ（read:false）は次が来ない。
+            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow },
                                       Advance(l, CommsCueLogic.BeginDelaySec + 0.2f));
             CollectionAssert.IsEmpty(Advance(l, 30f), "読ませている最中に①b が割り込んでいる");
 
-            // 読ませ終わったら、次のフレームで①b。
-            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow }, Advance(l, 0.1f, read: true));
-            Assert.IsTrue(l.BeginHowFired);
+            // 読ませ終わったら、次のフレームで①b（開始の合図）。
+            CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, Advance(l, 0.1f, read: true));
+            Assert.IsTrue(l.BeginFired);
             // ラン 1 回に 1 度だけ。
             CollectionAssert.IsEmpty(Advance(l, 60f, read: true));
         }
 
         /// <summary>
-        /// ⚠ <b>①b は押しのけられても消える権利が無い</b>（①③と違う）。押し方の説明なので、
+        /// ⚠ <b>①b は押しのけられても消える権利が無い</b>（①③と違う）。
         /// ②や③に割り込まれた回では<b>その連絡を読ませ終わってから</b>改めて出す。
+        /// ⚠ 0174 で中身が入れ替わったので、いまここが守るのは<b>開始の合図</b>の側。
         /// </summary>
         [Test]
-        public void TheHowTo_SurvivesBeingPushedAsideByAReport()
+        public void TheOpeningNotice_SurvivesBeingPushedAsideByAReport()
         {
             var l = new CommsCueLogic();
-            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);          // ①
+            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);          // ①（押し方）
             // 読ませ終わったフレームに報告が来る ＝ ②が勝つ。
             CollectionAssert.AreEqual(new[] { CommsNotice.MarkLogged },
                                       new System.Collections.Generic.List<CommsNotice>
                                       { l.Tick(Run(mark: true, resolved: true, read: true)) });
-            Assert.IsFalse(l.BeginHowFired, "押しのけられた①b を消費している");
+            Assert.IsFalse(l.BeginFired, "押しのけられた①b を消費している");
 
-            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow }, Advance(l, 0.1f, read: true));
+            CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, Advance(l, 0.1f, read: true));
         }
 
         /// <summary>2 人目の体験者にも①b が出る（ラン単位のラッチを落とし忘れない）。</summary>
         [Test]
-        public void TheSecondVisitor_HearsTheHowToAgain()
+        public void TheSecondVisitor_HearsTheOpeningNoticeAgain()
         {
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
             Advance(l, 0.2f, read: true);
-            Assert.IsTrue(l.BeginHowFired);
+            Assert.IsTrue(l.BeginFired);
 
             l.ResetRun();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
-            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow }, Advance(l, 0.1f, read: true));
+            CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, Advance(l, 0.1f, read: true));
         }
 
         // ------------------------------------------------------------------ ① 導入が明けた直後
 
+        /// <summary>
+        /// ⚠⚠ <b>本編で最初に届くのは押し方</b>（0174）。ここが <c>Begin</c> に戻っていたら、
+        /// 体験者は「調査を開始してください」を読んでから<b>押し方を知らないまま</b>歩き出す。
+        /// </summary>
         [Test]
-        public void EnteringTheMainRun_DeliversTheOpeningNotice_Once()
+        public void EnteringTheMainRun_DeliversTheHowTo_Once()
         {
             var l = new CommsCueLogic();
             var seen = Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
-            CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, seen);
+            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow }, seen);
 
-            // そのあといくら経っても二度は来ない。
+            // そのあといくら経っても二度は来ない（read:false のあいだは①b も来ない）。
             CollectionAssert.IsEmpty(Advance(l, 60f));
         }
 
@@ -182,10 +192,11 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void AReport_OutranksTheOpeningNotice_AndTheOpeningNeverArrivesLate()
+        public void AReport_OutranksTheHowTo_AndTheHowToNeverArrivesLate()
         {
             // 同じフレームに 2 つ揃ったら報告が勝つ。⚠ 押しのけた方を**次のフレームへ持ち越さない**
             //    （持ち越すと「報告したのに関係ない連絡が来た」になる）。
+            // ⚠ 0174 で 1 通目が①（押し方）になったので、消費されるのはそちら。
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec - 0.05f);
             for (int i = 0; i < 10; i++)
@@ -193,7 +204,7 @@ namespace FixedCamVr.Streaming.Tests
                 CommsNotice v = l.Tick(Run(mark: true));
                 Assert.AreEqual(CommsNotice.MarkNothing, v, $"i={i}");
             }
-            CollectionAssert.IsEmpty(Advance(l, 30f), "開始の連絡が遅れて出てきた");
+            CollectionAssert.IsEmpty(Advance(l, 30f), "押し方の連絡が遅れて出てきた");
         }
 
         // ------------------------------------------------------------------ ③ 押さないまま 3 秒
@@ -220,10 +231,10 @@ namespace FixedCamVr.Streaming.Tests
         public void TheClosingCut_SaysStopFirst_ThenExplainsWhy()
         {
             var l = new CommsCueLogic();
-            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);   // ①
+            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);   // ①（押し方）
             // ⚠ ①b を先に消費しておく。**読ませ終わりは①b の出口でもある**ので、
             //    ここで出しておかないと下の read:true が③b と一緒に①b を連れてくる。
-            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow }, Advance(l, 0.5f, read: true));
+            CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, Advance(l, 0.5f, read: true));
 
             CollectionAssert.AreEqual(new[] { CommsNotice.Halt },
                                       Advance(l, CommsCueLogic.PromptAfterWaitSec + 0.2f, waiting: true));
@@ -246,7 +257,7 @@ namespace FixedCamVr.Streaming.Tests
         public void TheExplanation_NeverArrives_AfterTheVisitorReports()
         {
             var l = new CommsCueLogic();
-            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);                       // ①
+            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);                       // ①（押し方）
             Advance(l, 0.5f, read: true);                                         // ①b（先に消費）
             Advance(l, CommsCueLogic.PromptAfterWaitSec + 0.2f, waiting: true);   // ③a
 
@@ -278,7 +289,7 @@ namespace FixedCamVr.Streaming.Tests
             // 締めのカットが無い体験（著作が変わった / 4 周目まで来なかった）では 1 通も出さない。
             var l = new CommsCueLogic();
             var seen = Advance(l, 120f);
-            CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, seen);
+            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow }, seen);
         }
 
         // ------------------------------------------------------------------ 体験 1 回ぶんの状態
@@ -293,7 +304,7 @@ namespace FixedCamVr.Streaming.Tests
 
             l.Tick(new CommsCueInput { inRun = false, dt = Dt });
 
-            CollectionAssert.AreEqual(new[] { CommsNotice.Begin },
+            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow },
                                       Advance(l, CommsCueLogic.BeginDelaySec + 0.2f));
             CollectionAssert.AreEqual(new[] { CommsNotice.Halt },
                                       Advance(l, CommsCueLogic.PromptAfterWaitSec + 0.4f, waiting: true));
@@ -309,7 +320,7 @@ namespace FixedCamVr.Streaming.Tests
 
             l.ResetRun();
 
-            CollectionAssert.AreEqual(new[] { CommsNotice.Begin },
+            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow },
                                       Advance(l, CommsCueLogic.BeginDelaySec + 0.2f));
         }
 
