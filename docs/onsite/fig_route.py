@@ -2,17 +2,21 @@
 """待機者に渡す資料の順路図（真上から見た平面図）。  py -3.11 docs/onsite/fig_route.py
 
 fig_room.py（スタッフ用の斜投影）とは別物。こちらは体験者に「どちら回りか」だけを伝える。
-⚠ 描くのは壁と順路だけ（2026-09-05 ユーザー判定）。カメラ・位置合わせの点・導入の線・
-床のテープの枠は描かない。足すたびに、伝えたい 1 本の線が読みにくくなる。
 
-⚠ 順路は**閉じた 1 本**で描く。3 本の弧に割ると、離れた矢印が 3 つ並ぶだけの図になって
-   「回る」に見えない（2026-09-05 に 1 版目でそうなった）。
+⚠ 描くのは壁と順路だけ（2026-09-05 ユーザー判定）。カメラ・位置合わせの点・導入の線・
+   床のテープの枠は描かない。足すたびに、伝えたい 1 本の線が読みにくくなる。
+
+⚠⚠ 形はユーザーの手描き（2026-09-05・`canon/LEDGER.md` 0163）に合わせる。要点は 3 つ:
+   1. **壁に沿った直角の道**。丸い輪だと壁との関係が消える（1 版目がそれで没）
+   2. **L 字の内側を先に行く** — 上の腕の下を西へ、縦の腕の東を南へ。
+      そこから南端を回って外側（西 → 北）へ出て、また入口へ戻る
+   3. **入口は上の腕の東の端**。ここから入って、以後は同じ道を回る
 
 写像:
     X(x) = OX + 60*x     x: 東西（+ が東）
     Y(z) = OY - 60*z     z: 南北（+ が北 = 図の上）
-  実寸 1m = 60 単位。74mm 幅で刷るので 1 単位 = 0.712mm。
-  ⚠ figure.mjs の検査は 1 単位 = 1mm として字の大きさを見る。実寸はその 0.6 倍。
+  実寸 1m = 60 単位。74mm 幅で刷るので 1 単位 = 0.871mm。
+  ⚠ figure.mjs の検査は 1 単位 = 1mm として字の大きさを見る。実寸はその 0.87 倍。
 
 壁の座標は show.json の room.walls から取る（巻尺で測った値が入っている所）。
 順路は壁との最短距離を測ってから出す（目で見て決めない。壁を突き抜けた図を刷ると事故になる）。
@@ -22,8 +26,8 @@ import io, json, math, os
 SHOW = r"C:\Users\kouga\Projects\Unity\fixed-cam-vr\tools\web-compositor\show.json"
 DST = r"C:\Users\kouga\Projects\Unity\fixed-cam-vr\docs\onsite\fig-route.svg"
 
-S, OX, OY = 60.0, 59.0, 60.8
-VW, VH = 104, 128          # viewBox
+S, OX, OY = 60.0, 52.0, 50.8
+VW, VH = 85, 116           # viewBox（描くものにぴったり合わせてある。余白は 4 単位）
 MM_W = 74.0                # 紙の上の幅
 
 
@@ -31,8 +35,8 @@ def P(x, z):
     return OX + S * x, OY - S * z
 
 
-def pt(x, z):
-    a, b = P(x, z)
+def pt(p):
+    a, b = P(*p)
     return f"{a:.2f},{b:.2f}"
 
 
@@ -43,46 +47,53 @@ if len(walls) != 2:
     raise SystemExit(f"壁が L 字（2 枚）でない: {walls}")
 print("walls =", walls)
 
-# ---- 順路（壁の外側を時計回りに 1 周する閉じた線） --------------------------
-# 壁の南端（z=-0.72）と床の南の縁（z=-0.9）のあいだは 18cm しかない。
-# 実際にはテープの外へ少しふくらんで回るので、図もそう描く。
+# ---- 順路（壁から 28cm 離した直角の道。時計回りに 1 周） --------------------
+# 入口 → 内側を西 → 内側を南 → 南端を回って西 → 外側を北 → 外側を東 → 入口
 WAY = [
-    (0.34, -0.56),    # 0 南東（スタート）
-    (-0.14, -0.98),   # 1 南（← 矢印）
-    (-0.70, -0.88),
-    (-0.82, -0.16),   # 3 西（← 矢印）
-    (-0.72, 0.60),
-    (-0.10, 0.84),    # 5 北（← 矢印）
-    (0.36, 0.76),
-    (0.58, 0.10),     # 7 東（← 矢印）
-    (0.50, -0.34),
+    (0.42, 0.22),    # 0 入口（上の腕の東の端の外）
+    (-0.22, 0.22),   # 1
+    (-0.22, -1.00),  # 2
+    (-0.80, -1.00),  # 3
+    (-0.80, 0.78),   # 4
+    (0.42, 0.78),    # 5
 ]
-ARROW_AT = [1, 3, 5, 7]
+ARROW_AT = [0, 1, 3, 4]     # 矢じりを置く辺（WAY[i] → WAY[i+1]）
+R = 6.0                     # 角の丸み（単位）。入口の角だけ尖らせる
+SHARP = {0}
 
 
-def catmull(pts):
-    """閉じた Catmull-Rom を 3 次ベジエの列にする。戻り値は [(p0,c1,c2,p1), ...]"""
-    n = len(pts)
-    segs = []
+def unit(a, b):
+    d = (b[0] - a[0], b[1] - a[1])
+    n = math.hypot(*d) or 1.0
+    return (d[0] / n, d[1] / n), n
+
+
+def rounded(way):
+    """角を丸めた閉じた道。(path 文字列, 標本点の列) を返す"""
+    n = len(way)
+    segs, samples = [], []
     for i in range(n):
-        p0, p1 = pts[i], pts[(i + 1) % n]
-        pm, pn = pts[(i - 1) % n], pts[(i + 2) % n]
-        c1 = (p0[0] + (p1[0] - pm[0]) / 6.0, p0[1] + (p1[1] - pm[1]) / 6.0)
-        c2 = (p1[0] - (pn[0] - p0[0]) / 6.0, p1[1] - (pn[1] - p0[1]) / 6.0)
-        segs.append((p0, c1, c2, p1))
-    return segs
-
-
-def bez(p0, c1, c2, p1, t):
-    u = 1 - t
-    return (u ** 3 * p0[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t ** 3 * p1[0],
-            u ** 3 * p0[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t ** 3 * p1[1])
-
-
-def bez_d(p0, c1, c2, p1, t):
-    u = 1 - t
-    return (3 * u * u * (c1[0] - p0[0]) + 6 * u * t * (c2[0] - c1[0]) + 3 * t * t * (p1[0] - c2[0]),
-            3 * u * u * (c1[1] - p0[1]) + 6 * u * t * (c2[1] - c1[1]) + 3 * t * t * (p1[1] - c2[1]))
+        c = way[i]
+        din, lin = unit(way[i - 1], c)
+        dout, lout = unit(c, way[(i + 1) % n])
+        r = 0.0 if i in SHARP else min(R / S, lin / 2, lout / 2)
+        a = (c[0] - din[0] * r, c[1] - din[1] * r)
+        b = (c[0] + dout[0] * r, c[1] + dout[1] * r)
+        segs.append((a, c, b))
+    d = "M" + pt(segs[0][2])
+    for i in range(n):
+        nxt = segs[(i + 1) % n]
+        d += f" L{pt(nxt[0])}"
+        samples += [(segs[i][2][0] + (nxt[0][0] - segs[i][2][0]) * k / 20,
+                     segs[i][2][1] + (nxt[0][1] - segs[i][2][1]) * k / 20) for k in range(21)]
+        if nxt[0] != nxt[2]:
+            d += f" Q{pt(nxt[1])} {pt(nxt[2])}"
+            for k in range(11):
+                t = k / 10
+                u = 1 - t
+                samples.append((u * u * nxt[0][0] + 2 * u * t * nxt[1][0] + t * t * nxt[2][0],
+                                u * u * nxt[0][1] + 2 * u * t * nxt[1][1] + t * t * nxt[2][1]))
+    return d + " Z", samples
 
 
 def seg_dist(p, a, b):
@@ -93,18 +104,13 @@ def seg_dist(p, a, b):
     return math.hypot(p[0] - (ax + t * dx), p[1] - (az + t * dz))
 
 
-SEGS = catmull(WAY)
+PATH, SAMPLES = rounded(WAY)
 
 MIN_CLEAR = 0.15   # m。これを割ると図の上で順路が壁に噛む
-worst, worst_i = 9.9, -1
-for i, s in enumerate(SEGS):
-    d = min(seg_dist(bez(*s, t=k / 100), (w[0], w[1]), (w[2], w[3]))
-            for k in range(101) for w in walls)
-    if d < worst:
-        worst, worst_i = d, i
-print(f"壁との最短 {worst * 100:.1f}cm（区間 {worst_i}）")
+worst = min(seg_dist(p, (w[0], w[1]), (w[2], w[3])) for p in SAMPLES for w in walls)
+print(f"壁との最短 {worst * 100:.1f}cm")
 if worst < MIN_CLEAR:
-    raise SystemExit(f"順路が壁に近すぎる（{worst * 100:.1f}cm・区間 {worst_i}）")
+    raise SystemExit(f"順路が壁に近すぎる（{worst * 100:.1f}cm）")
 
 out = []
 A = out.append
@@ -112,49 +118,48 @@ A('<?xml version="1.0" encoding="UTF-8"?>')
 A(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {VW} {VH}"'
   f' width="{MM_W}mm" height="{VH * MM_W / VW:.1f}mm" role="img" aria-labelledby="rt rd">')
 A('<title id="rt">歩く順路</title>')
-A('<desc id="rd">壁を真上から見た図。L 字の壁を、外側から時計回りに一周する破線の輪が描いてある。'
-  'スタートは壁の南東。そこから壁の南端の外を西へ回り、壁の西側を北へ上がり、'
-  '壁の北側を東へ進み、壁の東端の外を南へ下ってスタートへ戻る。矢印はこの一方向だけを指す。</desc>')
+A('<desc id="rd">壁を真上から見た図。L 字の壁があり、その外周を一周する破線の道が描いてある。'
+  '入口は横に伸びた腕の東の端。そこから壁の内側を西へ進み、縦の腕の東側を南へ下り、'
+  '南端を回って壁の外側を西から北へ上がり、壁の北側を東へ戻って入口へ着く。'
+  '矢印はこの一方向だけを指し、同じ道を繰り返す。</desc>')
 A('''<style>
   text  { font-family: "Yu Gothic", "Noto Sans JP", Meiryo, sans-serif; }
   .thing{ font-size: 4.6px; font-weight: bold; fill: #000; }
-  .sub  { font-size: 4.2px; font-weight: bold; fill: #333; }
-  .wall { fill: none; stroke: #000; stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
-  .flow { fill: none; stroke: #333; stroke-width: 1.1; stroke-dasharray: 3.4 2.4; }
+  .sub  { font-size: 4.6px; font-weight: bold; fill: #1a1a1a; }
+  .wall { fill: none; stroke: #000; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
+  .flow { fill: none; stroke: #333; stroke-width: 1.2; stroke-dasharray: 3.6 2.6; stroke-linecap: butt; }
   .lead { fill: none; stroke: #000; stroke-width: .35; }
 </style>''')
 
-# 順路（閉じた 1 本）
-d = "M" + pt(*SEGS[0][0])
-for _, c1, c2, p1 in SEGS:
-    d += f" C{pt(*c1)} {pt(*c2)} {pt(*p1)}"
-A(f'<path d="{d} Z" class="flow"/>')
+# 順路
+A(f'<path d="{PATH}" class="flow"/>')
 
-# 進む向き（矢じりは輪の上に直接置く。marker-mid だと全部の節に付く）
+# 進む向き（矢じりは辺の中ほどに置く）
 for i in ARROW_AT:
-    s = SEGS[i]
-    p = bez(*s, t=0.02)
-    v = bez_d(*s, t=0.02)
-    # 図の Y は南北が反転しているので、画面上の向きは (vx, -vz)。
-    # ⚠ rotate() は Y が下向きの座標系での角。ここで符号を反転させると輪が逆回りに見える
-    a = math.degrees(math.atan2(-v[1], v[0]))
-    x, y = P(*p)
-    A(f'<g transform="translate({x:.2f},{y:.2f}) rotate({a:.1f})">'
-      f'<path d="M-3.4,-2.6 L3.4,0 L-3.4,2.6 Z" fill="#333"/></g>')
+    a, b = WAY[i], WAY[(i + 1) % len(WAY)]
+    m = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+    d, _ = unit(a, b)
+    # 図の Y は南北が反転しているので、画面上の向きは (dx, -dz)。
+    # ⚠ rotate() は Y が下向きの座標系での角。符号を反転させると道が逆回りに見える
+    ang = math.degrees(math.atan2(-d[1], d[0]))
+    x, y = P(*m)
+    A(f'<g transform="translate({x:.2f},{y:.2f}) rotate({ang:.1f})">'
+      f'<path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>')
 
 # 壁
-A(f'<path d="M{pt(walls[0][2], walls[0][3])} L{pt(walls[0][0], walls[0][1])}'
-  f' L{pt(walls[1][2], walls[1][3])}" class="wall"/>')
+A(f'<path d="M{pt((walls[0][2], walls[0][3]))} L{pt((walls[0][0], walls[0][1]))}'
+  f' L{pt((walls[1][2], walls[1][3]))}" class="wall"/>')
 
-# スタート（輪の上の点）
-sx, sy = P(*WAY[0])
-A(f'<circle cx="{sx:.2f}" cy="{sy:.2f}" r="2.4" fill="#000"/>')
-A(f'<text x="{sx + 4.0:.2f}" y="{sy + 1.6:.2f}" class="sub">スタート</text>')
+# 入口（道の角の上の点。丸めていないので線とちょうど重なる）
+# ラベルは点の真下へ右揃えで置く。近いので引き出し線は要らない
+ex, ey = P(*WAY[0])
+A(f'<circle cx="{ex:.2f}" cy="{ey:.2f}" r="2.8" fill="#000"/>')
+A(f'<text x="{ex + 3.4:.2f}" y="{ey + 11.0:.2f}" class="sub" text-anchor="end">最初は</text>')
+A(f'<text x="{ex + 3.4:.2f}" y="{ey + 17.4:.2f}" class="sub" text-anchor="end">ここから入る</text>')
 
-# 壁のラベル（L 字の内側。引き出し線で壁を指す）
-lx, ly = P(-0.26, 0.14)
-wx, _ = P(-0.50, 0.14)
-A(f'<line x1="{lx - 1.4:.2f}" y1="{ly - 1.5:.2f}" x2="{wx + 1.6:.2f}" y2="{ly - 1.5:.2f}" class="lead"/>')
+# 壁のラベル（縦の腕と道のあいだ。引き出し線で壁を指す）
+lx, ly = P(-0.335, -0.05)
+A(f'<line x1="{lx - 1.0:.2f}" y1="{ly - 1.6:.2f}" x2="{lx - 6.4:.2f}" y2="{ly - 1.6:.2f}" class="lead"/>')
 A(f'<text x="{lx:.2f}" y="{ly:.2f}" class="thing">壁</text>')
 
 A('</svg>')
