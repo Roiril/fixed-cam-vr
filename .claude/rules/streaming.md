@@ -2294,7 +2294,8 @@ py -3.11 tools/swap-motion-audit.py --label all --baseline none
   `mask=`（`analyze-xp-log.py` が WARN を出す）
 - しきい値と mip は `SwapMorphLogic.MaskDiffLo/Hi/Lod` **1 か所**（実機と Editor プレビューが同じ値を引く）
 - ⚠ 差分は照明の変化・人の影も拾いうる（しきい値 lo=0.06 の下は捨てる）。プレートは**同じ照明**で
-  撮り直すのが正（卓の 📷 無人プレート）
+  撮り直すのが正（`py -3.11 tools/gen-plate/grab.py --cam A`。⚠ **卓にプレートを撮る口は無い** —
+  卓の 📷 は `recordings/` へ 1 枚落とすだけで、`captures/plate_<ID>_<時刻>.jpg` の名では入らない）
 
 ⚠ **暗い背景の前では黒いシルエットが読めない。** 人形 → 人（4 周目 A）は人型が右の暗い所へ
 育つので、育つ段の後半は形が背景へ溶ける。**黒く覆う以上これは避けられない**ので、
