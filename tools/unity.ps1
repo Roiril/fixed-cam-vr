@@ -102,8 +102,9 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/Streaming/CommsGlitchLogic.cs',
                                     'Assets/Scripts/Streaming/ShowRunDirector.cs') }
     'comms-preview'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsPreview.Run'
-                            Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set decay=0..1 で周回の壊れ／→ make-preview-video.py で mp4）'
-                            Out = 'Assets/Screenshots/comms-preview/place.png' }
+                            Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set lang=ja|en|fr,decay=0..1,frames=0／→ make-preview-video.py で mp4）'
+                            Out = 'Assets/Screenshots/comms-preview/place.png'
+                            OutLang = $true }
     'glitch'           = @{ Method = 'FixedCamVr.Streaming.EditorTools.GlitchPreview.Run'
                             Desc = '乱れが起きるたびにどれだけ大きくなるかを 1 コマずつ焼く（→ make-preview-video.py で mp4）'
                             Out = 'Assets/Screenshots/glitch-preview/f0000.png' }
@@ -631,11 +632,13 @@ switch ($Action) {
             $method = $App.Substring(4)
             $desc = "(直接指定) $method"
             $out = $null
+            $outLang = $false
         }
         elseif ($Menus.Contains($App)) {
             $method = $Menus[$App].Method
             $desc = $Menus[$App].Desc
             $out = $Menus[$App].Out
+            $outLang = [bool]$Menus[$App].OutLang
         }
         else {
             Write-Host "知らない menu: $App" -ForegroundColor Red
@@ -654,6 +657,18 @@ switch ($Action) {
             $fcv += '-fcv'; $fcv += $kv
         }
 
+        # ⚠⚠ **言語を切り替える menu は出し先も変わる**（`comms-preview -Set lang=fr` は
+        #    Screenshots/comms-preview-fr/ へ焼く）。ここを直さないと、**実際には焼けているのに
+        #    「出力が更新されていない」で落ちる** ＝ 計器の側が嘘をつく（2026-09-06 に踏んだ）。
+        if ($out -and $outLang) {
+            $langArg = @($Set | Where-Object { $_ -like 'lang=*' })
+            if ($langArg.Count -gt 0) {
+                $lang = ($langArg[-1] -split '=', 2)[1].ToLower()
+                if ($lang -and $lang -notin @('ja', 'jp')) {
+                    $out = ((Split-Path $out -Parent) -replace '\\', '/') + "-$lang/" + (Split-Path $out -Leaf)
+                }
+            }
+        }
         $outPath = if ($out) { Join-Path $Root $out } else { $null }
         $before = if ($outPath) { Get-OutputStamp $outPath } else { [datetime]::MinValue }
 

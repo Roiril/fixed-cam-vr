@@ -25,6 +25,12 @@ namespace FixedCamVr.Streaming.EditorTools
     /// 背景が明るい現場では印象が変わる。
     ///
     /// 使い方: <c>.\tools\unity.ps1 menu comms-preview</c> → <c>tools/make-preview-video.py</c> で mp4 へ。
+    ///
+    /// ⚠⚠ <b>言語を選べる</b>（<c>-Set lang=ja|en|fr</c>・既定は日本語）。
+    /// 2026-09-06 まで日本語しか焼けなかったので、<b>English / Français の面は一度も
+    /// 描かれた絵で見られていなかった</b>（字数と行数は <c>CommsNoticeTextTests</c> が
+    /// 3 言語ぶん測っているが、**測るのと見るのは別**）。
+    /// 出し先は日本語だけ従来どおりで、他は <c>-en</c> / <c>-fr</c> が付く。
     /// </summary>
     public static class CommsPreview
     {
@@ -42,6 +48,14 @@ namespace FixedCamVr.Streaming.EditorTools
 
         private const string MainScenePath = "Assets/Scenes/Main.unity";
         private const string OutDirRel = "Screenshots/comms-preview";
+
+        /// <summary>
+        /// <c>-Set lang=ja|en|fr</c>（既定は日本語）。出し先は日本語だけ従来どおりで、
+        /// 他は <c>-en</c> / <c>-fr</c> が付く（同じ所へ焼くと前の言語のコマを消す）。
+        /// ⚠ 読み違えても落とさない（<see cref="ShowLanguage.Parse"/> と同じ流儀）。
+        /// </summary>
+        private static string OutDirFor(ShowLang lang)
+            => lang == ShowLang.Ja ? OutDirRel : OutDirRel + "-" + ShowLanguage.Code(lang);
 
         /// <summary>撮影台。他の scene 幾何が写り込まないよう、誰も居ない高さへ。</summary>
         private static readonly Vector3 Stage = new Vector3(0f, 1000f, 0f);
@@ -65,6 +79,21 @@ namespace FixedCamVr.Streaming.EditorTools
         public static void Run()
         {
             if (!EditorCliArgs.EnsureScene(MainScenePath)) return;
+
+            // ⚠⚠ **言語は面を組む前に決める。** 後から替えると、`SetNotice` が測った字数・重心・
+            //    枠の高さが前の言語のまま焼き付く（`HmdTextAudit` と同じ順序）。
+            ShowLang lang = ShowLanguage.Parse(EditorCliArgs.Get("lang"));
+            ShowLang restoreLang = ShowLanguage.Current;
+            ShowLanguage.Select(lang);
+            try
+            {
+                RunFor(lang);
+            }
+            finally { ShowLanguage.Select(restoreLang); }
+        }
+
+        private static void RunFor(ShowLang lang)
+        {
 
             var panel = Object.FindObjectOfType<CommsPanel>(includeInactive: true);
             if (panel == null)
@@ -100,7 +129,8 @@ namespace FixedCamVr.Streaming.EditorTools
             //    周ごとの見え方を比べるのに 4 回起こしていられない。
             float[] decays = ParseDecayList();
 
-            string dir = Path.Combine(Application.dataPath, OutDirRel);
+            string outDirRel = OutDirFor(lang);
+            string dir = Path.Combine(Application.dataPath, outDirRel);
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             Directory.CreateDirectory(dir);
 
@@ -306,7 +336,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 {decays.Length * Notices.Length} 枚"
                         + $"（周回の壊れ {string.Join(" / ", System.Array.ConvertAll(decays, d => d.ToString("0.00")))}）"
-                        + $" → Assets/{OutDirRel}/\n"
+                        + $" → Assets/{outDirRel}/（言語 {ShowLanguage.Code(lang)}）\n"
                         + $"  通し: {EndAt:0} 秒 ＝ 文面 {Notices.Length} 通"
                         + "（⓪a→⓪b / ①→①b / ③a→③b は同じ面のまま繋がる）\n"
                         + $"  枠が開く {inSec:0.00}s → 打つ 文字数÷{ConstF(typeof(CommsPanelLogic), "CharsPerSec", 12f):0}"
