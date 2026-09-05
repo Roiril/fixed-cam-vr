@@ -28,12 +28,12 @@ ROUTE_CSS = """
     .sheet.exhibit .route figure {
       margin: 0;
       flex: 0 0 auto;
-      width: 74mm;
+      width: 84mm;
     }
 
     .sheet.exhibit .route figure svg {
       display: block;
-      width: 74mm;
+      width: 84mm;
       height: auto;
     }
 
