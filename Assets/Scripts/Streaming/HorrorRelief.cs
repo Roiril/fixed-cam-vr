@@ -69,6 +69,22 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public static float ShowGain => _enabled ? Gain : 1f;
 
+        /// <summary>
+        /// <b>いま長押しがどこまで進んだか</b>（0..1・2026-09-05・<c>canon/LEDGER.md</c> 0155
+        /// ユーザー指定「長押し中は [--- ] みたいな感じで長押しの状況を視覚的にわかるように」）。
+        ///
+        /// ⚠ <b>書くのは <c>OvrControllerBridge</c> 1 か所、読むのは注意書きの面 1 か所。</b>
+        /// 入力（Assembly-CSharp）と文言（<c>Diagnostics</c>）は互いを参照できないので、
+        /// いちばん下のここが唯一の配線点になる（<see cref="ShowLanguage"/> と同じ理由）。
+        /// ⚠ <b>面が出ていない間は 0</b> — 押しっぱなしのまま注意書きが閉じられたとき、
+        /// 次に出したゲージが伸びたまま始まらないように。
+        /// </summary>
+        public static float HoldProgress01 { get; private set; }
+
+        /// <summary>長押しの進み具合を外から書く（入力の層だけが呼ぶ）。</summary>
+        public static void SetHoldProgress(float progress01)
+            => HoldProgress01 = progress01 < 0f ? 0f : (progress01 > 1f ? 1f : progress01);
+
         /// <summary>切り替える。<b>切り替わった後の状態</b>を返す。</summary>
         public static bool Toggle()
         {
@@ -77,11 +93,12 @@ namespace FixedCamVr.Streaming
             return _enabled;
         }
 
-        /// <summary>体験者の交代。<b>切り替えた回数も 0 へ戻す。</b></summary>
+        /// <summary>体験者の交代。<b>切り替えた回数も長押しの進みも 0 へ戻す。</b></summary>
         public static void Reset()
         {
             _enabled = false;
             ChangeCount = 0;
+            HoldProgress01 = 0f;
         }
 
         /// <summary>

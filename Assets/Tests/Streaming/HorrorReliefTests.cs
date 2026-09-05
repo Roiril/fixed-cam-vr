@@ -113,6 +113,38 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
+        /// ⚠⚠ <b>陽気な曲は段も相も読まない</b>（2026-09-05 ユーザー指定
+        /// 「ホラー軽減モードにしたら、<b>注意書きの時点から</b>陽気な BGM をループさせよう」）。
+        ///
+        /// 注意書きは導入の段 0（<c>TitleStage.Wait</c>）で、本編は相 <c>Run</c>。
+        /// 段や相で分岐を書いた瞬間に「注意書きでは鳴らない」「終幕で止まる」が生まれ、
+        /// <b>どれも音でしか出ない</b>（画にも録画にも 1 ビットも出ない）。
+        /// ⇒ 読んでよいのは <see cref="HorrorRelief.Enabled"/> だけ、を機械で持つ。
+        /// </summary>
+        [Test]
+        public void ReliefBgm_DoesNotReadThePhaseOrTheStage()
+        {
+            string src = File.ReadAllText(Path.Combine(
+                RepoRoot, "Assets", "Scripts", "Streaming", "Sound", "HorrorReliefAudio.cs"));
+            // ⚠ コメントには段の名前が出てよい（説明のため）。**コードの行だけ**を見る。
+            var code = new System.Text.StringBuilder();
+            foreach (string line in src.Split('\n'))
+            {
+                string t = line.TrimStart();
+                if (t.StartsWith("///") || t.StartsWith("//")) continue;
+                code.Append(line).Append('\n');
+            }
+            foreach (string banned in new[]
+                     { "ShowPhase", "IntroStage", "TitleStage", "OutroStage",
+                       "ShowRunDirector", "IntroDirector", "OutroDirector", "TitleScreen" })
+            {
+                StringAssert.DoesNotContain(banned, code.ToString(),
+                    $"陽気な曲が {banned} を読んでいる — 段や相で鳴らない場面が生まれる"
+                    + "（注意書きの時点から鳴る、が壊れる）");
+            }
+        }
+
+        /// <summary>
         /// ⚠⚠ <b>倍率を掛ける口は 1 つだけ。</b> <c>ShowSoundDirector</c> の <c>masterGain</c> にも
         /// 掛けると、<c>SfxPlayer.Play</c> の中でもう一度掛かって<b>二乗になる</b>
         /// （同ファイルが 2026-08 に同じ罠を警告している）。

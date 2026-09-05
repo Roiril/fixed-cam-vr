@@ -55,15 +55,29 @@ namespace FixedCamVr.Streaming.EditorTools
         /// <c>-Set lang=fr</c> を読む前の言語（＝ 既定の日本語）で焼き付いてしまい、
         /// <b>フランス語を指定しても日本語を測って「収まっている」と言う</b>。
         /// </summary>
+        /// <summary>
+        /// <c>-Set</c> の値を実数として読む。⚠ <b>読めなければ既定へ倒す</b>
+        /// （打ち間違いで検査そのものを落とさない・<c>ShowLanguage.Parse</c> と同じ流儀）。
+        /// ⚠ 現場の地域設定に左右されないよう <c>InvariantCulture</c> で読む。
+        /// </summary>
+        private static float ParseFloat(string? s, float fallback)
+            => float.TryParse(s, System.Globalization.NumberStyles.Float,
+                              System.Globalization.CultureInfo.InvariantCulture, out float v)
+               ? v : fallback;
+
         private static Surface[] BuildSurfaces() => new Surface[]
         {
-            new Surface { Name = "体験前の注意書き", Type = typeof(TitleNotice),
-                          DistanceField = "distanceM", BuildsItsOwnText = true },
-            // ⚠ この面も TMP を **2 つ**持つ（本文 ＋ 並びの下の小さな案内・2026-09-04・0147）。
-            //    フィールドを名指ししないと、先に組んだ本文が 2 度測られて案内が 1 度も測られない。
-            new Surface { Name = "体験前の注意書き（小さな案内）", Type = typeof(TitleNotice),
+            // ⚠⚠ この面は TMP を **3 つ**持つ（2026-09-05・0155 で 2 → 3）。
+            //    上から 言語の並び（1.8°）/ 操作の説明（1.5°）/ 安全の掲示（1.8°）。
+            //    **3 つとも `Field` で名指しする** — 名指しを 1 つでも省くと
+            //    先に組んだ面が 2 度測られて、どれかが 1 度も測られない。
+            new Surface { Name = "体験前の注意書き（言語の並び）", Type = typeof(TitleNotice),
+                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_chooser" },
+            new Surface { Name = "体験前の注意書き（操作の説明）", Type = typeof(TitleNotice),
                           DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_footer",
                           TierDeg = HmdTextStyle.MinorDeg },
+            new Surface { Name = "体験前の注意書き（安全の掲示）", Type = typeof(TitleNotice),
+                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_text" },
             new Surface { Name = "終幕の報告", Type = typeof(OutroReport),
                           DistanceField = "distanceM", BuildsItsOwnText = true,
                           Probe = OutroReportText.Compose(3) },
@@ -119,6 +133,18 @@ namespace FixedCamVr.Streaming.EditorTools
             string langCode = ShowLanguage.Code(lang);
             // 絵は言語ごとに別名で残す（上書きすると 3 言語を並べて見られない）。
             string shotSuffix = lang == ShowLang.Ja ? "" : "_" + langCode;
+
+            // ⚠⚠ **注意書きは軽減モードの入 / 出と、長押しの進み具合でも姿が変わる**
+            //    （2026-09-05・`canon/LEDGER.md` 0155）。実機では長押しの最中しか見えない姿なので、
+            //    **ここで撮れないと誰も確かめられない**。
+            //    `-Set relief=1` / `-Set hold=0.6`。既定は「入っていない・押していない」。
+            bool reliefRestore = HorrorRelief.Enabled;
+            float holdRestore = HorrorRelief.HoldProgress01;
+            HorrorRelief.Select(EditorCliArgs.Get("relief") == "1");
+            HorrorRelief.SetHoldProgress(ParseFloat(EditorCliArgs.Get("hold"), 0f));
+            if (HorrorRelief.Enabled) shotSuffix += "_relief";
+            if (HorrorRelief.HoldProgress01 > 0f)
+                shotSuffix += $"_hold{Mathf.RoundToInt(HorrorRelief.HoldProgress01 * 100f)}";
 
             var spawned = new List<GameObject>();
             var sb = new StringBuilder(2048);
@@ -186,8 +212,10 @@ namespace FixedCamVr.Streaming.EditorTools
             finally
             {
                 foreach (GameObject go in spawned) if (go != null) Object.DestroyImmediate(go);
-                // 検査のために回した言語を戻す（Editor に選択を残さない）。
+                // 検査のために回した言語と軽減モードを戻す（Editor に選択を残さない）。
                 ShowLanguage.Select(restore);
+                HorrorRelief.Select(reliefRestore);
+                HorrorRelief.SetHoldProgress(holdRestore);
             }
 
             sb.Append($"  段: 補助 {HmdTextStyle.MinorDeg:0.0}° / 本文 {HmdTextStyle.BodyDeg:0.0}° / 注目 {HmdTextStyle.AlertDeg:0.0}°\n");

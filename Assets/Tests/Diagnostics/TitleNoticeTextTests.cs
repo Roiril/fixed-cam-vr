@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using FixedCamVr.Diagnostics;
 using FixedCamVr.Streaming;
 using NUnit.Framework;
@@ -6,14 +6,13 @@ using NUnit.Framework;
 namespace FixedCamVr.Diagnostics.Tests
 {
     /// <summary>
-    /// <b>体験前の注意書き</b>と、そこに載っている<b>言語の選択</b>
-    /// （2026-09-03 ユーザー指定「言語選択をできるようにしてほしい。日本語、英語、フランス語の
-    /// 3 種類で。最初の注意書きが表示されている間に、体験者がもつコントローラーから
-    /// 切り替えできるように」）。
+    /// <b>体験前の注意書き</b>。面は上から <b>言語の並び / 操作の説明 / 安全の掲示</b> の 3 枚で、
+    /// 並びは 2026-09-05（<c>canon/LEDGER.md</c> 0155）のユーザー指定
+    /// 「言語選択を一番上に。その次にホラー軽減モード、その次に注意書き、その次スタッフに声かけて」。
     ///
     /// ⚠ ここが守るのは<b>実機でしか出ない壊れ方</b>:
     /// 行が枠を超えて首を振らないと読めなくなる／選んでいる言語が分からない／
-    /// 訳し忘れて 1 言語だけ日本語のまま出る。
+    /// 訳し忘れて 1 言語だけ日本語のまま出る／長押しのゲージで行が左右に揺れる。
     /// どれも <c>menu text-audit</c> の絵に写らない（絵は大きさとはみ出し専用）。
     ///
     /// ⚠ 文言を変えたら <c>.\tools\unity.ps1 menu hud-font</c> を再実行する
@@ -37,7 +36,7 @@ namespace FixedCamVr.Diagnostics.Tests
         private const float MaxFullWidthPerLine = 20f;
 
         /// <summary>
-        /// 小さな案内（1.5°）の 1 行に入る全角の数。本文より字が小さいぶん多く入る
+        /// 操作の説明（1.5°）の 1 行に入る全角の数。本文より字が小さいぶん多く入る
         /// （20 × 1.8 ÷ 1.5 ＝ 24）。⚠ <b>本文の物差しで測ると理由なく落ちる</b>。
         /// </summary>
         private const float MaxFullWidthPerFooterLine = 24f;
@@ -46,47 +45,260 @@ namespace FixedCamVr.Diagnostics.Tests
         /// ⚠ 別々に数えると、片方だけアクセント付きを全角と数えて理由なく落ちる。</summary>
         private static float FullWidth(string line) => HmdTextStyle.LineWidth(line);
 
+        // --- 並び（2026-09-05・0155）--------------------------------------------------
+
+        /// <summary>
+        /// ⚠⚠ <b>順は 言語 → ホラー軽減 → 掲示 → スタッフ</b>（ユーザー指定）。
+        /// この順が崩れると、体験者は「何を選ぶ面なのか」が分からないまま掲示から読むことになる。
+        /// </summary>
         [Test]
-        public void EveryLine_FitsTheFrame()
+        public void Compose_PutsTheChooserFirst_AndTheNoticeAfterTheControls()
         {
             foreach (ShowLang lang in ShowLanguage.All)
-            foreach (string line in TitleNotice.ComposeFor(lang).Split('\n'))
-                Assert.LessOrEqual(FullWidth(line), MaxFullWidthPerLine,
-                                   $"[{ShowLanguage.Code(lang)}]「{line}」が 1 行に入らない"
-                                   + "（折り返して行が増え、塊が視界の上下へはみ出す）");
+            {
+                string all = TitleNotice.ComposeFor(lang, relief: false, hold01: 0f);
+                int chooser = all.IndexOf(TitleNotice.ChooserFor(lang), System.StringComparison.Ordinal);
+                int relief = all.IndexOf(TitleNotice.ReliefLinesOf(lang, on: false),
+                                         System.StringComparison.Ordinal);
+                int body = all.IndexOf(TitleNotice.BodyFor(lang), System.StringComparison.Ordinal);
+                int ready = all.LastIndexOf(TitleNotice.ReadyLineOf(lang), System.StringComparison.Ordinal);
+
+                Assert.AreEqual(0, chooser, $"[{lang}] 言語の並びが先頭に無い");
+                Assert.Less(chooser, relief, $"[{lang}] ホラー軽減が言語の並びより上");
+                Assert.Less(relief, body, $"[{lang}] 安全の掲示がホラー軽減より上");
+                Assert.Less(body, ready, $"[{lang}] スタッフを呼ぶ行が掲示より上");
+            }
         }
+
+        // --- ① 言語の並び -------------------------------------------------------------
 
         /// <summary>
         /// <b>3 つの名前を常に全部出す。</b> 次の言語だけを出す形にすると、
         /// いま何が選べるのかが分からない（体験者は 1 度も押さずに諦める）。
         /// </summary>
         [Test]
-        public void EveryLanguage_ListsAllThreeNames()
+        public void Chooser_ListsAllThreeNames()
         {
             foreach (ShowLang lang in ShowLanguage.All)
             {
-                string all = TitleNotice.ComposeFor(lang);
-                StringAssert.Contains("日本語", all, $"{lang}");
-                StringAssert.Contains("English", all, $"{lang}");
-                StringAssert.Contains("Français", all, $"{lang}");
+                string line = TitleNotice.ChooserFor(lang);
+                StringAssert.Contains("日本語", line, $"{lang}");
+                StringAssert.Contains("English", line, $"{lang}");
+                StringAssert.Contains("Français", line, $"{lang}");
+                Assert.AreEqual(1, line.Split('\n').Length, $"{lang}: 並びは 1 行");
+                Assert.LessOrEqual(FullWidth(line), MaxFullWidthPerLine, $"{lang}: 並びが枠に入らない");
             }
         }
 
         /// <summary>
         /// ⚠⚠ <b>いま選んでいるものが 1 つだけ囲まれている。</b> この面は <c>richText</c> を
         /// 切ってあり白 1 色しか出せないので、<b>括弧だけが「選ばれている」の唯一の手掛かり</b>。
-        /// 0 個だとどれを選んでいるか分からず、2 個だと 2 つ選べるように見える。
+        /// ⚠ 数えるのは<b>並びの行だけ</b> — ホラー軽減モードの ［］ は別の面にあり、別の意味を持つ。
         /// </summary>
         [Test]
-        public void ExactlyOneEntry_IsMarked()
+        public void Chooser_MarksExactlyOneEntry()
         {
             foreach (ShowLang lang in ShowLanguage.All)
             {
-                string all = TitleNotice.ComposeFor(lang);
-                int open = Count(all, '［');
-                Assert.AreEqual(1, open, $"{lang}: 囲みが {open} 個");
-                Assert.AreEqual(1, Count(all, '］'), $"{lang}: 閉じ括弧の数");
+                string line = TitleNotice.ChooserFor(lang);
+                Assert.AreEqual(1, Count(line, '［'), $"{lang}: 囲みの数");
+                Assert.AreEqual(1, Count(line, '］'), $"{lang}: 閉じ括弧の数");
             }
+        }
+
+        // --- ② 操作の説明 -------------------------------------------------------------
+
+        /// <summary>
+        /// ⚠⚠ <b>切り替え方は 3 言語ぶん出す。</b> 選択中の言語だけで書くと、
+        /// <b>それを読めない人には切り替え方が届かない</b>（＝ 日本語のまま始めるしかない）。
+        /// </summary>
+        [Test]
+        public void Guide_ExplainsSwitchingInEveryLanguage()
+        {
+            foreach (bool relief in BothReliefStates)
+            foreach (ShowLang lang in ShowLanguage.All)
+            {
+                string g = TitleNotice.GuideFor(lang, relief, 0f);
+                StringAssert.Contains("ボタンを単押し", g, $"[{lang}] 日本語で切り替え方が無い");
+                StringAssert.Contains("Press a button once", g, $"[{lang}] English で切り替え方が無い");
+                StringAssert.Contains("Appuyez une fois", g, $"[{lang}] Français で切り替え方が無い");
+            }
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>どちらの押し方の話かを毎行で言う</b>（2026-09-05・0155 の「説明口調で」）。
+        /// 同じボタンに 2 つの意味があるので、「ボタンで」では長押しと区別が付かない。
+        /// </summary>
+        [Test]
+        public void Guide_SaysWhichKindOfPressEachLineIsAbout()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+            {
+                string sw = TitleNotice.GuideFor(lang, relief: false, hold01: 0f).Split('\n')[0];
+                StringAssert.Contains("単押し", sw, "単押しと言い切っていない");
+                string hold = TitleNotice.ReliefLinesOf(lang, on: false);
+                bool saysHold = hold.Contains("長押し") || hold.Contains("Hold")
+                                || hold.Contains("Maintenez");
+                Assert.IsTrue(saysHold, $"[{lang}] 長押しだと分かる語が無い: {hold}");
+            }
+        }
+
+        /// <summary>
+        /// <b>入る前は「どうすれば入れるか」と「何が起きるか」の両方を言う</b>
+        /// （ユーザー指定「既存の音が1/2になり、陽気なBGMが流れます と簡単に説明を」）。
+        /// </summary>
+        [Test]
+        public void ReliefLines_Off_SayHowToEnterAndWhatHappens()
+        {
+            (ShowLang lang, string how, string what)[] cases =
+            {
+                (ShowLang.Ja, "長押し", "陽気な曲"),
+                (ShowLang.En, "Hold a button", "cheery music"),
+                (ShowLang.Fr, "Maintenez", "musique joyeuse"),
+            };
+            foreach ((ShowLang lang, string how, string what) in cases)
+            {
+                string lines = TitleNotice.ReliefLinesOf(lang, on: false);
+                StringAssert.Contains(how, lines, $"[{lang}] 入り方が書かれていない");
+                StringAssert.Contains(what, lines, $"[{lang}] 何が起きるかが書かれていない");
+            }
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>入っているあいだは、入っていると分かる。</b> 白 1 色しか出せないので
+        /// <b>囲みだけが状態の手掛かり</b>。⚠ <b>出方も同じ面に書く</b> —
+        /// 誤って入った人の出口がここしかない。
+        /// </summary>
+        [Test]
+        public void ReliefLines_On_ShowTheStateAndTheWayOut()
+        {
+            (ShowLang lang, string mark, string out_)[] cases =
+            {
+                (ShowLang.Ja, "［", "長押し"),
+                (ShowLang.En, "[", "Hold"),
+                (ShowLang.Fr, "[", "Maintenez"),
+            };
+            foreach ((ShowLang lang, string mark, string out_) in cases)
+            {
+                string on = TitleNotice.ReliefLinesOf(lang, on: true);
+                StringAssert.Contains(mark, on, $"[{lang}] 入っている印が無い");
+                StringAssert.Contains(out_, on, $"[{lang}] 出方が書かれていない");
+                StringAssert.DoesNotContain(mark, TitleNotice.ReliefLinesOf(lang, on: false),
+                                            $"[{lang}] 入っていないのに印が出ている");
+            }
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>入 / 出で行数を変えない</b>（2026-09-05・0155）。変えると切り替えた瞬間に
+        /// <b>下の安全の掲示が跳ねる</b>（塊の高さが動くため）。
+        /// </summary>
+        [Test]
+        public void ReliefLines_KeepTheSameRowCount_WhetherOnOrOff()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+                Assert.AreEqual(TitleNotice.ReliefLinesOf(lang, on: false).Split('\n').Length,
+                                TitleNotice.ReliefLinesOf(lang, on: true).Split('\n').Length,
+                                $"[{lang}] 入と出で行数が違う");
+        }
+
+        /// <summary>訳し忘れの検出。<b>3 つがどれも違う</b>ことだけを見る。</summary>
+        [Test]
+        public void ReliefLines_AreWrittenInEveryLanguage()
+        {
+            foreach (bool on in BothReliefStates)
+            {
+                Assert.AreNotEqual(TitleNotice.ReliefLinesOf(ShowLang.Ja, on),
+                                   TitleNotice.ReliefLinesOf(ShowLang.En, on));
+                Assert.AreNotEqual(TitleNotice.ReliefLinesOf(ShowLang.En, on),
+                                   TitleNotice.ReliefLinesOf(ShowLang.Fr, on));
+                Assert.AreNotEqual(TitleNotice.ReliefLinesOf(ShowLang.Fr, on),
+                                   TitleNotice.ReliefLinesOf(ShowLang.Ja, on));
+            }
+        }
+
+        /// <summary>
+        /// <b>操作の説明は 7 行</b>（切り替え方 3 ＋ 空行 ＋ ホラー軽減 2 ＋ ゲージ）。
+        /// ⚠ 行が増えると塊が縦に伸びて、上下の端を読むのに首を振ることになる
+        /// （縦の実測は <c>TitleNoticeLayoutTests.TheWholeStack_FitsInTheView</c>）。
+        /// </summary>
+        [Test]
+        public void Guide_KeepsItsSevenRows()
+        {
+            foreach (bool relief in BothReliefStates)
+            foreach (ShowLang lang in ShowLanguage.All)
+            {
+                string[] rows = TitleNotice.GuideFor(lang, relief, 0f).Split('\n');
+                Assert.AreEqual(7, rows.Length, $"[{lang}] 切り替え方 3 ＋ 空行 ＋ 軽減 2 ＋ ゲージ");
+                Assert.That(rows[3], Is.Empty, $"[{lang}] 3 言語の塊と 1 言語の塊は空行で離す");
+                Assert.That(rows[6], Is.Not.Empty, $"[{lang}] ゲージの行が無い");
+            }
+        }
+
+        /// <summary>操作の説明の行も枠に入る（本文より小さいので入る数が違う）。</summary>
+        [Test]
+        public void GuideLines_FitTheFrame()
+        {
+            foreach (bool relief in BothReliefStates)
+            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (string line in TitleNotice.GuideFor(lang, relief, 1f).Split('\n'))
+                Assert.LessOrEqual(FullWidth(line), MaxFullWidthPerFooterLine,
+                                   $"[{ShowLanguage.Code(lang)}/軽減{relief}] 「{line}」が 1 行に入らない");
+        }
+
+        // --- ③ 長押しのゲージ ---------------------------------------------------------
+
+        /// <summary>
+        /// ⚠⚠ <b>どの進み具合でも幅が 1 ミリも動かない。</b> 半角の <c>-</c> と空白で組むと
+        /// 字送りが違って<b>押すほど行が左右に揺れる</b>（このフォントは半角が等幅ではない）。
+        /// 全角はどれも送りが 1em なので、それだけが解になる。
+        /// </summary>
+        [Test]
+        public void Gauge_KeepsTheSameWidth_AtEveryProgress()
+        {
+            float want = FullWidth(TitleNotice.HoldGauge(0f));
+            Assert.AreEqual(TitleNotice.GaugeCells, want, 0.001f, "全角 1 マス ＝ 幅 1");
+            for (int i = 0; i <= 20; i++)
+                Assert.AreEqual(want, FullWidth(TitleNotice.HoldGauge(i / 20f)), 0.001f,
+                                $"進み {i / 20f:0.00} で幅が変わった（行が左右に揺れる）");
+        }
+
+        /// <summary>マスの数は進み具合に応じて増え、0 と満杯を必ず取る。</summary>
+        [Test]
+        public void Gauge_FillsFromEmptyToFull()
+        {
+            Assert.AreEqual(0, TitleNotice.GaugeCellsFor(0f), "押していないのに点いている");
+            Assert.AreEqual(TitleNotice.GaugeCells, TitleNotice.GaugeCellsFor(1f), "成立しても満杯にならない");
+            Assert.AreEqual(TitleNotice.GaugeCells, TitleNotice.GaugeCellsFor(2f), "1 を超えても満杯で止まる");
+            Assert.AreEqual(0, TitleNotice.GaugeCellsFor(-1f), "負でも 0 で止まる");
+            // ⚠ 切り捨て。触れただけで 1 マス点くと「もう始まっている」に見える。
+            Assert.AreEqual(0, TitleNotice.GaugeCellsFor(0.09f), "触れただけで点いている");
+            Assert.Less(TitleNotice.GaugeCellsFor(0.4f), TitleNotice.GaugeCellsFor(0.8f), "増えていない");
+        }
+
+        /// <summary>
+        /// ⚠ <b>ゲージを ［］ で囲まない。</b> この面の ［］ は「選んでいる言語」と
+        /// 「軽減モード中」の 2 つで既に意味を持っている。3 つ目を与えると印が読めなくなる。
+        /// </summary>
+        [Test]
+        public void Gauge_DoesNotUseTheBracketsThatMeanSomethingElse()
+        {
+            for (int i = 0; i <= TitleNotice.GaugeCells; i++)
+            {
+                string g = TitleNotice.HoldGauge(i / (float)TitleNotice.GaugeCells);
+                foreach (char c in new[] { '［', '］', '[', ']' })
+                    Assert.AreEqual(0, Count(g, c), $"ゲージが {c} を使っている");
+            }
+        }
+
+        // --- ④ 安全の掲示 ------------------------------------------------------------
+
+        [Test]
+        public void NoticeLines_FitTheFrame()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (string line in TitleNotice.NoticeFor(lang).Split('\n'))
+                Assert.LessOrEqual(FullWidth(line), MaxFullWidthPerLine,
+                                   $"[{ShowLanguage.Code(lang)}]「{line}」が 1 行に入らない");
         }
 
         /// <summary>
@@ -122,186 +334,45 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         /// <summary>
-        /// 本文と選択のあいだは空行 1 つで分ける（掲示と操作が地続きに読めないように）。
-        /// 全体は <b>本文 ＋ 空行 ＋ 並び</b>（切り替え方は小さな案内が持つ）。
+        /// <b>次にすることは、選んでいる言語で 1 行だけ</b>。この行を読むのは言語を選んだ後なので、
+        /// そのとき選ばれているのは<b>読める言語</b>。
         /// </summary>
         [Test]
-        public void Compose_PutsTheChooserBelowTheNotice()
-        {
-            foreach (ShowLang lang in ShowLanguage.All)
-            {
-                string all = TitleNotice.ComposeFor(lang);
-                string body = TitleNotice.BodyFor(lang);
-                StringAssert.StartsWith(body + "\n\n", all, $"{lang}");
-                string[] tail = all.Substring(body.Length + 2).Split('\n');
-                Assert.AreEqual(1, tail.Length, $"{lang}: 並びの 1 行だけ");
-                StringAssert.Contains("］", tail[0], $"{lang}: 並びの行に囲みが無い");
-            }
-        }
-
-        // --- 小さな案内（2026-09-04・0147）------------------------------------------
-
-        /// <summary>
-        /// ⚠⚠ <b>切り替え方は 3 言語ぶん出す。</b> 選択中の言語だけで書くと、
-        /// <b>それを読めない人には切り替え方が届かない</b>（＝ 日本語のまま始めるしかない）。
-        /// これがこの案内の存在理由そのものなので、機械で持つ。
-        /// </summary>
-        [Test]
-        public void Footer_ExplainsSwitchingInEveryLanguage()
-        {
-            foreach (bool relief in BothReliefStates)
-            foreach (ShowLang lang in ShowLanguage.All)
-            {
-                string f = TitleNotice.FooterFor(lang, relief);
-                StringAssert.Contains("ボタン", f, $"[{lang}] 日本語で切り替え方が書かれていない");
-                StringAssert.Contains("button", f, $"[{lang}] English で切り替え方が書かれていない");
-                StringAssert.Contains("Appuyez", f, $"[{lang}] Français で切り替え方が書かれていない");
-            }
-        }
-
-        /// <summary>
-        /// <b>選んだ後どうするかは、選んでいる言語で 1 行だけ</b>（0151 で 3 言語 → 1 行へ整理）。
-        /// この行を読むのは言語を選んだ後なので、そのとき選ばれているのは<b>読める言語</b>。
-        /// ⚠ 3 言語ぶん並べると、誰にとっても 2 行が読めない字の壁になる。
-        /// </summary>
-        [Test]
-        public void Footer_TellsWhatToDoNext_InTheChosenLanguage()
+        public void Notice_TellsWhatToDoNext_InTheChosenLanguage()
         {
             (ShowLang lang, string mine, string[] others)[] cases =
             {
-                (ShowLang.Ja, "スタッフにお声がけください", new[] { "staff member", "personnel" }),
-                (ShowLang.En, "tell a staff member", new[] { "スタッフにお声がけ", "prévenez le personnel" }),
-                (ShowLang.Fr, "prévenez le personnel", new[] { "スタッフにお声がけ", "tell a staff member" }),
+                (ShowLang.Ja, "準備ができたら", new[] { "When ready", "Quand vous êtes" }),
+                (ShowLang.En, "When ready", new[] { "準備ができたら", "Quand vous êtes" }),
+                (ShowLang.Fr, "Quand vous êtes", new[] { "準備ができたら", "When ready" }),
             };
-            foreach (bool relief in BothReliefStates)
             foreach ((ShowLang lang, string mine, string[] others) in cases)
             {
-                string f = TitleNotice.FooterFor(lang, relief);
-                StringAssert.Contains(mine, f, $"[{lang}] 次にすることが自分の言語で無い");
+                string n = TitleNotice.NoticeFor(lang);
+                StringAssert.Contains(mine, n, $"[{lang}] 次にすることが自分の言語で無い");
                 foreach (string other in others)
-                    StringAssert.DoesNotContain(other, f, $"[{lang}] 他の言語の行まで出ている");
-            }
-        }
-
-        /// <summary>案内の行も枠に入る（本文より小さいので入る数が違う）。</summary>
-        [Test]
-        public void FooterLines_FitTheFrame()
-        {
-            foreach (bool relief in BothReliefStates)
-            foreach (ShowLang lang in ShowLanguage.All)
-            foreach (string line in TitleNotice.FooterFor(lang, relief).Split('\n'))
-                Assert.LessOrEqual(FullWidth(line), MaxFullWidthPerFooterLine,
-                                   $"[{ShowLanguage.Code(lang)}/軽減{relief}] "
-                                   + $"案内の「{line}」が 1 行に入らない");
-        }
-
-        /// <summary>
-        /// <b>案内は 5 行</b>（切り替え方 3 行 ＋ 空行 ＋ ホラー軽減 ＋ 次にすること）。
-        /// ⚠ 行が増えると塊が縦に伸びて、上下の端を読むのに首を振ることになる
-        /// （縦の実測は <c>TitleNoticeLayoutTests.TheWholeStack_FitsInTheView</c>）。
-        /// ⚠ <b>下の 2 行は空行で離さない</b> — どちらも選んでいる言語なので 1 つの塊。
-        /// 離すと 0151 で減らした「字の壁」がまた立つ。
-        /// </summary>
-        [Test]
-        public void Footer_KeepsItsSixLines()
-        {
-            foreach (bool relief in BothReliefStates)
-            foreach (ShowLang lang in ShowLanguage.All)
-            {
-                string[] lines = TitleNotice.FooterFor(lang, relief).Split('\n');
-                Assert.AreEqual(6, lines.Length,
-                                $"[{lang}] 切り替え方 3 ＋ 空行 ＋ ホラー軽減 ＋ 次にすること");
-                Assert.That(lines[3], Is.Empty, $"[{lang}] 下の 2 行は空行で離す");
-                Assert.That(lines[4], Is.Not.Empty, $"[{lang}] ホラー軽減の行が無い");
-            }
-        }
-
-        // --- ホラー軽減モード（2026-09-05・0154）--------------------------------------
-
-        /// <summary>
-        /// ⚠⚠ <b>各言語で書く</b>（ユーザー指定「各言語で、ボタン長押しするとホラー軽減モードに
-        /// 入れますと書き入れといてほしい」）。訳し忘れると、その言語の体験者だけ
-        /// <b>逃げ道があることを知らないまま怖い体験に入る</b>。
-        /// </summary>
-        [Test]
-        public void Relief_IsWrittenInEveryLanguage()
-        {
-            foreach (bool relief in BothReliefStates)
-            {
-                Assert.AreNotEqual(TitleNotice.ReliefLineOf(ShowLang.Ja, relief),
-                                   TitleNotice.ReliefLineOf(ShowLang.En, relief));
-                Assert.AreNotEqual(TitleNotice.ReliefLineOf(ShowLang.En, relief),
-                                   TitleNotice.ReliefLineOf(ShowLang.Fr, relief));
-                Assert.AreNotEqual(TitleNotice.ReliefLineOf(ShowLang.Fr, relief),
-                                   TitleNotice.ReliefLineOf(ShowLang.Ja, relief));
-                foreach (ShowLang lang in ShowLanguage.All)
-                    Assert.That(TitleNotice.ReliefLineOf(lang, relief), Is.Not.Empty, $"{lang}");
+                    StringAssert.DoesNotContain(other, n, $"[{lang}] 他の言語の行まで出ている");
             }
         }
 
         /// <summary>
-        /// <b>入る前は「どうすれば入れるか」と「何が起きるか」の両方を言う</b>
-        /// （ユーザー指定「ホラー軽減モード：既存の音が1/2になり、陽気なBGMが流れます と簡単に説明を」）。
-        /// ⚠ 入り方だけだと、体験者は何が起きるか分からないまま押すか押さないかを決めることになる。
+        /// ⚠⚠ <b>掲示の最後と「次にすること」で動詞を変える</b>（2026-09-05・0155）。
+        /// 並びが変わって<b>この 2 行が隣り合った</b>ので、同じ言い回しだと
+        /// 2 行続けて同じことを言っているように読める。
         /// </summary>
         [Test]
-        public void ReliefLine_Off_SaysHowToEnterAndWhatHappens()
-        {
-            (ShowLang lang, string how, string what)[] cases =
-            {
-                (ShowLang.Ja, "長押し", "陽気な曲"),
-                (ShowLang.En, "Hold", "cheery music"),
-                (ShowLang.Fr, "Maintenez", "musique gaie"),
-            };
-            foreach ((ShowLang lang, string how, string what) in cases)
-            {
-                string line = TitleNotice.ReliefLineOf(lang, on: false);
-                StringAssert.Contains(how, line, $"[{lang}] 入り方が書かれていない");
-                StringAssert.Contains(what, line, $"[{lang}] 何が起きるかが書かれていない");
-            }
-        }
-
-        /// <summary>
-        /// ⚠⚠ <b>入っているあいだは、入っていると分かる。</b> この面は <c>richText</c> を
-        /// 切ってあり白 1 色しか出せないので、<b>囲み（［］/ []）だけが状態の手掛かり</b>。
-        /// 分からないと体験者は効くまで押し続ける（＝ 何度も出入りする）。
-        /// ⚠ <b>出方も同じ行に書く。</b> 誤って入った人の出口が、この 1 行しかない。
-        /// </summary>
-        [Test]
-        public void ReliefLine_On_ShowsTheStateAndTheWayOut()
-        {
-            (ShowLang lang, string mark, string out_)[] cases =
-            {
-                (ShowLang.Ja, "［", "長押し"),
-                (ShowLang.En, "[", "Hold"),
-                (ShowLang.Fr, "[", "Maintenez"),
-            };
-            foreach ((ShowLang lang, string mark, string out_) in cases)
-            {
-                string on = TitleNotice.ReliefLineOf(lang, on: true);
-                StringAssert.Contains(mark, on, $"[{lang}] 入っている印が無い");
-                StringAssert.Contains(out_, on, $"[{lang}] 出方が書かれていない");
-                StringAssert.DoesNotContain(mark, TitleNotice.ReliefLineOf(lang, on: false),
-                                            $"[{lang}] 入っていないのに印が出ている");
-            }
-        }
-
-        /// <summary>
-        /// ⚠⚠ <b>軽減の囲みを本文側へ持ち込まない。</b> 本文（<see cref="TitleNotice.ComposeFor"/>）の
-        /// ［］は<b>いま選んでいる言語</b>の印で、<c>ExactlyOneEntry_IsMarked</c> が 1 個であることを
-        /// 守っている。軽減の状態を同じ面へ足すと、そこが 2 個になって
-        /// <b>どちらが言語の選択か分からなくなる</b>。
-        /// </summary>
-        [Test]
-        public void Relief_DoesNotTouchTheLanguageChooser()
+        public void ReadyLine_DoesNotRepeatTheWordingOfTheNoticesLastLine()
         {
             foreach (ShowLang lang in ShowLanguage.All)
             {
-                HorrorRelief.Select(false);
-                string off = TitleNotice.ComposeFor(lang);
-                HorrorRelief.Select(true);
-                Assert.AreEqual(off, TitleNotice.ComposeFor(lang),
-                                $"[{lang}] 軽減モードで本文か言語の並びが変わっている");
+                string[] body = TitleNotice.BodyFor(lang).Split('\n');
+                string last = body[body.Length - 1].Trim();
+                string ready = TitleNotice.ReadyLineOf(lang).Trim();
+                Assert.AreNotEqual(last, ready, $"[{lang}] 掲示の最後と同じ行");
+                // 末尾 8 文字（動詞のあたり）が一致していたら、読み手には同じ文に見える。
+                string TailOf(string s) => s.Length <= 8 ? s : s.Substring(s.Length - 8);
+                Assert.AreNotEqual(TailOf(last), TailOf(ready),
+                                   $"[{lang}] 語尾が同じ（「{last}」/「{ready}」）");
             }
         }
 

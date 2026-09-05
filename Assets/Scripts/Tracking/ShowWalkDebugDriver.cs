@@ -177,18 +177,22 @@ namespace FixedCamVr.Tracking
                 //    周回リセットし、体験者に被せてから A を押すので、真っ暗な待ち（`TitleStage.Wait`）は
                 //    数十秒ある。ここで即座に A を送ると**待ちが 1 フレームも無く、注意書きが
                 //    走行の画に 1 枚も写らない**（安全の掲示なのに、実機で読めるか確かめる手段が無い）。
-                Debug.Log("[XPWalk] 注意書きを読む間（真っ暗な待ち）");
-                yield return new WaitForSeconds(NoticeReadSec);
-
-                // ⚠⚠ **ここでしか入れない**（体験者の長押しは注意書きが出ているあいだだけ効く）。
-                //    しかも `TitleScreen.BeginTitle` が落とすので、**A を押す前のこの位置**でなければ
-                //    次のリセットで消える。実機の押下と同じ入口（`Toggle`）を通す。
+                // ⚠⚠ **読む間より先に入る。** 実機の体験者は注意書きを読みながら長押しして、
+                //    そのあとスタッフが A を押すので、**注意書きが出ているあいだ陽気な曲が鳴る**
+                //    （`canon/LEDGER.md` 0154 のユーザー指定）。読む間の後に入れると、
+                //    走行では入った 0.3 秒後に題字が立つので**注意書きの最中に鳴った証拠が残らない**
+                //    （2026-09-05 の走行 20260905_100203 が実際にそうだった）。
+                // ⚠ `TitleScreen.BeginTitle` が落とすので、A を押す前でなければ次のリセットで消える。
+                //    実機の押下と同じ入口（`Toggle`）を通す。
                 if (ExtraPresent("relief"))
                 {
                     FixedCamVr.Streaming.HorrorRelief.Toggle();
                     Debug.Log("[XPWalk] ホラー軽減モードへ入った（-e relief 1）— "
                               + "既存の音が半分になり、陽気な曲が流れる走行になる");
                 }
+
+                Debug.Log("[XPWalk] 注意書きを読む間（真っ暗な待ち）");
+                yield return new WaitForSeconds(NoticeReadSec);
 
                 if (title.RequestAdvance()) Debug.Log("[XPWalk] タイトルを A で閉じた（実機と同じ入り方）");
                 else Debug.LogWarning($"[XPWalk] タイトルの A が効かない（{title.DescribeAdvanceBlock()}）");

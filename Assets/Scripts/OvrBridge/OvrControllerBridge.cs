@@ -444,6 +444,9 @@ namespace FixedCamVr.OvrBridge
                     if (!_leftPressConsumed && ShowLanguage.Cycle()) haptics?.LeftMark();
                     _leftPressConsumed = false;
                 }
+                // 面へゲージを渡す（2026-09-05・0155）。⚠ **長押しが成立した後は満杯のまま**
+                //    （`VisitorMarkHoldLogic` は離すまでラッチする）＝ 「効いた」が画に残る。
+                HorrorRelief.SetHoldProgress(_reliefHold.Progress01);
             }
             else
             {
@@ -452,6 +455,8 @@ namespace FixedCamVr.OvrBridge
                 //    （面が無いので何が起きたか誰にも見えない）。
                 _reliefHold.Reset();
                 _leftPressConsumed = false;
+                // ⚠ ゲージも 0 へ。次に注意書きを出したとき伸びたまま始まらないように。
+                HorrorRelief.SetHoldProgress(0f);
             }
             _leftWasHeld = leftMarkHeld;
 

@@ -162,11 +162,16 @@ namespace FixedCamVr.Diagnostics
         /// 切り替え方だけ**にして、「選んだらスタッフへ」は<b>選んでいる言語 1 行だけ</b>にした。
         /// ⚠ 順序は固定（日本語 → English → Français）。選択中を先頭へ動かすと、
         /// ボタンで巡らせるたびに 3 行が並び替わってちらつく。
+        ///
+        /// ⚠⚠ <b>2026-09-05（0155）に「単押し」と言い切る形へ変えた</b>（ユーザー指定
+        /// 「ボタンを単押しで言語が変わります で、ボタンを長押しするとホラー軽減モードに入ります
+        /// みたいに説明口調で」）。同じボタンに 2 つの意味があるので、
+        /// <b>どちらの押し方の話かを毎行で言う</b>。「ボタンで」では長押しと区別が付かない。
         /// </summary>
         private const string SwitchLines =
-            "ボタンで言語が変わります\n" +
-            "Press the button to change language.\n" +
-            "Appuyez pour changer de langue.";
+            "ボタンを単押しで言語が変わります\n" +
+            "Press a button once to change the language.\n" +
+            "Appuyez une fois pour changer de langue.";
 
         /// <summary>
         /// 選び終わった人が次にすること。<b>ここだけは選んでいる言語で 1 行</b>。
@@ -174,14 +179,21 @@ namespace FixedCamVr.Diagnostics
         /// ⚠⚠ <b>3 言語ぶん出さなくてよい理由</b>: この行を読むのは<b>言語を選んだ後</b>で、
         /// そのとき選ばれているのは<b>その人が読める言語</b>。読めなければ上の 3 行が
         /// 切り替え方を教えるので、切り替えてからここへ戻ってくる。
-        /// ⚠ 安全の掲示の最後（体調が悪いときの「スタッフにお声がけください」）と
-        /// <b>同じ言い回しが 2 度出る</b>ので、こちらは「言語を選んだら」を頭に付けて役割を分ける。
+        /// ⚠⚠ <b>安全の掲示の最後と動詞を変える</b>（2026-09-05・0155）。
+        /// 並びが変わって<b>この行が掲示のすぐ下へ来た</b>ので、同じ言い回しだと 2 行続けて
+        /// 同じことを言っているように読める。掲示は「お声がけください / let … know /
+        /// prévenez」、こちらは「呼んでください / call / appelez」。
+        /// ⚠ 頭は「言語を選んだら」ではなく<b>「準備ができたら」</b> — 選ぶものが
+        /// 言語とホラー軽減モードの 2 つになったので、片方だけ名指しできない。
         /// </summary>
-        private static string ReadyLineOf(ShowLang lang) => lang switch
+        public static string ReadyLineOf(ShowLang lang) => lang switch
         {
-            ShowLang.En => "Once you have chosen, tell a staff member.",
-            ShowLang.Fr => "Une fois choisie, prévenez le personnel.",
-            _ => "言語を選んだらスタッフにお声がけください",
+            ShowLang.En => "When ready, call a staff member.",
+            // ⚠ Français は «prévenez le personnel» にしない — 掲示の最後がまさにそれで、
+            //   **語尾まで同じ行が 2 つ隣り合う**（`ReadyLine_DoesNotRepeat…` が落とす）。
+            //   ⚠ 1 行 20 全角（＝ 半角 40）も超える。«appelez-nous» なら 34 字。
+            ShowLang.Fr => "Quand vous êtes prêt, appelez-nous.",
+            _ => "準備ができたらスタッフをお呼びください",
         };
 
         /// <summary>
@@ -201,35 +213,97 @@ namespace FixedCamVr.Diagnostics
         /// <c>richText</c> を切ってあり白 1 色しか出せないので、囲みだけが状態の手掛かり）。
         /// 入ったのが分からないと、体験者は効くまで押し続ける。
         ///
-        /// ⚠ <b>Français だけ「音が半分」を落としてある。</b> 3 つとも 1 行 24 全角に収める必要が
-        /// あり（<c>HmdTextStyle.LineWidth</c>）、フランス語で 3 つ言うと 25.5 になる。
-        /// 残したのは<b>体験者への約束</b>の側（怖さが和らぐ・陽気な曲が鳴る）で、
-        /// 落としたのは仕掛けの説明。⚠ 縮めて 3 つ入れようとして «musique»（形容詞なし）に
-        /// すると「陽気な」が消える ＝ 約束の方が壊れる。
+        /// ⚠⚠ <b>2 行。入っていても出ていても 2 行</b>（2026-09-05・0155）。行数が変わると、
+        /// 切り替えた瞬間に下の塊（安全の掲示）が跳ねる。
+        /// ⚠ 1 行目が「どうなるか」、2 行目が「何が起きるか / どう戻すか」。
         /// </summary>
-        public static string ReliefLineOf(ShowLang lang, bool on) => lang switch
+        public static string ReliefLinesOf(ShowLang lang, bool on) => lang switch
         {
-            ShowLang.En => on ? "[Less horror] Hold again to turn it off."
-                              : "Hold: less horror, half volume, cheery music.",
-            ShowLang.Fr => on ? "[Horreur adoucie] Maintenez pour annuler."
-                              : "Maintenez : horreur adoucie, musique gaie.",
-            _ => on ? "［ホラー軽減中］もう一度長押しで戻ります"
-                    : "長押しでホラー軽減（音が半分・陽気な曲）",
+            ShowLang.En => on ? "[Reduced horror] mode is on.\n"
+                                + "Hold a button again to turn it off."
+                              : "Hold a button to enter reduced-horror mode.\n"
+                                + "(Everything at half volume, plus cheery music.)",
+            ShowLang.Fr => on ? "[Mode adouci] est activé.\n"
+                                + "Maintenez à nouveau pour le désactiver."
+                              : "Maintenez un bouton pour le mode adouci.\n"
+                                + "(Sons à moitié, avec une musique joyeuse.)",
+            _ => on ? "［ホラー軽減モード］になっています\n"
+                      + "もう一度長押しすると元に戻ります"
+                    : "ボタンを長押しするとホラー軽減モードに入ります\n"
+                      + "（音が半分になり、陽気な曲が流れます）",
         };
 
+        /// <summary>ゲージのマスの数。長押しは <see cref="HorrorRelief.HoldSec"/> 秒なので 1 マス 150ms。</summary>
+        public const int GaugeCells = 10;
+
         /// <summary>
-        /// 小さな案内の全文（テストと <c>menu text-audit</c> が読む）＝
-        /// <b>切り替え方 3 行 ＋ 空行 ＋ ホラー軽減 1 行 ＋ 次にすること 1 行</b>。
+        /// <b>長押しの進み具合</b>（2026-09-05 ユーザー指定「長押し中は [--- ] みたいな感じで
+        /// 長押しの状況を視覚的にわかるように」）。
         ///
-        /// ⚠ 下の 2 行は<b>どちらも選んでいる言語</b>なので、空行で離さず続けて置く
-        /// （離すと 3 つの塊に見えて、0151 で減らした「字の壁」がまた立つ）。
-        /// ⚠ 並びは<b>「選ぶ → 決める → 呼ぶ」の順</b>。次にすることが最後に来る。
+        /// ⚠⚠ <b>全角 2 種で組む。</b> このフォント（Source Han Sans JP）は<b>半角の字送りが
+        /// 字ごとに違う</b>ので、<c>-</c> と空白で組むと<b>進むほど行の幅が変わって左右に揺れる</b>。
+        /// 全角はどれも送りが 1em なので、どの進み具合でも幅が 1 ミリも動かない。
+        ///
+        /// ⚠⚠ <b>使うのは ● と ○</b>（2026-09-05 に絵を見て決めた）。試した 2 つは駄目だった:
+        /// <b>░（薄い網掛け）はこのフォントでは斜線のハッチ</b>で、1.5° では走り書きにしか見えない
+        /// （数値の判定は全部緑のまま通った ＝ <c>rules/visual-verification.md</c> §7 の型）。
+        /// <b>□ は使えない</b> — フォントが解決できないときの豆腐と見分けが付かず、
+        /// 「字が化けた」と読まれる（<c>CommsGlitchLogic</c> が化け字から □ を外したのと同じ理由）。
+        /// ⚠ 字を変えたら<b>必ず絵を開く</b>。枠に収まっているかは数値で分かるが、
+        /// <b>何に見えるかは絵でしか分からない</b>。
+        /// ⚠ <b>［］で囲まない。</b> この面の ［］ は「選んでいる言語」と「軽減モード中」の
+        /// 2 つで既に意味を持っている。3 つ目を与えると印が読めなくなる。
+        /// ⚠ <b>押していないときも枠（░ だけの行）を出す。</b> 出したり消したりすると
+        /// 行数が変わって塊が上下に跳ねる。
+        /// ⚠ 字を足したら <c>menu hud-font</c> を再実行する（静的ベイク）。
         /// </summary>
-        public static string FooterFor(ShowLang lang, bool relief)
-            => SwitchLines + "\n\n" + ReliefLineOf(lang, relief) + "\n" + ReadyLineOf(lang);
+        public static string HoldGauge(float progress01)
+        {
+            int on = GaugeCellsFor(progress01);
+            var sb = new System.Text.StringBuilder(GaugeCells);
+            for (int i = 0; i < GaugeCells; i++) sb.Append(i < on ? '●' : '○');
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 進み具合を<b>マスの数</b>へ落とす。⚠ <b>切り捨て</b>（四捨五入にすると、
+        /// 触れただけで 1 マス点いて「もう始まっている」に見える）。
+        /// </summary>
+        public static int GaugeCellsFor(float progress01)
+            => Mathf.Clamp(Mathf.FloorToInt(progress01 * GaugeCells), 0, GaugeCells);
+
+        /// <summary>
+        /// <b>いちばん上の面 ＝ 言語の並び</b>（2026-09-05・0155 でここへ上がった）。
+        /// 選ぶものなので本文の段（1.8°）のまま。
+        /// </summary>
+        public static string ChooserFor(ShowLang lang) => ChooserLine(lang);
+
+        /// <summary>
+        /// <b>真ん中の面 ＝ 操作の説明</b>（補助 1.5°）＝
+        /// <b>切り替え方 3 行 ＋ 空行 ＋ ホラー軽減 2 行 ＋ ゲージ 1 行</b>。
+        ///
+        /// ⚠ 切り替え方は 3 言語ぶん（0147）、ホラー軽減は選んでいる言語だけ（0154）。
+        /// 空行で離すのは、<b>3 言語の塊と 1 言語の塊が地続きに読めない</b>ようにするため。
+        /// </summary>
+        public static string GuideFor(ShowLang lang, bool relief, float hold01)
+            => SwitchLines + "\n\n" + ReliefLinesOf(lang, relief) + "\n" + HoldGauge(hold01);
 
         /// <summary>いま選ばれている状態で組む（実行時と <c>menu text-audit</c> はこちら）。</summary>
-        public static string FooterFor(ShowLang lang) => FooterFor(lang, HorrorRelief.Enabled);
+        public static string GuideFor(ShowLang lang)
+            => GuideFor(lang, HorrorRelief.Enabled, HorrorRelief.HoldProgress01);
+
+        /// <summary>
+        /// <b>いちばん下の面 ＝ 安全の掲示 ＋ 次にすること</b>（本文 1.8°）。
+        ///
+        /// ⚠⚠ <b>掲示が面のいちばん下へ来た</b>（2026-09-05・0155 のユーザー指定の並び）。
+        /// 読まれる順は「言語を選ぶ → 軽減を決める → 掲示を読む → スタッフを呼ぶ」。
+        /// <b>掲示はいちばん大きい段のまま・いちばん大きい塊のまま</b>にしてある
+        /// （小さくすると、操作説明の下にある小さい字になって読み飛ばされる）。
+        /// ⚠ 同じ掲示は受付の紙（<c>docs/onsite/handout.html</c>）にもあり、
+        /// スタッフが口頭でも言う（<c>docs/onsite-checklist.md</c>）。
+        /// </summary>
+        public static string NoticeFor(ShowLang lang)
+            => BodyFor(lang) + "\n\n" + ReadyLineOf(lang);
 
         /// <summary>本文だけ（言語ごと）。テストと <c>menu text-audit</c> が読む。</summary>
         public static string BodyFor(ShowLang lang) => lang switch
@@ -240,16 +314,22 @@ namespace FixedCamVr.Diagnostics
         };
 
         /// <summary>
-        /// 面に出す全文 ＝ <b>注意書き ＋ 空行 ＋ 言語の並び</b>。
-        /// <b>切り替え方は <see cref="Footer"/>（一回り小さい 2 つ目の TMP）が持つ。</b>
+        /// 面ぜんたいを上から下へ 1 本にしたもの（<b>テストと検査だけが読む</b>。
+        /// 実物は 3 枚の TMP に分かれていて、これと同じ順に積まれる）。
         ///
-        /// ⚠ <b>言語の並びは注意書きと同じ面に出す。</b> 別の面を立てると、
-        /// 「まだ何も始まっていない黒の中」に装置の UI が 2 枚並ぶ（世界に混ざる面が増える）。
+        /// ⚠⚠ <b>2026-09-05（0155）に並びが変わった</b>（ユーザー指定「言語選択を一番上に。
+        /// その次にホラー軽減モード、その次に注意書き、その次スタッフに声かけて」）。
+        /// それまでは 注意書き → 言語の並び → 案内 の順で、<b>装置の UI が掲示の下</b>にあった。
         /// ⚠ <b>選べることは、選ぶ前の言語でも読めなければならない。</b> だから 3 つの名前を
         /// 常に全部出す（次の言語だけを出す形は、いま何が選べるのかが分からない）。
         /// </summary>
+        public static string ComposeFor(ShowLang lang, bool relief, float hold01)
+            => ChooserFor(lang) + "\n\n" + GuideFor(lang, relief, hold01)
+               + "\n\n" + NoticeFor(lang);
+
+        /// <summary>いま選ばれている状態で組む。</summary>
         public static string ComposeFor(ShowLang lang)
-            => BodyFor(lang) + "\n\n" + ChooserLine(lang);
+            => ComposeFor(lang, HorrorRelief.Enabled, HorrorRelief.HoldProgress01);
 
         /// <summary>
         /// タイトルの黒（<c>FixedCamVr/TitleVeil</c> = 4950）と題字（<c>TitleGlyph</c> = 4960）より
@@ -271,21 +351,23 @@ namespace FixedCamVr.Diagnostics
         private const float TextWidthM = 1.70f;
 
         /// <summary>
-        /// 文字の並ぶ高さ (m)。<b>いちばん行数の多い言語</b>（Français ＝ 7 行）＋ 空行 ＋
-        /// 言語の並び ＝ 9 行 ＋ 行間。
+        /// 安全の掲示の枠の高さ (m)。<b>いちばん行数の多い言語</b>（Français ＝ 7 行）＋ 空行 ＋
+        /// 次にすること ＝ 9 行 ＋ 行間。
         /// ⚠ 揃えは縦中央（<c>TextAlignmentOptions.Left</c>）なので、ここが実際の行数より
         /// 低いと塊が枠からはみ出して<b>上下が視界の外へ出る</b>。文言を足したら一緒に上げる。
         /// ⚠ <b>縦の置き場所はこの枠では決まらない</b>（<see cref="StackLabels"/> が
-        /// 実測した高さから 2 つを積む）。ここは折り返しと溢れのための枠。
+        /// 実測した高さから 3 枚を積む）。ここは折り返しと溢れのための枠。
         /// </summary>
         private const float TextHeightM = 1.75f;
 
+        /// <summary>言語の並びの枠の高さ (m)。1 行 ＋ 行間。</summary>
+        private const float ChooserHeightM = 0.40f;
+
         /// <summary>
-        /// 小さな案内の枠の高さ (m)。切り替え方 3 行 ＋ 空行 ＋ ホラー軽減 ＋ 次にすること ＝ 6 行ぶん。
-        /// ⚠ 2026-09-05 に 5 行（0.90）から 1 行ぶん上げた。行を足したらここも上げる —
-        /// 枠が足りないと折り返しが起きて<b>行数がさらに増える</b>。
+        /// 操作の説明の枠の高さ (m)。切り替え方 3 行 ＋ 空行 ＋ ホラー軽減 2 行 ＋ ゲージ ＝ 7 行ぶん。
+        /// ⚠ 行を足したらここも上げる — 枠が足りないと折り返しが起きて<b>行数がさらに増える</b>。
         /// </summary>
-        private const float FooterHeightM = 1.10f;
+        private const float FooterHeightM = 1.30f;
 
         /// <summary>
         /// 注意書きの塊と、小さな案内のあいだ (m)。2.6m 先で約 1.3° ＝ 半行ぶんの空き。
@@ -327,9 +409,28 @@ namespace FixedCamVr.Diagnostics
         /// <summary>供給元が見つからないときの探し直しの間隔 (s)。毎フレーム探すと只では済まない。</summary>
         private const float ResolveRetrySec = 1f;
 
-        private TMP_Text? _text;
-        /// <summary>並びの下の小さな案内（3 言語）。<b>言語で中身は変わらない</b>。</summary>
+        /// <summary>
+        /// <b>いちばん上 ＝ 言語の並び</b>（本文 1.8°・2026-09-05・0155 でここへ上がった）。
+        /// ⚠ <c>menu text-audit</c> がこの名前で引く（`HmdTextAudit` の `Field`）。
+        /// </summary>
+        private TMP_Text? _chooser;
+
+        /// <summary>
+        /// <b>真ん中 ＝ 操作の説明</b>（補助 1.5°）。切り替え方 3 言語 ＋ ホラー軽減 ＋ 長押しのゲージ。
+        /// ⚠ 名前を <c>_footer</c> のままにしてあるのは <c>HmdTextAudit</c> と
+        /// <c>TitleNoticeLayoutTests</c> がこの名前で引くため（意味は「面の下段」ではなくなった）。
+        /// </summary>
         private TMP_Text? _footer;
+
+        /// <summary><b>いちばん下 ＝ 安全の掲示 ＋ 次にすること</b>（本文 1.8°）。</summary>
+        private TMP_Text? _text;
+
+        /// <summary>上から下へ並べた 3 枚（積む順・濃さ・後片付けはこの配列 1 本で回す）。</summary>
+        private TMP_Text?[] Labels => new[] { _chooser, _footer, _text };
+
+        /// <summary>3 枚それぞれの拡大率（<see cref="Labels"/> と同じ並び）。</summary>
+        private float[] LabelScales => new[] { TextScale, FooterScale, TextScale };
+
         private HeadYawFollow? _follow;
         private float _alpha;
         private float _resolveWait;
@@ -339,9 +440,19 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>
         /// いま面に書いてあるホラー軽減モードの状態。<see cref="HorrorRelief.Enabled"/> と
-        /// 食い違ったら案内だけ組み直す（本文と言語の並びはこの状態で変わらない）。
+        /// 食い違ったら案内だけ組み直す（掲示と言語の並びはこの状態で変わらない）。
         /// </summary>
         private bool _shownRelief;
+
+        /// <summary>
+        /// いま面に書いてあるゲージのマスの数（0..<see cref="GaugeCells"/>）。
+        ///
+        /// ⚠⚠ <b>進み具合そのものではなくマスの数で見る。</b> 進み具合で比べると
+        /// 押しているあいだ<b>毎フレーム</b>文字列を作り直して TMP がメッシュを組み直す
+        /// （90Hz ぶんの GC）。マスなら 1.5 秒で最大 10 回しか変わらない。
+        /// ⚠ 出ていないときは -1（次に出たとき必ず 1 度書く）。
+        /// </summary>
+        private int _shownGaugeCells = -1;
 
         /// <summary>
         /// 最後に見た「体験者が押して変わった回数」（<see cref="ShowLanguage.ChangeCount"/>）。
@@ -410,15 +521,20 @@ namespace FixedCamVr.Diagnostics
                 _follow = HeadYawFollow.Attach(transform, "NoticeYawFollow");
                 _shownLang = ShowLanguage.Current;
                 _shownRelief = HorrorRelief.Enabled;
-                var tmp = MakeLabel(jp, "Label", ComposeFor(_shownLang), TextScale, TextHeightM);
-                go = tmp.gameObject;
-                // ⚠⚠ **小さな案内は 2 つ目の TMP**（2026-09-04・0147）。1 つの TMP に混ぜるには
+                _shownGaugeCells = -1;
+
+                // ⚠⚠ **段の違う字を並べる面は TMP を分ける**（2026-09-04・0147）。1 つに混ぜるには
                 //    リッチテキストの `<size>` が要り、そうすると行の幅を測る物差し
                 //    （`HmdTextStyle.LineWidth`）がタグの字まで数える ＝ 全部の判定が狂う。
-                //    段の違う字を並べる面は 2 つ持つ（`CommsPanel` の上段・下段と同じ形）。
-                TMP_Text footer = MakeLabel(jp, "Footer", FooterFor(_shownLang, _shownRelief),
-                                            FooterScale, FooterHeightM);
-                _footer = footer;
+                // ⚠⚠ **2026-09-05（0155）に 3 枚になった。** 並びが
+                //    1.8° → 1.5° → 1.8° と交互になったので、2 枚では表現できない。
+                _chooser = MakeLabel(jp, "Chooser", ChooserFor(_shownLang),
+                                     TextScale, ChooserHeightM);
+                go = _chooser.gameObject;
+                _footer = MakeLabel(jp, "Guide",
+                                    GuideFor(_shownLang, _shownRelief, HorrorRelief.HoldProgress01),
+                                    FooterScale, FooterHeightM);
+                _text = MakeLabel(jp, "Notice", NoticeFor(_shownLang), TextScale, TextHeightM);
 
                 // タイトルの黒に潰されないように、黒と題字より後に描く。fontMaterial の getter が
                 // インスタンスを作るので、共有マテリアルを汚さない。
@@ -427,24 +543,27 @@ namespace FixedCamVr.Diagnostics
                 //    ＝ 既定で LEqual。この面は **2.6m** に立つのに、本編のスクリーン（不透明・
                 //    ZWrite On）が **2.0m** に居るので、**注意書きはスクリーンの深度に隠れて
                 //    1 文字も出ていなかった**。しかも警告は 1 件も出ない。
-                foreach (TMP_Text t in new[] { tmp, footer })
+                foreach (TMP_Text? t in Labels)
                 {
+                    if (t == null) continue;
                     UseOverlayShader(t);
                     t.fontMaterial.renderQueue = RenderQueue;
                 }
-                _text = tmp;
                 StackLabels();
             }
             catch (System.Exception e)
             {
                 // 組めなかった側は必ず「出さない」で終わらせる（半端な面を残さない）。
+                // ⚠ **3 枚とも畳む**（1 枚でも残すと、その段だけが黒の中に浮く）。
                 Debug.LogWarning($"[TitleNotice] 実体を組めません — 注意書きは出しません: {e.Message}");
                 if (go != null) Destroy(go);
-                if (_footer != null) Destroy(_footer.gameObject);
+                foreach (TMP_Text? t in Labels)
+                    if (t != null) Destroy(t.gameObject);
                 if (_follow != null) Destroy(_follow.gameObject);
                 _follow = null;
-                _text = null;
+                _chooser = null;
                 _footer = null;
+                _text = null;
             }
         }
 
@@ -495,13 +614,21 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private void StackLabels()
         {
-            if (_text == null || _footer == null) return;
-            float s1 = TextScale, s2 = FooterScale;
-            (float top, float bottom) a = Ink(_text);
-            (float top, float bottom) b = Ink(_footer);
-            float h1 = (a.top - a.bottom) * s1;
-            float h2 = (b.top - b.bottom) * s2;
-            float total = h1 + FooterGapM + h2;
+            TMP_Text?[] labels = Labels;
+            float[] scales = LabelScales;
+            foreach (TMP_Text? t in labels)
+                if (t == null) return;
+
+            int n = labels.Length;
+            var ink = new (float top, float bottom)[n];
+            var h = new float[n];
+            float total = FooterGapM * (n - 1);
+            for (int i = 0; i < n; i++)
+            {
+                ink[i] = Ink(labels[i]!);
+                h[i] = (ink[i].top - ink[i].bottom) * scales[i];
+                total += h[i];
+            }
 
             // 頭の正面やや下。姿勢は追従根が持つので、ここでは根から見た置き場所だけを決める。
             // ⚠ **黒の面（TitleScreen の覆い）はこれに乗っていない** — 覆いが頭から離れると
@@ -511,9 +638,14 @@ namespace FixedCamVr.Diagnostics
             float baseY = -Mathf.Sin(rad) * d;
             float z = Mathf.Cos(rad) * d;
 
-            // 上が注意書き、下が小さな案内。**2 枚を合わせた塊の中心**が据わりに来る。
-            PlaceInk(_text, s1, baseY + total * 0.5f - h1 * 0.5f, (a.top + a.bottom) * 0.5f, z);
-            PlaceInk(_footer, s2, baseY - total * 0.5f + h2 * 0.5f, (b.top + b.bottom) * 0.5f, z);
+            // 上から下へ積む。**全部を合わせた塊の中心**が据わりに来る。
+            float y = baseY + total * 0.5f;
+            for (int i = 0; i < n; i++)
+            {
+                PlaceInk(labels[i]!, scales[i], y - h[i] * 0.5f,
+                         (ink[i].top + ink[i].bottom) * 0.5f, z);
+                y -= h[i] + FooterGapM;
+            }
         }
 
         /// <summary>
@@ -615,7 +747,8 @@ namespace FixedCamVr.Diagnostics
             if (_shownLang != ShowLanguage.Current)
             {
                 _shownLang = ShowLanguage.Current;
-                _text.text = ComposeFor(_shownLang);
+                _text.text = NoticeFor(_shownLang);
+                if (_chooser != null) _chooser.text = ChooserFor(_shownLang);
                 // ⚠⚠ **音は字を書き替えているこの行から鳴らす**（0153）。入力の側で鳴らすと、
                 //    面が組めていない現場（フォント不在）で**画は変わらないのに音だけ鳴る**。
                 // ⚠⚠ **鳴らすのは「体験者が押して変わった」ときだけ。**
@@ -631,9 +764,9 @@ namespace FixedCamVr.Diagnostics
                 //    `1 > 3` で偽になって無音になる**。増減ではなく「変わったか」で見る。
                 if (changes != _lastLangChange && changes > 0) switchSfx?.Play();
                 _lastLangChange = changes;
-                // ⚠⚠ **案内も書き直す**（0151 から「次にすること」が言語で変わる）。
-                //    忘れると、本文だけ替わって最後の 1 行が前の言語のまま残る。
-                if (_footer != null) _footer.text = FooterFor(_shownLang, _shownRelief);
+                // ⚠⚠ **3 枚とも書き直す**（0151 から「次にすること」が、0155 から並びも言語で変わる）。
+                //    忘れると、掲示だけ替わって上の 2 枚が前の言語のまま残る。
+                RewriteGuide();
                 // ⚠ **行数が変わるので積み直す**（日本語 6 行 / Français 7 行）。
                 //   忘れると、行数の少ない言語で塊が下へずれたまま出る。
                 StackLabels();
@@ -641,15 +774,27 @@ namespace FixedCamVr.Diagnostics
 
             // ホラー軽減モードに入った / 出た（2026-09-05）。
             // ⚠⚠ **入ったことが画に出なければ、体験者は効くまで押し続ける。**
-            //    この面の中では音も鳴っていない（黒の中）ので、返せるのは振動とこの 1 行だけ。
-            // ⚠ 書き替えるのは案内だけ（本文と言語の並びはこの状態で変わらない）。
-            //    それでも積み直すのは、日本語と英語で行の高さが同じとは限らないため
-            //    ＝ **状態で行数が変わらなくても、字が変われば実測した高さは変わる**。
+            //    この面の中では音も鳴っていない（黒の中）ので、返せるのは振動とこの 2 行だけ。
+            // ⚠ 書き替えるのは真ん中の面だけ（掲示と言語の並びはこの状態で変わらない）。
+            //    それでも積み直すのは、入 / 出で字が変われば実測した高さも変わるため
+            //    （行数は変えていない — 変えると下の掲示が跳ねる）。
             if (_shownRelief != HorrorRelief.Enabled)
             {
                 _shownRelief = HorrorRelief.Enabled;
-                if (_footer != null) _footer.text = FooterFor(_shownLang, _shownRelief);
+                RewriteGuide();
                 StackLabels();
+            }
+
+            // 長押しのゲージ（2026-09-05・0155）。
+            // ⚠⚠ **マスの数が変わったフレームだけ書く**（進み具合で比べると 90Hz で組み直す）。
+            // ⚠⚠ **積み直さない。** ゲージは全角 2 種なのでどの進み具合でも字送りが 1 ミリも
+            //    動かず、行数も変わらない ＝ 積み直す理由が無い。積み直すと押しているあいだ
+            //    毎回 `ForceMeshUpdate` が 2 度走り、塊が上下に揺れる。
+            int cells = GaugeCellsFor(HorrorRelief.HoldProgress01);
+            if (cells != _shownGaugeCells)
+            {
+                _shownGaugeCells = cells;
+                RewriteGuide();
             }
 
             bool show = ShouldShow();
@@ -663,13 +808,24 @@ namespace FixedCamVr.Diagnostics
             SetAlpha(_alpha);
         }
 
+        /// <summary>
+        /// 真ん中の面（操作の説明）を、いま面が持っている言語・軽減の状態・ゲージで書き直す。
+        /// <b>書き替える場所を 1 か所に寄せてある</b> — 3 つの引き金（言語 / 軽減 / ゲージ）が
+        /// あるので、それぞれで文字列を組み立てると片方だけ古い値を渡す形が必ず生まれる。
+        /// </summary>
+        private void RewriteGuide()
+        {
+            if (_footer == null) return;
+            _footer.text = GuideFor(_shownLang, _shownRelief, HorrorRelief.HoldProgress01);
+        }
+
         private void SetAlpha(float a)
         {
             if (_text == null) return;
-            // ⚠ **2 枚とも同じだけ濃くする。** 片方だけ残ると、注意書きが消えた黒の中に
-            //   案内だけが浮く（世界が始まっているのに装置の外の言葉が居る）。
-            SetAlpha(_text, a);
-            if (_footer != null) SetAlpha(_footer, a);
+            // ⚠ **3 枚とも同じだけ濃くする。** 1 枚でも残ると、注意書きが消えた黒の中に
+            //   その段だけが浮く（世界が始まっているのに装置の外の言葉が居る）。
+            foreach (TMP_Text? t in Labels)
+                if (t != null) SetAlpha(t, a);
         }
 
         private static void SetAlpha(TMP_Text t, float a)
@@ -691,8 +847,10 @@ namespace FixedCamVr.Diagnostics
             if (_text == null) return;
             _shownLang = lang;
             _shownRelief = HorrorRelief.Enabled;
-            _text.text = ComposeFor(lang);
-            if (_footer != null) _footer.text = FooterFor(lang, _shownRelief);
+            _shownGaugeCells = GaugeCellsFor(HorrorRelief.HoldProgress01);
+            _text.text = NoticeFor(lang);
+            if (_chooser != null) _chooser.text = ChooserFor(lang);
+            RewriteGuide();
             StackLabels();
             _alpha = 1f;
             SetAlpha(1f);
