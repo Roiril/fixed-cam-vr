@@ -41,8 +41,40 @@ namespace FixedCamVr.Streaming
         MarkLogged,
         /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異常は検出されませんでした」。</summary>
         MarkNothing,
-        /// <summary>③ 4 周目 A の締めで、押さないまま時間が過ぎた。「異常があなたを取り込もうとしています。排除してください。」</summary>
+        /// <summary>
+        /// ③a <b>4 周目 A の締めで、押さないまま時間が過ぎた最初の一言</b>「止まってください！」
+        /// （2026-09-06・<c>canon/LEDGER.md</c> 0168・ユーザー指定
+        /// 「"止まってください！"を短くその前に差し込む」「カタカタ音無しにすっと出てくる感じで」）。
+        ///
+        /// ⚠⚠ <b>これだけは打たない</b>（<see cref="CommsDelivery.Fade"/>）。
+        /// 1 字ずつ印字している間も惜しい、という一言なので、<b>文面ごとすっと浮かんで
+        /// 打鍵は 1 発も鳴らない</b>。<c>rules/sound-design.md</c> の「1 文字 1 発」の唯一の例外。
+        /// ⚠ 読ませ終わったら<b>同じ面のまま</b> <see cref="Prompt"/> へ替わる（枠は開いたまま・0096）。
+        /// </summary>
+        Halt,
+        /// <summary>
+        /// ③b <see cref="Halt"/> を読ませ終わった縁。
+        /// 「異常があなたを取り込もうとしています。排除してください。」
+        /// </summary>
         Prompt,
+    }
+
+    /// <summary>
+    /// 連絡の<b>出方</b>。1 通ごとに決まっていて、面（<c>CommsPanelLogic</c>）と
+    /// 打鍵（<c>CommsPanel.Apply</c>）と観測（<c>NoticeChars</c>）は<b>これに従うだけ</b>。
+    /// </summary>
+    public enum CommsDelivery
+    {
+        /// <summary>
+        /// 1 字ずつ打つ（<b>既定</b>）。<b>1 文字 1 発</b>の打鍵音が鳴る
+        /// （<c>rules/sound-design.md</c>「印字の打鍵」）。
+        /// </summary>
+        Typed,
+        /// <summary>
+        /// <b>文面ごとすっと浮かぶ。</b> 打鍵は 1 発も鳴らない。
+        /// ⚠ 濃さだけが上がる — 字は最初から全部そこに在る（<c>CommsPanelLogic.FadeInSec</c>）。
+        /// </summary>
+        Fade,
     }
 
     /// <summary>1 フレーム分の入力。<b>UnityEngine 非依存・dt 注入</b>。</summary>
@@ -131,7 +163,8 @@ namespace FixedCamVr.Streaming
         public const float BeginDelaySec = 0f;
 
         /// <summary>
-        /// ③ 締めのカットが待ち始めてから促すまで (秒)。
+        /// ③a 締めのカットが待ち始めてから<b>「止まってください！」</b>まで (秒)。
+        /// ⚠ ③b（異常があなたを…）は<b>これを読ませ終わった縁</b>で続く（間は持たない）。
         /// ⚠ <b>3 → 2 へ</b>（2026-08-19・<c>canon/LEDGER.md</c> 0096）。当初のユーザー指定は「3s ほど」。
         /// ⚠ <c>ShowWalkDebugDriver.ReportHesitateSec</c>（4.5 秒）より短く保つ —
         ///   自動走行が先に押してしまうと③は実機で一度も走らない。
@@ -166,6 +199,7 @@ namespace FixedCamVr.Streaming
 
         private bool _beginFired;
         private bool _beginHowFired;
+        private bool _haltFired;
         private bool _promptFired;
         private float _runSec;
         private float _waitSec;
@@ -192,6 +226,7 @@ namespace FixedCamVr.Streaming
         {
             _beginFired = false;
             _beginHowFired = false;
+            _haltFired = false;
             _promptFired = false;
             _runSec = 0f;
             _waitSec = 0f;
@@ -205,6 +240,16 @@ namespace FixedCamVr.Streaming
 
         /// <summary>①b（押し方）まで出したか（診断・テスト用）。</summary>
         public bool BeginHowFired => _beginHowFired;
+
+        /// <summary>③a（止まってください！）を出したか（診断・テスト用）。</summary>
+        public bool HaltFired => _haltFired;
+
+        /// <summary>
+        /// その連絡の出方。<b>ここが唯一の窓口</b> — 面も打鍵も観測もここを読む
+        /// （散らすと、音だけ / 観測だけが黙って食い違う）。
+        /// </summary>
+        public static CommsDelivery DeliveryOf(CommsNotice notice)
+            => notice == CommsNotice.Halt ? CommsDelivery.Fade : CommsDelivery.Typed;
 
         /// <summary>導入で名乗ったか（診断・テスト用）。</summary>
         public bool GreetFired => _greetFired;
@@ -243,8 +288,15 @@ namespace FixedCamVr.Streaming
             //     消費しないと、押しのけられた方が次のフレームに遅れて出て、
             //     体験者から見ると「報告したのに関係ない連絡が来た」になる。
             bool beginDue = !_beginFired && _runSec >= BeginDelaySec;
-            bool promptDue = !_promptFired && inp.waitingForMark && _waitSec >= PromptAfterWaitSec;
+            bool haltDue = !_haltFired && inp.waitingForMark && _waitSec >= PromptAfterWaitSec;
             if (beginDue) _beginFired = true;
+            if (haltDue) _haltFired = true;
+
+            // ③b は③a を**読ませ終わった縁**で、間を置かずに続ける（①→①b と同じ形）。
+            // ⚠⚠ **待ちが続いていることを見る。** 見ないと、③a のあとに体験者が報告しても
+            //    ③b だけが遅れて届く ＝ 押したのに「排除してください」と言われる。
+            bool promptDue = !haltDue && _haltFired && !_promptFired
+                             && inp.waitingForMark && inp.panelDoneReading;
             if (promptDue) _promptFired = true;
 
             // ①b は①を**読ませ終わった縁**で、間を置かずに続ける（`canon/LEDGER.md` 0097）。
@@ -255,6 +307,7 @@ namespace FixedCamVr.Streaming
             // 優先は 報告 > 締めの催促 > 開始。**報告は体験者が起こした出来事**なので必ず勝つ
             // （押した手応えが返らないと、装置が壊れているように見える）。
             if (inp.markPressed) return inp.markResolved ? CommsNotice.MarkLogged : CommsNotice.MarkNothing;
+            if (haltDue) return CommsNotice.Halt;
             if (promptDue) return CommsNotice.Prompt;
             if (beginDue) return CommsNotice.Begin;
             // ⚠ ①b だけは**押しのけられても消費しない**（上の 2 つと違う）。押し方の説明なので、

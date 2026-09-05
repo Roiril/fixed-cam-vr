@@ -162,6 +162,31 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float HoldSec = 2.0f;
 
+        /// <summary>
+        /// <see cref="CommsDelivery.Fade"/> の連絡が浮かび上がるまで (秒)。
+        ///
+        /// ⚠ <b>0 にしない。</b> 1 フレームで出すと「浮かんだ」ではなく「点いた」に見える
+        /// （装置が壊れて明滅したのと区別が付かない）。
+        /// ⚠ <b>長くもしない。</b> 打つ間も惜しいから打たない一言なので、待たせたら意味が消える。
+        /// </summary>
+        public const float FadeInSec = 0.25f;
+
+        /// <summary>
+        /// <see cref="CommsDelivery.Fade"/> の連絡を読ませる時間 (秒)。
+        ///
+        /// ⚠⚠ <b>ここだけ <see cref="HoldSec"/>（一律 2 秒・<c>canon/LEDGER.md</c> 0092）から外れる。</b>
+        /// あの 2 秒は「<b>打っているあいだにもう読み終わっている</b>ので、後は読み落としを拾うだけ」
+        /// という理屈で、<b>打たない連絡にはその前提が無い</b>。ここは読む時間そのもの。
+        /// ⚠ それでも短いのは、ユーザー指定が「<b>短く</b>その前に差し込む」だから（0168）。
+        /// 画に居るのは <see cref="FadeInSec"/> ＋ ここ ＝ 1.35 秒
+        /// （同じ 9 文字を打つと 0.75 ＋ 2.0 ＝ 2.75 秒）。
+        /// </summary>
+        public const float FadeHoldSec = 1.1f;
+
+        /// <summary>その出方で読ませる時間 (秒)。<b>読ませる尺を読む所は必ずここを通す</b>。</summary>
+        public static float HoldSecFor(CommsDelivery delivery)
+            => delivery == CommsDelivery.Fade ? FadeHoldSec : HoldSec;
+
         /// <summary>引くまで (秒)。ぱっと消すと「消えた」ではなく「壊れた」に見える。</summary>
         public const float OutSec = 0.9f;
 
@@ -186,6 +211,7 @@ namespace FixedCamVr.Streaming
         private CommsStage _stage = CommsStage.Off;
         private float _elapsed;
         private float _typeSec = MinTypeSec;
+        private CommsDelivery _delivery = CommsDelivery.Typed;
         private bool _guideWanted;
         // 段へ入った瞬間の姿。**そこから動かす**ので、どの段へ移っても飛ばない。
         // ⚠⚠ **4 つ全部を覚える。** 2026-08-16 まで開きと丈しか継承しておらず、
@@ -201,6 +227,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>打ち終わるまでの秒（この文面での実測値。プレビューと卓が読む）。</summary>
         public float TypeSec => _typeSec;
+
+        /// <summary>
+        /// いまの連絡の出方。<b>面が打鍵を鳴らすかはこれが決める</b>
+        /// （<c>CommsPanel.Apply</c>）。
+        /// </summary>
+        public CommsDelivery Delivery => _delivery;
 
         /// <summary>
         /// <b>読ませ終わった</b>（<see cref="HoldSec"/> を満たした、または最初から何も出ていない）。
@@ -223,7 +255,11 @@ namespace FixedCamVr.Streaming
         /// 打つ文字数。<b>尺はここから決まる</b>（文面が伸びれば打つ時間も伸びる）。
         /// 0 以下なら文字の段を飛ばす。
         /// </param>
-        public void Begin(int charCount)
+        /// <param name="delivery">
+        /// 出方（既定は打つ）。<see cref="CommsDelivery.Fade"/> なら
+        /// <b>文面ごとすっと浮かび、打鍵は 1 発も鳴らない</b>（<c>canon/LEDGER.md</c> 0168）。
+        /// </param>
+        public void Begin(int charCount, CommsDelivery delivery = CommsDelivery.Typed)
         {
             // ⚠⚠ **いまの姿から動かす**（`canon/LEDGER.md` 0058）。②の連絡は「押した瞬間」に届くので、
             //    開きを 0 から張り直すと**押し終わるたびに枠が畳まれて開き直る**（毎回かならず起きる吃り）。
@@ -233,10 +269,15 @@ namespace FixedCamVr.Streaming
             //    そのあいだ面が空になる（体験者から見れば「消えて、少し待って、また出た」）。
             CommsWeights now = Weights;
             bool chained = _stage != CommsStage.Off && now.open >= 0.999f && now.body >= 0.999f;
+            // ⚠ **出方を替えるのは段を移った後**（`EnterStage` は「いまの姿」を覚えるので、
+            //   新しい出方の目で古い段を測らせない）。
             EnterStage(chained ? CommsStage.Type : CommsStage.In);
-            _typeSec = charCount <= 0
-                ? 0f
-                : Clamp(charCount / CharsPerSecFor(ShowLanguage.Current), MinTypeSec, MaxTypeSec);
+            _delivery = delivery;
+            _typeSec = delivery == CommsDelivery.Fade
+                ? FadeInSec
+                : charCount <= 0
+                    ? 0f
+                    : Clamp(charCount / CharsPerSecFor(ShowLanguage.Current), MinTypeSec, MaxTypeSec);
         }
 
         /// <summary>段を移る。<b>いまの姿を覚えてから</b>移る（そこから動かすので飛ばない）。</summary>
@@ -286,6 +327,7 @@ namespace FixedCamVr.Streaming
         {
             _stage = CommsStage.Off;
             _elapsed = 0f;
+            _delivery = CommsDelivery.Typed;
             _guideWanted = false;
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = 0f;
         }
@@ -307,7 +349,7 @@ namespace FixedCamVr.Streaming
                 case CommsStage.Hold:
                     // 読ませ終わったら引く。⚠ ただし**まだ押している最中なら開いたまま残す** —
                     //    引いてすぐ開き直すのは、体験者から見れば 1 度の操作の途中のちらつき。
-                    if (_elapsed >= HoldSec)
+                    if (_elapsed >= HoldSecFor(_delivery))
                         EnterStage(_guideWanted ? CommsStage.Guide : CommsStage.Out);
                     break;
                 case CommsStage.Out:
@@ -352,6 +394,16 @@ namespace FixedCamVr.Streaming
                     }
                     case CommsStage.Type:
                     {
+                        // ⚠⚠ **すっと浮かぶ出方**（`canon/LEDGER.md` 0168）。字は最初から全部
+                        //    そこに在って（`reveal = 1`）、**濃さだけが上がる**。
+                        //    1 字ずつ出さないので `CommsPanel.Apply` の打鍵も鳴らない
+                        //    （あちらは `shown` の増分で鳴らすが、増分は 1 回きり ＝ `_silent` で止める）。
+                        if (_delivery == CommsDelivery.Fade)
+                        {
+                            float f = Smooth(_typeSec <= 0f ? 1f : Clamp01(_elapsed / _typeSec));
+                            return new CommsWeights
+                            { panel = 1f, glyph = f, open = 1f, body = 1f, reveal = 1f, hint = 1f };
+                        }
                         // ⚠ **打つところは滑らかにしない。** ここを smoothstep で均すと
                         //    打鍵の間隔が伸び縮みして「機械が打っている」に見えない。
                         float p = _typeSec <= 0f ? 1f : Clamp01(_elapsed / _typeSec);

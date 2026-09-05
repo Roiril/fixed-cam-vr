@@ -243,14 +243,18 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// 読ませる尺は<b>全文面で同じ</b>（2026-08-19・<c>canon/LEDGER.md</c> 0092・
+        /// 読ませる尺は<b>打つ連絡すべてで同じ</b>（2026-08-19・<c>canon/LEDGER.md</c> 0092・
         /// 「出し切った後残す時間は一律 2s」）。役割ごとに分けていた 3 つ（0065）は畳んだ。
         /// ⚠ <b>長い文面ほど画に居る時間は自然に長い</b>（打つ尺が文字数から決まる）。
+        /// ⚠⚠ <b>すっと浮かぶ連絡（③a）だけは別</b>（0168）。あの 2 秒は「打っているあいだに
+        /// もう読み終わっている」が前提で、<b>打たない連絡にはその前提が無い</b>。
         /// </summary>
         [Test]
-        public void HoldSec_IsTheSameForEveryNotice()
+        public void HoldSec_IsTheSameForEveryTypedNotice()
         {
             Assert.AreEqual(2.0f, CommsPanelLogic.HoldSec, 0.001f);
+            Assert.AreEqual(CommsPanelLogic.HoldSec,
+                            CommsPanelLogic.HoldSecFor(CommsDelivery.Typed), 0.001f);
             // 報告 1 回で面が灯る総尺（押し始めから）。**10 秒級に戻さない**。
             float total = VisitorMarkHoldSec
                         + CommsPanelLogic.InSec + CommsPanelLogic.MinTypeSec
@@ -260,6 +264,68 @@ namespace FixedCamVr.Streaming.Tests
 
         /// <summary>報告の長押し（`VisitorMarkHoldLogic.DefaultHoldSec`）。asmdef を跨がないので値を持つ。</summary>
         private const float VisitorMarkHoldSec = 1.0f;
+
+        // ------------------------------------------------------------------ ③a すっと浮かぶ出方
+
+        /// <summary>
+        /// ⚠⚠ <b>すっと浮かぶ連絡は 1 字も「打たない」。</b>（2026-09-06・
+        /// <c>canon/LEDGER.md</c> 0168・ユーザー指定「カタカタ音無しにすっと出てくる感じで」）
+        ///
+        /// 打鍵は <c>CommsPanel.Apply</c> が <b>出た字数の増分</b>から鳴らすので、
+        /// ここで <c>reveal</c> が段階的に増えると<b>その刻みだけ打鍵が鳴る</b>。
+        /// <b>字は最初から全部そこに在って、濃さだけが上がる</b>のが正。
+        /// </summary>
+        [Test]
+        public void TheFadedNotice_HasEveryLetterFromTheFirstFrame()
+        {
+            var l = new CommsPanelLogic();
+            l.Begin(9, CommsDelivery.Fade);
+            AdvanceUntil(l, CommsStage.Type);
+
+            Assert.AreEqual(CommsDelivery.Fade, l.Delivery);
+            Assert.AreEqual(1f, l.Weights.reveal, 1e-4f,
+                            "字が 1 字ずつ出ている（増分で打鍵が鳴ってしまう）");
+            Assert.Less(l.Weights.glyph, 1f, "初手から濃さが全開 ＝ 浮かばずに点いている");
+
+            Advance(l, CommsPanelLogic.FadeInSec);
+            Assert.AreEqual(1f, l.Weights.glyph, 0.02f, "浮かび切っていない");
+            Assert.AreEqual(1f, l.Weights.reveal, 1e-4f);
+        }
+
+        /// <summary>
+        /// ⚠ <b>浮かぶ尺は 0 でも長くもない。</b> 0 なら「点いた」に見え、長いと
+        /// 「打つ間も惜しい一言」という意味が消える。
+        /// </summary>
+        [Test]
+        public void TheFadedNotice_TakesLessTimeOnScreen_ThanTypingTheSameWords()
+        {
+            const int Nine = 9;   // 「止まってください！」
+            float faded = CommsPanelLogic.FadeInSec + CommsPanelLogic.FadeHoldSec;
+
+            var typed = new CommsPanelLogic();
+            typed.Begin(Nine);
+            float asTyped = typed.TypeSec + CommsPanelLogic.HoldSec;
+
+            Assert.Greater(CommsPanelLogic.FadeInSec, 0f, "1 フレームで出すと「点いた」に見える");
+            Assert.Less(faded, asTyped,
+                        $"すっと浮かぶ方が長い（{faded:0.00}s / 打つと {asTyped:0.00}s）");
+            Assert.Greater(faded, 1f, "読む間が無い");
+        }
+
+        /// <summary>浮かび終わったら、打つ連絡と同じ道を通って引く（段は増やしていない）。</summary>
+        [Test]
+        public void TheFadedNotice_ClosesByItself_LikeAnyOther()
+        {
+            var l = new CommsPanelLogic();
+            l.Begin(9, CommsDelivery.Fade);
+            AdvanceUntil(l, CommsStage.Hold);
+            Advance(l, CommsPanelLogic.FadeHoldSec + Dt);
+            Assert.AreEqual(CommsStage.Out, l.Stage, "読ませ終わっても引かない");
+
+            // ⚠ 次の連絡（③b）は**打つ**方へ戻る。出方を持ち越すと以後ずっと無音になる。
+            l.Begin(24);
+            Assert.AreEqual(CommsDelivery.Typed, l.Delivery);
+        }
 
         /// <summary>
         /// ⚠⚠ <b>押し始めたら、走っている連絡は片づく</b>（2026-08-16・<c>canon/LEDGER.md</c> 0065）。

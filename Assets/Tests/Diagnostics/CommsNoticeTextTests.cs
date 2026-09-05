@@ -53,14 +53,21 @@ namespace FixedCamVr.Diagnostics.Tests
         /// 同じ内容でも<b>行の文字数は倍近くになる</b> — 日本語だけ測って通しても、
         /// English / Français のときだけ枠から出る（実機で 1 言語だけ壊れる形）。
         /// </remarks>
-        private static System.Collections.Generic.IEnumerable<(ShowLang lang, string text)> AllTexts()
+        private static System.Collections.Generic.IEnumerable<(ShowLang lang, CommsNotice notice, string text)>
+            AllNotices()
         {
             foreach (ShowLang lang in ShowLanguage.All)
             foreach (CommsNotice n in System.Enum.GetValues(typeof(CommsNotice)))
             {
                 string t = CommsPanel.NoticeText(n, lang);
-                if (!string.IsNullOrEmpty(t)) yield return (lang, t);
+                if (!string.IsNullOrEmpty(t)) yield return (lang, n, t);
             }
+        }
+
+        private static System.Collections.Generic.IEnumerable<(ShowLang lang, string text)> AllTexts()
+        {
+            foreach ((ShowLang lang, CommsNotice notice, string t) in AllNotices())
+                yield return (lang, t);
         }
 
         [Test]
@@ -138,8 +145,11 @@ namespace FixedCamVr.Diagnostics.Tests
             ShowLang before = ShowLanguage.Current;
             try
             {
-                foreach ((ShowLang lang, string body) in AllTexts())
+                foreach ((ShowLang lang, CommsNotice notice, string body) in AllNotices())
                 {
+                    // ⚠ すっと浮かぶ連絡（③a）は 1 字も打たないので、速さの物差しを当てる相手ではない
+                    //    （`canon/LEDGER.md` 0168）。
+                    if (CommsCueLogic.DeliveryOf(notice) != CommsDelivery.Typed) continue;
                     // ⚠ 速さは言語で違う（日本語 12 / Latin 18・0149）。**その言語で測る**。
                     ShowLanguage.Select(lang);
                     var logic = new CommsPanelLogic();

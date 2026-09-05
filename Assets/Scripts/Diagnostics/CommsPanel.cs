@@ -281,6 +281,8 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.MarkLogged => "異変を排除しました",
             // ②b 報告が通らなかった（3 周目は AI が侵食されていて通らない — 0082）。
             CommsNotice.MarkNothing => "異常は検出されませんでした",
+            // ③a すっと浮かぶ一言（打鍵は鳴らない・`canon/LEDGER.md` 0168）。
+            CommsNotice.Halt => "止まってください！",
             // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
             //    読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
             CommsNotice.Prompt => "異常があなたを\n取り込もうとしています。\n排除してください。",
@@ -306,6 +308,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.BeginHow => "If you see an anomaly,\nhold down the button and\nthe device will analyse it.",
             CommsNotice.MarkLogged => "The anomaly was removed.",
             CommsNotice.MarkNothing => "No anomaly was detected.",
+            CommsNotice.Halt => "Please stop!",
             // ③ ここだけが体験者自身を名指しする（0096）。
             CommsNotice.Prompt => "An anomaly is trying to\nabsorb you.\nRemove it.",
             _ => "",
@@ -321,6 +324,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez le bouton.\nL'appareil l'analysera.",
             CommsNotice.MarkLogged => "L'anomalie a été supprimée.",
             CommsNotice.MarkNothing => "Aucune anomalie détectée.",
+            CommsNotice.Halt => "Arrêtez-vous !",
             CommsNotice.Prompt => "Une anomalie tente de vous\nabsorber.\nSupprimez-la.",
             _ => "",
         };
@@ -474,6 +478,10 @@ namespace FixedCamVr.Diagnostics
         private bool _runRestartHooked;
         // 直前のフレームで何文字出ていたか。**打鍵音はこの増分から鳴らす**（下の Apply）。
         private int _lastShown;
+        // ⚠⚠ いまの連絡は**すっと浮かぶ出方**か（`canon/LEDGER.md` 0168）。
+        //    true のあいだ打鍵を 1 発も鳴らさない。あの出方は 1 フレームで全文が出るので、
+        //    増分で鳴らす Apply は**放っておくと 1 発だけ鳴る**（画では気づけない）。
+        private bool _silent;
         // その字が絵を持つか（改行だけ false）。⚠ **全文が出ている一瞬にしか測れない** → SetNotice。
         private bool[]? _charVisible;
 
@@ -671,6 +679,7 @@ namespace FixedCamVr.Diagnostics
             _cue.ResetRun();
             _lastMarkCount = showControl != null ? showControl.VisitorMarkCount : 0;
             _logic.Disable();
+            _silent = false;
             Apply(CommsWeights.Hidden);
             // 前の体験者の打鍵を次のランへ持ち越さない（`ShowSoundDirector.ResetRun` と同じ流儀）。
             typeSfx?.StopAll();
@@ -690,11 +699,20 @@ namespace FixedCamVr.Diagnostics
             SetNotice(notice);
             // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。
             // 読ませる尺は**全文面で同じ 2 秒**（`canon/LEDGER.md` 0092）。
-            _logic.Begin(_charCount);
+            // ⚠⚠ **③a だけは打たない**（`CommsCueLogic.DeliveryOf`・0168）。すっと浮かんで
+            //    打鍵は 1 発も鳴らないので、**鳴るはずの数（`NoticeChars`）も 0 にする** —
+            //    ここを字数のままにすると、解析器が「打鍵が字数の半分以下」と言い出す
+            //    （`analyze-xp-log.py` は `ev=comms` の `chars` の合計と `typeN` を突き合わせる）。
+            CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice);
+            _silent = delivery == CommsDelivery.Fade;
+            if (_silent) NoticeChars = 0;
+            _logic.Begin(_charCount, delivery);
             LastNotice = notice;
             PulseCount++;
             Debug.Log($"[Comms] AIエージェントからの連絡 {notice}「{TextFor(notice).Replace("\n", "／")}」"
-                    + $"（{_charCount} 文字 / 打つ {_logic.TypeSec:0.00}s）");
+                    + $"（{_charCount} 文字 / "
+                    + (_silent ? $"すっと浮かぶ {_logic.TypeSec:0.00}s・打鍵なし"
+                               : $"打つ {_logic.TypeSec:0.00}s") + "）");
         }
 
         private void Update()
@@ -1183,7 +1201,10 @@ namespace FixedCamVr.Diagnostics
                 //      打鍵は「スクリーン関係の音」なので面そのものから鳴る。渡すのは
                 //      `_root`（実際に画へ出ている面）で、この部品が乗っている
                 //      GameObject ではない（あちらは動かない ＝ 足元から鳴る）。
-                if (shown > _lastShown && IsVisibleChar(shown - 1) && _root != null)
+                //    ⚠⚠ **すっと浮かぶ連絡では鳴らさない**（`canon/LEDGER.md` 0168）。あの出方は
+                //      1 フレームで全文が出るので、ここは増分 1 回ぶん **1 発だけ**鳴らしてしまう
+                //      ＝ 「カタカタ無し」のはずが打鍵が 1 発だけ鳴る（画では気づけない）。
+                if (shown > _lastShown && IsVisibleChar(shown - 1) && _root != null && !_silent)
                     typeSfx?.Play(_root.position);
                 _lastShown = shown;
                 VisibleChars = shown;

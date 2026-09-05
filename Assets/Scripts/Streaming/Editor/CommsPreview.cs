@@ -36,7 +36,8 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             CommsNotice.Greeting, CommsNotice.Walk, CommsNotice.Arrived,
             CommsNotice.Begin, CommsNotice.BeginHow,
-            CommsNotice.MarkLogged, CommsNotice.MarkNothing, CommsNotice.Prompt,
+            CommsNotice.MarkLogged, CommsNotice.MarkNothing,
+            CommsNotice.Halt, CommsNotice.Prompt,
         };
 
         private const string MainScenePath = "Assets/Scenes/Main.unity";
@@ -234,8 +235,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 const float RunAt = 17.0f;       // 導入演出が明けた（①）
                 const float Press1At = 28.0f;    // 1 回目の報告（通る ＝ ②a）
                 const float Press2At = 34.5f;    // 2 回目の報告（通らない ＝ ②b）
-                const float WaitAt = 41.0f;      // 締めのカットが待ち始めた（③は 2 秒後）
-                const float EndAt = 49.0f;
+                const float WaitAt = 41.0f;      // 締めのカットが待ち始めた（③a は 2 秒後）
+                // ⚠⚠ **③a を挟んだぶん伸びた**（2026-09-06・0168）。③a が 1.35 秒画に居て、
+                //    そこから③b が打ち始めるので、49 のままだと**③b が引き切る前に切れる**
+                //    （＝ 出来上がった動画の最後だけが無い、という気づきにくい形）。
+                const float EndAt = 51.5f;
                 float markHoldSec = ConstF(typeof(FixedCamVr.Input.VisitorMarkHoldLogic),
                                            "DefaultHoldSec", 1.0f);
 
@@ -303,7 +307,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 {decays.Length * Notices.Length} 枚"
                         + $"（周回の壊れ {string.Join(" / ", System.Array.ConvertAll(decays, d => d.ToString("0.00")))}）"
                         + $" → Assets/{OutDirRel}/\n"
-                        + $"  通し: {EndAt:0} 秒 ＝ 文面 8 通（⓪a→⓪b / ①→①b は同じ面のまま繋がる）\n"
+                        + $"  通し: {EndAt:0} 秒 ＝ 文面 {Notices.Length} 通"
+                        + "（⓪a→⓪b / ①→①b / ③a→③b は同じ面のまま繋がる）\n"
                         + $"  枠が開く {inSec:0.00}s → 打つ 文字数÷{ConstF(typeof(CommsPanelLogic), "CharsPerSec", 12f):0}"
                         + $" → 読ませる {holdSec:0.0}s → 引く {outSec:0.00}s\n"
                         + $"  置き場所: 頭から {dist:0.0}m・左へ {-yawOff:0}°・下へ {pitchOff:0}°");

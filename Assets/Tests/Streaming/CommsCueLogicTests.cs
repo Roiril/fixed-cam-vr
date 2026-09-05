@@ -199,19 +199,65 @@ namespace FixedCamVr.Streaming.Tests
         // ------------------------------------------------------------------ ③ 押さないまま 3 秒
 
         [Test]
-        public void NotReportingAtTheClosingCut_PromptsAfterThreeSeconds()
+        public void NotReportingAtTheClosingCut_CallsStopFirst()
         {
+            // ⚠ 待って最初に来るのは③a「止まってください！」（2026-09-06・0168）。
+            //   ③b「異常があなたを…」は③a を読ませ終わってから続く（下のテスト）。
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
 
             CollectionAssert.IsEmpty(Advance(l, CommsCueLogic.PromptAfterWaitSec - 0.2f, waiting: true),
-                                     "3 秒より前に催促した");
-            CollectionAssert.AreEqual(new[] { CommsNotice.Prompt }, Advance(l, 0.4f, waiting: true));
+                                     "2 秒より前に催促した");
+            CollectionAssert.AreEqual(new[] { CommsNotice.Halt }, Advance(l, 0.4f, waiting: true));
             CollectionAssert.IsEmpty(Advance(l, 30f, waiting: true), "催促が二度来た");
         }
 
+        /// <summary>
+        /// ③a →（読ませ終わった縁）→ ③b。<b>同じ面のまま文面だけが替わる</b>（0096 / 0168）。
+        /// ⚠ ここが「間を持つ」形に戻ると、床の演出が走っている最中に面が一度畳まれて開き直す。
+        /// </summary>
         [Test]
-        public void ThePrompt_NeedsAnUninterruptedWait()
+        public void TheClosingCut_SaysStopFirst_ThenExplainsWhy()
+        {
+            var l = new CommsCueLogic();
+            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);   // ①
+            // ⚠ ①b を先に消費しておく。**読ませ終わりは①b の出口でもある**ので、
+            //    ここで出しておかないと下の read:true が③b と一緒に①b を連れてくる。
+            CollectionAssert.AreEqual(new[] { CommsNotice.BeginHow }, Advance(l, 0.5f, read: true));
+
+            CollectionAssert.AreEqual(new[] { CommsNotice.Halt },
+                                      Advance(l, CommsCueLogic.PromptAfterWaitSec + 0.2f, waiting: true));
+
+            // 読ませ終わるまでは続かない（read=false のあいだ 1 通も出ない）。
+            CollectionAssert.IsEmpty(Advance(l, 5f, waiting: true),
+                                     "③a を読ませ終わる前に③b が出た");
+
+            CollectionAssert.AreEqual(new[] { CommsNotice.Prompt },
+                                      Advance(l, Dt * 3f, waiting: true, read: true));
+            CollectionAssert.IsEmpty(Advance(l, 30f, waiting: true, read: true), "③b が二度来た");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>③a のあとに報告したら、③b は二度と届かない。</b>
+        /// 届くと「排除しました」の直後に「排除してください」が来る ＝ 意味が真逆になる
+        /// （②が真逆になる事故と同じ型・0082）。
+        /// </summary>
+        [Test]
+        public void TheExplanation_NeverArrives_AfterTheVisitorReports()
+        {
+            var l = new CommsCueLogic();
+            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);                       // ①
+            Advance(l, 0.5f, read: true);                                         // ①b（先に消費）
+            Advance(l, CommsCueLogic.PromptAfterWaitSec + 0.2f, waiting: true);   // ③a
+
+            Assert.AreEqual(CommsNotice.MarkLogged,
+                            l.Tick(Run(waiting: true, mark: true, resolved: true)));
+            CollectionAssert.IsEmpty(Advance(l, 30f, waiting: false, read: true),
+                                     "報告した後に③b が届いた");
+        }
+
+        [Test]
+        public void TheStopCall_NeedsAnUninterruptedWait()
         {
             // 待ちが途切れたら数え直す（別のカットが挟まった / 一度畳まれた）。
             var l = new CommsCueLogic();
@@ -222,12 +268,12 @@ namespace FixedCamVr.Streaming.Tests
             // 再開後は 0 から数え直す ＝ 同じ 2.7 秒ではまだ出ない。
             CollectionAssert.IsEmpty(Advance(l, CommsCueLogic.PromptAfterWaitSec - 0.3f, waiting: true),
                                      "途切れる前の待ちを持ち越している");
-            // そこからさらに 0.4 秒で 3 秒を越えて、初めて出る。
-            CollectionAssert.AreEqual(new[] { CommsNotice.Prompt }, Advance(l, 0.4f, waiting: true));
+            // そこからさらに 0.4 秒で 2 秒を越えて、初めて出る。
+            CollectionAssert.AreEqual(new[] { CommsNotice.Halt }, Advance(l, 0.4f, waiting: true));
         }
 
         [Test]
-        public void ThePrompt_NeverFires_WhenNobodyIsWaiting()
+        public void TheClosingNotices_NeverFire_WhenNobodyIsWaiting()
         {
             // 締めのカットが無い体験（著作が変わった / 4 周目まで来なかった）では 1 通も出さない。
             var l = new CommsCueLogic();
@@ -249,7 +295,7 @@ namespace FixedCamVr.Streaming.Tests
 
             CollectionAssert.AreEqual(new[] { CommsNotice.Begin },
                                       Advance(l, CommsCueLogic.BeginDelaySec + 0.2f));
-            CollectionAssert.AreEqual(new[] { CommsNotice.Prompt },
+            CollectionAssert.AreEqual(new[] { CommsNotice.Halt },
                                       Advance(l, CommsCueLogic.PromptAfterWaitSec + 0.4f, waiting: true));
         }
 
