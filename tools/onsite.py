@@ -1004,6 +1004,18 @@ def _take_of(name: str) -> int:
     return int(m.group(2)) if m else 0
 
 
+def _stamp_of(name: str) -> str:
+    """名前の末尾の撮影時刻（`20260905_194728`）。取れなければ空。
+
+    ⚠⚠ **端末をまたぐ「いちばん新しい」は、これで決める。番号（`_t03`）では決めない**
+    （2026-09-05 実害）。撮った端末が変わると番号は t01 から振り直されるので、
+    **古い日に別の端末で撮った t05 が、今日の t03 に勝つ**。実際にリハで、今日 B で撮った
+    4 本が、A に残っていた 8/23 のテイクに全部置き換わった。**全部 ✅ で出るので気づけない。**
+    """
+    m = re.fullmatch(r"(.+)_t(\d+)_(\d{8}_\d{6})\.mp4", name)
+    return m.group(3) if m else ""
+
+
 def _plan_shots(cam: str = "?") -> dict:
     """卓が配る「今日撮るもの」を cueId → shot の辞書で。取れなければ空。"""
     p = get_json(f"{DESK}/shoot/plan?cam={cam}", timeout=8.0) or {}
@@ -1067,7 +1079,17 @@ def cmd_takes(args):
         if plan and cue not in plan:
             print(f"  {cue}  — 台本にこの cue が無いので飛ばす")
             continue
-        dev, take = entries[0]          # 名前の降順 = 撮った時刻の降順
+        # ⚠⚠ **端末をまたいで撮影時刻で選び直す。** 端末ごとには時刻順に並んでいるが、
+        #    集めたあとの並びは「読んだ端末の順」なので、そのまま先頭を採ると
+        #    **最初に読んだ端末の最新**が勝つ（2026-09-05 実害。今日 B で撮った 4 本が、
+        #    A に残っていた 8/23 のテイクへ全部置き換わった。番号は t01 から振り直されるので
+        #    古い日の t05 が今日の t03 に勝つ。しかも全部 ✅ で出るので気づけない）。
+        entries.sort(key=lambda e: _stamp_of(e[1]["name"]), reverse=True)
+        dev, take = entries[0]
+        stamp = _stamp_of(take["name"])
+        if stamp and stamp[:8] != datetime.now().strftime("%Y%m%d"):
+            print(f"  {cue}  ⚠ 今日撮ったものがありません（採るのは {stamp[:8]} の "
+                  f"{take['name']}）。撮り直すか、卓で名指しして採用する")
         pulled = post_json(f"{DESK}/shoot/pull",
                            {"name": take["name"], "shot": cue,
                             "host": dev["host"], "port": dev.get("port", 8080)},
