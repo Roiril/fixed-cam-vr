@@ -388,10 +388,23 @@ def quest_rows(rows: Rows):
     except Exception:
         qf = None
     # quest-fleet.py はハイフン入りで import できないので、必要な処理だけここで叩く。
-    rc, out, _ = run(["adb", "devices"], timeout=25)
-    serials = [l.split()[0] for l in out.splitlines()[1:]
-               if l.strip() and l.split()[-1] == "device"]
-    if not serials:
+    # ⚠⚠ **adb に出ている＝Quest ではない**（2026-09-05 実害）。設営で配信スマホを USB に挿し、
+    #    :5555 を開けた直後は adb に 7 件並ぶ（Quest 1・Pixel 3・その無線側 3）。model で絞らないと
+    #    **配信スマホ 3 台が「Quest / アプリが入っていません」の NG になる**（本物の NG に紛れる）。
+    #    同じ機が USB と :5555 で 2 回出るので、実シリアル（ro.serialno）で畳む。
+    rc, out, _ = run(["adb", "devices", "-l"], timeout=25)
+    devices, seen = [], set()
+    for l in out.splitlines()[1:]:
+        p = l.split()
+        if len(p) < 2 or p[1] != "device" or "model:Quest" not in l:
+            continue
+        _, sn, _ = run(["adb", "-s", p[0], "shell", "getprop ro.serialno"], timeout=20)
+        real = sn.strip().splitlines()[0].strip() if sn.strip() else p[0]
+        if real in seen:
+            continue
+        seen.add(real)
+        devices.append((p[0], real))
+    if not devices:
         rows.add(sec, "ng", "Quest", "adb に 1 台も出ていません",
                  "USB を挿すか、無線 adb（192.168.10.31 / .32:5555）へ connect する")
         return []
@@ -399,8 +412,8 @@ def quest_rows(rows: Rows):
     apk = os.path.join(ROOT, "Builds", "mawarimi.apk")
     apk_mtime = os.path.getmtime(apk) if os.path.exists(apk) else 0
     running = []
-    for s in serials:
-        name = QUEST_NAMES.get(s, s[-6:])
+    for s, real in devices:
+        name = QUEST_NAMES.get(real, real[-6:])
         tag = f"Quest {name}"
         _, pkg, _ = run(["adb", "-s", s, "shell", "dumpsys package com.roiril.mawarimi"], 30)
         if "Unable to find package" in pkg or not pkg.strip():
@@ -453,16 +466,20 @@ def quest_rows(rows: Rows):
                      + (f"（{g['ssid']}）" if g["ssid"] else "")
                      + " — いま繋がっていても、電源を入れ直すと戻りません",
                      "端末の Wi-Fi 設定でそのネットワークを 1 度手で選び直す（adb からは戻せない）")
+        elif not g["parsed"]:
+            rows.add(sec, "warn", tag + " の自動接続",
+                     "判定できませんでした（設定の節が読めない）",
+                     "adb shell dumpsys wifi の Configured networks を直接見る")
         else:
             rows.add(sec, "ok", tag + " の自動接続",
                      f"生きています（接続チェック={g['guard']}）")
 
         _, ps, _ = run(["adb", "-s", s, "shell", "ps -A | grep mawarimi"], 20)
         if "mawarimi" in ps:
-            running.append(s)
+            running.append(real)
     rows.add(sec, "ok" if running else "warn", "起動中の機",
              f"{len(running)} 台でアプリが動いています"
-             + (f"（{', '.join(QUEST_NAMES.get(s, s[-6:]) for s in running)}）" if running else ""),
+             + (f"（{', '.join(QUEST_NAMES.get(r, r[-6:]) for r in running)}）" if running else ""),
              "点検で音・コントローラ・目の写真を見るには、本番と同じ台数を起動しておく")
     return running
 
@@ -799,21 +816,62 @@ def cmd_watch(args):
 CAPTIVE_KEYS = ("captive_portal_mode", "captive_portal_detection_enabled")
 
 
+def configured_networks(dump: str) -> list:
+    """`dumpsys wifi` の **いまの設定** だけを読む。`[(ssid, 状態, 理由), ...]`。
+
+    ⚠⚠ **全文検索で判定してはいけない**（2026-09-05 実害）。dumpsys には過去の走査の写しが
+    ring buffer で何時間も残り、そこに `NETWORK_SELECTION_PERMANENTLY_DISABLED` の**古い写し**が
+    居座る。全文に `in` を掛けると、**端末で選び直して直したあとも永遠に「殺されている」と出る**
+    （実際にカメラ B で出た。現在の設定は ENABLED なのに、11:53〜14:06 の写しが 9 件残っていた）。
+    見るのは `WifiConfigManager - Configured networks` の節だけ。
+    """
+    lines = dump.splitlines()
+    s = e = -1
+    for i, l in enumerate(lines):
+        if s < 0 and "WifiConfigManager - Configured networks Begin" in l:
+            s = i
+        elif s >= 0 and "WifiConfigManager - Configured networks End" in l:
+            e = i
+            break
+    if s < 0 or e < 0:
+        return []
+    nets, ssid, status, reason = [], "", "", ""
+    for l in lines[s + 1:e]:
+        m = re.search(r'ID:\s*\d+\s+SSID:\s*"([^"]*)"', l)
+        if m:
+            if ssid:
+                nets.append((ssid, status, reason))
+            ssid, status, reason = m.group(1), "", ""
+            continue
+        m = re.search(r"NetworkSelectionStatus\s+(\S+)", l)
+        if m and not status:
+            status = m.group(1)
+        m = re.search(r"mNetworkSelectionDisableReason\s+(\S+)", l)
+        if m and not reason:
+            reason = m.group(1)
+    if ssid:
+        nets.append((ssid, status, reason))
+    return nets
+
+
 def wifi_guard(serial: str) -> dict:
-    """その機の「自動接続を殺す仕掛け」を止め、いま殺されていないかを見る。"""
+    """その機の「自動接続を殺す仕掛け」を止め、いま殺されていないかを見る。
+
+    `parsed` が False なら**判定できていない**（節が見つからなかった）。OK と読まないこと。
+    """
     for k in CAPTIVE_KEYS:
         run(["adb", "-s", serial, "shell", f"settings put global {k} 0"], timeout=20)
     _, got, _ = run(["adb", "-s", serial, "shell",
                      f"settings get global {CAPTIVE_KEYS[0]}"], timeout=20)
     _, dump, _ = run(["adb", "-s", serial, "shell", "dumpsys wifi"], timeout=60)
-    disabled = "NETWORK_SELECTION_PERMANENTLY_DISABLED" in dump
-    reason = "NO_INTERNET" if "DISABLED_NO_INTERNET" in dump else ""
-    ssid = ""
-    m = re.search(r'Ignoring network selection disabled SSID: "([^"]+)"', dump)
-    if m:
-        ssid = m.group(1)
+    nets = configured_networks(dump)
+    dead = [(sid, rsn) for sid, st, rsn in nets if "PERMANENTLY_DISABLED" in st]
+    ssid = dead[0][0] if dead else ""
+    reason = ("NO_INTERNET" if dead and "NO_INTERNET" in dead[0][1]
+              else (dead[0][1] if dead else ""))
     return {"guard": got.strip().splitlines()[0].strip() if got.strip() else "?",
-            "disabled": disabled, "reason": reason, "ssid": ssid}
+            "disabled": bool(dead), "reason": reason, "ssid": ssid,
+            "parsed": bool(nets)}
 
 
 def cmd_wifi_guard(args):
@@ -831,6 +889,8 @@ def cmd_wifi_guard(args):
                   + (f"（{r['ssid']} / 理由 {r['reason']}）" if r["ssid"] else "")
                   + "\n    → **端末の Wi-Fi 設定で、そのネットワークを 1 度手で選び直す。**"
                     "adb からは戻せません")
+        elif not r["parsed"]:
+            print(f"{name}  ⚠ 判定できませんでした（設定の節が読めない）")
         else:
             print(f"{name}  自動接続は生きています")
         print(f"    予防（接続チェックを切る）= {r['guard']}（0 なら入っている）")
@@ -866,7 +926,8 @@ def cmd_adb_open(args):
         g = wifi_guard(s)
         print(f"    接続チェックを切りました（{g['guard']}）"
               + ("  ⚠ この機は既に自動接続が殺されています — "
-                 "端末の Wi-Fi 設定で 1 度手で選び直すこと" if g["disabled"] else ""))
+                 "端末の Wi-Fi 設定で 1 度手で選び直すこと" if g["disabled"]
+                 else ("  ⚠ 自動接続は判定できませんでした" if not g["parsed"] else "")))
         ok += 1 if good else 0
     print(f"\n{ok}/{len(usb)} 台。⚠ 端末を再起動すると :5555 は閉じます（設営後にもう一度)")
     return 0 if ok else 1

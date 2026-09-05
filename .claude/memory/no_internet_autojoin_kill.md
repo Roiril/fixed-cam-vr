@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: aa629b9d-978a-41e5-b9f1-d22062359145
-  modified: 2026-09-04T15:58:29.145Z
+  modified: 2026-09-05T05:20:41.852Z
 ---
 
 # 上流が無いと、Android が展示網の自動接続を殺す（2026-09-05 実測）
@@ -77,6 +77,23 @@ adb -s <serial> shell "settings put global captive_portal_detection_enabled 0"
 ⭐ **根っこから消すなら、Aterm の WAN を上流のある回線へ挿す。** 検証が通れば
 この判定自体が起きないので、Quest もスマホも全部まとめて解決する。会場に挿せる線があるなら
 それがいちばん強い（LAN 側は NAT の内側のままなので、端末が別の AP へ移る心配は増えない）。
+
+## ⚠⚠ 計器が 2 つとも嘘をついた（2026-09-05 の設営で発覚。どちらも直した）
+
+**直したあとも「殺されている」と出続けた。** `wifi_guard` が `dumpsys wifi` の**全文**に
+`"NETWORK_SELECTION_PERMANENTLY_DISABLED" in dump` を掛けていたため。dumpsys には過去の走査の
+写しが ring buffer で何時間も残る（実測: カメラ B は現在の設定が `ENABLED` なのに、
+11:53〜14:06 の写しが 9 件居座っていた）。⇒ **`WifiConfigManager - Configured networks` の節だけを
+読む**（`configured_networks()`）。判定は「いまの設定」から取る。
+
+⭐ **判定するときは、必ず「止まるはず」と「通るはず」の 2 通りを流してから本題を測る。**
+今回は「古い写しだけが残る dump」を作って通し、旧実装ならそれが `True` になることまで確かめた。
+
+**adb に出ている＝Quest ではない。** `check` が `adb devices` の全件を Quest として数えていたので、
+設営で配信スマホを USB に挿し `:5555` を開けた直後は **7 件**並び、**Pixel 3 台が
+「Quest / アプリが入っていません」の NG** になった（本物の NG に紛れる）。
+⇒ `adb devices -l` の `model:Quest` で絞り、**同じ機が USB と `:5555` で 2 回出るので
+`ro.serialno` で畳む**。無線側は `s[-6:]` が `1:5555` になって名前も壊れていた。
 
 ## 道具
 
