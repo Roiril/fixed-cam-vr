@@ -41,8 +41,17 @@ ROUTE_CSS = """
       flex: 1;
     }
 
-    .sheet.exhibit .route .cols p:last-child {
-      margin-bottom: 0;
+    /* ⚠ 繰り返しの語が途中で折れると読みが崩れる（「ゆっくりゆ／っくり」になった） */
+    .sheet.exhibit .route .nb {
+      white-space: nowrap;
+    }
+
+    /* ⚠ 最後の 1 行だけ枠で囲う（2026-09-06 ユーザー判定「強調しよう」）。
+       この面でいちばん強い要素になる。太字だけだと上の 2 つの警告と区別が付かない */
+    .sheet.exhibit .route .warn {
+      border: .6pt solid var(--ink);
+      padding: 3mm 4mm;
+      margin: 1mm 0 0;
     }
 
     @media screen and (max-width: 230mm) {
@@ -71,7 +80,7 @@ ROUTE_HTML = """
           <p>壁のまわりを、矢印の向きに 3 周します。</p>
           <p>右手で手すりをたどりながら進みます。手は離さないでください。</p>
           <p>画面に映るのは、自分の視点の映像ではありません。</p>
-          <p class="warn">足元が見づらいので、気を付けてゆっくり歩いてください。</p>
+          <p class="warn">足元が見づらいので、<span class="nb">ゆっくりゆっくり</span>、慎重に歩いてください。</p>
         </div>
       </div>
     </div>
