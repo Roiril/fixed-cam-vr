@@ -405,6 +405,25 @@ namespace FixedCamVr.Streaming
             _material.SetVector(OverlayOffsetId, new Vector4(o.x, o.y, o.z, 0f));
         }
 
+        /// <summary>
+        /// いま出ている 1 層目の<b>素材だけ</b>を差し替える（マスク・強さ・色合わせ・フェードは触らない）。
+        ///
+        /// 入れ替わりの覆いが育つあいだ、畳んだ素材の跡へ<b>ライブを出さない</b>ために使う
+        /// （4 周目 A の締め。<see cref="TakeRunner"/> が無人プレートを渡す）。マスクが左半分なら
+        /// 左半分だけがプレートになるので、右半分の第 2 層と合わせて画面全体が無人の部屋になる。
+        ///
+        /// ⚠ 動画・録画フレーム列の cue では効かない（次のフレームで上書きされる）。false を返す。
+        /// </summary>
+        /// <returns>差し替えたら true。出ている素材が無い / 動画なら false（呼び出し側が従来どおり畳む）。</returns>
+        public bool ReplaceStillSource(Texture? tex)
+        {
+            if (_material == null || tex == null) return false;
+            if (_current == null || _strength <= 0.001f) return false;
+            if (_current.SourceIsVideo || _current.SourceIsFrames) return false;
+            SetOverlayTexture(tex, (float)tex.width / Mathf.Max(1, tex.height));
+            return true;
+        }
+
         /// <summary>現在のオーバーレイをフェードアウトして停止。</summary>
         public void StopOverlay()
         {

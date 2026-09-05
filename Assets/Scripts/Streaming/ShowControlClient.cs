@@ -2351,7 +2351,13 @@ namespace FixedCamVr.Streaming
         private Texture2D?[] _swapPlates = Array.Empty<Texture2D?>();
         private int _swapPlateGen;
 
-        private Texture? SwapPlateFor(int cameraIndex)
+        /// <summary>
+        /// そのカメラの<b>無人プレート</b>（<c>plate_&lt;カメラid&gt;</c> cue の静止画）。読めていなければ null。
+        ///
+        /// 読み手は 2 つ: <see cref="SwapMorphFx"/>（覆いの形を背景差分で引く相手）と
+        /// <see cref="TakeRunner"/>（覆いが育つあいだ 1 層目へ出す絵）。
+        /// </summary>
+        public Texture? SwapPlateFor(int cameraIndex)
             => cameraIndex >= 0 && cameraIndex < _swapPlates.Length ? _swapPlates[cameraIndex] : null;
 
         private void RefreshSwapPlates()

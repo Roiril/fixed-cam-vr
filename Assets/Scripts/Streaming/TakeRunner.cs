@@ -721,7 +721,16 @@ namespace FixedCamVr.Streaming
                 //   ので「黒い波が育って人になる」が読めなくなる。第 2 層は従来どおり onCovered。
                 //   ⚠ **素材を出す側も従来どおり onCovered**（早く出すと体験者が砂の下ではなく
                 //   画の中で入れ替わる）。ここで畳んでよいのは「もう出さないと決まっている素材」だけ。
-                if (cue == null) PlayStepOverlay(null, step);
+                //
+                //   ⚠⚠ **畳んだ跡へライブを出さない**（2026-09-05・ユーザー報告「4-A って確か、
+                //   体験者がひだりはんぶんに手を伸ばしちゃうと結構序盤から手が見えちゃってたよね」）。
+                //   覆いは CG の人型の形でしか育たないので、**横へ伸ばした手は覆いの外に残る** —
+                //   畳んだ跡がライブだと、育ち切るまでの 2.6 秒（`DefaultSwapMs`）ずっと生身が見える。
+                //   右半分は第 2 層が onCovered まで保持されるので、**穴は左半分にだけ開いていた**。
+                //   ⇒ 素材だけ**無人プレート**へ差し替え、マスク（左半分）はそのまま保つ。
+                //   生成の人形は消え（ユーザー指定は守る）、左右とも無人プレート ＝ 画面全体が
+                //   無人の部屋になり、そこへ黒い波が育つ。掴めなければ従来どおり畳む。
+                if (cue == null && !CoverWithPlate(step)) PlayStepOverlay(null, step);
                 swapping = director.TakeSwapBegin(
                     source == TakeSchema.SourceLive ? step.camera : -1, swapSec, swapDir,
                     () =>
@@ -855,6 +864,34 @@ namespace FixedCamVr.Streaming
         /// <c>untilClipEnd</c> の待ちはここで確定させる — 静止画は終端イベントを持たないため
         /// §6.4 のとおり <c>durSec&gt;0 ? durSec : 4s</c> で畳む（watchdog 任せにすると 45 秒画面が固まる）。
         /// </summary>
+        /// <summary>
+        /// 入れ替わりの覆いが育つあいだ、1 層目の素材を<b>そのカメラの無人プレート</b>へ差し替える
+        /// （2026-09-05）。マスクは触らないので、左半分だけを覆っていた cue は左半分だけがプレートになる。
+        ///
+        /// ⚠ プレートは <see cref="ShowControlClient"/> が起動時に先読みしてある
+        /// （<see cref="SwapMorphFx"/> が覆いの形を引く相手と同じ 1 枚）。掴めなければ <c>false</c> を返し、
+        /// 呼び出し側は従来どおり畳む — **覆いが育つまで実写が出る**が、素材が残り続けるよりはよい。
+        /// </summary>
+        private bool CoverWithPlate(ShowStepDef step)
+        {
+            if (overlay == null || showControl == null) return false;
+            int cam = step.camera >= 0 ? step.camera : ResolveLatestZoneCamera();
+            Texture? plate = showControl.SwapPlateFor(cam);
+            if (plate == null)
+            {
+                Debug.LogWarning($"[TakeRunner] 覆いのあいだ 1 層目へ出す無人プレートがありません" +
+                                 $"（camera={cam}）→ 素材を畳みます。覆いが育つ間その部分に実写が出ます。" +
+                                 $"卓の 📷 無人プレートで plate_<カメラid> を用意すること。");
+                return false;
+            }
+            if (!overlay.ReplaceStillSource(plate)) return false;
+            // ⚠ **画からはほとんど区別が付かない**（塞いだ跡も無人の部屋なので、実写と絵の差しか出ない）。
+            //   体験者が写っているかどうかで判定するしかないが、自動走行には人が居ない。
+            //   だからこの 1 行が「塞げたか」の唯一の証拠になる（走行ログを grep して確かめる）。
+            Debug.Log($"[TakeRunner] 覆いのあいだ 1 層目を無人プレートで塞いだ（camera={cam}）");
+            return true;
+        }
+
         private void PlayStepOverlay(OverlayCueData? cue, ShowStepDef step)
         {
             if (cue != null && overlay != null)

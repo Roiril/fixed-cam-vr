@@ -495,6 +495,14 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   「作者が『山場が出ない』危険に気づく唯一の手段」と位置づけたもの
 - **発火** = [`CueScheduler`](../../Assets/Scripts/Streaming/CueScheduler.cs): (lap, camera) 一致 + delaySec 後に `ScreenOverlayController.PlayCue` を**ローカル直接**呼ぶ（サーバ不要）。**`control.activeCue` が非空の間は抑止**（ライブ手動操作が常に優先）。once=true はラン内 1 回
 - **APK 焼き込み**: Web 卓「📦 ビルド用エクスポート」（`POST /export-build`）が show.json + 参照アセットを `Assets/StreamingAssets/show/` へコピーし、URL を `sa://assets/<file>` に書換。Unity 側は [`ShowAssetResolver`](../../Assets/Scripts/Streaming/ShowAssetResolver.cs) が `sa://` → `StreamingAssets/show/assets/` に解決（Android は jar: URL、動画は VideoPlayer 直接パス）。起動時に `StreamingAssets/show/show.json` を読み、優先順位は **焼き込み < 端末キャッシュ < ライブ**（従来の後勝ちを維持）
+- **⭐ 焼き込みは `build fixedcam` が毎回やる**（2026-09-03）。[`tools/export-show-build.py`](../../tools/export-show-build.py) が
+  卓の `tools/web-compositor/show.json` を読んで同じ焼き込みを走らせる（中身は卓と共通の
+  [`export_build.py`](../../tools/web-compositor/export_build.py)）。飛ばすのは `-NoExport`、いま古いかを見るのは
+  `py -3.11 tools/export-show-build.py --check`（`unity.ps1 doctor` も出す）
+  - ⚠⚠ **自動にした理由**: 📦 が手で押す 1 手だったので、押し忘れた焼き込みが `timeline.rev 33`（8/17）のまま
+    2 週間以上残り、卓は 44 まで進んでいた。**端末キャッシュが焼き込みより上なので普段は表に出ない**が、
+    APK を焼き直すとキャッシュは捨てられる（`CachedConfig.buildGuid`）＝ 焼き直した機を卓なしで起動すると
+    古い著作がそのまま体験になる。当時の差は「3 周目 A が 1 周目 A の録画（左右分割なし）」
 - **⚠ `Assets/StreamingAssets/show/` はコミット禁止**（gitignore 済み）。エクスポート時点のカメラ host（現場 DHCP IP）が verbatim に焼き込まれるため。ビルド直前に現場でエクスポートし直すのが正
 - `CachedConfig`（端末キャッシュ）に cues / schedule / course を保存するようになった（旧: cues 欠落でオフライン発火不可だった）
 - **⚠ 実機未検証**（2026-07-17 実装。コンパイル・EditMode テスト 75/75・Web UI・エクスポートは検証済み）
@@ -2315,6 +2323,21 @@ py -3.11 tools/swap-motion-audit.py --label all --baseline none
   - ⇒ 体験者に見えるのは「**黒い波が人の大きさへ育つ → 画が変わる → 晴れて人が現れる**」
   - ⚠ `justCovered` を直接読まない（`SwapMorphFx` / `ShowSwapPreview` とも `justSwapScreen`）。
     姿を替える縁（人形 ⇄ 人の差し替え）は従来どおり覆いの下＝ `justCovered` / `justSettling`
+- ⚠⚠ **覆いが育つあいだ、畳んだ 1 層目の跡には無人プレートを出す**
+  （2026-09-05・`canon/LEDGER.md` 0155）。4 周目 A の締めは 1 層目（左半分の生成人形）を
+  覆いの完成を待たずに畳む（0050 の赤入れ「左半分だけ生成を乱れとともに抹消したらすぐ消す」）が、
+  **跡がライブだと覆いが育つ 2.6 秒ずっと実写が出る**。覆いは CG の人型の形でしか育たないので
+  **横へ伸ばした手は覆いの外に残り、生身が見える**（実機で起きていた）。
+  ⇒ [`TakeRunner.CoverWithPlate`](../../Assets/Scripts/Streaming/TakeRunner.cs) が
+  **素材だけ無人プレートへ差し替える**（[`ScreenOverlayController.ReplaceStillSource`](../../Assets/Scripts/Streaming/ScreenOverlayController.cs)。
+  **マスク・強さ・色合わせは触らない**ので、左半分マスクの cue は左半分だけがプレートになる）。
+  生成の人形は消え、左右とも `plate_A` ＝ **画面全体が無人の部屋**になり、そこへ黒い波が育つ。
+  - ⚠ プレート（`plate_<カメラid>` cue）を掴めなければ**従来どおり畳む**（警告 1 行）。
+    覆いが育つまで実写が出るが、消すと決まった素材が残り続けるよりはよい
+  - ⚠ **第 2 層は従来どおり onCovered まで保持**（右半分が先にライブへ戻ると
+    「入れ替わる前から本物の体験者が写っている」に戻る）
+  - ⚠ **動画・録画フレーム列の cue では差し替えない**（次のフレームで上書きされる）。
+    この経路を通るのは静止画の素材だけ
 - ⚠⚠ **向きはデータで指定しない。** 「このカットが人形を出すか（`cg` が空でないか）」と
   「直前に人形が出ていたか」から導く。前後で同じなら入れ替わりではないので、
   **乱れ遷移（既定尺）へ倒して理由をログに出す**
