@@ -92,10 +92,11 @@ behind the stand legs, and from below the bottom edge close to the lens — and 
 until they are exactly where the last frame shows them. They never walk smoothly: they shuffle,
 totter, tip and slide in small uneven jerks, each starting and stopping at its own moment, like
 footage missing frames; some crawl, some are already seated when they appear. The largest doll at
-the front arrives last and comes closest to the lens. When they have all stopped, several of them
-slowly raise a stiff arm toward the right side of the picture, elbow and shoulder bending in
-angles, palm turned up, beckoning — and hold it there. No hand ever crosses the middle of the
-picture. Nothing else changes — the curtain, the floor and the light stay exactly as in the input
+the front arrives last and comes closest to the lens. When they have all stopped, they turn their
+heads toward the right side of the picture and several of them slowly raise a stiff arm that way,
+elbow and shoulder bending in angles, fingers spread and slightly curled as if to take hold of
+someone standing there — and hold it. No hand ever crosses the middle of the picture. Nothing else
+changes — the curtain, the floor and the light stay exactly as in the input
 frames, and the right half stays empty. Keep the brightness, contrast, colour, sharpness and grain
 of the input.
 ```
