@@ -12,8 +12,8 @@ namespace FixedCamVr.Streaming.EditorTools
     /// ⚠ <see cref="CommsFaceImporter"/> と違う所が 3 つある:
     /// <list type="bullet">
     /// <item><b><c>isReadable</c> を立てる</b>。この版は GPU では 1 度も引かれない —
-    ///       <see cref="ScreenOsd"/> が <c>GetPixels32</c> で CPU へ読み、いまの時刻の
-    ///       19 セルぶんを別のテクスチャへ敷き直す。落ちていると実機でだけ例外になり、
+    ///       <see cref="ScreenOsd"/> が <c>GetPixels32</c> で CPU へ読み、いまの時刻と周回の
+    ///       26 セルぶんを別のテクスチャへ敷き直す。落ちていると実機でだけ例外になり、
     ///       時計が丸ごと出ない。</item>
     /// <item><b>ミップを作らない</b>。CPU で読むだけなので要らない
     ///       （縮小のちらつきは、実際に貼られる敷き直し先の側がミップで面倒を見る）。</item>
@@ -21,9 +21,11 @@ namespace FixedCamVr.Streaming.EditorTools
     ///       （生成りの字＋暗い縁）。false にすると字が沈んで縁と混ざる。</item>
     /// </list>
     ///
-    /// ⚠ 圧縮しない。19 字ぶんをセル単位でコピーするので、ブロック圧縮が掛かると
+    /// ⚠ 圧縮しない。セル単位でコピーするので、ブロック圧縮が掛かると
     ///   セルの境目に隣の字の破片が滲む（<c>GetPixels32</c> は展開後を返すが、
     ///   展開の時点で既に混ざっている）。
+    /// ⚠ <b>版の幅が <c>maxTextureSize</c>（1024）を超えると縮小されてセル幅が狂う。</b>
+    ///   いまは 22 セル × 24px ＝ 528px。字を足すときはここを見る。
     /// </summary>
     public sealed class OsdGlyphImporter : AssetPostprocessor
     {

@@ -30,16 +30,11 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// <b>別の場所（異世界）の素材 id の頭</b>（2026-09-03・<c>canon/LEDGER.md</c> 0131）。
         ///
-        /// いま画面を取っているカットの <c>cueId</c>（<see cref="TakeRunner.ActiveStepCueId"/>）が
-        /// これで始まっていれば「異世界が映っている」とみなし、風が鳴って劇伴が切れる。
-        ///
-        /// ⚠⚠ <b>ここは現場の著作（`show.json`）に踏み込んでいる唯一の場所。</b>
-        /// 卓で cue の名前を変えると<b>音が黙って止まる</b>（画は 1 画素も変わらない）。
-        /// だから <c>analyze-xp-log.py</c> が「異世界のカットが出たのに風が鳴っていない」を FAIL にする。
-        /// ⚠ 素材の側に「これは異世界だ」と書ける欄が無いので名前で判じている。
-        /// 欄を足すなら <c>rules/streaming.md</c> の契約・卓の編集面・端末キャッシュを対で直すこと。
+        /// ⚠ <b>正本は <see cref="TakeRunner.OtherworldCuePrefix"/></b>（2026-09-06 に移した）。
+        /// 判定も <see cref="TakeRunner.OtherworldActive"/> 1 本で、音（風・劇伴）と
+        /// 時計（<c>ScreenOsd</c>）が同じ 1 本を読む。ここは呼び名として残してある。
         /// </summary>
-        public const string OtherworldCuePrefix = "backrooms";
+        public const string OtherworldCuePrefix = TakeRunner.OtherworldCuePrefix;
 
         /// <summary>隔離が開いているときの部屋の帯域（＝ 素通し）。</summary>
         public const float OpenCutoffHz = 22000f;
@@ -528,12 +523,8 @@ namespace FixedCamVr.Streaming
             // ⚠ **呪いが排除されたか**（0129 / 0131）。画が戻るのと同じ 1 本を読む。
             if (_run != null) s.curseReleased = _run.ScreenDecayReleased;
             // ⚠ **異世界が映っているか。** 画面を取っているカットの素材 id で判じる（上の但し書き）。
-            if (_takes != null)
-            {
-                string cue = _takes.ActiveStepCueId;
-                s.otherworld = cue.Length > 0 && cue.StartsWith(OtherworldCuePrefix,
-                                                                System.StringComparison.Ordinal);
-            }
+            //   判定は TakeRunner の 1 本（時計も同じものを読む・`canon/LEDGER.md` 0167）。
+            if (_takes != null) s.otherworld = _takes.OtherworldActive;
             // ⚠ ここが立った縁 ＝ **体験者と人形が入れ替わった瞬間**（`canon/LEDGER.md` 0086）。
             //    「3 周目」と書かず、人形が立っていること自体を見る。
             // ⚠⚠ **DollVisible を読む（IsVisible ではなく）。** 持続の覆い（swapHold）と

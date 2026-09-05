@@ -3117,6 +3117,42 @@ def analyze(events, others, exp, warns=None):
                 verdict("WARN", f"時計の刻みが走行の長さに追いついていない"
                                 f"（{span:.0f} 秒で {grew} 回）")
 
+    # --- 時計の右の周回（canon/LEDGER.md 0167）---
+    #
+    # ⚠ ここも著作に紐づかない（常に出ている）ので、走行そのものを見る。
+    # ⚠⚠ **異世界のあいだは時刻ごと `?` になる**（osdLap=mask）。時計と音（風）は
+    #   同じ 1 本（`TakeRunner.OtherworldActive`）を読んでいるので、**片方だけ出ていたら
+    #   配線が切れている**。画には「時計が読める」としか出ないので気づけない。
+    lap_all = [str(v) for v in effect_samples(events, "osdLap")]
+    if lap_all:
+        any_effect_key = True
+        w()
+        w("### 時計の右の周回（0167）")
+        w(f"  出た値: {' '.join(sorted(set(lap_all)))}")
+        shown = [v for v in lap_all if v not in ("", "-")]
+        segs = [e for e in events if e.get("ev") == "seg"]
+        if not shown:
+            if segs:
+                verdict("FAIL", f"区間へ {len(segs)} 回入ったのに周回が 1 度も出ていない"
+                                "（osdLap が常に -）— 時計が区間の周を掴めていない")
+            else:
+                verdict("WARN", "区間へ 1 度も入っていない走行（周回は出なくて正常）")
+        else:
+            other_cues = [e for e in events
+                          if e.get("ev") == "cue" and str(e.get("st")) == "on"
+                          and str(e.get("id", "")).startswith("backrooms")]
+            if "mask" in lap_all:
+                verdict("OK", "別の場所が映っているあいだ、時刻と周回が ? になった")
+            elif other_cues:
+                verdict("FAIL", f"別の場所のカット（{other_cues[0].get('id')}）が画に出たのに"
+                                "時計が ? にならなかった — 音の風と同じ 1 本"
+                                "（TakeRunner.OtherworldActive）を読めているか見る")
+            else:
+                verdict("WARN", "別の場所の演出に到達していない走行（? は出なくて正常）")
+            if "last" not in lap_all and any(fnum(e, "lap", 0.0) >= 4.0 for e in segs):
+                verdict("FAIL", "帰りの区間へ入ったのに「最後」が出ていない"
+                                "（osdLap に last が無い）")
+
     want_eyes = [f"{t['id']}#{i}" for t in exp["takes"]
                  for i, s in enumerate(t["steps"]) if (fstr(s.get("eyes")) or 0.0) > 0.0]
     eyes_raw = [str(v) for v in effect_samples(events, "eyes") if str(v) not in ("", "-")]

@@ -644,6 +644,17 @@ namespace FixedCamVr.Diagnostics
             : $"{(_osd.Built ? 1 : 0)}/{_osd.Ticks}/{_osd.Opacity:F2}";
 
         /// <summary>
+        /// 時計の右に出している<b>周回</b>（<c>canon/LEDGER.md</c> 0167）—
+        /// <c>-</c>（区間が未確定）/ <c>1</c> <c>2</c> <c>3</c> / <c>last</c>（帰りの区間）/
+        /// <c>mask</c>（別の場所が映っていて時刻ごと <c>?</c>）。
+        ///
+        /// ⚠ <b>敷いた結果</b>を出す（状態ではない）。時計を組めていなければ <c>-</c> のまま。
+        /// ⚠ <c>osd=</c> と分けてある — あちらは 3 値で <c>analyze-xp-log.py</c> が
+        /// スラッシュの数を見ている。増やすと解析が黙って落ちる。
+        /// </summary>
+        private string OsdLapState => _osd == null ? "-" : _osd.LabelToken;
+
+        /// <summary>
         /// 目の視界ジャック（<c>canon/LEDGER.md</c> 0099）—
         /// <c>&lt;面を組めたか&gt;/&lt;端末に用意できた写真&gt;/&lt;画に出した累計&gt;/&lt;いま乗っ取り中か&gt;</c>。
         ///
@@ -1154,6 +1165,10 @@ namespace FixedCamVr.Diagnostics
             //   ⚠ **本編で 1/0/… なら時計が止まっている**（秒が変わっても敷き直していない）。
             //     画には「時計が無い」としか出ないので、ここが唯一の手掛かり。
             _sb.Append(" osd=").Append(OsdState);
+            //   osdLap = 時計の右の周回（`canon/LEDGER.md` 0167）。-/1/2/3/last/mask。
+            //   ⚠ **別の場所（バックルームズ）が映っているあいだは mask**。異世界のカットが出た
+            //     走行でここが 1 度も mask にならなければ、時計だけが現実を主張し続けている。
+            _sb.Append(" osdLap=").Append(OsdLapState);
             //   jack = 目の視界ジャック（`canon/LEDGER.md` 0099）。組めたか/写真/出した累計/乗っ取り中。
             _sb.Append(" jack=").Append(JackState);
             //   guide = 歩行誘導（canon/LEDGER.md 0079）。組めたか/山形の数/矢印/輪。

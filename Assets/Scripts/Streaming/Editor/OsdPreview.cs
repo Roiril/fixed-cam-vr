@@ -93,6 +93,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 //   Edit モードでは Awake が走らないので、材質を直接渡す口を使う。
                 var osd = quadGo.AddComponent<ScreenOsd>();
                 osd.BindForPreview(mat, new Vector2(liveScale.x, liveScale.y));
+                osd.SetShowState(1, ShowRunDefaults.TotalLaps, otherworld: false);
                 osd.Tick(Fixed);
                 if (!osd.Built)
                 {
@@ -112,29 +113,41 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 // ⚠⚠ **状態は「装置に起きること」と「映像に起きること」を必ず両方入れる。**
                 //   時計が正しい層に入っているかは、片方だけ見ても判定できない。
-                var shots = new (string name, string desc, Action<Material> set)[]
+                var shots = new (string name, string desc, Action<Material> set,
+                                 int lap, bool otherworld)[]
                 {
-                    ("0_plain", "素（本編）", m => { }),
+                    ("0_plain", "素（本編・1 周目）", m => { }, 1, false),
                     ("1_static", "信号断（砂嵐）— 映像側。時計は鮮明なまま",
-                        m => m.SetFloat("_SignalLost", 1f)),
+                        m => m.SetFloat("_SignalLost", 1f), 1, false),
                     ("2_glitch", "乱れ最大 0.60 — 映像側。時計は微動もしない",
-                        m => { m.SetFloat("_Glitch", 0.60f); m.SetFloat("_GlitchSeed", 3.1f); }),
+                        m => { m.SetFloat("_Glitch", 0.60f); m.SetFloat("_GlitchSeed", 3.1f); },
+                        2, false),
                     ("3_decay", "3 周目相当（粗い・夜間モード）— 映像側。時計は鮮明なまま",
-                        m => { m.SetFloat("_CoarseBlocks", 96f); m.SetFloat("_Mono", 1f); }),
+                        m => { m.SetFloat("_CoarseBlocks", 96f); m.SetFloat("_Mono", 1f); },
+                        3, false),
                     ("4_dip", "切替の黒 0.6 — 装置側。時計も一緒に沈む",
-                        m => m.SetFloat("_SwitchDim", 0.6f)),
+                        m => m.SetFloat("_SwitchDim", 0.6f), 1, false),
                     ("5_outro", "終幕の電力 0.35 — 装置側。時計も一緒に落ちる",
-                        m => m.SetFloat("_ScreenPower", 0.35f)),
+                        m => m.SetFloat("_ScreenPower", 0.35f), 4, false),
                     ("6_intro_frame", "導入 段 4（映像が出てくる途中）",
-                        m => m.SetFloat("_IntroLive", 0.5f)),
+                        m => m.SetFloat("_IntroLive", 0.5f), -1, false),
                     ("7_intro_dark", "導入 段 0〜3（まだ何も映していない管）— **時計は出ない**",
-                        m => m.SetFloat("_IntroLive", 0f)),
+                        m => m.SetFloat("_IntroLive", 0f), -1, false),
+                    // 周回（canon/LEDGER.md 0167）。ここから 3 枚は**表示の側**を切り替える。
+                    ("8_lap_last", "帰りの区間（4-A）＝「最後」。4 周目とは書かない",
+                        m => { }, 4, false),
+                    ("9_lap_none", "区間がまだ確定していない（導入）＝ 周回は空のまま",
+                        m => { }, -1, false),
+                    ("10_otherworld", "別の場所（バックルームズ）が映っている — 時刻も周回も ?",
+                        m => { }, 2, true),
                 };
 
-                foreach (var (name, desc, set) in shots)
+                foreach (var (name, desc, set, lap, otherworld) in shots)
                 {
                     ResetState(mat);
                     set(mat);
+                    osd.SetShowState(lap, ShowRunDefaults.TotalLaps, otherworld);
+                    osd.Tick(Fixed);
                     Shoot(cam, Path.Combine(dir, $"osd_{name}.png"));
                     Debug.Log($"[OsdPreview] {name}  {desc}");
                 }
@@ -145,8 +158,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 // スクリーンの見かけ: 水平 ±30.6° / 垂直 ±18.4°（本編の実測）
                 const float vFovDeg = 36.8f, hFovDeg = 61.2f;
                 float cellDeg = rect.w * vFovDeg;
-                Debug.Log($"[OsdPreview] 8 枚 → Assets/{OutDirRel}/\n"
-                        + $"  文字列 {OsdClockLogic.Format(Fixed)}（{OsdClockLogic.TextLength} 字）\n"
+                Debug.Log($"[OsdPreview] {shots.Length} 枚 → Assets/{OutDirRel}/\n"
+                        + $"  文字列 {OsdClockLogic.Format(Fixed)}  {OsdClockLogic.LapLabel(1, 3)}"
+                        + $"（時刻 {OsdClockLogic.TextLength} ＋ 空き {OsdClockLogic.GapCells}"
+                        + $" ＋ 周回 {OsdClockLogic.LabelCells} ＝ {OsdClockLogic.CellCount} セル）\n"
                         + $"  矩形 x={rect.x:F3} y={rect.y:F3} w={rect.z:F3} h={rect.w:F3}（枠 UV）\n"
                         + $"  1 セル {cellDeg:F2}° ＝ 字の高さ 約 {cellDeg / 1.19f:F2}°"
                         + $" / 全幅 {rect.z * hFovDeg:F1}°（枠幅の {rect.z * 100f:F0}%）\n"

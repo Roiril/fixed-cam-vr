@@ -55,13 +55,20 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.Ignore("tools/make-osd-font.py が見つからない");
                 return;
             }
-            Match m = Regex.Match(File.ReadAllText(script), "^GLYPHS\\s*=\\s*\"([^\"]*)\"",
-                                  RegexOptions.Multiline);
+            string src = File.ReadAllText(script);
+            Match m = Regex.Match(src, "^GLYPHS\\s*=\\s*\"([^\"]*)\"", RegexOptions.Multiline);
             Assert.IsTrue(m.Success, "make-osd-font.py の GLYPHS を読めない");
             Assert.AreEqual(OsdClockLogic.Glyphs, m.Groups[1].Value,
-                            "版のセルの並びが C# と Python で食い違っている");
-            Assert.AreEqual(OsdClockLogic.GlyphCount, OsdClockLogic.Glyphs.Length,
-                            "セル数が並びの長さと合っていない");
+                            "半角セルの並びが C# と Python で食い違っている");
+
+            Match w = Regex.Match(src, "^WIDE_GLYPHS\\s*=\\s*\"([^\"]*)\"", RegexOptions.Multiline);
+            Assert.IsTrue(w.Success, "make-osd-font.py の WIDE_GLYPHS を読めない");
+            Assert.AreEqual(OsdClockLogic.WideGlyphs, w.Groups[1].Value,
+                            "全角セルの並びが C# と Python で食い違っている");
+
+            Assert.AreEqual(OsdClockLogic.GlyphCount,
+                            OsdClockLogic.Glyphs.Length + OsdClockLogic.WideGlyphs.Length * 2,
+                            "セル数が並びの長さと合っていない（全角は 2 セル）");
         }
 
         /// <summary>
@@ -155,6 +162,169 @@ namespace FixedCamVr.Streaming.Tests
                             $"版の幅 {atlas.width} が {OsdClockLogic.GlyphCount} で割り切れない");
             Assert.IsTrue(atlas.isReadable,
                           "版に Read/Write Enabled が要る（CPU で敷き直すため）");
+        }
+
+        // ---- 周回（canon/LEDGER.md 0167）----
+
+        /// <summary>
+        /// ⚠ <b>帰りの区間は「最後」</b>。ユーザー逐語「4-Aは最後とかの表示で。
+        /// 4周目と書くと混乱する」— 待機者の資料に「3 周します」と書いてある（0165）。
+        /// </summary>
+        [Test]
+        public void LapLabel_CountsFromOne_AndCallsTheReturnSegmentTheLast()
+        {
+            Assert.AreEqual("1周目", OsdClockLogic.LapLabel(1, 3));
+            Assert.AreEqual("2周目", OsdClockLogic.LapLabel(2, 3));
+            Assert.AreEqual("3周目", OsdClockLogic.LapLabel(3, 3));
+            Assert.AreEqual("最後", OsdClockLogic.LapLabel(4, 3), "帰りの A は「最後」");
+            Assert.AreEqual("最後", OsdClockLogic.LapLabel(9, 3));
+        }
+
+        /// <summary>区間がまだ確定していなければ何も出さない（導入のあいだ）。</summary>
+        [Test]
+        public void LapLabel_IsEmptyBeforeTheFirstSegment()
+        {
+            Assert.AreEqual("", OsdClockLogic.LapLabel(-1, 3));
+            Assert.AreEqual("", OsdClockLogic.LapLabel(0, 3));
+        }
+
+        /// <summary>周数が渡されなくても既定（3 周）で答える。</summary>
+        [Test]
+        public void LapLabel_FallsBackToTheDefaultTotal()
+        {
+            Assert.AreEqual("3周目", OsdClockLogic.LapLabel(3, 0));
+            Assert.AreEqual("最後", OsdClockLogic.LapLabel(4, 0));
+        }
+
+        /// <summary>全角は版の「その字が焼かれている 2 セル」を指す。</summary>
+        [Test]
+        public void WideCellIndex_PointsAtTheCellThatHoldsIt()
+        {
+            for (int i = 0; i < OsdClockLogic.WideGlyphs.Length; i++)
+            {
+                int at = OsdClockLogic.WideCellIndex(OsdClockLogic.WideGlyphs[i]);
+                Assert.AreEqual(OsdClockLogic.Glyphs.Length + i * 2, at);
+                Assert.Less(at + 1, OsdClockLogic.GlyphCount, "右のセルが版の外を指している");
+            }
+            Assert.AreEqual(-1, OsdClockLogic.WideCellIndex('0'), "半角は全角のセルを指さない");
+        }
+
+        /// <summary>
+        /// 周回は<b>時刻の右</b>に、空きを 2 セル置いて出る（0167「その右くらいに」）。
+        /// 全角は 2 セルを使うので「1周目」で欄（5 セル）がちょうど埋まる。
+        /// </summary>
+        [Test]
+        public void FillCells_PutsTheLapToTheRightOfTheClock()
+        {
+            var buf = new int[OsdClockLogic.CellCount];
+            Assert.IsTrue(OsdClockLogic.FillCells(new DateTime(2026, 9, 6, 14, 23, 45),
+                                                  lap: 1, totalLaps: 3, otherworld: false, buf));
+            for (int i = 0; i < OsdClockLogic.TextLength; i++)
+                Assert.AreEqual(OsdClockLogic.GlyphIndex("2026/09/06 14:23:45"[i]), buf[i]);
+            Assert.AreEqual(OsdClockLogic.BlankGlyph, buf[19], "時刻と周回のあいだは空き");
+            Assert.AreEqual(OsdClockLogic.BlankGlyph, buf[20]);
+            Assert.AreEqual(1, buf[21], "'1'");
+            Assert.AreEqual(OsdClockLogic.WideCellIndex('周'), buf[22]);
+            Assert.AreEqual(OsdClockLogic.WideCellIndex('周') + 1, buf[23]);
+            Assert.AreEqual(OsdClockLogic.WideCellIndex('目'), buf[24]);
+            Assert.AreEqual(OsdClockLogic.WideCellIndex('目') + 1, buf[25]);
+        }
+
+        /// <summary>短い語（「最後」＝ 4 セル）の右は空白で埋まる（欄の幅は変わらない）。</summary>
+        [Test]
+        public void FillCells_PadsTheShorterLabel()
+        {
+            var buf = new int[OsdClockLogic.CellCount];
+            Assert.IsTrue(OsdClockLogic.FillCells(new DateTime(2026, 9, 6, 14, 23, 45),
+                                                  lap: 4, totalLaps: 3, otherworld: false, buf));
+            Assert.AreEqual(OsdClockLogic.WideCellIndex('最'), buf[21]);
+            Assert.AreEqual(OsdClockLogic.WideCellIndex('後'), buf[23]);
+            Assert.AreEqual(OsdClockLogic.BlankGlyph, buf[25]);
+        }
+
+        /// <summary>区間が未確定なら周回の欄は空のまま（時刻だけが出る）。</summary>
+        [Test]
+        public void FillCells_LeavesTheLabelEmptyBeforeTheFirstSegment()
+        {
+            var buf = new int[OsdClockLogic.CellCount];
+            Assert.IsTrue(OsdClockLogic.FillCells(new DateTime(2026, 9, 6, 14, 23, 45),
+                                                  lap: -1, totalLaps: 3, otherworld: false, buf));
+            for (int i = OsdClockLogic.TextLength; i < OsdClockLogic.CellCount; i++)
+                Assert.AreEqual(OsdClockLogic.BlankGlyph, buf[i]);
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>別の場所が映っているあいだは、時刻も周回も <c>?</c></b>
+        /// （0167「時刻も何周目かも全部???になるようにしてほしい」）。
+        /// 数字は 1 つも残らない。区切り（<c>/</c> <c>:</c>）は形として残す。
+        /// </summary>
+        [Test]
+        public void FillCells_MasksBothTheClockAndTheLapInTheOtherworld()
+        {
+            var buf = new int[OsdClockLogic.CellCount];
+            Assert.IsTrue(OsdClockLogic.FillCells(new DateTime(2026, 9, 6, 14, 23, 45),
+                                                  lap: 2, totalLaps: 3, otherworld: true, buf));
+            int q = OsdClockLogic.GlyphIndex('?');
+            for (int i = 0; i < OsdClockLogic.CellCount; i++)
+                Assert.IsTrue(buf[i] == q || buf[i] == OsdClockLogic.BlankGlyph
+                              || buf[i] == OsdClockLogic.GlyphIndex('/')
+                              || buf[i] == OsdClockLogic.GlyphIndex(':'),
+                              $"セル {i} に数字か語が残っている");
+            Assert.AreEqual(OsdClockLogic.GlyphIndex('/'), buf[4], "区切りは形として残す");
+            Assert.AreEqual(q, buf[21]);
+            Assert.AreEqual(q, buf[22]);
+            Assert.AreEqual(q, buf[23]);
+            Assert.AreEqual(OsdClockLogic.BlankGlyph, buf[24]);
+        }
+
+        /// <summary>マスクした時刻も**同じ幅**（欄がずれない）。</summary>
+        [Test]
+        public void MaskedTime_HasTheSameWidthAsTheClock()
+        {
+            Assert.AreEqual(OsdClockLogic.TextLength, OsdClockLogic.MaskedTime.Length);
+        }
+
+        /// <summary>短い配列では書かずに false（版の外へはみ出して壊れない）。</summary>
+        [Test]
+        public void FillCells_RefusesAShortBuffer()
+        {
+            Assert.IsFalse(OsdClockLogic.FillCells(DateTime.Now, 1, 3, false,
+                                                   new int[OsdClockLogic.CellCount - 1]));
+            Assert.IsFalse(OsdClockLogic.FillCells(DateTime.Now, 1, 3, false, null!));
+        }
+
+        /// <summary>
+        /// 書いた番号はどれも版の中を指す（版の外を読んで壊れない）。
+        /// ⚠ 全角は 2 セルを使うので、<b>右のセルまで</b>版に無いといけない。
+        /// </summary>
+        [Test]
+        public void FillCells_NeverPointsOutsideTheAtlas()
+        {
+            var buf = new int[OsdClockLogic.CellCount];
+            foreach (int lap in new[] { -1, 1, 2, 3, 4 })
+                foreach (bool other in new[] { false, true })
+                {
+                    Assert.IsTrue(OsdClockLogic.FillCells(DateTime.Now, lap, 3, other, buf));
+                    foreach (int cell in buf)
+                    {
+                        Assert.GreaterOrEqual(cell, 0);
+                        Assert.Less(cell, OsdClockLogic.GlyphCount);
+                    }
+                }
+        }
+
+        /// <summary>
+        /// ⚠ <b>異世界の判定は 1 本</b>（<see cref="TakeRunner.IsOtherworldCue"/>）。
+        /// 音（風・劇伴）と時計が同じものを読む。
+        /// </summary>
+        [Test]
+        public void TheOtherworldTest_IsSharedWithTheSound()
+        {
+            Assert.AreEqual(TakeRunner.OtherworldCuePrefix,
+                            ShowSoundDirector.OtherworldCuePrefix);
+            Assert.IsTrue(TakeRunner.IsOtherworldCue("backrooms_B"));
+            Assert.IsFalse(TakeRunner.IsOtherworldCue("plate_A"));
+            Assert.IsFalse(TakeRunner.IsOtherworldCue(""));
         }
     }
 }

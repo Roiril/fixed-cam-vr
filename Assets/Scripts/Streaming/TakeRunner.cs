@@ -132,6 +132,33 @@ namespace FixedCamVr.Streaming
         private string _activeStepCueId = "";
 
         /// <summary>
+        /// <b>別の場所（異世界）の素材 id の頭</b>（2026-09-03・<c>canon/LEDGER.md</c> 0131）。
+        ///
+        /// ⚠⚠ <b>現場の著作（<c>show.json</c>）に踏み込んでいる唯一の場所。</b>
+        /// 卓で cue の名前を変えると<b>音が黙って止まり、時計も ? にならない</b>（画は 1 画素も
+        /// 変わらない）。だから <c>analyze-xp-log.py</c> が「異世界のカットが出たのに風が鳴って
+        /// いない」を FAIL にする。
+        /// ⚠ 素材の側に「これは異世界だ」と書ける欄が無いので名前で判じている。
+        /// 欄を足すなら <c>rules/streaming.md</c> の契約・卓の編集面・端末キャッシュを対で直すこと。
+        /// </summary>
+        public const string OtherworldCuePrefix = "backrooms";
+
+        /// <summary>
+        /// <b>いま画面を取っているカットが別の場所（異世界）か</b>。
+        ///
+        /// 読む側は 2 つ — 音（<see cref="ShowSoundDirector"/>：風が鳴って劇伴が切れる）と
+        /// 時計（<see cref="ScreenOsd"/>：時刻も周回も <c>?</c> になる・<c>canon/LEDGER.md</c> 0167）。
+        /// ⚠ <b>判定はこの 1 本だけ。</b> 2 か所に書くと、片方だけ直したときに
+        /// 「風は鳴っているのに時計は出たまま」が黙って起きる。
+        /// </summary>
+        public bool OtherworldActive => IsOtherworldCue(ActiveStepCueId);
+
+        /// <summary>素材 id が異世界のものか（純判定）。</summary>
+        public static bool IsOtherworldCue(string cueId)
+            => !string.IsNullOrEmpty(cueId)
+               && cueId.StartsWith(OtherworldCuePrefix, System.StringComparison.Ordinal);
+
+        /// <summary>
         /// カット 1 つを解決した瞬間に上がる<b>観測専用</b>イベント。
         /// 引数は (演出 id, カット index, source, camera, 画面を取ったか, 理由トークン)。
         ///

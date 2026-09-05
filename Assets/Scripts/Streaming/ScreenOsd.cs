@@ -5,7 +5,7 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// スクリーン左上に日付と時刻を出す（<c>canon/LEDGER.md</c> 0108）。
+    /// スクリーン左上に日付と時刻（<c>canon/LEDGER.md</c> 0108）と、その右に<b>周回</b>（0167）を出す。
     /// <c>_OsdTex</c> / <c>_OsdRect</c> / <c>_OsdOpacity</c> の**唯一の writer**
     /// （<see cref="CameraFeelFx"/> / <see cref="GlitchFx"/> と同じ流儀）。
     ///
@@ -19,7 +19,12 @@ namespace FixedCamVr.Streaming
     /// <b>3 周目に 1 周目の録画が流れても時計は「いま」のまま進む</b> — 録画は配信の生 JPEG で
     /// OSD が焼き込まれていないので、装置が「これは今の映像だ」と主張し続ける形になる。
     ///
+    /// <b>周回（0167）</b>: 「1周目」「2周目」「3周目」、帰りの区間は「最後」。
+    /// <b>別の場所（バックルームズ）が映っているあいだは、時刻も周回も <c>?</c> になる</b> —
+    /// 装置が場所を見失っている、という 1 つの出来事を 2 つの欄で言っている。
+    ///
     /// ⚠ <b>秒が変わったときだけ敷き直す</b>（1Hz）。毎フレーム書くと 90Hz で 4 万画素を組み替える。
+    ///   周回が変わった縁でも敷き直す（そこだけは次の秒を待たない）。
     /// ⚠ <b>版を掴めなければ何も書かない</b>（<c>_OsdRect</c> は 0 のまま ＝ シェーダは 1 画素も触らない）。
     ///   掴めたかは <see cref="Built"/> ＝ テレメトリの <c>osd=</c>。
     /// </summary>
@@ -59,6 +64,15 @@ namespace FixedCamVr.Streaming
         [Tooltip("枠のアスペクトの供給元。null なら同 GameObject → シーンから探す。")]
         [SerializeField] private MjpegScreen? screen;
 
+        [Tooltip("周回の出どころ（区間の周）。null ならシーンから探す。")]
+        [SerializeField] private TimelineDirector? timeline;
+
+        [Tooltip("走り切る周数の出どころ。null ならシーンから探す。")]
+        [SerializeField] private ShowRunDirector? run;
+
+        [Tooltip("いま画面を取っているカットの出どころ（異世界の判定）。null ならシーンから探す。")]
+        [SerializeField] private TakeRunner? takes;
+
         private Material? _material;
         private Texture2D? _target;
         private Color32[]? _atlas;
@@ -66,8 +80,16 @@ namespace FixedCamVr.Streaming
         private int _cellW, _cellH;
         private Vector2 _previewFit = Vector2.one;
         private long _stamp = OsdClockLogic.Never;
-        private readonly int[] _glyphs = new int[OsdClockLogic.TextLength];
+        private readonly int[] _glyphs = new int[OsdClockLogic.CellCount];
         private bool _warned;
+
+        private int _lap = -1;
+        private int _totalLaps = ShowRunDefaults.TotalLaps;
+        private bool _otherworld;
+        // 最後に**敷いた**状態。時刻と同じで、変わった縁でしか敷き直さない。
+        private int _drawnLap = int.MinValue;
+        private int _drawnTotalLaps = int.MinValue;
+        private bool _drawnOtherworld;
 
         /// <summary>
         /// 書く先（スクリーンの Renderer の材質）と版の両方を掴めているか。
@@ -106,12 +128,26 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Func<DateTime>? TimeProvider { get; set; }
 
+        /// <summary>いま出している周回の語（「1周目」「最後」「???」）。空なら欄は空白。</summary>
+        public string Label { get; private set; } = "";
+
+        /// <summary>
+        /// テレメトリに出す周回のトークン（<c>osdLap=</c>）。
+        /// ⚠ <b>敷いた結果を出す。</b> 状態だけを出すと「時計が組めていないのに周回だけ出ている」
+        /// という嘘のログになる（画には 1 画素も出ていない）。
+        /// </summary>
+        public string LabelToken { get; private set; } = "-";
+
+        /// <summary>異世界が映っているとみなしているか（診断用）。</summary>
+        public bool Otherworld => _otherworld;
+
         private void Awake()
         {
             var r = GetComponent<Renderer>();
             _material = r != null ? r.material : null;
             if (screen == null) screen = GetComponent<MjpegScreen>();
             if (screen == null) screen = FindObjectOfType<MjpegScreen>();
+            ReadShowState();
             BuildTarget();
         }
 
@@ -129,7 +165,42 @@ namespace FixedCamVr.Streaming
             _target = null;
         }
 
-        private void Update() => Tick(TimeProvider != null ? TimeProvider() : DateTime.Now);
+        private void Update()
+        {
+            ReadShowState();
+            Tick(TimeProvider != null ? TimeProvider() : DateTime.Now);
+        }
+
+        /// <summary>
+        /// 周回と異世界をシーンから読む（<c>canon/LEDGER.md</c> 0167）。
+        ///
+        /// ⚠ 読むのは <b>区間の周</b>（<see cref="TimelineDirector.CurrentLap"/>）— 体験者が
+        /// いま立っている区間で、逆走すれば戻る。進行の周を出すと、引き返した人の画面だけが
+        /// 実際より先に進む。<c>rules/show-design.md</c>「周回数は 2 つある」。
+        /// ⚠ 異世界の判定は <see cref="TakeRunner.OtherworldActive"/> 1 本に寄せてある
+        /// （音（<c>ShowSoundDirector</c>）と同じ 1 本。2 か所で判じると、片方だけ直したときに
+        /// 「風は鳴っているのに時計は出たまま」が黙って起きる）。
+        /// </summary>
+        private void ReadShowState()
+        {
+            if (timeline == null) timeline = FindObjectOfType<TimelineDirector>();
+            if (run == null) run = FindObjectOfType<ShowRunDirector>();
+            if (takes == null) takes = FindObjectOfType<TakeRunner>();
+            SetShowState(timeline != null ? timeline.CurrentLap : -1,
+                         run != null ? run.TotalLaps : ShowRunDefaults.TotalLaps,
+                         takes != null && takes.OtherworldActive);
+        }
+
+        /// <summary>
+        /// 周回と異世界を外から与える（Editor のプレビューが状態ごとに焼くための口）。
+        /// 実機では <see cref="ReadShowState"/> が毎フレーム同じ値を入れる。
+        /// </summary>
+        public void SetShowState(int lap, int totalLaps, bool otherworld)
+        {
+            _lap = lap;
+            _totalLaps = totalLaps;
+            _otherworld = otherworld;
+        }
 
         /// <summary>
         /// Editor のプレビューが材質を直接与える口（<c>Awake</c> の代わり）。
@@ -158,7 +229,12 @@ namespace FixedCamVr.Streaming
         public void Tick(DateTime now)
         {
             if (!Built) return;
-            if (OsdClockLogic.NeedsRedraw(now, _stamp, out long stamp))
+            // 秒が変わったときのほかに、**周回が変わった / 異世界へ入った縁**でも敷き直す
+            //（`canon/LEDGER.md` 0167）。ここを見落とすと、周回は次の秒まで古いままになる。
+            bool stateChanged = _lap != _drawnLap
+                             || _totalLaps != _drawnTotalLaps
+                             || _otherworld != _drawnOtherworld;
+            if (OsdClockLogic.NeedsRedraw(now, _stamp, out long stamp) || stateChanged)
             {
                 _stamp = stamp;
                 Redraw(now);
@@ -166,19 +242,25 @@ namespace FixedCamVr.Streaming
             WriteRect();
         }
 
-        // 版から 19 セルぶんを 1 枚へ敷き直す。行ごとの Array.Copy なので画素の走査は無い。
+        // 版から 26 セルぶんを 1 枚へ敷き直す。行ごとの Array.Copy なので画素の走査は無い。
         private void Redraw(DateTime now)
         {
             if (_atlas == null || _buffer == null || _target == null) return;
-            if (!OsdClockLogic.FillGlyphs(now, _glyphs)) return;
+            if (!OsdClockLogic.FillCells(now, _lap, _totalLaps, _otherworld, _glyphs)) return;
+            _drawnLap = _lap;
+            _drawnTotalLaps = _totalLaps;
+            _drawnOtherworld = _otherworld;
+            Label = _otherworld ? OsdClockLogic.MaskedLabel
+                                : OsdClockLogic.LapLabel(_lap, _totalLaps);
+            LabelToken = OsdClockLogic.LapToken(_lap, _totalLaps, _otherworld);
 
             int atlasW = _cellW * OsdClockLogic.GlyphCount;
-            int dstW = _cellW * OsdClockLogic.TextLength;
+            int dstW = _cellW * OsdClockLogic.CellCount;
             for (int y = 0; y < _cellH; y++)
             {
                 int srcRow = y * atlasW;
                 int dstRow = y * dstW;
-                for (int i = 0; i < OsdClockLogic.TextLength; i++)
+                for (int i = 0; i < OsdClockLogic.CellCount; i++)
                     Array.Copy(_atlas, srcRow + _glyphs[i] * _cellW,
                                _buffer, dstRow + i * _cellW, _cellW);
             }
@@ -198,7 +280,7 @@ namespace FixedCamVr.Streaming
             if (aspect <= 0.01f) aspect = 16f / 9f;
             float h = CellHeightK;
             // セルの縦横比を枠のアスペクトで割って、枠 UV の幅へ直す
-            float w = h * ((float)_cellW / Mathf.Max(_cellH, 1)) / aspect * OsdClockLogic.TextLength;
+            float w = h * ((float)_cellW / Mathf.Max(_cellH, 1)) / aspect * OsdClockLogic.CellCount;
 
             // ⚠⚠ **枠の左上ではなく「映像の左上」へ置く**（2026-08-22・絵で見て直した）。
             //   映像は 4:3、枠は 16:9 なので左右に必ず黒帯（letterbox）が出る。枠の隅に置くと
@@ -246,8 +328,8 @@ namespace FixedCamVr.Streaming
             }
             _cellW = atlas.width / OsdClockLogic.GlyphCount;
             _cellH = atlas.height;
-            _buffer = new Color32[_cellW * OsdClockLogic.TextLength * _cellH];
-            _target = new Texture2D(_cellW * OsdClockLogic.TextLength, _cellH,
+            _buffer = new Color32[_cellW * OsdClockLogic.CellCount * _cellH];
+            _target = new Texture2D(_cellW * OsdClockLogic.CellCount, _cellH,
                                     TextureFormat.RGBA32, mipChain: true)
             {
                 name = "ScreenOsdText",
