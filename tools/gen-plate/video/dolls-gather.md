@@ -52,6 +52,50 @@ contrast, colour, sharpness and grain of the input.
 
 ネガティブは**空**。
 
+## ⭐⭐ 終わりは「右へ手を差し伸べる」（2026-09-05・0157）
+
+ユーザーの言葉:
+
+> 仲間になりたい的な感じで手を右に差し伸べるところを最後にしたい。
+> 人形の動きは不気味な感じで。ほかは任せた。怖い感じで
+
+⇒ **到達点が変わったので、最終コマの静止画を作り直す**（差し伸べた姿）。
+フリーズはその姿のまま最大 48 秒つづく。⚠ **右半分には体験者の人形が 1 体だけ立っている**
+（`plate_A_right` ＋ CG 人形）。群れはそちらへ手を伸ばすが、届かない。
+
+⚠⚠ **手は画面の左右の中央を越えさせない。** 越えた手は実機で縦に切れる（0120）。
+群れの右端は既に素材 x=309 で、境目（x=320）まで **11 画素しかない**。
+差し伸べるのは群れの中ほど・奥の人形が主で、手はその隙間へ伸ばす。
+
+プロンプト（首尾フレーム・5〜10 秒・ループ OFF）:
+
+```
+The camera is locked on a tripod and never moves: no pan, tilt, zoom, roll or shake, and the
+framing is identical in every frame. Animate from the first frame to the last frame. The floor
+starts empty. Then Japanese ichimatsu dolls come into the left half of the picture from several
+different places at once — from beyond the left edge, from under the hem of the curtain, from
+behind the stand legs, and from below the bottom edge close to the lens — and gather on the floor
+until they are exactly where the last frame shows them. They never walk smoothly: they shuffle,
+totter, tip and slide in small uneven jerks, each starting and stopping at its own moment, like
+footage missing frames; some crawl, some are already seated when they appear. The largest doll at
+the front arrives last and comes closest to the lens. When they have all stopped, several of them
+slowly raise a stiff arm toward the right side of the picture, elbow and shoulder bending in
+angles, palm turned up, beckoning — and hold it there. No hand ever crosses the middle of the
+picture. Nothing else changes — the curtain, the floor and the light stay exactly as in the input
+frames, and the right half stays empty. Keep the brightness, contrast, colour, sharpness and grain
+of the input.
+```
+
+**不気味さは 4 つで作る**（どれも周 4 の潰れを越える）:
+
+1. **空から始める。** 体験者は 1〜3 周目にこの床が空なのを見ている。埋まることが出来事になる
+2. **入る口を 4 つに散らす。** 1 か所からの列は行進に見える。同時にばらばらから湧くと「もともと画面の外に全部いた」になる
+3. **歩かせない。** ずり・傾ぎ・倒れ込みを不揃いな間で。コマ落ちしたような動きは、画素が潰れても位置で残る
+4. **止まってから手が上がる。** 動きが終わったあとに腕だけが上がるので、フリーズが「終わり」ではなくなる
+
+⚠ **周 4 は色が完全に抜け、この画像の 3.2 画素が 1 つに潰れる。** 届いた顔は明るい楕円 1 つぶん。
+表情も着物の柄も残らない。**残るのは大きな動きと、明るい楕円の数だけ**。赤に労力を使わない。
+
 **カメラが固定になる仕掛けは 3 つ**（プロンプトの 1 文だけに頼らない）:
 
 1. 先頭の 1 文（locked on a tripod / no pan, tilt, zoom, roll or shake / framing identical）
