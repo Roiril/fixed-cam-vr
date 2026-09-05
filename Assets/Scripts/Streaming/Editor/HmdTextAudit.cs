@@ -68,16 +68,21 @@ namespace FixedCamVr.Streaming.EditorTools
         private static Surface[] BuildSurfaces() => new Surface[]
         {
             // ⚠⚠ この面は TMP を **3 つ**持つ（2026-09-05・0155 で 2 → 3）。
-            //    上から 言語の並び（1.8°）/ 操作の説明（1.5°）/ 安全の掲示（1.8°）。
+            //    上から 言語の並び / 操作の説明 / 安全の掲示。
             //    **3 つとも `Field` で名指しする** — 名指しを 1 つでも省くと
             //    先に組んだ面が 2 度測られて、どれかが 1 度も測られない。
+            // ⚠⚠ 狙い値に **`TitleNotice.Scale`** を掛けてある（2026-09-05・`canon/LEDGER.md` 0161 で
+            //    面ごと 2/3 にした。連絡の面の 0091 と同じ形）。実際に出るのは
+            //    **本文 1.2° / 補助 1.0°** で、段の素の値（1.8° / 1.5°）と突き合わせると必ず「外れ」と出る。
             new Surface { Name = "体験前の注意書き（言語の並び）", Type = typeof(TitleNotice),
-                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_chooser" },
+                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_chooser",
+                          TierDeg = HmdTextStyle.BodyDeg * TitleNotice.Scale },
             new Surface { Name = "体験前の注意書き（操作の説明）", Type = typeof(TitleNotice),
                           DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_footer",
-                          TierDeg = HmdTextStyle.MinorDeg },
+                          TierDeg = HmdTextStyle.MinorDeg * TitleNotice.Scale },
             new Surface { Name = "体験前の注意書き（安全の掲示）", Type = typeof(TitleNotice),
-                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_text" },
+                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_text",
+                          TierDeg = HmdTextStyle.BodyDeg * TitleNotice.Scale },
             new Surface { Name = "終幕の報告", Type = typeof(OutroReport),
                           DistanceField = "distanceM", BuildsItsOwnText = true,
                           Probe = OutroReportText.Compose(3) },

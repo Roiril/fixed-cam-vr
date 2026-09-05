@@ -32,8 +32,9 @@ namespace FixedCamVr.Diagnostics
     /// （2026-09-04・<c>canon/LEDGER.md</c> 0147）。選択中の言語だけで書くと、
     /// <b>それを読めない人には切り替え方が届かない</b>。
     /// ⚠ <b>「選んだらスタッフへ」は選んでいる言語で 1 行だけ</b>（0151 で 6 行 → 4 行へ整理）。
-    /// 面は TMP を <b>2 つ</b>持ち（本文 1.8° / 案内 1.5°）、
+    /// 面は TMP を <b>3 つ</b>持ち（言語の並び / 操作の説明 / 安全の掲示）、
     /// <see cref="StackLabels"/> が実測した高さで縦に積む。
+    /// 字の大きさは本文 1.2° / 補助 1.0°（段の 1.8° / 1.5° に <see cref="Scale"/> を掛けた値）。
     /// 選ばれた言語は <see cref="ShowLanguage.Current"/> が持ち、
     /// AIエージェントの連絡・手元のゲージ・終幕の報告が同じ値を読む。
     /// <b>スタッフが読む面（StatusHud・操作早見表・位置合わせ）は日本語のまま。</b>
@@ -73,9 +74,11 @@ namespace FixedCamVr.Diagnostics
         /// ⚠⚠ <b>紙（<c>docs/onsite/handout.html</c> の 2 枚目）と同じことを言う</b>（2026-08-14）。
         /// 紙は 0039 / 0040 で 2 度差し替えたのに、この面だけ 0023 ⑤ の旧文言が残っていて、
         /// **同じ安全の掲示が受付とヘッドセットの中で食い違っていた**（`canon/OPEN.md` の宿題）。
-        /// ⚠ <b>改行は 1 行 20 文字まで</b>（<see cref="TextWidthM"/> に 1 文字 1.8° で入る数）。
+        /// ⚠ <b>改行は 1 行 20 文字まで</b>（<see cref="TextWidthM"/> に入る数）。
         /// 2026-08-15 に字を 1.8° へ上げたので、旧の 1 行 24〜26 文字では横 46° を超えて
         /// 読むのに首を振ることになる。<b>英語・フランス語は半角なので 40 文字まで。</b>
+        /// ⚠ <b>この 20 は <see cref="Scale"/> を変えても動かない</b> — 枠と字に同じ率が掛かるので、
+        /// 1 行に入る文字数は縮尺に依らない（変わるのは見かけの角度だけ）。
         /// ⚠ 文言を変えたら <c>menu hud-font</c> を再実行する（静的ベイクなので忘れると豆腐）。
         /// </summary>
         private const string NoticeJa =
@@ -376,10 +379,30 @@ namespace FixedCamVr.Diagnostics
         private const float FontSize = 0.07f;
 
         /// <summary>
-        /// 文字の並ぶ幅 (m)。<b>いちばん長い行がちょうど収まる幅</b>にしてある ＝
-        /// 左揃えでも文の塊が視界の中央に座る。2.6m 先で 37°。
+        /// <b>この面だけの縮尺</b>（2026-09-05 ユーザー指定・<c>canon/LEDGER.md</c> 0161
+        /// 「注意書きのときのフォントサイズ全部を今の 2/3 くらいにしてほしい。他のサイズは変えずに」）。
+        /// 連絡の面が 0091 で同じことをしている（<c>CommsPanel.Scale</c>）ので、値も形も揃えてある。
+        ///
+        /// ⚠⚠ <b>段の正（<see cref="HmdTextStyle.BodyDeg"/> / <see cref="HmdTextStyle.MinorDeg"/>）は
+        /// 1 ビットも動かさない。</b> あれは全面の共有で、触るとステータス・連絡・報告まで一緒に縮む。
+        /// 掛けるのはこの面の中だけ（本文 1.8° → <b>1.2°</b> / 補助 1.5° → <b>1.0°</b>）。
+        /// ⚠⚠ <b>枠と空きにも同じ率を掛ける。</b> 字だけ縮めると、枠幅（<see cref="TextWidthM"/>）に
+        /// 対して行が短くなり、<b>左揃えのまま塊が左へ寄る</b>（枠幅は「いちばん長い行がちょうど
+        /// 収まる幅」なので、字と枠は必ず一緒に動かす）。空き（<see cref="FooterGapM"/>）を
+        /// 据え置くと、塊のあいだだけが 1.5 倍に見える。
+        /// ⚠ 置き場所（<c>distanceM</c> / <c>pitchOffsetDeg</c>）は<b>動かさない</b> —
+        /// 面は同じ所で、同じ据わりのまま小さくなる。
+        /// ⚠ <c>menu text-audit</c> の狙い値にもこの倍率が掛けてある（<c>HmdTextAudit</c>）。
         /// </summary>
-        private const float TextWidthM = 1.70f;
+        public const float Scale = 2f / 3f;
+
+        /// <summary>
+        /// 文字の並ぶ幅 (m)。<b>いちばん長い行がちょうど収まる幅</b>にしてある ＝
+        /// 左揃えでも文の塊が視界の中央に座る。2.6m 先で 37° × <see cref="Scale"/> ＝ <b>24.7°</b>。
+        /// ⚠ <b>字と一緒に縮める</b>（<see cref="Scale"/>）。ここだけ据え置くと行が枠より短くなり、
+        /// 左揃えのまま<b>塊が左へ寄る</b>。
+        /// </summary>
+        private const float TextWidthM = 1.70f * Scale;
 
         /// <summary>
         /// 安全の掲示の枠の高さ (m)。<b>いちばん行数の多い言語</b>（Français ＝ 7 行）＋ 空行 ＋
@@ -389,26 +412,27 @@ namespace FixedCamVr.Diagnostics
         /// ⚠ <b>縦の置き場所はこの枠では決まらない</b>（<see cref="StackLabels"/> が
         /// 実測した高さから 3 枚を積む）。ここは折り返しと溢れのための枠。
         /// </summary>
-        private const float TextHeightM = 1.75f;
+        private const float TextHeightM = 1.75f * Scale;
 
         /// <summary>言語の並びの枠の高さ (m)。1 行 ＋ 行間。</summary>
-        private const float ChooserHeightM = 0.40f;
+        private const float ChooserHeightM = 0.40f * Scale;
 
         /// <summary>
         /// 操作の説明の枠の高さ (m)。切り替え方 3 行 ＋ 空行 ＋ ホラー軽減 2 行 ＋ ゲージ ＝ 7 行ぶん。
         /// ⚠ 行を足したらここも上げる — 枠が足りないと折り返しが起きて<b>行数がさらに増える</b>。
         /// </summary>
-        private const float FooterHeightM = 1.30f;
+        private const float FooterHeightM = 1.30f * Scale;
 
         /// <summary>
-        /// 注意書きの塊と、小さな案内のあいだ (m)。2.6m 先で約 1.3° ＝ 半行ぶんの空き。
+        /// 注意書きの塊と、小さな案内のあいだ (m)。2.6m 先で約 1.3° × <see cref="Scale"/> ＝
+        /// <b>0.9°</b> ＝ 半行ぶんの空き（字が縮んだぶん、見た目は半行のまま）。
         /// ⚠ <b>字の側で測った実寸の空き</b>（0151）。行送りの高さで積んでいた頃は
         /// ここに書いた値の 2.6 倍が画に出ていた。
         /// ⚠ <b>案内は言語の並びに付いている</b>（切り替え方を言う行なので・0151）。
         /// 空けすぎると別の掲示に見え、詰めすぎると本文の続きに読める。
         /// 案内の中の「次にすること」は空行 1 つで離してある。
         /// </summary>
-        private const float FooterGapM = 0.06f;
+        private const float FooterGapM = 0.06f * Scale;
 
         /// <summary>
         /// 文字の拡大率。<b>距離から逆算する</b>（<see cref="HmdTextStyle"/> が唯一の正）。
@@ -419,16 +443,18 @@ namespace FixedCamVr.Diagnostics
         /// そのとき実機の画で測って 8.5 倍したが、<b>倍率を手で持っている限り同じ事故が再発する</b>
         /// （実際 <see cref="CommsPanel"/> が 1 か月後に同じ間違いを 10 倍の規模でやった）。
         /// ⚠ 倍率は <b>transform の scale</b> で掛ける（fontSize を上げるとメッシュの座標が広がる）。
+        /// ⚠ 段（<see cref="HmdTextStyle.BodyDeg"/>）に <see cref="Scale"/> を掛けた <b>1.2°</b>。
         /// </summary>
         private float TextScale =>
-            HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, Mathf.Max(distanceM, 0.5f), FontSize);
+            HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg * Scale, Mathf.Max(distanceM, 0.5f), FontSize);
 
         /// <summary>
-        /// 小さな案内の拡大率。段は<b>補助（1.5°）</b>（<see cref="HmdTextStyle.MinorDeg"/>）。
+        /// 小さな案内の拡大率。段は<b>補助（1.5°）</b>（<see cref="HmdTextStyle.MinorDeg"/>）に
+        /// <see cref="Scale"/> を掛けた <b>1.0°</b>。
         /// ⚠ <b>段を増やさない</b>（0052 の「段は 3 つ」）。ここは既にある補助段をそのまま使う。
         /// </summary>
         private float FooterScale =>
-            HmdTextStyle.MeshScale(HmdTextStyle.MinorDeg, Mathf.Max(distanceM, 0.5f), FontSize);
+            HmdTextStyle.MeshScale(HmdTextStyle.MinorDeg * Scale, Mathf.Max(distanceM, 0.5f), FontSize);
 
         /// <summary>TMP の Overlay 版（<c>ZTest Always</c>）。<b>Always Included に入っている。</b></summary>
         private const string OverlayShaderName = "TextMeshPro/Distance Field Overlay";
