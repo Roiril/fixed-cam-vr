@@ -73,7 +73,10 @@ ROUTE_CSS = """
 #    順路が時計回りなので壁はつねに右手側にある。左手で持つと後ろ向きに歩くことになる。
 ROUTE_HTML = """
     <div class="band route">
-      <h2>歩く順路</h2>
+      <!-- ⚠ 語は 1 枚目の依頼書に合わせる（2026-09-06 ユーザー判定）。
+           あちらが「所定の経路を移動すること」なので、この面も「経路」。
+           順路・道・ルートに書き換えない -->
+      <h2>経路</h2>
       <div class="cols">
         <figure><!--FIG_ROUTE--></figure>
         <div>
@@ -99,7 +102,7 @@ for marker in ("/*ROUTE-CSS*/", "<!--ROUTE-->"):
 route = src.replace("/*ROUTE-CSS*/", ROUTE_CSS.strip("\n"))
 route = route.replace("<!--ROUTE-->", ROUTE_HTML.strip("\n").replace("<!--FIG_ROUTE-->", svg))
 route = route.replace("<title>調査依頼書 / 展示の注意 — 待機者に渡す資料（廻リ視）</title>",
-                      "<title>調査依頼書 / 展示の注意（順路つき） — 待機者に渡す資料（廻リ視）</title>")
+                      "<title>調査依頼書 / 展示の注意（経路つき） — 待機者に渡す資料（廻リ視）</title>")
 route = route.replace("<body>", "<!-- ⚠ 生成物。直接編集しない。直すのは handout.html と "
                                 "build_handout.py -->\n\n<body>", 1)
 

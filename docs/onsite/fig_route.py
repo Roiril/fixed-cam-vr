@@ -136,7 +136,7 @@ A = out.append
 A('<?xml version="1.0" encoding="UTF-8"?>')
 A(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {VW} {VH}"'
   f' width="{MM_W}mm" height="{VH * MM_W / VW:.1f}mm" role="img" aria-labelledby="rt rd">')
-A('<title id="rt">歩く順路</title>')
+A('<title id="rt">経路</title>')
 A('<desc id="rd">壁を真上から見た図。L 字の壁があり、その外周を一周する破線の道が描いてある。'
   '入口は横に伸びた腕の東の端。そこから壁の内側を西へ進み、縦の腕の東側を南へ下り、'
   '南端を回って壁の外側を西から北へ上がり、壁の北側を東へ戻って入口へ着く。'
