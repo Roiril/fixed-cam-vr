@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 812d83b0-0fea-4ffe-a970-ad213de45d31
-  modified: 2026-09-03T06:35:39.446Z
+  modified: 2026-09-05T16:25:12.803Z
 ---
 
 # 言語選択（2026-09-03・`canon/LEDGER.md` 0127）
@@ -19,8 +19,13 @@ metadata:
 
 ## 訳す面と訳さない面
 
-**訳すのは体験者が読む 4 つだけ** — 注意書き（`TitleNotice`）/ AIエージェントの連絡 8 通
-（`CommsPanel`）/ 手元の「解析中」（`VisitorMarkGuidance`）/ 終幕の報告 4 行（`OutroReportText`）。
+**訳すのは体験者が読む 5 つだけ** — 注意書き（`TitleNotice`）/ AIエージェントの連絡 8 通
+（`CommsPanel`）/ 手元の「解析中」（`VisitorMarkGuidance`）/ 終幕の報告 4 行（`OutroReportText`）/
+**スクリーン左上の周回**（`OsdClockLogic.LapLabel`・2026-09-06 の 0167 / 訳は 0177）。
+
+⚠ **周回だけは HUD のフォントと無関係**。OSD は独自の版（`tools/make-osd-font.py`）を焼いていて、
+`CollectHudCharset()` は通らない。訳語に使う字は **`GLYPHS` / `WIDE_GLYPHS` に足す**のが配線で、
+足し忘れると**画では字が消える**（豆腐にもならない）。門は `EveryLabelCharacter_IsInTheAtlas`。
 
 **スタッフが読む面は日本語のまま**（`StatusHud` / `ControllerGuidePanel` /
 `RegistrationGuidance` / `RecoveryGuidance` / 黒の上の 1 行）。読み手が日本語のスタッフなので、

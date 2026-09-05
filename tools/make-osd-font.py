@@ -44,7 +44,11 @@ PREVIEW = ROOT / "logs/osd/glyphs_preview.png"
 # ⚠⚠ **この並びが C# の OsdClockLogic.Glyphs と対**。片方だけ直すと、実機で別の字が出る
 #    （テストが両者の一致を固定している）。末尾の空白は「何も描かない」セル。
 # `?` は**異世界が映っているあいだ**（canon/LEDGER.md 0167）に時刻と周回を埋める字。
-GLYPHS = "0123456789:/ ?"
+# 後ろのラテン 11 字は**周回の英語とフランス語**（`LAP 1` / `LAST` / `TOUR 1` / `FIN`）。
+# ⚠ **大文字だけ使う。** 小文字の `p` はディセンダがベースラインの下 9px まで伸び、
+#    数字とベースラインを揃えるとセルの下端で切れる（監視カメラの OSD は大文字が様式でもある）。
+# ⚠ **末尾に足す。** 番号は C# の OsdClockLogic.Glyphs と 1:1 なので、間に挿すと全部ずれる。
+GLYPHS = "0123456789:/ ?LAPSTOURFIN"
 
 # ⚠⚠ **全角の字は 2 セルぶんの幅で焼く**（canon/LEDGER.md 0167）。半角セル（24px）へ詰めると
 #    漢字は潰れて実機で読めない。2 セル（48px）に 40px の字を入れる（下の wide_px）。
@@ -108,6 +112,18 @@ def main() -> int:
         wb = wide_font.getbbox(WIDE_GLYPHS)
     wide_top = (CELL_H - (wb[3] - wb[1])) // 2 - wb[1]
 
+    # ⚠⚠ **ラテンは字を小さくせず、横だけ潰してセルへ入れる。** 大文字は `O` `U` `N` が 32px あり、
+    #    セル（24px）に入らない。**小さくすると数字（字高 34px）の隣で背が低くなる**
+    #    （`LAP 1` の `1` だけが大きく見える）ので、字の大きさは 44px のまま横を 0.75 倍に潰す。
+    #    細長い等幅は監視カメラの OSD の様式でもある。
+    # ⚠ 縦は数字と同じ `top`（大文字は数字と同じ上下範囲に収まる。ディセンダのある小文字は使わない）。
+    latin_chars = [c for c in GLYPHS if c.isascii() and c.isalpha()]
+    latin_squeeze = 1.0
+    if latin_chars:
+        maxw = max(font.getbbox(c)[2] - font.getbbox(c)[0] for c in latin_chars)
+        if maxw > CELL_W:
+            latin_squeeze = CELL_W / maxw
+
     cell_count = len(GLYPHS) + 2 * len(WIDE_GLYPHS)
     atlas = Image.new("RGBA", (CELL_W * cell_count, CELL_H), (0, 0, 0, 0))
 
@@ -118,21 +134,32 @@ def main() -> int:
     #    並べたときに切り口どうしが接して連続した縁になる。
     # ⚠ 左右の縁は原理的に残らない（字が送り幅を使い切っている）。参考画像も字は隙間なく
     #    並んでいて左右の縁は無い。**効くのは上下の縁**で、可読性はそれで足りている（§検証）。
-    def draw_cell(ch: str, cells: int, at: int, f: ImageFont.FreeTypeFont, y: int) -> None:
-        """幅 `cells` セルの独立した画像へ 1 字描いてから、セル `at` へ貼る。"""
+    def draw_cell(ch: str, cells: int, at: int, f: ImageFont.FreeTypeFont, y: int,
+                  squeeze: float = 1.0) -> None:
+        """幅 `cells` セルの独立した画像へ 1 字描いてから、セル `at` へ貼る。
+
+        `squeeze` < 1 なら、その割合ぶん**横に広いキャンバスへ描いてから横だけ縮める**
+        （字の高さを変えずに幅だけセルへ収める）。
+        """
         w = CELL_W * cells
-        cell = Image.new("RGBA", (w, CELL_H), (0, 0, 0, 0))
+        cw = round(w / squeeze) if squeeze < 1.0 else w
+        cell = Image.new("RGBA", (cw, CELL_H), (0, 0, 0, 0))
         b = f.getbbox(ch)
         # 等幅: そのグリフの実幅をセルの中央へ
-        x = (w - (b[2] - b[0])) // 2 - b[0]
+        x = (cw - (b[2] - b[0])) // 2 - b[0]
         ImageDraw.Draw(cell).text((x, y), ch, font=f, fill=INK + (255,),
                                   stroke_width=STROKE, stroke_fill=EDGE + (EDGE_A,))
+        if cw != w:
+            cell = cell.resize((w, CELL_H), Image.LANCZOS)
         atlas.alpha_composite(cell, (at * CELL_W, 0))
 
     for i, ch in enumerate(GLYPHS):
         if ch == " ":
             continue
-        draw_cell(ch, 1, i, font, top)
+        if ch in latin_chars:
+            draw_cell(ch, 1, i, font, top, latin_squeeze)
+        else:
+            draw_cell(ch, 1, i, font, top)
 
     # 全角は 2 セル幅。番号は半角の後ろに「左・右」の順で並ぶ（C# の WideCellIndex と対）。
     for j, ch in enumerate(WIDE_GLYPHS):
@@ -155,7 +182,7 @@ def main() -> int:
           f"  セル {CELL_W}x{CELL_H} × {cell_count}"
           f"（半角 {len(GLYPHS)} ＋ 全角 {len(WIDE_GLYPHS)}×2）"
           f"  不透明 {ink / (atlas.width * atlas.height):.1%}")
-    print(f"   全角 {wide_px}px 字高 {wb[3] - wb[1]}px（数字 {FONT_PX}px 字高 {glyph_h}px）")
+    print(f"   全角 {wide_px}px 字高 {wb[3] - wb[1]}px / ラテン 横 {latin_squeeze:.2f} 倍（数字 {FONT_PX}px 字高 {glyph_h}px）")
     print(f"   見る: {PREVIEW.relative_to(ROOT)}")
 
     # ⚠ **セルの上下端に字が届いていたら切れている**（版は縦に余白が無い）。

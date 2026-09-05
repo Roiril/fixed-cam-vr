@@ -950,6 +950,7 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
 | `CommsPanel`（AIエージェントの連絡 8 通） | ○ | 体験者が読む |
 | `VisitorMarkGuidance`（「解析中」） | ○ | 体験者が読む |
 | `OutroReportText`（終幕の報告 4 行） | ○ | 体験者が読む |
+| **スクリーン左上の周回**（`OsdClockLogic.LapLabel`・0167 / 訳は 0177） | ○ | 体験者が読む。`LAP 1` / `LAST`、`TOUR 1` / `FIN`。⚠ **時刻は訳さない**（数字と区切りだけ）。⚠ 版は独自（`make-osd-font.py`）なので HUD フォントの収集元とは無関係 |
 | `StatusHud` / `ControllerGuidePanel` / `RegistrationGuidance` / `RecoveryGuidance` / 黒の上の 1 行 | ✗ | **読み手は日本語のスタッフ**。訳すと現場が読めなくなる |
 | 題字「廻リ視」 | ✗ | 作品の名前（焼いた版 1 枚） |
 

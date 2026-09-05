@@ -33,7 +33,10 @@ namespace FixedCamVr.Streaming
         /// <c>GLYPHS</c> と対**。片方だけ直すと実機で別の字が出る
         /// （<c>OsdClockLogicTests</c> が数と並びを固定する）。空白は「何も描かない」セル。
         /// </summary>
-        public const string Glyphs = "0123456789:/ ?";
+        /// ⚠ 後ろのラテン 11 字は<b>周回の英語とフランス語</b>（<c>LAP 1</c> / <c>LAST</c> /
+        /// <c>TOUR 1</c> / <c>FIN</c>）。大文字だけ — 小文字の <c>p</c> はディセンダが
+        /// セルの下端で切れる（監視カメラの OSD は大文字が様式でもある）。
+        public const string Glyphs = "0123456789:/ ?LAPSTOURFIN";
 
         /// <summary>
         /// 版の**全角**セルの並び（1 字 = <b>2 セル</b>）。**<c>make-osd-font.py</c> の
@@ -45,7 +48,7 @@ namespace FixedCamVr.Streaming
         public const string WideGlyphs = "周目最後";
 
         /// <summary>版のセル数（半角 ＋ 全角 × 2）。</summary>
-        public const int GlyphCount = 22;
+        public const int GlyphCount = 33;
 
         /// <summary>「何も描かない」セルの番号。解決できない文字はここへ落とす。</summary>
         public const int BlankGlyph = 12;
@@ -62,10 +65,12 @@ namespace FixedCamVr.Streaming
         public const int GapCells = 2;
 
         /// <summary>
-        /// 周回の欄のセル数。いちばん長い「1周目」（半角 1 ＋ 全角 2 字）がちょうど収まる。
-        /// **固定長**で、短い語（「最後」「???」）は右に空白が残る。
+        /// 周回の欄のセル数。いちばん長い <c>TOUR 1</c>（フランス語・6 セル）がちょうど収まる。
+        /// **固定長**で、短い語（「最後」「???」「FIN」）は右に空白が残る。
+        /// ⚠ 3 言語のうち<b>いちばん長いもの</b>で決める（言語で欄の幅を変えると、
+        /// 版を敷き直すテクスチャの大きさが言語で変わる）。
         /// </summary>
-        public const int LabelCells = 5;
+        public const int LabelCells = 6;
 
         /// <summary>
         /// 敷き直す 1 行のセル総数。**テクスチャの幅はこれで決まる**（＝ 画に出る全幅）。
@@ -97,14 +102,15 @@ namespace FixedCamVr.Streaming
                              "{0:D4}/{1:D2}/{2:D2} {3:D2}:{4:D2}:{5:D2}",
                              t.Year, t.Month, t.Day, t.Hour, t.Minute, t.Second);
 
-        /// <summary>半角の文字 → 版のセル番号。知らない文字は空白のセルへ落とす（豆腐を出さない）。</summary>
+        /// <summary>
+        /// 半角の文字 → 版のセル番号。知らない文字は空白のセルへ落とす（豆腐を出さない）。
+        /// ⚠ <see cref="Glyphs"/> の並びがそのままセル番号なので、**引くのは 1 か所**。
+        /// 個別に書き下すと、字を足したとき片方を直し忘れて別の字が出る。
+        /// </summary>
         public static int GlyphIndex(char c)
         {
-            if (c >= '0' && c <= '9') return c - '0';
-            if (c == ':') return 10;
-            if (c == '/') return 11;
-            if (c == '?') return 13;
-            return BlankGlyph;
+            int i = Glyphs.IndexOf(c);
+            return i < 0 ? BlankGlyph : i;
         }
 
         /// <summary>
@@ -124,13 +130,25 @@ namespace FixedCamVr.Streaming
         /// 3 周と案内している体験で 4 周目と出ると、数が合わなくなる。
         /// </summary>
         /// <param name="lap">いま体験者が居る<b>区間の周</b>（1 始まり・未確定は -1）。</param>
-        public static string LapLabel(int lap, int totalLaps)
+        /// <param name="lang">
+        /// 体験者が選んだ言語（<c>canon/LEDGER.md</c> 0127）。**周回は体験者が読む情報**なので
+        /// 訳す（`rules/show-design.md`「体験者が読む面には言語が 3 つある」の表）。
+        /// ⚠ 時刻は数字と区切りだけなので訳しようがない。訳すのは語のここだけ。
+        /// </param>
+        public static string LapLabel(int lap, int totalLaps, ShowLang lang = ShowLang.Ja)
         {
             if (totalLaps < 1) totalLaps = ShowRunDefaults.TotalLaps;
             if (lap < 1) return "";
             // 版に 1 桁ぶんしか欄が無い。走り切った先はどこであれ「最後」。
-            if (lap > totalLaps || lap > 9) return "最後";
-            return (char)('0' + lap) + "周目";
+            if (lap > totalLaps || lap > 9)
+                return lang switch { ShowLang.En => "LAST", ShowLang.Fr => "FIN", _ => "最後" };
+            char n = (char)('0' + lap);
+            return lang switch
+            {
+                ShowLang.En => "LAP " + n,
+                ShowLang.Fr => "TOUR " + n,
+                _ => n + "周目",
+            };
         }
 
         /// <summary>
@@ -170,7 +188,8 @@ namespace FixedCamVr.Streaming
         /// （<c>canon/LEDGER.md</c> 0167「バックルーム的な演出の最中では、時刻も何周目かも
         /// 全部???になるようにしてほしい」）。
         /// </summary>
-        public static bool FillCells(DateTime t, int lap, int totalLaps, bool otherworld, int[] into)
+        public static bool FillCells(DateTime t, int lap, int totalLaps, bool otherworld, int[] into,
+                                     ShowLang lang = ShowLang.Ja)
         {
             if (into == null || into.Length < CellCount) return false;
 
@@ -179,7 +198,7 @@ namespace FixedCamVr.Streaming
             for (int i = 0; i < TextLength; i++) into[at++] = GlyphIndex(time[i]);
             for (int i = 0; i < GapCells; i++) into[at++] = BlankGlyph;
 
-            string label = otherworld ? MaskedLabel : LapLabel(lap, totalLaps);
+            string label = otherworld ? MaskedLabel : LapLabel(lap, totalLaps, lang);
             foreach (char c in label)
             {
                 int wide = WideCellIndex(c);

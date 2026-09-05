@@ -114,39 +114,45 @@ namespace FixedCamVr.Streaming.EditorTools
                 // ⚠⚠ **状態は「装置に起きること」と「映像に起きること」を必ず両方入れる。**
                 //   時計が正しい層に入っているかは、片方だけ見ても判定できない。
                 var shots = new (string name, string desc, Action<Material> set,
-                                 int lap, bool otherworld)[]
+                                 int lap, bool otherworld, ShowLang lang)[]
                 {
-                    ("0_plain", "素（本編・1 周目）", m => { }, 1, false),
+                    ("0_plain", "素（本編・1 周目）", m => { }, 1, false, ShowLang.Ja),
                     ("1_static", "信号断（砂嵐）— 映像側。時計は鮮明なまま",
-                        m => m.SetFloat("_SignalLost", 1f), 1, false),
+                        m => m.SetFloat("_SignalLost", 1f), 1, false, ShowLang.Ja),
                     ("2_glitch", "乱れ最大 0.60 — 映像側。時計は微動もしない",
                         m => { m.SetFloat("_Glitch", 0.60f); m.SetFloat("_GlitchSeed", 3.1f); },
-                        2, false),
+                        2, false, ShowLang.Ja),
                     ("3_decay", "3 周目相当（粗い・夜間モード）— 映像側。時計は鮮明なまま",
                         m => { m.SetFloat("_CoarseBlocks", 96f); m.SetFloat("_Mono", 1f); },
-                        3, false),
+                        3, false, ShowLang.Ja),
                     ("4_dip", "切替の黒 0.6 — 装置側。時計も一緒に沈む",
-                        m => m.SetFloat("_SwitchDim", 0.6f), 1, false),
+                        m => m.SetFloat("_SwitchDim", 0.6f), 1, false, ShowLang.Ja),
                     ("5_outro", "終幕の電力 0.35 — 装置側。時計も一緒に落ちる",
-                        m => m.SetFloat("_ScreenPower", 0.35f), 4, false),
+                        m => m.SetFloat("_ScreenPower", 0.35f), 4, false, ShowLang.Ja),
                     ("6_intro_frame", "導入 段 4（映像が出てくる途中）",
-                        m => m.SetFloat("_IntroLive", 0.5f), -1, false),
+                        m => m.SetFloat("_IntroLive", 0.5f), -1, false, ShowLang.Ja),
                     ("7_intro_dark", "導入 段 0〜3（まだ何も映していない管）— **時計は出ない**",
-                        m => m.SetFloat("_IntroLive", 0f), -1, false),
-                    // 周回（canon/LEDGER.md 0167）。ここから 3 枚は**表示の側**を切り替える。
+                        m => m.SetFloat("_IntroLive", 0f), -1, false, ShowLang.Ja),
+                    // 周回（canon/LEDGER.md 0167）。ここから先は**表示の側**を切り替える。
                     ("8_lap_last", "帰りの区間（4-A）＝「最後」。4 周目とは書かない",
-                        m => { }, 4, false),
+                        m => { }, 4, false, ShowLang.Ja),
                     ("9_lap_none", "区間がまだ確定していない（導入）＝ 周回は空のまま",
-                        m => { }, -1, false),
+                        m => { }, -1, false, ShowLang.Ja),
                     ("10_otherworld", "別の場所（バックルームズ）が映っている — 時刻も周回も ?",
-                        m => { }, 2, true),
+                        m => { }, 2, true, ShowLang.Ja),
+                    // 言語（canon/LEDGER.md 0127 の表に周回を足した）。⚠ 時刻は訳さない（数字）。
+                    ("11_en", "English — LAP 1", m => { }, 1, false, ShowLang.En),
+                    ("12_en_last", "English — LAST", m => { }, 4, false, ShowLang.En),
+                    ("13_fr", "Français — TOUR 1（欄いっぱいの 6 セル）",
+                        m => { }, 1, false, ShowLang.Fr),
+                    ("14_fr_last", "Français — FIN", m => { }, 4, false, ShowLang.Fr),
                 };
 
-                foreach (var (name, desc, set, lap, otherworld) in shots)
+                foreach (var (name, desc, set, lap, otherworld, lang) in shots)
                 {
                     ResetState(mat);
                     set(mat);
-                    osd.SetShowState(lap, ShowRunDefaults.TotalLaps, otherworld);
+                    osd.SetShowState(lap, ShowRunDefaults.TotalLaps, otherworld, lang);
                     osd.Tick(Fixed);
                     Shoot(cam, Path.Combine(dir, $"osd_{name}.png"));
                     Debug.Log($"[OsdPreview] {name}  {desc}");

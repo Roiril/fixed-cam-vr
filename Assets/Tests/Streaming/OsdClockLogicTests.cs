@@ -90,7 +90,7 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void UnknownCharacters_FallBackToBlank()
         {
-            foreach (char c in new[] { 'あ', 'A', '-', ' ', '\n' })
+            foreach (char c in new[] { 'あ', 'Z', '-', ' ', '\n' })
                 Assert.AreEqual(OsdClockLogic.BlankGlyph, OsdClockLogic.GlyphIndex(c));
         }
 
@@ -311,6 +311,73 @@ namespace FixedCamVr.Streaming.Tests
                         Assert.Less(cell, OsdClockLogic.GlyphCount);
                     }
                 }
+        }
+
+        // ---- 言語（canon/LEDGER.md 0127 の表に周回を足した）----
+
+        /// <summary>周回は体験者が選んだ言語で出る（時刻は数字なので訳さない）。</summary>
+        [Test]
+        public void LapLabel_IsTranslated()
+        {
+            Assert.AreEqual("LAP 1", OsdClockLogic.LapLabel(1, 3, ShowLang.En));
+            Assert.AreEqual("TOUR 1", OsdClockLogic.LapLabel(1, 3, ShowLang.Fr));
+            Assert.AreEqual("1周目", OsdClockLogic.LapLabel(1, 3, ShowLang.Ja));
+            Assert.AreEqual("LAST", OsdClockLogic.LapLabel(4, 3, ShowLang.En));
+            Assert.AreEqual("FIN", OsdClockLogic.LapLabel(4, 3, ShowLang.Fr));
+            Assert.AreEqual("最後", OsdClockLogic.LapLabel(4, 3, ShowLang.Ja));
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>3 言語のどの語も欄（<see cref="OsdClockLogic.LabelCells"/>）に収まる。</b>
+        /// はみ出した語は <see cref="OsdClockLogic.FillCells"/> が黙って切る
+        /// （画では「TOUR」で終わって数字が消える）。ここが落ちたら欄を広げる。
+        /// </summary>
+        [Test]
+        public void EveryLabel_FitsTheField()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+                foreach (int lap in new[] { 1, 2, 3, 4 })
+                {
+                    string s = OsdClockLogic.LapLabel(lap, 3, lang);
+                    int cells = 0;
+                    foreach (char c in s) cells += OsdClockLogic.WideCellIndex(c) >= 0 ? 2 : 1;
+                    Assert.LessOrEqual(cells, OsdClockLogic.LabelCells,
+                                       $"{lang} lap{lap}: 「{s}」が欄（{OsdClockLogic.LabelCells} セル）に入らない");
+                }
+            Assert.LessOrEqual(OsdClockLogic.MaskedLabel.Length, OsdClockLogic.LabelCells);
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>語に使う字が版に焼かれている。</b> 無い字は空白のセルへ落ちるので、
+        /// <b>画では字が消えるだけ</b>（豆腐も警告も出ない）。訳語を変えたらここが落ちる。
+        /// </summary>
+        [Test]
+        public void EveryLabelCharacter_IsInTheAtlas()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+                foreach (int lap in new[] { 1, 2, 3, 4 })
+                    foreach (char c in OsdClockLogic.LapLabel(lap, 3, lang))
+                    {
+                        if (c == ' ') continue;
+                        bool ok = OsdClockLogic.WideCellIndex(c) >= 0
+                               || OsdClockLogic.GlyphIndex(c) != OsdClockLogic.BlankGlyph;
+                        Assert.IsTrue(ok, $"'{c}'（{lang}）が版に無い — make-osd-font.py の"
+                                        + " GLYPHS / WIDE_GLYPHS に足す");
+                    }
+        }
+
+        /// <summary>言語を変えても時刻の欄は 1 セルも動かない（数字は訳さない）。</summary>
+        [Test]
+        public void TheClockDoesNotMoveWhenTheLanguageChanges()
+        {
+            var t = new DateTime(2026, 9, 6, 14, 23, 45);
+            var ja = new int[OsdClockLogic.CellCount];
+            var fr = new int[OsdClockLogic.CellCount];
+            Assert.IsTrue(OsdClockLogic.FillCells(t, 1, 3, false, ja, ShowLang.Ja));
+            Assert.IsTrue(OsdClockLogic.FillCells(t, 1, 3, false, fr, ShowLang.Fr));
+            for (int i = 0; i < OsdClockLogic.TextLength + OsdClockLogic.GapCells; i++)
+                Assert.AreEqual(ja[i], fr[i], $"セル {i} が言語で動いた");
+            Assert.AreNotEqual(ja[21], fr[21], "周回の欄は言語で変わる");
         }
 
         /// <summary>

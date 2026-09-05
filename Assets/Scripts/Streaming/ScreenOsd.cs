@@ -20,6 +20,8 @@ namespace FixedCamVr.Streaming
     /// OSD が焼き込まれていないので、装置が「これは今の映像だ」と主張し続ける形になる。
     ///
     /// <b>周回（0167）</b>: 「1周目」「2周目」「3周目」、帰りの区間は「最後」。
+    /// <b>体験者が選んだ言語で出す</b>（English は <c>LAP 1</c> / <c>LAST</c>、
+    /// Français は <c>TOUR 1</c> / <c>FIN</c>）。時刻は数字と区切りだけなので訳しようがない。
     /// <b>別の場所（バックルームズ）が映っているあいだは、時刻も周回も <c>?</c> になる</b> —
     /// 装置が場所を見失っている、という 1 つの出来事を 2 つの欄で言っている。
     ///
@@ -86,10 +88,12 @@ namespace FixedCamVr.Streaming
         private int _lap = -1;
         private int _totalLaps = ShowRunDefaults.TotalLaps;
         private bool _otherworld;
+        private ShowLang _lang = ShowLang.Ja;
         // 最後に**敷いた**状態。時刻と同じで、変わった縁でしか敷き直さない。
         private int _drawnLap = int.MinValue;
         private int _drawnTotalLaps = int.MinValue;
         private bool _drawnOtherworld;
+        private ShowLang _drawnLang = (ShowLang)(-1);
 
         /// <summary>
         /// 書く先（スクリーンの Renderer の材質）と版の両方を掴めているか。
@@ -188,18 +192,21 @@ namespace FixedCamVr.Streaming
             if (takes == null) takes = FindObjectOfType<TakeRunner>();
             SetShowState(timeline != null ? timeline.CurrentLap : -1,
                          run != null ? run.TotalLaps : ShowRunDefaults.TotalLaps,
-                         takes != null && takes.OtherworldActive);
+                         takes != null && takes.OtherworldActive,
+                         ShowLanguage.Current);
         }
 
         /// <summary>
-        /// 周回と異世界を外から与える（Editor のプレビューが状態ごとに焼くための口）。
+        /// 周回・異世界・言語を外から与える（Editor のプレビューが状態ごとに焼くための口）。
         /// 実機では <see cref="ReadShowState"/> が毎フレーム同じ値を入れる。
         /// </summary>
-        public void SetShowState(int lap, int totalLaps, bool otherworld)
+        public void SetShowState(int lap, int totalLaps, bool otherworld,
+                                 ShowLang lang = ShowLang.Ja)
         {
             _lap = lap;
             _totalLaps = totalLaps;
             _otherworld = otherworld;
+            _lang = lang;
         }
 
         /// <summary>
@@ -233,7 +240,8 @@ namespace FixedCamVr.Streaming
             //（`canon/LEDGER.md` 0167）。ここを見落とすと、周回は次の秒まで古いままになる。
             bool stateChanged = _lap != _drawnLap
                              || _totalLaps != _drawnTotalLaps
-                             || _otherworld != _drawnOtherworld;
+                             || _otherworld != _drawnOtherworld
+                             || _lang != _drawnLang;
             if (OsdClockLogic.NeedsRedraw(now, _stamp, out long stamp) || stateChanged)
             {
                 _stamp = stamp;
@@ -246,12 +254,13 @@ namespace FixedCamVr.Streaming
         private void Redraw(DateTime now)
         {
             if (_atlas == null || _buffer == null || _target == null) return;
-            if (!OsdClockLogic.FillCells(now, _lap, _totalLaps, _otherworld, _glyphs)) return;
+            if (!OsdClockLogic.FillCells(now, _lap, _totalLaps, _otherworld, _glyphs, _lang)) return;
             _drawnLap = _lap;
             _drawnTotalLaps = _totalLaps;
             _drawnOtherworld = _otherworld;
+            _drawnLang = _lang;
             Label = _otherworld ? OsdClockLogic.MaskedLabel
-                                : OsdClockLogic.LapLabel(_lap, _totalLaps);
+                                : OsdClockLogic.LapLabel(_lap, _totalLaps, _lang);
             LabelToken = OsdClockLogic.LapToken(_lap, _totalLaps, _otherworld);
 
             int atlasW = _cellW * OsdClockLogic.GlyphCount;
