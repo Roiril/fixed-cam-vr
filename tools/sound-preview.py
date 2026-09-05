@@ -149,6 +149,12 @@ SCORE2_WAV = os.path.join(ROOT, "logs", "sound", "ingest", "src_score_lostplace2
 SCORE2_VOLUME = 0.57
 
 
+# ---- ホラー軽減モードで既存の音に掛かる倍率（`canon/LEDGER.md` 0154）----------
+#
+# ⚠ **C# の `HorrorRelief.Gain` と同じ値**。実機は `AudioListener.volume` 1 か所で掛ける。
+FixedCamVr_RELIEF_GAIN = 0.5
+
+
 def load_score2() -> np.ndarray:
     """入れ替わった後の劇伴を**実機と同じ音量**で返す。"""
     if not os.path.exists(SCORE2_WAV):
@@ -899,6 +905,52 @@ def build_score_swap() -> np.ndarray:
     return out
 
 
+def build_relief() -> np.ndarray:
+    """**ホラー軽減モード**（`canon/LEDGER.md` 0154）。
+
+    判定してほしいのは 2 つ:
+
+    1. **既存の音が半分**（-6dB）で、怖さが和らいだと感じるか
+    2. **陽気な曲の高さ**（焼いた -24.0 LUFS）— 主に立っているか / 大きすぎないか
+
+    ⚠⚠ **同じ場面を 2 回鳴らす。前半が平時、後半が軽減モード。**
+      片側だけ聴くと「小さくなった」も「曲が乗った」も判定できない
+      （`~/.claude/rules/work-style.md` §2-3 の校正と同じ）。
+    ⚠ 後半はさらに**内蔵スピーカーを通した形**も付ける。展示で耳に届くのはそちら。
+    """
+    seg, gap = 14.0, 1.0
+    dev = load("bed_device")
+    sw = load("sfx_switch_alert_1")
+    laugh = load("bed_doll_one")
+    score = load_score()
+    relief = load("bed_relief")
+
+    def scene(gain: float, with_relief: bool) -> np.ndarray:
+        """本編のひとこま（装置の声 ＋ 劇伴 ＋ 笑い ＋ 切替が 3 発）。"""
+        one = np.zeros((int(seg * sk.SR), 2))
+        lay(one, tile(dev, seg), 0.0, 0.5 * gain)
+        lay(one, score[int(40 * sk.SR):int((40 + seg) * sk.SR)], 0.0, gain)
+        lay(one, tile(laugh, seg), 0.0, gain)
+        for at in (2.6, 7.1, 11.4):
+            lay(one, sw, at, gain)
+        # ⚠ 陽気な曲は倍率を掛けない（実機の `ignoreListenerVolume` と同じ）。
+        if with_relief:
+            lay(one, tile(relief, seg), 0.0)
+        return one
+
+    plain = scene(1.0, with_relief=False)
+    soft = scene(FixedCamVr_RELIEF_GAIN, with_relief=True)
+
+    total = seg * 3 + gap * 2
+    out = np.zeros((int(total * sk.SR), 2))
+    lay(out, plain, 0.0)
+    lay(out, soft, seg + gap)
+    lay(out, through_speaker(soft), (seg + gap) * 2)
+    print(f"   0.0s 平時   {seg + gap:.1f}s 軽減モード   "
+          f"{(seg + gap) * 2:.1f}s 同じ軽減モードを**内蔵スピーカー越し**で")
+    return out
+
+
 def build_outro() -> np.ndarray:
     """**終幕**（`canon/LEDGER.md` 0111 の電源断 ＋ 0125 の電源が落ちる音）。
 
@@ -983,6 +1035,9 @@ def main() -> int:
     print("追いつきの後で劇伴が入れ替わる所:")
     emit("preview_score_swap", build_score_swap(),
          "前半ヘッドホン / 後半は内蔵スピーカー越し。**音量と交代の尺**が判定")
+    print("ホラー軽減モード（0154・平時 → 軽減 → 内蔵スピーカー越し）:")
+    emit("preview_relief", build_relief(),
+         "**既存の音が半分になったか**と**陽気な曲の高さ**が判定。片側だけでは決まらない")
     print("終幕（電源が落ちて、報告が打たれる）:")
     emit("preview_outro", build_outro(),
          "前半ヘッドホン / 後半は内蔵スピーカー越し。**電源が落ちる音の高さ**が判定")
