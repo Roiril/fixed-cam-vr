@@ -20,9 +20,10 @@ fig_room.py（スタッフ用の斜投影）とは別物。こちらは体験者
   ⚠ figure.mjs の検査は 1 単位 = 1mm として字の大きさを見る。実寸はその 0.79 倍。
 
 ⚠⚠ **壁は show.json から取らない。** live の `room.walls` は 2026-08-05 から
-   横 0.59m / 縦 1.22m の非対称になっているが、**実物は 2 辺とも同じ長さ**（0164 でユーザーが明言）。
-   8/5 より前の show.json・`fig_room.py` の焼き込み・ゾーンの格子（B の南端が z=-0.6）の
-   3 つが揃って 1.0m / 1.0m を指すので、それを採る。食い違ったら下で警告を出す。
+   横 0.59m / 縦 1.22m の非対称になっているが、**実物は 2 辺とも 0.955m の等長**。
+   正本は `tools/walk-guide/build_walk_guide.py`（`Joint.blend` の実測値。同じ食い違いが
+   そこにも書いてある）。0164 では 1.0m と置いていたが、実測値へ直した。
+   食い違っているあいだは下で警告を出す。
 順路は壁との最短距離を測ってから出す（目で見て決めない。壁を突き抜けた図を刷ると事故になる）。
 """
 import io, json, math, os, sys
@@ -32,8 +33,8 @@ sys.stdout.reconfigure(encoding="utf-8")   # cp932 の端末で ⚠ を print �
 SHOW = r"C:\Users\kouga\Projects\Unity\fixed-cam-vr\tools\web-compositor\show.json"
 DST = r"C:\Users\kouga\Projects\Unity\fixed-cam-vr\docs\onsite\fig-route.svg"
 
-S, OX, OY = 60.0, 52.0, 50.8
-VW, VH = 106, 102          # viewBox（描くものにぴったり合わせてある。余白は 4 単位）
+S, OX, OY = 60.0, 50.8, 50.8
+VW, VH = 103, 99           # viewBox（描くものにぴったり合わせてある。余白は 4 単位）
 MM_W = 84.0                # 紙の上の幅
 
 
@@ -46,25 +47,34 @@ def pt(p):
     return f"{a:.2f},{b:.2f}"
 
 
-# ---- 壁（角 → 東の端 / 角 → 南の端。2 辺とも 1.0m） ------------------------
+# ---- 壁（角 → 東の端 / 角 → 南の端。2 辺とも 0.955m） ----------------------
 CORNER = (-0.5, 0.5)
-walls = [(CORNER[0], CORNER[1], 0.5, 0.5), (CORNER[0], CORNER[1], -0.5, -0.5)]
+ARM = 0.955      # walk-guide の WALL_ARM と同じ値。片方だけ動かさない
+walls = [(CORNER[0], CORNER[1], CORNER[0] + ARM, CORNER[1]),
+         (CORNER[0], CORNER[1], CORNER[0], CORNER[1] - ARM)]
 
 live = json.load(io.open(SHOW, encoding="utf-8"))["layout"]["room"]["walls"]
 lens = [math.hypot(w["x2"] - w["x1"], w["z2"] - w["z1"]) for w in live]
 if abs(lens[0] - lens[1]) > 0.05:
-    print(f"警告: show.json の壁が非対称（{lens[0]:.2f}m / {lens[1]:.2f}m）。図は 1.0m / 1.0m で引いた。"
-          f"CG の遮蔽もこの値で出ているので、卓の部屋の設定を見ること")
+    print(f"警告: show.json の壁が非対称（{lens[0]:.2f}m / {lens[1]:.2f}m）。"
+          f"図は実測の {ARM}m / {ARM}m で引いた。"
+          f"CG の遮蔽と登録時のワイヤーは show.json の値で出ているので、卓の部屋の設定を見ること")
 
-# ---- 順路（壁から 28cm 離した直角の道。時計回りに 1 周） --------------------
+# ---- 順路（壁から D 離した直角の道。時計回りに 1 周） ----------------------
 # 入口 → 内側を西 → 内側を南 → 南端を回って西 → 外側を北 → 外側を東 → 入口
+# ⚠ 実際に歩く道は壁の芯から 0.24m（walk-guide の D_WALK）。図は文字を置く幅を取るために
+#   0.28m で引いてある。読む人には見えない差だが、寸法の図として使わないこと
+D = 0.28
+E, W = CORNER[0] + ARM + D, CORNER[0] - D      # 東の端の外 / 西の面の外
+N, Sth = CORNER[1] + D, CORNER[1] - ARM - D    # 北の面の外 / 南の端の外
+IN_X, IN_Z = CORNER[0] + D, CORNER[1] - D      # 内側の 2 本
 WAY = [
-    (0.78, 0.22),    # 0 入口（上の腕の東の端の外）
-    (-0.22, 0.22),   # 1
-    (-0.22, -0.78),  # 2
-    (-0.80, -0.78),  # 3
-    (-0.80, 0.78),   # 4
-    (0.78, 0.78),    # 5
+    (E, IN_Z),       # 0 入口（上の腕の東の端の外）
+    (IN_X, IN_Z),    # 1
+    (IN_X, Sth),     # 2
+    (W, Sth),        # 3
+    (W, N),          # 4
+    (E, N),          # 5
 ]
 ARROW_AT = [0, 1, 3, 4]     # 矢じりを置く辺（WAY[i] → WAY[i+1]）
 R = 6.0                     # 角の丸み（単位）。入口の角だけ尖らせる

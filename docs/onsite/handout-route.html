@@ -487,9 +487,10 @@
       <h2>体験について</h2>
       <div class="lines">
         <p>所要時間は約 3 分です。</p>
+        <!-- ⚠ 「スタッフから声をかけない」「中断したいときは立ち止まって外す」の 2 行は
+             2026-09-06 に落とした。上の「ご体験の前に」が同じことを言っている（ユーザー判定）。
+             戻すときは、上と重ならない言い方になっているか見ること -->
         <p>体験中は、立った状態で移動していただきます。足元には十分ご注意ください。</p>
-        <p>安全上必要な場合を除き、体験中にスタッフからお声がけすることはありません。</p>
-        <p>体験を中断したい場合は、その場で立ち止まり、ヘッドセットを外してください。</p>
       </div>
     </div>
 
@@ -500,7 +501,7 @@
         <div class="band route">
       <h2>歩く順路</h2>
       <div class="cols">
-        <figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 106 102" width="84.0mm" height="80.8mm" role="img" aria-labelledby="rt rd">
+        <figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 103 99" width="84.0mm" height="80.7mm" role="img" aria-labelledby="rt rd">
 <title id="rt">歩く順路</title>
 <desc id="rd">壁を真上から見た図。L 字の壁があり、その外周を一周する破線の道が描いてある。入口は横に伸びた腕の東の端。そこから壁の内側を西へ進み、縦の腕の東側を南へ下り、南端を回って壁の外側を西から北へ上がり、壁の北側を東へ戻って入口へ着く。矢印はこの一方向だけを指し、同じ道を繰り返す。</desc>
 <style>
@@ -511,22 +512,22 @@
   .flow { fill: none; stroke: #333; stroke-width: 1.2; stroke-dasharray: 3.6 2.6; stroke-linecap: butt; }
   .lead { fill: none; stroke: #000; stroke-width: .35; }
 </style>
-<path d="M98.80,37.60 L44.80,37.60 Q38.80,37.60 38.80,43.60 L38.80,91.60 Q38.80,97.60 32.80,97.60 L10.00,97.60 Q4.00,97.60 4.00,91.60 L4.00,10.00 Q4.00,4.00 10.00,4.00 L92.80,4.00 Q98.80,4.00 98.80,10.00 L98.80,37.60 Z" class="flow"/>
-<g transform="translate(68.80,37.60) rotate(-180.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
-<g transform="translate(38.80,67.60) rotate(90.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
-<g transform="translate(4.00,50.80) rotate(-90.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
-<g transform="translate(51.40,4.00) rotate(-0.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
-<path d="M82.00,20.80 L22.00,20.80 L22.00,80.80" class="wall"/>
-<circle cx="98.80" cy="37.60" r="2.8" fill="#000"/>
-<text x="102.20" y="48.60" class="sub" text-anchor="end">最初は</text>
-<text x="102.20" y="55.00" class="sub" text-anchor="end">ここから入る</text>
-<line x1="30.90" y1="52.20" x2="25.50" y2="52.20" class="lead"/>
-<text x="31.90" y="53.80" class="thing">壁</text>
+<path d="M94.90,37.60 L43.60,37.60 Q37.60,37.60 37.60,43.60 L37.60,88.90 Q37.60,94.90 31.60,94.90 L10.00,94.90 Q4.00,94.90 4.00,88.90 L4.00,10.00 Q4.00,4.00 10.00,4.00 L88.90,4.00 Q94.90,4.00 94.90,10.00 L94.90,37.60 Z" class="flow"/>
+<g transform="translate(66.25,37.60) rotate(-180.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
+<g transform="translate(37.60,66.25) rotate(90.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
+<g transform="translate(4.00,49.45) rotate(-90.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
+<g transform="translate(49.45,4.00) rotate(-0.0)"><path d="M-3.6,-2.9 L3.6,0 L-3.6,2.9 Z" fill="#333"/></g>
+<path d="M78.10,20.80 L20.80,20.80 L20.80,78.10" class="wall"/>
+<circle cx="94.90" cy="37.60" r="2.8" fill="#000"/>
+<text x="98.30" y="48.60" class="sub" text-anchor="end">最初は</text>
+<text x="98.30" y="55.00" class="sub" text-anchor="end">ここから入る</text>
+<line x1="29.70" y1="52.20" x2="24.30" y2="52.20" class="lead"/>
+<text x="30.70" y="53.80" class="thing">壁</text>
 </svg></figure>
         <div>
-          <p>壁のまわりを、矢印の向きに回ります。体験が終わるまで、同じ順路を繰り返します。</p>
+          <p>壁のまわりを、矢印の向きに 3 周します。</p>
           <p>画面に映るのは、自分の視点の映像ではありません。足元は見えません。</p>
-          <p class="warn">壁にぶつかると危険です。ゆっくり歩いてください。</p>
+          <p class="warn">右手で手すりをたどりながら、ゆっくり歩いてください。手を離すと危険です。</p>
         </div>
       </div>
     </div>
