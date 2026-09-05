@@ -39,9 +39,11 @@ namespace FixedCamVr.Diagnostics
     /// <b>スタッフが読む面（StatusHud・操作早見表・位置合わせ）は日本語のまま。</b>
     ///
     /// ⚠⚠ <b>この面はホラー軽減モードの入口も兼ねる</b>（2026-09-05 ユーザー指定・
-    /// <c>canon/LEDGER.md</c> 0154）。同じボタンを<b>短く押せば言語・
+    /// <c>canon/LEDGER.md</c> 0154）。同じボタンを<b>単押しすれば言語・
     /// <see cref="Streaming.HorrorRelief.HoldSec"/> 秒長押しすれば軽減モード</b>で、
     /// <b>入力は 1 つも増えていない</b>（2026-07-23 の凍結は生きている）。
+    /// ⚠⚠ <b>単押しは「<see cref="ShowLanguage.TapMaxSec"/> 秒以内に離した押下」だけ</b>
+    /// （2026-09-05・0159）。それより長く握った回は、離しても言語が変わらない。
     /// 案内は <see cref="ReliefLineOf"/> が 1 行で持ち、入っているあいだは ［］ で囲む。
     /// </summary>
     [DisallowMultipleComponent]
@@ -233,8 +235,24 @@ namespace FixedCamVr.Diagnostics
                       + "（音が半分になり、陽気な曲が流れます）",
         };
 
-        /// <summary>ゲージのマスの数。長押しは <see cref="HorrorRelief.HoldSec"/> 秒なので 1 マス 150ms。</summary>
+        /// <summary>
+        /// ゲージのマスの数。割るのは<b>単押しの窓が終わってから長押しが成立するまで</b>
+        /// （<see cref="HorrorRelief.HoldSec"/> − <see cref="ShowLanguage.TapMaxSec"/> ＝ 1.0 秒）
+        /// なので 1 マス 100ms。
+        /// </summary>
         public const int GaugeCells = 10;
+
+        /// <summary>
+        /// <b>ゲージが出始める進み具合</b>（<see cref="HorrorRelief.HoldProgress01"/> の値）＝
+        /// <b>単押しの窓の終わり</b>（<see cref="ShowLanguage.TapMaxSec"/>）。
+        ///
+        /// ⚠⚠ <b>ここより手前では 1 文字も出さない</b>（2026-09-05・0159）。押していないのに
+        /// <b>○ が 10 個並んでいると、体験者は文字化けを疑う</b>（ユーザー報告
+        /// 「最初から○○○○が出ていると文字化けしているのか心配になる」）。
+        /// ⭐ 出る境目を単押しの上限に合わせてあるので、<b>ゲージが出た ＝ もう単押しではない</b>
+        /// （離しても言語は変わらない）。押し方と画が同じ 1 つの値で動く。
+        /// </summary>
+        public const float GaugeStart01 = ShowLanguage.TapMaxSec / HorrorRelief.HoldSec;
 
         /// <summary>
         /// <b>長押しの進み具合</b>（2026-09-05 ユーザー指定「長押し中は [--- ] みたいな感じで
@@ -253,24 +271,37 @@ namespace FixedCamVr.Diagnostics
         /// <b>何に見えるかは絵でしか分からない</b>。
         /// ⚠ <b>［］で囲まない。</b> この面の ［］ は「選んでいる言語」と「軽減モード中」の
         /// 2 つで既に意味を持っている。3 つ目を与えると印が読めなくなる。
-        /// ⚠ <b>押していないときも枠（░ だけの行）を出す。</b> 出したり消したりすると
-        /// 行数が変わって塊が上下に跳ねる。
+        /// ⚠⚠ <b>1 マスも点いていないときは全角空白で出す</b>（2026-09-05・0159）。
+        /// ○ を 10 個並べて待つ形は<b>文字化けに見える</b>（ユーザー報告「最初から○○○○が
+        /// 出ていると文字化けしているのか心配になる」）。⚠ <b>行は消さない</b> — 全角空白なので
+        /// 字送りも行数も 1 ミリも変わらず、塊が上下に跳ねない
+        /// （空白は <see cref="Ink"/> が数えないので、<b>積むときは満杯のゲージで測る</b>）。
+        /// ⚠ <b>○ が単独で並ぶ状態はもう存在しない</b> — 出るときは必ず ● が 1 つ以上ある。
         /// ⚠ 字を足したら <c>menu hud-font</c> を再実行する（静的ベイク）。
         /// </summary>
         public static string HoldGauge(float progress01)
         {
             int on = GaugeCellsFor(progress01);
             var sb = new System.Text.StringBuilder(GaugeCells);
-            for (int i = 0; i < GaugeCells; i++) sb.Append(i < on ? '●' : '○');
+            for (int i = 0; i < GaugeCells; i++)
+                sb.Append(on <= 0 ? '　' : (i < on ? '●' : '○'));
             return sb.ToString();
         }
 
         /// <summary>
-        /// 進み具合を<b>マスの数</b>へ落とす。⚠ <b>切り捨て</b>（四捨五入にすると、
-        /// 触れただけで 1 マス点いて「もう始まっている」に見える）。
+        /// 進み具合を<b>マスの数</b>へ落とす。
+        ///
+        /// ⚠⚠ <b>単押しの窓（<see cref="GaugeStart01"/>）までは 0</b> — そこまでは離せば
+        /// 言語が変わる押し方なので、長押しの画を出す理由が無い。
+        /// ⚠ 窓を過ぎたら<b>切り上げ</b>で、<b>出た瞬間に必ず 1 マス点く</b>
+        /// （0 マスの ○ だけの行が出ないのはこれが理由。<see cref="HoldGauge"/> の空白と対）。
         /// </summary>
         public static int GaugeCellsFor(float progress01)
-            => Mathf.Clamp(Mathf.FloorToInt(progress01 * GaugeCells), 0, GaugeCells);
+        {
+            if (progress01 <= GaugeStart01) return 0;
+            float after = (progress01 - GaugeStart01) / (1f - GaugeStart01);
+            return Mathf.Clamp(Mathf.CeilToInt(after * GaugeCells), 1, GaugeCells);
+        }
 
         /// <summary>
         /// <b>いちばん上の面 ＝ 言語の並び</b>（2026-09-05・0155 でここへ上がった）。
@@ -623,12 +654,24 @@ namespace FixedCamVr.Diagnostics
             var ink = new (float top, float bottom)[n];
             var h = new float[n];
             float total = FooterGapM * (n - 1);
+
+            // ⚠⚠ **ゲージは満杯の姿で測る**（2026-09-05・0159）。単押しの窓のあいだ
+            //    ゲージは全角空白で、<see cref="Ink"/> は空白を数えない ＝ **そのとき積むと
+            //    操作の説明が 1 行ぶん縮んだものとして積まれる**。言語を巡らせた回（ゲージ無し）と
+            //    軽減モードへ入った回（ゲージ満杯）で積み方が変わり、押すたびに面が上下へ跳ねる。
+            //    ⚠ 実際に画へ出す字は下で戻す — 測るためだけの差し替え。
+            // ⚠⚠ **そのぶん、ゲージが出ていないあいだは掲示との空きが 1 行ぶん広い**（実測 0.157m）。
+            //    これは**ゲージの席**で、詰めると押した瞬間に掲示が跳ねる。
+            //    寸法の門（`TitleNoticeLayoutTests`）も満杯の姿で測っている。
+            string shownGuide = labels[1]!.text;
+            labels[1]!.text = GuideFor(_shownLang, _shownRelief, 1f);
             for (int i = 0; i < n; i++)
             {
                 ink[i] = Ink(labels[i]!);
                 h[i] = (ink[i].top - ink[i].bottom) * scales[i];
                 total += h[i];
             }
+            labels[1]!.text = shownGuide;
 
             // 頭の正面やや下。姿勢は追従根が持つので、ここでは根から見た置き場所だけを決める。
             // ⚠ **黒の面（TitleScreen の覆い）はこれに乗っていない** — 覆いが頭から離れると

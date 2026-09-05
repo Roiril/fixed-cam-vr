@@ -270,9 +270,49 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.AreEqual(TitleNotice.GaugeCells, TitleNotice.GaugeCellsFor(1f), "成立しても満杯にならない");
             Assert.AreEqual(TitleNotice.GaugeCells, TitleNotice.GaugeCellsFor(2f), "1 を超えても満杯で止まる");
             Assert.AreEqual(0, TitleNotice.GaugeCellsFor(-1f), "負でも 0 で止まる");
-            // ⚠ 切り捨て。触れただけで 1 マス点くと「もう始まっている」に見える。
+            // ⚠ 触れただけで点かない（単押しの窓の内側は 0）。
             Assert.AreEqual(0, TitleNotice.GaugeCellsFor(0.09f), "触れただけで点いている");
             Assert.Less(TitleNotice.GaugeCellsFor(0.4f), TitleNotice.GaugeCellsFor(0.8f), "増えていない");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>単押しの窓のあいだは 1 文字も出さない</b>（2026-09-05・<c>canon/LEDGER.md</c> 0159・
+        /// ユーザー報告「最初から○○○○が出ていると文字化けしているのか心配になる」）。
+        /// 押してもいないうちから同じ字が 10 個並ぶと、体験者は<b>フォントが壊れた</b>と読む。
+        ///
+        /// ⭐ 出る境目は<b>単押しの上限</b>（<see cref="ShowLanguage.TapMaxSec"/>）に合わせてある ＝
+        /// <b>ゲージが出たら、離しても言語は変わらない</b>。
+        /// ⚠ <b>行は消さない</b>（全角空白で場所を取る）。消すと行数が変わって塊が上下に跳ねる。
+        /// </summary>
+        [Test]
+        public void Gauge_StaysBlank_WhileThePressCouldStillBeATap()
+        {
+            foreach (float p in new[] { 0f, 0.1f, TitleNotice.GaugeStart01 })
+            {
+                string g = TitleNotice.HoldGauge(p);
+                Assert.AreEqual(0, Count(g, '●') + Count(g, '○'),
+                                $"進み {p:0.00}（まだ単押し）で輪が出ている: 「{g}」");
+                Assert.AreEqual(TitleNotice.GaugeCells, g.Length, "行が消えている（塊が跳ねる）");
+                Assert.AreEqual(TitleNotice.GaugeCells, FullWidth(g), 0.001f, "幅が変わった");
+            }
+            Assert.AreEqual(1, TitleNotice.GaugeCellsFor(TitleNotice.GaugeStart01 + 0.001f),
+                            "窓を過ぎた最初のフレームで 1 マスも点かない");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>○ だけが並ぶ状態を作らない</b> — それが文字化けに見える形そのもの。
+        /// 出るときは必ず ● が 1 つ以上ある。
+        /// </summary>
+        [Test]
+        public void Gauge_NeverShowsRingsWithoutADot()
+        {
+            for (int i = 0; i <= 200; i++)
+            {
+                string g = TitleNotice.HoldGauge(i / 200f);
+                if (Count(g, '○') > 0)
+                    Assert.Greater(Count(g, '●'), 0,
+                                   $"進み {i / 200f:0.000} で ○ だけが並んだ: 「{g}」");
+            }
         }
 
         /// <summary>

@@ -453,6 +453,9 @@ namespace FixedCamVr.OvrBridge
             //      押した瞬間へ戻すことがあれば、必ず 1 つずつ聞くこと。
             if (langChoosing)
             {
+                // ⚠⚠ **押していた長さは Tick の前に読む。** 離したフレームの `Tick` は
+                //    計時を 0 へ戻すので、後で読むと**どの押下も 0 秒 ＝ 単押し**になる。
+                float leftHeldSec = _reliefHold.ElapsedSec;
                 if (_reliefHold.Tick(Time.deltaTime, leftMarkHeld))
                 {
                     HorrorRelief.Toggle();
@@ -462,9 +465,17 @@ namespace FixedCamVr.OvrBridge
                               + $"（長押し {HorrorRelief.HoldSec:0.0}s / 切り替え "
                               + $"{HorrorRelief.ChangeCount} 回目）");
                 }
+                // ⚠⚠ **言語が変わるのは単押しだけ**（2026-09-05 ユーザー指定・0159
+                //    「長押しした後に離すと言語が変わるのが面倒なので、単押し以外で言語は
+                //    変わらないように」）。成立した長押しは上で食べてあるが、**成立する手前で
+                //    離した回**（1.4 秒など）は単押しと区別が付かず、軽減モードを狙って
+                //    押すたびに言語が 1 つ進んでいた。⇒ **0.5 秒（`ShowLanguage.TapMaxSec`）を
+                //    超えて握っていたら、離しても何も起きない。**
+                // ⭐ 境目は面のゲージが出る所と同じ ＝ **ゲージが出たら言語は変わらない**。
                 if (_leftWasHeld && !leftMarkHeld)
                 {
-                    if (!_leftPressConsumed && ShowLanguage.Cycle()) haptics?.LeftMark();
+                    if (!_leftPressConsumed && ShowLanguage.IsTap(leftHeldSec)
+                        && ShowLanguage.Cycle()) haptics?.LeftMark();
                     _leftPressConsumed = false;
                 }
                 // 面へゲージを渡す（2026-09-05・0155）。⚠ **長押しが成立した後は満杯のまま**

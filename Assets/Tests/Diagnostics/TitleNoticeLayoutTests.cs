@@ -107,10 +107,15 @@ namespace FixedCamVr.Tests.Diagnostics
         /// <summary>
         /// ⚠⚠ <b>上から 言語 → 操作 → 掲示 の順に積む</b>（2026-09-05・0155 のユーザー指定）。
         /// 重なると読めず、順が違うと体験者は掲示から読み始める。
+        ///
+        /// ⚠⚠ <b>測るのはゲージが満杯のとき</b>（2026-09-05・0159）。押していないあいだゲージは
+        /// 全角空白で、その 1 行は<b>席だけ空けてある</b>（積み方はいつも満杯の姿で決める ＝
+        /// 押しても何も動かない）。空のまま測ると、ここの空きは<b>ゲージ 1 行ぶん広い</b>値になる。
         /// </summary>
         [Test]
         public void TheThreeLabels_AreStackedInTheOrderTheUserAsked()
         {
+            HorrorRelief.SetHoldProgress(1f);
             var (_, l) = Spawn();
             var ink = new[] { Ink(l[0]), Ink(l[1]), Ink(l[2]) };
             float want = Const("FooterGapM");
@@ -216,6 +221,39 @@ namespace FixedCamVr.Tests.Diagnostics
             }
             // ⚠ 満杯まで来たら、画に出ている字も満杯であること（書き替えを忘れていない）。
             StringAssert.Contains(TitleNotice.HoldGauge(1f), l[1].text, "ゲージが画に出ていない");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>ゲージが出ていない状態で積み直しても、塊は同じ所に座る</b>
+        /// （2026-09-05・<c>canon/LEDGER.md</c> 0159）。単押しの窓のあいだゲージは全角空白で、
+        /// <c>Ink</c> は<b>空白を数えない</b> ＝ 測る字が 1 行ぶん減る。満杯の姿で測っていないと、
+        /// <b>言語を巡らせた回だけ塊が縮んで面が跳ねる</b>（軽減モードへ入った回は満杯で積むため）。
+        /// </summary>
+        [Test]
+        public void TheStack_SitsInTheSamePlace_WhetherTheGaugeShowsOrNot()
+        {
+            var (notice, l) = Spawn();
+            MethodInfo? late = typeof(TitleNotice).GetMethod("LateUpdate", Priv);
+            Assert.That(late, Is.Not.Null);
+
+            // ① ゲージ満杯のまま積み直す（軽減モードの長押しが成立した回）。
+            HorrorRelief.SetHoldProgress(1f);
+            ShowLanguage.Select(ShowLang.En);
+            late!.Invoke(notice, null);
+            var full = (top: Ink(l[0]).top, bottom: Ink(l[2]).bottom);
+
+            // ② ゲージ無しのまま積み直す（単押しで言語を巡らせた回）。
+            //    同じ言語へ戻すだけでは積み直しが起きないので、一度 Français を経由する。
+            HorrorRelief.SetHoldProgress(0f);
+            ShowLanguage.Select(ShowLang.Fr);
+            late.Invoke(notice, null);
+            ShowLanguage.Select(ShowLang.En);
+            late.Invoke(notice, null);
+
+            Assert.That(Ink(l[0]).top, Is.EqualTo(full.top).Within(1e-4f),
+                        "ゲージの有無で上端が動いた");
+            Assert.That(Ink(l[2]).bottom, Is.EqualTo(full.bottom).Within(1e-4f),
+                        "ゲージの有無で下端が動いた");
         }
     }
 }

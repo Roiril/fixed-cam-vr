@@ -47,6 +47,27 @@ namespace FixedCamVr.Streaming
         /// <summary>巡る順。<b>この配列が順序の唯一の正</b>（<see cref="Next"/> はここから引く）。</summary>
         public static readonly ShowLang[] All = { ShowLang.Ja, ShowLang.En, ShowLang.Fr };
 
+        /// <summary>
+        /// <b>単押しと見なす上限 (秒)</b>（2026-09-05 ユーザー指定・<c>canon/LEDGER.md</c> 0159
+        /// 「長押しした後に離すと言語が変わるのが面倒なので、単押し以外で言語は変わらないように」）。
+        /// 押していた時間がこれ以下で離したときだけ言語が巡る。
+        ///
+        /// ⚠⚠ <b>これが無いと、長押しを途中でやめた回が必ず言語を 1 つ進める。</b>
+        /// 成立した長押し（<see cref="HorrorRelief.HoldSec"/> 秒）は入力側が食べているので
+        /// もともと巡らないが、<b>1.4 秒で離した回</b>は単押しと 1 ビットも区別が付かなかった。
+        /// ⚠ <b><see cref="HorrorRelief.HoldSec"/> より必ず短い。</b> 逆転すると、長押しが
+        /// 成立する前にどの押下も単押しになり<b>軽減モードへ入れなくなる</b>。
+        /// ⚠ 縮めると<b>ゆっくり押す人の言語が変わらなくなる</b>（画には何も出ないので気づけない）。
+        /// ⭐ ここは<b>面のゲージが出始める境目でもある</b>（<c>TitleNotice.GaugeStart01</c>）＝
+        /// <b>ゲージが出たら、離しても言語は変わらない</b>。押し方と画が同じ 1 つの値で動く。
+        /// </summary>
+        public const float TapMaxSec = 0.5f;
+
+        /// <summary>
+        /// この押下は言語を巡らせるか。<b>純関数</b>（入力側と面が同じ判定を読む唯一の口）。
+        /// </summary>
+        public static bool IsTap(float heldSec) => heldSec >= 0f && heldSec <= TapMaxSec;
+
         private static ShowLang _current = Default;
 
         /// <summary>いま体験者に見せている言語。</summary>

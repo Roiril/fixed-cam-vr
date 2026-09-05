@@ -105,6 +105,34 @@ namespace FixedCamVr.Streaming.Tests
             }
         }
 
+        /// <summary>
+        /// ⚠⚠ <b>言語が変わるのは単押しだけ</b>（2026-09-05 ユーザー指定・<c>canon/LEDGER.md</c> 0159
+        /// 「長押しした後に離すと言語が変わるのが面倒なので、単押し以外で言語は変わらないように」）。
+        /// 軽減モードを狙って握って途中でやめた回は、離しても何も起きない。
+        /// </summary>
+        [Test]
+        public void IsTap_TakesOnlyAShortPress()
+        {
+            Assert.IsTrue(ShowLanguage.IsTap(0f), "押した瞬間に離した回");
+            Assert.IsTrue(ShowLanguage.IsTap(ShowLanguage.TapMaxSec * 0.5f));
+            Assert.IsTrue(ShowLanguage.IsTap(ShowLanguage.TapMaxSec), "境目は単押しの側");
+            Assert.IsFalse(ShowLanguage.IsTap(ShowLanguage.TapMaxSec + 0.01f), "窓を過ぎても通る");
+            Assert.IsFalse(ShowLanguage.IsTap(HorrorRelief.HoldSec - 0.1f),
+                           "長押しをやめた回で言語が変わる（0159 で直した形）");
+            Assert.IsFalse(ShowLanguage.IsTap(-1f), "負の秒");
+        }
+
+        /// <summary>
+        /// ⚠⚠ <b>単押しの窓は長押しより必ず短い。</b> 逆転すると、長押しが成立する前に
+        /// どの押下も単押しになり<b>軽減モードへ入れなくなる</b>（画にも音にも出ない壊れ方）。
+        /// </summary>
+        [Test]
+        public void TheTapWindow_EndsWellBeforeTheHold()
+        {
+            Assert.Greater(ShowLanguage.TapMaxSec, 0f, "単押しが 1 つも通らない");
+            Assert.Less(ShowLanguage.TapMaxSec, HorrorRelief.HoldSec, "長押しへ辿り着けない");
+        }
+
         /// <summary>読めない指定（CLI の打ち間違い）は既定へ倒す — 検査を止めない。</summary>
         [Test]
         public void Parse_FallsBackToTheDefault()
