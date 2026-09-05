@@ -87,7 +87,9 @@ namespace FixedCamVr.Streaming
             //    「効果音」に聞こえないための仕掛け。ここは 2 本が交互に来るので、
             //    散らすと**押すたびに高さと大きさが揺れて「交互」が読めなくなる**
             //    （2 本を尖頭で揃えて 0.5dB 差に収めた意味も無くなる）。
-            player.Play(_clips[IndexFor(PlayedCount, _clips.Count)], 1f,
+            // 音量 0.5（2026-09-05 ユーザー指定「今の 1/2 の音量」）。
+            // ⚠ 掛けるのはここ 1 か所。2 本の相対（尖頭で揃えた 0.5dB 差）は保たれる。
+            player.Play(_clips[IndexFor(PlayedCount, _clips.Count)], 0.5f,
                         pitchSpread: 0f, gainSpreadDb: 0f);
             PlayedCount++;
         }
