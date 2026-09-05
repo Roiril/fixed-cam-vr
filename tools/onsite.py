@@ -916,14 +916,18 @@ def cmd_adb_open(args):
             print(f"{s}  Wi-Fi の IP が取れません")
             continue
         addr = m.group(1)
+        # ⚠⚠ USB を挿しているこの一瞬が、**自動接続を殺す仕掛けを止められる唯一の機会**。
+        #    上流の無いネットワークは Android に恒久無効化され、次に電源を入れた時に戻らない。
+        # ⚠ **tcpip より先に見る。** `adb tcpip 5555` は adbd を再起動するので、直後の
+        #    `dumpsys wifi` は空を返すことがある（2026-09-05 実測: 5 台中 4 台で読めなかった）。
+        #    空の dump は「無効化されていない」と同じ顔で出るので、順番を逆にすると
+        #    **殺されている機を見逃す**。
+        g = wifi_guard(s)
         run(["adb", "-s", s, "tcpip", "5555"], timeout=20)
         time.sleep(1.5)
         rc2, o2, e2 = run(["adb", "connect", f"{addr}:5555"], timeout=15)
         good = "connected" in (o2 + e2)
         print(f"{s}  {addr}:5555  {'開きました' if good else (o2 + e2).strip()[:70]}")
-        # ⚠⚠ USB を挿しているこの一瞬が、**自動接続を殺す仕掛けを止められる唯一の機会**。
-        #    上流の無いネットワークは Android に恒久無効化され、次に電源を入れた時に戻らない。
-        g = wifi_guard(s)
         print(f"    接続チェックを切りました（{g['guard']}）"
               + ("  ⚠ この機は既に自動接続が殺されています — "
                  "端末の Wi-Fi 設定で 1 度手で選び直すこと" if g["disabled"]
