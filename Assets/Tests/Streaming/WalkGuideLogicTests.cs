@@ -126,6 +126,71 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void GatesStart_IsUp_BeforeTheFirstChevron()
+        {
+            // ⚠⚠ **門は矢印より先に立つ**（2026-09-06・ユーザー報告
+            //    「体験エリアの中でスタートすると、動かなくてもすぐに到着した判定になる」）。
+            //    説明が届くのは題字が焼け切ってから実測 7.6 秒後。そのあいだ GatesStart が
+            //    寝ていると、`IntroLogic` の救済（中に立ったまま 1 秒）で**円を一度も見ないまま**始まる。
+            var l = new WalkGuideLogic();
+            Assert.IsFalse(l.GatesStart, "出せないうちから門を立てない");
+
+            Run(l, 5f, true, 9f, told: false);
+            Assert.AreEqual(WalkGuideStage.Off, l.Stage, "まだ 1 画素も出ていない");
+            Assert.IsFalse(l.Directing, "出していないので「円へ行け」とは言っていない");
+            Assert.IsTrue(l.Reserving, "これから出す");
+            Assert.IsTrue(l.GatesStart, "出す前の窓で導入の救済が生き返る");
+
+            l.Tick(In(true, 9f, told: true));
+            Assert.IsFalse(l.Reserving, "出たら Reserving は降りる");
+            Assert.IsTrue(l.GatesStart, "出しているあいだも門は立ったまま");
+        }
+
+        [Test]
+        public void GatesStart_IsDown_WhileTheGuideIsNotWanted()
+        {
+            // タイトルが立っている・道筋が解けない・実体を組めない —
+            // どれも wanted が false になる。**ここで門を立てると従来の判定ごと止まる**。
+            var l = new WalkGuideLogic();
+            Run(l, 5f, false, 9f, told: false);
+            Assert.IsFalse(l.Reserving);
+            Assert.IsFalse(l.GatesStart, "誘導を出せない現場で導入が永久に始まらなくなる");
+        }
+
+        [Test]
+        public void GatesStart_IsDown_OnceItIsDoneWith()
+        {
+            // 着いた後も、諦めた後も、門は降りる（降りないと導入が進まない）。
+            var arrived = new WalkGuideLogic();
+            Run(arrived, ThroughSpotIn + 0.2f, true, 9f);
+            Run(arrived, WalkGuideLogic.ArriveHoldSec + 0.2f, true, 0.1f);
+            Assert.IsTrue(arrived.Arrived);
+            Assert.IsFalse(arrived.GatesStart, "着いた後はもう用が済んでいる");
+
+            var gaveUp = new WalkGuideLogic();
+            Run(gaveUp, ThroughSpotIn + 0.2f, true, 9f);
+            Run(gaveUp, WalkGuideLogic.HoldMaxSec + WalkGuideLogic.OutSec + 0.4f, true, 9f);
+            Assert.IsTrue(gaveUp.TimedOut);
+            Assert.IsFalse(gaveUp.GatesStart, "諦めたら接近・安全網・救済が生き返る");
+        }
+
+        [Test]
+        public void GatesStart_ComesBack_AfterResetForTheNextVisitor()
+        {
+            // 周回リセット（卓の ▶ ラン開始）で門を立て直せないと、
+            // 2 人目以降だけ円を見ないまま始まる。
+            var l = new WalkGuideLogic();
+            Run(l, ThroughSpotIn + 0.2f, true, 9f);
+            Run(l, WalkGuideLogic.ArriveHoldSec + 0.2f, true, 0.1f);
+            Assert.IsFalse(l.GatesStart);
+
+            l.Reset();
+            Assert.IsFalse(l.GatesStart, "Reset 直後はまだ wanted を見ていない");
+            l.Tick(In(true, 9f, told: false));
+            Assert.IsTrue(l.GatesStart, "次の体験者でも説明待ちから門が立つ");
+        }
+
+        [Test]
         public void Arriving_ClosesTheRing_AndPullsTheArrowFirst()
         {
             var l = new WalkGuideLogic();

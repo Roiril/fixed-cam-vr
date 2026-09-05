@@ -103,7 +103,12 @@ namespace FixedCamVr.Streaming
     /// 導入の既定の開始は体験エリアへの<b>接近</b>（境界の 1.0m 外）なので、円を出したまま
     /// 接近で始めると<b>指示より手前で演出が走る</b> ＝ 装置が出した指示が嘘になる。
     /// だから誘導が出ているあいだ、<see cref="IntroLogic"/> の接近・安全網・救済は止まる
-    /// （<c>IntroInput.guidingToSpot</c>）。
+    /// （<c>IntroInput.guidingToSpot</c> ← <see cref="GatesStart"/>）。
+    ///
+    /// ⚠⚠ <b>止めるのは「出す前」から</b>（<see cref="Reserving"/>・2026-09-06）。
+    /// 矢印はエージェントの説明が届いてから出るので、題字が焼け切ってから実測 7.6 秒は
+    /// まだ何も出ていない。そこを開けていたら、<b>体験エリアの中に立った体験者は 1 秒で
+    /// 導入へ落ち、円も矢印も一度も見ないまま始まっていた</b>。
     ///
     /// ⚠ <b>止めたぶんの出口をここが持つ。</b> <see cref="HoldMaxSec"/> を超えても着かなければ
     /// 誘導を畳んで従来の判定へ戻す（<see cref="TimedOut"/>）。装置が諦めるのは正直な形で、
@@ -175,6 +180,7 @@ namespace FixedCamVr.Streaming
         private bool _inside;
         private bool _arrived;
         private float _armedSec;
+        private bool _armed;
 
         /// <summary>いまの段。</summary>
         public WalkGuideStage Stage => _stage;
@@ -190,6 +196,28 @@ namespace FixedCamVr.Streaming
         public bool Directing => _stage == WalkGuideStage.SpotIn
                                  || _stage == WalkGuideStage.Trail
                                  || _stage == WalkGuideStage.Hold;
+
+        /// <summary>
+        /// <b>まだ 1 画素も出していないが、これから出す</b>（出せる状態で
+        /// <see cref="WalkGuideInput.told"/> ＝ エージェントの説明を待っている）。
+        ///
+        /// ⚠⚠ <b>この窓を開けたままにすると、円が出る前に導入が始まる。</b>
+        /// 説明が届くのは題字が焼け切ってから実測約 7.6 秒後で、そのあいだ
+        /// <see cref="Directing"/> は false ＝ <see cref="IntroLogic"/> の救済
+        /// （<see cref="IntroLogic.ConcealStartSec"/> ＝ 中に立ったまま 1 秒）が生きている。
+        /// 体験エリアの中に立った体験者は<b>1 秒で導入へ落ち、誘導を一度も見ない</b>
+        /// （2026-09-06 ユーザー報告「動かなくてもすぐに到着した判定になる」）。
+        /// </summary>
+        public bool Reserving => _stage == WalkGuideStage.Off && _armed;
+
+        /// <summary>
+        /// <b>段 0 のほかの出口を止めているか</b>（<c>IntroInput.guidingToSpot</c> へ渡す値）。
+        /// 出す前（<see cref="Reserving"/>）から出している最中（<see cref="Directing"/>）まで通しで立つ。
+        ///
+        /// ⚠ 止めたぶんの出口はこちらが持つ — 説明が来なくても <see cref="TellTimeoutSec"/> で出て、
+        /// 着かなくても <see cref="HoldMaxSec"/> で畳む（<see cref="TimedOut"/>）。
+        /// </summary>
+        public bool GatesStart => Reserving || Directing;
 
         /// <summary>着かないまま上限を超えたか（＝従来の開始判定へ戻した）。</summary>
         public bool TimedOut => _timedOut;
@@ -222,6 +250,7 @@ namespace FixedCamVr.Streaming
             _inside = false;
             _arrived = false;
             _armedSec = 0f;
+            _armed = false;
         }
 
         /// <summary>時間を進める。<b>段が変わったら true</b>（呼び出し側が縁でログと観測を出す）。</summary>
@@ -229,6 +258,9 @@ namespace FixedCamVr.Streaming
         {
             float dt = input.dt > 0f ? input.dt : 0f;
             WalkGuideStage before = _stage;
+            // ⚠ **出す前から門を立てる**（Reserving）。ここを Tick の頭で写しておかないと、
+            //    説明を待っているあいだだけ導入の救済が生き返る（0079 の穴・2026-09-06）。
+            _armed = input.wanted;
             UpdateArrival(input, dt);
 
             // 流れは出ているあいだだけ回す（畳んだ後も回すと、次に出したとき位相が飛ぶ）。

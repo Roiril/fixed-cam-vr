@@ -105,8 +105,15 @@ namespace FixedCamVr.Streaming
         /// <summary>いまの段（テレメトリ用）。</summary>
         public WalkGuideStage Stage => _logic.Stage;
 
-        /// <summary>体験者へ「円へ行け」と言い切っているか（<see cref="IntroLogic"/> のゲート）。</summary>
+        /// <summary>体験者へ「円へ行け」と言い切っているか（矢印か円が出ている）。</summary>
         public bool Directing => _logic.Directing;
+
+        /// <summary>
+        /// <b>段 0 のほかの出口を止めているか</b>（<see cref="IntroLogic"/> のゲート ＝
+        /// <c>IntroInput.guidingToSpot</c>）。<b>説明を待っているあいだも立つ</b>
+        /// （<see cref="WalkGuideLogic.Reserving"/>）。
+        /// </summary>
+        public bool GatesStart => _logic.GatesStart;
 
         /// <summary>円へ着いたか。</summary>
         public bool Arrived => _logic.Arrived;

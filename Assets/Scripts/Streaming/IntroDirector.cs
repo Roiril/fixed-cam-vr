@@ -390,7 +390,11 @@ namespace FixedCamVr.Streaming
                           && IsStartAuthorized()
                           && IsCourseRegistered();
             walkGuide.Tick(wanted);
-            _guiding = walkGuide.Directing;
+            // ⚠⚠ **門は「出している」ではなく「出す」で立てる**（`WalkGuideLogic.GatesStart`・2026-09-06）。
+            //    矢印はエージェントの説明が届いてから出るので、題字が焼け切ってから実測 7.6 秒は
+            //    `Directing` が false のままだった。その窓で `IntroLogic` の救済（中に立ったまま 1 秒）が
+            //    生きており、**体験エリアの中で始めた体験者は円を一度も見ないまま導入へ落ちていた**。
+            _guiding = walkGuide.GatesStart;
         }
 
         /// <summary>このフレーム、誘導が「円へ行け」と言い切っているか（<see cref="IntroInput"/> へ渡す）。</summary>
@@ -491,8 +495,9 @@ namespace FixedCamVr.Streaming
 
             // ⚠⚠ **歩行誘導が出ているあいだは円だけが出口**（2026-08-17・`canon/LEDGER.md` 0079）。
             //    着いたら以後ずっと true（着いたことは取り消せない）。着かないまま誘導が諦めたら
-            //    Directing も Arrived も false になり、下の従来の判定（接近 → 線 → 円）が生き返る。
-            if (walkGuide != null && (walkGuide.Directing || walkGuide.Arrived)) return walkGuide.Arrived;
+            //    GatesStart も Arrived も false になり、下の従来の判定（接近 → 線 → 円）が生き返る。
+            //    **出す前の待ちもここで止める**（`GatesStart` は `Reserving` を含む・2026-09-06）。
+            if (walkGuide != null && (walkGuide.GatesStart || walkGuide.Arrived)) return walkGuide.Arrived;
 
             var head2 = showControl?.HeadCourseXZProvider;
             if (head2 == null) { _startSpot.NotifyUnavailable(); return false; }
