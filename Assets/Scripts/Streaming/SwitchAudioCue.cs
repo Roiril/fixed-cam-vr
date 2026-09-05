@@ -268,7 +268,7 @@ namespace FixedCamVr.Streaming
                 _warnSource.clip = _warnClip;
                 _warnSource.pitch = 1f;
                 // ⚠ **警告は音量を散らさない。** 土台の ±1.5dB をここにも掛けると、
-                //   1 段 1.6dB の育ちが乱数に埋もれて「重ねるにつれて大きくなる」が消える。
+                //   1 段 1.2dB の育ちが乱数に埋もれて「重ねるにつれて大きくなる」が消える。
                 _warnSource.volume = Mathf.Clamp01(gain * _esc.Next());
                 _warnSource.Stop();
                 _warnSource.PlayScheduled(at);

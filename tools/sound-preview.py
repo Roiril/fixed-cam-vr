@@ -21,6 +21,7 @@ py -3.11 tools/sound-preview.py
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 
@@ -505,6 +506,30 @@ def build_swap() -> np.ndarray:
 
 SWITCH_VARIANTS_N = 6      # ⚠ `SwitchAudioCue.DefaultVariantCount` の写し
 
+# ⚠⚠ **C# の `AlertEscalationLogic` の写し**（`canon/LEDGER.md` 0145 / 0158）。
+#    警告つきの切替音は、**土台（素の変種）と警告（`sfx_switch_warn`）を別の声で同じ時刻に
+#    重ねて**鳴らし、警告だけが回を重ねて大きくなる。
+#    ⚠⚠ **混ぜた 1 本（`sfx_switch_alert_*`）を並べると、6 発とも天井の高さ ＝ 育ちが消える。**
+#    2026-09-05 まで、この preview は 3 本ともそれを並べていた（0145 で実装を変えたのに
+#    聴く側を直していなかった）ので、**人が聴いて判定できるのは最大の 1 段だけ**だった。
+#    ⚠ 向こうを変えたらここも直す（片方だけだと黙って食い違う）。
+ALERT_RAMP_TO = 6           # `AlertEscalationLogic.RampToCount`
+ALERT_FIRST_DB = -6.0       # `AlertEscalationLogic.FirstDb`（0158 で -8 から）
+ALERT_FIRST_DB_PREV = -8.0  # 0158 より前（旧 → 新の比べに使う）
+# 接近の 4 カット（`pov_1`〜`pov_4`）は、1 体験の通しでは **3〜6 発目**。
+# 1 発目は 2 周目 B のバックルームズ、2 発目は予備動作（`pov_0`）。
+ALERT_NTH_AT_APPROACH = 3
+
+
+def alert_gain(nth: int, first_db: float = ALERT_FIRST_DB) -> float:
+    """<c>nth</c> 発目（1 始まり）の警告の倍率。**dB で直線**（`AlertEscalationLogic.GainFor`）。"""
+    if nth <= 1:
+        return 10 ** (first_db / 20.0)
+    if nth >= ALERT_RAMP_TO:
+        return 1.0
+    t = (nth - 1) / (ALERT_RAMP_TO - 1)
+    return 10 ** ((first_db * (1.0 - t)) / 20.0)
+
 
 def build_switch() -> np.ndarray:
     """カメラ切替の音（`canon/LEDGER.md` 0112 の変種 ＋ 0106 の警告つき）。
@@ -524,6 +549,7 @@ def build_switch() -> np.ndarray:
     rng = np.random.default_rng(20260823)
     plain = [load(f"sfx_switch_{i}") for i in range(1, SWITCH_VARIANTS_N + 1)]
     alert = [load(f"sfx_switch_alert_{i}") for i in range(1, SWITCH_VARIANTS_N + 1)]
+    warn = load("sfx_switch_warn")
 
     def shot(clip: np.ndarray) -> np.ndarray:
         r = 1.0 + float(rng.uniform(-0.035, 0.035))
@@ -569,13 +595,19 @@ def build_switch() -> np.ndarray:
     #    連続で、あいだにゾーン切替は入らない（`switchSfx` は 4 つとも true）。
     #    以前ここは 3 発に 1 発を素にしていたが、それだと警告の密度が実機より低く聞こえる。
     #    ⚠ このほかに予備動作（`L2C2#0` の pov_0）が先に 1 発ある ＝ 1 体験で計 5 発。
-    for sec in steps:
-        lay(out, shot(alert[pick(SWITCH_VARIANTS_N)]), at)
+    # ⚠⚠ **ここは実機と同じ構えで鳴らす**（0145 / 0158）— 土台は素の変種、警告は別に重ね、
+    #    **回を重ねて大きくなる**。混ぜた 1 本を並べると 4 発とも天井 ＝ 育ちが消える。
+    #    ⚠ 上の ①b（4.6s の「素 → 警告つき」の対）は混ぜた 1 本のまま ＝ **天井の高さ**
+    #    （通しの 6 発目に当たる）。あちらは「警告が混ざっているか」を聴く場なのでそれでよい。
+    for k, sec in enumerate(steps):
+        lay(out, shot(plain[pick(SWITCH_VARIANTS_N)]), at)
+        lay(out, warn * 0.85 * alert_gain(ALERT_NTH_AT_APPROACH + k), at)
         at += sec
     print(f"   0.5s 変種を 1 本ずつ（{SWITCH_VARIANTS_N} 本）   "
           f"4.6s 素 → 警告つき の対（{SWITCH_VARIANTS_N} 組）   "
           f"12.4s 旧（1 本を 8 発）→ 18.4s 新（6 本を 8 発）   "
-          f"{start:.0f}s 2 周目 C の刻み {' / '.join(f'{s:.1f}' for s in steps)} 秒（4 発とも警告つき）")
+          f"{start:.0f}s 2 周目 C の刻み {' / '.join(f'{s:.1f}' for s in steps)} 秒"
+          f"（4 発とも警告つき・**回ごとに大きくなる** {ALERT_FIRST_DB:+.0f}dB → 0dB の 3〜6 発目）")
     return out
 
 
@@ -591,7 +623,10 @@ def build_call() -> np.ndarray:
     ⚠ 散らし方は実機の写し — 切替音は音程 ±3.5% / 音量 ±1.5dB、**声は散らさない**。
     """
     rng = np.random.default_rng(20260823)
-    alert, call = load("sfx_switch_alert_1"), load("sfx_doll_call")
+    # ⚠ 切替音は**実機と同じ構え**（0145 / 0158）— 土台の変種 ＋ 警告を別に重ね、回ごとに育つ。
+    #   声が重なるのは 4 カット目 ＝ 通しの 6 発目 ＝ **警告が最大**のところ。
+    plain = [load(f"sfx_switch_{i}") for i in range(1, SWITCH_VARIANTS_N + 1)]
+    warn, call = load("sfx_switch_warn"), load("sfx_doll_call")
 
     def shot(clip: np.ndarray) -> np.ndarray:
         r = 1.0 + float(rng.uniform(-0.035, 0.035))
@@ -599,6 +634,10 @@ def build_call() -> np.ndarray:
         x = np.linspace(0, len(clip) - 1, m)
         c = np.stack([np.interp(x, np.arange(len(clip)), clip[:, ch]) for ch in (0, 1)], axis=1)
         return c * 0.85 * 10 ** (float(rng.uniform(-1.5, 1.5)) / 20.0)
+
+    def cut(nth: int, at_sec: float) -> None:
+        lay(out, shot(plain[(nth - ALERT_NTH_AT_APPROACH) % len(plain)]), at_sec)
+        lay(out, warn * 0.85 * alert_gain(nth), at_sec)
 
     total, bed_from, start = 12.0, 4.0, 5.0
     steps = (1.0, 0.9, 0.8)      # pov_1 → pov_2 → pov_3 →（この後が pov_4 ＝ 追いつき）
@@ -611,10 +650,10 @@ def build_call() -> np.ndarray:
     lay(out, tile(load("bed_device"), total - bed_from), bed_from)
 
     at = start
-    for sec in steps:
-        lay(out, shot(alert), at)
+    for k, sec in enumerate(steps):
+        cut(ALERT_NTH_AT_APPROACH + k, at)
         at += sec
-    lay(out, shot(alert), at)    # 4 カット目の切替音
+    cut(ALERT_NTH_AT_APPROACH + len(steps), at)   # 4 カット目の切替音（＝ 警告は最大）
     lay(out, call, at)           # **同じ縁で声**（散らさない・gain 1.0）
     print(f"   0.6s 声だけ   {start:.0f}s 接近の刻み "
           f"{' / '.join(f'{x:.1f}' for x in steps)} 秒 → "
@@ -698,16 +737,24 @@ def build_alert() -> np.ndarray:
        ＋ 警告つきの切替 ＋ 4 カット目で声。**旧の版 → 新の版**
     3. 同じ 2 回を**内蔵スピーカー越し**で（展示で耳に届くのはこちら）
 
+    ⚠⚠ **警告は回を重ねて大きくなる**（0145 / 0158）。接近の 4 カットは通しの 3〜6 発目なので、
+    ここでも `alert_gain(3..6)` を掛ける。**混ぜた 1 本を並べると育ちが消える**（上の但し書き）。
     ⚠ 散らし方は実機の写し（切替 gain 0.85 / 音程 ±3.5% / 音量 ±1.5dB、乱れは 1 回目の 0.80）。
+    **警告だけは散らさない** — 1 段 1.2dB の育ちが乱数に埋もれるので（`SwitchAudioCue`）。
     ⚠ 劇伴の退きは `SoundBedLogic` の半減期 0.55 秒を包絡で写した近似。
     """
     rng = np.random.default_rng(20260904)
+    plain = [load(f"sfx_switch_{i}") for i in range(1, SWITCH_VARIANTS_N + 1)]
     new = [load(f"sfx_switch_alert_{i}") for i in range(1, SWITCH_VARIANTS_N + 1)]
+    warn = load("sfx_switch_warn")
     prev = []
     for i in range(1, SWITCH_VARIANTS_N + 1):
         p = os.path.join(REF, f"sfx_switch_alert_prev_{i}.wav")
         if os.path.exists(p):
             prev.append(sk.to_stereo(sk.read_wav(p)[0]))
+    warn_prev_path = os.path.join(REF, "sfx_switch_warn_prev.wav")
+    warn_prev = (sk.to_stereo(sk.read_wav(warn_prev_path)[0])
+                 if os.path.exists(warn_prev_path) else None)
     glitch = [load(f"sfx_glitch_{i}") for i in range(1, 4)]
     call = load("sfx_doll_call")
 
@@ -721,7 +768,11 @@ def build_alert() -> np.ndarray:
     steps = (1.0, 0.9, 0.8, 1.4)          # pov_1 → pov_2 → pov_3 → pov_4（追いつき）
     seg = 8.0
 
-    def approach(alerts: list) -> np.ndarray:
+    def approach(warn_clip: np.ndarray, first_db: float) -> np.ndarray:
+        # ⚠ **ブロックごとに散らしを撒き直す。** 旧と新を並べて比べる場なので、
+        #   土台の音程と音量の乱数が違うと「警告が育ったか」以外の差が混ざる。
+        nonlocal rng
+        rng = np.random.default_rng(20260904)
         one = np.zeros((int(seg * sk.SR), 2))
         score = tile(load_score(), seg)
         # 劇伴は乱れの一撃のたびに 0.35 退き、半減期 0.55 秒で戻る（`SoundCueLogic.DuckFor(Glitch)`）。
@@ -737,15 +788,25 @@ def build_alert() -> np.ndarray:
         lay(one, score * env[:, None], 0.0)
         lay(one, tile(load("bed_device"), seg), 0.0)
         for k, tc in enumerate(cuts):
-            lay(one, shot(alerts[k % len(alerts)]), tc)
+            # ⭐ 実機と同じ構え: **土台は素の変種**（散らす）＋ **警告は別に同じ時刻へ**（散らさない）。
+            #    35ms のずれは警告の波形の頭に焼いてあるので、実行時に足すものは無い。
+            lay(one, shot(plain[k % len(plain)]), tc)
+            nth = ALERT_NTH_AT_APPROACH + k
+            lay(one, warn_clip * 0.85 * alert_gain(nth, first_db), tc)
             # 乱れの一撃は次のフレーム（+35ms）。1 回目の高さ 0.80 → 徐々に 1.0（ここは 0.85）。
             lay(one, shot(glitch[k % 3], gain=0.85, pitch=0.03, db=1.2), tc + 0.035)
         lay(one, call, cuts[-1])          # 4 カット目の頭で声（散らさない）
         return one
 
+    # 旧版が退避してあれば「旧 → 新」、無ければ新だけ。⚠ 尺は本数から出す（決め打ちにしない）。
+    passes = []
+    if warn_prev is not None:
+        passes.append(("旧", warn_prev, ALERT_FIRST_DB_PREV))
+    passes.append(("新", warn, ALERT_FIRST_DB))
+
     parts: list = []
     t = 0.5
-    total = 0.5 + 3 * 2.0 + 1.0 + (seg + 0.8) * 4 + 1.0
+    total = 0.5 + 3 * 2.0 + 1.0 + (seg + 0.8) * 2 * len(passes) + 1.0
     out = np.zeros((int(total * sk.SR), 2))
     if prev:
         for i in range(3):
@@ -758,14 +819,12 @@ def build_alert() -> np.ndarray:
             t += 2.0
     t += 1.0
     marks = []
-    for label, alerts in (("旧", prev if prev else new), ("新", new)):
-        block = approach(alerts)
-        lay(out, block, t)
+    for label, w, fdb in passes:
+        lay(out, approach(w, fdb), t)
         marks.append((label, t))
         t += seg + 0.8
-    for label, alerts in (("旧", prev if prev else new), ("新", new)):
-        block = through_speaker(approach(alerts))
-        lay(out, block, t)
+    for label, w, fdb in passes:
+        lay(out, through_speaker(approach(w, fdb)), t)
         marks.append((label + "・内蔵SP", t))
         t += seg + 0.8
     print("   0.5s 旧 → 新 を素で 3 組   "
@@ -1004,43 +1063,59 @@ def build_outro() -> np.ndarray:
 
 
 def main() -> int:
-    print("素材を 1 本ずつ:")
-    emit("preview_materials", build_materials(), "何がどんな音か")
-    print("導入の流れ:")
-    emit("preview_intro", build_intro(), "⚠ 近似。実機の混ざり方は SoundBedLogic が決める")
-    print("連絡の面の打鍵:")
-    emit("preview_comms", build_comms(), "本編の敷く音の上で。頭の 2 本は速さの比べ")
-    print("最後の演出（人形がたくさん出てくる所）:")
-    emit("preview_dolls", build_dolls(), "笑い → 3 秒後に③の連絡。4 周目の敷く音の上で")
-    emit("preview_lang", build_lang(),
+    # ⚠⚠ **1 本だけ作る口**（2026-09-05）。全部作ると `preview_materials`（素材を全部つないだ
+    #    いちばん長い 1 本）の尖頭検査で **MemoryError で落ちることがある**。そこで落ちると
+    #    **後ろの 15 本が 1 本も作られない**ので、聴かせたい 1 本のために全部を焼く必要は無い。
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", nargs="*", default=None, metavar="名前",
+                    help="この preview だけ作る（例: --only preview_alert preview_switch）")
+    a = ap.parse_args()
+    want = set(a.only) if a.only else None
+
+    def make(name: str, fn, note: str, head: str = "") -> None:
+        if want is not None and name not in want:
+            return
+        if head:
+            print(head)
+        emit(name, fn(), note)
+
+    make("preview_materials", build_materials, "何がどんな音か", "素材を 1 本ずつ:")
+    make("preview_intro", build_intro,
+         "⚠ 近似。実機の混ざり方は SoundBedLogic が決める", "導入の流れ:")
+    make("preview_comms", build_comms, "本編の敷く音の上で。頭の 2 本は速さの比べ", "連絡の面の打鍵:")
+    make("preview_dolls", build_dolls, "笑い → 3 秒後に③の連絡。4 周目の敷く音の上で",
+         "最後の演出（人形がたくさん出てくる所）:")
+    make("preview_lang", build_lang,
          "言語の切り替えを 4 回（交互に鳴るか・2 本の大きさが揃っているか）")
-    print("3 周目（入れ替わってから C で増えるまで）:")
-    emit("preview_swap", build_swap(), "実機と同じ式。**尺も実機どおり** — 増え方が判定そのもの")
-    print("パススルーが割れて 2D に移るところ:")
-    emit("preview_break", build_break(), "旧 → 新の比べ ＋ 段 4 の通し（0057 の並び）")
-    print("カメラ切替の変種:")
-    emit("preview_switch", build_switch(),
-         "変種 6 本 → 旧（1 本を 8 発）→ 新（6 本を 8 発）→ 2 周目 C の刻み")
-    print("人形の呼びかけ（2 周目 C の追いつき）:")
-    emit("preview_call", build_call(), "前半は声だけ / 後半は切替音と重なった所")
-    print("人形の笑い — 周囲に大勢いるか（0139・旧 1 点 → 新 8 か所）:")
-    emit("preview_laugh_ring", build_laugh_ring(),
-         "⚠ ヘッドホン用の近似（左右と前後の曇りだけ）。**何か所から鳴っているか**が判定")
-    print("警告つきの切替音（0134・実機で鳴る場に置いて、旧 → 新）:")
-    emit("preview_alert", build_alert(),
-         "素で 3 組 → 接近そのまま（旧 → 新）→ 同じ 2 回を内蔵スピーカー越し。**警告が聞こえるか**が判定")
-    print("笑いの高さ（呼びかけと並べる）:")
-    emit("preview_pitch", build_pitch(),
-         "呼びかけ → 一人 → 呼びかけ → 群れ → 重ねる。**同じ人形に聞こえるか**")
-    print("追いつきの後で劇伴が入れ替わる所:")
-    emit("preview_score_swap", build_score_swap(),
-         "前半ヘッドホン / 後半は内蔵スピーカー越し。**音量と交代の尺**が判定")
-    print("ホラー軽減モード（0154・平時 → 軽減 → 内蔵スピーカー越し）:")
-    emit("preview_relief", build_relief(),
-         "**既存の音が半分になったか**と**陽気な曲の高さ**が判定。片側だけでは決まらない")
-    print("終幕（電源が落ちて、報告が打たれる）:")
-    emit("preview_outro", build_outro(),
-         "前半ヘッドホン / 後半は内蔵スピーカー越し。**電源が落ちる音の高さ**が判定")
+    make("preview_swap", build_swap,
+         "実機と同じ式。**尺も実機どおり** — 増え方が判定そのもの",
+         "3 周目（入れ替わってから C で増えるまで）:")
+    make("preview_break", build_break, "旧 → 新の比べ ＋ 段 4 の通し（0057 の並び）",
+         "パススルーが割れて 2D に移るところ:")
+    make("preview_switch", build_switch,
+         "変種 6 本 → 旧（1 本を 8 発）→ 新（6 本を 8 発）→ 2 周目 C の刻み",
+         "カメラ切替の変種:")
+    make("preview_call", build_call, "前半は声だけ / 後半は切替音と重なった所",
+         "人形の呼びかけ（2 周目 C の追いつき）:")
+    make("preview_laugh_ring", build_laugh_ring,
+         "⚠ ヘッドホン用の近似（左右と前後の曇りだけ）。**何か所から鳴っているか**が判定",
+         "人形の笑い — 周囲に大勢いるか（0139・旧 1 点 → 新 8 か所）:")
+    make("preview_alert", build_alert,
+         "素で 3 組 → 接近そのまま（旧 → 新）→ 同じ 2 回を内蔵スピーカー越し。"
+         "**警告の大きさと育ち**が判定",
+         "警告つきの切替音（0134 / 0158・実機で鳴る場に置いて、旧 → 新）:")
+    make("preview_pitch", build_pitch,
+         "呼びかけ → 一人 → 呼びかけ → 群れ → 重ねる。**同じ人形に聞こえるか**",
+         "笑いの高さ（呼びかけと並べる）:")
+    make("preview_score_swap", build_score_swap,
+         "前半ヘッドホン / 後半は内蔵スピーカー越し。**音量と交代の尺**が判定",
+         "追いつきの後で劇伴が入れ替わる所:")
+    make("preview_relief", build_relief,
+         "**既存の音が半分になったか**と**陽気な曲の高さ**が判定。片側だけでは決まらない",
+         "ホラー軽減モード（0154・平時 → 軽減 → 内蔵スピーカー越し）:")
+    make("preview_outro", build_outro,
+         "前半ヘッドホン / 後半は内蔵スピーカー越し。**電源が落ちる音の高さ**が判定",
+         "終幕（電源が落ちて、報告が打たれる）:")
     print(f"\n→ {OUT}")
     return 0
 

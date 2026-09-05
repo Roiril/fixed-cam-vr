@@ -14,8 +14,8 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void FirstIsQuietest_AndTheLastIsExactlyFull()
         {
-            Assert.AreEqual(0.398f, AlertEscalationLogic.GainFor(1), 0.005f,
-                            "1 発目は -8dB（＝ 0.398 倍）");
+            Assert.AreEqual(0.501f, AlertEscalationLogic.GainFor(1), 0.005f,
+                            "1 発目は -6dB（＝ 0.501 倍・0158 で -8 から上げた）");
             Assert.AreEqual(1f, AlertEscalationLogic.GainFor(AlertEscalationLogic.RampToCount), 1e-4f,
                             "頭打ちはちょうど 1.0（焼いてある高さが天井）");
         }
