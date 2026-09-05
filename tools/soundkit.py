@@ -387,10 +387,37 @@ def biquad_fft(y: np.ndarray, kind: str, freq: float, q: float = 0.707,
 
     `_lfilter` は 1 標本ずつ回る Python のループなので、20 秒の素材に数本掛けると
     分の単位で待つことになる。測定は因果性を要らないので、伝達関数をそのまま掛ける。
+
+    ⚠⚠ **長い素材（1 次元）は分けて掛ける**（2026-09-05）。全長を一度に変換すると
+    複素スペクトルと作業領域で**標本あたり数十バイト**を取るので、190 秒の素材
+    （`bed_relief`）で **MemoryError で落ちる**。`describe` の鋭さ・粗さ・帯域は
+    ここを通るため、落ちると `sound-lint.py` がその素材で止まり、
+    **アルファベット順でその後ろが 1 本も検査されない**（2026-09-05 に 2 度踏んだ）。
+    ⚠ 重なりを取って中央だけ拾う（周波数領域で掛けるのは巡回畳み込みなので、
+    端の巻き込みを捨て代の外へ追い出す）。一致は `sound-lint.py --calib` が確かめる。
     """
     b, a = _biquad_coef(kind, freq, q, gain_db, sr)
     n = len(y)
-    w = 2 * np.pi * np.fft.rfftfreq(n, 1.0) / 1.0 * (1.0 / 1.0)
+    if y.ndim != 1 or n <= _FFT_BLOCK:
+        return _biquad_fft_seg(y, b, a, sr)
+    out = np.empty(n, dtype=float)
+    for i in range(0, n, _FFT_BLOCK):
+        hi_i = min(i + _FFT_BLOCK, n)
+        a0 = max(0, i - _FFT_GUARD)
+        b0 = min(n, hi_i + _FFT_GUARD)
+        seg = _biquad_fft_seg(y[a0:b0], b, a, sr)
+        out[i:hi_i] = seg[i - a0:hi_i - a0]
+    return out
+
+
+# ⚠ 分けるときの単位。`_TP_BLOCK` / `_TP_GUARD` と同じ理由・同じ大きさ。
+_FFT_BLOCK = 1 << 19    # 約 10.9 秒
+_FFT_GUARD = 1 << 12    # 約 85ms（biquad の応答は数十標本で減衰するので十分すぎる）
+
+
+def _biquad_fft_seg(y: np.ndarray, b, a, sr: int) -> np.ndarray:
+    """1 区間へ伝達関数をそのまま掛ける（分けない版）。"""
+    n = len(y)
     w = 2 * np.pi * np.fft.rfftfreq(n, 1 / sr) / sr
     z = np.exp(-1j * w)
     h = (b[0] + b[1] * z + b[2] * z * z) / (1.0 + a[1] * z + a[2] * z * z)
@@ -622,15 +649,47 @@ def true_peak_db(y: np.ndarray) -> float:
     出た**。あり得ない値なので気づけたが、+0.5dB のような「もっともらしい嘘」なら通っていた。
     """
     m = to_stereo(y)
-    n = len(m)
     out = 0.0
     for c in range(m.shape[1]):
-        spec = np.fft.rfft(m[:, c])
-        pad = np.zeros(n * 2 + 1, dtype=complex)
-        pad[:len(spec)] = spec
-        up = np.fft.irfft(pad, n * 4) * 4.0
-        out = max(out, float(np.max(np.abs(up))))
+        out = max(out, _peak4x(m[:, c]))
     return 20 * math.log10(max(out, 1e-9))
+
+
+# ⚠⚠ **長い素材は分けて測る**（2026-09-05）。全長を一度に 4 倍へ伸ばすと、複素スペクトルと
+#    出力で**標本あたり 64 バイト**を確保するので、150 秒の素材（`bed_horror2`）で
+#    **MemoryError で落ちる**。しかも `sound-lint.py` はそこで止まるため、
+#    **アルファベット順でその後ろの素材が 1 本も検査されない**（実際に踏んだ）。
+#    ⚠ **`| tail` を通すと落ちても exit 0 に見える**（終了コードは tail のもの）。
+_TP_BLOCK = 1 << 19    # 約 10.9 秒
+_TP_GUARD = 1 << 12    # 約 85ms。⚠ 矩形に切った継ぎ目の像を中央へ届かせないための捨て代
+
+
+def _upsample4(x: np.ndarray) -> np.ndarray:
+    """1 チャンネルを 4 倍の帯域制限補間で伸ばす（スペクトルを 0 で伸ばして戻す）。"""
+    n = len(x)
+    spec = np.fft.rfft(x)
+    pad = np.zeros(n * 2 + 1, dtype=complex)
+    pad[:len(spec)] = spec
+    return np.fft.irfft(pad, n * 4) * 4.0
+
+
+def _peak4x(x: np.ndarray) -> float:
+    """標本間ピーク。長ければ**重なりを取って**ブロックに割り、中央だけを読む。
+
+    ⚠ 端を捨てるのは、矩形に切った継ぎ目の不連続が像として尖頭に化けるため。
+    捨て代を挟めば通しで測った値と一致する（`sound-lint.py --calib` が確かめる）。
+    """
+    n = len(x)
+    if n <= _TP_BLOCK:
+        return float(np.max(np.abs(_upsample4(x))))
+    out = 0.0
+    for i in range(0, n, _TP_BLOCK):
+        a = max(0, i - _TP_GUARD)
+        b = min(n, i + _TP_BLOCK + _TP_GUARD)
+        up = _upsample4(x[a:b])
+        lo, hi = (i - a) * 4, (min(i + _TP_BLOCK, n) - a) * 4
+        out = max(out, float(np.max(np.abs(up[lo:hi]))))
+    return out
 
 
 def _k_weight(y: np.ndarray, sr: int = SR) -> np.ndarray:
@@ -996,20 +1055,44 @@ def tone_purity(y: np.ndarray, sr: int = SR) -> float:
     return round(1.0 - min(best_cv / rayleigh_cv, 1.0), 2)
 
 
+# ⚠⚠ **定常的な指標は代表区間で測る**（2026-09-05）。`roughness` は包絡の変調スペクトルを
+#    全長で解くので、96 秒の素材（`bed_beat`）で **MemoryError で落ちる**
+#    （長さが 2 冪から遠いと FFT が Bluestein 法へ落ちて作業領域が跳ね上がる）。
+#    ⚠ 見たいのは 20〜300Hz の揺れなので、0.01Hz の分解能に意味が無い。
+#    ⚠ **40 秒**にしてあるのは、いちばん長い輪（`bed_doll_one` 31 秒）が丸ごと入る値だから
+#    ＝ **既存の素材で値が 1 ビットも変わらない**。変わるのは 96 秒以上の 3 本だけ。
+_PROBE_SEC = 40.0
+
+
+def _probe(y: np.ndarray, sr: int = SR) -> np.ndarray:
+    """長ければ**中央の `_PROBE_SEC` 秒**を返す（端の立ち上がり・減衰を避ける）。"""
+    n = int(_PROBE_SEC * sr)
+    if len(y) <= n:
+        return y
+    a = (len(y) - n) // 2
+    return y[a:a + n]
+
+
 def describe(y: np.ndarray, sr: int = SR) -> dict:
-    """1 本の音を数字で言い切る。**これが聴くことの代わり。**"""
+    """1 本の音を数字で言い切る。**これが聴くことの代わり。**
+
+    ⚠ **全長で測るもの**（尖頭・ラウドネス・波高・直流・モノ互換・内蔵スピーカー）と
+    **代表区間で測るもの**（重心・帯域・鋭さ・粗さ・突出・純度）が分かれている。
+    後者は定常的な性質で、`sec` が `_PROBE_SEC` を超えたら中央だけを見る（上の但し書き）。
+    """
+    p = _probe(y, sr)
     return {
         "sec": round(len(y) / sr, 3),
         "true_peak_db": round(true_peak_db(y), 2),
         "lufs": round(lufs(y, sr), 1),
         "crest_db": round(crest_db(y), 1),
-        "centroid_hz": round(centroid_hz(y, sr)),
-        "bands_db": bands_db(y, sr),
+        "centroid_hz": round(centroid_hz(p, sr)),
+        "bands_db": bands_db(p, sr),
         "dc": round(dc_offset(y), 5),
         "mono_db": round(mono_compat_db(y), 2),
         "speaker_db": round(speaker_loss_db(y, sr), 1),
-        "sharp": round(sharpness(y, sr), 2),
-        "rough": round(roughness(y, sr), 2),
-        "tonal_db": round(tonality_db(y, sr), 1),
-        "purity": tone_purity(y, sr),
+        "sharp": round(sharpness(p, sr), 2),
+        "rough": round(roughness(p, sr), 2),
+        "tonal_db": round(tonality_db(p, sr), 1),
+        "purity": tone_purity(p, sr),
     }

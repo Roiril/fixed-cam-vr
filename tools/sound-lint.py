@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime
+import gc
 import io
 import math
 import os
@@ -83,6 +84,12 @@ RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_
             "sfx_power_off"}
 RECORDED |= {f"sfx_switch_{i}" for i in range(1, 9)}
 RECORDED |= {f"sfx_switch_alert_{i}" for i in range(1, 9)}
+#    ⚠⚠ 警告だけ（`canon/LEDGER.md` 0145）。**もらった警告音そのもの**（切り出しただけ）なので
+#       純度 0.75 が出る — 合成した警告つき 6 本と同じ理由で、通すために作り変えたら §4.5 違反。
+#       ⚠ **0145 から 2026-09-05 まで NG が出ていたのに誰も見ていなかった**。lint が
+#       `bed_horror2` の MemoryError で止まっており、**アルファベット順でその後ろ
+#       （`sfx_*` 全部）が 1 本も検査されていなかった**（`soundkit` の分割はその手当て）。
+RECORDED |= {"sfx_switch_warn"}
 #    ⚠ 2026-09-03 追加: ユーザー指定の 6 本（`canon/LEDGER.md` 0131）。
 #       風・ビート・ホラーな曲・ホワイトノイズ・太鼓の一撃・大きい目の出現。
 #       **どれも実録 / 既成曲**なので、突出と純度の判定からは外す。
@@ -268,10 +275,51 @@ def check_spatial_pairing() -> list[str]:
     return out
 
 
+def calib_instruments() -> int:
+    """**計器の校正** — 長い素材を分けて測っても、通しと同じ値が出るか。
+
+    ⚠ 長い素材はブロックに割る（`soundkit._peak4x` / `biquad_fft`）。割り方が悪いと
+    **継ぎ目の不連続が像として尖頭に化ける / 応答が切れる**ので、
+    「通しでも測れる長さ」で両方を出して突き合わせる。
+    ⚠ 山はわざと**ブロックの継ぎ目ちょうど**にも置く（そこが壊れやすい）。
+    """
+    rng = np.random.default_rng(20260905)
+    n = sk._TP_BLOCK * 2 + 1234
+    x = rng.standard_normal(n) * 0.2
+    x[n // 3] = 0.98                 # 継ぎ目から離れた山
+    x[sk._TP_BLOCK] = 0.95           # 継ぎ目ちょうどの山
+
+    whole = 20 * math.log10(max(float(np.max(np.abs(sk._upsample4(x)))), 1e-9))
+    split = 20 * math.log10(max(sk._peak4x(x), 1e-9))
+    d1 = abs(whole - split)
+    ok1 = d1 <= 0.01
+    print(f"  標本間ピーク（{n} 標本 = {n / sk.SR:.1f} 秒 / ブロック {sk._TP_BLOCK}）")
+    print(f"    通し {whole:7.3f} dB   分割 {split:7.3f} dB   差 {d1:.4f} dB"
+          f"   → {'一致' if ok1 else '⚠ 食い違い'}")
+
+    # ⚠ 端は両者で巻き込み方が違う（通しは全長の端・分割は各ブロックの端）ので、
+    #    比べるのは捨て代より内側だけ。
+    b, a2 = sk._biquad_coef("hp", 200.0, 0.707, 0.0, sk.SR)
+    g = sk._FFT_GUARD
+    wf = sk._biquad_fft_seg(x, b, a2, sk.SR)[g:-g]
+    sf = sk.biquad_fft(x, "hp", 200.0, 0.707, 0.0, sk.SR)[g:-g]
+    d2 = float(np.max(np.abs(wf - sf))) / max(float(np.max(np.abs(wf))), 1e-12)
+    ok2 = d2 <= 1e-6
+    print(f"  帯域フィルタ（ハイパス 200Hz / ブロック {sk._FFT_BLOCK}）")
+    print(f"    最大の食い違い {d2:.2e}（振幅比）   → {'一致' if ok2 else '⚠ 食い違い'}")
+
+    return 0 if (ok1 and ok2) else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=DEFAULT_DIR)
+    ap.add_argument("--calib", action="store_true",
+                    help="計器の校正だけ流す（標本間ピークの分割が通しと一致するか）")
     a = ap.parse_args()
+
+    if a.calib:
+        return calib_instruments()
 
     names = sorted(f[:-4] for f in os.listdir(a.dir) if f.endswith(".wav"))
     if not names:
@@ -293,6 +341,12 @@ def main() -> int:
         d, bad = check(name, y, is_loop)
         png = os.path.join(PNG_DIR, f"{name}.png")
         render(name, y, png, sr)
+        # ⚠⚠ **1 本ごとに明示的に返す**（2026-09-05）。長い素材（`bed_relief` 190 秒 ＝
+        #    float64 ステレオで 145MB）を解いた後のアリーナが残ると、**その次の小さい素材で
+        #    MemoryError が出る**（実際に `bed_dolls_grow_a_2`・300KB で踏んだ）。
+        #    ⚠ 落ちるとそこで止まり、**アルファベット順でその後ろが 1 本も検査されない**。
+        del y
+        gc.collect()
         rows.append((name, d, bad, png, is_loop))
         fails += bool(bad)
         mark = "NG" if bad else "ok"
