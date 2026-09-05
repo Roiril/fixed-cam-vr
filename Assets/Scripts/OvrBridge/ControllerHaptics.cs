@@ -45,6 +45,23 @@ namespace FixedCamVr.OvrBridge
         /// <summary>長押しカウント進行の進捗 [0,1]。0（or 1）で HoldTick 停止。</summary>
         public void SetHoldProgress(float progress01) => _logic.SetHoldProgress(progress01);
 
+        /// <summary>
+        /// <b>体験が締めに入った</b>（右 ＝ スタッフの手）。体験者が最後の異変を排除して、
+        /// 画がリアルタイム映像へ戻った瞬間に 1 ラン 1 回だけ鳴る
+        /// （2026-09-05・<c>canon/LEDGER.md</c> 0156）。
+        ///
+        /// <b>スタッフは HMD の中を見ていない。</b> 締めが始まったことは画にも音にも出ないので、
+        /// 手で知らせる以外に伝える口が無い。ここから電源断まで数秒、終幕を出し切るまで十数秒。
+        ///
+        /// ⚠ <b>押下への返事（<see cref="Ack"/> / <see cref="Action"/> / <see cref="Fire"/> /
+        /// <see cref="Error"/>）と混ぜない。</b> あちらは全部 80ms 以下の短い粒で、これだけが長い粒
+        /// （<see cref="HapticSequenceLogic.Pattern.Notice"/>）。同じ形だと
+        /// 「自分が押した」と「向こうから来た」が混ざる（左手で <see cref="LeftMark"/> と
+        /// <see cref="LeftNotify"/> を分けてあるのと同じ理由）。
+        /// ⚠ <b>体験者の手（左）へは出さない。</b> 体験者に「終わりだ」を先に教えることになる。
+        /// </summary>
+        public void Closing() => _logic.Trigger(HapticSequenceLogic.Pattern.Notice);
+
         /// <summary>体験者の報告ボタン（左のどれか）の 1 秒長押しが通った。<b>返すのはこれだけ。</b></summary>
         public void LeftMark() => _left.Trigger(HapticSequenceLogic.Pattern.Action);
 

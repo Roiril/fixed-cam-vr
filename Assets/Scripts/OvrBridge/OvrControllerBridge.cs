@@ -176,6 +176,13 @@ namespace FixedCamVr.OvrBridge
                  "null でも報告そのものは動く（画に出ないだけ）。")]
         [SerializeField] private CommsPanel? comms;
         private int _lastCommsPulse;
+
+        /// <summary>
+        /// 直近に見た <c>ShowControlClient.CurseReleasedCount</c>。増えた瞬間が
+        /// 「呪いが排除されて画がリアルタイム映像へ戻った」縁（2026-09-05・<c>canon/LEDGER.md</c> 0156）。
+        /// ⚠ 0 で始めるので、起動直後に空振りしない（あちらも 0 始まりで単調）。
+        /// </summary>
+        private int _lastCurseReleased;
         // 連絡の面を毎フレーム探しに行かないための再試行の間隔（面が無い構成での 90Hz 全走査を断つ）。
         private const float CommsResolveRetrySec = 2f;
         private float _commsRetryAt;
@@ -371,6 +378,22 @@ namespace FixedCamVr.OvrBridge
             {
                 _lastCommsPulse = comms.PulseCount;
                 haptics?.LeftNotify();
+            }
+
+            // 体験者が最後の異変を排除して、画がリアルタイム映像へ戻った ＝ 締めが始まった。
+            // **スタッフの手（右）**を震わせて知らせる（2026-09-05・`canon/LEDGER.md` 0156）。
+            //
+            // ⚠ スタッフは HMD の中を見ていないので、締めが始まったことは画にも音にも出ない。
+            //    ここから電源断まで数秒しかないため、引き渡しの支度を始める合図がこれ以外に無い。
+            // ⚠ **体験者の手（左）へは出さない** — 体験者に「終わりだ」を先に教えることになる。
+            // ⚠ **縁は `ShowControlClient` から読む**（`comms.PulseCount` と同じ流儀）。
+            //    `RecordVisitorMark` の直後に鳴らす形にすると、**自動走行（`ShowWalkDebugDriver`）が
+            //    直に呼ぶ経路**が漏れる。増分を見れば号令元がどこでも拾える。
+            if (showControl != null && showControl.CurseReleasedCount != _lastCurseReleased)
+            {
+                _lastCurseReleased = showControl.CurseReleasedCount;
+                haptics?.Closing();
+                Debug.Log("[Haptics] 締めの合図（右・スタッフ）— 呪いが排除されて画がライブへ戻った");
             }
 
             // ---- モード遷移（副作用は OnModeChanged / ResetRun が担う）----

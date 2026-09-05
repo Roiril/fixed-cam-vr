@@ -2875,6 +2875,21 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool LastMarkResolved { get; private set; }
 
+        /// <summary>
+        /// <b>呪いが排除されて画がリアルタイム映像へ戻った回数</b>（2026-09-05・
+        /// <c>canon/LEDGER.md</c> 0156）。<b>単調に増えるだけで、ラン開始でも 0 へ戻さない</b> —
+        /// 読み手は「増えた瞬間」を縁として見るので、戻すとその戻り自体が縁に化ける
+        /// （<c>CommsPanel.PulseCount</c> と同じ流儀）。
+        ///
+        /// 増えるのは締めのカット（<c>durKind:"untilMark"</c>）が報告で畳まれた
+        /// <see cref="TakeRunnerLogic.MarkResult.Released"/> のときだけ ＝ <b>1 ラン 1 回</b>。
+        /// 1〜3 周目で異変を消した（<c>Dismissed</c>）ときには増えない。
+        ///
+        /// 読むのは <c>OvrControllerBridge</c>（スタッフの手を震わせる）。⚠ <b>OVR を触らない規約なので
+        /// 向こうから読みに来る</b>（<c>StartAuthorizedProvider</c> / <c>CommsPanel.PulseCount</c> と同じ）。
+        /// </summary>
+        public int CurseReleasedCount { get; private set; }
+
         /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
         public void RecordVisitorMark()
         {
@@ -2888,7 +2903,12 @@ namespace FixedCamVr.Streaming
             // ⚠⚠ **呪いが解けるのは締めのカットが進んだ 1 回だけ**（`canon/LEDGER.md` 0083）。
             //    1〜2 周目で異変を消した（Dismissed）ときに戻すと、**まだ呪われている最中に
             //    視界が晴れて**、以後の周の劣化が「なぜまた悪くなるのか」説明できなくなる。
-            if (result == TakeRunnerLogic.MarkResult.Released) ResolveRunDirector()?.ReleaseScreenDecay();
+            if (result == TakeRunnerLogic.MarkResult.Released)
+            {
+                ResolveRunDirector()?.ReleaseScreenDecay();
+                // スタッフの手へ「締めに入った」を渡す縁（`OvrControllerBridge` が増分を見る）。
+                CurseReleasedCount++;
+            }
 
             Debug.Log($"[ShowControl] 記録ボタン（体験者・左のどれか） {VisitorMarkCount} 回目"
                     + $"（解除は{(LastMarkResolved ? "通った" : "通らなかった")}・{result}）");

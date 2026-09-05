@@ -11,12 +11,13 @@ namespace FixedCamVr.Input
     ///   - <see cref="Pattern.Action"/> 短押しアクション実行                 : 80ms・amp 0.50 の単発
     ///   - <see cref="Pattern.Fire"/>   長押し発火 / モード遷移 / 確定保存    : 80ms×2（間 80ms）・amp 0.80
     ///   - <see cref="Pattern.Error"/>  失敗・拒否                           : 50ms×3（間 60ms）・amp 0.60
+    ///   - <see cref="Pattern.Notice"/> <b>向こうから届いた知らせ</b>         : 350ms×2（間 120ms）・amp 1.00
     ///   - HoldTick 長押しカウント進行                                       : 連続・amp 0.10→0.30 の progress 比例ランプ
     /// frequency は全パターン 0.5 固定（Quest 3 はほぼ振幅のみ体感差）。数値は const（SerializeField にすると
     /// 旧シーン YAML に未記載で 0 と読まれる罠 — OvrControllerBridge の閾値 const と同じ理由）。
     ///
     /// <b>重畳時の優先度（仕様として固定）</b>:
-    ///   1. 単発パターン（Ack/Action/Fire/Error）は「<b>ピーク振幅が現在再生中より厳密に大きい時だけ差し替え</b>、
+    ///   1. 単発パターン（Ack/Action/Fire/Error/Notice）は「<b>ピーク振幅が現在再生中より厳密に大きい時だけ差し替え</b>、
     ///      それ以外は再生中なら無視」。これにより弱い後着（Fire 中の Ack 等）が強い進行中パターンを潰さず、
     ///      同ピークの二重発火（確定保存 = RegistrationConfirmed と ModeChanged の同時 Fire 等）も 1 回に畳まれる。
     ///   2. HoldTick は連続の「床」として単発パターンと <b>max</b> で合成する（大振幅優先）。
@@ -27,13 +28,33 @@ namespace FixedCamVr.Input
         /// <summary>全パターン共通の周波数（0.5 固定）。MonoBehaviour が振幅>0 の時に使う。</summary>
         public const float Frequency = 0.5f;
 
-        public enum Pattern { Ack, Action, Fire, Error }
+        /// <summary>
+        /// 振動の語彙。<b>末尾へ足す</b>（値を跨いで並べ替えると既存の呼び手の意味が変わる）。
+        /// </summary>
+        public enum Pattern
+        {
+            Ack, Action, Fire, Error,
+            /// <summary>
+            /// <b>自分が押していないのに届いた知らせ。</b> 押下への返事（Ack / Action / Fire / Error）が
+            /// 全部 80ms 以下の短い粒なのに対し、これだけが<b>長い粒</b>で鳴る。
+            /// ⚠ <b>返事と同じ形にしない</b> — 同じだと「自分が押した」と「向こうから来た」が混ざる
+            /// （左手の <c>LeftMark</c> / <c>LeftNotify</c> を分けてあるのと同じ理由）。
+            /// </summary>
+            Notice,
+        }
 
         // ---- 単発パターンのピーク振幅（差し替え判定に使う）----
         private const float AckAmp = 0.25f;
         private const float ActionAmp = 0.50f;
         private const float FireAmp = 0.80f;
         private const float ErrorAmp = 0.60f;
+
+        /// <summary>
+        /// 知らせのピーク。<b>語彙の中でいちばん強い</b>（Fire の 0.80 を超える）ので、
+        /// 何が鳴っている最中でも必ず差し替わる。知らせは押下への返事と違って
+        /// <b>取り逃がすと二度と来ない</b>ため、譲らせない。
+        /// </summary>
+        private const float NoticeAmp = 1.00f;
 
         // ---- HoldTick ランプ（progress 0→1 を amp 0.10→0.30 へ）----
         private const float HoldTickMinAmp = 0.10f;
@@ -52,6 +73,10 @@ namespace FixedCamVr.Input
 
         private static readonly float[] ErrorDur = { 0.050f, 0.060f, 0.050f, 0.060f, 0.050f };
         private static readonly float[] ErrorAmpSeg = { ErrorAmp, 0f, ErrorAmp, 0f, ErrorAmp };
+
+        // 知らせ。⚠ 長さで区別する語彙なので、**1 粒を 80ms 級へ縮めない**（Fire と区別が付かなくなる）。
+        private static readonly float[] NoticeDur = { 0.350f, 0.120f, 0.350f };
+        private static readonly float[] NoticeAmpSeg = { NoticeAmp, 0f, NoticeAmp };
 
         private bool _playing;
         private Pattern _cur;
@@ -139,6 +164,7 @@ namespace FixedCamVr.Input
             Pattern.Action => ActionAmp,
             Pattern.Fire => FireAmp,
             Pattern.Error => ErrorAmp,
+            Pattern.Notice => NoticeAmp,
             _ => 0f,
         };
 
@@ -148,6 +174,7 @@ namespace FixedCamVr.Input
             Pattern.Action => ActionDur,
             Pattern.Fire => FireDur,
             Pattern.Error => ErrorDur,
+            Pattern.Notice => NoticeDur,
             _ => AckDur,
         };
 
@@ -157,6 +184,7 @@ namespace FixedCamVr.Input
             Pattern.Action => ActionAmpSeg,
             Pattern.Fire => FireAmpSeg,
             Pattern.Error => ErrorAmpSeg,
+            Pattern.Notice => NoticeAmpSeg,
             _ => AckAmpSeg,
         };
     }

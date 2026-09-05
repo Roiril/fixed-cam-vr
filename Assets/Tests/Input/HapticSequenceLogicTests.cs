@@ -72,6 +72,65 @@ namespace FixedCamVr.Input.Tests
             Assert.That(SampleAt(HapticSequenceLogic.Pattern.Error, 0.271f), Is.EqualTo(0f).Within(Eps), "after");
         }
 
+        // ---- Notice: 350ms×2（間 120ms）・amp 1.00 ----
+        //   スタッフの手（右）へ「締めが始まった」を知らせる粒（canon/LEDGER.md 0156）。
+
+        [Test]
+        public void Notice_Waveform_TwoLongPulses()
+        {
+            Assert.That(SampleAt(HapticSequenceLogic.Pattern.Notice, 0.17f), Is.EqualTo(1.00f).Within(Eps), "pulse 1");
+            Assert.That(SampleAt(HapticSequenceLogic.Pattern.Notice, 0.41f), Is.EqualTo(0f).Within(Eps), "gap");
+            Assert.That(SampleAt(HapticSequenceLogic.Pattern.Notice, 0.64f), Is.EqualTo(1.00f).Within(Eps), "pulse 2");
+            Assert.That(SampleAt(HapticSequenceLogic.Pattern.Notice, 0.821f), Is.EqualTo(0f).Within(Eps), "after");
+        }
+
+        /// <summary>
+        /// <b>1 粒が押下への返事より長い。</b> この語彙は長さで区別しているので、縮めると
+        /// <see cref="HapticSequenceLogic.Pattern.Fire"/>（80ms×2）と手で区別が付かなくなる。
+        /// </summary>
+        [Test]
+        public void Notice_FirstPulse_IsLongerThanEveryReply()
+        {
+            // 返事の粒はどれも 80ms 以下 ＝ 0.1s の時点では鳴り終わっている。
+            Assert.That(SampleAt(HapticSequenceLogic.Pattern.Ack, 0.1f), Is.EqualTo(0f).Within(Eps));
+            Assert.That(SampleAt(HapticSequenceLogic.Pattern.Action, 0.1f), Is.EqualTo(0f).Within(Eps));
+            Assert.That(SampleAt(HapticSequenceLogic.Pattern.Fire, 0.1f), Is.EqualTo(0f).Within(Eps), "Fire は間の中");
+            Assert.That(SampleAt(HapticSequenceLogic.Pattern.Error, 0.1f), Is.EqualTo(0f).Within(Eps), "Error は間の中");
+            // 知らせだけが 0.1s でもまだ 1 粒目を鳴らしている。
+            Assert.That(SampleAt(HapticSequenceLogic.Pattern.Notice, 0.1f), Is.EqualTo(1.00f).Within(Eps));
+        }
+
+        /// <summary>
+        /// <b>知らせは何が鳴っていても割り込む。</b> 取り逃がすと二度と来ないので譲らせない。
+        /// </summary>
+        [Test]
+        public void Notice_ReplacesEveryOtherPattern()
+        {
+            foreach (var p in new[]
+                     {
+                         HapticSequenceLogic.Pattern.Ack, HapticSequenceLogic.Pattern.Action,
+                         HapticSequenceLogic.Pattern.Fire, HapticSequenceLogic.Pattern.Error,
+                     })
+            {
+                var l = new HapticSequenceLogic();
+                l.Trigger(p);
+                l.Tick(0.01f);
+                l.Trigger(HapticSequenceLogic.Pattern.Notice);
+                Assert.That(l.Tick(0.01f), Is.EqualTo(1.00f).Within(Eps), p.ToString());
+            }
+        }
+
+        /// <summary>逆は起きない（知らせの最中に返事が来ても潰されない）。</summary>
+        [Test]
+        public void Notice_IsNotReplacedByReplies()
+        {
+            var l = new HapticSequenceLogic();
+            l.Trigger(HapticSequenceLogic.Pattern.Notice);
+            l.Tick(0.01f);
+            l.Trigger(HapticSequenceLogic.Pattern.Fire);
+            Assert.That(l.Tick(0.01f), Is.EqualTo(1.00f).Within(Eps));
+        }
+
         // ---- HoldTick: 連続・amp 0.10→0.30 の progress 比例ランプ ----
 
         [Test]
