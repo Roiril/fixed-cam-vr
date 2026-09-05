@@ -109,6 +109,34 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool curseArmed;
 
+        /// <summary>
+        /// <b>人形の呼びかけを持つカットが、いま画面を取っているか</b>
+        /// （<c>TakeRunner.DollCallShowing</c>・2026-09-06・<c>canon/LEDGER.md</c> 0175）。
+        ///
+        /// ここが立ってから降りた縁 ＝ <b>2 周目 C の人形視点の連なりが終わった所</b>で、
+        /// そこから心音（<see cref="SoundBedGains.heart"/>）が鳴り始める。
+        /// </summary>
+        public bool dollCallShowing;
+
+        /// <summary>
+        /// <b>端末内録画が画面を取っているか</b>（<c>TakeRunner.ActiveRecordingLap &gt;= 0</c>・0175）。
+        ///
+        /// 心音が<b>終わる縁</b>を作るためだけに読む。ユーザー指定は「3-A で左右反転 →
+        /// 自分が人形になる演出が終わるまで」で、その演出の最後は<b>2 周目 A の録画に人形が
+        /// 立っている再生</b>（<c>show.json</c> の <c>source:"rec"</c>）。それが終わって
+        /// 静止画へ落ち着いた所が「演出が終わった」。
+        ///
+        /// ⚠ 心音が armed になってから 3 周目 A までのあいだ、録画を出すカットは他に無い
+        /// （2 周目 A / B / C はどれも live か plate か clip）。
+        /// </summary>
+        public bool recPlaying;
+
+        /// <summary>
+        /// <b>心音が鳴ってよい区間に居るか</b>（0175）。<b><see cref="SoundBedLogic.Tick"/> が
+        /// 自分で立てる</b>ラッチで、外から渡す値ではない（<see cref="curseArmed"/> と同じ構え）。
+        /// </summary>
+        public bool heartArmed;
+
         public static SoundShowState Idle => new SoundShowState
         {
             introStage = IntroStage.Off,
@@ -186,6 +214,15 @@ namespace FixedCamVr.Streaming
         /// 報告が通ってから体験が終わるまで 1。
         /// </summary>
         public float white;
+
+        /// <summary>
+        /// <b>心音</b>（`bed_heart`・2026-09-06・<c>canon/LEDGER.md</c> 0175）。
+        /// <b>2 周目 C の追いつきから、3 周目 A の入れ替わりの再生が終わるまで</b> 1。
+        ///
+        /// ⚠ <b>置き換えではなく足す。</b> 劇伴も装置の声も切らない（<see cref="wind"/> /
+        /// <see cref="beat"/> とはそこが違う）ので、<c>Tick</c> の等パワーの補には入れない。
+        /// </summary>
+        public float heart;
 
         /// <summary>
         /// 部屋の開き具合（1 = 広い / 0 = 隔離されて狭い）。低域通過フィルタの開度に写す。
@@ -280,6 +317,38 @@ namespace FixedCamVr.Streaming
 
         /// <summary>呪いの 2 本が入り始める周（3 周目）。</summary>
         public const int CurseLap = 3;
+
+        // ---- 心音（2026-09-06・`canon/LEDGER.md` 0175）----------------------------
+        //
+        // ユーザー指定「2-C で連続する人形視点が終わった後から、3-A で左右反転 →
+        // 自分が人形になる演出が終わるまで、これを流すようにしてほしい」。
+        //
+        // ⚠⚠ **区間の条件を毎フレーム見ない。** 呪いの 2 本と同じ理由 —— 体験者は引き返すので、
+        //    「いま 2-C か 3-A か」で判じると引き返した瞬間に脈が止まる。**始点と終点を別々の
+        //    縁で latch する。**
+
+        /// <summary>心音が立ち上がるまでの秒。<b>追いつきは事件なので、退きより速い。</b></summary>
+        public const float HeartFadeInSec = 1.2f;
+
+        /// <summary>
+        /// 心音が退くまでの秒。<b>劇伴の退き（<see cref="ScoreFadeOutSec"/>）と同じ。</b>
+        /// 入れ替わりを見終わった後は、一人ぶんの笑いが場を引き取る（0086）ので、
+        /// 心音はその下で静かに抜ける。
+        /// </summary>
+        public const float HeartFadeOutSec = ScoreFadeOutSec;
+
+        /// <summary>
+        /// 心音が<b>遅くとも</b>鳴り始める周（3 周目 A）。
+        ///
+        /// ⚠ 本来の始まりは「呼びかけのカットが降りた縁」だが、接近の演出は
+        /// <c>at:"line"</c>（卓の合図待ち・<c>ifMissed:"skip"</c>）なので、**合図が出なければ
+        /// 1 度も走らない**。それでもユーザー指定の区間の後半（3 周目 A）は鳴らす約束なので、
+        /// 区間へ入った縁を保険の始点にしてある。
+        /// </summary>
+        public const int HeartLap = 3;
+
+        /// <summary>同・区間のカメラ（0 = A）。</summary>
+        public const int HeartCamera = 0;
 
         /// <summary>位置合わせ作業中に敷く音を何倍にするか。**スタッフが喋れる高さまで引く。**</summary>
         public const float RegistrationDuckScale = 0.22f;
@@ -378,6 +447,20 @@ namespace FixedCamVr.Streaming
         //    ⚠ `beat` と `horror2` は**常に同じ値**（2 本で 1 つの背景）なので進みは 1 本。
         private float _windT, _curseT, _whiteT;
 
+        /// <summary>心音の進み 0..1（0175）。⚠ **置き換えではないので等パワーの補には入らない。**</summary>
+        private float _heartT;
+
+        /// <summary>心音がいまどこに居るか（0175）。<b>前 → 鳴っている → 済み</b>の 3 相。</summary>
+        private enum HeartPhase { Before, On, After }
+
+        private HeartPhase _heart;
+
+        /// <summary>呼びかけのカットが 1 度でも画面を取ったか（心音の始点の手前・0175）。</summary>
+        private bool _heartCallSeen;
+
+        /// <summary>入れ替わりの再生が 1 度でも始まったか（心音の終点の手前・0175）。</summary>
+        private bool _heartRecSeen;
+
         /// <summary>締めの群れへ譲ったか（人形が画から消えるまで一人ぶんを戻さない）。</summary>
         private bool _swapMuted;
 
@@ -389,6 +472,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>同上（テレメトリが読む。**画にも一撃のログにも出ない**ので唯一の証拠）。</summary>
         public float Swell01 => _swell01;
+
+        /// <summary>心音が鳴ってよい区間に居るか（0175・テストと観測が読む）。</summary>
+        public bool HeartArmed => _heart == HeartPhase.On;
 
         /// <summary>
         /// 装置の声の**合計**（新しい方 ＋ 痩せた方）。平滑化はこの 1 本で行う。
@@ -418,6 +504,12 @@ namespace FixedCamVr.Streaming
             _windT = _curseT = _whiteT = 0f;
             _curseOn = false;
             _swapMuted = false;
+            // 前の体験者の心音を持ち越さない（0175）。⚠ 3 相ぜんぶ戻す —— `After` のまま
+            // 残すと**次の体験者では 1 度も鳴らない**（画にも録画にも出ない形の事故）。
+            _heartT = 0f;
+            _heart = HeartPhase.Before;
+            _heartCallSeen = false;
+            _heartRecSeen = false;
         }
 
         /// <summary>進みを目標へ 1 フレームぶん送る（行き過ぎない）。</summary>
@@ -456,6 +548,29 @@ namespace FixedCamVr.Streaming
             if (st.lap > CurseLap || (st.lap == CurseLap && st.camera >= CurseCamera)) _curseOn = true;
             if (st.curseReleased) _curseOn = false;
             st.curseArmed = _curseOn;
+
+            // 心音のラッチ（0175）。⚠ **始点と終点を別々の縁で見る**（呪いと同じ理由 ——
+            //    区間の条件を毎フレーム見ると、引き返した瞬間に脈が止まる）。
+            //
+            //   始点 … 呼びかけのカット（＝ 人形視点の連なりの最後）が**降りた**縁。
+            //          保険として 3 周目 A へ入った縁でも立てる（接近は卓の合図待ちなので、
+            //          合図が出ないと 1 度も走らない）。
+            //   終点 … 入れ替わりの再生（3 周目 A の録画カット）が**終わった**縁。
+            //          保険として呪いの 2 本が立った縁（＝ 3 周目 B）でも降ろす —— そこから先は
+            //          背景が呪いのビートへ入れ替わるので、心音がその上に残ってはいけない。
+            if (_heart == HeartPhase.Before)
+            {
+                if (st.dollCallShowing) _heartCallSeen = true;
+                bool atHeartZone = st.lap > HeartLap
+                                   || (st.lap == HeartLap && st.camera >= HeartCamera);
+                if ((_heartCallSeen && !st.dollCallShowing) || atHeartZone) _heart = HeartPhase.On;
+            }
+            if (_heart == HeartPhase.On)
+            {
+                if (st.recPlaying) _heartRecSeen = true;
+                if ((_heartRecSeen && !st.recPlaying) || _curseOn) _heart = HeartPhase.After;
+            }
+            st.heartArmed = _heart == HeartPhase.On;
 
             SoundBedGains t = Target(st);
 
@@ -510,6 +625,14 @@ namespace FixedCamVr.Streaming
             _cur.beat = _cur.horror2 = SoundFade.Gain(_curseT, SoundFade.Curve.EqualPower);
             _cur.white = SoundFade.Gain(_whiteT, SoundFade.Curve.EqualPower);
 
+            // --- 心音（0175）------------------------------------------------------
+            // ⚠ **等パワーではなく聴感直線**（劇伴の 1 人の出入りと同じ）。これは置き換えではなく
+            //    足す音なので、相手の補として動く必要が無い。等パワーで入れると
+            //    「半分まで一気に立ち上がる」形になり、追いつきの瞬間に脈が**点いた**ように聞こえる。
+            _heartT = Ramp(_heartT, t.heart,
+                           dt / (t.heart > _heartT ? HeartFadeInSec : HeartFadeOutSec));
+            _cur.heart = SoundFade.Gain(_heartT, SoundFade.Curve.Perceptual);
+
             // ⚠⚠ **劇伴は「相手の合成パワーの補」だけ鳴る。** 相手が sin で立つあいだ劇伴は cos で退き、
             //    sin² ＋ cos² ＝ 1 なので背景の総量が動かない。呪い → ホワイトノイズの受け渡し
             //    （相手どうしの入れ替え）のあいだも、パワーの和は 1 のままなので劇伴は 0 に留まる
@@ -537,6 +660,8 @@ namespace FixedCamVr.Streaming
             //    「節目の一撃を地に埋もれさせない」ための仕組みで、笑い自体がその事件。
             //    自分で自分を引いたら意味が無い。3 周目は切替の一撃が 9 回以上入るので、
             //    ここで引くと**笑いが切替のたびに凹む**。
+            // ⚠ **心音も退かせない**（0175）。鳴っている区間には切替の一撃が何度も入るので、
+            //    引くと**脈が切替のたびに飛ぶ**。地の音ではなく体験者自身の身体の音。
             return outG;
         }
 
@@ -652,6 +777,15 @@ namespace FixedCamVr.Streaming
             // ⚠ 終わりまで鳴らす（終幕の劇伴の代わり）。落ちるのは体験が終わったときだけ。
             g.white = s.curseReleased ? 1f : 0f;
 
+            // --- 心音（2026-09-06・`canon/LEDGER.md` 0175）------------------------
+            // ユーザー指定「2-C で連続する人形視点が終わった後から、3-A で左右反転 →
+            // 自分が人形になる演出が終わるまで、これを流すようにしてほしい」。
+            // ⚠⚠ **区間の判定はここではなく `Tick` のラッチ**（`heartArmed`）。始点と終点が
+            //    別々の縁で決まるので、状態から毎フレーム導けない（呪いの 2 本と同じ構え）。
+            // ⚠ **劇伴を退かせない。** 「流して」としか言われていないので、置き換えではなく
+            //    足す（`bed_relief` と同じ扱い）。退かせると 0131 の入れ替えと二重になる。
+            g.heart = s.heartArmed ? 1f : 0f;
+
             // ⚠⚠ **入れ替えなので、置き換える側が鳴っているあいだ劇伴は 0 になる — が、ここでは
             //    `score` を落とさない。** 落とすのは `Tick` の等パワーの補（相手が立ったぶんだけ
             //    cos で引く）。ここで 0 を言うと、劇伴の 1 人の退き（聴感直線）と相手の入りが
@@ -696,6 +830,8 @@ namespace FixedCamVr.Streaming
                 g.dollOne = 0f;
                 // 風・呪い・ホワイトノイズも黙らせる（0131）。
                 g.wind = g.beat = g.horror2 = g.white = 0f;
+                // 心音も黙らせる（0175）。スタッフが実物へ線を重ねているあいだ脈は要らない。
+                g.heart = 0f;
                 // 劇伴も黙らせる（`duck` でも消えるが、観測に「鳴っている」と出さない）。
                 g.score = 0f;
                 g.roomOpen = 1f;
@@ -706,7 +842,7 @@ namespace FixedCamVr.Streaming
             if (s.phase == ShowPhase.Finished && !s.outroActive)
             {
                 g.seal = g.room = g.device = g.noise = g.dolls = g.dollOne = 0f;
-                g.wind = g.beat = g.horror2 = g.white = 0f;
+                g.wind = g.beat = g.horror2 = g.white = g.heart = 0f;
                 g.score = 0f;
                 g.duck = 1f;
             }

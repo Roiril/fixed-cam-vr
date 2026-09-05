@@ -90,6 +90,14 @@ namespace FixedCamVr.Streaming
         private BedVoice _white = new BedVoice();
 
         /// <summary>
+        /// <b>心音</b>（2026-09-06・<c>canon/LEDGER.md</c> 0175）。追いつきから入れ替わりまで。
+        ///
+        /// ⚠ <b>2D。</b> 体験者自身の鼓動なので出どころが無い（部屋のトーンを 2D に残すのと同じ理屈で、
+        /// 1 点から鳴らすと「鼓動が聞こえる何か」がそこに居ることになる）。
+        /// </summary>
+        private BedVoice _heart = new BedVoice();
+
+        /// <summary>
         /// <b>笑いの 1 層</b>（体ごとの声の束・2026-09-04・<c>canon/LEDGER.md</c> 0139）。
         ///
         /// ⚠⚠ <b>1 層 ＝ 1 点ではない。</b> 焼く側（<c>ingest-sounds.py</c> の <c>LAUGH_BODIES</c>）が
@@ -221,6 +229,13 @@ namespace FixedCamVr.Streaming
         /// <summary>ホワイトノイズの音量（0..1）。呪いが排除された後。</summary>
         public float WhiteGain { get; private set; }
 
+        /// <summary>
+        /// <b>心音の音量</b>（0..1・2026-09-06・<c>canon/LEDGER.md</c> 0175）。
+        /// 追いつきから 3 周目 A の入れ替わりの再生が終わるまで立つ。
+        /// ⚠⚠ <b>画にも録画にも一撃のログにも出ない。</b> 鳴っているかを外から知る唯一の手。
+        /// </summary>
+        public float HeartGain { get; private set; }
+
         // ---- 3D の観測（`canon/LEDGER.md` 0130）----------------------------------
 
         /// <summary>3D で鳴らす名簿のうち、実際に掴めた本数。</summary>
@@ -317,6 +332,8 @@ namespace FixedCamVr.Streaming
             _beat = MakeBed("Beat", "bed_beat", spatial: false);
             _horror2 = MakeBed("Horror2", "bed_horror2", spatial: false);
             _white = MakeBed("White", "bed_white", spatial: false);
+            // ⚠ 心音も 2D（0175）。体験者自身の鼓動なので出どころを作らない。
+            _heart = MakeBed("Heart", "bed_heart", spatial: false);
             SpatialAudio.PickLaughSpots(_laughSpots);
 
             // ⚠⚠ **ステレオのまま 3D に置かれていないかを起動時に数える。**
@@ -524,7 +541,16 @@ namespace FixedCamVr.Streaming
             if (_run != null) s.curseReleased = _run.ScreenDecayReleased;
             // ⚠ **異世界が映っているか。** 画面を取っているカットの素材 id で判じる（上の但し書き）。
             //   判定は TakeRunner の 1 本（時計も同じものを読む・`canon/LEDGER.md` 0167）。
-            if (_takes != null) s.otherworld = _takes.OtherworldActive;
+            if (_takes != null)
+            {
+                s.otherworld = _takes.OtherworldActive;
+                // ⚠ 心音の始点と終点（0175）。**どちらも「縁」で、区間の条件ではない** —
+                //    判定は `SoundBedLogic.Tick` のラッチが持つ（引き返しで消えないため）。
+                //    始点 = 呼びかけのカット（人形視点の連なりの最後）が画面から降りた所。
+                //    終点 = 入れ替わりの再生（3 周目 A の録画カット）が終わった所。
+                s.dollCallShowing = _takes.DollCallShowing;
+                s.recPlaying = _takes.ActiveRecordingLap >= 0;
+            }
             // ⚠ ここが立った縁 ＝ **体験者と人形が入れ替わった瞬間**（`canon/LEDGER.md` 0086）。
             //    「3 周目」と書かず、人形が立っていること自体を見る。
             // ⚠⚠ **DollVisible を読む（IsVisible ではなく）。** 持続の覆い（swapHold）と
@@ -663,6 +689,9 @@ namespace FixedCamVr.Streaming
             sum += Set(_horror2, g.horror2 * m);
             WhiteGain = Set(_white, g.white * m);
             sum += WhiteGain;
+            // 心音（0175）。⚠ **置き換えではなく足す**ので、劇伴の取り分（`score`）には触らない。
+            HeartGain = Set(_heart, g.heart * m);
+            sum += HeartGain;
             // ⚠ **鳴り始めは必ず輪の同じ所から。** 12 秒の輪を常時回しているので、
             //    頭出ししないと**体験者ごとに違う所から笑い出す**（走行の再現性が消える）。
             // ⚠⚠ **体ぜんぶを同じ所へ頭出しする**（0139）。表は 8 体の掛け合いとして composed して

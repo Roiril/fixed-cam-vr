@@ -1455,17 +1455,20 @@ def analyze(events, others, exp, warns=None):
             verdict("WARN", "連絡が 1 通も届いていない（本編に入っていないか、CommsPanel が未配線）")
         else:
             ids = [e.get("id") for e in comms]
-            if "Begin" in ids:
-                verdict("OK", "導入が明けた直後に①「調査を開始してください」が届いた")
+            # ⚠⚠ **2026-09-06 に①と①b を入れ替えた**（canon/LEDGER.md 0174・ユーザー指定
+            #    「調査を開始してくださいと、異変を見つけたらボタンを長押ししてくださいの順番を逆に」）。
+            #    ① = BeginHow（押し方）/ ①b = Begin（開始の合図）。**id の綴りは入れ替えていない**。
+            if "BeginHow" in ids:
+                verdict("OK", "導入が明けた直後に①「異変を見つけたら…」が届いた")
             else:
                 verdict("FAIL", "①の連絡が届いていない — 本編に入った縁を見ていない"
                                 "（CommsCueLogic.BeginDelaySec / runDirector の配線）")
 
-            # ①b 押し方（canon/LEDGER.md 0097）。**①を読ませ終わった縁**で間を置かず続く。
-            # ⚠ ここが欠けると、体験者は押し方も「押すと何が起きるか」も一度も読まないまま終わる。
-            if "Begin" in ids and "BeginHow" not in ids:
-                verdict("FAIL", "①b『異変を見つけたら…』が届いていない — "
-                                "押し方の説明が 1 度も画に出ていない"
+            # ①b 開始の合図。**①を読ませ終わった縁**で間を置かず続く。
+            # ⚠ ここが欠けると、体験者は押し方だけ読んで「始めてよい」を一度も言われないまま終わる。
+            if "BeginHow" in ids and "Begin" not in ids:
+                verdict("FAIL", "①b『調査を開始してください』が届いていない — "
+                                "開始の合図が 1 度も画に出ていない"
                                 "（CommsPanelLogic.DoneReading / panelDoneReading の配線）")
 
             # ⓪ タイトルの直後の 2 通（canon/LEDGER.md 0079）。**順序が意味を持つ** —
@@ -1489,18 +1492,20 @@ def analyze(events, others, exp, warns=None):
                         verdict("OK", f"⓪a 名乗り {t_greet:.1f}s → ⓪b 指示 {t_walk:.1f}s の順で届いた")
                     else:
                         verdict("FAIL", "⓪b の指示が⓪a の名乗りより先に出ている")
-                if t_walk is not None and t_begin is not None and t_begin <= t_walk:
+                if t_walk is not None and t_how is not None and t_how <= t_walk:
                     verdict("FAIL", "①が⓪b より先に出ている — 導入と本編の連絡が入れ替わっている")
-            # ①b は①の後（順序が逆なら、押し方を読んでから「開始してください」が来る）。
+            # ①b は①の後（0174 で中身が入れ替わった。順序が逆なら、
+            # 押し方を知らないまま「調査を開始してください」を読むことになる）。
             if t_begin is not None and t_how is not None:
-                gap = t_how - t_begin
+                gap = t_begin - t_how
                 if gap <= 0:
-                    verdict("FAIL", "①b が①より先に出ている")
+                    verdict("FAIL", "①b『調査を開始してください』が①『異変を見つけたら…』より先に"
+                                    "出ている — 押し方を知らないまま始めさせている（0174）")
                 elif gap > 8.0:
                     verdict("WARN", f"①→①b が {gap:.1f}s 空いている — 同じ面のまま繋がっていない疑い"
                                     "（②③に割り込まれた回なら正常）")
                 else:
-                    verdict("OK", f"① {t_begin:.1f}s → ①b {gap:.1f}s 後 の順で届いた")
+                    verdict("OK", f"① {t_how:.1f}s → ①b {gap:.1f}s 後 の順で届いた")
 
             # ⓪c 演出の始まりの告知。**導入演出が始まったのと同じ縁**で出る（0079 の赤入れ 3）。
             # ⚠ 導入まで走らなかった走行では出ないのが正常なので、段 1 を踏んだときだけ判定する。
@@ -1548,9 +1553,22 @@ def analyze(events, others, exp, warns=None):
                                 "台本の演出に dismissible が 1 つも立っていない疑い。"
                                 "1〜2 周目に消せる異変が無いと、3 周目の「消えない」が伝わらない")
 
+            # ③は 2 通（canon/LEDGER.md 0168）。③a「止まってください！」→ ③b「異常があなたを…」。
+            # ⚠ ③a は**打鍵を鳴らさない**ので、chars=0 で届くのが正常（下の打鍵の合計に混ぜない）。
+            t_halt = _first("Halt")
             waited = [e for e in comms if e.get("id") == "Prompt"]
-            if waited:
-                verdict("OK", "③4 周目 A の締めで押さないまま 3 秒が経ち、催促が届いた")
+            if t_halt is not None and waited:
+                gap = fnum(waited[0], "t", 0.0) - t_halt
+                if gap < 0:
+                    verdict("FAIL", "③b が③a『止まってください！』より先に出ている")
+                else:
+                    verdict("OK", f"③a『止まってください！』{t_halt:.1f}s → ③b が {gap:.1f}s 後 の順で届いた")
+            elif waited:
+                verdict("FAIL", "③b は届いたのに③a『止まってください！』が届いていない（0168）— "
+                                "CommsCueLogic の Halt を見ていない古い APK の疑い")
+            elif t_halt is not None:
+                verdict("WARN", "③a は届いたが③b『異常があなたを…』が届いていない — "
+                                "③a を読ませ終わる前に体験者が報告したなら正常")
             elif any(str(e.get("wait")) == "1" for e in comms):
                 verdict("WARN", "締めのカットが待っていたのに③の催促が届いていない")
 
@@ -2033,6 +2051,38 @@ def analyze(events, others, exp, warns=None):
             elif released:
                 verdict("FAIL", "呪いが排除されたのにホワイトノイズが鳴っていない — "
                                 "`bed_white` を掴めているか（sndBuilt）を見る")
+
+        # -- 心音（`canon/LEDGER.md` 0175）
+        #    ⚠⚠ **画にも録画にも一撃のログにも 1 ビットも出ない。** しかも素材は正体が 150Hz より
+        #       下にあるので（内蔵SP -21.1dB）、実機で耳を当てても確かめられない。ここが唯一の証拠。
+        #    ⚠ **劇伴の入れ替えの仲間ではない**（足す音）。だから下の `bg_power`（背景の総量が
+        #       1 から動かないか）には**入れない** — 入れると正しい走行が毎回 1 を超える。
+        heart = timed_samples(events, "sndHeart")
+        if heart:
+            pk = _peak(heart)
+            on = [t for t, v in heart if (v or 0.0) > 0.01]
+            reached3 = any((fnum(e, "lap", 0.0) or 0) >= 3
+                           for e in events if e.get("ev") == "seg")
+            span = f"（{on[0]:.1f}s 〜 {on[-1]:.1f}s ＝ {on[-1] - on[0]:.0f} 秒）" if on else ""
+            w(f"  心音: 最大 {pk:.2f}{span}")
+            if pk is not None and pk > 0.01:
+                verdict("OK", f"心音が鳴った（最大 {pk:.2f}）{span}")
+                # ⚠ 終わりの縁だけ見る。**呪いとの重なりは落とさない** — 心音が退く縁と
+                #   呪いが立つ縁は同じ所（3 周目 B）なので、入れ替わりの途中は必ず重なる。
+                #   落とすべきは「最後まで鳴りっぱなし」の方。
+                tail = [v for _t, v in heart[-2:]]
+                if tail and min(tail) > 0.30:
+                    verdict("FAIL", f"心音が走行の最後まで鳴っている（最後の標本 {tail[-1]:.2f}）— "
+                                    "終わりの縁（3 周目 A の録画カットの終わり / 3 周目 B）が "
+                                    "1 度も来ていない")
+            elif reached3:
+                verdict("FAIL", "3 周目まで進んだのに心音が 1 度も鳴っていない — "
+                                "`bed_heart` を掴めているか（sndBuilt）と、"
+                                "接近の演出が走ったか（ev=take L2C2#1）を見る")
+            else:
+                verdict("WARN", "3 周目 A に到達していない走行（心音は鳴らなくて正常）")
+        else:
+            verdict("WARN", "心音の観測が無い（sndHeart）— この計装より前のビルドのログ")
 
         # -- 目が開く音（0131）
         #    ⚠ **目が開いた数と対で見る。** 開いているのに 0 なら鳴っていない。

@@ -1010,6 +1010,50 @@ def build_relief() -> np.ndarray:
     return out
 
 
+def build_heart() -> np.ndarray:
+    """**心音**（`canon/LEDGER.md` 0175）。
+
+    判定してほしいのは 3 つ:
+
+    1. **高さ**（焼いた -25.0 LUFS）— 曲の下で脈として立つか / 大きすぎないか
+    2. **輪の継ぎ目**（7.91 秒 ＝ 8 拍）— 各場面で 2 周ぶん鳴らすので、巻き戻りが分かるか
+    3. **実機で残るか** — 3 つ目は**内蔵スピーカーを通した形**。この音は正体が 150Hz より
+       下にあるので（内蔵SP -21.1dB）、**ここでほぼ消えるのが正しい**（`bed_beat` と同じ）
+
+    ⚠ 場は実機どおり: 追いつきの後の劇伴（`LostPlace2` 実効 -22.1）＋ 装置の声。
+      3 周目 A の側は一人ぶんの笑い（-26）と切替音も足す。
+    """
+    seg, gap = 16.0, 1.0
+    dev = load("bed_device")
+    heart = load("bed_heart")
+    laugh = load("bed_doll_one")
+    sw = load("sfx_switch_alert_1")
+    score2 = load_score2()
+
+    def scene(with_doll: bool) -> np.ndarray:
+        one = np.zeros((int(seg * sk.SR), 2))
+        lay(one, tile(dev, seg), 0.0, 0.5)
+        lay(one, score2, 0.0)
+        lay(one, tile(heart, seg), 0.0)
+        if with_doll:
+            lay(one, tile(laugh, seg), 0.0)
+            for at in (3.2, 9.6):
+                lay(one, sw, at)
+        return one
+
+    approach = scene(with_doll=False)   # 2 周目 C の追いつき（人形はまだ立っていない）
+    swap = scene(with_doll=True)        # 3 周目 A（入れ替わった後 ＝ 笑いが乗る）
+
+    total = seg * 3 + gap * 2
+    out = np.zeros((int(total * sk.SR), 2))
+    lay(out, approach, 0.0)
+    lay(out, swap, seg + gap)
+    lay(out, through_speaker(swap), (seg + gap) * 2)
+    print(f"   0.0s 追いつきの後（曲＋装置＋心音）   {seg + gap:.1f}s 3 周目 A（＋一人ぶんの笑い）"
+          f"   {(seg + gap) * 2:.1f}s 同じ所を**内蔵スピーカー越し**で")
+    return out
+
+
 def build_outro() -> np.ndarray:
     """**終幕**（`canon/LEDGER.md` 0111 の電源断 ＋ 0125 の電源が落ちる音）。
 
@@ -1113,6 +1157,9 @@ def main() -> int:
     make("preview_relief", build_relief,
          "**既存の音が半分になったか**と**陽気な曲の高さ**が判定。片側だけでは決まらない",
          "ホラー軽減モード（0154・平時 → 軽減 → 内蔵スピーカー越し）:")
+    make("preview_heart", build_heart,
+         "前半ヘッドホン / 3 つ目は内蔵スピーカー越し。**曲の下で脈として立つか**が判定",
+         "心音（0175・追いつき → 3 周目 A の入れ替わり）:")
     make("preview_outro", build_outro,
          "前半ヘッドホン / 後半は内蔵スピーカー越し。**電源が落ちる音の高さ**が判定",
          "終幕（電源が落ちて、報告が打たれる）:")

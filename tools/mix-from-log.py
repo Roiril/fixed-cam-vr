@@ -12,7 +12,8 @@ py -3.11 tools/mix-from-log.py logs/capture/<日時>_xp.log --from 112 --to 124 
 **合っているもの**（ログが持っている）:
 
 - 一撃が鳴った**時刻**（`ev=sfx` の `t=`）と、どの音か（`id=`）
-- 敷く音の**音量**（`ev=sum` の `sndCurse` / `sndDolls` / `sndSwap` / `sndWind` / `sndWhite` / `sndScore`）
+- 敷く音の**音量**（`ev=sum` の `sndCurse` / `sndDolls` / `sndSwap` / `sndWind` / `sndWhite` /
+  `sndHeart` / `sndScore`）
 - 変種の**順番**（`SoundCueLogic.VariantCount` の回し方は決定論なので再現できる）
 
 ⚠ **合っていないもの**（ログに無い）:
@@ -65,6 +66,8 @@ BEDS = {
                 + [f"bed_dolls_grow_b_{i}" for i in range(1, 5)]),
     "sndWind": ["bed_wind"],
     "sndWhite": ["bed_white"],
+    # 心音（0175）。追いつき → 3 周目 A の入れ替わりのあいだ 1 本だけ鳴る。
+    "sndHeart": ["bed_heart"],
 }
 
 # 卓が配る劇伴（`show.json` の volume 込み）。
@@ -201,7 +204,8 @@ def main() -> int:
         rest = (gain_at(sums, "sndAud", t)
                 - 2 * gain_at(sums, "sndCurse", t)
                 - gain_at(sums, "sndDolls", t) - gain_at(sums, "sndSwap", t)
-                - gain_at(sums, "sndWind", t) - gain_at(sums, "sndWhite", t))
+                - gain_at(sums, "sndWind", t) - gain_at(sums, "sndWhite", t)
+                - gain_at(sums, "sndHeart", t))
         dev.append(max(0.0, min(1.5, rest)))
     dev = np.array(dev)
     if dev.max() > 0.005:

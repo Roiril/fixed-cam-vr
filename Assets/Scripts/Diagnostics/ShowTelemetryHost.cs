@@ -1232,6 +1232,12 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" sndWind=").Append(_sound == null ? "-" : _sound.WindGain.ToString("F2"));
             _sb.Append(" sndCurse=").Append(_sound == null ? "-" : _sound.CurseGain.ToString("F2"));
             _sb.Append(" sndWhite=").Append(_sound == null ? "-" : _sound.WhiteGain.ToString("F2"));
+            //   sndHeart = 心音（`canon/LEDGER.md` 0175）。2 周目 C の追いつきから、
+            //   3 周目 A の入れ替わりの再生が終わるまで立つ。
+            //   ⚠⚠ **画にも録画にも一撃のログにも 1 ビットも出ない。** ここが唯一の証拠。
+            //      しかも素材は正体が 150Hz より下にあるので、**実機の内蔵スピーカーでも聞こえない**
+            //      （内蔵SP -21.1dB）。耳でも確かめられない ＝ この数字しか無い。
+            _sb.Append(" sndHeart=").Append(_sound == null ? "-" : _sound.HeartGain.ToString("F2"));
             //   sndEye = 目が開く音（0131）。<一撃の累計>/<大きい目を鳴らせたか>。
             //   ⚠ **目が開いた数（`eyes` の 2 つ目）と対で見る** — 開いているのに 0 なら鳴っていない。
             _sb.Append(" sndEye=").Append(EyeSfxState);

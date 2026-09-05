@@ -132,6 +132,24 @@ namespace FixedCamVr.Streaming
         private string _activeStepCueId = "";
 
         /// <summary>
+        /// <b>人形の呼びかけ（<c>steps[].dollCall</c>）を持つカットが、いま画面を取っているか</b>
+        /// （2026-09-06・<c>canon/LEDGER.md</c> 0175）。
+        ///
+        /// 心音（<see cref="SoundBedLogic"/>）が<b>始まる縁を作るためだけ</b>に読む。ユーザー指定は
+        /// 「2-C で連続する人形視点が終わった後から」で、その連なりの最後のカットが
+        /// <b>呼びかけを持つカット</b>（＝ 人形が追いつく所）。ここが立ってから降りた瞬間が
+        /// 「連なりが終わった」。
+        ///
+        /// ⚠ <b>素材 id の頭（<c>pov</c>）では判じられない。</b> 同じ 2 周目 C の予備動作
+        /// （<c>pov_0</c>・低い視点が 1 度だけ割り込む）も同じ頭を持つので、
+        /// そちらで心音が始まってしまう（**連なりではない**）。呼びかけは接近の最後のカットに
+        /// 1 つだけ付いているので、これが連なりの終わりの唯一の目印になる。
+        /// </summary>
+        public bool DollCallShowing => _logic.IsActive && _activeStepDollCall;
+
+        private bool _activeStepDollCall;
+
+        /// <summary>
         /// <b>別の場所（異世界）の素材 id の頭</b>（2026-09-03・<c>canon/LEDGER.md</c> 0131）。
         ///
         /// ⚠⚠ <b>現場の著作（<c>show.json</c>）に踏み込んでいる唯一の場所。</b>
@@ -643,6 +661,8 @@ namespace FixedCamVr.Streaming
             // いま画面を取っているカットの素材 id（音が読む・`canon/LEDGER.md` 0131）。
             // ⚠ **飛ばす判定の後**（画面を取れなかったカットの id を立てない）。
             _activeStepCueId = step.cueId ?? "";
+            // 呼びかけのカットが画面を取っているか（心音の始まりを決める・0175）。
+            _activeStepDollCall = step.dollCall;
 
             // このカットから劇伴を差し替える（`canon/LEDGER.md` 0119）。
             // ⚠ **演出の bgm（占有）とは別の口。** こちらはレーンそのものを書き換えるので、
@@ -1086,6 +1106,7 @@ namespace FixedCamVr.Streaming
             _chainPending = false;
             if (!_logic.IsActive && !handingOver) return;
             _activeStepCueId = "";   // 音が「まだ異世界が映っている」と読まない（0131）
+            _activeStepDollCall = false;   // 同・呼びかけのカットが降りた縁を作る（0175）
             EndTakeBgm();
             ReleaseStepState();
             if (director != null && director.InsertActive)
