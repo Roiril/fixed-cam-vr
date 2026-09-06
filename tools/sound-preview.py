@@ -1011,46 +1011,93 @@ def build_relief() -> np.ndarray:
 
 
 def build_heart() -> np.ndarray:
-    """**心音**（`canon/LEDGER.md` 0175）。
+    """**心音を、実際にその場で鳴っている音の上で聴く**（`canon/LEDGER.md` 0175）。
 
-    判定してほしいのは 3 つ:
+    実機の並びをそのまま組んである（2 周目 C の接近 → 追いつき → 3 周目 A の入れ替わり）:
 
-    1. **高さ**（焼いた -25.0 LUFS）— 曲の下で脈として立つか / 大きすぎないか
-    2. **輪の継ぎ目**（7.91 秒 ＝ 8 拍）— 各場面で 2 周ぶん鳴らすので、巻き戻りが分かるか
-    3. **実機で残るか** — 3 つ目は**内蔵スピーカーを通した形**。この音は正体が 150Hz より
-       下にあるので（内蔵SP -21.1dB）、**ここでほぼ消えるのが正しい**（`bed_beat` と同じ）
+    | 秒 | 何が起きるか |
+    |---|---|
+    | 0.0 | 2 周目 C の人形視点。**警告つきの切替音**と乱れが 1 秒刻みで来る。劇伴は `HorrBGM` |
+    | 2.7 | 追いつきのカット（`pov_4`）。切替音 ＋ **呼びかけ「あーそぼー」** |
+    | 4.1 | ライブへ戻る ＝ **心音が 1.2 秒で立ち上がる**。同時に劇伴が `LostPlace2` へ 3 秒で入れ替わる |
+    | 14.0 | 3 周目 A の入れ替わり。乱れ ＋ **一人ぶんの笑い**が入り、劇伴が 0.55 倍へ引く |
+    | 24.0 | 録画が終わる ＝ **心音が 2.0 秒で退く** |
 
-    ⚠ 場は実機どおり: 追いつきの後の劇伴（`LostPlace2` 実効 -22.1）＋ 装置の声。
-      3 周目 A の側は一人ぶんの笑い（-26）と切替音も足す。
+    判定してほしいのは 1 つだけ、**心音の高さ**（焼いた -25.0 LUFS）。
+
+    ⚠⚠ **同じ通しを 3 回鳴らす。** 1 回目は心音あり / 2 回目は**心音なし** /
+      3 回目は 1 回目を**内蔵スピーカー越し**。片方だけ聴いても大きさは決まらない
+      （`~/.claude/rules/work-style.md` §2-3 の校正）。3 回目でほぼ消えるのが実機の耳。
+
+    ⚠ 合っていないもの: **定位**（実機は笑いが周囲から・呼びかけが後ろから鳴る）と、
+      一撃 1 発ごとの音程と音量の散らし。**高さの関係と時刻は実機どおり。**
     """
-    seg, gap = 16.0, 1.0
+    seg, gap = 28.0, 1.0
+    n = int(seg * sk.SR)
     dev = load("bed_device")
     heart = load("bed_heart")
     laugh = load("bed_doll_one")
-    sw = load("sfx_switch_alert_1")
-    score2 = load_score2()
+    call = load("sfx_doll_call")
+    gl = load("sfx_glitch_1")
+    a, b = load_score(), load_score2()
 
-    def scene(with_doll: bool) -> np.ndarray:
-        one = np.zeros((int(seg * sk.SR), 2))
-        lay(one, tile(dev, seg), 0.0, 0.5)
-        lay(one, score2, 0.0)
-        lay(one, tile(heart, seg), 0.0)
-        if with_doll:
-            lay(one, tile(laugh, seg), 0.0)
-            for at in (3.2, 9.6):
-                lay(one, sw, at)
+    swap_at = 4.1        # 追いつき ＝ 心音の始点 ＝ 劇伴が入れ替わる縁
+    doll_at = 14.0       # 3 周目 A の入れ替わり ＝ 笑いが入る縁
+    heart_off = 24.0     # 録画が終わる ＝ 心音の終点（退き 2 秒の後も 2 秒残して聴かせる）
+    # 人形視点の切替（`transition:"glitch"` なので乱れも同じ縁で鳴る）。最後が追いつき。
+    cuts = [0.0, 1.0, 1.9, 2.7]
+
+    t = np.arange(n) / sk.SR
+
+    # --- 劇伴の退き（`SoundBedLogic`）: 乱れの一撃 0.35（半減期 0.55 秒）と、
+    #     人形が笑っているあいだの 0.45（押し続ける）。⚠ 切替音と呼びかけは退かせない（DuckFor = 0）。
+    duck = np.zeros(n)
+    for at in cuts:
+        m = t >= at
+        duck[m] = np.maximum(duck[m], 0.35 * 0.5 ** ((t[m] - at) / 0.55))
+    duck = np.maximum(duck, 0.45 * np.clip((t - doll_at) / 0.3, 0.0, 1.0))
+
+    # --- 劇伴（HorrBGM → LostPlace2 を 3 秒で等パワー入れ替え。高さは卓の volume 込み）
+    score = np.zeros((n, 2))
+    head = int(40 * sk.SR)                       # 曲の頭は静かなので中ほどを使う
+    i0, nf = int(swap_at * sk.SR), int(3.0 * sk.SR)
+    u = np.linspace(0.0, 1.0, nf)
+    lay(score, a[head:head + i0], 0.0)
+    lay(score, a[head + i0:head + i0 + nf], swap_at, np.cos(u * np.pi / 2))
+    lay(score, b[:nf], swap_at, np.sin(u * np.pi / 2))
+    lay(score, b[nf:n - i0], swap_at + 3.0)
+    score *= (1.0 - duck)[:, None]
+
+    # --- 心音の包絡（立ち上がり 1.2 秒 / 退き 2.0 秒。どちらも聴感直線 = t^(1/0.6)）
+    env = np.clip((t - swap_at) / 1.2, 0.0, 1.0) ** (1 / 0.6)
+    env *= np.clip((heart_off + 2.0 - t) / 2.0, 0.0, 1.0) ** (1 / 0.6)
+
+    def scene(with_heart: bool) -> np.ndarray:
+        one = np.zeros((n, 2))
+        lay(one, tile(dev, seg), 0.0, 0.5)       # 装置の唸り（本編はずっとこの高さ）
+        one += score
+        for i, at in enumerate(cuts):            # 人形視点の切替（警告つき）＋ 乱れ
+            lay(one, load(f"sfx_switch_alert_{i % 6 + 1}"), at)
+            lay(one, gl, at + 0.035)
+        lay(one, call, cuts[-1])                 # 追いつきのカットの頭で「あーそぼー」
+        lay(one, gl, doll_at)                    # 入れ替わりの乱れ
+        lay(one, load("sfx_switch_alert_2"), doll_at)
+        lay(one, tile(laugh, seg - doll_at), doll_at)
+        if with_heart:
+            hb = tile(heart, seg)
+            lay(one, hb, 0.0, env)
         return one
 
-    approach = scene(with_doll=False)   # 2 周目 C の追いつき（人形はまだ立っていない）
-    swap = scene(with_doll=True)        # 3 周目 A（入れ替わった後 ＝ 笑いが乗る）
-
+    with_h = scene(True)
     total = seg * 3 + gap * 2
     out = np.zeros((int(total * sk.SR), 2))
-    lay(out, approach, 0.0)
-    lay(out, swap, seg + gap)
-    lay(out, through_speaker(swap), (seg + gap) * 2)
-    print(f"   0.0s 追いつきの後（曲＋装置＋心音）   {seg + gap:.1f}s 3 周目 A（＋一人ぶんの笑い）"
-          f"   {(seg + gap) * 2:.1f}s 同じ所を**内蔵スピーカー越し**で")
+    lay(out, with_h, 0.0)
+    lay(out, scene(False), seg + gap)
+    lay(out, through_speaker(with_h), (seg + gap) * 2)
+    print(f"   0.0s 心音あり（通し）   {seg + gap:.1f}s **心音なし**（同じ通し）"
+          f"   {(seg + gap) * 2:.1f}s 心音ありを**内蔵スピーカー越し**で")
+    print(f"   通しの中: {swap_at:.1f}s 追いつき（心音が立つ）  {doll_at:.1f}s 入れ替わり（笑いが入る）"
+          f"  {heart_off:.1f}s 録画が終わる（心音が退く）")
     return out
 
 
