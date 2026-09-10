@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: f7e1eec1-cf38-4817-87a9-dbe94be9407c
-  modified: 2026-09-10T07:19:35.477Z
+  modified: 2026-09-10T07:22:09.300Z
 ---
 
 # キービジュアルを触る前に
@@ -52,8 +52,11 @@ tools/make-key-visual.py --ground <②の画>          # ③ 題字と文字を�
 | 何 | 書体 | 位置 |
 |---|---|---|
 | キャッチ 2 行（縦書き・右の行から） | Yu Mincho Light 29px | 右の行 x=0.088W、上 y=0.075H。人形の頭（y≈0.33H〜）より上で終える |
-| `VR固定視点ホラー` | Yu Mincho Light 30px・字間 0.32em | 中央 y=0.888H |
-| 役職 ＋ 名前 | 役職 Yu Gothic 17px / 名前 Yu Mincho 28px。**ベースラインで揃える** | 中央 y=0.952H |
+| `VR固定視点ホラー` | Yu Mincho Light 30px・字間 0.32em | 中央 y=0.902H（`--billing-y`） |
+| 役職 ＋ 名前 | 役職 Yu Gothic 17px / 名前 Yu Mincho 28px。**ベースラインで揃える** | 中央 `--billing-y` + 0.064 |
+
+下端の余白は 36px（1080 の 3.3%）。測るのは `(輝度 > 110).sum(axis=1) > 3` の最下行で、
+版の目分量ではなく画素で出す。
 
 - ⚠ **役職と名前を同じ大きさで並べると名簿に見える。** 役職は小さく淡く（`draw_billing`）
 - ⭐ **下段を置く前に、その帯の地の ばらつきを測る。** 中央の底は左半分が人形なので、

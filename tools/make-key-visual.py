@@ -314,6 +314,7 @@ def main() -> int:
     ap.add_argument("--title-x", type=float, default=0.50, help="主の墨の中心 x（画面比）")
     ap.add_argument("--title-y", type=float, default=0.385, help="主の墨の中心 y（画面比）")
     ap.add_argument("--billing-x", type=float, default=0.50, help="下段の中心 x（画面比）")
+    ap.add_argument("--billing-y", type=float, default=0.902, help="下段の 1 行目の上端 y（画面比）。役職と名前は +0.064")
     ap.add_argument("--no-text", action="store_true", help="キャッチと情報行を入れない")
     ap.add_argument("--no-halo", action="store_true", help="題字の下の黒い暈しを入れない")
     ap.add_argument("--grain", type=float, default=2.2)
@@ -348,12 +349,12 @@ def main() -> int:
                             ink + (205,))
         # 下段は 2 段。種別 → 役職と名前。中心（題字と同じ軸）に置く
         bx = int(W * a.billing_x)
-        draw_spaced(canvas, BILLING_GENRE, _font(FONT_MINCHO, 30), bx, int(H * 0.888), ink + (175,), 0.32)
+        draw_spaced(canvas, BILLING_GENRE, _font(FONT_MINCHO, 30), bx, int(H * a.billing_y), ink + (175,), 0.32)
         f_role, f_name = _font(FONT_GOTHIC, 17), _font(FONT_MINCHO, 28)
         for i, (role, name) in enumerate(BILLING_CREDIT):
             draw_billing(canvas, [(role, f_role, ink + (120,), 0.06, 0),
                                   (name, f_name, ink + (190,), 0.16, 30)],
-                         bx, int(H * (0.952 + 0.042 * i)))
+                         bx, int(H * (a.billing_y + 0.064 + 0.042 * i)))
 
     out_im = grain(canvas, a.grain, rng)
     out = a.out if os.path.isabs(a.out) else os.path.join(REPO, a.out)
