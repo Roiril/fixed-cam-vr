@@ -58,7 +58,7 @@ FONT_MINCHO = r"C:\Windows\Fonts\yuminl.ttf"     # Yu Mincho Light
 FONT_GOTHIC = r"C:\Windows\Fonts\YuGothM.ttc"    # Yu Gothic Medium
 
 # 案 / 2026-09-10 / シュビー（canon/OPEN.md）。縦書き 2 行、右の行から読む
-TAGLINE_LINES = ("カメラは動かない。", "動くのは、あなた。")
+TAGLINE_LINES = ("廻るたびに狂う世界、", "あなたは生きて戻れるか。")
 
 # 下段（映画の一枚絵のビリングブロックの形）。上から順に 種別 / 役職と名前。
 # ⚠ 役職は名前より小さく淡く。同じ大きさで並べると名簿に見える
