@@ -59,8 +59,12 @@ FONT_GOTHIC = r"C:\Windows\Fonts\YuGothM.ttc"    # Yu Gothic Medium
 
 # 案 / 2026-09-10 / シュビー（canon/OPEN.md）。縦書き 2 行、右の行から読む
 TAGLINE_LINES = ("カメラは動かない。", "動くのは、あなた。")
-BILLING_TOP = "MAWARIMI"
-BILLING = "IVRC 2026   ｜   固定視点ホラー VR   ｜   Meta Quest 3"
+
+# 下段（映画の一枚絵のビリングブロックの形）。上から順に 出展先 / 種別 / 役職と名前。
+# ⚠ 役職は名前より小さく淡く。同じ大きさで並べると名簿に見える
+BILLING_EVENT = "IVRC2026"
+BILLING_GENRE = "VR固定視点ホラー"
+BILLING_CREDIT = (("企画・監督・制作リーダー", "白石大晴"),)
 
 SEED = 20260910
 
@@ -270,6 +274,30 @@ def draw_spaced(canvas: Image.Image, text: str, font: ImageFont.FreeTypeFont,
     canvas.alpha_composite(layer)
 
 
+def draw_billing(canvas: Image.Image, parts, cx: int, baseline: int) -> None:
+    """役職と名前を 1 行に。大きさの違う断片をベースラインで揃えて中央へ置く。
+
+    parts は (文字列, フォント, 塗り, 字間 em 比, 前の空き px) の並び。
+    """
+    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    runs = []
+    total = 0.0
+    for text, font, fill, tracking, lead in parts:
+        tr = font.size * tracking
+        widths = [d.textlength(ch, font=font) for ch in text]
+        w = sum(widths) + tr * (len(text) - 1)
+        runs.append((text, font, fill, tr, widths, w, lead))
+        total += w + lead
+    x = cx - total / 2
+    for text, font, fill, tr, widths, w, lead in runs:
+        x += lead
+        for ch, cw in zip(text, widths):
+            d.text((x, baseline), ch, font=font, fill=fill, anchor="ls")
+            x += cw + tr
+    canvas.alpha_composite(layer)
+
+
 def grain(im: Image.Image, sigma: float, rng) -> Image.Image:
     a = np.asarray(im.convert("RGB"), dtype=np.float64)
     a += rng.normal(0.0, sigma, (H, W, 1))            # 輝度のみ
@@ -286,6 +314,7 @@ def main() -> int:
     ap.add_argument("--title-width", type=float, default=0.52, help="版の幅（画面比）。主の墨はその 0.76 倍")
     ap.add_argument("--title-x", type=float, default=0.50, help="主の墨の中心 x（画面比）")
     ap.add_argument("--title-y", type=float, default=0.385, help="主の墨の中心 y（画面比）")
+    ap.add_argument("--billing-x", type=float, default=0.625, help="下段の中心 x（画面比）。床の光の溜まりの上")
     ap.add_argument("--no-text", action="store_true", help="キャッチと情報行を入れない")
     ap.add_argument("--no-halo", action="store_true", help="題字の下の黒い暈しを入れない")
     ap.add_argument("--grain", type=float, default=2.2)
@@ -318,8 +347,17 @@ def main() -> int:
         # 左上の暗部に 2 行。人形の頭（y ≈ 0.33H〜）に掛からない高さで終える
         draw_vertical_lines(canvas, TAGLINE_LINES, _font(FONT_MINCHO, 29), int(W * 0.088), int(H * 0.075),
                             ink + (205,))
-        draw_spaced(canvas, BILLING_TOP, _font(FONT_MINCHO, 22), W // 2, int(H * 0.905), ink + (150,), 0.42)
-        draw_spaced(canvas, BILLING, _font(FONT_GOTHIC, 17), W // 2, int(H * 0.945), ink + (125,), 0.10)
+        # 下段は 3 段。出展先 → 種別 → 役職と名前の順に、下へ行くほど字を大きくする。
+        # ⚠ 中心（0.50W）に置くと、いちばん小さい出展先の行が手前の人形の着物に乗る
+        #   （地の明るさの ばらつき sd 25。他の 2 行は床の上で sd 4〜9）。床の光の溜まりへ寄せる
+        bx = int(W * a.billing_x)
+        draw_spaced(canvas, BILLING_EVENT, _font(FONT_GOTHIC, 18), bx, int(H * 0.866), ink + (120,), 0.52)
+        draw_spaced(canvas, BILLING_GENRE, _font(FONT_MINCHO, 25), bx, int(H * 0.902), ink + (170,), 0.30)
+        f_role, f_name = _font(FONT_GOTHIC, 15), _font(FONT_MINCHO, 23)
+        for i, (role, name) in enumerate(BILLING_CREDIT):
+            draw_billing(canvas, [(role, f_role, ink + (115,), 0.06, 0),
+                                  (name, f_name, ink + (185,), 0.16, 26)],
+                         bx, int(H * (0.958 + 0.038 * i)))
 
     out_im = grain(canvas, a.grain, rng)
     out = a.out if os.path.isabs(a.out) else os.path.join(REPO, a.out)
