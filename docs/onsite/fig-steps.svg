@@ -2,7 +2,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 92" width="170mm" height="92mm"
      role="img" aria-labelledby="t d">
 <title id="t">到着してからの手順 4 段</title>
-<desc id="d">配信スマートフォンと卓を立ち上げ、HMD で床の 2 点をタッチして位置を合わせ、1 周通して動きを見る。人形の合成がずれていたら、卓でカメラを手で合わせる。段のあいだの矢印は、前の段が次の段へ渡すものを示す。</desc>
+<desc id="d">配信スマートフォンと卓を立ち上げ、HMD で壁の両端の上 1m の 2 点をタッチして位置を合わせ、1 周通して動きを見る。人形の合成がずれていたら、卓でカメラを手で合わせる。段のあいだの矢印は、前の段が次の段へ渡すものを示す。</desc>
 <style>
   text   { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
   .step  { font-size: 3.2px; font-weight: bold; }
@@ -66,7 +66,7 @@
 <path d="M79.5,51.7 L81.0,54.6 L78.0,54.6 Z" class="accf"/>
 <text x="79.5" y="50.4" class="desc" text-anchor="middle">2</text>
 <path d="M70.0,52 q5,-3.4 9,0" class="acc"/>
-<text x="57.5" y="64.2" class="desc">壁の両端の床を順にタッチ</text>
+<text x="57.5" y="64.2" class="desc">両端の上 1m を順にタッチ</text>
 <rect x="101.0" y="24" width="21" height="12.4" class="f2" stroke="#000" stroke-width=".3"/>
 <text x="111.5" y="31.4" class="desc" text-anchor="middle">固定カメラの映像</text>
 <text x="101.0" y="39.5" class="desc">目の前に出る画面</text>

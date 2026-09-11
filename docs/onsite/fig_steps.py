@@ -13,7 +13,7 @@ A('<?xml version="1.0" encoding="UTF-8"?>')
 A(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}mm" height="{H}mm"')
 A('     role="img" aria-labelledby="t d">')
 A('<title id="t">到着してからの手順 4 段</title>')
-A('<desc id="d">配信スマートフォンと卓を立ち上げ、HMD で床の 2 点をタッチして位置を合わせ、'
+A('<desc id="d">配信スマートフォンと卓を立ち上げ、HMD で壁の両端の上 1m の 2 点をタッチして位置を合わせ、'
   '1 周通して動きを見る。人形の合成がずれていたら、卓でカメラを手で合わせる。'
   '段のあいだの矢印は、前の段が次の段へ渡すものを示す。</desc>')
 A('''<style>
@@ -81,7 +81,7 @@ for k, (px, py) in enumerate([(x1 + 13, 53.4), (x1 + 24, 53.4)]):
     A(f'<path d="M{px:.1f},{py - 1.7:.1f} L{px + 1.5:.1f},{py + 1.2:.1f} L{px - 1.5:.1f},{py + 1.2:.1f} Z" class="accf"/>')
     A(f'<text x="{px:.1f}" y="{py - 3.0:.1f}" class="desc" text-anchor="middle">{k + 1}</text>')
 A(f'<path d="M{x1 + 14.5:.1f},52 q5,-3.4 9,0" class="acc"/>')
-A(f'<text x="{x1 + 2:.1f}" y="64.2" class="desc">壁の両端の床を順にタッチ</text>')
+A(f'<text x="{x1 + 2:.1f}" y="64.2" class="desc">両端の上 1m を順にタッチ</text>')
 
 # ---- 段 3 の絵: 歩く人 + 前方のスクリーン ----------------------------------
 x2 = COLS[2]

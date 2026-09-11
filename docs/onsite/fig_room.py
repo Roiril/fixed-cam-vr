@@ -28,7 +28,14 @@ show = json.load(io.open(
     r"C:\Users\kouga\Projects\Unity\fixed-cam-vr\tools\web-compositor\show.json", encoding="utf-8"))
 L = show["layout"]
 FW, FD = L["floor"]["w"] / 2, L["floor"]["d"] / 2
-sp, ln = L["startSpot"], L["lines"][0]
+ln = L["lines"][0]
+# 開始位置の円。show.json に無ければ WalkGuideLogic と同じ導出（角から LaneOffsetM=0.42 ずつ内側・半径 0.245）。
+# 2026-09 から show.json は円を持たない（hasStartSpot=false）ので、こちらが通常の経路。
+if L.get("hasStartSpot") and L.get("startSpot"):
+    sp = L["startSpot"]
+else:
+    _c = L["wall"]["corner"]
+    sp = {"x": _c[0] + 0.42, "z": _c[1] - 0.42, "radiusM": 0.245}
 r = sp["radiusM"]
 
 out = []
