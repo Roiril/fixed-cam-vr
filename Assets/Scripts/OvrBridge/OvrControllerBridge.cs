@@ -99,6 +99,16 @@ namespace FixedCamVr.OvrBridge
         private const float LongPressSec = 2.0f;
 
         /// <summary>
+        /// トリガー／グリップの長押しで、HoldTick（右の連続の振動）を鳴らし始めるまでの間（秒）。
+        /// 握りが閾値（0.5）の付近で揺れると、進捗が 0〜数% を往復して amp 0.10 が
+        /// **際限なく**鳴る（2 秒に達しないので何も起きず、鳴っている理由が誰にも分からない）。
+        /// 頭の 0.3 秒を鳴らさなければ、その揺れは黙り、意図した長押しには残り 1.7 秒のランプが付く。
+        /// ⚠ 登録の A 0.5 秒ホールド（<c>SampleHoldProgress01</c>）には掛けない —
+        /// あれは 0.5 秒で 0→1 を走るので、掛けるとランプの 6 割が消える。
+        /// </summary>
+        private const float HoldTickDeadSec = 0.3f;
+
+        /// <summary>
         /// <b>体験者が押せるもの、全部</b>（2026-09-03 ユーザー指定「体験者が押すボタン、X/Y だけじゃなく、
         /// どのボタンを押してもいいようにしてほしい。これは、言語選択も報告も全部含めて」）。
         ///
@@ -325,6 +335,7 @@ namespace FixedCamVr.OvrBridge
             bool aDown = OVRInput.GetDown(primaryButton, OVRInput.Controller.RTouch); // A: タイトルを閉じる / マーク・やり直し
             bool aHeld = OVRInput.Get(primaryButton, OVRInput.Controller.RTouch);     // A: 押しっぱなし（登録のホールド平均用）
             bool bDown = OVRInput.GetDown(statusButton, OVRInput.Controller.RTouch); // B: ステータストグル / 確定
+            bool bHeld = OVRInput.Get(statusButton, OVRInput.Controller.RTouch);     // B: 押しっぱなし（長押しの無効化の門）
             bool rGrip = OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
             bool rTrigger = OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
             bool gripDown = OVRInput.GetDown(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
@@ -397,13 +408,28 @@ namespace FixedCamVr.OvrBridge
             }
 
             // ---- モード遷移（副作用は OnModeChanged / ResetRun が担う）----
+            // ⚠⚠ **A / B を押しているあいだのグリップ／トリガーは長押しに数えない**（2026-09-11）。
+            //    親指で A を押すとき中指は握り込むので、握りが閾値（0.5）を越えるとそれだけで
+            //    グリップの長押しが数え始まり、HoldTick（連続の振動）が右の手元で鳴り続け、
+            //    2 秒握っていればランリセットまで撃たれる。「体験を始める A を押したら
+            //    右がしばらく震え続けた」（ユーザー報告）はこの形。無効化は ControllerModeLogic が持つ。
+            int voidedBefore = _modeLogic.VoidedHolds;
             _modeLogic.Tick(new ControllerModeLogic.Frame
             {
                 deltaTime = Time.deltaTime,
                 triggerHeld = rTrigger,
                 gripHeld = rGrip,
                 registrationActive = regActive,
+                faceButtonHeld = aHeld || bHeld,
             });
+            if (_modeLogic.VoidedHolds != voidedBefore)
+            {
+                // 振動は画にも音にも出ないので、握り込みが起きたことはここにしか残らない。
+                Debug.Log("[OvrBridge] 右の長押しを無効にした（A/B と重なった握り込み）"
+                          + $" grip={(rGrip ? 1 : 0)} trigger={(rTrigger ? 1 : 0)}"
+                          + $" gripAxis={OVRInput.Get(OVRInput.Axis1D.PrimaryHandTrigger, OVRInput.Controller.RTouch):F2}"
+                          + $" triggerAxis={OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger, OVRInput.Controller.RTouch):F2}");
+            }
             ControllerModeLogic.Mode mode = _modeLogic.Current;
 
             // ---- 体験者の報告（左 X / 左 Y の 2 秒長押し）-------------------------------
@@ -540,7 +566,13 @@ namespace FixedCamVr.OvrBridge
 
             // 長押しカウント進行を HoldTick 振動へ（トリガー入場 / グリップ ランリセット / 登録の 0.5s ホールド
             // 平均サンプリングの最大を流す。登録中は SampleHoldProgress01 が 0.5 秒ホールドの進行ランプを鳴らす）。
-            float holdProgress = Mathf.Max(_modeLogic.TriggerHoldProgress01, _modeLogic.GripHoldProgress01);
+            // ⚠ トリガー／グリップの頭 HoldTickDeadSec は鳴らさない（閾値付近で揺れる握りを黙らせる）。
+            // ⚠ 登録中のグリップは機能を持たないので鳴らさない（鳴ると「何かが数えられている」と読まれる）。
+            float longPress = _modeLogic.TriggerHoldProgress01;
+            if (mode == ControllerModeLogic.Mode.Normal)
+                longPress = Mathf.Max(longPress, _modeLogic.GripHoldProgress01);
+            if (longPress < HoldTickDeadSec / LongPressSec) longPress = 0f;
+            float holdProgress = longPress;
             if (courseRegistration != null)
                 holdProgress = Mathf.Max(holdProgress, courseRegistration.SampleHoldProgress01);
             haptics?.SetHoldProgress(holdProgress);

@@ -19,7 +19,11 @@ namespace FixedCamVr.Input
     /// 体験者はコントローラを持たないため封印モード（旧 Run/Staff）は廃止した。右手 4 入力
     /// （A / B / グリップ / トリガー）だけで全操作を賄い、モード遷移はトリガー長押しに集約する。
     /// 長押し検出（トリガー・グリップの 2 秒ホールド）は 1 回の連続ホールドで 1 回だけ発火する
-    /// （<see cref="HoldLatch"/>）。registrationActive は <c>CourseRegistrationController.IsActive</c>
+    /// （<see cref="HoldLatch"/>）。
+    /// ⚠ <b>A / B と重なったホールドは離すまで数えない</b>（2026-09-11）。A を押す手は自然に握り込むので、
+    /// 重なりを許すと「体験を始める A」のたびに右の手元が震え、2 秒握っていればランリセットまで撃たれる
+    /// （<see cref="Frame.faceButtonHeld"/> / <see cref="FaceButtonQuietSec"/>）。
+    /// registrationActive は <c>CourseRegistrationController.IsActive</c>
     /// （外部の真実）を渡す。登録の開始・停止という副作用は Bridge が <see cref="ModeChanged"/> を
     /// 受けて行う（このロジックはモード遷移とランリセット要求だけを決める）。
     /// </summary>
@@ -38,22 +42,44 @@ namespace FixedCamVr.Input
             public bool gripHeld;
             /// <summary>登録フロー中か（CourseRegistrationController.IsActive の外部真実）。</summary>
             public bool registrationActive;
+            /// <summary>
+            /// 右の A / B（面のボタン）が押されているか。<b>押されているあいだ、グリップ／トリガーの
+            /// 長押しは数えない</b>（<see cref="FaceButtonQuietSec"/> も参照）。
+            /// </summary>
+            public bool faceButtonHeld;
         }
+
+        /// <summary>
+        /// A / B を離してから、グリップ／トリガーの長押しを数え始めてよいまでの間（秒）。
+        ///
+        /// 親指で A を押すとき、持ち手の中指と人差し指は自然に握り込む。握りが
+        /// <c>OVRInput</c> の閾値（0.5）を越えると、それだけでグリップの長押しが数え始まり、
+        /// 右の手元で HoldTick（連続の振動）が鳴り、2 秒握っていればランリセットが撃たれる。
+        /// 「体験を始める A を押したら右コントローラがしばらく震え続けた」（2026-09-11 ユーザー報告）は
+        /// この形で説明がつく。A を押した手はしばらく握ったままなので、離した直後も数えない。
+        /// </summary>
+        public const float FaceButtonQuietSec = 0.3f;
 
         // 単一ボタンの「N 秒長押しを 1 ホールド 1 回だけ発火」する計時 + ラッチ。トリガー / グリップで各 1 個。
         private sealed class HoldLatch
         {
             private float _hold;
             private bool _fired;
+            // A / B と重なった（またはその直後に始まった）ホールド。離すまで数えず、発火もしない。
+            private bool _voided;
 
-            /// <summary>長押しの進捗 [0,1]。</summary>
-            public float Progress01(float holdSec) => holdSec <= 0f ? 0f : Clamp01(_hold / holdSec);
+            /// <summary>長押しの進捗 [0,1]。無効化されたホールドは 0（鳴らさない・表示しない）。</summary>
+            public float Progress01(float holdSec) => (holdSec <= 0f || _voided) ? 0f : Clamp01(_hold / holdSec);
+
+            /// <summary>いま押されているホールドが A / B と重なって無効化されているか。</summary>
+            public bool Voided => _voided;
 
             /// <summary>計時とラッチをクリアする。</summary>
             public void Reset()
             {
                 _hold = 0f;
                 _fired = false;
+                _voided = false;
             }
 
             /// <summary>
@@ -66,13 +92,22 @@ namespace FixedCamVr.Input
             /// <summary>
             /// 押下状態を進める。ホールドが holdSec に達した最初の 1 フレームだけ true を返す
             /// （離すまで再発火しない。離したら計時とラッチをリセット）。
+            /// <paramref name="blocked"/> のあいだ（A / B が押されている・離した直後）に押されている
+            /// ホールドは<b>離すまで無効</b> — 数えず、鳴らさず、発火しない。
             /// </summary>
-            public bool Tick(bool held, float dt, float holdSec)
+            public bool Tick(bool held, float dt, float holdSec, bool blocked)
             {
                 if (!held)
                 {
                     _hold = 0f;
                     _fired = false;
+                    _voided = false;
+                    return false;
+                }
+                if (blocked) _voided = true;
+                if (_voided)
+                {
+                    _hold = 0f;
                     return false;
                 }
                 _hold += dt;
@@ -93,14 +128,30 @@ namespace FixedCamVr.Input
 
         private float _holdSec = 2f;
 
+        // A / B を離してからの静穏期の残り（秒）。> 0 のあいだホールドは数え始めない。
+        private float _faceQuiet;
+        private int _voidedHolds;
+
         /// <summary>現在のモード。</summary>
         public Mode Current => _mode;
 
-        /// <summary>右トリガー長押しの進捗 [0,1]（HUD 表示等の任意用途）。</summary>
+        /// <summary>右トリガー長押しの進捗 [0,1]（HUD 表示等の任意用途）。無効化中は 0。</summary>
         public float TriggerHoldProgress01 => _trigger.Progress01(_holdSec);
 
-        /// <summary>右グリップ長押しの進捗 [0,1]（HUD 表示等の任意用途）。</summary>
+        /// <summary>右グリップ長押しの進捗 [0,1]（HUD 表示等の任意用途）。無効化中は 0。</summary>
         public float GripHoldProgress01 => _grip.Progress01(_holdSec);
+
+        /// <summary>
+        /// A / B と重なって無効化されたホールドの累計（グリップ・トリガー合算）。
+        /// Bridge が増分を見てログを出す（振動は画にも音にも出ないので、ここが唯一の手掛かり）。
+        /// </summary>
+        public int VoidedHolds => _voidedHolds;
+
+        /// <summary>いま押されているグリップが A / B と重なって無効化されているか。</summary>
+        public bool GripHoldVoided => _grip.Voided;
+
+        /// <summary>いま押されているトリガーが A / B と重なって無効化されているか。</summary>
+        public bool TriggerHoldVoided => _trigger.Voided;
 
         /// <summary>モードが変わった時に (from, to) で発火する。副作用（登録開始/停止等）は購読側で行う。</summary>
         public event Action<Mode, Mode>? ModeChanged;
@@ -118,13 +169,23 @@ namespace FixedCamVr.Input
             _prevRegActive = false;
             _trigger.Reset();
             _grip.Reset();
+            _faceQuiet = 0f;
+            _voidedHolds = 0;
         }
 
         /// <summary>毎フレームの評価。入力からモード遷移・ランリセット要求を決める。</summary>
         public void Tick(in Frame f)
         {
-            bool triggerFired = _trigger.Tick(f.triggerHeld, f.deltaTime, _holdSec);
-            bool gripFired = _grip.Tick(f.gripHeld, f.deltaTime, _holdSec);
+            // A / B が押されているあいだと、離してから FaceButtonQuietSec のあいだは、
+            // グリップ／トリガーのホールドを「コントローラを握っているだけ」とみなして数えない。
+            if (f.faceButtonHeld) _faceQuiet = FaceButtonQuietSec;
+            else if (_faceQuiet > 0f) _faceQuiet = Max0(_faceQuiet - f.deltaTime);
+            bool blocked = f.faceButtonHeld || _faceQuiet > 0f;
+
+            bool wasVoided = _trigger.Voided || _grip.Voided;
+            bool triggerFired = _trigger.Tick(f.triggerHeld, f.deltaTime, _holdSec, blocked);
+            bool gripFired = _grip.Tick(f.gripHeld, f.deltaTime, _holdSec, blocked);
+            if (!wasVoided && (_trigger.Voided || _grip.Voided)) _voidedHolds++;
 
             switch (_mode)
             {

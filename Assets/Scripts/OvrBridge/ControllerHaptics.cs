@@ -10,6 +10,9 @@ namespace FixedCamVr.OvrBridge
     /// <see cref="HapticSequenceLogic"/> に委譲し、ここは毎フレーム <c>OVRInput.SetControllerVibration</c> を
     /// RTouch へ適用するだけ（OVRInput の振動は呼び続けないと約 2 秒で自動停止するため、非再生時も
     /// (0,0) を毎フレーム送って停止を保証する）。
+    /// ⚠ 逆に言うと、<b>振幅を送った直後に Update が止まると、その上限までは鳴り続ける</b>。
+    /// アプリが止まる縁（<c>OnApplicationPause</c> / <c>OnApplicationFocus(false)</c>）では明示的に止め、
+    /// 長いフレームをまたいで送りっぱなしだった回はログに残す（<see cref="StallLogSec"/>）。
     ///
     /// 公開 API（OvrControllerBridge / 各コントローラが呼ぶ）:
     ///   <see cref="Ack"/> / <see cref="Action"/> / <see cref="Fire"/> / <see cref="Error"/> /
@@ -79,25 +82,69 @@ namespace FixedCamVr.OvrBridge
         /// </summary>
         public void LeftNotify() => _left.Trigger(HapticSequenceLogic.Pattern.Fire);
 
+        /// <summary>
+        /// これより長いフレームのあいだに振幅 &gt; 0 を送りっぱなしだったら、ログに残す（秒）。
+        /// <c>SetControllerVibration</c> は「次に呼ばれるまで（上限は実行時側の約 2 秒）」鳴り続けるので、
+        /// 直前のフレームで振幅を送ったまま Update が止まると、その長さだけ手元が震え続ける。
+        /// 画にも音にも出ないので、起きたことはここにしか残らない。
+        /// </summary>
+        private const float StallLogSec = 0.25f;
+
+        // 直前のフレームで実際に送った振幅と、その時刻（実時間。maximumDeltaTime で丸められない）。
+        private float _sentR;
+        private float _sentL;
+        private float _lastRealtime = -1f;
+
         private void Update()
         {
+            float now = Time.realtimeSinceStartup;
+            if (_lastRealtime >= 0f)
+            {
+                float gap = now - _lastRealtime;
+                if (gap >= StallLogSec && (_sentR > 0f || _sentL > 0f))
+                    Debug.Log($"[Haptics] フレームが {gap * 1000f:F0}ms 空いたあいだ振動を送りっぱなしだった"
+                              + $"（右 amp={_sentR:F2} / 左 amp={_sentL:F2}）");
+            }
+            _lastRealtime = now;
+
             float dt = Time.deltaTime;
             float amp = _logic.Tick(dt);
             float freq = amp > 0f ? HapticSequenceLogic.Frequency : 0f;
             OVRInput.SetControllerVibration(freq, amp, OVRInput.Controller.RTouch);
+            _sentR = amp;
 
             // 左は体験者の手。右と混ぜない（スタッフの操作が体験者の手に伝わると世界の外の合図になる）。
             float ampL = _left.Tick(dt);
             float freqL = ampL > 0f ? HapticSequenceLogic.Frequency : 0f;
             OVRInput.SetControllerVibration(freqL, ampL, OVRInput.Controller.LTouch);
+            _sentL = ampL;
         }
 
-        private void OnDisable()
+        private void OnDisable() => Silence("OnDisable");
+
+        // アプリが止まる（HMD を外した・システムの面が出た）縁で必ず止める。
+        // 止まっているあいだ Update は来ないので、直前に送った振幅が実行時側の上限まで残る。
+        private void OnApplicationPause(bool paused)
         {
+            if (paused) Silence("OnApplicationPause");
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (!hasFocus) Silence("OnApplicationFocus(false)");
+        }
+
+        private void Silence(string why)
+        {
+            bool wasSounding = _sentR > 0f || _sentL > 0f;
             _logic.Reset();
             _left.Reset();
             OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
             OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
+            _sentR = 0f;
+            _sentL = 0f;
+            _lastRealtime = -1f;
+            if (wasSounding) Debug.Log($"[Haptics] {why}: 鳴っていた振動を止めた");
         }
     }
 }

@@ -306,7 +306,7 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
 |---|---|---|
 | Ack | 監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る） | 40ms・amp 0.25 |
 | Action | 短押しアクション実行（カメラ Next / ステータストグル / 点サンプル確定） | 80ms・amp 0.5 |
-| HoldTick | 長押しカウント進行 | 連続・amp 0.10→0.30 の progress 比例ランプ |
+| HoldTick | 長押しカウント進行 | 連続・amp 0.10→0.30 の progress 比例ランプ。⚠ **トリガー／グリップは頭 0.3 秒を鳴らさない**（`OvrControllerBridge.HoldTickDeadSec`・2026-09-11）。登録の A 0.5 秒ホールドは従来どおり 0 から鳴る |
 | Fire | 長押し発火・モード遷移・確定保存 | 80ms×2（間 80ms）・amp 0.8 |
 | Error | 失敗・拒否（登録の残差 NG やり直し） | 50ms×3（間 60ms）・amp 0.6 |
 
@@ -329,6 +329,11 @@ MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHap
   ⚠ ここに出していた赤 1 行（`ControllerGuidePanel.ShowTransient`）は 2026-08-16 に消した —
   唯一の呼び出し元だった A のカメラ手送りが 2026-08-12 に無くなっていたため（`canon/LEDGER.md` 0052）。
 - **⚠ 実機未検証**（2026-07-21）。振幅・波形の体感、コントローラ未接続時のガイドパネル消灯は現場調整前提
+- ⚠⚠ **A / B と重なったグリップ／トリガーの長押しは、離すまで数えない**（2026-09-11・
+  `ControllerModeLogic.Frame.faceButtonHeld` / `FaceButtonQuietSec` 0.3 秒）。親指で A を押す手は
+  中指で握り込むので、これを許すと**体験を始める A のたびに右の手元が震え続け、2 秒握っていれば
+  ランリセットが撃たれる**（ユーザー報告「最初の A を押したとき右がしばらくバイブし続ける」）。
+  経緯と切り分けは [memory/controller_input_final.md](../memory/controller_input_final.md)
 
 ### 体験の骨格（導入 → 3 周 → 終了）— 2026-07-29〜
 
