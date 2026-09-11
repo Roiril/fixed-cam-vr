@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>廻リ視 — 体験の前に</title>
 <!--
-  タブレットで開く「体験の前に」の面（2026-09-11・canon/LEDGER.md 0185）。
+  タブレットで開く「体験の前に」の面（2026-09-11・canon/LEDGER.md 0185 / 0186）。
     http://192.168.10.10:8099/visitor.html
   クエストα用・β用に 1 台ずつ。体験者が言語とホラー軽減を選び、送ると卓の枠
   （control.visitor.<役>）へ入って、対応するヘッドセットへ届く。
 
-  ⚠ 説明の文はまだ仮（用途と詳細はユーザーが後で詰める）。注意書きの 3 言語は HMD の
-    TitleNotice と同じ文（安全の掲示なので、受付とヘッドセットで食い違わせない）。
+  ⚠ 最初の画面は注意書きと設定だけ（0186）。導入の文は置かない。
+  ⚠ 注意書きの 3 言語は HMD の TitleNotice と同じ文（安全の掲示なので、受付とヘッドセットで食い違わせない）。
+  ⚠ 「反映されたか」は heartbeat が返す実際の値（lang / relief）で判定する。送った値を表示しない。
   ⚠ 外部の CDN と Web フォントは使わない（会場に外の回線が無くても開くため）。
   ⚠ 役（α/β）はこのタブレットの localStorage に持つ。卓には「どのタブレットか」は無い。
     役と Quest の端末 ID を結ぶのは下のスタッフ欄（POST /command bindVisitorDevice）。
@@ -62,7 +63,6 @@
     border:1px solid var(--line); padding:18px 20px; margin:0 0 12px;
     white-space:pre-line; font-size:19px;
   }
-  .notice .lead{color:var(--accent); font-size:22px; margin-bottom:12px; white-space:normal}
   .toggle{
     display:flex; align-items:center; gap:16px; text-align:left; min-height:96px;
   }
@@ -73,15 +73,34 @@
   .toggle.on{border-color:var(--accent)} .toggle.on .box{border-color:var(--accent)}
   .toggle .t{font-size:21px; font-weight:600}
   .toggle .d{font-size:15px; opacity:var(--sub); margin-top:2px; line-height:1.5}
-  .status{
-    border:1px solid var(--line); padding:14px 18px; margin:10px 0 0; min-height:64px;
-    font-size:17px;
-  }
-  .status.ok{border-color:var(--ok)} .status.ok .h{color:var(--ok)}
-  .status.warn{border-color:var(--warn)} .status.warn .h{color:var(--warn)}
+
+  /* ---- 送る前の 1 行 ---- */
+  .status{border:1px solid var(--line); padding:14px 18px; margin:10px 0 0; font-size:17px}
   .status.ng{border-color:var(--ng)} .status.ng .h{color:var(--ng)}
   .status .h{font-weight:600; font-size:19px}
   .status .d{opacity:var(--sub); font-size:15px; margin-top:4px}
+
+  /* ---- 送った後: ヘッドセットが実際に持っている値を、送った値と並べて出す ----
+     色は 3 つだけ。緑 = 反映された / 橙 = 待っている / 赤 = 届かない */
+  .result{border:2px solid var(--line); padding:18px 20px; margin:12px 0 0}
+  .result.ok{border-color:var(--ok)} .result.warn{border-color:var(--warn)} .result.ng{border-color:var(--ng)}
+  .result .rh{display:flex; align-items:center; gap:14px; font-size:24px; font-weight:600; line-height:1.3}
+  .result .rh .glyph{font-size:44px; line-height:1; width:52px; text-align:center; flex:0 0 52px}
+  .result.ok .rh{color:var(--ok)} .result.warn .rh{color:var(--warn)} .result.ng .rh{color:var(--ng)}
+  .result .rd{opacity:var(--sub); font-size:15px; margin:6px 0 0 66px; line-height:1.5}
+  .cmp{margin:16px 0 0; border-top:1px solid var(--line)}
+  .cmp .r{display:grid; grid-template-columns:5.5em 1fr 1.4em 1fr 2em; align-items:center; gap:8px;
+          padding:12px 0; border-bottom:1px solid var(--line); font-size:20px}
+  .cmp .k{opacity:var(--sub); font-size:15px}
+  .cmp .sent{opacity:var(--sub)}
+  .cmp .arrow{opacity:var(--mute); text-align:center}
+  .cmp .got{font-weight:600}
+  .cmp .mark{text-align:center; font-size:24px; font-weight:700}
+  .cmp .r.hit .got,.cmp .r.hit .mark{color:var(--ok)}
+  .cmp .r.miss .mark{color:var(--warn)}
+  .cmp .r.stale .got{opacity:.4}
+  .cmp .caphead{display:grid; grid-template-columns:5.5em 1fr 1.4em 1fr 2em; gap:8px; font-size:12px;
+                letter-spacing:.12em; opacity:var(--mute); padding:8px 0 0; text-transform:uppercase}
   .note{font-size:14px; opacity:var(--mute); line-height:1.55; margin:6px 0 0}
   details{margin-top:40px; border-top:1px solid var(--line); padding-top:6px}
   summary{font-size:13px; letter-spacing:.14em; opacity:var(--mute); cursor:pointer; padding:10px 0; list-style:none}
@@ -114,11 +133,8 @@
   <button data-lang="fr">Français</button>
 </div>
 
-<h2 id="hNotice">体験の前に</h2>
-<div class="notice">
-  <div class="lead" id="lead"></div>
-  <div id="noticeText"></div>
-</div>
+<h2 id="hNotice">注意</h2>
+<div class="notice" id="noticeText"></div>
 
 <h2 id="hRelief">設定</h2>
 <button class="toggle" id="reliefBtn">
@@ -133,6 +149,15 @@
   <button class="big" id="sendBtn"></button>
 </div>
 <div class="status" id="status"><div class="h" id="stH">—</div><div class="d" id="stD"></div></div>
+<div class="result" id="result" hidden>
+  <div class="rh"><span class="glyph" id="rG">…</span><span id="rH">—</span></div>
+  <div class="rd" id="rD"></div>
+  <div class="cmp">
+    <div class="caphead"><span></span><span id="capSent">選んだ</span><span></span><span id="capGot">ヘッドセット</span><span></span></div>
+    <div class="r" id="rowLang"><span class="k" id="kLang">言語</span><span class="sent" id="sLang">—</span><span class="arrow">→</span><span class="got" id="gLang">—</span><span class="mark" id="mLang">…</span></div>
+    <div class="r" id="rowRelief"><span class="k" id="kRelief">軽減</span><span class="sent" id="sRelief">—</span><span class="arrow">→</span><span class="got" id="gRelief">—</span><span class="mark" id="mRelief">…</span></div>
+  </div>
+</div>
 <div class="row" style="margin-top:10px">
   <button id="resetBtn" style="text-align:center"></button>
 </div>
@@ -168,74 +193,93 @@
   'use strict';
   // ---- 文言（体験者が読む面。3 言語）----------------------------------------
   // ⚠ 注意書きは HMD の TitleNotice と同じ文。片方だけ直すと受付とヘッドセットで食い違う。
-  // ⚠ lead（導入の 1 行）は仮の文。用途をユーザーが詰めたら差し替える（canon/OPEN.md）。
   const T = {
     ja: {
-      hNotice: '体験の前に',
-      lead: '調査員となって、この呪われた壁を調査してください。',
+      hNotice: '注意',
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
       hRelief: '設定',
       reliefTitle: 'ホラー軽減モード',
       reliefDesc: '音が半分になり、陽気な曲が流れます。映像と時間は変わりません。',
       send: 'この設定で始める',
       reset: 'はじめから',
-      st: {
+      kLang: '言語', kRelief: '軽減', capSent: '選んだ', capGot: 'ヘッドセット',
+      reliefOn: 'あり', reliefOff: 'なし',
+      pre: {
         idle: ['まだ送っていません', '言語と設定を選んで、「この設定で始める」を押してください'],
-        sending: ['送っています…', ''],
-        sent: ['ヘッドセットへ送りました', 'スタッフの案内でヘッドセットを着けてください'],
-        applied: ['ヘッドセットに届きました', 'スタッフの案内でヘッドセットを着けてください'],
-        later: ['次の体験の開始時に反映されます', 'いまヘッドセットは体験中です'],
         unbound: ['ヘッドセットがまだ結ばれていません', 'スタッフを呼んでください'],
         noserver: ['卓に繋がっていません', 'スタッフを呼んでください'],
         norole: ['このタブレットの役が決まっていません', 'スタッフを呼んでください'],
+      },
+      post: {
+        sending: ['送っています…', ''],
+        applied: ['ヘッドセットに反映されました', 'スタッフの案内でヘッドセットを着けてください'],
+        waiting: ['ヘッドセットの反映を待っています…', '注意書きの画面になると反映されます'],
+        later: ['いまヘッドセットは体験中です', '次の体験の開始時に反映されます'],
+        dead: ['ヘッドセットの応答がありません', 'スタッフを呼んでください'],
+        unbound: ['ヘッドセットがまだ結ばれていません', 'スタッフを呼んでください'],
+        noserver: ['卓に繋がっていません', 'スタッフを呼んでください'],
         fail: ['送れませんでした', 'もう一度押してください'],
       },
     },
     en: {
-      hNotice: 'Before you begin',
-      lead: 'You are an investigator. Examine this cursed wall.',
+      hNotice: 'Notice',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
       hRelief: 'Settings',
       reliefTitle: 'Reduced-horror mode',
       reliefDesc: 'Sound is halved and a cheerful tune plays. The visuals and timing do not change.',
       send: 'Start with these settings',
       reset: 'Start over',
-      st: {
+      kLang: 'Language', kRelief: 'Reduced', capSent: 'Chosen', capGot: 'Headset',
+      reliefOn: 'on', reliefOff: 'off',
+      pre: {
         idle: ['Not sent yet', 'Choose a language and settings, then press "Start with these settings"'],
-        sending: ['Sending…', ''],
-        sent: ['Sent to the headset', 'Put on the headset when staff guide you'],
-        applied: ['The headset has received it', 'Put on the headset when staff guide you'],
-        later: ['Will apply when the next session starts', 'The headset is in use right now'],
         unbound: ['No headset is linked yet', 'Please call a member of staff'],
         noserver: ['Not connected to the desk', 'Please call a member of staff'],
         norole: ['This tablet has no role yet', 'Please call a member of staff'],
+      },
+      post: {
+        sending: ['Sending…', ''],
+        applied: ['Applied on the headset', 'Put on the headset when staff guide you'],
+        waiting: ['Waiting for the headset…', 'It applies once the headset shows the notice screen'],
+        later: ['The headset is in use right now', 'It will apply when the next session starts'],
+        dead: ['No response from the headset', 'Please call a member of staff'],
+        unbound: ['No headset is linked yet', 'Please call a member of staff'],
+        noserver: ['Not connected to the desk', 'Please call a member of staff'],
         fail: ['Could not send', 'Please press again'],
       },
     },
     fr: {
-      hNotice: 'Avant de commencer',
-      lead: 'Vous êtes enquêteur. Examinez ce mur maudit.',
+      hNotice: 'Avertissement',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
       hRelief: 'Réglages',
       reliefTitle: 'Mode horreur atténuée',
       reliefDesc: 'Le son est réduit de moitié et une musique gaie est diffusée. Les images et la durée ne changent pas.',
       send: 'Commencer avec ces réglages',
       reset: 'Recommencer',
-      st: {
+      kLang: 'Langue', kRelief: 'Atténué', capSent: 'Choisi', capGot: 'Casque',
+      reliefOn: 'oui', reliefOff: 'non',
+      pre: {
         idle: ['Pas encore envoyé', 'Choisissez une langue et des réglages, puis appuyez sur « Commencer »'],
-        sending: ['Envoi…', ''],
-        sent: ['Envoyé au casque', 'Mettez le casque quand le personnel vous guide'],
-        applied: ['Le casque l’a reçu', 'Mettez le casque quand le personnel vous guide'],
-        later: ['Sera appliqué au début de la prochaine session', 'Le casque est en cours d’utilisation'],
         unbound: ['Aucun casque n’est encore relié', 'Appelez un membre du personnel'],
         noserver: ['Non connecté au poste', 'Appelez un membre du personnel'],
         norole: ['Cette tablette n’a pas encore de rôle', 'Appelez un membre du personnel'],
+      },
+      post: {
+        sending: ['Envoi…', ''],
+        applied: ['Appliqué sur le casque', 'Mettez le casque quand le personnel vous guide'],
+        waiting: ['En attente du casque…', 'Appliqué dès que le casque affiche l’avertissement'],
+        later: ['Le casque est en cours d’utilisation', 'Appliqué au début de la prochaine session'],
+        dead: ['Le casque ne répond pas', 'Appelez un membre du personnel'],
+        unbound: ['Aucun casque n’est encore relié', 'Appelez un membre du personnel'],
+        noserver: ['Non connecté au poste', 'Appelez un membre du personnel'],
         fail: ['Envoi impossible', 'Appuyez de nouveau'],
       },
     },
   };
   const ROLE_NAME = { alpha: 'クエストα', beta: 'クエストβ', '': '—' };
   const LANG_NAME = { ja: '日本語', en: 'English', fr: 'Français' };
+  const GLYPH = { applied: '✓', waiting: '…', sending: '…', later: '⏳', dead: '✕', unbound: '✕', noserver: '✕', fail: '✕' };
+  const TONE = { applied: 'ok', waiting: 'warn', sending: 'warn', later: 'warn', dead: 'ng', unbound: 'ng', noserver: 'ng', fail: 'ng' };
 
   const $ = (id) => document.getElementById(id);
   const state = {
@@ -252,13 +296,14 @@
   function renderText() {
     const t = T[state.lang];
     $('hNotice').textContent = t.hNotice;
-    $('lead').textContent = t.lead;
     $('noticeText').textContent = t.notice;
     $('hRelief').textContent = t.hRelief;
     $('reliefTitle').textContent = t.reliefTitle;
     $('reliefDesc').textContent = t.reliefDesc;
     $('sendBtn').textContent = t.send;
     $('resetBtn').textContent = t.reset;
+    $('kLang').textContent = t.kLang; $('kRelief').textContent = t.kRelief;
+    $('capSent').textContent = t.capSent; $('capGot').textContent = t.capGot;
     document.querySelectorAll('#langRow button').forEach((b) => {
       b.classList.toggle('on', b.dataset.lang === state.lang);
     });
@@ -267,47 +312,83 @@
     $('roleLabel').innerHTML = state.role
       ? `<b>${ROLE_NAME[state.role]}</b>`
       : '<span style="color:var(--warn)">役が未設定</span>';
-    $('roleAlpha').classList.toggle('on', state.role === 'alpha');
-    $('roleBeta').classList.toggle('on', state.role === 'beta');
     $('roleAlpha').style.borderColor = state.role === 'alpha' ? 'var(--accent)' : '';
     $('roleBeta').style.borderColor = state.role === 'beta' ? 'var(--accent)' : '';
   }
 
-  // 送った後の状態は、卓の枠と機の heartbeat から決める（「送ったつもり」を出さない）。
-  function statusKey() {
-    if (state.ui === 'sending' || state.ui === 'fail') return state.ui;
+  // 結ばれている機の直近 heartbeat（無ければ null）と、役の枠。
+  function boundDevice() {
+    const d = state.devices;
+    if (!d || !d.roles || !state.role) return { dev: null, roleInfo: null };
+    const roleInfo = d.roles[state.role];
+    const boundId = roleInfo ? roleInfo.deviceId : '';
+    const dev = boundId ? (d.devices || []).find((x) => x.deviceId === boundId) || null : null;
+    return { dev, roleInfo, boundId };
+  }
+
+  // 送る前の 1 行。
+  function preKey() {
     if (!state.role) return 'norole';
     if (!state.online) return 'noserver';
-    const d = state.devices;
-    const roleInfo = d && d.roles && d.roles[state.role];
-    const boundId = roleInfo ? roleInfo.deviceId : '';
+    const { boundId } = boundDevice();
     if (!boundId) return 'unbound';
-    if (!state.sent) return 'idle';
-    const dev = (d.devices || []).find((x) => x.deviceId === boundId);
-    if (!dev || !dev.alive) return 'sent';
-    const slotEpoch = roleInfo.slot ? roleInfo.slot.epoch : 0;
-    const gotIt = dev.visitorAppliedEpoch >= state.sent.epoch
-      && dev.lang === state.sent.lang && dev.relief === state.sent.relief;
-    if (gotIt) return 'applied';
+    return 'idle';
+  }
+
+  // 送った後。**ヘッドセットが実際に返している値**で決める（送ったつもりを出さない）。
+  function postKey() {
+    if (state.ui === 'sending' || state.ui === 'fail') return state.ui;
+    if (!state.online) return 'noserver';
+    const { dev, boundId } = boundDevice();
+    if (!boundId) return 'unbound';
+    if (!dev || !dev.alive) return 'dead';
+    const hit = dev.lang === state.sent.lang && dev.relief === state.sent.relief
+      && dev.visitorAppliedEpoch >= state.sent.epoch && state.sent.epoch > 0;
+    if (hit) return 'applied';
     if (dev.phase === 'RUN' || dev.phase === 'END') return 'later';
-    if (dev.visitorPendingEpoch >= state.sent.epoch && dev.visitorAppliedEpoch < state.sent.epoch) {
-      // 届いているが、まだ注意書きの段でない（黒の待ち・タイトル・導入）→ タイトルで載る
-      return 'sent';
-    }
-    void slotEpoch;
-    return 'sent';
+    return 'waiting';
   }
 
   function renderStatus() {
-    const key = statusKey();
-    const t = T[state.lang].st[key] || T[state.lang].st.idle;
-    const el = $('status');
-    el.className = 'status ' + ({
-      applied: 'ok', later: 'warn', unbound: 'ng', noserver: 'ng', norole: 'ng', fail: 'ng',
-    }[key] || '');
-    $('stH').textContent = t[0];
-    $('stD').textContent = t[1];
-    $('sendBtn').disabled = state.ui === 'sending';
+    const t = T[state.lang];
+    if (!state.sent && state.ui !== 'sending' && state.ui !== 'fail') {
+      const key = preKey();
+      const s = t.pre[key];
+      $('status').hidden = false; $('result').hidden = true;
+      $('status').className = 'status ' + (key === 'idle' ? '' : 'ng');
+      $('stH').textContent = s[0]; $('stD').textContent = s[1];
+      $('sendBtn').disabled = false;
+      return;
+    }
+    const key = postKey();
+    const s = t.post[key];
+    $('status').hidden = true; $('result').hidden = false;
+    $('result').className = 'result ' + (TONE[key] || '');
+    $('rG').textContent = GLYPH[key] || '…';
+    $('rH').textContent = s[0]; $('rD').textContent = s[1];
+    $('sendBtn').disabled = key === 'sending';
+
+    // 2 行の比較。右列はヘッドセットが返した値そのもの。
+    const { dev } = boundDevice();
+    const sent = state.sent || { lang: state.lang, relief: state.relief };
+    const gotLang = dev ? dev.lang : null;
+    const gotRelief = dev ? dev.relief : null;
+    const alive = !!(dev && dev.alive);
+    const settled = key === 'applied';
+    const holding = key === 'later';   // いまの体験者の値が出ている（比べても意味が無い）
+    row('rowLang', 'sLang', 'gLang', 'mLang', LANG_NAME[sent.lang],
+        gotLang == null ? '—' : LANG_NAME[gotLang] || gotLang,
+        alive && gotLang === sent.lang && settled, alive, holding);
+    row('rowRelief', 'sRelief', 'gRelief', 'mRelief', sent.relief ? t.reliefOn : t.reliefOff,
+        gotRelief == null ? '—' : (gotRelief ? t.reliefOn : t.reliefOff),
+        alive && gotRelief === sent.relief && settled, alive, holding);
+  }
+  function row(rowId, sId, gId, mId, sentText, gotText, hit, alive, holding) {
+    $(sId).textContent = sentText;
+    $(gId).textContent = gotText;
+    const r = $(rowId);
+    r.className = 'r ' + (hit ? 'hit' : (alive && !holding ? 'miss' : 'stale'));
+    $(mId).textContent = hit ? '✓' : (holding ? '⏳' : (alive ? '…' : '—'));
   }
 
   function renderStaff() {
@@ -323,7 +404,7 @@
         const badge = x.role ? `<span class="badge">${ROLE_NAME[x.role]}</span>` : '';
         return `<div class="dev">
           <span class="lamp ${x.alive ? 'ok' : ''}"></span><span class="id">${x.shortId}</span>${badge}
-          <div class="meta">${x.deviceModel || '?'} ・ ${x.phase || '—'} ・ ${LANG_NAME[x.lang] || x.lang} ・ 軽減 ${x.relief ? 'あり' : 'なし'} ・ ${age}
+          <div class="meta">${x.deviceModel || '?'} ・ ${x.phase || '—'}${x.titleStage ? '／' + x.titleStage : ''} ・ ${LANG_NAME[x.lang] || x.lang} ・ 軽減 ${x.relief ? 'あり' : 'なし'} ・ ${age}
             ・ rev ${x.appliedRev} ・ 世代 卓${x.visitorPendingEpoch}/書${x.visitorAppliedEpoch}/始${x.visitorConsumedEpoch}</div>
           <div class="row">
             <button data-bind="alpha" data-id="${x.deviceId}" ${x.role === 'alpha' ? 'disabled' : ''}>α に結ぶ</button>
@@ -369,6 +450,7 @@
       state.sent = { lang: state.lang, relief: state.relief, epoch: 0, rev: j.rev };
       state.ui = 'sent';
       await poll();
+      $('result').scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch (e) {
       console.warn('setVisitor failed', e);
       state.ui = 'fail';
@@ -397,7 +479,6 @@
     const b = ev.target.closest('button[data-lang]');
     if (!b) return;
     state.lang = b.dataset.lang;
-    state.ui = state.sent ? state.ui : 'idle';
     render();
   });
   $('reliefBtn').addEventListener('click', () => { state.relief = !state.relief; render(); });
@@ -406,6 +487,7 @@
     // 面だけ戻す（枠は体験者が始めた瞬間に卓が戻す。送ったまま帰った人の分はスタッフ欄で空にする）
     state.lang = 'ja'; state.relief = false; state.sent = null; state.ui = 'idle';
     render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   });
   $('roleAlpha').addEventListener('click', () => setRole('alpha'));
   $('roleBeta').addEventListener('click', () => setRole('beta'));

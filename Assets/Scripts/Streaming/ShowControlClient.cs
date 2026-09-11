@@ -1570,6 +1570,7 @@ namespace FixedCamVr.Streaming
         // ---- タブレットの設定（0185）----
         private string _deviceId = "";
         private string _deviceModel = "";
+        private TitleScreen? _titleForHb;   // heartbeat の titleStage 用（遅延解決・無ければ空文字）
 
         /// <summary>この機の端末 ID（<c>SystemInfo.deviceUniqueIdentifier</c>）。テレメトリの <c>ev=boot</c> も出す。</summary>
         public string DeviceId => _deviceId;
@@ -3350,6 +3351,10 @@ namespace FixedCamVr.Streaming
             public int visitorConsumedEpoch;
             public string lang = "ja";
             public bool relief;
+            // titleStage = タイトルの段（Off / Wait / In / Hold / Out / Done）。タブレットが
+            //   「注意書きの段で待っているか（＝ いま書けるか）」を出すために要る。phase（INTRO）だけでは
+            //   黒の待ちと導入の演出中を区別できない。
+            public string titleStage = "";
             // 前回の heartbeat 以降に確定した区間滞在（実測）。卓が集計して
             // リボン UI の「実測 平均 Ns」に使う。空配列で送ってよい（サーバ側は無視）。
             public DwellHb[] dwell = Array.Empty<DwellHb>();
@@ -3450,6 +3455,8 @@ namespace FixedCamVr.Streaming
                     hb.visitorConsumedEpoch = VisitorPrefs.ConsumedEpoch;
                     hb.lang = ShowLanguage.Code(ShowLanguage.Current);
                     hb.relief = HorrorRelief.Enabled;
+                    if (_titleForHb == null) _titleForHb = FindObjectOfType<TitleScreen>();
+                    hb.titleStage = _titleForHb != null ? _titleForHb.Stage.ToString() : "";
 
                     ShowRunDirector? run = ResolveRunDirector();
                     if (run != null)

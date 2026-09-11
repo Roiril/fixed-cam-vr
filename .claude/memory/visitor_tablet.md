@@ -23,6 +23,14 @@ metadata:
 | 書く | `TitleScreen.BeginTitle`（戻す → 載せる）と `TitleScreen.Update`（Wait の段で届いたら即） |
 | 観測 | `ev=boot id=`（端末 ID の頭 6 桁）／ `ev=sum visitor=<役>/<卓>/<書>/<始>/<回数>`／解析器「## タブレットの設定」 |
 
+## 「反映されたか」は heartbeat の実値で出す（0186）
+
+送った後の枠は **選んだ値 → ヘッドセットが返している `lang` / `relief`** を 2 行で並べ、
+一致して `visitorAppliedEpoch >= 送った世代` なら緑の ✓。送った値を写して「反映済み」と出すことはしない
+（memory/show_json_is_live_config.md の「書いたつもり」を出さない、と同じ理屈）。
+待ちは橙・本編中（phase RUN/END）は「次の開始時」・heartbeat が 6 秒来なければ赤。
+heartbeat の `titleStage`（Wait なら注意書きの段 ＝ いま書ける）はスタッフ欄に出る。
+
 ## 正は卓が持つ。Quest は世代番号を 3 つ持つだけ
 
 `control.visitor.<役> = {lang, relief, epoch}`。タブレットが書くたびに epoch +1。
@@ -86,7 +94,7 @@ heartbeat に `deviceId`（`SystemInfo.deviceUniqueIdentifier`）と `deviceMode
 
 ## まだ決めていないこと（`canon/OPEN.md`）
 
-- タブレットに出す説明の文（いまは仮。注意書きは HMD の `TitleNotice` と同じ文）
+- 導入の文をどこへ置くか（0186 で最初の画面からは外した。注意書きは HMD の `TitleNotice` と同じ文）
 - HMD 側の単押し（言語）と長押し（軽減）を残すか（いまは残っている。両方効く）
 - 当日の手順書（`docs/onsite-checklist.md`）への追記（用途が決まってから）
 

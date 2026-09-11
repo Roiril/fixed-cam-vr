@@ -158,6 +158,7 @@ def device_rows(devices, ctrl, now, alive_sec=6.0):
             'ageSec': age,
             'alive': age is not None and age < alive_sec,
             'phase': hb.get('phase') or '',
+            'titleStage': hb.get('titleStage') or '',
             'lang': hb.get('lang') or 'ja',
             'relief': bool(hb.get('relief')),
             'visitorRole': hb.get('visitorRole') or '',
