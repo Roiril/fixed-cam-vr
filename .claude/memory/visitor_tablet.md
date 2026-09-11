@@ -40,6 +40,12 @@ inline の opacity を書いても効かない（実際に踏んだ）。`.in` �
 女性版 `doctor_v2_female.png` も同じプロンプトで焼いてある。動画に替えるときは `doctor.mp4.bytes` を置いて `<img>` を
 `<video autoplay muted loop playsinline>` にする（口は Range 対応済み。Safari は Range が無いと動画を再生しない）。
 
+⚠ **値の入れ替え（`swapBig`）は「いまの 1 枚」を `el._cur` で持つ。** `querySelector('span')` で拾うと、滑っている最中に
+もう一度切り替えたとき、出て行く途中の枚を「いま」と誤認して 2 枚残る（文字が重なる。ユーザー報告）。
+言語を替えたときの軽減の訳語のように**値が変わっていない束は滑らせない**（`animate=false`）— 滑ると
+「軽減も変わった」に見える（同報告）。的は 11 インチ前提: 矢印 56×40・候補 48px 高・大きな値そのものも押せる・輪 40px。
+送った後も「設定を変える」で束へ戻れる（`state.view`）。送り直せば新しい受理番号で届き、注意書きの段なら即座に書き替わる。
+
 机上の見え方は `?demo=applied|waiting|later|noserver|fail&lang=en` で固定できる（実機では使わない）。
 全解像度の絵は headless Edge で撮る（in-app browser は viewport をスケールするので判定に使わない）:
 ```powershell

@@ -80,8 +80,8 @@
   @keyframes pulse{0%,100%{opacity:.35; transform:scale(.85)} 50%{opacity:1; transform:scale(1)}}
 
   /* ---------- 左下: 操作の束 ---------- */
-  .panel{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(150px,23vh,210px); width:min(52vw,640px); display:flex; gap:clamp(18px,3vw,44px); align-items:flex-end; transition:opacity .6s var(--ease-io)}
-  .ctl{position:relative; flex:1 1 0; padding:16px 18px 12px; min-width:0}
+  .panel{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(150px,23vh,210px); width:min(54vw,680px); display:flex; gap:clamp(18px,3vw,44px); align-items:flex-end; transition:opacity .6s var(--ease-io)}
+  .ctl{position:relative; flex:1 1 0; padding:16px 18px 10px; min-width:0}
   .ctl .tab{display:inline-flex; align-items:center; gap:10px; font-family:var(--sans); font-size:11px; letter-spacing:.3em; color:var(--ink-2); text-transform:uppercase; white-space:nowrap}
   .ctl .tab b{font-family:var(--serif); font-weight:500; font-size:13px; letter-spacing:.26em; color:var(--ink)}
   .ctl .tab .hatch{display:inline-block; width:64px; height:9px; transform-origin:left; transform:scaleX(0); animation:hatch 1s var(--ease) forwards; animation-delay:.6s;
@@ -89,18 +89,19 @@
   .ctl.focus .tab .hatch{background:repeating-linear-gradient(120deg, var(--red) 0 6px, transparent 6px 11px)}
   @keyframes hatch{to{transform:scaleX(1)}}
   .ctl .tag{position:absolute; right:18px; top:16px; font-family:var(--sans); font-size:9px; letter-spacing:.28em; color:var(--ink-3)}
-  .ctl .val{display:flex; align-items:center; gap:10px; margin-top:10px; min-height:52px}
-  .ctl .arrows{display:flex; flex-direction:column; gap:6px}
-  .ctl .arrows button{width:40px; height:24px; color:var(--ink-2); font-family:var(--sans); font-size:11px; line-height:1; transition:color .3s, transform .3s var(--ease)}
+  .ctl .val{display:flex; align-items:center; gap:10px; margin-top:10px; min-height:84px}
+  .ctl .arrows{display:flex; flex-direction:column; gap:2px}
+  .ctl .arrows button{width:56px; height:40px; color:var(--ink-2); font-family:var(--sans); font-size:15px; line-height:1; transition:color .3s, transform .3s var(--ease)}
   .ctl .arrows button:active{color:var(--ink); transform:scale(1.25)}
-  .ctl .big{position:relative; font-family:var(--serif); font-weight:500; font-size:clamp(24px,3.4vw,40px); letter-spacing:.06em; line-height:1.15; color:var(--ink); overflow:hidden; min-width:6.5em; height:1.3em}
+  /* 大きな値そのものも的（押すと次へ）。指 1 本ぶんの高さを確保する */
+  .ctl .big{position:relative; font-family:var(--serif); font-weight:500; font-size:clamp(28px,3.6vw,44px); letter-spacing:.06em; line-height:1.15; color:var(--ink); overflow:hidden; min-width:6.5em; height:1.3em; cursor:pointer; padding-right:.4em}
   .ctl .big span{position:absolute; left:0; top:0; white-space:nowrap; transition:transform .55s var(--ease), opacity .45s var(--ease-io)}
   .ctl .big span.out-up{transform:translateY(-110%); opacity:0}
   .ctl .big span.out-dn{transform:translateY(110%); opacity:0}
   .ctl .big span.in-up{transform:translateY(110%); opacity:0}
   .ctl .big span.in-dn{transform:translateY(-110%); opacity:0}
-  .ctl .alts{display:flex; flex-wrap:wrap; gap:4px 18px; margin:6px 0 0 50px; min-height:1.5em}
-  .ctl .alts button{font-family:var(--serif); font-size:clamp(14px,1.5vw,18px); letter-spacing:.06em; color:var(--ink-3); transition:color .35s}
+  .ctl .alts{display:flex; flex-wrap:wrap; gap:2px 6px; margin:2px 0 0 60px; min-height:1.5em}
+  .ctl .alts button{font-family:var(--serif); font-size:clamp(15px,1.6vw,20px); letter-spacing:.06em; color:var(--ink-3); transition:color .35s; min-height:48px; padding:0 12px}
   .ctl .alts button:active{color:var(--ink)}
   /* 四隅の括弧。いま触っている束にだけ出る。動くときは少し外から寄る */
   .ctl .br{position:absolute; width:14px; height:14px; border:1px solid var(--ink-2); opacity:0; transition:all .6s var(--ease)}
@@ -136,8 +137,10 @@
   .readout .r .mark{text-align:center; font-family:var(--sans); font-size:16px; color:var(--ink-3); transition:color .5s}
   .readout .r.hit .got,.readout .r.hit .mark{color:var(--gold)}
   .readout .r.stale .got{color:var(--ink-3)}
-  .readout .again{margin:14px 0 0 48px; font-family:var(--sans); font-size:11px; letter-spacing:.3em; color:var(--ink-3); text-transform:uppercase; transition:color .3s}
-  .readout .again:active{color:var(--ink)}
+  .readout .acts{display:flex; gap:10px; margin:14px 0 0 48px}
+  .readout .again{border:1px solid var(--line); padding:0 18px; min-height:52px; font-family:var(--serif); font-size:clamp(14px,1.4vw,17px); letter-spacing:.14em; color:var(--ink); transition:color .3s, border-color .3s}
+  .readout .again.dim{color:var(--ink-3); border-color:var(--line-2)}
+  .readout .again:active{color:var(--gold); border-color:var(--gold)}
 
   /* ---------- 下中央: 字幕（博士の言葉） ---------- */
   .subtitle{position:absolute; left:0; right:0; margin:0 auto; bottom:clamp(26px,5vh,50px); width:min(42vw,700px); text-align:center; font-family:var(--serif); font-size:clamp(15px,1.55vw,21px); letter-spacing:.08em; line-height:1.7; min-height:3.4em; color:var(--ink); text-shadow:0 1px 14px rgba(0,0,0,.9); white-space:pre-line; pointer-events:none}
@@ -145,15 +148,15 @@
   .subtitle .dash{color:var(--ink-2); margin-right:.5em}
 
   /* ---------- 右下: 進む ---------- */
-  .continue{position:absolute; right:clamp(18px,3vw,40px); bottom:clamp(24px,4.6vh,46px); display:flex; align-items:center; gap:16px; font-family:var(--sans); font-size:12px; letter-spacing:.34em; color:var(--ink); text-transform:uppercase; padding:10px 6px 10px 12px}
-  .continue .ring{position:relative; width:30px; height:30px; border-radius:50%; border:1.5px solid var(--ink-2); flex:0 0 30px; transition:all .5s var(--ease)}
-  .continue .ring::after{content:""; position:absolute; inset:4px; border-radius:50%; background:var(--red); transform:scale(0); transition:transform .5s var(--ease)}
+  .continue{position:absolute; right:clamp(18px,3vw,40px); bottom:clamp(20px,4vh,40px); display:flex; align-items:center; gap:18px; font-family:var(--sans); font-size:12px; letter-spacing:.34em; color:var(--ink); text-transform:uppercase; padding:14px 10px 14px 14px; min-height:68px}
+  .continue .ring{position:relative; width:40px; height:40px; border-radius:50%; border:1.5px solid var(--ink-2); flex:0 0 40px; transition:all .5s var(--ease)}
+  .continue .ring::after{content:""; position:absolute; inset:5px; border-radius:50%; background:var(--red); transform:scale(0); transition:transform .5s var(--ease)}
   .continue:active .ring{border-color:var(--ink)}
   .continue:active .ring::after{transform:scale(.6)}
   .continue.busy .ring{border-style:dashed; animation:spin 2.4s linear infinite}
   .continue.done .ring{border-color:var(--gold); box-shadow:0 0 16px rgba(233,207,154,.35)}
   .continue.done .ring::after{transform:scale(1); background:var(--gold)}
-  .continue .jp{font-family:var(--serif); font-size:clamp(14px,1.5vw,18px); letter-spacing:.2em; text-transform:none}
+  .continue .jp{font-family:var(--serif); font-size:clamp(16px,1.7vw,21px); letter-spacing:.2em; text-transform:none}
   .continue[disabled]{opacity:.45}
 
   /* ---------- スタッフ ---------- */
@@ -232,7 +235,7 @@
       <div class="r" id="rowLang"><span class="k" id="kLang">言語</span><span class="sent" id="sLang">—</span><span class="arrow">→</span><span class="got" id="gLang">—</span><span class="mark" id="mLang">…</span></div>
       <div class="r" id="rowRelief"><span class="k" id="kRelief">軽減</span><span class="sent" id="sRelief">—</span><span class="arrow">→</span><span class="got" id="gRelief">—</span><span class="mark" id="mRelief">…</span></div>
     </div>
-    <button class="again" id="resetBtn">reset</button>
+    <div class="acts"><button class="again" id="editBtn">edit</button><button class="again dim" id="resetBtn">reset</button></div>
   </div>
 
   <div class="subtitle in" id="subtitle" style="--i:5"></div>
@@ -263,7 +266,7 @@
       reliefDesc: 'ホラー軽減 — 音が半分になり、陽気な曲が流れます。映像と時間は変わりません。',
       notice: ['本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます',
                '体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください'],
-      send: 'この設定で始める', reset: 'はじめから',
+      send: 'この設定で始める', reset: 'はじめから', edit: '設定を変える',
       pre: { noserver: 'ヘッドセットに繋がっていません。スタッフを呼んでください' },
       post: {
         sending: ['送っています', ''],
@@ -280,7 +283,7 @@
       reliefDesc: 'Reduced-horror mode — sound is halved and a cheerful tune plays. The visuals and timing do not change.',
       notice: ['This work contains horror imagery and\nscenes meant to unsettle or frighten.',
                'If you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.'],
-      send: 'Start with these settings', reset: 'Start over',
+      send: 'Start with these settings', reset: 'Start over', edit: 'Change settings',
       pre: { noserver: 'Not connected to the headset. Please call a member of staff' },
       post: {
         sending: ['Sending', ''],
@@ -297,7 +300,7 @@
       reliefDesc: 'Mode horreur atténuée — le son est réduit de moitié et une musique gaie est diffusée. Les images et la durée ne changent pas.',
       notice: ["Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.",
                'Si vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.'],
-      send: 'Commencer avec ces réglages', reset: 'Recommencer',
+      send: 'Commencer avec ces réglages', reset: 'Recommencer', edit: 'Modifier les réglages',
       pre: { noserver: 'Non connecté au casque. Appelez un membre du personnel' },
       post: {
         sending: ['Envoi', ''],
@@ -317,20 +320,35 @@
   const $ = (id) => document.getElementById(id);
   const state = {
     lang: 'ja', relief: false, focus: 'lang',
-    sent: null, ui: 'idle', st: null, online: false,
+    sent: null,          // 最後に送ったもの {lang, relief, seq}
+    ui: 'idle',          // idle | sending | sent | fail
+    view: 'edit',        // edit（束を出している）| result（読み出しを出している）
+    st: null, online: false,
     subtitleKey: '',
   };
 
   // ---- 大きな値の入れ替え（上下へ滑る）------------------------------------
-  function swapBig(el, text, dir) {
-    const cur = el.querySelector('span');
-    if (cur && cur.textContent === text) return;
+  // ⚠ 「いまの 1 枚」は el._cur で持つ。querySelector で拾うと、滑っている最中にもう一度切り替えたとき
+  //   出て行く途中の古い枚を「いま」と誤認して、新しい枚が 2 枚残る（文字が重なる）。
+  //   animate=false なら滑らせずに文字だけ替える（言語を替えたときの軽減の訳語など、値が変わっていないもの）。
+  function swapBig(el, text, dir, animate) {
+    const cur = el._cur || el.querySelector('span');
+    if (cur && cur.textContent === text && !cur.classList.contains('out-up') && !cur.classList.contains('out-dn')) return;
+    // 出て行く途中のものは今すぐ消す（重ねない）
+    el.querySelectorAll('span').forEach((sp) => { if (sp !== cur) sp.remove(); });
+    if (!animate) {
+      if (cur) { cur.className = ''; cur.textContent = text; el._cur = cur; return; }
+    }
     const next = document.createElement('span');
     next.textContent = text;
-    next.className = dir < 0 ? 'in-dn' : 'in-up';
+    next.className = animate ? (dir < 0 ? 'in-dn' : 'in-up') : '';
     el.appendChild(next);
-    if (cur) { cur.className = dir < 0 ? 'out-dn' : 'out-up'; setTimeout(() => cur.remove(), 600); }
-    requestAnimationFrame(() => requestAnimationFrame(() => { next.className = ''; }));
+    el._cur = next;
+    if (cur) {
+      cur.className = dir < 0 ? 'out-dn' : 'out-up';
+      setTimeout(() => { if (cur.parentNode && cur !== el._cur) cur.remove(); }, 600);
+    }
+    if (animate) setTimeout(() => { if (next === el._cur) next.className = ''; }, 20);
   }
 
   // ---- 字幕（博士の言葉）------------------------------------------------
@@ -361,18 +379,19 @@
   }
 
   // ---- 描画 ---------------------------------------------------------------
-  function renderText(dir) {
+  function renderText(dir, changed) {
     const t = T[state.lang];
     $('tLang').textContent = t.tLang; $('tRelief').textContent = t.tRelief;
     $('kLang').textContent = t.kLang; $('kRelief').textContent = t.kRelief;
-    swapBig($('vLang'), LANG_NAME[state.lang], dir || 1);
-    swapBig($('vRelief'), state.relief ? t.reliefOn : t.reliefOff, dir || 1);
+    swapBig($('vLang'), LANG_NAME[state.lang], dir || 1, changed === 'lang');
+    swapBig($('vRelief'), state.relief ? t.reliefOn : t.reliefOff, dir || 1, changed === 'relief');
     // 選んでいないものを下に薄く
     $('aLang').innerHTML = LANGS.filter((l) => l !== state.lang).map((l) => `<button data-lang="${l}">${LANG_NAME[l]}</button>`).join('');
     $('aRelief').innerHTML = `<button data-relief="${state.relief ? 0 : 1}">${state.relief ? t.reliefOff : t.reliefOn}</button>`;
     $('hint').textContent = t.reliefDesc;
     $('sendLabel').textContent = t.send;
     $('resetBtn').textContent = t.reset;
+    $('editBtn').textContent = t.edit;
     $('ctlLang').classList.toggle('focus', state.focus === 'lang');
     $('ctlRelief').classList.toggle('focus', state.focus === 'relief');
     $('hint').classList.toggle('lit', state.focus === 'relief' || state.relief);
@@ -391,7 +410,8 @@
 
   function renderStatus() {
     const t = T[state.lang];
-    const before = !state.sent && state.ui !== 'sending' && state.ui !== 'fail';
+    // 束を出すのは: まだ送っていない / 「設定を変える」で戻った。送っている最中と失敗は読み出し側。
+    const before = state.view === 'edit' && state.ui !== 'sending' && state.ui !== 'fail';
     if (before) {
       $('panel').style.opacity = ''; $('panel').style.pointerEvents = ''; $('hint').style.opacity = '';
       $('readout').classList.remove('show', 'ok', 'wait', 'ng');
@@ -440,7 +460,7 @@
     $('clearBtn').disabled = !s.pending;
   }
 
-  function render(dir) { renderText(dir); renderStatus(); renderStaff(); }
+  function render(dir, changed) { renderText(dir, changed); renderStatus(); renderStaff(); }
 
   // ---- ヘッドセットとの通信（この面を配っている機そのもの）--------------------------
   async function post(path, body) {
@@ -455,7 +475,7 @@
     try {
       const j = await post('./set', { lang: state.lang, relief: state.relief });
       state.sent = { lang: state.lang, relief: state.relief, seq: j.seq || 0 };
-      state.ui = 'sent';
+      state.ui = 'sent'; state.view = 'result';
       await poll();
     } catch (e) { console.warn('set failed', e); state.ui = 'fail'; }
     render();
@@ -470,13 +490,14 @@
   }
 
   // ---- 操作 ---------------------------------------------------------------
-  function setLang(l, dir) { if (l === state.lang) return; state.lang = l; state.focus = 'lang'; render(dir); }
-  function setRelief(v, dir) { if (v === state.relief) return; state.relief = v; state.focus = 'relief'; render(dir); }
+  function setLang(l, dir) { if (l === state.lang) return; state.lang = l; state.focus = 'lang'; render(dir, 'lang'); }
+  function setRelief(v, dir) { if (v === state.relief) return; state.relief = v; state.focus = 'relief'; render(dir, 'relief'); }
   $('ctlLang').addEventListener('click', (ev) => {
     const b = ev.target.closest('button');
     state.focus = 'lang';
     if (b && b.dataset.lang) return setLang(b.dataset.lang, 1);
     if (b && b.dataset.step) { const i = LANGS.indexOf(state.lang); return setLang(LANGS[(i + +b.dataset.step + LANGS.length) % LANGS.length], +b.dataset.step); }
+    if (ev.target.closest('.big')) { const i = LANGS.indexOf(state.lang); return setLang(LANGS[(i + 1) % LANGS.length], 1); }
     render();
   });
   $('ctlRelief').addEventListener('click', (ev) => {
@@ -484,11 +505,14 @@
     state.focus = 'relief';
     if (b && b.dataset.relief != null) return setRelief(b.dataset.relief === '1', 1);
     if (b && b.dataset.step) return setRelief(!state.relief, +b.dataset.step);
+    if (ev.target.closest('.big')) return setRelief(!state.relief, 1);
     render();
   });
-  $('sendBtn').addEventListener('click', () => { if (!state.sent) send(); });
+  $('sendBtn').addEventListener('click', () => { if (state.view === 'edit') send(); });
+  // 戻って設定し直す（送った値は残る。もう一度送れば新しい受理番号で届く ＝ 注意書きの段なら即座に書き替わる）
+  $('editBtn').addEventListener('click', () => { state.view = 'edit'; render(); });
   $('resetBtn').addEventListener('click', () => {
-    state.lang = 'ja'; state.relief = false; state.sent = null; state.ui = 'idle'; state.focus = 'lang';
+    state.lang = 'ja'; state.relief = false; state.sent = null; state.ui = 'idle'; state.view = 'edit'; state.focus = 'lang';
     render(-1);
   });
   $('staffToggle').addEventListener('click', () => $('staff').classList.toggle('open'));
@@ -521,7 +545,7 @@
     const lang = new URLSearchParams(location.search).get('lang') || 'ja';
     state.lang = lang; state.relief = true;
     state.sent = { lang, relief: true, seq: 1 };
-    state.ui = demo === 'fail' ? 'fail' : 'sent';
+    state.ui = demo === 'fail' ? 'fail' : 'sent'; state.view = 'result';
     state.online = demo !== 'noserver';
     state.st = { ok: true, lang: demo === 'applied' ? lang : 'ja', relief: demo === 'applied', appliedSeq: demo === 'applied' ? 1 : 0,
                  phase: demo === 'later' ? 'RUN' : 'INTRO', titleStage: demo === 'later' ? 'Done' : 'Wait',
