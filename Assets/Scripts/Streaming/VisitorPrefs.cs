@@ -4,80 +4,69 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// <b>タブレットで体験前に選んだ設定（言語・ホラー軽減）を、この機へ運ぶ箱。</b>
-    /// 2026-09-11・<c>canon/LEDGER.md</c> 0185（クエストα用・β用のタブレット 2 台）。
+    /// <b>タブレットで体験前に選んだ設定（言語・ホラー軽減）を、この機の中で運ぶ箱。</b>
+    /// 2026-09-11・<c>canon/LEDGER.md</c> 0185（クエストα用・β用のタブレット 2 台）／
+    /// 0187（卓を経由せず、タブレットと Quest を直接つなぐ）。
     ///
-    /// 流れは 1 本だけ:
-    ///   タブレット（<c>visitor.html</c>）→ 卓 <c>/command setVisitor</c> → <c>control.visitor.&lt;役&gt;</c>
-    ///   → long-poll → <see cref="Offer"/>（<c>ShowControlClient</c>）→ 面が出ている段で
-    ///   <see cref="ApplyPending"/>（<c>TitleScreen</c>）→ <see cref="ShowLanguage"/> / <see cref="HorrorRelief"/>。
+    /// 流れは 1 本だけ、しかも**この機の中で閉じている**:
+    ///   タブレット → <see cref="VisitorPortal"/>（この機の HTTP）→ <see cref="Set"/>
+    ///   → 注意書きが出ている段で <see cref="ApplyPending"/>（<c>TitleScreen</c>）
+    ///   → <see cref="ShowLanguage"/> / <see cref="HorrorRelief"/>。
     ///
-    /// <b>正は卓が持つ。</b>この機は「いま卓が言っている値（pending）」と「自分がどこまで
-    /// 適用したか（applied）」「体験者がどこで始めたか（consumed）」の 3 つの世代番号を持つだけで、
-    /// 再起動でぜんぶ 0 へ戻ってよい。体験者が A を押して注意書きを閉じた瞬間に
-    /// <see cref="Consume"/> が世代を記録し、heartbeat がそれを卓へ返す。卓は同じ世代を見たら
-    /// 枠を既定へ戻す（＝ 次の人に前の人の設定を持ち越さない。<c>capture-server.py</c> の
-    /// <c>visitor_prefs.consume</c>）。
+    /// <b>正はこの機。</b>卓も PC も持たない。体験者が A を押して注意書きを閉じた瞬間に
+    /// <see cref="Consume"/> が枠を空にする ＝ 次の人に前の人の設定を持ち越さない。
+    /// 再起動すればまっさら（永続化しない。持ち越してよいものが 1 つも無い）。
     ///
     /// ⚠ <b>static なのは <see cref="ShowLanguage"/> と同じ理由</b>（読む側が asmdef をまたぐ）。
     /// ⚠ <b>ここに表示用の文字列は置かない</b>（フォントの静的ベイク。<see cref="ShowLanguage"/> の doc）。
     /// ⚠ <b>この箱は <see cref="ShowLanguage"/> / <see cref="HorrorRelief"/> を戻さない。</b>
     /// 戻すのは従来どおり <c>TitleScreen.BeginTitle</c> の 1 か所で、そのすぐ後に
-    /// <see cref="ApplyAtTitle"/> が「戻した上に、卓の値を載せる」。順序を入れ替えると
+    /// <see cref="ApplyAtTitle"/> が「戻した上に、枠の値を載せる」。順序を入れ替えると
     /// タイトルを出し直した瞬間にタブレットの設定が消える。
+    /// ⚠ 呼ぶのはメインスレッドだけ（<see cref="VisitorPortal"/> はキューで渡してくる）。
     /// </summary>
     public static class VisitorPrefs
     {
-        /// <summary>この機に割り当てられた役（"alpha" / "beta"）。空 = 卓がまだ結んでいない。</summary>
-        public static string Role { get; private set; } = "";
+        /// <summary>いま枠に入っている選択の受理番号。0 = 枠は空。</summary>
+        public static int PendingSeq { get; private set; }
 
-        /// <summary>卓が最後に言った枠の世代。0 = 枠を受け取っていない。</summary>
-        public static int PendingEpoch { get; private set; }
-
-        /// <summary>卓が最後に言った言語。</summary>
+        /// <summary>枠の言語。</summary>
         public static ShowLang PendingLang { get; private set; } = ShowLanguage.Default;
 
-        /// <summary>卓が最後に言った軽減モード。</summary>
+        /// <summary>枠の軽減モード。</summary>
         public static bool PendingRelief { get; private set; }
 
-        /// <summary>この機が <see cref="ShowLanguage"/> / <see cref="HorrorRelief"/> へ書いた最後の世代。</summary>
-        public static int AppliedEpoch { get; private set; }
+        /// <summary>この機が <see cref="ShowLanguage"/> / <see cref="HorrorRelief"/> へ書いた最後の受理番号。</summary>
+        public static int AppliedSeq { get; private set; }
 
-        /// <summary>体験者が注意書きを閉じた（＝ 始めた）ときの枠の世代。heartbeat が卓へ返す。</summary>
-        public static int ConsumedEpoch { get; private set; }
+        /// <summary>体験者が始めた（枠を空にした）ときの受理番号。テレメトリが読む。</summary>
+        public static int ConsumedSeq { get; private set; }
 
         /// <summary>この走行で <see cref="ApplyPending"/> が実際に書いた回数（テレメトリが読む）。</summary>
         public static int ApplyCount { get; private set; }
 
-        /// <summary>卓が言っている値のうち、まだこの機に書いていないものがあるか。</summary>
-        public static bool HasUnapplied => PendingEpoch > 0 && PendingEpoch != AppliedEpoch;
+        /// <summary>枠に何か入っているか。</summary>
+        public static bool HasPending => PendingSeq > 0;
 
-        /// <summary>役を結ぶ／解く。解いたら枠も忘れる（別の役の値を引きずらない）。</summary>
-        public static void SetRole(string? role)
-        {
-            string r = role ?? "";
-            if (r == Role) return;
-            Role = r;
-            if (r.Length == 0) ClearPending();
-        }
+        /// <summary>枠の値のうち、まだこの機に書いていないものがあるか。</summary>
+        public static bool HasUnapplied => PendingSeq > 0 && PendingSeq != AppliedSeq;
 
         /// <summary>
-        /// 卓の枠を受け取る（long-poll のたびに呼んでよい。同じ世代なら何もしない）。
+        /// タブレットの選択を枠へ入れる（受理番号は <see cref="VisitorPortal"/> が振る。単調増加）。
         /// ⚠ <b>ここでは書かない。</b>書くのは面が出ている段だけ（<see cref="ApplyPending"/>）。
         /// 本編の最中に言語が変わると、連絡の面が途中から別の言語になる。
         /// </summary>
-        public static void Offer(int epoch, string? langCode, bool relief)
+        public static void Set(ShowLang lang, bool relief, int seq)
         {
-            // 役が無い機は枠を持たない（結ばれていない機に他人の設定を書かない）。
-            if (Role.Length == 0 || epoch <= 0) { ClearPending(); return; }
-            PendingEpoch = epoch;
-            PendingLang = ShowLanguage.Parse(langCode);
+            if (seq <= 0) return;
+            PendingSeq = seq;
+            PendingLang = lang;
             PendingRelief = relief;
         }
 
         /// <summary>
-        /// 受け取っている枠を <see cref="ShowLanguage"/> / <see cref="HorrorRelief"/> へ書く。
-        /// <b>書いたら true。</b>世代が既に書いた値と同じなら何もしない。
+        /// 枠の値を <see cref="ShowLanguage"/> / <see cref="HorrorRelief"/> へ書く。<b>書いたら true。</b>
+        /// 受理番号が既に書いた値と同じなら何もしない。
         /// ⚠ <c>Select</c> を使うので <c>ChangeCount</c>（体験者が押した回数）は動かない。
         /// </summary>
         public static bool ApplyPending()
@@ -85,35 +74,39 @@ namespace FixedCamVr.Streaming
             if (!HasUnapplied) return false;
             ShowLanguage.Select(PendingLang);
             HorrorRelief.Select(PendingRelief);
-            AppliedEpoch = PendingEpoch;
+            AppliedSeq = PendingSeq;
             ApplyCount++;
             return true;
         }
 
         /// <summary>
         /// タイトルの出し直し（<c>TitleScreen.BeginTitle</c>）専用。既定へ戻した直後に呼ぶ。
-        /// 同じ世代でも<b>もう一度書く</b>（戻した分を載せ直す）。<b>書いたら true。</b>
+        /// 同じ受理番号でも<b>もう一度書く</b>（戻した分を載せ直す）。<b>書いたら true。</b>
         /// </summary>
         public static bool ApplyAtTitle()
         {
-            AppliedEpoch = 0;
+            AppliedSeq = 0;
             return ApplyPending();
         }
 
         /// <summary>
-        /// 体験者が注意書きを閉じた（始めた）。いま持っている枠の世代を「消費した」として記録する。
-        /// <b>記録が進んだら true。</b>heartbeat がこの値を卓へ返し、卓が枠を既定へ戻す。
+        /// 体験者が注意書きを閉じた（始めた）。枠を空にする ＝ 次の人へ持ち越さない。
+        /// <b>空にしたら true</b>（もともと空なら false）。
         /// </summary>
         public static bool Consume()
         {
-            if (PendingEpoch <= ConsumedEpoch) return false;
-            ConsumedEpoch = PendingEpoch;
+            if (!HasPending) return false;
+            ConsumedSeq = PendingSeq;
+            ClearPending();
             return true;
         }
 
+        /// <summary>スタッフが枠を空にする（送ったまま帰った人の分）。書いた値は戻さない。</summary>
+        public static void Clear() => ClearPending();
+
         private static void ClearPending()
         {
-            PendingEpoch = 0;
+            PendingSeq = 0;
             PendingLang = ShowLanguage.Default;
             PendingRelief = false;
         }
@@ -121,10 +114,9 @@ namespace FixedCamVr.Streaming
         /// <summary>まっさらへ（テスト・Editor のドメインリロード無し Play）。</summary>
         public static void Reset()
         {
-            Role = "";
             ClearPending();
-            AppliedEpoch = 0;
-            ConsumedEpoch = 0;
+            AppliedSeq = 0;
+            ConsumedSeq = 0;
             ApplyCount = 0;
         }
 

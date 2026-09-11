@@ -3216,34 +3216,27 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
 - **cue（`OverlayCueData`）自体は色補正 post を持たない**（従来どおり）。画面全体のグレーディングは segment post > camera post > global の 3 段で解決される
 - キー空間は現状維持（`cues[].camera`=文字列 id / `timeline.segments[].camera`=int index。変換は Web の `cuesForCam` 流儀）。統一は Unity 共有契約の破壊を避けるため見送り
 
-## タブレットの設定（`control.visitor` / `control.visitorDevices`）— 2026-09-11
+## タブレットの口（Quest 自身の HTTP :8090）— 2026-09-11
 
-`canon/LEDGER.md` 0185。クエストα用・β用のタブレット 2 台（`visitor.html`）で、体験者が
-**体験前に言語とホラー軽減を選ぶ**。仕組みだけ先に作ってある（文と用途は後）。経緯と罠は
+`canon/LEDGER.md` 0185 / 0186 / **0187**。クエストα用・β用のタブレット 2 台で、体験者が
+**体験前に言語とホラー軽減を選ぶ**。⚠⚠ **卓も PC も経由しない**（0187「PC は開かない運用をする前提だから、
+メインのウェブ卓は経由せずにクエストとタブレットを直接つなぐ」）。経緯と罠は
 [memory/visitor_tablet.md](../memory/visitor_tablet.md)。
 
-```jsonc
-"control": {
-  "visitorDevices": { "alpha": "<deviceId>", "beta": "" },          // 役 → Quest の端末 ID（"" = 未結）
-  "visitor": { "alpha": { "lang": "en", "relief": true, "epoch": 3 },  // 役ごとの枠。書くたび epoch +1
-               "beta":  { "lang": "ja", "relief": false, "epoch": 0 } } // epoch 0 = 一度も書いていない
-}
-```
-
-| 口 | 何 |
-|---|---|
-| `POST /command {type:"setVisitor", role, lang, relief}` | 枠を書く（epoch +1）。`role` は alpha / beta、`lang` は ja / en / fr。他は 400 |
-| `POST /command {type:"bindVisitorDevice", role, deviceId}` | 役と端末を結ぶ（`""` で解く）。1 台 1 役 |
-| `GET /unity/devices` | 機ごとの heartbeat（`deviceId` を名乗る機だけ）＋ 役の枠 |
-| heartbeat の `deviceId` / `deviceModel` / `visitorRole` / `visitor{Pending,Applied,Consumed}Epoch` / `lang` / `relief` | Quest → 卓。`visitorConsumedEpoch` が枠の epoch と一致し枠が既定でなければ、卓が枠を既定へ戻して epoch +1 |
-
-- **正は卓。** Quest（`VisitorPrefs`）は世代番号 3 つを持つだけで、**キャッシュには載せない**（再起動で 0 へ）
-- **書くのは注意書きの段（`TitleStage.Wait`）だけ**。`ShowControlClient.ApplyVisitorSlot`（1.69）は箱へ入れるだけで、
-  `TitleScreen` が Wait のとき即書き、`BeginTitle` では**戻した直後に載せ直す**（同じ世代でも）
+- **Quest 自身が口を持つ**: [`VisitorPortal`](../../Assets/Scripts/Streaming/VisitorPortal.cs)（TcpListener :8090・
+  `ShowControlClient.EnsureVisitorPortal` が起動時に生成。シーンには焼かない）。面（`Assets/Resources/Visitor/visitor.html`）も
+  Quest が配る。タブレットは `http://192.168.10.31:8090/`（α）／ `.32`（β）を開く ＝ **役は URL で決まる**
+- 口は 4 つ: `GET /`（面）／ `GET /status`（実値）／ `POST /set {"lang","relief"}`（枠へ）／ `POST /clear`（枠を空に）。
+  判断は [`VisitorPortalLogic`](../../Assets/Scripts/Streaming/VisitorPortalLogic.cs)（純ロジック・テスト付き）
+- **正は Quest の中**（`VisitorPrefs`）。**書くのは注意書きの段（`TitleStage.Wait`）だけ**。`BeginTitle` は
+  **戻した直後に載せ直す**（同じ受理番号でも）。体験者が A を押したら枠を空にする ＝ 次の人へ持ち越さない
 - `Select` で書くので `langN` / `relief` の 2 つ目（体験者が押した回数）は動かない
-- ⚠ **`/unity/status` は従来どおり最後の 1 台**。機ごとは `/unity/devices`
-- 観測: `ev=boot id=`（端末 ID の頭 6 桁・役を結ぶときの手掛かり）／ `ev=sum visitor=<役>/<卓>/<書>/<始>/<回数>`。
-  判定は `analyze-xp-log.py` の「## タブレットの設定」。**`ShowTelemetryHost` と対で直す**
+- **卓に載るのは heartbeat の実値と「口が開いているか」だけ**（`deviceId` / `localIp` / `titleStage` / `visitorPort` /
+  `visitorReceived` / `visitorPending` / `lang` / `relief`）。`GET /unity/devices` が機ごとに出す（スタッフが眺める用）。
+  ⚠ `/unity/status` は従来どおり最後の 1 台
+- 観測: `ev=boot id=`（端末 ID の頭 6 桁）／ `ev=sum visitor=<口>/<受けた>/<枠の受理>/<書いた受理>/<回数>`。
+  判定は `analyze-xp-log.py` の「## タブレットの口」。**`ShowTelemetryHost` と対で直す**
+- 面を直したら APK を焼き直す（TextAsset。卓の静的配信ではない）
 
 ## 接続の堅牢化 — 端末内在 ID + 発見プロトコル（fixedcam-discovery/1）— 2026-07-18
 

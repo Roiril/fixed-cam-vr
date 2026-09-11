@@ -1368,15 +1368,18 @@ namespace FixedCamVr.Diagnostics
                .Append('/').Append(_relief == null ? "-" : _relief.ListenerVolume.ToString("F2"))
                .Append('/').Append(_relief == null ? "-" : _relief.BgmGain.ToString("F2"))
                .Append('/').Append(_relief == null ? "-" : _relief.BgmTimeSec.ToString("F1"));
-            //   visitor = タブレットの設定（0185）。**`<役>/<卓が言った世代>/<書いた世代>/<始めた世代>/<書いた回数>`**
-            //   ⚠ 役が `-` なら卓がこの機を α/β に結んでいない ＝ タブレットで何を選んでも届かない。
-            //   ⚠ 卓の世代が書いた世代より大きいまま本編（RUN）に入ったら、それは次の人の分（正常）。
+            //   visitor = タブレットの口（0185 / 0187）。
+            //     **`<口が開いているか>/<受けた累計>/<枠の受理番号>/<書いた受理番号>/<書いた回数>`**
+            //   ⚠ 1 つ目が 0 なら :8090 を開けていない ＝ タブレットは繋げない（卓は関わらないので他に手掛かりが無い）。
+            //   ⚠ 2 つ目は入力の累計（work-style §2-2）。タブレットで押したのに増えないなら届いていない。
+            //   ⚠ 枠の受理番号が書いた受理番号より大きいまま本編（RUN）なら、それは次の人の分（正常）。
             //     注意書きの段（Wait）で大きいままなら TitleScreen の書き込みが効いていない。
             //   ⚠ `lang` / `relief`（上）が実際の値。ここは経路の証拠で、値は上を見る。
-            _sb.Append(" visitor=").Append(VisitorPrefs.Role.Length == 0 ? "-" : VisitorPrefs.Role)
-               .Append('/').Append(VisitorPrefs.PendingEpoch)
-               .Append('/').Append(VisitorPrefs.AppliedEpoch)
-               .Append('/').Append(VisitorPrefs.ConsumedEpoch)
+            VisitorPortal? portal = _show != null ? _show.Portal : null;
+            _sb.Append(" visitor=").Append(portal != null && portal.IsListening ? 1 : 0)
+               .Append('/').Append(portal != null ? portal.Received : 0)
+               .Append('/').Append(VisitorPrefs.PendingSeq)
+               .Append('/').Append(VisitorPrefs.AppliedSeq)
                .Append('/').Append(VisitorPrefs.ApplyCount);
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、

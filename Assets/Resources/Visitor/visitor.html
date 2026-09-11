@@ -5,17 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>廻リ視 — 体験の前に</title>
 <!--
-  タブレットで開く「体験の前に」の面（2026-09-11・canon/LEDGER.md 0185 / 0186）。
-    http://192.168.10.10:8099/visitor.html
-  クエストα用・β用に 1 台ずつ。体験者が言語とホラー軽減を選び、送ると卓の枠
-  （control.visitor.<役>）へ入って、対応するヘッドセットへ届く。
+  タブレットで開く「体験の前に」の面（2026-09-11・canon/LEDGER.md 0185 / 0186 / 0187）。
+  ⚠ この面は **Quest 自身が配る**（VisitorPortal・:8090）。PC も卓も経由しない。
+    α 用のタブレットは α の機、β 用は β の機の URL を開く:
+      http://192.168.10.31:8090/   http://192.168.10.32:8090/  （現地の静的割当・docs/onsite/network-setup.md）
+    どの機に繋いでいるかは、この面のヘッダ（機の IP）とスタッフ欄で分かる。
 
   ⚠ 最初の画面は注意書きと設定だけ（0186）。導入の文は置かない。
   ⚠ 注意書きの 3 言語は HMD の TitleNotice と同じ文（安全の掲示なので、受付とヘッドセットで食い違わせない）。
-  ⚠ 「反映されたか」は heartbeat が返す実際の値（lang / relief）で判定する。送った値を表示しない。
-  ⚠ 外部の CDN と Web フォントは使わない（会場に外の回線が無くても開くため）。
-  ⚠ 役（α/β）はこのタブレットの localStorage に持つ。卓には「どのタブレットか」は無い。
-    役と Quest の端末 ID を結ぶのは下のスタッフ欄（POST /command bindVisitorDevice）。
+  ⚠ 「反映されたか」は GET /status が返す実値（lang / relief）で判定する。送った値を表示しない。
+  ⚠ 外部の CDN と Web フォントは使わない（会場に外の回線が無い）。
+  ⚠ Unity は .html を TextAsset として取り込む。Resources.Load("Visitor/visitor") で読まれる。
+    文を直したら APK を焼き直す（卓の静的配信と違い、ファイルを置き換えても届かない）。
 -->
 <style>
   :root{
@@ -39,8 +40,8 @@
     display:flex; align-items:baseline; gap:12px;
   }
   h1{font-size:20px; margin:0; letter-spacing:.14em; border-bottom:2px solid var(--accent); padding-bottom:2px}
-  .role{margin-left:auto; font-size:15px; opacity:var(--sub); letter-spacing:.08em}
-  .role b{color:var(--accent); font-size:18px}
+  .who{margin-left:auto; font-size:14px; opacity:var(--sub); letter-spacing:.06em; font-family:ui-monospace,Consolas,monospace}
+  .who.ng{color:var(--ng); opacity:1}
   h2{
     font-size:12px; letter-spacing:.16em; text-transform:uppercase;
     opacity:var(--mute); margin:28px 0 10px; font-weight:600;
@@ -108,14 +109,11 @@
   summary::before{content:"▸ "} details[open] summary::before{content:"▾ "}
   .staff{font-size:15px}
   .staff button{min-height:48px; font-size:15px; padding:8px 12px}
-  .staff .row{margin-bottom:6px}
   .dev{border:1px solid var(--line); padding:10px 12px; margin-bottom:8px}
   .dev .id{font-family:ui-monospace,Consolas,monospace; font-size:16px}
   .dev .lamp{display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--ng); margin-right:8px; vertical-align:middle}
   .dev .lamp.ok{background:var(--ok)}
-  .dev .badge{color:var(--accent); font-weight:600; margin-left:8px}
-  .dev .meta{opacity:var(--sub); font-size:13px; margin:2px 0 8px}
-  .slot{opacity:var(--sub); font-size:13px; margin:4px 0 0; font-family:ui-monospace,Consolas,monospace}
+  .dev .meta{opacity:var(--sub); font-size:13px; margin:2px 0 8px; line-height:1.6}
   .busy{opacity:.5; pointer-events:none}
 </style>
 </head>
@@ -123,7 +121,7 @@
 
 <header>
   <h1>廻リ視</h1>
-  <span class="role" id="roleLabel">—</span>
+  <span class="who" id="who">—</span>
 </header>
 
 <h2 id="hLang">言語 / Language / Langue</h2>
@@ -164,27 +162,15 @@
 
 <details class="staff" id="staff">
   <summary>スタッフ</summary>
-  <p class="note">この面はスタッフだけが触る。体験者に見せる文は上の 3 言語のところ。</p>
+  <p class="note">この面はスタッフだけが触る。体験者に見せる文は上の 3 言語のところ。
+    この面はヘッドセット自身が配っている（PC も卓も経由しない）。α 用のタブレットは α の機の URL を開く。</p>
 
-  <h2>このタブレットは</h2>
-  <div class="row">
-    <button id="roleAlpha">クエストα 用</button>
-    <button id="roleBeta">クエストβ 用</button>
-  </div>
-  <p class="note">タブレット側の記憶（この端末のブラウザに残る）。卓には「どのタブレットか」は無い。</p>
-
-  <h2>ヘッドセット（heartbeat が届いている機）</h2>
-  <div id="devices"><p class="note">読み込み中…</p></div>
+  <h2>このヘッドセット</h2>
+  <div id="dev" class="dev"><p class="note">読み込み中…</p></div>
+  <div class="row"><button id="clearBtn">枠を空にする（次の人は日本語・軽減なしから）</button></div>
   <p class="note">
-    どの機がどれかは、機の <code>adb logcat</code> の <code>[XP] ev=boot … id=</code>（頭 6 桁）か、
-    片方だけ電源を入れて見分ける。結び直しは卓の <code>show.json</code>（control.visitorDevices）に残る。
-  </p>
-
-  <h2>枠（卓が持っている値）</h2>
-  <div id="slots"></div>
-  <p class="note">
-    体験者が A を押して始めた瞬間に、ヘッドセットが世代を返し、卓が枠を既定（日本語・軽減なし）へ戻す。
-    送ったまま帰った人の設定が残っていたら「枠を空にする」。
+    体験者が A を押して始めた瞬間に、ヘッドセットが枠を空にする。送ったまま帰った人の設定が残っていたら上のボタン。
+    枠が空でも、いま出ている値（言語・軽減）はそのまま。戻すのはランのやり直し（タイトルの出し直し）。
   </p>
 </details>
 
@@ -206,18 +192,14 @@
       reliefOn: 'あり', reliefOff: 'なし',
       pre: {
         idle: ['まだ送っていません', '言語と設定を選んで、「この設定で始める」を押してください'],
-        unbound: ['ヘッドセットがまだ結ばれていません', 'スタッフを呼んでください'],
-        noserver: ['卓に繋がっていません', 'スタッフを呼んでください'],
-        norole: ['このタブレットの役が決まっていません', 'スタッフを呼んでください'],
+        noserver: ['ヘッドセットに繋がっていません', 'スタッフを呼んでください'],
       },
       post: {
         sending: ['送っています…', ''],
         applied: ['ヘッドセットに反映されました', 'スタッフの案内でヘッドセットを着けてください'],
         waiting: ['ヘッドセットの反映を待っています…', '注意書きの画面になると反映されます'],
         later: ['いまヘッドセットは体験中です', '次の体験の開始時に反映されます'],
-        dead: ['ヘッドセットの応答がありません', 'スタッフを呼んでください'],
-        unbound: ['ヘッドセットがまだ結ばれていません', 'スタッフを呼んでください'],
-        noserver: ['卓に繋がっていません', 'スタッフを呼んでください'],
+        noserver: ['ヘッドセットに繋がっていません', 'スタッフを呼んでください'],
         fail: ['送れませんでした', 'もう一度押してください'],
       },
     },
@@ -233,18 +215,14 @@
       reliefOn: 'on', reliefOff: 'off',
       pre: {
         idle: ['Not sent yet', 'Choose a language and settings, then press "Start with these settings"'],
-        unbound: ['No headset is linked yet', 'Please call a member of staff'],
-        noserver: ['Not connected to the desk', 'Please call a member of staff'],
-        norole: ['This tablet has no role yet', 'Please call a member of staff'],
+        noserver: ['Not connected to the headset', 'Please call a member of staff'],
       },
       post: {
         sending: ['Sending…', ''],
         applied: ['Applied on the headset', 'Put on the headset when staff guide you'],
         waiting: ['Waiting for the headset…', 'It applies once the headset shows the notice screen'],
         later: ['The headset is in use right now', 'It will apply when the next session starts'],
-        dead: ['No response from the headset', 'Please call a member of staff'],
-        unbound: ['No headset is linked yet', 'Please call a member of staff'],
-        noserver: ['Not connected to the desk', 'Please call a member of staff'],
+        noserver: ['Not connected to the headset', 'Please call a member of staff'],
         fail: ['Could not send', 'Please press again'],
       },
     },
@@ -260,37 +238,30 @@
       reliefOn: 'oui', reliefOff: 'non',
       pre: {
         idle: ['Pas encore envoyé', 'Choisissez une langue et des réglages, puis appuyez sur « Commencer »'],
-        unbound: ['Aucun casque n’est encore relié', 'Appelez un membre du personnel'],
-        noserver: ['Non connecté au poste', 'Appelez un membre du personnel'],
-        norole: ['Cette tablette n’a pas encore de rôle', 'Appelez un membre du personnel'],
+        noserver: ['Non connecté au casque', 'Appelez un membre du personnel'],
       },
       post: {
         sending: ['Envoi…', ''],
         applied: ['Appliqué sur le casque', 'Mettez le casque quand le personnel vous guide'],
         waiting: ['En attente du casque…', 'Appliqué dès que le casque affiche l’avertissement'],
         later: ['Le casque est en cours d’utilisation', 'Appliqué au début de la prochaine session'],
-        dead: ['Le casque ne répond pas', 'Appelez un membre du personnel'],
-        unbound: ['Aucun casque n’est encore relié', 'Appelez un membre du personnel'],
-        noserver: ['Non connecté au poste', 'Appelez un membre du personnel'],
+        noserver: ['Non connecté au casque', 'Appelez un membre du personnel'],
         fail: ['Envoi impossible', 'Appuyez de nouveau'],
       },
     },
   };
-  const ROLE_NAME = { alpha: 'クエストα', beta: 'クエストβ', '': '—' };
   const LANG_NAME = { ja: '日本語', en: 'English', fr: 'Français' };
-  const GLYPH = { applied: '✓', waiting: '…', sending: '…', later: '⏳', dead: '✕', unbound: '✕', noserver: '✕', fail: '✕' };
-  const TONE = { applied: 'ok', waiting: 'warn', sending: 'warn', later: 'warn', dead: 'ng', unbound: 'ng', noserver: 'ng', fail: 'ng' };
+  const GLYPH = { applied: '✓', waiting: '…', sending: '…', later: '⏳', noserver: '✕', fail: '✕' };
+  const TONE = { applied: 'ok', waiting: 'warn', sending: 'warn', later: 'warn', noserver: 'ng', fail: 'ng' };
 
   const $ = (id) => document.getElementById(id);
   const state = {
     lang: 'ja', relief: false,
-    role: '',            // このタブレットの役（localStorage）
-    sent: null,          // {lang, relief, epoch} 最後に送ったもの
+    sent: null,          // {lang, relief, seq} 最後に送ったもの
     ui: 'idle',          // idle | sending | sent | fail
-    devices: null,       // /unity/devices の直近
+    st: null,            // GET /status の直近（ヘッドセットの実値）
     online: false,
   };
-  try { state.role = localStorage.getItem('visitor.role') || ''; } catch (e) { /* 私用ウィンドウ等 */ }
 
   // ---- 描画 ---------------------------------------------------------------
   function renderText() {
@@ -309,50 +280,32 @@
     });
     $('reliefBtn').classList.toggle('on', state.relief);
     $('reliefBox').textContent = state.relief ? '✓' : '';
-    $('roleLabel').innerHTML = state.role
-      ? `<b>${ROLE_NAME[state.role]}</b>`
-      : '<span style="color:var(--warn)">役が未設定</span>';
-    $('roleAlpha').style.borderColor = state.role === 'alpha' ? 'var(--accent)' : '';
-    $('roleBeta').style.borderColor = state.role === 'beta' ? 'var(--accent)' : '';
-  }
-
-  // 結ばれている機の直近 heartbeat（無ければ null）と、役の枠。
-  function boundDevice() {
-    const d = state.devices;
-    if (!d || !d.roles || !state.role) return { dev: null, roleInfo: null };
-    const roleInfo = d.roles[state.role];
-    const boundId = roleInfo ? roleInfo.deviceId : '';
-    const dev = boundId ? (d.devices || []).find((x) => x.deviceId === boundId) || null : null;
-    return { dev, roleInfo, boundId };
-  }
-
-  // 送る前の 1 行。
-  function preKey() {
-    if (!state.role) return 'norole';
-    if (!state.online) return 'noserver';
-    const { boundId } = boundDevice();
-    if (!boundId) return 'unbound';
-    return 'idle';
+    const who = $('who');
+    if (state.online && state.st) {
+      who.className = 'who';
+      who.textContent = (state.st.model || 'Quest') + '  ' + (state.st.ip || location.hostname);
+    } else {
+      who.className = 'who ng';
+      who.textContent = location.hostname + ' — 応答なし';
+    }
   }
 
   // 送った後。**ヘッドセットが実際に返している値**で決める（送ったつもりを出さない）。
   function postKey() {
     if (state.ui === 'sending' || state.ui === 'fail') return state.ui;
-    if (!state.online) return 'noserver';
-    const { dev, boundId } = boundDevice();
-    if (!boundId) return 'unbound';
-    if (!dev || !dev.alive) return 'dead';
-    const hit = dev.lang === state.sent.lang && dev.relief === state.sent.relief
-      && dev.visitorAppliedEpoch >= state.sent.epoch && state.sent.epoch > 0;
+    if (!state.online || !state.st) return 'noserver';
+    const s = state.st;
+    const hit = s.lang === state.sent.lang && s.relief === state.sent.relief
+      && s.appliedSeq >= state.sent.seq && state.sent.seq > 0;
     if (hit) return 'applied';
-    if (dev.phase === 'RUN' || dev.phase === 'END') return 'later';
+    if (s.phase === 'RUN' || s.phase === 'END') return 'later';
     return 'waiting';
   }
 
   function renderStatus() {
     const t = T[state.lang];
     if (!state.sent && state.ui !== 'sending' && state.ui !== 'fail') {
-      const key = preKey();
+      const key = state.online ? 'idle' : 'noserver';
       const s = t.pre[key];
       $('status').hidden = false; $('result').hidden = true;
       $('status').className = 'status ' + (key === 'idle' ? '' : 'ng');
@@ -369,11 +322,11 @@
     $('sendBtn').disabled = key === 'sending';
 
     // 2 行の比較。右列はヘッドセットが返した値そのもの。
-    const { dev } = boundDevice();
+    const dev = state.online ? state.st : null;
     const sent = state.sent || { lang: state.lang, relief: state.relief };
     const gotLang = dev ? dev.lang : null;
     const gotRelief = dev ? dev.relief : null;
-    const alive = !!(dev && dev.alive);
+    const alive = !!dev;
     const settled = key === 'applied';
     const holding = key === 'later';   // いまの体験者の値が出ている（比べても意味が無い）
     row('rowLang', 'sLang', 'gLang', 'mLang', LANG_NAME[sent.lang],
@@ -392,49 +345,26 @@
   }
 
   function renderStaff() {
-    const d = state.devices;
-    const box = $('devices');
-    if (!state.online) { box.innerHTML = '<p class="note">卓に繋がっていません（8099）</p>'; }
-    else if (!d || !d.devices || d.devices.length === 0) {
-      box.innerHTML = '<p class="note">heartbeat がまだ 1 台も届いていません。'
-        + 'ヘッドセットが起動して卓に繋がると、ここに出る（端末 ID を名乗るのは 2026-09-11 以降の APK）。</p>';
-    } else {
-      box.innerHTML = d.devices.map((x) => {
-        const age = x.ageSec == null ? '—' : `${x.ageSec.toFixed(0)} 秒前`;
-        const badge = x.role ? `<span class="badge">${ROLE_NAME[x.role]}</span>` : '';
-        return `<div class="dev">
-          <span class="lamp ${x.alive ? 'ok' : ''}"></span><span class="id">${x.shortId}</span>${badge}
-          <div class="meta">${x.deviceModel || '?'} ・ ${x.phase || '—'}${x.titleStage ? '／' + x.titleStage : ''} ・ ${LANG_NAME[x.lang] || x.lang} ・ 軽減 ${x.relief ? 'あり' : 'なし'} ・ ${age}
-            ・ rev ${x.appliedRev} ・ 世代 卓${x.visitorPendingEpoch}/書${x.visitorAppliedEpoch}/始${x.visitorConsumedEpoch}</div>
-          <div class="row">
-            <button data-bind="alpha" data-id="${x.deviceId}" ${x.role === 'alpha' ? 'disabled' : ''}>α に結ぶ</button>
-            <button data-bind="beta" data-id="${x.deviceId}" ${x.role === 'beta' ? 'disabled' : ''}>β に結ぶ</button>
-            <button data-bind="" data-id="${x.deviceId}" data-role="${x.role}" ${x.role ? '' : 'disabled'}>解く</button>
-          </div>
-        </div>`;
-      }).join('');
+    const box = $('dev');
+    const s = state.st;
+    if (!state.online || !s) {
+      box.innerHTML = `<span class="lamp"></span><span class="id">${location.host}</span>
+        <div class="meta">応答がありません。ヘッドセットが起動しているか、同じ Wi-Fi か、URL の IP が合っているかを見る。</div>`;
+      return;
     }
-    const sl = $('slots');
-    if (!d || !d.roles) { sl.innerHTML = ''; return; }
-    sl.innerHTML = ['alpha', 'beta'].map((r) => {
-      const ri = d.roles[r];
-      const s = ri.slot || {};
-      const bound = ri.deviceId ? ri.deviceId.slice(0, 6) : '（未結）';
-      const isDefault = (s.lang || 'ja') === 'ja' && !s.relief;
-      return `<div class="dev">
-        <span class="badge" style="margin-left:0">${ROLE_NAME[r]}</span> <span class="id">${bound}</span>
-        <div class="slot">lang=${s.lang || 'ja'} relief=${s.relief ? 1 : 0} epoch=${s.epoch || 0}${isDefault ? '（既定）' : ''}</div>
-        <div class="row" style="margin-top:6px"><button data-clear="${r}" ${isDefault ? 'disabled' : ''}>枠を空にする（日本語・軽減なし）</button></div>
-      </div>`;
-    }).join('');
+    const pend = s.pending ? `${LANG_NAME[s.pending.lang] || s.pending.lang} ・ 軽減 ${s.pending.relief ? 'あり' : 'なし'}（受理 ${s.pending.seq}）` : '空';
+    box.innerHTML = `<span class="lamp ok"></span><span class="id">${s.model || '?'}  ${s.ip || location.hostname}:${s.port || ''}</span>
+      <div class="meta">${s.phase || '—'}${s.titleStage ? '／' + s.titleStage : ''} ・ いま ${LANG_NAME[s.lang] || s.lang} ・ 軽減 ${s.relief ? 'あり' : 'なし'}<br>
+      枠: ${pend} ・ 書いた受理番号 ${s.appliedSeq} ・ 書いた回数 ${s.applyCount} ・ 受けた累計 ${s.received}${s.rejected ? ' ・ 読めなかった ' + s.rejected : ''}</div>`;
+    $('clearBtn').disabled = !s.pending;
   }
 
   function render() { renderText(); renderStatus(); renderStaff(); }
 
-  // ---- 卓との通信 -----------------------------------------------------------
-  async function command(body) {
-    const r = await fetch('/command', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  // ---- ヘッドセットとの通信（この面を配っている機そのもの）--------------------------
+  async function post(path, body) {
+    const r = await fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body == null ? '' : JSON.stringify(body),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.ok === false) throw new Error(j.error || `HTTP ${r.status}`);
@@ -442,17 +372,15 @@
   }
 
   async function send() {
-    if (!state.role) { render(); return; }
     state.ui = 'sending'; renderStatus();
     try {
-      const j = await command({ type: 'setVisitor', role: state.role, lang: state.lang, relief: state.relief });
-      // 送った世代は /unity/devices の枠から読む（rev しか返らないので次の poll で確定する）
-      state.sent = { lang: state.lang, relief: state.relief, epoch: 0, rev: j.rev };
+      const j = await post('./set', { lang: state.lang, relief: state.relief });
+      state.sent = { lang: state.lang, relief: state.relief, seq: j.seq || 0 };
       state.ui = 'sent';
       await poll();
       $('result').scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch (e) {
-      console.warn('setVisitor failed', e);
+      console.warn('set failed', e);
       state.ui = 'fail';
     }
     render();
@@ -460,18 +388,14 @@
 
   async function poll() {
     try {
-      const r = await fetch('/unity/devices', { cache: 'no-store' });
+      const r = await fetch('./status', { cache: 'no-store' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      state.devices = await r.json();
-      state.online = true;
-      if (state.sent && state.sent.epoch === 0 && state.role) {
-        const ri = state.devices.roles && state.devices.roles[state.role];
-        if (ri && ri.slot) state.sent.epoch = ri.slot.epoch || 0;
-      }
+      state.st = await r.json();
+      state.online = !!state.st.ok;
     } catch (e) {
       state.online = false;
     }
-    renderStatus(); renderStaff();
+    renderText(); renderStatus(); renderStaff();
   }
 
   // ---- 操作 ---------------------------------------------------------------
@@ -484,35 +408,15 @@
   $('reliefBtn').addEventListener('click', () => { state.relief = !state.relief; render(); });
   $('sendBtn').addEventListener('click', send);
   $('resetBtn').addEventListener('click', () => {
-    // 面だけ戻す（枠は体験者が始めた瞬間に卓が戻す。送ったまま帰った人の分はスタッフ欄で空にする）
+    // 面だけ戻す（枠は体験者が始めた瞬間にヘッドセットが空にする。送ったまま帰った人の分はスタッフ欄で空にする）
     state.lang = 'ja'; state.relief = false; state.sent = null; state.ui = 'idle';
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
-  $('roleAlpha').addEventListener('click', () => setRole('alpha'));
-  $('roleBeta').addEventListener('click', () => setRole('beta'));
-  function setRole(r) {
-    state.role = r;
-    try { localStorage.setItem('visitor.role', r); } catch (e) { /* 保存できなくても動く */ }
-    render();
-  }
-  $('devices').addEventListener('click', async (ev) => {
-    const b = ev.target.closest('button[data-bind]');
-    if (!b) return;
-    const role = b.dataset.bind || b.dataset.role;
-    const deviceId = b.dataset.bind ? b.dataset.id : '';
-    if (!role) return;
-    b.classList.add('busy');
-    try { await command({ type: 'bindVisitorDevice', role, deviceId }); }
-    catch (e) { console.warn('bind failed', e); }
-    await poll();
-  });
-  $('slots').addEventListener('click', async (ev) => {
-    const b = ev.target.closest('button[data-clear]');
-    if (!b) return;
-    b.classList.add('busy');
-    try { await command({ type: 'setVisitor', role: b.dataset.clear, lang: 'ja', relief: false }); }
-    catch (e) { console.warn('clear failed', e); }
+  $('clearBtn').addEventListener('click', async () => {
+    $('clearBtn').classList.add('busy');
+    try { await post('./clear'); } catch (e) { console.warn('clear failed', e); }
+    $('clearBtn').classList.remove('busy');
     await poll();
   });
 
