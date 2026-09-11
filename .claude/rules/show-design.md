@@ -985,6 +985,11 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
     `textBounds` も枠を返すことがあるので使わない
 - ⚠ **体験者が替わったら日本語へ戻す**（`TitleScreen.BeginTitle` 1 か所）。
   押さなかった人に前の人の言語を出さない
+- ⭐ **タブレットからも入る**（2026-09-11・`canon/LEDGER.md` 0185・仕組みだけ）。卓の枠 `control.visitor.<役>` を
+  `VisitorPrefs` が受け、**注意書きの段でだけ** `ShowLanguage.Select` / `HorrorRelief.Select` へ書く。
+  `BeginTitle` は**戻した直後に載せ直す**（順を入れ替えるとタブレットの設定が消える）。持ち越しは卓が断つ
+  （体験者が始めた世代を heartbeat で返し、卓が枠を既定へ）。手元の単押し・長押しは残っている。
+  契約は [streaming.md](streaming.md)「タブレットの設定」、罠は `memory/visitor_tablet.md`
 - **巡らせるのは左のどのボタンでもよい**（2026-09-03・0128）。X／Y だけではない
 - ⚠ **切り替わると音が鳴る**（2026-09-04・`canon/LEDGER.md` 0153）。2 本を**交互**に
   （`sfx_lang_1` / `_2`）。鳴らすのは `TitleNotice` が字を書き替えている行で、

@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>廻リ視 — 体験の前に</title>
+<!--
+  タブレットで開く「体験の前に」の面（2026-09-11・canon/LEDGER.md 0185）。
+    http://192.168.10.10:8099/visitor.html
+  クエストα用・β用に 1 台ずつ。体験者が言語とホラー軽減を選び、送ると卓の枠
+  （control.visitor.<役>）へ入って、対応するヘッドセットへ届く。
+
+  ⚠ 説明の文はまだ仮（用途と詳細はユーザーが後で詰める）。注意書きの 3 言語は HMD の
+    TitleNotice と同じ文（安全の掲示なので、受付とヘッドセットで食い違わせない）。
+  ⚠ 外部の CDN と Web フォントは使わない（会場に外の回線が無くても開くため）。
+  ⚠ 役（α/β）はこのタブレットの localStorage に持つ。卓には「どのタブレットか」は無い。
+    役と Quest の端末 ID を結ぶのは下のスタッフ欄（POST /command bindVisitorDevice）。
+-->
+<style>
+  :root{
+    --bg:#000; --fg:#fffaf0; --accent:#ffdead;
+    --ok:#5ad19a; --warn:#ffae5e; --ng:#ff6b5e;
+    --line:rgba(255,250,240,.18); --mute:.55; --sub:.75;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; padding:0 20px calc(28px + env(safe-area-inset-bottom));
+    background:radial-gradient(circle at top left,#1a1a1a 0%,var(--bg) 100%) fixed;
+    color:var(--fg);
+    font:20px/1.7 "Noto Sans JP",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-text-size-adjust:100%;
+    max-width:900px; margin-inline:auto;
+  }
+  header{
+    position:sticky; top:0; z-index:5; padding:16px 0 10px;
+    background:linear-gradient(#000 70%,rgba(0,0,0,0));
+    display:flex; align-items:baseline; gap:12px;
+  }
+  h1{font-size:20px; margin:0; letter-spacing:.14em; border-bottom:2px solid var(--accent); padding-bottom:2px}
+  .role{margin-left:auto; font-size:15px; opacity:var(--sub); letter-spacing:.08em}
+  .role b{color:var(--accent); font-size:18px}
+  h2{
+    font-size:12px; letter-spacing:.16em; text-transform:uppercase;
+    opacity:var(--mute); margin:28px 0 10px; font-weight:600;
+  }
+  button{
+    font:inherit; color:var(--fg); background:transparent;
+    border:1px solid var(--line); border-radius:0;
+    min-height:64px; padding:12px 18px; width:100%; text-align:left;
+    touch-action:manipulation;
+  }
+  button:active{border-color:var(--accent); color:var(--accent)}
+  button:disabled{opacity:.35}
+  .big{border-color:var(--accent); color:var(--accent); font-weight:600; text-align:center; font-size:22px; min-height:76px}
+  .row{display:flex; gap:10px; margin-bottom:10px}
+  .row>*{flex:1}
+  .lang button{text-align:center; font-size:22px}
+  .lang button.on{border-color:var(--accent); color:var(--accent); background:rgba(255,222,173,.08)}
+  .lang button.on::before{content:"［"} .lang button.on::after{content:"］"}
+  .notice{
+    border:1px solid var(--line); padding:18px 20px; margin:0 0 12px;
+    white-space:pre-line; font-size:19px;
+  }
+  .notice .lead{color:var(--accent); font-size:22px; margin-bottom:12px; white-space:normal}
+  .toggle{
+    display:flex; align-items:center; gap:16px; text-align:left; min-height:96px;
+  }
+  .toggle .box{
+    flex:0 0 40px; height:40px; border:2px solid var(--line); display:flex;
+    align-items:center; justify-content:center; font-size:26px; color:var(--accent);
+  }
+  .toggle.on{border-color:var(--accent)} .toggle.on .box{border-color:var(--accent)}
+  .toggle .t{font-size:21px; font-weight:600}
+  .toggle .d{font-size:15px; opacity:var(--sub); margin-top:2px; line-height:1.5}
+  .status{
+    border:1px solid var(--line); padding:14px 18px; margin:10px 0 0; min-height:64px;
+    font-size:17px;
+  }
+  .status.ok{border-color:var(--ok)} .status.ok .h{color:var(--ok)}
+  .status.warn{border-color:var(--warn)} .status.warn .h{color:var(--warn)}
+  .status.ng{border-color:var(--ng)} .status.ng .h{color:var(--ng)}
+  .status .h{font-weight:600; font-size:19px}
+  .status .d{opacity:var(--sub); font-size:15px; margin-top:4px}
+  .note{font-size:14px; opacity:var(--mute); line-height:1.55; margin:6px 0 0}
+  details{margin-top:40px; border-top:1px solid var(--line); padding-top:6px}
+  summary{font-size:13px; letter-spacing:.14em; opacity:var(--mute); cursor:pointer; padding:10px 0; list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸ "} details[open] summary::before{content:"▾ "}
+  .staff{font-size:15px}
+  .staff button{min-height:48px; font-size:15px; padding:8px 12px}
+  .staff .row{margin-bottom:6px}
+  .dev{border:1px solid var(--line); padding:10px 12px; margin-bottom:8px}
+  .dev .id{font-family:ui-monospace,Consolas,monospace; font-size:16px}
+  .dev .lamp{display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--ng); margin-right:8px; vertical-align:middle}
+  .dev .lamp.ok{background:var(--ok)}
+  .dev .badge{color:var(--accent); font-weight:600; margin-left:8px}
+  .dev .meta{opacity:var(--sub); font-size:13px; margin:2px 0 8px}
+  .slot{opacity:var(--sub); font-size:13px; margin:4px 0 0; font-family:ui-monospace,Consolas,monospace}
+  .busy{opacity:.5; pointer-events:none}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>廻リ視</h1>
+  <span class="role" id="roleLabel">—</span>
+</header>
+
+<h2 id="hLang">言語 / Language / Langue</h2>
+<div class="row lang" id="langRow">
+  <button data-lang="ja">日本語</button>
+  <button data-lang="en">English</button>
+  <button data-lang="fr">Français</button>
+</div>
+
+<h2 id="hNotice">体験の前に</h2>
+<div class="notice">
+  <div class="lead" id="lead"></div>
+  <div id="noticeText"></div>
+</div>
+
+<h2 id="hRelief">設定</h2>
+<button class="toggle" id="reliefBtn">
+  <span class="box" id="reliefBox"></span>
+  <span>
+    <div class="t" id="reliefTitle"></div>
+    <div class="d" id="reliefDesc"></div>
+  </span>
+</button>
+
+<div style="margin-top:14px">
+  <button class="big" id="sendBtn"></button>
+</div>
+<div class="status" id="status"><div class="h" id="stH">—</div><div class="d" id="stD"></div></div>
+<div class="row" style="margin-top:10px">
+  <button id="resetBtn" style="text-align:center"></button>
+</div>
+
+<details class="staff" id="staff">
+  <summary>スタッフ</summary>
+  <p class="note">この面はスタッフだけが触る。体験者に見せる文は上の 3 言語のところ。</p>
+
+  <h2>このタブレットは</h2>
+  <div class="row">
+    <button id="roleAlpha">クエストα 用</button>
+    <button id="roleBeta">クエストβ 用</button>
+  </div>
+  <p class="note">タブレット側の記憶（この端末のブラウザに残る）。卓には「どのタブレットか」は無い。</p>
+
+  <h2>ヘッドセット（heartbeat が届いている機）</h2>
+  <div id="devices"><p class="note">読み込み中…</p></div>
+  <p class="note">
+    どの機がどれかは、機の <code>adb logcat</code> の <code>[XP] ev=boot … id=</code>（頭 6 桁）か、
+    片方だけ電源を入れて見分ける。結び直しは卓の <code>show.json</code>（control.visitorDevices）に残る。
+  </p>
+
+  <h2>枠（卓が持っている値）</h2>
+  <div id="slots"></div>
+  <p class="note">
+    体験者が A を押して始めた瞬間に、ヘッドセットが世代を返し、卓が枠を既定（日本語・軽減なし）へ戻す。
+    送ったまま帰った人の設定が残っていたら「枠を空にする」。
+  </p>
+</details>
+
+<script>
+(() => {
+  'use strict';
+  // ---- 文言（体験者が読む面。3 言語）----------------------------------------
+  // ⚠ 注意書きは HMD の TitleNotice と同じ文。片方だけ直すと受付とヘッドセットで食い違う。
+  // ⚠ lead（導入の 1 行）は仮の文。用途をユーザーが詰めたら差し替える（canon/OPEN.md）。
+  const T = {
+    ja: {
+      hNotice: '体験の前に',
+      lead: '調査員となって、この呪われた壁を調査してください。',
+      notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
+      hRelief: '設定',
+      reliefTitle: 'ホラー軽減モード',
+      reliefDesc: '音が半分になり、陽気な曲が流れます。映像と時間は変わりません。',
+      send: 'この設定で始める',
+      reset: 'はじめから',
+      st: {
+        idle: ['まだ送っていません', '言語と設定を選んで、「この設定で始める」を押してください'],
+        sending: ['送っています…', ''],
+        sent: ['ヘッドセットへ送りました', 'スタッフの案内でヘッドセットを着けてください'],
+        applied: ['ヘッドセットに届きました', 'スタッフの案内でヘッドセットを着けてください'],
+        later: ['次の体験の開始時に反映されます', 'いまヘッドセットは体験中です'],
+        unbound: ['ヘッドセットがまだ結ばれていません', 'スタッフを呼んでください'],
+        noserver: ['卓に繋がっていません', 'スタッフを呼んでください'],
+        norole: ['このタブレットの役が決まっていません', 'スタッフを呼んでください'],
+        fail: ['送れませんでした', 'もう一度押してください'],
+      },
+    },
+    en: {
+      hNotice: 'Before you begin',
+      lead: 'You are an investigator. Examine this cursed wall.',
+      notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
+      hRelief: 'Settings',
+      reliefTitle: 'Reduced-horror mode',
+      reliefDesc: 'Sound is halved and a cheerful tune plays. The visuals and timing do not change.',
+      send: 'Start with these settings',
+      reset: 'Start over',
+      st: {
+        idle: ['Not sent yet', 'Choose a language and settings, then press "Start with these settings"'],
+        sending: ['Sending…', ''],
+        sent: ['Sent to the headset', 'Put on the headset when staff guide you'],
+        applied: ['The headset has received it', 'Put on the headset when staff guide you'],
+        later: ['Will apply when the next session starts', 'The headset is in use right now'],
+        unbound: ['No headset is linked yet', 'Please call a member of staff'],
+        noserver: ['Not connected to the desk', 'Please call a member of staff'],
+        norole: ['This tablet has no role yet', 'Please call a member of staff'],
+        fail: ['Could not send', 'Please press again'],
+      },
+    },
+    fr: {
+      hNotice: 'Avant de commencer',
+      lead: 'Vous êtes enquêteur. Examinez ce mur maudit.',
+      notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
+      hRelief: 'Réglages',
+      reliefTitle: 'Mode horreur atténuée',
+      reliefDesc: 'Le son est réduit de moitié et une musique gaie est diffusée. Les images et la durée ne changent pas.',
+      send: 'Commencer avec ces réglages',
+      reset: 'Recommencer',
+      st: {
+        idle: ['Pas encore envoyé', 'Choisissez une langue et des réglages, puis appuyez sur « Commencer »'],
+        sending: ['Envoi…', ''],
+        sent: ['Envoyé au casque', 'Mettez le casque quand le personnel vous guide'],
+        applied: ['Le casque l’a reçu', 'Mettez le casque quand le personnel vous guide'],
+        later: ['Sera appliqué au début de la prochaine session', 'Le casque est en cours d’utilisation'],
+        unbound: ['Aucun casque n’est encore relié', 'Appelez un membre du personnel'],
+        noserver: ['Non connecté au poste', 'Appelez un membre du personnel'],
+        norole: ['Cette tablette n’a pas encore de rôle', 'Appelez un membre du personnel'],
+        fail: ['Envoi impossible', 'Appuyez de nouveau'],
+      },
+    },
+  };
+  const ROLE_NAME = { alpha: 'クエストα', beta: 'クエストβ', '': '—' };
+  const LANG_NAME = { ja: '日本語', en: 'English', fr: 'Français' };
+
+  const $ = (id) => document.getElementById(id);
+  const state = {
+    lang: 'ja', relief: false,
+    role: '',            // このタブレットの役（localStorage）
+    sent: null,          // {lang, relief, epoch} 最後に送ったもの
+    ui: 'idle',          // idle | sending | sent | fail
+    devices: null,       // /unity/devices の直近
+    online: false,
+  };
+  try { state.role = localStorage.getItem('visitor.role') || ''; } catch (e) { /* 私用ウィンドウ等 */ }
+
+  // ---- 描画 ---------------------------------------------------------------
+  function renderText() {
+    const t = T[state.lang];
+    $('hNotice').textContent = t.hNotice;
+    $('lead').textContent = t.lead;
+    $('noticeText').textContent = t.notice;
+    $('hRelief').textContent = t.hRelief;
+    $('reliefTitle').textContent = t.reliefTitle;
+    $('reliefDesc').textContent = t.reliefDesc;
+    $('sendBtn').textContent = t.send;
+    $('resetBtn').textContent = t.reset;
+    document.querySelectorAll('#langRow button').forEach((b) => {
+      b.classList.toggle('on', b.dataset.lang === state.lang);
+    });
+    $('reliefBtn').classList.toggle('on', state.relief);
+    $('reliefBox').textContent = state.relief ? '✓' : '';
+    $('roleLabel').innerHTML = state.role
+      ? `<b>${ROLE_NAME[state.role]}</b>`
+      : '<span style="color:var(--warn)">役が未設定</span>';
+    $('roleAlpha').classList.toggle('on', state.role === 'alpha');
+    $('roleBeta').classList.toggle('on', state.role === 'beta');
+    $('roleAlpha').style.borderColor = state.role === 'alpha' ? 'var(--accent)' : '';
+    $('roleBeta').style.borderColor = state.role === 'beta' ? 'var(--accent)' : '';
+  }
+
+  // 送った後の状態は、卓の枠と機の heartbeat から決める（「送ったつもり」を出さない）。
+  function statusKey() {
+    if (state.ui === 'sending' || state.ui === 'fail') return state.ui;
+    if (!state.role) return 'norole';
+    if (!state.online) return 'noserver';
+    const d = state.devices;
+    const roleInfo = d && d.roles && d.roles[state.role];
+    const boundId = roleInfo ? roleInfo.deviceId : '';
+    if (!boundId) return 'unbound';
+    if (!state.sent) return 'idle';
+    const dev = (d.devices || []).find((x) => x.deviceId === boundId);
+    if (!dev || !dev.alive) return 'sent';
+    const slotEpoch = roleInfo.slot ? roleInfo.slot.epoch : 0;
+    const gotIt = dev.visitorAppliedEpoch >= state.sent.epoch
+      && dev.lang === state.sent.lang && dev.relief === state.sent.relief;
+    if (gotIt) return 'applied';
+    if (dev.phase === 'RUN' || dev.phase === 'END') return 'later';
+    if (dev.visitorPendingEpoch >= state.sent.epoch && dev.visitorAppliedEpoch < state.sent.epoch) {
+      // 届いているが、まだ注意書きの段でない（黒の待ち・タイトル・導入）→ タイトルで載る
+      return 'sent';
+    }
+    void slotEpoch;
+    return 'sent';
+  }
+
+  function renderStatus() {
+    const key = statusKey();
+    const t = T[state.lang].st[key] || T[state.lang].st.idle;
+    const el = $('status');
+    el.className = 'status ' + ({
+      applied: 'ok', later: 'warn', unbound: 'ng', noserver: 'ng', norole: 'ng', fail: 'ng',
+    }[key] || '');
+    $('stH').textContent = t[0];
+    $('stD').textContent = t[1];
+    $('sendBtn').disabled = state.ui === 'sending';
+  }
+
+  function renderStaff() {
+    const d = state.devices;
+    const box = $('devices');
+    if (!state.online) { box.innerHTML = '<p class="note">卓に繋がっていません（8099）</p>'; }
+    else if (!d || !d.devices || d.devices.length === 0) {
+      box.innerHTML = '<p class="note">heartbeat がまだ 1 台も届いていません。'
+        + 'ヘッドセットが起動して卓に繋がると、ここに出る（端末 ID を名乗るのは 2026-09-11 以降の APK）。</p>';
+    } else {
+      box.innerHTML = d.devices.map((x) => {
+        const age = x.ageSec == null ? '—' : `${x.ageSec.toFixed(0)} 秒前`;
+        const badge = x.role ? `<span class="badge">${ROLE_NAME[x.role]}</span>` : '';
+        return `<div class="dev">
+          <span class="lamp ${x.alive ? 'ok' : ''}"></span><span class="id">${x.shortId}</span>${badge}
+          <div class="meta">${x.deviceModel || '?'} ・ ${x.phase || '—'} ・ ${LANG_NAME[x.lang] || x.lang} ・ 軽減 ${x.relief ? 'あり' : 'なし'} ・ ${age}
+            ・ rev ${x.appliedRev} ・ 世代 卓${x.visitorPendingEpoch}/書${x.visitorAppliedEpoch}/始${x.visitorConsumedEpoch}</div>
+          <div class="row">
+            <button data-bind="alpha" data-id="${x.deviceId}" ${x.role === 'alpha' ? 'disabled' : ''}>α に結ぶ</button>
+            <button data-bind="beta" data-id="${x.deviceId}" ${x.role === 'beta' ? 'disabled' : ''}>β に結ぶ</button>
+            <button data-bind="" data-id="${x.deviceId}" data-role="${x.role}" ${x.role ? '' : 'disabled'}>解く</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+    const sl = $('slots');
+    if (!d || !d.roles) { sl.innerHTML = ''; return; }
+    sl.innerHTML = ['alpha', 'beta'].map((r) => {
+      const ri = d.roles[r];
+      const s = ri.slot || {};
+      const bound = ri.deviceId ? ri.deviceId.slice(0, 6) : '（未結）';
+      const isDefault = (s.lang || 'ja') === 'ja' && !s.relief;
+      return `<div class="dev">
+        <span class="badge" style="margin-left:0">${ROLE_NAME[r]}</span> <span class="id">${bound}</span>
+        <div class="slot">lang=${s.lang || 'ja'} relief=${s.relief ? 1 : 0} epoch=${s.epoch || 0}${isDefault ? '（既定）' : ''}</div>
+        <div class="row" style="margin-top:6px"><button data-clear="${r}" ${isDefault ? 'disabled' : ''}>枠を空にする（日本語・軽減なし）</button></div>
+      </div>`;
+    }).join('');
+  }
+
+  function render() { renderText(); renderStatus(); renderStaff(); }
+
+  // ---- 卓との通信 -----------------------------------------------------------
+  async function command(body) {
+    const r = await fetch('/command', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  }
+
+  async function send() {
+    if (!state.role) { render(); return; }
+    state.ui = 'sending'; renderStatus();
+    try {
+      const j = await command({ type: 'setVisitor', role: state.role, lang: state.lang, relief: state.relief });
+      // 送った世代は /unity/devices の枠から読む（rev しか返らないので次の poll で確定する）
+      state.sent = { lang: state.lang, relief: state.relief, epoch: 0, rev: j.rev };
+      state.ui = 'sent';
+      await poll();
+    } catch (e) {
+      console.warn('setVisitor failed', e);
+      state.ui = 'fail';
+    }
+    render();
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch('/unity/devices', { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      state.devices = await r.json();
+      state.online = true;
+      if (state.sent && state.sent.epoch === 0 && state.role) {
+        const ri = state.devices.roles && state.devices.roles[state.role];
+        if (ri && ri.slot) state.sent.epoch = ri.slot.epoch || 0;
+      }
+    } catch (e) {
+      state.online = false;
+    }
+    renderStatus(); renderStaff();
+  }
+
+  // ---- 操作 ---------------------------------------------------------------
+  $('langRow').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-lang]');
+    if (!b) return;
+    state.lang = b.dataset.lang;
+    state.ui = state.sent ? state.ui : 'idle';
+    render();
+  });
+  $('reliefBtn').addEventListener('click', () => { state.relief = !state.relief; render(); });
+  $('sendBtn').addEventListener('click', send);
+  $('resetBtn').addEventListener('click', () => {
+    // 面だけ戻す（枠は体験者が始めた瞬間に卓が戻す。送ったまま帰った人の分はスタッフ欄で空にする）
+    state.lang = 'ja'; state.relief = false; state.sent = null; state.ui = 'idle';
+    render();
+  });
+  $('roleAlpha').addEventListener('click', () => setRole('alpha'));
+  $('roleBeta').addEventListener('click', () => setRole('beta'));
+  function setRole(r) {
+    state.role = r;
+    try { localStorage.setItem('visitor.role', r); } catch (e) { /* 保存できなくても動く */ }
+    render();
+  }
+  $('devices').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('button[data-bind]');
+    if (!b) return;
+    const role = b.dataset.bind || b.dataset.role;
+    const deviceId = b.dataset.bind ? b.dataset.id : '';
+    if (!role) return;
+    b.classList.add('busy');
+    try { await command({ type: 'bindVisitorDevice', role, deviceId }); }
+    catch (e) { console.warn('bind failed', e); }
+    await poll();
+  });
+  $('slots').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('button[data-clear]');
+    if (!b) return;
+    b.classList.add('busy');
+    try { await command({ type: 'setVisitor', role: b.dataset.clear, lang: 'ja', relief: false }); }
+    catch (e) { console.warn('clear failed', e); }
+    await poll();
+  });
+
+  render();
+  poll();
+  setInterval(poll, 2000);
+})();
+</script>
+</body>
+</html>

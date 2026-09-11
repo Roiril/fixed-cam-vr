@@ -54,6 +54,9 @@ Quest が 1 台も起動していないのに「音 OK / コントローラ NG�
 ⭐ 同じ理由で、**2 台のうち片方だけ欠けている状態は 1 回読んでも分からない**。
 heartbeat に端末 ID が無く（`ShowControlClient.cs` の `Hb` に無い）、`_unity_status` は
 1 スロットを 2 台が交互に上書きする。⇒ **20 秒の窓の最悪値**で見る（欠けている機の番が来た瞬間に落ちる）。
+⭐ **2026-09-11 から heartbeat は `deviceId` を名乗る**（0185・[[visitor_tablet]]）。卓は `_unity_devices` に
+機ごとに持ち分け、`GET /unity/devices` で出す。`/unity/status` と `onsite.py check` は従来のまま
+（1 スロット・20 秒の窓）なので、機ごとに見たいなら `/unity/devices` を読む。
 
 ## 4. 点検が初回に暴いたもの（2026-09-04 22:38）
 

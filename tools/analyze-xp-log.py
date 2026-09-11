@@ -1873,6 +1873,59 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", f"陽気な曲は {max(times):.1f}s まで進んだ（本当に鳴っている）")
         w()
 
+    # ---------------- タブレットの設定（2026-09-11・canon/LEDGER.md 0185）----------------
+    # 観測の出どころは C# の `ShowTelemetryHost` の `visitor`（5 つ組）。**片方だけ直すと沈黙して食い違う。**
+    #   `<役>/<卓が言った世代>/<書いた世代>/<始めた世代>/<書いた回数>`
+    # ⚠ 役が `-` なら卓がこの機を結んでいない ＝ タブレットで選んでも届かない。卓が居ない走行では普通。
+    # ⚠ 値そのもの（どの言語・軽減か）は `lang` / `relief` が持つ。ここは経路の証拠。
+    vis_rows = [e for e in events if e.get("ev") == "sum" and "visitor" in e]
+    if vis_rows:
+        w("## タブレットの設定（体験前に選んだ言語・軽減がこの機へ届いたか）")
+
+        def _vis(e):
+            f = str(e.get("visitor", "")).split("/")
+            f += ["-"] * (5 - len(f))
+            return f
+
+        roles = {_vis(e)[0] for e in vis_rows}
+        role = next((r for r in roles if r not in ("-", "")), "-")
+        pend = max((int(_vis(e)[1]) for e in vis_rows if _vis(e)[1].isdigit()), default=0)
+        appl = max((int(_vis(e)[2]) for e in vis_rows if _vis(e)[2].isdigit()), default=0)
+        cons = max((int(_vis(e)[3]) for e in vis_rows if _vis(e)[3].isdigit()), default=0)
+        n_ap = max((int(_vis(e)[4]) for e in vis_rows if _vis(e)[4].isdigit()), default=0)
+        w(f"  役 {role} / 卓の世代 {pend} / 書いた世代 {appl} / 始めた世代 {cons} / 書いた回数 {n_ap}")
+        if role == "-":
+            verdict("OK", "卓がこの機を α/β に結んでいない（卓なし・結ぶ前の走行では普通）")
+        elif pend == 0:
+            verdict("OK", f"役 {role} に結ばれているが、タブレットからはまだ何も届いていない")
+        else:
+            # 注意書きが出ている段（`ev=title stage=Wait` の区間）で、卓の世代が書いた世代より
+            # 大きいまま続いていたら、TitleScreen の書き込みが効いていない。
+            # ⚠ 段は `ev=sum` には無い。`ev=title` の縁から各標本の時刻の段を引く。
+            tstages = sorted((fnum(e, "t", 0), str(e.get("stage"))) for e in events if e.get("ev") == "title")
+
+            def _stage_at(t):
+                cur = "Off"
+                for tt, st in tstages:
+                    if tt <= t:
+                        cur = st
+                    else:
+                        break
+                return cur
+
+            stuck = [e for e in vis_rows
+                     if _stage_at(fnum(e, "t", 0)) == "Wait" and _vis(e)[1].isdigit() and _vis(e)[2].isdigit()
+                     and int(_vis(e)[1]) > int(_vis(e)[2])]
+            if len(stuck) >= 3:
+                verdict("FAIL", f"注意書きの段で卓の世代 {pend} が書かれないまま（{len(stuck)} 標本）— "
+                                "TitleScreen.Update の VisitorPrefs.ApplyPending が効いていない")
+            elif n_ap == 0:
+                verdict("WARN", f"卓の世代 {pend} を受け取ったが 1 度も書いていない"
+                                "（注意書きの段が無い走行なら普通）")
+            else:
+                verdict("OK", f"タブレットの設定をこの機へ {n_ap} 回書いた（役 {role}・世代 {appl}）")
+        w()
+
     # ---------------- 音（鳴ったか）----------------
     # ⚠⚠ **音は録画に映らない。** 画は `quest-record.py` が撮って人が開けば分かるが、
     #    音は実機で被って聴く以外に確かめる手段が無い（しかもこの作業をしているシュビーは

@@ -1508,6 +1508,29 @@ namespace FixedCamVr.Streaming
             public int introAdvanceEpoch;
             // 体験を終える合図（世代カウンタ）。卓の「■ 体験を終える」。
             public int runEndEpoch;
+
+            // タブレット（体験前の説明と設定・0185）。役 → 端末 ID の結び付けと、役ごとの枠。
+            // 端末 ID は SystemInfo.deviceUniqueIdentifier（heartbeat で名乗る）。卓の visitor.html が結ぶ。
+            // 枠は「卓が言っている値」で、書くのは面が出ている段だけ（VisitorPrefs の doc）。
+            public VisitorDevicesDef? visitorDevices;
+            public VisitorSlotsDef? visitor;
+        }
+        [Serializable] private class VisitorDevicesDef
+        {
+            public string alpha = "";
+            public string beta = "";
+        }
+        [Serializable] private class VisitorSlotsDef
+        {
+            public VisitorPrefDef? alpha;
+            public VisitorPrefDef? beta;
+        }
+        [Serializable] private class VisitorPrefDef
+        {
+            public string lang = "ja";
+            public bool relief;
+            // 0 = 枠が無い（卓が一度も書いていない）。卓は書くたびに +1 する。
+            public int epoch;
         }
 
         private void Awake()
@@ -1534,10 +1557,44 @@ namespace FixedCamVr.Streaming
 
         private void Start()
         {
+            // 端末 ID（heartbeat で名乗る。卓の visitor.html が役 α/β と結ぶ・0185）。
+            // メインスレッドでしか読めないので、ここで 1 度だけ取る。
+            _deviceId = SystemInfo.deviceUniqueIdentifier ?? "";
+            _deviceModel = SystemInfo.deviceModel ?? "";
             // 優先順位: 焼き込み StreamingAssets < 端末キャッシュ < ライブ long-poll（後勝ち）。
             // 焼き込みの読込は UnityWebRequest（Android は jar: URL）なので非同期。
             // registry の Awake（stream 生成）が済んだ後に、この初期化列を回す。
             _ = RunInitAsync();
+        }
+
+        // ---- タブレットの設定（0185）----
+        private string _deviceId = "";
+        private string _deviceModel = "";
+
+        /// <summary>この機の端末 ID（<c>SystemInfo.deviceUniqueIdentifier</c>）。テレメトリの <c>ev=boot</c> も出す。</summary>
+        public string DeviceId => _deviceId;
+
+        /// <summary>
+        /// <c>control.visitorDevices</c> で自分の端末 ID が結ばれている役を探し、その役の枠を
+        /// <see cref="VisitorPrefs"/> へ渡す。結ばれていなければ役を解く（枠も忘れる）。
+        /// ⚠ 端末 ID の比較は大文字小文字を見ない（卓は heartbeat の値をそのまま書くが、人が打つ経路も残す）。
+        /// </summary>
+        private void ApplyVisitorSlot(ControlState? control)
+        {
+            string role = "";
+            VisitorPrefDef? slot = null;
+            var devs = control?.visitorDevices;
+            if (devs != null && _deviceId.Length > 0)
+            {
+                if (string.Equals(devs.alpha, _deviceId, StringComparison.OrdinalIgnoreCase))
+                { role = "alpha"; slot = control!.visitor?.alpha; }
+                else if (string.Equals(devs.beta, _deviceId, StringComparison.OrdinalIgnoreCase))
+                { role = "beta"; slot = control!.visitor?.beta; }
+            }
+            VisitorPrefs.SetRole(role);
+            if (role.Length == 0) return;
+            if (slot == null) { VisitorPrefs.Offer(0, null, false); return; }
+            VisitorPrefs.Offer(slot.epoch, slot.lang, slot.relief);
         }
 
         private async Task RunInitAsync()
@@ -2178,6 +2235,12 @@ namespace FixedCamVr.Streaming
                 _knownRunEndEpoch = endEpoch;
                 ResolveRunDirector()?.RequestFinish();
             }
+
+            // 1.69) タブレットの設定（control.visitorDevices / control.visitor・0185）。
+            //       自分の端末 ID が結ばれている役の枠だけを箱へ渡す。**ここでは書かない** —
+            //       書くのは注意書きが出ている段の TitleScreen（本編の途中で言語が変わらないように）。
+            //       キャッシュへは載せない（正は卓。再起動で 0 へ戻ってよい設計）。
+            ApplyVisitorSlot(state.control);
 
             // 端末キャッシュへ保存（次回 PC 不在起動で参照）
             SaveCache();
@@ -3271,6 +3334,22 @@ namespace FixedCamVr.Streaming
             public float sourceAgeMs;
             public float displayHz;
             public int throttleStage;   // 配信側の熱による自動降格（0 = なし）
+            // ---- タブレットの設定（0185）------------------------------------------------
+            // deviceId = この機の名乗り（SystemInfo.deviceUniqueIdentifier）。卓は機ごとに
+            //   heartbeat を持ち分け、visitor.html が役 α/β と結ぶ。**これが無いと 2 台が 1 スロットを
+            //   交互に上書きする**（memory/onsite_day_ops.md §3）。
+            // visitorRole = 卓が結んだ役（"" = 未結）。
+            // visitor*Epoch = 卓が言った世代 / この機が書いた世代 / 体験者が始めたときの世代。
+            //   卓は consumed が自分の枠の世代と一致したら枠を既定へ戻す（次の人へ持ち越さない）。
+            // lang / relief = いま実際にこの機が出している値（書いたつもりではなく static から読む）。
+            public string deviceId = "";
+            public string deviceModel = "";
+            public string visitorRole = "";
+            public int visitorPendingEpoch;
+            public int visitorAppliedEpoch;
+            public int visitorConsumedEpoch;
+            public string lang = "ja";
+            public bool relief;
             // 前回の heartbeat 以降に確定した区間滞在（実測）。卓が集計して
             // リボン UI の「実測 平均 Ns」に使う。空配列で送ってよい（サーバ側は無視）。
             public DwellHb[] dwell = Array.Empty<DwellHb>();
@@ -3361,6 +3440,16 @@ namespace FixedCamVr.Streaming
                         hb.throttleStage = active.Health?.throttleStage ?? 0;
                     }
                     hb.displayHz = DisplayRateInfo.CurrentHz;
+
+                    // タブレットの設定（0185）。static から読み直す（書いたつもりを送らない）。
+                    hb.deviceId = _deviceId;
+                    hb.deviceModel = _deviceModel;
+                    hb.visitorRole = VisitorPrefs.Role;
+                    hb.visitorPendingEpoch = VisitorPrefs.PendingEpoch;
+                    hb.visitorAppliedEpoch = VisitorPrefs.AppliedEpoch;
+                    hb.visitorConsumedEpoch = VisitorPrefs.ConsumedEpoch;
+                    hb.lang = ShowLanguage.Code(ShowLanguage.Current);
+                    hb.relief = HorrorRelief.Enabled;
 
                     ShowRunDirector? run = ResolveRunDirector();
                     if (run != null)

@@ -261,6 +261,11 @@ namespace FixedCamVr.Streaming
             // ⚠ 落ちたことは `HorrorReliefAudio` が毎フレーム見ていて、曲は退いて頭へ戻る
             //   （リセットの相手を増やさない）。
             HorrorRelief.Reset();
+            // ▶ 戻した上に、タブレットで選んだ値を載せる（0185）。**戻す → 載せる の順が正**。
+            //   逆にすると、タイトルを出し直した瞬間にタブレットの設定が消える。
+            //   卓が結んでいない機・枠が無い機では何もしない（従来どおり既定のまま）。
+            if (VisitorPrefs.ApplyAtTitle())
+                Debug.Log($"[Title] タブレットの設定を載せた: lang={ShowLanguage.Code(ShowLanguage.Current)} relief={HorrorRelief.Enabled} epoch={VisitorPrefs.AppliedEpoch}");
             if (!titleEnabled || !IsBuilt)
             {
                 if (!IsBuilt && !_warnedNotBuilt)
@@ -346,8 +351,28 @@ namespace FixedCamVr.Streaming
             Hide();
         }
 
+        // タブレットの設定（0185）の 2 つの縁を見るための、前フレームの段。
+        private TitleStage _prevStage = TitleStage.Off;
+
         private void Update()
         {
+            // ▶ タブレットの設定（0185）。注意書きが出ている段（Wait）に卓から新しい枠が届いたら
+            //   その場で書く（体験者が手元で巡らせるのと同じ縁）。Wait を出た瞬間 ＝ 体験者が始めた
+            //   ので、そのとき持っていた枠の世代を「消費した」と記録する（heartbeat が卓へ返し、
+            //   卓が枠を既定へ戻す ＝ 次の人へ持ち越さない）。
+            //   ⚠ Wait → Wait（ランリセットの出し直し）は縁ではない。BeginTitle が載せ直す。
+            TitleStage stage = _logic.Stage;
+            if (stage == TitleStage.Wait)
+            {
+                if (VisitorPrefs.HasUnapplied && VisitorPrefs.ApplyPending())
+                    Debug.Log($"[Title] タブレットの設定を書いた: lang={ShowLanguage.Code(ShowLanguage.Current)} relief={HorrorRelief.Enabled} epoch={VisitorPrefs.AppliedEpoch}");
+            }
+            else if (_prevStage == TitleStage.Wait && VisitorPrefs.Consume())
+            {
+                Debug.Log($"[Title] 体験者が始めた: タブレットの枠 epoch={VisitorPrefs.ConsumedEpoch} を消費");
+            }
+            _prevStage = stage;
+
             if (_logic.Stage == TitleStage.Off || _logic.Stage == TitleStage.Done)
             {
                 _dismissRequested = false;

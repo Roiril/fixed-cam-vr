@@ -178,7 +178,12 @@ namespace FixedCamVr.Diagnostics
             Resolve();
             // bg / font は**シーンとアセットに焼かれた値**なので、コードを直しても走行のたびに変わらない。
             // 起動時に 1 回出せば足りるし、ここで出さないと「実機でだけ画が出ない」原因に辿り着けない。
-            Emit($"ev=boot build=dev dev={SystemInfo.deviceModel} rate={DisplayRateInfo.CurrentHz:F0} " +
+            // id = この機の端末 ID の頭 6 桁（SystemInfo.deviceUniqueIdentifier）。卓の visitor.html で
+            //   役 α/β と結ぶときに「どの機がどれか」を見分ける唯一の手掛かり（0185）。
+            //   heartbeat は全桁を名乗るが、logcat には頭だけで足りる。
+            string devId = SystemInfo.deviceUniqueIdentifier ?? "";
+            Emit($"ev=boot build=dev dev={SystemInfo.deviceModel} id={(devId.Length > 6 ? devId.Substring(0, 6) : devId)} " +
+                 $"rate={DisplayRateInfo.CurrentHz:F0} " +
                  $"bg={DescribeCameraBackgrounds()} font={(JapaneseHudFont.TryGet() != null ? 1 : 0)}");
         }
 
@@ -1363,6 +1368,16 @@ namespace FixedCamVr.Diagnostics
                .Append('/').Append(_relief == null ? "-" : _relief.ListenerVolume.ToString("F2"))
                .Append('/').Append(_relief == null ? "-" : _relief.BgmGain.ToString("F2"))
                .Append('/').Append(_relief == null ? "-" : _relief.BgmTimeSec.ToString("F1"));
+            //   visitor = タブレットの設定（0185）。**`<役>/<卓が言った世代>/<書いた世代>/<始めた世代>/<書いた回数>`**
+            //   ⚠ 役が `-` なら卓がこの機を α/β に結んでいない ＝ タブレットで何を選んでも届かない。
+            //   ⚠ 卓の世代が書いた世代より大きいまま本編（RUN）に入ったら、それは次の人の分（正常）。
+            //     注意書きの段（Wait）で大きいままなら TitleScreen の書き込みが効いていない。
+            //   ⚠ `lang` / `relief`（上）が実際の値。ここは経路の証拠で、値は上を見る。
+            _sb.Append(" visitor=").Append(VisitorPrefs.Role.Length == 0 ? "-" : VisitorPrefs.Role)
+               .Append('/').Append(VisitorPrefs.PendingEpoch)
+               .Append('/').Append(VisitorPrefs.AppliedEpoch)
+               .Append('/').Append(VisitorPrefs.ConsumedEpoch)
+               .Append('/').Append(VisitorPrefs.ApplyCount);
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。

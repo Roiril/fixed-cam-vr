@@ -11,6 +11,7 @@
 #   POST /masks?name=            : マスク PNG 保存 → /masks/<name>.png で配信
 #   POST /unity/heartbeat        : Unity が現状報告（アクティブカメラ等）
 #   GET  /unity/status           : 直近 heartbeat + 経過秒（UI 表示用）
+#   GET  /unity/devices          : 機ごとの heartbeat ＋ タブレットの枠（visitor.html 用・0185）
 #   GET  /scenarios/list         : 🕹 記録済みシナリオ一覧（本体は /scenarios/<name>.json で静的配信）
 #   POST /scenarios/save         : {name, scenario} を scenarios/<name>.json へ保存（show.json は不変）
 #   GET  /dwell/stats            : 区間 (lap,camera) の実測滞在時間の集計（heartbeat の dwell[] 由来）
@@ -51,6 +52,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 import export_build as _export  # noqa: E402  （sys.path を整えた後でないと読めない）
+import visitor_prefs as _visitor  # noqa: E402  タブレットの設定（0185）
 
 CAPTURES = os.path.join(ROOT, 'captures')
 MASKS = os.path.join(ROOT, 'masks')
@@ -561,7 +563,10 @@ def _default_show():
                     # 卓からの手動の乱れ（⚡ ボタン）。
                     'glitchEpoch': 0, 'glitchLevel': 0.8, 'glitchSec': 0.3,
                     # 導入を終える / 体験を終える の合図。
-                    'introAdvanceEpoch': 0, 'runEndEpoch': 0},
+                    'introAdvanceEpoch': 0, 'runEndEpoch': 0,
+                    # タブレット（体験前の説明と設定・0185）。役 α/β → 端末 ID と、役ごとの枠
+                    # （lang / relief / epoch）。判断は visitor_prefs.py。
+                    **_visitor.default_control_fields()},
         # 体験 1 回の骨格（企画書 3 章「3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒」）。
         # totalLaps 周を回り、元の位置（course.order[0]）へ戻ったところで Unity は暗転して終了する
         # （lap = totalLaps + 1 の order[0] ＝「もどり」の区間だけは必ず踏む）。
@@ -686,6 +691,9 @@ def _load_show():
 _show = _load_show()
 # Unity の直近 heartbeat（メモリのみ。再起動で消えてよい）
 _unity_status = {'at': 0.0}
+# 端末ごとの直近 heartbeat（deviceId → body）。2 台が 1 スロットを交互に上書きする問題
+# （memory/onsite_day_ops.md §3）の受け皿。deviceId を名乗らない旧 APK はここに入らない。
+_unity_devices = {}
 # _unity_status は heartbeat スレッドが書き、/unity/status と /diag が読む（ThreadingHTTPServer =
 # リクエストごとに別スレッド）。clear()+update() の隙間で読むと KeyError / dict changed size で 500 になり、
 # 卓が「サーバ断」を誤表示する（2026-07-26 監査 MED）。読み書きを必ずこのロックで囲む。
@@ -695,6 +703,11 @@ _unity_status_lock = threading.Lock()
 def _unity_status_snapshot():
     with _unity_status_lock:
         return dict(_unity_status)
+
+
+def _unity_devices_snapshot():
+    with _unity_status_lock:
+        return {k: dict(v) for k, v in _unity_devices.items()}
 
 
 def _mutate_show(fn):
@@ -1462,6 +1475,11 @@ class Handler(SimpleHTTPRequestHandler):
             return self._open_dir(q.get('dir', ['recordings'])[0])
         if path == '/state':
             return self._get_state()
+        if path == '/unity/devices':
+            # タブレット（visitor.html）が読む: 機ごとの heartbeat ＋ 役の枠。
+            with _show_cond:
+                ctrl = json.loads(json.dumps(_show.get('control') or {}))
+            return self._json(_visitor.device_rows(_unity_devices_snapshot(), ctrl, time.time()))
         if path == '/unity/status':
             snap = _unity_status_snapshot()
             age = (time.time() - snap['at']) if snap.get('at') else None
@@ -2076,10 +2094,23 @@ class Handler(SimpleHTTPRequestHandler):
             body['at'] = time.time()
             # 実測滞在（dwell[]）は集計側へ渡し、status には残さない（毎回のスナップに混ぜない）。
             merged = _merge_dwell(body.pop('dwell', None))
+            did = (body.get('deviceId') or '').strip()
             with _unity_status_lock:
                 _unity_status.clear()
                 _unity_status.update(body)
-            return self._json({'ok': True, 'dwellMerged': merged})
+                if did:
+                    _unity_devices[did] = dict(body)
+            # タブレットの枠（0185）: 体験者が始めた世代を Quest が返してきたら、枠を既定へ戻す。
+            # 先に読んで判定し、要るときだけ _mutate_show（heartbeat は 2 秒ごとに 2 台から来る）。
+            consumed = 0
+            if did and _visitor.needs_consume(_show.get('control') or {}, did,
+                                              body.get('visitorConsumedEpoch')):
+                def _consume(show):
+                    if _visitor.consume(show.setdefault('control', {}), did,
+                                        body.get('visitorConsumedEpoch')):
+                        print(f"[visitor] {did[:6]} が始めたので枠を既定へ戻した")
+                consumed = _mutate_show(_consume)
+            return self._json({'ok': True, 'dwellMerged': merged, 'visitorReset': consumed})
         if parsed.path in ('/shoot/start', '/shoot/stop', '/shoot/pull',
                            '/shoot/adopt', '/shoot/delete', '/shoot/collect'):
             return self._shoot_post(parsed.path)
@@ -2367,6 +2398,12 @@ class Handler(SimpleHTTPRequestHandler):
             elif typ == 'endRun':
                 # 体験を終える（暗転）。走行中の演出は待たない。
                 ctrl['runEndEpoch'] = int(ctrl.get('runEndEpoch') or 0) + 1
+            elif typ == 'setVisitor':
+                # タブレットで体験者が選んだ言語・軽減を役の枠へ（0185）。世代を進めて Quest へ届ける。
+                _visitor.set_visitor(ctrl, body.get('role'), body.get('lang'), body.get('relief'))
+            elif typ == 'bindVisitorDevice':
+                # 役 α/β と Quest の端末 ID を結ぶ（空で解く）。visitor.html のスタッフ欄から。
+                _visitor.bind_device(ctrl, body.get('role'), body.get('deviceId'))
             elif typ == 'setDiscoveryEnabled':
                 # Quest 内の発見プロトコル（fixedcam-discovery/1）のキルスイッチ。
                 # autoFollow は卓側の host 書き換えを止めるだけで、Quest 内の張替は止まらない。
