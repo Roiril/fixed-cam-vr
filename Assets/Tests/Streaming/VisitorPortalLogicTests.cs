@@ -120,6 +120,78 @@ namespace FixedCamVr.Streaming.Tests
             StringAssert.Contains("Connection: close\r\n\r\n日本語", text);
         }
 
+        // ---- 面が使う画像・動画（GET /asset/<name>）----
+        private static VisitorPortalLogic.Response RouteAsset(string path, long rangeStart, long rangeEnd, byte[]? data)
+        {
+            var req = new VisitorPortalLogic.Request { method = "GET", path = path, rangeStart = rangeStart, rangeEnd = rangeEnd };
+            return VisitorPortalLogic.Route(req, "", "<html>", "{}", (l, r) => 1, () => { }, (name) => name == "doctor.jpg" ? data : null);
+        }
+
+        [Test]
+        public void Asset_ServesBytes_WithContentTypeFromExtension()
+        {
+            byte[] data = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+            var res = RouteAsset("/asset/doctor.jpg", -1, -1, data);
+            Assert.AreEqual(200, res.status);
+            Assert.AreEqual("image/jpeg", res.contentType);
+            Assert.AreSame(data, res.bytes);
+            Assert.AreEqual(10, res.bytesCount);
+            string head = Encoding.ASCII.GetString(VisitorPortalLogic.Encode(res), 0, 120);
+            StringAssert.Contains("Content-Length: 10\r\n", head);
+            StringAssert.Contains("Accept-Ranges: bytes\r\n", head);
+        }
+
+        [Test]
+        public void Asset_Range_Returns206_WithContentRange()
+        {
+            byte[] data = new byte[100];
+            for (int i = 0; i < data.Length; i++) data[i] = (byte)i;
+            var res = RouteAsset("/asset/doctor.jpg", 10, 19, data);
+            Assert.AreEqual(206, res.status);
+            Assert.AreEqual(10, res.bytesOffset);
+            Assert.AreEqual(10, res.bytesCount);
+            Assert.AreEqual(100, res.totalLength);
+            byte[] all = VisitorPortalLogic.Encode(res);
+            string text = Encoding.ASCII.GetString(all);
+            StringAssert.Contains("HTTP/1.1 206 Partial Content\r\n", text);
+            StringAssert.Contains("Content-Range: bytes 10-19/100\r\n", text);
+            StringAssert.Contains("Content-Length: 10\r\n", text);
+            Assert.AreEqual(10, all[all.Length - 10], "本文の先頭が範囲の先頭でない");
+            Assert.AreEqual(19, all[all.Length - 1], "本文の末尾が範囲の末尾でない");
+            // 開いた範囲（bytes=90-）は末尾まで
+            var tail = RouteAsset("/asset/doctor.jpg", 90, -1, data);
+            Assert.AreEqual(206, tail.status);
+            Assert.AreEqual(10, tail.bytesCount);
+        }
+
+        [Test]
+        public void Asset_Unknown_Is404_AndBadNamesAreRejected()
+        {
+            Assert.AreEqual(404, RouteAsset("/asset/nope.png", -1, -1, null).status);
+            Assert.AreEqual(404, RouteAsset("/asset/../secret", -1, -1, new byte[1]).status, "名前に / や .. を通さない");
+        }
+
+        [Test]
+        public void ParseHead_ReadsRange()
+        {
+            Assert.IsTrue(VisitorPortalLogic.TryParseHead("GET /asset/doctor.mp4 HTTP/1.1\r\nRange: bytes=1000-1999\r\n", out var req));
+            Assert.AreEqual(1000, req.rangeStart);
+            Assert.AreEqual(1999, req.rangeEnd);
+            Assert.IsTrue(VisitorPortalLogic.TryParseHead("GET /asset/doctor.mp4 HTTP/1.1\r\nRange: bytes=500-\r\n", out req));
+            Assert.AreEqual(500, req.rangeStart);
+            Assert.AreEqual(-1, req.rangeEnd);
+            Assert.IsTrue(VisitorPortalLogic.TryParseHead("GET / HTTP/1.1\r\n", out req));
+            Assert.AreEqual(-1, req.rangeStart, "Range が無ければ -1");
+        }
+
+        [Test]
+        public void ContentTypeFor_KnowsTheTypesThePageUses()
+        {
+            Assert.AreEqual("image/jpeg", VisitorPortalLogic.ContentTypeFor("doctor.JPG"));
+            Assert.AreEqual("video/mp4", VisitorPortalLogic.ContentTypeFor("doctor.mp4"));
+            Assert.AreEqual("application/octet-stream", VisitorPortalLogic.ContentTypeFor("x.bin"));
+        }
+
         [Test]
         public void JsonString_EscapesQuotesAndBackslashes()
         {

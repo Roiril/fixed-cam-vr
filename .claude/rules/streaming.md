@@ -3226,7 +3226,8 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
 - **Quest 自身が口を持つ**: [`VisitorPortal`](../../Assets/Scripts/Streaming/VisitorPortal.cs)（TcpListener :8090・
   `ShowControlClient.EnsureVisitorPortal` が起動時に生成。シーンには焼かない）。面（`Assets/Resources/Visitor/visitor.html`）も
   Quest が配る。タブレットは `http://192.168.10.31:8090/`（α）／ `.32`（β）を開く ＝ **役は URL で決まる**
-- 口は 4 つ: `GET /`（面）／ `GET /status`（実値）／ `POST /set {"lang","relief"}`（枠へ）／ `POST /clear`（枠を空に）。
+- 口は 5 つ: `GET /`（面）／ `GET /status`（実値）／ `POST /set {"lang","relief"}`（枠へ）／ `POST /clear`（枠を空に）／
+  `GET /asset/<name>`（面が使う画像・動画。`Resources/Visitor/<name>.bytes`。Range 対応）。
   判断は [`VisitorPortalLogic`](../../Assets/Scripts/Streaming/VisitorPortalLogic.cs)（純ロジック・テスト付き）
 - **正は Quest の中**（`VisitorPrefs`）。**書くのは注意書きの段（`TitleStage.Wait`）だけ**。`BeginTitle` は
   **戻した直後に載せ直す**（同じ受理番号でも）。体験者が A を押したら枠を空にする ＝ 次の人へ持ち越さない
@@ -3237,6 +3238,8 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
 - 観測: `ev=boot id=`（端末 ID の頭 6 桁）／ `ev=sum visitor=<口>/<受けた>/<枠の受理>/<書いた受理>/<回数>`。
   判定は `analyze-xp-log.py` の「## タブレットの口」。**`ShowTelemetryHost` と対で直す**
 - 面を直したら APK を焼き直す（TextAsset。卓の静的配信ではない）
+- 見た目は DBH 風を廻リ視へ落としたもの（0188）。案内役は研究所の博士（`Resources/Visitor/doctor.jpg.bytes`・Codex 生成）。
+  作法と罠は `memory/visitor_tablet.md`「見た目」
 
 ## 接続の堅牢化 — 端末内在 ID + 発見プロトコル（fixedcam-discovery/1）— 2026-07-18
 

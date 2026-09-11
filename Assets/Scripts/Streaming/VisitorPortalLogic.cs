@@ -9,9 +9,10 @@ namespace FixedCamVr.Streaming
     /// <b>タブレットの口（HTTP）の判断。</b>純ロジック — ソケットも Unity も触らない
     /// （<see cref="VisitorPortal"/> がスレッドで呼ぶ。テストは <c>VisitorPortalLogicTests</c>）。
     ///
-    /// 受けるのは 4 つだけ:
+    /// 受けるのは 5 つだけ:
     ///   <c>GET /</c>（面）／ <c>GET /status</c>（この機の実値）／
-    ///   <c>POST /set</c>（<c>{"lang":"en","relief":true}</c>）／ <c>POST /clear</c>（枠を空にする）。
+    ///   <c>POST /set</c>（<c>{"lang":"en","relief":true}</c>）／ <c>POST /clear</c>（枠を空にする）／
+    ///   <c>GET /asset/&lt;name&gt;</c>（面が使う画像・動画。<c>Resources/Visitor/&lt;name&gt;.bytes</c>。Range 対応）。
     /// ⚠ JSON は自前で読む（JsonUtility をサーバのスレッドから呼ばない）。
     /// </summary>
     public static class VisitorPortalLogic
@@ -22,6 +23,9 @@ namespace FixedCamVr.Streaming
             public string method;
             public string path;
             public int contentLength;
+            // Range: bytes=a-b（無ければ rangeStart = -1）。動画の再生はブラウザが必ずこれを投げる。
+            public long rangeStart;
+            public long rangeEnd;
         }
 
         /// <summary>返すもの。<see cref="Encode"/> がバイト列にする。</summary>
@@ -30,6 +34,11 @@ namespace FixedCamVr.Streaming
             public int status;
             public string contentType;
             public string body;
+            // 二進の応答（画像・動画）。bytes が非 null なら body は使わない。
+            public byte[]? bytes;
+            public int bytesOffset;
+            public int bytesCount;
+            public long totalLength;   // 206 のとき Content-Range に要る
         }
 
         /// <summary>
@@ -48,13 +57,27 @@ namespace FixedCamVr.Streaming
             int q = path.IndexOf('?');
             if (q >= 0) path = path.Substring(0, q);
             req.path = path.Length == 0 ? "/" : path;
+            req.rangeStart = -1;
+            req.rangeEnd = -1;
             for (int i = 1; i < lines.Length; i++)
             {
                 int c = lines[i].IndexOf(':');
                 if (c <= 0) continue;
                 string name = lines[i].Substring(0, c).Trim();
-                if (!string.Equals(name, "Content-Length", StringComparison.OrdinalIgnoreCase)) continue;
-                int.TryParse(lines[i].Substring(c + 1).Trim(), out req.contentLength);
+                string value = lines[i].Substring(c + 1).Trim();
+                if (string.Equals(name, "Content-Length", StringComparison.OrdinalIgnoreCase))
+                    int.TryParse(value, out req.contentLength);
+                else if (string.Equals(name, "Range", StringComparison.OrdinalIgnoreCase) && value.StartsWith("bytes="))
+                {
+                    string[] se = value.Substring(6).Split('-');
+                    if (se.Length == 2)
+                    {
+                        if (se[0].Length > 0 && long.TryParse(se[0], out long a)) req.rangeStart = a;
+                        if (se[1].Length > 0 && long.TryParse(se[1], out long b)) req.rangeEnd = b;
+                        if (req.rangeStart < 0 && req.rangeEnd < 0) { /* 読めない Range は無視 */ }
+                        else if (req.rangeStart < 0) req.rangeStart = 0;   // "bytes=-500"（末尾）は使わないので頭から
+                    }
+                }
             }
             return true;
         }
@@ -88,9 +111,21 @@ namespace FixedCamVr.Streaming
         /// <paramref name="onSet"/> / <paramref name="onClear"/> はメインスレッドへ積む口（戻り値は受理番号）。
         /// </summary>
         public static Response Route(Request req, string body, string page, string statusJson,
-                                     Func<ShowLang, bool, int> onSet, Action onClear)
+                                     Func<ShowLang, bool, int> onSet, Action onClear,
+                                     Func<string, byte[]?>? asset = null)
         {
             string p = req.path;
+            if (req.method == "GET" && p.StartsWith("/asset/"))
+            {
+                string name = p.Substring(7);
+                // 名前は英数字・点・下線・ハイフンだけ（Resources の外へは出られないが、念のため）
+                foreach (char ch in name)
+                    if (!(char.IsLetterOrDigit(ch) || ch == '.' || ch == '_' || ch == '-'))
+                        return Json(404, "{\"ok\":false,\"error\":\"bad asset name\"}");
+                byte[]? data = asset != null && name.Length > 0 ? asset(name) : null;
+                if (data == null) return Json(404, "{\"ok\":false,\"error\":\"no such asset\"}");
+                return Binary(data, ContentTypeFor(name), req);
+            }
             if (req.method == "GET" && (p == "/" || p == "/visitor.html" || p == "/index.html"))
                 return new Response { status = 200, contentType = "text/html; charset=utf-8", body = page };
             if (req.method == "GET" && p == "/status")
@@ -113,21 +148,64 @@ namespace FixedCamVr.Streaming
         private static Response Json(int status, string body)
             => new Response { status = status, contentType = "application/json; charset=utf-8", body = body };
 
+        /// <summary>二進の応答。Range があれば 206 で部分を返す（動画の再生に要る）。</summary>
+        public static Response Binary(byte[] data, string contentType, Request req)
+        {
+            long total = data.Length;
+            if (req.rangeStart >= 0 && req.rangeStart < total)
+            {
+                long end = req.rangeEnd < 0 || req.rangeEnd >= total ? total - 1 : req.rangeEnd;
+                if (end < req.rangeStart) end = req.rangeStart;
+                return new Response
+                {
+                    status = 206, contentType = contentType, body = "", bytes = data,
+                    bytesOffset = (int)req.rangeStart, bytesCount = (int)(end - req.rangeStart + 1), totalLength = total,
+                };
+            }
+            return new Response { status = 200, contentType = contentType, body = "", bytes = data, bytesOffset = 0, bytesCount = data.Length, totalLength = total };
+        }
+
+        /// <summary>拡張子から Content-Type（面が使う種類だけ）。</summary>
+        public static string ContentTypeFor(string name)
+        {
+            string n = name.ToLowerInvariant();
+            if (n.EndsWith(".jpg") || n.EndsWith(".jpeg")) return "image/jpeg";
+            if (n.EndsWith(".png")) return "image/png";
+            if (n.EndsWith(".webp")) return "image/webp";
+            if (n.EndsWith(".mp4")) return "video/mp4";
+            if (n.EndsWith(".webm")) return "video/webm";
+            if (n.EndsWith(".mp3")) return "audio/mpeg";
+            if (n.EndsWith(".wav")) return "audio/wav";
+            if (n.EndsWith(".ogg")) return "audio/ogg";
+            return "application/octet-stream";
+        }
+
         /// <summary>HTTP/1.1 の応答をバイト列に。常に <c>Connection: close</c>（1 要求 1 接続）。</summary>
         public static byte[] Encode(Response r)
         {
-            byte[] body = Encoding.UTF8.GetBytes(r.body ?? "");
-            string reason = r.status switch { 200 => "OK", 400 => "Bad Request", 404 => "Not Found", _ => "Error" };
+            bool bin = r.bytes != null;
+            byte[] body = bin ? r.bytes! : Encoding.UTF8.GetBytes(r.body ?? "");
+            int off = bin ? r.bytesOffset : 0;
+            int cnt = bin ? r.bytesCount : body.Length;
+            string reason = r.status switch { 200 => "OK", 206 => "Partial Content", 400 => "Bad Request", 404 => "Not Found", _ => "Error" };
             var sb = new StringBuilder(256);
             sb.Append("HTTP/1.1 ").Append(r.status).Append(' ').Append(reason).Append("\r\n");
             sb.Append("Content-Type: ").Append(r.contentType).Append("\r\n");
-            sb.Append("Content-Length: ").Append(body.Length).Append("\r\n");
-            sb.Append("Cache-Control: no-store\r\n");
+            sb.Append("Content-Length: ").Append(cnt).Append("\r\n");
+            if (bin)
+            {
+                // 二進は動かないので短くキャッシュさせる（面を開き直すたびに数百 KB を送らない）。
+                sb.Append("Cache-Control: max-age=600\r\n");
+                sb.Append("Accept-Ranges: bytes\r\n");
+                if (r.status == 206)
+                    sb.Append("Content-Range: bytes ").Append(off).Append('-').Append(off + cnt - 1).Append('/').Append(r.totalLength).Append("\r\n");
+            }
+            else sb.Append("Cache-Control: no-store\r\n");
             sb.Append("Connection: close\r\n\r\n");
             byte[] head = Encoding.ASCII.GetBytes(sb.ToString());
-            byte[] all = new byte[head.Length + body.Length];
+            byte[] all = new byte[head.Length + cnt];
             Buffer.BlockCopy(head, 0, all, 0, head.Length);
-            Buffer.BlockCopy(body, 0, all, head.Length, body.Length);
+            Buffer.BlockCopy(body, off, all, head.Length, cnt);
             return all;
         }
 

@@ -202,7 +202,7 @@ namespace FixedCamVr.Streaming
                             have += n;
                         }
                         res = VisitorPortalLogic.Route(req, Encoding.UTF8.GetString(body, 0, have), _page, _statusJson,
-                                                       OnSetFromThread, OnClearFromThread);
+                                                       OnSetFromThread, OnClearFromThread, LoadAssetFromThread);
                         if (res.status == 400 && req.path == "/set") Interlocked.Increment(ref _rejected);
                     }
                     byte[] bytes = VisitorPortalLogic.Encode(res);
@@ -241,6 +241,35 @@ namespace FixedCamVr.Streaming
                 VisitorPrefs.Clear();
                 Debug.Log("[VisitorPortal] 枠を空にした（スタッフ）");
             });
+        }
+
+        // ---- 面が使う画像・動画（Resources/Visitor/<name>.bytes）-----------------------------
+        // Resources.Load はメインスレッド専用なので、要求はキューで渡して待つ（最大 3 秒）。
+        // 一度読んだものはメモリに持つ（面を開き直すたびに Resources から読まない）。
+        private readonly Dictionary<string, byte[]?> _assets = new Dictionary<string, byte[]?>();
+        private readonly object _assetLock = new object();
+
+        private byte[]? LoadAssetFromThread(string name)
+        {
+            lock (_assetLock) { if (_assets.TryGetValue(name, out var cached)) return cached; }
+            var done = new ManualResetEventSlim(false);
+            byte[]? result = null;
+            lock (_queueLock) _queue.Add(() =>
+            {
+                try
+                {
+                    var ta = Resources.Load<TextAsset>("Visitor/" + name);
+                    result = ta != null ? ta.bytes : null;
+                    if (ta == null) Debug.LogWarning($"[VisitorPortal] 面が要る素材が無い: Resources/Visitor/{name}.bytes");
+                }
+                finally
+                {
+                    lock (_assetLock) _assets[name] = result;
+                    done.Set();
+                }
+            });
+            done.Wait(ReadTimeoutMs);
+            return result;
         }
 
         private static string FindLocalIPv4()

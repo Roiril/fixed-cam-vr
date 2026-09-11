@@ -27,7 +27,26 @@ metadata:
 | 代役 | [`tools/visitor-portal-stub.py`](../../tools/visitor-portal-stub.py)（Quest 無しで面を机上で通す） |
 | 観測 | `ev=sum visitor=<口が開いているか>/<受けた累計>/<枠の受理番号>/<書いた受理番号>/<書いた回数>`／解析器「## タブレットの口」／logcat `[VisitorPortal]` |
 
-## 口は 4 つだけ
+## 見た目（0188・DBH 風を廻リ視へ）
+
+骨格は DBH の案内役の画面: 人物が右を占め、左下に操作の束、下中央に字幕、右下に輪＋続ける、右上に REC。
+色は黒・暖かい褐色・生成り（`--ink`）・題字の赤（`--red`）。反映は金（`--gold`）。書体は端末の明朝。
+動きは transition（指数の減速 `--ease`）。**登場に CSS animation の fill-mode を使わない** — 残ると後から
+inline の opacity を書いても効かない（実際に踏んだ）。`.in` → JS が timer で `.on` を付ける。
+⚠ **rAF も使わない**（画を描かない環境では一度も来ない。headless の検証で全部消えた）。
+
+博士の画は `GET /asset/doctor.jpg`（`Resources/Visitor/doctor.jpg.bytes`・102KB）。元は `tools/visitor-ui/doctor_v1.png`
+（Codex 生成。プロンプトは LEDGER 0188 の要点: 実写のスチル・85mm・黒い暗幕・タングステン 1 灯・左 40% は空ける・口は閉じる）。
+女性版 `doctor_v2_female.png` も同じプロンプトで焼いてある。動画に替えるときは `doctor.mp4.bytes` を置いて `<img>` を
+`<video autoplay muted loop playsinline>` にする（口は Range 対応済み。Safari は Range が無いと動画を再生しない）。
+
+机上の見え方は `?demo=applied|waiting|later|noserver|fail&lang=en` で固定できる（実機では使わない）。
+全解像度の絵は headless Edge で撮る（in-app browser は viewport をスケールするので判定に使わない）:
+```powershell
+& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --hide-scrollbars --window-size=1180,820 --virtual-time-budget=8000 --screenshot="$env:TEMP\v.png" "http://127.0.0.1:8090/?demo=applied"
+```
+
+## 口は 5 つ
 
 | | |
 |---|---|
@@ -35,6 +54,7 @@ metadata:
 | `GET /status` | この機の実値: `lang` / `relief` / `titleStage` / `phase` / `pending{lang,relief,seq}` / `appliedSeq` / `applyCount` / `received` / `model` / `ip` / `port` |
 | `POST /set` `{"lang":"en","relief":true}` | 枠へ入れる。`{"ok":true,"seq":N}`。lang が ja/en/fr 以外は 400 |
 | `POST /clear` | 枠を空にする（スタッフ） |
+| `GET /asset/<name>` | 面が使う画像・動画。`Resources/Visitor/<name>.bytes`。Range（206）対応・10 分キャッシュ |
 
 役の結び付けは**どの URL を開くか**で決まる。卓に台帳は無い（0185 初版の `control.visitorDevices` は消した）。
 

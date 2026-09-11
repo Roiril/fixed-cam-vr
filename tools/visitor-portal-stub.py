@@ -61,11 +61,41 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def _send_bytes(self, code, ctype, data, extra=None):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Accept-Ranges", "bytes")
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
         path = self.path.split("?")[0]
         if path in ("/", "/visitor.html", "/index.html"):
             with open(PAGE, encoding="utf-8") as f:
                 return self._send(200, "text/html; charset=utf-8", f.read())
+        if path.startswith("/asset/"):
+            # 実機と同じ置き場（Resources/Visitor/<name>.bytes）から配る。Range も実機と同じ形で返す
+            name = path[7:]
+            fp = os.path.join(os.path.dirname(PAGE), name + ".bytes")
+            if not os.path.isfile(fp) or "/" in name or "\\" in name:
+                return self._send(404, "application/json", '{"ok":false}')
+            with open(fp, "rb") as f:
+                data = f.read()
+            ctype = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "mp4": "video/mp4",
+                     "webm": "video/webm", "mp3": "audio/mpeg", "wav": "audio/wav"}.get(name.rsplit(".", 1)[-1].lower(),
+                                                                                         "application/octet-stream")
+            rng = self.headers.get("Range")
+            if rng and rng.startswith("bytes="):
+                a, _, b = rng[6:].partition("-")
+                start = int(a) if a else 0
+                end = int(b) if b else len(data) - 1
+                end = min(end, len(data) - 1)
+                return self._send_bytes(206, ctype, data[start:end + 1],
+                                        {"Content-Range": f"bytes {start}-{end}/{len(data)}"})
+            return self._send_bytes(200, ctype, data)
         if path == "/status":
             with _lock:
                 _apply_if_wait()

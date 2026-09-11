@@ -5,7 +5,7 @@
 > `OPEN` = 未確定とシュビーの案 / `ROUNDS` = 周回の賭けと差）。混ぜない — 規律は `rules/canon-boundary.md`。
 > 作りこみの思想は `.claude/reference/why.md`。
 
-- [visitor_tablet.md](visitor_tablet.md) - **タブレット 2 台（クエストα用・β用）で体験前に言語と軽減を選ばせる仕組み（0185/0186/0187・2026-09-11）**。⚠⚠ **卓も PC も経由しない** — Quest 自身が HTTP の口（:8090）と面（`Resources/Visitor/visitor.html`・APK に入る）を持ち、タブレットは `http://192.168.10.31:8090/`（α）/ `.32`（β）を開く／正は Quest（`VisitorPrefs`・永続化しない）／**戻す → 載せる の順**（`BeginTitle`）／書くのは注意書きの段だけ／反映は `GET /status` の実値で ✓／机上は `tools/visitor-portal-stub.py`
+- [visitor_tablet.md](visitor_tablet.md) - **タブレット 2 台（クエストα用・β用）で体験前に言語と軽減を選ばせる仕組み（0185/0186/0187・2026-09-11）**。⚠⚠ **卓も PC も経由しない** — Quest 自身が HTTP の口（:8090）と面（`Resources/Visitor/visitor.html`・APK に入る）を持ち、タブレットは `http://192.168.10.31:8090/`（α）/ `.32`（β）を開く／正は Quest（`VisitorPrefs`・永続化しない）／**戻す → 載せる の順**（`BeginTitle`）／書くのは注意書きの段だけ／反映は `GET /status` の実値で ✓／机上は `tools/visitor-portal-stub.py`／**見た目は DBH 風（0188）**: 博士の画は `GET /asset/doctor.jpg`・登場は transition（animation の fill と rAF は使わない）・絵は headless Edge で撮る
 - [l_wall_geometry.md](l_wall_geometry.md) - ⚠⚠ **L 字の壁は 2 辺とも等長 0.955m**（ユーザーが 2 回言った・0164/0183）。show.json には壁の表現が 2 つあり、`room.walls` は 8/5〜9/11 の間 0.59/1.22 の非対称で、機械で読んだセッションが全員そこから間違えた。`layout.wall`（位置合わせの既定点）は 1.0/1.0 のまま
 - [key_visual.md](key_visual.md) - **キービジュアルを触る前に**。地は Codex に照明だけ描き直させる（暗さはマスクではなく光の不在）／「照明だけ」は Sobel の相関で見る（0.5 を切ったら物が動いている）／着物の赤はプロンプトでは沈まないので組むときに落とす／Codex は 1672×941 で返す／文字の書体と位置
 - [no_internet_autojoin_kill.md](no_internet_autojoin_kill.md) - ⚠⚠ **上流の無い展示網を Android が恒久無効化する**（`NO_INTERNET_PERMANENT`）。繋がっている間は 1 ビットも出ず、**次に電源を入れた時だけ戻らない ＝ 展示の朝に全機が同時に踏む**。Quest も配信スマホも。解けるのは端末の設定で手で選び直すことだけ（adb 不可）／予防は接続チェックを切る（これからにしか効かない）／同時に確かめた「問題なかったこと」4 つ
