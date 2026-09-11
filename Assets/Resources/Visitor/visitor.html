@@ -129,7 +129,7 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .readout .sub{font-family:var(--serif); font-size:clamp(12px,1.15vw,15px); color:var(--ink-2); letter-spacing:.06em; margin:4px 0 0 48px}
   .readout .rows{margin:16px 0 0 48px; border-top:1px solid var(--line-2)}
-  .readout .r{display:grid; grid-template-columns:5em 1fr 1.6em 1fr 2em; align-items:center; gap:6px; padding:10px 0; border-bottom:1px solid var(--line-2); font-family:var(--serif); font-size:clamp(15px,1.7vw,20px); letter-spacing:.06em}
+  .readout .r{display:grid; grid-template-columns:7.5em 1fr 1.6em 1fr 2em; align-items:center; gap:6px; padding:10px 0; border-bottom:1px solid var(--line-2); font-family:var(--serif); font-size:clamp(15px,1.7vw,20px); letter-spacing:.06em}
   .readout .r .k{font-family:var(--sans); font-size:10px; letter-spacing:.28em; color:var(--ink-3); text-transform:uppercase}
   .readout .r .sent{color:var(--ink-2)}
   .readout .r .arrow{text-align:center; color:var(--ink-3); font-family:var(--sans)}
@@ -260,7 +260,7 @@
   // ⚠ 注意書きは HMD の TitleNotice と同じ文。片方だけ直すと受付とヘッドセットで食い違う。
   const T = {
     ja: {
-      tLang: '言語', tRelief: '軽減', kLang: '言語', kRelief: '軽減',
+      tLang: '言語', tRelief: 'ホラー軽減', kLang: '言語', kRelief: 'ホラー軽減',
       reliefOn: 'あり', reliefOff: 'なし',
       reliefDesc: 'ホラー軽減 — 音が半分になり、陽気な曲が流れます。映像と時間は変わりません。',
       notice: ['本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます',
@@ -277,7 +277,7 @@
       },
     },
     en: {
-      tLang: 'Language', tRelief: 'Reduced', kLang: 'Language', kRelief: 'Reduced',
+      tLang: 'Language', tRelief: 'Reduced horror', kLang: 'Language', kRelief: 'Reduced horror',
       reliefOn: 'on', reliefOff: 'off',
       reliefDesc: 'Reduced-horror mode — sound is halved and a cheerful tune plays. The visuals and timing do not change.',
       notice: ['This work contains horror imagery and\nscenes meant to unsettle or frighten.',
@@ -294,7 +294,7 @@
       },
     },
     fr: {
-      tLang: 'Langue', tRelief: 'Atténué', kLang: 'Langue', kRelief: 'Atténué',
+      tLang: 'Langue', tRelief: 'Horreur atténuée', kLang: 'Langue', kRelief: 'Horreur atténuée',
       reliefOn: 'oui', reliefOff: 'non',
       reliefDesc: 'Mode horreur atténuée — le son est réduit de moitié et une musique gaie est diffusée. Les images et la durée ne changent pas.',
       notice: ["Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.",
