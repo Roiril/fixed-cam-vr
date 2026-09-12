@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""タイトル「廻リ視」のロゴタイプを焼く。
+"""採用したタイトル「廻リ視」から各表示先の版を焼く。
 
 出力: Assets/Resources/Title/MawarimiTitle.png（2048x1024 RGBA32・**マスクなので sRGB ではない**）
 
@@ -11,8 +11,9 @@
 3 つに分けてあるのは VR で**別の奥行きに置く**ため。添えを奥、主を中、朱を手前にすると、
 平らな版のまま両眼視差だけで層が分かれる（押し出すと細い画が潰れる）。
 
-⚠ **生成モデルは使っていない。** 漢字の字形が崩れるため、字は必ずフォントの輪郭から起こす。
-質感（かすれ・にじみ）だけを手続きで乗せる。
+正本は tools/title-art/mawarimi-title-master-v2.png。
+画像生成で詰めた字形を一度だけ正本に固定し、Quest・Web UI・キービジュアルへ同じ輪郭を配る。
+正本が無い場合だけ、以前のフォント輪郭による版へ戻る。
 
 ⚠ **sRGB 変換を掛けさせない。** ここは絵ではなくマスクで、掛かると墨の量が変わる。
 取り込み設定は Assets/Scripts/Streaming/Editor/TitleArtImporter.cs が機械で固定している。
@@ -31,6 +32,11 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+MASTER_SOURCE = os.path.join(ROOT, "tools", "title-art", "mawarimi-title-master-v2.png")
+KEYVISUAL_PLATE = os.path.join(ROOT, "tools", "title-art", "keyvisual-clean-v2.png")
+WEB_DEST = os.path.join(ROOT, "Assets", "Resources", "Visitor", "title-logo-v2.png.bytes")
+KEYVISUAL_DEST = os.path.join(ROOT, "Assets", "Art", "KeyVisual", "MawarimiKeyVisual-v2.png")
 
 W, H = 2048, 1024
 SS = 2                                   # supersample（字の輪郭のなめらかさ）
@@ -254,10 +260,120 @@ def dissolve_order(size):
     return ImageChops.blend(grad, n, 0.26)
 
 
+def _clamp_byte(v):
+    return max(0, min(255, int(round(v))))
+
+
+def _master_layers():
+    """正本の暗い地を落とし、主・朱・添えを別のマスクにする。"""
+    src = Image.open(MASTER_SOURCE).convert("RGB")
+    w, h = src.size
+    corners = [src.getpixel((x, y)) for x, y in
+               ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1))]
+    bg = tuple(sum(p[c] for p in corners) / len(corners) for c in range(3))
+    bg_luma = sum(bg) / 3.0
+
+    main = Image.new("L", src.size, 0)
+    accent = Image.new("L", src.size, 0)
+    deco = Image.new("L", src.size, 0)
+    transparent = Image.new("RGBA", src.size, (0, 0, 0, 0))
+    sp = src.load(); mp = main.load(); ap = accent.load(); dp = deco.load(); tp = transparent.load()
+
+    for y in range(h):
+        for x in range(w):
+            r, g, b = sp[x, y]
+            is_red = r > 58 and r > g * 1.42 and r > b * 1.30
+            if is_red:
+                alpha = _clamp_byte(255 * (r - bg[0]) / max(1.0, 205 - bg[0]))
+                if alpha < 8: alpha = 0
+                ap[x, y] = alpha
+                tp[x, y] = (176, 43, 49, alpha)
+                continue
+
+            luma = (r + g + b) / 3.0
+            alpha = _clamp_byte(255 * (luma - bg_luma) / max(1.0, 235 - bg_luma))
+            if alpha < 8: alpha = 0
+            if not alpha:
+                continue
+
+            # 小さな縦ルビと、下側の灰色の一筆だけを奥の添えへ置く。
+            ruby = 705 <= x <= 790 and 315 <= y <= 575
+            lower_trace = 300 <= x <= 1030 and y >= 545 and luma < 195
+            if ruby or lower_trace: dp[x, y] = alpha
+            else: mp[x, y] = alpha
+            tp[x, y] = (241, 235, 222, alpha)
+
+    combined = ImageChops.lighter(ImageChops.lighter(main, accent), deco)
+    bbox = combined.point(lambda v: 255 if v >= 8 else 0).getbbox()
+    if bbox is None:
+        raise RuntimeError("題字正本から墨を抽出できない")
+    pad = 28
+    bbox = (max(0, bbox[0] - pad), max(0, bbox[1] - pad),
+            min(w, bbox[2] + pad), min(h, bbox[3] + pad))
+    return tuple(im.crop(bbox) for im in (main, accent, deco, transparent))
+
+
+def _fit(im, max_w, max_h):
+    scale = min(max_w / im.width, max_h / im.height)
+    return im.resize((max(1, int(round(im.width * scale))),
+                      max(1, int(round(im.height * scale)))), Image.LANCZOS)
+
+
+def build_from_master(preview=False):
+    """同じ題字を Quest の多層版、Web の透過版、キービジュアルへ配る。"""
+    main, accent, deco, transparent = _master_layers()
+
+    fitted = [_fit(im, 1780, 760) for im in (main, accent, deco)]
+    ox = (W - fitted[0].width) // 2
+    oy = (H - fitted[0].height) // 2
+    layers = []
+    for im in fitted:
+        canvas = Image.new("L", (W, H), 0)
+        canvas.paste(im, (ox, oy))
+        layers.append(canvas)
+    quest = Image.merge("RGBA", (layers[0], layers[1], dissolve_order((W, H)), layers[2]))
+    dst = os.path.join(ROOT, "Assets", "Resources", "Title", "MawarimiTitle.png")
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    quest.save(dst)
+
+    if preview:
+        preview_path = os.path.join(ROOT, "Assets", "Screenshots", "title", "art-preview.png")
+        os.makedirs(os.path.dirname(preview_path), exist_ok=True)
+        ground = Image.new("RGB", (W, H), (36, 24, 22))
+        ink = Image.new("RGB", (W, H), (238, 234, 226))
+        red = Image.new("RGB", (W, H), (196, 26, 34))
+        visible = Image.composite(ink, ground, ImageChops.lighter(layers[0], layers[2]))
+        visible = Image.composite(red, visible, layers[1])
+        visible.save(preview_path)
+        print(f"preview: {preview_path}")
+
+    os.makedirs(os.path.dirname(WEB_DEST), exist_ok=True)
+    transparent.save(WEB_DEST, format="PNG", optimize=True)
+
+    if os.path.exists(KEYVISUAL_PLATE):
+        plate = Image.open(KEYVISUAL_PLATE).convert("RGBA")
+        logo = _fit(transparent, int(plate.width * 0.57), int(plate.height * 0.47))
+        x = int(plate.width * 0.29)
+        y = int(plate.height * 0.245)
+        plate.alpha_composite(logo, (x, y))
+        plate = plate.convert("RGB").resize((1920, 1080), Image.LANCZOS)
+        os.makedirs(os.path.dirname(KEYVISUAL_DEST), exist_ok=True)
+        plate.save(KEYVISUAL_DEST, quality=95)
+
+    print(f"master: {MASTER_SOURCE}")
+    print(f"wrote: {dst}  ({W}x{H} RGBA32 / R=白墨 G=朱墨 B=溶ける順 A=添え)")
+    print(f"web  : {WEB_DEST}  ({transparent.width}x{transparent.height} RGBA32)")
+    if os.path.exists(KEYVISUAL_PLATE): print(f"key  : {KEYVISUAL_DEST}  (1920x1080)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", action="store_true")
     a = ap.parse_args()
+
+    if os.path.exists(MASTER_SOURCE):
+        build_from_master(a.preview)
+        return
 
     big = (W * SS, H * SS)
     main = Image.new("L", big, 0)          # 廻・リ

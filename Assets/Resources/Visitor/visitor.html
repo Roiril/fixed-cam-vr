@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#090807">
 <link rel="preload" as="image" href="./asset/entrance-doll-v1.png">
+<link rel="preload" as="image" href="./asset/title-logo-v2.png">
 <title>廻リ視 — 体験の前に</title>
 <!--
   Quest 自身が :8090 で配る来場者用の面。PC とウェブ卓は経由しない。
@@ -36,7 +37,8 @@
   .stage { isolation: isolate; position: relative; display: grid; grid-template-rows: auto 1fr auto; min-height: 100svh; overflow: clip; background: var(--bg); }
   .stage::after { content: ""; position: absolute; z-index: 8; pointer-events: none; inset: 14px; border: 1px solid rgba(232,220,196,.07); }
   .topbar { position: relative; z-index: 4; display: flex; align-items: center; gap: 36px; min-height: 88px; padding: max(20px,env(safe-area-inset-top)) var(--gutter) 16px; }
-  .brand { margin: 0; font-size: 23px; font-weight: 400; line-height: 1; letter-spacing: .27em; white-space: nowrap; }
+  .brand { width: 104px; margin: 0; line-height: 1; white-space: nowrap; }
+  .brand img { display: block; width: 100%; height: auto; }
   .brand::after { content: ""; display: block; width: 22px; height: 2px; margin-top: 11px; background: var(--red); }
   .journey { display: flex; align-items: center; gap: 25px; margin: 0 auto; padding: 0; list-style: none; color: var(--faint); font: 11px/1.4 var(--sans); letter-spacing: .1em; }
   .journey li { display: flex; align-items: center; gap: 9px; }
@@ -123,9 +125,9 @@
   .title-view { position: absolute; z-index: 10; inset: 0; display: flex; align-items: center; min-height: 100svh; overflow: hidden; cursor: pointer; background: var(--bg); transition: opacity .52s var(--ease); }
   .title-view::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg,rgba(9,8,7,.45),transparent 75%),linear-gradient(0deg,rgba(9,8,7,.65),transparent 30%),url("./asset/entrance-doll-v1.png") 76% center / cover no-repeat; transition: transform .8s var(--ease),opacity .5s var(--ease); }
   .title-view::after { content: ""; position: absolute; inset: 22px; border: 1px solid rgba(232,220,196,.16); pointer-events: none; }
-  .title-lockup { position: relative; z-index: 1; width: 49%; margin-left: calc(var(--gutter) + 12px); padding-bottom: 12px; transition: opacity .35s var(--ease),transform .55s var(--ease); }
-  .title-brand { margin: 0 0 38px; font-size: clamp(76px,10.8vw,174px); font-weight: 400; line-height: 1.1; letter-spacing: .13em; white-space: nowrap; text-shadow: 0 4px 32px rgba(0,0,0,.45); }
-  .title-brand span { color: var(--red); }
+  .title-lockup { position: relative; z-index: 1; width: min(58%,900px); margin-left: calc(var(--gutter) + 12px); padding-bottom: 12px; transition: opacity .35s var(--ease),transform .55s var(--ease); }
+  .title-brand { margin: 0 0 30px; line-height: 1; }
+  .title-brand img { display: block; width: 100%; height: auto; filter: drop-shadow(0 4px 24px rgba(0,0,0,.42)); }
   .title-rule { display: block; width: 42px; height: 1px; margin-bottom: 34px; background: var(--gold); }
   .title-start { border: 0; padding: 10px 0; gap: 42px; background: transparent; }
   .title-start:hover { background: transparent; }
@@ -217,7 +219,7 @@
     .stage { min-height: 100svh; }
     .stage::after { inset: 10px; }
     .topbar { min-height: 90px; flex-wrap: wrap; gap: 12px; padding-top: max(22px,env(safe-area-inset-top)); }
-    .brand { font-size: 20px; }
+    .brand { width: 92px; }
     .connection { font-size: 10px; }
     .journey { order: 3; flex-basis: 100%; justify-content: flex-start; padding-top: 9px; gap: 16px; }
     .journey li + li::before { margin-right: 0; width: 16px; }
@@ -237,7 +239,7 @@
     .title-view::before { background: linear-gradient(0deg,var(--bg),rgba(9,8,7,.9) 18%,transparent 68%),url("./asset/entrance-doll-v1.png") 77% 35% / cover no-repeat; }
     .title-view::after { inset: 14px; }
     .title-lockup { margin: 0; width: 100%; padding: 40px var(--gutter) max(60px,env(safe-area-inset-bottom)); }
-    .title-brand { font-size: clamp(68px,17vw,140px); margin-bottom: 26px; }
+    .title-brand { width: min(100%,620px); margin-bottom: 24px; }
     .title-rule { margin-bottom: 22px; }
     .title-start { width: 100%; justify-content: space-between; }
     .result { padding-block: 30px; }
@@ -297,7 +299,7 @@
 <div class="stage is-title">
   <section class="title-view is-active" id="titleView" aria-labelledby="titleBrand">
     <div class="title-lockup">
-      <h1 class="title-brand" id="titleBrand" translate="no">廻リ<span>視</span></h1>
+      <h1 class="title-brand" id="titleBrand" translate="no"><img src="./asset/title-logo-v2.png" alt="廻リ視" width="1210" height="531" draggable="false"></h1>
       <span class="title-rule" aria-hidden="true"></span>
       <button class="title-start" id="titleStart" type="button" aria-label="タップして始める。Tap to begin. Touchez pour commencer.">
         <span class="title-start-copy">
@@ -308,7 +310,7 @@
     </div>
   </section>
   <header class="topbar">
-    <p class="brand" translate="no">廻リ視</p>
+    <p class="brand" translate="no"><img src="./asset/title-logo-v2.png" alt="廻リ視" width="1210" height="531" draggable="false"></p>
     <ol class="journey" id="journey" aria-label="体験の準備">
       <li id="journeySettings" aria-current="step"><b>01</b><span id="journeySettingsLabel">設定</span></li>
       <li id="journeyBriefing"><b>02</b><span id="journeyBriefingLabel">調査説明</span></li>
