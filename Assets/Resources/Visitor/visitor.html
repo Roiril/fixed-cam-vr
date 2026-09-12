@@ -115,7 +115,8 @@
   .hint{position:absolute; left:clamp(18px,3vw,40px); top:clamp(110px,17vh,170px); width:min(40vw,480px); font-family:var(--serif); font-size:clamp(12px,1.15vw,15px); letter-spacing:.08em; color:var(--ink-2); line-height:1.8; white-space:pre-line;
     transition:opacity .5s var(--ease-io)}
   .hint small{display:block; font-family:var(--sans); font-size:10px; letter-spacing:.32em; color:var(--ink-3); text-transform:uppercase; margin-bottom:8px}
-  .ctl .desc{margin:2px 0 0 60px; font-family:var(--serif); font-size:clamp(11px,1.05vw,13px); letter-spacing:.06em; color:var(--ink-3); line-height:1.6; white-space:pre-line}
+  .ctl .desc{margin:2px 0 0 60px; min-height:2.2em; font-family:var(--serif); font-size:clamp(11px,1.05vw,13px); letter-spacing:.06em; color:var(--ink-3); line-height:1.6; white-space:pre-line; opacity:0; transition:opacity .6s var(--ease-io)}
+  .ctl .desc.show{opacity:1; color:var(--ink-2)}
 
   /* ---------- 送った後: 読み出し ---------- */
   .readout{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(150px,23vh,210px); width:min(52vw,640px); opacity:0; transform:translateY(10px); pointer-events:none; transition:opacity .7s var(--ease), transform .7s var(--ease)}
@@ -265,7 +266,7 @@
     ja: {
       tLang: '言語', tRelief: 'ホラー軽減', kLang: '言語', kRelief: 'ホラー軽減',
       reliefOn: 'あり', reliefOff: 'なし',
-      reliefDesc: '音が半分になり、\n陽気な曲が流れます。\n映像と時間は変わりません。',
+      reliefDesc: 'すべての演出の音量が半分になり、\n陽気な曲が流れます。',
       ask: '使う言語と、恐怖を和らげるかどうかを、教えてください。',
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
       send: 'この設定で始める', edit: '設定を変える',
@@ -282,7 +283,7 @@
     en: {
       tLang: 'Language', tRelief: 'Reduced horror', kLang: 'Language', kRelief: 'Reduced horror',
       reliefOn: 'on', reliefOff: 'off',
-      reliefDesc: 'Sound is halved and a cheerful tune plays. The visuals and timing do not change.',
+      reliefDesc: 'All sound is halved,\nand a cheerful tune plays.',
       ask: 'Tell me your language, and whether you would like the horror softened.',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
       send: 'Start with these settings', edit: 'Change settings',
@@ -299,7 +300,7 @@
     fr: {
       tLang: 'Langue', tRelief: 'Horreur atténuée', kLang: 'Langue', kRelief: 'Horreur atténuée',
       reliefOn: 'oui', reliefOff: 'non',
-      reliefDesc: 'Le son est réduit de moitié et une musique gaie est diffusée. Les images et la durée ne changent pas.',
+      reliefDesc: 'Tout le son est réduit de moitié,\net une musique gaie est diffusée.',
       ask: 'Dites-moi votre langue, et si vous souhaitez que l’horreur soit atténuée.',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
       send: 'Commencer avec ces réglages', edit: 'Modifier les réglages',
@@ -401,7 +402,8 @@
     $('aLang').innerHTML = LANGS.filter((l) => l !== state.lang).map((l) => `<button data-lang="${l}">${LANG_NAME[l]}</button>`).join('');
     $('aRelief').innerHTML = `<button data-relief="${state.relief ? 0 : 1}">${state.relief ? t.reliefOff : t.reliefOn}</button>`;
     $('hintBody').textContent = t.notice;
-    $('reliefDesc').textContent = t.reliefDesc;
+    $('reliefDesc').textContent = state.relief ? t.reliefDesc : '';
+    $('reliefDesc').classList.toggle('show', state.relief);
     $('sendLabel').textContent = t.send;
     $('editBtn').textContent = t.edit;
     $('ctlLang').classList.toggle('focus', state.focus === 'lang');
