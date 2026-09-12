@@ -23,15 +23,15 @@
         "fr": "Présentation de la mission"
       },
       "caption": {
-        "ja": "博士 · 観測調査担当",
-        "en": "Doctor · Observation research",
-        "fr": "Docteur · Recherche sur les phénomènes"
+        "ja": "博士 · 怪異調査統括",
+        "en": "Doctor · Anomalous investigations",
+        "fr": "Docteur · Supervision des enquêtes"
       },
       "cues": {
         "ja": [
           {
-            "text": "私はこの研究所で怪異の観測を担当しています。",
-            "durationMs": 3500
+            "text": "私はこの研究所で、怪異調査を統括している博士です。",
+            "durationMs": 3600
           },
           {
             "text": "あなたには調査員として、呪われたオブジェクトを調べていただきたい。",
@@ -40,8 +40,8 @@
         ],
         "en": [
           {
-            "text": "I study anomalous phenomena here at the institute.",
-            "durationMs": 3400
+            "text": "I am the doctor overseeing anomalous investigations at this institute.",
+            "durationMs": 4200
           },
           {
             "text": "I would like you to serve as an investigator and examine a cursed object.",
@@ -50,8 +50,8 @@
         ],
         "fr": [
           {
-            "text": "J’étudie les phénomènes anormaux dans cet institut.",
-            "durationMs": 3500
+            "text": "Je suis le docteur chargé de superviser les enquêtes sur les phénomènes anormaux dans cet institut.",
+            "durationMs": 5200
           },
           {
             "text": "Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.",

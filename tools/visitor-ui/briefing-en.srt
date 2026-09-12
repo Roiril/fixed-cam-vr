@@ -1,47 +1,47 @@
 1
-00:00:00,000 --> 00:00:03,400
-I study anomalous phenomena here at the institute.
+00:00:00,000 --> 00:00:04,200
+I am the doctor overseeing anomalous investigations at this institute.
 
 2
-00:00:03,400 --> 00:00:08,200
+00:00:04,200 --> 00:00:09,000
 I would like you to serve as an investigator and examine a cursed object.
 
 3
-00:00:08,200 --> 00:00:10,900
+00:00:09,000 --> 00:00:11,700
 This is the wall you will investigate.
 
 4
-00:00:10,900 --> 00:00:14,700
+00:00:11,700 --> 00:00:15,500
 Walk around it three times as shown in the video.
 
 5
-00:00:14,700 --> 00:00:19,700
+00:00:15,500 --> 00:00:20,500
 Hold the handrail with your right hand and keep hold of it as you walk.
 
 6
-00:00:19,700 --> 00:00:24,700
+00:00:20,500 --> 00:00:25,500
 Your footing will be hard to see, so walk very slowly and carefully.
 
 7
-00:00:24,700 --> 00:00:29,200
+00:00:25,500 --> 00:00:30,000
 You will use an observation device that records and analyses anomalies.
 
 8
-00:00:29,200 --> 00:00:33,400
+00:00:30,000 --> 00:00:34,200
 While you are observing, an agent will support your investigation.
 
 9
-00:00:33,400 --> 00:00:39,000
+00:00:34,200 --> 00:00:39,800
 If you spot an anomaly, hold X or Y on the left controller for one second.
 
 10
-00:00:39,000 --> 00:00:42,200
+00:00:39,800 --> 00:00:43,000
 The report will be sent to the agent for analysis.
 
 11
-00:00:42,200 --> 00:00:46,400
+00:00:43,000 --> 00:00:47,200
 Now hold the controller in your left hand and put on the device.
 
 12
-00:00:46,400 --> 00:00:49,400
+00:00:47,200 --> 00:00:50,200
 Good luck with your survey.

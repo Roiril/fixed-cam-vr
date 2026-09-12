@@ -1,47 +1,47 @@
 1
-00:00:00,000 --> 00:00:03,500
-J’étudie les phénomènes anormaux dans cet institut.
+00:00:00,000 --> 00:00:05,200
+Je suis le docteur chargé de superviser les enquêtes sur les phénomènes anormaux dans cet institut.
 
 2
-00:00:03,500 --> 00:00:08,700
+00:00:05,200 --> 00:00:10,400
 Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.
 
 3
-00:00:08,700 --> 00:00:11,400
+00:00:10,400 --> 00:00:13,100
 Voici le mur que vous allez examiner.
 
 4
-00:00:11,400 --> 00:00:15,600
+00:00:13,100 --> 00:00:17,300
 Faites-en trois fois le tour, comme dans la vidéo.
 
 5
-00:00:15,600 --> 00:00:21,100
+00:00:17,300 --> 00:00:22,800
 Tenez la main courante de la main droite et ne la lâchez pas en marchant.
 
 6
-00:00:21,100 --> 00:00:26,600
+00:00:22,800 --> 00:00:28,300
 Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prudence.
 
 7
-00:00:26,600 --> 00:00:31,300
+00:00:28,300 --> 00:00:33,000
 Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.
 
 8
-00:00:31,300 --> 00:00:35,600
+00:00:33,000 --> 00:00:37,300
 Pendant l’observation, un agent vous assistera dans votre enquête.
 
 9
-00:00:35,600 --> 00:00:41,600
+00:00:37,300 --> 00:00:43,300
 Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.
 
 10
-00:00:41,600 --> 00:00:45,000
+00:00:43,300 --> 00:00:46,700
 Le signalement sera envoyé à l’agent pour analyse.
 
 11
-00:00:45,000 --> 00:00:49,200
+00:00:46,700 --> 00:00:50,900
 À présent, prenez la manette dans la main gauche et mettez le dispositif.
 
 12
-00:00:49,200 --> 00:00:52,200
+00:00:50,900 --> 00:00:53,900
 Bonne chance pour votre enquête.

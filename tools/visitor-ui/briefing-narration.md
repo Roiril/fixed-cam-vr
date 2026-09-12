@@ -18,21 +18,21 @@
 
 ### 01 introduction — 調査依頼
 
-開始 0.0 秒 / 尺 8.1 秒
+開始 0.0 秒 / 尺 8.2 秒
 
 画像: `doctor.jpg`
 
-文 01 / 場面内 0.0–3.5 秒
+文 01 / 場面内 0.0–3.6 秒
 
-私はこの研究所で怪異の観測を担当しています。
+私はこの研究所で、怪異調査を統括している博士です。
 
-文 02 / 場面内 3.5–8.1 秒
+文 02 / 場面内 3.6–8.2 秒
 
 あなたには調査員として、呪われたオブジェクトを調べていただきたい。
 
 ### 02 subject — 回収壁面
 
-開始 8.1 秒 / 尺 14.8 秒
+開始 8.2 秒 / 尺 14.8 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -54,7 +54,7 @@
 
 ### 03 report — XかYを長押し
 
-開始 22.9 秒 / 尺 15.9 秒
+開始 23.0 秒 / 尺 15.9 秒
 
 画像: `briefing-device-v1.png`
 
@@ -76,7 +76,7 @@
 
 ### 04 wear — 装着案内
 
-開始 38.8 秒 / 尺 7.0 秒
+開始 38.9 秒 / 尺 7.0 秒
 
 画像: `doctor.jpg`
 
@@ -92,21 +92,21 @@
 
 ### 01 introduction — Survey briefing
 
-開始 0.0 秒 / 尺 8.2 秒
+開始 0.0 秒 / 尺 9.0 秒
 
 画像: `doctor.jpg`
 
-文 01 / 場面内 0.0–3.4 秒
+文 01 / 場面内 0.0–4.2 秒
 
-I study anomalous phenomena here at the institute.
+I am the doctor overseeing anomalous investigations at this institute.
 
-文 02 / 場面内 3.4–8.2 秒
+文 02 / 場面内 4.2–9.0 秒
 
 I would like you to serve as an investigator and examine a cursed object.
 
 ### 02 subject — Recovered wall
 
-開始 8.2 秒 / 尺 16.5 秒
+開始 9.0 秒 / 尺 16.5 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -128,7 +128,7 @@ Your footing will be hard to see, so walk very slowly and carefully.
 
 ### 03 report — Hold X or Y
 
-開始 24.7 秒 / 尺 17.5 秒
+開始 25.5 秒 / 尺 17.5 秒
 
 画像: `briefing-device-v1.png`
 
@@ -150,7 +150,7 @@ The report will be sent to the agent for analysis.
 
 ### 04 wear — Putting on the device
 
-開始 42.2 秒 / 尺 7.2 秒
+開始 43.0 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 
@@ -166,21 +166,21 @@ Good luck with your survey.
 
 ### 01 introduction — Présentation de la mission
 
-開始 0.0 秒 / 尺 8.7 秒
+開始 0.0 秒 / 尺 10.4 秒
 
 画像: `doctor.jpg`
 
-文 01 / 場面内 0.0–3.5 秒
+文 01 / 場面内 0.0–5.2 秒
 
-J’étudie les phénomènes anormaux dans cet institut.
+Je suis le docteur chargé de superviser les enquêtes sur les phénomènes anormaux dans cet institut.
 
-文 02 / 場面内 3.5–8.7 秒
+文 02 / 場面内 5.2–10.4 秒
 
 Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.
 
 ### 02 subject — Mur récupéré
 
-開始 8.7 秒 / 尺 17.9 秒
+開始 10.4 秒 / 尺 17.9 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -202,7 +202,7 @@ Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prud
 
 ### 03 report — Maintenez X ou Y
 
-開始 26.6 秒 / 尺 18.4 秒
+開始 28.3 秒 / 尺 18.4 秒
 
 画像: `briefing-device-v1.png`
 
@@ -224,7 +224,7 @@ Le signalement sera envoyé à l’agent pour analyse.
 
 ### 04 wear — Mise en place du dispositif
 
-開始 45.0 秒 / 尺 7.2 秒
+開始 46.7 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 
