@@ -519,6 +519,9 @@
     gap: 10px;
     margin-top: 20px;
   }
+  .stage.is-result-ready .result,
+  .stage.is-result-ready .portrait,
+  .stage.is-result-ready .footer { cursor: pointer; }
   .secondary, .retry, .briefing-control {
     min-height: 50px;
     padding: 10px 17px;
@@ -1120,6 +1123,7 @@
       <div class="result-actions">
         <button class="retry" id="retryBtn" type="button" hidden>もう一度送る</button>
         <button class="retry" id="briefingRetryBtn" type="button" hidden>説明資料を再読み込み</button>
+        <button class="secondary" id="briefingStartBtn" type="button" hidden>博士からの説明へ</button>
         <button class="secondary" id="editBtn" type="button" hidden>設定を変える</button>
       </div>
     </section>
@@ -1195,7 +1199,7 @@
       connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
         sending: ['送信中', 'ヘッドセットへ設定を送っています'],
-        applied: ['反映済み', '博士から調査について説明します'],
+        applied: ['Questに反映しました', '選んだ設定を確認しました'],
         waiting: ['反映待ち', '注意書きの画面になると反映されます'],
         later: ['次回の開始待ち', 'いまの体験が終わると、次の開始時に反映されます'],
         noserver: ['ヘッドセットを確認できません', '通信の回復を待っています。スタッフを呼んでください'],
@@ -1203,7 +1207,7 @@
       },
       postSpeech: {
         sending: '設定を送っています。少しお待ちください。',
-        applied: '準備が整うまで、少しお待ちください。',
+        applied: '画面をタップすると、博士からの説明へ進みます。',
         waiting: '準備が整うまで、少しお待ちください。',
         later: '次の開始まで、少しお待ちください。',
         noserver: '通信を確認できません。スタッフにお声がけください。',
@@ -1215,7 +1219,7 @@
         loading: ['説明資料を準備しています', '設定は反映されました。準備が整うまでお待ちください'],
         error: ['説明資料を読み込めません', '通信を確認して、説明資料を再読み込みしてください'],
         retry: '説明資料を再読み込み', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: '前の文',
-        next: '次の文', settings: '設定に戻る', replay: 'もう一度説明を見る',
+        next: '次の文', settings: '設定に戻る', replay: 'もう一度説明を見る', start: '博士からの説明へ',
         role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
     },
@@ -1232,7 +1236,7 @@
       connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
         sending: ['Sending', 'Sending the settings to the headset'],
-        applied: ['Settings applied', 'The doctor will now explain your survey'],
+        applied: ['Applied to Quest', 'The selected settings have been confirmed'],
         waiting: ['Waiting to apply', 'They will apply when the notice screen appears'],
         later: ['Waiting for the next session', 'They will apply when the next session starts'],
         noserver: ['Connection unknown', 'The headset connection cannot be confirmed. Please call a member of staff'],
@@ -1240,7 +1244,7 @@
       },
       postSpeech: {
         sending: 'I am sending your settings. Please wait a moment.',
-        applied: 'Please wait a moment while everything is prepared.',
+        applied: 'Tap the screen to continue to the doctor’s briefing.',
         waiting: 'Please wait a moment while everything is prepared.',
         later: 'Please wait for the next session to begin.',
         noserver: 'I cannot confirm the connection. Please call a member of staff.',
@@ -1252,7 +1256,7 @@
         loading: ['Preparing the briefing', 'The settings are applied. Please wait while the material loads'],
         error: ['The briefing could not be loaded', 'Check the connection, then reload the briefing material'],
         retry: 'Reload briefing', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: 'Previous sentence',
-        next: 'Next sentence', settings: 'Back to settings', replay: 'Watch the briefing again',
+        next: 'Next sentence', settings: 'Back to settings', replay: 'Watch the briefing again', start: 'Continue to briefing',
         role: 'Guide', progress: 'Briefing progress', advance: 'Continue to the next sentence',
       },
     },
@@ -1269,7 +1273,7 @@
       connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
         sending: ['Envoi en cours', 'Envoi des réglages au casque'],
-        applied: ['Réglages appliqués', 'Le docteur va vous présenter votre mission'],
+        applied: ['Réglages appliqués au Quest', 'Les réglages choisis ont été confirmés'],
         waiting: ['En attente d’application', 'Ils seront appliqués à l’écran d’avertissement'],
         later: ['En attente de la prochaine session', 'Ils seront appliqués au début de la prochaine session'],
         noserver: ['Connexion non vérifiable', 'La connexion au casque ne peut pas être confirmée. Appelez un membre du personnel'],
@@ -1277,7 +1281,7 @@
       },
       postSpeech: {
         sending: 'J’envoie vos réglages. Veuillez patienter un instant.',
-        applied: 'Veuillez patienter un instant pendant la préparation.',
+        applied: 'Touchez l’écran pour passer aux explications du docteur.',
         waiting: 'Veuillez patienter un instant pendant la préparation.',
         later: 'Veuillez attendre le début de la prochaine session.',
         noserver: 'Je ne peux pas confirmer la connexion. Appelez un membre du personnel.',
@@ -1289,7 +1293,7 @@
         loading: ['Préparation des explications', 'Les réglages sont appliqués. Veuillez patienter pendant le chargement'],
         error: ['Impossible de charger les explications', 'Vérifiez la connexion, puis rechargez les documents'],
         retry: 'Recharger les explications', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: 'Phrase précédente',
-        next: 'Phrase suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications',
+        next: 'Phrase suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications', start: 'Voir les explications',
         role: 'Guide', progress: 'Progression des explications', advance: 'Continuer vers la phrase suivante',
       },
     },
@@ -1318,7 +1322,6 @@
       loadState: 'loading',
       data: null,
       triggered: false,
-      startQueued: false,
       sceneIndex: 0,
       cueIndex: 0,
       ended: false,
@@ -1361,6 +1364,7 @@
     const stage = document.querySelector('.stage');
     stage.classList.toggle('is-title', view === 'title');
     stage.classList.toggle('is-briefing', view === 'briefing');
+    if (view !== 'result') stage.classList.remove('is-result-ready');
     if (view !== 'briefing') stage.classList.remove('is-doctor-only');
     document.querySelector('.footer').classList.toggle('is-briefing', view === 'briefing');
     document.querySelector('.topbar').inert = view === 'title';
@@ -1474,6 +1478,7 @@
     $('editBtn').textContent = t.edit;
     $('retryBtn').textContent = t.retry;
     $('briefingRetryBtn').textContent = t.briefing.retry;
+    $('briefingStartBtn').textContent = t.briefing.start;
     $('briefingPrevious').textContent = t.briefing.previous;
     $('briefingNext').textContent = t.briefing.next;
     $('briefingSettings').textContent = t.briefing.settings;
@@ -1605,7 +1610,6 @@
       if (briefingController === controller) briefingController = null;
     }
     if (state.view === 'result') renderResult();
-    maybeStartBriefing();
   }
 
   function currentBriefingScene() {
@@ -1929,7 +1933,6 @@
   function resetBriefingSession() {
     stopBriefingPlayback();
     state.briefing.triggered = false;
-    state.briefing.startQueued = false;
   }
 
   function returnToSettings() {
@@ -1953,18 +1956,17 @@
     $('briefingView').focus();
   }
 
-  function maybeStartBriefing() {
-    if (state.view !== 'result'
-      || state.briefing.triggered
-      || state.briefing.startQueued
-      || state.briefing.loadState !== 'ready'
-      || !state.briefing.data
-      || resultKey() !== 'applied') return;
-    state.briefing.startQueued = true;
-    queueMicrotask(() => {
-      state.briefing.startQueued = false;
-      if (state.view === 'result' && resultKey() === 'applied') startBriefing();
-    });
+  function canAdvanceFromResult() {
+    return state.view === 'result'
+      && !state.briefing.triggered
+      && state.briefing.loadState === 'ready'
+      && Boolean(state.briefing.data)
+      && resultKey() === 'applied';
+  }
+
+  function advanceFromResult() {
+    if (!canAdvanceFromResult()) return;
+    startBriefing();
   }
 
   function resultKey() {
@@ -2002,11 +2004,12 @@
     $('headsetRelief').textContent = actual && typeof actual.relief === 'boolean' ? (actual.relief ? t.reliefOn : t.reliefOff) : '—';
     $('retryBtn').hidden = key !== 'fail';
     $('briefingRetryBtn').hidden = !(key === 'applied' && state.briefing.loadState === 'error');
+    $('briefingStartBtn').hidden = briefingBlocked || key !== 'applied';
     $('editBtn').hidden = key === 'sending';
+    document.querySelector('.stage').classList.toggle('is-result-ready', !briefingBlocked && key === 'applied');
     setFormDisabled(key === 'sending');
     const speechKey = briefingBlocked ? state.briefing.loadState : key;
     setSubtitle(t.postSpeech[speechKey], `result:${state.lang}:${speechKey}`);
-    maybeStartBriefing();
   }
 
   function renderConnection() {
@@ -2177,6 +2180,11 @@
   });
   $('retryBtn').addEventListener('click', send);
   $('briefingRetryBtn').addEventListener('click', loadBriefingData);
+  $('briefingStartBtn').addEventListener('click', advanceFromResult);
+  document.querySelector('.stage').addEventListener('click', (event) => {
+    if (!canAdvanceFromResult() || event.target.closest('button, a, input, select, textarea, dialog')) return;
+    if (event.target.closest('#resultView, .portrait, .footer')) advanceFromResult();
+  });
   $('briefingToggle').addEventListener('click', () => {
     if (state.briefing.ended) return;
     setBriefingAuto(!state.briefing.auto, true);
