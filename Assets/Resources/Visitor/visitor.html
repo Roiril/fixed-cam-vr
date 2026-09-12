@@ -17,6 +17,20 @@
   ▶ 最初の画面は注意書きと設定だけ（0186）。導入の文は置かない。
   ▶ 注意書きの 3 言語は HMD の TitleNotice と同じ文（安全の掲示なので、受付とヘッドセットで食い違わせない）。
   ▶ 「反映されたか」は GET /status が返す実値（lang / relief）で判定する。送った値を表示しない。
+
+  ▶▶ 言葉は「展示の設定画面」ではなく「作中の観察装置」の側へ寄せてある（2026-09-12・0193 のレビュー）:
+    ・博士は**廻リ視という観察装置の研究責任者**。設定を聞き、実験の手順だけを説明する。
+      ⚠⚠ **博士はホラーを一切説明しない**（怖いこと・過去の自分・人形は 1 語も言わない）。
+      言うのは「自分を外から見る／映像だけを頼りに歩く／カメラは位置で切り替わる」まで。
+    ・字幕は**順番に 1 つずつ聞く / 説明する**（`SAY` の並び）。設定の画面で勝手に回らない（0191）が、
+      体験者が答えたら次へ進み、答えなくても読み終わりから `DWELL` 秒で次へ進む。
+      **言語を替えたら、いまの行を頭から言い直す**（0191）。
+    ・束の見出しは「ホラー軽減」ではなく **「刺激レベル」標準 / 軽減**（0190 をここで上書き）。
+      何が変わるかは「軽減」を選んだときだけ束の中に出す（0192 の文はそのまま）。
+    ・送るボタンは **「観察を開始する」**（0191 の「この設定で始める」をここで上書き）。
+    ・左下は STAFF の字をやめ、**装置の読み（SUBJECT / SESSION / CAMERA）**。送って反映されると
+      SUBJECT READY ・ CAMERA REC へ変わる。⚠ **スタッフの面はここを 0.8 秒長押しで開く**
+      （体験者が指で触れても開かない）。
   ⚠ 外部の CDN と Web フォントは使わない（会場に外の回線が無い）。書体は端末の明朝（Yu Mincho / Hiragino / Noto Serif）。
   ⚠ Unity は .html を TextAsset として取り込む。文を直したら APK を焼き直す。
 -->
@@ -99,9 +113,11 @@
   .ctl .big span.out-dn{transform:translateY(110%); opacity:0}
   .ctl .big span.in-up{transform:translateY(110%); opacity:0}
   .ctl .big span.in-dn{transform:translateY(-110%); opacity:0}
-  .ctl .alts{display:flex; flex-wrap:wrap; gap:2px 6px; margin:2px 0 0 60px; min-height:1.5em}
-  .ctl .alts button{font-family:var(--serif); font-size:clamp(15px,1.6vw,20px); letter-spacing:.06em; color:var(--ink-3); transition:color .35s; min-height:48px; padding:0 12px}
-  .ctl .alts button:active{color:var(--ink)}
+  .ctl .alts{display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 0 60px; min-height:1.5em}
+  /* 選べるものは枠を持つ。枠が無いと「English　Français」が飾りか的か読めない（0193 のレビュー） */
+  .ctl .alts button{font-family:var(--serif); font-size:clamp(15px,1.6vw,20px); letter-spacing:.06em; color:var(--ink-3);
+    border:1px solid var(--line-2); transition:color .35s, border-color .35s; min-height:48px; padding:0 14px}
+  .ctl .alts button:active{color:var(--ink); border-color:var(--line)}
   /* 四隅の括弧。いま触っている束にだけ出る。動くときは少し外から寄る */
   .ctl .br{position:absolute; width:14px; height:14px; border:1px solid var(--ink-2); opacity:0; transition:all .6s var(--ease)}
   .ctl .br.tl{left:-6px; top:-6px; border-right:0; border-bottom:0}
@@ -161,8 +177,17 @@
   .continue .jp{font-family:var(--serif); font-size:clamp(16px,1.7vw,21px); letter-spacing:.2em; text-transform:none}
   .continue[disabled]{opacity:.45}
 
-  /* ---------- スタッフ ---------- */
-  .staffToggle{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(20px,4.2vh,42px); font-family:var(--sans); font-size:10px; letter-spacing:.34em; color:var(--ink-3); text-transform:uppercase; padding:8px 0}
+  /* ---------- 左下: 装置の読み（＝ スタッフの面への入口）---------- */
+  /* ⚠ 見た目は装置の読み。押しても何も起きず、**0.8 秒長押し**でだけスタッフの面が開く。
+     体験者が触れる場所なので、単押しで開くと業務の面が体験の前に出る */
+  .sysline{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(20px,4.2vh,42px);
+    display:flex; flex-direction:column; align-items:flex-start; gap:5px; padding:6px 0; text-align:left;
+    font-family:var(--sans); font-size:10px; letter-spacing:.3em; text-transform:uppercase;
+    -webkit-user-select:none; user-select:none}
+  .sysline .r{display:grid; grid-template-columns:9.4em auto; gap:10px; align-items:baseline}
+  .sysline i{font-style:normal; color:var(--ink-3)}
+  .sysline b{font-weight:400; letter-spacing:.26em; color:var(--ink-2); transition:color .6s var(--ease)}
+  .sysline .r.hot b{color:var(--gold)}
   .staff{position:absolute; left:0; top:0; bottom:0; width:min(92vw,420px); background:rgba(5,4,3,.94); border-right:1px solid var(--line); padding:26px 22px; overflow:auto; transform:translateX(-100%); transition:transform .6s var(--ease); font-family:var(--sans); font-size:13px; line-height:1.7; color:var(--ink-2)}
   .staff.open{transform:none}
   .staff h3{font-family:var(--serif); font-size:15px; letter-spacing:.2em; color:var(--ink); margin:0 0 14px}
@@ -179,14 +204,27 @@
     .portrait img,.portrait video{object-position:60% 18%; height:52%}
     .portrait::before{background:
       linear-gradient(180deg, rgba(5,4,3,.35) 0%, rgba(5,4,3,0) 18%, rgba(5,4,3,0) 36%, rgba(5,4,3,.96) 54%, rgba(5,4,3,1) 100%)}
-    .panel{left:6vw; right:6vw; width:auto; bottom:34vh; flex-direction:column; align-items:stretch; gap:6px}
-    .ctl .big{font-size:30px} .ctl .alts{margin-left:50px}
-    .hint{left:6vw; right:6vw; width:auto; bottom:27vh; font-size:13px}
+    /* 縦持ちは上から 束 → 注意書き → 字幕 → 下の帯。⚠ 束の丈（刺激の説明ぶんを含む）で決まるので、
+       ここの 4 つの bottom は組で動かす（1 つだけ動かすと注意書きが束に潜る） */
+    .panel{left:6vw; right:6vw; width:auto; bottom:40vh; flex-direction:column; align-items:stretch; gap:6px}
+    /* 縦持ちでは束を詰める（詰めないと 2 つ目の束が上の帯へ潜る。実測 500×761 で 10px はみ出していた） */
+    .ctl{padding:10px 14px 8px}
+    .ctl .val{min-height:64px}
+    .ctl .big{font-size:26px} .ctl .alts{margin-left:50px}
+    .ctl .alts button{min-height:44px}
+    .ctl .desc{min-height:2.6em}
     .readout{left:6vw; right:6vw; width:auto; bottom:34vh}
-    .subtitle{width:88vw; bottom:12vh; font-size:16px}
-    .hint{position:absolute; top:auto; bottom:27vh; left:6vw; right:6vw; width:auto; font-size:13px; line-height:1.6}
-    .continue{right:6vw; bottom:4vh}
-    .staffToggle{left:6vw; bottom:4vh}
+    .subtitle{width:88vw; bottom:10vh; font-size:16px}
+    .hint{position:absolute; top:auto; bottom:17vh; left:6vw; right:6vw; width:auto; font-size:13px; line-height:1.6}
+    .continue{right:6vw; bottom:4vh; gap:12px; padding:12px 6px 12px 10px}
+    .continue .jp{font-size:14px; letter-spacing:.1em}
+    .sysline{left:6vw; bottom:4vh; font-size:9px; gap:4px; letter-spacing:.24em}
+    .sysline .r{grid-template-columns:8.4em auto; gap:8px}
+  }
+  /* 縦持ちで背が低い窓（スマホ・PC で細く開いたとき）。束をもう一段詰めて帯に潜らせない */
+  @media (max-aspect-ratio: 1/1) and (max-height: 720px){
+    .panel{bottom:38vh} .hint{bottom:21vh}
+    .ctl .val{min-height:56px} .ctl .big{font-size:23px} .ctl .alts button{min-height:40px}
   }
   /* 背が低い窓（PC で細く開いたとき）は左上の注意書きが束に被るので畳む。タブレットの実寸では出る */
   @media (max-height: 640px) and (min-aspect-ratio: 1/1){ .hint{display:none} }
@@ -219,39 +257,46 @@
     </div>
     <div class="ctl in" id="ctlRelief" style="--i:3" data-key="relief">
       <span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br bb"></span>
-      <div class="tab"><b id="tRelief">軽減</b><span class="hatch"></span></div>
+      <div class="tab"><b id="tRelief">刺激レベル</b><span class="hatch"></span></div>
       <div class="val">
         <div class="arrows"><button data-step="-1" aria-label="up">▲</button><button data-step="1" aria-label="down">▼</button></div>
-        <div class="big" id="vRelief"><span>なし</span></div>
+        <div class="big" id="vRelief"><span>標準</span></div>
       </div>
       <div class="alts" id="aRelief"></div>
       <div class="desc" id="reliefDesc"></div>
       <div class="rule"></div>
     </div>
   </div>
-  <div class="hint in" id="hint" style="--i:4"><small id="hintCap">notice</small><div id="hintBody"></div></div>
+  <div class="hint in" id="hint" style="--i:4"><small id="hintCap">notice ／ 安全上の注意</small><div id="hintBody"></div></div>
 
   <div class="readout" id="readout">
     <div class="head"><span class="glyph" id="rG">…</span><span id="rH">—</span></div>
     <div class="sub" id="rD"></div>
     <div class="rows">
       <div class="r" id="rowLang"><span class="k" id="kLang">言語</span><span class="sent" id="sLang">—</span><span class="arrow">→</span><span class="got" id="gLang">—</span><span class="mark" id="mLang">…</span></div>
-      <div class="r" id="rowRelief"><span class="k" id="kRelief">軽減</span><span class="sent" id="sRelief">—</span><span class="arrow">→</span><span class="got" id="gRelief">—</span><span class="mark" id="mRelief">…</span></div>
+      <div class="r" id="rowRelief"><span class="k" id="kRelief">刺激レベル</span><span class="sent" id="sRelief">—</span><span class="arrow">→</span><span class="got" id="gRelief">—</span><span class="mark" id="mRelief">…</span></div>
     </div>
     <div class="acts"><button class="again" id="editBtn">edit</button></div>
   </div>
 
   <div class="subtitle in" id="subtitle" style="--i:5"></div>
 
-  <button class="continue in" id="sendBtn" style="--i:6"><span class="ring"></span><span class="jp" id="sendLabel">この設定で始める</span></button>
-  <button class="staffToggle" id="staffToggle">staff</button>
+  <button class="continue in" id="sendBtn" style="--i:6"><span class="ring"></span><span class="jp" id="sendLabel">観察を開始する</span></button>
+
+  <!-- 装置の読み。押しても何も起きない（0.8 秒長押しでスタッフの面） -->
+  <button class="sysline" id="sysDoor" aria-label="observation unit">
+    <span class="r" id="rowSubject"><i>subject</i><b id="sysSubject">---</b></span>
+    <span class="r" id="rowSession"><i>session</i><b id="sysSession">---</b></span>
+    <span class="r" id="rowCamera"><i>camera</i><b id="sysCamera">standby</b></span>
+  </button>
 
   <aside class="staff" id="staff">
     <button class="close" id="staffClose" aria-label="close">×</button>
     <h3>このヘッドセット</h3>
     <div class="dev" id="dev">読み込み中…</div>
-    <button class="wide" id="clearBtn">枠を空にする（次の人は日本語・軽減なしから）</button>
+    <button class="wide" id="clearBtn">枠を空にする（次の人は日本語・刺激 標準から）</button>
     <p>この面はヘッドセット自身が配っている（PC も卓も経由しない）。α 用のタブレットは α の機の URL（.31）、β 用は .32 を開く。</p>
+    <p><b>この面の開け方</b>：左下の SUBJECT / SESSION / CAMERA を <b>0.8 秒長押し</b>。単押しでは開かないので、体験者が触れても業務の面は出ない。</p>
     <p>体験者が A を押して始めた瞬間に、ヘッドセットが枠を空にする。送ったまま帰った人の設定が残っていたら上のボタン。枠が空でも、いま出ている値はそのまま。戻すのはランのやり直し。</p>
     <p>博士の画は <code>./asset/doctor.jpg</code>。動画に差し替えるときは同じ名前で <code>.mp4</code> を置く。</p>
   </aside>
@@ -264,12 +309,25 @@
   // ⚠ 注意書きは HMD の TitleNotice と同じ文。片方だけ直すと受付とヘッドセットで食い違う。
   const T = {
     ja: {
-      tLang: '言語', tRelief: 'ホラー軽減', kLang: '言語', kRelief: 'ホラー軽減',
-      reliefOn: 'あり', reliefOff: 'なし',
+      tLang: '言語', tRelief: '刺激レベル', kLang: '言語', kRelief: '刺激レベル',
+      reliefOn: '軽減', reliefOff: '標準',
       reliefDesc: 'すべての演出の音量が半分になり、\n陽気な曲が流れます。',
-      ask: '使う言語と、恐怖を和らげるかどうかを、教えてください。',
-      notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
-      send: 'この設定で始める', edit: '設定を変える',
+      // 博士の台詞。順に 1 つずつ。⚠ ホラーには 1 語も触れない（説明するのは実験の手順だけ）
+      say: {
+        greet: 'こんにちは。私はこの観察を担当します。',
+        lang: '始める前に、二つだけ確認させてください。\nまず、使用する言語を教えてください。',
+        stim: '次に、刺激の強さを選んでください。',
+        x1: '普段、私たちは自分の身体を外側から見ることはできません。',
+        x2: 'この観察装置『廻リ視』では、それが可能になります。',
+        x3: '映像だけを頼りに、この空間を歩いてください。',
+        x4: 'カメラは三台。あなたの位置に応じて切り替わります。',
+        x5: '映像の中には、あなた自身の姿も映ります。',
+        x6: '体調に異変を感じたら、その場で立ち止まり、装置を外してください。',
+        x7: '……それだけです。',
+      },
+      noticeCap: 'notice ／ 安全上の注意',
+      notice: 'この体験にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
+      send: '観察を開始する', edit: '設定を変える',
       pre: { noserver: 'ヘッドセットに繋がっていません。スタッフを呼んでください' },
       post: {
         sending: ['送っています', ''],
@@ -281,12 +339,24 @@
       },
     },
     en: {
-      tLang: 'Language', tRelief: 'Reduced horror', kLang: 'Language', kRelief: 'Reduced horror',
-      reliefOn: 'on', reliefOff: 'off',
+      tLang: 'Language', tRelief: 'Stimulus', kLang: 'Language', kRelief: 'Stimulus',
+      reliefOn: 'reduced', reliefOff: 'standard',
       reliefDesc: 'All sound is halved,\nand a cheerful tune plays.',
-      ask: 'Tell me your language, and whether you would like the horror softened.',
-      notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
-      send: 'Start with these settings', edit: 'Change settings',
+      say: {
+        greet: 'Hello. I am in charge of this observation.',
+        lang: 'Before we begin, two things.\nFirst, tell me which language you use.',
+        stim: 'Next, choose the level of stimulus.',
+        x1: 'We cannot normally see our own body from the outside.',
+        x2: 'This observation unit — Mawarimi — makes that possible.',
+        x3: 'You will walk this space guided only by the footage.',
+        x4: 'There are three cameras. They change with where you stand.',
+        x5: 'You will also appear in the footage yourself.',
+        x6: 'If you feel unwell, stop where you are and remove the device.',
+        x7: '...That is all.',
+      },
+      noticeCap: 'notice ／ safety',
+      notice: 'This experience contains horror imagery\nand scenes meant to unsettle or scare.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
+      send: 'Begin observation', edit: 'Change settings',
       pre: { noserver: 'Not connected to the headset. Please call a member of staff' },
       post: {
         sending: ['Sending', ''],
@@ -298,12 +368,24 @@
       },
     },
     fr: {
-      tLang: 'Langue', tRelief: 'Horreur atténuée', kLang: 'Langue', kRelief: 'Horreur atténuée',
-      reliefOn: 'oui', reliefOff: 'non',
+      tLang: 'Langue', tRelief: 'Stimulation', kLang: 'Langue', kRelief: 'Stimulation',
+      reliefOn: 'réduite', reliefOff: 'standard',
       reliefDesc: 'Tout le son est réduit de moitié,\net une musique gaie est diffusée.',
-      ask: 'Dites-moi votre langue, et si vous souhaitez que l’horreur soit atténuée.',
+      say: {
+        greet: 'Bonjour. Je suis responsable de cette observation.',
+        lang: 'Avant de commencer, deux choses.\nD’abord, indiquez-moi votre langue.',
+        stim: 'Ensuite, choisissez le niveau de stimulation.',
+        x1: 'Nous ne pouvons pas voir notre propre corps de l’extérieur.',
+        x2: 'Cet appareil d’observation — Mawarimi — le rend possible.',
+        x3: 'Vous marcherez dans cet espace guidé par les images seules.',
+        x4: 'Il y a trois caméras. Elles changent selon votre position.',
+        x5: 'Vous apparaîtrez vous-même dans les images.',
+        x6: 'Si vous vous sentez mal, arrêtez-vous et retirez l’appareil.',
+        x7: '……C’est tout.',
+      },
+      noticeCap: 'notice ／ sécurité',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
-      send: 'Commencer avec ces réglages', edit: 'Modifier les réglages',
+      send: 'Commencer l’observation', edit: 'Modifier les réglages',
       pre: { noserver: 'Non connecté au casque. Appelez un membre du personnel' },
       post: {
         sending: ['Envoi', ''],
@@ -320,6 +402,12 @@
   const GLYPH = { applied: '✓', waiting: '…', sending: '…', later: '⏳', noserver: '✕', fail: '✕' };
   const TONE = { applied: 'ok', waiting: 'wait', sending: 'wait', later: 'wait', noserver: 'ng', fail: 'ng' };
 
+  // ---- 博士の話す順（0193）------------------------------------------------
+  // ⚠ 回転ではなく**進行**。答えたら次へ、答えなくても読み終わりから DWELL 秒で次へ。
+  //   最後（x7）で止まる。言語を替えると、いまの行を頭から言い直す（0191）。
+  const FLOW = ['greet', 'lang', 'stim', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7'];
+  const DWELL = { greet: 2.2, lang: 7.0, stim: 7.0, x1: 2.6, x2: 2.4, x3: 2.8, x4: 2.4, x5: 2.6, x6: 3.0, x7: 0 };
+
   const $ = (id) => document.getElementById(id);
   const state = {
     lang: 'ja', relief: false, focus: 'lang',
@@ -328,7 +416,32 @@
     view: 'edit',        // edit（束を出している）| result（読み出しを出している）
     st: null, online: false,
     subtitleKey: '',
+    step: 'greet',       // 博士がいまどこまで話したか（FLOW の名）
+    session: 0,          // 送った時の観測番号（0 = まだ送っていない）
   };
+
+  let flowTimer = null;
+  function clearFlow() { if (flowTimer) { clearTimeout(flowTimer); flowTimer = null; } }
+  // いまの行を打ち終わったら呼ばれる。DWELL 秒おいて次の行へ
+  function afterLine() {
+    clearFlow();
+    const d = DWELL[state.step] || 0;
+    if (d > 0) flowTimer = setTimeout(() => { flowTimer = null; stepTo(FLOW[FLOW.indexOf(state.step) + 1]); }, d * 1000);
+  }
+  // 後ろへは戻さない（答えた人に同じ問いを二度出さない）
+  function stepTo(name) {
+    if (!name) return;
+    const i = FLOW.indexOf(name), cur = FLOW.indexOf(state.step);
+    if (i < 0 || i <= cur) return;
+    clearFlow();
+    state.step = name;
+    renderStatus();
+  }
+  // 体験者が答えたぶんだけ先へ進める（render はしない。呼び出し側がまとめて描く）
+  function answered(name) {
+    const i = FLOW.indexOf(name), cur = FLOW.indexOf(state.step);
+    if (i > cur) { clearFlow(); state.step = name; }
+  }
 
   // ---- 大きな値の入れ替え（上下へ滑る）------------------------------------
   // ⚠ 「いまの 1 枚」は el._cur で持つ。querySelector で拾うと、滑っている最中にもう一度切り替えたとき
@@ -360,7 +473,7 @@
   // 回転はしない（0191「設定の画面では字幕が切り替わる必要はあんまりない」）。
   const CPS = { ja: 12, en: 18, fr: 18 };
   let typeTimer = null;
-  function setSubtitle(text, key) {
+  function setSubtitle(text, key, onDone) {
     if (key === state.subtitleKey) return;
     state.subtitleKey = key;
     if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
@@ -382,13 +495,19 @@
     const total = lines.reduce((a, l) => a + l.length, 0);
     const cps = CPS[state.lang] || 12;
     const t0 = performance.now();
+    let done = false;
     const step = () => {
       let n = Math.min(total, Math.floor((performance.now() - t0) * cps / 1000));
       for (const { tn, ln } of nodes) { const take = Math.min(n, ln.length); tn.textContent = ln.slice(0, take); n -= take; }
-      if (n >= 0 && nodes.every(({ tn, ln }) => tn.textContent.length === ln.length)) { clearInterval(typeTimer); typeTimer = null; }
+      if (!done && n >= 0 && nodes.every(({ tn, ln }) => tn.textContent.length === ln.length)) {
+        done = true;
+        if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+        if (onDone) onDone();       // 打ち終わった縁（＝ 次の行へ進む合図）
+      }
     };
     step();
-    typeTimer = setInterval(step, 40);
+    // ⚠ 打ち終わっているのに interval を張らない（張ると onDone が毎 40ms 走る）
+    if (!done) typeTimer = setInterval(step, 40);
   }
 
   // ---- 描画 ---------------------------------------------------------------
@@ -401,6 +520,7 @@
     // 選んでいないものを下に薄く
     $('aLang').innerHTML = LANGS.filter((l) => l !== state.lang).map((l) => `<button data-lang="${l}">${LANG_NAME[l]}</button>`).join('');
     $('aRelief').innerHTML = `<button data-relief="${state.relief ? 0 : 1}">${state.relief ? t.reliefOff : t.reliefOn}</button>`;
+    $('hintCap').textContent = t.noticeCap;
     $('hintBody').textContent = t.notice;
     $('reliefDesc').textContent = state.relief ? t.reliefDesc : '';
     $('reliefDesc').classList.toggle('show', state.relief);
@@ -429,9 +549,12 @@
       $('panel').style.opacity = ''; $('panel').style.pointerEvents = ''; $('hint').style.opacity = '';
       $('readout').classList.remove('show', 'ok', 'wait', 'ng');
       $('sendBtn').disabled = false; $('sendBtn').classList.remove('busy', 'done');
-      setSubtitle(state.online ? t.ask : t.pre.noserver, 'ask:' + state.lang + ':' + state.online);
+      // 博士の 1 行。打ち終わったら DWELL 秒で次の行へ（繋がっていない間は進めない）
+      if (state.online) setSubtitle(t.say[state.step], 'say:' + state.step + ':' + state.lang, afterLine);
+      else { clearFlow(); setSubtitle(t.pre.noserver, 'noserver:' + state.lang); }
       return;
     }
+    clearFlow();      // 送った後は博士の説明を進めない（読み出しの側が字幕を持つ）
     const key = postKey();
     const s = t.post[key];
     $('panel').style.opacity = '0'; $('panel').style.pointerEvents = 'none'; $('hint').style.opacity = '0';
@@ -466,14 +589,33 @@
       box.innerHTML = `<span class="lamp"></span>${location.host}<br>応答がありません。ヘッドセットが起動しているか、同じ Wi-Fi か、URL の IP が合っているかを見る。`;
       $('clearBtn').disabled = true; return;
     }
-    const pend = s.pending ? `${LANG_NAME[s.pending.lang] || s.pending.lang} ・ 軽減 ${s.pending.relief ? 'あり' : 'なし'}（受理 ${s.pending.seq}）` : '空';
+    const pend = s.pending ? `${LANG_NAME[s.pending.lang] || s.pending.lang} ・ 刺激 ${s.pending.relief ? '軽減' : '標準'}（受理 ${s.pending.seq}）` : '空';
     box.innerHTML = `<span class="lamp ok"></span>${s.model || '?'}  ${s.ip || location.hostname}:${s.port || ''}<br>
-      ${s.phase || '—'}${s.titleStage ? '／' + s.titleStage : ''} ・ いま ${LANG_NAME[s.lang] || s.lang} ・ 軽減 ${s.relief ? 'あり' : 'なし'}<br>
+      ${s.phase || '—'}${s.titleStage ? '／' + s.titleStage : ''} ・ いま ${LANG_NAME[s.lang] || s.lang} ・ 刺激 ${s.relief ? '軽減' : '標準'}<br>
       枠: ${pend}<br>書いた受理番号 ${s.appliedSeq} ・ 書いた回数 ${s.applyCount} ・ 受けた累計 ${s.received}${s.rejected ? ' ・ 読めなかった ' + s.rejected : ''}`;
     $('clearBtn').disabled = !s.pending;
   }
 
-  function render(dir, changed) { renderText(dir, changed); renderStatus(); renderStaff(); }
+  // ---- 左下: 装置の読み（0193）----------------------------------------------
+  // ⚠ 数を作らない。SESSION はヘッドセットが実際に書いた回数 + 1（＝ この機の何人目か）で、
+  //   繋がっていないあいだは --- のまま。送った時の番号はそこで凍らせる（反映で 1 増えて見えないように）。
+  function sessionNo() {
+    if (state.session > 0) return state.session;
+    if (!state.online || !state.st) return 0;
+    return (state.st.applyCount | 0) + 1;
+  }
+  function renderSys() {
+    const done = state.view === 'result' && state.ui !== 'fail' && postKey() === 'applied';
+    const held = state.view === 'result' && !done;
+    const n = sessionNo();
+    $('sysSubject').textContent = done ? 'ready' : (held ? 'hold' : '---');
+    $('sysSession').textContent = n > 0 ? String(n).padStart(3, '0') : '---';
+    $('sysCamera').textContent = done ? 'rec' : 'standby';
+    $('rowSubject').classList.toggle('hot', done);
+    $('rowCamera').classList.toggle('hot', done);
+  }
+
+  function render(dir, changed) { renderText(dir, changed); renderStatus(); renderStaff(); renderSys(); }
 
   // ---- ヘッドセットとの通信（この面を配っている機そのもの）--------------------------
   async function post(path, body) {
@@ -484,7 +626,8 @@
   }
   async function send() {
     if (state.ui === 'sending') return;
-    state.ui = 'sending'; renderStatus();
+    state.session = sessionNo();      // 反映で applyCount が 1 増える前に凍らせる
+    state.ui = 'sending'; renderStatus(); renderSys();
     try {
       const j = await post('./set', { lang: state.lang, relief: state.relief });
       state.sent = { lang: state.lang, relief: state.relief, seq: j.seq || 0 };
@@ -499,12 +642,14 @@
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       state.st = await r.json(); state.online = !!state.st.ok;
     } catch (e) { state.online = false; }
-    renderStatus(); renderStaff();
+    renderStatus(); renderStaff(); renderSys();
   }
 
   // ---- 操作 ---------------------------------------------------------------
-  function setLang(l, dir) { if (l === state.lang) return; state.lang = l; state.focus = 'lang'; render(dir, 'lang'); }
-  function setRelief(v, dir) { if (v === state.relief) return; state.relief = v; state.focus = 'relief'; render(dir, 'relief'); }
+  // ⚠ 答えたら博士は次の問いへ進む（言語を選んだら刺激へ・刺激を選んだら説明へ）。
+  //   束に触れただけでも、いまの問いより先には戻らない。
+  function setLang(l, dir) { if (l === state.lang) return; state.lang = l; state.focus = 'lang'; answered('stim'); render(dir, 'lang'); }
+  function setRelief(v, dir) { if (v === state.relief) return; state.relief = v; state.focus = 'relief'; answered('x1'); render(dir, 'relief'); }
   $('ctlLang').addEventListener('click', (ev) => {
     const b = ev.target.closest('button');
     state.focus = 'lang';
@@ -516,6 +661,7 @@
   $('ctlRelief').addEventListener('click', (ev) => {
     const b = ev.target.closest('button');
     state.focus = 'relief';
+    answered('stim');   // 刺激の束を見ている ＝ 言語は済んでいる
     if (b && b.dataset.relief != null) return setRelief(b.dataset.relief === '1', 1);
     if (b && b.dataset.step) return setRelief(!state.relief, +b.dataset.step);
     if (ev.target.closest('.big')) return setRelief(!state.relief, 1);
@@ -524,7 +670,18 @@
   $('sendBtn').addEventListener('click', () => { if (state.view === 'edit') send(); });
   // 戻って設定し直す（送った値は残る。もう一度送れば新しい受理番号で届く ＝ 注意書きの段なら即座に書き替わる）
   $('editBtn').addEventListener('click', () => { state.view = 'edit'; render(); });
-  $('staffToggle').addEventListener('click', () => $('staff').classList.toggle('open'));
+  // スタッフの面は「装置の読み」を 0.8 秒長押しで開く。
+  // ⚠ 単押しでは開かない — 体験者が触れる場所なので、業務の面が体験の前に出てはいけない
+  (() => {
+    const door = $('sysDoor');
+    let holdT = null;
+    const arm = () => { clearTimeout(holdT); holdT = setTimeout(() => { holdT = null; $('staff').classList.add('open'); }, 800); };
+    const disarm = () => { clearTimeout(holdT); holdT = null; };
+    door.addEventListener('pointerdown', arm);
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((e) => door.addEventListener(e, disarm));
+    door.addEventListener('click', (ev) => ev.preventDefault());
+    door.addEventListener('contextmenu', (ev) => ev.preventDefault());
+  })();
   $('staffClose').addEventListener('click', () => $('staff').classList.remove('open'));
   $('clearBtn').addEventListener('click', async () => {
     $('clearBtn').disabled = true;
@@ -548,11 +705,16 @@
   }
   tick(); setInterval(tick, 1000);
 
-  // ---- 机上の確認用: ?demo=applied|waiting|later|noserver|fail で送った後の見え方を固定する ----
-  const demo = new URLSearchParams(location.search).get('demo');
+  // ---- 机上の確認用 ----
+  //   ?demo=applied|waiting|later|noserver|fail  送った後の見え方を固定する
+  //   ?say=<FLOW の名>                            博士の台詞をその行で止めて見る（束の面）
+  const qs = new URLSearchParams(location.search);
+  const saySeed = qs.get('say');
+  if (saySeed && FLOW.indexOf(saySeed) >= 0) { state.step = saySeed; DWELL[saySeed] = 0; }
+  const demo = qs.get('demo');
   if (demo) {
     const lang = new URLSearchParams(location.search).get('lang') || 'ja';
-    state.lang = lang; state.relief = true;
+    state.lang = lang; state.relief = true; state.session = 7;
     state.sent = { lang, relief: true, seq: 1 };
     state.ui = demo === 'fail' ? 'fail' : 'sent'; state.view = 'result';
     state.online = demo !== 'noserver';

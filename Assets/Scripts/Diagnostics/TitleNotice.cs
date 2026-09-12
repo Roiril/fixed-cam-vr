@@ -80,9 +80,14 @@ namespace FixedCamVr.Diagnostics
         /// ⚠ <b>この 20 は <see cref="Scale"/> を変えても動かない</b> — 枠と字に同じ率が掛かるので、
         /// 1 行に入る文字数は縮尺に依らない（変わるのは見かけの角度だけ）。
         /// ⚠ 文言を変えたら <c>menu hud-font</c> を再実行する（静的ベイクなので忘れると豆腐）。
+        ///
+        /// ⚠⚠ <b>「本作品」とは書かない</b>（2026-09-12・<c>canon/LEDGER.md</c> 0193）。展示の目録の語で、
+        /// 作中の観察装置として読ませたいこの面から浮く。**同じ文をタブレットの面
+        /// （<c>Assets/Resources/Visitor/visitor.html</c>）と紙（<c>docs/onsite/handout.html</c>）も持つので、
+        /// 直すときは 3 つとも直す。**
         /// </summary>
         private const string NoticeJa =
-            "本作品にはホラー表現および、\n" +
+            "この体験にはホラー表現および、\n" +
             "不安や恐怖を感じる演出が含まれます\n" +
             "\n" +
             "体験中に気分が悪くなった場合は、\n" +
@@ -94,8 +99,8 @@ namespace FixedCamVr.Diagnostics
         /// （安全の掲示なので、言語で内容が変わったらそれは別の掲示）。
         /// </summary>
         private const string NoticeEn =
-            "This work contains horror imagery and\n" +
-            "scenes meant to unsettle or frighten.\n" +
+            "This experience contains horror imagery\n" +
+            "and scenes meant to unsettle or scare.\n" +
             "\n" +
             "If you feel unwell at any point, stop\n" +
             "where you are, remove the headset and\n" +

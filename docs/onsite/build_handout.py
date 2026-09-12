@@ -198,8 +198,8 @@ TRANSLATE = [
 
     # 2 枚目 — 展示の注意。⚠ 訳文はアプリの TitleNotice と同じ文（安全の掲示なので割らない）
     ("<h2>ご体験の前に</h2>", "<h2>Before you begin</h2>"),
-    ("本作品には、ホラー表現および不安や恐怖を感じる演出が含まれます。",
-     "This work contains horror imagery and scenes meant to unsettle or frighten."),
+    ("この体験には、ホラー表現および不安や恐怖を感じる演出が含まれます。",
+     "This experience contains horror imagery and scenes meant to unsettle or scare."),
     ("体験中に気分が悪くなった場合は、その場で立ち止まり、ヘッドセットを外してスタッフにお声がけください。",
      "If you feel unwell at any point, stop where you are, remove the headset "
      "and let a member of staff know."),

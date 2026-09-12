@@ -3240,6 +3240,11 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
 - 面を直したら APK を焼き直す（TextAsset。卓の静的配信ではない）
 - 見た目は DBH 風を廻リ視へ落としたもの（0188）。案内役は研究所の博士（`Resources/Visitor/doctor.jpg.bytes`・Codex 生成）。
   作法と罠は `memory/visitor_tablet.md`「見た目」
+- ⚠⚠ **言葉は作中の観察装置の側**（2026-09-12・0193）。束の見出しは**刺激レベル**（標準 / 軽減）、
+  送るのは**観察を開始する**、左下は装置の読み（SUBJECT / SESSION / CAMERA・**0.8 秒長押しでスタッフの面**）。
+  博士は**実験の手順だけを説明し、ホラーには 1 語も触れない**。
+  ⚠ **注意書きの文は タブレット / `TitleNotice` / 紙（`docs/onsite/handout.html`）の 3 つが同じものを持つ** —
+  直すときは 3 つとも（`memory/visitor_tablet.md`「言葉」）
 
 ## 接続の堅牢化 — 端末内在 ID + 発見プロトコル（fixedcam-discovery/1）— 2026-07-18
 
