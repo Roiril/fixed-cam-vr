@@ -12,24 +12,24 @@ Voici le mur que vous allez examiner.
 
 4
 00:00:11,700 --> 00:00:16,400
-Vous utiliserez un dispositif d’observation qui révèle les anomalies dans les images.
+Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.
 
 5
 00:00:16,400 --> 00:00:22,000
-Un agent vous guidera à travers le dispositif, alors suivez ses consignes pour avancer.
+Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.
 
 6
-00:00:22,000 --> 00:00:25,500
-La vue change automatiquement selon votre position.
+00:00:22,000 --> 00:00:28,000
+Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.
 
 7
-00:00:25,500 --> 00:00:31,500
-Si vous repérez une anomalie dans l’image, maintenez X ou Y sur la manette gauche pendant une seconde.
+00:00:28,000 --> 00:00:31,400
+Le signalement sera envoyé à l’agent pour analyse.
 
 8
-00:00:31,500 --> 00:00:34,900
-Cette action envoie un signalement que l’agent analysera.
+00:00:31,400 --> 00:00:35,600
+À présent, prenez la manette dans la main gauche et mettez le dispositif.
 
 9
-00:00:34,900 --> 00:00:39,100
-À présent, prenez la manette dans la main gauche et mettez le dispositif.
+00:00:35,600 --> 00:00:38,600
+Bonne chance pour votre enquête.

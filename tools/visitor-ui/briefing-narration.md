@@ -32,7 +32,7 @@
 
 ### 02 subject — 回収壁面
 
-開始 8.0 秒 / 尺 15.0 秒
+開始 8.0 秒 / 尺 11.5 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -42,39 +42,39 @@
 
 文 02 / 場面内 2.4–6.0 秒
 
-調査には、怪異を映像で捉える観測装置を使います。
+調査には、怪異を記録し、解析するための観測装置を使用します。
 
 文 03 / 場面内 6.0–11.5 秒
 
-装置を通じてエージェントが案内しますので、その指示に従って歩いてください。
-
-文 04 / 場面内 11.5–15.0 秒
-
-映像はあなたの位置に応じて自動で切り替わります。
+装置を装着するとエージェントが調査経路を案内しますので、その指示に従って進んでください。
 
 ### 03 report — XかYを長押し
 
-開始 23.0 秒 / 尺 8.5 秒
+開始 19.5 秒 / 尺 8.5 秒
 
 画像: `briefing-device-v1.png`
 
 文 01 / 場面内 0.0–5.0 秒
 
-映像に異変を見つけたら、左コントローラーのXかYを1秒間長押ししてください。
+異変を見つけたら、左コントローラーのXかYを1秒間長押ししてください。
 
 文 02 / 場面内 5.0–8.5 秒
 
-この操作で報告が送られ、エージェントが解析します。
+報告はエージェントへ送られ、その内容が解析されます。
 
 ### 04 wear — 装着案内
 
-開始 31.5 秒 / 尺 4.0 秒
+開始 28.0 秒 / 尺 7.0 秒
 
 画像: `doctor.jpg`
 
 文 01 / 場面内 0.0–4.0 秒
 
 では、コントローラーを左手に持ち、装置を装着してください。
+
+文 02 / 場面内 4.0–7.0 秒
+
+それでは、健闘を祈ります。
 
 ## en
 
@@ -94,7 +94,7 @@ I would like you to investigate a wall where anomalies have been reported.
 
 ### 02 subject — Recovered wall
 
-開始 8.2 秒 / 尺 15.7 秒
+開始 8.2 秒 / 尺 12.7 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -104,39 +104,39 @@ This is the wall you will investigate.
 
 文 02 / 場面内 2.7–7.2 秒
 
-You will use an observation device that reveals anomalies in its images.
+You will use an observation device that records and analyses anomalies.
 
 文 03 / 場面内 7.2–12.7 秒
 
-An agent will guide you through the device, so follow its directions as you walk.
-
-文 04 / 場面内 12.7–15.7 秒
-
-The view changes automatically as you move.
+Once you put on the device, an agent will guide you along the survey route, so follow its directions.
 
 ### 03 report — Hold X or Y
 
-開始 23.9 秒 / 尺 8.8 秒
+開始 20.9 秒 / 尺 8.8 秒
 
 画像: `briefing-device-v1.png`
 
 文 01 / 場面内 0.0–5.6 秒
 
-If you spot an anomaly in the image, hold X or Y on the left controller for one second.
+If you spot an anomaly, hold X or Y on the left controller for one second.
 
 文 02 / 場面内 5.6–8.8 秒
 
-This sends a report for the agent to analyse.
+The report will be sent to the agent for analysis.
 
 ### 04 wear — Putting on the device
 
-開始 32.7 秒 / 尺 4.2 秒
+開始 29.7 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 
 文 01 / 場面内 0.0–4.2 秒
 
 Now hold the controller in your left hand and put on the device.
+
+文 02 / 場面内 4.2–7.2 秒
+
+Good luck with your survey.
 
 ## fr
 
@@ -156,7 +156,7 @@ Je vous confie une enquête sur un mur autour duquel des anomalies ont été sig
 
 ### 02 subject — Mur récupéré
 
-開始 9.0 秒 / 尺 16.5 秒
+開始 9.0 秒 / 尺 13.0 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -166,36 +166,36 @@ Voici le mur que vous allez examiner.
 
 文 02 / 場面内 2.7–7.4 秒
 
-Vous utiliserez un dispositif d’observation qui révèle les anomalies dans les images.
+Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.
 
 文 03 / 場面内 7.4–13.0 秒
 
-Un agent vous guidera à travers le dispositif, alors suivez ses consignes pour avancer.
-
-文 04 / 場面内 13.0–16.5 秒
-
-La vue change automatiquement selon votre position.
+Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.
 
 ### 03 report — Maintenez X ou Y
 
-開始 25.5 秒 / 尺 9.4 秒
+開始 22.0 秒 / 尺 9.4 秒
 
 画像: `briefing-device-v1.png`
 
 文 01 / 場面内 0.0–6.0 秒
 
-Si vous repérez une anomalie dans l’image, maintenez X ou Y sur la manette gauche pendant une seconde.
+Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.
 
 文 02 / 場面内 6.0–9.4 秒
 
-Cette action envoie un signalement que l’agent analysera.
+Le signalement sera envoyé à l’agent pour analyse.
 
 ### 04 wear — Mise en place du dispositif
 
-開始 34.9 秒 / 尺 4.2 秒
+開始 31.4 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 
 文 01 / 場面内 0.0–4.2 秒
 
 À présent, prenez la manette dans la main gauche et mettez le dispositif.
+
+文 02 / 場面内 4.2–7.2 秒
+
+Bonne chance pour votre enquête.

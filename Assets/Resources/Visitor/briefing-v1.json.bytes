@@ -87,16 +87,12 @@
             "durationMs": 2400
           },
           {
-            "text": "調査には、怪異を映像で捉える観測装置を使います。",
+            "text": "調査には、怪異を記録し、解析するための観測装置を使用します。",
             "durationMs": 3600
           },
           {
-            "text": "装置を通じてエージェントが案内しますので、その指示に従って歩いてください。",
+            "text": "装置を装着するとエージェントが調査経路を案内しますので、その指示に従って進んでください。",
             "durationMs": 5500
-          },
-          {
-            "text": "映像はあなたの位置に応じて自動で切り替わります。",
-            "durationMs": 3500
           }
         ],
         "en": [
@@ -105,16 +101,12 @@
             "durationMs": 2700
           },
           {
-            "text": "You will use an observation device that reveals anomalies in its images.",
+            "text": "You will use an observation device that records and analyses anomalies.",
             "durationMs": 4500
           },
           {
-            "text": "An agent will guide you through the device, so follow its directions as you walk.",
+            "text": "Once you put on the device, an agent will guide you along the survey route, so follow its directions.",
             "durationMs": 5500
-          },
-          {
-            "text": "The view changes automatically as you move.",
-            "durationMs": 3000
           }
         ],
         "fr": [
@@ -123,16 +115,12 @@
             "durationMs": 2700
           },
           {
-            "text": "Vous utiliserez un dispositif d’observation qui révèle les anomalies dans les images.",
+            "text": "Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.",
             "durationMs": 4700
           },
           {
-            "text": "Un agent vous guidera à travers le dispositif, alors suivez ses consignes pour avancer.",
+            "text": "Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.",
             "durationMs": 5600
-          },
-          {
-            "text": "La vue change automatiquement selon votre position.",
-            "durationMs": 3500
           }
         ]
       }
@@ -163,31 +151,31 @@
       "cues": {
         "ja": [
           {
-            "text": "映像に異変を見つけたら、左コントローラーのXかYを1秒間長押ししてください。",
+            "text": "異変を見つけたら、左コントローラーのXかYを1秒間長押ししてください。",
             "durationMs": 5000
           },
           {
-            "text": "この操作で報告が送られ、エージェントが解析します。",
+            "text": "報告はエージェントへ送られ、その内容が解析されます。",
             "durationMs": 3500
           }
         ],
         "en": [
           {
-            "text": "If you spot an anomaly in the image, hold X or Y on the left controller for one second.",
+            "text": "If you spot an anomaly, hold X or Y on the left controller for one second.",
             "durationMs": 5600
           },
           {
-            "text": "This sends a report for the agent to analyse.",
+            "text": "The report will be sent to the agent for analysis.",
             "durationMs": 3200
           }
         ],
         "fr": [
           {
-            "text": "Si vous repérez une anomalie dans l’image, maintenez X ou Y sur la manette gauche pendant une seconde.",
+            "text": "Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.",
             "durationMs": 6000
           },
           {
-            "text": "Cette action envoie un signalement que l’agent analysera.",
+            "text": "Le signalement sera envoyé à l’agent pour analyse.",
             "durationMs": 3400
           }
         ]
@@ -221,18 +209,30 @@
           {
             "text": "では、コントローラーを左手に持ち、装置を装着してください。",
             "durationMs": 4000
+          },
+          {
+            "text": "それでは、健闘を祈ります。",
+            "durationMs": 3000
           }
         ],
         "en": [
           {
             "text": "Now hold the controller in your left hand and put on the device.",
             "durationMs": 4200
+          },
+          {
+            "text": "Good luck with your survey.",
+            "durationMs": 3000
           }
         ],
         "fr": [
           {
             "text": "À présent, prenez la manette dans la main gauche et mettez le dispositif.",
             "durationMs": 4200
+          },
+          {
+            "text": "Bonne chance pour votre enquête.",
+            "durationMs": 3000
           }
         ]
       }

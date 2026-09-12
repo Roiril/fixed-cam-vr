@@ -1783,17 +1783,18 @@
     const t = T[state.lang].briefing;
     const positions = briefingPositions();
     const position = currentBriefingPosition();
+    const complete = state.briefing.ended || position === positions.length - 1;
     $('briefingToggle').textContent = state.lang === 'ja'
       ? `オート ${state.briefing.auto ? 'ON' : 'OFF'}`
       : (state.briefing.auto ? t.autoOn : t.autoOff);
     $('briefingToggle').setAttribute('aria-label', $('briefingToggle').textContent);
     $('briefingToggle').setAttribute('aria-pressed', String(state.briefing.auto));
     $('briefingToggle').disabled = state.briefing.ended || state.briefing.pauseReasons.size > 0;
-    $('briefingToggle').hidden = state.briefing.ended;
+    $('briefingToggle').hidden = complete;
     $('briefingPrevious').disabled = position <= 0;
     $('briefingNext').disabled = state.briefing.ended || positions.length === 0;
-    $('briefingNext').hidden = state.briefing.ended;
-    $('briefingReplay').hidden = !state.briefing.ended;
+    $('briefingNext').hidden = complete;
+    $('briefingReplay').hidden = !complete;
   }
 
   function renderBriefingScene() {
