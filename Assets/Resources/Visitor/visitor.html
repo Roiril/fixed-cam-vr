@@ -1123,7 +1123,6 @@
       <div class="result-actions">
         <button class="retry" id="retryBtn" type="button" hidden>もう一度送る</button>
         <button class="retry" id="briefingRetryBtn" type="button" hidden>説明資料を再読み込み</button>
-        <button class="secondary" id="briefingStartBtn" type="button" hidden>博士からの説明へ</button>
         <button class="secondary" id="editBtn" type="button" hidden>設定を変える</button>
       </div>
     </section>
@@ -1207,7 +1206,7 @@
       },
       postSpeech: {
         sending: '設定を送っています。少しお待ちください。',
-        applied: '画面をタップすると、博士からの説明へ進みます。',
+        applied: '画面をタップして次へ',
         waiting: '準備が整うまで、少しお待ちください。',
         later: '次の開始まで、少しお待ちください。',
         noserver: '通信を確認できません。スタッフにお声がけください。',
@@ -1219,7 +1218,7 @@
         loading: ['説明資料を準備しています', '設定は反映されました。準備が整うまでお待ちください'],
         error: ['説明資料を読み込めません', '通信を確認して、説明資料を再読み込みしてください'],
         retry: '説明資料を再読み込み', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: '前の文',
-        next: '次の文', settings: '設定に戻る', replay: 'もう一度説明を見る', start: '博士からの説明へ',
+        next: '次の文', settings: '設定に戻る', replay: 'もう一度説明を見る',
         role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
     },
@@ -1244,7 +1243,7 @@
       },
       postSpeech: {
         sending: 'I am sending your settings. Please wait a moment.',
-        applied: 'Tap the screen to continue to the doctor’s briefing.',
+        applied: 'Tap the screen to continue',
         waiting: 'Please wait a moment while everything is prepared.',
         later: 'Please wait for the next session to begin.',
         noserver: 'I cannot confirm the connection. Please call a member of staff.',
@@ -1256,7 +1255,7 @@
         loading: ['Preparing the briefing', 'The settings are applied. Please wait while the material loads'],
         error: ['The briefing could not be loaded', 'Check the connection, then reload the briefing material'],
         retry: 'Reload briefing', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: 'Previous sentence',
-        next: 'Next sentence', settings: 'Back to settings', replay: 'Watch the briefing again', start: 'Continue to briefing',
+        next: 'Next sentence', settings: 'Back to settings', replay: 'Watch the briefing again',
         role: 'Guide', progress: 'Briefing progress', advance: 'Continue to the next sentence',
       },
     },
@@ -1281,7 +1280,7 @@
       },
       postSpeech: {
         sending: 'J’envoie vos réglages. Veuillez patienter un instant.',
-        applied: 'Touchez l’écran pour passer aux explications du docteur.',
+        applied: 'Touchez l’écran pour continuer',
         waiting: 'Veuillez patienter un instant pendant la préparation.',
         later: 'Veuillez attendre le début de la prochaine session.',
         noserver: 'Je ne peux pas confirmer la connexion. Appelez un membre du personnel.',
@@ -1293,7 +1292,7 @@
         loading: ['Préparation des explications', 'Les réglages sont appliqués. Veuillez patienter pendant le chargement'],
         error: ['Impossible de charger les explications', 'Vérifiez la connexion, puis rechargez les documents'],
         retry: 'Recharger les explications', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: 'Phrase précédente',
-        next: 'Phrase suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications', start: 'Voir les explications',
+        next: 'Phrase suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications',
         role: 'Guide', progress: 'Progression des explications', advance: 'Continuer vers la phrase suivante',
       },
     },
@@ -1478,7 +1477,6 @@
     $('editBtn').textContent = t.edit;
     $('retryBtn').textContent = t.retry;
     $('briefingRetryBtn').textContent = t.briefing.retry;
-    $('briefingStartBtn').textContent = t.briefing.start;
     $('briefingPrevious').textContent = t.briefing.previous;
     $('briefingNext').textContent = t.briefing.next;
     $('briefingSettings').textContent = t.briefing.settings;
@@ -2004,7 +2002,6 @@
     $('headsetRelief').textContent = actual && typeof actual.relief === 'boolean' ? (actual.relief ? t.reliefOn : t.reliefOff) : '—';
     $('retryBtn').hidden = key !== 'fail';
     $('briefingRetryBtn').hidden = !(key === 'applied' && state.briefing.loadState === 'error');
-    $('briefingStartBtn').hidden = briefingBlocked || key !== 'applied';
     $('editBtn').hidden = key === 'sending';
     document.querySelector('.stage').classList.toggle('is-result-ready', !briefingBlocked && key === 'applied');
     setFormDisabled(key === 'sending');
@@ -2180,7 +2177,6 @@
   });
   $('retryBtn').addEventListener('click', send);
   $('briefingRetryBtn').addEventListener('click', loadBriefingData);
-  $('briefingStartBtn').addEventListener('click', advanceFromResult);
   document.querySelector('.stage').addEventListener('click', (event) => {
     if (!canAdvanceFromResult() || event.target.closest('button, a, input, select, textarea, dialog')) return;
     if (event.target.closest('#resultView, .portrait, .footer')) advanceFromResult();
@@ -2249,7 +2245,15 @@
     setBriefingPause('hidden', document.hidden);
   });
   document.addEventListener('keydown', (event) => {
-    if (state.view !== 'briefing' || $('staff').open || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    if ($('staff').open || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (state.view === 'result' && canAdvanceFromResult()
+      && (event.key === 'Enter' || event.key === ' ')
+      && !event.target.closest?.('button, a, input, select, textarea')) {
+      event.preventDefault();
+      advanceFromResult();
+      return;
+    }
+    if (state.view !== 'briefing') return;
     const editable = event.target.closest?.('input, select, textarea');
     if (event.key === 'ArrowLeft' && !editable) {
       event.preventDefault();
