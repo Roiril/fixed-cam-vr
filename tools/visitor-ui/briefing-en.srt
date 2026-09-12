@@ -7,21 +7,29 @@ I study anomalous phenomena here at the institute.
 I would like you to investigate a wall where anomalies have been reported.
 
 3
-00:00:08,200 --> 00:00:13,400
-Watch the images in the observation device and walk as directed by the agent.
+00:00:08,200 --> 00:00:10,900
+This is the wall you will investigate.
 
 4
-00:00:13,400 --> 00:00:16,400
-The view changes automatically as you move.
+00:00:10,900 --> 00:00:15,400
+You will use an observation device that reveals anomalies in its images.
 
 5
-00:00:16,400 --> 00:00:22,000
-If you spot an anomaly, hold X or Y on the left controller for one second.
+00:00:15,400 --> 00:00:20,900
+An agent will guide you through the device, so follow its directions as you walk.
 
 6
-00:00:22,000 --> 00:00:24,500
-The agent will analyse your report.
+00:00:20,900 --> 00:00:23,900
+The view changes automatically as you move.
 
 7
-00:00:24,500 --> 00:00:28,700
-Hold the controller in your left hand and put on the device.
+00:00:23,900 --> 00:00:29,500
+If you spot an anomaly in the image, hold X or Y on the left controller for one second.
+
+8
+00:00:29,500 --> 00:00:32,700
+This sends a report for the agent to analyse.
+
+9
+00:00:32,700 --> 00:00:36,900
+Now hold the controller in your left hand and put on the device.

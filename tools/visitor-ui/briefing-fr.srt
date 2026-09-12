@@ -7,21 +7,29 @@ J’étudie les phénomènes anormaux dans cet institut.
 Je vous confie une enquête sur un mur autour duquel des anomalies ont été signalées.
 
 3
-00:00:09,000 --> 00:00:14,500
-Observez les images dans le dispositif et marchez en suivant les consignes de l’agent.
+00:00:09,000 --> 00:00:11,700
+Voici le mur que vous allez examiner.
 
 4
-00:00:14,500 --> 00:00:18,000
-La vue change automatiquement selon votre position.
+00:00:11,700 --> 00:00:16,400
+Vous utiliserez un dispositif d’observation qui révèle les anomalies dans les images.
 
 5
-00:00:18,000 --> 00:00:24,000
-Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.
+00:00:16,400 --> 00:00:22,000
+Un agent vous guidera à travers le dispositif, alors suivez ses consignes pour avancer.
 
 6
-00:00:24,000 --> 00:00:26,500
-L’agent analysera votre signalement.
+00:00:22,000 --> 00:00:25,500
+La vue change automatiquement selon votre position.
 
 7
-00:00:26,500 --> 00:00:30,700
-Prenez la manette dans la main gauche et mettez le dispositif.
+00:00:25,500 --> 00:00:31,500
+Si vous repérez une anomalie dans l’image, maintenez X ou Y sur la manette gauche pendant une seconde.
+
+8
+00:00:31,500 --> 00:00:34,900
+Cette action envoie un signalement que l’agent analysera.
+
+9
+00:00:34,900 --> 00:00:39,100
+À présent, prenez la manette dans la main gauche et mettez le dispositif.

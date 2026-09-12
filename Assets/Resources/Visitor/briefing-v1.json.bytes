@@ -83,8 +83,16 @@
       "cues": {
         "ja": [
           {
-            "text": "観測装置の映像を見ながら、エージェントの指示に従って歩いてください。",
-            "durationMs": 5000
+            "text": "こちらが調査対象の壁です。",
+            "durationMs": 2400
+          },
+          {
+            "text": "調査には、怪異を映像で捉える観測装置を使います。",
+            "durationMs": 3600
+          },
+          {
+            "text": "装置を通じてエージェントが案内しますので、その指示に従って歩いてください。",
+            "durationMs": 5500
           },
           {
             "text": "映像はあなたの位置に応じて自動で切り替わります。",
@@ -93,8 +101,16 @@
         ],
         "en": [
           {
-            "text": "Watch the images in the observation device and walk as directed by the agent.",
-            "durationMs": 5200
+            "text": "This is the wall you will investigate.",
+            "durationMs": 2700
+          },
+          {
+            "text": "You will use an observation device that reveals anomalies in its images.",
+            "durationMs": 4500
+          },
+          {
+            "text": "An agent will guide you through the device, so follow its directions as you walk.",
+            "durationMs": 5500
           },
           {
             "text": "The view changes automatically as you move.",
@@ -103,8 +119,16 @@
         ],
         "fr": [
           {
-            "text": "Observez les images dans le dispositif et marchez en suivant les consignes de l’agent.",
-            "durationMs": 5500
+            "text": "Voici le mur que vous allez examiner.",
+            "durationMs": 2700
+          },
+          {
+            "text": "Vous utiliserez un dispositif d’observation qui révèle les anomalies dans les images.",
+            "durationMs": 4700
+          },
+          {
+            "text": "Un agent vous guidera à travers le dispositif, alors suivez ses consignes pour avancer.",
+            "durationMs": 5600
           },
           {
             "text": "La vue change automatiquement selon votre position.",
@@ -139,32 +163,32 @@
       "cues": {
         "ja": [
           {
-            "text": "異変を見つけたら、左コントローラーのXかYを1秒間長押ししてください。",
+            "text": "映像に異変を見つけたら、左コントローラーのXかYを1秒間長押ししてください。",
             "durationMs": 5000
           },
           {
-            "text": "報告を受けて、エージェントが解析します。",
-            "durationMs": 3000
+            "text": "この操作で報告が送られ、エージェントが解析します。",
+            "durationMs": 3500
           }
         ],
         "en": [
           {
-            "text": "If you spot an anomaly, hold X or Y on the left controller for one second.",
+            "text": "If you spot an anomaly in the image, hold X or Y on the left controller for one second.",
             "durationMs": 5600
           },
           {
-            "text": "The agent will analyse your report.",
-            "durationMs": 2500
+            "text": "This sends a report for the agent to analyse.",
+            "durationMs": 3200
           }
         ],
         "fr": [
           {
-            "text": "Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.",
+            "text": "Si vous repérez une anomalie dans l’image, maintenez X ou Y sur la manette gauche pendant une seconde.",
             "durationMs": 6000
           },
           {
-            "text": "L’agent analysera votre signalement.",
-            "durationMs": 2500
+            "text": "Cette action envoie un signalement que l’agent analysera.",
+            "durationMs": 3400
           }
         ]
       }
@@ -195,19 +219,19 @@
       "cues": {
         "ja": [
           {
-            "text": "コントローラーを左手に持ち、装置を装着してください。",
+            "text": "では、コントローラーを左手に持ち、装置を装着してください。",
             "durationMs": 4000
           }
         ],
         "en": [
           {
-            "text": "Hold the controller in your left hand and put on the device.",
+            "text": "Now hold the controller in your left hand and put on the device.",
             "durationMs": 4200
           }
         ],
         "fr": [
           {
-            "text": "Prenez la manette dans la main gauche et mettez le dispositif.",
+            "text": "À présent, prenez la manette dans la main gauche et mettez le dispositif.",
             "durationMs": 4200
           }
         ]
