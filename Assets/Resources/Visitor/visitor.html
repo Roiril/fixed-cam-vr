@@ -46,7 +46,7 @@
     -webkit-tap-highlight-color: rgba(168, 34, 41, .22);
   }
   button { color: inherit; }
-  button:focus-visible, input:focus-visible {
+  button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
     outline: 2px solid var(--gold);
     outline-offset: 4px;
   }
@@ -75,6 +75,7 @@
   }
 
   .stage {
+    position: relative;
     min-height: 100svh;
     display: grid;
     grid-template-columns: minmax(540px, 52%) minmax(0, 48%);
@@ -85,6 +86,103 @@
       "footer footer";
     overflow: clip;
   }
+  .title-view {
+    position: absolute;
+    z-index: 10;
+    inset: 0;
+    min-height: 100svh;
+    display: grid;
+    grid-template-columns: minmax(0, 52%) minmax(0, 48%);
+    align-items: center;
+    overflow: hidden;
+    cursor: pointer;
+    background:
+      linear-gradient(90deg, rgba(8, 6, 4, .98) 0 38%, rgba(8, 6, 4, .72) 57%, rgba(8, 6, 4, .18) 100%),
+      linear-gradient(180deg, rgba(8, 6, 4, .18), rgba(8, 6, 4, .42)),
+      url("./asset/doctor.jpg") 88% center / cover no-repeat;
+    transition: opacity .58s var(--ease), transform .58s var(--ease);
+  }
+  .title-view[hidden] { display: none; }
+  .title-view::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: #050403;
+    opacity: 0;
+    transition: opacity .58s var(--ease);
+  }
+  .title-view.is-leaving { opacity: 0; transform: scale(1.008); }
+  .title-view.is-leaving::before { opacity: .72; }
+  .title-lockup {
+    position: relative;
+    z-index: 1;
+    grid-column: 1;
+    width: min(82%, 620px);
+    margin-left: max(42px, env(safe-area-inset-left));
+    padding-block: max(34px, env(safe-area-inset-top)) max(34px, env(safe-area-inset-bottom));
+    transition: opacity .5s var(--ease), transform .5s var(--ease);
+  }
+  .title-view.is-leaving .title-lockup { opacity: 0; transform: translateY(-8px); }
+  .title-kicker {
+    display: block;
+    color: var(--gold);
+    font: 11px/1.3 var(--sans);
+    letter-spacing: .42em;
+  }
+  .title-brand {
+    margin: 10px 0 22px;
+    font-size: clamp(72px, 11vw, 154px);
+    font-weight: 400;
+    line-height: .95;
+    letter-spacing: .12em;
+    text-shadow: 0 4px 30px rgba(0, 0, 0, .62);
+    white-space: nowrap;
+  }
+  .title-rule {
+    width: min(100%, 430px);
+    height: 1px;
+    display: block;
+    margin-bottom: 28px;
+    background: linear-gradient(90deg, var(--gold), rgba(231, 207, 159, .08));
+    transform-origin: left center;
+    transition: opacity .5s var(--ease), transform .5s var(--ease);
+  }
+  .title-view.is-leaving .title-rule { opacity: 0; transform: scaleX(.35); }
+  .title-start {
+    min-width: min(100%, 300px);
+    min-height: 68px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
+    padding: 12px 20px 12px 54px;
+    position: relative;
+    border: 1px solid var(--line-strong);
+    background: rgba(8, 6, 4, .72);
+    color: var(--ink);
+    cursor: pointer;
+    text-align: left;
+    transition: background-color .24s var(--ease), border-color .24s var(--ease), transform .24s var(--ease);
+  }
+  .title-start::before {
+    content: "";
+    position: absolute;
+    left: 21px;
+    width: 17px;
+    height: 17px;
+    border: 1px solid var(--gold);
+    background: var(--red-deep);
+    transform: rotate(45deg);
+  }
+  .title-start:hover { border-color: var(--gold); background: rgba(97, 20, 25, .32); }
+  .title-start:active { transform: translateY(1px); }
+  .title-start[disabled] { cursor: wait; opacity: .58; }
+  .title-start-main { font-size: 18px; letter-spacing: .08em; }
+  .title-start-alt { color: var(--muted); font: 11px/1.4 var(--sans); letter-spacing: .04em; }
+  .stage.is-title { height: 100svh; overflow: clip; }
+  .stage.is-title .topbar, .stage.is-title .content, .stage.is-title .footer { visibility: hidden; }
   .topbar {
     grid-area: header;
     z-index: 2;
@@ -462,7 +560,41 @@
   .briefing[data-portrait="true"] .briefing-title { font-size: clamp(28px, 3.6vw, 48px); line-height: 1.4; }
   .briefing[data-portrait="true"] .briefing-caption { margin-top: 20px; font-size: 17px; }
   .briefing-copy { min-width: 0; }
-  .briefing-copy .eyebrow { margin-bottom: 5px; }
+  .briefing-chapter {
+    display: grid;
+    grid-template-columns: auto auto minmax(28px, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    color: var(--gold);
+    font: 11px/1.3 var(--sans);
+    letter-spacing: .18em;
+    transform-origin: left center;
+  }
+  .briefing-chapter-number, .briefing-cue-number { font-variant-numeric: tabular-nums; }
+  .briefing-chapter-number {
+    padding-left: 9px;
+    border-left: 2px solid var(--gold);
+    font-size: 20px;
+    line-height: 1;
+    letter-spacing: .08em;
+  }
+  .briefing-chapter .eyebrow { margin: 0; font-size: 12px; }
+  .briefing-chapter-line {
+    height: 1px;
+    background: linear-gradient(90deg, var(--line-strong), rgba(242, 232, 215, .04));
+    transform-origin: left center;
+  }
+  .briefing.is-chapter-changing .briefing-chapter { animation: chapter-copy-in .38s var(--ease); }
+  .briefing.is-chapter-changing .briefing-chapter-line { animation: chapter-line-in .38s var(--ease); }
+  @keyframes chapter-copy-in {
+    from { opacity: 0; transform: translateX(var(--chapter-shift, 9px)); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes chapter-line-in {
+    from { opacity: 0; transform: scaleX(.2); }
+    to { opacity: 1; transform: none; }
+  }
   .briefing-title {
     margin: 0;
     font-size: clamp(23px, 2.5vw, 34px);
@@ -550,6 +682,10 @@
   .briefing-progress progress::-webkit-progress-bar { background: var(--line); }
   .briefing-progress progress::-webkit-progress-value { background: var(--gold); }
   .briefing-progress progress::-moz-progress-bar { background: var(--gold); }
+  .stage.is-briefing .briefing, .stage.is-briefing .portrait, .stage.is-briefing .subtitle {
+    cursor: pointer;
+    touch-action: manipulation;
+  }
 
   .footer {
     grid-area: footer;
@@ -714,6 +850,25 @@
         "footer";
       overflow: visible;
     }
+    .title-view {
+      position: fixed;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: end;
+      background:
+        linear-gradient(180deg, rgba(8, 6, 4, .08) 0 34%, rgba(8, 6, 4, .92) 72%, var(--bg) 100%),
+        url("./asset/doctor.jpg") 78% 26% / cover no-repeat;
+    }
+    .title-lockup {
+      grid-column: 1;
+      width: auto;
+      margin: 0;
+      padding:
+        32px
+        max(24px, env(safe-area-inset-right))
+        max(36px, env(safe-area-inset-bottom))
+        max(24px, env(safe-area-inset-left));
+    }
+    .title-brand { font-size: clamp(64px, 18vw, 112px); }
     .topbar {
       padding:
         max(15px, env(safe-area-inset-top))
@@ -810,6 +965,9 @@
     .stage.is-briefing { grid-template-rows: auto 110px auto auto; }
     .briefing { grid-template-rows: auto minmax(145px, 24svh) auto; gap: 10px; }
     .briefing-visual { min-height: 145px; }
+    .title-brand { font-size: clamp(54px, 19vw, 82px); }
+    .title-start { width: 100%; }
+    .briefing-chapter { grid-template-columns: auto minmax(0, auto) minmax(20px, 1fr) auto; gap: 7px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -823,8 +981,19 @@
 </style>
 </head>
 <body>
-<a class="skip" href="#main">設定へ移動</a>
-<div class="stage">
+<a class="skip" href="#main" hidden>設定へ移動</a>
+<div class="stage is-title">
+  <section class="title-view is-active" id="titleView" aria-labelledby="titleBrand">
+    <div class="title-lockup">
+      <span class="title-kicker" lang="en">MAWARIMI</span>
+      <h1 class="title-brand" id="titleBrand" translate="no">廻リ視</h1>
+      <span class="title-rule" aria-hidden="true"></span>
+      <button class="title-start" id="titleStart" type="button" aria-label="タップして始める。Tap to begin. Touchez pour commencer.">
+        <span class="title-start-main">タップして始める</span>
+        <span class="title-start-alt"><span lang="en">Tap to begin</span> · <span lang="fr">Touchez pour commencer</span></span>
+      </button>
+    </div>
+  </section>
   <header class="topbar">
     <p class="brand" translate="no">廻リ視</p>
     <button class="connection" id="staffToggle" data-state="checking" type="button" aria-haspopup="dialog" aria-label="スタッフ情報を開く">
@@ -840,7 +1009,7 @@
   </figure>
 
   <main class="content" id="main">
-    <section class="surface settings is-active" id="settingsView" aria-labelledby="pageTitle">
+    <section class="surface settings" id="settingsView" aria-labelledby="pageTitle" aria-hidden="true" hidden inert>
       <h1 id="pageTitle">体験の前に</h1>
       <div class="notice" id="notice">
         <span class="eyebrow" id="noticeLabel">注意</span>
@@ -923,9 +1092,15 @@
       </div>
     </section>
 
-    <section class="surface briefing" id="briefingView" aria-labelledby="briefingTitle" aria-hidden="true" hidden inert>
+    <section class="surface briefing" id="briefingView" role="button" tabindex="0" aria-labelledby="briefingTitle" aria-describedby="briefingAdvanceHint" aria-hidden="true" hidden inert>
+      <span class="sr-only" id="briefingAdvanceHint">次の文へ進む</span>
       <div class="briefing-copy">
-        <span class="eyebrow" id="briefingEyebrow"></span>
+        <div class="briefing-chapter">
+          <span class="briefing-chapter-number" id="briefingChapterNumber"></span>
+          <span class="eyebrow" id="briefingEyebrow"></span>
+          <span class="briefing-chapter-line" aria-hidden="true"></span>
+          <span class="briefing-cue-number" id="briefingCueNumber"></span>
+        </div>
         <h2 class="briefing-title" id="briefingTitle" tabindex="-1"></h2>
         <p class="briefing-caption" id="briefingCaption"></p>
       </div>
@@ -953,9 +1128,9 @@
       <span id="submitLabel">この設定で始める</span>
     </button>
     <div class="briefing-controls" id="briefingControls" hidden>
-      <button class="briefing-control" id="briefingToggle" data-action="toggle" type="button">停止</button>
-      <button class="briefing-control" id="briefingPrevious" type="button">前の場面</button>
-      <button class="briefing-control" id="briefingNext" type="button">次の場面</button>
+      <button class="briefing-control" id="briefingToggle" data-action="toggle" type="button" aria-pressed="false">AUTO OFF</button>
+      <button class="briefing-control" id="briefingPrevious" type="button">前の文</button>
+      <button class="briefing-control" id="briefingNext" type="button">次の文</button>
       <button class="briefing-control" id="briefingSettings" type="button">設定に戻る</button>
       <button class="briefing-control briefing-replay" id="briefingReplay" type="button" hidden>もう一度説明を見る</button>
     </div>
@@ -994,12 +1169,22 @@
         noserver: ['ヘッドセットを確認できません', '通信の回復を待っています。スタッフを呼んでください'],
         fail: ['送信を確認できませんでした', '設定が届いたか確認できません。もう一度送れます'],
       },
+      postSpeech: {
+        sending: '設定を送っています。少しお待ちください。',
+        applied: '準備が整うまで、少しお待ちください。',
+        waiting: '準備が整うまで、少しお待ちください。',
+        later: '次の開始まで、少しお待ちください。',
+        noserver: '通信を確認できません。スタッフにお声がけください。',
+        fail: '設定を確認できません。スタッフにお声がけください。',
+        loading: '準備が整うまで、少しお待ちください。',
+        error: '説明を読み込めません。スタッフにお声がけください。',
+      },
       briefing: {
         loading: ['説明資料を準備しています', '設定は反映されました。準備が整うまでお待ちください'],
         error: ['説明資料を読み込めません', '通信を確認して、説明資料を再読み込みしてください'],
-        retry: '説明資料を再読み込み', pause: '停止', resume: '再開', previous: '前の場面',
-        next: '次の場面', settings: '設定に戻る', replay: 'もう一度説明を見る',
-        role: '案内担当', progress: '説明の進み具合',
+        retry: '説明資料を再読み込み', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: '前の文',
+        next: '次の文', settings: '設定に戻る', replay: 'もう一度説明を見る',
+        role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
     },
     en: {
@@ -1021,12 +1206,22 @@
         noserver: ['Connection unknown', 'The headset connection cannot be confirmed. Please call a member of staff'],
         fail: ['Could not confirm delivery', 'Delivery could not be confirmed. You can send the settings again'],
       },
+      postSpeech: {
+        sending: 'I am sending your settings. Please wait a moment.',
+        applied: 'Please wait a moment while everything is prepared.',
+        waiting: 'Please wait a moment while everything is prepared.',
+        later: 'Please wait for the next session to begin.',
+        noserver: 'I cannot confirm the connection. Please call a member of staff.',
+        fail: 'I cannot confirm your settings. Please call a member of staff.',
+        loading: 'Please wait a moment while everything is prepared.',
+        error: 'I cannot load the briefing. Please call a member of staff.',
+      },
       briefing: {
         loading: ['Preparing the briefing', 'The settings are applied. Please wait while the material loads'],
         error: ['The briefing could not be loaded', 'Check the connection, then reload the briefing material'],
-        retry: 'Reload briefing', pause: 'Pause', resume: 'Resume', previous: 'Previous scene',
-        next: 'Next scene', settings: 'Back to settings', replay: 'Watch the briefing again',
-        role: 'Guide', progress: 'Briefing progress',
+        retry: 'Reload briefing', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: 'Previous sentence',
+        next: 'Next sentence', settings: 'Back to settings', replay: 'Watch the briefing again',
+        role: 'Guide', progress: 'Briefing progress', advance: 'Continue to the next sentence',
       },
     },
     fr: {
@@ -1048,19 +1243,28 @@
         noserver: ['Connexion non vérifiable', 'La connexion au casque ne peut pas être confirmée. Appelez un membre du personnel'],
         fail: ['Envoi non confirmé', 'La réception n’a pas pu être confirmée. Vous pouvez renvoyer les réglages'],
       },
+      postSpeech: {
+        sending: 'J’envoie vos réglages. Veuillez patienter un instant.',
+        applied: 'Veuillez patienter un instant pendant la préparation.',
+        waiting: 'Veuillez patienter un instant pendant la préparation.',
+        later: 'Veuillez attendre le début de la prochaine session.',
+        noserver: 'Je ne peux pas confirmer la connexion. Appelez un membre du personnel.',
+        fail: 'Je ne peux pas confirmer vos réglages. Appelez un membre du personnel.',
+        loading: 'Veuillez patienter un instant pendant la préparation.',
+        error: 'Je ne peux pas charger les explications. Appelez un membre du personnel.',
+      },
       briefing: {
         loading: ['Préparation des explications', 'Les réglages sont appliqués. Veuillez patienter pendant le chargement'],
         error: ['Impossible de charger les explications', 'Vérifiez la connexion, puis rechargez les documents'],
-        retry: 'Recharger les explications', pause: 'Pause', resume: 'Reprendre', previous: 'Scène précédente',
-        next: 'Scène suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications',
-        role: 'Guide', progress: 'Progression des explications',
+        retry: 'Recharger les explications', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: 'Phrase précédente',
+        next: 'Phrase suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications',
+        role: 'Guide', progress: 'Progression des explications', advance: 'Continuer vers la phrase suivante',
       },
     },
   };
 
   const LANG_NAME = { ja: '日本語', en: 'English', fr: 'Français' };
   const BRIEFING_LANGS = Object.keys(LANG_NAME);
-  const CPS = { ja: 12, en: 18, fr: 18 };
   const $ = (id) => document.getElementById(id);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const state = {
@@ -1068,7 +1272,8 @@
     relief: false,
     sent: null,
     ui: 'idle',
-    view: 'edit',
+    view: 'title',
+    titleTransitioning: false,
     status: null,
     connection: 'checking',
     subtitleKey: '',
@@ -1085,20 +1290,27 @@
       sceneIndex: 0,
       cueIndex: 0,
       ended: false,
+      auto: false,
       pauseReasons: new Set(),
-      remainingMs: 0,
-      dueAt: 0,
       mediaFailed: false,
+      mediaWindowActive: false,
+      chapterChanging: false,
+      pendingMove: 0,
+      lastMoveAt: 0,
     },
   };
-  let typeTimer = null;
-  let subtitleTyping = null;
   let surfaceTimer = null;
+  let titleTimer = null;
   let pollInFlight = null;
   let pollController = null;
   let briefingController = null;
   let briefingTimer = null;
   let briefingMedia = null;
+  let briefingMediaTimer = null;
+  let briefingMediaToken = 0;
+  let briefingMediaSceneId = '';
+  let chapterTimer = null;
+  let pointerGesture = null;
   function setText(id, text) {
     if ($(id).textContent !== text) $(id).textContent = text;
   }
@@ -1106,57 +1318,33 @@
   function setSubtitle(text, key) {
     if (state.subtitleKey === key) return;
     state.subtitleKey = key;
-    if (typeTimer) clearInterval(typeTimer);
-    typeTimer = null;
     $('subtitleReserve').textContent = `―${text}`;
     $('subtitleAnnouncement').textContent = text;
-    const target = $('subtitleTyped');
-    target.textContent = '';
-    if (reducedMotion.matches) {
-      target.textContent = text;
-      subtitleTyping = null;
-      return;
-    }
-    subtitleTyping = { text, count: 0, cps: CPS[state.lang], started: performance.now() };
-    resumeSubtitleTyping();
+    $('subtitleTyped').textContent = text;
   }
 
-  function updateSubtitleTyping() {
-    if (!subtitleTyping) return;
-    const elapsed = performance.now() - subtitleTyping.started;
-    subtitleTyping.count = Math.min(subtitleTyping.text.length, Math.floor(elapsed * subtitleTyping.cps / 1000));
-    $('subtitleTyped').textContent = subtitleTyping.text.slice(0, subtitleTyping.count);
-    if (subtitleTyping.count < subtitleTyping.text.length) return;
-    if (typeTimer) clearInterval(typeTimer);
-    typeTimer = null;
-    subtitleTyping = null;
-  }
-
-  function pauseSubtitleTyping() {
-    if (typeTimer) updateSubtitleTyping();
-    if (typeTimer) clearInterval(typeTimer);
-    typeTimer = null;
-  }
-
-  function resumeSubtitleTyping() {
-    if (!subtitleTyping || reducedMotion.matches || typeTimer) return;
-    subtitleTyping.started = performance.now() - subtitleTyping.count * 1000 / subtitleTyping.cps;
-    updateSubtitleTyping();
-    if (subtitleTyping) typeTimer = setInterval(updateSubtitleTyping, 40);
-  }
-
-  function revealSubtitle() {
-    if (!subtitleTyping) return;
-    $('subtitleTyped').textContent = subtitleTyping.text;
-    if (typeTimer) clearInterval(typeTimer);
-    typeTimer = null;
-    subtitleTyping = null;
+  function syncViewChrome(view) {
+    $('sendBtn').hidden = view !== 'edit';
+    $('briefingControls').hidden = view !== 'briefing';
+    const stage = document.querySelector('.stage');
+    stage.classList.toggle('is-title', view === 'title');
+    stage.classList.toggle('is-briefing', view === 'briefing');
+    document.querySelector('.footer').classList.toggle('is-briefing', view === 'briefing');
+    document.querySelector('.topbar').inert = view === 'title';
+    document.querySelector('.footer').inert = view === 'title';
+    document.querySelector('.skip').hidden = view === 'title';
   }
 
   function setSurface(view, focusTarget) {
-    const surfaces = { edit: $('settingsView'), result: $('resultView'), briefing: $('briefingView') };
+    const surfaces = { title: $('titleView'), edit: $('settingsView'), result: $('resultView'), briefing: $('briefingView') };
     const current = surfaces[view];
+    syncViewChrome(view);
     if (state.view === view && !current.hidden) {
+      if (view === 'title') {
+        current.classList.remove('is-leaving');
+        $('titleStart').disabled = false;
+        state.titleTransitioning = false;
+      }
       if (focusTarget) focusTarget.focus();
       return;
     }
@@ -1172,20 +1360,54 @@
       }
     }
     state.view = view;
-    $('sendBtn').hidden = view !== 'edit';
-    $('briefingControls').hidden = view !== 'briefing';
-    document.querySelector('.stage').classList.toggle('is-briefing', view === 'briefing');
-    document.querySelector('.footer').classList.toggle('is-briefing', view === 'briefing');
     oldSurface.classList.remove('is-active');
     oldSurface.setAttribute('aria-hidden', 'true');
     oldSurface.inert = true;
     newSurface.hidden = false;
     newSurface.removeAttribute('aria-hidden');
     newSurface.inert = false;
+    if (view === 'title') {
+      newSurface.classList.remove('is-leaving');
+      $('titleStart').disabled = false;
+      state.titleTransitioning = false;
+    }
     void newSurface.offsetWidth;
     newSurface.classList.add('is-active');
     surfaceTimer = setTimeout(() => { oldSurface.hidden = true; }, reducedMotion.matches ? 0 : 360);
     if (focusTarget) focusTarget.focus();
+  }
+
+  function beginFromTitle() {
+    if (state.view !== 'title' || state.titleTransitioning) return;
+    state.titleTransitioning = true;
+    $('titleStart').disabled = true;
+    const finish = () => {
+      titleTimer = null;
+      setSurface('edit', document.querySelector(`input[name="lang"][value="${state.lang}"]`));
+      $('titleView').hidden = true;
+      render();
+    };
+    if (reducedMotion.matches) {
+      finish();
+      return;
+    }
+    $('titleView').classList.add('is-leaving');
+    titleTimer = setTimeout(finish, 600);
+  }
+
+  function resetVisitorSession(restarted = false) {
+    if (titleTimer) clearTimeout(titleTimer);
+    titleTimer = null;
+    state.sent = null;
+    state.ui = 'idle';
+    state.appliedSeen = false;
+    state.leftWaitAfterApplied = false;
+    state.restartMessage = restarted;
+    resetBriefingSession();
+    setDraft('ja', false);
+    setFormDisabled(false);
+    setSurface('title');
+    render();
   }
 
   function setFormDisabled(disabled) {
@@ -1203,7 +1425,7 @@
   function renderText() {
     const t = T[state.lang];
     document.documentElement.lang = state.lang;
-    if (state.view !== 'briefing') document.title = `廻リ視 — ${t.pageTitle}`;
+    document.title = state.view === 'title' ? '廻リ視' : `廻リ視 — ${t.pageTitle}`;
     document.querySelector('.skip').textContent = t.skip;
     $('staffLabel').textContent = t.staff;
     $('staffToggle').setAttribute('aria-label', t.staffOpen);
@@ -1223,6 +1445,7 @@
     $('briefingNext').textContent = t.briefing.next;
     $('briefingSettings').textContent = t.briefing.settings;
     $('briefingReplay').textContent = t.briefing.replay;
+    $('briefingAdvanceHint').textContent = t.briefing.advance;
     $('selectedHeading').textContent = t.selected;
     $('headsetHeading').textContent = t.headset;
     $('itemHeading').textContent = t.item;
@@ -1231,7 +1454,8 @@
     $('connectionText').textContent = t.connection[state.connection];
     $('restartNotice').textContent = t.restarted;
     $('restartNotice').hidden = !state.restartMessage;
-    if (state.view !== 'briefing') setSubtitle(t.ask, `ask:${state.lang}`);
+    if (state.view === 'title') setSubtitle('', 'title');
+    if (state.view === 'edit') setSubtitle(t.ask, `ask:${state.lang}`);
   }
 
   function renderReliefDescription() {
@@ -1359,30 +1583,50 @@
     return currentBriefingScene()?.cues[state.lang]?.[state.briefing.cueIndex] || null;
   }
 
-  function pauseBriefingTimer() {
-    if (briefingTimer) {
-      state.briefing.remainingMs = Math.max(0, state.briefing.dueAt - performance.now());
-      clearTimeout(briefingTimer);
-    }
+  function clearBriefingTimer() {
+    if (briefingTimer) clearTimeout(briefingTimer);
     briefingTimer = null;
-    state.briefing.dueAt = 0;
   }
 
-  function armBriefingTimer() {
-    if (briefingTimer || state.view !== 'briefing' || state.briefing.ended || state.briefing.pauseReasons.size > 0) return;
-    const delay = Math.max(1, state.briefing.remainingMs);
-    state.briefing.dueAt = performance.now() + delay;
-    briefingTimer = setTimeout(() => {
-      briefingTimer = null;
-      state.briefing.dueAt = 0;
-      state.briefing.remainingMs = 0;
-      advanceBriefingCue();
-    }, delay);
+  function clearBriefingMediaTimer() {
+    if (briefingMediaTimer) clearTimeout(briefingMediaTimer);
+    briefingMediaTimer = null;
+  }
+
+  function briefingPositions() {
+    if (!state.briefing.data) return [];
+    return state.briefing.data.scenes.flatMap((scene, sceneIndex) => (
+      scene.cues[state.lang].map((cue, cueIndex) => ({ sceneIndex, cueIndex, cue }))
+    ));
+  }
+
+  function currentBriefingPosition() {
+    const positions = briefingPositions();
+    return positions.findIndex((position) => (
+      position.sceneIndex === state.briefing.sceneIndex && position.cueIndex === state.briefing.cueIndex
+    ));
+  }
+
+  function cueStartMs(scene, cueIndex) {
+    return scene.cues[state.lang]
+      .slice(0, cueIndex)
+      .reduce((total, cue) => total + cue.durationMs, 0);
+  }
+
+  function stopBriefingMediaWindow() {
+    clearBriefingMediaTimer();
+    state.briefing.mediaWindowActive = false;
+    briefingMedia?.pause();
   }
 
   function stopBriefingMedia() {
+    briefingMediaToken += 1;
+    stopBriefingMediaWindow();
     if (briefingMedia) {
       briefingMedia.onerror = null;
+      briefingMedia.onloadedmetadata = null;
+      briefingMedia.ontimeupdate = null;
+      briefingMedia.onended = null;
       briefingMedia.pause();
       if (briefingMedia === $('doctorVideo')) {
         briefingMedia.removeAttribute('src');
@@ -1390,20 +1634,36 @@
       }
     }
     briefingMedia = null;
+    briefingMediaSceneId = '';
     $('doctorVideo').hidden = true;
     $('doctorImage').hidden = false;
+  }
+
+  function setBriefingAuto(enabled, restartMedia = false) {
+    const allowed = enabled
+      && state.view === 'briefing'
+      && !state.briefing.ended
+      && state.briefing.pauseReasons.size === 0;
+    state.briefing.auto = allowed;
+    clearBriefingTimer();
+    if (allowed) {
+      if (restartMedia) startBriefingMediaWindow();
+      const cue = currentBriefingCue();
+      if (cue && !briefingMedia) briefingTimer = setTimeout(() => moveBriefing(1, 'auto'), cue.durationMs);
+    }
+    renderBriefingControls();
   }
 
   function handleBriefingMediaFailure() {
     if (state.view !== 'briefing' || state.briefing.mediaFailed) return;
     state.briefing.mediaFailed = true;
+    setBriefingAuto(false);
     stopBriefingMedia();
-    state.briefing.pauseReasons.add('media');
-    syncBriefingPlayback();
     renderBriefingControls();
   }
 
   function configureBriefingMedia(scene) {
+    if (briefingMediaSceneId === scene.id && briefingMedia) return;
     stopBriefingMedia();
     state.briefing.mediaFailed = false;
     const videoFilename = scene.video?.[state.lang];
@@ -1422,41 +1682,65 @@
       audio.onerror = handleBriefingMediaFailure;
       briefingMedia = audio;
     }
+    briefingMediaSceneId = briefingMedia ? scene.id : '';
   }
 
-  function playBriefingMedia() {
-    if (!briefingMedia || state.briefing.mediaFailed || !briefingMedia.paused) return;
+  function startBriefingMediaWindow() {
+    stopBriefingMediaWindow();
+    if (!briefingMedia
+      || state.briefing.mediaFailed
+      || state.briefing.ended
+      || state.briefing.pauseReasons.size > 0) return;
+    const scene = currentBriefingScene();
+    const cue = currentBriefingCue();
+    if (!scene || !cue) return;
+    const startSec = cueStartMs(scene, state.briefing.cueIndex) / 1000;
+    const endSec = startSec + cue.durationMs / 1000;
     const media = briefingMedia;
-    const attempt = media.play();
-    if (attempt?.catch) attempt.catch(() => {
-      if (briefingMedia === media) handleBriefingMediaFailure();
-    });
-  }
-
-  function syncBriefingPlayback() {
-    if (state.view !== 'briefing') return;
-    if (state.briefing.ended) {
-      pauseBriefingTimer();
-      pauseSubtitleTyping();
-      briefingMedia?.pause();
-      return;
+    const token = ++briefingMediaToken;
+    state.briefing.mediaWindowActive = true;
+    const reachBoundary = () => {
+      if (briefingMedia !== media || briefingMediaToken !== token) return;
+      if (state.briefing.auto) moveBriefing(1, 'auto');
+      else stopBriefingMediaWindow();
+    };
+    media.ontimeupdate = () => {
+      if (state.briefing.mediaWindowActive && media.currentTime >= endSec - .03) reachBoundary();
+    };
+    media.onended = () => {
+      if (briefingMedia !== media || briefingMediaToken !== token) return;
+      if (media.currentTime >= endSec - .03) reachBoundary();
+      else handleBriefingMediaFailure();
+    };
+    const playSegment = () => {
+      if (briefingMedia !== media || briefingMediaToken !== token || !state.briefing.mediaWindowActive) return;
+      clearBriefingMediaTimer();
+      try {
+        media.currentTime = startSec;
+      } catch (error) {
+        handleBriefingMediaFailure();
+        return;
+      }
+      const attempt = media.play();
+      if (attempt?.catch) attempt.catch(() => {
+        if (briefingMedia === media && briefingMediaToken === token) handleBriefingMediaFailure();
+      });
+    };
+    if (media.readyState >= 1) playSegment();
+    else {
+      media.onloadedmetadata = playSegment;
+      briefingMediaTimer = setTimeout(handleBriefingMediaFailure, 6000);
     }
-    if (state.briefing.pauseReasons.size > 0) {
-      pauseBriefingTimer();
-      if (state.briefing.pauseReasons.has('user')) revealSubtitle();
-      else pauseSubtitleTyping();
-      briefingMedia?.pause();
-      return;
-    }
-    resumeSubtitleTyping();
-    playBriefingMedia();
-    armBriefingTimer();
   }
 
   function setBriefingPause(reason, paused) {
-    if (paused) state.briefing.pauseReasons.add(reason);
-    else state.briefing.pauseReasons.delete(reason);
-    syncBriefingPlayback();
+    if (paused) {
+      state.briefing.pauseReasons.add(reason);
+      setBriefingAuto(false);
+      stopBriefingMediaWindow();
+    } else {
+      state.briefing.pauseReasons.delete(reason);
+    }
     renderBriefingControls();
   }
 
@@ -1464,13 +1748,17 @@
     const scene = currentBriefingScene();
     if (!scene) return;
     const t = T[state.lang].briefing;
-    const paused = state.briefing.pauseReasons.size > 0;
-    $('briefingToggle').textContent = paused ? t.resume : t.pause;
-    $('briefingToggle').disabled = state.briefing.ended;
+    const positions = briefingPositions();
+    const position = currentBriefingPosition();
+    $('briefingToggle').textContent = state.lang === 'ja'
+      ? `オート ${state.briefing.auto ? 'ON' : 'OFF'}`
+      : (state.briefing.auto ? t.autoOn : t.autoOff);
+    $('briefingToggle').setAttribute('aria-label', $('briefingToggle').textContent);
+    $('briefingToggle').setAttribute('aria-pressed', String(state.briefing.auto));
+    $('briefingToggle').disabled = state.briefing.ended || state.briefing.pauseReasons.size > 0;
     $('briefingToggle').hidden = state.briefing.ended;
-    $('briefingToggle').setAttribute('aria-pressed', String(paused));
-    $('briefingPrevious').disabled = state.briefing.sceneIndex === 0;
-    $('briefingNext').disabled = state.briefing.sceneIndex >= state.briefing.data.scenes.length - 1;
+    $('briefingPrevious').disabled = position <= 0;
+    $('briefingNext').disabled = state.briefing.ended || positions.length === 0;
     $('briefingNext').hidden = state.briefing.ended;
     $('briefingReplay').hidden = !state.briefing.ended;
   }
@@ -1479,8 +1767,13 @@
     const scene = currentBriefingScene();
     if (!scene) return;
     const t = T[state.lang].briefing;
-    const total = state.briefing.data.scenes.length;
+    const sceneTotal = state.briefing.data.scenes.length;
+    const cues = scene.cues[state.lang];
+    const positions = briefingPositions();
+    const position = currentBriefingPosition();
+    setText('briefingChapterNumber', String(state.briefing.sceneIndex + 1).padStart(2, '0'));
     setText('briefingEyebrow', scene.eyebrow[state.lang]);
+    setText('briefingCueNumber', `${state.briefing.cueIndex + 1} / ${cues.length}`);
     setText('briefingTitle', scene.title[state.lang]);
     setText('briefingCaption', scene.caption[state.lang]);
     document.title = `廻リ視 — ${scene.title[state.lang]}`;
@@ -1503,13 +1796,9 @@
         if (image.complete) requestAnimationFrame(() => image.classList.add('is-visible'));
       }
     }
-    $('sceneCounter').textContent = `${state.briefing.sceneIndex + 1} / ${total}`;
-    const cues = scene.cues[state.lang];
-    const progress = state.briefing.ended
-      ? total
-      : state.briefing.sceneIndex + state.briefing.cueIndex / cues.length;
-    $('sceneProgress').max = total;
-    $('sceneProgress').value = progress;
+    $('sceneCounter').textContent = `${state.briefing.sceneIndex + 1} / ${sceneTotal} · ${state.briefing.cueIndex + 1} / ${cues.length}`;
+    $('sceneProgress').max = Math.max(1, positions.length);
+    $('sceneProgress').value = state.briefing.ended ? positions.length : position + 1;
     $('sceneProgress').setAttribute('aria-label', t.progress);
     renderBriefingControls();
   }
@@ -1518,60 +1807,87 @@
     const scene = currentBriefingScene();
     const cue = currentBriefingCue();
     if (!scene || !cue) return;
-    pauseBriefingTimer();
-    state.briefing.remainingMs = cue.durationMs;
+    clearBriefingTimer();
     setSubtitle(cue.text, `briefing:${scene.id}:${state.lang}:${state.briefing.cueIndex}`);
     renderBriefingScene();
-    syncBriefingPlayback();
+    startBriefingMediaWindow();
+    if (state.briefing.auto) setBriefingAuto(true);
   }
 
-  function showBriefingScene(index) {
-    if (!state.briefing.data || index < 0 || index >= state.briefing.data.scenes.length) return;
-    pauseBriefingTimer();
-    stopBriefingMedia();
-    state.briefing.sceneIndex = index;
-    state.briefing.cueIndex = 0;
+  function playChapterTransition(direction) {
+    if (chapterTimer) clearTimeout(chapterTimer);
+    state.briefing.chapterChanging = true;
+    const view = $('briefingView');
+    view.classList.remove('is-chapter-changing');
+    view.style.setProperty('--chapter-shift', direction < 0 ? '-9px' : '9px');
+    void view.offsetWidth;
+    view.classList.add('is-chapter-changing');
+    chapterTimer = setTimeout(() => {
+      chapterTimer = null;
+      state.briefing.chapterChanging = false;
+      view.classList.remove('is-chapter-changing');
+      const pending = state.briefing.pendingMove;
+      state.briefing.pendingMove = 0;
+      if (pending) moveBriefing(pending, 'queued');
+    }, reducedMotion.matches ? 0 : 380);
+  }
+
+  function moveBriefing(delta, source = 'control') {
+    if (state.view !== 'briefing' || !state.briefing.data || delta === 0) return false;
+    const direction = delta < 0 ? -1 : 1;
+    const userMove = source !== 'auto' && source !== 'queued';
+    if (state.briefing.chapterChanging && userMove) {
+      if (!state.briefing.pendingMove) state.briefing.pendingMove = direction;
+      return false;
+    }
+    const now = performance.now();
+    if (userMove && state.briefing.lastMoveAt && now - state.briefing.lastMoveAt < 150) return false;
+    if (userMove) state.briefing.lastMoveAt = now;
+    const positions = briefingPositions();
+    const current = currentBriefingPosition();
+    if (current < 0) return false;
+    if (state.briefing.ended && direction > 0) return false;
+    const target = current + direction;
+    if (target < 0) return false;
+    if (target >= positions.length) {
+      finishBriefing();
+      return true;
+    }
+    const next = positions[target];
+    const changedChapter = next.sceneIndex !== state.briefing.sceneIndex;
+    state.briefing.sceneIndex = next.sceneIndex;
+    state.briefing.cueIndex = next.cueIndex;
     state.briefing.ended = false;
-    state.briefing.pauseReasons.delete('media');
-    const scene = currentBriefingScene();
-    renderBriefingScene();
-    configureBriefingMedia(scene);
+    if (changedChapter) configureBriefingMedia(currentBriefingScene());
     beginBriefingCue();
+    if (changedChapter) playChapterTransition(direction);
+    return true;
   }
 
   function finishBriefing() {
-    pauseBriefingTimer();
+    setBriefingAuto(false);
+    stopBriefingMediaWindow();
     state.briefing.ended = true;
-    revealSubtitle();
-    briefingMedia?.pause();
     renderBriefingScene();
   }
 
-  function advanceBriefingCue() {
-    const scene = currentBriefingScene();
-    if (!scene || state.briefing.ended) return;
-    if (state.briefing.cueIndex + 1 < scene.cues[state.lang].length) {
-      state.briefing.cueIndex += 1;
-      beginBriefingCue();
-      return;
-    }
-    if (state.briefing.sceneIndex + 1 < state.briefing.data.scenes.length) {
-      showBriefingScene(state.briefing.sceneIndex + 1);
-      return;
-    }
-    finishBriefing();
-  }
-
   function stopBriefingPlayback() {
-    pauseBriefingTimer();
-    if (state.view === 'briefing') pauseSubtitleTyping();
+    clearBriefingTimer();
+    clearBriefingMediaTimer();
+    if (chapterTimer) clearTimeout(chapterTimer);
+    chapterTimer = null;
     stopBriefingMedia();
     state.briefing.pauseReasons.clear();
     state.briefing.sceneIndex = 0;
     state.briefing.cueIndex = 0;
     state.briefing.ended = false;
-    state.briefing.remainingMs = 0;
+    state.briefing.auto = false;
     state.briefing.mediaFailed = false;
+    state.briefing.mediaWindowActive = false;
+    state.briefing.chapterChanging = false;
+    state.briefing.pendingMove = 0;
+    state.briefing.lastMoveAt = 0;
+    $('briefingView').classList.remove('is-chapter-changing');
   }
 
   function resetBriefingSession() {
@@ -1594,9 +1910,11 @@
     stopBriefingPlayback();
     if (document.hidden) state.briefing.pauseReasons.add('hidden');
     if ($('staff').open) state.briefing.pauseReasons.add('staff');
+    if (state.connection !== 'online') state.briefing.pauseReasons.add('offline');
     setSurface('briefing');
-    showBriefingScene(0);
-    $('briefingTitle').focus();
+    configureBriefingMedia(currentBriefingScene());
+    beginBriefingCue();
+    $('briefingView').focus();
   }
 
   function maybeStartBriefing() {
@@ -1650,6 +1968,8 @@
     $('briefingRetryBtn').hidden = !(key === 'applied' && state.briefing.loadState === 'error');
     $('editBtn').hidden = key === 'sending';
     setFormDisabled(key === 'sending');
+    const speechKey = briefingBlocked ? state.briefing.loadState : key;
+    setSubtitle(t.postSpeech[speechKey], `result:${state.lang}:${speechKey}`);
     maybeStartBriefing();
   }
 
@@ -1698,17 +2018,7 @@
       state.leftWaitAfterApplied = true;
     }
     if (!state.leftWaitAfterApplied || status.titleStage !== 'Wait') return;
-    state.sent = null;
-    state.ui = 'idle';
-    state.appliedSeen = false;
-    state.leftWaitAfterApplied = false;
-    resetBriefingSession();
-    if (state.view !== 'edit') {
-      setDraft('ja', false);
-      setFormDisabled(false);
-      setSurface('edit');
-      render();
-    }
+    resetVisitorSession();
   }
 
   function validSequence(value, allowZero = true) {
@@ -1789,26 +2099,16 @@
         const status = await fetchWithTimeout('./status', { cache: 'no-store' }, pollController);
         if (!validateStatus(status)) throw new Error('invalid status response');
         if (state.lastReceived != null && status.received < state.lastReceived) {
-          const wasEditing = state.view === 'edit';
-          state.sent = null;
-          state.ui = 'idle';
-          state.appliedSeen = false;
-          state.leftWaitAfterApplied = false;
-          state.restartMessage = true;
-          resetBriefingSession();
-          if (!wasEditing) {
-            setDraft('ja', false);
-            setFormDisabled(false);
-            setSurface('edit');
-          }
-          render();
+          resetVisitorSession(true);
         }
         state.lastReceived = status.received;
         state.status = status;
         state.connection = 'online';
+        if (state.view === 'briefing') setBriefingPause('offline', false);
         observeVisitorCycle(status);
       } catch (error) {
         state.connection = 'offline';
+        if (state.view === 'briefing') setBriefingPause('offline', true);
       }
       renderConnection();
       renderStaff();
@@ -1834,6 +2134,8 @@
       renderReliefDescription();
     }
   });
+  $('titleStart').addEventListener('click', beginFromTitle);
+  $('titleView').addEventListener('click', beginFromTitle);
   $('editBtn').addEventListener('click', () => {
     returnToSettings();
   });
@@ -1841,23 +2143,23 @@
   $('briefingRetryBtn').addEventListener('click', loadBriefingData);
   $('briefingToggle').addEventListener('click', () => {
     if (state.briefing.ended) return;
-    const resume = state.briefing.pauseReasons.has('user') || state.briefing.pauseReasons.has('media');
-    state.briefing.pauseReasons.delete('media');
-    setBriefingPause('user', !resume);
+    setBriefingAuto(!state.briefing.auto, true);
   });
   $('briefingPrevious').addEventListener('click', () => {
-    showBriefingScene(state.briefing.sceneIndex - 1);
+    moveBriefing(-1, 'control');
   });
   $('briefingNext').addEventListener('click', () => {
-    showBriefingScene(state.briefing.sceneIndex + 1);
+    moveBriefing(1, 'control');
   });
   $('briefingSettings').addEventListener('click', returnToSettings);
   $('briefingReplay').addEventListener('click', () => {
-    state.briefing.pauseReasons.clear();
+    stopBriefingPlayback();
     if (document.hidden) state.briefing.pauseReasons.add('hidden');
     if ($('staff').open) state.briefing.pauseReasons.add('staff');
-    showBriefingScene(0);
-    $('briefingTitle').focus();
+    if (state.connection !== 'online') state.briefing.pauseReasons.add('offline');
+    configureBriefingMedia(currentBriefingScene());
+    beginBriefingCue();
+    $('briefingView').focus();
   });
   $('staffToggle').addEventListener('click', () => {
     $('staffMessage').textContent = '';
@@ -1892,29 +2194,60 @@
     }
   });
   reducedMotion.addEventListener?.('change', () => {
-    state.subtitleKey = '';
-    const cue = state.view === 'briefing' ? currentBriefingCue() : null;
-    if (cue) {
-      setSubtitle(cue.text, `motion:${state.lang}:${state.briefing.sceneIndex}:${state.briefing.cueIndex}:${reducedMotion.matches}`);
-      syncBriefingPlayback();
-    } else {
-      setSubtitle(T[state.lang].ask, `motion:${state.lang}:${reducedMotion.matches}`);
+    if (state.titleTransitioning && reducedMotion.matches) {
+      if (titleTimer) clearTimeout(titleTimer);
+      titleTimer = null;
+      setSurface('edit', document.querySelector(`input[name="lang"][value="${state.lang}"]`));
+      render();
     }
   });
   document.addEventListener('visibilitychange', () => {
     setBriefingPause('hidden', document.hidden);
   });
   document.addEventListener('keydown', (event) => {
-    if (state.view !== 'briefing' || $('staff').open || event.altKey || event.ctrlKey || event.metaKey) return;
-    if (event.key === 'ArrowLeft' && !$('briefingPrevious').disabled) {
+    if (state.view !== 'briefing' || $('staff').open || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    const editable = event.target.closest?.('input, select, textarea');
+    if (event.key === 'ArrowLeft' && !editable) {
       event.preventDefault();
-      showBriefingScene(state.briefing.sceneIndex - 1);
+      moveBriefing(-1, 'keyboard');
     }
-    if (event.key === 'ArrowRight' && !$('briefingNext').disabled) {
+    if (event.key === 'ArrowRight' && !editable) {
       event.preventDefault();
-      showBriefingScene(state.briefing.sceneIndex + 1);
+      moveBriefing(1, 'keyboard');
+    }
+    if ((event.key === 'Enter' || event.key === ' ') && event.target === $('briefingView')) {
+      event.preventDefault();
+      moveBriefing(1, 'keyboard');
     }
   });
+  function isBriefingAdvanceTarget(target) {
+    if (state.view !== 'briefing' || $('staff').open || !(target instanceof Element)) return false;
+    if (target.closest('button, a, input, select, textarea, label, dialog')) return false;
+    return Boolean(target.closest('#briefingView, .portrait, #subtitle'));
+  }
+  document.addEventListener('pointerdown', (event) => {
+    if (!event.isPrimary || !isBriefingAdvanceTarget(event.target)) {
+      pointerGesture = null;
+      return;
+    }
+    pointerGesture = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    };
+  });
+  document.addEventListener('pointerup', (event) => {
+    const start = pointerGesture;
+    pointerGesture = null;
+    if (!start || start.pointerId !== event.pointerId || !isBriefingAdvanceTarget(event.target)) return;
+    const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    const scrolled = Math.hypot(window.scrollX - start.scrollX, window.scrollY - start.scrollY);
+    if (moved <= 14 && scrolled <= 4) moveBriefing(1, 'pointer');
+  });
+  document.addEventListener('pointercancel', () => { pointerGesture = null; });
+  setSurface('title');
   render();
   loadBriefingData();
   poll();
