@@ -19,29 +19,29 @@ You will use an observation device that records and analyses anomalies.
 Once you put on the device, an agent will guide you along the survey route, so follow its directions.
 
 6
-00:00:20,900 --> 00:00:25,700
-Walk clockwise around the wall three times, keeping it on your right.
+00:00:20,900 --> 00:00:24,700
+Walk around it three times as shown in the video.
 
 7
-00:00:25,700 --> 00:00:30,700
+00:00:24,700 --> 00:00:29,700
 Hold the handrail with your right hand and keep hold of it as you walk.
 
 8
-00:00:30,700 --> 00:00:35,700
+00:00:29,700 --> 00:00:34,700
 Your footing will be hard to see, so walk very slowly and carefully.
 
 9
-00:00:35,700 --> 00:00:41,300
+00:00:34,700 --> 00:00:40,300
 If you spot an anomaly, hold X or Y on the left controller for one second.
 
 10
-00:00:41,300 --> 00:00:44,500
+00:00:40,300 --> 00:00:43,500
 The report will be sent to the agent for analysis.
 
 11
-00:00:44,500 --> 00:00:48,700
+00:00:43,500 --> 00:00:47,700
 Now hold the controller in your left hand and put on the device.
 
 12
-00:00:48,700 --> 00:00:51,700
+00:00:47,700 --> 00:00:50,700
 Good luck with your survey.

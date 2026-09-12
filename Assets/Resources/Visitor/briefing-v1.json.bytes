@@ -101,8 +101,8 @@
             "durationMs": 5500
           },
           {
-            "text": "壁を右手側に見ながら、時計回りに3周します。",
-            "durationMs": 4200
+            "text": "動画のように3周します。",
+            "durationMs": 3000
           },
           {
             "text": "右手で手すりを持ち、手を離さずに進んでください。",
@@ -127,8 +127,8 @@
             "durationMs": 5500
           },
           {
-            "text": "Walk clockwise around the wall three times, keeping it on your right.",
-            "durationMs": 4800
+            "text": "Walk around it three times as shown in the video.",
+            "durationMs": 3800
           },
           {
             "text": "Hold the handrail with your right hand and keep hold of it as you walk.",
@@ -153,8 +153,8 @@
             "durationMs": 5600
           },
           {
-            "text": "Faites trois tours du mur dans le sens des aiguilles d’une montre, en le gardant à votre droite.",
-            "durationMs": 6500
+            "text": "Faites-en trois fois le tour, comme dans la vidéo.",
+            "durationMs": 4200
           },
           {
             "text": "Tenez la main courante de la main droite et ne la lâchez pas en marchant.",

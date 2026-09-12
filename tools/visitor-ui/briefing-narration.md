@@ -32,7 +32,7 @@
 
 ### 02 subject — 回収壁面
 
-開始 8.1 秒 / 尺 25.1 秒
+開始 8.1 秒 / 尺 23.9 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -48,21 +48,21 @@
 
 装着後はエージェントの案内に従って調査を進めてください。
 
-文 04 / 場面内 11.5–15.7 秒
+文 04 / 場面内 11.5–14.5 秒
 
-壁を右手側に見ながら、時計回りに3周します。
+動画のように3周します。
 
-文 05 / 場面内 15.7–19.9 秒
+文 05 / 場面内 14.5–18.7 秒
 
 右手で手すりを持ち、手を離さずに進んでください。
 
-文 06 / 場面内 19.9–25.1 秒
+文 06 / 場面内 18.7–23.9 秒
 
 足元が見づらいので、ゆっくりゆっくり、慎重に歩いてください。
 
 ### 03 report — XかYを長押し
 
-開始 33.2 秒 / 尺 8.5 秒
+開始 32.0 秒 / 尺 8.5 秒
 
 画像: `briefing-device-v1.png`
 
@@ -76,7 +76,7 @@
 
 ### 04 wear — 装着案内
 
-開始 41.7 秒 / 尺 7.0 秒
+開始 40.5 秒 / 尺 7.0 秒
 
 画像: `doctor.jpg`
 
@@ -106,7 +106,7 @@ I would like you to serve as an investigator and examine a cursed object.
 
 ### 02 subject — Recovered wall
 
-開始 8.2 秒 / 尺 27.5 秒
+開始 8.2 秒 / 尺 26.5 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -122,21 +122,21 @@ You will use an observation device that records and analyses anomalies.
 
 Once you put on the device, an agent will guide you along the survey route, so follow its directions.
 
-文 04 / 場面内 12.7–17.5 秒
+文 04 / 場面内 12.7–16.5 秒
 
-Walk clockwise around the wall three times, keeping it on your right.
+Walk around it three times as shown in the video.
 
-文 05 / 場面内 17.5–22.5 秒
+文 05 / 場面内 16.5–21.5 秒
 
 Hold the handrail with your right hand and keep hold of it as you walk.
 
-文 06 / 場面内 22.5–27.5 秒
+文 06 / 場面内 21.5–26.5 秒
 
 Your footing will be hard to see, so walk very slowly and carefully.
 
 ### 03 report — Hold X or Y
 
-開始 35.7 秒 / 尺 8.8 秒
+開始 34.7 秒 / 尺 8.8 秒
 
 画像: `briefing-device-v1.png`
 
@@ -150,7 +150,7 @@ The report will be sent to the agent for analysis.
 
 ### 04 wear — Putting on the device
 
-開始 44.5 秒 / 尺 7.2 秒
+開始 43.5 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 
@@ -180,7 +180,7 @@ Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.
 
 ### 02 subject — Mur récupéré
 
-開始 8.7 秒 / 尺 30.5 秒
+開始 8.7 秒 / 尺 28.2 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -196,21 +196,21 @@ Vous utiliserez un dispositif d’observation qui enregistre et analyse les phé
 
 Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.
 
-文 04 / 場面内 13.0–19.5 秒
+文 04 / 場面内 13.0–17.2 秒
 
-Faites trois tours du mur dans le sens des aiguilles d’une montre, en le gardant à votre droite.
+Faites-en trois fois le tour, comme dans la vidéo.
 
-文 05 / 場面内 19.5–25.0 秒
+文 05 / 場面内 17.2–22.7 秒
 
 Tenez la main courante de la main droite et ne la lâchez pas en marchant.
 
-文 06 / 場面内 25.0–30.5 秒
+文 06 / 場面内 22.7–28.2 秒
 
 Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prudence.
 
 ### 03 report — Maintenez X ou Y
 
-開始 39.2 秒 / 尺 9.4 秒
+開始 36.9 秒 / 尺 9.4 秒
 
 画像: `briefing-device-v1.png`
 
@@ -224,7 +224,7 @@ Le signalement sera envoyé à l’agent pour analyse.
 
 ### 04 wear — Mise en place du dispositif
 
-開始 48.6 秒 / 尺 7.2 秒
+開始 46.3 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 

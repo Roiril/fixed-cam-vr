@@ -19,29 +19,29 @@ Vous utiliserez un dispositif d’observation qui enregistre et analyse les phé
 Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.
 
 6
-00:00:21,700 --> 00:00:28,200
-Faites trois tours du mur dans le sens des aiguilles d’une montre, en le gardant à votre droite.
+00:00:21,700 --> 00:00:25,900
+Faites-en trois fois le tour, comme dans la vidéo.
 
 7
-00:00:28,200 --> 00:00:33,700
+00:00:25,900 --> 00:00:31,400
 Tenez la main courante de la main droite et ne la lâchez pas en marchant.
 
 8
-00:00:33,700 --> 00:00:39,200
+00:00:31,400 --> 00:00:36,900
 Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prudence.
 
 9
-00:00:39,200 --> 00:00:45,200
+00:00:36,900 --> 00:00:42,900
 Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.
 
 10
-00:00:45,200 --> 00:00:48,600
+00:00:42,900 --> 00:00:46,300
 Le signalement sera envoyé à l’agent pour analyse.
 
 11
-00:00:48,600 --> 00:00:52,800
+00:00:46,300 --> 00:00:50,500
 À présent, prenez la manette dans la main gauche et mettez le dispositif.
 
 12
-00:00:52,800 --> 00:00:55,800
+00:00:50,500 --> 00:00:53,500
 Bonne chance pour votre enquête.
