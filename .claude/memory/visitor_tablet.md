@@ -132,3 +132,15 @@ heartbeat の `deviceId` / `deviceModel` / `localIp` / `titleStage` / `visitorPo
 - 当日の手順書への追記（用途が決まってから）
 
 関連: [[show_language]] / [[onsite_day_ops]] / [[quest_fleet_two_devices]]
+
+## 画面遷移と表示直後の入力（2026-09-13）
+
+来場者UIでは画面状態を同期してから Web Animations API で入場の動きを付ける。
+同じ要素の前のアニメーションは cancel する。退出した設定画面は即座に hidden / inert にする。
+本文を同じ場所で重ねてフェードすると二つの文章が混ざるため避ける。
+
+このUIと Codex 内蔵ブラウザの検証では、`document.startViewTransition` の表示直後に二度入力が失われた。
+一度は言語ラジオ。もう一度は「設定に戻る」。`::view-transition` の `pointer-events: none` だけでは解消しなかった。
+DOMが見えることだけで成功とせず、表示直後のクリックで設定値または画面状態が変わることを確認する。
+他のブラウザにも同じ不具合があるという判定ではない。ここでは同期更新と装飾のアニメーションを分離した。
+再検証は `node tools/visitor-ui/verify-runtime.cjs` と実ブラウザの「反映確認 → 博士 → 設定に戻る → 言語変更」を使う。
