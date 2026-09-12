@@ -80,7 +80,7 @@
   @keyframes pulse{0%,100%{opacity:.35; transform:scale(.85)} 50%{opacity:1; transform:scale(1)}}
 
   /* ---------- 左下: 操作の束 ---------- */
-  .panel{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(150px,23vh,210px); width:min(54vw,680px); display:flex; gap:clamp(18px,3vw,44px); align-items:flex-end; transition:opacity .6s var(--ease-io)}
+  .panel{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(150px,23vh,210px); width:min(54vw,680px); display:flex; gap:clamp(18px,3vw,44px); align-items:flex-start; transition:opacity .6s var(--ease-io)}
   .ctl{position:relative; flex:1 1 0; padding:16px 18px 10px; min-width:0}
   .ctl .tab{display:inline-flex; align-items:center; gap:10px; font-family:var(--sans); font-size:11px; letter-spacing:.3em; color:var(--ink-2); text-transform:uppercase; white-space:nowrap}
   .ctl .tab b{font-family:var(--serif); font-weight:500; font-size:13px; letter-spacing:.26em; color:var(--ink)}
@@ -88,7 +88,6 @@
     background:repeating-linear-gradient(120deg, var(--red-2) 0 6px, transparent 6px 11px); opacity:.9}
   .ctl.focus .tab .hatch{background:repeating-linear-gradient(120deg, var(--red) 0 6px, transparent 6px 11px)}
   @keyframes hatch{to{transform:scaleX(1)}}
-  .ctl .tag{position:absolute; right:18px; top:16px; font-family:var(--sans); font-size:9px; letter-spacing:.28em; color:var(--ink-3)}
   .ctl .val{display:flex; align-items:center; gap:10px; margin-top:10px; min-height:84px}
   .ctl .arrows{display:flex; flex-direction:column; gap:2px}
   .ctl .arrows button{width:56px; height:40px; color:var(--ink-2); font-family:var(--sans); font-size:15px; line-height:1; transition:color .3s, transform .3s var(--ease)}
@@ -113,9 +112,10 @@
   .ctl.focus .br.tl{left:0; top:0} .ctl.focus .br.tr{right:0; top:0} .ctl.focus .br.bl{left:0; bottom:0} .ctl.focus .br.bb{right:0; bottom:0}
   .ctl .rule{position:absolute; left:18px; right:18px; bottom:0; height:1px; background:var(--line-2); transform-origin:left; transform:scaleX(0); animation:hatch 1.2s var(--ease) forwards; animation-delay:.9s}
     /* 軽減の説明。DBH が難易度の説明を左上に置くのと同じ位置。束の上、人物にかからない左の闇に */
-  .hint{position:absolute; left:clamp(18px,3vw,40px); top:clamp(120px,22vh,200px); width:min(38vw,460px); font-family:var(--serif); font-size:clamp(12px,1.2vw,16px); letter-spacing:.08em; color:var(--ink-3); line-height:1.9;
-    transition:opacity .5s var(--ease-io), color .6s}
-  .hint.lit{color:var(--ink-2)}
+  .hint{position:absolute; left:clamp(18px,3vw,40px); top:clamp(110px,17vh,170px); width:min(40vw,480px); font-family:var(--serif); font-size:clamp(12px,1.15vw,15px); letter-spacing:.08em; color:var(--ink-2); line-height:1.8; white-space:pre-line;
+    transition:opacity .5s var(--ease-io)}
+  .hint small{display:block; font-family:var(--sans); font-size:10px; letter-spacing:.32em; color:var(--ink-3); text-transform:uppercase; margin-bottom:8px}
+  .ctl .desc{margin:2px 0 0 60px; font-family:var(--serif); font-size:clamp(11px,1.05vw,13px); letter-spacing:.06em; color:var(--ink-3); line-height:1.6; white-space:pre-line}
 
   /* ---------- 送った後: 読み出し ---------- */
   .readout{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(150px,23vh,210px); width:min(52vw,640px); opacity:0; transform:translateY(10px); pointer-events:none; transition:opacity .7s var(--ease), transform .7s var(--ease)}
@@ -142,9 +142,11 @@
   .readout .again:active{color:var(--gold); border-color:var(--gold)}
 
   /* ---------- 下中央: 字幕（博士の言葉） ---------- */
-  .subtitle{position:absolute; left:0; right:0; margin:0 auto; bottom:clamp(26px,5vh,50px); width:min(42vw,700px); text-align:center; font-family:var(--serif); font-size:clamp(15px,1.55vw,21px); letter-spacing:.08em; line-height:1.7; min-height:3.4em; color:var(--ink); text-shadow:0 1px 14px rgba(0,0,0,.9); white-space:pre-line; pointer-events:none}
+  .subtitle{position:absolute; left:0; right:0; margin:0 auto; bottom:clamp(26px,5vh,50px); width:min(50vw,760px); text-align:center; font-family:var(--serif); font-size:clamp(15px,1.55vw,21px); letter-spacing:.08em; line-height:1.7; min-height:3.4em; color:var(--ink); text-shadow:0 1px 14px rgba(0,0,0,.9); white-space:pre-line; pointer-events:none}
   .subtitle .line{display:block; opacity:0; transform:translateY(6px); animation:rise .9s var(--ease) forwards}
   .subtitle .dash{color:var(--ink-2); margin-right:.5em}
+  .subtitle .ghost{visibility:hidden}   /* 打ち終わる前から行の幅と高さを取っておく */
+  .subtitle .line{white-space:pre-wrap}
 
   /* ---------- 右下: 進む ---------- */
   .continue{position:absolute; right:clamp(18px,3vw,40px); bottom:clamp(20px,4vh,40px); display:flex; align-items:center; gap:18px; font-family:var(--sans); font-size:12px; letter-spacing:.34em; color:var(--ink); text-transform:uppercase; padding:14px 10px 14px 14px; min-height:68px}
@@ -185,6 +187,8 @@
     .continue{right:6vw; bottom:4vh}
     .staffToggle{left:6vw; bottom:4vh}
   }
+  /* 背が低い窓（PC で細く開いたとき）は左上の注意書きが束に被るので畳む。タブレットの実寸では出る */
+  @media (max-height: 640px) and (min-aspect-ratio: 1/1){ .hint{display:none} }
   @media (prefers-reduced-motion: reduce){
     .portrait img,.portrait video,.grain,.rec i{animation:none}
     .in{transition-duration:.01s}
@@ -205,7 +209,6 @@
     <div class="ctl in focus" id="ctlLang" style="--i:2" data-key="lang">
       <span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br bb"></span>
       <div class="tab"><b id="tLang">言語</b><span class="hatch"></span></div>
-      <div class="tag">LNG-01</div>
       <div class="val">
         <div class="arrows"><button data-step="-1" aria-label="up">▲</button><button data-step="1" aria-label="down">▼</button></div>
         <div class="big" id="vLang"><span>日本語</span></div>
@@ -216,16 +219,16 @@
     <div class="ctl in" id="ctlRelief" style="--i:3" data-key="relief">
       <span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br bb"></span>
       <div class="tab"><b id="tRelief">軽減</b><span class="hatch"></span></div>
-      <div class="tag">RLF-02</div>
       <div class="val">
         <div class="arrows"><button data-step="-1" aria-label="up">▲</button><button data-step="1" aria-label="down">▼</button></div>
         <div class="big" id="vRelief"><span>なし</span></div>
       </div>
       <div class="alts" id="aRelief"></div>
+      <div class="desc" id="reliefDesc"></div>
       <div class="rule"></div>
     </div>
   </div>
-  <div class="hint in" id="hint" style="--i:4"></div>
+  <div class="hint in" id="hint" style="--i:4"><small id="hintCap">notice</small><div id="hintBody"></div></div>
 
   <div class="readout" id="readout">
     <div class="head"><span class="glyph" id="rG">…</span><span id="rH">—</span></div>
@@ -262,9 +265,9 @@
     ja: {
       tLang: '言語', tRelief: 'ホラー軽減', kLang: '言語', kRelief: 'ホラー軽減',
       reliefOn: 'あり', reliefOff: 'なし',
-      reliefDesc: 'ホラー軽減 — 音が半分になり、陽気な曲が流れます。映像と時間は変わりません。',
-      notice: ['本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます',
-               '体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください'],
+      reliefDesc: '音が半分になり、\n陽気な曲が流れます。\n映像と時間は変わりません。',
+      ask: '使う言語と、恐怖を和らげるかどうかを、教えてください。',
+      notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
       send: 'この設定で始める', edit: '設定を変える',
       pre: { noserver: 'ヘッドセットに繋がっていません。スタッフを呼んでください' },
       post: {
@@ -279,9 +282,9 @@
     en: {
       tLang: 'Language', tRelief: 'Reduced horror', kLang: 'Language', kRelief: 'Reduced horror',
       reliefOn: 'on', reliefOff: 'off',
-      reliefDesc: 'Reduced-horror mode — sound is halved and a cheerful tune plays. The visuals and timing do not change.',
-      notice: ['This work contains horror imagery and\nscenes meant to unsettle or frighten.',
-               'If you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.'],
+      reliefDesc: 'Sound is halved and a cheerful tune plays. The visuals and timing do not change.',
+      ask: 'Tell me your language, and whether you would like the horror softened.',
+      notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
       send: 'Start with these settings', edit: 'Change settings',
       pre: { noserver: 'Not connected to the headset. Please call a member of staff' },
       post: {
@@ -296,9 +299,9 @@
     fr: {
       tLang: 'Langue', tRelief: 'Horreur atténuée', kLang: 'Langue', kRelief: 'Horreur atténuée',
       reliefOn: 'oui', reliefOff: 'non',
-      reliefDesc: 'Mode horreur atténuée — le son est réduit de moitié et une musique gaie est diffusée. Les images et la durée ne changent pas.',
-      notice: ["Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.",
-               'Si vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.'],
+      reliefDesc: 'Le son est réduit de moitié et une musique gaie est diffusée. Les images et la durée ne changent pas.',
+      ask: 'Dites-moi votre langue, et si vous souhaitez que l’horreur soit atténuée.',
+      notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
       send: 'Commencer avec ces réglages', edit: 'Modifier les réglages',
       pre: { noserver: 'Non connecté au casque. Appelez un membre du personnel' },
       post: {
@@ -351,30 +354,40 @@
   }
 
   // ---- 字幕（博士の言葉）------------------------------------------------
-  // cues = 「一度に出す塊」の配列。塊が 2 つ以上なら、博士が順に言うように 7 秒ごとに入れ替える
-  // （DBH の字幕と同じ。注意書きは 2 段落なので、5 行を一度に積まない ＝ 左下の束と重ならない）。
-  const CUE_SEC = 7;
-  let cueTimer = null;
-  function setSubtitle(cues, key) {
+  // 1 文だけ。**1 字ずつ打たれる**（HMD の連絡の面と同じ速さ: 日本語 12 / Latin 18 字/秒）。
+  // 言語を替えると頭から言い直す（あとでユーザーが音声とリップシンクを付ける。文はその台本になる）。
+  // 回転はしない（0191「設定の画面では字幕が切り替わる必要はあんまりない」）。
+  const CPS = { ja: 12, en: 18, fr: 18 };
+  let typeTimer = null;
+  function setSubtitle(text, key) {
     if (key === state.subtitleKey) return;
     state.subtitleKey = key;
-    if (cueTimer) { clearInterval(cueTimer); cueTimer = null; }
-    let i = 0;
-    const show = () => {
-      const box = $('subtitle');
-      box.innerHTML = '';
-      String(cues[i % cues.length]).split('\n').forEach((ln, k) => {
-        const sp = document.createElement('span');
-        sp.className = 'line';
-        sp.style.animationDelay = (k * 140) + 'ms';
-        if (k === 0) { const d = document.createElement('span'); d.className = 'dash'; d.textContent = '―'; sp.appendChild(d); }
-        sp.appendChild(document.createTextNode(ln));
-        box.appendChild(sp);
-      });
-      i++;
+    if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+    const box = $('subtitle');
+    box.innerHTML = '';
+    const lines = String(text).split('\n');
+    const nodes = lines.map((ln, k) => {
+      const sp = document.createElement('span');
+      sp.className = 'line';
+      sp.style.animation = 'none'; sp.style.opacity = '1'; sp.style.transform = 'none';
+      if (k === 0) { const d = document.createElement('span'); d.className = 'dash'; d.textContent = '―'; sp.appendChild(d); }
+      const tn = document.createTextNode('');
+      sp.appendChild(tn);
+      // 打ち終わるまで行の高さを保つ（積み上がりで下の行が跳ねないように）
+      const ghost = document.createElement('span'); ghost.className = 'ghost'; ghost.textContent = ln; sp.appendChild(ghost);
+      box.appendChild(sp);
+      return { tn, ln };
+    });
+    const total = lines.reduce((a, l) => a + l.length, 0);
+    const cps = CPS[state.lang] || 12;
+    const t0 = performance.now();
+    const step = () => {
+      let n = Math.min(total, Math.floor((performance.now() - t0) * cps / 1000));
+      for (const { tn, ln } of nodes) { const take = Math.min(n, ln.length); tn.textContent = ln.slice(0, take); n -= take; }
+      if (n >= 0 && nodes.every(({ tn, ln }) => tn.textContent.length === ln.length)) { clearInterval(typeTimer); typeTimer = null; }
     };
-    show();
-    if (cues.length > 1) cueTimer = setInterval(show, CUE_SEC * 1000);
+    step();
+    typeTimer = setInterval(step, 40);
   }
 
   // ---- 描画 ---------------------------------------------------------------
@@ -387,12 +400,12 @@
     // 選んでいないものを下に薄く
     $('aLang').innerHTML = LANGS.filter((l) => l !== state.lang).map((l) => `<button data-lang="${l}">${LANG_NAME[l]}</button>`).join('');
     $('aRelief').innerHTML = `<button data-relief="${state.relief ? 0 : 1}">${state.relief ? t.reliefOff : t.reliefOn}</button>`;
-    $('hint').textContent = t.reliefDesc;
+    $('hintBody').textContent = t.notice;
+    $('reliefDesc').textContent = t.reliefDesc;
     $('sendLabel').textContent = t.send;
     $('editBtn').textContent = t.edit;
     $('ctlLang').classList.toggle('focus', state.focus === 'lang');
     $('ctlRelief').classList.toggle('focus', state.focus === 'relief');
-    $('hint').classList.toggle('lit', state.focus === 'relief' || state.relief);
   }
 
   function postKey() {
@@ -414,7 +427,7 @@
       $('panel').style.opacity = ''; $('panel').style.pointerEvents = ''; $('hint').style.opacity = '';
       $('readout').classList.remove('show', 'ok', 'wait', 'ng');
       $('sendBtn').disabled = false; $('sendBtn').classList.remove('busy', 'done');
-      setSubtitle(state.online ? t.notice : [t.pre.noserver], 'notice:' + state.lang + ':' + state.online);
+      setSubtitle(state.online ? t.ask : t.pre.noserver, 'ask:' + state.lang + ':' + state.online);
       return;
     }
     const key = postKey();
@@ -427,7 +440,7 @@
     $('sendBtn').disabled = key === 'sending';
     $('sendBtn').classList.toggle('busy', key === 'sending' || key === 'waiting');
     $('sendBtn').classList.toggle('done', key === 'applied');
-    setSubtitle([s[1] || s[0]], 'post:' + key + ':' + state.lang);
+    setSubtitle(s[1] || s[0], 'post:' + key + ':' + state.lang);
 
     const dev = state.online ? state.st : null;
     const sent = state.sent || { lang: state.lang, relief: state.relief };
