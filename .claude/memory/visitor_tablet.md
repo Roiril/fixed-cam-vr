@@ -36,6 +36,14 @@ metadata:
 RECと時計は置かない。接続表示はヘッドセットの応答に基づく。
 詳細と検証手順は [`tools/visitor-ui/README.md`](../../tools/visitor-ui/README.md)。
 
+2026-09-12 に設定後の博士の説明を追加した（0194）。
+実値への反映を確認すると7場面の静止画と字幕が一度だけ始まる。
+停止と前後移動ができる。最後は装置の装着依頼で留まる。
+説明内容は `Resources/Visitor/briefing-v1.json.bytes`。画像は同じ場所の `briefing-*-v1.png.bytes`。
+`/asset/` に JSON の MIME を追加した。音声と動画は未制作で任意の差し替え欄だけがある。
+台本と SRT は `tools/visitor-ui/export-briefing.py` で JSON から再生成する。
+台詞と画像の採否は `canon/OPEN.md`。機械の検証済みを世界観の採用へ読み替えない。
+
 博士の画は `GET /asset/doctor.jpg`（`Resources/Visitor/doctor.jpg.bytes`）。
 元は `tools/visitor-ui/doctor_v1.png`。女性版は未採用の候補。
 動画に替えるときは `doctor.mp4.bytes` を置いて `<video autoplay muted loop playsinline>` にする。

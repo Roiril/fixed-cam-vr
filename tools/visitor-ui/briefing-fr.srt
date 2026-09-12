@@ -1,0 +1,55 @@
+1
+00:00:00,000 --> 00:00:05,300
+Merci d’être venu. J’étudie les phénomènes anormaux dans cet institut.
+
+2
+00:00:05,300 --> 00:00:09,900
+Aujourd’hui, je voudrais vous confier l’examen d’un mur.
+
+3
+00:00:09,900 --> 00:00:15,800
+Voici l’objet de votre mission. Des anomalies ont été signalées autour de ce mur.
+
+4
+00:00:15,800 --> 00:00:21,600
+Le lieu de récupération et les détails ne sont pas communiqués aux enquêteurs.
+
+5
+00:00:21,600 --> 00:00:27,400
+Suivez le parcours prévu en observant les images affichées dans le dispositif.
+
+6
+00:00:27,400 --> 00:00:34,000
+Un agent intégré vous assistera pendant la mission. Suivez les consignes qu’il vous transmet.
+
+7
+00:00:34,000 --> 00:00:40,400
+Lorsque vous repérez une anomalie dans l’image, maintenez le bouton de la manette enfoncé.
+
+8
+00:00:40,400 --> 00:00:47,300
+L’agent analysera le signalement. Si une anomalie est détectée, le dispositif tentera d’y remédier.
+
+9
+00:00:47,300 --> 00:00:53,100
+Ce dispositif a été conçu pour observer des phénomènes normalement invisibles.
+
+10
+00:00:53,100 --> 00:00:59,700
+La vue change automatiquement selon votre position. Vous n’avez rien à faire pour la changer.
+
+11
+00:00:59,700 --> 00:01:05,300
+Tenez la manette dans la main droite. Passez la dragonne autour du poignet.
+
+12
+00:01:05,300 --> 00:01:12,100
+Si vous vous sentez mal, arrêtez-vous sur place et retirez le dispositif. Prévenez le personnel.
+
+13
+00:01:12,100 --> 00:01:16,900
+Les consignes sont terminées. Veuillez mettre le dispositif.
+
+14
+00:01:16,900 --> 00:01:21,500
+La suite des instructions s’affichera dans le dispositif.

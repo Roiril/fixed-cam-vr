@@ -1,0 +1,397 @@
+{
+  "schemaVersion": 1,
+  "scenes": [
+    {
+      "id": "introduction",
+      "image": "doctor.jpg",
+      "alt": {
+        "ja": "黒い背景の前にいる白衣の博士",
+        "en": "The doctor in a lab coat against a dark background",
+        "fr": "Le docteur en blouse devant un fond sombre"
+      },
+      "eyebrow": {
+        "ja": "観測調査",
+        "en": "OBSERVATION SURVEY",
+        "fr": "MISSION D’OBSERVATION"
+      },
+      "title": {
+        "ja": "調査をお願いします",
+        "en": "A survey for you",
+        "fr": "Une mission pour vous"
+      },
+      "caption": {
+        "ja": "博士 · 観測調査担当",
+        "en": "Doctor · Observation research",
+        "fr": "Docteur · Recherche sur les phénomènes"
+      },
+      "cues": {
+        "ja": [
+          {
+            "text": "来てくれてありがとう。私はこの研究所で怪異の観測を担当しています。",
+            "durationMs": 4700
+          },
+          {
+            "text": "今日はあなたに、ある壁の調査をお願いしたい。",
+            "durationMs": 4000
+          }
+        ],
+        "en": [
+          {
+            "text": "Thank you for coming. I study anomalous phenomena here at the institute.",
+            "durationMs": 5400
+          },
+          {
+            "text": "Today, I would like you to survey a particular wall.",
+            "durationMs": 4300
+          }
+        ],
+        "fr": [
+          {
+            "text": "Merci d’être venu. J’étudie les phénomènes anormaux dans cet institut.",
+            "durationMs": 5300
+          },
+          {
+            "text": "Aujourd’hui, je voudrais vous confier l’examen d’un mur.",
+            "durationMs": 4600
+          }
+        ]
+      }
+    },
+    {
+      "id": "subject",
+      "image": "briefing-wall-v1.png",
+      "alt": {
+        "ja": "暗い調査室に保管されたL字の壁面",
+        "en": "A recovered L-shaped wall held in a dark examination room",
+        "fr": "Un mur récupéré en forme de L dans une salle d’examen sombre"
+      },
+      "eyebrow": {
+        "ja": "調査対象",
+        "en": "SURVEY SUBJECT",
+        "fr": "OBJET DE LA MISSION"
+      },
+      "title": {
+        "ja": "回収壁面",
+        "en": "Recovered wall",
+        "fr": "Mur récupéré"
+      },
+      "caption": {
+        "ja": "管理番号 SH-KB-02 · 回収地点 非開示",
+        "en": "Reference SH-KB-02 · Recovery site withheld",
+        "fr": "Référence SH-KB-02 · Lieu de récupération non communiqué"
+      },
+      "cues": {
+        "ja": [
+          {
+            "text": "これが今回の調査対象です。この壁の周辺では怪異が報告されています。",
+            "durationMs": 4700
+          },
+          {
+            "text": "回収された場所と対象の詳細は、調査者には開示していません。",
+            "durationMs": 4300
+          }
+        ],
+        "en": [
+          {
+            "text": "This is the subject of your survey. Anomalies have been reported around this wall.",
+            "durationMs": 6000
+          },
+          {
+            "text": "The recovery site and further details are not disclosed to surveyors.",
+            "durationMs": 5300
+          }
+        ],
+        "fr": [
+          {
+            "text": "Voici l’objet de votre mission. Des anomalies ont été signalées autour de ce mur.",
+            "durationMs": 5900
+          },
+          {
+            "text": "Le lieu de récupération et les détails ne sont pas communiqués aux enquêteurs.",
+            "durationMs": 5800
+          }
+        ]
+      }
+    },
+    {
+      "id": "survey",
+      "image": "briefing-survey-v1.png",
+      "alt": {
+        "ja": "観測装置を着けた調査者が壁面の周囲を歩く様子",
+        "en": "A surveyor wearing the observation device walks around the wall",
+        "fr": "Un enquêteur équipé du dispositif marche autour du mur"
+      },
+      "eyebrow": {
+        "ja": "調査方法",
+        "en": "SURVEY PROCEDURE",
+        "fr": "DÉROULEMENT"
+      },
+      "title": {
+        "ja": "映像を確認しながら進む",
+        "en": "Observe as you walk",
+        "fr": "Observer en avançant"
+      },
+      "caption": {
+        "ja": "所定の経路を移動 · 指示は装置内に表示",
+        "en": "Follow the designated route · Instructions appear in the device",
+        "fr": "Suivez le parcours prévu · Les consignes s’affichent dans le dispositif"
+      },
+      "cues": {
+        "ja": [
+          {
+            "text": "装置に映る様子を確認しながら、所定の経路を進んでください。",
+            "durationMs": 4300
+          },
+          {
+            "text": "調査中は装置の中のエージェントがあなたを支援します。指示が届いたら従ってください。",
+            "durationMs": 5500
+          }
+        ],
+        "en": [
+          {
+            "text": "Follow the designated route while observing the images shown in the device.",
+            "durationMs": 5600
+          },
+          {
+            "text": "An agent in the device will assist you during the survey. Follow its instructions.",
+            "durationMs": 6000
+          }
+        ],
+        "fr": [
+          {
+            "text": "Suivez le parcours prévu en observant les images affichées dans le dispositif.",
+            "durationMs": 5800
+          },
+          {
+            "text": "Un agent intégré vous assistera pendant la mission. Suivez les consignes qu’il vous transmet.",
+            "durationMs": 6600
+          }
+        ]
+      }
+    },
+    {
+      "id": "report",
+      "image": "briefing-device-v1.png",
+      "alt": {
+        "ja": "観測装置と手元のコントローラー",
+        "en": "The observation headset and handheld controller",
+        "fr": "Le dispositif d’observation et sa manette"
+      },
+      "eyebrow": {
+        "ja": "異変の報告",
+        "en": "REPORTING ANOMALIES",
+        "fr": "SIGNALER UNE ANOMALIE"
+      },
+      "title": {
+        "ja": "異変を見つけたら長押し",
+        "en": "See an anomaly? Press and hold.",
+        "fr": "Une anomalie ? Maintenez le bouton."
+      },
+      "caption": {
+        "ja": "手元のボタンを長押し",
+        "en": "Press and hold the button on the controller",
+        "fr": "Maintenez le bouton de la manette enfoncé"
+      },
+      "cues": {
+        "ja": [
+          {
+            "text": "映像の中に異変を見つけたら、その都度、手元のボタンを長押ししてください。",
+            "durationMs": 5000
+          },
+          {
+            "text": "エージェントが解析します。異変が検出された場合は、装置が対処を試みます。",
+            "durationMs": 5000
+          }
+        ],
+        "en": [
+          {
+            "text": "Whenever you spot an anomaly in the image, press and hold the button on your controller.",
+            "durationMs": 6300
+          },
+          {
+            "text": "The agent will analyse it. If an anomaly is detected, the device will attempt to counter it.",
+            "durationMs": 6600
+          }
+        ],
+        "fr": [
+          {
+            "text": "Lorsque vous repérez une anomalie dans l’image, maintenez le bouton de la manette enfoncé.",
+            "durationMs": 6400
+          },
+          {
+            "text": "L’agent analysera le signalement. Si une anomalie est détectée, le dispositif tentera d’y remédier.",
+            "durationMs": 6900
+          }
+        ]
+      }
+    },
+    {
+      "id": "device",
+      "image": "briefing-device-v1.png",
+      "alt": {
+        "ja": "白い観測用ヘッドセットと右手用コントローラー",
+        "en": "A white observation headset and right-hand controller",
+        "fr": "Un casque d’observation blanc et une manette pour la main droite"
+      },
+      "eyebrow": {
+        "ja": "使用する装置",
+        "en": "YOUR EQUIPMENT",
+        "fr": "VOTRE ÉQUIPEMENT"
+      },
+      "title": {
+        "ja": "観測装置",
+        "en": "Observation device",
+        "fr": "Dispositif d’observation"
+      },
+      "caption": {
+        "ja": "怪異の観測に使用します",
+        "en": "For observing anomalous phenomena",
+        "fr": "Pour observer les phénomènes anormaux"
+      },
+      "cues": {
+        "ja": [
+          {
+            "text": "この装置は、通常では確認できない怪異を観測するために開発されました。",
+            "durationMs": 4800
+          },
+          {
+            "text": "映像はあなたの位置に応じて切り替わります。切り替える操作は必要ありません。",
+            "durationMs": 5100
+          }
+        ],
+        "en": [
+          {
+            "text": "This device was developed to observe anomalous phenomena that cannot normally be seen.",
+            "durationMs": 6200
+          },
+          {
+            "text": "The view changes automatically as you move. You do not need to switch it yourself.",
+            "durationMs": 6000
+          }
+        ],
+        "fr": [
+          {
+            "text": "Ce dispositif a été conçu pour observer des phénomènes normalement invisibles.",
+            "durationMs": 5800
+          },
+          {
+            "text": "La vue change automatiquement selon votre position. Vous n’avez rien à faire pour la changer.",
+            "durationMs": 6600
+          }
+        ]
+      }
+    },
+    {
+      "id": "prepare",
+      "image": "briefing-device-v1.png",
+      "alt": {
+        "ja": "ストラップ付きの観測装置とコントローラー",
+        "en": "The observation headset and controller with straps",
+        "fr": "Le casque et la manette avec leurs sangles"
+      },
+      "eyebrow": {
+        "ja": "装着の準備",
+        "en": "GETTING READY",
+        "fr": "PRÉPARATION"
+      },
+      "title": {
+        "ja": "右手にコントローラーを",
+        "en": "Controller in your right hand",
+        "fr": "La manette dans la main droite"
+      },
+      "caption": {
+        "ja": "ストラップを手首に通してください",
+        "en": "Put the wrist strap around your wrist",
+        "fr": "Passez la dragonne autour du poignet"
+      },
+      "cues": {
+        "ja": [
+          {
+            "text": "コントローラーは右手で持ってください。ストラップを手首に通してください。",
+            "durationMs": 5000
+          },
+          {
+            "text": "気分が悪くなったら、その場で立ち止まって装置を外してください。スタッフに知らせてください。",
+            "durationMs": 5900
+          }
+        ],
+        "en": [
+          {
+            "text": "Hold the controller in your right hand. Put the wrist strap around your wrist.",
+            "durationMs": 5800
+          },
+          {
+            "text": "If you feel unwell, stop where you are and remove the device. Let a staff member know.",
+            "durationMs": 6200
+          }
+        ],
+        "fr": [
+          {
+            "text": "Tenez la manette dans la main droite. Passez la dragonne autour du poignet.",
+            "durationMs": 5600
+          },
+          {
+            "text": "Si vous vous sentez mal, arrêtez-vous sur place et retirez le dispositif. Prévenez le personnel.",
+            "durationMs": 6800
+          }
+        ]
+      }
+    },
+    {
+      "id": "wear",
+      "image": "doctor.jpg",
+      "alt": {
+        "ja": "装置の装着を案内する博士",
+        "en": "The doctor asks you to put on the device",
+        "fr": "Le docteur vous invite à mettre le dispositif"
+      },
+      "eyebrow": {
+        "ja": "説明は以上です",
+        "en": "BRIEFING COMPLETE",
+        "fr": "FIN DES CONSIGNES"
+      },
+      "title": {
+        "ja": "装置を装着してください",
+        "en": "Please put on the device",
+        "fr": "Veuillez mettre le dispositif"
+      },
+      "caption": {
+        "ja": "装着後は映像内の案内に従ってください",
+        "en": "Once it is on, follow the instructions in the display",
+        "fr": "Une fois équipé, suivez les consignes affichées"
+      },
+      "cues": {
+        "ja": [
+          {
+            "text": "説明は以上です。では、装置を装着してください。",
+            "durationMs": 4000
+          },
+          {
+            "text": "装着後の案内は、装置の中に表示されます。",
+            "durationMs": 4000
+          }
+        ],
+        "en": [
+          {
+            "text": "That concludes the briefing. Please put on the device.",
+            "durationMs": 4400
+          },
+          {
+            "text": "Further instructions will appear inside the device.",
+            "durationMs": 4300
+          }
+        ],
+        "fr": [
+          {
+            "text": "Les consignes sont terminées. Veuillez mettre le dispositif.",
+            "durationMs": 4800
+          },
+          {
+            "text": "La suite des instructions s’affichera dans le dispositif.",
+            "durationMs": 4600
+          }
+        ]
+      }
+    }
+  ]
+}

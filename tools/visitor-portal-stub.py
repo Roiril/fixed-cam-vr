@@ -109,7 +109,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(404, "application/json", '{"ok":false}')
             with open(fp, "rb") as f:
                 data = f.read()
-            ctype = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "mp4": "video/mp4",
+            ctype = {"json": "application/json; charset=utf-8",
+                     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "mp4": "video/mp4",
                      "webm": "video/webm", "mp3": "audio/mpeg", "wav": "audio/wav"}.get(name.rsplit(".", 1)[-1].lower(),
                                                                                          "application/octet-stream")
             rng = self.headers.get("Range")
@@ -141,7 +142,7 @@ class H(BaseHTTPRequestHandler):
                     delay = spec.get("delayMs", 0)
                     status = spec.get("status", 200)
                     count = spec.get("count", 1)
-                    if (target not in ("/status", "/set", "/clear")
+                    if (target not in ("/status", "/set", "/clear", "/asset/briefing-v1.json")
                             or type(delay) is not int or not 0 <= delay <= 15000
                             or type(status) is not int or status not in (200, 400, 503)
                             or type(count) is not int or not -1 <= count <= 100):

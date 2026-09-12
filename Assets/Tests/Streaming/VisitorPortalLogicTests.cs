@@ -187,9 +187,10 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void ContentTypeFor_KnowsTheTypesThePageUses()
         {
+            Assert.AreEqual("application/json; charset=utf-8", VisitorPortalLogic.ContentTypeFor("briefing-v1.JSON"));
             Assert.AreEqual("image/jpeg", VisitorPortalLogic.ContentTypeFor("doctor.JPG"));
             Assert.AreEqual("video/mp4", VisitorPortalLogic.ContentTypeFor("doctor.mp4"));
-            Assert.AreEqual("application/octet-stream", VisitorPortalLogic.ContentTypeFor("x.bin"));
+            Assert.AreEqual("application/octet-stream", VisitorPortalLogic.ContentTypeFor("x.bin"), "許可していない拡張子は従来どおり");
         }
 
         [Test]

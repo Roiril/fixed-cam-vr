@@ -169,6 +169,7 @@ namespace FixedCamVr.Streaming
         public static string ContentTypeFor(string name)
         {
             string n = name.ToLowerInvariant();
+            if (n.EndsWith(".json")) return "application/json; charset=utf-8";
             if (n.EndsWith(".jpg") || n.EndsWith(".jpeg")) return "image/jpeg";
             if (n.EndsWith(".png")) return "image/png";
             if (n.EndsWith(".webp")) return "image/webp";

@@ -1,0 +1,55 @@
+1
+00:00:00,000 --> 00:00:05,400
+Thank you for coming. I study anomalous phenomena here at the institute.
+
+2
+00:00:05,400 --> 00:00:09,700
+Today, I would like you to survey a particular wall.
+
+3
+00:00:09,700 --> 00:00:15,700
+This is the subject of your survey. Anomalies have been reported around this wall.
+
+4
+00:00:15,700 --> 00:00:21,000
+The recovery site and further details are not disclosed to surveyors.
+
+5
+00:00:21,000 --> 00:00:26,600
+Follow the designated route while observing the images shown in the device.
+
+6
+00:00:26,600 --> 00:00:32,600
+An agent in the device will assist you during the survey. Follow its instructions.
+
+7
+00:00:32,600 --> 00:00:38,900
+Whenever you spot an anomaly in the image, press and hold the button on your controller.
+
+8
+00:00:38,900 --> 00:00:45,500
+The agent will analyse it. If an anomaly is detected, the device will attempt to counter it.
+
+9
+00:00:45,500 --> 00:00:51,700
+This device was developed to observe anomalous phenomena that cannot normally be seen.
+
+10
+00:00:51,700 --> 00:00:57,700
+The view changes automatically as you move. You do not need to switch it yourself.
+
+11
+00:00:57,700 --> 00:01:03,500
+Hold the controller in your right hand. Put the wrist strap around your wrist.
+
+12
+00:01:03,500 --> 00:01:09,700
+If you feel unwell, stop where you are and remove the device. Let a staff member know.
+
+13
+00:01:09,700 --> 00:01:14,100
+That concludes the briefing. Please put on the device.
+
+14
+00:01:14,100 --> 00:01:18,400
+Further instructions will appear inside the device.
