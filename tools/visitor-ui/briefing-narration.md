@@ -32,7 +32,7 @@
 
 ### 02 subject — 回収壁面
 
-開始 8.1 秒 / 尺 23.9 秒
+開始 8.1 秒 / 尺 14.8 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -40,43 +40,43 @@
 
 こちらが調査対象の壁です。
 
-文 02 / 場面内 2.4–6.0 秒
+文 02 / 場面内 2.4–5.4 秒
 
-調査には怪異の記録と解析を行う観測装置を使います。
+動画のように3周してください。
 
-文 03 / 場面内 6.0–11.5 秒
-
-装着後はエージェントの案内に従って調査を進めてください。
-
-文 04 / 場面内 11.5–14.5 秒
-
-動画のように3周します。
-
-文 05 / 場面内 14.5–18.7 秒
+文 03 / 場面内 5.4–9.6 秒
 
 右手で手すりを持ち、手を離さずに進んでください。
 
-文 06 / 場面内 18.7–23.9 秒
+文 04 / 場面内 9.6–14.8 秒
 
 足元が見づらいので、ゆっくりゆっくり、慎重に歩いてください。
 
 ### 03 report — XかYを長押し
 
-開始 32.0 秒 / 尺 8.5 秒
+開始 22.9 秒 / 尺 15.9 秒
 
 画像: `briefing-device-v1.png`
 
-文 01 / 場面内 0.0–5.0 秒
+文 01 / 場面内 0.0–3.6 秒
+
+調査には怪異の記録と解析を行う観測装置を使います。
+
+文 02 / 場面内 3.6–7.4 秒
+
+観測中は、エージェントがあなたの調査を支援します。
+
+文 03 / 場面内 7.4–12.4 秒
 
 異変を見つけたら、左コントローラーのXかYを1秒間長押ししてください。
 
-文 02 / 場面内 5.0–8.5 秒
+文 04 / 場面内 12.4–15.9 秒
 
 報告はエージェントへ送られ、その内容が解析されます。
 
 ### 04 wear — 装着案内
 
-開始 40.5 秒 / 尺 7.0 秒
+開始 38.8 秒 / 尺 7.0 秒
 
 画像: `doctor.jpg`
 
@@ -106,7 +106,7 @@ I would like you to serve as an investigator and examine a cursed object.
 
 ### 02 subject — Recovered wall
 
-開始 8.2 秒 / 尺 26.5 秒
+開始 8.2 秒 / 尺 16.5 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -114,43 +114,43 @@ I would like you to serve as an investigator and examine a cursed object.
 
 This is the wall you will investigate.
 
-文 02 / 場面内 2.7–7.2 秒
-
-You will use an observation device that records and analyses anomalies.
-
-文 03 / 場面内 7.2–12.7 秒
-
-Once you put on the device, an agent will guide you along the survey route, so follow its directions.
-
-文 04 / 場面内 12.7–16.5 秒
+文 02 / 場面内 2.7–6.5 秒
 
 Walk around it three times as shown in the video.
 
-文 05 / 場面内 16.5–21.5 秒
+文 03 / 場面内 6.5–11.5 秒
 
 Hold the handrail with your right hand and keep hold of it as you walk.
 
-文 06 / 場面内 21.5–26.5 秒
+文 04 / 場面内 11.5–16.5 秒
 
 Your footing will be hard to see, so walk very slowly and carefully.
 
 ### 03 report — Hold X or Y
 
-開始 34.7 秒 / 尺 8.8 秒
+開始 24.7 秒 / 尺 17.5 秒
 
 画像: `briefing-device-v1.png`
 
-文 01 / 場面内 0.0–5.6 秒
+文 01 / 場面内 0.0–4.5 秒
+
+You will use an observation device that records and analyses anomalies.
+
+文 02 / 場面内 4.5–8.7 秒
+
+While you are observing, an agent will support your investigation.
+
+文 03 / 場面内 8.7–14.3 秒
 
 If you spot an anomaly, hold X or Y on the left controller for one second.
 
-文 02 / 場面内 5.6–8.8 秒
+文 04 / 場面内 14.3–17.5 秒
 
 The report will be sent to the agent for analysis.
 
 ### 04 wear — Putting on the device
 
-開始 43.5 秒 / 尺 7.2 秒
+開始 42.2 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 
@@ -180,7 +180,7 @@ Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.
 
 ### 02 subject — Mur récupéré
 
-開始 8.7 秒 / 尺 28.2 秒
+開始 8.7 秒 / 尺 17.9 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -188,43 +188,43 @@ Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.
 
 Voici le mur que vous allez examiner.
 
-文 02 / 場面内 2.7–7.4 秒
-
-Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.
-
-文 03 / 場面内 7.4–13.0 秒
-
-Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.
-
-文 04 / 場面内 13.0–17.2 秒
+文 02 / 場面内 2.7–6.9 秒
 
 Faites-en trois fois le tour, comme dans la vidéo.
 
-文 05 / 場面内 17.2–22.7 秒
+文 03 / 場面内 6.9–12.4 秒
 
 Tenez la main courante de la main droite et ne la lâchez pas en marchant.
 
-文 06 / 場面内 22.7–28.2 秒
+文 04 / 場面内 12.4–17.9 秒
 
 Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prudence.
 
 ### 03 report — Maintenez X ou Y
 
-開始 36.9 秒 / 尺 9.4 秒
+開始 26.6 秒 / 尺 18.4 秒
 
 画像: `briefing-device-v1.png`
 
-文 01 / 場面内 0.0–6.0 秒
+文 01 / 場面内 0.0–4.7 秒
+
+Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.
+
+文 02 / 場面内 4.7–9.0 秒
+
+Pendant l’observation, un agent vous assistera dans votre enquête.
+
+文 03 / 場面内 9.0–15.0 秒
 
 Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.
 
-文 02 / 場面内 6.0–9.4 秒
+文 04 / 場面内 15.0–18.4 秒
 
 Le signalement sera envoyé à l’agent pour analyse.
 
 ### 04 wear — Mise en place du dispositif
 
-開始 46.3 秒 / 尺 7.2 秒
+開始 45.0 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 

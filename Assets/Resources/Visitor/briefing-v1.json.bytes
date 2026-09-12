@@ -93,15 +93,7 @@
             "durationMs": 2400
           },
           {
-            "text": "調査には怪異の記録と解析を行う観測装置を使います。",
-            "durationMs": 3600
-          },
-          {
-            "text": "装着後はエージェントの案内に従って調査を進めてください。",
-            "durationMs": 5500
-          },
-          {
-            "text": "動画のように3周します。",
+            "text": "動画のように3周してください。",
             "durationMs": 3000
           },
           {
@@ -117,14 +109,6 @@
           {
             "text": "This is the wall you will investigate.",
             "durationMs": 2700
-          },
-          {
-            "text": "You will use an observation device that records and analyses anomalies.",
-            "durationMs": 4500
-          },
-          {
-            "text": "Once you put on the device, an agent will guide you along the survey route, so follow its directions.",
-            "durationMs": 5500
           },
           {
             "text": "Walk around it three times as shown in the video.",
@@ -143,14 +127,6 @@
           {
             "text": "Voici le mur que vous allez examiner.",
             "durationMs": 2700
-          },
-          {
-            "text": "Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.",
-            "durationMs": 4700
-          },
-          {
-            "text": "Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.",
-            "durationMs": 5600
           },
           {
             "text": "Faites-en trois fois le tour, comme dans la vidéo.",
@@ -196,6 +172,14 @@
       "cues": {
         "ja": [
           {
+            "text": "調査には怪異の記録と解析を行う観測装置を使います。",
+            "durationMs": 3600
+          },
+          {
+            "text": "観測中は、エージェントがあなたの調査を支援します。",
+            "durationMs": 3800
+          },
+          {
             "text": "異変を見つけたら、左コントローラーのXかYを1秒間長押ししてください。",
             "durationMs": 5000
           },
@@ -206,6 +190,14 @@
         ],
         "en": [
           {
+            "text": "You will use an observation device that records and analyses anomalies.",
+            "durationMs": 4500
+          },
+          {
+            "text": "While you are observing, an agent will support your investigation.",
+            "durationMs": 4200
+          },
+          {
             "text": "If you spot an anomaly, hold X or Y on the left controller for one second.",
             "durationMs": 5600
           },
@@ -215,6 +207,14 @@
           }
         ],
         "fr": [
+          {
+            "text": "Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.",
+            "durationMs": 4700
+          },
+          {
+            "text": "Pendant l’observation, un agent vous assistera dans votre enquête.",
+            "durationMs": 4300
+          },
           {
             "text": "Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.",
             "durationMs": 6000

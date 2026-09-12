@@ -11,37 +11,37 @@ Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.
 Voici le mur que vous allez examiner.
 
 4
-00:00:11,400 --> 00:00:16,100
-Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.
-
-5
-00:00:16,100 --> 00:00:21,700
-Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.
-
-6
-00:00:21,700 --> 00:00:25,900
+00:00:11,400 --> 00:00:15,600
 Faites-en trois fois le tour, comme dans la vidéo.
 
-7
-00:00:25,900 --> 00:00:31,400
+5
+00:00:15,600 --> 00:00:21,100
 Tenez la main courante de la main droite et ne la lâchez pas en marchant.
 
-8
-00:00:31,400 --> 00:00:36,900
+6
+00:00:21,100 --> 00:00:26,600
 Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prudence.
 
+7
+00:00:26,600 --> 00:00:31,300
+Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.
+
+8
+00:00:31,300 --> 00:00:35,600
+Pendant l’observation, un agent vous assistera dans votre enquête.
+
 9
-00:00:36,900 --> 00:00:42,900
+00:00:35,600 --> 00:00:41,600
 Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.
 
 10
-00:00:42,900 --> 00:00:46,300
+00:00:41,600 --> 00:00:45,000
 Le signalement sera envoyé à l’agent pour analyse.
 
 11
-00:00:46,300 --> 00:00:50,500
+00:00:45,000 --> 00:00:49,200
 À présent, prenez la manette dans la main gauche et mettez le dispositif.
 
 12
-00:00:50,500 --> 00:00:53,500
+00:00:49,200 --> 00:00:52,200
 Bonne chance pour votre enquête.

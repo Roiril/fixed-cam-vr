@@ -11,37 +11,37 @@ I would like you to serve as an investigator and examine a cursed object.
 This is the wall you will investigate.
 
 4
-00:00:10,900 --> 00:00:15,400
-You will use an observation device that records and analyses anomalies.
-
-5
-00:00:15,400 --> 00:00:20,900
-Once you put on the device, an agent will guide you along the survey route, so follow its directions.
-
-6
-00:00:20,900 --> 00:00:24,700
+00:00:10,900 --> 00:00:14,700
 Walk around it three times as shown in the video.
 
-7
-00:00:24,700 --> 00:00:29,700
+5
+00:00:14,700 --> 00:00:19,700
 Hold the handrail with your right hand and keep hold of it as you walk.
 
-8
-00:00:29,700 --> 00:00:34,700
+6
+00:00:19,700 --> 00:00:24,700
 Your footing will be hard to see, so walk very slowly and carefully.
 
+7
+00:00:24,700 --> 00:00:29,200
+You will use an observation device that records and analyses anomalies.
+
+8
+00:00:29,200 --> 00:00:33,400
+While you are observing, an agent will support your investigation.
+
 9
-00:00:34,700 --> 00:00:40,300
+00:00:33,400 --> 00:00:39,000
 If you spot an anomaly, hold X or Y on the left controller for one second.
 
 10
-00:00:40,300 --> 00:00:43,500
+00:00:39,000 --> 00:00:42,200
 The report will be sent to the agent for analysis.
 
 11
-00:00:43,500 --> 00:00:47,700
+00:00:42,200 --> 00:00:46,400
 Now hold the controller in your left hand and put on the device.
 
 12
-00:00:47,700 --> 00:00:50,700
+00:00:46,400 --> 00:00:49,400
 Good luck with your survey.
