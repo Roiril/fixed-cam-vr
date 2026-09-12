@@ -3,45 +3,45 @@
 J’étudie les phénomènes anormaux dans cet institut.
 
 2
-00:00:03,500 --> 00:00:09,000
-Je vous confie une enquête sur un mur autour duquel des anomalies ont été signalées.
+00:00:03,500 --> 00:00:09,500
+Je vous demande d’enquêter, en tant qu’agent de terrain, sur les phénomènes anormaux signalés.
 
 3
-00:00:09,000 --> 00:00:11,700
+00:00:09,500 --> 00:00:12,200
 Voici le mur que vous allez examiner.
 
 4
-00:00:11,700 --> 00:00:16,400
+00:00:12,200 --> 00:00:16,900
 Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.
 
 5
-00:00:16,400 --> 00:00:22,000
+00:00:16,900 --> 00:00:22,500
 Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.
 
 6
-00:00:22,000 --> 00:00:28,500
+00:00:22,500 --> 00:00:29,000
 Faites trois tours du mur dans le sens des aiguilles d’une montre, en le gardant à votre droite.
 
 7
-00:00:28,500 --> 00:00:34,000
+00:00:29,000 --> 00:00:34,500
 Tenez la main courante de la main droite et ne la lâchez pas en marchant.
 
 8
-00:00:34,000 --> 00:00:39,500
+00:00:34,500 --> 00:00:40,000
 Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prudence.
 
 9
-00:00:39,500 --> 00:00:45,500
+00:00:40,000 --> 00:00:46,000
 Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.
 
 10
-00:00:45,500 --> 00:00:48,900
+00:00:46,000 --> 00:00:49,400
 Le signalement sera envoyé à l’agent pour analyse.
 
 11
-00:00:48,900 --> 00:00:53,100
+00:00:49,400 --> 00:00:53,600
 À présent, prenez la manette dans la main gauche et mettez le dispositif.
 
 12
-00:00:53,100 --> 00:00:56,100
+00:00:53,600 --> 00:00:56,600
 Bonne chance pour votre enquête.

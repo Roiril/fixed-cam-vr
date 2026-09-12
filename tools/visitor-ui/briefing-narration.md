@@ -18,7 +18,7 @@
 
 ### 01 introduction — 調査依頼
 
-開始 0.0 秒 / 尺 8.0 秒
+開始 0.0 秒 / 尺 7.9 秒
 
 画像: `doctor.jpg`
 
@@ -26,13 +26,13 @@
 
 私はこの研究所で怪異の観測を担当しています。
 
-文 02 / 場面内 3.5–8.0 秒
+文 02 / 場面内 3.5–7.9 秒
 
-怪異が報告された壁を、あなたに調査員として調べていただきたい。
+あなたには調査員として、報告された怪異を調べていただきたい。
 
 ### 02 subject — 回収壁面
 
-開始 8.0 秒 / 尺 25.1 秒
+開始 7.9 秒 / 尺 25.1 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -62,7 +62,7 @@
 
 ### 03 report — XかYを長押し
 
-開始 33.1 秒 / 尺 8.5 秒
+開始 33.0 秒 / 尺 8.5 秒
 
 画像: `briefing-device-v1.png`
 
@@ -76,7 +76,7 @@
 
 ### 04 wear — 装着案内
 
-開始 41.6 秒 / 尺 7.0 秒
+開始 41.5 秒 / 尺 7.0 秒
 
 画像: `doctor.jpg`
 
@@ -92,7 +92,7 @@
 
 ### 01 introduction — Survey briefing
 
-開始 0.0 秒 / 尺 8.2 秒
+開始 0.0 秒 / 尺 8.4 秒
 
 画像: `doctor.jpg`
 
@@ -100,13 +100,13 @@
 
 I study anomalous phenomena here at the institute.
 
-文 02 / 場面内 3.4–8.2 秒
+文 02 / 場面内 3.4–8.4 秒
 
-I would like you to investigate a wall where anomalies have been reported.
+I would like you to serve as an investigator and examine the reported anomalies.
 
 ### 02 subject — Recovered wall
 
-開始 8.2 秒 / 尺 27.5 秒
+開始 8.4 秒 / 尺 27.5 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -136,7 +136,7 @@ Your footing will be hard to see, so walk very slowly and carefully.
 
 ### 03 report — Hold X or Y
 
-開始 35.7 秒 / 尺 8.8 秒
+開始 35.9 秒 / 尺 8.8 秒
 
 画像: `briefing-device-v1.png`
 
@@ -150,7 +150,7 @@ The report will be sent to the agent for analysis.
 
 ### 04 wear — Putting on the device
 
-開始 44.5 秒 / 尺 7.2 秒
+開始 44.7 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 
@@ -166,7 +166,7 @@ Good luck with your survey.
 
 ### 01 introduction — Présentation de la mission
 
-開始 0.0 秒 / 尺 9.0 秒
+開始 0.0 秒 / 尺 9.5 秒
 
 画像: `doctor.jpg`
 
@@ -174,13 +174,13 @@ Good luck with your survey.
 
 J’étudie les phénomènes anormaux dans cet institut.
 
-文 02 / 場面内 3.5–9.0 秒
+文 02 / 場面内 3.5–9.5 秒
 
-Je vous confie une enquête sur un mur autour duquel des anomalies ont été signalées.
+Je vous demande d’enquêter, en tant qu’agent de terrain, sur les phénomènes anormaux signalés.
 
 ### 02 subject — Mur récupéré
 
-開始 9.0 秒 / 尺 30.5 秒
+開始 9.5 秒 / 尺 30.5 秒
 
 画像: `briefing-wall-v1.png`
 
@@ -210,7 +210,7 @@ Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prud
 
 ### 03 report — Maintenez X ou Y
 
-開始 39.5 秒 / 尺 9.4 秒
+開始 40.0 秒 / 尺 9.4 秒
 
 画像: `briefing-device-v1.png`
 
@@ -224,7 +224,7 @@ Le signalement sera envoyé à l’agent pour analyse.
 
 ### 04 wear — Mise en place du dispositif
 
-開始 48.9 秒 / 尺 7.2 秒
+開始 49.4 秒 / 尺 7.2 秒
 
 画像: `doctor.jpg`
 

@@ -34,8 +34,8 @@
             "durationMs": 3500
           },
           {
-            "text": "怪異が報告された壁を、あなたに調査員として調べていただきたい。",
-            "durationMs": 4500
+            "text": "あなたには調査員として、報告された怪異を調べていただきたい。",
+            "durationMs": 4400
           }
         ],
         "en": [
@@ -44,8 +44,8 @@
             "durationMs": 3400
           },
           {
-            "text": "I would like you to investigate a wall where anomalies have been reported.",
-            "durationMs": 4800
+            "text": "I would like you to serve as an investigator and examine the reported anomalies.",
+            "durationMs": 5000
           }
         ],
         "fr": [
@@ -54,8 +54,8 @@
             "durationMs": 3500
           },
           {
-            "text": "Je vous confie une enquête sur un mur autour duquel des anomalies ont été signalées.",
-            "durationMs": 5500
+            "text": "Je vous demande d’enquêter, en tant qu’agent de terrain, sur les phénomènes anormaux signalés.",
+            "durationMs": 6000
           }
         ]
       }
