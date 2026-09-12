@@ -1,91 +1,27 @@
 1
-00:00:00,000 --> 00:00:02,400
-Thank you for coming.
-
-2
-00:00:02,400 --> 00:00:05,800
+00:00:00,000 --> 00:00:03,400
 I study anomalous phenomena here at the institute.
 
+2
+00:00:03,400 --> 00:00:08,200
+I would like you to investigate a wall where anomalies have been reported.
+
 3
-00:00:05,800 --> 00:00:10,600
-Today, I would like you to act as a surveyor and examine a particular wall.
+00:00:08,200 --> 00:00:13,400
+Watch the images in the observation device and walk as directed by the agent.
 
 4
-00:00:10,600 --> 00:00:13,200
-This is the subject of your survey.
-
-5
-00:00:13,200 --> 00:00:16,400
-Anomalies have been reported around this wall.
-
-6
-00:00:16,400 --> 00:00:20,900
-The recovery site and further details are not disclosed to surveyors.
-
-7
-00:00:20,900 --> 00:00:25,700
-Follow the designated route while observing the images shown in the device.
-
-8
-00:00:25,700 --> 00:00:29,800
-An agent will assist you through the device during the survey.
-
-9
-00:00:29,800 --> 00:00:32,200
-Follow its instructions.
-
-10
-00:00:32,200 --> 00:00:38,000
-Whenever you spot an anomaly in the image, hold X or Y on the left controller for one second.
-
-11
-00:00:38,000 --> 00:00:40,500
-Either button will send a report.
-
-12
-00:00:40,500 --> 00:00:42,900
-The agent will analyse it.
-
-13
-00:00:42,900 --> 00:00:47,200
-If an anomaly is detected, the device will attempt to counter it.
-
-14
-00:00:47,200 --> 00:00:52,600
-This device was developed to observe anomalous phenomena that cannot normally be seen.
-
-15
-00:00:52,600 --> 00:00:55,600
+00:00:13,400 --> 00:00:16,400
 The view changes automatically as you move.
 
-16
-00:00:55,600 --> 00:00:58,400
-You do not need to switch it yourself.
+5
+00:00:16,400 --> 00:00:22,000
+If you spot an anomaly, hold X or Y on the left controller for one second.
 
-17
-00:00:58,400 --> 00:01:01,200
-Hold the controller in your left hand.
+6
+00:00:22,000 --> 00:00:24,500
+The agent will analyse your report.
 
-18
-00:01:01,200 --> 00:01:04,000
-Put the wrist strap around your wrist.
-
-19
-00:01:04,000 --> 00:01:08,000
-If you feel unwell, stop where you are and remove the device.
-
-20
-00:01:08,000 --> 00:01:10,400
-Let a staff member know.
-
-21
-00:01:10,400 --> 00:01:12,800
-That concludes the briefing.
-
-22
-00:01:12,800 --> 00:01:15,200
-Please put on the device.
-
-23
-00:01:15,200 --> 00:01:18,800
-Once it is on, follow the instructions on the display.
+7
+00:00:24,500 --> 00:00:28,700
+Hold the controller in your left hand and put on the device.
