@@ -18,6 +18,7 @@ import os
 import re
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -30,6 +31,8 @@ _st = {
     "pending": None, "appliedSeq": 0, "applyCount": 0, "received": 0, "rejected": 0,
     "model": "Quest 3 (stub)", "ip": "127.0.0.1", "port": 8090, "seq": 0,
 }
+_initial = dict(_st)
+_faults = {}
 
 
 def _apply_if_wait():
@@ -59,7 +62,27 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(b)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(b)
+        try:
+            self.wfile.write(b)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass  # A timed-out browser request deliberately closes the connection.
+
+    def _fault(self, path):
+        """Local QA only: delay or reject selected requests without changing Unity."""
+        with _lock:
+            fault = _faults.get(path)
+            if not fault:
+                return False
+            fault = dict(fault)
+            if fault["count"] > 0:
+                _faults[path]["count"] -= 1
+                if _faults[path]["count"] == 0:
+                    del _faults[path]
+        time.sleep(fault["delayMs"] / 1000)
+        if fault["status"] != 200:
+            self._send(fault["status"], "application/json", '{"ok":false,"error":"qa_fault"}')
+            return True
+        return False
 
     def _send_bytes(self, code, ctype, data, extra=None):
         self.send_response(code)
@@ -73,6 +96,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        if self._fault(path):
+            return
         if path in ("/", "/visitor.html", "/index.html"):
             with open(PAGE, encoding="utf-8") as f:
                 return self._send(200, "text/html; charset=utf-8", f.read())
@@ -106,7 +131,39 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(n).decode("utf-8", "replace") if n else ""
         path = self.path.split("?")[0]
+        if self._fault(path):
+            return
         with _lock:
+            if path == "/_fault":
+                try:
+                    spec = json.loads(body)
+                    target = spec["path"]
+                    delay = spec.get("delayMs", 0)
+                    status = spec.get("status", 200)
+                    count = spec.get("count", 1)
+                    if (target not in ("/status", "/set", "/clear")
+                            or type(delay) is not int or not 0 <= delay <= 15000
+                            or type(status) is not int or status not in (200, 400, 503)
+                            or type(count) is not int or not -1 <= count <= 100):
+                        raise ValueError("fault")
+                except (ValueError, KeyError, TypeError):
+                    return self._send(400, "application/json", '{"ok":false}')
+                if count == 0:
+                    _faults.pop(target, None)
+                else:
+                    _faults[target] = {"delayMs": delay, "status": status, "count": count}
+                return self._send(200, "application/json", '{"ok":true}')
+            if path == "/_reboot":
+                port = _st["port"]
+                _st.update(_initial)
+                _st["port"] = port
+                _faults.clear()
+                return self._send(200, "application/json", '{"ok":true}')
+            if path == "/_begin":
+                # TitleScreen.BeginTitle: reset the actual values, then reapply a reservation.
+                _st.update(lang="ja", relief=False, appliedSeq=0, titleStage="Wait", phase="INTRO")
+                _apply_if_wait()
+                return self._send(200, "application/json", '{"ok":true}')
             if path == "/set":
                 m = re.search(r'"lang"\s*:\s*"([A-Za-z]{2})"', body)
                 if not m or m.group(1).lower() not in ("ja", "en", "fr"):

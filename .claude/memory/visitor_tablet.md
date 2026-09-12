@@ -27,33 +27,30 @@ metadata:
 | 代役 | [`tools/visitor-portal-stub.py`](../../tools/visitor-portal-stub.py)（Quest 無しで面を机上で通す） |
 | 観測 | `ev=sum visitor=<口が開いているか>/<受けた累計>/<枠の受理番号>/<書いた受理番号>/<書いた回数>`／解析器「## タブレットの口」／logcat `[VisitorPortal]` |
 
-## 見た目（0188・DBH 風を廻リ視へ）
+## 見た目（2026-09-12 全面再設計）
 
-骨格は DBH の案内役の画面: 人物が右を占め、左下に操作の束、下中央に字幕、右下に輪＋続ける、右上に REC。
-色は黒・暖かい褐色・生成り（`--ink`）・題字の赤（`--red`）。反映は金（`--gold`）。書体は端末の明朝。
-動きは transition（指数の減速 `--ease`）。**登場に CSS animation の fill-mode を使わない** — 残ると後から
-inline の opacity を書いても効かない（実際に踏んだ）。`.in` → JS が timer で `.on` を付ける。
-⚠ **rAF も使わない**（画を描かない環境では一度も来ない。headless の検証で全部消えた）。
+博士を右に置く構図と黒・生成り・朱赤を維持した。
+左は注意事項から言語3択、ホラー軽減2択へ読む順番で並べる。
+矢印の循環選択は廃止した。全候補を直接押すネイティブのラジオ入力になった。
+縦持ちと狭幅では縦に並べる。注意事項を低い画面で隠す旧CSSは廃止した。
+RECと時計は置かない。接続表示はヘッドセットの応答に基づく。
+詳細と検証手順は [`tools/visitor-ui/README.md`](../../tools/visitor-ui/README.md)。
 
-博士の画は `GET /asset/doctor.jpg`（`Resources/Visitor/doctor.jpg.bytes`・102KB）。元は `tools/visitor-ui/doctor_v1.png`
-（Codex 生成。プロンプトは LEDGER 0188 の要点: 実写のスチル・85mm・黒い暗幕・タングステン 1 灯・左 40% は空ける・口は閉じる）。
-女性版 `doctor_v2_female.png` も同じプロンプトで焼いてある。動画に替えるときは `doctor.mp4.bytes` を置いて `<img>` を
-`<video autoplay muted loop playsinline>` にする（口は Range 対応済み。Safari は Range が無いと動画を再生しない）。
+博士の画は `GET /asset/doctor.jpg`（`Resources/Visitor/doctor.jpg.bytes`）。
+元は `tools/visitor-ui/doctor_v1.png`。女性版は未採用の候補。
+動画に替えるときは `doctor.mp4.bytes` を置いて `<video autoplay muted loop playsinline>` にする。
+サーバーは Range/206 対応済み。
 
-⚠ **値の入れ替え（`swapBig`）は「いまの 1 枚」を `el._cur` で持つ。** `querySelector('span')` で拾うと、滑っている最中に
-もう一度切り替えたとき、出て行く途中の枚を「いま」と誤認して 2 枚残る（文字が重なる。ユーザー報告）。
-言語を替えたときの軽減の訳語のように**値が変わっていない束は滑らせない**（`animate=false`）— 滑ると
-「軽減も変わった」に見える（同報告）。的は 11 インチ前提: 矢印 56×40・候補 48px 高・大きな値そのものも押せる・輪 40px。
-送った後も「設定を変える」で束へ戻れる（`state.view`）。送り直せば新しい受理番号で届き、注意書きの段なら即座に書き替わる。
-「はじめから」（既定へ戻す）はユーザー指示で消した — 持ち越しを断つのはヘッドセットの側（A で枠を空にする）なので要らない。
-字幕は博士の 1 文を 1 字ずつ打つ（`setSubtitle`・`CPS` ja 12 / en·fr 18）。言語を替えると頭から打ち直す（0191）。
-注意書きは左上の `.hint`（NOTICE）、軽減の説明は束の中の `.desc`。背の低い横長の窓（max-height 640px）では `.hint` を畳む。
+字幕は既存の博士の1文を1字ずつ表示する（ja 12 / en・fr 18字/秒）。
+言語を変えると頭から言い直す。通信状態の変化では台詞を変えない。
+動きを減らす設定では全文を即時表示する。軽減の説明は「あり」の場合だけ出す。
+「設定を変える」は選択を保って戻る。「はじめから」は置かない。
 
-机上の見え方は `?demo=applied|waiting|later|noserver|fail&lang=en` で固定できる（実機では使わない）。
-全解像度の絵は headless Edge で撮る（in-app browser は viewport をスケールするので判定に使わない）:
-```powershell
-& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --hide-scrollbars --window-size=1180,820 --virtual-time-budget=8000 --screenshot="$env:TEMP\v.png" "http://127.0.0.1:8090/?demo=applied"
-```
+送信時の設定を固定してから送る。通信には期限を設ける。
+失敗画面には再送と編集への復帰を用意した。確認要求を重複させない。
+カウンターの減少で検出できる再起動では古い送信を破棄する。
+本番の `?demo=` による偽の成功画面は廃止した。状態の検証は代役サーバーで行う。
+ブラウザ検証は明示した viewport の寸法と実際の `innerWidth/innerHeight` を照合する。
 
 ## 口は 5 つ
 
@@ -87,9 +84,9 @@ inline の opacity を書いても効かない（実際に踏んだ）。`.in` �
 
 ## 「反映されたか」は `GET /status` の実値で出す（0186）
 
-面は送った後、**選んだ値 → ヘッドセットが返している値**を 2 行で並べ、一致して `appliedSeq >= seq` なら緑の ✓。
+面は送った後、**選んだ値 → ヘッドセットが返している値**を 2 行で並べ、一致して `appliedSeq >= seq > 0` なら反映済み。
 送った値を写して「反映済み」と出すことはしない。本編中（phase RUN/END）は「次の開始時」、
-`/status` が返らなければ赤の「繋がっていません」。
+`/status` が返らなければ確認不能を表示する。古い実値は「—」に戻す。
 
 ## ⚠ 面を直したら APK を焼き直す
 

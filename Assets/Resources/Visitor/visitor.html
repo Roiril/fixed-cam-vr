@@ -2,569 +2,1245 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#080604">
 <title>廻リ視 — 体験の前に</title>
 <!--
-  タブレットで開く「体験の前に」の面（2026-09-11・canon/LEDGER.md 0185 / 0186 / 0187 / 0188）。
-  ⚠ この面は **Quest 自身が配る**（VisitorPortal・:8090）。PC も卓も経由しない。
-    α 用のタブレットは α の機、β 用は β の機の URL を開く:
-      http://192.168.10.31:8090/   http://192.168.10.32:8090/  （現地の静的割当・docs/onsite/network-setup.md）
-
-  ▶ 見た目（0188）: 「Detroit: Become Human」の案内役の画面の骨格 — 人物が画面を占め、左下に薄い
-    操作の束、下中央に字幕、右下に CONTINUE — を、廻リ視の世界（黒・暖かい褐色・題字の赤・明朝）へ移したもの。
-    案内するのは研究所の博士（./asset/doctor.jpg・Resources/Visitor/doctor.jpg.bytes）。
-    いまは静止画。あとでリップシンクの動画に差し替える（同じ名前で .mp4.bytes を置き、<img> を <video> にする）。
-  ▶ 最初の画面は注意書きと設定だけ（0186）。導入の文は置かない。
-  ▶ 注意書きの 3 言語は HMD の TitleNotice と同じ文（安全の掲示なので、受付とヘッドセットで食い違わせない）。
-  ▶ 「反映されたか」は GET /status が返す実値（lang / relief）で判定する。送った値を表示しない。
-  ⚠ 外部の CDN と Web フォントは使わない（会場に外の回線が無い）。書体は端末の明朝（Yu Mincho / Hiragino / Noto Serif）。
-  ⚠ Unity は .html を TextAsset として取り込む。文を直したら APK を焼き直す。
+  Quest 自身が :8090 で配る来場者用の面。PC とウェブ卓は経由しない。
+  注意書きは HMD の TitleNotice と同文。外部 CDN と Web フォントは使わない。
+  博士の静止画は ./asset/doctor.jpg。GET /status の実値で反映を判定する。
 -->
 <style>
-  :root{
-    --bg:#050403;
-    --ink:#efe6d6;                 /* 生成りの字 */
-    --ink-2:rgba(239,230,214,.55);
-    --ink-3:rgba(239,230,214,.30);
-    --line:rgba(239,230,214,.22);
-    --line-2:rgba(239,230,214,.10);
-    --red:#b3202b;                 /* 題字「視」の赤 */
-    --red-2:#6f1219;
-    --gold:#e9cf9a;                /* 反映されたときの温かい白 */
-    --serif:"Yu Mincho","YuMincho","Hiragino Mincho ProN","Noto Serif JP","Noto Serif CJK JP","Source Han Serif JP","Times New Roman",serif;
-    --sans:"Segoe UI","Helvetica Neue",Helvetica,Arial,"Noto Sans JP","Hiragino Sans",sans-serif;
-    --ease:cubic-bezier(.16,1,.3,1);   /* ぬるっと減速 */
-    --ease-io:cubic-bezier(.65,0,.35,1);
+  :root {
+    color-scheme: dark;
+    --bg: #080604;
+    --ink: #f2e8d7;
+    --muted: #c4b8a5;
+    --faint: #817669;
+    --line: rgba(242, 232, 215, .2);
+    --line-strong: rgba(242, 232, 215, .42);
+    --red: #a82229;
+    --red-deep: #611419;
+    --gold: #e7cf9f;
+    --error: #e1847e;
+    --serif: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", "Noto Serif CJK JP", Georgia, serif;
+    --sans: "Segoe UI", "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Sans", sans-serif;
+    --ease: cubic-bezier(.16, 1, .3, 1);
   }
-  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
-  html,body{height:100%; margin:0; background:var(--bg); color:var(--ink); overflow:hidden}
-  body{font:16px/1.6 var(--serif); -webkit-text-size-adjust:100%; -webkit-font-smoothing:antialiased}
-  button{font:inherit; color:inherit; background:none; border:0; padding:0; margin:0; cursor:pointer; touch-action:manipulation}
-
-  /* ---------- 舞台 ---------- */
-  .stage{position:fixed; inset:0; overflow:hidden}
-  .portrait{position:absolute; inset:0; overflow:hidden}
-  .portrait img,.portrait video{
-    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:78% 40%;
-    transform:scale(1.02); animation:breathe 16s var(--ease-io) infinite alternate;
-    filter:saturate(.92) contrast(1.02);
-  }
-  @keyframes breathe{from{transform:scale(1.02) translateY(0)} to{transform:scale(1.045) translateY(-.6%)}}
-  /* 左は字のために沈め、下は字幕のために沈める */
-  .portrait::before{content:""; position:absolute; inset:0; pointer-events:none;
+  * { box-sizing: border-box; }
+  html { min-height: 100%; background: var(--bg); }
+  body {
+    min-height: 100%;
+    margin: 0;
     background:
-      linear-gradient(90deg, rgba(5,4,3,.92) 0%, rgba(5,4,3,.72) 28%, rgba(5,4,3,.18) 52%, rgba(5,4,3,0) 70%),
-      linear-gradient(180deg, rgba(5,4,3,.55) 0%, rgba(5,4,3,0) 22%, rgba(5,4,3,0) 60%, rgba(5,4,3,.82) 100%);
+      radial-gradient(circle at 26% 18%, rgba(107, 53, 30, .11), transparent 32rem),
+      var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 var(--serif);
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
   }
-  /* 粒。動く粒は面が「装置の映像」であることをそっと言う */
-  .grain{position:absolute; inset:-20%; pointer-events:none; opacity:.055; mix-blend-mode:screen;
-    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 .95  0 0 0 0 .85  0 0 0 .7 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-    animation:grain 1.2s steps(6) infinite;
+  button, input { font: inherit; }
+  button, label {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(168, 34, 41, .22);
   }
-  @keyframes grain{0%{transform:translate(0,0)}20%{transform:translate(-3%,2%)}40%{transform:translate(2%,-4%)}60%{transform:translate(-4%,-1%)}80%{transform:translate(3%,3%)}100%{transform:translate(0,0)}}
-
-  /* ---------- 登場 ---------- */
-  /* 登場は transition で（animation の fill-mode が残ると、あとで opacity を書いても効かない）。
-     JS が --i の順に .on を付ける */
-  .in{opacity:0; transform:translateY(14px); transition:opacity 1.1s var(--ease), transform 1.1s var(--ease)}
-  .in.on{opacity:1; transform:none}
-  @keyframes rise{to{opacity:1; transform:none}}
-
-  /* ---------- 上の帯 ---------- */
-  header{position:absolute; left:0; right:0; top:0; padding:clamp(14px,2.6vh,26px) clamp(18px,3vw,36px); display:flex; align-items:flex-start; justify-content:space-between; pointer-events:none}
-  .mark{font-family:var(--serif); letter-spacing:.34em; font-size:clamp(15px,1.5vw,20px); color:var(--ink)}
-  .mark small{display:block; font-family:var(--sans); font-size:10px; letter-spacing:.32em; color:var(--ink-3); margin-top:6px; text-transform:uppercase}
-  .rec{font-family:var(--sans); font-size:11px; letter-spacing:.28em; color:var(--ink-2); display:flex; align-items:center; gap:10px; text-transform:uppercase}
-  .rec i{width:8px; height:8px; border-radius:50%; background:var(--red); box-shadow:0 0 10px rgba(179,32,43,.7); animation:pulse 2.4s ease-in-out infinite}
-  .rec .clock{font-variant-numeric:tabular-nums; letter-spacing:.14em; color:var(--ink-3)}
-  @keyframes pulse{0%,100%{opacity:.35; transform:scale(.85)} 50%{opacity:1; transform:scale(1)}}
-
-  /* ---------- 左下: 操作の束 ---------- */
-  .panel{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(150px,23vh,210px); width:min(54vw,680px); display:flex; gap:clamp(18px,3vw,44px); align-items:flex-start; transition:opacity .6s var(--ease-io)}
-  .ctl{position:relative; flex:1 1 0; padding:16px 18px 10px; min-width:0}
-  .ctl .tab{display:inline-flex; align-items:center; gap:10px; font-family:var(--sans); font-size:11px; letter-spacing:.3em; color:var(--ink-2); text-transform:uppercase; white-space:nowrap}
-  .ctl .tab b{font-family:var(--serif); font-weight:500; font-size:13px; letter-spacing:.26em; color:var(--ink)}
-  .ctl .tab .hatch{display:inline-block; width:64px; height:9px; transform-origin:left; transform:scaleX(0); animation:hatch 1s var(--ease) forwards; animation-delay:.6s;
-    background:repeating-linear-gradient(120deg, var(--red-2) 0 6px, transparent 6px 11px); opacity:.9}
-  .ctl.focus .tab .hatch{background:repeating-linear-gradient(120deg, var(--red) 0 6px, transparent 6px 11px)}
-  @keyframes hatch{to{transform:scaleX(1)}}
-  .ctl .val{display:flex; align-items:center; gap:10px; margin-top:10px; min-height:84px}
-  .ctl .arrows{display:flex; flex-direction:column; gap:2px}
-  .ctl .arrows button{width:56px; height:40px; color:var(--ink-2); font-family:var(--sans); font-size:15px; line-height:1; transition:color .3s, transform .3s var(--ease)}
-  .ctl .arrows button:active{color:var(--ink); transform:scale(1.25)}
-  /* 大きな値そのものも的（押すと次へ）。指 1 本ぶんの高さを確保する */
-  .ctl .big{position:relative; font-family:var(--serif); font-weight:500; font-size:clamp(28px,3.6vw,44px); letter-spacing:.06em; line-height:1.15; color:var(--ink); overflow:hidden; min-width:6.5em; height:1.3em; cursor:pointer; padding-right:.4em}
-  .ctl .big span{position:absolute; left:0; top:0; white-space:nowrap; transition:transform .55s var(--ease), opacity .45s var(--ease-io)}
-  .ctl .big span.out-up{transform:translateY(-110%); opacity:0}
-  .ctl .big span.out-dn{transform:translateY(110%); opacity:0}
-  .ctl .big span.in-up{transform:translateY(110%); opacity:0}
-  .ctl .big span.in-dn{transform:translateY(-110%); opacity:0}
-  .ctl .alts{display:flex; flex-wrap:wrap; gap:2px 6px; margin:2px 0 0 60px; min-height:1.5em}
-  .ctl .alts button{font-family:var(--serif); font-size:clamp(15px,1.6vw,20px); letter-spacing:.06em; color:var(--ink-3); transition:color .35s; min-height:48px; padding:0 12px}
-  .ctl .alts button:active{color:var(--ink)}
-  /* 四隅の括弧。いま触っている束にだけ出る。動くときは少し外から寄る */
-  .ctl .br{position:absolute; width:14px; height:14px; border:1px solid var(--ink-2); opacity:0; transition:all .6s var(--ease)}
-  .ctl .br.tl{left:-6px; top:-6px; border-right:0; border-bottom:0}
-  .ctl .br.tr{right:-6px; top:-6px; border-left:0; border-bottom:0}
-  .ctl .br.bl{left:-6px; bottom:-6px; border-right:0; border-top:0}
-  .ctl .br.bb{right:-6px; bottom:-6px; border-left:0; border-top:0}
-  .ctl.focus .br{opacity:1}
-  .ctl.focus .br.tl{left:0; top:0} .ctl.focus .br.tr{right:0; top:0} .ctl.focus .br.bl{left:0; bottom:0} .ctl.focus .br.bb{right:0; bottom:0}
-  .ctl .rule{position:absolute; left:18px; right:18px; bottom:0; height:1px; background:var(--line-2); transform-origin:left; transform:scaleX(0); animation:hatch 1.2s var(--ease) forwards; animation-delay:.9s}
-    /* 軽減の説明。DBH が難易度の説明を左上に置くのと同じ位置。束の上、人物にかからない左の闇に */
-  .hint{position:absolute; left:clamp(18px,3vw,40px); top:clamp(110px,17vh,170px); width:min(40vw,480px); font-family:var(--serif); font-size:clamp(12px,1.15vw,15px); letter-spacing:.08em; color:var(--ink-2); line-height:1.8; white-space:pre-line;
-    transition:opacity .5s var(--ease-io)}
-  .hint small{display:block; font-family:var(--sans); font-size:10px; letter-spacing:.32em; color:var(--ink-3); text-transform:uppercase; margin-bottom:8px}
-  .ctl .desc{margin:2px 0 0 60px; min-height:3.4em; font-family:var(--serif); font-size:clamp(11px,1.05vw,13px); letter-spacing:.06em; color:var(--ink-3); line-height:1.6; white-space:pre-line; opacity:0; transition:opacity .6s var(--ease-io)}
-  .ctl .desc.show{opacity:1; color:var(--ink-2)}
-
-  /* ---------- 送った後: 読み出し ---------- */
-  .readout{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(150px,23vh,210px); width:min(52vw,640px); opacity:0; transform:translateY(10px); pointer-events:none; transition:opacity .7s var(--ease), transform .7s var(--ease)}
-  .readout.show{opacity:1; transform:none; pointer-events:auto}
-  .readout .head{display:flex; align-items:center; gap:14px; font-family:var(--serif); font-size:clamp(18px,2.2vw,26px); letter-spacing:.08em; color:var(--ink); min-height:1.5em}
-  .readout .head .glyph{width:34px; height:34px; border:1px solid var(--ink-2); border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:var(--sans); font-size:16px; color:var(--ink); flex:0 0 34px; transition:all .6s var(--ease)}
-  .readout.ok .head .glyph{border-color:var(--gold); color:var(--gold); box-shadow:0 0 18px rgba(233,207,154,.35)}
-  .readout.ok .head{color:var(--gold)}
-  .readout.ng .head .glyph{border-color:var(--red); color:var(--red)} .readout.ng .head{color:var(--ink)}
-  .readout.wait .head .glyph{border-style:dashed; animation:spin 6s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .readout .sub{font-family:var(--serif); font-size:clamp(12px,1.15vw,15px); color:var(--ink-2); letter-spacing:.06em; margin:4px 0 0 48px}
-  .readout .rows{margin:16px 0 0 48px; border-top:1px solid var(--line-2)}
-  .readout .r{display:grid; grid-template-columns:7.5em 1fr 1.6em 1fr 2em; align-items:center; gap:6px; padding:10px 0; border-bottom:1px solid var(--line-2); font-family:var(--serif); font-size:clamp(15px,1.7vw,20px); letter-spacing:.06em}
-  .readout .r .k{font-family:var(--sans); font-size:10px; letter-spacing:.28em; color:var(--ink-3); text-transform:uppercase}
-  .readout .r .sent{color:var(--ink-2)}
-  .readout .r .arrow{text-align:center; color:var(--ink-3); font-family:var(--sans)}
-  .readout .r .got{color:var(--ink); transition:color .5s}
-  .readout .r .mark{text-align:center; font-family:var(--sans); font-size:16px; color:var(--ink-3); transition:color .5s}
-  .readout .r.hit .got,.readout .r.hit .mark{color:var(--gold)}
-  .readout .r.stale .got{color:var(--ink-3)}
-  .readout .acts{display:flex; gap:10px; margin:14px 0 0 48px}
-  .readout .again{border:1px solid var(--line); padding:0 18px; min-height:52px; font-family:var(--serif); font-size:clamp(14px,1.4vw,17px); letter-spacing:.14em; color:var(--ink); transition:color .3s, border-color .3s}
-  .readout .again:active{color:var(--gold); border-color:var(--gold)}
-
-  /* ---------- 下中央: 字幕（博士の言葉） ---------- */
-  .subtitle{position:absolute; left:0; right:0; margin:0 auto; bottom:clamp(26px,5vh,50px); width:min(50vw,760px); text-align:center; font-family:var(--serif); font-size:clamp(15px,1.55vw,21px); letter-spacing:.08em; line-height:1.7; min-height:3.4em; color:var(--ink); text-shadow:0 1px 14px rgba(0,0,0,.9); white-space:pre-line; pointer-events:none}
-  .subtitle .line{display:block; opacity:0; transform:translateY(6px); animation:rise .9s var(--ease) forwards}
-  .subtitle .dash{color:var(--ink-2); margin-right:.5em}
-  .subtitle .ghost{visibility:hidden}   /* 打ち終わる前から行の幅と高さを取っておく */
-  .subtitle .line{white-space:pre-wrap}
-
-  /* ---------- 右下: 進む ---------- */
-  .continue{position:absolute; right:clamp(18px,3vw,40px); bottom:clamp(20px,4vh,40px); display:flex; align-items:center; gap:18px; font-family:var(--sans); font-size:12px; letter-spacing:.34em; color:var(--ink); text-transform:uppercase; padding:14px 10px 14px 14px; min-height:68px}
-  .continue .ring{position:relative; width:40px; height:40px; border-radius:50%; border:1.5px solid var(--ink-2); flex:0 0 40px; transition:all .5s var(--ease)}
-  .continue .ring::after{content:""; position:absolute; inset:5px; border-radius:50%; background:var(--red); transform:scale(0); transition:transform .5s var(--ease)}
-  .continue:active .ring{border-color:var(--ink)}
-  .continue:active .ring::after{transform:scale(.6)}
-  .continue.busy .ring{border-style:dashed; animation:spin 2.4s linear infinite}
-  .continue.done .ring{border-color:var(--gold); box-shadow:0 0 16px rgba(233,207,154,.35)}
-  .continue.done .ring::after{transform:scale(1); background:var(--gold)}
-  .continue .jp{font-family:var(--serif); font-size:clamp(16px,1.7vw,21px); letter-spacing:.2em; text-transform:none}
-  .continue[disabled]{opacity:.45}
-
-  /* ---------- スタッフ ---------- */
-  .staffToggle{position:absolute; left:clamp(18px,3vw,40px); bottom:clamp(20px,4.2vh,42px); font-family:var(--sans); font-size:10px; letter-spacing:.34em; color:var(--ink-3); text-transform:uppercase; padding:8px 0}
-  .staff{position:absolute; left:0; top:0; bottom:0; width:min(92vw,420px); background:rgba(5,4,3,.94); border-right:1px solid var(--line); padding:26px 22px; overflow:auto; transform:translateX(-100%); transition:transform .6s var(--ease); font-family:var(--sans); font-size:13px; line-height:1.7; color:var(--ink-2)}
-  .staff.open{transform:none}
-  .staff h3{font-family:var(--serif); font-size:15px; letter-spacing:.2em; color:var(--ink); margin:0 0 14px}
-  .staff .dev{border:1px solid var(--line); padding:12px 14px; margin:0 0 12px; font-family:ui-monospace,Consolas,monospace; font-size:12px; color:var(--ink-2); line-height:1.7; word-break:break-all}
-  .staff .dev .lamp{display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--red); margin-right:8px; vertical-align:middle}
-  .staff .dev .lamp.ok{background:var(--gold)}
-  .staff button.wide{display:block; width:100%; border:1px solid var(--line); padding:12px; text-align:left; letter-spacing:.06em; color:var(--ink); margin:8px 0}
-  .staff button.wide[disabled]{opacity:.35}
-  .staff p{margin:8px 0}
-  .staff .close{position:absolute; right:14px; top:14px; font-size:20px; color:var(--ink-2); padding:6px 10px}
-
-  /* ---------- 縦持ち ---------- */
-  @media (max-aspect-ratio: 1/1){
-    .portrait img,.portrait video{object-position:60% 18%; height:52%}
-    .portrait::before{background:
-      linear-gradient(180deg, rgba(5,4,3,.35) 0%, rgba(5,4,3,0) 18%, rgba(5,4,3,0) 36%, rgba(5,4,3,.96) 54%, rgba(5,4,3,1) 100%)}
-    .panel{left:6vw; right:6vw; width:auto; bottom:34vh; flex-direction:column; align-items:stretch; gap:6px}
-    .ctl .big{font-size:30px} .ctl .alts{margin-left:50px}
-    .hint{left:6vw; right:6vw; width:auto; bottom:27vh; font-size:13px}
-    .readout{left:6vw; right:6vw; width:auto; bottom:34vh}
-    .subtitle{width:88vw; bottom:12vh; font-size:16px}
-    .hint{position:absolute; top:auto; bottom:27vh; left:6vw; right:6vw; width:auto; font-size:13px; line-height:1.6}
-    .continue{right:6vw; bottom:4vh}
-    .staffToggle{left:6vw; bottom:4vh}
+  button { color: inherit; }
+  button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 4px;
   }
-  /* 背が低い窓（PC で細く開いたとき）は左上の注意書きが束に被るので畳む。タブレットの実寸では出る */
-  @media (max-height: 640px) and (min-aspect-ratio: 1/1){ .hint{display:none} }
-  @media (prefers-reduced-motion: reduce){
-    .portrait img,.portrait video,.grain,.rec i{animation:none}
-    .in{transition-duration:.01s}
+  .skip {
+    position: fixed;
+    z-index: 20;
+    left: 12px;
+    top: 12px;
+    padding: 10px 14px;
+    background: var(--ink);
+    color: var(--bg);
+    transform: translateY(-160%);
+    transition: transform .2s var(--ease);
+  }
+  .skip:focus { transform: none; }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .stage {
+    min-height: 100svh;
+    display: grid;
+    grid-template-columns: minmax(540px, 52%) minmax(0, 48%);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "header portrait"
+      "content portrait"
+      "footer footer";
+    overflow: clip;
+  }
+  .topbar {
+    grid-area: header;
+    z-index: 2;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    padding: max(20px, env(safe-area-inset-top)) 38px 12px max(38px, env(safe-area-inset-left));
+  }
+  .brand {
+    margin: 0;
+    font-size: clamp(17px, 1.8vw, 23px);
+    font-weight: 500;
+    letter-spacing: .32em;
+    white-space: nowrap;
+  }
+  .brand::after {
+    content: "";
+    display: block;
+    width: 54px;
+    height: 5px;
+    margin-top: 7px;
+    background: repeating-linear-gradient(120deg, var(--red) 0 5px, transparent 5px 9px);
+  }
+  .connection {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    color: var(--muted);
+    font: 11px/1.3 var(--sans);
+    letter-spacing: .08em;
+    text-align: right;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .connection-dot {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 8px;
+    border: 1px solid currentColor;
+    transform: rotate(45deg);
+  }
+  .connection[data-state="online"] { color: var(--gold); }
+  .connection[data-state="online"] .connection-dot { background: currentColor; }
+  .connection[data-state="offline"] { color: var(--error); }
+  .staff-label { margin-left: 6px; padding-left: 12px; border-left: 1px solid var(--line); color: var(--muted); }
+
+  .portrait {
+    grid-area: portrait;
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    background: #0d0907;
+    overflow: hidden;
+  }
+  .portrait img {
+    width: 100%;
+    height: 100%;
+    min-height: 560px;
+    display: block;
+    object-fit: cover;
+    object-position: 95% center;
+    filter: saturate(.84) contrast(1.04) brightness(.92);
+  }
+  .portrait::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, var(--bg) 0, rgba(8, 6, 4, .22) 12%, transparent 35%),
+      linear-gradient(180deg, rgba(8, 6, 4, .18), transparent 25%, transparent 70%, rgba(8, 6, 4, .7));
+  }
+
+  .content {
+    grid-area: content;
+    position: relative;
+    z-index: 2;
+    width: min(100%, 760px);
+    min-width: 0;
+    padding: 8px 42px 28px max(38px, env(safe-area-inset-left));
+    align-self: center;
+  }
+  h1 {
+    margin: 0 0 20px;
+    font-size: clamp(27px, 3vw, 42px);
+    font-weight: 500;
+    line-height: 1.18;
+    letter-spacing: .12em;
+    text-wrap: balance;
+    scroll-margin-top: 24px;
+  }
+  .notice {
+    margin-bottom: 22px;
+    padding: 14px 0 15px;
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--gold);
+    font: 11px/1.3 var(--sans);
+    text-transform: uppercase;
+    letter-spacing: .22em;
+  }
+  .notice-body {
+    margin: 0;
+    max-width: 44em;
+    color: var(--ink);
+    font-size: clamp(16px, 1.45vw, 19px);
+    line-height: 1.65;
+    letter-spacing: .025em;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+  .system-note {
+    margin: -8px 0 18px;
+    padding: 10px 12px;
+    border-left: 2px solid var(--gold);
+    background: rgba(231, 207, 159, .07);
+    color: var(--ink);
+    font-size: 15px;
+  }
+
+  .surface {
+    transition: opacity .34s var(--ease), transform .34s var(--ease);
+  }
+  .surface:not(.is-active) {
+    position: absolute;
+    inset: 8px 42px 28px max(38px, env(safe-area-inset-left));
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+  }
+  .surface[hidden] { display: none; }
+  .settings { margin: 0; }
+  fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: 0 0 17px;
+    border: 0;
+  }
+  fieldset + fieldset {
+    padding-top: 15px;
+    border-top: 1px solid var(--line);
+  }
+  legend {
+    width: 100%;
+    margin: 0 0 9px;
+    padding: 0;
+    color: var(--muted);
+    font: 12px/1.3 var(--sans);
+    letter-spacing: .16em;
+  }
+  .choices {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .choices.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .choice {
+    position: relative;
+    min-width: 0;
+    min-height: 54px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-bottom-color: var(--line-strong);
+    background: rgba(242, 232, 215, .02);
+    cursor: pointer;
+    transition:
+      color .25s var(--ease),
+      background-color .25s var(--ease),
+      border-color .25s var(--ease),
+      transform .25s var(--ease);
+  }
+  .choice:hover {
+    border-color: var(--line-strong);
+    background: rgba(242, 232, 215, .055);
+  }
+  .choice:active { transform: translateY(1px); }
+  .choice::after {
+    content: "";
+    position: absolute;
+    left: -1px;
+    top: 12px;
+    bottom: 12px;
+    width: 3px;
+    background: var(--red);
+    transform: scaleY(0);
+    transition: transform .35s var(--ease);
+  }
+  .choice:has(input:checked)::after { transform: scaleY(1); }
+  .choice:focus-within { outline: 2px solid var(--gold); outline-offset: 3px; }
+  .choice input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    overflow: hidden;
+  }
+  .choice-text {
+    min-width: 0;
+    font-size: clamp(16px, 1.55vw, 20px);
+    line-height: 1.2;
+    letter-spacing: .035em;
+    overflow-wrap: anywhere;
+  }
+  .choice-mark {
+    width: 16px;
+    height: 16px;
+    margin-left: auto;
+    flex: 0 0 16px;
+    display: grid;
+    place-items: center;
+    border: 1px solid transparent;
+    color: transparent;
+    font: 11px/1 var(--sans);
+    transform: rotate(45deg);
+    transition:
+      color .25s var(--ease),
+      background-color .25s var(--ease),
+      border-color .25s var(--ease);
+  }
+  .choice-mark::before { content: ""; width: 7px; height: 4px; border: solid currentColor; border-width: 0 0 1px 1px; transform: rotate(-90deg); }
+  .choice:has(input:checked) {
+    border-bottom-color: var(--gold);
+    background: linear-gradient(100deg, rgba(168, 34, 41, .20), rgba(242, 232, 215, .035));
+    color: #fff9ee;
+  }
+  .choice input:checked ~ .choice-mark {
+    border-color: var(--gold);
+    background: var(--red-deep);
+    color: var(--ink);
+  }
+  .relief-description {
+    min-height: 3.25em;
+    margin: 9px 0 0 2px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-line;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity .28s var(--ease), transform .28s var(--ease);
+  }
+  .relief-description.is-visible { opacity: 1; transform: none; }
+
+  .result { padding-top: 2px; }
+  .result-state {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 12px 14px;
+    align-items: center;
+    margin-bottom: 22px;
+  }
+  .status-glyph {
+    grid-row: 1 / span 2;
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line-strong);
+    color: var(--ink);
+    font: 17px/1 var(--sans);
+    transform: rotate(45deg);
+  }
+  .status-glyph span { transform: rotate(-45deg); }
+  .result[data-tone="ok"] .status-glyph {
+    border-color: var(--gold);
+    background: rgba(231, 207, 159, .11);
+    color: var(--gold);
+  }
+  .result[data-tone="error"] .status-glyph {
+    border-color: var(--error);
+    color: var(--error);
+  }
+  .result-title {
+    margin: 0;
+    font-size: clamp(22px, 2.4vw, 32px);
+    font-weight: 500;
+    line-height: 1.25;
+    letter-spacing: .07em;
+    overflow-wrap: anywhere;
+  }
+  .result-detail {
+    margin: 0;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .values {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .values th, .values td {
+    padding: 11px 10px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .values thead th {
+    color: var(--muted);
+    font: 11px/1.3 var(--sans);
+    letter-spacing: .12em;
+  }
+  .values thead th:first-child { width: 29%; }
+  .values tbody th {
+    color: var(--muted);
+    font: 12px/1.3 var(--sans);
+    font-weight: 400;
+    letter-spacing: .08em;
+  }
+  .values td {
+    color: var(--ink);
+    font-size: clamp(16px, 1.7vw, 21px);
+    font-variant-numeric: tabular-nums;
+  }
+  .result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .secondary, .retry {
+    min-height: 50px;
+    padding: 10px 17px;
+    border: 1px solid var(--line-strong);
+    background: rgba(242, 232, 215, .035);
+    font-size: 16px;
+    letter-spacing: .06em;
+    cursor: pointer;
+    transition:
+      color .25s var(--ease),
+      background-color .25s var(--ease),
+      border-color .25s var(--ease),
+      transform .25s var(--ease);
+  }
+  .secondary:hover, .retry:hover {
+    border-color: var(--gold);
+    background: rgba(242, 232, 215, .08);
+  }
+  .secondary:active, .retry:active { transform: translateY(1px); }
+  .retry {
+    border-color: var(--red);
+    background: rgba(168, 34, 41, .16);
+  }
+
+  .footer {
+    grid-area: footer;
+    position: relative;
+    z-index: 3;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 30px;
+    min-height: 126px;
+    padding:
+      20px
+      max(38px, env(safe-area-inset-right))
+      max(26px, env(safe-area-inset-bottom))
+      max(38px, env(safe-area-inset-left));
+    background: linear-gradient(180deg, transparent, rgba(8, 6, 4, .94) 43%);
+  }
+  .subtitle {
+    justify-self: center;
+    align-self: center;
+    width: min(100%, 760px);
+    min-height: 3.2em;
+    position: relative;
+    text-align: center;
+    font-size: clamp(16px, 1.65vw, 21px);
+    line-height: 1.6;
+    letter-spacing: .04em;
+    text-wrap: balance;
+    text-shadow: 0 2px 14px #000;
+  }
+  .subtitle-reserve { visibility: hidden; }
+  .subtitle-typed { position: absolute; inset: 0; }
+  .subtitle-dash { color: var(--gold); margin-right: .45em; }
+  .primary {
+    min-height: 62px;
+    max-width: 320px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 13px;
+    padding: 12px 19px;
+    border: 1px solid var(--line-strong);
+    background: rgba(8, 6, 4, .72);
+    font-size: clamp(16px, 1.55vw, 20px);
+    line-height: 1.25;
+    letter-spacing: .08em;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      color .28s var(--ease),
+      background-color .28s var(--ease),
+      border-color .28s var(--ease),
+      transform .28s var(--ease);
+  }
+  .primary::before {
+    content: "";
+    width: 19px;
+    height: 19px;
+    flex: 0 0 19px;
+    border: 1px solid var(--gold);
+    background: var(--red-deep);
+    transform: rotate(45deg);
+  }
+  .primary:hover {
+    border-color: var(--gold);
+    background: rgba(97, 20, 25, .36);
+  }
+  .primary:active { transform: translateY(1px); }
+  .primary[disabled] { cursor: wait; opacity: .52; }
+  .primary[hidden] { display: none; }
+
+  .staff-dialog {
+    width: min(92vw, 520px);
+    max-height: min(86vh, 700px);
+    padding: 26px;
+    border: 1px solid var(--line-strong);
+    background: #0d0a07;
+    color: var(--ink);
+    box-shadow: 0 28px 80px rgba(0, 0, 0, .7);
+    overscroll-behavior: contain;
+  }
+  .staff-dialog::backdrop { background: rgba(0, 0, 0, .72); }
+  .staff-dialog h2 {
+    margin: 0 42px 18px 0;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: .08em;
+  }
+  .staff-close {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--line);
+    background: transparent;
+    cursor: pointer;
+  }
+  .staff-summary {
+    min-height: 8em;
+    margin: 0 0 16px;
+    padding: 14px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font: 13px/1.8 ui-monospace, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .staff-message {
+    min-height: 1.6em;
+    margin: 10px 0;
+    color: var(--gold);
+    font: 13px/1.6 var(--sans);
+  }
+  .staff-clear {
+    min-height: 48px;
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--red);
+    background: rgba(168, 34, 41, .14);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .staff-clear[disabled] { opacity: .45; cursor: default; }
+
+  @media (max-width: 980px) {
+    .stage { grid-template-columns: minmax(500px, 58%) minmax(0, 42%); }
+    .topbar { padding-left: 26px; padding-right: 22px; }
+    .content { padding-left: 26px; padding-right: 28px; }
+    .surface:not(.is-active) { left: 26px; right: 28px; }
+    .choice { padding-inline: 9px; }
+    .footer { padding-left: 26px; padding-right: 26px; }
+  }
+
+  @media (max-aspect-ratio: 4/5), (max-width: 720px) {
+    .stage {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto clamp(190px, 30vh, 330px) auto auto;
+      grid-template-areas:
+        "header"
+        "portrait"
+        "content"
+        "footer";
+      overflow: visible;
+    }
+    .topbar {
+      padding:
+        max(15px, env(safe-area-inset-top))
+        max(20px, env(safe-area-inset-right))
+        12px
+        max(20px, env(safe-area-inset-left));
+    }
+    .portrait img {
+      min-height: 0;
+      object-position: 54% 31%;
+    }
+    .portrait::after {
+      background: linear-gradient(180deg, rgba(8, 6, 4, .15), transparent 46%, var(--bg));
+    }
+    .content {
+      width: 100%;
+      padding:
+        8px
+        max(24px, env(safe-area-inset-right))
+        26px
+        max(24px, env(safe-area-inset-left));
+    }
+    .surface:not(.is-active) {
+      inset:
+        0
+        max(24px, env(safe-area-inset-right))
+        0
+        max(24px, env(safe-area-inset-left));
+    }
+    h1 { margin-bottom: 16px; }
+    .notice { margin-bottom: 18px; }
+    .footer {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+      min-height: 0;
+      padding:
+        18px
+        max(24px, env(safe-area-inset-right))
+        max(24px, env(safe-area-inset-bottom))
+        max(24px, env(safe-area-inset-left));
+      background: var(--bg);
+    }
+    .subtitle {
+      justify-self: stretch;
+      min-height: 3.2em;
+    }
+    .primary {
+      width: 100%;
+      max-width: none;
+      justify-self: stretch;
+    }
+  }
+
+  @media (max-width: 500px) {
+    .brand { font-size: 16px; }
+    .connection { max-width: 46%; font-size: 10px; }
+    .stage { grid-template-rows: auto 180px auto auto; }
+    .content {
+      padding-left: max(18px, env(safe-area-inset-left));
+      padding-right: max(18px, env(safe-area-inset-right));
+    }
+    .surface:not(.is-active) {
+      left: max(18px, env(safe-area-inset-left));
+      right: max(18px, env(safe-area-inset-right));
+    }
+    h1 { font-size: 27px; }
+    .notice-body { font-size: 16px; line-height: 1.58; }
+    .choices {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 7px;
+    }
+    .choice { min-height: 62px; padding: 10px 5px; justify-content: center; gap: 5px; flex-wrap: wrap; }
+    .choice-mark { position: absolute; bottom: -1px; right: -1px; width: 9px; height: 3px; transform: none; border: 0; }
+    .choice-mark::before { content: none; }
+    .choice input:checked ~ .choice-mark { width: 100%; background: var(--gold); }
+    .relief-description { min-height: 3.2em; }
+    .values th, .values td { padding-inline: 6px; }
+    .values thead th:first-child { width: 26%; }
+    .footer {
+      padding-left: max(18px, env(safe-area-inset-left));
+      padding-right: max(18px, env(safe-area-inset-right));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      scroll-behavior: auto !important;
+      transition-duration: .01ms !important;
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+    }
   }
 </style>
 </head>
 <body>
+<a class="skip" href="#main">設定へ移動</a>
 <div class="stage">
-  <div class="portrait"><img id="doctor" src="./asset/doctor.jpg" alt="" draggable="false"></div>
-  <div class="grain"></div>
-
-  <header>
-    <div class="mark in" style="--i:0">廻リ視<small>observation unit</small></div>
-    <div class="rec in" style="--i:1"><i></i>rec <span class="clock" id="clock">--:--:--</span></div>
+  <header class="topbar">
+    <p class="brand" translate="no">廻リ視</p>
+    <button class="connection" id="staffToggle" data-state="checking" type="button" aria-haspopup="dialog" aria-label="スタッフ情報を開く">
+      <span class="connection-dot" aria-hidden="true"></span>
+      <span id="connectionText" role="status" aria-live="polite">接続を確認中…</span>
+      <span class="staff-label" id="staffLabel">スタッフ</span>
+    </button>
   </header>
 
-  <div class="panel" id="panel">
-    <div class="ctl in focus" id="ctlLang" style="--i:2" data-key="lang">
-      <span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br bb"></span>
-      <div class="tab"><b id="tLang">言語</b><span class="hatch"></span></div>
-      <div class="val">
-        <div class="arrows"><button data-step="-1" aria-label="up">▲</button><button data-step="1" aria-label="down">▼</button></div>
-        <div class="big" id="vLang"><span>日本語</span></div>
+  <figure class="portrait" aria-hidden="true">
+    <img src="./asset/doctor.jpg" alt="" width="1672" height="941" draggable="false" fetchpriority="high">
+  </figure>
+
+  <main class="content" id="main">
+    <section class="surface settings is-active" id="settingsView" aria-labelledby="pageTitle">
+      <h1 id="pageTitle">体験の前に</h1>
+      <div class="notice" id="notice">
+        <span class="eyebrow" id="noticeLabel">注意</span>
+        <p class="notice-body" id="noticeBody"></p>
       </div>
-      <div class="alts" id="aLang"></div>
-      <div class="rule"></div>
-    </div>
-    <div class="ctl in" id="ctlRelief" style="--i:3" data-key="relief">
-      <span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br bb"></span>
-      <div class="tab"><b id="tRelief">軽減</b><span class="hatch"></span></div>
-      <div class="val">
-        <div class="arrows"><button data-step="-1" aria-label="up">▲</button><button data-step="1" aria-label="down">▼</button></div>
-        <div class="big" id="vRelief"><span>なし</span></div>
+      <p class="system-note" id="restartNotice" role="status" hidden></p>
+
+      <form class="settings" id="settingsForm">
+        <fieldset>
+          <legend id="languageLegend">言語</legend>
+          <div class="choices">
+            <label class="choice">
+              <input type="radio" name="lang" value="ja" checked>
+              <span class="choice-text">日本語</span>
+              <span class="choice-mark" aria-hidden="true"></span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="lang" value="en">
+              <span class="choice-text">English</span>
+              <span class="choice-mark" aria-hidden="true"></span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="lang" value="fr">
+              <span class="choice-text">Français</span>
+              <span class="choice-mark" aria-hidden="true"></span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend id="reliefLegend">ホラー軽減</legend>
+          <div class="choices two">
+            <label class="choice">
+              <input type="radio" name="relief" value="off" checked>
+              <span class="choice-text" id="reliefOff">なし</span>
+              <span class="choice-mark" aria-hidden="true"></span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="relief" value="on">
+              <span class="choice-text" id="reliefOn">あり</span>
+              <span class="choice-mark" aria-hidden="true"></span>
+            </label>
+          </div>
+          <p class="relief-description" id="reliefDesc" aria-hidden="true"></p>
+        </fieldset>
+      </form>
+    </section>
+
+    <section class="surface result" id="resultView" aria-labelledby="resultTitle" aria-hidden="true" hidden inert>
+      <div class="result-state" role="status" aria-live="polite" aria-atomic="true">
+        <div class="status-glyph" aria-hidden="true"><span id="resultGlyph">…</span></div>
+        <h2 class="result-title" id="resultTitle" tabindex="-1">送信中</h2>
+        <p class="result-detail" id="resultDetail"></p>
       </div>
-      <div class="alts" id="aRelief"></div>
-      <div class="desc" id="reliefDesc"></div>
-      <div class="rule"></div>
+      <table class="values">
+        <thead>
+          <tr>
+            <th scope="col"><span class="sr-only" id="itemHeading">項目</span></th>
+            <th scope="col" id="selectedHeading">選んだ設定</th>
+            <th scope="col" id="headsetHeading">ヘッドセット</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" id="resultLanguageLabel">言語</th>
+            <td id="selectedLanguage">日本語</td>
+            <td id="headsetLanguage">—</td>
+          </tr>
+          <tr>
+            <th scope="row" id="resultReliefLabel">ホラー軽減</th>
+            <td id="selectedRelief">なし</td>
+            <td id="headsetRelief">—</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="result-actions">
+        <button class="retry" id="retryBtn" type="button" hidden>もう一度送る</button>
+        <button class="secondary" id="editBtn" type="button" hidden>設定を変える</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="subtitle" id="subtitle" aria-hidden="true">
+      <span class="subtitle-reserve" id="subtitleReserve"></span>
+      <span class="subtitle-typed"><span class="subtitle-dash">―</span><span id="subtitleTyped"></span></span>
     </div>
-  </div>
-  <div class="hint in" id="hint" style="--i:4"><small id="hintCap">notice</small><div id="hintBody"></div></div>
-
-  <div class="readout" id="readout">
-    <div class="head"><span class="glyph" id="rG">…</span><span id="rH">—</span></div>
-    <div class="sub" id="rD"></div>
-    <div class="rows">
-      <div class="r" id="rowLang"><span class="k" id="kLang">言語</span><span class="sent" id="sLang">—</span><span class="arrow">→</span><span class="got" id="gLang">—</span><span class="mark" id="mLang">…</span></div>
-      <div class="r" id="rowRelief"><span class="k" id="kRelief">軽減</span><span class="sent" id="sRelief">—</span><span class="arrow">→</span><span class="got" id="gRelief">—</span><span class="mark" id="mRelief">…</span></div>
-    </div>
-    <div class="acts"><button class="again" id="editBtn">edit</button></div>
-  </div>
-
-  <div class="subtitle in" id="subtitle" style="--i:5"></div>
-
-  <button class="continue in" id="sendBtn" style="--i:6"><span class="ring"></span><span class="jp" id="sendLabel">この設定で始める</span></button>
-  <button class="staffToggle" id="staffToggle">staff</button>
-
-  <aside class="staff" id="staff">
-    <button class="close" id="staffClose" aria-label="close">×</button>
-    <h3>このヘッドセット</h3>
-    <div class="dev" id="dev">読み込み中…</div>
-    <button class="wide" id="clearBtn">枠を空にする（次の人は日本語・軽減なしから）</button>
-    <p>この面はヘッドセット自身が配っている（PC も卓も経由しない）。α 用のタブレットは α の機の URL（.31）、β 用は .32 を開く。</p>
-    <p>体験者が A を押して始めた瞬間に、ヘッドセットが枠を空にする。送ったまま帰った人の設定が残っていたら上のボタン。枠が空でも、いま出ている値はそのまま。戻すのはランのやり直し。</p>
-    <p>博士の画は <code>./asset/doctor.jpg</code>。動画に差し替えるときは同じ名前で <code>.mp4</code> を置く。</p>
-  </aside>
+    <p class="sr-only" id="subtitleAnnouncement" role="status" aria-live="polite" aria-atomic="true"></p>
+    <button class="primary" id="sendBtn" type="submit" form="settingsForm">
+      <span id="submitLabel">この設定で始める</span>
+    </button>
+  </footer>
 </div>
+
+<dialog class="staff-dialog" id="staff">
+  <button class="staff-close" id="staffClose" type="button" aria-label="閉じる">×</button>
+  <h2>スタッフ情報</h2>
+  <div class="staff-summary" id="staffSummary">読み込み中…</div>
+  <p class="staff-message" id="staffMessage" role="status" aria-live="polite"></p>
+  <button class="staff-clear" id="clearBtn" type="button">予約を取り消す</button>
+</dialog>
 
 <script>
 (() => {
   'use strict';
-  // ---- 文言（体験者が読む面。3 言語）----------------------------------------
-  // ⚠ 注意書きは HMD の TitleNotice と同じ文。片方だけ直すと受付とヘッドセットで食い違う。
+
   const T = {
     ja: {
-      tLang: '言語', tRelief: 'ホラー軽減', kLang: '言語', kRelief: 'ホラー軽減',
+      pageTitle: '体験の前に', noticeLabel: '注意', language: '言語', relief: 'ホラー軽減',
       reliefOn: 'あり', reliefOff: 'なし',
       reliefDesc: 'すべての演出の音量が半分になり、\n陽気な曲が流れます。',
       ask: '使う言語と、恐怖を和らげるかどうかを、教えてください。',
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
-      send: 'この設定で始める', edit: '設定を変える',
-      pre: { noserver: 'ヘッドセットに繋がっていません。スタッフを呼んでください' },
+      send: 'この設定で始める', edit: '設定を変える', retry: 'もう一度送る',
+      selected: '選んだ設定', headset: 'ヘッドセット', item: '項目',
+      restarted: 'ヘッドセットが再起動しました。設定を選び直してください。',
+      staff: 'スタッフ', staffOpen: 'スタッフ情報を開く', skip: '設定へ移動',
+      connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
-        sending: ['送っています', ''],
-        applied: ['ヘッドセットに反映されました', 'スタッフの案内でヘッドセットを着けてください'],
-        waiting: ['ヘッドセットの反映を待っています', '注意書きの画面になると反映されます'],
-        later: ['いまヘッドセットは体験中です', '次の体験の開始時に反映されます'],
-        noserver: ['ヘッドセットに繋がっていません', 'スタッフを呼んでください'],
-        fail: ['送れませんでした', 'もう一度押してください'],
+        sending: ['送信中', 'ヘッドセットへ設定を送っています'],
+        applied: ['反映済み', 'スタッフの案内でヘッドセットを着けてください'],
+        waiting: ['反映待ち', '注意書きの画面になると反映されます'],
+        later: ['次回の開始待ち', 'いまの体験が終わると、次の開始時に反映されます'],
+        noserver: ['ヘッドセットを確認できません', '通信の回復を待っています。スタッフを呼んでください'],
+        fail: ['送信を確認できませんでした', '設定が届いたか確認できません。もう一度送れます'],
       },
     },
     en: {
-      tLang: 'Language', tRelief: 'Reduced horror', kLang: 'Language', kRelief: 'Reduced horror',
+      pageTitle: 'Before the experience', noticeLabel: 'Notice', language: 'Language', relief: 'Reduced horror',
       reliefOn: 'on', reliefOff: 'off',
       reliefDesc: 'All sound is halved,\nand a cheerful tune plays.',
       ask: 'Tell me your language, and whether you would like the horror softened.',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
-      send: 'Start with these settings', edit: 'Change settings',
-      pre: { noserver: 'Not connected to the headset. Please call a member of staff' },
+      send: 'Start with these settings', edit: 'Change settings', retry: 'Send again',
+      selected: 'Selected settings', headset: 'Headset', item: 'Item',
+      restarted: 'The headset restarted. Please choose the settings again.',
+      staff: 'Staff', staffOpen: 'Open staff information', skip: 'Skip to settings',
+      connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
-        sending: ['Sending', ''],
-        applied: ['Applied on the headset', 'Put on the headset when staff guide you'],
-        waiting: ['Waiting for the headset', 'It applies once the headset shows the notice screen'],
-        later: ['The headset is in use right now', 'It will apply when the next session starts'],
-        noserver: ['Not connected to the headset', 'Please call a member of staff'],
-        fail: ['Could not send', 'Please press again'],
+        sending: ['Sending', 'Sending the settings to the headset'],
+        applied: ['Settings applied', 'Put on the headset when staff guide you'],
+        waiting: ['Waiting to apply', 'They will apply when the notice screen appears'],
+        later: ['Waiting for the next session', 'They will apply when the next session starts'],
+        noserver: ['Connection unknown', 'The headset connection cannot be confirmed. Please call a member of staff'],
+        fail: ['Could not confirm delivery', 'Delivery could not be confirmed. You can send the settings again'],
       },
     },
     fr: {
-      tLang: 'Langue', tRelief: 'Horreur atténuée', kLang: 'Langue', kRelief: 'Horreur atténuée',
+      pageTitle: 'Avant l’expérience', noticeLabel: 'Attention', language: 'Langue', relief: 'Horreur atténuée',
       reliefOn: 'oui', reliefOff: 'non',
       reliefDesc: 'Tout le son est réduit de moitié,\net une musique gaie est diffusée.',
       ask: 'Dites-moi votre langue, et si vous souhaitez que l’horreur soit atténuée.',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
-      send: 'Commencer avec ces réglages', edit: 'Modifier les réglages',
-      pre: { noserver: 'Non connecté au casque. Appelez un membre du personnel' },
+      send: 'Commencer avec ces réglages', edit: 'Modifier les réglages', retry: 'Renvoyer',
+      selected: 'Réglages choisis', headset: 'Casque', item: 'Élément',
+      restarted: 'Le casque a redémarré. Veuillez choisir de nouveau les réglages.',
+      staff: 'Personnel', staffOpen: 'Ouvrir les informations du personnel', skip: 'Aller aux réglages',
+      connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
-        sending: ['Envoi', ''],
-        applied: ['Appliqué sur le casque', 'Mettez le casque quand le personnel vous guide'],
-        waiting: ['En attente du casque', 'Appliqué dès que le casque affiche l’avertissement'],
-        later: ['Le casque est en cours d’utilisation', 'Appliqué au début de la prochaine session'],
-        noserver: ['Non connecté au casque', 'Appelez un membre du personnel'],
-        fail: ['Envoi impossible', 'Appuyez de nouveau'],
+        sending: ['Envoi en cours', 'Envoi des réglages au casque'],
+        applied: ['Réglages appliqués', 'Mettez le casque quand le personnel vous guide'],
+        waiting: ['En attente d’application', 'Ils seront appliqués à l’écran d’avertissement'],
+        later: ['En attente de la prochaine session', 'Ils seront appliqués au début de la prochaine session'],
+        noserver: ['Connexion non vérifiable', 'La connexion au casque ne peut pas être confirmée. Appelez un membre du personnel'],
+        fail: ['Envoi non confirmé', 'La réception n’a pas pu être confirmée. Vous pouvez renvoyer les réglages'],
       },
     },
   };
-  const LANGS = ['ja', 'en', 'fr'];
+
   const LANG_NAME = { ja: '日本語', en: 'English', fr: 'Français' };
-  const GLYPH = { applied: '✓', waiting: '…', sending: '…', later: '⏳', noserver: '✕', fail: '✕' };
-  const TONE = { applied: 'ok', waiting: 'wait', sending: 'wait', later: 'wait', noserver: 'ng', fail: 'ng' };
-
+  const CPS = { ja: 12, en: 18, fr: 18 };
   const $ = (id) => document.getElementById(id);
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const state = {
-    lang: 'ja', relief: false, focus: 'lang',
-    sent: null,          // 最後に送ったもの {lang, relief, seq}
-    ui: 'idle',          // idle | sending | sent | fail
-    view: 'edit',        // edit（束を出している）| result（読み出しを出している）
-    st: null, online: false,
+    lang: 'ja',
+    relief: false,
+    sent: null,
+    ui: 'idle',
+    view: 'edit',
+    status: null,
+    connection: 'checking',
     subtitleKey: '',
+    appliedSeen: false,
+    leftWaitAfterApplied: false,
+    restartMessage: false,
+    lastReceived: null,
+    clearing: false,
   };
-
-  // ---- 大きな値の入れ替え（上下へ滑る）------------------------------------
-  // ⚠ 「いまの 1 枚」は el._cur で持つ。querySelector で拾うと、滑っている最中にもう一度切り替えたとき
-  //   出て行く途中の古い枚を「いま」と誤認して、新しい枚が 2 枚残る（文字が重なる）。
-  //   animate=false なら滑らせずに文字だけ替える（言語を替えたときの軽減の訳語など、値が変わっていないもの）。
-  function swapBig(el, text, dir, animate) {
-    const cur = el._cur || el.querySelector('span');
-    if (cur && cur.textContent === text && !cur.classList.contains('out-up') && !cur.classList.contains('out-dn')) return;
-    // 出て行く途中のものは今すぐ消す（重ねない）
-    el.querySelectorAll('span').forEach((sp) => { if (sp !== cur) sp.remove(); });
-    if (!animate) {
-      if (cur) { cur.className = ''; cur.textContent = text; el._cur = cur; return; }
-    }
-    const next = document.createElement('span');
-    next.textContent = text;
-    next.className = animate ? (dir < 0 ? 'in-dn' : 'in-up') : '';
-    el.appendChild(next);
-    el._cur = next;
-    if (cur) {
-      cur.className = dir < 0 ? 'out-dn' : 'out-up';
-      setTimeout(() => { if (cur.parentNode && cur !== el._cur) cur.remove(); }, 600);
-    }
-    if (animate) setTimeout(() => { if (next === el._cur) next.className = ''; }, 20);
+  let typeTimer = null;
+  let surfaceTimer = null;
+  let pollInFlight = null;
+  let pollController = null;
+  function setText(id, text) {
+    if ($(id).textContent !== text) $(id).textContent = text;
   }
 
-  // ---- 字幕（博士の言葉）------------------------------------------------
-  // 1 文だけ。**1 字ずつ打たれる**（HMD の連絡の面と同じ速さ: 日本語 12 / Latin 18 字/秒）。
-  // 言語を替えると頭から言い直す（あとでユーザーが音声とリップシンクを付ける。文はその台本になる）。
-  // 回転はしない（0191「設定の画面では字幕が切り替わる必要はあんまりない」）。
-  const CPS = { ja: 12, en: 18, fr: 18 };
-  let typeTimer = null;
   function setSubtitle(text, key) {
-    if (key === state.subtitleKey) return;
+    if (state.subtitleKey === key) return;
     state.subtitleKey = key;
-    if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
-    const box = $('subtitle');
-    box.innerHTML = '';
-    const lines = String(text).split('\n');
-    const nodes = lines.map((ln, k) => {
-      const sp = document.createElement('span');
-      sp.className = 'line';
-      sp.style.animation = 'none'; sp.style.opacity = '1'; sp.style.transform = 'none';
-      if (k === 0) { const d = document.createElement('span'); d.className = 'dash'; d.textContent = '―'; sp.appendChild(d); }
-      const tn = document.createTextNode('');
-      sp.appendChild(tn);
-      // 打ち終わるまで行の高さを保つ（積み上がりで下の行が跳ねないように）
-      const ghost = document.createElement('span'); ghost.className = 'ghost'; ghost.textContent = ln; sp.appendChild(ghost);
-      box.appendChild(sp);
-      return { tn, ln };
-    });
-    const total = lines.reduce((a, l) => a + l.length, 0);
-    const cps = CPS[state.lang] || 12;
-    const t0 = performance.now();
+    if (typeTimer) clearInterval(typeTimer);
+    typeTimer = null;
+    $('subtitleReserve').textContent = `―${text}`;
+    $('subtitleAnnouncement').textContent = text;
+    const target = $('subtitleTyped');
+    target.textContent = '';
+    if (reducedMotion.matches) {
+      target.textContent = text;
+      return;
+    }
+    const started = performance.now();
+    const cps = CPS[state.lang];
     const step = () => {
-      let n = Math.min(total, Math.floor((performance.now() - t0) * cps / 1000));
-      for (const { tn, ln } of nodes) { const take = Math.min(n, ln.length); tn.textContent = ln.slice(0, take); n -= take; }
-      if (n >= 0 && nodes.every(({ tn, ln }) => tn.textContent.length === ln.length)) { clearInterval(typeTimer); typeTimer = null; }
+      const count = Math.min(text.length, Math.floor((performance.now() - started) * cps / 1000));
+      target.textContent = text.slice(0, count);
+      if (count >= text.length) {
+        clearInterval(typeTimer);
+        typeTimer = null;
+      }
     };
     step();
     typeTimer = setInterval(step, 40);
   }
 
-  // ---- 描画 ---------------------------------------------------------------
-  function renderText(dir, changed) {
-    const t = T[state.lang];
-    $('tLang').textContent = t.tLang; $('tRelief').textContent = t.tRelief;
-    $('kLang').textContent = t.kLang; $('kRelief').textContent = t.kRelief;
-    swapBig($('vLang'), LANG_NAME[state.lang], dir || 1, changed === 'lang');
-    swapBig($('vRelief'), state.relief ? t.reliefOn : t.reliefOff, dir || 1, changed === 'relief');
-    // 選んでいないものを下に薄く
-    $('aLang').innerHTML = LANGS.filter((l) => l !== state.lang).map((l) => `<button data-lang="${l}">${LANG_NAME[l]}</button>`).join('');
-    $('aRelief').innerHTML = `<button data-relief="${state.relief ? 0 : 1}">${state.relief ? t.reliefOff : t.reliefOn}</button>`;
-    $('hintBody').textContent = t.notice;
-    $('reliefDesc').textContent = state.relief ? t.reliefDesc : '';
-    $('reliefDesc').classList.toggle('show', state.relief);
-    $('sendLabel').textContent = t.send;
-    $('editBtn').textContent = t.edit;
-    $('ctlLang').classList.toggle('focus', state.focus === 'lang');
-    $('ctlRelief').classList.toggle('focus', state.focus === 'relief');
+  function setSurface(view, focusTarget) {
+    const current = view === 'edit' ? $('settingsView') : $('resultView');
+    if (state.view === view && !current.hidden) {
+      if (focusTarget) focusTarget.focus();
+      return;
+    }
+    if (surfaceTimer) clearTimeout(surfaceTimer);
+    const oldSurface = state.view === 'edit' ? $('settingsView') : $('resultView');
+    const newSurface = view === 'edit' ? $('settingsView') : $('resultView');
+    state.view = view;
+    $('sendBtn').hidden = view !== 'edit';
+    oldSurface.classList.remove('is-active');
+    oldSurface.setAttribute('aria-hidden', 'true');
+    oldSurface.inert = true;
+    newSurface.hidden = false;
+    newSurface.removeAttribute('aria-hidden');
+    newSurface.inert = false;
+    void newSurface.offsetWidth;
+    newSurface.classList.add('is-active');
+    surfaceTimer = setTimeout(() => { oldSurface.hidden = true; }, reducedMotion.matches ? 0 : 360);
+    if (focusTarget) focusTarget.focus();
   }
 
-  function postKey() {
+  function setFormDisabled(disabled) {
+    $('settingsForm').querySelectorAll('input, button').forEach((control) => { control.disabled = disabled; });
+    $('sendBtn').disabled = disabled;
+  }
+
+  function setDraft(lang, relief) {
+    state.lang = lang;
+    state.relief = relief;
+    document.querySelector(`input[name="lang"][value="${lang}"]`).checked = true;
+    document.querySelector(`input[name="relief"][value="${relief ? 'on' : 'off'}"]`).checked = true;
+  }
+
+  function renderText() {
+    const t = T[state.lang];
+    document.documentElement.lang = state.lang;
+    document.title = `廻リ視 — ${t.pageTitle}`;
+    document.querySelector('.skip').textContent = t.skip;
+    $('staffLabel').textContent = t.staff;
+    $('staffToggle').setAttribute('aria-label', t.staffOpen);
+    $('pageTitle').textContent = t.pageTitle;
+    $('noticeLabel').textContent = t.noticeLabel;
+    $('noticeBody').textContent = t.notice.split('\n\n').map(paragraph => paragraph.replace(/\n/g, state.lang === 'ja' ? '' : ' ')).join('\n\n');
+    $('languageLegend').textContent = t.language;
+    $('reliefLegend').textContent = t.relief;
+    $('reliefOff').textContent = t.reliefOff;
+    $('reliefOn').textContent = t.reliefOn;
+    $('reliefDesc').textContent = t.reliefDesc;
+    $('submitLabel').textContent = t.send;
+    $('editBtn').textContent = t.edit;
+    $('retryBtn').textContent = t.retry;
+    $('selectedHeading').textContent = t.selected;
+    $('headsetHeading').textContent = t.headset;
+    $('itemHeading').textContent = t.item;
+    $('resultLanguageLabel').textContent = t.language;
+    $('resultReliefLabel').textContent = t.relief;
+    $('connectionText').textContent = t.connection[state.connection];
+    $('restartNotice').textContent = t.restarted;
+    $('restartNotice').hidden = !state.restartMessage;
+    setSubtitle(t.ask, `ask:${state.lang}`);
+  }
+
+  function renderReliefDescription() {
+    $('reliefDesc').classList.toggle('is-visible', state.relief);
+    $('reliefDesc').setAttribute('aria-hidden', String(!state.relief));
+  }
+
+  function resultKey() {
     if (state.ui === 'sending' || state.ui === 'fail') return state.ui;
-    if (!state.online || !state.st) return 'noserver';
-    const s = state.st;
-    const hit = s.lang === state.sent.lang && s.relief === state.sent.relief
-      && s.appliedSeq >= state.sent.seq && state.sent.seq > 0;
-    if (hit) return 'applied';
-    if (s.phase === 'RUN' || s.phase === 'END') return 'later';
+    if (state.connection !== 'online' || !state.status) return 'noserver';
+    const actual = state.status;
+    const sent = state.sent;
+    if (sent && sent.seq > 0 && actual.lang === sent.lang && actual.relief === sent.relief && actual.appliedSeq >= sent.seq) return 'applied';
+    if (actual.phase === 'RUN' || actual.phase === 'END') return 'later';
     return 'waiting';
   }
 
-  function renderStatus() {
+  function renderResult() {
+    if (!state.sent) return;
     const t = T[state.lang];
-    // 束を出すのは: まだ送っていない / 「設定を変える」で戻った。送っている最中と失敗は読み出し側。
-    const before = state.view === 'edit' && state.ui !== 'sending' && state.ui !== 'fail';
-    if (before) {
-      $('panel').style.opacity = ''; $('panel').style.pointerEvents = ''; $('hint').style.opacity = '';
-      $('readout').classList.remove('show', 'ok', 'wait', 'ng');
-      $('sendBtn').disabled = false; $('sendBtn').classList.remove('busy', 'done');
-      setSubtitle(state.online ? t.ask : t.pre.noserver, 'ask:' + state.lang + ':' + state.online);
-      return;
-    }
-    const key = postKey();
-    const s = t.post[key];
-    $('panel').style.opacity = '0'; $('panel').style.pointerEvents = 'none'; $('hint').style.opacity = '0';
-    const ro = $('readout');
-    ro.classList.add('show'); ro.classList.remove('ok', 'wait', 'ng'); ro.classList.add(TONE[key] || 'wait');
-    $('rG').textContent = GLYPH[key] || '…';
-    $('rH').textContent = s[0]; $('rD').textContent = s[1];
-    $('sendBtn').disabled = key === 'sending';
-    $('sendBtn').classList.toggle('busy', key === 'sending' || key === 'waiting');
-    $('sendBtn').classList.toggle('done', key === 'applied');
-    setSubtitle(s[1] || s[0], 'post:' + key + ':' + state.lang);
-
-    const dev = state.online ? state.st : null;
-    const sent = state.sent || { lang: state.lang, relief: state.relief };
-    const gotLang = dev ? dev.lang : null;
-    const gotRelief = dev ? dev.relief : null;
-    const alive = !!dev, settled = key === 'applied', holding = key === 'later';
-    row('rowLang', 'sLang', 'gLang', 'mLang', LANG_NAME[sent.lang], gotLang == null ? '—' : LANG_NAME[gotLang] || gotLang,
-        alive && gotLang === sent.lang && settled, alive, holding);
-    row('rowRelief', 'sRelief', 'gRelief', 'mRelief', sent.relief ? t.reliefOn : t.reliefOff,
-        gotRelief == null ? '—' : (gotRelief ? t.reliefOn : t.reliefOff), alive && gotRelief === sent.relief && settled, alive, holding);
+    const key = resultKey();
+    const copy = t.post[key];
+    const actual = state.connection === 'online' ? state.status : null;
+    const glyph = { sending: '…', waiting: '…', later: '⌛', applied: '✓', fail: '×', noserver: '?' }[key];
+    const tone = key === 'applied' ? 'ok' : (key === 'fail' || key === 'noserver' ? 'error' : 'wait');
+    $('resultView').dataset.tone = tone;
+    setText('resultGlyph', glyph);
+    setText('resultTitle', copy[0]);
+    setText('resultDetail', copy[1]);
+    $('selectedLanguage').textContent = LANG_NAME[state.sent.lang];
+    $('selectedRelief').textContent = state.sent.relief ? t.reliefOn : t.reliefOff;
+    $('headsetLanguage').textContent = actual && actual.lang ? (LANG_NAME[actual.lang] || actual.lang) : '—';
+    $('headsetRelief').textContent = actual && typeof actual.relief === 'boolean' ? (actual.relief ? t.reliefOn : t.reliefOff) : '—';
+    $('retryBtn').hidden = key !== 'fail';
+    $('editBtn').hidden = key === 'sending';
+    setFormDisabled(key === 'sending');
   }
-  function row(rowId, sId, gId, mId, sentText, gotText, hit, alive, holding) {
-    $(sId).textContent = sentText; $(gId).textContent = gotText;
-    $(rowId).className = 'r ' + (hit ? 'hit' : (alive && !holding ? '' : 'stale'));
-    $(mId).textContent = hit ? '✓' : (holding ? '⏳' : (alive ? '…' : '—'));
+
+  function renderConnection() {
+    $('staffToggle').dataset.state = state.connection;
+    setText('connectionText', T[state.lang].connection[state.connection]);
   }
 
   function renderStaff() {
-    const s = state.st, box = $('dev');
-    if (!state.online || !s) {
-      box.innerHTML = `<span class="lamp"></span>${location.host}<br>応答がありません。ヘッドセットが起動しているか、同じ Wi-Fi か、URL の IP が合っているかを見る。`;
-      $('clearBtn').disabled = true; return;
+    const status = state.connection === 'online' ? state.status : null;
+    if (!status) {
+      $('staffSummary').textContent = `接続先: ${location.host}\n応答: なし\n受信回数: —\n反映回数: —\n現在設定: —\n予約: —`;
+      $('clearBtn').disabled = true;
+      return;
     }
-    const pend = s.pending ? `${LANG_NAME[s.pending.lang] || s.pending.lang} ・ 軽減 ${s.pending.relief ? 'あり' : 'なし'}（受理 ${s.pending.seq}）` : '空';
-    box.innerHTML = `<span class="lamp ok"></span>${s.model || '?'}  ${s.ip || location.hostname}:${s.port || ''}<br>
-      ${s.phase || '—'}${s.titleStage ? '／' + s.titleStage : ''} ・ いま ${LANG_NAME[s.lang] || s.lang} ・ 軽減 ${s.relief ? 'あり' : 'なし'}<br>
-      枠: ${pend}<br>書いた受理番号 ${s.appliedSeq} ・ 書いた回数 ${s.applyCount} ・ 受けた累計 ${s.received}${s.rejected ? ' ・ 読めなかった ' + s.rejected : ''}`;
-    $('clearBtn').disabled = !s.pending;
+    const pending = status.pending
+      ? `${LANG_NAME[status.pending.lang]} / ホラー軽減 ${status.pending.relief ? 'あり' : 'なし'} / 受理 ${status.pending.seq}`
+      : 'なし';
+    $('staffSummary').textContent =
+      `接続先: ${location.host}\n`
+      + `画面: ${status.phase} / ${status.titleStage}\n`
+      + `受信回数: ${status.received}\n`
+      + `反映回数: ${status.applyCount}\n`
+      + `現在設定: ${LANG_NAME[status.lang]} / ホラー軽減 ${status.relief ? 'あり' : 'なし'}\n`
+      + `予約: ${pending}`;
+    $('clearBtn').disabled = state.clearing || state.ui === 'sending' || status.pending == null;
   }
 
-  function render(dir, changed) { renderText(dir, changed); renderStatus(); renderStaff(); }
+  function render() {
+    renderText();
+    renderReliefDescription();
+    renderConnection();
+    renderStaff();
+    if (state.view === 'result') renderResult();
+  }
 
-  // ---- ヘッドセットとの通信（この面を配っている機そのもの）--------------------------
+  function observeVisitorCycle(status) {
+    if (!state.sent) return;
+    const applied = state.sent.seq > 0
+      && status.lang === state.sent.lang
+      && status.relief === state.sent.relief
+      && status.appliedSeq >= state.sent.seq;
+    if (applied) state.appliedSeen = true;
+    if (state.appliedSeen && status.pending == null && status.titleStage !== 'Wait') {
+      state.leftWaitAfterApplied = true;
+    }
+    if (!state.leftWaitAfterApplied || status.titleStage !== 'Wait') return;
+    state.sent = null;
+    state.ui = 'idle';
+    state.appliedSeen = false;
+    state.leftWaitAfterApplied = false;
+    if (state.view !== 'edit') {
+      setDraft('ja', false);
+      setFormDisabled(false);
+      setSurface('edit');
+      render();
+    }
+  }
+
+  function validSequence(value, allowZero = true) {
+    return Number.isSafeInteger(value) && value >= (allowZero ? 0 : 1);
+  }
+
+  function validateStatus(status) {
+    if (!status || typeof status !== 'object') return false;
+    const pendingValid = status.pending == null || (
+      typeof status.pending === 'object'
+      && Object.hasOwn(LANG_NAME, status.pending.lang)
+      && typeof status.pending.relief === 'boolean'
+      && validSequence(status.pending.seq, false)
+    );
+    return status && status.ok === true
+      && Object.hasOwn(LANG_NAME, status.lang)
+      && typeof status.relief === 'boolean'
+      && typeof status.phase === 'string'
+      && typeof status.titleStage === 'string'
+      && validSequence(status.appliedSeq)
+      && validSequence(status.applyCount)
+      && validSequence(status.received)
+      && pendingValid;
+  }
+
+  async function fetchWithTimeout(path, options = {}, controller = new AbortController()) {
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    try {
+      const response = await fetch(path, { ...options, signal: controller.signal });
+      const json = await response.json();
+      if (!response.ok || json?.ok !== true) throw new Error(`HTTP ${response.status}`);
+      return json;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async function post(path, body) {
-    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body == null ? '' : JSON.stringify(body) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.ok === false) throw new Error(j.error || `HTTP ${r.status}`);
-    return j;
+    return await fetchWithTimeout(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body == null ? '' : JSON.stringify(body),
+    });
   }
+
   async function send() {
     if (state.ui === 'sending') return;
-    state.ui = 'sending'; renderStatus();
+    if (pollController) pollController.abort();
+    state.sent = { lang: state.lang, relief: state.relief, seq: 0 };
+    state.restartMessage = false;
+    state.appliedSeen = false;
+    state.leftWaitAfterApplied = false;
+    state.ui = 'sending';
+    setSurface('result', $('resultTitle'));
+    render();
     try {
-      const j = await post('./set', { lang: state.lang, relief: state.relief });
-      state.sent = { lang: state.lang, relief: state.relief, seq: j.seq || 0 };
-      state.ui = 'sent'; state.view = 'result';
+      const response = await post('./set', { lang: state.sent.lang, relief: state.sent.relief });
+      if (response.ok !== true || !validSequence(response.seq, false)) throw new Error('invalid set response');
+      state.sent.seq = response.seq;
+      state.ui = 'sent';
+      if (pollInFlight) await pollInFlight;
       await poll();
-    } catch (e) { console.warn('set failed', e); state.ui = 'fail'; }
+    } catch (error) {
+      console.warn('set failed', error);
+      if (error.name === 'AbortError' || error instanceof TypeError) state.connection = 'offline';
+      state.ui = 'fail';
+    }
     render();
-  }
-  async function poll() {
-    try {
-      const r = await fetch('./status', { cache: 'no-store' });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      state.st = await r.json(); state.online = !!state.st.ok;
-    } catch (e) { state.online = false; }
-    renderStatus(); renderStaff();
   }
 
-  // ---- 操作 ---------------------------------------------------------------
-  function setLang(l, dir) { if (l === state.lang) return; state.lang = l; state.focus = 'lang'; render(dir, 'lang'); }
-  function setRelief(v, dir) { if (v === state.relief) return; state.relief = v; state.focus = 'relief'; render(dir, 'relief'); }
-  $('ctlLang').addEventListener('click', (ev) => {
-    const b = ev.target.closest('button');
-    state.focus = 'lang';
-    if (b && b.dataset.lang) return setLang(b.dataset.lang, 1);
-    if (b && b.dataset.step) { const i = LANGS.indexOf(state.lang); return setLang(LANGS[(i + +b.dataset.step + LANGS.length) % LANGS.length], +b.dataset.step); }
-    if (ev.target.closest('.big')) { const i = LANGS.indexOf(state.lang); return setLang(LANGS[(i + 1) % LANGS.length], 1); }
+  function poll() {
+    if (pollInFlight) return pollInFlight;
+    if (state.ui === 'sending') return Promise.resolve();
+    pollController = new AbortController();
+    pollInFlight = (async () => {
+      try {
+        const status = await fetchWithTimeout('./status', { cache: 'no-store' }, pollController);
+        if (!validateStatus(status)) throw new Error('invalid status response');
+        if (state.lastReceived != null && status.received < state.lastReceived) {
+          const wasEditing = state.view === 'edit';
+          state.sent = null;
+          state.ui = 'idle';
+          state.appliedSeen = false;
+          state.leftWaitAfterApplied = false;
+          state.restartMessage = true;
+          if (!wasEditing) {
+            setDraft('ja', false);
+            setFormDisabled(false);
+            setSurface('edit');
+          }
+          render();
+        }
+        state.lastReceived = status.received;
+        state.status = status;
+        state.connection = 'online';
+        observeVisitorCycle(status);
+      } catch (error) {
+        state.connection = 'offline';
+      }
+      renderConnection();
+      renderStaff();
+      if (state.view === 'result') renderResult();
+    })().finally(() => {
+      pollInFlight = null;
+      pollController = null;
+    });
+    return pollInFlight;
+  }
+
+  $('settingsForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    send();
+  });
+  $('settingsForm').addEventListener('change', (event) => {
+    if (event.target.name === 'lang') {
+      state.lang = event.target.value;
+      render();
+    }
+    if (event.target.name === 'relief') {
+      state.relief = event.target.value === 'on';
+      renderReliefDescription();
+    }
+  });
+  $('editBtn').addEventListener('click', () => {
+    state.ui = 'idle';
+    setFormDisabled(false);
+    setSurface('edit', document.querySelector(`input[name="lang"][value="${state.lang}"]`));
     render();
   });
-  $('ctlRelief').addEventListener('click', (ev) => {
-    const b = ev.target.closest('button');
-    state.focus = 'relief';
-    if (b && b.dataset.relief != null) return setRelief(b.dataset.relief === '1', 1);
-    if (b && b.dataset.step) return setRelief(!state.relief, +b.dataset.step);
-    if (ev.target.closest('.big')) return setRelief(!state.relief, 1);
-    render();
+  $('retryBtn').addEventListener('click', send);
+  $('staffToggle').addEventListener('click', () => {
+    $('staffMessage').textContent = '';
+    renderStaff();
+    $('staff').showModal();
   });
-  $('sendBtn').addEventListener('click', () => { if (state.view === 'edit') send(); });
-  // 戻って設定し直す（送った値は残る。もう一度送れば新しい受理番号で届く ＝ 注意書きの段なら即座に書き替わる）
-  $('editBtn').addEventListener('click', () => { state.view = 'edit'; render(); });
-  $('staffToggle').addEventListener('click', () => $('staff').classList.toggle('open'));
-  $('staffClose').addEventListener('click', () => $('staff').classList.remove('open'));
+  $('staffClose').addEventListener('click', () => $('staff').close());
   $('clearBtn').addEventListener('click', async () => {
+    if (state.clearing || state.ui === 'sending') return;
+    state.clearing = true;
     $('clearBtn').disabled = true;
-    try { await post('./clear'); } catch (e) { console.warn('clear failed', e); }
-    await poll();
+    $('staffMessage').textContent = '予約を取り消しています…';
+    try {
+      const response = await post('./clear');
+      if (response.ok !== true) throw new Error('invalid clear response');
+      state.sent = null;
+      state.ui = 'idle';
+      state.appliedSeen = false;
+      state.leftWaitAfterApplied = false;
+      setFormDisabled(false);
+      setSurface('edit');
+      $('staffMessage').textContent = '予約の取消を送信しました。';
+      await poll();
+    } catch (error) {
+      $('staffMessage').textContent = '予約を取り消せませんでした。通信を確認してください。';
+    } finally {
+      state.clearing = false;
+      renderStaff();
+    }
   });
-
-  // 登場: --i の順に .on を付けて transition で浮かせる
-  // ⚠ rAF は使わない（画を描かない環境では一度も来ない）。reflow を 1 回踏んでから timer で付ける
-  document.querySelectorAll('.in').forEach((el) => {
-    void el.offsetWidth;
-    const i = parseInt(el.style.getPropertyValue('--i') || '0', 10) || 0;
-    setTimeout(() => el.classList.add('on'), 220 + i * 120);
+  reducedMotion.addEventListener?.('change', () => {
+    state.subtitleKey = '';
+    setSubtitle(T[state.lang].ask, `motion:${state.lang}:${reducedMotion.matches}`);
   });
-
-  // 装置の時計（REC の隣）。実時刻をそのまま — 嘘をつかない
-  function tick() {
-    const d = new Date();
-    const p = (n) => String(n).padStart(2, '0');
-    $('clock').textContent = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-  }
-  tick(); setInterval(tick, 1000);
-
-  // ---- 机上の確認用: ?demo=applied|waiting|later|noserver|fail で送った後の見え方を固定する ----
-  const demo = new URLSearchParams(location.search).get('demo');
-  if (demo) {
-    const lang = new URLSearchParams(location.search).get('lang') || 'ja';
-    state.lang = lang; state.relief = true;
-    state.sent = { lang, relief: true, seq: 1 };
-    state.ui = demo === 'fail' ? 'fail' : 'sent'; state.view = 'result';
-    state.online = demo !== 'noserver';
-    state.st = { ok: true, lang: demo === 'applied' ? lang : 'ja', relief: demo === 'applied', appliedSeq: demo === 'applied' ? 1 : 0,
-                 phase: demo === 'later' ? 'RUN' : 'INTRO', titleStage: demo === 'later' ? 'Done' : 'Wait',
-                 pending: null, applyCount: 0, received: 1, rejected: 0, model: 'Quest 3 (demo)', ip: '192.168.10.31', port: 8090 };
-    render(1);
-  } else {
-    render(1);
-    poll();
-    setInterval(poll, 2000);
-  }
+  render();
+  poll();
+  setInterval(poll, 2000);
 })();
 </script>
 </body>
