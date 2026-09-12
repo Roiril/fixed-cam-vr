@@ -93,12 +93,24 @@
             "durationMs": 2400
           },
           {
-            "text": "調査には、怪異を記録し、解析するための観測装置を使用します。",
+            "text": "調査には怪異の記録と解析を行う観測装置を使います。",
             "durationMs": 3600
           },
           {
-            "text": "装置を装着するとエージェントが調査経路を案内しますので、その指示に従って進んでください。",
+            "text": "装着後はエージェントの案内に従って調査を進めてください。",
             "durationMs": 5500
+          },
+          {
+            "text": "壁を右手側に見ながら、時計回りに3周します。",
+            "durationMs": 4200
+          },
+          {
+            "text": "右手で手すりを持ち、手を離さずに進んでください。",
+            "durationMs": 4200
+          },
+          {
+            "text": "足元が見づらいので、ゆっくりゆっくり、慎重に歩いてください。",
+            "durationMs": 5200
           }
         ],
         "en": [
@@ -113,6 +125,18 @@
           {
             "text": "Once you put on the device, an agent will guide you along the survey route, so follow its directions.",
             "durationMs": 5500
+          },
+          {
+            "text": "Walk clockwise around the wall three times, keeping it on your right.",
+            "durationMs": 4800
+          },
+          {
+            "text": "Hold the handrail with your right hand and keep hold of it as you walk.",
+            "durationMs": 5000
+          },
+          {
+            "text": "Your footing will be hard to see, so walk very slowly and carefully.",
+            "durationMs": 5000
           }
         ],
         "fr": [
@@ -127,6 +151,18 @@
           {
             "text": "Une fois le dispositif en place, un agent vous guidera sur le parcours d’enquête ; suivez ses consignes.",
             "durationMs": 5600
+          },
+          {
+            "text": "Faites trois tours du mur dans le sens des aiguilles d’une montre, en le gardant à votre droite.",
+            "durationMs": 6500
+          },
+          {
+            "text": "Tenez la main courante de la main droite et ne la lâchez pas en marchant.",
+            "durationMs": 5500
+          },
+          {
+            "text": "Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prudence.",
+            "durationMs": 5500
           }
         ]
       }
@@ -219,11 +255,11 @@
       "cues": {
         "ja": [
           {
-            "text": "では、コントローラーを左手に持ち、装置を装着してください。",
+            "text": "コントローラーを左手に持ち、観測装置を装着してください。",
             "durationMs": 4000
           },
           {
-            "text": "それでは、健闘を祈ります。",
+            "text": "健闘を祈ります。",
             "durationMs": 3000
           }
         ],
