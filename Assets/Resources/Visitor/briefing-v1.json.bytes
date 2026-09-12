@@ -3,7 +3,10 @@
   "scenes": [
     {
       "id": "introduction",
+      "layout": "doctor-center",
       "image": "doctor.jpg",
+      "doctorImage": "doctor.jpg",
+      "doctorAnchor": 70,
       "alt": {
         "ja": "黒い背景の前にいる白衣の博士",
         "en": "The doctor in a lab coat against a dark background",
@@ -59,7 +62,10 @@
     },
     {
       "id": "subject",
+      "layout": "doctor-evidence",
       "image": "briefing-wall-v1.png",
+      "doctorImage": "doctor.jpg",
+      "doctorAnchor": 70,
       "alt": {
         "ja": "暗い調査室に保管されたL字の壁面",
         "en": "A recovered L-shaped wall held in a dark examination room",
@@ -127,7 +133,10 @@
     },
     {
       "id": "report",
+      "layout": "doctor-evidence",
       "image": "briefing-device-v1.png",
+      "doctorImage": "doctor.jpg",
+      "doctorAnchor": 70,
       "alt": {
         "ja": "観測装置と手元のコントローラー",
         "en": "The observation headset and handheld controller",
@@ -183,7 +192,10 @@
     },
     {
       "id": "wear",
+      "layout": "doctor-center",
       "image": "doctor.jpg",
+      "doctorImage": "doctor.jpg",
+      "doctorAnchor": 70,
       "alt": {
         "ja": "装置の装着を案内する博士",
         "en": "The doctor asks you to put on the device",

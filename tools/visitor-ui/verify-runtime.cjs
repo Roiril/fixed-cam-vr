@@ -1,0 +1,610 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const root = path.resolve(__dirname, '..', '..');
+const htmlPath = path.join(root, 'Assets', 'Resources', 'Visitor', 'visitor.html');
+const briefingPath = path.join(root, 'Assets', 'Resources', 'Visitor', 'briefing-v1.json.bytes');
+const html = fs.readFileSync(htmlPath, 'utf8');
+const briefing = JSON.parse(fs.readFileSync(briefingPath, 'utf8'));
+
+class ClassList {
+  constructor() {
+    this.values = new Set();
+  }
+
+  add(...names) {
+    names.forEach((name) => this.values.add(name));
+  }
+
+  remove(...names) {
+    names.forEach((name) => this.values.delete(name));
+  }
+
+  toggle(name, force) {
+    const enabled = force === undefined ? !this.values.has(name) : Boolean(force);
+    if (enabled) this.values.add(name);
+    else this.values.delete(name);
+    return enabled;
+  }
+
+  contains(name) {
+    return this.values.has(name);
+  }
+}
+
+class MockElement {
+  constructor(id = '', tagName = 'div') {
+    this.id = id;
+    this.tagName = tagName.toUpperCase();
+    this.classList = new ClassList();
+    this.style = { setProperty: (name, value) => { this.style[name] = value; } };
+    this.dataset = {};
+    this.attributes = new Map();
+    this.listeners = new Map();
+    this.hidden = false;
+    this.inert = false;
+    this.disabled = false;
+    this.checked = false;
+    this.open = false;
+    this.textContent = '';
+    this.value = '';
+    this.name = '';
+    this.offsetWidth = 100;
+    this.complete = false;
+    this.naturalWidth = 0;
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) || [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  dispatch(type, properties = {}) {
+    const event = {
+      target: this,
+      preventDefault() {},
+      ...properties,
+    };
+    for (const listener of this.listeners.get(type) || []) listener(event);
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.has(name) ? this.attributes.get(name) : null;
+  }
+
+  removeAttribute(name) {
+    this.attributes.delete(name);
+    if (name === 'src') this.src = '';
+  }
+
+  querySelectorAll(selector) {
+    if (selector === 'input, button') return Array.from(elements.values()).filter((element) => (
+      element.tagName === 'INPUT' || element.tagName === 'BUTTON'
+    ));
+    return [];
+  }
+
+  closest() {
+    return null;
+  }
+
+  focus() {}
+
+  showModal() {
+    this.open = true;
+  }
+
+  close() {
+    this.open = false;
+    this.dispatch('close');
+  }
+}
+
+class MockMedia extends MockElement {
+  constructor(id = '', tagName = 'audio') {
+    super(id, tagName);
+    this.currentTime = 0;
+    this.readyState = 1;
+    this.muted = false;
+    this.pauseCount = 0;
+    this.playCount = 0;
+    this.loadCount = 0;
+    this.nextPlayPromise = null;
+  }
+
+  pause() {
+    this.pauseCount += 1;
+  }
+
+  play() {
+    this.playCount += 1;
+    const result = this.nextPlayPromise || Promise.resolve();
+    this.nextPlayPromise = null;
+    return result;
+  }
+
+  load() {
+    this.loadCount += 1;
+  }
+}
+
+class FakeTimers {
+  constructor() {
+    this.nextId = 1;
+    this.tasks = new Map();
+  }
+
+  setTimeout(callback, delay = 0) {
+    const id = this.nextId++;
+    this.tasks.set(id, { callback, delay, interval: false });
+    return id;
+  }
+
+  setInterval(callback, delay = 0) {
+    const id = this.nextId++;
+    this.tasks.set(id, { callback, delay, interval: true });
+    return id;
+  }
+
+  clear(id) {
+    this.tasks.delete(id);
+  }
+
+  runOne(delay) {
+    const entry = Array.from(this.tasks.entries()).find(([, task]) => !task.interval && task.delay === delay);
+    assert.ok(entry, `expected a ${delay}ms timer`);
+    this.tasks.delete(entry[0]);
+    entry[1].callback();
+  }
+
+  reset() {
+    this.tasks.clear();
+  }
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+const elements = new Map();
+for (const match of html.matchAll(/<([a-z][a-z0-9-]*)\b[^>]*\bid="([^"]+)"[^>]*>/gi)) {
+  const [, tagName, id] = match;
+  elements.set(id, tagName.toLowerCase() === 'video' ? new MockMedia(id, tagName) : new MockElement(id, tagName));
+}
+
+for (const match of html.matchAll(/<input\b([^>]*)>/gi)) {
+  const attributes = match[1];
+  const id = /\bid="([^"]+)"/.exec(attributes)?.[1];
+  if (!id || !elements.has(id)) continue;
+  const element = elements.get(id);
+  element.name = /\bname="([^"]+)"/.exec(attributes)?.[1] || '';
+  element.value = /\bvalue="([^"]+)"/.exec(attributes)?.[1] || '';
+}
+
+const selectorElements = new Map([
+  ['.stage', new MockElement('', 'main')],
+  ['.content', new MockElement('', 'div')],
+  ['.portrait', new MockElement('', 'div')],
+  ['.footer', new MockElement('', 'footer')],
+  ['.topbar', new MockElement('', 'header')],
+  ['.skip', new MockElement('', 'button')],
+  ['.briefing-visual', new MockElement('', 'div')],
+]);
+
+const documentListeners = new Map();
+const document = {
+  hidden: false,
+  title: '',
+  documentElement: new MockElement('', 'html'),
+  getElementById(id) {
+    assert.ok(elements.has(id), `missing mock for #${id}`);
+    return elements.get(id);
+  },
+  querySelector(selector) {
+    const radio = /^input\[name="(lang|relief)"\]\[value="([^"]+)"\]$/.exec(selector);
+    if (radio) {
+      return Array.from(elements.values()).find((element) => element.name === radio[1] && element.value === radio[2]);
+    }
+    assert.ok(selectorElements.has(selector), `missing mock for ${selector}`);
+    return selectorElements.get(selector);
+  },
+  addEventListener(type, listener) {
+    const listeners = documentListeners.get(type) || [];
+    listeners.push(listener);
+    documentListeners.set(type, listeners);
+  },
+};
+
+const timers = new FakeTimers();
+const createdAudio = [];
+const warnings = [];
+const motionPreference = { matches: true, addEventListener() {} };
+const validStatus = {
+  ok: true,
+  lang: 'ja',
+  relief: false,
+  phase: 'INTRO',
+  titleStage: 'Wait',
+  appliedSeq: 0,
+  applyCount: 0,
+  received: 0,
+  pending: null,
+};
+let fetchHandler = async (resource) => ({
+  ok: true,
+  status: 200,
+  json: async () => resource === './asset/briefing-v1.json' ? clone(briefing) : clone(validStatus),
+});
+
+const context = {
+  AbortController,
+  Audio: function Audio() {
+    const media = new MockMedia('', 'audio');
+    createdAudio.push(media);
+    return media;
+  },
+  Element: MockElement,
+  Image: class Image extends MockElement {},
+  URLSearchParams,
+  clearInterval: (id) => timers.clear(id),
+  clearTimeout: (id) => timers.clear(id),
+  console: { warn: (...args) => warnings.push(args), log() {}, error: console.error },
+  document,
+  encodeURIComponent,
+  fetch: (...args) => fetchHandler(...args),
+  location: { host: '127.0.0.1:8091' },
+  matchMedia: () => motionPreference,
+  performance: { now: () => 1000 },
+  setInterval: (callback, delay) => timers.setInterval(callback, delay),
+  setTimeout: (callback, delay) => timers.setTimeout(callback, delay),
+  window: { scrollX: 0, scrollY: 0 },
+};
+context.globalThis = context;
+
+const scripts = Array.from(html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi), (match) => match[1]);
+const source = scripts.find((script) => script.includes('(() => {') && script.includes('validateBriefingData'));
+assert.ok(source, 'visitor runtime script was not found');
+const close = source.lastIndexOf('})();');
+assert.notEqual(close, -1, 'visitor runtime IIFE terminator was not found');
+const exportsSource = `
+  globalThis.__visitorTest = {
+    state,
+    validateBriefingData,
+    resultKey,
+    send,
+    poll,
+    changeVisual,
+    cancelVisualChange,
+    configureBriefingMedia,
+    startBriefingMediaWindow,
+    stopBriefingMediaWindow,
+    stopBriefingPlayback,
+    setBriefingAuto,
+    setBriefingPause,
+    beginBriefingCue,
+    moveBriefing,
+    getBriefingMedia: () => briefingMedia,
+  };
+`;
+vm.runInNewContext(source.slice(0, close) + exportsSource + source.slice(close), context, {
+  filename: htmlPath,
+});
+
+const runtime = context.__visitorTest;
+const state = runtime.state;
+
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+function prepareBriefing(data) {
+  runtime.stopBriefingPlayback();
+  timers.reset();
+  state.lang = 'ja';
+  state.view = 'briefing';
+  state.connection = 'online';
+  state.briefing.data = data;
+  state.briefing.loadState = 'ready';
+  state.briefing.sceneIndex = 0;
+  state.briefing.cueIndex = 0;
+  state.briefing.pauseReasons.clear();
+  state.briefing.auto = false;
+  state.briefing.mediaFailed = false;
+  state.briefing.doctorFailed = false;
+  elements.get('doctorImage').hidden = false;
+  elements.get('doctorVideo').hidden = true;
+}
+
+const tests = [];
+function test(name, body) {
+  tests.push({ name, body });
+}
+
+test('反映判定はPOSTの受理番号と実値の両方を見る', async () => {
+  const requests = [];
+  let status = { ...validStatus, lang: 'ja', relief: false, appliedSeq: 7, received: 1 };
+  fetchHandler = async (resource, options = {}) => {
+    requests.push({ resource, options });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => resource === './set' ? { ok: true, seq: 7 } : clone(status),
+    };
+  };
+  state.lang = 'en';
+  state.relief = true;
+  state.ui = 'idle';
+  state.view = 'edit';
+  await runtime.send();
+  assert.equal(requests[0].resource, './set');
+  assert.deepEqual(JSON.parse(requests[0].options.body), { lang: 'en', relief: true });
+  assert.equal(JSON.stringify(state.sent), JSON.stringify({ lang: 'en', relief: true, seq: 7 }));
+  assert.equal(runtime.resultKey(), 'waiting');
+
+  state.status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 6 };
+  assert.equal(runtime.resultKey(), 'waiting');
+  state.status = { ...state.status, lang: 'ja', appliedSeq: 7 };
+  assert.equal(runtime.resultKey(), 'waiting');
+  state.status = { ...state.status, lang: 'en', relief: false };
+  assert.equal(runtime.resultKey(), 'waiting');
+  state.status = { ...state.status, relief: true };
+  assert.equal(runtime.resultKey(), 'applied');
+
+  status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 7, received: 1 };
+  await runtime.poll();
+  assert.equal(runtime.resultKey(), 'applied');
+});
+
+test('表示更新は同期し、重複アニメーションを取消して縮小設定に従う', () => {
+  const content = selectorElements.get('.content');
+  const portrait = selectorElements.get('.portrait');
+  const animations = [];
+  for (const element of [content, portrait]) {
+    element.animate = (keyframes, options) => {
+      const animation = {
+        element,
+        keyframes,
+        options,
+        cancelCount: 0,
+        cancel() { this.cancelCount += 1; },
+        finished: new Promise(() => {}),
+      };
+      animations.push(animation);
+      return animation;
+    };
+  }
+
+  motionPreference.matches = false;
+  let updates = 0;
+  assert.equal(runtime.changeVisual(() => { updates += 1; }), true);
+  assert.equal(updates, 1);
+  assert.equal(animations.length, 2);
+
+  assert.equal(runtime.changeVisual(() => { updates += 1; }), true);
+  assert.equal(updates, 2);
+  assert.equal(animations.length, 4);
+  assert.equal(animations[0].cancelCount, 1);
+  assert.equal(animations[1].cancelCount, 1);
+  runtime.cancelVisualChange();
+  assert.equal(animations[2].cancelCount, 1);
+  assert.equal(animations[3].cancelCount, 1);
+
+  motionPreference.matches = true;
+  assert.equal(runtime.changeVisual(() => { updates += 1; }), true);
+  assert.equal(updates, 3);
+  assert.equal(animations.length, 4);
+  delete content.animate;
+  delete portrait.animate;
+});
+
+test('本番JSONと表示指定の境界値を検証する', () => {
+  assert.equal(runtime.validateBriefingData(clone(briefing)).scenes.length, briefing.scenes.length);
+  const presentation = clone(briefing);
+  presentation.scenes[0].layout = 'doctor-evidence';
+  presentation.scenes[0].doctorAnchor = 0;
+  presentation.scenes[1].layout = 'doctor-center';
+  presentation.scenes[1].doctorAnchor = 100;
+  assert.doesNotThrow(() => runtime.validateBriefingData(presentation));
+
+  for (const mutate of [
+    (data) => { data.scenes[0].layout = 'center'; },
+    (data) => { data.scenes[0].doctorImage = '../doctor.jpg'; },
+    (data) => { data.scenes[0].doctorImage = ''; },
+    (data) => { data.scenes[0].doctorAnchor = -1; },
+    (data) => { data.scenes[0].doctorAnchor = 101; },
+    (data) => { data.scenes[0].doctorAnchor = Number.NaN; },
+  ]) {
+    const invalid = clone(briefing);
+    mutate(invalid);
+    assert.throws(() => runtime.validateBriefingData(invalid), /invalid briefing presentation/);
+  }
+});
+
+test('媒体未指定の場面ではaudioもvideoも作らない', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  const audioCount = createdAudio.length;
+  const video = elements.get('doctorVideo');
+  const loadCount = video.loadCount;
+  runtime.configureBriefingMedia(data.scenes[0]);
+  assert.equal(runtime.getBriefingMedia(), null);
+  assert.equal(createdAudio.length, audioCount);
+  assert.equal(video.loadCount, loadCount);
+});
+
+test('媒体時計の文末判定で手動は止まり、オートは次の文へ進む', () => {
+  const data = clone(briefing);
+  data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
+  prepareBriefing(data);
+  runtime.configureBriefingMedia(data.scenes[0]);
+  runtime.beginBriefingCue();
+  const media = runtime.getBriefingMedia();
+  media.onplaying();
+  media.currentTime = data.scenes[0].cues.ja[0].durationMs / 1000 - 0.01;
+  timers.runOne(100);
+  assert.equal(state.briefing.cueIndex, 0);
+  assert.equal(state.briefing.mediaWindowActive, false);
+
+  runtime.setBriefingAuto(true, true);
+  media.onplaying();
+  media.currentTime = data.scenes[0].cues.ja[0].durationMs / 1000 - 0.01;
+  timers.runOne(100);
+  assert.equal(state.briefing.cueIndex, 1);
+  assert.equal(elements.get('subtitleTyped').textContent, data.scenes[0].cues.ja[1].text);
+});
+
+test('停止や一時停止後の古い再生失敗は現在の文を壊さない', async () => {
+  const data = clone(briefing);
+  data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
+  prepareBriefing(data);
+  runtime.configureBriefingMedia(data.scenes[0]);
+  let media = runtime.getBriefingMedia();
+  const pausedAttempt = deferred();
+  media.nextPlayPromise = pausedAttempt.promise;
+  runtime.beginBriefingCue();
+  runtime.setBriefingPause('hidden', true);
+  pausedAttempt.reject(new Error('late pause rejection'));
+  await flushPromises();
+  assert.equal(state.briefing.mediaFailed, false);
+  assert.equal(state.briefing.cueIndex, 0);
+
+  runtime.setBriefingPause('hidden', false);
+  const stoppedAttempt = deferred();
+  media.nextPlayPromise = stoppedAttempt.promise;
+  runtime.startBriefingMediaWindow();
+  runtime.stopBriefingPlayback();
+  stoppedAttempt.reject(new Error('late stop rejection'));
+  await flushPromises();
+  assert.equal(state.briefing.mediaFailed, false);
+  assert.equal(runtime.getBriefingMedia(), null);
+});
+
+test('素早い文送り後の古いmetadata通知を無視する', () => {
+  const data = clone(briefing);
+  data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
+  prepareBriefing(data);
+  runtime.configureBriefingMedia(data.scenes[0]);
+  const media = runtime.getBriefingMedia();
+  media.readyState = 0;
+  runtime.beginBriefingCue();
+  const staleMetadata = media.onloadedmetadata;
+  assert.equal(typeof staleMetadata, 'function');
+  runtime.moveBriefing(1, 'auto');
+  staleMetadata();
+  assert.equal(state.briefing.cueIndex, 1);
+  assert.equal(media.playCount, 0);
+  assert.equal(media.currentTime, 0);
+});
+
+test('自動再生拒否後は同じ媒体をユーザー操作で再生する', async () => {
+  const data = clone(briefing);
+  data.scenes[0].video = { ja: 'introduction-ja-v1.mp4' };
+  prepareBriefing(data);
+  const video = elements.get('doctorVideo');
+  video.readyState = 1;
+  const blockedAttempt = deferred();
+  video.nextPlayPromise = blockedAttempt.promise;
+  runtime.configureBriefingMedia(data.scenes[0]);
+  const source = video.src;
+  const loadCount = video.loadCount;
+  runtime.setBriefingAuto(true);
+  runtime.beginBriefingCue();
+  const notAllowed = new Error('user gesture required');
+  notAllowed.name = 'NotAllowedError';
+  blockedAttempt.reject(notAllowed);
+  await flushPromises();
+  assert.equal(runtime.getBriefingMedia(), video);
+  assert.equal(state.briefing.mediaFailed, false);
+  assert.equal(state.briefing.mediaPaused, true);
+  assert.equal(state.briefing.auto, false);
+  assert.equal(state.briefing.mediaWindowActive, false);
+  assert.equal(video.src, source);
+  assert.equal(video.loadCount, loadCount);
+
+  const playCount = video.playCount;
+  video.nextPlayPromise = Promise.resolve();
+  elements.get('mediaRetry').dispatch('click');
+  assert.equal(runtime.getBriefingMedia(), video);
+  assert.equal(video.src, source);
+  assert.equal(video.loadCount, loadCount);
+  assert.equal(video.playCount, playCount + 1);
+  assert.equal(state.briefing.mediaPaused, false);
+  assert.equal(state.briefing.mediaWindowActive, true);
+  await flushPromises();
+  assert.equal(state.briefing.mediaFailed, false);
+});
+
+test('媒体失敗時は静止画と字幕を保ち、オート解除後に再試行できる', async () => {
+  const data = clone(briefing);
+  data.scenes[0].video = { ja: 'introduction-ja-v1.mp4' };
+  prepareBriefing(data);
+  const video = elements.get('doctorVideo');
+  video.readyState = 1;
+  const failedAttempt = deferred();
+  video.nextPlayPromise = failedAttempt.promise;
+  runtime.configureBriefingMedia(data.scenes[0]);
+  runtime.setBriefingAuto(true);
+  runtime.beginBriefingCue();
+  const subtitle = data.scenes[0].cues.ja[0].text;
+  failedAttempt.reject(new Error('decode failed'));
+  await flushPromises();
+  assert.equal(state.briefing.mediaFailed, true);
+  assert.equal(state.briefing.auto, false);
+  assert.equal(elements.get('doctorImage').hidden, false);
+  assert.equal(video.hidden, true);
+  assert.equal(elements.get('subtitleTyped').textContent, subtitle);
+
+  const playCount = video.playCount;
+  video.nextPlayPromise = Promise.resolve();
+  elements.get('mediaRetry').dispatch('click');
+  await flushPromises();
+  assert.equal(state.briefing.mediaFailed, false);
+  assert.equal(runtime.getBriefingMedia(), video);
+  assert.equal(state.briefing.mediaWindowActive, true);
+  assert.equal(video.playCount, playCount + 1);
+  assert.equal(elements.get('subtitleTyped').textContent, subtitle);
+});
+
+(async () => {
+  await flushPromises();
+  timers.reset();
+  let failed = 0;
+  for (const { name, body } of tests) {
+    try {
+      await body();
+      console.log(`ok - ${name}`);
+    } catch (error) {
+      failed += 1;
+      console.error(`not ok - ${name}`);
+      console.error(error.stack || error);
+    }
+  }
+  runtime.stopBriefingPlayback();
+  timers.reset();
+  if (failed > 0) process.exitCode = 1;
+  else console.log(`${tests.length} tests passed`);
+})().catch((error) => {
+  console.error(error.stack || error);
+  process.exitCode = 1;
+});
