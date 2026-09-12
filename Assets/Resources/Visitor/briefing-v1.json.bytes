@@ -34,8 +34,8 @@
             "durationMs": 3500
           },
           {
-            "text": "あなたには調査員として、報告された怪異を調べていただきたい。",
-            "durationMs": 4400
+            "text": "あなたには調査員として、呪われた物体を一つ調べていただきたい。",
+            "durationMs": 4500
           }
         ],
         "en": [
@@ -44,8 +44,8 @@
             "durationMs": 3400
           },
           {
-            "text": "I would like you to serve as an investigator and examine the reported anomalies.",
-            "durationMs": 5000
+            "text": "I would like you to serve as an investigator and examine a cursed object.",
+            "durationMs": 4800
           }
         ],
         "fr": [
@@ -54,8 +54,8 @@
             "durationMs": 3500
           },
           {
-            "text": "Je vous demande d’enquêter, en tant qu’agent de terrain, sur les phénomènes anormaux signalés.",
-            "durationMs": 6000
+            "text": "Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.",
+            "durationMs": 5200
           }
         ]
       }
