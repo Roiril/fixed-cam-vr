@@ -15,9 +15,9 @@
         "fr": "MISSION D’OBSERVATION"
       },
       "title": {
-        "ja": "調査をお願いします",
-        "en": "A survey for you",
-        "fr": "Une mission pour vous"
+        "ja": "調査依頼",
+        "en": "Survey briefing",
+        "fr": "Présentation de la mission"
       },
       "caption": {
         "ja": "博士 · 観測調査担当",
@@ -447,9 +447,9 @@
         "fr": "FIN DES CONSIGNES"
       },
       "title": {
-        "ja": "装置を装着してください",
-        "en": "Please put on the device",
-        "fr": "Veuillez mettre le dispositif"
+        "ja": "装着案内",
+        "en": "Putting on the device",
+        "fr": "Mise en place du dispositif"
       },
       "caption": {
         "ja": "装着後は装置に表示される案内に従ってください",

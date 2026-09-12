@@ -16,7 +16,7 @@
 
 ## ja
 
-### 01 introduction — 調査をお願いします
+### 01 introduction — 調査依頼
 
 開始 0.0 秒 / 尺 7.9 秒
 
@@ -132,7 +132,7 @@
 
 スタッフに知らせてください。
 
-### 07 wear — 装置を装着してください
+### 07 wear — 装着案内
 
 開始 54.2 秒 / 尺 7.4 秒
 
@@ -152,7 +152,7 @@
 
 ## en
 
-### 01 introduction — A survey for you
+### 01 introduction — Survey briefing
 
 開始 0.0 秒 / 尺 10.6 秒
 
@@ -268,7 +268,7 @@ If you feel unwell, stop where you are and remove the device.
 
 Let a staff member know.
 
-### 07 wear — Please put on the device
+### 07 wear — Putting on the device
 
 開始 70.4 秒 / 尺 8.4 秒
 
@@ -288,7 +288,7 @@ Once it is on, follow the instructions on the display.
 
 ## fr
 
-### 01 introduction — Une mission pour vous
+### 01 introduction — Présentation de la mission
 
 開始 0.0 秒 / 尺 9.9 秒
 
@@ -404,7 +404,7 @@ Si vous vous sentez mal, arrêtez-vous sur place et retirez le dispositif.
 
 Prévenez le personnel.
 
-### 07 wear — Veuillez mettre le dispositif
+### 07 wear — Mise en place du dispositif
 
 開始 74.9 秒 / 尺 8.1 秒
 

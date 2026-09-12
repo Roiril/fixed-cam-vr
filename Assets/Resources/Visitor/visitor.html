@@ -976,6 +976,41 @@
       animation-iteration-count: 1 !important;
     }
   }
+  /* With no reference image, the doctor occupies the central frame. */
+  .stage.is-briefing.is-doctor-only {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(420px, 1fr) auto;
+    grid-template-areas: "header" "content" "footer";
+  }
+  .stage.is-doctor-only .portrait { grid-area: content; }
+  .stage.is-doctor-only .content { height: 100%; }
+  .stage.is-doctor-only .portrait img,
+  .stage.is-doctor-only .portrait video {
+    position: absolute;
+    left: 50%;
+    width: auto;
+    max-width: none;
+    height: 100%;
+    max-height: 680px;
+    bottom: 0;
+    mask-image: linear-gradient(180deg, transparent, #000 12%, #000 85%, transparent);
+    min-height: 0;
+    transform: translateX(-70%);
+  }
+  .stage.is-doctor-only .portrait::after {
+    background: linear-gradient(180deg, rgba(8, 6, 4, .35), transparent 30%, transparent 65%, var(--bg));
+  }
+  .stage.is-doctor-only .briefing { height: 100%; grid-template-rows: auto 1fr auto; }
+  .stage.is-doctor-only .briefing-copy { align-self: start; padding-block: 10px; width: min(100%, 360px); }
+  .stage.is-doctor-only .briefing-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .stage.is-doctor-only .briefing-caption { margin-top: 8px; font-size: 14px; }
+  .stage.is-doctor-only .briefing-progress { grid-row: 3; }
 </style>
 </head>
 <body>
@@ -1327,6 +1362,7 @@
     const stage = document.querySelector('.stage');
     stage.classList.toggle('is-title', view === 'title');
     stage.classList.toggle('is-briefing', view === 'briefing');
+    if (view !== 'briefing') stage.classList.remove('is-doctor-only');
     document.querySelector('.footer').classList.toggle('is-briefing', view === 'briefing');
     document.querySelector('.topbar').inert = view === 'title';
     document.querySelector('.footer').inert = view === 'title';
@@ -1778,6 +1814,8 @@
     $('briefingRole').textContent = t.role;
     $('briefingIntroText').textContent = scene.caption[state.lang];
     const intro = scene.image === 'doctor.jpg';
+    document.querySelector('.stage').classList.toggle('is-doctor-only', intro);
+    if (intro) setText('briefingEyebrow', scene.title[state.lang]);
     $('briefingView').dataset.portrait = String(intro);
     document.querySelector('.briefing-visual').hidden = intro;
     $('briefingIntro').hidden = !intro;
