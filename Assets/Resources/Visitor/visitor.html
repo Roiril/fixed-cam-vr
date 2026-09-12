@@ -716,7 +716,6 @@
   }
   .subtitle-reserve { visibility: hidden; }
   .subtitle-typed { position: absolute; inset: 0; }
-  .subtitle-dash { color: var(--gold); margin-right: .45em; }
   .primary {
     min-height: 62px;
     max-width: 320px;
@@ -1154,7 +1153,7 @@
   <footer class="footer">
     <div class="subtitle" id="subtitle" aria-hidden="true">
       <span class="subtitle-reserve" id="subtitleReserve"></span>
-      <span class="subtitle-typed"><span class="subtitle-dash">―</span><span id="subtitleTyped"></span></span>
+      <span class="subtitle-typed"><span id="subtitleTyped"></span></span>
     </div>
     <p class="sr-only" id="subtitleAnnouncement" role="status" aria-live="polite" aria-atomic="true"></p>
     <button class="primary" id="sendBtn" type="submit" form="settingsForm">
@@ -1351,7 +1350,7 @@
   function setSubtitle(text, key) {
     if (state.subtitleKey === key) return;
     state.subtitleKey = key;
-    $('subtitleReserve').textContent = `―${text}`;
+    $('subtitleReserve').textContent = text;
     $('subtitleAnnouncement').textContent = text;
     $('subtitleTyped').textContent = text;
   }
