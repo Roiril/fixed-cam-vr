@@ -1,6 +1,6 @@
 # Project Memory Index
 
-- [comms_takeover.md](comms_takeover.md) - 2026-09-14。人形側から正しい検出結果を消す演出。最終文は正常に読める。通常の空振りと区別する。帰りの区間と解除後は復帰する。
+- [comms_takeover.md](comms_takeover.md) - 2026-09-14。否定報告の出力中に文頭から侵食が追いつく。完成前に文字と打鍵と顔が失われる。二つ目の発話を出さない。復路では復帰する。
 
 - [presentation_redesign.md](presentation_redesign.md) - 2026-09-13 の導入とエージェント画面の再構築。連続開口と固定位置の通信面。実装案の採否は未判定。比較画像と検証手順。
 

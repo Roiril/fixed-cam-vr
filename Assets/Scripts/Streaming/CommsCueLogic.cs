@@ -54,10 +54,8 @@ namespace FixedCamVr.Streaming
         MarkLogged,
         /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異常は検出されませんでした」。</summary>
         MarkNothing,
-        /// <summary>人形へ置換された最終周の報告。真文の後で装置が文面を書き換える。</summary>
+        /// <summary>人形へ置換された最終周の報告。印字へ侵食が追いついて文面を奪う。</summary>
         Takeover,
-        /// <summary>書き換えが済んだ後の同じ報告。虚偽文だけを無音で出す。</summary>
-        TakeoverLie,
         /// <summary>
         /// ③a <b>4 周目 A の締めで、押さないまま時間が過ぎた最初の一言</b>「止まってください！」
         /// （2026-09-06・<c>canon/LEDGER.md</c> 0168・ユーザー指定
@@ -92,10 +90,8 @@ namespace FixedCamVr.Streaming
         /// ⚠ 濃さだけが上がる — 字は最初から全部そこに在る（<c>CommsPanelLogic.FadeInSec</c>）。
         /// </summary>
         Fade,
-        /// <summary>真文を打った後、同じ面で虚偽文へ書き換える。</summary>
+        /// <summary>印字へ侵食が追いつき、未完成の文面を捕捉する。</summary>
         Takeover,
-        /// <summary>書き換え済みの虚偽文だけを無音で出す。</summary>
-        TakeoverLie,
     }
 
     /// <summary>1 フレーム分の入力。<b>UnityEngine 非依存・dt 注入</b>。</summary>
@@ -314,7 +310,6 @@ namespace FixedCamVr.Streaming
         public static CommsDelivery DeliveryOf(CommsNotice notice)
             => notice == CommsNotice.Halt ? CommsDelivery.Fade
              : notice == CommsNotice.Takeover ? CommsDelivery.Takeover
-             : notice == CommsNotice.TakeoverLie ? CommsDelivery.TakeoverLie
              : CommsDelivery.Typed;
 
         /// <summary>候補ではなく面へ実際に渡せた時だけ自動提示の一回を消費する。</summary>
@@ -393,12 +388,13 @@ namespace FixedCamVr.Streaming
             if (inp.markPressed)
             {
                 if (inp.markResolved) return CommsNotice.MarkLogged;
-                if (inp.takeoverPlaying) return CommsNotice.None;
+                if (inp.takeoverPlaying || inp.takeoverModified) return CommsNotice.None;
                 if (inp.takeoverAllowed && finalNormalLap && !inp.markSuppressed && inp.markDollReplacementShowing)
-                    return inp.takeoverModified ? CommsNotice.TakeoverLie : CommsNotice.Takeover;
+                    return CommsNotice.Takeover;
                 return CommsNotice.MarkNothing;
             }
-            if (inp.takeoverAllowed && !_takeoverDelivered && finalNormalLap && inp.dollReplacementShowing
+            if (inp.takeoverAllowed && !_takeoverDelivered && !inp.takeoverModified
+                && finalNormalLap && inp.dollReplacementShowing
                 && _dollShowingSec >= CommsTakeoverLogic.AutoDelaySec)
                 return CommsNotice.Takeover;
             if (haltDue) { _haltFired = true; return CommsNotice.Halt; }

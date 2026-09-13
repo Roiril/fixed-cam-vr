@@ -73,9 +73,12 @@ namespace FixedCamVr.Streaming.EditorTools
                     - (text.transform.position - go.transform.position);
                 int intended = panel.NoticeChars;
                 int previousHits = panel.TypedCount;
-                var rows = new StringBuilder("frame\tsec\tphase\terase\tlie\tface\tmissing\thit\tfull\tdrawn\tx\ty\ttext\n");
+                var rows = new StringBuilder("frame\tsec\tphase\terase\treveal\tcollapse\tface\tmissing\thit\tfull\tdrawn\tgenerated\ttotal\texpected\tcut\tx\ty\ttext\n");
                 var taps = new StringBuilder("frame\tchars\thit\n");
-                int totalHits = 0, truthFrames = 0, lieFrames = 0;
+                int totalHits = 0, overlapFrames = 0, blankFrames = 0;
+                int lastGenerated = 0, overlapGrowth = 0;
+                string original = text.text;
+                int total = text.textInfo.characterCount;
                 string lastPhase = "";
                 int count = 0;
                 for (int i = 0; i < Fps * 14; i++)
@@ -90,9 +93,11 @@ namespace FixedCamVr.Streaming.EditorTools
                     string body = text.text.Replace("\n", " / ").Replace("\t", " ");
                     Vector3 screen = cam.WorldToScreenPoint(text.transform.position);
                     rows.AppendFormat(CultureInfo.InvariantCulture,
-                        "{0}\t{1:F6}\t{2}\t{3:F4}\t{4:F4}\t{5:F4}\t{6}\t{7}\t{8}\t{9}\t{10:F3}\t{11:F3}\t{12}\n",
-                        i, i / (float)Fps, phase, panel.AppliedTakeoverErase, panel.AppliedTakeoverLie,
-                        panel.AppliedFaceMix, panel.CorruptedChars, hit, full, drawn, screen.x, screen.y, body);
+                        "{0}\t{1:F6}\t{2}\t{3:F4}\t{4:F4}\t{5:F4}\t{6:F4}\t{7}\t{8}\t{9}\t{10}\t{11}\t{12}\t{13}\t{14}\t{15:F3}\t{16:F3}\t{17}\n",
+                        i, i / (float)Fps, phase, panel.AppliedTakeoverErase, panel.AppliedTakeoverReveal,
+                        panel.AppliedTakeoverCollapse, panel.AppliedFace, panel.CorruptedChars,
+                        hit, full, drawn, panel.VisibleChars, total, intended, panel.TakeoverCutCount,
+                        screen.x, screen.y, body);
                     taps.Append(i).Append('\t').Append(panel.VisibleChars).Append('\t').Append(hit).Append('\n');
                     byte[] png = Capture(cam, rt, image);
                     File.WriteAllBytes(Path.Combine(dir, $"f{i:0000}.png"), png);
@@ -101,33 +106,38 @@ namespace FixedCamVr.Streaming.EditorTools
                         File.WriteAllBytes(Path.Combine(dir, "phase-" + phase + ".png"), png);
                         lastPhase = phase;
                     }
-                    if (phase == "Truth" && full == intended)
+                    if (phase == "Output" && full >= 3)
+                        File.WriteAllBytes(Path.Combine(dir, "output.png"), png);
+                    if (phase == "Pursuit" && panel.CorruptedChars > 0 && drawn > 0)
                     {
-                        truthFrames++;
-                        if (truthFrames == 20) File.WriteAllBytes(Path.Combine(dir, "truth-readable.png"), png);
+                        overlapFrames++;
+                        if (panel.VisibleChars > lastGenerated) overlapGrowth++;
+                        if (overlapFrames == 3) File.WriteAllBytes(Path.Combine(dir, "overlap-early.png"), png);
+                        File.WriteAllBytes(Path.Combine(dir, "overlap-late.png"), png);
                     }
-                    if (phase == "Erase" && panel.AppliedTakeoverErase > 0.46f && panel.AppliedTakeoverErase < 0.52f)
-                        File.WriteAllBytes(Path.Combine(dir, "erasing.png"), png);
-                    if (phase == "LieHold")
+                    if (phase == "Seized")
                     {
-                        lieFrames++;
-                        if (lieFrames == 10) File.WriteAllBytes(Path.Combine(dir, "lie-readable.png"), png);
-                        if (lieFrames == 40) File.WriteAllBytes(Path.Combine(dir, "lie-still.png"), png);
-                        if (hit != 0) throw new InvalidOperationException("The concealed report produced a keystroke");
+                        blankFrames++;
+                        if (blankFrames == 4) File.WriteAllBytes(Path.Combine(dir, "seized.png"), png);
+                        if (hit != 0 || drawn != 0)
+                            throw new InvalidOperationException("The seized output resumed");
                     }
+                    if (text.text != original || panel.VisibleChars >= total)
+                        throw new InvalidOperationException("The source finished or a second sentence was introduced");
+                    lastGenerated = panel.VisibleChars;
                     count++;
                     if (!logic.Active) break;
                     logic.Tick(1f / Fps);
                 }
                 File.WriteAllText(Path.Combine(dir, "frames.tsv"), rows.ToString(), new UTF8Encoding(false));
                 File.WriteAllText(Path.Combine(dir, "type.tsv"), taps.ToString(), new UTF8Encoding(false));
-                if (logic.Active || truthFrames < Fps || lieFrames < Fps)
-                    throw new InvalidOperationException("Takeover did not finish with readable truth and lie");
+                if (logic.Active || overlapFrames < 6 || overlapGrowth < 2 || blankFrames < 4)
+                    throw new InvalidOperationException("Output did not coexist with erasure or fail irreversibly");
                 if (totalHits != intended)
-                    throw new InvalidOperationException($"Keystrokes {totalHits}, expected visible truth glyphs {intended}");
+                    throw new InvalidOperationException($"Keystrokes {totalHits}, expected generated glyphs {intended}");
                 Debug.Log($"[CommsTakeoverPreview] {ShowLanguage.Code(lang)} frames={count} "
-                    + $"typed={totalHits}/{intended} truthFrames={truthFrames} lieFrames={lieFrames} "
-                    + $"completed={panel.TakeoverCompletedCount}");
+                    + $"typed={totalHits}/{intended} overlapFrames={overlapFrames} overlapGrowth={overlapGrowth} "
+                    + $"blankFrames={blankFrames} cuts={panel.TakeoverCutCount} completed={panel.TakeoverCompletedCount}");
             }
             finally
             {

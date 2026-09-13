@@ -1689,7 +1689,7 @@ def analyze(events, others, exp, warns=None):
                 verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "
                                 "周が進んでいないか、ShowRunDirector.ScreenDecay を読めていない")
             elif gl and cx and max(cx) <= 0 and not any(
-                    e.get("commsTakeover") in ("Truth", "Erase", "Blank", "LieReveal", "LieHold", "Complete")
+                    e.get("commsTakeover") in ("Output", "Pursuit", "Seized", "Complete")
                     for e in events if e.get("ev") == "sum"):
                 # 強さは上がったのに 1 字も化けていない ＝ 印字へ届いていない。
                 verdict("FAIL", f"強さは上がった（最大 {max(gl):.2f}）のに字が 1 つも化けていない"
@@ -1699,7 +1699,7 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", f"連絡の面が周回とともに壊れた"
                               f"（強さ 最大 {max(gl):.2f} / 化けた字 最大 {max(cx) if cx else 0}）")
             elif gl and cx:
-                verdict("WARN", "改変中は読みやすい報告を残すため、通常文の欠落はこの記録だけでは判定できない")
+                verdict("WARN", "報告が侵食される区間を含むため、通常文の欠落はこの記録だけでは判定できない")
 
             # ③（4 周目 A の締め）は進み 1.0 ＝ 壊れが最大の状態で届くはず。
             # ⚠ 進みは 3 周目 A で 1.0 に着いて以後動かない（`ScreenDecayLogic`）ので、

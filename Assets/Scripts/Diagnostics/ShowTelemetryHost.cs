@@ -806,9 +806,11 @@ namespace FixedCamVr.Diagnostics
             {
                 _lastCommsTakeoverPhase = _comms.TakeoverPhase.ToString();
                 Emit($"ev=commsTakeover phase={_lastCommsTakeoverPhase} " +
-                     $"erase={_comms.AppliedTakeoverErase:F3} lie={_comms.AppliedTakeoverLie:F3} " +
+                     $"erase={_comms.AppliedTakeoverErase:F3} reveal={_comms.AppliedTakeoverReveal:F3} " +
+                     $"collapse={_comms.AppliedTakeoverCollapse:F3} cut={_comms.TakeoverCutCount} " +
                      $"cx={_comms.CorruptedChars} face={_comms.AppliedFaceMix:F3} " +
-                     $"glyph={_comms.AppliedGlyph:F3} started={_comms.TakeoverStartedCount} " +
+                     $"glyph={_comms.AppliedGlyph:F3} faceInk={_comms.AppliedFace:F3} " +
+                     $"shown={_comms.VisibleChars} started={_comms.TakeoverStartedCount} " +
                      $"completed={_comms.TakeoverCompletedCount}");
             }
             if (_comms != null && _comms.PulseCount != _lastCommsPulse)
@@ -1316,7 +1318,8 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" commsCx=").Append(_comms == null ? "-" : _comms.CorruptedChars.ToString());
             _sb.Append(" commsTakeover=").Append(_comms == null ? "-" : _comms.TakeoverPhase.ToString());
             _sb.Append(" commsErase=").Append(_comms == null ? "-" : _comms.AppliedTakeoverErase.ToString("F3"));
-            _sb.Append(" commsLie=").Append(_comms == null ? "-" : _comms.AppliedTakeoverLie.ToString("F3"));
+            _sb.Append(" commsReveal=").Append(_comms == null ? "-" : _comms.AppliedTakeoverReveal.ToString("F3"));
+            _sb.Append(" commsCollapse=").Append(_comms == null ? "-" : _comms.AppliedTakeoverCollapse.ToString("F3"));
             //   commsBg = 地と縁を組めたか。**0 なら文字と壊れだけが宙に浮く。**
             //   ⚠⚠ 2026-08-17 まで実機がまさにこれだった（`Unlit/Color` がビルドから剥がれていた）。
             //   Editor では出るので、この 1 ビットが無いと永久に気づけない。

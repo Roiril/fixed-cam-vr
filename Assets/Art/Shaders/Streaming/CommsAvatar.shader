@@ -42,6 +42,7 @@ Shader "FixedCamVr/CommsAvatar"
         _Stroke("Frame stroke (0 = none)", Range(0, 0.25)) = 0
         // 顔を出すか。0 にすると枠線だけになる（版を掴めなかったときの姿）。
         _FaceOn("Draw face (0/1)", Range(0, 1)) = 1
+        _Seizure("Output seized (0..1)", Range(0, 1)) = 0
     }
 
     SubShader
@@ -77,6 +78,7 @@ Shader "FixedCamVr/CommsAvatar"
                 float _Radius;
                 float _Stroke;
                 float _FaceOn;
+                float _Seizure;
             CBUFFER_END
 
             struct Attributes
@@ -159,6 +161,13 @@ Shader "FixedCamVr/CommsAvatar"
                 float face = lerp(a1, a2, k) * _FaceOn * inner;
 
                 float a = saturate(max(ring, face)) * _Opacity;
+                // 発話を失う時は口元から版が消える。形を潰して別の表情にはしない。
+                if (_Seizure > 0.0001)
+                {
+                    float edge = _Seizure * 1.10;
+                    float paper = i.uv.y + (n - 0.5) * 0.025;
+                    a *= smoothstep(edge - 0.04, edge + 0.02, paper);
+                }
                 return half4(_Color.rgb, a);
             }
             ENDHLSL

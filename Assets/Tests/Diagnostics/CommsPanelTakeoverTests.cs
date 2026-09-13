@@ -43,12 +43,12 @@ namespace FixedCamVr.Diagnostics.Tests
             { _logic.Tick(1f / 30f); Apply(); }
         }
 
-        [TestCase(false)]
-        [TestCase(true)]
-        public void SuccessfulReportIsVisibleAfterEitherKindOfLie(bool repeat)
+        [TestCase(1f)]
+        [TestCase(3f)]
+        public void SuccessfulReportIsVisibleDuringAndAfterSeizure(float elapsed)
         {
-            _panel.Deliver(repeat ? CommsNotice.TakeoverLie : CommsNotice.Takeover);
-            Advance(repeat ? 1f : 7f);
+            _panel.Deliver(CommsNotice.Takeover);
+            Advance(elapsed);
             _panel.SetDecayForPreview(0f, 0f);
             _panel.Deliver(CommsNotice.MarkLogged);
             Advance(1.4f);
@@ -59,7 +59,7 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
-        public void CompletedPanelRemainsHiddenWithoutReenteringTruth()
+        public void CompletedPanelRemainsHiddenWithoutReenteringOutput()
         {
             _panel.Deliver(CommsNotice.Takeover);
             Advance(10f);
@@ -76,16 +76,58 @@ namespace FixedCamVr.Diagnostics.Tests
         {
             _panel.Deliver(CommsNotice.Takeover);
             Advance(5f);
-            Assert.Greater(_panel.AppliedTakeoverLie, 0f);
+            Assert.AreEqual(1, _panel.TakeoverCutCount);
             Call(interruption);
             Assert.AreEqual(CommsTakeoverPhase.Off, _panel.TakeoverPhase);
             Assert.AreEqual(0f, _panel.AppliedGlyph);
-            Assert.AreEqual(0f, _panel.AppliedTakeoverLie);
+            Assert.AreEqual(0f, _panel.AppliedTakeoverCollapse);
             _panel.SetDecayForPreview(0f, 0f);
             _panel.Deliver(CommsNotice.Greeting);
             Advance(2.5f);
             Assert.AreEqual(1f, _panel.AppliedGlyph);
             Assert.AreEqual(0, _panel.CorruptedChars);
+        }
+
+        [Test]
+        public void HoldingReportAfterCaptureCannotRestoreTheFace()
+        {
+            _panel.Deliver(CommsNotice.Takeover);
+            Advance(4f);
+            _logic.SetGuideWanted(true);
+            Advance(1f);
+            Assert.AreEqual(0f, _panel.AppliedGlyph);
+            Assert.AreEqual(0f, _panel.AppliedFace);
+            Assert.AreEqual(1, _panel.TakeoverCompletedCount);
+        }
+
+        [TestCase(ShowLang.Ja)]
+        [TestCase(ShowLang.En)]
+        [TestCase(ShowLang.Fr)]
+        public void OneSentenceIsErasedWhileTheTailIsStillBeingGenerated(ShowLang lang)
+        {
+            ShowLanguage.Select(lang);
+            _panel.Deliver(CommsNotice.Takeover);
+            var text = (TMPro.TMP_Text)typeof(CommsPanel).GetField("_text", Private)!.GetValue(_panel);
+            string original = text.text;
+            int total = text.textInfo.characterCount, lastShown = 0, overlappingGrowth = 0;
+            bool seized = false;
+            for (int i = 0; i < 160; i++)
+            {
+                Advance(1f / 30f);
+                Assert.AreEqual(original, text.text, "A second sentence must never replace the original");
+                Assert.Less(_panel.VisibleChars, total, "The original must never finish");
+                if (_panel.CorruptedChars > 0 && _panel.VisibleChars > lastShown) overlappingGrowth++;
+                if (_panel.TakeoverCutCount > 0)
+                {
+                    seized = true;
+                    Assert.AreEqual(0f, _panel.AppliedGlyph);
+                }
+                lastShown = _panel.VisibleChars;
+            }
+            Assert.GreaterOrEqual(overlappingGrowth, 2, "Erasure and new output must coexist");
+            Assert.IsTrue(seized);
+            Assert.AreEqual(0f, _panel.AppliedFace);
+            Assert.AreEqual(1, _panel.TakeoverCutCount);
         }
     }
 }

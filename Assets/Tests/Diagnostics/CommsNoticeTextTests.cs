@@ -16,13 +16,12 @@ namespace FixedCamVr.Diagnostics.Tests
     /// </summary>
     public class CommsNoticeTextTests
     {
-        [TestCase(ShowLang.Ja, "異状を検出しました", "異状は検出されませんでした")]
-        [TestCase(ShowLang.En, "An anomaly was detected.", "No anomaly was detected.")]
-        [TestCase(ShowLang.Fr, "Une anomalie a été\ndétectée.", "Aucune anomalie n’a été\ndétectée.")]
-        public void ConcealmentChangesTheMeaningInEveryLanguage(ShowLang lang, string truth, string lie)
+        [TestCase(ShowLang.Ja, "異状なしと判定しました")]
+        [TestCase(ShowLang.En, "No anomaly was detected.")]
+        [TestCase(ShowLang.Fr, "Aucune anomalie n’a été\ndétectée.")]
+        public void TakeoverAttemptsOnlyOneDenial(ShowLang lang, string sentence)
         {
-            Assert.AreEqual(truth, CommsPanel.NoticeText(CommsNotice.Takeover, lang));
-            Assert.AreEqual(lie, CommsPanel.NoticeText(CommsNotice.TakeoverLie, lang));
+            Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.Takeover, lang));
         }
 
         /// <summary>

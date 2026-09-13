@@ -37,28 +37,31 @@ def render_language(folder):
     assert rows and [int(r['frame']) for r in rows] == list(range(len(rows)))
     frames = [folder / f'f{i:04d}.png' for i in range(len(rows))]
     assert all(p.is_file() for p in frames)
-    truth = [r for r in rows if r['phase'] == 'Truth' and int(r['full']) > 0]
-    hold = [r for r in rows if r['phase'] == 'LieHold']
-    assert truth and hold
-    truth_glyphs = max(int(r['full']) for r in truth)
-    readable = [r for r in truth if int(r['full']) == truth_glyphs]
-    assert len(readable) / FPS >= 1.7, 'Truth was not held long enough to read'
-    assert len(hold) / FPS >= 2.1, 'Lie was not held long enough to read'
-    assert all(int(r['missing']) == 0 and float(r['lie']) >= .999 for r in hold)
-    assert all(int(r['full']) == int(r['drawn']) and int(r['full']) > 0 for r in hold)
-    assert all(float(r['face']) >= .99 for r in hold), 'The doll did not remain'
-    assert all(int(r['hit']) == 0 for r in rows if r['phase'] not in ('Off', 'Truth'))
-    assert sum(int(r['hit']) for r in rows) == truth_glyphs
-    # Same TMP position must survive the wording change.
+    overlap = [r for r in rows if r['phase'] == 'Pursuit'
+               and int(r['missing']) > 0 and int(r['drawn']) > 0]
+    seized = [r for r in rows if r['phase'] == 'Seized']
+    assert overlap and seized
+    assert len(overlap) / FPS >= .20, 'Erasure and output did not coexist'
+    growing = [r for r in overlap if int(r['hit']) > 0]
+    assert len(growing) >= 2, 'The tail did not keep producing ink during erasure'
+    assert len({r['text'] for r in rows}) == 1, 'A second sentence replaced the source'
+    assert all(int(r['generated']) < int(r['total']) for r in rows), 'The source finished'
+    cut_frame = int(seized[0]['frame'])
+    after_cut = rows[cut_frame:]
+    assert all(int(r['hit']) == 0 and int(r['drawn']) == 0 for r in after_cut)
+    assert all(float(r['face']) == 0 for r in seized[3:]), 'The seized face returned'
+    expected = int(rows[0]['expected'])
+    assert sum(int(r['hit']) for r in rows) == expected
+    # The source keeps one layout; only ink is deformed.
     assert max(float(r['x']) for r in rows) - min(float(r['x']) for r in rows) < .01
     assert max(float(r['y']) for r in rows) - min(float(r['y']) for r in rows) < .01
-    a = np.asarray(Image.open(folder / 'lie-readable.png')).astype(np.int16)
-    b = np.asarray(Image.open(folder / 'lie-still.png')).astype(np.int16)
+    a = np.asarray(Image.open(folder / f'f{int(seized[3]["frame"]):04d}.png')).astype(np.int16)
+    b = np.asarray(Image.open(folder / f'f{int(seized[-1]["frame"]):04d}.png')).astype(np.int16)
     still_delta = float(np.abs(a - b).mean())
-    assert still_delta == 0, f'Lie should remain still: {still_delta}'
-    a = np.asarray(Image.open(folder / 'truth-readable.png')).astype(np.int16)
+    assert still_delta == 0, f'The empty display should remain still: {still_delta}'
+    a = np.asarray(Image.open(folder / 'output.png')).astype(np.int16)
     changed = float(np.abs(a - b).mean())
-    assert changed > .01, 'Text content changed in state but not in pixels'
+    assert changed > .01, 'The output was not removed in pixels'
 
     sounds = ROOT / 'Assets/Resources/Sound'
     clips = [wav_read(sounds / f'sfx_type_{i}.wav') for i in range(1, 9)]
@@ -71,12 +74,16 @@ def render_language(folder):
         bed, rate = wav_read(sounds / f'{name}.wav')
         assert rate == sr
         out += np.tile(bed, (samples // len(bed) + 1, 1))[:samples] * gain
+    keystrokes = np.zeros_like(out)
     for i, r in enumerate(row for row in rows if int(row['hit'])):
         clip = clips[i % len(clips)][0]
         start = int((int(r['frame']) / FPS + .035) * sr)
         count = min(len(clip), samples - start)
         if count > 0:
-            out[start:start + count] += clip[:count]
+            keystrokes[start:start + count] += clip[:count]
+    # Runtime StopAll cuts both currently sounding and DSP-scheduled keystrokes.
+    keystrokes[int(cut_frame / FPS * sr):] = 0
+    out += keystrokes
     assert np.abs(out).max() <= 1, 'Preview audio would clip'
     audio = folder / 'type.wav'
     with wave.open(str(audio), 'wb') as f:
@@ -90,10 +97,12 @@ def render_language(folder):
         '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac',
         '-b:a', '192k', '-shortest', '-movflags', '+faststart', str(video)], check=True)
     result = dict(language=folder.name, frames=len(rows), seconds=len(rows) / FPS,
-        typed=sum(int(r['hit']) for r in rows), expected=truth_glyphs,
-        truth_readable_seconds=len(readable) / FPS, lie_hold_seconds=len(hold) / FPS,
-        lie_static_pixel_delta=still_delta, truth_to_lie_pixel_delta=changed,
-        video=str(video), audio_note='Existing beds. Recorded keystrokes plus 35 ms DSP delay. No spatial audio.')
+        typed=sum(int(r['hit']) for r in rows), expected=expected,
+        generated=max(int(r['generated']) for r in rows), total=int(rows[0]['total']),
+        overlap_seconds=len(overlap) / FPS, new_keystrokes_during_erasure=len(growing),
+        cut_seconds=cut_frame / FPS, empty_hold_seconds=len(seized) / FPS,
+        empty_static_pixel_delta=still_delta, output_to_empty_pixel_delta=changed,
+        video=str(video), audio_note='Existing beds. Recorded keystrokes plus 35 ms DSP delay, cut at capture. No spatial audio.')
     (folder / 'evidence.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     return result
 

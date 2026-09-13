@@ -186,8 +186,6 @@ namespace FixedCamVr.Streaming
         /// <summary>その出方で読ませる時間 (秒)。<b>読ませる尺を読む所は必ずここを通す</b>。</summary>
         public static float HoldSecFor(CommsDelivery delivery)
             => delivery == CommsDelivery.Fade ? FadeHoldSec
-             : delivery == CommsDelivery.Takeover ? CommsTakeoverLogic.TotalSec
-             : delivery == CommsDelivery.TakeoverLie ? CommsTakeoverLogic.LieHoldSec
              : HoldSec;
 
         /// <summary>引くまで (秒)。ぱっと消すと「消えた」ではなく「壊れた」に見える。</summary>
@@ -240,13 +238,19 @@ namespace FixedCamVr.Streaming
         /// <summary>現在の段に入ってからの秒数。専用表示とプレビューが同じ時計を読む。</summary>
         public float StageElapsedSec => _elapsed;
 
-        public CommsTakeoverSample TakeoverSample => _delivery == CommsDelivery.Takeover
-            ? CommsTakeoverLogic.Sample(_stage == CommsStage.Hold ? _elapsed
-                                      : _stage == CommsStage.Out ? CommsTakeoverLogic.TotalSec : 0f)
-            : _delivery == CommsDelivery.TakeoverLie
-                ? CommsTakeoverLogic.LieOnly(_stage == CommsStage.Hold ? _elapsed
-                                          : _stage == CommsStage.Out ? CommsTakeoverLogic.LieHoldSec : 0f)
-                : new CommsTakeoverSample { phase = CommsTakeoverPhase.Off };
+        public CommsTakeoverSample TakeoverSample
+        {
+            get
+            {
+                if (_delivery != CommsDelivery.Takeover || _stage == CommsStage.In)
+                    return new CommsTakeoverSample { phase = CommsTakeoverPhase.Off };
+                if (_stage == CommsStage.Type)
+                    return CommsTakeoverLogic.Sample(_elapsed, _typeSec);
+                if (_stage == CommsStage.Out)
+                    return CommsTakeoverLogic.Sample(CommsTakeoverLogic.DurationFor(_typeSec), _typeSec);
+                return new CommsTakeoverSample { phase = CommsTakeoverPhase.Off };
+            }
+        }
 
         /// <summary>
         /// <b>読ませ終わった</b>（<see cref="HoldSec"/> を満たした、または最初から何も出ていない）。
@@ -287,8 +291,8 @@ namespace FixedCamVr.Streaming
             //   新しい出方の目で古い段を測らせない）。
             EnterStage(chained ? CommsStage.Type : CommsStage.In);
             _delivery = delivery;
-            _typeSec = delivery == CommsDelivery.TakeoverLie
-                ? 0f
+            _typeSec = delivery == CommsDelivery.Takeover
+                ? CommsTakeoverLogic.OutputSecFor(charCount, ShowLanguage.Current)
                 : delivery == CommsDelivery.Fade
                 ? FadeInSec
                 : charCount <= 0
@@ -361,7 +365,12 @@ namespace FixedCamVr.Streaming
                     if (_elapsed >= InSec) EnterStage(CommsStage.Type);
                     break;
                 case CommsStage.Type:
-                    if (_elapsed >= _typeSec) EnterStage(CommsStage.Hold);
+                    if (_delivery == CommsDelivery.Takeover)
+                    {
+                        if (CommsTakeoverLogic.Sample(_elapsed, _typeSec).phase == CommsTakeoverPhase.Complete)
+                            EnterStage(CommsStage.Out);
+                    }
+                    else if (_elapsed >= _typeSec) EnterStage(CommsStage.Hold);
                     break;
                 case CommsStage.Hold:
                     // 読ませ終わったら引く。⚠ ただし**まだ押している最中なら開いたまま残す** —
@@ -411,6 +420,15 @@ namespace FixedCamVr.Streaming
                     }
                     case CommsStage.Type:
                     {
+                        if (_delivery == CommsDelivery.Takeover)
+                        {
+                            CommsTakeoverSample takeover = CommsTakeoverLogic.Sample(_elapsed, _typeSec);
+                            return new CommsWeights
+                            {
+                                panel = 1f, glyph = 1f, open = 1f, body = 1f,
+                                reveal = takeover.reveal, hint = 0f,
+                            };
+                        }
                         // ⚠⚠ **すっと浮かぶ出方**（`canon/LEDGER.md` 0168）。字は最初から全部
                         //    そこに在って（`reveal = 1`）、**濃さだけが上がる**。
                         //    1 字ずつ出さないので `CommsPanel.Apply` の打鍵も鳴らない
@@ -453,6 +471,18 @@ namespace FixedCamVr.Streaming
                         //    文字がはみ出して「潰された」に見える。
                         float g = Smooth(Clamp01(t / GlyphOutAt));
                         float fold = Smooth(Clamp01((t - FoldStartAt) / (1f - FoldStartAt)));
+                        if (_delivery == CommsDelivery.Takeover)
+                        {
+                            return new CommsWeights
+                            {
+                                panel = _panelFrom * (1f - Smooth(t)),
+                                glyph = 0f,
+                                open = (1f - fold) * _openFrom,
+                                body = _bodyFrom,
+                                reveal = CommsTakeoverLogic.MaxReveal,
+                                hint = 0f,
+                            };
+                        }
                         return new CommsWeights
                         {
                             panel = _panelFrom,
