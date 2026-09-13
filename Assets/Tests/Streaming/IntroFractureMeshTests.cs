@@ -1,16 +1,18 @@
 #nullable enable
 
+using System;
 using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Random = UnityEngine.Random;
 
 namespace FixedCamVr.Streaming.Tests
 {
     public sealed class IntroFractureMeshTests
     {
         [Test]
-        public void Shards_CoverTheFractureAreaWithoutDegeneratePieces()
+        public void Shards_FormACompleteNonDegenerateTriangulation()
         {
             Mesh mesh = IntroFractureMesh.Build();
             try
@@ -36,8 +38,8 @@ namespace FixedCamVr.Streaming.Tests
                     Assert.That(surfaceData[ic].x, Is.EqualTo(surface));
                     if (surface != IntroFractureMesh.FrontSurface)
                         continue;
-                    totalArea += area;
 
+                    totalArea += area;
                     Vector4 key = pieceData[ia];
                     Assert.That(pieceData[ib], Is.EqualTo(key));
                     Assert.That(pieceData[ic], Is.EqualTo(key));
@@ -47,48 +49,116 @@ namespace FixedCamVr.Streaming.Tests
 
                 Assert.That(totalArea, Is.EqualTo(0.36d).Within(0.0002d));
                 Assert.That(pieceAreas.Count, Is.EqualTo(IntroFractureMesh.LastPieceCount));
-                foreach (KeyValuePair<Vector4, double> piece in pieceAreas)
-                    Assert.That(piece.Value, Is.GreaterThan(0d), $"piece {piece.Key} has no area");
+                Assert.That(IntroFractureMesh.LastPieceCount, Is.InRange(200, 500));
             }
             finally
             {
-                Object.DestroyImmediate(mesh);
+                UnityEngine.Object.DestroyImmediate(mesh);
             }
         }
 
         [Test]
-        public void Shards_ContainEveryMacroGroupAndIrregularPolygons()
+        public void FrontEdges_AreSharedExactlyTwiceExceptAtTheOuterBoundary()
         {
             Mesh mesh = IntroFractureMesh.Build();
             try
             {
-                List<Vector4> pieceData = ReadUv(mesh, 1);
-                List<Vector4> macroData = ReadUv(mesh, 2);
-                List<Vector4> surfaceData = ReadUv(mesh, 3);
-                var macros = new HashSet<int>();
-                var verticesPerPiece = new Dictionary<Vector4, int>();
-                bool hasNonQuad = false;
-                for (int i = 0; i < mesh.vertexCount; i++)
+                List<Vector4> pieces = ReadUv(mesh, 1);
+                List<Vector4> surfaces = ReadUv(mesh, 3);
+                Vector3[] vertices = mesh.vertices;
+                var verticesByPiece = new Dictionary<Vector4, List<Vector2>>();
+                for (int i = 0; i < vertices.Length; i++)
                 {
-                    macros.Add(Mathf.RoundToInt(macroData[i].w));
-                    if (surfaceData[i].x != IntroFractureMesh.FrontSurface)
+                    if (surfaces[i].x != IntroFractureMesh.FrontSurface)
                         continue;
-                    verticesPerPiece.TryGetValue(pieceData[i], out int count);
-                    verticesPerPiece[pieceData[i]] = count + 1;
+                    if (!verticesByPiece.TryGetValue(pieces[i], out List<Vector2>? points))
+                    {
+                        points = new List<Vector2>(3);
+                        verticesByPiece.Add(pieces[i], points);
+                    }
+                    points.Add(vertices[i]);
                 }
 
-                foreach (int count in verticesPerPiece.Values)
-                    hasNonQuad |= count != 4;
+                var edgeCounts = new Dictionary<EdgeKey, int>();
+                foreach (List<Vector2> points in verticesByPiece.Values)
+                {
+                    Assert.That(points.Count, Is.EqualTo(3), "a shard is not triangular");
+                    AddEdge(edgeCounts, points[0], points[1]);
+                    AddEdge(edgeCounts, points[1], points[2]);
+                    AddEdge(edgeCounts, points[2], points[0]);
+                }
 
-                Assert.That(macros.Count, Is.EqualTo(IntroFractureMesh.MacroCount));
-                for (int i = 0; i < IntroFractureMesh.MacroCount; i++)
-                    Assert.That(macros.Contains(i), Is.True, $"macro {i} is absent");
-                Assert.That(IntroFractureMesh.LastPieceCount, Is.InRange(1000, 2400));
-                Assert.That(hasNonQuad, Is.True, "all pieces are quads; Voronoi irregularity was lost");
+                int outside = 0;
+                int inside = 0;
+                foreach (KeyValuePair<EdgeKey, int> edge in edgeCounts)
+                {
+                    if (edge.Value == 1)
+                    {
+                        outside++;
+                        Assert.That(edge.Key.IsOuterBoundary, Is.True,
+                            $"unpaired internal edge {edge.Key}");
+                    }
+                    else
+                    {
+                        inside++;
+                        Assert.That(edge.Value, Is.EqualTo(2), $"edge {edge.Key} is shared by {edge.Value} shards");
+                    }
+                }
+                Assert.That(outside, Is.GreaterThan(0));
+                Assert.That(inside, Is.GreaterThan(outside));
             }
             finally
             {
-                Object.DestroyImmediate(mesh);
+                UnityEngine.Object.DestroyImmediate(mesh);
+            }
+        }
+
+        [Test]
+        public void ShardSizes_HaveClearLargeSmallContrastAndMostlyPointedShapes()
+        {
+            Mesh mesh = IntroFractureMesh.Build();
+            try
+            {
+                List<Vector4> pieces = ReadUv(mesh, 1);
+                List<Vector4> surfaces = ReadUv(mesh, 3);
+                Vector3[] vertices = mesh.vertices;
+                var verticesByPiece = new Dictionary<Vector4, List<Vector2>>();
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    if (surfaces[i].x != IntroFractureMesh.FrontSurface)
+                        continue;
+                    if (!verticesByPiece.TryGetValue(pieces[i], out List<Vector2>? points))
+                    {
+                        points = new List<Vector2>(3);
+                        verticesByPiece.Add(pieces[i], points);
+                    }
+                    points.Add(vertices[i]);
+                }
+
+                var areas = new List<double>(verticesByPiece.Count);
+                int pointed = 0;
+                foreach (List<Vector2> points in verticesByPiece.Values)
+                {
+                    double area = Math.Abs(Cross(points[1] - points[0], points[2] - points[0])) * 0.5d;
+                    areas.Add(area);
+                    double longestSquared = Math.Max(
+                        (points[1] - points[0]).sqrMagnitude,
+                        Math.Max((points[2] - points[1]).sqrMagnitude, (points[0] - points[2]).sqrMagnitude));
+                    if (longestSquared / (2d * area) >= 2d)
+                        pointed++;
+                }
+                areas.Sort();
+
+                double lower = areas[areas.Count / 10];
+                double upper = areas[areas.Count * 9 / 10];
+                Assert.That(upper / lower, Is.GreaterThanOrEqualTo(8d),
+                    "the 90th-percentile shard is not eight times the 10th-percentile shard");
+                Assert.That(pointed, Is.GreaterThanOrEqualTo(areas.Count / 3),
+                    "fewer than one third of the shards are pointed or elongated");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(mesh);
             }
         }
 
@@ -131,14 +201,14 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(mesh.vertexCount, Is.EqualTo(IntroFractureMesh.LastVertexCount));
                 foreach (KeyValuePair<Vector4, Vector3Int> piece in counts)
                 {
-                    Assert.That(piece.Value.x, Is.GreaterThanOrEqualTo(3));
-                    Assert.That(piece.Value.y, Is.EqualTo(piece.Value.x));
-                    Assert.That(piece.Value.z, Is.EqualTo(piece.Value.x * 4));
+                    Assert.That(piece.Value.x, Is.EqualTo(3));
+                    Assert.That(piece.Value.y, Is.EqualTo(3));
+                    Assert.That(piece.Value.z, Is.EqualTo(12));
                 }
             }
             finally
             {
-                Object.DestroyImmediate(mesh);
+                UnityEngine.Object.DestroyImmediate(mesh);
             }
         }
 
@@ -190,12 +260,12 @@ namespace FixedCamVr.Streaming.Tests
             }
             finally
             {
-                Object.DestroyImmediate(mesh);
+                UnityEngine.Object.DestroyImmediate(mesh);
             }
         }
 
         [Test]
-        public void MacroAttributes_AreSharedWithinEachGroup()
+        public void MacroAttributes_CoverEveryGroupAndUseTheFullDelayRange()
         {
             Mesh mesh = IntroFractureMesh.Build();
             try
@@ -206,7 +276,7 @@ namespace FixedCamVr.Streaming.Tests
                 {
                     int macro = Mathf.RoundToInt(data.w);
                     if (byMacro.TryGetValue(macro, out Vector4 expected))
-                        Assert.That(data, Is.EqualTo(expected), $"macro {macro} has inconsistent centroid or start offset");
+                        Assert.That(data, Is.EqualTo(expected), $"macro {macro} has inconsistent center or start offset");
                     else
                         byMacro.Add(macro, data);
                 }
@@ -225,7 +295,7 @@ namespace FixedCamVr.Streaming.Tests
             }
             finally
             {
-                Object.DestroyImmediate(mesh);
+                UnityEngine.Object.DestroyImmediate(mesh);
             }
         }
 
@@ -257,10 +327,19 @@ namespace FixedCamVr.Streaming.Tests
             finally
             {
                 Random.state = original;
-                if (first != null) Object.DestroyImmediate(first);
-                if (second != null) Object.DestroyImmediate(second);
+                if (first != null) UnityEngine.Object.DestroyImmediate(first);
+                if (second != null) UnityEngine.Object.DestroyImmediate(second);
             }
         }
+
+        private static void AddEdge(Dictionary<EdgeKey, int> edges, Vector2 a, Vector2 b)
+        {
+            var edge = new EdgeKey(a, b);
+            edges.TryGetValue(edge, out int count);
+            edges[edge] = count + 1;
+        }
+
+        private static double Cross(Vector2 a, Vector2 b) => (double)a.x * b.y - (double)a.y * b.x;
 
         private static List<Vector4> ReadUv(Mesh mesh, int channel)
         {
@@ -291,6 +370,64 @@ namespace FixedCamVr.Streaming.Tests
                         || float.IsNaN(value.z) || float.IsInfinity(value.z)
                         || float.IsNaN(value.w) || float.IsInfinity(value.w),
                 Is.False, label);
+        }
+
+        private readonly struct EdgeKey : IEquatable<EdgeKey>
+        {
+            private const long Scale = 10000000L;
+            private const long Boundary = 3000000L;
+            private readonly PointKey _a;
+            private readonly PointKey _b;
+
+            public EdgeKey(Vector2 a, Vector2 b)
+            {
+                var first = new PointKey(a);
+                var second = new PointKey(b);
+                if (first.CompareTo(second) <= 0)
+                {
+                    _a = first;
+                    _b = second;
+                }
+                else
+                {
+                    _a = second;
+                    _b = first;
+                }
+            }
+
+            public bool IsOuterBoundary =>
+                (_a.x == -Boundary && _b.x == -Boundary)
+                || (_a.x == Boundary && _b.x == Boundary)
+                || (_a.y == -Boundary && _b.y == -Boundary)
+                || (_a.y == Boundary && _b.y == Boundary);
+
+            public bool Equals(EdgeKey other) => _a.Equals(other._a) && _b.Equals(other._b);
+            public override bool Equals(object? obj) => obj is EdgeKey other && Equals(other);
+            public override int GetHashCode() => (_a.GetHashCode() * 397) ^ _b.GetHashCode();
+            public override string ToString() => $"{_a}-{_b}";
+
+            private readonly struct PointKey : IEquatable<PointKey>, IComparable<PointKey>
+            {
+                public readonly long x;
+                public readonly long y;
+
+                public PointKey(Vector2 point)
+                {
+                    x = (long)Math.Round(point.x * Scale);
+                    y = (long)Math.Round(point.y * Scale);
+                }
+
+                public int CompareTo(PointKey other)
+                {
+                    int xOrder = x.CompareTo(other.x);
+                    return xOrder != 0 ? xOrder : y.CompareTo(other.y);
+                }
+
+                public bool Equals(PointKey other) => x == other.x && y == other.y;
+                public override bool Equals(object? obj) => obj is PointKey other && Equals(other);
+                public override int GetHashCode() => (x.GetHashCode() * 397) ^ y.GetHashCode();
+                public override string ToString() => $"({x},{y})";
+            }
         }
     }
 }

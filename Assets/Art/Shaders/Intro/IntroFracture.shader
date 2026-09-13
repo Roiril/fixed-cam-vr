@@ -60,8 +60,8 @@ Shader "FixedCamVr/IntroFracture"
                 float4 positionCS : SV_POSITION;
                 float3 positionWS : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
-                float2 leftUv : TEXCOORD2;
-                float2 rightUv : TEXCOORD3;
+                float3 leftUv : TEXCOORD2;
+                float3 rightUv : TEXCOORD3;
                 float2 projectionValidity : TEXCOORD4;
                 nointerpolation float surface : TEXCOORD5;
                 float detail : TEXCOORD6;
@@ -156,40 +156,44 @@ Shader "FixedCamVr/IntroFracture"
                     -macroRay.x / max(macroRay.z, 1e-4)));
                 float3 macroTangentY = normalize(cross(macroRay, macroTangentX));
 
-                // .02〜.18 で亀裂が24大面へ伝播し、.12〜.34 で面ごと奥へ剥がれる。
+                // 起点から裂け、片が外へ離れた後に同じ片がスクリーンへ戻る。
                 float macroStart = 0.02 + v.macro.z * (0.16 / 0.14);
-                float crack = smoothstep(macroStart, min(macroStart + 0.08, 0.26), p);
-                float peel = smoothstep(max(0.12, macroStart), 0.34, p) * crack;
-                float macroAngle = radians(lerp(4.0, 12.0, macroNoise.y))
-                                 * (macroNoise.x < 0.5 ? -1.0 : 1.0) * peel;
+                float crack = smoothstep(macroStart, macroStart + 0.055, p);
+                float loosen = smoothstep(0.10 + v.macro.z * 0.30,
+                    0.28 + pieceNoise.x * 0.03, p);
+                float launch = smoothstep(0.12 + v.macro.z * 0.35,
+                    0.38 + pieceNoise.y * 0.035, p);
+                float largePiece = smoothstep(0.016, 0.055, v.small.z);
+                float macroAngle = radians(lerp(2.0, 5.0, macroNoise.y))
+                                 * (macroNoise.x < 0.5 ? -1.0 : 1.0) * crack;
                 float3 macroAxis = SafeNormalize(
                     lerp(macroTangentX, macroTangentY, macroNoise.x), macroTangentX);
-                float3 peelOffset = macroRay * lerp(0.06, 0.20, macroNoise.y) * peel;
+                float3 peelOffset = macroRay * 0.018 * crack;
                 float3 sourceVertex = rawMacroCenter
                     + IntroShardSpin3(rawVertex - rawMacroCenter, macroAxis, macroAngle) + peelOffset;
                 float3 sourcePieceCenter = rawMacroCenter
                     + IntroShardSpin3(rawPieceCenter - rawMacroCenter, macroAxis, macroAngle) + peelOffset;
 
-                // 小片は大面の運動を受け継ぐ。片ごとの乱れは小さく留め、群れとして見せる。
-                float pieceStart = lerp(0.22, 0.26, pieceNoise.x);
-                float loosen = smoothstep(pieceStart, 0.46, p);
-                float2 groupedNoise = (macroNoise * 2.0 - 1.0) * 0.82
-                                    + (pieceNoise * 2.0 - 1.0) * 0.18;
-                float3 pieceOffset = (macroTangentX * groupedNoise.x + macroTangentY * groupedNoise.y)
-                                   * lerp(0.006, 0.022, macroNoise.y) * loosen;
-                sourceVertex += pieceOffset;
-                sourcePieceCenter += pieceOffset;
+                float2 slope = rawPieceCenter.xy / max(rawPieceCenter.z, 0.01);
+                float2 radial = slope - float2(-0.16, 0.12);
+                radial /= max(length(radial), 1e-4);
+                float2 tangent = float2(-radial.y, radial.x);
+                float edgeDistance = smoothstep(0.35, 1.25, length(slope));
+                float lateral = lerp(0.80, 1.08, pieceNoise.x) + v.small.z * 2.0;
+                // 周縁の片は奥へ逃がす。大きな片の一部だけが少し手前を通る。
+                float depth = lerp(0.26, -0.26, largePiece) + edgeDistance * 0.95
+                            + (pieceNoise.y - 0.5) * 0.18;
+                float3 burst = float3(radial * lateral + tangent * 0.08, depth);
+                sourcePieceCenter += burst * launch;
 
-                // 大面ごとに出発と到着をずらす。一枚のまま縮まず、同じ空間を順に渡る。
-                float travelStart = 0.27 + v.macro.z * (0.09 / 0.14);
-                float travelEnd = lerp(0.74, 0.82, macroNoise.y);
+                float travelStart = 0.43 + v.macro.z * 0.12 + pieceNoise.x * 0.025;
+                float travelEnd = lerp(0.82, 0.76, largePiece);
                 float travel = smoothstep(travelStart, travelEnd, p);
-                float seal = smoothstep(0.70, 0.82, p);
-                float detail = smoothstep(0.02, 0.12, p) * (1.0 - seal);
-                float3 captureHeadPosition = mul(_CaptureHeadToWorld, float4(0.0, 0.0, 0.0, 1.0)).xyz;
+                float seal = smoothstep(0.66, 1.0, travel);
+                float detail = crack * (1.0 - seal);
                 float3 startCenter = mul(_CaptureHeadToWorld, float4(sourcePieceCenter, 1.0)).xyz;
                 float3 sourceRelative = mul((float3x3)_CaptureHeadToWorld,
-                    sourceVertex - sourcePieceCenter);
+                    sourceVertex - sourcePieceCenter + burst * launch);
                 float3 captureWorld = mul(_CaptureHeadToWorld, float4(rawVertex, 1.0)).xyz;
                 float3 captureCenterWorld = mul(_CaptureHeadToWorld, float4(rawPieceCenter, 1.0)).xyz;
                 float3 targetCenter = _HasFrozenFrame > 0.5
@@ -202,38 +206,34 @@ Shader "FixedCamVr/IntroFracture"
                 if (dot(screenNormal, targetCenter - _CurrentHeadPosition.xyz) < 0.0)
                     screenNormal = -screenNormal;
 
-                float3 sourceAway = normalize(startCenter - captureHeadPosition);
-                float3 drift = (screenRight * groupedNoise.x + screenUp * groupedNoise.y)
-                             * lerp(0.06, 0.13, macroNoise.x);
-                float3 control1 = startCenter + sourceAway * lerp(0.16, 0.38, macroNoise.x) + drift;
-                float3 control2 = targetCenter - screenNormal * lerp(0.24, 0.52, macroNoise.y) + drift * 0.35;
+                float3 worldBurst = mul((float3x3)_CaptureHeadToWorld, burst);
+                float3 drift = (screenRight * tangent.x + screenUp * tangent.y) * 0.10;
+                float3 control1 = startCenter + worldBurst * 0.14 + drift;
+                float3 control2 = targetCenter - screenNormal * lerp(0.24, 0.42, pieceNoise.y) + drift * 0.35;
                 float3 centerWorld = Bezier(startCenter, control1, control2, targetCenter, travel);
                 float3 fromEye = centerWorld - _CurrentHeadPosition.xyz;
                 float eyeDistance = length(fromEye);
-                if (eyeDistance < 0.45)
+                if (eyeDistance < 0.55)
                 {
                     float3 safeFromEye = eyeDistance > 1e-4 ? fromEye / eyeDistance : screenNormal;
-                    centerWorld = _CurrentHeadPosition.xyz + safeFromEye * 0.45;
+                    centerWorld = _CurrentHeadPosition.xyz + safeFromEye * 0.55;
                 }
 
                 float3 relativeWorld = lerp(sourceRelative, targetVertex - targetCenter, travel);
-                float middle = sin(travel * PI) * (1.0 - seal);
-                float tiltNoise = (macroNoise.x * 2.0 - 1.0) * 0.62
-                                + (pieceNoise.x * 2.0 - 1.0) * 0.38;
-                float rollNoise = (macroNoise.y * 2.0 - 1.0) * 0.76
-                                + (pieceNoise.y * 2.0 - 1.0) * 0.24;
+                float middle = loosen * (1.0 - smoothstep(0.18, 1.0, travel));
                 float3 travelAxis = SafeNormalize(lerp(
                     mul((float3x3)_CaptureHeadToWorld, macroTangentX), screenRight, travel), screenRight);
                 float3 faceAxis = SafeNormalize(lerp(
                     mul((float3x3)_CaptureHeadToWorld, macroRay), screenNormal, travel), screenNormal);
-                float tilt = radians(tiltNoise * 42.0) * middle;
-                float roll = radians(rollNoise * 18.0) * middle;
+                float tilt = radians(lerp(26.0, 48.0, pieceNoise.y) * (1.0 - 0.35 * largePiece))
+                           * (pieceNoise.x < 0.5 ? -1.0 : 1.0) * middle;
+                float roll = radians((pieceNoise.y * 2.0 - 1.0) * (34.0 - 17.0 * largePiece)) * middle;
                 relativeWorld = IntroShardSpin3(relativeWorld, travelAxis, tilt);
                 relativeWorld = IntroShardSpin3(relativeWorld, faceAxis, roll);
 
-                // 隙間は18%以内。終端では共有頂点、回転、陰影、厚みを厳密にゼロへ戻す。
-                float gap = loosen * lerp(0.04, 0.18, macroNoise.x) * (1.0 - seal);
-                float thickness = lerp(0.006, 0.012, pieceNoise.y) * detail;
+                // 片を小さく消すのではなく、位置と向きで間隔を空ける。
+                float gap = lerp(crack * 0.014, 0.025 + pieceNoise.x * 0.035, loosen) * (1.0 - seal);
+                float thickness = lerp(0.002, 0.005, pieceNoise.y) * detail;
                 float3 faceNormal = faceAxis;
                 faceNormal = IntroShardSpin3(faceNormal, travelAxis, tilt);
                 faceNormal = IntroShardSpin3(faceNormal, faceAxis, roll);
@@ -256,8 +256,12 @@ Shader "FixedCamVr/IntroFracture"
                 // UV は変形前の撮影ワールド点から一度だけ求める。移動中には再投影しない。
                 float leftValid;
                 float rightValid;
-                o.leftUv = ProjectFrozenUv(_LeftWorldToUv, captureWorld, leftValid);
-                o.rightUv = ProjectFrozenUv(_RightWorldToUv, captureWorld, rightValid);
+                float2 leftUv = ProjectFrozenUv(_LeftWorldToUv, captureWorld, leftValid);
+                float2 rightUv = ProjectFrozenUv(_RightWorldToUv, captureWorld, rightValid);
+                float leftQ = lerp(mul(_LeftWorldToUv, float4(captureWorld, 1.0)).w, 1.0, travel);
+                float rightQ = lerp(mul(_RightWorldToUv, float4(captureWorld, 1.0)).w, 1.0, travel);
+                o.leftUv = float3(leftUv * leftQ, leftQ);
+                o.rightUv = float3(rightUv * rightQ, rightQ);
                 o.projectionValidity = float2(leftValid, rightValid);
                 o.positionWS = worldPosition;
                 o.normalWS = normalize(normalWorld);
@@ -273,11 +277,13 @@ Shader "FixedCamVr/IntroFracture"
                 if (_HasFrozenFrame < 0.5)
                     return float4(0.0, 0.0, 0.0, saturate(_ScreenFade));
 
-                float2 uv = unity_StereoEyeIndex == 0 ? i.leftUv : i.rightUv;
+                float3 projected = unity_StereoEyeIndex == 0 ? i.leftUv : i.rightUv;
+                float2 uv = projected.xy / max(projected.z, 1e-5);
                 float valid = unity_StereoEyeIndex == 0
                     ? i.projectionValidity.x : i.projectionValidity.y;
                 float edge = min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y));
                 float field = smoothstep(0.0, 0.018, edge) * step(1e-5, valid);
+                clip(field - 1e-4);
                 float2 sampleUv = saturate(uv);
                 float3 photo = unity_StereoEyeIndex == 0
                     ? SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, sampleUv).rgb

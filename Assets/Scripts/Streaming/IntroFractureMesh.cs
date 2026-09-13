@@ -8,13 +8,12 @@ using UnityEngine.Rendering;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// 導入で覆いを割る不規則な破片を組む。角度空間で作った小さい Voronoi 面を
-    /// 24 枚の大面で切り、大面の境界を隣り合う小片で共有する。
+    /// 導入で覆いを割る大小の三角形片を組む。角度空間の Delaunay 分割を全片で共有し、
+    /// 各片を最寄りの大区分へまとめる。
     /// </summary>
     public static class IntroFractureMesh
     {
         public const int MacroCount = 24;
-        public const int MicroSide = 40;
         public const float HalfExtentLocal = 0.30f;
         public const float FrontSurface = 0f;
         public const float BackSurface = 1f;
@@ -24,14 +23,7 @@ namespace FixedCamVr.Streaming
         private const int MacroRows = 4;
         private const int Seed = 20260913;
         private const double MinArea = 1e-12;
-
-        private static readonly Point[] Domain =
-        {
-            new Point(-1d, -1d),
-            new Point(1d, -1d),
-            new Point(1d, 1d),
-            new Point(-1d, 1d)
-        };
+        private const double DuplicateDistanceSquared = 1e-16;
 
         public static int LastPieceCount { get; private set; }
         public static int LastVertexCount { get; private set; }
@@ -39,49 +31,35 @@ namespace FixedCamVr.Streaming
         public static Mesh Build()
         {
             var random = new System.Random(Seed);
-            Point[] macroSites = BuildSites(MacroColumns, MacroRows, random);
-            Point[] microSites = BuildSites(MicroSide, MicroSide, random);
+            Point[] macroSites = BuildGridSites(MacroColumns, MacroRows, 0.34d, random);
+            List<Point> points = BuildFracturePoints(macroSites, random);
+            List<Triangle> shards = Triangulate(points);
             MacroRegion[] macros = BuildMacroRegions(macroSites);
 
-            var positions = new List<Vector3>(12000);
-            var uv0 = new List<Vector2>(12000);
-            var uv1 = new List<Vector4>(12000);
-            var uv2 = new List<Vector4>(12000);
-            var uv3 = new List<Vector4>(12000);
-            var normals = new List<Vector3>(12000);
-            var triangles = new List<int>(48000);
-            int pieceCount = 0;
+            var positions = new List<Vector3>(shards.Count * 18);
+            var uv0 = new List<Vector2>(shards.Count * 18);
+            var uv1 = new List<Vector4>(shards.Count * 18);
+            var uv2 = new List<Vector4>(shards.Count * 18);
+            var uv3 = new List<Vector4>(shards.Count * 18);
+            var normals = new List<Vector3>(shards.Count * 18);
+            var triangles = new List<int>(shards.Count * 24);
 
-            for (int y = 0; y < MicroSide; y++)
+            foreach (Triangle shard in shards)
             {
-                for (int x = 0; x < MicroSide; x++)
-                {
-                    int microIndex = y * MicroSide + x;
-                    List<Point> micro = BuildMicroCell(microSites, x, y, microIndex);
-                    if (micro.Count < 3)
-                        continue;
+                Point a = points[shard.a];
+                Point b = points[shard.b];
+                Point c = points[shard.c];
+                Point angularCentroid = (a + b + c) * (1d / 3d);
+                int macroIndex = FindNearestMacro(angularCentroid, macroSites);
+                var local = new List<Vector2>(3) { ToLocal(a), ToLocal(b), ToLocal(c) };
+                if (!TryMeasure(local, out float area, out Vector2 centroid))
+                    throw new InvalidOperationException("Delaunay shard became degenerate after projection.");
 
-                    for (int macroIndex = 0; macroIndex < macros.Length; macroIndex++)
-                    {
-                        List<Point> piece = IntersectConvex(micro, macros[macroIndex].polygon);
-                        if (piece.Count < 3)
-                            continue;
-
-                        var local = new List<Vector2>(piece.Count);
-                        for (int i = 0; i < piece.Count; i++)
-                            local.Add(ToLocal(piece[i]));
-
-                        if (!TryMeasure(local, out float area, out Vector2 centroid) || area <= MinArea)
-                            continue;
-
-                        AddPiece(positions, uv0, uv1, uv2, uv3, normals, triangles, local, centroid, area,
-                            macros[macroIndex], macroIndex);
-                        pieceCount++;
-                    }
-                }
+                AddPiece(positions, uv0, uv1, uv2, uv3, normals, triangles, local, centroid, area,
+                    macros[macroIndex], macroIndex);
             }
 
-            LastPieceCount = pieceCount;
+            LastPieceCount = shards.Count;
             LastVertexCount = positions.Count;
             var mesh = new Mesh
             {
@@ -102,12 +80,74 @@ namespace FixedCamVr.Streaming
             return mesh;
         }
 
-        private static Point[] BuildSites(int columns, int rows, System.Random random)
+        private static List<Point> BuildFracturePoints(Point[] macroSites, System.Random random)
+        {
+            var points = new List<Point>(220);
+            AddPoint(points, new Point(-1d, -1d));
+            AddPoint(points, new Point(1d, -1d));
+            AddPoint(points, new Point(1d, 1d));
+            AddPoint(points, new Point(-1d, 1d));
+
+            double[] horizontal = { -0.91d, -0.78d, -0.59d, -0.34d, -0.08d, 0.13d, 0.47d, 0.72d, 0.93d };
+            double[] vertical = { -0.88d, -0.63d, -0.29d, 0.04d, 0.38d, 0.79d };
+            foreach (double x in horizontal)
+            {
+                AddPoint(points, new Point(x, -1d));
+                AddPoint(points, new Point(x, 1d));
+            }
+            foreach (double y in vertical)
+            {
+                AddPoint(points, new Point(-1d, y));
+                AddPoint(points, new Point(1d, y));
+            }
+
+            foreach (Point site in BuildGridSites(9, 7, 0.42d, random))
+                AddPoint(points, site);
+
+            Point[] clusterCenters =
+            {
+                new Point(-0.64d, 0.52d),
+                new Point(0.53d, 0.58d),
+                new Point(-0.48d, -0.51d),
+                new Point(0.49d, -0.43d),
+                new Point(0.03d, 0.02d),
+            };
+            double[] clusterAngles = { 0.22d, -0.63d, 0.87d, 0.38d, -0.91d };
+            for (int cluster = 0; cluster < clusterCenters.Length; cluster++)
+                AddCluster(points, clusterCenters[cluster], clusterAngles[cluster], random);
+
+            foreach (Point site in macroSites)
+                AddPoint(points, site);
+            return points;
+        }
+
+        private static void AddCluster(List<Point> points, Point center, double angle, System.Random random)
+        {
+            var along = new Point(Math.Cos(angle), Math.Sin(angle));
+            var across = new Point(-along.y, along.x);
+            for (int i = 0; i < 18; i++)
+            {
+                double longitudinal = (random.NextDouble() * 2d - 1d) * 0.16d;
+                double lateral = (random.NextDouble() * 2d - 1d) * 0.022d;
+                AddPoint(points, center + along * longitudinal + across * lateral);
+            }
+        }
+
+        private static void AddPoint(List<Point> points, Point point)
+        {
+            for (int i = 0; i < points.Count; i++)
+            {
+                if (DistanceSquared(points[i], point) < DuplicateDistanceSquared)
+                    return;
+            }
+            points.Add(point);
+        }
+
+        private static Point[] BuildGridSites(int columns, int rows, double jitter, System.Random random)
         {
             var sites = new Point[columns * rows];
             double width = 2d / columns;
             double height = 2d / rows;
-            const double jitter = 0.34d;
             for (int y = 0; y < rows; y++)
             {
                 for (int x = 0; x < columns; x++)
@@ -122,130 +162,107 @@ namespace FixedCamVr.Streaming
             return sites;
         }
 
+        private static List<Triangle> Triangulate(List<Point> points)
+        {
+            int pointCount = points.Count;
+            var working = new List<Point>(points)
+            {
+                new Point(-16d, -8d),
+                new Point(16d, -8d),
+                new Point(0d, 16d),
+            };
+            var triangles = new List<Triangle> { new Triangle(pointCount, pointCount + 1, pointCount + 2) };
+
+            for (int pointIndex = 0; pointIndex < pointCount; pointIndex++)
+            {
+                var boundary = new List<Edge>();
+                for (int triangleIndex = triangles.Count - 1; triangleIndex >= 0; triangleIndex--)
+                {
+                    Triangle triangle = triangles[triangleIndex];
+                    if (!CircumcircleContains(working[triangle.a], working[triangle.b], working[triangle.c],
+                            working[pointIndex]))
+                        continue;
+
+                    ToggleBoundary(boundary, new Edge(triangle.a, triangle.b));
+                    ToggleBoundary(boundary, new Edge(triangle.b, triangle.c));
+                    ToggleBoundary(boundary, new Edge(triangle.c, triangle.a));
+                    triangles.RemoveAt(triangleIndex);
+                }
+
+                foreach (Edge edge in boundary)
+                {
+                    double cross = Cross(working[edge.b] - working[edge.a], working[pointIndex] - working[edge.a]);
+                    if (Math.Abs(cross) <= MinArea)
+                        continue;
+                    triangles.Add(cross > 0d
+                        ? new Triangle(edge.a, edge.b, pointIndex)
+                        : new Triangle(edge.b, edge.a, pointIndex));
+                }
+            }
+
+            triangles.RemoveAll(triangle => triangle.a >= pointCount || triangle.b >= pointCount || triangle.c >= pointCount);
+            return triangles;
+        }
+
+        private static void ToggleBoundary(List<Edge> boundary, Edge edge)
+        {
+            int existing = boundary.IndexOf(edge);
+            if (existing >= 0)
+                boundary.RemoveAt(existing);
+            else
+                boundary.Add(edge);
+        }
+
+        private static bool CircumcircleContains(Point a, Point b, Point c, Point point)
+        {
+            double ax = a.x - point.x;
+            double ay = a.y - point.y;
+            double bx = b.x - point.x;
+            double by = b.y - point.y;
+            double cx = c.x - point.x;
+            double cy = c.y - point.y;
+            double determinant = (ax * ax + ay * ay) * (bx * cy - by * cx)
+                                 - (bx * bx + by * by) * (ax * cy - ay * cx)
+                                 + (cx * cx + cy * cy) * (ax * by - ay * bx);
+            return determinant > 1e-13;
+        }
+
         private static MacroRegion[] BuildMacroRegions(Point[] sites)
         {
-            var polygons = new List<Point>[MacroCount];
-            var localCentroids = new Vector2[MacroCount];
+            var centers = new Vector2[MacroCount];
             var distances = new float[MacroCount];
-            var start = new Point(-0.45d, 0.30d);
+            Vector2 start = ToLocal(new Point(-0.12d, 0.08d));
             float maxDistance = 0f;
             float minDistance = float.PositiveInfinity;
             for (int i = 0; i < sites.Length; i++)
             {
-                List<Point> polygon = BuildCell(sites, i, 0, sites.Length);
-                Point angularCentroid = Centroid(polygon);
-                var local = new List<Vector2>(polygon.Count);
-                for (int p = 0; p < polygon.Count; p++)
-                    local.Add(ToLocal(polygon[p]));
-                if (!TryMeasure(local, out _, out Vector2 localCentroid))
-                    throw new InvalidOperationException($"Macro Voronoi cell {i} has no area.");
-
-                float distance = (float)Math.Sqrt(
-                    Square(angularCentroid.x - start.x) + Square(angularCentroid.y - start.y));
-                polygons[i] = polygon;
-                localCentroids[i] = localCentroid;
-                distances[i] = distance;
-                maxDistance = Mathf.Max(maxDistance, distance);
-                minDistance = Mathf.Min(minDistance, distance);
+                centers[i] = ToLocal(sites[i]);
+                distances[i] = Vector2.Distance(centers[i], start);
+                maxDistance = Mathf.Max(maxDistance, distances[i]);
+                minDistance = Mathf.Min(minDistance, distances[i]);
             }
 
             var regions = new MacroRegion[MacroCount];
             for (int i = 0; i < regions.Length; i++)
                 regions[i] = new MacroRegion(
-                    polygons[i], localCentroids[i], (distances[i] - minDistance) / (maxDistance - minDistance) * 0.14f);
+                    centers[i], (distances[i] - minDistance) / (maxDistance - minDistance) * 0.14f);
             return regions;
         }
 
-        private static List<Point> BuildMicroCell(Point[] sites, int siteX, int siteY, int siteIndex)
+        private static int FindNearestMacro(Point point, Point[] macroSites)
         {
-            var polygon = new List<Point>(Domain);
-            int minX = Math.Max(0, siteX - 2);
-            int maxX = Math.Min(MicroSide - 1, siteX + 2);
-            int minY = Math.Max(0, siteY - 2);
-            int maxY = Math.Min(MicroSide - 1, siteY + 2);
-            Point site = sites[siteIndex];
-            for (int y = minY; y <= maxY && polygon.Count >= 3; y++)
+            int nearest = 0;
+            double nearestDistance = double.PositiveInfinity;
+            for (int i = 0; i < macroSites.Length; i++)
             {
-                for (int x = minX; x <= maxX && polygon.Count >= 3; x++)
+                double distance = DistanceSquared(point, macroSites[i]);
+                if (distance < nearestDistance)
                 {
-                    int otherIndex = y * MicroSide + x;
-                    if (otherIndex == siteIndex)
-                        continue;
-                    polygon = ClipNearer(polygon, site, sites[otherIndex]);
+                    nearest = i;
+                    nearestDistance = distance;
                 }
             }
-            return polygon;
-        }
-
-        private static List<Point> BuildCell(Point[] sites, int siteIndex, int first, int end)
-        {
-            var polygon = new List<Point>(Domain);
-            Point site = sites[siteIndex];
-            for (int other = first; other < end && polygon.Count >= 3; other++)
-            {
-                if (other == siteIndex)
-                    continue;
-                polygon = ClipNearer(polygon, site, sites[other]);
-            }
-            return polygon;
-        }
-
-        private static List<Point> ClipNearer(List<Point> polygon, Point site, Point other)
-        {
-            Point normal = other - site;
-            double limit = (Square(other.x) + Square(other.y) - Square(site.x) - Square(site.y)) * 0.5d;
-            return Clip(polygon, p => limit - Dot(p, normal));
-        }
-
-        private static List<Point> IntersectConvex(List<Point> subject, List<Point> clipPolygon)
-        {
-            var result = new List<Point>(subject);
-            for (int i = 0; i < clipPolygon.Count && result.Count >= 3; i++)
-            {
-                Point a = clipPolygon[i];
-                Point b = clipPolygon[(i + 1) % clipPolygon.Count];
-                Point edge = b - a;
-                result = Clip(result, p => Cross(edge, p - a));
-            }
-            return result;
-        }
-
-        private static List<Point> Clip(List<Point> polygon, Func<Point, double> signedDistance)
-        {
-            var output = new List<Point>(polygon.Count + 1);
-            if (polygon.Count == 0)
-                return output;
-
-            Point previous = polygon[polygon.Count - 1];
-            double previousDistance = signedDistance(previous);
-            bool previousInside = previousDistance >= 0d;
-            for (int i = 0; i < polygon.Count; i++)
-            {
-                Point current = polygon[i];
-                double currentDistance = signedDistance(current);
-                bool currentInside = currentDistance >= 0d;
-                if (currentInside != previousInside)
-                {
-                    double t = previousDistance / (previousDistance - currentDistance);
-                    AddDistinct(output, previous + (current - previous) * t);
-                }
-                if (currentInside)
-                    AddDistinct(output, current);
-
-                previous = current;
-                previousDistance = currentDistance;
-                previousInside = currentInside;
-            }
-
-            if (output.Count > 1 && DistanceSquared(output[0], output[output.Count - 1]) < 1e-24)
-                output.RemoveAt(output.Count - 1);
-            return output;
-        }
-
-        private static void AddDistinct(List<Point> points, Point point)
-        {
-            if (points.Count == 0 || DistanceSquared(points[points.Count - 1], point) >= 1e-24)
-                points.Add(point);
+            return nearest;
         }
 
         private static void AddPiece(
@@ -263,7 +280,7 @@ namespace FixedCamVr.Streaming
             int macroIndex)
         {
             var pieceData = new Vector4(centroid.x, centroid.y, Mathf.Sqrt(area), 1f);
-            var macroData = new Vector4(macro.localCentroid.x, macro.localCentroid.y,
+            var macroData = new Vector4(macro.localCenter.x, macro.localCenter.y,
                 macro.startOffset, macroIndex);
             int front = positions.Count;
             for (int i = 0; i < polygon.Count; i++)
@@ -275,12 +292,9 @@ namespace FixedCamVr.Streaming
             }
 
             // 覆いは -Z 側から見る。表は従来と同じ winding、裏は逆向きにする。
-            for (int i = 1; i < polygon.Count - 1; i++)
-            {
-                triangles.Add(front);
-                triangles.Add(front + i + 1);
-                triangles.Add(front + i);
-            }
+            triangles.Add(front);
+            triangles.Add(front + 2);
+            triangles.Add(front + 1);
 
             int back = positions.Count;
             for (int i = 0; i < polygon.Count; i++)
@@ -290,20 +304,15 @@ namespace FixedCamVr.Streaming
                     new Vector3(point.x, point.y, 0.5f), point, pieceData, macroData,
                     new Vector3(0f, 0f, 1f), BackSurface);
             }
-            for (int i = 1; i < polygon.Count - 1; i++)
-            {
-                triangles.Add(back);
-                triangles.Add(back + i);
-                triangles.Add(back + i + 1);
-            }
+            triangles.Add(back);
+            triangles.Add(back + 1);
+            triangles.Add(back + 2);
 
             for (int i = 0; i < polygon.Count; i++)
             {
                 Vector2 a = polygon[i];
                 Vector2 b = polygon[(i + 1) % polygon.Count];
                 Vector2 edge = b - a;
-                // Voronoi の交点には 1e-5m 未満の辺もある。Vector2.normalized はそれを
-                // ゼロへ丸めるため、側面の照明へ不正な法線を渡してしまう。
                 float edgeLength = edge.magnitude;
                 if (edgeLength <= 0f)
                     throw new InvalidOperationException("Fracture polygon contains an empty edge.");
@@ -386,40 +395,50 @@ namespace FixedCamVr.Streaming
             return true;
         }
 
-        private static Point Centroid(List<Point> polygon)
-        {
-            double twiceArea = 0d;
-            double sumX = 0d;
-            double sumY = 0d;
-            for (int i = 0; i < polygon.Count; i++)
-            {
-                Point a = polygon[i];
-                Point b = polygon[(i + 1) % polygon.Count];
-                double cross = Cross(a, b);
-                twiceArea += cross;
-                sumX += (a.x + b.x) * cross;
-                sumY += (a.y + b.y) * cross;
-            }
-            return new Point(sumX / (3d * twiceArea), sumY / (3d * twiceArea));
-        }
-
-        private static double Dot(Point a, Point b) => a.x * b.x + a.y * b.y;
         private static double Cross(Point a, Point b) => a.x * b.y - a.y * b.x;
         private static double Square(double value) => value * value;
         private static double DistanceSquared(Point a, Point b) => Square(a.x - b.x) + Square(a.y - b.y);
 
         private readonly struct MacroRegion
         {
-            public readonly List<Point> polygon;
-            public readonly Vector2 localCentroid;
+            public readonly Vector2 localCenter;
             public readonly float startOffset;
 
-            public MacroRegion(List<Point> polygon, Vector2 localCentroid, float startOffset)
+            public MacroRegion(Vector2 localCenter, float startOffset)
             {
-                this.polygon = polygon;
-                this.localCentroid = localCentroid;
+                this.localCenter = localCenter;
                 this.startOffset = startOffset;
             }
+        }
+
+        private readonly struct Triangle
+        {
+            public readonly int a;
+            public readonly int b;
+            public readonly int c;
+
+            public Triangle(int a, int b, int c)
+            {
+                this.a = a;
+                this.b = b;
+                this.c = c;
+            }
+        }
+
+        private readonly struct Edge : IEquatable<Edge>
+        {
+            public readonly int a;
+            public readonly int b;
+
+            public Edge(int a, int b)
+            {
+                this.a = Math.Min(a, b);
+                this.b = Math.Max(a, b);
+            }
+
+            public bool Equals(Edge other) => a == other.a && b == other.b;
+            public override bool Equals(object? obj) => obj is Edge other && Equals(other);
+            public override int GetHashCode() => (a * 397) ^ b;
         }
 
         private readonly struct Point
