@@ -137,39 +137,6 @@ Shader "FixedCamVr/IntroFracture"
                     / (0.5 * (up + down)));
             }
 
-            float OrbitProgress(float p)
-            {
-                // 亀裂とともに順回転を始める。開口後も同じ向きへ回り続け、帰還の直前に一周を終える。
-                const float begin = 0.02;
-                const float peak = 0.07;
-                const float coastEnd = 0.42;
-                const float end = 0.49;
-                const float up = peak - begin;
-                const float coast = coastEnd - peak;
-                const float down = end - coastEnd;
-                const float distance = up * 0.5 + coast * 0.8 + down * 0.3;
-
-                if (p <= begin) return 0.0;
-                if (p < peak)
-                {
-                    float t = saturate((p - begin) / up);
-                    return saturate(up * EaseIntegral(t) / distance);
-                }
-
-                float progress = up * 0.5;
-                if (p < coastEnd)
-                {
-                    float t = saturate((p - peak) / coast);
-                    progress += coast * (t - 0.4 * EaseIntegral(t));
-                    return saturate(progress / distance);
-                }
-
-                progress += coast * 0.8;
-                float t = saturate((p - coastEnd) / down);
-                progress += down * 0.6 * (t - EaseIntegral(t));
-                return saturate(progress / distance);
-            }
-
             float2 ProjectFrozenUv(float4x4 worldToUv, float3 captureWorld, out float valid)
             {
                 float4 q = mul(worldToUv, float4(captureWorld, 1.0));
@@ -257,9 +224,9 @@ Shader "FixedCamVr/IntroFracture"
                 if (dot(screenNormal, targetCenter - _CurrentHeadPosition.xyz) < 0.0)
                     screenNormal = -screenNormal;
 
-                // 一周を同じ向きへ回り切る。元の角度へ戻ってから写真の対応位置へ直線で帰還する。
+                // 回転は開く期間だけ。離散後の位置からは写真の対応位置へ直線で戻す。
                 float3 fromScreen = startCenter - _ScreenCenter.xyz;
-                float orbitAngle = -radians(360.0) * OrbitProgress(p);
+                float orbitAngle = -radians(80.0) * OpeningProgress(p, 0.0);
                 float3 releasedCenter = _ScreenCenter.xyz
                     + IntroShardSpin3(fromScreen, screenNormal, orbitAngle);
                 float3 centerWorld = lerp(releasedCenter, targetCenter, travel);
