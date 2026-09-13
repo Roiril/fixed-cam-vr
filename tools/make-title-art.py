@@ -352,9 +352,10 @@ def build_from_master(preview=False):
 
     if os.path.exists(KEYVISUAL_PLATE):
         plate = Image.open(KEYVISUAL_PLATE).convert("RGBA")
-        logo = _fit(transparent, int(plate.width * 0.57), int(plate.height * 0.47))
-        x = int(plate.width * 0.29)
-        y = int(plate.height * 0.245)
+        # 人形群の右上にある暗幕へ置く。顔と左のコピーを避ける。
+        logo = _fit(transparent, int(plate.width * 0.43), int(plate.height * 0.35))
+        x = int(plate.width * 0.515)
+        y = int(plate.height * 0.225)
         plate.alpha_composite(logo, (x, y))
         plate = plate.convert("RGB").resize((1920, 1080), Image.LANCZOS)
         os.makedirs(os.path.dirname(KEYVISUAL_DEST), exist_ok=True)

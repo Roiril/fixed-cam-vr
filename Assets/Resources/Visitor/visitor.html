@@ -125,11 +125,11 @@
   .title-view { position: absolute; z-index: 10; inset: 0; display: flex; align-items: center; min-height: 100svh; overflow: hidden; cursor: pointer; background: var(--bg); transition: opacity .52s var(--ease); }
   .title-view::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg,rgba(9,8,7,.45),transparent 75%),linear-gradient(0deg,rgba(9,8,7,.65),transparent 30%),url("./asset/entrance-doll-v1.png") 76% center / cover no-repeat; transition: transform .8s var(--ease),opacity .5s var(--ease); }
   .title-view::after { content: ""; position: absolute; inset: 22px; border: 1px solid rgba(232,220,196,.16); pointer-events: none; }
-  .title-lockup { position: relative; z-index: 1; width: min(58%,900px); margin-left: calc(var(--gutter) + 12px); padding-bottom: 12px; transition: opacity .35s var(--ease),transform .55s var(--ease); }
-  .title-brand { margin: 0 0 30px; line-height: 1; }
+  .title-lockup { position: absolute; z-index: 1; inset: 0; transition: opacity .35s var(--ease),transform .55s var(--ease); }
+  .title-brand { position: absolute; left: 6%; top: 30%; width: min(47%,900px); margin: 0; line-height: 1; }
   .title-brand img { display: block; width: 100%; height: auto; filter: drop-shadow(0 4px 24px rgba(0,0,0,.42)); }
-  .title-rule { display: block; width: 42px; height: 1px; margin-bottom: 34px; background: var(--gold); }
-  .title-start { border: 0; padding: 10px 0; gap: 42px; background: transparent; }
+  .title-rule { display: none; }
+  .title-start { position: absolute; left: 6%; bottom: max(13%,env(safe-area-inset-bottom)); border: 0; padding: 10px 0; gap: 42px; background: transparent; }
   .title-start:hover { background: transparent; }
   .title-start-copy { display: grid; gap: 7px; }
   .title-start-main { font-size: 17px; letter-spacing: .12em; }
@@ -238,10 +238,9 @@
     .title-view { align-items: flex-end; }
     .title-view::before { background: linear-gradient(0deg,var(--bg),rgba(9,8,7,.9) 18%,transparent 68%),url("./asset/entrance-doll-v1.png") 77% 35% / cover no-repeat; }
     .title-view::after { inset: 14px; }
-    .title-lockup { margin: 0; width: 100%; padding: 40px var(--gutter) max(60px,env(safe-area-inset-bottom)); }
-    .title-brand { width: min(100%,620px); margin-bottom: 24px; }
-    .title-rule { margin-bottom: 22px; }
-    .title-start { width: 100%; justify-content: space-between; }
+    .title-lockup { inset: 0; }
+    .title-brand { left: 8%; right: 8%; top: max(10%,env(safe-area-inset-top)); width: auto; max-width: 620px; margin: 0 auto; }
+    .title-start { left: 8%; bottom: max(8%,env(safe-area-inset-bottom)); width: 84%; justify-content: space-between; }
     .result { padding-block: 30px; }
     .result-state { gap: 10px 20px; margin-bottom: 30px; }
     .result-title { font-size: 28px; }
@@ -268,6 +267,10 @@
     #briefingPrevious { grid-row: 2; grid-column: 1; }
     #briefingNext, .briefing-replay { grid-row: 2; grid-column: 2; }
     #briefingMute { grid-row: 3; grid-column: 1 / -1; }
+  }
+  @media (max-width:760px) and (min-aspect-ratio:1/1) {
+    .title-brand { left: 6%; right: auto; top: 22%; width: 47%; margin: 0; }
+    .title-start { left: 6%; width: auto; }
   }
   @media (max-width:420px) {
     :root { --gutter: 22px; }
