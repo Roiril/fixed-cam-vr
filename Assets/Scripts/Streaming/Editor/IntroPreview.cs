@@ -249,7 +249,8 @@ namespace FixedCamVr.Streaming.EditorTools
             foreach ((float p, int label) in
                      new[]
                      {
-                         (0f, 0), (0.125f, 12), (0.25f, 25), (0.375f, 37), (0.5f, 50),
+                         (0f, 0), (0.08f, 8), (0.125f, 12), (0.16f, 16), (0.25f, 25),
+                         (0.375f, 37), (0.42f, 42), (0.5f, 50),
                          (0.625f, 62), (0.75f, 75), (0.84f, 84), (0.875f, 87), (0.94f, 94), (0.999f, 100),
                      })
                 yield return new Shot(IntroStage.Frame, 4, "frame", p, label);
@@ -720,6 +721,20 @@ namespace FixedCamVr.Streaming.EditorTools
 
             public void VerifyFrozenFrame(List<string> saved)
             {
+                // 状態値だけでは停止を証明できない。同じ入力で別時刻の実画素を照合する。
+                Render(new Shot(IntroStage.Frame, 4, "probe_motion_reset", 0f, 0), saved);
+                Render(new Shot(IntroStage.Frame, 4, "probe_suspended_a", 0.38f, 38), saved);
+                Color32[] suspended = _sceneTex.GetPixels32();
+                Render(new Shot(IntroStage.Frame, 4, "probe_suspended_b", 0.43f, 43), saved);
+                float suspendedDelta = MeanPixelDifference(suspended, _sceneTex.GetPixels32());
+                Render(new Shot(IntroStage.Frame, 4, "probe_landed_a", 0.78f, 78), saved);
+                Color32[] landed = _sceneTex.GetPixels32();
+                Render(new Shot(IntroStage.Frame, 4, "probe_landed_b", 0.87f, 87), saved);
+                float landedDelta = MeanPixelDifference(landed, _sceneTex.GetPixels32());
+                if (suspendedDelta > 0.01f || landedDelta > 0.01f)
+                    throw new InvalidOperationException(
+                        $"破片の静止区間が動いた: suspended={suspendedDelta} landed={landedDelta}");
+                Debug.Log($"[IntroViz] motion holds: suspended={suspendedDelta:F4} landed={landedDelta:F4}");
                 _freezeSourceOverride = UnityEngine.Object.Instantiate(_reality);
                 try
                 {

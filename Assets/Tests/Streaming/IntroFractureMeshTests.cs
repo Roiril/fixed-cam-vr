@@ -263,6 +263,45 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void BevelDistance_OnlyMarksPolygonBoundaries_NotQuadDiagonals()
+        {
+            Mesh mesh = IntroFractureMesh.Build();
+            try
+            {
+                List<Vector4> pieces = ReadUv(mesh, 1);
+                List<Vector4> surfaces = ReadUv(mesh, 3);
+                List<Vector4> distances = ReadUv(mesh, 4);
+                Assert.That(distances.Count, Is.EqualTo(mesh.vertexCount));
+                var fronts = new Dictionary<Vector4, List<int>>();
+                for (int i = 0; i < mesh.vertexCount; i++)
+                {
+                    if (surfaces[i].x != IntroFractureMesh.FrontSurface) continue;
+                    if (!fronts.TryGetValue(pieces[i], out List<int>? ids))
+                    {
+                        ids = new List<int>();
+                        fronts.Add(pieces[i], ids);
+                    }
+                    ids.Add(i);
+                }
+                foreach (List<int> ids in fronts.Values)
+                {
+                    for (int edge = 0; edge < ids.Count; edge++)
+                    {
+                        Vector4 midpoint = (distances[ids[edge]]
+                            + distances[ids[(edge + 1) % ids.Count]]) * 0.5f;
+                        Assert.That(midpoint[edge], Is.LessThan(1e-6f), "outline must catch light");
+                    }
+                    if (ids.Count != 4) continue;
+                    Vector4 diagonal = (distances[ids[0]] + distances[ids[2]]) * 0.5f;
+                    for (int edge = 0; edge < 4; edge++)
+                        Assert.That(diagonal[edge], Is.GreaterThan(1e-6f),
+                            "an internal triangulation edge must not appear as a crack");
+                }
+            }
+            finally { UnityEngine.Object.DestroyImmediate(mesh); }
+        }
+
+        [Test]
         public void EveryPiece_HasFrontBackAndOutwardSideSurfaces()
         {
             Mesh mesh = IntroFractureMesh.Build();

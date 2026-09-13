@@ -44,6 +44,7 @@ namespace FixedCamVr.Streaming
             var uv1 = new List<Vector4>(shards.Count * 20);
             var uv2 = new List<Vector4>(shards.Count * 20);
             var uv3 = new List<Vector4>(shards.Count * 20);
+            var edgeDistances = new List<Vector4>(shards.Count * 20);
             var normals = new List<Vector3>(shards.Count * 20);
             var meshTriangles = new List<int>(shards.Count * 28);
 
@@ -63,8 +64,25 @@ namespace FixedCamVr.Streaming
                 if (!TryMeasure(local, out float area, out Vector2 centroid))
                     throw new InvalidOperationException("Fracture shard became degenerate after projection.");
 
+                int firstVertex = positions.Count;
                 AddPiece(positions, uv0, uv1, uv2, uv3, normals, meshTriangles, local, centroid, area,
                     macros[macroIndex], macroIndex);
+                // 各外周辺までの符号付き距離。四角片の内部対角線を光らせない。
+                // 距離はアフィンなので、面の中でも頂点からの補間で正確に復元できる。
+                for (int vertex = firstVertex; vertex < positions.Count; vertex++)
+                {
+                    Vector2 point = positions[vertex];
+                    Vector4 distances = Vector4.one;
+                    for (int edge = 0; edge < local.Count; edge++)
+                    {
+                        Vector2 a = local[edge];
+                        Vector2 direction = local[(edge + 1) % local.Count] - a;
+                        Vector2 delta = point - a;
+                        distances[edge] = Mathf.Max(0f,
+                            (direction.x * delta.y - direction.y * delta.x) / direction.magnitude);
+                    }
+                    edgeDistances.Add(distances);
+                }
                 if (shard.vertices.Length == 3) trianglePieceCount++;
                 else quadPieceCount++;
             }
@@ -84,6 +102,7 @@ namespace FixedCamVr.Streaming
             mesh.SetUVs(1, uv1);
             mesh.SetUVs(2, uv2);
             mesh.SetUVs(3, uv3);
+            mesh.SetUVs(4, edgeDistances);
             mesh.SetTriangles(meshTriangles, 0);
             // 頂点シェーダで撮影時の頭位置から現在のスクリーンまで運ぶ。
             // 元の平面だけから求めた bounds では、頭を動かした瞬間に全破片がカリングされる。

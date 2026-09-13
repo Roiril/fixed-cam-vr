@@ -406,12 +406,11 @@ EYE_VARIANTS = [
 # ⚠ **これも「もらった音」の側**（合成ではない）。掛けるのは並べ方・音量・音程と端の処理だけで、
 #    イコライザも圧縮も掛けない。**種は固定**なので、同じ版なら同じ波形が出る。
 #
-# ⚠⚠ **尺は「次の音が鳴る時刻」から逆算する。** 割れる音は段 4 の頭（進み 0.02 ＝ 0.05 秒）から
-#    始まり、スクリーンが出る音は live が .999 に達する進み約 .978（＝ 約 2.45 秒）に鳴る。
-#    ユーザー指示は「割れる音はちゃんとこれを鳴らす前に終わらせて静かにしてから」なので、
-#    0209 の画では 1.70 秒の後に約 0.70 秒の静けさが残る。判定は live の到達を読む。
+# ⚠⚠ **尺は「次の音が鳴る時刻」から逆算する。** 割れる音は段 4 の頭（進み 0.02）から
+#    preview 30fps と DSP 35ms を経て映像上の約 0.10 秒に始まる。スクリーンが出る音は
+#    映像上の約 2.50 秒に鳴る。クリップは 1.98 秒で終え、次の音まで約 0.42 秒の静けさを残す。
 #
-SWARM_SEC = 1.70          # 全長（上の逆算）。⚠ 2026-08-23 の作り直しでも動かしていない
+SWARM_SEC = 1.98
 #
 # ⚠⚠ **2026-08-23 に作り直した**（`canon/LEDGER.md` 0112・ユーザー指示「もっとクオリティを
 #    上げて気持ち良くしたい」「使う音声素材を増やすのではなくうまく加工して」）。
@@ -434,26 +433,26 @@ SWARM_HEAD_WIN = 0.50
 #    **さらに -4dB**。合わせて **-10dB ＝ 元の 0.32 倍**。-14.7 は 0112 で旧版に揃えた値だった。
 #    ⚠ 尺・粒・刻み・音程・減り方は 1 つも動かしていない（大きさだけの指示だったので）。
 SWARM_HEAD_LUFS = -24.7   # 0112 は -14.7（旧版の実測値）。0144 で -6dB → さらに -4dB
-# 2026-09-13: 破裂して左右へ広がったあと、短粒化しながら中心へ収束する形へ再設計。
-# 頭の高さと全長を維持。開口の連打→無音→帰還の連打に分ける。
-SWARM_GRAIN_HEAD = 0.040  # 収束し始める粒。前半の主亀裂より短い
-SWARM_GRAIN_TAIL = 0.014  # 中心へ集まった破片 1 つ
-SWARM_FLOW_START = 1.22
-SWARM_FLOW_END = 1.63
-SWARM_STEP_HEAD = 0.030   # 広がった破片が戻り始める間隔
-SWARM_STEP_TAIL = 0.018   # 中心へ近づくほど細かく集まる
-SWARM_STEP_JITTER = 0.12  # 等間隔の連射にしない最小限の揺らぎ
-SWARM_PITCH_HEAD = 0.72   # 主亀裂から自然につながる低めの粒
-SWARM_PITCH_TAIL = 1.18   # 小さくなっても甲高くしない
+# 2026-09-13: 映像の主破壊 0.30 秒へ、DSP 分を引いたクリップ 0.20 秒の一撃を合わせる。
+# 0.65〜1.00 秒を無音にし、1.00 秒から小片→大片の帰還を作る。
+SWARM_RETURN_START = 1.00
+SWARM_RETURN_END = 1.90
+SWARM_GRAIN_HEAD = 0.012  # 帰還の頭は小片
+SWARM_GRAIN_TAIL = 0.055  # 着地に近いほど大片
+SWARM_STEP_JITTER = 0.10  # 等間隔の連射にしない最小限の揺らぎ
+SWARM_PITCH_HEAD = 1.20
+SWARM_PITCH_TAIL = 0.52
 SWARM_PITCH_SPREAD = 0.07
-SWARM_FALL_KNOTS = ((0.00, -16.0),
-                    (0.30, -2.0),
-                    (0.65, +1.0),
-                    (1.00, -10.0))
+SWARM_FALL_KNOTS = ((0.00, -24.0),
+                    (0.28, -9.0),
+                    (0.55, -6.0),
+                    (0.72, -11.0),
+                    (1.00, -24.0))
 SWARM_GAIN_JITTER_DB = 1.5
-SWARM_PAN_HEAD = 0.85     # 左右へ広がった地点
-SWARM_PAN_TAIL = 0.10     # 中心へ静かに集まる地点
+SWARM_PAN_HEAD = 0.30
+SWARM_PAN_TAIL = 0.06
 SWARM_DRIVE_MAX = 6.0     # 頭の高さへ届かないときに丸めてよい上限
+SWARM_PEAK_CEIL_DB = -6.2 # 直前版の -6.14dBTP を超えない
 SWARM_SEED = 20260913
 # 素材（PC-Mouse06-1・端を落とした後の時刻）の一撃 4 つ。粒はここから「長さ」を切る。
 #   0.005 押し込み（本体の頭。長く取ると中間と戻りまで入る ＝ 割れの轟き）
@@ -463,27 +462,26 @@ SWARM_SEED = 20260913
 # ⚠ 旧版は 1 種類（0.005 から 130ms）しか使っておらず、しかも尻の 12ms フェードが
 #    **いちばん大きい一撃の本体を毎粒で潰していた**。
 SWARM_SHARD_AT = (0.0050, 0.0490, 0.1010, 0.1190)
-SWARM_SHARD_MIX = (0.30, 0.24, 0.20, 0.26)   # 収束する粒に使う一撃の比率
-# 0〜0.40 秒の主亀裂と枝分かれ。(時刻, 一撃番号, 音程, dB, 左右)
-SWARM_IMPACT = ((0.000, 3, 0.72, +2.0,  0.00),
-                (0.037, 0, 0.80, +0.5, -0.70),
-                (0.083, 3, 0.87, -1.0, +0.70),
-                (0.140, 2, 0.82, -3.0, -0.60),
-                (0.215, 3, 0.92, -6.0, +0.55),
-                (0.310, 0, 0.90, -11.0, -0.45),
-                (0.430, 1, 1.00, -18.0, +0.35))
-SWARM_IMPACT_LEN = 0.065
-# 帰還の連打の終わり。次の映像出現音の前には静けさを残す。
-SWARM_SETTLE = ((1.650, 3, 1.02, -12.0, +0.04),
-                (1.675, 1, 1.18, -18.0, +0.02))
-SWARM_SETTLE_LEN = 0.012
+SWARM_SHARD_MIX = (0.30, 0.24, 0.20, 0.26)
+# (時刻, 一撃番号, 粒の長さ, 音程, dB, 左右)
+SWARM_PRE = ((0.000, 0, 0.035, 0.46, -23.0, -0.18),
+             (0.078, 1, 0.032, 0.50, -25.0, +0.14),
+             (0.146, 2, 0.024, 0.44, -27.0, -0.08))
+SWARM_IMPACT = ((0.200, 3, 0.085, 0.62, +2.0, 0.00),)
+SWARM_BRANCH = ((0.240, 0, 0.060, 0.72, -1.0, -0.72),
+                (0.292, 3, 0.058, 0.80, -3.5, +0.68),
+                (0.355, 2, 0.052, 0.86, -6.0, -0.58),
+                (0.445, 0, 0.048, 0.92, -10.0, +0.46),
+                (0.565, 1, 0.040, 0.98, -16.0, -0.30))
+SWARM_DUST = ((1.905, 1, 0.010, 1.20, -34.0, -0.03),
+              (1.938, 2, 0.008, 1.28, -40.0, +0.02))
 
 # (元ファイル名, 出力名, **頭 0.5 秒の**短期ラウドネス, 使い先)
 # ⚠ 3 つ目は統合 LUFS ではない（上の `SWARM_HEAD_LUFS` の理由）。
 SWARMS = [
     ("PC-Mouse06-mp3/PC-Mouse06/PC-Mouse06-1.mp3", "sfx_shatter", SWARM_HEAD_LUFS,
      "段 4 — 現実が細かく割れてスクリーンへ吸い込まれる。2026-08-16 ユーザー指定の音源を"
-     "開口の連打から静けさへ移り、帰還の連打を中央へ収める"),
+     "予兆と主破壊から静けさへ移り、小片から大片へ段階的に帰還させる"),
 ]
 
 
@@ -1352,8 +1350,12 @@ def swarm_grain_len(u: float) -> float:
 
 
 def swarm_step(u: float) -> float:
-    """中心へ近づくほど短くなる刻み。"""
-    return SWARM_STEP_HEAD + (SWARM_STEP_TAIL - SWARM_STEP_HEAD) * u
+    """帰還の頭は疎ら、中間で密、着地で再び間隔を広げる。"""
+    if u < 0.28:
+        return float(np.interp(u, (0.0, 0.28), (0.095, 0.050)))
+    if u < 0.62:
+        return float(np.interp(u, (0.28, 0.62), (0.040, 0.024)))
+    return float(np.interp(u, (0.62, 1.0), (0.035, 0.115)))
 
 
 def swarm_shard(st: np.ndarray, sr: int, at: float, length: float,
@@ -1364,27 +1366,47 @@ def swarm_shard(st: np.ndarray, sr: int, at: float, length: float,
     return sk.env_fade(s, 0.0004, min(fade_out, length * 0.35))
 
 
+def swarm_add(out: np.ndarray, g: np.ndarray, at: float, amp: float,
+              p: float, sr: int, end: float = None) -> None:
+    """粒が尺の端へ達しても配列を超えずに重ねる。"""
+    i = max(0, int(at * sr))
+    limit = len(out) if end is None else min(len(out), int(end * sr))
+    take = min(len(g), limit - i)
+    if take > 0:
+        seg = sk.env_fade(g[:take], 0.0, min(0.012, take / sr * 0.35))
+        out[i:i + take] += seg * amp * pan_lr(p)
+
+
 def swarm_build(y, sr: int, head_lufs: float):
-    """1 発の録音を並べて、左右へ割れた破片が中心へ収束する群れにする。
+    """1 発の録音を並べて、破壊と帰還の群れにする。
 
     ⚠ **等間隔・等音量にしない。** そうすると「割れた」ではなく「連射した」に聞こえる。
-    開口の連打を減速・減衰させて無音を作る。帰還では別の連打を立ち上げて中央へ収める。
+    0.20 秒の主破壊から減衰し、無音の後に疎→密→疎の帰還を作る。
     """
     st = sk.to_stereo(trim(y))
     rng = np.random.default_rng(SWARM_SEED)
     n = int(SWARM_SEC * sr)
     out = np.zeros((n, 2))
 
-    # ① t=0 の一撃（大きい破片が 1 つ割れる）。ここが 25ms 窓の山になる。
-    for (at, idx, ratio, db, p) in SWARM_IMPACT:
-        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], SWARM_IMPACT_LEN, 0.030), ratio)
-        i = int(at * sr)
-        out[i:i + len(g)] += g * 10 ** (db / 20.0) * pan_lr(p)
+    # ① 0〜0.20 秒は低く小さい軋み。主破壊を先食いしない。
+    count = 0
+    for (at, idx, length, ratio, db, p) in SWARM_PRE:
+        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], length), ratio)
+        swarm_add(out, g, at, 10 ** (db / 20.0), p, sr)
+        count += 1
 
-    # ② 左右へ広がった破片が、細かくなりながら中心へ集まる。
-    t, count, head_n = SWARM_FLOW_START, len(SWARM_IMPACT), len(SWARM_IMPACT)
-    while t < SWARM_FLOW_END:
-        u = (t - SWARM_FLOW_START) / (SWARM_FLOW_END - SWARM_FLOW_START)
+    # ② 映像の主破壊と、そこから減衰する枝分かれ。
+    for event in SWARM_IMPACT + SWARM_BRANCH:
+        at, idx, length, ratio, db, p = event
+        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], length, 0.030), ratio)
+        swarm_add(out, g, at, 10 ** (db / 20.0), p, sr)
+        count += 1
+    head_n = count
+
+    # ③ 0.65〜1.00 秒の無音の後、小片から大片へ段階的に着地する。
+    t = SWARM_RETURN_START
+    while t < SWARM_RETURN_END:
+        u = (t - SWARM_RETURN_START) / (SWARM_RETURN_END - SWARM_RETURN_START)
         gl = swarm_grain_len(u)
         idx = int(rng.choice(len(SWARM_SHARD_AT), p=SWARM_SHARD_MIX))
         ratio = (SWARM_PITCH_HEAD + (SWARM_PITCH_TAIL - SWARM_PITCH_HEAD) * u
@@ -1394,32 +1416,28 @@ def swarm_build(y, sr: int, head_lufs: float):
         amp *= 10 ** (float(rng.uniform(-SWARM_GAIN_JITTER_DB, SWARM_GAIN_JITTER_DB)) / 20.0)
         pan_width = SWARM_PAN_HEAD + (SWARM_PAN_TAIL - SWARM_PAN_HEAD) * u
         p = float(rng.uniform(-1, 1)) * pan_width
-        i = int(t * sr)
-        seg = g * amp * pan_lr(p)
-        out[i:i + len(seg)] += seg
-        if t < 0.45:
-            head_n += 1
+        swarm_add(out, g, t, amp, p, sr, SWARM_RETURN_END)
         t += swarm_step(u) * (1.0 + float(rng.uniform(-SWARM_STEP_JITTER,
                                                       SWARM_STEP_JITTER)))
         count += 1
 
-    # ③ 中心付近の小さな 4 粒から無音へ入る。
-    for (at, idx, ratio, db, p) in SWARM_SETTLE:
-        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], SWARM_SETTLE_LEN), ratio)
-        i = int(at * sr)
-        out[i:i + len(g)] += g * 10 ** (db / 20.0) * pan_lr(p)
+    # ④ 1.90 秒で主成分を終えた後は、ごく小さい粒だけにする。
+    for (at, idx, length, ratio, db, p) in SWARM_DUST:
+        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], length), ratio)
+        swarm_add(out, g, at, 10 ** (db / 20.0), p, sr)
         count += 1
 
     out = sk.env_fade(out, 0.0, 0.05)
 
-    # ④ **頭 0.5 秒の高さ**で揃える（届かなければ必要なぶんだけ尖頭を丸める）。
+    # ⑤ **頭 0.5 秒の高さ**で揃え、直前版の尖頭を超えない。
     drive = 0.0
     while True:
         z = sk.soft_clip(out, drive) if drive > 0 else out
         g = 10 ** ((head_lufs - short_lufs(z, 0.0, SWARM_HEAD_WIN, sr)) / 20.0)
         tp = sk.true_peak_db(z * g)
-        if tp <= -3.0 or drive >= SWARM_DRIVE_MAX:
-            z = z * g if tp <= -3.0 else z * g * 10 ** ((-3.0 - tp) / 20.0)
+        if tp <= SWARM_PEAK_CEIL_DB or drive >= SWARM_DRIVE_MAX:
+            z = (z * g if tp <= SWARM_PEAK_CEIL_DB else
+                 z * g * 10 ** ((SWARM_PEAK_CEIL_DB - tp) / 20.0))
             return z, count, head_n, drive
         drive += 0.5
 
@@ -1604,11 +1622,12 @@ def ingest_swarms(swarms, src_dir: str) -> None:
         w = int(0.025 * sk.SR)
         env = [float(np.sqrt(np.mean(out[i:i + w] ** 2))) for i in range(0, len(out) - w, w)]
         top = int(np.argmax(env)) * 25
-        print(f"  {name:16s} {count} 粒（0.45s までに {head_n}）/ {d['sec']:.2f}s   "
+        print(f"  {name:16s} {count} 粒（0.65s までに {head_n}）/ {d['sec']:.2f}s   "
               f"丸め {drive:.1f}dB   tp {d['true_peak_db']:5.1f}dB   山 {top}ms")
         print(f"    頭 0.5s {short_lufs(out, 0.0, 0.5):6.1f} LUFS   "
-              f"0.5-1.2s {short_lufs(out, 0.5, 1.2):6.1f}   "
-              f"1.2-1.7s {short_lufs(out, 1.2, 1.7):6.1f}（段 4 の敷く音は約 -30.5）   "
+              f"無音 0.65-1.00s {short_lufs(out, 0.65, 1.0):6.1f}   "
+              f"帰還 1.00-1.90s {short_lufs(out, 1.0, 1.9):6.1f}   "
+              f"微小粒 1.90-1.98s {short_lufs(out, 1.9, 1.98):6.1f}   "
               f"最後の 0.25s {rest:5.1f}dB")
         print(f"    通し {d['lufs']:6.1f} LUFS   波高 {d['crest_db']:4.1f}dB   "
               f"鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f} 内蔵SP {d['speaker_db']:5.1f}dB   "

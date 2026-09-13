@@ -616,7 +616,7 @@ namespace FixedCamVr.Streaming
             _mat.SetVector(VeilSizeId, new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
             _mat.SetFloat(FeatherAngId, featherAng);
 
-            // p=.82 で全片がスクリーン矩形を埋める。p=.88 以降は映像へ溶け始める。
+            // p=.76 で全片がスクリーン矩形を埋める。p=.88 までは実景の面を静止して見せる。
             // Renderer は Frame 終端まで通して実配布の最大値を記録し、Swap へ入った所で止める。
             bool drawShatter = w.shatter > FullyOpenEpsilon
                                && _fractureRenderer != null && _fractureMat != null

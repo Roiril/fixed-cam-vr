@@ -661,7 +661,7 @@ namespace FixedCamVr.Streaming
                             structure = 0f,
                             // 全片の再構成が終わる時刻に、幾何上の矩形も確定する。
                             // base quad は破砕中ずっと閉じているため、四辺の閉鎖としては見せない。
-                            frame = SmoothStep(0.70f, 0.84f, p),
+                            frame = SmoothStep(0.62f, 0.76f, p),
                             // 映像と既存音が共有する段 4 の時計。
                             shatter = p,
                             grain = 0f,
