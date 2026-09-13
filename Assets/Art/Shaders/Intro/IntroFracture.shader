@@ -187,7 +187,7 @@ Shader "FixedCamVr/IntroFracture"
                 sourcePieceCenter += burst * launch;
 
                 float travelStart = 0.43 + v.macro.z * 0.12 + pieceNoise.x * 0.025;
-                float travelEnd = lerp(0.82, 0.76, largePiece);
+                float travelEnd = lerp(0.79, 0.82, largePiece);
                 float travel = smoothstep(travelStart, travelEnd, p);
                 float seal = smoothstep(0.66, 1.0, travel);
                 float detail = crack * (1.0 - seal);
@@ -211,6 +211,25 @@ Shader "FixedCamVr/IntroFracture"
                 float3 control1 = startCenter + worldBurst * 0.14 + drift;
                 float3 control2 = targetCenter - screenNormal * lerp(0.24, 0.42, pieceNoise.y) + drift * 0.35;
                 float3 centerWorld = Bezier(startCenter, control1, control2, targetCenter, travel);
+
+                // 中央を時計回りに囲み、元の写真の位置まで半径を単調に縮める。
+                // 回転した直線経路では一度集まりすぎて再拡大するため、角度と半径を分ける。
+                float3 fromScreen = startCenter - _ScreenCenter.xyz;
+                float3 toScreen = targetCenter - _ScreenCenter.xyz;
+                float2 orbitStart = float2(dot(fromScreen, screenRight), dot(fromScreen, screenUp));
+                float2 orbitTarget = float2(dot(toScreen, screenRight), dot(toScreen, screenUp));
+                float angleDelta = atan2(orbitStart.x * orbitTarget.y - orbitStart.y * orbitTarget.x,
+                    dot(orbitStart, orbitTarget)) - TWO_PI;
+                float orbitAngle = atan2(orbitStart.y, orbitStart.x) + angleDelta * travel;
+                float orbitRadius = lerp(length(orbitStart), length(orbitTarget), travel);
+                float orbitSin, orbitCos;
+                sincos(orbitAngle, orbitSin, orbitCos);
+                float orbitDepth = dot(centerWorld - _ScreenCenter.xyz, screenNormal);
+                centerWorld = _ScreenCenter.xyz + screenRight * (orbitRadius * orbitCos)
+                            + screenUp * (orbitRadius * orbitSin) + screenNormal * orbitDepth;
+                // 終端を厳密に揃える。進みを戻す回転や、貼り付け直す別面は使わない。
+                if (travel <= 0.0) centerWorld = startCenter;
+                if (travel >= 1.0) centerWorld = targetCenter;
                 float3 fromEye = centerWorld - _CurrentHeadPosition.xyz;
                 float eyeDistance = length(fromEye);
                 if (eyeDistance < 0.55)
