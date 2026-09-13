@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [comms_clock_boundaries.md](comms_clock_boundaries.md) - CommsTakeoverの時刻境界で再発したfloat比較の注意。境界ぴったりと低FPSを別に検証する。
+
 - [comms_takeover.md](comms_takeover.md) - 2026-09-14。否定報告の出力中に文頭から侵食が追いつく。完成前に文字と打鍵と顔が失われる。二つ目の発話を出さない。復路では復帰する。
 
 - [presentation_redesign.md](presentation_redesign.md) - 2026-09-13 の導入とエージェント画面の再構築。連続開口と固定位置の通信面。実装案の採否は未判定。比較画像と検証手順。
